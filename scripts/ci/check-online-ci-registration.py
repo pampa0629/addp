@@ -5030,6 +5030,227 @@ def validate_raster_focal_circle_weighted(repository: Path, registered: set[str]
         raise RegistrationError('focal circle oracle must remain independent')
 
 
+TWO_ROUND_BOUNDARY_REQUIRED = {'scripts/test/online-hosted-raster-boundary-clean-two-rounds-gate.sh': ('start_online_geopython_runtime',
+                                                                         '--mount',
+                                                                         '--suite raster-workflow',
+                                                                         '--wait-protection-owners develop,manager',
+                                                                         'ADDP_ONLINE_TEST_TIMEOUT_SECONDS=600',
+                                                                         'online_raster_lineage.py prepare',
+                                                                         'online-raster-boundary-clean-two-rounds-fixture.py '
+                                                                         'stop',
+                                                                         'unset '
+                                                                         'ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN'),
+ 'business/scripts/online-raster-boundary-clean-two-rounds-fixture.py': ('NFSExport',
+                                                                         'owned_root',
+                                                                         'verify_sources(root)',
+                                                                         'np.array_equal',
+                                                                         'GDAL_TIFF_INTERNAL_MASK',
+                                                                         'full_source_pixels_verified',
+                                                                         'runtime_workspaces_removed',
+                                                                         'archive_files',
+                                                                         'oracle cache hash changed',
+                                                                         'source file changed',
+                                                                         'archive history missing',
+                                                                         'validate_expected_export',
+                                                                         'archive_expectations',
+                                                                         'allow_pickle=False',
+                                                                         'def cleanup_oracle',
+                                                                         'full_check=True',
+                                                                         'nearest_overviews',
+                                                                         'private_control',
+                                                                         'affine_transform',
+                                                                         'expected_overview_count',
+                                                                         'CASES',
+                                                                         'np.array_equal(actual, expected, '
+                                                                         'equal_nan=True)',
+                                                                         'GetMaskBand().ReadAsArray()',
+                                                                         'case_shape(name)',
+                                                                         'from collections import Counter',
+                                                                         'counts = Counter(int(value) for value in '
+                                                                         'values[valid])',
+                                                                         'counts[value], -value',
+                                                                         'category = baseline[cell]',
+                                                                         'baseline = shrunk',
+                                                                         'frozen_priorities_verified',
+                                                                         'complete_round_snapshots_verified',
+                                                                         'actual default and explicit one-round COG '
+                                                                         'pixels or masks differ',
+                                                                         'actual round or frozen-priority witness '
+                                                                         'differs',
+                                                                         'GetGeoTransform(can_return_null=True)',
+                                                                         'reference(CASES[name][0])',
+                                                                         'values[509:512, 509:512]',
+                                                                         'mask[504, 510] = 0',
+                                                                         'alpha[505, 511] = 0.',
+                                                                         'boundary-two-rounds-cogs',
+                                                                         'boundary-two-rounds-expectations'),
+ 'scripts/test/raster-boundary-clean-two-rounds-persistence-online.py': ('raster.validate_identity',
+                                                                         'raster.EDITOR_PERMISSIONS',
+                                                                         'budget != 600',
+                                                                         'BudgetClient',
+                                                                         'remaining()',
+                                                                         'validate_success',
+                                                                         'lineage.collect',
+                                                                         'lineage.validate(facts,wanted,public=True)',
+                                                                         'lineage.verify_archive',
+                                                                         'base.validate_scan',
+                                                                         'raster.wait_lineage',
+                                                                         'source_edges',
+                                                                         'readonly.no_publication',
+                                                                         'query language rewrote stored failure',
+                                                                         'previous original COG changed',
+                                                                         'fixture_call',
+                                                                         'cleanup-oracle',
+                                                                         'oracle cleanup also failed',
+                                                                         'full_checks != 462',
+                                                                         'six-coefficient affine proof differs',
+                                                                         'frozen independent array archive changed',
+                                                                         'archived_expectations',
+                                                                         'physical_calls != 45',
+                                                                         'len(cases) != 12',
+                                                                         'len(failures) != 32',
+                                                                         'exact_cause',
+                                                                         'Monitor current output lineage differs',
+                                                                         'raster.strict_sizes',
+                                                                         'fixture.expected_cache_bytes()',
+                                                                         'fixture.BAND_FAILURES',
+                                                                         "params['rounds'] = rounds",
+                                                                         'target_metadata_before[name] = '
+                                                                         'copy.deepcopy(item)',
+                                                                         'target_metadata_after != '
+                                                                         'target_metadata_before',
+                                                                         'source_metadata_after',
+                                                                         'fixture.ROUND_FAILURES',
+                                                                         'overview_resampling',
+                                                                         'round_witnesses',
+                                                                         'failed execution added scan',
+                                                                         'failed execution added derived lineage',
+                                                                         'located_or_unlocated.validate_success',
+                                                                         'located_or_unlocated.validate_target_item',
+                                                                         "'task': 'clean'",
+                                                                         'fixture.WITNESSES', 'encoded(stored) != encoded(dag)'),
+ 'engines/geopython-workflow/test_online_boundary_clean_two_rounds_fixture.py': ('test_boundary_two_rounds_hosted_twelve_real_cogs_complete_oracle_rounds_controls_and_original_bytes',
+                                                                                 'test_boundary_two_rounds_hosted_thirty_two_exact_submitted_failures_no_output_and_clean_workspace',
+                                                                                 'test_boundary_two_rounds_hosted_actual_pixel_mask_metadata_and_overview_corruption_rejected',
+                                                                                 'one-ulp',
+                                                                                 'test_boundary_two_rounds_hosted_original_cog_archive_never_repairs_or_overwrites',
+                                                                                 'test_boundary_two_rounds_hosted_frozen_cache_rejects_hash_shape_inventory_or_run_change',
+                                                                                 'test_boundary_two_rounds_hosted_stdin_worker_has_no_repository_dependency_and_exact_cleanup',
+                                                                                 'test_boundary_two_rounds_hosted_frozen_expected_archive_rejects_tampering',
+                                                                                 'test_boundary_two_rounds_hosted_independent_semantic_mutations_cannot_pass',
+                                                                                 'test_boundary_two_rounds_hosted_oracle_never_calls_product_kernel_or_reducer',
+                                                                                 'test_boundary_two_rounds_hosted_actual_grid_witnesses'),
+ 'scripts/test/raster-boundary-clean-two-rounds-persistence-online_test.py': ('test_full_matrix_12_success_32_failures_462_checks_and_cleanup',
+                                                                              'test_every_affine_coefficient_and_type_is_required',
+                                                                              'test_role_bound_lineage_rejects_wrong_roles_operations_and_public_projection',
+                                                                              'test_strict_physical_counts_sizes_original_archives_and_cleanup_cannot_weaken',
+                                                                              'test_failures_preserve_primary_and_cleanup_error',
+                                                                              'test_exact_failure_stage_language_scan_lineage_and_budget_are_enforced',
+                                                                              'test_exact_12_16_matrix_rounds_and_actual_controls',
+                                                                              'test_all_source_and_target_meta_snapshots_archived_and_mutation_rejected',
+                                                                              'test_default_one_comparisons_and_measured_round_witnesses_are_required'),
+ 'business/scripts/online-raster-zonal-percentile-fixture.py': ('previous archive was deleted',
+                                                                'previous archived bytes changed'),
+ 'scripts/utils/online_raster_lineage.py': ("'raster-boundary-clean-two-rounds-persistence': "
+                                            "'boundary-two-rounds-lineage'",
+                                            'BEGIN READ ONLY;',
+                                            'statement_timeout',
+                                            'workflow_matches',
+                                            'validate_container',
+                                            'closed(public, expected)',
+                                            'closed(internal, expected)'),
+ 'scripts/test/online-raster-lineage_test.py': ('test_boundary_two_rounds_approved_single_source_current_raster_save_and_hidden_public_operation',),
+ 'Makefile': ('test_online_boundary_clean_two_rounds_fixture.py',
+              '@$(MAKE) test-raster-boundary-clean-two-rounds-online-runner',
+              'scripts/test/raster-boundary-clean-two-rounds-persistence-online_test.py',
+              'scripts/test/online-raster-boundary-clean-two-rounds-fixture_test.py',
+              'scripts/test/online-hosted-raster-boundary-clean-two-rounds-gate_test.py',
+              'test_boundary_two_rounds_requires_exact_cog_matrix_budget_and_regressions')}
+
+
+def validate_raster_boundary_clean_two_rounds(repository: Path, registered: set[str]) -> None:
+    suite = 'raster-boundary-clean-two-rounds-persistence'
+    if suite not in registered: return
+    workflow = (repository/'.github/workflows/online-t4-gates.yml').read_text()
+    job = re.search(r'(?ms)^  raster-boundary-clean-two-rounds-hosted-t4:\n(?P<body>.*?)(?=^  [a-z][a-z0-9-]*:\n|\Z)', workflow)
+    if (job is None or 'runs-on: ubuntu-24.04' not in job.group('body')
+        or "if: github.event_name == 'workflow_dispatch' && inputs.suite == 'raster-boundary-clean-two-rounds-persistence'" not in job.group('body')
+        or "&& inputs.suite != 'raster-boundary-clean-two-rounds-persistence'" not in workflow
+        or 'nfs-kernel-server nfs-common' not in job.group('body') or 'cancel-in-progress: false' not in job.group('body')
+        or 'if: always()' not in job.group('body') or 'logs/' not in job.group('body') or load_suite_registry(repository)[suite].nightly):
+        raise RegistrationError('two-round boundary cleaning requires an independent manual Hosted NFS job')
+    make = (repository/'Makefile').read_text()
+    if 'test_online_boundary_clean_two_rounds_fixture.py' not in make.split('test-geopython-workflow:',1)[1].split('\n.PHONY:',1)[0]:
+        raise RegistrationError('two-round boundary cleaning Native omitted from standard recipe')
+    for relative, fragments in TWO_ROUND_BOUNDARY_REQUIRED.items():
+        path = repository/relative
+        if not path.is_file() or any(not source_contract_contains(path.read_text(), fragment, repository) for fragment in fragments):
+            raise RegistrationError('two-round boundary cleaning strict contract incomplete: '+relative)
+    source = (repository/'business/scripts/online-raster-boundary-clean-two-rounds-fixture.py').read_text()
+    tree = ast.parse(source)
+    expected = {'CASES': {'change-default.cog.tif': ('change.tif', None, 'direct'),
+               'change-one.cog.tif': ('change.tif', 1, 'direct'),
+               'change-two.cog.tif': ('change.tif', 2, 'direct'),
+               'frozen-default.cog.tif': ('frozen.tif', None, 'direct'),
+               'frozen-one.cog.tif': ('frozen.tif', 1, 'direct'),
+               'frozen-two.cog.tif': ('frozen.tif', 2, 'direct'),
+               'seam-default.cog.tif': ('seam.tif', None, 'direct'),
+               'seam-one.cog.tif': ('seam.tif', 1, 'direct'),
+               'seam-two.cog.tif': ('seam.tif', 2, 'direct'),
+               'reclassified-two.cog.tif': ('continuous.tif', 2, 'reclassify'),
+               'empty-two.cog.tif': ('empty.tif', 2, 'direct'),
+               'thin-two.cog.tif': ('thin.tif', 2, 'direct')},
+     'ROUND_FAILURES': {'rounds_null': None,
+                        'rounds_true': True,
+                        'rounds_false': False,
+                        'rounds_zero': 0,
+                        'rounds_negative': -1,
+                        'rounds_high': 3,
+                        'rounds_fraction': 1.5,
+                        'rounds_string': '2',
+                        'rounds_list': [2],
+                        'rounds_object': {}},
+     'BAND_FAILURES': {'band_zero': 0,
+                       'band_high': 99,
+                       'band_fraction': 1.5,
+                       'band_alpha': 3,
+                       'class_fractional': 4,
+                       'class_overflow': 5},
+     'FAILURES': ('rounds_null',
+                  'rounds_true',
+                  'rounds_false',
+                  'rounds_zero',
+                  'rounds_negative',
+                  'rounds_high',
+                  'rounds_fraction',
+                  'rounds_string',
+                  'rounds_list',
+                  'rounds_object',
+                  'band_zero',
+                  'band_high',
+                  'band_fraction',
+                  'band_alpha',
+                  'class_fractional',
+                  'class_overflow'),
+     'COMPARISONS': (('change-default.cog.tif', 'change-one.cog.tif'),
+                     ('frozen-default.cog.tif', 'frozen-one.cog.tif'),
+                     ('seam-default.cog.tif', 'seam-one.cog.tif')),
+     'WITNESSES': {'change-one.cog.tif': (1, 1, 1.0),
+                   'change-two.cog.tif': (1, 1, 0.0),
+                   'frozen-one.cog.tif': (0, 1, 0.0),
+                   'frozen-two.cog.tif': (0, 1, 0.0),
+                   'seam-one.cog.tif': (510, 510, 1.0),
+                   'seam-two.cog.tif': (510, 510, 0.0)}}
+    actual = {key: [node.value for node in tree.body if isinstance(node, ast.Assign)
+                    and any(isinstance(target, ast.Name) and target.id == key for target in node.targets)]
+              for key in expected}
+    if any(len(nodes) != 1 or repr(ast.literal_eval(nodes[0])) != repr(expected[key])
+           for key, nodes in actual.items()):
+        raise RegistrationError('two-round boundary cleaning fixed 12/32 case, parameter or witness matrix changed')
+    if any(word in source for word in ('operators.raster_compute', '_boundary_clean_round', 'raster_boundary_clean(', 'np.percentile', 'np.quantile', 'gdal.RasterizeLayer', 'gdal.Polygonize')):
+        raise RegistrationError('two-round boundary cleaning oracle must remain independent')
+
+
 REGION_REQUIRED = {'business/scripts/online-raster-region-group-fixture.py': ('NFSExport', 'source_arrays', 'from collections import deque', 'answer[row,col]=number', 'values[yy,xx]==values[row,col]', 'np.array_equal(actual,expected,equal_nan=True)', 'verify_csv', 'validate_records', 'pixel_conservation_verified', 'full_check=True', 'nearest_overviews(ds,actual)', 'def prepare_oracle', 'def cleanup_oracle', 'allow_pickle=False', 'private_control', 'archive_files', 'archive_expectations', 'validate_expected_export', 'full_source_pixels_verified', 'GetNoDataValueAsUInt64'), 'scripts/test/raster-region-group-persistence-online.py': ('raster.validate_identity', 'raster.EDITOR_PERMISSIONS', 'remaining()', 'budget != 600', 'full_checks != 819', 'len(cases) != 18', 'len(failures) != 36', 'physical_calls != 55', 'current(execution', 'lineage.collect', 'lineage.verify_archive', 'base.validate_scan', 'raster.strict_sizes', 'validate_table_preview', 'validate_item(item', 'target_metadata_after != target_metadata_before', 'source_metadata_after != before', "for language in ('zh-cn', 'en')", 'query language rewrote stored failure', 'failed execution added scan', 'failed execution added derived lineage', "physical_runner(repository, env, 'cleanup-oracle'", 'archived_outputs'), 'scripts/test/online-hosted-raster-region-group-gate.sh': ('source "$ROOT_DIR/scripts/utils/hosted-online.sh"', 'start_online_geopython_runtime', 'online_raster_lineage.py prepare', '--suite raster-workflow', '--wait-protection-owners develop,manager', 'ADDP_ONLINE_TEST_TIMEOUT_SECONDS=600', 'online-raster-region-group-fixture.py stop', 'unset ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN'), 'engines/geopython-workflow/test_online_region_group_fixture.py': ('test_region_hosted_eighteen_mixed_results_complete_oracle_and_original_bytes', 'test_region_hosted_thirty_six_exact_submitted_failures_no_output_and_clean_workspace', 'test_region_hosted_independent_semantic_mutations_cannot_pass', 'test_region_hosted_oracle_never_calls_product_kernel_or_reducer', 'test_region_hosted_csv_corruption_cannot_pass'), 'scripts/test/raster-region-group-persistence-online_test.py': ('test_full_matrix_18_success_36_failures_819_checks_and_cleanup', 'test_exact_18_18_matrix_region_parameters_and_csv_routes', 'test_all_source_and_target_meta_snapshots_archived_and_mutation_rejected'), 'Makefile': ('test_online_region_group_fixture.py', 'test-raster-region-group-online-runner', 'scripts/test/raster-region-group-persistence-online_test.py', 'test_region_requires_exact_cog_matrix_budget_and_regressions')}
 
 def validate_raster_region_group(repository: Path, registered: set[str]) -> None:
@@ -7286,6 +7507,7 @@ def check_registration(repository: Path) -> None:
     validate_raster_focal_circle(repository, registered)
     validate_raster_focal_circle_orthogonal(repository, registered)
     validate_raster_focal_circle_weighted(repository, registered)
+    validate_raster_boundary_clean_two_rounds(repository, registered)
     validate_raster_region_group(repository, registered)
     validate_raster_focal_weighted_mean(repository, registered)
     validate_raster_focal_weighted_stddev(repository, registered)

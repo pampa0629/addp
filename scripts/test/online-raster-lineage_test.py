@@ -448,6 +448,12 @@ class RasterLineageTest(unittest.TestCase):
         changed=copy.deepcopy(EXPECTED);changed['operations'][0]['operator']='save'
         with self.assertRaises(m.SuiteError):m.validate(changed,EXPECTED,public=False)
 
+    def test_boundary_two_rounds_approved_single_source_current_raster_save_and_hidden_public_operation(self):
+        self.assertEqual(m.SUITES['raster-boundary-clean-two-rounds-persistence'],'boundary-two-rounds-lineage')
+        m.validate(EXPECTED,EXPECTED,public=False);m.validate(PUBLIC,EXPECTED,public=True)
+        changed=copy.deepcopy(EXPECTED);changed['operations'][0]['operator']='save'
+        with self.assertRaises(m.SuiteError):m.validate(changed,EXPECTED,public=False)
+
     def test_region_approved_single_source_current_raster_save_and_hidden_public_operation(self):
         self.assertEqual(m.SUITES['raster-region-group-persistence'],'region-lineage')
         m.validate(EXPECTED,EXPECTED,public=False);m.validate(PUBLIC,EXPECTED,public=True)

@@ -419,7 +419,7 @@ Meta 夹具仅在当轮 Hosted 独占 `addp_online`、同一非默认 Tenant／�
 
 ## raster-boundary-clean-persistence
 
-该固定套件覆盖默认一轮。显式两轮的计算、冻结优先级及阶段清理由 Native 专项验证，独立 Hosted 范围另议。
+该固定套件覆盖默认一轮。显式两轮单独登记为下述套件。
 
 独立手工 Hosted Linux x86_64，入口 `make test-online ONLINE_SUITE=raster-boundary-clean-persistence`，生命周期由 `scripts/test/online-hosted-raster-boundary-clean-gate.sh` 管理。复用同源默认入口产品 Runtime、隔离 NFS 和普通 User 原 12 权限，独立预检与业务预算 600 秒；原各套验收及权限保持。仅验 API 持久化，不计页面、容量或任意影像效果认证。
 
@@ -428,6 +428,14 @@ Meta 夹具仅在当轮 Hosted 独占 `addp_online`、同一非默认 Tenant／�
 逐成果核对原尺寸、CRS 与完整仿射网格、Float64／NaN、完整 COG／金字塔、未继承源 scale／offset／色表，以及 artifact／物理／Meta 相等正整数大小。仅源由普通用户手工精确扫描一次，三个目标必须来自各自父执行的自动扫描；严格核扫描执行、父执行、用户、租户和引擎，Monitor 与当前执行源输入派生血缘一致。非法波段、小数类别和越界类别必须失败，输出、扫描及 active derive 图均不得增加；每步重核源物理／Meta 与先前成果不变。所有退出路径检查工作目录、NFS export／私有目录、Runtime／镜像／registry、部署及 Infra 清理，清理失败使门禁失败。
 
 真实 GDAL／COG 及篡改拒绝沿 `make test-geopython-workflow`；编排、严格校验、隔离生命周期与登记沿 `make test-raster-boundary-clean-online-runner`，并纳入原 `make test-raster-online-runner`。只登记手工 Hosted，不新增定时。固定 `1b5a26bc1` 的 [Hosted 39625363775](https://github.com/pampa0629/addp/actions/runs/39625363775/job/119309061524) 已通过上述 API 场景，预检与业务 194662 毫秒，三份大小 31270／13788／10787 字节，有效像元数 267227／267227／0；现场物理校验回执、失败 Runtime 诊断与完整日志已独立复核。归档未保留原 TIFF，未作离线重读；无页面截图，不计 UI／容量或同版本 Linux 全量通过。最终报告哈希与边界统一维护于[栅格专题验收基线](../../../next/栅格算子体系后续专题.md#二当前验收基线)。
+
+## raster-boundary-clean-two-rounds-persistence
+
+独立手工 Hosted Linux x86_64，复用同源默认入口 Runtime、隔离 NFS、非默认租户普通 User 原 12 权限及既有退出清理。固定 600 秒业务预算覆盖身份与源初始化、冻结独立预期、全部执行和物理复核、归档与业务内清理。Linux 全量和实际 Hosted 由 CI 会话协调，不重试、不扩预算。
+
+12 条 COG 成功链。三组见证输入分别保存默认一轮、显式一轮和显式两轮，核真实第二轮变化、原始类别优先级冻结、旋转网格上跨双轴块的第二轮变化。三对默认／显式一轮实际成果必须像元及掩膜完全相等。另含重分类接两轮、全无效及无定位薄栅格。按原输入全图独立计数冻结类别优先级，逐像元独立生成每轮完整扩张和收缩，精确校验 NoData、mask、透明和部分透明 alpha、原始第二波段、合法零及负分类。16 类各中英文提交共 32 次准确失败，包括轮数 10、波段 4、分类 2，严格绑定真实清理节点与冻结提交语言。整数值浮点、宽整数 NoData 邻接、混合复数 alpha、数值极限及阶段故障注入单列 Native。
+
+成功后复查全部已有成果，失败后逐次复查全部 12 份，共 462 次成果全检、含首次基线 45 轮物理核验。核完整像元／实际掩膜、六项仿射及 CRS 或明确缺定位、Float64／NaN、COG 布局及全部实际最近邻概览、源编码清除。严格核声明／物理／Meta 正整数大小一致、精确父执行扫描、当前实际输入内外血缘及 Monitor、源和旧成果原字节／Meta 不变、失败零发布／新增扫描及派生血缘和全部退出清理。归档 12 份 COG 原字节、源文件、冻结预期及大小／SHA256 清单。
 
 ## 分类蚕食容量（raster-nibble-capacity）
 
