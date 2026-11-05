@@ -853,10 +853,14 @@ def run_nodes_lineage_permissions(repository, env, client, physical_runner):
         'ADDP_ONLINE_HOST': '1', 'ADDP_ONLINE_HOSTED': '1', 'GITHUB_ACTIONS': 'true', 'RUNNER_OS': 'Linux',
     }.items()):
         raise SuiteError('nodes lineage permissions requires the disposable Hosted runner')
+    for key in ('ADDP_ONLINE_READ_USER_ACCESS_TOKEN', 'ADDP_ONLINE_READ_USER_USERNAME',
+                'ADDP_ONLINE_READ_USER_PASSWORD', 'ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN'):
+        if not env.get(key):
+            raise SuiteError(f'nodes lineage permissions fixture missing {key}')
     registration = importlib.import_module('scripts.test.online-engine-registration')
     tenant = positive(env['ADDP_ONLINE_TEST_TENANT_ID'], 'disposable Tenant')
     actor = raster.validate_identity(client, tenant, required_permissions=PERMISSIONS)
-    reader = raster.GatewayClient(env['GATEWAY_URL'], env['ADDP_ONLINE_TOPOLOGY_LINEAGE_READER_ACCESS_TOKEN'], 30)
+    reader = raster.GatewayClient(env['GATEWAY_URL'], env['ADDP_ONLINE_READ_USER_ACCESS_TOKEN'], 30)
     issuer = raster.GatewayClient(env['GATEWAY_URL'], env['ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN'], 30)
     identity = raster.validate_identity(reader, tenant, required_permissions={
         'manager.data_item.read', 'meta.catalog.read', 'meta.lineage.read'})
@@ -937,7 +941,7 @@ def run_nodes_lineage_permissions(repository, env, client, physical_runner):
         browser_path.unlink(missing_ok=True)
         browser_env = dict(env, ADDP_ONLINE_TOPOLOGY_EVIDENCE=json.dumps(binding))
         for key in ('ADDP_ONLINE_TEST_USER_ACCESS_TOKEN', 'ADDP_ONLINE_TEST_USER_USERNAME',
-                    'ADDP_ONLINE_TEST_USER_PASSWORD', 'ADDP_ONLINE_TOPOLOGY_LINEAGE_READER_ACCESS_TOKEN'):
+                    'ADDP_ONLINE_TEST_USER_PASSWORD', 'ADDP_ONLINE_READ_USER_ACCESS_TOKEN'):
             browser_env.pop(key, None)
         result = subprocess.run(['npm', 'exec', '--', 'playwright', 'test',
             'e2e/online/vector-topology-persistence.spec.js', '--config=playwright.online.config.js',

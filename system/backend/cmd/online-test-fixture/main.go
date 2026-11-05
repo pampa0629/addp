@@ -1003,9 +1003,9 @@ func run(args []string, environment []string) error {
 		if err != nil {
 			return err
 		}
-		values["ADDP_ONLINE_TOPOLOGY_LINEAGE_READER_ACCESS_TOKEN"] = reader.AccessToken
-		values["ADDP_ONLINE_TOPOLOGY_LINEAGE_READER_USERNAME"] = "external-online-topology-lineage-reader"
-		values["ADDP_ONLINE_TOPOLOGY_LINEAGE_READER_PASSWORD"] = password
+		values["ADDP_ONLINE_READ_USER_ACCESS_TOKEN"] = reader.AccessToken
+		values["ADDP_ONLINE_READ_USER_USERNAME"] = "external-online-topology-lineage-reader"
+		values["ADDP_ONLINE_READ_USER_PASSWORD"] = password
 	}
 	if *suite == "catalog-domain-overview" {
 		for _, fixture := range []struct {

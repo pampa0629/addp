@@ -2149,6 +2149,15 @@ class NodesOnlineTest(unittest.TestCase):
         self.env={**ENV,'ADDP_ONLINE_TOPOLOGY_CASE':m.fixture.NODES_CASE,'ADDP_ONLINE_ARTIFACT_DIR':self.directory.name}
     def run_case(self,client=None,physical=nodes_physical,browser=lambda *a:a[2]):
         return m.run_scenario(Path('.'),self.env,client or NodesClient(),physical,browser,diagnostic_runner=lambda *a,**k:self.fail('no private log oracle'))
+    def test_nodes_lineage_permissions_requires_exported_reader_before_any_scan(self):
+        self.env.update(ADDP_ONLINE_TOPOLOGY_LINEAGE_PERMISSIONS='1', ADDP_ONLINE_HOST='1',
+                        ADDP_ONLINE_HOSTED='1', GITHUB_ACTIONS='true', RUNNER_OS='Linux')
+        self.env.pop('ADDP_ONLINE_READ_USER_ACCESS_TOKEN', None)
+        client = NodesClient()
+        with self.assertRaisesRegex(m.SuiteError, 'fixture missing ADDP_ONLINE_READ_USER_ACCESS_TOKEN'):
+            self.run_case(client)
+        self.assertEqual(client.calls, [])
+
     def test_nodes_one_success_nine_failures_two_point_scans_and_exact_source_edges(self):
         c=NodesClient();report=self.run_case(c)
         self.assertEqual(report['result'],'passed');self.assertEqual(report['schema_version'],'addp.line-nodes/v1')

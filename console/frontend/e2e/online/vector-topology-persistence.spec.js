@@ -1527,8 +1527,7 @@ test('NFS GeoPackage 同一普通用户撤权血缘', async ({ page }) => {
     await observeLineageCanvas(page)
     const beforeRead = waitForGraph(2)
     const redirect = `/manager/data-explorer?locator=${encodeURIComponent(output.locator)}&tab=lineage`
-    await login(page, process.env.ADDP_ONLINE_TOPOLOGY_LINEAGE_READER_USERNAME,
-      process.env.ADDP_ONLINE_TOPOLOGY_LINEAGE_READER_PASSWORD, redirect)
+    await login(page, process.env.ADDP_ONLINE_READ_USER_USERNAME, process.env.ADDP_ONLINE_READ_USER_PASSWORD, redirect)
     const before = await beforeRead
     const graph = await capture('authorized', before)
     const api = await browserAPIFromResponse(before, process.env.GATEWAY_URL, {
