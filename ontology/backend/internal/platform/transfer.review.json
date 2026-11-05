@@ -86,11 +86,11 @@
       "kind": "procedure",
       "path": "skills/transfer-generation/SKILL.md",
       "anchor": "## 核心流程",
-      "commit": "e01a3263f4578015e8f136c8508ad8ea2108f3d8",
-      "sha256": "25ed22c4cf25abfac9950b8e75c4f43f9cc1a8c660d0c0abce8599629cce966a",
+      "commit": "0f712d357a00d5e30c32abc3f690b84216eb6b83",
+      "sha256": "4e077470d3db8479306d4b976675dab616bb266ec4476ea9a72feba5d944f8f7",
       "use": {
-        "zh-cn": "先读正式引擎目录。明确限定且唯一匹配的源以 engine_id 收窄搜索，多引擎先澄清，未限定允许跨引擎发现；零召回和调用失败分别处理。",
-        "en": "Read the formal engine inventory first. Scope searches to the uniquely matched explicit source by engine_id, clarify multiple engine matches, and allow cross-engine discovery when the source engine is unspecified; distinguish no results from call failure."
+        "zh-cn": "保留按引擎目录限定源搜索的流程。存在多个目标父节点时，单独以正式 schema 或 database locator 澄清；另行确定表名及写入策略。",
+        "en": "Preserve source search scoping by engine inventory. Clarify ambiguous target parents by formal schema or database locator and resolve the table name and write strategy separately."
       }
     },
     {
@@ -138,11 +138,11 @@
       "kind": "implementation",
       "path": "agent/backend/graph/factory.py",
       "anchor": "async def _run_config_check(",
-      "commit": "bf28a6ebfe186602c2c72a4e4427708a960ec2c9",
-      "sha256": "0a1ded1d37cbb6f48c419cc1e2ef5a19d025ab6dc3be7008b16d219b27e8da9e",
+      "commit": "0f712d357a00d5e30c32abc3f690b84216eb6b83",
+      "sha256": "6d9457884c2da1b9f05942cc3f8bf5c3dccd3849310089c627c7c34ca3404e9c",
       "use": {
-        "zh-cn": "复核默认类型由 Transfer 推导及新草稿多源必须确认的改动。模型不复制源类型为覆盖参数；Runtime 基于正式搜索候选暂停并核对恢复选择。完整原参数绑定、预检三态、创建和运行审批边界保持。",
-        "en": "Reviewed owner-derived default types and mandatory multi-source selection for new drafts. Source types are not copied as overrides; Runtime pauses on formal candidates and checks the resumed choice. Exact parameter binding, tri-state preflight, creation and run approval boundaries remain."
+        "zh-cn": "Runtime 按当前会话语言校验目录澄清选项并返回拒绝原因。预检、复核及创建提交路径未变。",
+        "en": "Runtime validates directory clarification options with errors in the current session language. Preflight, review, and creation submission paths are unchanged."
       }
     },
     {
@@ -164,11 +164,11 @@
       "kind": "implementation",
       "path": "agent/backend/i18n.py",
       "anchor": "def transfer_config_check_completed(",
-      "commit": "bf28a6ebfe186602c2c72a4e4427708a960ec2c9",
-      "sha256": "d2aed7de4319bbc8f9af25b0400e70db3120995c9a62d75a8f06c939472f23be",
+      "commit": "0f712d357a00d5e30c32abc3f690b84216eb6b83",
+      "sha256": "808aa1e2d93a8e4c7ea5db17aeb8294ebe4c75e20e591f2900dd1674a4a521d3",
       "use": {
-        "zh-cn": "复核默认类型由 Transfer 推导及新草稿多源必须确认的改动。模型不复制源类型为覆盖参数；Runtime 基于正式搜索候选暂停并核对恢复选择。完整原参数绑定、预检三态、创建和运行审批边界保持。",
-        "en": "Reviewed owner-derived default types and mandatory multi-source selection for new drafts. Source types are not copied as overrides; Runtime pauses on formal candidates and checks the resumed choice. Exact parameter binding, tri-state preflight, creation and run approval boundaries remain."
+        "zh-cn": "新增目标父节点无效及资源选项重复的双语提示。创建预检及运行审批的消息保持原行为。",
+        "en": "Add bilingual errors for invalid target parents and duplicate resource options. Creation preflight and run approval messaging keep their existing behavior."
       }
     },
     {
@@ -333,11 +333,11 @@
       "kind": "implementation",
       "path": "agent/backend/agents/checkpoint.py",
       "anchor": "def normalize_checkpoint(",
-      "commit": "bf28a6ebfe186602c2c72a4e4427708a960ec2c9",
-      "sha256": "94fe36f6ab9ff56a6c8794e0e0088a2d70e0ae3bdd5ed4799b776e9c6b1382e3",
+      "commit": "0f712d357a00d5e30c32abc3f690b84216eb6b83",
+      "sha256": "707f47a80c2b5a797989fd5b33c12c9063fc53a0e43eec955f3d3bc323aae032",
       "use": {
-        "zh-cn": "复核默认类型由 Transfer 推导及新草稿多源必须确认的改动。模型不复制源类型为覆盖参数；Runtime 基于正式搜索候选暂停并核对恢复选择。完整原参数绑定、预检三态、创建和运行审批边界保持。",
-        "en": "Reviewed owner-derived default types and mandatory multi-source selection for new drafts. Source types are not copied as overrides; Runtime pauses on formal candidates and checks the resumed choice. Exact parameter binding, tri-state preflight, creation and run approval boundaries remain."
+        "zh-cn": "按已观察事实规范化目标父节点选项。只接受 schema 或 database locator，拒绝重复及拼接值。",
+        "en": "Canonicalize target parent options from observed facts. Accept schema or database locators and reject duplicate and composite values."
       }
     },
     {
@@ -593,11 +593,11 @@
       "kind": "normative",
       "path": "docs/spec/addp智能体交互协议规范.md",
       "anchor": "Transfer 参数来源只接受三种受信任输入",
-      "commit": "bf28a6ebfe186602c2c72a4e4427708a960ec2c9",
-      "sha256": "34ca230ed2738b80420707b6f82d5764c15239a1a85bec62a59de320f6aef4c3",
+      "commit": "0f712d357a00d5e30c32abc3f690b84216eb6b83",
+      "sha256": "7c8f0e7987132c7d5e99c1504ee216104b40cf4182140044560380050948e411",
       "use": {
-        "zh-cn": "复核默认类型由 Transfer 推导及新草稿多源必须确认的改动。模型不复制源类型为覆盖参数；Runtime 基于正式搜索候选暂停并核对恢复选择。完整原参数绑定、预检三态、创建和运行审批边界保持。",
-        "en": "Reviewed owner-derived default types and mandatory multi-source selection for new drafts. Source types are not copied as overrides; Runtime pauses on formal candidates and checks the resumed choice. Exact parameter binding, tri-state preflight, creation and run approval boundaries remain."
+        "zh-cn": "资源澄清按钮使用唯一的正式 locator。目标表名和写入策略独立回答；保留原参数来源绑定。",
+        "en": "Resource clarification buttons use unique formal locators. Target names and write strategies are answered separately, with existing parameter-source binding preserved."
       }
     },
     {
@@ -702,6 +702,19 @@
       "use": {
         "zh-cn": "未限定源引擎时允许跨引擎搜索。多个正式候选须暂停选择，覆盖到澄清为止。",
         "en": "An unspecified source engine permits cross-engine search. Multiple formal candidates must suspend for selection; this scenario ends at clarification."
+      }
+    },
+    {
+      "id": "target_parent_choice_test",
+      "owner": "agent",
+      "kind": "test",
+      "path": "agent/backend/tests/test_checkpoints.py",
+      "anchor": "def test_transfer_target_parent_options_reject_composites_and_repeated_schema(",
+      "commit": "0f712d357a00d5e30c32abc3f690b84216eb6b83",
+      "sha256": "19aea93e155f3007c666b0c13a13c9ba50bdd69b1825412ed41dc77fae47ba3a",
+      "use": {
+        "zh-cn": "验证拒绝拼接 locator、重复候选、表叶节点和非正式值，且确认时仅保存所选 schema 的正式事实。",
+        "en": "Verify rejection of composite locators, duplicate choices, table leaves, and unobserved values, and persist only the chosen schema's formal fact on confirmation."
       }
     }
   ],
@@ -1036,7 +1049,8 @@
       "sources": [
         "conditions",
         "condition_test",
-        "skill"
+        "skill",
+        "target_parent_choice_test"
       ]
     },
     {
@@ -1354,7 +1368,8 @@
       "sources": [
         "manifest",
         "skill",
-        "tool_test"
+        "tool_test",
+        "target_parent_choice_test"
       ]
     },
     {

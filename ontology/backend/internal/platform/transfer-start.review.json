@@ -151,11 +151,11 @@
       "kind": "implementation",
       "path": "agent/backend/graph/factory.py",
       "anchor": "async def _resume_confirmed_start(",
-      "commit": "bf28a6ebfe186602c2c72a4e4427708a960ec2c9",
-      "sha256": "0a1ded1d37cbb6f48c419cc1e2ef5a19d025ab6dc3be7008b16d219b27e8da9e",
+      "commit": "0f712d357a00d5e30c32abc3f690b84216eb6b83",
+      "sha256": "6d9457884c2da1b9f05942cc3f8bf5c3dccd3849310089c627c7c34ca3404e9c",
       "use": {
-        "zh-cn": "复核默认类型由 Transfer 推导及新草稿多源必须确认的改动。模型不复制源类型为覆盖参数；Runtime 基于正式搜索候选暂停并核对恢复选择。完整原参数绑定、预检三态、创建和运行审批边界保持。",
-        "en": "Reviewed owner-derived default types and mandatory multi-source selection for new drafts. Source types are not copied as overrides; Runtime pauses on formal candidates and checks the resumed choice. Exact parameter binding, tri-state preflight, creation and run approval boundaries remain."
+        "zh-cn": "共享 Runtime 变动限定在目录澄清的错误语言传递。一次性运行审批、提交及执行查询边界保持。",
+        "en": "The shared Runtime change only passes the locale for directory clarification errors. One-time run approval, submission, and execution read boundaries are unchanged."
       }
     },
     {
@@ -242,11 +242,11 @@
       "kind": "implementation",
       "path": "agent/backend/i18n.py",
       "anchor": "'transfer_run_expired'",
-      "commit": "bf28a6ebfe186602c2c72a4e4427708a960ec2c9",
-      "sha256": "d2aed7de4319bbc8f9af25b0400e70db3120995c9a62d75a8f06c939472f23be",
+      "commit": "0f712d357a00d5e30c32abc3f690b84216eb6b83",
+      "sha256": "808aa1e2d93a8e4c7ea5db17aeb8294ebe4c75e20e591f2900dd1674a4a521d3",
       "use": {
-        "zh-cn": "复核默认类型由 Transfer 推导及新草稿多源必须确认的改动。模型不复制源类型为覆盖参数；Runtime 基于正式搜索候选暂停并核对恢复选择。完整原参数绑定、预检三态、创建和运行审批边界保持。",
-        "en": "Reviewed owner-derived default types and mandatory multi-source selection for new drafts. Source types are not copied as overrides; Runtime pauses on formal candidates and checks the resumed choice. Exact parameter binding, tri-state preflight, creation and run approval boundaries remain."
+        "zh-cn": "新增目标父节点无效及资源选项重复的双语提示。创建预检及运行审批的消息保持原行为。",
+        "en": "Add bilingual errors for invalid target parents and duplicate resource options. Creation preflight and run approval messaging keep their existing behavior."
       }
     }
   ],
