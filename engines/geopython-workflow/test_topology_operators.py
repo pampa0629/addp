@@ -5102,7 +5102,7 @@ def test_endpoint_snap_workflow_saves_both_ports_with_independent_ogr_or_publish
 
 
 @pytest.mark.parametrize('language,expected',[('zh-cn','端点吸附的容差必须'),('en','Endpoint snapping tolerance must')])
-def test_endpoint_snap_async_runtime_discovery_direct_denial_and_existing_failure_channel(language,expected,monkeypatch):
+def test_endpoint_snap_async_runtime_discovery_direct_denial_and_parameter_diagnostic(language,expected,monkeypatch):
     import api_server
     from addp_common.workflow_runtime import ExecutionRegistry
     monkeypatch.setattr(api_server,'executions',ExecutionRegistry())
@@ -5123,7 +5123,11 @@ def test_endpoint_snap_async_runtime_discovery_direct_denial_and_existing_failur
             state=client.get('/api/executions/'+response.get_json()['execution_id']).get_json()
             if state['status'] in {'success','failed'}:break
             time.sleep(.01)
-        assert state['status']=='failed' and state['error_code']=='EXECUTION_FAILED' and not state.get('diagnostic')
+        assert state["status"] == "failed" and state["error_code"] == "INVALID_PARAMS"
+        assert state["diagnostic"] == {
+            "schema_version": "addp.execution-failure/v3", "stage": "execution", "reason": "operator_positive_number_required",
+            "operator": {"node_index": 1, "operator_id": "snap_line_endpoints", "parameter": "tolerance"},
+        }
         assert expected in state['error']
 
 
@@ -5259,6 +5263,76 @@ def test_line_extension_unrepresentable_first_hit_fails_instead_of_choosing_late
     assert_geodataframe_equal(source,before)
 
 
+@pytest.mark.parametrize("operator,limit", [
+    ("snap_line_endpoints", "tolerance"),
+    ("extend_line_endpoints", "max_distance"),
+])
+@pytest.mark.parametrize("problem", ["source", "reference", "crs", "limit", "native_check", "native_network"])
+def test_line_endpoint_diagnostics_block_both_saves(monkeypatch, operator, limit, problem):
+    import workflow_engine
+    from addp_common.workflow_runtime import WorkflowExecutionError
+
+    source, reference = line_extension_frames()
+    params = {"input_gdf": source, "reference_gdf": reference, "id_field": "route_key",
+              "reference_id_field": "ref_key", limit: 1.0}
+    if problem == "source":
+        params["id_field"] = "PRIVATE_SOURCE_FIELD"
+    elif problem == "reference":
+        params["reference_id_field"] = "PRIVATE_REFERENCE_FIELD"
+    elif problem == "crs":
+        params["reference_gdf"] = reference.set_crs("EPSG:2263", allow_override=True)
+    elif problem == "limit":
+        params[limit] = 0
+
+    saves = []
+    original = workflow_engine.get_operator
+
+    def resolve(name):
+        if name == "save":
+            return lambda **kwargs: saves.append(kwargs)
+        function = original(name)
+        fault = {"native_check": "is_valid", "native_network": "node"}.get(problem)
+        if name != operator or fault is None:
+            return function
+
+        def fail(*args, **kwargs):
+            raise ValueError("requires valid lines with finite coordinates")
+
+        def invoke(**kwargs):
+            with monkeypatch.context() as scope:
+                scope.setattr(shapely, fault, fail)
+                return function(**kwargs)
+
+        return invoke
+
+    monkeypatch.setattr(workflow_engine, "get_operator", resolve)
+    tasks = [{"id": "operation", "operator": operator, "params": params, "depends_on": []}]
+    for port in ("result", "details"):
+        tasks.append({"id": f"save_{port}", "operator": "save", "depends_on": ["operation"],
+                      "params": {"input_df": {"$ref": "operation", "port": port}}})
+    with pytest.raises(WorkflowExecutionError) as error:
+        workflow_engine.GeoPythonWorkflowRunner(language="en").execute({"tasks": tasks})
+    assert not saves
+    if problem.startswith("native"):
+        assert error.value.error_code == "EXECUTION_FAILED"
+        assert error.value.diagnostic is None
+        return
+    reason, parameter = {
+        "source": ("operator_input_invalid", "input_gdf"),
+        "reference": ("operator_reference_invalid", "reference_gdf"),
+        "crs": ("operator_crs_invalid", ""),
+        "limit": ("operator_positive_number_required" if limit == "tolerance" else
+                  "operator_distance_limit_invalid", limit),
+    }[problem]
+    context = {"node_index": 1, "operator_id": operator}
+    if parameter:
+        context["parameter"] = parameter
+    assert error.value.error_code == "INVALID_PARAMS"
+    assert error.value.diagnostic == {"schema_version": "addp.execution-failure/v3",
+                                      "stage": "execution", "reason": reason, "operator": context}
+    assert "PRIVATE_" not in str(error.value)
+
+
 @pytest.mark.parametrize('bad',[0,-1,True,np.bool_(False),float('inf'),float('nan'),'1',None])
 def test_line_extension_rejects_invalid_maximum(bad):
     source,reference=line_extension_frames()
@@ -5298,13 +5372,15 @@ def test_line_extension_closed_part_is_not_extended():
 
 
 @pytest.mark.parametrize('language,expected',[('zh-cn','最大延伸距离'),('en','maximum extension distance')])
-def test_line_extension_runner_localizes_without_expanding_parameter_diagnostic(language,expected):
+def test_line_extension_runner_localizes_invalid_maximum(language,expected):
     from workflow_engine import GeoPythonWorkflowRunner
     from addp_common.workflow_runtime import WorkflowExecutionError
     source,reference=line_extension_frames()
     task={'id':'extend','operator':'extend_line_endpoints','params':{'input_gdf':source,'reference_gdf':reference,'id_field':'route_key','reference_id_field':'ref_key','max_distance':0},'depends_on':[]}
     with pytest.raises(WorkflowExecutionError) as error:GeoPythonWorkflowRunner(language=language).execute({'tasks':[task]})
-    assert error.value.error_code=='EXECUTION_FAILED' and error.value.diagnostic is None
+    assert error.value.error_code == "INVALID_PARAMS"
+    assert error.value.diagnostic["reason"] == "operator_distance_limit_invalid"
+    assert error.value.diagnostic["operator"]["parameter"] == "max_distance"
     assert expected in str(error.value)
 
 
@@ -5323,7 +5399,13 @@ def test_line_extension_workflow_dual_save_independent_ogr_and_failure_no_publis
     result=execute_workflow({'tasks':tasks})
     assert all((tmp_path/f'{name}.gpkg').read_bytes()==value for name,value in originals.items())
     if problem:
-        assert result['status']=='failed' and result['error_code']=='EXECUTION_FAILED',result
+        assert result["status"] == "failed"
+        if problem == "invalid_limit":
+            assert result["error_code"] == "INVALID_PARAMS"
+            assert result["diagnostic"]["reason"] == "operator_distance_limit_invalid"
+        else:
+            assert result["error_code"] == "EXECUTION_FAILED"
+            assert "diagnostic" not in result
         assert not (tmp_path/'lines.gpkg').exists() and not (tmp_path/'details.gpkg').exists()
         return
     assert result['status']=='success',result
@@ -5399,7 +5481,7 @@ def test_line_extension_original_source_is_not_an_implicit_target_or_a_chained_r
 
 
 @pytest.mark.parametrize('language,expected',[('zh-cn','最大延伸距离'),('en','maximum extension distance')])
-def test_line_extension_async_discovery_and_existing_runtime_failure_channel(language,expected,monkeypatch):
+def test_line_extension_async_discovery_and_parameter_diagnostic(language,expected,monkeypatch):
     import api_server
     from addp_common.workflow_runtime import ExecutionRegistry
     monkeypatch.setattr(api_server,'executions',ExecutionRegistry())
@@ -5420,7 +5502,11 @@ def test_line_extension_async_discovery_and_existing_runtime_failure_channel(lan
             state=client.get('/api/executions/'+response.get_json()['execution_id']).get_json()
             if state['status'] in {'success','failed'}:break
             time.sleep(.01)
-        assert state['status']=='failed' and state['error_code']=='EXECUTION_FAILED' and not state.get('diagnostic')
+        assert state["status"] == "failed" and state["error_code"] == "INVALID_PARAMS"
+        assert state["diagnostic"] == {
+            "schema_version": "addp.execution-failure/v3", "stage": "execution", "reason": "operator_distance_limit_invalid",
+            "operator": {"node_index": 1, "operator_id": "extend_line_endpoints", "parameter": "max_distance"},
+        }
         assert expected in state['error']
 
 
@@ -5431,7 +5517,7 @@ def test_line_extension_multiple_outward_directions_fail_without_choosing_a_part
     # Defensive occurrence guard: inject a shared point to exercise direction
     # disagreement, without claiming this degree-two node is a genuine dangle.
     diagnostic=gpd.GeoDataFrame({'source_id':source.route_key},geometry=[Point(0,0),Point(0,0)],crs=source.crs)
-    monkeypatch.setattr(module,'check_dangling_points',lambda *_:diagnostic)
+    monkeypatch.setattr(module, '_dangling_points', lambda *_: diagnostic)
     before=source.copy(deep=True)
     with pytest.raises(module.LineExtensionError,match='朝外方向'):line_extension(source,reference)
     assert_geodataframe_equal(source,before)

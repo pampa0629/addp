@@ -135,14 +135,14 @@ test('protection refusals remain distinct from data permissions without exposing
 test('operator input contract matches the canonical runtime tuples and rejects unproven fields', () => {
   const source = read('../../../common-python/addp_common/workflow_runtime/errors.py')
   const canonical = [...source.matchAll(/\('([^']+)', '([^']+)', '([^']*)'\): '([^']*)'/g)].map(match => [match[1],match[2],match[4],match[3]])
-  assert.equal(canonical.length, 116)
+  assert.equal(canonical.length, 124)
   const actual = operatorInputRules.map(rule => [...rule])
   assert.deepEqual(actual.sort(), canonical.sort())
   for (const [operator_id, reason, parameter, field] of canonical) {
     const operator = { node_index: 2, operator_id, ...(parameter ? { parameter } : {}), ...(field ? { field } : {}) }
     const diagnostic = { schema_version: 'addp.execution-failure/v3', stage: 'execution', reason, operator }
     const result = executionFailurePresentation({ diagnostic, message: 'private' }, key => key)
-    const profiles = { polygonize: 'polygonize', snap_geometry:'referenceSnap', check_geometry:'geometryValidity', repair_geometry:'geometryValidity', extract_vertices:'vertices', split_multipart:'multipart', get_bounds:'bounds', distance_to:'distance', get_area:'measurement', get_length:'measurement', split_by_area:'measurement', contains:'spatialRelation', intersects:'spatialRelation', voronoi:'voronoi',
+    const profiles = { snap_line_endpoints: 'lineEndpoint', extend_line_endpoints: 'lineEndpoint', polygonize: 'polygonize', snap_geometry:'referenceSnap', check_geometry:'geometryValidity', repair_geometry:'geometryValidity', extract_vertices:'vertices', split_multipart:'multipart', get_bounds:'bounds', distance_to:'distance', get_area:'measurement', get_length:'measurement', split_by_area:'measurement', contains:'spatialRelation', intersects:'spatialRelation', voronoi:'voronoi',
       envelope:'construction', centroid:'construction', convex_hull:'construction', minimum_rotated_rectangle:'construction',
       representative_point:'interiorPoint',
       'buffer:operator_input_invalid':'buffer', 'buffer:operator_crs_invalid':'buffer', 'batch_buffer:operator_crs_invalid':'buffer',
@@ -767,4 +767,37 @@ test('reference snap diagnostics preserve tolerance semantics and privacy',()=>{
   assert.match(messages.referenceSnap.actions.operator_nonnegative_number_required,/零|Zero/)
   assert.match(messages.referenceSnap.actions.operator_reference_invalid,/空参考|empty reference/)
  }
+})
+
+
+test('endpoint diagnostics show the correct bilingual input and distance guidance', () => {
+  for (const locale of ['zh-cn', 'en']) {
+    const messages = JSON.parse(read(`../src/i18n/${locale}.json`)).common.executionFailure
+    const translate = (key, args = {}) => key.replace('common.executionFailure.', '').split('.')
+      .reduce((value, part) => value[part], messages).replace(/\{(\w+)\}/g, (_, name) => args[name])
+    const names = locale === 'zh-cn' ? ['端点吸附', '线端延伸'] : ['Snap line endpoints', 'Extend line endpoints']
+    for (const [index, op] of ['snap_line_endpoints', 'extend_line_endpoints'].entries()) {
+      const bound = index === 0 ? 'tolerance' : 'max_distance'
+      const reason = index === 0 ? 'operator_positive_number_required' : 'operator_distance_limit_invalid'
+      const cases = [
+        ['operator_input_invalid', 'input_gdf', /\bid_field\b/],
+        ['operator_reference_invalid', 'reference_gdf', /reference_id_field/],
+        ['operator_crs_invalid', '', locale === 'zh-cn' ? /相同/ : /same/],
+        [reason, bound, new RegExp(bound)]
+      ]
+      for (const [reason, parameter, action] of cases) {
+        const diagnostic = {
+          schema_version: 'addp.execution-failure/v3', stage: 'execution', reason,
+          operator: { node_index: 2, operator_id: op, ...(parameter ? { parameter } : {}) }
+        }
+        const display = executionFailurePresentation({ diagnostic, message: 'PRIVATE_FIELD 123.456' }, translate)
+        assert.equal(display.operator, names[index])
+        assert.match(display.node, /2/)
+        if (parameter) assert.ok(display.parameter.includes(parameter))
+        else assert.equal(display.parameter, '')
+        assert.match(display.action, action)
+        assert.doesNotMatch(JSON.stringify(display), /PRIVATE_FIELD|123\.456/)
+      }
+    }
+  }
 })

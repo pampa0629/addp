@@ -864,25 +864,25 @@ def extract_vertices(input_gdf: gpd.GeoDataFrame, id_field: str) -> gpd.GeoDataF
     return result
 
 
-def _source_identifiers(input_gdf: gpd.GeoDataFrame, id_field: str) -> pd.Series:
+def _source_identifiers(input_gdf: gpd.GeoDataFrame, id_field: str, *, input_error=ValueError) -> pd.Series:
     if (not isinstance(id_field, str) or not id_field or not input_gdf.columns.is_unique
             or id_field not in input_gdf.columns or isinstance(input_gdf[id_field].dtype, gpd.array.GeometryDtype)):
-        raise ValueError("id_field must explicitly name one existing non-geometry scalar column")
+        raise input_error("id_field must explicitly name one existing non-geometry scalar column")
     ids = input_gdf[id_field]
     if not all(pd.api.types.is_scalar(value) for value in ids):
-        raise ValueError("id_field requires non-empty unique scalar identifiers")
+        raise input_error("id_field requires non-empty unique scalar identifiers")
     if ids.isna().any() or any(isinstance(value, str) and not value.strip() for value in ids) or ids.duplicated().any():
-        raise ValueError("id_field requires non-empty unique scalar identifiers")
+        raise input_error("id_field requires non-empty unique scalar identifiers")
     return ids
 
 
-def _require_nonempty_valid_lines(geometry: gpd.GeoSeries) -> None:
+def _require_nonempty_valid_lines(geometry: gpd.GeoSeries, *, input_error=ValueError) -> None:
     if geometry.isna().any() or not geometry.geom_type.isin(["LineString", "MultiLineString"]).all():
-        raise ValueError("input_gdf requires non-null LineString or MultiLineString geometries")
+        raise input_error("input_gdf requires non-null LineString or MultiLineString geometries")
     parts = shapely.get_parts(geometry.array)
     if (shapely.is_empty(geometry.array).any() or shapely.is_empty(parts).any()
             or not shapely.is_valid(geometry.array).all()):
-        raise ValueError("input_gdf requires non-empty valid lines; repair explicitly before checking")
+        raise input_error("input_gdf requires non-empty valid lines; repair explicitly before checking")
 
 
 def _normalized_line_overlap(intersections):
@@ -1554,12 +1554,20 @@ def check_line_intersection(input_gdf: gpd.GeoDataFrame, id_field: str) -> gpd.G
     return result
 
 
+def _line_network_inputs(frame, id_field, name="input_gdf", *, input_error=ValueError):
+    geometry = _finite_xy_geometry(frame, name, input_error=input_error)
+    _require_projected_xy_crs(geometry.crs, input_error=input_error)
+    ids = _source_identifiers(frame, id_field, input_error=input_error)
+    _require_nonempty_valid_lines(geometry, input_error=input_error)
+    return geometry, ids
+
+
 def check_dangling_points(input_gdf: gpd.GeoDataFrame, id_field: str) -> gpd.GeoDataFrame:
     """Report degree-one planar network endpoints with all original source IDs."""
-    geometry = _finite_xy_geometry(input_gdf)
-    _require_projected_xy_crs(geometry.crs)
-    ids = _source_identifiers(input_gdf, id_field)
-    _require_nonempty_valid_lines(geometry)
+    return _dangling_points(*_line_network_inputs(input_gdf, id_field))
+
+
+def _dangling_points(geometry, ids):
     parts = shapely.get_parts(geometry.array)
 
     # Use the same exact noding as polygonize; coincident/reversed edges count
@@ -1705,17 +1713,12 @@ def _line_reference_inputs(input_gdf, reference_gdf, id_field, reference_id_fiel
         raise error_type('tolerance') from exc
     if not np.isfinite(tolerance) or tolerance <= 0:
         raise error_type('tolerance')
-    try:
-        dangling = check_dangling_points(input_gdf, id_field)
-    except ValueError as exc:
-        raise error_type('source') from exc
-    try:
-        reference = _finite_xy_geometry(reference_gdf, 'reference_gdf')
-        _require_projected_xy_crs(reference.crs)
-        reference_ids = _source_identifiers(reference_gdf, reference_id_field)
-        _require_nonempty_valid_lines(reference)
-    except ValueError as exc:
-        raise error_type('reference') from exc
+    source, source_ids = _line_network_inputs(
+        input_gdf, id_field, input_error=lambda _: error_type('source'))
+    dangling = _dangling_points(source, source_ids)
+    reference, reference_ids = _line_network_inputs(
+        reference_gdf, reference_id_field, 'reference_gdf',
+        input_error=lambda _: error_type('reference'))
     if not dangling.crs.equals(reference.crs):
         raise error_type('crs')
     return dangling, reference, reference_ids, tolerance

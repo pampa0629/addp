@@ -461,7 +461,9 @@
         "check_geometry": "几何检查",
         "repair_geometry": "几何修复",
         "snap_geometry": "参考吸附",
-        "polygonize": "拓扑构面"
+        "polygonize": "拓扑构面",
+        "snap_line_endpoints": "端点吸附",
+        "extend_line_endpoints": "线端延伸"
       },
       "operatorParameters": {
         "target_geom": "目标图层（target_geom）",
@@ -522,6 +524,22 @@
         "actions": {
           "operator_input_invalid": "请检查输入类型、活动几何与有限二维XY；NULL/EMPTY和未知CRS保持原规则，无效几何仍可检查或显式修复，不自动投影。",
           "operator_output_fields_invalid": "请显式修改valid_field和reason_field：使用非空、无首尾空白、彼此不同且不与源列重名的字符串；不自动改名或覆盖。"
+        }
+      },
+      "lineEndpoint": {
+        "reasons": {
+          "operator_input_invalid": "源图层的线几何、标识或投影 CRS 不符合要求。",
+          "operator_reference_invalid": "参考图层的线几何、标识或投影 CRS 不符合要求。",
+          "operator_crs_invalid": "两个图层必须使用相同的投影 CRS。",
+          "operator_positive_number_required": "吸附容差必须是有限的正数。",
+          "operator_distance_limit_invalid": "最大延伸距离必须是有限的正数。"
+        },
+        "actions": {
+          "operator_input_invalid": "请检查源图层的二维线、已知投影 CRS 和非空唯一的 id_field。",
+          "operator_reference_invalid": "请检查参考图层的二维线、已知投影 CRS 和非空唯一的 reference_id_field。",
+          "operator_crs_invalid": "请先将两图层显式转换到相同的投影坐标系。",
+          "operator_positive_number_required": "请将 tolerance 设为有限正数，单位沿投影坐标系。",
+          "operator_distance_limit_invalid": "请将 max_distance 设为有限正数，单位沿投影坐标系。"
         }
       },
       "polygonize": {

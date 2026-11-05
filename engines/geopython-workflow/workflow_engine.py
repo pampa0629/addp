@@ -84,10 +84,14 @@ class GeoPythonWorkflowRunner(WorkflowRunner):
         except PolygonizeInputError as exc:
             message = str(exc) if self.language == "en" else "拓扑构面需要带活动几何列的图层，几何须为有效、非空且坐标有限的二维线或多线。"
             raise OperatorInputError("operator_input_invalid", message) from exc
-        except (EndpointSnapError, LineExtensionError, GeoPackageSaveError) as exc:
+        except GeoPackageSaveError as exc:
             raise ValueError(exc.message(self.language)) from exc
-        except (ReferenceSnapInputError, GeometryValidityInputError, MultipartInputError, BoundsInputError, MeasurementInputError, InteriorPointInputError, UnaryConstructionInputError, SimplifyInputError, BufferInputError, VoronoiInputError, RelationInputError, DistanceInputError, NearLineInputError, MultiBufferInputError, ClipInputError, PolygonRingInputError, LineTrimError, LineNodeInputError, IntersectionInputError, DissolveInputError, UnionInputError, DifferenceInputError) as exc:
+        except (EndpointSnapError, LineExtensionError, ReferenceSnapInputError, GeometryValidityInputError, MultipartInputError, BoundsInputError, MeasurementInputError, InteriorPointInputError, UnaryConstructionInputError, SimplifyInputError, BufferInputError, VoronoiInputError, RelationInputError, DistanceInputError, NearLineInputError, MultiBufferInputError, ClipInputError, PolygonRingInputError, LineTrimError, LineNodeInputError, IntersectionInputError, DissolveInputError, UnionInputError, DifferenceInputError) as exc:
             reasons = {
+                EndpointSnapError: {'source': 'operator_input_invalid', 'reference': 'operator_reference_invalid',
+                                    'crs': 'operator_crs_invalid', 'tolerance': 'operator_positive_number_required'},
+                LineExtensionError: {'source': 'operator_input_invalid', 'reference': 'operator_reference_invalid',
+                                     'crs': 'operator_crs_invalid', 'tolerance': 'operator_distance_limit_invalid'},
                 ReferenceSnapInputError: {'source':'operator_input_invalid','reference':'operator_reference_invalid','crs':'operator_crs_invalid','tolerance':'operator_nonnegative_number_required'},
                 GeometryValidityInputError: {'source':'operator_input_invalid','fields':'operator_output_fields_invalid'},
                 VertexInputError: {'source':'operator_input_invalid','crs':'operator_crs_invalid','field':'operator_field_conflict'},

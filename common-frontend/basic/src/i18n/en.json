@@ -461,7 +461,9 @@
         "check_geometry": "Check geometry",
         "repair_geometry": "Repair geometry",
         "snap_geometry": "Reference snap",
-        "polygonize": "Polygonize linework"
+        "polygonize": "Polygonize linework",
+        "snap_line_endpoints": "Snap line endpoints",
+        "extend_line_endpoints": "Extend line endpoints"
       },
       "operatorParameters": {
         "target_geom": "Target layer (target_geom)",
@@ -522,6 +524,22 @@
         "actions": {
           "operator_input_invalid": "Check the input type, active geometry and finite XY coordinates; NULL/EMPTY and unknown CRS retain their existing rules. Invalid geometries may still be checked or explicitly repaired, without automatic projection.",
           "operator_output_fields_invalid": "Set valid_field and reason_field explicitly to non-empty strings without surrounding whitespace, distinct from each other and every source column; no automatic renaming or replacement."
+        }
+      },
+      "lineEndpoint": {
+        "reasons": {
+          "operator_input_invalid": "The source lines, identifiers or projected CRS do not meet the input requirements.",
+          "operator_reference_invalid": "The reference lines, identifiers or projected CRS do not meet the input requirements.",
+          "operator_crs_invalid": "The two layers must use the same projected CRS.",
+          "operator_positive_number_required": "Snapping tolerance must be a finite positive number.",
+          "operator_distance_limit_invalid": "The maximum extension distance must be a finite positive number."
+        },
+        "actions": {
+          "operator_input_invalid": "Check the source XY lines, known projected CRS, and unique non-null identifiers in id_field.",
+          "operator_reference_invalid": "Check the reference XY lines, known projected CRS, and unique non-null identifiers in reference_id_field.",
+          "operator_crs_invalid": "Explicitly reproject both layers to the same projected CRS.",
+          "operator_positive_number_required": "Set tolerance to a finite positive number in the projected CRS units.",
+          "operator_distance_limit_invalid": "Set max_distance to a finite positive number in the projected CRS units."
         }
       },
       "polygonize": {

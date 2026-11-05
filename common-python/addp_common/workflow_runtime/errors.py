@@ -18,6 +18,14 @@ class WorkflowExecutionError(RuntimeError):
 
 # Closed protocol tuples; never classify arbitrary exception text as input errors.
 OPERATOR_INPUT_RULES = {
+    ('snap_line_endpoints', 'operator_input_invalid', ''): 'input_gdf',
+    ('snap_line_endpoints', 'operator_reference_invalid', ''): 'reference_gdf',
+    ('snap_line_endpoints', 'operator_crs_invalid', ''): '',
+    ('snap_line_endpoints', 'operator_positive_number_required', ''): 'tolerance',
+    ('extend_line_endpoints', 'operator_input_invalid', ''): 'input_gdf',
+    ('extend_line_endpoints', 'operator_reference_invalid', ''): 'reference_gdf',
+    ('extend_line_endpoints', 'operator_crs_invalid', ''): '',
+    ('extend_line_endpoints', 'operator_distance_limit_invalid', ''): 'max_distance',
     ('polygonize', 'operator_input_invalid', ''): 'input_gdf',
     ('snap_geometry', 'operator_input_invalid', ''): 'input_gdf',
     ('snap_geometry', 'operator_reference_invalid', ''): 'reference_gdf',

@@ -27,6 +27,20 @@ func (o *WorkflowOperatorFailure) Valid(reason string) bool {
 	}
 	parameter, field, ok := "", "", false
 	switch o.OperatorID {
+	case "snap_line_endpoints", "extend_line_endpoints":
+		switch reason {
+		case "operator_input_invalid":
+			parameter, ok = "input_gdf", true
+		case "operator_reference_invalid":
+			parameter, ok = "reference_gdf", true
+		case "operator_crs_invalid":
+			ok = true
+		case "operator_positive_number_required":
+			parameter, ok = "tolerance", o.OperatorID == "snap_line_endpoints"
+		case "operator_distance_limit_invalid":
+			parameter, ok = "max_distance", o.OperatorID == "extend_line_endpoints"
+		}
+
 	case "polygonize":
 		parameter, ok = "input_gdf", reason == "operator_input_invalid"
 
