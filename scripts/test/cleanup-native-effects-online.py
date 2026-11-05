@@ -12,6 +12,7 @@ from pathlib import Path
 import re
 import time
 import uuid
+from urllib.error import HTTPError
 from urllib.parse import quote
 
 S = import_module('scripts.test.execution-online-support')
@@ -65,6 +66,25 @@ def model_prepare_diagnostics(error):
              'source_composition_incomplete', 'engine_unavailable', 'authorization_service_unavailable',
              'download_bundle_invalid', 'download_source_changed', 'unknown'}
     return dict(operation=operation, error_code=code if code in codes else 'unrecognized')
+
+
+def manager_inventory_diagnostics(probe, error):
+    reasons = {
+        'private Hosted control failed': 'private_read_failed',
+        'native GLB target missing': 'storage_reference_missing',
+        'native artifact requires the canonical Manager object reference': 'storage_reference_invalid',
+        'artifact is outside this Tenant output scope': 'storage_reference_outside_scope',
+        'native artifact unexpectedly exists or is empty': 'object_empty',
+        'native artifact absence is not proven': 'object_unproven',
+        'native index count is incomplete': 'index_response_incomplete',
+        'native index returned a foreign projection': 'index_scope_mismatch',
+        'real source indexing never completed': 'index_not_observed',
+        'native artifact is not a live generated result': 'artifact_not_live',
+    }
+    if isinstance(error, HTTPError) and type(error.code) is int and 100 <= error.code <= 599:
+        return dict(probe=probe, reason='http_error', http_status=error.code)
+    reason = reasons.get(str(error), 'unrecognized') if isinstance(error, S.SuiteError) else 'unrecognized'
+    return dict(probe=probe, reason=reason)
 
 
 def assert_proxy(value, run_id, key):
@@ -886,12 +906,20 @@ def run_manager(manager, workflow, controls, source, case, report, checkpoint):
     report.update(artifact_id=S.positive(model.result_id), generation_execution_id=S.identifier(model.execution_id))
     checkpoint()
     report['stage'] = 'manager_native_inventory'; checkpoint()
-    ref = controls.glb_storage(model.result_id)
-    object_path = controls.object(ref, present=True)
-    S.wait_for(lambda: controls.index_count(engine_id), lambda n: n > 0, 'real source indexing never completed')
-    before = controls.manager_snapshot(engine_id, model.result_id)
-    require(before['artifact']['status'] == 'ready' and before['artifact']['deleted'] is False,
-            'native artifact is not a live generated result')
+    probe = 'storage_reference'
+    try:
+        ref = controls.glb_storage(model.result_id)
+        probe = 'native_object'
+        object_path = controls.object(ref, present=True)
+        probe = 'index_projection'
+        S.wait_for(lambda: controls.index_count(engine_id), lambda n: n > 0, 'real source indexing never completed')
+        probe = 'artifact_state'
+        before = controls.manager_snapshot(engine_id, model.result_id)
+        require(before['artifact']['status'] == 'ready' and before['artifact']['deleted'] is False,
+                'native artifact is not a live generated result')
+    except Exception as error:
+        report['manager_inventory_diagnostic'] = manager_inventory_diagnostics(probe, error)
+        raise
     key = None
     if case == 'manager-object-unknown': key = controls.arm('object', path=object_path)
     elif case == 'manager-index-unknown':

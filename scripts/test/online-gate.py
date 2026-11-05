@@ -1153,6 +1153,7 @@ def execution_profile(suite_name: str, environment: Mapping[str, str]) -> str | 
 def validate_native_cleanup_report(report: dict[str, object], environment: Mapping[str, str]) -> None:
     if any(field in report for field in ('failure_kind', 'failure_http_status', 'failure_stage',
                                          'error_type', 'cleanup_error_type', 'runtime_start_diagnostic', 'model_prepare_diagnostic',
+                                         'manager_inventory_diagnostic',
                                          'engine_readiness_diagnostic', 'task_create_diagnostic',
                                          'engine_assessment_diagnostic', 'initial_records_diagnostic', 'engine_cleanup_diagnostic')):
         raise OnlineStageError('scenario', 'online_native_cleanup_report_invalid',

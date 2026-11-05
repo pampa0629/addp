@@ -8,6 +8,7 @@ import unittest
 import uuid
 from pathlib import Path
 from types import SimpleNamespace
+from urllib.error import HTTPError
 from unittest.mock import patch
 from contextlib import contextmanager
 
@@ -1412,6 +1413,52 @@ class NativeCleanupRunnerTest(unittest.TestCase):
                     else:
                         with self.subTest(case=case, mutation=mutation), self.assertRaises(S.SuiteError):
                             M.run_manager(User(), workflow, Controls(), User(), case, report, lambda: None)
+
+    def test_manager_inventory_failure_identifies_the_first_unproven_probe(self):
+        model = SimpleNamespace(result_id=7, execution_id=ID)
+        probes = [
+            ('storage_reference', 'glb_storage', S.SuiteError('native GLB target missing'), 'storage_reference_missing'),
+            ('native_object', 'object', S.SuiteError('artifact is outside this Tenant output scope'), 'storage_reference_outside_scope'),
+            ('index_projection', 'index_count', S.SuiteError('native index count is incomplete'), 'index_response_incomplete'),
+            ('index_projection', 'index_count', HTTPError('http://127.0.0.1/private', 503, 'raw response', {}, None), 'http_error'),
+            ('index_projection', 'index_count', None, 'index_not_observed'),
+            ('artifact_state', 'manager_snapshot', S.SuiteError('private Hosted control failed'), 'private_read_failed'),
+            ('artifact_state', 'manager_snapshot', RuntimeError('private raw response'), 'unrecognized'),
+        ]
+        for probe, method, error, reason in probes:
+            calls = []
+            def read(name, result):
+                def observe(*args, **kwargs):
+                    calls.append(name)
+                    if name == method and error is not None:
+                        raise error
+                    return 0 if name == method == 'index_count' else result
+                return observe
+            controls = SimpleNamespace(tenant=2, glb_storage=read('glb_storage', 'ref'),
+                object=read('object', '/output'), index_count=read('index_count', 1),
+                manager_snapshot=read('manager_snapshot', {'artifact': {'status': 'ready', 'deleted': False}}))
+            workflow = SimpleNamespace(begin=lambda *_: self.fail('inventory failure must prevent Engine deletion'))
+            def observe_once(read, predicate, message):
+                self.assertEqual(message, 'real source indexing never completed')
+                S.require(predicate(read()), message)
+            with self.subTest(probe=probe, reason=reason), \
+                 patch.object(M, 'prepare_manager', return_value=(9, model)), \
+                 patch.object(M.MANAGER, 'generate_model_glb'), \
+                 patch.object(S, 'wait_for', side_effect=observe_once):
+                report = {'checks': []}
+                with self.assertRaises(type(error) if error else S.SuiteError) as raised:
+                    M.run_manager(None, workflow, controls, None, 'manager-success', report, lambda: None)
+                if error is not None:
+                    self.assertIs(raised.exception, error)
+                self.assertEqual(report['stage'], 'manager_native_inventory')
+                diagnostic = {'probe': probe, 'reason': reason}
+                if isinstance(error, HTTPError):
+                    diagnostic['http_status'] = 503
+                    error.close()
+                self.assertEqual(report['manager_inventory_diagnostic'], diagnostic)
+                self.assertEqual(report['checks'], [])
+                expected = ['glb_storage', 'object', 'index_count', 'manager_snapshot']
+                self.assertEqual(calls, expected[:expected.index(method) + 1])
 
     def test_transfer_engine_preserves_definition_and_dlq_until_explicit_delete(self):
         real_prepare = M.prepare_task

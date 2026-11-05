@@ -65,6 +65,7 @@ class OnlineGateTest(unittest.TestCase):
             ('cleanup_error_type', 'SuiteError'),
             ('runtime_start_diagnostic', {'status': 'failed'}),
             ('model_prepare_diagnostic', {'operation': 'manager_source_download', 'error_code': 'permission_denied'}),
+            ('manager_inventory_diagnostic', {'probe': 'index_projection', 'reason': 'index_not_observed'}),
             ('engine_readiness_diagnostic', {'engines': []}),
             ('task_create_diagnostic', {'reason': 'unrecognized'}),
             ('engine_assessment_diagnostic', {'status': 'failed'}),
