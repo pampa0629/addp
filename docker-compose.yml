@@ -1227,6 +1227,7 @@ services:
       - ADDP_HOST_NODE_ID=${ADDP_HOST_NODE_ID:-}
       - ADDP_HOST_NODE_NAME=${ADDP_HOST_NODE_NAME:-}
       - ADDP_HOST_NODE_IPS=${ADDP_HOST_NODE_IPS:-}
+      - SERVICE_HOST=portal-backend
       - PORTAL_BACKEND_PORT=8184
       - SYSTEM_URL=http://system-backend:8180
       - ASSET_URL=http://asset-backend:8183

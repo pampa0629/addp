@@ -112,8 +112,8 @@ class HostedPublicOriginGateTest(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         trace = self.host.trace.read_text()
         for step in (
-            "infra-up", "make:build BUILD_ARGS=--arch amd64 --services system-backend,security-backend,gateway,meta-backend,manager-backend,transfer-backend,orchestrator-backend",
-            "make:build-images IMAGE_BUILD_ARGS=--verify --services system-backend,security-backend,gateway,meta-backend,manager-backend,transfer-backend,orchestrator-backend,console,system-frontend,meta-frontend,manager-frontend,transfer-frontend,orchestrator-frontend,nginx,geopython-workflow-engine",
+            "infra-up", "make:build BUILD_ARGS=--arch amd64 --services system-backend,security-backend,gateway,meta-backend,manager-backend,transfer-backend,orchestrator-backend,workbench-backend,asset-backend,portal-backend",
+            "make:build-images IMAGE_BUILD_ARGS=--verify --services system-backend,security-backend,gateway,meta-backend,manager-backend,transfer-backend,orchestrator-backend,workbench-backend,asset-backend,portal-backend,console,system-frontend,meta-frontend,manager-frontend,transfer-frontend,orchestrator-frontend,workbench-frontend,portal-frontend,nginx,geopython-workflow-engine",
             "make:test-online ONLINE_SUITE=compose-public-origin", "docker:compose -f", "docker:rm -fv addp-online-public-origin-upstreams registry", "infra-down",
             "npm:--prefix console/frontend ci", "npm:--prefix console/frontend exec -- playwright install --with-deps chromium",
             " up -d --no-deps --wait security-backend", "--wait-protection-owners manager,transfer",
@@ -121,6 +121,8 @@ class HostedPublicOriginGateTest(unittest.TestCase):
             " up -d --no-deps --wait manager-backend", " up -d --no-deps --wait manager-frontend",
             " up -d --no-deps --wait transfer-backend", " up -d --no-deps --wait transfer-frontend",
             " up -d --no-deps --wait orchestrator-backend", " up -d --no-deps --wait orchestrator-frontend",
+            " up -d --no-deps --wait workbench-backend asset-backend", " up -d --no-deps --wait portal-backend",
+            " up -d --no-deps --wait workbench-frontend portal-frontend",
             "docker:compose -f " + str(self.host.repository / "docker-compose.runtimes.yml") + " up -d --no-deps --wait --wait-timeout 180 geopython-workflow-engine",
             "docker:compose --env-file /dev/null -f " + str(self.host.repository / "business/docker-compose.yml") + " up -d --no-deps --wait --wait-timeout 180 minio",
         ):
@@ -129,6 +131,8 @@ class HostedPublicOriginGateTest(unittest.TestCase):
         self.assertNotIn("--network-alias manager-frontend", trace)
         self.assertNotIn("--network-alias transfer-frontend", trace)
         self.assertNotIn("--network-alias orchestrator-frontend", trace)
+        self.assertNotIn("--network-alias workbench-frontend", trace)
+        self.assertNotIn("--network-alias portal-frontend", trace)
         self.assertLess(trace.index("make:test-online ONLINE_SUITE=compose-public-origin"), trace.index("business/docker-compose.yml down --remove-orphans --volumes"))
         self.assertLess(trace.index("business/docker-compose.yml down --remove-orphans --volumes"), trace.index("docker-compose.runtimes.yml down --remove-orphans --volumes"))
         self.assertFalse(self.host.secrets.exists())

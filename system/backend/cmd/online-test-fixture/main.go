@@ -21,6 +21,7 @@ import (
 	"github.com/addp/system/internal/iamcli"
 	"github.com/addp/system/internal/models"
 	"github.com/addp/system/internal/testsupport"
+	"github.com/pquerna/otp/totp"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
@@ -747,6 +748,37 @@ func run(args []string, environment []string) error {
 		}
 	}
 	if *suite == "compose-public-origin" {
+		const username = "external-online-public-mfa"
+		browserSession, assignmentID, password, err := createPermissionFixture(ctx, repository, identity, membershipService, roleService, selectionService,
+			tenant.ID, administrator.PrincipalID, username, []string{"workbench.data_application.execute", "asset.entry.read"})
+		if err != nil {
+			return err
+		}
+		assignment, err := roleService.GetAssignment(ctx, tenant.ID, assignmentID)
+		if err != nil {
+			return err
+		}
+		secret, err := enrollPublicOriginTOTP(ctx, repository, tokenService, cfg.IAMMFAEncryptionKey, browserSession, password)
+		if err != nil {
+			return err
+		}
+		// Enroll while the User has a single context, then give it a second
+		// membership with no permissions. Browser login must choose explicitly.
+		alternate, err := membershipService.EstablishMembership(ctx, iam.EstablishTenantMembershipInput{
+			TenantID: reserveTenant.ID, PrincipalID: assignment.PrincipalID,
+			SourceType: iam.TenantMembershipSourceManual, CreatedByPrincipalID: &reserve.PrincipalID,
+			Audit: audit("external-online-public-mfa-alternate"),
+		})
+		if err != nil {
+			return fmt.Errorf("establish alternate public-origin membership: %w", err)
+		}
+		values["ADDP_ONLINE_PUBLIC_MFA_USERNAME"] = username
+		values["ADDP_ONLINE_PUBLIC_MFA_PASSWORD"] = password
+		values["ADDP_ONLINE_PUBLIC_MFA_TOTP"] = secret
+		values["ADDP_ONLINE_PUBLIC_MFA_PRINCIPAL_ID"] = fmt.Sprint(assignment.PrincipalID)
+		values["ADDP_ONLINE_PUBLIC_MFA_MEMBERSHIP_ID"] = fmt.Sprint(assignment.MembershipID)
+		values["ADDP_ONLINE_PUBLIC_MFA_ALTERNATE_MEMBERSHIP_ID"] = fmt.Sprint(alternate.Membership.ID)
+
 		readerSession, _, readerPassword, err := createPermissionFixture(ctx, repository, identity, membershipService, roleService, selectionService,
 			tenant.ID, administrator.PrincipalID, "external-online-public-reader", publicOriginReadPermissions)
 		if err != nil {
@@ -1117,6 +1149,9 @@ func validateExternalEnvironment(environment []string, output, suite string) err
 	} else if values["GITHUB_ACTIONS"] != "true" || values["RUNNER_OS"] != "Linux" || profileCount != 1 {
 		return errors.New("fixture requires exactly one GitHub Hosted or owner-managed Linux Online profile")
 	}
+	if suite == "compose-public-origin" && values["ADDP_ONLINE_HOSTED"] != "1" {
+		return errors.New("compose-public-origin fixture requires disposable GitHub Hosted Linux")
+	}
 	if !filepath.IsAbs(output) {
 		return errors.New("output path must be absolute")
 	}
@@ -1164,6 +1199,36 @@ func tenantAdministratorAssignmentID(assignments []iam.ManagedTenantRoleAssignme
 func createUser(ctx context.Context, service *iam.IdentityService, username string) (*iam.CreatedLocalUser, error) {
 	created, _, err := createUserCredentials(ctx, service, username)
 	return created, err
+}
+
+func enrollPublicOriginTOTP(ctx context.Context, repo *iam.Repository, tokens *iam.TokenFamilyService, key []byte, session *iam.IssuedBrowserSession, password string) (string, error) {
+	cipher, err := iam.NewMFACredentialCipher(key)
+	if err != nil {
+		return "", err
+	}
+	service, err := iam.NewMFASessionService(repo, cipher, tokens, iam.MFAServiceConfig{}, nil, nil)
+	if err != nil {
+		return "", err
+	}
+	enrollment, err := service.BeginEnrollment(ctx, iam.BeginMFAEnrollmentInput{
+		AccessToken: session.AccessToken, RefreshToken: session.RefreshToken, CurrentPassword: password,
+		Audit: audit("external-online-public-mfa-enrollment"),
+	})
+	if err != nil {
+		return "", err
+	}
+	code, err := totp.GenerateCode(enrollment.Secret, time.Now())
+	if err != nil {
+		return "", err
+	}
+	_, err = service.CompleteEnrollment(ctx, iam.CompleteMFAEnrollmentInput{
+		AccessToken: session.AccessToken, RefreshToken: session.RefreshToken, EnrollmentToken: enrollment.EnrollmentToken,
+		Code: code, Audit: audit("external-online-public-mfa-enrolled"),
+	})
+	if err != nil {
+		return "", err
+	}
+	return enrollment.Secret, nil
 }
 
 func createUserCredentials(ctx context.Context, service *iam.IdentityService, username string) (*iam.CreatedLocalUser, string, error) {
@@ -1523,6 +1588,12 @@ func writeEnvironmentFile(path string, values map[string]string) error {
 		"ADDP_ONLINE_READ_USER_ACCESS_TOKEN",
 		"ADDP_ONLINE_READ_USER_USERNAME",
 		"ADDP_ONLINE_READ_USER_PASSWORD",
+		"ADDP_ONLINE_PUBLIC_MFA_USERNAME",
+		"ADDP_ONLINE_PUBLIC_MFA_PASSWORD",
+		"ADDP_ONLINE_PUBLIC_MFA_TOTP",
+		"ADDP_ONLINE_PUBLIC_MFA_PRINCIPAL_ID",
+		"ADDP_ONLINE_PUBLIC_MFA_MEMBERSHIP_ID",
+		"ADDP_ONLINE_PUBLIC_MFA_ALTERNATE_MEMBERSHIP_ID",
 		"ADDP_ONLINE_TEST_TENANT_ID",
 		"ADDP_ONLINE_RETENTION_FOREIGN_TENANT_ID",
 		"ADDP_ONLINE_TEST_APPROVER_ACCESS_TOKEN",

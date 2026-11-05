@@ -528,6 +528,13 @@ func TestValidateExternalEnvironment(t *testing.T) {
 	if err := validateExternalEnvironment(ownerManaged, filepath.Join(t.TempDir(), "fixture.env"), "manager-internal-artifact-lineage"); err != nil {
 		t.Fatal(err)
 	}
+	output := filepath.Join(t.TempDir(), "fixture.env")
+	if err := validateExternalEnvironment(valid, output, "compose-public-origin"); err != nil {
+		t.Fatal(err)
+	}
+	if err := validateExternalEnvironment(ownerManaged, output, "compose-public-origin"); err == nil {
+		t.Fatal("public-origin credentials must require a disposable Hosted runner")
+	}
 	for _, invalid := range [][]string{
 		{"GITHUB_ACTIONS=false", "RUNNER_OS=Linux", "ADDP_ONLINE_HOSTED=1"},
 		{"GITHUB_ACTIONS=true", "RUNNER_OS=macOS", "ADDP_ONLINE_HOSTED=1"},

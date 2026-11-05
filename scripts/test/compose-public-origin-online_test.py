@@ -39,6 +39,12 @@ class ComposePublicOriginOnlineTest(unittest.TestCase):
             "ADDP_ONLINE_TEST_RUN_ID": "origin-run",
             "ADDP_ONLINE_READ_USER_USERNAME": "origin-reader",
             "ADDP_ONLINE_READ_USER_PASSWORD": "fixture-password",
+            "ADDP_ONLINE_PUBLIC_MFA_USERNAME": "origin-mfa",
+            "ADDP_ONLINE_PUBLIC_MFA_PASSWORD": "fixture-mfa-password",
+            "ADDP_ONLINE_PUBLIC_MFA_TOTP": "fixture-totp",
+            "ADDP_ONLINE_PUBLIC_MFA_PRINCIPAL_ID": "8",
+            "ADDP_ONLINE_PUBLIC_MFA_MEMBERSHIP_ID": "16",
+            "ADDP_ONLINE_PUBLIC_MFA_ALTERNATE_MEMBERSHIP_ID": "18",
         })
         self.env.start()
         self.addCleanup(self.env.stop)
@@ -61,13 +67,16 @@ class ComposePublicOriginOnlineTest(unittest.TestCase):
         with patch.multiple(MODULE, **checks) as mocked, redirect_stdout(io.StringIO()) as output:
             mocked["run_browser"].return_value = {"concurrent_refreshes": 1}
             self.assertEqual(MODULE.main(), 0)
-        for module in ("system", "meta", "manager", "transfer", "orchestrator"):
+        for module in ("system", "meta", "manager", "transfer", "orchestrator", "workbench"):
             mocked["assert_frontend"].assert_any_call(f"/module-ui/{module}/", f"/module-ui/{module}/")
-        self.assertEqual(mocked["assert_module_gateway_route"].call_count, 4)
+        mocked["assert_frontend"].assert_any_call("/portal/", "/portal/")
+        self.assertEqual(mocked["assert_module_gateway_route"].call_count, 6)
         mocked["assert_module_gateway_route"].assert_any_call("Meta", "/api/v1/meta/engines")
         mocked["assert_module_gateway_route"].assert_any_call("Manager", "/api/v1/manager/engines")
         mocked["assert_module_gateway_route"].assert_any_call("Transfer", "/api/v1/transfer/task-definitions")
         mocked["assert_module_gateway_route"].assert_any_call("Orchestrator", "/api/v1/orchestrator/orchestrations")
+        mocked["assert_module_gateway_route"].assert_any_call("Workbench", "/api/v1/workbench/data_applications")
+        mocked["assert_module_gateway_route"].assert_any_call("Portal", "/api/v1/portal/home")
         for call in mocked["assert_module_gateway_route"].call_args_list:
             owner, path = call.args
             schema = json.loads((SCRIPT.parents[2] / owner.lower() / "backend/docs/swagger.json").read_text())
@@ -77,7 +86,7 @@ class ComposePublicOriginOnlineTest(unittest.TestCase):
         mocked["assert_partial_permission_matrix"].assert_called_once()
         mocked["run_browser"].assert_called_once()
         report = json.loads(output.getvalue())
-        self.assertEqual(report["frontends"], ["console", "system", "meta", "manager", "transfer", "orchestrator"])
+        self.assertEqual(report["frontends"], ["console", "system", "meta", "manager", "transfer", "orchestrator", "workbench", "portal"])
         self.assertEqual(report["gateway_manager_permission_guard"], "passed")
         self.assertEqual(report["gateway_transfer_permission_guard"], "passed")
         self.assertEqual(report["gateway_orchestrator_permission_guard"], "passed")
@@ -91,6 +100,15 @@ class ComposePublicOriginOnlineTest(unittest.TestCase):
             "reload_without_refresh": True, "logout_propagated": True, "javascript_tokens_persisted": False,
             "iframe_preserved_on_refresh": True,
         }
+        login_evidence = {
+            "run_id": "origin-run", "origin": "http://127.0.0.1:18080", "tenant_id": "42",
+            "mfa": True, "explicit_tenant_selection": True, "full_return_url": True, "http_only_refresh": True,
+            "reload_preserved_identity": True, "cross_module_session_reused": True,
+            "workbench_runtime_status": 404, "portal_home_status": 200,
+        }
+        workbench_evidence = {**login_evidence, "entry": "workbench"}
+        portal_evidence = {**login_evidence, "entry": "portal"}
+        portal_payload = portal_evidence
         with tempfile.TemporaryDirectory() as temporary, patch.dict(os.environ, ADDP_ONLINE_ARTIFACT_DIR=temporary):
             def browser(command, *, cwd, env):
                 self.assertIn("e2e/online/compose-public-origin.spec.js", command)
@@ -98,11 +116,16 @@ class ComposePublicOriginOnlineTest(unittest.TestCase):
                 Path(env["ADDP_ONLINE_PUBLIC_ORIGIN_BROWSER_REPORT"]).write_text(json.dumps(payload))
                 for name in ("console", "independent"):
                     (Path(temporary) / f"public-origin-{name}.png").write_bytes(b"fixture-screenshot")
+                (Path(temporary) / "public-origin-workbench-login.json").write_text(json.dumps(workbench_evidence))
+                if portal_payload is not None:
+                    (Path(temporary) / "public-origin-portal-login.json").write_text(json.dumps(portal_payload))
                 return SimpleNamespace(returncode=0)
 
             payload = expected
             with patch.object(MODULE.subprocess, "run", side_effect=browser):
-                self.assertEqual(MODULE.run_browser(), expected)
+                self.assertEqual(MODULE.run_browser(), {
+                    **expected, "public_login": {"workbench": workbench_evidence, "portal": portal_evidence},
+                })
                 for invalid in ({"origin": "http://127.0.0.1:5170"}, {"tenant_id": "1"}, {"run_id": "old-run"},
                                 {"concurrent_refreshes": 2}, {"concurrent_refreshes": True}, {"iframe_converged": False},
                                 {"cookie_rotated": False}, {"reload_without_refresh": False}, {"logout_propagated": False},
@@ -111,6 +134,14 @@ class ComposePublicOriginOnlineTest(unittest.TestCase):
                     payload = {**expected, **invalid}
                     with self.subTest(invalid=invalid), self.assertRaises(MODULE.AcceptanceError):
                         MODULE.run_browser()
+                payload = expected
+                for invalid in (None, workbench_evidence, {**portal_evidence, "explicit_tenant_selection": False},
+                                {**portal_evidence, "mfa": 1}, {**portal_evidence, "portal_home_status": 403},
+                                {**portal_evidence, "password": "must-not-be-in-evidence"}):
+                    portal_payload = invalid
+                    with self.subTest(invalid=invalid), self.assertRaisesRegex(MODULE.AcceptanceError, "portal production login evidence"):
+                        MODULE.run_browser()
+                portal_payload = portal_evidence
 
             with patch.object(MODULE.subprocess, "run", return_value=SimpleNamespace(returncode=0)):
                 with self.assertRaises(MODULE.AcceptanceError):
@@ -188,10 +219,19 @@ class ComposePublicOriginOnlineTest(unittest.TestCase):
             "transfer-frontend": container("transfer-frontend"),
             "orchestrator-backend": container("orchestrator-backend", env=["SERVICE_HOST=orchestrator-backend", "SYSTEM_URL=http://system-backend:8180", "POSTGRES_HOST=postgres", "POSTGRES_DB=addp_online", "REDIS_HOST=redis"]),
             "orchestrator-frontend": container("orchestrator-frontend"),
+            "workbench-backend": container("workbench-backend", env=["SERVICE_HOST=workbench-backend", "SYSTEM_URL=http://system-backend:8180", "POSTGRES_HOST=postgres", "POSTGRES_DB=addp_online"]),
+            "asset-backend": container("asset-backend", env=["SERVICE_HOST=asset-backend", "SYSTEM_URL=http://system-backend:8180", "POSTGRES_HOST=postgres", "POSTGRES_DB=addp_online"]),
+            "portal-backend": container("portal-backend", env=["SERVICE_HOST=portal-backend", "SYSTEM_URL=http://system-backend:8180", "ASSET_URL=http://asset-backend:8183", "REDIS_HOST=redis"]),
+            "workbench-frontend": container("workbench-frontend"),
+            "portal-frontend": container("portal-frontend"),
             "addp-nginx": container("addp-nginx", {"80/tcp": [{"HostIp": "127.0.0.1", "HostPort": "18080"}]}),
         }
         docker_json.side_effect = lambda *args: fixtures[args[-1]]
         MODULE.assert_platform_ports()
+        fixtures["portal-backend"][0]["Config"]["Env"][0] = "SERVICE_HOST=localhost"
+        with self.assertRaisesRegex(MODULE.AcceptanceError, "portal-backend SERVICE_HOST"):
+            MODULE.assert_platform_ports()
+        fixtures["portal-backend"][0]["Config"]["Env"][0] = "SERVICE_HOST=portal-backend"
         self.assertIn("security-backend", [call.args[-1] for call in docker_json.call_args_list])
         fixtures["security-backend"][0]["State"]["Health"]["Status"] = "unhealthy"
         with self.assertRaises(MODULE.AcceptanceError):

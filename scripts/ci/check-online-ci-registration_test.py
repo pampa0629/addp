@@ -2550,6 +2550,9 @@ class OnlineCIRegistrationTest(unittest.TestCase):
             (paths[0], "up -d --no-deps --wait security-backend"),
             (paths[0], "--wait-protection-owners manager,transfer"), (paths[1], "browser = run_browser()"),
             (paths[2], "ADDP_ONLINE_PUBLIC_ORIGIN_BROWSER_REPORT"), (paths[3], 'values["ADDP_ONLINE_READ_USER_PASSWORD"]'),
+            (paths[0], "up -d --no-deps --wait workbench-frontend portal-frontend"),
+            (paths[1], "cross_module_session_reused"), (paths[2], "auth/mfa-verifications"),
+            (paths[3], 'values["ADDP_ONLINE_PUBLIC_MFA_ALTERNATE_MEMBERSHIP_ID"]'),
         )):
             path = self.repository / relative
             original = path.read_text()

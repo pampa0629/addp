@@ -21,6 +21,12 @@ class AcceptanceError(RuntimeError):
 
 OPENER = urllib.request.build_opener(urllib.request.ProxyHandler({}))
 PUBLIC_PORT = 18080
+MODULE_FRONTENDS = ("system", "meta", "manager", "transfer", "orchestrator", "workbench")
+LOGIN_BACKENDS = {
+    "workbench-backend": {"POSTGRES_HOST": "postgres", "POSTGRES_DB": "addp_online"},
+    "asset-backend": {"POSTGRES_HOST": "postgres", "POSTGRES_DB": "addp_online"},
+    "portal-backend": {"ASSET_URL": "http://asset-backend:8183", "REDIS_HOST": "redis"},
+}
 
 
 def docker_json(*args: str, env: dict[str, str] | None = None) -> object:
@@ -65,7 +71,9 @@ def running_container(name: str, project: str = "addp-platform") -> dict[str, ob
 
 def assert_platform_ports() -> None:
     expected = {"system-backend": ("8180/tcp", 8180), "gateway": ("8000/tcp", 8000), "addp-nginx": ("80/tcp", PUBLIC_PORT)}
-    for name in ("system-backend", "gateway", "console", "system-frontend", "meta-backend", "meta-frontend", "security-backend", "manager-backend", "manager-frontend", "transfer-backend", "transfer-frontend", "orchestrator-backend", "orchestrator-frontend", "addp-nginx"):
+    for name in ("system-backend", "gateway", "console", "security-backend", "meta-backend",
+                 "manager-backend", "transfer-backend", "orchestrator-backend", *LOGIN_BACKENDS,
+                 *(f"{module}-frontend" for module in MODULE_FRONTENDS), "portal-frontend", "addp-nginx"):
         container = running_container(name)
         bindings = container["HostConfig"].get("PortBindings") or {}
         if name in expected:
@@ -76,6 +84,13 @@ def assert_platform_ports() -> None:
         elif bindings:
             raise AcceptanceError(f"{name} must not publish host ports")
         env = dict(item.split("=", 1) for item in container["Config"]["Env"] if "=" in item)
+        if name in LOGIN_BACKENDS:
+            if container["State"].get("Health", {}).get("Status") != "healthy":
+                raise AcceptanceError(f"{name} is not healthy")
+            settings = {"SERVICE_HOST": name, "SYSTEM_URL": "http://system-backend:8180", **LOGIN_BACKENDS[name]}
+            for key, value in settings.items():
+                if env.get(key) != value:
+                    raise AcceptanceError(f"{name} {key} differs from the internal topology")
         if name == "system-backend":
             for key in ("PUBLIC_API_URL", "CONSOLE_URL"):
                 if env.get(key) != os.environ["ADDP_ONLINE_PUBLIC_ORIGIN"]:
@@ -307,13 +322,17 @@ def assert_module_gateway_route(module: str, path: str) -> None:
 
 
 def run_browser() -> dict[str, object]:
-    for key in ("ADDP_ONLINE_ARTIFACT_DIR", "ADDP_ONLINE_TEST_RUN_ID", "ADDP_ONLINE_READ_USER_USERNAME", "ADDP_ONLINE_READ_USER_PASSWORD"):
+    for key in ("ADDP_ONLINE_ARTIFACT_DIR", "ADDP_ONLINE_TEST_RUN_ID", "ADDP_ONLINE_READ_USER_USERNAME", "ADDP_ONLINE_READ_USER_PASSWORD",
+                "ADDP_ONLINE_PUBLIC_MFA_USERNAME", "ADDP_ONLINE_PUBLIC_MFA_PASSWORD", "ADDP_ONLINE_PUBLIC_MFA_TOTP",
+                "ADDP_ONLINE_PUBLIC_MFA_PRINCIPAL_ID", "ADDP_ONLINE_PUBLIC_MFA_MEMBERSHIP_ID",
+                "ADDP_ONLINE_PUBLIC_MFA_ALTERNATE_MEMBERSHIP_ID"):
         if not os.environ.get(key):
             raise AcceptanceError(f"missing browser environment: {key}")
     artifacts = Path(os.environ["ADDP_ONLINE_ARTIFACT_DIR"]).resolve()
     report_file = artifacts / "public-origin-browser.json"
     screenshots = [artifacts / f"public-origin-{name}.png" for name in ("console", "independent")]
-    for path in [report_file, *screenshots]:
+    login_reports = {entry: artifacts / f"public-origin-{entry}-login.json" for entry in ("workbench", "portal")}
+    for path in [report_file, *screenshots, *login_reports.values()]:
         path.unlink(missing_ok=True)
     result = subprocess.run(
         ["npm", "exec", "--", "playwright", "test", "e2e/online/compose-public-origin.spec.js", "--config=playwright.online.config.js"],
@@ -338,6 +357,23 @@ def run_browser() -> dict[str, object]:
         raise AcceptanceError("production browser evidence differs from the required identity and session results")
     if any(not path.is_file() or path.stat().st_size == 0 for path in screenshots):
         raise AcceptanceError("production browser screenshot evidence is missing")
+    login_fields = {
+        "run_id": expected["run_id"], "origin": expected["origin"], "tenant_id": expected["tenant_id"],
+        "mfa": True, "explicit_tenant_selection": True, "full_return_url": True, "http_only_refresh": True,
+        "reload_preserved_identity": True, "cross_module_session_reused": True,
+        "workbench_runtime_status": 404, "portal_home_status": 200,
+    }
+    login_evidence = {}
+    for entry, path in login_reports.items():
+        login_expected = {**login_fields, "entry": entry}
+        if not path.is_file():
+            raise AcceptanceError(f"{entry} production login evidence is missing")
+        payload = json.loads(path.read_text())
+        if (not isinstance(payload, dict) or payload != login_expected
+                or any(type(payload[key]) is not type(value) for key, value in login_expected.items())):
+            raise AcceptanceError(f"{entry} production login evidence differs from the required results")
+        login_evidence[entry] = payload
+    evidence["public_login"] = login_evidence
     return evidence
 
 
@@ -351,16 +387,19 @@ def main() -> int:
     assert_platform_ports()
     assert_isolated_groups()
     assert_frontend("/", "/")
-    for module in ("system", "meta", "manager", "transfer", "orchestrator"):
+    for module in MODULE_FRONTENDS:
         assert_frontend(f"/module-ui/{module}/", f"/module-ui/{module}/")
+    assert_frontend("/portal/", "/portal/")
     assert_authorized_gateway()
     assert_module_gateway_route("Meta", "/api/v1/meta/engines")
     assert_module_gateway_route("Manager", "/api/v1/manager/engines")
     assert_module_gateway_route("Transfer", "/api/v1/transfer/task-definitions")
     assert_module_gateway_route("Orchestrator", "/api/v1/orchestrator/orchestrations")
+    assert_module_gateway_route("Workbench", "/api/v1/workbench/data_applications")
+    assert_module_gateway_route("Portal", "/api/v1/portal/home")
     assert_partial_permission_matrix()
     browser = run_browser()
-    print(json.dumps({"schema_version": "addp.online-suite/v1", "suite": "compose-public-origin", "public_port": PUBLIC_PORT, "frontends": ["console", "system", "meta", "manager", "transfer", "orchestrator"], "gateway_auth_context": "passed", "gateway_engine_permission_guard": "passed", "gateway_meta_permission_guard": "passed", "gateway_manager_permission_guard": "passed", "gateway_transfer_permission_guard": "passed", "gateway_orchestrator_permission_guard": "passed", "gateway_partial_permission_matrix": "passed", "compose_projects": ["addp-infra", "addp-platform", "addp-runtimes", "business"], "browser": browser}, sort_keys=True))
+    print(json.dumps({"schema_version": "addp.online-suite/v1", "suite": "compose-public-origin", "public_port": PUBLIC_PORT, "frontends": ["console", *MODULE_FRONTENDS, "portal"], "gateway_auth_context": "passed", "gateway_engine_permission_guard": "passed", "gateway_meta_permission_guard": "passed", "gateway_manager_permission_guard": "passed", "gateway_transfer_permission_guard": "passed", "gateway_orchestrator_permission_guard": "passed", "gateway_partial_permission_matrix": "passed", "compose_projects": ["addp-infra", "addp-platform", "addp-runtimes", "business"], "browser": browser}, sort_keys=True))
     return 0
 
 

@@ -6,7 +6,7 @@ set -euo pipefail
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)
 ROOT_DIR=$(cd "$SCRIPT_DIR/../.." && pwd -P)
 ONLINE_SUITE=compose-public-origin
-HOSTED_FIXTURE_CONTAINERS=(registry addp-online-public-origin-upstreams system-backend security-backend gateway console system-frontend meta-backend meta-frontend manager-backend manager-frontend transfer-backend transfer-frontend orchestrator-backend orchestrator-frontend addp-nginx geopython-workflow-engine business-minio)
+HOSTED_FIXTURE_CONTAINERS=(registry addp-online-public-origin-upstreams system-backend security-backend gateway console system-frontend meta-backend meta-frontend manager-backend manager-frontend transfer-backend transfer-frontend orchestrator-backend orchestrator-frontend workbench-backend workbench-frontend asset-backend portal-backend portal-frontend addp-nginx geopython-workflow-engine business-minio)
 HOSTED_FIXTURE_COMPOSE_PROJECTS=(addp-platform addp-runtimes business)
 HOSTED_FIXTURE_IMAGES=()
 COMPOSE_OVERLAY="$ROOT_DIR/scripts/test/docker-compose.public-origin-t4.yml"
@@ -75,8 +75,10 @@ for _ in $(seq 1 30); do
   sleep 1
 done
 [ "$registry_ready" -eq 1 ] || fail "disposable image registry did not become ready"
-run_logged make build BUILD_ARGS="--arch amd64 --services system-backend,security-backend,gateway,meta-backend,manager-backend,transfer-backend,orchestrator-backend"
-run_logged make build-images IMAGE_BUILD_ARGS="--verify --services system-backend,security-backend,gateway,meta-backend,manager-backend,transfer-backend,orchestrator-backend,console,system-frontend,meta-frontend,manager-frontend,transfer-frontend,orchestrator-frontend,nginx,geopython-workflow-engine"
+backends=system-backend,security-backend,gateway,meta-backend,manager-backend,transfer-backend,orchestrator-backend,workbench-backend,asset-backend,portal-backend
+frontends=console,system-frontend,meta-frontend,manager-frontend,transfer-frontend,orchestrator-frontend,workbench-frontend,portal-frontend
+run_logged make build BUILD_ARGS="--arch amd64 --services $backends"
+run_logged make build-images IMAGE_BUILD_ARGS="--verify --services $backends,$frontends,nginx,geopython-workflow-engine"
 
 application_owned=1
 run_logged compose_app up -d --no-deps --wait system-backend
@@ -90,6 +92,9 @@ run_logged compose_app up -d --no-deps --wait transfer-backend
 run_logged compose_app up -d --no-deps --wait transfer-frontend
 run_logged compose_app up -d --no-deps --wait orchestrator-backend
 run_logged compose_app up -d --no-deps --wait orchestrator-frontend
+run_logged compose_app up -d --no-deps --wait workbench-backend asset-backend
+run_logged compose_app up -d --no-deps --wait portal-backend
+run_logged compose_app up -d --no-deps --wait workbench-frontend portal-frontend
 
 # Nginx resolves its legacy static upstream names at startup. These aliases
 # occupy no host ports and do not replace any service under test.

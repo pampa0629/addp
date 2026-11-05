@@ -6784,18 +6784,24 @@ def validate_public_origin_browser_profile(repository: Path, registered: set[str
             "npm --prefix console/frontend ci",
             "playwright install --with-deps chromium",
             "up -d --no-deps --wait security-backend",
+            "up -d --no-deps --wait workbench-backend asset-backend",
+            "up -d --no-deps --wait portal-backend",
+            "up -d --no-deps --wait workbench-frontend portal-frontend",
             "--wait-protection-owners manager,transfer",
             'run_logged make test-online "ONLINE_SUITE=$ONLINE_SUITE"',
         ),
         "scripts/test/compose-public-origin-online.py": (
             "e2e/online/compose-public-origin.spec.js", "--config=playwright.online.config.js", "browser = run_browser()",
+            "login_reports", "cross_module_session_reused",
         ),
         "console/frontend/e2e/online/compose-public-origin.spec.js": (
             "ADDP_ONLINE_READ_USER_PASSWORD", "action: 'hold-lock'", "action: 'queue-refresh'",
             "requests.length - initialRefreshes", "ADDP_ONLINE_PUBLIC_ORIGIN_BROWSER_REPORT",
+            "auth/mfa-verifications", "auth/context-selections", "ADDP_ONLINE_PUBLIC_MFA_TOTP", "cross_module_session_reused",
         ),
         "system/backend/cmd/online-test-fixture/main.go": (
             'values["ADDP_ONLINE_READ_USER_USERNAME"]', 'values["ADDP_ONLINE_READ_USER_PASSWORD"]',
+            'values["ADDP_ONLINE_PUBLIC_MFA_TOTP"]', 'values["ADDP_ONLINE_PUBLIC_MFA_ALTERNATE_MEMBERSHIP_ID"]',
         ),
     }
     for relative, fragments in required.items():
