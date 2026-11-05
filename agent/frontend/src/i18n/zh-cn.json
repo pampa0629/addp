@@ -146,6 +146,13 @@
       "toolCount": "工具调用（{count}）",
       "planProgress": "已处理 {completed}/{total}",
       "technicalDetails": "技术详情",
+      "runExplanation": {
+        "sourceSelection": "等待选择数据源。",
+        "waiting": "此运行正在等待进一步输入或确认。",
+        "viewPending": "查看本会话的待处理交互",
+        "inferenceUnavailable": "上游推理服务暂时不可用，本轮运行已停止。",
+        "failed": "本轮运行已停止，可查看执行记录了解详情。"
+      },
       "navigationFailed": "配置页面打开失败",
       "preferences": "使用偏好",
       "configuration": "管理配置",

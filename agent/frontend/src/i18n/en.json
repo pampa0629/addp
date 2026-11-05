@@ -146,6 +146,13 @@
       "toolCount": "Tool calls ({count})",
       "planProgress": "Processed {completed}/{total}",
       "technicalDetails": "Technical details",
+      "runExplanation": {
+        "sourceSelection": "Waiting for you to select a data source.",
+        "waiting": "This run is waiting for input or confirmation.",
+        "viewPending": "View pending interactions in this conversation",
+        "inferenceUnavailable": "The upstream inference service is temporarily unavailable. This run has stopped.",
+        "failed": "This run has stopped. See the execution record for details."
+      },
       "navigationFailed": "Could not open configuration",
       "preferences": "Usage preferences",
       "configuration": "Management configuration",

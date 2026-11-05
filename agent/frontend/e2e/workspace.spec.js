@@ -13,7 +13,7 @@ const resultMessage = { id: 71, protocol_message_id: 'result-71', role: 'assista
   ] } }
 ] }
 
-async function installWorkspace(page, { conflict = false, configuration = false, paginated = false, history = [resultMessage], identity = { user: 9, tenant: '7' } } = {}) {
+async function installWorkspace(page, { conflict = false, configuration = false, paginated = false, history = [resultMessage], identity = { user: 9, tenant: '7' }, runDetail = {} } = {}) {
   const session = { id: 61, title: '数据分析会话', version: 1, pinned: false, archived: false, created_at: '2026-10-29T00:00:00Z', updated_at: '2026-10-30T00:00:00Z' }
   const writes = [], queries = [], runQueries = [], unexpected = []
   await page.addInitScript(() => localStorage.setItem('addp-lang', 'zh-cn'))
@@ -41,9 +41,9 @@ async function installWorkspace(page, { conflict = false, configuration = false,
     } else if (path === '/api/v1/agent/sessions/61/messages') body = history
     else if (path === '/api/v1/agent/sessions/61/runs') {
       runQueries.push(Object.fromEntries(url.searchParams))
-      body = { data: [{ id: runId, skill_name: 'query-generation', status: 'waiting', created_at: '2026-10-30T00:00:00Z' }], total: paginated ? 41 : 1, page: Number(url.searchParams.get('page')), page_size: 20, total_pages: paginated ? 3 : 1 }
+      body = { data: [{ id: runId, skill_name: 'query-generation', status: runDetail.status || 'waiting', created_at: '2026-10-30T00:00:00Z' }], total: paginated ? 41 : 1, page: Number(url.searchParams.get('page')), page_size: 20, total_pages: paginated ? 3 : 1 }
     }
-    else if (path === `/api/v1/agent/runs/${runId}`) body = { id: runId, status: 'waiting', plan, steps: [{ id: 'step-1', tool_name: 'resource.facts.get', step_type: 'tool_call', status: 'completed', started_at: '2026-10-30T00:00:00Z', completed_at: '2026-10-30T00:00:02Z', output_summary: '{"field_count":2}' }] }
+    else if (path === `/api/v1/agent/runs/${runId}`) body = { id: runId, status: 'waiting', plan, steps: [{ id: 'step-1', tool_name: 'resource.facts.get', step_type: 'tool_call', status: 'completed', started_at: '2026-10-30T00:00:00Z', completed_at: '2026-10-30T00:00:02Z', output_summary: '{"field_count":2}' }], ...runDetail }
     else { unexpected.push(`${request.method()} ${path}`); return route.fulfill({ status: 500, json: { error: 'Unexpected fixture request' } }) }
     return route.fulfill({ json: body })
   })
@@ -207,26 +207,70 @@ test('archiving keeps history readable across reload and requires explicit resto
 
 test('pending interaction stays readable but disabled while archived and reopens after restore', async ({ page }) => {
   const interactionId = '1b842c47-cdf4-4228-af6e-25bfbaa8609b'
+  const prompt = '发现多个源候选。请先选择一个已观察的源再构建 Transfer 草稿，或补充更精确的要求。'
+  const options = [
+    { label: 'MongoDB · demo.events', value: 'addp://engine/311/path/demo/events?type=collection&item_id=3110' },
+    { label: 'MongoDB · archive.events', value: 'addp://engine/311/path/archive/events?type=collection&item_id=3112' }
+  ]
   const history = [{ id: 72, role: 'assistant', parts: [
     { type: 'interaction_ref', interaction_id: interactionId, status: 'pending' },
     { type: 'presentation_ref', protocol: 'a2ui', interaction_id: interactionId, surface_id: 'waiting:1', content: { operations: [
       { version: 'v0.9', createSurface: { surfaceId: 'waiting:1', catalogId: 'addp.catalog/v1' } },
-      { version: 'v0.9', updateComponents: { surfaceId: 'waiting:1', components: [{ id: 'root', component: 'ClarificationChoice', interactionId, prompt: '请选择引擎', options: [{ label: 'GeoPython', value: 6 }] }] } }
+      { version: 'v0.9', updateComponents: { surfaceId: 'waiting:1', components: [{ id: 'root', component: 'ClarificationChoice', interactionId, prompt, options }] } }
     ] } }
   ] }]
-  const backend = await installWorkspace(page, { history })
+  const backend = await installWorkspace(page, { history, runDetail: { steps: [{
+    id: 'source-question', tool_name: 'request_clarification', status: 'completed', input: { reason: 'transfer_source_selection' }
+  }] } })
   await page.goto('/module-ui/agent/sessions/61')
-  const choice = page.getByRole('button', { name: 'GeoPython', exact: true })
+  const choice = page.getByRole('button', { name: options[0].label, exact: true })
+  await expect(choice).toBeEnabled()
+  await page.getByRole('button', { name: '过程与成果', exact: true }).click()
+  await expect(page.getByText('等待选择数据源。')).toBeVisible()
+  await page.getByRole('button', { name: '查看本会话的待处理交互' }).click()
+  await expect(page.getByRole('tab', { name: '会话信息' })).toHaveAttribute('aria-selected', 'true')
+  await page.getByRole('button', { name: '待回答：定位原问题' }).click()
   await expect(choice).toBeEnabled()
   await menu(page, '归档')
   await expect(choice).toBeDisabled()
-  await expect(page.getByText('请选择引擎', { exact: true })).toBeVisible()
+  await expect(page.getByText(prompt, { exact: true })).toBeVisible()
   await page.reload()
   await expect(choice).toBeDisabled()
   await page.getByRole('button', { name: '恢复会话', exact: true }).click()
   await expect(choice).toBeEnabled()
   expect(backend.writes).toEqual([{ version: 1, archived: true }, { version: 2, archived: false }])
   expect(backend.unexpected).toEqual([])
+})
+
+test('run failure summary survives refresh and keeps exact errors in expandable details', async ({ page }) => {
+  const runDetail = { status: 'failed', error_source: 'runtime', error_code: 'runtime_exception',
+    error_message: 'inference_upstream_unavailable: 上游推理服务暂时不可用', steps: [] }
+  const backend = await installWorkspace(page, { runDetail })
+  await page.goto('/module-ui/agent/sessions/61')
+  const openPanel = () => page.getByRole('button', { name: '过程与成果', exact: true }).click()
+  await openPanel()
+  const panel = page.getByRole('complementary', { name: '过程与成果' })
+  const unavailable = panel.getByText('上游推理服务暂时不可用，本轮运行已停止。', { exact: true })
+  await expect(unavailable).toBeVisible()
+  await expect(panel.getByText('本轮没有工具步骤')).toBeVisible()
+  const technicalError = panel.getByText(/runtime_exception · inference_upstream_unavailable:/)
+  await expect(technicalError).not.toBeVisible()
+  await panel.getByText('技术详情', { exact: true }).click()
+  await expect(technicalError).toBeVisible()
+
+  await page.reload()
+  await openPanel()
+  await expect(unavailable).toBeVisible()
+  await expect(technicalError).not.toBeVisible()
+
+  runDetail.error_message = 'unexpected_model_error'
+  runDetail.steps = [{ id: 'observed-tool', tool_name: 'resource.facts.get', status: 'completed' }]
+  await panel.getByRole('button', { name: '刷新列表', exact: true }).click()
+  await expect(panel.getByText('本轮运行已停止，可查看执行记录了解详情。')).toBeVisible()
+  await expect(unavailable).not.toBeVisible()
+  await expect(panel.getByText('本轮没有工具步骤')).not.toBeVisible()
+  expect(backend.unexpected).toEqual([])
+  expect(backend.writes).toEqual([])
 })
 
 test('rename conflict retains the draft and reloads a version only on request', async ({ page }) => {

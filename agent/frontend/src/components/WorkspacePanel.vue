@@ -13,9 +13,16 @@
           <el-alert v-if="failed" :title="t('agent.workspace.runsFailed')" type="error" :closable="false" />
           <DataPagination size="small" :background="false" :pager-count="5" layout="prev, pager, next" v-model:current-page="page" :page-size="20" :total="total" @change="reload" />
           <template v-if="detail">
-            <AgentPlan v-if="detail.plan?.length" :plan="detail.plan" />
             <div class="run-summary"><el-tag>{{ t(`agent.workspace.status.${detail.status}`) }}</el-tag><code>{{ detail.id }}</code></div>
-            <p v-if="detail.error_code" class="run-error">{{ detail.error_source }} · {{ detail.error_code }} · {{ detail.error_message }}</p>
+            <div v-if="statusExplanation" class="run-explanation" role="status">
+              <p>{{ t(statusExplanation) }}</p>
+              <el-button v-if="detail.status === 'waiting' && pending.length" text type="primary" @click="tab = 'information'">{{ t('agent.workspace.runExplanation.viewPending') }}</el-button>
+            </div>
+            <details v-if="detail.error_code" class="step-summary" :open="expandDetails">
+              <summary>{{ t('agent.workspace.technicalDetails') }}</summary>
+              <p class="run-error">{{ detail.error_source }} · {{ detail.error_code }} · {{ detail.error_message }}</p>
+            </details>
+            <AgentPlan v-if="detail.plan?.length" :plan="detail.plan" />
             <el-empty v-if="detail.steps.length === 0" :description="t('agent.workspace.noSteps')" :image-size="48" />
             <ol class="run-steps">
               <li v-for="step in detail.steps" :key="step.id">
@@ -73,6 +80,22 @@ const resultFilter = ref('all')
 const goal = computed(() => messageText(props.messages.find(message => message.role === 'user') || {}))
 const resources = computed(() => conversationResources(props.messages))
 const pending = computed(() => pendingSessionInteractions(props.messages))
+const statusExplanation = computed(() => {
+  const run = detail.value
+  if (run?.status === 'waiting') {
+    const lastStep = run.steps.at(-1)
+    return lastStep?.status === 'completed' && lastStep.tool_name === 'request_clarification' &&
+      lastStep.input?.reason === 'transfer_source_selection'
+      ? 'agent.workspace.runExplanation.sourceSelection'
+      : 'agent.workspace.runExplanation.waiting'
+  }
+  if (run?.status === 'failed') {
+    const unavailable = run.error_source === 'runtime' && run.error_code === 'runtime_exception' &&
+      run.error_message?.startsWith('inference_upstream_unavailable:')
+    return unavailable ? 'agent.workspace.runExplanation.inferenceUnavailable' : 'agent.workspace.runExplanation.failed'
+  }
+  return null
+})
 const filteredResults = computed(() => results.value.filter(result => resultFilter.value === 'all' || (resultFilter.value === 'drafts' ? ['WorkflowDag', 'TransferDraftSnapshot'].includes(result.kind) : resultFilter.value === 'reports' ? result.kind === 'TransferConfigCheckReport' : !['WorkflowDag', 'TransferDraftSnapshot', 'TransferConfigCheckReport'].includes(result.kind))))
 const results = computed(() => sessionResults(props.messages))
 async function loadDetail() {
@@ -110,6 +133,8 @@ onBeforeUnmount(() => scope.dispose())
 .run-controls .el-select { flex: 1; min-width: 0; }
 .run-summary { display: flex; flex-direction: column; gap: 8px; margin: 16px 0; }
 .run-summary code, .step-summary { overflow-wrap: anywhere; font-size: 12px; color: var(--addp-text-secondary); }
+.run-explanation { padding: 8px 12px; background: var(--addp-bg-secondary); border-radius: 8px; margin-bottom: 8px; }
+.run-explanation p { margin: 0; overflow-wrap: anywhere; }
 .run-steps { padding-left: 20px; }
 .run-steps li { padding: 8px 0; border-bottom: 1px solid var(--addp-border-color); overflow-wrap: anywhere; }
 .run-steps li div { display: flex; gap: 8px; margin-top: 8px; }
