@@ -42,6 +42,9 @@ func (p *DatabaseTablePreviewProvider) Name() string {
 
 func (p *DatabaseTablePreviewProvider) Preview(ctx context.Context, req *PreviewRequest) (*models.TablePreview, error) {
 	const maxRows = MaxPreparedTablePageRows
+	if req.Engine != nil {
+		ctx = plugin.WithPoolEngineVersion(ctx, req.Engine.ID, req.Engine.Version)
+	}
 
 	plug := req.EnginePlugin
 	if plug == nil {

@@ -107,12 +107,24 @@ func TestIntegrationPostgresManagerPreviewPreparedPageReadSet(t *testing.T) {
 		}
 	})
 	t.Run("protected spatial display and key page", func(t *testing.T) {
-		path := plugin.TabularItemPath(12, "schema", schema, "protected_spatial")
+		const engineID = 8412
+		t.Cleanup(func() { _ = plugin.ClosePool(engineID) })
+		path := plugin.TabularItemPath(engineID, "schema", schema, "protected_spatial")
+		var previousPool *sql.DB
 		rules := []dataprotection.Rule{{Action: "preview", Component: dataprotection.Component{Key: "phone", ValueType: "string", Path: []dataprotection.PathSegment{{Name: "phone", Container: "scalar"}}}, Decision: dataprotection.Decision{Effect: dataprotection.EffectMask, Algorithm: dataprotection.AlgorithmKeepPrefixSuffixV2, Parameters: map[string]interface{}{"prefix_runes": 3, "suffix_runes": 4, "mask_rune": "*"}, InvalidValueEffect: dataprotection.EffectSuppress}}}
 		for index, want := range []struct{ phone, point string }{{"138****7055", "POINT(1 2)"}, {"158****2486", "POINT(3 4)"}} {
-			req := &PreviewRequest{Engine: &models.Engine{ID: 12, EngineType: "postgresql", ConnectionInfo: map[string]interface{}(conn)}, EnginePlugin: pg, ProviderPath: path, Schema: schema, Table: "protected_spatial", Page: index + 1, PageSize: 1}
+			info := make(plugin.ConnectionInfo, len(conn)+2)
+			for key, value := range conn {
+				info[key] = value
+			}
+			info["pool_max_open_conns"], info["pool_max_idle_conns"] = index+1, 0
+			engine := &models.Engine{ID: engineID, EngineType: "postgresql", Version: int64(index + 1), ConnectionInfo: map[string]interface{}(info)}
+			req := &PreviewRequest{Engine: engine, EnginePlugin: pg, ProviderPath: path, Schema: schema, Table: "protected_spatial", Page: index + 1, PageSize: 1}
 			executions := 0
 			req.executePrepared = func(ctx context.Context, _ plugin.EnginePlugin, plan plugin.PreparedQuery) (*plugin.QueryResult, *dataprotection.PreparedTableProtection, error) {
+				if plugin.PoolEngineVersion(ctx, engineID) != engine.Version {
+					t.Fatal("preview did not carry the resolved Engine version")
+				}
 				lineage, err := plan.OutputLineage(ctx)
 				if err != nil || len(lineage.Sources) != 1 {
 					t.Fatalf("spatial preview lineage: %v", err)
@@ -146,6 +158,19 @@ func TestIntegrationPostgresManagerPreviewPreparedPageReadSet(t *testing.T) {
 			protected := &plugin.QueryResult{Rows: result.Rows, Columns: result.Columns}
 			if err := result.PreparedProtection.Apply(protected); err != nil || protected.Rows[0]["phone"] != want.phone || protected.Rows[0]["location"] != want.point {
 				t.Fatalf("final spatial preview changed: %v", err)
+			}
+			if previousPool != nil && previousPool.PingContext(ctx) == nil {
+				t.Fatal("preview retained the previous pool after loading newer settings")
+			}
+			pool, err := plugin.GetOrCreatePoolFromFactory(&plugin.Engine{
+				ID: engineID, EngineType: engine.EngineType, Version: engine.Version, ConnectionInfo: info,
+			}, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			previousPool, err = pool.DB()
+			if err != nil || previousPool.Stats().MaxOpenConnections != index+1 {
+				t.Fatalf("preview did not use the configured pool: %v", err)
 			}
 		}
 		var original string

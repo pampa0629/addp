@@ -371,6 +371,7 @@ func (s *NotebookSessionService) StreamQuery(
 	if access.Engine == nil || access.Engine.ID != request.EngineID || access.Engine.EngineType == "" {
 		return ErrNotebookQueryUnsupported
 	}
+	executionCtx = plugin.WithPoolEngineVersion(executionCtx, access.Engine.ID, access.Engine.Version)
 	enginePlugin, err := plugin.Get(access.Engine.EngineType)
 	if err != nil {
 		return fmt.Errorf("%w: %v", ErrNotebookQueryUnsupported, err)

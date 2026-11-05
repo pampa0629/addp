@@ -15,6 +15,7 @@ type ConnectionInfo map[string]interface{}
 // Engine 引擎结构（最小化定义，避免循环依赖）
 type Engine struct {
 	ID             uint
+	Version        int64
 	EngineType     string
 	ConnectionInfo ConnectionInfo
 }
@@ -125,6 +126,7 @@ type ConnectionPoolPlugin interface {
 type PoolConfig struct {
 	MaxOpenConns    int           // 最大打开连接数，默认10
 	MaxIdleConns    int           // 最大空闲连接数，默认5
+	ConnMaxIdleTime time.Duration // 物理连接最大空闲时间，默认不限
 	ConnMaxLifetime time.Duration // 连接最大生命周期，默认1小时
 }
 

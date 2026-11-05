@@ -145,6 +145,7 @@ func GetPoolStats() map[uint]plugin.PoolStats {
 func toPluginEngine(engine *models.Engine) *plugin.Engine {
 	pluginEngine := &plugin.Engine{
 		ID:             engine.ID,
+		Version:        engine.Version,
 		EngineType:     engine.EngineType,
 		ConnectionInfo: plugin.ConnectionInfo(engine.ConnectionInfo),
 	}

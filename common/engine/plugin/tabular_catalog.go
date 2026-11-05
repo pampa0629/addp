@@ -47,8 +47,22 @@ type TabularCatalogCallbacks struct {
 	IsSystemNamespaceFunc func(namespace string) bool
 }
 
+func tabularPoolEngine(ctx context.Context, engine *Engine) *Engine {
+	if engine == nil || engine.Version != 0 {
+		return engine
+	}
+	version := PoolEngineVersion(ctx, engine.ID)
+	if version == 0 {
+		return engine
+	}
+	snapshot := *engine
+	snapshot.Version = version
+	return &snapshot
+}
+
 // ListTabularCatalogChildren maps tabular callbacks to EngineCatalogProvider.
 func ListTabularCatalogChildren(ctx context.Context, callbacks TabularCatalogCallbacks, engine *Engine, parent EngineCatalogPath, opts ListOptions) ([]EngineCatalogEntry, error) {
+	engine = tabularPoolEngine(ctx, engine)
 	if err := callbacks.validate(); err != nil {
 		return nil, err
 	}
@@ -99,6 +113,7 @@ func ListTabularCatalogChildren(ctx context.Context, callbacks TabularCatalogCal
 
 // ResolveTabularCatalogPath resolves a namespace or table node.
 func ResolveTabularCatalogPath(ctx context.Context, callbacks TabularCatalogCallbacks, engine *Engine, path EngineCatalogPath) (*EngineCatalogEntry, error) {
+	engine = tabularPoolEngine(ctx, engine)
 	if err := callbacks.validate(); err != nil {
 		return nil, err
 	}
@@ -139,6 +154,7 @@ func ResolveTabularCatalogPath(ctx context.Context, callbacks TabularCatalogCall
 
 // DescribeTabularCatalogFacts maps tabular column callbacks and table stats to EngineCatalogFactsProvider.
 func DescribeTabularCatalogFacts(ctx context.Context, callbacks TabularCatalogCallbacks, engine *Engine, path EngineCatalogPath, opts EngineCatalogFactsOptions) (*EngineCatalogFacts, error) {
+	engine = tabularPoolEngine(ctx, engine)
 	if err := callbacks.validate(); err != nil {
 		return nil, err
 	}

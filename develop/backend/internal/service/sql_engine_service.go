@@ -458,7 +458,7 @@ func (s *SQLEngineService) ExecuteIssuedSQLAuthorization(
 		return nil, ErrControlledSQLExecutionUnsupported
 	}
 
-	execCtx, cancel := context.WithTimeout(ctx, time.Duration(timeout)*time.Second)
+	execCtx, cancel := context.WithTimeout(plugin.WithPoolEngineVersion(ctx, engine.ID, engine.Version), time.Duration(timeout)*time.Second)
 	defer cancel()
 	executionEffect, err := ClassifySQLExecutionEffect(sqlContent)
 	if err != nil || !containsSQLExecutionEffect(authorization.Effects, executionEffect) {
@@ -663,7 +663,7 @@ func (s *SQLEngineService) generateProtectedExecutableSampleQuery(
 		return "", "", fmt.Errorf("%w: 引擎未提供查询运行时", ErrSampleQueryUnavailable)
 	}
 
-	validationCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	validationCtx, cancel := context.WithTimeout(plugin.WithPoolEngineVersion(ctx, engine.ID, engine.Version), 10*time.Second)
 	defer cancel()
 	query, language := provider.GenerateSampleQuery(validationCtx, plugin.ConnectionInfo(engine.ConnectionInfo), plugin.SampleQueryOptions{Path: *selectedPath})
 	query = strings.TrimSpace(query)

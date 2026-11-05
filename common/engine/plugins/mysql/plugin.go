@@ -59,13 +59,13 @@ func (p *MySQLPlugin) EngineOrigin() string {
 }
 
 func (p *MySQLPlugin) ConnectionSpec() plugin.ConnectionSpec {
-	return plugin.NewConnectionSpec(
+	return plugin.WithSharedSQLPoolFields(plugin.NewConnectionSpec(
 		plugin.ConnectionFieldSpec{Key: "host", LabelKey: "storageEngine.host", Input: plugin.ConnectionFieldText, Required: true, Identity: true, Default: "localhost", Placeholder: "localhost"},
 		plugin.ConnectionFieldSpec{Key: "port", LabelKey: "storageEngine.port", Input: plugin.ConnectionFieldNumber, Identity: true, Default: 3306, Min: plugin.Int(1), Max: plugin.Int(65535)},
 		plugin.ConnectionFieldSpec{Key: "database", LabelKey: "storageEngine.database", Input: plugin.ConnectionFieldText, Required: true, Identity: true, PlaceholderKey: "storageEngine.databasePlaceholder"},
 		plugin.ConnectionFieldSpec{Key: "user", LabelKey: "storageEngine.username", Input: plugin.ConnectionFieldText, Required: true, Default: "root", Placeholder: "root"},
 		plugin.ConnectionFieldSpec{Key: "password", LabelKey: "storageEngine.passwordOptional", Input: plugin.ConnectionFieldPassword, Sensitive: true},
-	)
+	))
 }
 
 func (p *MySQLPlugin) DefaultPort() int {
@@ -199,6 +199,9 @@ func (p *MySQLPlugin) ReadBatch(ctx context.Context, connInfo plugin.ConnectionI
 }
 
 func (p *MySQLPlugin) ValidateConnectionInfo(connInfo plugin.ConnectionInfo) error {
+	if err := plugin.ValidateSharedSQLPoolSettings(p.Type(), connInfo); err != nil {
+		return err
+	}
 	return plugin.ValidateRequiredFields(connInfo, p.RequiredFields())
 }
 

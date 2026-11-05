@@ -1123,6 +1123,9 @@ func sameConnectionIdentityKey(left, right models.JSONString) (bool, error) {
 }
 
 func buildConnectionIdentityKey(engineType string, connInfo models.ConnectionInfo) (models.JSONString, error) {
+	if err := engineplugin.ValidateSharedSQLPoolSettings(engineType, engineplugin.ConnectionInfo(connInfo)); err != nil {
+		return "", err
+	}
 	identityKey, err := engineplugin.BuildConnectionIdentityKey(engineType, engineplugin.ConnectionInfo(connInfo))
 	if err != nil {
 		return "", err

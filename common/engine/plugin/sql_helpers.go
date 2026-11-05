@@ -144,6 +144,7 @@ func OpenGORMPool(dialector gorm.Dialector, poolConfig *PoolConfig) (*gorm.DB, e
 
 	sqlDB.SetMaxOpenConns(poolConfig.MaxOpenConns)
 	sqlDB.SetMaxIdleConns(poolConfig.MaxIdleConns)
+	sqlDB.SetConnMaxIdleTime(poolConfig.ConnMaxIdleTime)
 	sqlDB.SetConnMaxLifetime(poolConfig.ConnMaxLifetime)
 
 	return db, nil

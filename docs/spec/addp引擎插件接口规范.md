@@ -117,6 +117,12 @@ type DSNProvider interface {
 
 ### 共享 SQL 连接池生命周期
 
+PostgreSQL、MySQL 的 Engine Instance 通过驱动声明的连接表单保存 `pool_max_open_conns`、`pool_max_idle_conns`、`pool_max_idle_seconds`、`pool_max_lifetime_seconds`。四项是 `connection_info` 内的非敏感、非身份字段，整数范围依次为 1–1000、0–1000、0–86400、0–86400，空闲连接数不得超过最大打开连接数。缺省值依次为 10、5、0、3600。空闲数为 0 表示不保留空闲连接，两项时间为 0 时分别关闭对应时间限制。共享池在每个服务进程内按 Engine Instance 应用这些值。Develop 有界 SQL 与 Manager 有界预览纳入首批验收，独占流式导出、持续扫描会话与批量写入事务分别管理自己的连接生命周期。
+
+接入已登记引擎的共享调用从可信 Engine Instance 传入 `version`。配置刷新复用 System 既有版本和引擎变更通知。同一进程观察到新版本后拒绝用旧版本创建或更换池，已有同配置的无版本借用只可复用相同的池。版本前进且有效配置相同则复用，配置变化按下述规则关闭和重建。已从旧池借出物理连接的操作按原事务完成，参数用于后续获取的池。连接池字段不参加引擎地址身份、数据项指纹和 DSN 构造。
+
+真实连接池回归纳入既有 Common PostgreSQL 和 MySQL T2 门禁。单独验证可使用 `make test-common-postgres COMMON_POSTGRES_TEST_ARGS='--test shared-sql-pool'` 和 `make test-common-mysql-data-protection COMMON_MYSQL_TEST_ARGS='--local-disposable --test shared-sql-pool'`，覆盖池饱和、配置切换、旧连接完成与释放、迟到版本拒绝。
+
 `common/engine/plugin` 唯一管理按 Engine Instance 复用的 GORM 连接池。仅当引擎 ID、类型、完整连接配置及 `PoolConfig` 都一致时复用；连接配置包含账号、密码与 TLS 参数，变化后不得回退到旧池。比较使用不对外暴露的确定性摘要，不保存或输出 DSN／凭据副本；调用方不得并发修改传入配置。`ConnMaxLifetime` 只由 `database/sql` 管理物理连接寿命，不作为整个池的空闲淘汰时间。
 
 同一引擎的创建、更换和关闭串行执行，其他引擎可独立创建。创建失败不缓存失败结果，下次调用可以重试；更换失败不能返回旧配置的连接。`ClosePool` 真正关闭底层 `sql.DB` 并移除缓存，向调用方返回关闭错误；`CloseAllPools` 关闭边界之前已开始创建的池也须收回，不允许其在关闭完成后重新发布。关闭允许在途数据库操作按 `database/sql` 规则结束；已取得的旧池句柄不转移到新配置。关闭完成后的新请求可以重新创建池，保持现有调用接口与非永久停机语义。统计读取与最近访问时间更新必须并发安全。 配置比较发生在当前进程每次取池时；调用方须提供当前配置，此机制不代替 System 配置刷新或跨进程失效传播。

@@ -19,13 +19,13 @@ import (
 )
 
 func (p *MySQLPlugin) OpenTableReadSession(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.EngineCatalogPath, opts plugin.TableReadSessionOptions) (plugin.TableReadSession, error) {
-	return p.openTableReadSession(ctx, connInfo, path, opts, 0, 0)
+	return p.openTableReadSession(ctx, connInfo, path, opts, 0, 0, false)
 }
 
 func (p *MySQLPlugin) readBatch(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.EngineCatalogPath, opts plugin.BatchReadOptions) (*plugin.BatchData, error) {
 	session, err := p.openTableReadSession(ctx, connInfo, path, plugin.TableReadSessionOptions{
 		Query: opts.Query, Args: opts.Args, Hints: opts.Hints,
-	}, opts.Limit, opts.Offset)
+	}, opts.Limit, opts.Offset, plugin.PoolEngineVersion(ctx, path.EngineID) > 0)
 	if err != nil {
 		return nil, err
 	}
@@ -33,15 +33,17 @@ func (p *MySQLPlugin) readBatch(ctx context.Context, connInfo plugin.ConnectionI
 	return session.ReadBatch(ctx, opts.Limit)
 }
 
-func (p *MySQLPlugin) openTableReadSession(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.EngineCatalogPath, opts plugin.TableReadSessionOptions, limit int, offset int64) (plugin.TableReadSession, error) {
+type mysqlTableSessionConnection interface {
+	QueryContext(context.Context, string, ...any) (*sql.Rows, error)
+	BeginTx(context.Context, *sql.TxOptions) (*sql.Tx, error)
+	Close() error
+}
+
+func (p *MySQLPlugin) openTableReadSession(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.EngineCatalogPath, opts plugin.TableReadSessionOptions, limit int, offset int64, shared bool) (plugin.TableReadSession, error) {
 	if err := resume.RejectUnsupported(opts.ResumeMarker, "mysql.table_read_session"); err != nil {
 		return nil, err
 	}
-	dsn, err := p.serverDSN(connInfo)
-	if err != nil {
-		return nil, fmt.Errorf("failed to build mysql dsn: %w", err)
-	}
-	db, err := sql.Open("mysql", dsn)
+	db, err := p.openTableSessionConnection(ctx, connInfo, path.EngineID, shared)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open mysql connection: %w", err)
 	}
@@ -64,7 +66,27 @@ func (p *MySQLPlugin) openTableReadSession(ctx context.Context, connInfo plugin.
 	return &mysqlTableReadSession{db: db, tx: tx, rows: rows, fields: fields, spatialInfo: spatialInfo, geometryEncoding: encoding}, nil
 }
 
-func mysqlReadSessionQuery(ctx context.Context, db *sql.DB, path plugin.EngineCatalogPath, opts plugin.TableReadSessionOptions, limit int, offset int64) (string, []datatype.FieldInfo, *datatype.SpatialInfo, format.GeometryEncoding, error) {
+func (p *MySQLPlugin) openTableSessionConnection(ctx context.Context, info plugin.ConnectionInfo, engineID uint, shared bool) (mysqlTableSessionConnection, error) {
+	if shared {
+		pool, err := plugin.GetOrCreatePoolFromFactory(&plugin.Engine{ID: engineID, EngineType: p.Type(),
+			Version: plugin.PoolEngineVersion(ctx, engineID), ConnectionInfo: info}, nil)
+		if err != nil {
+			return nil, err
+		}
+		db, err := pool.DB()
+		if err != nil {
+			return nil, err
+		}
+		return db.Conn(ctx)
+	}
+	dsn, err := p.serverDSN(info)
+	if err != nil {
+		return nil, fmt.Errorf("failed to build mysql dsn: %w", err)
+	}
+	return sql.Open("mysql", dsn)
+}
+
+func mysqlReadSessionQuery(ctx context.Context, db mysqlTableSessionConnection, path plugin.EngineCatalogPath, opts plugin.TableReadSessionOptions, limit int, offset int64) (string, []datatype.FieldInfo, *datatype.SpatialInfo, format.GeometryEncoding, error) {
 	encoding := mysqlGeometryEncodingHint(opts.Hints)
 	query := strings.TrimSpace(opts.Query)
 	if query != "" {
@@ -277,7 +299,7 @@ func mysqlSpatialInfoFromColumns(columns []mysqlColumnInfo, fields []datatype.Fi
 }
 
 type mysqlTableReadSession struct {
-	db               *sql.DB
+	db               mysqlTableSessionConnection
 	tx               *sql.Tx
 	rows             *sql.Rows
 	fields           []datatype.FieldInfo

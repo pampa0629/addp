@@ -9,19 +9,22 @@ test_group=all
 local_disposable=false
 recovery_mode=
 recovery_names=()
-if [ "$#" -gt 0 ]; then
+while [ "$#" -gt 0 ]; do
     case "$1" in
         --local-disposable)
-            [ "$#" -eq 1 ] || { echo '--local-disposable takes no additional arguments' >&2; exit 2; }
+            [ "$local_disposable" = false ] || { echo 'duplicate --local-disposable' >&2; exit 2; }
             local_disposable=true
+            shift
             ;;
         --test)
-            [ "$#" -eq 2 ] || { echo 'expected --test all|typed-write' >&2; exit 2; }
-            case "$2" in all|typed-write) test_group="$2" ;; *) echo 'unknown MySQL test group' >&2; exit 2 ;; esac
+            [ "$#" -eq 2 ] || { echo 'expected --test all|shared-sql-pool|typed-write' >&2; exit 2; }
+            case "$2" in all|shared-sql-pool|typed-write) test_group="$2" ;; *) echo 'unknown MySQL test group' >&2; exit 2 ;; esac
+            shift 2
             ;;
         --inspect-owned-databases)
             [ "$#" -eq 1 ] || { echo 'inspection takes no names' >&2; exit 2; }
             recovery_mode=inspect
+            shift
             ;;
         --cleanup-owned-databases)
             shift
@@ -31,9 +34,14 @@ if [ "$#" -gt 0 ]; then
                 recovery_names+=("$name")
             done
             recovery_mode=cleanup
+            shift "$#"
             ;;
         *) echo 'unknown Common MySQL gate argument' >&2; exit 2 ;;
     esac
+done
+if [ "$local_disposable" = true ] && [ -n "$recovery_mode" ]; then
+    echo 'fixture inspection or recovery requires an explicit test server' >&2
+    exit 2
 fi
 
 ROOT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
@@ -133,7 +141,10 @@ if [ "$recovery_mode" = cleanup ]; then
     exit 0
 fi
 
-test_pattern='^TestIntegrationMySQL(TypedJSONWrites|AnalyticalInstance|AnalyticalText|AnalyticalDateBuckets|AnalyticalScan|AnalyticalRelations|AnalyticalCalendar|AnalyticalExpressions|AnalyticalArithmetic|LosslessAnalyticalInteger|BoundedWatermarkResumeAndIdempotentUpsert|DataProtectionReadContracts|ResultSchema|OutputRewrite|QueryReadSession)$'
+test_pattern='^TestIntegrationMySQL(TypedJSONWrites|AnalyticalInstance|AnalyticalText|AnalyticalDateBuckets|AnalyticalScan|AnalyticalRelations|AnalyticalCalendar|AnalyticalExpressions|AnalyticalArithmetic|LosslessAnalyticalInteger|BoundedWatermarkResumeAndIdempotentUpsert|DataProtectionReadContracts|ResultSchema|SharedSQLPool|OutputRewrite|QueryReadSession)$'
+if [ "$test_group" = shared-sql-pool ]; then
+    test_pattern='^TestIntegrationMySQLSharedSQLPool$'
+fi
 if [ "$test_group" = typed-write ]; then
     test_pattern='^TestIntegrationMySQLTypedJSONWrites$'
 fi
@@ -147,6 +158,13 @@ ADDP_MYSQL_INTEGRATION=1 \
 if grep -q -- '--- SKIP:' "$WORK_DIR/common-mysql-data-protection.log"; then
     echo "MySQL data protection provider gate refuses skipped tests" >&2
     exit 1
+fi
+
+if [ "$test_group" = all ] || [ "$test_group" = shared-sql-pool ]; then
+    grep -q -- '--- PASS: TestIntegrationMySQLSharedSQLPool ' "$WORK_DIR/common-mysql-data-protection.log" || {
+        echo 'MySQL gate requires the native shared SQL pool test' >&2
+        exit 1
+    }
 fi
 
 if [ "$test_group" != all ]; then

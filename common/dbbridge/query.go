@@ -40,7 +40,7 @@ func generateSampleQueryWithPath(ctx context.Context, engine *models.Engine, que
 	}
 	engineType := strings.ToLower(engine.EngineType)
 
-	sampleCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	sampleCtx, cancel := context.WithTimeout(plugin.WithPoolEngineVersion(ctx, engine.ID, engine.Version), 10*time.Second)
 	defer cancel()
 
 	p, err := plugin.Get(engineType)
@@ -188,6 +188,7 @@ func ExecuteQuery(ctx context.Context, engine *models.Engine, query string) (*pl
 	if engine == nil {
 		return nil, fmt.Errorf("引擎不能为空")
 	}
+	ctx = plugin.WithPoolEngineVersion(ctx, engine.ID, engine.Version)
 	engineType := strings.ToLower(engine.EngineType)
 	p, err := plugin.Get(engineType)
 	if err != nil {
@@ -254,6 +255,7 @@ func ExecuteReadOnlyQuery(ctx context.Context, engine *models.Engine, query stri
 	if engine == nil || !SupportsReadOnlySQLExecution(engine.EngineType) {
 		return nil, fmt.Errorf("引擎不支持受控只读 SQL 执行")
 	}
+	ctx = plugin.WithPoolEngineVersion(ctx, engine.ID, engine.Version)
 	registered, err := plugin.Get(engine.EngineType)
 	if err != nil {
 		return nil, err
@@ -390,6 +392,7 @@ func ExecuteReadOnlyRuntimeQueryWithPath(ctx context.Context, engine *models.Eng
 	if engine == nil {
 		return nil, fmt.Errorf("引擎不能为空")
 	}
+	ctx = plugin.WithPoolEngineVersion(ctx, engine.ID, engine.Version)
 	p, err := plugin.Get(engine.EngineType)
 	if err != nil {
 		return nil, err

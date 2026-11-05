@@ -16,6 +16,8 @@ import (
 	"time"
 
 	engineplugin "github.com/addp/common/engine/plugin"
+	mysqlengine "github.com/addp/common/engine/plugins/mysql"
+	pgengine "github.com/addp/common/engine/plugins/postgresql"
 	supermapworkflow "github.com/addp/common/engine/plugins/supermap_workflow"
 	"github.com/addp/common/events"
 	"github.com/addp/common/execution"
@@ -1246,6 +1248,65 @@ func TestUpdateRejectsStaleEngineVersion(t *testing.T) {
 	}
 	if stored.Description != "" || stored.Version != engine.Version {
 		t.Fatalf("stale update changed engine: %#v", stored)
+	}
+}
+
+// Keep each driver's contract while resolving fixture capabilities offline.
+type offlinePoolSettingsPostgres struct{ pgengine.PostgreSQLPlugin }
+type offlinePoolSettingsMySQL struct{ mysqlengine.MySQLPlugin }
+
+func (*offlinePoolSettingsPostgres) ResolveCapabilities(_ context.Context, _ engineplugin.ConnectionInfo, caps engineplugin.EngineCapabilities) (engineplugin.EngineCapabilities, error) {
+	return caps, nil
+}
+
+func (*offlinePoolSettingsMySQL) ResolveCapabilities(_ context.Context, _ engineplugin.ConnectionInfo, caps engineplugin.EngineCapabilities) (engineplugin.EngineCapabilities, error) {
+	return caps, nil
+}
+
+func TestUpdateSharedSQLPoolSettingsPreservesEngineIdentity(t *testing.T) {
+	for _, fixture := range []engineplugin.EnginePlugin{&offlinePoolSettingsPostgres{}, &offlinePoolSettingsMySQL{}} {
+		engineType := fixture.Type()
+		t.Run(engineType, func(t *testing.T) {
+			driver, err := engineplugin.Get(engineType)
+			if err != nil {
+				t.Fatal(err)
+			}
+			engineplugin.Register(fixture)
+			t.Cleanup(func() { engineplugin.Register(driver) })
+			repo := newEngineServiceTestRepository(t)
+			service := NewEngineService(repo, nil, nil)
+			tenantID := uint(7)
+			created, _, err := service.Create(&models.EngineCreateRequest{
+				Name: "Shared pool", EngineType: engineType,
+				ConnectionInfo: models.ConnectionInfo{"host": "pool.example.test", "database": "example", "user": "reader"},
+			}, 42, tenantID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			bad := models.ConnectionInfo{"pool_max_open_conns": 1, "pool_max_idle_conns": 2}
+			if _, err := service.Update(created.ID, tenantID, &models.EngineUpdateRequest{
+				Version: created.Version, ConnectionInfo: &bad,
+			}); err == nil || !strings.Contains(err.Error(), "pool_max_idle_conns") {
+				t.Fatalf("invalid pool limits accepted: %v", err)
+			}
+			good := models.ConnectionInfo{"pool_max_open_conns": 1, "pool_max_idle_conns": 0, "pool_max_lifetime_seconds": 0}
+			updated, err := service.Update(created.ID, tenantID, &models.EngineUpdateRequest{
+				Version: created.Version, ConnectionInfo: &good,
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			stored, err := repo.GetByID(created.ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if updated.ID != created.ID || stored.IdentityKey != created.IdentityKey || stored.Version != created.Version+1 ||
+				stored.ConnectionInfo["pool_max_open_conns"] != float64(1) ||
+				stored.ConnectionInfo["pool_max_idle_conns"] != float64(0) ||
+				stored.ConnectionInfo["pool_max_lifetime_seconds"] != float64(0) {
+				t.Fatal("pool update changed the instance identity or lost the configured limits")
+			}
+		})
 	}
 }
 
