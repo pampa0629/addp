@@ -23,7 +23,8 @@ const failureCategories = new Set(['permission_denied', 'timeout', 'cancelled', 
   'coordinator_lost', 'child_failed', 'owner_unavailable'])
 
 const operatorFailureTemplates = Object.freeze({ snap_line_endpoints: 'lineEndpoint', extend_line_endpoints: 'lineEndpoint', polygonize: 'polygonize', snap_geometry:'referenceSnap', check_geometry:'geometryValidity', repair_geometry:'geometryValidity', extract_vertices: 'vertices', split_multipart: 'multipart', get_bounds: 'bounds', distance_to: 'distance', get_area: 'measurement', get_length: 'measurement', split_by_area: 'measurement', contains: 'spatialRelation', intersects: 'spatialRelation', voronoi: 'voronoi',
-  check_dangling_points: 'danglingPoints', check_polygon_overlap: 'polygonOverlap', check_polygon_gap: 'polygonGap',
+  check_dangling_points: 'lineCheck', check_line_intersection: 'lineCheck', check_line_self_intersection: 'lineCheck',
+  check_polygon_overlap: 'polygonOverlap', check_polygon_gap: 'polygonGap',
   envelope: 'construction', centroid: 'construction', convex_hull: 'construction', minimum_rotated_rectangle: 'construction',
   representative_point: 'interiorPoint',
   'buffer:operator_input_invalid': 'buffer', 'buffer:operator_crs_invalid': 'buffer',
@@ -67,6 +68,10 @@ export function executionFailurePresentation(details, translate) {
 export const operatorInputRules = Object.freeze([
   ["check_dangling_points", "operator_input_invalid", "input_gdf", ""],
   ["check_dangling_points", "operator_crs_invalid", "", ""],
+  ["check_line_intersection", "operator_input_invalid", "input_gdf", ""],
+  ["check_line_intersection", "operator_crs_invalid", "", ""],
+  ["check_line_self_intersection", "operator_input_invalid", "input_gdf", ""],
+  ["check_line_self_intersection", "operator_crs_invalid", "", ""],
   ["check_polygon_overlap", "operator_input_invalid", "input_gdf", ""],
   ["check_polygon_overlap", "operator_crs_invalid", "", ""],
   ["check_polygon_gap", "operator_input_invalid", "input_gdf", ""],

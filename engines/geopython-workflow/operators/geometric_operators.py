@@ -1020,10 +1020,7 @@ def _line_intersection_parts(intersection):
 
 def check_line_self_intersection(input_gdf: gpd.GeoDataFrame, id_field: str) -> gpd.GeoDataFrame:
     """Report isolated internal point meetings, excluding every self-overlap position."""
-    geometry = _finite_xy_geometry(input_gdf)
-    _require_projected_xy_crs(geometry.crs)
-    ids = _source_identifiers(input_gdf, id_field)
-    _require_nonempty_valid_lines(geometry)
+    geometry, ids = _line_check_inputs(input_gdf, id_field)
     sources, points = [], []
     for row, shape in enumerate(geometry.array):
         segments, adjacent = [], set()
@@ -1528,10 +1525,7 @@ def split_line_intersections(input_gdf: gpd.GeoDataFrame, id_field: str, scope: 
 
 def check_line_intersection(input_gdf: gpd.GeoDataFrame, id_field: str) -> gpd.GeoDataFrame:
     """Report exact isolated point intersections for distinct original feature pairs."""
-    geometry = _finite_xy_geometry(input_gdf)
-    _require_projected_xy_crs(geometry.crs)
-    ids = _source_identifiers(input_gdf, id_field)
-    _require_nonempty_valid_lines(geometry)
+    geometry, ids = _line_check_inputs(input_gdf, id_field)
     left, right, points = [], [], []
     tree = shapely.STRtree(geometry.array)
     for a, shape in enumerate(geometry.array):
@@ -1563,16 +1557,16 @@ def _line_network_inputs(frame, id_field, name="input_gdf", *, input_error=Value
     return geometry, ids
 
 
-class DanglingPointsInputError(ValueError):
-    """Explicit admission facts from the standalone dangling-points operator."""
+class LineCheckInputError(ValueError):
+    """Explicit admission facts shared by the standalone line checks."""
     _messages = {
         'operator_input_invalid': (
-            '悬点检查要求具有活动几何列的有效非空有限二维线图层，id_field 须指向值非空、唯一的非几何标量列。允许空表。',
-            'Dangling-point checking requires active geometry with valid non-empty finite XY lines and an id_field naming a non-geometry column with unique non-empty scalar values. A layer with no rows is allowed.',
+            '线拓扑检查要求具有活动几何列的有效非空有限二维线图层，id_field 须指向值非空、唯一的非几何标量列。允许空表。',
+            'Line topology checking requires active geometry with valid non-empty finite XY lines and an id_field naming a non-geometry column with unique non-empty scalar values. A layer with no rows is allowed.',
         ),
         'operator_crs_invalid': (
-            '悬点检查要求已知投影 CRS，两个水平轴的单位须一致且换算因子有限为正。',
-            'Dangling-point checking requires a known projected CRS with matching finite positive horizontal unit factors.',
+            '线拓扑检查要求已知投影 CRS，两个水平轴的单位须一致且换算因子有限为正。',
+            'Line topology checking requires a known projected CRS with matching finite positive horizontal unit factors.',
         ),
     }
 
@@ -1584,13 +1578,17 @@ class DanglingPointsInputError(ValueError):
         return self._messages[self.reason][language == 'en']
 
 
+def _line_check_inputs(input_gdf, id_field):
+    return _line_network_inputs(
+        input_gdf, id_field,
+        input_error=partial(LineCheckInputError, 'operator_input_invalid'),
+        crs_error=partial(LineCheckInputError, 'operator_crs_invalid'),
+    )
+
+
 def check_dangling_points(input_gdf: gpd.GeoDataFrame, id_field: str) -> gpd.GeoDataFrame:
     """Report degree-one planar network endpoints with all original source IDs."""
-    geometry, ids = _line_network_inputs(
-        input_gdf, id_field,
-        input_error=partial(DanglingPointsInputError, 'operator_input_invalid'),
-        crs_error=partial(DanglingPointsInputError, 'operator_crs_invalid'),
-    )
+    geometry, ids = _line_check_inputs(input_gdf, id_field)
     return _dangling_points(geometry, ids)
 
 

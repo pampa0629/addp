@@ -12,7 +12,7 @@ from operators.orc_table import SourceChanged as OrcSourceChanged
 from operators.properties_operators import MeasurementInputError, BoundsInputError
 from operators.spatial_relations import DistanceInputError, RelationInputError
 from operators.data_operations import MultiBufferInputError, ClipInputError, VoronoiInputError
-from operators.geometric_operators import DanglingPointsInputError, PolygonCheckInputError, PolygonizeInputError, ReferenceSnapInputError, GeometryValidityInputError, VertexInputError, MultipartInputError, InteriorPointInputError, UnaryConstructionInputError, SimplifyInputError, BufferInputError, NearLineInputError, EndpointSnapError, LineExtensionError, LineTrimError, PolygonRingInputError, LineNodeInputError, IntersectionInputError, DissolveInputError, UnionInputError, DifferenceInputError
+from operators.geometric_operators import LineCheckInputError, PolygonCheckInputError, PolygonizeInputError, ReferenceSnapInputError, GeometryValidityInputError, VertexInputError, MultipartInputError, InteriorPointInputError, UnaryConstructionInputError, SimplifyInputError, BufferInputError, NearLineInputError, EndpointSnapError, LineExtensionError, LineTrimError, PolygonRingInputError, LineNodeInputError, IntersectionInputError, DissolveInputError, UnionInputError, DifferenceInputError
 from operators.raster_compute import RasterDataset, RasterTiles, raster_info, raster_tiles_info, raster_workspace, raster_error_language
 
 logger = logging.getLogger(__name__)
@@ -61,8 +61,9 @@ def _project(value):
 
 
 def _execute_workflow_operator(operator, params):
-    if operator == 'check_dangling_points' and not {'input_gdf', 'id_field'} <= params.keys():
-        raise DanglingPointsInputError('operator_input_invalid', 'input_gdf and id_field are required')
+    if (operator in {'check_dangling_points', 'check_line_intersection', 'check_line_self_intersection'}
+            and not {'input_gdf', 'id_field'} <= params.keys()):
+        raise LineCheckInputError('operator_input_invalid', 'input_gdf and id_field are required')
     if operator == 'check_polygon_overlap' and not {'input_gdf', 'id_field'} <= params.keys():
         raise PolygonCheckInputError('overlap_source', 'input_gdf and id_field are required')
     if operator == 'check_polygon_gap':
@@ -90,7 +91,7 @@ class GeoPythonWorkflowRunner(WorkflowRunner):
     def _execute_operator(self, operator, params):
         try:
             return _execute_workflow_operator(operator, params)
-        except DanglingPointsInputError as exc:
+        except LineCheckInputError as exc:
             raise OperatorInputError(exc.reason, exc.message(self.language)) from exc
         except PolygonCheckInputError as exc:
             reason = {

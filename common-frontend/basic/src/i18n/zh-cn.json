@@ -462,6 +462,8 @@
         "repair_geometry": "几何修复",
         "snap_geometry": "参考吸附",
         "check_dangling_points": "悬点检查",
+        "check_line_intersection": "线交检查",
+        "check_line_self_intersection": "线内自交",
         "check_polygon_overlap": "面叠检查",
         "check_polygon_gap": "面缝检查",
         "polygonize": "拓扑构面",
@@ -484,10 +486,10 @@
         "tolerance": "容差（tolerance）",
         "gdf_b": "图层 B（gdf_b）"
       },
-      "danglingPoints": {
+      "lineCheck": {
         "reasons": {
           "operator_input_invalid": "待检查的线图层或来源标识配置不符合要求。",
-          "operator_crs_invalid": "悬点检查要求已知投影坐标系和匹配、有限且为正的水平单位换算因子。"
+          "operator_crs_invalid": "线拓扑检查要求已知投影坐标系和匹配、有限且为正的水平单位换算因子。"
         },
         "actions": {
           "operator_input_invalid": "请提供具有活动几何列的有效非空有限二维线，并将 id_field 指向值非空、唯一的非几何标量列。允许空表。",

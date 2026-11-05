@@ -3574,8 +3574,91 @@ def test_line_intersection_async_runtime_discovery_and_required_identity(tmp_pat
         assert features[0]['geometry']=={'type':'Point','coordinates':[1,0]}
     tasks[1]['params'].pop('id_field')
     failed=execute_workflow({'tasks':tasks})
-    assert failed['status']=='failed' and 'id_field' in str(failed)
+    assert failed['status']=='failed' and failed['error_code']=='INVALID_PARAMS'
+    assert failed['diagnostic']['operator']=={
+        'node_index':2,'operator_id':'check_line_intersection','parameter':'input_gdf'}
 
+
+@pytest.mark.parametrize('operator', ['check_line_intersection', 'check_line_self_intersection'])
+@pytest.mark.parametrize('problem,reason', [
+    ('missing_layer', 'operator_input_invalid'),
+    ('missing_identifier', 'operator_input_invalid'),
+    ('invalid_identifier', 'operator_input_invalid'),
+    ('invalid_line', 'operator_input_invalid'),
+    ('crs', 'operator_crs_invalid'),
+    ('native_check', None),
+    ('native_intersection', None),
+    ('result_validation', None),
+])
+def test_line_point_check_diagnostics_block_result_save(monkeypatch, operator, problem, reason):
+    import workflow_engine
+    from addp_common.workflow_runtime import WorkflowExecutionError
+    from operators import geometric_operators
+
+    crossing = LineString([(0, 0), (2, 2), (0, 2), (2, 0)])
+    second = LineString([(1, -1), (1, 3)])
+    if problem == 'invalid_line':
+        second = LineString([(1, 1), (1, 1)])
+    frame = line_overlap_frame([crossing, second], crs=None if problem == 'crs' else 'EPSG:3857')
+    params = {'input_gdf': frame, 'id_field': 'route_key'}
+    if problem == 'missing_layer':
+        del params['input_gdf']
+    elif problem == 'missing_identifier':
+        del params['id_field']
+    elif problem == 'invalid_identifier':
+        params['id_field'] = 'PRIVATE_SOURCE_FIELD'
+
+    native_message = 'input_gdf requires non-empty valid lines'
+
+    def fail(*args, **kwargs):
+        raise ValueError(native_message)
+
+    if problem == 'native_check':
+        monkeypatch.setattr(shapely, 'is_valid', fail)
+    elif problem == 'native_intersection':
+        monkeypatch.setattr(shapely, 'intersection', fail)
+    elif problem == 'result_validation':
+        validate = geometric_operators._finite_xy_geometry
+
+        def validate_with_failure(frame, name='input_gdf', **kwargs):
+            if name == 'result':
+                fail()
+            return validate(frame, name, **kwargs)
+
+        monkeypatch.setattr(geometric_operators, '_finite_xy_geometry', validate_with_failure)
+
+    saves = []
+    resolve = workflow_engine.get_operator
+
+    def resolve_with_save_probe(name):
+        if name == 'save':
+            return lambda **kwargs: saves.append(kwargs)
+        return resolve(name)
+
+    monkeypatch.setattr(workflow_engine, 'get_operator', resolve_with_save_probe)
+    tasks = [
+        {'id': 'check', 'operator': operator, 'params': params, 'depends_on': []},
+        {'id': 'save_result', 'operator': 'save', 'depends_on': ['check'],
+         'params': {'input_df': {'$ref': 'check', 'port': 'result'}}},
+    ]
+    with pytest.raises(WorkflowExecutionError) as caught:
+        workflow_engine.GeoPythonWorkflowRunner(language='en').execute({'tasks': tasks})
+    assert not saves
+    error = caught.value
+    if reason is None:
+        assert error.error_code == 'EXECUTION_FAILED' and error.diagnostic is None
+        assert native_message in str(error)
+        return
+
+    context = {'node_index': 1, 'operator_id': operator}
+    if reason == 'operator_input_invalid':
+        context['parameter'] = 'input_gdf'
+    assert error.error_code == 'INVALID_PARAMS'
+    assert error.diagnostic == {
+        'schema_version': 'addp.execution-failure/v3', 'stage': 'execution',
+        'reason': reason, 'operator': context,
+    }
+    assert 'PRIVATE_SOURCE_FIELD' not in str(error)
 
 
 def line_self_intersection(frame, id_field="route_key"):

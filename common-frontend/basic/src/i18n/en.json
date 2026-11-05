@@ -462,6 +462,8 @@
         "repair_geometry": "Repair geometry",
         "snap_geometry": "Reference snap",
         "check_dangling_points": "Check dangling points",
+        "check_line_intersection": "Check line intersections",
+        "check_line_self_intersection": "Check line self-intersections",
         "check_polygon_overlap": "Check polygon overlaps",
         "check_polygon_gap": "Check polygon gaps",
         "polygonize": "Polygonize linework",
@@ -484,10 +486,10 @@
         "tolerance": "Tolerance (tolerance)",
         "gdf_b": "Input layer B (gdf_b)"
       },
-      "danglingPoints": {
+      "lineCheck": {
         "reasons": {
           "operator_input_invalid": "The line layer or its source identifier configuration is invalid.",
-          "operator_crs_invalid": "Dangling-point checking requires a known projected CRS with matching finite positive horizontal unit factors."
+          "operator_crs_invalid": "Line topology checks require a known projected CRS with matching finite positive horizontal unit factors."
         },
         "actions": {
           "operator_input_invalid": "Provide valid non-empty finite XY lines in the active geometry column and set id_field to a non-geometry column with unique non-empty scalar values. A layer with no rows is allowed.",
