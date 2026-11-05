@@ -135,7 +135,7 @@ test('protection refusals remain distinct from data permissions without exposing
 test('operator input contract matches the canonical runtime tuples and rejects unproven fields', () => {
   const source = read('../../../common-python/addp_common/workflow_runtime/errors.py')
   const canonical = [...source.matchAll(/\('([^']+)', '([^']+)', '([^']*)'\): '([^']*)'/g)].map(match => [match[1],match[2],match[4],match[3]])
-  assert.equal(canonical.length, 135)
+  assert.equal(canonical.length, 139)
   const actual = operatorInputRules.map(rule => [...rule])
   assert.deepEqual(actual.sort(), canonical.sort())
   for (const [operator_id, reason, parameter, field] of canonical) {
@@ -143,6 +143,7 @@ test('operator input contract matches the canonical runtime tuples and rejects u
     const diagnostic = { schema_version: 'addp.execution-failure/v3', stage: 'execution', reason, operator }
     const result = executionFailurePresentation({ diagnostic, message: 'private' }, key => key)
     const profiles = { snap_line_endpoints: 'lineEndpoint', extend_line_endpoints: 'lineEndpoint', polygonize: 'polygonize', snap_geometry:'referenceSnap', check_geometry:'geometryValidity', repair_geometry:'geometryValidity', extract_vertices:'vertices', split_multipart:'multipart', get_bounds:'bounds', distance_to:'distance', get_area:'measurement', get_length:'measurement', split_by_area:'measurement', contains:'spatialRelation', intersects:'spatialRelation', voronoi:'voronoi',
+      check_line_overlap:'lineCheck', check_line_self_overlap:'lineCheck',
       check_dangling_points:'lineCheck', check_line_intersection:'lineCheck', check_line_self_intersection:'lineCheck',
       check_polygon_overlap:'polygonOverlap', check_polygon_gap:'polygonGap',
       envelope:'construction', centroid:'construction', convex_hull:'construction', minimum_rotated_rectangle:'construction',
@@ -774,6 +775,10 @@ test('reference snap diagnostics preserve tolerance semantics and privacy',()=>{
 
 test('topology check diagnostics identify the source and coverage in both languages', () => {
   const cases = [
+    ['check_line_overlap', 'lineCheck', 'operator_input_invalid', 'input_gdf', /id_field/],
+    ['check_line_overlap', 'lineCheck', 'operator_crs_invalid', '', /投影|projected/],
+    ['check_line_self_overlap', 'lineCheck', 'operator_input_invalid', 'input_gdf', /id_field/],
+    ['check_line_self_overlap', 'lineCheck', 'operator_crs_invalid', '', /投影|projected/],
     ['check_dangling_points', 'lineCheck', 'operator_input_invalid', 'input_gdf', /id_field/],
     ['check_dangling_points', 'lineCheck', 'operator_crs_invalid', '', /投影|projected/],
     ['check_line_intersection', 'lineCheck', 'operator_input_invalid', 'input_gdf', /id_field/],
@@ -791,6 +796,9 @@ test('topology check diagnostics identify the source and coverage in both langua
     const lineNames = locale === 'zh-cn' ? ['线交检查', '线内自交'] : ['Check line intersections', 'Check line self-intersections']
     assert.equal(messages.operatorNames.check_line_intersection, lineNames[0])
     assert.equal(messages.operatorNames.check_line_self_intersection, lineNames[1])
+    const overlapNames = locale === 'zh-cn' ? ['线叠检查', '线内自叠'] : ['Check line overlaps', 'Check line self-overlaps']
+    assert.equal(messages.operatorNames.check_line_overlap, overlapNames[0])
+    assert.equal(messages.operatorNames.check_line_self_overlap, overlapNames[1])
     const translate = (key, args = {}) => key.replace('common.executionFailure.', '').split('.')
       .reduce((value, part) => value[part], messages).replace(/\{(\w+)\}/g, (_, name) => args[name])
     for (const [operator_id, profile, reason, parameter, guidance] of cases) {

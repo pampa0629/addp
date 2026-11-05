@@ -61,7 +61,8 @@ def _project(value):
 
 
 def _execute_workflow_operator(operator, params):
-    if (operator in {'check_dangling_points', 'check_line_intersection', 'check_line_self_intersection'}
+    if (operator in {'check_dangling_points', 'check_line_intersection', 'check_line_self_intersection',
+                     'check_line_overlap', 'check_line_self_overlap'}
             and not {'input_gdf', 'id_field'} <= params.keys()):
         raise LineCheckInputError('operator_input_invalid', 'input_gdf and id_field are required')
     if operator == 'check_polygon_overlap' and not {'input_gdf', 'id_field'} <= params.keys():

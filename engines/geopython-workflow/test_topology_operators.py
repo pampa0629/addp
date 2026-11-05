@@ -1222,7 +1222,12 @@ def test_line_overlap_invalid_identity_fails_before_save(tmp_path):
         {"id": "check", "operator": "check_line_overlap", "params": {"input_gdf": {"$ref": "load"}, "id_field": "route_key"}, "depends_on": ["load"]},
         {"id": "save", "operator": "save", "params": {"input_df": {"$ref": "check"}, "connection_info": connection, "path": "invalid-result.gpkg", "mode": "fail"}, "depends_on": ["check"]},
     ]})
-    assert result["status"] == "failed"
+    assert result["status"] == "failed" and result["error_code"] == "INVALID_PARAMS"
+    assert result["diagnostic"] == {
+        "schema_version": "addp.execution-failure/v3", "stage": "execution",
+        "reason": "operator_input_invalid",
+        "operator": {"node_index": 2, "operator_id": "check_line_overlap", "parameter": "input_gdf"},
+    }
     assert not (tmp_path / "invalid-result.gpkg").exists()
 
 
@@ -1382,7 +1387,9 @@ def test_line_self_overlap_batch2048_failure_does_not_fallback_or_save(tmp_path,
         {"id": "check", "operator": "check_line_self_overlap", "params": {"input_gdf": {"$ref": "load"}, "id_field": "route_key"}, "depends_on": ["load"]},
         {"id": "save", "operator": "save", "params": {"input_df": {"$ref": "check"}, "connection_info": connection, "path": "rejected.gpkg", "mode": "fail"}, "depends_on": ["check"]},
     ]
-    assert execute_workflow({"tasks": tasks})["status"] == "failed"
+    result = execute_workflow({"tasks": tasks})
+    assert result["status"] == "failed" and result["error_code"] == "EXECUTION_FAILED"
+    assert "diagnostic" not in result and "batch intersection failure" in result["error"]
     assert calls == [2048, 32]
     assert not (tmp_path / "rejected.gpkg").exists()
     assert (tmp_path / "source.gpkg").read_bytes() == before
@@ -3579,18 +3586,22 @@ def test_line_intersection_async_runtime_discovery_and_required_identity(tmp_pat
         'node_index':2,'operator_id':'check_line_intersection','parameter':'input_gdf'}
 
 
-@pytest.mark.parametrize('operator', ['check_line_intersection', 'check_line_self_intersection'])
-@pytest.mark.parametrize('problem,reason', [
-    ('missing_layer', 'operator_input_invalid'),
-    ('missing_identifier', 'operator_input_invalid'),
-    ('invalid_identifier', 'operator_input_invalid'),
-    ('invalid_line', 'operator_input_invalid'),
-    ('crs', 'operator_crs_invalid'),
-    ('native_check', None),
-    ('native_intersection', None),
-    ('result_validation', None),
+@pytest.mark.parametrize('operator,problem,reason', [
+    (operator, problem, reason)
+    for operator in ('check_line_intersection', 'check_line_self_intersection',
+                     'check_line_overlap', 'check_line_self_overlap')
+    for problem, reason in (
+        ('missing_layer', 'operator_input_invalid'),
+        ('missing_identifier', 'operator_input_invalid'),
+        ('invalid_identifier', 'operator_input_invalid'),
+        ('invalid_line', 'operator_input_invalid'),
+        ('crs', 'operator_crs_invalid'),
+        ('native_check', None),
+        ('native_intersection', None),
+        ('length_overflow' if operator.endswith('overlap') else 'result_validation', None),
+    )
 ])
-def test_line_point_check_diagnostics_block_result_save(monkeypatch, operator, problem, reason):
+def test_line_check_diagnostics_block_result_save(monkeypatch, operator, problem, reason):
     import workflow_engine
     from addp_common.workflow_runtime import WorkflowExecutionError
     from operators import geometric_operators
@@ -3599,7 +3610,14 @@ def test_line_point_check_diagnostics_block_result_save(monkeypatch, operator, p
     second = LineString([(1, -1), (1, 3)])
     if problem == 'invalid_line':
         second = LineString([(1, 1), (1, 1)])
-    frame = line_overlap_frame([crossing, second], crs=None if problem == 'crs' else 'EPSG:3857')
+    shapes = [crossing, second]
+    if problem == 'length_overflow':
+        if operator == 'check_line_overlap':
+            shapes = [LineString([(-1e308, 0), (1e308, 0)])] * 2
+        else:
+            shapes = [MultiLineString([[(0, 0), (1e308, 0)], [(1e308, 0), (0, 0)],
+                                       [(0, 2), (1e308, 2)], [(1e308, 2), (0, 2)]])]
+    frame = line_overlap_frame(shapes, crs=None if problem == 'crs' else 'EPSG:3857')
     params = {'input_gdf': frame, 'id_field': 'route_key'}
     if problem == 'missing_layer':
         del params['input_gdf']
@@ -3641,13 +3659,14 @@ def test_line_point_check_diagnostics_block_result_save(monkeypatch, operator, p
         {'id': 'save_result', 'operator': 'save', 'depends_on': ['check'],
          'params': {'input_df': {'$ref': 'check', 'port': 'result'}}},
     ]
-    with pytest.raises(WorkflowExecutionError) as caught:
+    with np.errstate(over='ignore', invalid='ignore'), pytest.raises(WorkflowExecutionError) as caught:
         workflow_engine.GeoPythonWorkflowRunner(language='en').execute({'tasks': tasks})
     assert not saves
     error = caught.value
     if reason is None:
         assert error.error_code == 'EXECUTION_FAILED' and error.diagnostic is None
-        assert native_message in str(error)
+        expected_message = 'finite positive Float64 length' if problem == 'length_overflow' else native_message
+        assert expected_message in str(error)
         return
 
     context = {'node_index': 1, 'operator_id': operator}

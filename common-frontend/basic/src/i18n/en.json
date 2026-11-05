@@ -462,6 +462,8 @@
         "repair_geometry": "Repair geometry",
         "snap_geometry": "Reference snap",
         "check_dangling_points": "Check dangling points",
+        "check_line_overlap": "Check line overlaps",
+        "check_line_self_overlap": "Check line self-overlaps",
         "check_line_intersection": "Check line intersections",
         "check_line_self_intersection": "Check line self-intersections",
         "check_polygon_overlap": "Check polygon overlaps",

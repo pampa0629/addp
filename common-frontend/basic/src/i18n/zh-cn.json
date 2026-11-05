@@ -462,6 +462,8 @@
         "repair_geometry": "几何修复",
         "snap_geometry": "参考吸附",
         "check_dangling_points": "悬点检查",
+        "check_line_overlap": "线叠检查",
+        "check_line_self_overlap": "线内自叠",
         "check_line_intersection": "线交检查",
         "check_line_self_intersection": "线内自交",
         "check_polygon_overlap": "面叠检查",

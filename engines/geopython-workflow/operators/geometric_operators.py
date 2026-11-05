@@ -954,10 +954,7 @@ def _self_overlap_intersections(segments):
 
 def check_line_self_overlap(input_gdf: gpd.GeoDataFrame, id_field: str) -> gpd.GeoDataFrame:
     """Report positions traversed more than once within each original feature."""
-    geometry = _finite_xy_geometry(input_gdf)
-    _require_projected_xy_crs(geometry.crs)
-    ids = _source_identifiers(input_gdf, id_field)
-    _require_nonempty_valid_lines(geometry)
+    geometry, ids = _line_check_inputs(input_gdf, id_field)
     sources, lengths, overlaps = [], [], []
     for row, shape in enumerate(geometry.array):
         # Preserve every occurrence until AFTER comparing segments. Adjacent
@@ -980,10 +977,7 @@ def check_line_self_overlap(input_gdf: gpd.GeoDataFrame, id_field: str) -> gpd.G
 
 def check_line_overlap(input_gdf: gpd.GeoDataFrame, id_field: str) -> gpd.GeoDataFrame:
     """Report positive-length intersections of distinct feature pairs, without editing sources."""
-    geometry = _finite_xy_geometry(input_gdf)
-    _require_projected_xy_crs(geometry.crs)
-    ids = _source_identifiers(input_gdf, id_field)
-    _require_nonempty_valid_lines(geometry)
+    geometry, ids = _line_check_inputs(input_gdf, id_field)
     left, right, lengths, overlaps = [], [], [], []
     tree = shapely.STRtree(geometry.array)
     for a, shape in enumerate(geometry.array):
