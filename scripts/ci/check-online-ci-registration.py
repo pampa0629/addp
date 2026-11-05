@@ -4800,6 +4800,236 @@ def validate_raster_focal_circle_orthogonal(repository: Path, registered: set[st
         raise RegistrationError('focal circle oracle must remain independent')
 
 
+WEIGHTED_CIRCLE_REQUIRED = {'scripts/test/online-hosted-raster-focal-circle-weighted-gate.sh': ('start_online_geopython_runtime',
+                                                                     '--mount',
+                                                                     '--suite raster-workflow',
+                                                                     '--wait-protection-owners develop,manager',
+                                                                     'ADDP_ONLINE_TEST_TIMEOUT_SECONDS=600',
+                                                                     'online_raster_lineage.py prepare',
+                                                                     'online-raster-focal-circle-weighted-fixture.py '
+                                                                     'stop',
+                                                                     'unset '
+                                                                     'ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN'),
+ 'business/scripts/online-raster-focal-circle-weighted-fixture.py': ('NFSExport',
+                                                                     'owned_root',
+                                                                     'case_shape(name)',
+                                                                     'verify_sources(root)',
+                                                                     'np.array_equal',
+                                                                     'GDAL_TIFF_INTERNAL_MASK',
+                                                                     'full_source_pixels_verified',
+                                                                     'runtime_workspaces_removed',
+                                                                     'archive_files',
+                                                                     'oracle cache hash changed',
+                                                                     'source file changed',
+                                                                     'circle-weighted-cogs',
+                                                                     'archive history missing',
+                                                                     'circle-weighted-expectations',
+                                                                     'validate_expected_export',
+                                                                     'archive_expectations',
+                                                                     'allow_pickle=False',
+                                                                     'def cleanup_oracle',
+                                                                     'full_check=True',
+                                                                     'nearest_overviews',
+                                                                     'private_control',
+                                                                     'Decimal.from_float',
+                                                                     'reference(source).GetLinearUnits()',
+                                                                     '<= radius_squared',
+                                                                     'affine_transform',
+                                                                     'below.cog.tif',
+                                                                     'expected_overview_count',
+                                                                     'CASES',
+                                                                     'circle_membership_verified',
+                                                                     'circle_statistics_verified',
+                                                                     'WIDTH,HEIGHT=131,129',
+                                                                     'context.prec = 2000',
+                                                                     'sum(weight * (value - mean)**2 for value, '
+                                                                     'weight in pairs) / mass',
+                                                                     'dc*column_x + dr*row_x',
+                                                                     'dc*column_y + dr*row_y',
+                                                                     'fixture includes positive weight outside',
+                                                                     'np.array_equal(actual, expected, '
+                                                                     'equal_nan=True)',
+                                                                     'GetMaskBand().ReadAsArray()',
+                                                                     'actual all-one and unweighted COG pixels or '
+                                                                     'masks differ',
+                                                                     'actual exact/below boundary witness '
+                                                                     'differs'),
+ 'scripts/test/raster-focal-circle-weighted-persistence-online.py': ('raster.validate_identity',
+                                                                     'raster.EDITOR_PERMISSIONS',
+                                                                     'budget != 600',
+                                                                     'BudgetClient',
+                                                                     'remaining()',
+                                                                     'validate_success',
+                                                                     'lineage.collect',
+                                                                     'lineage.validate(facts,wanted,public=True)',
+                                                                     'lineage.verify_archive',
+                                                                     'base.validate_scan',
+                                                                     'raster.wait_lineage',
+                                                                     'source_edges',
+                                                                     'readonly.no_publication',
+                                                                     'query language rewrote stored failure',
+                                                                     'previous original COG changed',
+                                                                     'fixture_call',
+                                                                     'cleanup-oracle',
+                                                                     'oracle cleanup also failed',
+                                                                     'full_checks != 1467',
+                                                                     'six-coefficient affine proof differs',
+                                                                     'frozen independent array archive changed',
+                                                                     'archived_expectations',
+                                                                     'physical_calls != 91',
+                                                                     'len(cases) != 18',
+                                                                     'len(failures) != 72',
+                                                                     'exact_cause',
+                                                                     'Monitor current output lineage differs',
+                                                                     'raster.strict_sizes',
+                                                                     'fixture.expected_cache_bytes()',
+                                                                     'window_type',
+                                                                     'radius_metres',
+                                                                     'target_metadata_before[name] = '
+                                                                     'copy.deepcopy(item)',
+                                                                     'target_metadata_after != '
+                                                                     'target_metadata_before',
+                                                                     'source_metadata_after',
+                                                                     'fixture.KERNELS',
+                                                                     'overview_resampling',
+                                                                     'boundary_witness',
+                                                                     'failed execution added scan',
+                                                                     'failed execution added derived lineage'),
+ 'engines/geopython-workflow/test_online_focal_circle_weighted_fixture.py': ('test_weighted_circle_hosted_eighteen_real_cogs_complete_oracle_circle_boundaries_controls_and_original_bytes',
+                                                                             'test_weighted_circle_hosted_seventy_two_exact_submitted_failures_no_output_and_clean_workspace',
+                                                                             'test_weighted_circle_hosted_actual_pixel_mask_metadata_and_overview_corruption_rejected',
+                                                                             'one-ulp',
+                                                                             'test_weighted_circle_hosted_original_cog_archive_never_repairs_or_overwrites',
+                                                                             'test_weighted_circle_hosted_frozen_cache_rejects_hash_shape_inventory_or_run_change',
+                                                                             'test_weighted_circle_hosted_stdin_worker_has_no_repository_dependency_and_exact_cleanup',
+                                                                             'test_weighted_circle_hosted_frozen_expected_archive_rejects_tampering',
+                                                                             'test_weighted_circle_hosted_independent_semantic_mutations_cannot_pass',
+                                                                             'test_weighted_circle_hosted_oracle_never_calls_product_kernel_or_reducer',
+                                                                             'test_weighted_circle_hosted_actual_grid_witnesses'),
+ 'scripts/test/raster-focal-circle-weighted-persistence-online_test.py': ('test_full_matrix_18_success_72_failures_1467_checks_and_cleanup',
+                                                                          'test_every_affine_coefficient_and_type_is_required',
+                                                                          'test_role_bound_lineage_rejects_wrong_roles_operations_and_public_projection',
+                                                                          'test_strict_physical_counts_sizes_original_archives_and_cleanup_cannot_weaken',
+                                                                          'test_failures_preserve_primary_and_cleanup_error',
+                                                                          'test_exact_failure_stage_language_scan_lineage_and_budget_are_enforced',
+                                                                          'test_exact_18_36_matrix_circle_radius_weights_and_actual_controls',
+                                                                          'test_all_source_and_target_meta_snapshots_archived_and_mutation_rejected'),
+ 'business/scripts/online-raster-zonal-percentile-fixture.py': ('previous archive was deleted',
+                                                                'previous archived bytes changed'),
+ 'scripts/utils/online_raster_lineage.py': ("'raster-focal-circle-weighted-persistence': "
+                                            "'circle-weighted-lineage'",
+                                            'BEGIN READ ONLY;',
+                                            'statement_timeout',
+                                            'workflow_matches',
+                                            'validate_container',
+                                            'closed(public, expected)',
+                                            'closed(internal, expected)'),
+ 'scripts/test/online-raster-lineage_test.py': ('test_weighted_circle_approved_single_source_current_raster_save_and_hidden_public_operation',),
+ 'Makefile': ('test_online_focal_circle_weighted_fixture.py',
+              '@$(MAKE) test-raster-focal-circle-weighted-online-runner',
+              'scripts/test/raster-focal-circle-weighted-persistence-online_test.py',
+              'scripts/test/online-raster-focal-circle-weighted-fixture_test.py',
+              'scripts/test/online-hosted-raster-focal-circle-weighted-gate_test.py',
+              'test_weighted_circle_requires_exact_cog_matrix_budget_and_regressions')}
+
+
+def validate_raster_focal_circle_weighted(repository: Path, registered: set[str]) -> None:
+    suite = 'raster-focal-circle-weighted-persistence'
+    if suite not in registered: return
+    workflow = (repository/'.github/workflows/online-t4-gates.yml').read_text()
+    job = re.search(r'(?ms)^  raster-focal-circle-weighted-hosted-t4:\n(?P<body>.*?)(?=^  [a-z][a-z0-9-]*:\n|\Z)', workflow)
+    if (job is None or 'runs-on: ubuntu-24.04' not in job.group('body')
+        or "if: github.event_name == 'workflow_dispatch' && inputs.suite == 'raster-focal-circle-weighted-persistence'" not in job.group('body')
+        or "&& inputs.suite != 'raster-focal-circle-weighted-persistence'" not in workflow
+        or 'nfs-kernel-server nfs-common' not in job.group('body') or 'cancel-in-progress: false' not in job.group('body')
+        or 'if: always()' not in job.group('body') or 'logs/' not in job.group('body') or load_suite_registry(repository)[suite].nightly):
+        raise RegistrationError('focal circle requires an independent manual Hosted NFS job')
+    make = (repository/'Makefile').read_text()
+    if 'test_online_focal_circle_weighted_fixture.py' not in make.split('test-geopython-workflow:',1)[1].split('\n.PHONY:',1)[0]:
+        raise RegistrationError('focal circle Native omitted from standard recipe')
+    for relative, fragments in WEIGHTED_CIRCLE_REQUIRED.items():
+        path = repository/relative
+        if not path.is_file() or any(not source_contract_contains(path.read_text(), fragment, repository) for fragment in fragments):
+            raise RegistrationError('focal circle strict contract incomplete: '+relative)
+    source = (repository/'business/scripts/online-raster-focal-circle-weighted-fixture.py').read_text()
+    tree = ast.parse(source)
+    expected = {'CASES': {'north-mean.cog.tif': ('north.tif', 'weighted_mean', 4.0, 'north', 'direct'),
+               'north-stddev.cog.tif': ('north.tif', 'weighted_stddev', 4.0, 'north', 'direct'),
+               'north-sum.cog.tif': ('north.tif', 'weighted_sum', 4.0, 'north', 'direct'),
+               'rotated-mean.cog.tif': ('rotated-values.tif', 'weighted_mean', 10.0, 'rotated', 'direct'),
+               'rotated-stddev.cog.tif': ('rotated-values.tif', 'weighted_stddev', 10.0, 'rotated', 'direct'),
+               'rotated-sum.cog.tif': ('cross-block.tif', 'weighted_sum', 10.0, 'rotated', 'direct'),
+               'ones-mean.cog.tif': ('control.tif', 'weighted_mean', 4.0, 'ones', 'direct'),
+               'control-mean.cog.tif': ('control.tif', 'mean', 4.0, None, 'direct'),
+               'ones-stddev.cog.tif': ('control.tif', 'weighted_stddev', 4.0, 'ones', 'direct'),
+               'control-stddev.cog.tif': ('control.tif', 'stddev', 4.0, None, 'direct'),
+               'ones-sum.cog.tif': ('control.tif', 'weighted_sum', 4.0, 'ones', 'direct'),
+               'control-sum.cog.tif': ('control.tif', 'sum', 4.0, None, 'direct'),
+               'foot.cog.tif': ('foot.tif', 'weighted_mean', 0.4, 'north', 'direct'),
+               'survey.cog.tif': ('survey.tif', 'weighted_stddev', 0.4, 'north', 'direct'),
+               'center.cog.tif': ('rotated-values.tif', 'weighted_sum', 1.0, 'center', 'direct'),
+               'reclassified.cog.tif': ('north.tif', 'weighted_stddev', 4.0, 'north', 'reclassify'),
+               'invalid.cog.tif': ('invalid.tif', 'weighted_sum', 10.0, 'rotated', 'direct'),
+               'below.cog.tif': ('north.tif', 'weighted_mean', 3.9999999999999996, 'below', 'direct')},
+     'KERNELS': {'north': [[0, 2, 0], [1, 0, 3], [0, 0, 0]],
+                 'rotated': [[0, 0, 0, 0, 0],
+                             [0, 0, 0.5, 0, 0],
+                             [2, 0, 0, 3, 1],
+                             [0, 0, 4, 0, 0],
+                             [0, 0, 0, 0, 0]],
+                 'ones': [[0, 1, 0], [1, 1, 1], [0, 1, 0]],
+                 'center': [[2]],
+                 'below': [[0, 0, 0], [1, 0, 3], [0, 0, 0]]},
+     'FAILURES': ('weight_missing',
+                  'weight_null',
+                  'weight_scalar',
+                  'weight_flat',
+                  'weight_ragged',
+                  'weight_size',
+                  'weight_zero',
+                  'weight_bool',
+                  'weight_string',
+                  'weight_null_element',
+                  'weight_object_element',
+                  'weight_negative',
+                  'weight_outside',
+                  'weight_below',
+                  'method',
+                  'unused_weights',
+                  'unused_percentile',
+                  'circle_window',
+                  'circle_window_null',
+                  'radius_missing',
+                  'radius_null',
+                  'radius_zero',
+                  'radius_negative',
+                  'radius_bool',
+                  'geographic',
+                  'compound',
+                  'missing_crs',
+                  'missing_grid',
+                  'shear',
+                  'mirror',
+                  'x_oversize',
+                  'y_oversize',
+                  'band_zero',
+                  'band_high',
+                  'band_fraction',
+                  'alpha'),
+     'COMPARISONS': (('ones-mean.cog.tif', 'control-mean.cog.tif'),
+                     ('ones-stddev.cog.tif', 'control-stddev.cog.tif'),
+                     ('ones-sum.cog.tif', 'control-sum.cog.tif')),
+     'BOUNDARY_PAIR': ('north-mean.cog.tif', 'below.cog.tif')}
+    actual = {key: [node.value for node in tree.body if isinstance(node, ast.Assign)
+                    and any(isinstance(target, ast.Name) and target.id == key for target in node.targets)]
+              for key in expected}
+    if any(len(nodes) != 1 or repr(ast.literal_eval(nodes[0])) != repr(expected[key])
+           for key, nodes in actual.items()):
+        raise RegistrationError('weighted circle fixed 18/72 case, kernel or comparison matrix changed')
+    if any(word in source for word in ('operators.raster_compute', '_focal_weighted_values', '_focal_circle_window', 'np.percentile', 'np.quantile', 'gdal.RasterizeLayer', 'gdal.Polygonize')):
+        raise RegistrationError('focal circle oracle must remain independent')
+
+
 REGION_REQUIRED = {'business/scripts/online-raster-region-group-fixture.py': ('NFSExport', 'source_arrays', 'from collections import deque', 'answer[row,col]=number', 'values[yy,xx]==values[row,col]', 'np.array_equal(actual,expected,equal_nan=True)', 'verify_csv', 'validate_records', 'pixel_conservation_verified', 'full_check=True', 'nearest_overviews(ds,actual)', 'def prepare_oracle', 'def cleanup_oracle', 'allow_pickle=False', 'private_control', 'archive_files', 'archive_expectations', 'validate_expected_export', 'full_source_pixels_verified', 'GetNoDataValueAsUInt64'), 'scripts/test/raster-region-group-persistence-online.py': ('raster.validate_identity', 'raster.EDITOR_PERMISSIONS', 'remaining()', 'budget != 600', 'full_checks != 819', 'len(cases) != 18', 'len(failures) != 36', 'physical_calls != 55', 'current(execution', 'lineage.collect', 'lineage.verify_archive', 'base.validate_scan', 'raster.strict_sizes', 'validate_table_preview', 'validate_item(item', 'target_metadata_after != target_metadata_before', 'source_metadata_after != before', "for language in ('zh-cn', 'en')", 'query language rewrote stored failure', 'failed execution added scan', 'failed execution added derived lineage', "physical_runner(repository, env, 'cleanup-oracle'", 'archived_outputs'), 'scripts/test/online-hosted-raster-region-group-gate.sh': ('source "$ROOT_DIR/scripts/utils/hosted-online.sh"', 'start_online_geopython_runtime', 'online_raster_lineage.py prepare', '--suite raster-workflow', '--wait-protection-owners develop,manager', 'ADDP_ONLINE_TEST_TIMEOUT_SECONDS=600', 'online-raster-region-group-fixture.py stop', 'unset ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN'), 'engines/geopython-workflow/test_online_region_group_fixture.py': ('test_region_hosted_eighteen_mixed_results_complete_oracle_and_original_bytes', 'test_region_hosted_thirty_six_exact_submitted_failures_no_output_and_clean_workspace', 'test_region_hosted_independent_semantic_mutations_cannot_pass', 'test_region_hosted_oracle_never_calls_product_kernel_or_reducer', 'test_region_hosted_csv_corruption_cannot_pass'), 'scripts/test/raster-region-group-persistence-online_test.py': ('test_full_matrix_18_success_36_failures_819_checks_and_cleanup', 'test_exact_18_18_matrix_region_parameters_and_csv_routes', 'test_all_source_and_target_meta_snapshots_archived_and_mutation_rejected'), 'Makefile': ('test_online_region_group_fixture.py', 'test-raster-region-group-online-runner', 'scripts/test/raster-region-group-persistence-online_test.py', 'test_region_requires_exact_cog_matrix_budget_and_regressions')}
 
 def validate_raster_region_group(repository: Path, registered: set[str]) -> None:
@@ -7055,6 +7285,7 @@ def check_registration(repository: Path) -> None:
     validate_raster_focal_variety(repository, registered)
     validate_raster_focal_circle(repository, registered)
     validate_raster_focal_circle_orthogonal(repository, registered)
+    validate_raster_focal_circle_weighted(repository, registered)
     validate_raster_region_group(repository, registered)
     validate_raster_focal_weighted_mean(repository, registered)
     validate_raster_focal_weighted_stddev(repository, registered)
