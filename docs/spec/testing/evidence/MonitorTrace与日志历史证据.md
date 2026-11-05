@@ -129,192 +129,168 @@ Common 为独立短阶段增加 `EndExecution`，与原 End 共用一次终结�
 
 首次本地窗口在构建器准备阶段等待 Docker Desktop 个人凭据助手，尚未下载基础镜像、创建业务部署或发送业务请求。主动中断自有 gate 后，进程组、Builder 容器／卷和私有目录经精确过滤复查均为空；最终报告写入还暴露 Path.open 不支持 opener 的接口错误，原自动报告未生成，不伪造为通过。已修为内置 open 的 O_EXCL／0600 路径，并补真实文件权限与拒绝覆写测试；Docker 客户端改为当次 0700 目录、空 auths、无凭据助手，只读公共工具插件并固定已核对 Unix endpoint，不借个人凭据。标准 local runner 复验结果另记。后续操作继续扣减首次窗口已耗时间，未放宽原 60 分钟、8 CPU／12 GiB 或 4 GiB 停止线。首次失败及清理复查见 local-first-interrupted-receipt.json 与 local-acceptance.log。
 
+## 正式身份本地窗口的共同口径
+
+第三至第十窗口均沿 `make test-monitor-traces-local`。各窗口的尝试共用原授权的绝对截止时间，资源上限为 8 CPU／12 GiB、当次卷及私有可写目录 4 GiB 停止线；单次完整资源检查限四秒。记录采样间隔时按开始时间判定，完成时间戳间隔单列。失败样本、受控中断和未启动均按原结果记录。
+
+固定源码、实际构建、依赖就绪、登录和完整业务链按各次尝试分别认定。准备或构建修复后的确定性门禁不能回填到历史运行；经核验复用的 MinIO／mc 镜像也不能计为本次源码重建。各窗口的零残留记录只涉及当次归属的容器、网络、卷、构建器及其状态、产品镜像标签和私有工作目录；保留原有已核验 MinIO 镜像。标准退出和独立复核分列，有清理或审计失败时保留原结果。
+
+本段记录的是本机隔离验收；未运行 Hosted、正式专用 Runner T4、生产 T5、长期留存或新的容量验收。时间均为北京时间。各窗口的实际运行按序对应归档目录中的 `attempt-N-report.json`（N 为尝试编号）。表中源码未单列时，以对应尝试报告为准，后继修复版本单列。原逐次过程、日志摘要与报告清单见[整理前固定快照](https://github.com/pampa0629/addp/blob/90d13c2545c602eddcc17a81621a135ab64fa540/docs/spec/testing/evidence/MonitorTrace%E4%B8%8E%E6%97%A5%E5%BF%97%E5%8E%86%E5%8F%B2%E8%AF%81%E6%8D%AE.md)。
+
 ## 正式身份本地第三窗口：镜像核验、守卫修复与部署配置拒绝（2026-10-23）
 
-用户重新授权窗口为北京时间19:18:00–20:18:00，上限仍为8 CPU／12 GiB、全部当次卷及私有可写目录4 GiB停止线。六次尝试共用这一绝对截止时间，没有按重试续时。标准入口均为 `make test-monitor-traces-local`；未运行Hosted、容量模型或定时任务，未接管个人开发服务。
+授权 19:18:00–20:18:00。六次标准运行均失败；尝试 1–5 的源码未在旧正文单列。
 
-首次真实核验已有MinIO产品镜像成功：Linux ARM64，镜像ID `sha256:dd87261892226d0e651ba1d059205cdd4e93d94be3dd9c819abffbf23d994d0b`；MinIO `RELEASE.2025-10-15T17-29-55Z`嵌入源提交`9e49d5e7a648f00e26f2246f4dc28e6b07f8c84a`；mc `RELEASE.2025-08-13T08-35-41Z`，源提交`7394ce0dd2a80935aded936b09fa12cbb3cb8096`。两组件均以同一不可变镜像ID执行只读、无网络版本检查并匹配当前固定配方，报告保存版本输出哈希；这不等同于重新源码编译或可复现构建证明。
+| 尝试 | 实际首败或停止点 | 完整成功测量 |
+| --- | --- | ---: |
+| 1 | Orchestrator 产品镜像构建时卷测量解析异常，底层原因未定。 | 129 |
+| 2 | System 镜像前私有目录 du 非零退出。 | 38 |
+| 3 | 对象缓存清理超出 0.75 秒；该过短期限方案后来撤掉。 | 41 |
+| 4 | 全部产品镜像构建后，主动停止 BuildKit 被误判为容器失败。 | 169 |
+| 5 | 前置停止检查复现 BuildKit 退出 1、非 OOM，昂贵编译未开始。 | 未记录 |
+| 6 | 固定 `4aee4813909077cd3fa35906bf70353278ba89e2`；16 个产品镜像与浏览器依赖通过，Trace 部署生成因误传 `module` 被正式生成器拒绝。 | 180 |
 
-| 尝试 | 实际停止点 | 结果与清理 |
-| --- | --- | --- |
-| 1 | Orchestrator产品镜像构建；卷测量解析通用异常 | 失败，129项成功测量；零残留 |
-| 2 | System镜像前的私有目录测量；du非零退出 | 失败，38项成功测量；零残留 |
-| 3 | 对象缓存清理0.75秒期限 | 失败，41项成功测量；该过短期限方案已撤掉，零残留 |
-| 4 | 全部产品镜像后主动停止BuildKit，被误判容器失败 | 失败，169项成功测量；零残留 |
-| 5 | 前置停止检查复现BuildKit退出1、非OOM | 失败，在昂贵编译前拒绝；零残留 |
-| 6 | 全部16个产品镜像及浏览器依赖完成后，Trace部署配置生成被拒绝 | 失败，180项成功测量；零残留 |
+实际核验 ARM64 MinIO/mc 镜像 `sha256:dd87261892226d0e651ba1d059205cdd4e93d94be3dd9c819abffbf23d994d0b`。只读、无网络核验匹配 MinIO `RELEASE.2025-10-15T17-29-55Z`／`9e49d5e7a648f00e26f2246f4dc28e6b07f8c84a` 和 mc `RELEASE.2025-08-13T08-35-41Z`／`7394ce0dd2a80935aded936b09fa12cbb3cb8096`。
 
-缓存清理会使du遍历中的文件消失。当前唯一测量路径在原四秒总预算内，仅对明确ENOENT重新进行完整扫描；不采用带缺失诊断的部分字节数，其他错误或预算耗尽仍停止。第4次实际发生一次私有目录完整重扫，最终测量0.508秒；该次最长测量1.055秒、最大完成间隔4.24秒。卷内扫描当次没有重扫，不据此推定首轮卷异常的全部根因。BuildKit通过成功的主动停止命令后实际退出码1，当前只允许当次明确主动停止的精确构建器ID出现该已核验状态；停止前须运行且非OOM，产品服务、一次性任务、其他退出码及OOM仍拒绝。停止检查已前置，末尾复用同一实现。第6次真实通过前后停止检查，180项测量最长0.807秒、最大完成间隔4.43秒。
+当次修正只在剩余四秒内对明确 ENOENT 完整重扫。第 4 次私有目录重扫后耗时 0.508 秒，未发生卷内重扫；该次最长测量 1.055 秒、最大完成间隔 4.24 秒。BuildKit 的退出 1 仅在当次精确 ID、明确主动停止且非 OOM 时接受，第 6 次前后检查通过，最长测量 0.807 秒、最大完成间隔 4.43 秒。最终 `162cb8747d211d3fe184e8acba48117f6123e934` 改用 `module_name` 并将配置校验前移，旧字段反例失败、修正后生命周期 55＋60 和身份 Go 等通过；完整运行未重跑。
 
-第6次固定源码为`4aee4813909077cd3fa35906bf70353278ba89e2`，六个后端、Console及其余产品前端／Nginx共16镜像从该源码构建，报告保存不可变ID；浏览器依赖准备通过。部署生成拒绝根因为本地入口误用`module`，正式生成器只接受`module_name`。最终代码`162cb8747d211d3fe184e8acba48117f6123e934`已修正该字段，并把产品Trace／Compose配置准备移到构建器创建及编译之前，增加细分阶段和固定容器状态诊断，不引入兼容字段或第二路线。真实产品生成器的跨入口回归在恢复旧字段时失败、修正后通过；配置拒绝不得启动构建器亦有覆盖。
-
-最终 `make test-infra-runtime-log-lifecycle` 退出0：55项本地入口／业务契约、JS语法、CI登记、System ExecutionTrace定向Go，以及既有60项生命周期通过。标准实际入口最后一次仍为失败；最终配置修复后的完整部署未重跑，正式密码/MFA、Tenant成功／受控失败执行、Trace与日志及Console闭环均未运行、未计通过。当前源码不是第6次完整实际运行的输入，不能把确定性回归记成正式运行验收。剩余窗口不足以重建并完成闭环，没有启动注定超时的完整重跑，也没有续开新窗口。
-
-六次成功测量的总体峰值3,421,573,120字节（约3.19 GiB）、6.25 CPU／10.0625 GiB，均未触及原上限；这只覆盖准备构建，不能证明业务部署的资源表现。六次自动清理全部通过，独立复核当次容器、网络、卷、构建器、镜像标签和私有目录均为零，原MinIO镜像保留。安全报告、绝对窗口、输入提交、红绿回归及最终门禁日志见 `/tmp/addp-p19-formal-local-20261023-window3/` 中的 `attempt-1-report.json` 至 `attempt-6-report.json`、`receipt.json`、`cleanup-audit.json`、`deployment-contract-red.log`、`preflight-final-test.log`、`lifecycle-final.log`。清单实际第19行（B18）及第45行（B44）仍为部分实现，正式身份缺口保留；不将本次结果计为Linux Runner T4、Hosted、T5或真实72小时证明。
+六次均经标准清理和独立审计核验零残留。成功样本峰值 6.25 CPU／10.0625 GiB、私有可写约 3.19 GiB，仅覆盖准备与构建。正式密码／MFA、成功／受控失败执行、Trace／日志和页面未运行。实际报告、回执和红绿日志见 `/tmp/addp-p19-formal-local-20261023-window3/`。
 
 ## 正式身份本地第四窗口：依赖核验通过，完整闭环未验收（2026-10-24）
 
-用户“继续”后沿原上限新开窗口：2026-10-23 23:54:17至2026-10-24 00:54:17（Asia/Shanghai），8 CPU／12 GiB、4 GiB停止线；所有重试沿同一绝对截止，无Hosted、容量模型或定时。实际运行在截止前受控结束，清理完成。
+授权 10-23 23:54:17–10-24 00:54:17。九份完整入口报告均为 failed，尝试 6、9 为 `local_acceptance_interrupted`。早期尝试源码以各自报告为准。
 
-本窗口定位并修正四项入口问题：
+| 尝试 | 实际首败或停止点 |
+| --- | --- |
+| 1 | Compose 插值未选中的 capacity profile 挂载，缺 `TRACE_T2_WORK` 拒绝。 |
+| 2 | 完成 16 镜像；成功退出的 oneoff 自动删除，与守卫列举后 inspect 竞态。 |
+| 3 | 完成 16 镜像；依赖启动失败。 |
+| 4 | Nginx 前置 `nginx -t` 在 UID 0 且无 capability 时 chown 被拒。 |
+| 5 | Nginx 前置校验再次失败。 |
+| 6 | 旧顺序的构建在余量不足时受控中断。 |
+| 7 | 新顺序的 Loki 启动权限失败。 |
+| 8 | Loki 启动 permission denied；UID 10001 与卷的 root:root／755 不符。 |
+| 9 | 产品配置、MinIO／mc、Nginx、PG／Redis／MinIO、两存储初始化与遥测依赖通过，`dependencies_ready=true`。进入编译后因余量不足受控停止。 |
 
-- Compose仍会插值未启用capacity profile中的挂载，缺少TRACE_T2_WORK使配置拒绝；仅声明当次私有工作目录，trace-load仍不选中。
-- 一次性容器成功退出后自动删除，与资源守卫“列举后inspect”竞态；现在保留当次oneoff及初始化容器的退出状态至统一清理，非零退出和OOM仍拒绝，未用忽略检查或重试丢失状态的方法计成功。
-- trace-query以UID 0且移除全部capability运行时，Nginx创建临时目录的chown被拒绝。真实前置nginx -t复现operation not permitted／chown；改为现有Trace T2同样的宿主私有证书所有者身份，保留cap_drop、只读和网络边界，实际校验及健康检查通过。
-- Loki配置校验通过但实际启动permission denied。第8次实测进程UID10001，而可写/loki卷已变成root:root、755；初始化脚本此前成功chown10001并chmod750。空卷在创建消费者时的镜像copy-up覆盖了初始化权限。当前当次新建数据卷统一nocopy，由原初始化路径负责权限；第9次只读测量Loki /loki和Tempo /var/tempo均保持10001:10001、750，修正后实际服务不再退出。
+修正保留当次成功退出的一次性容器至统一清理；trace-query 用宿主私有证书所有者身份，仍保持只读及 capability 限制。Loki／Tempo 当次空卷统一 `nocopy`，由原初始化路径设置权限；第 9 次实测两卷均为 10001:10001／750，依赖保持运行。原独占依赖前移到编译前，仍复用同一 Compose／网络／卷，不使用 trace-load。
 
-为避免依赖启动错误在整轮产品构建后才暴露，先修规范，再将同一组独占依赖的实际启动移到编译前；同一私有Compose、网络、卷和凭据继续使用，不创建第二组或新增验收选项。依赖运行期间构建器与源码编译各1 CPU／2 GiB；业务构建后仅更新同一Compose内的实际业务镜像ID。原总上限、停止线、采样与业务断言不变。失败诊断只保留固定错误类别、输出哈希及Unix卷权限，不导出登录、SQL或运行日志正文。
-
-当前最终代码`f07a5a6cc201a0ed676f0ad013ca5ddfcf3b23a8`。第9次标准入口`make test-monitor-traces-local`实际通过产品配置、MinIO/mc、Loki完整启动参数校验、Nginx校验、独占PostgreSQL／业务PostgreSQL／Redis／MinIO、两个存储初始化及遥测依赖检查；两代理healthy，Loki／Tempo／Alloy持续运行，报告dependencies_ready=true，并越过构建器前置检查进入编译。24项成功资源测量，峰值7.45 CPU、9.375 GiB、1,085,509,632字节，最长测量0.880秒。此为依赖准备通过，不是正式身份或全业务验收。
-
-本窗口共九次实际尝试：1为模板配置拒绝；2为oneoff删除竞态；3为依赖启动失败；4、5为Nginx前置校验失败；6因余量不足受控中断旧顺序构建；7、8在新顺序中复现Loki权限失败；9完成依赖核验后因余量不足受控中断编译。完整入口报告均保留failed，其中两次为local_acceptance_interrupted，不改写成通过。第2、3次完成的16个产品镜像分别属于其各自固定提交，不能当作最终修复源码已完成重建。正式密码/MFA、普通Tenant执行、Trace查询、日志和Console闭环仍未运行、未计通过；没有续开新窗口。
-
-最终`make test-infra-runtime-log-lifecycle`退出0：58项本地入口／业务契约、JS语法、CI登记、System ExecutionTrace定向Go及既有60项生命周期通过；未更改业务API或采样策略，现有Platform／owner路径继续覆盖。九次自动清理及独立审计均零当次容器、网络、卷、构建器、镜像标签和私有目录，原MinIO产品镜像保留。安全证据位于`/tmp/addp-p19-formal-local-20261023-window4/`，包括`window.json`、九份`attempt-*-report.json`、`attempt-9-mount-audit.json`、`attempt-9-planned-stop.json`、`receipt.json`、`cleanup-audit.json`、`lifecycle-final.log`；未手工调度或跟踪无关CI。原清单实际第19行（B18）、第45行（B44）继续部分实现，正式身份缺口保留，不计Linux Runner T4、Hosted、T5、72小时或生产容量通过。
+最终代码 `f07a5a6cc201a0ed676f0ad013ca5ddfcf3b23a8` 的标准生命周期 58＋60 和身份 Go 等通过。第 9 次 24 项成功测量最长 0.880 秒，峰值 7.45 CPU／9.375 GiB、私有可写 1,085,509,632 字节。九次标准清理与独立审计均零残留；无正式登录、业务执行、Trace／日志或页面证据。实际报告、卷审计和清理见 `/tmp/addp-p19-formal-local-20261023-window4/`。
 
 ## 正式身份本地第五窗口：标准数据库初始化修正，页面部署依赖仍阻断（2026-10-24）
 
-本窗口由用户明确授权，绝对边界为2026-10-24 08:28:23～09:28:23（Asia/Shanghai），合计8 CPU／12 GiB、卷及私有可写目录4 GiB停止线。三次尝试沿同一截止时间，没有自动续期。第三次在截止前失败退出并完成清理，未运行Hosted、容量模型或定时任务。
+授权 08:28:23–09:28:23。三份完整报告均为 failed。
 
-第一次固定源码`1cf5be3660172abfc0e57b1fd9e3fb1be65e5f31`，基础依赖及七个二进制编译通过，在System产品镜像步骤返回`command_failed_2`；原输出仅保留哈希，不能据此断言具体原因。补充公共构建固定错误类别诊断后，第二次源码`8a3006670e7f6cfaddf018253515ccb37ab5bc78`的16个正式产品镜像与浏览器依赖通过，但Develop启动退出1、非OOM。其Docker标准输出为空，实际正文由runtime-log保存在当次卷中；入口随后补充只读提取固定错误类别／哈希，不导出正文。
+| 尝试 | 实际源码 | 已达阶段与首败 |
+| --- | --- | --- |
+| 1 | `1cf5be3660172abfc0e57b1fd9e3fb1be65e5f31` | 独占依赖和七个二进制通过；System 镜像 `command_failed_2`，只留输出哈希，具体原因未定。 |
+| 2 | `8a3006670e7f6cfaddf018253515ccb37ab5bc78` | 16 镜像和浏览器依赖通过；Develop 启动退出 1、非 OOM，Docker stdout 为空，随后补了从当次日志卷读封闭类别及哈希的诊断。 |
+| 3 | `2f9414696911a4701b23ce19081c2cab5f1f7925` | 原 PostgreSQL 初始化、七个二进制、16 镜像、浏览器依赖及六后端就绪通过；`isolated_deployment_start` 中 Meta、Service 页面退出 1、非 OOM，封闭标记 `not found`。 |
 
-源码核对发现隔离入口漏执行现有`scripts/infra/init-postgresql.sql`，而Develop初始化直接在`develop` schema创建导出会话表。运行观测规范与标准入口同步补齐初始化步骤：在当次独占平台库执行原SQL并使用`ON_ERROR_STOP=1`，失败即停止后续准备；不新建额外数据库、不触碰共享Infra。修正提交`2f9414696911a4701b23ce19081c2cab5f1f7925`。第三次实际通过该初始化，独立只读核对当次集群／平台库归属、Develop schema、PostGIS、pgvector及标准更新时间触发器函数均为true。随后七个二进制、16个产品镜像与浏览器依赖再次通过，System及其余五个后端按标准等待顺序就绪，已越过此前Develop启动失败。
+源码确认原入口漏执行 `scripts/infra/init-postgresql.sql`。第 3 次仅对独占平台库用 `ON_ERROR_STOP=1` 执行原 SQL，核验 Develop schema、PostGIS、pgvector 和标准更新时间触发器。页面阻断来自根 Nginx 静态依赖旧页面、这些页面又静态代理未部署后端；该窗口未改部分部署策略。准备门禁 60 项、标准生命周期另 60 项及身份 Go 等通过。
 
-第三次最终仍失败于`isolated_deployment_start`：Meta及Service页面容器退出1，均非OOM，诊断命中`not found`。产品配置核对确认，根Nginx对一批旧模块页面采用静态upstream，本入口为满足该依赖而启动了非本专项页面；这些页面又直接静态代理未部署的对应Backend。现有Monitor等页面已使用按请求解析。未通过假上游、增加未授权业务后端或忽略容器失败来继续；产品Nginx的部分部署行为修正需另行确认，未在本窗口实施。
-
-三份完整入口报告均为failed，正式密码/MFA、普通Tenant执行、Trace／日志读取及真实Console闭环全部未运行、未计通过，实际运行提交核对探针亦尚未到达。标准入口准备门禁`make test-monitor-traces-local-runner`退出0（60项契约、JS语法、CI登记及System身份夹具定向Go）；最终`make test-infra-runtime-log-lifecycle`退出0，另含既有60项生命周期检查。没有改动业务API、权限、采样或保留策略，未跟踪无关CI。
-
-全窗口578项成功资源测量，峰值硬配额7.45 CPU／10,066,329,600字节（9.375 GiB），卷及私有可写目录合计最高3,635,802,112字节，最长单次测量1.597秒，未触及停止线。三次自动清理和独立审计均为当次容器、网络、卷、构建器、镜像标签及私有目录零残留，已核验的原MinIO产品镜像保留。证据目录`/tmp/addp-p19-formal-local-20261024-window5/`含`window.json`、三份`attempt-*-report.json`、`attempt-3-database-init-audit.json`、`receipt.json`、`cleanup-audit.json`及`lifecycle-final.log`。实际清单第19行（B18）、第45行（B44）仍为部分实现；本证据不计正式身份闭环、Linux Runner T4、Hosted、72小时或生产T5通过。
+578 项成功测量最长 1.597 秒，峰值 7.45 CPU／9.375 GiB、私有可写 3,635,802,112 字节，未触停止线。三次标准清理及独立审计均零残留。实际运行提交探针、密码／MFA、执行、Trace／日志及 Console 均未到达。原件 `/tmp/addp-p19-formal-local-20261024-window5/`，含第 3 次数据库初始化审计。
 
 ## 正式身份本地第六窗口：按需页面及正式登录通过，执行闭环仍未验收（2026-10-24）
 
-用户确认修正产品Nginx部分部署行为并新开60分钟窗口，绝对时间为2026-10-24 09:27:58～10:27:58（Asia/Shanghai），仍限8 CPU／12 GiB、当次卷及私有可写目录4 GiB停止线。三次完整尝试沿同一截止时间，未运行Hosted、容量或定时，过期没有自动续开。
+授权 09:27:58–10:27:58。三份完整报告均为 failed。
 
-提交`e25a09264e39a0c48e01af696b87df15c1b5f103`删除根Nginx七个旧模块页面的静态upstream，统一为请求时Docker DNS解析，保留去除模块前缀后的路径与查询参数；Console／Gateway仍是入口必需依赖。隔离入口只选择Console、System、Monitor页面和根Nginx，六个后端及身份、采样、业务断言保持。新增标准`make test-nginx-routes`与实际完整入口共享同一真实Nginx探针，同时接入既有Trace T2，并将nginx/加入其路径输入。最终实测11项嵌套路径、查询参数、静态资源／plugins／WASM及API路径通过，缺失模块502且已部署页面仍可读，探针清理通过。开发期两次探针失败分别涉及就绪重试stderr污染及回显服务遗漏Gateway 8000端口，均清理后修正，未当作产品或正式身份通过。
+| 尝试 | 实际源码 | 已达阶段与首败 |
+| --- | --- | --- |
+| 1 | `6621748b0b1a8497597e4f4ee5bb3274503402ff` | 七二进制、10 镜像、11 项 Nginx、六后端版本／四页面就绪通过。两个 Platform User 真实密码／TOTP、两个 Tenant User 密码、AuthContext 和普通业务 User 精确 11 项权限通过。首败 `synthetic_engine_registration` 的 SuiteError，未保存 HTTP 状态，不能认定实测 403。 |
+| 2 | `6b7704611ff20856cfc03db9f4c3b6cfd1150e3a` | Security 镜像构建失败，仅有 `failed to solve`／`timed out`，具体请求与根因未定；未复验新的准备角色。 |
+| 3 | `1c5a5cc26dd7291f0a142a5a67adea1a908d3d2b` | 计划停止构建器后用 2 CPU／3 GiB 编译，恢复原 1 CPU／2 GiB 构建器，七二进制及 10 镜像通过；`browser_dependencies` 到总期限，`command_deadline_exceeded`。 |
 
-共享工作区首次完整准备门禁受另一专项未提交的Online登记组合影响，不计通过；仅保留其本专项63项契约通过事实。已提交源码e25a09264的私有副本随后实际运行标准`make test-infra-runtime-log-lifecycle`退出0（63项入口契约、JS语法、Online登记、System身份夹具Go及既有60项生命周期），构建登记与T2登记检查均退出0；私有准备源码副本已删除，没有纳入或修复并行未提交工作。
+`e25a09264e39a0c48e01af696b87df15c1b5f103` 改根 Nginx 七个旧页面为请求时 Docker DNS，隔离入口只选 Console／System／Monitor 和根 Nginx。实际 11 项路径、查询、静态资源／plugins／WASM、API、缺模块 502 及可用模块通过，探针已清理。早期探针首败为重试 stderr 污染和回显漏 Gateway 8000。共享准备门禁曾被其他未提交登记阻断，只计 63 项本专项；同固定源码私有副本后来通过 63＋60、登记及身份 Go。最终输入 66＋60 通过。
 
-第一次实际完整入口源码`6621748b0b1a8497597e4f4ee5bb3274503402ff`：七个二进制、10个产品镜像、产品Nginx同一11项路由探针、六后端及四页面服务就绪通过，六后端实际/health/live提交均匹配该SHA。两个Platform User完成真实密码／TOTP登录、两个Tenant User完成真实密码登录；AuthContext为普通非委托User，Platform MFA身份、负例无平台诊断权限及业务User精确11项权限检查通过。随后在synthetic_engine_registration阶段以SuiteError失败，尚未创建本批成功／失败执行闭环；原报告没有HTTP状态，不把源码推断写成已实测403。
+第 2 次引入的自定义角色只拟授 `system.engine.create`／`system.engine.execute`，普通执行 User 权限保持；其真实目录冲突见第七窗口。既有 Release and T2 run `40050940303` 仅记录到 queued，未形成 Job 通过证据。
 
-核对角色与API发现租户管理员模板不含引擎操作权限，而夹具遗漏已批准的独立准备能力。提交`6b7704611ff20856cfc03db9f4c3b6cfd1150e3a`通过既有IAM角色服务向当次准备成员显式赋予仅含system.engine.create／system.engine.execute的临时角色，业务User仍为原11项；增加正式AuthContext准备权限检查，以及只保留固定断言码或HTTP状态／稳定错误码的安全诊断。该修正代码和单测通过，但本窗口未到达修正后的运行验证，不宣称引擎登记已通过。第二次实际源码6b7704611在Security产品镜像构建失败，固定诊断命中failed to solve／timed out；未保留原始公共构建输出，不能进一步断言具体外部请求或原因，清理通过。
-
-为在原总上限内减少闲置配额，先修规范，再由提交`1c5a5cc26dd7291f0a142a5a67adea1a908d3d2b`将编译与构建器串行：计划停止原构建器，以2 CPU／3 GiB及两个Go线程编译，完成后恢复1 CPU／2 GiB构建器；确认原ID运行且非OOM，并与采样锁同步后才清除计划停止状态。第三次实际完成七个二进制、构建器恢复及10个产品镜像，在browser_dependencies阶段达到本窗口总期限，以command_deadline_exceeded失败退出并清理。未缩短真实尾采样等待或省略任何业务／页面断言来计通过。
-
-当前源码1c5a5cc26的`make test-infra-runtime-log-lifecycle`退出0：66项入口／业务契约、JS语法、CI登记、System ExecutionTrace定向Go及既有60项生命周期通过。源码未修改产品业务API、内置角色、采样或保留策略，不需生成Swagger；普通Tenant执行、Trace／Link与精确日志、Console闭环及退出后旧令牌拒绝本窗口均未通过。三份完整报告全部failed；正式登录的实际局部证据不能替代完整闭环，也不能外推Linux Runner T4、Hosted、72小时或生产T5。
-
-全窗口516项成功资源测量，峰值7.8 CPU／10,468,982,784字节（9.75 GiB），卷及私有可写目录最高3,619,434,496字节，最长测量1.126秒；无OOM或资源停止线触发。三次自动清理及独立审计均为当次容器、网络、卷、构建器、镜像标签和私有源码／秘密零残留，原核验MinIO产品镜像保留。安全证据位于`/tmp/addp-p19-formal-local-20261024-window6/`，含window.json、三份attempt-*-report.json、nginx-route-gate-3.log、prepare-source.json、committed-lifecycle.log、final-lifecycle.log、t2-registration.log、receipt.json及cleanup-audit.json。仅只读查看过源码6621748的既有Release and T2自动运行40050940303，当时queued，未计通过，未手工触发工作流或跟踪无关CI。清单第19行（B18）、第45行（B44）继续部分实现。
+516 项成功测量最长 1.126 秒，峰值 7.8 CPU／9.75 GiB、私有可写 3,619,434,496 字节，无 OOM 或触线。三次标准清理及独立审计均零残留。登录局部通过；成功／受控失败执行、Trace／Link、精确日志、Console 闭环及退出后旧令牌拒绝未通过。原件 `/tmp/addp-p19-formal-local-20261024-window6/`。
 
 ## 正式身份本地第七窗口：准备守卫修正及IAM权限冲突，闭环未通过（2026-10-24）
 
-用户授权窗口为2026-10-24 16:32:47–17:32:47（Asia/Shanghai），准备、构建、等待与重试共用该截止时间；最多8 CPU／12 GiB、所有当次卷及私有可写目录达到4 GiB停止。仅运行根入口`make test-monitor-traces-local`，不运行Hosted、容量或定时，不接管个人开发服务或共享数据库。实际8次尝试全部失败，正式登录→执行→Trace查询→日志→页面闭环仍未通过；第六窗口的登录局部证据不能替代本窗口或完整闭环。
+授权 16:32:47–17:32:47。八次尝试全部失败。
 
-本次修正：`b5b543863501d371d851a9dd69601f55875677f3`在依赖启动前准备全部当次Compose空卷和构建器，保留独占所有权／Compose标签；`5a1a4c0330809c836edb13e08ec4b1e3b578b1a8`把受0.25 CPU／64 MiB及30秒准入预算限制的只读卷辅助容器准备与首次完整测量分开，之后才启动依赖。周期四秒检查预算、最长五秒间隔、CPU／内存／磁盘上限、OOM及测量失败即停止均保持。`4108c283a183e4bfc89e76a3b38aa7cc1f6e48a8`补充首次资源检查的固定操作／耗时诊断；`d9a3cec22e12db098182e25bc96a62e0916f5f32`细分依赖初始化阶段及固定公共诊断标记，不保存凭据、SQL或原始失败正文。
+| 尝试 | 实际源码 | 首败或停止点 | 完整成功测量 |
+| --- | --- | --- | ---: |
+| 1 | `c93da8151` | `isolated_dependencies_start`，`prepare_volume_sampler` 超预算。 | 2 |
+| 2 | `c93da8151` | 同一卷测量器准备超预算。 | 2 |
+| 3 | `b5b543863501d371d851a9dd69601f55875677f3` | 依赖已就绪，`product_compile` 的 `measure_owned_volumes` 超时。 | 71 |
+| 4 | `cdd038f22` | `bounded_builder/command_deadline_exceeded`，旧报告无法进一步定位。 | 0 |
+| 5 | `3a5cd4c54` | `bounded_builder/command_deadline_exceeded`。 | 0 |
+| 6 | `5a1a4c0330809c836edb13e08ec4b1e3b578b1a8` | `initial_resource_sample/command_deadline_exceeded`。 | 0 |
+| 7 | `4108c283a183e4bfc89e76a3b38aa7cc1f6e48a8` | `isolated_dependencies_start` 退出 2，封闭标记为空，具体命令与根因未定。 | 6 |
+| 8 | `d9a3cec22e12db098182e25bc96a62e0916f5f32` | 七二进制、10 镜像、浏览器依赖、11 项 Nginx 与六后端运行提交核验通过；`formal_identity_preparation` 退出 1，封闭标记为空。 | 253 |
 
-每次实际结果（同一窗口，无自动续期）：
+修正依次将当次空卷／构建器前移，将限额 0.25 CPU／64 MiB、准入 30 秒的只读卷辅助容器准备和首次测量分离，并补固定操作、耗时与依赖阶段诊断。最终标准生命周期 70＋60、登记及身份 Go 等通过；中间 67／68／69 各自通过，均为确定性证据。
 
-| 尝试 | 实际源码提交 | 停止阶段／原因 | 成功资源测量次数 |
-| --- | --- | --- | --- |
-| 1 | `c93da8151` | `isolated_dependencies_start`；`prepare_volume_sampler`超过资源检查预算 | 2 |
-| 2 | `c93da8151` | 同上，未计通过 | 2 |
-| 3 | `b5b543863` | `product_compile`；`measure_owned_volumes`超时，依赖已就绪 | 71 |
-| 4 | `cdd038f22` | `bounded_builder`；`command_deadline_exceeded`，尚无完整资源样本；旧报告不能进一步定位 | 0 |
-| 5 | `3a5cd4c54` | 同上，尚无完整资源样本 | 0 |
-| 6 | `5a1a4c033` | `initial_resource_sample`；`command_deadline_exceeded` | 0 |
-| 7 | `4108c283a` | `isolated_dependencies_start`；退出2，固定标记为空，未能定位具体准备命令或唯一根因 | 6 |
-| 8 | `d9a3cec22` | `formal_identity_preparation`；退出1，固定标记为空；未到达真实登录及业务执行 | 253 |
+目录核对确认旧 `6b7704611ff20856cfc03db9f4c3b6cfd1150e3a` 的自定义角色使用了不可租户定制的权限，会被 `validateCustomizablePermissions` 拒绝。历史运行回执不足以确认这是尝试 8 的唯一原因。既有基础设施管理员角色当时仅为待确认方案，下一窗口才验证。
 
-第8次完成7个源码二进制、10个实际产品镜像、浏览器依赖、同一产品Nginx的11项路径／参数断言、缺席模块502及已部署模块仍可读检查；六个Backend均经`/health/live`核验实际提交为`d9a3cec22e12db098182e25bc96a62e0916f5f32`。正式身份准备失败后未继续业务；没有本次正式登录、成功／受控失败父子execution、真实检查点、自然尾采样、精确Trace／Link／日志、Console页面或旧会话拒绝的通过证据。
-
-代码调查确认一项必须先讨论的权限冲突：此前`6b7704611ff20856cfc03db9f4c3b6cfd1150e3a`用`local.execution_trace_preparation`自定义角色授予`system.engine.create/execute`，但当前`system/authorization/permissions.yaml`及迁移目录中两者均不可租户定制；`TenantRoleService.CreateRole`必经`validateCustomizablePermissions`拒绝该方案。这是此前夹具设计错误，原精确权限单测未覆盖真实目录约束；现有运行报告尚不能证明它是第8次退出1的唯一原因。没有修改权限目录、制造AAL2、直接写授权表或擅自授予更大角色。建议讨论仅当次准备User通过正式密码／TOTP、真实增强认证及角色分配取得现有`tenant.infrastructure_administrator`；其11项权限超出此前准备身份两项初值，尚未确认或实施，普通执行User仍保持原11项权限。完整重跑需要另行确认新窗口。
-
-当前最终代码的`make test-infra-runtime-log-lifecycle`通过70项本地入口契约、60项生命周期测试、Node语法、Online登记及System fixture Go检查；日志为`/tmp/addp-p19-formal-local-20261024-window7/dependency-diagnostics-lifecycle.log`。此前67／68／69项中间版本及各60项生命周期门禁分别记录，不代替最终运行验收；现有标准入口及CI登记继续覆盖本次脚本，未新增Hosted触发或定时。
-
-原始脱敏报告为`/tmp/addp-p19-formal-local-20261024-window7/attempt-{1..8}-report.json`，同目录`window.json`、各`attempt-*-source.json`／日志、`receipt.json`及`cleanup-audit.json`保留窗口及源码身份。独立只读清理核对于17:22:07完成：8次均为当次容器、网络、卷、构建器容器／状态卷、镜像标签及私有目录零残留，复用前已有MinIO不可变镜像仍保留。334次成功资源样本的硬配额峰值7.8 CPU／10468982784字节（9.75 GiB），卷及私有目录实际分配峰值3637747712字节（约3.39 GiB），成功单次测量最长2.640秒；超时失败样本单独按失败记录，不从成功最大值中隐去。没有观察到OOM或4 GiB停止线触发；资源守卫超时及身份准备失败不得计为通过。
+17:22:07 独立审计确认八次零残留。334 次成功测量最长 2.640 秒，峰值 7.8 CPU／9.75 GiB、私有可写 3637747712 字节；超时样本另列，无 OOM 或 4 GiB 触线。正式登录、业务执行、Trace／日志、页面及退出拒绝未到达。逐次源码／报告及清理见 `/tmp/addp-p19-formal-local-20261024-window7/`。
 
 ## 正式身份本地第八窗口：真实MFA与准备角色通过，成功查询被保护链拒绝（2026-10-24）
 
-用户确认准备User仅在当次隔离环境，经真实密码／TOTP与正式IAM API取得既有`tenant.infrastructure_administrator`；普通执行User的原11项权限保持。先修规范和入口，`558cb372659a9b863d14ae78fdbe7ba1014870bf`删除不可租户定制的自定义准备角色，夹具不预授准备角色、不制造会话或AAL2。实际入口核对内置角色当前11项权限及同一Membership，自助TOTP登记替换Cookie／Access Token、验证旧令牌401；真实AAL2和有效step-up后分配限于窗口期限的角色，再经正式Refresh重读同一身份及准确授权。普通User权限在准备后再次核对。
+授权 20:55:05–21:55:05。三次完整报告均为 failed。
 
-本次唯一运行窗口为2026-10-24 20:55:05–21:55:05（Asia/Shanghai），8 CPU／12 GiB、卷和私有可写目录4 GiB停止线保持。每次运行均为根入口`make test-monitor-traces-local`、当前已提交源码私有副本、产品构建与原六后端／三页面，不复用旧产品镜像，只有固定MinIO／mc镜像按既有规则核验复用。不运行Hosted、容量或定时，不接管个人开发服务／共享数据库。三次尝试都失败，完整执行→Trace→日志→页面闭环未通过。
-
-| 尝试 | 实际源码 | 结果与实际覆盖 |
+| 尝试 | 实际源码 | 已达阶段与首败 |
 | --- | --- | --- |
-| 1 | `558cb372659a9b863d14ae78fdbe7ba1014870bf` | 7个源码二进制及依赖准备通过；`product_image_gateway`退出2，固定标记`failed to solve`／`not found`。缺少足以确定唯一根因的正文诊断，不能认定已修复镜像故障。未进入身份阶段。 |
-| 2 | `25c5aab9165f582556ead36f8d5f4bb75118dfb5` | 7个二进制、10个产品镜像、浏览器依赖、11项产品Nginx路径／参数断言、缺席模块502及已有模块可读通过；六后端运行提交均匹配该源码。真实平台密码／MFA／AuthContext、普通User最小权限、准备User真实MFA／内置角色、两次旧Token拒绝、合成引擎注册与连接测试通过。成功查询编排终态不匹配，未保存进一步错误码，不计执行通过。 |
-| 3 | `b57e481009c83fb200cd0ccd986937802d6c363e` | 同样完成源码／产品／实际版本／Nginx及上述五项身份和引擎断言。复现成功查询失败：父执行为`orchestrator.execution.child_failed`，Develop子执行为`develop.query.protection_required`。已实际走通正式User提交与Orchestrator派发到Develop子执行；实际子执行失败，不能算成功查询通过。 |
+| 1 | `558cb372659a9b863d14ae78fdbe7ba1014870bf` | 七二进制及依赖通过；`product_image_gateway` 退出 2，`failed to solve`／`not found`，唯一原因未定。 |
+| 2 | `25c5aab9165f582556ead36f8d5f4bb75118dfb5` | 七二进制、10 镜像、浏览器、11 项 Nginx、六后端版本，以及正式身份与引擎断言通过；成功查询编排终态不匹配，无进一步错误码。 |
+| 3 | `b57e481009c83fb200cd0ccd986937802d6c363e` | 同类准备和正式身份断言通过；成功查询父执行 `orchestrator.execution.child_failed`，Develop 子执行 `develop.query.protection_required`。父 UUID `9fad5ff2-f121-4f67-9e81-e1c64293b7ac`，子 UUID `de10928e-f672-41f5-8780-6b8e0b3a5457`。 |
 
-第3次的父执行UUID为`9fad5ff2-f121-4f67-9e81-e1c64293b7ac`，子执行UUID为`de10928e-f672-41f5-8780-6b8e0b3a5457`，仅保留身份引用、状态、步骤与稳定码。`b57e48100`补充这条失败诊断，不输出错误正文、SQL、参数或结果，原终态断言未放宽。普通User准备后仍保持原11项权限；没有为查询失败扩大权限、增加源Grant或绕过保护。由于成功查询断言已失败，未继续受控失败场景、真实检查点／自然尾采样、精确Trace／Link／日志读取、平台Trace／日志无权限与最终退出负例、真实页面闭环；浏览器接收端未观察到页面回执，不计页面通过。
+尝试 2、3 实测准备 User 经密码／TOTP、有效 step-up 和正式 IAM API 获当次限时 `tenant.infrastructure_administrator`，刷新后同一 Membership 和准确权限，两个准备阶段的旧 Token 拒绝；普通执行 User 保持原 11 项。合成引擎登记和连接通过。尝试 3 验到提交及派发到 Develop，子执行仍拒绝。
 
-代码和规范调查另确认入口漏了既有的新Tenant保护初始化前置：`docs/spec/addp数据安全与隐私保护实现规范.md`明确实例就绪不等于新Tenant已完成Owner首轮投影；Develop以30秒周期消费实际Security投影。本地夹具原来没有等待这项状态。窗口结束后，仅做代码与不启动环境的门禁：`8c2a83abe`复用既有`waitForOwnerProtection`，在导出凭据前只读等待当次Tenant、固定Develop的持久初始化checkpoint，最长60秒，仍受身份准备／总窗口预算；不开放可选Owner参数，不直接写投影／checkpoint，不把业务拒绝重试成成功。标准入口同时覆盖已有`ProtectionReadiness`单测，并补固定Owner／精确Tenant／导出顺序约束；失败报告只保留Owner已有类型化`stage/reason`，不保存SQL上下文。该准备缺口已修代码，但尚未运行验证，不能认定是实际保护拒绝的唯一根因，也不能宣称闭环已修复。
+调查确认夹具漏等新 Tenant 的 Owner 首轮投影。窗口后 `8c2a83abe` 复用既有 `waitForOwnerProtection`，导出凭据前只读等待固定 Develop checkpoint，最长 60 秒且不超原预算。该缺口修正不确证历史拒绝的唯一根因。共享 runner 初次在本专项 73 项后被登记阻断；冻结输入 73＋60、诊断版 74＋60、最终 75＋60 与身份 Go 通过，尚无该修复后的实际身份运行。
 
-标准代码门禁分层记录：初次共享工作区的`make test-monitor-traces-local-runner`在本专项73项通过后，被无关未提交拓扑登记阻断，不计整入口通过；仓库外冻结已提交main与本次代码后，`make test-infra-runtime-log-lifecycle`的73项入口、60项生命周期、Node语法／登记及System fixture Go检查通过，冻结源码随后删除。执行诊断版本同入口74＋60通过。最终`8c2a83abe`输入在共享工作区运行同一标准入口75＋60通过，Go范围为`ExecutionTrace|ProtectionReadiness`；其余无关工作区改动未提交本专项。既有CI输入与owner登记命中，未新增workflow或Hosted调度；本次未轮询／宣称CI通过。公开产品API未变，无Swagger变更。
-
-窗口 8 的三次尝试、前置输入、诊断、就绪及清理回执在 `/tmp/addp-p19-formal-local-20261024-window8/`。脱敏冻结输入可从 `/tmp/addp-p19-mfa-preparation-path` 回查。
-
-21:52:18独立只读核对三次全部当次容器、网络、卷、构建器容器／状态卷、镜像标签及私有目录零残留，复用前已有MinIO镜像保留；页面回执读取器亦已退出。684次成功资源测量的合计硬配额峰值7.8 CPU／10468982784字节（9.75 GiB），卷及私有目录实际分配峰值3649245184字节（约3.40 GiB），成功测量最长2.769秒；没有OOM、资源采样失败或磁盘停止线触发。窗口结束后没有新增真实运行。当前状态仍部分实现；下一次完整运行必须另行确认本地窗口，重点先验证当次Owner初始化，再验证成功／受控失败查询与Trace／日志／页面，不能把本次MFA及引擎准备通过替代完整闭环。
+21:52:18 独立审计确认三次零残留，页面回执读取器已退出。684 项成功测量最长 2.769 秒，峰值 7.8 CPU／9.75 GiB、私有可写 3649245184 字节，无 OOM、采样失败或触线。受控失败执行、检查点／尾采样、Trace／Link、精确日志、无权限与退出负例及真实 Console 未到达。原件 `/tmp/addp-p19-formal-local-20261024-window8/`；冻结输入 `/tmp/addp-p19-mfa-preparation-path`。
 
 ## 正式身份本地第九窗口：构建失败、资源守卫停止与源码准入阻断（2026-10-24）
 
-用户另行授权22:48:15–23:48:15（Asia/Shanghai）的本地窗口，8 CPU／12 GiB、当次卷及私有目录4 GiB停止线保持；不运行Hosted、容量或定时，不接管个人服务及共享数据库。原保护就绪修正`8c2a83abe`已在本次实际重建源码中，但三次尝试均未进入正式身份阶段，不能宣称当次Tenant初始化或执行闭环已运行通过。
+授权 22:48:15–23:48:15。三次尝试均未进入正式身份阶段。
 
-| 尝试 | 实际源码 | 结果与实际覆盖 |
+| 尝试 | 实际源码或准入基线 | 已达阶段与首败 |
 | --- | --- | --- |
-| 1 | `752da6994bd72001d3cb08a7e67303f51e7830b2` | 独占依赖准备及7个源码二进制编译通过；`product_image_gateway`退出2，仍仅有`failed to solve`／`not found`固定标记，未取得可确定唯一构建根因的证据。 |
-| 2 | `0569a8c72ff4060b74a1de93ce9aec2feddbd062` | 独占依赖准备通过；`product_compile`期间卷测量耗时4.105秒，超过原4秒单次预算，`resource_sample_deadline_exceeded`停止。没有放宽守卫、借用旧业务镜像或将终止算通过。 |
-| 3 | `abeb0272e916a325898724c5135108a2e0a1286f` | `source_snapshot`以`commit_all_local_inputs_before_acceptance`拒绝，尚未启动环境。共享工作区`system/backend/go.mod`、`go.sum`有其他会话未提交依赖修改；保留这些改动，不代为提交、不跳过私有Owner输入一致性检查。 |
+| 1 | `752da6994bd72001d3cb08a7e67303f51e7830b2` | 独占依赖及七二进制通过；Gateway 镜像退出 2，仅 `failed to solve`／`not found`，历史根因未定。 |
+| 2 | `0569a8c72ff4060b74a1de93ce9aec2feddbd062` | 独占依赖通过；`product_compile` 卷测量 4.105 秒，`resource_sample_deadline_exceeded`。 |
+| 3 | `abeb0272e916a325898724c5135108a2e0a1286f` | `source_snapshot/commit_all_local_inputs_before_acceptance`，共享 System go.mod／go.sum 含未提交改动；环境未启动。 |
 
-`0569a8c72`仅为原入口补充固定脱敏构建分类，包括缓存键／校验和、镜像内容摘要、匿名令牌／HEAD请求等；不导出任意错误正文、路径、SQL或秘密，不改变产品构建、资源上限及验收口径。最小充分标准门禁`make test-monitor-traces-local-runner`通过76项入口检查、Node语法、CI登记及System fixture Go检查（`ExecutionTrace|ProtectionReadiness`）。未修改Makefile或workflow，现有路径登记实际命中。先用3类含私密哨兵的样本确认分类缺失，再补实现通过；该诊断增强不代表实际Gateway构建故障已修复。只读`docker manifest inspect --insecure localhost:5001/debian-slim:bookworm`当前返回0及OCI清单，只证明当时清单可读，不证明失败时的BuildKit路径、内容或网络正常。
+重建输入已包含 Owner 就绪修正 `8c2a83abe`，但未到实际检查。`0569a8c72` 的构建诊断红绿及标准 runner 76 项、身份 Go 等通过。只读 registry manifest 可读，只反映检查时刻；Gateway 独立构建见下节。
 
-三次运行均走`make test-monitor-traces-local`及当次剩余绝对时间，不另开或重置60分钟。报告与独立审计确认每次当次容器、网络、卷、构建器容器／状态卷、镜像标签及私有源码目录零残留；既有MinIO镜像保持原不可变ID。181次成功测量的合计硬配额峰值7.45 CPU／8992587776字节（8.375 GiB），卷及私有目录实际分配峰值3608891392字节（约3.36 GiB），成功测量最长2.547秒；第二次失败测量另列4.105秒，不能混入成功峰值掩盖失败。没有OOM或4 GiB磁盘停止线触发。
-
-窗口 9 的三次尝试、来源冲突、构建诊断、行映射及清理回执在 `/tmp/addp-p19-formal-local-20261024-window9/`。只保留脱敏证据。页面回执接收端在第 1 次结束后退出，未观察到页面回执。
-
-截至本次记录，准备角色／真实MFA／普通User权限、成功／受控失败查询、真实阶段检查点、自然尾采样、精确Trace／Link／日志、平台无权限及正式退出负例、真实Console页面均未在本窗口运行，不得沿用第八窗口的局部通过冒充本次通过。功能清单第19行（B18，接口管理总述）、第45行（B44，实时耗时接口追踪）仍为部分实现；已向维护会话发送阶段回报，M列未据此升级。下一步先恢复已提交源码准入并取得实际构建失败分类，再补完整正式身份闭环。
+三次均核验零残留，含第三次未创建环境；页面读取器在第一次后退出，无页面回执。181 项成功测量最长 2.547 秒，峰值 7.45 CPU／8.375 GiB、私有可写 3608891392 字节；4.105 秒失败样本单列，无 OOM 或触线。真实登录、保护就绪、两类执行、Trace／日志、页面与退出负例未运行。报告、构建诊断和清理见 `/tmp/addp-p19-formal-local-20261024-window9/`。
 
 ## System依赖准入恢复与Gateway单项构建复现（2026-10-24）
 
-用户要求先核对共享System依赖、恢复准入并调查Gateway构建，再在条件具备后另开原上限60分钟正式身份本地窗口。首次核对时`system/backend/go.mod`／`go.sum`仍有其他会话未提交的Avro间接依赖；未覆盖或代为提交。随后该依赖随`be747a4a2d914d67696a675b1ceea0cac732b087`落到main，两个文件干净，直接复用标准`committed_inputs`函数逐项核对通过，保留准确输入哈希。共享准入阻断已解除，但这项只读结果不代替环境运行验收。
+System 依赖随 `be747a4a2d914d67696a675b1ceea0cac732b087` 入库后，标准 `committed_inputs` 核验通过。独立诊断只覆盖 23:29:55–23:49:55 的构建窗口，沿原资源线和同一绝对期限；未启动数据库、身份、后端或页面。
 
-独立调查限定2026-10-24 23:29:55–23:49:55（Asia/Shanghai）最多20分钟，仍守8 CPU／12 GiB、4 GiB停止线，第二次沿原绝对截止时间计算剩余预算，不续时。本次只从已提交源码经根`make build`编译System／Gateway／runtime-log，再用`make build-images IMAGE_BUILD_ARGS="--verify --jobs 1 --services <owner> ..."`复现原System镜像→当次BuildKit全缓存清理→Gateway镜像顺序；复用既有隔离构建器／只读卷测量／资源守卫及退出清理，不启动业务后端、数据库、身份或页面，不计完整`make test-monitor-traces-local`通过。一次性诊断脚本和报告仅在系统临时目录，不新增仓库公共验收入口。
-
-| 单项尝试 | 实际源码 | 结果 |
+| 单项尝试 | 实际源码 | 实际结果 |
 | --- | --- | --- |
-| 1 | `133d9c0121630fb7f0a987e74f092c667721b431` | `product_compile`期间完整测量4.059秒超过原4秒预算，守卫停止；未进入镜像构建，不计Gateway失败重现或编译通过。 |
-| 2 | `be747a4a2d914d67696a675b1ceea0cac732b087` | 3个源码二进制均重新编译，System产品镜像、当次缓存清理及Gateway产品镜像全部通过；23:42:27结束。System镜像ID为`sha256:aaf46c29ca32cfad6782cdc55197f2671300b0875e3a780c3eeb197a80a787f6`，Gateway为`sha256:01b85677d78e85902c1aebf0e7adb8131e8ae882f567c13b2b7bf518f708e7de`，当次标签与资源随后全部删除。 |
+| 1 | `133d9c0121630fb7f0a987e74f092c667721b431` | `product_compile` 的资源测量 4.059 秒，守卫停止；未到镜像。 |
+| 2 | `be747a4a2d914d67696a675b1ceea0cac732b087` | 三二进制、System 镜像、当次 BuildKit 全缓存清理和 Gateway 镜像均通过，23:42:27 结束并清理。 |
 
-两次共有153次成功资源测量，合计硬配额峰值2.25 CPU／3288334336字节（3.0625 GiB），卷及私有目录实际分配峰值2579521536字节（约2.40 GiB），成功测量最长3.345秒；第一次失败的4.059秒另列。没有OOM／4 GiB停止线触发；标准清理与独立审计均确认当次容器、网络、卷、构建器容器／状态卷、镜像标签和私有源码目录零残留，既有MinIO镜像保持。诊断第2次记录只读测量分步骤耗时，不改变四秒预算；空闲时3次本专项容器列表读取约0.029–0.032秒，仅作当时参考，不推定编译时测量超时的唯一根因。
+System／Gateway 产物分别为 `sha256:aaf46c29ca32cfad6782cdc55197f2671300b0875e3a780c3eeb197a80a787f6`、`sha256:01b85677d78e85902c1aebf0e7adb8131e8ae882f567c13b2b7bf518f708e7de`。两次标准清理与独立审计均零残留。153 项成功测量最长 3.345 秒，峰值 2.25 CPU／3.0625 GiB、私有可写 2579521536 字节；失败样本单列。
 
-只读读取Gateway基础镜像`localhost:5001/debian-slim:bookworm`的OCI清单、配置和全部层：配置468字节、压缩层28117255字节的HEAD／完整GET与清单大小及SHA-256均匹配。只证明检查当时仓库内容完整，不证明过去失败时的BuildKit缓存、导出或网络状态。历史窗口只保留`failed to solve`／`not found`及哈希，已清理原始错误；本次相同构建顺序成功，不能确定历史唯一根因，也不宣称修复了Gateway间歇构建故障。
-
-为避免再丢失原因，`20a9efcc6e49743bd3846b3caafa7e8ab87b1b5c`给同一标准本地入口的`product_image_*`失败补封闭诊断：仅固定原因／失败步骤、已知产物输入名、Dockerfile行号、最多8项HTTP状态／进程退出码，未知原因明确未分类；不保存任意正文、URL、内容摘要值、凭据或SQL，不对身份／业务命令开启该分类。规范同步同次完成，原构建路线、资源及验收断言不变。先以缺失函数验证测试失败，再实现；`make test-monitor-traces-local-runner`通过79项、Node语法、CI登记及System fixture Go检查（`ExecutionTrace|ProtectionReadiness`），现有路径自动发现命中，未新增Makefile／workflow。成功复现发生在该诊断提交前，准确源码如表；这项纯失败报告变化不改变成功构建路径，也不把单测当成实际失败重现。
-
-证据目录`/tmp/addp-p19-gateway-investigation-20261024/`：`window.json`、`attempt-{1,2}-report.json`／日志、`current-source-admission.json`、`base-blobs.json`／`base-blob-integrity.json`、`idle-daemon-readonly-timing.json`、`structured-diagnostics-runner.log`／`structured-diagnostics-inputs.json`、`receipt.json`及`cleanup-audit.json`。正式60分钟窗口尚未启动：当前构建已通过，但历史原因未定，已向用户确认是否接受这一前提作为新窗口准入。正式身份执行→Trace→日志→真实页面仍待运行，不运行Hosted、不重跑容量、不设置定时；功能清单第19、45行保持部分实现。
+只读 OCI 清单、配置及层的大小和摘要匹配，证明核对时内容完整，历史 BuildKit 故障根因仍未知。`20a9efcc6e49743bd3846b3caafa7e8ab87b1b5c` 后补唯一入口的封闭构建诊断，标准 runner 79 项、语法／登记及身份 Go 通过；成功构建先于此修正。两次报告、OCI 校验、诊断红绿及清理见 `/tmp/addp-p19-gateway-investigation-20261024/`。正式完整窗口独立认定。
 
 ## 正式身份本地第十窗口：执行、Trace、日志与真实页面闭环通过（2026-10-25）
 
-用户接受“当前源码准入和Gateway构建已通过、历史间歇失败唯一根因未定”的前提，另行授权2026-10-25 06:17:43–07:17:43（Asia/Shanghai）最多60分钟本地窗口；8 CPU／12 GiB、当次卷及私有可写目录4 GiB停止线、单次完整资源测量4秒预算保持。只运行根`make test-monitor-traces-local`，不运行Hosted、不重跑容量、不设置定时，不接管个人服务或以共享数据库承载测试。两次尝试共用同一绝对截止时间，未重置60分钟，所有产品均从各次准确已提交源码私有副本构建；仅固定MinIO／mc按原规则核验复用。本次未改产品代码、身份权限、采样或验收断言。
+授权 06:17:43–07:17:43。两次实际运行分别使用下列固定源码和 run_id。
 
-| 尝试 | 实际源码 | 结果与实际覆盖 |
+| 尝试 | 实际源码及 run_id | 结果与实际覆盖 |
 | --- | --- | --- |
-| 1 | `7b3a5d6cac630ac76edbfdebda61e2ee89f674cf` | **失败**。7个源码二进制、10个产品镜像、浏览器依赖及11项Nginx路径／参数、缺席模块502／已部署模块可读通过；`isolated_deployment_start`的容器详情检查耗时4.070秒，触发原资源守卫停止，身份与业务断言未运行。 |
-| 2 | `47b02db01342a049c4fe01ae1f3ee15369b04863` | **通过**。重新完成全部产品构建、Nginx及实际版本检查；六个后端`/health/live`提交均准确匹配该SHA，12项后端断言和6项真实页面断言全部为真。06:55:09报告在完成清理后写入，早于原07:17:43截止；06:55:37独立残留审计通过。 |
+| 1 | `7b3a5d6cac630ac76edbfdebda61e2ee89f674cf` · `addp-trace-local-54dc65c1ba754a9fb05ce5a1ec0ca2e4` | **失败**。七二进制、10 镜像、浏览器依赖和 11 项 Nginx 通过；`isolated_deployment_start` 容器详情检查耗时 4.070 秒，守卫停止，未运行身份和业务断言。 |
+| 2 | `47b02db01342a049c4fe01ae1f3ee15369b04863` · `addp-trace-local-4eb709c8ced44689a5dd7fdb2884ea58` | **本机闭环通过**。产品构建及 Nginx 通过，六后端 `/health/live` 均匹配该 SHA；12 项后端、6 项真实页面断言通过。06:55:09 清理后写报告，06:55:37 完成独立残留审计。 |
 
-第2次通过的范围：
+**第 2 次实际业务覆盖**
 
-- System-owned夹具导出凭据前，实际只读等待当次Tenant、固定Develop的保护初始化checkpoint；本次运行跨过了第八窗口尚未验的准备前置。正式密码／真实TOTP／AuthContext链路通过；准备User真实MFA后经正式IAM API给自身分配既有`tenant.infrastructure_administrator`，Refresh重读同一主体／Tenant／Membership及准确权限，MFA和角色分配后的旧Token拒绝。普通执行User仍准确持有原11项权限，没有为验收扩大授权或伪造AAL2。
-- 普通User经正式API创建合成Engine上的查询任务与编排，实际完成Orchestrator→Develop的成功和受控失败父子执行；终态与父子关系一致，公开执行树DTO未输出新增私有Trace字段。成功父／子UUID为`257c2e73-ade0-426f-bde3-e90223d5d82d`／`21179a6c-028b-41ff-a6a8-172afbd790e5`，受控失败为`ffbd76ac-fc82-4a1a-9354-3f8e62f25cca`／`3afd46a8-3400-48d1-8993-4d9c411f2e0e`。仅使用已批准的合成常量查询，不将SQL、参数或结果写入证据。
-- Platform系统管理员经System正式日志接口读到两Owner、两组执行的真实enqueue／claim／dispatch／terminal共16条检查点，核对实际attempt／outcome／Context。沿原v2采样自然等待125秒后，两个失败终态独立Trace均实际可查，各为一个`addp.execution`终态Span，并准确关联持久enqueue／dispatch两个Link及当前System实例身份；再以相同trace/span核对精确检查点日志。Orchestrator终态Trace／Span为`8eaca8355f7e95edf240a6a6c1673417`／`191017df7a1d550d`，Develop为`9d5510fc1f897f0a70da060bdd2db770`／`4e005bdc29851e44`。未开全采样、注入日志、直读execution私有列或手工补链。
-- 普通Tenant User与Platform安全管理员读取平台Trace／日志均实际403；原User经正式API删除当次任务定义／编排后重读404；四个API客户端正式退出后旧Access Token均401。准备角色的旧Token拒绝和最终退出拒绝分别验证，不把会话撤销写成单实例撤权。
-- 真实Console Chromium页面通过密码／MFA登录并核对Platform系统管理员AuthContext，Monitor iframe显示同一失败终态Span；点击因果Link前实际重核当前实例，并按目标started_at构造新查询窗口，返回受限结果；随后在System iframe显示相同execution UUID／trace／span的真实检查点日志。六项页面断言全部通过，没有mock API、注入Token或采集密码页面截图／视频／trace。
+- System-owned 夹具在导出凭据前只读等待当次 Tenant 的固定 Develop 初始化 checkpoint。准备 User 经正式密码／TOTP 和 IAM API 获既有 `tenant.infrastructure_administrator`，Refresh 核对同一主体、Tenant、Membership 及精确权限，两阶段旧 Token 拒绝；普通执行 User 仍为原 11 项权限。
+- 普通 User 经正式 API 在合成 Engine 上实际完成 Orchestrator → Develop 的两组父子执行。成功父／子 `257c2e73-ade0-426f-bde3-e90223d5d82d`／`21179a6c-028b-41ff-a6a8-172afbd790e5`，受控失败父／子 `ffbd76ac-fc82-4a1a-9354-3f8e62f25cca`／`3afd46a8-3400-48d1-8993-4d9c411f2e0e`。终态及父子关系一致，公开 DTO 未泄漏私有 Trace 字段。
+- Platform 系统管理员经 System 日志接口读到两 Owner、两组执行的 16 条 enqueue／claim／dispatch／terminal 检查点。原 v2 自然等待 125 秒后，两组失败终态各查得一个 `addp.execution` Span、两个持久 enqueue／dispatch Link 和对应精确日志。Orchestrator Trace／Span 为 `8eaca8355f7e95edf240a6a6c1673417`／`191017df7a1d550d`，Develop 为 `9d5510fc1f897f0a70da060bdd2db770`／`4e005bdc29851e44`。普通 Tenant User 和 Platform 安全管理员读诊断实际 403；原 User 删除任务／编排后重读 404，四个 API 客户端正式退出后旧 Token 均 401。
+- Chromium Console 真实密码／MFA 后在 Monitor iframe 读取同一失败终态 Span，在 System iframe 查得相同执行／Trace／Span 的检查点日志。Link 点击重核当前实例并用目标 `started_at` 查询；`link_result=not_found`，目标 enqueue Span 独立采样，本次未留存，实际 404。此处通过的是授权、精确时间窗和有界未保留结果断言，未实际读出目标 Span。
 
-页面回执`link_result=not_found`：被点击的普通enqueue目标独立采样，本次未保留，实际查询404；它仍通过当前实例授权、精确目标时间窗及有界未保留结果断言，不表示目标Span曾实际读取成功。原普通5%／失败优先、120秒等待、72小时／20 GiB初值及5秒／2 MiB查询、原并发预算全部保持；不能以本次两组查询或未保留目标推定全调用链完整留存、未执行或生产容量。本次仍仅为本机隔离正式身份技术闭环，`formal_runner_t4=false`，不代替Hosted／正式专用Runner T4或生产T5；其他Runtime／continuous／Python异步、SQL Span及真实长期保留等既有边界不变。
+两次共 507 项成功测量，第 2 次 287 项。峰值 7.8 CPU／9.75 GiB、私有可写 3652866048 字节，成功最长 2.766 秒；第一次的 4.070 秒单列。两次开始间隔峰值约 4.018／4.017 秒，完成间隔峰值 5.350／6.330 秒，按不同口径记录。无 OOM 或 4 GiB 触线，历史 Docker／Gateway 间歇根因未定。
 
-两次共有507次成功资源测量；合计硬配额峰值7.8 CPU／10468982784字节（9.75 GiB），卷及私有目录实际分配峰值3652866048字节（约3.40 GiB），成功测量最长2.766秒；第一次失败的4.070秒另列，不混入成功峰值。两次均未记录OOM或4 GiB停止线触发。按记录的完成时刻减单次耗时重建测量开始间隔，两次峰值约4.018／4.017秒，低于5秒；完成时间戳间隔峰值为5.350／6.330秒，不能与开始间隔混用。第2次共287次测量，均在原4秒及资源范围内；通过不抹去第1次失败，也不宣称解决了Docker状态读取偶发超时或历史Gateway构建故障。
+两次标准清理及最终独立审计均零残留，页面回执接收端已退出。首次独立审计全量列镜像时超出 20 秒，后按实际产品镜像 reference 精确过滤完成核验，原审计超时保留。原始源码／报告、浏览器回执和审计见 `/tmp/addp-p19-formal-local-20261025-window10/`。
 
-标准清理和独立审计均确认两次当次容器、网络、卷、构建器容器／状态卷、镜像标签和私有目录零残留，既有MinIO镜像保持原不可变ID，两个只读页面回执接收端均已退出。首次独立审计在无筛选全镜像列表读取时20秒超时，未计审计通过；随后仅对标准入口实际创建的当次产品镜像reference精确过滤，完成相同残留核验，未放宽产品资源守卫或清理标准。
-
-证据目录`/tmp/addp-p19-formal-local-20261025-window10/`：`window.json`、`attempt-{1,2}-source.json`／报告／日志、`attempt-2-browser-receipt.json`、`receipt.json`、`cleanup-audit.json`、`evidence-review.json`、`function-row-mapping.json`及初次审计读取未完成记录。第二次run_id为`addp-trace-local-4eb709c8ced44689a5dd7fdb2884ea58`，第一次为`addp-trace-local-54dc65c1ba754a9fb05ce5a1ec0ca2e4`。交叉复核原始脱敏报告、12＋6断言、六模块SHA、原截止时间与全部资源边界，`git diff --check`通过；本次仅更新已有证据，不重复未变代码的T0/T1门禁，不调查／触发其他专项CI或Hosted。
-
-清单已只读核对Excel实际第19行（B18，接口管理总述）与第45行（B44，实时耗时接口追踪）；两项仍为部分实现，但“正式身份本地有界执行→Trace→日志→页面闭环”可以记为已验，不能继续笼统写成本地闭环未验，也不能升级为全域追踪、正式Runner T4或生产完成。工作簿由维护会话统一回填，本会话未编辑。后续优先调查资源守卫Docker状态读取的偶发超时，在原4秒标准内补充分步骤证据后再讨论优化，不自动扩展本次运行范围。
+第 2 次支持本机隔离正式身份的执行 → Trace → 日志 → 页面闭环，`formal_runner_t4=false`。Hosted／正式专用 Runner T4、生产 T5、其他 Runtime／continuous／Python 异步、SQL Span、全调用链留存及真实长期保留均未覆盖。普通 5%／失败优先、120 秒等待、72 小时／20 GiB 初值、5 秒／2 MiB 查询与原并发预算保持。清单第 19 行（B18）和第 45 行（B44）仍为部分实现。
 
 <a id="python-trace-certificate-fixture-20261102"></a>
 
