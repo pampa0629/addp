@@ -293,21 +293,87 @@ def pair_apiproxy_events(events):
     return pairs
 
 
+def apiproxy_pair_fits(command, pair, offset):
+    return (pair['request_signature_sha256'] == command['request_signature_sha256'] and
+            max(offset[0], command['entered_monotonic_ns']-pair['started_ns']) <=
+            min(offset[1], command['decision_monotonic_ns']-pair['finished_ns']))
+
+
 def attribute_apiproxy_requests(commands, pairs, offset):
     require(offset[0] <= offset[1] and offset[1]-offset[0] <= 50_000_000, 'clock_uncertainty_exceeded')
     result, used = {}, set()
     for command in sorted(commands, key=lambda row: row['entered_monotonic_ns']):
         require(command['result'] == 'passed' and command['command_id'] not in result, 'command_not_correlatable')
-        candidates = [i for i, pair in enumerate(pairs)
-            if pair['request_signature_sha256'] == command['request_signature_sha256'] and
-            max(offset[0], command['entered_monotonic_ns']-pair['started_ns']) <=
-            min(offset[1], command['decision_monotonic_ns']-pair['finished_ns'])]
+        candidates = [i for i, pair in enumerate(pairs) if apiproxy_pair_fits(command, pair, offset)]
         require(len(candidates) == 1, 'api_request_missing_or_ambiguous')
         require(candidates[0] not in used, 'api_request_reused')
         result[command['command_id']] = candidates[0]
         used.add(candidates[0])
     require(len(used) == len(pairs), 'unassigned_owned_api_request')
     return result
+
+
+def classify_archived_apiproxy(commands, events, command_id, *, log_contiguous, desktop_version,
+                               coarse_offset_ns=None, clock_proof=None, clock_anchors=(), probe_bounds=()):
+    """Classify normalized archive records without changing the run report or reading live state."""
+    try:
+        require(log_contiguous is True, 'api_log_coverage_unconfirmed')
+        require(0 < len(commands) <= 4104 and len(events) <= 8208, 'api_archive_limit')
+        require(type(command_id) is int, 'command_not_correlatable')
+        by_id = {}
+        for command in commands:
+            require(isinstance(command, dict), 'command_not_correlatable')
+            number = command.get('command_id')
+            start = command.get('entered_monotonic_ns')
+            end = command.get('decision_monotonic_ns')
+            signature = command.get('request_signature_sha256')
+            require(type(number) is int and number not in by_id and command.get('record_complete') is True and
+                    isinstance(command.get('run_id'), str) and bool(command['run_id']) and
+                    command.get('method') == 'GET' and command.get('api_family') in ('/containers/json', '/volumes') and
+                    isinstance(signature, str) and re.fullmatch('[a-f0-9]{64}', signature) and
+                    type(start) is int and type(end) is int and start < end, 'command_not_correlatable')
+            by_id[number] = command
+        target = by_id.get(command_id)
+        require(target and target.get('result') == 'passed' and
+                all(row['run_id'] == target['run_id'] for row in commands), 'command_not_correlatable')
+        for event in events:
+            require(isinstance(event, dict), 'api_event_invalid')
+            signature = event.get('request_signature_sha256')
+            require(type(event.get('timestamp_ns')) is int and event.get('direction') in ('>>', '<<') and
+                    isinstance(signature, str) and re.fullmatch('[a-f0-9]{64}', signature), 'api_event_invalid')
+        pairs = pair_apiproxy_events(events)
+        require(all(p['started_ns'] < p['finished_ns'] for p in pairs), 'clock_event_order_invalid')
+        if clock_proof is not None or clock_anchors or probe_bounds:
+            require_apiproxy_clock_semantics(clock_proof, desktop_version)
+        if clock_anchors or probe_bounds:
+            require(len(clock_anchors) == len(probe_bounds) == 2 and
+                    all(isinstance(anchor, (list, tuple)) and len(anchor) == 3 for anchor in clock_anchors) and
+                    all(isinstance(probe, (list, tuple)) and len(probe) == 4 for probe in probe_bounds),
+                    'api_calibration_missing')
+            validate_clock_anchors(clock_anchors)
+            before, after = probe_bounds
+            offset = apiproxy_clock_envelope(apiproxy_clock_interval(*before), apiproxy_clock_interval(*after))
+            first = min(row['entered_monotonic_ns'] for row in commands)
+            last = max(row['decision_monotonic_ns'] for row in commands)
+            require(clock_anchors[0][2] <= first <= last <= clock_anchors[1][0] and
+                    before[1] <= first <= last <= after[0] and
+                    all(before[3] <= p['started_ns'] < p['finished_ns'] <= after[2] for p in pairs),
+                    'api_calibration_unbracketed')
+            pair = pairs[attribute_apiproxy_requests(commands, pairs, offset)[command_id]]
+            status = 'reliable_match'
+        else:
+            require(type(coarse_offset_ns) is int, 'api_coarse_alignment_missing')
+            offset = (coarse_offset_ns, coarse_offset_ns)
+            candidates = [pair for pair in pairs if apiproxy_pair_fits(target, pair, offset)]
+            require(len(candidates) == 1, 'api_request_missing_or_ambiguous')
+            pair = candidates[0]
+            require(not any(apiproxy_pair_fits(row, pair, offset)
+                            for row in commands if row['command_id'] != command_id), 'api_request_reused')
+            status = 'unique_candidate'
+        return {'status': status, 'command_id': command_id,
+                'proxy_log_span_ns': pair['finished_ns'] - pair['started_ns']}
+    except GateError as error:
+        return {'status': 'indeterminate', 'reason': str(error)}
 
 
 HOST_CLI_BUFFER_LIMIT = 16 * 1024**2

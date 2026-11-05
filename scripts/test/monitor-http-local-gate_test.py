@@ -14,6 +14,28 @@ spec=importlib.util.spec_from_file_location('http_local',Path(__file__).with_nam
 m=importlib.util.module_from_spec(spec);spec.loader.exec_module(m)
 
 class HTTPProductLocalTests(unittest.TestCase):
+    def test_archived_list_candidate_keeps_full_deadline_failure(self):
+        run = 'addp-http-local-archive-fixture'
+        identity = m.core.owned_list_identity(
+            ['docker', 'container', 'ls', '-a', '-q', '--filter', f'label={m.LABEL}={run}'], run, m.LABEL)
+        command = {**identity, 'command_id': 363, 'run_id': run, 'record_complete': True, 'result': 'passed',
+                   'phase': 'product_image_system_backend', 'entered_monotonic_ns': 10_000_000_000,
+                   'decision_monotonic_ns': 13_888_400_000}
+        cleanup = {**command, 'command_id': 370, 'phase': 'cleanup', 'entered_monotonic_ns': 26_000_000_000,
+                   'decision_monotonic_ns': 33_000_000_000}
+        report = {'result': 'failed', 'error_code': 'resource_sample_deadline_exceeded',
+                  'resource_guard_failure': {'operation': 'inspect_owned_containers', 'budget_seconds': 4},
+                  'owned_list_commands': [command, cleanup]}
+        original = json.dumps(report, sort_keys=True)
+        events = [{'direction': direction, 'timestamp_ns': stamp,
+                   'request_signature_sha256': identity['request_signature_sha256'], 'raw': 'PRIVATE'}
+                  for direction, stamp in [('>>', 111_375_000_000), ('<<', 113_844_591_459),
+                                           ('>>', 127_000_000_000), ('<<', 130_000_000_000)]]
+        result = m.core.classify_archived_apiproxy(report['owned_list_commands'], events, 363, log_contiguous=True,
+                                                  desktop_version='4.49.0', coarse_offset_ns=-100_000_000_000)
+        self.assertEqual(result, {'status': 'unique_candidate', 'command_id': 363, 'proxy_log_span_ns': 2_469_591_459})
+        self.assertEqual(json.dumps(report, sort_keys=True), original)
+
     def test_forbidden_profiles_and_remote_architecture(self):
         m.validate_profile({},'arm64','aarch64')
         for marker in ('GITHUB_ACTIONS','ADDP_ONLINE_HOSTED','ADDP_ONLINE_OWNER_MANAGED','ADDP_EXECUTION_TRACE_LOCAL','ADDP_CATALOG_BROWSER_LOCAL'):

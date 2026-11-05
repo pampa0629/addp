@@ -1814,6 +1814,65 @@ class CommandBoundaryEvidenceTests(unittest.TestCase):
             m.require_apiproxy_clock_semantics({'version':'4.49.0','source':'log_path_only'},'4.49.0')
 
 
+class ArchivedAPIProxyAttributionTests(unittest.TestCase):
+    def setUp(self):
+        self.command = {'command_id': 1, 'run_id': 'owned', 'method': 'GET', 'api_family': '/containers/json',
+                        'record_complete': True, 'phase': 'product_image_system_backend', 'result': 'passed',
+                        'request_signature_sha256': 'a'*64, 'entered_monotonic_ns': 100, 'decision_monotonic_ns': 200}
+        self.events = self.pair(1020, 1040)
+        self.proof = {'desktop_version': '4.49.0', 'component': 'apiproxy', 'timestamp_origin': 'request_event',
+                      'events_within_request_lifetime': True, 'source_url': 'https://example.invalid/proof',
+                      'source_sha256': 'b'*64}
+        self.anchors = [(60, 1060, 61), (230, 1230, 231)]
+        self.probes = [(70, 85, 970, 975), (210, 225, 1110, 1115)]
+
+    def pair(self, start, end, signature='a'*64):
+        return [{'direction': d, 'timestamp_ns': t, 'request_signature_sha256': signature}
+                for d, t in [('>>', start), ('<<', end)]]
+
+    def classify(self, *, commands=None, events=None, **options):
+        inputs = {'desktop_version': '4.49.0', 'log_contiguous': True, 'coarse_offset_ns': -900} | options
+        return m.classify_archived_apiproxy([self.command] if commands is None else commands,
+                                           self.events if events is None else events, 1, **inputs)
+
+    def test_reliable_match_requires_version_proof_and_bracketing_calibration(self):
+        self.assertEqual(self.classify(), {'status': 'unique_candidate', 'command_id': 1, 'proxy_log_span_ns': 20})
+        self.assertEqual(self.classify(clock_proof=self.proof)['status'], 'unique_candidate')
+        self.assertEqual(self.classify(clock_proof=self.proof, clock_anchors=self.anchors, probe_bounds=self.probes),
+                         {'status': 'reliable_match', 'command_id': 1, 'proxy_log_span_ns': 20})
+
+    def test_invalid_supplied_clock_evidence_never_falls_back_to_coarse_alignment(self):
+        calibrated = {'clock_proof': self.proof, 'clock_anchors': self.anchors, 'probe_bounds': self.probes}
+        for options, reason in [
+            ({'desktop_version': '4.50.0'}, 'apiproxy_clock_semantics_unconfirmed'),
+            ({'clock_proof': None}, 'apiproxy_clock_semantics_unconfirmed'),
+            ({'probe_bounds': ()}, 'api_calibration_missing'),
+            ({'clock_anchors': [self.anchors[0], (230, 1_000_001_230, 231)]}, 'clock_wall_jump'),
+            ({'probe_bounds': [(70, 85_000_070, 970, 975), self.probes[1]]}, 'clock_uncertainty_exceeded'),
+            ({'probe_bounds': [(70, 105, 970, 1000), self.probes[1]]}, 'api_calibration_unbracketed'),
+        ]:
+            with self.subTest(reason=reason):
+                self.assertEqual(self.classify(**(calibrated | options)), {'status': 'indeterminate', 'reason': reason})
+
+    def test_missing_ambiguous_reused_or_discontinuous_archive_is_indeterminate(self):
+        for options, reason in [
+            ({'events': []}, 'api_request_missing_or_ambiguous'),
+            ({'events': self.pair(1020, 1040, 'f'*64)}, 'api_request_missing_or_ambiguous'),
+            ({'events': self.events + self.pair(1050, 1060)}, 'api_request_missing_or_ambiguous'),
+            ({'events': self.events[:1]}, 'api_event_without_end'),
+            ({'events': self.events + self.events}, 'duplicate_api_event'),
+            ({'log_contiguous': False}, 'api_log_coverage_unconfirmed'),
+            ({'commands': [self.command, {**self.command, 'command_id': 2}]}, 'api_request_reused'),
+            ({'commands': [{**self.command, 'run_id': 'foreign'}, {**self.command, 'command_id': 2}]},
+             'command_not_correlatable'),
+            ({'commands': [{**self.command, 'record_complete': False}]}, 'command_not_correlatable'),
+            ({'commands': [{**self.command, 'api_family': '/_ping'}]}, 'command_not_correlatable'),
+            ({'events': self.events * 4105}, 'api_archive_limit'),
+        ]:
+            with self.subTest(reason=reason):
+                self.assertEqual(self.classify(**options), {'status': 'indeterminate', 'reason': reason})
+
+
 class VolumeCheckpointTests(unittest.TestCase):
     def capture_attribution(self, body, roles, *, deadline=None, complete=True):
         with tempfile.TemporaryFile() as output:

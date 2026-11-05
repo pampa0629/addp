@@ -1214,3 +1214,11 @@ Copilot 与后续构建、正式密码／MFA、采集／API、真实页面、停
 57 次完整检查最长 2.237384 秒、最大开始间隔 4.006694 秒，峰值 2.25 CPU、3288334336 字节内存及 4215373824 字节私有可写（约 3.93 GiB），读取重试 0。失败样本缺完整占用数据。标准清理和独立只读复核均确认当次容器、网络、卷、构建器容器及状态卷、镜像标签和私有工作目录零残留。
 
 System 镜像及后续 Agent／Copilot 构建、正式密码／MFA、采集／API、页面、停源、两阶段注销及旧会话 401 均无本轮通过证据。未续窗、重试、运行 Hosted、容量或定时。Run `addp-http-local-29ed3ed8637d409e884211e4418f57c6`，报告 SHA256 `d9e077b448d4d445c4417dbe05d1b24ac9797724b77d12776aa544f3bb977667`。原始报告、输入、首因关联与清理复核在 `/var/folders/r1/l7b49c757dz02zftf_l9vl9r0000gn/T/addp-p19-http-full-volume-attribution-20261105.GxTJctoW/`。
+
+#### 离线归属复核
+
+本机 Docker Desktop 安装版本为 4.49.0（208700）。该版发布说明、Docker 日志说明及安装包许可清单均未提供可核对该版本 `apiproxy` 时间戳生成点的依据。未取得本轮独立校时，宿主转发和 daemon 亦无同一请求的成对边界。[4.49.0 发布说明](https://docs.docker.com/desktop/release-notes/#4490) · [Docker 日志说明](https://docs.docker.com/engine/daemon/logs/)
+
+以原报告和此前从 VM `init.log` 提取的归一化事件值离线回放。命令 363 的单调等待区间为 `1499365815179000–1499369695288083` ns。当次归属标签、GET 路径及签名相符的代理记录为 `2026-11-05T13:56:18.032072760Z–13:56:20.501664219Z`，两条原日志片段 SHA256 为 `34dcf8d4d85deabbc7ef2e830fe826bca1fda57f34daf08b08de51eee9469368`。结论只记 `unique_candidate`，代理日志跨度 2469591459 ns，客户端、转发及 daemon 的分段耗时未确认。回放未改写原报告，首因仍为 `inspect_owned_containers` 中的 `resource_sample_deadline_exceeded`，整轮仍失败。脱敏回放收据位于 `/var/folders/r1/l7b49c757dz02zftf_l9vl9r0000gn/T/addp-p19-offline-apiproxy.g9lgSFfA/archive-replay.json`。
+
+`make test-monitor-http-local-runner` 与 `make test-monitor-traces-local-runner` 均退出 0，分别覆盖 HTTP Python 47 项、Node 7 项、Trace Python 190 项，以及既有身份、登记和离线 TLS 子门禁。归属的可靠分支仅有确定性回归证据。无真实校时、构建重试、新窗口、Hosted、容量或定时。
