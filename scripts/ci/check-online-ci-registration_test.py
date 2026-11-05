@@ -1731,6 +1731,30 @@ class OnlineCIRegistrationTest(unittest.TestCase):
                 CHECK.validate_raster_focal_circle_weighted(self.repository, {'raster-focal-circle-weighted-persistence'})
             target.write_text(original)
 
+    def test_square_seven_requires_actual_controls_exact_counts_and_manual_isolation(self):
+        for relative in ('scripts/test/online-gate.py', '.github/workflows/online-t4-gates.yml',
+                         *CHECK.SQUARE_SEVEN_REQUIRED):
+            target = self.repository / relative
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(SCRIPT.parents[2] / relative, target)
+        suite = {'raster-focal-square-seven-persistence'}
+        CHECK.validate_focal_square_seven(self.repository, suite)
+        changes = (
+            ('.github/workflows/online-t4-gates.yml',
+             "&& inputs.suite != 'raster-focal-square-seven-persistence'", ''),
+            ('scripts/test/raster-focal-square-seven-persistence-online.py', 'full_checks != 1251', 'full_checks != 1250'),
+            ('business/scripts/online-raster-focal-square-seven-fixture.py',
+             "'weighted_mean', 'ones', False", "'weighted_mean', 'asymmetric', False"),
+        )
+        for relative, before, after in changes:
+            target = self.repository / relative
+            original = target.read_text()
+            self.assertIn(before, original)
+            target.write_text(original.replace(before, after, 1))
+            with self.subTest(relative=relative), self.assertRaises(CHECK.RegistrationError):
+                CHECK.validate_focal_square_seven(self.repository, suite)
+            target.write_text(original)
+
     def test_boundary_two_rounds_requires_exact_cog_matrix_budget_and_regressions(self):
         source = Path(__file__).resolve().parents[2]
         required = CHECK.TWO_ROUND_BOUNDARY_REQUIRED

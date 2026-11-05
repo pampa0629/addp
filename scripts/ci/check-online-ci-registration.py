@@ -7520,6 +7520,7 @@ def check_registration(repository: Path) -> None:
     validate_point_kernel_density(repository, registered)
     validate_point_density_weighted(repository, registered)
     validate_focal_percentiles(repository, registered)
+    validate_focal_square_seven(repository, registered)
     validate_vector_zonal_class_frequency(repository, registered)
     validate_vector_zonal_weighted(repository, registered)
     validate_vector_zonal_weighted_stddev(repository, registered)
@@ -7873,6 +7874,73 @@ def validate_focal_percentiles(repository: Path, registered: set[str]) -> None:
     fixed={'PERCENTILES': [0.0, 25.0, 33.3, 50.0, 75.0, 100.0], 'CASES': {'square3.cog.tif': ('values.tif', 'square_pixels', 3, 'batch'), 'square3-stack.cog.tif': ('values.tif', 'square_pixels', 3, 'singles'), 'square5.cog.tif': ('values.tif', 'square_pixels', 5, 'batch'), 'square5-stack.cog.tif': ('values.tif', 'square_pixels', 5, 'singles'), 'square3-median.cog.tif': ('values.tif', 'square_pixels', 3, 'median'), 'square5-median.cog.tif': ('values.tif', 'square_pixels', 5, 'median'), 'circle.cog.tif': ('metre.tif', 'circle_metres', 3.0, 'batch'), 'circle-stack.cog.tif': ('metre.tif', 'circle_metres', 3.0, 'singles'), 'circle-median.cog.tif': ('metre.tif', 'circle_metres', 3.0, 'median'), 'foot.cog.tif': ('foot.tif', 'circle_metres', 1.5, 'batch'), 'survey-foot.cog.tif': ('survey.tif', 'circle_metres', 1.5, 'batch'), 'reclassified.cog.tif': ('values.tif', 'square_pixels', 3, 'reclassify'), 'int64-unlocated.cog.tif': ('int64.tif', 'square_pixels', 3, 'batch'), 'uint64.cog.tif': ('uint64.tif', 'square_pixels', 5, 'batch'), 'cross-block.cog.tif': ('cross.tif', 'square_pixels', 5, 'batch'), 'invalid.cog.tif': ('invalid.tif', 'square_pixels', 3, 'batch')}, 'FAILURES': ('list_missing', 'list_null', 'list_empty', 'scalar_number', 'scalar_boolean', 'scalar_string', 'scalar_object', 'item_boolean', 'item_string', 'item_null', 'item_list', 'item_object', 'item_low', 'item_high', 'duplicate', 'descending', 'unused', 'unused_null', 'band_zero', 'band_high', 'band_boolean', 'band_alpha', 'square_size', 'square_radius', 'circle_window', 'circle_radius_missing', 'circle_size', 'circle_geographic')}
     if any(len(nodes)!=1 or repr(ast.literal_eval(nodes[0]))!=repr(fixed[key])for key,nodes in actual.items()):raise RegistrationError('fixed success/failure matrix changed')
     if any(word in source for word in('operators.raster_compute','gdal.InvGeoTransform','raster_focal_statistics(', 'np.percentile(', 'np.quantile(', 'raster_vector_zonal_statistics(')):raise RegistrationError('expected oracle must be independent')
+
+SQUARE_SEVEN_REQUIRED = {
+    'business/scripts/online-raster-focal-square-seven-fixture.py': (
+        'NFSExport', 'full_check=True', 'check_band', 'complete band mask differs', 'complete overview mask differs',
+        'actual same-source COG control pixels or masks differ', 'fixture_sha256', 'source_files',
+        'oracle cache hash changed', 'allow_pickle=False', 'Runtime execution workspace residual', 'archive_files',
+        '(367, 369)'),
+    'scripts/test/raster-focal-square-seven-persistence-online.py': (
+        'ADDP_ONLINE_FOCAL_SQUARE_SEVEN_STARTED', 'budget != 600', 'raster.EDITOR_PERMISSIONS',
+        'lineage.collect', 'lineage.verify_archive', 'raster.strict_sizes', 'base.validate_scan',
+        'for language in (\'zh-cn\', \'en\')', 'wrong exact failure task/cause',
+        'query language rewrote stored failure', 'failed execution added scan', 'failed execution added derived lineage',
+        'target_metadata_after != target_metadata_before', 'source_metadata_after != before',
+        'len(cases) != 18', 'len(failures) != 60', 'full_checks != 1251', 'physical_calls != 79',
+        "physical_runner(repository, env, 'cleanup-oracle'"),
+    'scripts/test/online-hosted-raster-focal-square-seven-gate.sh': (
+        'start_online_geopython_runtime', 'ADDP_ONLINE_FOCAL_SQUARE_SEVEN_STARTED', 'ADDP_ONLINE_TEST_TIMEOUT_SECONDS=600',
+        '--suite raster-workflow', '--wait-protection-owners develop,manager',
+        'online_raster_lineage.py prepare', 'unset ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN'),
+    'scripts/utils/online_raster_lineage.py': (
+        "'raster-focal-square-seven-persistence': 'raster-focal-square-seven-lineage'",),
+    'engines/geopython-workflow/test_online_focal_square_seven_fixture.py': (
+        'test_eighteen_real_cogs_original_archives_and_1251_full_reads', 'test_seam_sensitive_oracle_and_weight_direction',
+        'test_physical_corruption_is_rejected', 'test_sixty_accurate_failures_are_at_focal_and_clear_workspace'),
+    'scripts/test/raster-focal-square-seven-persistence-online_test.py': (
+        'test_exact_18_success_60_failures_1251_full_reads_and_cleanup',
+        'test_budget_includes_prior_initialization_and_stops_at_exhaustion'),
+    'Makefile': ('test_online_focal_square_seven_fixture.py', '@$(MAKE) test-raster-focal-square-seven-online-runner',
+                 'scripts/test/online-hosted-raster-focal-square-seven-gate_test.py'),
+}
+
+
+def validate_focal_square_seven(repository: Path, registered: set[str]) -> None:
+    suite = 'raster-focal-square-seven-persistence'
+    if suite not in registered:
+        return
+    workflow = (repository / '.github/workflows/online-t4-gates.yml').read_text()
+    job = re.search(r'(?ms)^  raster-focal-square-seven-hosted-t4:\n(.*?)(?=^  [a-z][a-z0-9-]*:\n|\Z)', workflow)
+    job_fragments = (
+        f"if: github.event_name == 'workflow_dispatch' && inputs.suite == '{suite}'",
+        'runs-on: ubuntu-24.04', 'cancel-in-progress: false', 'nfs-kernel-server nfs-common',
+        'online-hosted-raster-focal-square-seven-gate.sh --check-only', 'if: always()', 'logs/')
+    if (job is None or any(fragment not in job[1] for fragment in job_fragments)
+            or f"&& inputs.suite != '{suite}'" not in workflow or load_suite_registry(repository)[suite].nightly):
+        raise RegistrationError('independent manual Hosted seven-pixel NFS job required')
+    for relative, fragments in SQUARE_SEVEN_REQUIRED.items():
+        path = repository / relative
+        if not path.is_file() or any(not source_contract_contains(path.read_text(), item, repository) for item in fragments):
+            raise RegistrationError('strict seven-pixel Hosted contract incomplete: ' + relative)
+    fixture = (repository / 'business/scripts/online-raster-focal-square-seven-fixture.py').read_text()
+    assignments = {node.targets[0].id: node.value for node in ast.parse(fixture).body
+                   if isinstance(node, ast.Assign) and len(node.targets) == 1 and isinstance(node.targets[0], ast.Name)}
+    cases = ast.literal_eval(assignments['CASES'])
+    failures = ast.literal_eval(assignments['FAILURES'])
+    kernels = {method for _, size, method, kernel, _ in cases.values() if size == 7 and kernel == 'asymmetric'}
+    uniform = {method for _, size, method, kernel, _ in cases.values() if size == 7 and kernel == 'ones'}
+    weighted = {'weighted_sum', 'weighted_mean', 'weighted_stddev'}
+    methods = {method for _, size, method, _, _ in cases.values() if size == 7}
+    pairs = ast.literal_eval(assignments['COMPARISONS'])
+    if (len(cases) != 18 or len(failures) != 30 or len(set(failures)) != 30 or kernels != weighted or uniform != weighted
+            or methods != weighted | {'sum', 'mean', 'min', 'max', 'stddev', 'mode', 'median', 'percentile', 'variety'}
+            or len(pairs) != 6 or {pair[0] for pair in pairs if pair[0].startswith('ones-')} != {
+                'ones-sum.cog.tif', 'ones-mean.cog.tif', 'ones-stddev.cog.tif'}):
+        raise RegistrationError('seven-pixel fixed COG matrix or actual comparison coverage changed')
+    if any(fragment in fixture for fragment in ('operators.raster_compute', 'raster_focal_statistics(', 'np.percentile(', 'np.quantile(')):
+        raise RegistrationError('seven-pixel oracle must be independent')
+
 
 def main() -> int:
     parser = argparse.ArgumentParser()
