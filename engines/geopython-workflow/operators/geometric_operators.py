@@ -1555,17 +1555,43 @@ def check_line_intersection(input_gdf: gpd.GeoDataFrame, id_field: str) -> gpd.G
     return result
 
 
-def _line_network_inputs(frame, id_field, name="input_gdf", *, input_error=ValueError):
+def _line_network_inputs(frame, id_field, name="input_gdf", *, input_error=ValueError, crs_error=None):
     geometry = _finite_xy_geometry(frame, name, input_error=input_error)
-    _require_projected_xy_crs(geometry.crs, input_error=input_error)
+    _require_projected_xy_crs(geometry.crs, input_error=crs_error or input_error)
     ids = _source_identifiers(frame, id_field, input_error=input_error)
     _require_nonempty_valid_lines(geometry, input_error=input_error)
     return geometry, ids
 
 
+class DanglingPointsInputError(ValueError):
+    """Explicit admission facts from the standalone dangling-points operator."""
+    _messages = {
+        'operator_input_invalid': (
+            '悬点检查要求具有活动几何列的有效非空有限二维线图层，id_field 须指向值非空、唯一的非几何标量列。允许空表。',
+            'Dangling-point checking requires active geometry with valid non-empty finite XY lines and an id_field naming a non-geometry column with unique non-empty scalar values. A layer with no rows is allowed.',
+        ),
+        'operator_crs_invalid': (
+            '悬点检查要求已知投影 CRS，两个水平轴的单位须一致且换算因子有限为正。',
+            'Dangling-point checking requires a known projected CRS with matching finite positive horizontal unit factors.',
+        ),
+    }
+
+    def __init__(self, reason, detail):
+        super().__init__(detail)
+        self.reason = reason
+
+    def message(self, language):
+        return self._messages[self.reason][language == 'en']
+
+
 def check_dangling_points(input_gdf: gpd.GeoDataFrame, id_field: str) -> gpd.GeoDataFrame:
     """Report degree-one planar network endpoints with all original source IDs."""
-    return _dangling_points(*_line_network_inputs(input_gdf, id_field))
+    geometry, ids = _line_network_inputs(
+        input_gdf, id_field,
+        input_error=partial(DanglingPointsInputError, 'operator_input_invalid'),
+        crs_error=partial(DanglingPointsInputError, 'operator_crs_invalid'),
+    )
+    return _dangling_points(geometry, ids)
 
 
 def _dangling_points(geometry, ids):

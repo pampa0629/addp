@@ -135,7 +135,7 @@ test('protection refusals remain distinct from data permissions without exposing
 test('operator input contract matches the canonical runtime tuples and rejects unproven fields', () => {
   const source = read('../../../common-python/addp_common/workflow_runtime/errors.py')
   const canonical = [...source.matchAll(/\('([^']+)', '([^']+)', '([^']*)'\): '([^']*)'/g)].map(match => [match[1],match[2],match[4],match[3]])
-  assert.equal(canonical.length, 129)
+  assert.equal(canonical.length, 131)
   const actual = operatorInputRules.map(rule => [...rule])
   assert.deepEqual(actual.sort(), canonical.sort())
   for (const [operator_id, reason, parameter, field] of canonical) {
@@ -143,7 +143,7 @@ test('operator input contract matches the canonical runtime tuples and rejects u
     const diagnostic = { schema_version: 'addp.execution-failure/v3', stage: 'execution', reason, operator }
     const result = executionFailurePresentation({ diagnostic, message: 'private' }, key => key)
     const profiles = { snap_line_endpoints: 'lineEndpoint', extend_line_endpoints: 'lineEndpoint', polygonize: 'polygonize', snap_geometry:'referenceSnap', check_geometry:'geometryValidity', repair_geometry:'geometryValidity', extract_vertices:'vertices', split_multipart:'multipart', get_bounds:'bounds', distance_to:'distance', get_area:'measurement', get_length:'measurement', split_by_area:'measurement', contains:'spatialRelation', intersects:'spatialRelation', voronoi:'voronoi',
-      check_polygon_overlap:'polygonOverlap', check_polygon_gap:'polygonGap',
+      check_dangling_points:'danglingPoints', check_polygon_overlap:'polygonOverlap', check_polygon_gap:'polygonGap',
       envelope:'construction', centroid:'construction', convex_hull:'construction', minimum_rotated_rectangle:'construction',
       representative_point:'interiorPoint',
       'buffer:operator_input_invalid':'buffer', 'buffer:operator_crs_invalid':'buffer', 'batch_buffer:operator_crs_invalid':'buffer',
@@ -771,8 +771,10 @@ test('reference snap diagnostics preserve tolerance semantics and privacy',()=>{
 })
 
 
-test('polygon check diagnostics identify the source and coverage in both languages', () => {
+test('topology check diagnostics identify the source and coverage in both languages', () => {
   const cases = [
+    ['check_dangling_points', 'danglingPoints', 'operator_input_invalid', 'input_gdf', /id_field/],
+    ['check_dangling_points', 'danglingPoints', 'operator_crs_invalid', '', /投影|projected/],
     ['check_polygon_overlap', 'polygonOverlap', 'operator_input_invalid', 'input_gdf', /id_field/],
     ['check_polygon_overlap', 'polygonOverlap', 'operator_crs_invalid', '', /投影|projected/],
     ['check_polygon_gap', 'polygonGap', 'operator_input_invalid', 'input_gdf', /空表|no rows/],

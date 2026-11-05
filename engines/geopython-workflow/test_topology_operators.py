@@ -3286,8 +3286,82 @@ def test_dangling_points_async_runtime_discovery_direct_denial_and_no_implicit_i
     tasks[1]['params'].pop('id_field')
     tasks.append({"id":"save","operator":"save","params":{"input_df":{"$ref":"check"},"connection_info":connection,"path":"must-not-exist.gpkg","mode":"fail"},"depends_on":["check"]})
     failed=execute_workflow({'tasks':tasks})
-    assert failed['status']=='failed' and 'id_field' in str(failed)
+    assert failed['status'] == 'failed' and failed['error_code'] == 'INVALID_PARAMS'
+    assert failed['diagnostic'] == {
+        'schema_version': 'addp.execution-failure/v3', 'stage': 'execution',
+        'reason': 'operator_input_invalid',
+        'operator': {'node_index': 2, 'operator_id': 'check_dangling_points', 'parameter': 'input_gdf'},
+    }
     assert not (tmp_path/'must-not-exist.gpkg').exists()
+
+
+@pytest.mark.parametrize("problem,reason", [
+    ("missing_source", "operator_input_invalid"),
+    ("invalid_line", "operator_input_invalid"),
+    ("identifier", "operator_input_invalid"),
+    ("crs", "operator_crs_invalid"),
+    ("native_check", None),
+    ("native_noding", None),
+    ("missing_association", None),
+])
+def test_dangling_points_diagnostics_block_result_save(monkeypatch, problem, reason):
+    import workflow_engine
+    from addp_common.workflow_runtime import WorkflowExecutionError
+
+    end = (0, 0) if problem == "invalid_line" else (1, 0)
+    frame = lines([LineString([(0, 0), end])], crs=None if problem == "crs" else "EPSG:3857")
+    frame["line_id"] = [1]
+    params = {"input_gdf": frame, "id_field": "PRIVATE_SOURCE_FIELD" if problem == "identifier" else "line_id"}
+    if problem == "missing_source":
+        del params["input_gdf"]
+    op = "check_dangling_points"
+    saves = []
+    original = workflow_engine.get_operator
+
+    def resolve(name):
+        if name == "save":
+            return lambda **kwargs: saves.append(kwargs)
+        function = original(name)
+        if name != op:
+            return function
+
+        def invoke(**kwargs):
+            def native_failure(*args, **kwargs):
+                raise ValueError("input_gdf requires valid lines")
+
+            with monkeypatch.context() as scope:
+                if problem == "native_check":
+                    scope.setattr(shapely, "is_valid", native_failure)
+                elif problem == "native_noding":
+                    scope.setattr(shapely, "node", native_failure)
+                elif problem == "missing_association":
+                    scope.setattr(shapely.STRtree, "query", lambda *args, **kwargs: [])
+                return function(**kwargs)
+
+        return invoke
+
+    monkeypatch.setattr(workflow_engine, "get_operator", resolve)
+    tasks = [
+        {"id": "operation", "operator": op, "params": params, "depends_on": []},
+        {"id": "save_result", "operator": "save", "depends_on": ["operation"],
+         "params": {"input_df": {"$ref": "operation", "port": "result"}}},
+    ]
+    with pytest.raises(WorkflowExecutionError) as error:
+        workflow_engine.GeoPythonWorkflowRunner(language="en").execute({"tasks": tasks})
+    assert not saves
+    if reason is None:
+        assert error.value.error_code == "EXECUTION_FAILED"
+        assert error.value.diagnostic is None
+        return
+    context = {"node_index": 1, "operator_id": op}
+    if reason == "operator_input_invalid":
+        context["parameter"] = "input_gdf"
+    assert error.value.error_code == "INVALID_PARAMS"
+    assert error.value.diagnostic == {
+        "schema_version": "addp.execution-failure/v3", "stage": "execution",
+        "reason": reason, "operator": context,
+    }
+    assert "PRIVATE_SOURCE_FIELD" not in str(error.value)
 
 
 def test_dangling_points_source_lookup_uses_exact_lines_not_bounding_boxes():

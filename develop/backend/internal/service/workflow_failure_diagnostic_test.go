@@ -722,8 +722,10 @@ func TestGeometryValidityDiagnosticBindsFrozenDefinitionAndHidesOutputNames(t *t
 	}
 }
 
-func TestPolygonChecksAndReferenceSnapDiagnosticsBindFrozenDefinitionAndHideValues(t *testing.T) {
+func TestTopologyChecksAndReferenceSnapDiagnosticsBindFrozenDefinitionAndHideValues(t *testing.T) {
 	for _, tc := range []struct{ op, reason, param string }{
+		{"check_dangling_points", "operator_input_invalid", "input_gdf"},
+		{"check_dangling_points", "operator_crs_invalid", ""},
 		{"check_polygon_overlap", "operator_input_invalid", "input_gdf"},
 		{"check_polygon_overlap", "operator_crs_invalid", ""},
 		{"check_polygon_gap", "operator_input_invalid", "input_gdf"},
