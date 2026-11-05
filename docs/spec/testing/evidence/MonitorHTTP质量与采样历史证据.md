@@ -2,21 +2,17 @@
 
 [返回 Monitor 历史证据](Monitor历史证据.md) · [返回验收证据索引](../验收证据索引.md)
 
-本专题收录公共 mTLS、Go/Python 来源、启动诊断及采样／清理交接。固定源码、环境、失败记录、修复结论与未覆盖范围以各记录为准；本次仅整理文档，没有重跑验收或刷新 CI 状态，不推导当前 HEAD 或生产 T5 已通过。跨主题语境与原有顺序见 [Monitor 历史证据入口](Monitor历史证据.md#原记录入口)。
+本专题收录公共 mTLS、Go/Python 来源、启动诊断及采样／清理交接。验收结论按各记录的固定源码、环境、运行尝试和层级认定。原顺序见[Monitor 历史证据入口](Monitor历史证据.md#原记录入口)。
+
+原始过程、逐步诊断及详细归档清单见[精简前的固定记录](https://github.com/pampa0629/addp/blob/be8f8daa4d38a7830585577f03b77bf2b5ed3931/docs/spec/testing/evidence/MonitorHTTP%E8%B4%A8%E9%87%8F%E4%B8%8E%E9%87%87%E6%A0%B7%E5%8E%86%E5%8F%B2%E8%AF%81%E6%8D%AE.md)。 现行采样及验收规则见[HTTP 接口质量](../../addp平台运行观测规范.md#64-http-接口质量分阶段接入)。
 
 ## 平台 HTTP 接口质量：本地一期
 
-2026-10-20，Common 统一 Router 采集基础已在 `39b132c9926f9f404287ab5aeaa8c9d94eebd9f4` 提交；Monitor 查询、页面、权限迁移 227、HTTP 规则和通知产品代码已纳入 `3ee46b77fd84fe1a915874a11e0e97b843cac8bd`。以下分别记录本地分项，不表示共享工作区整个 HEAD 已重跑。
+2026-10-20 本地分项以基础源码 `39b132c9926f9f404287ab5aeaa8c9d94eebd9f4`、产品源码 `3ee46b77fd84fe1a915874a11e0e97b843cac8bd` 认定。T1 覆盖 Common Router、Monitor／System Go、授权和双语 Swagger。T2 覆盖 HTTP CRUD／CAS、冻结恢复与租约、IAM 227 五项权限及刷新令牌撤销。
 
-- T1：基础阶段的固定源码 `make test-go` 全部通过且无跳过；产品阶段 `make test-module MODULE=monitor GO_ONLY=1`、System 对应 T1、`make test-authorization` 及双语 Swagger 覆盖通过。后续没有将基础阶段的全 Go 结果扩大到整个最新 HEAD。
-- T2：`make test-monitor-postgres` 通过，覆盖 HTTP CRUD、并发 CAS、冻结恢复证据、缺样保护、查询期间策略变化及完成租约过期；最后一次运行输入无漂移。`make test-system-iam-postgres SYSTEM_IAM_POSTGRES_TEST_ARGS="--package migration --test platform-alert-management"` 通过，覆盖五项权限仅授现有平台系统管理员、刷新令牌撤销和幂等重跑。
-- T2：完整 `make test-monitor-metrics` 在仓库外固定源码（基线 `688ecb005843ecadf7240a0e5249517de3a8381d` 叠加本专项文件）通过，含既有主机、进程、PostgreSQL 来源及资源告警回归。此后历史趋势补充与最终 HTTP 文件以 `make test-monitor-metrics MONITOR_METRICS_TEST_ARGS=--case=http-quality` 独立复验通过：真实 SDK 请求、13 项原生窗口场景、有权历史趋势、HTTP 503 窗口打开事件、签名通知首次 503 后重试、成功请求恢复同一事件、停止来源清空数值；HTTP 生命周期约 195.54 秒。两份快照输入均无漂移，退出分别核验当次容器、网络、卷和临时文件零残留。专项跳过 PostgreSQL 专业来源探针与后续主机回归，不能替代完整入口。
-- T3：Monitor 78 项单元、226 项浏览器及构建通过，包含持续慢接口、筛选趋势、401/403/404 清空、迟到响应隔离和规则 CAS；Console 186 项单元、191 项浏览器及构建通过；Common 前端 241 项单元、System 前端 149 项单元及 189 项浏览器和构建通过。最后的 HTTP/权限相关文件与已验证输入相符，不扩展为其它会话后续修改的结果。
+完整 Metrics T2 以 `688ecb005843ecadf7240a0e5249517de3a8381d` 叠加专项文件验证，包含主机、进程、PostgreSQL 来源与告警。最终 HTTP 专项另验真实 SDK、13 项窗口语义、历史趋势、503 告警、签名重试、恢复同一事件及停源清空，约 195.54 秒。两份快照各自核验零残留，HTTP 专项跳过 PostgreSQL 专业探针和后续主机回归。历史趋势首轮因自然窗口未形成而失败，复验保留原采样和失败条件。
 
-前次历史趋势试验在过去完整窗口形成前断言失败，未计为通过；最终仅等待自然历史形成，查询错误、采集状态或数据形状异常立即失败，未放宽有效失败点条件。配置选择矩阵验证 HTTP 专项不调用 PG 专业探针，默认及 postgres-source 保留原探针；39 项配置测试通过。
-
-按用户决定，本轮不扩展或运行 Hosted HTTP T4，不借现有主机资源场景身份操作本专项。System 当前 User／后台最小投影在 T2 使用受控夹具，不能冒充真实密码/MFA 身份；个人部署未重启。Python HTTP 采集、Trace／日志链路关联及调用拓扑尚未实现，生产容量与 T5 未验；Tenant 发布服务质量仍由 Service 按对象权限提供。
-
+T3 中 Monitor 78 单测／226 浏览器、Console 186／191、Common 前端 241 单测、System 149／189 按各自门禁通过，适用的构建一并通过。正式密码／MFA、Python HTTP、Trace／日志关联、拓扑、Hosted 和 T5 未纳入这一期。
 
 ## 2026-10-26 Python 全量 HTTP 质量首批与公共 mTLS 前置失败
 
@@ -30,27 +26,21 @@
 
 本窗口采集 32 次资源检查，最大 0.260 秒，均在原完整 4 秒口径内；容器硬配额峰值 2.25 CPU／2.75 GiB，私有可写预算上界峰值约 1.44 GiB（含 tmpfs 配额预留，不能称为实占磁盘），未触发资源守卫。342 项输入摘要运行期间一致。标准退出清理及独立按当次 project 精确过滤的只读复核均确认容器／网络／卷为零、私有工作目录已删除。没有自动重试／续窗、运行 Hosted、重跑容量、设置定时或重启个人服务。共享 ASGI 调整后的真实 Trace T2 未运行，与旧混合链通过证据分开保留。
 
-证据目录 `/tmp/addp-p19-python-http-quality-20261026/`：`functional.json` SHA256 `e8772a2dd64d4d5053f6dd113395a66126c0467260d2536916510d6a4514d0f3`；`functional.log` SHA256 `81228778f9e8eb36b658ccce3f010e65ef7544ec5291b2359e10c6ef8cd76694`；`cleanup-audit.json` SHA256 `ba6b2e4daefac07de6eede702a8d792a9446923856502d7425c75d0614a35309`。同目录 `audit-summary.json` 保存分项日志摘要及资源／清理汇总。门禁早期的导入、夹具和登记失败日志仍保留，不能被最终确定性通过覆盖。
+原报告、日志、分项审计和清理收据在 `/tmp/addp-p19-python-http-quality-20261026/`。早期导入、夹具和登记失败保留于原记录。
 
 ## 公共采样失败的离线关联
 
-用户要求先离线调查、讨论最小修正及验收后再运行。核对失败窗口的输入 SHA256 与当前源，gate／probe／Compose、Prometheus 模板、配置生成器及中心服务定义六项完全一致。控制面发现已有活动目标；宿主机以 collector 身份通过 `https://localhost:<当次映射>/metrics`，中心却以当前容器 IP 采样失败。Prometheus 06:19:14 UTC 的匿名、外来 CA 与明文握手日志对应既有负向探针，不能用它们认定实际采样为 unknown authority。
+失败窗口的六项采样相关输入与核对版本一致。宿主机以 collector 身份访问 localhost 成功，中心以实际容器 IP 采样失败。Prometheus 中的匿名、外来 CA 与明文握手日志属于负向探针。localhost 同时匹配初始和最终证书，因此该检查无法区分 Nginx 是否已换证。
 
-现有启动链先用不含当次容器 IP 的证书启动 Nginx，inspect IP 后重签来源证书并执行 `nginx -s reload`；当前就绪只看信号命令成功，没有核对实际呈送的证书已切换且覆盖该 IP。宿主机正向探针验证 localhost，初始／最终证书均含 localhost，不能辨认是否仍在呈送初始证书。因此“换证加载／IP SAN 校验差异”是优先核查假设，尚不是确认根因；也不能排除链校验、有效期或客户端证书等其他 TLS 子类。
-
-已确认的诊断缺口是 `fixture_scrape_diagnostic` 将所有 certificate／TLS 错误折叠为单一 tls；当次原始 lastError、实际呈送叶子证书及请求日志均未保留，清理后无法唯一还原。下一步待讨论：保持严格 TLS 与原资源／时间边界，在原标准入口补充封闭子类、预期／实际公开证书摘要及名称／链／有效期匹配结果、换证后真实 IP 就绪断言；任何未知仍明确未知。不得通过跳过校验、改 server_name、扩大信任或延长原采样等待绕过失败。本文仅记录调查和待确认方案，尚未实施或运行该修正。
-
+历史诊断把证书错误合并为 tls，未保留原始 lastError、实际叶子证书和请求日志，根因无法唯一确认。换证加载／实际 IP SAN 是优先排障方向，也需区分链、有效期及客户端证书。复验保留严格 TLS，核对实际 IP 的预期／实际叶子摘要和匹配结果。
 
 ## 共享 Python 依赖与 Agent 冷安装冲突修复（2026-10-26）
 
-用户现场 Agent 同步失败后，确认本批 `0eca81f9b` 新增的 `cryptography==49.0.0` 与现有固定 DeerFlow Harness 2.1.0 的 `cryptography>=50.0.0` 互斥。此前使用已有依赖覆盖的 T1 通过没有覆盖完整冷安装，不能用于否认这项集成回归；原 pip 升级提示不构成根因。修复 `db5289c7474a91966ab254efc0d61957c17d7479` 已推 main，统一固定 `50.0.2`，同步技术栈及 uv.lock；锁文件仅该包版本变化。未删除消费者、变更其版本约束或新增跳过依赖解析路径。PyPI 发布元数据及实际下载确认 macOS arm64、Linux arm64 的 wheel 可用；Linux amd64 发布文件也存在，实际构建仍由自然 CI 单列验证。
+`0eca81f9b` 引入的 cryptography 49.0.0 与 DeerFlow Harness 2.1.0 的最低 50.0.0 要求冲突。此前依赖覆盖环境的 T1 缺少完整冷安装。修复 `db5289c7474a91966ab254efc0d61957c17d7479` 统一固定 50.0.2。
 
-仓库外全新 Python 3.12 Agent/Copilot 环境分别按完整 requirements 安装，包含正式固定提交的 DeerFlow 两个 package 和共享模块，均退出 0、`pip check` 通过；安装报告实际为 cryptography 50.0.2／deerflow-harness 2.1.0。Agent 新环境 app／OpenAPI／Skills 导入通过，`make test-agent-eval` 通过 7 项场景契约、Agent 评测／持久化及 Common 聚合。`make test-copilot` 185 项通过，3 项已有警告。独立 Python 3.11 使用 `uv sync --locked --extra dev --extra inference-langchain` 后，`make test-common-python` 421 项及 54 subtests 通过、1 项可选 GeoPandas 跳过；`uv lock --check` 通过。`make test-python-ci-registration` 沿现有入口通过，依赖改动已由 Common Python／Agent／Copilot／共享消费者和产品镜像自动发现，无需新增 workflow 或测试路线。
+新 Python 3.12 环境的 Agent／Copilot 完整安装和 pip check 通过。Agent 导入及七场景门禁、Copilot 185 项通过。Common Python 421 项和 54 subtests 通过，1 项可选 GeoPandas 跳过，锁文件与 CI 登记通过。Linux arm64 Agent 产品镜像完成完整依赖安装、pip check 与导入。make test-changed 因缺少 Monitor PostgreSQL T2 连接而前置退出 2。
 
-`make build-images IMAGE_BUILD_ARGS="--services agent-backend --verify --jobs 1 --tag p19-crypto-fix-20261026"` 实际退出 0，Linux arm64 产品镜像完成第三方完整依赖解析安装、最终 `pip check` 和 app／OpenAPI／Skills 导入；镜像 `localhost:5001/addp-agent-backend:p19-crypto-fix-20261026`，ID `sha256:9333059e7c4f4eab53471ffe785a97c3850bc5b8fb038c0f632951fd46466747`。验证模式未推送产品镜像，未启动业务服务或挂载个人环境；该本地工作区构建的五项依赖／Dockerfile 摘要与验证开始时一致，不冒充固定 GitHub SHA 的 Linux amd64 构建。`make test-changed` 已尝试，但缺少 Monitor PostgreSQL T2 显式连接输入而前置退出 2，不计全量通过，未因此启动数据库。
-
-原始证据 `/tmp/addp-p19-crypto-fix-20261026-9oi78l3t/`：Agent/Copilot 完整安装 JSON 与日志、Common 锁安装／测试、Agent 评测 JSON、Copilot 测试、镜像日志／身份、分发元数据与输入／产物 SHA256。自然 Platform CI `40294294052` 绑定修复 SHA，回查时仍进行中，未认定整轮通过；未取消／重跑 Actions、触发 Hosted、重跑容量或设置定时。没有操作个人 venv、运行服务、权限或数据卷；用户可自行沿 `./scripts/dev/restart.sh -agent` 重新同步。本修复不代替公共 mTLS 前置的待讨论方案，也不使 Python HTTP 实链或真实 Trace T2 自动通过。
-
+安装、镜像和输入散列在 `/tmp/addp-p19-crypto-fix-20261026-9oi78l3t/`。自然 Platform Run `40294294052` 当时仍在运行，后续 Linux 复核另见下一节。此项修复只覆盖冷安装冲突，公共 mTLS、Python HTTP 实链与 Trace T2 分开认定。
 
 ## 修复 SHA 的 Linux 复核与 HTTP 守卫取证准备（2026-10-26）
 
@@ -62,12 +52,11 @@
 
 源码已确认两个编排风险：固定窗口 `runPromtoolCases` 使用同项目 `compose run --rm` 临时 Prometheus 容器，守卫 ps→inspect／exec 之间该容器可被自动删除；其继承 2 GiB 配额，与基础栈 2.75 GiB 合计为 4.75 GiB，不能通过忽略临时容器来满足 4 GiB。上述风险与缺失的当次失败详情分开陈述，不由静态可能性反推唯一历史原因。较早其他 SHA 的 Release workflow success 中 Metrics 个案可为 skipped，未将其算作本专项通过。
 
-取证修正本地提交 `e65c8d7b1fde4e529238519b80a22eb8b1cc4681`：固定枚举／inspect／卷／私有目录失败步骤、超时／容器消失／命令失败子类与数值限额；抑制原始命令和 Docker 错误正文，stdout 输出封闭摘要；原 Linux HTTP case 的同一 Job 无论通过或失败均保存预算报告七天，缺失报告为失败。不重试、忽略容器、提高限额或延长完整四秒。`python3 -m unittest scripts/test/metrics-http-budget_test.py` 8 项通过，含守卫失败后清理也保持失败、报告与日志可见且不泄漏注入敏感内容；`make test-infra-runtime-log-lifecycle` 123 项本地 runner／既有 System Go fixture、69 项生命周期聚合退出 0。T2 登记 22／12／9／2、workflow YAML 与归档路径契约、`git diff --check` 通过。新增用例沿原标准聚合自动发现；本会话暂不推送这批取证修正，避免在用户确认运行方案前间接启动新 T2。
+取证修正本地提交 `e65c8d7b1fde4e529238519b80a22eb8b1cc4681`：固定枚举／inspect／卷／私有目录失败步骤、超时／容器消失／命令失败子类与数值限额；抑制原始命令和 Docker 错误正文，stdout 输出封闭摘要；原 Linux HTTP case 的同一 Job 无论通过或失败均保存预算报告七天，缺失报告为失败。不重试、忽略容器、提高限额或延长完整四秒。`python3 -m unittest scripts/test/metrics-http-budget_test.py` 8 项通过，含守卫失败后清理也保持失败、报告与日志可见且不泄漏注入敏感内容；`make test-infra-runtime-log-lifecycle` 123 项本地 runner／既有 System Go fixture、69 项生命周期聚合退出 0。T2 登记 22／12／9／2、workflow YAML 与归档路径契约、`git diff --check` 通过。该取证修正当时尚未推送。
 
 进一步只读查到固定 Nginx 1.28 支持跨 reload 继承 SSL 对象；[官方规范](https://nginx.org/en/docs/ngx_core_module.html#ssl_object_cache_inheritable)说明文件修改时间和文件标识未变时可继承。旧夹具覆盖原证书文件后只确认 reload 信号成功，未核对实际呈送证书；这加强了换证生效判定的调查价值，但仍缺少当次 inode／mtime／叶子摘要，不能认定该缓存就是原本地失败根因。下一步待确认方案仍需保留严格 TLS、原 4 秒／资源边界，先收敛 promtool 额外容器和证书加载判定，再决定仅公共前置的新窗口；不得自动进入 Python 业务实链。
 
 原始复核、摘要和本地门禁日志位于 `/tmp/addp-p19-http-budget-diagnostics-20261026-zd251axo/`，`audit-summary.json` 区分固定源码通过、本次 HTTP 失败、未知触发原因与尚未运行范围，`artifact-sha256.json` 保存文件摘要。没有改个人 venv、服务、权限或数据库；用户重启结果是现场反馈，不冒充本会话正式身份运行验收。
-
 
 ## 公共 mTLS 单次前置窗口与容器内换证修正（2026-10-26）
 
@@ -131,7 +120,6 @@ Monitor T1 实际覆盖停流零分母的归一、零请求权重聚合及活动
 
 诊断源码、输入摘要、红／绿及标准门禁日志保存在 `/tmp/addp-p19-directory-diagnostic-20261026-ap5xjngx/`，见 `audit-summary.json`、`artifact-sha256.json`。本次仅本地提交，不推送或触发／重跑 CI，不运行 Hosted、容量、定时或个人服务操作。下一步应在另行确认的单次准备阶段取证窗口取得真实目录失败分类，未得到该证据前不认定根因已修复，也不直接将完整 HTTP 实链记为通过。
 
-
 ## Linux Go HTTP 子链通过与 Python 来源启动诊断（2026-10-26）
 
 只读核验已有自然 CI 原始日志：[bdf 的 HTTP Job](https://github.com/pampa0629/addp/actions/runs/40334346467/job/121612153803) 精确 checkout `bdf8788266408209a1c3da6aab948a0c4321b248`，Go `TestIntegrationMetricsHTTPAlertLifecycle` 实跑 152.28 秒通过，覆盖同一事件恢复及签名通知；后续真实进程／来源停止断言也通过。[206 的 HTTP Job](https://github.com/pampa0629/addp/actions/runs/40339327143/job/121630064969) 精确源码 `206261e751090a7bfb4e816dd0a8fbd97273d3d3`，相同 Go 子链实跑 150.27 秒通过。两轮均在 Python 发布身份前退出，finally 的非零退出异常再次覆盖首失败；日志回执分别 539.709／547.187 秒、Go 148／Python 0，输入未变且私有目录删除，但 cleanup_verified=false。不能继续将旧 Go unknown/no_data 当作这两轮的实际失败，也不能将 Go 子项通过或目录删除写成整项 HTTP／完整清理通过。
@@ -143,7 +131,6 @@ Monitor T1 实际覆盖停流零分母的归一、零请求权重聚合及活动
 `python3 -m unittest scripts/test/metrics-deployment-config_test.py scripts/test/metrics-http-budget_test.py` 116 项通过；`make test-infra-runtime-log-lifecycle` 123 项 runner／既有 System Go fixture及 78 项聚合通过；T2 登记测试 38 项和登记 22／12／9／2、shell／专项 diff 检查通过。首失败被旧 finally 覆盖的回归先失败，修正后通过；覆盖启动子阶段模拟、安装诊断边界／脱敏、超时和恢复失败时仍检查第二来源、关闭全部进程内资源及保留首失败、预算归档回执。此为 T0／确定性证据，未运行本地安装、容器、Python 业务实链、Hosted、容量或定时；真实 Python 启动根因仍待带诊断的自然 Linux CI。
 
 原始日志和补丁／门禁／摘要保存在 `/tmp/addp-p19-python-startup-20261026-y1zoacsw/`。前一轮 66.598 秒本地目录失败和 `1ce3ddac7` 目录分类仅在各自已记范围有效，不是本次 Python 启动原因。本批只提交本会话 hunk，按既有 main 推送产生自然 CI；不手工触发、取消或重跑 Actions，不新开本地窗口。
-
 
 ## 启动诊断的 Linux 实跑与同进程导入缓存修正（2026-10-26）
 
@@ -157,7 +144,6 @@ Monitor T1 实际覆盖停流零分母的归一、零请求权重聚合及活动
 
 先修规范，两个回归先失败后通过；最终配置／预算 118 项、生命周期 123 项 runner／既有 System Go fixture及 79 项聚合、登记测试 38 项与 22／12／9／2、shell／专项 diff 均通过。补丁和门禁日志在上述目录 follow-up/；后续自然 CI 单独核验，不把这份确定性通过当作实际 Python 已启动。本轮未开本地窗口、安装实际依赖或运行 Python 业务实链、Hosted、容量、定时，也未取消或手工重跑 CI。
 
-
 ## Python ImportError 分层回执与清理 profile 修正（2026-10-26）
 
 自然 [75c5c42b9 的 HTTP Job](https://github.com/pampa0629/addp/actions/runs/40347081176/job/121657200460) 仍失败，Go 告警子链实跑 153.45 秒通过；Python 失败从 module_missing 变为 imports/import_failed，仍在身份发布前，不能将导入缓存修正写成完整启动通过。577.072 秒的预算回执保留两源启动／退出事实、Go 147 次／Python 0、输入未变；failure_during_cleanup=true，子入口退出 1，私有目录已删除，证明没有再次 SIGTERM 打断这次清理。但 cleanup_verified=false，仍不能称零残留。Artifact 12663195763（20172 字节）下载 SHA256 已核对 d90f3b1552f8eb2fe5de071e04b89f8354cc2721909e14bd600e34756769162d；原始预算及日志在 `/tmp/addp-p19-python-startup-20261026-y1zoacsw/import-profile/`。
@@ -166,8 +152,7 @@ Monitor T1 实际覆盖停流零分母的归一、零请求权重聚合及活动
 
 ImportError 尚缺具体组件与版本事实，本批没有猜测升级／降级。启动回执新增固定导入检查点、ImportError 组件白名单及实际安装的预声明发行包版本；未知模块为 unknown，版本仅短版本字符串或 unavailable，不留异常正文、任意模块路径或环境。失败发生在 FastAPI、Starlette、Uvicorn 还是 Common 导入时可以区分，异常所属组件与入口检查点分别解释，不从名称关联推断唯一根因。未运行本地依赖安装、容器、业务实链、Hosted、容量或定时。
 
-最终配置／预算 120 项、生命周期 123 项 runner／既有 System Go fixture及 80 项聚合、登记测试 38 项与 22／12／9／2、shell／专项 diff 均通过；实际退出回归、敏感版本／模块拒绝及导入检查点保留均覆盖。标准入口及原 Metrics T2 自动发现／归档已覆盖，未增加旁路或 workflow。后续以新提交的自然 CI 单独核验，旧失败保留，Python 全链与真实清零仍待通过。
-
+最终配置／预算 120 项、生命周期 123 项 runner／既有 System Go fixture及 80 项聚合、登记测试 38 项与 22／12／9／2、shell／专项 diff 均通过；实际退出回归、敏感版本／模块拒绝及导入检查点保留均覆盖。后续以新提交的自然 CI 单独核验，旧失败保留，Python 全链与真实清零仍待通过。
 
 ## Python 来源 FastAPI 导入定位与清理实跑核验（2026-10-27）
 
@@ -179,7 +164,6 @@ ImportError 尚缺具体组件与版本事实，本批没有猜测升级／降�
 
 拟仅对当次两源现有 tmpfs 显式允许 exec、保留其余隔离与资源上限，增加实际挂载／扩展加载断言，并由各消费者正式 HTTP 声明生成各自测试依赖，删除第三套夹具版本；执行权限变化已提出确认，尚未修订规范或实施该方案。本轮没有新增本地环境、依赖安装、业务负载、Hosted、容量或定时，也未手工触发／重跑 CI。这里只同步只读证据，未将待讨论方案或旧失败记为通过。
 
-
 ## Python 测试来源本地扩展挂载及正式 HTTP 依赖修正（2026-10-27）
 
 用户确认继续实施最小修正后，先修运行观测规范 6.4 与 T0–T3 条款，再调整原唯一 Python 来源入口。两个当次来源继承的唯一 /tmp tmpfs 显式为 exec／nosuid／nodev，仍为 256 MiB；非 root、只读根、cap_drop ALL、no-new-privileges、CPU／内存／私有可写／完整四秒和全部请求／清理预算均保持。安装前读取当次 /tmp 的实际 statvfs 标志，noexec、缺少 nosuid／nodev 或读取失败均禁止安装和业务启动；安装后必须成功导入 Pydantic Core 本地扩展且加载器为 ExtensionFileLoader，才进入 FastAPI。回执只增加实际挂载布尔值与 native_imported 布尔值、白名单组件／版本；失败不留路径、异常正文或任意模块名。这是已确认配置矛盾的修正，不反推旧 Job 未捕获的唯一异常符号。
@@ -189,7 +173,6 @@ ImportError 尚缺具体组件与版本事实，本批没有猜测升级／降�
 新增四项回归先于实现失败，覆盖原 mount 缺 exec、未按实际挂载拒绝以及缺少依赖提取／本地扩展内核；随后补充实际标志读取、本地扩展失败不进入框架、独立来源文件及严格回执脱敏反例。首次完整配置／生命周期聚合发现旧回执测试缺少新增字段，更新唯一结构而非兼容旧结构后重跑。最终 `python3 -m unittest scripts/test/metrics-deployment-config_test.py scripts/test/metrics-http-budget_test.py` 127 项通过；`make test-infra-runtime-log-lifecycle` 的 123 项 runner／既有 System Go fixture及 80 项聚合通过；T2 登记测试 38 项、登记检查 22／12／9／2、shell 语法与本专项 diff 检查通过。T0 没有启动容器、安装实际依赖或导入产品依赖。
 
 补丁、红／绿门禁日志及输入／选择摘要位于 `/var/folders/r1/l7b49c757dz02zftf_l9vl9r0000gn/T/addp-p19-python-native-fix-20261027-040bs6so`。本轮没有新开本地实链窗口、运行 Hosted、容量或定时，也没有修改／重启个人服务。修正后的实际挂载、本地扩展与两源 SDK→mTLS→采集查询告警仍待自然 Linux Metrics CI 单列核验，不将本地确定性通过算作完整 HTTP 实链通过。
-
 
 ## 正式 HTTP 声明两源 Linux 业务子链通过，整门禁仍因清理重叠读取失败（2026-10-27）
 
@@ -203,7 +186,6 @@ ImportError 尚缺具体组件与版本事实，本批没有猜测升级／降�
 
 官方Artifact 12715410863（21672字节），下载SHA256核对 `2fd7f54ef48bc6dc12be5c413cabc4b6097aa9e0d8b5e27118cd97b753eff427`。原始日志、ZIP、预算及独立摘要在 `/var/folders/r1/l7b49c757dz02zftf_l9vl9r0000gn/T/addp-p19-python-native-fix-20261027-040bs6so`（job-122046852189.log、linux-budget-44230c5c8.json、audit-summary.json）；首次下载网络EOF，重新只读下载后才核对成功，不是重跑验收。这里只追加证据，`git diff --check`通过，代码的127项配置／预算、123＋80项生命周期和登记门禁沿前述固定提交仍有效；本轮未运行Hosted、容量或定时，未修改个人服务。完整标准HTTP门禁仍未通过，剩余优先项为采样／清理协调及其整门禁验证。
 
-
 ## HTTP 采样／清理原子交接实现与确定性验证（2026-10-27）
 
 核对现行“进入清理后停止新采样”、完整四秒、原120秒清理与1200秒整轮判定后，本次按既有必要CI修复范围落实交接，不新增产品阶段、权限或运行范围。此前将私有协调实现再次列为产品边界确认过宽；本次没有从协调消息推定Hosted、容量、定时或本地窗口授权。旧44230c5c8的业务子链通过与整门禁失败仍保留，不回写为通过。
@@ -212,10 +194,9 @@ ImportError 尚缺具体组件与版本事实，本批没有猜测升级／降�
 
 取锁与回执读取消耗同一四秒，原采样命令只使用剩余时间，解析／汇总后再核整轮检查期限；成功回执分列lock_wait_seconds。清理在入口记录唯一120秒单调截止，锁等待不重置截止；报告保留cleanup_lock_wait_seconds及cleanup_overdue，超期即使最终清零也不得判整轮通过。原1200秒、资源／请求上限、首失败及清理重叠时不重复SIGTERM均保持；不更改Docker daemon或个人服务。原先只有清理前一次标志检查的路线已替换，完整采样内核仍唯一。
 
-确定性回归使用真实私有文件锁与受控线程，验证采样先开始时禁止删除、清理先发布时不启动读取、剩余Docker命令预算、四秒及清理锁截止、归属不符、真实命令失败后释放锁、解锁错误不覆盖首失败。实际Shell子进程验证Python退出后FD锁仍由Shell持有、原退出后释放；整轮成功负例验证清理逾期不因零残留改判。相同新回归对父提交临时副本失败、当前实现通过，未改写共享源码做回退。最终配置／预算135项、生命周期123项runner／既有System Go fixture及88项聚合、登记38项与22／12／9／2、Shell语法及专项diff通过。既有固定输入、Makefile和CI自动发现覆盖，未增加新入口／workflow或依赖。
+确定性回归使用真实私有文件锁与受控线程，验证采样先开始时禁止删除、清理先发布时不启动读取、剩余Docker命令预算、四秒及清理锁截止、归属不符、真实命令失败后释放锁、解锁错误不覆盖首失败。实际Shell子进程验证Python退出后FD锁仍由Shell持有、原退出后释放；整轮成功负例验证清理逾期不因零残留改判。相同新回归对父提交临时副本失败、当前实现通过，未改写共享源码做回退。最终配置／预算135项、生命周期123项runner／既有System Go fixture及88项聚合、登记38项与22／12／9／2、Shell语法及专项diff通过。
 
 原始门禁、红／绿对照、补丁与输入摘要在 `/var/folders/r1/l7b49c757dz02zftf_l9vl9r0000gn/T/addp-p19-http-handoff-20261027-0slhhjwm`。本地没有新建容器或实际运行HTTP／Hosted／容量／定时；修后的真实整体结果待唯一自然Linux HTTP Job单列核验，确定性通过不计为完整门禁通过。
-
 
 ## HTTP 采样／清理交接修正后的 Linux 整门禁通过（2026-10-27）
 
@@ -226,7 +207,6 @@ ImportError 尚缺具体组件与版本事实，本批没有猜测升级／降�
 205次完整资源检查全部小于四秒，最长1.285895秒；采样锁等待最长0.000208秒，清理锁等待0.000446秒，未触发清理超期。本轮在原20分钟内同时完成业务、预算与退出清理；成功样本的容器硬配额峰值3.25 CPU／4026531840字节内存、私有可写预算上界1807532095字节，均未触线，这些不是CPU／RSS实际用量或容量基线。确定性门禁的135项配置／预算、123＋88项生命周期及登记结果沿前述固定修复有效。
 
 本轮仅为标准Linux HTTP T2：真实Go与两个ASGI SDK来源→mTLS／HTTP SD／Prometheus→Monitor查询／自然一分钟／告警与通知闭环及资源守卫清理通过；不冒充个人本地实链窗口、完整Agent/Copilot正式backend登录或页面、正式密码/MFA T4、Hosted、容量、72小时保留或全workflow通过。旧44230c5c8业务子链通过但整门禁失败的证据仍保留，历史inspect退出1缺少stderr及对象的唯一原因仍未知，不因本轮通过倒改历史归因。本次未手工触发／重跑／取消CI，未新增本地窗口、Hosted、容量或定时，也未重启个人服务。下一步建议先明确正式Agent/Copilot产品进程及页面的HTTP观测本地验收边界，再申请运行窗口。
-
 
 <a id="formal-python-http-local-20261028-image-auth"></a>
 
@@ -246,7 +226,6 @@ ImportError 尚缺具体组件与版本事实，本批没有猜测升级／降�
 
 本机保留窗口记录、runtime-report.json、缓存只读回执、红绿门禁和evidence-manifest.json；临时归档可由本会话标准指针`/tmp/addp-p19-http-product-window-bfdb7a34f1c8`定位。runtime-report.json SHA256为`94e66706654ad24ecaa4d0c75821701c56c6a5588d16c688b3277b793f044733`。本轮结论独立保持“运行失败、清理通过”；构建、真实身份和页面等未运行项不得计通过，下一轮须用户另行授权。
 
-
 <a id="formal-python-http-local-20261028-cache-reclaim"></a>
 
 ## 2026-10-28 正式Python产品HTTP独立窗口：编译后私有目录测量失败
@@ -265,7 +244,6 @@ cleanup.zero_owned_resources=true、failures=[]，当次构建器／容器／网
 
 本机窗口报告、resource-summary.json、提案及evidence-manifest.json由稳定临时指针`/tmp/addp-p19-http-product-window-dcf57cc7344c`定位；runtime-report.json SHA256=`62100e1d0fcd4e60330276fc8ad60fc6277c50692114e422082de66e32ee4e0a`。本节独立结论仍为“运行失败、清理通过”，不计完整四秒守卫、完整构建或产品闭环通过。
 
-
 <a id="go-cache-reclaim-deterministic-20261028"></a>
 
 ## 2026-10-28 中途Go缓存回收互斥与独立四秒门禁（仅确定性验证）
@@ -276,10 +254,9 @@ Go编译命令成功后，先做一次完整资源预检，锁等待、读取／
 
 删除子进程未退出或状态未知时不解锁继续；清理会针对该受管子进程终止／回收，仍不能确认退出则保留锁并返回清理失败，不删除相关环境或宣称零残留。成功与失败均保存封闭预检／删除时序及退出状态；严格模式锁等待回执改用实际拿锁时刻计算，不再把总扫描起点误当拿锁时刻。未改变权限、产品API、采样策略／保留、原60分钟／8 CPU／12 GiB／4 GiB上限。
 
-验证：`make test-infra-runtime-log-lifecycle`退出0，包含HTTP23项、Trace及共享回收136项、既有生命周期88项，以及相关System Go夹具／CI登记检查。现有Make与生命周期CI已自动覆盖，未新增入口／依赖／workflow。覆盖完整预检先于删除、预检触线不删、两个方向的采样／删除互斥、绝对预检截止包含锁等待、预检文件消失不重试、删除锁等待扣减预算、返回0但耗尽预算仍失败、子进程终止／未知状态不放锁、原生删除子进程确实回收及越界／符号链接拒绝。向既有用例注入原无锁删除行为时，用例以cache removed while active sample owns lock如期失败；恢复新路径后全部通过，不把该预期红例记为正常门禁失败。
+验证：`make test-infra-runtime-log-lifecycle`退出0，包含HTTP23项、Trace及共享回收136项、既有生命周期88项，以及相关System Go夹具／CI登记检查。覆盖完整预检先于删除、预检触线不删、两个方向的采样／删除互斥、绝对预检截止包含锁等待、预检文件消失不重试、删除锁等待扣减预算、返回0但耗尽预算仍失败、子进程终止／未知状态不放锁、原生删除子进程确实回收及越界／符号链接拒绝。向既有用例注入原无锁删除行为时，用例以cache removed while active sample owns lock如期失败；恢复新路径后全部通过，不把该预期红例记为正常门禁失败。
 
 本机准备证据由`/tmp/addp-p19-cache-reclaim-preparation-current`定位，preparation-evidence.json记录固定实现提交及红绿日志散列。**未运行**修正后的正式Go编译→镜像→身份→HTTP／页面闭环，未运行Hosted、容量或定时；此前dcf窗口继续保持“运行失败、清理通过”。上次最后一次失败采样没有完整可写值，修正不证明4 GiB必然足够；新窗口若预检触线仍按原标准停止，不能通过回收补成通过。
-
 
 <a id="formal-python-http-local-20261028-resource-list-deadline"></a>
 
@@ -321,7 +298,7 @@ cleanup.zero_owned_resources=true、failures=[]，当次构建器／容器／网
 
 验证：既有生命周期Make入口先通过HTTP本地23项／共享内核136项及相关Go夹具，随后被共享工作区中另一专项surface-area持久化注册检查阻断，整条入口不得计通过，未改动该专项。继续执行该入口原有确定性子命令：`python3 -m unittest scripts/test/metrics-http-budget_test.py scripts/test/infra-runtime-log-lifecycle_test.py scripts/test/trace-deployment-config_test.py scripts/test/trace-capacity_test.py scripts/test/postgres-metrics-lifecycle_test.py`合跑96项通过；最终预算取证单独35项通过；既有Metrics配置脚本120项、shell语法、T2 CI登记及diff检查通过。新增重复斜杠拒绝用例初次失败后修正，通过仅指当前取证契约。夹具只有小型临时文件、真实du缺失根读取和受控Go替身子进程（含进程组取消），没有Docker、本地服务或业务负载。
 
-现有Make生命周期、dev-lifecycle及自然Metrics矩阵已覆盖测试和脚本输入，既有HTTP预算JSON artifact自动保存新增字段，不新增入口／依赖／workflow。自然push运行[40799494798](https://github.com/pampa0629/addp/actions/runs/40799494798)、HTTP Job[123204132217](https://github.com/pampa0629/addp/actions/runs/40799494798/job/123204132217)，固定实现SHA如上，push／attempt 1已通过，HTTP生命周期及预算artifact上传步骤均成功；未手动dispatch或rerun。原始artifact `12865618656`共24238字节，ZIP SHA256=`ccac6dfe1557dec98cce5e19f912908e93f5f88dae37c59204ea1189877e681b`与API登记摘要一致，CRC完整；唯一monitor-http-budget.json SHA256=`bbb5008607a5310a26f639ca497d85ff650d745829a827d58ed9b4fc4a9f84a8`。独立逐文件核对报告353个输入全部匹配该提交，未以当前HEAD替代。
+自然push运行[40799494798](https://github.com/pampa0629/addp/actions/runs/40799494798)、HTTP Job[123204132217](https://github.com/pampa0629/addp/actions/runs/40799494798/job/123204132217)，固定实现SHA如上，push／attempt 1已通过，HTTP生命周期及预算artifact上传步骤均成功；未手动dispatch或rerun。原始artifact `12865618656`共24238字节，ZIP SHA256=`ccac6dfe1557dec98cce5e19f912908e93f5f88dae37c59204ea1189877e681b`与API登记摘要一致，CRC完整；唯一monitor-http-budget.json SHA256=`bbb5008607a5310a26f639ca497d85ff650d745829a827d58ed9b4fc4a9f84a8`。独立逐文件核对报告353个输入全部匹配该提交，未以当前HEAD替代。
 
 真实Linux报告result=passed、exit_code=0、error_code=null，elapsed=854.099548秒；209次完整样本最长1.182123秒，私有可写保守上界最大1808158783字节，容器硬配额合计最大3.25 CPU／4026531840字节内存，均在原上限内。请求Go148（失败90／健康58）、Python Agent75（45／30）、Copilot28（15／13），总251次，三源阶段和计数契约一致。process_compile为finished／exit0，原始单调纳秒开始64979234562、观察结束138843033209；inputs_unchanged、cleanup_verified、private_directory_removed均为true。**本次没有复现目录消失，缺失对象及根目录失败诊断现场分支未触发**；编译边界实录和单次Linux功能门禁通过，不等于旧间歇故障已修复／删除者已定位，不用本次成功覆盖此前失败。
 
@@ -352,7 +329,7 @@ cleanup.zero_owned_resources=true、failures=[]，当次构建器／容器／网
 
 本次沿用户“继续”仅进行一次只读核对：关闭上一节两条未完成状态，并核对其后main自然push中的HTTP质量子Job，不派发／重跑CI，不新开本地环境，不运行Hosted、容量或定时。2026-10-29 22:20（Asia/Shanghai）元数据快照中，上次两条已完成通过；之后44个push运行里筛出18条HTTP成功子Job，其中17条属于attempt 1。因此本次纳入的自然首轮HTTP状态共19条均success；无HTTP子Job的运行不计通过，不把其他专项的聚合失败归本专项。
 
-其中40880761833／123475011822虽状态success，但属于已有push运行的attempt 2，不能计为自然首轮；原attempt 1没有HTTP子Job。本轮未触发该重跑，也不推测操作者或重跑原因。该项仅作排除说明，不纳入以下自然门禁验收统计。
+其中40880761833／123475011822虽状态success，但属于已有push运行的attempt 2，不能计为自然首轮；原attempt 1没有HTTP子Job。该项仅作排除说明，不纳入以下自然门禁验收统计。
 
 深核三份自然attempt 1原始预算归档：
 
@@ -441,7 +418,7 @@ cleanup.zero_owned_resources=true、failures=[]，当次构建器／容器／网
 
 确定性验证：`make test-infra-runtime-log-lifecycle`最终退出0，包括HTTP本地23项、Trace共享内核136项及相关Go／CI登记、预算与生命周期合跑100项；`python3 -m unittest scripts/test/metrics-deployment-config_test.py`122项通过，Shell语法、T2登记及diff检查通过。新增回归从正式probe提取实际函数，以受控Go替身验证两次编译接入、顺序历史、错误／信号／超时和取消不完整，回执写失败不覆盖编译首失败；验证采样快照与最终观察独立、缺任一阶段不能通过。向同一回归注入“省略两次HTTP边界记录”时，测试按预期失败；恢复当前实现全部通过，该预期红例不计正常门禁失败。夹具仅临时小文件／原生子进程，无Docker、业务负载或新本地环境。
 
-现有Make生命周期／dev-lifecycle／Metrics配置门禁与T2输入登记已覆盖上述三个脚本和测试，HTTP预算artifact会保存新字段，不需新增Make／workflow或兼容路线。此次只推送main触发[run40984761553／HTTP Job123833677076](https://github.com/pampa0629/addp/actions/runs/40984761553/job/123833677076)，push attempt 1已通过，未手工dispatch／rerun。原始artifact12946559397共23965字节，ZIP实际SHA256=`aca8ce7f7e09818fc3de1b3a4cadd71f413e8961ae8967c02fa530f59a953278`与API登记一致，CRC和唯一JSON成员验证通过；报告SHA256=`f749a1af0e4d6bf2bcde953813cbd61e38c8b4699e163668ee5acd269916727d`。353个输入独立逐文件匹配固定实现3a004a947，不借当前HEAD替代。
+此次只推送main触发[run40984761553／HTTP Job123833677076](https://github.com/pampa0629/addp/actions/runs/40984761553/job/123833677076)，push attempt 1已通过，未手工dispatch／rerun。原始artifact12946559397共23965字节，ZIP实际SHA256=`aca8ce7f7e09818fc3de1b3a4cadd71f413e8961ae8967c02fa530f59a953278`与API登记一致，CRC和唯一JSON成员验证通过；报告SHA256=`f749a1af0e4d6bf2bcde953813cbd61e38c8b4699e163668ee5acd269916727d`。353个输入独立逐文件匹配固定实现3a004a947，不借当前HEAD替代。
 
 真实报告result=passed／exit0／error null，823.080908秒，202个完整样本最长1.042991秒，私有可写保守上界最大1809215551字节，硬配额最大3.25 CPU／4026531840字节内存，原四秒／资源／1200秒均满足。请求Go163、Python[75,28]、总266，三源阶段和计数契约一致；inputs_unchanged／cleanup_verified／private_directory_removed=true，无failure_detail。compile_stages.status=valid，三个且仅三个阶段均finished／exit0，顺序及单调端点验证通过，报告没有旧process_compile字段：
 
@@ -497,7 +474,6 @@ cleanup.zero_owned_resources=true、failures=[]，当次构建器／容器／网
 
 既有有效三阶段自然通过继续保留，不重跑、不覆盖这次失败；本轮不新增产品或控制器变更，仅校验文档主题／锚点／索引及diff，没有新的代码门禁／运行验收。`/tmp/addp-p19-http-process-source-recurrence-audit-20261030.json`保存固定353输入、原始归档与Go版本源码散列；原归档和日志沿`/tmp/addp-ci-20261030-043005`复用。正式产品后端到页面及停源历史读取等原缺口保持。
 
-
 <a id="http-stable-read-owned-go-20261030"></a>
 
 ## 2026-10-30 当次Go组稳定读取：规范、确定性与自然Linux分列
@@ -510,7 +486,7 @@ cleanup.zero_owned_resources=true、failures=[]，当次构建器／容器／网
 
 取消夹具另在`74277133b`修正：heredoc会耗尽标准输入，原read等待可能提前退出，改为与EOF无关的受控等待；仅修夹具，生产协调不变。修后预算51项及上述标准生命周期聚合再次通过。向现有暂停模型回归注入空协调时按预期断言失败，恢复当前实现后通过；早前原生故障注入还伴随夹具收尾超时，单列为不充分红例，不用其证明根因。准备清单和最终日志位于`/tmp/addp-p19-http-stable-preparation-20261030.json`及同前缀lifecycle-cancel-final／config-final／cancellation-final／unpaused-red日志；各层证明分列。
 
-现有Make生命周期／Metrics配置检查、T2输入登记及原HTTP预算artifact已覆盖全部改动，不新增入口／workflow／镜像／依赖。实现提交的[自然push attempt 1／run41021354128／HTTP Job123949620339](https://github.com/pampa0629/addp/actions/runs/41021354128/job/123949620339)于2026-10-30 16:00:11（Asia/Shanghai）completed／success。原始日志确认实际checkout及Go／Python三源、查询／历史趋势、事件／签名重试及同事件恢复、停源隔离通过。取消夹具后续提交不是手动dispatch／rerun，不用当前HEAD替代本次固定实现源码。
+实现提交的[自然push attempt 1／run41021354128／HTTP Job123949620339](https://github.com/pampa0629/addp/actions/runs/41021354128/job/123949620339)于2026-10-30 16:00:11（Asia/Shanghai）completed／success。原始日志确认实际checkout及Go／Python三源、查询／历史趋势、事件／签名重试及同事件恢复、停源隔离通过。取消夹具后续提交不是手动dispatch／rerun，不用当前HEAD替代本次固定实现源码。
 
 原始artifact12962652612共24971字节，实际ZIP SHA256=`733ccd6a69e3de2218b17bd2ebacc9d67bbeacf0a7342c9fc62dfe51152d2b3b`与API登记一致，CRC和唯一JSON成员通过；报告SHA256=`d89a186c79d3565424bebe0d74ac4294305f6daa1c4b53ef989217632fa3b57e`。353项输入独立逐文件匹配固定4e5487386提交，原始日志的摘要与报告逐字段一致。最初两次只读归档下载因网络握手超时失败，后用同一官方归档成功取回；没有重跑作业，不把传输失败记作CI失败。
 
@@ -528,7 +504,6 @@ cleanup.zero_owned_resources=true、failures=[]，当次构建器／容器／网
 
 本批针对活动Go临时树与整树读取并发的机制，不宣称已经观测到历史散列对象的删除进程；历史失败保留。正式Agent/Copilot产品后端到Console／Monitor页面、停源后历史读取等原有缺口不被此协调修正替代。没有手动重跑、新开本地窗口、Hosted、容量或定时。
 
-
 <a id="http-stop-confirmation-recurrence-20261030"></a>
 
 ## 2026-10-30 稳定读取后停止确认超时复发与最小取证（根因未定）
@@ -543,7 +518,7 @@ cleanup.zero_owned_resources=true、failures=[]，当次构建器／容器／网
 
 先修观测／T0–T3规范，再提交`f49f59ad39d2d50f0aef69335ca74aa5c1fdb830`补取证缺口：只复用原确认清单读取，记录尝试／完整返回次数、成员集合变化次数、最后尝试起点及最后一次完整读取的单调起止和固定R／S／D／T／t／Z／X／I／other状态计数。仅保留一份完整快照，不保存成员PID、出生身份、原始状态、命令、路径或原始stderr，不增探针／信号／读取；清单未返回与多次快速返回分列。取证开销仍在原四秒及原资源预算内，一次组暂停、全成员停止、完整统计、finally恢复、首失败及清理期限不变；这是诊断修正，尚未修复或唯一定位实际超时根因。
 
-确定性反例先在旧代码缺少confirmation事实时按预期产生断言失败（2用例／3分支，无额外错误），补齐后预算53项通过；逻辑单调时钟分别模拟稳定D／T组反复返回和一次清单耗尽截止，二者均拒绝进入读取、保留首inventory截止并恢复，且证明没有额外组读取或信号。另覆盖成员变化、未知状态封闭归other、只保留最后完整快照及不泄漏身份。这只证明模型／取证契约，不证明真实失败就是该模型。`make test-infra-runtime-log-lifecycle`退出0，包含HTTP本地23项、Trace共享136项及相关Go／登记、预算与生命周期122项；Metrics配置122项、T2登记24／12／9／2及diff通过。现有Make／workflow／输入登记和同一预算artifact自动覆盖，无需新增入口／依赖／配置／镜像。新增取证的[自然push attempt 1／run41039374832／HTTP Job124008442804](https://github.com/pampa0629/addp/actions/runs/41039374832/job/124008442804)已于2026-10-30 18:30:33（Asia/Shanghai）completed／success，实际checkout为固定f49f59ad3；没有手动dispatch／rerun。
+确定性反例先在旧代码缺少confirmation事实时按预期产生断言失败（2用例／3分支，无额外错误），补齐后预算53项通过；逻辑单调时钟分别模拟稳定D／T组反复返回和一次清单耗尽截止，二者均拒绝进入读取、保留首inventory截止并恢复，且证明没有额外组读取或信号。另覆盖成员变化、未知状态封闭归other、只保留最后完整快照及不泄漏身份。这只证明模型／取证契约，不证明真实失败就是该模型。`make test-infra-runtime-log-lifecycle`退出0，包含HTTP本地23项、Trace共享136项及相关Go／登记、预算与生命周期122项；Metrics配置122项、T2登记24／12／9／2及diff通过。新增取证的[自然push attempt 1／run41039374832／HTTP Job124008442804](https://github.com/pampa0629/addp/actions/runs/41039374832/job/124008442804)已于2026-10-30 18:30:33（Asia/Shanghai）completed／success，实际checkout为固定f49f59ad3；没有手动dispatch／rerun。
 
 原始artifact12970980011共26383字节，实际ZIP SHA256=`60252c77529d8833ffc004a3d5c0c371dfbee976e6a08d6603b206d6ada334ce`与API一致，CRC及唯一JSON成员通过；报告SHA256=`f76e4116094d08f9a7016b0ef80f4214d881157497f65c2e4b8215073f82dd5e`，353输入逐文件匹配固定修正源码，原始日志摘要逐字段匹配报告。真实三源采集／查询／历史趋势、告警事件／签名重试／同事件恢复、停源隔离通过；本轮未复现确认超时，不用新成功覆盖fe105失败或宣称超时根因已修复。
 
@@ -552,7 +527,6 @@ cleanup.zero_owned_resources=true、failures=[]，当次构建器／容器／网
 31份confirmation均有attempts=completed=2、membership_changes=0，最后尝试与最后完整快照的起点一致，单调起止均在确认完成之前，固定九类状态的合计不超过64且末次只有T／t／Z／X，未保存原始身份。新增成功字段已在Linux真实接通；一次读取耗尽截止、稳定D／T不确认及未知状态other仍只由确定性反例覆盖，不能宣称已采到实际失败状态。下一步若后续自然复发，先用新计数／端点／末次状态区分等待、成员变化和单次读取耗时，再决定最小修正，不先把D纳入安全或改暂停顺序。
 
 `/tmp/addp-p19-http-confirmation-recurrence-audit-20261030.json`保存本次独立归档／353输入／日志核对，原报告和日志沿`/tmp/addp-ci-20261030-100013`复用；`/tmp/addp-p19-http-confirmation-preparation-20261030.json`保存固定修正输入和红／绿门禁日志散列。`/tmp/addp-p19-http-confirmation-linux-20261030.audit.json`另存新自然运行的原始归档、353输入、31份封闭确认、预算／清理核验；同前缀job.log／report.json／zip保留原始证据。没有手动dispatch／rerun、新开本地真实窗口、Hosted、容量或定时。正式Agent/Copilot到页面和停源历史读取原缺口保持，后续若证据显示需要改变已确认的单次组暂停协议，应先讨论规范与范围，不直接放宽通过条件。
-
 
 <a id="http-confirmation-followup-manual-20261030"></a>
 
@@ -587,7 +561,6 @@ cleanup.zero_owned_resources=true、failures=[]，当次构建器／容器／网
 | 12979905507 | 27557／`cd109ea49f0d11f42099a6a8a486a9a310a4ea538b25dcdf4e5ee7d257078023` | `ba6f1488a5062630299f52cb04ff58b702853e446abfd50f786ef55eca2e126f` |
 
 本机`/tmp/addp-p19-http-confirmation-followup-verified-20261030.json`保存12候选／五专项、归档／353输入／1047样本／178确认及三阶段实际覆盖的独立核对；各run同前缀artifact-meta.json／zip／report.json／audit.json保存原始及核验结果，最新运行另留job.log。仅更新两份证据文档，验证34主题计数、唯一锚点／索引和diff，不重跑代码门禁或已有运行。没有手动dispatch／rerun、新开本地窗口、Hosted、容量或定时；正式Agent/Copilot产品到页面、停源历史读取及历史具体删除进程等原缺口不被替代。
-
 
 <a id="http-confirmation-followup-manual-20261031"></a>
 
@@ -631,7 +604,6 @@ cleanup.zero_owned_resources=true、failures=[]，当次构建器／容器／网
 
 本机`/tmp/addp-p19-http-followup-20261031-runs.json`／candidates.json／jobs.json保存候选和分页筛选；同前缀verified.json及各run的artifact-meta.json／zip／report.json／audit.json保存原始与独立核验，最新已完成另留job.log；pending-41087857172.json／pending-41087959071.json保存两项原未完成快照，final-41087857172.json／final-41087959071.json保存00:30更新状态。仅更新两份证据文档，验证35主题、唯一锚点／索引、核心源散列及diff，没有代码变更或重跑代码门禁。没有手动dispatch／rerun、新开本地窗口、Hosted、容量或定时；正式Agent/Copilot产品到页面、停源历史读取及历史具体删除进程等原缺口保持。
 
-
 <a id="http-remaining-completed-20261031"></a>
 
 ## 2026-10-31 剩余Linux HTTP专项最终通过核验
@@ -647,7 +619,6 @@ cleanup.zero_owned_resources=true、failures=[]，当次构建器／容器／网
 至此，上轮记录的九条已生成HTTP专项均有实际步骤／预算归档通过证据，合计1890个完整样本、316次暂停全部恢复，最长完整采样1.342966秒；该合计只是各次固定运行的记录，不是容量或长期不复发证明，也不外推后来push、未生成专项的workflow或当前HEAD。最后一条同样没有复发目录消失／停止确认超时，未取得真实失败循环内状态，fe105实际根因和修复仍未确认；保留历史失败，不因九次成功改停止规则或把D状态接纳为安全。正式Agent/Copilot产品后端到页面、停源历史读取及历史具体删除进程等原缺口保持。
 
 本机`/tmp/addp-p19-http-remaining-20261031-job.json`保存最终Job快照；同前缀artifact-meta.json／zip／report.json／job.log／audit.json保存原始归档、353固定输入、37份封闭确认、资源／阶段计数／清理和日志摘要独立核验。本轮仅两份文档变更，验证36主题计数、唯一锚点／索引、历史状态到最终结果链接及diff，没有代码变更或重跑代码门禁。没有手动dispatch／rerun、新开本地窗口、Hosted、容量或定时；若后续自然超时复发，仍须先用新增取证定位再讨论最小修正，不在本次正常记录上推测改码。
-
 
 <a id="http-formal-page-oracles-20261031"></a>
 
@@ -671,7 +642,6 @@ Console 受控回归与人工用例复用唯一 `http-quality-page-support.mjs`�
 
 正式产品构建／注册／mTLS采集、真实密码/MFA、API及两阶段真实页面、注销和最终零残留仍未验收；停源后历史读取、5／15分钟完整窗口、模型／工具、5xx／告警通知、Hosted、容量及72小时保留仍不在本批。历史 Mac Docker list／inspect 等待与完整四秒失败原因未确认；Linux SDK 稳定读取路径的成功不能代替本地资源守卫修复。下一步只建议另行确认原60分钟真实本地窗口，未取得授权前不启动。
 
-
 <a id="http-formal-page-window-projection-failed-20261031"></a>
 
 ## 2026-10-31 正式 Agent/Copilot 页面本地窗口：指标投影准备失败并清理
@@ -687,7 +657,6 @@ Console 受控回归与人工用例复用唯一 `http-quality-page-support.mjs`�
 原生命周期自动清理完成，报告`cleanup.zero_owned_resources=true`、`failures=[]`，当次容器／网络／卷／builder残留检查无失败；私有工作目录已删除，本轮只读核对同run_id目录数量为0。首失败保留，原资源及清理期限未改。失败即结束，剩余时间没有被复用，未自动重试或续窗。
 
 报告SHA256=`dfcc1dce648df718b62d925eafbbc1c59f79bc8b8bb09810eb139b269f6626ec`，原报告8002字节，位于系统临时目录`addp-http-local-3fa6c05f2dd047728a1b0b29925fc05e-report.json`。仅脱敏报告、阶段日志、窗口起点及独立核对回执归档到`/tmp/addp-p19-http-product-window-20261031-3fa6c05f/`（`report.json`／`run.log`／`launch.json`／`audit.json`，目录0700／文件0600），不保留临时密钥、口令或完整环境。正式产品→身份→采集/API→Console/Monitor页面闭环仍未验收；停源历史、完整5/15分钟窗口及其余原缺口保持。本次只更新两份证据文档，以38条主题计数、唯一锚点／索引、固定输入摘要、报告／清理及本专项差异检查验证，不重复已通过且未变的代码门禁。
-
 
 <a id="http-private-openssl-config-20261031"></a>
 
@@ -714,13 +683,11 @@ OpenSSL依赖在原HTTP runner先检查，Platform consistency既有准备步骤
 
 实现与规范提交`a517d68becca6d55a29cad1bf9ff48191a0dd23a`已推送main，仅10个本专项路径／片段；共享Makefile仅1行、登记文件仅12行自有增加，其他会话改动未提交。自然push生成[Platform CI run41204767479／Platform consistency Job124547494998](https://github.com/pampa0629/addp/actions/runs/41204767479/job/124547494998)，截至2026-10-31 21:17（Asia/Shanghai）API为queued／conclusion=null／steps=[]，不计Linux或单次完整runner通过。后续须核对该固定提交实际步骤，不能用后续文档提交的选择跳过或其他Job结果补齐；本轮未手动重跑／dispatch，未设置任何定时跟进。
 
-
 2026-11-01 08:03手动核对同一固定提交的自然CI最终结果：原21:17排队快照保留；run41204767479仍为main／push／attempt 1／`a517d68becca6d55a29cad1bf9ff48191a0dd23a`，Job124547494998已于2026-10-31 21:38:08—21:42:08（Asia/Shanghai）执行并completed／failure。实际checkout日志与固定SHA一致；`Install platform check dependencies`步骤成功，OpenSSL为Ubuntu包3.0.13-0ubuntu3.16，`command -v openssl`返回`/usr/bin/openssl`。这只证明Linux依赖准备成功，不是离线证书组或HTTP runner通过。
 
 实际`make test-platform`在靠前的`test-platform-review`失败：`TestTransferReviewSourceDrift/config`与`batch_contract`分别报告`transfer/docs/transfer-基本概念及配置说明.md`及`docs/spec/addp智能体Tool开放规范.md`来源漂移，make退出2。按固定源码的顺序及完整日志，尚未调用`test-monitor-http-local-runner`，本专项37项、实际离线证书组和Go身份子门禁在这次Linux运行均**未执行**；不能把聚合失败误写为HTTP断言失败，也不能用OpenSSL安装或既有Mac分项结果补齐Linux单次完整入口。仅定位到阻断本专项的首个前置，不调查、修复或跟踪上述无关功能。
 
 本次只读取得Job／run元数据与完整原始日志；日志301934字节，SHA256=`7ec710605d99cef3d09a0e664efecce71b4a550d6dfd550c6f12c579d0bbdd4c`，本机`/tmp/addp-p19-http-platform-124547494998.log`及同前缀`-job.json`／`-run.json`／`-audit.json`保存最终证据与独立核对（文件0600）。仅补充原记录及索引，39主题不变，验证唯一锚点／索引、固定SHA／attempt／步骤、日志散列及本专项差异；没有重跑代码门禁或实际证书组，没有手动CI重跑／dispatch、新开本地窗口、Hosted、容量或定时。Linux完整runner与正式产品到页面验收仍未通过；下一步建议只手动核对后续自然CI中本专项实际执行结果，须重新核验固定输入，不能将后续主分支状态直接归给a517。
-
 
 <a id="http-stop-confirmation-real-dt-20261101"></a>
 
@@ -741,7 +708,6 @@ members=2仅为发停止前的初始清单，末次完整计数合计3；members
 恢复成功后原首因保留；exit143为失败后的取消结果，failure_during_cleanup=false，compile_cleanup_error／cleanup_overdue为空，inputs_unchanged／cleanup_verified／private_directory_removed=true。原4 CPU／4 GiB、私有可写小于2 GiB、1200秒和全量统计、失败清理口径保持；清理成功不补算业务通过。已向用户提出只补一次有界等待位置与成员关系取证的建议，涉及超出现行“只复用清单”的读取范围，等待确认后才修规范／代码；本记录不授权或宣称已实施该方案。
 
 `/tmp/addp-p19-http-stop-recurrence-20261101.zip`／同前缀`-report.json`／`-audit.json`保存原始归档和独立核验（0600），原日志复用`/tmp/addp-ci-20261101-020424/job-124583446674.log`，SHA256=`12713459415001ed41cfa22a798b1074446722fcfe824cd67d05b036b68f195c`。仅更新两份证据文档，验证40主题计数、唯一锚点／索引、归档散列／353输入／计数端点／日志摘要与diff，不重跑代码或运行门禁，不修改守卫。没有手动CI重跑／dispatch、新本地窗口、Hosted、容量或定时；正式Agent/Copilot到Console/Monitor页面、停源历史及其余原缺口保持。
-
 
 <a id="http-bounded-wait-evidence-20261101"></a>
 
@@ -768,7 +734,6 @@ members=2仅为发停止前的初始清单，末次完整计数合计3；members
 
 截至2026-11-01 09:03（Asia/Shanghai），该固定源码自然push生成[Release/T2 run41259443591](https://github.com/pampa0629/addp/actions/runs/41259443591)和[Platform CI run41259443660](https://github.com/pampa0629/addp/actions/runs/41259443660)，均queued／无结论，HTTP矩阵尚无实际结果，不能计Linux／真实取证通过。后续只手动核对本专项实际步骤和原始归档，未触发rerun／dispatch或设置定时；不新开本地窗口，不运行Hosted或容量。前述11db／fe105失败保留；正式Agent/Copilot产品到Console/Monitor页面、停源历史及原长期保留等缺口保持。
 
-
 <a id="http-bounded-wait-linux-success-086-20261101"></a>
 
 ## 2026-11-01 固定086自然Linux HTTP整门禁通过，持续D取证未触发
@@ -785,8 +750,7 @@ members=2仅为发停止前的初始清单，末次完整计数合计3；members
 
 原生受控请求Go148、Python[75,29]，总252；各源failure／healthy尝试分别90／58、45／30、15／14，阶段与限额、计数及最后请求端点通过固定086的完整请求校验。来源localhost叶子／source IP两项TLS探针通过且叶子摘要匹配当次原子换证；两Python ASGI来源实际启动并导入原生依赖，无生产者清理错误。实际日志证明Go和两ASGI SDK来源的真实mTLS采集、身份隔离、Monitor查询、有权历史趋势、原生Prometheus窗口、503打开事件、签名通知失败后重试、成功窗口恢复同一事件及来源停止隔离通过。只计完整标准Linux HTTP T2功能门禁；这不是正式Agent/Copilot产品构建、密码／MFA、Console/Monitor真实浏览器页面或Hosted验收，也不关闭停源历史／长期保留及原容量缺口。
 
-原始归档／日志复用`/tmp/addp-ci-20261101-103029/http-quality-086ae-budget.zip`及`http-quality-086ae-job.log`，日志137252字节，SHA256=`45dbad4c85b452f0f590126d1bc3b153e455d400dd7ba7645119422b92f143f5`。本会话独立审计位于`/tmp/addp-p19-http-086-followup-20261101/verified-report.json`／`verified-audit.json`／`job-final.json`／`artifact-meta.json`及run快照（目录0700／文件0600），保留原输入、38份封闭确认及预算／请求／清理核验。仅更新两份证据文档，以42主题计数、唯一锚点／索引、固定输入／归档／实际日志／资源及首因清理检查和diff验证，不重复代码测试。已核对维护会话状态后按原授权回报；未手动rerun／dispatch、开本地窗口或运行Hosted／容量／定时。
-
+原预算 ZIP 与 Job 日志在 `/tmp/addp-ci-20261101-103029/`。同次输入、38 份确认及预算、请求和清理核验在 `/tmp/addp-p19-http-086-followup-20261101/`。
 
 <a id="http-formal-admission-runner-linux-20261101"></a>
 
@@ -813,7 +777,6 @@ members=2仅为发停止前的初始清单，末次完整计数合计3；members
 
 原始日志`/tmp/addp-p19-http-page-admission-086-platform.log`共425865字节，SHA256=`82cd34c5a7311e894968af3d7a71df8944b61aeed941d472f933cc9450a90e4d`；独立审计`/tmp/addp-p19-http-product-admission-20261101/audit.json`及`fixed-http-recipe.txt`保存固定Make配方、37项／Go及离线T1、12项来源比较（私有目录／文件）。仅更新两份证据文档，验证43主题、唯一锚点／索引、固定SHA／配方／实际日志及自有差异，不重跑任何代码或实链门禁，不设置定时。
 
-
 <a id="http-formal-product-window-agent-apt-failed-20261101"></a>
 
 ## 2026-11-01 正式产品60分钟本地窗口：Agent镜像系统包步骤失败，已清理
@@ -833,7 +796,6 @@ members=2仅为发停止前的初始清单，末次完整计数合计3；members
 标准生命周期清理`zero_owned_resources=true`、failures=[]：原内核先停采样并等其退出，再回收当次只读测量助手、builder及其容器／卷、当次标签的容器／网络／卷和临时镜像标签，最后删除私有目录。报告4份清理阶段归属列表命令全部passed，缓存删除子进程已停止；本会话按同run_id只统计目录而非-report.json文件，独立确认私有工作目录残留0。没有把清理动作当作业务通过。原共享Infra仍保留，不删除其他会话资源。
 
 原报告1441711字节，SHA256=`520c31da1ceff3f601d66a617d63d80ff301a5a46ceaf2ca2bf681551c2eb2db`，原路径系统临时目录`addp-http-local-4b06f791f4f144f29fbdd9f0b9cf52ee-report.json`；归档`/tmp/addp-p19-http-product-window-20261101-x5tejves/`含launch.json／entry-started.json／completion.json／expected-inputs.json／infra-status.log／run.log／report.json／audit.json，目录0700／文件0600，无私钥、口令或完整环境。本次仅补两份证据文档，验证44主题、唯一锚点／索引、15固定输入、130样本／阶段／首因／清理及差异，不重复代码门禁或任何运行。下一步建议先调查Agent系统包构建的已有配置和取证，明确最小修正方案；不得在本轮剩余时间重试构建、改镜像／apt源／代理或另起环境。
-
 
 <a id="http-agent-apt-bounded-diagnostic-20261101"></a>
 
@@ -929,8 +891,7 @@ members=2仅为发停止前的初始清单，末次完整计数合计3；members
 | `make test-monitor-http-local-runner` | 37项／0.963秒、JS语法／登记及System身份Go子门禁通过；原离线证书T1为OpenSSL4.1.0、35命令／0.863569秒、峰值125489字节、4次预期拒绝、清理完成，无真实产品环境 |
 | AST／差异核验 | 唯一共享解析函数改变；其他顶层定义及生命周期、资源、恢复、清理、Docker调用不变，产品Dockerfile、Make入口与workflow未调整 |
 
-现有Platform调用链及自动登记已覆盖该共享解析器和测试，无需新增入口或CI编排。本轮代码、两份规范及两份证据共6个自有路径保留为未提交／未推送差异；现有Platform product-build每次push还会按baseline构建Agent；本轮只授权确定性门禁，因此不以推送触发实际镜像构建。日志位于`/tmp/addp-p19-apt-transport-{red,directed,trace-runner,http-runner}-20261102.log`。本地门禁通过只证明新增封闭分类，不代表自然Linux新版本已验证、历史APT根因修复或正式身份／API／页面闭环通过；真实构建另行讨论确认。原四秒、资源／请求／清理预算均保持，未执行APT、Docker探针、产品构建、新窗口、Hosted、容量或定时。
-
+本轮代码、两份规范及两份证据共6个自有路径保留为未提交／未推送差异；现有Platform product-build每次push还会按baseline构建Agent；本轮只授权确定性门禁，因此不以推送触发实际镜像构建。日志位于`/tmp/addp-p19-apt-transport-{red,directed,trace-runner,http-runner}-20261102.log`。本地门禁通过只证明新增封闭分类，不代表自然Linux新版本已验证、历史APT根因修复或正式身份／API／页面闭环通过；真实构建另行讨论确认。原四秒、资源／请求／清理预算均保持，未执行APT、Docker探针、产品构建、新窗口、Hosted、容量或定时。
 
 <a id="http-apt-transport-natural-linux-20261103"></a>
 
@@ -950,7 +911,6 @@ members=2仅为发停止前的初始清单，末次完整计数合计3；members
 两组runner实现／单元／Online／登记测试共8个Python路径与HTTP页面脚本共9项逐字节比较：发布提交`d5a9a3f21`、实际CI提交`f1a50c03a`及本次工作区均一致，包含新增封闭的连接／正文与端点分类。原始日志505397字节，SHA256=`58fb981a256759f8ed70fecd103f838bbd45044d640b470c7327dcc8992251dc`；日志、收据及9项来源摘要保存在`/var/folders/r1/l7b49c757dz02zftf_l9vl9r0000gn/T/addp-p19-http-trace-natural-20261103-xed4ix9r/`（目录0700、文件0600）。同目录其他作业日志不与本固定提交合并为一次验收。
 
 本次补齐新增APT取证的自然Linux确定性门禁证据，不代表真实APT失败分支已运行、历史Copilot下载根因已定位或修复。正式Agent/Copilot构建后的真实密码／MFA、采集API、Console／Monitor页面、停源、注销与清理闭环仍未验收；停源历史读取仍为另批产品缺口。原四秒及资源预算未变；未改产品、构建策略或守卫，未手动重跑、新开本地窗口、运行Hosted／容量／定时。当前仍为部分实现／部分验收。
-
 
 <a id="http-formal-product-window-resource-timeout-20261103"></a>
 
@@ -975,7 +935,6 @@ members=2仅为发停止前的初始清单，末次完整计数合计3；members
 
 归档为`/var/folders/r1/l7b49c757dz02zftf_l9vl9r0000gn/T/addp-p19-http-product-window-20261103-liev9el8/`（目录0700、文件0600），含launch／expected-inputs／entry-started／completion／audit、入口阶段日志和report。报告424292字节，SHA256=`a5fa541e710018e958326232f5136b14ee9715a542da576d1d720e183d50e968`；入口日志4508字节，SHA256=`0973f93f346d4954ae2dedada958b4bdc862cfaa11191e91f02b779efb61c514`。独立核验固定15项来源、零重试、分步计时及清理；本次只更新失败证据与索引，不修守卫或扩大取证，不运行Hosted、容量或定时、不接管个人服务。正式产品闭环继续部分实现／未验收，已有确定性及其他限定实链证据保持各自范围。
 
-
 <a id="http-volume-checkpoints-local-20261103"></a>
 
 ## 2026-11-03 卷测量检查点与有界残片（仅本地确定性门禁）
@@ -994,10 +953,9 @@ members=2仅为发停止前的初始清单，末次完整计数合计3；members
 | `make test-monitor-http-local-runner` | 最终37项／2.063秒及既有JS／HTTP登记／System身份子门禁通过；离线TLS T1为OpenSSL4.1.0、35命令／1.909249秒、峰值125465字节、4次预期拒绝及清理完成，非正式产品身份或采集链 |
 | AST／差异核验 | 既有定义仅Lifecycle.command与_sample改变，新增两个私有诊断函数；sample／monitor／互斥、配额／OOM、恢复／清理、builder／产品构建／缓存回收定义保持；未改Dockerfile、Make或workflow |
 
-初轮HTTP runner因离线TLS夹具直接调用命令内核、无新增实例方法而失败；已将捕获实现收敛为内核独立函数，保留原TLS夹具及产品TLS，最终37项恢复通过。HTTP资源错误替身只同步新帧格式，保留原“不读取重试／不忽略du失败”断言。两组runner沿原Platform生命周期自动发现，登记检查实际通过，无需新增workflow或旁路入口。
+初轮HTTP runner因离线TLS夹具直接调用命令内核、无新增实例方法而失败；已将捕获实现收敛为内核独立函数，保留原TLS夹具及产品TLS，最终37项恢复通过。HTTP资源错误替身只同步新帧格式，保留原“不读取重试／不忽略du失败”断言。登记检查通过。
 
 日志为`/tmp/addp-p19-volume-checkpoints-{controlled-red,directed,trace-runner,http-runner}-20261103.log`（0600），旧源码与规范快照在`/var/folders/r1/l7b49c757dz02zftf_l9vl9r0000gn/T/addp-p19-volume-checkpoints-before-20261103-s3m9sy6q/`（0700／0600）。最终补丁／输入摘要及日志哈希在`/var/folders/r1/l7b49c757dz02zftf_l9vl9r0000gn/T/addp-p19-volume-checkpoints-delivery-20261103-9p0480cu/`。本批7个自有路径本地落地，未推送，避免本轮额外触发基线Agent镜像构建；自然Linux新版本和真实超时残片尚未运行验证，不把本地诊断通过当作四秒性能问题已解决。上一窗口失败及零残留清理结论保持，原4秒、8 CPU／12 GiB、4 GiB停止线、最长五秒开始间隔与清理期限均不变；没有新增Docker请求、容器、线程、探针、/proc读取或跨VM校时。
-
 
 <a id="http-volume-checkpoints-natural-linux-20261103"></a>
 
@@ -1020,19 +978,13 @@ members=2仅为发停止前的初始清单，末次完整计数合计3；members
 
 至此新检查点有本地及自然Linux确定性通过证据，真实卷测量超时的残片尚未运行采集，不能宣称已定位CLI／daemon／卷扫描根因或解决四秒性能问题。固定92309920b本地窗口失败与零残留清理结论不变；正式Agent/Copilot构建、真实密码/MFA、采集/API、页面、停源及注销闭环仍未验收，停源历史读取另批。当前保持部分实现／部分验收。本轮只更新证据与索引，不修改产品、预算或取证实现，不手动重跑、新开本地窗口或运行Hosted／容量／定时。
 
-
 <a id="http-checkpoint-follow-clauses-20261103"></a>
 
 ## 2026-11-03 真实检查点随行采集条款确认（仅准备，未运行）
 
-用户确认“采用，只补条款，真实采集待另行授权”。本轮只修订运行观测和T0–T3验收条款，复用已实现的卷测量进入／返回检查点及原report；无新增入口、采集器、运行选项、产品实现或CI编排。当前无仍有效的本专项运行窗口，不将方案确认视作启动许可，也不借历史120秒／40分钟诊断条款重新运行。
+本次确认随行采集条款，真实采集仍待另行授权。随原负载记录卷测量进入／返回检查点，编译阶段初值为至少 12 次完整检查。样本不足如实记未覆盖。完整四秒、最多五秒开始间隔、8 CPU／12 GiB、4 GiB 停止线和原清理期限保持。
 
-已确认最小模型：仅随以后另行获准的本专项原有负载采集，新增业务请求、压测、构建及Docker调用为零；不重建环境、不重试构建、不附着个人／其他会话资源。编译阶段至少12次完整检查为离线验收初值，样本不足如实未覆盖，不延时补样或以空闲替代。四秒完整检查、最多五秒开始间隔、8 CPU／12 GiB、4 GiB停止线与依附运行的原截止／清理期限保持，不另设诊断窗口。
-
-判定继续分开：归属、输入、检查点、最小样本、资源和清理完整，只证明该次真实采集链路；未复发不等于超时修复；若复发仍保留运行失败及有界诊断，不能计稳定性通过，标记缺失不推断未执行或根因。原窗口失败、自然Linux HTTP37／Trace163确定性分项通过和整作业取消的独立证据均不改写。正式Agent／Copilot身份／采集API／页面闭环、真实超时残片及性能根因继续未验收，整体仍部分实现／部分验收。
-
-本次只执行文档差异、锚点／引用、主题计数及既有实现／入口哈希不变校验，没有重跑代码门禁，也未运行探针、Docker、构建或真实采集。规范及[验收条款](../T0-T3测试规范.md)指向同一[随行采集准入](../../addp平台运行观测规范.md#volume-checkpoint-follow-acceptance)，本批不运行Hosted、容量或定时；后续实际执行仍待另行明确授权。
-
+本次范围为文档静态检查。真实采集、超时残片、性能根因和正式产品页面仍未验收。旧窗口失败与 Linux HTTP 37／Trace 163 的分项通过及整 Job 取消分别保留。[T0–T3 验收条款](../T0-T3测试规范.md) · [随行采集准入](../../addp平台运行观测规范.md#volume-checkpoint-follow-acceptance)
 
 <a id="http-compile-checkpoints-local-20261103"></a>
 
@@ -1058,7 +1010,6 @@ members=2仅为发停止前的初始清单，末次完整计数合计3；members
 
 原始归档`/var/folders/r1/l7b49c757dz02zftf_l9vl9r0000gn/T/addp-p19-compile-window-20261103-kc5b9jtp/`（目录0700、文件0600），含launch／Infra状态／expected-inputs／entry-started／completion／独立audit／原始report。报告528685字节，SHA256=`5abbd1aab2c49e67da5db420f06259d4d9493a30c31fb8456881f4bf5a46c260`；入口日志SHA256=`9beea1452883a3db51314dde7b22fb0677ce34225c4a78e5e0beed8e851df04a`。准备快照及门禁摘要在`/var/folders/r1/l7b49c757dz02zftf_l9vl9r0000gn/T/addp-p19-compile-profile-before-20261103-auwt01zn/`与`/tmp/addp-p19-compile-profile-{http,trace}-runner-20261103.log`。本轮更新证据并回报维护会话，整体仍为部分实现／部分验收。
 
-
 <a id="http-full-monitor-apt-index-failed-20261103"></a>
 
 ## 2026-11-03 单次完整本地窗口在Monitor镜像APT索引阶段失败
@@ -1081,7 +1032,6 @@ report.assertions为空，无images最终身份清单、Python依赖、浏览器
 
 私有归档`/var/folders/r1/l7b49c757dz02zftf_l9vl9r0000gn/T/addp-p19-http-full-window-20261103-7cmces4n/`（目录0700、文件0600），包含launch／Infra状态／expected-inputs／entry-started／completion／entry.log／原report及独立audit。报告1326657字节，SHA256=`b081119705eef0f5900e61d31a7b141675c215072c93f3fa68cbd52a5c9637ed`；入口日志SHA256=`dd3df5a21f2887266695b964de0509edefb77fe391d8f4e7989847db1b7b0724`。仅更新两份既有证据及55主题索引，验证固定输入、原归档散列、样本／检查点／时限／零残留、唯一锚点和引用，未因文档更新重跑代码门禁。本轮回报维护会话，整体维持部分实现／部分验收；建议下一步先只读关联现存Monitor Dockerfile、索引签名分类及已有构建／代理记录，提出最小修正与验收方案后再讨论，不自动重试构建或开启新窗口。
 
-
 <a id="http-monitor-apt-signature-diagnostics-20261103"></a>
 
 ## 2026-11-03 Monitor APT索引只读关联与最小取证门禁
@@ -1103,7 +1053,6 @@ report.assertions为空，无images最终身份清单、Python依赖、浏览器
 
 原只读关联及实现审核位于`/var/folders/r1/l7b49c757dz02zftf_l9vl9r0000gn/T/addp-p19-monitor-apt-offline-20261103-czdxdxpo/`的correlation.json／implementation-audit.json（0700／0600）；红、最终Trace及HTTP日志为`/tmp/addp-p19-monitor-apt-{red,trace-final,http-final}-20261103.log`（0600），审核收据保存实现输入与日志SHA256。仅更新本专题、56主题索引并回报维护会话，本会话不推送以避免额外触发镜像构建。原失败报告不改写、不追填新字段，不运行Hosted、容量、定时或接管个人开发服务；下一步只宜在另行批准的原产品运行中使用新增诊断，具体修复仍待充分证据与讨论。
 
-
 <a id="http-preparation-directory-categories-20261103"></a>
 
 ## 2026-11-03 Linux HTTP准备目录消失调查及固定分类扩展
@@ -1114,7 +1063,7 @@ report.assertions为空，无images最终身份清单、Python依赖、浏览器
 
 只读核对失败固定源码与当前相关七项输入（预算实现及测试、shell编排、配置测试、private-state、身份准备及配置渲染）逐字节相同，未发现已有修复。源码显示回执发布后即允许扫描私有根目录，准备流程仍有原子发布／临时名称删除，且不在Go组或退出清理协调范围内，存在可解释此类故障的并发机制；但既有固定相对路径候选均未匹配对象哈希，原日志无du路径正文，不能确认本次具体对象、删除者或唯一根因。旧other不按新映射追填，不据目录位置断言原子发布已被直接观测。
 
-实现提交`f0aa912a8abdd04869b703c0a18ff815d5457f3a`：先修运行观测及T0–T3条款，唯一directory_objects映射仅增加postgres-auth→postgres_auth、tls→tls、deployment→deployment、node-tls→node_tls、control→control、query-tls→query_tls。只匹配当次根的精确首层，目录本身和后代同类，未知及嵌套／近似同名仍other；原字段结构、project域相对SHA256、4 KiB／八非空行、归属／穿越／歧义／超限及首失败语义保持。AST反向去掉六项后整个预算模块与准备基线163a24be8完全相同；编排、来源发布、Make和CI登记均未改。现有配置／生命周期聚合及T2输入登记已命中，无新入口或workflow。
+实现提交`f0aa912a8abdd04869b703c0a18ff815d5457f3a`：先修运行观测及T0–T3条款，唯一directory_objects映射仅增加postgres-auth→postgres_auth、tls→tls、deployment→deployment、node-tls→node_tls、control→control、query-tls→query_tls。只匹配当次根的精确首层，目录本身和后代同类，未知及嵌套／近似同名仍other；原字段结构、project域相对SHA256、4 KiB／八非空行、归属／穿越／歧义／超限及首失败语义保持。AST反向去掉六项后整个预算模块与准备基线163a24be8完全相同；编排、来源发布、Make和CI登记均未改。
 
 | 本地确定性门禁 | 实际结果 |
 | --- | --- |
@@ -1130,7 +1079,6 @@ report.assertions为空，无images最终身份清单、Python依赖、浏览器
 
 本轮仅本地自有提交及57主题证据归档，并回报维护会话；没有推送、重试构建、新开本地窗口、Hosted、容量、定时或接管个人服务。分类实现及确定性门禁通过，不计修改后的自然Linux采样或正式Agent／Copilot到Console／Monitor页面闭环通过；目录消失是否消除、具体删除者及APT根因均未验。下一步只在后续另行获准的原运行中使用新增类别定位，再讨论必要的准备／采样协调，不现在猜测删除者加锁。
 
-
 ### 2026-11-03 20:42 远端包含性与自然CI排队核对
 
 用户本轮允许推送分类与证据并接受自然CI；先fetch核验，origin/main快照`785839a5772c1539fe8909d8dc59337b3daacb24`已同时包含f0aa912a8及49e08b6ac，本地与远端相同且无待推送提交。本会话此前未主动推送的事实保持；此次没有重复push或制造空提交，也未因追加排队记录再触发运行。
@@ -1138,7 +1086,6 @@ report.assertions为空，无images最终身份清单、Python依赖、浏览器
 最早已查询到包含新分类的[自然Release run41613913398](https://github.com/pampa0629/addp/actions/runs/41613913398)为main／push／attempt1，固定源码`64a6a3b16fbf639a051d96061502cfe694840135`；预算实现、预算测试及shell编排与已验证f0aa912a8逐字节一致。该源码包含分类实现，尚不含其后49e08b6ac证据提交，不能将两者混作相同源码。北京时间2026-11-03 20:42:26 API仍queued／conclusion=null；Release and T2 gate selection Job125842451761排队、steps为空，本专项http-quality Job尚未创建，artifact列表为0。没有实际Linux HTTP步骤、原始预算或目录消失复发证据，不计Linux通过或失败，不借后续其他Job、旧绿或仅源码相同补齐。后续含分类的自然run也仍排队，本轮固定前述候选，不取消、重跑或调查无关CI。
 
 原始run列表／jobs／artifacts及独立audit位于`/var/folders/r1/l7b49c757dz02zftf_l9vl9r0000gn/T/addp-p19-directory-natural-ci-20261103-t0ebcp9f/`（0700／0600）。只追加本专题与索引状态、核对主题数／锚点／引用及metadata归属，未重跑已有效本地门禁，未新开窗口、构建、Hosted、容量或定时；本次观察证据仅本地提交，回报维护会话时保持部分验收及自然Linux待执行。下一步仅手动核对该候选实际步骤及上传的同次原始预算，若目录消失复发先按新增类别定位，再讨论最小修正。
-
 
 <a id="http-natural-linux-budget-passed-20261104"></a>
 
@@ -1159,7 +1106,6 @@ report.assertions为空，无images最终身份清单、Python依赖、浏览器
 Preserve HTTP functional budget evidence于22:55:34—22:55:35成功，官方artifact13239563817名为monitor-http-budget-41613913398-1，26623字节；下载ZIP的SHA256=`c3b7e325ca3baa7e226409c479eaef427a29f58d110dc3f051d718fe6e56e4b8`与GitHub digest一致，CRC及唯一monitor-http-budget.json成员核验通过。原JSON148561字节，SHA256=`f5605587decceb00c1be9788a037730963aa2b0b1b8089370d52b08356baa6e5`；368项input_sha256逐文件与固定64a6a3b16源码一致，inputs_unchanged=true，日志末尾封闭预算摘要所有字段与原JSON逐项相同。完整日志134242字节，SHA256=`8d572e324e55c06b69550171c23b348d1c34659dc67a3c3b2efeed917e10cef1`；没有只依据绿色徽标或下载摘要判断通过。
 
 原始job／run／artifacts元数据、job.log／budget.zip／report.json及独立audit在`/var/folders/r1/l7b49c757dz02zftf_l9vl9r0000gn/T/addp-p19-http-125925007987-20261104-pvikyz67/`（0700／0600）。本轮仅更新58主题证据与索引、核对固定输入／归档／请求／资源／清理及文档锚点，不重跑有效代码门禁，也不触发额外CI。原eb8af3281准备目录失败保持独立failed，本轮是后继固定源码的一次Linux HTTP T2通过，不宣称根因修复、稳定性、正式密码／MFA产品页面、Hosted或72小时容量验收；未运行Hosted、容量或定时，未新开本地窗口。更新证据并回报维护会话后，建议下一步回到正式Agent／Copilot产品到页面的剩余准入与验收方案，真实窗口仍须另行确认。
-
 
 <a id="http-full-agent-build-deadline-20261104"></a>
 
@@ -1183,7 +1129,6 @@ Preserve HTTP functional budget evidence于22:55:34—22:55:35成功，官方art
 
 私有归档`/var/folders/r1/l7b49c757dz02zftf_l9vl9r0000gn/T/addp-p19-http-full-window-20261104-ycdtsdrn/`（0700／0600），包括launch、expected-inputs、Infra状态、两组准备runner日志、entry-started／entry.log／completion、原report及独立audit。报告2758017字节，SHA256=`ebe06bd937ca2c63a8be205908eaf5f9e6f1cb552b0f6c505c2f37ff2f4d6c25`；入口日志SHA256=`b887005af98378dd29939272f264afe0810a07f30ac461d256014646a23de8d8`。本轮只补59主题证据与索引，核对固定15项来源、原哈希、全部样本／检查点／清理及文档链接，代码未改且不额外触发CI。更新证据并回报维护会话，保留部分实现／正式产品未验收；建议下一步先只读关联既有Agent构建和代理记录，判断600秒耗尽位置及超时输出缺口，再讨论最小取证或修正，不现在放宽超时或重试构建。
 
-
 <a id="http-product-timeout-bounded-diagnostics-20261104"></a>
 
 ## 2026-11-04 Agent超时只读关联与有界构建诊断门禁
@@ -1205,7 +1150,6 @@ Preserve HTTP functional budget evidence于22:55:34—22:55:35成功，官方art
 
 原四秒、8 CPU／12 GiB、4 GiB停止线、60／55分钟、600秒及请求／失败清理边界保持。确定性只证明新诊断实现，不补齐历史Agent超时、目录消失根因或正式Agent／Copilot到Console／Monitor页面；旧失败报告不追填新字段。只读关联及冻结文件SHA256在`/var/folders/r1/l7b49c757dz02zftf_l9vl9r0000gn/T/addp-p19-agent-deadline-offline-20261104-we42ib19/correlation.json`，实现／输入／日志审核为同目录implementation-audit.json（0700／0600）；门禁日志`/tmp/addp-p19-timeout-diagnostic-{red,trace-final,http-final}-20261104.log`（0600）。本轮仅本地提交，不推送触发构建、不重试构建或新开窗口，不运行Hosted／容量／定时；更新60主题证据并回报维护会话。下一步建议在另行批准的原产品运行中使用超时诊断，再依据实际步骤讨论性能或网络修正，不预先放宽期限。
 
-
 ### 2026-11-04 09:04 单次full授权在额外准备检查停止（正式入口未启动）
 
 用户明确批准一次60分钟full窗口使用新增超时诊断，准备北京时间2026-11-04 09:04:44.398400起计，冻结main为`f9737960ee2dd4b9dd44e9cabeef6574293468e4`；原55分钟工作截止09:59:44.398400、60分钟总截止10:04:44.398400。本次外部准备代码错误地要求三份共享集成文件也逐字节等于提交，在Makefile整文件比较处AssertionError而停止；这超出正式入口只对12项OWN_INPUTS核字节、对三份集成文件读取已提交标记的既有准入。错误由本会话添加的临时准备检查造成，不是产品构建、原资源守卫或正式入口拒绝，不能归因于无关会话功能。
@@ -1215,7 +1159,6 @@ Preserve HTTP functional budget evidence于22:55:34—22:55:35成功，官方art
 按本次失败即停、不自动重试或续窗边界，未在余时重新运行准备或full；full entry_started=false、build_attempts=0、runtime_run_id=null、isolated_runtime_created=false，未创建当次隔离运行资源，运行清理记not_required，不伪造zero_owned_resources成功回执。临时离线证书由原runner清理，不接管或重启用户开发环境。本轮没有运行Hosted／容量／定时，没有推送触发CI，没有修改产品、Make、预算或其他会话代码；正式产品闭环及真实超时诊断仍未验收。
 
 归档`/var/folders/r1/l7b49c757dz02zftf_l9vl9r0000gn/T/addp-p19-http-full-timeout-window-20261104-mtufr_1s/`（0700／0600）含原launch、两组runner及completion中的停止事实／目标比较／12项SHA256／日志散列，不存在full entry.log或report。09:05:54记录停止事实，不把未执行步骤补作失败产品阶段。仅追加本专题及索引说明，主题仍60，回报维护会话保持部分实现／未验收；后续准备应严格复用原12项输入及集成标记规则，不再加共享文件整份一致要求，真实窗口另行确认。
-
 
 <a id="http-full-agent-timeout-over-budget-20261104"></a>
 
@@ -1238,29 +1181,15 @@ Preserve HTTP functional budget evidence于22:55:34—22:55:35成功，官方art
 
 本轮严格不运行Hosted、容量或定时，无APT源／依赖／镜像／代理／签名策略调整。旧8a34ecb84超时及09:04未启动窗口各自保留，本次新增的是“新诊断真实触发但输入超预算”的证据，Agent耗尽位置及根因仍未确定，正式产品闭环仍未验收。单次授权已消费，更新证据并回报维护会话；下一步建议先只读评估构建输出为何超过现有限额及可行的有界步骤记录方案，讨论确认后再修规范／实现，不自动扩大读取上限或重跑。
 
-
 <a id="http-incremental-build-progress-20261104"></a>
 
 ## 2026-11-04 有界增量构建步骤观测与确定性门禁
 
-用户先确认仅只读评估，再明确批准修规范及确定性门禁，不推送触发构建、不重试构建或开窗口。原3506802ce失败的command_failure只证实读到131073字节而超过128 KiB，不是完整输出大小；捕获的整条make命令混合预热／BuildKit标题及APT／pip正文，原日志与调度临时材料已清理，无法还原各部分占比或具体耗时步骤。本批没有恢复旧原文、扩大读取旧报告或用候选代理时序补填根因。
+旧 `3506802ce` 的 131073 字节只证明捕获超过 128 KiB。历史构建正文混合多个步骤，具体耗时阶段未知。实现 `0a7d3d3682613e00bb184826d6eded20a28ce36d` 改为同一构建命令的有界增量读取。每轮 32 KiB、累计 8 MiB、单行 4 KiB、64 步，解析 CPU 1 秒、摘要 4 KiB。只有完整、连续且唯一的未完成步骤可归类，歧义、截断或超限保留未知。主机观察端点只代表本机观测。保留原 600 秒及完整四秒资源检查。
 
-实现`0a7d3d3682613e00bb184826d6eded20a28ce36d`先修运行观测及T0–T3条款，再用唯一BuildProgress替换旧capture_product_deadline及超时后整份快照进度解析。精确当次product_image服务／make build-images原命令、非采样线程才创建观测；原等待循环以位置读取观察同一捕获文件，每轮≤32768字节、全命令累计≤8388608字节、完整行含换行≤4096字节、内部≤64个编号步骤。固定类别apt／python_dependency／common_package／verification／other及running／done／cached／error／canceled状态只存内存，不保存命令、包名、URL、路径、正文或输出哈希。原正常非零失败的128 KiB public_build错误归属保持独立职责，没有第二条超时进度路线或旧字段兼容。
+旧路线反证为 1 项失败、21 个 subtest 错误。最终 Trace runner 178 项、HTTP runner 44 项及 JS、登记、身份和离线 TLS 子门禁通过，覆盖跨块、超限、隐私、取消及首失败保留。真实构建、APT／网络、Hosted、容量和正式产品页面未运行。旧 `a82c1e82` 的失败与历史根因保持原结论。
 
-当前线程CPU逐块前后及最终摘要累计计量，预算1秒；实际扫描／解析和摘要开销如实记录并计入原600秒，读／解析异常使观测不可用，不改变原构建退出或业务结果。原取消finally返回后最多再读一块已有数据，不循环追尾或等待；只对连续完整读至所见EOF、无半行／超限／异常的唯一未完成候选记录类别、状态及宿主观测单调端点。多候选ambiguous、重复／未知终态编号或捕获缩短为invalid，尾部未读unread、半行truncated、读取异常unavailable，任何预算失败over_budget，均不能使用旧候选冒充当前步骤。观测时刻不是BuildKit执行起止；停止CPU检查不宣称内核硬限额，也不把完整捕获当构建成功。
-
-| 验证 | 实际结果与范围 |
-| --- | --- |
-| 旧路线反证 | 新增首轮增量用例替换旧快照测试后，原Trace runner176项／4.907秒出现预期1 failure／21 subtest errors，证明旧类／协调接口及等待循环不满足新契约，不计通过 |
-| 最终Trace runner | make test-monitor-traces-local-runner退出0，178项／5.711秒；两项JS语法、Online CI登记与System身份Go子门禁通过。旧175项中的6项快照用例删除，新增9项增量观测测试及子例，不保留双轨实现或测试开关 |
-| 最终HTTP runner | make test-monitor-http-local-runner退出0，44项／0.816秒，JS／HTTP登记／System身份Go子门禁通过；原离线TLS T1为OpenSSL4.1.0、35命令／0.720430秒、材料与在途输出预留125497字节、4次预期拒绝和清理完成，不是正式产品环境 |
-| 关键边界 | 逐字节／跨行拆块及超过128 KiB正文仍可定位；32 KiB位置读取且不改变写指针；精确8 MiB／4 KiB行／64步及超限、4 KiB摘要／1秒CPU、末尾未读／截断／文件缩短／读取异常、DONE／CACHED／ERROR／CANCELED、并行／重复／编号碰撞／畸形帧、错误run及采样线程拒绝与脱敏分别通过；观察耗尽原600秒时不增加一次等待，仍取消并保留原首因 |
-| 自查与登记 | 原取消finally AST相同，采样／互斥／构建／监测／恢复／清理定义未改，无新进程／线程、Docker或网络请求；通用build-images、Agent／Copilot Dockerfile与原HTTP入口未改。现有Make／CI自动发现命中这些测试，无新入口或workflow。共享运行观测文档原有其他会话差异保留，仅当前段落补丁入索引；不宣称整个共享HEAD或自然CI已通过 |
-
-超时报告仅输出≤4 KiB封闭进度／计数／观测端点及CPU／耗时，删除旧captured_bytes／output_status／输出哈希快照路线；正常非零失败原哈希及错误分类保留。原600秒、完整四秒、8 CPU／12 GiB、4 GiB停止线、60／55分钟及清理要求保持；本轮没有运行真实构建、APT、Docker／网络探针或产品窗口，不推送，不运行Hosted、容量或定时。确定性门禁通过不证明历史Agent步骤／根因已定位、目录消失已修复或正式产品到页面闭环通过，旧a82c1e82失败报告保持不变。
-
-本批只读方案审核为`/var/folders/r1/l7b49c757dz02zftf_l9vl9r0000gn/T/addp-p19-output-progress-assessment-20261104-fq2xv7n2/assessment.json`；实施前共享文件快照、独立输入／日志散列与审核在`/var/folders/r1/l7b49c757dz02zftf_l9vl9r0000gn/T/addp-p19-stream-progress-20261104-5v3aewmd/`（0700／0600），红与最终门禁日志`/tmp/addp-p19-stream-progress-{red,trace-verified,http-verified}-20261104.log`（0600）。更新62主题证据及索引并回报维护会话；下一步仅在另行批准的原产品full运行中验证真实步骤回执，若仍不完整先定位原因再讨论，不自动重跑或放宽预算。
-
+方案审查与验证原件分别在 `/var/folders/r1/l7b49c757dz02zftf_l9vl9r0000gn/T/addp-p19-output-progress-assessment-20261104-fq2xv7n2/` 和 `/var/folders/r1/l7b49c757dz02zftf_l9vl9r0000gn/T/addp-p19-stream-progress-20261104-5v3aewmd/`。
 
 <a id="http-full-stream-resource-deadline-20261104"></a>
 
@@ -1290,19 +1219,15 @@ Preserve HTTP functional budget evidence于22:55:34—22:55:35成功，官方art
 
 本次没有手动重跑／续窗、Hosted、容量或定时，不接管个人环境，不改APT源／依赖／镜像／代理策略，原600秒／四秒及全部资源预算保持。先前Agent命令超时与本次资源守卫失败分别保留；正式产品闭环及增量步骤真实定位均未验收。单次授权已消费，建议下一步先只读关联本次串行CLI等待及已有Docker记录，给出保持原四秒口径的最小方案后讨论，不自动放宽或重跑。
 
-
 <a id="http-resource-wait-poll-deterministic-20261104"></a>
 
 ## 2026-11-04 资源检查等待返回汇总：确定性门禁通过，真实采集待授权
 
-按用户确认先修规范，仅在原资源采样命令的p.wait循环增加wait_poll四个固定整数：调用次数、TimeoutExpired次数、累计及最大非负返回超出量（纳秒），摘要≤512字节，不保留逐次明细。使用包围原调用的主机单调端点，扣除当次实际timeout；原min(0.05, deadline-now)及四秒剩余预算不变。成功等待或其他异常只计调用次数，取消回收中的一秒等待排除；非采样命令不新增字段。首次失败、原取消与清理继续传播，不以完整诊断放行失败。不新增进程／线程／Docker请求、采样范围、并发或第二路线；原600秒、完整四秒、8 CPU／12 GiB、4 GiB停止线保持。源文件AST对照仅Lifecycle.command改变，原其他函数、Dockerfile、根Make与workflow未由本批修改；既有test-platform→生命周期→HTTP／Trace local runner及登记校验已覆盖，未新增CI入口。
+固定基线 `cc4c7de44e1503091dd36ebc2eb7c2ea1196398c` 叠加本地实现。仅对原采样等待记录 `wait_poll` 四项汇总，≤512 字节，扣除本次实际 timeout，排除取消等待。原四秒资源和清理边界继续生效。
 
-本批旧实现反证运行make test-monitor-traces-local-runner：183项中新增5项因缺少wait_poll而错误，退出2，符合预期。实现后最终make test-monitor-traces-local-runner 183项／6.477秒，make test-monitor-http-local-runner 44项／1.169秒，两组完整入口均退出0；JS语法、Online／HTTP登记和System身份Go子门禁均通过。HTTP附带原离线TLS T1：OpenSSL4.1.0、35命令／0.935208秒、125493字节、4次预期拒绝与cleanup_removed=true，不连接真实Docker。回归覆盖连续／提前TimeoutExpired、成功长等待不误计超出、即时退出、同一生命周期不同命令清零、剩余20毫秒按实际timeout、其他异常保留、创建前失败零计量、取消排除、脱敏及≤512字节。原完整检查4.2秒失败反例保留首因、进程组回收及空成功样本，新增汇总不会反转失败。
+旧实现 5 项反例错误。最终 Trace runner 183 项、HTTP runner 44 项及 JS、登记、身份和离线 TLS 子门禁通过，覆盖提前返回、异常、剩余时间、脱敏及失败后清理。4.2 秒反例仍失败并回收进程组。
 
-只读前置关联仍指向上条固定8b320fb8e／run_id=addp-http-local-29078910b1d34180b764f66260daacc8及原报告SHA256 bbbed09f1db3f07a9417b39b6fa5a7753ce6d530b8aec0c0e17ff62333857a98：四秒由串行CLI等待累计耗尽，不能唯一归因卷扫描。已有Desktop候选03:37—03:38 UTC日志中apiproxy仅55条usage记录，没有可归属API路径起止；现存dockerd／containerd归档日期未覆盖本轮。缺可信跨时钟对齐及请求归属，卷测量零字节检查点只能记未观测到，不能证明未执行。本次汇总仅观察主机调用返回，包含包围开销；既不是线程调度延迟或daemon时间，也不能从总等待中扣除后把余量归给daemon。历史报告没有wait_poll，不能补算新指标。
-
-收尾只读核对共享HEAD=cc4c7de44e1503091dd36ebc2eb7c2ea1196398c；共享main其他改动不纳入本批验收。输入快照、AST审核及verification.json在/var/folders/r1/l7b49c757dz02zftf_l9vl9r0000gn/T/addp-p19-wait-poll-20261104-kzwedobr/；原只读摘要在/var/folders/r1/l7b49c757dz02zftf_l9vl9r0000gn/T/addp-p19-resource-wait-readonly-20261104-ftrmi7kn/assessment.json（SHA256 1f87aad85b589ece787b09fbe013b65ee75150df07c7e28c2eceed1754d8e53c）。门禁日志/tmp/addp-p19-wait-poll-{red,trace-final,http-final}-20261104.log。仅本地实现与确定性验证，不推送、不重试镜像构建、不开真实窗口，不运行Hosted、容量或定时；真实等待计量、物理根因、繁忙稳定性及正式Agent/Copilot到Console/Monitor页面闭环均未验收。优先下一步是在另行授权的原有运行中随行采集，先读新汇总再决定性能修正，不自动续窗或重跑。
-
+固定 `8b320fb8e` 历史窗口的四秒来自串行 CLI 等待累积。Docker 日志缺少可信跨时钟对齐和请求归属，未观测到检查点不足以判断 daemon 行为。历史报告无 `wait_poll`，当前指标只能表达主机调用的观察值。真实等待、物理根因、繁忙稳定性和正式页面仍未验收。源和门禁证据在 `/var/folders/r1/l7b49c757dz02zftf_l9vl9r0000gn/T/addp-p19-wait-poll-20261104-kzwedobr/`，历史关联在 `/var/folders/r1/l7b49c757dz02zftf_l9vl9r0000gn/T/addp-p19-resource-wait-readonly-20261104-ftrmi7kn/assessment.json`。
 
 <a id="http-linux-resource-windows-managed-20261104"></a>
 
@@ -1320,23 +1245,17 @@ Preserve HTTP functional budget evidence于22:55:34—22:55:35成功，官方art
 
 旧实现受控反证沿make test-infra-runtime-log-lifecycle执行，最终148项中6项断言失败／2项错误，命中新增阶段、正式窗口函数仍直编译及新阶段不被原内核接纳，退出2。修正后make test-monitor-metrics-config退出0，136项／16.281秒及来源恢复前置通过；make test-infra-runtime-log-lifecycle完整退出0，最终148项／69.597秒。后者含HTTP runner44项／1.086秒、Trace runner183项／5.916秒、JS／登记／System身份Go子门禁全部通过；原离线TLS T1为OpenSSL4.1.0、35命令／0.943794秒、125493字节、4次预期拒绝及清理完成。回归从正式源码提取并执行窗口函数，验证受管调用先于两个HTTP编译、同一内核、确切参数／预算及仅执行编译后的二进制；失败／信号／超时／取消不执行旧文件、缺窗口阶段和前序失败不能通过。同一原生小型替身分别覆盖process_source和resource_windows：采样期间写入不变，模拟du失败仍传播，恢复后阶段成功结束；原超时／取消／组回收及严格du失败反例继续通过。替身不是真实Go构建或Docker负载。
 
-本批实施快照、AST审核及verification.json在/var/folders/r1/l7b49c757dz02zftf_l9vl9r0000gn/T/addp-p19-resource-windows-20261104-oubmruea/，日志/tmp/addp-p19-resource-windows-{red,config,lifecycle}-20261104.log；输入基准共享HEAD为5f4984a6c671facdad5024a413e719d9b01a2f5d，独立文件摘要绑定本次门禁。既有Platform→生命周期及Release Linux http-quality矩阵已覆盖，无需新增Make／workflow。结论仅为受管覆盖缺口已本地修正、确定性门禁通过；自然Linux四阶段真实运行、历史删除者／间歇稳定性及正式Agent/Copilot到页面full仍未验收。下一步须用户另行允许推送后跟进自然Linux HTTP及原始预算归档，不手动重跑或追加窗口。
-
+本批实施快照、AST审核及verification.json在/var/folders/r1/l7b49c757dz02zftf_l9vl9r0000gn/T/addp-p19-resource-windows-20261104-oubmruea/，日志/tmp/addp-p19-resource-windows-{red,config,lifecycle}-20261104.log；输入基准共享HEAD为5f4984a6c671facdad5024a413e719d9b01a2f5d，独立文件摘要绑定本次门禁。结论仅为受管覆盖缺口已本地修正、确定性门禁通过；自然Linux四阶段真实运行、历史删除者／间歇稳定性及正式Agent/Copilot到页面full仍未验收。下一步须用户另行允许推送后跟进自然Linux HTTP及原始预算归档，不手动重跑或追加窗口。
 
 <a id="http-window-fixture-outer-receipt-20261104"></a>
 
 ## 2026-11-04 四阶段CI配置前置回归：测试环境隔离的本地修正
 
-前次只读排队状态已被实际终态替代：Run41792712024／Job126473639226／固定4786f12ace3fe9e619db710210e8b61a88f0344c／attempt1及后续Run41792903360／Job126477749395均为failure，均在metrics-deployment-config_test.py的窗口配置检查报四项ERROR，未进入真实HTTP四阶段。原日志分别在/tmp/addp-ci-20261104-resume-patrol/job-126473639226.log（SHA256 5e59b24645c165e4259bc59a3924cc018267235dcc64cfc6fbfa8cf4817deb47）、job-126477749395.log（797c385597e13252d6043102e9e672ea6d7ca0dbf2b7f6b2575faff9d1fe295c）；本轮再次只读GET两个实际Job均completed／failure，首Job的Verify isolated metrics lifecycle步骤failure。未手动重跑、重复下载日志或启动真实环境。
+Run `41792712024`／Job `126473639226`（`4786f12ace3fe9e619db710210e8b61a88f0344c`，attempt 1）和 Run `41792903360`／Job `126477749395` 均失败。配置夹具继承外层尚未发布的 `ADDP_HTTP_BUDGET_RECEIPT`，读取失败产生 4 项 ERROR。真实四阶段、发流及清理均无回执。日志在 `/tmp/addp-ci-20261104-resume-patrol/`。
 
-这是b6c669022遗漏的测试隔离，不是旧go_tmp后代消失，也不是四秒预算耗尽：CLI预算内核先将ADDP_HTTP_BUDGET_RECEIPT指向尚未发布的ownership.json再启动shell；shell先运行配置单元测试，之后才创建产品私有目录并发布回执。配置夹具提取check_resource_windows却直接使用进程os.environ；窗口编译改为受管后，该夹具把外层未发布回执传入run_owned_compile，在cleaning读取文件时报FileNotFoundError，未达到其原mock subprocess.run。冷准备一项、编译失败两个subtest及执行超时一项共四错误，两个Job均136项配置测试未通过；原预算stdout分别10.148212／9.127820秒失败，compile_stages、request_counts、cleanup_verified和private_directory_removed均null，不能填作真实四阶段、业务或零残留通过。
+本地基线 `2d35280aafc2e86463df4f6f8054c9ba1779c546` 叠加配置夹具修复。局部环境隔离未发布回执，父环境及产品四阶段不变。保留 180 秒准备、60 秒执行及旧二进制拒绝条件。旧夹具两项反证错误，修正后配置 137 项、生命周期 148 项及 HTTP 44／Trace 183 等子门禁通过。证据在 `/var/folders/r1/l7b49c757dz02zftf_l9vl9r0000gn/T/addp-p19-window-fixture-20261104-uukj5y5k/`。
 
-本次仅修配置测试夹具：以私有环境快照作为提取函数的os.environ，排除ADDP_HTTP_BUDGET_RECEIPT；父进程环境、外层文件及锁均不改，不在产品新增缺文件跳过或降级。原180秒准备、60秒执行及旧二进制失败拒绝断言保持。增加未发布回执和已有非本夹具内容两种反例，并禁止该单元夹具启动编译器；验证两次模拟命令、180／60秒、GOWORK=off、无外层回执字段、父环境不变、外层目录清单和正文不变。真实受管分支仍由原预算测试自建回执／小型原生替身覆盖，未加入兼容路径。产品metrics-http-budget.py与monitor-metrics-probe.py逐字节保持b6c669022的四阶段实现，所有四秒、1200秒、资源、业务、身份及失败清理语义不变。
-
-旧夹具反证运行make test-monitor-metrics-config，137项／13.114秒中新增两种输入各报一项ERROR，退出2；不启动Go或Docker。修正后向标准配置入口局部注入一个本次未发布的外层回执路径，make test-monitor-metrics-config完整退出0，137项／11.928秒及来源恢复前置通过，注入的外层文件和锁均未被创建。make test-infra-runtime-log-lifecycle完整退出0：最终148项／63.688秒，含HTTP44项／1.072秒、Trace183项／5.979秒及JS／登记／System身份Go子门禁通过；离线TLS T1为OpenSSL4.1.0、35命令／0.918689秒、125485字节、4次预期拒绝及清理完成。最小修正沿原配置／Platform生命周期／自然Linux HTTP路径自动覆盖，不新增标准入口或workflow。
-
-本批快照基准HEAD=2d35280aafc2e86463df4f6f8054c9ba1779c546；快照、产品不变审核与verification.json在/var/folders/r1/l7b49c757dz02zftf_l9vl9r0000gn/T/addp-p19-window-fixture-20261104-uukj5y5k/，日志/tmp/addp-p19-window-fixture-{red,config,lifecycle}-20261104.log。仍仅本地确定性修正，未推送、未手动重跑CI、未新增本地窗口，不运行Hosted、容量或定时；其他会话要求推送不替代用户此前“本批不推送”的边界。两个自然Job的失败不被本地通过覆盖；修正后的自然Linux配置前置、四阶段／预算／清理、历史删除者与正式产品页面闭环仍未验收。下一步须用户明确允许推送后，跟进新输入的自然HTTP结果及原始预算报告。
-
+两个原 Job 保持失败。本地修正当时未推送，真实窗口、历史删除者与正式页面闭环未验。修正后的固定 Linux 实际结果另见下一节。
 
 <a id="http-natural-four-stage-budget-passed-20261104"></a>
 
@@ -1363,34 +1282,22 @@ HTTP Job北京时间19:31:13—19:46:12，Verify isolated metrics lifecycle于19
 
 原始选择／Job元数据、ZIP、JSON、日志及逐项verification.json在/var/folders/r1/l7b49c757dz02zftf_l9vl9r0000gn/T/addp-p19-fixture-natural-20261104-6jtlv6sc/（私有目录／文件）。本轮仅跟进已有自然CI，不手动重跑、不新开窗口，不运行Hosted、容量或定时。上次两个配置前置失败及更早go_tmp失败原件继续保留，不被本次覆盖；本次证明这一次Linux HTTP四阶段／采样／功能／清理通过，不证明具体历史删除进程已直接定位或长期偶发已根除。正式Agent/Copilot产品镜像、真实密码/MFA及Console/Monitor页面full仍未验收。同源Platform Job126528774946的最后一次只读快照仍in_progress，本批不据此宣称远端Platform整轮或HTTP／Trace确定性runner已实际通过；本地原137／148及HTTP44／Trace183有效结果保持独立。下一步优先回到正式产品页面闭环的准入核对，真实本地窗口另行确认。
 
-
 <a id="http-browser-logout-contract-20261104"></a>
 
 ## 2026-11-04 正式HTTP浏览器两阶段注销：确定性补齐，真实窗口待确认
 
-用户确认先补浏览器注销规范与门禁，真实60分钟full另行确认。本批没有启动真实窗口、Docker部署、产品镜像构建、Hosted、容量或定时，也未为本批推送触发自然CI。上条自然Linux SDK HTTP通过仍独立有效，不能替代正式产品浏览器退出及会话撤销。此前只读核对发现API三身份已有logout／旧会话401，存活／停源两个真实浏览器阶段原先只关页，缺少各自会话撤销断言。
+固定基线 `37f9724376ca7ac5f72dc5461da610259595f016` 叠加本地门禁。存活和停源两个浏览器阶段均要求 Console 正式注销 204，并以该次旧凭证单次请求 AuthContext 得 401。关页后实际增量恰为 2，仍计入原浏览器 80／控制面 200。预算不足、缺凭证、其他状态或传输失败均拒绝。正式 full 的专项输入为 13 项，连同三份集成标记共 16 项。具体契约见[正式 Python 后端与接口质量页面的本机隔离验收](../../addp平台运行观测规范.md#正式-python-后端与接口质量页面的本机隔离验收)。
 
-先修运行观测／T0–T3规范，并对齐Linux四阶段及完整四秒从等待采样锁起计的旧文字；不改实际预算。HTTP页面验收支持代码新增唯一assertHTTPBrowserLogout，存活／停源两阶段共用：经Console现有账号菜单真实退出，绑定当次同源确切POST /api/v1/system/logout响应204及实际请求Authorization；在System仍运行时，以裸fetch仅重放一次GET /api/v1/system/auth/context，须401。拒绝匿名、其他会话、关页或销毁库替代；旧凭证仅函数局部内存使用，裸请求credentials=omit、redirect=error、cache=no-store，既不注入页面状态，也不经自动刷新／重试。只读响应状态，不留正文或凭证；失败只输出封闭错误码，非401一律记拒绝未证明，不将500推断为旧会话仍可用。
+旧回执验证 8 个反例失败，缺 Node 实现的反证为 6 失败、1 接线通过。最终 HTTP Python 46、Node 7、Trace 183 及身份、登记、离线 TLS 子门禁通过。受控 Page／fetch 证明请求绑定、脱敏、双阶段计数和失败语义，真实浏览器会话撤销未验。
 
-退出前至少预留两次原浏览器请求余量；两次检查都经过原页面请求范围／全局计数守卫。关闭页面后冻结全量次数，logout_api_requests为该阶段实际增量且必须整数2，之后才写browser_logout_old_session_denied=true；多出请求、预算不足、logout非204、旧会话非401或传输异常均失败，不重试。父入口对live／stopped两份回执均强制新增断言与计数（且不超过原总请求），失败回执的api_requests仍累计扣减，首因保留。全局浏览器80／控制面200不变，新增最多4次已包含其中；API三身份原注销检查独立保持。共享localConsoleLogin／Trace登录协议、产品API／权限／角色及正式退出实现未由本批修改。
-
-新增Node内置纯逻辑测试纳入原make test-monitor-http-local-runner，不新增标准入口或依赖，覆盖204／401、同源方法路径绑定、实际旧凭证、剩余不足零发送、缺凭证、logout失败、旧会话200／204／403／500拒绝、传输异常脱敏及最多两次／无重试。正式源代码接线回归确认退出先于关页、实际增量在关页后冻结、无浏览器Token状态注入或独立API Context绕过原计数。CI登记拒绝删除测试文件、删除命令或用echo／注释伪装执行；既有Platform已提供Node并调用同一runner，不改workflow。该Node文件加入full的OWN_INPUTS，专项输入从12项增至13项，连同原三份已提交集成标记共16项；真实运行仍要求这些输入与冻结提交匹配，不接受未提交门禁文件。
-
-旧回执验证受控反证make test-monitor-http-local-runner：45项中8个live／stopped反例失败，退出2，证明旧实现未裁决注销。随后保留缺失检查实现的Node反证沿同一标准入口执行，Python46项通过、Node7项中6失败／1接线通过，退出2。最终make test-monitor-http-local-runner完整退出0：Python46项／1.207秒、Node7项全通过，JS／HTTP登记／System身份Go子门禁通过；离线TLS T1为OpenSSL4.1.0、35命令／1.035431秒、125473字节、4次预期拒绝与清理完成。make test-monitor-traces-local-runner完整退出0：183项／5.887秒、JS／Online登记及System身份Go子门禁通过。原80／200跨阶段总预算、失败计数、阶段顺序、13项固定输入、四秒及全部原资源反例继续通过。Node使用受控Page／fetch替身，不启动真实浏览器或System，不记为真实204／401撤销验收。
-
-本批源快照基准37f9724376ca7ac5f72dc5461da610259595f016；快照、输入摘要、红绿门禁日志散列及verification.json位于/var/folders/r1/l7b49c757dz02zftf_l9vl9r0000gn/T/addp-p19-browser-logout-20261104-hz6vb_p7/，日志/tmp/addp-p19-browser-logout-{red,node-red,http-final,trace-final}-20261104.log。共享Makefile、CI登记和规范中的他会话改动不纳入本批提交。真实full仍须另行批准原60／55分钟、8 CPU／12 GiB、4 GiB停止线、完整四秒及单镜像600秒；五后端正式构建／完整依赖、真实密码/MFA、采集/API、两阶段页面、浏览器与API会话撤销及零残留均通过才可验收。动态Docker／固定Nginx缓存／代理及依赖准入尚未运行；历史Mac四秒偶发、构建下载和接近4 GiB风险仍保留，不自动放宽、补跑或续窗。
-
+完整产品构建、正式密码／MFA、采集／API、真实页面与清理未运行。历史 Linux SDK 通过独立保留。原始快照、反证及收据在 `/var/folders/r1/l7b49c757dz02zftf_l9vl9r0000gn/T/addp-p19-browser-logout-20261104-hz6vb_p7/`。
 
 <a id="http-full-logout-agent-volume-read-failed-20261105"></a>
 
 ## 2026-11-05 正式 HTTP full 在 Agent 构建期间遇到卷读取错误
 
-用户批准一次60分钟本地窗口，含准备和清理，55分钟停止新业务。沿 `make test-monitor-http-local MONITOR_HTTP_LOCAL_CASE=full` 只启动一次，固定已提交源码 `e30f04c2dc3764d39ff7d899ae748de6db519050`。16项入口输入与该提交及原报告逐一匹配。复用北京时间11月5日已通过的同输入门禁，HTTP Python46项、Node注销7项、Trace183项及附属检查。Docker 本机 Unix Socket、ARM64、固定 Nginx 缓存身份、无凭据代理及只读 Go 缓存布局均通过准入。
+本机 ARM64 标准 full 单次失败，固定源码 `e30f04c2dc3764d39ff7d899ae748de6db519050`，16 项入口输入匹配。含准备 708.839 秒，退出 2。Go 编译和私有缓存清理完成，System／Gateway／Monitor 镜像命令结束。Agent 构建阶段的首因是 `measure_owned_volumes` 返回 `owned_resource_measurement_failed`。完整检查仅 0.261156 秒，卷子步骤 0.163843 秒，`du` 诊断符合路径消失分类。报告未保留缺失路径或写入方，删除者仍未知。与早先 Gateway 四秒累积超时、独立 Linux T2 的路径归属分别认定。
 
-北京时间13:32:36.363214开始准备，13:32:36.838816进入标准入口，13:44:25.210174收尾，含准备708.839秒，入口退出2。Go 编译和私有缓存预检／删除完成，System、Gateway、Monitor 镜像命令结束，314.30秒进入 Agent 镜像构建。704.94秒出现首失败，阶段 `product_image_agent_backend`，操作 `measure_owned_volumes`，错误 `owned_resource_measurement_failed`。此码在固定源码中要求 `du:` 诊断均以 `No such file or directory` 结尾且严格禁重试。该次扫描用时0.261156秒，卷测量子步骤0.163843秒，进入及管道返回检查点均完整，已读1351字节，报告只保留13行／诊断存在及输出摘要。首次失败即转清理，距离 Agent 阶段开始约391秒，单镜像600秒或完整扫描四秒截止均未耗尽。报告未保留缺失路径或写入方身份，无法定位具体文件及删除者。
+前 176 次完整检查最长 1.955384 秒，读取重试 0，已完成样本私有占用峰值约 3.76 GiB。失败样本缺完整卷及目录读数。标准退出和独立归属复核确认容器、网络、卷、构建器及镜像标签零残留，私有工作目录已移除。
 
-176次已完成完整扫描最长1.955384秒，开始间隔最大4.006524秒，读取重试0。已完成扫描的CPU／内存硬配额峰值2.25核／3288334336字节，私有可写完整统计峰值4034666496字节（约3.76 GiB，已含容器可写层）。失败样本缺完整卷与私有目录读数，峰值仅代表已完成样本。失败样本的卷命令等待记录4次轮询、3次轮询返回超时、累计超额7267082纳秒，完整扫描仍远低于四秒。该记录不复现前次 Gateway 累计四秒超时，也不能沿用独立 Linux HTTP T2 的路径归属。
-
-标准清理成功，另按当次标签、构建器名称和镜像标签只读核验容器、网络、卷、构建器容器及镜像标签均为0，私有目录不存在。Agent 构建被终止，Copilot 与后续产品构建、真实密码/MFA、采集/API、Console/Monitor 页面、停源和两阶段浏览器注销／旧会话401均未执行，报告断言为空。Hosted、容量、定时及重复构建均无运行。
-
-私有归档 `/var/folders/r1/l7b49c757dz02zftf_l9vl9r0000gn/T/addp-p19-http-full-logout-20261105.9aKCoSAd` 保存窗口、入口、输入、准入、预算原件及清理核对。run_id `addp-http-local-35fa4d468ba04931861d6947cbdc1775`，原报告2246119字节，SHA256 `1aa4a76e11df1245505a5ba0455a34f4701e66693f33ea80ae1b0cd2d7404a03`，入口日志5136字节，SHA256 `f78a12e86f8ee466999209c55a93ee36ae498ec6d98198c9d5f64b84a76b0331`。本次正式 full 失败，先前确定性门禁及 Linux SDK 验收保留各自结论。
+Copilot 与后续构建、正式密码／MFA、采集／API、真实页面、停源、两阶段浏览器注销及旧会话 401 均未执行。Hosted 与容量未运行。原确定性和 Linux SDK 通过各按其范围认定。Run `addp-http-local-35fa4d468ba04931861d6947cbdc1775`，预算原件、输入及清理收据在 `/var/folders/r1/l7b49c757dz02zftf_l9vl9r0000gn/T/addp-p19-http-full-logout-20261105.9aKCoSAd`。

@@ -2,7 +2,9 @@
 
 [返回 Monitor 历史证据](Monitor历史证据.md) · [返回验收证据索引](../验收证据索引.md)
 
-本专题收录CPU/RSS、告警检索与排序、服务失联、文件系统容量规则。固定源码、环境、失败记录、修复结论与未覆盖范围以各记录为准；本次仅整理文档，没有重跑验收或刷新 CI 状态，不推导当前 HEAD 或生产 T5 已通过。跨主题语境与原有顺序见 [Monitor 历史证据入口](Monitor历史证据.md#原记录入口)。
+本专题收录CPU/RSS、告警检索与排序、服务失联、文件系统容量规则。验收结论按各记录的固定源码、环境、运行尝试和层级认定。原顺序见[Monitor 历史证据入口](Monitor历史证据.md#原记录入口)。
+
+原始过程、逐步诊断及详细归档清单见[精简前的固定记录](https://github.com/pampa0629/addp/blob/be8f8daa4d38a7830585577f03b77bf2b5ed3931/docs/spec/testing/evidence/Monitor%E5%91%8A%E8%AD%A6%E4%B8%8E%E8%A7%84%E5%88%99%E5%8E%86%E5%8F%B2%E8%AF%81%E6%8D%AE.md)。
 
 ## 服务实例 CPU 与 RSS 超限告警（2026-10-22）
 
@@ -18,15 +20,13 @@
 
 边界：PostgreSQL T2 使用受控 System/指标来源夹具，浏览器 T3 使用隔离 HTTP 夹具，不能计为真实身份、真实 Prometheus 压力或正式通知端 T4 验收。本轮未重启个人服务，未执行 CI 或 Hosted，等待专门会话回传；未设置定时任务。
 
-
-2026-10-22 补查 Console 嵌入场景：`console/frontend/e2e/platform-alert-navigation.spec.js` 新增服务实例规则弹窗用例，验证弹窗位于视口内、内容与遮罩透明度、名称输入、真实选择控件的候选选择及关闭；只模拟 HTTP 响应，不写个人配置。标准 `npm run test:e2e -- e2e/platform-alert-navigation.spec.js` 最终 Chromium 5/5、退出 0；`npm run test:e2e -- e2e/platform-alert-navigation.spec.js --browser webkit --grep painted` 的同一新增场景 1/1、退出 0。初次诊断用例的动态夹具导入及控件定位失败已修正，不计产品故障。现有 Console 浏览器门禁自动发现该文件，无需新增 CI 或依赖登记；WebKit 仅为本地诊断，未扩展 CI 浏览器矩阵。个人 Safari 仍出现辅助功能树有表单但用户与截图看不到弹窗，且控制工具有 noWindowsAvailable／ScreenCaptureKit 错误；隔离浏览器通过不能证明此真实故障已修复，仍待前台手动点击复现及根因确认。本轮未修改产品样式，未创建或启用真实规则，未查询 CI／Hosted、未设置定时。
+2026-10-22 补查 Console 嵌入场景：`console/frontend/e2e/platform-alert-navigation.spec.js` 新增服务实例规则弹窗用例，验证弹窗位于视口内、内容与遮罩透明度、名称输入、真实选择控件的候选选择及关闭；只模拟 HTTP 响应，不写个人配置。标准 `npm run test:e2e -- e2e/platform-alert-navigation.spec.js` 最终 Chromium 5/5、退出 0；`npm run test:e2e -- e2e/platform-alert-navigation.spec.js --browser webkit --grep painted` 的同一新增场景 1/1、退出 0。初次诊断用例的动态夹具导入及控件定位失败已修正，不计产品故障。WebKit 仅用于本地诊断。个人 Safari 仍出现辅助功能树有表单但用户与截图看不到弹窗，且控制工具有 noWindowsAvailable／ScreenCaptureKit 错误；隔离浏览器通过不能证明此真实故障已修复，仍待前台手动点击复现及根因确认。本轮未修改产品样式，未创建或启用真实规则，未查询 CI／Hosted、未设置定时。
 
 ## Safari 服务实例规则弹窗实景复核（2026-10-23）
 
 05:49–05:53（Asia/Shanghai），在用户确认可操作 Safari 后，用原生 CUA 操作已登录的平台系统管理员及真实 Console `/monitor/platform-alerts?tab=process-rules`。检查器读到页面曾 `document.hidden=true`，随后为 `false`；活动弹窗 `display=block`、`visibility=visible`、遮罩和内容透明度均为 1，动画列表为空，标题坐标的命中检测确为弹窗标题，父层命中 iframe。检查器开启时 iframe 高度约 227 CSS px、弹窗顶部约 34 px，标题仍在可见区域；没有取得样式隐藏、动画卡住或其他元素遮挡的证据。期间工具出现用户操作中止及 ScreenCaptureKit 捕获错误，辅助功能树与截图一度不同步。
 
-窗口恢复前台并关闭检查器后，真实截图清楚显示弹窗与遮罩；随后实际关闭、确认列表恢复、重新打开，以及展开真实实例候选下拉层均正常，截图包含 Monitor／Meta／Transfer／Manager／System 当前候选。保持表单未保存，未创建、启用规则或发送通知。本轮仅补充证据，没有修改产品代码、样式、浏览器设置或重启服务。此前现象与后台窗口／重绘不同步相关的判断得到支持，但未建立 Safari 底层异常的稳定复现，不称为代码根治或全部告警 T4 通过。既有 Chromium 5/5、WebKit 弹窗专项 1/1 是隔离 T3 证据，本次是个人开发环境只读 UI 复核，分别陈述。CI／Hosted 仍等专门会话回传，未查询或调度、未设置定时。
-
+窗口恢复前台并关闭检查器后，真实截图清楚显示弹窗与遮罩；随后实际关闭、确认列表恢复、重新打开，以及展开真实实例候选下拉层均正常，截图包含 Monitor／Meta／Transfer／Manager／System 当前候选。保持表单未保存，未创建、启用规则或发送通知。此前现象与后台窗口／重绘不同步相关的判断得到支持，但未建立 Safari 底层异常的稳定复现，不称为代码根治或全部告警 T4 通过。既有 Chromium 5/5、WebKit 弹窗专项 1/1 是隔离 T3 证据，本次是个人开发环境只读 UI 复核，分别陈述。CI／Hosted 仍等专门会话回传，未查询或调度、未设置定时。
 
 ## 服务实例 CPU/RSS 真实采样告警链路 T2（2026-10-23）
 
@@ -39,7 +39,6 @@
 - `make test-release-runner`：退出 0，62 项发布／登记回归及正式登记检查通过；`make test-workflow-security`：退出 0。新增场景已加入原 Release Metrics 矩阵，仍保持每项 20 分钟及所有分组真实成功才通过的汇总要求；默认全量入口包含原分组及新专项，无第二套执行路线。
 
 原始日志及输入摘要保存在 `/var/folders/r1/l7b49c757dz02zftf_l9vl9r0000gn/T/addp-process-alert-real-r7sgulbj/` 的 `process-alerts-t2.log`、`monitor-go.log`、`release-registration.log`、`workflow-security.log` 与 `inputs.json`；七项工作区输入与冻结副本哈希一致。此结果为真实 SDK／Prometheus／PostgreSQL／签名接收端下的 T2，System 当前用户与身份投影仍是夹具，不替代正式密码／MFA、真实 Console、Hosted T4、生产容量或 T5。本轮未运行其他 Metrics 分组，复用原有证据边界；未查询／调度 CI 或 Hosted，等待专门会话回传，未重启个人服务、未设置定时任务。
-
 
 ## CPU/RSS 告警专项的就绪分段与失败诊断（2026-10-23）
 
@@ -83,7 +82,6 @@
 
 本批 T3 使用受控 API 返回，不代表正式身份、个人 Safari 或 Hosted 验收；没有重启个人服务、修改 IAM／个人业务库、设置定时任务或主动跟踪 CI。CI／Hosted 结果继续等专门会话回传。
 
-
 ## 平台告警发现时间范围查询（2026-10-24，本地）
 
 对应原表 Excel 第 51 行、B 列 50“告警信息管理”。沿已有 `opened_at` 发现时间和 System 时间边界口径新增 `time_from/time_to` RFC3339 查询：起始含、结束不含，支持单边界，空边界不限，双边界须开始早于结束；UTC 公元 1—9999 年。与类别／状态／主体／严重级别取交集，在计数和分页前完成，排序不变；不按恢复或最近观测时间改判。服务使用唯一 `PlatformAlertFilter`，删除原位置参数调用，不保留第二条查询路径。无新权限、迁移、依赖、配置或后台任务。
@@ -102,8 +100,7 @@
 
 首次浏览器专项有两项因测试将共享中文占位“起始时间”误写为“开始时间”而失败；按实际共享译名修订后，四项专项及上述整套最终通过。原失败 `/tmp/addp-alert-time-browser.log` 保留，不计通过；后续专项 `/tmp/addp-alert-time-browser-green.log` 只作为中间证据，最终草稿／翻页增强以整套 421 项结果为准。
 
-现有 owner／路径自动发现、PostgreSQL `TestIntegrationPostgres` 与前端标准入口已实际命中新用例，不新增 Makefile／workflow。T3 使用受控 API，不代替正式身份、个人 Safari 或 Hosted；没有重启个人服务、修改个人业务库或 IAM，没有查询／重跑 CI／Hosted或设置定时任务，相关结果继续等专门会话回传。
-
+T3 使用受控 API，不代替正式身份、个人 Safari 或 Hosted；没有重启个人服务、修改个人业务库或 IAM，没有查询／重跑 CI／Hosted或设置定时任务，相关结果继续等专门会话回传。
 
 ## 发现时间查询：个人 Safari 重启后只读复验（2026-10-24）
 
@@ -112,7 +109,6 @@
 在个人 Safari 现有平台系统管理员会话，通过真实 Console `/monitor/platform-alerts` 只读复验：截图可见发现时间控件和就近说明；结束时间单边界可查到现有告警；相等时间草稿提示无效并禁用搜索；查询 10 月 24 日至 25 日后现有 10 月 23 日告警被排除，整页刷新后日期与空结果保留；扩大起始日期至 23 日后该告警重新显示；组合警告级别后，清除时间保留 `severity=warning` 及现有告警。日期框使用本地时间，URL 使用对应 UTC。未创建、确认、抑制或删除任何告警。
 
 操作记录 `/tmp/addp-alert-time-safari-result.json`，最终 AX 状态 `/tmp/addp-alert-time-safari-state.txt`，截图 `/tmp/addp-alert-time-safari.png`，摘要内记录两份文件的 SHA-256。当前只有一条现有告警，本次不证明多页或微秒边界；这些范围仍分别依赖上文 PostgreSQL T2／受控浏览器 T3。个人 Safari 结果不升级为正式隔离身份 T4、Hosted 或生产证据；CI／Hosted 继续等专门会话回传，本次未查询或触发，也未设置定时任务。
-
 
 ## 平台告警名称检索与触发时名称证据（2026-10-24—25，本地）
 
@@ -130,8 +126,7 @@
 
 首轮Go构建因两处旧测试夹具返回类型未同步而失败，修订为实际列表投影后通过，原失败 `/tmp/addp-alert-name-go.log` 保留。首轮完整前端为422通过／2失败，失败是名称框只绑定已提交路由值、未保留输入草稿，键入被控件还原；逐字键入专项也复现，两份原失败 `/tmp/addp-alert-name-frontend.log`、`/tmp/addp-alert-name-typing-final.log` 不计通过。改为独立 `v-model` 草稿并沿路由／身份同步后，最终上述117／424完整门禁通过，没有加定时查询或自动重载兜底。
 
-30个任务实现／测试／契约文件收据 `/tmp/addp-alert-name-inputs.json` SHA-256 `c6a539735647b78d7716ef188435fe4f7680a7ed559f28072728adf9ea8438b0`，最终内容摘要核对无漂移；本节只追加证据。现有Monitor、Console路径选择、PostgreSQL自动发现和前端标准入口已命中新用例，无新增依赖、测试入口或workflow。以上是本地共享工作区T1/T2及受控API的T3，不代表固定提交CI、个人Safari、正式身份T4／Hosted或生产T5。没有重启个人服务、修改个人配置、创建正式告警或运行CI／Hosted，也没有设置定时任务；正式结果继续等专门会话回传。
-
+30个任务实现／测试／契约文件收据 `/tmp/addp-alert-name-inputs.json` SHA-256 `c6a539735647b78d7716ef188435fe4f7680a7ed559f28072728adf9ea8438b0`，最终内容摘要核对无漂移；本节只追加证据。以上是本地共享工作区T1/T2及受控API的T3，不代表固定提交CI、个人Safari、正式身份T4／Hosted或生产T5。没有重启个人服务、修改个人配置、创建正式告警或运行CI／Hosted，也没有设置定时任务；正式结果继续等专门会话回传。
 
 ## 名称检索固定提交 CI：PG通过，前端浏览器被取消（2026-10-25）
 
@@ -141,7 +136,6 @@
 - [Platform Run 40110942794／Monitor frontend Job 120922337484](https://github.com/pampa0629/addp/actions/runs/40110942794/job/120922337484)：117项单测实际通过，424项浏览器只出现至363项进度即 `The operation was canceled`；真实测试步骤及Job为cancelled，没有整套浏览器通过或Vite构建记录。后续summary步骤的success只表示摘要写入成功，不能作为产品门禁通过。不能将“363项进度”当作363项已通过，也不能把本地424项或旧时间筛选的421项结果替代本次CI全套。
 
 证据目录 `/tmp/addp-ci-20261024-180033/`，原始日志 `job-120933711310.log` SHA-256 `8754ba1551e3fc6738e372ef2dc60b14c583bad53eb2ee5123d457ea0d4973f8`、`job-120922337484.log` SHA-256 `d2f1dc03e6a0b1c54afc6df56f383db885822659e1d2146b94af555060cfdeb0` 均独立核对一致；同时读取 `jobs-40110942812.json`、`jobs-40110942794.json` 的实际步骤终态及协调审计 `Monitor-a604-actual-CI-audit.json`。后继Platform仍由专门CI会话跟进，复用前须证明名称功能及共享输入等价。本会话不接管其他owner的失败，不另派验收、不设置定时任务；本地、个人Safari、正式身份／Hosted和CI范围继续分别记录，功能清单第51行仍为部分实现。
-
 
 ## 名称检索前端 CI 取消原因更正与限定预算修复（2026-10-25）
 
@@ -154,7 +148,6 @@
 同步CI规范与现有前端登记检查：拒绝丢失Monitor的30分钟例外、越界／非数字／重复预算、改变全局20分钟默认或给其他owner扩预算。先增加测试，标准 `make test-frontend-ci-registration`因缺失新校验函数失败（22项中9个错误含子场景），补齐唯一校验和矩阵声明后，同一入口22项及当前21个前端实际登记通过；`python3 scripts/test/changed-gate_test.py`标准脚本25项通过，独立调用同一影响矩阵确认workflow改动自动选择Monitor。`git diff --check`通过。本批仅改CI编排／登记／文档，产品、用例和依赖未变，不重复本地15分钟整套或重跑旧超时运行。推送只沿main正常触发，后继实际117＋424＋build是否全过继续等专门CI会话回传，不自行轮询、重试、派发Hosted、重启用户服务或设置定时任务。
 
 原始后继日志 `/tmp/addp-ci-20261024-200030/job-120948753235.log` SHA-256 `580d23329fc832e57792bd5f66e330627eed281e0d14ba5ebb057546c9e0e15d`；两份annotation文件SHA-256分别为 `a240f2e0643b2676aca613f5f7335a1f9a9a7f8105aee8c4860b40542a193e6a`（a604）、`1cf37185d974dd0961e1bc2c152580aeada267ea50ddb7ddea56550c40343e3d`（f2ca）。本地红／绿与选择回归日志 `/tmp/addp-monitor-ci-budget-{red,green,selection}.log`。名称检索个人Safari、正式身份／Hosted缺口仍独立，功能清单第51行保持部分实现。
-
 
 ## 名称检索前端 CI 预算闭环：固定 a292 整套通过（2026-10-25）
 
@@ -191,7 +184,7 @@
 | `make test-console-frontend` | 195项T1、220项真实iframe受控T3及构建通过；新增主机名称与告警名称／时间／级别在同一iframe和Console URL恢复。此前同一标准browser launcher的5项导航专项也通过。 |
 | 标准Monitor Swagger生成／覆盖；Common Manifest `--coverage-report` | 生成成功，91条公开路由方法一致；授权覆盖报告 `complete=true`，新增参数及条件主机读取权限已同步，不修改IAM目录或角色。 |
 
-现有路径选择、Monitor PostgreSQL自动发现及前端入口已命中，`changed-gate.py --dry-run`实际选择Monitor和Console；无新增入口、依赖或workflow。Monitor仍沿既有30分钟完整前端预算，CI规范删除易过期的“当前用例数”表述，不改变预算、Worker、断言或重试。没有轮询、手工派发或重跑CI／Hosted，也没有个人数据库写入、服务重启或定时任务；提交后只沿main既有push触发编排。
+`changed-gate.py --dry-run` 实际选择 Monitor 和 Console。Monitor仍沿既有30分钟完整前端预算，CI规范删除易过期的“当前用例数”表述，不改变预算、Worker、断言或重试。没有轮询、手工派发或重跑CI／Hosted，也没有个人数据库写入、服务重启或定时任务；提交后只沿main既有push触发编排。
 
 证据 `/tmp/addp-alert-host-name-{go,go-final,postgres,frontend,alerts-final,build,console,console-full,swagger,swagger-coverage}.log`，授权覆盖及影响选择回执同前缀；`/tmp/addp-alert-host-name-inputs.json`记录22项实现／测试／契约摘要、唯一测试导入修正与全部日志SHA-256。真实Safari尚未加载本批后端，当前主机名称筛选的个人运行／正式隔离身份／Hosted未验，不沿用前一批“告警名称”Safari证据代替。Excel第51行仍为部分实现，高等级置顶、拓扑／影响范围及根因分析等缺口保留。
 
@@ -225,7 +218,6 @@
 
 原始最终日志 `/tmp/addp-alert-priority-{pg-final,go,swagger,swagger-coverage,selection}.log`；十项输入与日志摘要收据 `/tmp/addp-alert-priority-receipt.json` SHA-256 `3b22232e15112b2c14eb30ec21d79d18f7d142ab73d868fcfea935e79e2a3eca`。证据仅为本地共享工作区T0／T1／真实SQL T2，非固定提交CI全绿。清单实际第49行／B48与第51行／B50仍部分实现；本次仅补唯一事件列表的优先顺序，不计大屏滚动、拓扑／影响范围或根因分析完成。
 
-
 ## 告警优先排序个人 Safari：跨页普通组只读复验（2026-10-25）
 
 用户要求后通过原生Safari操作真实Console iframe及既有平台管理员登录，不使用内置浏览器。运行前后直接读取Monitor `/health/live`，均为`69b2f3292fb62aa8b67e8e58ab5e8dc39dc9289b`、实例`7dce643e-b0e3-4f05-909e-12602561d196`，已包含`c723b01a9`排序实现；没有重启个人服务。清除旧名称／级别筛选后，全部状态列表显示466条、24页；默认未恢复集合仅一条“源容量接近额度”警告／未处理（2026-10-23 08:02:39），严重＋未恢复筛选为空。因此本轮不计严重未恢复置顶、确认／抑制后仍置顶的Safari真实场景通过，不创建假事件或操作真实确认／抑制来补样本。
@@ -235,7 +227,6 @@
 可访问性文本实际读取等级、状态、时间及分页；已查看的截图证明真实表格、末页6行与24页分页可见，但原生横向滚动报`noWindowsAvailable`，最终截图保存另报ScreenCaptureKit `-3811`，没有生成最终截图文件，也不计右侧列视觉验收通过。只读记录`/tmp/addp-alert-priority-safari-report.json` SHA-256 `1c718df0e17dd06b7cf75d8f7e7a8f3e4b6189bbb8ef3e157d4edf9af0580ddd`，包含五页边界、刷新／重载比较及运行身份；原始各次AX状态`/tmp/addp-alert-priority-safari-states.txt` SHA-256 `2d1704161fc8e709ce614d2bfbe454fb36e8dea2e29e9c147c27c9481fadf16b`。保存后用独立Python校验报告的86行计数、各页总数／倒序标记、三组边界及恢复比较均成功，`git diff --check`通过；本次仅追加文档，没有修改产品代码，无需重跑未变的Go／PostgreSQL门禁。
 
 本轮仅增加个人Safari既有数据集的普通组分页、筛选与恢复证据，严重未恢复置顶／确认抑制及同时间ID顺序仍分别引用此前真实SQL的合成数据回归，不能混作本轮Safari通过。清单第49行／B48“实时告警联动”与第51行／B50“告警信息管理”仍部分实现，正式隔离身份T4／Hosted、真实严重事件、容量及生产T5未新增验收。没有创建、修改、确认、抑制、删除告警／规则或发送通知，没有修改个人库／IAM、操作CI／Hosted或设置定时任务。后续优先补真实严重未恢复与普通组交界的页面证据，继续等专门会话回传，不为补证据主动触发异常或修改个人告警。
-
 
 ## 告警筛选“全部”选项的可读标签修正（2026-10-25）
 
@@ -248,7 +239,6 @@
 个人Safari实际Console iframe已热加载本批工作区源码，中文三个框分别显示“全部类别／全部状态／全部级别”，整页重载后同一`status=all`地址与登录、标签均保持；未操作英文个人偏好，英文显示及两种语言下的筛选项切换由上述独立受控T3覆盖。真实截图为`/tmp/addp-alert-filter-labels-safari.jpg`（工具返回JPEG，3024×1898），前后AX状态同前缀`-safari-state.txt`／`-safari-reloaded.txt`，均已独立读取核对。本轮没有修改真实告警或规则、发送通知、重启个人服务、操作个人数据库／IAM、查询或调度CI／Hosted，也未设置定时任务；不扩大前节严重未恢复置顶、确认抑制、同时间ID与正式隔离身份的证据范围。
 
 最终日志同前缀`-{green,frontend,registration,selection}.log`；输入、日志和Safari产物摘要收据`/tmp/addp-alert-filter-labels-receipt.json` SHA-256 `e78a28c32d56c98269fef8845f6d1c79cd7ccaec9f67d4da537d5df694d3507f`。清单第51行仍部分实现，本次只补筛选可读性；拓扑／影响范围、根因、严重未恢复真实页面、容量与正式身份／Hosted缺口不变。后续服务失联自动告警的判定粒度及预期运行事实已向用户提问，未实现或默认采用任何新口径。
-
 
 ## 2026-10-25 服务组失联规则与持久确认
 
@@ -269,13 +259,11 @@
 
 日志：`/tmp/addp-service-availability-{common-final,monitor-final,system-go,system-pg,monitor-pg,authorization-final,common-frontend,system-frontend,browser,monitor-frontend-final,swagger,route-coverage,registration}.log`。真实数据库T2使用受控组投影与时钟，不等于真实部署停机／租约超时或真实渠道送达；页面为受控HTTP T3，不等于Safari个人会话、Console正式身份或Hosted。没有执行个人重启／数据库迁移、创建个人规则／通知、查询／触发CI或Hosted，也未设置定时任务。个人真实链路和正式身份验收仍待应用代码后复验及专门会话安排；清单第15／49／52行保持部分实现。
 
-
 ## 重启后的个人环境只读核对（2026-10-25）
 
 用户完成全量重启后，System 8180、Monitor 8100、Gateway 8000的`/health/ready`均200/ready；构建报告commit为`871bc854795105b364b154f1802697969655b6f0`，祖先检查确认包含本批`062301037`。沿Safari当前平台系统管理员会话进入Console的服务失联规则页，规则列表为空且无读取错误；创建入口及System授权候选可读取，候选25组与标准入口受管声明的25组一致。当前声明为Meta scan、Quality quality-bounded、Transfer sync／continuous_sync各一个预期副本；不据此认定双Worker运行验收。无障碍接口完成Meta扫描组筛选／选择，默认60／30秒、启用开关关闭且不可在创建时开启，缺名称时本地校验阻止写入。
 
 截图仍显示原列表，与无障碍树中的弹窗及校验提示不一致；Raise窗口后仍未得到一致视觉证据，已请求用户核对实际是否可见，未把无障碍读取外推为弹窗视觉通过。未保存／启用个人规则或通知，未停止服务、直接读写个人数据库、触发CI／Hosted或创建定时任务。真实规则保存、重新启用后的运行确认、租约失联／恢复和正式身份全闭环仍未验收。安全收据：`/tmp/addp-service-availability-personal-restart-20261025.json`。
-
 
 ## Safari服务失联规则保存复验（2026-10-26）
 
@@ -291,7 +279,7 @@
 
 故障夹具仅允许当次Hosted case；由标准PID文件、实际可执行文件／工作目录及`/proc`启动标记核验两个Meta Worker，使用Linux pidfd固定原进程。暂停前原子保存私有0600恢复记录；正常异常均恢复所有已固定暂停进程，外层生命周期也在标准停止前补做独立恢复，归属变化保留记录并使清理失败。SIGSTOP／SIGCONT不改预期声明、真实时钟、租约或数据库，保持1800秒场景／60分钟Job期限；本机只跑受控fixture测试，未对个人Worker发信号。共享通知接收器只抽出事件校验钩子，资源告警与失联告警复用同一TLS／HMAC与重试入口，没有复制传输实现。顺带补齐已支持的服务失联类别在告警查询Swagger枚举中的遗漏，不改HTTP行为或生产权限。
 
-最终`make test-node-metrics-online-runner`退出0：148项Python回归及System身份Go夹具通过，含新事件窗口／主体／策略拒绝、共享签名传输、浏览器身份及回执、真实`/proc`格式解析的受控夹具、PID启动身份变化拒绝、失败恢复／外层恢复顺序。当前根目录`validate_platform_node_metrics_profile`检查通过；`bash scripts/swagger/gen-swagger.sh monitor`及`bash scripts/swagger/check-route-coverage.sh monitor`通过，96个公开路由方法；`git diff --check`通过。标准入口已沿原Online runner／Platform路径发现，无新增Make路线。原始本地门禁曾出现旧失败分支20秒超时，后续本轮修正及最终完整148项均已通过；不把先前失败改写为通过。日志`/tmp/addp-service-availability-runner-first.log`、`/tmp/addp-availability-{new-tests,runner-final,runner-verified,runner-release,swagger}.log`。
+最终`make test-node-metrics-online-runner`退出0：148项Python回归及System身份Go夹具通过，含新事件窗口／主体／策略拒绝、共享签名传输、浏览器身份及回执、真实`/proc`格式解析的受控夹具、PID启动身份变化拒绝、失败恢复／外层恢复顺序。当前根目录`validate_platform_node_metrics_profile`检查通过；`bash scripts/swagger/gen-swagger.sh monitor`及`bash scripts/swagger/check-route-coverage.sh monitor`通过，96个公开路由方法；`git diff --check`通过。原始本地门禁曾出现旧失败分支20秒超时，后续本轮修正及最终完整148项均已通过；不把先前失败改写为通过。日志`/tmp/addp-service-availability-runner-first.log`、`/tmp/addp-availability-{new-tests,runner-final,runner-verified,runner-release,swagger}.log`。
 
 以上仅为验收实现及本地T0／协议断言证据，不是实际Linux pidfd／心跳租约故障注入、真实Hosted页面或T4通过。本会话未执行／调度／轮询CI或Hosted，未设置定时任务；真实故障闭环和退出零残留等专门会话安排并回传，清单第15／49／52行保持部分实现。个人Safari中先前启用的临时规则本轮未改动。
 
@@ -315,7 +303,6 @@
 
 三次拥有明确归属的当次项目均已正常down，随后按精确Compose项目label独立核验容器／网络／卷全部为0，回执 `/tmp/addp-filesystem-alert-cleanup.json`。未填充磁盘，未修改或重启个人服务／数据库／配置，未执行Safari、Hosted、CI调度／轮询或定时任务。CI与Hosted继续等专门会话回传，本批不能写为完整运行验收完成。
 
-
 ## 主机挂载行创建容量告警入口（2026-10-27）
 
 先更新正式观测规范，再在主机列表展开及详情的完整挂载行增加“创建容量告警”。只向当前非委托Platform User、具备既有资源观测／主机读取及资源规则读取／创建权限的用户显示，有效容量采样才可点击。挂载入口只打开表单，固定并重新核验主机及完整device／mountpoint／fstype，读取既有服务器预设；缺样、挂载消失、主机版本变化或拒绝均不换绑、不写入。仍须填写名称并显式保存，创建停用，取消不写入，冲突保留输入。没有新增API、权限、后台投影或容量判定口径。
@@ -331,15 +318,13 @@
 
 已目视核对中英文窄屏弹窗及保存后的挂载行截图；最终专项目录/var/folders/r1/l7b49c757dz02zftf_l9vl9r0000gn/T/addp-mount-capacity-shortcut-m3c5jA（英文）及addp-mount-capacity-shortcut-NsNOKp（中文），临时路径由专项日志记录。沿既有Monitor前端测试、Playwright自动发现和Platform Monitor frontend门禁，不增加测试入口、依赖或工作流；未改变HTTP契约，无需重新生成Swagger或运行数据库／指标门禁。本批没有后端修改，未操作个人服务或数据库，未执行Safari或正式身份运行验收，也未调度／轮询CI、Hosted或创建定时任务。原文件系统Prometheus专项未通过状态不因本批受控页面结果提升，CI和Hosted仍等专门会话回传。
 
-
 ## 挂载告警入口的共享所有权门禁登记修复（2026-10-27）
 
 专门CI会话回传[Platform consistency失败](https://github.com/pampa0629/addp/actions/runs/40465364758/job/122059331587)后读取原始日志/tmp/addp-ci-20261027-073016/job-122059331587.log，确认唯一首失败为hostNodeSelectOwnership.test.mjs仍要求ResourceAlertRules直接导入HostNodeSelect。2d373a47e已将其迁入唯一ResourceAlertRuleEditor，产品主路径正确但本会话漏同步共享测试消费者登记；上轮Monitor129单元／67浏览器不能覆盖或替代这一平台门禁。原始首个失败Job122058289956仍保留，不把其他Redis／HTTP失败算作本批修复阻碍。
 
 按现有开发原则和共享组件契约修正原测试：改为登记实际Editor消费者，补上已有EngineDeployments；扫描所有模块frontend/src及共享basic/src的实际HostNodeSelect使用，与四个闭合集合一致才通过。每个消费标签均须显式提供api／allowed／identity，并只导入同一共享实现；已有@common-ui公开导入须由index.js唯一重新导出同一文件。保留共享组件不依赖业务store／模块、Monitor旧本地HostNodeSelect与hostAdmission删除及Monitor不拥有主机创建／导入的原断言；新增规则列表与挂载页只能组合唯一Editor、不得重新拥有选择器／表单／POST／PUT的断言。没有恢复重复实现，也没有修改产品组件、接口、权限或授权失效清空行为；业务行为仍由Monitor现有浏览器用例覆盖，未在共享测试中复制业务运行逻辑。
 
-Node24.11.1下标准`make test-common-frontend`先重现283项中282通过／1失败（/tmp/addp-host-selector-owner-red.log），修正后最终284全部通过（/tmp/addp-host-selector-owner-final.log）；当前`npm --prefix monitor/frontend test`129项通过（/tmp/addp-host-selector-monitor-unit.log），diff检查通过。已核对2d373a47e至本次验证的monitor/frontend和common-frontend/basic/src无差异，因此沿用上节实际浏览器及构建证据，不重复运行有效浏览器／Hosted。当前只修测试登记与本证据；Platform workflow原有make test-platform调用make test-common-frontend，包内通配自动发现覆盖修改，无新增入口或CI选择登记需求。未运行整套Platform、未把本地子门禁写成远程CI已恢复；自然CI和Hosted继续等专门会话回传，未轮询、重跑、取消工作流、创建定时任务或操作个人服务。此为既有功能的CI验证覆盖修复，不提升功能清单整行运行验收状态。
-
+Node24.11.1下标准`make test-common-frontend`先重现283项中282通过／1失败（/tmp/addp-host-selector-owner-red.log），修正后最终284全部通过（/tmp/addp-host-selector-owner-final.log）；当前`npm --prefix monitor/frontend test`129项通过（/tmp/addp-host-selector-monitor-unit.log），diff检查通过。已核对2d373a47e至本次验证的monitor/frontend和common-frontend/basic/src无差异，因此沿用上节实际浏览器及构建证据，不重复运行有效浏览器／Hosted。未运行整套Platform、未把本地子门禁写成远程CI已恢复；自然CI和Hosted继续等专门会话回传，未轮询、重跑、取消工作流、创建定时任务或操作个人服务。此为既有功能的CI验证覆盖修复，不提升功能清单整行运行验收状态。
 
 ## 主机挂载行查看已有容量规则入口（2026-10-27）
 
@@ -353,9 +338,7 @@ Node24.11.1下标准`make test-common-frontend`先重现283项中282通过／1�
 
 本轮未操作个人Safari、CI／Hosted或定时任务。完整浏览器门禁的后续结果单列如下；受控HTTP页面验证不能替代个人真实来源、Safari视觉或正式身份验收。后端增加查询参数，个人运行复验须由用户执行`./scripts/dev/restart.sh -monitor`，不得把旧进程返回400当成新接口已验收。
 
-
 最终复验：实际运行条件恢复为系统负载约6／内存压力级别1，且最后一项维度拒绝校验及单元变更已落地后，重新执行标准`make test-monitor-frontend`，退出0：130项单元、488项浏览器（19.1分钟，含本次七项）、Vite构建（3.92秒）全部通过，无失败／跳过。日志/tmp/addp-mount-rule-view-frontend-delivery.log，日志记载临时结果目录 `/var/folders/r1/l7b49c757dz02zftf_l9vl9r0000gn/T/addp-monitor-playwright-results-7korI9`，已按标准成功退出路径移除；最终128个Monitor前端输入摘要与/tmp/addp-mount-rule-view-delivery-inputs.json完全一致。标准wrapper清理返回成功；中英620像素截图addp-mount-rule-view-a1295S／Z4NyGG均已查看，只读入口无创建／编辑按钮、上下文与唯一匹配规则可见。此前失败不改判，只以这轮独立终态支持最终本地T3通过；未修改断言、超时或产品采样口径。当前本批本地验证已通过，CI／Hosted与个人真实运行仍未执行或取得新结果。
-
 
 ## 挂载规则入口的个人Safari前置核对（2026-10-27）
 
@@ -363,13 +346,11 @@ Node24.11.1下标准`make test-common-frontend`先重现283项中282通过／1�
 
 详情返回保留原list_view=load-connections，三档负载、缺失TCP、采集／纳管状态及一个主机可读。页面持续报告“隐藏，自动刷新已暂停”；native Raise未恢复该状态，横向滚动接口报noWindowsAvailable，截图中右侧部分仍不可见。已请求用户将Safari置于当前桌面前台，右侧列视觉及前台自动刷新仍未验，不将无障碍树可读等同全部可见。未写规则／通知、修改采集或个人数据库、重启服务、触发CI／Hosted或设置定时任务。此次仅记录运行前置与阻碍，未核验运行二进制对应提交，不将当前工作区HEAD写成运行源码身份；来源恢复、挂载规则跳转及正式身份闭环仍待相应环境验证。
 
-
 ## 挂载缺样断言修复的完整CI闭环（2026-10-28）
 
 专门CI会话回传后，仅核对已有归档，不触发或轮询新Job。修复9ad52efda9d0b7d9fea1e644060363461c07a784的有效后继为7ebf98370ebc965e09cb5744983dbf8ee7fbbbce，[Monitor Job 122257072557](https://github.com/pampa0629/addp/actions/runs/40523616999/job/122257072557)的实际Run Monitor frontend gate及Job均success；原始日志确认130单元／0失败／0跳过、488浏览器（25.1分钟）和Vite构建（10.57秒）通过。filesystem-alert-rules.spec.js的mount action requires both rule permissions and valid current capacity实际执行，包含9ad新增的真实no_data响应及刷新完成后disabled断言；node-resources.spec.js的disabled refresh clears old metrics用例也实际执行，两者是不同用例，不混淆修复归属。Report skipped步骤本身跳过不表示正式门禁跳过。
 
 已独立核对9ad至7eb的monitor/frontend无差异，后继源码包含修后的测试；不能以修前版本偶然通过代替本次证据。归档日志/tmp/addp-ci-20261027-160029/job-122257072557.log的SHA256为4b356a2735e7196114f6f1de7a7f1a213e0413785c8d12b6db0447c38631ee6e，与Monitor_9ad_actual_full_frontend_recovery_audit.json一致，callback-live-job-122257072557.json的head_sha及正式执行步骤终态一致。旧35／a1f失败及旧预算超时保留，不倒改历史，也不宣称父workflow或当前HEAD全通过。此处仅关闭本修复的受控HTTP前端CI缺口；个人Safari隐藏页、右侧列／前台刷新与真实Linux文件系统挂载行仍未验，既有告警实源缺口不由本CI代替。此次仅文档归档及限定diff／链接核对，未运行新产品测试、Hosted、容量或定时任务，未操作个人服务。
-
 
 ## 文件系统容量告警受控源实链T2复验（2026-10-28）
 
@@ -380,7 +361,6 @@ Node24.11.1下标准`make test-common-frontend`先重现283项中282通过／1�
 最终独立110项确定性回归通过（/tmp/addp-filesystem-diagnostic-delivery-unit.log），覆盖有界读取、权限／缺失／超限／Docker命令失败及超时、秘密不泄漏和首异常保留；原反例红记录为/tmp/addp-filesystem-first-failure-red.log。标准T2登记检查、shell语法及限定diff通过，原输入声明和Release的filesystem-alerts矩阵已自动覆盖，无新入口或workflow。最终T2日志/tmp/addp-filesystem-discovery-metrics-v3.log的SHA256为0d6a7f97048664109410d8dcc63b40c032de50fd2f60f7f175d913f3b2d28698，输入快照/tmp/addp-filesystem-discovery-v3-inputs.json记录基底41024f0800a646ee613f53f518673de2c494527e及本批两份脚本修改；348项中347项前后不变，Makefile仅发生其他会话的两个栅格runner测试登记改动，已核对原文件与基底匹配及Monitor metrics完整target／recipe字节不变。不将整个共享HEAD写作全通过。
 
 成功项目addp-metrics-t2-032ce1c920ed484f8a84f9f9a4856244沿标准退出清理并核对临时文件删除，外部再按精确Compose项目label独立确认容器／网络／卷均0，回执/tmp/addp-filesystem-discovery-v3-receipt.json；前两轮对应清理回执分别为/tmp/addp-filesystem-discovery-cleanup.json与-v2-cleanup.json，三类对象均0。此为Docker Desktop上受控Linux指标源→真实Prometheus／SQL／签名HTTP的本地T2，不是原生Linux主机文件系统采集、个人Safari挂载行、真实MFA／Hosted或生产T5。未操作个人服务、数据库或采集配置，未触发／轮询CI、Hosted、容量或定时；后续CI仍等专门会话回传。
-
 
 ## 平台告警自动筛选与字段提示（2026-10-29）
 
@@ -423,7 +403,6 @@ Node24.11.1下标准`make test-common-frontend`先重现283项中282通过／1�
 
 本轮只使用原生Safari输入、键盘、可访问性状态与截图，没有浏览器脚本注入、模拟接口、测试身份、配置写入或服务重启。四页均不再显示搜索按钮；本轮未覆盖全部筛选组合、真实IME、完整跨页排序或所有语言／尺寸，不外推为Hosted或全功能验收。原受控前端门禁保持独立有效记录，无产品代码变化，不重复运行测试；证据文档限定diff检查通过。当前旧资源导致的四页交互复验阻塞据本轮实际范围关闭；CI／Hosted仍只收专门会话回传，未调度、轮询或设置定时任务。
 
-
 ## 告警筛选刷新测试的公开 URL 提交时序（2026-10-30）
 
 CI 专门会话回传 [Platform 40891592721／Job 123509561021](https://github.com/pampa0629/addp/actions/runs/40891592721/job/123509561021)：源码 `a62ef412ceff7539ba784184a65c8a8dca9bd268` 的英文自动筛选用例在 reload 后缺少 `time_from`，原精确断言五秒失败，264／265 通过。后继源码 `3f43b9bff04fdccb3d689c3efea8a9b9b783e44d` 的 [Platform 40903636698／Job 123552351917](https://github.com/pampa0629/addp/actions/runs/40903636698/job/123552351917) 实际通过 219 单元、265 浏览器和构建，中英文同一用例均执行。独立读取两份原始日志确认上述事实，未查询或重跑云端。对两版本、当前基线 `1353e06febaf67963dcc79c11bf25a3b79526c29` 和工作区的六个直接产品输入逐文件 SHA-256 比对，告警页、自动筛选、模块导航、导航请求、桥协议和 Console Portal 均一致；审计 `/tmp/addp-alert-publication-input-audit.json`。后继通过保留为其固定版本证据，不计为本次新测试已通过 CI。
@@ -432,8 +411,7 @@ CI 专门会话回传 [Platform 40891592721／Job 123509561021](https://github.c
 
 本轮仅补测试及规范：名称／主机／时间变化须先核对 iframe 和 Console canonical 查询提交，reload 后还须观察新请求，避免复用刷新前最后一次请求造成假通过；精确时间值、控件、URL、原请求及单 iframe 断言均保留。新增中英文受控顺序回归验证 API 结果先于公开导航、未知请求 ID 的导航回执不能改写状态、退役旧请求延迟返回不能替换当前结果、放行导航后同一 iframe 不重建，以及刷新恢复时间／名称／主机／类别／严重级别。没有改产品导航、API、权限、超时或引入 sleep，也不增加部署或服务重启。
 
-标准定向入口 `npm --prefix console/frontend run test:e2e -- e2e/platform-alert-navigation.spec.js` 先通过全部 9 项、无跳过、退出 0（2.2 分钟），日志 `/tmp/addp-alert-publication-green-final.log`。随后只在新增两场景补未知导航回执断言，沿同一入口加 `--grep 'earlier API result'`，中英文 2 项最终通过、无跳过、退出 0（1.9 分钟）；原七场景输入未变复用前次有效结果，不将两次运行合计为十一场景。最终补充日志 `/tmp/addp-alert-publication-unknown-final.log`。首次新夹具导入触发两个 Playwright 副本而停在收集阶段，未执行断言、不计通过；已改为本用例最小协议 DTO，没有改依赖或扩大共用夹具。既有 Playwright testDir、根 `test-console-frontend` 与 Platform 前端矩阵自动覆盖同一 spec，无新增入口、依赖或 workflow。产品输入未变，不重复原有效 Console／Monitor 完整本地门禁、PG、个人实链或 Hosted；本次为受控 T3 测试修复，新增输入的自然 CI 继续等专门会话回传，未轮询、调度或设置定时。
-
+标准定向入口 `npm --prefix console/frontend run test:e2e -- e2e/platform-alert-navigation.spec.js` 先通过全部 9 项、无跳过、退出 0（2.2 分钟），日志 `/tmp/addp-alert-publication-green-final.log`。随后只在新增两场景补未知导航回执断言，沿同一入口加 `--grep 'earlier API result'`，中英文 2 项最终通过、无跳过、退出 0（1.9 分钟）；原七场景输入未变复用前次有效结果，不将两次运行合计为十一场景。最终补充日志 `/tmp/addp-alert-publication-unknown-final.log`。首次新夹具导入触发两个 Playwright 副本而停在收集阶段，未执行断言、不计通过；已改为本用例最小协议 DTO，没有改依赖或扩大共用夹具。产品输入未变，不重复原有效 Console／Monitor 完整本地门禁、PG、个人实链或 Hosted；本次为受控 T3 测试修复，新增输入的自然 CI 继续等专门会话回传，未轮询、调度或设置定时。
 
 ### 固定修复版本的自然 CI 复核（2026-10-30）
 

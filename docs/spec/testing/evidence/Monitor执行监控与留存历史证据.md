@@ -2,7 +2,9 @@
 
 [返回 Monitor 历史证据](Monitor历史证据.md) · [返回验收证据索引](../验收证据索引.md)
 
-本专题收录continuous、Owner 不可用、租户日志终审及过程事件留存。固定源码、环境、失败记录、修复结论与未覆盖范围以各记录为准；本次仅整理文档，没有重跑验收或刷新 CI 状态，不推导当前 HEAD 或生产 T5 已通过。跨主题语境与原有顺序见 [Monitor 历史证据入口](Monitor历史证据.md#原记录入口)。
+本专题收录continuous、Owner 不可用、租户日志终审及过程事件留存。验收结论按各记录的固定源码、环境、运行尝试和层级认定。原顺序见[Monitor 历史证据入口](Monitor历史证据.md#原记录入口)。
+
+原始过程、逐步诊断及详细归档清单见[精简前的固定记录](https://github.com/pampa0629/addp/blob/be8f8daa4d38a7830585577f03b77bf2b5ed3931/docs/spec/testing/evidence/Monitor%E6%89%A7%E8%A1%8C%E7%9B%91%E6%8E%A7%E4%B8%8E%E7%95%99%E5%AD%98%E5%8E%86%E5%8F%B2%E8%AF%81%E6%8D%AE.md)。
 
 ## 2026-10-24 概览保留只读评估第一期
 
@@ -64,7 +66,6 @@ Suite 内的 `cleanup=pending_deployment_destruction` 只是场景完成时尚�
 证据为 `/tmp/addp-retention-platform-40139997741-metadata.json`、`-attempt.json`、`-audit.json`及原始 `.log`，日志SHA-256为 `0ca82b64f5dafd79eba1021c3c1962392b25cf9374f1e81f20662bff27ca1e45`。独立核对了固定head SHA、push事件、attempt、真实步骤、标准入口及28项对应日志；没有重跑CI、T4或未变产品测试，也未跟进其他模块Job。该结论仅针对上述固定版本，不外推当前HEAD、其他Owner、专业结果生命周期、小时周期／30天实际事件维护、180天物理删除或T5。
 
 本批CI核对可收口；功能清单实际327／328／329行仍保持部分实现。Owner释放／消费者引用裁决及删除仍需另行讨论确认，不进入本次开发。本轮仅追加现有证据并运行 `git diff --check`，未改产品、期限、权限或工作簿，不启动／重启服务，不新增定时或验收场景。
-
 
 ## 30 天过程事件清理真实进程验收（2026-10-26）
 

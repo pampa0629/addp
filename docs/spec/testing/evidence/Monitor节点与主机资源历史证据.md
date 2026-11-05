@@ -2,7 +2,9 @@
 
 [返回 Monitor 历史证据](Monitor历史证据.md) · [返回验收证据索引](../验收证据索引.md)
 
-本专题收录主机列表、资源趋势、设备与文件系统视图、探针预算。固定源码、环境、失败记录、修复结论与未覆盖范围以各记录为准；本次仅整理文档，没有重跑验收或刷新 CI 状态，不推导当前 HEAD 或生产 T5 已通过。跨主题语境与原有顺序见 [Monitor 历史证据入口](Monitor历史证据.md#原记录入口)。
+本专题收录主机列表、资源趋势、设备与文件系统视图、探针预算。验收结论按各记录的固定源码、环境、运行尝试和层级认定。原顺序见[Monitor 历史证据入口](Monitor历史证据.md#原记录入口)。
+
+原始过程、逐步诊断及详细归档清单见[精简前的固定记录](https://github.com/pampa0629/addp/blob/be8f8daa4d38a7830585577f03b77bf2b5ed3931/docs/spec/testing/evidence/Monitor%E8%8A%82%E7%82%B9%E4%B8%8E%E4%B8%BB%E6%9C%BA%E8%B5%84%E6%BA%90%E5%8E%86%E5%8F%B2%E8%AF%81%E6%8D%AE.md)。
 
 ## 主机固定窗口探针的准备与执行期限
 
@@ -14,28 +16,23 @@
 
 三个最终输入与隔离副本逐字节一致；指纹、日志摘要及清理核验记录为 `/tmp/addp-host-window-budget-audit.json`。本轮仅将计时修复和 48 项 T0 回归落地，不计完整本地 T2、原生 Linux 或 Hosted T4 通过；新输入原生 Linux 结果继续由专门 CI 会话回传，没有查询、重跑或设置定时。来信同时附带的 PostgreSQL 来源 `6d42e4621` 三次真实准入成功及退出清零已核对原始日志哈希，与 P0 已记录的更新 `c7ef8ea0e` 三分组通过不冲突，不重跑或重复回填 PG，既有专业 T4 边界保留。
 
-
 2026-10-22 原生 Linux 复验终态：专门 CI 会话回传精确源码 `9a2b3d28691741397f171b94866c125722bbe388` 的 [host-resources / Job 119660741437](https://github.com/pampa0629/addp/actions/runs/39727468958/job/119660741437)，push、attempt 1，实际 `Verify isolated metrics lifecycle` 成功。本会话复核本地保存的完整原始日志：真实准备编译约 46.67 秒，与保留的 Go／进程 60 秒执行上限分离；DiskIO、Disk、Network、HTTP、Process、CPU、Filesystem、Inodes 八项逐项 PASS。后续 ResourceQueries 两次、PressureEvidence 两次、ResourceOverview 和 ResourceAlertLifecycle 均真实通过，十四项 Go 运行零 FAIL／SKIP；完整门禁仍覆盖 mTLS 拒绝、溢出、来源故障／恢复、HTTP SD 失败／重定向／空集、OAuth、受限节点、中心 SIGKILL／持久样本、六源排行与查询前预算。告警在同一事件上由真实低样本恢复，签名 resolved 投递落库，`events=2 delivered=2 HTTP attempts=3`；末尾明确当次容器、网络、卷及临时文件清零。required Metrics 汇总 `119670125126` 成功由专门 CI 审计回传，本次未自行查询云端或重跑。
 
 原始日志 `/tmp/addp-ci-20261022-063001/job-119660741437.log` 的 SHA-256 为 `54634e180dbd8d850f77e553ff9ec1206761ff73674b7d0c06aab3a2ceed4084`；中央独立审计为同目录 `monitor-9a2-linux-independent-audit.json`，本会话复核记录 `/tmp/addp-host-window-linux-receipt-audit.json` 保存两份证据指纹、八项窗口／十四项通过、零失败跳过、选择成功及清零回执。当前两个探针输入与已验源码字节一致；本轮只补证据，`git diff --check` 通过，不重复运行有效 T2。由此关闭该输入的原生 Linux host-resources 计时修复验收缺口；此前本地 promtool 30 秒／执行 60 秒失败与补清理记录仍按原结果保留，云端成功不证明其唯一根因或已修复。本结论不外推最新共享工作区、原生 macOS、72 小时留存、全部观测功能或生产验收；既有 PostgreSQL 专业 T4 与来源通过记录不变，未设置定时或操作个人服务。
-
 
 ## 同设备双向吞吐同图（2026-10-23）
 
 主机资源页对同一磁盘的读／写、同一网卡的收／发使用一次现有趋势查询，同图显示两条独立折线；按全部有效点共同选择图表单位，并在图旁明确单位及末次评估值。所选方向仍决定采样明细，响应数组乱序不改变方向；真实零值保留，陈旧／缺样各自断开，缺序列、错误设备或评估网格错位拒绝整幅趋势。复用共享 ChartRenderer、格式化和请求隔离，没有新增采集、接口、权限、插值或设备汇总；其他标量、文件系统、磁盘 IO 耗时及 CPU／内存比较保持原单指标路径。规范见平台运行观测 6.3。
 
-冻结基线 `c71bd5cfaddd4607c2d0907691f2d2a06a57d432` 加本批六项前端输入执行 `make test-monitor-frontend`：退出 0，100 项确定性测试、299 项浏览器测试与构建通过。随后仅补图旁明确的容量单位及独立测试截图路径；最终六项输入再次冻结，执行 `npm test`（100／100，无 Skip）、标准 `npm run test:e2e -- e2e/node-resources.spec.js`（65／65）及 `npm run build`，全部退出 0。最终主机页覆盖中英文、620px、双向单位／零值、响应乱序、方向明细、重载恢复、错位拒绝／恢复与独立缺样；其余未受最后单位文本影响的页面复用完整门禁证据，不宣称最终输入又完整重跑299项。现有 Monitor 前端路径及标准门禁自动发现，无新增依赖或 CI 编排。
+冻结基线 `c71bd5cfaddd4607c2d0907691f2d2a06a57d432` 加本批六项前端输入执行 `make test-monitor-frontend`：退出 0，100 项确定性测试、299 项浏览器测试与构建通过。随后仅补图旁明确的容量单位及独立测试截图路径；最终六项输入再次冻结，执行 `npm test`（100／100，无 Skip）、标准 `npm run test:e2e -- e2e/node-resources.spec.js`（65／65）及 `npm run build`，全部退出 0。最终主机页覆盖中英文、620px、双向单位／零值、响应乱序、方向明细、重载恢复、错位拒绝／恢复与独立缺样；其余未受最后单位文本影响的页面复用完整门禁证据，不宣称最终输入又完整重跑299项。
 
 末版专项首次为64／65，一次点击写入方向后 URL 未变化，截图显示选择弹层仍打开；带 trace 的四组合12次检查、加入输入事件记录的单场景10次诊断及最终标准65项均未复现，不能据此确认该次失败根因或宣称修复了间歇点击／Safari 故障。临时诊断代码已删除，不增加重试、超时或移除 URL／明细断言；新截图使用每次浏览器测试的独立 outputPath。保留首次失败证据 `/var/folders/r1/l7b49c757dz02zftf_l9vl9r0000gn/T/addp-monitor-playwright-results-lf2gXA/`。
 
 日志、两版冻结输入及诊断记录位于 `/var/folders/r1/l7b49c757dz02zftf_l9vl9r0000gn/T/addp-paired-throughput-ge5httgy/`：`frontend.log`、`inputs.json`、`inputs-final.json` 与 `snapshot-final/monitor/` 下的 `unit-final.log`、`node-verified.log`、`build-final.log`、`node-final.log`、`paired-trace.log`、`selection-probe.log`。最终六项输入与工作区哈希一致。仅为隔离夹具 T1／T3，未运行真实 Safari、Hosted T4、CI 或后台重启，等待专门会话回传，未设置定时任务。当前仍为折线，不将本批计为原图的分钟柱形、内存双Y轴、资源热力或完整监控交付。
 
-
 构建器独立客户端修正后已实际启动；第二次仍在业务部署前主动停止，用于修正启动清单中一次性 init 的前台成功语义及显式 MinIO 镜像绑定，未发业务请求。自动报告 `local-report-final.json` 记录失败／中断及零残留，实际最高硬配额 6 CPU／10 GiB、未发生 OOM。进一步将全部私有可写目录计入原 4 GiB 停止线，只读复用公共 Go 依赖缓存，及时删除当次已完成 Go 对象缓存，未借用个人凭据或写共享缓存；标准 runner 的初始化序列、目录预算及私有文件回归共 35 项通过。全部重试继续使用首次窗口截止时间，不重新取得一小时。
 
-
 第三次在 product_compile 阶段由守卫自动报 `owned_volume_stop_line_reached`，业务部署／身份／查询均未执行；报告 `local-report-window-final.json` 明确失败且 zero_owned_resources=true。最近成功样本为 4,235,309,056 字节（低于 4 GiB），独立只读 du 随后观察到私有目录 4,266,260 KiB（约 4.07 GiB）；旧守卫在触线断言前未追加触线样本，不能用最近成功样本冒充峰值，已将样本落盘移到断言之前并增回归。只读主仓库 `.git` 约 1.2 GiB，因此快照唯一切换为同提交的 file:// 浅克隆（depth=1、no-local），不复制无关历史，也不放宽资源／时间／验收断言；标准 runner 仍通过。下一次继续沿首次绝对截止时间与同样停止线，不能计为容量或正式身份已通过。
-
 
 ## 内存容量与使用率双 Y 轴（2026-10-23）
 
@@ -49,8 +46,7 @@
 - Monitor 最终 `npm run build` 通过（`build-final.log`）；Console 标准浏览器入口 `npm run test:e2e -- process-resource-navigation.spec.js --grep 'exact managed host'` 1/1，通过，核对同一 iframe、实际主机趋势及返回筛选（`console-navigation.log`）。
 - `make test-frontend-ci-registration` 20 项及 21 个前端登记检查通过（`registration.log`）；现有共享依赖扩散与 Monitor 前端登记已覆盖本批，无需新增 workflow。Hosted 既有脚本的内存比较查询预期同步复用同一指标组合；`make test-node-metrics-online-runner` 的 138 项确定性测试与 Metrics Go 身份夹具通过（`online-runner.log`），不是实际 Hosted 结果。
 
-以上仅为本地 T1/T3 和验收脚本的确定性验证，不计真实身份／数据源 T4 或生产 T5。本轮未查询、触发或重跑云端 CI／Hosted，未设置定时任务，未重启个人服务。CI 和 Hosted 结果由专门会话回传。
-
+以上仅为本地 T1/T3 和验收脚本的确定性验证，不计真实身份／数据源 T4 或生产 T5。CI 和 Hosted 结果由专门会话回传。
 
 本轮最终实现与失败边界（2026-10-23，正式身份本地入口）：Common 检查点及 owner 接线提交 `3f59dc5c56d44f11bb8c8fa7b8518ec36028f965`；入口后续修正至 `d4b31264d`。共享扩散最终 `make test-go` 退出 0，22 个模块通过；最终 `make test-infra-runtime-log-lifecycle` 退出 0，包含 40 项本地入口契约、JS 语法／CI 登记／System ExecutionTrace Go，以及既有 60 项生命周期检查。40 项包含真实回环 Cookie Jar／退出、守卫失败前拒绝新业务请求、客户端与 daemon 分别校验无凭据代理、完整可写预算／触线样本、采样失败步骤和总硬配额。标准入口准备验证通过不等于正式身份实际执行通过。完整 Console 结果仍为上述 192/193，E2E/build 未执行，不把专项四项通过记为全量通过。
 
@@ -61,7 +57,6 @@
 八次实际启动中，首轮报告写入异常使用明确标注的人工复查回执，其余七份自动报告全部为 failed 且清理通过；均未创建业务部署、未准备正式身份、未发送成功／失败查询，也未进行真实 Console／Trace／日志闭环。`local-final-receipt.json` 汇总每次报告哈希、停止阶段、资源记录与独立清理复查；当次容器、网络、卷、构建器和私有目录残留均为零。全部原始安全报告、准备门禁日志及输入摘要位于 `/tmp/addp-p19-formal-local-20261023/`。因此整体仍为部分实现，正式身份验收未执行；不是业务链路失败或通过的证明。后续优先在同样 8 CPU／12 GiB／4 GiB 停止线下确认一个新的最长 60 分钟本地窗口，先核对采样稳定性，再执行正式身份闭环；未经确认不续开窗口，不运行 Hosted、容量或定时，不接管个人服务。
 
 代码提交 `d4b31264dc7308ca7b1b7479e9b697a97580b16b` 推送后单次只读核对：[Platform CI 39881617580](https://github.com/pampa0629/addp/actions/runs/39881617580) 与 [Release/T2 39881617528](https://github.com/pampa0629/addp/actions/runs/39881617528) 均为 queued，不计为通过；安全回执 `ci-receipt.json`。没有手工调度任何 workflow 或设置后续跟踪。
-
 
 ## 网卡收发速率柱状展示与局部缩放（2026-10-23）
 
@@ -74,18 +69,17 @@
 - `make test-common-frontend`：最终 264/264，通过，无失败／跳过；覆盖默认上限不变、显式上限类型／边界／超限拒绝、饼图拒绝覆盖、完整结果约束、隐藏标签仍保留零／null／tooltip、缩放保留全数据及主题颜色（`common-final.log`）。
 - Monitor `npm test`：101/101，通过（`monitor-unit-final.log`）。沿标准浏览器入口 `npm run test:e2e -- node-resources.spec.js network-bars.spec.js`：最终 69/69，通过（`browser-final.log`）；随后仅增强绘图动画完成等待和时段切换重置断言，`npm run test:e2e -- network-bars.spec.js` 最终 2/2，通过（`network-settled-browser.log`），其余 67 项输入未变、沿有效证据复用。覆盖中英文 620 像素窄屏、5 分钟 21 点／1 小时 241 点／24 小时 961 点／7 天 984 点、乱序响应、原步长与单位、各方向独立缺样／陈旧值排除、真实零值、切换方向及采样明细、错误设备／预算失败后恢复；既有磁盘、内存双轴与撤权回归同时通过。
 - 缩放使用实际鼠标拖动绘制出的滑块手柄，确认不新增请求，完整两组 984 点仍保留；主题重绘和刷新恢复视口，切换时段及查询错误清空视口。最终截图等待图引擎动画实际完成，已核对中英文五分钟及七天局部稳定绘图：`addp-network-bars-EXT7Am/zh-cn-5m.png`、`addp-network-bars-MPmUTl/zh-cn-7d-zoom.png`、`addp-network-bars-8UKtyV/en-5m.png`、`addp-network-bars-n2SGks/en-7d-zoom.png`（均位于同一 macOS 临时目录父级）。
-- Monitor `npm run build` 通过（`build-final.log`）；`make test-frontend-ci-registration` 20 项及 21 个前端登记检查通过（`registration.log`）。现有共享依赖发现、Monitor 前端 Make 入口与 Playwright 自动发现覆盖新增 spec，无需新增 workflow。
+- Monitor `npm run build` 通过（`build-final.log`）；`make test-frontend-ci-registration` 20 项及 21 个前端登记检查通过（`registration.log`）。
 
 初始失败不计通过：新增七天用例曾误写 630 秒／961 点，核对后端既有 plan 后修正为 615 秒／984 点，未改变产品步长、上限或查询；初始滑块测试使用配置坐标偏移，真实渲染手柄中心受图引擎布局影响，点击未命中。运行时绘制边界诊断保留在 `zoom-hit-test.log`；最终从实际绘制手柄取点并执行真实拖动，未增加等待预算、重试或减弱缩放断言。初始失败日志与报告分别保留在 `monitor-browser.log`、`network-zoom-browser.log` 及对应 `addp-monitor-playwright-results-*`；最终等待动画完成避免将过渡帧当稳定实图，未据此修改产品数据或过滤模式。
 
-以上为本地 T1/T3，不计真实来源与身份的 Hosted T4 或生产 T5；未运行完整 Monitor 其他领域浏览器全集，不外推其结果。本轮未查询、触发或重跑云端 CI／Hosted，未设置定时任务、重启个人服务或修改个人数据库。CI 和 Hosted 结果等专门会话回传。清单第 38 行仅补网络柱图的局部缩放，第 39 行补网卡速率柱图；不能将全部图表拖拽缩放、图例筛选、资源热力面板及原行其他缺口同时标为完成。
-
+以上为本地 T1/T3，不计真实来源与身份的 Hosted T4 或生产 T5；未运行完整 Monitor 其他领域浏览器全集，不外推其结果。CI 和 Hosted 结果等专门会话回传。清单第 38 行仅补网络柱图的局部缩放，第 39 行补网卡速率柱图；不能将全部图表拖拽缩放、图例筛选、资源热力面板及原行其他缺口同时标为完成。
 
 ## CPU、内存与磁盘趋势复用共享时间缩放（2026-10-23）
 
 主机 CPU、内存和磁盘折线趋势接入既有共享 ChartRenderer 滑块，与网卡柱图沿同一路径保存临时视口。缩放只改变图中可见范围，完整 rows／series、查询窗口／步长、采样明细及相邻时段比较保持不变；说明紧邻图表展示。视口绑定主机、指标组、设备维度、时段、固定锚点、比较模式和当前身份，刷新及主题重绘保留；同组内存指标、同设备读写方向切换保留，不同组或上述范围变化以及查询失败时清空。不新增指标、API、权限、依赖或持久化配置；负载、运行时长、文件系统、服务及引擎图表不在本批接入范围。
 
-本地冻结输入根为 `/var/folders/r1/l7b49c757dz02zftf_l9vl9r0000gn/T/addp-host-time-zoom-io4lexon`，基线 `a53690c9f933e7ca0a6a32f18bfee0a9a6f043e3`，`snapshot` 只叠加本批路径，`inputs-final.json` 记录七项实现／测试／规范的 SHA-256。交付前工作区逐文件一致；期间 main 上其他提交未改变 Monitor 前端、common-frontend 或本批标准测试执行脚本。现有 Make 前端 owner 登记、共享依赖扩散与 Playwright 自动发现覆盖新增场景，无需新增 workflow。
+本地冻结输入根为 `/var/folders/r1/l7b49c757dz02zftf_l9vl9r0000gn/T/addp-host-time-zoom-io4lexon`，基线 `a53690c9f933e7ca0a6a32f18bfee0a9a6f043e3`，`snapshot` 只叠加本批路径，`inputs-final.json` 记录七项实现／测试／规范的 SHA-256。交付前工作区逐文件一致；期间 main 上其他提交未改变 Monitor 前端、common-frontend 或本批标准测试执行脚本。
 
 - `make test-common-frontend`：264/264，通过，无失败／跳过（`common.log`）；Monitor `npm test`：101/101，通过（`unit.log`）。共享 renderer 产品代码未再修改。
 - Monitor 标准 `npm run test:e2e -- node-resources.spec.js network-bars.spec.js host-resource-zoom.spec.js resource-comparison.spec.js`：最终 96/96，通过（`browser-final.log`）。新增九项覆盖 CPU／内存／磁盘中英文窄屏、真实鼠标拖动、七天完整 984 点不裁剪、主题及容器尺寸变化、手动／自动刷新后恢复、内存双轴和同设备双方向切换、独立缺样、时段／比较模式／不同指标组切换及查询失败／身份撤销清除；CPU 和内存时段对比仍使用原完整范围，采样明细行数和比较结果不受局部缩放影响。既有主机资源、网卡柱图和时段比较回归同时通过，未把此结果外推整个 Monitor 浏览器全集。
@@ -95,7 +89,6 @@
 初始新增场景为 8/9，自动刷新场景失败于测试夹具读取不到图引擎模块；日志 `zoom-browser.log` 与报告 `addp-monitor-playwright-results-ymYElk` 保留。查明 Playwright 虚拟时钟同时替换 Performance 的资源读取接口并返回空数组；共享测试 helper 改为从页面实际资源请求记录模块 URL，再查询真实图实例，不保留性能表 fallback，也不改变产品逻辑、等待预算、重试或业务断言。修正后自动刷新专项 1/1（`automatic-zoom.log`），随后上述最终 96 项整组通过；最初失败不计通过。测试时钟只在隔离浏览器验证刷新，不是定时任务。
 
 以上为本地 T1/T3 与构建／登记证据，浏览器使用受控 HTTP 夹具，不计真实来源、正式身份、Safari／Hosted T4 或生产 T5；本批未新跑 T2，原指标口径和来源未变。未查询、触发或重跑 CI／Hosted，未设置定时任务、重启个人服务或修改个人数据库；云端结果等专门会话回传。清单第 38 行仅补 CPU／内存／磁盘共享时间缩放子项，不能将所有图表缩放、完整图例交互验收或原行其他缺口一并记为完成。
-
 
 ## 主机趋势图例筛选与悬停交互验收（2026-10-23）
 
@@ -110,7 +103,6 @@
 最初单项测试将陈旧百分比夹具错误设为超过 100，页面按原响应校验拒绝整图，日志 `interaction-cpu-initial.log` 及报告 `addp-monitor-playwright-results-OkYGg3` 保留。夹具修正为范围内的陈旧百分比，仍要求该点不显示数值，未放宽产品校验、等待或断言；随后专项通过。默认终端 Node 为 v25.2.1，之前的 22 项及新增断言后 11 项通过保留在 `interaction-browser.log`／`interaction-browser-final.log`，最终交付结果以符合仓库工具链的上述 Node 24 门禁为准。
 
 本批仅为受控 HTTP 夹具的本地 T1/T3、构建及登记证据，不计真实来源、正式身份、Safari／Hosted T4 或生产 T5；未新跑 T2 或其余领域浏览器全集，未重跑输入未变的共享组件单测。未查询／触发／重跑 CI 或 Hosted，未设置定时任务、重启个人服务或修改个人数据库。清单第 38 行可补上述四类主机图表的图例筛选与悬停本地验收，不代表所有图表、真实运行及原行其他缺口均已完成；CI 和 Hosted 等专门会话回传。
-
 
 ## 负载、运行时长与文件系统趋势统一时间缩放（2026-10-23）
 
@@ -127,14 +119,13 @@
 
 以上为本地 T1/T3、构建及登记证据，浏览器为受控 HTTP 夹具，不计真实来源、正式身份、Safari／Hosted T4 或生产 T5；未新跑 T2 或未涉及 owner 的门禁，未把缩放接入外推为专业图表或全部原始功能完成。未查询／触发／重跑 CI 或 Hosted、设置定时任务、重启个人服务或修改个人数据库。清单第 38 行可补主机负载／时长／文件系统共享缩放的本地结果；真实页面与来源验收仍等专门会话回传。
 
-
 ## 主机运行时长趋势的自适应显示单位（2026-10-23）
 
 主机运行时长曲线按完整已加载时窗内有效点的最大秒数选择秒／分钟／小时／天，纵轴与 tooltip 使用同一单位、两位小数；缩放不重选量级，刷新跨量级可以更新。共享 `scaleDurationValue` 与原复合时长格式化共用唯一 day／hour／minute／second 换算表，不读取时区或舍弃原始精度；Monitor 只换算图表 rows 与字段呈现。API 秒值、采样证据、重启判断、当前卡片及采样明细的原复合时长格式均不变。零值有效，陈旧／缺样不选级且保持 null，全缺样默认秒；不新增配置、依赖、API 或权限。
 
 冻结根 `/var/folders/r1/l7b49c757dz02zftf_l9vl9r0000gn/T/addp-uptime-units-k46w9uio`，基线 `d01c5772f84d19c74010d1bd048433c8000d85be`；最终 `inputs-final.json` 记录十一项产品／测试／规范输入，交付前与工作区逐项一致，快照排除其他 owner WIP。各命令通过 `fnm exec --using v24.11.1` 使用根工具链，沿已有独立端口及清理入口：
 
-- `make test-common-frontend`：267/267，通过，无失败／跳过（`common.log`）。包含时长量级阈值、小数／零／非法值及原复合时长格式回归；其他共享单位与图表约束保持。Monitor `npm test` 101/101、`npm run build` 及 `make test-frontend-ci-registration` 的 20 项／21 个前端登记均通过（`unit.log`、`build.log`、`registration.log`），构建仅有既有 chunk 大小提示。现有共享依赖发现、Monitor owner 与 Playwright 自动发现覆盖新增 spec，无需修改 workflow。
+- `make test-common-frontend`：267/267，通过，无失败／跳过（`common.log`）。包含时长量级阈值、小数／零／非法值及原复合时长格式回归；其他共享单位与图表约束保持。Monitor `npm test` 101/101、`npm run build` 及 `make test-frontend-ci-registration` 的 20 项／21 个前端登记均通过（`unit.log`、`build.log`、`registration.log`），构建仅有既有 chunk 大小提示。
 - 新增 `npm run test:e2e -- uptime-units.spec.js` 首次 2/2，通过（`uptime-browser.log`）；覆盖中英文秒→分钟→小时→天、真实悬停、跨量级刷新保留缩放、图例显隐、原采样明细与当前卡片不变、陈旧极值排除、独立缺样／全缺样、真实零、错误清除与恢复，查询仍只含原 uptime 指标。267 项共享 T1 与真实 Monitor 消费页面共同验证新格式化入口，不外推其他消费模块的完整页面验收。
 - 组合 `npm run test:e2e -- node-resources.spec.js network-bars.spec.js host-resource-zoom.spec.js host-trend-interactions.spec.js resource-comparison.spec.js uptime-units.spec.js` 首轮 115/122，不能记成功（`browser-final.log`，失败报告 `addp-monitor-playwright-results-g8XJhD`）。失败包括拖动未改变视口、动画／加载等待、创建 page 阶段超时、明细点击、错误切换及缩放值捕获；创建 page 的一项尚未运行产品。未延长 5 秒断言／30 秒场景预算，不加重试或跳过。
 - 确认滑块实时事件经过 ECharts 节流：最初新英文场景捕获 54.770992366412216，后续实际视口为 59.732824427480914。共享测试 helper 改为在 mouseup 后等待已应用 start／end 与实际滑块 `_range` 一致，再保存或比较；只等真实事件完成，不调用 dispatchAction 或强制 flush，不改变产品行为。最终 `npm run test:e2e -- host-resource-zoom.spec.js host-trend-interactions.spec.js network-bars.spec.js uptime-units.spec.js` 37/37，通过（`affected-browser-final.log`）。
@@ -143,7 +134,6 @@
 诊断 `interaction-diagnostic.log` 的三个场景通过，记录了实际鼠标命中、绘制帧、页面可见性与请求错误，未复现最初的加载／动画失败；临时诊断 hooks 已从最终快照和工作区移除。新的通过结果不证明这些历史偶发失败的根因已经确定或修复；只有上述滑块中间状态的同步条件得到针对性补齐，其余历史加载／动画超时仍待定位，不据 CPU 使用率快照推定原因。原 34.6 分钟聚合执行失败保留，不通过重试计成功。
 
 最终中英文窄屏悬停图已逐一核对：`addp-uptime-units-VtugVb/zh-cn.png`、`addp-uptime-units-Fq3pIK/en.png`（与冻结根位于同一 macOS 临时目录父级）。286,435 秒的图轴及悬停显示 3.32 天／days，明细仍为 3 天 7 小时 33 分钟／对应英文；图例和缩放保留。以上为本地 T1/T3、构建／登记，不计真实来源、正式身份、Safari／Hosted T4 或生产 T5，未新跑 T2。未查询／触发／重跑云端 CI 或 Hosted、设置定时任务、重启个人服务或修改个人数据库；云端验收继续等专门会话回传。清单第 38 行仅补时长趋势显示量级与当前本地验证，历史偶发失败和其他原行缺口不能据此关闭。
-
 
 CI 专门会话回传补充（2026-10-23）：固定提交 `2cd3e278fc00c19183f3508f45253d31e9eef9f8` 的 [Platform Monitor frontend Job 120242877828](https://github.com/pampa0629/addp/actions/runs/39901181026/job/120242877828) 已实际执行 `Run Monitor frontend gate` 并成功。Owner 已核对 Job 的提交身份／实际步骤及原始日志：101 项单测、339 项浏览器均通过，失败／跳过为零，构建 10.36 秒；包含 memory／disk／network 中英文六项图例／悬停／缩放及新增两项时长单位场景。原始材料为 `/tmp/addp-ci-20261023-070013/critical-120242877828.json`、`job-120242877828.log`、`Monitor-2cd3-frontend-actual-pass-audit.json`。这是该固定输入的前端 CI 证据，不表示父 Platform workflow 全部通过，不覆盖后续服务独立缩放／进程环比提交、实源告警 T2 或 Hosted；旧输入失败及尚未复现的加载／动画偶发根因继续保留，未重跑任何门禁。
 
@@ -155,7 +145,6 @@ CI 专门会话回传补充（2026-10-23）：固定提交 `2cd3e278fc00c19183f3
 
 本批仅为受控 HTTP 夹具加真实图表的本地 T3 与 T1／登记证据；产品源码未变，未重建或重跑输入未变的其余模块／前端全集。未运行 T2、真实身份／来源 T4、Hosted 或生产 T5，未追查／重跑 CI、设置定时任务或重启个人服务。历史加载／动画偶发失败仍不能由本次通过推定根因已修复。原表第 38 行图例／悬停本地专项缺口可关闭，真实运行、留存与原行其他缺口保留。
 
-
 ## 主机 TCP 当前连接数（本地）
 
 2026-10-23，按用户确认口径新增固定主机标量 `node.tcp.current_connections`，单位 `connections`，只读当前宿主网络命名空间的 ESTABLISHED＋CLOSE_WAIT，不含监听／TIME_WAIT。复用唯一 `resourcequery` gauge、节点与来源身份、预算、新鲜度、即时和趋势 API；固定主机目录由 25 项增至 26 项，标量由九项增至十项。整数须在 0～2^53−1，合法零值保留，缺样不变成零；采集器缺失、重复原始序列及外来节点不能构造有效值。受限 Docker Desktop 来源不开放 netstat，不补容器命名空间统计，返回 `no_data`。页面新增就近口径／缺样提示、即时卡片及同一趋势、缩放、图例与悬停能力。CPU／内存摘要、TOP5、告警、生产权限及身份不变。
@@ -166,11 +155,10 @@ CI 专门会话回传补充（2026-10-23）：固定提交 `2cd3e278fc00c19183f3
 - `make test-monitor-metrics MONITOR_METRICS_TEST_ARGS=--case=host-resources`：退出 0（`host-resources-t2.log`）。真实 node_exporter／Prometheus 的全来源即时及趋势、受限 Desktop 的 TCP 无数据分支通过；同一入口执行五个固定 promtool 场景：有效零、有效数量、重复来源、外来节点和缺失采集器。原有主机来源故障恢复及预算回归通过，退出核验当次容器／网络／卷和临时文件零残留。这是本地隔离 T2，不是原生 Linux 正式身份页面 T4，亦不作为服务实例 CPU／RSS 告警实源验收结果。
 - Node v24.19.0 下 `make test-monitor-frontend`：111 项 T1、405 项浏览器 T3 及构建全部通过（`frontend-full.log`）。覆盖 TCP 中英文整数／零值、来源缺失后恢复、错误小数／负数／越界拒绝，及真实鼠标图例／悬停／缩放；其余主机、服务和错误／撤权场景一并回归。`screenshots/` 保留中英文 TCP 窄屏趋势实图，中文精确整数与单位已人工核对。页面测试使用受控 HTTP 夹具，不冒充真实来源页面。
 - `bash scripts/swagger/gen-swagger.sh monitor` 与 `bash scripts/swagger/check-route-coverage.sh monitor`：最终生成成功，90 个公开路由方法覆盖一致（`swagger-generation-final.log`、`swagger-coverage.log`）；生成工具固定 module v1.16.6。首次未复制根 go.work 的生成失败仅为临时副本准备错误，保留在 `swagger-generation.log`，不计为通过证据。
-- `make test-node-metrics-online-runner`：最终 139 项本地入口／身份／收据守卫及 System 既有 Metrics Go 夹具通过（`online-runner-final.log`）；`make test-frontend-ci-registration`：20 项检查、21 个前端登记通过（`registration-final.log`）。原有 Monitor 指标 T2、前端及 Console／Online 路径自动发现覆盖本批，无新增 workflow 或标准测试入口。
+- `make test-node-metrics-online-runner`：最终 139 项本地入口／身份／收据守卫及 System 既有 Metrics Go 夹具通过（`online-runner-final.log`）；`make test-frontend-ci-registration`：20 项检查、21 个前端登记通过（`registration-final.log`）。
 - `npm test -- --testNamePattern='Online scalar resource receipt identity'`（Console frontend）：最终 8 项指定收据测试通过（`console-receipts-final.log`），包含精确十项且拒绝旧九项请求；其余 186 项因过滤未执行，不计为 Console 全量通过。
 
 用户同日确认原一次性 `platform-node-metrics` 临时平台管理员限定用途增加当次主机 TCP 当前值、趋势和同一真实 Console 页面。规范与标准 runner 已同步精确十项标量；仅为多出的 TCP 选中与恢复两轮各六读，将原 174 项收据上限调整为 186，仍严格拒绝未授权指标、重复／缺失、错误节点或 query。总预算、密码／MFA、独立 Prometheus、节点范围、无租户业务及退出清零保持原约束。本会话没有触发或轮询 CI／Hosted，没有设置定时任务或重启个人服务；真实身份／来源 T4 及 CI 等专门会话回传，生产 T5 未运行。原表第 37 行（B36，主机实时资源总览列表）的 TCP 指标能力已落地，但主机列表仍只展示核心摘要，综合健康评分与完整总览列仍未实现；第 38 行（B37，资源趋势曲线图）新增 TCP 本地证据，不由本次结果推导留存、长期比较或其他真实运行范围通过。
-
 
 ## 主机资源热力面板（本地）
 
@@ -186,7 +174,6 @@ CI 专门会话回传补充（2026-10-23）：固定提交 `2cd3e278fc00c19183f3
 
 `screenshots/` 保留最终中英文浅色／深色窄屏面板实图，已人工核对中文浅色布局与单位。T3 使用受控 HTTP 夹具与真实组件，未操作个人 Safari 或重启个人服务；未运行真实身份／来源页面 Hosted、T4 或生产 T5，CI 和 Hosted 等专门会话回传，未设置定时任务。原表第 39 行（B38，主机底层资源明细）的热力面板能力已实现；该行的完整硬件汇总／分区健康判定及新增页面真实运行证据仍需分别核对，不能由本批界面色彩推定健康判定或告警通过。
 
-
 ## 主机列表五项核心摘要（本地）
 
 2026-10-23，按用户确认范围，主机列表展示 CPU 逻辑核数／一分钟忙碌率、内存总量／使用率与运行时长，默认每页 20 台。复用原单位、当前节点身份／版本、采样新鲜度、采集状态和列表生命周期；容量用 IEC 单位，运行时长用复合时长。固定主机与操作列、标题允许换行，每项保留独立状态。当前页只进行一次摘要 API 请求，不逐台读取详情或补齐失败列；返回乱序仍按节点身份映射，单项陈旧不抹除其他有效值，整批缺项拒绝并清空旧摘要，主机列表仍保留。
@@ -201,9 +188,9 @@ CI 专门会话回传补充（2026-10-23）：固定提交 `2cd3e278fc00c19183f3
 - 最终 `make test-monitor-frontend`：112 项 T1、411/411 浏览器 T3 及构建全部通过，命令退出0（`frontend-full.log`，浏览器约15分钟，构建4.46秒）；本次输入下无失败或跳过。覆盖主机／采集列表的投影隔离、TOP5、详情、热力、趋势与服务／告警回归；不把前面的专项与整批交叠用例重复累计。`screenshots/` 保留最终五项列表中英文实图，已人工核对中文布局、单位与可读表头。
 - 首轮 `npm --prefix monitor/frontend run test:e2e -- node-resources.spec.js monitoring-target-list.spec.js resource-overview.spec.js`：89 通过、3 失败（`focused-browser.log`）；失败是旧列表用例仍断言两列数值或不带 metrics 的请求，已按精确五项和必填选择修订，不放宽采集配置页两项断言或产品校验。
 - `make test-node-metrics-online-runner`：139 项本地入口／身份／收据守卫及 System Metrics Go 夹具通过（`online-runner.log`）；新增拒绝省略指标选择、旧两项列表请求及缺失核心列的反例。仅为准备好的正式入口本地检查，没有运行 Hosted。
-- `bash scripts/swagger/gen-swagger.sh monitor` 和 `bash scripts/swagger/check-route-coverage.sh monitor`：生成成功，90 个公开路由方法覆盖一致（`swagger-generation.log`、`swagger-coverage.log`）。固定 Swag module v1.16.6。`make test-frontend-ci-registration`：20 项检查与21个前端登记通过（`registration.log`）。现有 Monitor 前端／Go／指标 T2、Console／Online 路径自动发现覆盖本批，没有新增 workflow 或标准入口。
+- `bash scripts/swagger/gen-swagger.sh monitor` 和 `bash scripts/swagger/check-route-coverage.sh monitor`：生成成功，90 个公开路由方法覆盖一致（`swagger-generation.log`、`swagger-coverage.log`）。固定 Swag module v1.16.6。`make test-frontend-ci-registration`：20 项检查与21个前端登记通过（`registration.log`）。
 
-本会话不触发／轮询 CI 或 Hosted，不设置定时任务，不修改 IAM 或重启个人服务。因摘要请求契约同次更新，个人环境体验需由用户按标准入口重启 Monitor 后端；前端改动不要求重启其他后端。原表第37行（B36，主机实时资源总览列表）仍是部分实现：本批核心五项已具备，三档负载、TCP 与存储／网卡明细仍在主机详情，未补完整列表或综合健康评分；新列表的真实身份页面 Hosted 与生产规模证据继续待专门会话回传。
+因摘要请求契约同次更新，个人环境体验需由用户按标准入口重启 Monitor 后端；前端改动不要求重启其他后端。原表第37行（B36，主机实时资源总览列表）仍是部分实现：本批核心五项已具备，三档负载、TCP 与存储／网卡明细仍在主机详情，未补完整列表或综合健康评分；新列表的真实身份页面 Hosted 与生产规模证据继续待专门会话回传。
 
 ## Safari 主机列表右侧列与前台自动刷新（2026-10-24）
 
@@ -212,7 +199,6 @@ CI 专门会话回传补充（2026-10-23）：固定提交 `2cd3e278fc00c19183f3
 已实际截图核对内存使用率与运行时长的表头和值，两列可读、百分比和复合时长单位正确，固定主机名称及查看资源入口仍保留。08:30:23（Asia/Shanghai）显示 43.20%、3 天 12 小时 21 分钟；08:31:35 显示 42.46%、3 天 12 小时 23 分钟，且自动刷新仍开启。整个前台记录区间没有点击手动刷新、重载或修改每 15 秒的选择；仅横向滚动、拖动表格滚动条及临时收起／恢复 Safari 侧栏，中间另留 18 秒一次性观察等待。08:29:19～08:31:58 的六份辅助功能文本记录多次 CPU／内存数值自然变化和时长推进，恢复原侧栏后两列仍可读，默认每页 20 台、当前一台 VM。由此确认本次单机页面前台自动更新及右侧列视觉复验通过；没有网络瀑布证据，不推断精确请求次数、重入并发或隐藏期间网络取消已在此实测。
 
 证据目录 `/tmp/addp-safari-host-list-Su1V5L/`：`foreground-before.txt`、`scrolled.txt`、`right-actual.txt`、`right-columns-final.txt`、`automatic-after-cycle.txt`、`restored-sidebar.txt` 及对应原生 JPEG 截图；`verification.json` 保存采样时间、读数、动作与限制。`health-ready.json` 记录 Monitor HTTP 200、ready／registered、实际后端构建 `e931905933bab26701e2586eb8df9a49d9da4a30`。本次文本／状态／时长推进／观察间隔及截图格式完整性断言通过；首次记录脚本误把原生 JPEG 当作 PNG 校验而失败，已按实际格式改名并核对，未修改截图像素或产品代码。不重启个人服务、不改配置或凭据，没有 CI／Hosted 查询、调度或定时任务。此结果仅为个人单台 Desktop VM 的页面现场复验，不计一次性隔离 Hosted／T4、多真实主机、其他角色／撤权、长窗或生产 T5。
-
 
 ## 主机监控类型／纳管状态筛选与分页回跳修正（2026-10-25）
 
@@ -235,7 +221,6 @@ Monitor 列表复用 System 已有主机 `node_kind`／`enabled` 与名称／地
 
 关键16项实现／测试摘要及日志摘要在 `/tmp/addp-host-list-final-receipt.json`，SHA-256 `ec59a5a6613d572360515e95daac332ab8109bef3b52b3d6ec4e9bb10f38f48c`；最终日志为 `/tmp/addp-host-list-{common-node24-final,system-node24,monitor-node24-final,console-node24-corrected-full,console-navigation-node24-corrected,frontend-registration}.log`。这些是本地共享工作区T1／受控T3／构建证据，不代表固定提交CI、个人Safari、真实System身份T4／Hosted、多真实主机或生产T5；本批未运行后端T2（后端未变）。未重启个人服务、操作个人数据库、轮询／派发／重跑CI或Hosted，也未设置定时任务。功能清单第36行仍部分实现，数据库／任务／角色／网卡关联筛选及真实运行验收保留；第37行的其他总览列与健康评分缺口不变。
 
-
 ## 主机列表负载与连接视图（2026-10-26）
 
 主机列表默认保留核心资源五项，新增“负载与连接”视图，仅请求 1／5／15 分钟系统平均负载及 TCP 当前连接数。复用既有指标公式、单位、新鲜度、当前用户逐主机授权及同一批量摘要；后端摘要白名单同步为这两组共九项标量的非空无重复子集，不新增接口或权限。每页默认 20 台，新视图请求 80 条序列，继续在 Owner 裁决和来源查询前校验原整批预算。TOP5／采集配置仍只请求原两项。
@@ -254,19 +239,17 @@ Monitor 列表复用 System 已有主机 `node_kind`／`enabled` 与名称／地
 
 TCP 在列表及详情均为“—／缺失”，详情就近明确“当前来源未提供可用的宿主 TCP 统计，不代表连接数为 0”；仅验证受限 Docker Desktop 来源的缺样表达，不计真实 TCP 有效数值通过。AX 原始证据为 `/tmp/addp-host-load-safari-e8AXcN/load-refreshed.ax.txt`、`host-detail.ax.txt`、`load-reloaded.ax.txt`。截图能见真实负载，但按钮着色与 AX 选中状态存在滞后，右侧横向滚动返回 `noWindowsAvailable`，页面持续报告隐藏；故右侧 TCP 实际截图、前台自然自动刷新不计本轮通过，也不把个人单 VM／管理员会话结果外推为多主机、TCP 有效来源、此前失败的隔离 T2 或正式 Hosted。未操作个人数据库、权限或服务进程，未手工触发／轮询 CI 或 Hosted，未设置定时任务；正式结果仍等专门会话回传。
 
-
 ## 主机列表按设备展开（2026-10-26）
 
 2026-10-26 用户确认先做主机行内按设备展开，不计算跨设备整机摘要。列表及详情的磁盘／网卡表格、单位、列旁解释、缺样状态、活动磁盘排序／无活动设备展开、精确设备趋势入口唯一归属 `monitor/frontend/src/components/HostDeviceResources.vue`，删除 `NodeResources.vue` 原内联设备表格和重复派生；列表读取组合由 `HostDeviceObservation.vue` 消费既有 `resource_observations`。最多打开当前授权页一台主机的一类明细，未展开无设备请求；磁盘固定五项、网络固定两项，沿原一分钟窗口、单次预算及授权，不新增接口、权限、指标或设备总量。
 
 展开只属于临时页面状态；筛选、分页、列视图切换、详情导航、整页重载及身份变化关闭展开。刷新在主机仍处于当前授权页时保留选择、重读数据；切换／收起／离页取消在途请求，迟到结果不恢复旧内容。普通失败／超限清除设备值并保留仍授权的标量列表；设备 401／403／404 清空列表并停止自动读取。原始 node_version 必须与当前行版本相同；未知、未提供、陈旧与真实零分别显示。展开面板按列表可视宽度布局，窄屏刷新按钮可见，宽设备表保留自身横向滚动。
 
-验证使用 Node `v24.11.1` 和原标准入口 `make test-monitor-frontend`：最终退出 0，125 项单元测试、459 项 Playwright 场景、Vite 生产构建全部通过；既有 chunk 大小提示不影响构建。新增九项浏览器场景覆盖中英和窄屏边界、无预取、单主机／单类别精确请求、默认箭头、折叠与有效零、类别切换的迟到旧响应、预算／版本错误及方向独立缺样、采集未提供、全局手动刷新、临时状态清除、精确设备趋势及列表回跳、测试时钟的15秒刷新／隐藏暂停、当前主机离页与撤权停止。旧详情页折叠、说明弹层、设备／网络趋势与交互也在同一完整门禁中通过；组件唯一所有权约束同步。现有 Platform CI Monitor frontend 与 E2E 自动发现覆盖本批，无需新增 Make／workflow 登记。没有重跑未变化的后端或此前公共 mTLS 前置，也未手工触发／轮询 CI 或 Hosted、设置定时任务或重启个人服务。
+验证使用 Node `v24.11.1` 和原标准入口 `make test-monitor-frontend`：最终退出 0，125 项单元测试、459 项 Playwright 场景、Vite 生产构建全部通过；既有 chunk 大小提示不影响构建。新增九项浏览器场景覆盖中英和窄屏边界、无预取、单主机／单类别精确请求、默认箭头、折叠与有效零、类别切换的迟到旧响应、预算／版本错误及方向独立缺样、采集未提供、全局手动刷新、临时状态清除、精确设备趋势及列表回跳、测试时钟的15秒刷新／隐藏暂停、当前主机离页与撤权停止。旧详情页折叠、说明弹层、设备／网络趋势与交互也在同一完整门禁中通过；组件唯一所有权约束同步。没有重跑未变化的后端或此前公共 mTLS 前置，也未手工触发／轮询 CI 或 Hosted、设置定时任务或重启个人服务。
 
 最终日志 `/tmp/addp-host-devices-final-gate-v2.log`，新增专项 `/tmp/addp-host-device-expansion-responsive.log` 九项通过。窄屏中英截图 `/var/folders/r1/l7b49c757dz02zftf_l9vl9r0000gn/T/addp-host-device-list-te3HaS/zh-cn.png` 与 `/var/folders/r1/l7b49c757dz02zftf_l9vl9r0000gn/T/addp-host-device-list-PZiaVK/en.png` 已目视检查。首轮 `/tmp/addp-host-devices-final-gate.log` 因目视发现展开区域继承外层宽表宽度、刷新按钮离开可视范围而主动中止，119 项通过／1 项中断／339 项未运行，未计为完整通过；修正宽度后从标准入口完整重跑。早期静态断言仍指向旧内联设备循环，已同步为唯一组件归属，不保留旧实现。
 
 个人 Safari 已从现有管理员会话读取到“设备明细／磁盘 IO／网卡吞吐”入口；工具展开操作被 `ScreenCaptureKit -3811`／`noWindowsAvailable` 阻断。用户随后手动激活并明确反馈“已展开磁盘 IO”，但工具仍返回未展开且报告隐藏的页面。窗口菜单只列一个控制台窗口，重新选中同一窗口后，AX 与截图仍未显示展开；这是用户反馈与工具观测不一致，不直接判为产品失败，也不计为实机通过。只读证据 `/tmp/addp-host-device-safari-jUB6Y1/current.ax.txt`、`after-user-expanded.ax.txt`、`after-user-expanded.png`。真实单 VM 磁盘读数、真实网卡缺样、收起／刷新／面板像素和前台自然刷新均尚未独立验收；本地受控浏览器通过不替代个人实机或正式 Hosted，其他验证仍等专门会话回传。
-
 
 ## 主机列表文件系统容量与 inode 展开（2026-10-26）
 
@@ -274,15 +257,13 @@ TCP 在列表及详情均为“—／缺失”，详情就近明确“当前来�
 
 本批同时修复行内读取组合漏传共享 `createAutoRefresh` 必需的 `visibilityChanged` 回调：原实现在隐藏／恢复时抛错，切回前台未重读；现按原契约补齐调用，不修改共享工具。新增场景验证隐藏暂停、恢复后两组重读且无浏览器异常，以及收起第一组时不继续读 inode、切换时迟到第二组不回填、第二组拒绝后清空列表并停读。
 
-Node `v24.11.1`：新增八项受控浏览器场景与原设备九项合计17项通过；进一步补充截图后的文件系统专项八项再次通过。覆盖中英／窄屏／横向滚动、同挂载点的设备或文件系统类型差异、乱序对齐、容量与 inode 独立预算／不可用错误、版本拒绝、合法零／缺样、未提供能力、精确趋势与返回、自动刷新及身份撤销。首轮三项失败为两项新测试漏写既有 inode 单位与上述回调问题，保留原失败日志，不计通过。最终标准入口 `make test-monitor-frontend` 退出0：127项单元测试、467项Playwright场景与Vite生产构建全部通过（保留原chunk大小提示）；前端源码及测试输入摘要在门禁前后核对一致，日志 `/tmp/addp-host-filesystem-final-gate.log`。沿已有 `make test-monitor-frontend`、Platform CI Monitor frontend 与 Playwright 自动发现，无新增测试入口或依赖。
+Node `v24.11.1`：新增八项受控浏览器场景与原设备九项合计17项通过；进一步补充截图后的文件系统专项八项再次通过。覆盖中英／窄屏／横向滚动、同挂载点的设备或文件系统类型差异、乱序对齐、容量与 inode 独立预算／不可用错误、版本拒绝、合法零／缺样、未提供能力、精确趋势与返回、自动刷新及身份撤销。首轮三项失败为两项新测试漏写既有 inode 单位与上述回调问题，保留原失败日志，不计通过。最终标准入口 `make test-monitor-frontend` 退出0：127项单元测试、467项Playwright场景与Vite生产构建全部通过（保留原chunk大小提示）；前端源码及测试输入摘要在门禁前后核对一致，日志 `/tmp/addp-host-filesystem-final-gate.log`。
 
 日志：`/tmp/addp-host-filesystem-targeted.log`（14通过／3失败）、`/tmp/addp-host-filesystem-targeted-v2.log`（17通过）、`/tmp/addp-host-filesystem-visual.log`（8通过）。截图目录 `/var/folders/r1/l7b49c757dz02zftf_l9vl9r0000gn/T/addp-host-filesystem-list-NgAnEN`（中）与 `addp-host-filesystem-list-7grzkp`（英），已目视检查宽屏、窄屏及 inode 横向滚动。既有个人 Safari 工具观测限制未解除，且 Desktop VM 来源不提供 filesystem／inode，不能以受控数据证明个人环境真实分区读数。未运行新的后端／实源 T2、个人 Safari 或 Hosted 验收，未触发／轮询 CI、未设定时任务、未重启服务；当时 CI 与 Hosted 待专门会话回传；Linux 前端结果现已按下段独立复核，Hosted 仍待回传。
-
 
 2026-10-27 独立复核专门 CI 会话回传的 [Linux Monitor frontend Job](https://github.com/pampa0629/addp/actions/runs/40351996188/job/121674238730)：push／attempt 1，实际 checkout `e5391ca36843cd0d99233ea3f63949abb45d81d0`。GitHub Job 与实际 `Run Monitor frontend gate` 步骤均为 success，`make test-monitor-frontend` 原始日志确认 tests/pass 各127、fail 0、467 browser passed（23.3分钟），生产构建10.55秒完成。产品 `12d3eba1f6d9294ca16c2bfe9204e046e2d872e6` 至该实际提交的 `monitor/frontend`、`common-frontend`、根 Makefile、标准前端／浏览器入口、prepare-frontend-gate 与 Platform workflow 均无差异，因此覆盖本批实现。
 
 通过 `gh api repos/pampa0629/addp/actions/jobs/121674238730` 及对应 run 的只读请求核对终态，再独立下载原始日志至 `/tmp/addp-monitor-e539-independent-job.log`；与回传归档逐字节相同，SHA256 为 `2665d7996277041d5b79bf80c985e6f223a4b944f4b0b69130f1d170df985511`。回传审计 `/tmp/addp-ci-20261026-180018/Monitor_e539_actual_frontend_audit.json`。父 Platform run 的终态为 cancelled，不计整套 workflow 通过；旧超时保留，不能据此认定其根因已修。后继作业若实际跳过也不计第二轮复验。这一证据仅证明固定源码的 Linux 标准前端门禁，不替代 Safari、个人实源、正式身份 Hosted 或生产验收，不扩展文件系统告警范围；本轮未重跑或调度任何验收。
-
 
 ## 真实 Linux 采集与挂载页面验收准备（2026-10-28）
 
@@ -296,8 +277,7 @@ Node `v24.11.1`：新增八项受控浏览器场景与原设备九项合计17项
 - `npm --prefix console/frontend test`：30 个文件、202 项单元测试通过，其中收据专项 15 项；日志 `/tmp/addp-native-mount-console-unit-final.log`。前一轮全量为 201 通过／1 失败，失败在本批未改的 `devPorts.test.js` 临时 Vite 清理断言，残留名称为 `7102.pid`／`addp-system-vite-test-7102`；最终复跑通过，未修该路径，未确认首次失败根因，不能据此宣称其清理问题已修复。
 - 在 `console/frontend` 执行 `npm exec -- playwright test --config=playwright.online.config.js --list e2e/online/platform-node-resources.spec.js`：发现唯一既有场景，导入解析成功；仅发现，不计浏览器执行通过。
 
-继续由既有 Online runner、Console frontend 单元自动发现及手动 Hosted regression 接入，无新增依赖或 CI 路线。本轮不改产品前端／后端、Swagger、个人配置或服务，不重跑既有受控产品前端门禁。本机仍为 Darwin／Docker Desktop，真实原生 Linux、正式登录后的挂载读数及完整 Hosted 零残留尚未运行；CI 和 Hosted 由专门会话安排并回传，不在本会话调度或设定时任务。这是验收实现与本地准备证据，不能填为真实采集／正式页面已验收。
-
+本轮不改产品前端／后端、Swagger、个人配置或服务，不重跑既有受控产品前端门禁。本机仍为 Darwin／Docker Desktop，真实原生 Linux、正式登录后的挂载读数及完整 Hosted 零残留尚未运行；CI 和 Hosted 由专门会话安排并回传，不在本会话调度或设定时任务。这是验收实现与本地准备证据，不能填为真实采集／正式页面已验收。
 
 ### 列表展开、手工刷新与收起的验收准备（2026-10-28）
 
@@ -306,7 +286,6 @@ Node `v24.11.1`：新增八项受控浏览器场景与原设备九项合计17项
 本地 `make test-node-metrics-online-runner`：152项确定性测试及 System Go Metrics 正式身份夹具通过，日志 `/tmp/addp-native-filesystem-list-runner-final.log`。`npm --prefix console/frontend test`：30文件202项单元测试通过，日志 `/tmp/addp-native-filesystem-list-console-unit.log`。在 `console/frontend` 执行标准 `npm run test:e2e -- node-resource-navigation.spec.js`：5项受控浏览器T3通过，日志 `/tmp/addp-native-filesystem-list-console-browser-final.log`；新增场景沿实际 Console／Monitor iframe，使用同一个 DOM 读数核对函数，刷新后将 inode 使用率20%改为30%、空闲量80改为70，核对值更新、完整身份、仅四次当前节点观测、收起、URL及原 iframe 文档保持。标准隔离浏览器入口退出0，未启动或接管个人服务。Online Playwright `--list` 发现唯一既有场景，导入解析通过，仅计测试发现。
 
 本批只改验收实现及证据，既有 Online runner、Console frontend 单元与浏览器自动发现覆盖，无新依赖、入口或 workflow。上述T3为受控HTTP数据，不计真实Linux来源、正式密码／MFA、Safari或Hosted通过；未触发／轮询CI及Hosted、未设置定时任务。正式运行仍等专门会话安排与回传，原失败及前一批验证范围保留。
-
 
 ### 热力面板实源页面验收准备（2026-10-28）
 
@@ -321,7 +300,6 @@ Online 与受控 Console T3 共用 `readResourceHeatmap`，纯收据生成与拒
 
 本批只改验收与既有证据，沿原 Online runner 和 Console frontend 的单元／浏览器自动发现；未改产品代码、Swagger或依赖，未重跑完整Monitor产品前端门禁。真实原生Linux、正式密码／MFA页面、Safari、Hosted及零残留仍待专门会话执行／回传；本地确定性与受控HTTP T3不计这些层级通过。未触发／轮询CI或Hosted、未设置定时任务、未修改个人配置或重启个人服务。
 
-
 ## 主机 CPU 空闲率辅助展示（2026-10-28）
 
 原图硬件信息中的CPU空闲率补在详情原“CPU忙碌率（1分钟）”卡内，使用同一有效观测的 `100 - busy_percent` 并复用共享百分比格式化；非空闲率原本由各核idle计数的完整一分钟速率反推，因此不另加采集或新口径。预热缺样、陈旧和未接入显示“—”，合法忙碌0%／100%分别显示空闲100%／0%；中英文就近显示。不新增指标、独立卡片、列表列、趋势或规则，不改26项目录、五项列表摘要、API／权限／预算；前端只组合现有同源数据。
@@ -333,7 +311,6 @@ Online 与受控 Console T3 共用 `readResourceHeatmap`，纯收据生成与拒
 
 沿既有 Monitor／Console frontend 自动发现与 Online runner，未新增依赖、标准入口或CI路线。此次只改前端及验收，没有后端重启、IAM、个人配置或数据库操作；真实Linux、Safari及正式密码／MFA Hosted仍未据此通过，继续等专门会话回传。未触发／轮询CI或Hosted、未设置定时任务。磁盘分区容量继续按完整挂载展示，不把该补项外推为整机物理磁盘容量或整个硬件信息卡已完整验收。
 
-
 ## 块设备容量只读前置核对（2026-10-28）
 
 本轮仅调查原图硬件容量的数据来源与设备层级，没有产品实现或正式测试。仓库锁定node_exporter v1.12.1的diskstats源码与现有固定目录只提供IO及设备信息，当前文件系统容量不能当物理总量。官方Textfile Collector支持节点绑定的扩展指标，但旧文件在每次抓取时仍会出现，因此正式实现还须独立源采样时间和失败／完整性保护，不能只按Prometheus抓取时间判断新鲜。
@@ -341,7 +318,6 @@ Online 与受控 Console T3 共用 `readResourceHeatmap`，纯收据生成与拒
 只读核对当前唯一归属本仓库的node-exporter容器，保持原User 65534:65534、非特权、只读根及无宿主根挂载，仅使用固定的/sys/class/block元数据与/proc/diskstats／内核版本；未读业务文件、序列号或凭据，未写容器文件、挂载或修改配置。Desktop来源与Docker daemon内核一致，43个可见块对象中24个size为0；诊断取样见vda=3,996,276,228,096B、vda1=2,199,022,206,976B、vdb=600,440,832B，三者设备号均匹配同一VM的diskstats，sysfs父关系确认vda1属于vda。另有RAM设备，故既不能将所有条目算物理盘，也不能将盘和分区直接求和。诊断取样中的名称过滤不是生产设备选择算法。
 
 封闭元数据收据 `/var/folders/r1/l7b49c757dz02zftf_l9vl9r0000gn/T/addp-block-capacity-probe-cij4zyyg/observations.json`（0600）仅保留配置布尔项、容器身份摘要与上述元数据，没有原始inspect／环境。结果标记read_only_feasibility；新采集器未安装、Prometheus查询及正式页面未验证，不能计T1／T2／T3／T4通过。首期提案见[运行监控后续事项](../../../next/ADDP平台运行监控与可观测性设计.md#磁盘与卷容量首期)，用户随后确认该范围，产品实现及分层验证见下节；此前置阶段不计产品门禁。文档只做差异／链接及事实核对，不重复旧产品门禁；未调度CI／Hosted、未设置定时任务、未重启个人服务或修改来源。
-
 
 ## 磁盘与卷容量首期实现与本地分层验证（2026-10-28）
 
@@ -367,7 +343,6 @@ Online 与受控 Console T3 共用 `readResourceHeatmap`，纯收据生成与拒
 
 本批没有应用个人节点开关、重启服务、读取个人业务数据、触发／轮询 CI／Hosted 或设置定时任务。CI／Hosted等专门会话回传；原生 Linux 容量扩展的受管来源证明、真实 Console／Safari 及正式身份 Hosted 仍未验，容量对应的原生证明和页面收据准备也仍需补齐。不得以默认关闭容量的旧文件系统 Hosted 或本机 VM T2 外推这些范围。
 
-
 ## host-resources 受限来源挂载断言修复（2026-10-29）
 
 专门CI会话回传 [Release/T2 40701610871 的 host-resources 实际步骤](https://github.com/pampa0629/addp/actions/runs/40701610871/job/122862998720) 失败于旧 `len(limited['Mounts']) == 4`（原始日志 `/tmp/addp-ci-20261028-160001/job-122862998720.log` 第833—836行）。原生资源查询、来源停机／恢复已走到，受限来源重建后在该检查退出；原CI没有归档完整inspect，不能只凭数量认定当时没有权限回归。
@@ -376,15 +351,13 @@ Online 与受控 Console T3 共用 `readResourceHeatmap`，纯收据生成与拒
 
 唯一 `verify_limited_node_mounts` 对运行容器与当次volume inspect逐项核对：目标集合唯一且恰好五项，四个绑定源精确匹配当前仓库固定Web文件和当次TLS目录、只读且rprivate；Textfile卷名／Compose项目／service／owner／volume标签、local驱动及1 MiB tmpfs的uid／gid／mode均精确匹配，其实际Source必须等于同一volume inspect的Mountpoint并只读。拒绝额外、缺少、重复、可写、根目录／Socket、错源、影子目标或外来卷；不保存原始inspect、宿主路径、环境或凭据。仅输出封闭布尔及4绑定／1卷计数。来源初次准备后即核验，后续原受限来源重建位置仍再次核验，不跳过预算、查询、重启或恢复阶段。
 
-受限阶段显式关闭Textfile，避免默认all在早先容量专项启用后把该采集器带入限定七采集器的视图；all先前容量验证及host-resources其他检查不删除。本批5项新增确定性回归包含真实Compose叠加和现有all／host-resources状态下的该关闭输入；27种错误对象／命令变体拒绝。新测试归入原 `metrics-deployment-config_test.py`，由现有根Metrics门禁、开发生命周期及原Release矩阵自动发现，无新增依赖、入口、CI Job或调度。
+受限阶段显式关闭Textfile，避免默认all在早先容量专项启用后把该采集器带入限定七采集器的视图；all先前容量验证及host-resources其他检查不删除。本批5项新增确定性回归包含真实Compose叠加和现有all／host-resources状态下的该关闭输入；27种错误对象／命令变体拒绝。
 
 本地验证：新增五项 `python3 -m unittest scripts.test.metrics-deployment-config_test.LimitedNodeMountEvidenceTest` 通过，日志 `/tmp/addp-limited-mount-unit.log`。此前新测试在旧代码因缺少精确证明函数失败，真实叠加配置也证实旧四项断言必失败；不是删除安全条件后的空回归。
 
 标准链路使用 `make test-monitor-metrics MONITOR_METRICS_TEST_ARGS=--case=host-resources`。首轮在更早的旧fixture“budget recovery”65秒等待超时，未到本次目标；当次清理执行，不能计整轮通过，日志 `/tmp/addp-limited-host-resources-t2.log`。未修改预算、TLS、采样标准或等待时限；随后新增首个来源准备检查点的同一精确证明，以实际inspect在前后两处覆盖挂载边界。最终结果待下述终态记录，不据局部通过外推完整门禁。
 
-
 最终同一标准命令通过（退出0），日志 `/tmp/addp-limited-host-resources-final.log`：120项脚本回归；初次来源与受限重建后的两份精确挂载证明均为4绑定／1卷、只读／精确源／受管tmpfs／Textfile关闭；既有固定窗口、mTLS、预算恢复、普通／受限资源查询、来源停机恢复、中心SIGKILL持久化、六来源总览及资源告警生命周期全部沿原链路运行。资源查询两阶段分别56.77／29.39秒，总览85.75秒，资源告警生命周期195.62秒；退出验证全部当次容器、网络、卷与临时文件清零。此次仅本机Docker Desktop Linux VM上的标准T2；[原Linux CI失败](https://github.com/pampa0629/addp/actions/runs/40701610871/job/122862998720)保持失败历史，替代提交的自然Linux host-resources Job实际步骤仍等专门会话回传，不据本地结果提前认定远端通过。原生Linux容量／Console／Hosted与完整前端缺口保持原记录。本轮没有API、Swagger或产品代码变更，无需重启业务；不调度／重跑／取消CI或Hosted、不设置定时任务、不向个人服务或共享数据卷施加操作。
-
 
 ## 磁盘与卷容量原生来源证明与Console收据准备（2026-10-29）
 
@@ -400,8 +373,7 @@ regression／complete-comparison 在当次私有部署显式开启原容量扩�
 - `npm --prefix console/frontend test`：30文件219项通过，日志 `/tmp/addp-capacity-console-unit.log`；新增12项容量收据回归核对IEC、完整性、最后一次响应与无效状态拒绝。
 - `npm --prefix console/frontend run test:e2e -- e2e/node-resource-navigation.spec.js`：7/7受控iframe场景通过（50.9秒），日志 `/tmp/addp-capacity-console-browser.log`。新增容量场景覆盖两设备逐项1 TiB、刷新后512 GiB、完整DOM读数、仅两个容量请求、收起、URL与同iframe不变；使用受控API，不是正式密码／MFA或真实主机证据。
 
-上述脚本及测试由原根Online runner、Console frontend自动发现和已登记的标准CI路径覆盖，不新增入口、依赖、Workflow或调度。未重跑未变的Monitor产品门禁，原完整前端长回归失败仍保留，稳定环境复验未完成。原生Linux容量实源、正式身份Console／Safari、Hosted与该层零残留尚未实际执行／回传，不计通过；旧关闭Textfile的文件系统通过也不补作容量通过。未触发／轮询CI或Hosted、未设置定时任务、未修改个人开关或重启服务；当前仅可将“验收准备缺口”更新为已补，不能更新“真实运行验收”为完成。
-
+未重跑未变的Monitor产品门禁，原完整前端长回归失败仍保留，稳定环境复验未完成。原生Linux容量实源、正式身份Console／Safari、Hosted与该层零残留尚未实际执行／回传，不计通过；旧关闭Textfile的文件系统通过也不补作容量通过。未触发／轮询CI或Hosted、未设置定时任务、未修改个人开关或重启服务；当前仅可将“验收准备缺口”更新为已补，不能更新“真实运行验收”为完成。
 
 ## 容量关闭故障与恢复的Console状态验收（2026-10-29）
 
@@ -411,10 +383,9 @@ regression／complete-comparison 在当次私有部署显式开启原容量扩�
 
 两入口各恰好11次容量GET（首次一次、五组失败／恢复各两次），查询仅当前node_id及固定容量指标，不新增其他资源读取、写操作或轮询。CPU核数摘要保持原值；Console URL、同一iframe的timeOrigin及手工刷新选择保持。结束收起设备表，不把局部来源问题扩为主机页整体错误。
 
-验证记录：标准隔离浏览器入口 `npm --prefix console/frontend run test:e2e -- e2e/node-resource-navigation.spec.js` 首轮9/9通过（1.1分钟），日志 `/tmp/addp-capacity-console-states-browser.log`；覆盖原7项及本次列表／详情两项。随后按最终文件运行根 `make test-console-frontend`，退出0：30文件219项单元测试、242项浏览器回归（7.0分钟）及Vite生产构建（1.93秒）全部通过，日志 `/tmp/addp-capacity-console-states-full.log`。源码仅改现有自动发现的Console浏览器文件；已有Console标准入口及CI路径覆盖，无新增依赖、Make入口或Workflow。未修改Monitor产品代码、共享读数函数或Online协议，不重跑未变的Go、来源T2及Online runner。
+验证记录：标准隔离浏览器入口 `npm --prefix console/frontend run test:e2e -- e2e/node-resource-navigation.spec.js` 首轮9/9通过（1.1分钟），日志 `/tmp/addp-capacity-console-states-browser.log`；覆盖原7项及本次列表／详情两项。随后按最终文件运行根 `make test-console-frontend`，退出0：30文件219项单元测试、242项浏览器回归（7.0分钟）及Vite生产构建（1.93秒）全部通过，日志 `/tmp/addp-capacity-console-states-full.log`。未修改Monitor产品代码、共享读数函数或Online协议，不重跑未变的Go、来源T2及Online runner。
 
 本批只证明受控HTTP响应下的真实Console／Monitor iframe交互；没有关闭或破坏个人采集器，不读取个人数据、不重启服务，不运行真实Linux故障或正式身份Hosted。原生来源／Hosted与Linux CI结果仍等专门会话回传，未触发／重跑／轮询CI或Hosted，未设置定时任务。旧完整Monitor前端长回归失败保持原记录，不由本批Console结果代替。
-
 
 ## 容量明细自动刷新与隐藏恢复的Console验收（2026-10-29）
 
@@ -424,10 +395,9 @@ regression／complete-comparison 在当次私有部署显式开启原容量扩�
 
 通过正式刷新控件选择off，Console URL与同一iframe保持既有规则：列表路由变化关闭临时展开，重新展开仍只读一次；详情沿同一页面重新读取。关闭后推进两轮60秒并切换隐藏／可见，不产生自动请求；手工刷新仍更新16 GiB，收起后再推进60秒无容量读取。每入口总共8次当前主机固定容量GET，其中1次被隐藏取消；正常刷新、恢复及手工阶段逐次核对新IEC容量／源时间与同iframe，查询只含原node_id与固定指标，不增加写入、权限或采集范围。
 
-验证记录：`npm --prefix console/frontend run test:e2e -- e2e/node-resource-navigation.spec.js` 退出0，11/11通过（59.5秒），日志 `/tmp/addp-capacity-console-auto-browser.log`；包含原9项和新增两个入口的自动刷新／取消／恢复／off场景。最终文件的根 `make test-console-frontend` 退出2、未通过：218项单元测试通过／1项失败，失败在本批未改的 `tests/devPorts.test.js:243` Vite临时目录清理断言，目录中仍列出 `50446.pid`、`50475.pid`、`addp-console-vite-test-50446`、`addp-system-vite-test-50475`；日志 `/tmp/addp-capacity-console-auto-full.log`。后续完整浏览器和该入口的构建阶段未运行，不计通过；未修改清理实现、放宽断言或盲目重跑，未确认此次清理时序根因。另行执行既有 `npm --prefix console/frontend run build` 退出0（1.57秒），日志 `/tmp/addp-capacity-console-auto-build.log`；专项与独立构建不替代完整Console门禁通过。现有Console浏览器自动发现、根Make入口及CI路径已覆盖，无新增依赖或Workflow；未改未变的Monitor产品／Go／来源T2／Online协议，不重复其既有验证。
+验证记录：`npm --prefix console/frontend run test:e2e -- e2e/node-resource-navigation.spec.js` 退出0，11/11通过（59.5秒），日志 `/tmp/addp-capacity-console-auto-browser.log`；包含原9项和新增两个入口的自动刷新／取消／恢复／off场景。最终文件的根 `make test-console-frontend` 退出2、未通过：218项单元测试通过／1项失败，失败在本批未改的 `tests/devPorts.test.js:243` Vite临时目录清理断言，目录中仍列出 `50446.pid`、`50475.pid`、`addp-console-vite-test-50446`、`addp-system-vite-test-50475`；日志 `/tmp/addp-capacity-console-auto-full.log`。后续完整浏览器和该入口的构建阶段未运行，不计通过；未修改清理实现、放宽断言或盲目重跑，未确认此次清理时序根因。另行执行既有 `npm --prefix console/frontend run build` 退出0（1.57秒），日志 `/tmp/addp-capacity-console-auto-build.log`；专项与独立构建不替代完整Console门禁通过。
 
 本批只证明受控HTTP和时钟下的真实Console／Monitor iframe交互，未操作个人采集器、真实来源或账号，不重启服务、不改变个人配置。CI／Hosted与真实Linux／正式身份验收继续等专门会话回传；未触发／重跑／轮询CI或Hosted、未设置定时任务。既有Monitor完整前端长回归失败保持原记录，不由Console结果代替。
-
 
 ## 容量迟到响应的Console范围隔离验收（2026-10-29）
 
@@ -437,10 +407,9 @@ regression／complete-comparison 在当次私有部署显式开启原容量扩�
 
 列表／详情分别覆盖收起重开及离页返回。收起取消在途请求，重新展开从同主机的新请求取得容量，再释放旧403；不恢复旧设备、旧错误或旧观测。离页使用正式Console Logo返回首页，核对旧iframe卸载及原Frame detached，释放旧403并推进60秒不再读容量；浏览器Back回原URL创建新iframe，临时容量保持收起，重新展开才发第二次读取。恢复保留原分页与刷新偏好，不把旧页面内存或请求带入新Frame。各场景只有旧／新两次容量读取及一份有效响应收据，不写业务数据或修改真实授权。
 
-本地验证：`npm --prefix console/frontend run test:e2e -- e2e/node-resource-navigation.spec.js` 退出0，17/17通过（1.4分钟），日志 `/tmp/addp-capacity-console-isolation-browser.log`；包含原11项及新增6项，覆盖提取后的请求识别函数和原刷新路径。`npm --prefix console/frontend run build` 退出0（4.05秒），日志 `/tmp/addp-capacity-console-isolation-build.log`。差异格式检查通过；现有标准浏览器入口、Console自动发现与CI路径覆盖，无新增入口、依赖或Workflow。
+本地验证：`npm --prefix console/frontend run test:e2e -- e2e/node-resource-navigation.spec.js` 退出0，17/17通过（1.4分钟），日志 `/tmp/addp-capacity-console-isolation-browser.log`；包含原11项及新增6项，覆盖提取后的请求识别函数和原刷新路径。`npm --prefix console/frontend run build` 退出0（4.05秒），日志 `/tmp/addp-capacity-console-isolation-build.log`。
 
 本批不盲目重跑上节已记录的完整Console门禁清理断言失败，不修改无关devPorts清理实现；该门禁本轮未运行，不能由专项／构建计通过。未改未变的Go、来源T2、共享内核或Online协议，不重复其既有验证。当前只计受控HTTP／时钟下真实Console和Monitor iframe的T3，不计真实Safari、Linux来源或正式密码/MFA Hosted；旧403是废弃请求的模拟响应，不是当前身份撤权验收。CI／Hosted继续等专门会话回传；未调度／重跑／轮询CI或Hosted、不设置定时任务、不修改个人配置或重启服务。
-
 
 ## 容量读取撤权与身份切换的Console验收（2026-10-29）
 
@@ -452,10 +421,9 @@ regression／complete-comparison 在当次私有部署显式开启原容量扩�
 
 被拒绝的上下文后续得到权威平台授权时，新建iframe而非复用已撤销实例；新Principal路径也只在显式展开后读取容量。核对Console当前Principal／Context及已有读取权限，新容量请求使用不同于旧读取的测试Token、属于新响应索引；各场景只有最初有效、被取消、重新展开三次容量请求和两份有效响应。分页、刷新偏好及原URL保持，不让Tenant进入平台主机页，不把宿主资源归为Tenant数据。
 
-本地验证：`npm --prefix console/frontend run test:e2e -- e2e/node-resource-navigation.spec.js`退出0，25/25通过（1.4分钟），包含旧17项及新增8项，日志 `/tmp/addp-capacity-console-authority-browser.log`。`npm --prefix console/frontend run build`退出0（1.69秒），日志 `/tmp/addp-capacity-console-authority-build.log`；差异格式检查通过。原Console自动发现、标准浏览器入口及CI路径覆盖，无新增依赖、入口或Workflow。未改未变的Go、来源T2、共享内核或Online，不重复其既有验证；完整Console门禁本轮未重跑，上述开发端口清理断言失败仍未闭环，不计整批通过。
+本地验证：`npm --prefix console/frontend run test:e2e -- e2e/node-resource-navigation.spec.js`退出0，25/25通过（1.4分钟），包含旧17项及新增8项，日志 `/tmp/addp-capacity-console-authority-browser.log`。`npm --prefix console/frontend run build`退出0（1.69秒），日志 `/tmp/addp-capacity-console-authority-build.log`；差异格式检查通过。未改未变的Go、来源T2、共享内核或Online，不重复其既有验证；完整Console门禁本轮未重跑，上述开发端口清理断言失败仍未闭环，不计整批通过。
 
 本批只计受控HTTP／时钟下的真实Console和Monitor iframe T3，不是System真实权限发布、上下文选择／切换接口、真实登录/MFA或跨租户数据隔离T4。个人账户、采集器、数据库和配置未改动，不重启服务；CI／Hosted继续等专门会话回传，未触发／重跑／轮询CI或Hosted、不设置定时任务。原生Linux容量／Safari／Hosted与Monitor长回归的既有缺口保留。
-
 
 ## 主机与引擎自动筛选统一（2026-10-29）
 
@@ -506,7 +474,7 @@ Safari真实运行只操作获准的第二个标签页，前端普通组件地�
 
 服务页实际打开当前Monitor后端实例的趋势弹窗，前台自动刷新把窗口从23:44:19—23:49:19推进到23:54:03—23:59:03，CPU曲线实际可见；随后点击弹窗刷新，窗口为23:54:34—23:59:34。继续滚动核对RSS真实曲线，窗口推进到23:55:02—次日00:00:02，悬停显示23:58:32为66.98MiB。原生macOS明确未接入资源组采集，不计容器配额验收。Safari的离散观察证明真实数据推进及结果可见，不声称逐帧无闪烁或原canvas身份；后两项由受控T3暂缓响应场景证明。
 
-既有Monitor前端标准入口、测试目录自动发现和CI路径已覆盖，无新依赖、Make目标或Workflow。本批只改前端及对应规范／证据，不重复未变的Go、来源T2、权限或Online验证；未触发、轮询或重跑CI／Hosted，不设置定时任务，仍等专门会话回传。个人服务、数据库、身份、凭据及配置未改动。原正式来源／Hosted缺口保留，不能将本地T1／T3和个人Safari替代正式验收。
+本批只改前端及对应规范／证据，不重复未变的Go、来源T2、权限或Online验证；未触发、轮询或重跑CI／Hosted，不设置定时任务，仍等专门会话回传。个人服务、数据库、身份、凭据及配置未改动。原正式来源／Hosted缺口保留，不能将本地T1／T3和个人Safari替代正式验收。
 
 ## 主机详情就近提示（2026-10-31）
 
@@ -525,7 +493,6 @@ Safari真实运行只操作获准的第二个标签页，前端普通组件地�
 
 根Make的Monitor／Console前端入口、现有浏览器目录自动发现及Monitor变更扩散至Console的路径登记已覆盖，无新依赖、目标或Workflow。未改共享组件内核、API、Swagger、后端、部署、IAM或个人配置。上述是本次显示变更的最小充分T1／相关T3与构建，不计整套Monitor／Console聚合、未运行的Go／来源T2／Online或新CI通过；CI及Hosted仍等专门会话回传，未自行触发、轮询、重跑或设置定时任务，也未重启个人服务。
 
-
 ### Console 窄屏 tip 回归的语言弹层退出同步（2026-10-31）
 
 专门CI会话回传固定`5cb1a9980a1829fc1250834f3a5d3fcb95e6580c`的[Console失败Job](https://github.com/pampa0629/addp/actions/runs/41149596599/job/124382684316)，push／attempt1、selected=true：`node-resource-navigation.spec.js`的`host detail tips translate...`在620像素的外层文档宽度断言失败；浏览器271通过／1失败，构建未运行。原始日志`/tmp/addp-ci-20261031-092302/job-124382684316.log:864`及同目录`console-browser-artifact/addp-console-playwright-results-13bpEJ/node-resource-navigation-h-75080-ng-or-hiding-current-states/`保留。失败截图显示英文tip完整可见，截图自身不足以确认溢出元素，也不把相邻ECONNRESET日志当根因。
@@ -537,7 +504,6 @@ Safari真实运行只操作获准的第二个标签页，前端普通组件地�
 根因为测试在点击English后立即缩窄视口，尚未等语言菜单退出动画结束；不应把尚在桌面位置退出的菜单计作后续稳定窄屏tip布局。仅在主机和同样流程的引擎两项用例中，缩窄前定位实际含English项的语言弹层，并用`toHaveCSS('display', 'none')`确认退出完成。仍保留620px宽度、原`scrollWidth <= innerWidth`断言、同iframe timeOrigin、URL和无额外请求检查；不以aria隐藏／透明度代替退出完成，不加固定sleep、重试或时限，不改产品布局或共享组件。
 
 最终最小充分验证：`npm --prefix console/frontend run test:e2e -- node-resource-navigation.spec.js engine-resource-navigation.spec.js --grep 'host detail tips translate|engine detail tips follow'`，2项通过（36.2秒），日志`/tmp/addp-host-engine-tip-exit-sync.log`；`git diff --check`通过。标准浏览器入口隔离并清理本轮服务，不操作个人部署。只改变两项测试的操作同步，不重跑产品未变的单测、构建、来源T2、全量Linux或Hosted；修正后的自然CI继续等专门会话回传，不自行轮询／重跑或设置定时任务。本轮UI测试修复与个人Infra／Business“采集来源不可用”是不同事实，后者未由此恢复。
-
 
 ### 菜单退出同步修复的 Linux Console 门禁回传（2026-10-31）
 
@@ -553,7 +519,7 @@ Safari真实运行只操作获准的第二个标签页，前端普通组件地�
 
 新增停用／版本变更×手动／自动刷新4项，使用暂缓资源响应验证当前事实已重读但旧卡片／canvas尚不可保留，随后释放并核对缺样或新读数。修复前4项均失败（`/tmp/addp-host-owner-refresh-red.log`）；修复后标准 `npm run test:e2e -- e2e/node-resources.spec.js` 整份73项T3通过（2.4分钟，`/tmp/addp-host-owner-refresh-green.log`）。包括原位刷新、隐藏暂停／恢复、当前页摘要、热力、设备／挂载、双轴、缩放、比较、故障撤权及CPU空闲率旧场景，未删改原断言。前端132项T1通过，最终两页构建通过，日志分别`/tmp/addp-engine-owner-refresh-unit.log`、`/tmp/addp-owner-refresh-build-final.log`。
 
-同批[PG／Redis引擎页](Monitor采集来源与引擎指标历史证据.md#引擎当前对象变化的原位刷新保护2026-11-02)46项独立通过。标准脚本独占测试端口，没有启停个人服务；这些为受控T3，不外推个人Safari、真实来源或Hosted，不宣称完整Monitor浏览器门禁通过。既有Platform CI Monitor前端自动发现，CI与Hosted仍由专门会话安排／回传，本会话未调度或设置定时任务。
+同批[PG／Redis引擎页](Monitor采集来源与引擎指标历史证据.md#引擎当前对象变化的原位刷新保护2026-11-02)46项独立通过。标准脚本独占测试端口，没有启停个人服务；这些为受控T3，不外推个人Safari、真实来源或Hosted，不宣称完整Monitor浏览器门禁通过。CI 与 Hosted 结果在该记录中尚未认定。
 
 ## 同组主机趋势切换的事实比较修复（2026-11-02）
 
@@ -567,7 +533,6 @@ Safari真实运行只操作获准的第二个标签页，前端普通组件地�
 
 本次只改Monitor主机页与本领域浏览器反例；既有Platform CI Monitor前端路径选择和标准E2E自动发现覆盖，无需新增Makefile或workflow。共享前端及其他消费者没有产品变更，不重跑无关门禁。个人服务未启停，Safari未操作；精确替代提交的Linux结果及Hosted继续等专门会话回传，没有设置定时任务。下一步回到已确认的MinIO17项固定指标来源及mTLS输出，账号阶段证据不变。
 
-
 ### 缩放修复的固定 Linux 产品门禁回传（2026-11-02）
 
 专门CI会话回传固定源码`74edeb978bd6a8c2874401b0df336bf050a2e0e5`的[Platform Run41375543514／Monitor前端Job125054853600](https://github.com/pampa0629/addp/actions/runs/41375543514/job/125054853600)，attempt1。本会话独立读取原始日志并核对SHA256：`/tmp/addp-ci-20261102-104553/job-125054853600.log`为`56ebc6bf57caa2241a942bc87a4c11c07fdd882431c1d912f3d7b62992fddb10`。标准`make test-monitor-frontend`实际执行，592项浏览器全部通过（28.7分钟），包含原内存／磁盘／网络双语6项反例和新增System版本／名称变化2项；随后Vite构建通过（10.88秒），产品步骤及gate summary均为success。
@@ -575,7 +540,6 @@ Safari真实运行只操作获准的第二个标签页，前端普通组件地�
 整Job在其后的`Post Prepare Monitor frontend environment`归档Node缓存tar时取消；因此只认定“固定源码的Linux产品门禁通过、整Job取消”，不改为Job或父workflow通过，不重复运行有效验收。独立结论文件为`/tmp/addp-ci-20261102-104553/Monitor74-independent-product-pass-job-post-cancel-proof.json`。旧584通过／6失败、7e2原Job未运行完以及本机266项组合的5项失败全部保留，不把新固定版本成功倒写为旧记录成功。
 
 另逐字节比较本工作区的`NodeResources.vue`、`host-resource-zoom.spec.js`、`network-bars.spec.js`与受验74ed，三文件完全一致；协调会话也已核对远端固定`4243aefa676f93c71916872dda30c6127aa91546`的同三文件（`/tmp/addp-ci-20261102-123449/Monitor-current-owned-input-recheck.json`）。该一致性只支持复用缩放修复的Linux证据，不外推当前main全部前端输入、个人Safari、Hosted或新增`59d4adaee`MinIO来源的CI／正式验收。此次只核验回传材料及同步进展，没有查询、触发或重跑CI／Hosted，没有设置定时任务。
-
 
 ### 主机恢复后的Safari复验与缺样提示修正（2026-11-04）
 
@@ -585,12 +549,11 @@ Safari真实运行只操作获准的第二个标签页，前端普通组件地�
 
 `make test-monitor-frontend`中135项单元通过；完整浏览器首轮受环境休眠干扰出现8项失败，随后验证唯一自有Monitor runner／cwd／npm父链，发送SIGINT并由标准入口清理，浏览器入口退出130、make退出2，结果为534通过、8失败、1中断、141未运行，不记整条命令通过。只读pmset日志确认09:41:23发生Clamshell Sleep，随后反复Maintenance Sleep／DarkWake；六项趋势失败截图时间09:42:14、09:43:44、09:46:15、09:46:45、09:47:38、09:50:04逐一对应唤醒点，身份用例09:54:18也对应唤醒，文件系统用例09:55:06处于短暂DarkWake中。09:55:11恢复FullWake，后续只读核验开盖；未改电源设置或添加唤醒断言。
 
-保持唤醒后，通过原标准`npm run test:e2e`入口，仅选择上述8项、原预算／源码／断言不变，8项全部通过（40.7秒）；再按原文件顺序选择process-resources起至uptime-units的11个文件，144项全部通过（4.8分钟），其中2项是首轮已通过项的文件边界重复。程序按完整测试名集合核对，534＋8＋144－2＝684个不同浏览器场景均有通过证据；这是分批覆盖结论，不改写首轮退出状态，也不作为单次完整命令或CI通过。单独`npm run build`退出0（7.65秒）。原自有浏览器运行目录和端口租约已回收；失败截图保留。既有Monitor前端门禁自动发现两项新增测试，无需新增CI路径。
+保持唤醒后，通过原标准`npm run test:e2e`入口，仅选择上述8项、原预算／源码／断言不变，8项全部通过（40.7秒）；再按原文件顺序选择process-resources起至uptime-units的11个文件，144项全部通过（4.8分钟），其中2项是首轮已通过项的文件边界重复。程序按完整测试名集合核对，534＋8＋144－2＝684个不同浏览器场景均有通过证据；这是分批覆盖结论，不改写首轮退出状态，也不作为单次完整命令或CI通过。单独`npm run build`退出0（7.65秒）。原自有浏览器运行目录和端口租约已回收；失败截图保留。
 
 日志：`/tmp/addp-node-collection-copy-red.log`、`/tmp/addp-node-collection-copy-frontend.log`、`/tmp/addp-node-collection-awake-recheck.log`、`/tmp/addp-node-collection-remaining.log`、`/tmp/addp-node-collection-copy-build.log`；测试集合收据`/tmp/addp-node-collection-browser-coverage.json`，只读电源记录`/tmp/addp-node-collection-power-20261104.log`。首轮浏览器失败证据目录为`/var/folders/r1/l7b49c757dz02zftf_l9vl9r0000gn/T/addp-monitor-playwright-results-dsytDF`。
 
 Safari通过“窗口→当前控制台窗口”确认过“自动刷新已开启”，非手工刷新期间查询时间亦前移，但后续观察再次报告隐藏，尚无稳定连续前台定时、视觉无闪及缩放刷新保持的充分个人证据。原生拖拽仍报noWindowsAvailable，不用受控T3替代个人拖拽验收；真实数值、手工刷新、双轴图展示与上述缺口分别记录。本轮未重启服务、改个人配置／凭据／数据库，未查询或手动触发CI／Hosted、未设置定时任务。下一步优先细化统一采集恢复的失败诊断，保留Safari剩余交互复验。
-
 
 ### 主机Safari前台刷新及原生缩放保持复验（2026-11-04）
 
@@ -604,14 +567,13 @@ Safari通过“窗口→当前控制台窗口”确认过“自动刷新已开�
 
 本批只补既有证据文档，`git diff --check`及新锚点核对通过；无产品代码／API／测试入口变更，不重跑未变化的前端门禁，不要求重启。CI／Hosted仍等专门会话回传，未查询或手动调度，未设置定时任务。下一步优先复验磁盘IO趋势的原生缩放、提示及刷新保持。
 
-
 ### 磁盘吞吐纵轴单位与Safari交互（2026-11-04）
 
 沿Safari平台管理员真实主机详情，由vda行“查看趋势”进入近一小时读写双曲线。原生左滑块从约x495拖至x1050后，未手动刷新时窗口末端11:45:34→11:46:20，前移46秒，局部比例及双曲线保持；数据提示11:37:05读取0.00MiB/s、写入0.75MiB/s。点击刷新后查询11:47:13，再定位图表时末端11:47:28且缩放保持。实际Screenshot发现纵轴只有刻度数值；单位虽然在tip与数据提示中，但图面无法直接识别吞吐。
 
 先补正式规范，再在NodeResources复用共享ChartRenderer的valueAxes声明“磁盘读写吞吐”单轴；共享实现自动追加当前IEC速率单位，两方向共轴，最小值0。只增加模块中英文词条，不另造图表、改共享渲染器或指标查询／缩放公式；CPU、内存双轴、网络柱状、时长及挂载仍走原配置。新增中英文T3从读、写两种入口核对实际ECharts纵轴，刷新后由MiB/s切至KiB/s时名称／单位同步，数据与两条序列的比例保持。旧实现红测两项均因缺少轴名与min失败；修订后通过。
 
-本地`npm test`135项通过，`npm run build`退出0（5.74秒，沿原有分包大小提示）；标准隔离浏览器入口`npm run test:e2e -- e2e/host-trend-interactions.spec.js e2e/host-resource-zoom.spec.js e2e/resource-inplace-refresh.spec.js --workers=1`89项全部通过（6.3分钟），涵盖新增两项、各类指标图例／数据提示、缩放与原位刷新隔离。日志`/tmp/addp-disk-axis-red.log`、`/tmp/addp-disk-axis-browser.log`，红测证据目录`/var/folders/r1/l7b49c757dz02zftf_l9vl9r0000gn/T/addp-monitor-playwright-results-D4iyCr`。只认本批专项，不计单次完整Monitor前端／Console门禁或远端CI通过；现有自动发现已覆盖本批文件，不新增测试入口／workflow。
+本地`npm test`135项通过，`npm run build`退出0（5.74秒，沿原有分包大小提示）；标准隔离浏览器入口`npm run test:e2e -- e2e/host-trend-interactions.spec.js e2e/host-resource-zoom.spec.js e2e/resource-inplace-refresh.spec.js --workers=1`89项全部通过（6.3分钟），涵盖新增两项、各类指标图例／数据提示、缩放与原位刷新隔离。日志`/tmp/addp-disk-axis-red.log`、`/tmp/addp-disk-axis-browser.log`，红测证据目录`/var/folders/r1/l7b49c757dz02zftf_l9vl9r0000gn/T/addp-monitor-playwright-results-D4iyCr`。范围限本批专项，完整 Monitor 前端、Console 和远端 CI 另计。
 
 修订后Safari实际截图已出现“磁盘读写吞吐（MiB/s）”，再次原生缩放成功。首次等待中11:55:38出现页面滚回顶部和局部缩放复位，原因尚未确认，不以其后正常认定已解决。随后11:57:25重新选择局部区间，手动刷新11:57:59后保持，至11:58:45无进一步输入自动前移46秒仍保持，双曲线与轴名均可见；仅证明这一后续短时区间。此前还出现页面隐藏并按原行为暂停，手动刷新后恢复；不修改可见性规则或声称历史hidden根因修复。工具点击顶部刷新会定位到按钮，重新滚回只核对缩放，不计滚动位置保持。原始AX／截图在本会话，`/tmp/addp-safari-disk-trend-20261104.json`为人工整理摘要。
 
@@ -627,8 +589,7 @@ Safari通过“窗口→当前控制台窗口”确认过“自动刷新已开�
 
 后续建议仅在重新确认相同账号／平台上下文／权限、查询及System主机事实后，从内存恢复临时滚动与缩放；旧资源仍清除、全部数据重新查询，真实身份／权限／事实变化及失败继续清空，不写URL或持久存储。该范围与现行“身份变化清空视口”的细分待用户确认，未提前实现。CI／Hosted仍等专门会话回传，不查询、调度或设置定时任务；个人数据库、配置、登录状态和服务均未操作。
 
-相关回归`npm run test:e2e -- e2e/host-resource-zoom.spec.js e2e/resource-inplace-refresh.spec.js --workers=1`38项全部通过（2.1分钟），含新增续期、已有撤权／迟到响应、主机事实变化、各类缩放及手动／自动原位刷新；日志`/tmp/addp-host-renewal-regression.log`。`node --check monitor/frontend/e2e/host-resource-zoom.spec.js`及本批`git diff --check`通过。只修改测试和证据，不修改产品输入，沿用此前135项单元及构建证据但不计为本轮重跑；完整Monitor／Console前端及CI／Hosted未运行。既有Monitor前端门禁及Platform CI按e2e目录自动发现该用例，无新增入口或编排。
-
+相关回归`npm run test:e2e -- e2e/host-resource-zoom.spec.js e2e/resource-inplace-refresh.spec.js --workers=1`38项全部通过（2.1分钟），含新增续期、已有撤权／迟到响应、主机事实变化、各类缩放及手动／自动原位刷新；日志`/tmp/addp-host-renewal-regression.log`。`node --check monitor/frontend/e2e/host-resource-zoom.spec.js`及本批`git diff --check`通过。只修改测试和证据，不修改产品输入，沿用此前135项单元及构建证据但不计为本轮重跑；完整Monitor／Console前端及CI／Hosted未运行。
 
 ### 主机同身份续期后的临时视口恢复（2026-11-04）
 

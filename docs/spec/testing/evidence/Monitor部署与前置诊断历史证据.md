@@ -2,7 +2,9 @@
 
 [返回 Monitor 历史证据](Monitor历史证据.md) · [返回验收证据索引](../验收证据索引.md)
 
-本专题收录资源守卫、Docker CLI／daemon 取证与 Compose 超时。固定源码、环境、失败记录、修复结论与未覆盖范围以各记录为准；本次仅整理文档，没有重跑验收或刷新 CI 状态，不推导当前 HEAD 或生产 T5 已通过。跨主题语境与原有顺序见 [Monitor 历史证据入口](Monitor历史证据.md#原记录入口)。
+本专题收录资源守卫、Docker CLI／daemon 取证与 Compose 超时。验收结论按各记录的固定源码、环境、运行尝试和层级认定。原顺序见[Monitor 历史证据入口](Monitor历史证据.md#原记录入口)。
+
+原始过程、逐步诊断及详细归档清单见[精简前的固定记录](https://github.com/pampa0629/addp/blob/be8f8daa4d38a7830585577f03b77bf2b5ed3931/docs/spec/testing/evidence/Monitor%E9%83%A8%E7%BD%B2%E4%B8%8E%E5%89%8D%E7%BD%AE%E8%AF%8A%E6%96%AD%E5%8E%86%E5%8F%B2%E8%AF%81%E6%8D%AE.md)。
 
 ## 资源守卫四秒截止、分步计时与等待优化（2026-10-25）
 
@@ -20,7 +22,6 @@
 - 同轮10次、三种调用方式、五类只读操作，共150次均通过：容器列表中位耗时旧封装57.24毫秒／新封装39.18毫秒，卷列表57.07／38.75毫秒，小证据目录du 55.04／6.85毫秒；固定公共镜像元数据57.59／56.35毫秒，仅小幅变化。直接调用对照、每次耗时及零失败均见`readonly-profile-paired.json`。当次本专项容器和卷标签列表均为空；没有创建或更改Docker对象，不代表带负载完整采样的稳定性结论。
 
 脱敏证据目录为`/tmp/addp-p19-resource-guard-investigation-20261025/`，含调查前后探针、`deadline-simulation.json`、`docker-log-correlation.json`、`candidate-inputs.json`、`runner-red.log`、`candidate-runner.log`、`candidate-lifecycle.log`、`candidate-test-changed.log`及`verification-receipt.json`。生命周期日志SHA-256为`816bf3cda2244c910182b657c1e3c08a678b5dd1f5ce2dfc4ec882de1c002333`，同轮探针JSON为`f0f777c873985e5822798867c2407fc7adbc3a30e0f2edcb4230a2286e6badb3`。既有正式身份闭环证据不变；下一步需先讨论有界繁忙阶段验证方案，利用新计时定位尖峰，不自动申请或续开窗口。
-
 
 ## 资源守卫有界繁忙阶段：唯一一轮本地诊断通过（2026-10-25）
 
@@ -49,7 +50,6 @@
 
 本次仅证明已确认繁忙模型通过，历史尖峰唯一根因仍未定；不改变既有正式身份闭环结论，不计新正式身份／页面、Hosted、容量、72小时或生产T5通过，没有设置定时。只读核对清单实际第19行／B18（存算引擎管理／服务管理／接口管理／总述）、第45行／B44（实时耗时接口追踪）及现有M列，维持部分实现；工作簿未编辑，临时解密依赖已删除。下一步优先讨论Docker CLI到daemon等待的分层取证，未经确认不再启动负载或调整四秒口径。
 
-
 ## Docker CLI／daemon 既有记录离线分层：分析完成，取证完整性未通过（2026-10-25）
 
 用户确认先修正日志覆盖证据，再只读关联已有脱敏记录；不新增负载或环境，原四秒完整采样口径不变。首先修正上一节的漏查：独立dockerd日志文件不是当前Docker Desktop组件日志全集，合并`Data/log/vm/init.log*`内的apiproxy、dockerd记录实际覆盖上述繁忙轮次最慢样本。此次只消费调查时已保存的脱敏索引和原始资源报告，不重新读取实时Docker状态或已轮转的原日志，不打开全局debug，不启动代理、采集器或特权跟踪。
@@ -74,10 +74,9 @@
 
 验收要求至少20个连续完整样本可无歧义关联，且全部至少1秒的归属列表命令获得可靠对应；缺失、歧义或时钟前提未证实均不能强记通过。本次虽有125个连续条件关联样本，但独立时钟对齐及命令边界仍不足，慢命令也仅获得条件候选，故**离线取证完整性未通过，历史偶发超时唯一根因仍未定**。正常分析退出码不覆盖此验收结果，未重新运行繁忙模型。
 
-证据目录`/tmp/addp-p19-cli-daemon-investigation-20261025/`保留`correlate-offline.py`、`offline-window.json`、`offline-pairing.json`、`offline-associations.json`、`offline-summary.json`和`offline-run.log`。汇总SHA-256为`bf6797fbd7c77a2ceddaabf6d03773ec227664123e1fbf7d8c2d2999858e88ea`；关联明细为`18d8dd995723115aca1cd1b0b2cf83192dc29dffc8a7bf12ad454508bb6d311f`，配对为`c364f0f85172e8cf1be9fd5b6d6eca9b1573f42114b58185b8b0d63c91fae6c0`，脚本为`329d74479fc74d761086ccd6f750ad6b1a3b21b008561491f7dc26f1c1d346da`。输入／输出哈希及原323个四秒结果另行只读核对通过，九项内存自检覆盖孤立／重叠拒绝、去重、候选歧义、时差移动及时间精度。此次仓库只修订本历史证据，未修改产品、标准入口或CI编排，不新增T2依赖。 现有标准变更选择器`python3 scripts/test/changed-gate.py --repository /Users/pampa/code/addp --dry-run`退出0，只展示计划；共享工作区另有Makefile及多模块未提交改动，使整区计划扩散至全平台，未运行该整套门禁，不计通过。本专项无产品或门禁实现变更，按仅离线、不新增负载边界不执行全平台／T2；`git diff --check -- docs/spec/testing/evidence/Monitor历史证据.md`通过。独立CI复验仍由现有Platform consistency负责，本次不宣称新增CI通过。
+离线关联程序、输入、配对、汇总及日志在 `/tmp/addp-p19-cli-daemon-investigation-20261025/`。
 
 不新增正式身份／页面、Hosted、容量、72小时、生产或定时证据。按当日既有只读行映射，接口管理／总述为第19行／B18、实时耗时接口追踪为第45行／B44，均保持部分实现；当前共享工作簿哈希已变化，未重解密或编辑，汇报注明当前行号待维护会话重新核对。既有正式身份本地闭环结论不变。下一步优先讨论最小取证修订：记录命令绝对单调时间及可验证的两侧时钟对齐，明确请求归属和代理计时语义；未确认前不实施、不新开负载窗口。
-
 
 ## 命令单调边界与归属登记：确定性通过，校时准入停止（2026-10-25）
 
@@ -97,15 +96,13 @@
 
 2026-10-25 17:42:05 Asia/Shanghai，仓库外`python3 /tmp/addp-p19-command-boundaries-20261025/admission-once.py`在第一条请求前返回停止原因`apiproxy_clock_semantics_unconfirmed`。`admission.json`明确`status=stopped_before_readonly_window`、`verification_result=not_run`、`forensic_acceptance=not_passed`；诊断进程墙钟约0.0131秒、CPU约0.0126秒。**120秒窗口没有启动，20组自检未运行，Docker CLI／探针／归属读取请求均为0**，没有启动日志跟随线程、创建容器／卷／网络、代理或VM辅助容器，没有更改Docker配置。真实日志连续读取／轮转、时钟对齐和慢路径没有验收，也未为补证继续实现或启用这些实际编排；不存在可报告的自检资源峰值。退出无需销毁新增环境，因为没有创建环境；脱敏证据按授权保留。停止后只做报告出口修正及确定性复验，未重复准入或重新开启窗口；AST及原输入哈希重建证明校时准入函数未改变。
 
-证据目录`/tmp/addp-p19-command-boundaries-20261025/`保留红灯日志、`runner.log`、`report-export-red.log`、`lifecycle-verified.log`、`test-changed.log`、一次性准入脚本／`admission.json`及`verification-receipt.json`。最终生命周期日志SHA-256为`4817e4e0aed778c050d77fd390f39a41e219d548c479a336039eb3afdea87a70`，准入报告为`ab347eae8b6ed3c22c40b2b0110e70bd02c54ad6823f146479eb2498f6edb22f`，最终入口代码为`d22a7d619a8b8329c9efb9de66323683fa800ca22303b63d61a5df23cb241117`，配套测试为`2e34b320213fe597e6940186d34b141f9da27286d60d0ee6ab60c7584d1ba0e4`；实际提交仅包含本批代码／测试及规范／本节证据，其他会话共享规范改动不混入。
+红绿日志、生命周期／聚合、准入与验证收据在 `/tmp/addp-p19-command-boundaries-20261025/`。
 
 结论为命令边界与归属登记已实现、确定性门禁通过；真实只读取证因语义准入未满足而未运行，不计自检通过，历史偶发超时根因仍未定。既有正式身份本地执行→Trace→日志→页面证据保持，不新增繁忙稳定性、Hosted、容量、72小时、生产或定时结论。功能清单沿当日既有映射接口管理／总述（第19行／B18）及实时耗时接口追踪（第45行／B44）均仍为部分实现；共享工作簿已变化，当前行号待维护会话重新核对，本会话未编辑工作簿。下一步优先取得与4.49.0（208700）对应的apiproxy事件时间来源依据；其他取证路线须另行讨论，不自动换路或重开窗口。
-
 
 后续只读核验（2026-10-25）：`git ls-remote origin refs/heads/main`返回`17209f23f738acaab040d6f42f3b36fc8ce5dcab`，本地对应提交对象的祖先关系确认已包含本专项`9904726a0ff85296574266dc844165941a6f2d9e`。因此，上次“两次HTTPS推送失败、当时尚未同步”是历史状态，当前已确认该专项提交在远端main中，不需要重复推送；不由远端存在推定CI通过。本专项入口和测试SHA-256与最终确定性门禁回执一致，未改产品或重跑门禁，不据此宣称后续main整套检查通过。
 
 安装包元数据仍为Docker Desktop 4.49.0（208700）；补查[官方组件源码说明](https://docs.docker.com/subscription-billing/desktop-license/)只承诺部分GPL组件源码，不能充当当前apiproxy事件时间契约。对本机安装包进行定向文件名检索及OSS-LICENSES内apiproxy／pinata检索，未找到对应源码；公开issue示例日志也不能证明当前版本时间戳生成位置。没有解包573 MiB的VM镜像、逆向二进制或替换当前日志组件，未获得新的版本绑定语义依据，校时准入仍未满足。120秒自检未开启、未重复准入、Docker CLI／探针新增调用0，无Hosted、容量或定时。本次补查回执位于`/tmp/addp-p19-command-boundaries-20261025/source-audit-followup.json`。后续若改作主机同一时钟的CLI墙钟／子进程CPU对照，只同时报告单调墙钟与用户／系统CPU用量，不能将多线程CPU累计时间与墙钟相减构造等待时长，也不能由CPU较少证明I/O或daemon阻塞。该独立对照不替代原跨VM可靠关联验收；目标变化仅作为讨论建议，尚未修订验收标准或实施。
-
 
 ## 主机侧CLI墙钟／CPU独立对照：唯一一轮通过（2026-10-26）
 
@@ -132,7 +129,6 @@
 
 结论为**当前空标签主机计量独立对照通过**。原跨VM可靠关联仍未通过，apiproxy当前版本时间语义仍未证实，历史偶发超时根因未定；既有正式身份本地执行→Trace→日志→页面事实保持，没有新增繁忙稳定性、Hosted、容量、72小时、生产或定时结论。功能清单当前行号待维护会话重核，沿2026-10-25既有只读映射接口管理／总述（Excel19／B18）及实时耗时接口追踪（Excel45／B44）均仍为部分实现，未编辑工作簿。下一步优先讨论繁忙阶段如何保持测量进程的CPU归属隔离；不能把本次RUSAGE_CHILDREN差分直接用于同时派生构建器及守卫子进程的共享编排，更不自动新开繁忙窗口。
 
-
 ## Business PostgreSQL Compose 配置超时：安全诊断与自有进程回收（2026-10-25）
 
 专门 CI 会话回传 [Release 40156170007／job 121063186791](https://github.com/pampa0629/addp/actions/runs/40156170007/job/121063186791)，固定源码 `50f85debd27948c7b093b3fcd4a1cb5cb379e852`。独立核对提供的原始日志 `/tmp/addp-ci-20261025-043011/job-121063186791.log`：55项准备测试中54项通过，Business PostgreSQL 的首次 `docker compose … config --format json postgres` 在15秒期限超时，真实 http-quality 隔离采样未执行。失败源码至本轮基线的该用例、Business Compose及部署发现源均无已提交差异；日志不足以区分Docker CLI、Compose插件或管道等待，根因未定。前述5d91的唯一一次重试成功仍仅属于当次证据，不覆盖本轮失败，也不据此重复重试。
@@ -141,10 +137,9 @@
 
 最终 `python3 -m unittest scripts/test/metrics-deployment-config_test.py` 的65项通过，含原55项和新增10项：原期限／静默成功、安全错误与取消、身份改变／外组拒绝、数量截断、退出／不可用视图、工作区源码隔离及真实POSIX父子进程超时清理。源码缓存负例先红后绿，日志保留。Linux proc树为确定性模拟；真实故障注入只创建当次Python父子进程，确认父进程已回收、子进程不再运行，不计原生Linux或容器采集验证。完整 `make test-dev-lifecycle` 退出0，含142／99／61项Python聚合、生命周期脚本、共享Go包及模块命令编译；尾部无测试包只计编译。完整入口运行于最后“不提前reap”的快照细化之前，该最终细化由随后完整65项配置入口覆盖。`git diff --check`通过。
 
-现有Make和Metrics标准入口均自动发现新增测试，原T2输入登记已覆盖该测试文件及部署发现源，无需新增入口、依赖或workflow。`changed-gate.py --dry-run`退出0只计选择，含其他会话WIP，不计对应门禁执行。本轮未运行原生Metrics T2／Hosted或重跑、调度、轮询CI，没有重启个人服务、修改个人数据库／Docker配置或设置定时；原Linux15秒失败仍未修复，等待专门会话回传新证据。清单实际第40行／B39“监控／总述”维持部分实现，本次只补测试诊断，不计产品采集自诊断或业务功能新增。
+`changed-gate.py --dry-run`退出0只计选择，含其他会话WIP，不计对应门禁执行。本轮未运行原生Metrics T2／Hosted或重跑、调度、轮询CI，没有重启个人服务、修改个人数据库／Docker配置或设置定时；原Linux15秒失败仍未修复，等待专门会话回传新证据。清单实际第40行／B39“监控／总述”维持部分实现，本次只补测试诊断，不计产品采集自诊断或业务功能新增。
 
 最终日志 `/tmp/addp-compose-config-{reader-final,dev-lifecycle-final,selection-final}.log`；输入及分层验证收据 `/tmp/addp-compose-config-receipt.json` SHA-256 `c1bee48f6de49ce3c9a5b0535c05cdbdeeb2635d63c8be0796d335aaf92d4ae7`。尚未证明原超时根因，后续优先核对同一失败命令的新阶段／私有进程树证据，不能将本机未复现或测试回收通过写成原CI故障闭环。
-
 
 ## 本机 Monitor 浏览器超时与系统休眠诊断（2026-11-02）
 
@@ -162,7 +157,6 @@
 
 进一步本机验收先等待Mac恢复稳定唤醒，再原样复验原三项；未自行改变电源策略或重复运行完整592项。已有自然Linux运行继续由专门会话回传，本会话未查询、触发、取消或重跑CI／Hosted。固定74ed的592项＋构建通过但后置缓存归档取消的旧证据不变，也不覆盖新本机反例；本次休眠诊断不计当前完整Monitor前端、MinIO专业监控或正式身份验收通过。
 
-
 ### 后续 Linux 完整前端门禁回传（2026-11-02）
 
 专门CI会话回传固定`3f281d49c7c3533a347db4a270d090cabfd63301`、push attempt1的[Platform Run41391135443／Monitor前端Job125102562739](https://github.com/pampa0629/addp/actions/runs/41391135443/job/125102562739)。本会话独立核对原日志`/tmp/addp-ci-20261102-140026/job-125102562739.log`（191020字节，SHA256=`0b58f71377d96bb66c0f94088c1ea02ac92c637f50f1dddaf5dfa149d01715b2`）和同目录`Monitor3f-job-current.json`：Ubuntu24.04实际执行`make test-monitor-frontend`，selected=true，592项浏览器全部通过（24.2分钟），Vite构建通过（7.30秒），产品步骤、summary、后置步骤及整Job均success，运行时间05:30:16—05:55:31 UTC。原进程unavailable恢复、Redis英语列表与Redis手动刷新三项分别实际出现在原日志第1428／1434／1441行，不能把条件跳过作业计作另一轮产品通过。
@@ -171,7 +165,6 @@
 
 据此补齐这组三项的固定Linux实际复验缺口，不修改原Mac589／592失败、系统休眠诊断及稳定唤醒后原样本机复验尚未完成的状态。协调会话保留的a14 Job125095800507在585／592、4243 Job125099325773在586／592处30分钟取消、无终态总结，不改记通过；旧74ed产品通过／后置缓存取消也仍独立。本轮只读回传材料、比较源码并同步文档，未查询、触发、重跑或取消CI／Hosted，没有设置定时、修改5秒预算／产品／电源／用户服务，也不把受控前端结果计为真实Redis／MinIO来源或正式身份验收。
 
-
 ### 用户确认稳定唤醒后的原三项本机复验（2026-11-02）
 
 用户确认“Mac已恢复稳定唤醒”后，在源码`39059d2ed2d711b992947c1debee6872a0d60578`沿原标准入口只选三项：`npm --prefix monitor/frontend run test:e2e -- e2e/process-trend-zoom.spec.js e2e/redis-resources.spec.js --grep 'process unavailable clears|Redis list.*\(en\)|Redis manual refresh' --trace=on`，临时reporter只保留成功trace，不改测试执行。3／3通过（13.6秒），标准runner退出0并清理本轮服务、缓存及端口租约；原进程unavailable恢复、Redis英语列表初始值和Redis手动刷新／数据／缩放／DOM保持均实际执行。没有复用前一轮Node诊断注入、修改产品或测试、加重试、延长5秒预算、禁用动画或降低ready谓词。
@@ -179,7 +172,6 @@
 本轮时段为15:20:29.354—15:20:43.426 Asia/Shanghai；只读`pmset -g log`核对该窗口无Sleep／DarkWake／Wake条目。两个失败spec、共享驱动／领域夹具、两页／共享图表及依赖／配置／标准启动器共13项输入在前后SHA256完全一致，Node v24.22.2。结果及三个trace摘要保存在`/tmp/addp-monitor-stable-awake-20261102/receipt.json`，日志`gate.log` SHA256为`bfd478e2b46859e38161f419c60666df01e31111c36b8b65abe215a0015baf8a`。每个成功trace已复制到该独立OS临时目录，正常runner未保留旧测试输出目录。
 
 据此补齐稳定唤醒后这三项的本机受控T3复验；原589／592失败、无trace的取证限制以及两轮诊断中的失败原样保留，不把本次三项通过改记原完整命令成功。固定3f的Linux592项／build／整Job通过仍独立认定；未重复完整门禁、查询或触发CI／Hosted，不等于真实Safari、真实Redis／MinIO采集或正式身份验收。没有修改电源／Docker配置、重启个人服务或设置定时任务。
-
 
 ## 本地 MinIO 联调前置核对与 Infra 配置准备（2026-11-02）
 
@@ -190,7 +182,6 @@
 - 使用既有受管source CA为Infra生成独立serverAuth叶子证书／私钥，SAN为IP127.0.0.1与DNShost.docker.internal；不创建CA、不修改既有信任、CA序列文件或其他证书。目录0700、私钥0600；有效期63天，限制在既有CA到期前。离线调用产品唯一sources.transport校验，且以Monitor与collector各自CA分别验证服务器IP／DNS、证书私钥匹配及两类客户端链，全部通过。没有执行账户或来源up/down。
 - 末次只读复验两侧数据库容器ID／启动时刻与准备前一致、来源仍为not_deployed；账户安装、指标抓取、真实页面与趋势联调尚未开始。外部准备收据为/tmp/addp-infra-minio-preparation-receipt.json，最终脱敏前置报告为/tmp/addp-minio-local-preflight-final.json；不记录凭据或CA私钥内容。
 - 下一步由用户执行标准指标应用并更新ADDP开发运行版本，再核对System候选及明确主机绑定、来源实际抓取和真实页面。指标应用会调和中心及已配置来源，可能产生短暂监控间断；AI未启停个人服务、升级Business或改数据库。CI／Hosted继续等专门会话回传，未查询、重跑或设定时任务。本次仅准备和离线验证，不计为T4或实时指标验收通过。
-
 
 ### Infra MinIO 用户应用后的本机采集复验（2026-11-03）
 

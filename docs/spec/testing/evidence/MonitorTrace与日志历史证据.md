@@ -2,7 +2,9 @@
 
 [返回 Monitor 历史证据](Monitor历史证据.md) · [返回验收证据索引](../验收证据索引.md)
 
-本专题收录分布式追踪、Python 接入、容量基线与正式身份本地多窗口。固定源码、环境、失败记录、修复结论与未覆盖范围以各记录为准；本次仅整理文档，没有重跑验收或刷新 CI 状态，不推导当前 HEAD 或生产 T5 已通过。跨主题语境与原有顺序见 [Monitor 历史证据入口](Monitor历史证据.md#原记录入口)。
+本专题收录分布式追踪、Python 接入、容量基线与正式身份本地多窗口。验收结论按各记录的固定源码、环境、运行尝试和层级认定。原顺序见[Monitor 历史证据入口](Monitor历史证据.md#原记录入口)。
+
+原始过程、逐步诊断及详细归档清单见[精简前的固定记录](https://github.com/pampa0629/addp/blob/be8f8daa4d38a7830585577f03b77bf2b5ed3931/docs/spec/testing/evidence/MonitorTrace%E4%B8%8E%E6%97%A5%E5%BF%97%E5%8E%86%E5%8F%B2%E8%AF%81%E6%8D%AE.md)。
 
 ## HTTP 追踪二期第一批（本地）
 
@@ -24,7 +26,6 @@ T0：最终 `make test-dev-lifecycle`、50 项 Infra 日志/指标/追踪生命�
 根 Go 首轮发现本方 Context 迁移误触 Graph 创建及遗漏 Transfer 导出测试替身，已分别撤销无关调用参数、补齐真实接口签名后全量复验；旧失败不计通过。Console 初次误用同模块导航，导致 iframe 内进入无权限页且公开 URL 未变化，已改用现有 `openConsoleRoute` 跨模块桥并完整复验。追踪早期实际运行还证实 Tempo 默认 120 秒 WAL 时间容差不足以容纳 120 秒尾采样及入库延迟；现从唯一策略生成 300 秒容差，不降低慢阈值、采样等待或扩大用户查询窗。重启测试随机发布端口变化仅修复当次夹具，产品端点不自动改挂。
 
 本轮未运行 Hosted/正式密码 MFA T4、生产安装发布 T5、72 小时自然过期等待或容量压测，未重启或接管个人服务。Python、异步 execution Links、SQL/数据库 Span、浏览器采集及引擎实例追踪不在本批；平台总体请求量仍由全量 HTTP 指标提供，不能从采样 Trace 倒算。下一步优先在一次性隔离设施实测压缩字节/Span、对象存储增长、采样/丢失与峰值待决占用，再复核 20 GiB/72 小时是否满足实际负载。
-
 
 ## HTTP 追踪隔离容量基线（本地）
 
@@ -53,7 +54,6 @@ T0：最终 `make test-dev-lifecycle`、50 项 Infra 日志/指标/追踪生命�
 
 此前各项失败、中止及未运行仍不计通过。本专项始终只做本地验证，不运行 Hosted，不接管/重启个人服务；本次结论限定于所测三 Go 进程五 Span HTTP 链、属性及单节点存储，未证明真实 72 小时留存/过期删除、长期合并峰值或生产 HA，也不替代全量 HTTP 指标及 QPS 告警实压。
 
-
 ## HTTP 追踪二期第二批（Python 本地）
 
 2026-10-22 按用户确认范围，先修订运行观测规范及验收标准，再并行实现 Common Python 显式 SDK／ASGI／HTTPX 内核、Agent/Copilot 生命周期及日志关联；复用唯一部署声明、mTLS、Alloy/Tempo、采样与读取权限。只补同步 HTTP Trace，不把 Python 接入记为全量 HTTP 指标或进程指标，不增加第三方模型、异步 execution、SQL、其他 Runtime 或 Hosted 范围。生产部署投影仅显式新增 Agent/Copilot backend；依赖固定为 OpenTelemetry API/SDK/proto 1.45.1 并同步共享锁。未改个人虚拟环境，测试使用仓库外依赖叠加层。
@@ -69,7 +69,6 @@ T0：最终 `make test-dev-lifecycle`、50 项 Infra 日志/指标/追踪生命�
 
 本轮只证明上述冻结输入的本地 T0/T1/T2；未运行 Hosted、容量重跑或真实 72 小时留存／删除，未重启个人服务或设置定时。先前容量外推及 Linux Metrics 证据保留原边界，不作为新增 Python 吞吐／长期容量或最新共享 main 的验收；本批推送后的远端自动 CI 结果另记。
 
-
 ## Python Trace 接入后的开发依赖／OpenAPI 阻断修复
 
 2026-10-22 针对 `c05c70480` 引入共享 OpenTelemetry 依赖后的本地可复现阻断，核实 Copilot 旧 venv 没有 `opentelemetry`，editable `addp-common` 源码已更新但已安装元数据仍不含新依赖，旧 FastAPI／LangChain 导入探针却判完整。Agent 的共享元数据同样陈旧。全量 restart 在 start 的依赖准备之前生成 Python OpenAPI，因此仅补 start 探针仍不能解除阻断。
@@ -82,9 +81,7 @@ T0：最终 `make test-dev-lifecycle`、50 项 Infra 日志/指标/追踪生命�
 
 使用上述真实准备后的隔离解释器，`make test-common-python` 411 项及 48 子测试通过，1 项可选 GeoPandas 缺失跳过、不计通过；`make test-copilot` 184 项通过（3 项既有依赖弃用警告）；`make test-agent-eval` offline 的七场景、Agent 及 Common Python 子门禁通过；`make test-swagger` 的 18 项脚本回归与所有 Go/FastAPI 路由覆盖通过。此次只修本地准备／生成链，无 API 契约变化、无需改 OpenAPI 产物；未运行 Hosted、容量或用户服务重启。用户需在自己的终端经标准 restart 同步旧环境，推送后的自动 CI 状态另记，不能把排队当作通过。
 
-
 2026-10-22 23:22 用户在自己的终端完成重启后，本会话只读核验当前源码 `a4cdb6b81409d2d3237eba01cff3d1a8b86f8690`：Agent/Copilot 的 API／SDK／proto 三个依赖均为 1.45.1，两者依赖指纹与实际环境一致且 `pip check` 通过，`addp_python_dependencies_current` 返回可复用，没有执行安装。已核原生 PID 74166／74147 分别监听实际保存端口 8190／8087；两者 `/health/live`、`/health/ready`、`/openapi.json` 全部 HTTP 200，实时 OpenAPI 与已提交投影深相等。标准 `PYTHONDONTWRITEBYTECODE=1 bash scripts/swagger/check-route-coverage.sh agent copilot` 退出 0，分别 14／12 个公开路由方法一致。由此关闭本次本机缺依赖／生成阻断，不外推正式业务、LLM、Trace 尾采样或 Hosted 验收；未由 AI 重启或改写 venv。只读核对修复提交 `673cf8eef` 的自动 Platform CI `39803050868`，Platform consistency、Common Python、Copilot Backend 与 Agent offline 均仍 queued，不计远端通过。
-
 
 ## Python Trace 与依赖修复的远端 CI 分项回执（2026-10-23）
 
@@ -95,7 +92,6 @@ T0：最终 `make test-dev-lifecycle`、50 项 Infra 日志/指标/追踪生命�
 - 依赖准备修复 `673cf8eef7cb776de26a0b04c8dbdc86384becbf` 的 [Platform consistency](https://github.com/pampa0629/addp/actions/runs/39803050868/job/119908856837) 实际完整执行 `make test-platform` 并通过；含 124 项配置／部署、60 项设施生命周期、统一 Backend 准备／指纹及 dev lifecycle／原子构建，末尾 Swagger 覆盖通过。同 run 的 Common Python、Agent、Copilot 三 Job 虽状态 success，原始日志是路径 `selected=false`，属于跳过，不能作为这三项重测通过证据；三项实际执行证据使用上面的 c05 原输入。
 
 由此关闭前两批本专项自动 CI 待核项；不是对后续共享 main、异步第三批、真实身份 T4、真实 72 小时或生产容量的证明。用户重启后的本机只读结果仍沿前节，不重复重启个人服务。
-
 
 ## 执行短阶段与 Trace Link（二期第三批，本地）
 
@@ -114,7 +110,6 @@ Monitor 仅接受 addp.http／addp.execution 两种明确契约；Link 目标和
 
 本批只有上述本地 T0/T1/T2/T3 证据，未运行 Hosted、正式身份 T4、容量重跑或真实 72 小时保留／删除，未设置定时或重启个人服务。原 HTTP 两档容量结果不外推新增阶段。其他 Runtime、continuous、SQL Span、Python 异步、长期合并及生产 HA 仍未覆盖，不能将本批记为全链路追踪全部完工；新提交的远端自动 CI 状态另记。
 
-
 ## 正式身份的本机执行 Trace／日志闭环（2026-10-23）
 
 用户确认仅在本机一次性隔离部署，先修规范与标准入口，再验证正式密码／MFA、Orchestrator → Develop bounded query、Platform Trace 查询与精确日志关联。新增人工 `make test-monitor-traces-local`；静态／准入／守卫／业务契约标准入口 `make test-monitor-traces-local-runner` 聚合到既有 Infra runtime-log lifecycle / Platform，CI 登记明确拒绝公共 workflow 调用真实入口。所有构建与运行容器、浏览器共享 8 CPU／12 GiB 上限，独占卷达到 4 GiB 即停止，最长 60 分钟后进入不可跳过的清理；不运行 Hosted、容量、定时或个人服务重启。
@@ -132,9 +127,7 @@ Common 为独立短阶段增加 `EndExecution`，与原 End 共用一次终结�
 
 此提交先落入口与准备证据；正式身份本机隔离验收尚未执行，不记通过。成功、失败、停止线和清理结果将追加本节；本地技术证据不替代专用 Runner T4、实例单独撤权、SQL Span、其他 Runtime、真实 72 小时留存或生产容量。
 
-
 首次本地窗口在构建器准备阶段等待 Docker Desktop 个人凭据助手，尚未下载基础镜像、创建业务部署或发送业务请求。主动中断自有 gate 后，进程组、Builder 容器／卷和私有目录经精确过滤复查均为空；最终报告写入还暴露 Path.open 不支持 opener 的接口错误，原自动报告未生成，不伪造为通过。已修为内置 open 的 O_EXCL／0600 路径，并补真实文件权限与拒绝覆写测试；Docker 客户端改为当次 0700 目录、空 auths、无凭据助手，只读公共工具插件并固定已核对 Unix endpoint，不借个人凭据。标准 local runner 复验结果另记。后续操作继续扣减首次窗口已耗时间，未放宽原 60 分钟、8 CPU／12 GiB 或 4 GiB 停止线。首次失败及清理复查见 local-first-interrupted-receipt.json 与 local-acceptance.log。
-
 
 ## 正式身份本地第三窗口：镜像核验、守卫修复与部署配置拒绝（2026-10-23）
 
@@ -158,7 +151,6 @@ Common 为独立短阶段增加 `EndExecution`，与原 End 共用一次终结�
 最终 `make test-infra-runtime-log-lifecycle` 退出0：55项本地入口／业务契约、JS语法、CI登记、System ExecutionTrace定向Go，以及既有60项生命周期通过。标准实际入口最后一次仍为失败；最终配置修复后的完整部署未重跑，正式密码/MFA、Tenant成功／受控失败执行、Trace与日志及Console闭环均未运行、未计通过。当前源码不是第6次完整实际运行的输入，不能把确定性回归记成正式运行验收。剩余窗口不足以重建并完成闭环，没有启动注定超时的完整重跑，也没有续开新窗口。
 
 六次成功测量的总体峰值3,421,573,120字节（约3.19 GiB）、6.25 CPU／10.0625 GiB，均未触及原上限；这只覆盖准备构建，不能证明业务部署的资源表现。六次自动清理全部通过，独立复核当次容器、网络、卷、构建器、镜像标签和私有目录均为零，原MinIO镜像保留。安全报告、绝对窗口、输入提交、红绿回归及最终门禁日志见 `/tmp/addp-p19-formal-local-20261023-window3/` 中的 `attempt-1-report.json` 至 `attempt-6-report.json`、`receipt.json`、`cleanup-audit.json`、`deployment-contract-red.log`、`preflight-final-test.log`、`lifecycle-final.log`。清单实际第19行（B18）及第45行（B44）仍为部分实现，正式身份缺口保留；不将本次结果计为Linux Runner T4、Hosted、T5或真实72小时证明。
-
 
 ## 正式身份本地第四窗口：依赖核验通过，完整闭环未验收（2026-10-24）
 
@@ -193,7 +185,6 @@ Common 为独立短阶段增加 `EndExecution`，与原 End 共用一次终结�
 
 全窗口578项成功资源测量，峰值硬配额7.45 CPU／10,066,329,600字节（9.375 GiB），卷及私有可写目录合计最高3,635,802,112字节，最长单次测量1.597秒，未触及停止线。三次自动清理和独立审计均为当次容器、网络、卷、构建器、镜像标签及私有目录零残留，已核验的原MinIO产品镜像保留。证据目录`/tmp/addp-p19-formal-local-20261024-window5/`含`window.json`、三份`attempt-*-report.json`、`attempt-3-database-init-audit.json`、`receipt.json`、`cleanup-audit.json`及`lifecycle-final.log`。实际清单第19行（B18）、第45行（B44）仍为部分实现；本证据不计正式身份闭环、Linux Runner T4、Hosted、72小时或生产T5通过。
 
-
 ## 正式身份本地第六窗口：按需页面及正式登录通过，执行闭环仍未验收（2026-10-24）
 
 用户确认修正产品Nginx部分部署行为并新开60分钟窗口，绝对时间为2026-10-24 09:27:58～10:27:58（Asia/Shanghai），仍限8 CPU／12 GiB、当次卷及私有可写目录4 GiB停止线。三次完整尝试沿同一截止时间，未运行Hosted、容量或定时，过期没有自动续开。
@@ -211,7 +202,6 @@ Common 为独立短阶段增加 `EndExecution`，与原 End 共用一次终结�
 当前源码1c5a5cc26的`make test-infra-runtime-log-lifecycle`退出0：66项入口／业务契约、JS语法、CI登记、System ExecutionTrace定向Go及既有60项生命周期通过。源码未修改产品业务API、内置角色、采样或保留策略，不需生成Swagger；普通Tenant执行、Trace／Link与精确日志、Console闭环及退出后旧令牌拒绝本窗口均未通过。三份完整报告全部failed；正式登录的实际局部证据不能替代完整闭环，也不能外推Linux Runner T4、Hosted、72小时或生产T5。
 
 全窗口516项成功资源测量，峰值7.8 CPU／10,468,982,784字节（9.75 GiB），卷及私有可写目录最高3,619,434,496字节，最长测量1.126秒；无OOM或资源停止线触发。三次自动清理及独立审计均为当次容器、网络、卷、构建器、镜像标签和私有源码／秘密零残留，原核验MinIO产品镜像保留。安全证据位于`/tmp/addp-p19-formal-local-20261024-window6/`，含window.json、三份attempt-*-report.json、nginx-route-gate-3.log、prepare-source.json、committed-lifecycle.log、final-lifecycle.log、t2-registration.log、receipt.json及cleanup-audit.json。仅只读查看过源码6621748的既有Release and T2自动运行40050940303，当时queued，未计通过，未手工触发工作流或跟踪无关CI。清单第19行（B18）、第45行（B44）继续部分实现。
-
 
 ## 正式身份本地第七窗口：准备守卫修正及IAM权限冲突，闭环未通过（2026-10-24）
 
@@ -240,7 +230,6 @@ Common 为独立短阶段增加 `EndExecution`，与原 End 共用一次终结�
 
 原始脱敏报告为`/tmp/addp-p19-formal-local-20261024-window7/attempt-{1..8}-report.json`，同目录`window.json`、各`attempt-*-source.json`／日志、`receipt.json`及`cleanup-audit.json`保留窗口及源码身份。独立只读清理核对于17:22:07完成：8次均为当次容器、网络、卷、构建器容器／状态卷、镜像标签及私有目录零残留，复用前已有MinIO不可变镜像仍保留。334次成功资源样本的硬配额峰值7.8 CPU／10468982784字节（9.75 GiB），卷及私有目录实际分配峰值3637747712字节（约3.39 GiB），成功单次测量最长2.640秒；超时失败样本单独按失败记录，不从成功最大值中隐去。没有观察到OOM或4 GiB停止线触发；资源守卫超时及身份准备失败不得计为通过。
 
-
 ## 正式身份本地第八窗口：真实MFA与准备角色通过，成功查询被保护链拒绝（2026-10-24）
 
 用户确认准备User仅在当次隔离环境，经真实密码／TOTP与正式IAM API取得既有`tenant.infrastructure_administrator`；普通执行User的原11项权限保持。先修规范和入口，`558cb372659a9b863d14ae78fdbe7ba1014870bf`删除不可租户定制的自定义准备角色，夹具不预授准备角色、不制造会话或AAL2。实际入口核对内置角色当前11项权限及同一Membership，自助TOTP登记替换Cookie／Access Token、验证旧令牌401；真实AAL2和有效step-up后分配限于窗口期限的角色，再经正式Refresh重读同一身份及准确授权。普通User权限在准备后再次核对。
@@ -259,10 +248,9 @@ Common 为独立短阶段增加 `EndExecution`，与原 End 共用一次终结�
 
 标准代码门禁分层记录：初次共享工作区的`make test-monitor-traces-local-runner`在本专项73项通过后，被无关未提交拓扑登记阻断，不计整入口通过；仓库外冻结已提交main与本次代码后，`make test-infra-runtime-log-lifecycle`的73项入口、60项生命周期、Node语法／登记及System fixture Go检查通过，冻结源码随后删除。执行诊断版本同入口74＋60通过。最终`8c2a83abe`输入在共享工作区运行同一标准入口75＋60通过，Go范围为`ExecutionTrace|ProtectionReadiness`；其余无关工作区改动未提交本专项。既有CI输入与owner登记命中，未新增workflow或Hosted调度；本次未轮询／宣称CI通过。公开产品API未变，无Swagger变更。
 
-证据目录`/tmp/addp-p19-formal-local-20261024-window8/`：`window.json`、`attempt-{1..3}-source.json`／报告／日志、`preparation-evidence.json`／`preparation-lifecycle.log`、`execution-diagnostics-lifecycle.log`、`readiness-final-lifecycle.log`、`receipt.json`及`cleanup-audit.json`。另有初始准备冻结的输入清单／原日志，路径见`preparation-evidence.json`及`/tmp/addp-p19-mfa-preparation-path`，只保留脱敏文件，源码副本已移除。
+窗口 8 的三次尝试、前置输入、诊断、就绪及清理回执在 `/tmp/addp-p19-formal-local-20261024-window8/`。脱敏冻结输入可从 `/tmp/addp-p19-mfa-preparation-path` 回查。
 
 21:52:18独立只读核对三次全部当次容器、网络、卷、构建器容器／状态卷、镜像标签及私有目录零残留，复用前已有MinIO镜像保留；页面回执读取器亦已退出。684次成功资源测量的合计硬配额峰值7.8 CPU／10468982784字节（9.75 GiB），卷及私有目录实际分配峰值3649245184字节（约3.40 GiB），成功测量最长2.769秒；没有OOM、资源采样失败或磁盘停止线触发。窗口结束后没有新增真实运行。当前状态仍部分实现；下一次完整运行必须另行确认本地窗口，重点先验证当次Owner初始化，再验证成功／受控失败查询与Trace／日志／页面，不能把本次MFA及引擎准备通过替代完整闭环。
-
 
 ## 正式身份本地第九窗口：构建失败、资源守卫停止与源码准入阻断（2026-10-24）
 
@@ -278,10 +266,9 @@ Common 为独立短阶段增加 `EndExecution`，与原 End 共用一次终结�
 
 三次运行均走`make test-monitor-traces-local`及当次剩余绝对时间，不另开或重置60分钟。报告与独立审计确认每次当次容器、网络、卷、构建器容器／状态卷、镜像标签及私有源码目录零残留；既有MinIO镜像保持原不可变ID。181次成功测量的合计硬配额峰值7.45 CPU／8992587776字节（8.375 GiB），卷及私有目录实际分配峰值3608891392字节（约3.36 GiB），成功测量最长2.547秒；第二次失败测量另列4.105秒，不能混入成功峰值掩盖失败。没有OOM或4 GiB磁盘停止线触发。
 
-证据目录`/tmp/addp-p19-formal-local-20261024-window9/`：`window.json`、`attempt-{1..3}-source.json`／报告／日志、`build-diagnostics-runner.log`／`build-diagnostics-inputs.json`、`source-admission-conflicts.json`、`gateway-base-manifest-readonly.json`、`function-row-mapping.json`、`receipt.json`及`cleanup-audit.json`。只保留脱敏证据；页面回执接收端在第1次结束后退出，未观察到页面回执。
+窗口 9 的三次尝试、来源冲突、构建诊断、行映射及清理回执在 `/tmp/addp-p19-formal-local-20261024-window9/`。只保留脱敏证据。页面回执接收端在第 1 次结束后退出，未观察到页面回执。
 
 截至本次记录，准备角色／真实MFA／普通User权限、成功／受控失败查询、真实阶段检查点、自然尾采样、精确Trace／Link／日志、平台无权限及正式退出负例、真实Console页面均未在本窗口运行，不得沿用第八窗口的局部通过冒充本次通过。功能清单第19行（B18，接口管理总述）、第45行（B44，实时耗时接口追踪）仍为部分实现；已向维护会话发送阶段回报，M列未据此升级。下一步先恢复已提交源码准入并取得实际构建失败分类，再补完整正式身份闭环。
-
 
 ## System依赖准入恢复与Gateway单项构建复现（2026-10-24）
 
@@ -301,7 +288,6 @@ Common 为独立短阶段增加 `EndExecution`，与原 End 共用一次终结�
 为避免再丢失原因，`20a9efcc6e49743bd3846b3caafa7e8ab87b1b5c`给同一标准本地入口的`product_image_*`失败补封闭诊断：仅固定原因／失败步骤、已知产物输入名、Dockerfile行号、最多8项HTTP状态／进程退出码，未知原因明确未分类；不保存任意正文、URL、内容摘要值、凭据或SQL，不对身份／业务命令开启该分类。规范同步同次完成，原构建路线、资源及验收断言不变。先以缺失函数验证测试失败，再实现；`make test-monitor-traces-local-runner`通过79项、Node语法、CI登记及System fixture Go检查（`ExecutionTrace|ProtectionReadiness`），现有路径自动发现命中，未新增Makefile／workflow。成功复现发生在该诊断提交前，准确源码如表；这项纯失败报告变化不改变成功构建路径，也不把单测当成实际失败重现。
 
 证据目录`/tmp/addp-p19-gateway-investigation-20261024/`：`window.json`、`attempt-{1,2}-report.json`／日志、`current-source-admission.json`、`base-blobs.json`／`base-blob-integrity.json`、`idle-daemon-readonly-timing.json`、`structured-diagnostics-runner.log`／`structured-diagnostics-inputs.json`、`receipt.json`及`cleanup-audit.json`。正式60分钟窗口尚未启动：当前构建已通过，但历史原因未定，已向用户确认是否接受这一前提作为新窗口准入。正式身份执行→Trace→日志→真实页面仍待运行，不运行Hosted、不重跑容量、不设置定时；功能清单第19、45行保持部分实现。
-
 
 ## 正式身份本地第十窗口：执行、Trace、日志与真实页面闭环通过（2026-10-25）
 
@@ -330,7 +316,6 @@ Common 为独立短阶段增加 `EndExecution`，与原 End 共用一次终结�
 
 清单已只读核对Excel实际第19行（B18，接口管理总述）与第45行（B44，实时耗时接口追踪）；两项仍为部分实现，但“正式身份本地有界执行→Trace→日志→页面闭环”可以记为已验，不能继续笼统写成本地闭环未验，也不能升级为全域追踪、正式Runner T4或生产完成。工作簿由维护会话统一回填，本会话未编辑。后续优先调查资源守卫Docker状态读取的偶发超时，在原4秒标准内补充分步骤证据后再讨论优化，不自动扩展本次运行范围。
 
-
 <a id="python-trace-certificate-fixture-20261102"></a>
 
 ## 2026-11-02 Common Python Trace证书夹具修正（本地及自然Linux通过）
@@ -354,6 +339,5 @@ Common 为独立短阶段增加 `EndExecution`，与原 End 共用一次终结�
 本地门禁在共享工作区执行，未提交的workflow_runtime/errors.py为其他会话内容，不混入本批提交；该本地结果不替代最终提交净快照的Linux验证。客户端解释器Python3.12.7／OpenSSL3.0.16、HTTPX0.28.1、Otel SDK／proto1.45.1及protobuf7.36.2均沿现有安装，证书命令为现有OpenSSL4.1.0，无版本或环境切换。受控复现证明当前夹具的无效CA问题，并由显式约束修正；原件二没有保留底层异常，不追填其历史TLS数值。
 
 私有证据目录`/var/folders/r1/l7b49c757dz02zftf_l9vl9r0000gn/T/addp-p19-common-python-trace-evidence-20261102-5vrcf3cb/`（0700／0600），含两份原件、isolated_config_diagnostic.log、final.log及audit.json。诊断复现8210字节，SHA256=`f69688b4be216d723110b6aafe38417f4722e8ef739cb94492d92800c57f7b69`；最终日志638字节，SHA256=`a0e0dc9ae41701afc7f469c1f8858b72fdfe1f2b070dac18ac2b45b41eaa7637`；最终测试文件SHA256=`9ad58b363494566227ff98411a38686efe46973944c9da12a7eb727850b2e841`。本批仅测试夹具、T0–T3条款及两份既有证据，不改变生产导出器，也不增加正式产品／Hosted／容量通过结论；自然Linux结果另记。
-
 
 自然Linux复核：四个自有路径已提交推送为`a5945380cbf5e415a93a73a2d91200d3e8173ee2`。[Platform自然push／Common Python tests作业125094948224](https://github.com/pampa0629/addp/actions/runs/41388636491/job/125094948224)实际checkout该完整SHA，经共享矩阵选中并执行原`make test-common-python`，北京时间2026-11-02 12:28:17—12:30:01作业success；原始测试输出为461 passed、1 skipped、54 subtests passed／18.08秒。测试文件逐字节匹配上述本地通过的9ad58b36摘要；这次干净提交快照也通过，不依赖共享工作区未提交的workflow_runtime/errors.py。日志已独立保存为上述私有证据目录linux.log，59326字节，SHA256=`df702cefad3b7637e33c769427bad0144b985e8dd31d0e4e098ffd604c664fe3`。本条只认定Common Python命名作业及原四项回归通过，不推导整个Platform workflow、另一组HTTP／Trace本地runner、交叉语言实链、产品页面、Hosted或容量通过；APT历史网络问题与SDK HTTP T2目录消失仍独立保留。

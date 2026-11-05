@@ -4,15 +4,13 @@
 
 本专题收录PostgreSQL、Redis及MinIO账号、来源准入、引擎身份与专业观测。固定源码、环境、失败记录、修复结论与未覆盖范围以各记录为准；历史整理本身不代表重跑验收或刷新CI状态，不推导当前HEAD或生产T5已通过。跨主题语境与原有顺序见 [Monitor 历史证据入口](Monitor历史证据.md#原记录入口)。
 
+原始过程、逐步诊断及详细归档清单见[精简前的固定记录](https://github.com/pampa0629/addp/blob/be8f8daa4d38a7830585577f03b77bf2b5ed3931/docs/spec/testing/evidence/Monitor%E9%87%87%E9%9B%86%E6%9D%A5%E6%BA%90%E4%B8%8E%E5%BC%95%E6%93%8E%E6%8C%87%E6%A0%87%E5%8E%86%E5%8F%B2%E8%AF%81%E6%8D%AE.md)。 现行部署及专业来源规则见[运行观测规范](../../addp平台运行观测规范.md)。
+
 ## Infra与Business PostgreSQL 自动接入
 
-2026-10-20 已核验 [engine-admission Hosted 专项](https://github.com/pampa0629/addp/actions/runs/39324018076/job/118305077445)，精确源码 `b3dcae5a3e62b37dbbb15f9e28067a94b6454545`（包含成功更新审计状态修复 `0155d5db578ef3324d81db8aa7a8d2482539f55e`）。独占 Linux x86_64 部署通过正式三员 Bootstrap、真实密码与 MFA 建立非委托 Platform User；一次集合请求接入 Infra／Business 两个单容器 PostgreSQL，显式关联同一新建主机。浏览器验证保存、刷新恢复、已接入项禁选与两个当前容器来源；两张截图已目视核对。
+2026-10-20 固定 `b3dcae5a3e62b37dbbb15f9e28067a94b6454545` 的 Hosted 专项通过，含审计修复 `0155d5db578ef3324d81db8aa7a8d2482539f55e`。真实非委托 Platform User 以密码／MFA 一次接入 Infra 和 Business 两个单容器 PostgreSQL，并绑定同一新建主机。覆盖列表／详情、刷新恢复、重复拒绝、版本冲突、整批回滚及停用退役，业务约 62.544 秒，浏览器约 26.469 秒。业务、清理通过，Infra 零残留。[实际 Hosted Job](https://github.com/pampa0629/addp/actions/runs/39324018076/job/118305077445)
 
-场景报告 `engine_admission.result=passed`，覆盖 Owner 列表／详情读取、版本冲突、来源变化／重复成员拒绝、第二项失败整批无根记录、修改与停用退役，身份隔离通过。正式场景约 62.544 秒，浏览器约 26.469 秒；原有身份、断言及预算不变。外层 `summary.txt` 分别记录 `result=passed`、`cleanup=passed`、`infra_cleanup=zero_residuals`，不能仅用页面通过替代完整验收。
-
-修复前实际 PUT 因成功审计缺少 HTTP 状态导致 PostgreSQL 约束拒绝；新增 HTTP Handler／PostgreSQL 回归先复现 400，再验证正常更新、旧版本 409、停用与两条成功审计。`make test-module MODULE=system GO_ONLY=1`、`make test-system-iam-runner`（19 项）及 `make test-system-iam-postgres SYSTEM_IAM_POSTGRES_TEST_ARGS="--package api --test engine-deployments"`、对应 `--package repository` 均通过。本地只使用 `addp_iam_test`；T2 的受控认证上下文不冒充真实身份 T4。同源码 [System 前端](https://github.com/pampa0629/addp/actions/runs/39323690209/job/118303942964)、[Platform consistency](https://github.com/pampa0629/addp/actions/runs/39323690209/job/118303942260) 和 [System IAM PostgreSQL](https://github.com/pampa0629/addp/actions/runs/39323690244/job/118304788473) CI 已实际通过。
-
-此结果限于自动发现、管理员确认接入和单主机承载声明，不表示数据库专业指标、容器资源、其他引擎／集群、多真实主机、原生 macOS／Desktop VM、租户连接关联或生产 T5 已验。没有读取租户业务数据或执行专业采集 SQL，个人部署未重启。此前未通过的尝试保留于各次 CI 归档，不计为通过。
+旧 PUT 因成功审计缺少 HTTP 状态而被约束拒绝。Handler／PostgreSQL 回归先复现 400，后验证更新、旧版本 409、停用和成功审计。System Go、IAM runner 和标准隔离 IAM PostgreSQL API／Repository 验证通过，同源码前端、Platform 与 IAM Job 分别通过。数据库专业指标、其他引擎／集群、多主机、Desktop VM、租户关联和 T5 不在本次 Hosted 范围。[System 前端](https://github.com/pampa0629/addp/actions/runs/39323690209/job/118303942964) · [Platform consistency](https://github.com/pampa0629/addp/actions/runs/39323690209/job/118303942260) · [System IAM PostgreSQL](https://github.com/pampa0629/addp/actions/runs/39323690244/job/118304788473)
 
 ## PostgreSQL 固定指标来源与引擎身份投影
 
@@ -42,7 +40,7 @@
 
 最终 `make test-monitor-metrics MONITOR_METRICS_TEST_ARGS=--case=postgres-source` 在同一基线叠加最终源码后通过：39 项配置与 8 项生命周期纯契约、两种认证文件布局及产品启停实库检查全部通过，退出零残留；额外核对每次实际 mTLS 返回的采样时间处于当次请求窗口，不接受旧快照。完成后核对本会话运行／探针文件与快照记录无字节漂移。
 
-所有实际 PostgreSQL 验证均由现有标准门禁管理的 UUID 专属 PG15 执行，不使用个人或共享数据库，不修改个人 `.env`、凭据、卷或运行容器。新开关默认关闭；个人认证目录切换、正式 Prometheus 发现、Monitor 引擎专业查询／页面及 T4/T5 尚未验收，不能把来源部署计为专业监控全部完成。既有 Monitor metrics CI 通过目录／输入登记覆盖产品 SQL、Python、Business 启停与两个新增测试文件；纯契约同步进入既有 Infra 生命周期 T1，不新增 Job。
+所有实际 PostgreSQL 验证均由现有标准门禁管理的 UUID 专属 PG15 执行，不使用个人或共享数据库，不修改个人 `.env`、凭据、卷或运行容器。新开关默认关闭；个人认证目录切换、正式 Prometheus 发现、Monitor 引擎专业查询／页面及 T4/T5 尚未验收，不能把来源部署计为专业监控全部完成。
 
 ## PostgreSQL 专业发现、查询与页面
 
@@ -51,37 +49,25 @@
 - T1：仓库外冻结基线 `25addd430` 仅叠加本会话输入，`make test-module MODULE=monitor GO_ONLY=1`、最终 `make test-module MODULE=common GO_ONLY=1` 与 `make test-module MODULE=system GO_ONLY=1` 分别通过。最终 System 输入覆盖投影补充后的 4 MiB 预算和未来容器启动事实拒绝。两项旧失败分别来自负面服务身份误用 Web Token 类型、准入测试使用未启动的固定端口；修正夹具后全包通过，不改变产品授权条件。
 - T2：最终 `make test-monitor-metrics MONITOR_METRICS_TEST_ARGS=--case=postgres-source` 通过：39 项配置、9 项纯生命周期契约、真实 PG15／Prometheus 查询链路的十二项即时、四项摘要、容器隔离及趋势、统计重置速率断点、SQL 权限撤销时 `up=1` 仍清空、恢复后的新鲜数据，以及两作用域／两种认证布局的安装和启停。项目 `addp-metrics-t2-efa0ddcde25c4641b418f2811b582055` 退出核验当次容器、网络、卷与临时文件零残留。最终运行／探针输入与工作区逐文件字节一致；登记断言补充独立再验通过。未操作个人数据库或服务。
 - T3：86 项 Monitor Node 单元通过；首次浏览器 240 项中 238 通过、两项新增场景误匹配 Select 箭头 SVG，修正为精确图表可访问名称。最终 PostgreSQL 专项九项浏览器及构建通过，覆盖双语单位／零值、URL 重载与前进后退、503／403／404／错误主体／SQL 缺样清空、Tenant／Service／Delegated／任一 Owner 权限缺失拒绝。其余 232 项浏览器来自同轮有效输入，不声称最终全量 241 项在同一调用重跑。
-- T0：最终 `make test-infra-runtime-log-lifecycle` 51 项通过；Swagger 修复已通过正式生成与 86 个公开方法覆盖校验；部署发现 34 项沿无变化输入复用。既有目录和输入登记覆盖新 PG 集成测试与 Common 私有投影文件，未新增重复 CI Job。
+- T0：最终 `make test-infra-runtime-log-lifecycle` 51 项通过；Swagger 修复已通过正式生成与 86 个公开方法覆盖校验；部署发现 34 项沿无变化输入复用。
 
 专项首轮专业查询通过，但后续只读 HBA 布局的 Docker 读取返回通用失败，原根因未复现；现增加关闭式退出分类且不回显私有输出，最终该分支通过，不能据此宣称原根因已修复。第二轮初始速率在 95 秒期限尚未完整，整批失败；按既有 SD 30 秒、scrape 15 秒、SQL 5 秒、完整一分钟及余量导出 130 秒就绪预算，保留四样本／epoch／reset／新鲜度条件并加入安全诊断，第三轮通过。首两轮失败不计通过。
 
 正式身份 T4 的新增专业读取及真实 Console 用途已于 2026-10-21 获用户确认，已接入现有 `engine-admission`；其后真实 Hosted 的结果见下文，不能由本地契约计为通过。冻结源码基线 `2e46ea4e0` 的 `make test-node-metrics-online-runner` 通过：115 项契约、Node／Bash 语法及 System 的 Metrics 身份夹具 Go 测试；新增两个采集来源的归属、私有状态、各自端口与 mTLS、清理失败处理一并验证。`make test-system-iam-postgres SYSTEM_IAM_POSTGRES_TEST_ARGS="--source-root <冻结源码> --package repository --test engine-deployments"` 亦通过，使用实际映射和标准 `addp_iam_test` owner 锁，覆盖当前声明、主机有效性与整批失败回滚，不改变个人运行库。
 
-
 来源生命周期提交 `c828ffd3b` 的 Metrics 作业 `118632764390` 已失败：PostgreSQL 来源分支通过，后续 `TestIntegrationMetricsHTTPAlertLifecycle` 将 Compose DNS `metrics-source` 当作 IP 解析。测试声明和唯一 SD 现统一为 Docker inspect 的真实来源 IP，并为同一一次性进程证书补齐该 IP SAN，Desktop 仍沿既有精确回环传输；不修改产品解析／证书校验或扩大准入。第一次本地复验因尚未同步该 SAN 在 SDK 自检处失败，第二次到达历史趋势前置条件而提前退出（当时未保存状态／组数，不能据此确认根因）；现保持原 45 秒等待及有效失败点要求，仅允许零观察组继续等待自然完整窗口，并保留状态／组数诊断。后续本机专项分别在进程观测前置因 `no_sample` 或 CPU `no_data` 失败，未到达最终 HTTP 告警分支；最终诊断显示两来源 UP=1、身份各一且启动时刻匹配，CPU 一分钟窗口仅两采样、前一分钟边界缺失，不能降低四采样／完整边界条件换取通过，亦未归因为并发或已确认的产品缺陷。失败后各次自有容器／网络／卷均只读核对为零。上述失败不计通过，本批 `make test-monitor-metrics MONITOR_METRICS_TEST_ARGS=--case=http-quality` 未通过，原生 Linux CI 和新的历史等待分支仍待实际运行。旧 Platform 作业已通过本方 47 项生命周期，后续既有开发生命周期聚合失败未定位为本方根因，不把该作业记通过。生产发布、T5 与七天自然留存未验收。
 
 最终冻结输入的 `make test-module MODULE=monitor GO_ONLY=1` 再次通过（含新增历史等待测试文件的全包编译及全部 Go T1）；Python／Bash 语法与配置登记覆盖有效。Hosted 接入的最终查询参数回归沿 `python3 -m unittest scripts/test/platform-node-metrics-online_test.py` 86 项通过；两个新增指标项目的既有资源拒绝另沿 `scripts/test/online-hosted-node-metrics-gate_test.py` 对应场景验证通过。正式 Hosted 专业读取与页面扩展提交为 `89749f1d6`，调度后按真实结果追加，不能由这些本地契约计为 T4 通过。
-
 
 2026-10-21 后续收口：`009a5e42598038f37cc0a202edfbe88a49acc7bd` 的 [Platform consistency](https://github.com/pampa0629/addp/actions/runs/39519915079/job/118960943889) 已通过。原 [Metrics 作业](https://github.com/pampa0629/addp/actions/runs/39519915536/job/118961147933) 在后续资源总览阶段被取消，不计整项通过。正式 [Hosted engine-admission](https://github.com/pampa0629/addp/actions/runs/39519991703) 首次在基础设施构建时连接 GitHub 超时，证据上传亦超时；第二次真实运行已通过管理员接入页面，但在 `engine-professional-current-container-queries` 阶段由验收脚本错误拒绝默认 `policy_version=0`，专业页面未执行，整项失败。第二次报告明确为 `cleanup=passed`、`infra_cleanup=zero_residuals`。默认预算未保存时合法版本为零；脚本和负面回归修正已随 `c4ff143d7` 入库，本次冻结该输入的 `make test-node-metrics-online-runner` 为 117 项 Python 契约、Node/Bash 语法及 Metrics 身份 Go 夹具通过，仍不替代真实专业 T4。
 
 [Metrics 后续原生 Linux 运行](https://github.com/pampa0629/addp/actions/runs/39522656609/job/118975847648)（`95a8b2a25678475bdaa65ba07649f10344092916`，attempt 1）已通过真实 HTTP 告警的触发、签名通知及恢复，随后 `TestIntegrationMetricsHTTPRealSource` 在停源清空断言失败。旧日志中前置失败来源检查于 `02:31:00.147 UTC` 放行，Go 检查于同秒执行，但未保存失败 scrape 的原始时间戳，不能据此确证旧失败的唯一成因。代码核对及确定性红绿回归确认夹具存在评估时间竞态：前置检查使用 Prometheus 当前时刻，Go 消费者使用向下取整至秒的时刻，后者可能仍位于失败采样之前。现只把停源前置检查统一到消费者的整秒时间，保留原 65 秒期限、完整窗口、来源身份、对等进程存活和停源数值清空断言；不修改产品 PromQL、TLS、权限或新鲜度。本次冻结源码基线为 `53cc8e07ddd810dd43fccbfd0106279050c3b25a`，仅叠加两项夹具输入；完整 `make test-monitor-metrics` 已退出零：40 项部署配置、9 项生命周期契约、PG 专业来源与两种认证布局、PromQL 固定窗口、真实进程/HTTP 查询及告警/签名通知/恢复、停源 HTTP 和进程数值清空、对等进程存活、原生与 Desktop 受限来源、监控中心 WAL 恢复、六来源总览/TOP5 和资源告警生命周期均通过。项目 `addp-metrics-t2-855a0575dbd145eaacb375b10e0478ed` 的容器、网络、卷及临时文件核验零残留，原始日志 `/tmp/addp-http-stop-boundary-metrics.log`。两项脚本最终哈希与冻结输入一致；共享主机未声明独占，不据本轮测试推导性能 SLA。`python3 scripts/ci/check-t2-ci-registration.py --repository .` 通过，沿既有 Metrics Job 自动登记，无需新增 workflow；冻结副本因没有 Git 元数据而无法运行的首次登记检查不计通过。原生 Linux 新输入 CI 与正式专业 T4 仍待后续真实结果，不重跑旧输入、不恢复定时轮询。
 
-
 ## PostgreSQL 来源准入协议修复
 
-2026-10-22，冻结 `c7753fe38fa55d3d2431d42f4ac49c05c3ba754c` 的 `make test-node-metrics-online-runner` 通过 117 项契约及 Metrics 身份 Go 夹具。随后 [Hosted engine-admission 39680591321 / 119501760697](https://github.com/pampa0629/addp/actions/runs/39680591321/job/119501760697) 通过真实管理员引擎接入页面，在 `engine-professional-current-container-queries` 因 130 秒完整采样窗口未就绪而失败，专业页面尚未执行；外层报告为 `cleanup=passed`、`infra_cleanup=zero_residuals`。运行中发现 HTTP SD 由 200 转为 422，不能把接入页面或来源 UP 计为专业 T4 通过。
+冻结 `c7753fe38fa55d3d2431d42f4ac49c05c3ba754c` 的 runner 117 项和身份 Go 夹具通过。Hosted 通过引擎接入页面，在当前容器专业查询的 130 秒采样窗口失败，专业页面未执行。HTTP SD 曾由 200 转 422。外层清理通过，Infra 零残留。[Hosted 实际失败 Job](https://github.com/pampa0629/addp/actions/runs/39680591321/job/119501760697)
 
-确定性实源回归复现了协议缺陷：PostgreSQL 的 Nginx 在缺少客户端证书时返回通用 400，而同一 Monitor `SourcePolicy.Admit` 只认可明确 TLS 证书拒绝或 HTTP 401/403。旧来源 T2 直接接受 400，未经过该准入。现保持 `ssl_verify_client on`，仅将 Nginx 内部证书缺失/校验失败 496/495 映射为 403，拒绝请求不转发上游；不修改 Monitor 准入、TLS 信任、权限、窗口或新鲜度。新增实源 Go 集成由原 `postgres-source` 探针调用，覆盖同一生产准入、无证书及不受信证书拒绝；既有输入登记和 Metrics CI 已覆盖，无新增平行门禁。
-
-冻结上述基线、只叠加本方三项来源/测试输入的标准验证：
-
-- 红阶段 `make test-monitor-metrics MONITOR_METRICS_TEST_ARGS=--case=postgres-source` 在新实源准入测试明确失败为 `metrics source protection could not be verified`，原始日志 `/tmp/addp-pg-admission-red.log`；退出后另核对项目 `addp-metrics-t2-a0a767df28ca404799e582dc6f33cab7` 的容器、网络、卷均为零。
-- 修正后的同一完整入口退出 0：十二项指标/四项摘要/当前容器趋势、统计重置、SQL 失败无旧值、两作用域与只读认证目录、安装/停用/恢复及新增正式准入/证书拒绝均通过。项目 `addp-metrics-t2-e4c94596f14645fd83228e116598b893` 的容器、网络、卷与临时文件清零，随后独立读取三类资源均为空；日志 `/tmp/addp-pg-admission-green.log`。
-- `make test-module MODULE=monitor GO_ONLY=1` 全包通过，日志 `/tmp/addp-pg-admission-go-t1.log`；首次因冻结副本无 Git 元数据而未运行模块门禁的调用不计通过，补齐副本元数据后沿同一标准入口重跑。T2 CI 登记校验通过，最终三项输入与冻结验证副本逐文件字节一致。本轮不重跑输入未变的 HTTP/主机 T2，不操作个人数据库或服务。
-
-上述实源红绿证明来源协议修复，尚不能替代新源码的原生 Linux CI 或正式专业 T4；后续结果须按实际执行与退出清理记录。
-
+旧 PostgreSQL Nginx 对缺客户端证书返回通用 400，生产 Admit 只认可明确证书拒绝或 HTTP 401／403。修正保留严格双向 TLS，将内部 496／495 映射为 403，拒绝请求不转发。实源红绿沿原 postgres-source 入口，红阶段报 `metrics source protection could not be verified`，修正后真实准入、无证书／不受信证书拒绝、12 指标／4 摘要、统计重置、失败清空和生命周期通过。红绿项目均零残留。Monitor Go T1 通过，首次缺 Git 元数据的未运行调用单列。日志 `/tmp/addp-pg-admission-red.log`、`/tmp/addp-pg-admission-green.log`、`/tmp/addp-pg-admission-go-t1.log`。原生 Linux 冷构建与正式专业 T4 另计。
 
 ## 引擎监控的当前承载主机导航
 
@@ -89,30 +75,21 @@
 
 冻结基线 `1e59fda800edf9ff1e8d33ddccb891d123b765f6`、只叠加本方前端输入的 `make test-monitor-frontend` 退出 0：87 项 Node 单元、266 项确定性浏览器及生产构建通过。新增五项浏览器覆盖中英文详情/主机跳转/原趋势 URL 返回、列表当前名称与改名、名称 403 时指标保留、撤权拒绝迟到名称与后续额外读取、失效关联不回用旧声明；原服务主机名称与撤权回归亦包含在完整门禁。中英文截图已检查，保存在 `/tmp/addp-engine-host-nav-visuals/`；完整日志 `/tmp/addp-engine-host-nav-frontend.log`。成功后原浏览器输出目录与端口租约由标准入口移除。
 
-`make test-frontend-ci-registration` 最终通过 20 项登记回归及 21 个受控前端登记检查；首次因冻结副本没有 Git 元数据而未完成实际登记检查，补齐副本元数据后重新执行才计通过。既有 Monitor 前端 owner/Make/CI 路径自动覆盖，无新增测试路线或 workflow。九项实现/测试输入与验证副本逐文件一致，另核对冻结基线的 8677 个未改跟踪 blob 一致；仅文档摘要随后更新，不以共享工作区其他改动替代验证输入。
+`make test-frontend-ci-registration` 最终通过 20 项登记回归及 21 个受控前端登记检查；首次因冻结副本没有 Git 元数据而未完成实际登记检查，补齐副本元数据后重新执行才计通过。九项实现/测试输入与验证副本逐文件一致，另核对冻结基线的 8677 个未改跟踪 blob 一致；仅文档摘要随后更新，不以共享工作区其他改动替代验证输入。
 
 本批没有读取或轮询云端 CI、调度 Hosted、恢复定时任务、修改个人数据库或重启服务。上述结果为 T0/T1/T3，不替代 PostgreSQL 正式身份 T4、原生多宿主/多进程或生产 T5，云端结果继续等待专门会话回传。
 
-
 ## PostgreSQL 专业观测正式 Hosted 验收
 
-2026-10-22，CI 专门会话回传 [Hosted 39683888149 / Job 119512936927](https://github.com/pampa0629/addp/actions/runs/39683888149/job/119512936927) 的真实通过结果。本会话独立复核官方制品：源码为 `b08f2331dc6c76b520b958dc5a3d79c054f80900`、工作区干净，System／Monitor／Gateway 三服务均为相同提交；正式平台管理员密码/MFA及无权限对照身份与当次输入一致，独立 Prometheus 身份隔离保持。场景报告为 `stage=complete`、`result=passed`，外层 `cleanup=passed`、`infra_cleanup=zero_residuals`。
+固定 `b08f2331dc6c76b520b958dc5a3d79c054f80900`，System／Monitor／Gateway 同源码。真实平台管理员密码／MFA和无权限对照通过。Infra、Business 单容器 PostgreSQL 覆盖接入、变更、整批回滚、版本和退役。12 即时指标、4 摘要、当前容器趋势、Console 重载与有效零、停源及恢复通过。业务与外层清理通过，Infra 零残留。归档在 `/tmp/addp-ci-20261022-manual-followup/artifacts-39683888149/`。此结论仅限该版本，后续主机导航、其他引擎／集群、自然留存及 T5 另计。[Hosted 实际 Job](https://github.com/pampa0629/addp/actions/runs/39683888149/job/119512936927)
 
-当次 Infra／Business 两个单容器 PostgreSQL 均覆盖：发现与批量接入、来源变化与重复拒绝、整批回滚、版本管理与退役；专业观测固定十二项即时、当前页四项摘要、当前数据库容器趋势、真实 Console 页面重载/有效零及单位、身份拒绝、来源停止清空与恢复新样。浏览器证据记录一次双部署摘要、四次即时和四次趋势响应，主体及固定目录完整，已检查 `engine-resources-detail.png`。官方制品在 `/tmp/addp-ci-20261022-manual-followup/artifacts-39683888149/`，协调审计为同目录上级的 `independent-passes-audit.json`；本次复核没有重复运行验收。
-
-结论仅关闭上述提交的 PostgreSQL 专业查询与页面正式身份 T4，不能覆盖其后 `4a0a9ea1d` 新增的主机导航、其他引擎/容器/集群、七天自然留存或生产 T5。先前失败仍分别保留，不将本次通过追溯为旧输入通过。
-
-同时回传的 [Release 39683857764 PostgreSQL 来源 T2 / Job 119520816486](https://github.com/pampa0629/addp/actions/runs/39683857764/job/119520816486) 已失败：新增准入探针的 Python `subprocess.run(timeout=45)` 终止整个 `go test ... -timeout=30s` 命令，日志出现依赖下载而未见 `=== RUN TestIntegrationMetricsPostgreSQLAdmission` 或 Go 测试自身超时报错。外层期限包含下载、编译与执行，不能把该结果当作 mTLS 断言失败，也不能据温缓存本地通过解释冷构建耗时的唯一原因。原始日志 `/tmp/addp-ci-20261022-manual-followup/job-119520816486.log`。若后续仍复现，先分清构建准备与实际测试期限，保留原测试超时和准入断言；不直接放宽等待。当前已有自动复验由专门 CI 会话跟进，本会话未查询、重跑、取消或设置定时；该新增 Linux T2 仍不计通过。
-
+同版 Release PostgreSQL 来源 T2 独立失败。外层 45 秒终止包含依赖准备的 Go 命令，日志未进入测试或报 Go 内部 30 秒超时。排障先区分冷准备与实际准入。原日志 `/tmp/addp-ci-20261022-manual-followup/job-119520816486.log`。[Release 实际失败 Job](https://github.com/pampa0629/addp/actions/runs/39683857764/job/119520816486)
 
 ## PostgreSQL 准入探针的构建与执行期限
 
-2026-10-22，CI 专门会话再次回传 [4a0a9ea1d 的 PostgreSQL 来源 T2 / Job 119557101259](https://github.com/pampa0629/addp/actions/runs/39696991326/job/119557101259) 失败。它与前次 `b08f2331d` 失败使用完全相同的准入探针，均由外层 45 秒终止包含依赖下载、编译和执行的 `go test`，日志未进入准入测试。现将同一正式准入分为私有目录 `go test -c` 准备和直接执行两个阶段：每次准备最多 180 秒，实际测试仍为 Go 30 秒、外层 45 秒；构建失败立即退出，不执行遗留文件，执行超时不重试、不计成功。产品代码、mTLS 证书拒绝、权限、采样窗口、新鲜度及 Job 20 分钟上限均未改。
+固定 `4a0a9ea1d` 的 T2 再次失败，与前次 `b08f2331d` 相同。外层 45 秒包含依赖下载、编译及执行，日志未进入准入测试。修复拆分私有目录编译准备（最多 180 秒）与执行（Go 30 秒，外层 45 秒）。失败即停止，准备失败禁止执行遗留文件。正式 mTLS 和准入断言仍按原口径。[实际失败 Job](https://github.com/pampa0629/addp/actions/runs/39696991326/job/119557101259)
 
-冻结基线 `0cad0ddf334524fa31295b167389002b0edd9e1f`，只叠加本方输入，沿标准 `make test-monitor-metrics MONITOR_METRICS_TEST_ARGS=--case=postgres-source` 执行红绿验证。新增确定性回归用模拟的 70 秒冷准备及 1 秒执行复现旧计时缺陷（无实际等待），并覆盖构建失败禁止执行旧文件、真实执行超时保持失败；红阶段为 2 项失败、1 项错误，停在配置检查，日志 `/tmp/addp-pg-admission-budget-red.log`。修正后同一完整门禁退出 0：45 项配置回归、9 项生命周期契约，以及 Infra、Business、只读认证目录三次真实正式准入均通过；十二项专业指标、四项摘要、当前容器趋势、统计重置、SQL 失败/恢复、只读认证目录的原子更新/重载/还原和安装/停用/恢复生命周期亦通过。日志 `/tmp/addp-pg-admission-budget-green.log`，末尾确认容器、网络、卷及临时文件零残留；随后独立读取精确项目 `addp-metrics-t2-54b61b59556949878eed8c39bd039590` 的三类 Docker 资源均为空。
-
-两个最终脚本与成功验证副本逐字节一致；T2 CI 登记检查通过，既有根 Make、输入登记及 Release 分组已覆盖，无新增工作流或平行门禁。本地真实 T2 使用现有依赖缓存，冷准备预算由确定性回归覆盖，不代替新输入在原生 Linux 的冷构建结果；该项继续等待专门 CI 会话回传。本轮不重复专业 Hosted 已通过验收，不自行查询、重跑云端 CI、设置定时或操作个人服务。
-
+冻结 `0cad0ddf334524fa31295b167389002b0edd9e1f` 叠加专项输入。确定性红阶段模拟冷准备，2 项失败、1 项错误。修正后完整 postgres-source 通过 45 项配置、9 项生命周期及三次真实准入（Infra、Business、只读认证目录），包含指标、SQL 失败恢复及原子重载。退出及精确项目复核零残留。原始日志为 `/tmp/addp-pg-admission-budget-red.log` 与 `/tmp/addp-pg-admission-budget-green.log`。本地真实 T2 使用依赖缓存，原生 Linux 冷构建需独立证据，已有专业 Hosted 结论单列。
 
 ## PostgreSQL 专业来源固定版本 Linux T2 复核（2026-10-24）
 
@@ -131,7 +108,6 @@ CI `39775896930`／System IAM Job `119824550350` 的原始失败是 `private fie
 已先运行 `bash scripts/infra/status.sh` 核对当前共享 PostgreSQL 为 `25432`。在 `addp_iam_test` 使用标准 `make test-system-iam-postgres SYSTEM_IAM_POSTGRES_TEST_ARGS="--package repository"`：旧断言加固定 UUID 的红色复现失败；修正结构预期后通过；随后仅在当次测试输入临时注入嵌套 `source_key.published_ports=[5433]`，同一入口按完整结构断言明确失败，证明泄露仍被拒绝；删除临时注入后最终重新执行，7 项 Repository 顶层 T2 与测试库重置均通过、退出 0，无跳过。最终文件与注入前通过版本逐字节一致。原始日志 `/tmp/addp-observability-projection-red.log`、`/tmp/addp-observability-projection-mutation.log`、`/tmp/addp-observability-projection-final.log`；中间首次结构预期遗漏已有指标状态且错误强制启动时刻为 UTC 的失败已修正，不计产品故障。
 
 本轮仅修改既有测试和此证据，现有 Release/T2 System IAM Job 自动发现，无新增测试入口、依赖或 CI 编排。完整 System IAM CI 等专门会话回传，不把本地 Repository 分包 T2 计为全批 CI；未调度或查询 CI／Hosted、未设置定时、未重启个人服务。Safari 实际弹窗可见性问题仍未解决。
-
 
 ## 个人环境 Infra PostgreSQL 接通与跨模块入口修复（2026-10-29）
 
@@ -184,7 +160,7 @@ CI 专门会话回传 [Actions 40984761423／Job 123833070594](https://github.co
 
 测试保留当前新鲜的发现时间，仅将容器启动时间固定为失败现场的 `2026-10-30T00:29:17Z`，并锁定完整碰撞指纹；原短数字断言因此在标准入口稳定报出相同失败。修正为完整公开投影值比较、逐作用域检查内存中的私有指针及 JSON 私有字段，并拒绝完整私有端点；保留后台来源正确性、快照启动边界、外来 Docker 身份、可选来源身份错误和旧协议拒绝。只修改此测试，未改生产 DTO、发现路由、权限或采集断言。
 
-在当前共享工作区，以已有 Node 24.20.0 的 bin 临时加入测试命令 PATH 后，`make test-module MODULE=system GO_ONLY=1` 红阶段仅该碰撞断言失败，绿阶段完整 System Go T1 退出 0。最初使用默认 Node 25 的调用被仓库新版 Node 24 前置检查拒绝，未进入 Go、不能记为碰撞复现；没有改全局 Node 或依赖。红／绿日志 `/tmp/addp-engine-metrics-privacy-red.log`、`/tmp/addp-engine-metrics-privacy-green.log`。另用 Go overlay 在 OS 临时目录单独向测试结果注入第二作用域私有指针、私有 JSON 字段和完整私有端点，三次同一标准入口均命中各自拒绝断言；共享测试文件及生产文件未改写，记录 `/tmp/addp-engine-metrics-privacy-audit.json`。现有 Go T1 自动发现及自然 CI 已覆盖，无需新增入口；未运行 T2／Hosted、未操作个人服务、未轮询 CI 或设置定时，自然 CI 结果继续等待专门会话回传。
+在当前共享工作区，以已有 Node 24.20.0 的 bin 临时加入测试命令 PATH 后，`make test-module MODULE=system GO_ONLY=1` 红阶段仅该碰撞断言失败，绿阶段完整 System Go T1 退出 0。最初使用默认 Node 25 的调用被仓库新版 Node 24 前置检查拒绝，未进入 Go、不能记为碰撞复现；没有改全局 Node 或依赖。红／绿日志 `/tmp/addp-engine-metrics-privacy-red.log`、`/tmp/addp-engine-metrics-privacy-green.log`。另用 Go overlay 在 OS 临时目录单独向测试结果注入第二作用域私有指针、私有 JSON 字段和完整私有端点，三次同一标准入口均命中各自拒绝断言；共享测试文件及生产文件未改写，记录 `/tmp/addp-engine-metrics-privacy-audit.json`。T2／Hosted 未运行，自然 CI 当时待回传。
 
 CI 专门会话随后回传源码 `cf39ab99fc6dd1e5a022d87dd3c81230a88c9add` 的自然 [Platform CI Go 作业 123880180441](https://github.com/pampa0629/addp/actions/runs/40999452791/job/123880180441) 为 success。本会话只读核对其原始日志 `/tmp/addp-ci-20261030-043005/job-123880180441.log`：检出 SHA 与上述修复一致，第 799 行为 `ok github.com/addp/system/internal/service 1.502s`。据此关闭本项确定性投影误报的自然 Go T1 缺口；原失败记录保留，不据此推定整个 Platform CI、Desktop 真实认证变更 T2 或 Hosted 已通过。未查询或重跑 CI，未操作个人服务。
 
@@ -240,7 +216,6 @@ Safari 已加载新缩放提示与实际提交速率曲线，但本轮截图存�
 
 操作与截图保留于本会话，摘要 `/tmp/addp-engine-inplace-safari-receipt.json`。本轮仅补文档证据与能力状态，最小验证 `git diff --check` 通过，产品代码未变，复用原 131 项 T1／521 项 T3及构建结果，不重跑有效门禁。不代表列表的个人 Safari 专项、其他时段／引擎、旧来源 T2 或新 CI／Hosted 通过；CI 与 Hosted 仍等专门会话回传，未设置定时任务，未由 AI 启停个人服务。
 
-
 ## 引擎监控就近提示（2026-10-31）
 
 按用户“文字写在需要的地方”要求，先更新运行观测规范6.3，再复用唯一 FieldHelp：列表四项摘要的说明放在列名旁，详情十二项说明放在卡片标题旁，当前趋势含义／缩放说明和当前数据库容器／最长七天范围分别放在指标与时间选择器旁。删除对应常驻重复段落；实际数值、单位、查询窗口、当前缺样、采集失败及权限错误仍直接显示。复用既有中英文文案，不新增翻译键、请求、权限、统计口径或共享提示实现，不修改来源及刷新生命周期。
@@ -257,7 +232,6 @@ Safari 已加载新缩放提示与实际提交速率曲线，但本轮截图存�
 
 原生Safari只读检查第二个本会话标签页时已回到登录页（重定向仍指向主机详情）；未操作第一个标签页，未填写或取得认证凭据，已请用户在第二个标签页完成平台系统管理员密码／MFA登录。本轮引擎 tip 的个人Safari真实显示／交互尚未验，不沿用上一版本的刷新证据代替。本次不启停个人服务、不修改数据库／IAM／配置，不查询或触发CI／Hosted，不设置定时任务；CI与Hosted仍等专门会话回传。
 
-
 ### 用户登录后的个人 Safari 就近提示复验（2026-10-31）
 
 用户在第二个标签页完成平台系统管理员密码／MFA登录后，本会话仅操作该原生Safari标签页，经实际菜单进入引擎监控，再打开 Business PostgreSQL（`deployment_id=9e4fd2b0-3b45-473e-b070-cc6f92e40e11`）。列表真实显示 Infra／Business 两个部署，表头问号已出现；详情十二张卡片的说明改为标题旁问号，当前缺样及顶部“采集来源不可用”直接展示。初次原生点击未观察到说明弹出，不计鼠标悬停／点击通过；随后使用Safari键盘 Option＋Tab，实际焦点和截图分别确认：趋势指标旁显示提交速率／采集事务不等同业务吞吐及缩放仅改变可见范围；时间范围旁显示当前数据库容器运行段／最长七天／断点；容量标题旁显示全部非模板数据库合计、不按租户归算。切换焦点后前一提示消失，各提示在对应控件旁出现；中文内容完整、换行可读，未铺开为常驻段落。实际原生截图与可访问状态保留在本会话。
@@ -266,16 +240,13 @@ Safari 已加载新缩放提示与实际提交速率曲线，但本轮截图存�
 
 本轮只追加证据并更新能力文档，产品／测试输入没有变化，复用提交`5cb1a9980`的本地分层证据；最小检查`git diff --check`通过。不改数据库、IAM或采集配置，不重跑有效测试，不查询、调度CI／Hosted或设置定时任务。此前登录待验和本轮登录后结果分别保留，不倒改首次未验记录。
 
-
 ### Console 语言切换与窄屏提示的退出同步（2026-10-31）
 
 专门CI会话返回同前端源码的后继Console完整272项浏览器及构建通过，同时保留首轮主机tip宽度失败。本轮定向测量已将首失败定位到尚未退出的桌面语言菜单，非引擎／主机内容布局；引擎同流程测试在缩窄窗口前同样等待语言弹层display:none，原iframe／无额外查询／620px宽度检查不变。最终主机与引擎两项标准定向场景通过，产品未修改；原始失败、几何测量、固定Linux成功版本与本地修复证据统一见[主机证据](Monitor节点与主机资源历史证据.md#console-窄屏-tip-回归的语言弹层退出同步2026-10-31)。不外推来源恢复、当前完整CI或Hosted，继续等专门会话回传，不设定时任务。
 
-
 ### 菜单退出同步修复的 Console CI 结果（2026-10-31）
 
 固定修复提交`4a6a7a4fa`的真实Linux Console Job现已由专门会话回传并核对原始日志：`make test-console-frontend`的222项单元测试、272项浏览器及构建通过，selected=true／整个Job success。完整来源、摘要与原失败分层见[主机证据](Monitor节点与主机资源历史证据.md#菜单退出同步修复的-linux-console-门禁回传2026-10-31)。本轮仅补文档，最小检查`git diff --check`通过，不重复有效验收，不计整个Platform、Hosted或个人两库来源恢复，仍优先只读排查采集来源不可用。
-
 
 ## 个人两库来源不可用的只读诊断（2026-10-31）
 
@@ -286,7 +257,6 @@ Safari 已加载新缩放提示与实际提交速率曲线，但本轮截图存�
 确认的直接断点为采集容器未恢复，且旧来源声明已不匹配本次数据库启动；不是页面tip修改引入的查询或展示问题。仅docker start旧容器或补重启策略，仍不能重新发布当前启动身份，因此不能据此认定恢复。当前支持的恢复路径仍是标准部署入口：用户在仓库根目录依次运行`bash scripts/infra/up.sh --metrics`及`bash business/scripts/start.sh -postgres`。前者重新应用中心和Infra来源；后者沿现有幂等分支复用已运行Business PostgreSQL，再重新核验采集账号、认证及当前数据库身份并发布来源。暂不要求Monitor重启；恢复后分别复验来源发现、实际专业值和趋势，不用source deployed输出替代采集通过。按AGENTS，实际应用已请求用户操作，本会话未执行。
 
 本轮仅诊断并更新现有证据／能力状态，最小检查`git diff --check`通过；没有产品／测试变更，不运行额外数据库、来源T2、CI或Hosted，不设置定时任务。Prometheus受保护API的无凭据直读未成功，不记为目标状态通过，也不读取或输出服务秘密。当前来源恢复与本次采集新鲜度／趋势有效性仍待用户应用后的验证；后续若要让宿主恢复时自动协调来源，需要另行明确部署侧身份重发布职责，不直接加入restart旁路或放宽StartedAt校验。
-
 
 ## 用户重新应用后的两库来源与 Safari 恢复复验（2026-11-01）
 
@@ -301,7 +271,6 @@ Business真实截图看到提交曲线，五分钟窗口08:11:12—08:16:12、15
 前一日四来源停止、旧StartedAt失配与本日恢复结果分别保留；当前个人来源不可用缺口已在上述范围闭合，不倒改停采期间的历史，不填零或回填曲线。宿主自动恢复后如何重新协调部署身份仍未新增，本次依赖用户标准入口重新应用，不以本次恢复证明无人值守恢复。
 
 本轮仅追加证据及更新能力状态，产品和测试未改，最小检查`git diff --check`通过；不重复已有效的T1／T3／来源T2／CI或Hosted，不自行轮询、触发或设置定时任务，不修改IAM、数据库、采集配置或共享工作区其他会话改动。下一步建议先讨论宿主恢复时的部署侧来源协调范围，再在确认后实现，不直接加restart策略或放宽启动身份校验。
-
 
 ## 完整开发启动的 PostgreSQL 来源恢复（2026-11-01）
 
@@ -323,10 +292,9 @@ Business真实截图看到提交曲线，五分钟窗口08:11:12—08:16:12、15
 
 变更沿已登记的Monitor来源T2输入与 `Platform consistency` 开发生命周期门禁覆盖；未新增CI分组、延长Job／场景期限或触发Hosted。个人环境完整启动以及真实Monitor／Console自动恢复尚未验收；原生Linux目录认证／恢复、新CI及Hosted结果仍缺，等待专门会话回传。本批建议状态为“部分实现”：代码与两作用域新增恢复实测已具备，综合及完整来源门禁仍有上述明确缺口。
 
-
 ## 目录认证 HBA 读取取证与夹具恢复版本修复（2026-11-01）
 
-用户要求继续补齐目录认证分支，CI／Hosted仍由专门会话回传，不设置定时任务。本批只修改同一T2夹具及其确定性回归，没有修改产品认证发布、HBA策略、数据库权限、个人配置或服务启停。入口与CI输入登记已覆盖 `postgres-observation-probe.py`、配置回归和Owner门禁说明；没有新增依赖、旁路、分组或期限。
+用户要求继续补齐目录认证分支，CI／Hosted仍由专门会话回传，不设置定时任务。本批只修改同一T2夹具及其确定性回归，没有修改产品认证发布、HBA策略、数据库权限、个人配置或服务启停。
 
 原夹具在物理发布成功后，直到容器读回／重载成功才更新恢复版本；读回失败时finally仍用旧版本，导致恢复CAS冲突并掩盖首个错误。现在物理发布成功即记录新版本，后续仍严格逐字节读回、校验属主模式、`pg_hba_file_rules`及三秒真实重载；恢复仍沿相同版本校验和原子写入，不覆盖外部漂移。首个失败保留，清理异常只追加类型诊断。新增回归覆盖“发布成功但读回失败后按新版本恢复”、首失败与仅清理失败的区分，以及HBA／SQL／凭据／路径不进入封闭诊断。
 
@@ -348,12 +316,11 @@ Business真实截图看到提交曲线，五分钟窗口08:11:12—08:16:12、15
 
 执行 `PATH=/opt/homebrew/opt/openssl@3/bin:$PATH make test-monitor-metrics MONITOR_METRICS_TEST_ARGS=--case=postgres-observation`，日志 `/tmp/addp-hba-publication-control.log`：129项配置T1、26项生命周期T1通过；Infra／Business原生认证、固定汇总、拒绝越权、幂等、轮换与归属用例均通过。目录前置对照失败：`host_inode_changed=true`、`host_matches_replacement=true`，但容器读取返回1、`container_matches_replacement=false`；`hba_host_unchanged=true`且`hba_container_unchanged=true`。该结果独立排除HBA解析、账号SQL及重载作为本次普通文件故障的触发条件，仍不足以指定Docker上游缺陷或承诺升级修复。
 
-目录HBA正向验收尚未进入，整体T2失败；不将普通分支成功或安全拒绝记为完整通过。项目 `addp-metrics-t2-b8a5b53b8a2d4255ac93ca69559904e5` 标准退出清理后，按项目标签独立确认容器、网络、卷均为零。`py_compile`、`bash -n`及`git diff --check`通过。本轮不修改个人数据库或服务、不轮询／触发CI和Hosted、不设置定时任务。下一步以专门会话回传的原生Linux目录分支结果作对照，再确定共享层维护窗口；本机正向读回及完整来源恢复验收继续保留缺口。
-
+目录HBA正向验收尚未进入，整体T2失败；不将普通分支成功或安全拒绝记为完整通过。项目 `addp-metrics-t2-b8a5b53b8a2d4255ac93ca69559904e5` 标准退出清理后，按项目标签独立确认容器、网络、卷均为零。`py_compile`、`bash -n`及`git diff --check`通过。下一步以专门会话回传的原生Linux目录分支结果作对照，再确定共享层维护窗口；本机正向读回及完整来源恢复验收继续保留缺口。
 
 ## 已有文件名的替换缓存与目录枚举对照（2026-11-01）
 
-继续沿标准 `make test-monitor-metrics MONITOR_METRICS_TEST_ARGS=--case=postgres-observation` 取证，命令仅为本次进程在PATH前置既有OpenSSL3；没有调整Docker设置、共享选项、账号／HBA或个人服务，也没有读取／重跑CI、Hosted或设置定时任务。本机macOS只读版本为26.6.2。新增内容仅为既有目录前置检查失败后的封闭诊断；对照结果即使成功，首个读取失败仍保留，门禁仍失败，不以枚举、延迟或重试替代发布后的精确读回。既有来源T2登记和Platform配置测试已覆盖这些文件，无新增入口或依赖。
+继续沿标准 `make test-monitor-metrics MONITOR_METRICS_TEST_ARGS=--case=postgres-observation` 取证，命令仅为本次进程在PATH前置既有OpenSSL3；没有调整Docker设置、共享选项、账号／HBA或个人服务，也没有读取／重跑CI、Hosted或设置定时任务。本机macOS只读版本为26.6.2。新增内容仅为既有目录前置检查失败后的封闭诊断；对照结果即使成功，首个读取失败仍保留，门禁仍失败，不以枚举、延迟或重试替代发布后的精确读回。
 
 第一轮 `/tmp/addp-hba-no-chown.log` 中，去掉同属主的 `fchown`、保留权限设置／fsync／原子替换后仍不能读取；两条路径stat成功但都报告旧7字节元数据。第二轮 `/tmp/addp-hba-directory-lookup.log` 将初始创建改成普通文件而非硬链接发布，替换后仍失败；从未使用过的新文件名发布后立即读到14字节新内容。该轮最终枚举目录后，原失败路径也变为新inode及14字节、内容可读，不能据单轮顺序直接排除时间与其他文件变更的影响。
 
@@ -362,7 +329,6 @@ Business真实截图看到提交曲线，五分钟窗口08:11:12—08:16:12、15
 三轮各自130项配置T1与26项生命周期T1通过，Infra／Business原生认证、汇总、权限拒绝、幂等、轮换、归属T2均通过；目录前置均失败，HBA宿主与容器原内容均未变，目录认证正向验收未进入，整体T2均失败。三个项目 `addp-metrics-t2-bf1ca637fccc41c79c08f67b8362f9d8`、`addp-metrics-t2-69a07664fddd488ba239cb887d15710a`、`addp-metrics-t2-32552e5a75a1423d85cadb4a760d5ff5` 均沿标准退出清理，容器／网络／卷另按各自项目标签核验全零。最终代码py_compile、bash -n和git diff --check通过，不把局部通过升级为完整来源验收。
 
 上游公开报告仅作假设来源：[Docker for-mac #7882](https://github.com/docker/for-mac/issues/7882) 描述STATX_BTIME查询失败而open仍成功，与本地内容读取失败不同；[#6787](https://github.com/docker/for-mac/issues/6787) 有共享目录ENOENT报告，但版本、工作负载及触发条件不同，不直接认定同一问题或宣称已有确定修复版本。后续正向验收仍待共享层一致性恢复及专门会话回传的原生Linux对照；现阶段保持原子发布和不可见即拒绝。
-
 
 ## 同进程、等时与正反枚举顺序对照（2026-11-01）
 
@@ -377,7 +343,6 @@ Business真实截图看到提交曲线，五分钟窗口08:11:12—08:16:12、15
 两轮各131项配置T1、26项生命周期T1通过；Infra／Business原生认证、汇总、权限拒绝、幂等、轮换、归属T2均通过。原目录前置仍失败、两侧HBA原内容不变、正向目录认证未进入，整体T2失败，不因诊断后来可读而改判。两个项目 `addp-metrics-t2-714e53c6268943f787eb249e977cbca3`／`addp-metrics-t2-ddf06be8f89c46f683cb68bae160c5a0` 已标准退出清理，并按各自标签独立确认容器／网络／卷全零；py_compile、bash -n及git diff --check通过。
 
 本轮不修改Docker设置、现有服务、个人数据库或凭据，不加入先枚举／重试／原地覆盖的认证路线；未查询或触发CI、Hosted，未设置定时任务。当前仍是共享层一致性缺口，安全发布保持不可见即拒绝。下一步建议以该同进程双目录对照核对原生Linux结果，并据此讨论共享层维护或发布职责调整；后者若改变既定部署边界，须先确认，不能当作局部兜底直接实现。
-
 
 ## 无数据库的共享目录最小复现与修复建议（2026-11-01）
 
@@ -413,7 +378,6 @@ Business真实截图看到提交曲线，五分钟窗口08:11:12—08:16:12、15
 
 完整 `make test-t2-ci-registration` 本轮74项聚合退出非零：SystemCleanupPostgresRunnerTest的no-tests子场景15秒超时，随后skip-child因当次模拟锁／目录残留失败，日志 `/tmp/addp-redis-source-registration-full.log`。未修改这些非本批夹具、放宽时限或将注册事实局部通过记为完整聚合通过。正式账号生命周期、mTLS、System登记／私有发现投影、Prometheus、Monitor查询／Console和正式身份T4尚未接通，CI／Hosted未自行查询、触发或重跑，继续等待专门会话回传；未设置定时任务、修改Docker设置、重启个人服务或安装个人账号。
 
-
 ## Redis 账号持久化与来源生命周期（2026-11-01）
 
 本批接通 Infra／Business 单机 Redis 的原生 ACL 启动、数据卷内本方账号记录、部署用户私有凭据与归属、显式启停及独立 mTLS 固定来源。唯一配方仍由 `redissource.ObserverACL` 生成；标准生命周期通过来源镜像的受限 stdin 计划调用该配方，不保留另一套账号生成器。源进程只持最小采集凭据，管理员只在安装期进入 stdin；源容器非特权、只读、限额，不挂载数据卷／宿主目录／Docker socket。Business 原 admin／reader 配方保留，Infra 保留原 default 认证。未修改个人 `.env`、安装个人账号或启停个人服务。
@@ -431,7 +395,6 @@ Business真实截图看到提交曲线，五分钟窗口08:11:12—08:16:12、15
 过程失败均未计通过：最初Redis CLI `--json`实际协商RESP3对象，而部署代码按数组读取，已改为显式RESP3并只接受对象；当前Python严格TLS验证拒绝缺少密钥标识的测试证书，已补SKI／AKI，未放宽验证；损坏记录恢复测试原先只恢复文件、未重新加载Redis，已补一次性夹具重启后再验停用。Infra配置渲染夹具补齐本身必需的Redis密码。最终标准门禁覆盖这些修正，早期失败项目均清理，不以等待、补零、自动接管或放宽ACL处理。
 
 范围仍为来源与账号生命周期。System Redis部署类型／私有投影、部署发现、Prometheus HTTP SD、Monitor查询／Console尚未接通；正式用户链路、CI及Hosted未在本会话查询、触发或重跑，等待专门会话回传。当前个人环境未应用本批Redis部署，也未声明正式页面已可用。推荐下一批接通Redis部署发现与System精确来源关联，再接查询展示。
-
 
 ## Redis 自动发现与 System 精确来源关联（2026-11-01）
 
@@ -453,7 +416,6 @@ Business真实截图看到提交曲线，五分钟窗口08:11:12—08:16:12、15
 发布依赖：本批000261只扩展平台部署类型／清单约束，不更新任何声明、身份、权限或角色；当前259／260为其他会话未提交WIP，Catalog要求从000001连续编号，因此不能单独提交／推送261。保存本批路径与共享文件基线于 `/tmp/addp-redis-discovery-owned-paths.json`、`/tmp/addp-redis-discovery-baseline/`，后续提交须精确隔离共享catalog、System文档／i18n／Swagger中的他人变更。未擅自提交前置迁移、改号避开或发布缺号main。清单维护会话进展及依赖协调已尝试发送，但工具以空闲会话无活动turn拒绝，未声称送达。
 
 Redis专业指标查询／页面仍待下一批；CI、Hosted和正式产品运行未在本会话查询、触发或重跑，等待专门会话回传；未设置定时任务、安装个人Redis账号或重启个人服务。推荐先完成前置迁移的发布顺序，再提交本批和开展Redis查询／专业页面。
-
 
 ## Redis 专业指标查询与页面（2026-11-01）
 
@@ -478,7 +440,6 @@ Console原引擎页增加类型筛选、Redis分组、指标旁中英tip及语�
 
 本批已按湖南项目约定主动发送上述进展至p0维护会话；消息工具仍以“without an active turn id”拒绝空闲会话投递，未送达、未改XLSX。证据和发布依赖已保存在本节及现有设计状态中。
 
-
 ### Redis 查询发布前的混合摘要与超限呈现复核（2026-11-01）
 
 用户继续推进后，只读确认前置259／260仍未提交，本批261及Redis查询／页面继续保留工作区，不越过发布条件。补足新共享查询路径的有意义边界验证，不扩大产品目录、权限、预算或Hosted用途：同一次PG／Redis批量摘要只发两次共享form读取，按类型分别归一化；有效零值和180％Redis内存占用率保留，Redis快照失败仅清空本部署，外来deployment标签或跨类型指标导致整批拒绝返回。`make test-module MODULE=monitor GO_ONLY=1` 全部通过，日志 `/tmp/addp-redis-query-summary-transport-go.log`。
@@ -486,7 +447,6 @@ Console原引擎页增加类型筛选、Redis分组、指标旁中英tip及语�
 Console同一Redis受控夹具补中英文“超过100％→未设置上限”场景，验证列表／详情保留180.00％、趋势真实props不裁剪且原生悬停显示180.00％，切换无上限后比例为空并显示未设置上限；未更改产品公式、展示或轴逻辑。标准 `node ../../scripts/test/frontend-browser-gate.mjs e2e/redis-resources.spec.js` 最终7项T3通过（15.9秒），日志 `/tmp/addp-redis-query-over-limit-browser-final.log`；复用原刷新／缩放／tip／分组五项，不计正式Safari、User认证或实源页面T4。只有测试夹具及断言新增，前一轮产品构建／原生PromQL与实源T2输入未改变，不重复运行仍有效的T2或扩大为整套浏览器通过。
 
 System说明已同步为PG／Redis按当前User事实选择固定目录，未混入同文件的其他会话IAM变更。既有路径清单仍在 `/tmp/addp-redis-discovery-owned-paths.json`，发布前有界工作区摘要在 `/tmp/addp-redis-publication-review-snapshot.json`：72项本方路径、共享文件仅按本方hunk处理、前置迁移未提交状态；它是复核快照，不是已暂存／提交内容或永久证据来源。索引保持不动、格式检查通过。CI和Hosted继续等待专门会话回传，未查询／触发／重跑或设置定时任务，未修改个人服务／数据库／配置。
-
 
 2026-11-01 22:50（Asia/Shanghai）继续只读核对：259／260仍未提交，本批索引未暂存。现有设计增加“Redis正式全链路验收提案（待用户确认，尚未实施）”，具体列出同suite独立redis-engine-admission的当次两Redis、原管理员／Prometheus身份用途、固定指标／缺比率、真实页面、Business来源停用恢复及完整清理；没有修改有效T4身份例外或实现该profile，不将一般继续开发解释为扩大管理员测试用途。提案边界检查确认当前runner及人工workflow都未增加此名称。仅修正Monitor即时指标Swagger标题的多余空格，标准gen-swagger和覆盖校验通过，96个公开路由方法一致（`/tmp/addp-redis-query-swagger-final-review.log`、`/tmp/addp-redis-query-swagger-coverage-final-review.log`）；未改变API行为，不重复仍有效的Go／T2／页面验证，未运行CI／Hosted或定时任务。先请求限定测试用途确认，其他现有授权的发布准备继续保留。
 
@@ -516,7 +476,7 @@ Redis正式入口提交后继续开发，发现同上下文保留未覆盖已重
 
 新增PG／Redis×列表／详情×停用／解绑／版本变化12项浏览器场景；修复前12项均在旧内容断言失败（`/tmp/addp-engine-owner-refresh-red.log`），修复后同一标准 `npm run test:e2e -- e2e/engine-resources.spec.js e2e/redis-resources.spec.js` 共46项T3通过（1.7分钟，`/tmp/addp-engine-owner-refresh-green.log`）。同时复验旧单位／零值、tip、故障撤权、跨身份、两语种导航、主机关联、Redis分组及超过100％、缩放与原位刷新。132项前端T1通过（`/tmp/addp-engine-owner-refresh-unit.log`）；两页最终构建通过（`/tmp/addp-owner-refresh-build-final.log`）。Console标准 `npm run test:e2e -- e2e/engine-resource-navigation.spec.js` 4项集成T3通过（39.7秒，`/tmp/addp-owner-refresh-console.log`），包含Redis iframe及PG双语筛选／提示。上述是受控后端T3及构建，不是个人Safari、来源T2或正式身份T4。
 
-同类主机详情保护与独立页面验证见[节点专题](Monitor节点与主机资源历史证据.md#主机详情当前对象变化的原位刷新保护2026-11-02)。既有标准浏览器入口自动发现两份修改的spec，Platform CI原Monitor前端owner门禁覆盖本批；无需改Makefile／workflow或扩大测试身份。CI／Hosted继续等待专门会话回传，未查询、触发、重跑、设置定时或接管个人服务。
+同类主机详情保护与独立页面验证见[节点专题](Monitor节点与主机资源历史证据.md#主机详情当前对象变化的原位刷新保护2026-11-02)。CI／Hosted继续等待专门会话回传，未查询、触发、重跑、设置定时或接管个人服务。
 
 ## Redis 来源状态与恢复的受控页面验收（2026-11-02）
 
@@ -540,7 +500,6 @@ Redis正式入口提交后继续开发，发现同上下文保留未覆盖已重
 
 根Makefile与Release/T2 workflow已注册`test-monitor-minio-observation`，使用既有固定MinIO构建缓存；相关源码及标准生命周期变化可命中该门禁。CI／Hosted未查询、触发、重跑或设置定时任务，继续等专门会话回传。未实现固定17项来源适配、mTLS输出、自动发现／System精确来源投影、Monitor查询及Console页面；本次账号T2不等于完整MinIO专业监控、正式用户T4或生产T5验收。
 
-
 ## MinIO 固定 v3 指标与 mTLS 来源（2026-11-02）
 
 沿已确认17项范围接通部署侧来源，未新增产品API或权限。`internal/miniosource`固定读取四个v3端点和前后进程边界，每轮三秒、最多五请求、每响应256KiB／4096样本，不使用代理、重定向、DNS、重试或旧缓存。严格验证固定原生标签／类型、数值和同一进程，输出前移除全部原生标签；计数仅携带当前部署／进程的摘要代际。只输出原始数值，速率／占比仍留给后续唯一查询层。对象扫描时间按该端点的实际读取时刻计算，与整轮采集时间分别记录。
@@ -562,7 +521,6 @@ Redis／MinIO在Monitor内部复用唯一固定HTTP/TLS服务和受管来源部�
 
 本批没有自动发现／System精确来源投影、Monitor固定查询和Console专业页的MinIO实现；不计作完整17项专业监控或正式用户T4／生产T5。没有应用个人配置、安装个人账号、改数据库／Docker设置、重启个人服务、查询或触发CI／Hosted，继续等专门会话回传；没有设置定时任务。
 
-
 ## MinIO 自动发现与 System 精确来源关联（2026-11-02）
 
 - 范围：Infra／平台自管Business单容器MinIO，沿唯一部署发现v2、管理员确认及既有主机关联、私有投影和HTTP SD。无自动纳管、租户Engine／S3数据读取或新增IAM权限。平台目录沿发现协议使用minio，登记只保留9000 API端口；000262仅扩展类型与服务匹配约束，不改历史迁移、声明或权限。
@@ -572,10 +530,9 @@ Redis／MinIO在Monitor内部复用唯一固定HTTP/TLS服务和受管来源部�
 - T2：`make test-monitor-minio-observation`最终版本通过真实独占双来源mTLS、发现available／not_deployed、精确容器身份／启动时刻／HTTPS端点、重建恢复和原最小权限拒绝，容器／网络／卷／私有材料=0。`make test-monitor-redis-source`通过原真实发现、15项固定查询、生命周期及退出清理回归。均未启停或安装个人MinIO。
 - PostgreSQL T2：标准入口`make test-system-iam-postgres SYSTEM_IAM_POSTGRES_TEST_ARGS="--package <migration|repository|api> --test engine-deployments"`三包串行通过，实际addp-postgres映射25432、数据库仅addp_iam_test。覆盖Redis／MinIO前向发布及重复执行、权限不变、类型／服务错配拒绝、来源唯一性、有效主机关联、CAS及停用后退出私有投影、原HTTP审计事务。迁移回归参数化后再次通过migration包；未应用个人addp开发库。
 - 前端T1／T3：`make test-system-frontend`通过158项单元、原233项受控浏览器和构建；新增MinIO确认场景后，`make test-system-frontend SYSTEM_FRONTEND_BROWSER_ARGS='e2e/engine-deployments.e2e.js'`通过158项单元、15项登记页浏览器和构建，包含Infra／Business MinIO显式主机关联、名称和确认请求。不是Safari真实运行或正式身份T4。
-- Swagger：`bash scripts/swagger/gen-swagger.sh system`和`bash scripts/swagger/check-route-coverage.sh system`通过，248个公开路由方法覆盖一致，类型筛选枚举加入minio。`make test-t2-ci-registration test-build-registration`通过；既有门禁已登记公共模型、发现脚本、System迁移及前端路径，无需新增入口或Workflow。
+- Swagger：`bash scripts/swagger/gen-swagger.sh system`和`bash scripts/swagger/check-route-coverage.sh system`通过，248个公开路由方法覆盖一致，类型筛选枚举加入minio。`make test-t2-ci-registration test-build-registration` 通过。
 - 本地日志：`/tmp/addp-minio-discovery-{python-final,common-t1,monitor-t1,system-t1-pass,system-pg,system-migration-final,t2-final,redis-t2,system-frontend,admission-ui,swagger,registration}.log`。临时路径不是长期交付附件；上述可重放标准命令和断言范围为证据正文。
 - 剩余：MinIO固定查询、17项指标与Console专业页尚未实现；当前来源受上游零值省略约束，不能补造0。CI／Hosted由专门会话安排回传，本会话未触发、重跑或轮询，不建立定时任务。
-
 
 ## MinIO 固定查询与专业监控页面（2026-11-02）
 
@@ -590,11 +547,9 @@ Redis／MinIO在Monitor内部复用唯一固定HTTP/TLS服务和受管来源部�
 - 日志：`/tmp/addp-minio-query-{go-verified,t2,t2-final,t2-cleanup-final,redis-t2,frontend,ui-targeted,ui-verified,system-ui,registration-final,swagger}.log`。临时路径不代替正文的可重放标准入口。
 - 尚未验证：个人MinIO采集配置应用／真实Console数值与曲线、Safari及正式身份全链路。未修改个人数据库／配置或启停服务。CI与Hosted等专门会话回传，本会话未触发、重跑或轮询，未设置定时任务。
 
-
 ### MinIO 专项 CI 回传（2026-11-02，dff267ed0）
 
 专门CI会话确认提交`dff267ed00aef78f009dcc54ac33fe62305c7aa0`的[Release MinIO专项](https://github.com/pampa0629/addp/actions/runs/41424138332/job/125206871137)结论success，实际`Run MinIO observation source and identity gate`已执行（回执selected=true），不是跳过。原日志`/tmp/addp-ci-20261102-180000/Monitor-dff-MinIO-source.log`本地复核110015字节，SHA256=`e71e3c001fe447c870af4e77497d54a49ac4b8ee40e446bdcd2c1dfab2b6a8b6`；1113—1115行21项脚本检查OK，1275行真实固定PromQL40场景通过并移除promtool，1279行容器／网络／卷／私有材料=0。仅补记该独立专项通过，不推及Monitor完整前端、Release整批、Safari或Hosted。完整前端Job125206526177在回执时仍运行，由专门会话继续跟进；本会话只核对回传日志，未访问CI状态、重跑或设置定时任务。
-
 
 ### Linux 完整前端产品步骤回传（2026-11-02，2cd45ec2）
 
@@ -602,15 +557,13 @@ Redis／MinIO在Monitor内部复用唯一固定HTTP/TLS服务和受管来源部�
 
 整Job结论仍为cancelled，官方annotation为`The job has exceeded the maximum execution time of 30m0s`，不能将完整步骤成功写成Job或Release全批成功，不加时限或重跑。原件目录`/tmp/addp-ci-monitor-2cd-step-success-20261102`；job.log为195494字节、SHA256=`69c4d256f3f23ad1431e684b921266757e1c0ed149d2978e1e7db95668cd03e1`，单元673—678行、MinIO场景1205—1206行、浏览器1563行、构建1592行、selected1597行。Git复核dff267ed0至2cd45ec2的monitor/frontend树均为`e901d153bb1a06b02658412f23d87339791f8d30`，但common-frontend的executionFailure／翻译及Makefile有变化，不能声称整个输入闭包等同于dff。此前本地失败与独立MinIO40场景记录仍各自保留。本条不增加修复任务、环境应用、Safari或Hosted验收，也不重复功能清单报表；个人真实来源联调仍待用户手工应用已准备配置。
 
-
 ### MinIO 原生计时基准差异导致整批误判（2026-11-03）
 
 Infra来源实际UP后，Safari平台管理员的专业详情仍返回“未取得有效数据库快照”。只读取证确认：同次observed_at=1793664989、原生start_time=1793597423.35、uptime=71364.002917418，旧查询附加的abs(observed_at-start_time-uptime)≤5判定差3798.35秒，过滤全部指标。容器内/proc/1/stat的启动ticks=9035、/proc/stat btime=1793597333，按procfs的100Hz重建启动值恰为1793597423.35；uptime反推的应用启动记录为2026-11-02T04:27:04.997Z，与Docker实际启动04:27:05.532Z接近。固定MinIO源码的start_time来自procfs.StartTime，uptime来自time.Since(globalBootTime)，不能强行视为同一计时基准。本记录不推断底层时钟差异的历史成因，未修改Docker／时钟／电源设置或重启个人MinIO。脱敏原始计算在`/tmp/addp-minio-clock-proof-20261103.json`；上游事实见[固定版本进程指标](https://github.com/minio/minio/blob/9e49d5e7a648f00e26f2246f4dc28e6b07f8c84a/cmd/metrics-v3-system-process.go)、[应用启动记录](https://github.com/minio/minio/blob/9e49d5e7a648f00e26f2246f4dc28e6b07f8c84a/cmd/globals.go)、[procfs算法](https://github.com/prometheus/procfs/blob/v0.16.1/proc_stat.go)。
 
-先明确运行观测规范的原生时间来源，再删除唯一MinIO查询路径中的错误加法等式；保留同次唯一UP／字段、16秒新鲜度、采集时刻偏差、当前容器身份／启动边界、非负值、一分钟四样本／完整窗口／重置／counter_epoch保护。不增加Desktop特判、容差配置、替代时间或补零。原API目录、DTO、权限和Swagger契约不变。新增六项真实PromQL情形：计时基准不同的容量／运行时长／请求速率有效，以及未来启动、当前容器前启动和负运行时长拒绝。原标准MinIO T2和既有Monitor Go门禁自动覆盖，无新增入口或CI编排。
+先明确运行观测规范的原生时间来源，再删除唯一MinIO查询路径中的错误加法等式；保留同次唯一UP／字段、16秒新鲜度、采集时刻偏差、当前容器身份／启动边界、非负值、一分钟四样本／完整窗口／重置／counter_epoch保护。不增加Desktop特判、容差配置、替代时间或补零。原API目录、DTO、权限和Swagger契约不变。新增六项真实PromQL情形：计时基准不同的容量／运行时长／请求速率有效，以及未来启动、当前容器前启动和负运行时长拒绝。
 
 旧查询沿`make test-monitor-minio-observation`实际失败，容量和运行时长的非空预期得到nil；账号、mTLS和持久化前置均通过，但整命令不计通过。原日志`/tmp/addp-minio-clock-red-20261103.log`；独立核对当次fb7240bce31d及两个来源项目的容器／网络／卷均0，见`/tmp/addp-minio-clock-red-cleanup-20261103.json`。修复后原标准MinIO命令退出0：21项Python检查、来源Go专项、双MinIO原生权限／mTLS／停用恢复／重建持久化及46项真实PromQL全部通过，containers/networks/volumes/private state=0；日志`/tmp/addp-minio-clock-green-20261103.log`。Monitor后端首次`make test-module MODULE=monitor GO_ONLY=1`有一项模拟Docker脚本生命周期测试在原30秒截止被终止；同期本机load约70、08:20—08:29无Sleep／Wake／DarkWake事件，未确认具体超时根因，不改原预算。待本轮T2退出后原样执行相同命令，退出0，resourcequery实际执行20.463秒，其余有效包缓存复用；保留首次失败`/tmp/addp-minio-clock-monitor-go-20261103.log`与最终通过`/tmp/addp-minio-clock-monitor-go-final-20261103.log`，不把第一次命令改记通过。末次只读核对个人Infra／Business MinIO原完整ID、启动时刻及RestartCount=0不变。真实专业页面仍待用户仅重启Monitor后复验，不将来源UP或上述隔离测试当作实际页面验收完成。CI／Hosted继续等专门会话回传，未查询、触发、重跑或设置定时任务。
-
 
 ### Infra MinIO 修复应用后的真实页面截图（2026-11-03）
 
@@ -628,36 +581,21 @@ Infra来源实际UP后，Safari平台管理员的专业详情仍返回“未取�
 
 用户按本会话步骤手动验证Infra搜索MinIO不按Enter即自动只剩一张卡片，进入监控详情再返回仍保留MinIO，并明确回复“自动筛选正常，返回后仍保留MinIO”。此项为人工实操确认；工具随后读取时页面已切至Business，未声称独立读到MinIO返回URL。完整Console／Monitor受控回归沿`250bcf176`原有效证据，不把人工确认改写成自动化回执。本轮只补运行证据，`git diff --check`通过；无新CI／Hosted、容量、定时任务、配置更改或个人服务启停。租户关联及租户级监控仍仅讨论，未实施。
 
-
 ### 统一采集管理入口首版（2026-11-03）
 
-用户确认在保持独立采集来源、账号、凭据及 Compose 项目的前提下，先实现统一管理入口。新增 `scripts/infra/metrics-sources.py`，统一主机与 Infra／Business 的 PostgreSQL、Redis、MinIO 七项选择、状态、部署输入检查、安装／应用、停用和失败汇总；标准 Infra／Business 启停移除重复的来源调用清单，通过同一编排调用原有唯一生命周期实现。选中一个 Business 服务不会作用于其他服务；来源失败返回非零，核心启停继续。来源容器运行与真实采集成功仍分别表达，不将 Running 当成 Monitor 查询通过。
+首版统一状态、输入核验和应用／停用，覆盖主机与 Infra／Business 的 PostgreSQL、Redis、MinIO 七项。各域仍独立取配置与凭据。首版无账号修改的 recover 仅覆盖 PostgreSQL。现行分组和恢复以[运行观测规范](../../addp平台运行观测规范.md#采集来源统一部署分组2026-11-04)为准。
 
-直接调用分别读取根 `.env`／`business/.env`，不让父环境采集开关和凭据混入另一域；Hosted 只读取显式隔离文件。标准已解析环境只允许以 `--resolved-env` 交接一个明确 scope，避免重新加载配置覆盖标准入口的实际注入值。停用不因启用标志无效而被跳过；操作超时报告结果未知，不自动重试。状态仅使用本地 Docker 元数据，核验 Owner、scope、来源组件集合、当前数据库完整容器身份及启动时刻，不读容器环境／业务数据。未部署、停止、组件缺失、归属冲突、数据库运行身份变化均不作为正常运行。
+本地统一入口 15 项、配置 136 项、登记 78 项及 9 项 runner 通过。Business 配置和完整开发生命周期也通过，包含 206 项部署／Worker／资源输入、44 项 HTTP、169 项 Trace、145 项生命周期与预算。首次独立配置的 10／5 秒停止夹具超时根因未定，原预算下复验通过。生命周期曾因副本漏复制新入口及旧 Redis 输出断言失败，修复后核对 Redis 已停用、三项零失败及实际删除标记。日志可查 `/tmp/addp-metrics-sources-config-recheck.log`、`/tmp/addp-metrics-sources-dev-verified.log` 和精简前的固定记录。
 
-首版无账号修改的 `recover` 仅覆盖原 PostgreSQL 证明路径；完整 ADDP 启动仍只选择两域 PostgreSQL，正常来源保持不变。其他已启用来源明确报告尚不支持并要求显式 up，不以账号重新安装冒充恢复。主机来源须明确选择，不随 Infra／Business 自动启用；指标中心沿原 Infra 入口管理，不新增常驻协调器、定时任务、集中凭据或配置副本。指南已补统一操作和当前限制。
-
-本地验证：`make test-metrics-sources` 最终15项通过；`make test-monitor-metrics-config test-t2-ci-registration` 退出0，136项指标配置、78项登记、9项 PostgreSQL runner 检查及实际登记核对通过，入口前置的13项旧计数由最终15项独立复验更新。`make test-business-config` 退出0，覆盖 Business Compose、部署发现、受影响启动入口及既有独立消费回归。最终 `make test-dev-lifecycle` 退出0：24项原生准备、206项部署／Worker／资源输入、15项统一管理、44项 HTTP runner、169项 Trace runner及145项生命周期／预算检查，端口与停机防护、原子构建和选择性启停脚本回归、共享 Go 包及四模块 cmd 编译检查均通过。三条现有 Monitor T2 来源门禁的输入声明已包含统一入口和新测试，Platform 原有生命周期／Business 入口自动覆盖，无新增 CI Job。`git diff --check`通过。
-
-保留首次失败：独立指标配置门禁中两个无真实进程的停止夹具分别超过10秒／5秒，未唯一定位瞬时超时原因，未增加预算；随后同一136项及包含它们的206项原样通过，不将首次失败改记通过。完整生命周期回归先发现测试副本漏复制新入口，补齐后又发现旧原始 Redis 日志断言不适用统一输出；测试改为要求 Redis 行已停用和全部三项零失败，仍保留实际删除标记断言。最后完整标准命令通过。日志分别为 `/tmp/addp-metrics-sources-config-final.log`、`/tmp/addp-metrics-sources-dev-final.log`、`/tmp/addp-metrics-sources-dev-recheck.log`、最终 `/tmp/addp-metrics-sources-config-recheck.log`、`/tmp/addp-metrics-sources-business-final.log`、`/tmp/addp-metrics-sources-dev-verified.log`、`/tmp/addp-metrics-sources-unit-verified.log`。
-
-本机仅执行统一 `status` 和 `check`，分别退出0，七项汇总失败0：主机、Infra PostgreSQL／MinIO、Business PostgreSQL启用且来源运行；Infra Redis、Business Redis／MinIO停用且未部署。部署输入检查通过四项，另三项未启用。记录在 `/tmp/addp-metrics-sources-local-status-final.txt` 与 `/tmp/addp-metrics-sources-local-check-final.txt`。本轮未在个人环境执行 up／down／recover，实际统一应用仍待部署者操作；未改个人配置、凭据、数据库或服务，不把本机只读状态作为新安装、mTLS、Prometheus、页面或完整七来源部署验收。CI／Hosted继续等专门会话回传，未查询、触发、重跑或设置定时任务。
-
+本机只读 status／check 七项失败 0，四项启用且运行，三项停用且未部署。收据 `/tmp/addp-metrics-sources-local-status-final.txt`、`/tmp/addp-metrics-sources-local-check-final.txt`。个人实际应用、新安装、mTLS、Prometheus 采样、页面、CI 与 Hosted 当时均未验。
 
 ### Redis／MinIO 已安装来源的无账号修改恢复（2026-11-04）
 
-承接用户对统一采集管理的继续授权，先补正式规范和指南，再为Redis／MinIO接通recover；完整本地ADDP启动通过同一入口选择Infra／Business的PG、Redis和MinIO。删除原PG专属恢复函数名，保持完整启动／非Hosted守卫；单模块、Hosted、Node及显式未选择／未安装的来源不自动启动。来源恢复只读核验已有账号，不创建／启用／停用／轮换账号，不写ACL、持久记录、MinIO策略或数据库数据，不构建镜像，不启动数据库。显式up／down仍沿唯一原安装与停用实现，不作为恢复兜底；同时补齐MinIO底层down不因错误启用标志而跳过清理，错误选择的recover仍拒绝，最后24项T1已验证。
+本批增加已安装 Redis／MinIO 恢复。恢复核对原来源归属、数据库容器、账号、镜像、挂载和私有输入。健康来源保持，缺失或停止的来源按原安装恢复，停用、漂移和换数据库容器拒绝。完整／局部／Hosted 守卫及当前恢复范围见[已安装引擎采集来源的统一恢复](../../addp平台运行观测规范.md#已安装引擎采集来源的统一恢复)。
 
-Redis核验精确启用ACL、已提交持久记录、密码摘要及私有安装；MinIO核验phase、原生账号归属／父身份／策略、启用状态及固定指标JWT读取。两者共用来源恢复：核验原私有Compose、镜像、Owner／scope／当前数据库完整ID；逐字段核对私有配置与凭据，逐字节核对证书。原容器ID相同且仅启动时刻／私网地址变化时允许重建；新数据库容器、停用／漂移／不完整安装、证书或端口变化拒绝。已有来源还核对非root、只读根、capabilities、安全选项、CPU／内存／PID预算及唯一只读来源卷，不只信任标签。私有卷读取与Redis纯账号配方生成复用同一短时无网络只读helper，随机标记限定回收，超时也检查并清理当次helper；不挂数据库数据、宿主目录或Docker Socket。健康来源容器与凭据保持；停止／缺失来源按原镜像恢复，重建前后重读数据库和账号，失败只清理本方来源、不变更账号。
+本地共享 5、编排 15、启动守卫 2、Redis T1 14、MinIO T1 24、登记 78 与 runner 9 项通过。两域 Redis／MinIO 独占 T2 验证健康 ID、原账号与凭据不变、停机恢复、同容器重新绑定、账号停用拒绝、mTLS 与精确发现。MinIO 保卷换容器后 recover 拒绝，显式 up 重新应用。Redis 15、MinIO 46 项 PromQL 通过，临时容器／网络／卷／helper 及文件零残留。标准门禁日志 `/tmp/addp-metrics-recovery-{redis-verified,minio-verified}.log`，清理回执 `/tmp/addp-metrics-recovery-cleanup-verified.json`。
 
-本地最终标准门禁：make test-metrics-sources退出0，含5项共享恢复、15项统一编排及2项完整／局部／Hosted启动守卫与失败继续的可执行检查；Redis T1为14项、MinIO T1最终为24项，相关固定来源Go专项通过。make test-t2-ci-registration退出0，78项登记、9项runner及24个hosted-service／16个owned-compose／9个hosted-only／2个owner-managed实际登记核对通过。标准T2输入声明已登记新共享测试，原Platform／Monitor门禁自动覆盖，不增加workflow或定时任务。
-
-最终make test-monitor-redis-source、make test-monitor-minio-observation均退出0，仅在命令PATH中使用本机已安装OpenSSL3.6.4，无系统配置变更。各独占两域数据库，真实验证健康来源ID保持、来源停止／删除恢复、数据库停止时拒绝且来源不变、同一数据库容器重启重新绑定、账号停用拒绝、原私有凭据／ACL记录不变、mTLS／精确发现恢复；MinIO另在保卷换容器后验证recover拒绝，再沿显式up重新应用。既有越权拒绝、失败关闭、持久化、数据保留及15项Redis／46项MinIO真实PromQL继续通过。临时容器、网络、数据／私有卷、helper及私有文件最终清零；当次源项目只读复核亦全0，见/tmp/addp-metrics-recovery-cleanup-verified.json。最终日志为/tmp/addp-metrics-recovery-{coordinator-final,unit-final,minio-shutdown-unit,source-runtime-unit,redis-verified,minio-verified,registration}.log。
-
-首次MinIO T2在Compose start不支持--wait处失败，临时对象已清理；改为单一up --no-recreate --no-build --wait，只启动原临时容器，未改Docker版本或增加兼容分支。中间有效T2在共用helper及运行权限检查完善后重新执行，以最终verified日志为准。make test-dev-lifecycle首次有4项Worker夹具失败及1项停止夹具超时，未唯一定位瞬时原因、未改时间预算；容器门禁退出后串行复验原24项和206项通过，随后44项HTTP与169项Trace单测通过，但被其他会话Security Online v34登记校验阻断，整体仍退出2，后续145项等未执行，不计整套通过。本会话未修改该登记或其他owner实现。失败及受阻证据分别保留/tmp/addp-metrics-recovery-dev.log与/tmp/addp-metrics-recovery-dev-final.log；本批新增启动接线由上述2项独立标准入口验证，不用聚焦通过冒充完整门禁通过。
-
-本轮未对个人Infra／Business执行up/down/recover、重启或修改配置、凭据、账号与数据库业务数据；个人环境恢复与跨Docker重启的实际应用仍未验。CI／Hosted继续等专门会话回传，未查询、触发、重跑或设置定时任务。不把本地T2、来源Running或零残留扩大为正式身份页面验收。
-
+首轮 MinIO T2 因 Compose start 不支持 --wait 失败，临时资源已清理。改为单一受限 up 后复验通过。完整开发门禁首轮 4 项 Worker 失败、1 项停止超时。串行 24／206 及 HTTP 44／Trace 169 分项通过，随后 Security Online v34 登记阻断，后段 145 项未执行，整门禁仍失败。失败日志 `/tmp/addp-metrics-recovery-dev.log` 与 `/tmp/addp-metrics-recovery-dev-final.log`。个人跨 Docker 重启恢复、正式身份页面、CI 和 Hosted 当时未验。
 
 ### Infra MinIO 恢复的原镜像不可用诊断（2026-11-04）
 
@@ -667,13 +605,11 @@ Redis核验精确启用ACL、已提交持久记录、密码摘要及私有安装
 
 先增缺失镜像回归，旧代码在Redis／MinIO两case均因无封闭reason失败（/tmp/addp-metrics-image-diagnostic-red.log）。最终make test-metrics-sources退出0，共享恢复7项、编排16项、标准启动守卫2项通过；make test-monitor-redis-source-unit test-monitor-minio-observation-unit标准门禁退出0，Redis14／MinIO24项及相关Go专项通过。门禁覆盖镜像失败不删除／构建／重建、两种CLI只转发已知reason、统一中文建议及未知reason不泄漏。日志/tmp/addp-metrics-image-diagnostic-{green,final}.log。只读调用新installed_image在本机同一镜像上得到正确reason，前后同一来源完整fact未变，收据/tmp/addp-minio-recovery-image-diagnostic-20261104.json。本次仅错误路径和提示变更，既有T2成功路径未改，未重复创建隔离部署；既有来源T2输入声明及Platform编排已覆盖六个修改文件，无新登记。git diff --check通过。个人服务未启停，未改配置、账号／权限／凭据、卷、镜像或业务数据；CI／Hosted仍等专门会话回传，无定时任务。
 
-
 ### 用户重新应用后的 Infra MinIO 采集恢复（2026-11-04）
 
 用户已执行`python3 scripts/infra/metrics-sources.py up --scope infra --kind minio`，返回已应用、单项失败0。本会话随后只读核对：新来源唯一且运行，原私有Compose中的完整镜像ID已可inspect并通过工作区Owner校验；账号on，来源的数据库ID及启动时刻精确匹配当前原MinIO容器。既有Monitor准入客户端的真实mTLS GET返回200、14项原始指标、在线盘数1；Prometheus按显式来源端口定位到唯一目标，health=up，严格使用该目标完整标签查询在线盘数得到1。后续以timestamp(metric)核对实际scrape时间、以observed_at值核对来源快照，而非使用即时query的评估时间冒充新鲜度；当次scrape距今2.80秒、来源快照距今3.44秒，均新鲜。
 
 只读收据为/tmp/addp-minio-source-reapplied-20261104.json。这补齐用户实际重新应用后的镜像可用、来源mTLS与Prometheus采集恢复，不表示已实操recover健康不重建、Monitor当前User API／Safari专业页面／趋势或正式Hosted通过。14项为原生实际发布，未将省略值补0或承诺17项全有。未启停个人服务、修改配置／账号／凭据或业务数据；本轮仅补证据，git diff --check通过，无产品代码变更及新测试部署，无CI／Hosted轮询或定时任务。下一步优先复验引擎监控页面真实值及趋势恢复。
-
 
 ### Infra MinIO 重新应用后的 Safari 真实页面与趋势交互（2026-11-04）
 
@@ -687,13 +623,11 @@ Redis核验精确启用ACL、已提交持久记录、密码摘要及私有安装
 
 证据为本会话原生Safari AX、截图和实际输入记录，时间约07:44—07:48（Asia/Shanghai）。本轮仅记录真实运行证据，git diff --check通过，无产品代码或新测试变更；未重启服务、改配置／账号／凭据，未读Token或业务内容，未查询／触发CI与Hosted或设置定时任务。下一项建议复验统一recover在本机健康来源上保持容器不变，实际命令仍由用户执行。
 
-
 ### 本机 Infra MinIO 健康来源恢复实操（2026-11-04）
 
 用户再次执行`python3 scripts/infra/metrics-sources.py recover --scope infra --kind minio`，实际输出“来源运行正常，未重建（采集待验证）”，一项失败0；作为用户执行的本机实操证据，证明命令到达健康复用成功分支。后续本会话只读核验来源唯一且Running，当前来源StartedAt为2026-11-03T22:10:21.519864215Z；Prometheus同端口唯一目标UP，完整目标标签查询在线盘1，observed_at实际快照距今12.75秒。收据/tmp/addp-minio-healthy-recover-20261104.json。无该命令执行前的容器ID收据，因此不虚称独立工具前后逐字段对照，未重建依据为用户真实命令输出，采集正常依据为后续独立只读核验。
 
 此前新镜像／mTLS／Safari真实值与容量／请求曲线交互证据继续有效，本项只补齐健康recover用户实操及其后采集新鲜度，不重跑既有T1/T2或扩大为跨Docker停机故障恢复／全部来源已验。本轮仅文档与只读取证，git diff --check通过；个人服务未启停，CI／Hosted仍等专门会话回传，无定时任务。后续优先补统一管理的主机来源恢复边界，保持主机显式选择与现有安全部署约束。
-
 
 ### 主机来源显式安全恢复（2026-11-04）
 
@@ -704,7 +638,6 @@ Redis核验精确启用ACL、已提交持久记录、密码摘要及私有安装
 新T2复用正式node_exporter、容量采样器和固定镜像，只在随机独占项目使用桥接命名空间、回环随机端口及受限私有tmpfs卷；不使用宿主根／proc／sys绑定、host网络／PID或Docker Socket。实际证明健康容器与证明文件不变、仅采样器停止恢复、两容器全部停止恢复、真实start生效但回执丢失时回收本轮采样器且保留原健康exporter；恢复后内存和容量成功指标经严格mTLS可读，容器与网络／卷身份不变。证书漂移、删除采样器及安装退役均拒绝，已有exporter和容量卷保持；退出容器／网络／卷／临时私有状态清零。夹具编写期间曾因本机缺少默认OpenSSL配置、测试环境漏带PATH及新证书缺少严格X.509扩展失败；已限定命令环境并补全证书扩展后原TLS校验通过，未修改系统配置或放宽验证。
 
 T2通过的是受限桥接夹具中的真实恢复事务；其测试签名明确记录夹具文件，不冒充生产原生／Desktop输入签名联调。生产签名由T1覆盖，本机个人标准up生成证明及恢复后Monitor页面尚未操作，原生Linux宿主挂载实机恢复、CI／Hosted尚未验收。本机统一主机check一项失败0仅证明部署输入检查通过。个人服务／数据库／配置／凭据未改，未设置定时任务。下一步由部署者显式应用一次主机来源生成证明，再复验健康recover与Monitor真实采集。
-
 
 ### 本机主机来源应用及健康恢复（2026-11-04）
 
@@ -718,7 +651,7 @@ T2通过的是受限桥接夹具中的真实恢复事务；其测试签名明确
 
 本地验证：新增原因断言先在旧实现失败（缺少／合并原因码），修正后`make test-monitor-metrics-config`退出0，涵盖共享恢复7项、主机恢复15项、编排18项、启动守卫2项和配置136项；最终主机15项还由下述T2入口再次执行，包含损坏／重复字段／错误类型证明和原私有文件拒绝路径。`make test-monitor-metrics MONITOR_METRICS_TEST_ARGS=--case=node-recovery`退出0，真实桥接隔离来源精确断言证明缺失、证书输入变化、组件被删除、安装停用四类原因；健康不变、仅采样器及全部停止恢复、回执丢失清理和恢复后mTLS指标均通过，容器／网络／卷／临时私有状态清零。日志分别为`/tmp/addp-node-recovery-diagnosis-config.log`、`/tmp/addp-node-recovery-diagnosis-t2.log`。
 
-`make test-infra-runtime-log-lifecycle`退出0（HTTP44、Trace175及生命周期145项等）；`make test-t2-ci-registration`退出0（登记78、runner9项及实际门禁登记检查）。日志`/tmp/addp-node-recovery-diagnosis-lifecycle.log`、`/tmp/addp-node-recovery-diagnosis-registration.log`。现有Monitor指标门禁输入和node-recovery矩阵已登记这些实现／测试，不新增测试入口或workflow。未知／退役原因码的原始输出不透传且清理提示保留由T1验证；T2是受限桥接来源，不外推为个人故障恢复、原生Linux实机或Hosted验收。本轮未启停个人来源、改配置／账号／数据库、操作Safari或查询远程CI／Hosted，未设置定时任务。
+`make test-infra-runtime-log-lifecycle`退出0（HTTP44、Trace175及生命周期145项等）；`make test-t2-ci-registration`退出0（登记78、runner9项及实际门禁登记检查）。日志`/tmp/addp-node-recovery-diagnosis-lifecycle.log`、`/tmp/addp-node-recovery-diagnosis-registration.log`。未知／退役原因码的原始输出不透传且清理提示保留由T1验证；T2是受限桥接来源，不外推为个人故障恢复、原生Linux实机或Hosted验收。本轮未启停个人来源、改配置／账号／数据库、操作Safari或查询远程CI／Hosted，未设置定时任务。
 
 ### 引擎来源失败阶段的中文提示（2026-11-04）
 
@@ -729,7 +662,6 @@ PostgreSQL已有十二项固定失败阶段，统一入口此前直接显示英�
 `make test-monitor-redis-source`退出0（含Redis生命周期15项T1、Go固定协议T1），双域真实ACL／固定快照、十五项PromQL、只读复用／停止恢复／同一数据库容器重启后的来源重建、mTLS、发现、持久化及越权拒绝通过；自有来源和配置卷、私有文件清零。`make test-monitor-minio-observation`退出0（含MinIO生命周期25项T1及Go协议T1），双域仅指标授权、S3／管理拒绝、过期／停用、只读复用恢复、mTLS、固定投影及失败清理通过；独立作用域和容器替换后的账号持久化、四十六项PromQL通过；外层容器／网络／卷／私有状态清零。日志`/tmp/addp-engine-stage-redis-t2.log`、`/tmp/addp-engine-stage-minio-t2.log`。实源T2证明诊断加入后的既有生命周期回归；全部失败阶段的注入及中文展示仍是T1，不声称每个阶段均在实源制造过故障。
 
 本批未修改个人来源、账号、数据库、Docker设置或启停个人服务，未操作Safari；PostgreSQL未重跑实库安装或T2，复用其未改的原阶段，仅经本地生命周期与提示T1验证。远端CI和Hosted等专门会话回传，未手动调度或轮询验收，未设置定时任务。下一步优先补主机Safari连续前台刷新及原生缩放保持的剩余真实交互证据。
-
 
 ### 采集来源统一 Compose 分组（2026-11-05）
 
@@ -752,7 +684,6 @@ PostgreSQL已有十二项固定失败阶段，统一入口此前直接显示英�
 
 个人来源没有被本会话迁移、重启或改配置。当前MinIO旧镜像缺失的历史根因仍未知，不把隔离构建或新代码视为个人恢复成功。下一步由用户在仓库根目录运行 `python3 scripts/infra/metrics-sources.py up`，按现有配置统一应用；该操作只针对采集来源，可能有短暂采集间断，之后再只读核对分组、当前数据库绑定和Monitor实际采样。个人迁移、Safari／Desktop效果、最终Linux目录认证、自然CI及Hosted仍未验；CI／Hosted等专门会话回传，不设置定时任务。
 
-
 ### 统一分组后的标准生命周期夹具修复（2026-11-05）
 
 CI修复会话回传固定`3d0ccfcce`的Platform Run41867352427／Job126704897315：`test-infra-runtime-log-lifecycle`中六项disabled、metrics-only及父环境隔离用例预期0而实际1。保留[首次失败](https://github.com/pampa0629/addp/actions/runs/41867352427/job/126704897315)；原始日志 `/tmp/addp-ci-20261105-010000/job-126704897315.log` 的2510—2773行，输入一致性收据 `/tmp/addp-ci-20261105-010000/Metrics-lifecycle-current-input-identity.json`。
@@ -761,12 +692,11 @@ CI修复会话回传固定`3d0ccfcce`的Platform Run41867352427／Job12670489731
 
 修复仅调整`infra-runtime-log-lifecycle_test.py`：复用产品共享内核生成当前夹具工作区的项目与Infra服务名；在父环境变量分支前，只接受精确七参数的只读来源列表查询并返回当前夹具确实为空的来源集合。明确拒绝Business服务、未知服务、另一工作区项目、缺少服务及额外参数。新增反例不带`MOCK_*`运行，确认不进入核心／变更分支。它在旧夹具上实际失败为`MOCK_COMMANDS: unbound variable`，修复后通过；六项原断言、凭据不生成、核心／数据卷保留、来源故障不阻止核心和父环境隔离均保留。未修改产品部署脚本、个人.env、服务、数据库、数据卷、IAM、Hosted用途、预算或超时。
 
-标准验证：`make test-infra-runtime-log-lifecycle`退出0，包含53项统一来源依赖、HTTP runner46项、Trace／登记183项及149项生命周期／预算／配置／PG生命周期组合回归，相关Go与登记步骤均通过；日志 `/tmp/addp-regroup-lifecycle-final-20261105.log`。`make test-monitor-metrics-config test-t2-ci-registration`退出0，配置137项及依赖、登记80项、runner9项与实际登记通过，日志 `/tmp/addp-regroup-lifecycle-registration-20261105.log`。新增测试沿原模块自动运行，原Platform consistency的`make test-platform`和Metrics T2输入清单已覆盖此文件，不新增workflow或测试路线。十项相关Make配方与已提交HEAD完全一致，未提交的其他会话Makefile调整不纳入本批。
+标准验证：`make test-infra-runtime-log-lifecycle`退出0，包含53项统一来源依赖、HTTP runner46项、Trace／登记183项及149项生命周期／预算／配置／PG生命周期组合回归，相关Go与登记步骤均通过；日志 `/tmp/addp-regroup-lifecycle-final-20261105.log`。`make test-monitor-metrics-config test-t2-ci-registration`退出0，配置137项及依赖、登记80项、runner9项与实际登记通过，日志 `/tmp/addp-regroup-lifecycle-registration-20261105.log`。十项相关Make配方与已提交HEAD完全一致，未提交的其他会话Makefile调整不纳入本批。
 
 首次本地复现另外记录HTTP预算夹具原五秒编译断言超时，未修改该用例、预算或实现；后续完整标准入口149项通过，原失败保留在 `/tmp/addp-regroup-lifecycle-repro-20261105.log`，不倒填首次通过。针对新查询的单项先失败证据为 `/tmp/addp-regroup-fixture-contract-red-20261105.log`。
 
 本批只修复确定的T1夹具接线，不替代个人来源迁移、真实来源T2或Hosted；没有应用用户采集来源或启动个人服务。修复推送后仍等待专门CI会话回传唯一自然Platform结果，不设置定时、手工dispatch、rerun或轮询远端CI。工作簿仅由P0依据固定版本结果维护。
-
 
 ### 统一分组的独立仓库闭包与网络声明修复（2026-11-05）
 

@@ -2,7 +2,9 @@
 
 [返回 Monitor 历史证据](Monitor历史证据.md) · [返回验收证据索引](../验收证据索引.md)
 
-本专题收录多 Worker、实例筛选、cgroup 配额、部署预期与发现生命周期。固定源码、环境、失败记录、修复结论与未覆盖范围以各记录为准；本次仅整理文档，没有重跑验收或刷新 CI 状态，不推导当前 HEAD 或生产 T5 已通过。跨主题语境与原有顺序见 [Monitor 历史证据入口](Monitor历史证据.md#原记录入口)。
+本专题收录多 Worker、实例筛选、cgroup 配额、部署预期与发现生命周期。验收结论按各记录的固定源码、环境、运行尝试和层级认定。原顺序见[Monitor 历史证据入口](Monitor历史证据.md#原记录入口)。
+
+原始过程、逐步诊断及详细归档清单见[精简前的固定记录](https://github.com/pampa0629/addp/blob/be8f8daa4d38a7830585577f03b77bf2b5ed3931/docs/spec/testing/evidence/Monitor%E5%AE%9E%E4%BE%8B%E4%B8%8E%E6%9C%8D%E5%8A%A1%E5%8F%91%E7%8E%B0%E5%8E%86%E5%8F%B2%E8%AF%81%E6%8D%AE.md)。
 
 ## 清单接入与实例绑定
 
@@ -22,7 +24,6 @@
 
 本次是 Docker Desktop 上的 Linux SDK／真实 Prometheus／Monitor 查询 T2，未执行真实 System 多 Worker 登记与宿主绑定、业务 Worker 副本启动或原生 macOS 拓扑 T4，不把局部通过扩大为这些范围。既有 PostgreSQL 专业 Hosted 证据不变；本批云端结果继续等待专门 CI 会话回传，不自行轮询、重跑或设定时，也未重启个人服务。
 
-
 ## Meta 双 Worker 标准启动与登记绑定专项
 
 2026-10-22，按用户确认范围补齐原生 Meta 的唯一编号启动路径：`ADDP_DEV_META_WORKER_REPLICAS` 默认 `1`、仅接受 `1/2`，两个单元共用同一 Worker 产物，各自独立 PID、进程身份和可选指标/TLS；任务并发仍是每进程独立配置。标准启动复用健康单元、只补缺失单元，活动缩容及外来/重复 PID 拒绝；模块停止和局部重启覆盖全部选中 Worker。未改变 Common 登记、System 首次主机声明、Monitor 授权、IAM 或业务任务调度。首次应用需部署方先停止旧 Meta，再使用标准入口启动；个人服务与配置未切换。
@@ -35,7 +36,6 @@
 
 最终串行 `make test-node-metrics-online-runner` 退出 0：123 项 Python 正反向契约、JS/Bash 语法及 System Metrics 身份 Go 夹具通过，日志 `/tmp/addp-meta-workers-online-runner-final-check.log`；包括新 Meta 单元独立证书/计划、限定标准命令、SDK 来源映射、当前实例 DTO、真实浏览器收据拒绝与清理编排。并行轮引擎 CLI 失败的唯一原因仍未确认，仅增加测试阶段输出诊断，未修改引擎产品、认证、读取期限或清理边界。`make test-workflow-security` 退出 0（原标准 Release workflow 固定版本安全审计），实际 T2 和 Online CI 登记检查均通过；新增 choice 已同步原 Online 受控登记及删除 choice 的拒绝回归。24 项最终输入与成功冻结副本逐字节一致，之后仅更新本证据与后续事项摘要；本次未读、轮询或重跑云端 CI，未设置定时，也未重启个人服务。
 
-
 ## 服务监控的登记地址查询与重置
 
 2026-10-22，服务监控补齐按登记端点主机名／IP 精确筛选及一键重置。复用 System 已有 `registered_host`，由服务端在计数、分页前过滤；不按端口、DNS 解析结果、运行环境主机名或承载主机补匹配，也不为无监听端点的 Worker 推断地址。地址沿唯一 URL 保留到分页、刷新和趋势重载，未提交的地址草稿不影响自动刷新；重置清空筛选、页码及趋势，恢复在线且已声明采集的默认范围，保留刷新频率，同一默认 URL 上也清除未提交草稿。无新增 API、Swagger、权限或采集配置，未重启个人服务。
@@ -43,7 +43,6 @@
 冻结基线 `d75dce1f1f2e345e7686e8d073baad9e8915ef48`，仅叠加本批八项实现／测试／规范输入，使用实际核验为 Node `v24.19.0` 的运行时，沿标准 `make test-monitor-frontend` 最终退出 0：88 项 Node、269 项浏览器及生产构建均通过。新增中英文回归验证同一主机不同端口均匹配、不借用相同宿主名／未登记端点的 Worker、只请求当页摘要、趋势及重载保留地址、重置与未提交草稿隔离；已检查截图 `/tmp/addp-service-address-visuals/service-address-{zh-cn,en}.png`。日志 `/tmp/addp-service-address-frontend-final.log`。首轮 268 项通过、中文新用例因英文关闭按钮名称定位超时而失败；改用同页既有关闭按钮定位后，完整门禁重跑通过，未调整产品时序或等待期限。首轮日志 `/tmp/addp-service-address-frontend.log`。
 
 `make test-frontend-ci-registration` 通过 20 项回归及 21 个受控前端登记检查，日志 `/tmp/addp-service-address-registration.log`；现有 Monitor owner 与 CI 路径自动覆盖，无新增工作流。八项最终输入与成功冻结副本逐文件字节一致，随后仅追加本证据及后续事项摘要。成功浏览器输出目录与端口租约已由标准入口清理；首轮失败证据按标准保留在临时目录。本次为确定性 T1/T3 及构建验证，不计正式身份 Hosted T4，通过结果已交清单维护会话；CI 与已接入的 Meta 专项继续等待专门会话回传，未查询、调度或设置定时任务。
-
 
 ## 服务实例时间查询共享入口
 
@@ -59,19 +58,17 @@
 
 上述四组成功浏览器运行的输出目录与精确端口租约均已由标准入口清理，另行核对不存在。已人工检查此前同一共享控件的中英文窄屏截图 `/tmp/addp-service-time-visuals/service-time-{zh-cn,en}.png`；最终全量同场景及真实日期录入均通过。最终运行的补充截图捕获未取得新文件，仅为临时产物收集，不计新的截图证据，也未据此重复执行测试。本批为本地 T0／T1／T3 与构建验证，不代表正式身份 Hosted T4；CI 与 Hosted 等专门会话回传，没有查询、调度、设置定时或重启个人服务。
 
-
 ## 服务实例离线原因筛选共享入口
 
 2026-10-22，服务监控复用 System 当前离线观测的 `stop_reason=graceful|lease_expired`，支持全部原因、正常退出及租约超时筛选，并在列表对应原因旁说明租约超时只表示失联。原因与状态、采集声明和时间取交集，不自动切换到 DOWN，不按浏览器时钟或采集失败推断退出；实例恢复后退出原因结果。沿原表单搜索提交、回到第一页并关闭旧趋势，分页／刷新／重载／Console iframe 保留已提交原因，自动刷新不应用原因草稿，重置清除原因；原因参数不进入进程趋势，离线实例仍不能打开历史趋势。
 
-原因控件、枚举规范化和中英文译名统一到 Common Frontend 的 `RuntimeInstanceStopReasonSelect`／`runtimeInstanceStopReason.mjs`；System 原内联选择器和枚举删除，模块概览、实例列表与日志诊断同步消费共享译名。System 仍选择立即查询，Monitor 仍搜索提交；没有 API/Swagger、权限、后端状态裁决或部署变化。现有 Common／System／Monitor／Console 前端门禁及自动路径登记覆盖，不新增 Make、workflow 或测试路线。
+原因控件、枚举规范化和中英文译名统一到 Common Frontend 的 `RuntimeInstanceStopReasonSelect`／`runtimeInstanceStopReason.mjs`；System 原内联选择器和枚举删除，模块概览、实例列表与日志诊断同步消费共享译名。System 仍选择立即查询，Monitor 仍搜索提交；没有 API/Swagger、权限、后端状态裁决或部署变化。
 
 冻结基线 `66b1f8ab8725bd3c32c9b8a0150694561c894a62`，仅叠加本批输入，实际 Node `v24.19.0`。最终 `make test-common-frontend` 退出 0，251 项通过，日志 `/tmp/addp-service-reason-common-final.log`；`make test-system-frontend` 退出 0，152 项单元、194 项浏览器及构建通过，日志 `/tmp/addp-service-reason-system-final.log`；`make test-monitor-frontend` 退出 0，90 项单元、275 项浏览器及构建通过，日志 `/tmp/addp-service-reason-monitor-final.log`；`make test-console-frontend` 退出 0，188 项单元、208 项浏览器及构建通过，日志 `/tmp/addp-service-reason-console.log`。新增中英 T3 覆盖原因／状态／时间交集、计数分页、范围切换、恢复移除、草稿隔离、重置、未知原因不分类，以及真实 Console 语言切换／重载保持一个 iframe。`make test-frontend-ci-registration` 通过 20 项回归与 21 个受控前端登记检查，日志 `/tmp/addp-service-reason-registration.log`。
 
 首轮 Monitor 为 273 项浏览器通过、两项新用例失败：测试错误要求手动刷新保留未提交草稿，既有行为是手动刷新恢复已提交条件；改为断言选择不提交，并由独立自动刷新用例验证草稿隔离，未改产品交互。标准入口定向两项通过后，完整 Monitor 门禁通过，首轮与定向日志为 `/tmp/addp-service-reason-monitor.log`、`/tmp/addp-service-reason-targeted.log`。首轮 System 在发现运行日志仍引用移走的译名后精确中断当次独立门禁，不计通过；补齐消费者与唯一所有权回归后沿相同入口完整重跑通过，未停止个人服务。初轮日志 `/tmp/addp-service-reason-system.log`，保留中断状态与当时已通过项，不扩大为完整验收。
 
 最终仅为新窄屏截图增加“下拉弹层已关闭”的断言，再沿 `npm run test:e2e -- e2e/process-resources.spec.js --grep 'service stop reasons'` 重跑中英两项退出 0，日志 `/tmp/addp-service-reason-visual-final.log`。已检查稳定截图 `/tmp/addp-service-reason-visuals/service-stop-reason-{zh-cn,en}.png`；18 项最终代码／测试输入与成功验证副本逐字节一致，三项规范及能力摘要同步更新。四组成功浏览器门禁和最终截图专项的输出目录、精确端口租约均独立核对已清理；失败／中断证据按标准保留在临时目录。本批为本地 T0／T1／T3 与构建，不计正式身份 Hosted T4；CI 和 Hosted 等专门会话回传，未查询、调度、设置定时或重启个人服务。
-
 
 ## 服务监控承载主机 IP 筛选（2026-10-22）
 
@@ -81,7 +78,6 @@ Monitor 服务监控新增承载主机 IP 输入，复用 System `/platform/modu
 
 `make test-frontend-ci-registration` 的 20 项回归及 21 个前端登记检查通过；首次在无 `.git` 的归档副本执行时，回归已过但正式检查无法读取索引，补齐同一基线的前端 package 登记后通过，未修改 Make／workflow。现有 Monitor／Console glob、变更影响传播及 Platform CI 已覆盖新增用例，无需新入口。最终输入指纹及日志摘要为 `/tmp/addp-host-ip-final-audit.json`，原始日志为 `/tmp/addp-host-ip-*.log`；Console 实际 iframe 截图 `/tmp/addp-host-ip-visuals/console-host-ip.png` 已查看，双语窄屏无横向溢出由 Monitor T3 验证。此次仅为本地确定性 T1／T3 与构建证据，System 后端语义未改；未运行真实服务／Hosted T4，也未查询云端 CI、设置定时或重启个人服务，后续结果等待专门会话回传。
 
-
 ## 服务监控宿主／运行环境名称筛选（2026-10-22）
 
 服务监控复用 System 既有 `node_name`，精确匹配部署声明的 `host_node_name` 或进程 `runtime_hostname`，忽略大小写。前端只规范化单值字符串首尾空白；不把登记端点、名称前缀或主机管理显示名称当作匹配对象，不按名称推断绑定或额外读取主机详情。输入框旁解释匹配范围；名称与 IP、模块、角色、状态、采集声明、离线原因及时间取交集。搜索／范围切换回第一页、关闭旧趋势；分页／重载／主机跳转返回保留条件，自动刷新只用已提交值，重置也清除未提交草稿，列表条件不进入趋势 API。无监听端点的多个 Worker 可按同一宿主名查询，各自实例与趋势身份不变。
@@ -89,7 +85,6 @@ Monitor 服务监控新增承载主机 IP 输入，复用 System `/platform/modu
 冻结基线 `7b77919f87ef27201a7d754801e06dafe2c85832`，仅叠加本批前端、测试和规范输入，Node `v24.19.0`。`make test-monitor-frontend` 退出 0，92 项 T1、282 项确定性浏览器 T3 和构建通过；`make test-console-frontend` 退出 0，189 项单测、211 项浏览器和构建通过。新增双语场景覆盖宿主名／运行环境名匹配、前缀及同名登记端点排除、分页、趋势、组合条件、自动刷新草稿隔离、重复参数清除和重置；Console 覆盖名称与 IP 条件下的主机跳转返回、语言切换及重载保持唯一 iframe。`make test-frontend-ci-registration` 通过 20 项回归和 21 个前端登记检查；原批处理在此项启动前因检测到另一浏览器门禁退出，确认该入口只运行静态 Python 校验后单独执行通过，没有终止对方或重复执行有效浏览器结果。现有 Monitor／Console 门禁及路径扩散已覆盖，无需修改 Make 或 workflow。
 
 原始日志 `/tmp/addp-host-name-test-{monitor-frontend,console-frontend,frontend-ci-registration}.log`，输入／日志指纹和成功门禁清理核验见 `/tmp/addp-host-name-final-audit.json`。本批输入与验证快照逐字节一致，标准浏览器输出目录及当次端口租约均已清理；保留截图 `/tmp/addp-host-name-visuals/`，已查看中文窄屏和 Console 页面，说明紧邻控件，双语窄屏无页面横向溢出断言通过。本批仅为本地 T0／T1／T3 和构建证据，未改后端、Swagger、IAM 或部署；未执行真实服务／Hosted T4，不查询云端 CI、不设置定时、不操作个人服务，后续结果等待专门会话回传。
-
 
 ## Transfer 两类双 Worker 标准启动与主机绑定验收入口（2026-10-22）
 
@@ -105,7 +100,6 @@ Monitor 服务监控新增承载主机 IP 输入，复用 System `/platform/modu
 
 首次完整生命周期门禁在新增“第二 Worker 缺失”夹具失败：测试未选中对应 Backend，未进入标准构建阶段，因此没有 events 文件。夹具改为保留 Backend 与第一 Worker、仅缺少第二 Worker后，标准生命周期脚本和完整 `make test-dev-lifecycle` 重新执行通过；未修改产品启动条件或放宽断言。原始日志为 `/tmp/addp-transfer-workers-dev-final.log`、`/tmp/addp-transfer-workers-online-gate.log`、`/tmp/addp-transfer-workers-continuous-gate.log`，输入与日志指纹见 `/tmp/addp-transfer-workers-final-audit.json`。本次只验证本地 T0／T1 与原生临时进程生命周期，不计正式多实例登记／主机绑定 T4、租户同步任务、多 Worker 抢占或 HA 通过。未改个人配置、数据库或运行服务；CI 和 Hosted 结果等专门会话回传，未设置定时任务。
 
-
 ## Quality 多 Worker 标准启动、登记与主机绑定入口（2026-10-22）
 
 复用 Meta／Transfer 的唯一启动与观测流程，新增部署输入 `ADDP_DEV_QUALITY_WORKER_REPLICAS`，默认 1、仅允许 1 或 2。单副本亦使用 `quality-worker-1`，双副本追加 `quality-worker-2`，共用原 Worker 二进制；独立 PID、启动身份及采集计划，沿既有主机声明及 Quality 正式登记。标准启动只补缺失单元，所属 Backend Ready 后才启动 Worker；重复启动复用现有实例，运行中缩容、外部 PID、重复 PID 与非法数量封闭拒绝；模块停止／重启覆盖所有编号单元。Quality 的 claim、任务并发、租约及权限未变，旧未编号启动路径已删除。
@@ -116,7 +110,6 @@ Monitor 服务监控新增承载主机 IP 输入，复用 System `/platform/modu
 
 真实 `quality-workers` Hosted T4 尚未运行；任务竞争、重复执行、租约接管、跨主机和生产 HA 均不在本批验收结论内。CI 与 Hosted 等专门会话回传；本轮未查询或调度云端验收、未设置定时、未修改个人配置／数据库或重启个人服务。功能清单由维护会话统一更新。
 
-
 ## 服务实例 CPU/RSS 趋势的独立时间缩放（2026-10-23）
 
 服务趋势弹窗的 CPU、RSS 图分别接入既有共享 ChartRenderer 时间滑块，图旁提供中英文操作提示；两个临时视口独立，不裁剪完整响应、不新增请求或 URL 参数。相同已提交范围的手动／自动刷新保留相对视口；关闭弹窗、切换实例／时段／筛选或身份变化时重置，错误及撤权清除旧图与视口。指标、当前运行实例历史边界、权限及生产采集均未改变。
@@ -126,15 +119,13 @@ Monitor 服务监控新增承载主机 IP 输入，复用 System `/platform/modu
 - `npm run test:e2e -- process-trend-zoom.spec.js`：7/7 通过，见 `zoom-browser.log`。中英文窄屏真实拖动分别缩放两图；完整样本／真实零／缺样及陈旧断点保留，无额外请求／URL 变化；悬停、图例显隐、主题重绘、手动／自动刷新保留，时段／实例／关闭再打开／身份变化重置，503、403 和错误运行身份的清除与恢复均通过。
 - `make test-monitor-frontend`：退出 0，101 项单元测试、346 项浏览器测试及生产构建通过，见 `frontend-full.log`；上述 7 项包含在 346 项内，不累加为唯一场景数量。完整门禁同时覆盖复用多图定位参数后的主机缩放、图例／悬停及既有进程页面布局／筛选，未改共享渲染器实现。构建保留原有大包提示，不将提示计为失败或性能验收。
 
-证据目录 `/var/folders/r1/l7b49c757dz02zftf_l9vl9r0000gn/T/addp-process-trend-zoom-p2lmhr_b/` 保存原始日志、`inputs.json`、`frontend-inputs-sha256.json` 及原表只读行号引用。浏览器使用独立端口和受控 API，成功后由标准入口清理运行目录；不操作 Safari、个人登录态或服务，不重启后端。现有 Monitor 前端标准门禁及 Platform CI 矩阵自动发现新 spec，无新增依赖、入口或 workflow。本轮未查询或触发 CI／Hosted，真实页面验收等专门会话回传，不设置定时。此项前端通过不替代上一批 CPU/RSS 告警真实触发／恢复 T2 或正式身份验收。
-
+证据目录 `/var/folders/r1/l7b49c757dz02zftf_l9vl9r0000gn/T/addp-process-trend-zoom-p2lmhr_b/` 保存原始日志、`inputs.json`、`frontend-inputs-sha256.json` 及原表只读行号引用。浏览器使用独立端口和受控 API，成功后由标准入口清理运行目录；不操作 Safari、个人登录态或服务，不重启后端。本轮未查询或触发 CI／Hosted，真实页面验收等专门会话回传，不设置定时。此项前端通过不替代上一批 CPU/RSS 告警真实触发／恢复 T2 或正式身份验收。
 
 二次本地窗口（2026-10-23 17:11:14–18:11:14 Asia/Shanghai，用户重新授权）：保留 8 CPU／12 GiB、4 GiB 停止线及既有正式身份范围。第一次实测由 `measure_owned_volumes` 资源采样超时停止，最后成功样本 3,236,450,304 字节，44 项成功样本；自动报告明确失败、清理通过。按已记录子步骤调查，原采样把 Docker 容器创建／启动／退出与 du 放在同一四秒预算。只调整为当次只读辅助容器复用，卷集合变化才重建，采样串行且退出先释放 BuildKit 卷挂载；保留 0.25 CPU／64 MiB、无网络、只读卷及原采样／停止边界，辅助容器 /data 用受限 tmpfs，不产生额外匿名卷。代码 `97714a1ac68624ecaf56573051bb9febcaf2075b`；最终 `make test-infra-runtime-log-lifecycle` 退出 0，42 项入口契约、JS 语法／登记／System ExecutionTrace Go及原60项生命周期通过。
 
 同窗口第二次实际冷构建记录 56 项采样，最长测量 1.139 秒、最大相邻采样完成间隔约4.27秒，约四分钟构建观察未再超时；随后在 product_minio 正确触发 `owned_volume_stop_line_reached`。完整触线样本 4,362,616,832 字节，超过停止线 67,649,536 字节（约64.52 MiB），末次测量0.902秒，运行硬配额3.25 CPU／5.0625 GiB；没有放宽预算或把触线记录作通过。两次均未创建业务部署、未准备正式身份或执行查询，Trace／日志／Console闭环未执行，清理均通过。安全报告／源码哈希／窗口及独立清理回执见 `/tmp/addp-p19-formal-local-20261023-window2/{attempt-1-report.json,attempt-2-report.json,attempt-2-source.json,receipt.json,lifecycle-final.log}`。
 
 当前缺口是既有 MinIO 基础依赖的冷构建已达到本地准备预算。本会话提出仅在核验固定 MinIO／mc 源提交及镜像ID后复用既有产品镜像，本专项后端／前端仍按当前已提交源码构建；该依赖准备范围调整正在等待用户明确确认，尚未实施，不凭已有缓存降低原验证口径，也不续开或延长本窗口。不运行 Hosted、容量或定时，不接管个人服务。
-
 
 ## 服务进程 CPU／RSS 相邻时段比较（本地）
 
@@ -149,13 +140,11 @@ Monitor 服务监控新增承载主机 IP 输入，复用 System `/platform/modu
 
 最终 T3 使用 HTTP 协议夹具与真实共享图表，覆盖两种语言／窄屏、原单位升降及零值、两期缺样、启动裁剪、48 小时查询的自适应步长、7 天拒绝比较、URL／刷新／关闭、身份及错误清除、缩放不重算比较；复制保存并人工检查了 `screenshots/` 下中英文卡片截图。未连接个人库或重启个人服务，未运行本批正式身份真实数据／长窗 T4 或 Hosted，CI／Hosted 等专门会话回传；此结果不覆盖尚未通过的 CPU／RSS 告警实源触发恢复 T2，不证明同比或长期留存已实现。原表第 18 行（B 列 17）仍为部分实现。
 
-
 MinIO 产品镜像核验复用入口准备（2026-10-23，原窗口结束后）：用户确认复用已有固定版本 MinIO 产品镜像，先核验 MinIO／mc 源提交与镜像 ID，本专项代码继续标准源码构建。收到确认时北京时间18:45，原18:11:14截止时间已过，因此没有启动新容器，也没有执行真实镜像二进制核验、业务部署或正式身份闭环。先修运行观测规范，再将唯一入口改为从当前提交的 scripts/infra/Dockerfile.minio 提取两组件固定发布版本／40位源码提交；已有镜像必须有不可变sha256 ID和Linux ARM64身份，两个只读／无网络／0.25CPU／256MiB检查逐一以该ID运行--version，核对发布版本及嵌入提交。通过的同一ID用于卷测量、真实MinIO及两个存储初始化步骤；缺失、不匹配、命令失败直接拒绝，不拉取替代品或回退冷构建。旧MinIO冷构建及其专用故障分类分支已删除。镜像版本与嵌入提交校验不等同于重新源码编译／字节级可复现证明。
 
-代码及规范提交5681227a0，已推送main。标准 make test-infra-runtime-log-lifecycle 退出0：46项当时的入口契约、两份JS语法、完整CI登记、System ExecutionTrace定向Go及既有60项生命周期通过；随后仅加强mc不匹配／缺失镜像用例，最终 make test-monitor-traces-local-runner 退出0，47项入口契约及其余定向检查通过，60项未改输入复用当次有效结果。没有新增测试入口或依赖，现有Platform生命周期及路径登记仍覆盖；未查询或手工调度CI。安全输入摘要与日志见 /tmp/addp-p19-minio-reuse-preparation-20261023/{receipt.json,minio-reuse-lifecycle.log,minio-reuse-final-tests.log}，明确标注为窗口外的确定性准备，actual_minio_binary_verification与formal_identity_closure均为not_run。
+代码及规范提交5681227a0，已推送main。标准 make test-infra-runtime-log-lifecycle 退出0：46项当时的入口契约、两份JS语法、完整CI登记、System ExecutionTrace定向Go及既有60项生命周期通过；随后仅加强mc不匹配／缺失镜像用例，最终 make test-monitor-traces-local-runner 退出0，47项入口契约及其余定向检查通过，60项未改输入复用当次有效结果。安全输入摘要与日志见 /tmp/addp-p19-minio-reuse-preparation-20261023/{receipt.json,minio-reuse-lifecycle.log,minio-reuse-final-tests.log}，明确标注为窗口外的确定性准备，actual_minio_binary_verification与formal_identity_closure均为not_run。
 
 当前已具备核验后复用的单一路径；真实MinIO／mc核验及正式密码/MFA、执行、Trace／日志／页面闭环均未运行、未计通过。需新的同上限本地窗口方可继续实际运行；不自动续开、不运行Hosted、容量或定时，不接管个人服务。
-
 
 ## 服务实例容器配额：自身 cgroup 采集基础（2026-10-24，本地）
 
@@ -244,7 +233,6 @@ CI：`cgroup-source` 作为现有 Release 指标矩阵第五个真实分项，�
 
 因此，本条固定版本 Linux cgroup-source T2 已通过，原旧版本失败及本机证据继续分别保留；不再因同一缺样重复验收。该结果仅证明三个 SDK 的共享组原始量采集、完整窗口读取与身份拒绝，**不证明独立容器关联、完整限制层级、正式身份配额页面或当前 main／告警级别筛选的 CI**。本次只补录回传证据，没有重跑 CI／Hosted、设置定时任务或操作用户服务；同一证据已由协调会话通知清单维护会话，不重复发送。
 
-
 ## 持续部署发现 Linux 退出失败调查：仅补诊断，根因未证实（2026-10-25）
 
 专门CI会话回传后，只读核对 [Platform Run40150409107／Job121040604338](https://github.com/pampa0629/addp/actions/runs/40150409107/job/121040604338) 原始日志的checkout与实际失败步骤，源码为 `994db320ae7147cb0e566db4960eb256306cc9e1`。`make test-platform → test-dev-lifecycle → test-infra-runtime-log-lifecycle` 的61项中，`test_logs_failure_does_not_prevent_selected_metrics_start` 在 `addCleanup/stop_discovery_observer` 收到“部署发现进程尚未退出，不删除运行记录”；Job实际失败，后续摘要写入成功不能覆盖。日志没有当时的进程状态／等待／信号／子进程证据，不能断言是僵尸、锁、Docker子进程或预算不足，更没有证据把它归因于新增告警 `host_name` 逻辑。
@@ -253,7 +241,7 @@ CI：`cgroup-source` 作为现有 Release 指标矩阵第五个真实分项，�
 
 本批只在现有“无法确认退出”失败分支追加即时有界诊断。Linux从同UID普通proc文件读取状态、固定等待类型、SIGTERM挂起／屏蔽／忽略／处理位及直接子进程数量；每个文件最多8192字节，拒绝符号链接／非UTF8／超量，读取失败明确未知，其他平台明确不可用。只输出固定键、枚举、布尔及数量，不输出命令行、路径、PID清单、任意wait文本或随机运行标识。字段依据为 [Linux proc状态手册](https://man7.org/linux/man-pages/man5/proc_pid_status.5.html)及[内核proc文档](https://docs.kernel.org/filesystems/proc.html)；瞬时诊断不参与归属或清理裁决。原SIGTERM只发一次、foreign拒绝、确认退出前保留记录、退出后由控制流程清空来源等主路径不变，无新配置、接口或权限。
 
-先补三项诊断回归，标准发现入口因缺失诊断函数产生3个错误，保留红灯日志；实现后再补真实文件读取的大小／编码／符号链接拒绝，最终 `make test-deployment-discovery` 为38项发现＋5项容器证明全部通过。`make test-dev-lifecycle` 最终退出0，132项原生生命周期、79项前置、61项Infra生命周期、Online登记／Go夹具、端口／缓存／锁／原子构建及现有共享包检查通过；末尾Worker命令的“无测试”仅计编译覆盖，不外推为Worker功能验收。标准影响选择继续命中Platform；原Make与CI登记已覆盖，无新增入口或workflow。`git diff --check`通过。
+先补三项诊断回归，标准发现入口因缺失诊断函数产生3个错误，保留红灯日志；实现后再补真实文件读取的大小／编码／符号链接拒绝，最终 `make test-deployment-discovery` 为38项发现＋5项容器证明全部通过。`make test-dev-lifecycle` 最终退出0，132项原生生命周期、79项前置、61项Infra生命周期、Online登记／Go夹具、端口／缓存／锁／原子构建及现有共享包检查通过；末尾Worker命令的“无测试”仅计编译覆盖，不外推为Worker功能验收。`git diff --check`通过。
 
 原始失败 `/tmp/addp-ci-20261025-013034/job-121040604338.log`；本机 `/tmp/addp-discovery-exit-{baseline,diagnostics-red,diagnostics-final,dev-final}.log`、`/tmp/addp-discovery-infra-baseline.log`及`/tmp/addp-discovery-exit-selection.txt`。本批不宣称原CI退出故障已修复，Linux实测与新诊断尚待专门CI会话回传；没有轮询、手工派发或重跑CI／Hosted，也没有操作个人服务、keepalive、数据库或数据卷，不设置定时任务。已只读核对功能清单第28／30／34行的主机管理内容，本次诊断不等于新增主机注册、远程初始化或批量运维，不据此升级功能完成程度。
 
@@ -283,7 +271,6 @@ CI：`cgroup-source` 作为现有 Release 指标矩阵第五个真实分项，�
 
 剩余：标准启停Hook尚未接通；停止时计划停用发布失败的处理待用户选择。首次登记预热／触发及恢复窗口、失联规则权限、Monitor评估／事件／通知与真实页面均未实现或未验收，不把基础声明或零在线计数记为服务失联自动告警已完成。原清单第15、49行仍部分实现。
 
-
 ## 2026-10-25 标准启停接通服务组预期与停止前发布屏障
 
 用户明确确认：计划停用发布成功后才允许停止；发布失败立即报错，保留服务运行。本批在上一节协议基座上接通开发与生产入口。开发从当前已解析的后端选择与正式编号Worker单元发布，Meta双副本、Transfer两用途、Quality用途保持独立；Security Worker不在新增范围。生产仅渲染当前Compose声明，使用Profile和规范化scale／deploy.replicas，不读取存活容器推断预期；零副本、未选Profile及完整计划不再选择的已有组置为计划停用，局部开发启动不改变其他组。渲染凭据不输出或持久化到声明及覆盖文件。
@@ -299,7 +286,6 @@ CI：`cgroup-source` 作为现有 Release 指标矩阵第五个真实分项，�
 本轮没有Go产品或HTTP契约变更，沿用上一节System真实PG T2与Swagger证据，不重复充当本批运行验收。没有运行个人标准启停、操作个人数据库／IAM、触发CI或Hosted，也未设置定时任务。全量平台T0前轮已在无关Security MySQL Online v27登记一致性处失败，本批没有重跑或接管；本批上述相关独立门禁取得通过终态。
 
 日志为 `/tmp/addp-service-intent-hooks-{config-final,lifecycle-final,registration-final,selection}.log`。尚未验证个人实际启停后完整的部署发布→System→Monitor正式身份链路或真实生产部署；当前仍没有服务组失联规则、连续窗口、事件与通知闭环。首次登记前的处理、触发／恢复时长及规则权限尚待明确；清单第15／49行保持部分实现。
-
 
 ## 2026-10-25 确认运行前置：组预期变更标记消歧
 
@@ -319,7 +305,6 @@ CI：`cgroup-source` 作为现有 Release 指标矩阵第五个真实分项，�
 
 修复后 `make test-deployment-discovery` 退出0（38项发现＋6项证明及脚本语法）；`python3 -m unittest scripts/test/metrics-deployment-config_test.py` 87项退出0，覆盖原生产生命周期单一发现挂载、关闭指标仍声明及启动／停止屏障。日志 `/tmp/addp-container-proof-owner-{red,green,lifecycle}.log`。此处仅为本批本地T0修复，不将原失败改写为通过，不外推整轮Platform、Linux CI或Hosted；修复后的自然CI结果等专门会话回传，未自行查询、重跑CI或设置定时任务。
 
-
 ## 2026-10-26 部署观察器单次停止信号在析构边界丢失
 
 专门CI会话回传固定source `effd9f800e05516d1809a8e63d202e3f3516b19f` 的Platform run `40208335725` / job `121213997615`：`test_disabled_logs_never_stop_foreign_containers`清理观察器失败，原诊断为`owned/S/hrtimer_nanosleep`、零子进程、SIGTERM未屏蔽／未挂起且已注册处理器。本批不把`term_caught`当作处理器实际执行证据。
@@ -336,8 +321,7 @@ CI：`cgroup-source` 作为现有 Release 指标矩阵第五个真实分项，�
 - 本机隔离Linux/arm64、Python 3.12.14：运行标准scripts/test的观察器类及本次／上次复发两个Infra单例，18项退出0，含真实信号、在途读取子进程回收及不停止外来容器。一次性容器无Docker Socket、无个人配置或数据库挂载，源码为临时脱敏拷贝只读挂载，容器退出销毁，不代替Ubuntu x64自然CI；测试tmpfs需exec以运行既有临时CLI夹具。首轮绿套因tmpfs默认noexec使在途Docker夹具无法启动，已用PermissionError与挂载选项独立确认；修正仅当次测试tmpfs后取得上述18项有效证据，不把首轮失败当通过。
 - 已尝试更广 `make test-dev-lifecycle`，164项聚合出现两项超时：标准停止声明夹具10秒超时、Bounded Worker夹具就绪等待超时。该聚合退出1，不计通过、不放宽时限；前者在上述独立87项重新验证通过，后者运行既有Worker脚本片段，不调用本批修改的部署观察器。本批不扩展修理其他夹具，保留原失败供专门会话核对。
 
-日志：`/tmp/addp-discovery-{finalizer-red,finalizer-green,stop-current,stop-lifecycle-green,stop-metrics-green,stop-infra-green,stop-linux,stop-linux-green}.log`。新用例沿原部署发现标准入口自动发现，相关Python脚本已在原Metrics T2输入清单，Platform沿原标准聚合；不新增Make／workflow或并行技术路线。未自行查询／触发／重跑CI或Hosted、未设置定时任务、未执行个人服务或keepalive生命周期；自然Linux CI等专门会话回传。Safari实际可见性及真实服务失联验收仍保持原缺口。
-
+日志：`/tmp/addp-discovery-{finalizer-red,finalizer-green,stop-current,stop-lifecycle-green,stop-metrics-green,stop-infra-green,stop-linux,stop-linux-green}.log`。未自行查询／触发／重跑CI或Hosted、未设置定时任务、未执行个人服务或keepalive生命周期；自然Linux CI等专门会话回传。Safari实际可见性及真实服务失联验收仍保持原缺口。
 
 ## 原生Linux回传与迁移选择断言同步（2026-10-26）
 
@@ -384,7 +368,7 @@ CI：`cgroup-source` 作为现有 Release 指标矩阵第五个真实分项，�
 
 个人Safari第二个标签页沿真实Console打开当前Monitor进程，初始AuthContext无法确认后点击原“重试”恢复；无需重启。新版正文已直接生效，实际截图可见短状态“未接入资源组采集”、查询窗口、CPU曲线与标题旁问号；点击CPU问号实际显示核占用／非百分比／断点／缩放解释。该个人环境为原生macOS，不计容器限额或来源支持通过；当前页面提示自动刷新开启，但本轮只记布局及提示可见，不把一次截图计为新的刷新或Hosted验收。
 
-本批只改Monitor领域组合／中英文词条及相应Monitor／Console测试，未改共享组件、API、Swagger、后端、部署或IAM。现有Make前端门禁、浏览器目录自动发现和Monitor变更扩散至Console的路径登记已覆盖，无新入口、依赖或Workflow。局部标准T1／T3及Monitor构建是本次显示变更的最小充分验证，未重跑整套Monitor／Console聚合、未变的Go、来源T2或Online，不能记为本轮整套通过。CI和Hosted仍等专门会话回传，未自行查询、触发或重跑，也未设置定时任务、重启个人服务或修改账户／数据库／配置。
+本批只改Monitor领域组合／中英文词条及相应Monitor／Console测试，未改共享组件、API、Swagger、后端、部署或IAM。局部标准T1／T3及Monitor构建是本次显示变更的最小充分验证，未重跑整套Monitor／Console聚合、未变的Go、来源T2或Online，不能记为本轮整套通过。CI和Hosted仍等专门会话回传，未自行查询、触发或重跑，也未设置定时任务、重启个人服务或修改账户／数据库／配置。
 
 ## 停用意图顺序夹具隔离与配置 T1 入口（2026-11-01）
 
@@ -392,7 +376,7 @@ CI：`cgroup-source` 作为现有 Release 指标矩阵第五个真实分项，�
 
 临时夹具的阶段取证表明，空PID／监听者拓扑仍执行宿主真实 `ps -axo pid=,ppid=`；当次开发／生产假停止分别3.025／0.443秒。该证据确认无关宿主进程表依赖，不足以指定此前超时的唯一根因。现为同一夹具补明确的空快照替身，仅接受声明的快照查询，其他查询返回78；测试验证停用发布前不得有动作、模块范围精确、查询顺序及无实际停止命令。macOS允许随后检查空launchd清单，不将其当作停止动作；原8／10秒期限、失败拒绝、锁释放和声明断言保留。实际PID／后代／外来进程归属继续由既有开发生命周期专项覆盖，本批未修改产品停止逻辑。
 
-新增标准入口 `make test-monitor-metrics-config`，独立运行既有配置测试文件，不启动个人服务或真实来源；原 `test-dev-lifecycle` 和 Metrics T2 仍覆盖同一文件。该文件已在 Metrics 输入清单中，Platform沿原开发生命周期聚合执行，无新增依赖或workflow改动。
+新增标准入口 `make test-monitor-metrics-config`，独立运行既有配置测试文件，不启动个人服务或真实来源；原 `test-dev-lifecycle` 和 Metrics T2 仍覆盖同一文件。
 
 实际验证与失败保留：
 

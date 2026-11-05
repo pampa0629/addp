@@ -2,7 +2,9 @@
 
 [返回 Monitor 历史证据](Monitor历史证据.md) · [返回验收证据索引](../验收证据索引.md)
 
-本专题收录跨主题汇总、分项失败、Metrics 分组与前端固定版本复核。固定源码、环境、失败记录、修复结论与未覆盖范围以各记录为准；本次仅整理文档，没有重跑验收或刷新 CI 状态，不推导当前 HEAD 或生产 T5 已通过。跨主题语境与原有顺序见 [Monitor 历史证据入口](Monitor历史证据.md#原记录入口)。
+本专题收录跨主题汇总、分项失败、Metrics 分组与前端固定版本复核。验收结论按各记录的固定源码、环境、运行尝试和层级认定。原顺序见[Monitor 历史证据入口](Monitor历史证据.md#原记录入口)。
+
+原始过程、逐步诊断及详细归档清单见[精简前的固定记录](https://github.com/pampa0629/addp/blob/be8f8daa4d38a7830585577f03b77bf2b5ed3931/docs/spec/testing/evidence/Monitor%E7%BB%BC%E5%90%88%E9%AA%8C%E6%94%B6%E5%8E%86%E5%8F%B2%E8%AF%81%E6%8D%AE.md)。
 
 ## 节点、实例与资源告警
 
@@ -52,11 +54,9 @@
 
 现保留根 `make test-monitor-metrics` 默认全量顺序路径，CI 改为同一入口的 `postgres-source`、`http-quality`、`host-resources` 三个互补场景，各自随机项目及 Linux Runner，原 20 分钟上限、子步期限、窗口/权限/身份断言和退出清零均不变；`fail-fast: false` 不因一项失败取消其他项。稳定检查名 `Monitor metrics infrastructure` 汇总当前选择和整个矩阵结果，任何已选分组失败、取消或跳过均拒绝通过。不是并行保留旧单 Job 全量路线，也不新增产品配置或测试身份。本地分组真实结果及新输入云端结果按后续实际证据分别记录；之前排队的旧输入不取消、不重复派发，不恢复定时轮询。
 
-
 本次冻结源码基线 `667b25923fd6b25007ae55e6741a806d22367351`，仅叠加本方分组编排输入。三个标准命令均退出 0：`make test-monitor-metrics MONITOR_METRICS_TEST_ARGS=--case=postgres-source` 为 315.279 秒，`--case=http-quality` 为 403.107 秒，`--case=host-resources` 为 736.779 秒，覆盖完整专业来源/认证/生命周期、真实进程与 HTTP 窗口/告警/停源清空，以及主机/受限来源/中心 WAL/总览 TOP5/资源告警。三个分组的容器、网络、卷及临时目录均由各自退出路径清零，随后另读回三类资源全部为零；共享主机并非独占，不由本机耗时承诺 Linux CI 时长。结果 `/tmp/addp-metrics-partition-results.json`，各自日志 `/tmp/addp-metrics-partition-{postgres-source,http-quality,host-resources}.log`；原生进程场景封装前后的检查语句 AST 完全一致（除函数作用域及 `global base`），没有删减原断言。默认全量路径仍包含同一批场景，新的本地证据来自三个互补分组，不声称本轮又执行了无参数全量调用。
 
-T0：42 项指标配置契约（含分组选择和失败/取消/跳过拒绝）、38 项 CI 登记回归、实际 T2 登记检查和 `make test-workflow-security` 均通过。既有根 Make 入口、owner 自动发现和变更输入覆盖有效，无新增依赖或平行测试实现。先前排队的 `01925025a` / [Release 39626206650](https://github.com/pampa0629/addp/actions/runs/39626206650) 选择成功但 Metrics 作业 `119318812307` 实际跳过，不能作为替代通过证据；未取消或重跑它。当次新输入 Linux 三分组及稳定汇总检查尚待 CI，现已取得下述终态证据；专业指标/页面正式身份 T4 的既有缺口仍不由本次 T2 关闭。
-
+T0：42 项指标配置契约（含分组选择和失败/取消/跳过拒绝）、38 项 CI 登记回归、实际 T2 登记检查和 `make test-workflow-security` 均通过。先前排队的 `01925025a` / [Release 39626206650](https://github.com/pampa0629/addp/actions/runs/39626206650) 选择成功但 Metrics 作业 `119318812307` 实际跳过，不能作为替代通过证据；未取消或重跑它。当次新输入 Linux 三分组及稳定汇总检查尚待 CI，现已取得下述终态证据；专业指标/页面正式身份 T4 的既有缺口仍不由本次 T2 关闭。
 
 2026-10-22，精确提交 `b100eda7b803d180e0db53297331ba618de11b67` 的 [Release 39634536388](https://github.com/pampa0629/addp/actions/runs/39634536388) attempt 1 已取得完整 Metrics T2 通过证据：
 
@@ -68,7 +68,6 @@ T0：42 项指标配置契约（含分组选择和失败/取消/跳过拒绝）�
 | 完整汇总 | [119387244768](https://github.com/pampa0629/addp/actions/runs/39634536388/job/119387244768) | `Require every selected metrics case` 成功，三个已选分组全部真实成功，非条件跳过。 |
 
 三个分组完整原始日志均以 `zero owned containers/networks/volumes and temporary files` 结束。本会话复核全部日志文件与独立审计记录的 SHA-256 一致，日志源码为上述精确提交，并再次通过 GitHub API 确认四个 Job 均为 `completed/success`；未重跑测试。证据位于 `/tmp/addp-ci-20261021-180013/job-{119356253850,119356254038,119356254095,119387244768}.log` 和 `metrics-complete-independent-audit.json`。此前约 20 分钟取消的记录仍不计通过；本次仅关闭 Metrics 完整 T2 的 CI 预算收口，不将父 Release 的其他 Owner 结论并入，也不扩展为 PostgreSQL 专业页面 Hosted T4、七天自然留存或 T5 通过。定时任务保持停用。
-
 
 ## 最新 Linux Metrics 三分组人工复核
 
@@ -85,7 +84,6 @@ GitHub API 确认四个 Job 均为 `completed/success`；四份原始日志的 c
 
 此前 ParseAddr、停源竞态、20 分钟取消和准入外层 45 秒失败仍按其原输入保留，不追溯改成通过。本次关闭上述 `c7ef8ea0e` 输入的完整 Linux Metrics T2 缺口；核对时更晚 main 的运行仍有排队或 Metrics 未选中，不能扩大为最新共享工作区、后续前端改动、额外 Hosted T4、72 小时留存/容量、生产 T5 或其它 Owner CI 全部通过。
 
-
 ## Linux Metrics 后续输入复核（f09c1ecf9）
 
 2026-10-22 按用户要求再次手动核对本专项 CI。精确源码 `f09c1ecf962b7184f71a0b92f489f2a7f1fada30` 的 [Release 39750726710](https://github.com/pampa0629/addp/actions/runs/39750726710)，push、attempt 1，已完整实际执行三组：`http-quality` [119734076006](https://github.com/pampa0629/addp/actions/runs/39750726710/job/119734076006)、`postgres-source` [119734076020](https://github.com/pampa0629/addp/actions/runs/39750726710/job/119734076020)、`host-resources` [119734075933](https://github.com/pampa0629/addp/actions/runs/39750726710/job/119734075933) 的 `Verify isolated metrics lifecycle` 均成功，稳定汇总 [119755672239](https://github.com/pampa0629/addp/actions/runs/39750726710/job/119755672239) 的 `Require every selected metrics case` 成功。汇总实际为 selected=true、选择及分组结果 success，未用条件跳过代替。
@@ -94,7 +92,6 @@ GitHub API 确认四个 Job 均为 `completed/success`；四份原始日志的 c
 
 较后 `7b77919f8`／39751069208 及 `610110d8`／39759525003 的 Metrics matrix 实际跳过，不能当作新 T2；核对时 `6eb1ce457`／39772136972 仍排队且尚无 Metrics Job。本次仅关闭 f09c1ecf9 输入的 Linux Metrics T2 待收口，不扩为当前共享 main、后续 Python Trace、额外 Hosted 或容量通过；未设置定时、手工触发或重跑。
 
-
 ## 五项列表、热力面板与服务环比的 Linux 前端复核（2026-10-24）
 
 专门 CI 会话回传 [Platform 39960204230 / Monitor job 120436001184](https://github.com/pampa0629/addp/actions/runs/39960204230/job/120436001184)，固定检出 `9bf8dddcbe8a589b0c7a85af6ded4bb44485a87e`，push、attempt 1。独立核对原始日志的实际 `make test-monitor-frontend`、检出 SHA、完整 411 条浏览器执行序号和最终汇总：112 项单元测试通过、失败／取消／跳过均为 0；411 项浏览器全部通过（17.9 分钟）；构建通过（7.06 秒），Monitor frontend gate 为 selected／success。包含中英文 20 台主机精确五项批量摘要、默认每页 20 台及独立状态、四项热力面板用例和十五项服务进程比较用例。
@@ -102,7 +99,6 @@ GitHub API 确认四个 Job 均为 `completed/success`；四份原始日志的 c
 固定版本的 `monitor/frontend/e2e/process-comparison.spec.js` 与 `d7ec3e9ffac1761c60fd0a5f76dc0063a6354398` 字节一致，SHA-256 为 `4e6560c91f6a1ab2e8c72294776296a2918391f6f1817b987eca8c5f2b378954`。复核关闭环比时先挂起实际 `process_resource_summaries` 响应，断言旧四次趋势请求与 `23:50:15` 起点仍保留，释放后等待第五次请求再断言 `23:55:15`；这项同步修正已在后继完整 Linux 门禁通过。原 `35f` 失败记录保留，原 `d7ec` Platform 39952965397 已取消，不计通过，亦不重复派发已修正事项。
 
 原始日志 `/tmp/addp-ci-manual-20261023-155348/job-120436001184.log` SHA-256 为 `e1ccc444f59ff2203f8bc8e1453fdba19ce55f36a5d216573bf8d6e14aed49e8`；同目录 `Monitor-9bf-frontend-independent-audit.json` 为回传审计，`Monitor-9bf-domain-audit.json` 为本次领域核对。核对使用原始日志哈希、`git show` 固定源码字节比较及执行项断言，没有重跑或查询／调度 CI、Hosted，也未操作个人服务或设置定时。这是受控 HTTP 下的前端 T1／T3／构建证据，不替代新摘要实源或正式身份 T4、长窗、容量及生产验收，不外推当前共享 HEAD。父 Platform 的无关 FTP 失败不在本会话修复范围，不将该 workflow 写为全绿；该次核对时个人 Safari 右侧两列截图与前台自动刷新尚未完成，后续实景结果见下一节。
-
 
 ## Monitor 前端整套门禁超时复核（2026-11-01，0e69a25b1）
 
@@ -113,7 +109,6 @@ GitHub API 确认四个 Job 均为 `completed/success`；四份原始日志的 c
 耗时拆分：checkout为12:10:40—12:15:32 UTC（292秒），含全分支／标签历史fetch；正式门禁步为12:15:59—12:40:53（1494秒）。浏览器首项12:16:04.025356、末项12:40:50.612102，启动跨度1486.586746秒。证据说明仓库获取与大套串行运行共同耗尽30分钟上限；不证明冷checkout的具体网络／对象耗时根因，也不将“接近跑完”算作通过。后续应先核对如何减少仓库获取开销、保留固定事件before/head及完整变更选择；当前不改预算、Worker数、断言、用例集合或共享CI编排。
 
 原始文件在 `/var/folders/r1/l7b49c757dz02zftf_l9vl9r0000gn/T/addp-line-nodes-q5rkxkgn/terminal-ci/124842615491/`，独立有界审计为 `/tmp/addp-monitor-0e69-frontend-timeout-audit.json`。审计脚本验证日志哈希、固定SHA、序号连续性和时间差；本次证据增量另经 `git diff --check`。未查询／重跑CI、Hosted或容量验收，未设置定时任务；不把本地Redis专项证据升级为该旧输入的整套Linux前端通过。
-
 
 ## Redis 必填认证与 MinIO 隔离构建闭包修复（2026-11-01）
 
@@ -129,12 +124,11 @@ GitHub API 确认四个 Job 均为 `completed/success`；四份原始日志的 c
 
 本地已证明输入解析回归及登记缺口修复；没有在macOS伪装GitHub Runner运行完整MinIO冷／热源码构建，也没有查询／重跑旧Job。推送后的唯一自然MinIO构建与新Runner复用仍等专门CI会话回传，不能把T0／原生解析通过计为镜像／cache-save／Hosted成功。此修复独立于未提交的Redis查询与261迁移，不包含其他会话前置迁移或共享功能WIP。
 
-
 ### 92dcfe06f 的 MinIO Linux 实际构建回传
 
 专门CI会话回传 [run41311505167／fixed-source job124862692691](https://github.com/pampa0629/addp/actions/runs/41311505167/job/124862692691)，push／attempt1，固定 `92dcfe06fdfbaf98884946b76b06aa476472bc5f`，selected=true、completed/success。独立核对 `/tmp/addp-ci-20261101-220010/MinIO-92dc-actual-Linux-proof.json` 与原始日志 `/tmp/addp-ci-20261101-220010/pass-job-124862692691.log`，SHA-256为 `2fbee89b572afbc5f1e3920b1e12723a85d4e4c8a608ab3a1fcb0ad54b5cee13`。日志固定检出一致，builder／正式MinIO Compose构建、离线MinIO和mc二进制摘要及版本、普通Compose缓存核验、inline元数据导出、image save、Actions Cache save和artifact upload均实际执行成功。最终构建回执cache_hit=false、ordinary_compose_cached=true、两个预期镜像身份完整；这是当次冷准备及同Runner暖构建，不是另一次Run恢复命中。
 
-关闭旧4803引出的Redis必填插值与MinIO固定源码Linux构建缺口；保留跨Run缓存恢复尚未获得本次证据的边界，不将该单Job扩大为整个workflow、新Runnerreuse、Hosted或当前共享工作区全部通过。本会话只核验回传归档，不查询／重跑CI。
+关闭旧4803引出的Redis必填插值与MinIO固定源码Linux构建缺口；保留跨Run缓存恢复尚未获得本次证据的边界，不将该单Job扩大为整个workflow、新Runnerreuse、Hosted或当前共享工作区全部通过。
 
 ## 独立引擎 CLI 临时树依赖闭包修复（2026-11-01）
 
@@ -146,13 +140,10 @@ GitHub API 确认四个 Job 均为 `completed/success`；四份原始日志的 c
 
 另以仓库外冻结HEAD仅叠加该单文件修复，执行同一Python包的EngineSourceCommandTest两项，4.076秒全部通过，日志 `/tmp/addp-platform-engine-cli-frozen.log`，冻结目录退出删除；未依赖未提交Redis查询／261或其他会话WIP。现有标准入口已在Platform T0与Online runner登记并实际覆盖该测试文件和原注册约束，无新增测试入口、权限、CI Job或Hosted用途。差异格式检查通过；新自然Platform终态仍等专门会话回传，本地确定性夹具不计真实Hosted或整套Linux Platform已通过，不重跑旧CI、不设置定时任务或操作个人服务。
 
-
 ## 后续本机浏览器三项失败的独立诊断（2026-11-02）
 
 固定22f8叠加拓扑自有overlay的标准Monitor前端入口实际132项T1通过、589／592项浏览器通过、构建未到；原三项失败和首次中断记录保留。本会话同源取证确认诊断期间存在macOS整机休眠、多个本方测试进程同步5—17秒停顿，超过原5秒断言预算；原失败产物完成时间紧邻11／18／12秒休眠恢复点。单独三项通过不覆盖原组合失败，原失败无trace不能逐调用复原；当前没有产品或测试修复，不放宽预算、不重跑完整门禁，稳定唤醒后的本机复验仍待完成。原图、源码闭包、分层结果及只读电源证据见[专项诊断](Monitor部署与前置诊断历史证据.md#本机-monitor-浏览器超时与系统休眠诊断2026-11-02)。自然Linux与Hosted继续等专门会话回传，不把旧74ed的固定产品通过或MinIO来源T2合并为本轮通过。
 
-
 后续固定`3f281d49c7c3533a347db4a270d090cabfd63301`的[Linux Monitor前端Job125102562739](https://github.com/pampa0629/addp/actions/runs/41391135443/job/125102562739)已实际执行标准入口，592项浏览器、Vite构建及整Job全部通过，含上述原三项；原日志哈希、Job元数据、当时远端2f83提交输入一致及当前九项直接输入重核见[Linux回传](Monitor部署与前置诊断历史证据.md#后续-linux-完整前端门禁回传2026-11-02)。仅补齐固定源码的Linux复验，不覆盖Mac休眠失败／稳定唤醒复验、前两次不完整取消或真实引擎来源／Hosted。本会话未重复运行已有有效门禁，也未把条件跳过的success计为另一轮产品通过。
-
 
 用户确认Mac稳定唤醒后，源码39059的原三个场景沿标准入口原样复验3／3通过（13.6秒），原5秒预算／ready条件／产品及测试不变，测试窗口无休眠／唤醒日志；13项直接输入前后哈希一致。记录及成功trace见[本机复验](Monitor部署与前置诊断历史证据.md#用户确认稳定唤醒后的原三项本机复验2026-11-02)。仅补齐这三项稳定唤醒后的本机受控T3缺口，原完整589／592失败及诊断失败保留，不与独立Linux结果合并为当前完整门禁／实源／Hosted通过；未重跑有效CI。
