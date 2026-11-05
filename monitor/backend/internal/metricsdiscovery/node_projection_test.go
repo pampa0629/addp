@@ -58,18 +58,18 @@ func TestNodeTargetRejectsUnsupportedAttributionAndSourceKinds(t *testing.T) {
 }
 
 func TestNodeReservationsIncludeCenterAndRejectDuplicateOwnership(t *testing.T) {
-	targets := make([]NodeTarget, 10)
+	targets := make([]NodeTarget, 13)
 	for i := range targets {
 		targets[i] = testNodeTarget()
 		targets[i].Source.Endpoint = fmt.Sprintf("https://127.0.0.%d:9443/metrics", i+1)
 	}
-	if err := CheckReservations(targets[:9]); err != nil {
+	if err := CheckReservations(targets[:12]); err != nil {
 		t.Fatalf("within reservation: %v", err)
 	}
 	if err := CheckReservations(targets); err != ErrBudgetExceeded {
 		t.Fatalf("center reservation omitted: %v", err)
 	}
-	targets[9].Enabled = false
+	targets[12].Enabled = false
 	if err := CheckReservations(targets); err != nil {
 		t.Fatalf("disabled source consumes scrape reservation: %v", err)
 	}

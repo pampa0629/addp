@@ -22,7 +22,7 @@ const (
 	Timeout                      = 5 * time.Second
 	EndpointSampleLimit          = 20000
 	SelfSampleReservation        = 20000
-	TotalSampleReservation       = 200000
+	TotalSampleReservation       = 260000
 	EndpointBodyLimit      int64 = 10 << 20
 	TargetLimit                  = 1000
 )

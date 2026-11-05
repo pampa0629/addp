@@ -24,7 +24,7 @@ scrape_configs:
     metrics_path: /metrics
     honor_labels: false
     follow_redirects: false
-    target_limit: 9
+    target_limit: 12
     sample_limit: 20000
     body_size_limit: 10MB
     label_limit: 20

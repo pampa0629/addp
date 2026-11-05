@@ -442,7 +442,7 @@ assert flags['web.enable-remote-write-receiver'] == 'false', flags
 config = api('status/config')['yaml']
 for value in ('scrape_interval: 15s', 'scrape_timeout: 5s', 'sample_limit: 20000', 'body_size_limit: 10MiB',
               'label_limit: 20', 'label_name_length_limit: 128', 'label_value_length_limit: 512',
-              'refresh_interval: 30s', 'target_limit: 9', 'client_id: addp-prometheus',
+              'refresh_interval: 30s', 'target_limit: 12', 'client_id: addp-prometheus',
               'context_type: platform', 'audience: addp.api', 'follow_redirects: false'):
     assert value in config, (value, config)
 

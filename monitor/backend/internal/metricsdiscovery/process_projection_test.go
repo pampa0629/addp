@@ -85,7 +85,7 @@ func TestProcessProjectionRejectsUnprotectedTransportAndDuplicatePhysicalSource(
 
 func TestProcessAndHostShareWholeSnapshotReservations(t *testing.T) {
 	snapshot := testSnapshot()
-	for i := 0; i < 10; i++ {
+	for i := 0; i < 13; i++ {
 		instance := testProcessIdentity("https://127.0.0.1:" + strconv.Itoa(18100+i) + "/metrics")
 		instance.InstanceID = "process-" + strconv.Itoa(i)
 		snapshot.ModuleInstances = append(snapshot.ModuleInstances, instance)
@@ -95,7 +95,7 @@ func TestProcessAndHostShareWholeSnapshotReservations(t *testing.T) {
 	if groups, err := projector.Project(context.Background(), nil); err != ErrBudgetExceeded || groups != nil {
 		t.Fatalf("process source budget: %+v %v", groups, err)
 	}
-	snapshot.ModuleInstances = snapshot.ModuleInstances[:9]
+	snapshot.ModuleInstances = snapshot.ModuleInstances[:12]
 	node := testNodeTarget()
 	snapshot.Nodes = append(snapshot.Nodes, models.ObservabilityNodeIdentity{NodeID: node.Subject.NodeID, Version: 1})
 	if groups, err := projector.Project(context.Background(), []NodeTarget{node}); err != ErrBudgetExceeded || groups != nil {

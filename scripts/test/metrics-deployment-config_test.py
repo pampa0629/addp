@@ -1548,7 +1548,7 @@ class MetricsDeploymentConfigTest(unittest.TestCase):
         self.assertIn('https://system.internal:8443/api/v1/system/oauth/token', data)
         self.assertIn('https://monitor.internal:8443/api/v1/monitor/platform/metrics_discovery', data)
         for value in ('client_id: addp-prometheus', 'context_type: platform', 'audience: addp.api',
-                      'refresh_interval: 30s', 'target_limit: 9', 'sample_limit: 20000',
+                      'refresh_interval: 30s', 'target_limit: 12', 'sample_limit: 20000',
                       'collector.key', 'control-ca.crt', 'source-ca.crt'):
             self.assertIn(value, data)
         config.render(self.env)
