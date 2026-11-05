@@ -271,7 +271,7 @@ test.describe('production public login', () => {
         await expect(primary).toBeDisabled()
         await assertAnonymous()
 
-        stage = 'explicit tenant and full return URL'
+        stage = 'explicit tenant and token issuance'
         const tenant = choices.find(option => option.tenant_membership_id === membershipID)
         await page.getByText(tenant.tenant_name, { exact: true }).click()
         await expect(page.getByRole('radio', { name: tenant.tenant_name, exact: true })).toBeChecked()
@@ -285,7 +285,12 @@ test.describe('production public login', () => {
         const choice = selection.request().postDataJSON()
         expect(choice.tenant_membership_id).toBe(membershipID)
         expect(choice.context_type).toBe('tenant')
-        expect((await selection.json()).next_action).toBe('session_issued')
+        const session = await selection.json()
+        expect(Boolean(session.access_token?.startsWith('addp_at_'))).toBe(true)
+        expect(session.token_type).toBe('Bearer')
+        expect(session.expires_in).toBeGreaterThan(0)
+
+        stage = 'selected identity and full return URL'
         await assertIdentity(identity)
         await assertLanding(page, target, landing)
         const cookie = await refreshCookie()

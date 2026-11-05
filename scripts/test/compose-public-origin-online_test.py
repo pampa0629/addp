@@ -109,9 +109,11 @@ class ComposePublicOriginOnlineTest(unittest.TestCase):
         workbench_evidence = {**login_evidence, "entry": "workbench"}
         portal_evidence = {**login_evidence, "entry": "portal"}
         portal_payload = portal_evidence
-        with tempfile.TemporaryDirectory() as temporary, patch.dict(os.environ, ADDP_ONLINE_ARTIFACT_DIR=temporary):
+        with (tempfile.TemporaryDirectory() as temporary, tempfile.TemporaryDirectory() as secrets,
+              patch.dict(os.environ, ADDP_ONLINE_ARTIFACT_DIR=temporary, ADDP_ONLINE_SECRET_DIR=secrets)):
             def browser(command, *, cwd, env):
                 self.assertIn("e2e/online/compose-public-origin.spec.js", command)
+                self.assertEqual(Path(command[command.index("--output") + 1]), Path(secrets).resolve() / "public-origin-playwright")
                 self.assertEqual(env["CONSOLE_URL"], "http://127.0.0.1:18080")
                 Path(env["ADDP_ONLINE_PUBLIC_ORIGIN_BROWSER_REPORT"]).write_text(json.dumps(payload))
                 for name in ("console", "independent"):

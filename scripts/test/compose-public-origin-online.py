@@ -322,7 +322,8 @@ def assert_module_gateway_route(module: str, path: str) -> None:
 
 
 def run_browser() -> dict[str, object]:
-    for key in ("ADDP_ONLINE_ARTIFACT_DIR", "ADDP_ONLINE_TEST_RUN_ID", "ADDP_ONLINE_READ_USER_USERNAME", "ADDP_ONLINE_READ_USER_PASSWORD",
+    for key in ("ADDP_ONLINE_ARTIFACT_DIR", "ADDP_ONLINE_SECRET_DIR", "ADDP_ONLINE_TEST_RUN_ID",
+                "ADDP_ONLINE_READ_USER_USERNAME", "ADDP_ONLINE_READ_USER_PASSWORD",
                 "ADDP_ONLINE_PUBLIC_MFA_USERNAME", "ADDP_ONLINE_PUBLIC_MFA_PASSWORD", "ADDP_ONLINE_PUBLIC_MFA_TOTP",
                 "ADDP_ONLINE_PUBLIC_MFA_PRINCIPAL_ID", "ADDP_ONLINE_PUBLIC_MFA_MEMBERSHIP_ID",
                 "ADDP_ONLINE_PUBLIC_MFA_ALTERNATE_MEMBERSHIP_ID"):
@@ -334,8 +335,11 @@ def run_browser() -> dict[str, object]:
     login_reports = {entry: artifacts / f"public-origin-{entry}-login.json" for entry in ("workbench", "portal")}
     for path in [report_file, *screenshots, *login_reports.values()]:
         path.unlink(missing_ok=True)
+    # Playwright writes a DOM snapshot on failures even with screenshots off.
+    private_output = Path(os.environ["ADDP_ONLINE_SECRET_DIR"]).resolve() / "public-origin-playwright"
     result = subprocess.run(
-        ["npm", "exec", "--", "playwright", "test", "e2e/online/compose-public-origin.spec.js", "--config=playwright.online.config.js"],
+        ["npm", "exec", "--", "playwright", "test", "e2e/online/compose-public-origin.spec.js",
+         "--config=playwright.online.config.js", "--output", str(private_output)],
         cwd=Path(__file__).resolve().parents[2] / "console/frontend",
         env={**os.environ, "CONSOLE_URL": os.environ["ADDP_ONLINE_PUBLIC_ORIGIN"],
              "ADDP_ONLINE_PUBLIC_ORIGIN_BROWSER_REPORT": str(report_file)},
