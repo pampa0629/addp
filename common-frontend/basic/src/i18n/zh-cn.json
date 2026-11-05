@@ -460,7 +460,8 @@
         "extract_vertices": "顶点提取",
         "check_geometry": "几何检查",
         "repair_geometry": "几何修复",
-        "snap_geometry": "参考吸附"
+        "snap_geometry": "参考吸附",
+        "polygonize": "拓扑构面"
       },
       "operatorParameters": {
         "target_geom": "目标图层（target_geom）",
@@ -521,6 +522,14 @@
         "actions": {
           "operator_input_invalid": "请检查输入类型、活动几何与有限二维XY；NULL/EMPTY和未知CRS保持原规则，无效几何仍可检查或显式修复，不自动投影。",
           "operator_output_fields_invalid": "请显式修改valid_field和reason_field：使用非空、无首尾空白、彼此不同且不与源列重名的字符串；不自动改名或覆盖。"
+        }
+      },
+      "polygonize": {
+        "reasons": {
+          "operator_input_invalid": "输入图层需要活动几何列，且每条记录须为有效、非空、坐标有限的二维线。"
+        },
+        "actions": {
+          "operator_input_invalid": "请检查 input_gdf 的活动几何列，提供有效的 LineString 或 MultiLineString，清理 NULL、空几何或空部件，以及 Z/M 或非有限坐标。"
         }
       },
       "referenceSnap": {

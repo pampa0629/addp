@@ -1549,13 +1549,14 @@ def polygonize(frame):
     return get_operator("polygonize")(input_gdf=frame)
 
 
-def test_polygonize_nodes_intersections_and_removes_duplicate_edges_without_mutating_source():
+@pytest.mark.parametrize("crs", [None, "EPSG:4326", "EPSG:3857"])
+def test_polygonize_nodes_intersections_and_removes_duplicate_edges_without_mutating_source(crs):
     frame = lines([
         box(0, 0, 4, 4).boundary,
         LineString([(-1, 2), (5, 2)]),
         MultiLineString([[(2, -1), (2, 5)], [(0, 0), (4, 0)]]),
         LineString([(4, 0), (0, 0)]),
-    ])
+    ], crs=crs)
     frame.index = [3, 5, 7, 9]
     original = frame.copy(deep=True)
     result = polygonize(frame)
@@ -1563,12 +1564,12 @@ def test_polygonize_nodes_intersections_and_removes_duplicate_edges_without_muta
 
     assert len(faces) == 4
     assert set(faces.geom_type) == {"Polygon"}
-    assert sorted(faces.area) == [4, 4, 4, 4]
+    assert sorted(shapely.area(faces.geometry.array)) == [4, 4, 4, 4]
     assert shapely.union_all(faces.geometry.array).equals(box(0, 0, 4, 4))
     assert faces.columns.tolist() == ["geometry"]
     assert diagnostics.columns.tolist() == ["issue_type", "geometry"]
     assert diagnostics.issue_type.tolist() == ["dangle"] * 4
-    assert diagnostics.length.sum() == 4
+    assert shapely.length(diagnostics.geometry.array).sum() == 4
     assert faces.crs == diagnostics.crs == frame.crs
     assert_geodataframe_equal(frame, original)
 
@@ -1628,14 +1629,79 @@ def test_polygonize_preserves_empty_schema_and_crs(crs):
     (shapely.from_wkt("MULTILINESTRING (EMPTY, (0 0, 1 1))"), "empty"),
 ])
 def test_polygonize_rejects_unsupported_rows_without_silently_dropping_them(geometry, message):
-    with pytest.raises(ValueError, match=message):
+    from operators.geometric_operators import PolygonizeInputError
+
+    with pytest.raises(PolygonizeInputError, match=message):
         polygonize(lines([box(0, 0, 1, 1).boundary, geometry]))
 
 
 @pytest.mark.parametrize("frame", [None, pd.DataFrame({"x": [1]}), gpd.GeoDataFrame({"x": [1]})])
 def test_polygonize_requires_an_active_geodataframe(frame):
-    with pytest.raises(ValueError, match="GeoDataFrame|geometry"):
+    from operators.geometric_operators import PolygonizeInputError
+
+    with pytest.raises(PolygonizeInputError, match="GeoDataFrame|geometry"):
         polygonize(frame)
+
+
+@pytest.mark.parametrize(
+    "fault, error_code",
+    [
+        (None, "INVALID_PARAMS"),
+        ("get_parts", "EXECUTION_FAILED"),
+        ("is_valid", "EXECUTION_FAILED"),
+        ("node", "EXECUTION_FAILED"),
+        ("polygonize_full", "EXECUTION_FAILED"),
+    ],
+)
+def test_polygonize_diagnostic_classification_blocks_both_dependent_saves(monkeypatch, fault, error_code):
+    import workflow_engine
+    from addp_common.workflow_runtime import WorkflowExecutionError
+
+    source = lines([Point(0, 0)] if fault is None else [box(0, 0, 1, 1).boundary], crs=None)
+    original = workflow_engine.get_operator
+    saves = []
+
+    def native_failure(*args, **kwargs):
+        # Even an exception with the same text as a deliberate rejection stays an execution failure.
+        raise ValueError("input_gdf requires valid lines with finite coordinates")
+
+    def resolve(name):
+        if name == "load":
+            return lambda **params: source
+        if name == "save":
+            return lambda **params: saves.append(params)
+        operator = original(name)
+        if name != "polygonize" or fault is None:
+            return operator
+
+        def invoke(**params):
+            with monkeypatch.context() as scope:
+                scope.setattr(shapely, fault, native_failure)
+                return operator(**params)
+
+        return invoke
+
+    monkeypatch.setattr(workflow_engine, "get_operator", resolve)
+    tasks = [
+        {"id": "build", "operator": "polygonize", "params": {"input_gdf": {"$ref": "load"}}, "depends_on": ["load"]},
+        {"id": "load", "operator": "load", "params": {}, "depends_on": []},
+    ]
+    for port in ("result", "diagnostics"):
+        tasks.append({
+            "id": f"save_{port}", "operator": "save", "depends_on": ["build"],
+            "params": {"input_df": {"$ref": "build", "port": port}},
+        })
+    with pytest.raises(WorkflowExecutionError) as error:
+        workflow_engine.GeoPythonWorkflowRunner(language="en").execute({"tasks": tasks})
+    assert error.value.error_code == error_code
+    assert not saves
+    expected = {
+        "schema_version": "addp.execution-failure/v3",
+        "stage": "execution",
+        "reason": "operator_input_invalid",
+        "operator": {"node_index": 1, "operator_id": "polygonize", "parameter": "input_gdf"},
+    }
+    assert error.value.diagnostic == (expected if fault is None else None)
 
 
 def test_polygonize_metadata_declares_existing_workflow_ports_only():

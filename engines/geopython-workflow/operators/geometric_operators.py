@@ -2414,24 +2414,28 @@ def snap_geometry(
     return result
 
 
+class PolygonizeInputError(ValueError):
+    """An explicit rejection of the input linework."""
+
+
 def polygonize(input_gdf: gpd.GeoDataFrame) -> dict[str, gpd.GeoDataFrame]:
     """Build planar faces and report unused edges without changing source linework."""
     if not isinstance(input_gdf, gpd.GeoDataFrame):
-        raise ValueError("input_gdf must be a GeoDataFrame")
+        raise PolygonizeInputError("input_gdf must be a GeoDataFrame")
     try:
         geometry = input_gdf.geometry
     except AttributeError as exc:
-        raise ValueError("input_gdf requires an active geometry column") from exc
+        raise PolygonizeInputError("input_gdf requires an active geometry column") from exc
 
     if geometry.isna().any() or not geometry.geom_type.isin(["LineString", "MultiLineString"]).all():
-        raise ValueError("input_gdf requires non-null LineString or MultiLineString geometries")
+        raise PolygonizeInputError("input_gdf requires non-null LineString or MultiLineString geometries")
     parts = shapely.get_parts(geometry.array)
     if shapely.is_empty(geometry.array).any() or shapely.is_empty(parts).any():
-        raise ValueError("input_gdf must not contain empty line geometries")
+        raise PolygonizeInputError("input_gdf must not contain empty line geometries")
     if shapely.has_z(parts).any() or shapely.has_m(parts).any():
-        raise ValueError("input_gdf requires two-dimensional XY line geometries")
+        raise PolygonizeInputError("input_gdf requires two-dimensional XY line geometries")
     if not np.isfinite(shapely.get_coordinates(parts)).all() or not shapely.is_valid(parts).all():
-        raise ValueError("input_gdf requires valid lines with finite coordinates")
+        raise PolygonizeInputError("input_gdf requires valid lines with finite coordinates")
 
     # Node the complete network once; this inserts real intersections and removes
     # overlapping segments without introducing a snapping distance.

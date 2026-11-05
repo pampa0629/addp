@@ -695,19 +695,23 @@ for(const locale of ['zh-cn','en'])for(const [operator_id,reason,parameter,field
  })
 
 
-for(const locale of ['zh-cn','en'])for(const [operator_id,reason,parameter,field]of [["snap_geometry", "operator_input_invalid", "input_gdf", ""], ["snap_geometry", "operator_reference_invalid", "reference_gdf", ""], ["snap_geometry", "operator_crs_invalid", "", ""], ["snap_geometry", "operator_nonnegative_number_required", "tolerance", ""]])
- test(`reference snap diagnostics in monitor (${operator_id}, ${reason}, ${locale})`,async({page})=>{
+for(const locale of ['zh-cn','en'])for(const [operator_id,reason,parameter,field]of [["polygonize", "operator_input_invalid", "input_gdf", ""], ["snap_geometry", "operator_input_invalid", "input_gdf", ""], ["snap_geometry", "operator_reference_invalid", "reference_gdf", ""], ["snap_geometry", "operator_crs_invalid", "", ""], ["snap_geometry", "operator_nonnegative_number_required", "tolerance", ""]])
+ test(`${operator_id === 'polygonize' ? 'polygonize' : 'reference snap'} diagnostics in monitor (${operator_id}, ${reason}, ${locale})`,async({page})=>{
     await page.addInitScript(()=>{window.copiedDiagnostic='';Object.defineProperty(navigator,'clipboard',{value:{writeText:async text=>{window.copiedDiagnostic=text}},configurable:true})})
     const details={category:'execution_failed',code:'develop.workflow.invalid_params',message:'PRIVATE_BIZ_FIELD private-password /private/input.gpkg',
       diagnostic:{schema_version:'addp.execution-failure/v3',stage:'execution',reason,operator:{node_index:2,operator_id,...(parameter?{parameter}:{}),...(field?{field}:{})}}}
     await installBackend(page,{locale,empty:true,targetExists:true,errorDetails:details})
     await page.goto('/executions?execution_id=diagnostic-run')
     const panel=page.locator('.execution-detail-content > .execution-failure')
-    const name=locale==='zh-cn'?'参考吸附':'Reference snap'
+    const name = operator_id === 'polygonize'
+      ? (locale === 'zh-cn' ? '拓扑构面' : 'Polygonize linework')
+      : (locale === 'zh-cn' ? '参考吸附' : 'Reference snap')
     await expect(panel).toContainText(name)
     await expect(panel).toContainText(locale==='zh-cn'?'定义中的第 2 个节点':'Node 2 in the workflow definition')
     if(parameter)await expect(panel).toContainText(parameter)
-    if(['operator_input_invalid','operator_reference_invalid'].includes(reason)){for(const token of ['NULL/EMPTY','XY','Z/M'])await expect(panel).toContainText(token)}
+    if (operator_id === 'polygonize') {
+      for (const token of ['LineString', 'MultiLineString', 'NULL', 'Z/M']) await expect(panel).toContainText(token)
+    } else if(['operator_input_invalid','operator_reference_invalid'].includes(reason)){for(const token of ['NULL/EMPTY','XY','Z/M'])await expect(panel).toContainText(token)}
     if(reason==='operator_nonnegative_number_required')await expect(panel).toContainText(locale==='zh-cn'?'零容差':'Zero')
     if(reason==='operator_crs_invalid')await expect(panel).toContainText('CRS')
     if(field){await expect(panel).toContainText(field);await expect(panel).toContainText(locale==='zh-cn'?'手动重命名':'Rename')}

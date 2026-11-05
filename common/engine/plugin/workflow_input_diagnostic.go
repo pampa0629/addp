@@ -27,6 +27,9 @@ func (o *WorkflowOperatorFailure) Valid(reason string) bool {
 	}
 	parameter, field, ok := "", "", false
 	switch o.OperatorID {
+	case "polygonize":
+		parameter, ok = "input_gdf", reason == "operator_input_invalid"
+
 	case "snap_geometry":
 		switch reason {
 		case "operator_input_invalid":

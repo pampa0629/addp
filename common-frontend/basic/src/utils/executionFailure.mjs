@@ -22,7 +22,7 @@ const failureCategories = new Set(['permission_denied', 'timeout', 'cancelled', 
   'resource_exhausted', 'invalid_input', 'execution_failed', 'submission_uncertain',
   'coordinator_lost', 'child_failed', 'owner_unavailable'])
 
-const operatorFailureTemplates = Object.freeze({ snap_geometry:'referenceSnap', check_geometry:'geometryValidity', repair_geometry:'geometryValidity', extract_vertices: 'vertices', split_multipart: 'multipart', get_bounds: 'bounds', distance_to: 'distance', get_area: 'measurement', get_length: 'measurement', split_by_area: 'measurement', contains: 'spatialRelation', intersects: 'spatialRelation', voronoi: 'voronoi',
+const operatorFailureTemplates = Object.freeze({ polygonize: 'polygonize', snap_geometry:'referenceSnap', check_geometry:'geometryValidity', repair_geometry:'geometryValidity', extract_vertices: 'vertices', split_multipart: 'multipart', get_bounds: 'bounds', distance_to: 'distance', get_area: 'measurement', get_length: 'measurement', split_by_area: 'measurement', contains: 'spatialRelation', intersects: 'spatialRelation', voronoi: 'voronoi',
   envelope: 'construction', centroid: 'construction', convex_hull: 'construction', minimum_rotated_rectangle: 'construction',
   representative_point: 'interiorPoint',
   'buffer:operator_input_invalid': 'buffer', 'buffer:operator_crs_invalid': 'buffer',
@@ -64,6 +64,7 @@ export function executionFailurePresentation(details, translate) {
 }
 
 export const operatorInputRules = Object.freeze([
+  ["polygonize", "operator_input_invalid", "input_gdf", ""],
   ["snap_geometry", "operator_input_invalid", "input_gdf", ""],
   ["snap_geometry", "operator_reference_invalid", "reference_gdf", ""],
   ["snap_geometry", "operator_crs_invalid", "", ""],

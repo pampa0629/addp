@@ -460,7 +460,8 @@
         "extract_vertices": "Extract vertices",
         "check_geometry": "Check geometry",
         "repair_geometry": "Repair geometry",
-        "snap_geometry": "Reference snap"
+        "snap_geometry": "Reference snap",
+        "polygonize": "Polygonize linework"
       },
       "operatorParameters": {
         "target_geom": "Target layer (target_geom)",
@@ -521,6 +522,14 @@
         "actions": {
           "operator_input_invalid": "Check the input type, active geometry and finite XY coordinates; NULL/EMPTY and unknown CRS retain their existing rules. Invalid geometries may still be checked or explicitly repaired, without automatic projection.",
           "operator_output_fields_invalid": "Set valid_field and reason_field explicitly to non-empty strings without surrounding whitespace, distinct from each other and every source column; no automatic renaming or replacement."
+        }
+      },
+      "polygonize": {
+        "reasons": {
+          "operator_input_invalid": "The input layer needs an active geometry column with valid, non-empty lines and finite XY coordinates."
+        },
+        "actions": {
+          "operator_input_invalid": "Check the active geometry of input_gdf. Provide valid LineString or MultiLineString geometries and remove NULL, empty geometries or parts, Z/M dimensions, and non-finite coordinates."
         }
       },
       "referenceSnap": {
