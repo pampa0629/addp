@@ -489,6 +489,17 @@ class PGAuthorizationOnlineTest(unittest.TestCase):
                                      server.client('coordinator'), server.client('login'), 'external-online-consumer', 'private-password')
         return server, lifecycle
 
+    def test_cpu_profile_skips_serial_benchmark_and_keeps_authorization_lifecycle(self):
+        server, lifecycle = self.lifecycle()
+        report = {}
+        lifecycle.run(report, load_profile=ONLINE.CPU_LOAD_PROFILE)
+        lifecycle.cleanup()
+        self.assertNotIn('authorization_latency', report)
+        self.assertFalse(any(call[2] == READ_CHECK for call in server.calls))
+        self.assertEqual(len(report['checks']), 26)
+        self.assertTrue(report['same_credential_through_grant_expiry'])
+        self.assertIn(lifecycle.expiry_grant, server.expired_grants)
+
     def test_full_flow_keeps_one_table_same_credential_and_natural_expiry(self):
         server, lifecycle = self.lifecycle()
         report = {}
@@ -1109,8 +1120,9 @@ class PGAuthorizationOnlineTest(unittest.TestCase):
                 ADDP_ONLINE_TEST_USER_PASSWORD='private-password',
                 ADDP_ONLINE_FIXTURE_DEPARTMENT_ID='41', ADDP_ONLINE_FIXTURE_PROJECT_GROUP_ID='51')
             life = Mock(grants=[], paths=[])
-            def after_member_exit(report):
+            def after_member_exit(report, *, load_profile):
                 # The existing membership scenario formally reauthenticates the same reader.
+                self.assertEqual(load_profile, 'full')
                 life.reader = server.client('reader-after-exit')
                 server.current_reader_token = life.reader.token
             life.run.side_effect = after_member_exit
@@ -1130,8 +1142,9 @@ class PGAuthorizationOnlineTest(unittest.TestCase):
                     proof.update(result='passed', completed=list(completed))
                 scenario.inflight_items.side_effect = cutoff
                 return scenario
-            def late_failure(report):
+            def late_failure(report, *, load_profile):
                 self.assertEqual(completed, ['ranges', 'withdrawal', 'expiry'])
+                self.assertEqual(load_profile, 'full')
                 raise ONLINE.SuiteError('read load exceeded its budget')
             life.production_flow.side_effect = late_failure
             with patch.dict(ONLINE.os.environ, env, clear=True), \
@@ -1698,6 +1711,7 @@ class PGReadLoadTest(unittest.TestCase):
         self.lifecycle.measure_read_load(report, self.bindings)
         evidence = report['authorization_load']
         self.assertEqual(evidence['result'], 'passed')
+        self.assertEqual(evidence['profile'], 'full')
         self.assertTrue(evidence['audit_observer_enabled'])
         self.assertTrue(evidence['audit_observation']['connection_closed'])
         self.assertEqual([(cell['mode'], cell['concurrency_limit']) for cell in evidence['cells']],
@@ -1719,6 +1733,23 @@ class PGReadLoadTest(unittest.TestCase):
         self.server.grants['0']['revocation'] = {'reason': 'test'}
         self.lifecycle.require_batch_denied(self.reader, self.paths)
         self.assertIsNone(self.server.grants['1']['revocation'])
+
+    def test_cpu_profile_runs_only_the_original_single_target_cells(self):
+        report = {}
+        before = json.dumps(self.server.grants, sort_keys=True)
+        self.lifecycle.measure_read_load(report, self.bindings, profile=ONLINE.CPU_LOAD_PROFILE)
+        evidence = report['authorization_load']
+        self.assertEqual(evidence['profile'], 'single_target_cpu')
+        self.assertEqual(evidence['result'], 'passed')
+        self.assertEqual(evidence['budget_seconds'], 90)
+        self.assertEqual([(cell['mode'], cell['concurrency_limit']) for cell in evidence['cells']],
+                         [('single_target', 1), ('single_target', 5), ('single_target', 10)])
+        self.assertEqual([body['targets'] for reader, body in self.reads if reader], [[self.paths[0]]] * 66)
+        self.assertTrue(evidence['outsider_batch_denied'])
+        self.assertTrue(evidence['unchanged_identity_rules_boundary'])
+        self.assertTrue(evidence['audit_observation']['connection_closed'])
+        self.assertEqual(self.active, 0)
+        self.assertEqual(json.dumps(self.server.grants, sort_keys=True), before)
 
     def test_failure_stops_without_retry_drains_threads_and_preserves_failure(self):
         for fault in ('transport', 'wrong_status', 'time', 'shape', 'credential', 'context', 'grant', 'boundary'):
@@ -2014,7 +2045,7 @@ class InitialProductionOnlineTest(unittest.TestCase):
         self.lifecycle.grant = Mock(return_value=(self.source_command, {'expires_at': self.expiry}))
         self.lifecycle.listing = Mock(side_effect=self.listing)
         self.lifecycle.revoke = Mock(side_effect=self.revoke)
-        self.lifecycle.measure_read_load = Mock(side_effect=lambda report, bindings:
+        self.lifecycle.measure_read_load = Mock(side_effect=lambda report, bindings, *, profile:
                                                report.update(authorization_load={}))
         self.lifecycle.require_batch_denied = Mock()
         self.reader.request.side_effect = self.request

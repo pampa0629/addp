@@ -147,7 +147,7 @@ on:
         type: string
         default: ''
       pg_cpu_comparison:
-        description: Run the PG authorization CPU comparison on one disposable Runner
+        description: Compare single-target PG authorization load at 4 and 3 vCPUs
         required: false
         type: boolean
         default: false
@@ -286,8 +286,11 @@ jobs:
           [ "$(git rev-parse HEAD)" = "$selected" ] || { echo 'PG source checkout mismatch' >&2; exit 1; }
           git merge-base --is-ancestor "$selected" "$PG_DISPATCH_COMMIT"
           if [ "${PG_CPU_COMPARISON:-false}" = true ]; then
-            grep -Fxq 'run_pg_cpu_arm() (' scripts/test/online-hosted-pg-authorization-gate.sh ||
-              { echo 'Selected PG source does not support the CPU comparison' >&2; exit 1; }
+            if ! grep -Fxq 'run_pg_cpu_arm() (' scripts/test/online-hosted-pg-authorization-gate.sh ||
+              ! grep -Fxq "CPU_LOAD_PROFILE = 'single_target_cpu'" scripts/test/pg-source-authorization-online.py; then
+              echo 'Selected PG source does not support the single-target CPU comparison' >&2
+              exit 1
+            fi
           fi
           printf 'PG source commit=%s; dispatch commit=%s\n' "$selected" "$PG_DISPATCH_COMMIT"
 

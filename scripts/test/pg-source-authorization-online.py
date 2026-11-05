@@ -64,6 +64,7 @@ METADATA_CHECKS = ['metadata_only_visible_content_denied', 'read_withdrawal_pres
 READ_CHECK = '/api/v1/system/engine-access/read-checks/manager-preview'
 LATENCY_ROUNDS, LATENCY_SAMPLES, LATENCY_WARMUPS = 3, 500, 10
 LOAD_ROUNDS, LOAD_SAMPLES, LOAD_WARMUPS = 3, 100, 10
+CPU_LOAD_PROFILE = 'single_target_cpu'
 
 # Deliberately no query text/parameters, credentials, relation data or query plans
 # in the published evidence. Counters belong to the whole disposable instance.
@@ -1786,7 +1787,7 @@ class Lifecycle:
                 if row['request_id'] not in self.grants:
                     self.grants.append(row['request_id'])
 
-    def production_flow(self, report):
+    def production_flow(self, report, *, load_profile='full'):
         report['phase'] = 'initial_output_authorization'
         facts = REGISTRATION.read_exact_record_authorization_facts(self.operator, self.path)
         source_grant, source_body = self.grant(facts, seconds=600)
@@ -1853,7 +1854,7 @@ class Lifecycle:
         lineage.issued()
         report['phase'] = 'concurrent_and_batch_read_load'
         self.measure_read_load(report, [(self.path, facts, source_grant),
-                                       (path, output_facts, row['request_id'])])
+                                       (path, output_facts, row['request_id'])], profile=load_profile)
         report['phase'] = 'output_source_withdrawal'
         self.revoke(source_grant)
         self.require_batch_denied(self.reader, [self.path, path])
@@ -1928,21 +1929,22 @@ class Lifecycle:
                 and isinstance(response.payload.get('error'), str) and bool(response.payload['error']),
                 'batch denial must not expose partial data or substitute another boundary')
 
-    def measure_read_load(self, report, bindings):
+    def measure_read_load(self, report, bindings, *, profile='full'):
         observation = {}
         report['authorization_load'] = {'result': 'failed', 'audit_observer_enabled': True,
                                         'audit_observation': observation}
         with AuditLatencyObservation(observation, self.recipient, phase='load') as observer:
-            self.sample_read_load(report, bindings, observer, observation)
+            self.sample_read_load(report, bindings, observer, observation, profile=profile)
         require(observation.get('result') == 'passed' and observation.get('connection_closed') is True,
                 'read load observation did not finish cleanly')
         result = report['authorization_load']
         verify_load_audit_windows(result, observation['audit_rows'])
         result['result'] = 'passed'
 
-    def sample_read_load(self, report, bindings, observer, observation):
+    def sample_read_load(self, report, bindings, observer, observation, *, profile='full'):
         """Bounded closed-loop HTTP samples, using only already-issued fixture Grants."""
-        result = {'schema_version': 'addp.authorization-load/v1', 'result': 'failed',
+        require(profile in {'full', CPU_LOAD_PROFILE}, 'invalid PG authorization load profile')
+        result = {'schema_version': 'addp.authorization-load/v1', 'result': 'failed', 'profile': profile,
                   'measurement': 'gateway_client_http_and_json_roundtrip', 'unit': 'ms',
                   'principal_id': self.recipient, 'same_principal': True,
                   'endpoint': READ_CHECK, 'quantile_method': 'nearest_rank',
@@ -1994,8 +1996,9 @@ class Lifecycle:
         targets = [path for path, _, _ in bindings]
         self.require_batch_denied(self.outsider, targets)
         result['outsider_batch_denied'] = True
-        modes = [('single_target', [[targets[0]]]), ('two_target_batch', [targets]),
-                 ('two_target_separate', [[targets[0]], [targets[1]]])]
+        modes = [('single_target', [[targets[0]]])]
+        if profile == 'full':
+            modes.extend([('two_target_batch', [targets]), ('two_target_separate', [[targets[0]], [targets[1]]])])
         for mode, groups in modes:
             for concurrency in ((1,) if mode == 'two_target_separate' else (1, 5, 10)):
                 require(snapshot() == baseline, 'read load control drifted before a cell')
@@ -2914,7 +2917,7 @@ class Lifecycle:
             'existing_grant_reads_reset_content',
             'content_change_and_replay_do_not_restore_withdrawn_grant', 'source_baseline_restored_without_read_access'])
 
-    def run(self, report):
+    def run(self, report, *, load_profile='full'):
         reader_before = self.reader.token
         report['phase'] = 'initial_protection_sync'
         API.wait_manager_read_boundary(self.reader, self.engine, time.monotonic() + 120)
@@ -2939,8 +2942,9 @@ class Lifecycle:
         self.grants.append(duplicate['request_id'])
         rejected = self.operator.request('POST', self.base + '/access_grants', (409,), duplicate).payload
         require(rejected.get('error_code') == 'engine_access_grant_relation_exists', 'duplicate rejected for the wrong reason')
-        report['phase'] = 'fixed_target_read_latency'
-        self.measure_read_latency(report, facts, first)
+        if load_profile == 'full':
+            report['phase'] = 'fixed_target_read_latency'
+            self.measure_read_latency(report, facts, first)
         report['phase'] = 'basic_rescan'
         report['basic_rescan'] = basic_scan(self.operator, self.engine, ['metric_people'])
         refreshed = item(self.reader, self.engine, 'metric_people')
@@ -2991,6 +2995,11 @@ def main():
             'ADDP_ONLINE_TEST': '1', 'ADDP_ONLINE_HOST': '1', 'ADDP_ONLINE_HOSTED': '1',
             'GITHUB_ACTIONS': 'true', 'RUNNER_OS': 'Linux', 'POSTGRES_DB': 'addp_online'}.items()),
             'use the disposable Hosted PG authorization gate')
+        cpu_arm = os.environ.get('ADDP_ONLINE_PG_CPU_ARM', '')
+        require(cpu_arm in {'', '3', '4'}, 'invalid PG CPU arm')
+        load_profile = CPU_LOAD_PROFILE if cpu_arm else 'full'
+        if cpu_arm:
+            report.update(cpu_vcpus=int(cpu_arm), full_load_acceptance='not_run')
         tenant, engine = int(os.environ['ADDP_ONLINE_TEST_TENANT_ID']), int(os.environ['ADDP_ONLINE_CONSUMER_ENGINE_ID'])
         require(tenant > 1 and engine > 0, 'nondefault Tenant and positive Engine required')
         directory = Path(os.environ['ADDP_ONLINE_ARTIFACT_DIR'])
@@ -3031,7 +3040,7 @@ def main():
         lifecycle = Lifecycle(operator, reader, tenant, engine, recipient, organizations, outsider,
                               organization_operator, login, os.environ['ADDP_ONLINE_TEST_USER_USERNAME'],
                               os.environ['ADDP_ONLINE_TEST_USER_PASSWORD'])
-        lifecycle.run(report)
+        lifecycle.run(report, load_profile=load_profile)
         lifecycle.function_permission_flow(report, business, confirmer)
         lifecycle.catalog_flow(report, business, confirmer)
         lifecycle.workspace_flow(report, issuer)
@@ -3059,7 +3068,7 @@ def main():
             lifecycle.collection.source_barriers.append(barrier)
             lifecycle.scoped_refresh.inflight_items('public', ['public.metric_people', 'public.metric_events'],
                                                    cutoff, barrier)
-        lifecycle.production_flow(report)
+        lifecycle.production_flow(report, load_profile=load_profile)
         report['result'] = 'passed'
     except (SuiteError, PREFLIGHT.PreflightError, REGISTRATION.RegistrationError, KeyError, ValueError, TypeError, OSError):
         print('PG source authorization acceptance failed; inspect the bounded phase evidence', file=sys.stderr)
@@ -3082,6 +3091,8 @@ def main():
                 audits = load.get('audit_observation', {}).get('audit_rows', [])
                 system_logs = Path(__file__).resolve().parents[2] / 'logs/runtime/system'
                 load['system_log_tail'] = collect_system_load_tail(system_logs, audits)
+                if load.get('profile') == CPU_LOAD_PROFILE and load['system_log_tail']['result'] != 'matched':
+                    report['result'] = 'failed'
                 evidence.write_text(json.dumps(report, sort_keys=True) + '\n')
     print(json.dumps(report, sort_keys=True))
     return 0 if report['result'] == 'passed' else 1
