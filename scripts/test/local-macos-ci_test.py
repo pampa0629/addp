@@ -229,6 +229,7 @@ class LocalMacOSCiTest(unittest.TestCase):
               "${ADDP_TEST_MYSQL_PORT-UNSET}" \
               "${ADDP_TEST_MYSQL_USER-UNSET}" \
               "${ADDP_TEST_MYSQL_PASSWORD-UNSET}" >> "$GO_LOG"
+            case "$*" in *SharedSQLPool*) printf '%s\n' '--- PASS: TestIntegrationMySQLSharedSQLPool (0.01s)' ;; esac
             case "$*" in *OutputRewrite*) printf '%s\n' '--- PASS: TestIntegrationMySQLOutputRewrite (0.01s)' ;; esac
             printf '%s|%s|%s|%s|%s|%s|%s\n' "$*" \
               "${ADDP_TEST_OCEANBASE_HOST-UNSET}" \
@@ -432,11 +433,16 @@ class LocalMacOSCiTest(unittest.TestCase):
         self.assertFalse(self.go_log.exists())
         self.assertFalse(any(" up " in command or " down " in command for command in self._docker_commands()))
 
-    def test_mysql_gate_requires_native_output_rewrite_pass_evidence(self) -> None:
-        self._executable("go", "#!/bin/sh\nexit 0\n")
-        result = self._run_mysql_gate()
-        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
-        self.assertIn("output rewrite equivalence test did not pass", result.stderr)
+    def test_mysql_gate_requires_pass_evidence_for_each_native_contract(self) -> None:
+        for passing_test, expected_error in (
+            ("TestIntegrationMySQLSharedSQLPool", "output rewrite equivalence test did not pass"),
+            ("TestIntegrationMySQLOutputRewrite", "MySQL gate requires the native shared SQL pool test"),
+        ):
+            with self.subTest(passing_test=passing_test):
+                self._executable("go", f"#!/bin/sh\nprintf '%s\\n' '--- PASS: {passing_test} (0.01s)'\n")
+                result = self._run_mysql_gate()
+                self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+                self.assertIn(expected_error, result.stderr)
 
     def _run_oceanbase_gate(self) -> subprocess.CompletedProcess[str]:
         environment = os.environ.copy()
