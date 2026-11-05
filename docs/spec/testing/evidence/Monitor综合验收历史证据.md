@@ -104,7 +104,13 @@
 
 固定版本的 `monitor/frontend/e2e/process-comparison.spec.js` 与 `d7ec3e9ffac1761c60fd0a5f76dc0063a6354398` 字节一致，SHA-256 为 `4e6560c91f6a1ab2e8c72294776296a2918391f6f1817b987eca8c5f2b378954`。复核关闭环比时先挂起实际 `process_resource_summaries` 响应，断言旧四次趋势请求与 `23:50:15` 起点仍保留，释放后等待第五次请求再断言 `23:55:15`；这项同步修正已在后继完整 Linux 门禁通过。原 `35f` 失败记录保留，原 `d7ec` Platform 39952965397 已取消，不计通过，亦不重复派发已修正事项。
 
-原始日志 `/tmp/addp-ci-manual-20261023-155348/job-120436001184.log` SHA-256 为 `e1ccc444f59ff2203f8bc8e1453fdba19ce55f36a5d216573bf8d6e14aed49e8`；同目录 `Monitor-9bf-frontend-independent-audit.json` 为回传审计，`Monitor-9bf-domain-audit.json` 为本次领域核对。核对使用原始日志哈希、`git show` 固定源码字节比较及执行项断言，没有重跑或查询／调度 CI、Hosted，也未操作个人服务或设置定时。这是受控 HTTP 下的前端 T1／T3／构建证据，不替代新摘要实源或正式身份 T4、长窗、容量及生产验收，不外推当前共享 HEAD。父 Platform 的无关 FTP 失败不在本会话修复范围，不将该 workflow 写为全绿；该次核对时个人 Safari 右侧两列截图与前台自动刷新尚未完成，后续实景结果见下一节。
+原始日志 `/tmp/addp-ci-manual-20261023-155348/job-120436001184.log` SHA-256 为 `e1ccc444f59ff2203f8bc8e1453fdba19ce55f36a5d216573bf8d6e14aed49e8`；同目录 `Monitor-9bf-frontend-independent-audit.json` 为回传审计，`Monitor-9bf-domain-audit.json` 为本次领域核对。核对使用原始日志哈希、`git show` 固定源码字节比较及执行项断言，没有重跑或查询／调度 CI、Hosted，也未操作个人服务或设置定时。这是受控 HTTP 下的前端 T1／T3／构建证据，不替代新摘要实源或正式身份 T4、长窗、容量及生产验收，不外推当前共享 HEAD。父 Platform 的无关 FTP 失败不在本会话修复范围，不将该 workflow 写为全绿。
+
+固定 Linux Job 核对时，个人 Safari 复验尚未完成。随后在单台 Desktop VM 的核心资源列表中，截图核对了右侧内存使用率和运行时长，并观察到前台数值自动更新。[核心资源列表的 Safari 复验](Monitor节点与主机资源历史证据.md#safari-主机列表右侧列与前台自动刷新2026-10-24)
+
+负载与连接视图另有一轮个人复验，覆盖三档负载、导航和 TCP 缺样展示。该轮右侧 TCP 截图及前台自然刷新未验。[负载与连接视图的 Safari 记录](Monitor节点与主机资源历史证据.md#主机列表负载与连接视图2026-10-26)
+
+固定 Linux Job 的热力面板与服务环比覆盖受控前端场景，实源页面及正式身份长窗各自验收。[热力面板实源验收准备](Monitor节点与主机资源历史证据.md#热力面板实源页面验收准备2026-10-28) · [服务进程环比本地证据](Monitor实例与服务发现历史证据.md#服务进程-cpurss-相邻时段比较本地)
 
 ## Monitor 前端整套门禁超时复核（2026-11-01，0e69a25b1）
 
