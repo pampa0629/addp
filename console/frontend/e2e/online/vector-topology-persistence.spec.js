@@ -1501,6 +1501,18 @@ test('NFS GeoPackage 同一普通用户撤权血缘', async ({ page }) => {
   const canvas = viewer.locator('.lineage-canvas canvas').first()
   const marker = viewer.getByTestId('lineage-permission-filtered')
   const summary = viewer.locator('.lineage-summary')
+  const tree = frame.locator('.explorer-tree .resource-tree')
+  const treePath = `/api/v1/meta/resource-tree/${binding.engine_id}`
+  const sibling = 'node-members.gpkg'
+  const treeLabels = () => tree.locator('.explorer-node-label__text').allTextContents()
+  const treeReads = []
+  page.on('request', request => {
+    const url = new URL(request.url())
+    if (request.method() === 'GET' && (url.pathname === '/api/v1/manager/engines' ||
+      url.pathname === treePath || url.pathname.startsWith(treePath + '/'))) {
+      treeReads.push(url.pathname)
+    }
+  })
   const changeDepth = async depth => {
     const response = waitForGraph(depth)
     await viewer.locator('.lineage-depth .el-select__wrapper').click()
@@ -1543,6 +1555,9 @@ test('NFS GeoPackage 同一普通用户撤权血缘', async ({ page }) => {
       const { rows, paths } = await lineageCanvasSnapshot(canvas)
       return paths.length > 0 && [source.name, output.name].every(name => rows.some(row => row.text.includes(name)))
     }).toBe(true)
+    for (const name of [source.name, output.name, sibling]) await expect(tree.getByText(name, { exact: true })).toBeVisible()
+    report.resource_tree = { authorized: await treeLabels() }
+    const beforeWithdrawal = treeReads.length
     await page.screenshot({ path: resolve(directory, 'topology-lineage-authorized.png') })
     const originalDocument = before.request().frame()
     const navigations = []
@@ -1586,9 +1601,59 @@ test('NFS GeoPackage 同一普通用户撤权血缘', async ({ page }) => {
     await expect(summary).toContainText('0 个节点 · 0 条关系')
     await expect(canvas).toHaveCount(0)
     await page.screenshot({ path: resolve(directory, 'topology-lineage-root-revoked.png') })
-    report.result = 'passed'
     report.same_browser_credential = true
     report.same_manager_frame = true
+    report.resource_tree.after_lineage_requery = { requests: treeReads.slice(beforeWithdrawal), labels: await treeLabels() }
+    persist()
+
+    const beforeToolbar = treeReads.length
+    const engineRead = page.waitForResponse(response => response.request().method() === 'GET' &&
+      new URL(response.url()).pathname === '/api/v1/manager/engines')
+    await tree.locator('.tree-header .header-actions button').click()
+    const engineResponse = await engineRead
+    sameSessionAndDocument(engineResponse)
+    expect(engineResponse.status()).toBe(200)
+    await expect(frame.getByText('刷新成功', { exact: true })).toBeVisible()
+    report.resource_tree.toolbar = { status: engineResponse.status(), requests: treeReads.slice(beforeToolbar), labels: await treeLabels() }
+    await page.screenshot({ path: resolve(directory, 'topology-tree-toolbar-refresh.png') })
+    persist()
+
+    const beforeReload = treeReads.length
+    const treeRead = page.waitForResponse(response => response.request().method() === 'GET' && new URL(response.url()).pathname === treePath)
+    await page.reload()
+    const treeResponse = await treeRead
+    const treeAPI = await browserAPIFromResponse(treeResponse, process.env.GATEWAY_URL, {
+      principalID: binding.principal_id, tenantID: binding.tenant_id, permissions: binding.permissions_verified
+    })
+    try {
+      const fullTree = await treeAPI.get(treePath, { params: { expand_depth: -1 } })
+      const data = await capture('fresh_tree', fullTree)
+      expect(fullTree.status()).toBe(200)
+      const labels = []
+      const walk = node => {
+        labels.push(node.label)
+        for (const child of node.children || []) walk(child)
+      }
+      walk(data)
+      expect(labels).toContain(sibling)
+      expect(labels).not.toContain(source.name)
+      expect(labels).not.toContain(output.name)
+    } finally {
+      await treeAPI.dispose()
+    }
+    for (const name of ['Hosted topology NFS', 'outputs']) {
+      const row = tree.locator('.el-tree-node__content').filter({ has: frame.getByText(name, { exact: true }) })
+      await expect(row).toBeVisible()
+      if (await row.locator('..').getAttribute('aria-expanded') !== 'true') {
+        await row.locator(':scope > .el-tree-node__expand-icon').click()
+      }
+    }
+    await expect(tree.getByText(sibling, { exact: true })).toBeVisible()
+    await expect(tree.getByText(source.name, { exact: true })).toHaveCount(0)
+    await expect(tree.getByText(output.name, { exact: true })).toHaveCount(0)
+    report.resource_tree.reload = { status: treeResponse.status(), requests: treeReads.slice(beforeReload), labels: await treeLabels() }
+    await page.screenshot({ path: resolve(directory, 'topology-tree-browser-reload.png') })
+    report.result = 'passed'
     persist()
   } finally {
     await issuer.dispose()
