@@ -898,7 +898,8 @@ def run_nodes_lineage_permissions(repository, env, client, physical_runner):
     persist()
     try:
         source_name = fixture.NODES_SOURCES[0]
-        report['source_scan'] = support.wait_for_meta_scan(issuer, engine, deadline, scope={'catalog_paths': [source_name]})
+        source_target = f'addp://engine/{engine}/path/{source_name}?type=file'
+        report['source_scan'] = support.wait_for_meta_scan(issuer, engine, deadline, scope={'targets': [source_target]})
         stage = 'source_grant'
         source_grant = grant(source_name)
         source = support.find_fixture_item(reader, engine, source_name, 'nodes source')
