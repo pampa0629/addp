@@ -3422,6 +3422,66 @@ def validate_raster_surface_area(repository: Path, registered: set[str]) -> None
 
 
 
+def validate_raster_line_of_sight(repository: Path, registered: set[str]) -> None:
+    import ast
+
+    suite = 'raster-line-of-sight-persistence'
+    if suite not in registered:
+        return
+    workflow = (repository/'.github/workflows/online-t4-gates.yml').read_text()
+    job = re.search(r'(?ms)^  raster-line-of-sight-hosted-t4:\n(.*?)(?=^  [a-z][a-z0-9-]*:\n|\Z)', workflow)
+    gate = 'scripts/test/online-hosted-raster-line-of-sight-gate.sh'
+    if (job is None or any(fragment not in job[1] for fragment in (
+            f"if: github.event_name == 'workflow_dispatch' && inputs.suite == '{suite}'",
+            'runs-on: ubuntu-24.04', 'cancel-in-progress: false', 'nfs-kernel-server nfs-common',
+            f'bash {gate} --check-only', f'run: bash {gate}', 'if: always()'))
+            or f"&& inputs.suite != '{suite}'" not in workflow or load_suite_registry(repository)[suite].nightly):
+        raise RegistrationError('line of sight requires an isolated manual Hosted NFS job')
+
+    fixture = 'business/scripts/online-raster-line-of-sight-fixture.py'
+    scene = 'scripts/test/raster-line-of-sight-persistence-online.py'
+    runner = 'test-raster-line-of-sight-online-runner'
+    native = 'test_online_line_of_sight_fixture.py'
+    make = (repository/'Makefile').read_text()
+    if (not source_contract_contains(make_target_commands(make, 'test-geopython-workflow'), native, repository)
+            or runner+':' not in make_target_commands(make, 'test-raster-online-runner')
+            or 'scripts/test/online-raster-lineage_test.py' not in make_target_commands(make, runner)):
+        raise RegistrationError('line-of-sight Native and Runner must be in the standard aggregate gates')
+    required = {
+        gate: ('start_online_geopython_runtime', '--suite raster-workflow', '--wait-protection-owners develop,manager',
+               'ADDP_ONLINE_TEST_TIMEOUT_SECONDS=600', 'online_raster_lineage.py prepare',
+               'unset ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN', 'online-raster-line-of-sight-fixture.py stop'),
+        fixture: ('GDAL_TIFF_INTERNAL_MASK', 'GCI_AlphaBand', 'enter >= leave', 'decimal', 'double_precision=15',
+                  'runtime_workspaces_removed', 'source bytes changed', 'csv_base64'),
+        scene: ('(16, 36, 712, 53)', "for language in ('zh-cn', 'en')", 'lineage.collect',
+                'lineage.verify_archive', 'base.validate_scan', 'raster.wait_lineage', 'readonly.no_publication',
+                'query language rewrote stored failure', 'source or prior target Meta snapshot changed',
+                'line-of-sight-csv-manifest.json', 'fixture.parse_csv', 'immutable(archive/name, payload)'),
+        'engines/geopython-workflow/'+native: ('test_line_of_sight_real_sixteen_csv_chains_preview_original_bytes_and_fail_closed_archive',
+                                             'test_line_of_sight_real_exact_failure_node_language_and_no_publication'),
+        'scripts/utils/online_raster_lineage.py': ("'raster-line-of-sight-persistence': 'line-of-sight-lineage'",),
+        'scripts/test/raster-line-of-sight-persistence-online_test.py': ('test_complete_fixed_matrix_rereads_and_original_manifest',
+                                                                       'test_identity_language_lineage_scan_size_and_metadata_fail_closed'),
+        'Makefile': ('scripts/test/raster-line-of-sight-persistence-online_test.py',
+                     'scripts/test/online-hosted-raster-line-of-sight-gate_test.py',
+                     'test_line_of_sight_requires_manual_nfs_and_fixed_matrix'),
+    }
+    for name, fragments in required.items():
+        path = repository/name
+        if not path.is_file() or any(not source_contract_contains(path.read_text(), fragment, repository) for fragment in fragments):
+            raise RegistrationError('line-of-sight persistence evidence or registration is incomplete: '+name)
+
+    def literal(relative, name):
+        module = ast.parse((repository/relative).read_text())
+        return next(ast.literal_eval(node.value) for node in module.body if isinstance(node, ast.Assign)
+                    and any(isinstance(t, ast.Name) and t.id == name for t in node.targets))
+
+    cases = literal(fixture, 'CASES')
+    if (len(cases) != 16 or set(cases.values()) != {'visible', 'blocked', 'indeterminate'}
+            or len(literal(scene, 'FAILURES')) != 18):
+        raise RegistrationError('line of sight requires the fixed three-state and bilingual matrix')
+
+
 def validate_raster_profile_curvature(repository: Path, registered: set[str]) -> None:
     suite='raster-profile-curvature-persistence'
     if suite not in registered:return
@@ -7480,6 +7540,7 @@ def check_registration(repository: Path) -> None:
     validate_raster_profile_curvature(repository, registered)
     validate_raster_cut_fill(repository, registered)
     validate_raster_surface_area(repository, registered)
+    validate_raster_line_of_sight(repository, registered)
     validate_raster_tangential_curvature(repository, registered)
     validate_raster_plan_curvature(repository, registered)
     validate_raster_tpi(repository, registered)

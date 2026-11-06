@@ -596,6 +596,39 @@ class OnlineCIRegistrationTest(unittest.TestCase):
             target.write_text(original)
 
 
+    def test_line_of_sight_requires_manual_nfs_and_fixed_matrix(self):
+        source = SCRIPT.parents[2]
+        paths = ('Makefile', '.github/workflows/online-t4-gates.yml', 'scripts/test/online-gate.py',
+                 'scripts/test/online-hosted-raster-line-of-sight-gate.sh',
+                 'business/scripts/online-raster-line-of-sight-fixture.py',
+                 'scripts/test/raster-line-of-sight-persistence-online.py',
+                 'scripts/test/raster-line-of-sight-persistence-online_test.py',
+                 'scripts/utils/online_raster_lineage.py',
+                 'engines/geopython-workflow/test_online_line_of_sight_fixture.py')
+        for relative in paths:
+            target = self.repository/relative
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(source/relative, target)
+        registered = {'raster-line-of-sight-persistence'}
+        CHECK.validate_raster_line_of_sight(self.repository, registered)
+        changes = ((paths[0], 'test_online_line_of_sight_fixture.py'),
+                   (paths[1], "inputs.suite != 'raster-line-of-sight-persistence'"),
+                   (paths[3], 'ADDP_ONLINE_TEST_TIMEOUT_SECONDS=600'),
+                   (paths[4], "'flat.csv': 'visible',"),
+                   (paths[5], '(16, 36, 712, 53)'),
+                   (paths[5], 'lineage.verify_archive'),
+                   (paths[5], 'immutable(archive/name, payload)'),
+                   (paths[7], "'raster-line-of-sight-persistence': 'line-of-sight-lineage'"),
+                   (paths[8], 'test_line_of_sight_real_exact_failure_node_language_and_no_publication'))
+        for relative, fragment in changes:
+            target = self.repository/relative
+            original = target.read_text()
+            self.assertIn(fragment, original)
+            target.write_text(original.replace(fragment, '' if relative == paths[4] else 'omitted'))
+            with self.subTest(relative=relative, fragment=fragment), self.assertRaises(CHECK.RegistrationError):
+                CHECK.validate_raster_line_of_sight(self.repository, registered)
+            target.write_text(original)
+
     def test_profile_curvature_requires_manual_nfs_full_pixels_and_regressions(self):
         source=SCRIPT.parents[2]
         required={
