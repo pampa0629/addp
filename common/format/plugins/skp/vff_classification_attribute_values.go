@@ -7,17 +7,25 @@ type vffSKCTypeReferenceKey struct {
 	role   string
 }
 
-// Semantics over the graph already resolved by readValueType. No parsing,
-// symbol resolution, external loading, or alternative type-reading route.
-func (b *vffSKCBinder) checkAttributeValues(result *vffSKCValueBinding) error {
+func (b *vffSKCBinder) restrictionTypeReferences(result *vffSKCValueBinding) (map[vffSKCTypeReferenceKey]vffSKCValueReference, error) {
 	refs := map[vffSKCTypeReferenceKey]vffSKCValueReference{}
 	for _, ref := range result.references {
 		if err := b.tick(0); err != nil {
-			return err
+			return nil, err
 		}
 		if ref.role == "type" || ref.role == "base" || ref.role == "itemType" {
 			refs[vffSKCTypeReferenceKey{ref.source, ref.role}] = ref
 		}
+	}
+	return refs, nil
+}
+
+// Semantics over the graph already resolved by readValueType. No parsing,
+// symbol resolution, external loading, or alternative type-reading route.
+func (b *vffSKCBinder) checkAttributeValues(result *vffSKCValueBinding) error {
+	refs, err := b.restrictionTypeReferences(result)
+	if err != nil {
+		return err
 	}
 	if err := b.checkRestrictionValues(result, refs); err != nil {
 		return err

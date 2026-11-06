@@ -174,6 +174,71 @@ func (b *vffSKCBinder) particleType(element *vffXMLNode) (vffSKCSubstitutionType
 	return b.substitutionType(element, element.attrs["type"])
 }
 
+func (b *vffSKCBinder) particleFixedIssue(derived, base *vffXMLNode, typ vffSKCSubstitutionType, name string) (string, error) {
+	baseFixed, baseHasFixed := base.attrs["fixed"]
+	derivedFixed, derivedHasFixed := derived.attrs["fixed"]
+	if !derivedHasFixed {
+		if baseHasFixed {
+			return fmt.Sprintf("XSD particle restriction drops %s fixed value", name), nil
+		}
+		return "", nil
+	}
+	if _, hasDefault := derived.attrs["default"]; hasDefault {
+		return fmt.Sprintf("XSD particle %s declares both default and fixed", name), nil
+	}
+	if _, hasDefault := base.attrs["default"]; baseHasFixed && hasDefault {
+		return fmt.Sprintf("XSD base particle %s declares both default and fixed", name), nil
+	}
+	unproved := fmt.Sprintf("XSD particle restriction fixed value unproved for %s", name)
+	c := &vffSKCRestrictionChecker{
+		b: b, cache: map[*vffXMLNode]*vffSKCRestrictionProfile{}, active: map[*vffXMLNode]bool{},
+	}
+	var profile *vffSKCRestrictionProfile
+	var err error
+	if typ.node == nil {
+		profile, err = c.referenceProfile(vffSKCValueReference{name: typ.name}, 1)
+	} else if typ.node.name.Local == "simpleType" {
+		var binding *vffSKCValueBinding
+		binding, err = b.readValueType(typ.node)
+		if err != nil {
+			return "", err
+		}
+		c.refs, err = b.restrictionTypeReferences(binding)
+		if err != nil {
+			return "", err
+		}
+		profile, err = c.profile(typ.node, 1)
+	}
+	if err != nil {
+		return "", err
+	}
+	if profile == nil || !profile.known {
+		return unproved, nil
+	}
+	if profile.primitive == (xml.Name{Space: vffXSDNS, Local: "ID"}) {
+		return fmt.Sprintf("XSD particle %s of type ID cannot declare fixed", name), nil
+	}
+	derivedValue, known, err := c.evaluate(profile, derived, derivedFixed)
+	if err != nil || !known {
+		return unproved, err
+	}
+	if !baseHasFixed {
+		return "", nil
+	}
+	baseValue, known, err := c.evaluate(profile, base, baseFixed)
+	if err != nil || !known {
+		return unproved, err
+	}
+	equal, err := b.equalValue(baseValue, derivedValue)
+	if err != nil {
+		return "", err
+	}
+	if !equal {
+		return fmt.Sprintf("XSD particle restriction changes %s fixed value", name), nil
+	}
+	return "", nil
+}
+
 func (b *vffSKCBinder) particleRestrictionIssue(restriction, base *vffXMLNode, depth int) (string, error) {
 	const unproved = "XSD particle occurrence restriction unproved"
 	var sequence *vffXMLNode
@@ -234,6 +299,9 @@ func (b *vffSKCBinder) particleRestrictionIssue(restriction, base *vffXMLNode, d
 		}
 		if derivedType.name.Local == "" || derivedType != baseType {
 			return fmt.Sprintf("XSD particle restriction type compatibility unproved for %s", particle.name.Local), nil
+		}
+		if issue, err := b.particleFixedIssue(particle.declaration, from.declaration, derivedType, particle.name.Local); issue != "" || err != nil {
+			return issue, err
 		}
 		next = i + 1
 	}

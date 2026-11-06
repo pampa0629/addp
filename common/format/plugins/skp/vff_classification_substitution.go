@@ -91,7 +91,8 @@ func (b *vffSKCBinder) substitutionType(n *vffXMLNode, raw string) (vffSKCSubsti
 }
 
 // Checks the named derivation chain and its declared constraints. For flat
-// sequences, this checks occurrence bounds, nillability, and named type identity.
+// sequences, this checks occurrence bounds, nillability, named type identity,
+// and fixed values.
 func (b *vffSKCBinder) substitutionDerivation(source, target vffSKCSubstitutionType) (methods, blocks vffSKCDerivationFlags, issue string, err error) {
 	if source.name.Local == "" || target.name.Local == "" {
 		return 0, 0, "XSD substitution type derivation unproved", nil

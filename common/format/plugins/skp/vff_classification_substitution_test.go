@@ -111,3 +111,38 @@ func TestVFFSKCSubstitutionChecksInheritedParticleRestrictions(t *testing.T) {
 		})
 	}
 }
+
+func TestVFFSKCSubstitutionPreservesParticleFixedValues(t *testing.T) {
+	for _, tc := range []struct {
+		name, typ, base, derived, diagnostic string
+	}{
+		{"same integer value", "x:int", `fixed="1"`, `fixed="+01"`, ""},
+		{"empty fixed string", "x:string", `fixed=""`, `fixed=""`, ""},
+		{"introduces fixed", "x:int", "", `fixed="1"`, ""},
+		{"drops fixed", "x:int", `fixed="1"`, "", "drops Value fixed value"},
+		{"uses default", "x:int", `fixed="1"`, `default="1"`, "drops Value fixed value"},
+		{"changes fixed", "x:int", `fixed="1"`, `fixed="2"`, "changes Value fixed value"},
+		{"unknown value space", "x:float", `fixed="1"`, `fixed="1"`, "fixed value unproved for Value"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			element := `<x:element name="Value" type="` + tc.typ + `" `
+			base := `<x:complexType name="Base"><x:sequence>` + element + tc.base + `/></x:sequence></x:complexType>`
+			derived := `<x:complexType name="Derived"><x:complexContent><x:restriction base="r:Base"><x:sequence>` + element + tc.derived + `/></x:sequence></x:restriction></x:complexContent></x:complexType>`
+			const groups = `<x:element name="Head" type="r:Base"/><x:element name="Member" type="r:Derived" substitutionGroup="r:Head"/>`
+			files := skcDocumentFiles(t)
+			files["Schemas/root.xsd"] = skcGraphSchema("urn:r", base+derived+groups)
+			files["Schemas/root.xsd.filter"] = []byte("Derived")
+			facts := skcGraphRead(t, files)[0].substitutions
+			if len(facts.affiliations) != 1 {
+				t.Fatalf("lost direct affiliation: %#v", facts.affiliations)
+			}
+			if tc.diagnostic == "" {
+				if len(facts.pairs) != 1 || len(facts.pending) != 0 {
+					t.Fatalf("valid fixed value unresolved: %#v", facts)
+				}
+			} else if len(facts.pairs) != 0 || len(facts.pending) != 1 || !strings.Contains(facts.pending[0].reason, tc.diagnostic) {
+				t.Fatalf("unexpected fixed value outcome: %#v", facts)
+			}
+		})
+	}
+}
