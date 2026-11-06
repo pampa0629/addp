@@ -100,7 +100,7 @@ Redis 专业采集首批内核位于 `backend/internal/redissource`，仅供部�
 | [节点与主机资源](../docs/spec/testing/evidence/Monitor节点与主机资源历史证据.md) | 列表／设备／文件系统、趋势、个人 Safari 与实源覆盖 |
 | [实例与服务发现](../docs/spec/testing/evidence/Monitor实例与服务发现历史证据.md) | 主机绑定、多 Worker、cgroup、容器证明及部署预期／发现 |
 | [告警与规则](../docs/spec/testing/evidence/Monitor告警与规则历史证据.md) | CPU/RSS、事件查询、服务失联、文件系统规则及挂载入口 |
-| [Trace 与日志](../docs/spec/testing/evidence/MonitorTrace与日志历史证据.md) | 同步 HTTP、短阶段 Link、容量外推、正式身份本地窗口及历次失败 |
+| [Trace 与日志](../docs/spec/testing/evidence/MonitorTrace与日志历史证据.md) | 同步 HTTP、短阶段 Link，另见[正式身份本地窗口总览](../docs/spec/testing/evidence/MonitorTrace与日志历史证据.md#正式身份本地窗口总览)和[HTTP 追踪隔离容量基线](../docs/spec/testing/evidence/MonitorTrace与日志历史证据.md#http-追踪隔离容量基线本地) |
 | [HTTP 质量与采样](../docs/spec/testing/evidence/MonitorHTTP质量与采样历史证据.md) | 公共 mTLS、Go／Python 来源、采样／清理交接及限定 Linux T2 |
 | [采集来源与引擎指标](../docs/spec/testing/evidence/Monitor采集来源与引擎指标历史证据.md) | 自动接入、采集账号、PostgreSQL 来源 T2 与专业观测 Hosted T4 |
 | [执行监控与留存](../docs/spec/testing/evidence/Monitor执行监控与留存历史证据.md) | continuous、Owner 不可用、租户日志，另见[180 天概览只读评估](../docs/spec/testing/evidence/Monitor执行监控与留存历史证据.md#执行概览只读维护真实进程验收2026-10-25)和[30 天过程事件物理清理](../docs/spec/testing/evidence/Monitor执行监控与留存历史证据.md#30-天过程事件清理真实进程验收2026-10-26) |
