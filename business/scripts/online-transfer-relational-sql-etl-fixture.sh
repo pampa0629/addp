@@ -187,7 +187,8 @@ wait_for_clickhouse() {
           echo "ClickHouse stage=readiness result=passed"
           return
         fi
-        case "$status" in 0|1) ;; *) clickhouse_stage_failed readiness-sql "$status" ;; esac
+        # ClickHouse can report NETWORK_ERROR (210) while its listener is coming up.
+        case "$status" in 0|1|210) ;; *) clickhouse_stage_failed readiness-sql "$status" ;; esac
         ;;
       1) ;;
       *) clickhouse_stage_failed readiness-process "$status" ;;

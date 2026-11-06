@@ -150,6 +150,11 @@ case "$1" in
               echo 'SECRET_MARKER' >&2
               exec /bin/sleep 30
             fi
+            if [ "${ADDP_TEST_CLICKHOUSE_NETWORK_NOT_READY:-0}" = 1 ] && [ ! -f "$state.network-probed" ]; then
+              touch "$state.network-probed"
+              echo 'ClickHouse network error: SECRET_MARKER' >&2
+              exit 210
+            fi
             echo 1 ;;
           *--multiquery*)
             if [ "${ADDP_TEST_CLICKHOUSE_HANG:-}" = seed ]; then
@@ -408,6 +413,15 @@ esac
         self.assertEqual(self.run_fixture('stop').returncode, 0)
         self.assertFalse(self.doris_state.exists())
         self.assertFalse(self.clickhouse_state.exists())
+
+    def test_clickhouse_retries_sql_network_error_during_startup(self):
+        result = self.run_fixture('start', ADDP_TEST_CLICKHOUSE_NETWORK_NOT_READY='1')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn('ClickHouse stage=readiness result=passed', result.stdout)
+        self.assertNotIn('SECRET_MARKER', result.stdout + result.stderr)
+        self.assertEqual(self.log.read_text().count('timeout:readiness-sql:10s'), 2)
+        self.assertTrue((self.secrets / 'transfer-clickhouse-engine.json').is_file())
+        self.assertEqual(self.run_fixture('stop').returncode, 0)
 
     def test_clickhouse_startup_hangs_report_stage_and_allow_owned_cleanup(self):
         for stage, budget in (('pull', 300), ('start', 60), ('readiness-process', 10), ('readiness-sql', 10),
