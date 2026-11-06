@@ -67,24 +67,33 @@ func TestVFFSKCSubstitutionChecksInheritedParticleRestrictions(t *testing.T) {
 	const base = `<x:complexType name="Ancestor"><x:sequence><x:element name="Value" type="x:int"/></x:sequence></x:complexType><x:complexType name="Base"><x:complexContent><x:extension base="r:Ancestor"><x:sequence><x:element name="Optional" type="x:int" minOccurs="0"/></x:sequence></x:extension></x:complexContent></x:complexType>`
 	const groups = `<x:element name="Head" type="r:Base"/><x:element name="Member" type="r:MemberType" substitutionGroup="r:Head"/><x:element name="Unrelated" type="r:Base" substitutionGroup="r:Head"/>`
 	for _, tc := range []struct {
-		name, particle, diagnostic string
+		name, particle, diagnostic, baseNillable string
 	}{
-		{"exact", `<x:element name="Value" type="x:int"/>`, ""},
-		{"same type with another prefix", `<x:element xmlns:alias="http://www.w3.org/2001/XMLSchema" name="Value" type="alias:int"/>`, ""},
-		{"different type", `<x:element name="Value" type="x:string"/>`, "type compatibility unproved for Value"},
-		{"different type with same local name", `<x:element xmlns:other="urn:other" name="Value" type="other:int"/>`, "type compatibility unproved for Value"},
-		{"implicit type", `<x:element name="Value"/>`, "type compatibility unproved for Value"},
-		{"conflicting inline type", `<x:element name="Value" type="x:int"><x:simpleType><x:restriction base="x:string"/></x:simpleType></x:element>`, "type compatibility unproved for Value"},
-		{"wider maximum", `<x:element name="Value" type="x:int" maxOccurs="2"/>`, "widens Value maxOccurs from 1 to 2"},
-		{"unbounded maximum", `<x:element name="Value" type="x:int" maxOccurs="unbounded"/>`, "widens Value maxOccurs from 1 to unbounded"},
-		{"lower minimum", `<x:element name="Value" type="x:int" minOccurs="0"/>`, "lowers Value minOccurs from 1 to 0"},
-		{"required omission", "", "omits required Value"},
-		{"different namespace", `<x:element name="Value" type="x:int" form="qualified"/>`, "occurrence restriction unproved"},
+		{"exact", `<x:element name="Value" type="x:int"/>`, "", ""},
+		{"same type with another prefix", `<x:element xmlns:alias="http://www.w3.org/2001/XMLSchema" name="Value" type="alias:int"/>`, "", ""},
+		{"different type", `<x:element name="Value" type="x:string"/>`, "type compatibility unproved for Value", ""},
+		{"different type with same local name", `<x:element xmlns:other="urn:other" name="Value" type="other:int"/>`, "type compatibility unproved for Value", ""},
+		{"implicit type", `<x:element name="Value"/>`, "type compatibility unproved for Value", ""},
+		{"conflicting inline type", `<x:element name="Value" type="x:int"><x:simpleType><x:restriction base="x:string"/></x:simpleType></x:element>`, "type compatibility unproved for Value", ""},
+		{"implicit base prohibits nil", `<x:element name="Value" type="x:int" nillable="true"/>`, "widens Value nillable from false to true", ""},
+		{"explicit false prohibits nil", `<x:element name="Value" type="x:int" nillable="1"/>`, "widens Value nillable from false to true", "0"},
+		{"false may stay false", `<x:element name="Value" type="x:int" nillable="false"/>`, "", "0"},
+		{"true may narrow to the default", `<x:element name="Value" type="x:int"/>`, "", "true"},
+		{"true may stay true", `<x:element name="Value" type="x:int" nillable="1"/>`, "", "true"},
+		{"wider maximum", `<x:element name="Value" type="x:int" maxOccurs="2"/>`, "widens Value maxOccurs from 1 to 2", ""},
+		{"unbounded maximum", `<x:element name="Value" type="x:int" maxOccurs="unbounded"/>`, "widens Value maxOccurs from 1 to unbounded", ""},
+		{"lower minimum", `<x:element name="Value" type="x:int" minOccurs="0"/>`, "lowers Value minOccurs from 1 to 0", ""},
+		{"required omission", "", "omits required Value", ""},
+		{"different namespace", `<x:element name="Value" type="x:int" form="qualified"/>`, "occurrence restriction unproved", ""},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			files := skcDocumentFiles(t)
 			derived := `<x:complexType name="MemberType"><x:complexContent><x:restriction base="r:Base"><x:sequence>` + tc.particle + `</x:sequence></x:restriction></x:complexContent></x:complexType>`
-			files["Schemas/root.xsd"] = skcGraphSchema("urn:r", base+derived+groups)
+			baseDeclaration := base
+			if tc.baseNillable != "" {
+				baseDeclaration = strings.Replace(base, `name="Value" type="x:int"`, `name="Value" type="x:int" nillable="`+tc.baseNillable+`"`, 1)
+			}
+			files["Schemas/root.xsd"] = skcGraphSchema("urn:r", baseDeclaration+derived+groups)
 			files["Schemas/root.xsd.filter"] = []byte("MemberType")
 			facts := skcGraphRead(t, files)[0].substitutions
 			if len(facts.affiliations) != 2 {

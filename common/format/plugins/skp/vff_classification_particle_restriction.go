@@ -3,11 +3,13 @@ package skp
 import (
 	"encoding/xml"
 	"fmt"
+	"strings"
 )
 
 type vffSKCParticle struct {
 	name        xml.Name
 	min, max    string
+	nillable    bool
 	declaration *vffXMLNode
 }
 
@@ -75,7 +77,17 @@ func (b *vffSKCBinder) particleOccurrences(sequence *vffXMLNode) ([]vffSKCPartic
 		if vffSKCOccurrenceGreater(min, max) {
 			return nil, false, fmt.Errorf("reversed XSD occurrence bounds for %s", name.Local)
 		}
-		result = append(result, vffSKCParticle{name, min, max, element})
+		nillable := false
+		if raw, declared := element.attrs["nillable"]; declared {
+			switch strings.Trim(raw, " \t\r\n") {
+			case "true", "1":
+				nillable = true
+			case "false", "0":
+			default:
+				return nil, false, fmt.Errorf("invalid XSD nillable for %s", name.Local)
+			}
+		}
+		result = append(result, vffSKCParticle{name: name, min: min, max: max, nillable: nillable, declaration: element})
 	}
 	return result, true, nil
 }
@@ -208,6 +220,9 @@ func (b *vffSKCBinder) particleRestrictionIssue(restriction, base *vffXMLNode, d
 		}
 		if vffSKCOccurrenceGreater(from.min, particle.min) {
 			return fmt.Sprintf("XSD particle restriction lowers %s minOccurs from %s to %s", particle.name.Local, from.min, particle.min), nil
+		}
+		if particle.nillable && !from.nillable {
+			return fmt.Sprintf("XSD particle restriction widens %s nillable from false to true", particle.name.Local), nil
 		}
 		derivedType, err := b.particleType(particle.declaration)
 		if err != nil {
