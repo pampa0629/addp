@@ -61,6 +61,17 @@ func quickViewLocatorError(c *gin.Context, err error) {
 	}
 }
 
+func quickViewActionLocatorError(c *gin.Context, err error) {
+	if errors.Is(err, preview.ErrEngineLifecycleConflict) {
+		c.JSON(http.StatusConflict, gin.H{
+			"error":      commoni18n.T(c, manageri18n.MsgEngineLifecycleConflict),
+			"error_code": "engine_lifecycle_conflict",
+		})
+		return
+	}
+	quickViewLocatorError(c, err)
+}
+
 type QuickViewHandler struct {
 	service                    *service.QuickViewService
 	previewResolver            *preview.PreviewResolver
@@ -223,7 +234,7 @@ func (h *QuickViewHandler) GetQuickViewCapabilityByLocator(c *gin.Context) {
 // @Failure 401 {object} map[string]interface{} "当前用户凭据失效 | Current User credential rejected"
 // @Failure 403 {object} map[string]interface{} "功能权限不足或源数据读取授权未通过 | Functional permission or source data read authorization denied"
 // @Failure 404 {object} map[string]interface{} "资源不存在 | Resource not found"
-// @Failure 409 {object} map[string]interface{} "源文件组成不完整、已有活动执行或缺少已有结果动作 | Incomplete source composition, active execution or existing result action required"
+// @Failure 409 {object} map[string]interface{} "来源引擎生命周期冲突（engine_lifecycle_conflict）、源文件组成不完整、已有活动执行或缺少已有结果动作 | Source engine lifecycle conflict (engine_lifecycle_conflict), incomplete source composition, active execution or existing result action required"
 // @Failure 500 {object} map[string]interface{} "服务器内部错误 | Internal server error"
 // @Failure 503 {object} map[string]interface{} "来源引擎不可用 | Source engine unavailable"
 // @x-addp-auth-mode "permission"
@@ -287,7 +298,7 @@ func (h *QuickViewHandler) ExecuteQuickViewAction(c *gin.Context) {
 	tenantID := tenantIDFromContext(c)
 	capability, err := h.quickViewCapabilityForLocator(ctx, tenantID, locator)
 	if err != nil {
-		quickViewLocatorError(c, err)
+		quickViewActionLocatorError(c, err)
 		return
 	}
 	if !quickViewCapabilityHasAction(capability, action) {
@@ -296,7 +307,7 @@ func (h *QuickViewHandler) ExecuteQuickViewAction(c *gin.Context) {
 	}
 	source, err := h.quickViewSourceForLocator(c.Request.Context(), tenantID, locator)
 	if err != nil {
-		quickViewLocatorError(c, err)
+		quickViewActionLocatorError(c, err)
 		return
 	}
 

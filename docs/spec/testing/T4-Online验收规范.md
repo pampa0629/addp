@@ -135,6 +135,8 @@ Manager 源准备先沿当前扫描权限生成本轮元数据，再由独立授
 
 `manager_native_inventory` 失败时可记录 `manager_inventory_diagnostic`。`probe` 仅取 `storage_reference`、`native_object`、`index_projection`、`artifact_state`；`reason` 仅取 `private_read_failed`、`storage_reference_missing`、`storage_reference_invalid`、`storage_reference_outside_scope`、`object_empty`、`object_unproven`、`index_response_incomplete`、`index_scope_mismatch`、`index_not_observed`、`artifact_not_live`、`http_error` 或 `unrecognized`。HTTP 异常可附数字 `http_status`。只归类已有失败，保留原读取顺序、范围和等待时间。成功报告须拒绝该字段，失败报告不保存私有引用、请求、响应、原始错误或凭据。
 
+Manager 未知效果场景在观察原生效果及隔离记录后，分别以 `manager_unknown_engine_read`、`manager_repeated_delete_refusal`、`manager_new_generation_refusal` 记录 Engine 读取、重复删除拒绝和新生成拒绝。各阶段保留已有安全失败类别和 HTTP 状态。快显入口对来源连接的生命周期冲突返回 HTTP 409。故障范围、请求顺序和既有 11 项断言维持原契约。
+
 Manager 原生场景在首次 Meta 扫描之前进入 `manager_protection_readiness`。原 Manager User 使用既有 `manager.derived_artifact.read`，只查询本轮模型指纹的 GLB 结果列表。该列表和 Meta 向 Manager 投递技术元数据都经过 Manager 的 Tenant 保护投影检查。只在 HTTP 403 且错误码为 `security_protection_required` 时继续等待，其他拒绝或异常立即停止。观察 HTTP 200 后方可发起一次原扫描。保护就绪、扫描及 MinIO active／online 共用原 180 秒截止时间，就绪读的单次超时取原 60 秒上限和剩余时间的较小值，晚到响应不能启动扫描。该只读准入不消费源内容，源 Grant、原生库存及后续业务断言仍按原链路验证。
 
 原生 Cleanup Hosted 通过公共镜像构建器既有 `--jobs 1` 模式实时输出各镜像及委托 Runtime 构建日志，避免双并发完成后才输出掩盖未返回子阶段。编译、镜像、各服务启动、身份准备和业务门禁只记录固定阶段及开始／返回码，不输出额外参数或凭据；返回失败必须保留原退出状态并进入既有销毁链。工作流120分钟、业务900秒及各阶段既有等待预算不变，未取得终态报告或清理证明不能计为通过。

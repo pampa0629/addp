@@ -32,6 +32,39 @@ func TestQuickViewFBXRequiresAuthorizationOwnerBeforeCreatingPending(t *testing.
 	testQuickViewModel3DActor(t, "fbx")
 }
 
+func TestQuickViewActionRefusesEngineLifecycleConflictBeforeTaskCreation(t *testing.T) {
+	const privateDetail = "private System error detail"
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet || r.URL.Path != "/api/v1/system/engines/26" || r.Header.Get("Authorization") != "Bearer engine-facts-test" {
+			t.Errorf("unexpected request before lifecycle refusal: %s %s", r.Method, r.URL.Path)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusConflict)
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": privateDetail})
+	}))
+	defer server.Close()
+	tokens := commonClient.ServiceTokenProviderFunc(func(_ context.Context, tenant uint) (string, error) {
+		if tenant != 7 {
+			t.Errorf("lookup tenant = %d, want 7", tenant)
+		}
+		return "engine-facts-test", nil
+	})
+	resolver := preview.NewPreviewResolver(nil, commonClient.NewSystemClient(server.URL, tokens), nil)
+	// There is no task service. The source fence must run before task creation.
+	handler := NewQuickViewHandler(nil, resolver, nil, nil)
+	router := gin.New()
+	router.Use(func(c *gin.Context) { setTenantAuthContextForTest(c, 7, 31); c.Next() })
+	router.POST("/quick-view/actions", handler.ExecuteQuickViewAction)
+	res := executeTaskProviderRequest(t, router, "/quick-view/actions", `{"locator":"addp://engine/26/path/models/building.obj?type=object&item_id=77","action":"generate_model_3d_glb"}`)
+	var body map[string]string
+	if err := json.Unmarshal(res.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	if res.Code != http.StatusConflict || body["error_code"] != "engine_lifecycle_conflict" || body["error"] == "" || strings.Contains(res.Body.String(), privateDetail) {
+		t.Fatalf("status = %d body = %s, want a safe lifecycle conflict", res.Code, res.Body.String())
+	}
+}
+
 func testQuickViewModel3DActor(t *testing.T, modelFormat string) {
 	db := newTaskProviderHandlerTestDB(t)
 	if err := db.Exec("CREATE TABLE manager.preview_state (id INTEGER PRIMARY KEY, tenant_id INTEGER, item_fingerprint TEXT)").Error; err != nil {

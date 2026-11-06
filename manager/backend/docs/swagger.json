@@ -3233,7 +3233,7 @@
                         }
                     },
                     "409": {
-                        "description": "源文件组成不完整、已有活动执行或缺少已有结果动作 | Incomplete source composition, active execution or existing result action required",
+                        "description": "来源引擎生命周期冲突（engine_lifecycle_conflict）、源文件组成不完整、已有活动执行或缺少已有结果动作 | Source engine lifecycle conflict (engine_lifecycle_conflict), incomplete source composition, active execution or existing result action required",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true

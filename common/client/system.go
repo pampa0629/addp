@@ -46,23 +46,19 @@ func (c *SystemClient) GetEngine(engineID uint) (*models.Engine, error) {
 	if c == nil || c.tenantID == nil || *c.tenantID == 0 {
 		return nil, errors.New("System engine request requires a tenant context")
 	}
-	var engine models.Engine
-	if err := c.doTenantJSON(context.Background(), http.MethodGet, fmt.Sprintf("/api/v1/system/engines/%d", engineID), &engine); err != nil {
-		return nil, err
-	}
-	return &engine, nil
+	return c.GetEngineForTenant(context.Background(), *c.tenantID, engineID)
 }
 
 func (c *SystemClient) GetEngineForTenant(ctx context.Context, tenantID, engineID uint) (*models.Engine, error) {
 	if c == nil {
 		return nil, errors.New("System client is required")
 	}
-	bound := c.WithTenantID(tenantID)
-	var engine models.Engine
-	if err := bound.doTenantJSON(ctx, http.MethodGet, fmt.Sprintf("/api/v1/system/engines/%d", engineID), &engine); err != nil {
+	service := &SystemServiceClient{baseURL: c.baseURL, httpClient: c.httpClient, tenantTokens: c.tokenSource}
+	engine, err := service.WithTenantID(tenantID).GetEngine(ctx, engineID)
+	if err != nil {
 		return nil, err
 	}
-	return &engine, nil
+	return engine, nil
 }
 
 func (c *SystemClient) ListEngines(engineType string, tenantID uint) ([]models.Engine, error) {

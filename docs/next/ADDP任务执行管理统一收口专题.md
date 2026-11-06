@@ -270,4 +270,8 @@ Manager 源准备保持其正式授权链；本批 Transfer CDC 仅验证既有 
 
 **历史范围。** [首轮](https://github.com/pampa0629/addp/actions/runs/41586728539/job/125753855807)及[第三轮](https://github.com/pampa0629/addp/actions/runs/41736284282/job/126266219326)构建超时取消；[第二轮](https://github.com/pampa0629/addp/actions/runs/41639055422/job/125927590186)遇到 ZIP 解码错误；[第四轮](https://github.com/pampa0629/addp/actions/runs/41791842460/job/126446790438)已完成 GLB 生成／授权下载，但库存引用解析失败。[第五轮](https://github.com/pampa0629/addp/actions/runs/41833476102/job/126586309842)模型准备返回 403，原调用和错误码未归档，第六轮未复现。[第六轮](https://github.com/pampa0629/addp/actions/runs/41999442501/job/127150683595)库存失败，未记录具体探针。[第七轮](https://github.com/pampa0629/addp/actions/runs/42039158037/job/127285084068)通过引用及对象探针，首个失败点为索引未出现。该轮未归档投递回执，无法确认历史失败的唯一原因。
 
-**剩余工作。** Manager 对象效果未知、索引效果未知及旧 Runtime 迟到写入仍需各自的 Hosted 证据。下一项建议先验证 `manager-object-unknown`，运行须单独确认。第八轮私有证据位于 `/tmp/addp-manager-success-hosted-eighth-20261106/`。
+**对象效果未知。** `manager-object-unknown` 在 `2515e673` 于 2026-11-06 10:16:34（Asia/Shanghai）以失败结束。GLB、原生对象和索引可见、删除受理及对象实际消失共五项通过。后续拒绝验证收到 HTTP 500，原报告未标明具体请求。控制恢复、显式清理和零残留均通过。[对象未知 Hosted](https://github.com/pampa0629/addp/actions/runs/42138271441/job/127631855385)
+
+以真实快显入口和 System 连接读取的 409 响应复现了 Manager 将生命周期拒绝包装成 HTTP 500 并返回下游文案。修正保留原查询及权责，快显动作在创建任务前返回安全的 409。runner 将现有拒绝链分为三个阶段，11 项断言保持原契约。本地 Manager 后端、Common 客户端、Swagger 97 个公开路由及 runner 403 项通过。
+
+**剩余工作。** 分别验证对象效果未知、索引效果未知和旧 Runtime 迟到写入。新的 Hosted 须单独确认。正向和对象未知私有证据分别位于 `/tmp/addp-manager-success-hosted-eighth-20261106/` 与 `/tmp/addp-manager-object-unknown-hosted-20261106/`。

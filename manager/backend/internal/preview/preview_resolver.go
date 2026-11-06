@@ -29,6 +29,7 @@ import (
 var ErrPreviewRequiresScannedMeta = errors.New("preview requires scanned meta item or node")
 var ErrPreviewMetadataUnavailable = errors.New("preview metadata dependency unavailable")
 var ErrEngineAccessDenied = errors.New("engine not accessible for current tenant")
+var ErrEngineLifecycleConflict = errors.New("source engine lifecycle prevents the connection")
 
 func previewMetadataLookupError(err error) error {
 	if err != nil {
@@ -390,6 +391,9 @@ func (r *PreviewResolver) ResolveRequestFromURIWithSelection(ctx context.Context
 	}
 	engine, err := r.systemClient.GetEngineForTenant(ctx, *tenantID, loc.EngineID)
 	if err != nil {
+		if status, ok := commonClient.SystemAPIStatusCode(err); ok && status == http.StatusConflict {
+			return nil, ErrEngineLifecycleConflict
+		}
 		return nil, fmt.Errorf("failed to get engine: %w", err)
 	}
 

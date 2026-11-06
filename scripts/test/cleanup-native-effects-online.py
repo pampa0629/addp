@@ -975,10 +975,13 @@ def run_manager(manager, workflow, controls, source, case, report, checkpoint):
                     'unknown index response lost its delivery or target hold')
             S.wait_for(lambda: controls.index_count(engine_id), lambda n: n == 0, 'native index deletion did not happen')
         # Repeated Engine DELETE is an observed refusal, never a cleanup retry.
+        report['stage'] = 'manager_unknown_engine_read'; checkpoint()
         current = workflow.engine(engine_id)
+        report['stage'] = 'manager_repeated_delete_refusal'; checkpoint()
         workflow.user.request('DELETE', f'{ENGINE}/{engine_id}', (409,),
             {'version': current['version'], 'assessment_id': completed['task'].get('based_on_scan', ''),
              'confirmation_token': current['name'], 'external_artifact_policy': 'delete'})
+        report['stage'] = 'manager_new_generation_refusal'; checkpoint()
         manager.request('POST', '/api/v1/manager/quick-view/actions', (400, 403, 404, 409),
                         {'locator': model.locator, 'action': 'generate_model_3d_glb'})
         require(controls.manager_snapshot(engine_id, model.result_id) == after, 'blocked request changed isolated native facts')

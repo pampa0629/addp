@@ -34,6 +34,7 @@ const (
 	MsgMissingLocator                        = "manager.error.missing_locator"
 	MsgEngineAccessDenied                    = "manager.error.engine_access_denied"
 	MsgEngineUnavailable                     = "manager.error.engine_unavailable"
+	MsgEngineLifecycleConflict               = "manager.error.engine_lifecycle_conflict"
 	MsgMetaScanRequired                      = "manager.error.meta_scan_required"
 	MsgProtectionRequired                    = "manager.error.security_protection_required"
 	MsgContentDocumentInvalid                = "manager.error.content_document_invalid"

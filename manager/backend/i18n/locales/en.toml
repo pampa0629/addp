@@ -25,6 +25,9 @@ other = "Access denied to this engine"
 [manager.error.engine_unavailable]
 other = "The engine is currently unavailable. Wait until it is online and try again"
 
+[manager.error.engine_lifecycle_conflict]
+other = "The source engine is being deleted or has been deleted. This action is unavailable"
+
 [manager.error.meta_scan_required]
 other = "This target has not been scanned by meta"
 
