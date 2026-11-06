@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"strings"
+	"time"
 
 	commonapi "github.com/addp/common/api"
 	shared "github.com/addp/common/authorization"
@@ -35,20 +36,33 @@ func (s *Service) CheckManagerSearchRead(ctx context.Context, credential string,
 	if s == nil || s.repository == nil || s.repository.db == nil {
 		return nil, errSourceReadRules
 	}
+	timing := managerSearchTiming(ctx)
+	if timing != nil {
+		timing.candidates = len(request.Targets)
+	}
 	resolve := func(auth *iam.AuthContextService) (*shared.AuthContext, error) {
 		if strings.HasPrefix(credential, "addp_dat_") {
 			return auth.ResolveDelegatedAccessToken(ctx, credential)
 		}
 		return auth.ResolveUserAccessToken(ctx, credential)
 	}
+	started := time.Now()
 	tenant, err := s.repository.resolveSourceCredentialTenant(ctx, resolve, qualifyManagerSearchRead)
+	if timing != nil {
+		timing.preMetaCredential = time.Since(started)
+	}
 	if err != nil {
 		return nil, err
 	}
+	started = time.Now()
 	bindings, err := s.resolveMetadataBindings(ctx, tenant, request.Targets)
+	if timing != nil {
+		timing.metadataBinding = time.Since(started)
+	}
 	if err != nil {
 		return nil, err
 	}
+	started = time.Now()
 	result := &shared.SourceSearchCheck{Targets: make([]shared.SourceSearchTargetCheck, len(bindings))}
 	var paths []plugin.EngineCatalogPath
 	var rules []sourceRuleTarget
@@ -68,7 +82,10 @@ func (s *Service) CheckManagerSearchRead(ctx context.Context, credential string,
 			continue
 		}
 		if binding.Scope != nil {
-			engine, err := s.repository.engine(ctx, tenant, int64(path.EngineID), false)
+			if timing != nil {
+				timing.wholeCandidates++
+			}
+			engine, err := s.repository.metadataBindingEngine(ctx, tenant, int64(path.EngineID))
 			if err != nil {
 				return nil, err
 			}
@@ -81,7 +98,14 @@ func (s *Service) CheckManagerSearchRead(ctx context.Context, credential string,
 		rules = append(rules, sourceRuleTarget{Binding: binding, Action: shared.SourceAccessRead})
 	}
 	if len(rules) == 0 {
+		if timing != nil {
+			timing.rulePreparation = time.Since(started)
+		}
+		started = time.Now()
 		currentTenant, err := s.repository.resolveSourceCredentialTenant(ctx, resolve, qualifyManagerSearchRead)
+		if timing != nil {
+			timing.observedCredential = time.Since(started)
+		}
 		if err != nil || tenant != currentTenant {
 			if err == nil {
 				err = commonapi.ErrForbidden
@@ -89,13 +113,24 @@ func (s *Service) CheckManagerSearchRead(ctx context.Context, credential string,
 			return nil, err
 		}
 		result.ObservedAt, err = s.repository.wallClock(ctx)
+		if timing != nil {
+			timing.ruleObservation = time.Since(started)
+		}
 		return result, err
 	}
 	batch, err := json.Marshal(rules)
+	if timing != nil {
+		timing.rulePreparation = time.Since(started)
+		timing.ruleItems = len(rules)
+	}
 	if err != nil {
 		return nil, err
 	}
+	started = time.Now()
 	observation, err := s.repository.observePreparedSourceRules(ctx, shared.SourceAccessMetadataRead, paths, nil, batch, tenant, resolve, qualifyManagerSearchRead, nil)
+	if timing != nil {
+		timing.ruleObservation = time.Since(started)
+	}
 	if err != nil {
 		return nil, err
 	}

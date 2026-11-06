@@ -3,13 +3,14 @@ package engineaccess
 import (
 	"context"
 	"encoding/json"
-	commonexecution "github.com/addp/common/execution"
 	"strconv"
+	"time"
 
 	commonapi "github.com/addp/common/api"
 	commonauth "github.com/addp/common/authorization"
 	"github.com/addp/common/dataitem/authorizationfacts"
 	engineplugin "github.com/addp/common/engine/plugin"
+	commonexecution "github.com/addp/common/execution"
 	"github.com/addp/system/internal/iam"
 )
 
@@ -42,6 +43,7 @@ func (r *Repository) observePreparedSourceRules(ctx context.Context, action stri
 	if expectedTenantID <= 0 {
 		return nil, errSourceReadRules
 	}
+	timing := managerSearchTiming(ctx)
 	var result *sourceReadRules
 	err := r.readCommitted(ctx, func(tx *Repository) error {
 		auth, err := iam.NewAuthContextService(tx.identity())
@@ -50,7 +52,11 @@ func (r *Repository) observePreparedSourceRules(ctx context.Context, action stri
 		}
 		// IAM's nested read-only projection shares the outer Repeatable Read
 		// transaction and its committed snapshot, rather than opening another pool.
+		started := time.Now()
 		current, err := resolve(auth)
+		if timing != nil {
+			timing.observedCredential = time.Since(started)
+		}
 		if err != nil {
 			return err
 		}
@@ -103,8 +109,13 @@ func (r *Repository) observePreparedSourceRules(ctx context.Context, action stri
 		if err != nil {
 			return err
 		}
+		started = time.Now()
 		observation, err := tx.queryCurrentSourceRules(ctx, sourceReadRequest{Action: action, TenantID: tenantID,
 			Source: userProvenance{PrincipalID: principalID, MembershipID: membershipID, AuthorizationVersion: version}}, paths, batch)
+		if timing != nil {
+			timing.ruleQueries++
+			timing.ruleQuery = time.Since(started)
+		}
 		if err != nil {
 			return err
 		}

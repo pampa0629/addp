@@ -13,8 +13,10 @@ import (
 	"github.com/addp/common/client"
 	"github.com/addp/common/dataitem/authorizationfacts"
 	engineplugin "github.com/addp/common/engine/plugin"
+	commonmodels "github.com/addp/common/models"
 	systemauthorization "github.com/addp/system/internal/authorization"
 	"github.com/addp/system/internal/iam"
+	"github.com/addp/system/internal/models"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 )
@@ -216,9 +218,16 @@ func exerciseSourceReadCredentials(t *testing.T, db *gorm.DB, path engineplugin.
 			check := func(want bool) {
 				t.Helper()
 				for _, credential := range []string{session.AccessToken, search.AccessToken} {
-					result, err := service.CheckManagerSearchRead(ctx, credential, request)
+					observedCtx, timing := ObserveManagerSearchTiming(ctx)
+					result, err := service.CheckManagerSearchRead(observedCtx, credential, request)
 					if err != nil || !result.Matches(request) || result.Targets[0].Visible != want || result.Targets[0].ContentReadable != want || result.Targets[1].Visible || result.Targets[1].ContentReadable {
 						t.Fatalf("want readable=%v: %+v %v", want, result, err)
+					}
+					if timing.candidates != 2 || timing.wholeCandidates != 0 || timing.engineQueries != 1 ||
+						timing.ruleItems != 4 || timing.ruleQueries != 1 || timing.ruleQuery <= 0 ||
+						timing.observedCredential <= 0 || timing.ruleObservation < timing.ruleQuery+timing.observedCredential ||
+						timing.metaFacts <= 0 || timing.metadataBinding < timing.metaFacts {
+						t.Fatalf("unexpected table search timing: %+v", timing)
 					}
 				}
 			}
@@ -227,6 +236,64 @@ func exerciseSourceReadCredentials(t *testing.T, db *gorm.DB, path engineplugin.
 			check(true)
 			revoke(t, id)
 			check(false)
+
+			tenant := uint(tenantID)
+			nfs := models.Engine{Name: "Manager search whole fixture", EngineType: "nfs", TenantID: &tenant,
+				Version: 1, LifecycleState: "active", ConnectionInfo: models.ConnectionInfo{"host": "manager-search.invalid"},
+				IdentityKey: models.JSONString(`{"host":"manager-search.invalid"}`)}
+			if err := db.WithContext(ctx).Table("system.engines").Create(&nfs).Error; err != nil {
+				t.Fatal(err)
+			}
+			var wholeTargets []engineplugin.EngineCatalogPath
+			factsByKey := map[string]*authorizationfacts.AuthorizationFacts{}
+			for _, dir := range []string{"test/a.gdb", "test/b.gdb"} {
+				root := engineplugin.FileDirectoryPath(nfs.ID, dir)
+				wholeTargets = append(wholeTargets, root)
+				facts := authorizationfacts.AuthorizationFacts{
+					SchemaVersion: authorizationfacts.AuthorizationFactsSchemaV1, EngineID: nfs.ID,
+					ItemType: "file", FullName: root.StringPath(), ItemFingerprint: commonmodels.GenerateItemFingerprint(nfs.ID, root.StringPath()),
+					BasisState: authorizationfacts.AuthorizationBasisComplete, ObservedAt: time.Now(),
+					Boundary: &authorizationfacts.AuthorizationBoundary{Layout: "whole",
+						Scope: &authorizationfacts.ScopeBoundary{Format: "filegdb", RuleVersion: 1, Root: root}},
+				}
+				hash, err := facts.ComputeBoundaryHash()
+				if err != nil {
+					t.Fatal(err)
+				}
+				facts.BoundaryHash = &hash
+				factsByKey[facts.ItemFingerprint] = &facts
+			}
+			service.WithAuthorizationFactsReader(metadataBatchReaderFunc(func(_ context.Context, _ uint, keys []string) (*authorizationfacts.AuthorizationFactsBatch, error) {
+				batch := &authorizationfacts.AuthorizationFactsBatch{}
+				for _, key := range keys {
+					batch.Data = append(batch.Data, authorizationfacts.AuthorizationFactsResult{ItemFingerprint: key, Facts: factsByKey[key]})
+				}
+				return batch, nil
+			}))
+			for _, tc := range []struct {
+				targets                           []engineplugin.EngineCatalogPath
+				whole, engineQueries, ruleQueries int
+			}{
+				{targets: wholeTargets, whole: 2, engineQueries: 3, ruleQueries: 1},
+				{targets: []engineplugin.EngineCatalogPath{path}},
+			} {
+				req := shared.SourceMetadataCheckRequest{Targets: tc.targets}
+				observedCtx, timing := ObserveManagerSearchTiming(ctx)
+				result, err := service.CheckManagerSearchRead(observedCtx, session.AccessToken, req)
+				if err != nil || !result.Matches(req) || len(result.Targets) != len(tc.targets) {
+					t.Fatalf("invalid search observation: %v", err)
+				}
+				for _, target := range result.Targets {
+					if target.Visible || target.ContentReadable {
+						t.Fatal("an ungranted or unproven candidate became visible")
+					}
+				}
+				if timing.candidates != len(tc.targets) || timing.wholeCandidates != tc.whole || timing.engineQueries != tc.engineQueries ||
+					timing.ruleItems != tc.whole*2 || timing.ruleQueries != tc.ruleQueries || (timing.ruleQuery > 0) != (tc.ruleQueries > 0) ||
+					timing.observedCredential <= 0 || timing.ruleObservation < timing.observedCredential {
+					t.Fatalf("unexpected whole or missing search timing: %+v", timing)
+				}
+			}
 		})
 		t.Run("lineage uses only its function and current data rules", func(t *testing.T) {
 			service := NewService(repo, nil).WithAuthorizationFactsReader(testMetaFacts{paths: []engineplugin.EngineCatalogPath{path}})

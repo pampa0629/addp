@@ -4,10 +4,12 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"time"
 
 	commonapi "github.com/addp/common/api"
 	"github.com/addp/common/authorization"
 	sharedauth "github.com/addp/common/middleware/auth"
+	"github.com/addp/common/middleware/logging"
 	"github.com/addp/system/internal/engineaccess"
 	"github.com/addp/system/internal/middleware"
 	"github.com/gin-gonic/gin"
@@ -20,6 +22,8 @@ type metaMetadataCheckService interface {
 }
 
 type EngineAccessMetadataCheckHandler struct{ service metaMetadataCheckService }
+
+const managerSearchStartedKey = "addp.system.manager_search_started"
 
 func RegisterEngineAccessMetadataCheckRoutes(api *gin.RouterGroup, runtime *IAMRuntime, handler *EngineAccessMetadataCheckHandler) error {
 	if api == nil || runtime == nil || runtime.Authentication == nil || runtime.UserAccessCredential == nil || handler == nil || handler.service == nil {
@@ -77,7 +81,10 @@ func RegisterEngineAccessMetadataCheckRoutes(api *gin.RouterGroup, runtime *IAMR
 	if err != nil {
 		return err
 	}
-	api.POST("/engine-access/metadata-checks/manager-search", runtime.Authentication, credential, tenant, searchDelegate, searchPermission, handler.CheckManagerSearch)
+	api.POST("/engine-access/metadata-checks/manager-search", func(c *gin.Context) {
+		c.Set(managerSearchStartedKey, time.Now())
+		c.Next()
+	}, runtime.Authentication, credential, tenant, searchDelegate, searchPermission, handler.CheckManagerSearch)
 	return nil
 }
 
@@ -130,21 +137,28 @@ func (h *EngineAccessMetadataCheckHandler) CheckMetaLineage(c *gin.Context) {
 // @x-addp-required-permissions ["manager.search.execute"]
 // @Router /engine-access/metadata-checks/manager-search [post]
 func (h *EngineAccessMetadataCheckHandler) CheckManagerSearch(c *gin.Context) {
+	started := time.Now()
 	request, ok := bindMetadataCheck(c)
 	if !ok {
 		return
 	}
-	result, err := h.service.CheckManagerSearchRead(c.Request.Context(), sharedauth.CanonicalBearerToken(c.GetHeader("Authorization")), request)
+	requestBinding := time.Since(started)
+	ctx, timing := engineaccess.ObserveManagerSearchTiming(c.Request.Context())
+	result, err := h.service.CheckManagerSearchRead(ctx, sharedauth.CanonicalBearerToken(c.GetHeader("Authorization")), request)
 	if err != nil {
 		respondIAMError(c, err)
 		return
 	}
+	responseStarted := time.Now()
 	if !result.Matches(request) {
 		respondIAMError(c, errors.New("incomplete search observation"))
 		return
 	}
 	c.Header("Cache-Control", "no-store")
 	c.JSON(http.StatusOK, result)
+	if routeStarted := c.GetTime(managerSearchStartedKey); !routeStarted.IsZero() {
+		logging.SetCompletionDiagnostics(c, timing.LogGroup(started.Sub(routeStarted), requestBinding, time.Since(responseStarted)))
+	}
 }
 
 func (h *EngineAccessMetadataCheckHandler) check(c *gin.Context, observe func(context.Context, string, authorization.SourceMetadataCheckRequest) (*authorization.SourceMetadataCheck, error)) {

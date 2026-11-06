@@ -1,6 +1,7 @@
 package api
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"net/http/httptest"
@@ -10,6 +11,8 @@ import (
 
 	"github.com/addp/common/authorization"
 	"github.com/addp/common/engine/plugin"
+	"github.com/addp/common/logger"
+	"github.com/addp/common/modulelifecycle"
 	"github.com/addp/system/internal/engineaccess"
 	"github.com/addp/system/internal/middleware"
 	"github.com/gin-gonic/gin"
@@ -31,7 +34,10 @@ func (f *metadataCheckFixture) CheckManagerSearchRead(_ context.Context, credent
 }
 
 func TestManagerSearchMetadataCheckUsesFixedAudienceAndScope(t *testing.T) {
-	target := plugin.TabularItemPath(12, "schema", "public", "C")
+	var logs bytes.Buffer
+	logger.Init(logger.Options{Writer: &logs})
+	t.Cleanup(func() { logger.Init(logger.Options{}) })
+	target := plugin.TabularItemPath(12, "schema", "public", "private_search_fixture")
 	input := authorization.SourceMetadataCheckRequest{Targets: []plugin.EngineCatalogPath{target}}
 	body, err := json.Marshal(input)
 	if err != nil {
@@ -67,13 +73,14 @@ func TestManagerSearchMetadataCheckUsesFixedAudienceAndScope(t *testing.T) {
 				t.Fatal(err)
 			}
 			fixture := &metadataCheckFixture{}
-			router := gin.New()
+			router := modulelifecycle.NewRouter()
 			if err := RegisterEngineAccessMetadataCheckRoutes(router.Group("/api/v1/system"), &IAMRuntime{Authentication: authenticate, UserAccessCredential: credential}, &EngineAccessMetadataCheckHandler{service: fixture}); err != nil {
 				t.Fatal(err)
 			}
 			request := httptest.NewRequest("POST", "/api/v1/system/engine-access/metadata-checks/manager-search", strings.NewReader(string(body)))
 			request.Header.Set("Authorization", "Bearer "+token)
 			response := httptest.NewRecorder()
+			logs.Reset()
 			router.ServeHTTP(response, request)
 			if response.Code != tc.status || (fixture.calls == 1) != (tc.status == 200) {
 				t.Fatalf("status=%d calls=%d body=%s", response.Code, fixture.calls, response.Body.String())
@@ -83,6 +90,40 @@ func TestManagerSearchMetadataCheckUsesFixedAudienceAndScope(t *testing.T) {
 				if json.Unmarshal(response.Body.Bytes(), &observed) != nil || !observed.Matches(input) || !observed.Targets[0].Visible || observed.Targets[0].ContentReadable || response.Header().Get("Cache-Control") != "no-store" {
 					t.Fatal("invalid search observation")
 				}
+				if bytes.Contains(response.Body.Bytes(), []byte("manager_search")) {
+					t.Fatal("diagnostics reached the HTTP response")
+				}
+			}
+			var completion struct {
+				Message     string                      `json:"msg"`
+				RequestID   string                      `json:"request_id"`
+				Diagnostics map[string]map[string]int64 `json:"diagnostics"`
+			}
+			if err := json.Unmarshal(logs.Bytes(), &completion); err != nil || completion.Message != "http.request.completed" ||
+				completion.RequestID == "" || completion.RequestID != response.Header().Get("X-Request-ID") {
+				t.Fatalf("invalid request completion log: %v", err)
+			}
+			if tc.status != 200 {
+				if len(completion.Diagnostics) != 0 {
+					t.Fatal("rejected search emitted diagnostics")
+				}
+				return
+			}
+			fields := completion.Diagnostics["manager_search"]
+			keys := []string{"candidate_count", "whole_candidate_count", "engine_query_count", "rule_item_count",
+				"rule_query_count", "route_auth_and_guards_ns", "request_binding_ns", "pre_meta_credential_ns",
+				"metadata_binding_ns", "meta_facts_ns", "engine_lookup_ns", "rule_preparation_ns", "rule_observation_ns",
+				"observed_credential_ns", "rule_query_ns", "response_ns"}
+			if len(completion.Diagnostics) != 1 || len(fields) != len(keys) {
+				t.Fatalf("unexpected diagnostic fields: %v", fields)
+			}
+			for _, key := range keys {
+				if value, ok := fields[key]; !ok || value < 0 {
+					t.Fatalf("invalid diagnostic field %s", key)
+				}
+			}
+			if strings.Contains(logs.String(), token) || strings.Contains(logs.String(), "private_search_fixture") {
+				t.Fatal("completion log contained request data")
 			}
 		})
 	}

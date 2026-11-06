@@ -3,6 +3,7 @@ package engineaccess
 import (
 	"context"
 	"reflect"
+	"time"
 
 	"github.com/addp/common/dataitem/authorizationfacts"
 	"github.com/addp/common/dbbridge"
@@ -27,7 +28,11 @@ func (s *Service) resolveMetadataBindings(ctx context.Context, tenant int64, pat
 		keys[i] = fingerprint
 		fingerprints = append(fingerprints, fingerprint)
 	}
+	started := time.Now()
 	factsByKey, err := s.readAuthorizationFacts(ctx, uint(tenant), fingerprints)
+	if timing := managerSearchTiming(ctx); timing != nil {
+		timing.metaFacts = time.Since(started)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -49,7 +54,7 @@ func (s *Service) resolveMetadataBindings(ctx context.Context, tenant int64, pat
 		// current source rules are observed separately after these bindings.
 		model, ok := catalogModels[target.EngineID]
 		if !ok {
-			engine, err := s.repository.engine(ctx, tenant, int64(target.EngineID), false)
+			engine, err := s.repository.metadataBindingEngine(ctx, tenant, int64(target.EngineID))
 			if err != nil {
 				return nil, err
 			}
