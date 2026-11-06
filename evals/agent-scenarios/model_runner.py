@@ -276,18 +276,34 @@ async def run_case(name, tenant_id, model, *, timeout=180):
                                  and [t['name'] for t in phase['tools']] == ([] if ambiguous else [DRAFT_INSPECT])) if snapshot else True,
         'model_identity_observed': bool(identity_recorder.identities),
     }
-    if 'expected_candidates' in fixture:
+    if any(key in fixture for key in ('expected_candidates', 'expected_source_engines', 'expected_empty_scope')):
         # A structured question is the intended response; body counters still
         # count text events only. Preserve the single v2 assertion contract.
         interactions = [e.payload for e in events if e.kind == 'interaction_required']
-        expected = fixture['expected_candidates']
         actual = interactions[0] if len(interactions) == 1 else {}
         candidates = actual.get('candidates', [])
-        assertions['response_body_nonempty'] = bool(str(actual.get('prompt') or '').strip())
-        assertions['trace_contract'] = assertions['trace_contract'] and (
-            actual.get('reason') == 'transfer_source_selection'
-            and [c.get('value') for c in candidates] == [c['locator'] for c in expected]
-            and [c.get('candidate') for c in candidates] == expected)
+        prompt = str(actual.get('prompt') or '')
+        assertions['response_body_nonempty'] = bool(prompt.strip())
+        if 'expected_candidates' in fixture:
+            expected = fixture['expected_candidates']
+            matched = (actual.get('reason') == 'transfer_source_selection'
+                       and [c.get('value') for c in candidates] == [c['locator'] for c in expected]
+                       and [c.get('candidate') for c in candidates] == expected)
+        elif 'expected_source_engines' in fixture:
+            matched = actual.get('reason') == 'transfer_source_engine' and candidates == [
+                {'label': engine['name'], 'value': engine['id'],
+                 'candidate': {'transfer_source_engine_id': engine['id']}}
+                for engine in fixture['expected_source_engines']
+            ]
+        else:
+            engine, query = fixture['expected_empty_scope']
+            matched = (
+                actual.get('reason') == 'transfer_source_not_found'
+                and candidates == []
+                and engine in prompt and query in prompt and '未找到' in prompt
+                and sum(t['name'] == 'data.search' for t in phase['tools']) == 1
+            )
+        assertions['trace_contract'] = assertions['trace_contract'] and matched
     return {
         'name': name, 'contract_sha256': _contract_digest(name), 'skill': actual_skill,
         'status': 'passed' if not error_code and all(assertions.values()) else 'failed',
@@ -310,6 +326,7 @@ def _safe_tools(tools):
         'invalid_tool_arguments', 'model_parameters_changed', 'model_tool_blocked',
         'platform_condition_unsatisfied', 'tool_not_allowed', 'draft_reference_unavailable',
         'transfer_parameter_source_mismatch', 'transfer_parameter_rebuild_requires_user', 'transfer_parameter_source_ambiguous',
+        'transfer_source_engine_mismatch',
         'model_build_source_locator_changed', 'model_build_target_changed', 'model_build_row_grain_changed', 'model_build_fields_changed', 'model_build_types_changed',
     }
     return [{'name': t['name'] if t['name'] in known else 'unknown', 'status': t['status'],
@@ -334,6 +351,7 @@ def validate_report(report):
         'invalid_tool_arguments', 'model_parameters_changed', 'model_tool_blocked',
         'platform_condition_unsatisfied', 'tool_not_allowed', 'draft_reference_unavailable',
         'transfer_parameter_source_mismatch', 'transfer_parameter_rebuild_requires_user', 'transfer_parameter_source_ambiguous',
+        'transfer_source_engine_mismatch',
         'model_build_source_locator_changed', 'model_build_target_changed', 'model_build_row_grain_changed', 'model_build_fields_changed', 'model_build_types_changed', 'runtime_error',
     })
     sample = obj({

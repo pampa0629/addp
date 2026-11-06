@@ -39,6 +39,8 @@ class AgentState(TypedDict):
     answer_context: Optional[str]   # 语义选择的受限回答依据，不是公开正文
     needs_platform_semantics: NotRequired[bool]
     platform_capability: NotRequired[Optional[str]]
+    transfer_source_scope: NotRequired[Optional[Dict[str, str]]]
+    invalid_transfer_source_scope: NotRequired[bool]
     reply_detail: NotRequired[str]  # 表达偏好，不改变业务目标或权限
     draft_catalog: NotRequired[List[Dict[str, str]]]
     draft_action: NotRequired[Optional[Literal["inspect", "create"]]]
@@ -88,3 +90,5 @@ class RouteDecision(BaseModel):
 class PlatformRouteDecision(BaseModel):
     capability: Optional[str] = Field(default=None, description="从 owner 返回的目录选择唯一能力身份；不能编造，无匹配或有歧义时为 null。")
     answer_context: Optional[str] = Field(default=None, description="无匹配或歧义的依据，仅供最终回答阶段使用，不生成用户正文；选中能力时为 null。")
+    source_engine_name: Optional[str] = Field(default=None, max_length=255, description="仅 Transfer 新草稿：本轮用户原文明确给出的源引擎名称，不填集合名、目标或历史名称。")
+    source_engine_type: Optional[str] = Field(default=None, max_length=100, description="仅 Transfer 新草稿：本轮用户原文明确给出的源引擎类型。例如从 MongoDB 传到 PostgreSQL 时取 MongoDB。")

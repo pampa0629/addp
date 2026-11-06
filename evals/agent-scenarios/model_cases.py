@@ -18,6 +18,7 @@ CASE_NAMES = (
     'model-historical-boundaries', 'model-historical-named', 'model-historical-ambiguous',
     'model-transfer-source-choice', 'model-historical-long-context', 'model-current-goal-long-context',
     'model-transfer-source-unscoped',
+    'model-transfer-source-engine-choice', 'model-transfer-source-empty',
 )
 HISTORY_NAME = 'outdoors_mongodb_to_pg_agent_historical_regression_20261103'
 QUERY_LOCATOR = 'addp://engine/321/path/public/orders?type=table&item_id=3210'
@@ -118,6 +119,29 @@ def case_fixture(name):
             'query.draft.generate': {'engine_id': 321, 'query_language': 'sql'},
         }
         result['body_facts'] = ['public.orders', 'status']
+    elif name in {'model-transfer-source-engine-choice', 'model-transfer-source-empty'}:
+        engine = {'id': 311, 'name': 'SOURCE_FIXTURE', 'engine_type': 'mongodb',
+                  'lifecycle_state': 'active', 'connection_status': 'online'}
+        target = {**engine, 'id': 312, 'name': 'TARGET_FIXTURE', 'engine_type': 'postgresql'}
+        result['responses'] = {
+            'platform.capabilities.list': {'schema_version': 'addp.platform-capability-catalog/v1',
+                                            'capabilities': [definition]},
+            'platform.capability.context': definition,
+            'engine.list': [engine, target],
+        }
+        result['expected'] = {
+            'platform.capability.context': {'capability': 'transfer.task.create'},
+            'engine.list': {'capability': 'all'},
+        }
+        if name == 'model-transfer-source-engine-choice':
+            other = {**engine, 'id': 313, 'name': 'OTHER_SOURCE_FIXTURE'}
+            result['responses']['engine.list'].append(other)
+            result['expected_source_engines'] = [engine, other]
+        else:
+            query = 'demo.missing_events'
+            result['responses']['data.search'] = {'results': [], 'total': 0, 'page': 1, 'page_size': 10}
+            result['expected']['data.search'] = {'engine_id': engine['id'], 'query': query}
+            result['expected_empty_scope'] = (engine['name'], query)
     elif name in {'model-transfer-precheck', 'model-transfer-short-precheck',
                  'model-transfer-source-choice', 'model-transfer-source-unscoped'}:
         source_parent = {'locator': 'addp://engine/311/path/demo?type=database&node_id=3111',

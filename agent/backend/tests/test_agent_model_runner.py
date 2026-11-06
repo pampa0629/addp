@@ -233,6 +233,35 @@ class ModelRunnerTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(await search(accepted_scope), fixture['responses']['data.search'])
                 self.assertEqual(violations, ['model_parameters_changed', 'model_parameters_changed'])
 
+    async def test_multiple_source_engines_pause_with_only_the_observed_matches(self):
+        client = _InferenceFixture([
+            route(needs_platform_semantics=True),
+            Message(role='assistant', tool_calls=[_call('PlatformRouteDecision',
+                {'capability': 'transfer.task.create', 'source_engine_type': 'MongoDB'})]),
+        ])
+        sample = await model_runner.run_case('model-transfer-source-engine-choice', 1, _model(client))
+        self.assertEqual(sample['status'], 'passed', sample)
+        self.assertNotIn('data.search', [tool['name'] for tool in sample['tools']])
+        self.assertEqual(len(client.calls), 2)
+
+    async def test_empty_scoped_search_pauses_without_model_clarification(self):
+        client = _InferenceFixture([
+            route(needs_platform_semantics=True),
+            Message(role='assistant', tool_calls=[_call('PlatformRouteDecision',
+                {'capability': 'transfer.task.create', 'source_engine_name': 'SOURCE_FIXTURE'})]),
+            Message(role='assistant', tool_calls=[
+                _call('data.search', {'query': 'demo.missing_events'}, 'scoped'),
+                _call('data.search', {'query': 'missing_events'}, 'retry'),
+                _call('resource.children.list', {'engine_id': 312}, 'target'),
+                _call('transfer.task.draft.build', {}, 'build'),
+                _call('transfer.task.config.check', {}, 'check'),
+            ]),
+        ])
+        sample = await model_runner.run_case('model-transfer-source-empty', 1, _model(client))
+        self.assertEqual(sample['status'], 'passed', sample)
+        self.assertEqual(sample['violation_codes'], [])
+        self.assertEqual(len(client.calls), 3)
+
     def test_v1_model_report_is_rejected_without_compatibility_parser(self):
         report = self.empty_failure_report()
         report['schema'] = 'addp.agent-model-regression/v1'
@@ -244,7 +273,7 @@ class ModelRunnerTests(unittest.IsolatedAsyncioTestCase):
         client = _InferenceFixture([
             route(needs_platform_semantics=True),
             Message(role='assistant', tool_calls=[ToolCall(id='platform-route', name='PlatformRouteDecision',
-                    arguments={'capability': 'transfer.task.create'})]),
+                    arguments={'capability': 'transfer.task.create', 'source_engine_name': 'not-in-request'})]),
             Message(role='assistant', tool_calls=[_call('transfer.task.config.check', arguments)]),
             Message(role='assistant', content='unknown，当前只做预检，没有创建或运行。'),
         ])

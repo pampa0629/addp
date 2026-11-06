@@ -24,7 +24,10 @@ from langgraph.types import Command
 from pydantic import BaseModel, Field, ValidationError
 
 from agents.reply_preferences import reply_detail_prompt
-from agents.checkpoint import canonicalize_clarification_options, capture_owner_facts, checkpoint_prompt, normalize_checkpoint
+from agents.checkpoint import (
+    TRANSFER_SOURCE_ENGINE_REASON, canonicalize_clarification_options, capture_owner_facts,
+    checkpoint_prompt, matching_transfer_source_engines, normalize_checkpoint,
+)
 from agents.events import AgentEvent, text_event
 from agents.result_refs import build_result_ref
 from agents.platform_conditions import CHECK_TOOL, CREATE_TOOL, REVIEW_REASON, ConfigCheckUnsupported, capture_config_check, config_check_report, config_arguments_digest, prepare_review, review_json, validate_create
@@ -35,7 +38,11 @@ from i18n import bound_draft_review_error, invocation_stopped, transfer_config_c
 from services.drafts import validate_draft_arguments
 from agents.transfer_parameters import BUILD_TOOL, explicit_user_arguments, build_parameter_evidence, validate_parameter_arguments, parameter_reference
 from services.plans import PLAN_TOOL, PlanInput, plan_todos
-from i18n import workspace_message, transfer_parameter_error, transfer_parameter_clarification, transfer_source_selection_prompt
+from i18n import (
+    workspace_message, transfer_parameter_error, transfer_parameter_clarification,
+    transfer_source_engine_mismatch, transfer_source_engine_prompt, transfer_source_engine_unavailable,
+    transfer_source_not_found_prompt, transfer_source_selection_prompt,
+)
 from protocol.a2ui import preview_presentations, transfer_config_check_presentation
 from tools.langchain_tools import create_agent_tools, stable_tool_name
 from utils.llm import get_llm
@@ -148,6 +155,8 @@ class _PlatformBoundary(AgentMiddleware):
         self.model_calls = 0
         self.halted = False
         self.answering = False
+        self.transfer_inventory_ready = False
+        self.transfer_source_engine_id = None
         # Request-local gates preserve model order across concurrent ToolNode tasks.
         self.tool_turns = {}
 
@@ -160,6 +169,9 @@ class _PlatformBoundary(AgentMiddleware):
             return {"jump_to": "end"}
         if self.resuming and CREATE_TOOL in self.checkpoint["confirmed"]["operation_reviews"]:
             await self._resume_confirmed_create()
+            return {"jump_to": "end"}
+        if (self._new_transfer_draft() and self.checkpoint["transfer_source_scope"]
+                and not self.transfer_inventory_ready and not await self._load_transfer_inventory()):
             return {"jump_to": "end"}
         if self.model_calls >= self.max_iterations:
             raise RuntimeError("agent_iteration_limit_reached")
@@ -236,6 +248,19 @@ class _PlatformBoundary(AgentMiddleware):
                 content=invocation_stopped(self.accept_language), tool_call_id=call["id"],
             )]}, goto=END)
         name = self.names.get(call["name"], call["name"])
+        if name == "data.search" and self._new_transfer_draft():
+            if self.resuming and self.checkpoint["transfer_source_scope"] is None:
+                self.halted = True
+                get_stream_writer()(text_event(transfer_source_engine_unavailable(self.accept_language)))
+                return Command(update={"messages": [ToolMessage(
+                    content=invocation_stopped(self.accept_language), tool_call_id=call["id"],
+                )]}, goto=END)
+            if not self.transfer_inventory_ready and not await self._load_transfer_inventory():
+                return Command(update={"messages": [ToolMessage(
+                    content=invocation_stopped(self.accept_language), tool_call_id=call["id"],
+                )]}, goto=END)
+            if self.transfer_source_engine_id is not None:
+                call = {**call, "args": {**call["args"], "engine_id": self.transfer_source_engine_id}}
         if name == CREATE_TOOL and self.draft_arguments is not None:
             # Bind before Schema validation and audit, using the same adapter.
             call = {**call, "args": copy.deepcopy(self.draft_arguments)}
@@ -243,7 +268,13 @@ class _PlatformBoundary(AgentMiddleware):
         if name in {BUILD_TOOL, CHECK_TOOL, CREATE_TOOL} and self.checkpoint["parameter_source_issue"]:
             return await self._ask_parameter_source(call, name)
         if name == BUILD_TOOL:
-            if self._source_selection_required(call["args"].get("source_locator")):
+            locator = call["args"].get("source_locator")
+            if self.transfer_source_engine_id is not None and (
+                not isinstance(locator, str) or not locator.startswith(f"addp://engine/{self.transfer_source_engine_id}/")
+            ):
+                return self._error(call, name, "transfer_source_engine_mismatch",
+                                   transfer_source_engine_mismatch(self.accept_language))
+            if self._source_selection_required(locator):
                 content = json.dumps({"error": {"code": "transfer_source_selection_required",
                     "message": transfer_source_selection_prompt(self.accept_language)}}, ensure_ascii=False)
                 _emit("tool_result", tool_call_id=call["id"], tool_name=name, content=content, is_error=True,
@@ -527,6 +558,56 @@ class _PlatformBoundary(AgentMiddleware):
         return (BUILD_TOOL in self.platform_tools and self.draft_arguments is None
                 and self.checkpoint["parameter_source"] is None)
 
+    async def _load_transfer_inventory(self):
+        tool = self.platform_tools.get("engine.list")
+        if tool is None:
+            raise RuntimeError("agent_skill_tool_not_found")
+        call = {"id": str(uuid.uuid4()), "name": tool.name, "args": {"capability": "all"}}
+        await self._invoke(call, lambda request: tool.ainvoke({**request, "type": "tool_call"}))
+        if not self.transfer_inventory_ready and not self.halted:
+            self.halted = True
+            _emit("run_failed", error_source="runtime", error_code="transfer_engine_inventory_unavailable",
+                  message=transfer_source_engine_unavailable(self.accept_language))
+        return self.transfer_inventory_ready and not self.halted
+
+    def _resolve_transfer_engine_scope(self, call, content):
+        engines = matching_transfer_source_engines(self.checkpoint)
+        confirmed = self.checkpoint["confirmed"]
+        selected = confirmed["transfer_source_engine"]
+        if selected is not None and any(engine["id"] == selected for engine in engines):
+            self.transfer_source_engine_id = selected
+            return None
+        if selected is None and len(engines) == 1:
+            self.transfer_source_engine_id = engines[0]["id"]
+            confirmed["transfer_source_engine"] = self.transfer_source_engine_id
+            _emit("checkpoint", checkpoint=copy.deepcopy(self.checkpoint), facts={})
+            return None
+        self.transfer_source_engine_id = None
+        confirmed["transfer_source_engine"] = None
+        if selected is not None:
+            candidates = self.checkpoint["observed"]["transfer_source_candidates"]
+            for locator in candidates:
+                confirmed["resources"].pop(locator, None)
+            candidates.clear()
+        _emit("checkpoint", checkpoint=copy.deepcopy(self.checkpoint), facts={})
+        self.halted = True
+        if engines:
+            candidates = [{"label": str(engine.get("name") or engine["id"]), "value": engine["id"],
+                           "candidate": {"transfer_source_engine_id": engine["id"]}} for engine in engines]
+            call_id = str(uuid.uuid4())
+            prompt = transfer_source_engine_prompt(self.accept_language)
+            _emit("tool_start", tool_call_id=call_id, tool_name="request_clarification",
+                  args={"reason": TRANSFER_SOURCE_ENGINE_REASON, "prompt": prompt})
+            _emit("tool_result", tool_call_id=call_id, tool_name="request_clarification",
+                  content=prompt, is_error=False)
+            _emit("interaction_required", tool_call_id=call_id, prompt=prompt,
+                  reason=TRANSFER_SOURCE_ENGINE_REASON, candidates=candidates)
+        else:
+            get_stream_writer()(text_event(transfer_source_engine_unavailable(self.accept_language)))
+        return Command(update={"messages": [ToolMessage(
+            content=content, tool_call_id=call["id"], name=call["name"],
+        )]}, goto=END)
+
     def _source_selection_required(self, locator=None):
         candidates = self.checkpoint["observed"]["transfer_source_candidates"]
         selected = [x for x in candidates if x in self.checkpoint["confirmed"]["resources"]]
@@ -544,6 +625,22 @@ class _PlatformBoundary(AgentMiddleware):
         _emit("tool_start", tool_call_id=call["id"], tool_name=call["name"], args=call["args"])
         result = await self._clarify(call)
         result.update["messages"].insert(0, ToolMessage(content=content, tool_call_id=parent["id"], name=parent["name"], status="error" if failed else "success"))
+        return result
+
+    def _ask_missing_transfer_source(self, parent, content):
+        engine_id = self.transfer_source_engine_id
+        engine = self.checkpoint["observed"]["workflow_engines"][str(engine_id)]
+        prompt = transfer_source_not_found_prompt(
+            self.accept_language, engine.get("name") or str(engine_id), parent["args"]["query"],
+        )
+        call_id = str(uuid.uuid4())
+        reason = "transfer_source_not_found"
+        _emit("tool_start", tool_call_id=call_id, tool_name="request_clarification",
+              args={"prompt": prompt, "reason": reason, "options": []})
+        result = self._pause_for_clarification(call_id, prompt, reason, [])
+        result.update["messages"].insert(0, ToolMessage(
+            content=content, tool_call_id=parent["id"], name=parent["name"],
+        ))
         return result
 
     def _require_parameter_source(self, arguments):
@@ -620,11 +717,14 @@ class _PlatformBoundary(AgentMiddleware):
         except ValueError as exc:
             message = bound_draft_review_error(self.accept_language) if self.draft_arguments is not None and str(exc) == "invalid_operation_review" else str(exc)
             return self._error(call, "request_clarification", "clarification_option_not_observed", message)
+        return self._pause_for_clarification(call["id"], args.prompt, args.reason, options)
+
+    def _pause_for_clarification(self, call_id, prompt, reason, options):
         self.halted = True
         content = "等待用户完成澄清"
-        _emit("tool_result", tool_call_id=call["id"], tool_name="request_clarification", content=content, is_error=False)
-        _emit("interaction_required", tool_call_id=call["id"], prompt=args.prompt, reason=args.reason, candidates=options)
-        return Command(update={"messages": [ToolMessage(content=content, tool_call_id=call["id"])]}, goto=END)
+        _emit("tool_result", tool_call_id=call_id, tool_name="request_clarification", content=content, is_error=False)
+        _emit("interaction_required", tool_call_id=call_id, prompt=prompt, reason=reason, candidates=options)
+        return Command(update={"messages": [ToolMessage(content=content, tool_call_id=call_id)]}, goto=END)
 
     async def _owner_result(self, call, name, content, parent_call=None):
         if not isinstance(content, str):
@@ -640,6 +740,13 @@ class _PlatformBoundary(AgentMiddleware):
             source = "owner" if code.startswith("approval_") or code in {
                 "owner_api_error", "owner_api_unavailable", "invalid_owner_response", "manager_search_isolated",
             } else "tool"
+        transfer_inventory = (name == "engine.list" and self._new_transfer_draft()
+                              and call["args"].get("capability", "all") == "all")
+        if transfer_inventory:
+            self.transfer_inventory_ready = not code and isinstance(result, list)
+            if self.transfer_inventory_ready:
+                self.checkpoint["observed"]["workflow_engines"].clear()
+        scoped_source_empty = False
         if result is not None:
             facts = capture_owner_facts(name, result, self.checkpoint)
             if name == "data.search" and not code and self._new_transfer_draft():
@@ -649,6 +756,11 @@ class _PlatformBoundary(AgentMiddleware):
                     or x["locator"] not in self.checkpoint["observed"]["resources"] for x in rows)):
                     raise ValueError("invalid_transfer_source_candidates")
                 candidates = list(dict.fromkeys(x["locator"] for x in rows))
+                scoped_source_empty = (self.transfer_source_engine_id is not None and not candidates
+                                       and type(result.get("total")) is int and result["total"] == 0)
+                if scoped_source_empty:
+                    for locator in self.checkpoint["observed"]["transfer_source_candidates"]:
+                        self.checkpoint["confirmed"]["resources"].pop(locator, None)
                 self.checkpoint["observed"]["transfer_source_candidates"] = candidates
                 facts["transfer_source_candidates"] = candidates
             if name == START_TOOL and not code and result.get("status") == "approval_required":
@@ -661,7 +773,7 @@ class _PlatformBoundary(AgentMiddleware):
                 facts["constructed_draft"] = evidence
             if name == CHECK_TOOL and not code:
                 facts.update(capture_config_check(call["args"], result, self.checkpoint))
-            if facts:
+            if facts or transfer_inventory and self.transfer_inventory_ready:
                 _emit("checkpoint", tool_call_id=call["id"], checkpoint=copy.deepcopy(self.checkpoint), facts=facts)
             if name == CHECK_TOOL and not code:
                 get_stream_writer()(AgentEvent(kind="presentation", payload=transfer_config_check_presentation(result)))
@@ -682,6 +794,12 @@ class _PlatformBoundary(AgentMiddleware):
         )
         if halted is not None:
             return halted
+        if transfer_inventory and self.transfer_inventory_ready and self.checkpoint["transfer_source_scope"]:
+            scope_stop = self._resolve_transfer_engine_scope(call, content)
+            if scope_stop is not None:
+                return scope_stop
+        if scoped_source_empty:
+            return self._ask_missing_transfer_source(call, content)
         if name == "data.search" and not code and self._source_selection_required():
             return await self._ask_transfer_source(call, content)
         if code and parent_call is not None:

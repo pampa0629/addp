@@ -17,9 +17,11 @@ description: 理解 ADDP Transfer 平台能力，发现并确认源和目标、�
 
 ## 源引擎限定
 
-先调用 `engine.list(capability="all")` 并读取结果，再发现新草稿的数据源。以本轮明确的源引擎名称或类型匹配正式 `name` 或 `engine_type`，两者都给出时两项都须匹配。只有一个匹配项时，调用 `data.search` 前检查参数中同时有源集合关键词 `query` 和该匹配项的数字 `engine_id`。例如“把 MongoDB 的集合传到 PostgreSQL”里，`engine_id` 取自唯一匹配的 MongoDB 项，PostgreSQL 项仅用于目标目录。首次和后续搜索都沿用该源范围。
+Runtime 根据本轮明确的源名称或类型读取正式 `engine.list(capability="all")`，并在有多个匹配时先暂停等待源引擎选择。Runtime 将正式选定的数字 `engine_id` 绑定到集合搜索和草稿构建。引擎选择失效时，重新确认引擎及其源集合。PostgreSQL 等目标项仅用于目标目录。需要确定目标时使用已观察的引擎事实，缺少清单时读取正式清单。
 
-明确限定的引擎无法匹配时说明缺口，匹配多个引擎时先澄清。限定搜索零召回时说明当前范围并请用户补充。用户未限定源引擎且需要搜索候选时，`data.search` 可省略 `engine_id`。
+- `data.search.query` 保留用户给出的集合名。用户给出 `demo.events` 时，按 `demo.events` 搜索，保留库名前缀。
+- 限定搜索正式返回零命中时，Runtime 固定说明已查引擎和搜索词，暂停并等待用户补充集合信息。恢复后按补充信息继续在已核验的源引擎内搜索。
+- 用户未限定源引擎且需要搜索候选时，`data.search` 可省略 `engine_id`。
 
 ## 核心流程
 

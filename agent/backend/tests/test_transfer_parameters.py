@@ -199,7 +199,11 @@ class TransferSourceSelectionRuntimeTests(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
         import httpx
         self.h = _RuntimeHarness(); self.h.setUp()
-        self.allowed = ['platform.capability.context', 'data.search', BUILD_TOOL, CHECK_TOOL, CREATE_TOOL]
+        self.allowed = ['platform.capability.context', 'engine.list', 'data.search', BUILD_TOOL, CHECK_TOOL, CREATE_TOOL]
+        self.engines = [
+            {'id': 11, 'name': 'Synthetic Mongo', 'engine_type': 'mongodb', 'lifecycle_state': 'active', 'connection_status': 'online'},
+            {'id': 12, 'name': 'Synthetic PostgreSQL', 'engine_type': 'postgresql', 'lifecycle_state': 'active', 'connection_status': 'online'},
+        ]
         source = self.h.arguments['config']['source']['locator']
         self.locators = [source, 'addp://engine/11/path/demo/other?type=collection&item_id=43']
         self.h.checkpoint['observed']['resources'][source].update(engine_name='Synthetic Mongo', full_name='demo.events')
@@ -208,6 +212,9 @@ class TransferSourceSelectionRuntimeTests(unittest.IsolatedAsyncioTestCase):
             'row_grain':{'mode':'document'},'fields':[{'path':['_id'],'target':'id'}]}
         original = self.h.transport
         async def transport(owner, method, path, **kwargs):
+            if path == '/api/v1/system/engines':
+                self.h.requests.append((method,path,copy.deepcopy(kwargs)))
+                return httpx.Response(200,request=httpx.Request(method,'http://fixture'+path),json=self.engines)
             if path == '/api/v1/manager/search':
                 self.h.requests.append((method,path,copy.deepcopy(kwargs)))
                 rows=[{'locator':loc,'engine_id':11,'engine_name':'Synthetic Mongo','name':name,'full_name':'demo.'+name}
@@ -220,10 +227,106 @@ class TransferSourceSelectionRuntimeTests(unittest.IsolatedAsyncioTestCase):
     def build_calls(self):
         return [x for x in self.h.requests if x[1]=='/api/v1/transfer/task-config-drafts']
 
+    async def test_source_engine_choice_binds_resume_and_rechecks_visible_inventory(self):
+        from agents.checkpoint import confirm_selection, normalize_checkpoint
+
+        self.h.checkpoint['transfer_source_scope'] = {'engine_type': 'MongoDB'}
+        self.engines.append({**self.engines[0], 'id': 13, 'name': 'Other Mongo'})
+        events, client = await self.h.run_factory([], allowed=self.allowed)
+        self.assertEqual(client.calls, [])
+        options = next(e.payload['candidates'] for e in events if e.kind == 'interaction_required')
+        self.assertEqual([(c['label'], c['value']) for c in options], [('Synthetic Mongo', 11), ('Other Mongo', 13)])
+        self.assertFalse(any(r[1] == '/api/v1/manager/search' for r in self.h.requests))
+        checkpoint = normalize_checkpoint(next(e.payload['checkpoint'] for e in reversed(events) if e.kind == 'checkpoint'))
+        with self.assertRaisesRegex(ValueError, 'transfer_source_engine_not_observed'):
+            confirm_selection(checkpoint, {'value': 12, 'candidate': {'transfer_source_engine_id': 12}})
+        confirm_selection(checkpoint, options[0])
+
+        self.h.checkpoint = checkpoint
+        self.h.requests.clear()
+        events, _ = await self.h.run_factory([Message(role='assistant', tool_calls=[
+            _call('data.search', {'query': 'demo.events', 'engine_id': 12}),
+        ])], allowed=self.allowed, resuming=True)
+        reads = [(path, req.get('params')) for _, path, req in self.h.requests
+                 if path in {'/api/v1/system/engines', '/api/v1/manager/search'}]
+        self.assertEqual([path for path, _ in reads], ['/api/v1/system/engines', '/api/v1/manager/search'])
+        self.assertEqual(reads[1][1]['engine_id'], 11)
+        self.assertEqual(next(e.payload['args']['engine_id'] for e in events
+                              if e.kind == 'tool_start' and e.payload['tool_name'] == 'data.search'), 11)
+
+    async def test_reselected_engine_discards_old_collection_before_build(self):
+        from agents.checkpoint import confirm_selection
+
+        self.h.checkpoint['transfer_source_scope'] = {'engine_type': 'MongoDB'}
+        events, _ = await self.search()
+        checkpoint = next(e.payload['checkpoint'] for e in reversed(events) if e.kind == 'checkpoint')
+        self.assertEqual(checkpoint['confirmed']['transfer_source_engine'], 11)
+        candidates = next(e.payload['candidates'] for e in events if e.kind == 'interaction_required')
+        confirm_selection(checkpoint, candidates[0])
+        self.assertIn(self.locators[0], checkpoint['confirmed']['resources'])
+        self.h.checkpoint = checkpoint
+
+        self.engines[0] = {**self.engines[0], 'id': 13, 'name': 'Other Mongo'}
+        self.h.requests.clear()
+        events, _ = await self.h.run_factory([], allowed=self.allowed, resuming=True)
+        options = next(e.payload['candidates'] for e in events if e.kind == 'interaction_required')
+        self.assertEqual([c['value'] for c in options], [13])
+        self.assertFalse(any(r[1] == '/api/v1/manager/search' for r in self.h.requests))
+        checkpoint = next(e.payload['checkpoint'] for e in reversed(events) if e.kind == 'checkpoint')
+        self.assertEqual(checkpoint['observed']['transfer_source_candidates'], [])
+        self.assertNotIn(self.locators[0], checkpoint['confirmed']['resources'])
+        confirm_selection(checkpoint, options[0])
+        self.h.checkpoint = checkpoint
+
+        events, _ = await self.h.run_factory([Message(role='assistant', tool_calls=[
+            _call(BUILD_TOOL, self.choices), _call(CHECK_TOOL, self.h.arguments),
+        ])], allowed=self.allowed, resuming=True)
+        self.assertEqual(self.build_calls(), [])
+        self.assertFalse(any(path.endswith('task-config-checks') for _, path, _ in self.h.requests))
+        self.assertEqual(self.h.writes(), [])
+        build_result = next(e for e in events if e.kind == 'tool_result' and e.payload['tool_name'] == BUILD_TOOL)
+        self.assertEqual(build_result.payload['error_code'], 'transfer_source_engine_mismatch')
+        self.assertEqual(next(e.payload['error_code'] for e in events if e.kind == 'run_failed'),
+                         'transfer_source_engine_mismatch')
+
     async def search(self, batch=False):
         calls=[_call('data.search',{'query':'demo','engine_id':11})]
         if batch:calls.append(_call(BUILD_TOOL,self.choices))
         return await self.h.run_factory([Message(role='assistant',tool_calls=calls)],allowed=self.allowed)
+
+    async def test_scoped_zero_waits_for_collection_text_before_resume(self):
+        self.h.checkpoint['transfer_source_scope'] = {'engine_type': 'MongoDB'}
+        locators = self.locators
+        self.locators = []
+        events, _ = await self.h.run_factory([Message(role='assistant', tool_calls=[
+            _call('data.search', {'query': 'demo.missing'}),
+        ])], allowed=self.allowed)
+        interaction = next(e.payload for e in events if e.kind == 'interaction_required')
+        self.assertEqual(interaction['reason'], 'transfer_source_not_found')
+        self.assertIn('Synthetic Mongo', interaction['prompt'])
+        self.assertIn('demo.missing', interaction['prompt'])
+        self.assertEqual(interaction['candidates'], [])
+        self.h.checkpoint = next(e.payload['checkpoint'] for e in reversed(events) if e.kind == 'checkpoint')
+
+        self.locators = locators
+        self.h.requests.clear()
+        events, _ = await self.h.run_factory([Message(role='assistant', tool_calls=[
+            _call('data.search', {'query': 'demo.events', 'engine_id': 12}),
+        ])], allowed=self.allowed, user_request='集合是 demo.events', resuming=True)
+        reads = [(path, req.get('params')) for _, path, req in self.h.requests
+                 if path in {'/api/v1/system/engines', '/api/v1/manager/search'}]
+        self.assertEqual([path for path, _ in reads], ['/api/v1/system/engines', '/api/v1/manager/search'])
+        self.assertEqual(reads[1][1]['engine_id'], 11)
+        self.assertEqual(reads[1][1]['q'], 'demo.events')
+        self.assertEqual(next(e.payload['reason'] for e in events if e.kind == 'interaction_required'),
+                         'transfer_source_selection')
+
+    async def test_resumed_search_without_recorded_scope_stops_before_owner_reads(self):
+        events, _ = await self.h.run_factory([Message(role='assistant', tool_calls=[
+            _call('data.search', {'query': 'demo.events'}),
+        ])], allowed=self.allowed, resuming=True)
+        self.assertTrue(any(e.kind == 'text' and '新请求' in e.payload['delta'] for e in events))
+        self.assertFalse(any(r[1] in {'/api/v1/system/engines', '/api/v1/manager/search'} for r in self.h.requests))
 
     async def test_multiple_candidates_pause_without_model_choice_and_drop_same_batch_build(self):
         for batch in (False,True):

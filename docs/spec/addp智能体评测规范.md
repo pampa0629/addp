@@ -61,7 +61,7 @@ User Access Token 只能通过正式 `addp` OAuth 登录保存在 OS Keychain �
 
 只给业务目标的多候选场景以正式待答 Interaction 作为本轮成功终态：候选必须与正式搜索结果精确一致，不能提前构建、预检或默认选择首项。此场景不要求模型补充正文，不自动回答或冒充后续恢复完成；恢复的确认身份和参数保真仍由原 Runtime 回归及真实会话分开验证。
 
-新 Transfer 草稿的源搜索遵循 Transfer Skill 的引擎限定规则。回归覆盖三种输入：本轮明确源引擎且正式列表唯一匹配时，首次搜索必须携带该 `engine_id`；限定后仍有多个同名集合时，精确呈现正式候选并暂停；用户未限定源引擎且要求先搜索候选时，允许全范围搜索并等待选择。夹具分别校验正式引擎事实读取、搜索参数和候选集合，保留首次越界搜索的失败，即使后续纠正也不能算通过。
+新 Transfer 草稿的源搜索由 Runtime 确定引擎范围。明确源引擎且正式列表唯一匹配时，首次搜索携带该 `engine_id`。限定后仍有多个同名集合时，精确呈现正式候选并暂停。用户未限定源引擎且要求先搜索候选时，允许全范围搜索并等待选择。明确源类型匹配多个引擎时，Runtime 先生成 `transfer_source_engine` 澄清，正式候选包含匹配的 ID 和名称。限定搜索成功返回零命中时，Runtime 固定说明已查引擎及查询词，发出无选择项的文字澄清并暂停。回归校验正式引擎事实、精确搜索参数、候选身份和零命中后的同批调用拦截，保留此前模型二次搜索失败的原始证据。
 
 等待场景沿用 v2 报告：候选身份约束并入 `trace_contract`，`response_body_nonempty` 验证正式澄清提示非空；正文字符／块计数仍只统计文本事件，不把卡片提示计为 Runtime 或模型正文。新增场景的样本必须经过现有完整报告校验，不能只验证内存中的布尔断言。
 
@@ -94,6 +94,8 @@ evals/agent-scenarios/<scenario-name>/scenario.yaml
 | `model-transfer-precheck` | 真实模型回归 | 经平台语义路由按完整原参数预检，不创建或运行，不改写正式报告。 |
 | `model-transfer-short-precheck` | 真实模型回归 | 简短业务输入经平台路由、正式资源发现、Owner 草稿构建及同参预检，不由提示词附带完整配置，禁止 Copilot、创建和运行。工具事实仍为受控夹具，不能代替真实业务环境。 |
 | `model-transfer-source-choice` | 真实模型回归 | 明确源引擎类型和集合短名，限定搜索返回多个同名集合后必须暂停并呈现精确候选，不调用构建或预检。 |
+| `model-transfer-source-engine-choice` | 真实模型回归 | 两个正式源引擎匹配用户所指定的类型，准确列出两项供确认，搜索保持待处理。 |
+| `model-transfer-source-empty` | 真实模型回归 | 唯一源引擎内按原集合关键词搜索一次，Runtime 固定说明该范围并以文字澄清暂停。 |
 | `model-transfer-source-unscoped` | 真实模型回归 | 用户未限定源引擎且要求搜索候选时，可搜索跨引擎的同名集合，并暂停等待源选择。 |
 | `model-historical-draft` | 真实模型回归 | 无 Skill 路由（契约标记 `none`），仅私有 `draft.inspect`，不重新读取资源或预检。 |
 | `model-historical-boundaries` | 真实模型回归 | 多轮上下文下“刚才的草稿”只问关键主题，按历史 unsupported、append、bounded 固定说明，不调用正文模型。 |

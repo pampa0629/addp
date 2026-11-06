@@ -278,3 +278,27 @@ def transfer_source_selection_prompt(accept_language: str) -> str:
     if accept_language.lower().startswith("en"):
         return "Multiple source candidates were returned. Choose one observed source before building the Transfer draft, or refine your request."
     return "发现多个源候选。请先选择一个已观察的源再构建 Transfer 草稿，或补充更精确的要求。"
+
+
+def transfer_source_engine_prompt(accept_language: str) -> str:
+    if _language(accept_language) == "en":
+        return "Choose a source engine before searching for the collection."
+    return "请先选择源引擎，再搜索集合。"
+
+
+def transfer_source_engine_unavailable(accept_language: str) -> str:
+    if _language(accept_language) == "en":
+        return "The source engine could not be confirmed. Please include its exact name or type in a new request."
+    return "无法确认源引擎。请在新请求中补充确切的源引擎名称或类型。"
+
+
+def transfer_source_engine_mismatch(accept_language: str) -> str:
+    if _language(accept_language) == "en":
+        return "The source collection is outside the confirmed engine. Search for the collection in that engine."
+    return "源集合不属于当前确认的引擎。请在该引擎内重新搜索源集合。"
+
+
+def transfer_source_not_found_prompt(accept_language: str, engine: str, query: str) -> str:
+    if _language(accept_language) == "en":
+        return f"No collection matched “{query}” in “{engine}”. Please provide the collection name in the chat box."
+    return f"在源引擎「{engine}」中未找到与「{query}」匹配的集合。请在聊天框补充集合名称。"

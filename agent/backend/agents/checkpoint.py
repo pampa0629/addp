@@ -13,6 +13,7 @@ from i18n import workspace_message
 
 CHECKPOINT_SCHEMA = "addp.agent-checkpoint/v1"
 CHECKPOINT_MAX_BYTES = 256 * 1024
+TRANSFER_SOURCE_ENGINE_REASON = "transfer_source_engine"
 
 
 def validate_checkpoint_size(checkpoint: dict[str, Any]) -> None:
@@ -28,9 +29,10 @@ def new_checkpoint() -> dict[str, Any]:
         "parameter_source": None,
         "parameter_source_issue": False,
         "platform_capability": None,
+        "transfer_source_scope": None,
         "reply_detail": "standard",
         "observed": {"workflow_engines": {}, "resources": {}, "platform_capabilities": {}, "operation_reviews": {}, "config_checks": {}, "run_approval": None, "transfer_source_candidates": []},
-        "confirmed": {"workflow_engine": None, "resources": {}, "operation_reviews": {}, "run_approval": None},
+        "confirmed": {"workflow_engine": None, "transfer_source_engine": None, "resources": {}, "operation_reviews": {}, "run_approval": None},
     }
 
 
@@ -68,6 +70,17 @@ def normalize_checkpoint(value: Any) -> dict[str, Any]:
 
     observed = value.get("observed") if isinstance(value.get("observed"), dict) else {}
     confirmed = value.get("confirmed") if isinstance(value.get("confirmed"), dict) else {}
+    scope = value.get("transfer_source_scope")
+    if scope is not None:
+        if (not isinstance(scope, dict) or not scope.keys() <= {"name", "engine_type"}
+                or any(not isinstance(v, str) or not v.strip() or len(v) > 255 for v in scope.values())):
+            raise ValueError("invalid_transfer_source_scope")
+        checkpoint["transfer_source_scope"] = dict(scope)
+    source_engine = confirmed.get("transfer_source_engine")
+    if source_engine is not None:
+        if type(source_engine) is not int or source_engine <= 0 or not scope:
+            raise ValueError("invalid_transfer_source_engine")
+        checkpoint["confirmed"]["transfer_source_engine"] = source_engine
     workflow_engines = observed.get("workflow_engines")
     resources = observed.get("resources")
     confirmed_resources = confirmed.get("resources")
@@ -94,6 +107,15 @@ def normalize_checkpoint(value: Any) -> dict[str, Any]:
         if isinstance(source.get("run_approval"), dict):
             checkpoint[group]["run_approval"] = copy.deepcopy(source["run_approval"])
     return checkpoint
+
+
+def matching_transfer_source_engines(checkpoint: dict[str, Any]) -> list[dict[str, Any]]:
+    scope = checkpoint["transfer_source_scope"]
+    if not scope:
+        return []
+    return [engine for engine in checkpoint["observed"]["workflow_engines"].values()
+            if isinstance(engine, dict) and type(engine.get("id")) is int
+            and all(str(engine.get(key, "")).casefold() == value.casefold() for key, value in scope.items())]
 
 
 def _walk_objects(value: Any):
@@ -276,6 +298,11 @@ def canonicalize_clarification_options(
     observed = checkpoint["observed"]
     if any(isinstance(option.get("candidate"), dict) and "operation_review" in option["candidate"] for option in options):
         raise ValueError("operation_review_requires_runtime_preparation")
+    if reason == TRANSFER_SOURCE_ENGINE_REASON or any(
+        isinstance(option.get("candidate"), dict) and "transfer_source_engine_id" in option["candidate"]
+        for option in options
+    ):
+        raise ValueError("source_engine_selection_requires_runtime_preparation")
     if "workflow_engine" in reason:
         for option in options:
             value = option.get("value")
@@ -328,6 +355,13 @@ def confirm_selection(checkpoint: dict[str, Any], answer: Any) -> None:
     if not isinstance(answer, dict):
         return
     candidate = answer.get("candidate") if isinstance(answer.get("candidate"), dict) else {}
+    if "transfer_source_engine_id" in candidate:
+        engine_id = candidate["transfer_source_engine_id"]
+        if (type(engine_id) is not int or answer.get("value") != engine_id
+                or not any(engine["id"] == engine_id for engine in matching_transfer_source_engines(checkpoint))):
+            raise ValueError("transfer_source_engine_not_observed")
+        checkpoint["confirmed"]["transfer_source_engine"] = engine_id
+        return
     if "operation_review" in candidate:
         review = candidate["operation_review"]
         tool = review.get("tool") if isinstance(review, dict) else None
