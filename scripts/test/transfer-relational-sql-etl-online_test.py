@@ -646,6 +646,8 @@ class TransferRelationalSQLETLOnlineTest(unittest.TestCase):
         common = {"schema_version": "addp.manager-private-import-browser/v1", "result": "passed",
                   "run_id": "run-fixture", **identity}
         proof = {"transfer_task_id": 42, "transfer_execution_id": parent, "meta_scan_execution_id": child, "rejected_execution_id": denied}
+        proof["initial_grant"] = {"request_id": str(uuid.uuid4()), "uploader_preview_verified": True,
+                                  "outsider_denied": True, "revocation_verified": True, "hidden_after_revoke": True}
         proof["browser"] = {
             "upload": {**common, "stage": "upload", "submission": {"transfer_task_id": 42, "transfer_execution_id": parent},
                        "meta_scan_execution_id": child, "upload_ui_verified": True, "metadata_wait_verified": True},
@@ -720,6 +722,32 @@ class TransferRelationalSQLETLOnlineTest(unittest.TestCase):
         with patch.object(ONLINE, "validate_user_identity", return_value={"principal_id": "31"}), self.assertRaisesRegex(ONLINE.SuiteError, "distinct User"):
             ONLINE.verify_import_private_access(client, 42, {"principal_id": "31", "tenant_id": "7"}, 30)
 
+    def test_private_import_revokes_exact_issued_grant_on_success_and_preview_failure(self):
+        identity, proof = self.import_browser_proof()
+        grant = {"request_id": str(uuid.uuid4()), "action": "read", "expiry_mode": "until_revoked",
+                 "operator_principal_id": "31", "issuer_principal_id": "32", "item_fingerprint": "fingerprint",
+                 "boundary_hash": "boundary"}
+        path = {"engine_id": 8}
+        for broken_preview in (False, True):
+            with self.subTest(broken_preview=broken_preview):
+                uploader, outsider, authorizer = Mock(), Mock(), Mock()
+                revoked = dict(grant, revocation={"reason": "withdrawn"})
+                checks = [ONLINE.SuiteError("preview failed"), None] if broken_preview else [None, None, None]
+                with patch.object(ONLINE, "run_manager_import", return_value=proof.copy()), patch.object(
+                        ONLINE, "import_grant_history", side_effect=[(grant, path), (grant, path), (revoked, path)]), patch.object(
+                        ONLINE.REGISTRATION, "read_exact_record_authorization_facts", return_value=grant), patch.object(
+                        ONLINE, "verify_import_target_access", side_effect=checks) as access:
+                    args = uploader, 8, identity, 30, [], outsider, authorizer
+                    if broken_preview:
+                        with self.assertRaisesRegex(ONLINE.SuiteError, "preview failed"):
+                            ONLINE.run_manager_import_with_grant(*args)
+                    else:
+                        self.assertTrue(ONLINE.run_manager_import_with_grant(*args)["initial_grant"]["hidden_after_revoke"])
+                        self.assertEqual(access.call_args_list[1].args, (outsider, 8, False))
+                    self.assertEqual(access.call_args.args, (uploader, 8, False))
+                self.assertEqual(authorizer.request.call_args.args[:3], (
+                    "POST", f"/api/v1/system/engines/8/access_grants/{grant['request_id']}/revoke", (200,)))
+
     def test_import_receipt_requires_independent_physical_check_and_actual_source(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -729,7 +757,7 @@ class TransferRelationalSQLETLOnlineTest(unittest.TestCase):
                 ONLINE.record_manager_import_receipt(root, root, "run-fixture", identity, 8, proof)
             self.assertEqual(run.call_args_list[0].args[0], ["bash", "business/scripts/online-transfer-relational-sql-etl-fixture.sh", "manager-import"])
             receipt = json.loads((root / "manager-private-import.json").read_text())
-            self.assertEqual(receipt["schema_version"], "addp.manager-private-import/v2")
+            self.assertEqual(receipt["schema_version"], "addp.manager-private-import/v3")
             self.assertEqual(receipt["git_commit"], "a" * 40)
             self.assertTrue(receipt["manager_import"]["physical_geometry_verified"])
         for results in ([SimpleNamespace(returncode=1, stdout="SECRET_MARKER")],
@@ -1154,7 +1182,7 @@ class TransferRelationalSQLETLOnlineTest(unittest.TestCase):
             stack.enter_context(patch.object(ONLINE, "run_binary_roundtrip"))
             stack.enter_context(patch.object(ONLINE, "find_item"))
             stack.enter_context(patch.object(ONLINE, "run_object_upload", return_value={"single_source_facts_verified": True}))
-            stack.enter_context(patch.object(ONLINE, "run_manager_import", side_effect=imported))
+            stack.enter_context(patch.object(ONLINE, "run_manager_import_with_grant", side_effect=imported))
             stack.enter_context(patch.object(ONLINE, "record_manager_import_receipt"))
             stack.enter_context(patch.object(ONLINE, "record_scan_trace_receipt", return_value={"object_upload": {}, "bounded_import": {}}))
             stack.enter_context(patch.object(ONLINE, "run_native_lineage", side_effect=interrupt))
@@ -1229,7 +1257,7 @@ class TransferRelationalSQLETLOnlineTest(unittest.TestCase):
             binary = stack.enter_context(patch.object(ONLINE, "run_binary_roundtrip", side_effect=binary_roundtrip))
             stack.enter_context(patch.object(ONLINE, "run_browser", return_value={}))
             stack.enter_context(patch.object(ONLINE, "run_object_upload", return_value={"single_source_facts_verified": True}))
-            stack.enter_context(patch.object(ONLINE, "run_manager_import", return_value={"automatic_scan_verified": True}))
+            stack.enter_context(patch.object(ONLINE, "run_manager_import_with_grant", return_value={"automatic_scan_verified": True}))
             stack.enter_context(patch.object(ONLINE, "record_manager_import_receipt", side_effect=receipt))
             trace = stack.enter_context(patch.object(ONLINE, "record_scan_trace_receipt", side_effect=traced))
             stack.enter_context(patch.object(ONLINE, "cleanup_tasks"))
@@ -1240,7 +1268,7 @@ class TransferRelationalSQLETLOnlineTest(unittest.TestCase):
         self.assertEqual(binary.call_args.args[5:7], (3, pg_source))
         trace.assert_called_once()
         report = json.loads(output.getvalue())
-        self.assertEqual(report["schema_version"], "addp.transfer-relational-sql-etl-online/v15")
+        self.assertEqual(report["schema_version"], "addp.transfer-relational-sql-etl-online/v16")
         self.assertEqual(report["scan_trace_visibility"], {"object_upload": {}, "bounded_import": {}})
         self.assertEqual(report["created_resources"], 17)
         self.assertEqual(report["deleted_resources"], 17)

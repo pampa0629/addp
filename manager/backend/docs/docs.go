@@ -4315,7 +4315,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "仅 Transfer Tenant Service 可核验当前执行的上传者、绑定任务和准确来源；不返回文件或凭据。| Only the Transfer Tenant Service may verify the execution uploader, bound task and exact source; no files or credentials are returned.",
+                "description": "仅 Transfer Tenant Service 可核验当前执行的上传者、绑定任务、准确来源及已上传组成的摘要；不返回文件内容或凭据。| Only the Transfer Tenant Service may verify the execution uploader, bound task, exact source and uploaded file digests; no file contents or credentials are returned.",
                 "consumes": [
                     "application/json"
                 ],
@@ -6580,6 +6580,12 @@ const docTemplate = `{
         "client.ManagerImportSource": {
             "type": "object",
             "properties": {
+                "files": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    }
+                },
                 "source_locator": {
                     "type": "string"
                 },
@@ -6588,6 +6594,9 @@ const docTemplate = `{
                 },
                 "tenant_id": {
                     "type": "integer"
+                },
+                "upload_id": {
+                    "type": "string"
                 },
                 "uploader_id": {
                     "type": "integer"

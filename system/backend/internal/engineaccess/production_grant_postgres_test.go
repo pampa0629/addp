@@ -3,6 +3,7 @@ package engineaccess
 import (
 	"context"
 	"errors"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -12,6 +13,7 @@ import (
 	"github.com/addp/common/dataitem/authorizationfacts"
 	"github.com/addp/common/dataitem/authorizationfacts/factstest"
 	"github.com/addp/common/engine/plugin"
+	"github.com/addp/common/execution"
 	"github.com/addp/system/internal/iam"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
@@ -224,6 +226,28 @@ func exerciseInitialProductionGrants(t *testing.T, db *gorm.DB, acceptor *Servic
 			t.Fatal("recovery required live dependencies or renewed expiry", recovered, err)
 		}
 		checkCoverage(receipt.Target, false)
+		remoteErr = nil
+		fresh()
+		service.WithAuthorizationFactsReader(testMetaFacts{paths: []plugin.EngineCatalogPath{receipt.Target}})
+		receipt.SourceReadSet = nil
+		receipt.ManagerImport = &execution.ManagerImportReadProof{
+			UploadID: uuid.NewString(), UploaderID: user.PrincipalID, TaskID: 23, ManifestSHA256: strings.Repeat("a", 64),
+		}
+		imported, err := service.IssueInitialTransferGrant(ctx, actor, receipt.ExecutionID)
+		if err != nil || imported == nil || imported.Outcome != "issued" || imported.Grant == nil ||
+			imported.Grant.ExpiryMode != shared.SharingExpiryUntilRevoked || imported.Grant.ExpiresAt != nil {
+			t.Fatal("proven private upload did not receive an independently revocable output Grant", imported, err)
+		}
+		checkCoverage(receipt.Target, true)
+		revoke(imported.Grant.RequestID)
+		checkCoverage(receipt.Target, false)
+		fresh()
+		service.WithAuthorizationFactsReader(testMetaFacts{paths: []plugin.EngineCatalogPath{receipt.Target}})
+		receipt.UserOrigin.AuthorizationVersion--
+		stale, err := service.IssueInitialTransferGrant(ctx, actor, receipt.ExecutionID)
+		if err != nil || stale == nil || stale.Outcome != "denied" || stale.DenialCode != "source_access_denied" {
+			t.Fatal("stale private uploader retained initial Grant eligibility", stale, err)
+		}
 		bad := actor
 		bad.ClientID = "addp-catalog"
 		if _, err := service.ResolveInitialTransferGrant(ctx, bad, executionID); err == nil {

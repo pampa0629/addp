@@ -14,17 +14,18 @@ import (
 // TransferProductionReceipt is owner evidence, never an Allow or an assertion
 // of initial-Grant eligibility. System must independently resolve Meta and IAM.
 type TransferProductionReceipt struct {
-	SchemaVersion       string                        `json:"schema_version"`
-	TenantID            int64                         `json:"tenant_id,string" swaggertype:"string"`
-	ExecutionID         string                        `json:"execution_id"`
-	Attempt             int                           `json:"attempt"`
-	RetryOfExecutionID  *string                       `json:"retry_of_execution_id,omitempty"`
-	Target              plugin.EngineCatalogPath      `json:"target"`
-	Preparation         plugin.TableTargetDisposition `json:"preparation"`
-	CommittedAt         time.Time                     `json:"committed_at"`
-	UserOrigin          *TransferProductionUserOrigin `json:"user_origin"`
-	SourceReadSet       *plugin.QueryReadSet          `json:"source_read_set"`
-	CreatedAndCommitted bool                          `json:"created_and_committed"`
+	SchemaVersion       string                            `json:"schema_version"`
+	TenantID            int64                             `json:"tenant_id,string" swaggertype:"string"`
+	ExecutionID         string                            `json:"execution_id"`
+	Attempt             int                               `json:"attempt"`
+	RetryOfExecutionID  *string                           `json:"retry_of_execution_id,omitempty"`
+	Target              plugin.EngineCatalogPath          `json:"target"`
+	Preparation         plugin.TableTargetDisposition     `json:"preparation"`
+	CommittedAt         time.Time                         `json:"committed_at"`
+	UserOrigin          *TransferProductionUserOrigin     `json:"user_origin"`
+	SourceReadSet       *plugin.QueryReadSet              `json:"source_read_set"`
+	ManagerImport       *execution.ManagerImportReadProof `json:"manager_import,omitempty"`
+	CreatedAndCommitted bool                              `json:"created_and_committed"`
 }
 
 type TransferProductionUserOrigin struct {
@@ -53,6 +54,9 @@ func (r TransferProductionReceipt) Validate() error {
 	}
 	if r.UserOrigin != nil && (r.UserOrigin.PrincipalID <= 0 || r.UserOrigin.TenantMembershipID <= 0 || r.UserOrigin.AuthorizationVersion <= 0) {
 		return errors.New("incomplete Transfer production user origin")
+	}
+	if r.ManagerImport != nil && (r.SourceReadSet != nil || r.ManagerImport.Validate() != nil || r.UserOrigin == nil || r.ManagerImport.UploaderID != r.UserOrigin.PrincipalID) {
+		return errors.New("invalid private import production evidence")
 	}
 	if err := execution.ValidateProductionReadSet(r.SourceReadSet); err != nil {
 		return err

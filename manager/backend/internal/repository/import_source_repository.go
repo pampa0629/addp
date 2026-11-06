@@ -35,5 +35,5 @@ func (r *ImportSourceRepository) Verify(ctx context.Context, tenantID uint, requ
 	if err != nil {
 		return nil, err
 	}
-	return &client.ManagerImportSource{TenantID: source.TenantID, UploaderID: source.UploaderID, TaskID: *source.TransferTaskID, SourceLocator: source.SourceLocator}, nil
+	return &client.ManagerImportSource{UploadID: source.UploadUUID, Files: source.Files, TenantID: source.TenantID, UploaderID: source.UploaderID, TaskID: *source.TransferTaskID, SourceLocator: source.SourceLocator}, nil
 }

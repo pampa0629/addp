@@ -3,14 +3,16 @@ package repository
 import (
 	"context"
 	"errors"
+	"os"
+	"strings"
+	"testing"
+	"time"
+
 	"github.com/addp/common/client"
 	"github.com/addp/manager/internal/models"
 	"github.com/google/uuid"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
-	"os"
-	"testing"
-	"time"
 )
 
 func TestIntegrationPostgresManagerImportSourceIsPrivateAndBoundOnce(t *testing.T) {
@@ -31,7 +33,7 @@ func TestIntegrationPostgresManagerImportSourceIsPrivateAndBoundOnce(t *testing.
 	}
 	tenant := uint(time.Now().UnixNano()%10000000 + 800000000)
 	repo := NewImportSourceRepository(db)
-	source := &models.ImportSource{UploadUUID: uuid.NewString(), TenantID: tenant, UploaderID: 31, SourceLocator: "addp-infra://minio/manager/private/" + uuid.NewString() + ".shp?type=object"}
+	source := &models.ImportSource{UploadUUID: uuid.NewString(), TenantID: tenant, UploaderID: 31, Files: map[string]string{"fixture.shp": strings.Repeat("a", 64)}, SourceLocator: "addp-infra://minio/manager/private/" + uuid.NewString() + ".shp?type=object"}
 	t.Cleanup(func() {
 		if err := db.Where("tenant_id = ?", tenant).Delete(&models.ImportSource{}).Error; err != nil {
 			t.Error(err)
@@ -51,7 +53,7 @@ func TestIntegrationPostgresManagerImportSourceIsPrivateAndBoundOnce(t *testing.
 		t.Fatalf("rebound upload: %v", err)
 	}
 	facts, err := repo.Verify(t.Context(), tenant, request)
-	if err != nil || !facts.Matches(tenant, request) {
+	if err != nil || !facts.Matches(tenant, request) || facts.UploadID != source.UploadUUID || facts.Files["fixture.shp"] != source.Files["fixture.shp"] {
 		t.Fatalf("facts=%+v err=%v", facts, err)
 	}
 	for _, kind := range []string{"tenant", "uploader", "task", "locator"} {

@@ -3,11 +3,12 @@ package client
 import (
 	"context"
 	"errors"
-	"github.com/google/uuid"
 	"net/http"
 	"net/url"
 	"strings"
 	"time"
+
+	"github.com/google/uuid"
 )
 
 // ManagerImportSourceRequest carries only facts frozen by the Transfer Owner.
@@ -29,10 +30,12 @@ func (r ManagerImportSourceRequest) Validate() error {
 }
 
 type ManagerImportSource struct {
-	TenantID      uint   `json:"tenant_id"`
-	UploaderID    int64  `json:"uploader_id"`
-	TaskID        uint   `json:"task_id"`
-	SourceLocator string `json:"source_locator"`
+	UploadID      string            `json:"upload_id"`
+	Files         map[string]string `json:"files"`
+	TenantID      uint              `json:"tenant_id"`
+	UploaderID    int64             `json:"uploader_id"`
+	TaskID        uint              `json:"task_id"`
+	SourceLocator string            `json:"source_locator"`
 }
 
 func (s ManagerImportSource) Matches(tenantID uint, request ManagerImportSourceRequest) bool {

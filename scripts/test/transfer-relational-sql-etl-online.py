@@ -733,6 +733,90 @@ def run_manager_import(client, engine_id, identity, timeout, owned_ids, outsider
     return proof
 
 
+def import_grant_history(authorizer, engine_id, identity, execution_id):
+    query = urllib.parse.urlencode({"table_search": IMPORT_TARGET, "recipient_type": "user",
+                                    "recipient_id": identity["principal_id"], "page_size": 100})
+    route = f"/api/v1/system/engines/{engine_id}/access_grants/history?{query}"
+    listing = _object(authorizer.request("GET", route, (200,)).payload, "import Grant history")
+    rows = _array(listing, "import Grant history")
+    path = {"version": "catalog.path/v1", "engine_id": engine_id, "segments": [
+        {"term": "server", "kind": "server", "name": ""},
+        {"term": "schema", "kind": "namespace", "name": "public"},
+        {"term": "table", "kind": "table", "name": IMPORT_TARGET},
+    ]}
+    if listing.get("total") != len(rows) or len(rows) > 1:
+        raise SuiteError("import Grant history is incomplete or contains duplicates")
+    if rows:
+        row = _object(rows[0], "import Grant")
+        if (row.get("catalog_path") != path or row.get("production_execution_id") != execution_id
+                or row.get("approval_mode") != "task_production" or row.get("producer_owner") != "transfer"
+                or row.get("recipient_type") != "user" or row.get("recipient_id") != identity["principal_id"]):
+            raise SuiteError("import Grant history is not owned by this execution")
+        return row, path
+    return None, path
+
+
+def verify_import_target_access(client, engine_id, visible):
+    items = _array(client.request("GET", f"/api/v1/meta/engines/{engine_id}/items", (200,)).payload, "import target visibility")
+    matches = [row for row in items if row.get("full_name") == f"public.{IMPORT_TARGET}"]
+    if len(matches) != int(visible):
+        raise SuiteError("import target visibility differs from the current Grant")
+    locator = f"addp://engine/{engine_id}/path/public/{IMPORT_TARGET}?type=table"
+    query = urllib.parse.urlencode({"locator": locator, "page": 1, "page_size": 20})
+    result = _object(client.request("GET", f"/api/v1/manager/preview?{query}", (200,) if visible else (403,)).payload, "import preview")
+    if visible:
+        data = _object(result.get("data"), "import preview table")
+        rows = data.get("rows")
+        if (result.get("preview_type") != "table" or not isinstance(rows, list) or len(rows) != 2
+                or {(row.get("id"), row.get("label")) for row in rows} != {(1, "alpha"), (2, "beta")}):
+            raise SuiteError("Manager did not preview the two imported points")
+    elif set(result) - {"error", "error_code"} or not result.get("error") or result.get("error_code") == "security_protection_required":
+        raise SuiteError("Manager preview did not prove denial at the source Grant boundary")
+
+
+def run_manager_import_with_grant(client, engine_id, identity, timeout, owned_ids, outsider, authorizer):
+    report = None
+    execution_id = None
+    revoked_id = None
+    try:
+        report = run_manager_import(client, engine_id, identity, timeout, owned_ids, outsider)
+        execution_id = report["transfer_execution_id"]
+        grant, path = import_grant_history(authorizer, engine_id, identity, execution_id)
+        facts = REGISTRATION.read_exact_record_authorization_facts(authorizer, path)
+        if (grant is None or grant.get("revocation") is not None or grant.get("action") != "read"
+                or grant.get("expiry_mode") != "until_revoked" or grant.get("expires_at") is not None
+                or grant.get("operator_principal_id") != identity["principal_id"]
+                or grant.get("issuer_principal_id") in (None, identity["principal_id"])
+                or grant.get("item_fingerprint") != facts["item_fingerprint"]
+                or grant.get("boundary_hash") != facts["boundary_hash"]):
+            raise SuiteError("import output lacks its exact initial read Grant")
+        verify_import_target_access(client, engine_id, True)
+        verify_import_target_access(outsider, engine_id, False)
+    finally:
+        if execution_id is None:
+            # The browser writes the accepted identities before waiting for the page.
+            partial = Path(required_environment("ADDP_ONLINE_ARTIFACT_DIR")) / "manager-import-upload-browser.json"
+            if partial.is_file():
+                submission = json.loads(partial.read_text()).get("submission", {})
+                execution_id = submission.get("transfer_execution_id")
+        if execution_id:
+            current, _ = import_grant_history(authorizer, engine_id, identity, str(uuid.UUID(execution_id)))
+            if current is not None and current.get("revocation") is None:
+                grant_id = str(uuid.UUID(current["request_id"]))
+                authorizer.request("POST", f"/api/v1/system/engines/{engine_id}/access_grants/{grant_id}/revoke",
+                                   (200,), {"reason": "Disposable private import verification completed"})
+                withdrawn, _ = import_grant_history(authorizer, engine_id, identity, execution_id)
+                if withdrawn is None or withdrawn["request_id"] != grant_id or not withdrawn.get("revocation"):
+                    raise SuiteError("import Grant revocation was not recorded")
+                verify_import_target_access(client, engine_id, False)
+                revoked_id = grant_id
+    if revoked_id is None:
+        raise SuiteError("import Grant withdrawal was not verified")
+    report["initial_grant"] = {"request_id": revoked_id, "uploader_preview_verified": True,
+                               "outsider_denied": True, "revocation_verified": True, "hidden_after_revoke": True}
+    return report
+
+
 def verify_scan_trace_visibility(client, outsider, identity, outsider_identity, scan_id, parent_id=None):
     """A readable task parent never grants access to another User's ad-hoc scan."""
     if (outsider_identity.get("tenant_id") != identity["tenant_id"]
@@ -833,6 +917,11 @@ def record_manager_import_receipt(repository, artifact_dir, run_id, identity, en
     if (upload["submission"] != {"transfer_task_id": proof["transfer_task_id"], "transfer_execution_id": proof["transfer_execution_id"]}
             or upload["meta_scan_execution_id"] != proof["meta_scan_execution_id"]):
         raise SuiteError("Manager import receipt lost its actual browser submission or Meta child")
+    grant = _object(proof.get("initial_grant"), "Manager import initial Grant")
+    if (not isinstance(grant.get("request_id"), str) or str(uuid.UUID(grant["request_id"])) != grant["request_id"]
+            or any(grant.get(key) is not True for key in ("uploader_preview_verified", "outsider_denied",
+                                                         "revocation_verified", "hidden_after_revoke"))):
+        raise SuiteError("Manager import receipt is missing initial Grant and revocation proof")
     checked = subprocess.run(["bash", "business/scripts/online-transfer-relational-sql-etl-fixture.sh", "manager-import"],
                              cwd=repository, capture_output=True, text=True, timeout=60)
     if checked.returncode != 0:
@@ -842,7 +931,7 @@ def record_manager_import_receipt(repository, artifact_dir, run_id, identity, en
     if source.returncode != 0 or len(commit) != 40 or any(c not in "0123456789abcdef" for c in commit):
         raise SuiteError("Manager import receipt requires the actual source commit")
     proof["physical_geometry_verified"] = True
-    receipt = {"schema_version": "addp.manager-private-import/v2", "result": "passed", "run_id": run_id,
+    receipt = {"schema_version": "addp.manager-private-import/v3", "result": "passed", "run_id": run_id,
                "git_commit": commit, "identity": identity, "engine_id": engine_id, "manager_import": proof}
     path = Path(artifact_dir) / "manager-private-import.json"
     path.write_text(json.dumps(receipt, sort_keys=True) + "\n")
@@ -1826,8 +1915,8 @@ def main() -> int:
                                       convergence_timeout, owned_ids)
         wait_manager_read_boundary(client, engine_id, time.monotonic() + convergence_timeout)
         object_upload = run_object_upload(client, initializer, repository, identity_report, convergence_timeout)
+        manager_import = run_manager_import_with_grant(client, engine_id, identity_report, convergence_timeout, owned_ids, outsider, initializer)
         del initializer
-        manager_import = run_manager_import(client, engine_id, identity_report, convergence_timeout, owned_ids, outsider)
         record_manager_import_receipt(repository, required_environment("ADDP_ONLINE_ARTIFACT_DIR"), run_id, identity_report, engine_id, manager_import)
         trace_visibility = record_scan_trace_receipt(client, outsider, identity_report, outsider_identity, object_upload, manager_import)
         lineage = run_native_lineage(client, engine_id, source, owned_name, convergence_timeout, owned_ids)
@@ -1849,7 +1938,7 @@ def main() -> int:
         if residual:
             raise SuiteError("browser left the owned Transfer relational SQL ETL task behind")
         report = {
-            "schema_version": "addp.transfer-relational-sql-etl-online/v15",
+            "schema_version": "addp.transfer-relational-sql-etl-online/v16",
             "suite": "transfer-relational-sql-etl",
             "run_id": run_id,
             "result": "passed",

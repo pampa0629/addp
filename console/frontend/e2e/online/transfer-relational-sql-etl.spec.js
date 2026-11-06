@@ -101,9 +101,17 @@ test('browser imports a private Manager source through Console', async ({ page }
         && url.searchParams.get('execution_id') === submission.transfer_execution_id)
       await expect(frame.locator('.execution-detail-content')).toContainText(submission.transfer_execution_id)
       expect(refreshRequests).toContain(task.config.target.parent_locator)
-      await page.goto(`/manager/data-explorer?locator=${encodeURIComponent(task.config.target.parent_locator)}`)
-      await expect(frame.locator('.node-panel')).toContainText(input.target_table)
       report.meta_scan_execution_id = execution.metadata.metadata_scan.execution_id
+      writeFileSync(resolve(artifactDir, 'manager-import-upload-browser.json'), JSON.stringify(report))
+      const visibilityDeadline = Date.now() + 45_000
+      await expect.poll(async () => {
+        const result = await json(await browserAPI.get(`/api/v1/transfer/executions/${submission.transfer_execution_id}`),
+          'read private import initial authorization')
+        const state = result.metadata?.initial_authorization
+        return state?.code ? `${state.status}/${state.code}` : state?.status
+      }, { message: 'the private import must issue its initial Grant before the ordinary directory is read' }).toBe('issued')
+      await page.goto(`/manager/data-explorer?locator=${encodeURIComponent(task.config.target.parent_locator)}`, { timeout: Math.max(1, visibilityDeadline - Date.now()) })
+      await expect(frame.locator('.node-panel')).toContainText(input.target_table, { timeout: Math.max(1, visibilityDeadline - Date.now()) })
       report.upload_ui_verified = true
       report.metadata_wait_verified = true
       await page.screenshot({ path: resolve(artifactDir, 'manager-import-console-success.png'), fullPage: true })

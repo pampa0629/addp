@@ -5,6 +5,7 @@ import (
 	"errors"
 	"reflect"
 	"sort"
+	"time"
 
 	commonapi "github.com/addp/common/api"
 	"github.com/addp/common/authorization"
@@ -31,8 +32,17 @@ func initialProductionSources(production *preparedTransferProduction) (sourceRea
 	}
 	r := production.receipt
 	if !r.CreatedAndCommitted || r.Preparation != plugin.TableTargetCreated || r.Attempt != 1 || r.RetryOfExecutionID != nil || r.UserOrigin == nil ||
-		r.SourceReadSet == nil || execution.ValidateProductionReadSet(r.SourceReadSet) != nil || !reflect.DeepEqual(r.Target, production.binding.NativeTarget) ||
+		!reflect.DeepEqual(r.Target, production.binding.NativeTarget) ||
 		len(r.Target.Segments) != 3 || !reflect.DeepEqual(r.Target, plugin.TabularItemPath(r.Target.EngineID, plugin.EngineCatalogTermSchema, r.Target.Segments[1].Name, r.Target.Segments[2].Name)) {
+		return sourceReadRequest{}, errInitialProductionEvidence
+	}
+	request := sourceReadRequest{Action: "read", TenantID: r.TenantID, Source: userProvenance{
+		r.UserOrigin.PrincipalID, r.UserOrigin.TenantMembershipID, r.UserOrigin.AuthorizationVersion,
+	}}
+	if r.ManagerImport != nil {
+		return request, nil
+	}
+	if r.SourceReadSet == nil || execution.ValidateProductionReadSet(r.SourceReadSet) != nil {
 		return sourceReadRequest{}, errInitialProductionEvidence
 	}
 	paths := r.SourceReadSet.Clone().Paths
@@ -41,8 +51,8 @@ func initialProductionSources(production *preparedTransferProduction) (sourceRea
 			return sourceReadRequest{}, errInitialProductionEvidence
 		}
 	}
-	return sourceReadRequest{Action: "read", TenantID: r.TenantID, Source: userProvenance{r.UserOrigin.PrincipalID,
-		r.UserOrigin.TenantMembershipID, r.UserOrigin.AuthorizationVersion}, Targets: paths}, nil
+	request.Targets = paths
+	return request, nil
 }
 
 // Source facts use the same System-owned clients as target preparation. Cross-
@@ -69,8 +79,11 @@ func (s *Service) prepareInitialTransferProduction(ctx context.Context, tenantID
 		}
 		versions[id] = engine.Version
 	}
-	bindings, readErr := s.resolveReadBindings(ctx, tenantID, sources.Targets)
 	prepared := &preparedInitialProduction{production: production, sources: sources, engineVersions: versions}
+	if production.receipt.ManagerImport != nil {
+		return prepared, nil
+	}
+	bindings, readErr := s.resolveReadBindings(ctx, tenantID, sources.Targets)
 	// Recheck every source and the target, including when Meta failed.
 	if err := s.repository.checkProductionEngines(ctx, tenantID, versions); err != nil {
 		return nil, err
@@ -135,12 +148,9 @@ func (r *Repository) queryInitialProduction(ctx context.Context, prepared *prepa
 		!reflect.DeepEqual(request.Targets, prepared.sources.Targets) {
 		return nil, errInitialProductionEvidence
 	}
-	paths, batch, err := prepared.sources.encode()
-	if err != nil || len(prepared.engineVersions) == 0 {
-		return nil, errInitialProductionEvidence
-	}
+
 	expectedEngines := map[int64]bool{int64(prepared.production.receipt.Target.EngineID): true}
-	for _, path := range paths {
+	for _, path := range request.Targets {
 		expectedEngines[int64(path.EngineID)] = true
 	}
 	if len(expectedEngines) != len(prepared.engineVersions) {
@@ -156,7 +166,7 @@ func (r *Repository) queryInitialProduction(ctx context.Context, prepared *prepa
 		if err := tx.checkProductionEngines(ctx, request.TenantID, prepared.engineVersions); err != nil {
 			return err
 		}
-		rules, err := tx.queryCurrentSourceRules(ctx, prepared.sources, paths, batch)
+		rules, err := tx.queryProductionSourceRules(ctx, prepared)
 		if err != nil {
 			return err
 		}
@@ -195,3 +205,29 @@ const productionTargetHistorySQL = `WITH target AS (
  UNION ALL SELECT 1 FROM target t JOIN system.engine_access_grants g
  ON g.tenant_id=t.tenant_id AND g.engine_id=t.engine_id AND (g.item_fingerprint=t.fingerprint OR g.catalog_path=t.path)
 )`
+
+// The private upload is a proven input outside the DataItem Grant store.
+// It still requires the same live human identity at issuance and commit.
+func (r *Repository) queryProductionSourceRules(ctx context.Context, prepared *preparedInitialProduction) (*sourceReadRules, error) {
+	request := prepared.sources
+	if prepared.production.receipt.ManagerImport == nil {
+		paths, batch, err := request.encode()
+		if err != nil {
+			return nil, errInitialProductionEvidence
+		}
+		return r.queryCurrentSourceRules(ctx, request, paths, batch)
+	}
+	var subject struct {
+		ObservedAt time.Time
+		Covered    bool
+	}
+	err := r.db.WithContext(ctx).Raw(privateImportSourceSQL, request.TenantID, request.Source.PrincipalID,
+		request.Source.MembershipID, request.Source.AuthorizationVersion).Scan(&subject).Error
+	return &sourceReadRules{ObservedAt: subject.ObservedAt, Covered: subject.Covered}, err
+}
+
+const privateImportSourceSQL = `WITH input AS MATERIALIZED (
+ SELECT ?::bigint AS tenant_id, ?::bigint AS principal_id,
+        ?::bigint AS membership_id, ?::bigint AS authorization_version,
+        clock_timestamp() AS observed_at
+)` + sourceReadSubjectCTEs + ` SELECT input.observed_at, EXISTS (SELECT 1 FROM current_source) AS covered FROM input`

@@ -1005,7 +1005,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "仅供当前 Tenant 的 addp-system 和 addp-meta 读取 PG Transfer 已成功执行的 v3 产出证据、实际会话来源集合与创建提交事实；false 或 null 不得补造为已证明或长期许可。不代表首次新建资格、Meta 边界或数据权限，不返回私有配置或凭据 | Only the current Tenant addp-system and addp-meta Services may read v3 PG production evidence, actual session sources and the created-and-committed fact. False or null cannot imply proven creation or unbounded permission. Not initial-Grant eligibility, a Meta boundary or data permission; no private configuration or credentials",
+                "description": "仅供当前 Tenant 的 addp-system 和 addp-meta 读取 PG Transfer 已成功执行的 v3 产出证据、实际会话来源集合或私有导入读取证明，以及创建提交事实；false 或 null 不得补造为已证明或长期许可。不代表首次新建资格、Meta 边界或数据权限，不返回私有配置或凭据 | Only the current Tenant addp-system and addp-meta Services may read v3 PG production evidence, actual session sources or verified private import input, and the created-and-committed fact. False or null cannot imply proven creation or unbounded permission. Not initial-Grant eligibility, a Meta boundary or data permission; no private configuration or credentials",
                 "produces": [
                     "application/json"
                 ],
@@ -3596,6 +3596,25 @@ const docTemplate = `{
                 }
             }
         },
+        "execution.ManagerImportReadProof": {
+            "type": "object",
+            "properties": {
+                "manifest_sha256": {
+                    "type": "string"
+                },
+                "task_id": {
+                    "type": "string",
+                    "example": ""
+                },
+                "upload_id": {
+                    "type": "string"
+                },
+                "uploader_id": {
+                    "type": "string",
+                    "example": ""
+                }
+            }
+        },
         "execution.ReadGrant": {
             "type": "object",
             "properties": {
@@ -5886,6 +5905,9 @@ const docTemplate = `{
                 },
                 "execution_id": {
                     "type": "string"
+                },
+                "manager_import": {
+                    "$ref": "#/definitions/execution.ManagerImportReadProof"
                 },
                 "preparation": {
                     "$ref": "#/definitions/plugin.TableTargetDisposition"

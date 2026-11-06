@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/addp/common/client"
 	"github.com/addp/common/contentio"
 	"github.com/addp/common/dataprotection"
 	"github.com/addp/common/datatype"
@@ -20,6 +21,7 @@ import (
 
 type TablePipelineMetrics struct {
 	SourceReadSet     *engineplugin.QueryReadSet
+	PrivateImport     *execution.ManagerImportReadProof
 	TargetPreparation engineplugin.TableTargetPreparation
 	// Internal Provider fact, not a public result or persisted Grant receipt.
 	TargetCreatedAndCommitted bool `json:"-"`
@@ -186,6 +188,9 @@ func (p *TablePipeline) Execute(ctx context.Context) (result *TablePipelineMetri
 	}()
 
 	metrics := &TablePipelineMetrics{SourceReadSet: actualSources}
+	if source, ok := reader.(*multiTableBatchReader); ok {
+		metrics.PrivateImport = source.privateImport
+	}
 	if target, ok := p.Target.(*nativeTableBatchTarget); ok {
 		metrics.TargetPreparation = target.preparation
 	}
@@ -648,6 +653,7 @@ type encodedContentTableSource struct {
 	tableInfo           *datatype.TableInfo
 	spatialInfo         *datatype.SpatialInfo
 	relatedRefs         []format.RelatedRef
+	privateImport       *client.ManagerImportSource
 }
 
 func (s *encodedContentTableSource) Open(ctx context.Context) (TableBatchReader, error) {
@@ -706,10 +712,28 @@ func (s *encodedContentTableSource) Open(ctx context.Context) (TableBatchReader,
 	}
 
 	if s.multiReaderProvider != nil {
-		reader, refs := s.refReader(s.multiReaderProvider.RelatedRefSpecs())
+		specs := s.multiReaderProvider.RelatedRefSpecs()
+		reader, refs := s.refReader(specs)
+		var verified *verifiedImportReader
+		if s.privateImport != nil && len(s.privateImport.Files) > 0 {
+			var err error
+			verified, refs, err = newVerifiedImportReader(reader, format.SameBasenameRelatedRefs(s.path.StringPath(), specs), s.privateImport)
+			if err != nil {
+				return nil, err
+			}
+			reader = verified
+		}
 		tableReader, err := s.multiReaderProvider.OpenMultiTableReader(ctx, reader, refs, parseOptions)
 		if err != nil {
 			return nil, fmt.Errorf("open encoded source multi table reader: %w", err)
+		}
+		var proof *execution.ManagerImportReadProof
+		if verified != nil {
+			proof, err = verified.proof()
+			if err != nil {
+				_ = tableReader.Close(ctx)
+				return nil, err
+			}
 		}
 		tableInfo := s.tableInfo
 		spatialInfo := s.spatialInfo.Clone()
@@ -720,9 +744,10 @@ func (s *encodedContentTableSource) Open(ctx context.Context) (TableBatchReader,
 			spatialInfo = spatialInfoFromFormatReader(tableReader)
 		}
 		return &multiTableBatchReader{
-			tableReader: tableReader,
-			tableInfo:   tableInfo,
-			spatialInfo: spatialInfo,
+			tableReader:   tableReader,
+			privateImport: proof,
+			tableInfo:     tableInfo,
+			spatialInfo:   spatialInfo,
 		}, nil
 	}
 
@@ -832,10 +857,11 @@ func cloneResumeMarker(marker *resume.Marker) *resume.Marker {
 }
 
 type multiTableBatchReader struct {
-	tableReader format.TableReader
-	tableInfo   *datatype.TableInfo
-	spatialInfo *datatype.SpatialInfo
-	offset      int64
+	privateImport *execution.ManagerImportReadProof
+	tableReader   format.TableReader
+	tableInfo     *datatype.TableInfo
+	spatialInfo   *datatype.SpatialInfo
+	offset        int64
 }
 
 func (r *multiTableBatchReader) TableInfo() *datatype.TableInfo {

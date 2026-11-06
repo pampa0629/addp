@@ -153,6 +153,7 @@ Worker 按实际 EA／execution／attempt／lease 逐批读取 System 当前角�
 #### 成果事实与初始授权
 
 - PG bounded 在同 attempt／实际目标的成功提交中冻结同次读取会话的完整 ReadSet 与 Provider `created_and_committed`；来源未知为 null，新建未证明为 false，不从配置、行数或血缘补造。新建与提交证明、schema 运维前提及外部 DDL 原子性限制沿[Provider 契约](../docs/spec/addp引擎插件接口规范.md#storeprovider)。私有 `target_production` v3 使用封闭 JSON 字符串和唯一 owner codec，避免 JSONMap 浮点往返改变 Engine ID；不兼容或补填旧事实，不持久化原生 CreationWitness。
+- Manager 私有 Shapefile 导入在同次读取中核对上传组成的 SHA-256，随实际成功提交冻结私有来源证明，供 System 按同一初始授权入口裁决。源文件仍由 Manager 私有持有。
 - 成果资格、System／Meta 窄机器回执权限、签发事务与期限裁决、续办及限定 basic 补扫统一见[初始使用权契约](../docs/spec/addp授权上下文规范.md#558-任务产出数据与初始使用权)。Transfer 只在本次成功完成事务为具备 v3 首次新建提交证明及完整人类来源的首次 bounded 执行初始化 `initial_authorization`；不回填历史。Worker 注册有效时独立领取、锁外核清／续办，仅正式 pending 才补扫；有界退避、旧领取围栏和终态规则沿该契约，不重跑写入、不删除成果或延长 System 冻结期限。
 - 通用 metadata／完成路径禁止自报保留的授权状态，HTTP 只投影 `status/code`，不泄露领取进度、Grant 引用或私有证据；普通详情／TaskProvider 不暴露产出证明。页面区分物理成功与授权状态，待办只读刷新；实际读取仍按 System Grant 与 Security 链裁决。完整链路与固定版本证据见[新成果初始授权验收](../docs/spec/testing/scenarios/授权与共享.md#新成果初始授权)，T1/T2 与前端门禁不代替真实产出→识别→签发→读取→撤销验收。
 

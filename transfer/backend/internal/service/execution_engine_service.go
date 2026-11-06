@@ -212,7 +212,7 @@ func (s *ExecutionEngineService) executeCommonTransferTask(ctx context.Context, 
 		s.updateExecutionError(ctx, task, executionID, wrapped)
 		return wrapped
 	}
-	if err := s.verifyInfraImportSource(ctx, execution, spec.Source.Locator); err != nil {
+	if _, err := s.verifyInfraImportSource(ctx, execution, spec.Source.Locator); err != nil {
 		s.updateExecutionError(ctx, task, executionID, err)
 		return err
 	}
@@ -518,7 +518,7 @@ func (s *ExecutionEngineService) runCommonTableTransferData(
 		if buildResult.Plan.Source.Kind != executor.TableEndpointEncoded {
 			return nil, nil, fmt.Errorf("%w: invalid private source kind", executor.ErrProtectionPreparation)
 		}
-		err = s.verifyInfraImportSource(ctx, execution, spec.Source.Locator)
+		tableExecutor.PrivateImportSource, err = s.verifyInfraImportSource(ctx, execution, spec.Source.Locator)
 	} else {
 		tableExecutor.SourceProtector, err = prepareBoundedTableSourceProtection(
 			ctx, s.protectionGate, task.TenantID, task.Config, buildResult.Plan.Source.Kind, s.executionRoleResolver(execution, task.Config),
@@ -558,7 +558,7 @@ func (s *ExecutionEngineService) runCommonTableTransferData(
 		return buildResult, metrics, wrapped
 	}
 	if productionLocator != "" {
-		if err := s.executionService.taskRepo.RecordTargetCommit(ctx, productionLease, productionLocator, metrics.SourceReadSet, metrics.TargetCreatedAndCommitted); err != nil {
+		if err := s.executionService.taskRepo.RecordTargetCommit(ctx, productionLease, productionLocator, metrics.SourceReadSet, metrics.TargetCreatedAndCommitted, metrics.PrivateImport); err != nil {
 			return buildResult, metrics, fmt.Errorf("persist target commit: %w", err)
 		}
 	}
@@ -1627,36 +1627,36 @@ func cleanPathValue(value interface{}) string {
 }
 
 // Verify the frozen execution before metadata inspection and again before data reads.
-func (s *ExecutionEngineService) verifyInfraImportSource(ctx context.Context, current *commonExecution.TaskExecution, locator string) error {
+func (s *ExecutionEngineService) verifyInfraImportSource(ctx context.Context, current *commonExecution.TaskExecution, locator string) (*commonClient.ManagerImportSource, error) {
 	if !planner.IsInfraLocatorURI(locator) {
-		return nil
+		return nil, nil
 	}
 	deny := func() error {
 		return fmt.Errorf("%w: private import source verification failed", executor.ErrProtectionPreparation)
 	}
 	lease, ok := commonExecution.LeaseFromContext(ctx)
 	if !ok || ctx.Err() != nil || current == nil || current.TenantID <= 0 || current.Module != commonExecution.ModuleTransfer || current.TaskType != commonExecution.TaskTypeSync || current.ExecutionBoundary != commonExecution.ExecutionBoundaryBounded || current.Status != commonExecution.ExecutionStatusRunning || current.SourceTaskID == nil || s.importSourceVerifier == nil {
-		return deny()
+		return nil, deny()
 	}
 	actualLease, err := commonExecution.LeaseFromExecution(*current)
 	if err != nil || lease != actualLease || lease.Attempt <= 0 {
-		return deny()
+		return nil, deny()
 	}
 
 	if err := commonExecution.CopyActorOrigin(&commonExecution.TaskExecution{TenantID: current.TenantID}, current); err != nil {
-		return deny()
+		return nil, deny()
 	}
 	taskID, err := commonExecution.ParseSourceTaskIDUint(current.SourceTaskID)
 	if err != nil || taskID == 0 {
-		return deny()
+		return nil, deny()
 	}
 	request := commonClient.ManagerImportSourceRequest{ExecutionID: current.ExecutionID, TaskID: taskID, PrincipalID: *current.ActorPrincipalID, SourceLocator: locator}
 	if request.Validate() != nil {
-		return deny()
+		return nil, deny()
 	}
 	result, err := s.importSourceVerifier.VerifyImportSource(ctx, uint(current.TenantID), request)
 	if err != nil || result == nil || !result.Matches(uint(current.TenantID), request) {
-		return deny()
+		return nil, deny()
 	}
-	return nil
+	return result, nil
 }

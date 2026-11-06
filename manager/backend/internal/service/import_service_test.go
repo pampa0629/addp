@@ -4,8 +4,10 @@ import (
 	"archive/zip"
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -418,6 +420,9 @@ func TestImportShapefileSubmitsCurrentBoundedSnapshotContract(t *testing.T) {
 	}
 	for _, file := range completeImportShapefileUploadFiles("roads") {
 		key := "/manager/" + managerImportStagingPrefix(7, result.UploadUUID, time.Now()) + file.FileName
+		if store.source.Files[file.FileName] != fmt.Sprintf("%x", sha256.Sum256(uploads[key])) {
+			t.Errorf("persisted import digest differs for %s", file.FileName)
+		}
 		if !bytes.Equal(uploads[key], file.Content) {
 			t.Errorf("staged content differs for %s", file.FileName)
 		}

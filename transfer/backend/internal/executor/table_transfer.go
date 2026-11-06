@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/addp/common/client"
 	"github.com/addp/common/dataprotection"
 	"github.com/addp/common/datatype"
 	"github.com/addp/common/engine/contentadapter"
@@ -159,6 +160,7 @@ type TableTransferExecutor struct {
 	CRSDefinitionConverter     CRSDefinitionConverter
 	TargetCRSRequirements      format.CRSDefinitionWriteRequirementProvider
 	SourceProtector            TableSourceProtector
+	PrivateImportSource        *client.ManagerImportSource
 }
 
 func NewTableTransferExecutor(sourceEngineType, targetEngineType string, sourceFormat, targetFormat format.FormatType) (*TableTransferExecutor, error) {
@@ -272,6 +274,10 @@ func (e *TableTransferExecutor) openSource(plan TableSourcePlan) (TableBatchSour
 			spatialInfo:          plan.SpatialInfo,
 		}, nil
 	case TableEndpointEncoded:
+		if e.PrivateImportSource != nil && len(e.PrivateImportSource.Files) > 0 &&
+			(plan.Format != format.FormatShapefile || plan.Layout == format.LayoutWhole || e.SourceMultiReadProvider == nil || e.SourceRuntimeTableProvider != nil) {
+			return nil, fmt.Errorf("private import requires the Shapefile multi-file reader")
+		}
 		if e.SourceRuntimeTableProvider != nil {
 			if plan.Layout != format.LayoutSingle {
 				return nil, fmt.Errorf("runtime table source requires single layout")
@@ -313,6 +319,7 @@ func (e *TableTransferExecutor) openSource(plan TableSourcePlan) (TableBatchSour
 			tableInfo:           plan.TableInfo,
 			spatialInfo:         plan.SpatialInfo,
 			relatedRefs:         plan.RelatedRefs,
+			privateImport:       e.PrivateImportSource,
 		}, nil
 	default:
 		return nil, fmt.Errorf("unsupported table source kind %q", plan.Kind)

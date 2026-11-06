@@ -4,6 +4,8 @@ import (
 	"archive/zip"
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
@@ -139,6 +141,7 @@ func (s *ImportService) ImportShapefile(ctx context.Context, req *ImportShapefil
 	}
 
 	// 4. 上传所有文件到 MinIO
+	manifest := make(map[string]string, len(files))
 	for filename, content := range files {
 		objectKey := prefix + filename
 		_, err := s.minioClient.PutObject(ctx, s.minioBucket, objectKey,
@@ -148,6 +151,8 @@ func (s *ImportService) ImportShapefile(ctx context.Context, req *ImportShapefil
 		if err != nil {
 			return nil, fmt.Errorf("failed to upload %s to MinIO: %w", filename, err)
 		}
+		digest := sha256.Sum256(content)
+		manifest[filename] = hex.EncodeToString(digest[:])
 		log.Info("文件上传成功", "object_key", objectKey, "size", len(content))
 	}
 
@@ -155,7 +160,7 @@ func (s *ImportService) ImportShapefile(ctx context.Context, req *ImportShapefil
 	if s.sourceStore == nil {
 		return nil, fmt.Errorf("%w: import source store unavailable", ErrImportSubmission)
 	}
-	if err := s.sourceStore.Create(ctx, &models.ImportSource{UploadUUID: uploadUUID, TenantID: req.TenantID, UploaderID: req.UploaderID, SourceLocator: managerInfraMinioObjectLocator(s.minioBucket, sourceObjectPath)}); err != nil {
+	if err := s.sourceStore.Create(ctx, &models.ImportSource{UploadUUID: uploadUUID, TenantID: req.TenantID, UploaderID: req.UploaderID, Files: manifest, SourceLocator: managerInfraMinioObjectLocator(s.minioBucket, sourceObjectPath)}); err != nil {
 		return nil, fmt.Errorf("%w: persist upload source: %w", ErrImportSubmission, err)
 	}
 

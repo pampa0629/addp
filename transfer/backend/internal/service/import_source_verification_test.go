@@ -62,7 +62,7 @@ func TestImportSourceRequiresCurrentCompleteActorTaskAndLease(t *testing.T) {
 				verifier.mutate = func(s *commonClient.ManagerImportSource) { s.SourceLocator += "other" }
 			}
 			svc := &ExecutionEngineService{importSourceVerifier: verifier}
-			err := svc.verifyInfraImportSource(execution.ContextWithLease(t.Context(), lease), current, source)
+			_, err := svc.verifyInfraImportSource(execution.ContextWithLease(t.Context(), lease), current, source)
 			if (kind == "valid") != (err == nil) {
 				t.Fatalf("accepted=%v err=%v", err == nil, err)
 			}

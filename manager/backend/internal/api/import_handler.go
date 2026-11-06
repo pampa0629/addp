@@ -194,7 +194,7 @@ func (h *ImportHandler) ImportData(c *gin.Context) {
 
 // VerifyImportSource 核验上传者私有的导入暂存来源。
 // @Summary 核验导入暂存来源 | Verify private import staging source
-// @Description 仅 Transfer Tenant Service 可核验当前执行的上传者、绑定任务和准确来源；不返回文件或凭据。| Only the Transfer Tenant Service may verify the execution uploader, bound task and exact source; no files or credentials are returned.
+// @Description 仅 Transfer Tenant Service 可核验当前执行的上传者、绑定任务、准确来源及已上传组成的摘要；不返回文件内容或凭据。| Only the Transfer Tenant Service may verify the execution uploader, bound task, exact source and uploaded file digests; no file contents or credentials are returned.
 // @Tags Manager
 // @Accept json
 // @Produce json

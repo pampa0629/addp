@@ -48,15 +48,25 @@ func (r *TaskRepository) RecordTargetPreparation(ctx context.Context, lease exec
 	})
 }
 
-func (r *TaskRepository) RecordTargetCommit(ctx context.Context, lease execution.Lease, locator string, sources *plugin.QueryReadSet, createdAndCommitted bool) error {
+func (r *TaskRepository) RecordTargetCommit(ctx context.Context, lease execution.Lease, locator string, sources *plugin.QueryReadSet, createdAndCommitted bool, imported *execution.ManagerImportReadProof) error {
 	if err := execution.ValidateProductionReadSet(sources); err != nil {
 		return err
 	}
 	sources = sources.Clone()
+	if imported != nil {
+		copy := *imported
+		imported = &copy
+	}
 	return r.changeTargetProduction(ctx, lease, locator, func(item execution.TaskExecution, now time.Time) (models.TargetProduction, error) {
 		record, err := targetProductionForExecution(item, locator)
 		if err != nil {
 			return record, err
+		}
+		if imported != nil {
+			taskID, err := execution.ParseSourceTaskIDUint(item.SourceTaskID)
+			if err != nil || taskID != imported.TaskID || item.ActorPrincipalID == nil || *item.ActorPrincipalID != imported.UploaderID {
+				return record, fmt.Errorf("private import evidence does not match its execution")
+			}
 		}
 		if record.Phase == models.TargetProductionPending {
 			return record, fmt.Errorf("%w: target preparation is not recorded", commonapi.ErrConflict)
@@ -67,8 +77,9 @@ func (r *TaskRepository) RecordTargetCommit(ctx context.Context, lease execution
 		if record.Phase == models.TargetProductionPrepared {
 			record.Phase, record.CommittedAt = models.TargetProductionCommitted, &now
 			record.SourceReadSet = sources
+			record.ManagerImport = imported
 			record.CreatedAndCommitted = createdAndCommitted
-		} else if !reflect.DeepEqual(record.SourceReadSet, sources) || record.CreatedAndCommitted != createdAndCommitted {
+		} else if !reflect.DeepEqual(record.SourceReadSet, sources) || !reflect.DeepEqual(record.ManagerImport, imported) || record.CreatedAndCommitted != createdAndCommitted {
 			return record, fmt.Errorf("%w: committed production facts are immutable", commonapi.ErrConflict)
 		}
 		return record, nil
