@@ -7,6 +7,7 @@ Monitor 聚合任务执行事实，提供授权诊断、统计、健康观测、
 | 范围 | 权威正文与实现 |
 | --- | --- |
 | 任务定义与执行事实 | 定义归各业务 Owner；统一执行模型、状态、租约、来源和父子关系见[执行记录与租约](../../docs/spec/tasks/执行记录与租约.md)及[Common execution](../../common/execution/)。Monitor 不保存第二套任务定义或执行主表。 |
+| bounded 恢复时间 | 按[当前 attempt 契约](../../docs/spec/tasks/执行记录与租约.md#bounded-execution-领取租约和恢复契约)，Common [RetryExpired](../../common/execution/lease.go)在过期租约围栏内将 execution 恢复为 `pending` 时清空 `started_at`，保留 execution UUID 与 `created_at`。再次 claim 写入新的开始时间、递增 attempt 并生成新 token。 |
 | 执行读取与诊断 | [Owner 读取与诊断](../../docs/spec/tasks/执行监控.md#租户执行诊断)维护逐请求裁决及专业 DTO；[详情安全投影](../../docs/spec/tasks/执行监控.md#执行详情与安全投影)集中维护通用字段、步骤／恢复、独立事件与动作边界；父可读不授予子执行或业务结果权限。 |
 | 执行列表筛选与分页 | [正式列表契约](../../docs/spec/tasks/执行监控.md#执行列表筛选与分页)集中维护参数、授权总数、排序／分页、页面状态与验收边界；不由内部日期字段或事件游标外推列表能力。 |
 | 执行统计与运行健康 | [正式统计契约](../../docs/spec/tasks/执行监控.md#执行统计与运行指标)维护统计 API、口径、Owner 读取范围和验收边界；[Provider 与后台心跳](../../docs/spec/tasks/执行监控.md#provider-与后台运行实例健康)分别维护即时探测与存活观测，不据此判定任务成功。 |
@@ -42,7 +43,6 @@ Monitor 聚合任务执行事实，提供授权诊断、统计、健康观测、
 
 | 事项 | 保留的需求与决策边界 |
 | --- | --- |
-| bounded 恢复时间 | `started_at` 采用[当前 attempt 契约](../../docs/spec/tasks/执行记录与租约.md#bounded-execution-领取租约和恢复契约)。Common [RetryExpired](../../common/execution/lease.go) 在过期租约围栏内恢复为 `pending` 时清空 `started_at`，保留 execution UUID 与 `created_at`；再次 claim 写入新开始时间并递增 attempt、生成新 token。Common Go 回归覆盖首次／再次 claim、恢复排队及旧运行体拒绝；Quality SQLite／PostgreSQL 回归覆盖恢复摘要和排队失败不借用旧开始时间／耗时，Monitor PostgreSQL 回归覆盖恢复排队、再次运行／完成和排队失败的时间聚合。沿 `make test-module MODULE=common GO_ONLY=1`、`make test-quality-postgres` 和 `make test-monitor-postgres` 自动发现；现有排队／运行时长 SQL 公式不变，确定性证据不代表 Hosted／生产重启恢复验收。 |
 | 实时推送 | WebSocket 执行状态推送仅保留为候选；先明确刷新收益、授权撤销、连接范围和负载，不替换现有读取主路径。 |
 | 成功率与 stalled 规则 | 后续扩展须依赖 Owner 公共事实及明确 heartbeat/deadline 契约，不能以 created_at、updated_at 或全局固定时长猜测任务卡死。 |
 | 统计展示扩展 | 保留成功率趋势图、执行耗时分布图、失败原因分析和热点任务 Top 10 的后续需求；当前 Dashboard 的日趋势是总数／成功数／失败数，不是成功率趋势或失败原因分布。已有平均／P95 和状态数量也不构成完整分布或任务排名；现行 API、口径与权限沿[正式统计契约](../../docs/spec/tasks/执行监控.md#执行统计与运行指标)，后续展示须单独明确维度、读取范围及实际验收，不能由现有页面或历史证据外推。 |
@@ -53,5 +53,7 @@ Monitor 聚合任务执行事实，提供授权诊断、统计、健康观测、
 ## 验证与运行边界
 
 工作区变更、Monitor 模块、持久化和前端门禁的命令统一见[模块开发与验证](../CLAUDE.md#开发与验证)。测试分层及跨模块场景沿[测试与验收规范](../../docs/spec/addp测试与验收规范.md)；固定版本、失败、清理及未覆盖项统一见[模块主题证据导航](../CLAUDE.md#历史证据导航)，按各专题原记录认定。
+
+bounded 恢复时间由三组回归覆盖。[Common 租约回归](../../common/execution/lease_test.go)验证首次与再次 claim、恢复排队及旧运行体写入拒绝，沿 `make test-module MODULE=common GO_ONLY=1` 发现。[Quality 事件回归](../../quality/backend/internal/repository/plan_events_test.go)用 SQLite／PostgreSQL 核对恢复摘要，并确认排队失败时没有沿用旧开始时间或耗时，PostgreSQL 沿 `make test-quality-postgres` 发现。[Monitor 时间聚合回归](../backend/internal/repository/execution_runtime_metrics_repository_postgres_test.go)沿模块 PostgreSQL 门禁验证恢复排队、再次运行与完成、排队失败的统计结果，沿用现有排队和运行时长公式。Hosted 与生产环境的重启恢复须有独立验收证据。
 
 验收结论须对应固定源码、实际执行项与完整证据，旧样本数量、成功率、缓存命中率或日期标记不能代替当前验收。真实 System / Gateway / Owner / Worker 链路仍按对应 T4 场景核对，生产部署不由单元测试或历史通过结论外推。端口、启动与重启沿[端口规范](../../docs/spec/addp端口分配.md)和[部署指南](../../docs/guide/addp部署和开发步骤.md)，需要重启时由用户执行标准生命周期命令。
