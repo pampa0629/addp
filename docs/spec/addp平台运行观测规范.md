@@ -141,6 +141,8 @@ PostgreSQL／Redis／MinIO 专业来源沿同一发现文件发布：部署侧�
 
 该接口不创建纳管身份、不更改管理员声明、历史或租户权限；管理员批量确认遵循 [4.4](#44-平台引擎部署登记)，专业来源的私有投影与准入见 [4.7](#47-postgresql-受保护的固定指标来源)。候选读取、来源自动发布、专业采集与用户查询分别验证，不以发现成功代替产品接入验收。
 
+<a id="postgresql-source-pair-discovery"></a>
+
 PostgreSQL 只读发现在共享 `addp-metrics-sources` 项目中按同一作用域的 `<scope>-postgres-metrics`（SQL Exporter）和 `<scope>-postgres-metrics-web`（mTLS 入口）定位配对来源。每个服务须恰有一个正在运行的常驻容器，且项目、工作区 Owner、作用域、服务标签、当前数据库容器完整 ID 及启动时刻均匹配。mTLS 入口须共享该 Exporter 的网络命名空间。唯一显式的 HTTPS `9443/tcp` 映射记录在 Exporter 容器上，入口容器自身的发布端口应为空。两个服务都未发现时记为 `not_deployed`。配对不全、重复、身份或网络命名空间错配、端口不符时记为 `unavailable`。专业来源状态与基础数据库部署状态分别判定。[采集来源统一部署分组](#采集来源统一部署分组2026-11-04)
 
 Redis 和 MinIO 的只读发现在共享 `addp-metrics-sources` 项目内按 `<scope>-redis-metrics` 或 `<scope>-minio-metrics` 服务名定位唯一来源。发现时核对工作区 Owner、作用域及服务标签、当前数据库容器的完整 ID 与启动时刻、私网网络 ID 和唯一显式的 `9443/tcp` HTTPS 映射，并复核前后事实一致。[采集来源统一部署分组](#采集来源统一部署分组2026-11-04)
