@@ -24,7 +24,7 @@ var redisPhysical = map[string]string{
 	"redis.loading": "loading", "redis.persistence.aof_enabled": "aof_enabled", "redis.persistence.rdb_save_ok": "rdb_last_bgsave_ok", "redis.persistence.aof_write_ok": "aof_last_write_ok", "redis.persistence.aof_rewrite_ok": "aof_last_rewrite_ok",
 }
 var redisCounters = []string{"commands_total", "keyspace_hits_total", "keyspace_misses_total", "evicted_keys_total", "rejected_connections_total", "oom_errors_total"}
-var redisFields = []string{"observed_at_seconds", "uptime_seconds", "memory_allocated_bytes", "memory_rss_bytes", "maxmemory_bytes", "memory_excluded_from_limit_bytes", "memory_counted_for_limit_bytes", "connections", "max_connections", "blocked_connections", "commands_total", "keyspace_hits_total", "keyspace_misses_total", "evicted_keys_total", "rejected_connections_total", "oom_errors_total", "loading", "aof_enabled", "rdb_last_bgsave_ok", "aof_last_write_ok", "aof_last_rewrite_ok"}
+var redisFields = []string{"observed_at_seconds", "uptime_seconds", "memory_allocated_bytes", "memory_rss_bytes", "maxmemory_bytes", "memory_excluded_from_limit_bytes", "memory_counted_for_limit_bytes", "connections", "max_connections", "blocked_connections", "commands_total", "keyspace_hits_total", "keyspace_misses_total", "evicted_keys_total", "rejected_connections_total", "oom_errors_total", "loading", "aof_enabled", "rdb_last_bgsave_ok"}
 
 func RedisCatalog() []Definition { return append([]Definition(nil), redisDefinitions...) }
 func (s EngineScope) redisSnapshotGuard(offset string) string {
@@ -34,16 +34,30 @@ func (s EngineScope) redisSnapshotGuard(offset string) string {
 	if offset != "" {
 		age = "76"
 	}
+	sameScrape := func(raw string) string {
+		return ` and (count(` + raw + `)==1) and (min(` + raw + `)>=0) and (max(timestamp(` + raw + `))==` + stamp + `)`
+	}
+	boolean := func(raw string) string {
+		return ` and ((max(` + raw + `)==0) or (max(` + raw + `)==1))`
+	}
 	guard := ` and (count(` + up + `)==1) and (max(` + up + `)==1) and (` + stamp + `>=time()-` + age + `)`
 	for _, field := range redisFields {
-		raw := s.selector(field) + offset
-		guard += ` and (count(` + raw + `)==1) and (min(` + raw + `)>=0) and (max(timestamp(` + raw + `))==` + stamp + `)`
+		guard += sameScrape(s.selector(field) + offset)
 	}
 	observed := `max(` + s.selector("observed_at_seconds") + offset + `)`
 	guard += ` and (` + observed + `>=` + stamp + `-5) and (` + observed + `<=` + stamp + `+5) and (` + observed + `-max(` + s.selector("uptime_seconds") + offset + `)>=` + strconv.FormatInt(s.Source.StartedAt.Unix()-1, 10) + `)`
-	for _, field := range []string{"loading", "aof_enabled", "rdb_last_bgsave_ok", "aof_last_write_ok", "aof_last_rewrite_ok"} {
-		guard += ` and ((max(` + s.selector(field) + offset + `)==0) or (max(` + s.selector(field) + offset + `)==1))`
+	for _, field := range []string{"loading", "rdb_last_bgsave_ok"} {
+		guard += boolean(s.selector(field) + offset)
 	}
+	// The source emits AOF results only when AOF is enabled.
+	aof := `max(` + s.selector("aof_enabled") + offset + `)`
+	enabled, disabled := `(`+aof+`==1)`, `(`+aof+`==0)`
+	for _, field := range []string{"aof_last_write_ok", "aof_last_rewrite_ok"} {
+		raw := s.selector(field) + offset
+		enabled += sameScrape(raw) + boolean(raw)
+		disabled += ` unless count(` + raw + `)`
+	}
+	guard += ` and ((` + enabled + `) or (` + disabled + `))`
 	for _, field := range redisCounters {
 		guard += ` and (count(` + strings.TrimSuffix(s.selector(field), "}") + `,counter_epoch=~"[0-9a-f]{64}"}` + offset + `)==1)`
 	}
@@ -78,6 +92,8 @@ func (s EngineScope) redisExpression(p Plan) (string, error) {
 			eligible += s.redisSnapshotGuard(" offset 1m") + ` and (count(` + hits + `)==1) and (count(` + misses + `)==1) and (max(` + hits + `)+max(` + misses + `)>0)`
 		} else if !ok {
 			return "", ErrInvalid
+		} else if field == "aof_last_write_ok" || field == "aof_last_rewrite_ok" {
+			eligible += ` and (max(` + s.selector("aof_enabled") + `)==1)`
 		} else if d.WindowSeconds == 60 {
 			raw := s.selector(field)
 			valid := counterWindow(raw)

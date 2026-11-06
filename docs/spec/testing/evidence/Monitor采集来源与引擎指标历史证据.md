@@ -751,3 +751,11 @@ PostgreSQL已有十二项固定失败阶段，统一入口此前直接显示英�
 修复 `ca6c675ad` 推送后，用户在本机执行 `python3 scripts/infra/metrics-sources.py recover --scope host --kind node` 并确认成功。
 
 用户随后回传本机全量启动的末尾只读摘要。指标中心和采集控制入口均运行中，主机、Infra PostgreSQL、Infra MinIO 和 Business PostgreSQL 均启用并运行中，其余三项停用且未部署。摘要共 7 项、失败 0 项，所贴输出未出现前序观测失败提示。此次复验覆盖本机全量启动的监控摘要，实际采样、主机关联和有效指标仍需在 Monitor 核对。CI／Hosted 结果由专门会话回传。
+
+### Infra Redis 关闭 AOF 时的快照和 Safari 复验（2026-11-06）
+
+用户经标准入口安装 Infra Redis 来源，并确认平台接入与主机绑定。Prometheus 实际抓取为 UP，并读到 19 个原始指标。Safari 检查器曾读到 Console 顶层和 Monitor 内嵌页均为 hidden。用户刷新恢复可见后，Monitor 仍报“未取得有效数据库快照”。原始样本确认 AOF 开关为 0，采集器按约定省略最近写入和重写状态。原 Monitor 查询无条件要求这两项，导致整份快照被拒绝。
+
+修正后，关闭 AOF 的快照可展示基础指标，两项 AOF 结果留空。开启时仍要求两项有效结果来自同次采集。Redis 专项先复现基础指标丢失，最终 `make test-monitor-redis-source` 通过 21 个 PromQL 用例及双作用域实源生命周期检查，独占容器、网络、卷零残留。Monitor Go T1 通过。日志见 `/tmp/addp-redis-aof-guard-red2.log`、`/tmp/addp-redis-aof-guard-final.log` 和 `/tmp/addp-redis-aof-monitor-go-final.log`。
+
+用户只重启 Monitor 后，原生 Safari 详情显示“正在采集”和“自动刷新已开启”。实际读到当前连接 34 个、分配内存约 1.6 MiB。选择分配内存后，近五分钟曲线绘制了实际采样点，15 秒评估间隔，时间窗口随刷新向前推进。本次个人环境只验 Infra Redis 当前值及内存趋势，Safari 曾判定隐藏的触发条件仍待复现。
