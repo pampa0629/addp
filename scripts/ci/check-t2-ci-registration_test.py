@@ -1374,14 +1374,29 @@ mode = os.environ['FIXTURE_MODE']
 state_path = Path(os.environ['FIXTURE_SECRET'] + '.state')
 state = json.loads(state_path.read_text()) if state_path.exists() else {'generation': 0, 'exists': False}
 if args[0] == 'compose':
-    command = args[args.index('-f') + 2]
+    command_index = 5
+    while args[command_index] == '-f':
+        command_index += 2
+    command = args[command_index]
     if command == 'up':
         Path(os.environ['FIXTURE_SECRET']).write_text(os.environ['NEO4J_T2_PASSWORD'])
         if mode in {'startup', 'diagnostic-failure'}: sys.exit(64)
         if not state['exists']: state['generation'] += 1
         state['starts'] = state.get('starts', 0) + 1
         state['port'] = int(os.environ['NEO4J_T2_BOLT_PORT']) or 17686 + state['starts']
-        state.update(exists=True, project=args[args.index('-p') + 1])
+        state.update(exists=True, project=args[args.index('-p') + 1], status='running', exit_code=0, oom=False)
+        state_path.write_text(json.dumps(state))
+    if command == 'stop':
+        phase = os.environ.get('NEO4J_T2_IDENTITY_PHASE')
+        state.update(status='exited', exit_code=0, oom=False)
+        if mode == 'forced-before-restart' and phase == 'baseline':
+            state['exit_code'] = 137
+        if mode == 'oom-before-dump' and phase == 'restart':
+            state['oom'] = True
+        if mode == 'running-before-dump' and phase == 'restart':
+            state['status'] = 'running'
+        if mode == 'unknown-before-dump' and phase == 'restart':
+            state['status'] = 'unknown'
         state_path.write_text(json.dumps(state))
     if command == 'down':
         state['exists'] = False
@@ -1401,8 +1416,13 @@ if args[0] == 'compose':
 elif args[0] == 'inspect':
     if '.Config.Labels' in ' '.join(args):
         print(state['project'] + '|' + state['project'] + '_neo4j_data')
-    else:
+    elif mode in {'startup', 'diagnostic-failure'}:
         print('{"status":"exited","exit_code":64,"oom_killed":false,"error":"fixture startup"}')
+    elif '|' in args[2]:
+        if state['status'] == 'unknown': sys.exit(78)
+        print(state['status'] + '|' + str(state['exit_code']) + '|' + str(state['oom']).lower())
+    else:
+        print(json.dumps({'status': state['status'], 'exit_code': state['exit_code'], 'oom_killed': state['oom']}))
 elif args[:2] == ['volume', 'inspect']:
     if not state['exists']: sys.exit(1)
     print('volume-generation-' + str(state['generation']))
@@ -1448,7 +1468,7 @@ else:
         self.assertIn("startup diagnostic password=[redacted]", output)
         self.assertNotIn(secret, output)
         self.assertIn('"exit_code":64', output)
-        commands = [c[c.index('-f') + 2] for c in calls if c[0] == "compose"]
+        commands = [c[2 + max(i for i, arg in enumerate(c) if arg == "-f")] for c in calls if c[0] == "compose"]
         self.assertLess(commands.index("logs"), commands.index("down"))
         log_call = next(c for c in calls if c[0] == "compose" and "logs" in c)
         self.assertEqual(log_call[-5:], ["logs", "--no-color", "--tail", "200", "neo4j"])
@@ -1467,11 +1487,29 @@ else:
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn("NEO4J_T2_PASS", result.stdout)
         self.assertFalse(any(c[0] == "compose" and "logs" in c for c in calls))
-        self.assertFalse(any(c[0] == "inspect" and ".State" in " ".join(c) for c in calls))
+        stops = [c for c in calls if c[0] == "compose" and "stop" in c]
+        self.assertEqual(len(stops), 10)
+        self.assertTrue(all(c[-4:] == ["stop", "--timeout", "10", "neo4j"] for c in stops))
+        self.assertEqual(result.stdout.count("NEO4J_T2_STOP clean"), 10)
         phases = [c for c in calls if c[0] == "go" and c[1]]
         self.assertEqual([c[1] for c in phases], ["baseline", "restart", "post-dump", "recreated", "restored", "restored-restart", "clone-recreated", "full-clone", "full-clone-restart"])
         self.assertEqual([c[2] for c in phases], ["port=17687"] * 9)
         self.assertIn("NEO4J_T2_CLEANUP zero_residuals", result.stdout)
+
+    def test_unclean_stop_blocks_restart_or_offline_mutation_and_cleans_up(self) -> None:
+        for mode in ("forced-before-restart", "oom-before-dump", "running-before-dump", "unknown-before-dump"):
+            with self.subTest(mode=mode):
+                result, calls, secret = self.run_fixture(mode)
+                output = result.stdout + result.stderr
+                self.assertNotEqual(result.returncode, 0, output)
+                self.assertIn("Neo4j T2 could not verify a clean stop", output)
+                self.assertIn("NEO4J_T2_CLEANUP zero_residuals", output)
+                self.assertNotIn("NEO4J_T2_PASS ", output)
+                self.assertNotIn(secret, output)
+                stop = max(i for i, c in enumerate(calls) if c[0] == "compose" and "stop" in c)
+                after = [c for c in calls[stop + 1:] if c[0] == "compose"]
+                self.assertTrue(any("down" in c for c in after))
+                self.assertFalse(any({"up", "run", "cp"}.intersection(c) for c in after))
 
     def test_missing_identity_phase_cannot_pass(self) -> None:
         result, calls, _ = self.run_fixture("identity-missing")
