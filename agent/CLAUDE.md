@@ -31,6 +31,8 @@
 
 重启后以同一无痕 Chrome 普通账号复验 `0bf30113a`。原关键词 `Outdoor.Photos` 返回 HTTP 200、0 条，Manager 请求 `567aa8a1-8e3c-496f-84a7-80ae06f8f4cc` 耗时 7.23 秒。以该账号已有授权的 Business NFS GeoTIFF 作正例，关键词 `p312-focal7-verified-20261106-075711` 返回 2 条，目标路径可见。对应 Manager 请求 `4a6bae06-f9dd-47c9-bdfc-9da6f83c8625` 返回 HTTP 200，耗时 8.51 秒。按请求 ID 对照 System 日志，两个请求分别执行 44 批授权核验，System 累计分别用时 6.76 秒和 7.93 秒。这个样本用于定位全租户检索成本，尚无规模基准。
 
+继续按同一请求 ID 关联 Manager、System 和 Meta 的完成日志，纳入第三个实际请求 `b425f7bf-63dc-471f-99a0-80140620fc53`。三个样本各有 44 个 System 裁决、305 个 Meta 授权事实请求及 305 次嵌套身份核验。按日志区间去除包含关系后，Manager 在裁决之外耗时 0.47–0.59 秒，System 裁决在 Meta 请求之外耗时 2.48–3.00 秒，Meta 请求在嵌套身份核验之外耗时 1.62–1.71 秒，嵌套身份核验耗时 2.63–3.22 秒。区间残差仍包含各层未单独记录的工作，无法分辨数据库、JSON 编解码或传输成本。
+
 本次只做 Manager 页面查询和权限配置的只读核对。`outdoor-develop` 仍缺 `ontology.semantic.read` 和 `system.engine.read`，开发租户当前无具备本场景工具权限的普通账号，因此未发起新的 Agent Run。修复提交的 Manager、System IAM PostgreSQL 集成作业以及 Go workspace 和平台一致性作业已通过，Platform CI 整体状态为取消。 [Manager 集成](https://github.com/pampa0629/addp/actions/runs/42206312117/job/127868138784) · [System IAM 集成](https://github.com/pampa0629/addp/actions/runs/42206312117/job/127868137640) · [Go workspace](https://github.com/pampa0629/addp/actions/runs/42206311898/job/127853722302) · [平台一致性](https://github.com/pampa0629/addp/actions/runs/42206311898/job/127853722389)
 
 ### 2026-11-04 历史验收
