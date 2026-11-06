@@ -135,7 +135,7 @@ test('protection refusals remain distinct from data permissions without exposing
 test('operator input contract matches the canonical runtime tuples and rejects unproven fields', () => {
   const source = read('../../../common-python/addp_common/workflow_runtime/errors.py')
   const canonical = [...source.matchAll(/\('([^']+)', '([^']+)', '([^']*)'\): '([^']*)'/g)].map(match => [match[1],match[2],match[4],match[3]])
-  assert.equal(canonical.length, 177)
+  assert.equal(canonical.length, 182)
   const actual = operatorInputRules.map(rule => [...rule])
   assert.deepEqual(actual.sort(), canonical.sort())
   for (const [operator_id, reason, parameter, field] of canonical) {
@@ -144,6 +144,7 @@ test('operator input contract matches the canonical runtime tuples and rejects u
     const result = executionFailurePresentation({ diagnostic, message: 'private' }, key => key)
     const profiles = { snap_line_endpoints: 'lineEndpoint', extend_line_endpoints: 'lineEndpoint', polygonize: 'polygonize', snap_geometry:'referenceSnap', check_geometry:'geometryValidity', repair_geometry:'geometryValidity', extract_vertices:'vertices', split_multipart:'multipart', get_bounds:'bounds', distance_to:'distance', get_area:'measurement', get_length:'measurement', split_by_area:'measurement', contains:'spatialRelation', intersects:'spatialRelation', voronoi:'voronoi',
       vector_reproject:'vectorReproject', filter_by_geometry_type:'geometrySelection', drop_null_geometry:'geometrySelection',
+      load_from_wkt:'wktLoad', export_to_wkt:'wktExport',
       'extract_polygon_rings:operator_input_invalid':'polygonRings',
       'merge_line_chains:operator_input_invalid':'lineCheck', 'merge_line_chains:operator_crs_invalid':'lineCheck',
       'merge_line_chains:operator_endpoint_network_invalid':'lineCheck',

@@ -48,7 +48,7 @@ var failureReasons = map[string]bool{
 	"json_invalid": true, "array_invalid": true, "bytes_invalid": true,
 	"table_write_failed": true, "execution_failed": true,
 	"target_exists":                 true,
-	"operator_match_fields_invalid": true, "operator_output_fields_invalid": true, "operator_group_fields_invalid": true, "operator_dissolve_fields_conflict": true,
+	"operator_match_fields_invalid": true, "operator_output_fields_invalid": true, "operator_group_fields_invalid": true, "operator_dissolve_fields_conflict": true, "operator_wkt_properties_invalid": true,
 	"operator_input_overlap": true, "operator_reference_overlap": true,
 	"operator_overlay_fields_conflict": true, "operator_endpoint_network_invalid": true, "operator_distance_limit_invalid": true, "operator_source_topology_invalid": true, "operator_trim_conflict": true,
 	"operator_input_invalid": true, "operator_mask_invalid": true, "operator_reference_invalid": true, "operator_field_conflict": true,

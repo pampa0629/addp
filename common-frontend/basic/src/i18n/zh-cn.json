@@ -196,6 +196,7 @@
       "reasons": {
         "operator_match_fields_invalid": "一致字段列表无效、重复或包含非标量值。",
         "operator_group_fields_invalid": "分组字段列表无效、重复或包含非标量值。",
+        "operator_wkt_properties_invalid": "属性须为与 WKT 列表等长的对象列表。",
         "operator_dissolve_fields_conflict": "融合固定输出字段与源列重名。",
         "operator_input_overlap": "源图层内部存在正面积重叠，包含和重复面也属于重叠。",
         "operator_reference_overlap": "图层 B 内部存在正面积重叠，包含和重复面也属于重叠。",
@@ -265,6 +266,7 @@
       "actions": {
         "operator_match_fields_invalid": "显式选择不重复的现有非几何标量字段，排除 id_field。空数组表示仅按几何合并。",
         "operator_group_fields_invalid": "显式选择无重复的现有非几何标量字段；[]表示全局融合，空值组会保留。",
+        "operator_wkt_properties_invalid": "检查每个 WKT 列表项是否对应一个属性对象。",
         "operator_dissolve_fields_conflict": "先在上游手动重命名fusion_id/member_count/source_id重名列，不会自动覆盖。",
         "operator_input_overlap": "先对对应图层执行面叠检查，再显式处理重叠、包含或重复面；不会自动融合、去重或修复。",
         "operator_reference_overlap": "先对对应图层执行面叠检查，再显式处理重叠、包含或重复面；不会自动融合、去重或修复。",
@@ -435,6 +437,8 @@
         }
       },
       "operatorNames": {
+        "load_from_wkt": "从 WKT 导入几何",
+        "export_to_wkt": "导出几何为 WKT",
         "get_area": "计算面积",
         "get_length": "计算长度",
         "split_by_area": "按面积分割",
@@ -481,6 +485,9 @@
         "extend_line_endpoints": "线端延伸"
       },
       "operatorParameters": {
+        "wkt_list": "WKT 列表（wkt_list）",
+        "properties": "属性列表（properties）",
+        "crs": "坐标系（crs）",
         "geom_type": "几何类型（geom_type）",
         "scope": "点交会范围（scope）",
         "target_geom": "目标图层（target_geom）",
@@ -509,6 +516,28 @@
           "operator_enum_invalid": "请选择 between（仅跨要素）或 all（同时处理要素内部点交会）。省略时默认 between。",
           "operator_input_overlap": "请用线叠检查或线内自叠定位重合，显式处理重合后再执行。",
           "operator_source_topology_invalid": "如需同时打断要素内部点交会，请显式选择 all。"
+        }
+      },
+      "wktLoad": {
+        "reasons": {
+          "operator_input_invalid": "WKT 列表缺失、格式错误或含有无法解析的值。",
+          "operator_wkt_properties_invalid": "属性须为与 WKT 列表等长的对象列表。",
+          "operator_field_conflict": "业务属性 {field} 与生成的几何列重名。",
+          "operator_crs_invalid": "坐标系声明无法解析。"
+        },
+        "actions": {
+          "operator_input_invalid": "提供有效 WKT 字符串或 null 组成的列表。用 null 表示缺失几何。",
+          "operator_wkt_properties_invalid": "检查每个 WKT 列表项是否对应一个属性对象。",
+          "operator_field_conflict": "请先重命名业务属性 {field}。",
+          "operator_crs_invalid": "填写有效的坐标系声明，或用 null 表示未定义。"
+        }
+      },
+      "wktExport": {
+        "reasons": {
+          "operator_input_invalid": "WKT 导出需要带活动几何列的输入图层。"
+        },
+        "actions": {
+          "operator_input_invalid": "连接矢量图层并检查其活动几何列。"
         }
       },
       "geometrySelection": {

@@ -47,6 +47,10 @@ func TestVectorPreparationDiagnosticsBindFrozenDefinition(t *testing.T) {
 		{"filter_by_geometry_type", "operator_input_invalid", "input_gdf"},
 		{"filter_by_geometry_type", "operator_enum_invalid", "geom_type"},
 		{"drop_null_geometry", "operator_input_invalid", "input_gdf"},
+		{"load_from_wkt", "operator_input_invalid", "wkt_list"},
+		{"load_from_wkt", "operator_wkt_properties_invalid", "properties"},
+		{"load_from_wkt", "operator_crs_invalid", "crs"},
+		{"export_to_wkt", "operator_input_invalid", "input_gdf"},
 	} {
 		context := map[string]interface{}{"node_index": 2, "operator_id": test.operator}
 		if test.parameter != "" {

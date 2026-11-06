@@ -109,6 +109,7 @@ def list_operators():
         'list[float]': 'array',
         'list[list[float]]': 'array',
         'list[str]': 'array',
+        'list[str|null]': 'array',
         'list[int]': 'array',
         'list[dict]': 'array',
         'list[raster]': 'array',

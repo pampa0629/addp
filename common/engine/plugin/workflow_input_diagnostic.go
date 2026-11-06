@@ -291,6 +291,23 @@ func (o *WorkflowOperatorFailure) Valid(reason string) bool {
 			parameter, ok = "", true
 		}
 
+	case "load_from_wkt":
+		switch reason {
+		case "operator_input_invalid":
+			parameter, ok = "wkt_list", true
+		case "operator_wkt_properties_invalid":
+			parameter, ok = "properties", true
+		case "operator_field_conflict":
+			parameter, field, ok = "properties", "geometry", true
+		case "operator_crs_invalid":
+			parameter, ok = "crs", true
+		}
+
+	case "export_to_wkt":
+		if reason == "operator_input_invalid" {
+			parameter, ok = "input_gdf", true
+		}
+
 	case "filter_by_geometry_type", "drop_null_geometry":
 		switch reason {
 		case "operator_input_invalid":

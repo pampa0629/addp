@@ -13,6 +13,7 @@ from operators.properties_operators import MeasurementInputError, BoundsInputErr
 from operators.spatial_relations import DistanceInputError, RelationInputError
 from operators.spatial_transform_operators import VectorReprojectInputError
 from operators.filter_operators import GeometrySelectionInputError
+from operators.format_operators import WKTInputError
 from operators.data_operations import MultiBufferInputError, ClipInputError, VoronoiInputError
 from operators.geometric_operators import LineCheckInputError, LineSplitInputError, PolygonCheckInputError, PolygonizeInputError, ReferenceSnapInputError, GeometryValidityInputError, VertexInputError, MultipartInputError, InteriorPointInputError, UnaryConstructionInputError, SimplifyInputError, BufferInputError, NearLineInputError, EndpointSnapError, LineExtensionError, LineTrimError, PolygonRingInputError, LineNodeInputError, IntersectionInputError, DissolveInputError, UnionInputError, DifferenceInputError
 from operators.raster_compute import RasterDataset, RasterTiles, raster_info, raster_tiles_info, raster_workspace, raster_error_language
@@ -34,6 +35,8 @@ def _execute_operator(operator, params):
                 input_error = VectorReprojectInputError.input_layer
             elif operator in _GEOMETRY_SELECTION_OPERATORS:
                 input_error = GeometrySelectionInputError.input_layer
+            elif operator == 'export_to_wkt':
+                input_error = WKTInputError.input_layer
         if isinstance(value, str):
             try:
                 value = json.loads(value)
@@ -77,6 +80,10 @@ def _project(value):
 
 
 def _execute_workflow_operator(operator, params):
+    if operator == 'load_from_wkt' and 'wkt_list' not in params:
+        raise WKTInputError('operator_input_invalid')
+    if operator == 'export_to_wkt' and 'input_gdf' not in params:
+        raise WKTInputError('operator_input_invalid')
     if operator == 'vector_reproject' and 'input_gdf' not in params:
         raise VectorReprojectInputError('operator_input_invalid', 'input_gdf is required')
     if operator in _GEOMETRY_SELECTION_OPERATORS and 'input_gdf' not in params:
@@ -119,6 +126,17 @@ class GeoPythonWorkflowRunner(WorkflowRunner):
     def _execute_operator(self, operator, params):
         try:
             return _execute_workflow_operator(operator, params)
+        except WKTInputError as exc:
+            if exc.reason == 'operator_input_invalid' and operator == 'export_to_wkt':
+                zh, en = 'WKT 导出需要带活动几何列的输入图层。', 'WKT export requires an input layer with an active geometry column.'
+            else:
+                zh, en = {
+                    'operator_input_invalid': ('请提供 WKT 字符串或 null 的列表。', 'Provide a list of WKT strings or null values.'),
+                    'operator_wkt_properties_invalid': ('属性须为与 WKT 列表等长的对象列表。', 'Provide one property object per WKT list item.'),
+                    'operator_field_conflict': ('属性字段 geometry 与导入几何列重名。', 'The geometry property conflicts with the imported geometry column.'),
+                    'operator_crs_invalid': ('请检查 WKT 图层的坐标系声明。', 'Check the WKT layer CRS declaration.'),
+                }[exc.reason]
+            raise OperatorInputError(exc.reason, en if self.language == 'en' else zh, field=exc.field) from exc
         except GeometrySelectionInputError as exc:
             if exc.reason == 'operator_enum_invalid':
                 zh, en = '请选择登记的几何类型，名称区分大小写。', 'Select a registered geometry type. Names are case-sensitive.'

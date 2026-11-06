@@ -556,6 +556,87 @@ def test_load_spatial_geometry_identity_preserves_dimensions_empty_and_missing(t
     assert path.read_bytes()==original
 
 
+def test_wkt_batch_round_trip_preserves_rows_null_and_typed_empty():
+    import json
+    from operators import list_operators
+    from operators.format_operators import export_to_wkt, load_from_wkt
+    from workflow_engine import GeoPythonWorkflowRunner
+
+    values = ["POINT (1.12345678912345 2)", None, "POINT EMPTY", "POLYGON EMPTY"]
+    properties = [{"key": key} for key in [11, 22, 33, 44]]
+    frame = load_from_wkt(values, properties, crs=None)
+    assert frame.crs is None and frame["key"].tolist() == [11, 22, 33, 44]
+    assert frame.geometry.iloc[1] is None
+    assert frame.geometry.iloc[2].is_empty and frame.geometry.iloc[2].geom_type == "Point"
+    assert frame.geometry.iloc[3].is_empty and frame.geometry.iloc[3].geom_type == "Polygon"
+    assert export_to_wkt(frame.rename_geometry("shape")) == values
+    empty = load_from_wkt([], [])
+    assert empty.geometry.name == "geometry" and empty.crs.to_epsg() == 4326
+    assert export_to_wkt(empty) == []
+    tasks = [
+        {"id": "source", "operator": "load_from_wkt", "params": {"wkt_list": values, "properties": properties},
+         "depends_on": []},
+        {"id": "export", "operator": "export_to_wkt", "params": {"input_gdf": {"$ref": "source"}},
+         "depends_on": ["source"]},
+    ]
+    result = GeoPythonWorkflowRunner().execute({"tasks": tasks})
+    assert json.loads(result.final_result) == values
+    operators = {operator["id"]: operator for operator in list_operators()}
+    parameter = next(item for item in operators["load_from_wkt"]["parameters"] if item["name"] == "wkt_list")
+    assert parameter["type"] == "array" and "item_type" not in parameter
+    assert operators["export_to_wkt"]["output_ports"][0]["type"] == "array"
+
+
+@pytest.mark.parametrize(("operator", "params", "reason", "parameter", "field"), [
+    ("load_from_wkt", {}, "operator_input_invalid", "wkt_list", ""),
+    ("load_from_wkt", {"wkt_list": ["PRIVATE"]}, "operator_input_invalid", "wkt_list", ""),
+    ("load_from_wkt", {"wkt_list": [1]}, "operator_input_invalid", "wkt_list", ""),
+    ("load_from_wkt", {"wkt_list": [" "]}, "operator_input_invalid", "wkt_list", ""),
+    ("load_from_wkt", {"wkt_list": [None], "properties": []}, "operator_wkt_properties_invalid", "properties", ""),
+    ("load_from_wkt", {"wkt_list": [None], "properties": [None]}, "operator_wkt_properties_invalid", "properties", ""),
+    ("load_from_wkt", {"wkt_list": [None], "properties": [{"geometry": "PRIVATE"}]},
+     "operator_field_conflict", "properties", "geometry"),
+    ("load_from_wkt", {"wkt_list": [None], "crs": "PRIVATE"}, "operator_crs_invalid", "crs", ""),
+    ("export_to_wkt", {}, "operator_input_invalid", "input_gdf", ""),
+])
+def test_wkt_batch_reports_controlled_input_errors_and_blocks_save(monkeypatch, operator, params, reason, parameter, field):
+    from addp_common.workflow_runtime import WorkflowExecutionError
+    import workflow_engine
+
+    def unexpected_save(**_kwargs):
+        pytest.fail("save ran after a rejected WKT node")
+
+    resolve = workflow_engine.get_operator
+    monkeypatch.setattr(workflow_engine, "get_operator", lambda name: unexpected_save if name == "save" else resolve(name))
+    tasks = [
+        {"id": "save", "operator": "save", "params": {"input_df": {"$ref": "wkt"}}, "depends_on": ["wkt"]},
+        {"id": "wkt", "operator": operator, "params": params, "depends_on": []},
+    ]
+    with pytest.raises(WorkflowExecutionError) as caught:
+        workflow_engine.GeoPythonWorkflowRunner().execute({"tasks": tasks})
+    assert caught.value.error_code == "INVALID_PARAMS" and "PRIVATE" not in str(caught.value)
+    assert caught.value.diagnostic == {
+        "schema_version": "addp.execution-failure/v3", "stage": "execution", "reason": reason,
+        "operator": {"node_index": 2, "operator_id": operator, "parameter": parameter,
+                     **({"field": field} if field else {})},
+    }
+
+
+def test_wkt_batch_native_parser_exception_is_execution_failure(monkeypatch):
+    from addp_common.workflow_runtime import WorkflowExecutionError
+    from operators import format_operators
+    from workflow_engine import GeoPythonWorkflowRunner
+
+    def fail(*_args, **_kwargs):
+        raise RuntimeError("native parser unavailable")
+
+    monkeypatch.setattr(format_operators.shapely, "from_wkt", fail)
+    tasks = [{"id": "wkt", "operator": "load_from_wkt", "params": {"wkt_list": ["POINT (1 2)"]}, "depends_on": []}]
+    with pytest.raises(WorkflowExecutionError) as caught:
+        GeoPythonWorkflowRunner().execute({"tasks": tasks})
+    assert caught.value.error_code == "EXECUTION_FAILED" and caught.value.diagnostic is None
+
+
 def test_load_spatial_geometry_identity_invalid_wkb_fails_without_ignoring(monkeypatch):
     import pyogrio,shapely
     table=pa.Table.from_arrays([pa.array([b"invalid WKB"])],schema=pa.schema([pa.field("shape",pa.binary(),metadata={b"ARROW:extension:name":b"geoarrow.wkb"})]))

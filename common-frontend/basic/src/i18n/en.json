@@ -196,6 +196,7 @@
       "reasons": {
         "operator_match_fields_invalid": "The matching field list is invalid, contains duplicates, or includes non-scalar values.",
         "operator_group_fields_invalid": "The group field list is invalid, duplicated or contains non-scalar values.",
+        "operator_wkt_properties_invalid": "The property list must contain one object per WKT list item.",
         "operator_dissolve_fields_conflict": "Fixed dissolve output fields conflict with source columns.",
         "operator_input_overlap": "The source layer contains positive-area overlaps, including contained or duplicate polygons.",
         "operator_reference_overlap": "Layer B contains positive-area overlaps, including contained or duplicate polygons.",
@@ -265,6 +266,7 @@
       "actions": {
         "operator_match_fields_invalid": "Select distinct existing non-geometry scalar fields other than id_field. An empty list merges by geometry only.",
         "operator_group_fields_invalid": "Explicitly select distinct existing non-geometry scalar fields; [] means global dissolve and null groups are retained.",
+        "operator_wkt_properties_invalid": "Check that each WKT list item has one corresponding property object.",
         "operator_dissolve_fields_conflict": "Rename conflicting fusion_id/member_count/source_id columns upstream; they are not replaced automatically.",
         "operator_input_overlap": "Check polygon overlaps in the indicated layer and resolve overlaps, containment or duplicates explicitly; no automatic dissolve, deduplication or repair is performed.",
         "operator_reference_overlap": "Check polygon overlaps in the indicated layer and resolve overlaps, containment or duplicates explicitly; no automatic dissolve, deduplication or repair is performed.",
@@ -435,6 +437,8 @@
         }
       },
       "operatorNames": {
+        "load_from_wkt": "Import Geometry from WKT",
+        "export_to_wkt": "Export Geometry to WKT",
         "get_area": "Calculate area",
         "get_length": "Calculate length",
         "split_by_area": "Split by area",
@@ -481,6 +485,9 @@
         "extend_line_endpoints": "Extend line endpoints"
       },
       "operatorParameters": {
+        "wkt_list": "WKT list (wkt_list)",
+        "properties": "Property list (properties)",
+        "crs": "Coordinate reference system (crs)",
         "geom_type": "Geometry type (geom_type)",
         "scope": "Point intersection scope (scope)",
         "target_geom": "Target layer (target_geom)",
@@ -509,6 +516,28 @@
           "operator_enum_invalid": "Choose between for intersections across features, or all to include internal point intersections. Omission defaults to between.",
           "operator_input_overlap": "Use line overlap or self-overlap checking to locate the overlap, then resolve it explicitly before splitting.",
           "operator_source_topology_invalid": "Choose all explicitly to also split at point intersections within a feature."
+        }
+      },
+      "wktLoad": {
+        "reasons": {
+          "operator_input_invalid": "The WKT list is missing, malformed, or contains an unparseable value.",
+          "operator_wkt_properties_invalid": "The property list must contain one object per WKT list item.",
+          "operator_field_conflict": "The {field} property conflicts with the generated geometry column.",
+          "operator_crs_invalid": "The coordinate reference system could not be parsed."
+        },
+        "actions": {
+          "operator_input_invalid": "Provide a list of valid WKT strings or null values. Use null for missing geometry.",
+          "operator_wkt_properties_invalid": "Check that each WKT list item has one corresponding property object.",
+          "operator_field_conflict": "Rename the {field} property before importing.",
+          "operator_crs_invalid": "Supply a valid CRS declaration or use null for an undefined CRS."
+        }
+      },
+      "wktExport": {
+        "reasons": {
+          "operator_input_invalid": "WKT export requires an input layer with an active geometry column."
+        },
+        "actions": {
+          "operator_input_invalid": "Connect a vector layer and check its active geometry column."
         }
       },
       "geometrySelection": {

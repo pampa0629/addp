@@ -5,49 +5,62 @@
 """
 
 import geopandas as gpd
-from typing import List, Dict
+from pyproj import CRS
+from pyproj.exceptions import CRSError
+import shapely
 from .base import (
     OperatorType,
-    OperatorMetadata, OperatorParam, OperatorCategory, register_operator
+    OperatorMetadata, OperatorParam, OperatorCategory, OutputPort, register_operator
 )
+from .geometric_operators import _active_geometry
 
 
-# ==================== 算子实现 ====================
+class WKTInputError(ValueError):
+    def __init__(self, reason, *, field=""):
+        super().__init__(reason)
+        self.reason = reason
+        self.field = field
 
-def load_from_wkt(wkt_list: List[str], properties: List[Dict] = None, crs: str = "EPSG:4326") -> gpd.GeoDataFrame:
-    """
-    从 WKT 格式加载几何
+    @classmethod
+    def input_layer(cls, _message):
+        return cls("operator_input_invalid")
 
-    Args:
-        wkt_list: WKT 字符串列表
-        properties: 属性字典列表（可选）
-        crs: 坐标系统（默认 EPSG:4326）
 
-    Returns:
-        GeoDataFrame
-    """
-    from shapely import wkt
-
-    geometries = [wkt.loads(w) for w in wkt_list]
-
+def load_from_wkt(
+    wkt_list: list[str | None], properties: list[dict] | None = None, crs: str | None = "EPSG:4326",
+) -> gpd.GeoDataFrame:
+    """按输入位置解析 WKT，保留缺失几何。"""
+    if not isinstance(wkt_list, list) or any(
+        value is not None and (not isinstance(value, str) or not value.strip()) for value in wkt_list
+    ):
+        raise WKTInputError("operator_input_invalid")
     if properties is None:
-        properties = [{}] * len(geometries)
+        properties = [{} for _ in wkt_list]
+    elif (not isinstance(properties, list) or len(properties) != len(wkt_list)
+          or any(not isinstance(row, dict) for row in properties)):
+        raise WKTInputError("operator_wkt_properties_invalid")
+    if any("geometry" in row for row in properties):
+        raise WKTInputError("operator_field_conflict", field="geometry")
 
-    gdf = gpd.GeoDataFrame(properties, geometry=geometries, crs=crs)
-    return gdf
+    if crs is not None and not isinstance(crs, str):
+        raise WKTInputError("operator_crs_invalid")
+    try:
+        spatial_reference = CRS.from_user_input(crs) if crs else None
+    except CRSError:
+        # An unavailable PROJ database also raises CRSError.
+        CRS.from_epsg(4326)
+        raise WKTInputError("operator_crs_invalid") from None
+
+    geometries = shapely.from_wkt(wkt_list, on_invalid="ignore")
+    if any(text is not None and geometry is None for text, geometry in zip(wkt_list, geometries)):
+        raise WKTInputError("operator_input_invalid")
+    return gpd.GeoDataFrame(properties, geometry=geometries, crs=spatial_reference)
 
 
-def export_to_wkt(input_gdf: gpd.GeoDataFrame) -> List[str]:
-    """
-    导出为 WKT 格式
-
-    Args:
-        input_gdf: 输入 GeoDataFrame
-
-    Returns:
-        WKT 字符串列表
-    """
-    return input_gdf.geometry.apply(lambda g: g.wkt).tolist()
+def export_to_wkt(input_gdf: gpd.GeoDataFrame) -> list[str | None]:
+    """按活动几何的行序输出 WKT 或缺失值。"""
+    geometry = _active_geometry(input_gdf, input_error=WKTInputError.input_layer)
+    return [None if value is None else value.wkt for value in geometry]
 
 
 # ==================== 元数据定义 ====================
@@ -67,10 +80,10 @@ LOAD_FROM_WKT_METADATA = OperatorMetadata(
         OperatorParam(
             name="wkt_list",
             type="param",
-            data_type="list[str]",
+            data_type="list[str|null]",
             required=True,
-            description="WKT文本字符串列表",
-            notes='每个字符串表示一个几何对象,如 "POINT (120.5 30.2)"'
+            description="WKT 字符串或 null 的列表",
+            notes='null 表示缺失几何，"POINT EMPTY" 表示带类型的空几何'
         ),
         OperatorParam(
             name="properties",
@@ -78,7 +91,7 @@ LOAD_FROM_WKT_METADATA = OperatorMetadata(
             data_type="list[dict]",
             required=False,
             description="属性字典列表,每个字典对应一个几何的属性",
-            notes="长度必须与wkt_list相同"
+            notes="长度须与 wkt_list 相同，geometry 为保留字段"
         ),
         OperatorParam(
             name="crs",
@@ -86,7 +99,7 @@ LOAD_FROM_WKT_METADATA = OperatorMetadata(
             data_type="str",
             required=False,
             description='坐标参考系统（默认 "EPSG:4326"）',
-            notes='如 "EPSG:4326" (WGS84) 或 "EPSG:3857" (Web墨卡托)'
+            notes='例如 "EPSG:3857"，显式 null 表示未定义'
         )
     ],
 
@@ -100,7 +113,7 @@ LOAD_FROM_WKT_METADATA = OperatorMetadata(
     notes=[
         "WKT格式必须符合OGC标准,否则解析失败",
         "常见WKT类型: POINT、LINESTRING、POLYGON、MULTIPOINT等",
-        "properties列表长度必须与wkt_list一致",
+        "保留列表项的顺序和缺失几何的位置",
         "默认坐标系为WGS84 (EPSG:4326)"
     ],
 
@@ -151,12 +164,13 @@ EXPORT_TO_WKT_METADATA = OperatorMetadata(
     ],
 
     notes=[
-        "返回list[str],每个元素是一个WKT文本",
+        "按活动几何的行序返回 WKT 字符串或 null，EMPTY 保留为 WKT 文本",
         "WKT文本不包含坐标系信息,需单独记录CRS",
         "复杂几何的WKT文本可能很长",
         "属性信息不包含在WKT中,需单独处理"
     ],
 
+    output_ports=[OutputPort(name="default", type="array", description="逐行输出 WKT 字符串或 null")],
     workflow_example={
         'id': 'export_wkt',
         'operator': 'export_to_wkt',
