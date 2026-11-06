@@ -93,6 +93,8 @@ Redis 专业采集由部署侧 `backend/internal/redissource` 提供。适用范
 
 租户事件的 `TestIntegrationPostgresExecutionEventVisibility` 沿既有 PostgreSQL 服务测试自动发现，覆盖真实 SQL 上的 Owner 范围、历史／本人一次性执行、列表与统计总数、跨租户／类型／子执行隔离、三页事件游标、30 天读取窗口，以及翻页前撤权和 Owner 故障后重新授权。Owner HTTP 为受控协议夹具，仅计 T2，不代表真实 System／Gateway／Worker 的 T4，也不代表事件物理清理或 180 天概览删除已验收。
 
+Transfer continuous 场景要求在同一 Kafka 任务持续写入期间沿原游标续读，对照 Monitor 与 Owner 的完整事件顺序，并在 Console 核对自动续页、手动刷新和 Worker 失联后原执行的失败诊断及唯一终态事件。确定性 runner 与新增断言的 Hosted 实际结果按各自回执认定。历史租户日志终审核验了固定版本的两页事件及撤权后旧游标拒绝。留存另按 30 天事件物理清理与 180 天概览只读评估各自的证据认定。[现行 Transfer continuous 验收场景](../docs/spec/testing/scenarios/同步与引擎消费.md#transfer-continuous-events) · [固定版本租户日志终审](../docs/spec/testing/evidence/Monitor执行监控与留存历史证据.md#2026-10-23-固定版本租户日志终审) · [留存证据](../docs/spec/testing/evidence/Monitor执行监控与留存历史证据.md#按验收范围查阅)
+
 正式身份的本机执行 Trace／日志闭环使用人工 `make test-monitor-traces-local`，准入、8 CPU／12 GiB、4 GiB 停止线、60 分钟及全部清理沿观测规范“正式身份的本机隔离闭环”。独立构建、独占身份和容器，不借个人服务或 Hosted；静态／守卫回归 `make test-monitor-traces-local-runner` 已聚合到既有 Infra 日志生命周期和 Platform，公共 workflow 禁止调用真实本地入口。
 
 本地数据库先用 `bash scripts/infra/status.sh` 确认实际映射，测试资源与清理只走标准入口。需要运行验收或重启时遵守根 AGENTS.md，由用户在自己的终端执行标准生命周期命令；不接管个人服务，不执行未经单独授权的 keepalive。
