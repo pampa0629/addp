@@ -272,6 +272,6 @@ Manager 源准备保持其正式授权链；本批 Transfer CDC 仅验证既有 
 
 **对象效果未知。** `manager-object-unknown` 在 `2515e673` 于 2026-11-06 10:16:34（Asia/Shanghai）以失败结束。GLB、原生对象和索引可见、删除受理及对象实际消失共五项通过。后续拒绝验证收到 HTTP 500，原报告未标明具体请求。控制恢复、显式清理和零残留均通过。[对象未知 Hosted](https://github.com/pampa0629/addp/actions/runs/42138271441/job/127631855385)
 
-以真实快显入口和 System 连接读取的 409 响应复现了 Manager 将生命周期拒绝包装成 HTTP 500 并返回下游文案。修正保留原查询及权责，快显动作在创建任务前返回安全的 409。runner 将现有拒绝链分为三个阶段，11 项断言保持原契约。本地 Manager 后端、Common 客户端、Swagger 97 个公开路由及 runner 403 项通过。
+以真实快显入口和 System 连接读取的 409 响应复现了 Manager 将生命周期拒绝包装成 HTTP 500 并返回下游文案。修正保留原查询及权责，快显动作在创建任务前返回安全的 409。runner 将现有拒绝链分为三个阶段，11 项断言保持原契约。修正 `1f24cf9b` 的本地后端和同提交 Linux 门禁均通过，含 Swagger 97 个公开路由及 runner 403 项。[Go 工作区](https://github.com/pampa0629/addp/actions/runs/42153149805/job/127680944498) · [平台一致性](https://github.com/pampa0629/addp/actions/runs/42153149805/job/127680944701) · [Execution runner](https://github.com/pampa0629/addp/actions/runs/42153149805/job/127680944784)
 
 **剩余工作。** 分别验证对象效果未知、索引效果未知和旧 Runtime 迟到写入。新的 Hosted 须单独确认。正向和对象未知私有证据分别位于 `/tmp/addp-manager-success-hosted-eighth-20261106/` 与 `/tmp/addp-manager-object-unknown-hosted-20261106/`。
