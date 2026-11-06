@@ -121,9 +121,13 @@ def artifact_expectation(name):
 def oracle():
  """All original segments; independent high-precision quadratic t intersection."""
  from decimal import Decimal as D,localcontext
+ from functools import lru_cache
  from pyproj import CRS
  def decimal(v):
   q=Q(v);return D(q.numerator)/D(q.denominator)
+ # Root values depend only on their exact Decimal argument at this invocation's precision.
+ @lru_cache(maxsize=4096)
+ def square_root(value):return value.sqrt()
  results={}
  with localcontext() as context:
   context.prec=2000
@@ -133,19 +137,20 @@ def oracle():
    for geometry,props in vector_spec(lines):
     mass=decimal(1 if field is None else props[field])
     for part in (geometry.geoms if geometry.geom_type=='MultiLineString' else [geometry]):
-     vertices=[tuple(map(decimal,p))for p in part.coords];segments.extend((a,b,mass)for a,b in zip(vertices,vertices[1:]))
+     vertices=[tuple(map(decimal,p))for p in part.coords]
+     for (ax,ay),(bx,by) in zip(vertices,vertices[1:]):
+      dx,dy=bx-ax,by-ay;a=dx*dx+dy*dy
+      if a:segments.append((ax,ay,dx,dy,a,a.sqrt(),mass))
    answer=[]
    for row in range(h):
     line=[]
     for col in range(w):
      u,v=D(col)+D('.5'),D(row)+D('.5');x,y=gt[0]+gt[1]*u+gt[2]*v,gt[3]+gt[4]*u+gt[5]*v;total=D(0)
-     for (ax,ay),(bx,by),mass in segments:
-      dx,dy=bx-ax,by-ay;a=dx*dx+dy*dy
-      if not a:continue
+     for ax,ay,dx,dy,a,length,mass in segments:
       b=2*((ax-x)*dx+(ay-y)*dy);c=(ax-x)**2+(ay-y)**2-r*r;delta=b*b-4*a*c
       if delta<=0:continue
-      left=max(D(0),(-b-delta.sqrt())/(2*a));right=min(D(1),(-b+delta.sqrt())/(2*a))
-      if right>left:total+=mass*(right-left)*a.sqrt()*factor
+      root=square_root(delta);left=max(D(0),(-b-root)/(2*a));right=min(D(1),(-b+root)/(2*a))
+      if right>left:total+=mass*(right-left)*length*factor
      line.append(float(total/(D.from_float(math.pi)*decimal(radius)**2)))
     answer.append(line)
    results[name]=answer
