@@ -16,10 +16,19 @@
 | 30 天过程事件物理清理 | 独立 Hosted 场景验证真实 System 首轮删除 1004 条过期事件，窗口内事件、执行行与既有审计保留。精确截止点由 Common 固定时刻测试覆盖。 | [首轮删除断言与清理回执](#30-天过程事件清理真实进程验收2026-10-26) |
 | 小时周期与连续批次 | 独立 Hosted 场景验证同一 System 进程的两个自然小时区间、概览只读游标回绕，以及三轮分别删除 1004／4／4 条过期事件。持续 Worker 并发、重启恢复和容量未覆盖。 | [逐轮实测与未覆盖项](#小时周期与连续批次真实进程验收2026-10-26) |
 | 大量事件分页与截断 | 两次 Hosted 失败各自保留。第三次固定版本通过，覆盖 1000／1201 条事件的 API 分页、Console 展示上限、采集截断及 Owner 读取裁决。该范围限定为合成 Meta 执行。 | [三次运行、页面与清理证据](#大量事件分页与截断真实入口验收通过限定范围2026-10-26) |
+| 持续写入期间续页与刷新 | 本地 runner 通过。首次 Hosted 在源扫描准备阶段被拒绝，新增续页、刷新和终态断言均未运行。 | [固定源码与失败定位](#持续写入期间续页与刷新首次-hosted2026-11-07) |
 
 上表的租户日志终审记录固定版本的两页四条读取与撤权后旧游标拒绝。现行场景另要求在 Kafka 任务持续写入期间沿原游标续读并核对 Monitor 与 Owner 的事件顺序，在 Console 核对自动续页、手动刷新和 Worker 失联后原执行的失败诊断及唯一终态事件。新增断言按对应源码的实际 Hosted 回执认定，确定性 runner 与真实拓扑结果分别记录。[现行 Transfer continuous 验收场景](../scenarios/同步与引擎消费.md#transfer-continuous-events)
 
 180 天概览整树物理删除、Owner 释放和消费者引用裁决均未在上述场景验收。独占部署销毁仅计退出清理。现行规则见[通用执行读取与过程事件](../../tasks/执行监控.md#通用执行读取与过程事件)及[概览保留与清理契约](../../tasks/执行监控.md#概览保留与清理契约)。
+
+## 持续写入期间续页与刷新首次 Hosted（2026-11-07）
+
+验收变更 `368112401733a105bf15b3085354c726772d3d53` 沿既有 `make test-transfer-continuous-online-runner` 通过 61 项 Python 测试、JavaScript／Bash 语法检查及 System 身份夹具 Go 包。本批复用一条 Transfer Kafka 连续任务，覆盖写入前保存游标、写入后续页与完整事件比对、Console 刷新及失联后同页终态。
+
+[Run 42246891848／Job 127991351661](https://github.com/pampa0629/addp/actions/runs/42246891848/job/127991351661) attempt 1 固定源码 `566eb1f2526a9e3877db326a8eff8e2d5bba0c13`，干净检出，预检通过。业务步骤在 `source_scan` 失败，套件的 `checks`、`resources`、`executions` 均为空，`uncertain_mutation=true` 为原报告值。按同一请求 ID `b461a5c1-998b-41ff-bcbb-a884aab659d4` 对照服务日志，System AuthContext 返回 200，System `POST /engine-access/metadata-refresh-scopes/query` 返回 403，Meta `POST /scan/run/manual` 和 Gateway 同样返回 403。现有准备阶段由普通消费 User 请求 PG 整引擎扫描，该身份具有扫描功能权限，夹具未为其建立该引擎的管理范围。当前整引擎入口同时校验管理范围。Kafka 任务、分页、Console 和后续场景均未执行。
+
+套件清理 `passed`、领域残留 0，外层 `cleanup=passed`、`infra_cleanup=zero_residuals`。归档 `13523751222` 的 ZIP SHA-256 与 GitHub 声明一致，为 `39814a3b62867e9ddd2c248e7b6976e7f34db18ec507f5fefd106ce495bf6001`。本次保留原始失败记录和清理结果，真实拓扑仍待验收。
 
 ## 2026-10-24 概览保留只读评估第一期
 
