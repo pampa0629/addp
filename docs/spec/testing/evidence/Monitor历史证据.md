@@ -13,7 +13,7 @@
 | [综合验收](Monitor综合验收历史证据.md) | 跨主题汇总、分项失败、Metrics 分组与前端固定版本复核 |
 | [节点与主机资源](Monitor节点与主机资源历史证据.md) | 主机列表、资源趋势、设备与文件系统视图、探针预算，另见[采集与挂载](Monitor节点与主机资源历史证据.md#采集与挂载)、[容量状态](Monitor节点与主机资源历史证据.md#容量状态)、[前台刷新](Monitor节点与主机资源历史证据.md#前台刷新)、[Safari 缩放](Monitor节点与主机资源历史证据.md#safari-缩放) |
 | [实例与服务发现](Monitor实例与服务发现历史证据.md) | 多 Worker、发现生命周期，另见[服务筛选与分页恢复](Monitor实例与服务发现历史证据.md#服务筛选与分页恢复证据导航)、[实例 cgroup](Monitor实例与服务发现历史证据.md#服务实例-cgroup-证据导航)、[服务组部署预期与运行确认](Monitor实例与服务发现历史证据.md#服务组部署预期与运行确认证据导航) |
-| [告警与规则](Monitor告警与规则历史证据.md) | CPU/RSS、告警检索与排序、服务失联、文件系统容量规则 |
+| [告警与规则](Monitor告警与规则历史证据.md) | [名称检索与前端 CI](Monitor告警与规则历史证据.md#alert-evidence-name)、[服务组失联](Monitor告警与规则历史证据.md#alert-evidence-availability)、[文件系统容量告警](Monitor告警与规则历史证据.md#alert-evidence-filesystem)、[实例 CPU／RSS 告警](Monitor告警与规则历史证据.md#alert-evidence-process)，另收录筛选、排序与刷新 |
 | [Trace 与日志](MonitorTrace与日志历史证据.md) | 分布式追踪、Python 接入、容量基线与[正式身份本地窗口总览](MonitorTrace与日志历史证据.md#正式身份本地窗口总览) |
 | [HTTP 质量与采样](MonitorHTTP质量与采样历史证据.md) | 公共 mTLS、Go/Python 来源、启动诊断及采样／清理交接，另见[正式 full 失败入口](#正式-http-full-失败入口)和[停源历史趋势](#停源实例-http-历史趋势) |
 | [采集来源与引擎指标](Monitor采集来源与引擎指标历史证据.md) | PostgreSQL、Redis、MinIO、来源准入、引擎身份与专业观测 |
