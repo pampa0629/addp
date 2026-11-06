@@ -37,6 +37,16 @@
 
 `b0da68011` 重启后，运行中的 Meta Swagger 已显示 64 项及 8 KiB。无痕 Chrome 继续使用开发租户的 `outdoor-develop`，以相同关键词和第一页每页 10 条复跑。`Outdoor.Photos` 返回 HTTP 200 和 0 条，Manager 请求 `b481192c-4e17-4e39-8dfc-a8cedd73a879` 耗时从 7.232 秒降至 4.562 秒。已授权 GeoTIFF 正例返回 HTTP 200 和 2 条，目标路径仍可见。Manager 请求 `3d22669f-367e-4257-8780-688fcfddec9e` 耗时从 8.512 秒降至 4.695 秒。两个请求各保留 44 批 System 裁决，Meta 请求和其嵌套身份核验各从 305 降至 174，全部返回 200。System 扣除 Meta 请求的累计耗时为 2.161 秒和 2.114 秒。上述时间来自 Manager 完成日志，页面用于确认结果。每条关键词本轮测量一次，尚无并发或容量结论。
 
+2026-11-07 复查这两个请求的 System 日志，44 批裁决只有路由总耗时，缺少布局计数和内部计时。在 `bd721124e` 的隔离检出中，通过 `make test-system-iam-postgres` 的 engineaccess 门禁做分段测量。每批固定 200 个有效目标和 400 项规则检查，三组各测 28 次，逐项核对可见性和内容读取结论。使用真实 PostgreSQL、IAM 浏览器会话凭据和规则查询，Meta 事实由内存夹具提供，未经过 HTTP。
+
+| 每批整目录数据项数 | System 服务中位耗时 | 引擎查询次数与中位累计耗时 | 规则查询与扫描中位耗时 | 结果校验与 JSON 编码中位耗时 |
+| ---: | ---: | ---: | ---: | ---: |
+| 0 | 15.47 ms | 1 次，0.26 ms | 5.88 ms | 0.40 ms |
+| 20 | 22.54 ms | 22 次，5.76 ms | 6.08 ms | 0.45 ms |
+| 199 | 95.74 ms | 201 次，76.07 ms | 4.42 ms | 0.71 ms |
+
+三组的路由凭据解析、读取 Meta 前的凭据核验和规则事务内的凭据复核，中位耗时分别在 1.35–2.19、1.51–2.95 和 1.24–2.12 毫秒。服务耗时单独计量，路由凭据解析与响应编码在服务计时之外。整目录夹具的额外引擎查询来自同一批次逐项目读取 NFS 引擎类型，真实检索的候选布局分布仍未知。下一步应先采集两条原查询的布局数、引擎查询次数及分段耗时，确认实测热点后再选择优化项。
+
 本次只做 Manager 页面查询和权限配置的只读核对。`outdoor-develop` 仍缺 `ontology.semantic.read` 和 `system.engine.read`，开发租户当前无具备本场景工具权限的普通账号，因此未发起新的 Agent Run。修复提交的 Manager、System IAM PostgreSQL 集成作业以及 Go workspace 和平台一致性作业已通过，Platform CI 整体状态为取消。 [Manager 集成](https://github.com/pampa0629/addp/actions/runs/42206312117/job/127868138784) · [System IAM 集成](https://github.com/pampa0629/addp/actions/runs/42206312117/job/127868137640) · [Go workspace](https://github.com/pampa0629/addp/actions/runs/42206311898/job/127853722302) · [平台一致性](https://github.com/pampa0629/addp/actions/runs/42206311898/job/127853722389)
 
 ### 2026-11-04 历史验收
