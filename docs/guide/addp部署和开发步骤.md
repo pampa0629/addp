@@ -84,6 +84,8 @@ bash scripts/dev/start.sh
 
 核心 Infra 健康时，应用启动和重启直接复用现有容器，不构建 Infra 镜像、不执行 Compose 更新。日志或指标关闭不会触发 Infra 启动；所选观测能力异常会单独提示并返回非零，业务启动继续，需要修复设施时显式运行 `bash scripts/infra/up.sh`。
 
+<a id="startup-source-recovery"></a>
+
 开发启动的采集恢复与监控摘要遵循[运行观测规范的统一部署分组](../spec/addp平台运行观测规范.md#采集来源统一部署分组2026-11-04)。
 
 - **本地全量启动或重启**。使用无参数或 `-all` 的 `start.sh`／`restart.sh` 时，启动脚本在刷新部署事实前显式选择主机及 Infra／Business 的引擎来源，只恢复已启用且通过原安装校验的来源。健康来源保持原状。首次安装、迁移、账号或配置变更由部署者显式应用。[指标中心与来源](../../scripts/infra/docs/指标中心与来源.md)
