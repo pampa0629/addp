@@ -15,6 +15,7 @@ import tempfile
 import threading
 import time
 import uuid
+from bisect import bisect_right
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
@@ -66,6 +67,7 @@ READ_CHECK = '/api/v1/system/engine-access/read-checks/manager-preview'
 LATENCY_ROUNDS, LATENCY_SAMPLES, LATENCY_WARMUPS = 3, 500, 10
 LOAD_ROUNDS, LOAD_SAMPLES, LOAD_WARMUPS = 3, 100, 10
 CPU_LOAD_PROFILE = 'single_target_cpu'
+SOURCE_RULE_QUERY_EVENT = 'engine_access.source_rule_query'
 PG_CPU_SYSFS = Path('/sys/devices/system/cpu')
 
 
@@ -444,7 +446,7 @@ def verify_load_audit_windows(result, audits):
     result['audit_correlation'] = 'cell_time_windows_only_not_individual_requests'
 
 
-def collect_system_load_tail(directory, audits, *, wait_seconds=60):
+def collect_system_load_tail(directory, audits, *, rule_timings=None, wait_seconds=60):
     """Match existing redacted System HTTP records after load and rule cleanup."""
     if not audits or any(not isinstance(row, dict) for row in audits):
         return {'result': 'not_observed'}
@@ -471,13 +473,23 @@ def collect_system_load_tail(directory, audits, *, wait_seconds=60):
                         if not raw.endswith(b'\n'):
                             break
                         offsets[path] = stream.tell()
-                        if b'http.request.completed' not in raw or READ_CHECK.encode() not in raw:
+                        http_record = b'http.request.completed' in raw and READ_CHECK.encode() in raw
+                        timing_record = rule_timings is not None and SOURCE_RULE_QUERY_EVENT.encode() in raw
+                        if not (http_record or timing_record):
                             continue
                         entry = json.loads(raw)
                         request = entry.get('request_id')
                         if request not in expected or entry.get('module_name') != 'system' or entry.get('role') != 'backend':
                             continue
                         message = json.loads(entry['message'])
+                        if timing_record and message.get('event') == SOURCE_RULE_QUERY_EVENT:
+                            timing = {key: message.get(key) for key in
+                                      ('backend_pid', 'started_unix_ns', 'finished_unix_ns')}
+                            if (message.get('request_id') != request or request in rule_timings or
+                                    not all(type(value) is int and value > 0 for value in timing.values()) or
+                                    timing['started_unix_ns'] >= timing['finished_unix_ns']):
+                                raise ValueError('invalid or duplicate rule query timing')
+                            rule_timings[request] = timing
                         if (message.get('request_id'), message.get('msg'), message.get('method'), message.get('route')) == (
                                 request, 'http.request.completed', 'POST', READ_CHECK):
                             matched.add(request)
@@ -486,9 +498,47 @@ def collect_system_load_tail(directory, audits, *, wait_seconds=60):
             time.sleep(min(.25, max(0, deadline - time.monotonic())))
     except (OSError, ValueError, TypeError, KeyError, AttributeError):
         reason = 'read_failed_or_budget'
-    return {'result': 'matched' if matched == expected else 'incomplete',
+    complete = matched == expected and reason != 'read_failed_or_budget'
+    return {'result': 'matched' if complete else 'incomplete',
             'expected': len(expected), 'matched': len(matched),
-            'reason': 'all_load_audit_ids' if matched == expected else reason}
+            'reason': 'all_load_audit_ids' if complete else reason}
+
+
+def bind_source_rule_waits(timings, snapshots):
+    """Attribute sampled activity on the same backend within one query interval."""
+    by_pid = {}
+    for request, record in timings.items():
+        record.update(request_id=request, active_samples=0, wait_samples={})
+        by_pid.setdefault(record['backend_pid'], []).append(record)
+    starts = {}
+    for pid, windows in by_pid.items():
+        windows.sort(key=lambda record: record['started_unix_ns'])
+        require(all(left['finished_unix_ns'] <= right['started_unix_ns']
+                    for left, right in zip(windows, windows[1:])), 'overlapping rule timing on one backend')
+        starts[pid] = [record['started_unix_ns'] for record in windows]
+
+    def stamp_ns(value):
+        return int(datetime.fromisoformat(value.replace('Z', '+00:00')).timestamp() * 1_000_000_000)
+
+    for line in snapshots:
+        snapshot = json.loads(line)
+        at = stamp_ns(snapshot['db']['at'])
+        for row in snapshot['db']['activity']:
+            pid = row['pid']
+            if pid not in by_pid or row['state'] != 'active' or row['query_class'] != 'source_rules':
+                continue
+            index = bisect_right(starts[pid], at) - 1
+            if index < 0:
+                continue
+            record = by_pid[pid][index]
+            if not record['started_unix_ns'] <= stamp_ns(row['query_start']) <= at <= record['finished_unix_ns']:
+                continue
+            record['active_samples'] += 1
+            if row['wait_event_type']:
+                category = row['wait_event_type']
+                counts = record['wait_samples']
+                counts[category] = counts.get(category, 0) + 1
+    return list(timings.values())
 
 
 def require(condition, message):
@@ -3137,9 +3187,20 @@ def main():
             if load is not None:
                 audits = load.get('audit_observation', {}).get('audit_rows', [])
                 system_logs = Path(__file__).resolve().parents[2] / 'logs/runtime/system'
-                load['system_log_tail'] = collect_system_load_tail(system_logs, audits)
-                if load.get('profile') == CPU_LOAD_PROFILE and load['system_log_tail']['result'] != 'matched':
-                    report['result'] = 'failed'
+                timings = {} if load.get('profile') == CPU_LOAD_PROFILE else None
+                load['system_log_tail'] = collect_system_load_tail(system_logs, audits, rule_timings=timings)
+                if timings is not None:
+                    proof = load['source_rule_query_observation'] = {'result': 'incomplete', 'matched': len(timings)}
+                    if load['system_log_tail']['result'] == 'matched' and len(timings) == len(audits):
+                        try:
+                            with (evidence.parent / 'pg-load-waits.jsonl').open() as stream:
+                                records = bind_source_rule_waits(timings, stream)
+                            (evidence.parent / 'pg-source-rule-timings.json').write_text(json.dumps(records) + '\n')
+                            proof.update(result='matched', sampled=sum(row['active_samples'] > 0 for row in records))
+                        except (OSError, SuiteError, ValueError, TypeError, KeyError):
+                            pass
+                    if proof['result'] != 'matched':
+                        report['result'] = 'failed'
                 evidence.write_text(json.dumps(report, sort_keys=True) + '\n')
     print(json.dumps(report, sort_keys=True))
     return 0 if report['result'] == 'passed' else 1

@@ -258,7 +258,7 @@ func exerciseCurrentSourceRules(t *testing.T, db *gorm.DB, acceptor *Service, ru
 			check := func(want string) {
 				t.Helper()
 				var rules []sourceReadRuleRow
-				if err := db.Raw(currentSourceReadRulesSQL, runtime.TenantID, user.PrincipalID, user.MembershipID, user.AuthorizationVersion, string(batch)).Scan(&rules).Error; err != nil || len(rules) != 1 || rules[0].Reason != want {
+				if err := db.Raw(currentSourceReadRulesSQL, runtime.TenantID, user.PrincipalID, user.MembershipID, user.AuthorizationVersion, string(batch)).Scan(&rules).Error; err != nil || len(rules) != 1 || rules[0].Reason != want || rules[0].BackendPID <= 0 {
 					t.Fatalf("changed digest rules=%+v want=%s error=%v", rules, want, err)
 				}
 			}

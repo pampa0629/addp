@@ -4,14 +4,24 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"os"
+	"sync"
 	"time"
 
 	"github.com/addp/common/authorization"
 	"github.com/addp/common/dataitem/authorizationfacts"
 	engineplugin "github.com/addp/common/engine/plugin"
+	"github.com/addp/common/logger"
+	"github.com/addp/common/middleware/requestid"
 )
 
 var errSourceReadRules = errors.New("invalid or incomplete source read rule observation")
+
+var hostedSourceRuleTiming = sync.OnceValue(func() bool {
+	arm := os.Getenv("ADDP_ONLINE_PG_CPU_ARM")
+	return (arm == "3" || arm == "4") && os.Getenv("GITHUB_ACTIONS") == "true" &&
+		os.Getenv("ADDP_ONLINE_HOSTED") == "1" && os.Getenv("POSTGRES_DB") == "addp_online"
+})
 
 // Private rule-layer input, NOT authentication evidence. A future trusted IAM /
 // execution consumer must establish the live credential and complete Provider
@@ -115,6 +125,7 @@ type sourceReadRuleRow struct {
 	ObservedAt time.Time
 	Reason     string
 	ExpiresAt  *time.Time
+	BackendPID int `gorm:"column:backend_pid"`
 }
 
 func sourceReadObservation(paths []engineplugin.EngineCatalogPath, rows []sourceReadRuleRow) (*sourceReadRules, error) {
@@ -176,10 +187,22 @@ func (r *Repository) queryCurrentSourceRules(ctx context.Context, request source
 		return nil, errSourceReadRules
 	}
 	var rows []sourceReadRuleRow
+	var started time.Time
+	if hostedSourceRuleTiming() {
+		started = time.Now()
+	}
 	if err := r.db.WithContext(ctx).Raw(currentSourceReadRulesSQL, request.TenantID,
 		request.Source.PrincipalID, request.Source.MembershipID, request.Source.AuthorizationVersion,
 		string(batch)).Scan(&rows).Error; err != nil {
 		return nil, err
+	}
+	if !started.IsZero() && len(rows) > 0 && rows[0].BackendPID > 0 {
+		finished := time.Now()
+		if id := requestid.FromContext(ctx); id != "" {
+			logger.L().InfoContext(ctx, "Source rule query timing",
+				"event", "engine_access.source_rule_query", "request_id", id, "backend_pid", rows[0].BackendPID,
+				"started_unix_ns", started.UnixNano(), "finished_unix_ns", finished.UnixNano())
+		}
 	}
 	return sourceReadObservation(paths, rows)
 }
@@ -193,7 +216,7 @@ WITH input AS MATERIALIZED (
 	SELECT ?::bigint AS tenant_id, ?::bigint AS principal_id,
 	       ?::bigint AS membership_id, ?::bigint AS authorization_version,
 	       ?::jsonb AS targets, clock_timestamp() AS observed_at
-)` + sourceReadRuleCTEs + ` SELECT position, observed_at, reason, expires_at FROM rules ORDER BY position`
+)` + sourceReadRuleCTEs + ` SELECT position, observed_at, reason, expires_at, pg_backend_pid() AS backend_pid FROM rules ORDER BY position`
 
 // Both actual reads and management inspection consume these exact predicates.
 // The caller supplies input from trusted credential resolution or IAM lookup.

@@ -330,6 +330,48 @@ class AuditLatencyObservationTest(unittest.TestCase):
                 self.assertEqual(ONLINE.collect_system_load_tail(root, audits),
                                  {'result': 'matched', 'expected': 1, 'matched': 1, 'reason': 'all_load_audit_ids'})
 
+    def test_system_tail_matches_only_safe_unique_rule_timings(self):
+        request = 'a' * 36
+        timing = {'backend_pid': 23, 'started_unix_ns': 100, 'finished_unix_ns': 200}
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / 'instance').mkdir()
+            def record(message):
+                return json.dumps({'module_name': 'system', 'role': 'backend', 'request_id': request,
+                                   'message': json.dumps({'request_id': request, **message})}) + '\n'
+            event = record({'event': ONLINE.SOURCE_RULE_QUERY_EVENT, **timing, 'private': 'ignore'})
+            http = record({'msg': 'http.request.completed', 'method': 'POST', 'route': ONLINE.READ_CHECK})
+            path = root / 'instance' / '1.jsonl'
+            path.write_text(event + http)
+            collected = {}
+            result = ONLINE.collect_system_load_tail(root, [{'request_id': request}],
+                                                     rule_timings=collected, wait_seconds=0)
+            self.assertEqual(result['result'], 'matched')
+            self.assertEqual(collected, {request: timing})
+            path.write_text(event + event + http)
+            self.assertEqual(ONLINE.collect_system_load_tail(root, [{'request_id': request}],
+                             rule_timings={}, wait_seconds=0)['result'], 'incomplete')
+
+    def test_rule_waits_bind_only_same_pid_active_rule_and_query_window(self):
+        epoch = 1_700_000_000
+        start = epoch * 1_000_000_000
+        timing = {'backend_pid': 23, 'started_unix_ns': start, 'finished_unix_ns': start + 2_000_000_000}
+        stamp = lambda offset: datetime.fromtimestamp(epoch + offset, timezone.utc).isoformat()
+        row = {'pid': 23, 'query_start': stamp(.1), 'state': 'active',
+               'query_class': 'source_rules', 'wait_event_type': 'LWLock'}
+        def snapshot(offset, activity):
+            return json.dumps({'db': {'at': stamp(offset), 'activity': activity}})
+        same_pid_later = {**timing, 'started_unix_ns': start + 3_000_000_000,
+                         'finished_unix_ns': start + 5_000_000_000}
+        requests = ONLINE.bind_source_rule_waits({'one': timing, 'later': same_pid_later}, [
+            snapshot(1, [row, {**row, 'pid': 24}, {**row, 'query_class': 'auth_context'},
+                         {**row, 'state': 'idle'}, {**row, 'query_start': stamp(-1)}]),
+            snapshot(1.5, [{**row, 'wait_event_type': None}]),
+            snapshot(4, [row]),
+        ])
+        self.assertEqual([(r['request_id'], r['active_samples'], r['wait_samples']) for r in requests],
+                         [('one', 2, {'LWLock': 1}), ('later', 0, {})])
+
     def test_read_only_session_ownership_settings_and_cleanup(self):
         class Process:
             def __init__(self):
