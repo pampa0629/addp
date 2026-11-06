@@ -38,6 +38,10 @@ case "${0##*/}" in
         while read -r local_ref local_oid remote_ref remote_oid; do
             if [[ "$remote_ref" == refs/heads/main ]]; then
                 require_release_lock
+                if [[ -n "${ADDP_MAIN_PUBLISH_EXPECTED_REMOTE:-}" ]]; then
+                    [[ "$remote_oid" == "$ADDP_MAIN_PUBLISH_EXPECTED_REMOTE" ]] ||
+                        fail '推送握手时远端 main 基线已变化，请重新核对。'
+                fi
             fi
         done
         exit 0
@@ -58,8 +62,15 @@ case "$mode" in
         shift
         [[ $# -gt 0 ]] || fail "用法：$0 -- 命令 [参数...]"
         ;;
+    --resume)
+        [[ $# -ge 5 && "$4" == -- ]] ||
+            fail "用法：$0 --resume 本地待发布完整SHA 预期远端完整SHA -- 命令 [参数...]"
+        expected_local=$2
+        expected_remote=$3
+        shift 4
+        ;;
     *)
-        fail "用法：$0 --install | --sync | --push-existing | -- 命令 [参数...]"
+        fail "用法：$0 --install | --sync | --push-existing | -- 命令 [参数...] | --resume 本地待发布完整SHA 预期远端完整SHA -- 命令 [参数...]"
         ;;
 esac
 
@@ -92,31 +103,41 @@ export ADDP_MAIN_PUBLISH_OWNER=$$
 printf '%s\n' "$ADDP_MAIN_PUBLISH_OWNER" > "$lock/owner"
 
 fetch_main() {
-    git fetch --no-tags origin refs/heads/main
+    git fetch --no-tags origin refs/heads/main || return 1
     git rev-parse FETCH_HEAD
 }
 
 remote_before=$(fetch_main)
-if git merge-base --is-ancestor HEAD "$remote_before"; then
-    if [[ "$(git rev-parse HEAD)" != "$remote_before" ]]; then
+local_before=$(git rev-parse HEAD)
+if [[ "$mode" == --resume ]]; then
+    [[ "$local_before" == "$expected_local" && "$remote_before" == "$expected_remote" ]] ||
+        fail '续办的本地待发布提交或远端 main 基线已变化，请重新核对。'
+    [[ "$local_before" != "$remote_before" ]] && git merge-base --is-ancestor "$remote_before" "$local_before" ||
+        fail '续办要求本地待发布提交领先于已核对的远端 main 基线。'
+elif git merge-base --is-ancestor "$local_before" "$remote_before"; then
+    if [[ "$local_before" != "$remote_before" ]]; then
         git merge --ff-only "$remote_before"
     fi
 elif ! git merge-base --is-ancestor "$remote_before" HEAD; then
     fail '本地和远端 main 已分叉，请保全在制文件并由单一发布会话整合。'
 fi
 
-if [[ "$mode" != --push-existing && "$(git rev-parse HEAD)" != "$remote_before" ]]; then
-    fail '本地已有待发布提交，请先由发布者核对后使用 --push-existing。'
+if [[ "$mode" != --push-existing && "$mode" != --resume && "$(git rev-parse HEAD)" != "$remote_before" ]]; then
+    fail '本地已有待发布提交，请由发布者核对后使用 --resume 或 --push-existing。'
 fi
 if [[ "$mode" == --sync ]]; then
     exit 0
 fi
-if [[ "$mode" == -- ]]; then
+if [[ "$mode" == -- || "$mode" == --resume ]]; then
     "$@"
 fi
 
 require_primary_main
 candidate=$(git rev-parse HEAD)
+if [[ "$mode" == --resume ]]; then
+    [[ "$candidate" != "$local_before" ]] && git merge-base --is-ancestor "$local_before" "$candidate" ||
+        fail '续办须在已核对的本地待发布提交之后追加提交。'
+fi
 if [[ "$candidate" == "$remote_before" ]]; then
     exit 0
 fi
@@ -124,6 +145,6 @@ fi
     fail '远端 main 在本轮验证期间已更新，请重新核对后发布。'
 git merge-base --is-ancestor "$remote_before" "$candidate" ||
     fail '待发布的 main 没有包含已核对的远端提交。'
-git push origin "$candidate:refs/heads/main"
+ADDP_MAIN_PUBLISH_EXPECTED_REMOTE="$remote_before" git push origin "$candidate:refs/heads/main"
 [[ "$(fetch_main)" == "$candidate" && "$(git rev-parse HEAD)" == "$candidate" ]] ||
     fail '推送后本地与远端 main 已再次变化，请核对。'

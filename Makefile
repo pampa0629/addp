@@ -1267,7 +1267,13 @@ test-build-registration: ## 验证产品镜像构建登记与影响范围选择
 test-infra-minio-cache: ## 验证 MinIO 构建缓存输入、隔离和失败传播契约
 	@python3 -m unittest scripts/ci/minio-build-cache_test.py
 
+.PHONY: test-main-publication
+test-main-publication: ## 验证共享 main 续办、基线检查与发布锁
+	@bash -n scripts/ci/publish-main.sh
+	@python3 scripts/ci/publish-main_test.py
+
 test-platform: check-node-runtime ## 运行无外部服务依赖的平台一致性门禁
+	@$(MAKE) test-main-publication
 	@$(MAKE) test-infra-minio-cache
 	@$(MAKE) test-platform-review
 	@$(MAKE) test-dev-lifecycle

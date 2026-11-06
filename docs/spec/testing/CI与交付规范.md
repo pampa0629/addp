@@ -4,6 +4,8 @@
 
 ## CI 编排与登记
 
+共享 `main` 的续办沿用 [统一发布入口](../../../AGENTS.md) 的单写入锁和快进规则。`make test-main-publication` 使用隔离 Git 仓库验证显式续办、基线变化、命令失败和锁竞争，并由 `make test-platform` 进入现有 Platform CI。测试使用本地临时远端。
+
 按路径选择门禁的托管工作流（Platform CI、Release/T2、Quality Smoke）使用独立 Runner 和 Job 独占的 disposable 资源，不设置 workflow 或 job 的 `concurrency` 分组。每次运行保留自己的提交范围与选择结果，由 GitHub Runner 配额排队；后续无关提交不能取消正在执行的门禁，也不能替换待执行门禁。仅将 `cancel-in-progress` 改为 `false` 不足以满足此要求：GitHub 默认仍以新运行替换同组已有的 pending 运行。专用 T4 主机的资源互斥遵循其既有 Job 锁，不套用托管门禁的调度规则。
 
 Push 使用事件的 `before...sha`，PR 使用 base 与本次 SHA 的 merge-base 差异；共享依赖和 owner 声明的测试输入继续由 `changed-gate.py` 统一扩散。文档运行跳过测试只表示该提交未命中路径，不能替代前序代码提交的验收证据。`make test-platform` 的 CI 登记与选择回归约束上述调度，并验证连续相关提交后追加文档、共享依赖、取消/失败/意外跳过的判定；原有超时、owner 清理、零残留核验及 required check 汇总必须保留。
