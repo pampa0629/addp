@@ -292,6 +292,8 @@ Desktop 4.49.0 只读挂载显示 fakeowner，不能由此确认共享实现。�
 
 账号、发现、实源／固定 PromQL、受控浏览器和正式全链路分层记录。自然 CI／Hosted 只收录有实际回传的作业或阶段。
 
+个人环境的 Safari 复验覆盖 AOF 关闭时 Infra Redis 的当前值和内存趋势，页面被判定为隐藏的触发条件仍待复现。[AOF 关闭时的快照与 Safari 复验](#infra-redis-关闭-aof-时的快照和-safari-复验2026-11-06)
+
 ### Redis 固定采集与最小 ACL 基座（2026-11-01）
 
 用户确认首期实例级INFO元数据、禁止业务键访问的范围后，本批同步维护术语、运行观测规范与 `monitor/backend/internal/redissource`。本批交付为部署侧采集内核与账号配方，不是已安装的专业来源：仅HELLO／PING／固定INFO，使用既有Go Redis客户端，关闭重试、维护通知和客户端信息上报；客户端钩子拒绝额外命令及旧AUTH回退。固定字段保留uint64精度、有效零及AOF未启用差别，缺字段／重复／禁用errorstats／超解析预算／身份变化拒绝；采样前后run_id和uptime保护同容器内重启边界。原始INFO、路径、任意错误标签及上游错误不进入输出。
