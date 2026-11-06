@@ -312,4 +312,60 @@ func TestSQLRoleSelectionAgainstPostgres(t *testing.T) {
 	if err != nil || restored.Data[0]["phone_alias"] != "136****4499" || restored.Data[0]["phone_copy"] != "136****4499" || observations.Load() != before {
 		t.Fatalf("default restore added role dependency: %+v %v", restored, err)
 	}
+
+	t.Run("protected-sort-and-stable-key-use-original-token-values", func(t *testing.T) {
+		if _, err := db.Exec(`INSERT INTO ` + qualified + ` VALUES(3,'19976540000')`); err != nil {
+			t.Fatal(err)
+		}
+		query := baseSQL + " AND phone IS NOT NULL"
+		output := *contract.Table
+		output.Fields = append([]datatype.FieldInfo(nil), output.Fields...)
+		output.Fields[1].Nullable = false
+		ordered := *q
+		ordered.SqlQuery = query
+		ordered.DataConfig = models.JSONB{
+			models.QueryServiceSourceSnapshotKey: queryServiceSnapshotPayload(buildSQLDependencySnapshot(query, &models.QueryServiceOutputContract{Table: &output}, now)),
+			"stable_key":                         []string{"phone_alias"},
+		}
+		for _, hidden := range []bool{false, true} {
+			t.Run(fmt.Sprintf("hidden_%t", hidden), func(t *testing.T) {
+				request := &models.QueryExecutionRequest{
+					Parameters: map[string]any{"minimum": int64(1)},
+					Select:     []string{"id", "phone_alias", "phone_copy"},
+					Page:       models.QueryPageRequest{Limit: 1},
+				}
+				if hidden {
+					request.Select = []string{"id", "phone_copy"}
+				}
+				first, err := executor.ExecuteQuery(ctx, &ordered, request)
+				if err != nil || len(first.Data) != 1 || !first.Page.HasMore || fmt.Sprint(first.Data[0]["id"]) != "1" {
+					t.Fatalf("first page: %+v %v", first, err)
+				}
+				cursor, err := executor.tokenCodec.decodeCursor(first.Page.NextCursor)
+				if err != nil || len(cursor.Values) != 1 || cursor.Values[0] != "13661384499" {
+					t.Fatal("cursor lost its original sort value")
+				}
+				feature, err := executor.tokenCodec.decodeFeatureID(first.FeatureIDs[0])
+				if err != nil || len(feature.Values) != 1 || feature.Values[0] != "13661384499" {
+					t.Fatal("feature ID lost its original stable key")
+				}
+				request.Page.Cursor = first.Page.NextCursor
+				second, err := executor.ExecuteQuery(ctx, &ordered, request)
+				if err != nil || len(second.Data) != 1 || second.Page.HasMore || second.Page.NextCursor != "" || fmt.Sprint(second.Data[0]["id"]) != "3" {
+					t.Fatalf("second page: %+v %v", second, err)
+				}
+				for index, page := range []*models.QueryExecutionResult{first, second} {
+					want := []string{"136****4499", "199****0000"}[index]
+					alias, present := page.Data[0]["phone_alias"]
+					if present == hidden || (!hidden && alias != want) || page.Data[0]["phone_copy"] != want {
+						t.Fatal("published output contains an unprotected or hidden field")
+					}
+					csv, err := executor.FormatAsCSV(page)
+					if err != nil || strings.Contains(string(csv), "13661384499") || strings.Contains(string(csv), "19976540000") || strings.Contains(string(csv), "phone_alias") == hidden {
+						t.Fatal("CSV contains an unprotected or hidden field", err)
+					}
+				}
+			})
+		}
+	})
 }

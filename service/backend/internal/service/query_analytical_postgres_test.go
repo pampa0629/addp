@@ -24,7 +24,7 @@ type analyticalExecutionGate struct {
 	deny               bool
 }
 
-func (g *analyticalExecutionGate) BeginPreparedQuery(ctx context.Context, tenant uint, p plugin.EnginePlugin, q plugin.PreparedQuery, _ *dataprotection.QueryRoleSelection) (func(*plugin.QueryResult) error, func(), error) {
+func (g *analyticalExecutionGate) BeginPreparedQuery(ctx context.Context, tenant uint, p plugin.EnginePlugin, q plugin.PreparedQuery, _ *dataprotection.QueryRoleSelection, _ ...string) (func(*plugin.QueryResult) error, func(), error) {
 	g.entered = true
 	if _, err := q.ReadSet(ctx); err != nil {
 		return nil, nil, err

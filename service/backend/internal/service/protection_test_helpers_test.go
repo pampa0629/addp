@@ -9,7 +9,7 @@ import (
 
 type allowServiceProtectionGate struct{}
 
-func (allowServiceProtectionGate) BeginPreparedQuery(context.Context, uint, plugin.EnginePlugin, plugin.PreparedQuery, *dataprotection.QueryRoleSelection) (func(*plugin.QueryResult) error, func(), error) {
+func (allowServiceProtectionGate) BeginPreparedQuery(context.Context, uint, plugin.EnginePlugin, plugin.PreparedQuery, *dataprotection.QueryRoleSelection, ...string) (func(*plugin.QueryResult) error, func(), error) {
 	return func(*plugin.QueryResult) error { return nil }, func() {}, nil
 }
 

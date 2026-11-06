@@ -65,7 +65,7 @@ func (apiRoleTestTokens) PlatformToken(context.Context) (string, error) {
 
 type apiRoleOptionsGate struct{}
 
-func (apiRoleOptionsGate) BeginPreparedQuery(context.Context, uint, plugin.EnginePlugin, plugin.PreparedQuery, *dataprotection.QueryRoleSelection) (func(*plugin.QueryResult) error, func(), error) {
+func (apiRoleOptionsGate) BeginPreparedQuery(context.Context, uint, plugin.EnginePlugin, plugin.PreparedQuery, *dataprotection.QueryRoleSelection, ...string) (func(*plugin.QueryResult) error, func(), error) {
 	return nil, nil, errors.New("must not execute")
 }
 func (apiRoleOptionsGate) BeginUnresolvedRead(context.Context, uint) (func(), error) {

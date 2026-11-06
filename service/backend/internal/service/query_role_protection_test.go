@@ -255,7 +255,7 @@ type roleExecutionGate struct {
 	selected bool
 }
 
-func (g *roleExecutionGate) BeginPreparedQuery(_ context.Context, _ uint, _ plugin.EnginePlugin, _ plugin.PreparedQuery, selection *dataprotection.QueryRoleSelection) (func(*plugin.QueryResult) error, func(), error) {
+func (g *roleExecutionGate) BeginPreparedQuery(_ context.Context, _ uint, _ plugin.EnginePlugin, _ plugin.PreparedQuery, selection *dataprotection.QueryRoleSelection, _ ...string) (func(*plugin.QueryResult) error, func(), error) {
 	g.selected = selection != nil
 	return func(result *plugin.QueryResult) error {
 		g.applied++

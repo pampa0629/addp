@@ -27,13 +27,13 @@ type QueryExecutorService struct {
 	systemService  *client.SystemServiceClient
 	tokenCodec     *queryTokenCodec
 	protectionGate interface {
-		BeginPreparedQuery(context.Context, uint, plugin.EnginePlugin, plugin.PreparedQuery, *dataprotection.QueryRoleSelection) (func(*plugin.QueryResult) error, func(), error)
+		BeginPreparedQuery(context.Context, uint, plugin.EnginePlugin, plugin.PreparedQuery, *dataprotection.QueryRoleSelection, ...string) (func(*plugin.QueryResult) error, func(), error)
 		BeginUnresolvedRead(context.Context, uint) (func(), error)
 	}
 }
 
 func (s *QueryExecutorService) SetProtectionGate(gate interface {
-	BeginPreparedQuery(context.Context, uint, plugin.EnginePlugin, plugin.PreparedQuery, *dataprotection.QueryRoleSelection) (func(*plugin.QueryResult) error, func(), error)
+	BeginPreparedQuery(context.Context, uint, plugin.EnginePlugin, plugin.PreparedQuery, *dataprotection.QueryRoleSelection, ...string) (func(*plugin.QueryResult) error, func(), error)
 	BeginUnresolvedRead(context.Context, uint) (func(), error)
 }) {
 	s.protectionGate = gate
@@ -159,7 +159,13 @@ func (s *QueryExecutorService) executeDirectQuery(
 	if err != nil {
 		return nil, err
 	}
-	protect, end, err := s.protectionGate.BeginPreparedQuery(ctx, queryService.TenantID, enginePlugin, prepared, selection)
+	// Effective ordering includes the stable key. finalizeResult seals both
+	// token types from these original values before applying result protection.
+	tokenFields := make([]string, len(execution.OrderBy))
+	for index, order := range execution.OrderBy {
+		tokenFields[index] = order.Field
+	}
+	protect, end, err := s.protectionGate.BeginPreparedQuery(ctx, queryService.TenantID, enginePlugin, prepared, selection, tokenFields...)
 	if err != nil {
 		return nil, err
 	}

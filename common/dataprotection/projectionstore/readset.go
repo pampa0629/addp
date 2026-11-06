@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -17,6 +18,8 @@ import (
 // tenants without managed resources off the ReadSet and OutputLineage paths.
 // subject must come from the owner's trusted current-user context; an empty
 // subject applies default protection and does not infer an execution's author.
+// deferOutputFields are output names needed by the owner before Apply. Their
+// rules still apply in Go, before any result is delivered.
 func (s *Store) PrepareQueryProtection(
 	ctx context.Context,
 	tenantID int64,
@@ -26,6 +29,7 @@ func (s *Store) PrepareQueryProtection(
 	subject dataprotection.SubjectReference,
 	selection *dataprotection.QueryRoleSelection,
 	now time.Time,
+	deferOutputFields ...string,
 ) (*dataprotection.PreparedTableProtection, error) {
 	if err := selection.Validate(now); err != nil {
 		return nil, err
@@ -134,7 +138,7 @@ func (s *Store) PrepareQueryProtection(
 					nativeRules = append(nativeRules, rule)
 				}
 			}
-			// Validate the complete default and selected mappings before deferring only selected transformations.
+			// Validate the complete mappings before deferring content transformations.
 			chosen, err := planRoleRules(plan, selection, action)
 			if err != nil {
 				return nil, err
@@ -146,7 +150,11 @@ func (s *Store) PrepareQueryProtection(
 			if err != nil {
 				return nil, err
 			}
-			operations = append(operations, compiled...)
+			for _, operation := range compiled {
+				if !slices.Contains(deferOutputFields, operation.Column) {
+					operations = append(operations, operation)
+				}
+			}
 		}
 		if len(operations) > 0 {
 			if err := binder.BindOutputTransforms(ctx, operations); err != nil {
