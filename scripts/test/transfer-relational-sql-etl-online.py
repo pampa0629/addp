@@ -4,11 +4,10 @@
 from __future__ import annotations
 
 import hashlib
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 import io
 import struct
 import zipfile
-from datetime import datetime
 import importlib.util
 import json
 import os
@@ -502,7 +501,74 @@ def validate_object_upload_facts(items, physical, files, engine_id):
             "multi_physical_size_verified": True}
 
 
-def run_object_upload(client, repository, identity, timeout):
+def read_object_upload_meta(tenant_id, engine_id, scan_id):
+    hosted = importlib.import_module("scripts.test.execution-online-support")
+    try:
+        tenant, engine, scan = hosted.positive(tenant_id), hosted.positive(engine_id), hosted.identifier(scan_id)
+    except hosted.SuiteError as error:
+        raise SuiteError("invalid upload metadata observation scope") from error
+    query = f"""SELECT COALESCE(json_agg(row_to_json(item) ORDER BY id), '[]'::json) FROM (
+        SELECT i.id, i.engine_id, i.full_name, i.fingerprint, i.scanned_depth, i.size_bytes, i.data_updated_at,
+          json_build_object('item', json_build_object('data_type', i.attributes#>>'{{item,data_type}}',
+            'format', i.attributes#>>'{{item,format}}', 'layout', i.attributes#>>'{{item,layout}}',
+            'refs', (SELECT json_agg(json_build_object('path', ref->>'path'))
+                     FROM jsonb_array_elements(i.attributes#>'{{item,refs}}') AS ref)),
+            'storage', json_build_object('total_size', i.attributes#>'{{storage,total_size}}',
+              'etag', i.attributes#>>'{{storage,etag}}', 'last_modified_at', i.attributes#>>'{{storage,last_modified_at}}')) AS attributes
+        FROM meta.meta_item i JOIN common.task_executions e ON e.tenant_id=i.tenant_id
+        WHERE i.tenant_id={tenant} AND i.engine_id={engine} AND i.deleted_at IS NULL
+          AND i.full_name LIKE 'transfer-upload/%'
+          AND e.execution_id='{scan}' AND e.module='meta' AND e.task_type='scan'
+          AND e.source='manager' AND e.status='success'
+          AND i.scanned_at BETWEEN e.started_at AND e.completed_at
+        ORDER BY i.id LIMIT 3) AS item"""
+    try:
+        return _array(hosted.OwnedDeployment().read(query), "persisted upload metadata")
+    except (hosted.SuiteError, subprocess.SubprocessError, ValueError) as error:
+        raise SuiteError("owned upload metadata observation failed") from error
+
+
+def verify_upload_visibility(client, initializer, identity, engine_id, items):
+    tenant = positive_int(identity["tenant_id"], "upload Tenant")
+    route = f"/api/v1/meta/engines/{engine_id}/items"
+    if _array(client.request("GET", route, (200,)).payload, "items before exact grants"):
+        raise SuiteError("uploaded MinIO items must remain hidden before metadata grants")
+    expected = {item["full_name"]: item for item in items}
+    ids = {positive_int(item.get("id"), "uploaded item id") for item in items}
+    grants = REGISTRATION.ExactFileMetadataGrants(initializer, client, tenant, scan_preparation=True)
+    expires_at = (datetime.now(timezone.utc) + timedelta(minutes=15)).isoformat(timespec="seconds")
+    receipts = []
+    try:
+        for name, format_name, layout in (("upload-check.csv", "csv", "single"), ("points.shp", "shapefile", "multi")):
+            receipt = grants.grant(engine_id, "transfer-upload/" + name, "minio",
+                data_type="table", format_name=format_name, layout=layout, expires_at=expires_at)
+            receipts.append({key: receipt[key] for key in ("request_id", "item_fingerprint", "action", "expires_at")})
+        visible = [_object(item, "visible upload item") for item in
+                   _array(client.request("GET", route, (200,)).payload, "items after exact grants")]
+        if len(visible) != 2 or {item.get("full_name") for item in visible} != set(expected):
+            raise SuiteError("metadata grants must expose exactly the two uploaded logical items")
+        for listed in visible:
+            persisted = expected[listed["full_name"]]
+            detail = _object(client.request("GET", f"/api/v1/meta/items/{persisted['id']}", (200,)).payload, "visible item detail")
+            for item in (listed, detail):
+                keys = ("id", "engine_id", "full_name", "fingerprint", "scanned_depth")
+                descriptor = persisted["attributes"]["item"]
+                attrs = _object(item.get("attributes"), "visible item attributes")
+                if (any(item.get(key) != persisted[key] for key in keys) or item.get("tenant_id") != tenant
+                        or any(item.get(key) is not None for key in ("size_bytes", "row_count", "data_updated_at"))
+                        or "storage" in attrs
+                        or attrs.get("item") != {key: descriptor[key] for key in ("data_type", "format", "layout")}):
+                    raise SuiteError("public upload metadata must expose the exact structural projection")
+    finally:
+        cleanup = grants.cleanup()
+        if _array(client.request("GET", route, (200,)).payload, "items after grant revocation"):
+            raise SuiteError("uploaded metadata remains visible after grant revocation")
+        for item_id in sorted(ids):
+            client.request("GET", f"/api/v1/meta/items/{item_id}", (404,))
+    return {"grants": receipts, "visible_items": 2, "detail_404_after_revoke": 2, **cleanup}
+
+
+def run_object_upload(client, initializer, repository, identity, timeout):
     engine_id = positive_int(required_environment("ADDP_ONLINE_TRANSFER_MINIO_ENGINE_ID"), "upload MinIO engine id")
     validate_engine(client, engine_id, "Hosted Transfer MinIO", "minio", time.monotonic() + timeout)
     wait_manager_read_boundary(client, engine_id, time.monotonic() + timeout)
@@ -546,19 +612,19 @@ def run_object_upload(client, repository, identity, timeout):
     execution = wait_owner_execution(client, "meta", identifier, timeout)
     if execution.get("module") != "meta" or execution.get("source") != "manager" or execution.get("parent_execution_id") not in (None, "") or str(execution.get("triggered_by")) != identity["principal_id"] or str(execution.get("tenant_id")) != identity["tenant_id"] or execution.get("scan_context") != {"engine_id": engine_id, "scan_depth": "deep"}:
         raise SuiteError("object automatic scan lost its direct User origin or exact engine")
-    listed = _array(client.request("GET", f"/api/v1/meta/engines/{engine_id}/items", (200,)).payload, "uploaded items")
-    items = [_object(client.request("GET", f"/api/v1/meta/items/{positive_int(item.get('id'), 'uploaded item id')}", (200,)).payload, "uploaded item") for item in listed]
+    items = read_object_upload_meta(positive_int(identity["tenant_id"], "upload Tenant"), engine_id, identifier)
     checked = subprocess.run(["bash", "business/scripts/online-transfer-relational-sql-etl-fixture.sh", "object-facts"], cwd=repository, capture_output=True, text=True, timeout=60)
     if checked.returncode:
         raise SuiteError("independent object physical facts failed")
     physical = _object(json.loads(checked.stdout), "physical object proof")
     proof = validate_object_upload_facts(items, physical, files, engine_id)
+    visibility = verify_upload_visibility(client, initializer, identity, engine_id, items)
     commit = subprocess.run(["git", "rev-parse", "HEAD"], cwd=repository, capture_output=True, text=True, check=True).stdout.strip()
-    receipt = {"schema_version": "addp.manager-object-upload/v1", "result": "passed", "git_commit": commit,
+    receipt = {"schema_version": "addp.manager-object-upload/v2", "result": "passed", "git_commit": commit,
         "run_id": os.environ["ADDP_ONLINE_TEST_RUN_ID"], "identity": identity, "engine_id": engine_id,
         "api": report, "scan_execution_id": identifier,
         "scan": {key: execution.get(key) for key in ("execution_id", "status", "module", "source", "parent_execution_id", "triggered_by", "tenant_id", "scan_context")},
-        "items": items, "physical": physical, **proof}
+        "items": items, "physical": physical, "visibility": visibility, **proof}
     (artifact / "manager-object-upload.json").write_text(json.dumps(receipt, sort_keys=True) + "\n")
     return {"engine_id": engine_id, "scan_execution_id": identifier, **proof}
 
@@ -748,7 +814,7 @@ def record_scan_trace_receipt(client, outsider, identity, peer_identity, object_
     artifact = Path(required_environment("ADDP_ONLINE_ARTIFACT_DIR"))
     upload = _object(json.loads((artifact / "manager-object-upload.json").read_text()), "object upload receipt")
     run_id = required_environment("ADDP_ONLINE_TEST_RUN_ID")
-    if (upload.get("schema_version") != "addp.manager-object-upload/v1" or upload.get("result") != "passed"
+    if (upload.get("schema_version") != "addp.manager-object-upload/v2" or upload.get("result") != "passed"
             or upload.get("run_id") != run_id or upload.get("identity") != identity
             or upload.get("scan_execution_id") != object_upload["scan_execution_id"]):
         raise SuiteError("scan trace receipt is not bound to the actual current upload")
@@ -1758,9 +1824,9 @@ def main() -> int:
         repository = Path(os.environ.get("ADDP_ONLINE_REPOSITORY", Path(__file__).parents[2])).resolve()
         binary = run_binary_roundtrip(client, initializer, repository, run_id, identity_report, engine_id, source, owned_name,
                                       convergence_timeout, owned_ids)
-        del initializer
         wait_manager_read_boundary(client, engine_id, time.monotonic() + convergence_timeout)
-        object_upload = run_object_upload(client, repository, identity_report, convergence_timeout)
+        object_upload = run_object_upload(client, initializer, repository, identity_report, convergence_timeout)
+        del initializer
         manager_import = run_manager_import(client, engine_id, identity_report, convergence_timeout, owned_ids, outsider)
         record_manager_import_receipt(repository, required_environment("ADDP_ONLINE_ARTIFACT_DIR"), run_id, identity_report, engine_id, manager_import)
         trace_visibility = record_scan_trace_receipt(client, outsider, identity_report, outsider_identity, object_upload, manager_import)

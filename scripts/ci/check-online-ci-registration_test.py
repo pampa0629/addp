@@ -3524,7 +3524,7 @@ class OnlineCIRegistrationTest(unittest.TestCase):
             ("scripts/test/transfer-relational-sql-etl-online.py", "owner_visible_observations"),
             ("scripts/test/transfer-relational-sql-etl-online.py", "peer_denials"),
             ("scripts/test/transfer-relational-sql-etl-online.py", "addp.scan-trace-visibility/v1"),
-            ("scripts/test/transfer-relational-sql-etl-online.py", "addp.manager-object-upload/v1"),
+            ("scripts/test/transfer-relational-sql-etl-online.py", "addp.manager-object-upload/v2"),
             ("scripts/test/transfer-relational-sql-etl-online.py", "run_manager_import"),
             ("scripts/test/transfer-relational-sql-etl-online.py", "non_uploader_rejected"),
             ("scripts/test/transfer-relational-sql-etl-online.py", "manager-private-import.json"),

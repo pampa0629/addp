@@ -104,7 +104,7 @@ class TransferRelationalSQLETLOnlineTest(unittest.TestCase):
         for failure in (False, True, 'stale-upload'):
             with self.subTest(failure=failure), tempfile.TemporaryDirectory() as directory:
                 Path(directory, 'manager-object-upload.json').write_text(json.dumps({'git_commit':'a'*40,
-                    'schema_version':'addp.manager-object-upload/v1','result':'passed',
+                    'schema_version':'addp.manager-object-upload/v2','result':'passed',
                     'run_id':'old-run' if failure == 'stale-upload' else 'actual-run',
                     'identity':{'principal_id':'33'},'scan_execution_id':'actual-object'}))
                 target = Path(directory, 'scan-trace-visibility.json')
@@ -133,7 +133,7 @@ class TransferRelationalSQLETLOnlineTest(unittest.TestCase):
             size = len(files[name]) if single else sum(len(content) for key,content in files.items() if key != 'upload-check.csv')
             storage = {"total_size":size}
             if single: storage.update(etag='opaque-upload-check.csv',last_modified_at='2026-10-18T09:02:03+08:00')
-            descriptor = {"layout":"single" if single else "multi","format":"csv" if single else "shapefile"}
+            descriptor = {"data_type":"table","layout":"single" if single else "multi","format":"csv" if single else "shapefile"}
             if not single: descriptor['refs']=[{"path":"transfer-upload/"+key} for key in files if key != 'upload-check.csv']
             items.append({"id":len(items)+1,"engine_id":9,"full_name":"transfer-upload/"+name,"fingerprint":"hash-"+name,
                 "scanned_depth":"deep","size_bytes":size,"data_updated_at":"2026-10-18T01:02:03Z",
@@ -191,12 +191,12 @@ class TransferRelationalSQLETLOnlineTest(unittest.TestCase):
                 elif mutation=='old-api-proof': report['run_id']='old-run'
                 elif mutation=='wrong-locator': report['submission']['files'][0]['locator']='addp://engine/8/path/outside?type=object'
                 elif mutation=='bad-uuid': report['submission']['scan_execution_id']='bad'
-                listings=iter([[],items])
                 def request(method,path,status):
                     self.assertEqual(method,'GET', 'target metadata must come only from Manager automatic submission')
-                    value=next(listings) if path.endswith('/9/items') else items[int(path.rsplit('/',1)[1])-1]
-                    return SimpleNamespace(payload=value)
+                    self.assertEqual(path,'/api/v1/meta/engines/9/items')
+                    return SimpleNamespace(payload=[])
                 client=SimpleNamespace(request=Mock(side_effect=request))
+                initializer=Mock()
                 calls=[]
                 def run(command,**kwargs):
                     calls.append(command)
@@ -206,19 +206,85 @@ class TransferRelationalSQLETLOnlineTest(unittest.TestCase):
                     if command[0]=='bash': return SimpleNamespace(returncode=0,stdout=json.dumps(physical))
                     if command[0]=='git': return SimpleNamespace(returncode=0,stdout='a'*40)
                     raise AssertionError(command)
-                with patch.dict(ONLINE.os.environ, {"ADDP_ONLINE_TRANSFER_MINIO_ENGINE_ID":"9","ADDP_ONLINE_ARTIFACT_DIR":directory,"ADDP_ONLINE_TEST_RUN_ID":"object-run"}), patch.object(ONLINE,'validate_engine'), patch.object(ONLINE,'wait_manager_read_boundary'), patch.object(ONLINE,'wait_owner_execution',return_value=execution) as wait, patch.object(ONLINE.subprocess,'run',side_effect=run):
+                with patch.dict(ONLINE.os.environ, {"ADDP_ONLINE_TRANSFER_MINIO_ENGINE_ID":"9","ADDP_ONLINE_ARTIFACT_DIR":directory,"ADDP_ONLINE_TEST_RUN_ID":"object-run"}), patch.object(ONLINE,'validate_engine'), patch.object(ONLINE,'wait_manager_read_boundary'), patch.object(ONLINE,'wait_owner_execution',return_value=execution) as wait, patch.object(ONLINE.subprocess,'run',side_effect=run), patch.object(ONLINE,'read_object_upload_meta',return_value=items) as meta, patch.object(ONLINE,'verify_upload_visibility',return_value={'grants_revoked':True}) as visibility:
                     if mutation=='valid':
-                        proof=ONLINE.run_object_upload(client,Path('/repository'),identity,30)
+                        proof=ONLINE.run_object_upload(client,initializer,Path('/repository'),identity,30)
                         self.assertTrue(proof['single_source_facts_verified'])
                         receipt=json.loads(Path(directory,'manager-object-upload.json').read_text())
                         self.assertEqual(receipt['git_commit'],'a'*40)
                         self.assertEqual(receipt['scan_execution_id'],identifier)
                         self.assertEqual(receipt['scan']['triggered_by'],7)
                         wait.assert_called_once_with(client,'meta',identifier,30)
+                        meta.assert_called_once_with(2,9,identifier)
+                        visibility.assert_called_once_with(client,initializer,identity,9,items)
+                        self.assertTrue(receipt['visibility']['grants_revoked'])
                     else:
-                        with self.assertRaises(ONLINE.SuiteError): ONLINE.run_object_upload(client,Path('/repository'),identity,30)
+                        with self.assertRaises(ONLINE.SuiteError): ONLINE.run_object_upload(client,initializer,Path('/repository'),identity,30)
                         self.assertFalse(Path(directory,'manager-object-upload.json').exists())
                         self.assertFalse(any(command[0]=='bash' for command in calls))
+                        meta.assert_not_called()
+                        visibility.assert_not_called()
+
+    def test_object_upload_observation_is_bound_to_the_owned_scan(self):
+        hosted = importlib.import_module("scripts.test.execution-online-support")
+        scan_id = str(uuid.uuid4())
+        with patch.object(hosted, "OwnedDeployment") as deployment:
+            deployment.return_value.read.return_value = []
+            self.assertEqual(ONLINE.read_object_upload_meta(2, 9, scan_id), [])
+            query = deployment.return_value.read.call_args.args[0]
+            for fragment in ("i.tenant_id=2", "i.engine_id=9", "transfer-upload/%", f"e.execution_id='{scan_id}'",
+                             "e.module='meta'", "e.task_type='scan'", "e.source='manager'", "e.status='success'",
+                             "i.scanned_at BETWEEN e.started_at AND e.completed_at", "LIMIT 3"):
+                self.assertIn(fragment, query)
+            with self.assertRaises(ONLINE.SuiteError):
+                ONLINE.read_object_upload_meta(2, 9, "invalid scan")
+            deployment.return_value.read.assert_called_once()
+
+    def test_object_upload_grants_only_two_exact_items_and_revokes_on_failure(self):
+        _, _, items = self.object_facts_case()
+        identity = {"tenant_id": "2", "principal_id": "7"}
+        for case in ("valid", "second_grant_fails", "storage_leak"):
+            with self.subTest(case=case), patch.object(ONLINE.REGISTRATION, "ExactFileMetadataGrants") as create:
+                client, initializer = Mock(), Mock()
+                grants = create.return_value
+                grants.cleanup.return_value = {"grants_revoked": True, "metadata_hidden": True}
+                receipts = [{"request_id": str(uuid.uuid4()), "item_fingerprint": item["fingerprint"],
+                             "action": "metadata_read", "expires_at": "expires"} for item in items]
+                grants.grant.side_effect = [receipts[0], ONLINE.SuiteError("second grant failed") if case == "second_grant_fails" else receipts[1]]
+                visible = []
+                for item in items:
+                    descriptor = item["attributes"]["item"]
+                    visible.append({key: item[key] for key in ("id", "engine_id", "full_name", "fingerprint", "scanned_depth")}
+                        | {"tenant_id": 2, "attributes": {"item": {key: descriptor[key] for key in ("data_type", "format", "layout")}}})
+                detail = copy.deepcopy(visible)
+                if case == "storage_leak":
+                    detail[0]["attributes"]["storage"] = {}
+
+                def request(method, route, expected):
+                    self.assertEqual(method, "GET")
+                    if expected == (404,):
+                        self.assertTrue(grants.cleanup.called)
+                        return SimpleNamespace(payload={})
+                    if route.endswith("/9/items"):
+                        return SimpleNamespace(payload=visible if grants.grant.call_count == 2 and not grants.cleanup.called else [])
+                    return SimpleNamespace(payload=detail[int(route.rsplit("/", 1)[1]) - 1])
+
+                client.request.side_effect = request
+                if case == "valid":
+                    proof = ONLINE.verify_upload_visibility(client, initializer, identity, 9, items)
+                    self.assertEqual(proof, {"grants": receipts, "visible_items": 2, "detail_404_after_revoke": 2,
+                                             "grants_revoked": True, "metadata_hidden": True})
+                else:
+                    with self.assertRaises(ONLINE.SuiteError):
+                        ONLINE.verify_upload_visibility(client, initializer, identity, 9, items)
+                create.assert_called_once_with(initializer, client, 2, scan_preparation=True)
+                self.assertEqual([call.args for call in grants.grant.call_args_list],
+                                 [(9, "transfer-upload/upload-check.csv", "minio"), (9, "transfer-upload/points.shp", "minio")])
+                self.assertEqual([call.kwargs["layout"] for call in grants.grant.call_args_list], ["single", "multi"])
+                self.assertTrue(all(call.kwargs["expires_at"] for call in grants.grant.call_args_list))
+                grants.cleanup.assert_called_once_with()
+                self.assertEqual([call.args[1] for call in client.request.call_args_list if call.args[2] == (404,)],
+                                 ["/api/v1/meta/items/1", "/api/v1/meta/items/2"])
 
     def test_browser_text_selectors_match_real_fixture_labels(self):
         browser = SCRIPT.parents[2] / "console/frontend/e2e/online/transfer-relational-sql-etl.spec.js"
