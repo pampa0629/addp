@@ -740,7 +740,7 @@ PostgreSQL已有十二项固定失败阶段，统一入口此前直接显示英�
 
 ### 个人 Desktop 统一分组应用与恢复复验（2026-11-05）
 
-用户已亲自执行统一入口的三组显式应用：`up --scope host --kind node`、`up --scope infra --scope business --kind postgresql`、`up --scope infra --kind minio`，并确认成功。本会话随后只读检查，四项已启用来源均运行于唯一 `addp-metrics-sources-7bb4e5ee77e15388` 项目，共六个容器；四个旧项目残留容器为0。`python3 scripts/infra/metrics-sources.py status` 七项零失败，Redis及Business MinIO仍停用／未部署。应用前已核对旧容器归属；Infra MinIO旧镜像确实缺失，故先前普通recover不能恢复，显式up后来源已恢复。不据此声称数据库内容、账号权限或来源故障注入场景全部重新验收。
+用户已亲自执行统一入口的三组显式应用：`up --scope host --kind node`、`up --scope infra --scope business --kind postgresql`、`up --scope infra --kind minio`，并确认成功。当次只读收据记录的项目名为 `addp-metrics-sources-7bb4e5ee77e15388`，对应当时带工作区摘要的部署。四项已启用来源共六个容器，均运行于该项目，四个旧项目残留容器为 0。`python3 scripts/infra/metrics-sources.py status` 七项零失败，Redis 及 Business MinIO 仍停用／未部署。应用前已核对旧容器归属。Infra MinIO 旧镜像缺失，普通 `recover` 当时未能恢复，来源经显式 `up` 后恢复。数据库内容、账号权限和来源故障注入仍按各自证据认定。[当批分组与现行退役规则](#采集来源统一-compose-分组2026-11-05)
 
 沿当前Monitor查询证书只读访问Prometheus，`up{job="addp_nodes"}`九个目标全部为1（主机1、引擎3、进程5）；另查 `timestamp(up{job="addp_nodes"})` 核对真实抓取时间，九项距核验均小于15秒，未以即时查询的评估时间代替采样时间。Safari真实页面确认Business PostgreSQL详情及趋势存在、Infra PostgreSQL与MinIO卡片显示正在采集及有效数值；主机CPU、内存、磁盘IO有效，查询时间与采样时间自然推进，截图可见真实页面与自动刷新开启。当前Desktop视图的文件系统、网卡、TCP仍明确不可用，不作为已恢复或零值。此复验不含停用／恢复故障注入、缩放重新拖动、Hosted或完整租户功能。
 
