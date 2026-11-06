@@ -23,6 +23,8 @@ const failureCategories = new Set(['permission_denied', 'timeout', 'cancelled', 
   'coordinator_lost', 'child_failed', 'owner_unavailable'])
 
 const operatorFailureTemplates = Object.freeze({ snap_line_endpoints: 'lineEndpoint', extend_line_endpoints: 'lineEndpoint', polygonize: 'polygonize', snap_geometry:'referenceSnap', check_geometry:'geometryValidity', repair_geometry:'geometryValidity', extract_vertices: 'vertices', split_multipart: 'multipart', get_bounds: 'bounds', distance_to: 'distance', get_area: 'measurement', get_length: 'measurement', split_by_area: 'measurement', contains: 'spatialRelation', intersects: 'spatialRelation', voronoi: 'voronoi',
+  'group_line_components:operator_input_invalid': 'lineCheck',
+  'group_line_components:operator_crs_invalid': 'lineCheck',
   'split_line_intersections:operator_input_invalid': 'lineCheck',
   'split_line_intersections:operator_crs_invalid': 'lineCheck',
   'split_line_intersections:operator_enum_invalid': 'lineSplit',
@@ -72,6 +74,11 @@ export function executionFailurePresentation(details, translate) {
 }
 
 export const operatorInputRules = Object.freeze([
+  ["group_line_components", "operator_input_invalid", "input_gdf", ""],
+  ["group_line_components", "operator_crs_invalid", "", ""],
+  ["group_line_components", "operator_field_conflict", "input_gdf", "source_id"],
+  ["group_line_components", "operator_field_conflict", "input_gdf", "part_no"],
+  ["group_line_components", "operator_field_conflict", "input_gdf", "component_id"],
   ["split_line_intersections", "operator_input_invalid", "input_gdf", ""],
   ["split_line_intersections", "operator_crs_invalid", "", ""],
   ["split_line_intersections", "operator_enum_invalid", "scope", ""],

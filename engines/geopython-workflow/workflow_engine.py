@@ -62,7 +62,8 @@ def _project(value):
 
 def _execute_workflow_operator(operator, params):
     if (operator in {'check_dangling_points', 'check_line_intersection', 'check_line_self_intersection',
-                     'check_line_overlap', 'check_line_self_overlap', 'split_line_intersections'}
+                     'check_line_overlap', 'check_line_self_overlap', 'split_line_intersections',
+                     'group_line_components'}
             and not {'input_gdf', 'id_field'} <= params.keys()):
         raise LineCheckInputError('operator_input_invalid', 'input_gdf and id_field are required')
     if operator == 'check_polygon_overlap' and not {'input_gdf', 'id_field'} <= params.keys():
@@ -93,7 +94,7 @@ class GeoPythonWorkflowRunner(WorkflowRunner):
         try:
             return _execute_workflow_operator(operator, params)
         except LineCheckInputError as exc:
-            raise OperatorInputError(exc.reason, exc.message(self.language)) from exc
+            raise OperatorInputError(exc.reason, exc.message(self.language), field=exc.field) from exc
         except LineSplitInputError as exc:
             raise OperatorInputError(exc.reason, exc.message(self.language), field=exc.field) from exc
         except PolygonCheckInputError as exc:

@@ -1305,12 +1305,12 @@ def extract_polygon_rings(input_gdf: gpd.GeoDataFrame, id_field: str) -> gpd.Geo
 
 def group_line_components(input_gdf: gpd.GeoDataFrame, id_field: str) -> gpd.GeoDataFrame:
     """Label exact planar connectivity while retaining every original line part."""
-    geometry = _finite_xy_geometry(input_gdf)
-    _require_projected_xy_crs(geometry.crs)
-    ids = _source_identifiers(input_gdf, id_field)
-    _require_nonempty_valid_lines(geometry)
-    if any(field in input_gdf.columns for field in ("source_id", "part_no", "component_id")):
-        raise ValueError("output columns source_id, part_no and component_id must not overwrite source fields")
+    geometry, ids = _line_check_inputs(input_gdf, id_field)
+    for field in ("source_id", "part_no", "component_id"):
+        if field in input_gdf.columns:
+            raise LineCheckInputError(
+                "operator_field_conflict", f"output column {field} must not overwrite a source field", field=field,
+            )
 
     parts, source_rows = shapely.get_parts(geometry.array, return_index=True)
     parents = list(range(len(parts)))
@@ -1585,7 +1585,7 @@ def _line_network_inputs(frame, id_field, name="input_gdf", *, input_error=Value
 
 
 class LineCheckInputError(ValueError):
-    """Explicit admission facts shared by the standalone line checks."""
+    """Explicit admission facts shared by line topology operators."""
     _messages = {
         'operator_input_invalid': (
             '线拓扑检查要求具有活动几何列的有效非空有限二维线图层，id_field 须指向值非空、唯一的非几何标量列。允许空表。',
@@ -1595,14 +1595,19 @@ class LineCheckInputError(ValueError):
             '线拓扑检查要求已知投影 CRS，两个水平轴的单位须一致且换算因子有限为正。',
             'Line topology checking requires a known projected CRS with matching finite positive horizontal unit factors.',
         ),
+        'operator_field_conflict': (
+            '源图层字段 {field} 与算子的固定输出字段重名，请先在上游重命名。',
+            'Source field {field} conflicts with a fixed operator output field. Rename it upstream first.',
+        ),
     }
 
-    def __init__(self, reason, detail):
+    def __init__(self, reason, detail, *, field=""):
         super().__init__(detail)
         self.reason = reason
+        self.field = field
 
     def message(self, language):
-        return self._messages[self.reason][language == 'en']
+        return self._messages[self.reason][language == 'en'].format(field=self.field)
 
 
 def _line_check_inputs(input_gdf, id_field):

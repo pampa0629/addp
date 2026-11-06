@@ -748,7 +748,91 @@ def test_group_line_components_workflow_native_save_reload_and_rejection_no_publ
         assert feature.GetField("note") == (None if i < 2 else "支线") and feature.GetField("grade") == (2**60 + 1 if i < 2 else 3)
     dataset = None;assert (tmp_path / "source.gpkg").read_bytes() == before
     tasks[1]["params"]["id_field"] = "absent";tasks[2]["params"]["path"] = "rejected.gpkg"
-    assert execute_workflow({"tasks":tasks})["status"] == "failed" and not (tmp_path / "rejected.gpkg").exists()
+    rejected = execute_workflow({"tasks": tasks})
+    assert rejected["status"] == "failed" and rejected["error_code"] == "INVALID_PARAMS"
+    assert rejected["diagnostic"] == {
+        "schema_version": "addp.execution-failure/v3", "stage": "execution",
+        "reason": "operator_input_invalid",
+        "operator": {"node_index": 2, "operator_id": "group_line_components", "parameter": "input_gdf"},
+    }
+    assert not (tmp_path / "rejected.gpkg").exists()
+    assert (tmp_path / "source.gpkg").read_bytes() == before
+
+
+@pytest.mark.parametrize("case,reason,parameter,field", [
+    ("missing_layer", "operator_input_invalid", "input_gdf", ""),
+    ("missing_id", "operator_input_invalid", "input_gdf", ""),
+    ("invalid_id", "operator_input_invalid", "input_gdf", ""),
+    ("invalid_line", "operator_input_invalid", "input_gdf", ""),
+    ("crs", "operator_crs_invalid", "", ""),
+    ("source_id", "operator_field_conflict", "input_gdf", "source_id"),
+    ("part_no", "operator_field_conflict", "input_gdf", "part_no"),
+    ("component_id", "operator_field_conflict", "input_gdf", "component_id"),
+    ("all_fields", "operator_field_conflict", "input_gdf", "source_id"),
+    ("later_fields", "operator_field_conflict", "input_gdf", "part_no"),
+    ("native_check", None, "", ""),
+    ("native_query", None, "", ""),
+    ("result_construction", None, "", ""),
+])
+def test_group_line_components_diagnostics_block_result_save(monkeypatch, case, reason, parameter, field):
+    import workflow_engine
+    from addp_common.workflow_runtime import WorkflowExecutionError
+
+    shape = LineString([(0, 0), (1, 0)]) if case != "invalid_line" else Point(0, 0)
+    frame = line_overlap_frame([shape], crs=None if case == "crs" else "EPSG:3857")
+    params = {"input_gdf": frame, "id_field": "route_key"}
+    if case == "missing_layer":
+        del params["input_gdf"]
+    elif case == "missing_id":
+        del params["id_field"]
+    elif case == "invalid_id":
+        params["id_field"] = "PRIVATE_ID_FIELD"
+    elif case == "all_fields":
+        params["input_gdf"] = frame.assign(component_id=1, part_no=1, source_id=1)
+    elif case == "later_fields":
+        params["input_gdf"] = frame.assign(component_id=1, part_no=1)
+    elif field:
+        frame[field] = 1
+
+    def fail(*args, **kwargs):
+        raise ValueError("line geometry is invalid")
+
+    if case == "native_check":
+        monkeypatch.setattr(shapely, "is_valid", fail)
+    elif case == "native_query":
+        monkeypatch.setattr(shapely.STRtree, "query", fail)
+    elif case == "result_construction":
+        monkeypatch.setattr(gpd.GeoDataFrame, "reset_index", fail)
+
+    operator = "group_line_components"
+    resolve = workflow_engine.get_operator
+    saves = []
+    monkeypatch.setattr(workflow_engine, "get_operator",
+                        lambda name: (lambda **kwargs: saves.append(kwargs)) if name == "save" else resolve(name))
+    tasks = [
+        {"id": "group", "operator": operator, "params": params, "depends_on": []},
+        {"id": "save", "operator": "save", "params": {"input_df": {"$ref": "group", "port": "result"}},
+         "depends_on": ["group"]},
+    ]
+    with pytest.raises(WorkflowExecutionError) as caught:
+        workflow_engine.GeoPythonWorkflowRunner(language="en").execute({"tasks": tasks})
+    assert not saves
+    error = caught.value
+    if reason is None:
+        assert error.error_code == "EXECUTION_FAILED" and error.diagnostic is None
+        assert "line geometry is invalid" in str(error)
+        return
+
+    context = {"node_index": 1, "operator_id": operator}
+    if parameter:
+        context["parameter"] = parameter
+    if field:
+        context["field"] = field
+        assert field in str(error)
+    assert error.error_code == "INVALID_PARAMS"
+    assert error.diagnostic == {"schema_version": "addp.execution-failure/v3", "stage": "execution",
+                                "reason": reason, "operator": context}
+    assert "PRIVATE_" not in str(error)
 
 
 def test_group_line_components_metadata_async_discovery_and_workflow_only(tmp_path, monkeypatch):

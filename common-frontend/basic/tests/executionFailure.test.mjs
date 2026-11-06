@@ -135,7 +135,7 @@ test('protection refusals remain distinct from data permissions without exposing
 test('operator input contract matches the canonical runtime tuples and rejects unproven fields', () => {
   const source = read('../../../common-python/addp_common/workflow_runtime/errors.py')
   const canonical = [...source.matchAll(/\('([^']+)', '([^']+)', '([^']*)'\): '([^']*)'/g)].map(match => [match[1],match[2],match[4],match[3]])
-  assert.equal(canonical.length, 147)
+  assert.equal(canonical.length, 152)
   const actual = operatorInputRules.map(rule => [...rule])
   assert.deepEqual(actual.sort(), canonical.sort())
   for (const [operator_id, reason, parameter, field] of canonical) {
@@ -143,6 +143,7 @@ test('operator input contract matches the canonical runtime tuples and rejects u
     const diagnostic = { schema_version: 'addp.execution-failure/v3', stage: 'execution', reason, operator }
     const result = executionFailurePresentation({ diagnostic, message: 'private' }, key => key)
     const profiles = { snap_line_endpoints: 'lineEndpoint', extend_line_endpoints: 'lineEndpoint', polygonize: 'polygonize', snap_geometry:'referenceSnap', check_geometry:'geometryValidity', repair_geometry:'geometryValidity', extract_vertices:'vertices', split_multipart:'multipart', get_bounds:'bounds', distance_to:'distance', get_area:'measurement', get_length:'measurement', split_by_area:'measurement', contains:'spatialRelation', intersects:'spatialRelation', voronoi:'voronoi',
+      'group_line_components:operator_input_invalid':'lineCheck', 'group_line_components:operator_crs_invalid':'lineCheck',
       'split_line_intersections:operator_input_invalid':'lineCheck', 'split_line_intersections:operator_crs_invalid':'lineCheck',
       'split_line_intersections:operator_enum_invalid':'lineSplit', 'split_line_intersections:operator_input_overlap':'lineSplit',
       'split_line_intersections:operator_source_topology_invalid':'lineSplit',
@@ -778,6 +779,8 @@ test('reference snap diagnostics preserve tolerance semantics and privacy',()=>{
 
 test('topology check diagnostics identify the source and coverage in both languages', () => {
   const cases = [
+    ['group_line_components', 'lineCheck', 'operator_input_invalid', 'input_gdf', /id_field/],
+    ['group_line_components', 'lineCheck', 'operator_crs_invalid', '', /投影|projected/],
     ['split_line_intersections', 'lineSplit', 'operator_enum_invalid', 'scope', /between.*all/],
     ['split_line_intersections', 'lineSplit', 'operator_input_overlap', 'input_gdf', /线叠检查|line overlap/],
     ['split_line_intersections', 'lineSplit', 'operator_source_topology_invalid', 'input_gdf', /\ball\b/],
