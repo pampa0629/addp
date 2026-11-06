@@ -13,7 +13,7 @@ Monitor 聚合任务执行事实，提供授权诊断、统计、健康观测、
 | 租户告警与通知 | [概念说明](../../docs/concepts/monitoring/执行诊断与租户告警.md#执行信号与租户告警)及[术语表](../../docs/concepts/addp术语表.md)维护 incident / event / delivery、通用规则、Webhook、邮件和通知路由；各渠道消费同一生命周期事实，规则不改写 execution。 |
 | 平台观测与告警 | [平台运行观测规范](../../docs/spec/addp平台运行观测规范.md)和[运行日志规范](../../docs/spec/addp模块服务运行日志规范.md)维护主机身份、遥测、平台事件及通知；Platform 与 Tenant 分别授权。 |
 | Platform 能力状态与验收缺口 | [后续事项能力表](../../docs/next/ADDP平台运行监控与可观测性设计.md#一当前实现与剩余工作)维护实现状态和剩余覆盖；固定版本、失败与实际验收范围见[模块主题证据导航](../CLAUDE.md#历史证据导航)及对应专题。 |
-| 服务组失联 | [部署预期与租约投影](../../docs/spec/addp平台运行观测规范.md#48-服务部署预期与分组租约观测)、[运行确认与失联规则](../../docs/spec/addp平台运行观测规范.md#711-服务组失联规则)分别维护事实与判定；真实故障、通知及清理沿[测试场景](../../docs/spec/testing/scenarios/平台观测与语义生命周期.md#服务组失联恢复与通知)，实际结果沿下文主题证据导航。 |
+| 服务组失联 | [部署预期与租约投影](../../docs/spec/addp平台运行观测规范.md#48-服务部署预期与分组租约观测)、[运行确认与失联规则](../../docs/spec/addp平台运行观测规范.md#711-服务组失联规则)分别维护事实与判定；真实故障注入、恢复、通知及清理要求见[正式测试场景](../../docs/spec/testing/scenarios/平台观测与语义生命周期.md#服务组失联恢复与通知)。受控验证、个人页面与 Hosted 准备的实际范围见[服务组失联历史证据](../../docs/spec/testing/evidence/Monitor告警与规则历史证据.md#alert-evidence-availability)。 |
 | HTTP 接口质量 | [正式规范 6.4](../../docs/spec/addp平台运行观测规范.md#64-http-接口质量分阶段接入)定义平台职责、全量请求口径、Gateway/Backend 分层、固定窗口与权限；Common 采集、Monitor 固定查询与 HTTP 规则复用既有身份、指标中心和平台 outbox，Tenant 发布服务质量归 Service。 |
 
 ## 存储、接口与页面
