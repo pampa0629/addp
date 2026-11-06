@@ -42,6 +42,8 @@ type vffSKCFilterBindings struct {
 	packageMember, schemaMember, filterMember string
 	schemaSHA256, filterSHA256                [32]byte
 	rules                                     []vffSKCRuleBinding
+	schemaLinks                               []vffSKCSchemaLink
+	substitutions                             *vffSKCSubstitutionFacts
 }
 type vffSKCBindingBudget struct{ remaining, depth int }
 type vffSKCBinder struct {
@@ -76,6 +78,10 @@ func readVFFClassificationBindings(ctx context.Context, c *vffContainer, limits 
 		if err != nil {
 			return nil, err
 		}
+		substitutions, err := graph.readSubstitutions()
+		if err != nil {
+			return nil, err
+		}
 		for _, filter := range documents.documents[i].filters {
 			schemaMember := strings.TrimSuffix(filter.member, ".filter")
 			var schema *vffSKCSchemaFact
@@ -94,11 +100,8 @@ func readVFFClassificationBindings(ctx context.Context, c *vffContainer, limits 
 				return nil, err
 			}
 			binding.packageMember = item.member
-			if len(schema.dependencies) > 0 {
-				for j := range binding.rules {
-					binding.rules[j].issues = append(binding.rules[j].issues, "schema dependency graph not bound")
-				}
-			}
+			binding.schemaLinks = documents.documents[i].links
+			binding.substitutions = substitutions
 			result = append(result, *binding)
 		}
 	}

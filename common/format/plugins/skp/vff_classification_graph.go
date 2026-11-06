@@ -16,10 +16,11 @@ type vffSKCBindingEdge struct {
 	kind, namespace string
 }
 type vffSKCBindingGraph struct {
-	binders map[string]*vffSKCBinder
-	owners  map[*vffXMLNode]*vffSKCBinder
-	edges   map[string][]vffSKCBindingEdge
-	facts   map[string]*vffSKCSchemaFact
+	binders             map[string]*vffSKCBinder
+	owners              map[*vffXMLNode]*vffSKCBinder
+	edges               map[string][]vffSKCBindingEdge
+	facts               map[string]*vffSKCSchemaFact
+	substitutionMembers []*vffXMLNode
 }
 type vffSKCDeclarationScope struct {
 	owner *vffSKCBinder
@@ -59,6 +60,12 @@ func newVFFSKCBindingGraph(ctx context.Context, files map[string][]byte, doc vff
 				return err
 			}
 			g.owners[n] = b
+			if _, declared := n.attrs["substitutionGroup"]; declared && !inAnnotation {
+				if n.name.Local != "element" || n.parent != root {
+					return fmt.Errorf("XSD substitutionGroup requires a global element")
+				}
+				g.substitutionMembers = append(g.substitutionMembers, n)
+			}
 			if !inAnnotation && n.name.Local == "complexType" && n.parent != nil && n.parent.name.Local == "element" {
 				if _, named := n.attrs["name"]; !named {
 					parent := n.parent
