@@ -16,7 +16,7 @@
 | [告警与规则](Monitor告警与规则历史证据.md) | [名称检索与前端 CI](Monitor告警与规则历史证据.md#alert-evidence-name)、[服务组失联](Monitor告警与规则历史证据.md#alert-evidence-availability)、[文件系统容量告警](Monitor告警与规则历史证据.md#alert-evidence-filesystem)、[实例 CPU／RSS 告警](Monitor告警与规则历史证据.md#alert-evidence-process)，另收录筛选、排序与刷新 |
 | [Trace 与日志](MonitorTrace与日志历史证据.md) | 分布式追踪、Python 接入、容量基线与[正式身份本地窗口总览](MonitorTrace与日志历史证据.md#正式身份本地窗口总览) |
 | [HTTP 质量与采样](MonitorHTTP质量与采样历史证据.md) | 公共 mTLS、Go/Python 来源、启动诊断及采样／清理交接，另见[正式 full 失败入口](#正式-http-full-失败入口)和[停源历史趋势](#停源实例-http-历史趋势) |
-| [采集来源与引擎指标](Monitor采集来源与引擎指标历史证据.md) | PostgreSQL、Redis、MinIO、来源准入、引擎身份与专业观测 |
+| [采集来源与引擎指标](Monitor采集来源与引擎指标历史证据.md) | [PostgreSQL 来源与身份](Monitor采集来源与引擎指标历史证据.md#pg-source-history)、[Redis 来源与专业查询](Monitor采集来源与引擎指标历史证据.md#redis-source-history)、[MinIO 采样与专业查询](Monitor采集来源与引擎指标历史证据.md#minio-source-history)、[引擎页面、导航与刷新](Monitor采集来源与引擎指标历史证据.md#engine-ui-history)，另收录统一采集、主机恢复与部署分组 |
 | [执行监控与留存](Monitor执行监控与留存历史证据.md) | continuous、Owner 不可用、租户日志终审及过程事件留存，见[按验收范围查阅](Monitor执行监控与留存历史证据.md#按验收范围查阅) |
 | [部署与前置诊断](Monitor部署与前置诊断历史证据.md) | 资源守卫、Docker CLI／daemon 取证与 Compose 超时，见[按诊断问题查阅](Monitor部署与前置诊断历史证据.md#按诊断问题查阅) |
 
