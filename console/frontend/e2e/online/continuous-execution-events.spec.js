@@ -7,9 +7,10 @@ import { identity, json, login } from './transfer-browser-support.js'
 test.use({ screenshot: 'off' })
 
 test('continuous execution timeline, recovery and revoked Owner access', async ({ browser }) => {
-  test.setTimeout(180_000)
   if (process.env.ADDP_ONLINE_HOSTED !== '1' || process.env.ADDP_ONLINE_TEST !== '1') throw new Error('dedicated Hosted entry required')
   const phase = process.env.ADDP_CONTINUOUS_BROWSER_PHASE
+  // The live page stays open while the existing fault step replaces the Worker.
+  test.setTimeout(phase === 'live' ? 420_000 : 180_000)
   const ids = JSON.parse(process.env.ADDP_CONTINUOUS_BROWSER_EXECUTIONS)
   const runID = process.env.ADDP_ONLINE_TEST_RUN_ID
   const tenantID = process.env.ADDP_ONLINE_TEST_TENANT_ID
@@ -99,18 +100,74 @@ test('continuous execution timeline, recovery and revoked Owner access', async (
     const { page, frame } = await signedPage(ids[0])
     if (phase === 'live') {
       stage = 'live_timeline'
-      const { events } = await timeline(frame)
+      const { detail, events } = await timeline(frame)
+      const rows = events.locator('tbody tr')
+      const refresh = events.getByRole('button', { name: '刷新过程', exact: true })
+      const eventPath = `/api/v1/monitor/executions/by-execution-id/${ids[0]}/events`
+      function observePage(after, requireItems = false) {
+        const observed = page.waitForResponse(async response => {
+          const url = new URL(response.url())
+          return response.request().method() === 'GET' && url.pathname === eventPath &&
+            url.searchParams.get('after') === String(after) && response.ok() &&
+            (!requireItems || (await response.json()).items.length > 0)
+        }, { timeout: 120_000 }).then(response => response.json())
+        observed.catch(() => {})
+        return observed
+      }
+      async function refreshFromStart() {
+        const observed = observePage(0)
+        await refresh.click()
+        const first = await observed
+        expect(first.has_more).toBe(false)
+        return first
+      }
+      function assertCursor(items, after = 0) {
+        for (const item of items) {
+          expect(item.execution_id).toBe(ids[0])
+          expect(item.id).toBeGreaterThan(after)
+          after = item.id
+        }
+      }
+
       await expect(events).toContainText('写入记录: 2')
+      const initial = await refreshFromStart()
+      assertCursor(initial.items)
+      expect(initial.next_cursor).toBe(initial.items.at(-1).id)
+      await expect(rows).toHaveCount(initial.items.length)
       checks.push('timeline')
+
       stage = 'live_automatic_progress'
+      const next = observePage(initial.next_cursor, true)
       await release()
-      // Python commits additional physical Kafka records while this page stays open.
+      const liveItems = [...initial.items]
+      let additional = await next
+      while (true) {
+        assertCursor(additional.items, liveItems.at(-1).id)
+        expect(additional.next_cursor).toBe(additional.items.at(-1).id)
+        liveItems.push(...additional.items)
+        if (additional.items.some(item => item.kind === 'progress' && item.counters.records_written === 4)) break
+        additional = await observePage(additional.next_cursor, true)
+      }
       await expect(events).toContainText('写入记录: 4')
+      await expect(rows).toHaveCount(liveItems.length)
       checks.push('automatic_committed_progress')
-      await expect(events.locator('tbody tr').filter({ hasText: '开始执行' })).toHaveCount(1)
-      await expect(events).not.toContainText('business-value-sentinel')
-      checks.push('no_samples')
+
+      stage = 'live_refresh_cursor_consistency'
+      const refreshed = await refreshFromStart()
+      expect(refreshed.items).toEqual(liveItems)
+      await expect(rows).toHaveCount(liveItems.length)
+      await expect(rows.filter({ hasText: '开始执行' })).toHaveCount(1)
+      checks.push('cursor_and_refresh_match')
       await page.screenshot({ path: resolve(artifacts, 'continuous-live-events.png'), fullPage: true })
+
+      stage = 'live_same_page_terminal'
+      signal('live_progress_observed')
+      await expect(detail).toContainText('lease_expired', { timeout: 200_000 })
+      await expect(rows.filter({ hasText: '执行失败' })).toHaveCount(1)
+      await expect(rows.last()).toContainText('执行失败')
+      await expect(rows).toHaveCount(liveItems.length + 1)
+      await expect(detail).not.toContainText('business-value-sentinel')
+      checks.push('same_page_terminal_convergence', 'no_samples')
     } else if (phase === 'recovery') {
       stage = 'old_failure'
       let visible = await timeline(frame, '执行失败')

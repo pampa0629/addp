@@ -123,7 +123,7 @@ def assert_projection(item, execution_id, *, monitor=False, tenant=None):
             'execution exposed private failure details')
 
 
-def events(client, prefix, execution_id, *, evidence=None):
+def events(client, prefix, execution_id, *, evidence=None, after_first=None):
     """Drain cursor pages and reject duplicates, unknown fields, samples and offset payloads."""
     cursor, first_cursor, result = 0, 0, []
     for page_index in range(600):
@@ -158,9 +158,15 @@ def events(client, prefix, execution_id, *, evidence=None):
             cursor = identity
             result.append(item)
         require(isinstance(page['next_cursor'], int) and not isinstance(page['next_cursor'], bool)
-                and page['next_cursor'] == cursor, 'event next_cursor does not match the last fact')
+                and page['next_cursor'] == (cursor if page['items'] else 0),
+                'event next_cursor does not match the last fact')
         if page_index == 0:
             first_cursor = cursor
+            if after_first is not None:
+                require(first_cursor > 0, 'live pagination did not capture an initial cursor')
+                after_first()
+                # New commits can follow a page that was the tail when read.
+                continue
         if not page['has_more']:
             if evidence is not None:
                 evidence.update(page_size=2, page_count=page_index + 1, event_count=len(result),
@@ -442,15 +448,17 @@ def observe_browser_owner_outage(control, marker, process, faults):
     return proof
 
 
-def run_browser(phase, execution_ids, subject, run_id, secret, action=None, *, faults=None):
+def run_browser(phase, execution_ids, subject, run_id, secret, action=None, *, faults=None, finish=None):
     require(phase in {'live', 'recovery', 'revocation', 'owner_unavailable'}, 'unknown browser phase')
     require((action is not None) == (phase in {'live', 'revocation'}), 'browser action binding changed')
     require((faults is not None) == (phase == 'owner_unavailable'), 'browser Owner fault binding changed')
+    require((finish is not None) == (phase == 'live'), 'browser terminal action binding changed')
     execution_ids = [canonical_uuid(value) for value in execution_ids]
     require(len(execution_ids) == {'recovery': 3, 'owner_unavailable': 2}.get(phase, 1)
             and len(set(execution_ids)) == len(execution_ids), 'browser execution scope changed')
     required_checks = {
-        'live': ['timeline', 'automatic_committed_progress', 'no_samples'],
+        'live': ['timeline', 'automatic_committed_progress', 'cursor_and_refresh_match',
+                 'same_page_terminal_convergence', 'no_samples'],
         'recovery': ['old_failure', 'recovery_source', 'record_failure_code', 'no_samples'],
         'revocation': ['previously_readable', 'old_content_cleared', 'fresh_monitor_only_denied', 'no_samples'],
         'owner_unavailable': OWNER_OUTAGE_CHECKS,
@@ -482,6 +490,9 @@ def run_browser(phase, execution_ids, subject, run_id, secret, action=None, *, f
                     else:
                         action()
                     write_browser_marker(control, 'release', marker)
+                if finish is not None:
+                    wait_browser_marker(control, 'live_progress_observed', marker, process)
+                    finish()
                 require(process.wait(timeout=180) == 0, 'continuous browser acceptance failed: ' + phase)
             finally:
                 if process.poll() is None:
@@ -686,14 +697,31 @@ def run_suite(client, denied, foreign, peer, reader, admin, login, tenant, run_i
             assert_projection(actor.request('GET', f'{MONITOR}/{initial}', (200,)).payload, initial, monitor=True, tenant=tenant)
             lifecycle_events(events(actor, f'{OWNER}/executions', initial))
         report['checks'].append('owner_permissions_foreign_tenant_and_peer_history')
+
         def browser_progress():
-            require(physical('produce-after-recovery'), 'browser committed progress fixture failed')
-            until(lambda: physical('verify-kafka-recovered'))
+            def publish():
+                require(physical('produce-after-recovery'), 'browser committed progress fixture failed')
+                until(lambda: physical('verify-kafka-recovered'))
+                until(lambda: any(e['kind'] == 'progress' and e['counters'].get('records_written', 0) == 4
+                                  for e in events(client, f'{OWNER}/executions', initial)))
+
+            pagination = {}
+            observed = events(client, MONITOR, initial, after_first=publish, evidence=pagination)
+            require(pagination['page_count'] >= 2 and pagination['last_cursor'] > pagination['first_cursor'],
+                    'live pagination did not advance after a real Worker commit')
+            require(observed == compare(initial), 'live pagination differs from settled Owner and Monitor facts')
+            report['live_event_pagination'] = pagination
+            report['checks'].append('live_monitor_cursor_matches_settled_owner_events')
+            checkpoint()
+
+        def browser_finish():
+            phase('worker_recovery')
+            report['worker_fault'] = faults.kill_worker_and_replace()
+            checkpoint()
+
         phase('kafka_browser')
         report['browser_live'] = run_browser('live', [initial], report['consumer_identity'],
-                                             run_id, faults.secret, browser_progress)
-        phase('worker_recovery')
-        report['worker_fault'] = faults.kill_worker_and_replace()
+                                             run_id, faults.secret, browser_progress, finish=browser_finish)
         expired = wait_status(client, initial, 'failed')
         require(expired.get('error_details', {}).get('code') == 'lease_expired' and
                 client.request('GET', f'{MONITOR}/{initial}', (200,)).payload.get('error_details', {}).get('category') == 'coordinator_lost', 'lease failure lost its stable cause')

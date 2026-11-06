@@ -416,10 +416,13 @@ class ContinuousRunnerTest(unittest.TestCase):
                     self.control = control
                     self.assert_args = args
                     instances.append(self)
-                    (control / 'ready.json').write_text(json.dumps({'run_id': 'run-1', 'phase': 'live', 'execution_id': UUID}))
+                    marker = {'run_id': 'run-1', 'phase': 'live', 'execution_id': UUID}
+                    for name in ('ready', 'live_progress_observed'):
+                        (control / f'{name}.json').write_text(json.dumps(marker))
                     report = {'schema_version': 'addp.continuous-execution-browser/v1', 'phase': 'live',
                               'run_id': 'run-1', 'tenant_id': '2', 'principal_id': '33',
-                              'execution_ids': [UUID], 'checks': ['timeline', 'automatic_committed_progress', 'no_samples'], 'result': 'passed'}
+                              'execution_ids': [UUID], 'checks': ['timeline', 'automatic_committed_progress',
+                                  'cursor_and_refresh_match', 'same_page_terminal_convergence', 'no_samples'], 'result': 'passed'}
                     (artifacts / 'continuous-browser-live.json').write_text(json.dumps(report))
                 def poll(self): return 0 if self.ended else None
                 def wait(self, timeout):
@@ -427,9 +430,12 @@ class ContinuousRunnerTest(unittest.TestCase):
                     self.ended = True
                     return 0
             action = []
+            def finish():
+                self.assertTrue((instances[-1].control / 'release.json').is_file())
+                action.append('finish')
             with patch.dict(os.environ, env), patch.object(M.subprocess, 'Popen', Process):
-                result = M.run_browser('live', [UUID], subject, 'run-1', secrets, lambda: action.append(True))
-            self.assertEqual(action, [True])
+                result = M.run_browser('live', [UUID], subject, 'run-1', secrets, lambda: action.append('publish'), finish=finish)
+            self.assertEqual(action, ['publish', 'finish'])
             self.assertEqual(result['principal_id'], '33')
             self.assertIn('--output=' + str(instances[0].control / 'playwright'), instances[0].assert_args)
             self.assertFalse(instances[0].control.exists())
@@ -443,12 +449,12 @@ class ContinuousRunnerTest(unittest.TestCase):
                         payload = json.loads(path.read_text()); payload.update(change)
                         path.write_text(json.dumps(payload))
                 with self.subTest(change=change), patch.dict(os.environ, env), patch.object(M.subprocess, 'Popen', Incorrect), self.assertRaises(M.SuiteError):
-                    M.run_browser('live', [UUID], subject, 'run-1', secrets, lambda: None)
+                    M.run_browser('live', [UUID], subject, 'run-1', secrets, lambda: None, finish=finish)
             self.assertFalse(list(secrets.iterdir()))
 
     def test_browser_rejects_invalid_phase_identity_and_action_before_launch(self):
         with patch.object(M.subprocess, 'Popen') as launch:
-            for phase, ids, action in [('unknown', [UUID], None), ('live', [UUID], None),
+            for phase, ids, action in [('unknown', [UUID], None), ('live', [UUID], None), ('live', [UUID], lambda: None),
                                        ('revocation', ['other'], lambda: None), ('recovery', [UUID], None)]:
                 with self.subTest(phase=phase), self.assertRaises(M.SuiteError):
                     M.run_browser(phase, ids, {}, 'run-1', '/not-used', action)
@@ -463,6 +469,20 @@ class ContinuousRunnerTest(unittest.TestCase):
                                     'first_cursor': 9, 'last_cursor': 12})
         self.assertIn('after=9&limit=2', client.calls[1][1])
         M.lifecycle_events(items, 'cancelled')
+
+    def test_live_cursor_continues_from_pre_commit_tail(self):
+        before = [fact(4, 'started'), fact(9)]
+        after = fact(13)
+        client = Client([page(before), page([after])])
+        observations = []
+        def publish():
+            observations.append(len(client.calls))
+        evidence = {}
+        self.assertEqual(M.events(client, M.MONITOR, UUID, after_first=publish, evidence=evidence), [*before, after])
+        self.assertEqual(observations, [1])
+        self.assertTrue(client.calls[1][1].endswith('after=9&limit=2'))
+        self.assertEqual(evidence, {'page_size': 2, 'page_count': 2, 'event_count': 3,
+                                    'first_cursor': 9, 'last_cursor': 13})
 
     def test_rejects_unknown_fields_counters_samples_attempts_and_cursor_replay(self):
         base = page([fact(1, 'started')])
