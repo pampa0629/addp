@@ -29,6 +29,12 @@ assert SUPPORT_SPEC.loader is not None
 sys.modules[SUPPORT_SPEC.name] = SUPPORT
 SUPPORT_SPEC.loader.exec_module(SUPPORT)
 
+REGISTRATION_SPEC = importlib.util.spec_from_file_location("transfer_engine_registration", Path(__file__).with_name("online-engine-registration.py"))
+REGISTRATION = importlib.util.module_from_spec(REGISTRATION_SPEC)
+assert REGISTRATION_SPEC.loader is not None
+sys.modules[REGISTRATION_SPEC.name] = REGISTRATION
+REGISTRATION_SPEC.loader.exec_module(REGISTRATION)
+
 API_SPEC = importlib.util.spec_from_file_location("transfer_online_api", Path(__file__).resolve().parents[1] / "utils/online-api.py")
 API = importlib.util.module_from_spec(API_SPEC)
 assert API_SPEC.loader is not None
@@ -88,7 +94,7 @@ def task_name(run_id: str) -> str:
 
 
 def owned_task_names(name: str) -> set[str]:
-    return {name, name + "_native", name + "_replace", name + "_hop", name + "_mongodb", name + "_multi", name + "_wide", name + "_wide_hop"} | {name + "_" + engine + "_" + scenario for engine in WRITE_FAILURE_ENGINES for scenario in WRITE_FAILURE_CASES}
+    return {name, name + "_native", name + "_replace", name + "_hop", name + "_mongodb", name + "_multi", name + "_wide", name + "_wide_hop", name + "_binary"} | {name + "_" + engine + "_" + scenario for engine in WRITE_FAILURE_ENGINES for scenario in WRITE_FAILURE_CASES}
 
 
 WRITE_FAILURE_CASES = ("late_execute_failure", "invalid_json")
@@ -181,6 +187,114 @@ def run_write_failures(client, source_engine_id, name, timeout, owned_ids):
     for engine in WRITE_FAILURE_ENGINES:
         report[engine]["physical"] = physical[engine]
     return report
+
+
+BINARY_SOURCE = "transfer_fixture.addp_online_transfer_binary_source"
+BINARY_TARGET = "addp_online_transfer_binary_target"
+
+
+def validate_binary_physical(payload):
+    proof = _object(payload, "ClickHouse binary physical facts")
+    expected = [
+        {"id": 1, "payload_hex": "4100FF42", "byte_length": 4, "is_null": False, "label": "中文"},
+        {"id": 2, "payload_hex": "4142", "byte_length": 2, "is_null": False, "label": "AB"},
+        {"id": 3, "payload_hex": "", "byte_length": 0, "is_null": False, "label": "empty"},
+        {"id": 4, "payload_hex": None, "byte_length": None, "is_null": True, "label": "null"},
+    ]
+    # JSON equality is type-sensitive here, unlike Python's bool/int equality.
+    expected_json = json.dumps(expected, sort_keys=True)
+    if (proof.get("target_column") != "bytea:YES"
+            or any(json.dumps(proof.get(key), sort_keys=True) != expected_json for key in ("source_rows", "target_rows"))):
+        raise SuiteError("ClickHouse and PostgreSQL physical rows or nullable BYTEA type differ from the fixture")
+    return {key: proof[key] for key in ("target_column", "source_rows", "target_rows")}
+
+
+def validate_binary_worker_events(payload, execution_id):
+    page = _object(payload, "ClickHouse Transfer Worker event page")
+    events = [_object(item, "ClickHouse Transfer Worker event") for item in _array(page.get("items"), "Worker events")]
+    if (page.get("has_more") is not False or not events
+            or events[0].get("kind") != "started" or events[-1].get("kind") != "completed"
+            or any(event.get("execution_id") != execution_id or event.get("attempt") != 1 for event in events)):
+        raise SuiteError("ClickHouse Transfer Worker must start and complete the same first attempt")
+    batches = [event.get("counters") for event in events[1:-1] if event.get("kind") == "progress"]
+    expected = [{"batch_index": index, "batch_records": rows, "records_read": total, "records_written": total}
+                for index, rows, total in ((1, 2, 2), (2, 2, 4), (2, 0, 4))]
+    if len(events) != 5 or batches != expected:
+        raise SuiteError("ClickHouse Transfer Worker must process two batches of two rows and record the final checkpoint")
+    return batches[:2]
+
+
+def execute_binary_roundtrip(client, identity, source_engine_id, target_engine_id, target_source, name, timeout, owned_ids):
+    source = find_item(client, source_engine_id, BINARY_SOURCE, "table")
+    fields = _array(client.request("GET", f"/api/v1/meta/items/{source['id']}/fields", (200,)).payload, "ClickHouse binary source fields")
+    payload_fields = [field for field in fields if isinstance(field, dict) and field.get("name") == "payload"]
+    if (len(payload_fields) != 1 or payload_fields[0].get("type") != "bytes"
+            or payload_fields[0].get("native_type") != "Nullable(String)" or payload_fields[0].get("nullable") is not True):
+        raise SuiteError("ClickHouse source metadata must expose nullable bytes from its native declaration")
+
+    parent = f"addp://engine/{target_engine_id}/path/public?type=schema&node_id={positive_int(target_source.get('node_id'), 'PostgreSQL schema node id')}"
+    task = {
+        "name": name + "_binary", "task_type": "sync", "enabled": False, "schedule": "", "auto_scan_metadata": False,
+        "config": {
+            "runtime": {"boundary": "bounded"}, "load": {"mode": "snapshot"},
+            "source": {"locator": SUPPORT.build_item_locator(source_engine_id, source), "data_type": "table", "representation": "native"},
+            "target": {"parent_locator": parent, "name": BINARY_TARGET,
+                       "data_type": "table", "representation": "native", "policy": {"apply_mode": "append"}},
+            "transforms": [{"type": "field_mapping", "version": "v1", "mode": "project", "fields": [
+                {"source": field, "target": field, "target_type": kind, "nullable": nullable}
+                for field, kind, nullable in (("id", "bigint", False), ("payload", "bytes", True), ("label", "string", False))
+            ]}],
+            "batch_size": 2,
+        },
+    }
+    task_id, execution = SUPPORT.create_and_run_task(client, task, time.monotonic() + timeout, owned_ids)
+    execution_id = str(uuid.UUID(execution["execution_id"]))
+    if (execution.get("task_id") != task_id or execution.get("status") != "success"
+            or execution.get("trigger_type") != "manual" or str(execution.get("trigger_by")) != identity["principal_id"]
+            or execution.get("records_read") != 4 or execution.get("records_written") != 4):
+        raise SuiteError("ClickHouse Transfer did not read and write four rows as the current User")
+    events = client.request("GET", f"/api/v1/transfer/executions/{execution_id}/events", (200,)).payload
+    batches = validate_binary_worker_events(events, execution_id)
+    return {"source_item_id": source["id"], "task_id": task_id, "execution_id": execution_id,
+            "records_read": 4, "records_written": 4, "worker_attempt": 1, "batches": batches}
+
+
+def run_binary_roundtrip(client, initializer, repository, run_id, identity, target_engine_id, target_source, name, timeout, owned_ids):
+    source_engine_id = positive_int(required_environment("ADDP_ONLINE_TEST_CLICKHOUSE_ENGINE_ID"), "ClickHouse Engine id")
+    if source_engine_id == target_engine_id:
+        raise SuiteError("ClickHouse source and PostgreSQL target must use distinct Engine Instances")
+    validate_engine(client, source_engine_id, "Hosted Transfer clickhouse", "clickhouse", time.monotonic() + timeout)
+    namespace, table = BINARY_SOURCE.split(".")
+    source_scan = wait_for_scan(initializer, source_engine_id, time.monotonic() + timeout,
+                                targets=[f"addp://engine/{source_engine_id}/path/{namespace}/{table}?type=table"])
+    grant, = REGISTRATION.initialize_exact_record_read_grants(initializer, client, int(identity["tenant_id"]),
+        [(source_engine_id, "database", namespace, table)], scan_preparation=True)
+    grant_id = str(uuid.UUID(grant["request_id"]))
+    try:
+        execution = execute_binary_roundtrip(client, identity, source_engine_id, target_engine_id, target_source, name, timeout, owned_ids)
+        physical = read_binary_roundtrip(repository)
+        cleanup_tasks(client, [execution["task_id"]])
+        owned_ids.remove(execution["task_id"])
+    finally:
+        initializer.request("POST", f"/api/v1/system/engines/{source_engine_id}/access_grants/{grant_id}/revoke",
+                            (200,), {"reason": "Disposable ClickHouse binary roundtrip completed"})
+        client.request("POST", "/api/v1/system/engine-access/read-checks/manager-preview", (403,), {"targets": [grant["catalog_path"]]})
+    commit = subprocess.run(["git", "rev-parse", "HEAD"], cwd=repository, capture_output=True, text=True, check=True, timeout=10).stdout.strip()
+    proof = {"schema_version": "addp.clickhouse-binary-roundtrip/v1", "result": "passed", "run_id": run_id,
+             "git_commit": commit, "identity": identity, "source_engine_id": source_engine_id, "source_scan_execution_id": source_scan,
+             "source_read_grant_id": grant_id, "source_read_denied_after_revoke": True, "target_engine_id": target_engine_id,
+             **execution, "physical": physical, "task_deleted_and_read_back_404": True}
+    artifact = Path(required_environment("ADDP_ONLINE_ARTIFACT_DIR")) / "clickhouse-binary-roundtrip.json"
+    artifact.write_text(json.dumps(proof, sort_keys=True) + "\n")
+    return proof
+
+
+def read_binary_roundtrip(repository):
+    checked = subprocess.run(["bash", "business/scripts/online-transfer-relational-sql-etl-fixture.sh", "binary-roundtrip"],
+                             cwd=repository, capture_output=True, text=True, timeout=60)
+    if checked.returncode != 0:
+        raise SuiteError("ClickHouse binary roundtrip physical verification failed")
+    return validate_binary_physical(json.loads(checked.stdout))
 
 
 def native_task(name: str, source_locator: str, parent_locator: str, target: str, region_source: str, region_target: str) -> dict[str, object]:
@@ -1623,12 +1737,19 @@ def main() -> int:
         stale = suite_task_ids(client)
         if stale:
             raise SuiteError("stale Transfer relational SQL ETL Online tasks exist before the run")
-        scan_execution_id = wait_for_scan(client, engine_id, deadline)
+        initializer = GatewayClient(required_environment("GATEWAY_URL"), required_environment("ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN"), timeout)
+        os.environ.pop("ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN")
+        scan_execution_id = wait_for_scan(initializer, engine_id, deadline)
+        REGISTRATION.initialize_exact_record_read_grants(initializer, client, tenant_id,
+            [(engine_id, "schema", "public", SOURCE_TABLE)], scan_preparation=True)
         source = find_item(client, engine_id, f"public.{SOURCE_TABLE}", "table")
         convergence_timeout = float(os.environ.get("ADDP_ONLINE_CONVERGENCE_TIMEOUT_SECONDS", "180"))
         if convergence_timeout <= 0:
             raise SuiteError("ADDP_ONLINE_CONVERGENCE_TIMEOUT_SECONDS must be greater than zero")
         repository = Path(os.environ.get("ADDP_ONLINE_REPOSITORY", Path(__file__).parents[2])).resolve()
+        binary = run_binary_roundtrip(client, initializer, repository, run_id, identity_report, engine_id, source, owned_name,
+                                      convergence_timeout, owned_ids)
+        del initializer
         wait_manager_read_boundary(client, engine_id, time.monotonic() + convergence_timeout)
         object_upload = run_object_upload(client, repository, identity_report, convergence_timeout)
         manager_import = run_manager_import(client, engine_id, identity_report, convergence_timeout, owned_ids, outsider)
@@ -1653,7 +1774,7 @@ def main() -> int:
         if residual:
             raise SuiteError("browser left the owned Transfer relational SQL ETL task behind")
         report = {
-            "schema_version": "addp.transfer-relational-sql-etl-online/v14",
+            "schema_version": "addp.transfer-relational-sql-etl-online/v15",
             "suite": "transfer-relational-sql-etl",
             "run_id": run_id,
             "result": "passed",
@@ -1672,13 +1793,14 @@ def main() -> int:
             "manager_import": manager_import,
             "object_upload": object_upload,
             "write_failures": write_failures,
-            "created_resources": 16,
-            "deleted_resources": 16,
+            "clickhouse_binary_roundtrip": binary,
+            "created_resources": 17,
+            "deleted_resources": 17,
             "residual_resources": 0,
         }
         print(json.dumps(report, sort_keys=True))
         return 0
-    except (OSError, ValueError, SuiteError) as error:
+    except (OSError, ValueError, SuiteError, REGISTRATION.RegistrationError) as error:
         if client is not None and owned_name:
             try:
                 cleanup_definitions(client, owned_paths)

@@ -782,6 +782,10 @@ func TestTransferLineageFixtureUsesExactConsumerPermissions(t *testing.T) {
 	if err != nil || len(permissions) != 23 || !needsEngineProvisioner("transfer-relational-sql-etl") {
 		t.Fatalf("invalid transfer identity contract: %v %v", permissions, err)
 	}
+	wantInitializer := append(slices.Clone(sourceInitializerPermissions), "meta.scan_task.execute", "meta.scan_task.read")
+	if !slices.Equal(suiteSourceInitializerPermissions("transfer-relational-sql-etl"), wantInitializer) {
+		t.Fatal("Transfer requires a separate source Grant and scan preparer")
+	}
 	for _, required := range []string{
 		"monitor.execution.read",
 		"develop.task.create", "develop.task.read", "develop.task.execute", "develop.task.delete",

@@ -125,9 +125,9 @@ func suiteSourceInitializerPermissions(suite string) []string {
 			return append(slices.Clone(sourceInitializerPermissions), "meta.scan_task.execute", "meta.scan_task.read")
 		}
 		return nil
-	case "raster-workflow-capacity", "ftp-consumer-flow", "manager-internal-artifact-lineage", "highgo-consumer-flow", "security-mysql-owner-protection", "security-plaintext-access", "hdfs-spark-consumer-flow", "cleanup-native-effects", "opengauss-consumer-flow":
+	case "raster-workflow-capacity", "ftp-consumer-flow", "manager-internal-artifact-lineage", "highgo-consumer-flow", "security-mysql-owner-protection", "security-plaintext-access", "hdfs-spark-consumer-flow", "cleanup-native-effects", "opengauss-consumer-flow", "transfer-relational-sql-etl":
 		permissions := append([]string{}, sourceInitializerPermissions...)
-		if suite == "hdfs-spark-consumer-flow" || suite == "security-mysql-owner-protection" || (suite == "manager-internal-artifact-lineage" && os.Getenv("ADDP_ONLINE_MANAGER_CASE") == "native-envi") {
+		if suite == "hdfs-spark-consumer-flow" || suite == "security-mysql-owner-protection" || suite == "transfer-relational-sql-etl" || (suite == "manager-internal-artifact-lineage" && os.Getenv("ADDP_ONLINE_MANAGER_CASE") == "native-envi") {
 			permissions = append(permissions, "meta.scan_task.execute", "meta.scan_task.read")
 		}
 		return permissions

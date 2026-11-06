@@ -97,6 +97,8 @@ case "$1" in
         printf 'native-target:%s\n' "$*" >> "$ADDP_TEST_FIXTURE_LOG"
         case "$*" in
           *"SELECT 1"*) echo 1 ;;
+          *"FORMAT JSONEachRow"*)
+            printf '%s\n' '{"id":3,"payload_hex":"","byte_length":0,"is_null":false,"label":"empty"}' ;;
           *"SELECT COUNT(*)"*"write_failure"*) printf "${ADDP_TEST_COMMITTED_ROWS:-1001}\t1\t1000\t0\n" ;;
           *"SELECT COUNT(*)"*"json_failure"*) printf "1\t1\t0\t0\n" ;;
         esac
@@ -144,6 +146,9 @@ case "$1" in
          fi ;;
     esac
     case " $* " in
+      *"information_schema.columns"*"addp_online_transfer_binary_target"*) echo 'bytea:YES' ;;
+      *"json_build_object"*"addp_online_transfer_binary_target"*)
+        printf '%s\n' '{"id":4,"payload_hex":null,"byte_length":null,"is_null":true,"label":"null"}' ;;
       *"to_regclass('public.addp_online_transfer_config_check')"*) echo "${ADDP_TEST_PRECHECK_TARGET_ABSENT:-t}" ;;
       *"information_schema.columns"*"addp_wide"*) echo "${ADDP_TEST_WIDE_COLUMNS:-500}" ;;
       *"differences"*) echo "${ADDP_TEST_WIDE_DIFFERENCES:-0}" ;;
@@ -252,6 +257,21 @@ esac
         failed = self.run_fixture('manager-import', ADDP_TEST_IMPORT_GEOMETRY_FAIL='1')
         self.assertNotEqual(failed.returncode, 0)
         self.assertIn('Manager import rows or geometry differ', failed.stderr)
+
+    def test_binary_roundtrip_reads_each_owned_database_independently(self):
+        started = self.run_fixture('start')
+        self.assertEqual(started.returncode, 0, started.stderr)
+        self.assertIn('addp:type=bytes', self.log.read_text())
+        proof = self.run_fixture('binary-roundtrip')
+        self.assertEqual(proof.returncode, 0, proof.stderr)
+        facts = json.loads(proof.stdout)
+        self.assertEqual(facts['source_rows'][0]['payload_hex'], '')
+        self.assertIsNone(facts['target_rows'][0]['payload_hex'])
+        self.assertEqual(facts['target_column'], 'bytea:YES')
+        self.clickhouse_state.write_text('different-owner')
+        self.assertNotEqual(self.run_fixture('binary-roundtrip').returncode, 0)
+        self.clickhouse_state.write_text('transfer-relational-sql-etl')
+        self.assertEqual(self.run_fixture('stop').returncode, 0)
 
     def test_rejects_import_physical_geometry_failure(self):
         self.assertEqual(self.run_fixture('start').returncode, 0)

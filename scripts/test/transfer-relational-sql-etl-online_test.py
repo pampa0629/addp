@@ -332,6 +332,103 @@ class TransferRelationalSQLETLOnlineTest(unittest.TestCase):
         self.assertEqual(proof['clickhouse']['cases']['invalid_json']['records_written'], 0)
         self.assertEqual(len({value['execution_id'] for value in executions}), 4)
 
+    def test_binary_physical_requires_exact_bytes_nullability_and_text(self):
+        rows = [
+            dict(id=1, payload_hex="4100FF42", byte_length=4, is_null=False, label="中文"),
+            dict(id=2, payload_hex="4142", byte_length=2, is_null=False, label="AB"),
+            dict(id=3, payload_hex="", byte_length=0, is_null=False, label="empty"),
+            dict(id=4, payload_hex=None, byte_length=None, is_null=True, label="null"),
+        ]
+        proof = {"source_rows": rows, "target_rows": copy.deepcopy(rows), "target_column": "bytea:YES"}
+        self.assertEqual(ONLINE.validate_binary_physical(proof), proof)
+        for mutate in (
+            lambda p: p.update(target_column="text:YES"),
+            lambda p: p["source_rows"][0].update(payload_hex="410042"),
+            lambda p: p["target_rows"][0].update(label="损坏"),
+            lambda p: p["target_rows"][2].update(payload_hex=None, byte_length=None, is_null=True),
+            lambda p: p["target_rows"][3].update(payload_hex="", byte_length=0, is_null=False),
+            lambda p: p["target_rows"].append(p["target_rows"][0]),
+        ):
+            changed = copy.deepcopy(proof)
+            mutate(changed)
+            with self.assertRaises(ONLINE.SuiteError):
+                ONLINE.validate_binary_physical(changed)
+
+    def test_binary_worker_evidence_rejects_missing_batches_and_other_attempts(self):
+        execution_id = str(uuid.uuid4())
+        counters = [dict(batch_index=index, batch_records=count, records_read=total, records_written=total)
+                    for index, count, total in ((1, 2, 2), (2, 2, 4), (2, 0, 4))]
+        page = {"has_more": False, "items": [
+            dict(execution_id=execution_id, attempt=1, kind=kind, counters=values)
+            for kind, values in [("started", {}), *(("progress", value) for value in counters), ("completed", {})]
+        ]}
+        self.assertEqual(ONLINE.validate_binary_worker_events(page, execution_id), counters[:2])
+        for mutate in (
+            lambda p: p["items"].pop(1),
+            lambda p: p["items"][2].update(attempt=2),
+            lambda p: p["items"][-1].update(execution_id=str(uuid.uuid4())),
+            lambda p: p["items"][1]["counters"].update(records_written=1),
+        ):
+            changed = copy.deepcopy(page)
+            mutate(changed)
+            with self.assertRaises(ONLINE.SuiteError):
+                ONLINE.validate_binary_worker_events(changed, execution_id)
+
+    def test_binary_scope_uses_distinct_grant_preparer_and_checks_revocation(self):
+        client, initializer = Mock(), Mock()
+        identity = {"principal_id": "7", "tenant_id": "42"}
+        grant_id = str(uuid.uuid4())
+        target = {"engine_id": 9, "segments": [{"name": ONLINE.BINARY_SOURCE}]}
+        grant = {"request_id": grant_id, "catalog_path": target}
+        owned = [11]
+        with tempfile.TemporaryDirectory() as directory, ExitStack() as stack:
+            stack.enter_context(patch.dict(ONLINE.os.environ, {"ADDP_ONLINE_ARTIFACT_DIR": directory, "ADDP_ONLINE_TEST_CLICKHOUSE_ENGINE_ID": "9"}))
+            stack.enter_context(patch.object(ONLINE, "validate_engine"))
+            scan = stack.enter_context(patch.object(ONLINE, "wait_for_scan", return_value="scan-id"))
+            prepare = stack.enter_context(patch.object(ONLINE.REGISTRATION, "initialize_exact_record_read_grants", return_value=[grant]))
+            execute = stack.enter_context(patch.object(ONLINE, "execute_binary_roundtrip", return_value={"task_id": 11}))
+            stack.enter_context(patch.object(ONLINE, "read_binary_roundtrip", return_value={"target_column": "bytea:YES"}))
+            cleanup = stack.enter_context(patch.object(ONLINE, "cleanup_tasks"))
+            stack.enter_context(patch.object(ONLINE.subprocess, "run", return_value=SimpleNamespace(stdout="1" * 40)))
+            proof = ONLINE.run_binary_roundtrip(client, initializer, Path(directory), "test-run", identity, 3, {}, "task", 30, owned)
+            self.assertEqual(json.loads((Path(directory) / "clickhouse-binary-roundtrip.json").read_text()), proof)
+            execute.side_effect = ONLINE.SuiteError("Worker failed")
+            with self.assertRaisesRegex(ONLINE.SuiteError, "Worker failed"):
+                ONLINE.run_binary_roundtrip(client, initializer, Path(directory), "test-run", identity, 3, {}, "task", 30, owned)
+        self.assertEqual(scan.call_args.args[:2], (initializer, 9))
+        self.assertEqual(scan.call_args.kwargs["targets"], ["addp://engine/9/path/transfer_fixture/addp_online_transfer_binary_source?type=table"])
+        self.assertEqual(prepare.call_args.args, (initializer, client, 42, [(9, "database", "transfer_fixture", "addp_online_transfer_binary_source")]))
+        self.assertIs(execute.call_args.args[0], client)
+        cleanup.assert_called_once_with(client, [11])
+        self.assertEqual(owned, [])
+        self.assertEqual(initializer.request.call_count, 2)
+        self.assertEqual(initializer.request.call_args.args[:3], ("POST", f"/api/v1/system/engines/9/access_grants/{grant_id}/revoke", (200,)))
+        client.request.assert_called_with("POST", "/api/v1/system/engine-access/read-checks/manager-preview", (403,), {"targets": [target]})
+
+    def test_binary_task_maps_nullable_bytes_into_the_observed_postgresql_schema(self):
+        client = Mock()
+        client.request.side_effect = [SimpleNamespace(payload=[{"name": "payload", "type": "bytes", "native_type": "Nullable(String)", "nullable": True}]),
+                                      SimpleNamespace(payload={})]
+        source = {"id": 5, "item_type": "table", "full_name": ONLINE.BINARY_SOURCE}
+        execution_id = str(uuid.uuid4())
+        execution = {"execution_id": execution_id, "task_id": 11, "status": "success", "trigger_type": "manual", "trigger_by": 7,
+                     "records_read": 4, "records_written": 4}
+        with patch.object(ONLINE, "find_item", return_value=source), \
+             patch.object(ONLINE.SUPPORT, "create_and_run_task", return_value=(11, execution)) as run, \
+             patch.object(ONLINE, "validate_binary_worker_events", return_value=[]) as events:
+            result = ONLINE.execute_binary_roundtrip(client, {"principal_id": "7"}, 9, 3, {"node_id": 8}, "fixture", 30, [])
+        task = run.call_args.args[1]
+        self.assertFalse(task["enabled"])
+        self.assertEqual(task["config"]["runtime"], {"boundary": "bounded"})
+        self.assertEqual(task["config"]["source"], {"locator": "addp://engine/9/path/transfer_fixture/addp_online_transfer_binary_source?type=table&item_id=5",
+                                                   "data_type": "table", "representation": "native"})
+        self.assertEqual(task["config"]["target"]["parent_locator"], "addp://engine/3/path/public?type=schema&node_id=8")
+        self.assertEqual(task["config"]["target"]["name"], ONLINE.BINARY_TARGET)
+        self.assertEqual(task["config"]["transforms"][0]["fields"][1], {"source": "payload", "target": "payload", "target_type": "bytes", "nullable": True})
+        self.assertEqual(task["config"]["batch_size"], 2)
+        events.assert_called_once_with({}, execution_id)
+        self.assertEqual(result["execution_id"], execution_id)
+
     def test_direct_suite_entry_loads_shared_helpers_without_pythonpath(self):
         result = subprocess.run([sys.executable, str(SCRIPT.resolve())], cwd=SCRIPT.resolve().parents[2],
                                 env={'PATH': os.environ['PATH']}, capture_output=True, text=True, timeout=10)
@@ -930,13 +1027,13 @@ class TransferRelationalSQLETLOnlineTest(unittest.TestCase):
         self.assertEqual((fields[1]["source"], fields[1]["target"]), ("region", "region_name"))
         self.assertEqual((fields[2]["precision"], fields[2]["scale"]), (8, 2))
         self.assertEqual((fields[3]["source"], fields[3]["default"]), ("", "online"))
-        self.assertEqual(ONLINE.owned_task_names(name), {name, name + "_native", name + "_replace", name + "_hop", name + "_mongodb", name + "_multi", name + "_wide", name + "_wide_hop", name + "_doris_late_execute_failure", name + "_doris_invalid_json", name + "_clickhouse_late_execute_failure", name + "_clickhouse_invalid_json"})
+        self.assertEqual(ONLINE.owned_task_names(name), {name, name + "_native", name + "_replace", name + "_hop", name + "_mongodb", name + "_multi", name + "_wide", name + "_wide_hop", name + "_doris_late_execute_failure", name + "_doris_invalid_json", name + "_clickhouse_late_execute_failure", name + "_clickhouse_invalid_json", name + "_binary"})
 
     def test_cleanup_selection_is_limited_to_the_exact_run_family(self):
         name = ONLINE.task_name("run-123")
         names = sorted(ONLINE.owned_task_names(name)) + [ONLINE.task_name("another-run"), name + "_unrelated"]
         client = SimpleNamespace(request=lambda *args: SimpleNamespace(payload={"items": [{"id": index + 1, "name": value} for index, value in enumerate(names)], "total": len(names)}))
-        self.assertEqual(ONLINE.suite_task_ids(client, exact_name=name), list(range(1, 13)))
+        self.assertEqual(ONLINE.suite_task_ids(client, exact_name=name), list(range(1, 14)))
 
     def test_online_identity_requires_lineage_and_manager_permissions(self):
         self.assertFalse(any(key.startswith("system.engine.") for key in ONLINE.REQUIRED_PERMISSIONS))
@@ -958,7 +1055,8 @@ class TransferRelationalSQLETLOnlineTest(unittest.TestCase):
                        "ADDP_ONLINE_TEST_ENGINE_NAME": "fixture", "ADDP_ONLINE_TEST_MONGODB_ENGINE_ID": "4", "ADDP_ONLINE_TEST_MONGODB_ENGINE_NAME": "mongo-fixture", "ADDP_ONLINE_TEST_RUN_ID": "run-123", "CONSOLE_URL": "http://127.0.0.1:5170",
                        "GATEWAY_URL": "http://127.0.0.1:8000", "ADDP_ONLINE_TEST_USER_ACCESS_TOKEN": "fixture-token",
                        "ADDP_ONLINE_TEST_USER_USERNAME": "fixture", "ADDP_ONLINE_TEST_USER_PASSWORD": "fixture-only", "ADDP_ONLINE_IMPORT_OUTSIDER_ACCESS_TOKEN": "fixture-outsider",
-                       "ADDP_ONLINE_ARTIFACT_DIR": "/tmp/fixture-only", "ADDP_ONLINE_CONVERGENCE_TIMEOUT_SECONDS": "30"}
+                       "ADDP_ONLINE_ARTIFACT_DIR": "/tmp/fixture-only", "ADDP_ONLINE_CONVERGENCE_TIMEOUT_SECONDS": "30",
+                       "ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN": "fixture-initializer"}
         client = object()
         def imported(*args):
             args[4].extend([42, 10])
@@ -974,6 +1072,8 @@ class TransferRelationalSQLETLOnlineTest(unittest.TestCase):
             stack.enter_context(patch.object(ONLINE, "validate_engine"))
             owned = stack.enter_context(patch.object(ONLINE, "suite_task_ids", side_effect=[[], [10, 11]]))
             stack.enter_context(patch.object(ONLINE, "wait_for_scan"))
+            stack.enter_context(patch.object(ONLINE.REGISTRATION, "initialize_exact_record_read_grants"))
+            stack.enter_context(patch.object(ONLINE, "run_binary_roundtrip"))
             stack.enter_context(patch.object(ONLINE, "find_item"))
             stack.enter_context(patch.object(ONLINE, "run_object_upload", return_value={"single_source_facts_verified": True}))
             stack.enter_context(patch.object(ONLINE, "run_manager_import", side_effect=imported))
@@ -1003,7 +1103,8 @@ class TransferRelationalSQLETLOnlineTest(unittest.TestCase):
                        "ADDP_ONLINE_TEST_ENGINE_NAME": "fixture", "ADDP_ONLINE_TEST_MONGODB_ENGINE_ID": "4", "ADDP_ONLINE_TEST_MONGODB_ENGINE_NAME": "mongo-fixture",
                        "ADDP_ONLINE_TEST_RUN_ID": "run-123", "CONSOLE_URL": "http://127.0.0.1:5170", "GATEWAY_URL": "http://127.0.0.1:8000",
                        "ADDP_ONLINE_TEST_USER_ACCESS_TOKEN": "fixture-token", "ADDP_ONLINE_TEST_USER_USERNAME": "fixture",
-                       "ADDP_ONLINE_TEST_USER_PASSWORD": "fixture-only", "ADDP_ONLINE_IMPORT_OUTSIDER_ACCESS_TOKEN":"fixture-outsider", "ADDP_ONLINE_ARTIFACT_DIR": "/tmp/fixture-only"}
+                       "ADDP_ONLINE_TEST_USER_PASSWORD": "fixture-only", "ADDP_ONLINE_IMPORT_OUTSIDER_ACCESS_TOKEN":"fixture-outsider", "ADDP_ONLINE_ARTIFACT_DIR": "/tmp/fixture-only",
+                       "ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN": "fixture-initializer"}
         client = object()
         pg_source = {"id": 5, "node_id": 9, "full_name": "public." + ONLINE.SOURCE_TABLE, "item_type": "table"}
         mongo_source = {"id": 20, "node_id": 21, "full_name": ONLINE.MONGODB_SOURCE, "item_type": "collection"}
@@ -1031,6 +1132,7 @@ class TransferRelationalSQLETLOnlineTest(unittest.TestCase):
             stack.enter_context(patch.object(ONLINE, "validate_engine", side_effect=[{"engine_type": "postgresql"}, {"engine_type": "mongodb"}]))
             stack.enter_context(patch.object(ONLINE, "suite_task_ids", return_value=[]))
             stack.enter_context(patch.object(ONLINE, "wait_for_scan", return_value="scan-id"))
+            prepare = stack.enter_context(patch.object(ONLINE.REGISTRATION, "initialize_exact_record_read_grants"))
             stack.enter_context(patch.object(ONLINE, "find_item", side_effect=find))
             stack.enter_context(patch.object(ONLINE, "run_native_lineage", side_effect=native))
             mongodb = stack.enter_context(patch.object(ONLINE, "run_mongodb_lineage", return_value={"rerun_verified": True}))
@@ -1038,7 +1140,8 @@ class TransferRelationalSQLETLOnlineTest(unittest.TestCase):
             stack.enter_context(patch.object(ONLINE, "run_multi_source_lineage", return_value={"multiple_origins_verified": True}))
             stack.enter_context(patch.object(ONLINE, "run_wide_lineage", return_value={"node_count": 1500, "edge_count": 1000}))
             stack.enter_context(patch.object(ONLINE, "cleanup_definitions"))
-            stack.enter_context(patch.object(ONLINE, "run_write_failures", return_value={}))
+            stack.enter_context(patch.object(ONLINE, "run_write_failures", return_value={"clickhouse": {"engine_id": 9}}))
+            binary = stack.enter_context(patch.object(ONLINE, "run_binary_roundtrip", return_value={"task_deleted_and_read_back_404": True}))
             stack.enter_context(patch.object(ONLINE, "run_browser", return_value={}))
             stack.enter_context(patch.object(ONLINE, "run_object_upload", return_value={"single_source_facts_verified": True}))
             stack.enter_context(patch.object(ONLINE, "run_manager_import", return_value={"automatic_scan_verified": True}))
@@ -1048,12 +1151,15 @@ class TransferRelationalSQLETLOnlineTest(unittest.TestCase):
             stack.enter_context(patch.object(ONLINE.sys, "stdout", output))
             self.assertEqual(ONLINE.main(), 0)
         self.assertEqual(mongodb.call_args.args[:5], (client, 4, 3, mongo_source, pg_source))
+        prepare.assert_called_once_with(client, client, 42, [(3, "schema", "public", ONLINE.SOURCE_TABLE)], scan_preparation=True)
+        self.assertEqual(binary.call_args.args[5:7], (3, pg_source))
         trace.assert_called_once()
         report = json.loads(output.getvalue())
-        self.assertEqual(report["schema_version"], "addp.transfer-relational-sql-etl-online/v14")
+        self.assertEqual(report["schema_version"], "addp.transfer-relational-sql-etl-online/v15")
         self.assertEqual(report["scan_trace_visibility"], {"object_upload": {}, "bounded_import": {}})
-        self.assertEqual(report["created_resources"], 16)
-        self.assertEqual(report["deleted_resources"], 16)
+        self.assertEqual(report["created_resources"], 17)
+        self.assertEqual(report["deleted_resources"], 17)
+        self.assertTrue(report["clickhouse_binary_roundtrip"]["task_deleted_and_read_back_404"])
         self.assertTrue(report["mongodb_field_lineage"]["rerun_verified"])
         self.assertEqual(report["mongodb_engine"]["engine_type"], "mongodb")
 

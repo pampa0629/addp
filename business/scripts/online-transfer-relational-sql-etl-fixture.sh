@@ -16,6 +16,8 @@ DWD_TARGET=addp_online_transfer_dwd_activity
 WIDE_SOURCE=addp_wide_source
 WIDE_TARGET=addp_wide_target
 WIDE_DOWNSTREAM=addp_wide_downstream
+BINARY_SOURCE=addp_online_transfer_binary_source
+BINARY_TARGET=addp_online_transfer_binary_target
 
 fail() {
   echo "Online Transfer relational SQL ETL fixture failed: $*" >&2
@@ -36,8 +38,8 @@ database=transfer_fixture
 owner=transfer-relational-sql-etl
 action=${1:-}
 case "$action" in
-  start|evolve|write-failures|manager-import|object-facts|verify|stop|status) ;;
-  *) fail "usage: bash business/scripts/online-transfer-relational-sql-etl-fixture.sh start|evolve|write-failures|manager-import|object-facts|verify|stop|status" ;;
+  start|evolve|write-failures|binary-roundtrip|manager-import|object-facts|verify|stop|status) ;;
+  *) fail "usage: bash business/scripts/online-transfer-relational-sql-etl-fixture.sh start|evolve|write-failures|binary-roundtrip|manager-import|object-facts|verify|stop|status" ;;
 esac
 [ "$#" -eq 1 ] || fail "exactly one action is required"
 
@@ -176,6 +178,12 @@ start_write_failure_targets() {
     doris_sql -e "CREATE TABLE transfer_fixture.$target (id BIGINT NOT NULL, document STRING NULL, payload STRING NULL, label STRING NULL) DUPLICATE KEY(id) PARTITION BY RANGE(id) (PARTITION bounded_write VALUES LESS THAN (\"1001\")) DISTRIBUTED BY HASH(id) BUCKETS 1 PROPERTIES (\"replication_num\"=\"1\"); INSERT INTO transfer_fixture.$target VALUES (0, '{\"sentinel\":true}', UNHEX('00ff41'), 'plain {');" >/dev/null
     clickhouse_sql --multiquery --query "CREATE TABLE transfer_fixture.$target (id Int64, document Nullable(String), payload Nullable(String), label Nullable(String), CONSTRAINT fixture_label_length CHECK length(label) <= 8) ENGINE=MergeTree ORDER BY tuple(); INSERT INTO transfer_fixture.$target VALUES (0, '{\"sentinel\":true}', unhex('00ff41'), 'plain {');" >/dev/null
   done
+  clickhouse_sql --multiquery --query "
+    CREATE TABLE transfer_fixture.$BINARY_SOURCE (
+      id Int32, payload Nullable(String) COMMENT 'Transfer fixture\\naddp:type=bytes', label String
+    ) ENGINE=MergeTree ORDER BY id;
+    INSERT INTO transfer_fixture.$BINARY_SOURCE VALUES
+      (1, unhex('4100FF42'), '中文'), (2, unhex('4142'), 'AB'), (3, '', 'empty'), (4, NULL, 'null');" >/dev/null
   python3 - <<'PY_DESCRIPTOR_FAILURES'
 import json, os
 from pathlib import Path
@@ -191,6 +199,24 @@ for engine_type, port, user, password in (
                        'host': '127.0.0.1', 'port': int(port), 'database': 'transfer_fixture', 'user': user, 'password': password}}, output)
 PY_DESCRIPTOR_FAILURES
   unset CLICKHOUSE_PASSWORD TRANSFER_DORIS_PORT TRANSFER_CLICKHOUSE_PORT
+}
+
+read_binary_roundtrip() {
+  assert_owned
+  assert_owned "$clickhouse_container"
+  local source_rows target_rows target_type
+  source_rows=$(clickhouse_sql --query "SELECT id, hex(payload) AS payload_hex, toUInt32(length(payload)) AS byte_length,
+    CAST(isNull(payload), 'Bool') AS is_null, label FROM transfer_fixture.$BINARY_SOURCE ORDER BY id FORMAT JSONEachRow")
+  target_rows=$(postgres_sql -Atc "SELECT json_build_object('id', id, 'payload_hex', upper(encode(payload, 'hex')),
+    'byte_length', octet_length(payload), 'is_null', payload IS NULL, 'label', label) FROM public.$BINARY_TARGET ORDER BY id")
+  target_type=$(postgres_sql -Atc "SELECT data_type || ':' || is_nullable FROM information_schema.columns
+    WHERE table_schema='public' AND table_name='$BINARY_TARGET' AND column_name='payload'")
+  python3 - "$source_rows" "$target_rows" "$target_type" <<'PY_BINARY'
+import json, sys
+
+source, target = ([json.loads(line) for line in rows.splitlines()] for rows in sys.argv[1:3])
+print(json.dumps({'source_rows': source, 'target_rows': target, 'target_column': sys.argv[3]}))
+PY_BINARY
 }
 
 verify_write_failures() {
@@ -427,6 +453,9 @@ PY_DESCRIPTOR
     ;;
   write-failures)
     verify_write_failures
+    ;;
+  binary-roundtrip)
+    read_binary_roundtrip
     ;;
   evolve)
     assert_owned
