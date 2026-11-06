@@ -62,3 +62,38 @@ func TestVFFSKCRejectsInvalidSubstitutionDeclarationScopeAndCycles(t *testing.T)
 		}
 	}
 }
+
+func TestVFFSKCSubstitutionChecksInheritedParticleOccurrences(t *testing.T) {
+	const base = `<x:complexType name="Ancestor"><x:sequence><x:element name="Value" type="x:int"/></x:sequence></x:complexType><x:complexType name="Base"><x:complexContent><x:extension base="r:Ancestor"><x:sequence><x:element name="Optional" type="x:int" minOccurs="0"/></x:sequence></x:extension></x:complexContent></x:complexType>`
+	const groups = `<x:element name="Head" type="r:Base"/><x:element name="Member" type="r:MemberType" substitutionGroup="r:Head"/><x:element name="Unrelated" type="r:Base" substitutionGroup="r:Head"/>`
+	for _, tc := range []struct {
+		name, particle, diagnostic string
+	}{
+		{"exact", `<x:element name="Value" type="x:int"/>`, ""},
+		{"wider maximum", `<x:element name="Value" type="x:int" maxOccurs="2"/>`, "widens Value maxOccurs from 1 to 2"},
+		{"unbounded maximum", `<x:element name="Value" type="x:int" maxOccurs="unbounded"/>`, "widens Value maxOccurs from 1 to unbounded"},
+		{"lower minimum", `<x:element name="Value" type="x:int" minOccurs="0"/>`, "lowers Value minOccurs from 1 to 0"},
+		{"required omission", "", "omits required Value"},
+		{"different namespace", `<x:element name="Value" type="x:int" form="qualified"/>`, "occurrence restriction unproved"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			files := skcDocumentFiles(t)
+			derived := `<x:complexType name="MemberType"><x:complexContent><x:restriction base="r:Base"><x:sequence>` + tc.particle + `</x:sequence></x:restriction></x:complexContent></x:complexType>`
+			files["Schemas/root.xsd"] = skcGraphSchema("urn:r", base+derived+groups)
+			files["Schemas/root.xsd.filter"] = []byte("MemberType")
+			facts := skcGraphRead(t, files)[0].substitutions
+			if len(facts.affiliations) != 2 {
+				t.Fatalf("lost direct affiliations: %#v", facts.affiliations)
+			}
+			if tc.diagnostic == "" {
+				if len(facts.pairs) != 2 || len(facts.pending) != 0 {
+					t.Fatalf("valid occurrence restriction unresolved: %#v", facts)
+				}
+				return
+			}
+			if len(facts.pairs) != 1 || facts.pairs[0].member.name != "Unrelated" || len(facts.pending) != 1 || facts.pending[0].member.name != "Member" || !strings.Contains(facts.pending[0].reason, tc.diagnostic) {
+				t.Fatalf("unexpected restriction outcome: %#v", facts)
+			}
+		})
+	}
+}

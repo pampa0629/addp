@@ -91,43 +91,44 @@ func (b *vffSKCBinder) substitutionType(n *vffXMLNode, raw string) (vffSKCSubsti
 }
 
 // Checks the named derivation chain and its declared constraints. Particle
-// language inclusion and XML instance validation belong to other stages.
-func (b *vffSKCBinder) substitutionDerivation(source, target vffSKCSubstitutionType) (methods, blocks vffSKCDerivationFlags, known bool, err error) {
+// occurrence restrictions are checked for flat sequences. XML instance validation
+// and full particle language inclusion belong to other stages.
+func (b *vffSKCBinder) substitutionDerivation(source, target vffSKCSubstitutionType) (methods, blocks vffSKCDerivationFlags, issue string, err error) {
 	if source.name.Local == "" || target.name.Local == "" {
-		return 0, 0, false, nil
+		return 0, 0, "XSD substitution type derivation unproved", nil
 	}
 	seen := map[*vffXMLNode]bool{}
 	for current := source; current != target; {
 		node := current.node
 		if node == nil || node.name.Local != "complexType" {
-			return 0, 0, false, nil
+			return 0, 0, "XSD substitution type derivation unproved", nil
 		}
 		if seen[node] {
-			return 0, 0, false, fmt.Errorf("cyclic XSD substitution type derivation")
+			return 0, 0, "XSD substitution type derivation unproved", fmt.Errorf("cyclic XSD substitution type derivation")
 		}
 		seen[node] = true
 		if err := b.tick(len(seen)); err != nil {
-			return 0, 0, false, err
+			return 0, 0, "XSD substitution type derivation unproved", err
 		}
 		var content *vffXMLNode
 		for _, child := range node.children {
 			if err := b.tick(0); err != nil {
-				return 0, 0, false, err
+				return 0, 0, "XSD substitution type derivation unproved", err
 			}
 			if child.name.Local == "annotation" {
 				continue
 			}
 			if content != nil || child.name.Local != "complexContent" {
-				return 0, 0, false, nil
+				return 0, 0, "XSD substitution type derivation unproved", nil
 			}
 			content = child
 		}
 		if content == nil || len(content.children) != 1 || strings.TrimSpace(content.text) != "" {
-			return 0, 0, false, nil
+			return 0, 0, "XSD substitution type derivation unproved", nil
 		}
 		derivation := content.children[0]
 		if strings.TrimSpace(derivation.text) != "" {
-			return 0, 0, false, nil
+			return 0, 0, "XSD substitution type derivation unproved", nil
 		}
 		method := vffSKCExtension
 		switch derivation.name.Local {
@@ -136,28 +137,34 @@ func (b *vffSKCBinder) substitutionDerivation(source, target vffSKCSubstitutionT
 			method = vffSKCRestriction
 			supported, err := b.particleOnlyRestriction(content, derivation, len(seen))
 			if err != nil || !supported {
-				return 0, 0, false, err
+				return 0, 0, "XSD substitution type derivation unproved", err
 			}
 		default:
-			return 0, 0, false, nil
+			return 0, 0, "XSD substitution type derivation unproved", nil
 		}
 		base, err := b.substitutionType(derivation, derivation.attrs["base"])
 		if err != nil || base.node == nil || base.node.name.Local != "complexType" {
-			return 0, 0, false, err
+			return 0, 0, "XSD substitution type derivation unproved", err
+		}
+		if method == vffSKCRestriction {
+			issue, err := b.particleRestrictionIssue(derivation, base.node, len(seen))
+			if err != nil || issue != "" {
+				return 0, 0, issue, err
+			}
 		}
 		final, err := vffSKCSubstitutionFlags(base.node, "final")
 		if err != nil || final&method != 0 {
-			return 0, 0, false, err
+			return 0, 0, "XSD substitution type derivation unproved", err
 		}
 		block, err := vffSKCSubstitutionFlags(base.node, "block")
 		if err != nil {
-			return 0, 0, false, err
+			return 0, 0, "XSD substitution type derivation unproved", err
 		}
 		methods |= method
 		blocks |= block
 		current = base
 	}
-	return methods, blocks, true, nil
+	return methods, blocks, "", nil
 }
 
 func (g *vffSKCBindingGraph) readSubstitutions() (*vffSKCSubstitutionFacts, error) {
@@ -203,7 +210,7 @@ func (g *vffSKCBindingGraph) readSubstitutions() (*vffSKCSubstitutionFacts, erro
 				types[element] = typ
 			}
 		}
-		methods, _, known, err := binder.substitutionDerivation(types[member], types[head])
+		methods, _, issue, err := binder.substitutionDerivation(types[member], types[head])
 		if err != nil {
 			return nil, err
 		}
@@ -211,9 +218,12 @@ func (g *vffSKCBindingGraph) readSubstitutions() (*vffSKCSubstitutionFacts, erro
 		if err != nil {
 			return nil, err
 		}
-		verified[member] = known && methods&final == 0
+		if issue == "" && methods&final != 0 {
+			issue = "group affiliation type derivation excluded by final"
+		}
+		verified[member] = issue == ""
 		if !verified[member] {
-			result.pending = append(result.pending, vffSKCSubstitutionIssue{fact.member, name, "group affiliation type derivation unproved"})
+			result.pending = append(result.pending, vffSKCSubstitutionIssue{fact.member, name, issue})
 		}
 	}
 
@@ -252,14 +262,14 @@ func (g *vffSKCBindingGraph) readSubstitutions() (*vffSKCSubstitutionFacts, erro
 			if block&vffSKCSubstitutionBlock != 0 {
 				continue
 			}
-			methods, typeBlocks, known, err := binder.substitutionDerivation(types[member], types[head])
+			methods, typeBlocks, issue, err := binder.substitutionDerivation(types[member], types[head])
 			if err != nil {
 				return nil, err
 			}
 			witness := binder.witness(head)
-			if !known {
+			if issue != "" {
 				name := xml.Name{Space: witness.schemaNamespace, Local: witness.name}
-				result.pending = append(result.pending, vffSKCSubstitutionIssue{binder.witness(member), name, "transitive type derivation unproved"})
+				result.pending = append(result.pending, vffSKCSubstitutionIssue{binder.witness(member), name, issue})
 			} else if methods&(block|typeBlocks) == 0 {
 				result.pairs = append(result.pairs, vffSKCSubstitution{binder.witness(member), witness})
 			}
