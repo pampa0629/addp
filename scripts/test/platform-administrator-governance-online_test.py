@@ -518,6 +518,21 @@ print('accepted' if len(value)>5 else 'rejected',flush=True)
                                     for role in (*SCENE.ROLES, 'successor')))
                 self.assertEqual(set(scene.browser()), SCENE.BROWSER_PROOFS)
 
+    def test_emergency_receipt_rejects_missing_no_replay_evidence(self):
+        with tempfile.TemporaryDirectory() as folder:
+            env = {**environment(), 'ADDP_ONLINE_ARTIFACT_DIR': folder}
+            for suffix in ('FAMILY_ID', 'ACCESS_TOKEN', 'OTHER_ACCESS_TOKEN'):
+                env['ADDP_ONLINE_GOV_TARGET_' + suffix] = 'fixture-only'
+            scene = SCENE.Scenario(env)
+            receipt = Path(folder)/'emergency-browser.json'
+            proofs = SCENE.EMERGENCY_BROWSER_PROOFS - {'no_browser_write_replay'}
+            def incomplete(*args, **kwargs):
+                receipt.write_text(json.dumps({key: True for key in proofs}))
+                return type('Result', (), {'returncode': 0})()
+            with patch.object(SCENE.subprocess, 'run', side_effect=incomplete):
+                with self.assertRaisesRegex(API.SuiteError, 'browser receipt is incomplete'):
+                    scene.emergency_session_revocation()
+
     def test_totp_matches_known_rfc_counter(self):
         self.assertEqual(SCENE.totp('GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ', 59), '287082')
 

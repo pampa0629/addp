@@ -38,7 +38,8 @@ BROWSER_PROOFS = {'real_mfa', 'role_matrix', 'request_created', 'independent_rev
                   'one_time_recovery', 'secret_memory_only', 'old_session_revoked', 'new_login'}
 EMERGENCY_BROWSER_PROOFS = {'real_console', 'exact_tenant_family', 'two_independent_approvals',
                             'ten_fifteen_minute_windows', 'single_consumption_receipt', 'target_session_revoked',
-                            'unrelated_session_unchanged', 'independent_audit'}
+                            'unrelated_session_unchanged', 'independent_audit', 'committed_receipt_withheld',
+                            'original_request_reconciled_read_only', 'no_browser_write_replay'}
 CLI_DIR = ROOT/'dist/release-linux-amd64'
 OFFLINE_PROOFS = {'tty_only', 'two_real_totp_counters', 'all_principals_recovered',
                   'old_credentials_rejected', 'old_sessions_revoked', 'roles_unchanged', 'suspension_preserved',

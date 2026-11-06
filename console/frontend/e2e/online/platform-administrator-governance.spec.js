@@ -259,20 +259,63 @@ test('single-session emergency revocation through real Console', async ({ browse
     await button(ready, '执行撤销').click()
     const execution = tenantFrame.getByRole('dialog', { name: '执行撤销', exact: true })
     await expect(execution).toContainText(family)
-    const executed = writeResponse(tenant, `${tenantRequest}/execute`)
+    const executePath = `${tenantRequest}/execute`
+    const isExecution = request => new URL(request.url()).pathname === executePath && request.method() === 'POST'
+    const browserOperations = []
+    tenant.on('request', request => {
+      if (isExecution(request)) browserOperations.push('execute')
+      if (new URL(request.url()).pathname === tenantRequest && request.method() === 'GET') browserOperations.push('lookup')
+    })
+    let forwarded = false
+    let upstreamResponse
+    await tenant.route(new URL(executePath, process.env.CONSOLE_URL).href, async route => {
+      if (!isExecution(route.request())) return route.fallback()
+      try {
+        // Forward the browser's real command once, retaining only the upstream response in memory.
+        if (!forwarded) {
+          forwarded = true
+          upstreamResponse = await route.fetch({ maxRetries: 0, maxRedirects: 0 })
+        }
+      } finally {
+        await route.abort('connectionreset')
+      }
+    })
+    const disconnected = tenant.waitForEvent('requestfailed', isExecution)
     await button(execution, '确认提交').click()
-    const response = await executed
-    const command = response.request().postDataJSON()
-    const receipt = await json(response)
+    const failedRequest = await disconnected
+    expect(failedRequest.failure()?.errorText).toContain('ERR_CONNECTION_RESET')
+    const command = failedRequest.postDataJSON()
+    expect(upstreamResponse?.status()).toBe(200)
+    const receipt = await upstreamResponse.json()
     expect(receipt).toMatchObject({ id: pending.id, status: 'executed', outcome: 'revoked', execution_id: command.execution_id })
-    await expect(requestDetails(tenantFrame)).toContainText('目标会话已撤销')
 
-    stage('exact-session-effect')
+    stage('execution-receipt-withheld')
+    const unresolved = tenantFrame.getByText(`请求 ${pending.id} 的结果待核清。`, { exact: false })
+    await expect(unresolved).toBeVisible()
+    await expect(requestDetails(tenantFrame)).not.toBeVisible()
+    await expect(button(tenantFrame, '申请应急撤销')).toBeDisabled()
+    await expect(tenantFrame.getByRole('textbox', { name: '请求编号', exact: true })).toHaveValue(pending.id)
+    expect(browserOperations).toEqual(['execute'])
+
+    stage('exact-session-effect-before-lookup')
     expect((await tenant.request.get(contextPath, { headers: bearer(targetToken) })).status()).toBe(401)
     const otherAfter = await authContext(tenant, otherToken)
     expect(otherAfter.principal).toEqual(otherBefore.principal)
     expect(otherAfter.context).toEqual(otherBefore.context)
     expect(otherAfter.authorization).toEqual(otherBefore.authorization)
+
+    stage('read-only-reconciliation')
+    const reconciled = tenant.waitForResponse(r => new URL(r.url()).pathname === tenantRequest && r.request().method() === 'GET')
+    await button(tenantFrame, '按编号核清').click()
+    expect(await json(await reconciled)).toEqual(receipt)
+    const recovered = requestDetails(tenantFrame)
+    await expect(recovered).toContainText(receipt.execution_id)
+    await expect(recovered).toContainText('目标会话已撤销')
+    await expect(unresolved).toHaveCount(0)
+    await expect(button(recovered, '执行撤销')).toHaveCount(0)
+    expect(browserOperations).toEqual(['execute', 'lookup'])
+
+    // Explicit API probes run outside the page and must not count as browser writes.
     const replay = await tenant.request.post(`${tenantRequest}/execute`, { headers: bearer(executorToken), data: command })
     expect(await json(replay)).toEqual(receipt)
     const second = await tenant.request.post(`${tenantRequest}/execute`, {
@@ -298,12 +341,14 @@ test('single-session emergency revocation through real Console', async ({ browse
     for (const row of rows) expect(row.details).toMatchObject({ target_family_id: family, target_principal_id: target.principal.id })
     const auditJSON = JSON.stringify(rows)
     for (const token of [executorToken, auditToken, targetToken, otherToken]) expect(auditJSON).not.toContain(token)
+    expect(browserOperations).toEqual(['execute', 'lookup'])
   } finally {
     for (const context of contexts) await context.close()
   }
   stage('passed')
   writeFileSync(resolve(directory, 'emergency-browser.json'), JSON.stringify({
     real_console: true, exact_tenant_family: true, two_independent_approvals: true, ten_fifteen_minute_windows: true,
-    single_consumption_receipt: true, target_session_revoked: true, unrelated_session_unchanged: true, independent_audit: true
+    single_consumption_receipt: true, target_session_revoked: true, unrelated_session_unchanged: true, independent_audit: true,
+    committed_receipt_withheld: true, original_request_reconciled_read_only: true, no_browser_write_replay: true
   }))
 })
