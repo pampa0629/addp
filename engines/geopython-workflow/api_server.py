@@ -321,7 +321,7 @@ def execute_workflow_api():
         metadata = {op['id']: op for op in list_operators()}
         raster = any(requires_raster(metadata[task['operator']]) for task in data['workflow_def']['tasks'])
         admission = raster_resources.refresh() if raster else None
-        snapshot = executions.submit(GeoPythonWorkflowRunner(language=_raster_language()), data['workflow_def'], data.get('input_data'),
+        snapshot = executions.submit(GeoPythonWorkflowRunner(language=_request_language()), data['workflow_def'], data.get('input_data'),
                                      admission=admission, tenant_id=data['runtime']['tenant_id'])
         return jsonify(snapshot.to_dict()), 202
     except RasterPolicyUnavailable:
