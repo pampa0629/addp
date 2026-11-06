@@ -7,7 +7,9 @@ const client = vi.hoisted(() => ({
   delete: vi.fn()
 }))
 
-vi.mock('./client', () => ({ default: client }))
+const explicitWriteClient = vi.hoisted(() => ({ post: vi.fn() }))
+
+vi.mock('./client', () => ({ default: client, explicitWriteClient }))
 
 import { iamAPI } from './iam'
 
@@ -203,9 +205,9 @@ describe('IAM management API contract', () => {
     expect(client.post).toHaveBeenNthCalledWith(2, '/system/auth/mfa/totp-enrollment-verifications', {
       enrollment_token: 'addp_mfe_token', code: '123456'
     }, { withCredentials: true })
-    expect(client.post).toHaveBeenNthCalledWith(3, '/system/auth/mfa/step-up-challenges', null, { withCredentials: true })
-    expect(client.post).toHaveBeenNthCalledWith(4, '/system/auth/mfa/step-up-verifications', {
+    expect(explicitWriteClient.post).toHaveBeenNthCalledWith(1, '/system/auth/mfa/step-up-challenges', null, { withCredentials: true, signal: undefined })
+    expect(explicitWriteClient.post).toHaveBeenNthCalledWith(2, '/system/auth/mfa/step-up-verifications', {
       challenge_token: 'addp_mfc_token', code: '654321'
-    }, { withCredentials: true })
+    }, { withCredentials: true, signal: undefined })
   })
 })

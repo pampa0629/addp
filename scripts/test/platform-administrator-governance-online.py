@@ -1,4 +1,4 @@
-"""Disposable Hosted platform officer governance through real Gateway APIs."""
+"""Disposable Hosted platform officer governance through real Console and Gateway."""
 from __future__ import annotations
 
 import base64
@@ -36,6 +36,9 @@ CONTEXT = '/api/v1/system/auth/context'
 ROLES = ('system', 'security', 'audit')
 BROWSER_PROOFS = {'real_mfa', 'role_matrix', 'request_created', 'independent_review',
                   'one_time_recovery', 'secret_memory_only', 'old_session_revoked', 'new_login'}
+EMERGENCY_BROWSER_PROOFS = {'real_console', 'exact_tenant_family', 'two_independent_approvals',
+                            'ten_fifteen_minute_windows', 'single_consumption_receipt', 'target_session_revoked',
+                            'unrelated_session_unchanged', 'independent_audit'}
 CLI_DIR = ROOT/'dist/release-linux-amd64'
 OFFLINE_PROOFS = {'tty_only', 'two_real_totp_counters', 'all_principals_recovered',
                   'old_credentials_rejected', 'old_sessions_revoked', 'roles_unchanged', 'suspension_preserved',
@@ -324,67 +327,15 @@ class Scenario:
         return client
 
     def emergency_session_revocation(self):
-        self.stage = 'emergency-session-revocation'
-        # Enrollment already consumed a real counter; wait for a new one instead of retrying a rejected code.
-        self.used_steps.setdefault(self.credentials['successor']['totp'], int(time.time())//30)
-        result = self.authenticate('successor')
-        token = result.get('session', {}).get('access_token')
-        require(isinstance(token, str), 'emergency executor must resolve to its single Tenant context')
-        executor = API.GatewayClient(self.env['GATEWAY_URL'], token, 10)
-        context = executor.request('GET', CONTEXT, (200,)).payload
-        require(context.get('context', {}).get('type') == 'tenant'
-                and context['context'].get('tenant_id') == self.env['ADDP_ONLINE_TEST_TENANT_ID'],
-                'emergency executor escaped its Tenant')
-        target = API.GatewayClient(self.env['GATEWAY_URL'], self.env['ADDP_ONLINE_GOV_TARGET_ACCESS_TOKEN'], 10)
-        other = API.GatewayClient(self.env['GATEWAY_URL'], self.env['ADDP_ONLINE_GOV_TARGET_OTHER_ACCESS_TOKEN'], 10)
-        before = target.request('GET', CONTEXT, (200,)).payload
-        endpoint = '/api/v1/system/tenant/emergency_session_requests'
-        platform_endpoint = '/api/v1/system/platform/emergency_session_requests'
-        request_id, execution_id = str(uuid.uuid4()), str(uuid.uuid4())
-        body = {'id': request_id, 'target_principal_id': before['principal']['id'],
-                'target_family_id': self.env['ADDP_ONLINE_GOV_TARGET_FAMILY_ID'],
-                'reason': 'Disposable suspicious Web session', 'incident_reference': self.run_id}
-        request = executor.request('POST', endpoint, (201,), body).payload
-        require(request.get('tenant_id') == self.env['ADDP_ONLINE_TEST_TENANT_ID']
-                and request.get('executor_principal_id') == self.credentials['successor']['id']
-                and request.get('tenant_name') and request.get('target_name'), 'emergency request binding differs')
-        self.actors['audit'].request('POST', platform_endpoint+'/'+request_id+'/approve', (403,),
-                                     {'version': request['version'], 'reason': 'audit must only observe'})
-        executor.request('POST', endpoint+'/'+request_id+'/execute', (409,),
-                         {'version': request['version'], 'execution_id': execution_id})
-        for role in ('system', 'security'):
-            request = self.actors[role].request('POST', platform_endpoint+'/'+request_id+'/approve', (200,),
-                         {'version': request['version'], 'reason': 'Independent '+role+' review'}).payload
-            if role == 'system':
-                executor.request('POST', endpoint+'/'+request_id+'/execute', (409,),
-                                 {'version': request['version'], 'execution_id': execution_id})
-        require(request.get('status') == 'approved' and len(request.get('approvals', [])) == 2,
-                'two distinct platform approvals were not persisted')
-        parse_time = lambda value: datetime.datetime.fromisoformat(value.replace('Z', '+00:00'))
-        require((parse_time(request['approval_expires_at'])-parse_time(request['requested_at'])).total_seconds() == 600
-                and (parse_time(request['execute_before'])-parse_time(request['approved_at'])).total_seconds() == 900,
-                'emergency ten/fifteen minute windows differ')
-        command = {'version': request['version'], 'execution_id': execution_id}
-        receipt = executor.request('POST', endpoint+'/'+request_id+'/execute', (200,), command).payload
-        require(receipt.get('status') == 'executed' and receipt.get('outcome') == 'revoked'
-                and receipt.get('execution_id') == execution_id, 'emergency execution receipt differs')
-        target.request('GET', CONTEXT, (401,))
-        unchanged = other.request('GET', CONTEXT, (200,)).payload
-        require(unchanged['authorization'] == before['authorization'], 'another family or global authorization changed')
-        replay = executor.request('POST', endpoint+'/'+request_id+'/execute', (200,), command).payload
-        require(replay == receipt, 'same execution did not return immutable receipt')
-        executor.request('POST', endpoint+'/'+request_id+'/execute', (409,),
-                         {'version': receipt['version'], 'execution_id': str(uuid.uuid4())})
-        resolved = self.actors['audit'].request('GET', platform_endpoint+'/'+request_id, (200,)).payload
-        require(resolved == receipt, 'independent audit could not resolve original execution')
-        events = self.actors['audit'].request('GET', '/api/v1/system/platform/audit/events?entity_type=emergency_session_request&page_size=100', (200,)).payload
-        rows = [row for row in events.get('data', []) if row.get('entity_id') == request_id]
-        require(len(rows) == 4 and sum(row.get('event_name') == 'iam.emergency_session_revocation.approve' for row in rows) == 2,
-                'emergency independent business audit count differs')
-        assert_audit_credentials_absent(rows, [token, target.token, other.token])
-        return {'exact_tenant_family': True, 'two_independent_approvals': True,
-                'ten_fifteen_minute_windows': True, 'single_consumption_receipt': True,
-                'unrelated_session_unchanged': True, 'independent_audit': True}
+        self.stage = 'emergency-session-console'
+        result = self.run_browser_case('single-session emergency revocation through real Console',
+                                       'emergency-browser.json', EMERGENCY_BROWSER_PROOFS, (*ROLES, 'successor'),
+                                       include_target=True)
+        # The real browser consumed a TOTP counter for each actor. Do not
+        # reuse a counter when the existing API/CLI scenario signs in again.
+        self.used_steps.update((self.credentials[role]['totp'], int(time.time())//30)
+                               for role in (*ROLES, 'successor'))
+        return result
 
     def assert_legacy_route_removed(self):
         # An unregistered Gin route has no JSON response contract. Check its
@@ -694,24 +645,34 @@ class Scenario:
 
     def browser(self):
         self.stage = 'browser'
-        receipt = Path(self.env['ADDP_ONLINE_ARTIFACT_DIR'])/'administrator-browser.json'
+        return self.run_browser_case('three officers request review and recover through real Console and System',
+                                     'administrator-browser.json', BROWSER_PROOFS, ROLES)
+
+    def run_browser_case(self, title, receipt_name, proofs, roles, include_target=False):
+        receipt = Path(self.env['ADDP_ONLINE_ARTIFACT_DIR'])/receipt_name
         require(not receipt.exists(), 'browser evidence path must be new')
-        env = {key: value for key, value in self.env.items() if not key.startswith('ADDP_ONLINE_GOV_TARGET_')}
-        for role in ROLES:
+        env = {key: value for key, value in self.env.items() if not key.startswith('ADDP_ONLINE_GOV_')}
+        for role in roles:
             for key, value in self.credentials[role].items():
                 env[f'ADDP_ONLINE_GOV_{role.upper()}_{key.upper()}'] = value
-        # Do not retain Playwright output: exception formatting can include form
-        # values. Its only public evidence is the strict boolean receipt below.
+        if include_target:
+            for suffix in ('FAMILY_ID', 'ACCESS_TOKEN', 'OTHER_ACCESS_TOKEN'):
+                key = f'ADDP_ONLINE_GOV_TARGET_{suffix}'
+                env[key] = self.env[key]
+        # Assertion formatting can contain credentials. Public evidence is
+        # restricted to fixed stages and the validated boolean receipt.
+        output = Path(self.env['ADDP_ONLINE_SECRET_DIR'])/'governance-browser-output'
         result = subprocess.run(['npm', 'exec', '--', 'playwright', 'test', '--config=playwright.online.config.js',
-                                'platform-administrator-governance.spec.js', '--output='+str(Path(self.env['ADDP_ONLINE_SECRET_DIR'])/'governance-browser-output')], cwd=ROOT/'console/frontend',
-                                env=env, capture_output=True, text=True, timeout=300)
+                                'platform-administrator-governance.spec.js', '--grep', title, '--output='+str(output)],
+                                cwd=ROOT/'console/frontend', env=env, capture_output=True, text=True, timeout=300)
         require(result.returncode == 0 and receipt.is_file(), 'real governance browser acceptance failed')
         value = json.loads(receipt.read_text())
-        require(set(value) == BROWSER_PROOFS and all(value[key] is True for key in BROWSER_PROOFS),
+        require(set(value) == proofs and all(value[key] is True for key in proofs),
                 'browser receipt is incomplete or contains unapproved data')
         return value
 
     def run(self):
+        emergency = self.emergency_session_revocation()
         for role in ROLES:
             self.stage = 'authentication-' + role
             self.login(role)
@@ -720,7 +681,6 @@ class Scenario:
         identity = negative.request('GET', CONTEXT, (200,)).payload
         require(identity.get('context', {}).get('type') == 'tenant', 'negative identity is not Tenant scoped')
         negative.request('GET', CHANGES, (403,))
-        emergency = self.emergency_session_revocation()
         self.stage = 'audit-write-boundary'
         self.actors['audit'].request('POST', '/api/v1/system/platform/users', (403,), {})
         self.stage = 'legacy-route-removed'

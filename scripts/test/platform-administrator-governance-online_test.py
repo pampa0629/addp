@@ -492,6 +492,32 @@ print('accepted' if len(value)>5 else 'rejected',flush=True)
                 receipt.write_text(json.dumps(value));return type('Result', (), {'returncode': 0})()
             with patch.object(SCENE.subprocess, 'run', side_effect=bad), self.assertRaises(API.SuiteError):scene.browser()
 
+    def test_only_emergency_browser_receives_target_session_fixture(self):
+        with tempfile.TemporaryDirectory() as folder:
+            target = {
+                'ADDP_ONLINE_GOV_TARGET_FAMILY_ID': '17',
+                'ADDP_ONLINE_GOV_TARGET_ACCESS_TOKEN': 'target-token',
+                'ADDP_ONLINE_GOV_TARGET_OTHER_ACCESS_TOKEN': 'other-token',
+            }
+            env = {**environment(), **target, 'ADDP_ONLINE_ARTIFACT_DIR': folder,
+                   'ADDP_ONLINE_GOV_TARGET_UNUSED': 'not-needed'}
+            scene = SCENE.Scenario(env)
+            def browser(command, **kwargs):
+                exported = kwargs['env']
+                emergency = 'single-session emergency revocation through real Console' in command
+                actual = {key: value for key, value in exported.items() if key.startswith('ADDP_ONLINE_GOV_TARGET_')}
+                self.assertEqual(actual, target if emergency else {})
+                self.assertEqual('ADDP_ONLINE_GOV_SUCCESSOR_PASSWORD' in exported, emergency)
+                receipt = Path(folder)/('emergency-browser.json' if emergency else 'administrator-browser.json')
+                proofs = SCENE.EMERGENCY_BROWSER_PROOFS if emergency else SCENE.BROWSER_PROOFS
+                receipt.write_text(json.dumps({key: True for key in proofs}))
+                return type('Result', (), {'returncode': 0})()
+            with patch.object(SCENE.subprocess, 'run', side_effect=browser):
+                self.assertEqual(set(scene.emergency_session_revocation()), SCENE.EMERGENCY_BROWSER_PROOFS)
+                self.assertTrue(all(scene.credentials[role]['totp'] in scene.used_steps
+                                    for role in (*SCENE.ROLES, 'successor')))
+                self.assertEqual(set(scene.browser()), SCENE.BROWSER_PROOFS)
+
     def test_totp_matches_known_rfc_counter(self):
         self.assertEqual(SCENE.totp('GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ', 59), '287082')
 

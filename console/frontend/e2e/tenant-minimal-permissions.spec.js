@@ -71,6 +71,21 @@ for (const [path, permissions] of independentlyReadablePages) {
   })
 }
 
+test('emergency session records use the Accounts iframe with only the read permission', async ({ page }) => {
+  const path = '/system/iam/accounts?tab=emergency-sessions'
+  const businessRequests = await openAsTenant(page, path, ['iam.emergency_session_revocation.read'])
+  await expect(page.locator('iframe.module-iframe')).toHaveAttribute('src', /\/module-ui\/system\/iam\/accounts\?tab=emergency-sessions$/)
+  await expect(page.locator('.sidebar').getByText('账号管理', { exact: true })).toBeVisible()
+  expect(businessRequests).toEqual([])
+})
+
+test('emergency execution permission alone cannot open the Accounts iframe', async ({ page }) => {
+  const businessRequests = await openAsTenant(page, '/system/iam/accounts?tab=emergency-sessions', ['iam.emergency_session_revocation.execute'])
+  await expect(page.locator('.el-result')).toContainText('无权访问')
+  await expect(page.locator('iframe.module-iframe')).toHaveCount(0)
+  expect(businessRequests).toEqual([])
+})
+
 test('Manager item reader with search opens Data Explorer and can navigate to retrieval', async ({ page }) => {
   const businessRequests = await openAsTenant(page, '/', ['manager.search.execute', 'manager.data_item.read'])
   await page.getByText('所有模块', { exact: true }).click()

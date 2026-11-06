@@ -50,6 +50,29 @@ describe('Console navigation access filtering', () => {
     }
   })
 
+  it('allows emergency records through the existing accounts entry for either authorized context', async () => {
+    vi.stubGlobal('window', { location: { protocol: 'http:', hostname: 'localhost', origin: 'http://localhost' } })
+    try {
+      const path = '/system/iam/accounts'
+      const { SIDEBAR_MENUS } = await import('../src/config/portalConfig.js')
+      const { SEARCH_INDEX } = await import('../src/config/searchIndex.js')
+      const searchEntry = SEARCH_INDEX.find(entry => entry.route === path)
+      for (const context of ['tenant', 'platform']) {
+        const read = ['iam.emergency_session_revocation.read']
+        const executeOnly = ['iam.emergency_session_revocation.execute']
+        for (const entry of [searchEntry, { access: consoleRouteAccess(path) }]) {
+          expect(matchesNavigationAccess(entry, context, read)).toBe(true)
+          expect(matchesNavigationAccess(entry, context, executeOnly)).toBe(false)
+        }
+        const visible = permissions => filterSidebarMenus({ system: SIDEBAR_MENUS.system }, context, permissions)
+        expect(firstAccessibleModuleRoute(visible(read).system)).toBe(path)
+        expect(firstAccessibleModuleRoute(visible(executeOnly).system)).toBe('')
+      }
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+
   it('labels the Catalog responsibility queue precisely in both languages', () => {
     expect(zhCn.console.menus.catalog.tasks).toBe('责任治理队列')
     expect(en.console.menus.catalog.tasks).toBe('Responsibility Governance Queue')

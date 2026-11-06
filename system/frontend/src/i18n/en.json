@@ -449,6 +449,64 @@
         "username": "Username",
         "administratorGovernance": "Managed through administrator governance"
       },
+      "emergencySessions": {
+        "title": "Emergency Session Revocation",
+        "scope": "Revoke one first-party web session of a regular user in the specified tenant. A system administrator and a security administrator must each approve within 10 minutes. The requester then has 15 minutes to execute once.",
+        "refresh": "Refresh list",
+        "lookup": "Look up by ID",
+        "details": "View request record",
+        "operation": "Actions",
+        "requestID": "Request ID",
+        "executionID": "Execution ID",
+        "incident": "Incident reference",
+        "tenant": "Tenant",
+        "executor": "Requester / executor",
+        "target": "Target user",
+        "targetID": "Target principal ID",
+        "family": "Target session family ID",
+        "state": "Current state",
+        "approvals": "Approvals",
+        "reason": "Reason",
+        "closeReason": "Closure reason",
+        "approvalDeadline": "Approval deadline",
+        "executionDeadline": "Execution deadline",
+        "outcome": "Execution outcome",
+        "confirm": "Confirm submission",
+        "stepUp": "Verify with MFA",
+        "stepUpHint": "Complete MFA verification, then reopen and confirm the action.",
+        "targetHint": "Enter the target principal and session family IDs from a verified incident record.",
+        "confirmTarget": "Check tenant {tenant}, user {target}, and session family {family}.",
+        "unresolved": "Request {id} needs verification. Look it up by its original ID. The page does not retry automatically.",
+        "lookupFailed": "Could not verify request {id}. Keep the ID. A failed lookup does not establish that the action did not happen.",
+        "readFailed": "Could not load emergency revocation records.",
+        "writeFailed": "Submission failed. Check the current request record.",
+        "actions": {
+          "create": "Request emergency revocation",
+          "approve": "Approve",
+          "reject": "Reject",
+          "revoke": "Withdraw authorization",
+          "cancel": "Cancel request",
+          "execute": "Execute revocation"
+        },
+        "roles": {
+          "system_administrator": "System administrator",
+          "security_administrator": "Security administrator"
+        },
+        "states": {
+          "pending": "Pending approval",
+          "approved": "Awaiting execution",
+          "expired": "Expired",
+          "rejected": "Rejected",
+          "revoked": "Authorization withdrawn",
+          "cancelled": "Cancelled",
+          "executed": "Executed"
+        },
+        "outcomes": {
+          "revoked": "Target session revoked",
+          "already_revoked": "Target session was already revoked",
+          "already_expired": "Target session had already expired"
+        }
+      },
       "administratorChanges": {
         "changeType": "Change Type",
         "create": "Create administrator change",

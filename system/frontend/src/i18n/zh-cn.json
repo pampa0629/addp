@@ -449,6 +449,64 @@
         "username": "用户名",
         "administratorGovernance": "通过管理员变更治理处理"
       },
+      "emergencySessions": {
+        "title": "应急会话撤销",
+        "scope": "仅限指定租户普通用户的一个第一方 Web 会话。系统管理员和安全管理员须在 10 分钟内分别批准，批准后由申请人在 15 分钟内执行一次。",
+        "refresh": "刷新列表",
+        "lookup": "按编号核清",
+        "details": "查看办理记录",
+        "operation": "操作",
+        "requestID": "请求编号",
+        "executionID": "执行编号",
+        "incident": "事件编号",
+        "tenant": "租户",
+        "executor": "申请人／执行人",
+        "target": "目标用户",
+        "targetID": "目标用户主体编号",
+        "family": "目标会话族编号",
+        "state": "当前状态",
+        "approvals": "批准记录",
+        "reason": "理由",
+        "closeReason": "关闭理由",
+        "approvalDeadline": "审批截止",
+        "executionDeadline": "执行截止",
+        "outcome": "执行结果",
+        "confirm": "确认提交",
+        "stepUp": "增强认证",
+        "stepUpHint": "请先完成增强认证，再重新打开操作并确认。",
+        "targetHint": "请从已经核实的事件记录填写目标用户主体编号和会话族编号。",
+        "confirmTarget": "请核对租户 {tenant}、用户 {target}、会话族 {family}。",
+        "unresolved": "请求 {id} 的结果待核清。请按原编号查询，页面不会自动重试。",
+        "lookupFailed": "暂未能核清请求 {id}。请保留编号，查询失败不能证明操作未执行。",
+        "readFailed": "读取应急撤销记录失败。",
+        "writeFailed": "提交失败，请核对当前记录。",
+        "actions": {
+          "create": "申请应急撤销",
+          "approve": "批准",
+          "reject": "拒绝",
+          "revoke": "撤回授权",
+          "cancel": "取消申请",
+          "execute": "执行撤销"
+        },
+        "roles": {
+          "system_administrator": "系统管理员",
+          "security_administrator": "安全管理员"
+        },
+        "states": {
+          "pending": "待批准",
+          "approved": "待执行",
+          "expired": "已过期",
+          "rejected": "已拒绝",
+          "revoked": "授权已撤回",
+          "cancelled": "已取消",
+          "executed": "已执行"
+        },
+        "outcomes": {
+          "revoked": "目标会话已撤销",
+          "already_revoked": "目标会话此前已撤销",
+          "already_expired": "目标会话此前已过期"
+        }
+      },
       "administratorChanges": {
         "changeType": "变更类型",
         "create": "创建管理员变更请求",

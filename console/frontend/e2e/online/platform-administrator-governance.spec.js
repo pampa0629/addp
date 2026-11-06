@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test'
 import { execFileSync } from 'node:child_process'
-import { randomBytes } from 'node:crypto'
+import { randomBytes, randomUUID } from 'node:crypto'
 import { writeFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 
@@ -9,6 +9,11 @@ test.use({ screenshot: 'off', trace: 'off', video: 'off' })
 const route = '/system/iam/accounts?tab=administrator-changes'
 const changes = '/api/v1/system/platform/administrator_changes'
 const contextPath = '/api/v1/system/auth/context'
+const emergencyRoute = '/system/iam/accounts?tab=emergency-sessions'
+const emergencyBase = scope => `/api/v1/system/${scope}/emergency_session_requests`
+const fixture = (role, key) => process.env[`ADDP_ONLINE_GOV_${role.toUpperCase()}_${key}`]
+const bearer = token => ({ Authorization: `Bearer ${token}` })
+const systemModule = page => page.frameLocator('iframe[data-testid="module-iframe"]')
 const freshStep = () => new Promise(done => setTimeout(done, 30_000 - Date.now() % 30_000 + 200))
 function code(secret) {
   return execFileSync('python3', ['-c', 'import importlib,os,time; print(importlib.import_module("scripts.test.platform-administrator-governance-online").totp(os.environ["ADDP_BROWSER_TOTP"],time.time()))'],
@@ -16,27 +21,36 @@ function code(secret) {
 }
 async function json(response) { expect(response.ok()).toBe(true); return response.json() }
 
-async function login(page, role, password, secret) {
-  const prefix = `ADDP_ONLINE_GOV_${role.toUpperCase()}`
-  await page.goto('/login?redirect=' + encodeURIComponent(route))
-  await page.locator('input[autocomplete="username"]').fill(process.env[prefix + '_USERNAME'])
-  await page.locator('input[autocomplete="current-password"]').fill(password || process.env[prefix + '_PASSWORD'])
+async function login(page, role, password, secret, destination = route) {
+  await page.goto('/login?redirect=' + encodeURIComponent(destination))
+  await page.locator('input[autocomplete="username"]').fill(fixture(role, 'USERNAME'))
+  await page.locator('input[autocomplete="current-password"]').fill(password || fixture(role, 'PASSWORD'))
   const response = page.waitForResponse(r => new URL(r.url()).pathname === '/api/v1/system/login')
   await page.locator('.auth-login-primary').click()
   expect((await json(await response)).next_action).toBe('verify_mfa')
   await expect(page.locator('input[autocomplete="one-time-code"]')).toBeVisible()
   const mfa = page.waitForResponse(r => new URL(r.url()).pathname === '/api/v1/system/auth/mfa-verifications')
-  await page.locator('input[autocomplete="one-time-code"]').fill(code(secret || process.env[prefix + '_TOTP']))
+  await page.locator('input[autocomplete="one-time-code"]').fill(code(secret || fixture(role, 'TOTP')))
   await page.locator('.auth-login-primary').click()
   const result = await json(await mfa)
   expect(result.next_action).toBe('session_issued')
-  await expect(page).toHaveURL(/\/system\/iam\/accounts\?tab=administrator-changes$/)
+  await expect(page).toHaveURL(destination === emergencyRoute
+    ? /\/system\/iam\/accounts(?:\?tab=emergency-sessions)?$/
+    : /\/system\/iam\/accounts\?tab=administrator-changes$/)
   const token = result.session.access_token
-  const identity = await json(await page.request.get(contextPath, { headers: { Authorization: `Bearer ${token}` } }))
-  expect(identity.principal).toEqual({ id: process.env[prefix + '_ID'], type: 'user' })
-  expect(identity.context).toEqual({ type: 'platform' })
+  const identity = await authContext(page, token)
+  expect(identity.principal).toEqual({ id: fixture(role, 'ID'), type: 'user' })
   expect(identity.authentication.assurance_level).toMatch(/^aal[23]$/)
-  expect(identity.authorization.role_assignments.map(a => a.role_key)).toEqual([`platform.${role}_administrator`])
+  if (role === 'successor') {
+    expect(identity.context).toMatchObject({ type: 'tenant', tenant_id: process.env.ADDP_ONLINE_TEST_TENANT_ID })
+  } else {
+    expect(identity.context).toEqual({ type: 'platform' })
+    expect(identity.authorization.role_assignments.map(a => a.role_key)).toEqual([`platform.${role}_administrator`])
+  }
+  if (destination === emergencyRoute) {
+    expect(identity.token.type).toBe('first_party_access_token')
+    expect(Date.parse(identity.authentication.step_up_expires_at)).toBeGreaterThan(Date.now())
+  }
   return token
 }
 
@@ -125,4 +139,171 @@ test('three officers request review and recover through real Console and System'
       one_time_recovery: true, secret_memory_only: true, old_session_revoked: true, new_login: true
     }))
   } finally { for (const context of contexts) await context.close() }
+})
+
+async function authContext(page, token) {
+  return json(await page.request.get(contextPath, { headers: bearer(token) }))
+}
+
+const requestDetails = frame => frame.getByRole('dialog', { name: '查看办理记录', exact: true })
+const button = (scope, name) => scope.getByRole('button', { name, exact: true })
+const writeResponse = (page, path) => page.waitForResponse(response =>
+  new URL(response.url()).pathname === path && response.request().method() === 'POST')
+
+async function lookupEmergency(frame, id) {
+  await frame.getByRole('textbox', { name: '请求编号', exact: true }).fill(id)
+  await button(frame, '按编号核清').click()
+  await expect(requestDetails(frame)).toContainText(id)
+  return requestDetails(frame)
+}
+
+test('single-session emergency revocation through real Console', async ({ browser }) => {
+  test.setTimeout(180_000)
+  const directory = process.env.ADDP_ONLINE_ARTIFACT_DIR
+  const stage = value => writeFileSync(resolve(directory, 'emergency-browser-stage.json'), JSON.stringify({ stage: value }))
+  const roles = ['successor', 'system', 'security', 'audit']
+  const contexts = []
+  const tenantPath = emergencyBase('tenant')
+  const platformPath = emergencyBase('platform')
+  try {
+    stage('authentication')
+    for (let index = 0; index < roles.length; index++) {
+      const context = await browser.newContext({ baseURL: process.env.CONSOLE_URL, locale: 'zh-CN', viewport: { width: 1440, height: 900 } })
+      contexts.push(context)
+      await context.addInitScript(() => localStorage.setItem('addp-lang', 'zh-cn'))
+    }
+    const [tenant, system, security, audit] = await Promise.all(contexts.map(context => context.newPage()))
+    await freshStep()
+    const [executorToken, , , auditToken] = await Promise.all([tenant, system, security, audit].map((page, index) =>
+      login(page, roles[index], undefined, undefined, emergencyRoute)))
+    const tenantFrame = systemModule(tenant)
+    const auditFrame = systemModule(audit)
+    const targetToken = fixture('target', 'ACCESS_TOKEN')
+    const otherToken = fixture('target', 'OTHER_ACCESS_TOKEN')
+    const family = fixture('target', 'FAMILY_ID')
+    expect(targetToken).toBeTruthy()
+    expect(otherToken).toBeTruthy()
+    expect(otherToken).not.toBe(targetToken)
+    expect(family).toMatch(/^[1-9]\d*$/)
+    const target = await authContext(tenant, targetToken)
+    const otherBefore = await authContext(tenant, otherToken)
+    expect(otherBefore.principal).toEqual(target.principal)
+    expect(otherBefore.context).toEqual(target.context)
+    expect(target.context).toMatchObject({ type: 'tenant', tenant_id: process.env.ADDP_ONLINE_TEST_TENANT_ID })
+    expect(target.token.type).toBe('first_party_access_token')
+    expect(otherBefore.token.type).toBe('first_party_access_token')
+
+    stage('request')
+    await button(tenantFrame, '申请应急撤销').click()
+    const form = tenantFrame.getByRole('dialog', { name: '申请应急撤销', exact: true })
+    const incident = process.env.ADDP_ONLINE_TEST_RUN_ID
+    await form.getByLabel('目标用户主体编号').fill(target.principal.id)
+    await form.getByLabel('目标会话族编号').fill(family)
+    await form.getByLabel('事件编号', { exact: true }).fill(incident)
+    await form.getByLabel('理由', { exact: true }).fill('Disposable suspicious Web session')
+    const created = writeResponse(tenant, tenantPath)
+    await button(form, '确认提交').click()
+    const createResponse = await created
+    expect(createResponse.status()).toBe(201)
+    const pending = await createResponse.json()
+    expect(pending).toMatchObject({
+      tenant_id: process.env.ADDP_ONLINE_TEST_TENANT_ID, executor_principal_id: fixture('successor', 'ID'),
+      target_principal_id: target.principal.id, target_family_id: family, incident_reference: incident, status: 'pending'
+    })
+    expect(pending.tenant_name).toBeTruthy()
+    expect(pending.target_name).toBeTruthy()
+    const tenantRequest = `${tenantPath}/${pending.id}`
+    const platformRequest = `${platformPath}/${pending.id}`
+    await expect(requestDetails(tenantFrame)).toContainText(pending.id)
+    await expect(button(requestDetails(tenantFrame), '执行撤销')).toHaveCount(0)
+    const prematureID = randomUUID()
+    const executeBeforeApproval = version => tenant.request.post(`${tenantRequest}/execute`, {
+      headers: bearer(executorToken), data: { version, execution_id: prematureID }
+    })
+    expect((await executeBeforeApproval(pending.version)).status()).toBe(409)
+    expect((await audit.request.post(`${platformRequest}/approve`, {
+      headers: bearer(auditToken), data: { version: pending.version, reason: 'audit must only observe' }
+    })).status()).toBe(403)
+    const auditPending = await lookupEmergency(auditFrame, pending.id)
+    for (const action of ['批准', '拒绝', '撤回授权', '执行撤销', '取消申请']) await expect(button(auditPending, action)).toHaveCount(0)
+    await auditPending.getByRole('button', { name: '关闭此对话框', exact: true }).click()
+
+    stage('independent-approvals')
+    let current = pending
+    for (const [page, role] of [[system, 'system'], [security, 'security']]) {
+      const frame = systemModule(page)
+      const details = await lookupEmergency(frame, pending.id)
+      await expect(details).toContainText(family)
+      await button(details, '批准').click()
+      const approval = frame.getByRole('dialog', { name: '批准', exact: true })
+      await approval.getByLabel('理由', { exact: true }).fill(`Independent ${role} review`)
+      const response = writeResponse(page, `${platformRequest}/approve`)
+      await button(approval, '确认提交').click()
+      current = await json(await response)
+      expect(current.approvals.find(approval => approval.principal_id === fixture(role, 'ID'))).toMatchObject({ role_key: `platform.${role}_administrator`, principal_id: fixture(role, 'ID') })
+      if (role === 'system') {
+        expect(current.status).toBe('pending')
+        expect(current.approvals).toHaveLength(1)
+        expect((await executeBeforeApproval(current.version)).status()).toBe(409)
+      }
+    }
+    expect(current.status).toBe('approved')
+    expect(current.approvals).toHaveLength(2)
+    expect(new Set(current.approvals.map(approval => approval.principal_id)).size).toBe(2)
+    expect(Date.parse(current.approval_expires_at) - Date.parse(current.requested_at)).toBe(600_000)
+    expect(Date.parse(current.execute_before) - Date.parse(current.approved_at)).toBe(900_000)
+
+    stage('execute')
+    await requestDetails(tenantFrame).getByRole('button', { name: '关闭此对话框', exact: true }).click()
+    const ready = await lookupEmergency(tenantFrame, pending.id)
+    await button(ready, '执行撤销').click()
+    const execution = tenantFrame.getByRole('dialog', { name: '执行撤销', exact: true })
+    await expect(execution).toContainText(family)
+    const executed = writeResponse(tenant, `${tenantRequest}/execute`)
+    await button(execution, '确认提交').click()
+    const response = await executed
+    const command = response.request().postDataJSON()
+    const receipt = await json(response)
+    expect(receipt).toMatchObject({ id: pending.id, status: 'executed', outcome: 'revoked', execution_id: command.execution_id })
+    await expect(requestDetails(tenantFrame)).toContainText('目标会话已撤销')
+
+    stage('exact-session-effect')
+    expect((await tenant.request.get(contextPath, { headers: bearer(targetToken) })).status()).toBe(401)
+    const otherAfter = await authContext(tenant, otherToken)
+    expect(otherAfter.principal).toEqual(otherBefore.principal)
+    expect(otherAfter.context).toEqual(otherBefore.context)
+    expect(otherAfter.authorization).toEqual(otherBefore.authorization)
+    const replay = await tenant.request.post(`${tenantRequest}/execute`, { headers: bearer(executorToken), data: command })
+    expect(await json(replay)).toEqual(receipt)
+    const second = await tenant.request.post(`${tenantRequest}/execute`, {
+      headers: bearer(executorToken), data: { version: receipt.version, execution_id: randomUUID() }
+    })
+    expect(second.status()).toBe(409)
+
+    stage('independent-audit')
+    const audited = audit.waitForResponse(r => new URL(r.url()).pathname === platformRequest && r.request().method() === 'GET')
+    const record = await lookupEmergency(auditFrame, pending.id)
+    expect(await json(await audited)).toEqual(receipt)
+    await expect(record).toContainText(receipt.execution_id)
+    await expect(record).toContainText('目标会话已撤销')
+    for (const action of ['批准', '拒绝', '撤回授权', '执行撤销', '取消申请']) await expect(button(record, action)).toHaveCount(0)
+    const events = await json(await audit.request.get('/api/v1/system/platform/audit/events?entity_type=emergency_session_request&page_size=100', { headers: bearer(auditToken) }))
+    const rows = events.data.filter(row => row.entity_id === pending.id)
+    expect(rows.map(row => [row.event_name, row.principal_id, row.result]).sort()).toEqual([
+      ['iam.emergency_session_revocation.created', fixture('successor', 'ID'), 'succeeded'],
+      ['iam.emergency_session_revocation.approve', fixture('system', 'ID'), 'succeeded'],
+      ['iam.emergency_session_revocation.approve', fixture('security', 'ID'), 'succeeded'],
+      ['iam.emergency_session_revocation.execute', fixture('successor', 'ID'), 'succeeded']
+    ].sort())
+    for (const row of rows) expect(row.details).toMatchObject({ target_family_id: family, target_principal_id: target.principal.id })
+    const auditJSON = JSON.stringify(rows)
+    for (const token of [executorToken, auditToken, targetToken, otherToken]) expect(auditJSON).not.toContain(token)
+  } finally {
+    for (const context of contexts) await context.close()
+  }
+  stage('passed')
+  writeFileSync(resolve(directory, 'emergency-browser.json'), JSON.stringify({
+    real_console: true, exact_tenant_family: true, two_independent_approvals: true, ten_fifteen_minute_windows: true,
+    single_consumption_receipt: true, target_session_revoked: true, unrelated_session_unchanged: true, independent_audit: true
+  }))
 })

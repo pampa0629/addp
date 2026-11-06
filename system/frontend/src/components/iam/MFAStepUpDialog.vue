@@ -1,5 +1,5 @@
 <template>
-  <el-dialog v-model="visible" :title="t('system.iam.security.stepUpTitle')" width="min(440px, calc(100% - 24px))" :close-on-click-modal="false" @closed="cancel">
+  <el-dialog v-model="visible" :title="t('system.iam.security.stepUpTitle')" width="min(440px, calc(100% - 24px))" :close-on-click-modal="false">
     <el-form label-position="top" @submit.prevent="complete">
       <el-form-item :label="t('system.iam.security.verificationCode')">
         <el-input v-model="code" inputmode="numeric" maxlength="6" autocomplete="one-time-code" autofocus @keyup.enter="complete" />
@@ -15,7 +15,7 @@
 </template>
 
 <script setup>
-import { ref } from 'vue'
+import { onBeforeUnmount, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { useI18n } from 'vue-i18n'
 import { iamAPI } from '../../api/iam'
@@ -26,48 +26,75 @@ const authStore = useAuthStore()
 const visible = ref(false)
 const submitting = ref(false)
 const code = ref('')
-const challenge = ref(null)
-let resolveRequest = null
+let active = null
 
-async function request() {
-  if (resolveRequest) return false
-  try {
-    challenge.value = await iamAPI.mfa.beginStepUp()
-    code.value = ''
-    visible.value = true
-    return await new Promise((resolve) => { resolveRequest = resolve })
-  } catch (error) {
-    ElMessage.error(error.response?.data?.error || t('system.iam.security.stepUpFailed'))
-    return false
-  }
+function isCurrent(request) {
+  return active === request && authStore.token === request.token && authStore.authContext === request.context
+}
+
+function request() {
+  if (active || !authStore.token || !authStore.authContext) return Promise.resolve(false)
+  return new Promise(resolve => {
+    const pending = { resolve, token: authStore.token, context: authStore.authContext, challenge: null, controller: new AbortController() }
+    active = pending
+    iamAPI.mfa.beginStepUp(pending.controller.signal).then(challenge => {
+      if (!isCurrent(pending)) return
+      pending.challenge = challenge
+      visible.value = true
+    }).catch(error => {
+      if (!isCurrent(pending)) return
+      ElMessage.error(error.response?.data?.error || t('system.iam.security.stepUpFailed'))
+      cancel()
+    })
+  })
 }
 
 async function complete() {
-  if (!challenge.value || code.value.length !== 6 || submitting.value) return
+  const pending = active
+  if (!pending?.challenge || !isCurrent(pending) || !/^\d{6}$/.test(code.value) || submitting.value) return
   submitting.value = true
+  let session
   try {
-    const session = await iamAPI.mfa.completeStepUp(challenge.value.challenge_token, code.value)
-    authStore.setToken(session.access_token, session.expires_in)
-    await authStore.fetchAuthContext()
-    const resolve = resolveRequest
-    resolveRequest = null
-    visible.value = false
-    resolve?.(true)
+    session = await iamAPI.mfa.completeStepUp(pending.challenge.challenge_token, code.value, pending.controller.signal)
   } catch (error) {
-    code.value = ''
-    ElMessage.error(error.response?.data?.error || t('system.iam.security.invalidCode'))
-  } finally {
-    submitting.value = false
+    if (isCurrent(pending)) {
+      code.value = ''
+      submitting.value = false
+      ElMessage.error(error.response?.data?.error || t('system.iam.security.invalidCode'))
+    }
+    return
+  }
+  if (!isCurrent(pending)) return
+  active = null
+  clearDialog()
+  try {
+    authStore.setToken(session.access_token, session.expires_in)
+    const context = await authStore.fetchAuthContext()
+    pending.resolve(authStore.token === session.access_token && Boolean(context))
+  } catch {
+    pending.resolve(false)
   }
 }
 
-function cancel() {
-  challenge.value = null
+function clearDialog() {
+  visible.value = false
   code.value = ''
-  const resolve = resolveRequest
-  resolveRequest = null
-  resolve?.(false)
+  submitting.value = false
 }
+
+function cancel() {
+  const pending = active
+  active = null
+  clearDialog()
+  pending?.controller.abort()
+  pending?.resolve(false)
+}
+
+watch(visible, open => { if (!open) cancel() }, { flush: 'sync' })
+watch([() => authStore.token, () => authStore.authContext], () => {
+  if (active && !isCurrent(active)) cancel()
+}, { flush: 'sync' })
+onBeforeUnmount(cancel)
 
 defineExpose({ request })
 </script>

@@ -1,4 +1,4 @@
-import client from './client'
+import client, { explicitWriteClient } from './client'
 
 function list(path, params) {
   return client.get(path, { params })
@@ -21,6 +21,8 @@ function exportAudit(path, params) {
   return client.get(path, { params, responseType: 'blob' })
 }
 
+const emergencyPath = scope => `/system/${scope}/emergency_session_requests`
+
 export const iamAPI = {
   self: {
     organization: () => client.get('/system/users/me/organization'),
@@ -35,11 +37,11 @@ export const iamAPI = {
       enrollment_token: enrollmentToken,
       code
     }, { withCredentials: true }),
-    beginStepUp: () => client.post('/system/auth/mfa/step-up-challenges', null, { withCredentials: true }),
-    completeStepUp: (challengeToken, code) => client.post('/system/auth/mfa/step-up-verifications', {
+    beginStepUp: (signal) => explicitWriteClient.post('/system/auth/mfa/step-up-challenges', null, { withCredentials: true, signal }),
+    completeStepUp: (challengeToken, code, signal) => explicitWriteClient.post('/system/auth/mfa/step-up-verifications', {
       challenge_token: challengeToken,
       code
-    }, { withCredentials: true })
+    }, { withCredentials: true, signal })
   },
   platformTenants: {
     list: (params) => list('/system/platform/tenants', params),
@@ -69,6 +71,16 @@ export const iamAPI = {
     approve: (id, version, reason) => client.post(`/system/platform/administrator_changes/${id}/approve`, { version, reason }),
     reject: (id, version, reason) => client.post(`/system/platform/administrator_changes/${id}/reject`, { version, reason }),
     cancel: (id, version, reason) => client.post(`/system/platform/administrator_changes/${id}/cancel`, { version, reason })
+  },
+  emergencySessions: {
+    list: (scope, params) => list(emergencyPath(scope), params),
+    get: (scope, id) => client.get(`${emergencyPath(scope)}/${id}`),
+    create: (payload, signal) => explicitWriteClient.post(emergencyPath('tenant'), payload, { signal }),
+    approve: (id, payload, signal) => explicitWriteClient.post(`${emergencyPath('platform')}/${id}/approve`, payload, { signal }),
+    reject: (id, payload, signal) => explicitWriteClient.post(`${emergencyPath('platform')}/${id}/reject`, payload, { signal }),
+    revoke: (id, payload, signal) => explicitWriteClient.post(`${emergencyPath('platform')}/${id}/revoke`, payload, { signal }),
+    cancel: (id, payload, signal) => explicitWriteClient.post(`${emergencyPath('tenant')}/${id}/cancel`, payload, { signal }),
+    execute: (id, payload, signal) => explicitWriteClient.post(`${emergencyPath('tenant')}/${id}/execute`, payload, { signal })
   },
   memberships: {
     list: (params) => list('/system/tenant/memberships', params),

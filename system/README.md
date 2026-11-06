@@ -84,7 +84,7 @@ OAuth 2.0:       /api/v1/system/oauth/*
 
 这是平台级应急治理能力，授权效果仅限一个指定租户的一个普通用户、一个 `addp-web` 第一方 Web Token Family。申请人与执行人为同一普通 User；目标和执行人均不得是有效平台角色持有人。系统管理员与安全管理员分别在 Platform Context 批准，两次批准必须来自不同 User，且均不能是执行人或目标。审计管理员独立读取，不参与批准或执行。不会产生应急 Token、管理员角色或通用数据权限。
 
-首期通过 System 现有 HTTP 管理入口办理，Gateway 继续转发 `/api/v1/system`，不增加第二套入口：
+Console「账号管理 → 应急会话撤销」复用现有 System HTTP 入口。Tenant 只看本人申请，由获显式权限的执行人填写已核实的目标用户与会话编号；Platform 的系统／安全管理员按原权限办理，审计管理员只读。需要增强认证时先完成现有 MFA 再显式确认；写入结果不明时按原请求编号只读核清，页面不自动重发。Gateway 继续转发 `/api/v1/system`：
 
 | Context | API | 用途 |
 | --- | --- | --- |
@@ -94,7 +94,7 @@ OAuth 2.0:       /api/v1/system/oauth/*
 | Tenant | `POST /tenant/emergency_session_requests/{id}/cancel` | 本人放弃，提交 `version`、`reason` |
 | Tenant | `POST /tenant/emergency_session_requests/{id}/execute` | 本人单次执行，提交 `version`、新的 `execution_id`（UUID） |
 
-现有 Tenant 自定义 Role 可显式配置 `iam.emergency_session_revocation.create/read/cancel/execute` 入口权限，默认不授予任何租户内置角色；入口权限本身不能代替两次批准。目标 Family 编号来自已核实事件记录，不提供跨用户会话枚举。返回租户、执行人、目标与批准人的可读名称供复核；所有 BIGINT 均使用十进制字符串。批准与执行需要现有 MFA Step-up，不能靠复用旧 MFA 事实绕过。`409 resource_version_conflict` 要求重新读取原请求；超时、断连等结果不明时先 `GET` 原 UUID 核清，同一 `execution_id` 的已执行命令只返回原回执，其他编号不能再次消费。客户端不得自动重放写请求。
+现有 Tenant 自定义 Role 可显式配置 `iam.emergency_session_revocation.create/read/cancel/execute` 入口权限，默认不授予任何租户内置角色；入口权限本身不能代替两次批准。目标 Family 编号来自已核实事件记录，不提供跨用户会话枚举。返回租户、执行人、目标与批准人的可读名称供复核；所有 BIGINT 均使用十进制字符串。批准与执行需要现有 MFA Step-up，不能靠复用旧 MFA 事实绕过。`409 resource_version_conflict` 要求重新读取原请求；超时、断连等结果不明时先 `GET` 原 UUID 核清，同一 `execution_id` 的已执行命令只返回原回执，其他编号不能再次消费。客户端不得自动重放写请求。 Hosted `platform-administrator-governance` 以真实 Console 办理和按编号核清，核对两次批准、单次执行回执、同一用户另一会话保留与独立审计。
 
 审批自数据库申请时刻起10分钟，第二次批准记录的数据库时刻起15分钟内执行，事务提交后生效；等待锁或审计写入跨越期限时回滚。以实时数据库时钟判定，不依赖定时任务或后台清理。撤销仅影响目标 Family 及现有派生授权，不停止外部引擎已经运行的作业，也不改变全局授权版本或同用户其他会话。目标此前已撤销／已到期时回执明确为 `already_revoked`／`already_expired`，不能记为本次撤销成功。
 
