@@ -1343,6 +1343,194 @@ def exercise_spatial_algorithms(client: GatewayClient, engine_id: int, run_id: s
             "temporary_resource_residuals": 0}
 
 
+def postgres_join_fixture(action: str, target: str, deadline: float) -> tuple[dict[str, object], dict[str, object]] | None:
+    repository = Path(__file__).resolve().parents[2]
+    SUPPORT.require_hosted_security_lifecycle(repository)
+    timeout = 30 if action == "join-target-clean" else min(30, deadline - time.monotonic())
+    if timeout <= 0:
+        raise SuiteError("PostgreSQL JOIN physical proof exceeded its budget")
+    try:
+        result = subprocess.run(["bash", "business/scripts/online-security-owner-fixture.sh", action],
+            cwd=repository, capture_output=True, text=True, timeout=timeout,
+            env=dict(os.environ, ADDP_SECURITY_JOIN_TARGET=target))
+        if result.returncode:
+            raise ValueError()
+        if action in {"join-target-prepare", "join-target-clean"}:
+            return None
+        target_state, source_state = [json.loads(line) for line in result.stdout.splitlines()]
+        if (set(target_state) != {"oid", "rows"} or set(source_state) != {"left", "right"}
+                or any(not isinstance(value, str) or re.fullmatch(r"[0-9a-f]{32}", value) is None
+                       for value in source_state.values())):
+            raise ValueError()
+        return target_state, source_state
+    except (ValueError, TypeError, subprocess.TimeoutExpired):
+        raise SuiteError("PostgreSQL JOIN fixture action failed: " + action) from None
+
+
+def postgres_join_payload(left: str, right: str, parent: str, target: str, case: str) -> dict[str, object]:
+    expression = "r.value_a" if case == "written" else "pg_catalog.lower(r.value_a)"
+    query = (f"SELECT l.id AS row_id, l.value_a AS left_secret, {expression} AS right_secret "
+             f"FROM {TARGET_SCHEMA}.{SPATIAL_SOURCE} l JOIN {TARGET_SCHEMA}.{SPATIAL_TARGET} r ON l.id=r.id "
+             "WHERE l.id<=3 ORDER BY 3,l.id LIMIT 2 OFFSET 1")
+    payload = transfer_payload(target + "_" + case, left, parent, target)
+    payload["batch_size"] = payload["config"]["batch_size"] = 1
+    payload["config"]["source"]["query"] = {"language": "sql", "statement": query, "inputs": [
+        {"name": "left", "locator": left}, {"name": "right", "locator": right}]}
+    payload["config"]["transforms"] = [{"type": "field_mapping", "version": "v1", "mode": "project", "fields": [
+        {"source": name, "target": name, "target_type": "bigint" if name == "row_id" else "string",
+         "nullable": name != "row_id"} for name in ("row_id", "left_secret", "right_secret")]}]
+    return payload
+
+
+def verify_postgres_join_execution(client: GatewayClient, execution: Mapping[str, object],
+                                   task_id: int, principal_id: int, success: bool) -> dict[str, object]:
+    execution_id = execution.get("execution_id")
+    try:
+        if str(uuid.UUID(execution_id)) != execution_id or uuid.UUID(execution_id).int == 0:
+            raise ValueError()
+    except (ValueError, TypeError, AttributeError):
+        raise SuiteError("PostgreSQL JOIN requires an actual execution UUID") from None
+    rows = 2 if success else 0
+    if (execution.get("status") != ("success" if success else "failed")
+            or positive_int(execution.get("task_id"), "JOIN task") != task_id
+            or positive_int(execution.get("trigger_by"), "JOIN initiator") != principal_id
+            or nonnegative_int(execution.get("records_read"), "JOIN read rows") != rows
+            or nonnegative_int(execution.get("records_written"), "JOIN written rows") != rows):
+        raise SuiteError("PostgreSQL JOIN execution identity, status or row counts differ")
+    page = _object(client.request("GET", f"/api/v1/transfer/executions/{execution_id}/events", (200,)).payload,
+                   "PostgreSQL JOIN Worker events")
+    events = [_object(item, "JOIN Worker event") for item in _array(page.get("items"), "JOIN Worker events")]
+    if (page.get("has_more") is not False or len(events) < 2 or events[0].get("kind") != "started"
+            or events[-1].get("kind") != ("completed" if success else "failed")
+            or any(event.get("execution_id") != execution_id or event.get("attempt") != 1 for event in events)
+            or (not success and len(events) != 2)):
+        raise SuiteError("PostgreSQL JOIN Worker must start and finish the same first attempt")
+    proof = {"execution_id": execution_id, "task_id": task_id, "worker_attempt": 1,
+             "records_read": rows, "records_written": rows}
+    if not success:
+        if nonnegative_int(execution.get("bytes_written"), "JOIN written bytes") != 0:
+            raise SuiteError("denied PostgreSQL JOIN wrote bytes")
+        return {**proof, **validate_transfer_protection_refusal(execution, "preparation",
+                "data_protection_required", "protection_computed_output_unsupported")}
+    metadata = _object(execution.get("metadata"), "JOIN execution metadata")
+    if metadata.get("initial_authorization") is not None:
+        raise SuiteError("prepared PostgreSQL JOIN target unexpectedly entered initial authorization")
+    facts = _object(metadata.get("lineage_facts"), "JOIN lineage")
+    operations = _array(facts.get("operations"), "JOIN lineage operations")
+    if (facts.get("runtime_execution_id") != execution_id or len(operations) != 1
+            or operations[0].get("field_lineage_status") != "complete"):
+        raise SuiteError("PostgreSQL JOIN lineage is incomplete")
+    actual = [tuple(mapping.get(key) for key in ("input_port", "source_field", "target_field", "transformation"))
+              for mapping in _array(operations[0].get("field_mappings"), "JOIN field mappings")
+              if mapping.get("target_field") in {"left_secret", "right_secret"}]
+    if len(actual) != 2 or set(actual) != {("left", "value_a", "left_secret", "derived"), ("right", "value_a", "right_secret", "derived")}:
+        raise SuiteError("PostgreSQL JOIN lost independent protected field lineage")
+    return {**proof, "protected_lineage_verified": True}
+
+
+def exercise_postgres_transfer_join(client: GatewayClient, engine_id: int, run_id: str,
+                                    principal_id: int, deadline: float) -> dict[str, object]:
+    suffix = hashlib.sha256(run_id.encode()).hexdigest()[:24]
+    written, absent = (f"p145_join_{suffix}_{name}" for name in ("written", "absent"))
+    tasks: list[int] = []
+    cases = {}
+    initial, source = postgres_join_fixture("join-target-proof", written, deadline)
+    missing, other_source = postgres_join_fixture("join-target-proof", absent, deadline)
+    if initial != {"oid": None, "rows": None} or missing != initial or other_source != source:
+        raise SuiteError("PostgreSQL JOIN needs two absent targets and stable sources")
+    left, right = (find_item(client, engine_id, f"{TARGET_SCHEMA}.{name}", "table")
+                   for name in (SPATIAL_SOURCE, SPATIAL_TARGET))
+    enrollment_id, initialized = ensure_enrollment(client, engine_id, f"{TARGET_SCHEMA}.{SPATIAL_TARGET}",
+                                                  build_item_locator(engine_id, right))
+    if not initialized:
+        raise SuiteError("PostgreSQL JOIN requires a fresh right-source Enrollment")
+    path = "/api/v1/security/protection-enrollments/" + enrollment_id
+    while time.monotonic() < deadline:
+        enrollment = _object(client.request("GET", path, (200,)).payload, "JOIN Enrollment")
+        if enrollment.get("latest_source_snapshot_hash"):
+            break
+        time.sleep(1)
+    else:
+        raise SuiteError("PostgreSQL JOIN right source has no Meta snapshot")
+    phones = [entry for entry in definition_array(client, "/api/v1/security/sensitive-data-types") if entry.get("code") == "phone"]
+    if len(phones) != 1:
+        raise SuiteError("PostgreSQL JOIN needs one phone type")
+    phone = phones[0]
+    assessment = _object(client.request("POST", "/api/v1/security/assessments", (201,), {
+        "enrollment_id": enrollment_id, "enrollment_version": enrollment["version"], "component_key": "value_a",
+        "sensitive_data_type_id": phone["id"], "security_grade_id": phone["default_security_grade_id"],
+        "rationale": written + " right source",
+    }).payload, "JOIN right-source Assessment")
+    wait_for_algorithm_projections(client, enrollment_id, deadline)
+    projection = role_projection(client, enrollment_id, "transfer")
+    policy_path = "/api/v1/security/protection-policies"
+    rationale = written + " constant export"
+    policy = None
+    try:
+        policy = _object(client.request("POST", policy_path, (201,), {
+            "assessment_id": assessment["id"], "consumer_owner": "transfer", "action": "export",
+            "effect": "mask", "algorithm": CONSTANT_ALGORITHM, "parameters": {"value": "[hidden]"},
+            "invalid_value_effect": "suppress", "rationale": rationale,
+        }).payload, "JOIN right-source Policy")
+        wait_role_projection(client, enrollment_id, projection, deadline, "transfer")
+        postgres_join_fixture("join-target-prepare", written, deadline)
+        for case, name in (("written", written), ("existing", written), ("missing", absent)):
+            payload = postgres_join_payload(build_item_locator(engine_id, left), build_item_locator(engine_id, right),
+                                            build_schema_locator(engine_id, right), name, case)
+            success = case == "written"
+            task_id, execution = create_and_run_task(client, payload, deadline, tasks,
+                expected_status="success" if success else "failed")
+            cases[case] = verify_postgres_join_execution(client, execution, task_id, principal_id, success)
+            physical, current_source = postgres_join_fixture("join-target-proof", name, deadline)
+            if current_source != source:
+                raise SuiteError("PostgreSQL JOIN changed a source value")
+            if success:
+                positive_int(physical["oid"], "JOIN target oid")
+                if physical["rows"] != [[1, "138****5678", "[hidden]"], [3, None, "[hidden]"]]:
+                    raise SuiteError("PostgreSQL JOIN physical values or source-order pagination differ")
+                written_state = physical
+            elif physical != (written_state if case == "existing" else {"oid": None, "rows": None}):
+                raise SuiteError("denied PostgreSQL JOIN mutated its physical target")
+        if len({proof["execution_id"] for proof in cases.values()}) != 3:
+            raise SuiteError("PostgreSQL JOIN reused an execution UUID")
+    finally:
+        try:
+            cleanup_tasks(client, tasks)
+            residuals = []
+            for name in (written, absent):
+                try:
+                    postgres_join_fixture("join-target-clean", name, deadline)
+                    physical, _ = postgres_join_fixture("join-target-proof", name, time.monotonic() + 30)
+                    if physical != {"oid": None, "rows": None}:
+                        residuals.append(name)
+                except SuiteError:
+                    residuals.append(name)
+            if residuals:
+                raise SuiteError("PostgreSQL JOIN could not verify cleanup of " + ", ".join(residuals))
+        finally:
+            candidates = [entry for entry in list_pages(client, policy_path) if entry.get("assessment_id") == assessment["id"]
+                          and entry.get("consumer_owner") == "transfer" and entry.get("action") == "export"]
+            if candidates:
+                if len(candidates) != 1 or (policy is not None and candidates[0].get("id") != policy.get("id")):
+                    raise SuiteError("PostgreSQL JOIN Policy ownership changed")
+                current_path = policy_path + "/" + str(candidates[0]["id"])
+                current = _object(client.request("GET", current_path, (200,)).payload, "JOIN Policy cleanup")
+                if (current.get("state") != "active" or _object(current.get("current"), "JOIN Policy revision").get("rationale") != rationale
+                        or (policy is not None and current.get("version") != policy.get("version"))):
+                    raise SuiteError("PostgreSQL JOIN Policy changed outside the run")
+                before = role_projection(client, enrollment_id, "transfer")
+                revoked = _object(client.request("DELETE", current_path, (200,), {
+                    "version": current["version"], "rationale": written + " cleanup"}).payload, "revoked JOIN Policy")
+                if revoked.get("state") != "revoked":
+                    raise SuiteError("PostgreSQL JOIN Policy still active")
+                wait_role_projection(client, enrollment_id, before, time.monotonic() + 30, "transfer")
+            elif policy is not None:
+                raise SuiteError("PostgreSQL JOIN Policy disappeared before cleanup")
+    return {"cases": cases, "original_order_and_protected_rows_verified": True,
+            "existing_target_unchanged": True, "missing_target_absent": True, "sources_unchanged": True,
+            "deleted_tasks": len(tasks), "active_policy_residuals": 0, "target_residuals": 0}
+
+
 def assert_mongodb_rows(rows: list[dict[str, object]], owner: str,
                         expected: Mapping[str, object]) -> dict[str, object]:
     """Validate nested values and sparse objects against independent fixture facts."""
@@ -4488,6 +4676,8 @@ def run_scenario(
     target_scan = wait_for_postgres_item_scan(client, target_engine_id, TARGET_TABLE, deadline)
     enrolling_refusal = exercise_unready_source(client, target_engine_id, positive_int(identity["principal_id"], "ordinary principal"), deadline)
     spatial_algorithms = exercise_spatial_algorithms(client, target_engine_id, run_id, deadline, timeout)
+    postgres_transfer_join = exercise_postgres_transfer_join(
+        client, target_engine_id, run_id, positive_int(identity["principal_id"], "ordinary principal"), deadline)
     bank_card_metadata = exercise_bank_card_metadata(
         client, source_engine_id, target_engine_id, source_database, run_id, identity, deadline, enrolling_refusal)
     service_role_cursor_revocation = exercise_service_role_cursor_revocation(
@@ -4594,7 +4784,7 @@ def run_scenario(
             source_locator, target_parent_locator, target_locator, service_name, task_name, identity, deadline, task_ids)
         result = {
             "resource_validity": resource_validity,
-            "schema_version": "addp.security-mysql-owner-protection-online/v42",
+            "schema_version": "addp.security-mysql-owner-protection-online/v43",
             "postgres_refresh_scope": {"mode": "exact_items", "initializer_depth": "basic",
                 "schema": TARGET_SCHEMA, "tables": list(POSTGRES_READ_TARGETS)},
             "result": "passed",
@@ -4602,6 +4792,7 @@ def run_scenario(
             "governance": governance,
             "default_protection_transaction": default_protection_transaction,
             "spatial_algorithms": spatial_algorithms,
+            "postgres_transfer_join": postgres_transfer_join,
             "bank_card_metadata": bank_card_metadata,
             "service_role_cursor_revocation": service_role_cursor_revocation,
             "service_sql_role_cursor_revocation": service_sql_role_cursor_revocation,
@@ -4637,8 +4828,8 @@ def run_scenario(
                     "records_written": transfer_execution.get("records_written"),
                 },
             },
-            "created_resources": 14 + len(task_ids),
-            "deleted_resources": 14 + len(task_ids),
+            "created_resources": 14 + len(task_ids) + postgres_transfer_join["deleted_tasks"],
+            "deleted_resources": 14 + len(task_ids) + postgres_transfer_join["deleted_tasks"],
             "residual_resources": 0,
         }
     except BaseException as error:

@@ -10,7 +10,7 @@
 
 ## 现行契约与证据边界
 
-当前领域报告为 `addp.security-mysql-owner-protection-online/v42`、浏览器报告为 `addp.security-manager-export-browser/v9`，以[现行校验器](../test/security-mysql-owner-protection-online.py)为准。本页按主题保留 v23～v42 的增量要求；当前报告继承仍适用的断言，v30 的旧错误合并仅作历史记录，v31／v32 的证据不能替代 v33 新增范围。
+当前领域报告为 `addp.security-mysql-owner-protection-online/v43`、浏览器报告为 `addp.security-manager-export-browser/v9`，以[现行校验器](../test/security-mysql-owner-protection-online.py)为准。本页按主题保留 v23～v43 的增量要求。当前报告继承仍适用的断言。
 
 保护方式、角色资格及导出有效性的能力契约见[数据安全规范](../../docs/spec/addp数据安全与隐私保护实现规范.md#711-默认方式与角色可选方式)。本文维护 suite 断言与版本差异；已归档的固定源码、运行尝试、失败和清理结果见[数据保护与执行血缘历史证据](../../docs/spec/testing/evidence/数据保护与执行血缘历史证据.md)，不由版本号推导某次验收已通过。其中[四出口实际停机 v9](../../docs/spec/testing/evidence/数据保护与执行血缘历史证据.md#四出口实际停机--t4-v9)、[四出口重新发现 v10](../../docs/spec/testing/evidence/数据保护与执行血缘历史证据.md#四出口重新发现--t4-v10)分别维护对应旧证据，不作为 v23～v33 新增范围的通过记录。
 
@@ -265,3 +265,11 @@ Transfer 的这两个 SQL 查询源拒绝复用套件已纳管的 PostgreSQL `sp
 ### 策略恢复、审计与未覆盖范围
 
 本轮策略变更必须绑定自己的Assessment、Transfer/export和唯一验收原因，采用当前版本的乐观并发控制；已有活动覆盖或并发他人变更时拒绝接管。失败、中断以及写请求结果不确定时均按真实读回的本次归属／修订恢复为revoked，不重放写请求、不覆盖他人修改。身份和功能资格、保护基线及原查询快照保持不变。成功保留6个导出会话、执行与策略修订审计及文件证据，随既有隔离Infra最终销毁，不新增清理接口或声称领域零残留包含这些保留审计；不得把物理清理报告与本轮实际保留范围混淆。真实隔离运行尚需专门CI会话回传，确定性Runner门禁及此前本地Persons验收均不能替代新的Hosted证据。
+
+## Transfer PostgreSQL 两表查询脱敏落盘
+
+领域报告 v43 在空间算法阶段之后读取原有的两个精确授权表 `spatial_algorithm_source` 和 `spatial_algorithm_transfer`。左表使用已恢复的手机号默认掩码，右表对上一阶段写出的合成 SM3 数据创建正式 Assessment 和本轮 Transfer/export 固定替换策略。沿原有 System 身份、Gateway、Transfer 任务 API 与独立 bounded Worker 执行，等待右表的 Transfer 投影确认后再提交查询。
+
+查询按右表原值排序，使用 `LIMIT 2 OFFSET 1`，目标表应只有 ID 1 和 3。ID 1 左列为掩码，ID 3 左列因源值过短写入 NULL，右列均为固定替换值。两个别名分别保留左、右字段来源。敏感表达式 `pg_catalog.lower` 分别写向已存在目标和未创建目标，两次均在准备阶段以 `protection_computed_output_unsupported` 拒绝，读写计数为零。每条用例核对原执行 UUID、发起人和首个 Worker attempt 的开始及终态事件。
+
+当次 PostgreSQL 夹具提前创建一个空目标，随后由 Worker 写入。物理核对检查两个精确目标的表标识、行和不存在状态，并以两个源表的摘要核对源数据。领域报告只保存判定及数量。任务按 API 删除并确认 404，固定替换策略按版本撤销并等待同步。物理清理只处理本轮预检时已证明不存在的目标名，校验两表均无残留。右表的治理记录与执行审计随隔离环境销毁。确定性校验仍使用 `make test-security-online-runner`，真实 T4 由专门 CI 会话执行。

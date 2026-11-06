@@ -7,10 +7,50 @@ fail() { echo "Security owner fixture failed: $*" >&2; exit 1; }
 [ "${GITHUB_ACTIONS:-}" = true ] && [ "${RUNNER_OS:-}" = Linux ] &&
   [ "${ADDP_ONLINE_HOSTED:-}" = 1 ] && [ "${ADDP_ONLINE_HOST:-}" = 1 ] &&
   [ "$(uname -s)" = Linux ] && [ "$(uname -m)" = x86_64 ] || fail "Hosted Linux x86_64 is required"
-[ "$#" -eq 1 ] || fail "usage: online-security-owner-fixture.sh start|stop|bank-schema-add|bank-schema-remove"
+[ "$#" -eq 1 ] || fail "expected a single Security fixture action"
 docker info >/dev/null 2>&1 || fail "Docker daemon is unavailable"
 containers=(addp-security-online-postgres addp-security-online-mysql addp-security-online-mongodb)
 case "$1" in
+  join-target-prepare|join-target-proof|join-target-clean)
+    container=${containers[0]}
+    [ "$(docker inspect --format '{{ index .Config.Labels "com.addp.online-fixture" }}' "$container")" = security ] || fail "container ownership mismatch"
+    [ -d "${ADDP_ONLINE_SECRET_DIR:?}" ] || fail "Hosted secret directory is missing"
+    run_id=${ADDP_ONLINE_TEST_RUN_ID:?}
+    [[ "$run_id" =~ ^[A-Za-z0-9_-]{1,100}$ ]] || fail "invalid JOIN run id"
+    suffix=$(python3 -c 'import hashlib, sys; print(hashlib.sha256(sys.argv[1].encode()).hexdigest()[:24])' "$run_id")
+    target=${ADDP_SECURITY_JOIN_TARGET:?}
+    [[ "$target" == "p145_join_${suffix}_written" || "$target" == "p145_join_${suffix}_absent" ]] || fail "JOIN target is outside this run"
+    if [ "$1" = join-target-prepare ]; then
+      [ "$target" = "p145_join_${suffix}_written" ] || fail "JOIN missing target cannot be prepared"
+      docker exec -i "$container" psql -XqAt -U postgres -d security_fixture -v ON_ERROR_STOP=1 -v target="$target" \
+        2>"$ADDP_ONLINE_SECRET_DIR/security-join-prepare-error.log" <<'SQL'
+SET ROLE security_writer;
+SELECT format('CREATE TABLE addp_online_security.%I (row_id bigint, left_secret text, right_secret text)', :'target') \gexec
+SQL
+    elif [ "$1" = join-target-clean ]; then
+      docker exec -i "$container" psql -XqAt -U postgres -d security_fixture -v ON_ERROR_STOP=1 -v target="$target" \
+        2>"$ADDP_ONLINE_SECRET_DIR/security-join-clean-error.log" <<'SQL'
+SET ROLE security_writer;
+SELECT format('DROP TABLE IF EXISTS addp_online_security.%I', :'target') \gexec
+SQL
+    else
+      docker exec -i "$container" psql -XqAt -U postgres -d security_fixture -v ON_ERROR_STOP=1 -v target="$target" \
+        2>"$ADDP_ONLINE_SECRET_DIR/security-join-proof-error.log" <<'SQL'
+BEGIN READ ONLY;
+SET LOCAL ROLE security_writer;
+SELECT CASE WHEN to_regclass(format('addp_online_security.%I', :'target')) IS NULL THEN
+  'SELECT json_build_object(''oid'',NULL,''rows'',NULL)'
+ELSE format(
+  'SELECT json_build_object(''oid'',%s,''rows'',coalesce(json_agg(json_build_array(row_id,left_secret,right_secret) ORDER BY row_id),''[]''::json)) FROM addp_online_security.%I',
+  to_regclass(format('addp_online_security.%I', :'target'))::oid, :'target')
+END \gexec
+SELECT json_build_object(
+  'left', (SELECT md5(jsonb_agg(jsonb_build_array(id,value_a) ORDER BY id)::text) FROM addp_online_security.spatial_algorithm_source),
+  'right', (SELECT md5(jsonb_agg(jsonb_build_array(id,value_a) ORDER BY id)::text) FROM addp_online_security.spatial_algorithm_transfer));
+COMMIT;
+SQL
+    fi
+    exit 0 ;;
   bank-schema-add|bank-schema-remove)
     container=${containers[1]}
     [ "$(docker inspect --format '{{ index .Config.Labels "com.addp.online-fixture" }}' "$container")" = security ] || fail "container ownership mismatch"
@@ -45,7 +85,7 @@ case "$1" in
     [ -z "$remaining" ] || fail "fixture containers remain after cleanup"
     exit 0 ;;
   start) ;;
-  *) fail "usage: online-security-owner-fixture.sh start|stop|bank-schema-add|bank-schema-remove" ;;
+  *) fail "unknown Security fixture action" ;;
 esac
 for container in "${containers[@]}"; do
   ! docker container inspect "$container" >/dev/null 2>&1 || fail "refusing an existing fixture container"

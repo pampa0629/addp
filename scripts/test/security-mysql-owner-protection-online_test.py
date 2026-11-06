@@ -4437,6 +4437,107 @@ class DefaultExportProtectionTest(unittest.TestCase):
 
 
 
+class PostgresTransferJoinTest(unittest.TestCase):
+    def test_payload_binds_two_sources_and_keeps_pagination_when_expression_changes(self):
+        normal = ONLINE.postgres_join_payload("left-uri", "right-uri", "parent", "target", "written")
+        denied = ONLINE.postgres_join_payload("left-uri", "right-uri", "parent", "target", "existing")
+        query = normal["config"]["source"]["query"]
+        self.assertEqual(query["inputs"], [{"name": "left", "locator": "left-uri"},
+                                          {"name": "right", "locator": "right-uri"}])
+        self.assertIn("ORDER BY 3,l.id LIMIT 2 OFFSET 1", query["statement"])
+        self.assertEqual(denied["config"]["source"]["query"]["statement"],
+                         query["statement"].replace("r.value_a AS", "pg_catalog.lower(r.value_a) AS"))
+        self.assertEqual(normal["batch_size"], 1)
+        self.assertFalse(normal["auto_scan_metadata"])
+
+    def test_worker_refusal_requires_same_first_attempt_and_zero_effects(self):
+        identifier = str(uuid.uuid4())
+        failure = {"execution_id": identifier, "task_id": 8, "trigger_by": 33, "status": "failed",
+                   "records_read": 0, "records_written": 0, "bytes_written": 0,
+                   "error_details": {"code": "data_protection_required", "diagnostic": {
+                       "schema_version": "addp.execution-failure/v3", "stage": "preparation",
+                       "reason": "protection_computed_output_unsupported"}}}
+        events = [{"execution_id": identifier, "kind": kind, "attempt": 1} for kind in ("started", "failed")]
+        client = Mock()
+        client.request.return_value = ONLINE.SUPPORT.Response(200, {"items": events, "has_more": False})
+        proof = ONLINE.verify_postgres_join_execution(client, failure, 8, 33, False)
+        self.assertEqual(proof["diagnostic_reason"], "protection_computed_output_unsupported")
+        client.request.assert_called_once_with("GET", f"/api/v1/transfer/executions/{identifier}/events", (200,))
+        for key in ("records_read", "records_written", "bytes_written"):
+            with self.subTest(key=key), self.assertRaises(ONLINE.SuiteError):
+                ONLINE.verify_postgres_join_execution(client, dict(failure, **{key: 1}), 8, 33, False)
+        events[-1]["attempt"] = 2
+        with self.assertRaisesRegex(ONLINE.SuiteError, "same first attempt"):
+            ONLINE.verify_postgres_join_execution(client, failure, 8, 33, False)
+
+    def test_worker_success_preserves_both_source_bindings_without_initial_authorization(self):
+        identifier = str(uuid.uuid4())
+        mappings = [{"input_port": name, "source_field": "value_a", "target_field": name + "_secret",
+                     "transformation": "derived"} for name in ("left", "right")]
+        result = {"execution_id": identifier, "task_id": 8, "trigger_by": 33, "status": "success",
+                  "records_read": 2, "records_written": 2, "metadata": {"lineage_facts": {
+                      "runtime_execution_id": identifier,
+                      "operations": [{"field_lineage_status": "complete", "field_mappings": mappings}]}}}
+        events = [{"execution_id": identifier, "kind": kind, "attempt": 1} for kind in ("started", "completed")]
+        client = Mock()
+        client.request.return_value = ONLINE.SUPPORT.Response(200, {"items": events, "has_more": False})
+        self.assertTrue(ONLINE.verify_postgres_join_execution(client, result, 8, 33, True)["protected_lineage_verified"])
+        changed = copy.deepcopy(result)
+        changed["metadata"]["initial_authorization"] = {"status": "pending"}
+        with self.assertRaisesRegex(ONLINE.SuiteError, "unexpectedly entered initial authorization"):
+            ONLINE.verify_postgres_join_execution(client, changed, 8, 33, True)
+        mappings[1]["input_port"] = "left"
+        with self.assertRaisesRegex(ONLINE.SuiteError, "lost independent protected field lineage"):
+            ONLINE.verify_postgres_join_execution(client, result, 8, 33, True)
+
+    def test_physical_probe_failure_still_cleans_tasks_tables_and_policy(self):
+        client = Mock()
+        requests = [
+            {"latest_source_snapshot_hash": "hash", "version": 1},
+            {"id": "assessment"},
+            {"id": "policy", "version": 1},
+            {"state": "active", "version": 1, "current": {"rationale": "owned"}},
+            {"state": "revoked"},
+        ]
+        client.request.side_effect = [ONLINE.SUPPORT.Response(200, body) for body in requests]
+        empty = {"oid": None, "rows": None}
+        source = {"left": "a", "right": "b"}
+        observations = [
+            (empty, source), (empty, source), None,
+            ({"oid": 13, "rows": [[2, None, "[hidden]"], [3, None, "[hidden]"]]}, source),
+            None, (empty, source), None, (empty, source),
+        ]
+
+        def submit(_client, _payload, _deadline, tasks, **_options):
+            tasks.append(8)
+            return 8, {}
+
+        with (patch.object(ONLINE, "postgres_join_fixture", side_effect=observations) as fixture,
+              patch.object(ONLINE, "find_item", side_effect=[{"id": 1}, {"id": 2}]),
+              patch.object(ONLINE, "build_item_locator", return_value="fixture-source"),
+              patch.object(ONLINE, "build_schema_locator", return_value="fixture-parent"),
+              patch.object(ONLINE, "ensure_enrollment", return_value=("enrollment", True)),
+              patch.object(ONLINE, "definition_array", return_value=[{"id": 9, "code": "phone", "default_security_grade_id": 3}]),
+              patch.object(ONLINE, "wait_for_algorithm_projections"),
+              patch.object(ONLINE, "role_projection"),
+              patch.object(ONLINE, "wait_role_projection") as synchronized,
+              patch.object(ONLINE, "list_pages", return_value=[{"id": "policy", "assessment_id": "assessment",
+                  "consumer_owner": "transfer", "action": "export"}]),
+              patch.object(ONLINE, "create_and_run_task", side_effect=submit),
+              patch.object(ONLINE, "verify_postgres_join_execution", return_value={"execution_id": str(uuid.uuid4())}),
+              patch.object(ONLINE, "cleanup_tasks") as cleanup):
+            run_id = "fixture-run"
+            target = "p145_join_" + ONLINE.hashlib.sha256(run_id.encode()).hexdigest()[:24] + "_written"
+            requests[3]["current"]["rationale"] = target + " constant export"
+            with self.assertRaisesRegex(ONLINE.SuiteError, "physical values or source-order pagination differ"):
+                ONLINE.exercise_postgres_transfer_join(client, 17, run_id, 33, time.monotonic() + 30)
+            cleanup.assert_called_once_with(client, [8])
+            self.assertEqual([call.args[0] for call in fixture.call_args_list], [
+                "join-target-proof", "join-target-proof", "join-target-prepare", "join-target-proof",
+                "join-target-clean", "join-target-proof", "join-target-clean", "join-target-proof"])
+            self.assertEqual(synchronized.call_count, 2)
+
+
 class PostgresExactRefreshContractTest(unittest.TestCase):
     def test_three_mongodb_targets_cannot_share_a_scan_or_continue_after_failure(self):
         for replies, expected_calls, message in [(["same", "same", "same"],3,"distinct executions"),
