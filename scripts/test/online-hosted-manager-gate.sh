@@ -8,12 +8,14 @@ ROOT_DIR=$(cd "$SCRIPT_DIR/../.." && pwd -P)
 ONLINE_SUITE=manager-internal-artifact-lineage
 export ADDP_ONLINE_MANAGER_CASE=${ADDP_ONLINE_MANAGER_CASE-full}
 case "$ADDP_ONLINE_MANAGER_CASE" in
-  full|native-raster-media|native-table-orc|native-netcdf|native-grib|native-envi|kml-export|filegdb-authorization) ;;
-  *) echo 'ADDP_ONLINE_MANAGER_CASE must be full, native-raster-media, native-table-orc, native-netcdf, native-grib, native-envi, kml-export or filegdb-authorization' >&2; exit 1 ;;
+  full|native-raster-media|native-table-orc|native-netcdf|native-grib|native-envi|kml-export|filegdb-export|filegdb-authorization) ;;
+  *) echo 'ADDP_ONLINE_MANAGER_CASE must be full, native-raster-media, native-table-orc, native-netcdf, native-grib, native-envi, kml-export, filegdb-export or filegdb-authorization' >&2; exit 1 ;;
 esac
 HOSTED_FIXTURE_CONTAINERS=(addp-manager-model3d-runtime business-minio addp-manager-online-registry addp-manager-raster-runtime addp-manager-raster-verifier)
 if [ "$ADDP_ONLINE_MANAGER_CASE" = kml-export ]; then
   HOSTED_FIXTURE_CONTAINERS=(addp-metric-online-disposable)
+elif [ "$ADDP_ONLINE_MANAGER_CASE" = filegdb-export ]; then
+  HOSTED_FIXTURE_CONTAINERS=(addp-metric-online-disposable addp-manager-online-registry addp-manager-raster-runtime)
 elif [ "$ADDP_ONLINE_MANAGER_CASE" = filegdb-authorization ]; then
   HOSTED_FIXTURE_CONTAINERS=(addp-manager-online-registry addp-manager-raster-runtime)
 fi
@@ -23,7 +25,7 @@ RUNTIME_TAG=manager-raster-online
 RUNTIME_IMAGE=localhost:5001/addp-geopython-workflow-engine:$RUNTIME_TAG
 export ADDP_ONLINE_RASTER_RUNTIME_IMAGE="$RUNTIME_IMAGE"
 HOSTED_FIXTURE_IMAGES=("$RUNTIME_IMAGE" localhost:5001/python:3.11-slim 127.0.0.1:5001/addp-model3d-converter:online 127.0.0.1:5001/addp-model3d-workflow-engine:online)
-if [ "$ADDP_ONLINE_MANAGER_CASE" = filegdb-authorization ]; then
+if [[ "$ADDP_ONLINE_MANAGER_CASE" = filegdb-* ]]; then
   HOSTED_FIXTURE_IMAGES=("$RUNTIME_IMAGE")
 fi
 stop_online_fixture() {
@@ -32,8 +34,14 @@ stop_online_fixture() {
     # Capture bounded, redacted evidence before the standard Infra teardown.
     python3 business/scripts/online-envi-fixture.py --infra-diagnostic || true
   fi
-  if [ "$ADDP_ONLINE_MANAGER_CASE" = kml-export ]; then
+  if [ "$ADDP_ONLINE_MANAGER_CASE" = kml-export ] || [ "$ADDP_ONLINE_MANAGER_CASE" = filegdb-export ]; then
     run_logged bash business/scripts/online-metric-postgres-fixture.sh stop || cleanup_status=1
+    if [ "$ADDP_ONLINE_MANAGER_CASE" = filegdb-export ]; then
+      remove_online_product_container addp-manager-online-registry || cleanup_status=1
+      if docker image inspect "$RUNTIME_IMAGE" >/dev/null 2>&1; then
+        run_logged docker image rm "$RUNTIME_IMAGE" || cleanup_status=1
+      fi
+    fi
     return "$cleanup_status"
   fi
   if [ "$ADDP_ONLINE_MANAGER_CASE" = filegdb-authorization ]; then
@@ -88,8 +96,8 @@ PYCASE
 export ADDP_ONLINE_TEST_RUN_ID="manager-${GITHUB_RUN_ID:?}-${GITHUB_RUN_ATTEMPT:?}"
 export MONITOR_URL=http://127.0.0.1:8100 CONSOLE_URL=http://127.0.0.1:5170
 export SECURITY_URL=http://127.0.0.1:8194
-if [ "$ADDP_ONLINE_MANAGER_CASE" = kml-export ]; then
-  export ADDP_ONLINE_FIXTURE_ENGINE_DESCRIPTOR_FILE="$ADDP_ONLINE_SECRET_DIR/manager-kml-engine.json"
+if [ "$ADDP_ONLINE_MANAGER_CASE" = kml-export ] || [ "$ADDP_ONLINE_MANAGER_CASE" = filegdb-export ]; then
+  export ADDP_ONLINE_FIXTURE_ENGINE_DESCRIPTOR_FILE="$ADDP_ONLINE_SECRET_DIR/manager-postgis-export-engine.json"
   infra_owned=1
   run_logged bash scripts/infra/up.sh
   fixture_owned=1
@@ -98,6 +106,15 @@ if [ "$ADDP_ONLINE_MANAGER_CASE" = kml-export ]; then
   for start_target in -security -meta -manager -monitor -transfer; do
     run_daemon_launcher_logged env SKIP_MODTIDY=1 bash scripts/dev/start.sh "$start_target"
   done
+  if [ "$ADDP_ONLINE_MANAGER_CASE" = filegdb-export ]; then
+    run_logged docker run -d --name addp-manager-online-registry --label "com.addp.online-runtime=$ONLINE_SUITE" -p 127.0.0.1:5001:5000 registry:2
+    for attempt in $(seq 1 30); do
+      if curl -fsS http://127.0.0.1:5001/v2/ >/dev/null; then break; fi
+      [ "$attempt" -lt 30 ] || fail 'temporary registry not ready'
+      sleep 1
+    done
+    start_online_geopython_runtime "$RUNTIME_TAG"
+  fi
   run_logged npm --prefix console/frontend exec -- playwright install --with-deps chromium
   run_logged bash -c 'cd system/backend && go run ./cmd/online-test-fixture --suite manager-internal-artifact-lineage --wait-protection-owners manager,transfer --output "$1"' _ "$IDENTITY_ENV"
   source "$IDENTITY_ENV"

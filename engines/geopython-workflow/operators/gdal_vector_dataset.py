@@ -5,23 +5,30 @@ from __future__ import annotations
 import base64
 import datetime as dt
 from functools import wraps
+import hashlib
 import json
 import math
+import os
 import re
 import shutil
-from . import _native_process
+import stat
 import sys
 import tempfile
+import time
 import xml.parsers.expat
+import zipfile
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
 
+from . import _native_process
+
 from osgeo import gdal, ogr, osr
-from shapely import from_wkb, set_srid, to_wkb
+from shapely import from_wkb, get_srid, set_srid, to_wkb
 
 from addp_common.workflow_access import (
     WorkflowAccessError,
+    publish_target_file,
     require_source_plan,
     require_target_plan,
     stage_source_directory,
@@ -225,7 +232,19 @@ def write_open(
     target = plan["target"]
     if target.get("format") != "filegdb":
         raise ValueError("GDAL vector writer supports filegdb target only")
-    path = _mounted_target_path(target)
+    path, workspace = _filegdb_write_path(target)
+    if workspace is not None:
+        _validate_archive_layer(fields, spatial)
+        _prepare_filegdb_workspace(workspace)
+    try:
+        return _create_filegdb(path, target, layer, fields, spatial, archive=workspace is not None)
+    except Exception:
+        if workspace is not None:
+            shutil.rmtree(workspace)
+        raise
+
+
+def _create_filegdb(path, target, layer, fields, spatial, *, archive):
     if path.exists():
         if target["write_mode"] == "create":
             raise WorkflowAccessError(f"target directory already exists: {path}")
@@ -241,11 +260,18 @@ def write_open(
         spatial = spatial if isinstance(spatial, dict) else {}
         primary_geometry = _primary_geometry(spatial)
         geometry_type = _ogr_geometry_type(primary_geometry.get("geometry_type")) if primary_geometry else ogr.wkbNone
-        target_layer = dataset.CreateLayer(layer_name, srs=_spatial_reference(spatial), geom_type=geometry_type)
+        reference = _archive_spatial_reference(spatial) if archive else _spatial_reference(spatial)
+        target_layer = dataset.CreateLayer(layer_name, srs=reference, geom_type=geometry_type)
         if target_layer is None:
             raise RuntimeError(f"create FileGDB layer failed: {layer_name}")
         geometry_field = primary_geometry.get("name")
         fid_column = target_layer.GetFIDColumn()
+        if archive:
+            attribute_names = [field["name"] for field in fields if field["name"] != geometry_field]
+            reserved = {fid_column.casefold(), target_layer.GetGeometryColumn().casefold()}
+            folded = {name.casefold() for name in attribute_names}
+            if len(folded) != len(attribute_names) or folded & reserved:
+                raise ValueError("FileGDB export has conflicting field names")
         for field in fields:
             if (
                 not isinstance(field, dict)
@@ -256,9 +282,13 @@ def write_open(
                 continue
             if target_layer.CreateField(_ogr_field_definition(field)) != ogr.OGRERR_NONE:
                 raise RuntimeError(f"create FileGDB field failed: {field.get('name')}")
+            if archive:
+                definition = target_layer.GetLayerDefn()
+                if definition.GetFieldDefn(definition.GetFieldCount() - 1).GetName() != field["name"]:
+                    raise ValueError("FileGDB export would change an attribute field name")
     finally:
         dataset = None
-    return {"protocol": BATCH_PROTOCOL, "created": True, "path": str(path)}
+    return {"protocol": BATCH_PROTOCOL, "created": True, **({} if archive else {"path": str(path)})}
 
 
 def write_batch(
@@ -272,7 +302,7 @@ def write_batch(
 ) -> dict[str, Any]:
     _require_protocol(protocol)
     plan = require_target_plan({"access_plan": access_plan})
-    path = _mounted_target_path(plan["target"])
+    path, workspace = _filegdb_write_path(plan["target"])
     dataset = gdal.OpenEx(str(path), gdal.OF_VECTOR | gdal.OF_UPDATE, allowed_drivers=["OpenFileGDB"])
     if dataset is None:
         raise RuntimeError(f"open FileGDB target failed: {path}")
@@ -281,13 +311,15 @@ def write_batch(
         current_count = target_layer.GetFeatureCount(force=1)
         if current_count != offset:
             raise RuntimeError(f"FileGDB target row count {current_count} does not match batch offset {offset}")
-        geometry_field = _primary_geometry(spatial or {}).get("name")
-        srs = _spatial_reference(spatial or {})
+        primary = _primary_geometry(spatial or {})
+        geometry_field = primary.get("name")
+        srs = _archive_spatial_reference(spatial or {}) if workspace is not None else _spatial_reference(spatial or {})
+        strict_srid = primary.get("srid", 0) if workspace is not None else None
         if target_layer.StartTransaction() != ogr.OGRERR_NONE:
             raise RuntimeError("start FileGDB batch transaction failed")
         try:
             for row in rows:
-                _append_feature(target_layer, row, fields, geometry_field, srs)
+                _append_feature(target_layer, row, fields, geometry_field, srs, archive_srid=strict_srid)
             if target_layer.CommitTransaction() != ogr.OGRERR_NONE:
                 raise RuntimeError("commit FileGDB batch transaction failed")
         except Exception:
@@ -309,22 +341,44 @@ def write_close(
     spatial: dict[str, Any] | None,
     expected_row_count: int,
 ) -> dict[str, Any]:
-    del fields, spatial
+    del fields
     _require_protocol(protocol)
     plan = require_target_plan({"access_plan": access_plan})
-    path = _mounted_target_path(plan["target"])
+    path, workspace = _filegdb_write_path(plan["target"])
+    try:
+        reference = _archive_spatial_reference(spatial or {}) if workspace is not None else None
+        extent = _completed_filegdb_extent(path, layer, expected_row_count, reference)
+        if workspace is not None:
+            output = workspace / plan["target"]["name"]
+            _zip_filegdb(path, output)
+            publish_target_file(output, plan)
+        return {"protocol": BATCH_PROTOCOL, "closed": True, "row_count": expected_row_count, "extent": extent}
+    finally:
+        if workspace is not None and workspace.is_dir():
+            shutil.rmtree(workspace)
+
+
+def _completed_filegdb_extent(path: Path, layer: str, expected_row_count: int, source_crs) -> list[float]:
     dataset = gdal.OpenEx(str(path), gdal.OF_VECTOR, allowed_drivers=["OpenFileGDB"])
     if dataset is None:
-        raise RuntimeError(f"open completed FileGDB failed: {path}")
+        raise RuntimeError("open completed FileGDB failed")
     try:
         target_layer = _required_layer(dataset, layer)
         row_count = target_layer.GetFeatureCount(force=1)
         if row_count != expected_row_count:
             raise RuntimeError(f"FileGDB target row count {row_count} does not match expected {expected_row_count}")
-        extent = _layer_extent(target_layer)
+        if source_crs is not None:
+            output_crs = target_layer.GetSpatialRef()
+            if output_crs is None:
+                raise RuntimeError("FileGDB output is missing the source CRS")
+            output_crs = output_crs.Clone()
+            for reference in (output_crs, source_crs):
+                reference.SetAxisMappingStrategy(osr.OAMS_TRADITIONAL_GIS_ORDER)
+            if not output_crs.IsSame(source_crs):
+                raise RuntimeError("FileGDB output changed the source CRS")
+        return _layer_extent(target_layer)
     finally:
         dataset = None
-    return {"protocol": BATCH_PROTOCOL, "closed": True, "row_count": row_count, "extent": extent}
 
 
 def write_abort(
@@ -337,9 +391,10 @@ def write_abort(
     del layer, fields, spatial
     _require_protocol(protocol)
     plan = require_target_plan({"access_plan": access_plan})
-    path = _mounted_target_path(plan["target"])
-    if path.exists():
-        shutil.rmtree(path)
+    path, workspace = _filegdb_write_path(plan["target"])
+    root = workspace if workspace is not None else path
+    if root.exists():
+        shutil.rmtree(root)
     return {"protocol": BATCH_PROTOCOL, "aborted": True}
 
 
@@ -710,7 +765,7 @@ def _ewkb(geometry, srid: int) -> bytes:
     return to_wkb(shape, hex=False, include_srid=srid > 0, flavor="extended", output_dimension=3)
 
 
-def _append_feature(layer, row: dict[str, Any], fields: list[dict[str, Any]], geometry_field: str | None, srs) -> None:
+def _append_feature(layer, row: dict[str, Any], fields: list[dict[str, Any]], geometry_field: str | None, srs, *, archive_srid=None) -> None:
     feature = ogr.Feature(layer.GetLayerDefn())
     try:
         fid_column = layer.GetFIDColumn()
@@ -735,6 +790,12 @@ def _append_feature(layer, row: dict[str, Any], fields: list[dict[str, Any]], ge
             encoded = row[geometry_field]
             ewkb = base64.b64decode(encoded) if isinstance(encoded, str) else bytes(encoded)
             shape = from_wkb(ewkb)
+            if archive_srid is not None:
+                type_word = int.from_bytes(ewkb[1:5], "little" if ewkb[0] == 1 else "big")
+                if shape.has_z or getattr(shape, "has_m", False) or type_word & 0xc0000000:
+                    raise ValueError("FileGDB export requires XY geometry")
+                if shape.is_empty or (archive_srid > 0 and get_srid(shape) != archive_srid):
+                    raise ValueError("FileGDB export cannot preserve empty geometry or mismatched SRID")
             geometry = ogr.CreateGeometryFromWkb(to_wkb(shape, hex=False, include_srid=False, flavor="iso", output_dimension=3))
             if srs is not None:
                 geometry.AssignSpatialReference(srs)
@@ -866,6 +927,89 @@ def _ogr_geometry_type(name: Any) -> int:
 def _layer_extent(layer) -> list[float]:
     extent = layer.GetExtent(force=1)
     return [] if extent is None else [extent[0], extent[2], extent[1], extent[3]]
+
+
+def _filegdb_write_path(target: dict[str, Any]) -> tuple[Path, Path | None]:
+    access = target["access"]
+    if target["kind"] == "directory" and access["method"] == "mounted_path":
+        return _mounted_target_path(target), None
+    name = target["name"]
+    if (target["format"] != "filegdb" or target["kind"] != "file" or access["method"] != "object_store"
+            or target["write_mode"] != "create" or target.get("content_type") != "application/zip"
+            or not name.endswith(".gdb.zip") or len(name) <= len(".gdb.zip")
+            or "/" in name or "\\" in name or access["object"].rsplit("/", 1)[-1] != name):
+        raise WorkflowAccessError("invalid FileGDB archive target")
+    identity = json.dumps([access["endpoint"], access["bucket"], access["object"]], separators=(",", ":"))
+    workspace = Path(tempfile.gettempdir()) / "addp-filegdb-exports" / hashlib.sha256(identity.encode()).hexdigest()
+    if workspace.is_symlink() or workspace.parent.is_symlink():
+        raise WorkflowAccessError("invalid FileGDB archive workspace")
+    if workspace.parent.exists():
+        root = workspace.parent.stat()
+        if not stat.S_ISDIR(root.st_mode) or root.st_uid != os.geteuid() or stat.S_IMODE(root.st_mode) != 0o700:
+            raise WorkflowAccessError("invalid private FileGDB archive workspace")
+    return workspace / name.removesuffix(".zip"), workspace
+
+
+def _prepare_filegdb_workspace(workspace: Path) -> None:
+    root = workspace.parent
+    root.mkdir(mode=0o700, exist_ok=True)
+    # An interrupted native process can leave a workspace behind. Expire old
+    # execution-owned directories without following links or touching exports.
+    cutoff = time.time() - 24 * 60 * 60
+    for child in root.iterdir():
+        if not re.fullmatch(r"[0-9a-f]{64}", child.name):
+            continue
+        try:
+            info = child.lstat()
+        except FileNotFoundError:
+            continue
+        if stat.S_ISDIR(info.st_mode) and info.st_mtime < cutoff:
+            shutil.rmtree(child, ignore_errors=True)
+    workspace.mkdir(mode=0o700)
+
+
+def _archive_spatial_reference(spatial: dict[str, Any]):
+    primary = _primary_geometry(spatial)
+    reference_id = primary.get("crs_ref") or spatial.get("crs_ref")
+    srid = primary.get("srid") or spatial.get("srid")
+    reference = osr.SpatialReference()
+    for definition in spatial.get("crs_definitions") or []:
+        if not reference_id or definition.get("id") != reference_id:
+            continue
+        encoding = definition.get("definition_encoding")
+        value = definition.get("definition")
+        if encoding == "wkt" and value and reference.ImportFromWkt(value) == ogr.OGRERR_NONE:
+            return reference
+        raise ValueError("FileGDB export could not read the source CRS definition")
+    if isinstance(srid, int) and srid > 0 and reference_id in (None, "", f"EPSG:{srid}"):
+        if reference.ImportFromEPSG(srid) == ogr.OGRERR_NONE:
+            return reference
+    raise ValueError("FileGDB export requires a known source CRS")
+
+
+def _validate_archive_layer(fields, spatial) -> None:
+    spatial = spatial or {}
+    columns = spatial.get("geometry_columns") or []
+    primary = _primary_geometry(spatial)
+    geometry = _ogr_geometry_type(primary.get("geometry_type"))
+    if (len(columns) != 1 or not primary.get("name") or primary.get("dimension") != 2
+            or geometry in {ogr.wkbUnknown, ogr.wkbGeometryCollection}):
+        raise ValueError("FileGDB export requires one declared XY geometry column and a known source CRS")
+    geometry_fields = [field["name"] for field in fields if field.get("type") == "geometry"]
+    if geometry_fields != [primary["name"]]:
+        raise ValueError("FileGDB export geometry field does not match the source layer")
+    if any(field.get("type") not in {"geometry", "string", "int", "bool", "float", "double"} for field in fields):
+        raise ValueError("FileGDB export contains an unsupported attribute type")
+
+
+def _zip_filegdb(root: Path, output: Path) -> None:
+    members = sorted(root.iterdir())
+    if not members or any(member.is_symlink() or not member.is_file() for member in members):
+        raise WorkflowAccessError("FileGDB output has invalid directory members")
+    with zipfile.ZipFile(output, "x", compression=zipfile.ZIP_DEFLATED) as archive:
+        archive.write(root, root.name)
+        for member in members:
+            archive.write(member, f"{root.name}/{member.name}")
 
 
 def _mounted_target_path(target: dict[str, Any]) -> Path:

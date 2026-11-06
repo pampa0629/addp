@@ -128,7 +128,7 @@ func (s *ResourceActionService) GetResourceActions(ctx context.Context, locatorU
 			resp.Actions["export"] = ResourceActionStatus{
 				Supported: true,
 				DataTypes: []string{"table"},
-				Formats:   tableExportFormats(),
+				Formats:   databaseTableExportFormats(engine),
 			}
 		} else if loc.Type == resourcetree.TypeTable {
 			resp.Actions["export"] = unsupported("engine does not support table read")
@@ -323,6 +323,22 @@ func tableImportFormats() []string {
 	}
 	sort.Strings(formats)
 	return formats
+}
+
+func databaseTableExportFormats(engine *commonModels.Engine) []string {
+	formats := tableExportFormats()
+	if databaseTableExportFormat(engine, format.FormatFileGDB) {
+		formats = append(formats, string(format.FormatFileGDB))
+		sort.Strings(formats)
+	}
+	return formats
+}
+
+func databaseTableExportFormat(engine *commonModels.Engine, formatType format.FormatType) bool {
+	if formatType == format.FormatFileGDB {
+		return engine != nil && strings.EqualFold(engine.EngineType, "postgresql")
+	}
+	return supportedExportFormat(formatType)
 }
 
 func tableExportFormats() []string {

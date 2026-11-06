@@ -307,9 +307,17 @@ func (s *Service) Create(ctx context.Context, req CreateRequest) (*SessionRespon
 	now := time.Now()
 	exportID := uuid.NewString()
 	prefix := fmt.Sprintf("tenant_%d/export/%s/%s/%s/", req.TenantID, s.owner, now.Format("20060102"), exportID)
-	baseName := sanitizeBaseName(req.FileName)
+	name := req.FileName
+	if formatType == format.FormatFileGDB {
+		name = strings.TrimSuffix(strings.TrimSpace(name), format.FileGDBArchiveSuffix)
+	}
+	baseName := sanitizeBaseName(name)
 	targetName := withExtension(baseName, formatType)
 	downloadName := downloadFileName(baseName, formatType)
+	if formatType == format.FormatFileGDB {
+		targetName = baseName + format.FileGDBArchiveSuffix
+		downloadName = targetName
+	}
 	objectPath := strings.Trim(prefix, "/") + "/" + targetName
 	parentLocator := InfraPrefixLocator(s.bucket, prefix)
 	targetLocator := InfraObjectLocator(s.bucket, objectPath)
@@ -465,6 +473,9 @@ func (s *Service) refresh(ctx context.Context, session *Session) error {
 	nextManifest := session.ArtifactManifest
 	if nextStatus == StatusSuccess {
 		nextManifest = buildManifest(session, execution.Metadata)
+		if session.Format == string(format.FormatFileGDB) && len(nextManifest) == 0 {
+			return ErrNotReady
+		}
 	}
 	if nextStatus == session.Status && strings.TrimSpace(execution.ErrorMessage) == strings.TrimSpace(session.ErrorMessage) && jsonEqual(nextManifest, session.ArtifactManifest) {
 		return nil
@@ -513,6 +524,14 @@ type artifactManifest struct {
 func buildManifest(session *Session, metadata map[string]interface{}) commonModels.JSONMap {
 	refs := targetRefs(metadata)
 	formatType := format.FormatType(session.Format)
+	if formatType == format.FormatFileGDB {
+		objectPath, err := InfraObjectPath(session.TargetLocator, "")
+		expectedRef := strings.TrimPrefix(strings.SplitN(session.TargetLocator, "?", 2)[0], "addp-infra://minio/")
+		if err != nil || !strings.HasSuffix(objectPath, format.FileGDBArchiveSuffix) || len(refs) != 1 ||
+			refs[0].Path != expectedRef || !refs[0].Required || !refs[0].Primary {
+			return commonModels.JSONMap{}
+		}
+	}
 	if len(refs) == 0 && !isMultiFormat(formatType) {
 		objectPath, err := InfraObjectPath(session.TargetLocator, "")
 		if err == nil {

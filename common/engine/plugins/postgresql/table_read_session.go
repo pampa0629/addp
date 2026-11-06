@@ -596,6 +596,12 @@ func parsePostgresSpatialType(nativeType string) (string, int, int) {
 	}
 	parts := strings.Split(value[open+1:close], ",")
 	geometryType, dimension := normalizePostgresGeometryType(parts[0])
+	// A known typmod without a Z/M suffix proves XY; untyped and
+	// measured-only columns retain their existing dimension handling.
+	declared := strings.ToLower(strings.TrimSpace(parts[0]))
+	if geometryType != "" && dimension == 0 && !strings.HasSuffix(declared, "m") {
+		dimension = 2
+	}
 	srid := 0
 	if len(parts) > 1 {
 		_, _ = fmt.Sscanf(strings.TrimSpace(parts[1]), "%d", &srid)

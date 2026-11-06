@@ -163,3 +163,29 @@ func TestInfraObjectPathValidatesBucket(t *testing.T) {
 		t.Fatal("InfraObjectPath() accepted a different bucket")
 	}
 }
+
+func TestFileGDBManifestRequiresExactPublishedArchive(t *testing.T) {
+	const archive = "manager/tenant_7/export/manager/session/roads.gdb.zip"
+	session := &Session{Format: string(format.FormatFileGDB), FileName: "roads.gdb.zip", TargetLocator: "addp-infra://minio/" + archive + "?type=object"}
+	ref := func(name string, primary bool) map[string]interface{} {
+		return map[string]interface{}{"path": name, "role": "main", "required": true, "primary": primary}
+	}
+	for name, refs := range map[string][]map[string]interface{}{
+		"missing":      nil,
+		"wrong bucket": {ref("other/tenant_7/export/manager/session/roads.gdb.zip", true)},
+		"directory":    {ref(strings.TrimSuffix(archive, ".zip"), true)},
+		"nonprimary":   {ref(archive, false)},
+		"extra":        {ref(archive, true), ref(archive+".tmp", false)},
+	} {
+		t.Run(name, func(t *testing.T) {
+			if manifest := buildManifest(session, map[string]interface{}{"target_refs": refs}); len(manifest) != 0 {
+				t.Fatalf("accepted invalid FileGDB receipt: %v", manifest)
+			}
+		})
+	}
+	manifest := manifestFromJSON(buildManifest(session, map[string]interface{}{"target_refs": []interface{}{ref(archive, true)}}))
+	if manifest.Layout != format.LayoutSingle || manifest.Download.Kind != "stream" || manifest.Download.FileName != session.FileName ||
+		manifest.PrimaryRef != archive {
+		t.Fatalf("FileGDB export must stream the published archive: %#v", manifest)
+	}
+}

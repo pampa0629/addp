@@ -2045,6 +2045,12 @@ func targetEndpointContentCatalogPath(endpoint EndpointSpec, formatType format.F
 			return engineplugin.EngineCatalogPath{}, fmt.Errorf("target infra parent_locator type must be %q or %q, got %q", resourcetree.TypePrefix, resourcetree.TypeDirectory, parent.Type)
 		}
 		objectPath := strings.Trim(pathpkg.Join(strings.Join(parent.Path, "/"), name), "/")
+		if formatType == format.FormatFileGDB {
+			if name != pathpkg.Base(name) || !strings.HasSuffix(name, format.FileGDBArchiveSuffix) {
+				return engineplugin.EngineCatalogPath{}, fmt.Errorf("FileGDB export target requires a .gdb.zip name")
+			}
+			return engineplugin.ObjectItemPath(0, parent.Namespace, objectPath), nil
+		}
 		normalizedPath, err := normalizeTargetContentPathExtension(objectPath, formatType, writeOptions)
 		if err != nil {
 			return engineplugin.EngineCatalogPath{}, err

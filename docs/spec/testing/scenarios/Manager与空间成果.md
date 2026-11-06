@@ -42,7 +42,7 @@ NFS／MinIO 各两份独立字节编码源文件，每份三条单场消息，�
 
 2026-10-24 用户批准在同一 suite 内增加独立 `native-raster-media` case，专门验收 IMG 与 JPEG2000；2026-10-26 按用户确认的读取范围扩展 Surfer 7 GRD；默认 `full` 保留原完整场景、八模型、授权、基础 FBX 及其他已有断言。二者复用同一 Hosted disposable 部署、既有十项普通 User 权限和原生产品 Runtime，不增加服务、权限或 suite，也不通过旧源码或放宽模型源授权运行。
 
-唯一选择项为 `ADDP_ONLINE_MANAGER_CASE=full|native-raster-media|native-table-orc|native-netcdf|native-grib|native-envi|kml-export|filegdb-authorization`，未提供时明确选择 `full`，未知或空值在任何 Hosted 生命周期动作前拒绝。标准业务入口仍为 `ADDP_ONLINE_MANAGER_CASE=native-raster-media make test-online ONLINE_SUITE=manager-internal-artifact-lineage`；人工 Hosted 使用既有 workflow 的 `suite=manager-internal-artifact-lineage` 和明确 `manager_case`。Job 名称、Artifact 名称和 `manager-case.json` 必须显式包含所选 case，不能把任一独立 case 的通过标为完整 Manager 场景通过。KML case 的独立数据、身份、导出与清理边界见下节。
+唯一选择项为 `ADDP_ONLINE_MANAGER_CASE=full|native-raster-media|native-table-orc|native-netcdf|native-grib|native-envi|kml-export|filegdb-export|filegdb-authorization`，未提供时明确选择 `full`，未知或空值在任何 Hosted 生命周期动作前拒绝。标准业务入口仍为 `ADDP_ONLINE_MANAGER_CASE=native-raster-media make test-online ONLINE_SUITE=manager-internal-artifact-lineage`；人工 Hosted 使用既有 workflow 的 `suite=manager-internal-artifact-lineage` 和明确 `manager_case`。Job 名称、Artifact 名称和 `manager-case.json` 必须显式包含所选 case，不能把任一独立 case 的通过标为完整 Manager 场景通过。KML case 的独立数据、身份、导出与清理边界见下节。
 
 `native-raster-media` 执行既有 IMG/JPEG2000、Surfer GRD 只读及 TIFF 无定位小图 COG 布局子场景。前两者沿同一入口验证真实 Meta、原文件、COG、页面、缓存和领域／物理清理；GRD 验证完整数值源、元数据、页面原文件下载及无定位边界。四个子场景任一个失败即失败，不因另一个通过继续宣称整项通过。独立根报告为 `manager-native-raster-media.json`、`schema_version=addp.manager-native-raster-media/v2`，包含 `case=native-raster-media`、完整 `source_formats=[img,jpeg2000,grd,tiff]`、普通身份、四个子报告及真实失败状态；总 `online-report.json` 仍由统一分发器生成。未执行的模型、点云、文档、结构化数据及其他格式既不计通过，也不伪装成跳过后完整通过；完整 case 在新模型源授权迁移完成前仍可能受其原有正向断言阻断，须单独验收。成功／失败后的应用、夹具、凭据与 Infra 清理继续使用同一 Hosted 生命周期，不修改开发服务。
 
@@ -67,6 +67,10 @@ case 路由、默认完整场景保留、未知值只读拒绝、子场景失败
 源表分别声明 EPSG:4326 与 EPSG:3857，覆盖七类二维非空几何、内洞和 null 几何，以及 int32、bool、double、中文／XML 特殊字符、空字符串和 null。同一普通用户在真实 Console iframe 查看表，打开共享导出弹窗，选择 KML 并修改文件名，经真实按钮建立导出会话、等待 Transfer 完成和接收浏览器下载；不以 API 下载替代按钮。独立 XML oracle 核对完整 Placemark、几何／坐标、Folder、Schema／标量、null／空字符串及数值布尔，保留文件名、文件哈希、截图和同一用户／无任务定义的执行归属。EPSG:3857 输出须恢复已知 WGS84 坐标，源数据、结构和行数前后不变。原生 LIBKML 跨版本读取仍沿已登记 GeoPython 门禁验证，XML oracle 不冒充产品 KML 读侧增强。
 
 新 case 的报告、异常和下载证据不得泄漏凭据。导出会话沿现有保留与生命周期规则，不新建业务删除 API；成功和失败均销毁本轮源容器／数据、应用、临时凭据及 Infra，并核零残留。业务结果和清理结果独立报告：业务失败且夹具清理成功时仍是 `result=failed / cleanup=passed`；夹具清理实际失败必须保留 `cleanup=failed`，不能由 Infra 零残留替代。部署清理不冒充会话业务 DELETE 或缓存验收。根 `make test-manager-online-runner`、`make test-online-runner`、System Go、共享前端及现有 Platform CI 覆盖新增路由、最小身份、页面脚本、物理 oracle 拒绝样例和失败清理；正式 Hosted 尚未通过前不得回填已验收。此 case 不扩展 bigint／decimal／时序／嵌套字段、Z/M、样式、KMZ 或其他目标格式。
+
+### FileGDB 实际页面导出
+
+`filegdb-export` 复用既有 Manager Hosted suite、隔离 PostGIS 源和 GeoPython 产品镜像，使用 `ADDP_ONLINE_MANAGER_CASE=filegdb-export make test-online ONLINE_SUITE=manager-internal-artifact-lineage`。来源初始化用户扫描测试表并授予精确读范围。消费用户在真实 Manager 页面导出单个 EPSG:3857 点图层，取得 `.gdb.zip`，同时核对 Monitor 执行归属、下载字节哈希及截图。同租户的另一位普通用户持有导出读取权限，对该会话及下载均须被拒。独立 GDAL 进程解包并核对唯一图层、源 CRS、原投影坐标、标量和空值，前后核对源表内容与结构。归档随本轮隔离 Infra 清理；此 case 与 NFS FileGDB 读授权分开报告。
 
 ### TIFF 无定位小图的 COG 布局回归
 

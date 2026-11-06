@@ -21,6 +21,20 @@ SELECT json_build_object(
 SQL
     exit 0
     ;;
+  snapshot-filegdb)
+    [ "${ONLINE_SUITE:-}" = manager-internal-artifact-lineage ] &&
+      [ "${ADDP_ONLINE_MANAGER_CASE:-}" = filegdb-export ] &&
+      [ "${ADDP_ONLINE_TEST:-}" = 1 ] && [ "${POSTGRES_DB:-}" = addp_online ] || fail "FileGDB snapshot requires its isolated case"
+    [ "$(docker inspect --format '{{ index .Config.Labels "com.addp.online-fixture" }}' "$container")" = metric ] || fail "container ownership mismatch"
+    docker exec -i "$container" psql -X -U postgres -d metric_fixture -Atq -v ON_ERROR_STOP=1 <<'SQL'
+SELECT json_build_object(
+  'rows', (SELECT md5(string_agg(row_to_json(t)::text, '' ORDER BY seq)) FROM public.filegdb_export_points t),
+  'count', (SELECT count(*) FROM public.filegdb_export_points),
+  'columns', (SELECT md5(string_agg(attname || format_type(atttypid, atttypmod) || attnotnull, '' ORDER BY attnum))
+    FROM pg_attribute WHERE attrelid = 'public.filegdb_export_points'::regclass AND attnum > 0 AND NOT attisdropped));
+SQL
+    exit 0
+    ;;
   node-future-create)
     [ "${ONLINE_SUITE:-}" = pg-source-authorization ] && [ "${ADDP_ONLINE_TEST:-}" = 1 ] &&
       [ "${POSTGRES_DB:-}" = addp_online ] || fail "PG node creation requires its isolated suite"
@@ -89,7 +103,7 @@ SQL
     exit 0
     ;;
   start) ;;
-  *) fail "usage: online-metric-postgres-fixture.sh start|stop|snapshot-kml|content-change|content-reset|node-future-create" ;;
+  *) fail "usage: online-metric-postgres-fixture.sh start|stop|snapshot-kml|snapshot-filegdb|content-change|content-reset|node-future-create" ;;
 esac
 # The PG authorization suite also produces a genuinely new table. Keep all
 # existing fixture tables read-only; CREATE only lets this disposable account
@@ -163,6 +177,21 @@ CREATE ROLE metric_reader LOGIN PASSWORD :'reader_password';
 GRANT CONNECT ON DATABASE metric_fixture TO metric_reader;
 GRANT USAGE ON SCHEMA public TO metric_reader;
 GRANT SELECT ON public.kml_export_wgs84, public.kml_export_mercator TO metric_reader;
+SQL
+elif [ "${ONLINE_SUITE:-}" = manager-internal-artifact-lineage ] && [ "${ADDP_ONLINE_MANAGER_CASE:-}" = filegdb-export ]; then
+  [ "${ADDP_ONLINE_TEST:-}" = 1 ] && [ "${POSTGRES_DB:-}" = addp_online ] || fail "FileGDB seed requires its isolated case"
+  docker exec -i "$container" psql -X -U postgres -d metric_fixture -v ON_ERROR_STOP=1 \
+    -v reader_password="$POSTGRES_PASSWORD" >/dev/null <<'SQL'
+CREATE EXTENSION postgis;
+CREATE TABLE public.filegdb_export_points (seq integer PRIMARY KEY, "标题" text, flag boolean NOT NULL, measure double precision, shape geometry(Point,3857));
+INSERT INTO public.filegdb_export_points VALUES
+ (1,'长沙',true,1.25,ST_SetSRID(ST_Point(12000,6000),3857)),
+ (2,'',false,2.5,ST_SetSRID(ST_Point(-8000,2300),3857)),
+ (3,NULL,true,NULL,NULL);
+CREATE ROLE metric_reader LOGIN PASSWORD :'reader_password';
+GRANT CONNECT ON DATABASE metric_fixture TO metric_reader;
+GRANT USAGE ON SCHEMA public TO metric_reader;
+GRANT SELECT ON public.filegdb_export_points TO metric_reader;
 SQL
 else
 docker exec -i "$container" psql -U postgres -d metric_fixture -v ON_ERROR_STOP=1 \

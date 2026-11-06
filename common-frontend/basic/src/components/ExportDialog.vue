@@ -76,6 +76,7 @@ const formatDisplayNames = {
   tsv: 'TSV',
   geojson: 'GeoJSON',
   kml: 'KML',
+  filegdb: 'File Geodatabase (.gdb.zip)',
   json: 'JSON',
   jsonl: 'JSONL',
   mongodb_extended_jsonl: 'MongoDB Extended JSON Lines',

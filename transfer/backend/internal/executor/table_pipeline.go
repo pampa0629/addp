@@ -1282,6 +1282,9 @@ func (t *encodedContentTableTarget) Open(ctx context.Context, tableInfo *datatyp
 		if err != nil {
 			return nil, fmt.Errorf("open encoded scope table writer: %w", err)
 		}
+		if t.path.EngineID == 0 && strings.HasSuffix(t.path.StringPath(), format.FileGDBArchiveSuffix) {
+			scope.Role = contentio.RoleMain
+		}
 		return &scopeTableBatchWriter{tableWriter: tableWriter, targetRef: format.NewRelatedRef(scope, true, true)}, nil
 	}
 	if tableInfoEmpty(tableInfo) && t.multiProvider == nil {

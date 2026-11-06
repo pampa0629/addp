@@ -500,6 +500,12 @@ func (s *ExecutionEngineService) runCommonTableTransferData(
 	if err != nil {
 		return nil, nil, fmt.Errorf("build common table transfer plan: %w", err)
 	}
+	if buildResult.Plan.Target.Format == format.FormatFileGDB && planner.IsInfraLocatorURI(spec.Target.ParentLocator) {
+		if execution == nil || execution.Source != "manager" || execution.Metadata[models.ExportProtectionMetadataKey] == nil ||
+			buildResult.Plan.Source.Kind != executor.TableEndpointNative || !strings.EqualFold(buildResult.SourceEngine.Type, "postgresql") {
+			return nil, nil, fmt.Errorf("FileGDB archive requires a Manager PostgreSQL export session")
+		}
+	}
 	buildResult.Plan.ProgressCallback = s.tableProgressCallback(task, executionID)
 
 	tableExecutor, err := executor.NewTableTransferExecutor(
@@ -827,16 +833,7 @@ func (s *ExecutionEngineService) configureRuntimeFormatProviders(
 		if err != nil {
 			return fmt.Errorf("resolve %s writer runtime: %w", build.Plan.Target.Format, err)
 		}
-		parent, err := spec.Target.ParentResourceLocator()
-		if err != nil {
-			return fmt.Errorf("parse runtime format target parent locator: %w", err)
-		}
-		targetName := filepath.Base(build.Plan.Target.Path.StringPath())
-		target, _, err := workflowaccess.ResolveTarget(workflowaccess.ResourceSpec{
-			Engine: engineFromBinding(build.TargetEngine), Locator: parent,
-			Kind: runtimeFormatResourceKind(build.Plan.Target.Format), Format: string(build.Plan.Target.Format),
-			Name: targetName, WriteMode: workflowaccess.WriteModeReplace,
-		})
+		target, err := runtimeFormatTarget(spec.Target, build)
 		if err != nil {
 			return fmt.Errorf("resolve %s target access: %w", build.Plan.Target.Format, err)
 		}
@@ -858,6 +855,35 @@ func engineFromBinding(binding planner.EngineBinding) *commonModels.Engine {
 		ID: binding.EngineID, EngineType: binding.Type,
 		ConnectionInfo: commonModels.ConnectionInfo(binding.ConnInfo),
 	}
+}
+
+func runtimeFormatTarget(endpoint planner.EndpointSpec, build *planner.TableTransferBuildResult) (workflowaccess.Target, error) {
+	formatType := build.Plan.Target.Format
+	name := filepath.Base(build.Plan.Target.Path.StringPath())
+	if formatType == format.FormatFileGDB && planner.IsInfraLocatorURI(endpoint.ParentLocator) {
+		bucket, object, err := engineplugin.SplitObjectRefPath(build.Plan.Target.Path.StringPath())
+		if err != nil {
+			return workflowaccess.Target{}, err
+		}
+		access, err := workflowaccess.ResolveObjectStoreTarget(build.TargetEngine.ConnInfo, bucket, object, workflowaccess.KindFile)
+		if err != nil {
+			return workflowaccess.Target{}, err
+		}
+		return workflowaccess.Target{
+			Kind: workflowaccess.KindFile, Format: string(formatType), Name: name,
+			WriteMode: workflowaccess.WriteModeCreate, ContentType: "application/zip", Access: access,
+		}, nil
+	}
+	parent, err := endpoint.ParentResourceLocator()
+	if err != nil {
+		return workflowaccess.Target{}, fmt.Errorf("parse runtime format target parent locator: %w", err)
+	}
+	target, _, err := workflowaccess.ResolveTarget(workflowaccess.ResourceSpec{
+		Engine: engineFromBinding(build.TargetEngine), Locator: parent,
+		Kind: runtimeFormatResourceKind(formatType), Format: string(formatType), Name: name,
+		WriteMode: workflowaccess.WriteModeReplace,
+	})
+	return target, err
 }
 
 func runtimeFormatResourceKind(formatType format.FormatType) string {

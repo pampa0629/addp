@@ -147,7 +147,7 @@ class HostedManagerGateTest(unittest.TestCase):
               touch "${ADDP_TEST_GATE_TRACE}.image"
               exit 0
             fi
-            if [ "$ADDP_ONLINE_MANAGER_CASE" = kml-export ]; then
+            if [ "$ADDP_ONLINE_MANAGER_CASE" = kml-export ] || [ "$ADDP_ONLINE_MANAGER_CASE" = filegdb-export ]; then
               [ "$ADDP_ONLINE_MANAGER_PG_ENGINE_ID" = 17 ]
             elif [ "$ADDP_ONLINE_MANAGER_CASE" = filegdb-authorization ]; then
               [ "$ADDP_ONLINE_MANAGER_NFS_ENGINE_ID" = 18 ]
@@ -273,6 +273,18 @@ class HostedManagerGateTest(unittest.TestCase):
                     self.assertIn('manager-case:kml-export', trace)
                 self.assertFalse(self.host.secrets.exists())
                 self.host.trace.unlink()
+
+    def test_filegdb_export_uses_postgis_and_product_geopython_and_cleans(self):
+        result = self.run_gate(ADDP_ONLINE_MANAGER_CASE='filegdb-export')
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        trace = self.host.trace.read_text()
+        for fragment in ('kml-pg-fixture:start', 'kml-pg-fixture:stop', 'start:-transfer',
+                         'manager-case:filegdb-export', '--services geopython-workflow-engine',
+                         'runtime-logs:addp-manager-raster-runtime', 'application-stop', 'infra-down'):
+            self.assertIn(fragment, trace)
+        for fragment in ('start:-model3d-workflow', 'nfs-fixture:start', 'source-fixture:start'):
+            self.assertNotIn(fragment, trace)
+        self.assertFalse(self.host.secrets.exists())
 
     def run_gate(self, check=False, **overrides):
         env = dict(os.environ, PATH=f"{self.host.bin}:{os.environ['PATH']}", GITHUB_ACTIONS="true", RUNNER_OS="Linux",

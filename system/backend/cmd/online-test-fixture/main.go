@@ -127,7 +127,7 @@ func suiteSourceInitializerPermissions(suite string) []string {
 		return nil
 	case "raster-workflow-capacity", "ftp-consumer-flow", "manager-internal-artifact-lineage", "highgo-consumer-flow", "security-mysql-owner-protection", "security-plaintext-access", "hdfs-spark-consumer-flow", "cleanup-native-effects", "opengauss-consumer-flow", "transfer-relational-sql-etl":
 		permissions := append([]string{}, sourceInitializerPermissions...)
-		if suite == "hdfs-spark-consumer-flow" || suite == "security-mysql-owner-protection" || suite == "transfer-relational-sql-etl" || (suite == "manager-internal-artifact-lineage" && os.Getenv("ADDP_ONLINE_MANAGER_CASE") == "native-envi") {
+		if suite == "hdfs-spark-consumer-flow" || suite == "security-mysql-owner-protection" || suite == "transfer-relational-sql-etl" || (suite == "manager-internal-artifact-lineage" && slices.Contains([]string{"native-envi", "filegdb-export"}, os.Getenv("ADDP_ONLINE_MANAGER_CASE"))) {
 			permissions = append(permissions, "meta.scan_task.execute", "meta.scan_task.read")
 		}
 		return permissions
@@ -141,8 +141,13 @@ func topologyLineagePermissions(suite string) bool {
 }
 
 func managerFileGDBOutsiderPermissions(suite string) []string {
-	if suite == "manager-internal-artifact-lineage" && os.Getenv("ADDP_ONLINE_MANAGER_CASE") == "filegdb-authorization" {
-		return []string{"manager.content.read", "manager.data_item.read"}
+	if suite == "manager-internal-artifact-lineage" {
+		switch os.Getenv("ADDP_ONLINE_MANAGER_CASE") {
+		case "filegdb-authorization":
+			return []string{"manager.content.read", "manager.data_item.read"}
+		case "filegdb-export":
+			return []string{"manager.derived_artifact.read"}
+		}
 	}
 	return nil
 }
@@ -376,6 +381,9 @@ func suitePermissions(suite string) ([]string, error) {
 			return managerFileGDBPermissions, nil
 		case "kml-export":
 			return managerKMLExportPermissions, nil
+		case "filegdb-export":
+			return []string{"manager.data_item.read", "manager.derived_artifact.create", "manager.derived_artifact.read",
+				"meta.catalog.read", "monitor.execution.read", "transfer.task.read"}, nil
 		case "native-netcdf", "native-grib":
 			return managerFileGDBPermissions, nil
 		case "native-table-orc":

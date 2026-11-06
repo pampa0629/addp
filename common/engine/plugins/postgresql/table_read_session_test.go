@@ -43,6 +43,20 @@ func TestPostgresFieldInfoFromColumnKeepsSpatialNativeType(t *testing.T) {
 	}
 }
 
+func TestPostgresDeclaredGeometryDimensions(t *testing.T) {
+	for nativeType, want := range map[string]int{
+		"geometry(Point,3857)":   2,
+		"geometry(PointZ,3857)":  3,
+		"geometry(PointM,3857)":  0,
+		"geometry(PointZM,3857)": 3,
+		"geometry":               0,
+	} {
+		if _, _, dimension := parsePostgresSpatialType(nativeType); dimension != want {
+			t.Errorf("%s dimension = %d, want %d", nativeType, dimension, want)
+		}
+	}
+}
+
 func TestPostgresFieldInfoFromColumnMapsNativeTypesToCanonicalTypes(t *testing.T) {
 	tests := []struct {
 		name       string

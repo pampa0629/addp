@@ -1069,7 +1069,13 @@ const storageDownloadUrl = computed(() => {
 
 const selectedAction = (name) => resourceActions.value?.actions?.[name] || null
 const selectedActionSupported = (name) => selectedAction(name)?.supported === true
-const exportFormats = computed(() => selectedAction('export')?.formats || [])
+const exportFormats = computed(() => {
+  const formats = selectedAction('export')?.formats || []
+  const preview = props.previewData
+  const geometryColumns = preview?.geometry_columns || []
+  const spatialLayer = geometryColumns.length === 1 && (Number(preview?.source_srid) > 0 || preview?.source_crs)
+  return formats.filter(format => format !== 'filegdb' || spatialLayer)
+})
 
 const defaultExportFileName = computed(() => {
   const node = props.selectedNode || {}

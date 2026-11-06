@@ -92,7 +92,7 @@ func (s *ExportService) CreateExport(ctx context.Context, req *ExportRequest) (*
 	} else if formatType == "" {
 		formatType = format.FormatCSV
 	}
-	if loc.Type == resourcetree.TypeTable && (!databaseCanRead(engine) || !supportedExportFormat(formatType)) {
+	if loc.Type == resourcetree.TypeTable && (!databaseCanRead(engine) || !databaseTableExportFormat(engine, formatType)) {
 		return nil, ErrExportFormatUnsupported
 	}
 	if loc.Type == resourcetree.TypeCollection {

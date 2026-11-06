@@ -5,6 +5,9 @@ import (
 	"strings"
 )
 
+// FileGDBArchiveSuffix is the delivery suffix for a ZIP containing one .gdb directory.
+const FileGDBArchiveSuffix = ".gdb.zip"
+
 // DefaultWriteExtension returns the canonical file extension for a format write.
 //
 // For formats whose writer has multiple user-facing encodings under the same

@@ -686,3 +686,59 @@ def test_kml_common_writer_golden_is_readable_by_native_driver():
             assert geometry is not None
             assert geometry.Equals(ogr.CreateGeometryFromWkt(wkt)), geometry.ExportToWkt()
     assert layer.GetNextFeature() is None
+
+
+def test_filegdb_archive_commit_preserves_crs_and_rejects_partial_publication(tmp_path, monkeypatch):
+    import io
+    import zipfile
+    from operators import gdal_vector_dataset as writer
+
+    monkeypatch.setattr(writer.tempfile, "gettempdir", lambda: str(tmp_path))
+    delivered = {}
+    def publish(path, plan):
+        delivered[plan["target"]["access"]["object"]] = path.read_bytes()
+    monkeypatch.setattr(writer, "publish_target_file", publish)
+    plan = {
+        "schema_version": "addp.workflow.access-plan/v1",
+        "target": {"kind": "file", "format": "filegdb", "name": "roads.gdb.zip",
+                   "write_mode": "create", "content_type": "application/zip",
+                   "access": {"method": "object_store", "endpoint": "localhost:9000", "bucket": "exports",
+                              "object": "session/roads.gdb.zip", "access_key": "fixture", "secret_key": "fixture"}},
+    }
+    fields = [{"name": "seq", "type": "int"}, {"name": "标题", "type": "string"}, {"name": "geom", "type": "geometry"}]
+    spatial = {"geometry_columns": [{"name": "geom", "geometry_type": "Point", "dimension": 2, "srid": 3857}]}
+    args = (BATCH_PROTOCOL, plan, "roads", fields, spatial)
+    write_open(*args)
+    with pytest.raises(RuntimeError, match="does not match"):
+        write_close(*args, expected_row_count=1)
+    assert not delivered
+    assert not list((tmp_path / "addp-filegdb-exports").iterdir())
+
+    write_open(*args)
+    from shapely import Point, set_srid, to_wkb
+    coordinate = (12000, 6000)
+    point = set_srid(Point(*coordinate), 3857)
+    row = {"seq": 1, "标题": "长沙", "geom": base64.b64encode(to_wkb(point, include_srid=True)).decode()}
+    wrong_srid = {**row, "geom": base64.b64encode(to_wkb(set_srid(point, 4326), include_srid=True)).decode()}
+    with pytest.raises(ValueError, match="mismatched SRID"):
+        write_batch(*args, offset=0, rows=[wrong_srid])
+    assert not delivered
+    write_batch(*args, offset=0, rows=[row])
+    write_batch(*args, offset=1, rows=[{"seq": 2, "标题": "", "geom": None}])
+    write_close(*args, expected_row_count=2)
+    with zipfile.ZipFile(io.BytesIO(delivered["session/roads.gdb.zip"])) as archive:
+        assert archive.testzip() is None
+        assert archive.namelist()[0] == "roads.gdb/"
+        assert all(name.startswith("roads.gdb/") for name in archive.namelist())
+        archive.extractall(tmp_path / "independent")
+    dataset = gdal.OpenEx(str(tmp_path / "independent" / "roads.gdb"), gdal.OF_VECTOR)
+    layer = dataset.GetLayerByName("roads")
+    assert layer.GetSpatialRef().GetAuthorityCode(None) == "3857"
+    assert layer.GetFeatureCount() == 2
+    first = layer.GetNextFeature()
+    assert first.GetField("标题") == "长沙"
+    assert tuple(first.GetGeometryRef().GetPoint()[:2]) == pytest.approx(coordinate)
+    second = layer.GetNextFeature()
+    assert second.GetField("标题") == ""
+    assert second.GetGeometryRef() is None
+    assert not list((tmp_path / "addp-filegdb-exports").iterdir())
