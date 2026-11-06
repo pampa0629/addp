@@ -71,6 +71,8 @@ scripts/dev/
 4. 启动显式选择的 Runtime、Copilot 和 Agent，全部成功后启动 Gateway 与前端。无参数全量启动包含默认 Runtime；Engine Runtime 按各自协议检查 `/health`。
 5. 输出本次服务清单、实际访问地址与 PID。
 
+本地无参数或 `-all` 启动只恢复符合条件的既有采集来源，并输出只读监控摘要。局部模块启动和 Hosted 精确进程入口跳过采集恢复与摘要。单独恢复主机来源须显式选择主机作用域并核验安装证明。启动阶段报错时按当次原输出排查，实际采样与主机关联须在 Monitor 核对。[采集恢复与监控摘要](../../docs/guide/addp部署和开发步骤.md#startup-source-recovery) · [启动观测失败排查](../infra/docs/指标中心与来源.md#startup-observation-stage-failures)
+
 模块迁移与 Worker 启动顺序统一见[生命周期规范](../../docs/spec/addp开发服务生命周期与构建身份规范.md#模块迁移与-worker-启动顺序)：迁移由所属 Backend 独占，Worker 不执行平台 schema DDL、只读检查版本；公共执行与心跳表由 System Backend 初始化。结构或初始化迁移变化须递增 owner 的 `SchemaVersion`。
 
 Develop Backend 内嵌 Query Execution Supervisor，领取全部 query execution。
