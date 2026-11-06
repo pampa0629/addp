@@ -274,4 +274,8 @@ Manager 源准备保持其正式授权链；本批 Transfer CDC 仅验证既有 
 
 以真实快显入口和 System 连接读取的 409 响应复现了 Manager 将生命周期拒绝包装成 HTTP 500 并返回下游文案。修正保留原查询及权责，快显动作在创建任务前返回安全的 409。runner 将现有拒绝链分为三个阶段，11 项断言保持原契约。修正 `1f24cf9b` 的本地后端和同提交 Linux 门禁均通过，含 Swagger 97 个公开路由及 runner 403 项。[Go 工作区](https://github.com/pampa0629/addp/actions/runs/42153149805/job/127680944498) · [平台一致性](https://github.com/pampa0629/addp/actions/runs/42153149805/job/127680944701) · [Execution runner](https://github.com/pampa0629/addp/actions/runs/42153149805/job/127680944784)
 
+复验 `e52be373` 于 2026-11-06 18:07:58（Asia/Shanghai）失败，官方报告仍登记五项。阶段标记定位为 `manager_new_generation_refusal` HTTP 500；前序已观察持久隔离，Engine 读取及重复删除拒绝（409）已越过。完整拒绝链、隔离复核及源字节校验尚未闭环。控制恢复、清理和零残留均通过。[修正版 Hosted](https://github.com/pampa0629/addp/actions/runs/42188743649/job/127795258412)
+
+按生产接线加入 Meta Client 后，回归复现了 Mosaic 提前查询将已清理 Meta 项的 404 包装成 500，绕过了 Engine 生命周期检查。Manager 删除该独立查询，从既有 Engine → Meta 解析取得 Mosaic 的规范来源，Engine 拒绝时在读 Meta 前返回既有的安全 409。权限、路由、11 项断言与等待预算沿用原契约。
+
 **剩余工作。** 分别验证对象效果未知、索引效果未知和旧 Runtime 迟到写入。新的 Hosted 须单独确认。正向和对象未知私有证据分别位于 `/tmp/addp-manager-success-hosted-eighth-20261106/` 与 `/tmp/addp-manager-object-unknown-hosted-20261106/`。

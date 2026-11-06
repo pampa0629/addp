@@ -35,6 +35,12 @@ func TestQuickViewFBXRequiresAuthorizationOwnerBeforeCreatingPending(t *testing.
 func TestQuickViewActionRefusesEngineLifecycleConflictBeforeTaskCreation(t *testing.T) {
 	const privateDetail = "private System error detail"
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet && r.URL.Path == "/api/v1/meta/items/77" {
+			// Cleanup can remove the source item before Manager receives this request.
+			t.Error("quick view read Meta before checking the Engine lifecycle")
+			http.NotFound(w, r)
+			return
+		}
 		if r.Method != http.MethodGet || r.URL.Path != "/api/v1/system/engines/26" || r.Header.Get("Authorization") != "Bearer engine-facts-test" {
 			t.Errorf("unexpected request before lifecycle refusal: %s %s", r.Method, r.URL.Path)
 		}
@@ -49,9 +55,10 @@ func TestQuickViewActionRefusesEngineLifecycleConflictBeforeTaskCreation(t *test
 		}
 		return "engine-facts-test", nil
 	})
-	resolver := preview.NewPreviewResolver(nil, commonClient.NewSystemClient(server.URL, tokens), nil)
-	// There is no task service. The source fence must run before task creation.
-	handler := NewQuickViewHandler(nil, resolver, nil, nil)
+	meta := commonClient.NewMetaClient(server.URL, tokens)
+	resolver := preview.NewPreviewResolver(nil, commonClient.NewSystemClient(server.URL, tokens), meta)
+	// Use the router's full source wiring. A refused request needs no DB or task service.
+	handler := NewQuickViewHandler(service.NewQuickViewService(nil, meta), resolver, nil, nil)
 	router := gin.New()
 	router.Use(func(c *gin.Context) { setTenantAuthContextForTest(c, 7, 31); c.Next() })
 	router.POST("/quick-view/actions", handler.ExecuteQuickViewAction)
@@ -62,6 +69,42 @@ func TestQuickViewActionRefusesEngineLifecycleConflictBeforeTaskCreation(t *test
 	}
 	if res.Code != http.StatusConflict || body["error_code"] != "engine_lifecycle_conflict" || body["error"] == "" || strings.Contains(res.Body.String(), privateDetail) {
 		t.Fatalf("status = %d body = %s, want a safe lifecycle conflict", res.Code, res.Body.String())
+	}
+}
+
+func TestQuickViewRasterMosaicUsesCanonicalSourceFacts(t *testing.T) {
+	const input = "addp://engine/26/path/stale?type=directory&item_id=77"
+	const canonical = "addp://engine/26/path/mosaics/srtm?type=directory&item_id=77"
+	requests := make(chan string, 8)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests <- r.URL.Path
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/api/v1/system/engines/26":
+			fmt.Fprint(w, `{"id":26,"tenant_id":7,"engine_type":"nfs","lifecycle_state":"active","connection_status":"online"}`)
+		case "/api/v1/meta/items/77":
+			fmt.Fprint(w, `{"id":77,"tenant_id":7,"engine_id":26,"item_type":"directory","name":"srtm","full_name":"mosaics/srtm","attributes":{"item":{"data_type":"media","format":"raster_mosaic","layout":"whole"},"format_info":{"raster_mosaic":{"manifest_ref":"mosaic.addp.json"}}}}`)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+	tokens := commonClient.ServiceTokenProviderFunc(func(context.Context, uint) (string, error) { return "facts-only-test", nil })
+	meta := commonClient.NewMetaClient(server.URL, tokens)
+	resolver := preview.NewPreviewResolver(nil, commonClient.NewSystemClient(server.URL, tokens), meta)
+	handler := NewQuickViewHandler(service.NewQuickViewService(nil, meta), resolver, nil, nil)
+	tenantID := uint(7)
+	source, err := handler.quickViewSourceForLocator(context.Background(), &tenantID, input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if source.RasterMosaic == nil || source.RasterMosaic.ManifestRef != "mosaic.addp.json" ||
+		source.Identity.Locator != canonical || source.Identity.TenantID != tenantID ||
+		source.Identity.ItemFingerprint != commonModels.GenerateItemFingerprint(26, "mosaics/srtm") {
+		t.Fatalf("unexpected Mosaic source: %+v", source)
+	}
+	if len(requests) != 2 || <-requests != "/api/v1/system/engines/26" || <-requests != "/api/v1/meta/items/77" {
+		t.Fatal("expected exactly one System lifecycle read followed by one Meta item read")
 	}
 }
 

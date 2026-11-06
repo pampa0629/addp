@@ -2746,59 +2746,6 @@ func rasterRecommendedActionForReason(reason string) string {
 	}
 }
 
-func (s *QuickViewService) RasterMosaicSourceForLocator(ctx context.Context, tenantID *uint, locatorURI string) (QuickViewSource, bool, error) {
-	_ = ctx
-	if s == nil || s.metaClient == nil {
-		return QuickViewSource{}, false, nil
-	}
-	loc, err := resourcetree.ParseURI(strings.TrimSpace(locatorURI))
-	if err != nil {
-		return QuickViewSource{}, false, err
-	}
-	if loc.ItemID == nil || *loc.ItemID == 0 {
-		return QuickViewSource{}, false, nil
-	}
-	metaClient := s.metaClient
-	if tenantID != nil {
-		metaClient = metaClient.WithTenantID(*tenantID)
-	}
-	item, err := metaClient.GetItemByID(ctx, *loc.ItemID)
-	if err != nil {
-		return QuickViewSource{}, false, err
-	}
-	if item == nil {
-		return QuickViewSource{}, false, nil
-	}
-	if tenantID != nil && item.TenantID != 0 && item.TenantID != *tenantID {
-		return QuickViewSource{}, false, ErrEngineAccessDenied
-	}
-	if item.EngineID != loc.EngineID {
-		return QuickViewSource{}, false, fmt.Errorf("locator engine_id does not match raster mosaic item")
-	}
-	mosaic := RasterMosaicQuickViewSourceFromAttributes(item.Attributes)
-	if mosaic == nil {
-		return QuickViewSource{}, false, nil
-	}
-	storageTenantID := item.TenantID
-	if storageTenantID == 0 && tenantID != nil {
-		storageTenantID = *tenantID
-	}
-	if storageTenantID == 0 {
-		storageTenantID = 1
-	}
-	return QuickViewSource{
-		Identity: QuickViewIdentity{
-			TenantID:        storageTenantID,
-			Locator:         strings.TrimSpace(locatorURI),
-			ItemFingerprint: commonModels.GenerateItemFingerprint(item.EngineID, item.FullName),
-		},
-		EngineID:         item.EngineID,
-		RasterMosaic:     mosaic,
-		DirectFlatGeobuf: false,
-		CanTile:          false,
-	}, true, nil
-}
-
 func RasterMosaicQuickViewSourceFromAttributes(attrs map[string]interface{}) *RasterMosaicQuickViewSource {
 	if len(attrs) == 0 {
 		return nil

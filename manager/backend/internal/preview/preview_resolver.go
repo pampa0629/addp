@@ -543,6 +543,7 @@ func (r *PreviewResolver) ResolveRequestFromURIWithSelection(ctx context.Context
 		req.ItemScannedDepth = metaItem.ScannedDepth
 		req.Metadata = &commonModels.MetaNode{
 			ID:             metaItem.ID,
+			TenantID:       metaItem.TenantID,
 			EngineID:       metaItem.EngineID,
 			Path:           metaItem.FullName,
 			FullName:       metaItem.FullName,

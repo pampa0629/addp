@@ -951,11 +951,6 @@ func (h *QuickViewHandler) resolveRealtimeTileTarget(ctx context.Context, tenant
 }
 
 func (h *QuickViewHandler) quickViewSourceForLocator(ctx context.Context, tenantID *uint, locator string) (service.QuickViewSource, error) {
-	if h.service != nil {
-		if source, ok, err := h.service.RasterMosaicSourceForLocator(ctx, tenantID, locator); err != nil || ok {
-			return source, err
-		}
-	}
 	if h.previewResolver == nil {
 		return service.QuickViewSource{}, errors.New("preview resolver not initialized")
 	}
@@ -966,7 +961,8 @@ func (h *QuickViewHandler) quickViewSourceForLocator(ctx context.Context, tenant
 	if req.MetaItemID == nil || *req.MetaItemID == 0 {
 		return service.QuickViewSource{}, preview.ErrPreviewRequiresScannedMeta
 	}
-	if req.Metadata == nil || req.Metadata.EngineID != req.Engine.ID {
+	if req.Metadata == nil || req.Metadata.EngineID != req.Engine.ID ||
+		(req.Metadata.TenantID != 0 && req.Metadata.TenantID != *tenantID) {
 		return service.QuickViewSource{}, preview.ErrEngineAccessDenied
 	}
 	// Resolve both identity and facts from the same Meta item, not a caller-supplied path.
@@ -1478,6 +1474,9 @@ func quickViewSourceFromMeta(req *preview.PreviewResolverRequest) service.QuickV
 		source.Identity.TenantID = *req.TenantID
 	}
 	attrs := req.MetadataAttributes()
+	if source.RasterMosaic = service.RasterMosaicQuickViewSourceFromAttributes(attrs); source.RasterMosaic != nil {
+		return source
+	}
 	if source.PPTX = service.PPTXPDFQuickViewSourceFromAttributes(attrs); source.PPTX != nil {
 		return source
 	}
