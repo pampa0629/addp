@@ -368,3 +368,5 @@ Meta 提交失败不回滚已经提交的数据或 schema。Transfer 只触发�
 标准门禁、固定版本证据、失败与修复结论及未覆盖项统一见[模块验证](../CLAUDE.md#开发与验证)，操作与结果核对见[快速开始](快速开始.md#五开发验证)。本专题的语义与支持矩阵不作为某一版本的运行通过记录。
 
 调度暂停／恢复、snapshot 重跑、watermark 续读及 continuous 停止／恢复分别验收。静态路由与授权声明、调度更新或 execution 创建成功，不证明真实 System → Gateway → Owner／Worker 链路、目标数据或公开入口已通过；未运行、失败、跳过和未覆盖项不计为通过。
+
+continuous 过程事件场景核对持续写入时沿原游标续读、Console 刷新，以及 Worker 失联后原执行的失败诊断和唯一终态。场景通过范围按对应源码版本的 Hosted 回执认定。[Transfer continuous Hosted 场景](../../docs/spec/testing/scenarios/同步与引擎消费.md#transfer-continuous-events)
