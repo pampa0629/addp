@@ -429,6 +429,17 @@ class TransferRelationalSQLETLOnlineTest(unittest.TestCase):
         events.assert_called_once_with({}, execution_id)
         self.assertEqual(result["execution_id"], execution_id)
 
+    def test_transfer_readiness_reuses_the_owned_tenant_probe_and_fails_closed(self):
+        hosted = Mock()
+        ready = hosted.HostedFaults.return_value.wait_protection_ready
+        with patch.object(ONLINE.importlib, "import_module", return_value=hosted) as imported:
+            ONLINE.wait_transfer_read_boundary(42)
+            imported.assert_called_once_with("scripts.test.continuous-execution-faults")
+            ready.assert_called_once_with(42)
+            ready.side_effect = ValueError("private details")
+            with self.assertRaisesRegex(ONLINE.SuiteError, "Transfer initial Security protection synchronization"):
+                ONLINE.wait_transfer_read_boundary(42)
+
     def test_direct_suite_entry_loads_shared_helpers_without_pythonpath(self):
         result = subprocess.run([sys.executable, str(SCRIPT.resolve())], cwd=SCRIPT.resolve().parents[2],
                                 env={'PATH': os.environ['PATH']}, capture_output=True, text=True, timeout=10)
@@ -1067,6 +1078,7 @@ class TransferRelationalSQLETLOnlineTest(unittest.TestCase):
             stack.enter_context(patch.dict(ONLINE.os.environ, environment))
             stack.enter_context(patch.object(ONLINE, "GatewayClient", return_value=client))
             stack.enter_context(patch.object(ONLINE, "wait_manager_read_boundary"))
+            stack.enter_context(patch.object(ONLINE, "wait_transfer_read_boundary"))
             handlers = stack.enter_context(patch.object(ONLINE.signal, "signal"))
             stack.enter_context(patch.object(ONLINE, "validate_user_identity"))
             stack.enter_context(patch.object(ONLINE, "validate_engine"))
@@ -1120,13 +1132,20 @@ class TransferRelationalSQLETLOnlineTest(unittest.TestCase):
             events.append("trace-receipt")
             return {"object_upload": {}, "bounded_import": {}}
         def native(*args):
-            self.assertEqual(events, ["import-receipt", "trace-receipt"], "independent receipts must precede later scenarios")
+            self.assertEqual(events, ["transfer-ready", "binary", "import-receipt", "trace-receipt"], "readiness and independent receipts must precede later scenarios")
             return {"two_hop_verified": True}
+        def ready(tenant_id):
+            self.assertEqual(tenant_id, 42)
+            events.append("transfer-ready")
+        def binary_roundtrip(*args):
+            events.append("binary")
+            return {"task_deleted_and_read_back_404": True}
         output = io.StringIO()
         with ExitStack() as stack:
             stack.enter_context(patch.dict(ONLINE.os.environ, environment))
             stack.enter_context(patch.object(ONLINE, "GatewayClient", return_value=client))
             stack.enter_context(patch.object(ONLINE, "wait_manager_read_boundary"))
+            stack.enter_context(patch.object(ONLINE, "wait_transfer_read_boundary", side_effect=ready))
             stack.enter_context(patch.object(ONLINE.signal, "signal"))
             stack.enter_context(patch.object(ONLINE, "validate_user_identity", return_value={}))
             stack.enter_context(patch.object(ONLINE, "validate_engine", side_effect=[{"engine_type": "postgresql"}, {"engine_type": "mongodb"}]))
@@ -1141,7 +1160,7 @@ class TransferRelationalSQLETLOnlineTest(unittest.TestCase):
             stack.enter_context(patch.object(ONLINE, "run_wide_lineage", return_value={"node_count": 1500, "edge_count": 1000}))
             stack.enter_context(patch.object(ONLINE, "cleanup_definitions"))
             stack.enter_context(patch.object(ONLINE, "run_write_failures", return_value={"clickhouse": {"engine_id": 9}}))
-            binary = stack.enter_context(patch.object(ONLINE, "run_binary_roundtrip", return_value={"task_deleted_and_read_back_404": True}))
+            binary = stack.enter_context(patch.object(ONLINE, "run_binary_roundtrip", side_effect=binary_roundtrip))
             stack.enter_context(patch.object(ONLINE, "run_browser", return_value={}))
             stack.enter_context(patch.object(ONLINE, "run_object_upload", return_value={"single_source_facts_verified": True}))
             stack.enter_context(patch.object(ONLINE, "run_manager_import", return_value={"automatic_scan_verified": True}))

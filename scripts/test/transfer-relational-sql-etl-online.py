@@ -1561,6 +1561,14 @@ def wait_manager_read_boundary(client: GatewayClient, engine_id: int, deadline: 
         raise SuiteError(str(error)) from error
 
 
+def wait_transfer_read_boundary(tenant_id: int) -> None:
+    hosted = importlib.import_module("scripts.test.continuous-execution-faults")
+    try:
+        hosted.HostedFaults().wait_protection_ready(tenant_id)
+    except (ValueError, subprocess.SubprocessError) as error:
+        raise SuiteError("Transfer initial Security protection synchronization did not become ready") from error
+
+
 def validate_engine(client: GatewayClient, engine_id: int, expected_name: str, engine_type: str, deadline: float) -> dict[str, object]:
     # Engine registration and connection testing belong to the Hosted Provisioner.
     # The consumer verifies the same tenant-visible Meta projection used by the UI.
@@ -1731,6 +1739,7 @@ def main() -> int:
 
         identity_report = validate_user_identity(client, tenant_id)
         outsider_identity = validate_user_identity(outsider, tenant_id)
+        wait_transfer_read_boundary(tenant_id)
         deadline = time.monotonic() + float(os.environ.get("ADDP_ONLINE_CONVERGENCE_TIMEOUT_SECONDS", "180"))
         engine = validate_engine(client, engine_id, required_environment("ADDP_ONLINE_TEST_ENGINE_NAME"), "postgresql", deadline)
         mongodb_engine = validate_engine(client, mongodb_engine_id, required_environment("ADDP_ONLINE_TEST_MONGODB_ENGINE_NAME"), "mongodb", deadline)

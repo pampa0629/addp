@@ -1889,7 +1889,7 @@ def validate_transfer_relational_sql_etl_profile(repository: Path, registered: s
             "run_wide_lineage", "validate_wide_graph", "WIDE_FIELDS", "manager_wide_field_graph_verified", "config_checks",
             "run_write_failures", "validate_write_failure_execution", "validate_write_failure_physical", "write_failure_details_verified", "ADDP_ONLINE_TRANSFER_WRITE_FAILURES",
             "run_binary_roundtrip", "validate_binary_physical", "validate_binary_worker_events", "clickhouse-binary-roundtrip.json", "task_deleted_and_read_back_404",
-            "initialize_exact_record_read_grants", "source_read_denied_after_revoke",
+            "initialize_exact_record_read_grants", "source_read_denied_after_revoke", "wait_transfer_read_boundary(tenant_id)",
             "run_multi_source_lineage", "validate_multi_source_execution", "multiple_origins_verified", "cte_join_union_verified",
             "run_orchestrated_lineage", "validate_orchestrated_child", "canonical_table_locator", "validate_query_facts", "wait_resource_chain", "cleanup_definitions", "three_hop_verified",
             "run_mongodb_lineage", "validate_mongodb_execution", "ADDP_ONLINE_TEST_MONGODB_ENGINE_ID", "automatic_collection_verified", "rerun_verified",

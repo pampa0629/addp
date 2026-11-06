@@ -943,7 +943,7 @@ SUITES: Mapping[str, Suite] = {
         ),
     ),
     "transfer-relational-sql-etl": Suite(
-        command=(sys.executable, "scripts/test/transfer-relational-sql-etl-online.py"),
+        command=(sys.executable, "-m", "scripts.test.transfer-relational-sql-etl-online"),
         services=(
             ("gateway", "GATEWAY_URL"),
             ("system", "SYSTEM_URL"),
