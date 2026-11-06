@@ -1,13 +1,24 @@
 package logging
 
 import (
+	"log/slog"
+	"time"
+
 	"github.com/addp/common/httpmetrics"
 	"github.com/addp/common/logger"
 	"github.com/addp/common/middleware/requestid"
 	"github.com/gin-gonic/gin"
-	"log/slog"
-	"time"
 )
+
+const completionDiagnosticsKey = "addp.http.completion_diagnostics"
+
+// SetCompletionDiagnostics attaches one bounded, server-owned diagnostic group
+// to the request completion log. Callers must supply allowlisted fields only.
+func SetCompletionDiagnostics(c *gin.Context, diagnostic slog.Attr) {
+	if diagnostic.Key != "" {
+		c.Set(completionDiagnosticsKey, slog.Group("diagnostics", diagnostic))
+	}
+}
 
 // LoggingMiddleware is the sole bounded HTTP request log. Framework templates
 // replace raw paths; body, credentials, peer addresses and raw errors stay out.
@@ -21,7 +32,17 @@ func LoggingMiddleware() gin.HandlerFunc {
 			} else if c.Writer.Status() >= 400 {
 				level = slog.LevelWarn
 			}
-			logger.L().Log(c.Request.Context(), level, "http.request.completed", "request_id", requestid.FromGinContext(c), "method", httpmetrics.Process().CanonicalMethod(c.Request.Method), "route", c.FullPath(), "status", c.Writer.Status(), "duration_ms", time.Since(started).Milliseconds())
+			attrs := []slog.Attr{
+				slog.String("request_id", requestid.FromGinContext(c)),
+				slog.String("method", httpmetrics.Process().CanonicalMethod(c.Request.Method)),
+				slog.String("route", c.FullPath()),
+				slog.Int("status", c.Writer.Status()),
+				slog.Int64("duration_ms", time.Since(started).Milliseconds()),
+			}
+			if diagnostic, exists := c.Get(completionDiagnosticsKey); exists {
+				attrs = append(attrs, diagnostic.(slog.Attr))
+			}
+			logger.L().LogAttrs(c.Request.Context(), level, "http.request.completed", attrs...)
 		}()
 		c.Next()
 	}

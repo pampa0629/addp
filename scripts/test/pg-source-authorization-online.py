@@ -67,7 +67,6 @@ READ_CHECK = '/api/v1/system/engine-access/read-checks/manager-preview'
 LATENCY_ROUNDS, LATENCY_SAMPLES, LATENCY_WARMUPS = 3, 500, 10
 LOAD_ROUNDS, LOAD_SAMPLES, LOAD_WARMUPS = 3, 100, 10
 CPU_LOAD_PROFILE = 'single_target_cpu'
-SOURCE_RULE_QUERY_EVENT = 'engine_access.source_rule_query'
 PG_CPU_SYSFS = Path('/sys/devices/system/cpu')
 
 
@@ -465,7 +464,7 @@ def collect_system_load_tail(directory, audits, *, rule_timings=None, wait_secon
                     continue
                 with path.open('rb') as stream:
                     stream.seek(offsets.get(path, 0))
-                    while len(matched) < len(expected):
+                    while rule_timings is not None or len(matched) < len(expected):
                         raw = stream.readline(512 * 1024 + 1)
                         read_bytes += len(raw)
                         if len(raw) > 512 * 1024 or read_bytes > 64 * 1024 * 1024:
@@ -473,26 +472,27 @@ def collect_system_load_tail(directory, audits, *, rule_timings=None, wait_secon
                         if not raw.endswith(b'\n'):
                             break
                         offsets[path] = stream.tell()
-                        http_record = b'http.request.completed' in raw and READ_CHECK.encode() in raw
-                        timing_record = rule_timings is not None and SOURCE_RULE_QUERY_EVENT.encode() in raw
-                        if not (http_record or timing_record):
+                        if b'http.request.completed' not in raw or READ_CHECK.encode() not in raw:
                             continue
                         entry = json.loads(raw)
                         request = entry.get('request_id')
                         if request not in expected or entry.get('module_name') != 'system' or entry.get('role') != 'backend':
                             continue
                         message = json.loads(entry['message'])
-                        if timing_record and message.get('event') == SOURCE_RULE_QUERY_EVENT:
-                            timing = {key: message.get(key) for key in
-                                      ('backend_pid', 'started_unix_ns', 'finished_unix_ns')}
-                            if (message.get('request_id') != request or request in rule_timings or
-                                    not all(type(value) is int and value > 0 for value in timing.values()) or
-                                    timing['started_unix_ns'] >= timing['finished_unix_ns']):
-                                raise ValueError('invalid or duplicate rule query timing')
-                            rule_timings[request] = timing
-                        if (message.get('request_id'), message.get('msg'), message.get('method'), message.get('route')) == (
+                        if (message.get('request_id'), message.get('msg'), message.get('method'), message.get('route')) != (
                                 request, 'http.request.completed', 'POST', READ_CHECK):
-                            matched.add(request)
+                            continue
+                        if rule_timings is not None:
+                            source = message.get('diagnostics', {}).get('source_rule_query', {})
+                            pid, start, finish = (source.get(key) for key in
+                                                  ('backend_pid', 'started_unix_ns', 'finished_unix_ns'))
+                            if (request in matched or type(pid) is not int or pid <= 0 or
+                                    not all(isinstance(value, str) and re.fullmatch('[1-9][0-9]{0,18}', value)
+                                            for value in (start, finish)) or int(start) >= int(finish)):
+                                raise ValueError('invalid or duplicate rule query timing')
+                            rule_timings[request] = {'backend_pid': pid, 'started_unix_ns': int(start),
+                                                     'finished_unix_ns': int(finish)}
+                        matched.add(request)
             if matched == expected or time.monotonic() >= deadline:
                 break
             time.sleep(min(.25, max(0, deadline - time.monotonic())))
@@ -517,8 +517,11 @@ def bind_source_rule_waits(timings, snapshots):
                     for left, right in zip(windows, windows[1:])), 'overlapping rule timing on one backend')
         starts[pid] = [record['started_unix_ns'] for record in windows]
 
+    epoch = datetime(1970, 1, 1, tzinfo=timezone.utc)
+
     def stamp_ns(value):
-        return int(datetime.fromisoformat(value.replace('Z', '+00:00')).timestamp() * 1_000_000_000)
+        elapsed = datetime.fromisoformat(value.replace('Z', '+00:00')) - epoch
+        return (elapsed.days * 86_400 + elapsed.seconds) * 1_000_000_000 + elapsed.microseconds * 1_000
 
     for line in snapshots:
         snapshot = json.loads(line)

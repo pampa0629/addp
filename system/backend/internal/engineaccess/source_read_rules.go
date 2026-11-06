@@ -4,15 +4,15 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"os"
+	"strconv"
 	"sync"
 	"time"
 
 	"github.com/addp/common/authorization"
 	"github.com/addp/common/dataitem/authorizationfacts"
 	engineplugin "github.com/addp/common/engine/plugin"
-	"github.com/addp/common/logger"
-	"github.com/addp/common/middleware/requestid"
 )
 
 var errSourceReadRules = errors.New("invalid or incomplete source read rule observation")
@@ -22,6 +22,34 @@ var hostedSourceRuleTiming = sync.OnceValue(func() bool {
 	return (arm == "3" || arm == "4") && os.Getenv("GITHUB_ACTIONS") == "true" &&
 		os.Getenv("ADDP_ONLINE_HOSTED") == "1" && os.Getenv("POSTGRES_DB") == "addp_online"
 })
+
+type sourceRuleTimingKey struct{}
+
+// SourceRuleTiming records one rule query in the synchronous preview check.
+type SourceRuleTiming struct {
+	started, finished time.Time
+	backendPID        int
+	queryCount        int
+}
+
+// ObserveHostedSourceRuleTiming starts request-local observation for the Hosted CPU comparison.
+func ObserveHostedSourceRuleTiming(ctx context.Context) (context.Context, *SourceRuleTiming) {
+	if !hostedSourceRuleTiming() {
+		return ctx, nil
+	}
+	timing := &SourceRuleTiming{}
+	return context.WithValue(ctx, sourceRuleTimingKey{}, timing), timing
+}
+
+func (timing *SourceRuleTiming) LogGroup() slog.Attr {
+	if timing.queryCount != 1 || timing.backendPID <= 0 || !timing.finished.After(timing.started) {
+		return slog.Attr{}
+	}
+	return slog.Group("source_rule_query",
+		slog.Int("backend_pid", timing.backendPID),
+		slog.String("started_unix_ns", strconv.FormatInt(timing.started.UnixNano(), 10)),
+		slog.String("finished_unix_ns", strconv.FormatInt(timing.finished.UnixNano(), 10)))
+}
 
 // Private rule-layer input, NOT authentication evidence. A future trusted IAM /
 // execution consumer must establish the live credential and complete Provider
@@ -187,22 +215,19 @@ func (r *Repository) queryCurrentSourceRules(ctx context.Context, request source
 		return nil, errSourceReadRules
 	}
 	var rows []sourceReadRuleRow
-	var started time.Time
-	if hostedSourceRuleTiming() {
-		started = time.Now()
+	timing, _ := ctx.Value(sourceRuleTimingKey{}).(*SourceRuleTiming)
+	if timing != nil {
+		timing.queryCount++
+		timing.started = time.Now()
 	}
 	if err := r.db.WithContext(ctx).Raw(currentSourceReadRulesSQL, request.TenantID,
 		request.Source.PrincipalID, request.Source.MembershipID, request.Source.AuthorizationVersion,
 		string(batch)).Scan(&rows).Error; err != nil {
 		return nil, err
 	}
-	if !started.IsZero() && len(rows) > 0 && rows[0].BackendPID > 0 {
-		finished := time.Now()
-		if id := requestid.FromContext(ctx); id != "" {
-			logger.L().InfoContext(ctx, "Source rule query timing",
-				"event", "engine_access.source_rule_query", "request_id", id, "backend_pid", rows[0].BackendPID,
-				"started_unix_ns", started.UnixNano(), "finished_unix_ns", finished.UnixNano())
-		}
+	if timing != nil && len(rows) > 0 {
+		timing.finished = time.Now()
+		timing.backendPID = rows[0].BackendPID
 	}
 	return sourceReadObservation(paths, rows)
 }

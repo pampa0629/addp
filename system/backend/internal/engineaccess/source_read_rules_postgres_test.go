@@ -50,9 +50,14 @@ func exerciseCurrentSourceRules(t *testing.T, db *gorm.DB, acceptor *Service, ru
 		}
 		read := func(t *testing.T, user userProvenance, paths ...engineplugin.EngineCatalogPath) *sourceReadRules {
 			t.Helper()
-			result, err := repo.readCurrentSourceRules(ctx, sourceReadRequest{Action: "read", TenantID: runtime.TenantID, Source: user, Targets: paths, Bindings: testReadBindings(paths...)})
+			timing := &SourceRuleTiming{}
+			observed := context.WithValue(ctx, sourceRuleTimingKey{}, timing)
+			result, err := repo.readCurrentSourceRules(observed, sourceReadRequest{Action: "read", TenantID: runtime.TenantID, Source: user, Targets: paths, Bindings: testReadBindings(paths...)})
 			if err != nil || result == nil {
 				t.Fatalf("read=%+v %v", result, err)
+			}
+			if timing.LogGroup().Key != "source_rule_query" {
+				t.Fatalf("missing timing for rule query: %+v", timing)
 			}
 			return result
 		}

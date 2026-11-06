@@ -332,25 +332,28 @@ class AuditLatencyObservationTest(unittest.TestCase):
 
     def test_system_tail_matches_only_safe_unique_rule_timings(self):
         request = 'a' * 36
-        timing = {'backend_pid': 23, 'started_unix_ns': 100, 'finished_unix_ns': 200}
+        timing = {'backend_pid': 23, 'started_unix_ns': '1793948995000000001',
+                  'finished_unix_ns': '1793948995000000002'}
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             (root / 'instance').mkdir()
             def record(message):
                 return json.dumps({'module_name': 'system', 'role': 'backend', 'request_id': request,
                                    'message': json.dumps({'request_id': request, **message})}) + '\n'
-            event = record({'event': ONLINE.SOURCE_RULE_QUERY_EVENT, **timing, 'private': 'ignore'})
-            http = record({'msg': 'http.request.completed', 'method': 'POST', 'route': ONLINE.READ_CHECK})
+            message = {'msg': 'http.request.completed', 'method': 'POST', 'route': ONLINE.READ_CHECK}
+            http = record({**message, 'diagnostics': {'source_rule_query': {**timing, 'private': 'ignore'}}})
             path = root / 'instance' / '1.jsonl'
-            path.write_text(event + http)
+            path.write_text(http)
             collected = {}
             result = ONLINE.collect_system_load_tail(root, [{'request_id': request}],
                                                      rule_timings=collected, wait_seconds=0)
             self.assertEqual(result['result'], 'matched')
-            self.assertEqual(collected, {request: timing})
-            path.write_text(event + event + http)
-            self.assertEqual(ONLINE.collect_system_load_tail(root, [{'request_id': request}],
-                             rule_timings={}, wait_seconds=0)['result'], 'incomplete')
+            self.assertEqual(collected, {request: {key: int(value) for key, value in timing.items()}})
+            for invalid in (http + http, record(message),
+                            record({**message, 'diagnostics': {'source_rule_query': {**timing, 'backend_pid': True}}})):
+                path.write_text(invalid)
+                self.assertEqual(ONLINE.collect_system_load_tail(root, [{'request_id': request}],
+                                 rule_timings={}, wait_seconds=0)['result'], 'incomplete')
 
     def test_rule_waits_bind_only_same_pid_active_rule_and_query_window(self):
         epoch = 1_700_000_000

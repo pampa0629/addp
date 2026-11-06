@@ -7,6 +7,7 @@ import (
 
 	commonapi "github.com/addp/common/api"
 	sharedauth "github.com/addp/common/middleware/auth"
+	"github.com/addp/common/middleware/logging"
 	"github.com/addp/system/internal/engineaccess"
 	"github.com/addp/system/internal/middleware"
 	"github.com/gin-gonic/gin"
@@ -67,6 +68,10 @@ func RegisterEngineAccessSourceReadCheckRoutes(api *gin.RouterGroup, runtime *IA
 // @x-addp-required-permissions ["manager.data_item.read"]
 // @Router /engine-access/read-checks/manager-preview [post]
 func (h *EngineAccessSourceReadCheckHandler) CheckManagerPreview(c *gin.Context) {
+	if ctx, timing := engineaccess.ObserveHostedSourceRuleTiming(c.Request.Context()); timing != nil {
+		c.Request = c.Request.WithContext(ctx)
+		defer func() { logging.SetCompletionDiagnostics(c, timing.LogGroup()) }()
+	}
 	h.check(c, h.service.CheckManagerPreviewRead)
 }
 
