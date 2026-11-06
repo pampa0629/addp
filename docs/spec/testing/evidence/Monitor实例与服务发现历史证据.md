@@ -2,7 +2,7 @@
 
 [返回 Monitor 历史证据](Monitor历史证据.md) · [返回验收证据索引](../验收证据索引.md)
 
-本专题收录多 Worker、实例筛选、cgroup 配额、部署预期与发现生命周期。验收结论按各记录的固定源码、环境、运行尝试和层级认定。原顺序见[Monitor 历史证据入口](Monitor历史证据.md#原记录入口)。 容器配额相关记录见[分层导航](#服务实例-cgroup-证据导航)。 部署观察器相关记录见[退出证据导航](#部署观察器退出证据导航)。 服务组相关记录见[部署预期与运行确认导航](#服务组部署预期与运行确认证据导航)。
+本专题收录多 Worker、实例筛选、cgroup 配额、部署预期与发现生命周期。验收结论按各记录的固定源码、环境、运行尝试和层级认定。原顺序见[Monitor 历史证据入口](Monitor历史证据.md#原记录入口)。 容器配额相关记录见[分层导航](#服务实例-cgroup-证据导航)。 部署观察器相关记录见[退出证据导航](#部署观察器退出证据导航)。 服务组相关记录见[部署预期与运行确认导航](#服务组部署预期与运行确认证据导航)。 服务列表相关记录见[筛选与分页恢复导航](#服务筛选与分页恢复证据导航)。
 
 原始过程、逐步诊断及详细归档清单见[精简前的固定记录](https://github.com/pampa0629/addp/blob/be8f8daa4d38a7830585577f03b77bf2b5ed3931/docs/spec/testing/evidence/Monitor%E5%AE%9E%E4%BE%8B%E4%B8%8E%E6%9C%8D%E5%8A%A1%E5%8F%91%E7%8E%B0%E5%8E%86%E5%8F%B2%E8%AF%81%E6%8D%AE.md)。
 
@@ -36,6 +36,16 @@
 
 最终串行 `make test-node-metrics-online-runner` 退出 0：123 项 Python 正反向契约、JS/Bash 语法及 System Metrics 身份 Go 夹具通过，日志 `/tmp/addp-meta-workers-online-runner-final-check.log`；包括新 Meta 单元独立证书/计划、限定标准命令、SDK 来源映射、当前实例 DTO、真实浏览器收据拒绝与清理编排。并行轮引擎 CLI 失败的唯一原因仍未确认，仅增加测试阶段输出诊断，未修改引擎产品、认证、读取期限或清理边界。`make test-workflow-security` 退出 0（原标准 Release workflow 固定版本安全审计），实际 T2 和 Online CI 登记检查均通过；新增 choice 已同步原 Online 受控登记及删除 choice 的拒绝回归。24 项最终输入与成功冻结副本逐字节一致，之后仅更新本证据与后续事项摘要；本次未读、轮询或重跑云端 CI，未设置定时，也未重启个人服务。
 
+## 服务筛选与分页恢复证据导航
+
+| 场景 | 实际验证与范围 | 直达记录 |
+| --- | --- | --- |
+| 登记端点、承载 IP 和运行环境名称 | 本地前端分别验证三类精确匹配、组合条件、重置及已提交条件在分页、重载和主机导航返回时的保留。承载 IP 的 Console 全量首轮失败，后续通过的是 11 项定向导航和构建。 | [登记地址与重置](#服务监控的登记地址查询与重置) · [承载主机 IP](#服务监控承载主机-ip-筛选2026-10-22) · [宿主／运行环境名](#服务监控宿主运行环境名称筛选2026-10-22) |
+| 时间与离线原因 | 共享控件统一预设、时间换算与离线原因枚举。受控浏览器验证时间边界、条件取交集、草稿隔离、重置及分页恢复。两轮完整 Monitor 门禁分别通过 272 和 275 项浏览器场景。 | [时间筛选与门禁](#服务实例时间查询共享入口) · [离线原因与门禁](#服务实例离线原因筛选共享入口) |
+| 自动提交与刷新 | 10 月 29 日的受控回归验证了选择立即提交、IME、回第一页、关闭旧趋势、同 URL 重置和刷新恢复。Monitor 的 497 项浏览器场景及构建通过。共享前端聚合仍保留一项失败。 | [自动筛选、首次失败与复验](#服务监控自动筛选与就近提示2026-10-29) |
+
+字段口径及 URL 恢复由 Monitor 规范维护。共享前端统一筛选计时和刷新协作，页面负责领域条件、分页及权限。以上筛选记录以本地受控验证为主，正式身份 Hosted 按对应场景单列。[Monitor 展示规范](../../addp平台运行观测规范.md#63-趋势时段比较与总览) · [共享自动筛选](../../../../common-frontend/docs/components/页面状态与导航.md#自动筛选与已提交范围) · [模块导航与历史](../../../../common-frontend/docs/components/页面状态与导航.md#模块公开导航与历史)
+
 ## 服务监控的登记地址查询与重置
 
 2026-10-22，服务监控补齐按登记端点主机名／IP 精确筛选及一键重置。复用 System 已有 `registered_host`，由服务端在计数、分页前过滤；不按端口、DNS 解析结果、运行环境主机名或承载主机补匹配，也不为无监听端点的 Worker 推断地址。地址沿唯一 URL 保留到分页、刷新和趋势重载，未提交的地址草稿不影响自动刷新；重置清空筛选、页码及趋势，恢复在线且已声明采集的默认范围，保留刷新频率，同一默认 URL 上也清除未提交草稿。无新增 API、Swagger、权限或采集配置，未重启个人服务。
@@ -62,7 +72,7 @@
 
 2026-10-22，服务监控复用 System 当前离线观测的 `stop_reason=graceful|lease_expired`，支持全部原因、正常退出及租约超时筛选，并在列表对应原因旁说明租约超时只表示失联。原因与状态、采集声明和时间取交集，不自动切换到 DOWN，不按浏览器时钟或采集失败推断退出；实例恢复后退出原因结果。沿原表单搜索提交、回到第一页并关闭旧趋势，分页／刷新／重载／Console iframe 保留已提交原因，自动刷新不应用原因草稿，重置清除原因；原因参数不进入进程趋势，离线实例仍不能打开历史趋势。
 
-原因控件、枚举规范化和中英文译名统一到 Common Frontend 的 `RuntimeInstanceStopReasonSelect`／`runtimeInstanceStopReason.mjs`；System 原内联选择器和枚举删除，模块概览、实例列表与日志诊断同步消费共享译名。System 仍选择立即查询，Monitor 仍搜索提交；没有 API/Swagger、权限、后端状态裁决或部署变化。
+原因控件、枚举规范化和中英文译名统一到 Common Frontend 的 `RuntimeInstanceStopReasonSelect`／`runtimeInstanceStopReason.mjs`；System 原内联选择器和枚举删除，模块概览、实例列表与日志诊断同步消费共享译名。在 10 月 22 日这批验证中，System 选择后立即查询，Monitor 仍用搜索提交。后续服务列表的自动提交及实际复验另见[自动筛选记录](#服务监控自动筛选与就近提示2026-10-29)。
 
 冻结基线 `66b1f8ab8725bd3c32c9b8a0150694561c894a62`，仅叠加本批输入，实际 Node `v24.19.0`。最终 `make test-common-frontend` 退出 0，251 项通过，日志 `/tmp/addp-service-reason-common-final.log`；`make test-system-frontend` 退出 0，152 项单元、194 项浏览器及构建通过，日志 `/tmp/addp-service-reason-system-final.log`；`make test-monitor-frontend` 退出 0，90 项单元、275 项浏览器及构建通过，日志 `/tmp/addp-service-reason-monitor-final.log`；`make test-console-frontend` 退出 0，188 项单元、208 项浏览器及构建通过，日志 `/tmp/addp-service-reason-console.log`。新增中英 T3 覆盖原因／状态／时间交集、计数分页、范围切换、恢复移除、草稿隔离、重置、未知原因不分类，以及真实 Console 语言切换／重载保持一个 iframe。`make test-frontend-ci-registration` 通过 20 项回归与 21 个受控前端登记检查，日志 `/tmp/addp-service-reason-registration.log`。
 
