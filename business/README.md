@@ -581,6 +581,8 @@ Spark Workflow 的 `load` 通过具体索引 locator 读取，Spark 计算集群
 
 配置项为 `BUSINESS_REDIS_PORT`、`BUSINESS_REDIS_ADMIN_PASSWORD`、`BUSINESS_REDIS_READER_PASSWORD`，避免与 Infra `REDIS_*` 混淆。关闭匿名 default 用户，管理员为 `addp_business_admin`，只读用户为 `addp_business_reader`；角色使用显式命令白名单。该实例只开放 DB 0，读取账号可读取实例内全部业务 key，但不能执行写入、脚本、CONFIG、ACL 或 FLUSHALL。ACL 文件在容器 tmpfs 中由密码哈希生成；数据使用 AOF 持久化。
 
+Business Redis 已健康但首次采集安装被拒时，核对 `business/.env` 中显式配置的 `BUSINESS_REDIS_ADMIN_PASSWORD` 与当前容器的管理员配置是否一致。[采集安装被拒的排查步骤](../scripts/infra/docs/指标中心与来源.md#business-redis-source-deployment-check)
+
 启动后仅补齐缺失的 `addp:sample:*` 固定样例，包含 string、大整数计数、hash、list、set、zset、stream、TTL 和带非 UTF-8 字节的 key/value。重复初始化不重复追加 list/stream、不重置仍存在的 TTL、不删除或覆盖既有 key；样例出现不符的原生类型时先整体拒绝初始化。初始化脚本只能由管理员执行，不属于读取账号的查询能力。
 
 已实现独立 Business 部署、原生数据夹具、Redis Engine Plugin、System 连接注册、Meta 键值数据集身份扫描与 Manager 原生有限样本预览。System 通用表单按 ConnectionSpec 配置 ACL 用户、数据库编号与 TLS，注册脚本读取真实容器映射并使用只读账号登记数据库 0；连接检测执行 SELECT 和 DBSIZE，不读写业务 key。Catalog 为 `server -> keyspace`，Meta 只登记一个 `data_type=key_value` 数据集，内容键使用 `k:` 加无填充 Base64URL 令牌，原生类型、长度和 TTL 实时读取，不能伪装为 document collection。SCAN 是有预算的弱一致遍历，COUNT 不保证返回条数；扫描失败保留既有目录。Develop 查询、写入、迁移及 Cluster/Sentinel 尚未实现。消费链路验证使用 `make test-common-redis-unit` 与 `make test-common-redis`。
