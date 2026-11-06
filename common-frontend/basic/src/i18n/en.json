@@ -481,6 +481,7 @@
         "extend_line_endpoints": "Extend line endpoints"
       },
       "operatorParameters": {
+        "geom_type": "Geometry type (geom_type)",
         "scope": "Point intersection scope (scope)",
         "target_geom": "Target layer (target_geom)",
         "threshold": "Area threshold (threshold)",
@@ -508,6 +509,16 @@
           "operator_enum_invalid": "Choose between for intersections across features, or all to include internal point intersections. Omission defaults to between.",
           "operator_input_overlap": "Use line overlap or self-overlap checking to locate the overlap, then resolve it explicitly before splitting.",
           "operator_source_topology_invalid": "Choose all explicitly to also split at point intersections within a feature."
+        }
+      },
+      "geometrySelection": {
+        "reasons": {
+          "operator_input_invalid": "Feature filtering requires an input layer with an active geometry column.",
+          "operator_enum_invalid": "The geometry type is missing or unsupported."
+        },
+        "actions": {
+          "operator_input_invalid": "Connect a vector layer and check its active geometry column.",
+          "operator_enum_invalid": "Select Point, LineString, Polygon, MultiPoint, MultiLineString, MultiPolygon, or GeometryCollection. Names are case-sensitive."
         }
       },
       "vectorReproject": {

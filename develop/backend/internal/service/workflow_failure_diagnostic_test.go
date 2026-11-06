@@ -39,19 +39,24 @@ func TestWorkflowParameterDiagnosticRequiresMatchingFrozenDefinition(t *testing.
 	}
 }
 
-func TestVectorReprojectDiagnosticBindsFrozenDefinition(t *testing.T) {
-	for reason, parameter := range map[string]string{
-		"operator_input_invalid": "input_gdf", "operator_crs_invalid": "", "operator_crs_mismatch": "",
+func TestVectorPreparationDiagnosticsBindFrozenDefinition(t *testing.T) {
+	for _, test := range []struct{ operator, reason, parameter string }{
+		{"vector_reproject", "operator_input_invalid", "input_gdf"},
+		{"vector_reproject", "operator_crs_invalid", ""},
+		{"vector_reproject", "operator_crs_mismatch", ""},
+		{"filter_by_geometry_type", "operator_input_invalid", "input_gdf"},
+		{"filter_by_geometry_type", "operator_enum_invalid", "geom_type"},
+		{"drop_null_geometry", "operator_input_invalid", "input_gdf"},
 	} {
-		context := map[string]interface{}{"node_index": 2, "operator_id": "vector_reproject"}
-		if parameter != "" {
-			context["parameter"] = parameter
+		context := map[string]interface{}{"node_index": 2, "operator_id": test.operator}
+		if test.parameter != "" {
+			context["parameter"] = test.parameter
 		}
-		diagnostic := map[string]interface{}{"schema_version": "addp.execution-failure/v3", "stage": "execution", "reason": reason, "operator": context}
+		diagnostic := map[string]interface{}{"schema_version": "addp.execution-failure/v3", "stage": "execution", "reason": test.reason, "operator": context}
 		raw := map[string]interface{}{"runtime_status": map[string]interface{}{"status": "failed", "error_code": "INVALID_PARAMS", "diagnostic": diagnostic}}
-		frozen := map[string]interface{}{"tasks": []interface{}{map[string]interface{}{"operator": "load"}, map[string]interface{}{"operator": "vector_reproject"}}}
+		frozen := map[string]interface{}{"tasks": []interface{}{map[string]interface{}{"operator": "load"}, map[string]interface{}{"operator": test.operator}}}
 		if got := executionFailureDetails("workflow", "execution_failed", "PRIVATE", raw, frozen); got["code"] != "develop.workflow.invalid_params" || got["diagnostic"] == nil {
-			t.Fatalf("lost reproject diagnostic: %+v", got)
+			t.Fatalf("lost vector preparation diagnostic: %+v", got)
 		}
 		context["node_index"] = 1
 		if got := executionFailureDetails("workflow", "execution_failed", "PRIVATE", raw, frozen); got["diagnostic"] != nil {

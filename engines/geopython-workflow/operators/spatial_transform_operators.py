@@ -33,6 +33,10 @@ class VectorReprojectInputError(ValueError):
         super().__init__(message)
         self.reason = reason
 
+    @classmethod
+    def input_layer(cls, message):
+        return cls("operator_input_invalid", message)
+
 
 def _crs_from_user_input(value: str | CRS | None, *, declared=False) -> CRS | None:
     text = str(value or "").strip()

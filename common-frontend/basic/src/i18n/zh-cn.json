@@ -481,6 +481,7 @@
         "extend_line_endpoints": "线端延伸"
       },
       "operatorParameters": {
+        "geom_type": "几何类型（geom_type）",
         "scope": "点交会范围（scope）",
         "target_geom": "目标图层（target_geom）",
         "threshold": "面积阈值（threshold）",
@@ -508,6 +509,16 @@
           "operator_enum_invalid": "请选择 between（仅跨要素）或 all（同时处理要素内部点交会）。省略时默认 between。",
           "operator_input_overlap": "请用线叠检查或线内自叠定位重合，显式处理重合后再执行。",
           "operator_source_topology_invalid": "如需同时打断要素内部点交会，请显式选择 all。"
+        }
+      },
+      "geometrySelection": {
+        "reasons": {
+          "operator_input_invalid": "要素筛选需要带活动几何列的输入图层。",
+          "operator_enum_invalid": "几何类型未填写或不在支持范围内。"
+        },
+        "actions": {
+          "operator_input_invalid": "连接矢量图层，并检查其活动几何列。",
+          "operator_enum_invalid": "请选择 Point、LineString、Polygon、MultiPoint、MultiLineString、MultiPolygon 或 GeometryCollection，名称区分大小写。"
         }
       },
       "vectorReproject": {

@@ -14,6 +14,26 @@ from .base import (
     OutputPort,
     register_operator
 )
+from .geometric_operators import _active_geometry
+
+
+GEOMETRY_FILTER_TYPES = (
+    "Point", "LineString", "Polygon", "MultiPoint", "MultiLineString", "MultiPolygon", "GeometryCollection",
+)
+
+
+class GeometrySelectionInputError(ValueError):
+    def __init__(self, reason, message):
+        super().__init__(message)
+        self.reason = reason
+
+    @classmethod
+    def input_layer(cls, message):
+        return cls("operator_input_invalid", message)
+
+    @classmethod
+    def geometry_type(cls):
+        return cls("operator_enum_invalid", "geom_type must be a supported geometry type")
 
 
 # ========== 1. filter_by_attribute ==========
@@ -478,19 +498,11 @@ SAMPLE_METADATA = OperatorMetadata(
 
 # ========== 6. filter_by_geometry_type ==========
 def filter_by_geometry_type(input_gdf: gpd.GeoDataFrame, geom_type: str) -> gpd.GeoDataFrame:
-    """
-    按几何类型过滤
-
-    Args:
-        input_gdf: 输入 GeoDataFrame
-        geom_type: 几何类型（'Point', 'LineString', 'Polygon', 'MultiPoint', 'MultiLineString', 'MultiPolygon'）
-
-    Returns:
-        筛选后的 GeoDataFrame
-    """
-    result = input_gdf.copy()
-    result = result[result.geometry.geom_type == geom_type].reset_index(drop=True)
-    return result
+    """按整条活动几何的类型筛选，保留同类型的 EMPTY。"""
+    geometry = _active_geometry(input_gdf, input_error=GeometrySelectionInputError.input_layer)
+    if not isinstance(geom_type, str) or geom_type not in GEOMETRY_FILTER_TYPES:
+        raise GeometrySelectionInputError.geometry_type()
+    return input_gdf.loc[geometry.geom_type == geom_type].reset_index(drop=True)
 
 
 FILTER_BY_GEOMETRY_TYPE_METADATA = OperatorMetadata(
@@ -519,7 +531,8 @@ FILTER_BY_GEOMETRY_TYPE_METADATA = OperatorMetadata(
             data_type="str",
             required=True,
             description="几何类型",
-            notes="支持: 'Point', 'LineString', 'Polygon', 'MultiPoint', 'MultiLineString', 'MultiPolygon'"
+            enum=list(GEOMETRY_FILTER_TYPES),
+            notes="按整条活动几何的类型匹配，区分大小写"
         )
     ],
 
@@ -533,6 +546,7 @@ FILTER_BY_GEOMETRY_TYPE_METADATA = OperatorMetadata(
     notes=[
         "几何类型名称区分大小写,必须精确匹配",
         "Multi* 类型与单类型不同,需分别筛选",
+        "GeometryCollection 按整条几何匹配；EMPTY 按类型参与筛选，NULL 不匹配",
         "如果数据中没有指定类型,返回空 GeoDataFrame",
         "筛选后索引会被重置为连续整数"
     ],
@@ -551,31 +565,21 @@ FILTER_BY_GEOMETRY_TYPE_METADATA = OperatorMetadata(
 
 # ========== 7. drop_null_geometry ==========
 def drop_null_geometry(input_gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
-    """
-    删除空几何
-
-    Args:
-        input_gdf: 输入 GeoDataFrame
-
-    Returns:
-        删除空几何后的 GeoDataFrame
-    """
-    result = input_gdf.copy()
-    result = result[~result.geometry.isna()].reset_index(drop=True)
-    return result
+    """只删除活动几何缺失的记录，保留有类型的 EMPTY。"""
+    geometry = _active_geometry(input_gdf, input_error=GeometrySelectionInputError.input_layer)
+    return input_gdf.loc[~geometry.array.isna()].reset_index(drop=True)
 
 
 DROP_NULL_GEOMETRY_METADATA = OperatorMetadata(
     name="drop_null_geometry",
     type=OperatorType.NON_SPATIAL,
     category=OperatorCategory.VECTOR_SELECTION,
-    description="删除空几何",
-    brief_description="删除几何为空的记录,常用于数据清洗和质量控制",
+    description="删除缺失几何",
+    brief_description="只删除活动几何缺失（NULL）的记录",
     execution_modes=["workflow"],
     effects=["read"],
 
-    overview="删除 GeoDataFrame 中几何列为 None 或 NaN 的记录。"
-              "常用于数据清洗、避免空间算子报错、确保数据完整性等场景。",
+    overview="删除活动几何缺失的记录，保留带类型的 EMPTY 几何。",
 
     params=[
         OperatorParam(
@@ -588,17 +592,13 @@ DROP_NULL_GEOMETRY_METADATA = OperatorMetadata(
     ],
 
     use_cases=[
-        "数据清洗: 删除导入时几何解析失败的记录",
-        "空间分析准备: 在缓冲区或相交分析前删除空几何避免报错",
-        "数据质量检查: 统计并删除几何缺失的记录",
-        "导出准备: 确保导出的 Shapefile 或 GeoJSON 不包含空几何"
+        "数据清洗: 移除活动几何缺失的记录",
+        "空间分析准备: 在后续算子只接受有几何的记录时先清除缺失值"
     ],
 
     notes=[
         "删除后索引会被重置为连续整数",
-        "建议在数据加载后立即执行,避免后续算子报错",
-        "空几何与空属性不同,只检查 geometry 列",
-        "大数据集过滤速度快（向量化操作）"
+        "只检查实际活动几何列，保留属性缺失的记录和 EMPTY 几何"
     ],
 
     workflow_example={

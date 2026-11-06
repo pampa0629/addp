@@ -8,6 +8,8 @@
 import geopandas as gpd
 from shapely.geometry import Point, Polygon
 import pandas as pd
+import pytest
+import shapely
 
 # 导入所有算子
 from operators import (
@@ -34,6 +36,111 @@ def create_test_data():
     }, crs='EPSG:4326')
 
     return gdf
+
+
+@pytest.mark.parametrize("crs", [None, "EPSG:3857"])
+def test_geometry_selection_preserves_empty_types_and_input_columns(crs):
+    source = gpd.GeoDataFrame({
+        "geometry": pd.array([None, "point", "missing", "collection", "multi"], dtype="string"),
+        "source_id": pd.array([1, None, 3, 4, 5], dtype="Int64"),
+        "shape": [Point(), Point(1, 2), None, shapely.GeometryCollection([Point(2, 3)]),
+                  shapely.MultiPoint([Point(3, 4)])],
+    }, geometry="shape", crs=crs, index=[5, 5, 4, 3, 2])
+    source_wkb = source.geometry.to_wkb().tolist()
+    for result, positions in [
+        (filter_by_geometry_type(source, "Point"), [0, 1]),
+        (filter_by_geometry_type(source, "GeometryCollection"), [3]),
+        (filter_by_geometry_type(source, "MultiPoint"), [4]),
+        (filter_by_geometry_type(source, "Polygon"), []),
+        (drop_null_geometry(source), [0, 1, 3, 4]),
+        (drop_null_geometry(source.iloc[:0]), []),
+    ]:
+        assert result.geometry.name == "shape" and result.crs == source.crs
+        assert result.index.equals(pd.RangeIndex(len(positions)))
+        assert result.geometry.to_wkb().tolist() == [source_wkb[i] for i in positions]
+        pd.testing.assert_frame_equal(result.drop(columns="shape"),
+                                      source.iloc[positions].drop(columns="shape").reset_index(drop=True))
+    assert source.geometry.to_wkb().tolist() == source_wkb
+    assert source.index.tolist() == [5, 5, 4, 3, 2]
+
+
+def test_geometry_selection_metadata_publishes_closed_types_and_null_label():
+    from operators import list_operators
+
+    entries = {op["name"]: op for op in list_operators()}
+    parameter = next(p for p in entries["filter_by_geometry_type"]["parameters"] if p["name"] == "geom_type")
+    assert parameter["enum"] == ["Point", "LineString", "Polygon", "MultiPoint",
+                                 "MultiLineString", "MultiPolygon", "GeometryCollection"]
+    assert entries["drop_null_geometry"]["display_name"] == "删除缺失几何"
+
+
+@pytest.mark.parametrize(("operator", "case", "reason", "parameter"), [
+    ("filter_by_geometry_type", "legal_no_match", None, None),
+    ("filter_by_geometry_type", "bad_type", "operator_enum_invalid", "geom_type"),
+    ("filter_by_geometry_type", "wrong_case", "operator_enum_invalid", "geom_type"),
+    ("filter_by_geometry_type", "non_string", "operator_enum_invalid", "geom_type"),
+    ("filter_by_geometry_type", "missing_type", "operator_enum_invalid", "geom_type"),
+    ("filter_by_geometry_type", "missing_input", "operator_input_invalid", "input_gdf"),
+    ("drop_null_geometry", "missing_input", "operator_input_invalid", "input_gdf"),
+    ("drop_null_geometry", "bad_input", "operator_input_invalid", "input_gdf"),
+    ("drop_null_geometry", "inactive_geometry", "operator_input_invalid", "input_gdf"),
+    ("drop_null_geometry", "native_failure", None, None),
+])
+def test_geometry_selection_workflow_diagnostics_block_save(monkeypatch, operator, case, reason, parameter):
+    from addp_common.workflow_runtime import WorkflowExecutionError
+    import workflow_engine
+
+    params = {"input_gdf": create_test_data()}
+    if operator == "filter_by_geometry_type":
+        params["geom_type"] = "Point"
+    if case == "missing_input":
+        del params["input_gdf"]
+    elif case == "bad_input":
+        params["input_gdf"] = "{PRIVATE"
+    elif case == "inactive_geometry":
+        params["input_gdf"] = gpd.GeoDataFrame({"shape": params["input_gdf"].geometry})
+    elif case == "bad_type":
+        params["geom_type"] = "PRIVATE"
+    elif case == "wrong_case":
+        params["geom_type"] = "point"
+    elif case == "non_string":
+        params["geom_type"] = ["Point"]
+    elif case == "missing_type":
+        del params["geom_type"]
+    elif case == "legal_no_match":
+        params["geom_type"] = "Polygon"
+    elif case == "native_failure":
+        def fail(*args, **kwargs):
+            raise ValueError("native geometry mask failed")
+
+        monkeypatch.setattr(gpd.array.GeometryArray, "isna", fail)
+
+    saves = []
+    resolve = workflow_engine.get_operator
+    monkeypatch.setattr(workflow_engine, "get_operator",
+                        lambda name: (lambda **kwargs: saves.append(kwargs)) if name == "save" else resolve(name))
+    tasks = [
+        {"id": "save", "operator": "save", "params": {"input_df": {"$ref": "filter"}}, "depends_on": ["filter"]},
+        {"id": "filter", "operator": operator, "params": params, "depends_on": []},
+    ]
+    runner = workflow_engine.GeoPythonWorkflowRunner()
+    if case == "legal_no_match":
+        runner.execute({"tasks": tasks})
+        assert len(saves) == 1 and saves[0]["input_df"].empty
+        return
+    with pytest.raises(WorkflowExecutionError) as caught:
+        runner.execute({"tasks": tasks})
+    assert not saves
+    error = caught.value
+    if reason is None:
+        assert error.error_code == "EXECUTION_FAILED" and error.diagnostic is None
+    else:
+        assert error.error_code == "INVALID_PARAMS"
+        assert error.diagnostic == {
+            "schema_version": "addp.execution-failure/v3", "stage": "execution", "reason": reason,
+            "operator": {"node_index": 2, "operator_id": operator, "parameter": parameter},
+        }
+        assert "PRIVATE" not in str(error)
 
 
 def test_attribute_operators():

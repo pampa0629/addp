@@ -291,6 +291,14 @@ func (o *WorkflowOperatorFailure) Valid(reason string) bool {
 			parameter, ok = "", true
 		}
 
+	case "filter_by_geometry_type", "drop_null_geometry":
+		switch reason {
+		case "operator_input_invalid":
+			parameter, ok = "input_gdf", true
+		case "operator_enum_invalid":
+			parameter, ok = "geom_type", o.OperatorID == "filter_by_geometry_type"
+		}
+
 	case "vector_reproject":
 		switch reason {
 		case "operator_input_invalid":
