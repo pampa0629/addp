@@ -157,7 +157,7 @@ bash scripts/dev/start.sh -transfer
 | Go 开发定位 | `make test-module MODULE=transfer GO_ONLY=1` | 仅 owner Go T1，不含前端、PostgreSQL T2 或真实 Online 验收，不计为完整模块门禁。 |
 | PostgreSQL 持久化专项 | `make test-transfer-postgres` | schema、执行读取隔离、事件与 fencing、自动恢复与退避、输出保护和目标覆盖等回归；无需 PostGIS，不运行 Oracle CDC 矩阵。 |
 | Hosted ETL 场景入口回归 | `make test-transfer-online-runner` | 身份、只读预检、SQL ETL 场景与清理契约回归，另检查浏览器脚本语法；不启动真实 Hosted suite。 |
-| Hosted 连续执行入口回归 | `make test-transfer-continuous-online-runner` | 生命周期、事件、故障与清理契约的确定性检查；不等于真实 Kafka/CDC 或浏览器链路已运行。 |
+| Hosted 连续执行入口回归 | `make test-transfer-continuous-online-runner` | 确定性检查覆盖生命周期、事件、故障与清理契约。真实 Kafka／CDC 与 Console 页面按对应版本的 Hosted 回执认定。[过程事件与浏览器验收](CLAUDE.md#continuous-过程事件与浏览器验收) |
 
 PostgreSQL 门禁及模块聚合的 T2 步骤要求已核对的 `ADDP_TEST_POSTGRES_PORT`、`ADDP_TEST_POSTGRES_PASSWORD` 等测试连接。先用 `bash scripts/infra/status.sh` 核对实际映射，凭据通过受控环境注入，不写入命令字面值或日志。本模块本地使用 `addp_test`；库归属、权限与清理边界见[Infra PostgreSQL 清单](../scripts/infra/README.md)和[测试隔离规范](../docs/spec/addp测试与验收规范.md)，不创建旁路测试库。T2 前提缺失会在模块门禁执行前拒绝，不能把只完成 Go 子集算作模块通过。
 
