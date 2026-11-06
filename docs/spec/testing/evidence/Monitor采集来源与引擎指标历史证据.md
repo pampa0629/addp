@@ -391,6 +391,12 @@ Redis 实源 T2、PromQL、受控 T3 各自有效，正式 System 确认至真�
 
 用户只重启 Monitor 后，原生 Safari 详情显示“正在采集”和“自动刷新已开启”。实际读到当前连接 34 个、分配内存约 1.6 MiB。选择分配内存后，近五分钟曲线绘制了实际采样点，15 秒评估间隔，时间窗口随刷新向前推进。本次个人环境只验 Infra Redis 当前值及内存趋势，Safari 曾判定隐藏的触发条件仍待复现。
 
+### Business Redis 平台接入和 Safari 复验（2026-11-06）
+
+本机 Business Redis 使用独立回环来源 19113 和独立服务器证书。标准启动后 Redis 健康，首次采集安装在部署检查阶段拒绝。原因是私有 `business/.env` 缺管理员配置，而已运行容器使用 Compose 的开发默认值。核验两者应采用同一配置并补录后，沿 `metrics-sources.py up --scope business --kind redis` 安装采集来源，原数据卷继续使用。Monitor 从交互式终端重启后，就绪接口和 Console 内嵌入口均可达。
+
+按用户确认保存 Business Redis 平台登记，并绑定 Docker Desktop Linux VM。Prometheus 复验 11 个受管目标全部 UP，Business Redis 有 21 个原始指标、AOF 开启、1 个连接。原生 Safari 显示“正在采集”和“自动刷新已开启”，读到约 1.33 MiB 分配内存、256 MiB 内存上限及 1 个连接。近五分钟内存曲线绘制了纳管后的实际采样点，评估间隔 15 秒，窗口随刷新推进。本次证据覆盖本机 Business Redis 平台纳管、实际采样、当前值和内存趋势。
+
 <a id="minio-source-history"></a>
 
 ## MinIO 账号、采样与专业查询
