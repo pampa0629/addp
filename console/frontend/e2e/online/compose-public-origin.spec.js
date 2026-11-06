@@ -171,7 +171,7 @@ test.describe('production public login', () => {
         : null
       const appID = published?.application_id ?? randomUUID()
       const workbench = {
-        url: `/data-apps/${appID}?preset=monthly#summary`,
+        url: `/data-apps/${appID}?preset=${published?.preset_key ?? 'monthly'}#summary`,
         login: '/module-ui/workbench/login',
         api: `/api/v1/workbench/data_applications/${appID}/runtime`,
         status: published ? 200 : 404,
@@ -230,11 +230,23 @@ test.describe('production public login', () => {
           const runtime = await check(`${phase}: Workbench published Runtime body`, () => response.json())
           check(`${phase}: Workbench published revision`, () =>
             expect(runtime).toMatchObject({ id: appID, revision_number: published.published_revision }))
+          check(`${phase}: Workbench published preset and default`, () => {
+            expect(runtime.snapshot.parameters).toMatchObject([
+              { key: 'person_id', default_value: published.default_person_id },
+            ])
+            expect(runtime.snapshot.parameter_presets).toMatchObject([
+              { key: published.preset_key, parameter_values: { person_id: published.query_filter.value } },
+            ])
+          })
+          check(`${phase}: Workbench Service request uses the preset`, () =>
+            expect(query.response.request().postDataJSON().filter).toEqual(published.query_filter))
           check(`${phase}: Workbench real Service query`, () => {
             expect(query.response.status()).toBe(200)
             expect(query.payload.data).toEqual(published.table_values.map(person_id => ({ person_id })))
           })
           const renderer = tab.getByTestId('data-application-runtime').getByTestId('renderer-host')
+          await check(`${phase}: rendered Service rows`, () =>
+            expect(renderer.getByRole('cell')).toHaveText(published.table_values))
           for (const value of published.table_values) {
             await check(`${phase}: rendered Service value`, () =>
               expect(renderer.getByRole('cell', { name: value, exact: true })).toBeVisible())
@@ -381,6 +393,8 @@ test.describe('production public login', () => {
           ...(published ? {
             workbench_application_id: appID,
             workbench_published_revision: published.published_revision,
+            workbench_preset_key: published.preset_key,
+            workbench_query_filter: published.query_filter,
             workbench_table_values: published.table_values,
           } : {}),
         }))

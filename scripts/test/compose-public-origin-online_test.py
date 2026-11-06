@@ -149,18 +149,25 @@ class ComposePublicOriginOnlineTest(unittest.TestCase):
                         MODULE.run_browser()
                 portal_payload = portal_evidence
 
-                published = {"application_id": "temporary-app", "published_revision": 1,
-                             "query_path": "/api/query/temporary/query", "table_values": ["A", "B"]}
+                query_filter = {"field": "person_id", "op": "eq", "value": "A"}
+                published = {"application_id": "temporary-app", "published_revision": 1, "preset_key": "person-a",
+                             "default_person_id": "B", "query_path": "/api/query/temporary/query",
+                             "query_filter": query_filter, "table_values": ["A"]}
                 published_evidence = {**login_evidence, "workbench_runtime_status": 200,
                                       "workbench_application_id": "temporary-app", "workbench_published_revision": 1,
-                                      "workbench_table_values": ["A", "B"]}
+                                      "workbench_preset_key": "person-a", "workbench_query_filter": query_filter,
+                                      "workbench_table_values": ["A"]}
                 workbench_evidence = {**published_evidence, "entry": "workbench"}
-                portal_payload = {**published_evidence, "entry": "portal"}
+                published_portal = {**published_evidence, "entry": "portal"}
+                portal_payload = published_portal
                 with patch.dict(os.environ, {MODULE.WORKBENCH_PREPARATION_TOKEN: "preparation-only"}):
                     self.assertEqual(MODULE.run_browser(published)["public_login"]["portal"], portal_payload)
-                portal_payload = {**portal_payload, "workbench_table_values": ["A", "C"]}
-                with self.assertRaisesRegex(MODULE.AcceptanceError, "portal production login evidence"):
-                    MODULE.run_browser(published)
+                for invalid in ({"workbench_preset_key": "unknown"},
+                                {"workbench_query_filter": {**query_filter, "value": "B"}},
+                                {"workbench_table_values": ["A", "B"]}):
+                    portal_payload = {**published_portal, **invalid}
+                    with self.subTest(invalid=invalid), self.assertRaisesRegex(MODULE.AcceptanceError, "portal production login evidence"):
+                        MODULE.run_browser(published)
                 published = None
 
             with patch.object(MODULE.subprocess, "run", return_value=SimpleNamespace(returncode=0)):

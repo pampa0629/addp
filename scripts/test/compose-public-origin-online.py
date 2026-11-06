@@ -32,7 +32,9 @@ PUBLISHED_WORKBENCH = "ADDP_ONLINE_PUBLIC_ORIGIN_PUBLISHED_WORKBENCH"
 WORKBENCH_PREPARATION_TOKEN = "ADDP_ONLINE_PUBLIC_WORKBENCH_PREPARATION_TOKEN"
 WORKBENCH_APPLICATIONS = "/api/v1/workbench/data_applications"
 QUERY_SERVICES = "/api/v1/service/query"
-PUBLISHED_WORKBENCH_ROWS = ["A", "B"]
+WORKBENCH_PRESET_KEY = "person-a"
+WORKBENCH_PRESET_PERSON_ID = "A"
+WORKBENCH_DEFAULT_PERSON_ID = "B"
 
 
 def docker_json(*args: str, env: dict[str, str] | None = None) -> object:
@@ -344,9 +346,25 @@ def published_workbench_payload(service_id: int, fingerprint: str, run_id: str) 
                 "id": component_id, "title": "People",
                 "service_ref": {"service_type": "query", "service_id": service_id},
                 "contract_fingerprint": fingerprint,
-                "query_template": {"select": ["person_id"], "order_by": [{"field": "person_id", "direction": "asc"}],
-                                   "page_limit": 10, "format": "json"},
+                "parameter_definitions": [
+                    {"key": "person_id", "label": "Person ID", "control_type": "text", "required": True},
+                ],
+                "query_template": {
+                    "select": ["person_id"], "order_by": [{"field": "person_id", "direction": "asc"}],
+                    "parameter_filters": [{"parameter_key": "person_id", "field": "person_id", "operator": "eq"}],
+                    "page_limit": 10, "format": "json",
+                },
                 "renderer_type": "table", "renderer_config": {"columns": ["person_id"]},
+            }],
+            "parameters": [{
+                "key": "person_id", "label": "Person ID", "control_type": "text", "required": True,
+                "default_value": WORKBENCH_DEFAULT_PERSON_ID,
+            }],
+            "parameter_bindings": [{
+                "application_parameter_key": "person_id", "component_id": component_id, "component_parameter_key": "person_id",
+            }],
+            "parameter_presets": [{
+                "key": WORKBENCH_PRESET_KEY, "name": "Person A", "parameter_values": {"person_id": WORKBENCH_PRESET_PERSON_ID},
             }],
         },
     }
@@ -379,7 +397,7 @@ def run_published_workbench_browser() -> dict[str, object]:
     service = api("POST", QUERY_SERVICES, 201, {
         "service_name": service_name, "title": service_name, "config_type": "sql", "engine_id": engine_id,
         "sql_query": sql, "output_contract": contract, "public_access": False, "max_features": 10,
-        "data_config": {"stable_key": ["person_id"], "default_fields": ["person_id"]},
+        "data_config": {"stable_key": ["person_id"], "default_fields": ["person_id"], "filterable_fields": ["person_id"]},
         "protocols": {"rest_api": {"enabled": True, "formats": ["json"]}},
     })
     service_path = f"{QUERY_SERVICES}/{service['id']}"
@@ -393,8 +411,12 @@ def run_published_workbench_browser() -> dict[str, object]:
         revision = published["current_revision_number"]
         if published["publication_status"] != "published" or type(revision) is not int or revision <= 0:
             raise AcceptanceError("Workbench did not return a published revision")
-        browser = run_browser({"application_id": app["id"], "published_revision": revision,
-                               "query_path": f"/api/query/{service_name}/query", "table_values": PUBLISHED_WORKBENCH_ROWS})
+        browser = run_browser({
+            "application_id": app["id"], "published_revision": revision, "preset_key": WORKBENCH_PRESET_KEY,
+            "default_person_id": WORKBENCH_DEFAULT_PERSON_ID, "query_path": f"/api/query/{service_name}/query",
+            "query_filter": {"field": "person_id", "op": "eq", "value": WORKBENCH_PRESET_PERSON_ID},
+            "table_values": [WORKBENCH_PRESET_PERSON_ID],
+        })
     finally:
         try:
             if app_path is not None:
@@ -463,6 +485,8 @@ def run_browser(published_workbench: dict | None = None) -> dict[str, object]:
     if published_workbench is not None:
         login_fields.update(workbench_runtime_status=200, workbench_application_id=published_workbench["application_id"],
                             workbench_published_revision=published_workbench["published_revision"],
+                            workbench_preset_key=published_workbench["preset_key"],
+                            workbench_query_filter=published_workbench["query_filter"],
                             workbench_table_values=published_workbench["table_values"])
     login_evidence = {}
     for entry, path in login_reports.items():
