@@ -35,6 +35,8 @@
 
 用隔离 PostgreSQL 门禁比较 Meta 单批 32、64、128 项，三档按顺序核对指纹、边界摘要及显式缺失。带指纹索引的常规夹具包含 1,536 个请求指纹，九轮中位总耗时依次为 348、314、216 毫秒，SQL SELECT 累计耗时为 180、134、64 毫秒，JSON 编码为 3.32、3.19、3.12 毫秒，严格事实解码为 112、113、113 毫秒，回环 HTTP 扣除处理时间后的残差为 7.60、4.47、2.74 毫秒。多文件夹具包含 256 个请求指纹及每个现存事实的 80 个附属文件，三轮中位总耗时依次为 1.77、1.75、1.82 秒，抽样堆峰值增量为 12.2、18.4、31.4 MiB。夹具复用 Meta PostgreSQL 查询及事实解码，HTTP 使用回环夹具，不包含生产 IAM 中间件或客户端额外的外层 JSON 检查。选择 64 项及 8 KiB 请求上限。System 的 200 项裁决在标准客户端测试中由七次 Meta HTTP 降为四次。按历史批次形状推算 305 次可降到 174 次，真实页面耗时待重启复验。
 
+`b0da68011` 重启后，运行中的 Meta Swagger 已显示 64 项及 8 KiB。无痕 Chrome 继续使用开发租户的 `outdoor-develop`，以相同关键词和第一页每页 10 条复跑。`Outdoor.Photos` 返回 HTTP 200 和 0 条，Manager 请求 `b481192c-4e17-4e39-8dfc-a8cedd73a879` 耗时从 7.232 秒降至 4.562 秒。已授权 GeoTIFF 正例返回 HTTP 200 和 2 条，目标路径仍可见。Manager 请求 `3d22669f-367e-4257-8780-688fcfddec9e` 耗时从 8.512 秒降至 4.695 秒。两个请求各保留 44 批 System 裁决，Meta 请求和其嵌套身份核验各从 305 降至 174，全部返回 200。System 扣除 Meta 请求的累计耗时为 2.161 秒和 2.114 秒。上述时间来自 Manager 完成日志，页面用于确认结果。每条关键词本轮测量一次，尚无并发或容量结论。
+
 本次只做 Manager 页面查询和权限配置的只读核对。`outdoor-develop` 仍缺 `ontology.semantic.read` 和 `system.engine.read`，开发租户当前无具备本场景工具权限的普通账号，因此未发起新的 Agent Run。修复提交的 Manager、System IAM PostgreSQL 集成作业以及 Go workspace 和平台一致性作业已通过，Platform CI 整体状态为取消。 [Manager 集成](https://github.com/pampa0629/addp/actions/runs/42206312117/job/127868138784) · [System IAM 集成](https://github.com/pampa0629/addp/actions/runs/42206312117/job/127868137640) · [Go workspace](https://github.com/pampa0629/addp/actions/runs/42206311898/job/127853722302) · [平台一致性](https://github.com/pampa0629/addp/actions/runs/42206311898/job/127853722389)
 
 ### 2026-11-04 历史验收
