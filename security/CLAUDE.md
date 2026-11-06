@@ -689,3 +689,10 @@ T1/T3/构建验证：`make test-security-frontend` 退出0，260项单元、37�
 本轮验证：`make test-manager-backend` 通过；`make test-manager-postgres` 33 项真实 PostgreSQL 检查通过，新增保护前处理→持久化→解码→重复保护及结构漂移拒绝检查；`make test-manager-frontend` 405 单元、321 独立浏览器及构建通过；`make test-security-frontend` 262 单元、37 独立浏览器及构建通过。首次回归先重现旧缺陷；接口签名遗漏调用和新浏览器夹具缺少表类型事实已修正并通过最终完整门禁，不把初次失败记为通过。标准入口与 CI 自动发现已覆盖新增测试，无新增登记路线。
 
 用户重启 Manager 后，Chrome 实际读取 PostgreSQL engine #2 / `outdoor.p145_native_default_20261024` / Meta #44720 的成功执行 `2043d7b3-167b-4956-ac1f-ddde49102e5a`：HTTP 200、字段数 3，仅 `_id`、`nick_name`、`gender`；样本 2,000、扫描 2,188，观察记录不指向 `phone`。切换预览／剖析后同一执行再次 HTTP 200，无新建执行响应。限定本地证据 `/tmp/p145-pg-profile-fixed-20261102/read-proof.json`、`repeat-proof.json`、`profile-result.jpg` 与日志 `/tmp/p145-profile-{backend-final,postgres-final,manager-frontend-final,security-frontend-final}.log`。原纳管记录 `03a9a977-7c55-4149-8573-b1023f92a3fa` 保持长期保护，本轮未更改任何源／原值授权或源数据。实际配置页刷新被浏览器文档响应暂停阻断，新配置说明只有独立浏览器证据，未声称个人 Chrome 配置页通过；未运行新增 Hosted，CI 继续由专门会话跟进。剩余优先项为未支持剖析来源的能力提示与具体错误分类。
+### Transfer PostgreSQL 两表 JOIN 脱敏落盘（2026-11-06）
+
+在固定提交 `c5ce9c1fed61e70946a8d35d556f91fcde00f32a` 的隔离检出中，以 `make test-transfer-postgres` 在本地 `addp_test` 验证 Transfer 规划器、保护 Gate、原生 PostgreSQL 读写，20 个主测试和定向子测试通过，零跳过。两条记录按原值排序和分页选出，目标列分别落盘掩码与固定替换，两列保留各自字段来源。计算右侧受保护字段时，准备阶段拒绝，已有表的 OID 和记录保持，新目标未创建。专用 schema 已清理。报告位于 `/tmp/p145-transfer-join.zsGYYA/verification.json`。
+
+在固定提交 `df3efe83ec32bbc2c38eea96863b0704cf477cd5` 补验真实 Transfer HTTP 路由、bounded Worker 首次领取、执行详情与事件。正常执行读写各两行，两次敏感计算均返回 `preparation / protection_computed_output_unsupported`，读写均为零，物理结果与前轮一致。任务、执行和事件记录已回滚，专用 schema 已清理。使用 System 身份与引擎事实夹具，经同一 PostgreSQL 门禁的定向运行通过四个主测试，零跳过。此前全量门禁在 continuous 仓储检查失败，首次定向还遇到 PostgreSQL 恢复和测试夹具编译问题。最终报告保留各轮日志与三个执行 UUID，位于 `/tmp/p145-transfer-worker-join.RRZjuA/verification.json`。
+
+提交 `9c0d82b51448138578e7a1cdecb80580c1d45fcb` 将三种场景纳入既有 Security Hosted 领域报告 v43。最终领域 190 项、登记 149 项通过。聚合入口的指标夹具清理测试超过 20 秒，保留失败记录。真实 Hosted 待专门 CI 会话回传。独立审核脚本以一组模拟产物与八个反例检查 SHA、运行步骤、UUID、拒绝计数和清理，位于 `/tmp/p145-v43-transfer-join-audit.py`。[Hosted 验收约定](../scripts/docs/Online数据保护.md#transfer-postgresql-两表查询脱敏落盘)
