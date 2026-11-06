@@ -104,7 +104,7 @@ Redis 专业采集首批内核位于 `backend/internal/redissource`，仅供部�
 | [HTTP 质量与采样](../docs/spec/testing/evidence/MonitorHTTP质量与采样历史证据.md) | 公共 mTLS、Go／Python 来源、采样／清理交接及限定 Linux T2 |
 | [采集来源与引擎指标](../docs/spec/testing/evidence/Monitor采集来源与引擎指标历史证据.md) | 自动接入、采集账号、PostgreSQL 来源 T2 与专业观测 Hosted T4 |
 | [执行监控与留存](../docs/spec/testing/evidence/Monitor执行监控与留存历史证据.md) | continuous、Owner 不可用、租户日志，另见[180 天概览只读评估](../docs/spec/testing/evidence/Monitor执行监控与留存历史证据.md#执行概览只读维护真实进程验收2026-10-25)和[30 天过程事件物理清理](../docs/spec/testing/evidence/Monitor执行监控与留存历史证据.md#30-天过程事件清理真实进程验收2026-10-26) |
-| [部署与前置诊断](../docs/spec/testing/evidence/Monitor部署与前置诊断历史证据.md) | 资源守卫、Docker CLI／daemon 取证及 Compose 超时 |
+| [部署与前置诊断](../docs/spec/testing/evidence/Monitor部署与前置诊断历史证据.md) | 资源守卫、Docker CLI／daemon 等待归属及 Compose 超时，见[按诊断问题查阅](../docs/spec/testing/evidence/Monitor部署与前置诊断历史证据.md#按诊断问题查阅) |
 
 ## 仍需独立证据的范围
 
