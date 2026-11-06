@@ -7,6 +7,7 @@ import importlib
 import json
 import math
 import os
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 import subprocess
 import sys
@@ -22,6 +23,11 @@ PERMISSIONS = {'develop.task.read', 'develop.task.execute', 'develop.data_read.e
                'meta.catalog.read', 'meta.scan_task.read', 'meta.scan_task.execute',
                'meta.lineage.read', 'monitor.execution.read'}
 EDITOR_PERMISSIONS = PERMISSIONS | {'develop.task.create', 'develop.task.delete'}
+LINEAGE_READER_PERMISSIONS = {'manager.data_item.read', 'meta.catalog.read', 'meta.lineage.read'}
+BRANCH_LINEAGE_CREDENTIALS = {'ADDP_ONLINE_READ_USER_ACCESS_TOKEN', 'ADDP_ONLINE_READ_USER_USERNAME',
+                              'ADDP_ONLINE_READ_USER_PASSWORD', 'ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN'}
+BRANCH_LINEAGE_OUTPUTS = {'a1': ('a', 'b1'), 'a2': ('a', 'b1+1'),
+                          'b1': ('b', 'b1'), 'b2': ('b', 'b1+1')}
 SCHEMA = 'addp.raster-workflow-online/v2'
 
 
@@ -1412,6 +1418,186 @@ def run_scenario(repository, env, client, physical_runner=physical, browser_runn
 
 
 
+def branch_lineage_workflow(sources, target_engine):
+    parent = f'addp://engine/{target_engine}/path/raster-target?type=bucket'
+    tasks = [{'id': 'load_'+branch, 'operator': 'raster_load', 'depends_on': [],
+              'params': {'locator': sources[branch]['locator']}} for branch in ('a', 'b', 'c')]
+    outputs = {}
+    for port, (branch, expression) in BRANCH_LINEAGE_OUTPUTS.items():
+        load, math_node, save = 'load_'+branch, 'math_'+port, 'save_'+port
+        name = 'branch-lineage-'+port+'.cog.tif'
+        tasks.extend([
+            {'id': math_node, 'operator': 'raster_band_math', 'depends_on': [load], 'params': {
+                'input_raster': {'$ref': load, 'port': 'default'}, 'expression': expression}},
+            {'id': save, 'operator': 'raster_save', 'depends_on': [math_node], 'params': {
+                'input_raster': {'$ref': math_node, 'port': 'default'}, 'target_parent_locator': parent,
+                'target_name': name, 'write_mode': 'create', 'profile': 'cog', 'blocksize': 128}},
+        ])
+        full_name = 'raster-target/'+name
+        outputs[port] = {'full_name': full_name, 'resource': {
+            'locator': f'addp://engine/{target_engine}/path/{full_name}?type=object',
+            'type': 'object', 'write_mode': 'create'}}
+    return {'tasks': tasks}, outputs
+
+
+def validate_branch_lineage_report(report, evidence):
+    observations = array(report.get('observations'), 'branch lineage observations')
+    expected_order = [(phase, port) for phase in ('authorized', 'a_revoked') for port in BRANCH_LINEAGE_OUTPUTS]
+    if (report.get('binding') != evidence or report.get('result') != 'passed'
+        or report.get('withdrawn_request_id') != evidence['withdraw_a']['request_id']
+        or [(row.get('phase'), row.get('port')) for row in observations] != expected_order):
+        raise SuiteError('raster branch browser did not complete the exact before/after observations')
+    for row in observations:
+        port, phase = row['port'], row['phase']
+        branch = BRANCH_LINEAGE_OUTPUTS[port][0]
+        source, target = evidence['sources'][branch], evidence['outputs'][port]
+        hidden = phase == 'a_revoked' and branch == 'a'
+        graph = obj(row.get('graph'), 'branch lineage graph')
+        nodes = array(graph.get('nodes'), 'branch lineage nodes')
+        edges = array(graph.get('edges'), 'branch lineage edges')
+        expected_ids = [target['item_id']] if hidden else sorted([source['item_id'], target['item_id']])
+        if (graph.get('truncated') is not False or graph.get('permission_filtered') is not hidden
+            or obj(graph.get('subject'), 'branch lineage subject').get('item_id') != target['item_id']
+            or sorted(positive(node.get('item_id'), 'branch lineage node ID') for node in nodes) != expected_ids
+            or any(node.get('hidden_upstream_count') != 0 or node.get('hidden_downstream_count') != 0 for node in nodes)):
+            raise SuiteError(f'raster branch {port} has the wrong visibility in {phase}')
+        actual_edges = [(edge.get('source', {}).get('item_id'), edge.get('target', {}).get('item_id'),
+                         edge.get('relation_kind'), edge.get('status'), edge.get('evidence', {}).get('execution_id'))
+                        for edge in edges]
+        expected_edge = (source['item_id'], target['item_id'], 'derive', 'active', evidence['execution_id'])
+        if actual_edges != ([] if hidden else [expected_edge]):
+            raise SuiteError(f'raster branch {port} has a missing, crossed or extra edge in {phase}')
+        if hidden and any(value in json.dumps(graph) for value in
+                          (source['name'], source['fingerprint'], evidence['execution_id'])):
+            raise SuiteError(f'raster branch {port} leaked hidden source or execution evidence')
+
+
+def run_branch_lineage(repository, env, client, browser_runner=raster_browser_report):
+    if any(env.get(key) != value for key, value in {
+        'ADDP_ONLINE_HOST': '1', 'ADDP_ONLINE_HOSTED': '1', 'GITHUB_ACTIONS': 'true', 'RUNNER_OS': 'Linux',
+        'ADDP_ONLINE_RASTER_BRANCH_LINEAGE': '1',
+    }.items()):
+        raise SuiteError('raster branch lineage requires the disposable Hosted runner')
+    registration = importlib.import_module('scripts.test.online-engine-registration')
+    tenant = positive(env['ADDP_ONLINE_TEST_TENANT_ID'], 'disposable Tenant')
+    actor = validate_identity(client, tenant, required_permissions=EDITOR_PERMISSIONS)
+    reader = GatewayClient(env['GATEWAY_URL'], env['ADDP_ONLINE_READ_USER_ACCESS_TOKEN'], 30)
+    issuer = GatewayClient(env['GATEWAY_URL'], env['ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN'], 30)
+    identity = validate_identity(reader, tenant, required_permissions=LINEAGE_READER_PERMISSIONS)
+    if tenant <= 1 or actor['principal_id'] == identity['principal_id']:
+        raise SuiteError('raster branch lineage requires a separate nondefault Tenant reader')
+    source_engines = {branch: positive(env['ADDP_ONLINE_RASTER_SOURCE'+suffix+'_ENGINE_ID'], 'branch source')
+                      for branch, suffix in (('a', ''), ('b', '_B'), ('c', '_C'))}
+    target_engine = positive(env['ADDP_ONLINE_RASTER_TARGET_ENGINE_ID'], 'branch target')
+    if len(set(source_engines.values()) | {target_engine}) != 4:
+        raise SuiteError('raster branch lineage requires three sources and a separate target')
+    evidence = {**identity, 'run_id': env['ADDP_ONLINE_TEST_RUN_ID'], 'case_name': 'branch-lineage',
+                'sources': {}, 'outputs': {}}
+    report = {'binding': evidence, 'result': 'incomplete', 'grants': [], 'pending': [], 'facts': []}
+    path = Path(env['ADDP_ONLINE_ARTIFACT_DIR'])/'raster-workflow-branch-lineage.json'
+
+    def persist():
+        path.write_text(json.dumps(report, ensure_ascii=False, sort_keys=True)+'\n')
+
+    def checkpoint(pending):
+        report['pending'] = list(pending)
+        persist()
+
+    def capture_facts(fact):
+        report['facts'].append(fact)
+        persist()
+
+    grants = registration.ExactFileMetadataGrants(issuer, reader, tenant, on_change=checkpoint,
+                                                  on_evidence=capture_facts)
+    expires_at = (datetime.now(timezone.utc)+timedelta(seconds=600)).isoformat()
+
+    def bind(engine, full_name, label):
+        facts = grants.metadata_facts(engine, full_name, 'minio', data_type='media', format_name='tiff',
+                                      layouts=('single', 'multi'))
+        receipt = grants.grant(engine, full_name, 'minio', data_type='media', format_name='tiff',
+                               layout=facts['boundary']['layout'], expires_at=expires_at)
+        report['grants'].append(receipt)
+        item = support.find_fixture_item(reader, engine, full_name, label)
+        if item['fingerprint'] != receipt['item_fingerprint']:
+            raise SuiteError('raster branch grant and DataItem identity differ')
+        return {'item_id': item['id'], 'name': full_name.rsplit('/', 1)[-1], 'fingerprint': item['fingerprint'],
+                'locator': support.build_item_locator(engine, item)}, receipt
+
+    stage = 'source_grants'
+    try:
+        for branch, engine in source_engines.items():
+            bucket = 'raster-source' if branch == 'a' else 'raster-source-'+branch
+            evidence['sources'][branch], receipt = bind(engine, f'{bucket}/mosaic-{branch}.tif', 'branch source')
+            if branch == 'a':
+                evidence['withdraw_a'] = {'engine_id': engine, 'request_id': receipt['request_id']}
+        stage = 'workflow'
+        definition, targets = branch_lineage_workflow(evidence['sources'], target_engine)
+        expected_outputs = {'save_'+port: {'resource': target['resource']} for port, target in targets.items()}
+        engines = array(client.request('GET', '/api/v1/develop/workflow-engines', (200,)).payload, 'workflow engines')
+        runtimes = [engine for engine in engines if engine.get('engine_type') == 'geopython_workflow'
+                    and engine.get('connection_status') == 'online']
+        if len(runtimes) != 1:
+            raise SuiteError('raster branch lineage requires one online GeoPython Workflow Runtime')
+        identifier = submit(client, positive(runtimes[0]['id'], 'runtime'), definition)
+        evidence['execution_id'] = identifier
+        persist()
+        execution = wait_execution(client, 'develop', identifier, 180)
+        if (execution.get('triggered_by') != int(actor['principal_id'])
+            or execution.get('outputs') != expected_outputs):
+            raise SuiteError('raster branch execution actor or exact outputs differ')
+        stage = 'automatic_scans'
+        scans = array(execution['metadata']['result']['meta_scan_runs'], 'branch automatic scans')
+        if (len(scans) != len(expected_outputs)
+            or {scan['target_locator'] for scan in scans} != {target['resource']['locator'] for target in targets.values()}
+            or len({scan['execution_id'] for scan in scans}) != len(scans)
+            or any(scan['status'] != 'submitted' or not scan['execution_id'] for scan in scans)):
+            raise SuiteError('raster branch automatic scans do not match the four targets')
+        for scan in scans:
+            completed = wait_execution(client, 'meta', scan['execution_id'], 180)
+            if completed.get('parent_execution_id') != identifier:
+                raise SuiteError('raster branch output scan has a different parent execution')
+        report['automatic_scans'] = scans
+        stage = 'output_grants_and_lineage'
+        for port, (branch, _) in BRANCH_LINEAGE_OUTPUTS.items():
+            item, _ = bind(target_engine, targets[port]['full_name'], 'branch output')
+            evidence['outputs'][port] = item
+            wait_lineage(reader, evidence['sources'][branch]['item_id'], item['item_id'], identifier, 90)
+        ids = [item['item_id'] for item in (*evidence['sources'].values(), *evidence['outputs'].values())]
+        if len(set(ids)) != 7:
+            raise SuiteError('raster branch sources and outputs must be seven distinct DataItems')
+        c_query = urllib.parse.urlencode({'subject_kind': 'data_item', 'direction': 'downstream', 'depth': 1,
+                                           'item_id': evidence['sources']['c']['item_id']})
+        c_graph = obj(client.request('GET', '/api/v1/meta/lineage/graph?'+c_query, (200,)).payload, 'unused source graph')
+        if (c_graph.get('truncated') is not False or c_graph.get('permission_filtered') is not False
+            or c_graph.get('subject', {}).get('item_id') != evidence['sources']['c']['item_id']
+            or any(edge.get('evidence', {}).get('execution_id') == identifier for edge in c_graph['edges'])):
+            raise SuiteError('unused raster input published a branch lineage edge')
+        report['unused_source_graph'] = c_graph
+        persist()
+        stage = 'manager_permissions'
+        browser_env = {key: env[key] for key in ('ADDP_ONLINE_ARTIFACT_DIR', 'CONSOLE_URL', 'GATEWAY_URL',
+            'ADDP_ONLINE_READ_USER_USERNAME', 'ADDP_ONLINE_READ_USER_PASSWORD', 'ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN')}
+        browser_env['PATH'] = env.get('PATH', os.defpath)
+        browser_env['HOME'] = env.get('HOME', str(Path.home()))
+        report['browser'] = browser_runner(repository, browser_env, evidence, 'permissions', '栅格多分支撤权血缘$')
+        validate_branch_lineage_report(report['browser'], evidence)
+    except Exception as error:
+        report['failure'] = registration.metadata_error_evidence(error, stage)
+        raise
+    finally:
+        try:
+            report['cleanup'] = grants.cleanup()
+        except Exception as error:
+            report['cleanup_error'] = registration.metadata_error_evidence(error, grants.phase)
+            if 'failure' not in report:
+                raise
+        finally:
+            persist()
+    report['result'] = 'passed'
+    persist()
+    return report
+
+
 def prepare_resource_policy(platform, tenant, consumer):
     engines = array(platform.request('GET', '/api/v1/system/platform/engine-raster-policies/engines', (200,)).payload, 'raster resource engines')
     if len(engines) != 1:
@@ -1475,15 +1661,17 @@ def main():
                 'ADDP_ONLINE_TEST_USER_USERNAME', 'ADDP_ONLINE_TEST_USER_PASSWORD',
                 'ADDP_ONLINE_ARTIFACT_DIR', 'GATEWAY_URL', 'CONSOLE_URL',
                 'ADDP_ONLINE_RASTER_POLICY_PLATFORM_TOKEN', 'ADDP_ONLINE_RASTER_POLICY_TENANT_TOKEN')
-    if any(not env.get(key) for key in required):
+    if any(not env.get(key) for key in (*required, *BRANCH_LINEAGE_CREDENTIALS)):
         raise SuiteError('required raster Online environment is missing')
     client = GatewayClient(env['GATEWAY_URL'], env['ADDP_ONLINE_TEST_USER_ACCESS_TOKEN'], 30)
     platform = GatewayClient(env['GATEWAY_URL'], env['ADDP_ONLINE_RASTER_POLICY_PLATFORM_TOKEN'], 30)
     tenant = GatewayClient(env['GATEWAY_URL'], env['ADDP_ONLINE_RASTER_POLICY_TENANT_TOKEN'], 30)
     setup = prepare_resource_policy(platform, tenant, client)
-    report = run_scenario(Path(__file__).resolve().parents[2], env, client)
+    producer_env = {key: value for key, value in env.items() if key not in BRANCH_LINEAGE_CREDENTIALS}
+    report = run_scenario(Path(__file__).resolve().parents[2], producer_env, client)
     images = importlib.import_module('scripts.test.raster-image-export-online')
-    report['image_exports'] = images.run_scenario(sys.modules[__name__], Path(__file__).resolve().parents[2], env, client)
+    report['image_exports'] = images.run_scenario(sys.modules[__name__], Path(__file__).resolve().parents[2], producer_env, client)
+    report['branch_lineage'] = run_branch_lineage(Path(__file__).resolve().parents[2], env, client)
     report['resource_policy'] = finish_resource_policy(platform, tenant, setup, 30)
     print(json.dumps(report, ensure_ascii=False, sort_keys=True))
 

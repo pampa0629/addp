@@ -1,6 +1,7 @@
 import { expect, request, test } from '@playwright/test'
 import { writeFileSync } from 'node:fs'
 import { resolve } from 'node:path'
+import { observeLineageCanvas, lineageCanvasSnapshot } from '../../../../common-frontend/basic/tests/fixtures/lineageCanvas.js'
 import { browserAPIFromResponse, identity, json, login } from './transfer-browser-support.js'
 
 test.use({ locale: 'zh-CN' })
@@ -296,6 +297,85 @@ test('栅格 Console 执行状态、持久成果血缘及分析 JSON 一致', as
   } finally {
     await api.dispose()
   }
+})
+
+test('栅格多分支撤权血缘', async ({ page }) => {
+  const binding = JSON.parse(process.env.ADDP_ONLINE_RASTER_EVIDENCE)
+  const directory = process.env.ADDP_ONLINE_ARTIFACT_DIR
+  const report = { binding, result: 'incomplete', observations: [] }
+  const persist = () => writeFileSync(resolve(directory, 'raster-workflow-branch-lineage-permissions.json'),
+    JSON.stringify(report, null, 2))
+  const path = output => '/manager/data-explorer?locator=' + encodeURIComponent(output.locator)
+  const frame = page.frameLocator('iframe[data-testid="module-iframe"]')
+  const viewer = frame.locator('.lineage-viewer')
+  const marker = viewer.getByTestId('lineage-permission-filtered')
+  const canvas = viewer.locator('.lineage-canvas canvas').first()
+  const expectedIdentity = { principalID: binding.principal_id, tenantID: binding.tenant_id,
+    permissions: binding.permissions_verified }
+
+  const observe = async (phase, port, output, alreadyOpen) => {
+    if (!alreadyOpen) await page.goto(path(output))
+    const graphRead = page.waitForResponse(response => {
+      const url = new URL(response.url())
+      return response.request().method() === 'GET' && url.pathname === '/api/v1/meta/lineage/graph' &&
+        url.searchParams.get('item_id') === String(output.item_id) && url.searchParams.get('direction') === 'both'
+    })
+    await frame.getByRole('tab', { name: '血缘', exact: true }).click()
+    const response = await graphRead
+    const graph = await json(response, 'raster branch Manager graph')
+    report.observations.push({ phase, port, graph })
+    persist()
+    const api = await browserAPIFromResponse(response, process.env.GATEWAY_URL, expectedIdentity)
+    await api.dispose()
+    const branch = port[0]
+    const hidden = phase === 'a_revoked' && branch === 'a'
+    await expect(viewer.locator('.lineage-summary')).toContainText(hidden ? '1 个节点 · 0 条关系' : '2 个节点 · 1 条关系')
+    if (hidden) {
+      await expect(marker).toHaveText('当前无可显示的上下游关系，部分关系因数据权限限制已隐藏。')
+    } else {
+      await expect(marker).toHaveCount(0)
+    }
+    await expect(canvas).toBeVisible()
+    const expectedLabels = (hidden ? [output] : [output, binding.sources[branch]])
+      .map(node => 'Item #' + node.item_id).sort()
+    await expect.poll(async () => {
+      const { rows } = await lineageCanvasSnapshot(canvas)
+      return [...new Set(rows.map(row => row.text).filter(text => /^Item #\d+$/.test(text)))].sort()
+    }).toEqual(expectedLabels)
+    await page.screenshot({ path: resolve(directory, 'raster-branch-lineage-' + phase + '-' + port + '.png') })
+  }
+
+  persist()
+  await observeLineageCanvas(page)
+  await login(page, process.env.ADDP_ONLINE_READ_USER_USERNAME, process.env.ADDP_ONLINE_READ_USER_PASSWORD, path(binding.outputs.a1))
+  for (const [port, output] of Object.entries(binding.outputs)) {
+    await observe('authorized', port, output, port === 'a1')
+  }
+  const issuer = await request.newContext({ baseURL: process.env.GATEWAY_URL, extraHTTPHeaders: {
+    Authorization: 'Bearer ' + process.env.ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN
+  } })
+  try {
+    const { engine_id, request_id } = binding.withdraw_a
+    let response
+    try {
+      response = await issuer.post('/api/v1/system/engines/' + engine_id + '/access_grants/' +
+        request_id + '/revoke', { data: { reason: 'Disposable Online metadata cleanup' } })
+    } catch {
+      throw new Error('raster source A withdrawal request failed')
+    }
+    const revocation = await json(response, 'withdraw only raster source A')
+    expect(revocation.request_id).toBe(request_id)
+    expect(revocation.revoked_request_ids).toEqual([request_id])
+    report.withdrawn_request_id = request_id
+    persist()
+  } finally {
+    await issuer.dispose()
+  }
+  for (const [port, output] of Object.entries(binding.outputs)) {
+    await observe('a_revoked', port, output, false)
+  }
+  report.result = 'passed'
+  persist()
 })
 
 test.describe('栅格真实编辑器', () => {

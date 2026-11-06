@@ -31,6 +31,7 @@ stop_online_fixture() {
 source "$ROOT_DIR/scripts/utils/hosted-online.sh"
 # This manual scene verifies each accepted output in a browser plus byte/lineage checks.
 export ADDP_ONLINE_TEST_TIMEOUT_SECONDS=1740
+export ADDP_ONLINE_RASTER_BRANCH_LINEAGE=1
 export MONITOR_URL=http://127.0.0.1:8100 CONSOLE_URL=http://127.0.0.1:5170
 export SECURITY_URL=http://127.0.0.1:8194
 export ADDP_ONLINE_TEST_RUN_ID="raster-${GITHUB_RUN_ID:?}-${GITHUB_RUN_ATTEMPT:?}"

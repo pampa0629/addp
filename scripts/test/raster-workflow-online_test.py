@@ -4,6 +4,8 @@ from pathlib import Path
 import unittest
 import tempfile
 import urllib.parse
+from types import SimpleNamespace
+from unittest.mock import Mock, patch
 
 m = importlib.import_module('scripts.test.raster-workflow-online')
 
@@ -2080,6 +2082,138 @@ class RasterWorkflowOnlineTest(unittest.TestCase):
 
 
 if __name__ == '__main__': unittest.main()
+
+
+class RasterBranchLineageTest(unittest.TestCase):
+    def setUp(self):
+        self.evidence = {
+            'execution_id': 'fixture-execution',
+            'withdraw_a': {'engine_id': 11, 'request_id': 'grant-a'},
+            'sources': {branch: {'item_id': item, 'name': f'mosaic-{branch}.tif',
+                                 'fingerprint': f'fingerprint-{branch}', 'locator': f'locator-{branch}'}
+                        for branch, item in [('a', 101), ('b', 102), ('c', 103)]},
+            'outputs': {port: {'item_id': item} for port, item in
+                        [('a1', 201), ('a2', 202), ('b1', 203), ('b2', 204)]},
+        }
+        def node(item_id):
+            return {'item_id': item_id, 'hidden_upstream_count': 0, 'hidden_downstream_count': 0}
+        self.report = {'binding': self.evidence, 'result': 'passed', 'withdrawn_request_id': 'grant-a', 'observations': []}
+        for phase, edges in (
+            ('authorized', [('a1', 101, 201), ('a2', 101, 202), ('b1', 102, 203), ('b2', 102, 204)]),
+            ('a_revoked', [('a1', None, 201), ('a2', None, 202), ('b1', 102, 203), ('b2', 102, 204)]),
+        ):
+            for port, source, target in edges:
+                graph = {'subject': node(target), 'truncated': False, 'permission_filtered': source is None,
+                         'nodes': [node(target)], 'edges': []}
+                if source is not None:
+                    graph['nodes'].append(node(source))
+                    graph['edges'].append({'source': node(source), 'target': node(target),
+                        'relation_kind': 'derive', 'status': 'active', 'evidence': {'execution_id': 'fixture-execution'}})
+                self.report['observations'].append({'phase': phase, 'port': port, 'graph': graph})
+
+    def test_unused_load_is_registered_but_disconnected_from_the_four_saves(self):
+        definition, outputs = m.branch_lineage_workflow(self.evidence['sources'], 12)
+        tasks = {task['id']: task for task in definition['tasks']}
+        self.assertEqual(len(tasks), 11)
+        self.assertEqual(tasks['load_c']['params']['locator'], 'locator-c')
+        for port, branch in [('a1', 'a'), ('a2', 'a'), ('b1', 'b'), ('b2', 'b')]:
+            math_node, save = tasks['math_'+port], tasks['save_'+port]
+            self.assertEqual(math_node['depends_on'], ['load_'+branch])
+            self.assertEqual(math_node['params']['input_raster']['$ref'], 'load_'+branch)
+            self.assertEqual(save['depends_on'], ['math_'+port])
+            self.assertEqual(save['params']['input_raster']['$ref'], 'math_'+port)
+        self.assertEqual(len({output['resource']['locator'] for output in outputs.values()}), 4)
+
+    def test_report_requires_all_exact_edges_and_only_a_is_hidden(self):
+        m.validate_branch_lineage_report(self.report, self.evidence)
+        for fault in ('crossed', 'unused', 'extra', 'wrong_execution', 'a_still_visible', 'b_hidden',
+                      'missing_output', 'wrong_withdrawal', 'hidden_count', 'hidden_source', 'truncated'):
+            with self.subTest(fault=fault):
+                report = copy.deepcopy(self.report)
+                before, after_a, after_b = (report['observations'][index]['graph'] for index in (0, 4, 6))
+                if fault == 'crossed': before['edges'][0]['source']['item_id'] = 102
+                if fault == 'unused': before['edges'][0]['source']['item_id'] = 103
+                if fault == 'extra': before['edges'].append(copy.deepcopy(before['edges'][0]))
+                if fault == 'wrong_execution': after_b['edges'][0]['evidence']['execution_id'] = 'other'
+                if fault == 'a_still_visible': report['observations'][4]['graph'] = copy.deepcopy(before)
+                if fault == 'b_hidden':
+                    after_b.update(nodes=after_b['nodes'][:1], edges=[], permission_filtered=True)
+                if fault == 'missing_output': report['observations'].pop()
+                if fault == 'wrong_withdrawal': report['withdrawn_request_id'] = 'grant-b'
+                if fault == 'hidden_count': after_a['nodes'][0]['hidden_upstream_count'] = 1
+                if fault == 'hidden_source': after_a['subject']['full_name'] = 'mosaic-a.tif'
+                if fault == 'truncated': after_a['truncated'] = True
+                with self.assertRaises(m.SuiteError):
+                    m.validate_branch_lineage_report(report, self.evidence)
+
+    def test_scene_rejects_local_deployment_before_using_any_credentials(self):
+        with self.assertRaisesRegex(m.SuiteError, 'disposable Hosted'):
+            m.run_branch_lineage(Path('.'), {}, None)
+
+    def test_scene_cleans_up_after_success_and_after_unused_input_gets_an_edge(self):
+        registration = importlib.import_module('scripts.test.online-engine-registration')
+        for unused_edge in (False, True):
+            with self.subTest(unused_edge=unused_edge), tempfile.TemporaryDirectory() as directory:
+                env = {
+                    'ADDP_ONLINE_HOST': '1', 'ADDP_ONLINE_HOSTED': '1', 'GITHUB_ACTIONS': 'true', 'RUNNER_OS': 'Linux',
+                    'ADDP_ONLINE_RASTER_BRANCH_LINEAGE': '1', 'ADDP_ONLINE_ARTIFACT_DIR': directory,
+                    'ADDP_ONLINE_TEST_TENANT_ID': '2', 'ADDP_ONLINE_TEST_RUN_ID': 'branch-fixture',
+                    'ADDP_ONLINE_RASTER_SOURCE_ENGINE_ID': '11', 'ADDP_ONLINE_RASTER_SOURCE_B_ENGINE_ID': '13',
+                    'ADDP_ONLINE_RASTER_SOURCE_C_ENGINE_ID': '14', 'ADDP_ONLINE_RASTER_TARGET_ENGINE_ID': '12',
+                    'GATEWAY_URL': 'http://unused', 'CONSOLE_URL': 'http://unused',
+                    'ADDP_ONLINE_TEST_USER_ACCESS_TOKEN': 'private-producer', 'ADDP_ONLINE_READ_USER_ACCESS_TOKEN': 'private-reader',
+                    'ADDP_ONLINE_READ_USER_USERNAME': 'browser-reader', 'ADDP_ONLINE_READ_USER_PASSWORD': 'private-password',
+                    'ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN': 'private-issuer',
+                }
+                specs = [(11, 'raster-source/mosaic-a.tif', 101), (13, 'raster-source-b/mosaic-b.tif', 102),
+                         (14, 'raster-source-c/mosaic-c.tif', 103)]
+                specs += [(12, f'raster-target/branch-lineage-{port}.cog.tif', 201+i)
+                          for i, port in enumerate(('a1', 'a2', 'b1', 'b2'))]
+                items = {(engine, name): {'id': item, 'full_name': name, 'fingerprint': f'fp-{item}', 'item_type': 'object'}
+                         for engine, name, item in specs}
+                _, outputs = m.branch_lineage_workflow(self.evidence['sources'], 12)
+                scans = [{'target_locator': target['resource']['locator'], 'status': 'submitted', 'execution_id': 'scan-'+port}
+                         for port, target in outputs.items()]
+                client, grants = Mock(), Mock()
+                client.request.side_effect = [
+                    SimpleNamespace(payload=[{'id': 6, 'engine_type': 'geopython_workflow', 'connection_status': 'online'}]),
+                    SimpleNamespace(payload={'subject': {'item_id': 103}, 'truncated': False, 'permission_filtered': False,
+                        'edges': [{'evidence': {'execution_id': 'fixture-execution'}}] if unused_edge else []}),
+                ]
+                grants.metadata_facts.return_value = {'boundary': {'layout': 'single'}}
+                grants.grant.side_effect = lambda engine, name, *args, **kwargs: {
+                    'item_fingerprint': items[engine, name]['fingerprint'],
+                    'request_id': 'grant-a' if engine == 11 else f'grant-{items[engine, name]["id"]}'}
+                grants.cleanup.return_value = {'grants_revoked': True, 'metadata_hidden': True}
+                observed = {'principal_id': '42', 'tenant_id': '2', 'permissions_verified': sorted(m.LINEAGE_READER_PERMISSIONS)}
+
+                def browser(repository, browser_env, evidence, kind, test_name):
+                    self.assertEqual(evidence['withdraw_a'], {'engine_id': 11, 'request_id': 'grant-a'})
+                    self.assertNotIn('ADDP_ONLINE_TEST_USER_ACCESS_TOKEN', browser_env)
+                    self.assertNotIn('ADDP_ONLINE_READ_USER_ACCESS_TOKEN', browser_env)
+                    return {**self.report, 'binding': evidence}
+
+                with (patch.object(m, 'GatewayClient', side_effect=[Mock(), Mock()]),
+                      patch.object(m, 'validate_identity', side_effect=[{'principal_id': '41'}, observed]),
+                      patch.object(registration, 'ExactFileMetadataGrants', return_value=grants),
+                      patch.object(m.support, 'find_fixture_item', side_effect=lambda reader, engine, name, label: items[engine, name]),
+                      patch.object(m, 'submit', return_value='fixture-execution'),
+                      patch.object(m, 'wait_execution', side_effect=[
+                          {'triggered_by': 41, 'outputs': {'save_'+port: {'resource': value['resource']} for port, value in outputs.items()},
+                           'metadata': {'result': {'meta_scan_runs': scans}}}, *[{'parent_execution_id': 'fixture-execution'}]*4]),
+                      patch.object(m, 'wait_lineage') as wait):
+                    if unused_edge:
+                        with self.assertRaisesRegex(m.SuiteError, 'unused raster input'):
+                            m.run_branch_lineage(Path('.'), env, client, browser)
+                    else:
+                        report = m.run_branch_lineage(Path('.'), env, client, browser)
+                        self.assertEqual(report['result'], 'passed')
+                    self.assertEqual([call.args[1:3] for call in wait.call_args_list],
+                                     [(101, 201), (101, 202), (102, 203), (102, 204)])
+                self.assertEqual([call.args[:2] for call in grants.grant.call_args_list],
+                                 [(engine, name) for engine, name, _ in specs])
+                self.assertTrue(all(call.kwargs.get('expires_at') for call in grants.grant.call_args_list))
+                grants.cleanup.assert_called_once_with()
 
 
 class ResourcePolicyClient:

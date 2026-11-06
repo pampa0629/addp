@@ -59,6 +59,7 @@ class HostedRasterGateTest(unittest.TestCase):
         go = self.host.bin / 'go'
         go.write_text(go.read_text().replace('previous=', '''
             echo "identity:$*" >> "$ADDP_TEST_GATE_TRACE"
+            echo "branch-lineage-fixture:${ADDP_ONLINE_RASTER_BRANCH_LINEAGE:-}" >> "$ADDP_TEST_GATE_TRACE"
             [ "${ADDP_TEST_IDENTITY_FAIL:-0}" != 1 ] || exit 1
             previous=''', 1))
         docker = self.host.bin / 'docker'
@@ -79,6 +80,7 @@ class HostedRasterGateTest(unittest.TestCase):
             [ -z "${ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN:-}" ]
             [ -z "${POSTGRES_PASSWORD:-}" ]
             [ "$ADDP_ONLINE_TEST_TIMEOUT_SECONDS" = 1740 ] || exit 1
+            echo "branch-lineage-runner:${ADDP_ONLINE_RASTER_BRANCH_LINEAGE:-}" >> "$ADDP_TEST_GATE_TRACE"
             echo "security-url:${SECURITY_URL:-}" >> "$ADDP_TEST_GATE_TRACE"
             [ "$ADDP_ONLINE_RASTER_SOURCE_ENGINE_ID" = 11 ]
             [ "$ADDP_ONLINE_RASTER_TARGET_ENGINE_ID" = 12 ]
@@ -132,6 +134,8 @@ class HostedRasterGateTest(unittest.TestCase):
         self.assertIn('security-url:http://127.0.0.1:8194', trace)
         self.assertLess(trace.index('start:-security'), trace.index('start:-develop'))
         self.assertIn('--wait-protection-owners develop,manager', trace)
+        self.assertIn('branch-lineage-fixture:1\n', trace)
+        self.assertIn('branch-lineage-runner:1\n', trace)
         self.assertIn('docker-rm:addp-raster-online-runtime', trace)
         self.assertLess(trace.index('application-stop'), trace.index('raster-fixture:stop'))
         self.assertFalse(self.host.secrets.exists())

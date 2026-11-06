@@ -1777,6 +1777,28 @@ func TestRasterCapacitySeparatesBoundedMetadataIssuerFromConsumer(t *testing.T) 
 	}
 }
 
+func TestRasterBranchLineageFixtureIsExclusiveToMainWorkflow(t *testing.T) {
+	t.Setenv("ADDP_ONLINE_RASTER_BRANCH_LINEAGE", "0")
+	if lineageReaderUsername("raster-workflow") != "" || len(suiteSourceInitializerPermissions("raster-workflow")) != 0 {
+		t.Fatal("raster specialist gates reuse the workflow fixture without lineage identities")
+	}
+	t.Setenv("ADDP_ONLINE_RASTER_BRANCH_LINEAGE", "1")
+	if lineageReaderUsername("raster-workflow") != "external-online-raster-lineage-reader" ||
+		lineageReaderUsername("raster-workflow-capacity") != "" ||
+		!slices.Equal(suiteSourceInitializerPermissions("raster-workflow"), sourceInitializerPermissions) {
+		t.Fatal("main raster workflow must use only the dedicated reader and existing issuer profile")
+	}
+	permissions, err := suitePermissions("raster-workflow")
+	if err != nil || len(permissions) != 12 {
+		t.Fatalf("unexpected raster execution permissions: %v %v", permissions, err)
+	}
+	for _, permission := range sourceInitializerPermissions {
+		if slices.Contains(permissions, permission) {
+			t.Fatal("raster execution User gained issuer permission", permission)
+		}
+	}
+}
+
 func TestSecurityFixtureScanPreparationKeepsConsumerUnprivileged(t *testing.T) {
 	want := append(slices.Clone(sourceInitializerPermissions), "meta.scan_task.execute", "meta.scan_task.read")
 	got := suiteSourceInitializerPermissions("security-mysql-owner-protection")

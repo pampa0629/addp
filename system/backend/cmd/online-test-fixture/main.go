@@ -127,6 +127,11 @@ func suiteSourceInitializerPermissions(suite string) []string {
 			return append(slices.Clone(sourceInitializerPermissions), "meta.scan_task.execute", "meta.scan_task.read")
 		}
 		return nil
+	case "raster-workflow":
+		if rasterBranchLineage(suite) {
+			return slices.Clone(sourceInitializerPermissions)
+		}
+		return nil
 	case "raster-workflow-capacity", "ftp-consumer-flow", "manager-internal-artifact-lineage", "highgo-consumer-flow", "security-mysql-owner-protection", "security-plaintext-access", "hdfs-spark-consumer-flow", "cleanup-native-effects", "opengauss-consumer-flow", "transfer-relational-sql-etl":
 		permissions := append([]string{}, sourceInitializerPermissions...)
 		if suite == "hdfs-spark-consumer-flow" || suite == "security-mysql-owner-protection" || suite == "transfer-relational-sql-etl" || (suite == "manager-internal-artifact-lineage" && slices.Contains([]string{"native-envi", "filegdb-export"}, os.Getenv("ADDP_ONLINE_MANAGER_CASE"))) {
@@ -140,6 +145,20 @@ func suiteSourceInitializerPermissions(suite string) []string {
 
 func topologyLineagePermissions(suite string) bool {
 	return suite == "vector-topology-persistence" && os.Getenv("ADDP_ONLINE_TOPOLOGY_LINEAGE_PERMISSIONS") == "1"
+}
+
+func rasterBranchLineage(suite string) bool {
+	return suite == "raster-workflow" && os.Getenv("ADDP_ONLINE_RASTER_BRANCH_LINEAGE") == "1"
+}
+
+func lineageReaderUsername(suite string) string {
+	if rasterBranchLineage(suite) {
+		return "external-online-raster-lineage-reader"
+	}
+	if topologyLineagePermissions(suite) {
+		return "external-online-topology-lineage-reader"
+	}
+	return ""
 }
 
 func managerFileGDBOutsiderPermissions(suite string) []string {
@@ -1060,15 +1079,15 @@ func run(args []string, environment []string) error {
 		}
 		values["ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN"] = sourceInitializer.AccessToken
 	}
-	if topologyLineagePermissions(*suite) {
+	if username := lineageReaderUsername(*suite); username != "" {
 		reader, _, password, err := createPermissionFixture(ctx, repository, identity, membershipService, roleService, selectionService,
-			tenant.ID, administrator.PrincipalID, "external-online-topology-lineage-reader",
+			tenant.ID, administrator.PrincipalID, username,
 			[]string{"manager.data_item.read", "meta.catalog.read", "meta.lineage.read"})
 		if err != nil {
 			return err
 		}
 		values["ADDP_ONLINE_READ_USER_ACCESS_TOKEN"] = reader.AccessToken
-		values["ADDP_ONLINE_READ_USER_USERNAME"] = "external-online-topology-lineage-reader"
+		values["ADDP_ONLINE_READ_USER_USERNAME"] = username
 		values["ADDP_ONLINE_READ_USER_PASSWORD"] = password
 	}
 	if *suite == "catalog-domain-overview" {
