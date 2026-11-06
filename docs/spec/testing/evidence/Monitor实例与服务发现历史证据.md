@@ -2,7 +2,7 @@
 
 [返回 Monitor 历史证据](Monitor历史证据.md) · [返回验收证据索引](../验收证据索引.md)
 
-本专题收录多 Worker、实例筛选、cgroup 配额、部署预期与发现生命周期。验收结论按各记录的固定源码、环境、运行尝试和层级认定。原顺序见[Monitor 历史证据入口](Monitor历史证据.md#原记录入口)。 容器配额相关记录见[分层导航](#服务实例-cgroup-证据导航)。
+本专题收录多 Worker、实例筛选、cgroup 配额、部署预期与发现生命周期。验收结论按各记录的固定源码、环境、运行尝试和层级认定。原顺序见[Monitor 历史证据入口](Monitor历史证据.md#原记录入口)。 容器配额相关记录见[分层导航](#服务实例-cgroup-证据导航)。 部署观察器相关记录见[退出证据导航](#部署观察器退出证据导航)。
 
 原始过程、逐步诊断及详细归档清单见[精简前的固定记录](https://github.com/pampa0629/addp/blob/be8f8daa4d38a7830585577f03b77bf2b5ed3931/docs/spec/testing/evidence/Monitor%E5%AE%9E%E4%BE%8B%E4%B8%8E%E6%9C%8D%E5%8A%A1%E5%8F%91%E7%8E%B0%E5%8E%86%E5%8F%B2%E8%AF%81%E6%8D%AE.md)。
 
@@ -240,6 +240,17 @@ CI：`cgroup-source` 作为现有 Release 指标矩阵第五个真实分项，�
 
 因此，本条固定版本 Linux cgroup-source T2 已通过，原旧版本失败及本机证据继续分别保留；不再因同一缺样重复验收。该结果仅证明三个 SDK 的共享组原始量采集、完整窗口读取与身份拒绝，**不证明独立容器关联、完整限制层级、正式身份配额页面或当前 main／告警级别筛选的 CI**。本次只补录回传证据，没有重跑 CI／Hosted、设置定时任务或操作用户服务；同一证据已由协调会话通知清单维护会话，不重复发送。
 
+## 部署观察器退出证据导航
+
+| 阶段 | 已归档结论 | 直达记录 |
+| --- | --- | --- |
+| Linux 首次退出失败 | `994db320` 的 Job `121040604338` 未确认观察器退出，保留运行记录。旧日志缺少状态和信号证据，根因未证实。 | [首败与有界诊断](#持续部署发现-linux-退出失败调查仅补诊断根因未证实2026-10-25) |
+| 诊断增强后的 Linux 复验 | `05b23292` 的 Job `121044843183` 整 Job 通过，未复现原间歇退出失败。 | [固定 05b 的原日志与终态](#持续部署发现固定-05b-linux-门禁通过原间歇失败仍未闭环2026-10-25) |
+| 单次停止信号 | `effd9f80` 的 Job `121213997615` 清理失败。受控复现确认信号落入 Popen 析构时可能丢失退出意图，原 CI 缺少当时的 Python 栈。修复后的本机隔离 Linux 复验与仍失败的开发聚合分列。 | [复现、取消路径及子进程回收](#2026-10-26-部署观察器单次停止信号在析构边界丢失) |
+| 后续自然 Linux 终态 | `2a2afdf4` 的 Job `121231972455` 已通过停止与挂载证明分项，整 Job 在迁移选择断言失败。`1fb051a5` 的 Job `121248639865` 通过固定源码的 Platform consistency。 | [两个 Job 与迁移选择复验](#原生linux回传与迁移选择断言同步2026-10-26) |
+
+部署证明的挂载归属另有原 Platform T0 失败和本地修复记录。[挂载归属回归](#部署证明测试的单一挂载归属回归2026-10-25)
+
 ## 持续部署发现 Linux 退出失败调查：仅补诊断，根因未证实（2026-10-25）
 
 专门CI会话回传后，只读核对 [Platform Run40150409107／Job121040604338](https://github.com/pampa0629/addp/actions/runs/40150409107/job/121040604338) 原始日志的checkout与实际失败步骤，源码为 `994db320ae7147cb0e566db4960eb256306cc9e1`。`make test-platform → test-dev-lifecycle → test-infra-runtime-log-lifecycle` 的61项中，`test_logs_failure_does_not_prevent_selected_metrics_start` 在 `addCleanup/stop_discovery_observer` 收到“部署发现进程尚未退出，不删除运行记录”；Job实际失败，后续摘要写入成功不能覆盖。日志没有当时的进程状态／等待／信号／子进程证据，不能断言是僵尸、锁、Docker子进程或预算不足，更没有证据把它归因于新增告警 `host_name` 逻辑。
@@ -332,13 +343,14 @@ CI：`cgroup-source` 作为现有 Release 指标矩阵第五个真实分项，�
 
 ## 原生Linux回传与迁移选择断言同步（2026-10-26）
 
-专门CI会话回传后，本会话只读核对其提供的原始日志：Platform run `40214288480` / job `121231972455`，checkout固定为`2a2afdf482aabcea3ab6dadc2f8aea01c6560f3a`；日志2191—2195行的61项Infra生命周期、2335—2344行的40项部署发现及6项证明均Ran/OK。相关停止／挂载证明门禁已取得该固定源码的原生Linux通过证据，不代替当前HEAD、完整Platform或正式运行验收；原本地Dev聚合两项超时仍保留为失败。
+| 固定源码与 Job | 实际执行与终态 |
+| --- | --- |
+| `2a2afdf482aabcea3ab6dadc2f8aea01c6560f3a` · [40214288480／121231972455](https://github.com/pampa0629/addp/actions/runs/40214288480/job/121231972455) | 原日志第 2191—2195 行的 61 项 Infra 生命周期及第 2335—2344 行的 40 项部署发现、6 项部署证明均实际通过。整 Job 随后在 `test-system-iam-runner` 失败，旧精确选择断言漏列实际已选中的 `PlatformServiceAvailabilityRulesForwardMigration`。 |
+| `1fb051a50e7c46975411542a0e9340f7fcb97929` · [40219785488／121248639865](https://github.com/pampa0629/addp/actions/runs/40219785488/job/121248639865) | Platform consistency 实际执行到末尾，`ADDP_CI_SELECTED=true`、`ADDP_CI_STATUS=success`。停止流程相关 61 项及迁移 runner 契约 30 项均执行并通过。 |
 
-该Job最终失败在 `test-system-iam-runner`：旧精确选择断言未纳入标准入口已选择的`PlatformServiceAvailabilityRulesForwardMigration`。本地先用 `make test-system-iam-runner`复现30项中同一失败，再仅同步该测试：精确比较实际迁移选择器，核对新增失联迁移、原告警／HTTP／Trace及Runner五个测试都命中，无关迁移、伪发布名、前后缀扩展及缺少后缀不命中；原错误package选择拒绝保持。没有修改迁移入口、SQL、权限、真实数据库或产品。
+本地沿 `make test-system-iam-runner` 复现 30 项中的同一失败。修复仅同步选择断言，逐项核对失联迁移、告警／HTTP／Trace 及 Runner 用例，保留无关迁移、伪发布名、前后缀扩展、缺少后缀和错误 package 拒绝。修复后同一入口 30 项通过。本地复验限于迁移选择断言，实库迁移与权限各有独立门禁。
 
-修复后同一标准入口30项退出0，`git diff --check`通过；沿原Make／Platform T0自动发现，无需新增登记。日志 `/tmp/addp-service-availability-selector-{red,green}.log`，原CI证据 `/tmp/addp-ci-20261025-180006/job-121231972455.log`，Job为 https://github.com/pampa0629/addp/actions/runs/40214288480/job/121231972455 。未将原失败改写为整轮通过，未重跑已有有效实库／Hosted，未查询或重跑远程CI、设置定时任务或操作个人服务；修复后的自然CI等专门会话回传。
-
-后续专门CI会话回传，本会话只读复核原始日志 `/tmp/addp-ci-20261025-200006/job-121248639865.log`：固定源码 `1fb051a50e7c46975411542a0e9340f7fcb97929` 的 [Platform consistency](https://github.com/pampa0629/addp/actions/runs/40219785488/job/121248639865) 实际执行到末尾，`ADDP_CI_SELECTED=true`、`ADDP_CI_STATUS=success`；其中停止流程相关61项及迁移runner契约30项均Ran/OK。停止流程、发现挂载证明及精确迁移选择三项修复已具备该固定源码的Linux标准T0证据。旧失败与本地Dev聚合超时保留；本结论仅覆盖该Job，不代表整个workflow、当前共享HEAD、Safari弹窗与规则写入、真实失联触发／恢复／通知或Hosted通过。本次仅归档回传证据，未触发／重跑／轮询CI或操作个人服务，清单相关功能仍部分实现。
+两轮原日志分别为 `/tmp/addp-ci-20261025-180006/job-121231972455.log`、`/tmp/addp-ci-20261025-200006/job-121248639865.log`，本地红绿日志为 `/tmp/addp-service-availability-selector-{red,green}.log`。原 Job 失败与本地开发聚合的两项超时仍分别保留。后继 Linux 通过的范围限于该固定 Platform Job，Safari、真实失联触发／恢复／通知及 Hosted 另行验收。
 
 ## 服务监控自动筛选与就近提示（2026-10-29）
 
