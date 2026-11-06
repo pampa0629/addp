@@ -141,7 +141,7 @@ Manager 源准备保持其正式授权链；本批 Transfer CDC 仅验证既有 
 | --- | --- | --- |
 | 1 | 后继 Neo4j CI 启动夹具故障 | 九阶段 T2 的42ae源码已获 Linux 实际通过；后继19e源码启动前置 exit64 由 CI 会话跟进，不计专项通过，不自动重跑 |
 | 2 | Graph 高级恢复（已暂缓） | 用户决定近期沿用 System 永久登记身份；恢复证据 Provider、可信原生绑定和正向 reopen 暂不实施，不扩大托管／权限边界，缺证据保持阻断 |
-| 3 | 其余真实故障验收 | Graph 原生写图回包丢失、两引擎生命周期（正向恢复随第2项暂缓）；Manager 对象／索引未知效果和真正迟到 writer；Cleanup 协调／授权／真实浏览器全矩阵。runner 或 PG 通过不计已完成 T4 |
+| 3 | 其余真实故障验收 | Graph 原生写图回包丢失、两引擎生命周期（正向恢复随第2项暂缓）；Manager 索引未知效果和真正迟到 writer；Cleanup 协调／授权／真实浏览器全矩阵。runner 或 PG 通过不计已完成 T4 |
 | 4 | Quality 新实现运行复验 | 历史 bounded-recovery 已通过；是否可复用须按本轮实际输入核对，不能直接升级为全部 Owner 的新实现证据 |
 | 5 | 旧环境一次性切换 | 研发旧记录允许清理；准确清单、引用关系、活动运行体及外部未决效果须重新盘点，实际切换与重启仍独立确认 |
 
@@ -255,7 +255,7 @@ Manager 源准备保持其正式授权链；本批 Transfer CDC 仅验证既有 
 
 ### 8.43 Manager 原生成功基线准备
 
-`manager-success` 基线已验收，后续分别验证对象／索引未知效果和旧 Runtime 迟到写入。Graph 高级恢复继续暂缓。沿原三业务 User、独立源办理员、精确权限、九项断言及独占 Hosted 部署推进。120分钟总预算、900秒业务预算、保护投影、扫描与 MinIO 就绪共用的180秒窗口不变；完整协议以 [T4 原生 Cleanup 契约](../spec/testing/T4-Online验收规范.md#原生-cleanup-的独立有限验收)为准。
+`manager-success` 与 `manager-object-unknown` 已验收，后续分别验证索引未知效果和旧 Runtime 迟到写入。Graph 高级恢复继续暂缓。沿原三业务 User、独立源办理员、精确权限、九项断言及独占 Hosted 部署推进。120分钟总预算、900秒业务预算、保护投影、扫描与 MinIO 就绪共用的180秒窗口不变；完整协议以 [T4 原生 Cleanup 契约](../spec/testing/T4-Online验收规范.md#原生-cleanup-的独立有限验收)为准。
 
 **最新真实结果。** 第八轮 `9f1f68d5` 于 2026-11-06 06:21:43（Asia/Shanghai）成功结束。16 个镜像、Model3D smoke 和 14 个服务准入通过。首扫后实际观察到原生对象和索引投影，Engine 删除后读回终态并确认对象与索引均已清除。九项断言全部通过，含专业回执一致、清理审计保留及源 OBJ／MTL／纹理保持不变。控制恢复、显式清理和零残留均通过。官方五件归档与作业原始日志已交叉核验。[第八轮 Hosted](https://github.com/pampa0629/addp/actions/runs/42109764720/job/127533929017)
 
@@ -274,8 +274,10 @@ Manager 源准备保持其正式授权链；本批 Transfer CDC 仅验证既有 
 
 以真实快显入口和 System 连接读取的 409 响应复现了 Manager 将生命周期拒绝包装成 HTTP 500 并返回下游文案。修正保留原查询及权责，快显动作在创建任务前返回安全的 409。runner 将现有拒绝链分为三个阶段，11 项断言保持原契约。修正 `1f24cf9b` 的本地后端和同提交 Linux 门禁均通过，含 Swagger 97 个公开路由及 runner 403 项。[Go 工作区](https://github.com/pampa0629/addp/actions/runs/42153149805/job/127680944498) · [平台一致性](https://github.com/pampa0629/addp/actions/runs/42153149805/job/127680944701) · [Execution runner](https://github.com/pampa0629/addp/actions/runs/42153149805/job/127680944784)
 
-复验 `e52be373` 于 2026-11-06 18:07:58（Asia/Shanghai）失败，官方报告仍登记五项。阶段标记定位为 `manager_new_generation_refusal` HTTP 500；前序已观察持久隔离，Engine 读取及重复删除拒绝（409）已越过。完整拒绝链、隔离复核及源字节校验尚未闭环。控制恢复、清理和零残留均通过。[修正版 Hosted](https://github.com/pampa0629/addp/actions/runs/42188743649/job/127795258412)
+复验 `e52be373` 于 2026-11-06 18:07:58（Asia/Shanghai）失败，官方报告仍登记五项。阶段标记定位为 `manager_new_generation_refusal` HTTP 500；前序已观察持久隔离，Engine 读取及重复删除拒绝（409）已越过。该轮未完成拒绝链、隔离复核及源字节校验。控制恢复、清理和零残留均通过。[修正版 Hosted](https://github.com/pampa0629/addp/actions/runs/42188743649/job/127795258412)
 
 按生产接线加入 Meta Client 后，回归复现了 Mosaic 提前查询将已清理 Meta 项的 404 包装成 500，绕过了 Engine 生命周期检查。Manager 删除该独立查询，从既有 Engine → Meta 解析取得 Mosaic 的规范来源，Engine 拒绝时在读 Meta 前返回既有的安全 409。权限、路由、11 项断言与等待预算沿用原契约。
 
-**剩余工作。** 分别验证对象效果未知、索引效果未知和旧 Runtime 迟到写入。新的 Hosted 须单独确认。正向和对象未知私有证据分别位于 `/tmp/addp-manager-success-hosted-eighth-20261106/` 与 `/tmp/addp-manager-object-unknown-hosted-20261106/`。
+**对象未知复验通过。** `c105b4ba` 于 2026-11-07 00:29:01（Asia/Shanghai）通过全部 11 项。实际对象变更后代理丢弃回包，持久隔离保留、Engine 保持 deleting、重复删除返回 409 且未重发、新生成被拒绝、源 OBJ／MTL／纹理不变。控制恢复、清理与零残留均通过。快显拒绝的精确 409 和错误码由回归测试验证，Hosted 按既有断言核对拒绝行为。[通过的 Hosted 作业](https://github.com/pampa0629/addp/actions/runs/42240606344/job/127969596209)
+
+**剩余工作。** 分别验证索引未知效果和旧 Runtime 迟到写入。新的 Hosted 须单独确认。正向和对象未知通过证据分别位于 `/tmp/addp-manager-success-hosted-eighth-20261106/` 与 `/tmp/addp-manager-object-unknown-hosted-third-20261106/`。
