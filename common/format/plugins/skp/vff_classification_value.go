@@ -23,7 +23,7 @@ type vffSKCValueBinding struct {
 	attributeUse         *vffSKCValueAttribute
 	fixedValues          []vffSKCFixedValueComparison
 	constraintValues     []vffSKCConstraintValue
-	valueTypes          []vffSKCValueTypeFact
+	valueTypes           []vffSKCValueTypeFact
 }
 
 func (b *vffSKCBinder) readValueType(n *vffXMLNode) (*vffSKCValueBinding, error) {
@@ -47,7 +47,7 @@ func (b *vffSKCBinder) readValueType(n *vffXMLNode) (*vffSKCValueBinding, error)
 		kind := source.name.Local
 		index := len(result.references)
 		result.references = append(result.references, vffSKCValueReference{role: kind + "Ref", name: name, source: b.witness(source)})
-		target, err := b.resolveValue(source, name, kind)
+		target, err := b.resolveDeclaration(source, name, kind)
 		if err != nil {
 			return err
 		}
@@ -89,7 +89,7 @@ func (b *vffSKCBinder) readValueType(n *vffXMLNode) (*vffSKCValueBinding, error)
 			}
 			return nil
 		}
-		target, err := b.resolveValue(source, name, "type")
+		target, err := b.resolveDeclaration(source, name, "type")
 		if err != nil {
 			return err
 		}

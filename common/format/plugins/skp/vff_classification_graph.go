@@ -21,11 +21,11 @@ type vffSKCBindingGraph struct {
 	edges   map[string][]vffSKCBindingEdge
 	facts   map[string]*vffSKCSchemaFact
 }
-type vffSKCValueScope struct {
+type vffSKCDeclarationScope struct {
 	owner *vffSKCBinder
 	via   []vffSKCSchemaLink
 }
-type vffSKCValueTarget struct {
+type vffSKCDeclarationTarget struct {
 	node *vffXMLNode
 	via  []vffSKCSchemaLink
 }
@@ -140,10 +140,10 @@ func newVFFSKCBindingGraph(ctx context.Context, files map[string][]byte, doc vff
 
 // This bounded subset follows forward includes only. Reverse include assembly,
 // chameleon namespaces and redefine semantics remain explicitly unproved.
-func (b *vffSKCBinder) valueIncludes(start *vffSKCBinder, via []vffSKCSchemaLink) ([]vffSKCValueScope, bool, error) {
-	queue := []vffSKCValueScope{{owner: start, via: via}}
+func (b *vffSKCBinder) declarationIncludes(start *vffSKCBinder, via []vffSKCSchemaLink) ([]vffSKCDeclarationScope, bool, error) {
+	queue := []vffSKCDeclarationScope{{owner: start, via: via}}
 	seen := map[string]bool{}
-	var scopes []vffSKCValueScope
+	var scopes []vffSKCDeclarationScope
 	complete := true
 	for i := 0; i < len(queue); i++ {
 		route := queue[i]
@@ -167,15 +167,15 @@ func (b *vffSKCBinder) valueIncludes(start *vffSKCBinder, via []vffSKCSchemaLink
 				complete = false
 				continue
 			}
-			queue = append(queue, vffSKCValueScope{owner: b.graph.binders[edge.link.target.member], via: append(append([]vffSKCSchemaLink(nil), route.via...), edge.link)})
+			queue = append(queue, vffSKCDeclarationScope{owner: b.graph.binders[edge.link.target.member], via: append(append([]vffSKCSchemaLink(nil), route.via...), edge.link)})
 		}
 	}
 	return scopes, complete, nil
 }
 
-func (b *vffSKCBinder) resolveValue(source *vffXMLNode, name xml.Name, kind string) (*vffSKCValueTarget, error) {
+func (b *vffSKCBinder) resolveDeclaration(source *vffXMLNode, name xml.Name, kind string) (*vffSKCDeclarationTarget, error) {
 	owner := b.graph.owners[source]
-	var starts []vffSKCValueScope
+	var starts []vffSKCDeclarationScope
 	complete := true
 	if name.Space == owner.namespace {
 		for _, edge := range b.graph.edges[owner.member] {
@@ -186,13 +186,13 @@ func (b *vffSKCBinder) resolveValue(source *vffXMLNode, name xml.Name, kind stri
 				return nil, nil
 			}
 		}
-		start, ok, err := b.valueIncludes(owner, nil)
+		start, ok, err := b.declarationIncludes(owner, nil)
 		if err != nil {
 			return nil, err
 		}
 		starts, complete = start, ok
 	} else {
-		_, ok, err := b.valueIncludes(owner, nil)
+		_, ok, err := b.declarationIncludes(owner, nil)
 		if err != nil {
 			return nil, err
 		}
@@ -208,7 +208,7 @@ func (b *vffSKCBinder) resolveValue(source *vffXMLNode, name xml.Name, kind stri
 				complete = false
 				continue
 			}
-			start, ok, err := b.valueIncludes(b.graph.binders[edge.link.target.member], []vffSKCSchemaLink{edge.link})
+			start, ok, err := b.declarationIncludes(b.graph.binders[edge.link.target.member], []vffSKCSchemaLink{edge.link})
 			if err != nil {
 				return nil, err
 			}
@@ -219,7 +219,7 @@ func (b *vffSKCBinder) resolveValue(source *vffXMLNode, name xml.Name, kind stri
 	if !complete {
 		return nil, nil
 	}
-	var target *vffSKCValueTarget
+	var target *vffSKCDeclarationTarget
 	for _, scope := range starts {
 		if err := b.tick(0); err != nil {
 			return nil, err
@@ -235,10 +235,10 @@ func (b *vffSKCBinder) resolveValue(source *vffXMLNode, name xml.Name, kind stri
 				continue
 			}
 			if target != nil && target.node != node {
-				return nil, fmt.Errorf("ambiguous cross-schema value declaration")
+				return nil, fmt.Errorf("ambiguous cross-schema declaration")
 			}
 			if target == nil {
-				target = &vffSKCValueTarget{node, scope.via}
+				target = &vffSKCDeclarationTarget{node, scope.via}
 			}
 		}
 	}

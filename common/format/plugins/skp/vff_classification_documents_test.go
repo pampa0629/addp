@@ -20,6 +20,29 @@ func skcDocumentLimits() vffClassificationDocumentLimits {
 	return vffClassificationDocumentLimits{packages: skcTestLimits(), xml: vffXMLLimits{bytes: 1 << 20, nodes: 10000, depth: 32, attributes: 10000, text: 1 << 20}, images: vffImageLimits{images: 10, bytes: 1 << 20, pixels: 10000}, filters: vffSKCFilterLimits{bytes: 1 << 20, tokens: 10000, rules: 1000, attributes: 10000}, dependencies: 100}
 }
 
+func TestVFFSKCIFC2X3ImportKeepsSameNamedUnpinnedSchemasUnresolved(t *testing.T) {
+	const namespace = "urn:iso.org:standard:10303:part(28):version(2):xmlschema:common"
+	const location = "http://www.iai-tech.org/ifcXML/IFC2x3/FINAL/ex.xsd"
+	files := skcDocumentFiles(t)
+	delete(files, "Schemas/root.xsd")
+	delete(files, "Schemas/root.xsd.filter")
+	files["document.xml"] = bytes.ReplaceAll(files["document.xml"], []byte("Schemas/root.xsd"), []byte("Schemas/IFC2X3.xsd"))
+	files["Schemas/IFC2X3.xsd"] = []byte(`<xs:schema xmlns:xs="` + vffXSDNS + `" targetNamespace="urn:ifc"><xs:import namespace="` + namespace + `" schemaLocation="` + location + `"/></xs:schema>`)
+	files["Schemas/ex.xsd"] = []byte(`<xs:schema xmlns:xs="` + vffXSDNS + `" targetNamespace="` + namespace + `"/>`)
+	facts, err := readVFFClassificationDocuments(context.Background(), skcGraphContainer(t, files), skcDocumentLimits())
+	if err != nil {
+		t.Fatal(err)
+	}
+	doc := facts.documents[0]
+	if len(doc.schemas) != 1 || len(doc.links) != 1 || len(doc.schemas[0].dependencies) != 1 {
+		t.Fatal("unverified target was parsed or import declaration was lost")
+	}
+	dependency := doc.schemas[0].dependencies[0]
+	if dependency.location != location || dependency.namespace != namespace || dependency.member != "" || doc.links[0].namespaceChecked || len(doc.links[0].issues) == 0 {
+		t.Fatal("matching names, URI, and namespace are insufficient to bind the target")
+	}
+}
+
 func skcDocumentFiles(t *testing.T) map[string][]byte {
 	t.Helper()
 	img := image.NewNRGBA(image.Rect(0, 0, 2, 1))

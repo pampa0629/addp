@@ -43,6 +43,43 @@ func skcGraphRead(t *testing.T, files map[string][]byte) []vffSKCFilterBindings 
 	return got
 }
 
+func TestVFFSKCFilterUsesVerifiedCrossFileBaseAndAttributeGroup(t *testing.T) {
+	const source = "Schemas/root.xsd"
+	const target = "Schemas/shared.xsd"
+	const imported = `<x:import namespace="urn:b" schemaLocation="shared.xsd"/>`
+	const holder = `<x:complexType name="Holder"><x:complexContent><x:extension base="b:Entity"/></x:complexContent></x:complexType>`
+	const other = `<x:complexType name="Other"><x:complexContent><x:extension base="b:Entity"/></x:complexContent></x:complexType>`
+	f := skcDocumentFiles(t)
+	f[source] = skcGraphSchema("urn:r", imported+holder+other)
+	f["Schemas/root.xsd.filter"] = []byte("Holder { id }\n{ instanceAttributes }")
+	f[target] = skcGraphSchema("urn:b", `<x:element name="Entity" type="x:string"/><x:complexType name="Entity"><x:attributeGroup ref="b:instanceAttributes"/></x:complexType><x:attributeGroup name="instanceAttributes"><x:attribute ref="b:id"/></x:attributeGroup><x:attribute name="id" type="x:ID"/>`)
+
+	rules := skcGraphRead(t, f)[0].rules
+	fields := rules[0].fields[0].candidates
+	if len(fields) != 1 || fields[0].source.member != target || fields[0].declaration.member != target || fields[0].declaration.kind != "attribute" || fields[0].declaration.name != "id" {
+		t.Fatalf("unexpected inherited field: %#v", fields)
+	}
+	if len(rules[1].scopes) != 1 || rules[1].scopes[0].typeDeclaration.name != "Other" {
+		t.Fatalf("foreign declarations became independent filter scopes: %#v", rules[1].scopes)
+	}
+	groups := rules[1].scopes[0].groups[0].uses
+	if len(groups) != 1 || groups[0].reference.member != target || groups[0].declaration.member != target || groups[0].declaration.name != "instanceAttributes" {
+		t.Fatalf("unexpected inherited group: %#v", groups)
+	}
+
+	f[source] = skcGraphSchema("urn:r", imported+`<x:import namespace="urn:b" schemaLocation="https://invalid/other.xsd"/>`+holder+other)
+	rules = skcGraphRead(t, f)[0].rules
+	if len(rules[0].fields[0].candidates) != 0 || len(rules[1].scopes[0].groups[0].uses) != 0 {
+		t.Fatal("incomplete import set proved an inherited field or group")
+	}
+
+	f[source] = skcGraphSchema("urn:r", imported+`<x:import namespace="urn:b" schemaLocation="extra.xsd"/>`+holder+other)
+	f["Schemas/extra.xsd"] = skcGraphSchema("urn:b", `<x:simpleType name="Entity"><x:restriction base="x:string"/></x:simpleType>`)
+	if got, err := readVFFClassificationBindings(context.Background(), skcGraphContainer(t, f), skcBindingLimits()); err == nil || got != nil {
+		t.Fatal("ambiguous inherited type accepted across the type symbol space")
+	}
+}
+
 func TestVFFSKCValueGraphFollowsOnlyEachOwnersDirectImports(t *testing.T) {
 	f := skcGraphFiles(t, `<x:import namespace="urn:b" schemaLocation="shared.xsd"/>`, `<x:element name="F" type="b:Label"/><x:element name="G" type="c:Text"/>`)
 	got := skcGraphRead(t, f)

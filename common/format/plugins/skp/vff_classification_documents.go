@@ -358,16 +358,39 @@ func readVFFSKCSchema(ctx context.Context, member string, files map[string][]byt
 		}
 		dependency := vffSKCDependency{kind: kind, location: location, namespace: child.attrs["namespace"], begin: child.begin, end: child.end}
 		_, dependency.namespaceDeclared = child.attrs["namespace"]
-		// Canonical relative URI subset only. Unsupported forms are retained as
-		// unresolved facts, never basename/local fallback or percent-decoded.
+		// Relative locations and the byte-pinned IFC2X3 import both resolve
+		// within this SKC. Other locations remain unresolved.
 		if location != "" && vffMemberName([]byte(location), 0x800) == nil && !strings.ContainsAny(location, "%?# \t\r\n") {
 			target := path.Join(path.Dir(member), location)
 			if err := vffSKCExactMember(files, target, ".xsd"); err != nil {
 				return nil, err
 			}
 			dependency.member, dependency.sha256 = target, sha256.Sum256(files[target])
+		} else {
+			bindVFFSKCIFC2X3Import(result.vffSKCMemberFact, files, &dependency)
 		}
 		result.dependencies = append(result.dependencies, dependency)
 	}
 	return result, nil
+}
+
+// buildingSMART Standards-builds IFC2x3 TC1 XML at 9e87befeccde8e876b0f06325779617dedd44aa5.
+func bindVFFSKCIFC2X3Import(source vffSKCMemberFact, files map[string][]byte, dependency *vffSKCDependency) {
+	const sourceDigest = "e67112920fa6750827d370a2bc42d8dc2d40f18776f91a87e8629947ba051533"
+	const targetDigest = "c9a726b71f870f6426ad396e0e91737ef5d5354e9dde23994298a8bcaa2e418f"
+	const target = "Schemas/ex.xsd"
+	if dependency.kind != "import" || !dependency.namespaceDeclared ||
+		dependency.location != "http://www.iai-tech.org/ifcXML/IFC2x3/FINAL/ex.xsd" ||
+		dependency.namespace != "urn:iso.org:standard:10303:part(28):version(2):xmlschema:common" ||
+		source.member != "Schemas/IFC2X3.xsd" || fmt.Sprintf("%x", source.sha256) != sourceDigest {
+		return
+	}
+	raw, exists := files[target]
+	if !exists {
+		return
+	}
+	digest := sha256.Sum256(raw)
+	if fmt.Sprintf("%x", digest) == targetDigest {
+		dependency.member, dependency.sha256 = target, digest
+	}
 }

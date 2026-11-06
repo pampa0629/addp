@@ -237,11 +237,19 @@ func (b *vffSKCBinder) lookup(n *vffXMLNode, value, kind string) (*vffXMLNode, e
 	if err != nil {
 		return nil, err
 	}
-	if name.Space != b.namespace || b.definitions[kind][name.Local] == nil {
+	symbol := kind
+	if kind == "complexType" {
+		symbol = "type"
+	}
+	target, err := b.resolveDeclaration(n, name, symbol)
+	if err != nil {
+		return nil, err
+	}
+	if target == nil || target.node.name.Local != kind {
 		b.issues = append(b.issues, "unresolved "+kind+" QName: "+value)
 		return nil, nil
 	}
-	return b.definitions[kind][name.Local], nil
+	return target.node, nil
 }
 
 func (b *vffSKCBinder) expand(n *vffXMLNode, via []vffSKCDeclarationWitness, depth int) ([]vffSKCFieldCandidate, error) {
