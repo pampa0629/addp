@@ -11,7 +11,7 @@ export const failureReasons = Object.freeze([
   'operator_input_overlap', 'operator_reference_overlap',
   'operator_overlay_fields_conflict', 'operator_endpoint_network_invalid', 'operator_distance_limit_invalid', 'operator_source_topology_invalid', 'operator_trim_conflict',
   'operator_input_invalid', 'operator_mask_invalid', 'operator_reference_invalid', 'operator_field_conflict', 'operator_geometry_field_conflict',
-  'operator_number_invalid', 'operator_nonnegative_number_required', 'operator_boolean_required', 'operator_number_array_invalid', 'operator_positive_integer_required', 'operator_positive_number_required',
+  'operator_enum_invalid', 'operator_number_invalid', 'operator_nonnegative_number_required', 'operator_boolean_required', 'operator_number_array_invalid', 'operator_positive_integer_required', 'operator_positive_number_required',
   'operator_projected_crs_required', 'operator_crs_mismatch', 'operator_crs_invalid', 'operator_geometry_invalid',
   'timeout', 'cancelled', 'resource_exhausted', 'query_failed', 'result_invalid', 'database_required', 'data_protection_required', 'local_read_unsupported',
   'protection_computed_output_unsupported', 'protection_lineage_unverified', 'protection_role_choice_unavailable', 'protection_not_ready',
@@ -23,6 +23,11 @@ const failureCategories = new Set(['permission_denied', 'timeout', 'cancelled', 
   'coordinator_lost', 'child_failed', 'owner_unavailable'])
 
 const operatorFailureTemplates = Object.freeze({ snap_line_endpoints: 'lineEndpoint', extend_line_endpoints: 'lineEndpoint', polygonize: 'polygonize', snap_geometry:'referenceSnap', check_geometry:'geometryValidity', repair_geometry:'geometryValidity', extract_vertices: 'vertices', split_multipart: 'multipart', get_bounds: 'bounds', distance_to: 'distance', get_area: 'measurement', get_length: 'measurement', split_by_area: 'measurement', contains: 'spatialRelation', intersects: 'spatialRelation', voronoi: 'voronoi',
+  'split_line_intersections:operator_input_invalid': 'lineCheck',
+  'split_line_intersections:operator_crs_invalid': 'lineCheck',
+  'split_line_intersections:operator_enum_invalid': 'lineSplit',
+  'split_line_intersections:operator_input_overlap': 'lineSplit',
+  'split_line_intersections:operator_source_topology_invalid': 'lineSplit',
   check_line_overlap: 'lineCheck', check_line_self_overlap: 'lineCheck',
   check_dangling_points: 'lineCheck', check_line_intersection: 'lineCheck', check_line_self_intersection: 'lineCheck',
   check_polygon_overlap: 'polygonOverlap', check_polygon_gap: 'polygonGap',
@@ -67,6 +72,14 @@ export function executionFailurePresentation(details, translate) {
 }
 
 export const operatorInputRules = Object.freeze([
+  ["split_line_intersections", "operator_input_invalid", "input_gdf", ""],
+  ["split_line_intersections", "operator_crs_invalid", "", ""],
+  ["split_line_intersections", "operator_enum_invalid", "scope", ""],
+  ["split_line_intersections", "operator_input_overlap", "input_gdf", ""],
+  ["split_line_intersections", "operator_source_topology_invalid", "input_gdf", ""],
+  ["split_line_intersections", "operator_field_conflict", "input_gdf", "source_id"],
+  ["split_line_intersections", "operator_field_conflict", "input_gdf", "part_no"],
+  ["split_line_intersections", "operator_field_conflict", "input_gdf", "segment_no"],
   ["check_line_overlap", "operator_input_invalid", "input_gdf", ""],
   ["check_line_overlap", "operator_crs_invalid", "", ""],
   ["check_line_self_overlap", "operator_input_invalid", "input_gdf", ""],

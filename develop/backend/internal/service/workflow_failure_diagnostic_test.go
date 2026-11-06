@@ -724,6 +724,11 @@ func TestGeometryValidityDiagnosticBindsFrozenDefinitionAndHidesOutputNames(t *t
 
 func TestTopologyChecksAndReferenceSnapDiagnosticsBindFrozenDefinitionAndHideValues(t *testing.T) {
 	for _, tc := range []struct{ op, reason, param string }{
+		{"split_line_intersections", "operator_input_invalid", "input_gdf"},
+		{"split_line_intersections", "operator_crs_invalid", ""},
+		{"split_line_intersections", "operator_enum_invalid", "scope"},
+		{"split_line_intersections", "operator_input_overlap", "input_gdf"},
+		{"split_line_intersections", "operator_source_topology_invalid", "input_gdf"},
 		{"check_line_overlap", "operator_input_invalid", "input_gdf"},
 		{"check_line_overlap", "operator_crs_invalid", ""},
 		{"check_line_self_overlap", "operator_input_invalid", "input_gdf"},

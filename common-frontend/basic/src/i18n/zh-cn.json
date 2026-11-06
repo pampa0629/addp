@@ -250,6 +250,7 @@
         "operator_number_invalid": "该参数须为有限实数，可为正数、零或负数。",
         "operator_nonnegative_number_required": "容差须为有限非负实数，允许为零。",
         "operator_boolean_required": "该参数须为严格布尔值 true 或 false。",
+        "operator_enum_invalid": "该参数值不在允许的选项中。",
         "operator_number_array_invalid": "距离列表必须为有限数值数组，不能包含布尔值、字符串或空值。",
         "operator_positive_integer_required": "参数必须是大于零的整数。",
         "operator_positive_number_required": "容差必须为以源坐标系水平单位表示的有限正数。",
@@ -317,6 +318,7 @@
         "operator_number_invalid": "填写有限数值，可为正数、零或负数；不接受布尔值、字符串、空值、数组或非有限值。",
         "operator_nonnegative_number_required": "填写有限非负数，零值合法；不接受布尔值、字符串、空值、数组或非有限值。",
         "operator_boolean_required": "选择布尔值 true 或 false，不接受数字、字符串、空值、数组或其他类型。",
+        "operator_enum_invalid": "请从该参数的允许选项中选择，再重新执行。",
         "operator_number_array_invalid": "检查 distances 数组中的全部元素；保留合法的零值、负值和重复距离。",
         "operator_positive_integer_required": "将该参数设为大于零的整数后重新执行。",
         "operator_positive_number_required": "按源坐标系单位设置有限且大于零的容差后重新执行，不自动换算为米。",
@@ -462,6 +464,7 @@
         "repair_geometry": "几何修复",
         "snap_geometry": "参考吸附",
         "check_dangling_points": "悬点检查",
+        "split_line_intersections": "交点打断",
         "check_line_overlap": "线叠检查",
         "check_line_self_overlap": "线内自叠",
         "check_line_intersection": "线交检查",
@@ -473,6 +476,7 @@
         "extend_line_endpoints": "线端延伸"
       },
       "operatorParameters": {
+        "scope": "点交会范围（scope）",
         "target_geom": "目标图层（target_geom）",
         "threshold": "面积阈值（threshold）",
         "preserve_topology": "保留单几何拓扑（preserve_topology）",
@@ -487,6 +491,18 @@
         "resolution": "圆弧段数（resolution）",
         "tolerance": "容差（tolerance）",
         "gdf_b": "图层 B（gdf_b）"
+      },
+      "lineSplit": {
+        "reasons": {
+          "operator_enum_invalid": "点交会范围只接受 between 或 all。",
+          "operator_input_overlap": "源线存在正长度重合，不能直接打断。",
+          "operator_source_topology_invalid": "between 范围不接受要素内部的点交会。"
+        },
+        "actions": {
+          "operator_enum_invalid": "请选择 between（仅跨要素）或 all（同时处理要素内部点交会）。省略时默认 between。",
+          "operator_input_overlap": "请用线叠检查或线内自叠定位重合，显式处理重合后再执行。",
+          "operator_source_topology_invalid": "如需同时打断要素内部点交会，请显式选择 all。"
+        }
       },
       "lineCheck": {
         "reasons": {

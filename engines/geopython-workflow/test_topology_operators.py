@@ -1005,7 +1005,9 @@ def test_split_line_intersections_workflow_native_save_reload_and_failure_no_pub
     bad = line_overlap_frame([LineString([(0, 0), (2, 0)]), LineString([(1, 0), (3, 0)])])
     bad.to_file(tmp_path / "bad.gpkg", driver="GPKG")
     tasks[0]["params"]["path"] = "bad.gpkg"; tasks[2]["params"]["path"] = "rejected.gpkg"
-    assert execute_workflow({"tasks": tasks})["status"] == "failed"
+    execution = execute_workflow({"tasks": tasks})
+    assert execution["status"] == "failed" and execution["error_code"] == "INVALID_PARAMS"
+    assert execution["diagnostic"]["reason"] == "operator_input_overlap"
     assert not (tmp_path / "rejected.gpkg").exists()
 
 
@@ -1036,7 +1038,11 @@ def test_split_line_intersections_async_discovery_workflow_only_and_required_ide
         assert state["status"] == "success", state
         assert len(json.loads(state["result"])["features"]) == 4
     tasks[1]["params"].pop("id_field")
-    assert execute_workflow({"tasks": tasks})["status"] == "failed"
+    execution = execute_workflow({"tasks": tasks})
+    assert execution["status"] == "failed" and execution["error_code"] == "INVALID_PARAMS"
+    assert execution["diagnostic"]["operator"] == {
+        "node_index": 2, "operator_id": "split_line_intersections", "parameter": "input_gdf",
+    }
 
 
 def test_line_overlap_reports_partial_contained_reversed_and_resampled_pairs_without_source_changes():
@@ -3999,8 +4005,102 @@ def test_split_line_all_workflow_real_save_reload_and_overlap_no_publication(tmp
     ds=layer=None;assert (tmp_path/'source.gpkg').read_bytes()==original
     bad=line_overlap_frame([LineString([(0,0),(2,0),(1,0)])]);bad.to_file(tmp_path/'bad.gpkg',driver='GPKG')
     before=(tmp_path/'bad.gpkg').read_bytes();tasks[0]['params']['path']='bad.gpkg';tasks[2]['params']['path']='rejected.gpkg'
-    execution=execute_workflow({'tasks':tasks});assert execution['status']=='failed' and 'overlap' in execution['error']
+    execution=execute_workflow({'tasks':tasks});assert execution['status']=='failed' and execution['error_code']=='INVALID_PARAMS'
+    assert execution['diagnostic']['reason']=='operator_input_overlap'
     assert not (tmp_path/'rejected.gpkg').exists() and (tmp_path/'bad.gpkg').read_bytes()==before
+
+
+@pytest.mark.parametrize("case,reason,parameter,field", [
+    ("missing_layer", "operator_input_invalid", "input_gdf", ""),
+    ("missing_id", "operator_input_invalid", "input_gdf", ""),
+    ("invalid_id", "operator_input_invalid", "input_gdf", ""),
+    ("invalid_line", "operator_input_invalid", "input_gdf", ""),
+    ("crs", "operator_crs_invalid", "", ""),
+    ("invalid_scope", "operator_enum_invalid", "scope", ""),
+    ("null_scope", "operator_enum_invalid", "scope", ""),
+    ("all_fields", "operator_field_conflict", "input_gdf", "source_id"),
+    ("part_no", "operator_field_conflict", "input_gdf", "part_no"),
+    ("segment_no", "operator_field_conflict", "input_gdf", "segment_no"),
+    ("between_overlap", "operator_input_overlap", "input_gdf", ""),
+    ("all_overlap", "operator_input_overlap", "input_gdf", ""),
+    ("internal_crossing", "operator_source_topology_invalid", "input_gdf", ""),
+    ("native_check", None, "", ""),
+    ("native_intersection", None, "", ""),
+    ("result_validation", None, "", ""),
+])
+def test_split_line_diagnostics_block_result_save(monkeypatch, case, reason, parameter, field):
+    import workflow_engine
+    from addp_common.workflow_runtime import WorkflowExecutionError
+    from operators import geometric_operators
+
+    shape = LineString([(0, 0), (2, 0)])
+    other = LineString([(1, -1), (1, 1)])
+    if case.endswith("_overlap"):
+        other = LineString([(1, 0), (3, 0)])
+    elif case == "internal_crossing":
+        shape = LineString([(0, 0), (2, 2), (0, 2), (2, 0)])
+    elif case == "invalid_line":
+        other = LineString([(1, 1), (1, 1)])
+    frame = line_overlap_frame([shape, other], crs=None if case == "crs" else "EPSG:3857")
+    params = {"input_gdf": frame, "id_field": "route_key"}
+    if case == "missing_layer":
+        del params["input_gdf"]
+    elif case == "missing_id":
+        del params["id_field"]
+    elif case == "invalid_id":
+        params["id_field"] = "PRIVATE_ID_FIELD"
+    elif case in {"invalid_scope", "null_scope"}:
+        params["scope"] = None if case == "null_scope" else "PRIVATE_SCOPE"
+    elif case == "all_overlap":
+        params["scope"] = "all"
+    elif field:
+        for name in ("segment_no", "part_no", "source_id") if case == "all_fields" else (field,):
+            frame[name] = 1
+
+    def fail(*args, **kwargs):
+        raise ValueError("positive-length overlap is not supported")
+
+    if case == "native_check":
+        monkeypatch.setattr(shapely, "is_valid", fail)
+    elif case == "native_intersection":
+        monkeypatch.setattr(shapely, "intersection", fail)
+    elif case == "result_validation":
+        validate = geometric_operators._finite_xy_geometry
+
+        def validate_result(frame, name="input_gdf", **kwargs):
+            if name == "result":
+                fail()
+            return validate(frame, name, **kwargs)
+
+        monkeypatch.setattr(geometric_operators, "_finite_xy_geometry", validate_result)
+
+    op = "split_line_intersections"
+    resolve = workflow_engine.get_operator
+    saves = []
+    monkeypatch.setattr(workflow_engine, "get_operator",
+                        lambda name: (lambda **kwargs: saves.append(kwargs)) if name == "save" else resolve(name))
+    tasks = [
+        {"id": "split", "operator": op, "params": params, "depends_on": []},
+        {"id": "save", "operator": "save", "params": {"input_df": {"$ref": "split", "port": "result"}},
+         "depends_on": ["split"]},
+    ]
+    with pytest.raises(WorkflowExecutionError) as caught:
+        workflow_engine.GeoPythonWorkflowRunner(language="en").execute({"tasks": tasks})
+    assert not saves
+    error = caught.value
+    if reason is None:
+        assert error.error_code == "EXECUTION_FAILED" and error.diagnostic is None
+        assert "positive-length overlap is not supported" in str(error)
+        return
+    context = {"node_index": 1, "operator_id": op}
+    if parameter:
+        context["parameter"] = parameter
+    if field:
+        context["field"] = field
+    assert error.error_code == "INVALID_PARAMS"
+    assert error.diagnostic == {"schema_version": "addp.execution-failure/v3", "stage": "execution",
+                                "reason": reason, "operator": context}
+    assert "PRIVATE_" not in str(error)
 
 
 def test_split_line_all_metadata_and_async_workflow_use_explicit_scope(tmp_path,monkeypatch):

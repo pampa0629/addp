@@ -27,6 +27,21 @@ func (o *WorkflowOperatorFailure) Valid(reason string) bool {
 	}
 	parameter, field, ok := "", "", false
 	switch o.OperatorID {
+	case "split_line_intersections":
+		switch reason {
+		case "operator_input_invalid", "operator_input_overlap", "operator_source_topology_invalid":
+			parameter, ok = "input_gdf", true
+		case "operator_crs_invalid":
+			ok = true
+		case "operator_enum_invalid":
+			parameter, ok = "scope", true
+		case "operator_field_conflict":
+			switch o.Field {
+			case "source_id", "part_no", "segment_no":
+				parameter, field, ok = "input_gdf", o.Field, true
+			}
+		}
+
 	case "check_line_overlap", "check_line_self_overlap", "check_line_intersection", "check_line_self_intersection", "check_dangling_points", "check_polygon_overlap", "check_polygon_gap":
 		switch reason {
 		case "operator_input_invalid":

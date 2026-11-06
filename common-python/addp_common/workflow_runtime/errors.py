@@ -18,6 +18,14 @@ class WorkflowExecutionError(RuntimeError):
 
 # Closed protocol tuples; never classify arbitrary exception text as input errors.
 OPERATOR_INPUT_RULES = {
+    ('split_line_intersections', 'operator_input_invalid', ''): 'input_gdf',
+    ('split_line_intersections', 'operator_crs_invalid', ''): '',
+    ('split_line_intersections', 'operator_enum_invalid', ''): 'scope',
+    ('split_line_intersections', 'operator_input_overlap', ''): 'input_gdf',
+    ('split_line_intersections', 'operator_source_topology_invalid', ''): 'input_gdf',
+    ('split_line_intersections', 'operator_field_conflict', 'source_id'): 'input_gdf',
+    ('split_line_intersections', 'operator_field_conflict', 'part_no'): 'input_gdf',
+    ('split_line_intersections', 'operator_field_conflict', 'segment_no'): 'input_gdf',
     ('check_line_overlap', 'operator_input_invalid', ''): 'input_gdf',
     ('check_line_overlap', 'operator_crs_invalid', ''): '',
     ('check_line_self_overlap', 'operator_input_invalid', ''): 'input_gdf',

@@ -250,6 +250,7 @@
         "operator_number_invalid": "The parameter must be a finite real number and may be positive, zero or negative.",
         "operator_nonnegative_number_required": "Tolerance must be a finite non-negative real number; zero is allowed.",
         "operator_boolean_required": "The parameter must be a strict boolean value, true or false.",
+        "operator_enum_invalid": "The parameter value is outside the allowed options.",
         "operator_number_array_invalid": "Distances must be an array of finite numbers without booleans, strings or nulls.",
         "operator_positive_integer_required": "The parameter must be a positive integer.",
         "operator_positive_number_required": "Tolerance must be a finite positive number in the source CRS horizontal units.",
@@ -317,6 +318,7 @@
         "operator_number_invalid": "Enter a finite real number, allowing positive, zero or negative values; do not use booleans, strings, nulls, arrays or non-finite values.",
         "operator_nonnegative_number_required": "Enter a finite non-negative number, allowing zero; do not use booleans, strings, nulls, arrays or non-finite values.",
         "operator_boolean_required": "Select a boolean value, true or false; do not use numbers, strings, nulls, arrays or other types.",
+        "operator_enum_invalid": "Select an allowed value for this parameter before running again.",
         "operator_number_array_invalid": "Check every distances array element; valid zero, negative and duplicate distances remain allowed.",
         "operator_positive_integer_required": "Set the parameter to an integer greater than zero before submitting a new execution.",
         "operator_positive_number_required": "Set a finite positive tolerance in source CRS units; it is not converted to metres automatically.",
@@ -462,6 +464,7 @@
         "repair_geometry": "Repair geometry",
         "snap_geometry": "Reference snap",
         "check_dangling_points": "Check dangling points",
+        "split_line_intersections": "Split line intersections",
         "check_line_overlap": "Check line overlaps",
         "check_line_self_overlap": "Check line self-overlaps",
         "check_line_intersection": "Check line intersections",
@@ -473,6 +476,7 @@
         "extend_line_endpoints": "Extend line endpoints"
       },
       "operatorParameters": {
+        "scope": "Point intersection scope (scope)",
         "target_geom": "Target layer (target_geom)",
         "threshold": "Area threshold (threshold)",
         "preserve_topology": "Preserve single-geometry topology (preserve_topology)",
@@ -487,6 +491,18 @@
         "resolution": "Arc segments (resolution)",
         "tolerance": "Tolerance (tolerance)",
         "gdf_b": "Input layer B (gdf_b)"
+      },
+      "lineSplit": {
+        "reasons": {
+          "operator_enum_invalid": "Point intersection scope accepts only between or all.",
+          "operator_input_overlap": "Source lines share a positive-length overlap, so splitting cannot proceed.",
+          "operator_source_topology_invalid": "The between scope rejects point intersections within a feature."
+        },
+        "actions": {
+          "operator_enum_invalid": "Choose between for intersections across features, or all to include internal point intersections. Omission defaults to between.",
+          "operator_input_overlap": "Use line overlap or self-overlap checking to locate the overlap, then resolve it explicitly before splitting.",
+          "operator_source_topology_invalid": "Choose all explicitly to also split at point intersections within a feature."
+        }
       },
       "lineCheck": {
         "reasons": {

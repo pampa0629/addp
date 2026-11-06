@@ -1425,16 +1425,47 @@ def normalize_line_network(input_gdf: gpd.GeoDataFrame, id_field: str) -> dict:
     return {"result": result, "members": members}
 
 
+class LineSplitInputError(ValueError):
+    """Explicit scope, field, and input topology refusals from line splitting."""
+    _messages = {
+        "operator_enum_invalid": (
+            "交点打断的 scope 只接受 between 或 all，省略时默认 between。",
+            "Line splitting accepts only between or all for scope. Omission defaults to between.",
+        ),
+        "operator_input_overlap": (
+            "源线存在正长度重合。请先显式处理重合，再执行交点打断。",
+            "Source lines overlap along a positive length. Resolve the overlap before splitting intersections.",
+        ),
+        "operator_source_topology_invalid": (
+            "between 范围不接受要素内部点交会。需要同时切分内部点交会时，请显式选择 all。",
+            "The between scope rejects point intersections within a feature. Choose all explicitly to split at internal point intersections.",
+        ),
+        "operator_field_conflict": (
+            "源图层字段 {field} 与交点打断的固定输出字段重名，请显式重命名。",
+            "Source field {field} conflicts with a fixed line-splitting output field. Rename it explicitly.",
+        ),
+    }
+
+    def __init__(self, reason, detail, *, field=""):
+        super().__init__(detail)
+        self.reason = reason
+        self.field = field
+
+    def message(self, language):
+        return self._messages[self.reason][language == "en"].format(field=self.field)
+
+
 def split_line_intersections(input_gdf: gpd.GeoDataFrame, id_field: str, scope: str = "between") -> gpd.GeoDataFrame:
     """Split exact point meetings at each original path occurrence, preserving provenance."""
     if not isinstance(scope, str) or scope not in {"between", "all"}:
-        raise ValueError("scope must be 'between' or 'all'")
-    geometry = _finite_xy_geometry(input_gdf)
-    _require_projected_xy_crs(geometry.crs)
-    ids = _source_identifiers(input_gdf, id_field)
-    _require_nonempty_valid_lines(geometry)
-    if any(field in input_gdf.columns for field in ("source_id", "part_no", "segment_no")):
-        raise ValueError("output columns source_id, part_no and segment_no must not overwrite source fields")
+        raise LineSplitInputError("operator_enum_invalid", "scope must be 'between' or 'all'")
+    geometry, ids = _line_check_inputs(input_gdf, id_field)
+    for field in ("source_id", "part_no", "segment_no"):
+        if field in input_gdf.columns:
+            raise LineSplitInputError(
+                "operator_field_conflict", "output columns source_id, part_no and segment_no must not overwrite source fields",
+                field=field,
+            )
 
     parts, segments, references = [], [], []
     for row, shape in enumerate(geometry.array):
@@ -1462,7 +1493,8 @@ def split_line_intersections(input_gdf: gpd.GeoDataFrame, id_field: str, scope: 
             row_b, _, vertices_b, _, cuts_b = parts[part_b]
             pieces = list(_line_intersection_parts(intersection))
             if any(piece.geom_type != "Point" for piece in pieces):
-                raise ValueError("positive-length overlap is not supported; resolve overlap explicitly before splitting")
+                raise LineSplitInputError("operator_input_overlap",
+                                          "positive-length overlap is not supported; resolve overlap explicitly before splitting")
             points = {(point.x, point.y) for point in pieces}
             if row_a == row_b:
                 adjacent = part_a == part_b and (
@@ -1473,7 +1505,8 @@ def split_line_intersections(input_gdf: gpd.GeoDataFrame, id_field: str, scope: 
                 if adjacent and points.issubset(shared):
                     continue
                 if scope == "between":
-                    raise ValueError("internal point intersection is not supported; resolve it explicitly before splitting")
+                    raise LineSplitInputError("operator_source_topology_invalid",
+                                              "internal point intersection is not supported; resolve it explicitly before splitting")
             # Each original edge occurrence owns its cuts. An XY visited more
             # than once must split at every visit, without merging its paths.
             cuts_a.setdefault(edge_a, set()).update(points)

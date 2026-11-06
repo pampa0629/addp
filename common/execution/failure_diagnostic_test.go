@@ -414,6 +414,32 @@ func TestDissolveObservationRetainsOnlyClosedAdmissionFacts(t *testing.T) {
 	}
 }
 
+func TestLineSplitDiagnosticSurvivesObservationWithOnlyFixedContext(t *testing.T) {
+	for _, tc := range []struct{ reason, parameter, field string }{
+		{"operator_enum_invalid", "scope", ""},
+		{"operator_field_conflict", "input_gdf", "segment_no"},
+	} {
+		operator := map[string]interface{}{"node_index": 1, "operator_id": "split_line_intersections", "parameter": tc.parameter}
+		if tc.field != "" {
+			operator["field"] = tc.field
+		}
+		diagnostic := map[string]interface{}{"schema_version": "addp.execution-failure/v3", "stage": "execution", "reason": tc.reason, "operator": operator}
+		item := &execution.TaskExecution{Status: "failed", ErrorDetails: models.JSONMap{"message": "PRIVATE_SCOPE", "diagnostic": diagnostic}}
+		got := execution.Observe(item).ErrorDetails
+		if got["diagnostic"] == nil {
+			t.Fatalf("lost line split diagnostic for %s", tc.reason)
+		}
+		wire, _ := json.Marshal(got)
+		if strings.Contains(string(wire), "PRIVATE_SCOPE") {
+			t.Fatal("private value leaked")
+		}
+		operator["field"] = "PRIVATE_FIELD"
+		if execution.Observe(item).ErrorDetails["diagnostic"] != nil {
+			t.Fatal("accepted a non-contract field")
+		}
+	}
+}
+
 func TestGeometryValidityDiagnosticsSurviveObservationWithoutConfiguredNames(t *testing.T) {
 	for _, tc := range []struct{ op, reason, param string }{
 		{"check_geometry", "operator_input_invalid", "input_gdf"},
