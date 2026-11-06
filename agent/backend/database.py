@@ -6,7 +6,11 @@ DATABASE_URL = (
     f"@{settings.POSTGRES_HOST}:{settings.POSTGRES_PORT}/{settings.POSTGRES_DB}"
 )
 
-engine = create_async_engine(DATABASE_URL, echo=False)
+def create_agent_engine(url):
+    return create_async_engine(url, pool_pre_ping=True)
+
+
+engine = create_agent_engine(DATABASE_URL)
 AsyncSessionLocal = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
 

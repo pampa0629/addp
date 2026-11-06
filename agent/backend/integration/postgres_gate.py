@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.schema import CreateSchema, DropSchema
 
 from services.schema import migrate, MIGRATION_ROOT
+from database import create_agent_engine
 from api.sessions import SessionUpdate, VersionInput, get_session, list_sessions, update_session, delete_session, list_session_runs
 from api.runs import get_agent_run
 from services.plans import read_run_plan
@@ -151,6 +152,31 @@ async def check_summary_concurrency(engine):
     print('PASS summary concurrency rejects a stale base, resumes from committed watermark and leaves zero fixture schema residue')
 
 
+async def check_idle_connection_recovery(url, admin):
+    probe_name = f'agent_idle_probe_{uuid4().hex}'
+    probe = create_agent_engine(url)
+    try:
+        async with probe.connect() as connection:
+            await connection.execute(
+                text("SELECT set_config('application_name', :name, false)"), {'name': probe_name},
+            )
+            pid = await connection.scalar(text('SELECT pg_backend_pid()'))
+            await connection.commit()
+        terminated = await admin.scalar(text("""
+            SELECT pg_terminate_backend(pid, 3000)
+            FROM pg_catalog.pg_stat_activity
+            WHERE pid = :pid AND application_name = :name
+              AND datname = current_database() AND usename = current_user
+        """), {'pid': pid, 'name': probe_name})
+        await admin.rollback()
+        assert terminated is True
+        async with probe.begin() as connection:
+            assert await connection.scalar(text('SELECT pg_backend_pid()')) != pid
+    finally:
+        await probe.dispose()
+    print('PASS pool checkout replaces a terminated idle connection before the next transaction')
+
+
 async def main():
     from sqlalchemy.engine import make_url
     url = make_url(os.environ['AGENT_POSTGRES_TEST_DSN']).set(drivername='postgresql+asyncpg', query={})
@@ -165,6 +191,7 @@ async def main():
             if exists is not None:
                 raise RuntimeError('Agent gate refuses a pre-existing agent schema')
             try:
+                await check_idle_connection_recovery(url, connection)
                 for legacy in (False, True):
                     transaction = await connection.begin()
                     try:

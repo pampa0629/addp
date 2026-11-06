@@ -31,6 +31,8 @@ Skill 首页从正式注册表输出稳定 Skill 身份及其方法描述，名�
 
 Agent Schema 由 `backend/migrations/` 的连续版本 SQL 唯一维护；启动在同一 PostgreSQL 事务内持 advisory lock，校验已应用文件名与 SHA-256，拒绝历史漂移、缺号或数据库版本超前。首版迁移建表并收纳原未版本化结构，第二版增加会话组织字段。旧 create_all/零散 ALTER 初始化删除；System migration 不操作 Agent Schema。失败 DDL 和版本记录一起回滚，重复启动不重做已登记迁移。
 
+Agent 在从 PostgreSQL 连接池取出连接时检查存活，失效连接在请求事务开始前替换。已开始的事务仍沿原错误与回滚路径处理。`make test-agent-postgres` 通过终止本轮专属的空闲测试连接验证恢复。
+
 实现与验证依上述顺序进行。已有 `make test-agent-eval`、`make test-agent-frontend` 和平台授权/OpenAPI 检查承接 T1/T3；新增 `make test-agent-postgres` 使用事务回滚测试 owner Schema 的升级、版本与隔离，并同步 T2 CI 登记。涉及平台 Transfer 冻结来源的文件按既有审查规则同步新修订，不改已发布历史。真实模型与真实部署验收另记，不能用受控门禁代替。
 
 ### 工作区体验增强（三批实施）
