@@ -61,6 +61,11 @@ type TableTargetPlan struct {
 	ResumeMarker      *resume.Marker
 }
 
+func (p TableTargetPlan) IsFileGDBArchive() bool {
+	return p.Kind == TableEndpointEncoded && p.Format == format.FormatFileGDB &&
+		p.Path.EngineID == 0 && strings.HasSuffix(p.Path.StringPath(), format.FileGDBArchiveSuffix)
+}
+
 type TableTransferPlan struct {
 	Source                 TableSourcePlan
 	Target                 TableTargetPlan
@@ -239,6 +244,7 @@ func (e *TableTransferExecutor) Execute(ctx context.Context, plan TableTransferP
 		ProgressCallback:         plan.ProgressCallback,
 		TargetPreparedCallback:   plan.TargetPreparedCallback,
 		GeometryBatchReprojecter: e.GeometryBatchReprojecter,
+		verifyFileGDBSpatial:     plan.Target.IsFileGDBArchive(),
 	}).Execute(ctx)
 }
 
@@ -350,6 +356,7 @@ func (e *TableTransferExecutor) openTarget(plan TableTargetPlan) (TableBatchTarg
 			tableWriterProvider: e.TargetTableWriterProvider,
 			multiProvider:       e.TargetMultiProvider,
 			scopeWriterProvider: e.TargetScopeWriterProvider,
+			fileGDBArchive:      plan.IsFileGDBArchive(),
 			connInfo:            plan.ConnInfo,
 			path:                plan.Path,
 			refBasePath:         refBasePath,

@@ -177,11 +177,11 @@
       "kind": "implementation",
       "path": "transfer/backend/internal/planner/table_export.go",
       "anchor": "func validateTableTransferSpec(",
-      "commit": "5227df6c72f08bd5baecf6d4a8b2de7d320d111f",
-      "sha256": "a1bf0a2adc1a9ff401c2c51fe7eb4bf51777b6e32f88840d123c77b09cc0873a",
+      "commit": "088248a95a0f97ade77babf877b55f2a442803c8",
+      "sha256": "10682cc5f6a21ea8fd95fb42cbe475d9f2f390d82056f51c48065c88721a8afc",
       "use": {
-        "zh-cn": "复核 KML 固定 CRS 与 encoded ORC 单文件 reader／源版本绑定；本轮只扩展未建模的 encoded 读取。停止态 native table 的 bounded/snapshot、replace/append、查询与字段资格校验，以及创建权限、条件和效果保持；不执行、调度或扫描。",
-        "en": "Review KML fixed CRS and encoded ORC single-file reading with source-version binding. Encoded execution remains unmodeled. Stopped native creation retains bounded/snapshot, replace/append, query and field checks, permissions, conditions and effects; no execution, schedule or scan."
+        "zh-cn": "复核 Manager 一次性 FileGDB 导出，仅给未建模的 encoded 归档执行增加精确 Infra 对象目标。停止态 native table 的 bounded/snapshot、replace/append、查询与字段资格校验，以及创建权限、条件和效果保持；不执行、调度或扫描。",
+        "en": "Reviewed Manager one-off FileGDB export, which adds an exact Infra object target for unmodeled encoded archive execution. Stopped native creation retains bounded/snapshot, replace/append, query and field checks, permissions, conditions and effects; no execution, schedule or scan."
       }
     },
     {

@@ -112,6 +112,7 @@ type TablePipeline struct {
 	ProgressCallback         TableProgressCallback
 	TargetPreparedCallback   func(context.Context, engineplugin.TableTargetPreparation) error
 	GeometryBatchReprojecter GeometryBatchReprojectProvider
+	verifyFileGDBSpatial     bool
 }
 
 // ErrTargetMayHaveChanged records an entered native target mutation boundary.
@@ -156,16 +157,23 @@ func (p *TablePipeline) Execute(ctx context.Context) (result *TablePipelineMetri
 	tableInfo := reader.TableInfo()
 	spatialInfo := reader.SpatialInfo()
 	var firstBatch *engineplugin.BatchData
-	if tableInfoEmpty(tableInfo) {
+	missingTableInfo := tableInfoEmpty(tableInfo)
+	if missingTableInfo || p.verifyFileGDBSpatial {
 		firstBatch, err = reader.ReadBatch(ctx, batchSize)
 		if err != nil {
 			return nil, err
 		}
-		if firstBatch != nil && len(firstBatch.Rows) > 0 {
+		if missingTableInfo && firstBatch != nil && len(firstBatch.Rows) > 0 {
 			tableInfo = tableInfoFromBatch(firstBatch)
 			if spatialInfo == nil {
 				spatialInfo = spatialInfoFromBatch(firstBatch)
 			}
+		}
+	}
+	if p.verifyFileGDBSpatial {
+		spatialInfo, err = verifiedFileGDBSourceSpatial(spatialInfo, spatialInfoFromBatch(firstBatch))
+		if err != nil {
+			return nil, err
 		}
 	}
 	sourceInfo := tableInfo.Clone()
@@ -1249,6 +1257,7 @@ type encodedContentTableTarget struct {
 	tableWriterProvider format.TableWriterProvider
 	multiProvider       format.MultiTableWriterProvider
 	scopeWriterProvider format.ScopeTableWriterProvider
+	fileGDBArchive      bool
 	connInfo            engineplugin.ConnectionInfo
 	path                engineplugin.EngineCatalogPath
 	refBasePath         string
@@ -1282,7 +1291,7 @@ func (t *encodedContentTableTarget) Open(ctx context.Context, tableInfo *datatyp
 		if err != nil {
 			return nil, fmt.Errorf("open encoded scope table writer: %w", err)
 		}
-		if t.path.EngineID == 0 && strings.HasSuffix(t.path.StringPath(), format.FileGDBArchiveSuffix) {
+		if t.fileGDBArchive {
 			scope.Role = contentio.RoleMain
 		}
 		return &scopeTableBatchWriter{tableWriter: tableWriter, targetRef: format.NewRelatedRef(scope, true, true)}, nil
@@ -1314,6 +1323,26 @@ func (t *encodedContentTableTarget) Open(ctx context.Context, tableInfo *datatyp
 		return nil, fmt.Errorf("open encoded target table writer: %w", err)
 	}
 	return &contentTableBatchWriter{output: output, tableWriter: tableWriter, targetRef: targetRef}, nil
+}
+
+// A source cursor carries the current declared PostGIS shape. The saved
+// catalog contributes the source CRS definition, including non-EPSG WKT.
+func verifiedFileGDBSourceSpatial(catalog, observed *datatype.SpatialInfo) (*datatype.SpatialInfo, error) {
+	if catalog == nil || observed == nil || len(catalog.GeometryColumns) != 1 || len(observed.GeometryColumns) != 1 {
+		return nil, fmt.Errorf("FileGDB export requires one source geometry column")
+	}
+	expected, actual := catalog.PrimaryGeometry(), observed.PrimaryGeometry()
+	if expected == nil || actual == nil || expected.Name != actual.Name ||
+		!strings.EqualFold(expected.GeometryType, actual.GeometryType) ||
+		catalog.PrimarySRIDValue() <= 0 || catalog.PrimarySRIDValue() != observed.PrimarySRIDValue() {
+		return nil, fmt.Errorf("FileGDB source geometry or CRS changed; refresh source metadata")
+	}
+	if dimension := catalog.PrimaryDimensionValue(); (dimension != 0 && dimension != 2) || observed.PrimaryDimensionValue() != 2 {
+		return nil, fmt.Errorf("FileGDB export requires a declared XY source geometry")
+	}
+	result := catalog.Clone()
+	result.PrimaryGeometry().Dimension = actual.Dimension
+	return result, nil
 }
 
 func prepareCRSDefinitionsForWrite(

@@ -93,6 +93,17 @@ def source_snapshot(repository, environment):
     return snapshot
 
 
+def scan_source(helpers, initializer, engine):
+    locator = f'addp://engine/{engine}/path/public/{TABLE}?type=table'
+    execution = helpers.wait_for_meta_scan(
+        initializer, engine, time.monotonic() + 180, scope={'targets': [locator]})
+    scanned = initializer.request('GET', f'/api/v1/meta/executions/{execution}', (200,)).payload
+    metadata = scanned.get('metadata', {})
+    require(metadata.get('items_scanned') == 1 and metadata.get('catalog_nodes_scanned') == 0,
+            'FileGDB requires one scanned source table')
+    return locator, execution
+
+
 def run(repository, environment, helpers):
     artifact_dir = Path(environment['ADDP_ONLINE_ARTIFACT_DIR'])
     report = {'schema_version': 'addp.manager-filegdb-export/v1', 'case': 'filegdb-export',
@@ -108,15 +119,14 @@ def run(repository, environment, helpers):
         denied_identity = helpers.validate_user_identity(outsider, tenant, OUTSIDER_PERMISSIONS)
         require(identity['principal_id'] != denied_identity['principal_id'], 'expected distinct same-tenant users')
         report.update(identity=identity, outsider_identity=denied_identity, source_before=source_snapshot(repository, environment))
-        report['scan_execution_id'] = helpers.wait_for_meta_scan(
-            initializer, engine, time.monotonic() + 180, scope={'catalog_paths': ['public/' + TABLE]})
+        table_locator, report['scan_execution_id'] = scan_source(helpers, initializer, engine)
         registration = importlib.import_module('scripts.test.online-engine-registration')
         grant, = registration.initialize_exact_record_read_grants(
             initializer, client, tenant, [(engine, 'schema', 'public', TABLE)], scan_preparation=True)
         report['source_grant'] = {key: grant[key] for key in ('request_id', 'item_fingerprint', 'boundary_hash')}
         items = client.request('GET', f'/api/v1/meta/engines/{engine}/items?branch=public', (200,)).payload
         item, = [item for item in items if item.get('fingerprint') == grant['item_fingerprint']]
-        locator = f'addp://engine/{engine}/path/public/{TABLE}?type=table&item_id={item["id"]}'
+        locator = f'{table_locator}&item_id={item["id"]}'
         source = {'source_case': 'mercator', 'source_srid': 3857, 'locator': locator,
                   'filename': 'FileGDB-成果-' + report['run_id'], 'download_file': 'manager-filegdb.gdb.zip',
                   'dialog_screenshot': 'manager-filegdb-export-dialog.png', 'screenshot': 'manager-filegdb-export.png'}

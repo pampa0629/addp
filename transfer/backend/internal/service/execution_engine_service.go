@@ -500,7 +500,7 @@ func (s *ExecutionEngineService) runCommonTableTransferData(
 	if err != nil {
 		return nil, nil, fmt.Errorf("build common table transfer plan: %w", err)
 	}
-	if buildResult.Plan.Target.Format == format.FormatFileGDB && planner.IsInfraLocatorURI(spec.Target.ParentLocator) {
+	if buildResult.Plan.Target.IsFileGDBArchive() {
 		if execution == nil || execution.Source != "manager" || execution.Metadata[models.ExportProtectionMetadataKey] == nil ||
 			buildResult.Plan.Source.Kind != executor.TableEndpointNative || !strings.EqualFold(buildResult.SourceEngine.Type, "postgresql") {
 			return nil, nil, fmt.Errorf("FileGDB archive requires a Manager PostgreSQL export session")
@@ -860,7 +860,7 @@ func engineFromBinding(binding planner.EngineBinding) *commonModels.Engine {
 func runtimeFormatTarget(endpoint planner.EndpointSpec, build *planner.TableTransferBuildResult) (workflowaccess.Target, error) {
 	formatType := build.Plan.Target.Format
 	name := filepath.Base(build.Plan.Target.Path.StringPath())
-	if formatType == format.FormatFileGDB && planner.IsInfraLocatorURI(endpoint.ParentLocator) {
+	if build.Plan.Target.IsFileGDBArchive() {
 		bucket, object, err := engineplugin.SplitObjectRefPath(build.Plan.Target.Path.StringPath())
 		if err != nil {
 			return workflowaccess.Target{}, err
