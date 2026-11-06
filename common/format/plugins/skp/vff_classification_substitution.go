@@ -90,9 +90,8 @@ func (b *vffSKCBinder) substitutionType(n *vffXMLNode, raw string) (vffSKCSubsti
 	return vffSKCSubstitutionType{name: name, node: target.node}, nil
 }
 
-// Checks the named derivation chain and its declared constraints. Particle
-// occurrence restrictions are checked for flat sequences. XML instance validation
-// and full particle language inclusion belong to other stages.
+// Checks the named derivation chain and its declared constraints. For flat
+// sequences, this checks particle occurrence bounds and named type identity.
 func (b *vffSKCBinder) substitutionDerivation(source, target vffSKCSubstitutionType) (methods, blocks vffSKCDerivationFlags, issue string, err error) {
 	if source.name.Local == "" || target.name.Local == "" {
 		return 0, 0, "XSD substitution type derivation unproved", nil

@@ -5,9 +5,10 @@ import (
 	"fmt"
 )
 
-type vffSKCParticleOccurrence struct {
-	name     xml.Name
-	min, max string
+type vffSKCParticle struct {
+	name        xml.Name
+	min, max    string
+	declaration *vffXMLNode
 }
 
 func vffSKCOccurrenceGreater(a, b string) bool {
@@ -18,7 +19,7 @@ func vffSKCOccurrenceGreater(a, b string) bool {
 }
 
 // Reads a single flat sequence. A nil sequence represents empty content.
-func (b *vffSKCBinder) particleOccurrences(sequence *vffXMLNode) ([]vffSKCParticleOccurrence, bool, error) {
+func (b *vffSKCBinder) particleOccurrences(sequence *vffXMLNode) ([]vffSKCParticle, bool, error) {
 	if sequence == nil {
 		return nil, true, nil
 	}
@@ -37,7 +38,7 @@ func (b *vffSKCBinder) particleOccurrences(sequence *vffXMLNode) ([]vffSKCPartic
 	for schema.parent != nil {
 		schema = schema.parent
 	}
-	var result []vffSKCParticleOccurrence
+	var result []vffSKCParticle
 	for _, element := range sequence.children {
 		if err := b.tick(0); err != nil {
 			return nil, false, err
@@ -74,20 +75,20 @@ func (b *vffSKCBinder) particleOccurrences(sequence *vffXMLNode) ([]vffSKCPartic
 		if vffSKCOccurrenceGreater(min, max) {
 			return nil, false, fmt.Errorf("reversed XSD occurrence bounds for %s", name.Local)
 		}
-		result = append(result, vffSKCParticleOccurrence{name, min, max})
+		result = append(result, vffSKCParticle{name, min, max, element})
 	}
 	return result, true, nil
 }
 
 // Flattens the supported base-first extension shape without expanding repeats.
-func (b *vffSKCBinder) baseParticleOccurrences(node *vffXMLNode, depth int) ([]vffSKCParticleOccurrence, bool, error) {
+func (b *vffSKCBinder) baseParticleOccurrences(node *vffXMLNode, depth int) ([]vffSKCParticle, bool, error) {
 	if err := b.tick(depth); err != nil {
 		return nil, false, err
 	}
 	if mixed := node.attrs["mixed"]; mixed != "" && mixed != "false" && mixed != "0" {
 		return nil, false, nil
 	}
-	var inherited []vffSKCParticleOccurrence
+	var inherited []vffSKCParticle
 	var sequence *vffXMLNode
 	var content *vffXMLNode
 	for _, child := range node.children {
@@ -147,6 +148,20 @@ func (b *vffSKCBinder) baseParticleOccurrences(node *vffXMLNode, depth int) ([]v
 	return append(inherited, local...), true, nil
 }
 
+// A type is comparable only when it is explicitly named and resolved in the
+// element's declaration scope. An inline type requires its own proof.
+func (b *vffSKCBinder) particleType(element *vffXMLNode) (vffSKCSubstitutionType, error) {
+	for _, child := range element.children {
+		if err := b.tick(0); err != nil {
+			return vffSKCSubstitutionType{}, err
+		}
+		if child.name.Local != "annotation" {
+			return vffSKCSubstitutionType{}, nil
+		}
+	}
+	return b.substitutionType(element, element.attrs["type"])
+}
+
 func (b *vffSKCBinder) particleRestrictionIssue(restriction, base *vffXMLNode, depth int) (string, error) {
 	const unproved = "XSD particle occurrence restriction unproved"
 	var sequence *vffXMLNode
@@ -193,6 +208,17 @@ func (b *vffSKCBinder) particleRestrictionIssue(restriction, base *vffXMLNode, d
 		}
 		if vffSKCOccurrenceGreater(from.min, particle.min) {
 			return fmt.Sprintf("XSD particle restriction lowers %s minOccurs from %s to %s", particle.name.Local, from.min, particle.min), nil
+		}
+		derivedType, err := b.particleType(particle.declaration)
+		if err != nil {
+			return "", err
+		}
+		baseType, err := b.particleType(from.declaration)
+		if err != nil {
+			return "", err
+		}
+		if derivedType.name.Local == "" || derivedType != baseType {
+			return fmt.Sprintf("XSD particle restriction type compatibility unproved for %s", particle.name.Local), nil
 		}
 		next = i + 1
 	}
