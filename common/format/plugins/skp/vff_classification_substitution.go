@@ -37,6 +37,9 @@ const (
 	vffSKCSubstitutionBlock
 	vffSKCList
 	vffSKCUnion
+
+	vffSKCElementBlockFlags  = vffSKCExtension | vffSKCRestriction | vffSKCSubstitutionBlock
+	vffSKCAllDerivationFlags = vffSKCElementBlockFlags | vffSKCList | vffSKCUnion
 )
 
 func vffSKCSubstitutionFlags(node *vffXMLNode, attr string) (vffSKCDerivationFlags, error) {
@@ -44,8 +47,12 @@ func vffSKCSubstitutionFlags(node *vffXMLNode, attr string) (vffSKCDerivationFla
 	if !present {
 		value = node.parent.attrs[attr+"Default"]
 	}
+	return vffSKCParseDerivationFlags(value, attr)
+}
+
+func vffSKCParseDerivationFlags(value, attr string) (vffSKCDerivationFlags, error) {
 	if strings.Trim(value, " \t\r\n") == "#all" {
-		return vffSKCExtension | vffSKCRestriction | vffSKCSubstitutionBlock | vffSKCList | vffSKCUnion, nil
+		return vffSKCAllDerivationFlags, nil
 	}
 	var flags vffSKCDerivationFlags
 	for _, method := range strings.Fields(value) {
@@ -92,7 +99,7 @@ func (b *vffSKCBinder) substitutionType(n *vffXMLNode, raw string) (vffSKCSubsti
 
 // Checks the named derivation chain and its declared constraints. For flat
 // sequences, this checks occurrence bounds, nillability, named type identity,
-// and fixed values.
+// fixed values, and element block constraints.
 func (b *vffSKCBinder) substitutionDerivation(source, target vffSKCSubstitutionType) (methods, blocks vffSKCDerivationFlags, issue string, err error) {
 	if source.name.Local == "" || target.name.Local == "" {
 		return 0, 0, "XSD substitution type derivation unproved", nil

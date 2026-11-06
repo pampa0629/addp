@@ -10,6 +10,7 @@ type vffSKCParticle struct {
 	name        xml.Name
 	min, max    string
 	nillable    bool
+	block       vffSKCDerivationFlags
 	declaration *vffXMLNode
 }
 
@@ -87,7 +88,21 @@ func (b *vffSKCBinder) particleOccurrences(sequence *vffXMLNode) ([]vffSKCPartic
 				return nil, false, fmt.Errorf("invalid XSD nillable for %s", name.Local)
 			}
 		}
-		result = append(result, vffSKCParticle{name: name, min: min, max: max, nillable: nillable, declaration: element})
+		rawBlock, explicitBlock := element.attrs["block"]
+		if !explicitBlock {
+			rawBlock = schema.attrs["blockDefault"]
+		}
+		block, err := vffSKCParseDerivationFlags(rawBlock, "block")
+		if err != nil {
+			return nil, false, err
+		}
+		if explicitBlock && block&^vffSKCElementBlockFlags != 0 && strings.Trim(rawBlock, " \t\r\n") != "#all" {
+			return nil, false, fmt.Errorf("invalid XSD element block for %s", name.Local)
+		}
+		result = append(result, vffSKCParticle{
+			name: name, min: min, max: max, nillable: nillable,
+			block: block & vffSKCElementBlockFlags, declaration: element,
+		})
 	}
 	return result, true, nil
 }
@@ -288,6 +303,9 @@ func (b *vffSKCBinder) particleRestrictionIssue(restriction, base *vffXMLNode, d
 		}
 		if particle.nillable && !from.nillable {
 			return fmt.Sprintf("XSD particle restriction widens %s nillable from false to true", particle.name.Local), nil
+		}
+		if from.block&^particle.block != 0 {
+			return fmt.Sprintf("XSD particle restriction weakens %s block", particle.name.Local), nil
 		}
 		derivedType, err := b.particleType(particle.declaration)
 		if err != nil {

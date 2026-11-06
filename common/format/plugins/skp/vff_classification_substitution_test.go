@@ -146,3 +146,40 @@ func TestVFFSKCSubstitutionPreservesParticleFixedValues(t *testing.T) {
 		})
 	}
 }
+
+func TestVFFSKCSubstitutionPreservesParticleBlock(t *testing.T) {
+	for _, tc := range []struct {
+		name, schemaDefault, base, derived string
+		valid                              bool
+	}{
+		{"retains", "", `block="restriction"`, `block="restriction"`, true},
+		{"removes", "", `block="restriction"`, "", false},
+		{"adds another restriction", "", `block="restriction"`, `block="extension restriction"`, true},
+		{"replaces restriction", "", `block="restriction"`, `block="extension"`, false},
+		{"all is the full element set", "", `block="#all"`, `block="substitution extension restriction"`, true},
+		{"inherits schema default", ` blockDefault="restriction"`, `block="restriction"`, "", true},
+		{"base inherits schema default", ` blockDefault="restriction"`, "", `block=""`, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			const element = `<x:element name="Value" type="x:int" `
+			base := `<x:complexType name="Base" block=""><x:sequence>` + element + tc.base + `/></x:sequence></x:complexType>`
+			derived := `<x:complexType name="Derived"><x:complexContent><x:restriction base="r:Base"><x:sequence>` + element + tc.derived + `/></x:sequence></x:restriction></x:complexContent></x:complexType>`
+			const groups = `<x:element name="Head" type="r:Base" block=""/><x:element name="Member" type="r:Derived" substitutionGroup="r:Head"/>`
+			files := skcDocumentFiles(t)
+			schema := string(skcGraphSchema("urn:r", base+derived+groups))
+			files["Schemas/root.xsd"] = []byte(strings.Replace(schema, `targetNamespace="urn:r"`, `targetNamespace="urn:r"`+tc.schemaDefault, 1))
+			files["Schemas/root.xsd.filter"] = []byte("Derived")
+			facts := skcGraphRead(t, files)[0].substitutions
+			if len(facts.affiliations) != 1 {
+				t.Fatalf("lost direct affiliation: %#v", facts.affiliations)
+			}
+			if tc.valid {
+				if len(facts.pairs) != 1 || len(facts.pending) != 0 {
+					t.Fatalf("valid particle block unresolved: %#v", facts)
+				}
+			} else if len(facts.pairs) != 0 || len(facts.pending) != 1 || !strings.Contains(facts.pending[0].reason, "weakens Value block") {
+				t.Fatalf("unexpected block outcome: %#v", facts)
+			}
+		})
+	}
+}
