@@ -111,10 +111,14 @@ class ComposePublicOriginOnlineTest(unittest.TestCase):
         portal_payload = portal_evidence
         with (tempfile.TemporaryDirectory() as temporary, tempfile.TemporaryDirectory() as secrets,
               patch.dict(os.environ, ADDP_ONLINE_ARTIFACT_DIR=temporary, ADDP_ONLINE_SECRET_DIR=secrets)):
+            published = None
+
             def browser(command, *, cwd, env):
                 self.assertIn("e2e/online/compose-public-origin.spec.js", command)
                 self.assertEqual(Path(command[command.index("--output") + 1]), Path(secrets).resolve() / "public-origin-playwright")
                 self.assertEqual(env["CONSOLE_URL"], "http://127.0.0.1:18080")
+                self.assertNotIn(MODULE.WORKBENCH_PREPARATION_TOKEN, env)
+                self.assertEqual(json.loads(env.get("ADDP_ONLINE_PUBLIC_ORIGIN_WORKBENCH_FIXTURE", "null")), published)
                 Path(env["ADDP_ONLINE_PUBLIC_ORIGIN_BROWSER_REPORT"]).write_text(json.dumps(payload))
                 for name in ("console", "independent"):
                     (Path(temporary) / f"public-origin-{name}.png").write_bytes(b"fixture-screenshot")
@@ -144,6 +148,20 @@ class ComposePublicOriginOnlineTest(unittest.TestCase):
                     with self.subTest(invalid=invalid), self.assertRaisesRegex(MODULE.AcceptanceError, "portal production login evidence"):
                         MODULE.run_browser()
                 portal_payload = portal_evidence
+
+                published = {"application_id": "temporary-app", "published_revision": 1,
+                             "query_path": "/api/query/temporary/query", "table_values": ["A", "B"]}
+                published_evidence = {**login_evidence, "workbench_runtime_status": 200,
+                                      "workbench_application_id": "temporary-app", "workbench_published_revision": 1,
+                                      "workbench_table_values": ["A", "B"]}
+                workbench_evidence = {**published_evidence, "entry": "workbench"}
+                portal_payload = {**published_evidence, "entry": "portal"}
+                with patch.dict(os.environ, {MODULE.WORKBENCH_PREPARATION_TOKEN: "preparation-only"}):
+                    self.assertEqual(MODULE.run_browser(published)["public_login"]["portal"], portal_payload)
+                portal_payload = {**portal_payload, "workbench_table_values": ["A", "C"]}
+                with self.assertRaisesRegex(MODULE.AcceptanceError, "portal production login evidence"):
+                    MODULE.run_browser(published)
+                published = None
 
             with patch.object(MODULE.subprocess, "run", return_value=SimpleNamespace(returncode=0)):
                 with self.assertRaises(MODULE.AcceptanceError):

@@ -73,7 +73,17 @@ SQL
   stop)
     if docker container inspect "$container" >/dev/null 2>&1; then
       [ "$(docker inspect --format '{{ index .Config.Labels "com.addp.online-fixture" }}' "$container")" = metric ] || fail "container ownership mismatch"
+      source_volumes=
+      if [ "${ONLINE_SUITE:-}" = compose-public-origin ]; then
+        source_volumes=$(docker inspect --format '{{range .Mounts}}{{if eq .Type "volume"}}{{println .Name}}{{end}}{{end}}' "$container")
+      fi
       docker rm -fv "$container" >/dev/null
+      if [ -n "$source_volumes" ]; then
+        remaining_volumes=$(docker volume ls --format '{{.Name}}')
+        while IFS= read -r volume; do
+          [ -z "$volume" ] || ! grep -Fxq -- "$volume" <<<"$remaining_volumes" || fail "source volume remains after cleanup"
+        done <<<"$source_volumes"
+      fi
     fi
     ! docker container inspect "$container" >/dev/null 2>&1 || fail "container remains after cleanup"
     exit 0
@@ -101,9 +111,23 @@ fi
 [ -d "${ADDP_ONLINE_SECRET_DIR:?}" ] || fail "Hosted secret directory is missing"
 export POSTGRES_PASSWORD
 POSTGRES_PASSWORD=$(python3 -c 'import secrets; print(secrets.token_hex(32))')
+# The public-origin profile consumes the source from the internal Compose
+# network. The other Hosted consumers run on the host.
+ADDP_FIXTURE_SOURCE_HOST=127.0.0.1
+ADDP_FIXTURE_SOURCE_PORT=55433
+source_network=(-p 127.0.0.1:55433:5432)
+if [ "${ONLINE_SUITE:-}" = compose-public-origin ]; then
+  [ "${ADDP_ONLINE_PUBLIC_ORIGIN_PUBLISHED_WORKBENCH:-}" = 1 ] && [ "${ADDP_ONLINE_TEST:-}" = 1 ] &&
+    [ "${POSTGRES_DB:-}" = addp_online ] ||
+    fail "public-origin source requires the disposable published Workbench case"
+  ADDP_FIXTURE_SOURCE_HOST=$container
+  ADDP_FIXTURE_SOURCE_PORT=5432
+  source_network=(--network addp-network)
+fi
+export ADDP_FIXTURE_SOURCE_HOST ADDP_FIXTURE_SOURCE_PORT
 # Infra has just built this repository-owned image on the clean Hosted VM.
 docker run -d --name "$container" --label com.addp.online-fixture=metric \
-  -p 127.0.0.1:55433:5432 -e POSTGRES_PASSWORD -e POSTGRES_DB=metric_fixture \
+  "${source_network[@]}" -e POSTGRES_PASSWORD -e POSTGRES_DB=metric_fixture \
   addp-postgres-pgvector:latest "${source_command[@]}" >/dev/null
 ready=0
 for _ in $(seq 1 60); do
@@ -172,7 +196,8 @@ fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
 with os.fdopen(fd, 'w') as output:
     json.dump({'name':'Hosted metric PostgreSQL', 'engine_type':'postgresql', 'engine_origin':'general',
                'description':'Disposable metric acceptance source', 'connection_info':{
-                   'host':'127.0.0.1', 'port':55433, 'database':'metric_fixture', 'user':'metric_reader',
+                   'host':os.environ['ADDP_FIXTURE_SOURCE_HOST'], 'port':int(os.environ['ADDP_FIXTURE_SOURCE_PORT']),
+                   'database':'metric_fixture', 'user':'metric_reader',
                    'password':os.environ['POSTGRES_PASSWORD'], 'sslmode':'disable'}}, output)
 PY
 echo "Disposable metric PostgreSQL source is ready"

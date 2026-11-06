@@ -13,6 +13,7 @@ from pathlib import Path
 import urllib.error
 import urllib.parse
 import urllib.request
+import uuid
 
 
 class AcceptanceError(RuntimeError):
@@ -27,6 +28,11 @@ LOGIN_BACKENDS = {
     "asset-backend": {"POSTGRES_HOST": "postgres", "POSTGRES_DB": "addp_online"},
     "portal-backend": {"ASSET_URL": "http://asset-backend:8183", "REDIS_HOST": "redis"},
 }
+PUBLISHED_WORKBENCH = "ADDP_ONLINE_PUBLIC_ORIGIN_PUBLISHED_WORKBENCH"
+WORKBENCH_PREPARATION_TOKEN = "ADDP_ONLINE_PUBLIC_WORKBENCH_PREPARATION_TOKEN"
+WORKBENCH_APPLICATIONS = "/api/v1/workbench/data_applications"
+QUERY_SERVICES = "/api/v1/service/query"
+PUBLISHED_WORKBENCH_ROWS = ["A", "B"]
 
 
 def docker_json(*args: str, env: dict[str, str] | None = None) -> object:
@@ -71,8 +77,11 @@ def running_container(name: str, project: str = "addp-platform") -> dict[str, ob
 
 def assert_platform_ports() -> None:
     expected = {"system-backend": ("8180/tcp", 8180), "gateway": ("8000/tcp", 8000), "addp-nginx": ("80/tcp", PUBLIC_PORT)}
+    login_backends = dict(LOGIN_BACKENDS)
+    if os.environ.get(PUBLISHED_WORKBENCH) == "1":
+        login_backends["service-backend"] = {"POSTGRES_HOST": "postgres", "POSTGRES_DB": "addp_online", "SECURITY_URL": "http://security-backend:8194"}
     for name in ("system-backend", "gateway", "console", "security-backend", "meta-backend",
-                 "manager-backend", "transfer-backend", "orchestrator-backend", *LOGIN_BACKENDS,
+                 "manager-backend", "transfer-backend", "orchestrator-backend", *login_backends,
                  *(f"{module}-frontend" for module in MODULE_FRONTENDS), "portal-frontend", "addp-nginx"):
         container = running_container(name)
         bindings = container["HostConfig"].get("PortBindings") or {}
@@ -84,10 +93,10 @@ def assert_platform_ports() -> None:
         elif bindings:
             raise AcceptanceError(f"{name} must not publish host ports")
         env = dict(item.split("=", 1) for item in container["Config"]["Env"] if "=" in item)
-        if name in LOGIN_BACKENDS:
+        if name in login_backends:
             if container["State"].get("Health", {}).get("Status") != "healthy":
                 raise AcceptanceError(f"{name} is not healthy")
-            settings = {"SERVICE_HOST": name, "SYSTEM_URL": "http://system-backend:8180", **LOGIN_BACKENDS[name]}
+            settings = {"SERVICE_HOST": name, "SYSTEM_URL": "http://system-backend:8180", **login_backends[name]}
             for key, value in settings.items():
                 if env.get(key) != value:
                     raise AcceptanceError(f"{name} {key} differs from the internal topology")
@@ -239,7 +248,7 @@ def assert_authorized_gateway() -> None:
         raise AcceptanceError("public Gateway did not preserve System's engine permission guard")
 
 
-def assert_context_permissions(token: str, expected: set[str]) -> None:
+def assert_context_permissions(token: str, expected: set[str]) -> dict:
     status, body, _ = request("/api/v1/system/auth/context", token)
     if status != 200:
         raise AcceptanceError(f"permission fixture AuthContext returned HTTP {status}")
@@ -257,6 +266,7 @@ def assert_context_permissions(token: str, expected: set[str]) -> None:
     }
     if granted != expected:
         raise AcceptanceError(f"permission fixture grants {sorted(granted)}, expected {sorted(expected)}")
+    return context
 
 
 def assert_partial_permission_matrix() -> None:
@@ -321,7 +331,85 @@ def assert_module_gateway_route(module: str, path: str) -> None:
     raise AcceptanceError(f"public Gateway did not discover the registered {module} Backend")
 
 
-def run_browser() -> dict[str, object]:
+def published_workbench_payload(service_id: int, fingerprint: str, run_id: str) -> dict[str, object]:
+    component_id = str(uuid.uuid4())
+    return {
+        "name": f"Public origin Workbench {run_id}",
+        "snapshot": {
+            "schema_version": "addp.workbench_data_application/v1",
+            "page": {"id": str(uuid.uuid4()), "title": "Public origin data", "display_mode": "desktop",
+                     "refresh_interval_seconds": 0, "visible_sections": ["title"],
+                     "placements": [{"component_id": component_id, "x": 0, "y": 0, "width": 12, "height": 6}]},
+            "components": [{
+                "id": component_id, "title": "People",
+                "service_ref": {"service_type": "query", "service_id": service_id},
+                "contract_fingerprint": fingerprint,
+                "query_template": {"select": ["person_id"], "order_by": [{"field": "person_id", "direction": "asc"}],
+                                   "page_limit": 10, "format": "json"},
+                "renderer_type": "table", "renderer_config": {"columns": ["person_id"]},
+            }],
+        },
+    }
+
+
+def run_published_workbench_browser() -> dict[str, object]:
+    token = os.environ[WORKBENCH_PREPARATION_TOKEN]
+    engine_id = int(os.environ["ADDP_ONLINE_CONSUMER_ENGINE_ID"])
+    run_id = os.environ["ADDP_ONLINE_TEST_RUN_ID"]
+
+    def api(method: str, path: str, status: int, body: dict | None = None) -> dict:
+        code, raw, _ = request(path, token, method=method, body=None if body is None else json.dumps(body).encode())
+        if code != status:
+            raise AcceptanceError(f"{method} {path} returned HTTP {code}, expected {status}")
+        return json.loads(raw) if raw else {}
+
+    context = assert_context_permissions(token, {
+        "asset.entry.read", "service.data_read.execute",
+        "service.definition.read", "service.definition.create", "service.definition.delete",
+        "workbench.data_application.execute", "workbench.data_application.read",
+        "workbench.data_application.create", "workbench.data_application.publish",
+    })
+    if (context["principal"]["id"] != os.environ["ADDP_ONLINE_PUBLIC_MFA_PRINCIPAL_ID"]
+            or context["context"]["tenant_membership_id"] != os.environ["ADDP_ONLINE_PUBLIC_MFA_MEMBERSHIP_ID"]):
+        raise AcceptanceError("published Workbench preparation identity does not match the browser User")
+
+    sql = "SELECT person_id FROM public.metric_people"
+    contract = api("POST", "/api/v1/service/sql/output-contract", 200, {"engine_id": engine_id, "sql": sql})
+    service_name = f"public-origin-{run_id}"
+    service = api("POST", QUERY_SERVICES, 201, {
+        "service_name": service_name, "title": service_name, "config_type": "sql", "engine_id": engine_id,
+        "sql_query": sql, "output_contract": contract, "public_access": False, "max_features": 10,
+        "data_config": {"stable_key": ["person_id"], "default_fields": ["person_id"]},
+        "protocols": {"rest_api": {"enabled": True, "formats": ["json"]}},
+    })
+    service_path = f"{QUERY_SERVICES}/{service['id']}"
+    app_path = None
+    try:
+        descriptor = api("GET", f"/api/v1/service/consumer/services/query/{service['id']}", 200)
+        app = api("POST", WORKBENCH_APPLICATIONS, 201,
+                  published_workbench_payload(service["id"], descriptor["contract_fingerprint"], run_id))
+        app_path = f"{WORKBENCH_APPLICATIONS}/{app['id']}"
+        published = api("POST", f"{app_path}/publish", 200, {"version": app["version"]})
+        revision = published["current_revision_number"]
+        if published["publication_status"] != "published" or type(revision) is not int or revision <= 0:
+            raise AcceptanceError("Workbench did not return a published revision")
+        browser = run_browser({"application_id": app["id"], "published_revision": revision,
+                               "query_path": f"/api/query/{service_name}/query", "table_values": PUBLISHED_WORKBENCH_ROWS})
+    finally:
+        try:
+            if app_path is not None:
+                current = api("GET", app_path, 200)
+                if current["publication_status"] == "published":
+                    api("POST", f"{app_path}/offline", 200, {"version": current["version"]})
+                    api("GET", f"{app_path}/runtime", 409)
+        finally:
+            api("DELETE", service_path, 200, {"version": service["version"]})
+            api("GET", service_path, 404)
+    browser["published_workbench_cleanup"] = "offline_and_service_deleted"
+    return browser
+
+
+def run_browser(published_workbench: dict | None = None) -> dict[str, object]:
     for key in ("ADDP_ONLINE_ARTIFACT_DIR", "ADDP_ONLINE_SECRET_DIR", "ADDP_ONLINE_TEST_RUN_ID",
                 "ADDP_ONLINE_READ_USER_USERNAME", "ADDP_ONLINE_READ_USER_PASSWORD",
                 "ADDP_ONLINE_PUBLIC_MFA_USERNAME", "ADDP_ONLINE_PUBLIC_MFA_PASSWORD", "ADDP_ONLINE_PUBLIC_MFA_TOTP",
@@ -337,12 +425,17 @@ def run_browser() -> dict[str, object]:
         path.unlink(missing_ok=True)
     # Playwright writes a DOM snapshot on failures even with screenshots off.
     private_output = Path(os.environ["ADDP_ONLINE_SECRET_DIR"]).resolve() / "public-origin-playwright"
+    browser_env = {**os.environ, "CONSOLE_URL": os.environ["ADDP_ONLINE_PUBLIC_ORIGIN"],
+                   "ADDP_ONLINE_PUBLIC_ORIGIN_BROWSER_REPORT": str(report_file)}
+    browser_env.pop(WORKBENCH_PREPARATION_TOKEN, None)
+    browser_env.pop("ADDP_ONLINE_PUBLIC_ORIGIN_WORKBENCH_FIXTURE", None)
+    if published_workbench is not None:
+        browser_env["ADDP_ONLINE_PUBLIC_ORIGIN_WORKBENCH_FIXTURE"] = json.dumps(published_workbench)
     result = subprocess.run(
         ["npm", "exec", "--", "playwright", "test", "e2e/online/compose-public-origin.spec.js",
          "--config=playwright.online.config.js", "--output", str(private_output)],
         cwd=Path(__file__).resolve().parents[2] / "console/frontend",
-        env={**os.environ, "CONSOLE_URL": os.environ["ADDP_ONLINE_PUBLIC_ORIGIN"],
-             "ADDP_ONLINE_PUBLIC_ORIGIN_BROWSER_REPORT": str(report_file)},
+        env=browser_env,
     )
     if result.returncode != 0 or not report_file.is_file():
         raise AcceptanceError("production browser acceptance failed or omitted evidence")
@@ -367,6 +460,10 @@ def run_browser() -> dict[str, object]:
         "reload_preserved_identity": True, "cross_module_session_reused": True,
         "workbench_runtime_status": 404, "portal_home_status": 200,
     }
+    if published_workbench is not None:
+        login_fields.update(workbench_runtime_status=200, workbench_application_id=published_workbench["application_id"],
+                            workbench_published_revision=published_workbench["published_revision"],
+                            workbench_table_values=published_workbench["table_values"])
     login_evidence = {}
     for entry, path in login_reports.items():
         login_expected = {**login_fields, "entry": entry}
@@ -402,7 +499,11 @@ def main() -> int:
     assert_module_gateway_route("Workbench", "/api/v1/workbench/data_applications")
     assert_module_gateway_route("Portal", "/api/v1/portal/home")
     assert_partial_permission_matrix()
-    browser = run_browser()
+    if os.environ.get(PUBLISHED_WORKBENCH) == "1":
+        assert_module_gateway_route("Service", QUERY_SERVICES)
+        browser = run_published_workbench_browser()
+    else:
+        browser = run_browser()
     print(json.dumps({"schema_version": "addp.online-suite/v1", "suite": "compose-public-origin", "public_port": PUBLIC_PORT, "frontends": ["console", *MODULE_FRONTENDS, "portal"], "gateway_auth_context": "passed", "gateway_engine_permission_guard": "passed", "gateway_meta_permission_guard": "passed", "gateway_manager_permission_guard": "passed", "gateway_transfer_permission_guard": "passed", "gateway_orchestrator_permission_guard": "passed", "gateway_partial_permission_matrix": "passed", "compose_projects": ["addp-infra", "addp-platform", "addp-runtimes", "business"], "browser": browser}, sort_keys=True))
     return 0
 

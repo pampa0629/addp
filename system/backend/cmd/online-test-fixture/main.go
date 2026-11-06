@@ -393,6 +393,9 @@ func suitePermissions(suite string) ([]string, error) {
 }
 
 func needsEngineProvisioner(suite string) bool {
+	if suite == "compose-public-origin" {
+		return os.Getenv("ADDP_ONLINE_PUBLIC_ORIGIN_PUBLISHED_WORKBENCH") == "1"
+	}
 	if suite == "graph-protection" {
 		return true
 	}
@@ -749,8 +752,16 @@ func run(args []string, environment []string) error {
 	}
 	if *suite == "compose-public-origin" {
 		const username = "external-online-public-mfa"
+		browserPermissions := []string{"workbench.data_application.execute", "asset.entry.read"}
+		publishedWorkbench := os.Getenv("ADDP_ONLINE_PUBLIC_ORIGIN_PUBLISHED_WORKBENCH") == "1"
+		if publishedWorkbench {
+			browserPermissions = append(browserPermissions,
+				"service.definition.read", "service.definition.create", "service.definition.delete", "service.data_read.execute",
+				"workbench.data_application.read", "workbench.data_application.create", "workbench.data_application.publish",
+			)
+		}
 		browserSession, assignmentID, password, err := createPermissionFixture(ctx, repository, identity, membershipService, roleService, selectionService,
-			tenant.ID, administrator.PrincipalID, username, []string{"workbench.data_application.execute", "asset.entry.read"})
+			tenant.ID, administrator.PrincipalID, username, browserPermissions)
 		if err != nil {
 			return err
 		}
@@ -778,6 +789,14 @@ func run(args []string, environment []string) error {
 		values["ADDP_ONLINE_PUBLIC_MFA_PRINCIPAL_ID"] = fmt.Sprint(assignment.PrincipalID)
 		values["ADDP_ONLINE_PUBLIC_MFA_MEMBERSHIP_ID"] = fmt.Sprint(assignment.MembershipID)
 		values["ADDP_ONLINE_PUBLIC_MFA_ALTERNATE_MEMBERSHIP_ID"] = fmt.Sprint(alternate.Membership.ID)
+		if publishedWorkbench {
+			preparation, err := issueFixtureSession(ctx, repository, selectionService, assignment.PrincipalID,
+				"external-online-workbench-preparation", &assignment.MembershipID)
+			if err != nil {
+				return err
+			}
+			values["ADDP_ONLINE_PUBLIC_WORKBENCH_PREPARATION_TOKEN"] = preparation.AccessToken
+		}
 
 		readerSession, _, readerPassword, err := createPermissionFixture(ctx, repository, identity, membershipService, roleService, selectionService,
 			tenant.ID, administrator.PrincipalID, "external-online-public-reader", publicOriginReadPermissions)
@@ -1456,6 +1475,10 @@ func grantExecutionMonitorReader(ctx context.Context, roles executionReaderRoles
 }
 
 func issueSession(ctx context.Context, repository *iam.Repository, service *iam.ContextSelectionService, principalID int64, requestID string) (*iam.IssuedBrowserSession, error) {
+	return issueFixtureSession(ctx, repository, service, principalID, requestID, nil)
+}
+
+func issueFixtureSession(ctx context.Context, repository *iam.Repository, service *iam.ContextSelectionService, principalID int64, requestID string, membershipID *int64) (*iam.IssuedBrowserSession, error) {
 	// Session authentication and validation must use the same IAM authority clock.
 	now, err := repository.CurrentDatabaseTime(ctx)
 	if err != nil {
@@ -1471,6 +1494,16 @@ func issueSession(ctx context.Context, repository *iam.Repository, service *iam.
 	})
 	if err != nil {
 		return nil, fmt.Errorf("issue %s: %w", requestID, err)
+	}
+	if membershipID != nil {
+		if result.NextAction != iam.ContextSelectionNextActionSelectContext || result.Challenge == nil {
+			return nil, fmt.Errorf("%s did not offer explicit Tenant selection", requestID)
+		}
+		return service.ConsumeContextSelection(ctx, iam.ConsumeContextSelectionInput{
+			SelectionTicket: result.Challenge.SelectionTicket,
+			Choice:          iam.ContextSelectionChoice{Type: iam.ContextTypeTenant, TenantMembershipID: membershipID},
+			Audit:           audit(requestID),
+		})
 	}
 	if result.NextAction != iam.ContextSelectionNextActionSessionIssued || result.Session == nil {
 		return nil, fmt.Errorf("%s did not resolve to one Tenant Context", requestID)
@@ -1557,6 +1590,7 @@ func writeEnvironmentFile(path string, values map[string]string) error {
 		"ADDP_ONLINE_EVENTS_FOREIGN_ACCESS_TOKEN",
 		"ADDP_ONLINE_EVENTS_FOREIGN_TENANT_ID",
 		"ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN",
+		"ADDP_ONLINE_PUBLIC_WORKBENCH_PREPARATION_TOKEN",
 		"ADDP_ONLINE_FIXTURE_QUALITY_ACCESS_TOKEN",
 		"ADDP_ONLINE_FIXTURE_SECURITY_ACCESS_TOKEN",
 		"ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN",

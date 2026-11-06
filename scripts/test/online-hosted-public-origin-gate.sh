@@ -10,6 +10,12 @@ HOSTED_FIXTURE_CONTAINERS=(registry addp-online-public-origin-upstreams system-b
 HOSTED_FIXTURE_COMPOSE_PROJECTS=(addp-platform addp-runtimes business)
 HOSTED_FIXTURE_IMAGES=()
 COMPOSE_OVERLAY="$ROOT_DIR/scripts/test/docker-compose.public-origin-t4.yml"
+published_workbench="${ADDP_ONLINE_PUBLIC_ORIGIN_PUBLISHED_WORKBENCH:-0}"
+case "$published_workbench" in
+  0) ;;
+  1) HOSTED_FIXTURE_CONTAINERS+=(service-backend addp-metric-online-disposable) ;;
+  *) echo "invalid published Workbench case selector" >&2; exit 1 ;;
+esac
 
 compose_app() {
   docker compose -f "$ROOT_DIR/docker-compose.yml" -f "$COMPOSE_OVERLAY" "$@"
@@ -36,11 +42,15 @@ verify_empty_project() {
 }
 
 stop_online_fixture() {
+  local status=0
+  if [ "$published_workbench" = 1 ]; then
+    run_logged bash business/scripts/online-metric-postgres-fixture.sh stop || status=1
+  fi
   run_logged docker rm -fv addp-online-public-origin-upstreams registry || true
   for container in addp-online-public-origin-upstreams registry; do
     docker container inspect "$container" >/dev/null 2>&1 && return 1
   done
-  return 0
+  return "$status"
 }
 
 source "$ROOT_DIR/scripts/utils/hosted-online.sh"
@@ -77,6 +87,13 @@ done
 [ "$registry_ready" -eq 1 ] || fail "disposable image registry did not become ready"
 backends=system-backend,security-backend,gateway,meta-backend,manager-backend,transfer-backend,orchestrator-backend,workbench-backend,asset-backend,portal-backend
 frontends=console,system-frontend,meta-frontend,manager-frontend,transfer-frontend,orchestrator-frontend,workbench-frontend,portal-frontend
+protection_owners=manager,transfer
+if [ "$published_workbench" = 1 ]; then
+  backends="$backends,service-backend"
+  protection_owners="$protection_owners,service"
+  export ADDP_ONLINE_FIXTURE_ENGINE_DESCRIPTOR_FILE="$ADDP_ONLINE_SECRET_DIR/public-origin-postgres.json"
+  run_logged bash business/scripts/online-metric-postgres-fixture.sh start
+fi
 run_logged make build BUILD_ARGS="--arch amd64 --services $backends"
 run_logged make build-images IMAGE_BUILD_ARGS="--verify --services $backends,$frontends,nginx,geopython-workflow-engine"
 
@@ -92,6 +109,9 @@ run_logged compose_app up -d --no-deps --wait transfer-backend
 run_logged compose_app up -d --no-deps --wait transfer-frontend
 run_logged compose_app up -d --no-deps --wait orchestrator-backend
 run_logged compose_app up -d --no-deps --wait orchestrator-frontend
+if [ "$published_workbench" = 1 ]; then
+  run_logged compose_app up -d --no-deps --wait service-backend
+fi
 run_logged compose_app up -d --no-deps --wait workbench-backend asset-backend
 run_logged compose_app up -d --no-deps --wait portal-backend
 run_logged compose_app up -d --no-deps --wait workbench-frontend portal-frontend
@@ -105,9 +125,16 @@ run_logged compose_app up -d --no-deps --wait nginx
 run_logged compose_runtimes up -d --no-deps --wait --wait-timeout 180 geopython-workflow-engine
 run_logged compose_business up -d --no-deps --wait --wait-timeout 180 minio
 
-run_logged bash -c 'cd system/backend && go run ./cmd/online-test-fixture --suite compose-public-origin --wait-protection-owners manager,transfer --output "$1"' _ "$IDENTITY_ENV"
+run_logged bash -c 'cd system/backend && go run ./cmd/online-test-fixture --suite compose-public-origin --wait-protection-owners "$2" --output "$1"' _ "$IDENTITY_ENV" "$protection_owners"
 # shellcheck disable=SC1090
 source "$IDENTITY_ENV"
+if [ "$published_workbench" = 1 ]; then
+  run_logged python3 scripts/test/online-engine-registration.py \
+    --descriptor "$ADDP_ONLINE_FIXTURE_ENGINE_DESCRIPTOR_FILE" --output "$ENGINE_RESULT_ENV"
+  source "$ENGINE_RESULT_ENV"
+  export ADDP_ONLINE_CONSUMER_ENGINE_ID
+  unset ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN
+fi
 run_logged npm --prefix console/frontend ci
 run_logged npm --prefix console/frontend exec -- playwright install --with-deps chromium
 run_logged make test-online "ONLINE_SUITE=$ONLINE_SUITE"

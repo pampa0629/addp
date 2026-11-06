@@ -17,6 +17,10 @@ class HostedPublicOriginGateTest(unittest.TestCase):
         self.host.setUp()
         self.addCleanup(self.host.tearDown)
         self.host.prepare_run_fixture()
+        self.host._write_repository_script("business/scripts/online-metric-postgres-fixture.sh", '''
+            #!/usr/bin/env bash
+            echo "postgres-source:$1" >> "$ADDP_TEST_GATE_TRACE"
+        ''')
         shutil.copy2(SCRIPT, self.host.repository / "scripts/test/online-hosted-public-origin-gate.sh")
         shutil.copy2(OVERLAY, self.host.repository / "scripts/test/docker-compose.public-origin-t4.yml")
         (self.host.repository / "docker-compose.yml").write_text("services: {}\n", encoding="utf-8")
@@ -133,10 +137,28 @@ class HostedPublicOriginGateTest(unittest.TestCase):
         self.assertNotIn("--network-alias orchestrator-frontend", trace)
         self.assertNotIn("--network-alias workbench-frontend", trace)
         self.assertNotIn("--network-alias portal-frontend", trace)
+        self.assertNotIn("postgres-source:", trace)
+        self.assertNotIn("service-backend", trace)
         self.assertLess(trace.index("make:test-online ONLINE_SUITE=compose-public-origin"), trace.index("business/docker-compose.yml down --remove-orphans --volumes"))
         self.assertLess(trace.index("business/docker-compose.yml down --remove-orphans --volumes"), trace.index("docker-compose.runtimes.yml down --remove-orphans --volumes"))
         self.assertFalse(self.host.secrets.exists())
         self.assertIn("infra_cleanup=zero_residuals", (self.host.artifacts / "summary.txt").read_text())
+
+    def test_manual_published_case_starts_service_and_cleans_source_after_scene_failure(self):
+        result = self.run_gate(ADDP_ONLINE_PUBLIC_ORIGIN_PUBLISHED_WORKBENCH="1", ADDP_TEST_SUITE_FAIL="1")
+        self.assertNotEqual(result.returncode, 0)
+        trace = self.host.trace.read_text()
+        steps = (
+            "postgres-source:start",
+            " up -d --no-deps --wait service-backend",
+            "--wait-protection-owners manager,transfer,service",
+            "make:test-online ONLINE_SUITE=compose-public-origin",
+            "postgres-source:stop",
+            "infra-down",
+        )
+        positions = [trace.index(step) for step in steps]
+        self.assertEqual(positions, sorted(positions))
+        self.assertFalse(self.host.secrets.exists())
 
     def test_business_minio_bindings_are_scoped_to_business_compose(self):
         for script, marker in (("up", "infra-up"), ("down", "infra-down")):

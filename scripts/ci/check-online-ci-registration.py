@@ -6855,17 +6855,21 @@ def validate_public_origin_browser_profile(repository: Path, registered: set[str
             "up -d --no-deps --wait workbench-backend asset-backend",
             "up -d --no-deps --wait portal-backend",
             "up -d --no-deps --wait workbench-frontend portal-frontend",
-            "--wait-protection-owners manager,transfer",
+            "protection_owners=manager,transfer",
+            '--wait-protection-owners "$2"',
+            "online-metric-postgres-fixture.sh start",
+            "online-metric-postgres-fixture.sh stop",
             'run_logged make test-online "ONLINE_SUITE=$ONLINE_SUITE"',
         ),
         "scripts/test/compose-public-origin-online.py": (
             "e2e/online/compose-public-origin.spec.js", "--config=playwright.online.config.js", "browser = run_browser()",
-            "login_reports", "cross_module_session_reused",
+            "login_reports", "cross_module_session_reused", "browser = run_published_workbench_browser()",
         ),
         "console/frontend/e2e/online/compose-public-origin.spec.js": (
             "ADDP_ONLINE_READ_USER_PASSWORD", "action: 'hold-lock'", "action: 'queue-refresh'",
             "requests.length - initialRefreshes", "ADDP_ONLINE_PUBLIC_ORIGIN_BROWSER_REPORT",
             "auth/mfa-verifications", "auth/context-selections", "ADDP_ONLINE_PUBLIC_MFA_TOTP", "cross_module_session_reused",
+            "workbench_published_revision", "workbench_table_values",
         ),
         "system/backend/cmd/online-test-fixture/main.go": (
             'values["ADDP_ONLINE_READ_USER_USERNAME"]', 'values["ADDP_ONLINE_READ_USER_PASSWORD"]',

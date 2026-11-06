@@ -2605,7 +2605,9 @@ class OnlineCIRegistrationTest(unittest.TestCase):
         for relative, fragment in self.contract_mutations((
             (paths[0], "playwright install --with-deps chromium"),
             (paths[0], "up -d --no-deps --wait security-backend"),
-            (paths[0], "--wait-protection-owners manager,transfer"), (paths[1], "browser = run_browser()"),
+            (paths[0], "protection_owners=manager,transfer"), (paths[1], "browser = run_browser()"),
+            (paths[0], "online-metric-postgres-fixture.sh stop"),
+            (paths[1], "browser = run_published_workbench_browser()"), (paths[2], "workbench_table_values"),
             (paths[2], "ADDP_ONLINE_PUBLIC_ORIGIN_BROWSER_REPORT"), (paths[3], 'values["ADDP_ONLINE_READ_USER_PASSWORD"]'),
             (paths[0], "up -d --no-deps --wait workbench-frontend portal-frontend"),
             (paths[1], "cross_module_session_reused"), (paths[2], "auth/mfa-verifications"),

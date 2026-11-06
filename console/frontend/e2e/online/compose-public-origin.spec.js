@@ -166,12 +166,15 @@ test.describe('production public login', () => {
       const principalID = required('ADDP_ONLINE_PUBLIC_MFA_PRINCIPAL_ID')
       const membershipID = required('ADDP_ONLINE_PUBLIC_MFA_MEMBERSHIP_ID')
       const alternateID = required('ADDP_ONLINE_PUBLIC_MFA_ALTERNATE_MEMBERSHIP_ID')
-      const appID = randomUUID()
+      const published = process.env.ADDP_ONLINE_PUBLIC_ORIGIN_WORKBENCH_FIXTURE
+        ? JSON.parse(process.env.ADDP_ONLINE_PUBLIC_ORIGIN_WORKBENCH_FIXTURE)
+        : null
+      const appID = published?.application_id ?? randomUUID()
       const workbench = {
         url: `/data-apps/${appID}?preset=monthly#summary`,
         login: '/module-ui/workbench/login',
         api: `/api/v1/workbench/data_applications/${appID}/runtime`,
-        status: 404,
+        status: published ? 200 : 404,
       }
       const portal = {
         url: '/portal/home?source=public-origin#latest',
@@ -201,6 +204,9 @@ test.describe('production public login', () => {
           return { response, payload: undefined }
         }
       }
+      const queryFor = (tab, destination) => published && destination === workbench
+        ? responseFor(tab, published.query_path, 'POST').then(captureJSON)
+        : undefined
       let stage = 'anonymous redirect'
       const check = (label, assertion) => {
         stage = label
@@ -217,10 +223,23 @@ test.describe('production public login', () => {
           assurance_level: 'aal2', methods: ['password', 'totp'],
         }))
       }
-      const assertLanding = async (phase, tab, destination, response) => {
+      const assertLanding = async (phase, tab, destination, response, query) => {
         await check(`${phase}: complete return URL`, () => expect(tab).toHaveURL(origin + destination.url))
         check(`${phase}: landing API status`, () => expect(response.status()).toBe(destination.status))
-        if (destination === workbench) {
+        if (destination === workbench && published) {
+          const runtime = await check(`${phase}: Workbench published Runtime body`, () => response.json())
+          check(`${phase}: Workbench published revision`, () =>
+            expect(runtime).toMatchObject({ id: appID, revision_number: published.published_revision }))
+          check(`${phase}: Workbench real Service query`, () => {
+            expect(query.response.status()).toBe(200)
+            expect(query.payload.data).toEqual(published.table_values.map(person_id => ({ person_id })))
+          })
+          const renderer = tab.getByTestId('data-application-runtime').getByTestId('renderer-host')
+          for (const value of published.table_values) {
+            await check(`${phase}: rendered Service value`, () =>
+              expect(renderer.getByRole('cell', { name: value, exact: true })).toBeVisible())
+          }
+        } else if (destination === workbench) {
           await check(`${phase}: Workbench missing application message`, () =>
             expect(tab.getByTestId('data-application-runtime').getByRole('alert')).toContainText('数据应用不存在'))
         } else {
@@ -299,10 +318,11 @@ test.describe('production public login', () => {
         // The Workbench login document also requests AuthContext before
         // leaving. Verify the runtime document's session after the return.
         const identityDocument = entry === 'workbench' ? new URL(target.url, origin).pathname : undefined
-        const [{ response: selection, payload: session }, identity, landing] = await Promise.all([
+        const [{ response: selection, payload: session }, identity, landing, query] = await Promise.all([
           responseFor(page, system('auth/context-selections'), 'POST').then(captureJSON),
           responseFor(page, system('auth/context'), 'GET', identityDocument).then(captureJSON),
           responseFor(page, target.api),
+          queryFor(page, target),
           primary.click(),
         ])
         check('selection status', () => expect(selection.status()).toBe(200))
@@ -316,21 +336,22 @@ test.describe('production public login', () => {
         check('selection token expiry', () => expect(session.expires_in).toBeGreaterThan(0))
 
         assertIdentity('after login', identity)
-        await assertLanding('after login', page, target, landing)
+        await assertLanding('after login', page, target, landing, query)
         stage = 'issued HttpOnly refresh cookie at System endpoint'
         const cookie = await refreshCookie()
         expect(Boolean(cookie?.httpOnly && cookie.path === '/api/v1/system')).toBe(true)
 
         stage = 'reload and rotate the session'
-        const [refresh, reloadedIdentity, reloadedLanding] = await Promise.all([
+        const [refresh, reloadedIdentity, reloadedLanding, reloadedQuery] = await Promise.all([
           responseFor(page, system('refresh'), 'POST'),
           responseFor(page, system('auth/context')).then(captureJSON),
           responseFor(page, target.api),
+          queryFor(page, target),
           page.reload({ timeout: 20000 }),
         ])
         check('reload refresh status', () => expect(refresh.status()).toBe(200))
         assertIdentity('after reload', reloadedIdentity)
-        await assertLanding('after reload', page, target, reloadedLanding)
+        await assertLanding('after reload', page, target, reloadedLanding, reloadedQuery)
         stage = 'rotated HttpOnly refresh cookie at System endpoint'
         const renewedCookie = await refreshCookie()
         expect(Boolean(renewedCookie?.httpOnly && renewedCookie.value !== cookie.value)).toBe(true)
@@ -338,13 +359,14 @@ test.describe('production public login', () => {
         stage = 'other module reuses the session'
         const before = refreshRequests
         const otherPage = await context.newPage()
-        const [sharedIdentity, sharedLanding] = await Promise.all([
+        const [sharedIdentity, sharedLanding, sharedQuery] = await Promise.all([
           responseFor(otherPage, system('auth/context')).then(captureJSON),
           responseFor(otherPage, other.api),
+          queryFor(otherPage, other),
           otherPage.goto(other.url, { timeout: 20000 }),
         ])
         assertIdentity('other module', sharedIdentity)
-        await assertLanding('other module', otherPage, other, sharedLanding)
+        await assertLanding('other module', otherPage, other, sharedLanding, sharedQuery)
         stage = 'other module uses the same bearer'
         const bearer = await reloadedLanding.request().headerValue('authorization')
         expect(Boolean(bearer?.startsWith('Bearer ') && bearer === await sharedLanding.request().headerValue('authorization'))).toBe(true)
@@ -355,7 +377,12 @@ test.describe('production public login', () => {
           run_id: required('ADDP_ONLINE_TEST_RUN_ID'), entry, origin, tenant_id: tenantID,
           mfa: true, explicit_tenant_selection: true, full_return_url: true, http_only_refresh: true,
           reload_preserved_identity: true, cross_module_session_reused: true,
-          workbench_runtime_status: 404, portal_home_status: 200,
+          workbench_runtime_status: workbench.status, portal_home_status: 200,
+          ...(published ? {
+            workbench_application_id: appID,
+            workbench_published_revision: published.published_revision,
+            workbench_table_values: published.table_values,
+          } : {}),
         }))
       } catch {
         throw new Error(`${entry} public login failed at ${stage} (${JSON.stringify(statuses)})`)
