@@ -150,7 +150,13 @@ Common / Meta 的历史工作区门禁结果仅适用于其记录范围；其他
 
 ## 平台指标设施独占门禁
 
-Redis 专业采集的确定性入口为 `make test-monitor-redis-source-unit`，真实协议入口为 `make test-monitor-redis-source`；后者由Monitor门禁薄入口沿唯一 `redis-owned-fixture.sh`／`common-redis-contract.sh --monitor-only` 复用固定 Redis 7.2.13 镜像、随机回环端口、随机密码、Business 原生样例和物理零残留核验。Monitor完整模块门禁、根串行集成与Release同名独占作业自动发现，登记采集目录／依赖输入；其他Redis消费者仍运行原范围，无第二套夹具或重复执行Monitor专项。T2仅在当次容器创建／删除两种采集账号，验证真实认证、固定INFO、业务读写／扫描／管理拒绝、off与清权后旧连接拒绝，以及原reader与业务键不变；一次一字节逻辑maxmemory加单次小SET验证OOM计数，不循环加压，随后还原当次限额。该结果不证明标准部署安装、mTLS来源、System纳管、Monitor查询／Console、正式身份T4或Hosted。
+Redis 专业采集的确定性入口为 `make test-monitor-redis-source-unit`，真实协议入口为 `make test-monitor-redis-source`；后者由Monitor门禁薄入口沿唯一 `redis-owned-fixture.sh`／`common-redis-contract.sh --monitor-only` 复用固定 Redis 7.2.13 镜像、随机回环端口、随机密码、Business 原生样例和物理零残留核验。Monitor完整模块门禁、根串行集成与Release同名独占作业自动发现，登记采集目录／依赖输入；其他Redis消费者仍运行原范围，无第二套夹具或重复执行Monitor专项。
+
+T2 在当次容器创建和删除两种采集账号，验证真实认证、固定 INFO、业务读写／扫描／管理拒绝、停用及清权后的旧连接拒绝，以及原 reader 与业务键保留。OOM 计数通过一字节逻辑 maxmemory 和单次小 SET 核验，随后还原当次限额。
+
+生命周期探针直接调用采集来源实现，在独占 Infra／Business 夹具中验证真实 mTLS 指标读取、无客户端证书或错误用途证书的拒绝、基于 Docker 事实的只读发现、重启后的账号持久化、既有来源恢复、停用清权及零残留。[Redis 来源生命周期历史证据](evidence/Monitor采集来源与引擎指标历史证据.md#redis-账号持久化与来源生命周期2026-11-01)
+
+标准 Infra／Business 部署入口的端到端安装，以及从 System 纳管到 Monitor HTTP SD、Prometheus 实际采样和 Console 专业页面的正式身份链路，均须按相应场景另行验收。[Redis 平台采集 Hosted T4 场景](scenarios/平台观测与语义生命周期.md#redis-自管接入专业观测与页面)
 
 确定性配置与服务部署意图沿 `make test-monitor-metrics-config` 单独执行，不启动观测设施或个人服务；既有完整部署／Metrics门禁继续覆盖同一测试文件。停用意图顺序夹具声明空进程拓扑，docker／launchctl／lsof／ps均使用当次替身；ps只允许声明的快照查询，意外查询必须失败，不读取宿主进程表。保留发布先于停止、发布失败不执行任何停止、精确模块范围及原8／10秒期限；真实PID／后代／其他工作区归属沿原开发生命周期专项验证，不由该空拓扑夹具代替。
 
