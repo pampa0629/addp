@@ -80,7 +80,12 @@ Go 后端与 Vue 3 / Element Plus / ECharts 前端沿平台技术栈。开发首
 
 配置与服务部署意图的确定性T1可单独使用 `make test-monitor-metrics-config`，不启动个人服务或实源；它不替代完整模块、来源T2或Hosted。
 
-Redis 专业采集首批内核位于 `backend/internal/redissource`，仅供部署侧来源消费，不由 Monitor Web 直连数据库。固定字段、账号命令、INFO 元数据和运行身份边界见平台运行观测规范的“Redis 专业观测首期边界”；`make test-monitor-redis-source-unit` 执行确定性 T1，`make test-monitor-redis-source` 复用现有独占 Redis 夹具执行两种作用域账号的真实读取／越权／停用拒绝。完整Monitor门禁与根串行集成自动发现该专项；部署安装／原生ACL持久化和mTLS来源已沿 `scripts/infra/redis-metrics.py` 接入Infra／Business标准启停；同一T2另验真实来源、重启／停用持久化和失败清理。Redis已接通同一部署发现、System批量确认／主机绑定与私有来源投影，并沿原HTTP SD按真实引擎类型发布；专业查询／页面沿同一三项engine_resource_*接口按System事实选择PG或Redis固定目录，复用传输、授权重核及预算；Redis22项按10／7／5三个显式分组查询，列表摘要每对象四项，不扩大单次12项预算。Redis原生PromQL语义、真实来源T2及受控页面T3分别验证，正式当前User全链路和Hosted仍须单独验收，不能将来源通过算作专业监控全链路上线。已批准的Redis正式用途沿现有platform-node-metrics人工redis-engine-admission选项，标准`make test-node-metrics-online-runner`覆盖本地准备与严格回执；真实CI／Hosted仍由专门会话安排，不自动执行。
+Redis 专业采集由部署侧 `backend/internal/redissource` 提供。适用范围、账号权限、来源生命周期、查询授权和指标预算统一见[Redis 专业观测契约](../docs/spec/addp平台运行观测规范.md#redis-专业观测首期边界2026-11-01-确认分阶段实施)。
+
+- **T1 确定性回归**通过 `make test-monitor-redis-source-unit` 检查固定采样协议、账号命令白名单和生命周期逻辑。[采集与 ACL 回归记录](../docs/spec/testing/evidence/Monitor采集来源与引擎指标历史证据.md#redis-固定采集与最小-acl-基座2026-11-01)
+- **真实来源 T2** 通过 `make test-monitor-redis-source` 使用独占 Redis 验证两种作用域账号的真实读取、越权及停用拒绝、mTLS、重启后持久化和失败清理。Monitor 模块门禁和根串行集成自动发现该专项。固定 PromQL 的受控样本另有回归，实际 HTTP SD 与正式身份页面须按真实链路验收。[实源与生命周期记录](../docs/spec/testing/evidence/Monitor采集来源与引擎指标历史证据.md#redis-账号持久化与来源生命周期2026-11-01) · [PromQL 回归记录](../docs/spec/testing/evidence/Monitor采集来源与引擎指标历史证据.md#redis-专业指标查询与页面2026-11-01)
+- **受控页面 T3** 使用受控 HTTP 与浏览器时钟核对来源状态、恢复、自动刷新与撤权清值。通过范围限原记录中的定向场景，真实来源启停、个人 Safari 与正式身份页面另行验收。[受控页面验收记录](../docs/spec/testing/evidence/Monitor采集来源与引擎指标历史证据.md#redis-来源状态与恢复的受控页面验收2026-11-02)
+- **正式身份 Hosted T4** 使用 `platform-node-metrics` 的人工 `redis-engine-admission` 场景，覆盖正式密码／MFA、System 确认、真实 HTTP SD 与 Prometheus、当前 User 查询、Console 页面及独立退出清理。现有记录只覆盖 `make test-node-metrics-online-runner` 的本地准备与回执检查。正式链路和零残留结论以专门验收会话的实际 Hosted 回执为准。[正式验收场景](../docs/spec/testing/scenarios/平台观测与语义生命周期.md#redis-自管接入专业观测与页面) · [本地准备证据](../docs/spec/testing/evidence/Monitor采集来源与引擎指标历史证据.md#redis-正式全链路验收准备2026-11-01)
 
 持久化/真实指标分别沿 `make test-monitor-postgres`、`make test-monitor-metrics`，真实 HTTP Trace、Tempo 与日志关联沿 `make test-monitor-traces`；显式容量基线使用 `make test-monitor-traces MONITOR_TRACES_TEST_ARGS=--capacity`，负载、资源上限及外推判定沿运行观测规范 6.5（仅当次本地设施，不运行 Hosted），前端沿 `make test-monitor-frontend`，共享组件和真实 iframe 按影响扩散至 Common Frontend / Console。System IAM、运行日志及授权/Swagger 变化按规范扩散，不为文档整理重跑无关门禁。API 变更同时执行标准 Swagger 生成与路由覆盖检查。
 
