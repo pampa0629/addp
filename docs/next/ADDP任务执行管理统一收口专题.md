@@ -255,9 +255,9 @@ Manager 源准备保持其正式授权链；本批 Transfer CDC 仅验证既有 
 
 ### 8.43 Manager 原生成功基线准备
 
-先验收 `manager-success`，再分别验证对象／索引未知效果和旧 Runtime 迟到写入；Graph 高级恢复继续暂缓。沿原三业务 User、独立源办理员、精确权限、九项断言及独占 Hosted 部署推进。120分钟总预算、900秒业务预算、保护投影、扫描与 MinIO 就绪共用的180秒窗口不变；完整协议以 [T4 原生 Cleanup 契约](../spec/testing/T4-Online验收规范.md#原生-cleanup-的独立有限验收)为准。
+`manager-success` 基线已验收，后续分别验证对象／索引未知效果和旧 Runtime 迟到写入。Graph 高级恢复继续暂缓。沿原三业务 User、独立源办理员、精确权限、九项断言及独占 Hosted 部署推进。120分钟总预算、900秒业务预算、保护投影、扫描与 MinIO 就绪共用的180秒窗口不变；完整协议以 [T4 原生 Cleanup 契约](../spec/testing/T4-Online验收规范.md#原生-cleanup-的独立有限验收)为准。
 
-**最新真实结果。** 第七轮 `dd57c699` 于 2026-11-05 22:47（Asia/Shanghai）以失败结束。16 个镜像、全部 Model3D smoke、14 服务准入、GLB 生成及授权下载通过。库存探针先通过私有引用和原生对象检查，再以 `index_projection/index_not_observed` 失败。尚未发起 Engine 删除，九项通过记录为空。控制恢复、显式清理和零残留均通过。[第七轮 Hosted](https://github.com/pampa0629/addp/actions/runs/42039158037/job/127285084068)
+**最新真实结果。** 第八轮 `9f1f68d5` 于 2026-11-06 06:21:43（Asia/Shanghai）成功结束。16 个镜像、Model3D smoke 和 14 个服务准入通过。首扫后实际观察到原生对象和索引投影，Engine 删除后读回终态并确认对象与索引均已清除。九项断言全部通过，含专业回执一致、清理审计保留及源 OBJ／MTL／纹理保持不变。控制恢复、显式清理和零残留均通过。官方五件归档与作业原始日志已交叉核验。[第八轮 Hosted](https://github.com/pampa0629/addp/actions/runs/42109764720/job/127533929017)
 
 | 已落地的收口 | 验证证据及边界 |
 | --- | --- |
@@ -268,6 +268,6 @@ Manager 源准备保持其正式授权链；本批 Transfer CDC 仅验证既有 
 | 原生库存失败按首个未通过的探针记录闭集原因，成功报告拒绝该字段 | `8b03c91c` 本地及 Linux 专项均 401 项通过，登记一致。[同提交 Linux 专项](https://github.com/pampa0629/addp/actions/runs/42014953009/job/127203046053) |
 | 首次 Meta 扫描先等待 Manager 的 Tenant 保护投影。原 User 对本轮模型指纹执行既有 GLB 列表 GET，原 180 秒内只等待明确的保护未就绪响应 | `241ac08e` 本地及同提交 Linux 专项均 403 项通过，登记一致。首扫时序、拒绝及超时边界有反例覆盖。[Linux 专项](https://github.com/pampa0629/addp/actions/runs/42054235504/job/127338131663) |
 
-**历史范围。** [首轮](https://github.com/pampa0629/addp/actions/runs/41586728539/job/125753855807)及[第三轮](https://github.com/pampa0629/addp/actions/runs/41736284282/job/126266219326)构建超时取消；[第二轮](https://github.com/pampa0629/addp/actions/runs/41639055422/job/125927590186)遇到 ZIP 解码错误；[第四轮](https://github.com/pampa0629/addp/actions/runs/41791842460/job/126446790438)已完成 GLB 生成／授权下载，但库存引用解析失败。[第五轮](https://github.com/pampa0629/addp/actions/runs/41833476102/job/126586309842)模型准备返回 403，原调用和错误码未归档，第六轮未复现。[第六轮](https://github.com/pampa0629/addp/actions/runs/41999442501/job/127150683595)库存失败，未记录具体探针。各轮清理结果独立核验，九项完整业务通过证据仍缺。
+**历史范围。** [首轮](https://github.com/pampa0629/addp/actions/runs/41586728539/job/125753855807)及[第三轮](https://github.com/pampa0629/addp/actions/runs/41736284282/job/126266219326)构建超时取消；[第二轮](https://github.com/pampa0629/addp/actions/runs/41639055422/job/125927590186)遇到 ZIP 解码错误；[第四轮](https://github.com/pampa0629/addp/actions/runs/41791842460/job/126446790438)已完成 GLB 生成／授权下载，但库存引用解析失败。[第五轮](https://github.com/pampa0629/addp/actions/runs/41833476102/job/126586309842)模型准备返回 403，原调用和错误码未归档，第六轮未复现。[第六轮](https://github.com/pampa0629/addp/actions/runs/41999442501/job/127150683595)库存失败，未记录具体探针。[第七轮](https://github.com/pampa0629/addp/actions/runs/42039158037/job/127285084068)通过引用及对象探针，首个失败点为索引未出现。该轮未归档投递回执，无法确认历史失败的唯一原因。
 
-**剩余工作。** Meta 技术投影投递失败可与扫描成功并存，Manager 初始保护投影的异步时序是已证实的准备缺口。第七轮未归档实际投递回执，不能确认索引缺失仅由该缺口导致。下一轮 `manager-success` 需单独确认，核验首扫后投影、完整删除链和九项业务断言。私有证据位于 `/tmp/addp-manager-success-hosted-seventh-20261105/`。
+**剩余工作。** Manager 对象效果未知、索引效果未知及旧 Runtime 迟到写入仍需各自的 Hosted 证据。下一项建议先验证 `manager-object-unknown`，运行须单独确认。第八轮私有证据位于 `/tmp/addp-manager-success-hosted-eighth-20261106/`。
