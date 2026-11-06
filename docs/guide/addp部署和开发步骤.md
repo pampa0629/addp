@@ -90,7 +90,7 @@ bash scripts/dev/start.sh
 - **局部模块启动或重启**。单模块、多模块选择和 Hosted 精确进程入口均跳过这项跨来源恢复与末尾监控摘要。
 - **显式主机恢复**。只需恢复既有主机来源时，由部署者在仓库根目录运行 `python3 scripts/infra/metrics-sources.py recover --scope host --kind node`。安装证明必须有效，且只能启动完全匹配证明的既有停止容器。证明失效或组件缺失时须显式重新应用。直接运行未指定 `--scope host` 的批量 `recover` 会跳过主机。
 
-全量启动末尾的只读摘要报告指标中心、控制入口和各来源的当前运行状态，并单列本次启动阶段的失败。恢复或检查异常保留非零退出结果，业务仍继续启动。实际采样、主机关联和有效指标须在 Monitor 核对，隔离门禁与本机实操按各轮记录判定。[采集恢复历史证据](../spec/testing/evidence/Monitor采集来源与引擎指标历史证据.md#source-lifecycle-history)
+全量启动末尾的只读摘要报告指标中心、控制入口和各来源的当前运行状态，并单列本次启动阶段的失败。恢复或检查异常保留非零退出结果，业务仍继续启动。如果启动阶段报错而末尾显示失败 0 项，按失败阶段回查当次原输出。[启动观测失败排查](../../scripts/infra/docs/指标中心与来源.md#startup-observation-stage-failures)实际采样、主机关联和有效指标须在 Monitor 核对，隔离门禁与本机实操按各轮记录判定。[采集恢复历史证据](../spec/testing/evidence/Monitor采集来源与引擎指标历史证据.md#source-lifecycle-history)
 
 模块依赖清单和 Asset 等例外统一见[模块选择启动指南](../../scripts/docs/模块选择启动指南.md#如何合并依赖)。普通模块选择保留 System Backend、Gateway 和 Console；Meta 和其他业务依赖按选择结果合并，不统一拉起全部模块前端。Engine Runtime 需[显式选择](../../scripts/docs/模块选择启动指南.md#显式选择-runtime-联调)，无参数全量启动和 Manager 自有 Raster Mosaic 的规则也见该节。
 
