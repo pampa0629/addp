@@ -14,7 +14,7 @@
 | 修订61激活与重启后复验 | 正式Tenant能力API返回create61／start7／get5；一次有界第二场景在同一Run完成源确认、重新取证、Owner构建与同参预检，两次Context和checkpoint均为61及相同digest，30项API／原件核对通过；独立页面刷新已核准新Run、新2字段卡片、unknown及12个已结束步骤，业务／Grant原件不变 | 正式预检仍unknown。首轮503失败及全部原件保留，本次成功仅证明当前路径可用，不声称网络根因已修复或长期稳定，也不代表业务执行或整套CI通过 |
 | 模型稳定性与长会话 | 本轮11场景各3轮，33/33真实模型受控事实回归通过；含多候选短输入、生产上下文预算及长会话指代／目标切换；摘要水位、失败、旧结果覆盖和完整消息筛选的4项SQL回归通过 | 合成摘要不证明真实压缩模型的语义质量；SQLite不证明PostgreSQL并发锁；固定事实不等于真实Owner、完整CI或Hosted |
 | 修订 64 的单引擎限定与集合确认 | 会话 66 仅指定 MongoDB 类型，自动限定到引擎 11，等待用户在 4 个集合候选中确认，原 Run 同参完成草稿与预检 | 本地真实验收覆盖单引擎，预检状态为 `unknown` |
-| 普通账号的集合可见性 | 同一账号在 Manager 检索命中集合，Meta 目录定位返回 404。会话 67 在能力目录委托处收到 403 | Agent 未到达候选确认，普通账号端到端验收未通过 |
+| 普通账号的集合可见性 | `0bf30113a` 重启后，Manager 对原反例返回 0 条，已有授权的 GeoTIFF 仍可命中 | 开发租户暂无具备必要工具权限的普通账号，Agent 候选确认未复验。两条全租户关键词查询各进行 44 批串行授权核验 |
 | PostgreSQL 连接池修复 | `34f05edc4` 的 PostgreSQL 15 集成、Agent 离线评测和平台一致性作业均通过 | 回归覆盖事务开始前替换已终止的空闲连接 |
 
 ### 2026-11-06 单引擎验收与连接池 CI
@@ -28,6 +28,10 @@
 在无痕 Chrome 个人中心确认 `outdoor-develop` 登录 ADDP 开发租户。Manager 数据检索返回 Business MongoDB（引擎 11）的 `Outdoor.Photos`，同账号访问该集合（数据项 104）的目录属性入口时，Meta `/resource-tree/11/ancestors` 返回 HTTP 404。两项结果分别来自检索页面和浏览器请求诊断。此前管理员的 Meta 单项查询与 Manager 搜索均命中该项，作为资源存在的对照。按[授权上下文规范](../docs/spec/addp授权上下文规范.md#5511-元数据查看与数据读取)，搜索结果须遵守数据项的当前元数据可见性。需要在 Manager 检索出口核对并收口这项过滤。
 
 [会话 67](http://localhost:5170/agent/sessions/67) 的只读候选查询 Run `206dcd74-02cb-454e-95a0-40b3fe74bf86` 仅记录 `platform.capabilities.list`，System 拒绝签发委托令牌（HTTP 403，`delegation_rejected`）。该工具要求 `ontology.semantic.read`。本次未到达 `data.search` 或候选确认，未读取样本、构建草稿、预检、创建或运行业务任务，未调整账号权限。Manager 页面结果与 Agent 的委托失败分别记录，尚无普通账号的 Agent 候选可见性证据。
+
+重启后以同一无痕 Chrome 普通账号复验 `0bf30113a`。原关键词 `Outdoor.Photos` 返回 HTTP 200、0 条，Manager 请求 `567aa8a1-8e3c-496f-84a7-80ae06f8f4cc` 耗时 7.23 秒。以该账号已有授权的 Business NFS GeoTIFF 作正例，关键词 `p312-focal7-verified-20261106-075711` 返回 2 条，目标路径可见。对应 Manager 请求 `4a6bae06-f9dd-47c9-bdfc-9da6f83c8625` 返回 HTTP 200，耗时 8.51 秒。按请求 ID 对照 System 日志，两个请求分别执行 44 批授权核验，System 累计分别用时 6.76 秒和 7.93 秒。这个样本用于定位全租户检索成本，尚无规模基准。
+
+本次只做 Manager 页面查询和权限配置的只读核对。`outdoor-develop` 仍缺 `ontology.semantic.read` 和 `system.engine.read`，开发租户当前无具备本场景工具权限的普通账号，因此未发起新的 Agent Run。修复提交的 Manager、System IAM PostgreSQL 集成作业以及 Go workspace 和平台一致性作业已通过，Platform CI 整体状态为取消。 [Manager 集成](https://github.com/pampa0629/addp/actions/runs/42206312117/job/127868138784) · [System IAM 集成](https://github.com/pampa0629/addp/actions/runs/42206312117/job/127868137640) · [Go workspace](https://github.com/pampa0629/addp/actions/runs/42206311898/job/127853722302) · [平台一致性](https://github.com/pampa0629/addp/actions/runs/42206311898/job/127853722389)
 
 ### 2026-11-04 历史验收
 
