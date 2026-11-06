@@ -86,11 +86,11 @@
       "kind": "procedure",
       "path": "skills/transfer-generation/SKILL.md",
       "anchor": "## 核心流程",
-      "commit": "0f712d357a00d5e30c32abc3f690b84216eb6b83",
-      "sha256": "4e077470d3db8479306d4b976675dab616bb266ec4476ea9a72feba5d944f8f7",
+      "commit": "6e1c33401213fab33bce9bc54416e0d7082bed55",
+      "sha256": "ab586aa2e0d4223440f9a63d6b3e303fe6a6618e9e1651b9067a9252edaacffe",
       "use": {
-        "zh-cn": "保留按引擎目录限定源搜索的流程。存在多个目标父节点时，单独以正式 schema 或 database locator 澄清；另行确定表名及写入策略。",
-        "en": "Preserve source search scoping by engine inventory. Clarify ambiguous target parents by formal schema or database locator and resolve the table name and write strategy separately."
+        "zh-cn": "新草稿的集合搜索和草稿构建均绑定正式选定的源引擎。选择失效时重新确认引擎及源集合。限定搜索正式返回零命中时，Runtime 显示已查引擎和搜索词并等待补充，恢复后在重新核验的引擎内搜索。",
+        "en": "For new drafts, bind collection search and draft construction to the selected source engine. Reconfirm the engine and collection if the selection becomes invalid. On a formal scoped zero-hit result, Runtime displays the engine and search term, waits for more information, and revalidates the engine before searching on resume."
       }
     },
     {
@@ -138,11 +138,11 @@
       "kind": "implementation",
       "path": "agent/backend/graph/factory.py",
       "anchor": "async def _run_config_check(",
-      "commit": "0f712d357a00d5e30c32abc3f690b84216eb6b83",
-      "sha256": "6d9457884c2da1b9f05942cc3f8bf5c3dccd3849310089c627c7c34ca3404e9c",
+      "commit": "6e1c33401213fab33bce9bc54416e0d7082bed55",
+      "sha256": "ee4d5eba1e04860130b9765532b57887a0aed341139978c234f23bbb2399bbfc",
       "use": {
-        "zh-cn": "Runtime 按当前会话语言校验目录澄清选项并返回拒绝原因。预检、复核及创建提交路径未变。",
-        "en": "Runtime validates directory clarification options with errors in the current session language. Preflight, review, and creation submission paths are unchanged."
+        "zh-cn": "所选源引擎约束新草稿的集合搜索及构建，原选择失效时撤销旧集合候选和确认。限定搜索成功且总数为零时，Runtime 根据正式引擎名称和实际搜索词生成纯文字澄清，暂停同一 Run 并阻断未执行的同批调用。用户补充后恢复该 Run，重读引擎清单并核验限定。",
+        "en": "The selected source engine constrains collection search and construction for new drafts. When the selection becomes invalid, revoke the old collection choices and confirmations. When a scoped search succeeds with a total of zero, Runtime uses the formal engine name and actual search term to ask for a text reply, pauses the same Run, and blocks the remaining calls in the batch. The reply resumes that Run and refreshes and revalidates the engine scope."
       }
     },
     {
@@ -164,11 +164,11 @@
       "kind": "implementation",
       "path": "agent/backend/i18n.py",
       "anchor": "def transfer_config_check_completed(",
-      "commit": "0f712d357a00d5e30c32abc3f690b84216eb6b83",
-      "sha256": "808aa1e2d93a8e4c7ea5db17aeb8294ebe4c75e20e591f2900dd1674a4a521d3",
+      "commit": "6e1c33401213fab33bce9bc54416e0d7082bed55",
+      "sha256": "9fb6a73acd20ff9fed4e5c015294a9655f96de8aca43350581eda62eb1ac966d",
       "use": {
-        "zh-cn": "新增目标父节点无效及资源选项重复的双语提示。创建预检及运行审批的消息保持原行为。",
-        "en": "Add bilingual errors for invalid target parents and duplicate resource options. Creation preflight and run approval messaging keep their existing behavior."
+        "zh-cn": "新增源引擎选择、无法确认、跨引擎草稿拒绝及限定搜索零命中的双语提示。零命中提示使用正式引擎名称和实际搜索词。",
+        "en": "Add bilingual messages for source-engine choice, unavailability, draft source mismatch, and a scoped search with zero hits. The zero-hit prompt uses the formal engine name and actual search term."
       }
     },
     {
@@ -203,11 +203,11 @@
       "kind": "implementation",
       "path": "agent/backend/agents/main_agent.py",
       "anchor": "async def _route_node(",
-      "commit": "4ee257c5efca48f2c009e2dfe8f4aef6ec643ef4",
-      "sha256": "1762169961856ed813455fa39e19b841e8111b35e6be322a36c8ab4b04bf0178",
+      "commit": "6e1c33401213fab33bce9bc54416e0d7082bed55",
+      "sha256": "3afb5e83d25a40220d4481bed0677eb08b8b9e8f3e8300cb77bb0fa97f1902f9",
       "use": {
-        "zh-cn": "复核 Runtime 参数来源绑定后的同文件变化。完整候选只来自正式构建、历史引用或用户原配置，已有预检、确认及运行审批边界保持。",
-        "en": "Reviewed this file after Runtime parameter source binding. Exact candidates come from formal construction, historical references or original user input, retaining preflight, review and run approval boundaries."
+        "zh-cn": "平台路由从当前请求提取源名称和类型线索，并核对线索出现在本轮正文。",
+        "en": "Platform routing extracts source name and type clues and checks that the clues occur in the current request."
       }
     },
     {
@@ -320,11 +320,11 @@
       "kind": "contract",
       "path": "agent/backend/graph/state.py",
       "anchor": "class RouteDecision(",
-      "commit": "4ee257c5efca48f2c009e2dfe8f4aef6ec643ef4",
-      "sha256": "4ba9f32e6c26a4f974b85a959e5fbab2f1c5c00da6fe839a28466ec2c0cf4b28",
+      "commit": "6e1c33401213fab33bce9bc54416e0d7082bed55",
+      "sha256": "dffbb2c307ea7936cb468ad4a3ce85dedc1f3d154ec634571cbb7f50f4a3dbdc",
       "use": {
-        "zh-cn": "复核 Runtime 参数来源绑定后的同文件变化。完整候选只来自正式构建、历史引用或用户原配置，已有预检、确认及运行审批边界保持。",
-        "en": "Reviewed this file after Runtime parameter source binding. Exact candidates come from formal construction, historical references or original user input, retaining preflight, review and run approval boundaries."
+        "zh-cn": "路由结果携带本轮源引擎限定，供正式引擎清单匹配。",
+        "en": "Route output carries the current source engine scope for matching against the formal inventory."
       }
     },
     {
@@ -333,11 +333,11 @@
       "kind": "implementation",
       "path": "agent/backend/agents/checkpoint.py",
       "anchor": "def normalize_checkpoint(",
-      "commit": "0f712d357a00d5e30c32abc3f690b84216eb6b83",
-      "sha256": "707f47a80c2b5a797989fd5b33c12c9063fc53a0e43eec955f3d3bc323aae032",
+      "commit": "6e1c33401213fab33bce9bc54416e0d7082bed55",
+      "sha256": "1d86629ec5db9d737908ee7df2f96acaf23bdfa94a3206d6caf1c0bd7162d6fd",
       "use": {
-        "zh-cn": "按已观察事实规范化目标父节点选项。只接受 schema 或 database locator，拒绝重复及拼接值。",
-        "en": "Canonicalize target parent options from observed facts. Accept schema or database locators and reject duplicate and composite values."
+        "zh-cn": "检查点保存本轮源范围和正式源引擎选择，包括唯一匹配的引擎。检查点只接受正式候选中的源引擎选择，为恢复核验提供依据。",
+        "en": "The checkpoint stores the current scope and formal source-engine selection, including a unique match. It accepts only selections from formal engine choices for validation on resume."
       }
     },
     {
@@ -580,11 +580,11 @@
       "kind": "test",
       "path": "agent/backend/tests/test_transfer_parameters.py",
       "anchor": "class TransferParameterRuntimeTests(",
-      "commit": "bf28a6ebfe186602c2c72a4e4427708a960ec2c9",
-      "sha256": "d44d345a401b783f7835efe387b51c3699eba44fb7d25a02504a30cb393c866e",
+      "commit": "6e1c33401213fab33bce9bc54416e0d7082bed55",
+      "sha256": "a5eadc97de15792038c3c370c8ae5c57d8c26858eca81ce538a6988350a38579",
       "use": {
-        "zh-cn": "复核默认类型由 Transfer 推导及新草稿多源必须确认的改动。模型不复制源类型为覆盖参数；Runtime 基于正式搜索候选暂停并核对恢复选择。完整原参数绑定、预检三态、创建和运行审批边界保持。",
-        "en": "Reviewed owner-derived default types and mandatory multi-source selection for new drafts. Source types are not copied as overrides; Runtime pauses on formal candidates and checks the resumed choice. Exact parameter binding, tri-state preflight, creation and run approval boundaries remain."
+        "zh-cn": "受控测试确认失效后撤销旧集合及确认，旧 locator 在构建前被拒绝。限定搜索零命中后，用户补充集合名可恢复同一 Run，Runtime 重读引擎清单并仍按已选引擎搜索。",
+        "en": "Controlled tests verify that invalidation revokes old collections and confirmations and that an old locator is rejected before construction. After scoped zero hits, a collection name supplied by the user resumes the same Run, refreshes the engine inventory, and searches within the selected engine."
       }
     },
     {
@@ -593,11 +593,11 @@
       "kind": "normative",
       "path": "docs/spec/addp智能体交互协议规范.md",
       "anchor": "Transfer 参数来源只接受三种受信任输入",
-      "commit": "0f712d357a00d5e30c32abc3f690b84216eb6b83",
-      "sha256": "7c8f0e7987132c7d5e99c1504ee216104b40cf4182140044560380050948e411",
+      "commit": "6e1c33401213fab33bce9bc54416e0d7082bed55",
+      "sha256": "ee8a2c456f0c508c19b60be9e9598ff92cfbe5b6b31ecb5d8311e49c3562507b",
       "use": {
-        "zh-cn": "资源澄清按钮使用唯一的正式 locator。目标表名和写入策略独立回答；保留原参数来源绑定。",
-        "en": "Resource clarification buttons use unique formal locators. Target names and write strategies are answered separately, with existing parameter-source binding preserved."
+        "zh-cn": "交互规范规定源引擎限定同时约束集合搜索和草稿构建。限定搜索正式返回零命中时，Runtime 生成无选择项的文字澄清，阻断未执行的同批调用。补充信息恢复同一 Run 并重新核验引擎。",
+        "en": "The interaction specification binds collection search and construction to the source engine scope. A formal scoped zero-hit result causes Runtime to ask for a text reply with no choices and block remaining calls in the batch. The reply resumes the same Run and revalidates the engine."
       }
     },
     {
@@ -619,11 +619,11 @@
       "kind": "test",
       "path": "agent/backend/tests/test_agent_model_runner.py",
       "anchor": "async def test_short_request_discovers_builds_and_checks_owner_result(",
-      "commit": "e01a3263f4578015e8f136c8508ad8ea2108f3d8",
-      "sha256": "3faa0b0bbd3b6381755fab4c880911ff545ac533fa580779362a01243934e697",
+      "commit": "6e1c33401213fab33bce9bc54416e0d7082bed55",
+      "sha256": "5cde210c7a14f70b688c5d71d0708e5d7ea6e8d02de679269ae149a082862a98",
       "use": {
-        "zh-cn": "受控测试核对引擎目录先于搜索、限定与不限源参数的反向拒绝、同参预检及私有计划步骤的安全报告。",
-        "en": "Controlled tests verify inventory before search, rejection of incorrect scoped and unscoped arguments, exact preflight, and safe reporting of the private planning step."
+        "zh-cn": "受控评测核对多引擎在搜索前暂停。限定搜索零命中后，Runtime 发出文字澄清，并拦截同批重搜、目标目录、草稿构建和预检。",
+        "en": "Controlled evaluation checks pause before search on multiple engines. After a scoped zero-hit search, Runtime asks for a text reply and blocks repeated search, target discovery, draft construction, and preflight from the same batch."
       }
     },
     {
@@ -632,11 +632,11 @@
       "kind": "test",
       "path": "evals/agent-scenarios/model_runner.py",
       "anchor": "def fixture_executor(",
-      "commit": "e01a3263f4578015e8f136c8508ad8ea2108f3d8",
-      "sha256": "7a1c5bd9cb35b17253ddf7d7dc0ec7a412412b66ef04e7b4f8d3840db01a4403",
+      "commit": "6e1c33401213fab33bce9bc54416e0d7082bed55",
+      "sha256": "151abe59fdce5725693f91552b41c457fba57f5156eba696b9b47516d649bde7",
       "use": {
-        "zh-cn": "夹具拒绝引擎目录之前的搜索及不符场景的 engine_id，仍通过 Manifest 校验并隔离真实 Owner。",
-        "en": "Fixtures reject searches before the inventory and incorrect engine_id values through the existing Manifest validation and isolated owner path."
+        "zh-cn": "核验多引擎选项的正式身份。零命中场景要求仅执行一次搜索，并返回写明引擎、搜索词及未找到结果的无选项澄清。",
+        "en": "Check formal identity for multiple engine options. The zero-hit scenario requires exactly one search and a clarification with no choices that identifies the engine, search term, and absence of results."
       }
     },
     {
@@ -645,11 +645,11 @@
       "kind": "test",
       "path": "evals/agent-scenarios/model_cases.py",
       "anchor": "result['responses']['data.search']",
-      "commit": "e01a3263f4578015e8f136c8508ad8ea2108f3d8",
-      "sha256": "20d4da3cc83e7cb0a018d3d2d2c59402ef5cce9bb9e0b36c84f5203e1ebd1d13",
+      "commit": "6e1c33401213fab33bce9bc54416e0d7082bed55",
+      "sha256": "85744f42c4fbf51d9b7cc210480c798cbe478fb614130589844cda9ced7efe95",
       "use": {
-        "zh-cn": "显式源限定场景在同引擎给出候选，未限定场景给出不同引擎候选；选择依据仍是正式候选投影。",
-        "en": "The explicit-source fixture provides candidates on one engine, while the unscoped fixture provides candidates across engines; selection still uses formal candidate projections."
+        "zh-cn": "夹具提供多个同类型源引擎、目标引擎及限定搜索零命中，供两项受控评测复现。",
+        "en": "Fixtures provide multiple source engines of the same type, a target engine, and scoped zero hits for the two controlled evaluations."
       }
     },
     {
@@ -715,6 +715,32 @@
       "use": {
         "zh-cn": "验证拒绝拼接 locator、重复候选、表叶节点和非正式值，且确认时仅保存所选 schema 的正式事实。",
         "en": "Verify rejection of composite locators, duplicate choices, table leaves, and unobserved values, and persist only the chosen schema's formal fact on confirmation."
+      }
+    },
+    {
+      "id": "parameter_source_engine_case",
+      "owner": "agent",
+      "kind": "contract",
+      "path": "evals/agent-scenarios/model-transfer-source-engine-choice/scenario.yaml",
+      "anchor": "\"name\": \"model-transfer-source-engine-choice\"",
+      "commit": "6e1c33401213fab33bce9bc54416e0d7082bed55",
+      "sha256": "444251978f4908882c39c06e2f8627ed6e38d9ef88ac847dd5a9739448771795",
+      "use": {
+        "zh-cn": "多源引擎候选暂停在集合搜索之前，保留正式候选及无写操作的断言。",
+        "en": "Multiple source engines suspend before collection search with formal choices and assertions of zero writes."
+      }
+    },
+    {
+      "id": "parameter_source_empty_case",
+      "owner": "agent",
+      "kind": "contract",
+      "path": "evals/agent-scenarios/model-transfer-source-empty/scenario.yaml",
+      "anchor": "\"name\": \"model-transfer-source-empty\"",
+      "commit": "6e1c33401213fab33bce9bc54416e0d7082bed55",
+      "sha256": "cf0197c4fad8b9a7485091c727c8fa6730802d84c1fe8e04b214200fd2b9554a",
+      "use": {
+        "zh-cn": "正式限定搜索零命中后暂停等待文字澄清，期间不调用目录、结构、草稿构建或预检工具。",
+        "en": "A formal scoped zero-hit search pauses for a text reply before any directory, resource facts, draft construction, or preflight calls."
       }
     }
   ],
@@ -1347,7 +1373,8 @@
       "sources": [
         "manifest",
         "skill",
-        "tool_test"
+        "tool_test",
+        "parameter_source_engine_case"
       ]
     },
     {
@@ -1360,7 +1387,9 @@
         "batch_contract",
         "batch_boundary_test",
         "parameter_source_choice_case",
-        "parameter_source_unscoped_case"
+        "parameter_source_unscoped_case",
+        "parameter_source_engine_case",
+        "parameter_source_empty_case"
       ]
     },
     {

@@ -86,11 +86,11 @@
       "kind": "implementation",
       "path": "agent/backend/graph/factory.py",
       "anchor": "async def _resume_confirmed_start(",
-      "commit": "0f712d357a00d5e30c32abc3f690b84216eb6b83",
-      "sha256": "6d9457884c2da1b9f05942cc3f8bf5c3dccd3849310089c627c7c34ca3404e9c",
+      "commit": "6e1c33401213fab33bce9bc54416e0d7082bed55",
+      "sha256": "ee4d5eba1e04860130b9765532b57887a0aed341139978c234f23bbb2399bbfc",
       "use": {
-        "zh-cn": "共享 Runtime 变动限定在目录澄清的错误语言传递。一次性运行审批、提交及执行查询边界保持。",
-        "en": "The shared Runtime change only passes the locale for directory clarification errors. One-time run approval, submission, and execution read boundaries are unchanged."
+        "zh-cn": "仅重新冻结共享 Runtime 文件。变更作用于新草稿的源引擎核验及零命中文字澄清，执行查询逻辑未变。",
+        "en": "Refresh provenance for the shared Runtime file. The change covers new draft source-engine checks and text clarification on zero hits. Execution read logic is unchanged."
       }
     },
     {

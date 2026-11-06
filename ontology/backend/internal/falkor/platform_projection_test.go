@@ -75,9 +75,20 @@ func compilePlatformFixture(t *testing.T, d platform.Context) *platform.Snapshot
 		t.Fatal(err)
 	}
 	r, _ := platformFixture(t).Review()
+	// Keep one source of each required kind. Each projection subject uses config.
+	sourceIDs := []string{"config", "manifest", "handler", "owner_test"}
+	r.Sources = slices.DeleteFunc(r.Sources, func(source platform.Source) bool {
+		return !slices.Contains(sourceIDs, source.ID)
+	})
+	r.Coverage = []platform.Coverage{{
+		ID:      d.Capability,
+		State:   "modeled",
+		Summary: map[string]string{"en": "Projection test", "zh-cn": "投影测试"},
+		Sources: sourceIDs,
+	}}
 	r.Bindings = nil
 	for _, subject := range platform.ReviewSubjects(d) {
-		r.Bindings = append(r.Bindings, platform.SourceBinding{Subject: subject, Sources: []string{r.Sources[0].ID}})
+		r.Bindings = append(r.Bindings, platform.SourceBinding{Subject: subject, Sources: []string{"config"}})
 	}
 	reviewData, _ := json.Marshal(r)
 	snapshot, err := platform.Compile(data, reviewData)
