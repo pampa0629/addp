@@ -129,6 +129,21 @@ Common 为独立短阶段增加 `EndExecution`，与原 End 共用一次终结�
 
 首次本地窗口在构建器准备阶段等待 Docker Desktop 个人凭据助手，尚未下载基础镜像、创建业务部署或发送业务请求。主动中断自有 gate 后，进程组、Builder 容器／卷和私有目录经精确过滤复查均为空；最终报告写入还暴露 Path.open 不支持 opener 的接口错误，原自动报告未生成，不伪造为通过。已修为内置 open 的 O_EXCL／0600 路径，并补真实文件权限与拒绝覆写测试；Docker 客户端改为当次 0700 目录、空 auths、无凭据助手，只读公共工具插件并固定已核对 Unix endpoint，不借个人凭据。标准 local runner 复验结果另记。后续操作继续扣减首次窗口已耗时间，未放宽原 60 分钟、8 CPU／12 GiB 或 4 GiB 停止线。首次失败及清理复查见 local-first-interrupted-receipt.json 与 local-acceptance.log。
 
+## 正式身份本地第二窗口：卷采样超时与 MinIO 构建触线（2026-10-23）
+
+重新授权的窗口为北京时间 17:11:14–18:11:14，沿既有正式身份范围及 8 CPU／12 GiB、4 GiB 停止线。两次尝试均在准备或构建阶段停止，自动报告分别保留失败原因，退出清理均通过。
+
+| 尝试 | 停止原因 | 实际测量 |
+| --- | --- | --- |
+| 第一次 | `measure_owned_volumes` 资源采样超时。原实现把 Docker 辅助容器的创建、启动、退出和 `du` 纳入同一四秒预算。 | 44 项成功样本，最后成功值为 3,236,450,304 字节。 |
+| 第二次 | 冷构建进入 `product_minio` 后触发 `owned_volume_stop_line_reached`。 | 56 项采样，最长测量 1.139 秒，最大相邻采样完成间隔约 4.27 秒，约四分钟观察期间未再超时。末次测量 0.902 秒，采样 4,362,616,832 字节，超过停止线 67,649,536 字节（约 64.52 MiB）。当时硬配额为 3.25 CPU／5.0625 GiB。 |
+
+两次尝试之间，`97714a1ac68624ecaf56573051bb9febcaf2075b` 将卷采样调整为当次复用只读辅助容器，卷集合变化时才重建，串行采样，退出先释放 BuildKit 卷挂载。辅助容器仍为 0.25 CPU／64 MiB、无网络和只读卷，`/data` 使用受限 tmpfs 以避免额外匿名卷，采样及停止边界保持原值。该变更的确定性验证由 `make test-infra-runtime-log-lifecycle` 记录，42 项入口契约、JS 语法、登记检查、System ExecutionTrace Go 及原 60 项生命周期均通过。
+
+两次均未创建业务部署、准备正式身份或执行查询，Trace／日志／Console 闭环未执行。本窗口的冷构建触线引出了固定 MinIO／mc 镜像复用方案，确认时窗口已经结束。[后续镜像核验复用准备](#minio-产品镜像核验复用入口准备2026-10-23)
+
+报告、源码哈希、窗口和独立清理回执见 `/tmp/addp-p19-formal-local-20261023-window2/{attempt-1-report.json,attempt-2-report.json,attempt-2-source.json,receipt.json,lifecycle-final.log}`。
+
 ## MinIO 产品镜像核验复用入口准备（2026-10-23）
 
 用户确认复用已有固定版本 MinIO 产品镜像时为北京时间 18:45，原窗口已于 18:11:14 截止。本批只完成窗口外的准备和确定性验证，实际容器启动、MinIO／mc 二进制核验、业务部署及正式身份闭环均未运行。收据中的 `actual_minio_binary_verification` 和 `formal_identity_closure` 均为 `not_run`。
