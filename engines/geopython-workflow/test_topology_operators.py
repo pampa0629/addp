@@ -565,6 +565,105 @@ def test_merge_line_chains_lens_with_two_common_endpoints_produces_one_closed_ch
     assert list(result.geometry.iloc[0].coords)==[(0,0),(1,1),(2,0),(1,-1),(0,0)]
 
 
+@pytest.mark.parametrize("case,reason,parameter,field", [
+    ("missing_layer", "operator_input_invalid", "input_gdf", ""),
+    ("invalid_id", "operator_input_invalid", "input_gdf", ""),
+    ("crs", "operator_crs_invalid", "", ""),
+    ("non_endpoint", "operator_endpoint_network_invalid", "input_gdf", ""),
+    ("overlap", "operator_endpoint_network_invalid", "input_gdf", ""),
+    ("missing_match_fields", "operator_match_fields_invalid", "match_fields", ""),
+    ("invalid_match_fields", "operator_match_fields_invalid", "match_fields", ""),
+    ("non_scalar", "operator_match_fields_invalid", "match_fields", ""),
+    ("chain_id", "operator_field_conflict", "input_gdf", "chain_id"),
+    ("member_count", "operator_field_conflict", "input_gdf", "member_count"),
+    ("member_no", "operator_field_conflict", "input_gdf", "member_no"),
+    ("source_part_no", "operator_field_conflict", "input_gdf", "source_part_no"),
+    ("is_reversed", "operator_field_conflict", "input_gdf", "is_reversed"),
+    ("all_fields_reversed", "operator_field_conflict", "input_gdf", "chain_id"),
+    ("native_check", None, "", ""),
+    ("native_intersection", None, "", ""),
+    ("result_validation", None, "", ""),
+])
+def test_merge_line_chains_diagnostics_block_both_saves(monkeypatch, case, reason, parameter, field):
+    import workflow_engine
+    from addp_common.workflow_runtime import WorkflowExecutionError
+    from operators import geometric_operators
+
+    first = LineString([(0, 0), (2, 0)])
+    second = {
+        "non_endpoint": LineString([(1, -1), (1, 1)]),
+        "overlap": LineString([(1, 0), (3, 0)]),
+    }.get(case, LineString([(2, 0), (3, 0)]))
+    frame = line_overlap_frame([first, second], crs=None if case == "crs" else "EPSG:3857")
+    params = {"input_gdf": frame, "id_field": "route_key", "match_fields": []}
+    if case == "missing_layer":
+        del params["input_gdf"]
+    elif case == "invalid_id":
+        params["id_field"] = "PRIVATE_ID_FIELD"
+    elif case == "missing_match_fields":
+        del params["match_fields"]
+    elif case == "invalid_match_fields":
+        params["match_fields"] = ["PRIVATE_MATCH_FIELD"]
+    elif case == "non_scalar":
+        frame["PRIVATE_MATCH_FIELD"] = [[1], [2]]
+        params["match_fields"] = ["PRIVATE_MATCH_FIELD"]
+    elif case == "all_fields_reversed":
+        params["input_gdf"] = frame.assign(
+            is_reversed=True, source_part_no=1, member_no=1, member_count=1, chain_id=1,
+        )
+    elif field:
+        frame[field] = 1
+
+    def fail(*args, **kwargs):
+        raise ValueError("non-endpoint intersection is not supported")
+
+    if case == "native_check":
+        monkeypatch.setattr(shapely, "is_valid", fail)
+    elif case == "native_intersection":
+        monkeypatch.setattr(shapely, "intersection", fail)
+    elif case == "result_validation":
+        validate = geometric_operators._finite_xy_geometry
+
+        def validate_result(frame, name="input_gdf", **kwargs):
+            if name == "result":
+                fail()
+            return validate(frame, name, **kwargs)
+
+        monkeypatch.setattr(geometric_operators, "_finite_xy_geometry", validate_result)
+
+    operator = "merge_line_chains"
+    resolve = workflow_engine.get_operator
+    saves = []
+    monkeypatch.setattr(workflow_engine, "get_operator",
+                        lambda name: (lambda **kwargs: saves.append(kwargs)) if name == "save" else resolve(name))
+    tasks = [{"id": "merge", "operator": operator, "params": params, "depends_on": []}]
+    for port in ("result", "members"):
+        tasks.append({
+            "id": f"save_{port}", "operator": "save",
+            "params": {"input_df": {"$ref": "merge", "port": port}},
+            "depends_on": ["merge"],
+        })
+    with pytest.raises(WorkflowExecutionError) as caught:
+        workflow_engine.GeoPythonWorkflowRunner(language="en").execute({"tasks": tasks})
+    assert not saves
+    error = caught.value
+    if reason is None:
+        assert error.error_code == "EXECUTION_FAILED" and error.diagnostic is None
+        assert "non-endpoint intersection" in str(error)
+        return
+
+    context = {"node_index": 1, "operator_id": operator}
+    if parameter:
+        context["parameter"] = parameter
+    if field:
+        context["field"] = field
+        assert field in str(error)
+    assert error.error_code == "INVALID_PARAMS"
+    assert error.diagnostic == {"schema_version": "addp.execution-failure/v3", "stage": "execution",
+                                "reason": reason, "operator": context}
+    assert "PRIVATE_" not in str(error)
+
+
 def test_merge_line_chains_input_rejection_leaves_no_dag_save_targets(tmp_path):
     source=tmp_path/"source.gpkg";line_overlap_frame([LineString([(0,0),(2,0)]),LineString([(1,-1),(1,1)])]).to_file(source,driver="GPKG")
     connection={"engine_type":"nfs","mount_path":str(tmp_path)}
@@ -573,7 +672,12 @@ def test_merge_line_chains_input_rejection_leaves_no_dag_save_targets(tmp_path):
     for port in ["result","members"]:
         tasks.append({"id":port,"operator":"save","params":{"input_df":{"$ref":"merge","port":port},"connection_info":connection,"path":port+".gpkg"},"depends_on":["merge"]})
     state=execute_workflow({"tasks":tasks})
-    assert state["status"]=="failed" and "non-endpoint intersection" in state["error"]
+    assert state["status"] == "failed" and state["error_code"] == "INVALID_PARAMS"
+    assert state["diagnostic"] == {
+        "schema_version": "addp.execution-failure/v3", "stage": "execution",
+        "reason": "operator_endpoint_network_invalid",
+        "operator": {"node_index": 2, "operator_id": "merge_line_chains", "parameter": "input_gdf"},
+    }
     assert not (tmp_path/"result.gpkg").exists() and not (tmp_path/"members.gpkg").exists()
 
 
@@ -4938,8 +5042,13 @@ def test_hosted_normalize_chains_case_three_save_independent_physical_oracle(tmp
         archive=tmp_path.parent/(tmp_path.name+'-archive');archive.mkdir()
         fixture.archive_physical_evidence(tmp_path,archive,verified,case)
         assert (archive/'topology-physical'/source.name).read_bytes()==original
-        failed=execute_workflow(definition(True));assert failed['status']=='failed'
-        assert 'id_field must explicitly name one existing non-geometry scalar column' in failed['error']
+        failed = execute_workflow(definition(True))
+        assert failed['status'] == 'failed' and failed['error_code'] == 'INVALID_PARAMS'
+        assert failed['diagnostic'] == {
+            'schema_version': 'addp.execution-failure/v3', 'stage': 'execution',
+            'reason': 'operator_input_invalid',
+            'operator': {'node_index': 3, 'operator_id': 'merge_line_chains', 'parameter': 'input_gdf'},
+        }
         assert fixture.worker('verify',tmp_path,case)==verified
     else:
         path=tmp_path/'outputs'/profile['targets'][profile['ports'].index(port)]

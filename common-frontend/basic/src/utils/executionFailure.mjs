@@ -7,7 +7,7 @@ export const failureReasons = Object.freeze([
   'type_mismatch', 'permission_denied', 'connection_failed',
   'json_invalid', 'array_invalid', 'bytes_invalid', 'table_write_failed', 'execution_failed',
   'target_exists',
-  'operator_output_fields_invalid', 'operator_group_fields_invalid', 'operator_dissolve_fields_conflict',
+  'operator_match_fields_invalid', 'operator_output_fields_invalid', 'operator_group_fields_invalid', 'operator_dissolve_fields_conflict',
   'operator_input_overlap', 'operator_reference_overlap',
   'operator_overlay_fields_conflict', 'operator_endpoint_network_invalid', 'operator_distance_limit_invalid', 'operator_source_topology_invalid', 'operator_trim_conflict',
   'operator_input_invalid', 'operator_mask_invalid', 'operator_reference_invalid', 'operator_field_conflict', 'operator_geometry_field_conflict',
@@ -23,6 +23,9 @@ const failureCategories = new Set(['permission_denied', 'timeout', 'cancelled', 
   'coordinator_lost', 'child_failed', 'owner_unavailable'])
 
 const operatorFailureTemplates = Object.freeze({ snap_line_endpoints: 'lineEndpoint', extend_line_endpoints: 'lineEndpoint', polygonize: 'polygonize', snap_geometry:'referenceSnap', check_geometry:'geometryValidity', repair_geometry:'geometryValidity', extract_vertices: 'vertices', split_multipart: 'multipart', get_bounds: 'bounds', distance_to: 'distance', get_area: 'measurement', get_length: 'measurement', split_by_area: 'measurement', contains: 'spatialRelation', intersects: 'spatialRelation', voronoi: 'voronoi',
+  'merge_line_chains:operator_input_invalid': 'lineCheck',
+  'merge_line_chains:operator_crs_invalid': 'lineCheck',
+  'merge_line_chains:operator_endpoint_network_invalid': 'lineCheck',
   'normalize_line_network:operator_input_invalid': 'lineCheck',
   'normalize_line_network:operator_crs_invalid': 'lineCheck',
   'group_line_components:operator_input_invalid': 'lineCheck',
@@ -76,6 +79,15 @@ export function executionFailurePresentation(details, translate) {
 }
 
 export const operatorInputRules = Object.freeze([
+  ["merge_line_chains", "operator_input_invalid", "input_gdf", ""],
+  ["merge_line_chains", "operator_crs_invalid", "", ""],
+  ["merge_line_chains", "operator_endpoint_network_invalid", "input_gdf", ""],
+  ["merge_line_chains", "operator_match_fields_invalid", "match_fields", ""],
+  ["merge_line_chains", "operator_field_conflict", "input_gdf", "chain_id"],
+  ["merge_line_chains", "operator_field_conflict", "input_gdf", "member_count"],
+  ["merge_line_chains", "operator_field_conflict", "input_gdf", "member_no"],
+  ["merge_line_chains", "operator_field_conflict", "input_gdf", "source_part_no"],
+  ["merge_line_chains", "operator_field_conflict", "input_gdf", "is_reversed"],
   ["normalize_line_network", "operator_input_invalid", "input_gdf", ""],
   ["normalize_line_network", "operator_crs_invalid", "", ""],
   ["normalize_line_network", "operator_field_conflict", "input_gdf", "edge_id"],

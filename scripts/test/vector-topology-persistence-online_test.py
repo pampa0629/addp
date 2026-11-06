@@ -1044,6 +1044,9 @@ class CompositionClient(NormalizeClient):
             'outputs':[{'locator':t,'write_mode':'create'} for t in targets.values()]}
         original['metadata']['result']['meta_scan_runs']=[{'execution_id':'scan-'+p,'target_locator':t,'status':'submitted'} for p,t in targets.items()]
         self.executions['normalize-execution']=original
+        self.executions['normalize-failed']['error_details']['diagnostic']['operator'] = {
+            'node_index':3, 'operator_id':'merge_line_chains', 'parameter':'input_gdf',
+        }
     def request(self,method,path,expected,body=None):
         if path=='/api/v1/develop/executions' and method=='POST':
             self.calls.append((method,path,body));tasks=body['content']['workflow_definition']['tasks']
@@ -1068,7 +1071,7 @@ class CompositionOnlineTest(unittest.TestCase):
         self.env={**ENV,'ADDP_ONLINE_TOPOLOGY_CASE':m.fixture.COMPOSITION_CASE,'ADDP_ONLINE_ARTIFACT_DIR':self.directory.name}
     def run_case(self,client=None,physical=composition_physical,browser=lambda r,e,v:v):
         return m.run_scenario(Path('.'),self.env,client or CompositionClient(),physical,browser,
-            diagnostic_runner=lambda *a,**kw:self.assertEqual((kw['task'],kw['cause']),('chains','invalid_chain_id_field')) or {'cause':kw['cause']})
+            diagnostic_runner=lambda *a,**kw:self.fail('chains must use the public diagnostic instead of log text'))
     def test_composition_exact_three_outputs_and_failure_barrier_without_old_scenarios(self):
         with patch.object(m,'definition',side_effect=AssertionError('old full must not run')):
             report=self.run_case()
@@ -1076,7 +1079,11 @@ class CompositionOnlineTest(unittest.TestCase):
         self.assertEqual([o['port'] for o in report['outputs']],list(m.fixture.COMPOSITION_PORTS))
         self.assertEqual([len(report['browser']['expected'][p]) for p in m.fixture.COMPOSITION_PORTS],[9,15,22])
         self.assertEqual(len(report['automatic_scan_observations']),3)
-        self.assertTrue(report['failed_normalize']['no_publication_or_scan'])
+        failure = report['failed_normalize']
+        self.assertTrue(failure['no_publication_or_scan'])
+        self.assertEqual(failure['diagnostic'], failure['monitor']['error_details'])
+        self.assertEqual(failure['diagnostic']['diagnostic']['operator'],
+                         {'node_index':3,'operator_id':'merge_line_chains','parameter':'input_gdf'})
         tasks=m.normalize_definition('s','p',case=m.fixture.COMPOSITION_CASE)['tasks']
         self.assertEqual([t['params']['input_df'] for t in tasks[3:]],[{'$ref':'chains'},{'$ref':'chains','port':'members'},{'$ref':'normal','port':'members'}])
     def test_composition_rejects_missing_duplicate_wrong_binding_facts_scans_and_sizes(self):

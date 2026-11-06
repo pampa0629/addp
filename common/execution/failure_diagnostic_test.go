@@ -414,12 +414,14 @@ func TestDissolveObservationRetainsOnlyClosedAdmissionFacts(t *testing.T) {
 	}
 }
 
-func TestLineSplitDiagnosticSurvivesObservationWithOnlyFixedContext(t *testing.T) {
-	for _, tc := range []struct{ reason, parameter, field string }{
-		{"operator_enum_invalid", "scope", ""},
-		{"operator_field_conflict", "input_gdf", "segment_no"},
+func TestLineWorkflowDiagnosticSurvivesObservationWithOnlyFixedContext(t *testing.T) {
+	for _, tc := range []struct{ id, reason, parameter, field string }{
+		{"split_line_intersections", "operator_enum_invalid", "scope", ""},
+		{"split_line_intersections", "operator_field_conflict", "input_gdf", "segment_no"},
+		{"merge_line_chains", "operator_match_fields_invalid", "match_fields", ""},
+		{"merge_line_chains", "operator_field_conflict", "input_gdf", "member_no"},
 	} {
-		operator := map[string]interface{}{"node_index": 1, "operator_id": "split_line_intersections", "parameter": tc.parameter}
+		operator := map[string]interface{}{"node_index": 1, "operator_id": tc.id, "parameter": tc.parameter}
 		if tc.field != "" {
 			operator["field"] = tc.field
 		}
@@ -427,7 +429,7 @@ func TestLineSplitDiagnosticSurvivesObservationWithOnlyFixedContext(t *testing.T
 		item := &execution.TaskExecution{Status: "failed", ErrorDetails: models.JSONMap{"message": "PRIVATE_SCOPE", "diagnostic": diagnostic}}
 		got := execution.Observe(item).ErrorDetails
 		if got["diagnostic"] == nil {
-			t.Fatalf("lost line split diagnostic for %s", tc.reason)
+			t.Fatalf("lost %s diagnostic for %s", tc.id, tc.reason)
 		}
 		wire, _ := json.Marshal(got)
 		if strings.Contains(string(wire), "PRIVATE_SCOPE") {

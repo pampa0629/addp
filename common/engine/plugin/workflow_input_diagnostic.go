@@ -27,6 +27,21 @@ func (o *WorkflowOperatorFailure) Valid(reason string) bool {
 	}
 	parameter, field, ok := "", "", false
 	switch o.OperatorID {
+	case "merge_line_chains":
+		switch reason {
+		case "operator_input_invalid", "operator_endpoint_network_invalid":
+			parameter, ok = "input_gdf", true
+		case "operator_crs_invalid":
+			ok = true
+		case "operator_match_fields_invalid":
+			parameter, ok = "match_fields", true
+		case "operator_field_conflict":
+			switch o.Field {
+			case "chain_id", "member_count", "member_no", "source_part_no", "is_reversed":
+				parameter, field, ok = "input_gdf", o.Field, true
+			}
+		}
+
 	case "group_line_components", "normalize_line_network":
 		switch reason {
 		case "operator_input_invalid":

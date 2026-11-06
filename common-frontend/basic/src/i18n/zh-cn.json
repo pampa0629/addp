@@ -194,6 +194,7 @@
         "result": "保存执行结果"
       },
       "reasons": {
+        "operator_match_fields_invalid": "一致字段列表无效、重复或包含非标量值。",
         "operator_group_fields_invalid": "分组字段列表无效、重复或包含非标量值。",
         "operator_dissolve_fields_conflict": "融合固定输出字段与源列重名。",
         "operator_input_overlap": "源图层内部存在正面积重叠，包含和重复面也属于重叠。",
@@ -262,6 +263,7 @@
         "operator_output_fields_invalid": "几何检查的输出字段配置不合法、彼此同名或与源字段重名。"
       },
       "actions": {
+        "operator_match_fields_invalid": "显式选择不重复的现有非几何标量字段，排除 id_field。空数组表示仅按几何合并。",
         "operator_group_fields_invalid": "显式选择无重复的现有非几何标量字段；[]表示全局融合，空值组会保留。",
         "operator_dissolve_fields_conflict": "先在上游手动重命名fusion_id/member_count/source_id重名列，不会自动覆盖。",
         "operator_input_overlap": "先对对应图层执行面叠检查，再显式处理重叠、包含或重复面；不会自动融合、去重或修复。",
@@ -464,6 +466,7 @@
         "repair_geometry": "几何修复",
         "snap_geometry": "参考吸附",
         "check_dangling_points": "悬点检查",
+        "merge_line_chains": "链路合并",
         "normalize_line_network": "重合规整",
         "group_line_components": "连通分组",
         "split_line_intersections": "交点打断",
@@ -483,6 +486,7 @@
         "threshold": "面积阈值（threshold）",
         "preserve_topology": "保留单几何拓扑（preserve_topology）",
         "distance": "缓冲距离（distance）",
+        "match_fields": "一致字段（match_fields）",
         "group_fields": "分组字段（group_fields）",
         "mask_gdf": "裁剪掩膜（mask_gdf）",
         "coverage_gdf": "覆盖范围（coverage_gdf）",
@@ -508,10 +512,12 @@
       },
       "lineCheck": {
         "reasons": {
+          "operator_endpoint_network_invalid": "链路合并要求线部件仅在双方端点相接。",
           "operator_input_invalid": "待检查的线图层或来源标识配置不符合要求。",
           "operator_crs_invalid": "线拓扑检查要求已知投影坐标系和匹配、有限且为正的水平单位换算因子。"
         },
         "actions": {
+          "operator_endpoint_network_invalid": "先显式打断交会并处理自交或重合，再重新运行。",
           "operator_input_invalid": "请提供具有活动几何列的有效非空有限二维线，并将 id_field 指向值非空、唯一的非几何标量列。允许空表。",
           "operator_crs_invalid": "请确认源坐标系，并显式重投影到符合要求的投影坐标系。"
         }

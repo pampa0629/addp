@@ -1159,21 +1159,23 @@ def extract_line_nodes(input_gdf: gpd.GeoDataFrame, id_field: str) -> dict[str, 
 
 def merge_line_chains(input_gdf: gpd.GeoDataFrame, id_field: str, match_fields: list) -> dict:
     """Join exact non-branching paths, with lossless original-part membership."""
-    geometry = _finite_xy_geometry(input_gdf)
-    _require_projected_xy_crs(geometry.crs)
-    _source_identifiers(input_gdf, id_field)
-    _require_nonempty_valid_lines(geometry)
-    reserved = {"chain_id", "member_count", "member_no", "source_part_no", "is_reversed"}
-    if reserved.intersection(input_gdf.columns):
-        raise ValueError("chain output columns must not overwrite source fields")
+    geometry, _ = _line_check_inputs(input_gdf, id_field)
+    for field in ("chain_id", "member_count", "member_no", "source_part_no", "is_reversed"):
+        if field in input_gdf.columns:
+            raise LineCheckInputError(
+                "operator_field_conflict", f"output column {field} must not overwrite a source field", field=field,
+            )
     if (not isinstance(match_fields, list) or
             any(not isinstance(field, str) or field not in input_gdf.columns or
                 field == id_field or isinstance(input_gdf[field].dtype, gpd.array.GeometryDtype)
                 for field in match_fields) or len(set(match_fields)) != len(match_fields)):
-        raise ValueError("match_fields must explicitly list distinct non-geometry business columns excluding id_field")
+        raise LineCheckInputError(
+            "operator_match_fields_invalid",
+            "match_fields must explicitly list distinct non-geometry business columns excluding id_field",
+        )
     attributes = list(input_gdf[match_fields].itertuples(index=False, name=None))
     if any(not pd.api.types.is_scalar(value) for row in attributes for value in row):
-        raise ValueError("match_fields requires scalar business values")
+        raise LineCheckInputError("operator_match_fields_invalid", "match_fields requires scalar business values")
 
     def matches(a, b):
         if not match_fields:
@@ -1188,7 +1190,10 @@ def merge_line_chains(input_gdf: gpd.GeoDataFrame, id_field: str, match_fields: 
                 return False
         return True
 
-    parts, sources, vertices, ends, part_numbers = _endpoint_line_network(geometry)
+    try:
+        parts, sources, vertices, ends, part_numbers = _endpoint_line_network(geometry)
+    except _EndpointNetworkError as exc:
+        raise LineCheckInputError("operator_endpoint_network_invalid", str(exc)) from exc
 
     # Full network degree is fixed before comparing business attributes. A
     # branch can never disappear merely because another arm differs in value.
@@ -1593,6 +1598,14 @@ class LineCheckInputError(ValueError):
         'operator_crs_invalid': (
             '线拓扑检查要求已知投影 CRS，两个水平轴的单位须一致且换算因子有限为正。',
             'Line topology checking requires a known projected CRS with matching finite positive horizontal unit factors.',
+        ),
+        'operator_endpoint_network_invalid': (
+            '链路合并要求线部件仅在双方端点相接，请先显式打断交会并处理自交或重合。',
+            'Line parts must meet only at both endpoints. Split intersections and resolve self-intersections or overlaps first.',
+        ),
+        'operator_match_fields_invalid': (
+            'match_fields 须显式列出不重复的现有非几何标量业务字段，且不含 id_field。空数组表示仅按几何合并。',
+            'match_fields must list distinct existing non-geometry scalar business fields other than id_field. An empty list merges by geometry only.',
         ),
         'operator_field_conflict': (
             '源图层字段 {field} 与算子的固定输出字段重名，请先在上游重命名。',
