@@ -107,7 +107,7 @@ Redis 专业采集由部署侧 `backend/internal/redissource` 提供。适用范
 | [告警与规则](../docs/spec/testing/evidence/Monitor告警与规则历史证据.md) | CPU/RSS、事件查询、服务失联、文件系统规则及挂载入口 |
 | [Trace 与日志](../docs/spec/testing/evidence/MonitorTrace与日志历史证据.md) | 同步 HTTP、短阶段 Link，另见[正式身份本地窗口总览](../docs/spec/testing/evidence/MonitorTrace与日志历史证据.md#正式身份本地窗口总览)和[HTTP 追踪隔离容量基线](../docs/spec/testing/evidence/MonitorTrace与日志历史证据.md#http-追踪隔离容量基线本地) |
 | [HTTP 质量与采样](../docs/spec/testing/evidence/MonitorHTTP质量与采样历史证据.md) | 公共 mTLS、Go／Python 来源、采样／清理交接及限定 Linux T2，另见[正式 HTTP full 失败记录](../docs/spec/testing/evidence/Monitor历史证据.md#正式-http-full-失败入口)和[停源实例历史趋势](../docs/spec/testing/evidence/Monitor历史证据.md#停源实例-http-历史趋势) |
-| [采集来源与引擎指标](../docs/spec/testing/evidence/Monitor采集来源与引擎指标历史证据.md) | 自动接入、采集账号、PostgreSQL 来源 T2 与专业观测 Hosted T4 |
+| [采集来源与引擎指标](../docs/spec/testing/evidence/Monitor采集来源与引擎指标历史证据.md) | 自动接入与采集账号。PostgreSQL 双作用域采集、mTLS、专业查询和来源生命周期的首败与复验见[固定版本 Linux 来源 T2](../docs/spec/testing/evidence/Monitor采集来源与引擎指标历史证据.md#postgresql-专业来源固定版本-linux-t2-复核2026-10-24)，七天留存、容量及新 Online T4 未覆盖。管理员密码／MFA、无权限对照、双部署及 Console 专业观测见[正式身份 Hosted T4](../docs/spec/testing/evidence/Monitor采集来源与引擎指标历史证据.md#postgresql-专业观测正式-hosted-验收)，后续主机导航、其他引擎与集群、自然留存及生产 T5 须另行验收。 |
 | [执行监控与留存](../docs/spec/testing/evidence/Monitor执行监控与留存历史证据.md) | continuous、Owner 不可用、租户日志，另见[180 天概览只读评估](../docs/spec/testing/evidence/Monitor执行监控与留存历史证据.md#执行概览只读维护真实进程验收2026-10-25)和[30 天过程事件物理清理](../docs/spec/testing/evidence/Monitor执行监控与留存历史证据.md#30-天过程事件清理真实进程验收2026-10-26) |
 | [部署与前置诊断](../docs/spec/testing/evidence/Monitor部署与前置诊断历史证据.md) | 资源守卫、Docker CLI／daemon 等待归属及 Compose 超时，见[按诊断问题查阅](../docs/spec/testing/evidence/Monitor部署与前置诊断历史证据.md#按诊断问题查阅) |
 
