@@ -4474,7 +4474,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "执行全文检索与向量语义检索，对候选去重后使用对称 RRF 融合排序并统一分页；field_matches 保留实际命中的已登记字段定义与高亮，纯向量命中不声明字段匹配 | Execute full-text and vector semantic retrieval, then deduplicate, rank with symmetric RRF, and paginate; field_matches preserves matched registered definitions and highlights, without claiming field matches for vector-only hits",
+                "description": "仅返回当前用户可见的项。仅元数据可见时只匹配名称及路径。内容和向量命中要求当前数据读取权。授权后去重、融合、计数及分页 | Returns only items visible to the current user. Metadata-only access matches names and paths. Content and vector matches require current data-read access. Deduplication, ranking, counts and pagination follow authorization",
                 "produces": [
                     "application/json"
                 ],
@@ -4523,6 +4523,13 @@ const docTemplate = `{
                             "additionalProperties": true
                         }
                     },
+                    "403": {
+                        "description": "检索身份未获授权 | Search credential forbidden",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
                     "500": {
                         "description": "混合检索失败 | Hybrid search failed",
                         "schema": {
@@ -4531,7 +4538,7 @@ const docTemplate = `{
                         }
                     },
                     "503": {
-                        "description": "搜索未配置或索引出口隔离；隔离不表示外部清理完成 | Search unconfigured or index outlet isolated; isolation does not imply external cleanup completion",
+                        "description": "搜索未配置、索引隔离或授权核验不可用 | Search unconfigured, index isolated or authorization unavailable",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true

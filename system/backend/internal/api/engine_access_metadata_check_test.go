@@ -20,6 +20,74 @@ type metadataCheckFixture struct {
 	wrongTarget bool
 }
 
+func (f *metadataCheckFixture) CheckManagerSearchRead(_ context.Context, credential string, request authorization.SourceMetadataCheckRequest) (*authorization.SourceSearchCheck, error) {
+	f.calls++
+	if credential != "addp_at_test" && credential != "addp_dat_test" {
+		panic("wrong search credential")
+	}
+	return &authorization.SourceSearchCheck{ObservedAt: time.Now(), Targets: []authorization.SourceSearchTargetCheck{{
+		SourceMetadataTargetCheck: authorization.SourceMetadataTargetCheck{Target: request.Targets[0], Visible: true},
+	}}}, nil
+}
+
+func TestManagerSearchMetadataCheckUsesFixedAudienceAndScope(t *testing.T) {
+	target := plugin.TabularItemPath(12, "schema", "public", "C")
+	input := authorization.SourceMetadataCheckRequest{Targets: []plugin.EngineCatalogPath{target}}
+	body, err := json.Marshal(input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		name, audience, scope string
+		status                int
+	}{
+		{"ordinary", "", "", 200},
+		{"search delegate", "manager", "data.search", 200},
+		{"preview delegate", "manager", "data.preview", 403},
+		{"Meta delegate", "meta", "resource.children.list", 403},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			current := sourceReadCheckAuth()
+			current.Authorization.RoleAssignments[0].Permissions = []string{engineaccess.ManagerSearchPermission}
+			token := "addp_at_test"
+			if tc.audience != "" {
+				current.Token.Type = middleware.IAMTokenTypeDelegatedAccess
+				current.Client.Audiences = []string{tc.audience}
+				current.Client.ScopeMode = "restricted"
+				current.Client.Scopes = []string{tc.scope}
+				current.Delegation = &authorization.DelegationFacts{DelegatedByClientID: *current.Client.ClientID, AgentRunID: "run", ToolCallID: "call"}
+				token = "addp_dat_test"
+			}
+			authenticate, err := middleware.NewIAMAuthenticationMiddleware(iamActorResolver{authContext: &current})
+			if err != nil {
+				t.Fatal(err)
+			}
+			credential, err := middleware.NewIAMCredentialGuard(middleware.IAMTokenTypeFirstPartyAccess, middleware.IAMTokenTypeOAuthAccess)
+			if err != nil {
+				t.Fatal(err)
+			}
+			fixture := &metadataCheckFixture{}
+			router := gin.New()
+			if err := RegisterEngineAccessMetadataCheckRoutes(router.Group("/api/v1/system"), &IAMRuntime{Authentication: authenticate, UserAccessCredential: credential}, &EngineAccessMetadataCheckHandler{service: fixture}); err != nil {
+				t.Fatal(err)
+			}
+			request := httptest.NewRequest("POST", "/api/v1/system/engine-access/metadata-checks/manager-search", strings.NewReader(string(body)))
+			request.Header.Set("Authorization", "Bearer "+token)
+			response := httptest.NewRecorder()
+			router.ServeHTTP(response, request)
+			if response.Code != tc.status || (fixture.calls == 1) != (tc.status == 200) {
+				t.Fatalf("status=%d calls=%d body=%s", response.Code, fixture.calls, response.Body.String())
+			}
+			if tc.status == 200 {
+				var observed authorization.SourceSearchCheck
+				if json.Unmarshal(response.Body.Bytes(), &observed) != nil || !observed.Matches(input) || !observed.Targets[0].Visible || observed.Targets[0].ContentReadable || response.Header().Get("Cache-Control") != "no-store" {
+					t.Fatal("invalid search observation")
+				}
+			}
+		})
+	}
+}
+
 func (f *metadataCheckFixture) CheckMetaMetadataRead(_ context.Context, credential string, request authorization.SourceMetadataCheckRequest) (*authorization.SourceMetadataCheck, error) {
 	f.calls++
 	target := request.Targets[0]

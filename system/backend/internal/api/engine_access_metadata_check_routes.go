@@ -16,6 +16,7 @@ import (
 type metaMetadataCheckService interface {
 	CheckMetaLineageRead(context.Context, string, authorization.SourceMetadataCheckRequest) (*authorization.SourceMetadataCheck, error)
 	CheckMetaMetadataRead(context.Context, string, authorization.SourceMetadataCheckRequest) (*authorization.SourceMetadataCheck, error)
+	CheckManagerSearchRead(context.Context, string, authorization.SourceMetadataCheckRequest) (*authorization.SourceSearchCheck, error)
 }
 
 type EngineAccessMetadataCheckHandler struct{ service metaMetadataCheckService }
@@ -68,6 +69,15 @@ func RegisterEngineAccessMetadataCheckRoutes(api *gin.RouterGroup, runtime *IAMR
 		return err
 	}
 	api.POST("/engine-access/metadata-checks/meta-lineage", runtime.Authentication, runtime.UserAccessCredential, tenant, lineagePermission, handler.CheckMetaLineage)
+	searchPermission, err := middleware.NewIAMPermissionGuard(engineaccess.ManagerSearchPermission)
+	if err != nil {
+		return err
+	}
+	searchDelegate, err := sharedauth.NewDelegatedRouteGuard(sharedauth.DelegatedRouteGuardConfig{Audience: "manager", RequiredScopes: []string{"data.search"}, RequiredPermissions: []string{engineaccess.ManagerSearchPermission}})
+	if err != nil {
+		return err
+	}
+	api.POST("/engine-access/metadata-checks/manager-search", runtime.Authentication, credential, tenant, searchDelegate, searchPermission, handler.CheckManagerSearch)
 	return nil
 }
 
@@ -106,11 +116,40 @@ func (h *EngineAccessMetadataCheckHandler) CheckMetaLineage(c *gin.Context) {
 	h.check(c, h.service.CheckMetaLineageRead)
 }
 
+// CheckManagerSearch godoc
+// @Summary 检查 Manager 检索候选的当前可见性 | Check current visibility for Manager search candidates
+// @Description 接受当前 Tenant User 或唯一 manager audience 和 data.search Scope 的委托，固定核验 manager.search.execute。逐项返回元数据及内容读取裁决，仅用于当前检索 | Accepts a current Tenant User or a delegate with sole manager audience and data.search scope. Checks fixed manager.search.execute and returns per-target metadata and content decisions for the current search only
+// @Tags 源数据读取检查 | Source Data Read Checks
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param request body authorization.SourceMetadataCheckRequest true "1 至 200 个不重复完整目标，不支持 query 参数 | 1 to 200 unique complete targets; no query parameters"
+// @Success 200 {object} authorization.SourceSearchCheck "当次检索授权观察 | Current search access observation"
+// @Failure 400,401,403,500,503 {object} IAMErrorResponse "核验失败 | Check failed"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["manager.search.execute"]
+// @Router /engine-access/metadata-checks/manager-search [post]
+func (h *EngineAccessMetadataCheckHandler) CheckManagerSearch(c *gin.Context) {
+	request, ok := bindMetadataCheck(c)
+	if !ok {
+		return
+	}
+	result, err := h.service.CheckManagerSearchRead(c.Request.Context(), sharedauth.CanonicalBearerToken(c.GetHeader("Authorization")), request)
+	if err != nil {
+		respondIAMError(c, err)
+		return
+	}
+	if !result.Matches(request) {
+		respondIAMError(c, errors.New("incomplete search observation"))
+		return
+	}
+	c.Header("Cache-Control", "no-store")
+	c.JSON(http.StatusOK, result)
+}
+
 func (h *EngineAccessMetadataCheckHandler) check(c *gin.Context, observe func(context.Context, string, authorization.SourceMetadataCheckRequest) (*authorization.SourceMetadataCheck, error)) {
-	var request authorization.SourceMetadataCheckRequest
-	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 512<<10)
-	if c.Request.URL.RawQuery != "" || commonapi.BindOptionalJSONStrict(c, &request) != nil || !request.Valid() {
-		respondIAMError(c, commonapi.ErrBadRequest)
+	request, ok := bindMetadataCheck(c)
+	if !ok {
 		return
 	}
 	result, err := observe(c.Request.Context(), sharedauth.CanonicalBearerToken(c.GetHeader("Authorization")), request)
@@ -124,4 +163,14 @@ func (h *EngineAccessMetadataCheckHandler) check(c *gin.Context, observe func(co
 	}
 	c.Header("Cache-Control", "no-store")
 	c.JSON(http.StatusOK, result)
+}
+
+func bindMetadataCheck(c *gin.Context) (authorization.SourceMetadataCheckRequest, bool) {
+	var request authorization.SourceMetadataCheckRequest
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 512<<10)
+	if c.Request.URL.RawQuery != "" || commonapi.BindOptionalJSONStrict(c, &request) != nil || !request.Valid() {
+		respondIAMError(c, commonapi.ErrBadRequest)
+		return request, false
+	}
+	return request, true
 }

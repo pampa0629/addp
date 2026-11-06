@@ -182,6 +182,52 @@ func exerciseSourceReadCredentials(t *testing.T, db *gorm.DB, path engineplugin.
 				t.Fatalf("ticket became metadata credential: %+v %v", result, err)
 			}
 		})
+		t.Run("Manager search uses current source rules and exact delegation", func(t *testing.T) {
+			other := engineplugin.TabularItemPath(path.EngineID, "schema", "public", "ungranted_search")
+			service := NewService(repo, nil).WithAuthorizationFactsReader(testMetaFacts{paths: []engineplugin.EngineCatalogPath{path, other}})
+			user, _ := newUser(t, time.Hour)
+			role, err := roles.CreateRole(ctx, iam.CreateTenantRoleInput{TenantID: tenantID, RoleKey: "custom.manager_search", Name: "Manager search fixture", PermissionKeys: []string{ManagerSearchPermission, MetaCatalogReadPermission}, ActorPrincipalID: adminID})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := roles.CreateAssignments(ctx, iam.CreateTenantRoleAssignmentsInput{TenantID: tenantID, MembershipID: user.MembershipID, RoleIDs: []int64{role.ID}, ActorPrincipalID: adminID, Reason: "Manager search fixture"}); err != nil {
+				t.Fatal(err)
+			}
+			session, _ := issue(t, user, time.Minute)
+			delegation, err := iam.NewDelegationService(identity, systemauthorization.ToolAuthorizationCatalog{}, iam.DelegationServiceConfig{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			search, err := delegation.IssueDelegatedAccessToken(ctx, iam.IssueDelegatedAccessTokenInput{SourceAccessToken: session.AccessToken, Audience: "manager", Scopes: []string{"data.search"}, AgentRunID: uuid.NewString(), ToolCallID: uuid.NewString()})
+			if err != nil {
+				t.Fatal(err)
+			}
+			meta, err := delegation.IssueDelegatedAccessToken(ctx, iam.IssueDelegatedAccessTokenInput{SourceAccessToken: session.AccessToken, Audience: "meta", Scopes: []string{"resource.children.list"}, AgentRunID: uuid.NewString(), ToolCallID: uuid.NewString()})
+			if err != nil {
+				t.Fatal(err)
+			}
+			request := shared.SourceMetadataCheckRequest{Targets: []engineplugin.EngineCatalogPath{path, other}}
+			if result, err := service.CheckManagerSearchRead(ctx, meta.AccessToken, request); result != nil || !errors.Is(err, commonapi.ErrForbidden) {
+				t.Fatalf("Meta delegation reached search: %+v %v", result, err)
+			}
+			if result, err := service.CheckMetaMetadataRead(ctx, search.AccessToken, request); result != nil || !errors.Is(err, commonapi.ErrForbidden) {
+				t.Fatalf("search delegation reached Meta: %+v %v", result, err)
+			}
+			check := func(want bool) {
+				t.Helper()
+				for _, credential := range []string{session.AccessToken, search.AccessToken} {
+					result, err := service.CheckManagerSearchRead(ctx, credential, request)
+					if err != nil || !result.Matches(request) || result.Targets[0].Visible != want || result.Targets[0].ContentReadable != want || result.Targets[1].Visible || result.Targets[1].ContentReadable {
+						t.Fatalf("want readable=%v: %+v %v", want, result, err)
+					}
+				}
+			}
+			check(false)
+			id := grant(t, "user", user.PrincipalID, nil)
+			check(true)
+			revoke(t, id)
+			check(false)
+		})
 		t.Run("lineage uses only its function and current data rules", func(t *testing.T) {
 			service := NewService(repo, nil).WithAuthorizationFactsReader(testMetaFacts{paths: []engineplugin.EngineCatalogPath{path}})
 			user, _ := newUser(t, time.Hour)

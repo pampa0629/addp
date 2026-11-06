@@ -94,6 +94,11 @@ func (request sourceReadRequest) encode() ([]engineplugin.EngineCatalogPath, jso
 	return paths, batch, err
 }
 
+type sourceRuleTarget struct {
+	Binding authorizationfacts.Binding `json:"binding"`
+	Action  string                     `json:"requested_action"`
+}
+
 func encodeBoundSourceTargets(paths []engineplugin.EngineCatalogPath, bindings []authorizationfacts.Binding, action string) (json.RawMessage, error) {
 	if len(paths) == 0 || len(paths) != len(bindings) || !authorization.ValidSourceAccessAction(action) {
 		return nil, errSourceReadRules
@@ -109,13 +114,9 @@ func encodeBoundSourceTargets(paths []engineplugin.EngineCatalogPath, bindings [
 			return nil, errSourceReadRules
 		}
 	}
-	type ruleTarget struct {
-		Binding authorizationfacts.Binding `json:"binding"`
-		Action  string                     `json:"requested_action"`
-	}
-	bound := make([]ruleTarget, len(bindings))
+	bound := make([]sourceRuleTarget, len(bindings))
 	for i, binding := range bindings {
-		bound[i] = ruleTarget{Binding: binding, Action: action}
+		bound[i] = sourceRuleTarget{Binding: binding, Action: action}
 	}
 	return json.Marshal(bound)
 }

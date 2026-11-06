@@ -2,6 +2,7 @@ package engineaccess
 
 import (
 	"context"
+	"encoding/json"
 	commonexecution "github.com/addp/common/execution"
 	"strconv"
 
@@ -31,11 +32,18 @@ func (r *Repository) observeSourceRules(ctx context.Context, credential, action 
 		return nil, errSourceReadRules
 	}
 	batch, err := encodeBoundSourceTargets(paths, bindings, action)
-	if err != nil || expectedTenantID <= 0 {
+	if err != nil {
+		return nil, errSourceReadRules
+	}
+	return r.observePreparedSourceRules(ctx, action, paths, bindings, batch, expectedTenantID, resolve, qualify, expectedEngine)
+}
+
+func (r *Repository) observePreparedSourceRules(ctx context.Context, action string, paths []engineplugin.EngineCatalogPath, bindings []authorizationfacts.Binding, batch json.RawMessage, expectedTenantID int64, resolve func(*iam.AuthContextService) (*commonauth.AuthContext, error), qualify func(commonauth.AuthContext) error, expectedEngine *sourceReadEngineVersion) (*sourceReadRules, error) {
+	if expectedTenantID <= 0 {
 		return nil, errSourceReadRules
 	}
 	var result *sourceReadRules
-	err = r.readCommitted(ctx, func(tx *Repository) error {
+	err := r.readCommitted(ctx, func(tx *Repository) error {
 		auth, err := iam.NewAuthContextService(tx.identity())
 		if err != nil {
 			return err

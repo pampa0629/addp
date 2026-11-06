@@ -301,6 +301,8 @@ func (s *HybridSearchService) SearchDocuments(
 	ctx context.Context,
 	tenantID *uint,
 	engineID *uint,
+	credential string,
+	checker SearchVisibilityChecker,
 	query string,
 	page int,
 	pageSize int,
@@ -327,44 +329,28 @@ func (s *HybridSearchService) SearchDocuments(
 		pageSize = 50
 	}
 
-	offset := (page - 1) * pageSize
-	candidateLimit := offset + pageSize
-
-	// 构建过滤条件
-	filter := buildSearchFilter(tenantID, engineID)
-
-	// 构建搜索请求
-	searchReq := &meilisearch.SearchRequest{
-		Query:                 query,
-		Filter:                filter,
-		AttributesToHighlight: []string{"name", "title", "full_name", "content_preview", "description", "tags", "keywords", "author", "fields.name", "fields.data_type", "fields.comment"},
-		HighlightPreTag:       "<mark>",
-		HighlightPostTag:      "</mark>",
-		Offset:                0,
-		Limit:                 int64(candidateLimit),
-		ShowMatchesPosition:   false,
+	if tenantID == nil || *tenantID == 0 || credential == "" || checker == nil {
+		return nil, ErrSearchVisibilityUnavailable
 	}
-
-	// 执行 Manager owner 的技术内容搜索。
-	index := s.client.Index(s.contentIndex)
-	resp, err := index.SearchWithContext(ctx, query, searchReq)
+	visibility, err := s.observeSearchVisibility(ctx, *tenantID, engineID, credential, checker)
+	if fenceErr := s.deliveries.RequireActive(ctx, s.epoch); fenceErr != nil {
+		return nil, ErrSearchIsolated
+	}
 	if err != nil {
-		return nil, fmt.Errorf("failed to execute search: %w", err)
-	}
-
-	keywordHits := make([]SearchDocument, 0, len(resp.Hits))
-	var decodedHits []map[string]interface{}
-	if err := resp.Hits.DecodeInto(&decodedHits); err != nil {
 		return nil, err
 	}
-	for _, hit := range decodedHits {
-		keywordHits = append(keywordHits, mapMeilisearchHit(hit))
+	keywordHits, err := s.searchVisibleKeywords(ctx, buildSearchFilter(tenantID, engineID), query, visibility)
+	if err != nil {
+		return nil, err
 	}
 
 	var vectorHits []VectorDocument
-	if s.vectorRepo != nil && s.configurationProvider != nil && s.bindingService != nil && s.inferenceClient != nil {
-		vectorHits, err = s.vectorSearch(ctx, tenantID, engineID, query)
+	if len(visibility.content) > 0 && s.vectorRepo != nil && s.configurationProvider != nil && s.bindingService != nil && s.inferenceClient != nil {
+		vectorHits, err = s.vectorSearch(ctx, tenantID, engineID, query, visibility.content)
 		if err != nil {
+			if errors.Is(err, ErrSearchVisibilityUnavailable) {
+				return nil, err
+			}
 			s.log.Warn("向量检索失败，已忽略", "error", err)
 			vectorHits = nil
 		}
@@ -374,7 +360,76 @@ func (s *HybridSearchService) SearchDocuments(
 	if err := s.deliveries.RequireActive(ctx, s.epoch); err != nil {
 		return nil, ErrSearchIsolated
 	}
-	return fuseSearchDocuments(keywordHits, int(resp.EstimatedTotalHits), vectorHits, page, pageSize), nil
+	return fuseSearchDocuments(keywordHits, vectorHits, page, pageSize), nil
+}
+
+type keywordSearchHit struct {
+	document     SearchDocument
+	rankingScore float64
+}
+
+func (s *HybridSearchService) searchVisibleKeywords(ctx context.Context, filter, query string, visibility searchVisibility) ([]SearchDocument, error) {
+	if len(visibility.content)+len(visibility.metadata) == 0 {
+		return nil, nil
+	}
+	index := s.client.Index(s.contentIndex)
+	window, err := index.GetPaginationWithContext(ctx)
+	if err != nil || window == nil || window.MaxTotalHits <= 0 {
+		return nil, ErrSearchVisibilityUnavailable
+	}
+	var hits []keywordSearchHit
+	for _, group := range []struct {
+		identities   map[string]indexedSearchIdentity
+		metadataOnly bool
+	}{
+		{identities: visibility.content},
+		{identities: visibility.metadata, metadataOnly: true},
+	} {
+		if len(group.identities) == 0 {
+			continue
+		}
+		request := &meilisearch.SearchRequest{
+			Query: query, Filter: searchIdentityFilter(filter, group.identities), Limit: window.MaxTotalHits,
+			ShowRankingScore: true, HighlightPreTag: "<mark>", HighlightPostTag: "</mark>",
+			AttributesToHighlight: []string{"name", "title", "full_name", "content_preview", "description", "tags", "keywords", "author", "fields.name", "fields.data_type", "fields.comment"},
+		}
+		if group.metadataOnly {
+			request.AttributesToSearchOn = []string{"name", "full_name"}
+			request.AttributesToHighlight = request.AttributesToSearchOn
+			request.AttributesToRetrieve = []string{"document_id", "locator", "engine_id", "engine_name", "engine_type", "data_item_type", "name", "full_name", "schema", "bucket", "path"}
+		}
+		response, err := index.SearchWithContext(ctx, query, request)
+		if err != nil {
+			return nil, err
+		}
+		var decoded []map[string]interface{}
+		if err := response.Hits.DecodeInto(&decoded); err != nil {
+			return nil, err
+		}
+		for _, hit := range decoded {
+			id, _ := hit["document_id"].(string)
+			identity, visible := group.identities[id]
+			doc := mapMeilisearchHit(hit)
+			if !visible || identity.Locator != doc.Locator || identity.EngineID != doc.EngineID {
+				return nil, ErrSearchVisibilityUnavailable
+			}
+			if group.metadataOnly {
+				doc = SearchDocument{
+					DocumentID: doc.DocumentID, Locator: doc.Locator, EngineID: doc.EngineID, EngineName: doc.EngineName,
+					EngineType: doc.EngineType, DataItemType: doc.DataItemType, Name: doc.Name, FileName: doc.FileName,
+					FullName: doc.FullName, Schema: doc.Schema, Bucket: doc.Bucket, Path: doc.Path,
+				}
+			}
+			score, _ := hit["_rankingScore"].(float64)
+			hits = append(hits, keywordSearchHit{document: doc, rankingScore: score})
+		}
+	}
+	sort.SliceStable(hits, func(i, j int) bool { return hits[i].rankingScore > hits[j].rankingScore })
+	result := make([]SearchDocument, 0, len(hits))
+	for _, hit := range hits {
+		result = append(result, hit.document)
+	}
+	return result, nil
 }
 
 type fusedSearchCandidate struct {
@@ -384,7 +439,7 @@ type fusedSearchCandidate struct {
 }
 
 // fuseSearchDocuments 使用对称 RRF 融合两个检索器的内部排名，再对唯一结果集分页。
-func fuseSearchDocuments(keywordHits []SearchDocument, keywordTotal int, vectorHits []VectorDocument, page, pageSize int) *SearchResult {
+func fuseSearchDocuments(keywordHits []SearchDocument, vectorHits []VectorDocument, page, pageSize int) *SearchResult {
 	if page < 1 {
 		page = 1
 	}
@@ -443,22 +498,17 @@ func fuseSearchDocuments(keywordHits []SearchDocument, keywordTotal int, vectorH
 		return left.document.DocumentID < right.document.DocumentID
 	})
 
-	start := (page - 1) * pageSize
-	if start > len(candidates) {
-		start = len(candidates)
+	start := len(candidates)
+	if page-1 <= len(candidates)/pageSize {
+		start = (page - 1) * pageSize
 	}
 	end := min(start+pageSize, len(candidates))
 	hits := make([]SearchDocument, 0, end-start)
 	for _, candidate := range candidates[start:end] {
 		hits = append(hits, candidate.document)
 	}
-	if keywordTotal < len(keywordHits) {
-		keywordTotal = len(keywordHits)
-	}
-	total := max(keywordTotal, len(candidates))
-
 	return &SearchResult{
-		Total:    total,
+		Total:    len(candidates),
 		Page:     page,
 		PageSize: pageSize,
 		Hits:     hits,
@@ -493,7 +543,7 @@ func mergeVectorSearchFacts(target *SearchDocument, vector SearchDocument) {
 	}
 }
 
-func (s *HybridSearchService) vectorSearch(ctx context.Context, tenantID, engineID *uint, query string) ([]VectorDocument, error) {
+func (s *HybridSearchService) vectorSearch(ctx context.Context, tenantID, engineID *uint, query string, visible map[string]indexedSearchIdentity) ([]VectorDocument, error) {
 	if s.vectorRepo == nil || s.configurationProvider == nil || s.bindingService == nil || s.inferenceClient == nil {
 		return nil, nil
 	}
@@ -544,7 +594,7 @@ func (s *HybridSearchService) vectorSearch(ctx context.Context, tenantID, engine
 		"max_distance", runtime.MaxDistance,
 	)
 
-	results, err := s.vectorRepo.QueryReadySimilar(ctx, *tenantID, engineID, queryVector, binding.ModelProfileID, embedResult.ProfileVersion, dimension, s.vectorTopK, runtime.MaxDistance)
+	results, err := s.vectorRepo.QueryReadySimilar(ctx, *tenantID, engineID, queryVector, binding.ModelProfileID, embedResult.ProfileVersion, dimension, s.vectorTopK, runtime.MaxDistance, visibleSearchIDs(visible))
 	if err != nil {
 		return nil, fmt.Errorf("query embedding results: %w", err)
 	}
@@ -555,6 +605,10 @@ func (s *HybridSearchService) vectorSearch(ctx context.Context, tenantID, engine
 			continue
 		}
 		emb := item.Embedding
+		identity, ok := visible[emb.ItemFingerprint]
+		if !ok || identity.EngineID != emb.EngineID || identity.Locator != emb.Locator {
+			return nil, ErrSearchVisibilityUnavailable
+		}
 		doc := VectorDocument{
 			DocumentID:     emb.ItemFingerprint,
 			Locator:        emb.Locator,

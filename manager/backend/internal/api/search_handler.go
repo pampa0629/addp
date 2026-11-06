@@ -7,7 +7,9 @@ import (
 	"strconv"
 	"strings"
 
+	commonClient "github.com/addp/common/client"
 	"github.com/addp/common/logger"
+	"github.com/addp/common/middleware/auth"
 	commoni18n "github.com/addp/common/middleware/i18n"
 	manageri18n "github.com/addp/manager/i18n"
 	"github.com/addp/manager/internal/service"
@@ -17,18 +19,20 @@ import (
 type SearchHandler struct {
 	searchService  *service.HybridSearchService
 	historyService *service.SearchHistoryService
+	visibility     service.SearchVisibilityChecker
 }
 
-func NewSearchHandler(searchService *service.HybridSearchService, historyService *service.SearchHistoryService) *SearchHandler {
+func NewSearchHandler(searchService *service.HybridSearchService, historyService *service.SearchHistoryService, visibility service.SearchVisibilityChecker) *SearchHandler {
 	return &SearchHandler{
 		searchService:  searchService,
 		historyService: historyService,
+		visibility:     visibility,
 	}
 }
 
 // Search 执行混合检索（全文检索 + 向量语义检索）
 // @Summary 执行混合检索 | Execute hybrid search
-// @Description 执行全文检索与向量语义检索，对候选去重后使用对称 RRF 融合排序并统一分页；field_matches 保留实际命中的已登记字段定义与高亮，纯向量命中不声明字段匹配 | Execute full-text and vector semantic retrieval, then deduplicate, rank with symmetric RRF, and paginate; field_matches preserves matched registered definitions and highlights, without claiming field matches for vector-only hits
+// @Description 仅返回当前用户可见的项。仅元数据可见时只匹配名称及路径。内容和向量命中要求当前数据读取权。授权后去重、融合、计数及分页 | Returns only items visible to the current user. Metadata-only access matches names and paths. Content and vector matches require current data-read access. Deduplication, ranking, counts and pagination follow authorization
 // @Tags Manager
 // @Produce json
 // @Param q query string true "搜索关键词 | Search query"
@@ -38,12 +42,20 @@ func NewSearchHandler(searchService *service.HybridSearchService, historyService
 // @Success 200 {object} service.SearchResult "搜索结果，results[].locator 为跨引擎资源定位符 | Search results; results[].locator is the cross-engine resource locator"
 // @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
 // @Failure 500 {object} map[string]interface{} "混合检索失败 | Hybrid search failed"
-// @Failure 503 {object} map[string]interface{} "搜索未配置或索引出口隔离；隔离不表示外部清理完成 | Search unconfigured or index outlet isolated; isolation does not imply external cleanup completion"
+// @Failure 403 {object} map[string]interface{} "检索身份未获授权 | Search credential forbidden"
+// @Failure 503 {object} map[string]interface{} "搜索未配置、索引隔离或授权核验不可用 | Search unconfigured, index isolated or authorization unavailable"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["manager.search.execute"]
 // @Router /search [get]
 // @Security BearerAuth
 func (h *SearchHandler) Search(c *gin.Context) {
+	c.Header("Cache-Control", "no-store")
+	current, ok := auth.AuthContextFromGin(c)
+	if !ok || current.Principal.Type != "user" || current.Context.Type != "tenant" ||
+		(current.Token.Type != "first_party_access_token" && current.Token.Type != "oauth_access_token" && current.Token.Type != "delegated_access_token") {
+		managerError(c, http.StatusForbidden, manageri18n.MsgUnauthorized)
+		return
+	}
 	if h.searchService == nil || !h.searchService.Enabled() {
 		managerError(c, http.StatusServiceUnavailable, manageri18n.MsgHybridSearchNotConfigured)
 		return
@@ -69,7 +81,7 @@ func (h *SearchHandler) Search(c *gin.Context) {
 	}
 
 	tenantID := tenantFilterIDFromContext(c)
-	result, err := h.searchService.SearchDocuments(c.Request.Context(), tenantID, engineID, query, page, pageSize)
+	result, err := h.searchService.SearchDocuments(c.Request.Context(), tenantID, engineID, auth.CanonicalBearerToken(c.GetHeader("Authorization")), h.visibility, query, page, pageSize)
 	if err != nil {
 		if errors.Is(err, service.ErrSearchIsolated) {
 			c.JSON(http.StatusServiceUnavailable, gin.H{"error": commoni18n.T(c, manageri18n.MsgHybridSearchIsolated), "error_code": "manager_search_isolated"})
@@ -77,6 +89,14 @@ func (h *SearchHandler) Search(c *gin.Context) {
 		}
 		if errors.Is(err, service.ErrSearchDisabled) {
 			managerError(c, http.StatusServiceUnavailable, manageri18n.MsgHybridSearchNotConfigured)
+			return
+		}
+		if errors.Is(err, commonClient.ErrMetadataQueryDenied) || errors.Is(err, commonClient.ErrMetadataCredentialRejected) {
+			managerError(c, http.StatusForbidden, manageri18n.MsgUnauthorized)
+			return
+		}
+		if errors.Is(err, commonClient.ErrMetadataQueryUnavailable) || errors.Is(err, service.ErrSearchVisibilityUnavailable) {
+			managerError(c, http.StatusServiceUnavailable, manageri18n.MsgHybridSearchFailed)
 			return
 		}
 		logger.L().Error("混合检索失败", "error_type", fmt.Sprintf("%T", err))

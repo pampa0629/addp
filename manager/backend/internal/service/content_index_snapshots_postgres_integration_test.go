@@ -9,11 +9,13 @@ import (
 	"net/http"
 	"os"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
 	commonClient "github.com/addp/common/client"
 	"github.com/addp/common/dataprotection/projectionstore"
+	"github.com/addp/common/engine/plugin"
 	"github.com/addp/manager/internal/models"
 	"github.com/addp/manager/internal/repository"
 	"github.com/google/uuid"
@@ -203,8 +205,9 @@ func TestIntegrationPostgresManagerContentSnapshots(t *testing.T) {
 		})
 	}
 	t.Run("registered_field_matches", func(t *testing.T) {
+		identity := testSearchIdentity(t, 7, 11, 80, "Outdoors")
 		doc := commonClient.ManagerContentDocument{
-			DocumentID: "field-search", PayloadKind: commonClient.ManagerContentPayloadTechnicalMetadata,
+			DocumentID: identity.ID, EngineType: identity.EngineType, Locator: identity.Locator, PayloadKind: commonClient.ManagerContentPayloadTechnicalMetadata,
 			EngineID: 11, DataItemType: "collection", Name: "Outdoors", FullName: "Outdoor.Outdoors",
 			Fields: []commonClient.ManagerContentField{
 				{Name: "aaMembers", DataType: "array", Comment: "Participants"},
@@ -217,7 +220,7 @@ func TestIntegrationPostgresManagerContentSnapshots(t *testing.T) {
 		}
 		tenantID, engineID := uint(7), uint(11)
 		for _, query := range []string{"aamember", "AAMEMBER", "aamembe", "aamemebr", "participant", "string"} {
-			result, err := svc.SearchDocuments(ctx, &tenantID, &engineID, query, 1, 10)
+			result, err := svc.SearchDocuments(ctx, &tenantID, &engineID, "addp_at_test", searchVisibilityFixture{}, query, 1, 10)
 			if err != nil || len(result.Hits) != 1 || len(result.Hits[0].FieldMatches) == 0 {
 				t.Fatalf("query=%q result=%+v error=%v", query, result, err)
 			}
@@ -231,7 +234,7 @@ func TestIntegrationPostgresManagerContentSnapshots(t *testing.T) {
 			}
 		}
 		for _, scope := range [][2]uint{{8, 11}, {7, 12}} {
-			result, err := svc.SearchDocuments(ctx, &scope[0], &scope[1], "aamember", 1, 10)
+			result, err := svc.SearchDocuments(ctx, &scope[0], &scope[1], "addp_at_test", searchVisibilityFixture{}, "aamember", 1, 10)
 			if err != nil || result.Total != 0 || len(result.Hits) != 0 {
 				t.Fatalf("scope=%v returned unrelated fields: %+v %v", scope, result, err)
 			}
@@ -240,9 +243,80 @@ func TestIntegrationPostgresManagerContentSnapshots(t *testing.T) {
 			t.Fatal(err)
 		}
 	})
+	t.Run("search_visibility_filters_before_count_and_pagination", func(t *testing.T) {
+		tenantID, engineID := uint(7), uint(11)
+		metadata := testSearchIdentity(t, tenantID, engineID, 84, "BudgetMeta")
+		content := testSearchIdentity(t, tenantID, engineID, 85, "BudgetRead")
+		hidden := testSearchIdentity(t, tenantID, engineID, 86, "BudgetHidden")
+		t.Cleanup(func() {
+			if err := svc.DeleteContentDocuments(ctx, tenantID, ContentDocumentDeleteScope{EngineID: engineID, DocumentIDs: []string{metadata.ID, content.ID, hidden.ID}}); err != nil {
+				t.Error(err)
+			}
+		})
+		for i, identity := range []indexedSearchIdentity{metadata, content, hidden} {
+			name := []string{"BudgetMeta", "BudgetRead", "BudgetHidden"}[i]
+			size := int64(99)
+			technical := commonClient.ManagerContentDocument{DocumentID: identity.ID, EngineType: identity.EngineType, Locator: identity.Locator, EngineID: engineID,
+				PayloadKind: commonClient.ManagerContentPayloadTechnicalMetadata, DataItemType: "collection", Name: name, FullName: "Outdoor." + name, SizeBytes: &size}
+			body := commonClient.ManagerContentDocument{DocumentID: identity.ID, EngineID: engineID, PayloadKind: commonClient.ManagerContentPayloadExtractedContent, DataItemType: "collection", Name: name,
+				Content: "secretonly", ContentPreview: "secretonly"}
+			for _, doc := range []commonClient.ManagerContentDocument{technical, body} {
+				if err := svc.UpsertContentDocuments(ctx, tenantID, []commonClient.ManagerContentDocument{doc}); err != nil {
+					t.Fatal(err)
+				}
+			}
+		}
+		checker := searchVisibilityFixture{classify: func(target plugin.EngineCatalogPath) (bool, bool) {
+			name := target.Segments[len(target.Segments)-1].Name
+			return name != "BudgetHidden", name == "BudgetRead"
+		}}
+		found := map[string]SearchDocument{}
+		for page := 1; page <= 3; page++ {
+			result, err := svc.SearchDocuments(ctx, &tenantID, &engineID, "addp_at_test", checker, "Budget", page, 1)
+			if err != nil || result.Total != 2 || len(result.Hits) != min(1, 3-page) {
+				t.Fatalf("page %d: %+v %v", page, result, err)
+			}
+			for _, hit := range result.Hits {
+				found[hit.DocumentID] = hit
+			}
+		}
+		if len(found) != 2 || found[metadata.ID].Name != "BudgetMeta" || found[metadata.ID].FileSize != 0 || found[metadata.ID].ContentPreview != "" || found[content.ID].ContentPreview != "secretonly" {
+			t.Fatalf("wrong search projections: %+v", found)
+		}
+		result, err := svc.SearchDocuments(ctx, &tenantID, &engineID, "addp_at_test", checker, "secretonly", 1, 10)
+		if err != nil || result.Total != 1 || len(result.Hits) != 1 || result.Hits[0].DocumentID != content.ID {
+			t.Fatalf("content-only match escaped access filter: %+v %v", result, err)
+		}
+		visibility, err := svc.observeSearchVisibility(ctx, tenantID, &engineID, "addp_at_test", checker)
+		if err != nil {
+			t.Fatal(err)
+		}
+		profileID := uuid.NewString()
+		t.Cleanup(func() {
+			if err := db.Exec("DELETE FROM manager.embeddings WHERE tenant_id = ? AND model_profile_id = ?", tenantID, profileID).Error; err != nil {
+				t.Error(err)
+			}
+		})
+		for i, identity := range []indexedSearchIdentity{content, hidden} {
+			// The hidden vector is an exact match. It must not consume top-1.
+			coordinates := []string{"1,1", "1,0"}[i]
+			vector := "[" + coordinates + strings.Repeat(",0", 2558) + "]"
+			if err := db.Exec(`INSERT INTO manager.embeddings (tenant_id,item_fingerprint,item_id,engine_id,locator,source_version,embedding,model_profile_id,profile_version,deployment_id,dimension,status,created_at,updated_at)
+				VALUES (?, ?, ?, ?, ?, 'test', ?::manager.vector, ?, 1, ?, 2560, 'ready', now(), now())`, tenantID, identity.ID, 85+i, engineID, identity.Locator, vector, profileID, uuid.NewString()).Error; err != nil {
+				t.Fatal(err)
+			}
+		}
+		queryVector := make([]float32, 2560)
+		queryVector[0] = 1
+		vectors, err := repository.NewEmbeddingRepository(db).QueryReadySimilar(ctx, tenantID, &engineID, queryVector, profileID, 1, 2560, 1, 0, visibleSearchIDs(visibility.content))
+		if err != nil || len(vectors) != 1 || vectors[0].Embedding.ItemFingerprint != content.ID {
+			t.Fatalf("unauthorized vector affected top-1: %+v %v", vectors, err)
+		}
+	})
 	t.Run("protection_purge_preserves_technical_projection", func(t *testing.T) {
-		id := "protected-mixed"
-		technical := commonClient.ManagerContentDocument{DocumentID: id, PayloadKind: commonClient.ManagerContentPayloadTechnicalMetadata, EngineID: 9, DataItemType: "collection", Name: "Persons", FullName: "Outdoor.Persons", Fields: []commonClient.ManagerContentField{{Name: "userInfo.phone", DataType: "string"}}, ProjectionTime: time.Now().UTC()}
+		identity := testSearchIdentity(t, 7, 9, 81, "Persons")
+		id := identity.ID
+		technical := commonClient.ManagerContentDocument{DocumentID: id, EngineType: identity.EngineType, Locator: identity.Locator, PayloadKind: commonClient.ManagerContentPayloadTechnicalMetadata, EngineID: 9, DataItemType: "collection", Name: "Persons", FullName: "Outdoor.Persons", Fields: []commonClient.ManagerContentField{{Name: "userInfo.phone", DataType: "string"}}, ProjectionTime: time.Now().UTC()}
 		if err := svc.UpsertContentDocuments(ctx, 7, []commonClient.ManagerContentDocument{technical}); err != nil {
 			t.Fatal(err)
 		}
@@ -301,11 +375,11 @@ func TestIntegrationPostgresManagerContentSnapshots(t *testing.T) {
 				t.Fatal("purge created missing-document placeholder")
 			}
 			tenantID := uint(7)
-			result, err := svc.SearchDocuments(ctx, &tenantID, nil, "userInfo.phone", 1, 10)
+			result, err := svc.SearchDocuments(ctx, &tenantID, nil, "addp_at_test", searchVisibilityFixture{}, "userInfo.phone", 1, 10)
 			if err != nil || result.Total != 1 || result.Hits[0].DocumentID != id {
 				t.Fatalf("technical search lost after purge: %+v %v", result, err)
 			}
-			result, err = svc.SearchDocuments(ctx, &tenantID, nil, "sensitive", 1, 10)
+			result, err = svc.SearchDocuments(ctx, &tenantID, nil, "addp_at_test", searchVisibilityFixture{}, "sensitive", 1, 10)
 			if err != nil || result.Total != 0 {
 				t.Fatalf("body remains searchable after purge: %+v %v", result, err)
 			}

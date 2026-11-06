@@ -199,7 +199,7 @@ func TestContentDeliveryLostResponseStaysUnknownAndCanAcknowledgeIsolation(t *te
 		t.Fatal("isolation not durable")
 	}
 	tenant := uint(7)
-	if _, err := svc.SearchDocuments(t.Context(), &tenant, nil, "persons", 1, 10); !errors.Is(err, ErrSearchIsolated) {
+	if _, err := svc.SearchDocuments(t.Context(), &tenant, nil, "addp_at_test", searchVisibilityFixture{}, "persons", 1, 10); !errors.Is(err, ErrSearchIsolated) {
 		t.Fatal("isolated index queried")
 	}
 	if requests.Load() != 1 {
@@ -252,7 +252,7 @@ func TestContentSearchDiscardsResultsIfProtectionFencesDuringExternalRead(t *tes
 		fmt.Fprint(w, `{"hits":[{"id":"item","name":"old-content"}],"estimatedTotalHits":1}`)
 	}))
 	tenant := uint(7)
-	result, err := svc.SearchDocuments(t.Context(), &tenant, nil, "persons", 1, 10)
+	result, err := svc.SearchDocuments(t.Context(), &tenant, nil, "addp_at_test", searchVisibilityFixture{}, "persons", 1, 10)
 	if !errors.Is(err, ErrSearchIsolated) || result != nil || requests.Load() != 1 {
 		t.Fatalf("old external result escaped fence: %#v %v", result, err)
 	}

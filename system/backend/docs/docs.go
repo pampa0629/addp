@@ -1302,6 +1302,79 @@ const docTemplate = `{
                 "x-addp-auth-mode": "self"
             }
         },
+        "/engine-access/metadata-checks/manager-search": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "接受当前 Tenant User 或唯一 manager audience 和 data.search Scope 的委托，固定核验 manager.search.execute。逐项返回元数据及内容读取裁决，仅用于当前检索 | Accepts a current Tenant User or a delegate with sole manager audience and data.search scope. Checks fixed manager.search.execute and returns per-target metadata and content decisions for the current search only",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "源数据读取检查 | Source Data Read Checks"
+                ],
+                "summary": "检查 Manager 检索候选的当前可见性 | Check current visibility for Manager search candidates",
+                "parameters": [
+                    {
+                        "description": "1 至 200 个不重复完整目标，不支持 query 参数 | 1 to 200 unique complete targets; no query parameters",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/authorization.SourceMetadataCheckRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "当次检索授权观察 | Current search access observation",
+                        "schema": {
+                            "$ref": "#/definitions/authorization.SourceSearchCheck"
+                        }
+                    },
+                    "400": {
+                        "description": "核验失败 | Check failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "核验失败 | Check failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "核验失败 | Check failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "核验失败 | Check failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "核验失败 | Check failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "manager.search.execute"
+                ]
+            }
+        },
         "/engine-access/metadata-checks/meta-lineage": {
             "post": {
                 "security": [
@@ -16578,6 +16651,34 @@ const docTemplate = `{
                 },
                 "target": {
                     "$ref": "#/definitions/plugin.EngineCatalogPath"
+                }
+            }
+        },
+        "authorization.SourceSearchCheck": {
+            "type": "object",
+            "properties": {
+                "observed_at": {
+                    "type": "string"
+                },
+                "targets": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/authorization.SourceSearchTargetCheck"
+                    }
+                }
+            }
+        },
+        "authorization.SourceSearchTargetCheck": {
+            "type": "object",
+            "properties": {
+                "content_readable": {
+                    "type": "boolean"
+                },
+                "target": {
+                    "$ref": "#/definitions/plugin.EngineCatalogPath"
+                },
+                "visible": {
+                    "type": "boolean"
                 }
             }
         },

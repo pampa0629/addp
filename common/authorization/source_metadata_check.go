@@ -52,3 +52,28 @@ func (r *SourceMetadataCheck) Matches(request SourceMetadataCheckRequest) bool {
 	}
 	return true
 }
+
+// SourceSearchCheck is a point-in-time observation for the fixed Manager search operation.
+type SourceSearchCheck struct {
+	ObservedAt time.Time                 `json:"observed_at"`
+	Targets    []SourceSearchTargetCheck `json:"targets"`
+}
+
+type SourceSearchTargetCheck struct {
+	SourceMetadataTargetCheck
+	ContentReadable bool `json:"content_readable"`
+}
+
+func (r *SourceSearchCheck) Matches(request SourceMetadataCheckRequest) bool {
+	if r == nil || len(r.Targets) != len(request.Targets) {
+		return false
+	}
+	metadata := SourceMetadataCheck{ObservedAt: r.ObservedAt, Targets: make([]SourceMetadataTargetCheck, len(r.Targets))}
+	for i, target := range r.Targets {
+		if target.ContentReadable && !target.Visible {
+			return false
+		}
+		metadata.Targets[i] = target.SourceMetadataTargetCheck
+	}
+	return metadata.Matches(request)
+}

@@ -12,6 +12,7 @@ import (
 	commonExecution "github.com/addp/common/execution"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/manager/internal/models"
+	"github.com/lib/pq"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
@@ -179,7 +180,7 @@ func (r *EmbeddingRepository) UpsertEmbeddingState(ctx context.Context, embeddin
 	})
 }
 
-func (r *EmbeddingRepository) QueryReadySimilar(ctx context.Context, tenantID uint, engineID *uint, queryVector []float32, modelProfileID string, profileVersion int64, dimension int, topK int, maxDistance float64) ([]EmbeddingSimilarityResult, error) {
+func (r *EmbeddingRepository) QueryReadySimilar(ctx context.Context, tenantID uint, engineID *uint, queryVector []float32, modelProfileID string, profileVersion int64, dimension int, topK int, maxDistance float64, allowedItems []string) ([]EmbeddingSimilarityResult, error) {
 	if tenantID == 0 {
 		return nil, errors.New("tenant_id is required")
 	}
@@ -192,9 +193,12 @@ func (r *EmbeddingRepository) QueryReadySimilar(ctx context.Context, tenantID ui
 	if topK <= 0 {
 		topK = 10
 	}
+	if len(allowedItems) == 0 {
+		return nil, nil
+	}
 
 	vector := vectorToString(queryVector)
-	args := []any{tenantID, models.EmbeddingStatusReady, modelProfileID, profileVersion, dimension}
+	args := []any{tenantID, models.EmbeddingStatusReady, modelProfileID, profileVersion, dimension, pq.Array(allowedItems)}
 	engineClause := ""
 	if engineID != nil && *engineID > 0 {
 		engineClause = " AND engine_id = ?"
@@ -212,8 +216,8 @@ func (r *EmbeddingRepository) QueryReadySimilar(ctx context.Context, tenantID ui
 		       status, status_reason, error_message, last_execution_id, vectorized_at, created_at, updated_at,
 		       embedding OPERATOR(manager.<=>) ?::manager.vector AS distance
 		FROM manager.embeddings
-		WHERE tenant_id = ? AND status = ? AND model_profile_id = ? AND profile_version = ? AND dimension = ?%s AND embedding IS NOT NULL%s
-		ORDER BY embedding OPERATOR(manager.<=>) ?::manager.vector
+		WHERE tenant_id = ? AND status = ? AND model_profile_id = ? AND profile_version = ? AND dimension = ? AND item_fingerprint = ANY(?::text[])%s AND embedding IS NOT NULL%s
+		ORDER BY embedding OPERATOR(manager.<=>) ?::manager.vector, item_fingerprint
 		LIMIT ?
 	`, engineClause, distanceClause)
 

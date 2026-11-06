@@ -29,32 +29,49 @@ func (c *SystemServiceClient) CheckMetaLineageRead(ctx context.Context, credenti
 }
 
 func (c *SystemServiceClient) checkMetaVisibility(ctx context.Context, credential string, targets []plugin.EngineCatalogPath, endpoint string, allowDelegate bool) (*authorization.SourceMetadataCheck, error) {
+	var result authorization.SourceMetadataCheck
+	if err := c.checkSourceVisibility(ctx, credential, targets, endpoint, allowDelegate, &result); err != nil {
+		return nil, err
+	}
+	return &result, nil
+}
+
+func (c *SystemServiceClient) CheckManagerSearchRead(ctx context.Context, credential string, targets []plugin.EngineCatalogPath) (*authorization.SourceSearchCheck, error) {
+	var result authorization.SourceSearchCheck
+	if err := c.checkSourceVisibility(ctx, credential, targets, "/api/v1/system/engine-access/metadata-checks/manager-search", true, &result); err != nil {
+		return nil, err
+	}
+	return &result, nil
+}
+
+func (c *SystemServiceClient) checkSourceVisibility(ctx context.Context, credential string, targets []plugin.EngineCatalogPath, endpoint string, allowDelegate bool, result interface {
+	Matches(authorization.SourceMetadataCheckRequest) bool
+}) error {
 	ordinary := strings.HasPrefix(credential, "addp_at_") && len(credential) > len("addp_at_")
 	delegated := allowDelegate && strings.HasPrefix(credential, "addp_dat_") && len(credential) > len("addp_dat_")
 	if (!ordinary && !delegated) || strings.ContainsAny(credential, " \t\r\n") {
-		return nil, ErrMetadataCredentialRejected
+		return ErrMetadataCredentialRejected
 	}
 	request := authorization.SourceMetadataCheckRequest{Targets: targets}
 	if !request.Valid() {
-		return nil, ErrMetadataQueryDenied
+		return ErrMetadataQueryDenied
 	}
 	if c == nil || c.baseURL == "" || c.httpClient == nil {
-		return nil, ErrMetadataQueryUnavailable
+		return ErrMetadataQueryUnavailable
 	}
 	bound := *c
 	httpClient := *c.httpClient
 	httpClient.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
 	bound.httpClient = &httpClient
-	var result authorization.SourceMetadataCheck
-	status, err := bound.doJSON(ctx, http.MethodPost, endpoint, credential, request, &result, 512<<10)
+	status, err := bound.doJSON(ctx, http.MethodPost, endpoint, credential, request, result, 512<<10)
 	if status == http.StatusUnauthorized {
-		return nil, ErrMetadataCredentialRejected
+		return ErrMetadataCredentialRejected
 	}
 	if status == http.StatusForbidden {
-		return nil, ErrMetadataQueryDenied
+		return ErrMetadataQueryDenied
 	}
 	if err != nil || status != http.StatusOK || !result.Matches(request) {
-		return nil, ErrMetadataQueryUnavailable
+		return ErrMetadataQueryUnavailable
 	}
-	return &result, nil
+	return nil
 }

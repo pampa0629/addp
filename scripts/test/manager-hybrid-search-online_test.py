@@ -29,6 +29,7 @@ class FakeGatewayClient:
         )
         self.embedding_exists = False
         self.fail_semantic_search = False
+        self.source_readable = True
         self.calls = []
 
     def request(self, method, path, expected, body=None):
@@ -62,6 +63,16 @@ class FakeGatewayClient:
                 "fingerprint": self.fingerprint,
                 "size_bytes": 4096,
             }])
+        if path == "/api/v1/system/engine-access/metadata-checks/manager-search" and method == "POST":
+            self.assertEqual(body, {"targets": [{"version": "catalog.path/v1", "engine_id": 27, "segments": [
+                {"term": "service", "kind": "service", "name": ""},
+                {"term": "bucket", "kind": "bucket", "name": "addp-online"},
+                {"term": "prefix", "kind": "prefix", "name": "hybrid-search"},
+                {"term": "object", "kind": "object", "name": "purple-gaming-light-gun.jpg"},
+            ]}]})
+            return response(payload={"observed_at": "2026-11-06T00:00:00Z", "targets": [
+                {"target": body["targets"][0], "visible": True, "content_readable": self.source_readable},
+            ]})
         if path.startswith("/api/v1/manager/embeddings?"):
             query = urllib.parse.parse_qs(urllib.parse.urlsplit(path).query)
             if query != {"item_id": ["701"], "page": ["1"], "page_size": ["20"]}:
@@ -158,6 +169,15 @@ def scenario_environment(artifact_dir: str):
 
 
 class ManagerHybridSearchOnlineTest(unittest.TestCase):
+    def test_rejects_metadata_only_access_before_embedding(self) -> None:
+        client = FakeGatewayClient()
+        client.source_readable = False
+        with tempfile.TemporaryDirectory() as artifact_dir:
+            with mock.patch.object(SUITE, "GatewayClient", return_value=client):
+                with self.assertRaisesRegex(SUITE.SuiteError, "current data-read Grant"):
+                    SUITE.run_scenario(scenario_environment(artifact_dir))
+        self.assertFalse(any(path == "/api/v1/manager/embedding_executions" for _, path, _ in client.calls))
+
     def test_runs_real_contract_and_deletes_embedding(self) -> None:
         client = FakeGatewayClient()
         with tempfile.TemporaryDirectory() as artifact_dir:

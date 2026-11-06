@@ -330,7 +330,7 @@ func SetupRouter(
 
 		searchGroup := api.Group("/search")
 		{
-			handler := NewSearchHandler(searchService, historyService)
+			handler := NewSearchHandler(searchService, historyService, systemServiceClient)
 			searchGroup.GET("", permission(managerauthorization.PermissionManagerSearchExecute), handler.Search) // 混合检索（全文 + 向量）
 			searchGroup.GET("/history", handler.ListHistory)
 			searchGroup.DELETE("/history/:id", handler.DeleteHistoryItem)

@@ -29,7 +29,7 @@ func exerciseMetadataOnlyGrants(t *testing.T, db *gorm.DB, tenantID, adminID int
 		if err != nil {
 			t.Fatal(err)
 		}
-		readerRole, err := roles.CreateRole(ctx, iam.CreateTenantRoleInput{TenantID: tenantID, RoleKey: "custom.generic_metadata_reader", Name: "Metadata viewer", PermissionKeys: []string{MetaCatalogReadPermission, MetaLineageReadPermission, ManagerPreviewReadPermission}, ActorPrincipalID: adminID})
+		readerRole, err := roles.CreateRole(ctx, iam.CreateTenantRoleInput{TenantID: tenantID, RoleKey: "custom.generic_metadata_reader", Name: "Metadata viewer", PermissionKeys: []string{MetaCatalogReadPermission, MetaLineageReadPermission, ManagerPreviewReadPermission, ManagerSearchPermission}, ActorPrincipalID: adminID})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -176,6 +176,10 @@ func exerciseMetadataOnlyGrants(t *testing.T, db *gorm.DB, tenantID, adminID int
 					t.Fatal("metadata Grant lost its exclusive boundary")
 				}
 				check(true)
+				search, err := service.CheckManagerSearchRead(ctx, credential, request)
+				if err != nil || !search.Matches(request) || !search.Targets[0].Visible || search.Targets[0].ContentReadable {
+					t.Fatalf("metadata-only Grant reached content search: %+v %v", search, err)
+				}
 				mixed := shared.SourceMetadataCheckRequest{Targets: []plugin.EngineCatalogPath{missingTarget, target}}
 				mixedResult, err := service.CheckMetaLineageRead(ctx, credential, mixed)
 				if err != nil || !mixedResult.Matches(mixed) || mixedResult.Targets[0].Visible || !mixedResult.Targets[1].Visible {

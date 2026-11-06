@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import json
 import os
+import runpy
 import sys
 import time
 import urllib.error
@@ -263,6 +264,18 @@ def search(client: GatewayClient, engine_id: int, query_text: str, page_size: in
     return _object(response.get("data"), "Manager search data")
 
 
+def require_search_source_access(client: GatewayClient, engine_id: int, image_full_name: str) -> None:
+    registration = runpy.run_path(str(Path(__file__).with_name("online-engine-registration.py")))
+    target = registration["ExactFileMetadataGrants"].target(engine_id, image_full_name, "minio")
+    observation = _object(client.request(
+        "POST", "/api/v1/system/engine-access/metadata-checks/manager-search", (200,), {"targets": [target]},
+    ).payload, "Manager search source access")
+    if not observation.get("observed_at") or observation.get("targets") != [
+        {"target": target, "visible": True, "content_readable": True}
+    ]:
+        raise SuiteError("Manager hybrid-search fixture requires a current data-read Grant for the Online User")
+
+
 def matching_hits(result: Mapping[str, object], document_id: str) -> list[dict[str, object]]:
     hits = [_object(value, "Manager search hit") for value in _array(result.get("results"), "Manager search results")]
     ids = [value.get("document_id") for value in hits]
@@ -303,6 +316,7 @@ def run_scenario(environment: Mapping[str, str]) -> dict[str, object]:
     item_id = positive_int(item.get("id"), "hybrid-search fixture id")
     fingerprint = str(item["fingerprint"])
     locator = build_item_locator(engine_id, item)
+    require_search_source_access(client, engine_id, image_full_name)
     if list_item_embeddings(client, item_id):
         raise SuiteError("a stale embedding exists for the dedicated hybrid-search fixture")
 

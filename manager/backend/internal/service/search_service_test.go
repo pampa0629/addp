@@ -35,7 +35,7 @@ func TestMapMeilisearchHitPreservesActualFieldMatches(t *testing.T) {
 		t.Fatalf("field matches=%+v, want %+v", doc.FieldMatches, want)
 	}
 	// Fusion retains keyword evidence; a vector-only result cannot fabricate it.
-	fused := fuseSearchDocuments([]SearchDocument{doc}, 1, []VectorDocument{{DocumentID: "collection"}, {DocumentID: "semantic-only"}}, 1, 10)
+	fused := fuseSearchDocuments([]SearchDocument{doc}, []VectorDocument{{DocumentID: "collection"}, {DocumentID: "semantic-only"}}, 1, 10)
 	if !reflect.DeepEqual(fused.Hits[0].FieldMatches, want) || len(fused.Hits[1].FieldMatches) != 0 {
 		t.Fatalf("fusion changed field evidence: %+v", fused.Hits)
 	}
@@ -53,7 +53,6 @@ func TestFuseSearchDocumentsRewardsHybridMatchesAndDeduplicates(t *testing.T) {
 			{DocumentID: "keyword-first", FileName: "first.docx"},
 			{DocumentID: "hybrid", FileName: "hybrid.docx", Locator: "keyword-locator"},
 		},
-		2,
 		[]VectorDocument{
 			{DocumentID: "hybrid", Distance: 0.1, Locator: "vector-locator"},
 			{DocumentID: "vector-only", Distance: 0.2, FileName: "semantic.jpg"},
@@ -92,11 +91,11 @@ func TestFuseSearchDocumentsInterleavesPureVectorHitsBeforePagination(t *testing
 	}
 	vectors := []VectorDocument{{DocumentID: "vector-1", Distance: 0.15}}
 
-	firstPage := fuseSearchDocuments(keywords, 3, vectors, 1, 2)
+	firstPage := fuseSearchDocuments(keywords, vectors, 1, 2)
 	if got := searchDocumentIDs(firstPage.Hits); !reflect.DeepEqual(got, []string{"keyword-1", "vector-1"}) {
 		t.Fatalf("first page order = %v", got)
 	}
-	secondPage := fuseSearchDocuments(keywords, 3, vectors, 2, 2)
+	secondPage := fuseSearchDocuments(keywords, vectors, 2, 2)
 	if got := searchDocumentIDs(secondPage.Hits); !reflect.DeepEqual(got, []string{"keyword-2", "keyword-3"}) {
 		t.Fatalf("second page order = %v", got)
 	}
@@ -110,7 +109,6 @@ func TestFuseSearchDocumentsDegradesToKeywordRanking(t *testing.T) {
 
 	result := fuseSearchDocuments(
 		[]SearchDocument{{DocumentID: "first"}, {DocumentID: "second"}},
-		12,
 		nil,
 		1,
 		10,
@@ -119,8 +117,8 @@ func TestFuseSearchDocumentsDegradesToKeywordRanking(t *testing.T) {
 	if got := searchDocumentIDs(result.Hits); !reflect.DeepEqual(got, []string{"first", "second"}) {
 		t.Fatalf("document order = %v", got)
 	}
-	if result.Total != 12 {
-		t.Fatalf("Total = %d, want 12", result.Total)
+	if result.Total != 2 {
+		t.Fatalf("Total = %d, want 2", result.Total)
 	}
 	for _, doc := range result.Hits {
 		if !reflect.DeepEqual(doc.MatchMethods, []string{"keyword"}) {
