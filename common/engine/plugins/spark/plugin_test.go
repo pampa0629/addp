@@ -14,7 +14,9 @@ import (
 
 	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/engine/selection"
+	commoni18n "github.com/addp/common/middleware/i18n"
 	"github.com/addp/common/models"
+	"golang.org/x/sys/unix"
 )
 
 const readyState = `{"url":"spark://internal-master:7077","status":"ALIVE","aliveworkers":1,"workers":[{"id":"worker-1","state":"ALIVE"}],"activeapps":[]}`
@@ -155,40 +157,84 @@ func TestProbeRejectsRedirectLargeBodyTLSFailureAndUnreachableRPC(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	closedPort := rpc.Addr().(*net.TCPAddr).Port
-	_ = rpc.Close()
-	for _, scenario := range []string{"redirect", "large", "http-error", "valid-but-no-rpc"} {
-		t.Run(scenario, func(t *testing.T) {
+	defer rpc.Close()
+	rpcPort := rpc.Addr().(*net.TCPAddr).Port
+	checkFailure := func(t *testing.T, ctx context.Context, port int, uiURL, want string) {
+		t.Helper()
+		err := (&Plugin{}).TestConnection(ctx, plugin.ConnectionInfo{"host": "127.0.0.1", "port": port, "web_ui_url": uiURL})
+		if err == nil {
+			t.Fatal("invalid probe accepted")
+		}
+		if strings.Contains(err.Error(), "secret-sentinel") {
+			t.Fatal("probe leaked the upstream response body")
+		}
+		if !reflect.DeepEqual(err, commoni18n.NewMessageError(want)) {
+			t.Fatalf("probe did not reject with %s (error type %T)", want, err)
+		}
+	}
+
+	for _, scenario := range []struct{ name, want string }{
+		{"redirect", "engine.spark.state_unavailable"},
+		{"large", "engine.spark.state_invalid"},
+		{"http-error", "engine.spark.state_unavailable"},
+	} {
+		t.Run(scenario.name, func(t *testing.T) {
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				switch scenario {
+				switch scenario.name {
 				case "redirect":
-					http.Redirect(w, r, "/another", 302)
+					if r.URL.Path == "/json/" {
+						http.Redirect(w, r, "/another", http.StatusFound)
+						return
+					}
+					_, _ = w.Write([]byte(readyState))
 				case "large":
-					_, _ = w.Write([]byte(strings.Repeat(" ", maxStateBytes+1)))
+					_, _ = w.Write([]byte(readyState + strings.Repeat(" ", maxStateBytes+1-len(readyState))))
 				case "http-error":
 					w.WriteHeader(403)
 					_, _ = w.Write([]byte("secret-sentinel"))
-				default:
-					_, _ = w.Write([]byte(readyState))
 				}
 			}))
 			defer server.Close()
-			err := (&Plugin{}).TestConnection(context.Background(), plugin.ConnectionInfo{"host": "127.0.0.1", "port": closedPort, "web_ui_url": server.URL})
-			if err == nil || strings.Contains(err.Error(), "secret-sentinel") {
-				t.Fatal("invalid probe accepted or leaked body")
-			}
+			checkFailure(t, context.Background(), rpcPort, server.URL, scenario.want)
 		})
 	}
+	t.Run("valid-but-no-rpc", func(t *testing.T) {
+		port := reserveNonListeningTCPPort(t)
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { _, _ = w.Write([]byte(readyState)) }))
+		defer server.Close()
+		// Some kernels leave the dial pending for a bound, non-listening port.
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+		checkFailure(t, ctx, port, server.URL, "engine.spark.rpc_unavailable")
+	})
+
 	tlsServer := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { _, _ = w.Write([]byte(readyState)) }))
 	defer tlsServer.Close()
-	if err := (&Plugin{}).TestConnection(context.Background(), plugin.ConnectionInfo{"host": "127.0.0.1", "port": closedPort, "web_ui_url": tlsServer.URL}); err == nil {
-		t.Fatal("untrusted TLS was accepted")
-	}
+	checkFailure(t, context.Background(), rpcPort, tlsServer.URL, "engine.spark.state_unavailable")
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	if err := probeMaster(ctx, "127.0.0.1:1", tlsServer.URL); err == nil {
 		t.Fatal("cancelled probe accepted")
 	}
+}
+
+func reserveNonListeningTCPPort(t *testing.T) int {
+	t.Helper()
+	// Keep the TCP port bound for the whole test without accepting connections.
+	fd, err := unix.Socket(unix.AF_INET, unix.SOCK_STREAM, unix.IPPROTO_TCP)
+	if err != nil {
+		t.Fatal(err)
+	}
+	unix.CloseOnExec(fd)
+	t.Cleanup(func() { _ = unix.Close(fd) })
+	if err := unix.Bind(fd, &unix.SockaddrInet4{Addr: [4]byte{127, 0, 0, 1}}); err != nil {
+		t.Fatal(err)
+	}
+	address, err := unix.Getsockname(fd)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return address.(*unix.SockaddrInet4).Port
 }
 
 // This test runs only inside the gate-owned Standalone container, using the
