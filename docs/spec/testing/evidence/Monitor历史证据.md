@@ -19,6 +19,7 @@
 | [采集来源与引擎指标](Monitor采集来源与引擎指标历史证据.md) | [PostgreSQL 来源与身份](Monitor采集来源与引擎指标历史证据.md#pg-source-history)、[Redis 来源与专业查询](Monitor采集来源与引擎指标历史证据.md#redis-source-history)（本机纳管、主机关联、实际采样及 AOF 开启时的当前值与近五分钟内存趋势见[Business Redis Safari 复验](Monitor采集来源与引擎指标历史证据.md#business-redis-平台接入和-safari-复验2026-11-06)）、[MinIO 采样与专业查询](Monitor采集来源与引擎指标历史证据.md#minio-source-history)、[引擎页面、导航与刷新](Monitor采集来源与引擎指标历史证据.md#engine-ui-history)，另收录统一采集、主机恢复与部署分组 |
 | MinIO 分项证据 | [实源 T2 的 Docker 只读发现及 System 独立验证](Monitor采集来源与引擎指标历史证据.md#minio-自动发现与-system-精确来源关联2026-11-02)、[固定 PromQL 与受控页面](Monitor采集来源与引擎指标历史证据.md#minio-固定查询与专业监控页面2026-11-02)、[本机 Infra Safari 页面与趋势](Monitor采集来源与引擎指标历史证据.md#infra-minio-重新应用后的-safari-真实页面与趋势交互2026-11-04) |
 | 采集来源 Compose 分组 | [分组门禁、首败与清理](Monitor采集来源与引擎指标历史证据.md#采集来源统一-compose-分组2026-11-05)、[个人 Desktop 应用与恢复复验](Monitor采集来源与引擎指标历史证据.md#个人-desktop-统一分组应用与恢复复验2026-11-05) |
+| 启动观测与主机恢复 | [启动前序失败与末尾摘要的归因](Monitor采集来源与引擎指标历史证据.md#启动前序失败与末尾现况的提示归因2026-11-05)、[主机恢复误拒绝与本机全量启动摘要复验](Monitor采集来源与引擎指标历史证据.md#主机恢复的空dns表示差异误拒绝2026-11-05) |
 | [执行监控与留存](Monitor执行监控与留存历史证据.md) | continuous、Owner 不可用、租户日志终审及过程事件留存，见[按验收范围查阅](Monitor执行监控与留存历史证据.md#按验收范围查阅) |
 | [部署与前置诊断](Monitor部署与前置诊断历史证据.md) | 资源守卫、Docker CLI／daemon 取证与 Compose 超时，见[按诊断问题查阅](Monitor部署与前置诊断历史证据.md#按诊断问题查阅) |
 
