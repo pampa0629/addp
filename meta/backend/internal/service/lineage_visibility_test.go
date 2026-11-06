@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"errors"
+	"slices"
 	"testing"
 	"time"
 
@@ -33,11 +34,21 @@ func exerciseUserLineageVisibility(t *testing.T, db *gorm.DB) {
 	if err := svc.RecordServicePublication(context.Background(), 7, models.RecordServicePublicationRequest{ServiceID: 77, ServiceName: "secret service", ServiceUpdatedAt: now, PublishedRevision: "r1", Dependencies: []models.LineageServiceDependencyInput{{SourceItemID: root.ID, DependencyKind: "table"}}}); err != nil {
 		t.Fatal(err)
 	}
-	allow := []uint{root.ID, visible.ID, next.ID, behind.ID}
-	calls := 0
-	ctx := WithLineageVisibility(context.Background(), func(context.Context) ([]uint, error) { calls++; return allow, nil })
+	allow := []uint{root.ID, visible.ID, next.ID, behind.ID, hidden.ID}
+	var batches [][]uint
+	ctx := WithLineageVisibility(context.Background(), func(_ context.Context, ids []uint) ([]uint, error) {
+		batches = append(batches, slices.Clone(ids))
+		return visibleLineageTestItems(ids, allow), nil
+	})
+	full := models.LineageGraphRequest{SubjectKind: "data_item", ItemID: &root.ID, Direction: "downstream", Depth: 5, Limit: 20}
+	graph, err := svc.GetGraph(ctx, 7, full)
+	if err != nil || len(graph.Nodes) != 5 || len(graph.Edges) != 4 || graph.PermissionFiltered {
+		t.Fatalf("before withdrawal: %+v %v", graph, err)
+	}
+	allow = allow[:len(allow)-1]
 	request := models.LineageGraphRequest{SubjectKind: "data_item", ItemID: &root.ID, Direction: "downstream", Depth: 1, Limit: 2}
 	for _, historical := range []bool{false, true} {
+		batches = nil
 		if historical {
 			at := now.Add(time.Minute)
 			request.AsOf = &at
@@ -49,11 +60,15 @@ func exerciseUserLineageVisibility(t *testing.T, db *gorm.DB) {
 		if *graph.Edges[0].Target.ItemID != visible.ID || graph.Subject.HiddenDownstreamCount != 0 || graph.Edges[0].Target.HiddenDownstreamCount != 1 {
 			t.Fatalf("hidden counts/limit leaked: %+v", graph)
 		}
+		if len(batches) != 3 || !slices.Equal(batches[0], []uint{root.ID}) ||
+			!slices.Equal(batches[1], []uint{hidden.ID, visible.ID}) || !slices.Equal(batches[2], []uint{next.ID}) {
+			t.Fatalf("want root, direct neighbours and visible count frontier; got %v", batches)
+		}
 	}
 	request.AsOf = nil
 	request.Depth = 5
 	request.Limit = 20
-	graph, err := svc.GetGraph(ctx, 7, request)
+	graph, err = svc.GetGraph(ctx, 7, request)
 	if err != nil || len(graph.Nodes) != 3 || len(graph.Edges) != 2 || !graph.PermissionFiltered {
 		t.Fatalf("hidden bridge traversed: %+v %v", graph, err)
 	}
@@ -62,22 +77,33 @@ func exerciseUserLineageVisibility(t *testing.T, db *gorm.DB) {
 			t.Fatalf("hidden node: %+v", n)
 		}
 	}
+	isolated := createLineageItem(t, db, 7, "isolated", "isolated")
+	allow = append(allow, isolated.ID)
+	batches = nil
+	isolatedRequest := full
+	isolatedRequest.ItemID, isolatedRequest.Direction = &isolated.ID, "both"
+	graph, err = svc.GetGraph(ctx, 7, isolatedRequest)
+	if err != nil || len(graph.Nodes) != 1 || len(graph.Edges) != 0 || graph.PermissionFiltered ||
+		len(batches) != 1 || !slices.Equal(batches[0], []uint{isolated.ID}) {
+		t.Fatalf("isolated root should be the only authorization target: %+v %v %v", graph, err, batches)
+	}
 	allow = nil
+	batches = nil
 	if _, err = svc.GetGraph(ctx, 7, request); !errors.Is(err, gorm.ErrRecordNotFound) {
 		t.Fatalf("revocation ignored: %v", err)
 	}
-	if calls != 4 {
-		t.Fatalf("observations=%d", calls)
+	if len(batches) != 1 || !slices.Equal(batches[0], []uint{root.ID}) {
+		t.Fatalf("denied root triggered other checks: %v", batches)
 	}
 	request.SubjectKind = "published_service"
 	request.ServiceID = uintPtr(77)
 	request.Revision = "r1"
-	if _, err = svc.GetGraph(ctx, 7, request); !errors.Is(err, commonapi.ErrForbidden) || calls != 4 {
-		t.Fatalf("service queried: %v %d", err, calls)
+	if _, err = svc.GetGraph(ctx, 7, request); !errors.Is(err, commonapi.ErrForbidden) || len(batches) != 1 {
+		t.Fatalf("service queried: %v %v", err, batches)
 	}
 	request.SubjectKind = "data_item"
 	failure := errors.New("authority unavailable")
-	ctx = WithLineageVisibility(context.Background(), func(context.Context) ([]uint, error) { return []uint{root.ID}, failure })
+	ctx = WithLineageVisibility(context.Background(), func(context.Context, []uint) ([]uint, error) { return []uint{root.ID}, failure })
 	if graph, err = svc.GetGraph(ctx, 7, request); !errors.Is(err, failure) || len(graph.Nodes) != 0 {
 		t.Fatalf("partial authority accepted: %+v %v", graph, err)
 	}
@@ -97,7 +123,9 @@ func exerciseUserFieldLineageVisibility(t *testing.T, db *gorm.DB) {
 		t.Fatal(err)
 	}
 	allow := []uint{target.ID}
-	ctx := WithLineageVisibility(context.Background(), func(context.Context) ([]uint, error) { return allow, nil })
+	ctx := WithLineageVisibility(context.Background(), func(_ context.Context, ids []uint) ([]uint, error) {
+		return visibleLineageTestItems(ids, allow), nil
+	})
 	req := models.LineageGraphRequest{SubjectKind: "field_ref", ItemID: &target.ID, FieldName: "id", Direction: "upstream", Depth: 2, Limit: 2}
 	graph, err := svc.GetGraph(ctx, 7, req)
 	if err != nil || len(graph.Nodes) != 1 || len(graph.Edges) != 0 || graph.Truncated || !graph.PermissionFiltered {
@@ -184,7 +212,9 @@ func exerciseUserLineagePermissionBoundary(t *testing.T, db *gorm.DB) {
 	add(root.ID, deleted.ID, "active")
 	add(root.ID, other.ID, "active")
 	add(root.ID, hidden.ID, "closed")
-	ctx := WithLineageVisibility(context.Background(), func(context.Context) ([]uint, error) { return []uint{root.ID, visible.ID}, nil })
+	ctx := WithLineageVisibility(context.Background(), func(_ context.Context, ids []uint) ([]uint, error) {
+		return visibleLineageTestItems(ids, []uint{root.ID, visible.ID}), nil
+	})
 	req := models.LineageGraphRequest{SubjectKind: "data_item", ItemID: &root.ID, Direction: "downstream", Depth: 2, Limit: 20}
 	check := func(want bool) {
 		t.Helper()
@@ -219,6 +249,16 @@ func exerciseUserLineagePermissionBoundary(t *testing.T, db *gorm.DB) {
 		t.Fatal(err)
 	}
 	check(false) // A future observation cannot disclose a hidden historical relationship.
+}
+
+func visibleLineageTestItems(ids, allow []uint) []uint {
+	var visible []uint
+	for _, id := range ids {
+		if slices.Contains(allow, id) {
+			visible = append(visible, id)
+		}
+	}
+	return visible
 }
 
 func TestUserLineageVisibilityAgainstPostgres(t *testing.T) {

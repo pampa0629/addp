@@ -142,20 +142,17 @@ func (s *LineageService) buildFieldLineageGraph(ctx context.Context, tenantID ui
 			} else {
 				query = query.Where("r.first_observed_at <= ? AND (r.status IN ('active', 'stale') OR (r.status = 'closed' AND r.closed_at > ?))", *request.AsOf, *request.AsOf)
 			}
-			column := "target"
+			column, neighbour := "target", "source"
 			if direction == "downstream" {
-				column = "source"
+				column, neighbour = neighbour, column
 			}
 			conditions := s.db.Session(&gorm.Session{NewDB: true}).Where("1 = 0")
 			for _, node := range frontier {
 				conditions = conditions.Or("r."+column+"_item_id = ? AND r."+column+"_field_name = ? AND r."+column+"_schema_hash = ?", *node.ItemID, node.FieldName, node.SchemaSnapshotHash)
 			}
 			query = query.Where(conditions)
-			if err := observePermissionFiltered(ctx, query, &response); err != nil {
-				return response, err
-			}
-			var relations []models.LineageItemRelation
-			if err := visibleLineageRelations(ctx, query).Order("r.id").Limit(request.Limit + 1).Find(&relations).Error; err != nil {
+			relations, err := lineageRelations(ctx, query, "r."+neighbour+"_item_id", request.Limit+1, &response)
+			if err != nil {
 				return response, err
 			}
 			observations, err := s.fieldLineageEvidence(ctx, tenantID, relations, request)

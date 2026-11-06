@@ -222,7 +222,9 @@ func exerciseBasicExecutionFieldLineage(t *testing.T, db *gorm.DB) {
 				t.Fatalf("collect complete execution: %+v %v", result, err)
 			}
 			visible := []uint{source.ID, target.ID}
-			ctx := WithLineageVisibility(t.Context(), func(context.Context) ([]uint, error) { return visible, nil })
+			ctx := WithLineageVisibility(t.Context(), func(_ context.Context, ids []uint) ([]uint, error) {
+				return visibleLineageTestItems(ids, visible), nil
+			})
 			request := models.LineageGraphRequest{SubjectKind: "field_ref", ItemID: &target.ID, FieldName: "person_id", SchemaSnapshotHash: schema.Hash, Direction: "upstream", Depth: 2, Limit: 2}
 			graph, err := svc.GetGraph(ctx, 7, request)
 			if err != nil || len(graph.Nodes) != 2 || len(graph.Edges) != 1 || graph.Edges[0].Status != "active" || graph.PermissionFiltered {

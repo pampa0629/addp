@@ -81,13 +81,12 @@ func (h *Handler) lineageBrowsingContext(c *gin.Context) context.Context {
 		return c.Request.Context()
 	}
 	c.Header("Cache-Control", "no-store")
-	return service.WithLineageVisibility(c.Request.Context(), func(ctx context.Context) ([]uint, error) {
-		if !ok || current.Principal.Type != "user" || current.Context.Type != "tenant" || current.Token.Type == "delegated_access_token" || h.lineageVisibility == nil {
-			return nil, commonapi.ErrForbidden
-		}
-		ctx = service.WithMetadataVisibility(ctx, func(ctx context.Context, targets []plugin.EngineCatalogPath) (*authorization.SourceMetadataCheck, error) {
-			return h.lineageVisibility.CheckMetaLineageRead(ctx, commonAuth.CanonicalBearerToken(c.GetHeader("Authorization")), targets)
-		})
-		return h.resourceTreeService.VisibleLineageItems(ctx, commonAuth.GetTenantID(c))
+	if !ok || current.Principal.Type != "user" || current.Context.Type != "tenant" || current.Token.Type == "delegated_access_token" || h.lineageVisibility == nil {
+		return service.WithLineageVisibility(c.Request.Context(), nil)
+	}
+	credential := commonAuth.CanonicalBearerToken(c.GetHeader("Authorization"))
+	check := h.resourceTreeService.LineageItemVisibility(commonAuth.GetTenantID(c), func(ctx context.Context, targets []plugin.EngineCatalogPath) (*authorization.SourceMetadataCheck, error) {
+		return h.lineageVisibility.CheckMetaLineageRead(ctx, credential, targets)
 	})
+	return service.WithLineageVisibility(c.Request.Context(), check)
 }

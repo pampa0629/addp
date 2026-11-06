@@ -149,19 +149,16 @@ func (s *LineageService) buildLineageGraph(ctx context.Context, tenantID uint, r
 			if len(frontier) == 0 {
 				continue
 			}
-			column := "r.target_item_id"
+			column, neighbour := "r.target_item_id", "r.source_item_id"
 			if direction == 1 {
-				column = "r.source_item_id"
+				column, neighbour = neighbour, column
 			}
 			query := active(s.db.WithContext(ctx).Table("meta.lineage_item_relations AS r").Select("r.*").
 				Joins("JOIN meta.meta_item AS source ON source.id = r.source_item_id AND source.tenant_id = r.tenant_id AND source.deleted_at IS NULL").
 				Joins("JOIN meta.meta_item AS target ON target.id = r.target_item_id AND target.tenant_id = r.tenant_id AND target.deleted_at IS NULL").
 				Where("r.tenant_id = ? AND r.granularity = 'item' AND "+column+" IN ?", tenantID, frontier))
-			if err := observePermissionFiltered(ctx, query, &response); err != nil {
-				return response, err
-			}
-			var relations []models.LineageItemRelation
-			if err := visibleLineageRelations(ctx, query).Order("r.id").Limit(request.Limit + 1).Find(&relations).Error; err != nil {
+			relations, err := lineageRelations(ctx, query, neighbour, request.Limit+1, &response)
+			if err != nil {
 				return response, err
 			}
 			for _, relation := range relations {
@@ -227,11 +224,17 @@ func (s *LineageService) buildLineageGraph(ctx context.Context, tenantID uint, r
 			Joins("JOIN meta.meta_item AS source ON source.id = r.source_item_id AND source.tenant_id = r.tenant_id AND source.deleted_at IS NULL").
 			Joins("JOIN meta.meta_item AS target ON target.id = r.target_item_id AND target.tenant_id = r.tenant_id AND target.deleted_at IS NULL").
 			Where("r.tenant_id = ? AND r.granularity = 'item' AND "+current+" IN ? AND "+neighbour+" NOT IN ?", tenantID, eligible, ids))
-		if err := visibleLineageRelations(ctx, query).Select(current + " AS item_id, COUNT(DISTINCT " + neighbour + ") AS count").Group(current).Scan(&counts).Error; err != nil {
-			return response, err
-		}
-		for _, count := range counts {
-			hidden[direction][count.ItemID] = count.Count
+		if visibility, user := ctx.Value(lineageVisibilityKey{}).(lineageVisibility); user {
+			if err := visibility.countNeighbours(ctx, query, current, neighbour, hidden[direction]); err != nil {
+				return response, err
+			}
+		} else {
+			if err := query.Select(current + " AS item_id, COUNT(DISTINCT " + neighbour + ") AS count").Group(current).Scan(&counts).Error; err != nil {
+				return response, err
+			}
+			for _, count := range counts {
+				hidden[direction][count.ItemID] = count.Count
+			}
 		}
 		if direction == 1 && !userLineageQuery(ctx) {
 			services := []string{}
