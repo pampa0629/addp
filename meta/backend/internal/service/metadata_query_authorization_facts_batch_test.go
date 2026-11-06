@@ -37,7 +37,7 @@ func exerciseAuthorizationFactsBatch(t *testing.T, db *gorm.DB) {
 	svc := NewMetadataQueryService(db)
 	// A full batch sharing a parent must not issue one SQL transaction/chain per item.
 	fingerprints := []string{item.Fingerprint}
-	for i := 1; i < 32; i++ {
+	for i := 1; i < authorizationfacts.MaxAuthorizationFactsQueryItems; i++ {
 		sibling := item
 		sibling.ID = 0
 		sibling.Name = fmt.Sprintf("batch_%d", i)
@@ -61,9 +61,9 @@ func exerciseAuthorizationFactsBatch(t *testing.T, db *gorm.DB) {
 		}
 	}
 	if counter.reads > 4 {
-		t.Fatalf("32 siblings used %d SELECTs; require a shared committed fact snapshot", counter.reads)
+		t.Fatalf("%d siblings used %d SELECTs; require a shared committed fact snapshot", len(fingerprints), counter.reads)
 	}
-	t.Logf("32 authorization facts: %d SELECTs", counter.reads)
+	t.Logf("%d authorization facts: %d SELECTs", len(fingerprints), counter.reads)
 	ids := make([]uint, 0, len(fingerprints))
 	if err := db.Model(&item).Where("tenant_id=7 AND engine_id=?", item.EngineID).Pluck("id", &ids).Error; err != nil {
 		t.Fatal(err)
@@ -71,10 +71,10 @@ func exerciseAuthorizationFactsBatch(t *testing.T, db *gorm.DB) {
 	counter.reads = 0
 	tree := &ResourceTreeService{metadataQueryService: counted}
 	targets, err := tree.metadataItemVisibilityTargets(t.Context(), 7, item.EngineID, ids)
-	if err != nil || len(targets) != 32 || counter.reads > 4 {
-		t.Fatalf("32 navigation targets: %d SELECTs, %d targets, err=%v", counter.reads, len(targets), err)
+	if err != nil || len(targets) != len(fingerprints) || counter.reads > 4 {
+		t.Fatalf("%d navigation targets: %d SELECTs, %d targets, err=%v", len(fingerprints), counter.reads, len(targets), err)
 	}
-	t.Logf("32 navigation targets: %d SELECTs", counter.reads)
+	t.Logf("%d navigation targets: %d SELECTs", len(fingerprints), counter.reads)
 
 	query := authorizationfacts.AuthorizationFactsQuery{Fingerprints: []string{strings.Repeat("b", 64), item.Fingerprint}}
 	batch, err := svc.QueryDataItemAuthorizationFacts(t.Context(), 7, query)

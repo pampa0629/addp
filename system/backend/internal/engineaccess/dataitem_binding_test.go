@@ -114,6 +114,7 @@ func TestDataItemReadBindingsRequireCompleteTrustedNativeProof(t *testing.T) {
 
 func TestContentBindingsUseBoundedOwnerBatches(t *testing.T) {
 	paths := make([]plugin.EngineCatalogPath, 200)
+	wantBatches := []int{64, 64, 64, 8}
 	factsByFingerprint := make(map[string]*authorizationfacts.AuthorizationFacts, len(paths))
 	for i := range paths {
 		paths[i] = plugin.TabularItemPath(2+uint(i%2), "schema", "public", fmt.Sprintf("item_%03d", i))
@@ -132,7 +133,7 @@ func TestContentBindingsUseBoundedOwnerBatches(t *testing.T) {
 				for _, fp := range fps {
 					batch.Data = append(batch.Data, authorizationfacts.AuthorizationFactsResult{ItemFingerprint: fp, Facts: factsByFingerprint[fp]})
 				}
-				if len(batches) == 7 {
+				if len(batches) == len(wantBatches) {
 					switch mode {
 					case "missing_tail":
 						batch.Data[len(batch.Data)-1].Facts = nil
@@ -145,8 +146,8 @@ func TestContentBindingsUseBoundedOwnerBatches(t *testing.T) {
 				return batch, nil
 			}))
 			bindings, err := svc.resolveReadBindings(t.Context(), 7, paths)
-			if !slices.Equal(batches, []int{32, 32, 32, 32, 32, 32, 8}) {
-				t.Fatalf("owner batches have sizes %v, expected six full batches and eight final items", batches)
+			if !slices.Equal(batches, wantBatches) {
+				t.Fatalf("owner batches have sizes %v, want %v", batches, wantBatches)
 			}
 			if mode != "complete" {
 				want := ErrAuthorizationFactsUnavailable

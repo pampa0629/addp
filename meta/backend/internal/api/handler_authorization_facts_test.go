@@ -3,7 +3,7 @@ package api
 import (
 	"bytes"
 	"encoding/json"
-	"github.com/addp/common/dataitem/authorizationfacts"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -11,6 +11,7 @@ import (
 	"time"
 
 	commonauth "github.com/addp/common/authorization"
+	"github.com/addp/common/dataitem/authorizationfacts"
 	commonAuth "github.com/addp/common/middleware/auth"
 	commoni18n "github.com/addp/common/middleware/i18n"
 	commonmodels "github.com/addp/common/models"
@@ -116,6 +117,26 @@ func TestMetaAuthorizationFactsRuntimeGuardAndReadOnlyQuery(t *testing.T) {
 		c.Next()
 	})
 	registerDataItemAuthorizationFactsRoute(router.Group("/api/v1/meta"), handler)
+	query := authorizationfacts.AuthorizationFactsQuery{Fingerprints: []string{item.Fingerprint}}
+	for i := 1; i < authorizationfacts.MaxAuthorizationFactsQueryItems; i++ {
+		query.Fingerprints = append(query.Fingerprints, fmt.Sprintf("%064x", i))
+	}
+	fullBody, err := json.Marshal(query)
+	if err != nil || len(fullBody) > authorizationfacts.MaxAuthorizationFactsQueryBytes {
+		t.Fatalf("full batch cannot fit request budget: bytes=%d err=%v", len(fullBody), err)
+	}
+	response := httptest.NewRecorder()
+	padding := strings.Repeat(" ", authorizationfacts.MaxAuthorizationFactsQueryBytes-len(fullBody))
+	router.ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/api/v1/meta/runtime/data-items/authorization-facts/query", strings.NewReader(padding+string(fullBody))))
+	var fullBatch authorizationfacts.AuthorizationFactsBatch
+	if response.Code != http.StatusOK || json.Unmarshal(response.Body.Bytes(), &fullBatch) != nil || fullBatch.Validate(query) != nil || fullBatch.Data[0].Facts == nil {
+		t.Fatalf("full batch rejected at the wire budget: status=%d", response.Code)
+	}
+	query.Fingerprints = append(query.Fingerprints, fmt.Sprintf("%064x", authorizationfacts.MaxAuthorizationFactsQueryItems))
+	overLimit, err := json.Marshal(query)
+	if err != nil {
+		t.Fatal(err)
+	}
 	for _, test := range []struct {
 		body string
 		want int
@@ -124,6 +145,7 @@ func TestMetaAuthorizationFactsRuntimeGuardAndReadOnlyQuery(t *testing.T) {
 		{`{"fingerprints":["` + item.Fingerprint + `","` + item.Fingerprint + `"]}`, 400},
 		{`{"fingerprints":["` + item.Fingerprint + `"],"tenant_id":8}`, 400},
 		{`{"fingerprints":[],"fingerprints":["` + item.Fingerprint + `"]}`, 400},
+		{string(overLimit), 400},
 		{strings.Repeat(" ", authorizationfacts.MaxAuthorizationFactsQueryBytes) + `{}`, 413},
 	} {
 		response := httptest.NewRecorder()

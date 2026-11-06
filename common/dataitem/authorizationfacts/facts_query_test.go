@@ -36,15 +36,16 @@ func TestAuthorizationFactsBatchBindsEveryRequestedIdentity(t *testing.T) {
 		t.Fatal("partial batch accepted")
 	}
 	bounded := AuthorizationFactsQuery{}
-	for i := 0; i < 32; i++ {
+	for i := 0; i < MaxAuthorizationFactsQueryItems; i++ {
 		bounded.Fingerprints = append(bounded.Fingerprints, fmt.Sprintf("%064x", i+1))
 	}
-	if bounded.Validate() != nil {
-		t.Fatal("32 exact fingerprints rejected")
+	requestBody, err := json.Marshal(bounded)
+	if err != nil || bounded.Validate() != nil || len(requestBody) > MaxAuthorizationFactsQueryBytes {
+		t.Fatalf("full exact batch exceeds the request budget: bytes=%d err=%v", len(requestBody), err)
 	}
-	bounded.Fingerprints = append(bounded.Fingerprints, fmt.Sprintf("%064x", 33))
+	bounded.Fingerprints = append(bounded.Fingerprints, fmt.Sprintf("%064x", MaxAuthorizationFactsQueryItems+1))
 	if bounded.Validate() == nil {
-		t.Fatal("33 valid fingerprints exceeded owner budget")
+		t.Fatal("owner accepted a batch above the item limit")
 	}
 	for _, fps := range [][]string{nil, {missing, missing}, {"invalid"}} {
 		if (AuthorizationFactsQuery{Fingerprints: fps}).Validate() == nil {

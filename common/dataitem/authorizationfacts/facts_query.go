@@ -8,8 +8,8 @@ import (
 	"unicode/utf8"
 )
 
-const MaxAuthorizationFactsQueryItems = 32
-const MaxAuthorizationFactsQueryBytes = 4096
+const MaxAuthorizationFactsQueryItems = 64
+const MaxAuthorizationFactsQueryBytes = 8 << 10
 const MaxAuthorizationFactsBatchBytes = MaxAuthorizationFactsQueryItems*(MaxAuthorizationFactsBytes+256) + 256
 
 // AuthorizationFactsQuery is an exact, bounded owner read, never a permission.

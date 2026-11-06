@@ -33,6 +33,8 @@
 
 继续按同一请求 ID 关联 Manager、System 和 Meta 的完成日志，纳入第三个实际请求 `b425f7bf-63dc-471f-99a0-80140620fc53`。三个样本各有 44 个 System 裁决、305 个 Meta 授权事实请求及 305 次嵌套身份核验。按日志区间去除包含关系后，Manager 在裁决之外耗时 0.47–0.59 秒，System 裁决在 Meta 请求之外耗时 2.48–3.00 秒，Meta 请求在嵌套身份核验之外耗时 1.62–1.71 秒，嵌套身份核验耗时 2.63–3.22 秒。区间残差仍包含各层未单独记录的工作，无法分辨数据库、JSON 编解码或传输成本。
 
+用隔离 PostgreSQL 门禁比较 Meta 单批 32、64、128 项，三档按顺序核对指纹、边界摘要及显式缺失。带指纹索引的常规夹具包含 1,536 个请求指纹，九轮中位总耗时依次为 348、314、216 毫秒，SQL SELECT 累计耗时为 180、134、64 毫秒，JSON 编码为 3.32、3.19、3.12 毫秒，严格事实解码为 112、113、113 毫秒，回环 HTTP 扣除处理时间后的残差为 7.60、4.47、2.74 毫秒。多文件夹具包含 256 个请求指纹及每个现存事实的 80 个附属文件，三轮中位总耗时依次为 1.77、1.75、1.82 秒，抽样堆峰值增量为 12.2、18.4、31.4 MiB。夹具复用 Meta PostgreSQL 查询及事实解码，HTTP 使用回环夹具，不包含生产 IAM 中间件或客户端额外的外层 JSON 检查。选择 64 项及 8 KiB 请求上限。System 的 200 项裁决在标准客户端测试中由七次 Meta HTTP 降为四次。按历史批次形状推算 305 次可降到 174 次，真实页面耗时待重启复验。
+
 本次只做 Manager 页面查询和权限配置的只读核对。`outdoor-develop` 仍缺 `ontology.semantic.read` 和 `system.engine.read`，开发租户当前无具备本场景工具权限的普通账号，因此未发起新的 Agent Run。修复提交的 Manager、System IAM PostgreSQL 集成作业以及 Go workspace 和平台一致性作业已通过，Platform CI 整体状态为取消。 [Manager 集成](https://github.com/pampa0629/addp/actions/runs/42206312117/job/127868138784) · [System IAM 集成](https://github.com/pampa0629/addp/actions/runs/42206312117/job/127868137640) · [Go workspace](https://github.com/pampa0629/addp/actions/runs/42206311898/job/127853722302) · [平台一致性](https://github.com/pampa0629/addp/actions/runs/42206311898/job/127853722389)
 
 ### 2026-11-04 历史验收

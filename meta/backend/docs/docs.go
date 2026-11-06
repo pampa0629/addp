@@ -2321,7 +2321,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "固定 System/Catalog Tenant Service 精确读取1—32个不重复指纹，正文最多4KiB、每项最多128KiB；按请求顺序返回，当前租户缺失项facts为null，故障整批失败。200不是许可，不扫描、不读源内容、不缓存 | Restricted to System/Catalog Tenant Services. Reads 1-32 unique exact fingerprints, at most 4 KiB request and 128 KiB per fact. Results retain request order; absent items have null facts, failures reject the entire query. HTTP 200 is not an Allow. No scans, source reads or caching",
+                "description": "固定 System/Catalog Tenant Service 精确读取 1—64 个不重复指纹，正文最多 8 KiB、每项最多 128 KiB；按请求顺序返回，当前租户缺失项facts为null，故障整批失败。200不是许可，不扫描、不读源内容、不缓存 | Restricted to System/Catalog Tenant Services. Reads 1-64 unique exact fingerprints, at most 8 KiB request and 128 KiB per fact. Results retain request order; absent items have null facts, failures reject the entire query. HTTP 200 is not an Allow. No scans, source reads or caching",
                 "consumes": [
                     "application/json"
                 ],

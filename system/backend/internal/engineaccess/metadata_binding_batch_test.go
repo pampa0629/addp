@@ -22,7 +22,7 @@ func (f metadataBatchReaderFunc) ReadAuthorizationFacts(ctx context.Context, ten
 	return f(ctx, tenant, fps)
 }
 
-func TestMetadataFactQueriesUseSevenOwnerHTTPCallsForTwoHundredItems(t *testing.T) {
+func TestMetadataFactQueriesUseFourOwnerHTTPCallsForTwoHundredItems(t *testing.T) {
 	for _, absentRoute := range []bool{false, true} {
 		t.Run(fmt.Sprint(absentRoute), func(t *testing.T) {
 			calls := 0
@@ -62,7 +62,7 @@ func TestMetadataFactQueriesUseSevenOwnerHTTPCallsForTwoHundredItems(t *testing.
 				if calls != 1 || !errors.Is(err, ErrAuthorizationFactsUnavailable) || bindings != nil {
 					t.Fatal("missing owner route became absent items", err)
 				}
-			} else if err != nil || len(bindings) != 200 || calls != 7 {
+			} else if err != nil || len(bindings) != 200 || calls != 4 {
 				t.Fatalf("RPC budget violated: calls=%d err=%v", calls, err)
 			}
 		})
@@ -89,6 +89,8 @@ func TestMetadataFactBatchDedupStillProvesEachTypedTarget(t *testing.T) {
 
 func TestMetadataVisibilityUsesBoundedFactQueriesAndNoPartialFailure(t *testing.T) {
 	paths := make([]plugin.EngineCatalogPath, 200)
+	const limit = authorizationfacts.MaxAuthorizationFactsQueryItems
+	wantCalls := (len(paths) + limit - 1) / limit
 	for i := range paths {
 		paths[i] = plugin.TabularItemPath(9, "schema", "public", fmt.Sprintf("item_%03d", i))
 	}
@@ -99,17 +101,17 @@ func TestMetadataVisibilityUsesBoundedFactQueriesAndNoPartialFailure(t *testing.
 			calls := 0
 			svc := NewService(nil, nil).WithAuthorizationFactsReader(metadataBatchReaderFunc(func(c context.Context, tenant uint, fps []string) (*authorizationfacts.AuthorizationFactsBatch, error) {
 				calls++
-				if tenant != 7 || len(fps) == 0 || len(fps) > 32 {
+				if tenant != 7 || len(fps) == 0 || len(fps) > limit {
 					t.Fatal("wrong owner scope or unbounded query")
 				}
-				if calls == 7 && mode == "last_batch_error" {
+				if calls == wantCalls && mode == "last_batch_error" {
 					return nil, errors.New("private owner failure")
 				}
 				batch := &authorizationfacts.AuthorizationFactsBatch{}
 				for _, fp := range fps {
 					batch.Data = append(batch.Data, authorizationfacts.AuthorizationFactsResult{ItemFingerprint: fp})
 				}
-				if calls == 7 && mode == "last_batch_reordered" {
+				if calls == wantCalls && mode == "last_batch_reordered" {
 					if len(batch.Data) > 1 {
 						batch.Data[0], batch.Data[1] = batch.Data[1], batch.Data[0]
 					} else {
@@ -123,7 +125,7 @@ func TestMetadataVisibilityUsesBoundedFactQueriesAndNoPartialFailure(t *testing.
 			}))
 			bindings, err := svc.resolveMetadataBindings(ctx, 7, paths)
 			if mode == "absent" {
-				if err != nil || len(bindings) != 200 || calls != 7 {
+				if err != nil || len(bindings) != len(paths) || calls != wantCalls {
 					t.Fatalf("one RPC per item returned: calls=%d err=%v", calls, err)
 				}
 				for _, b := range bindings {

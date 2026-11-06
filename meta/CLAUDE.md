@@ -15,7 +15,7 @@ PG 用户的通用数据项列表、按 ID／路径查询、字段详情及节�
 PG 用户元数据总数只计入当前可见的有效数据项；引擎选项保留注册身份，扫描节点统计和最近扫描时间仅来自可见分支，不返回原始检测错误文本。内部机器扫描统计不改变，不能用用户过滤后的数量推导引擎整体治理覆盖率。
 
 
-元数据可见性批次通过同一 Meta 授权事实批量契约回查，每次最多32个精确指纹；每批在同一只读 Repeatable Read 快照中读取数据项和最多64层持久父链，消除逐项事务与重复父链 SQL，技术事实共享不代替逐项身份校验或人员许可；先完整取得并逐项核对事实，再消费 System 当前授权裁决。不能因目录含有大量数据项退回逐项 HTTP、缓存许可、扩大超时或删除隐藏过滤。请求取消会中止后续目录数据库查询及事实批次，依赖故障不返回部分统计。
+元数据可见性批次通过同一 Meta 授权事实批量契约回查，每次最多64个精确指纹；每批在同一只读 Repeatable Read 快照中读取数据项和最多64层持久父链，消除逐项事务与重复父链 SQL，技术事实共享不代替逐项身份校验或人员许可；先完整取得并逐项核对事实，再消费 System 当前授权裁决。不能因目录含有大量数据项退回逐项 HTTP、缓存许可、扩大超时或删除隐藏过滤。请求取消会中止后续目录数据库查询及事实批次，依赖故障不返回部分统计。
 
 血缘候选汇总及元数据列表／树中，已缺失或持久身份不完整的数据项仅使自身不可见，不能阻断其他可靠项；数据库故障、System 核验故障或不完整授权回执仍中止整次查询，不能返回部分放行结果。
 
@@ -208,7 +208,7 @@ FalkorDB 图属性结构来自每个节点形态或关系类型的最多 100 条
 - 扫描任务：`GET /scan/tasks`、`POST /scan/tasks`、`PUT /scan/tasks/:task_id`、`DELETE /scan/tasks/:task_id`、`POST /scan/tasks/:task_id/trigger`。
 - TaskProvider：`GET /task-provider/tasks`、`GET /task-provider/tasks/:task_type/:id`、`POST /task-provider/tasks/:task_type/:id/execute`、`GET /task-provider/executions/:execution_id`；整组路由只允许 `addp-orchestrator` Service Client，并使用 `meta.task_provider.read|execute`，不得复用用户扫描任务权限。
 - 引擎数据项：`GET /engines/:engine_id/items`。`branch` 过滤按显式结构根下的直接业务分支定位，根、分支及数据项均限定同 Tenant、同 Engine 和未删除状态；不保留把业务分支当作顶层节点的旧查询。
-- 授权资源事实：`POST /runtime/data-items/authorization-facts/query`（1—32 个精确指纹；缺失项显式 facts:null；故障整批失败，删除旧单项 GET），仅允许固定 `addp-system`、`addp-catalog` Tenant Service 及 `meta.authorization_facts.read`；调用方复用 `common/client.MetaClient.ReadAuthorizationFacts`，不另建 HTTP 或祖先链拼装路线。在只读快照中精确查询，不回源、扫描或写回。原生、文件组成与 whole 内容边界以及可靠身份的 `metadata_target` 复用同一 wire；后者不证明内容可读。DTO／摘要归轻量纯值包 `common/dataitem/authorizationfacts`，状态派生归 Meta，权限裁决仍归 System。契约与未完成范围见平台《元数据扫描机制规范》。
+- 授权资源事实：`POST /runtime/data-items/authorization-facts/query`（1—64 个精确指纹；缺失项显式 facts:null；故障整批失败，删除旧单项 GET），仅允许固定 `addp-system`、`addp-catalog` Tenant Service 及 `meta.authorization_facts.read`；调用方复用 `common/client.MetaClient.ReadAuthorizationFacts`，不另建 HTTP 或祖先链拼装路线。在只读快照中精确查询，不回源、扫描或写回。原生、文件组成与 whole 内容边界以及可靠身份的 `metadata_target` 复用同一 wire；后者不证明内容可读。DTO／摘要归轻量纯值包 `common/dataitem/authorizationfacts`，状态派生归 Meta，权限裁决仍归 System。契约与未完成范围见平台《元数据扫描机制规范》。
 - 树查询：`GET /engines/:engine_id/tree`、`GET /nodes/:node_id`、`GET /nodes/:node_id/children`、`GET /nodes/:node_id/items`、`GET /nodes/by-catalog-path`、`GET /items/by-catalog-path`。
 - `resource.children.list` Tool 复用 `GET /resource-tree/:engine_id/node` 返回父资源及直接子资源，并使用独立 Delegated Tool scope；不新增第二条 Catalog HTTP 路由。
 - 字段与空间信息：`GET /items/:item_id/fields`、`GET /items/:item_id/spatial`、`GET /items/:item_id`。
