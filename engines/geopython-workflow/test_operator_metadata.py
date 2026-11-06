@@ -1017,9 +1017,10 @@ def test_vector_reproject_direct_preserves_http_contract(target_crs):
 
     result = response.get_json()
     if target_crs == "PRIVATE_INVALID_CRS":
-        assert response.status_code == 500
-        assert result["error_code"] == "EXECUTION_FAILED"
-        assert "diagnostic" not in result and "binary_payload" not in result
+        assert response.status_code == 400
+        assert result["error_code"] == "INVALID_PARAMS"
+        assert not {"diagnostic", "binary_payload", "details"} & result.keys()
+        assert target_crs not in response.get_data(as_text=True)
         return
     assert response.status_code == 200
     result_payload = base64.b64decode(result["binary_payload"]["data"])
@@ -2032,3 +2033,88 @@ def test_proximity_orthogonal_stays_one_read_entry_without_nibble_admission_chan
     assert spec['execution_modes']==['workflow']and spec['effects']==['read']and spec['category_path']==['栅格处理','基础计算']
     assert spec['attributes']['resource_groups']==['raster']
     assert '正交旋转'in next(p['description']for p in spec['parameters']if p['name']=='target_values')
+
+
+def _direct_geometry_request(columns=None, *, arrow_column="shape", arrow_crs="EPSG:3857"):
+    ewkb = shapely.to_wkb(shapely.set_srid(shapely.Point(10, 20), 3857), include_srid=True)
+    if columns is None:
+        columns = {"shape": pa.array([ewkb, None], type=pa.binary())}
+    table = pa.table(columns, metadata={
+        "addp.geometry.column": arrow_column, "addp.geometry.encoding": "ewkb",
+        "addp.geometry.source_crs": arrow_crs,
+    })
+    sink = pa.BufferOutputStream()
+    with pa.ipc.new_stream(sink, table.schema) as writer:
+        writer.write_table(table)
+    return {"params": {"source_crs": "EPSG:3857", "target_crs": "EPSG:4326"},
+            "binary_payload": {"content_type": "application/vnd.apache.arrow.stream", "encoding": "arrow",
+                               "data": base64.b64encode(sink.getvalue()).decode("ascii"),
+                               "metadata": {"geometry_encoding": "ewkb", "geometry_column": "shape"}}}
+
+
+@pytest.mark.parametrize("bad_input", ["arrow", "ewkb", "extra_column", "text_column", "wrong_name",
+                                      "source_crs", "crs_mismatch", "base64", "envelope"])
+def test_vector_reproject_direct_rejects_bad_geometry_batch_without_raw_details(bad_input, monkeypatch):
+    import api_server
+
+    private = "PRIVATE_REQUEST_CRS_OR_PAYLOAD"
+    invoked = []
+    monkeypatch.setattr(api_server, "get_operator", lambda _: lambda **params: invoked.append(params))
+    body = _direct_geometry_request()
+    if bad_input == "arrow":
+        body["binary_payload"]["data"] = base64.b64encode(b"not_arrow").decode()
+    elif bad_input == "ewkb":
+        body = _direct_geometry_request({"shape": pa.array([b"bad"], type=pa.binary())})
+    elif bad_input == "extra_column":
+        body = _direct_geometry_request({"shape": pa.array([b"bad"]), "other": pa.array([1])})
+    elif bad_input == "text_column":
+        body = _direct_geometry_request({"shape": pa.array(["010100000000000000000024400000000000003440"])})
+    elif bad_input == "wrong_name":
+        body = _direct_geometry_request(arrow_column="other")
+    elif bad_input == "source_crs":
+        body = _direct_geometry_request(arrow_crs=private)
+    elif bad_input == "crs_mismatch":
+        body["params"]["source_crs"] = "EPSG:4326"
+    elif bad_input == "base64":
+        body["binary_payload"]["data"] += "!"
+    elif bad_input == "envelope":
+        body["binary_payload"] = [private]
+    with api_server.app.test_client() as client:
+        response = client.post("/api/operators/vector_reproject/invoke", json=body, headers={"Accept-Language": "en"})
+    result = response.get_json()
+    assert response.status_code == 400
+    assert result["error_code"] == "INVALID_PARAMS"
+    assert "details" not in result and "binary_payload" not in result
+    assert private not in response.get_data(as_text=True)
+    assert not invoked
+
+
+@pytest.mark.parametrize("stage", ["proj_environment", "operator", "encoder"])
+def test_vector_reproject_direct_masks_execution_faults(stage, monkeypatch, caplog):
+    import api_server
+    import geometry_batches
+    from pyproj.exceptions import CRSError
+
+    private = "/tmp/PRIVATE_RUNTIME_PATH"
+
+    def fail(*args, **kwargs):
+        raise ValueError(private)
+
+    def fail_proj_database(*args, **kwargs):
+        raise CRSError(private)
+
+    body = _direct_geometry_request()
+    if stage == "proj_environment":
+        body = _direct_geometry_request(arrow_crs="INVALID_CRS")
+        monkeypatch.setattr(geometry_batches.CRS, "from_epsg", fail_proj_database)
+    elif stage == "operator":
+        monkeypatch.setattr(api_server, "get_operator", lambda _: fail)
+    else:
+        monkeypatch.setattr(api_server, "encode_geometry_batch_arrow", fail)
+    with api_server.app.test_client() as client:
+        response = client.post("/api/operators/vector_reproject/invoke", json=body)
+    result = response.get_json()
+    assert response.status_code == 500
+    assert result["error_code"] == "EXECUTION_FAILED"
+    assert "details" not in result and "binary_payload" not in result
+    assert private not in response.get_data(as_text=True) and private not in caplog.text

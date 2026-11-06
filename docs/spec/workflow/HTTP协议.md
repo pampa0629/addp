@@ -130,6 +130,8 @@ GeoPython 栅格 direct 调用还需由 owner 提供顶层 `tenant_id`，用于�
 
 二进制载荷可用于几何批、Arrow 记录批等场景。运行时必须按二进制语义处理，不得再把几何数组展开成 JSON records。对于几何坐标转换等批处理算子，载荷必须只包含 geometry 列及其批元数据，不得混入其他属性字段。
 
+`vector_reproject` direct 二进制入口使用现有失败响应。封装、base64、Arrow 列结构、EWKB、已证实无效的请求 CRS 及源 CRS 冲突返回 HTTP 400 / `INVALID_PARAMS`。物理列必须是唯一的 Arrow binary 列，列名须与请求中已声明的列名一致。PROJ 环境异常、转换和输出编码故障返回 HTTP 500 / `EXECUTION_FAILED`。两类响应均使用固定消息，不附载荷、坐标、CRS 原文、路径或原始异常详情；调用方保持失败处理和原有成功数据格式。
+
 ### 查询执行状态
 
 **请求**：

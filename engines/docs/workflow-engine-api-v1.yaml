@@ -228,13 +228,13 @@ paths:
                 error: 算子 'unknown' 不存在
                 error_code: OPERATOR_NOT_FOUND
         '400':
-          description: 参数错误
+          description: 参数错误。vector_reproject 的无效 Arrow、EWKB 或请求 CRS 使用固定消息 | Invalid parameters. vector_reproject uses fixed messages for invalid Arrow, EWKB or request CRS.
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '500':
-          description: 执行失败
+          description: 执行失败。vector_reproject 不返回原始异常详情 | Execution failed. vector_reproject omits raw exception details.
           content:
             application/json:
               schema:

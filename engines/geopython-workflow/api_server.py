@@ -50,6 +50,7 @@ if __name__ == '__main__':
 
 
 import base64
+import binascii
 
 from addp_common.workflow_runtime.health import health_dependency, runtime_health
 
@@ -70,10 +71,10 @@ load_dotenv(find_dotenv())
 from workflow_engine import GeoPythonWorkflowRunner, execute_single_operator
 from addp_common.workflow_runtime import ExecutionRegistry, WorkflowValidationError, validate_execution_authorization
 from geometry_batches import (
-    GEOMETRY_BATCH_METADATA_PREFIX,
+    GeometryBatchInputError,
     decode_geometry_batch_arrow,
     encode_geometry_batch_arrow,
-    geometry_batch_arrow_metadata,
+    parse_geometry_batch_crs,
 )
 from operators import get_operator, list_operators
 from raster_resources import RasterResources, RasterPolicyUnavailable, requires_raster
@@ -107,12 +108,12 @@ _RASTER_MESSAGES = {
 }
 
 
-def _raster_language():
+def _request_language():
     return request.accept_languages.best_match(['zh-cn', 'en']) or 'zh-cn'
 
 
 def _raster_message(code):
-    return _RASTER_MESSAGES[_raster_language()][code]
+    return _RASTER_MESSAGES[_request_language()][code]
 
 
 def _raster_busy_response(code):
@@ -144,6 +145,100 @@ def error_response(error_code: str, message: str, details: str = None):
     if details:
         response["details"] = details
     return response
+
+
+_BINARY_GEOMETRY_MESSAGES = {
+    "zh-cn": {
+        "envelope": "几何批请求封装无效",
+        "transport": "几何批须使用 Arrow 流和标准 base64",
+        "geometry_encoding": "binary_payload.metadata.geometry_encoding 必须是 ewkb",
+        "arrow_encoding": "Arrow schema geometry encoding 必须是 ewkb",
+        "arrow": "Arrow 几何批无效",
+        "column": "Arrow 几何批须包含唯一且名称一致的二进制几何列",
+        "ewkb": "几何列包含无法解析的 EWKB",
+        "crs": "请求中的源或目标 CRS 无效",
+        "crs_mismatch": "几何批的源 CRS 与请求参数不一致",
+        "execution": "几何批执行失败",
+    },
+    "en": {
+        "envelope": "Invalid geometry batch request envelope",
+        "transport": "Geometry batch requires an Arrow stream and standard base64",
+        "geometry_encoding": "binary_payload.metadata.geometry_encoding must be ewkb",
+        "arrow_encoding": "Arrow schema geometry encoding must be ewkb",
+        "arrow": "Invalid Arrow geometry batch",
+        "column": "Arrow batch requires one binary geometry column with matching names",
+        "ewkb": "Geometry column contains invalid EWKB",
+        "crs": "Invalid source or target CRS in the request",
+        "crs_mismatch": "Geometry batch source CRS does not match the request parameter",
+        "execution": "Geometry batch execution failed",
+    },
+}
+
+
+def _binary_geometry_error(start, reason, *, execution=False):
+    code = ErrorCode.EXECUTION_FAILED if execution else ErrorCode.INVALID_PARAMS
+    response = error_response(code, _BINARY_GEOMETRY_MESSAGES[_request_language()][reason])
+    response["execution_time_ms"] = (time.time() - start) * 1000
+    return jsonify(response), 500 if execution else 400
+
+
+def _invoke_binary_geometry(operator_func, direct_binary, params, binary_payload, start):
+    try:
+        if not isinstance(binary_payload, dict) or not isinstance(params, dict) or params.keys() - {"source_crs", "target_crs"}:
+            raise GeometryBatchInputError("envelope")
+        content_type = direct_binary["content_type"]
+        encoding = direct_binary["encoding"]
+        data = binary_payload.get("data")
+        if (binary_payload.get("content_type") != content_type or binary_payload.get("encoding") != encoding
+                or not isinstance(data, str) or not data.strip()):
+            raise GeometryBatchInputError("transport")
+        metadata = binary_payload.get("metadata")
+        geometry_encoding = direct_binary["geometry_encoding"]
+        if not isinstance(metadata, dict) or str(metadata.get("geometry_encoding", "")).strip().lower() != geometry_encoding:
+            raise GeometryBatchInputError("geometry_encoding")
+        try:
+            payload = base64.b64decode(data.strip(), validate=True)
+        except (binascii.Error, ValueError):
+            raise GeometryBatchInputError("transport") from None
+        input_gdf = decode_geometry_batch_arrow(payload, expected_encoding=geometry_encoding,
+                                                declared_column=metadata.get("geometry_column"))
+        source_crs = parse_geometry_batch_crs(params.get("source_crs"))
+        parse_geometry_batch_crs(params.get("target_crs"))
+        if input_gdf.crs is None and source_crs is None:
+            raise GeometryBatchInputError("crs")
+        if input_gdf.crs is not None and source_crs is not None and not input_gdf.crs.equals(source_crs):
+            raise GeometryBatchInputError("crs_mismatch")
+    except GeometryBatchInputError as exc:
+        return _binary_geometry_error(start, exc.args[0])
+    except Exception as exc:
+        logger.error("Binary geometry preparation failed (%s)", type(exc).__name__)
+        return _binary_geometry_error(start, "execution", execution=True)
+
+    try:
+        result_gdf = operator_func(input_gdf=input_gdf, **params)
+        if not isinstance(result_gdf, type(input_gdf)):
+            raise TypeError("binary direct operator must return a GeoDataFrame")
+        result_crs = str(result_gdf.crs) if result_gdf.crs else ""
+        column = result_gdf.geometry.name
+        encoded = encode_geometry_batch_arrow(
+            result_gdf, geometry_column=column, source_crs=result_crs,
+            target_crs=result_crs, geometry_encoding=geometry_encoding,
+        )
+        return jsonify({
+            "status": "success",
+            "result": {"row_count": len(result_gdf), "geometry_column": column, "crs": result_crs},
+            "binary_payload": {
+                "content_type": content_type,
+                "encoding": encoding,
+                "name": direct_binary["output_name"],
+                "data": base64.b64encode(encoded).decode("ascii"),
+                "metadata": {"geometry_column": column, "geometry_encoding": geometry_encoding, "crs": result_crs},
+            },
+            "execution_time_ms": (time.time() - start) * 1000,
+        }), 200
+    except Exception as exc:
+        logger.error("Binary geometry execution failed (%s)", type(exc).__name__)
+        return _binary_geometry_error(start, "execution", execution=True)
 
 
 # ========================================
@@ -288,161 +383,31 @@ def invoke_operator_endpoint(operator_name):
             response["execution_time_ms"] = execution_time
             return jsonify(response), 403
 
-        data = request.get_json(silent=True) or {}
-        params = data.get('params') or {}
+        data = request.get_json(silent=True)
+        direct_binary = (operator_meta.get("attributes") or {}).get("direct_binary") or {}
+        if not isinstance(data, dict) and direct_binary:
+            return _binary_geometry_error(start, "envelope")
+        data = data or {}
+        params = data.get('params')
         binary_payload = data.get('binary_payload')
 
-        if not isinstance(params, dict):
-            execution_time = (time.time() - start) * 1000
-            response = error_response(
-                ErrorCode.INVALID_PARAMS,
-                "请求体中的 'params' 必须是对象"
-            )
-            response["execution_time_ms"] = execution_time
-            return jsonify(response), 400
-
         logger.info(f"Invoking operator {operator_name} directly")
-        operator_func = get_operator(operator_name)
-
         if binary_payload is not None:
-            direct_binary = (operator_meta.get("attributes") or {}).get("direct_binary") or {}
             if not direct_binary:
-                execution_time = (time.time() - start) * 1000
                 response = error_response(
                     ErrorCode.DIRECT_NOT_SUPPORTED,
                     f"算子 '{operator_name}' 不支持 binary direct 调用",
                 )
-                response["execution_time_ms"] = execution_time
+                response["execution_time_ms"] = (time.time() - start) * 1000
                 return jsonify(response), 403
-            content_type = str(binary_payload.get("content_type") or "").strip()
-            if content_type and direct_binary.get("content_type") and content_type != direct_binary.get("content_type"):
-                execution_time = (time.time() - start) * 1000
-                response = error_response(
-                    ErrorCode.INVALID_PARAMS,
-                    f"算子 '{operator_name}' 的 binary_payload.content_type 不匹配",
-                )
-                response["execution_time_ms"] = execution_time
-                return jsonify(response), 400
+            return _invoke_binary_geometry(get_operator(operator_name), direct_binary,
+                                           {} if params is None else params, binary_payload, start)
 
-            payload_metadata = binary_payload.get("metadata")
-            if not isinstance(payload_metadata, dict):
-                payload_metadata = {}
-            if "geometry_encoding" not in payload_metadata:
-                execution_time = (time.time() - start) * 1000
-                response = error_response(
-                    ErrorCode.INVALID_PARAMS,
-                    f"算子 '{operator_name}' 缺少 binary_payload.metadata.geometry_encoding",
-                )
-                response["execution_time_ms"] = execution_time
-                return jsonify(response), 400
-            geometry_encoding = str(
-                payload_metadata.get("geometry_encoding")
-            ).strip().lower()
-            expected_geometry_encoding = str(direct_binary.get("geometry_encoding") or "ewkb").strip().lower()
-            if geometry_encoding != expected_geometry_encoding:
-                execution_time = (time.time() - start) * 1000
-                response = error_response(
-                    ErrorCode.INVALID_PARAMS,
-                    f"算子 '{operator_name}' 的 binary_payload.metadata.geometry_encoding 必须是 {expected_geometry_encoding}",
-                )
-                response["execution_time_ms"] = execution_time
-                return jsonify(response), 400
-
-            payload_data = str(binary_payload.get("data") or "").strip()
-            if not payload_data:
-                execution_time = (time.time() - start) * 1000
-                response = error_response(
-                    ErrorCode.INVALID_PARAMS,
-                    "binary_payload.data is required",
-                )
-                response["execution_time_ms"] = execution_time
-                return jsonify(response), 400
-
-            try:
-                binary_bytes = base64.b64decode(payload_data)
-            except Exception as exc:
-                execution_time = (time.time() - start) * 1000
-                response = error_response(
-                    ErrorCode.INVALID_PARAMS,
-                    "binary_payload.data 不是合法的 base64",
-                    details=str(exc),
-                )
-                response["execution_time_ms"] = execution_time
-                return jsonify(response), 400
-
-            try:
-                arrow_metadata = geometry_batch_arrow_metadata(binary_bytes)
-                arrow_geometry_encoding = str(
-                    arrow_metadata.get(f"{GEOMETRY_BATCH_METADATA_PREFIX}encoding") or ""
-                ).strip().lower()
-            except Exception as exc:
-                execution_time = (time.time() - start) * 1000
-                response = error_response(
-                    ErrorCode.INVALID_PARAMS,
-                    "binary_payload.data 不是合法的 Arrow geometry batch",
-                    details=str(exc),
-                )
-                response["execution_time_ms"] = execution_time
-                return jsonify(response), 400
-            if arrow_geometry_encoding != expected_geometry_encoding:
-                execution_time = (time.time() - start) * 1000
-                response = error_response(
-                    ErrorCode.INVALID_PARAMS,
-                    f"算子 '{operator_name}' 的 Arrow schema geometry encoding 必须是 {expected_geometry_encoding}",
-                )
-                response["execution_time_ms"] = execution_time
-                return jsonify(response), 400
-
-            try:
-                input_gdf = decode_geometry_batch_arrow(binary_bytes)
-                if input_gdf is None:
-                    raise ValueError("decoded geometry batch is empty")
-                source_crs = str(input_gdf.crs) if input_gdf.crs else str(params.get("source_crs") or "")
-                call_params = dict(params)
-                call_params["input_gdf"] = input_gdf
-                result_gdf = operator_func(**call_params)
-                if not isinstance(result_gdf, type(input_gdf)):
-                    raise ValueError("binary direct operator must return a GeoDataFrame")
-                result_crs = str(result_gdf.crs) if result_gdf.crs else ""
-                encoded = encode_geometry_batch_arrow(
-                    result_gdf,
-                    geometry_column=result_gdf.geometry.name,
-                    source_crs=result_crs,
-                    target_crs=result_crs,
-                    geometry_encoding=geometry_encoding,
-                )
-                execution_time = (time.time() - start) * 1000
-                response = {
-                    "status": "success",
-                    "result": {
-                        "row_count": len(result_gdf),
-                        "geometry_column": result_gdf.geometry.name,
-                        "crs": str(result_gdf.crs) if result_gdf.crs else "",
-                    },
-                    "binary_payload": {
-                        "content_type": direct_binary.get("content_type") or "application/vnd.apache.arrow.stream",
-                        "encoding": direct_binary.get("encoding") or "arrow",
-                        "name": direct_binary.get("output_name") or "geometry_batch",
-                        "data": base64.b64encode(encoded).decode("ascii"),
-                        "metadata": {
-                            "geometry_column": result_gdf.geometry.name,
-                            "geometry_encoding": geometry_encoding,
-                            "crs": result_crs,
-                        },
-                    },
-                    "execution_time_ms": execution_time,
-                }
-                logger.info(f"Operator {operator_name} completed successfully in {execution_time:.2f}ms")
-                return jsonify(response), 200
-            except Exception as exc:
-                execution_time = (time.time() - start) * 1000
-                response = error_response(
-                    ErrorCode.EXECUTION_FAILED,
-                    f"算子 '{operator_name}' 执行失败: {str(exc)}",
-                    details=str(exc),
-                )
-                response["execution_time_ms"] = execution_time
-                return jsonify(response), 500
+        params = params or {}
+        if not isinstance(params, dict):
+            response = error_response(ErrorCode.INVALID_PARAMS, "请求体中的 'params' 必须是对象")
+            response["execution_time_ms"] = (time.time() - start) * 1000
+            return jsonify(response), 400
 
         if requires_raster(operator_meta):
             tenant = data.get('tenant_id')

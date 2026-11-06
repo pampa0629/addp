@@ -5,41 +5,59 @@ from typing import Any, Dict
 import geopandas as gpd
 import pyarrow as pa
 from pyproj import CRS
+from pyproj.exceptions import CRSError
 import shapely
+from shapely.errors import GEOSException
 
 GEOMETRY_BATCH_METADATA_PREFIX = "addp.geometry."
 GEOMETRY_BATCH_ENCODING_WKB = "wkb"
 GEOMETRY_BATCH_ENCODING_EWKB = "ewkb"
 
 
-def decode_geometry_batch_arrow(payload: bytes) -> gpd.GeoDataFrame:
-    if not payload:
-        raise ValueError("binary_payload.data is required")
+class GeometryBatchInputError(ValueError):
+    """A request error identified at the binary geometry boundary."""
 
-    reader = pa.ipc.open_stream(pa.BufferReader(payload))
-    table = reader.read_all()
-    if table.num_columns != 1:
-        raise ValueError("geometry batch arrow payload must contain exactly one column")
+
+def parse_geometry_batch_crs(value: str | None) -> CRS | None:
+    if value is None or isinstance(value, str) and not value.strip():
+        return None
+    if not isinstance(value, str):
+        raise GeometryBatchInputError("crs")
+    try:
+        return CRS.from_user_input(value.strip())
+    except CRSError:
+        # PROJ also raises CRSError when its database is unavailable. A
+        # failed known-good lookup must remain an execution error.
+        CRS.from_epsg(4326)
+        raise GeometryBatchInputError("crs") from None
+
+
+def decode_geometry_batch_arrow(
+    payload: bytes, *, expected_encoding: str = GEOMETRY_BATCH_ENCODING_EWKB,
+    declared_column: str | None = None,
+) -> gpd.GeoDataFrame:
+    try:
+        with pa.ipc.open_stream(pa.BufferReader(payload)) as reader:
+            table = reader.read_all()
+        metadata = _metadata_to_dict(table.schema.metadata)
+    except (pa.ArrowInvalid, pa.ArrowTypeError, pa.ArrowNotImplementedError, UnicodeDecodeError):
+        raise GeometryBatchInputError("arrow") from None
+    if table.num_columns != 1 or table.schema.field(0).type != pa.binary():
+        raise GeometryBatchInputError("column")
     column_name = table.schema.names[0]
-    metadata = _metadata_to_dict(table.schema.metadata)
-    geometry_column = metadata.get(f"{GEOMETRY_BATCH_METADATA_PREFIX}column") or column_name
-    encoding = _normalize_encoding(metadata.get(f"{GEOMETRY_BATCH_METADATA_PREFIX}encoding"))
-    if encoding not in {GEOMETRY_BATCH_ENCODING_WKB, GEOMETRY_BATCH_ENCODING_EWKB}:
-        raise ValueError(f"unsupported geometry batch encoding: {encoding}")
-    source_crs = metadata.get(f"{GEOMETRY_BATCH_METADATA_PREFIX}source_crs", "")
-    values = table.column(0).to_pylist()
-
-    geometry = gpd.GeoSeries.from_wkb(values, crs=source_crs or None)
-    frame = gpd.GeoDataFrame({geometry_column: geometry}, geometry=geometry_column, crs=source_crs or None)
-    return frame
-
-
-def geometry_batch_arrow_metadata(payload: bytes) -> Dict[str, Any]:
-    if not payload:
-        raise ValueError("binary_payload.data is required")
-    reader = pa.ipc.open_stream(pa.BufferReader(payload))
-    table = reader.read_all()
-    return _metadata_to_dict(table.schema.metadata)
+    arrow_column = metadata.get(f"{GEOMETRY_BATCH_METADATA_PREFIX}column", column_name)
+    if not column_name.strip() or arrow_column != column_name or (declared_column is not None and declared_column != column_name):
+        raise GeometryBatchInputError("column")
+    encoding = metadata.get(f"{GEOMETRY_BATCH_METADATA_PREFIX}encoding", "").strip().lower()
+    if encoding != expected_encoding:
+        raise GeometryBatchInputError("arrow_encoding")
+    crs = parse_geometry_batch_crs(metadata.get(f"{GEOMETRY_BATCH_METADATA_PREFIX}source_crs"))
+    try:
+        values = shapely.from_wkb(table.column(0).to_pylist())
+    except GEOSException:
+        raise GeometryBatchInputError("ewkb") from None
+    geometry = gpd.GeoSeries(values, crs=crs)
+    return gpd.GeoDataFrame({column_name: geometry}, geometry=column_name, crs=crs)
 
 
 def encode_geometry_batch_arrow(
