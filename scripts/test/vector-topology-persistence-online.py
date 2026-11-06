@@ -59,17 +59,17 @@ def diagnostic_definition(key, sources, parent):
     return {'tasks':tasks}
 
 
-def expected_input_diagnostic(spec):
+def expected_input_diagnostic(spec, *, node_index=1):
     _,operator,reason,parameter,field=spec
     return {'schema_version':'addp.execution-failure/v3','stage':'execution','reason':reason,
-            'operator':{'node_index':1,'operator_id':operator,**({'parameter':parameter} if parameter else {}),**({'field':field} if field else {})}}
+            'operator':{'node_index':node_index,'operator_id':operator,**({'parameter':parameter} if parameter else {}),**({'field':field} if field else {})}}
 
 
-def validate_input_failure(execution, spec, identifier):
+def validate_input_failure(execution, spec, identifier, *, node_index=1):
     if execution.get('execution_id')!=identifier or execution.get('status')!='failed' or execution.get('outputs'):
         raise SuiteError('operator parameter failure identity/status/output differs')
     details=obj(execution.get('error_details'),'operator error details')
-    if (details.get('code')!='develop.workflow.invalid_params' or details.get('diagnostic')!=expected_input_diagnostic(spec)
+    if (details.get('code')!='develop.workflow.invalid_params' or details.get('diagnostic')!=expected_input_diagnostic(spec, node_index=node_index)
         or type(details.get('diagnostic',{}).get('operator',{}).get('node_index')) is not int
         or set(details)-{'code','category','message','diagnostic'}):
         raise SuiteError('operator parameter failure controlled public diagnostic differs')
@@ -1313,11 +1313,18 @@ def run_normalize_scenario(repository,env,client,physical_runner,browser_runner,
     fm=obj(failed.get('metadata'),'failed normalize metadata');fr=fm.get('result')
     if failed.get('status')!='failed' or failed.get('outputs') or fm.get('lineage_facts') or (isinstance(fr,dict) and fr.get('meta_scan_runs')):
         raise SuiteError('normalization validation failure must publish neither port nor scan/facts')
-    diagnostic=diagnostic_runner(repository,env,failed_id,task='chains' if composition else 'normal',
-        reason='源图层的列名 distance 与多距缓冲输出列冲突；请先手动重命名源列，再执行多距缓冲。' if buffer else 'id_field must explicitly name one existing non-geometry scalar column',
-        cause='distance_conflict' if buffer else 'invalid_chain_id_field' if composition else 'invalid_normalize_id_field')
+    if buffer or composition:
+        diagnostic=diagnostic_runner(repository,env,failed_id,task='chains' if composition else 'normal',
+            reason='源图层的列名 distance 与多距缓冲输出列冲突；请先手动重命名源列，再执行多距缓冲。' if buffer else 'id_field must explicitly name one existing non-geometry scalar column',
+            cause='distance_conflict' if buffer else 'invalid_chain_id_field')
+    else:
+        spec = ('invalid_normalize_id_field', 'normalize_line_network', 'operator_input_invalid', 'input_gdf', '')
+        diagnostic = validate_input_failure(failed, spec, failed_id, node_index=2)
     failed_monitor=obj(client.request('GET',f'/api/v1/monitor/executions/by-execution-id/{failed_id}',(200,)).payload,'failed normalize Monitor')
     if failed_monitor.get('status')!='failed' or failed_monitor.get('module')!='develop':raise SuiteError('normalization failure Monitor differs')
+    if not (buffer or composition):
+        if validate_input_failure(failed_monitor, spec, failed_id, node_index=2) != diagnostic:
+            raise SuiteError('normalization failure Monitor diagnostic differs from Develop')
     if scan_ids(client)!=scans_before or physical_runner(repository,env)!=native:raise SuiteError('normalization failure changed scans or physical files')
     failure={'execution_id':failed_id,'status':'failed','no_publication_or_scan':True,'diagnostic':diagnostic,
              'observation':{'status':failed['status'],'outputs':failed.get('outputs'),'lineage_facts':fm.get('lineage_facts'),

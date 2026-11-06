@@ -464,6 +464,7 @@
         "repair_geometry": "Repair geometry",
         "snap_geometry": "Reference snap",
         "check_dangling_points": "Check dangling points",
+        "normalize_line_network": "Normalize overlapping lines",
         "group_line_components": "Group connected line parts",
         "split_line_intersections": "Split line intersections",
         "check_line_overlap": "Check line overlaps",

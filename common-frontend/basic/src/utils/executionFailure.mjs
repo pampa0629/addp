@@ -23,6 +23,8 @@ const failureCategories = new Set(['permission_denied', 'timeout', 'cancelled', 
   'coordinator_lost', 'child_failed', 'owner_unavailable'])
 
 const operatorFailureTemplates = Object.freeze({ snap_line_endpoints: 'lineEndpoint', extend_line_endpoints: 'lineEndpoint', polygonize: 'polygonize', snap_geometry:'referenceSnap', check_geometry:'geometryValidity', repair_geometry:'geometryValidity', extract_vertices: 'vertices', split_multipart: 'multipart', get_bounds: 'bounds', distance_to: 'distance', get_area: 'measurement', get_length: 'measurement', split_by_area: 'measurement', contains: 'spatialRelation', intersects: 'spatialRelation', voronoi: 'voronoi',
+  'normalize_line_network:operator_input_invalid': 'lineCheck',
+  'normalize_line_network:operator_crs_invalid': 'lineCheck',
   'group_line_components:operator_input_invalid': 'lineCheck',
   'group_line_components:operator_crs_invalid': 'lineCheck',
   'split_line_intersections:operator_input_invalid': 'lineCheck',
@@ -74,6 +76,15 @@ export function executionFailurePresentation(details, translate) {
 }
 
 export const operatorInputRules = Object.freeze([
+  ["normalize_line_network", "operator_input_invalid", "input_gdf", ""],
+  ["normalize_line_network", "operator_crs_invalid", "", ""],
+  ["normalize_line_network", "operator_field_conflict", "input_gdf", "edge_id"],
+  ["normalize_line_network", "operator_field_conflict", "input_gdf", "occurrence_count"],
+  ["normalize_line_network", "operator_field_conflict", "input_gdf", "source_id"],
+  ["normalize_line_network", "operator_field_conflict", "input_gdf", "source_part_no"],
+  ["normalize_line_network", "operator_field_conflict", "input_gdf", "source_segment_no"],
+  ["normalize_line_network", "operator_field_conflict", "input_gdf", "piece_no"],
+  ["normalize_line_network", "operator_field_conflict", "input_gdf", "is_reversed"],
   ["group_line_components", "operator_input_invalid", "input_gdf", ""],
   ["group_line_components", "operator_crs_invalid", "", ""],
   ["group_line_components", "operator_field_conflict", "input_gdf", "source_id"],

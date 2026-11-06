@@ -1358,13 +1358,12 @@ def _ordered_segment_points(start, end, cuts):
 
 def normalize_line_network(input_gdf: gpd.GeoDataFrame, id_field: str) -> dict:
     """Node original segment occurrences and share exact edges without choosing attributes."""
-    geometry = _finite_xy_geometry(input_gdf)
-    _require_projected_xy_crs(geometry.crs)
-    ids = _source_identifiers(input_gdf, id_field)
-    _require_nonempty_valid_lines(geometry)
-    reserved = {"edge_id", "occurrence_count", "source_id", "source_part_no", "source_segment_no", "piece_no", "is_reversed"}
-    if reserved.intersection(input_gdf.columns):
-        raise ValueError("network output columns must not overwrite source fields")
+    geometry, ids = _line_check_inputs(input_gdf, id_field)
+    for field in ("edge_id", "occurrence_count", "source_id", "source_part_no", "source_segment_no", "piece_no", "is_reversed"):
+        if field in input_gdf.columns:
+            raise LineCheckInputError(
+                "operator_field_conflict", f"output column {field} must not overwrite a source field", field=field,
+            )
 
     segments, references, cuts = [], [], []
     for row, shape in enumerate(geometry.array):

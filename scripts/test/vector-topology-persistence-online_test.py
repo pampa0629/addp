@@ -858,7 +858,13 @@ class NormalizeClient(base.Client):
         super().__init__(m.fixture.NORMALIZE_SOURCE)
         self.permissions=sorted(m.PERMISSIONS);self.scan_tenant=2
         self.targets={20+i:base.item(name,20+i) for i,name in enumerate(m.fixture.NORMALIZE_TARGETS)}
-        self.executions={'normalize-execution':normalize_execution(),'normalize-failed':{'status':'failed','metadata':{}}}
+        self.executions={'normalize-execution':normalize_execution(),'normalize-failed':{
+            'execution_id':'normalize-failed','status':'failed','metadata':{},
+            'error_details':{'code':'develop.workflow.invalid_params','diagnostic':{
+                'schema_version':'addp.execution-failure/v3','stage':'execution','reason':'operator_input_invalid',
+                'operator':{'node_index':2,'operator_id':'normalize_line_network','parameter':'input_gdf'},
+            }},
+        }}
     def request(self,method,path,expected,body=None):
         if path.endswith('/auth/context'):
             data={'principal':{'id':33,'type':'user'},'context':{'type':'tenant','tenant_id':'2'},'token':{'type':'first_party_access_token'},
@@ -888,7 +894,8 @@ class NormalizeOnlineTest(unittest.TestCase):
         self.directory=tempfile.TemporaryDirectory();self.addCleanup(self.directory.cleanup)
         self.env={**ENV,'ADDP_ONLINE_TOPOLOGY_CASE':m.fixture.NORMALIZE_CASE,'ADDP_ONLINE_ARTIFACT_DIR':self.directory.name}
     def run_case(self,client=None,physical=normalize_physical,browser=lambda r,e,v:v):
-        return m.run_scenario(Path('.'),self.env,client or NormalizeClient(),physical,browser,diagnostic_runner=lambda *a,**kw:{'cause':kw['cause']})
+        return m.run_scenario(Path('.'),self.env,client or NormalizeClient(),physical,browser,
+            diagnostic_runner=lambda *a,**kw:self.fail('normalize must use the public diagnostic instead of log text'))
     def test_case_uses_only_one_source_two_ports_exact_identity_and_no_old_branch(self):
         client=NormalizeClient()
         with patch.object(m,'definition',side_effect=AssertionError('old full scenario must not run')):
@@ -899,7 +906,11 @@ class NormalizeOnlineTest(unittest.TestCase):
         self.assertEqual([len(result['browser']['expected'][p]) for p in m.fixture.NORMALIZE_PORTS],[9,17])
         manual=[call for call in client.calls if call[1].endswith('/scan/run/manual')]
         self.assertEqual(len(manual),1);self.assertEqual(manual[0][2]['targets'],[f'addp://engine/3/path/{m.fixture.NORMALIZE_SOURCE}?type=file'])
-        self.assertTrue(result['failed_normalize']['no_publication_or_scan'])
+        failure = result['failed_normalize']
+        self.assertTrue(failure['no_publication_or_scan'])
+        self.assertEqual(failure['diagnostic'], failure['monitor']['error_details'])
+        self.assertEqual(failure['diagnostic']['diagnostic']['operator'],
+                         {'node_index':2,'operator_id':'normalize_line_network','parameter':'input_gdf'})
         tasks=m.normalize_definition('s','p')['tasks']
         self.assertEqual(tasks[2]['params']['input_df'],{'$ref':'normal'})
         self.assertEqual(tasks[3]['params']['input_df'],{'$ref':'normal','port':'members'})
@@ -916,6 +927,18 @@ class NormalizeOnlineTest(unittest.TestCase):
             with self.subTest(field=field),self.assertRaises(m.SuiteError):self.run_case(client)
         client=NormalizeClient();client.targets[20]['size_bytes']=0
         with self.assertRaises(m.SuiteError):self.run_case(client)
+    def test_normalization_rejects_incorrect_public_diagnostic(self):
+        for owner in ('develop', 'monitor'):
+            class WrongDiagnostic(NormalizeClient):
+                def request(self, method, path, expected, body=None):
+                    result = super().request(method, path, expected, body)
+                    if f'/api/v1/{owner}/executions/' in path and path.endswith('/normalize-failed'):
+                        result.payload['error_details']['diagnostic']['operator']['node_index'] = 1
+                    return result
+
+            with self.subTest(owner=owner), self.assertRaisesRegex(m.SuiteError, 'public diagnostic differs'):
+                self.run_case(WrongDiagnostic())
+
     def test_case_failure_and_browser_cannot_change_physical_inventory(self):
         client=NormalizeClient();client.executions['normalize-failed']['outputs']={'unexpected':{}}
         with self.assertRaises(m.SuiteError):self.run_case(client)

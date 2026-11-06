@@ -235,7 +235,7 @@ NFS export/owned root、Runtime/registry、部署与 Infra 全部清理并核零
 
 双保存均使用既有授权与成果主线，稳定 outputs 和 facts 各两份 write_mode=create；各成果恰有同一普通 User／Tenant 的一次精确自动扫描、正整数 physical==Meta 大小以及源到该成果的一条当前 execution active derive。独立原生 OGR 读原始几何／字段类型／CRS，归档一个源与两成果原字节并核浏览器前后不变。两幅真实预览／OpenLayers 地图核全部九／十七行属性、标准 EWKB、FID 区分、EPSG:3857 原坐标的显示投影、要素数、绿色像素与截图。源 Meta 保持不变，Monitor 与执行 facts 一致；业务来源只由 members 表达，不塞入 Meta 技术血缘。
 
-同源另提交一次缺失 id_field 的计算失败 DAG，必须由指定 normalize 节点的确切字段校验原因失败，两个下游 save 都不发布、无新增扫描或输出 facts，原源／成功成果不变；不承诺保存阶段跨文件事务回滚。浏览器核同 User 的成功／失败执行页与两幅地图，共四截图。阶段证据 result=incomplete 不替代最终 `addp.topology-normalize/v1` 和 `addp.topology-normalize-browser/v1` 的 passed；两者显式绑定 case、Run ID、身份、当前执行、源和两端口预期。原始图／预览／OL 与完整物理证据须保留；领域、NFS export／owned root、Runtime／registry、部署／Infra 全部清理零残留，清理不认证业务 DELETE。新场景沿现有标准 runner、Native、Console 及 workflow 登记检查，不新增 suite、权限或容量运行。
+同源另提交一次引用不存在来源列的失败 DAG，Develop 与 Monitor 必须公开一致的 `develop.workflow.invalid_params`，诊断绑定定义顺序第 2 个节点 `normalize_line_network` 的 `operator_input_invalid/input_gdf`，不依赖运行日志的自由文本。两个下游 save 都不发布、无新增扫描或输出 facts，原源／成功成果不变；不承诺保存阶段跨文件事务回滚。浏览器核同 User 的成功／失败执行页与两幅地图，共四截图。阶段证据 result=incomplete 不替代最终 `addp.topology-normalize/v1` 和 `addp.topology-normalize-browser/v1` 的 passed；两者显式绑定 case、Run ID、身份、当前执行、源和两端口预期。原始图／预览／OL 与完整物理证据须保留；领域、NFS export／owned root、Runtime／registry、部署／Infra 全部清理零残留，清理不认证业务 DELETE。新场景沿现有标准 runner、Native、Console 及 workflow 登记检查，不新增 suite、权限或容量运行。
 
 
 ### 重合规整与链路合并独立组合

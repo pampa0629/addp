@@ -724,6 +724,8 @@ func TestGeometryValidityDiagnosticBindsFrozenDefinitionAndHidesOutputNames(t *t
 
 func TestTopologyChecksAndReferenceSnapDiagnosticsBindFrozenDefinitionAndHideValues(t *testing.T) {
 	for _, tc := range []struct{ op, reason, param string }{
+		{"normalize_line_network", "operator_input_invalid", "input_gdf"},
+		{"normalize_line_network", "operator_crs_invalid", ""},
 		{"group_line_components", "operator_input_invalid", "input_gdf"},
 		{"group_line_components", "operator_crs_invalid", ""},
 		{"split_line_intersections", "operator_input_invalid", "input_gdf"},

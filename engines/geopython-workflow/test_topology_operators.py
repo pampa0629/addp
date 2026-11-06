@@ -4430,6 +4430,100 @@ def test_normalize_line_network_native_dual_save_and_independent_ogr_reload(tmp_
     assert source.read_bytes()==original
 
 
+@pytest.mark.parametrize("case,reason,parameter,field", [
+    ("missing_layer", "operator_input_invalid", "input_gdf", ""),
+    ("missing_id", "operator_input_invalid", "input_gdf", ""),
+    ("invalid_id", "operator_input_invalid", "input_gdf", ""),
+    ("invalid_line", "operator_input_invalid", "input_gdf", ""),
+    ("crs", "operator_crs_invalid", "", ""),
+    ("edge_id", "operator_field_conflict", "input_gdf", "edge_id"),
+    ("occurrence_count", "operator_field_conflict", "input_gdf", "occurrence_count"),
+    ("source_id", "operator_field_conflict", "input_gdf", "source_id"),
+    ("source_part_no", "operator_field_conflict", "input_gdf", "source_part_no"),
+    ("source_segment_no", "operator_field_conflict", "input_gdf", "source_segment_no"),
+    ("piece_no", "operator_field_conflict", "input_gdf", "piece_no"),
+    ("is_reversed", "operator_field_conflict", "input_gdf", "is_reversed"),
+    ("all_fields_reversed", "operator_field_conflict", "input_gdf", "edge_id"),
+    ("native_check", None, "", ""),
+    ("native_index", None, "", ""),
+    ("native_intersection", None, "", ""),
+    ("result_validation", None, "", ""),
+])
+def test_normalize_line_network_diagnostics_block_both_saves(monkeypatch, case, reason, parameter, field):
+    import workflow_engine
+    from addp_common.workflow_runtime import WorkflowExecutionError
+    from operators import geometric_operators
+
+    first = LineString([(0, 0), (2, 0)])
+    second = Point(1, 0) if case == "invalid_line" else LineString([(1, 0), (3, 0)])
+    frame = line_overlap_frame([first, second], crs=None if case == "crs" else "EPSG:3857")
+    params = {"input_gdf": frame, "id_field": "route_key"}
+    if case == "missing_layer":
+        del params["input_gdf"]
+    elif case == "missing_id":
+        del params["id_field"]
+    elif case == "invalid_id":
+        params["id_field"] = "PRIVATE_ID_FIELD"
+    elif case == "all_fields_reversed":
+        params["input_gdf"] = frame.assign(
+            is_reversed=True, piece_no=1, source_segment_no=1, source_part_no=1,
+            source_id=1, occurrence_count=1, edge_id=1,
+        )
+    elif field:
+        frame[field] = 1
+
+    def fail(*args, **kwargs):
+        raise ValueError("line geometry is invalid")
+
+    if case == "native_check":
+        monkeypatch.setattr(shapely, "is_valid", fail)
+    elif case == "native_index":
+        monkeypatch.setattr(shapely.STRtree, "query", fail)
+    elif case == "native_intersection":
+        monkeypatch.setattr(shapely, "intersection", fail)
+    elif case == "result_validation":
+        validate = geometric_operators._finite_xy_geometry
+
+        def validate_result(frame, name="input_gdf", **kwargs):
+            if name == "result":
+                fail()
+            return validate(frame, name, **kwargs)
+
+        monkeypatch.setattr(geometric_operators, "_finite_xy_geometry", validate_result)
+
+    operator = "normalize_line_network"
+    resolve = workflow_engine.get_operator
+    saves = []
+    monkeypatch.setattr(workflow_engine, "get_operator",
+                        lambda name: (lambda **kwargs: saves.append(kwargs)) if name == "save" else resolve(name))
+    tasks = [{"id": "normalize", "operator": operator, "params": params, "depends_on": []}]
+    for port in ("result", "members"):
+        tasks.append({
+            "id": f"save_{port}", "operator": "save",
+            "params": {"input_df": {"$ref": "normalize", "port": port}},
+            "depends_on": ["normalize"],
+        })
+    with pytest.raises(WorkflowExecutionError) as caught:
+        workflow_engine.GeoPythonWorkflowRunner(language="en").execute({"tasks": tasks})
+    assert not saves
+    error = caught.value
+    if reason is None:
+        assert error.error_code == "EXECUTION_FAILED" and error.diagnostic is None
+        assert "line geometry is invalid" in str(error)
+        return
+
+    context = {"node_index": 1, "operator_id": operator}
+    if parameter:
+        context["parameter"] = parameter
+    if field:
+        context["field"] = field
+        assert field in str(error)
+    assert error.error_code == "INVALID_PARAMS"
+    assert error.diagnostic == {"schema_version": "addp.execution-failure/v3", "stage": "execution",
+                                "reason": reason, "operator": context}
+    assert "PRIVATE_" not in str(error)
+
+
 def test_normalize_line_network_async_default_and_explicit_port_and_failure_no_publish(tmp_path,monkeypatch):
     import api_server
     frame=line_overlap_frame([LineString([(0,0),(2,0)]),LineString([(2,0),(0,0)])],['甲','乙'])
@@ -4454,7 +4548,13 @@ def test_normalize_line_network_async_default_and_explicit_port_and_failure_no_p
     assert (tmp_path/'source.gpkg').read_bytes()==original
     tasks[1]['params']['id_field']='missing'
     for port in ('result','members'):next(t for t in tasks if t['id']==port)['params']['path']='failed-'+port+'.gpkg'
-    failed=execute_workflow({'tasks':tasks});assert failed['status']=='failed'
+    failed = execute_workflow({'tasks': tasks})
+    assert failed['status'] == 'failed' and failed['error_code'] == 'INVALID_PARAMS'
+    assert failed['diagnostic'] == {
+        'schema_version': 'addp.execution-failure/v3', 'stage': 'execution',
+        'reason': 'operator_input_invalid',
+        'operator': {'node_index': 2, 'operator_id': 'normalize_line_network', 'parameter': 'input_gdf'},
+    }
     assert not (tmp_path/'failed-result.gpkg').exists() and not (tmp_path/'failed-members.gpkg').exists()
     assert (tmp_path/'source.gpkg').read_bytes()==original
 
@@ -4739,7 +4839,13 @@ def test_normalize_line_network_chains_composition_invalid_source_publishes_none
     frame,*_= _normalize_chain_fixture('directions','int64');frame[field]=pd.Series([1,2],dtype='Int64')
     source=tmp_path/'source.gpkg';_seed_composition_source(frame,source);original=source.read_bytes()
     result=execute_workflow({'tasks':_composition_workflow({'engine_type':'nfs','mount_path':str(tmp_path)})})
-    assert result['status']=='failed' and 'network output columns must not overwrite source fields' in result['error']
+    assert result['status'] == 'failed' and result['error_code'] == 'INVALID_PARAMS'
+    assert result['diagnostic'] == {
+        'schema_version': 'addp.execution-failure/v3', 'stage': 'execution',
+        'reason': 'operator_field_conflict',
+        'operator': {'node_index': 2, 'operator_id': 'normalize_line_network',
+                     'parameter': 'input_gdf', 'field': field},
+    }
     assert sorted(p.name for p in tmp_path.iterdir())==['source.gpkg']
     assert source.read_bytes()==original
 
