@@ -139,7 +139,71 @@ doris_sql() {
   docker exec -i "$doris_container" mysql -h127.0.0.1 -P9030 -uroot --connect-timeout=5 --batch --skip-column-names "$@"
 }
 clickhouse_sql() {
-  docker exec -i "$clickhouse_container" sh -c 'exec clickhouse-client --user default --password "$CLICKHOUSE_PASSWORD" "$@"' _ "$@"
+  local seconds=$1
+  shift
+  timeout --kill-after=5s "${seconds}s" docker exec "$clickhouse_container" \
+    sh -c 'exec clickhouse-client --user default --password "$CLICKHOUSE_PASSWORD" "$@"' _ "$@" </dev/null
+}
+
+clickhouse_stage_failed() {
+  local stage=$1 status=$2
+  case "$status" in
+    124) fail "ClickHouse stage=$stage result=timed_out" ;;
+    137) fail "ClickHouse stage=$stage result=killed" ;;
+    *) fail "ClickHouse stage=$stage result=failed status=$status" ;;
+  esac
+}
+
+clickhouse_docker_stage() {
+  local stage=$1 seconds=$2
+  shift 2
+  echo "ClickHouse stage=$stage result=started timeout_seconds=$seconds" >&2
+  timeout --kill-after=5s "${seconds}s" docker "$@" 2>"$ADDP_ONLINE_SECRET_DIR/clickhouse-$stage.log" </dev/null ||
+    clickhouse_stage_failed "$stage" "$?"
+  echo "ClickHouse stage=$stage result=passed" >&2
+}
+
+wait_for_clickhouse() {
+  local deadline=$((SECONDS + 240)) budget attempt status
+  local log_dir=$ADDP_ONLINE_SECRET_DIR
+  echo "ClickHouse stage=readiness result=started timeout_seconds=240 probe_timeout_seconds=10"
+  for ((attempt=0; attempt<120 && SECONDS<deadline; attempt++)); do
+    budget=$((deadline - SECONDS))
+    if (( budget > 10 )); then budget=10; fi
+    if (( budget <= 0 )); then break; fi
+    status=0
+    timeout --kill-after=5s "${budget}s" docker exec "$clickhouse_container" \
+      sh -c 'test "$(tr "\000" "\n" < /proc/1/cmdline | head -n 1)" = clickhouse-server' \
+      </dev/null >"$log_dir/clickhouse-process.log" 2>&1 || status=$?
+    case "$status" in
+      0)
+        budget=$((deadline - SECONDS))
+        if (( budget > 10 )); then budget=10; fi
+        if (( budget <= 0 )); then break; fi
+        status=0
+        clickhouse_sql "$budget" --query 'SELECT 1' >"$log_dir/clickhouse-readiness.out" \
+          2>"$log_dir/clickhouse-readiness.log" || status=$?
+        if [ "$status" = 0 ] && grep -qx '1' "$log_dir/clickhouse-readiness.out"; then
+          echo "ClickHouse stage=readiness result=passed"
+          return
+        fi
+        case "$status" in 0|1) ;; *) clickhouse_stage_failed readiness-sql "$status" ;; esac
+        ;;
+      1) ;;
+      *) clickhouse_stage_failed readiness-process "$status" ;;
+    esac
+    sleep 2
+  done
+  fail "ClickHouse stage=readiness result=not_ready"
+}
+
+seed_clickhouse() {
+  local table=$1
+  shift
+  echo "ClickHouse stage=seed result=started table=$table timeout_seconds=30"
+  clickhouse_sql 30 --multiquery --query "$1" >"$ADDP_ONLINE_SECRET_DIR/clickhouse-seed.out" \
+    2>"$ADDP_ONLINE_SECRET_DIR/clickhouse-seed.log" || clickhouse_stage_failed seed "$?"
+  echo "ClickHouse stage=seed result=passed table=$table"
 }
 
 start_write_failure_targets() {
@@ -161,29 +225,25 @@ start_write_failure_targets() {
   TRANSFER_DORIS_PORT=$(docker port "$doris_container" 9030/tcp); TRANSFER_DORIS_PORT=${TRANSFER_DORIS_PORT##*:}
   export CLICKHOUSE_PASSWORD TRANSFER_CLICKHOUSE_PORT
   CLICKHOUSE_PASSWORD=$(python3 -c 'import secrets; print(secrets.token_hex(32))')
-  docker run -d --name "$clickhouse_container" --label "com.addp.online-fixture=$owner" \
+  local clickhouse_image=clickhouse/clickhouse-server:25.12.1.649@sha256:7234d193fbeb3a375f21f0bb99040396f68bb2e82cada4f4947d7fcf9638bbf3
+  clickhouse_docker_stage pull 300 pull "$clickhouse_image" >"$ADDP_ONLINE_SECRET_DIR/clickhouse-pull.out"
+  clickhouse_docker_stage start 60 run --pull=never -d --name "$clickhouse_container" --label "com.addp.online-fixture=$owner" \
     -p 127.0.0.1::9000 -e CLICKHOUSE_USER=default -e CLICKHOUSE_PASSWORD \
-    -e CLICKHOUSE_DB=transfer_fixture -e CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT=1 \
-    clickhouse/clickhouse-server:25.12.1.649@sha256:7234d193fbeb3a375f21f0bb99040396f68bb2e82cada4f4947d7fcf9638bbf3 >/dev/null
-  ready=0
-  for _ in $(seq 1 120); do
-    if docker exec "$clickhouse_container" sh -c 'test "$(tr "\000" "\n" < /proc/1/cmdline | head -n 1)" = clickhouse-server' &&
-        clickhouse_sql --query 'SELECT 1' 2>/dev/null | grep -qx '1'; then ready=1; break; fi
-    sleep 2
-  done
-  [ "$ready" = 1 ] || fail "ClickHouse write-failure target did not become ready"
-  TRANSFER_CLICKHOUSE_PORT=$(docker port "$clickhouse_container" 9000/tcp); TRANSFER_CLICKHOUSE_PORT=${TRANSFER_CLICKHOUSE_PORT##*:}
+    -e CLICKHOUSE_DB=transfer_fixture -e CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT=1 "$clickhouse_image" >/dev/null
+  wait_for_clickhouse
+  TRANSFER_CLICKHOUSE_PORT=$(clickhouse_docker_stage port 10 port "$clickhouse_container" 9000/tcp)
+  TRANSFER_CLICKHOUSE_PORT=${TRANSFER_CLICKHOUSE_PORT##*:}
   doris_sql -e 'CREATE DATABASE transfer_fixture; SET GLOBAL enable_insert_strict=true;' >/dev/null
   for target in addp_online_transfer_write_failure addp_online_transfer_json_failure; do
     doris_sql -e "CREATE TABLE transfer_fixture.$target (id BIGINT NOT NULL, document STRING NULL, payload STRING NULL, label STRING NULL) DUPLICATE KEY(id) PARTITION BY RANGE(id) (PARTITION bounded_write VALUES LESS THAN (\"1001\")) DISTRIBUTED BY HASH(id) BUCKETS 1 PROPERTIES (\"replication_num\"=\"1\"); INSERT INTO transfer_fixture.$target VALUES (0, '{\"sentinel\":true}', UNHEX('00ff41'), 'plain {');" >/dev/null
-    clickhouse_sql --multiquery --query "CREATE TABLE transfer_fixture.$target (id Int64, document Nullable(String), payload Nullable(String), label Nullable(String), CONSTRAINT fixture_label_length CHECK length(label) <= 8) ENGINE=MergeTree ORDER BY tuple(); INSERT INTO transfer_fixture.$target VALUES (0, '{\"sentinel\":true}', unhex('00ff41'), 'plain {');" >/dev/null
+    seed_clickhouse "$target" "CREATE TABLE transfer_fixture.$target (id Int64, document Nullable(String), payload Nullable(String), label Nullable(String), CONSTRAINT fixture_label_length CHECK length(label) <= 8) ENGINE=MergeTree ORDER BY tuple(); INSERT INTO transfer_fixture.$target VALUES (0, '{\"sentinel\":true}', unhex('00ff41'), 'plain {');"
   done
-  clickhouse_sql --multiquery --query "
+  seed_clickhouse "$BINARY_SOURCE" "
     CREATE TABLE transfer_fixture.$BINARY_SOURCE (
       id Int32, payload Nullable(String) COMMENT 'Transfer fixture\\naddp:type=bytes', label String
     ) ENGINE=MergeTree ORDER BY id;
     INSERT INTO transfer_fixture.$BINARY_SOURCE VALUES
-      (1, unhex('4100FF42'), '中文'), (2, unhex('4142'), 'AB'), (3, '', 'empty'), (4, NULL, 'null');" >/dev/null
+      (1, unhex('4100FF42'), '中文'), (2, unhex('4142'), 'AB'), (3, '', 'empty'), (4, NULL, 'null');"
   python3 - <<'PY_DESCRIPTOR_FAILURES'
 import json, os
 from pathlib import Path
@@ -205,7 +265,7 @@ read_binary_roundtrip() {
   assert_owned
   assert_owned "$clickhouse_container"
   local source_rows target_rows target_type
-  source_rows=$(clickhouse_sql --query "SELECT id, hex(payload) AS payload_hex, toUInt32(length(payload)) AS byte_length,
+  source_rows=$(clickhouse_sql 30 --query "SELECT id, hex(payload) AS payload_hex, toUInt32(length(payload)) AS byte_length,
     CAST(isNull(payload), 'Bool') AS is_null, label FROM transfer_fixture.$BINARY_SOURCE ORDER BY id FORMAT JSONEachRow")
   target_rows=$(postgres_sql -Atc "SELECT json_build_object('id', id, 'payload_hex', upper(encode(payload, 'hex')),
     'byte_length', octet_length(payload), 'is_null', payload IS NULL, 'label', label) FROM public.$BINARY_TARGET ORDER BY id")
@@ -230,7 +290,7 @@ verify_write_failures() {
     for scenario in late_execute_failure invalid_json; do
       if [ "$scenario" = late_execute_failure ]; then target=addp_online_transfer_write_failure; want='1001\t1\t1000\t0'; else target=addp_online_transfer_json_failure; want='1\t1\t0\t0'; fi
       query="SELECT COUNT(*), COALESCE(SUM(CASE WHEN id=0 AND document='{\"sentinel\":true}' AND HEX(payload)='00FF41' AND label='plain {' THEN 1 ELSE 0 END),0), COALESCE(SUM(CASE WHEN id BETWEEN 1 AND 1000 AND document='{\"ok\":true}' AND HEX(payload)='00FF41' AND label='plain {' THEN 1 ELSE 0 END),0), COALESCE(SUM(CASE WHEN id=1001 THEN 1 ELSE 0 END),0) FROM transfer_fixture.$target"
-      if [ "$engine" = doris ]; then values=$(doris_sql -e "$query"); else values=$(clickhouse_sql --query "$query"); fi
+      if [ "$engine" = doris ]; then values=$(doris_sql -e "$query"); else values=$(clickhouse_sql 30 --query "$query"); fi
       [ "$values" = "$(printf "$want")" ] || fail "write-failure physical row evidence mismatch: $engine/$scenario"
       printf '%s"%s":{"rows":%s,"sentinel_rows":1,"valid_rows":%s,"failed_row_absent":true}' "$case_separator" "$scenario" "$(cut -f1 <<< "$values")" "$(cut -f3 <<< "$values")"
       case_separator=','
@@ -398,6 +458,7 @@ PY_OBJECT
 
 case "$action" in
   start)
+    command -v timeout >/dev/null 2>&1 || fail "GNU timeout is required for ClickHouse fixture startup"
     for candidate in "$container" "$mongodb_container" "$doris_container" "$clickhouse_container" "$minio_container"; do
       ! docker container inspect "$candidate" >/dev/null 2>&1 || fail "refusing an existing source container"
     done

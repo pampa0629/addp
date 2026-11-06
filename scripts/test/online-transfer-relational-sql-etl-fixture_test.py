@@ -37,6 +37,35 @@ urllib.request.urlopen=lambda *args,**kwargs: Ready()
 ''')
         self._executable('uname', '#!/bin/bash\n[ "$1" != -s ] || { echo "${ADDP_TEST_OS:-Linux}"; exit; }\necho x86_64\n')
         self._executable('sleep', '#!/bin/bash\nexit 0\n')
+        self._executable('timeout', """#!/usr/bin/env python3
+import os, subprocess, sys
+
+kill_after, budget, *command = sys.argv[1:]
+assert kill_after == '--kill-after=5s'
+phase = None
+if command[1] == 'pull':
+    phase = 'pull'
+elif 'addp-transfer-clickhouse-online-disposable' in command:
+    if command[1] == 'run':
+        phase = 'start'
+    elif command[1] == 'port':
+        phase = 'port'
+    elif any('/proc/1/cmdline' in arg for arg in command):
+        phase = 'readiness-process'
+    elif 'SELECT 1' in command:
+        phase = 'readiness-sql'
+    elif '--multiquery' in command:
+        phase = 'seed'
+if phase:
+    with open(os.environ['ADDP_TEST_FIXTURE_LOG'], 'a') as log:
+        print(f'timeout:{phase}:{budget}', file=log)
+if phase and phase == os.environ.get('ADDP_TEST_CLICKHOUSE_HANG'):
+    try:
+        sys.exit(subprocess.run(command, timeout=0.25).returncode)
+    except subprocess.TimeoutExpired:
+        sys.exit(124)
+os.execvp(command[0], command)
+""")
         self._executable('docker', '''#!/bin/bash
 printf 'docker:%s:%s\n' "$1" "${2:-}" >> "$ADDP_TEST_FIXTURE_LOG"
 state=$ADDP_TEST_POSTGRES_STATE
@@ -62,6 +91,16 @@ case "$1" in
     if [ "$state" = "$ADDP_TEST_MINIO_STATE" ] && [ "${ADDP_TEST_MINIO_START_FAIL:-0}" = 1 ]; then exit 1; fi
     printf '%s\n' "$*" >> "$ADDP_TEST_FIXTURE_LOG"
     echo transfer-relational-sql-etl > "$state"
+    if [ "$state" = "$ADDP_TEST_CLICKHOUSE_STATE" ] && [ "${ADDP_TEST_CLICKHOUSE_HANG:-}" = start ]; then
+      echo 'SECRET_MARKER' >&2
+      exec /bin/sleep 30
+    fi
+    ;;
+  pull)
+    if [ "${ADDP_TEST_CLICKHOUSE_HANG:-}" = pull ]; then
+      echo 'SECRET_MARKER' >&2
+      exec /bin/sleep 30
+    fi
     ;;
   ps)
     [ "${ADDP_TEST_VERIFY_FAIL:-0}" != 1 ] || exit 1
@@ -72,7 +111,12 @@ case "$1" in
     if [ "$state" = "$ADDP_TEST_MONGODB_STATE" ] && [ "${ADDP_TEST_MONGODB_REMOVE_FAIL:-0}" = 1 ]; then exit 0; fi
     [ "${ADDP_TEST_REMOVE_FAIL:-0}" = 1 ] || rm -f "$state"
     ;;
-  port) echo 127.0.0.1:55435 ;;
+  port)
+    if [ "$state" = "$ADDP_TEST_CLICKHOUSE_STATE" ] && [ "${ADDP_TEST_CLICKHOUSE_HANG:-}" = port ]; then
+      echo 'SECRET_MARKER' >&2
+      exec /bin/sleep 30
+    fi
+    echo 127.0.0.1:55435 ;;
   logs)
     echo 'WiredTiger error: SECRET_MARKER'
     ;;
@@ -92,11 +136,26 @@ case "$1" in
         exit 0 ;;
       *pg_isready*) exit 0 ;;
       */addp-doris-init.sh*) [ "${ADDP_TEST_DORIS_READY_FAIL:-0}" != 1 ]; exit $? ;;
-      */proc/1/cmdline*) [ "${ADDP_TEST_CLICKHOUSE_READY_FAIL:-0}" != 1 ]; exit $? ;;
+      */proc/1/cmdline*)
+        if [ "${ADDP_TEST_CLICKHOUSE_HANG:-}" = readiness-process ]; then
+          echo 'SECRET_MARKER' >&2
+          exec /bin/sleep 30
+        fi
+        [ "${ADDP_TEST_CLICKHOUSE_READY_FAIL:-0}" != 1 ]; exit $? ;;
       *clickhouse-client*|*mysql*)
         printf 'native-target:%s\n' "$*" >> "$ADDP_TEST_FIXTURE_LOG"
         case "$*" in
-          *"SELECT 1"*) echo 1 ;;
+          *"SELECT 1"*)
+            if [ "${ADDP_TEST_CLICKHOUSE_HANG:-}" = readiness-sql ]; then
+              echo 'SECRET_MARKER' >&2
+              exec /bin/sleep 30
+            fi
+            echo 1 ;;
+          *--multiquery*)
+            if [ "${ADDP_TEST_CLICKHOUSE_HANG:-}" = seed ]; then
+              echo 'SECRET_MARKER' >&2
+              exec /bin/sleep 30
+            fi ;;
           *"FORMAT JSONEachRow"*)
             printf '%s\n' '{"id":3,"payload_hex":"","byte_length":0,"is_null":false,"label":"empty"}' ;;
           *"SELECT COUNT(*)"*"write_failure"*) printf "${ADDP_TEST_COMMITTED_ROWS:-1001}\t1\t1000\t0\n" ;;
@@ -349,6 +408,26 @@ esac
         self.assertEqual(self.run_fixture('stop').returncode, 0)
         self.assertFalse(self.doris_state.exists())
         self.assertFalse(self.clickhouse_state.exists())
+
+    def test_clickhouse_startup_hangs_report_stage_and_allow_owned_cleanup(self):
+        for stage, budget in (('pull', 300), ('start', 60), ('readiness-process', 10), ('readiness-sql', 10),
+                              ('port', 10), ('seed', 30)):
+            with self.subTest(stage=stage):
+                self.log.unlink(missing_ok=True)
+                result = self.run_fixture('start', ADDP_TEST_CLICKHOUSE_HANG=stage)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn(f'ClickHouse stage={stage} result=timed_out', result.stderr)
+                self.assertNotIn('SECRET_MARKER', result.stdout + result.stderr)
+                self.assertIn(f'timeout:{stage}:{budget}s', self.log.read_text())
+                self.assertNotIn('ClickHouse stage=seed result=passed', result.stdout)
+                self.assertFalse((self.secrets / 'transfer-clickhouse-engine.json').exists())
+                stopped = self.run_fixture('stop')
+                self.assertEqual(stopped.returncode, 0, stopped.stderr)
+                self.assertIn('zero residuals', stopped.stdout)
+                for state in (self.postgres_state, self.mongodb_state, self.doris_state, self.clickhouse_state, self.minio_state):
+                    self.assertFalse(state.exists())
+                for descriptor in self.secrets.glob('*.json'):
+                    descriptor.unlink()
 
     def test_partial_native_target_initialization_still_cleans_owned_containers(self):
         for key in ('ADDP_TEST_DORIS_READY_FAIL', 'ADDP_TEST_CLICKHOUSE_READY_FAIL'):
