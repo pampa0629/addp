@@ -265,9 +265,11 @@ def run(private, artifacts):
         env={**os.environ, "ADDP_ONLINE_POOL_EXPECTATIONS": str(source), "ADDP_ONLINE_POOL_REPORT": str(report)},
     )
     require(result.returncode == 0 and report.is_file(), "SQL pool Console flow failed or omitted evidence")
-    validate_browser(json.loads(report.read_text()), json.loads(source.read_text()))
+    evidence = json.loads(report.read_text())
+    validate_browser(evidence, json.loads(source.read_text()))
     require(process_identity() == before, "System, Manager or Develop restarted during the flow")
     (artifacts / "sql-pool-processes.json").write_text(json.dumps({"unchanged": True, "processes": before}))
+    print(json.dumps(evidence, sort_keys=True))
 
 
 def main():

@@ -1,11 +1,37 @@
 from copy import deepcopy
+from contextlib import redirect_stdout
 from importlib import import_module
+from io import StringIO
+import json
+from pathlib import Path
+import tempfile
 import unittest
+from unittest.mock import patch
 
 POOL = import_module("scripts.test.sql-pool-consumer-flow-online")
+DISPATCH = import_module("scripts.test.online-gate")
 
 
 class SQLPoolEvidenceTest(unittest.TestCase):
+    def test_verified_browser_output_is_returned_to_online_dispatcher(self):
+        evidence = {"schema_version": "addp.sql-pool-console/v1", "run_id": "run-pool", "cases": []}
+        processes = {"system": [19, "9"]}
+        with tempfile.TemporaryDirectory() as tmp:
+            private = Path(tmp)
+            (private / "pool-expectations.json").write_text("{}")
+
+            def browser(*args, env, **kwargs):
+                Path(env["ADDP_ONLINE_POOL_REPORT"]).write_text(json.dumps(evidence))
+                return POOL.subprocess.CompletedProcess(args, 0)
+
+            stdout = StringIO()
+            with patch.object(POOL, "process_identity", return_value=processes), \
+                 patch.object(POOL, "validate_browser") as validate, \
+                 patch.object(POOL.subprocess, "run", side_effect=browser), redirect_stdout(stdout):
+                POOL.run(private, private)
+            validate.assert_called_once_with(evidence, {})
+            self.assertEqual(DISPATCH._parse_stage_report("scenario", stdout.getvalue()), evidence)
+
     def test_native_postgres_evidence_requires_reader_and_sample_table_select(self):
         lines = """
 pid=27 user=pool_reader LOG:  statement: SELECT * FROM "public"."pool_source" LIMIT 1
