@@ -14,9 +14,15 @@ const completionDiagnosticsKey = "addp.http.completion_diagnostics"
 
 // SetCompletionDiagnostics attaches one bounded, server-owned diagnostic group
 // to the request completion log. Callers must supply allowlisted fields only.
-func SetCompletionDiagnostics(c *gin.Context, diagnostic slog.Attr) {
-	if diagnostic.Key != "" {
-		c.Set(completionDiagnosticsKey, slog.Group("diagnostics", diagnostic))
+func SetCompletionDiagnostics(c *gin.Context, diagnostics ...slog.Attr) {
+	var fields []slog.Attr
+	for _, diagnostic := range diagnostics {
+		if diagnostic.Key != "" {
+			fields = append(fields, diagnostic)
+		}
+	}
+	if len(fields) != 0 {
+		c.Set(completionDiagnosticsKey, slog.Attr{Key: "diagnostics", Value: slog.GroupValue(fields...)})
 	}
 }
 

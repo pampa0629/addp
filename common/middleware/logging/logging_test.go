@@ -34,7 +34,8 @@ func TestCompletionDiagnosticsSurviveRuntimeCaptureBurst(t *testing.T) {
 	router.POST("/preview", func(c *gin.Context) {
 		logging.SetCompletionDiagnostics(c, slog.Group("source_rule_query",
 			slog.Int("backend_pid", 23), slog.String("started_unix_ns", start),
-			slog.String("finished_unix_ns", finish)))
+			slog.String("finished_unix_ns", finish)),
+			slog.Group("auth_context_ns", slog.Group("route", slog.Int64("session_snapshot", 1234567))))
 		c.Status(http.StatusOK)
 	})
 	router.GET("/other", func(c *gin.Context) { c.Status(http.StatusOK) })
@@ -106,6 +107,9 @@ func TestCompletionDiagnosticsSurviveRuntimeCaptureBurst(t *testing.T) {
 		if len(timing) != 3 || string(timing["backend_pid"]) != "23" ||
 			string(timing["started_unix_ns"]) != `"`+start+`"` || string(timing["finished_unix_ns"]) != `"`+finish+`"` {
 			t.Fatalf("missing or altered timing: %s", entry.Message)
+		}
+		if string(event.Diagnostics["auth_context_ns"]["route"]) != `{"session_snapshot":1234567}` {
+			t.Fatalf("missing or redacted session snapshot duration: %s", entry.Message)
 		}
 		delete(pending, entry.RequestID)
 	}

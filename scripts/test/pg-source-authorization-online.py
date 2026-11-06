@@ -67,6 +67,9 @@ READ_CHECK = '/api/v1/system/engine-access/read-checks/manager-preview'
 LATENCY_ROUNDS, LATENCY_SAMPLES, LATENCY_WARMUPS = 3, 500, 10
 LOAD_ROUNDS, LOAD_SAMPLES, LOAD_WARMUPS = 3, 100, 10
 CPU_LOAD_PROFILE = 'single_target_cpu'
+AUTH_CONTEXT_PHASES = ('route', 'pre_meta', 'rule_snapshot')
+AUTH_CONTEXT_STAGES = ('transaction_begin', 'session_snapshot', 'departments', 'project_groups',
+                       'role_permissions', 'projection', 'transaction_commit')
 PG_CPU_SYSFS = Path('/sys/devices/system/cpu')
 
 
@@ -483,15 +486,24 @@ def collect_system_load_tail(directory, audits, *, rule_timings=None, wait_secon
                                 request, 'http.request.completed', 'POST', READ_CHECK):
                             continue
                         if rule_timings is not None:
-                            source = message.get('diagnostics', {}).get('source_rule_query', {})
+                            diagnostics = message.get('diagnostics', {})
+                            source = diagnostics.get('source_rule_query', {})
                             pid, start, finish = (source.get(key) for key in
                                                   ('backend_pid', 'started_unix_ns', 'finished_unix_ns'))
                             if (request in matched or type(pid) is not int or pid <= 0 or
                                     not all(isinstance(value, str) and re.fullmatch('[1-9][0-9]{0,18}', value)
                                             for value in (start, finish)) or int(start) >= int(finish)):
                                 raise ValueError('invalid or duplicate rule query timing')
+                            identity = {}
+                            for phase in AUTH_CONTEXT_PHASES:
+                                stages = diagnostics.get('auth_context_ns', {}).get(phase, {})
+                                values = {stage: stages.get(stage) for stage in AUTH_CONTEXT_STAGES}
+                                if (not all(type(value) is int and value >= 0 for value in values.values())
+                                        or not 0 < sum(values.values()) <= 90_000_000_000):
+                                    raise ValueError('invalid auth context stage timing')
+                                identity[phase] = values
                             rule_timings[request] = {'backend_pid': pid, 'started_unix_ns': int(start),
-                                                     'finished_unix_ns': int(finish)}
+                                                     'finished_unix_ns': int(finish), 'auth_context_ns': identity}
                         matched.add(request)
             if matched == expected or time.monotonic() >= deadline:
                 break

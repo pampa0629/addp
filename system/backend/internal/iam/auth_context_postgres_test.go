@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"os"
 	"reflect"
 	"strings"
@@ -150,10 +151,23 @@ func TestAuthContextServiceAgainstPostgres(t *testing.T) {
 			t.Fatalf("consume tenant AuthContext selection: %v", err)
 		}
 
-		resolved, err := authContextService.ResolveFirstPartyAccessToken(ctx, session.AccessToken)
+		var timings []slog.Value
+		observed := WithAuthContextTiming(ctx, func(timing slog.Value) {
+			timings = append(timings, timing)
+		})
+		resolved, err := authContextService.ResolveFirstPartyAccessToken(observed, session.AccessToken)
 		if err != nil {
 			logCredentialValidationBoundaries(t, err)
 			t.Fatalf("resolve tenant AuthContext: %v", err)
+		}
+		if len(timings) != 1 || len(timings[0].Group()) != 7 {
+			t.Fatalf("expected seven stages from one successful resolution, got %v", timings)
+		}
+		for _, stage := range timings[0].Group() {
+			if stage.Value.Kind() != slog.KindInt64 || stage.Value.Int64() < 0 ||
+				(stage.Key == "session_snapshot" && stage.Value.Int64() == 0) {
+				t.Fatalf("invalid stage duration: %v", stage)
+			}
 		}
 		if err := commonauth.ValidateAuthContext(*resolved); err != nil {
 			t.Fatalf("validate projected tenant AuthContext: %v", err)

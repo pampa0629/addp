@@ -3,12 +3,14 @@ package api
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"net/http"
 
 	commonapi "github.com/addp/common/api"
 	sharedauth "github.com/addp/common/middleware/auth"
 	"github.com/addp/common/middleware/logging"
 	"github.com/addp/system/internal/engineaccess"
+	"github.com/addp/system/internal/iam"
 	"github.com/addp/system/internal/middleware"
 	"github.com/gin-gonic/gin"
 )
@@ -45,12 +47,40 @@ func RegisterEngineAccessSourceReadCheckRoutes(api *gin.RouterGroup, runtime *IA
 		return err
 	}
 	routes := api.Group("/engine-access/read-checks")
-	routes.Use(runtime.Authentication, credential, tenant, delegated)
-	routes.POST("/manager-preview", permission, handler.CheckManagerPreview)
+	routes.POST("/manager-preview", observeManagerPreviewTimings, runtime.Authentication, credential, tenant, delegated, permission, handler.CheckManagerPreview)
 	// The result operation has no Tool delegation route. Membership or preview
 	// capability does not broaden a delegated credential to derived results.
 	api.POST("/engine-access/read-checks/manager-profile-result", runtime.Authentication, runtime.UserAccessCredential, tenant, permission, handler.CheckManagerProfileResult)
 	return nil
+}
+
+func observeManagerPreviewTimings(c *gin.Context) {
+	ctx, rule := engineaccess.ObserveHostedSourceRuleTiming(c.Request.Context())
+	if rule == nil {
+		c.Next()
+		return
+	}
+
+	// Authentication, Meta tenant resolution, then the rule snapshot each
+	// resolve once and synchronously. Extra or missing resolutions fail evidence.
+	var resolutions [3]slog.Value
+	count := 0
+	ctx = iam.WithAuthContextTiming(ctx, func(timing slog.Value) {
+		if count < len(resolutions) {
+			resolutions[count] = timing
+		}
+		count++
+	})
+	c.Request = c.Request.WithContext(ctx)
+	c.Next()
+	var identity slog.Attr
+	if count == len(resolutions) {
+		identity = slog.Group("auth_context_ns",
+			slog.Attr{Key: "route", Value: resolutions[0]},
+			slog.Attr{Key: "pre_meta", Value: resolutions[1]},
+			slog.Attr{Key: "rule_snapshot", Value: resolutions[2]})
+	}
+	logging.SetCompletionDiagnostics(c, rule.LogGroup(), identity)
 }
 
 // CheckManagerPreview godoc
@@ -68,10 +98,6 @@ func RegisterEngineAccessSourceReadCheckRoutes(api *gin.RouterGroup, runtime *IA
 // @x-addp-required-permissions ["manager.data_item.read"]
 // @Router /engine-access/read-checks/manager-preview [post]
 func (h *EngineAccessSourceReadCheckHandler) CheckManagerPreview(c *gin.Context) {
-	if ctx, timing := engineaccess.ObserveHostedSourceRuleTiming(c.Request.Context()); timing != nil {
-		c.Request = c.Request.WithContext(ctx)
-		defer func() { logging.SetCompletionDiagnostics(c, timing.LogGroup()) }()
-	}
 	h.check(c, h.service.CheckManagerPreviewRead)
 }
 

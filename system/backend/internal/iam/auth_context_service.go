@@ -384,6 +384,7 @@ func (s *AuthContextService) resolveSessionCredential(
 	}
 	finished := time.Now()
 	stageDurations[stage] += finished.Sub(stageStartedAt)
+	recordAuthContextTiming(ctx, stageDurations)
 	s.logSlowAuthContextResolution(ctx, startedAt, finished, stageDurations, poolBefore, poolAvailable)
 	return authContext, nil
 }

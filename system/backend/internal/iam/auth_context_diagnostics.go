@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"io"
+	"log/slog"
 	"net"
 	"syscall"
 	"time"
@@ -14,6 +15,28 @@ import (
 	"github.com/addp/common/middleware/requestid"
 	"github.com/jackc/pgx/v5/pgconn"
 )
+
+type authContextTimingKey struct{}
+
+// WithAuthContextTiming observes successful resolutions in one synchronous
+// request. The callback receives only the existing stage durations in ns.
+func WithAuthContextTiming(ctx context.Context, observe func(slog.Value)) context.Context {
+	return context.WithValue(ctx, authContextTimingKey{}, observe)
+}
+
+func recordAuthContextTiming(ctx context.Context, stages map[string]time.Duration) {
+	if observe, ok := ctx.Value(authContextTimingKey{}).(func(slog.Value)); ok {
+		observe(slog.GroupValue(
+			slog.Int64("transaction_begin", stages["transaction_begin"].Nanoseconds()),
+			slog.Int64("session_snapshot", stages["credential_snapshot"].Nanoseconds()),
+			slog.Int64("departments", stages["departments"].Nanoseconds()),
+			slog.Int64("project_groups", stages["project_groups"].Nanoseconds()),
+			slog.Int64("role_permissions", stages["role_permissions"].Nanoseconds()),
+			slog.Int64("projection", stages["projection"].Nanoseconds()),
+			slog.Int64("transaction_commit", stages["transaction_commit"].Nanoseconds()),
+		))
+	}
+}
 
 func (s *AuthContextService) authContextPoolStats() (sql.DBStats, bool) {
 	pool, err := s.repository.db.DB()

@@ -341,16 +341,25 @@ class AuditLatencyObservationTest(unittest.TestCase):
                 return json.dumps({'module_name': 'system', 'role': 'backend', 'request_id': request,
                                    'message': json.dumps({'request_id': request, **message})}) + '\n'
             message = {'msg': 'http.request.completed', 'method': 'POST', 'route': ONLINE.READ_CHECK}
-            http = record({**message, 'diagnostics': {'source_rule_query': {**timing, 'private': 'ignore'}}})
+            identity = {phase: {key: index for index, key in enumerate(ONLINE.AUTH_CONTEXT_STAGES, 1)}
+                        for phase in ONLINE.AUTH_CONTEXT_PHASES}
+            diagnostics = {'source_rule_query': {**timing, 'private': 'ignore'}, 'auth_context_ns': identity}
+            http = record({**message, 'diagnostics': diagnostics})
             path = root / 'instance' / '1.jsonl'
             path.write_text(http)
             collected = {}
             result = ONLINE.collect_system_load_tail(root, [{'request_id': request}],
                                                      rule_timings=collected, wait_seconds=0)
             self.assertEqual(result['result'], 'matched')
-            self.assertEqual(collected, {request: {key: int(value) for key, value in timing.items()}})
+            self.assertEqual(collected, {request: {**{key: int(value) for key, value in timing.items()},
+                                                  'auth_context_ns': identity}})
             for invalid in (http + http, record(message),
-                            record({**message, 'diagnostics': {'source_rule_query': {**timing, 'backend_pid': True}}})):
+                            record({**message, 'diagnostics': {**diagnostics, 'auth_context_ns': {}}}),
+                            record({**message, 'diagnostics': {**diagnostics, 'auth_context_ns': {
+                                **identity, 'rule_snapshot': {**identity['rule_snapshot'],
+                                                               'session_snapshot': '[REDACTED]'}}}}),
+                            record({**message, 'diagnostics': {**diagnostics,
+                                                              'source_rule_query': {**timing, 'backend_pid': True}}})):
                 path.write_text(invalid)
                 self.assertEqual(ONLINE.collect_system_load_tail(root, [{'request_id': request}],
                                  rule_timings={}, wait_seconds=0)['result'], 'incomplete')
