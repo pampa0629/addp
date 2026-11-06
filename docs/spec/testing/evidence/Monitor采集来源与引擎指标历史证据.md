@@ -762,6 +762,8 @@ PostgreSQL已有十二项固定失败阶段，统一入口此前直接显示英�
 
 新阶段断言先失败；实现后并行轮原五秒假命令夹具超时，完整开发门禁也在原 GDAL 并发准备 30 秒处失败，未进入后续。串行来源 55 项及定向开发 shell 通过，聚合失败保留。原件 `/tmp/addp-startup-warning-*-20261105.log`。
 
+用户后来补充原始启动输出，确认当次前序失败发生在主机来源恢复，报 `node-installation-changed`。只读比对进一步确认，安装证明与容器快照中的三个 DNS 字段只有 `null` 和空数组的表示差异。后续记录保留了误拒绝的核对、修复和本机复验范围。[主机恢复的误拒绝与后续复验](#主机恢复的空dns表示差异误拒绝2026-11-05)
+
 ### 主机恢复的空DNS表示差异误拒绝（2026-11-05）
 
 用户补充原输出确认：Step1核心健康，主机恢复报node-installation-changed，三个已启用引擎来源均健康未重建。只读比较原私有安装证明与当前Docker快照，输入完整相同，容器／镜像／挂载／网络及其他HostConfig无差异；仅node-exporter的HostConfig.Dns、DnsOptions、DnsSearch从证明中的null变为当前空数组。Docker服务端28.5.1；其[Moby网络配置](https://github.com/moby/moby/blob/v28.5.1/daemon/container_operations.go#L63-L76)仅在对应列表长度大于0时使用容器覆盖，因此此次为事实比较误拒绝，未发现真实DNS或安全配置变更，亦未证明Docker何时转换表示。原只读差异收据 `/tmp/addp-node-recovery-proof-diff-20261105.json`。
