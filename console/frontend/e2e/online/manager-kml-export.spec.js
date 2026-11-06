@@ -10,7 +10,7 @@ test('ordinary user exports PostGIS through real buttons and downloads the file'
   const env = process.env
   const filegdb = env.ADDP_ONLINE_MANAGER_CASE === 'filegdb-export'
   const profile = filegdb
-    ? { format: 'filegdb', name: 'File Geodatabase (.gdb.zip)', suffix: '.gdb.zip', mime: 'application/zip', srids: [3857], records: 3, permissionCount: 6 }
+    ? { format: 'filegdb', name: 'File Geodatabase (.gdb.zip)', suffix: '.gdb.zip', mime: 'application/zip', srids: [3857, 4326, 4326], records: 3, permissionCount: 6 }
     : { format: 'kml', name: 'KML', suffix: '.kml', mime: 'application/vnd.google-earth.kml+xml', srids: [4326, 3857], records: 8, permissionCount: 8 }
   const caseName = filegdb ? 'filegdb' : 'kml'
   const context = JSON.parse((filegdb ? env.ADDP_ONLINE_MANAGER_FILEGDB_EXPORT_JSON : env.ADDP_ONLINE_MANAGER_KML_JSON) || '{}')
@@ -119,7 +119,7 @@ test('ordinary user exports PostGIS through real buttons and downloads the file'
     passed = true
   } finally {
     writeFileSync(resolve(env.ADDP_ONLINE_ARTIFACT_DIR, 'manager-' + caseName + '-export-browser.json'), JSON.stringify({
-      schema_version: 'addp.manager-' + caseName + '-export-browser/v1', result: passed ? 'passed' : 'failed', run_id: context.run_id,
+      schema_version: 'addp.manager-' + caseName + '-export-browser/' + (filegdb ? 'v2' : 'v1'), result: passed ? 'passed' : 'failed', run_id: context.run_id,
       identity: context.identity, cases, warnings, failed_responses: failedResponses,
       gpu_diagnostics: diagnostics.snapshot()
     }, null, 2) + '\n')

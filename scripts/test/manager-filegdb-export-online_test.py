@@ -35,10 +35,10 @@ class FileGDBArchiveProofTest(unittest.TestCase):
         initializer.request.return_value = SimpleNamespace(payload={
             'metadata': {'items_scanned': 1, 'catalog_nodes_scanned': 0},
         })
-        locator, execution = owner.scan_source(helper, initializer, 2)
+        locator, execution = owner.scan_source(helper, initializer, 2, 'filegdb_export_points')
         self.assertEqual(locator, 'addp://engine/2/path/public/filegdb_export_points?type=table')
         self.assertEqual(execution, 'execution-7')
         self.assertEqual(helper.wait_for_meta_scan.call_args.kwargs, {'scope': {'targets': [locator]}})
         initializer.request.return_value.payload['metadata']['items_scanned'] = 0
         with self.assertRaisesRegex(ValueError, 'requires one scanned source table'):
-            owner.scan_source(helper, initializer, 2)
+            owner.scan_source(helper, initializer, 2, 'filegdb_export_points')

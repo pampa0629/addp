@@ -26,12 +26,16 @@ SQL
       [ "${ADDP_ONLINE_MANAGER_CASE:-}" = filegdb-export ] &&
       [ "${ADDP_ONLINE_TEST:-}" = 1 ] && [ "${POSTGRES_DB:-}" = addp_online ] || fail "FileGDB snapshot requires its isolated case"
     [ "$(docker inspect --format '{{ index .Config.Labels "com.addp.online-fixture" }}' "$container")" = metric ] || fail "container ownership mismatch"
-    docker exec -i "$container" psql -X -U postgres -d metric_fixture -Atq -v ON_ERROR_STOP=1 <<'SQL'
+    case "${2:-}" in
+      filegdb_export_points|filegdb_export_lines|filegdb_export_polygons) ;;
+      *) fail "FileGDB snapshot requires an exact fixture table" ;;
+    esac
+    docker exec -i "$container" psql -X -U postgres -d metric_fixture -Atq -v ON_ERROR_STOP=1 -v table="$2" <<'SQL'
 SELECT json_build_object(
-  'rows', (SELECT md5(string_agg(row_to_json(t)::text, '' ORDER BY seq)) FROM public.filegdb_export_points t),
-  'count', (SELECT count(*) FROM public.filegdb_export_points),
+  'rows', (SELECT md5(string_agg(row_to_json(t)::text, '' ORDER BY seq)) FROM public.:"table" t),
+  'count', (SELECT count(*) FROM public.:"table"),
   'columns', (SELECT md5(string_agg(attname || format_type(atttypid, atttypmod) || attnotnull, '' ORDER BY attnum))
-    FROM pg_attribute WHERE attrelid = 'public.filegdb_export_points'::regclass AND attnum > 0 AND NOT attisdropped));
+    FROM pg_attribute WHERE attrelid = ('public.' || :'table')::regclass AND attnum > 0 AND NOT attisdropped));
 SQL
     exit 0
     ;;
@@ -188,10 +192,22 @@ INSERT INTO public.filegdb_export_points VALUES
  (1,'长沙',true,1.25,ST_SetSRID(ST_Point(12000,6000),3857)),
  (2,'',false,2.5,ST_SetSRID(ST_Point(-8000,2300),3857)),
  (3,NULL,true,NULL,NULL);
+CREATE TABLE public.filegdb_export_lines (seq integer PRIMARY KEY, "标题" text, flag boolean NOT NULL, measure double precision, shape geometry(MultiLineString,4326));
+INSERT INTO public.filegdb_export_lines
+SELECT seq, "标题", flag, measure, ST_GeomFromText(CASE seq
+ WHEN 1 THEN 'MULTILINESTRING ((110 28,111 29,112 29.25),(114 30,115 30.5))'
+ WHEN 2 THEN 'MULTILINESTRING ((-121 45,-120.25 45.5))' END, 4326)
+FROM public.filegdb_export_points;
+CREATE TABLE public.filegdb_export_polygons (seq integer PRIMARY KEY, "标题" text, flag boolean NOT NULL, measure double precision, shape geometry(MultiPolygon,4326));
+INSERT INTO public.filegdb_export_polygons
+SELECT seq, "标题", flag, measure, ST_GeomFromText(CASE seq
+ WHEN 1 THEN 'MULTIPOLYGON (((110 28,114 28,114 32,110 32,110 28),(111 29,111 30,112 30,112 29,111 29)),((115 28,117 28,117 29,115 28)))'
+ WHEN 2 THEN 'MULTIPOLYGON (((-121 44,-120 44,-120 45,-121 45,-121 44)))' END, 4326)
+FROM public.filegdb_export_points;
 CREATE ROLE metric_reader LOGIN PASSWORD :'reader_password';
 GRANT CONNECT ON DATABASE metric_fixture TO metric_reader;
 GRANT USAGE ON SCHEMA public TO metric_reader;
-GRANT SELECT ON public.filegdb_export_points TO metric_reader;
+GRANT SELECT ON public.filegdb_export_points, public.filegdb_export_lines, public.filegdb_export_polygons TO metric_reader;
 SQL
 else
 docker exec -i "$container" psql -U postgres -d metric_fixture -v ON_ERROR_STOP=1 \
