@@ -390,6 +390,9 @@ func (g apiDownloadProtectionGate) RequireUnmanaged(_ context.Context, _ int64, 
 func (g apiDownloadProtectionGate) Gate(_ int64, _ dataprotection.ResourceReference, _ time.Time) projectionstore.GateResult {
 	return projectionstore.GateResult{}
 }
+func (apiDownloadProtectionGate) PrepareQueryProtection(context.Context, int64, plugin.EngineCatalogModelSpec, plugin.PreparedQuery, string, dataprotection.SubjectReference, *dataprotection.QueryRoleSelection, time.Time, ...string) (*dataprotection.PreparedTableProtection, error) {
+	return nil, dataprotection.ErrDenied
+}
 
 type apiDownloadTestFilePlugin struct {
 	engineType    string

@@ -14,7 +14,7 @@ type PreviewSourceChecker interface {
 }
 
 type PreviewQueryProtectionStore interface {
-	PrepareQueryProtection(context.Context, int64, plugin.EngineCatalogModelSpec, plugin.PreparedQuery, string, dataprotection.SubjectReference, *dataprotection.QueryRoleSelection, time.Time) (*dataprotection.PreparedTableProtection, error)
+	PrepareQueryProtection(context.Context, int64, plugin.EngineCatalogModelSpec, plugin.PreparedQuery, string, dataprotection.SubjectReference, *dataprotection.QueryRoleSelection, time.Time, ...string) (*dataprotection.PreparedTableProtection, error)
 }
 
 // PreviewQueryExecutor keeps source authorization and protection on the exact

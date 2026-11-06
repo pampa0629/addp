@@ -138,6 +138,9 @@ func (g *liveSchemaPreviewGate) Gate(int64, dataprotection.ResourceReference, ti
 func (*liveSchemaPreviewGate) RequireUnmanaged(context.Context, int64, []dataprotection.ResourceReference, time.Time) error {
 	return managerprotection.ErrRequired
 }
+func (*liveSchemaPreviewGate) PrepareQueryProtection(context.Context, int64, plugin.EngineCatalogModelSpec, plugin.PreparedQuery, string, dataprotection.SubjectReference, *dataprotection.QueryRoleSelection, time.Time, ...string) (*dataprotection.PreparedTableProtection, error) {
+	return nil, managerprotection.ErrRequired
+}
 
 type liveSchemaPreviewPlugin struct {
 	*apiDownloadTestFilePlugin

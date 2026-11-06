@@ -58,6 +58,7 @@ type ExplorerHandler struct {
 type explorerProtectionStore interface {
 	managerprotection.LocalProjectionGate
 	managerprotection.UnmanagedDataItemGate
+	managerprotection.PreviewQueryProtectionStore
 }
 
 // NewExplorerHandler 创建 Explorer Handler
@@ -216,7 +217,6 @@ func (h *ExplorerHandler) Preview(c *gin.Context) {
 		}
 	}
 	if err == nil {
-		store, _ := h.protectionStore.(managerprotection.PreviewQueryProtectionStore)
 		var tenant uint
 		if tenantID != nil {
 			tenant = *tenantID
@@ -247,7 +247,7 @@ func (h *ExplorerHandler) Preview(c *gin.Context) {
 			}
 			return h.previewSourceChecker.CheckManagerPreviewRead(ctx, commonauth.CanonicalBearerToken(c.GetHeader("Authorization")), []plugin.EngineCatalogPath{root})
 		}
-		execute := managerprotection.PreviewQueryExecutor(h.previewSourceChecker, store, tenant, req.Engine.ID, commonauth.CanonicalBearerToken(c.GetHeader("Authorization")), protectionSubject)
+		execute := managerprotection.PreviewQueryExecutor(h.previewSourceChecker, h.protectionStore, tenant, req.Engine.ID, commonauth.CanonicalBearerToken(c.GetHeader("Authorization")), protectionSubject)
 		result, err = h.previewResolver.PreviewWithQueryExecutor(c.Request.Context(), req, execute)
 	}
 	if err != nil {
