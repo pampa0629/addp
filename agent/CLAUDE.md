@@ -14,6 +14,7 @@
 | 修订61激活与重启后复验 | 正式Tenant能力API返回create61／start7／get5；一次有界第二场景在同一Run完成源确认、重新取证、Owner构建与同参预检，两次Context和checkpoint均为61及相同digest，30项API／原件核对通过；独立页面刷新已核准新Run、新2字段卡片、unknown及12个已结束步骤，业务／Grant原件不变 | 正式预检仍unknown。首轮503失败及全部原件保留，本次成功仅证明当前路径可用，不声称网络根因已修复或长期稳定，也不代表业务执行或整套CI通过 |
 | 模型稳定性与长会话 | 本轮11场景各3轮，33/33真实模型受控事实回归通过；含多候选短输入、生产上下文预算及长会话指代／目标切换；摘要水位、失败、旧结果覆盖和完整消息筛选的4项SQL回归通过 | 合成摘要不证明真实压缩模型的语义质量；SQLite不证明PostgreSQL并发锁；固定事实不等于真实Owner、完整CI或Hosted |
 | 修订 64 的单引擎限定与集合确认 | 会话 66 仅指定 MongoDB 类型，自动限定到引擎 11，等待用户在 4 个集合候选中确认，原 Run 同参完成草稿与预检 | 本地真实验收覆盖单引擎，预检状态为 `unknown` |
+| 普通账号的集合可见性 | 同一账号在 Manager 检索命中集合，Meta 目录定位返回 404。会话 67 在能力目录委托处收到 403 | Agent 未到达候选确认，普通账号端到端验收未通过 |
 | PostgreSQL 连接池修复 | `34f05edc4` 的 PostgreSQL 15 集成、Agent 离线评测和平台一致性作业均通过 | 回归覆盖事务开始前替换已终止的空闲连接 |
 
 ### 2026-11-06 单引擎验收与连接池 CI
@@ -21,6 +22,12 @@
 会话 66 的 Run `403cc305-3422-41ba-aa0a-236d3b965777` 使用 Transfer 创建能力修订 64。请求仅给出 MongoDB 类型，Runtime 将唯一的 Business MongoDB（引擎 11）写入检查点，一次限定搜索返回 4 个集合候选。页面展示候选并等待选择。确认 `Outdoor.Persons` 后，同一 Run 恢复并完成，构建返回的完整参数与正式预检入参相等，字段映射为 `_id` 和 `groups`。浏览器刷新后仍显示源引擎、配置快照和 `unknown` 报告。创建或运行业务任务的调用数为 0。原件见 `/tmp/addp-agent-r64-single-engine-20261106/receipt.json`，同目录保存了等待与恢复后的正式 Run。 [会话 66](http://localhost:5170/agent/sessions/66)
 
 连接池修复提交 `34f05edc4` 的三个远端作业均完成并通过。PostgreSQL 15 作业日志确认 `make test-agent-postgres` 实际执行了连接池用例，已终止的空闲连接在下一次事务开始前成功替换。 [PostgreSQL 15 集成](https://github.com/pampa0629/addp/actions/runs/42149356330/job/127671192236) · [Agent 离线评测](https://github.com/pampa0629/addp/actions/runs/42149356441/job/127668517902) · [平台一致性](https://github.com/pampa0629/addp/actions/runs/42149356441/job/127668517557)
+
+### 2026-11-06 普通账号集合可见性补验
+
+在无痕 Chrome 个人中心确认 `outdoor-develop` 登录 ADDP 开发租户。Manager 数据检索返回 Business MongoDB（引擎 11）的 `Outdoor.Photos`，同账号访问该集合（数据项 104）的目录属性入口时，Meta `/resource-tree/11/ancestors` 返回 HTTP 404。两项结果分别来自检索页面和浏览器请求诊断。此前管理员的 Meta 单项查询与 Manager 搜索均命中该项，作为资源存在的对照。按[授权上下文规范](../docs/spec/addp授权上下文规范.md#5511-元数据查看与数据读取)，搜索结果须遵守数据项的当前元数据可见性。需要在 Manager 检索出口核对并收口这项过滤。
+
+[会话 67](http://localhost:5170/agent/sessions/67) 的只读候选查询 Run `206dcd74-02cb-454e-95a0-40b3fe74bf86` 仅记录 `platform.capabilities.list`，System 拒绝签发委托令牌（HTTP 403，`delegation_rejected`）。该工具要求 `ontology.semantic.read`。本次未到达 `data.search` 或候选确认，未读取样本、构建草稿、预检、创建或运行业务任务，未调整账号权限。Manager 页面结果与 Agent 的委托失败分别记录，尚无普通账号的 Agent 候选可见性证据。
 
 ### 2026-11-04 历史验收
 
