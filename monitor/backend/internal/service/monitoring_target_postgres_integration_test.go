@@ -43,7 +43,11 @@ func TestIntegrationPostgresMonitoringTargetsAtomicBudgetAndCAS(t *testing.T) {
 	if err != nil || len(existing) != 0 {
 		t.Fatalf("standard test requires clean target fixture: count=%d err=%v", len(existing), err)
 	}
-	ids := make([]string, 11)
+	limit := (metricsdiscovery.TotalSampleReservation - metricsdiscovery.SelfSampleReservation) / metricsdiscovery.EndpointSampleLimit
+	// Leave one slot for the two concurrent creates and keep a spare ID for a
+	// contention-free assertion that the full budget rejects another write.
+	seedCount := limit - 1
+	ids := make([]string, limit+2)
 	for i := range ids {
 		ids[i] = uuid.NewString()
 	}
@@ -59,7 +63,7 @@ func TestIntegrationPostgresMonitoringTargetsAtomicBudgetAndCAS(t *testing.T) {
 	newTarget := func(i int) metricsdiscovery.NodeTarget {
 		return metricsdiscovery.NodeTarget{ID: ids[i], Version: 1, Subject: metricsdiscovery.NodeSubject{Kind: "node", NodeID: uuid.NewString()}, MonitorKind: "host_resources", Source: metricsdiscovery.NodeSource{Type: "node_exporter", Endpoint: fmt.Sprintf("https://127.0.0.1:%d/metrics", 10000+i)}, Enabled: true}
 	}
-	for i := 0; i < 8; i++ {
+	for i := 0; i < seedCount; i++ {
 		if _, err := r.Mutate(ctx, newTarget(i), true, false, nil); err != nil {
 			t.Fatal(err)
 		}
@@ -67,7 +71,7 @@ func TestIntegrationPostgresMonitoringTargetsAtomicBudgetAndCAS(t *testing.T) {
 	var wg sync.WaitGroup
 	results := make(chan error, 2)
 	start := make(chan struct{})
-	for i := 8; i < 10; i++ {
+	for i := seedCount; i < seedCount+2; i++ {
 		wg.Add(1)
 		go func(i int) {
 			defer wg.Done()
@@ -95,8 +99,11 @@ func TestIntegrationPostgresMonitoringTargetsAtomicBudgetAndCAS(t *testing.T) {
 		}
 	}
 	rows, err := r.Snapshot(ctx)
-	if err != nil || succeeded != 1 || len(rows) != 9 {
-		t.Fatalf("concurrent budget succeeded=%d count=%d err=%v", succeeded, len(rows), err)
+	if err != nil || succeeded != 1 || len(rows) != limit {
+		t.Fatalf("concurrent budget succeeded=%d count=%d want=%d err=%v", succeeded, len(rows), limit, err)
+	}
+	if _, err := r.Mutate(ctx, newTarget(limit+1), true, false, nil); !errors.Is(err, metricsdiscovery.ErrBudgetExceeded) {
+		t.Fatalf("full budget did not reject another create: %v", err)
 	}
 	row, err := r.Get(ctx, ids[0])
 	if err != nil {
