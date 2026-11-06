@@ -5,6 +5,22 @@ const itemLocator = name => `addp://engine/2/path/example/${name}?type=table&ite
 const itemNode = name => ({ id: itemLocator(name), locator: itemLocator(name), label: name, type: 'table', hasChildren: false })
 
 for (const locale of ['zh-cn', 'en']) {
+  test(`shows loading until the preview response arrives in ${locale}`, async ({ page }) => {
+    let releasePreview
+    const previewPending = new Promise(resolve => { releasePreview = resolve })
+    await installBackend(page, locale, 200, '', previewPending)
+    await page.goto(`/data-explorer?locator=${encodeURIComponent(itemLocator('first'))}`)
+    const loading = page.getByTestId('preview-loading')
+    try {
+      await expect(loading).toHaveText(locale === 'zh-cn' ? '加载中...' : 'Loading...')
+      await expect(page.getByText(locale === 'zh-cn' ? '暂无可预览数据' : 'No preview data available', { exact: true })).toHaveCount(0)
+    } finally {
+      releasePreview()
+    }
+    await expect(loading).toHaveCount(0)
+    await expect(page.locator('.preview-panel .el-table__empty-text')).toBeVisible()
+  })
+
   for (const [status, code, zh, en] of [
     [403, '', '无权读取此数据项', 'No permission to read this data item'],
     [403, 'security_protection_required', '数据保护阻止预览', 'Preview blocked by data protection'],
@@ -49,12 +65,12 @@ for (const locale of ['zh-cn', 'en']) {
   }
 }
 
-async function installBackend(page, locale, status, code) {
+async function installBackend(page, locale, status, code, previewPending) {
   const rootLocator = 'addp://engine/2/path/?type=server&node_id=1'
   const root = { id: rootLocator, locator: rootLocator, label: 'Preview test engine', type: 'server', hasChildren: true, children: [itemNode('first'), itemNode('second')] }
   await page.addInitScript(lang => localStorage.setItem('addp-lang', lang), locale)
   await page.route('**/plugins/manifest.json', route => json(route, { scripts: ['/plugins/table-preview.js'] }))
-  await page.route('**/api/v1/**', route => {
+  await page.route('**/api/v1/**', async route => {
     const url = new URL(route.request().url())
     const path = url.pathname
     if (path.endsWith('/system/refresh')) return json(route, { access_token: 'preview-failure-e2e-token', expires_in: 3600 })
@@ -64,7 +80,10 @@ async function installBackend(page, locale, status, code) {
     if (path.endsWith('/ancestors')) return json(route, { target_locator: itemLocator('first'), ancestors: [{ ...root, children: [] }, itemNode('first')] })
     if (path.endsWith('/meta/resource-tree/2') || path.endsWith('/meta/resource-tree/2/node')) return json(route, root)
     if (path.endsWith('/manager/preview')) {
-      if (url.searchParams.get('locator') === itemLocator('first')) return json(route, { error: 'Preview request failed', error_code: code }, status)
+      if (url.searchParams.get('locator') === itemLocator('first')) {
+        if (previewPending) await previewPending
+        if (status !== 200) return json(route, { error: 'Preview request failed', error_code: code }, status)
+      }
       return json(route, { preview_type: 'table', data: { mode: 'table', columns: ['id'], rows: [], total: 0 } })
     }
     return json(route, {})

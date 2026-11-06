@@ -3,6 +3,7 @@ package preview
 import (
 	"context"
 	"errors"
+	"fmt"
 	"reflect"
 	"strings"
 	"testing"
@@ -224,6 +225,9 @@ func TestDatabaseTablePreviewProviderPreviewUsesPreparedQueryAndAttributeRowCoun
 	if preview.Total == nil || *preview.Total != 321 {
 		t.Fatalf("Total = %v, want 321 from request attributes", preview.Total)
 	}
+	if len(enginePlugin.describeOptions) != 1 || enginePlugin.describeOptions[0].IncludeStatistics {
+		t.Fatalf("preview should describe the live schema without statistics: %#v", enginePlugin.describeOptions)
+	}
 	if len(enginePlugin.readBatchCalls) != 0 || len(enginePlugin.prepareCalls) != 1 || enginePlugin.executeCalls != 1 {
 		t.Fatalf("reads=%d prepare=%d execute=%d", len(enginePlugin.readBatchCalls), len(enginePlugin.prepareCalls), enginePlugin.executeCalls)
 	}
@@ -347,6 +351,43 @@ func TestDatabaseTablePreviewProviderPreviewFallsBackToCatalogFactsRowCount(t *t
 	}
 }
 
+func TestDatabaseTablePreviewProviderUnknownTotalUsesLookahead(t *testing.T) {
+	const pageSize = MaxPreparedTablePageRows
+	estimate := int64(pageSize + 1)
+	for _, rowCount := range []int{pageSize + 1, pageSize, 0} {
+		t.Run(fmt.Sprintf("rows_%d", rowCount), func(t *testing.T) {
+			enginePlugin := &recordingDatabasePreviewPlugin{
+				engineType: "postgresql",
+				catalogFacts: &plugin.EngineCatalogFacts{Table: &datatype.TableInfo{
+					EstimatedRowCount: &estimate,
+					Fields:            []datatype.FieldInfo{{Name: "id", Type: datatype.FieldTypeBigInt, PrimaryKey: true}},
+				}},
+				batchData: &plugin.BatchData{Rows: make([]map[string]interface{}, rowCount)},
+			}
+			for i := range enginePlugin.batchData.Rows {
+				enginePlugin.batchData.Rows[i] = map[string]interface{}{"id": i + 1}
+			}
+			req := &PreviewRequest{
+				Engine: &models.Engine{ID: 8, EngineType: "postgresql"}, EnginePlugin: enginePlugin,
+				executePrepared: executeDatabasePreviewTestPlan,
+				Schema:          "public", Table: "people", Page: 2, PageSize: pageSize,
+				ProviderPath: plugin.TabularItemPath(8, plugin.EngineCatalogTermSchema, "public", "people"),
+			}
+			result, err := (&DatabaseTablePreviewProvider{}).Preview(t.Context(), req)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if result.Total != nil || result.HasMore != (rowCount > pageSize) || len(result.Rows) != min(rowCount, pageSize) {
+				t.Fatalf("unexpected pagination: total=%v more=%v rows=%d", result.Total, result.HasMore, len(result.Rows))
+			}
+			want := fmt.Sprintf("LIMIT %d OFFSET %d", pageSize+1, pageSize)
+			if len(enginePlugin.prepareCalls) != 1 || !strings.Contains(enginePlugin.prepareCalls[0].Query, want) {
+				t.Fatalf("expected one bounded probe with %q: %#v", want, enginePlugin.prepareCalls)
+			}
+		})
+	}
+}
+
 func TestDatabaseTablePreviewProviderAllowsQuickViewPageSize(t *testing.T) {
 	previous, previousErr := plugin.Get("postgresql")
 	rowCount := int64(127)
@@ -444,6 +485,7 @@ type recordingDatabasePreviewPlugin struct {
 	batchData        *plugin.BatchData
 	sessionData      *plugin.BatchData
 	describePaths    []plugin.EngineCatalogPath
+	describeOptions  []plugin.EngineCatalogFactsOptions
 	readBatchPaths   []plugin.EngineCatalogPath
 	readBatchCalls   []plugin.BatchReadOptions
 	openSessionCalls []plugin.TableReadSessionOptions
@@ -500,8 +542,9 @@ func (p *recordingDatabasePreviewPlugin) Capabilities() plugin.EngineCapabilitie
 func (p *recordingDatabasePreviewPlugin) EngineCatalogModel() plugin.EngineCatalogModelSpec {
 	return plugin.TabularCatalogModel("schema")
 }
-func (p *recordingDatabasePreviewPlugin) DescribeEngineCatalogFacts(_ context.Context, _ plugin.ConnectionInfo, path plugin.EngineCatalogPath, _ plugin.EngineCatalogFactsOptions) (*plugin.EngineCatalogFacts, error) {
+func (p *recordingDatabasePreviewPlugin) DescribeEngineCatalogFacts(_ context.Context, _ plugin.ConnectionInfo, path plugin.EngineCatalogPath, opts plugin.EngineCatalogFactsOptions) (*plugin.EngineCatalogFacts, error) {
 	p.describePaths = append(p.describePaths, path)
+	p.describeOptions = append(p.describeOptions, opts)
 	if p.catalogFacts == nil {
 		return nil, nil
 	}

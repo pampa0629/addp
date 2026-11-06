@@ -68,7 +68,7 @@ func (p *DatabaseTablePreviewProvider) Preview(ctx context.Context, req *Preview
 		tableName = strings.TrimPrefix(req.Table, req.Schema+".")
 	}
 
-	// 2. 从 EngineCatalogFactsProvider 获取字段和统计信息。
+	// 2. 从 EngineCatalogFactsProvider 核验实时表结构。
 	catalogFacts, columns, err := p.describeDatabaseTable(ctx, catalogFactsProvider, connInfo, plug, req.ProviderPath)
 	if err != nil {
 		if p.isTableNotFoundError(err) {
@@ -116,11 +116,8 @@ func (p *DatabaseTablePreviewProvider) Preview(ctx context.Context, req *Preview
 		columnMetadata = databasePreviewColumnMetadata(columns)
 	}
 
-	// 4. 获取总行数，优先使用 Meta / EngineCatalogFacts 中已知的估算值。
-	totalCount := p.resolveTableRowCount(req, catalogFacts)
-	if req.DataScope.Kind == "condition" {
-		totalCount = -1
-	}
+	// 4. 复用已知的精确总行数。
+	total := p.resolveTableRowCount(req, catalogFacts)
 	if srid == 0 {
 		srid = databasePreviewSourceSRID(columns, geometryColumns)
 		if srid == 0 && catalogSpatial != nil {
@@ -153,6 +150,9 @@ func (p *DatabaseTablePreviewProvider) Preview(ctx context.Context, req *Preview
 	}
 	offset := (page - 1) * pageSize
 	limit := pageSize
+	if total == nil {
+		limit++
+	}
 
 	// 6. 执行分页查询
 	var rows []map[string]interface{}
@@ -203,6 +203,10 @@ func (p *DatabaseTablePreviewProvider) Preview(ctx context.Context, req *Preview
 	if err != nil {
 		return nil, fmt.Errorf("failed to query data: %w", err)
 	}
+	hasMore := total == nil && len(rows) > pageSize
+	if hasMore {
+		rows = rows[:pageSize]
+	}
 
 	return &models.TablePreview{
 		PreparedProtection:  preparedProtection,
@@ -211,7 +215,8 @@ func (p *DatabaseTablePreviewProvider) Preview(ctx context.Context, req *Preview
 		Fields:              profileFields,
 		ColumnMetadata:      columnMetadata,
 		Rows:                rows,
-		Total:               models.ExactPreviewTotal(int(totalCount)),
+		Total:               total,
+		HasMore:             hasMore,
 		Page:                page,
 		PageSize:            pageSize,
 		GeometryColumns:     geometryColumns,
@@ -237,7 +242,8 @@ func (p *DatabaseTablePreviewProvider) Preview(ctx context.Context, req *Preview
 func (p *DatabaseTablePreviewProvider) preparePostgreSQLPreview(ctx context.Context, req *PreviewRequest, columns []datatype.FieldInfo, offset, limit int) (plugin.PreparedQuery, error) {
 	runtime, ok := req.EnginePlugin.(plugin.QueryRuntimeProvider)
 	dialectProvider, hasDialect := req.EnginePlugin.(plugin.SQLDialectProvider)
-	if !ok || !hasDialect || req.Engine == nil || req.ProviderPath.EngineID != req.Engine.ID || len(req.ProviderPath.Segments) < 3 || limit < 1 || limit > MaxPreparedTablePageRows || offset < 0 {
+	// Preview may fetch one lookahead row beyond the maximum response size.
+	if !ok || !hasDialect || req.Engine == nil || req.ProviderPath.EngineID != req.Engine.ID || len(req.ProviderPath.Segments) < 3 || limit < 1 || limit > MaxPreparedTablePageRows+1 || offset < 0 {
 		return nil, ErrSourceAuthorizationRequired
 	}
 	dialect := commonquery.ForDialect(dialectProvider.SQLDialect())
@@ -667,8 +673,7 @@ func (p *DatabaseTablePreviewProvider) describeDatabaseTable(
 		return nil, nil, fmt.Errorf("engine %s does not implement EngineCatalogFactsProvider", plug.Type())
 	}
 	catalogFacts, err := catalogFactsProvider.DescribeEngineCatalogFacts(ctx, connInfo, providerPath, plugin.EngineCatalogFactsOptions{
-		IncludeStatistics: true,
-		IncludeIndexes:    true,
+		IncludeIndexes: true,
 	})
 	if err != nil {
 		return nil, nil, err
@@ -683,22 +688,19 @@ func (p *DatabaseTablePreviewProvider) describeDatabaseTable(
 func (p *DatabaseTablePreviewProvider) resolveTableRowCount(
 	req *PreviewRequest,
 	catalogFacts *plugin.EngineCatalogFacts,
-) int64 {
-	if req != nil && req.ItemRowCount != nil && *req.ItemRowCount > 0 {
-		return *req.ItemRowCount
+) *int {
+	if req.DataScope.Kind == dataprofile.DataScopeKindCondition {
+		return nil
 	}
-	if req != nil {
-		tableInfo := tableInfoFromMetaAttributes(req.Attributes, "")
-		if tableInfo != nil && tableInfo.RowCount != nil && *tableInfo.RowCount > 0 {
-			return *tableInfo.RowCount
+	if req.ItemRowCount != nil && *req.ItemRowCount >= 0 {
+		return models.ExactPreviewTotal(int(*req.ItemRowCount))
+	}
+	for _, table := range []*datatype.TableInfo{tableInfoFromMetaAttributes(req.Attributes, ""), plugin.EngineCatalogFactsTableInfo(catalogFacts)} {
+		if table != nil && table.RowCount != nil && *table.RowCount >= 0 {
+			return models.ExactPreviewTotal(int(*table.RowCount))
 		}
 	}
-	if catalogFacts != nil {
-		if tableInfo := plugin.EngineCatalogFactsTableInfo(catalogFacts); tableInfo != nil && tableInfo.RowCount != nil && *tableInfo.RowCount > 0 {
-			return *tableInfo.RowCount
-		}
-	}
-	return 0
+	return nil
 }
 
 // getColumnMetadataFromMeta 从 Meta 服务获取列元数据（包含准确的几何类型）

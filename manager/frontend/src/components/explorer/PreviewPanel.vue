@@ -329,9 +329,10 @@
       </el-empty>
     </div>
 
-    <!-- 无预览数据 -->
+    <!-- 等待预览响应或暂无预览数据 -->
     <div v-else-if="!previewData && !showQuickViewRenderer && !showModel3DTaskPrompt" class="empty-state">
-      <el-empty :description="emptyDescription" />
+      <p v-if="loading" role="status" data-testid="preview-loading">{{ t('common.loading') }}</p>
+      <el-empty v-else :description="emptyDescription" />
     </div>
 
     <!-- 无可用预览组件 -->

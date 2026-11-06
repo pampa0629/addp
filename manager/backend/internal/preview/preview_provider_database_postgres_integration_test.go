@@ -151,7 +151,7 @@ func TestIntegrationPostgresManagerPreviewPreparedPageReadSet(t *testing.T) {
 				if err != nil {
 					return nil, nil, err
 				}
-				if len(result.Rows) != 1 || result.Rows[0]["phone"] != want.phone || result.Rows[0]["location"] != want.point {
+				if len(result.Rows) != 2-index || result.Rows[0]["phone"] != want.phone || result.Rows[0]["location"] != want.point {
 					t.Fatal("native display/page/masking result changed")
 				}
 				if _, err := plan.Execute(ctx); !errors.Is(err, plugin.ErrPreparedQueryConsumed) {
@@ -164,6 +164,9 @@ func TestIntegrationPostgresManagerPreviewPreparedPageReadSet(t *testing.T) {
 			result, err := provider.Preview(ctx, req)
 			if err != nil || result == nil || result.PreparedProtection == nil || executions != 1 {
 				t.Fatalf("protected spatial page failed: %v", err)
+			}
+			if result.Total != nil || result.HasMore != (index == 0) || len(result.Rows) != 1 {
+				t.Fatalf("protected spatial page exposed incorrect pagination: total=%v more=%v rows=%d", result.Total, result.HasMore, len(result.Rows))
 			}
 			protected := &plugin.QueryResult{Rows: result.Rows, Columns: result.Columns}
 			if err := result.PreparedProtection.Apply(protected); err != nil || protected.Rows[0]["phone"] != want.phone || protected.Rows[0]["location"] != want.point {
@@ -239,6 +242,9 @@ func TestIntegrationPostgresManagerPreviewPreparedPageReadSet(t *testing.T) {
 			result, err := (&DatabaseTablePreviewProvider{}).Preview(ctx, req)
 			if err != nil || executions != 1 || len(result.Rows) != 1 || result.Rows[0]["status"] != "active" || result.PreparedProtection == nil {
 				t.Fatalf("controlled page preview: %#v %v reads=%d", result, err, executions)
+			}
+			if result.Total != nil || result.HasMore {
+				t.Fatalf("last filtered page should have unknown total and no next page: total=%v more=%v", result.Total, result.HasMore)
 			}
 			if name == "base" && fmt.Sprint(result.Rows[0]["id"]) != "2" {
 				t.Fatalf("bound page offset lost: %#v", result.Rows)
