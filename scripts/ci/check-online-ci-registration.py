@@ -6745,6 +6745,24 @@ def validate_raster_capacity_profile(repository: Path, registered: set[str]) -> 
             raise RegistrationError(f"raster capacity owner contract is incomplete: {relative}")
 
 
+def validate_sql_pool_profile(repository: Path, registry: dict[str, object]) -> None:
+    suite = "sql-pool-consumer-flow"
+    if suite not in registry:
+        return
+    workflow = (repository / ".github/workflows/online-t4-gates.yml").read_text()
+    job = re.search(r"(?ms)^  sql-pool-hosted-t4:\n(.*?)(?=^  [a-z][a-z0-9-]*:\n|\Z)", workflow)
+    required = (
+        f"if: github.event_name == 'workflow_dispatch' && inputs.suite == '{suite}'",
+        "runs-on: ubuntu-24.04", "online-hosted-sql-pool-gate.sh --check-only",
+        "run: bash scripts/test/online-hosted-sql-pool-gate.sh", "git merge-base --is-ancestor",
+    )
+    if (job is None or any(fragment not in job[1] for fragment in required)
+            or f"&& inputs.suite != '{suite}'" not in workflow or registry[suite].nightly):
+        raise RegistrationError("SQL pool requires its fixed-source manual Hosted job")
+    if not make_target_commands((repository / "Makefile").read_text(), "test-sql-pool-online-runner"):
+        raise RegistrationError("SQL pool deterministic gate is missing")
+
+
 def validate_hdfs_spark_profile(repository: Path, registered: set[str]) -> None:
     if "hdfs-spark-consumer-flow" not in registered:
         return
@@ -7627,6 +7645,7 @@ def check_registration(repository: Path) -> None:
     validate_raster_focal_statistics_profile(repository, registered)
     validate_raster_zonal_statistics_profile(repository, registered)
     validate_vector_topology_profile(repository, registered)
+    validate_sql_pool_profile(repository, registry)
     validate_hdfs_spark_profile(repository, registered)
     validate_elasticsearch_spark_profile(repository, registered)
     validate_orchestrator_execution_profile(repository, registered)

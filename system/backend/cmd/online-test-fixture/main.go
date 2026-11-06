@@ -120,6 +120,8 @@ var sourceInitializerPermissions = []string{
 
 func suiteSourceInitializerPermissions(suite string) []string {
 	switch suite {
+	case "sql-pool-consumer-flow":
+		return append(slices.Clone(sourceInitializerPermissions), "meta.scan_task.execute", "meta.scan_task.read")
 	case "vector-topology-persistence":
 		if topologyLineagePermissions(suite) {
 			return append(slices.Clone(sourceInitializerPermissions), "meta.scan_task.execute", "meta.scan_task.read")
@@ -353,6 +355,9 @@ func suitePermissions(suite string) ([]string, error) {
 		return readWorkflowConsumerPermissions, nil
 	case "hdfs-spark-consumer-flow":
 		return append(append([]string{}, readWorkflowConsumerPermissions...), "develop.data_write.execute", "develop.data_ddl.execute", "meta.lineage.read", "develop.task.create", "develop.task.update"), nil
+	case "sql-pool-consumer-flow":
+		return []string{"system.engine_catalog.read", "meta.catalog.read", "manager.data_item.read", "manager.content.read",
+			"develop.task.read", "develop.task.execute", "develop.data_read.execute", "system.execution_authorization.create"}, nil
 	case "gaussdb-consumer-flow", "starrocks-consumer-flow":
 		return append(append([]string{}, catalogConsumerPermissions...), "develop.task.read", "develop.task.execute", "develop.data_read.execute", "system.execution_authorization.create"), nil
 	case "redis-consumer-flow":
@@ -407,7 +412,7 @@ func needsEngineProvisioner(suite string) bool {
 	if suite == "graph-protection" {
 		return true
 	}
-	if suite == "pg-source-authorization" {
+	if suite == "pg-source-authorization" || suite == "sql-pool-consumer-flow" {
 		return true
 	}
 	if suite == "quality-dynamic-binding" {
@@ -422,7 +427,7 @@ func consumerEnvironment(suite string, tenantID int64, accessToken, password str
 		"ADDP_ONLINE_TEST_USER_ACCESS_TOKEN": accessToken,
 	}
 	switch suite {
-	case "graph-protection", "execution-events-pagination":
+	case "graph-protection", "execution-events-pagination", "sql-pool-consumer-flow":
 		values["ADDP_ONLINE_TEST_USER_USERNAME"] = "external-online-consumer"
 		values["ADDP_ONLINE_TEST_USER_PASSWORD"] = password
 	case "vector-topology-persistence", "vector-pmtiles-workflow", "highgo-consumer-flow", "gaussdb-consumer-flow", "starrocks-consumer-flow", "pg-source-authorization", "security-plaintext-access", "hdfs-spark-consumer-flow", "elasticsearch-consumer-flow", "raster-workflow", "raster-workflow-capacity", "raster-nibble-capacity", "redis-consumer-flow", "ftp-consumer-flow", "manager-internal-artifact-lineage", "transfer-relational-sql-etl", "transfer-continuous-events", "security-mysql-owner-protection":
@@ -1097,6 +1102,16 @@ func run(args []string, environment []string) error {
 		}
 		values["ADDP_ONLINE_READ_USER_ACCESS_TOKEN"] = reader.AccessToken
 	}
+	if *suite == "sql-pool-consumer-flow" {
+		const username = "external-online-pool-operator"
+		_, _, password, err := createPermissionFixture(ctx, repository, identity, membershipService, roleService, selectionService,
+			tenant.ID, administrator.PrincipalID, username, []string{"system.engine.read", "system.engine.update"})
+		if err != nil {
+			return err
+		}
+		values["ADDP_ONLINE_POOL_OPERATOR_USERNAME"] = username
+		values["ADDP_ONLINE_POOL_OPERATOR_PASSWORD"] = password
+	}
 	if needsEngineProvisioner(*suite) {
 		provisioner, err := createUser(ctx, identity, "external-online-engine-provisioner")
 		if err != nil {
@@ -1611,6 +1626,8 @@ func writeEnvironmentFile(path string, values map[string]string) error {
 		"ADDP_ONLINE_SECURITY_ROLE_USER_PASSWORD",
 		"ADDP_ONLINE_SECURITY_ROLE_ASSIGNMENT_ID",
 		"ADDP_ONLINE_SECURITY_ROLE_CONTROLLER_ACCESS_TOKEN",
+		"ADDP_ONLINE_POOL_OPERATOR_USERNAME",
+		"ADDP_ONLINE_POOL_OPERATOR_PASSWORD",
 		"ADDP_ONLINE_PG_OPERATOR_USERNAME",
 		"ADDP_ONLINE_PG_OPERATOR_PASSWORD",
 		"ADDP_ONLINE_FIXTURE_OUTSIDER_ACCESS_TOKEN",

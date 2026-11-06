@@ -107,6 +107,21 @@ func TestFixtureRolesKeepSystemEngineControlPlaneOutOfConsumerIdentity(t *testin
 	}
 }
 
+func TestSQLPoolFixtureSeparatesConfigurationAndConsumption(t *testing.T) {
+	const suite = "sql-pool-consumer-flow"
+	permissions, err := suitePermissions(suite)
+	if err != nil || !slices.Equal(permissions, []string{
+		"system.engine_catalog.read", "meta.catalog.read", "manager.data_item.read", "manager.content.read",
+		"develop.task.read", "develop.task.execute", "develop.data_read.execute", "system.execution_authorization.create",
+	}) || !needsEngineProvisioner(suite) {
+		t.Fatalf("unexpected pool consumer fixture: %v %v", permissions, err)
+	}
+	scan := sourceInitializerSupplement(suiteSourceInitializerPermissions(suite))
+	if !slices.Equal(scan, []string{"meta.scan_task.execute", "meta.scan_task.read"}) {
+		t.Fatalf("unexpected pool scan preparation permissions: %v", scan)
+	}
+}
+
 func TestPGAuthorizationFixtureSeparatesOperatorAndReader(t *testing.T) {
 	permissions, err := suitePermissions("pg-source-authorization")
 	if err != nil || !slices.Equal(permissions, pgAuthorizationConsumerPermissions) || !needsEngineProvisioner("pg-source-authorization") {

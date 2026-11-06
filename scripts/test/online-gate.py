@@ -778,6 +778,11 @@ SUITES: Mapping[str, Suite] = {
             ("service", "SERVICE_URL"),
         ),
     ),
+    "sql-pool-consumer-flow": Suite(
+        command=(sys.executable, "-m", "scripts.test.sql-pool-consumer-flow-online"),
+        services=(("gateway", "GATEWAY_URL"), ("system", "SYSTEM_URL"), ("meta", "META_URL"),
+                  ("manager", "MANAGER_URL"), ("security", "SECURITY_URL"), ("develop", "DEVELOP_URL")),
+    ),
     "starrocks-consumer-flow": Suite(
         command=(sys.executable, "-m", "scripts.test.readonly-sql-consumer-flow-online", "--engine-type", "starrocks"),
         services=(("gateway", "GATEWAY_URL"), ("system", "SYSTEM_URL"), ("meta", "META_URL"), ("manager", "MANAGER_URL"), ("security", "SECURITY_URL"), ("develop", "DEVELOP_URL")),

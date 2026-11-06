@@ -304,7 +304,7 @@ class ExactFileMetadataGrants:
         return {'grants_revoked': True, 'metadata_hidden': True}
 
 
-def initialize_exact_record_read_grants(authorizer, consumer, tenant_id, targets, *, item_term="table", scan_preparation=False):
+def initialize_exact_record_read_grants(authorizer, consumer, tenant_id, targets, *, item_term="table", scan_preparation=False, on_pending=None):
     """Prepare precise reads with separate Users and the formal System command."""
     if not isinstance(tenant_id, int) or tenant_id <= 1 or not targets or len(targets) > 200:
         raise RegistrationError('source Grant preparation requires a nondefault Tenant and exact record datasets')
@@ -337,6 +337,8 @@ def initialize_exact_record_read_grants(authorizer, consumer, tenant_id, targets
         check_path = '/api/v1/system/engine-access/read-checks/manager-preview'
         check_body = {'targets': [body['catalog_path']]}
         consumer.request('POST', check_path, (403,), check_body)
+        if on_pending is not None:
+            on_pending(engine_id, body['request_id'], body['catalog_path'])
         issued = authorizer.request('POST', f'/api/v1/system/engines/{engine_id}/access_grants', (201,), body).payload
         expected = {key: body[key] for key in (
             'request_id', 'catalog_path', 'recipient_type', 'recipient_id', 'action', 'expiry_mode')}
