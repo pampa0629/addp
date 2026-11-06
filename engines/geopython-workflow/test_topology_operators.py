@@ -4877,8 +4877,13 @@ def test_hosted_normalize_case_dual_save_independent_physical_oracle(tmp_path,po
         assert (root/'topology-physical'/source.name).read_bytes()==original
         tasks[1]['params']['id_field']='missing_id'
         for task in tasks[2:]:task['params']['path']=task['params']['path'].replace('outputs/','outputs/failed-')
-        failed=execute_workflow({'tasks':tasks});assert failed['status']=='failed'
-        assert 'id_field must explicitly name' in failed['error']
+        failed = execute_workflow({'tasks': tasks})
+        assert failed['status'] == 'failed' and failed['error_code'] == 'INVALID_PARAMS'
+        assert failed['diagnostic'] == {
+            'schema_version': 'addp.execution-failure/v3', 'stage': 'execution',
+            'reason': 'operator_input_invalid',
+            'operator': {'node_index': 2, 'operator_id': 'normalize_line_network', 'parameter': 'input_gdf'},
+        }
         assert fixture.worker('verify',tmp_path,fixture.NORMALIZE_CASE)==verified
     else:
         path=tmp_path/'outputs'/fixture.NORMALIZE_TARGETS[fixture.NORMALIZE_PORTS.index(port)]
