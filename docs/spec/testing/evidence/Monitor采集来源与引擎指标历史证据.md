@@ -419,7 +419,7 @@ MinIO 实源门禁、前端产品步骤及个人 Safari 分别认定。上游未
 
 共享生命周期先整组通过，取消重复启动前多余停用后复验在末组 142 项的旧 HTTP 超时夹具首败（`test_native_timeout_reaps_owned_group_without_completing_the_stage` 缺 PID 文件），整组仍失败。受影响 Infra 定向 40 项、发现 44＋6、端口、登记 75＋9、缓存 15 与构建登记通过。其他引擎实源未重跑。原件 `/tmp/addp-minio-observation-*.log`。
 
-本批覆盖账号 T2；固定 17 项来源、mTLS／发现、查询、页面和 T4／T5 尚未验。
+本批覆盖账号 T2。面向 17 项专业指标的固定来源、mTLS、发现、查询、页面及 T4／T5 均未纳入当次验收。后续实源验证覆盖固定来源与 mTLS。[固定 v3 指标与 mTLS 来源](#minio-固定-v3-指标与-mtls-来源2026-11-02)
 
 ### MinIO 固定 v3 指标与 mTLS 来源（2026-11-02）
 
@@ -435,7 +435,7 @@ Redis／MinIO在Monitor内部复用唯一固定HTTP/TLS服务和受管来源部�
 
 最初一轮编译因扫描时刻参数替换误触JWT调用失败，在启动夹具前修复；随后来源T2的保卷重建检查要求请求计数，但新进程还无S3调用，固定原生端点按正值发布规则没有计数代际。夹具补入重建后对自有对象的真实GET，同时验证对象持久化及新计数；不改产品输出、补零、降低边界或等待伪造样本。最终上述来源T2完整通过，前次失败及物理清理结果独立保留。
 
-本批未覆盖自动发现、System 私有投影、专业查询／Console、正式 T4 或生产 T5。
+本批未覆盖自动发现、System 私有投影、专业查询／Console、正式 T4 或生产 T5。Docker 只读发现的实源复验与 System 独立验证见后续记录。[自动发现与 System 精确来源关联](#minio-自动发现与-system-精确来源关联2026-11-02)
 
 ### MinIO 自动发现与 System 精确来源关联（2026-11-02）
 
@@ -448,14 +448,14 @@ Redis／MinIO在Monitor内部复用唯一固定HTTP/TLS服务和受管来源部�
 - 前端T1／T3：`make test-system-frontend`通过158项单元、原233项受控浏览器和构建；新增MinIO确认场景后，`make test-system-frontend SYSTEM_FRONTEND_BROWSER_ARGS='e2e/engine-deployments.e2e.js'`通过158项单元、15项登记页浏览器和构建，包含Infra／Business MinIO显式主机关联、名称和确认请求。不是Safari真实运行或正式身份T4。
 - Swagger：`bash scripts/swagger/gen-swagger.sh system`和`bash scripts/swagger/check-route-coverage.sh system`通过，248个公开路由方法覆盖一致，类型筛选枚举加入minio。`make test-t2-ci-registration test-build-registration` 通过。
 - 本地日志：`/tmp/addp-minio-discovery-{python-final,common-t1,monitor-t1,system-t1-pass,system-pg,system-migration-final,t2-final,redis-t2,system-frontend,admission-ui,swagger,registration}.log`。临时路径不是长期交付附件；上述可重放标准命令和断言范围为证据正文。
-- 剩余：MinIO固定查询、17项指标与Console专业页尚未实现；当前来源受上游零值省略约束，不能补造0。CI／Hosted由专门会话安排回传，本会话未触发、重跑或轮询，不建立定时任务。
+- **当期边界**。本批交付时，固定查询、17 项专业指标查询和 Console 专业页面尚未实现。上游省略的零值仍按缺样处理。本批未触发、重跑或轮询 CI／Hosted，也未设置定时任务。后续查询、受控页面和固定版本 CI 分别见下节。[固定查询与专业监控页面](#minio-固定查询与专业监控页面2026-11-02)
 
 ### MinIO 固定查询与专业监控页面（2026-11-02）
 
 - **契约**。沿既有三查询接口与当前 User／主机关联，返回前重核来源、版本和策略。列表四摘要，详情 10／7 分组，各次最多 12 项。验证同次 up、观测及容器边界、同代际四样本与完整一分钟；5xx 无分母、未扫描或上游未发布留空。真实扫描允许早于当前容器，整数及单位约束保持。
 - **实源与表达式**。Go T1、双 MinIO mTLS／账号权限／发现／持久化及 40 个固定 PromQL 场景通过。首败是早期扫描夹具未同步容器身份标签，旧版正确返回空；修正夹具后通过。首败项目容器／网络／卷为零，最终含私有状态亦清零。共享 Redis 15 表达式与实源清理独立通过。
 - **页面及失败**。Monitor 133 单元通过，首次完整浏览器 600／602，两个 MinIO tip 选择器误匹配“查看趋势”。修正后专项 61／62，英文返回按钮名预期错误；再修正后 MinIO 两项及构建通过，原完整运行仍失败。覆盖双语、10／7 请求、空值、类型归一与返回、刷新／缩放、隐藏暂停及撤权。System 158 单元／15 浏览器与构建、Monitor Swagger 96 方法及登记通过。
-- **边界**。个人真实来源、Safari 与正式 T4 未覆盖；后续固定前端和实源 Job 见下文。原件 `/tmp/addp-minio-query-*.log`。
+- **边界**。本批未覆盖个人真实来源、Safari 与正式 T4。后续固定前端和实源 Job 见下文，个人环境按各自实测范围认定。原件 `/tmp/addp-minio-query-*.log`。[本机采集恢复](#用户重新应用后的-infra-minio-采集恢复2026-11-04)、[本机 Safari 页面与趋势](#infra-minio-重新应用后的-safari-真实页面与趋势交互2026-11-04)
 
 #### MinIO 专项 CI 回传（2026-11-02，dff267ed0）
 
