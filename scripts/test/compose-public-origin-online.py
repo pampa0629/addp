@@ -338,7 +338,7 @@ def published_workbench_payload(service_id: int, fingerprint: str, run_id: str) 
         "snapshot": {
             "schema_version": "addp.workbench_data_application/v1",
             "page": {"id": str(uuid.uuid4()), "title": "Public origin data", "display_mode": "desktop",
-                     "refresh_interval_seconds": 0, "visible_sections": ["title"],
+                     "refresh_interval_seconds": 0, "visible_sections": ["title", "parameters", "query_actions"],
                      "placements": [{"component_id": component_id, "x": 0, "y": 0, "width": 12, "height": 6}]},
             "components": [{
                 "id": component_id, "title": "People",
