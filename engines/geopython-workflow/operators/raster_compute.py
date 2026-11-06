@@ -8,6 +8,8 @@ from contextlib import contextmanager, nullcontext
 from contextvars import ContextVar
 from dataclasses import dataclass, field
 from fractions import Fraction
+from functools import lru_cache
+from itertools import pairwise
 import json
 import math
 from numbers import Integral, Real
@@ -4846,6 +4848,131 @@ def raster_surface_area(input_raster, band, elevation_unit):
                              **{name: pd.array([_surface_area_float(value)], dtype='Float64')
                                 for name, value in measures.items()}})
 
+_SIGHT_MESSAGES = {
+    key: (zh.replace('DEM 填洼', 'DEM 两点通视'), en.replace('DEM depression filling', 'DEM line of sight'))
+    for key, (zh, en) in _FILL_MESSAGES.items() if key != 'overflow'
+}
+_SIGHT_MESSAGES.update({
+    'xy': ('DEM 两点通视的每个端点必须是两个有限投影坐标 [x,y]',
+           'DEM line of sight requires two finite projected coordinates [x,y] for each endpoint'),
+    'height': ('DEM 两点通视的两端离地高度必须是有限非负米数',
+               'DEM line of sight requires finite nonnegative heights above ground in metres'),
+    'coincident': ('DEM 两点通视的观察点和目标点不能重合',
+                   'DEM line of sight requires distinct observer and target locations'),
+    'outside': ('DEM 两点通视的端点超出栅格范围', 'DEM line of sight endpoint is outside the raster'),
+    'invalid': ('DEM 两点通视的端点落入无效高程像元', 'DEM line of sight endpoint has no valid elevation'),
+    'numeric': ('DEM 两点通视的米制水平距离超出有限Float64范围或下溢为零',
+                'DEM line of sight horizontal distance in metres exceeds finite Float64 range or underflows to zero'),
+})
+
+
+def _sight_error(code):
+    return ValueError(_SIGHT_MESSAGES[code][1 if _DISK_LANGUAGE.get() == 'en' else 0])
+
+
+def _sight_number(value, code):
+    try:
+        if (isinstance(value, (bool, np.bool_)) or not isinstance(value, Real)
+                or not math.isfinite(float(value))):
+            raise _sight_error(code)
+    except OverflowError as error:
+        raise _sight_error(code) from error
+    return Fraction(int(value) if isinstance(value, Integral) else float(value))
+
+
+def _sight_crossings(first, last):
+    if first < last:
+        boundaries = range(math.floor(first) + 1, math.ceil(last))
+    elif first > last:
+        boundaries = range(math.ceil(first) - 1, math.floor(last), -1)
+    else:
+        return
+    for boundary in boundaries:
+        yield (boundary - first) / (last - first)
+
+
+def _sight_spans(observer, target):
+    """Yield the cells intersected over each positive-length line interval."""
+    x, y = observer
+    tx, ty = target
+    dx, dy = tx - x, ty - y
+    crossings = heapq.merge(_sight_crossings(x, tx), _sight_crossings(y, ty), (Fraction(0), Fraction(1)))
+    for entry, exit in pairwise(crossings):
+        if entry == exit:
+            continue  # Simultaneous crossings only touch the other cells at a corner.
+        midpoint = (entry + exit) / 2
+        col, row = math.floor(x + dx * midpoint), math.floor(y + dy * midpoint)
+        cols = (col - 1, col) if dx == 0 and x == col and col > 0 else (col,)
+        rows = (row - 1, row) if dy == 0 and y == row and row > 0 else (row,)
+        for r in rows:
+            for c in cols:
+                yield entry, exit, c, r
+
+
+def raster_line_of_sight(input_raster, band, elevation_unit, observer_xy, target_xy,
+                         observer_height_m, target_height_m):
+    """Evaluate a single straight sightline against the native DEM cells it crosses."""
+    source, horizontal = _dem_admission(input_raster, elevation_unit, band, 1, diagnostic=_sight_error)
+    width, height = source.RasterXSize, source.RasterYSize
+    x0, xstep, _, y0, _, ystep = map(Fraction, source.GetGeoTransform())
+    vertical = Fraction(_ELEVATION_METRES[elevation_unit])
+
+    def pixel(point):
+        if not isinstance(point, (list, tuple)) or len(point) != 2:
+            raise _sight_error('xy')
+        x, y = (_sight_number(value, 'xy') for value in point)
+        col, row = (x - x0) / xstep, (y - y0) / ystep
+        if not (0 <= col < width and 0 <= row < height):
+            raise _sight_error('outside')
+        return col, row
+
+    tile_size = 256
+
+    @lru_cache(maxsize=4)
+    def tile(x, y):
+        window = (x, y, min(tile_size, width - x), min(tile_size, height - y))
+        _, _, values, valid = next(_blocks(source, [band], window=window, native=True))
+        return values[0], valid[0]
+
+    def ground(col, row):
+        x, y = col // tile_size * tile_size, row // tile_size * tile_size
+        values, valid = tile(x, y)
+        if not valid[row - y, col - x]:
+            return None
+        return Fraction(values[row - y, col - x].item()) * vertical
+
+    def endpoint_height(position, above_ground):
+        elevation = ground(*map(math.floor, position))
+        if elevation is None:
+            raise _sight_error('invalid')
+        offset = _sight_number(above_ground, 'height')
+        if offset < 0:
+            raise _sight_error('height')
+        return elevation + offset
+
+    observer, target = pixel(observer_xy), pixel(target_xy)
+    if observer == target:
+        raise _sight_error('coincident')
+    start = endpoint_height(observer, observer_height_m)
+    rise = endpoint_height(target, target_height_m) - start
+    horizontal = Fraction(horizontal)
+    dx = (target[0] - observer[0]) * xstep * horizontal
+    dy = (target[1] - observer[1]) * ystep * horizontal
+    distance = _sqrt_fraction(dx**2 + dy**2, error=lambda: _sight_error('numeric'))
+    status = 'visible'
+    for entry, exit, col, row in _sight_spans(observer, target):
+        elevation = ground(col, row)
+        if elevation is None:
+            status = 'indeterminate'
+            continue
+        lowest_t = entry if rise >= 0 else exit
+        lowest_height = start + rise * lowest_t
+        if elevation > lowest_height or (elevation == lowest_height and (rise == 0 or 0 < lowest_t < 1)):
+            status = 'blocked'
+            break
+    return pd.DataFrame({'distance_m': [distance], 'status': pd.array([status], dtype='string')})
+
+
 def _dem_source(input_raster, elevation_unit, band, minimum_size, *, diagnostic=None):
     dataset, horizontal_metres = _dem_admission(input_raster, elevation_unit, band, minimum_size, diagnostic=diagnostic)
     def invalid(code, message):
@@ -6783,6 +6910,14 @@ _SPECS = [
     (raster_aspect, OperatorCategory.RASTER_TERRAIN, 'DEM 坡向', _DEM_PARAMS(), 'raster', ['read']),
     (raster_hillshade, OperatorCategory.RASTER_TERRAIN, 'DEM 地形晕渲', [*_DEM_PARAMS(), _param('azimuth', 'float', '光照方位角，北起顺时针 [0,360)', 315., False), _param('altitude', 'float', '光照高度角 (0,90]', 45., False)], 'raster', ['read']),
     (raster_contour, OperatorCategory.RASTER_TERRAIN, 'DEM 等值线', [*_DEM_PARAMS(), _param('interval', 'float', '等高距（米），与指定高程二选一', None, False), _param('levels', 'list[float]', '严格递增的指定高程（米）', None, False)], 'GeoDataFrame', ['read']),
+    (raster_line_of_sight, OperatorCategory.RASTER_TERRAIN, 'DEM 两点通视', [
+        _INPUT(), _param('band', 'int', '显式一基高程数据波段'),
+        _param('elevation_unit', 'str', '显式高程单位', enum=list(_ELEVATION_METRES)),
+        _param('observer_xy', 'list[float]', '观察点 [x,y]，使用 DEM 投影坐标'),
+        _param('target_xy', 'list[float]', '目标点 [x,y]，使用 DEM 投影坐标'),
+        _param('observer_height_m', 'float', '观察点离地高度（米），有限且非负'),
+        _param('target_height_m', 'float', '目标点离地高度（米），有限且非负'),
+    ], 'DataFrame', ['read']),
 ]
 OPERATORS = {}
 for function, category, label, params, output, effects in _SPECS:
@@ -6870,6 +7005,9 @@ for function, category, label, params, output, effects in _SPECS:
             examples.update({'interval': 10.})
         if name == 'raster_curvature':
             examples.update({'method': 'mean'})
+    if name == 'raster_line_of_sight':
+        examples.update(band=1, elevation_unit='metre', observer_xy=[500001., 2999999.],
+                        target_xy=[500005., 2999999.], observer_height_m=1.7, target_height_m=2.)
     if name == 'raster_save_tiles':
         examples = {'input_tiles': {'$ref': 'tiles'}, 'access_plan': {
             'schema_version': 'addp.workflow.access-plan/v1', 'target': {

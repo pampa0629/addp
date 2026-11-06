@@ -376,6 +376,10 @@ D8增量子汇水区独立手工Hosted `raster-subcatchments-d8-persistence` 已
 DEM三维表面积统计`raster_surface_area`沿普通DataFrame契约返回面片计数、参与投影面积、双对角逐面片较小／较大／平均表面积及比值，面积统一平方米；只计算四角有效像元中心之间的区域，外缘不补面积，双对角平均是离散估算，不是实测面积或误差界。复用`save` CSV、普通表Schema／预览／授权和清理，不新增RasterArtifact。算法及精确失败边界以[栅格算子契约](workflow/栅格算子契约.md#dem-三维表面积统计)为准；本地标准Native专项114项及含其的受影响回归592项／2 warnings／24.88秒通过，0失败／跳过，8056项筛除不计通过；普通表Schema、独立向量叉积参考、单位／64位差值、完整覆盖、数值拒绝、异步CSV保存／反向查询语言和清理已核。Python／Online登记56＋10项／11模块通过，既有Native recipe与CI选路已覆盖，不新增门禁或Hosted脚本。Linux全量等CI回传，独立Hosted已批准12成功／36双语准确失败／510成果全检、12原CSV及600秒，夹具准备与实际验收分别记账，范围见[测试场景](testing/scenarios/Manager与空间成果.md#dem-三维表面积统计独立-hosted-验收)，不将本地CSV成功计作平台扫描／血缘通过。
 
 
+### DEM 两点通视
+
+`raster_line_of_sight`返回一行普通表，记录两点水平距离（米）和可见、遮挡或无法判定的稳定状态码。可接现有`save`保存CSV，沿用普通表预览、授权和失败清理，不生成RasterArtifact。网格边界、端点和NoData判定见[算子契约](workflow/栅格算子契约.md#dem-两点通视)。
+
 ### 地形湿度指数 TWI
 
 `raster_twi`将计入自身的m2汇流面积与显式degree/percent坡度连接起来，固定A/方形像元米制边长，零坡度NoData，极小非零坡度无阈值，负指数与合法零保留。两源同完整网格，单位冲突及非法有效数值严格失败，原始类型无效判定和共同有效覆盖保留；输出沿既有COG路径，不新增权限、依赖或跨模块逻辑。完整语义见[算子契约](workflow/栅格算子契约.md#地形湿度指数-twi)，固定验收基线见[专题](../next/栅格算子体系后续专题.md#二当前验收基线)。本地标准Native受影响回归734项（含155项TWI专项）／2 warnings／40.52秒通过，8174筛除不计通过；准备专项258项、runner90项及完整登记通过。固定`128a533078`的[独立Hosted](https://github.com/pampa0629/addp/actions/runs/40818720334/job/123265876421)已审计通过14成功／52准确双语失败／833成果全检，421186毫秒在原600秒预算内；14原COG及严格扫描／血缘／清理证据见[测试场景](testing/scenarios/Manager与空间成果.md#地形湿度指数-twi-独立-hosted-验收)。Linux全量仍待CI回传，不外推当前HEAD、UI、容量或数值极限通过。

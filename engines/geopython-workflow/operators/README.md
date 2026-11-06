@@ -79,7 +79,7 @@ D8汇流累积`raster_flow_accumulation_d8`仅有一个`measure=count/area`选�
 | 栅格处理 | 波段处理 | 2 | `raster_stack`、`raster_select_bands` |
 | 栅格处理 | 基础计算 | 6 | `raster_band_math`、`raster_aggregate`、`raster_proximity`、`raster_interpolate_idw`、`raster_point_density`、`raster_line_density` |
 | 栅格处理 | 分类处理 | 6 | `raster_reclassify`、`raster_nibble`、`raster_boundary_clean`、`raster_sieve`、`raster_region_group`、`raster_thin` |
-| 栅格处理 | 地形分析 | 10 | `raster_slope`、`raster_aspect`、`raster_hillshade`、`raster_curvature`、`raster_tpi`、`raster_tri`、`raster_roughness`、`raster_twi`、`raster_spi`、`raster_contour` |
+| 栅格处理 | 地形分析 | 11 | `raster_slope`、`raster_aspect`、`raster_hillshade`、`raster_curvature`、`raster_tpi`、`raster_tri`、`raster_roughness`、`raster_twi`、`raster_spi`、`raster_contour`、`raster_line_of_sight` |
 | 栅格处理 | 水流分析 | 5 | `raster_fill_depressions`、`raster_flow_direction_d8`、`raster_flow_accumulation_d8`、`raster_flow_accumulation_weighted_d8`、`raster_flow_length_d8` |
 | 栅格处理 | 汇水分析 | 4 | `raster_drainage_basins_d8`、`raster_snap_pour_points`、`raster_watershed_d8`、`raster_subcatchments_d8` |
 | 栅格处理 | 河网分析 | 5 | `raster_stream_order_d8`、`raster_stream_link_d8`、`raster_stream_to_vector_d8`、`raster_distance_to_stream_d8`、`raster_hand_d8` |

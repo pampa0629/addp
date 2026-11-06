@@ -22369,3 +22369,297 @@ def test_proximity_orthogonal_equal_weight_sites_keep_original_row_column_tie(tm
         with c._nearest_pixel_sites(ds,1,[1],axis_weights=(1,1))as(distances,sites):
             assert distances is None;records=np.fromfile(sites,np.int64).reshape(3,3,2);np.testing.assert_array_equal(records[1,1],[0,2])
         ds=None
+
+
+def _sight_reference_spans(observer, target, width, height):
+    """Clip against every closed cell independently, without grid traversal."""
+    result = set()
+    for row in range(height):
+        for col in range(width):
+            lower, upper = 0, 1
+            for start, end, cell in zip(observer, target, (col, row)):
+                delta = end - start
+                if delta == 0:
+                    if not cell <= start <= cell + 1:
+                        break
+                else:
+                    bounds = sorted(((cell - start) / delta, (cell + 1 - start) / delta))
+                    lower, upper = max(lower, bounds[0]), min(upper, bounds[1])
+            else:
+                if lower < upper:
+                    result.add((lower, upper, col, row))
+    return result
+
+
+def test_dem_line_of_sight_crossings_match_independent_cell_clipping():
+    from fractions import Fraction
+    from operators.raster_compute import _sight_spans
+
+    endpoints = [(0, 0), (0, 3), (2, 0), (2, 3), (2, 2),
+                 (.5, .5), (3.5, 3.5), (.25, 3.75), (3.75, .25), (2.25, 1.5)]
+    for observer in endpoints:
+        for target in endpoints:
+            if observer == target:
+                continue
+            start, end = tuple(map(Fraction, observer)), tuple(map(Fraction, target))
+            actual = list(_sight_spans(start, end))
+            expected = _sight_reference_spans(start, end, 4, 4)
+            assert len(actual) == len(expected)
+            assert set(actual) == expected
+
+
+@pytest.mark.parametrize('elevations,heights,expected', [
+    ([0, 0, 0, 0], (2, 2), 'visible'),
+    ([0, 2, 0, 0], (2, 2), 'blocked'),
+    ([0, np.nextafter(2., 0.), 0, 0], (2, 2), 'visible'),
+    ([0, 3, 0, 0], (2, 2), 'blocked'),
+    ([0, np.nan, 0, 0], (2, 2), 'indeterminate'),
+    ([0, np.nan, 3, 0], (2, 2), 'blocked'),
+    ([0, 3, np.nan, 0], (2, 2), 'blocked'),
+    ([0, 0, 0, 0], (0, 0), 'blocked'),
+    ([0, 0, 0, 0], (0, 2), 'visible'),
+    ([0, .5, 0, 0], (0, 3), 'blocked'),
+    ([0, 0, 0, 2], (0, 0), 'blocked'),
+])
+def test_dem_line_of_sight_status_and_distance_reversible(tmp_path, elevations, heights, expected):
+    from operators.raster_compute import raster_line_of_sight
+
+    path = create_raster(tmp_path / 'sight.tif', np.array([elevations]), (0, 2, 0, 3, 0, -3), 'EPSG:3857')
+    original = path.read_bytes()
+    with raster_workspace():
+        source = raster_load(source_plan(path))
+        before = set(source.workspace.iterdir())
+        for start, end, offsets in (([1, 1.5], [7, 1.5], heights), ([7, 1.5], [1, 1.5], heights[::-1])):
+            result = raster_line_of_sight(source, 1, 'metre', start, end, *offsets)
+            assert result.to_dict('records') == [{'distance_m': 6., 'status': expected}]
+        assert set(source.workspace.iterdir()) == before
+    assert path.read_bytes() == original
+
+
+@pytest.mark.parametrize('kind,expected', [
+    ('corner', 'visible'), ('corner-nodata', 'visible'), ('near-corner', 'blocked'),
+    ('horizontal-edge', 'blocked'), ('vertical-edge', 'blocked'), ('edge-nodata', 'indeterminate'),
+])
+def test_dem_line_of_sight_corner_edge_and_subpixel_discrimination(tmp_path, kind, expected):
+    from operators.raster_compute import raster_line_of_sight
+
+    values = np.zeros((4, 4))
+    start, end = [.5, 3.5], [3.5, .5]
+    if kind.startswith('corner') or kind == 'near-corner':
+        values[0, 1] = np.nan if kind == 'corner-nodata' else 10
+        if kind == 'near-corner':
+            end[1] = np.nextafter(end[1], 1.)
+    elif kind == 'vertical-edge':
+        start, end = [2, 3.5], [2, .5]
+        values[1, 1] = 10
+    else:
+        start, end = [.5, 2], [3.5, 2]
+        values[1, 1] = np.nan if kind == 'edge-nodata' else 10
+    path = create_raster(tmp_path / 'edge.tif', values, (0, 1, 0, 4, 0, -1), 'EPSG:3857')
+    with raster_workspace():
+        row = raster_line_of_sight(raster_load(source_plan(path)), 1, 'metre', start, end, 1, 1).iloc[0]
+        assert row.status == expected
+        assert row.distance_m == pytest.approx(math.dist(start, end))
+
+
+@pytest.mark.parametrize('epsg,unit,horizontal,vertical', [
+    (3857, 'metre', 1., 1.), (2277, 'foot', 1200 / 3937, .3048),
+    (2222, 'us_survey_foot', .3048, 1200 / 3937),
+])
+def test_dem_line_of_sight_horizontal_vertical_units_and_explicit_second_band(tmp_path, epsg, unit, horizontal, vertical):
+    from operators.raster_compute import raster_line_of_sight
+
+    values = np.array([[[20, 20, 20]], [[0, 6, 0]]], dtype=float)
+    path = create_raster(tmp_path / 'units.tif', values, (0, 3, 0, 4, 0, -4), f'EPSG:{epsg}')
+    dataset = gdal.Open(str(path), gdal.GA_Update)
+    dataset.GetRasterBand(2).SetUnitType(unit)
+    dataset = None
+    with raster_workspace():
+        source = raster_load(source_plan(path))
+        for offset, expected in ((5 * vertical, 'blocked'), (7 * vertical, 'visible')):
+            result = raster_line_of_sight(source, 2, unit, [1.5, 2], [7.5, 2], offset, offset).iloc[0]
+            assert result.distance_m == pytest.approx(6 * horizontal, rel=1e-14)
+            assert result.status == expected
+
+
+@pytest.mark.parametrize('coverage', ['native-int64', 'internal-mask', 'alpha'])
+def test_dem_line_of_sight_uses_native_high_elevation_and_coverage(tmp_path, coverage):
+    from operators.raster_compute import raster_line_of_sight
+
+    path = tmp_path / 'coverage.tif'
+    count = 2 if coverage == 'alpha' else 1
+    dtype = gdal.GDT_Int64 if coverage == 'native-int64' else gdal.GDT_Float64
+    dataset = gdal.GetDriverByName('GTiff').Create(str(path), 3, 1, count, dtype)
+    crs = osr.SpatialReference()
+    crs.ImportFromEPSG(3857)
+    dataset.SetSpatialRef(crs)
+    dataset.SetGeoTransform((0, 1, 0, 1, 0, -1))
+    band = dataset.GetRasterBand(1)
+    if coverage == 'native-int64':
+        base = 2**61
+        band.SetNoDataValue(base + 2)
+        band.WriteArray(np.array([[base, base + 1, base]], dtype=np.int64))
+    else:
+        band.WriteArray(np.array([[0., 100., 0.]]))
+        if coverage == 'internal-mask':
+            old = gdal.GetThreadLocalConfigOption('GDAL_TIFF_INTERNAL_MASK')
+            try:
+                gdal.SetThreadLocalConfigOption('GDAL_TIFF_INTERNAL_MASK', 'YES')
+                band.CreateMaskBand(gdal.GMF_PER_DATASET)
+                band.GetMaskBand().WriteArray(np.array([[255, 0, 255]], dtype=np.uint8))
+            finally:
+                gdal.SetThreadLocalConfigOption('GDAL_TIFF_INTERNAL_MASK', old)
+        else:
+            dataset.GetRasterBand(2).SetColorInterpretation(gdal.GCI_AlphaBand)
+            dataset.GetRasterBand(2).WriteArray(np.array([[255., 0., 255.]]))
+    band = dataset = None
+    with raster_workspace():
+        source = raster_load(source_plan(path))
+        args = (source, 1, 'metre', [.5, .5], [2.5, .5])
+        row = raster_line_of_sight(*args, 1, 1).iloc[0]
+        assert row.status == ('blocked' if coverage == 'native-int64' else 'indeterminate')
+        if coverage == 'native-int64':
+            assert raster_line_of_sight(*args, 1.5, 1.5).iloc[0].status == 'visible'
+
+
+def test_dem_line_of_sight_cross_block_reads_native_bounded_windows(tmp_path, monkeypatch):
+    import operators.raster_compute as compute
+
+    values = np.zeros((3, 540))
+    values[1, 256] = 2.
+    path = create_raster(tmp_path / 'tiles.tif', values, (0, 1, 0, 3, 0, -1), 'EPSG:3857')
+    reads = []
+    read = compute._blocks
+
+    def trace(*args, **kwargs):
+        assert kwargs['native']
+        reads.append(kwargs['window'])
+        yield from read(*args, **kwargs)
+
+    monkeypatch.setattr(compute, '_blocks', trace)
+    with raster_workspace():
+        source = raster_load(source_plan(path))
+        row = compute.raster_line_of_sight(source, 1, 'metre', [.5, 1.5], [539.5, 1.5], 2, 2).iloc[0]
+        assert row.status == 'blocked'
+    assert sorted(reads) == [(0, 0, 256, 3), (256, 0, 256, 3), (512, 0, 28, 3)]
+
+
+@pytest.mark.parametrize('language', ['zh-cn', 'en'])
+@pytest.mark.parametrize('fault,params,phrase', [
+    ('xy', {'observer_xy': [True, .5]}, ('两个有限投影坐标', 'two finite projected coordinates')),
+    ('xy', {'target_xy': [.5, np.inf]}, ('两个有限投影坐标', 'two finite projected coordinates')),
+    ('xy', {'target_xy': [1]}, ('两个有限投影坐标', 'two finite projected coordinates')),
+    ('height', {'observer_height_m': -1}, ('有限非负米数', 'finite nonnegative heights')),
+    ('height', {'target_height_m': np.nan}, ('有限非负米数', 'finite nonnegative heights')),
+    ('coincident', {'target_xy': [.5, .5]}, ('不能重合', 'requires distinct')),
+    ('outside', {'target_xy': [3, .5]}, ('超出栅格范围', 'outside the raster')),
+    ('invalid', {'target_xy': [1.5, .5]}, ('落入无效高程像元', 'no valid elevation')),
+    ('band', {'band': True}, ('有效的一基高程', 'valid one-based elevation band')),
+    ('grid', {}, ('北向无旋转网格', 'north-up grid')),
+    ('unit-conflict', {'elevation_unit': 'foot'}, ('与声明单位冲突', 'conflicts with elevation_unit')),
+    ('scale', {}, ('显式应用高程 scale/offset', 'requires elevation scale/offset')),
+])
+def test_dem_line_of_sight_bilingual_rejection_no_private_output(tmp_path, language, fault, params, phrase):
+    from operators.raster_compute import raster_line_of_sight
+
+    path = create_raster(tmp_path / 'rejected.tif', np.array([[0., -9999., 0.]]),
+                         (0, 1, .1 if fault == 'grid' else 0, 1, 0, -1), 'EPSG:3857')
+    dataset = gdal.Open(str(path), gdal.GA_Update)
+    dataset.GetRasterBand(1).SetUnitType('metre')
+    if fault == 'scale':
+        dataset.GetRasterBand(1).SetScale(2)
+    dataset = None
+    kwargs = dict(band=1, elevation_unit='metre', observer_xy=[.5, .5], target_xy=[2.5, .5],
+                  observer_height_m=1, target_height_m=1)
+    kwargs.update(params)
+    with raster_workspace(), raster_error_language(language):
+        source = raster_load(source_plan(path))
+        before = set(source.workspace.iterdir())
+        with pytest.raises(ValueError) as error:
+            raster_line_of_sight(source, **kwargs)
+        assert phrase[language == 'en'] in str(error.value)
+        assert set(source.workspace.iterdir()) == before
+
+
+@pytest.mark.parametrize('language', ['zh-cn', 'en'])
+@pytest.mark.parametrize('factor,target_x', [(1e308, 2.5), (math.ulp(0.), .75)])
+def test_dem_line_of_sight_distance_range_fails_without_publishing(tmp_path, monkeypatch, language, factor, target_x):
+    import operators.raster_compute as compute
+
+    path = create_raster(tmp_path / 'distance-range.tif', np.zeros((1, 3)), (0, 1, 0, 1, 0, -1), 'EPSG:3857')
+    monkeypatch.setattr(compute, '_projected_north_up_grid', lambda _: factor)
+    with raster_workspace(), raster_error_language(language):
+        source = raster_load(source_plan(path))
+        before = set(source.workspace.iterdir())
+        with pytest.raises(ValueError) as error:
+            compute.raster_line_of_sight(source, 1, 'metre', [.5, .5], [target_x, .5], 1, 1)
+        assert str(error.value) == (
+            'DEM 两点通视的米制水平距离超出有限Float64范围或下溢为零' if language == 'zh-cn'
+            else 'DEM line of sight horizontal distance in metres exceeds finite Float64 range or underflows to zero')
+        assert set(source.workspace.iterdir()) == before
+
+
+@pytest.mark.parametrize('language', ['zh-cn', 'en'])
+@pytest.mark.parametrize('case', ['visible', 'blocked', 'indeterminate', 'invalid', 'save-conflict'])
+def test_dem_line_of_sight_async_plain_csv_and_cleanup(tmp_path, monkeypatch, case, language):
+    import api_server
+    import workflow_engine
+
+    values = np.zeros((3, 3))
+    if case == 'blocked':
+        values[0, 1] = 10.
+    if case == 'indeterminate':
+        values[0, 1] = np.nan
+    if case == 'invalid':
+        values[0, 2] = np.nan
+    path = _curvature_file(tmp_path, values)
+    source_bytes = path.read_bytes()
+    target = tmp_path / 'sight.csv'
+    if case == 'save-conflict':
+        target.write_bytes(b'existing\n')
+    spec = next(item for item in list_operators() if item['id'] == 'raster_line_of_sight')
+    assert spec['execution_modes'] == ['workflow'] and spec['effects'] == ['read']
+    assert all(param['required'] for param in spec['parameters'])
+    tasks = [
+        {'id': 'source', 'operator': 'raster_load', 'params': {'access_plan': source_plan(path)}, 'depends_on': []},
+        {'id': 'sight', **spec['detailed_description']['workflow_example'], 'depends_on': ['source']},
+        {'id': 'save', 'operator': 'save', 'depends_on': ['sight'],
+         'params': {'input_df': {'$ref': 'sight'}, 'connection_info': {'mount_path': str(tmp_path)},
+                    'path': target.name, 'mode': 'fail'}},
+    ]
+    workspaces = []
+    execute = workflow_engine._execute_operator
+
+    def capture(name, params):
+        if name == 'raster_line_of_sight':
+            workspaces.append(params['input_raster'].workspace)
+        return execute(name, params)
+
+    monkeypatch.setattr(workflow_engine, '_execute_operator', capture)
+    client = api_server.app.test_client()
+    assert client.post('/api/operators/raster_line_of_sight/invoke', json={'params': {}}).status_code == 403
+    response = client.post('/api/workflow', headers={'Accept-Language': language}, json={
+        'workflow_def': {'tasks': tasks}, 'input_data': {},
+        'runtime': {'tenant_id': 7, 'execution_authorization': {'id': 1, 'effects': ['read', 'write']}},
+    })
+    assert response.status_code == 202, response.json
+    url = '/api/executions/' + response.json['execution_id']
+    deadline = time.monotonic() + 15
+    while time.monotonic() < deadline:
+        status = client.get(url, headers={'Accept-Language': 'en' if language == 'zh-cn' else 'zh-cn'}).json
+        if status['status'] in ('success', 'failed'):
+            break
+        time.sleep(.01)
+    assert workspaces and all(not path.exists() for path in workspaces)
+    assert path.read_bytes() == source_bytes
+    if case == 'invalid':
+        message = ('DEM 两点通视的端点落入无效高程像元' if language == 'zh-cn'
+                   else 'DEM line of sight endpoint has no valid elevation')
+        assert status['status'] == 'failed' and status['error'] == '任务 sight 执行失败: ' + message
+        assert client.get(url, headers={'Accept-Language': language}).json['error'] == status['error']
+        assert not target.exists()
+    elif case == 'save-conflict':
+        assert status['status'] == 'failed' and target.read_bytes() == b'existing\n'
+    else:
+        assert status['status'] == 'success', status
+        assert target.read_text().splitlines() == ['distance_m,status', f'4.0,{case}']
