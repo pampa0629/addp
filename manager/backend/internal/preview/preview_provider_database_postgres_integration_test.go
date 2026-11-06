@@ -16,6 +16,7 @@ import (
 	"github.com/addp/common/datatype"
 	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/engine/plugins/postgresql"
+	"github.com/addp/common/resourcetree"
 	"github.com/addp/manager/internal/dataprofile"
 	"github.com/addp/manager/internal/models"
 )
@@ -109,8 +110,11 @@ func TestIntegrationPostgresManagerPreviewPreparedPageReadSet(t *testing.T) {
 	t.Run("protected spatial display and key page", func(t *testing.T) {
 		const engineID = 8412
 		t.Cleanup(func() { _ = plugin.ClosePool(engineID) })
-		path := plugin.TabularItemPath(engineID, "schema", schema, "protected_spatial")
+		locator := &resourcetree.ResourceLocator{EngineID: engineID, Path: []string{schema, "protected_spatial"}, Type: resourcetree.TypeTable}
+		resolver := NewPreviewResolver(NewPreviewRegistry(), nil, nil)
+		provider := &DatabaseTablePreviewProvider{}
 		var previousPool *sql.DB
+		var oldRequest *PreviewRequest
 		rules := []dataprotection.Rule{{Action: "preview", Component: dataprotection.Component{Key: "phone", ValueType: "string", Path: []dataprotection.PathSegment{{Name: "phone", Container: "scalar"}}}, Decision: dataprotection.Decision{Effect: dataprotection.EffectMask, Algorithm: dataprotection.AlgorithmKeepPrefixSuffixV2, Parameters: map[string]interface{}{"prefix_runes": 3, "suffix_runes": 4, "mask_rune": "*"}, InvalidValueEffect: dataprotection.EffectSuppress}}}
 		for index, want := range []struct{ phone, point string }{{"138****7055", "POINT(1 2)"}, {"158****2486", "POINT(3 4)"}} {
 			info := make(plugin.ConnectionInfo, len(conn)+2)
@@ -119,7 +123,13 @@ func TestIntegrationPostgresManagerPreviewPreparedPageReadSet(t *testing.T) {
 			}
 			info["pool_max_open_conns"], info["pool_max_idle_conns"] = index+1, 0
 			engine := &models.Engine{ID: engineID, EngineType: "postgresql", Version: int64(index + 1), ConnectionInfo: map[string]interface{}(info)}
-			req := &PreviewRequest{Engine: engine, EnginePlugin: pg, ProviderPath: path, Schema: schema, Table: "protected_spatial", Page: index + 1, PageSize: 1}
+			req, err := resolver.buildProviderRequest(ctx, &PreviewResolverRequest{
+				Locator: locator, Engine: engine, ItemType: "table",
+				Pagination: &Pagination{Page: index + 1, PageSize: 1},
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
 			executions := 0
 			req.executePrepared = func(ctx context.Context, _ plugin.EnginePlugin, plan plugin.PreparedQuery) (*plugin.QueryResult, *dataprotection.PreparedTableProtection, error) {
 				if plugin.PoolEngineVersion(ctx, engineID) != engine.Version {
@@ -151,7 +161,7 @@ func TestIntegrationPostgresManagerPreviewPreparedPageReadSet(t *testing.T) {
 					return dataprotection.ProtectQueryResultSource(result, lineage.Sources[0], "preview", rules, dataprotection.SubjectReference{})
 				}}, nil
 			}
-			result, err := (&DatabaseTablePreviewProvider{}).Preview(ctx, req)
+			result, err := provider.Preview(ctx, req)
 			if err != nil || result == nil || result.PreparedProtection == nil || executions != 1 {
 				t.Fatalf("protected spatial page failed: %v", err)
 			}
@@ -172,6 +182,15 @@ func TestIntegrationPostgresManagerPreviewPreparedPageReadSet(t *testing.T) {
 			if err != nil || previousPool.Stats().MaxOpenConnections != index+1 {
 				t.Fatalf("preview did not use the configured pool: %v", err)
 			}
+			if index == 0 {
+				oldRequest = req
+			}
+		}
+		if _, err := provider.Preview(ctx, oldRequest); !errors.Is(err, plugin.ErrStalePoolConfiguration) {
+			t.Fatalf("late preview with the old Engine version was not rejected: %v", err)
+		}
+		if err := previousPool.PingContext(ctx); err != nil {
+			t.Fatalf("late preview closed the current pool: %v", err)
 		}
 		var original string
 		if err := db.QueryRowContext(ctx, `SELECT phone FROM "`+schema+`"."protected_spatial" WHERE id=1`).Scan(&original); err != nil || original != "13801017055" {

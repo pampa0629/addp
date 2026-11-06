@@ -711,6 +711,7 @@ func (r *PreviewResolver) buildProviderRequest(ctx context.Context, req *Preview
 		ID:             req.Engine.ID,
 		Name:           req.Engine.Name,
 		EngineType:     req.Engine.EngineType,
+		Version:        req.Engine.Version,
 		ConnectionInfo: models.ConnectionInfo(req.Engine.ConnectionInfo),
 		Description:    req.Engine.Description,
 		LifecycleState: req.Engine.LifecycleState,
