@@ -206,19 +206,24 @@ func TestOperatorFailureObservationRoundTripRejectsRawContext(t *testing.T) {
 }
 
 func TestPolygonRingObservationRetainsOnlyConfirmedContractFacts(t *testing.T) {
-	for _, field := range []string{"source_id", "part_no", "ring_no", "ring_id", "is_hole", ""} {
-		reason := "operator_field_conflict"
+	for _, tc := range []struct{ reason, field string }{
+		{"operator_field_conflict", "source_id"},
+		{"operator_field_conflict", "part_no"},
+		{"operator_field_conflict", "ring_no"},
+		{"operator_field_conflict", "ring_id"},
+		{"operator_field_conflict", "is_hole"},
+		{"operator_geometry_invalid", ""},
+		{"operator_input_invalid", ""},
+	} {
 		operator := map[string]interface{}{"node_index": 2, "operator_id": "extract_polygon_rings", "parameter": "input_gdf"}
-		if field == "" {
-			reason = "operator_geometry_invalid"
-		} else {
-			operator["field"] = field
+		if tc.field != "" {
+			operator["field"] = tc.field
 		}
-		diagnostic := map[string]interface{}{"schema_version": "addp.execution-failure/v3", "stage": "execution", "reason": reason, "operator": operator}
+		diagnostic := map[string]interface{}{"schema_version": "addp.execution-failure/v3", "stage": "execution", "reason": tc.reason, "operator": operator}
 		item := &execution.TaskExecution{Status: "failed", ErrorDetails: models.JSONMap{"message": "private-id /private/path password=secret GEOS", "diagnostic": diagnostic}}
 		observed := execution.Observe(item).ErrorDetails
 		if observed["diagnostic"] == nil {
-			t.Fatalf("lost ring diagnostic %s", field)
+			t.Fatalf("lost ring diagnostic %s/%s", tc.reason, tc.field)
 		}
 		encoded, _ := json.Marshal(observed)
 		if strings.Contains(string(encoded), "private") || strings.Contains(string(encoded), "secret") || strings.Contains(string(encoded), "GEOS") {

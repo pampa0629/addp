@@ -1258,28 +1258,40 @@ def merge_line_chains(input_gdf: gpd.GeoDataFrame, id_field: str, match_fields: 
 
 class PolygonRingInputError(ValueError):
     """Confirmed ring admission facts; the adapter owns public diagnostics."""
-    def __init__(self, code, field=""):
+    def __init__(self, code, field="", *, detail=""):
         self.code, self.field = code, field
         messages = {
+            'source': detail,
             'field_conflict': 'output columns source_id, part_no, ring_no, ring_id and is_hole must not overwrite source fields',
             'geometry_invalid': 'input_gdf requires non-empty valid polygons; repair explicitly before extraction',
         }
         super().__init__(messages[code])
 
+    @classmethod
+    def source(cls, detail):
+        return cls('source', detail=detail)
+
+    def message(self, language):
+        if self.code != 'source':
+            return str(self)
+        if language == 'en':
+            return 'Polygon ring extraction requires active finite XY Polygon or MultiPolygon geometry and an id_field with unique non-empty scalar identifiers. Empty layers are allowed.'
+        return '面界提取要求活动几何列为有限二维 Polygon 或 MultiPolygon，id_field 须指向非空、唯一的标量标识列。允许空表。'
+
 
 def extract_polygon_rings(input_gdf: gpd.GeoDataFrame, id_field: str) -> gpd.GeoDataFrame:
     """Extract original exterior/interior rings with their unmerged source attributes."""
-    geometry = _finite_xy_geometry(input_gdf)
-    ids = _source_identifiers(input_gdf, id_field)
+    geometry = _finite_xy_geometry(input_gdf, input_error=PolygonRingInputError.source)
+    ids = _source_identifiers(input_gdf, id_field, input_error=PolygonRingInputError.source)
     reserved = ("source_id", "part_no", "ring_no", "ring_id", "is_hole")
     for field in reserved:
         if field in input_gdf.columns:
             raise PolygonRingInputError("field_conflict", field)
     if geometry.isna().any() or not geometry.geom_type.isin(["Polygon", "MultiPolygon"]).all():
-        raise ValueError("input_gdf requires non-null Polygon or MultiPolygon geometries")
+        raise PolygonRingInputError.source("input_gdf requires non-null Polygon or MultiPolygon geometries")
     parts, source_rows = shapely.get_parts(geometry.array, return_index=True)
     if shapely.is_empty(geometry.array).any() or shapely.is_empty(parts).any():
-        raise ValueError("input_gdf requires non-empty valid polygons; repair explicitly before extraction")
+        raise PolygonRingInputError.source("input_gdf requires non-empty valid polygons; repair explicitly before extraction")
     if not shapely.is_valid(geometry.array).all():
         raise PolygonRingInputError("geometry_invalid")
 
@@ -1291,7 +1303,7 @@ def extract_polygon_rings(input_gdf: gpd.GeoDataFrame, id_field: str) -> gpd.Geo
         # vertices, even for shared edges or duplicate polygons in other rows.
         for ring_no, ring in enumerate((part.exterior, *part.interiors), 1):
             if ring.is_empty:
-                raise ValueError("input_gdf requires non-empty polygon rings")
+                raise PolygonRingInputError.source("input_gdf requires non-empty polygon rings")
             rows.append(source_row)
             lines.append(shapely.LineString(ring))
             part_numbers.append(source_part_counts[source_row])

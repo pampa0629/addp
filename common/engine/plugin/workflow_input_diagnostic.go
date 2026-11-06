@@ -294,7 +294,7 @@ func (o *WorkflowOperatorFailure) Valid(reason string) bool {
 	case "extract_polygon_rings":
 		parameter = "input_gdf"
 		switch reason {
-		case "operator_geometry_invalid":
+		case "operator_input_invalid", "operator_geometry_invalid":
 			ok = true
 		case "operator_field_conflict":
 			switch o.Field {

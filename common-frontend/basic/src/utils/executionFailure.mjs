@@ -23,6 +23,7 @@ const failureCategories = new Set(['permission_denied', 'timeout', 'cancelled', 
   'coordinator_lost', 'child_failed', 'owner_unavailable'])
 
 const operatorFailureTemplates = Object.freeze({ snap_line_endpoints: 'lineEndpoint', extend_line_endpoints: 'lineEndpoint', polygonize: 'polygonize', snap_geometry:'referenceSnap', check_geometry:'geometryValidity', repair_geometry:'geometryValidity', extract_vertices: 'vertices', split_multipart: 'multipart', get_bounds: 'bounds', distance_to: 'distance', get_area: 'measurement', get_length: 'measurement', split_by_area: 'measurement', contains: 'spatialRelation', intersects: 'spatialRelation', voronoi: 'voronoi',
+  'extract_polygon_rings:operator_input_invalid': 'polygonRings',
   'merge_line_chains:operator_input_invalid': 'lineCheck',
   'merge_line_chains:operator_crs_invalid': 'lineCheck',
   'merge_line_chains:operator_endpoint_network_invalid': 'lineCheck',
@@ -248,6 +249,7 @@ export const operatorInputRules = Object.freeze([
   ["check_line_proximity", "operator_input_invalid", "input_gdf", ""],
   ["check_line_proximity", "operator_reference_invalid", "reference_gdf", ""],
   ["check_line_proximity", "operator_crs_invalid", "", ""],
+  ["extract_polygon_rings", "operator_input_invalid", "input_gdf", ""],
   ["extract_polygon_rings", "operator_field_conflict", "input_gdf", "source_id"],
   ["extract_polygon_rings", "operator_field_conflict", "input_gdf", "part_no"],
   ["extract_polygon_rings", "operator_field_conflict", "input_gdf", "ring_no"],

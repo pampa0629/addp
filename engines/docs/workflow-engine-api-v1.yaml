@@ -1048,6 +1048,7 @@ components:
         - ["check_line_proximity", "operator_input_invalid", "input_gdf", ""]
         - ["check_line_proximity", "operator_reference_invalid", "reference_gdf", ""]
         - ["check_line_proximity", "operator_crs_invalid", "", ""]
+        - ["extract_polygon_rings", "operator_input_invalid", "input_gdf", ""]
         - ["extract_polygon_rings", "operator_field_conflict", "input_gdf", "source_id"]
         - ["extract_polygon_rings", "operator_field_conflict", "input_gdf", "part_no"]
         - ["extract_polygon_rings", "operator_field_conflict", "input_gdf", "ring_no"]

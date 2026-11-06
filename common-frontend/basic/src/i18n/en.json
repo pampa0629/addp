@@ -510,6 +510,14 @@
           "operator_source_topology_invalid": "Choose all explicitly to also split at point intersections within a feature."
         }
       },
+      "polygonRings": {
+        "reasons": {
+          "operator_input_invalid": "The source layer or source identifier does not meet polygon ring extraction requirements."
+        },
+        "actions": {
+          "operator_input_invalid": "Provide finite XY Polygon or MultiPolygon geometry in the active geometry column. Check for empty geometries, parts and rings, and set id_field to a column with unique non-empty scalar identifiers. An empty layer is allowed."
+        }
+      },
       "lineCheck": {
         "reasons": {
           "operator_endpoint_network_invalid": "Line chain merging requires line parts to meet only at both endpoints.",

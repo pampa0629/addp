@@ -68,6 +68,8 @@ def _execute_workflow_operator(operator, params):
         raise LineCheckInputError('operator_input_invalid', 'input_gdf and id_field are required')
     if operator == 'merge_line_chains' and 'match_fields' not in params:
         raise LineCheckInputError('operator_match_fields_invalid', 'match_fields is required')
+    if operator == 'extract_polygon_rings' and not {'input_gdf', 'id_field'} <= params.keys():
+        raise PolygonRingInputError.source('input_gdf and id_field are required')
     if operator == 'check_polygon_overlap' and not {'input_gdf', 'id_field'} <= params.keys():
         raise PolygonCheckInputError('overlap_source', 'input_gdf and id_field are required')
     if operator == 'check_polygon_gap':
@@ -147,7 +149,7 @@ class GeoPythonWorkflowRunner(WorkflowRunner):
                 LineTrimError: {'tolerance': 'operator_distance_limit_invalid', 'source': 'operator_input_invalid',
                                 'reference': 'operator_reference_invalid', 'crs': 'operator_crs_invalid',
                                 'topology': 'operator_source_topology_invalid', 'conflict': 'operator_trim_conflict'},
-                PolygonRingInputError: {"field_conflict": "operator_field_conflict", "geometry_invalid": "operator_geometry_invalid"},
+                PolygonRingInputError: {"source": "operator_input_invalid", "field_conflict": "operator_field_conflict", "geometry_invalid": "operator_geometry_invalid"},
                 MultiBufferInputError: {'source': 'operator_input_invalid', 'crs': 'operator_crs_invalid', 'distance_conflict': 'operator_field_conflict',
                                        'distances': 'operator_number_array_invalid', 'resolution': 'operator_positive_integer_required'},
                 DistanceInputError: {'source': 'operator_input_invalid', 'reference': 'operator_reference_invalid', 'geometry_column_conflict': 'operator_geometry_field_conflict',
@@ -158,7 +160,7 @@ class GeoPythonWorkflowRunner(WorkflowRunner):
             reason = reasons[type(exc)].get(exc.code)
             if reason is not None:
                 field = exc.code if isinstance(exc, MeasurementInputError) and exc.code in {"area", "length"} else exc.field if isinstance(exc, (MultipartInputError, BoundsInputError, PolygonRingInputError, LineNodeInputError)) else "distance" if reason in {"operator_field_conflict", "operator_geometry_field_conflict"} else ""
-                message = str(exc) if isinstance(exc, PolygonRingInputError) else exc.message(self.language)
+                message = exc.message(self.language)
                 raise OperatorInputError(reason, message, field=field) from exc
             # A numerical calculation failure is not a parameter admission failure.
             raise ValueError(exc.message(self.language)) from exc

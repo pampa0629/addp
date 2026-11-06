@@ -15,7 +15,7 @@ func TestWorkflowInputDiagnosticMatchesCanonicalLanguageContract(t *testing.T) {
 	}
 	pattern := regexp.MustCompile(`\('([^']+)', '([^']+)', '([^']*)'\): '([^']*)'`)
 	tuples := pattern.FindAllStringSubmatch(string(source), -1)
-	if len(tuples) != 170 {
+	if len(tuples) != 171 {
 		t.Fatalf("rules=%d", len(tuples))
 	}
 	valid := map[string]bool{}

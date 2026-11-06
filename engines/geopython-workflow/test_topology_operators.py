@@ -6486,7 +6486,14 @@ def test_extract_polygon_rings_native_dag_full_ogr_reload_and_rejection_no_publi
         assert f.GetField("enabled")==([None]*5+[False])[i] and f.GetField("weight")==([None]*5+[.125])[i]
     f=layer=ds=None;assert (tmp_path/"source.gpkg").read_bytes()==before
     tasks[1]["params"]["id_field"]="missing";tasks[2]["params"]["path"]="rejected.gpkg"
-    rejected=execute_workflow({"tasks":tasks});assert rejected["status"]=="failed" and not (tmp_path/"rejected.gpkg").exists()
+    rejected = execute_workflow({"tasks": tasks})
+    assert rejected["status"] == "failed" and rejected["error_code"] == "INVALID_PARAMS"
+    assert rejected["diagnostic"] == {
+        "schema_version": "addp.execution-failure/v3", "stage": "execution",
+        "reason": "operator_input_invalid",
+        "operator": {"node_index": 2, "operator_id": "extract_polygon_rings", "parameter": "input_gdf"},
+    }
+    assert not (tmp_path/"rejected.gpkg").exists()
     assert (tmp_path/"source.gpkg").read_bytes()==before
 
 
@@ -6620,11 +6627,63 @@ def test_extract_polygon_rings_conflict_uses_fixed_priority_before_validity(ring
 @pytest.mark.parametrize('wkt', [None,'POLYGON EMPTY','POINT (0 0)','POLYGON Z ((0 0 1,1 0 1,1 1 1,0 0 1))',
     'POLYGON M ((0 0 1,1 0 1,1 1 1,0 0 1))','POLYGON ((0 0,1 0,Infinity 1,0 0))',
     'MULTIPOLYGON (EMPTY,((0 0,1 0,1 1,0 0)))'])
-def test_extract_polygon_rings_other_rejections_are_not_validity_diagnostics(ring_extractor,wkt):
+def test_extract_polygon_rings_other_rejections_are_source_diagnostics(ring_extractor,wkt):
     from operators.geometric_operators import PolygonRingInputError
     frame=gpd.GeoDataFrame({'key':[1]},geometry=[None if wkt is None else shapely.from_wkt(wkt)],crs=3857)
-    with pytest.raises(ValueError) as caught:ring_extractor(frame,'key')
-    assert not isinstance(caught.value,PolygonRingInputError)
+    with pytest.raises(PolygonRingInputError) as caught:
+        ring_extractor(frame, 'key')
+    assert (caught.value.code, caught.value.field) == ('source', '')
+
+
+@pytest.mark.parametrize("language", ["zh-cn", "en"])
+@pytest.mark.parametrize("case", ["missing_layer", "missing_id", "inactive_geometry", "invalid_id",
+                                 "native_validity", "native_parts"])
+def test_extract_polygon_rings_source_diagnostic_and_native_failures_block_save(monkeypatch, language, case):
+    import workflow_engine
+    from addp_common.workflow_runtime import WorkflowExecutionError
+
+    frame = gpd.GeoDataFrame({"parcel_key": [1]}, geometry=[box(0, 0, 1, 1)])
+    params = {"input_gdf": frame, "id_field": "parcel_key"}
+    if case == "missing_layer":
+        del params["input_gdf"]
+    elif case == "missing_id":
+        del params["id_field"]
+    elif case == "inactive_geometry":
+        params["input_gdf"] = gpd.GeoDataFrame({"parcel_key": [1], "shapes": gpd.GeoSeries([box(0, 0, 1, 1)])})
+    elif case == "invalid_id":
+        params["id_field"] = "PRIVATE_FIELD"
+
+    def fail(*args, **kwargs):
+        raise ValueError("native calculation failed")
+
+    if case == "native_validity":
+        monkeypatch.setattr(shapely, "is_valid", fail)
+    elif case == "native_parts":
+        monkeypatch.setattr(shapely, "get_parts", fail)
+
+    resolve = workflow_engine.get_operator
+    saves = []
+    monkeypatch.setattr(workflow_engine, "get_operator",
+                        lambda name: (lambda **kwargs: saves.append(kwargs)) if name == "save" else resolve(name))
+    tasks = [
+        {"id": "rings", "operator": "extract_polygon_rings", "params": params, "depends_on": []},
+        {"id": "save", "operator": "save", "params": {"input_df": {"$ref": "rings"}}, "depends_on": ["rings"]},
+    ]
+    with pytest.raises(WorkflowExecutionError) as caught:
+        workflow_engine.GeoPythonWorkflowRunner(language=language).execute({"tasks": tasks})
+    assert not saves
+    error = caught.value
+    if case.startswith("native_"):
+        assert error.error_code == "EXECUTION_FAILED" and error.diagnostic is None
+        return
+    assert error.error_code == "INVALID_PARAMS"
+    assert error.diagnostic == {
+        "schema_version": "addp.execution-failure/v3", "stage": "execution",
+        "reason": "operator_input_invalid",
+        "operator": {"node_index": 1, "operator_id": "extract_polygon_rings", "parameter": "input_gdf"},
+    }
+    assert ("面界提取要求" if language == "zh-cn" else "Polygon ring extraction requires") in str(error)
+    assert "PRIVATE_FIELD" not in str(error)
 
 
 @pytest.mark.parametrize('key',['ring-field-conflict','ring-geometry-invalid'])

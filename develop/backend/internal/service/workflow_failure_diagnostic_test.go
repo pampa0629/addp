@@ -40,7 +40,7 @@ func TestWorkflowParameterDiagnosticRequiresMatchingFrozenDefinition(t *testing.
 }
 
 func TestPolygonRingDiagnosticBindsFrozenDefinitionAndRejectsForgedContext(t *testing.T) {
-	for _, reason := range []string{"operator_field_conflict", "operator_geometry_invalid"} {
+	for _, reason := range []string{"operator_field_conflict", "operator_geometry_invalid", "operator_input_invalid"} {
 		operator := map[string]interface{}{"node_index": 2, "operator_id": "extract_polygon_rings", "parameter": "input_gdf"}
 		if reason == "operator_field_conflict" {
 			operator["field"] = "ring_id"

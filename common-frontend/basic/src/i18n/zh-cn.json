@@ -510,6 +510,14 @@
           "operator_source_topology_invalid": "如需同时打断要素内部点交会，请显式选择 all。"
         }
       },
+      "polygonRings": {
+        "reasons": {
+          "operator_input_invalid": "源图层或来源标识不符合面界提取要求。"
+        },
+        "actions": {
+          "operator_input_invalid": "提供带活动几何列的有限二维 Polygon 或 MultiPolygon 图层，检查空几何、空部件和空环，并显式指定唯一非空的标量来源列 id_field。允许空表。"
+        }
+      },
       "lineCheck": {
         "reasons": {
           "operator_endpoint_network_invalid": "链路合并要求线部件仅在双方端点相接。",

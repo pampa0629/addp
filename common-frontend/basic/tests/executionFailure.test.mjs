@@ -135,7 +135,7 @@ test('protection refusals remain distinct from data permissions without exposing
 test('operator input contract matches the canonical runtime tuples and rejects unproven fields', () => {
   const source = read('../../../common-python/addp_common/workflow_runtime/errors.py')
   const canonical = [...source.matchAll(/\('([^']+)', '([^']+)', '([^']*)'\): '([^']*)'/g)].map(match => [match[1],match[2],match[4],match[3]])
-  assert.equal(canonical.length, 170)
+  assert.equal(canonical.length, 171)
   const actual = operatorInputRules.map(rule => [...rule])
   assert.deepEqual(actual.sort(), canonical.sort())
   for (const [operator_id, reason, parameter, field] of canonical) {
@@ -143,6 +143,7 @@ test('operator input contract matches the canonical runtime tuples and rejects u
     const diagnostic = { schema_version: 'addp.execution-failure/v3', stage: 'execution', reason, operator }
     const result = executionFailurePresentation({ diagnostic, message: 'private' }, key => key)
     const profiles = { snap_line_endpoints: 'lineEndpoint', extend_line_endpoints: 'lineEndpoint', polygonize: 'polygonize', snap_geometry:'referenceSnap', check_geometry:'geometryValidity', repair_geometry:'geometryValidity', extract_vertices:'vertices', split_multipart:'multipart', get_bounds:'bounds', distance_to:'distance', get_area:'measurement', get_length:'measurement', split_by_area:'measurement', contains:'spatialRelation', intersects:'spatialRelation', voronoi:'voronoi',
+      'extract_polygon_rings:operator_input_invalid':'polygonRings',
       'merge_line_chains:operator_input_invalid':'lineCheck', 'merge_line_chains:operator_crs_invalid':'lineCheck',
       'merge_line_chains:operator_endpoint_network_invalid':'lineCheck',
       'normalize_line_network:operator_input_invalid':'lineCheck', 'normalize_line_network:operator_crs_invalid':'lineCheck',
@@ -202,13 +203,20 @@ test('ring diagnostics provide controlled bilingual reasons and explicit repair 
   for (const locale of ['zh-cn','en']) {
     const messages=JSON.parse(read(`../src/i18n/${locale}.json`)).common.executionFailure
     const translate=(key,params={})=>key.replace('common.executionFailure.','').split('.').reduce((node,part)=>node[part],messages).replace(/\{(\w+)\}/g,(_,key)=>params[key])
-    for(const field of ['source_id','part_no','ring_no','ring_id','is_hole','']) {
-      const reason=field?'operator_field_conflict':'operator_geometry_invalid'
-      const diagnostic={schema_version:'addp.execution-failure/v3',stage:'execution',reason,operator:{node_index:2,operator_id:'extract_polygon_rings',parameter:'input_gdf',...(field?{field}:{})}}
+    for (const [operator_id, reason, parameter, field] of operatorInputRules.filter(([name]) => name === 'extract_polygon_rings')) {
+      const diagnostic={schema_version:'addp.execution-failure/v3',stage:'execution',reason,operator:{node_index:2,operator_id,parameter,...(field?{field}:{})}}
       const presentation=executionFailurePresentation({diagnostic,message:'private GEOS /path source-id'},translate)
       assert.equal(presentation.operator,locale==='zh-cn'?'面界提取':'Extract polygon rings')
       if(field) { assert.ok(presentation.reason.includes(field));assert.match(presentation.action,locale==='zh-cn'?/重命名/:/[Rr]ename/) }
-      else { assert.match(presentation.reason,locale==='zh-cn'?/未通过有效性检查/:/failed the validity check/);assert.match(presentation.action,locale==='zh-cn'?/显式修复/:/explicitly repair/);assert.equal(presentation.field,'') }
+      else if (reason === 'operator_geometry_invalid') {
+        assert.match(presentation.reason,locale==='zh-cn'?/未通过有效性检查/:/failed the validity check/)
+        assert.match(presentation.action,locale==='zh-cn'?/显式修复/:/explicitly repair/)
+        assert.equal(presentation.field,'')
+      } else {
+        assert.equal(presentation.reason, messages.polygonRings.reasons.operator_input_invalid)
+        assert.match(presentation.action, /Polygon.*id_field/)
+        assert.equal(presentation.field, '')
+      }
       assert.doesNotMatch(JSON.stringify(presentation),/private|GEOS|source-id/)
     }
   }

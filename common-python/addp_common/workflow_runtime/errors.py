@@ -194,6 +194,7 @@ OPERATOR_INPUT_RULES = {
     ('check_line_proximity', 'operator_input_invalid', ''): 'input_gdf',
     ('check_line_proximity', 'operator_reference_invalid', ''): 'reference_gdf',
     ('check_line_proximity', 'operator_crs_invalid', ''): '',
+    ('extract_polygon_rings', 'operator_input_invalid', ''): 'input_gdf',
     ('extract_polygon_rings', 'operator_field_conflict', 'source_id'): 'input_gdf',
     ('extract_polygon_rings', 'operator_field_conflict', 'part_no'): 'input_gdf',
     ('extract_polygon_rings', 'operator_field_conflict', 'ring_no'): 'input_gdf',
