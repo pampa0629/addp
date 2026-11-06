@@ -1142,9 +1142,9 @@ class PGAuthorizationOnlineTest(unittest.TestCase):
                     proof.update(result='passed', completed=list(completed))
                 scenario.inflight_items.side_effect = cutoff
                 return scenario
-            def late_failure(report, *, load_profile):
+            def late_failure(report, *, cpu_arm):
                 self.assertEqual(completed, ['ranges', 'withdrawal', 'expiry'])
-                self.assertEqual(load_profile, 'full')
+                self.assertEqual(cpu_arm, '')
                 raise ONLINE.SuiteError('read load exceeded its budget')
             life.production_flow.side_effect = late_failure
             with patch.dict(ONLINE.os.environ, env, clear=True), \
@@ -1634,6 +1634,60 @@ class PGBrowserObservationTest(unittest.TestCase):
                     browser.evidence.write_text(json.dumps(bad))
                     with self.subTest(fault=fault), self.assertRaises(ONLINE.SuiteError):
                         browser.finish()
+
+
+class PGLoadCPUWindowTest(unittest.TestCase):
+    def setUp(self):
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        self.root = Path(directory.name)
+        self.online = self.root / 'online'
+        self.online.write_text('0-3\n')
+        self.writes = []
+        self.fail_write = None
+        self.addCleanup(patch.stopall)
+        patch.object(ONLINE, 'PG_CPU_SYSFS', self.root).start()
+        patch.object(ONLINE.sys, 'platform', 'linux').start()
+        patch.dict(ONLINE.os.environ, ADDP_ONLINE_HOSTED='1', GITHUB_ACTIONS='true',
+                   ADDP_ONLINE_ARTIFACT_DIR=directory.name).start()
+        patch.object(ONLINE.subprocess, 'run', side_effect=self.write_cpu).start()
+
+    def write_cpu(self, argv, *, input, timeout, check, **kwargs):
+        self.assertEqual(argv, ['sudo', '-n', 'tee', str(self.root / 'cpu3/online')])
+        self.assertEqual(timeout, 5)
+        self.assertTrue(check)
+        self.writes.append(input)
+        if input == self.fail_write:
+            raise ONLINE.subprocess.CalledProcessError(1, argv)
+        self.online.write_text('0-3\n' if input == '1\n' else '0-2\n')
+
+    def test_four_vcpus_are_observed_without_writing_cpu_state(self):
+        with ONLINE.pg_load_cpu_window('4'):
+            self.assertEqual(self.online.read_text(), '0-3\n')
+        self.assertEqual(self.writes, [])
+        self.assertEqual((self.root / 'cpu-arm.txt').read_text(),
+                         'scope=single_target_load\nrequested_vcpus=4\nbefore=0-3\n'
+                         'during_start=0-3\nduring_end=0-3\nafter=0-3\n')
+
+    def test_three_vcpus_are_restored_when_sampling_is_interrupted(self):
+        with self.assertRaises(KeyboardInterrupt):
+            with ONLINE.pg_load_cpu_window('3'):
+                self.assertEqual(self.online.read_text(), '0-2\n')
+                raise KeyboardInterrupt()
+        self.assertEqual(self.writes, ['0\n', '1\n'])
+        self.assertEqual(self.online.read_text(), '0-3\n')
+        self.assertIn('during_end=0-2\nafter=0-3\n', (self.root / 'cpu-arm.txt').read_text())
+
+    def test_switch_and_restore_failures_do_not_pass(self):
+        for failed_write, expected_after in (('0\n', '0-3'), ('1\n', '0-2')):
+            with self.subTest(failed_write=failed_write):
+                self.fail_write = failed_write
+                entered = False
+                with self.assertRaisesRegex(ONLINE.SuiteError, 'CPU switch failed'):
+                    with ONLINE.pg_load_cpu_window('3'):
+                        entered = True
+                self.assertEqual(entered, failed_write == '1\n')
+                self.assertIn(f'after={expected_after}\n', (self.root / 'cpu-arm.txt').read_text())
 
 
 class PGReadLoadTest(unittest.TestCase):
@@ -2172,6 +2226,38 @@ class InitialProductionOnlineTest(unittest.TestCase):
                          [(self.lifecycle.path, self.source_command), (self.path, self.command)])
         self.lifecycle.require_batch_denied.assert_called_once_with(self.reader, [self.lifecycle.path, self.path])
         self.assertTrue(report['authorization_load']['mixed_withdrawn_batch_denied'])
+
+    def test_cpu_window_contains_only_load_sampling_before_withdrawal(self):
+        inside = False
+        load = self.lifecycle.measure_read_load.side_effect
+        revoke = self.lifecycle.revoke.side_effect
+
+        @ONLINE.contextmanager
+        def cpu_window(arm):
+            nonlocal inside
+            self.assertEqual(arm, '3')
+            self.assertFalse(self.source_revoked)
+            inside = True
+            try:
+                yield
+            finally:
+                inside = False
+
+        def measure(report, bindings, *, profile):
+            self.assertTrue(inside)
+            self.assertEqual(profile, ONLINE.CPU_LOAD_PROFILE)
+            load(report, bindings, profile=profile)
+
+        def withdraw(command):
+            self.assertFalse(inside)
+            revoke(command)
+
+        self.lifecycle.measure_read_load.side_effect = measure
+        self.lifecycle.revoke.side_effect = withdraw
+        with patch.object(ONLINE, 'pg_load_cpu_window', side_effect=cpu_window) as window:
+            self.lifecycle.production_flow({'checks': []}, cpu_arm='3')
+        window.assert_called_once_with('3')
+        self.assertTrue(self.source_revoked and self.output_revoked)
 
     def test_output_candidate_search_is_literal_and_still_rejects_wrong_full_path(self):
         self.lifecycle.production_flow({'checks': []})

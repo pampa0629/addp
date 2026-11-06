@@ -16,6 +16,7 @@ import threading
 import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 from importlib import import_module
 from pathlib import Path
@@ -65,6 +66,51 @@ READ_CHECK = '/api/v1/system/engine-access/read-checks/manager-preview'
 LATENCY_ROUNDS, LATENCY_SAMPLES, LATENCY_WARMUPS = 3, 500, 10
 LOAD_ROUNDS, LOAD_SAMPLES, LOAD_WARMUPS = 3, 100, 10
 CPU_LOAD_PROFILE = 'single_target_cpu'
+PG_CPU_SYSFS = Path('/sys/devices/system/cpu')
+
+
+def set_pg_cpu3(online):
+    try:
+        subprocess.run(['sudo', '-n', 'tee', str(PG_CPU_SYSFS / 'cpu3/online')],
+                       input=f'{int(online)}\n', text=True, stdout=subprocess.DEVNULL,
+                       stderr=subprocess.DEVNULL, timeout=5, check=True)
+    except (OSError, subprocess.SubprocessError):
+        raise SuiteError('PG sampling CPU switch failed') from None
+
+
+@contextmanager
+def pg_load_cpu_window(arm):
+    if not arm:
+        yield
+        return
+    require(arm in {'3', '4'} and sys.platform == 'linux' and
+            os.environ.get('ADDP_ONLINE_HOSTED') == '1' and os.environ.get('GITHUB_ACTIONS') == 'true',
+            'PG sampling CPU switch requires the disposable Hosted runner')
+    online = PG_CPU_SYSFS / 'online'
+    before = online.read_text().strip()
+    require(before == '0-3', 'PG sampling requires four online vCPUs before the window')
+    expected = '0-2' if arm == '3' else before
+    evidence = {'scope': 'single_target_load', 'requested_vcpus': arm, 'before': before}
+    try:
+        if arm == '3':
+            set_pg_cpu3(False)
+        evidence['during_start'] = online.read_text().strip()
+        require(evidence['during_start'] == expected, 'PG sampling CPU arm did not take effect')
+        yield
+    finally:
+        try:
+            evidence['during_end'] = online.read_text().strip()
+        finally:
+            try:
+                if arm == '3' and evidence.get('during_end') != before:
+                    set_pg_cpu3(True)
+            finally:
+                evidence['after'] = online.read_text().strip()
+                path = Path(os.environ['ADDP_ONLINE_ARTIFACT_DIR']) / 'cpu-arm.txt'
+                path.write_text(''.join(f'{key}={value}\n' for key, value in evidence.items()))
+        require(evidence['after'] == before, 'PG sampling CPU availability was not restored')
+        if evidence.get('during_start') == expected:
+            require(evidence['during_end'] == expected, 'PG sampling CPU availability changed during the window')
 
 # Deliberately no query text/parameters, credentials, relation data or query plans
 # in the published evidence. Counters belong to the whole disposable instance.
@@ -1787,7 +1833,7 @@ class Lifecycle:
                 if row['request_id'] not in self.grants:
                     self.grants.append(row['request_id'])
 
-    def production_flow(self, report, *, load_profile='full'):
+    def production_flow(self, report, *, cpu_arm=''):
         report['phase'] = 'initial_output_authorization'
         facts = REGISTRATION.read_exact_record_authorization_facts(self.operator, self.path)
         source_grant, source_body = self.grant(facts, seconds=600)
@@ -1853,8 +1899,9 @@ class Lifecycle:
         report['lineage_diagnostic'] = lineage.diagnostic
         lineage.issued()
         report['phase'] = 'concurrent_and_batch_read_load'
-        self.measure_read_load(report, [(self.path, facts, source_grant),
-                                       (path, output_facts, row['request_id'])], profile=load_profile)
+        with pg_load_cpu_window(cpu_arm):
+            self.measure_read_load(report, [(self.path, facts, source_grant), (path, output_facts, row['request_id'])],
+                                   profile=CPU_LOAD_PROFILE if cpu_arm else 'full')
         report['phase'] = 'output_source_withdrawal'
         self.revoke(source_grant)
         self.require_batch_denied(self.reader, [self.path, path])
@@ -3068,7 +3115,7 @@ def main():
             lifecycle.collection.source_barriers.append(barrier)
             lifecycle.scoped_refresh.inflight_items('public', ['public.metric_people', 'public.metric_events'],
                                                    cutoff, barrier)
-        lifecycle.production_flow(report, load_profile=load_profile)
+        lifecycle.production_flow(report, cpu_arm=cpu_arm)
         report['result'] = 'passed'
     except (SuiteError, PREFLIGHT.PreflightError, REGISTRATION.RegistrationError, KeyError, ValueError, TypeError, OSError):
         print('PG source authorization acceptance failed; inspect the bounded phase evidence', file=sys.stderr)

@@ -21,50 +21,6 @@ case "$cpu_arm" in
   *) fail 'PG CPU arm must be 3 or 4' ;;
 esac
 
-# On the disposable VM, change CPU availability for native services, capture
-# processes and Docker together. Keep provisioning and cleanup at full CPU.
-run_pg_cpu_arm() (
-  local cpu_dir=/sys/devices/system/cpu
-  local expected=0-3
-  local report="$ADDP_ONLINE_ARTIFACT_DIR/cpu-arm.txt"
-  local before actual
-  before=$(cat "$cpu_dir/online")
-  [ "$before" = 0-3 ] || fail 'PG CPU availability changed before the suite'
-  printf 'requested_vcpus=%s\nbefore=%s\n' "$cpu_arm" "$before" > "$report"
-
-  restore_cpu() {
-    local status=$? after
-    trap - EXIT INT TERM
-    if [ "$cpu_arm" = 3 ] && [ "$(cat "$cpu_dir/online")" != "$before" ]; then
-      printf '1\n' | sudo -n tee "$cpu_dir/cpu3/online" >/dev/null || status=1
-    fi
-    after=$(cat "$cpu_dir/online") || after=unavailable
-    printf 'after=%s\n' "$after" >> "$report"
-    if [ "$after" != "$before" ]; then
-      echo 'PG CPU availability was not restored' >&2
-      status=1
-    fi
-    exit "$status"
-  }
-  trap restore_cpu EXIT
-  trap 'exit 130' INT
-  trap 'exit 143' TERM
-
-  if [ "$cpu_arm" = 3 ]; then
-    expected=0-2
-    printf '0\n' | sudo -n tee "$cpu_dir/cpu3/online" >/dev/null
-  fi
-  actual=$(cat "$cpu_dir/online")
-  printf 'during_start=%s\n' "$actual" >> "$report"
-  [ "$actual" = "$expected" ] || fail 'PG CPU arm did not take effect'
-  local suite_status=0
-  run_logged make test-online "ONLINE_SUITE=$ONLINE_SUITE" || suite_status=$?
-  actual=$(cat "$cpu_dir/online")
-  printf 'during_end=%s\n' "$actual" >> "$report"
-  [ "$actual" = "$expected" ] || fail 'PG CPU availability changed during the suite'
-  exit "$suite_status"
-)
-
 export CONSOLE_URL=http://127.0.0.1:5170
 export CATALOG_URL=http://127.0.0.1:8192
 export SECURITY_URL=http://127.0.0.1:8194
@@ -105,8 +61,4 @@ source "$ENGINE_RESULT_ENV"
 export ADDP_ONLINE_PG_PROBE_ACCESS_TOKEN="$ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN"
 unset ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN
 export ADDP_ONLINE_CONSUMER_ENGINE_ID
-if [ -n "$cpu_arm" ]; then
-  run_pg_cpu_arm
-else
-  run_logged make test-online "ONLINE_SUITE=$ONLINE_SUITE"
-fi
+run_logged make test-online "ONLINE_SUITE=$ONLINE_SUITE"
