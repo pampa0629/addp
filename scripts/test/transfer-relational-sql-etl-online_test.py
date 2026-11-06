@@ -582,6 +582,23 @@ class TransferRelationalSQLETLOnlineTest(unittest.TestCase):
         with self.assertRaisesRegex(ONLINE.SuiteError, "transfer execution failed: data_protection_required"):
             ONLINE.wait_owner_execution(client, "transfer", identifier, 30)
 
+    def test_transfer_execution_allows_only_public_initial_authorization(self):
+        identifier = str(uuid.uuid4())
+        authorization = {"status": "issued"}
+        execution = {"execution_id": identifier, "status": "success",
+                     "metadata": {"initial_authorization": authorization}}
+        client = Mock()
+        client.request.return_value.payload = execution
+        self.assertEqual(ONLINE.wait_owner_execution(client, "transfer", identifier, 30), execution)
+        for state in ({"status": "pending", "code": "scan_pending"},
+                      {"status": "denied", "code": "source_access_denied"}):
+            execution["metadata"]["initial_authorization"] = state
+            ONLINE.assert_transfer_execution_projection(execution)
+        for field in ("grant_request_id", "attempts", "next_attempt_unix"):
+            with self.subTest(field=field), self.assertRaisesRegex(ONLINE.SuiteError, "undeclared fields"):
+                execution["metadata"]["initial_authorization"] = dict(authorization, **{field: "private"})
+                ONLINE.assert_transfer_execution_projection(execution)
+
     def test_failure_diagnostic_rejects_private_nested_facts(self):
         execution = {"error_details": {"category": "execution_failed", "code": "table_not_found", "diagnostic": {
             "schema_version": "addp.execution-failure/v3", "stage": "preparation", "reason": "table_not_found",
@@ -721,6 +738,49 @@ class TransferRelationalSQLETLOnlineTest(unittest.TestCase):
                     ONLINE.verify_import_private_access(client, 42, {"principal_id": "31", "tenant_id": "7"}, 30)
         with patch.object(ONLINE, "validate_user_identity", return_value={"principal_id": "31"}), self.assertRaisesRegex(ONLINE.SuiteError, "distinct User"):
             ONLINE.verify_import_private_access(client, 42, {"principal_id": "31", "tenant_id": "7"}, 30)
+
+    def test_private_import_grant_history_reads_the_paginated_data(self):
+        identity, proof = self.import_browser_proof()
+        execution_id = proof["transfer_execution_id"]
+        path = {"version": "catalog.path/v1", "engine_id": 8, "segments": [
+            {"term": "server", "kind": "server", "name": ""},
+            {"term": "schema", "kind": "namespace", "name": "public"},
+            {"term": "table", "kind": "table", "name": ONLINE.IMPORT_TARGET},
+        ]}
+        grant = {"catalog_path": path, "production_execution_id": execution_id,
+                 "approval_mode": "task_production", "producer_owner": "transfer",
+                 "recipient_type": "user", "recipient_id": identity["principal_id"]}
+        authorizer = Mock()
+        payload = {"data": [grant], "total": 1, "page": 1, "page_size": 100, "total_pages": 1}
+        authorizer.request.return_value.payload = payload
+        self.assertEqual(ONLINE.import_grant_history(authorizer, 8, identity, execution_id), (grant, path))
+        payload.update(data=[], total=0, total_pages=0)
+        self.assertEqual(ONLINE.import_grant_history(authorizer, 8, identity, execution_id), (None, path))
+        payload.update(data=[grant], total=2, total_pages=1)
+        with self.assertRaisesRegex(ONLINE.SuiteError, "history is incomplete"):
+            ONLINE.import_grant_history(authorizer, 8, identity, execution_id)
+        payload.update(data=[dict(grant, production_execution_id=str(uuid.uuid4()))], total=1)
+        with self.assertRaisesRegex(ONLINE.SuiteError, "not owned by this execution"):
+            ONLINE.import_grant_history(authorizer, 8, identity, execution_id)
+
+    def test_private_import_preserves_scenario_failure_when_grant_cleanup_fails(self):
+        identity, proof = self.import_browser_proof()
+        error = ONLINE.SuiteError("Transfer projection failed")
+        cleanup_error = ONLINE.SuiteError("private history response")
+        with tempfile.TemporaryDirectory() as directory:
+            (Path(directory) / "manager-import-upload-browser.json").write_text(json.dumps({
+                "submission": {"transfer_execution_id": proof["transfer_execution_id"]},
+            }))
+            with patch.dict(ONLINE.os.environ, {"ADDP_ONLINE_ARTIFACT_DIR": directory}), patch.object(
+                    ONLINE, "run_manager_import", side_effect=error), patch.object(
+                    ONLINE, "import_grant_history", side_effect=cleanup_error) as history, patch(
+                    "sys.stderr", new_callable=io.StringIO) as stderr:
+                authorizer = Mock()
+                with self.assertRaisesRegex(ONLINE.SuiteError, "Transfer projection failed"):
+                    ONLINE.run_manager_import_with_grant(Mock(), 8, identity, 30, [], Mock(), authorizer)
+                history.assert_called_once_with(authorizer, 8, identity, proof["transfer_execution_id"])
+                self.assertIn("Grant cleanup also failed", stderr.getvalue())
+                self.assertNotIn(str(cleanup_error), stderr.getvalue())
 
     def test_private_import_revokes_exact_issued_grant_on_success_and_preview_failure(self):
         identity, proof = self.import_browser_proof()

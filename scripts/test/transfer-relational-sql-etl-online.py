@@ -402,7 +402,11 @@ def assert_transfer_execution_projection(execution):
                 fields(sql["object"], "kind name", "Transfer failure SQL object")
             if "position" in sql:
                 fields(sql["position"], "line column", "Transfer failure SQL position")
-    metadata = fields(execution.get("metadata", {}), "metadata_scan lineage_facts continuous stop_reason recovery_reason recovered_from_execution_id recovery_attempt recovery_consecutive_failures recovery_backoff_seconds recovery_not_before recovery_circuit_state", "Transfer professional metadata")
+    metadata = fields(execution.get("metadata", {}), "initial_authorization metadata_scan lineage_facts continuous stop_reason recovery_reason recovered_from_execution_id recovery_attempt recovery_consecutive_failures recovery_backoff_seconds recovery_not_before recovery_circuit_state", "Transfer professional metadata")
+    if "initial_authorization" in metadata:
+        authorization = fields(metadata["initial_authorization"], "status code", "Transfer initial authorization")
+        if authorization.get("status") not in ("pending", "issued", "denied"):
+            raise SuiteError("Transfer initial authorization status is invalid")
     if "metadata_scan" in metadata:
         fields(metadata["metadata_scan"], "status attempt execution_id error_code", "Transfer metadata scan")
     if "lineage_facts" in metadata:
@@ -738,7 +742,7 @@ def import_grant_history(authorizer, engine_id, identity, execution_id):
                                     "recipient_id": identity["principal_id"], "page_size": 100})
     route = f"/api/v1/system/engines/{engine_id}/access_grants/history?{query}"
     listing = _object(authorizer.request("GET", route, (200,)).payload, "import Grant history")
-    rows = _array(listing, "import Grant history")
+    rows = _array(listing.get("data"), "import Grant history data")
     path = {"version": "catalog.path/v1", "engine_id": engine_id, "segments": [
         {"term": "server", "kind": "server", "name": ""},
         {"term": "schema", "kind": "namespace", "name": "public"},
@@ -778,6 +782,7 @@ def run_manager_import_with_grant(client, engine_id, identity, timeout, owned_id
     report = None
     execution_id = None
     revoked_id = None
+    scenario_failed = False
     try:
         report = run_manager_import(client, engine_id, identity, timeout, owned_ids, outsider)
         execution_id = report["transfer_execution_id"]
@@ -792,24 +797,32 @@ def run_manager_import_with_grant(client, engine_id, identity, timeout, owned_id
             raise SuiteError("import output lacks its exact initial read Grant")
         verify_import_target_access(client, engine_id, True)
         verify_import_target_access(outsider, engine_id, False)
+    except BaseException:
+        scenario_failed = True
+        raise
     finally:
-        if execution_id is None:
-            # The browser writes the accepted identities before waiting for the page.
-            partial = Path(required_environment("ADDP_ONLINE_ARTIFACT_DIR")) / "manager-import-upload-browser.json"
-            if partial.is_file():
-                submission = json.loads(partial.read_text()).get("submission", {})
-                execution_id = submission.get("transfer_execution_id")
-        if execution_id:
-            current, _ = import_grant_history(authorizer, engine_id, identity, str(uuid.UUID(execution_id)))
-            if current is not None and current.get("revocation") is None:
-                grant_id = str(uuid.UUID(current["request_id"]))
-                authorizer.request("POST", f"/api/v1/system/engines/{engine_id}/access_grants/{grant_id}/revoke",
-                                   (200,), {"reason": "Disposable private import verification completed"})
-                withdrawn, _ = import_grant_history(authorizer, engine_id, identity, execution_id)
-                if withdrawn is None or withdrawn["request_id"] != grant_id or not withdrawn.get("revocation"):
-                    raise SuiteError("import Grant revocation was not recorded")
-                verify_import_target_access(client, engine_id, False)
-                revoked_id = grant_id
+        try:
+            if execution_id is None:
+                # The browser writes the accepted identities before waiting for the page.
+                partial = Path(required_environment("ADDP_ONLINE_ARTIFACT_DIR")) / "manager-import-upload-browser.json"
+                if partial.is_file():
+                    submission = json.loads(partial.read_text()).get("submission", {})
+                    execution_id = submission.get("transfer_execution_id")
+            if execution_id:
+                current, _ = import_grant_history(authorizer, engine_id, identity, str(uuid.UUID(execution_id)))
+                if current is not None and current.get("revocation") is None:
+                    grant_id = str(uuid.UUID(current["request_id"]))
+                    authorizer.request("POST", f"/api/v1/system/engines/{engine_id}/access_grants/{grant_id}/revoke",
+                                       (200,), {"reason": "Disposable private import verification completed"})
+                    withdrawn, _ = import_grant_history(authorizer, engine_id, identity, execution_id)
+                    if withdrawn is None or withdrawn["request_id"] != grant_id or not withdrawn.get("revocation"):
+                        raise SuiteError("import Grant revocation was not recorded")
+                    verify_import_target_access(client, engine_id, False)
+                    revoked_id = grant_id
+        except Exception:
+            if not scenario_failed:
+                raise
+            print("Manager private import Grant cleanup also failed", file=sys.stderr)
     if revoked_id is None:
         raise SuiteError("import Grant withdrawal was not verified")
     report["initial_grant"] = {"request_id": revoked_id, "uploader_preview_verified": True,
