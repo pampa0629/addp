@@ -19,6 +19,7 @@ DATABASE = "pool_fixture"
 TABLE = "pool_source"
 READER = "pool_reader"
 LABEL = "addp.online.sql-pool"
+PROVISIONER_ROLE = "tenant.infrastructure_administrator"
 PROFILES = {"postgresql": ("postgres", 5432, "public", "schema"), "mysql": ("mysql", 3306, DATABASE, "database")}
 PERMISSIONS = {
     "system.engine_catalog.read", "meta.catalog.read", "manager.data_item.read", "manager.content.read",
@@ -132,11 +133,24 @@ def client(key):
 def prepare(private, run_id):
     consumer = client("ADDP_ONLINE_TEST_USER_ACCESS_TOKEN")
     preparer = client("ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN")
+    provisioner = client("ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN")
     tenant = SUPPORT.positive_int(SUPPORT.required_environment("ADDP_ONLINE_TEST_TENANT_ID"), "tenant")
     require(tenant > 1, "isolated tenant required")
     context = consumer.request("GET", "/api/v1/system/auth/context", (200,)).payload
     require({p for role in context["authorization"]["role_assignments"] for p in role["permissions"]} == PERMISSIONS,
             "unexpected pool consumer permissions")
+    registration_context = provisioner.request("GET", "/api/v1/system/auth/context", (200,)).payload
+    principal = registration_context["principal"]
+    scope = registration_context["context"]
+    operator_id = principal["id"]
+    roles = registration_context["authorization"]["role_assignments"]
+    require(principal["type"] == "user" and isinstance(operator_id, str)
+            and re.fullmatch(r"[1-9][0-9]*", operator_id) and operator_id != context["principal"]["id"]
+            and scope["type"] == "tenant" and scope["tenant_id"] == str(tenant),
+            "pool configuration requires the separate Tenant registration user")
+    require([role["role_key"] for role in roles] == [PROVISIONER_ROLE]
+            and {"system.engine.read", "system.engine.update"} <= set(roles[0]["permissions"]),
+            "pool registration user requires the published infrastructure role")
     grants = []
 
     def pending(engine_id, request_id, target):
@@ -146,9 +160,7 @@ def prepare(private, run_id):
     cases = []
     for engine, (_, _, namespace, term) in PROFILES.items():
         descriptor = REGISTRATION.load_descriptor(private / f"{engine}-engine.json")
-        engine_id = REGISTRATION.register_engine(SUPPORT.required_environment("GATEWAY_URL"),
-                                                SUPPORT.required_environment("ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN"),
-                                                descriptor)
+        engine_id = REGISTRATION.register_engine(provisioner.base_url, provisioner.token, descriptor)
         scan_id = SUPPORT.wait_for_scan(preparer, engine_id, time.monotonic() + 120)
         REGISTRATION.initialize_exact_record_read_grants(
             preparer, consumer, tenant, [(engine_id, term, namespace, TABLE)],
@@ -162,7 +174,8 @@ def prepare(private, run_id):
         })
     private_write(private / "pool-expectations.json", json.dumps({
         "run_id": run_id, "tenant_id": str(tenant), "principal_id": str(context["principal"]["id"]),
-        "permissions": sorted(PERMISSIONS), "cases": cases,
+        "permissions": sorted(PERMISSIONS), "cases": cases, "operator_principal_id": operator_id,
+        "operator_role": PROVISIONER_ROLE, "operator_permissions": sorted(set(roles[0]["permissions"])),
     }))
 
 
@@ -211,7 +224,9 @@ def validate_browser(evidence, expected):
     require(evidence.get("schema_version") == "addp.sql-pool-console/v1"
             and evidence.get("run_id") == expected["run_id"], "wrong Console evidence identity")
     require(evidence.get("consumer_principal_id") == expected["principal_id"], "wrong Console consumer")
-    require(evidence.get("operator_principal_id") not in (None, "", expected["principal_id"]), "expected separate configuration operator")
+    require(evidence.get("operator_principal_id") == expected["operator_principal_id"]
+            and expected["operator_principal_id"] != expected["principal_id"],
+            "configuration operator must be the registration user")
     cases = evidence.get("cases", [])
     require([case["engine_id"] for case in cases] == [case["engine_id"] for case in expected["cases"]], "missing or reordered Console cases")
     executions = set()

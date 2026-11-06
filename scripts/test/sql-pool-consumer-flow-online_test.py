@@ -46,7 +46,7 @@ pid=33 user=pool_reader LOG:  statement: UPDATE pool_source SET id=0
         self.assertEqual(POOL.pg_statement_ids(lines), [27, 28])
 
     def test_browser_evidence_rejects_missing_or_reused_physical_sessions(self):
-        expected = {"run_id": "run-pool", "principal_id": "4",
+        expected = {"run_id": "run-pool", "principal_id": "4", "operator_principal_id": "6",
                     "cases": [{"engine_id": 5, "engine_type": "postgresql"}, {"engine_id": 8, "engine_type": "mysql"}]}
         evidence = {"schema_version": "addp.sql-pool-console/v1", "run_id": "run-pool",
                     "consumer_principal_id": "4", "operator_principal_id": "6", "cases": []}
@@ -61,6 +61,8 @@ pid=33 user=pool_reader LOG:  statement: UPDATE pool_source SET id=0
                 },
             })
         POOL.validate_browser(evidence, expected)
+        with self.assertRaisesRegex(POOL.SUPPORT.SuiteError, "registration user"):
+            POOL.validate_browser({**evidence, "operator_principal_id": "7"}, expected)
         for scope, field, replacement in [
             ("manager", "new_ids", []), ("manager", "after_rows", 2), ("manager", "active_after", [1, 2]),
             ("develop", "old_ids", [1]), ("develop", "new_ids", [3]),

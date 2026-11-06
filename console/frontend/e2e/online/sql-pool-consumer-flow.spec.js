@@ -7,7 +7,6 @@ import { browserAPIFromResponse, identity, json, login, selectSearchResult } fro
 const root = fileURLToPath(new URL('../../../../', import.meta.url))
 const frameOf = page => page.frameLocator('iframe[data-testid="module-iframe"]')
 const previewRoute = sample => `/manager/data-explorer?locator=${encodeURIComponent(sample.locator)}`
-const operatorPermissions = ['system.engine.read', 'system.engine.update']
 const openKey = 'pool_max_open_conns'
 const idleKey = 'pool_max_idle_conns'
 
@@ -16,14 +15,16 @@ function observe(engine) {
     { cwd: root, encoding: 'utf8', timeout: 30_000 }))
 }
 
-async function checkIdentity(token, tenantID, permissions) {
+async function checkIdentity(token, tenantID, permissions, role) {
   const api = await request.newContext({ baseURL: process.env.GATEWAY_URL, extraHTTPHeaders: { Authorization: `Bearer ${token}` } })
   try {
-    const actual = identity(await json(await api.get('/api/v1/system/auth/context'), 'pool browser identity'))
+    const context = await json(await api.get('/api/v1/system/auth/context'), 'pool browser identity')
+    const actual = identity(context)
     expect(actual.principalType).toBe('user')
     expect(actual.contextType).toBe('tenant')
     expect(actual.tenantID).toBe(tenantID)
     expect([...actual.permissions].sort()).toEqual(permissions)
+    if (role) expect(context.authorization.role_assignments.map(assignment => assignment.role_key)).toEqual([role])
     return actual
   } finally { await api.dispose() }
 }
@@ -147,7 +148,8 @@ test('System pool edit replaces physical sessions in Manager and Develop for bot
   await page.addInitScript(() => localStorage.setItem('addp-lang', 'zh-cn'))
   const operator = await login(operatorPage, process.env.ADDP_ONLINE_POOL_OPERATOR_USERNAME,
     process.env.ADDP_ONLINE_POOL_OPERATOR_PASSWORD, '/system/engines')
-  const configIdentity = await checkIdentity(operator, expected.tenant_id, operatorPermissions)
+  const configIdentity = await checkIdentity(operator, expected.tenant_id, expected.operator_permissions, expected.operator_role)
+  expect(configIdentity.principalID).toBe(expected.operator_principal_id)
   await page.context().grantPermissions(['clipboard-read', 'clipboard-write'])
 
   const cases = []

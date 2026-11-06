@@ -394,7 +394,7 @@ func TestFixtureAuthorizationContractMatchesPublishedCatalog(t *testing.T) {
 		if role.RoleType != "tenant_builtin" || !contains(role.AllowedScopeTypes, "tenant") || !contains(role.AllowedPrincipalTypes, "user") {
 			t.Fatalf("engine provisioner role has incompatible assignment contract: %#v", role)
 		}
-		for _, required := range []string{"system.engine.create", "system.engine.execute", "system.engine.read"} {
+		for _, required := range []string{"system.engine.create", "system.engine.execute", "system.engine.read", "system.engine.update"} {
 			if !contains(role.Permissions, required) {
 				t.Fatalf("engine provisioner role is missing %q", required)
 			}

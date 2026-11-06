@@ -1121,18 +1121,9 @@ func run(args []string, environment []string) error {
 		}
 		values["ADDP_ONLINE_READ_USER_ACCESS_TOKEN"] = reader.AccessToken
 	}
-	if *suite == "sql-pool-consumer-flow" {
-		const username = "external-online-pool-operator"
-		_, _, password, err := createPermissionFixture(ctx, repository, identity, membershipService, roleService, selectionService,
-			tenant.ID, administrator.PrincipalID, username, []string{"system.engine.read", "system.engine.update"})
-		if err != nil {
-			return err
-		}
-		values["ADDP_ONLINE_POOL_OPERATOR_USERNAME"] = username
-		values["ADDP_ONLINE_POOL_OPERATOR_PASSWORD"] = password
-	}
 	if needsEngineProvisioner(*suite) {
-		provisioner, err := createUser(ctx, identity, "external-online-engine-provisioner")
+		const username = "external-online-engine-provisioner"
+		provisioner, password, err := createUserCredentials(ctx, identity, username)
 		if err != nil {
 			return err
 		}
@@ -1162,6 +1153,10 @@ func run(args []string, environment []string) error {
 			return err
 		}
 		values["ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN"] = provisionerSession.AccessToken
+		if *suite == "sql-pool-consumer-flow" {
+			values["ADDP_ONLINE_POOL_OPERATOR_USERNAME"] = username
+			values["ADDP_ONLINE_POOL_OPERATOR_PASSWORD"] = password
+		}
 	}
 	if *waitOwners != "" {
 		if err := waitForOwnerProtection(ctx, db, strings.Split(*waitOwners, ","), tenant.ID); err != nil {
