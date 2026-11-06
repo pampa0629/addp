@@ -157,13 +157,14 @@ test('platform node resources through real Console password MFA and Monitor ifra
       for (const owner of owners) {
         save('engine-professional-detail')
         const scope = owner.inventory.source.project === 'addp-infra' ? 'infra' : 'business'
+        const infraRedis = kind === 'redis' && scope === 'infra'
         const path = '/monitor/engine-resources?refresh=off&scope=' + scope + '&engine_type=' + kind + '&deployment_id=' + owner.deployment_id
         await page.goto(path)
         const verifyCards = async (metrics) => {
           await expect(monitor.getByTestId('engine-metrics').locator('strong')).toHaveCount(metrics.length)
           for (const metric of metrics) {
             const field = monitor.getByTestId('engine-value-' + metric.name)
-            if (kind === 'redis' && metric.name === 'redisPercent' && owner.inventory.source.project === 'addp-infra') await expect(field).toHaveText('—')
+            if (infraRedis && ['redisPercent', 'redisAOFWrite', 'redisAOFRewrite'].includes(metric.name)) await expect(field).toHaveText('—')
             else if (metric.name !== 'redisHitPercent') await expect(field).not.toHaveText('—')
             await expect(monitor.getByTestId('engine-metric-' + metric.name).getByRole('heading').getByRole('button')).toBeVisible()
           }

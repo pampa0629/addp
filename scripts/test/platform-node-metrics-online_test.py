@@ -2449,7 +2449,9 @@ class RedisEngineProfessionalEvidenceTest(unittest.TestCase):
         limit = 0 if owner["inventory"]["source"]["project"] == "addp-infra" else 256*1024**2
         numbers = {"redis.memory.allocated_bytes":80*1024**2, "redis.memory.excluded_bytes":10*1024**2,
                    "redis.memory.counted_bytes":70*1024**2, "redis.memory.limit_bytes":limit,
-                   "redis.memory.used_percent":None if not limit else 100*70*1024**2/limit, "redis.keyspace.hit_percent":None}
+                   "redis.memory.used_percent":None if not limit else 100*70*1024**2/limit, "redis.keyspace.hit_percent":None,
+                   "redis.persistence.aof_enabled":int(bool(limit)),
+                   "redis.persistence.aof_write_ok":1 if limit else None, "redis.persistence.aof_rewrite_ok":1 if limit else None}
         series = []
         for key in keys:
             number = numbers.get(key, 0)
@@ -2475,14 +2477,14 @@ class RedisEngineProfessionalEvidenceTest(unittest.TestCase):
         self.assertEqual(trend['metrics'],['redis.commands.per_second'])
         with self.assertRaises(ONLINE.SuiteError): ONLINE.engine_catalog('falkordb')
 
-    def test_fresh_redis_all_groups_allow_only_proven_missing_ratios(self):
+    def test_fresh_redis_all_groups_allow_only_applicable_missing_metrics(self):
         for scope in ('infra','business'):
             owner=self.owner(scope)
             for keys in ONLINE.engine_metric_groups('redis'):
                 value=self.response(owner,keys)
                 self.assertIs(ONLINE.assert_engine_resources(value,[owner],keys=keys,fresh=True),value)
                 invalid=copy.deepcopy(value)
-                next(s for s in invalid['data'][0]['series'] if s['metric_key'] not in {'redis.memory.used_percent','redis.keyspace.hit_percent'})['points'][0].update(value=None,sampled_at=None,data_state='no_data')
+                next(s for s in invalid['data'][0]['series'] if s['points'][0]['data_state'] == 'valid')['points'][0].update(value=None,sampled_at=None,data_state='no_data')
                 with self.assertRaises(ONLINE.SuiteError):ONLINE.assert_engine_resources(invalid,[owner],keys=keys,fresh=True)
         owner=self.owner()
         for key,group in [('redis.memory.used_percent',0),('redis.keyspace.hit_percent',1)]:
@@ -2492,6 +2494,40 @@ class RedisEngineProfessionalEvidenceTest(unittest.TestCase):
         owner=self.owner('business');keys=ONLINE.engine_metric_groups('redis')[0];value=self.response(owner,keys)
         next(s for s in value['data'][0]['series'] if s['metric_key']=='redis.memory.used_percent')['points'][0].update(value=None,sampled_at=None,data_state='no_data')
         with self.assertRaises(ONLINE.SuiteError):ONLINE.assert_engine_resources(value,[owner],keys=keys,fresh=True)
+
+    def test_fresh_aof_requires_the_deployed_switch_and_only_applicable_results(self):
+        keys = ONLINE.engine_metric_groups('redis')[2]
+        for scope, metric, replacement in (
+            ('infra', 'aof_enabled', {'value':1}),
+            ('business', 'aof_enabled', {'value':0}),
+            ('infra', 'aof_write_ok', {'data_state':'valid', 'sampled_at':self.at, 'value':0}),
+            ('infra', 'aof_rewrite_ok', {'value':0}),
+            ('infra', 'aof_write_ok', {'data_state':'no_sample'}),
+            ('business', 'aof_write_ok', {'data_state':'no_data', 'sampled_at':None, 'value':None}),
+            ('business', 'aof_rewrite_ok', {'data_state':'no_data', 'sampled_at':None, 'value':None}),
+        ):
+            with self.subTest(scope=scope, metric=metric, replacement=replacement):
+                owner = self.owner(scope)
+                value = self.response(owner, keys)
+                next(s for s in value['data'][0]['series'] if s['metric_key'] == 'redis.persistence.'+metric)['points'][0].update(replacement)
+                with self.assertRaises(ONLINE.SuiteError):
+                    ONLINE.assert_engine_resources(value, [owner], keys=keys, fresh=True)
+
+    def test_sampling_timeout_reports_scope_and_missing_metric_without_payload(self):
+        from urllib.parse import urlsplit, parse_qs
+        owner = self.owner('business')
+        def request(method, path, status):
+            keys = set(parse_qs(urlsplit(path).query)['metrics'][0].split(','))
+            value = self.response(owner, keys)
+            for series in value['data'][0]['series']:
+                if series['metric_key'] == 'redis.commands.per_second':
+                    series['points'][0].update(value=None, sampled_at=None, data_state='no_sample')
+            return type('Response', (), {'payload':value})()
+        with patch.object(ONLINE.time, 'monotonic', side_effect=[0, 130]), patch.object(ONLINE.time, 'sleep') as sleep:
+            with self.assertRaisesRegex(ONLINE.SuiteError, r'Engine complete sampling window did not converge.*business.*redis.commands.per_second=no_sample') as raised:
+                ONLINE.wait_engine_samples(type('Client', (), {'request':staticmethod(request)})(), [owner])
+        sleep.assert_not_called()
+        self.assertNotIn(owner['deployment_id'], str(raised.exception))
 
     def test_ratio_evidence_status_and_ownership_cannot_be_invented(self):
         owner=self.owner('business')

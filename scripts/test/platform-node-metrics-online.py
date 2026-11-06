@@ -1414,16 +1414,20 @@ def engine_metric_groups(kind):
     return [resources, throughput, persistence]
 
 
-def allowed_empty_ratio(owner, series, rows):
-    key = series["metric_key"]
+REDIS_AOF_RESULTS = {"redis.persistence.aof_write_ok", "redis.persistence.aof_rewrite_ok"}
+
+
+def allowed_empty_engine_metric(owner, key, points):
     if key == "redis.memory.used_percent":
         # The standard Infra Redis entry has no maxmemory setting. Business
         # retains its fixed 256 MiB setting; do not relax either assertion.
         return owner["inventory"]["source"]["project"] == "addp-infra"
     if key == "redis.keyspace.hit_percent":
-        evidence = {row["metric_key"]: row["points"][0] for row in rows}
-        points = [evidence.get("redis.keyspace."+name+"_per_second", {}) for name in ("hits", "misses")]
-        return all(point.get("data_state") == "valid" and point.get("value") == 0 for point in points)
+        lookup = [points.get("redis.keyspace."+name+"_per_second", {}) for name in ("hits", "misses")]
+        return all(point.get("data_state") == "valid" and point.get("value") == 0 for point in lookup)
+    if key in REDIS_AOF_RESULTS:
+        switch = points.get("redis.persistence.aof_enabled", {})
+        return switch.get("data_state") == "valid" and switch.get("value") == 0
     return False
 
 
@@ -1463,7 +1467,8 @@ def assert_engine_resources(value, owners, *, keys=None, trend=False, fresh=Fals
         container_start = utc_timestamp(owner["inventory"]["services"][0]["containers"][0]["started_at"])
         if trend and not absent: require(start >= math.ceil(container_start) and end-start <= 7*86400, "engine trend includes a previous container run")
         for series in row["series"]:
-            unit, window = catalog[series["metric_key"]]
+            key = series["metric_key"]
+            unit, window = catalog[key]
             require(series.get("unit") == unit and series.get("window_seconds") == window and series.get("dimensions") == {}
                     and isinstance(series.get("points"), list) and len(series["points"]) == count, "engine series contract differs")
             for index, point in enumerate(series["points"]):
@@ -1478,7 +1483,8 @@ def assert_engine_resources(value, owners, *, keys=None, trend=False, fresh=Fals
                             and (series["metric_key"] != "redis.keyspace.hit_percent" or number <= 100)
                             and 0 <= start+index*step-utc_timestamp(sample) <= 60, "engine value or sample is invalid")
                 else:
-                    optional = not trend and status == "no_data" and allowed_empty_ratio(owner, series, row["series"])
+                    optional = not trend and status == "no_data" and allowed_empty_engine_metric(
+                        owner, key, {item["metric_key"]: item["points"][0] for item in row["series"]})
                     require(not fresh or trend or optional, "engine current window is incomplete")
                     require(status in {"no_data", "no_sample", "stale"}, "engine missing state differs")
                     if status != "stale": require(number is None and sample is None, "engine missing value fabricated")
@@ -1498,6 +1504,12 @@ def assert_engine_resources(value, owners, *, keys=None, trend=False, fresh=Fals
                 ratio = points["redis.keyspace.hit_percent"]
                 if hits+misses == 0: require(ratio["data_state"] == "no_data" and ratio["value"] is None, "no lookup fabricated a ratio")
                 else: require(ratio["data_state"] == "valid" and abs(ratio["value"] - 100*hits/(hits+misses)) < 1e-6, "Redis lookup ratio differs")
+            if "redis.persistence.aof_enabled" in points:
+                enabled = owner["inventory"]["source"]["project"] == "business"
+                require(points["redis.persistence.aof_enabled"]["value"] == int(enabled), "owned Redis startup AOF switch differs")
+                expected = "valid" if enabled else "no_data"
+                require(all(points[key]["data_state"] == expected for key in REDIS_AOF_RESULTS & points.keys()),
+                        "Redis AOF result does not match the deployed switch")
     return value
 
 
@@ -1522,7 +1534,7 @@ def wait_engine_samples(admin, owners):
     deadline = time.monotonic()+130
     while True:
         values = []
-        ready = True
+        pending = []
         for owner in owners:
             for path, keys in zip(engine_query_paths(owner), engine_metric_groups(owner["engine_type"])):
                 value = assert_engine_resources(admin.request("GET", path, (200,)).payload, [owner], keys=keys)
@@ -1530,9 +1542,16 @@ def wait_engine_samples(admin, owners):
                 try: assert_engine_resources(value, [owner], keys=keys, fresh=True)
                 except SuiteError as error:
                     if str(error) not in {"engine current window is incomplete", "engine snapshot is not collecting"}: raise
-                    ready = False
-        if ready: return values
-        require(time.monotonic() < deadline, "Engine complete sampling window did not converge")
+                    row = value["data"][0]
+                    points = {series["metric_key"]: series["points"][0] for series in row["series"]}
+                    missing = [key+"="+point["data_state"] for key, point in sorted(points.items())
+                               if point["data_state"] != "valid" and not
+                               (point["data_state"] == "no_data" and allowed_empty_engine_metric(owner, key, points))]
+                    scope = "infra" if owner["inventory"]["source"]["project"] == "addp-infra" else "business"
+                    detail = ", ".join(missing)
+                    pending.append(f'{scope}/{owner["engine_type"]}/{min(keys)}: {error}' + (f" ({detail})" if detail else ""))
+        if not pending: return values
+        require(time.monotonic() < deadline, "Engine complete sampling window did not converge: "+"; ".join(pending))
         time.sleep(3)
 
 

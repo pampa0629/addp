@@ -65,7 +65,10 @@ export ADDP_ONLINE_TEST_TIMEOUT_SECONDS=1800
 export MONITOR_URL=http://127.0.0.1:8100 CONSOLE_URL=http://127.0.0.1:5170
 # Core Infra is created independently; metrics preparation and startup follow.
 if [ "$ADDP_ONLINE_NODE_METRICS_CASE" = redis-engine-admission ]; then
-  export REDIS_PASSWORD="$(python3 -c 'import secrets;print(secrets.token_urlsafe(32))')"
+  REDIS_PASSWORD="$(python3 -c 'import secrets;print(secrets.token_urlsafe(32))')"
+  export REDIS_PASSWORD
+  # Infra shutdown reloads this private configuration without inherited secrets.
+  (umask 077; printf '\nexport REDIS_PASSWORD=%s\n' "$REDIS_PASSWORD" >> "$ADDP_ONLINE_ENV_FILE")
 fi
 infra_owned=1
 run_logged env ADDP_OBSERVABILITY_METRICS_ENABLED=false ADDP_OBSERVABILITY_LOGS_ENABLED=false bash scripts/infra/up.sh

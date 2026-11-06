@@ -19,6 +19,7 @@ class HostedMetricsGateTest(unittest.TestCase):
         shutil.copy2(SCRIPT, self.host.repository / "scripts/test" / SCRIPT.name)
         shutil.copy2(SCRIPT.parents[1] / "utils/deployment-inventory.py", self.host.repository / "scripts/utils/deployment-inventory.py")
         shutil.copy2(SCRIPT.parents[1] / "utils/metrics-project.py", self.host.repository / "scripts/utils/metrics-project.py")
+        shutil.copy2(SCRIPT.parents[1] / "infra/metrics-sources.py", self.host.repository / "scripts/infra/metrics-sources.py")
         self.host._executable("python3", '''
             #!/usr/bin/env bash
             if [[ "${1:-}" == *platform-node-metrics-fixture.py ]]; then
@@ -194,7 +195,6 @@ class HostedMetricsGateTest(unittest.TestCase):
                 self.assertNotEqual(result.returncode,0)
 
     def test_redis_admission_keeps_an_independent_profile_and_private_volume_closure(self):
-        import hashlib
         prefix = self.metrics_project()
         for failure in (None, "ADDP_TEST_ENGINE_UP_FAIL", "ADDP_TEST_ENGINE_DOWN_FAIL", "ADDP_TEST_SUITE_FAIL"):
             with self.subTest(failure=failure):
@@ -213,6 +213,29 @@ class HostedMetricsGateTest(unittest.TestCase):
                     result = self.run_gate(check=True, ADDP_ONLINE_NODE_METRICS_CASE="redis-engine-admission", **{variable:value})
                     self.assertNotEqual(result.returncode, 0, result.stdout+result.stderr)
                     self.assertFalse(self.host.secrets.exists())
+
+    def test_redis_infra_shutdown_can_reload_the_same_private_deployment_credential(self):
+        self.host._write_repository_script("scripts/infra/down.sh", '''
+            #!/usr/bin/env bash
+            set -eu
+            python3 - <<'PY'
+import os, re, runpy, stat
+from pathlib import Path
+manager = runpy.run_path("scripts/infra/metrics-sources.py")
+runtime = Path(os.environ["ADDP_ONLINE_ENV_FILE"])
+assert stat.S_IMODE(runtime.stat().st_mode) == 0o600
+password = os.environ["REDIS_PASSWORD"]
+assert re.fullmatch(r"[A-Za-z0-9_-]{43}", password)
+assert manager["environment"]("infra", dict(os.environ, REDIS_PASSWORD="discarded"))["REDIS_PASSWORD"] == password
+assert "BUSINESS_REDIS_ADMIN_PASSWORD" not in manager["environment"]("infra", os.environ)
+PY
+        ''')
+        subprocess.run(["git", "add", "scripts/infra/down.sh"], cwd=self.host.repository, check=True)
+        subprocess.run(["git", "commit", "-qm", "use real metrics environment reader"], cwd=self.host.repository, check=True)
+        result = self.run_gate(ADDP_ONLINE_NODE_METRICS_CASE="redis-engine-admission")
+        self.assertEqual(result.returncode, 0, result.stdout+result.stderr)
+        self.assertFalse(self.host.secrets.exists())
+        self.assertIn("cleanup=passed", (self.host.artifacts/"summary.txt").read_text())
 
     def test_failure_at_each_stage_still_cleans_owned_deployment(self):
         for variable in ("ADDP_TEST_PREPARE_FAIL", "ADDP_TEST_NODE_FAIL", "ADDP_TEST_QUERY_FAIL", "ADDP_TEST_APP_FAIL", "ADDP_TEST_BROWSER_PREPARE_FAIL", "ADDP_TEST_SUITE_FAIL", "ADDP_TEST_CLEANUP_FAIL", "ADDP_TEST_INSPECTION_FAIL", "ADDP_TEST_RESIDUAL_NODE"):

@@ -399,6 +399,14 @@ Redis 实源 T2、PromQL、受控 T3 各自有效，正式 System 确认至真�
 
 按用户确认保存 Business Redis 平台登记，并绑定 Docker Desktop Linux VM。Prometheus 复验 11 个受管目标全部 UP，Business Redis 有 21 个原始指标、AOF 开启、1 个连接。原生 Safari 显示“正在采集”和“自动刷新已开启”，读到约 1.33 MiB 分配内存、256 MiB 内存上限及 1 个连接。近五分钟内存曲线绘制了纳管后的实际采样点，评估间隔 15 秒，窗口随刷新推进。本次证据覆盖本机 Business Redis 平台纳管、实际采样、当前值和内存趋势。
 
+### Redis Hosted 首轮失败与验收脚本修复（2026-11-07）
+
+在提交 `42c06354af54aabaca893426c1ed1a9fe1794a44` 上，[Hosted run 42242305588 的节点指标 job](https://github.com/pampa0629/addp/actions/runs/42242305588/job/127975454221) 通过双 Redis 的平台纳管、主机绑定、保存后刷新重读和身份隔离，随后在专业指标采样等待阶段超时。退出时标准 Infra 停采报部署核验失败，终态分别为 `cleanup=failed` 和 `infra_cleanup=zero_residuals`。归档 `13519309752` 未保留超时阶段的逐指标返回值。专业页面、Business 停采与恢复、期间 Infra 持续采集均未执行。
+
+使用当次部署的 AOF 配置和既有 API 合同复现：原验收断言会持续拒绝 Infra AOF 关闭时两项合法的 `no_data`，Console 断言同样要求这两项显示数值。修正后严格验证 Infra 留空、Business 两项有值，仍要求完整的速率窗口。后续超时只记录作用域、指标键和缺样状态。另复现了标准 Infra 清理从私有运行配置重载时丢失临时 Redis 部署凭据，现用同一份仅当次可读的配置供启动与清理使用，退出仍销毁并核验。变更限于验收脚本与断言。
+
+`make test-node-metrics-online-runner` 本地通过，包括 149 项登记检查、175 项 Runner 测试及 System 测试身份夹具 Go 检查。真实 Hosted 未重跑。
+
 <a id="minio-source-history"></a>
 
 ## MinIO 账号、采样与专业查询
