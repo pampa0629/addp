@@ -25,19 +25,31 @@ from .base import (
 _EPSG_CRS_REF = re.compile(r"^EPSG:([1-9][0-9]*)$", re.IGNORECASE)
 _ADDP_CRS_REF = re.compile(r"^ADDP:CRS:([0-9a-f]{64})$", re.IGNORECASE)
 _SUPPORTED_DEFINITION_ENCODINGS = {"wkt", "esri_wkt", "proj4", "projjson"}
+_DEFAULT_REPROJECT_TARGET = "EPSG:4326"
 
 
-def _crs_from_user_input(value: str | CRS | None) -> CRS | None:
+class VectorReprojectInputError(ValueError):
+    def __init__(self, reason, message):
+        super().__init__(message)
+        self.reason = reason
+
+
+def _crs_from_user_input(value: str | CRS | None, *, declared=False) -> CRS | None:
     text = str(value or "").strip()
     if not text:
         return None
-    return CRS.from_user_input(text)
+    try:
+        return CRS.from_user_input(text)
+    except CRSError as exc:
+        if not declared:
+            raise
+        raise VectorReprojectInputError("operator_crs_invalid", str(exc)) from exc
 
 
 def vector_reproject(
     input_gdf: gpd.GeoDataFrame,
     source_crs: str = "",
-    target_crs: str = "EPSG:4326",
+    target_crs: str = _DEFAULT_REPROJECT_TARGET,
 ) -> gpd.GeoDataFrame:
     """
     将输入几何批重投影到目标 CRS。
@@ -45,29 +57,28 @@ def vector_reproject(
     direct 调用时，输入由 Arrow/EWKB geometry batch 解码为 GeoDataFrame。
     """
     if input_gdf is None:
-        raise ValueError("input_gdf is required")
+        raise VectorReprojectInputError("operator_input_invalid", "input_gdf is required")
     if not isinstance(input_gdf, gpd.GeoDataFrame):
-        raise ValueError("input_gdf must be a GeoDataFrame")
-    if input_gdf.geometry.name == "":
-        raise ValueError("input_gdf requires an active geometry column")
+        raise VectorReprojectInputError("operator_input_invalid", "input_gdf must be a GeoDataFrame")
+    if input_gdf.active_geometry_name in (None, "") or input_gdf.active_geometry_name not in input_gdf.columns:
+        raise VectorReprojectInputError("operator_input_invalid", "input_gdf requires an active geometry column")
 
     result = input_gdf.copy()
     current_crs = _crs_from_user_input(result.crs)
-    declared_source = _crs_from_user_input(source_crs)
+    declared_source = _crs_from_user_input(source_crs, declared=True)
 
     if current_crs is None and declared_source is None:
-        raise ValueError("source_crs is required when input_gdf has no CRS")
+        raise VectorReprojectInputError("operator_crs_invalid", "source_crs is required when input_gdf has no CRS")
     if current_crs is None and declared_source is not None:
         result = result.set_crs(declared_source, allow_override=False)
         current_crs = declared_source
     elif current_crs is not None and declared_source is not None and not current_crs.equals(declared_source):
-        raise ValueError("input_gdf CRS does not match source_crs")
+        raise VectorReprojectInputError("operator_crs_mismatch", "input_gdf CRS does not match source_crs")
 
-    target = _crs_from_user_input(target_crs) or CRS.from_user_input("EPSG:4326")
-    if current_crs is None:
-        current_crs = _crs_from_user_input(source_crs)
-    if current_crs is None:
-        raise ValueError("source_crs is required when input_gdf has no CRS")
+    target = (
+        _crs_from_user_input(target_crs, declared=target_crs != _DEFAULT_REPROJECT_TARGET)
+        or CRS.from_user_input(_DEFAULT_REPROJECT_TARGET)
+    )
 
     if current_crs.equals(target):
         return result
@@ -198,7 +209,7 @@ VECTOR_REPROJECT_METADATA = OperatorMetadata(
             data_type="str",
             required=False,
             description="目标 CRS",
-            default="EPSG:4326",
+            default=_DEFAULT_REPROJECT_TARGET,
         ),
     ],
     use_cases=[

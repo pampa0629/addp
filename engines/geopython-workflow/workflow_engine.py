@@ -11,6 +11,7 @@ from operators.io_operators import GeoPackageSaveError
 from operators.orc_table import SourceChanged as OrcSourceChanged
 from operators.properties_operators import MeasurementInputError, BoundsInputError
 from operators.spatial_relations import DistanceInputError, RelationInputError
+from operators.spatial_transform_operators import VectorReprojectInputError
 from operators.data_operations import MultiBufferInputError, ClipInputError, VoronoiInputError
 from operators.geometric_operators import LineCheckInputError, LineSplitInputError, PolygonCheckInputError, PolygonizeInputError, ReferenceSnapInputError, GeometryValidityInputError, VertexInputError, MultipartInputError, InteriorPointInputError, UnaryConstructionInputError, SimplifyInputError, BufferInputError, NearLineInputError, EndpointSnapError, LineExtensionError, LineTrimError, PolygonRingInputError, LineNodeInputError, IntersectionInputError, DissolveInputError, UnionInputError, DifferenceInputError
 from operators.raster_compute import RasterDataset, RasterTiles, raster_info, raster_tiles_info, raster_workspace, raster_error_language
@@ -24,10 +25,19 @@ def _execute_operator(operator, params):
     for name, value in params.items():
         if str(schemas.get(name, {}).get('type', '')).lower() != 'geodataframe' or isinstance(value, gpd.GeoDataFrame):
             continue
+        reproject_input = operator == 'vector_reproject' and name == 'input_gdf'
         if isinstance(value, str):
-            value = json.loads(value)
+            try:
+                value = json.loads(value)
+            except json.JSONDecodeError as exc:
+                if reproject_input:
+                    raise VectorReprojectInputError('operator_input_invalid', str(exc)) from exc
+                raise
         if not isinstance(value, dict) or value.get('type') != 'FeatureCollection' or not isinstance(value.get('features'), list):
-            raise ValueError(f'{name} must be a GeoJSON FeatureCollection')
+            message = f'{name} must be a GeoJSON FeatureCollection'
+            if reproject_input:
+                raise VectorReprojectInputError('operator_input_invalid', message)
+            raise ValueError(message)
         params[name] = gpd.GeoDataFrame.from_features(value['features'], crs='EPSG:4326')
     result = get_operator(operator)(**params)
     if isinstance(result, dict) and result and all(isinstance(v, gpd.GeoDataFrame) for v in result.values()):
@@ -61,6 +71,8 @@ def _project(value):
 
 
 def _execute_workflow_operator(operator, params):
+    if operator == 'vector_reproject' and 'input_gdf' not in params:
+        raise VectorReprojectInputError('operator_input_invalid', 'input_gdf is required')
     if (operator in {'check_dangling_points', 'check_line_intersection', 'check_line_self_intersection',
                      'check_line_overlap', 'check_line_self_overlap', 'split_line_intersections',
                      'group_line_components', 'normalize_line_network', 'merge_line_chains'}
@@ -97,6 +109,23 @@ class GeoPythonWorkflowRunner(WorkflowRunner):
     def _execute_operator(self, operator, params):
         try:
             return _execute_workflow_operator(operator, params)
+        except VectorReprojectInputError as exc:
+            messages = {
+                'operator_input_invalid': (
+                    '矢量重投影需要带活动几何列的输入图层。',
+                    'Vector reprojection requires an input layer with an active geometry column.',
+                ),
+                'operator_crs_invalid': (
+                    '请检查源和目标坐标系声明。输入图层未定义坐标系时，必须明确指定源坐标系。',
+                    'Check the source and target CRS declarations. Specify a source CRS if the input layer has none.',
+                ),
+                'operator_crs_mismatch': (
+                    '输入图层的坐标系与显式指定的源坐标系不一致。',
+                    'The input layer CRS differs from the explicitly declared source CRS.',
+                ),
+            }
+            message_zh, message_en = messages[exc.reason]
+            raise OperatorInputError(exc.reason, message_en if self.language == 'en' else message_zh) from exc
         except LineCheckInputError as exc:
             raise OperatorInputError(exc.reason, exc.message(self.language), field=exc.field) from exc
         except LineSplitInputError as exc:

@@ -291,6 +291,14 @@ func (o *WorkflowOperatorFailure) Valid(reason string) bool {
 			parameter, ok = "", true
 		}
 
+	case "vector_reproject":
+		switch reason {
+		case "operator_input_invalid":
+			parameter, ok = "input_gdf", true
+		case "operator_crs_invalid", "operator_crs_mismatch":
+			ok = true
+		}
+
 	case "extract_polygon_rings":
 		parameter = "input_gdf"
 		switch reason {

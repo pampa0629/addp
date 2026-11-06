@@ -510,6 +510,18 @@
           "operator_source_topology_invalid": "如需同时打断要素内部点交会，请显式选择 all。"
         }
       },
+      "vectorReproject": {
+        "reasons": {
+          "operator_input_invalid": "矢量重投影需要带活动几何列的输入图层。",
+          "operator_crs_invalid": "源坐标系缺失，或提供的源或目标坐标系声明无法解析。",
+          "operator_crs_mismatch": "输入图层的坐标系与显式指定的源坐标系不一致。"
+        },
+        "actions": {
+          "operator_input_invalid": "连接有效的矢量图层，并确认其活动几何列。",
+          "operator_crs_invalid": "核对源和目标坐标系的声明。输入图层未定义坐标系时，必须明确指定源坐标系。",
+          "operator_crs_mismatch": "核对输入图层与节点的源坐标系声明，使两处声明与实际数据一致。"
+        }
+      },
       "polygonRings": {
         "reasons": {
           "operator_input_invalid": "源图层或来源标识不符合面界提取要求。"

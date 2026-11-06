@@ -876,7 +876,7 @@ components:
               description: 原workflow_def.tasks的1起始位置，不是拓扑调度顺序。
             operator_id:
               type: string
-              enum: [merge_line_chains, normalize_line_network, group_line_components, split_line_intersections, check_line_overlap, check_line_self_overlap, check_line_intersection, check_line_self_intersection, check_dangling_points, check_polygon_overlap, check_polygon_gap, snap_line_endpoints, extend_line_endpoints, polygonize, snap_geometry, check_geometry, repair_geometry, extract_vertices, split_multipart, get_bounds, get_area, get_length, split_by_area, envelope, representative_point, centroid, convex_hull, minimum_rotated_rectangle, simplify, buffer, voronoi, contains, intersects, batch_buffer, distance_to, check_line_proximity, extract_polygon_rings, trim_line_endpoints, extract_line_nodes, intersection, difference, clip, union, dissolve]
+              enum: [merge_line_chains, normalize_line_network, group_line_components, split_line_intersections, check_line_overlap, check_line_self_overlap, check_line_intersection, check_line_self_intersection, check_dangling_points, check_polygon_overlap, check_polygon_gap, snap_line_endpoints, extend_line_endpoints, polygonize, vector_reproject, snap_geometry, check_geometry, repair_geometry, extract_vertices, split_multipart, get_bounds, get_area, get_length, split_by_area, envelope, representative_point, centroid, convex_hull, minimum_rotated_rectangle, simplify, buffer, voronoi, contains, intersects, batch_buffer, distance_to, check_line_proximity, extract_polygon_rings, trim_line_endpoints, extract_line_nodes, intersection, difference, clip, union, dissolve]
             parameter:
               type: string
               enum: [target_geom, threshold, input_gdf, coverage_gdf, reference_gdf, preserve_topology, distance, distances, resolution, tolerance, max_distance, gdf_b, mask_gdf, group_fields, scope, match_fields]
@@ -939,6 +939,9 @@ components:
         - ["extend_line_endpoints", "operator_crs_invalid", "", ""]
         - ["extend_line_endpoints", "operator_distance_limit_invalid", "max_distance", ""]
         - ["polygonize", "operator_input_invalid", "input_gdf", ""]
+        - ["vector_reproject", "operator_input_invalid", "input_gdf", ""]
+        - ["vector_reproject", "operator_crs_invalid", "", ""]
+        - ["vector_reproject", "operator_crs_mismatch", "", ""]
         - ["snap_geometry", "operator_input_invalid", "input_gdf", ""]
         - ["snap_geometry", "operator_reference_invalid", "reference_gdf", ""]
         - ["snap_geometry", "operator_crs_invalid", "", ""]

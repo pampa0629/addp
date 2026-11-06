@@ -663,6 +663,93 @@ def test_vector_reproject_metadata_public_contract():
     assert direct_binary["geometry_encoding"] == "ewkb"
 
 
+@pytest.mark.parametrize(("case", "reason"), [
+    ("missing_input", "operator_input_invalid"),
+    ("bad_input", "operator_input_invalid"),
+    ("bad_json", "operator_input_invalid"),
+    ("inactive_geometry", "operator_input_invalid"),
+    ("missing_source_crs", "operator_crs_invalid"),
+    ("bad_source_crs", "operator_crs_invalid"),
+    ("bad_target_crs", "operator_crs_invalid"),
+    ("conflicting_source_crs", "operator_crs_mismatch"),
+    ("default_crs_failure", None),
+    ("native_transform_failure", None),
+])
+def test_vector_reproject_workflow_diagnostic_blocks_save(monkeypatch, case, reason):
+    from pyproj.exceptions import CRSError
+    from addp_common.workflow_runtime import WorkflowExecutionError
+    import workflow_engine
+
+    source = gpd.GeoDataFrame({"key": [1]}, geometry=[shapely.Point(111319.49079327357, 0)], crs=3857)
+    params = {"input_gdf": source}
+    if case == "missing_input":
+        del params["input_gdf"]
+    elif case == "bad_input":
+        params["input_gdf"] = {"type": "private"}
+    elif case == "bad_json":
+        params["input_gdf"] = "{private"
+    elif case == "inactive_geometry":
+        params["input_gdf"] = gpd.GeoDataFrame({"shapes": source.geometry})
+    elif case == "missing_source_crs":
+        params["input_gdf"] = source.set_crs(None, allow_override=True)
+    elif case == "bad_source_crs":
+        params["source_crs"] = "PRIVATE_CRS"
+    elif case == "bad_target_crs":
+        params["target_crs"] = "PRIVATE_CRS"
+    elif case == "conflicting_source_crs":
+        params["source_crs"] = "EPSG:4326"
+    elif case == "default_crs_failure":
+        from_user_input = CRS.from_user_input
+
+        def fail_default(value):
+            if value == "EPSG:4326":
+                raise CRSError("default CRS could not be loaded")
+            return from_user_input(value)
+
+        monkeypatch.setattr(CRS, "from_user_input", fail_default)
+    elif case == "native_transform_failure":
+        def fail_transform(*args, **kwargs):
+            raise CRSError("native transform failed")
+
+        monkeypatch.setattr(gpd.GeoDataFrame, "to_crs", fail_transform)
+
+    saves = []
+    resolve = workflow_engine.get_operator
+    monkeypatch.setattr(workflow_engine, "get_operator",
+                        lambda name: (lambda **kwargs: saves.append(kwargs)) if name == "save" else resolve(name))
+    tasks = [
+        {"id": "save", "operator": "save", "params": {"input_df": {"$ref": "project"}}, "depends_on": ["project"]},
+        {"id": "project", "operator": "vector_reproject", "params": params, "depends_on": []},
+    ]
+    with pytest.raises(WorkflowExecutionError) as caught:
+        workflow_engine.GeoPythonWorkflowRunner().execute({"tasks": tasks})
+    assert not saves
+    error = caught.value
+    if reason is None:
+        assert error.error_code == "EXECUTION_FAILED" and error.diagnostic is None
+    else:
+        context = {"node_index": 2, "operator_id": "vector_reproject"}
+        if reason == "operator_input_invalid":
+            context["parameter"] = "input_gdf"
+        assert error.error_code == "INVALID_PARAMS"
+        assert error.diagnostic == {"schema_version": "addp.execution-failure/v3", "stage": "execution",
+                                    "reason": reason, "operator": context}
+        assert "private" not in str(error).lower()
+
+
+def test_vector_reproject_default_target_preserves_geometry_name_and_attributes():
+    source = gpd.GeoDataFrame({"key": [1], "geom": [shapely.Point(111319.49079327357, 0)]},
+                              geometry="geom", crs=3857, index=[5])
+    result = vector_reproject(source)
+    assert result.crs.to_epsg() == 4326
+    assert result.geometry.name == "geom"
+    assert result.index.tolist() == [5]
+    assert result["key"].tolist() == [1]
+    assert result.geometry.iloc[0].x == pytest.approx(1)
+    assert result.geometry.iloc[0].y == 0
+    assert source.crs.to_epsg() == 3857 and source.geometry.iloc[0].x == 111319.49079327357
+
+
 def test_crs_to_projjson_metadata_public_contract():
     operators = {operator["name"]: operator for operator in list_operators()}
 
@@ -888,7 +975,8 @@ def test_crs_to_projjson_direct_returns_plain_json_result():
     }
 
 
-def test_vector_reproject_direct_returns_ewkb_with_target_srid():
+@pytest.mark.parametrize("target_crs", ["EPSG:4326", "PRIVATE_INVALID_CRS"])
+def test_vector_reproject_direct_preserves_http_contract(target_crs):
     import api_server
 
     source = gpd.GeoDataFrame(
@@ -910,7 +998,7 @@ def test_vector_reproject_direct_returns_ewkb_with_target_srid():
             json={
                 "params": {
                     "source_crs": "EPSG:3857",
-                    "target_crs": "EPSG:4326",
+                    "target_crs": target_crs,
                 },
                 "binary_payload": {
                     "content_type": "application/vnd.apache.arrow.stream",
@@ -927,8 +1015,13 @@ def test_vector_reproject_direct_returns_ewkb_with_target_srid():
             },
         )
 
-    assert response.status_code == 200
     result = response.get_json()
+    if target_crs == "PRIVATE_INVALID_CRS":
+        assert response.status_code == 500
+        assert result["error_code"] == "EXECUTION_FAILED"
+        assert "diagnostic" not in result and "binary_payload" not in result
+        return
+    assert response.status_code == 200
     result_payload = base64.b64decode(result["binary_payload"]["data"])
     result_metadata = _geometry_batch_metadata(result_payload)
     result_geometry = shapely.from_wkb(_first_geometry_bytes(result_payload))

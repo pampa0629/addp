@@ -510,6 +510,18 @@
           "operator_source_topology_invalid": "Choose all explicitly to also split at point intersections within a feature."
         }
       },
+      "vectorReproject": {
+        "reasons": {
+          "operator_input_invalid": "Vector reprojection requires an input layer with an active geometry column.",
+          "operator_crs_invalid": "The source CRS is missing, or a supplied source or target CRS could not be parsed.",
+          "operator_crs_mismatch": "The input layer CRS differs from the explicitly declared source CRS."
+        },
+        "actions": {
+          "operator_input_invalid": "Connect a valid vector layer and check its active geometry column.",
+          "operator_crs_invalid": "Check the source and target CRS declarations. Specify a source CRS if the input layer has none.",
+          "operator_crs_mismatch": "Check the input layer and node declarations so both match the actual source data."
+        }
+      },
       "polygonRings": {
         "reasons": {
           "operator_input_invalid": "The source layer or source identifier does not meet polygon ring extraction requirements."

@@ -39,6 +39,27 @@ func TestWorkflowParameterDiagnosticRequiresMatchingFrozenDefinition(t *testing.
 	}
 }
 
+func TestVectorReprojectDiagnosticBindsFrozenDefinition(t *testing.T) {
+	for reason, parameter := range map[string]string{
+		"operator_input_invalid": "input_gdf", "operator_crs_invalid": "", "operator_crs_mismatch": "",
+	} {
+		context := map[string]interface{}{"node_index": 2, "operator_id": "vector_reproject"}
+		if parameter != "" {
+			context["parameter"] = parameter
+		}
+		diagnostic := map[string]interface{}{"schema_version": "addp.execution-failure/v3", "stage": "execution", "reason": reason, "operator": context}
+		raw := map[string]interface{}{"runtime_status": map[string]interface{}{"status": "failed", "error_code": "INVALID_PARAMS", "diagnostic": diagnostic}}
+		frozen := map[string]interface{}{"tasks": []interface{}{map[string]interface{}{"operator": "load"}, map[string]interface{}{"operator": "vector_reproject"}}}
+		if got := executionFailureDetails("workflow", "execution_failed", "PRIVATE", raw, frozen); got["code"] != "develop.workflow.invalid_params" || got["diagnostic"] == nil {
+			t.Fatalf("lost reproject diagnostic: %+v", got)
+		}
+		context["node_index"] = 1
+		if got := executionFailureDetails("workflow", "execution_failed", "PRIVATE", raw, frozen); got["diagnostic"] != nil {
+			t.Fatalf("accepted wrong definition node: %+v", got)
+		}
+	}
+}
+
 func TestPolygonRingDiagnosticBindsFrozenDefinitionAndRejectsForgedContext(t *testing.T) {
 	for _, reason := range []string{"operator_field_conflict", "operator_geometry_invalid", "operator_input_invalid"} {
 		operator := map[string]interface{}{"node_index": 2, "operator_id": "extract_polygon_rings", "parameter": "input_gdf"}
