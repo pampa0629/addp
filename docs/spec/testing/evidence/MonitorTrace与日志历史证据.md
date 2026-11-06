@@ -129,6 +129,17 @@ Common 为独立短阶段增加 `EndExecution`，与原 End 共用一次终结�
 
 首次本地窗口在构建器准备阶段等待 Docker Desktop 个人凭据助手，尚未下载基础镜像、创建业务部署或发送业务请求。主动中断自有 gate 后，进程组、Builder 容器／卷和私有目录经精确过滤复查均为空；最终报告写入还暴露 Path.open 不支持 opener 的接口错误，原自动报告未生成，不伪造为通过。已修为内置 open 的 O_EXCL／0600 路径，并补真实文件权限与拒绝覆写测试；Docker 客户端改为当次 0700 目录、空 auths、无凭据助手，只读公共工具插件并固定已核对 Unix endpoint，不借个人凭据。标准 local runner 复验结果另记。后续操作继续扣减首次窗口已耗时间，未放宽原 60 分钟、8 CPU／12 GiB 或 4 GiB 停止线。首次失败及清理复查见 local-first-interrupted-receipt.json 与 local-acceptance.log。
 
+## MinIO 产品镜像核验复用入口准备（2026-10-23）
+
+用户确认复用已有固定版本 MinIO 产品镜像时为北京时间 18:45，原窗口已于 18:11:14 截止。本批只完成窗口外的准备和确定性验证，实际容器启动、MinIO／mc 二进制核验、业务部署及正式身份闭环均未运行。收据中的 `actual_minio_binary_verification` 和 `formal_identity_closure` 均为 `not_run`。
+
+代码与规范固定于 `5681227a0a86f02cb4f5a9c72c49284a4afe8425`。本地验收以当前提交的 `scripts/infra/Dockerfile.minio` 为预期，逐一核对 MinIO／mc 的发布版本及 40 位源码提交。候选镜像须有不可变 SHA-256 ID 和 Linux ARM64 身份，两个 `--version` 检查均以该 ID 运行，只读、无网络，各限 0.25 CPU／256 MiB。核验通过的同一 ID 用于卷测量、真实 MinIO 和两个存储初始化步骤。缺失、不匹配或命令失败时拒绝运行，旧冷构建和专用失败分支已移除。本专项代码仍走标准源码构建。版本与嵌入提交匹配是镜像复用的准入条件，字节级可复现性需独立验证。
+
+- `make test-infra-runtime-log-lifecycle` 退出 0。46 项入口契约、两份 JS 语法、完整 CI 登记、System ExecutionTrace 定向 Go 及既有 60 项生命周期检查通过。
+- 仅加强 mc 不匹配与镜像缺失用例后，`make test-monitor-traces-local-runner` 退出 0。47 项入口契约和其余定向检查通过，60 项生命周期检查沿用此前未变输入的有效结果。
+
+输入摘要与日志见 `/tmp/addp-p19-minio-reuse-preparation-20261023/{receipt.json,minio-reuse-lifecycle.log,minio-reuse-final-tests.log}`。正式密码／MFA、业务执行、Trace／日志及页面仍需在另获授权的原上限本地窗口验证。该批也未运行 Hosted、容量验收或定时任务。后续实际镜像核验按[第三窗口记录](#正式身份本地第三窗口镜像核验守卫修复与部署配置拒绝2026-10-23)独立认定。
+
 ## 正式身份本地窗口的共同口径
 
 第三至第十窗口均沿 `make test-monitor-traces-local`。各窗口的尝试共用原授权的绝对截止时间，资源上限为 8 CPU／12 GiB、当次卷及私有可写目录 4 GiB 停止线；单次完整资源检查限四秒。记录采样间隔时按开始时间判定，完成时间戳间隔单列。失败样本、受控中断和未启动均按原结果记录。
