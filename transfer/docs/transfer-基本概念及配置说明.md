@@ -524,7 +524,9 @@ continuous worker 的重启恢复、领取条件与 circuit 状态统一见[自�
 
 ### Continuous 验收边界
 
-本章能力摘要、execution 详情和诊断展示不作为当前版本的运行通过记录；事件与扫描的分版本范围分别见[过程事件记录](../CLAUDE.md#continuous-过程事件与浏览器验收)及[精确扫描与审批记录](../CLAUDE.md#continuous-精确扫描与审批归属)。
+持续写入期间沿原游标续读、Console 刷新及 Worker 失联后的终态收敛，按现行场景的断言验收。[Transfer continuous Hosted 场景](../../docs/spec/testing/scenarios/同步与引擎消费.md#transfer-continuous-events)
+
+实际通过范围以对应源码版本的运行回执为准。过程事件和精确扫描各有独立的分版本记录。[过程事件记录](../CLAUDE.md#continuous-过程事件与浏览器验收) · [精确扫描与审批记录](../CLAUDE.md#continuous-精确扫描与审批归属)
 
 目标事务与 Infra CAS 的提交顺序须实际核对；DLQ 处理或查询成功不替代 replay、Tenant/task 来源隔离与完整链路验收；位置诊断或取消请求返回不证明实际恢复、停止或回滚通过；策略参数保存或 recovery execution 创建不等于自动恢复成功。各项须按对应场景分别验证。
 
