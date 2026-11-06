@@ -615,13 +615,14 @@ capture supervisor 通过 Kafka Connect REST 和 Infra Kafka admin API 管理任
 
 ### 恢复分级
 
-| 等级 | 当前状态 |
-|---|---|
-| observable | 已支持，用于进度展示和故障定位。 |
-| restartable | 失败 snapshot retry 创建新 execution 并从头执行；append 拒绝。 |
-| resumable | watermark incremental 通过 `transfer.sync_states` 支持 execution 间 resume，目标按幂等 `table_upsert` capability 选择；支持引擎、非空间限制与稳定键条件统一见[增量同步契约](#七watermark-bounded-incremental)。snapshot checkpoint 仍仅可观测。 |
+| 等级与场景 | 前置条件与执行语义 | 结果核对 |
+|---|---|---|
+| observable | execution checkpoint 记录批次进度，可包含 Provider marker。snapshot checkpoint 仅用于观测。 | 依据已记录的进度和安全诊断定位故障。 |
+| restartable · snapshot | 当前用户须有重试权限和执行资格。失败的 `replace` snapshot 创建新 execution 并从头执行。`append` 拒绝重试。 [重试权限](tables/task_executions表.md#用户专业读取与重试) | 按返回的新 UUID 核对实际执行终态与目标内容。 [重试操作示例](快速开始.md#四checkpoint-和重试) |
+| resumable · watermark incremental | 支持的源须能冻结上界，目标须按稳定键幂等 `table_upsert`。新 execution 从 `transfer.sync_states` 的 committed position 继续。支持引擎与空间限制见契约。 [增量同步契约](#七watermark-bounded-incremental) | 核对本次读取边界、目标批次提交与随后推进的 committed position。 |
+| resumable · continuous | Resume 创建新 execution，从 `transfer.sync_states` 的 committed position 继续。位置须仍在当前 Kafka 分区范围内。CDC 若因可批准的 additive 结构变化阻塞，须先完成审批，再显式 Resume。 [位置恢复](#位置恢复与取消) · [结构审批](#schema-drift-与审批恢复) | 分别核对原 execution 终态、新 execution 的恢复位置、实际目标提交及后续位点推进。 [Continuous 验收边界](#continuous-验收边界) |
 
-本表只区分 execution 的观测、重跑与增量续读；任务的调度暂停／恢复另见[调度授权与控制](#调度授权与控制)。恢复操作及新旧 execution UUID 的使用见[快速开始](快速开始.md#四checkpoint-和重试)。调度控制、重跑与续读须分别验收。静态配置、授权或调度更新成功均不等于实际触发、Worker 执行和目标数据验收通过。
+bounded 调度暂停／恢复另行验收。先核对调度状态与当前授权主体，再确认后续是否实际触发并由 Worker 执行，最后核对目标数据。 [调度授权与控制](#调度授权与控制) · [任务表执行与恢复边界](tables/tasks表.md#执行恢复与验收边界) · [任务语义验证范围](transfer-任务语义与同步模式.md#十一验证范围)
 
 ## 十一、写后 Meta 扫描
 
