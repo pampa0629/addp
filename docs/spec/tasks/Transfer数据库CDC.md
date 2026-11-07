@@ -293,7 +293,8 @@ capture supervisor 先在同一事务登记 generation 与对应 provider 子事
 
 ##### 恢复资格与终态判定
 
-- `resume` 只允许从 paused 或可恢复失败状态创建新 execution；继续使用同一 capture generation、connector offset、topic 和 Transfer committed position。`status=blocked` 时 start/resume API 必须返回 `409 Conflict`；只有 pending additive schema change request 经专用审批 API applied 后，任务才进入 paused 并重新允许 Resume。
+- `resume` 只允许从 paused 或可恢复失败状态创建新 execution，继续使用同一 capture generation、connector offset、topic 和 Transfer committed position。
+- CDC 任务处于 `status=blocked` 时，Start 和 Resume 必须返回 `409 Conflict`。对该任务的失败 execution 调用 `POST /executions/:execution_id/retry` 同样返回 `409 Conflict`。只有可审批的 pending additive schema change request 经专用 API 标记为 `applied` 后，任务才进入 paused，由用户显式 Resume。 [审批落库与显式恢复](#审批落库与显式恢复)
 - `stop` 是数据库 CDC task 的不可逆终态：停止目标 runtime，停止并删除 connector，删除 ADDP-owned provider 专属资源、data/schema-history topic、consumer group 和 ACL，使原 capture generation 失效。已停止任务不得再次 start/resume；重新同步必须创建新任务和新目标表并重新 initial snapshot。
    `desired_state=stopped` 同时也是 continuous task definition 的初始值，因此不能单独作为数据库 CDC 已进入不可逆终态的判据。永久停止必须以 `transfer.capture_resources` 中当前 generation 的 `status=stopped` 为事实；尚无 capture generation 的新任务允许首次 start。`status=cleanup_failed` 表示不可逆 Stop 已开始但资源清理未完成，此时只允许重试 Stop 清理，不允许 start/resume。
 
