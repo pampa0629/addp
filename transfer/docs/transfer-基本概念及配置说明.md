@@ -4,7 +4,7 @@
 
 本文档定义 Transfer 稳定任务配置、执行状态、bounded snapshot 主链路、watermark bounded incremental 规则，以及 continuous/Kafka 契约与当前实现边界。旧版顶层 `mode`、`target.policy.write_mode`、`connector_type`、`source_config`、`target_config`、`output_format`、`file_type`、旧 endpoint `engine_id` 等字段不再兼容。
 
-阅读导航：[配置维度与 Worker 分工](#21-顶层字段)、[table Transfer](#三table-transfer-支持范围)、[raw copy](#四raw-copy-支持范围)、[Continuous/Kafka](#八continuouskafka-v1-契约与当前实现边界)、[数据库 CDC](#九数据库-cdc-v1-已冻结边界)、[恢复分级](#恢复分级)、[测试与验收](#测试与验收导航)。
+阅读导航：[配置维度与 Worker 分工](#21-顶层字段)、[table Transfer](#三table-transfer-支持范围)、[raw copy](#四raw-copy-支持范围)、[Continuous/Kafka](#八continuouskafka-v1-契约与当前实现边界)、[数据库 CDC](#九数据库-cdc-v1-已冻结边界)、[恢复分级](#恢复分级)、[execution 与 attempt 恢复分工](tables/task_executions表.md#execution-与-attempt-的恢复分工)、[测试与验收](#测试与验收导航)。
 
 ## 测试与验收导航
 
@@ -58,7 +58,7 @@ Transfer 执行记录使用统一表 `common.task_executions`。Transfer API 会
 | `checkpoint_offset` / `checkpoint_state` | execution metadata 中的观测与 marker 持久事实；字段口径、生成与解释职责统一见[Checkpoint、进度和重试](#十checkpoint进度和重试)，不据此扩大 HTTP DTO。 |
 | `error_details` / 安全 `metadata` | 专业响应仅保留已声明的安全错误与诊断投影，边界沿上述专业读取契约。 |
 
-snapshot 重跑与 watermark incremental 的恢复分工见[恢复分级](#恢复分级)和[增量同步契约](#七watermark-bounded-incremental)；返回执行记录、字段统计或保存 marker 均不代表真实恢复已验收。
+execution 身份、attempt 与时间重置统一见[恢复分工](tables/task_executions表.md#execution-与-attempt-的恢复分工)，恢复能力与适用配置见[恢复分级](#恢复分级)和[增量同步契约](#七watermark-bounded-incremental)。返回执行记录、字段统计或保存 marker 均不代表真实恢复已验收。
 
 ### 1.3 租户阶段的任务授权
 
@@ -615,6 +615,8 @@ capture supervisor 通过 Kafka Connect REST 和 Infra Kafka admin API 管理任
 - marker 由 provider 生成并解释；Transfer 只保存和展示，不解析 marker 内部字段。
 
 ### 恢复分级
+
+本节按装载方式区分恢复能力与验收要求。bounded 自动恢复、用户 retry 和 continuous 恢复的 execution／attempt 关系与时间字段沿[恢复分工](tables/task_executions表.md#execution-与-attempt-的恢复分工)，不以保存 checkpoint 判定恢复方式。
 
 | 等级与场景 | 前置条件与执行语义 | 结果核对 |
 |---|---|---|
