@@ -1412,7 +1412,9 @@ class NativeCleanupRunnerTest(unittest.TestCase):
 
     def test_manager_prepares_grant_before_source_download_and_rejects_missing_native_evidence(self):
         for case in ('manager-success', 'manager-object-unknown', 'manager-index-unknown'):
-            for mutation in ('none', 'missing_effect', 'lost_hold', 'dirty_audit', 'changed_after_refusal'):
+            for mutation in ('none', 'missing_effect', 'lost_hold', 'dirty_audit', 'changed_after_refusal',
+                             'receipt_recovered', 'receipt_after_refusal', 'lost_operation', 'changed_hold_identity'):
+                if mutation in {'receipt_recovered', 'receipt_after_refusal', 'lost_operation', 'changed_hold_identity'} and case != 'manager-index-unknown': continue
                 if mutation == 'dirty_audit' and case != 'manager-success': continue
                 if mutation in {'missing_effect', 'lost_hold', 'changed_after_refusal'} and case == 'manager-success': continue
                 granted, reads, indexed = [], [], []
@@ -1433,7 +1435,7 @@ class NativeCleanupRunnerTest(unittest.TestCase):
                     def manager_snapshot(self, engine, result):
                         current = dict(artifact=dict(status='ready', deleted=False, source_engine_id=9,
                             lifecycle={'input_preparations': [{'cleaned': False}]}),
-                            artifact_unknown=0, index_unknown=0, target_holds=0, index_targets=0)
+                            artifact_unknown=0, index_unknown=0, target_holds=0, index_targets=0, index_holds=0, index_hold_bindings=None)
                         snapshots.append(1)
                         if len(snapshots) > 1:
                             if case == 'manager-success':
@@ -1442,6 +1444,12 @@ class NativeCleanupRunnerTest(unittest.TestCase):
                             else:
                                 current['artifact_unknown' if case == 'manager-object-unknown' else 'index_unknown'] = 1
                                 current['target_holds'] = current['index_targets'] = 0 if mutation == 'lost_hold' else 1
+                                current['index_holds'] = 0 if mutation in {'lost_hold', 'lost_operation'} else 1
+                                current['index_hold_bindings'] = [{'operation_id': 'private-original'}]
+                                if mutation == 'changed_hold_identity' and len(snapshots) > 2:
+                                    current['index_hold_bindings'] = [{'operation_id': 'private-replacement'}]
+                                if mutation == 'receipt_recovered' or (mutation == 'receipt_after_refusal' and len(snapshots) > 2):
+                                    current['index_unknown'] = 0
                         if mutation == 'changed_after_refusal' and len(snapshots) > 2: current['artifact']['status'] = 'building'
                         return current
                     def arm(self, kind, **target): return ID
@@ -1463,7 +1471,7 @@ class NativeCleanupRunnerTest(unittest.TestCase):
                      patch.object(M.GRANTS, 'ModelSourceAuthorization', return_value=SimpleNamespace(grant=lambda value: granted.append(value))), \
                      patch.object(M, 'professional', return_value={'summary': {'deleted_physical_artifacts': 1}}), patch.object(S, 'wait_for', side_effect=wait):
                     report = {'checks': [], 'principals': {'manager': '18'}}
-                    if mutation == 'none':
+                    if mutation in {'none', 'receipt_recovered', 'receipt_after_refusal'}:
                         M.run_manager(User(), workflow, Controls(), User(), case, report, lambda: None)
                         self.assertEqual(reads, [True, False])
                         self.assertEqual(report['entry'], 'engine_deletion')
@@ -1475,12 +1483,13 @@ class NativeCleanupRunnerTest(unittest.TestCase):
                         diagnostic = report['manager_unknown_diagnostic']
                         expected_probe = {'missing_effect': 'proxy_receipt',
                             'lost_hold': 'object_hold' if case == 'manager-object-unknown' else 'index_hold',
-                            'changed_after_refusal': 'facts_recheck'}[mutation]
+                            'changed_after_refusal': 'facts_recheck', 'lost_operation': 'index_hold', 'changed_hold_identity': 'facts_recheck'}[mutation]
                         self.assertEqual(diagnostic['probe'], expected_probe)
                         self.assertEqual(report['engine_cleanup_diagnostic'], {'engine_id': 9})
                         self.assertEqual(report['stage'], 'manager_unknown_' + expected_probe)
                         self.assertEqual(diagnostic['index_unknown'], 'one' if case == 'manager-index-unknown' else 'zero')
                         self.assertEqual(diagnostic['index_targets'], 'zero' if mutation == 'lost_hold' else 'one')
+                        self.assertEqual(diagnostic['index_holds'], 'zero' if mutation in {'lost_hold', 'lost_operation'} else 'one')
                         self.assertEqual(diagnostic['forwarded'], 'one')
                         self.assertTrue(diagnostic['binding_matches'])
                         self.assertEqual(diagnostic['upstream_response'], 'false' if mutation == 'missing_effect' else 'true')
@@ -1488,11 +1497,11 @@ class NativeCleanupRunnerTest(unittest.TestCase):
     def test_manager_unknown_diagnostic_has_only_closed_safe_observations(self):
         secret = 'private binding and response'
         diagnostic = M.manager_unknown_diagnostics('index_hold',
-            {'index_unknown': True, 'index_targets': 3},
+            {'index_unknown': True, 'index_targets': 3, 'index_holds': secret},
             {'forwarded': secret, 'upstream_response': secret, 'run_id': secret, 'key': secret},
             'native-1', ID)
         self.assertEqual(diagnostic, {'probe': 'index_hold', 'index_unknown': 'unrecognized',
-            'index_targets': 'multiple', 'forwarded': 'unrecognized',
+            'index_targets': 'multiple', 'index_holds': 'unrecognized', 'forwarded': 'unrecognized',
             'upstream_response': 'unrecognized', 'binding_matches': False})
         self.assertNotIn(secret, json.dumps(diagnostic))
         for value, category in ((-1, 'unrecognized'), (None, 'unrecognized'), (0, 'zero'), (1, 'one'), (2, 'multiple')):

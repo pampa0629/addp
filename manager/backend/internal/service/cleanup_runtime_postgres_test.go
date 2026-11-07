@@ -44,7 +44,7 @@ func TestIntegrationPostgresManagerCleanupRuntimeAtomicity(t *testing.T) {
 	}
 	pool, _ := db.DB()
 	defer pool.Close()
-	for _, mode := range []string{"complete", "effect_denied", "result_rollback", "changed_target", "index_complete", "index_result_rollback", "index_unknown"} {
+	for _, mode := range []string{"complete", "effect_denied", "result_rollback", "changed_target", "index_complete", "index_result_rollback", "index_unknown", "index_receipt_recovered"} {
 		t.Run(mode, func(t *testing.T) {
 			tx := db.Begin()
 			if tx.Error != nil {
@@ -111,7 +111,7 @@ func TestIntegrationPostgresManagerCleanupRuntimeAtomicity(t *testing.T) {
 					if json.NewDecoder(r.Body).Decode(&body) != nil || body.Filter != "tenant_id = 7 AND engine_id = 9" || correlation == "" {
 						t.Error("external delete escaped exact registered scope")
 					}
-					if mode == "index_unknown" {
+					if mode == "index_unknown" || mode == "index_receipt_recovered" {
 						w.WriteHeader(503)
 						return
 					}
@@ -121,6 +121,10 @@ func TestIntegrationPostgresManagerCleanupRuntimeAtomicity(t *testing.T) {
 				}
 				if r.URL.Path == "/tasks/1" && r.Method == "GET" {
 					fmt.Fprintf(w, `{"uid":1,"indexUid":"content","type":"documentDeletion","status":"succeeded","enqueuedAt":%q,"customMetadata":%q}`, providerTime, correlation)
+					return
+				}
+				if r.URL.Path == "/tasks" && r.Method == "GET" && mode == "index_receipt_recovered" {
+					fmt.Fprintf(w, `{"results":[{"uid":1,"indexUid":"content","type":"documentDeletion","status":"succeeded","enqueuedAt":%q,"customMetadata":%q}],"total":1,"limit":100,"from":1,"next":null}`, providerTime, correlation)
 					return
 				}
 				var req client.CleanupAccessRequest
@@ -217,7 +221,7 @@ func TestIntegrationPostgresManagerCleanupRuntimeAtomicity(t *testing.T) {
 				if observed.CurrentStep == nil || len(observed.Steps) != 1 || observed.Steps[0].ID != *observed.CurrentStep || observed.Steps[0].Status != "failed" || observed.Steps[0].Phase != "terminal" {
 					t.Fatalf("missing safe Cleanup failure stage: mode=%s", mode)
 				}
-				wantStage := map[string]string{"effect_denied": "manager_cleanup_finalize", "result_rollback": "manager_cleanup_finalize", "index_result_rollback": "manager_cleanup_finalize", "changed_target": "manager_cleanup_confirmation", "index_unknown": "manager_cleanup_index_effect"}[mode]
+				wantStage := map[string]string{"effect_denied": "manager_cleanup_finalize", "result_rollback": "manager_cleanup_finalize", "index_result_rollback": "manager_cleanup_finalize", "changed_target": "manager_cleanup_confirmation", "index_unknown": "manager_cleanup_index_effect", "index_receipt_recovered": "manager_cleanup_index_effect"}[mode]
 				if wantStage == "" || *observed.CurrentStep != wantStage {
 					t.Fatalf("incorrect failure stage mode=%s stage=%s", mode, *observed.CurrentStep)
 				}
@@ -285,7 +289,7 @@ func TestIntegrationPostgresManagerCleanupRuntimeAtomicity(t *testing.T) {
 					t.Fatal(err)
 				}
 				wantStatus := repository.IndexDeliverySucceeded
-				if mode == "index_unknown" {
+				if mode == "index_unknown" || mode == "index_receipt_recovered" {
 					wantStatus = repository.IndexDeliveryUnknown
 				}
 				if delivery.Status != wantStatus {
@@ -307,6 +311,37 @@ func TestIntegrationPostgresManagerCleanupRuntimeAtomicity(t *testing.T) {
 					}
 					if err := search.reconcileContentDeliveries(t.Context()); err != nil && !errors.Is(err, repository.ErrContentIndexIsolated) {
 						t.Fatal(err)
+					}
+					if mode == "index_receipt_recovered" {
+						var recovered models.ContentIndexDelivery
+						if err := tx.Where("id=?", delivery.ID).First(&recovered).Error; err != nil {
+							t.Fatal(err)
+						}
+						if recovered.Status != repository.IndexDeliverySucceeded || recovered.TaskUID == nil || *recovered.TaskUID != 1 || recovered.TaskCorrelation != correlation {
+							t.Fatalf("original receipt not recovered: status=%s", recovered.Status)
+						}
+						var held models.CleanupIndexOperation
+						if err := tx.Where("id=?", op.ID).First(&held).Error; err != nil || held.State != "prepared" {
+							t.Fatal("receipt recovery changed unresolved Cleanup operation", err)
+						}
+						outlet, err := deliveries.State(t.Context(), epoch)
+						if err != nil || !outlet.Isolated || outlet.CleanupHoldID != op.ID {
+							t.Fatal("receipt recovery released Cleanup outlet hold", err)
+						}
+						if !errors.Is(deliveries.ActivateIfSettled(t.Context(), epoch), repository.ErrContentIndexIsolated) {
+							t.Fatal("recovered receipt reopened Cleanup outlet")
+						}
+						var targets int64
+						if err := tx.Model(&models.CleanupIndexTarget{}).Where("index_name=? AND tenant_id=? AND engine_id=? AND operation_id=?", op.IndexName, 7, 9, op.ID).Count(&targets).Error; err != nil || targets != 1 {
+							t.Fatal("recovered receipt lost exact Cleanup target", err)
+						}
+						var stillFailed execution.TaskExecution
+						if err := tx.Where("execution_id=?", child.ExecutionID).First(&stillFailed).Error; err != nil || stillFailed.Status != "failed" {
+							t.Fatal("receipt recovery rewrote Cleanup child", err)
+						}
+						if recoveredReceipt, err := execution.ReadCleanupReceipt(stillFailed); err != nil || recoveredReceipt != nil {
+							t.Fatal("receipt recovery fabricated Cleanup completion", err)
+						}
 					}
 					if deleteCalls != 1 {
 						t.Fatal("recovery replayed Cleanup delete")

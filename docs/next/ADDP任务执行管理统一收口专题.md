@@ -282,6 +282,8 @@ Manager 源准备保持其正式授权链；本批 Transfer CDC 仅验证既有 
 
 **索引未知首轮。** `f85842e7` 于 2026-11-07 10:56:42（Asia/Shanghai）失败，正式记录 5/11；GLB、原生对象与索引可见、删除受理及对象实际消失已通过。断言失败仍标为 `engine_tombstone_read`，无法区分代理回执、隔离记录或索引探针，未归档其现场值，实际根因保留未知。控制恢复、清理和零残留均通过。[首轮 Hosted](https://github.com/pampa0629/addp/actions/runs/42320210994/job/128242675201)
 
-专项仅细分既有核验阶段，失败时分类原快照／原代理观测并复用已取得的 Manager 子执行安全阶段；不增加读取、重试、权限或等待预算，原 11 项断言保留。
+**索引未知诊断轮。** `69ecb66c` 于 2026-11-07 20:05:34（Asia/Shanghai）失败，正式记录仍为 5/11。首个失败探针为 `manager_unknown_index_hold`：准确代理绑定成立、仅转发一次且已有上游响应，索引目标为一条，投递 unknown 计数为零；Manager 子项在 `manager_cleanup_index_effect` 失败，Transfer 成功，Engine 保持 deleting。控制恢复、清理和零残留均通过。[诊断轮 Hosted](https://github.com/pampa0629/addp/actions/runs/42364486834/job/128379566458)
+
+现行只读关联回执恢复允许投递离开 unknown，但不能结束原 Cleanup 或解除 hold。专项原先依赖瞬时状态，无法正确核验该合法恢复。修正只读取原快照中的精确 Tenant＋Engine／物理索引、原 execution／attempt、端点及代次一致的 prepared 操作、唯一删除投递、目标与隔离出口；拒绝前后排除瞬时 unknown 计数，其余事实仍完整比较。失败诊断仅增加该绑定 hold 的安全计数分类，不增加读取、重试、权限或等待预算，原 11 项验收目标保留。该轮未归档恢复后的具体投递状态，不能声称已证明 Hosted 中实际恢复为 succeeded。 本地标准 Manager Go T1、完整 PostgreSQL T2（含原回执恢复、不重发与 hold 保留）和 Execution runner 406 项已通过；原生 11 项完整链路尚待新的 Hosted 复验。
 
 **剩余工作。** 分别验证索引未知效果和旧 Runtime 迟到写入。新的 Hosted 须单独确认。正向和对象未知通过证据分别位于 `/tmp/addp-manager-success-hosted-eighth-20261106/` 与 `/tmp/addp-manager-object-unknown-hosted-third-20261106/`。

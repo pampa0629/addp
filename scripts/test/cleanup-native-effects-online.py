@@ -109,6 +109,7 @@ def manager_unknown_diagnostics(probe, snapshot, fault, run_id, key):
     return dict(probe=probe,
         index_unknown=native_count_category(snapshot.get('index_unknown')),
         index_targets=native_count_category(snapshot.get('index_targets')),
+        index_holds=native_count_category(snapshot.get('index_holds')),
         forwarded=native_count_category(fault.get('forwarded')),
         binding_matches=fault.get('run_id') == run_id and fault.get('key') == key,
         upstream_response=str(response).lower() if type(response) is bool else 'unrecognized')
@@ -866,7 +867,24 @@ with urllib.request.urlopen(request,timeout=5) as response: print(response.read(
 
     def manager_snapshot(self, engine_id, result_id):
         engine_id, result_id = S.positive(engine_id), S.positive(result_id)
-        return self.deployment.read(f"""SELECT json_build_object(
+        index_name = self.manifest['native']['meili']['index'].replace("'", "''")
+        return self.deployment.read(f"""WITH index_holds AS (
+ SELECT d.id AS delivery_id, o.id AS operation_id, o.execution_id, o.attempt, o.request_digest,
+   o.index_name, o.tenant_id, t.engine_id, o.epoch, o.endpoint_id
+ FROM manager.cleanup_index_targets t
+ JOIN manager.cleanup_index_operations o ON o.id=t.operation_id AND o.index_name=t.index_name AND o.tenant_id=t.tenant_id
+ JOIN manager.content_index_outlets x ON x.index_name=o.index_name AND x.cleanup_hold_id=o.id
+   AND x.epoch=o.epoch AND x.endpoint_id=o.endpoint_id AND x.isolated=TRUE
+ JOIN manager.content_index_deliveries d ON d.cleanup_operation_id=o.id AND d.index_name=o.index_name
+   AND d.tenant_id=o.tenant_id AND d.endpoint_id=o.endpoint_id AND d.task_correlation=d.id
+ JOIN common.task_executions e ON e.execution_id=o.execution_id AND e.tenant_id=o.tenant_id AND e.attempt=o.attempt
+ WHERE t.tenant_id={self.tenant} AND t.engine_id={engine_id} AND t.index_name='{index_name}' AND o.state='prepared'
+   AND d.kind='delete' AND d.engine_ids='[{engine_id}]'::jsonb
+   AND d.filter='tenant_id = {self.tenant} AND engine_id = {engine_id}'
+   AND d.status IN ('unknown','submitted','succeeded','failed','canceled'))
+SELECT json_build_object(
+ 'index_holds',(SELECT count(*) FROM index_holds),
+ 'index_hold_bindings',(SELECT json_agg(row_to_json(h) ORDER BY h.delivery_id) FROM index_holds h),
  'artifact',(SELECT json_build_object('status',status,'deleted',deleted_at IS NOT NULL,
    'source_engine_id',source_engine_id,'lifecycle',metadata->'model3d_output_lifecycle')
    FROM manager.model_3d_glb WHERE tenant_id={self.tenant} AND id={result_id}),
@@ -995,8 +1013,8 @@ def run_manager(manager, workflow, controls, source, case, report, checkpoint):
                 require(after['artifact_unknown'] == 1 and after['target_holds'] > 0,
                         'unknown object response lost its durable operation or target hold')
             else:
-                require(after['index_unknown'] == 1 and after['index_targets'] == 1,
-                        'unknown index response lost its delivery or target hold')
+                require(after['index_holds'] == 1 and after['index_targets'] == 1,
+                        'unknown index response lost its bound operation, delivery or target hold')
                 probe = 'index_absence'
                 report['stage'] = 'manager_unknown_' + probe; checkpoint()
                 S.wait_for(lambda: controls.index_count(engine_id), lambda n: n == 0, 'native index deletion did not happen')
@@ -1015,7 +1033,15 @@ def run_manager(manager, workflow, controls, source, case, report, checkpoint):
                             {'locator': model.locator, 'action': 'generate_model_3d_glb'})
             probe = 'facts_recheck'
             report['stage'] = 'manager_unknown_' + probe; checkpoint()
-            require(controls.manager_snapshot(engine_id, model.result_id) == after, 'blocked request changed isolated native facts')
+            current_facts = controls.manager_snapshot(engine_id, model.result_id)
+            # Read-only recovery may change the transient receipt state while
+            # every Cleanup operation, target and outlet hold remains intact.
+            if kind == 'index':
+                current_facts = {k: v for k, v in current_facts.items() if k != 'index_unknown'}
+                after_facts = {k: v for k, v in after.items() if k != 'index_unknown'}
+            else:
+                after_facts = after
+            require(current_facts == after_facts, 'blocked request changed isolated native facts')
             probe = 'proxy_recheck'
             report['stage'] = 'manager_unknown_' + probe; checkpoint()
             fault = controls.fault(kind, key)
