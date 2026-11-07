@@ -52,6 +52,8 @@ Enrollment、Assessment、申请、授权及不可变修订在业务验收期间
 
 ## MySQL 与空间字段保护
 
+Develop 查询几何输出严格遵守[查询几何值契约](../../docs/spec/addp引擎插件接口规范.md)：在原生 EWKB 完成保护后，唯一 JSON 形状是 `{wkt, srid}`。空间属性保护夹具要求该对象恰含这两个成员，WKT 为有限二维 Point、SRID 为整数4326、坐标与合成源逐行一致；不把 GeoJSON、裸WKT或十六进制原生值作为 Develop 的兼容输入。Manager 预览、Service 原生表读取和 Transfer 成果预览保持各自现行表协议，不套用 Develop 查询投影。原查询、保护字段与四出口算法断言不变，不通过 SQL 空间函数改写规避原生输出核验。
+
 `security-mysql-owner-protection` 的唯一 Hosted 部署、临时 workspace 和四出口参与链路统一见[正式准备规则](../../docs/spec/testing/scenarios/数据保护.md#部署与四出口主链路)，由[Security Host Gate](../test/online-hosted-security-gate.sh)复用共享生命周期。初始 MySQL 与空间表子场景使用当次 PostGIS PostgreSQL 与 MySQL；System owner helper 创建一次性 Tenant、最小权限非管理员 User、独立引擎登记用户和独立治理初始化用户；Business 只管理物理数据及 owner-only Engine descriptor，引擎登记和分类、等级、email/phone 敏感类型及默认保护初始化分别通过 System、Security 正式 API 完成。初始化令牌在业务验收前移除，凭据隔离沿[T4 专用环境](../../docs/spec/testing/T4-Online验收规范.md#专用环境)。
 
 suite 先验证默认保护同事务创建、非法参数整体回滚和探针清理，再经 Meta 扫描和 Security 正式 API 建立 Enrollment/Assessment。MySQL `customers.email` 在 Manager、Develop、Service、Transfer 四个出口均移除，但保留 5 条非敏感记录；临时任务及服务按捕获 ID 清理。所有退出路径按[T4 清理规则](../../docs/spec/testing/T4-Online验收规范.md#数据超时与清理)停止本轮应用、销毁当次业务容器及 Infra，并核对零残留；`runner.temp` 的 owner-only 凭据目录随生命周期删除。

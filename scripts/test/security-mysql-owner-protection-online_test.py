@@ -116,6 +116,7 @@ class SpatialClient:
                     columns[field] = by_algorithm[policy["algorithm"]]
         return [{"id": key, **{field: values[key] for field, values in columns.items()},
                  "location_point": f"POINT({100 + int(key)} {20 + int(key)})" if owner in {"manager", "transfer"} else
+                     {"wkt": f"POINT ({100 + int(key)} {20 + int(key)})", "srid": 4326} if owner == "develop" else
                      {"type": "Point", "coordinates": [100 + int(key), 20 + int(key)]}}
                 for key in sorted(ONLINE.EXPECTED_IDS)]
 
@@ -951,6 +952,32 @@ class SecurityMySQLOwnerProtectionOnlineTest(unittest.TestCase):
         raw = struct.pack("<BIIdd", 1, 0x20000001, 3857, 101, 21)
         with self.assertRaises(ONLINE.SuiteError):
             ONLINE.point_coordinates(raw.hex())
+
+    def test_develop_spatial_output_requires_current_query_geometry_contract(self):
+        client = SpatialClient()
+        client.baseline.update(algorithm=ONLINE.SM3_ALGORITHM, parameters={})
+        expected = {field: ONLINE.spatial_expected(client.baseline['algorithm'], client.baseline['parameters'])
+                    for field in ONLINE.SPATIAL_FIELDS[1:4]}
+        rows = client.rows('develop')
+        proof = ONLINE.assert_spatial_rows(rows, 'develop', expected)
+        self.assertTrue(proof['coordinates_preserved'])
+        invalid = [None, 'POINT(101 21)', struct.pack('<BIIdd', 1, 0x20000001, 4326, 101, 21).hex(),
+                   {'type': 'Point', 'coordinates': [101, 21]},
+                   {'wkt': 'POINT (101 21)'}, {'srid': 4326},
+                   {'wkt': 'POINT (101 21)', 'srid': 3857}, {'wkt': 'POINT (101 21)', 'srid': 0},
+                   {'wkt': 'POINT (101 21)', 'srid': '4326'}, {'wkt': 'POINT (101 21)', 'srid': 4326.0},
+                   {'wkt': 'POINT (101 21)', 'srid': True}, {'wkt': None, 'srid': 4326},
+                   {'wkt': 'POINT (101 21)', 'srid': 4326, 'coordinates': [101, 21]},
+                   {'wkt': 'POINT Z (101 21 5)', 'srid': 4326},
+                   {'wkt': 'POINT EMPTY', 'srid': 4326}, {'wkt': 'POINT (nan 21)', 'srid': 4326},
+                   {'wkt': 'LINESTRING (101 21,102 22)', 'srid': 4326}]
+        for geometry in invalid:
+            rows = client.rows('develop'); rows[0]['location_point'] = geometry
+            with self.subTest(geometry=geometry), self.assertRaises(ONLINE.SuiteError):
+                ONLINE.assert_spatial_rows(rows, 'develop', expected)
+        rows = client.rows('develop'); rows[0]['location_point']['wkt'] = 'POINT (102 21)'
+        with self.assertRaisesRegex(ONLINE.SuiteError, 'coordinates'):
+            ONLINE.assert_spatial_rows(rows, 'develop', expected)
 
     def test_point_coordinates_accept_current_manager_wkt_and_reject_invalid_geometry(self):
         for text, expected in (("POINT(101 21)", (101, 21)),

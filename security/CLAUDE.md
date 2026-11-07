@@ -758,3 +758,13 @@ T1/T3/构建验证：`make test-security-frontend` 退出0，260项单元、37�
 权限主责会话回报：`20d03f724` 已实现 metadata_read 搜索已登记字段名及高亮，Manager T1、PG＋Meilisearch T2与对应Linux CI通过，跨服务／真实浏览器仍待验；不能以本轮临时read证明该metadata-only产品规则已完成全链验收。
 
 2026-11-08，原共享main待发布提交阻塞已解除；本会话五路径摘要与前轮已验证输入一致。发布前再次沿上述根Make所属recipe验证，261项及System Fixture Go通过；登记反例主测试和登记CLI再次通过。四个依赖目标本次仍未重跑，未声称完整聚合门禁通过。新日志 `/tmp/p145-unready-owner-20261108.log`、`/tmp/p145-unready-registration-20261108.log`、`/tmp/p145-unready-registration-cli-20261108.log`。只发布本会话五路径，专门CI会话接收新完整SHA后单次安排v44/v9；运行与领域／浏览器结果须以实际回传独立核验，不将派发或排队算通过。
+
+### v44 Develop 查询几何契约夹具修正（2026-11-08）
+
+[Run 42389802508 / Job 128454804932](https://github.com/pampa0629/addp/actions/runs/42389802508/job/128454804932)，attempt1，实际提交 `82f9af3592bb994fc933810984fb736c3776a0c9`，不是006507精确运行。独立源码审阅确认五个修复路径及整个Security Job块与006507逐字相同；共享调度／初始化差异仅作用于Manager的FileGDB分支，未扩大Security权限或运行范围。十个服务preflight均为82f；readiness成功、gate失败、原始产物上传成功。首错误为 `develop spatial row 1: spatial output must contain a two-dimensional Point`，原日志5273行、scenario191763ms后退出1。旧未就绪首错误没有复现，但无最终suite_report和浏览器PNG，不能据此宣称该探针或完整v44/v9通过。三metadata＋三read的正式签发和六项精确撤销再次独立审计通过；pending／errors为空，撤销后不可读／不可见，生命周期cleanup=passed、Infra零残留。
+
+现行[查询几何值契约](../docs/spec/addp引擎插件接口规范.md)及术语表已统一：Provider按真实输出类型将PostGIS几何归一成EWKB，保护在原生值上执行，Develop持久预览及当前结果在最终JSON边界调用 `QueryRowsForJSON`，输出 `{wkt, srid}`。提交6f38108b78已有共享投影和Develop持久化回归。旧Hosted断言／合成Client仍只认识裸WKT、GeoJSON或hex EWKB，因此拒绝规范对象。原运行没有归档该结果响应正文，不声称直接捕获了失败行的几何对象；固定源码链路和两项确定性重现证明的是夹具与现行契约不一致，实际整链仍需新T4验证。
+
+仅修改本会话空间验收：Develop只接受恰含wkt／srid的对象，SRID必须为整数4326，WKT必须为有限二维Point且坐标逐行等于合成源；旧裸WKT／GeoJSON／hex不作为Develop兼容输入。其他三个出口保留各自现行表协议及原算法、NULL、坐标和清理断言，不改业务SQL、不用ST_AsGeoJSON绕过原生几何、不更改产品API／授权／算法。报告v44、浏览器v9及21图保持；既有Make与登记自动发现覆盖，无新增workflow或本地服务重启。
+
+验证：先把合成Develop响应改为规范对象，两项测试准确重现同一Point错误；首份新增测试的保护值预期曾与Client初始参数不一致，已先修正测试前提，再取得 `/tmp/p145-spatial-query-contract-red-final.log` 的两项Point失败。修正后所属空间／Owner组20项通过；当前根Make所属recipe262项及System Fixture Go通过，登记反例主测试和登记CLI通过。四个依赖目标未重跑，不把所属门禁当完整聚合；这是夹具T1，未新增真实数据库T2、本地HTTP或Hosted通过。错误／缺失／非整数SRID、旧形状、额外成员、NULL、空或三维Point、非有限值、其他几何及坐标改变均有拒绝反例。日志 `/tmp/p145-spatial-query-contract-{red,red-final,green}.log`、`/tmp/p145-spatial-query-owner-gate.log`、`/tmp/p145-spatial-query-registration{,-cli}.log`；原始归档 `/tmp/addp-security-unready-006507/archive/_temp/addp-online-42389802508/`，独立失败审计 `/tmp/addp-security-unready-006507/p145-independent-spatial-failure-audit.json`。后续仍交专门CI会话单次复验，原失败保留。

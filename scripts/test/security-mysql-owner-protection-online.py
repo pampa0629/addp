@@ -890,8 +890,8 @@ def spatial_expected(algorithm: str, parameters: Mapping[str, object]) -> dict[s
 
 
 def point_coordinates(value: object) -> tuple[float, float]:
-    # Current Manager table preview uses WKT; other owner protocols expose
-    # GeoJSON or native hexadecimal EWKB. All must preserve the same 2D Point.
+    # Current table protocols declare WKT, GeoJSON or hexadecimal EWKB.
+    # Develop's query-only JSON envelope is checked before parsing its WKT.
     if isinstance(value, str) and (match := re.fullmatch(r"POINT\s*\(([^()]*)\)", value)):
         try:
             coordinates = tuple(float(part) for part in match[1].split())
@@ -939,7 +939,14 @@ def assert_spatial_rows(rows: Iterable[Mapping[str, object]], owner: str,
             if row.get(field) != values[key] or (key == "4" and field not in row):
                 raise SuiteError(f"{owner} returned an unexpected protected value for {field}")
         try:
-            coordinates = point_coordinates(row.get("location_point"))
+            geometry = row.get("location_point")
+            if owner == "develop":
+                if (not isinstance(geometry, dict) or set(geometry) != {"wkt", "srid"}
+                        or not isinstance(geometry["wkt"], str)
+                        or type(geometry["srid"]) is not int or geometry["srid"] != 4326):
+                    raise SuiteError("Develop query geometry requires exactly wkt and integer SRID 4326")
+                geometry = geometry["wkt"]
+            coordinates = point_coordinates(geometry)
         except SuiteError as error:
             raise SuiteError(f"{owner} spatial row {key}: {error}") from error
         if coordinates != (100 + int(key), 20 + int(key)):
