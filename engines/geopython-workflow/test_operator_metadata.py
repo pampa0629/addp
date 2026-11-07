@@ -1190,7 +1190,7 @@ def test_workflow_categories_have_one_explicit_two_level_owner():
         (("栅格处理", "波段处理"), "raster_stack raster_select_bands"),
         (("栅格处理", "基础计算"), "raster_band_math raster_aggregate raster_proximity raster_interpolate_idw raster_point_density raster_line_density"),
         (("栅格处理", "分类处理"), "raster_reclassify raster_nibble raster_boundary_clean raster_sieve raster_region_group raster_thin"),
-        (("栅格处理", "地形分析"), "raster_slope raster_aspect raster_hillshade raster_curvature raster_tpi raster_tri raster_roughness raster_twi raster_spi raster_contour raster_line_of_sight"),
+        (("栅格处理", "地形分析"), "raster_slope raster_aspect raster_hillshade raster_curvature raster_tpi raster_tri raster_roughness raster_twi raster_spi raster_contour raster_line_of_sight raster_viewshed"),
         (("栅格处理", "水流分析"), "raster_fill_depressions raster_flow_direction_d8 raster_flow_accumulation_d8 raster_flow_accumulation_weighted_d8 raster_flow_length_d8"),
         (("栅格处理", "汇水分析"), "raster_drainage_basins_d8 raster_snap_pour_points raster_watershed_d8 raster_subcatchments_d8"),
         (("栅格处理", "河网分析"), "raster_stream_order_d8 raster_stream_link_d8 raster_stream_to_vector_d8 raster_distance_to_stream_d8 raster_hand_d8"),
@@ -2118,3 +2118,23 @@ def test_vector_reproject_direct_masks_execution_faults(stage, monkeypatch, capl
     assert result["error_code"] == "EXECUTION_FAILED"
     assert "details" not in result and "binary_payload" not in result
     assert private not in response.get_data(as_text=True) and private not in caplog.text
+
+
+def test_dem_viewshed_has_one_workflow_only_raster_contract():
+    operators = {item['id']: item for item in list_operators()}
+    spec = operators['raster_viewshed']
+    assert len([item for item in operators.values() if 'workflow' in item['execution_modes'] and item['category_path'][0] == '栅格处理']) == 68
+    assert spec['category_path'] == ['栅格处理', '地形分析']
+    assert spec['execution_modes'] == ['workflow'] and spec['effects'] == ['read']
+    params = {param['name']: param for param in spec['parameters']}
+    assert set(params) == {'input_raster', 'band', 'elevation_unit', 'observer_xy',
+                           'observer_height_m', 'target_height_m', 'radius_metres'}
+    assert all(param['required'] for param in params.values())
+    assert params['elevation_unit']['enum'] == ['metre', 'foot', 'us_survey_foot']
+    assert params['input_raster']['param_type'] == 'input' and params['input_raster']['type'] == 'raster'
+    assert spec['output_ports'][0]['type'] == 'raster'
+    example = spec['detailed_description']['workflow_example']
+    assert example == {'operator': 'raster_viewshed', 'params': {
+        'input_raster': {'$ref': 'source'}, 'band': 1, 'elevation_unit': 'metre',
+        'observer_xy': [500001., 2999999.], 'observer_height_m': 1.7,
+        'target_height_m': 2., 'radius_metres': 100.}}

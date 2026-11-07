@@ -4870,13 +4870,13 @@ def _sight_error(code):
     return ValueError(_SIGHT_MESSAGES[code][1 if _DISK_LANGUAGE.get() == 'en' else 0])
 
 
-def _sight_number(value, code):
+def _sight_number(value, code, error=_sight_error):
     try:
         if (isinstance(value, (bool, np.bool_)) or not isinstance(value, Real)
                 or not math.isfinite(float(value))):
-            raise _sight_error(code)
+            raise error(code)
     except OverflowError as error:
-        raise _sight_error(code) from error
+        raise error(code) from error
     return Fraction(int(value) if isinstance(value, Integral) else float(value))
 
 
@@ -4909,68 +4909,155 @@ def _sight_spans(observer, target):
                 yield entry, exit, c, r
 
 
+class _SightDEM:
+    """One native DEM reader and one exact sightline decision path."""
+    def __init__(self, input_raster, band, elevation_unit, error):
+        self.error = error
+        self.source, horizontal = _dem_admission(input_raster, elevation_unit, band, 1, diagnostic=error)
+        self.band = band
+        self.width, self.height = self.source.RasterXSize, self.source.RasterYSize
+        self.x0, self.xstep, _, self.y0, _, self.ystep = map(Fraction, self.source.GetGeoTransform())
+        self.vertical = Fraction(_ELEVATION_METRES[elevation_unit])
+        self.xmetres = self.xstep * Fraction(horizontal)
+        self.ymetres = self.ystep * Fraction(horizontal)
+        self.tile = lru_cache(maxsize=4)(self._read_tile)
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        self.tile.cache_clear()
+        self.tile = self.source = None
+
+    def _read_tile(self, x, y):
+        window = (x, y, min(256, self.width-x), min(256, self.height-y))
+        _, _, arrays, masks = next(_blocks(self.source, [self.band], window=window, native=True))
+        return arrays[0], masks[0]
+
+    def pixel(self, point):
+        if not isinstance(point, (list, tuple)) or len(point) != 2:
+            raise self.error('xy')
+        x, y = (_sight_number(value, 'xy', self.error) for value in point)
+        col, row = (x-self.x0)/self.xstep, (y-self.y0)/self.ystep
+        if not (0 <= col < self.width and 0 <= row < self.height):
+            raise self.error('outside')
+        return col, row
+
+    def ground(self, col, row):
+        x, y = col//256*256, row//256*256
+        values, valid = self.tile(x, y)
+        return Fraction(values[row-y, col-x].item())*self.vertical if valid[row-y, col-x] else None
+
+    def height_offset(self, value):
+        height = _sight_number(value, 'height', self.error)
+        if height < 0:
+            raise self.error('height')
+        return height
+
+    def endpoint_height(self, position, above_ground):
+        elevation = self.ground(*map(math.floor, position))
+        if elevation is None:
+            raise self.error('invalid')
+        return elevation + self.height_offset(above_ground)
+
+    def squared_distance(self, observer, target):
+        return ((target[0]-observer[0])*self.xmetres)**2 + ((target[1]-observer[1])*self.ymetres)**2
+
+    def status(self, observer, target, start, end):
+        rise, status = end-start, 'visible'
+        for entry, exit, col, row in _sight_spans(observer, target):
+            elevation = self.ground(col, row)
+            if elevation is None:
+                status = 'indeterminate'
+                continue
+            lowest_t = entry if rise >= 0 else exit
+            lowest_height = start + rise*lowest_t
+            if elevation > lowest_height or (elevation == lowest_height and (rise == 0 or 0 < lowest_t < 1)):
+                return 'blocked'
+        return status
+
+
 def raster_line_of_sight(input_raster, band, elevation_unit, observer_xy, target_xy,
                          observer_height_m, target_height_m):
     """Evaluate a single straight sightline against the native DEM cells it crosses."""
-    source, horizontal = _dem_admission(input_raster, elevation_unit, band, 1, diagnostic=_sight_error)
-    width, height = source.RasterXSize, source.RasterYSize
-    x0, xstep, _, y0, _, ystep = map(Fraction, source.GetGeoTransform())
-    vertical = Fraction(_ELEVATION_METRES[elevation_unit])
+    with _SightDEM(input_raster, band, elevation_unit, _sight_error) as dem:
+        observer, target = dem.pixel(observer_xy), dem.pixel(target_xy)
+        if observer == target:
+            raise _sight_error('coincident')
+        start = dem.endpoint_height(observer, observer_height_m)
+        end = dem.endpoint_height(target, target_height_m)
+        distance = _sqrt_fraction(dem.squared_distance(observer, target), error=lambda: _sight_error('numeric'))
+        status = dem.status(observer, target, start, end)
+        return pd.DataFrame({'distance_m': [distance], 'status': pd.array([status], dtype='string')})
 
-    def pixel(point):
-        if not isinstance(point, (list, tuple)) or len(point) != 2:
-            raise _sight_error('xy')
-        x, y = (_sight_number(value, 'xy') for value in point)
-        col, row = (x - x0) / xstep, (y - y0) / ystep
-        if not (0 <= col < width and 0 <= row < height):
-            raise _sight_error('outside')
-        return col, row
 
-    tile_size = 256
+_VIEWSHED_MESSAGES = {
+    key: (zh.replace('DEM 两点通视', 'DEM 单观察点可视域'), en.replace('DEM line of sight', 'DEM viewshed'))
+    for key, (zh, en) in _SIGHT_MESSAGES.items() if key not in ('coincident', 'numeric')
+}
+_VIEWSHED_MESSAGES.update({
+    'xy': ('DEM 单观察点可视域的观察点必须是两个有限投影坐标 [x,y]',
+           'DEM viewshed requires two finite projected observer coordinates [x,y]'),
+    'radius': ('DEM 单观察点可视域必须显式提供有限正米制半径',
+               'DEM viewshed requires an explicit finite positive radius in metres'),
+    'write': ('DEM 单观察点可视域栅格块写入失败', 'DEM viewshed raster block write failed'),
+})
 
-    @lru_cache(maxsize=4)
-    def tile(x, y):
-        window = (x, y, min(tile_size, width - x), min(tile_size, height - y))
-        _, _, values, valid = next(_blocks(source, [band], window=window, native=True))
-        return values[0], valid[0]
 
-    def ground(col, row):
-        x, y = col // tile_size * tile_size, row // tile_size * tile_size
-        values, valid = tile(x, y)
-        if not valid[row - y, col - x]:
-            return None
-        return Fraction(values[row - y, col - x].item()) * vertical
+def _viewshed_error(code):
+    return ValueError(_VIEWSHED_MESSAGES[code][1 if _DISK_LANGUAGE.get() == 'en' else 0])
 
-    def endpoint_height(position, above_ground):
-        elevation = ground(*map(math.floor, position))
-        if elevation is None:
-            raise _sight_error('invalid')
-        offset = _sight_number(above_ground, 'height')
-        if offset < 0:
-            raise _sight_error('height')
-        return elevation + offset
 
-    observer, target = pixel(observer_xy), pixel(target_xy)
-    if observer == target:
-        raise _sight_error('coincident')
-    start = endpoint_height(observer, observer_height_m)
-    rise = endpoint_height(target, target_height_m) - start
-    horizontal = Fraction(horizontal)
-    dx = (target[0] - observer[0]) * xstep * horizontal
-    dy = (target[1] - observer[1]) * ystep * horizontal
-    distance = _sqrt_fraction(dx**2 + dy**2, error=lambda: _sight_error('numeric'))
-    status = 'visible'
-    for entry, exit, col, row in _sight_spans(observer, target):
-        elevation = ground(col, row)
-        if elevation is None:
-            status = 'indeterminate'
-            continue
-        lowest_t = entry if rise >= 0 else exit
-        lowest_height = start + rise * lowest_t
-        if elevation > lowest_height or (elevation == lowest_height and (rise == 0 or 0 < lowest_t < 1)):
-            status = 'blocked'
-            break
-    return pd.DataFrame({'distance_m': [distance], 'status': pd.array([status], dtype='string')})
+def raster_viewshed(input_raster, band, elevation_unit, observer_xy,
+                    observer_height_m, target_height_m, radius_metres):
+    """Trace target centres within an exact projected circle; keep three valid states."""
+    with _SightDEM(input_raster, band, elevation_unit, _viewshed_error) as dem:
+        observer = dem.pixel(observer_xy)
+        start = dem.endpoint_height(observer, observer_height_m)
+        target_offset = dem.height_offset(target_height_m)
+        radius = _sight_number(radius_metres, 'radius', _viewshed_error)
+        if radius <= 0:
+            raise _viewshed_error('radius')
+        squared_limit = radius*radius
+        output = destination = None
+        path = None
+        completed = False
+        try:
+            path = _path()
+            output = gdal.GetDriverByName('GTiff').Create(str(path), dem.width, dem.height, 1, gdal.GDT_Byte,
+                                                         ['TILED=YES', 'COMPRESS=DEFLATE', 'PHOTOMETRIC=MINISBLACK'])
+            output.SetGeoTransform(dem.source.GetGeoTransform())
+            output.SetProjection(dem.source.GetProjection())
+            destination = output.GetRasterBand(1)
+            destination.SetNoDataValue(255)
+            destination.SetDescription('viewshed: 0=blocked,1=visible,2=indeterminate')
+            for top in range(0, dem.height, 512):
+                for left in range(0, dem.width, 512):
+                    height, width = min(512, dem.height-top), min(512, dem.width-left)
+                    values = np.full((height, width), 255, dtype=np.uint8)
+                    for row in range(height):
+                        for col in range(width):
+                            target = (Fraction(2*(left+col)+1, 2), Fraction(2*(top+row)+1, 2))
+                            if dem.squared_distance(observer, target) > squared_limit:
+                                continue
+                            elevation = dem.ground(left+col, top+row)
+                            if elevation is None:
+                                continue
+                            values[row,col] = (1 if target == observer else
+                                {'blocked': 0, 'visible': 1, 'indeterminate': 2}[
+                                    dem.status(observer, target, start, elevation+target_offset)])
+                    if destination.WriteRaster(left, top, width, height, values.tobytes(), buf_type=gdal.GDT_Byte) != gdal.CE_None:
+                        raise _viewshed_error('write')
+            destination = None
+            output.FlushCache()
+            output = None
+            result = _raster(path)
+            completed = True
+            return result
+        finally:
+            destination = output = None
+            if path is not None and not completed:
+                path.unlink(missing_ok=True)
 
 
 def _dem_source(input_raster, elevation_unit, band, minimum_size, *, diagnostic=None):
@@ -6918,6 +7005,14 @@ _SPECS = [
         _param('observer_height_m', 'float', '观察点离地高度（米），有限且非负'),
         _param('target_height_m', 'float', '目标点离地高度（米），有限且非负'),
     ], 'DataFrame', ['read']),
+    (raster_viewshed, OperatorCategory.RASTER_TERRAIN, 'DEM 单观察点可视域', [
+        _INPUT(), _param('band', 'int', '显式一基高程数据波段'),
+        _param('elevation_unit', 'str', '显式高程单位', enum=list(_ELEVATION_METRES)),
+        _param('observer_xy', 'list[float]', '观察点 [x,y]，使用 DEM 投影坐标'),
+        _param('observer_height_m', 'float', '观察点离地高度（米），有限且非负'),
+        _param('target_height_m', 'float', '各目标中心离地高度（米），有限且非负'),
+        _param('radius_metres', 'float', '显式有限正米制半径，等号纳入；遮挡0、可见1、无法判定2、NoData255'),
+    ], 'raster', ['read']),
 ]
 OPERATORS = {}
 for function, category, label, params, output, effects in _SPECS:
@@ -7005,6 +7100,9 @@ for function, category, label, params, output, effects in _SPECS:
             examples.update({'interval': 10.})
         if name == 'raster_curvature':
             examples.update({'method': 'mean'})
+    if name == 'raster_viewshed':
+        examples.update(band=1, elevation_unit='metre', observer_xy=[500001., 2999999.],
+                        observer_height_m=1.7, target_height_m=2., radius_metres=100.)
     if name == 'raster_line_of_sight':
         examples.update(band=1, elevation_unit='metre', observer_xy=[500001., 2999999.],
                         target_xy=[500005., 2999999.], observer_height_m=1.7, target_height_m=2.)

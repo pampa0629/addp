@@ -22663,3 +22663,279 @@ def test_dem_line_of_sight_async_plain_csv_and_cleanup(tmp_path, monkeypatch, ca
     else:
         assert status['status'] == 'success', status
         assert target.read_text().splitlines() == ['distance_m,status', f'4.0,{case}']
+
+
+def _viewshed_reference(values, valid, observer, radius, step=(1, 1), offsets=(1, 1), vertical=1):
+    """Independent closed-cell clipping, with no product ray/grid traversal calls."""
+    from fractions import Fraction as F
+    height, width = values.shape
+    observer = tuple(map(F, observer)); radius = F(radius)
+    step = tuple(map(F, step)); vertical = F(vertical)
+    result = np.full(values.shape, 255, dtype=np.uint8)
+    start = F(values[math.floor(observer[1]), math.floor(observer[0])].item()) * vertical + F(offsets[0])
+    for row in range(height):
+        for col in range(width):
+            target = (F(2*col+1, 2), F(2*row+1, 2))
+            squared = sum(((b-a)*unit)**2 for a,b,unit in zip(observer,target,step))
+            if squared > radius**2 or not valid[row,col]:
+                continue
+            if target == observer:
+                result[row,col] = 1
+                continue
+            end = F(values[row,col].item()) * vertical + F(offsets[1])
+            state = 1
+            for entry, exit, x, y in _sight_reference_spans(observer,target,width,height):
+                if not valid[y,x]:
+                    if state != 0: state = 2
+                    continue
+                ground = F(values[y,x].item()) * vertical
+                low_t = entry if end >= start else exit
+                low = start + (end-start)*low_t
+                if ground > low or (ground == low and (end == start or 0 < low_t < 1)):
+                    state = 0
+            result[row,col] = state
+    return result
+
+
+@pytest.mark.parametrize('observer,offsets', [((.5,.5),(1,1)), ((1.,1.),(1,1)),
+    ((.25,.75),(0,2)), ((2.5,2.5),(0,0)), ((4.75,.25),(3,1))])
+@pytest.mark.parametrize('radius', [1., 3., 20.])
+def test_dem_viewshed_complete_oracle_tristate_mask_grid_and_cog(tmp_path, observer, offsets, radius):
+    from operators.raster_compute import raster_viewshed
+    values = np.array([[0,0,0,0,0],[0,2,np.nan,0,0],[0,0,0,0,0],[0,0,-2,0,0]],dtype=float)
+    valid = np.isfinite(values)
+    path = create_raster(tmp_path/'viewshed-dem.tif',values,(0,1,0,4,0,-1),'EPSG:3857')
+    before = path.read_bytes()
+    expected = _viewshed_reference(values,valid,observer,radius,offsets=offsets)
+    with raster_workspace():
+        loaded = raster_load(source_plan(path))
+        result = raster_viewshed(loaded,1,'metre',[observer[0],4-observer[1]],*offsets,radius)
+        ds = gdal.Open(str(result.path));band=ds.GetRasterBand(1)
+        assert ds.RasterCount==1 and band.DataType==gdal.GDT_Byte and band.GetNoDataValue()==255
+        assert ds.GetGeoTransform()==(0,1,0,4,0,-1)
+        projection=osr.SpatialReference(wkt=ds.GetProjection());assert projection.GetAuthorityCode(None)=='3857'
+        np.testing.assert_array_equal(band.ReadAsArray(),expected)
+        np.testing.assert_array_equal(band.GetMaskBand().ReadAsArray(),(expected!=255)*255)
+        band=ds=None
+        target=tmp_path/'viewshed.cog.tif'
+        fact=raster_save(result,target_plan(target),profile='cog',blocksize=128)
+        assert fact['size_bytes']==target.stat().st_size>0
+        saved=gdal.Open(str(target));np.testing.assert_array_equal(saved.ReadAsArray(),expected)
+        np.testing.assert_array_equal(saved.GetRasterBand(1).GetMaskBand().ReadAsArray(),(expected!=255)*255)
+        from osgeo_utils.samples.validate_cloud_optimized_geotiff import validate
+        assert not validate(saved,full_check=True)[1]
+        assert saved.GetMetadataItem('LAYOUT','IMAGE_STRUCTURE')=='COG'
+        saved=None
+    assert path.read_bytes()==before
+
+
+@pytest.mark.parametrize('radius', [1.,np.nextafter(1.,0.),np.nextafter(1.,2.),.01])
+def test_dem_viewshed_exact_radius_and_coincident_target(tmp_path,radius):
+    from operators.raster_compute import raster_viewshed
+    path=create_raster(tmp_path/'radius.tif',np.zeros((1,3)),(0,1,0,1,0,-1),'EPSG:3857')
+    with raster_workspace():
+        result=raster_viewshed(raster_load(source_plan(path)),1,'metre',[1.5,.5],0,0,radius)
+        ds=gdal.Open(str(result.path));values=ds.ReadAsArray();ds=None
+        np.testing.assert_array_equal(values,[[0 if radius>=1 else 255,1,0 if radius>=1 else 255]])
+
+
+@pytest.mark.parametrize('language',['zh-cn','en'])
+@pytest.mark.parametrize('change,code', [
+    ({'radius_metres':0},'radius'),({'radius_metres':-1},'radius'),({'radius_metres':True},'radius'),
+    ({'radius_metres':None},'radius'),({'radius_metres':'2'},'radius'),({'radius_metres':np.inf},'radius'),
+    ({'observer_height_m':-1},'height'),({'target_height_m':np.nan},'height'),
+    ({'observer_xy':[True,.5]},'xy'),({'observer_xy':[.5]},'xy'),({'observer_xy':[2,.5]},'outside'),
+    ({'observer_xy':[1.5,.5]},'invalid'),({'band':0},'band'),({'elevation_unit':'unknown'},'unit')])
+def test_dem_viewshed_exact_bilingual_rejection_and_no_private_output(tmp_path,language,change,code):
+    import operators.raster_compute as c
+    path=create_raster(tmp_path/'bad.tif',np.array([[0,np.nan]]),(0,1,0,1,0,-1),'EPSG:3857')
+    params=dict(band=1,elevation_unit='metre',observer_xy=[.5,.5],observer_height_m=1,target_height_m=1,radius_metres=10)
+    params.update(change)
+    with raster_workspace(),raster_error_language(language):
+        source=raster_load(source_plan(path));before=set(source.workspace.iterdir())
+        with pytest.raises(ValueError)as error:c.raster_viewshed(source,**params)
+        assert str(error.value)==c._VIEWSHED_MESSAGES[code][language=='en']
+        assert set(source.workspace.iterdir())==before
+
+
+@pytest.mark.parametrize('epsg,unit,horizontal,vertical',[
+    (3857,'metre',1.,1.),(2277,'foot',1200/3937,.3048),(2222,'us_survey_foot',.3048,1200/3937)])
+def test_dem_viewshed_rectangular_units_second_band_and_zero_values(tmp_path,epsg,unit,horizontal,vertical):
+    from operators.raster_compute import raster_viewshed
+    values=np.array([[0,6,0],[0,-2,0]],dtype=float)
+    path=create_raster(tmp_path/'units-view.tif',np.stack([np.full(values.shape,100),values]),(0,3,0,8,0,-4),f'EPSG:{epsg}')
+    ds=gdal.Open(str(path),gdal.GA_Update);ds.GetRasterBand(2).SetUnitType(unit);ds=None
+    with raster_workspace():
+        source=raster_load(source_plan(path))
+        result=raster_viewshed(source,2,unit,[1.5,6],vertical,vertical,10)
+        ds=gdal.Open(str(result.path));expected=_viewshed_reference(values,np.ones(values.shape,bool),(.5,.5),10,
+            step=(3*horizontal,4*horizontal),offsets=(vertical,vertical),vertical=vertical)
+        np.testing.assert_array_equal(ds.ReadAsArray(),expected);ds=None
+
+
+@pytest.mark.parametrize('coverage',['native-int64','native-uint64','internal-mask','alpha','partial-alpha'])
+def test_dem_viewshed_native_elevation_and_coverage_no_float_aliasing(tmp_path,coverage):
+    from operators.raster_compute import raster_viewshed
+    path=tmp_path/'native-view.tif';native=coverage.startswith('native-')
+    dtype={'native-int64':gdal.GDT_Int64,'native-uint64':gdal.GDT_UInt64}.get(coverage,gdal.GDT_Float64)
+    ds=gdal.GetDriverByName('GTiff').Create(str(path),4,1,2 if 'alpha' in coverage else 1,dtype)
+    crs=osr.SpatialReference();crs.ImportFromEPSG(3857);ds.SetSpatialRef(crs);ds.SetGeoTransform((0,1,0,1,0,-1))
+    band=ds.GetRasterBand(1)
+    if native:
+        base=2**61 if coverage=='native-int64' else 2**63
+        band.SetNoDataValue(base+2);band.WriteArray(np.array([[base,base+1,base,base+2]],np.int64 if coverage=='native-int64' else np.uint64))
+    else:
+        band.WriteArray(np.array([[0,100,0,0]],float))
+        if coverage=='internal-mask':
+            with gdal.config_option('GDAL_TIFF_INTERNAL_MASK','YES'):
+                band.CreateMaskBand(gdal.GMF_PER_DATASET)
+            band.GetMaskBand().WriteArray(np.array([[255,0,255,255]],np.uint8))
+        else:
+            alpha=ds.GetRasterBand(2);alpha.SetColorInterpretation(gdal.GCI_AlphaBand)
+            alpha.WriteArray(np.array([[255,128 if coverage=='partial-alpha' else 0,255,255]],float));alpha=None
+    band=ds=None;before=path.read_bytes()
+    with raster_workspace():
+        source=raster_load(source_plan(path));result=raster_viewshed(source,1,'metre',[.5,.5],1,1,10)
+        ds=gdal.Open(str(result.path));actual=ds.ReadAsArray();ds=None
+        assert actual[0,0]==1
+        assert actual[0,2]==(0 if native or coverage=='partial-alpha' else 2)
+        assert actual[0,1]==(255 if coverage in ('alpha','internal-mask') else 1 if native else 0)
+        if native:assert actual[0,3]==255
+    assert path.read_bytes()==before
+
+
+def test_dem_viewshed_giant_origin_does_not_round_target_centres_to_observer(tmp_path):
+    from operators.raster_compute import raster_viewshed
+    path=create_raster(tmp_path/'large-origin.tif',np.zeros((2,3)),(2.**60,.25,0,2.**60,0,-.25),'EPSG:3857')
+    with raster_workspace():
+        result=raster_viewshed(raster_load(source_plan(path)),1,'metre',[2.**60,2.**60],0,0,2)
+        ds=gdal.Open(str(result.path));np.testing.assert_array_equal(ds.ReadAsArray(),np.zeros((2,3),np.uint8));ds=None
+
+
+def test_dem_viewshed_cross_block_writes_and_bounded_native_source_reads(tmp_path,monkeypatch):
+    import operators.raster_compute as c
+    path=create_raster(tmp_path/'wide-view.tif',np.zeros((3,520)),(0,1,0,3,0,-1),'EPSG:3857')
+    read=c._blocks;windows=[]
+    def capture(dataset,bands,**kwargs):
+        if kwargs.get('native'):
+            windows.append(kwargs['window'])
+            assert kwargs['window'][2]<=256 and kwargs['window'][3]<=256
+        return read(dataset,bands,**kwargs)
+    monkeypatch.setattr(c,'_blocks',capture)
+    with raster_workspace():
+        source=raster_load(source_plan(path));result=c.raster_viewshed(source,1,'metre',[511.5,1.5],1,1,4)
+        ds=gdal.Open(str(result.path));rows,cols=np.indices((3,520));expected=np.where((cols-511)**2+(rows-1)**2<=16,1,255).astype(np.uint8)
+        np.testing.assert_array_equal(ds.ReadAsArray(),expected);ds=None
+    assert windows and any(x>=512 for x,y,w,h in windows) and any(x==256 for x,y,w,h in windows)
+
+
+@pytest.mark.parametrize('failure',['write','flush','raster'])
+def test_dem_viewshed_partial_private_output_is_removed_on_failure(tmp_path,monkeypatch,failure):
+    import operators.raster_compute as c
+    path=create_raster(tmp_path/'fail-view.tif',np.zeros((3,3)),(0,1,0,3,0,-1),'EPSG:3857')
+    with raster_workspace():
+        source=raster_load(source_plan(path));before=set(source.workspace.iterdir())
+        if failure=='write':
+            original=gdal.Band.WriteRaster
+            def broken(self,*args,**kwargs):
+                if self.GetDescription().startswith('viewshed:'):return gdal.CE_Failure
+                return original(self,*args,**kwargs)
+            monkeypatch.setattr(gdal.Band,'WriteRaster',broken)
+        elif failure=='flush':
+            original=gdal.Dataset.FlushCache
+            def broken(self,*args,**kwargs):
+                if Path(self.GetDescription()).parent==source.workspace and self.GetDescription()!=str(source.path):raise RuntimeError('view flush failed')
+                return original(self,*args,**kwargs)
+            monkeypatch.setattr(gdal.Dataset,'FlushCache',broken)
+        else:
+            monkeypatch.setattr(c,'_raster',lambda *args,**kwargs:(_ for _ in ()).throw(RuntimeError('view object failed')))
+        with pytest.raises((ValueError,RuntimeError)):c.raster_viewshed(source,1,'metre',[.5,2.5],1,1,10)
+        assert set(source.workspace.iterdir())==before
+
+
+@pytest.mark.parametrize('language',['zh-cn','en'])
+@pytest.mark.parametrize('case',['success','invalid','save-conflict'])
+def test_dem_viewshed_async_cog_discovery_language_and_cleanup(tmp_path,monkeypatch,language,case):
+    import api_server
+    import workflow_engine
+    values=np.zeros((3,3));values[0,1]=np.nan;values[1,1]=3
+    path=create_raster(tmp_path/'view-async.tif',values,(500000,1,0,3000000,0,-1),'EPSG:3857');before=path.read_bytes()
+    target=tmp_path/'view.cog.tif'
+    if case=='save-conflict':target.write_bytes(b'original-target')
+    spec=next(item for item in list_operators()if item['id']=='raster_viewshed')
+    assert spec['execution_modes']==['workflow']and spec['effects']==['read']and spec['attributes']['resource_groups']==['raster']
+    assert all(p['required']for p in spec['parameters'])
+    tasks=[{'id':'source','operator':'raster_load','depends_on':[],'params':{'access_plan':source_plan(path)}},
+        {'id':'view',**spec['detailed_description']['workflow_example'],'depends_on':['source']},
+        {'id':'save','operator':'raster_save','depends_on':['view'],'params':{'input_raster':{'$ref':'view'},'access_plan':target_plan(target),'profile':'cog','blocksize':128}}]
+    params=tasks[1]['params'];params.update(observer_xy=[500000.5,2999999.5],observer_height_m=1,target_height_m=1,radius_metres=10)
+    if case=='invalid':params['radius_metres']=-1
+    workspaces=[];original=workflow_engine._execute_operator
+    def capture(name,params):
+        if name=='raster_viewshed':workspaces.append(params['input_raster'].workspace)
+        return original(name,params)
+    monkeypatch.setattr(workflow_engine,'_execute_operator',capture)
+    client=api_server.app.test_client();assert client.post('/api/operators/raster_viewshed/invoke',json={'params':{}}).status_code==403
+    response=client.post('/api/workflow',headers={'Accept-Language':language},json={'workflow_def':{'tasks':tasks},'input_data':{},'runtime':{'tenant_id':7,'execution_authorization':{'id':1,'effects':['read','write']}}})
+    assert response.status_code==202,response.json
+    url='/api/executions/'+response.json['execution_id'];deadline=time.monotonic()+15
+    while time.monotonic()<deadline:
+        status=client.get(url,headers={'Accept-Language':'en'if language=='zh-cn'else'zh-cn'}).json
+        if status['status']in('success','failed'):break
+        time.sleep(.01)
+    assert workspaces and all(not p.exists()for p in workspaces)and path.read_bytes()==before
+    if case=='success':
+        assert status['status']=='success',status
+        ds=gdal.Open(str(target));expected=_viewshed_reference(values,np.isfinite(values),(.5,.5),10)
+        np.testing.assert_array_equal(ds.ReadAsArray(),expected)
+        from osgeo_utils.samples.validate_cloud_optimized_geotiff import validate
+        assert not validate(ds,full_check=True)[1];ds=None
+    elif case=='invalid':
+        from operators.raster_compute import _VIEWSHED_MESSAGES
+        assert status['status']=='failed'and status['error']=='任务 view 执行失败: '+_VIEWSHED_MESSAGES['radius'][language=='en']
+        assert not target.exists()and not status.get('outputs',{}).get('save')
+    else:
+        assert status['status']=='failed'and target.read_bytes()==b'original-target'
+
+
+@pytest.mark.parametrize('language',['zh-cn','en'])
+@pytest.mark.parametrize('fault,code',[('rotation','grid'),('geographic','grid'),('unit-conflict','unit-conflict'),
+    ('scale','scale'),('alpha','alpha'),('complex','complex')])
+def test_dem_viewshed_inherits_strict_dem_admission_and_diagnostics(tmp_path,language,fault,code):
+    import operators.raster_compute as c
+    if fault=='complex':
+        path=tmp_path/'complex-view.tif';ds=gdal.GetDriverByName('GTiff').Create(str(path),2,2,1,gdal.GDT_CFloat64)
+        crs=osr.SpatialReference();crs.ImportFromEPSG(3857);ds.SetSpatialRef(crs);ds.SetGeoTransform((0,1,0,2,0,-1))
+        ds.GetRasterBand(1).WriteArray(np.zeros((2,2),np.complex128));ds=None
+    else:
+        path=create_raster(tmp_path/'admission-view.tif',np.zeros((2,2)),(0,1,.1 if fault=='rotation'else 0,2,0,-1),'EPSG:4326'if fault=='geographic'else'EPSG:3857')
+        ds=gdal.Open(str(path),gdal.GA_Update);band=ds.GetRasterBand(1)
+        if fault=='unit-conflict':band.SetUnitType('foot')
+        if fault=='scale':band.SetScale(2)
+        if fault=='alpha':band.SetColorInterpretation(gdal.GCI_AlphaBand)
+        band=ds=None
+    with raster_workspace(),raster_error_language(language):
+        source=raster_load(source_plan(path));before=set(source.workspace.iterdir())
+        with pytest.raises(ValueError)as error:c.raster_viewshed(source,1,'metre',[.5,1.5],1,1,3)
+        assert str(error.value)==c._VIEWSHED_MESSAGES[code][language=='en']
+        assert set(source.workspace.iterdir())==before
+
+
+@pytest.mark.parametrize('values,wanted',[
+    ([0,np.nan,3,0],0),([0,3,np.nan,0],0),([0,np.nan,0,0],2),([0,np.inf,0,0],2),
+    ([0,1,0,0],0),([0,np.nextafter(1.,0.),0,0],1)])
+def test_dem_viewshed_known_obstruction_dominates_unknown_and_touch_is_exact(tmp_path,values,wanted):
+    from operators.raster_compute import raster_viewshed
+    path=create_raster(tmp_path/'priority-view.tif',np.array([values]),(0,1,0,1,0,-1),'EPSG:3857')
+    with raster_workspace():
+        result=raster_viewshed(raster_load(source_plan(path)),1,'metre',[.5,.5],1,1,10)
+        ds=gdal.Open(str(result.path));assert ds.ReadAsArray()[0,3]==wanted;ds=None
+
+
+def test_dem_viewshed_tiny_radius_can_have_no_target_without_coincident_override(tmp_path):
+    from operators.raster_compute import raster_viewshed
+    path=create_raster(tmp_path/'empty-radius-view.tif',np.zeros((2,2)),(0,1,0,2,0,-1),'EPSG:3857')
+    with raster_workspace():
+        result=raster_viewshed(raster_load(source_plan(path)),1,'metre',[.25,1.75],0,0,.01)
+        ds=gdal.Open(str(result.path));np.testing.assert_array_equal(ds.ReadAsArray(),np.full((2,2),255,np.uint8))
+        assert not np.any(ds.GetRasterBand(1).GetMaskBand().ReadAsArray());ds=None

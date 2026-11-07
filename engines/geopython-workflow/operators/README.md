@@ -79,7 +79,7 @@ D8汇流累积`raster_flow_accumulation_d8`仅有一个`measure=count/area`选�
 | 栅格处理 | 波段处理 | 2 | `raster_stack`、`raster_select_bands` |
 | 栅格处理 | 基础计算 | 6 | `raster_band_math`、`raster_aggregate`、`raster_proximity`、`raster_interpolate_idw`、`raster_point_density`、`raster_line_density` |
 | 栅格处理 | 分类处理 | 6 | `raster_reclassify`、`raster_nibble`、`raster_boundary_clean`、`raster_sieve`、`raster_region_group`、`raster_thin` |
-| 栅格处理 | 地形分析 | 11 | `raster_slope`、`raster_aspect`、`raster_hillshade`、`raster_curvature`、`raster_tpi`、`raster_tri`、`raster_roughness`、`raster_twi`、`raster_spi`、`raster_contour`、`raster_line_of_sight` |
+| 栅格处理 | 地形分析 | 12 | `raster_slope`、`raster_aspect`、`raster_hillshade`、`raster_curvature`、`raster_tpi`、`raster_tri`、`raster_roughness`、`raster_twi`、`raster_spi`、`raster_contour`、`raster_line_of_sight`、`raster_viewshed` |
 | 栅格处理 | 水流分析 | 5 | `raster_fill_depressions`、`raster_flow_direction_d8`、`raster_flow_accumulation_d8`、`raster_flow_accumulation_weighted_d8`、`raster_flow_length_d8` |
 | 栅格处理 | 汇水分析 | 4 | `raster_drainage_basins_d8`、`raster_snap_pour_points`、`raster_watershed_d8`、`raster_subcatchments_d8` |
 | 栅格处理 | 河网分析 | 5 | `raster_stream_order_d8`、`raster_stream_link_d8`、`raster_stream_to_vector_d8`、`raster_distance_to_stream_d8`、`raster_hand_d8` |
@@ -330,3 +330,5 @@ SPI只有`raster_spi`一个入口：显式m2汇流面积与degree/percent坡度�
 ## 顶点提取
 
 `extract_vertices(input_gdf,id_field)`逐原始坐标位置输出Point，保闭环首尾、重复坐标/部件/孔洞及全部来源属性，追加source_id/part_no/ring_no/vertex_no/vertex_id；不去重、不补交点或计算网络度数。部件和源准入复用多部拆分，原XY/CRS不变；GeometryCollection/NULL/EMPTY及固定字段重名整批拒绝。完整规则见[顶点提取契约](../../../docs/spec/workflow/矢量算子契约.md#顶点提取契约)。
+
+`raster_viewshed`提供单观察点、显式米制半径的同网格Byte可视域；遮挡0／可见1／路径未知2，半径外及无效目标NoData255，半径等号纳入，精确重合中心可见。与两点通视共享原生逐格地表、贴地／格角／格边及NoData优先级，不改变原两点结果；源瓦片缓存与块写有界，逐目标射线成本随范围增长，不计容量认证。沿原COG保存和失败清理；Linux由CI协调，独立Hosted范围另议。详见[可视域契约](../../../docs/spec/workflow/栅格算子契约.md#dem-单观察点可视域)。
