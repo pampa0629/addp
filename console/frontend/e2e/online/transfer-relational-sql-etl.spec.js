@@ -259,8 +259,13 @@ async function verifyManagerLineage(page, api, env, sqlExecution) {
   const native = await managerFieldGraph(page, lineage.target_locator, lineage.target_item_id, 'area')
   expect(native.graph.field_lineage_status).toBe('complete')
   expect(native.graph.subject.schema_snapshot_hash).toBe(lineage.schema_snapshot_hash)
-  const edgeIdentity = edge => [edge.source.item_id, edge.source.field_name, edge.target.item_id, edge.target.field_name, edge.transformation, edge.evidence.execution_id]
-  expect(native.focused.edges.map(edgeIdentity).sort()).toEqual(lineage.expected_edges.sort())
+  const edgeIdentity = edge => {
+    expect(edge).not.toHaveProperty('transformation')
+    expect(Object.keys(edge.evidence).every(key => ['execution_id', 'write_mode', 'field_lineage_status'].includes(key))).toBe(true)
+    return [edge.source.item_id, edge.source.field_name, edge.target.item_id, edge.target.field_name, edge.evidence.execution_id]
+  }
+  const expectedIdentity = edge => [edge[0], edge[1], edge[2], edge[3], edge[5]]
+  expect(native.focused.edges.map(edgeIdentity).sort()).toEqual(lineage.expected_edges.map(expectedIdentity).sort())
   expect(native.focused.nodes).toHaveLength(3)
   for (const node of native.graph.nodes) {
     expect(node.kind).toBe('field_ref')
@@ -286,7 +291,9 @@ async function verifyManagerLineage(page, api, env, sqlExecution) {
   expect(query.focused.edges[0].source.field_name).toBe('amount')
   expect(query.focused.edges[0].target.field_name).toBe('amount')
   expect(query.focused.edges[0].evidence.execution_id).toBe(sqlExecution.execution_id)
-  expect(query.focused.edges[0].transformation).toBe('direct')
+  edgeIdentity(query.focused.edges[0])
+  writeFileSync(resolve(env.ADDP_ONLINE_ARTIFACT_DIR, 'transfer-query-lineage-execution.json'),
+    JSON.stringify({ execution_id: sqlExecution.execution_id, target_item_id: target.id }) + '\n', 'utf8')
   await expect(query.frame.locator('.lineage-inspector strong')).toHaveText('amount')
   await page.screenshot({ path: resolve(env.ADDP_ONLINE_ARTIFACT_DIR, 'transfer-query-field-lineage.png'), fullPage: true })
 
@@ -305,8 +312,8 @@ async function verifyManagerLineage(page, api, env, sqlExecution) {
     expect(ods.graph.field_lineage_status).toBe('complete')
     expect(ods.graph.subject.schema_snapshot_hash).toBe(mongodb.schema_snapshot_hash)
     expect(ods.graph.nodes).toHaveLength(18)
-    expect(ods.graph.edges.map(edgeIdentity).sort()).toEqual(chain.expected_edges.sort())
-    expect(ods.focused.edges.map(edgeIdentity).sort()).toEqual(chain.date_edges.sort())
+    expect(ods.graph.edges.map(edgeIdentity).sort()).toEqual(chain.expected_edges.map(expectedIdentity).sort())
+    expect(ods.focused.edges.map(edgeIdentity).sort()).toEqual(chain.date_edges.map(expectedIdentity).sort())
     for (const node of ods.graph.nodes) {
       const isSource = node.item_id === mongodb.source_item_id
       expect(node.engine_id).toBe(isSource ? mongodb.source_engine_id : mongodb.target_engine_id)
@@ -319,7 +326,7 @@ async function verifyManagerLineage(page, api, env, sqlExecution) {
     const nickname = ods.graph.nodes.find(node => node.item_id === mongodb.target_item_id && node.field_name === 'leader_nickname_snapshot')
     const focused = lineageFieldConnections(ods.graph.edges, lineageNodeId(nickname))
     const edges = ods.graph.edges.filter((_, index) => focused.connections.has(`lineage-edge:${index}`))
-    expect(edges.map(edgeIdentity).sort()).toEqual(chain.nickname_edges.sort())
+    expect(edges.map(edgeIdentity).sort()).toEqual(chain.nickname_edges.map(expectedIdentity).sort())
     await expect(ods.frame.getByRole('button', { name: '全部字段', exact: true })).toBeVisible()
     await showFieldOverview(ods.frame)
     expect(mongodbGraphRequests).toBe(1)
@@ -335,7 +342,7 @@ async function verifyManagerLineage(page, api, env, sqlExecution) {
   expect(chain.rounds[0].parent_execution_id).not.toBe(chain.rounds[1].parent_execution_id)
   const dwd = await managerFieldGraph(page, chain.target_locator, chain.target_item_id, 'activity_date', 3)
   expect(dwd.graph.subject.schema_snapshot_hash).toBe(chain.schema_snapshot_hash)
-  expect(dwd.focused.edges.map(edgeIdentity).sort()).toEqual(chain.date_edges.sort())
+  expect(dwd.focused.edges.map(edgeIdentity).sort()).toEqual(chain.date_edges.map(expectedIdentity).sort())
   expect(dwd.focused.nodes).toHaveLength(4)
   for (const node of dwd.graph.nodes) {
     expect(node.schema_snapshot_hash).toBe(chain.snapshot_hashes[String(node.item_id)])
@@ -345,12 +352,12 @@ async function verifyManagerLineage(page, api, env, sqlExecution) {
   for (const edge of dwd.graph.edges) expect(latestChildren).toContain(edge.evidence.execution_id)
   await expect(dwd.frame.getByRole('button', { name: 'person_nickname', exact: true })).toHaveCount(0)
   const changedDateEdge = dwd.graph.edges.find(edge => edge.target.item_id === chain.target_item_id && edge.target.field_name === 'activity_date')
-  expect(changedDateEdge.transformation).toBe('derived')
+  edgeIdentity(changedDateEdge)
   await dwd.frame.getByRole('button', { name: 'person_display_name', exact: true }).click()
   await expect(dwd.frame.locator('.lineage-inspector strong')).toHaveText('person_display_name')
   const selected = dwd.graph.nodes.find(node => node.item_id === chain.target_item_id && node.field_name === 'person_display_name')
   const focus = lineageFieldConnections(dwd.graph.edges, lineageNodeId(selected))
-  expect(dwd.graph.edges.filter((_, index) => focus.connections.has(`lineage-edge:${index}`)).map(edgeIdentity).sort()).toEqual(chain.nickname_edges.sort())
+  expect(dwd.graph.edges.filter((_, index) => focus.connections.has(`lineage-edge:${index}`)).map(edgeIdentity).sort()).toEqual(chain.nickname_edges.map(expectedIdentity).sort())
   await showFieldOverview(dwd.frame)
   const canvas = dwd.frame.locator('.lineage-canvas canvas').first()
   // Folding changes the card presentation without changing the field graph facts.
@@ -532,7 +539,10 @@ async function verifyWideLineage(page, env) {
     expect(graph.edges).toHaveLength(1000)
     const responseBytes = Buffer.byteLength(JSON.stringify(graph), 'utf8')
     expect(responseBytes).toBeLessThan(4 * 1024 * 1024)
-    for (const edge of graph.edges) expect(edge.evidence).not.toHaveProperty('field_mappings')
+    for (const edge of graph.edges) {
+      expect(edge).not.toHaveProperty('transformation')
+      expect(Object.keys(edge.evidence).every(key => ['execution_id', 'write_mode', 'field_lineage_status'].includes(key))).toBe(true)
+    }
     expect(graph.subject.schema_snapshot_hash).toBe(wide.schema_snapshot_hash)
     expect(urls[0].searchParams.has('limit')).toBe(false)
     const expectedNodes = wide.item_ids.flatMap(id => Array.from({ length: 500 }, (_, i) => `${id}:field_${String(i).padStart(4, '0')}`)).sort()

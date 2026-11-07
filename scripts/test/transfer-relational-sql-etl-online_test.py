@@ -873,7 +873,7 @@ class TransferRelationalSQLETLOnlineTest(unittest.TestCase):
         client = Mock()
         client.request.return_value.payload = {"fixture": True}
         owned = []
-        with patch.object(ONLINE, "find_item", return_value=items[0]), patch.object(ONLINE.SUPPORT, "create_and_run_task", side_effect=execute), patch.object(ONLINE, "wait_transfer_target", side_effect=items[1:]), patch.object(ONLINE, "validate_wide_graph") as validate:
+        with patch.object(ONLINE, "find_item", return_value=items[0]), patch.object(ONLINE.SUPPORT, "create_and_run_task", side_effect=execute), patch.object(ONLINE, "wait_transfer_target", side_effect=items[1:]), patch.object(ONLINE, "verify_field_transformations"), patch.object(ONLINE, "validate_wide_graph") as validate:
             report = ONLINE.run_wide_lineage(client, 7, 'fixture', 30, owned)
         self.assertEqual(owned, [1, 2])
         self.assertEqual(report['item_ids'], [1, 2, 3])
@@ -895,7 +895,7 @@ class TransferRelationalSQLETLOnlineTest(unittest.TestCase):
     def test_wide_graph_rejects_truncation_missing_fields_and_wrong_execution(self):
         ids, hashes, executions = [1, 2, 3], {1: 'source', 2: 'middle', 3: 'target'}, ['first', 'hop']
         nodes = [{"kind": "field_ref", "item_id": item, "engine_id": 7, "field_name": field, "schema_snapshot_hash": hashes[item]} for item in ids for field in ONLINE.WIDE_FIELDS]
-        edges = [{"granularity": "field", "status": "active", "transformation": "direct",
+        edges = [{"granularity": "field", "status": "active",
                   "source": nodes[i * 500 + column], "target": nodes[(i + 1) * 500 + column], "evidence": {"execution_id": executions[i]}}
                  for i in range(2) for column in range(500)]
         graph = {"subject": {"kind": "data_item", "item_id": 3, "schema_snapshot_hash": 'target'}, "granularity": "field",
@@ -1091,8 +1091,8 @@ class TransferRelationalSQLETLOnlineTest(unittest.TestCase):
             return {"kind": "field_ref", "item_id": item_id, "field_name": field, "schema_snapshot_hash": f"sha256:table-{item_id}"}
         source, target, downstream = node(5, "status"), node(7, "region_name"), node(11, "area")
         return {"field_lineage_status": "complete", "truncated": False, "subject": downstream, "nodes": [source, target, downstream], "edges": [
-            {"source": source.copy(), "target": target.copy(), "granularity": "field", "status": "active", "transformation": "direct", "evidence": {"execution_id": "replacement"}},
-            {"source": target.copy(), "target": downstream.copy(), "granularity": "field", "status": "active", "transformation": "direct", "evidence": {"execution_id": "hop"}},
+            {"source": source.copy(), "target": target.copy(), "granularity": "field", "status": "active", "evidence": {"execution_id": "replacement"}},
+            {"source": target.copy(), "target": downstream.copy(), "granularity": "field", "status": "active", "evidence": {"execution_id": "hop"}},
         ]}
 
     def test_rejects_wrong_fields_versions_and_execution_proofs(self):
@@ -1103,6 +1103,8 @@ class TransferRelationalSQLETLOnlineTest(unittest.TestCase):
             "mixed_snapshot": lambda graph: graph["edges"][0]["target"].update(schema_snapshot_hash="old-schema"),
             "closed": lambda graph: graph["edges"][0].update(status="closed"),
             "wrong_execution": lambda graph: graph["edges"][0]["evidence"].update(execution_id="first"),
+            "private_transformation": lambda graph: graph["edges"][0].update(transformation="direct"),
+            "private_expression": lambda graph: graph["edges"][0]["evidence"].update(expression="private"),
             "missing_hash": lambda graph: graph["nodes"][0].pop("schema_snapshot_hash"),
             "truncated": lambda graph: graph.update(truncated=True),
             "unavailable": lambda graph: graph.update(field_lineage_status="unavailable"),
@@ -1115,6 +1117,66 @@ class TransferRelationalSQLETLOnlineTest(unittest.TestCase):
                 mutate(graph)
                 with self.assertRaises(ONLINE.SuiteError):
                     ONLINE.validate_field_graph(graph, 11, "area", expected)
+
+    def test_private_field_transformations_bind_real_identity_and_read_only_observations(self):
+        identifier = str(uuid.uuid4())
+        as_of = "2026-10-05T00:00:02Z"
+        for count in (1, 101):
+            with self.subTest(count=count), tempfile.TemporaryDirectory() as directory:
+                source = [{"item_id": 5, "field_name": f"source_{i}", "schema_snapshot_hash": "source-hash", "engine_id": 4} for i in range(count)]
+                target = [{"item_id": 7, "field_name": f"target_{i}", "schema_snapshot_hash": "target-hash", "engine_id": 3} for i in range(count)]
+                graph = {"nodes": source + target, "subject": {"item_id": 7}, "as_of": as_of}
+                expected = {(5, left["field_name"], 7, right["field_name"], "derived", identifier) for left, right in zip(source, target)}
+                env = {"ONLINE_SUITE": "transfer-relational-sql-etl", "ADDP_ONLINE_TEST_TENANT_ID": "2",
+                       "ADDP_ONLINE_TEST_ENGINE_ID": "3", "ADDP_ONLINE_TEST_MONGODB_ENGINE_ID": "4",
+                       "ADDP_ONLINE_SCAN_POSTGRES_ID": "a" * 64, "ADDP_ONLINE_TEST_RUN_ID": "test-run",
+                       "ADDP_ONLINE_ARTIFACT_DIR": directory}
+                def read(statement, **kwargs):
+                    self.assertIn("BEGIN READ ONLY;", statement)
+                    self.assertIn("statement_timeout='3s'", statement)
+                    self.assertIn("o.source_schema_hash=e.source_schema_hash", statement)
+                    self.assertIn("o.target_schema_hash=e.target_schema_hash", statement)
+                    self.assertIn("run.actor_principal_id=:'principal'::bigint", statement)
+                    self.assertIn("o.execution_id=e.execution_id", statement)
+                    self.assertIn("o.observed_at<=NULLIF(:'as_of','')::timestamptz", statement)
+                    self.assertEqual(kwargs["postgres_id"], "a" * 64)
+                    variables = kwargs["variables"]
+                    self.assertEqual((variables["tenant"], variables["principal"], variables["as_of"]), (2, "31", as_of))
+                    rows = json.loads(variables["edges"])
+                    self.assertLessEqual(len(rows), 100)
+                    self.assertEqual({row["execution_id"] for row in rows}, {identifier})
+                    self.assertEqual({(row["source_engine_id"], row["target_engine_id"]) for row in rows}, {(4, 3)})
+                    return json.dumps({"expected": len(rows), "verified": len(rows)})
+                with patch.dict(os.environ, env, clear=True), patch.object(ONLINE, "validate_user_identity", return_value={"principal_id": "31"}), patch.object(ONLINE, "import_module") as load:
+                    query = load.return_value.sql
+                    query.side_effect = read
+                    ONLINE.verify_field_transformations(Mock(), graph, expected)
+                    self.assertEqual(query.call_count, 1 if count == 1 else 2)
+                    path = Path(directory) / "field-lineage-transformations.json"
+                    receipt = json.loads(path.read_text())
+                    self.assertEqual(receipt["checks"][0]["edge_count"], count)
+                    query.side_effect = None
+                    query.return_value = '{"expected":1,"verified":0}'
+                    with self.assertRaisesRegex(ONLINE.SuiteError, "stored field transformations"):
+                        ONLINE.verify_field_transformations(Mock(), graph, expected)
+                    self.assertEqual(json.loads(path.read_text()), receipt)
+                    graph["nodes"][0]["engine_id"] = 99
+                    query.reset_mock()
+                    with self.assertRaisesRegex(ONLINE.SuiteError, "outside the Hosted engines"):
+                        ONLINE.verify_field_transformations(Mock(), graph, expected)
+                    query.assert_not_called()
+
+    def test_browser_query_transformations_use_captured_execution_and_exact_target(self):
+        identifier = str(uuid.uuid4())
+        with tempfile.TemporaryDirectory() as directory, patch.dict(os.environ, {"ADDP_ONLINE_ARTIFACT_DIR": directory}):
+            path = Path(directory) / "transfer-query-lineage-execution.json"
+            path.write_text(json.dumps({"execution_id": identifier, "target_item_id": 7}))
+            client = Mock()
+            with patch.object(ONLINE, "find_item", return_value={"id": 7}), patch.object(ONLINE, "wait_field_graph") as wait:
+                ONLINE.verify_browser_query_transformations(client, 3, {"id": 5}, 30)
+                wait.assert_called_once_with(client, 7, "amount", {(5, "amount", 7, "amount", "direct", identifier)}, 30)
+            with patch.object(ONLINE, "find_item", return_value={"id": 9}), self.assertRaisesRegex(ONLINE.SuiteError, "target changed"):
+                ONLINE.verify_browser_query_transformations(client, 3, {"id": 5}, 30)
 
     def test_field_graph_diagnostic_bounds_and_redacts_untrusted_response(self):
         marker = "PRIVATE_EXPRESSION_TOKEN"
@@ -1142,7 +1204,7 @@ class TransferRelationalSQLETLOnlineTest(unittest.TestCase):
         expected = {(5, "status", 7, "region_name", "direct", execution_ids[0]),
                     (7, "region_name", 11, "area", "direct", execution_ids[1])}
         first = copy.deepcopy(graph)
-        first["edges"][0].pop("transformation")
+        first["field_lineage_status"] = "unavailable"
         final = copy.deepcopy(graph)
         final["edges"][0]["evidence"]["execution_id"] = str(uuid.uuid4())
         for converges in (False, True):
@@ -1151,7 +1213,7 @@ class TransferRelationalSQLETLOnlineTest(unittest.TestCase):
                 client.request.side_effect = [SimpleNamespace(payload=first),
                                               SimpleNamespace(payload=graph if converges else final)]
                 env = {"ADDP_ONLINE_ARTIFACT_DIR": directory, "ADDP_ONLINE_TEST_RUN_ID": "test-run"}
-                with patch.dict(os.environ, env), patch.object(ONLINE.time, "monotonic", side_effect=[0, 0, 1, 4]), patch.object(ONLINE.time, "sleep"):
+                with patch.dict(os.environ, env), patch.object(ONLINE.time, "monotonic", side_effect=[0, 0, 1, 4]), patch.object(ONLINE.time, "sleep"), patch.object(ONLINE, "verify_field_transformations"):
                     if converges:
                         self.assertEqual(ONLINE.wait_field_graph(client, 11, "area", expected, 3), graph)
                     else:
@@ -1196,6 +1258,7 @@ class TransferRelationalSQLETLOnlineTest(unittest.TestCase):
                 ONLINE.verify_unproven_schema(client, 11, "sha256:old")
 
     def test_old_schema_history_keeps_exact_hashes_execution_and_lifecycle(self):
+        self.enterContext(patch.object(ONLINE, "verify_field_transformations"))
         as_of = "2026-10-05T00:00:02Z"
         expected = {"area": {(5, "status", 7, "region_name", "direct", "replacement"), (7, "region_name", 11, "area", "direct", "hop")}}
         hashes = {item: f"sha256:table-{item}" for item in (5, 7, 11)}
@@ -1371,6 +1434,7 @@ class TransferRelationalSQLETLOnlineTest(unittest.TestCase):
             stack.enter_context(patch.object(ONLINE, "run_write_failures", return_value={"clickhouse": {"engine_id": 9}}))
             binary = stack.enter_context(patch.object(ONLINE, "run_binary_roundtrip", side_effect=binary_roundtrip))
             stack.enter_context(patch.object(ONLINE, "run_browser", return_value={}))
+            stack.enter_context(patch.object(ONLINE, "verify_browser_query_transformations"))
             stack.enter_context(patch.object(ONLINE, "run_object_upload", return_value={"single_source_facts_verified": True}))
             stack.enter_context(patch.object(ONLINE, "run_manager_import_with_grant", return_value={"automatic_scan_verified": True}))
             stack.enter_context(patch.object(ONLINE, "record_manager_import_receipt", side_effect=receipt))

@@ -71,6 +71,18 @@ class ExecutionRetentionReadonlyTest(unittest.TestCase):
             self.assertEqual(error.exception.sqlstate, '23514')
             self.assertNotIn('private', str(error.exception))
 
+    def test_fixture_sql_passes_quoted_variables_as_psql_arguments(self):
+        inspected = type('Result', (), {'stdout': '[{"Id":"owned"}]'})()
+        returned = type('Result', (), {'returncode': 0, 'stdout': '{"verified":1}'})()
+        statement = "BEGIN READ ONLY; SELECT :'field'; COMMIT;"
+        value = "field'; PRIVATE_MARKER"
+        with patch.object(M, 'boundary'), patch.object(M, 'validate_container', return_value='owner'), \
+                patch.object(M.subprocess, 'run', side_effect=[inspected, returned]) as command:
+            self.assertEqual(M.sql(statement, postgres_id='owned', variables={'field': value}), '{"verified":1}')
+        self.assertEqual(command.call_args.kwargs['input'], statement)
+        self.assertIn('field=' + value, command.call_args.args[0])
+        self.assertNotIn(value, statement)
+
     def test_container_identity_refuses_personal_replaced_and_nononline_database(self):
         environment = dict(POSTGRES_USER='owned', POSTGRES_PASSWORD='private')
         container = {'Id': 'container-id', 'State': {'Running': True}, 'Config': {

@@ -76,15 +76,18 @@ def validate_container(container, expected, environment):
     return values['POSTGRES_USER']
 
 
-def sql(statement, expected_suite=SUITE, *, postgres_id=None):
+def sql(statement, expected_suite=SUITE, *, postgres_id=None, variables=None):
     boundary(expected_suite)
     inspected = subprocess.run(['docker', 'inspect', 'addp-postgres'], check=True,
                                capture_output=True, text=True, timeout=10)
     container, = json.loads(inspected.stdout)
     expected = os.environ.get('ADDP_ONLINE_RETENTION_POSTGRES_ID') if postgres_id is None else postgres_id
     user = validate_container(container, expected, os.environ)
-    result = subprocess.run(['docker', 'exec', '-i', container['Id'], 'psql', '-X', '-qAt',
-                             '-v', 'ON_ERROR_STOP=1', '-v', 'VERBOSITY=sqlstate', '-U', user, '-d', 'addp_online'],
+    command = ['docker', 'exec', '-i', container['Id'], 'psql', '-X', '-qAt',
+               '-v', 'ON_ERROR_STOP=1', '-v', 'VERBOSITY=sqlstate', '-U', user, '-d', 'addp_online']
+    for key, value in (variables or {}).items():
+        command.extend(['-v', key + '=' + str(value)])
+    result = subprocess.run(command,
                             input=statement, capture_output=True, text=True, timeout=20)
     if result.returncode:
         match = re.search(r'ERROR:\s+([0-9A-Z]{5})\b', result.stderr)

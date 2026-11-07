@@ -9,6 +9,7 @@ import io
 import struct
 import zipfile
 import importlib.util
+from importlib import import_module
 import json
 import os
 import signal
@@ -341,14 +342,100 @@ def validate_field_graph(payload: object, item_id: int, field: str, expected: se
             matches = [node for node in nodes if node.get("item_id") == endpoint.get("item_id") and node.get("field_name") == endpoint.get("field_name")]
             if len(matches) != 1 or matches[0].get("schema_snapshot_hash") != endpoint.get("schema_snapshot_hash"):
                 raise SuiteError("field edge crosses a schema snapshot")
-        observed.add((source.get("item_id"), source.get("field_name"), target.get("item_id"), target.get("field_name"), edge.get("transformation"), evidence.get("execution_id")))
+        if "transformation" in edge or set(evidence) - {"execution_id", "write_mode", "field_lineage_status"}:
+            raise SuiteError("user field graph exposed private transformation evidence")
+        observed.add((source.get("item_id"), source.get("field_name"), target.get("item_id"), target.get("field_name"), evidence.get("execution_id")))
     expected_nodes = {(item_id, field)} | {(edge[0], edge[1]) for edge in expected} | {(edge[2], edge[3]) for edge in expected}
-    if observed != expected or len(edges) != len(expected) or identities != expected_nodes or len(nodes) != len(expected_nodes):
+    public_expected = {(edge[0], edge[1], edge[2], edge[3], edge[5]) for edge in expected}
+    if observed != public_expected or len(edges) != len(expected) or identities != expected_nodes or len(nodes) != len(expected_nodes):
         raise SuiteError("field lineage does not match the exact mappings/executions; old or unrelated fields may remain")
     root = [node for node in nodes if node.get("item_id") == item_id and node.get("field_name") == field][0]
     if root.get("schema_snapshot_hash") != subject.get("schema_snapshot_hash"):
         raise SuiteError("field lineage subject crosses a schema snapshot")
     return graph
+
+
+def verify_field_transformations(client, graph, expected):
+    if not expected:
+        return
+    if len(expected) > 1000:
+        raise SuiteError("field transformation proof exceeds the edge bound")
+    suite = "transfer-relational-sql-etl"
+    tenant = positive_int(required_environment("ADDP_ONLINE_TEST_TENANT_ID"), "lineage Tenant")
+    container = required_environment("ADDP_ONLINE_SCAN_POSTGRES_ID")
+    if os.environ.get("ONLINE_SUITE") != suite or tenant <= 1 or len(container) != 64 or any(c not in "0123456789abcdef" for c in container):
+        raise SuiteError("field proof requires the exact Hosted Transfer fixture")
+    identity = validate_user_identity(client, tenant)
+    engines = {positive_int(required_environment(key), "field proof Engine") for key in (
+        "ADDP_ONLINE_TEST_ENGINE_ID", "ADDP_ONLINE_TEST_MONGODB_ENGINE_ID")}
+    nodes = {(node["item_id"], node["field_name"]): node for node in graph["nodes"]}
+    rows = []
+    for source, source_field, target, target_field, transformation, identifier in sorted(expected):
+        if transformation not in {"direct", "derived"} or not isinstance(identifier, str) or str(uuid.UUID(identifier)) != identifier:
+            raise SuiteError("field proof requires a declared transformation and actual execution UUID")
+        left, right = nodes[(source, source_field)], nodes[(target, target_field)]
+        if left.get("engine_id") not in engines or right.get("engine_id") not in engines:
+            raise SuiteError("field proof endpoints are outside the Hosted engines")
+        rows.append({"source_item_id": source, "source_field_name": source_field, "source_schema_hash": left["schema_snapshot_hash"],
+                     "source_engine_id": left["engine_id"], "target_item_id": target, "target_field_name": target_field,
+                     "target_schema_hash": right["schema_snapshot_hash"], "target_engine_id": right["engine_id"],
+                     "transformation": transformation, "execution_id": identifier})
+    as_of = graph.get("as_of")
+    if as_of is not None and datetime.fromisoformat(as_of.replace("Z", "+00:00")).tzinfo is None:
+        raise SuiteError("historical field proof requires a timezone")
+    statement = """BEGIN READ ONLY;
+SET LOCAL statement_timeout='3s'; SET LOCAL lock_timeout='1s';
+WITH expected AS (
+  SELECT * FROM jsonb_to_recordset(:'edges'::jsonb) AS x(
+    source_item_id bigint, source_field_name text, source_schema_hash text, source_engine_id bigint,
+    target_item_id bigint, target_field_name text, target_schema_hash text, target_engine_id bigint,
+    transformation text, execution_id text)
+), checked AS (
+ SELECT e.*, proof.matches, proof.valid FROM expected e CROSS JOIN LATERAL (
+  SELECT count(*) AS matches,
+    bool_and(o.evidence->>'transformation'=e.transformation AND o.evidence->>'execution_id'=e.execution_id) AS valid
+  FROM meta.lineage_observations o
+  JOIN meta.meta_item s ON s.id=o.source_item_id AND s.tenant_id=o.tenant_id AND s.deleted_at IS NULL
+  JOIN meta.meta_item t ON t.id=o.target_item_id AND t.tenant_id=o.tenant_id AND t.deleted_at IS NULL
+  JOIN common.task_executions run ON run.execution_id=o.execution_id AND run.tenant_id=o.tenant_id
+  WHERE o.tenant_id=:'tenant'::integer AND o.granularity='field' AND o.relation_kind IN ('derive','reference')
+    AND o.execution_id=e.execution_id AND run.actor_principal_id=:'principal'::bigint AND run.status='success'
+    AND run.module IN ('transfer','develop') AND o.producer_module=run.module
+    AND o.source_item_id=e.source_item_id AND o.target_item_id=e.target_item_id
+    AND s.engine_id=e.source_engine_id AND t.engine_id=e.target_engine_id
+    AND o.source_field_name=e.source_field_name AND o.target_field_name=e.target_field_name
+    AND o.source_schema_hash=e.source_schema_hash AND o.target_schema_hash=e.target_schema_hash
+    AND (NULLIF(:'as_of','') IS NULL OR o.observed_at<=NULLIF(:'as_of','')::timestamptz)
+ ) proof
+)
+SELECT json_build_object('expected',count(*),'verified',count(*) FILTER (WHERE matches=1 AND valid)) FROM checked;
+COMMIT;
+"""
+    postgres = import_module("scripts.test.execution-retention-readonly-online")
+    for offset in range(0, len(rows), 100):
+        chunk = rows[offset:offset + 100]
+        encoded = json.dumps(chunk)
+        if len(encoded.encode()) > 60000:
+            raise SuiteError("field transformation proof exceeds the input bound")
+        try:
+            raw = postgres.sql(statement, expected_suite=suite, postgres_id=container,
+                               variables={"edges": encoded, "tenant": tenant, "principal": identity["principal_id"],
+                                          "as_of": as_of or ""})
+            result = json.loads(raw) if len(raw.encode()) <= 256 else None
+        except (OSError, ValueError, RuntimeError, subprocess.SubprocessError):
+            raise SuiteError("bounded field transformation read unavailable") from None
+        if result != {"expected": len(chunk), "verified": len(chunk)}:
+            raise SuiteError("stored field transformations do not match the exact execution endpoints")
+    artifact = Path(required_environment("ADDP_ONLINE_ARTIFACT_DIR")) / "field-lineage-transformations.json"
+    run_id = required_environment("ADDP_ONLINE_TEST_RUN_ID")
+    receipt = json.loads(artifact.read_text()) if artifact.is_file() else {
+        "schema_version": "addp.field-lineage-transformations/v1", "run_id": run_id, "checks": []}
+    if receipt.get("run_id") != run_id:
+        raise SuiteError("field transformation receipt belongs to another Run")
+    receipt["checks"].append({"item_id": graph["subject"]["item_id"], "field_name": graph["subject"].get("field_name"),
+                              "edge_count": len(expected),
+                              "execution_ids": sorted({row[5] for row in expected}), "as_of": as_of, "result": "passed"})
+    artifact.write_text(json.dumps(receipt, sort_keys=True) + "\n")
 
 
 def field_graph_diagnostic_snapshot(payload, fields):
@@ -417,6 +504,7 @@ def wait_field_graph(client: GatewayClient, item_id: int, field: str, expected: 
         attempts += 1
         try:
             graph = validate_field_graph(payload, item_id, field, expected)
+            verify_field_transformations(client, graph, expected)
         except SuiteError as error:
             last_error = str(error)
             last = field_graph_diagnostic_snapshot(payload, fields)
@@ -1166,8 +1254,9 @@ def validate_wide_graph(payload, engine_id, item_ids, hashes, execution_ids):
     actual_edges = set()
     for edge in edges:
         source, target = edge["source"], edge["target"]
-        if edge.get("status") != "active" or edge.get("granularity") != "field" or edge.get("transformation") != "direct":
-            raise SuiteError("wide field edge must be active direct evidence")
+        if (edge.get("status") != "active" or edge.get("granularity") != "field" or "transformation" in edge
+                or set(edge.get("evidence", {})) - {"execution_id", "write_mode", "field_lineage_status"}):
+            raise SuiteError("wide field edge must contain active public evidence only")
         for endpoint in (source, target):
             if endpoint.get("engine_id") != engine_id or endpoint.get("schema_snapshot_hash") != hashes.get(endpoint.get("item_id")):
                 raise SuiteError("wide field edge engine/snapshot mismatch")
@@ -1207,6 +1296,9 @@ def run_wide_lineage(client, engine_id, name, timeout, owned_ids):
         elapsed = time.monotonic() - started
         try:
             validate_wide_graph(graph, engine_id, item_ids, hashes, execution_ids)
+            expected = {(item_ids[i], field, item_ids[i + 1], field, "direct", execution_ids[i])
+                        for i in range(2) for field in WIDE_FIELDS}
+            verify_field_transformations(client, graph, expected)
             return {"target_locator": SUPPORT.build_item_locator(engine_id, source), "target_item_id": item_ids[-1], "item_ids": item_ids,
                     "schema_hashes": hashes, "execution_ids": execution_ids, "field_count": 500, "node_count": 1500, "edge_count": 1000,
                     "query_seconds": elapsed, "schema_snapshot_hash": hashes[item_ids[-1]]}
@@ -1560,6 +1652,7 @@ def verify_historical_schema(client, item_id, hashes, as_of, expected_fields, ta
         graph = field_graph_request(client, item_id, field, schema_snapshot_hash=hashes[item_id], as_of=as_of)
         validate_field_graph(graph, item_id, field, expected, historical=True)
         validate_graph_snapshots(graph, hashes)
+        verify_field_transformations(client, graph, expected)
         try:
             returned_time = datetime.fromisoformat(str(graph.get("as_of")).replace("Z", "+00:00"))
             observed_times = [datetime.fromisoformat(str(edge.get("last_observed_at")).replace("Z", "+00:00")) for edge in graph["edges"]]
@@ -1942,6 +2035,18 @@ def run_browser(repository: Path, environment: Mapping[str, str], expected_task_
     )
 
 
+def verify_browser_query_transformations(client, engine_id, source, timeout):
+    path = Path(required_environment("ADDP_ONLINE_ARTIFACT_DIR")) / "transfer-query-lineage-execution.json"
+    proof = _object(json.loads(path.read_text()), "browser SQL lineage identity")
+    if set(proof) != {"execution_id", "target_item_id"}:
+        raise SuiteError("browser SQL lineage must retain its actual execution and target")
+    target = find_item(client, engine_id, "public." + TARGET_TABLE, "table")
+    if proof["target_item_id"] != target["id"]:
+        raise SuiteError("browser SQL lineage target changed")
+    expected = {(source["id"], "amount", target["id"], "amount", "direct", proof["execution_id"])}
+    wait_field_graph(client, target["id"], "amount", expected, timeout)
+
+
 def interrupt_online(signum: int, _frame: object) -> None:
     raise SuiteError(f"Online acceptance interrupted by signal {signum}")
 
@@ -2012,6 +2117,7 @@ def main() -> int:
         wide = run_wide_lineage(client, engine_id, owned_name, convergence_timeout, owned_ids)
         write_failures = run_write_failures(client, engine_id, owned_name, convergence_timeout, owned_ids)
         browser = run_browser(repository, dict(os.environ), owned_name, lineage, mongodb_lineage, chain, wide, write_failures)
+        verify_browser_query_transformations(client, engine_id, source, convergence_timeout)
         multi = run_multi_source_lineage(client, engine_id, source, lineage, owned_name, convergence_timeout, owned_ids)
         cleanup_definitions(client, owned_paths)
         cleanup_tasks(client, owned_ids)
