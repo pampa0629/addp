@@ -343,6 +343,9 @@ class AuditLatencyObservationTest(unittest.TestCase):
             message = {'msg': 'http.request.completed', 'method': 'POST', 'route': ONLINE.READ_CHECK}
             identity = {phase: {key: index for index, key in enumerate(ONLINE.AUTH_CONTEXT_STAGES, 1)}
                         for phase in ONLINE.AUTH_CONTEXT_PHASES}
+            for timings in identity.values():
+                timings.update(session_snapshot=8000, session_snapshot_query_wall=6000,
+                               session_snapshot_server_to_row=4000)
             diagnostics = {'source_rule_query': {**timing, 'private': 'ignore'}, 'auth_context_ns': identity}
             http = record({**message, 'diagnostics': diagnostics})
             path = root / 'instance' / '1.jsonl'
@@ -361,6 +364,13 @@ class AuditLatencyObservationTest(unittest.TestCase):
                             record({**message, 'diagnostics': {**diagnostics,
                                                               'source_rule_query': {**timing, 'backend_pid': True}}})):
                 path.write_text(invalid)
+                self.assertEqual(ONLINE.collect_system_load_tail(root, [{'request_id': request}],
+                                 rule_timings={}, wait_seconds=0)['result'], 'incomplete')
+            for invalid_timing in ({'session_snapshot_server_to_row': None},
+                                   {'session_snapshot_server_to_row': 7000},
+                                   {'session_snapshot_query_wall': 9000}):
+                invalid_identity = {**identity, 'rule_snapshot': {**identity['rule_snapshot'], **invalid_timing}}
+                path.write_text(record({**message, 'diagnostics': {**diagnostics, 'auth_context_ns': invalid_identity}}))
                 self.assertEqual(ONLINE.collect_system_load_tail(root, [{'request_id': request}],
                                  rule_timings={}, wait_seconds=0)['result'], 'incomplete')
 

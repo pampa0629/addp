@@ -160,15 +160,22 @@ func TestAuthContextServiceAgainstPostgres(t *testing.T) {
 			logCredentialValidationBoundaries(t, err)
 			t.Fatalf("resolve tenant AuthContext: %v", err)
 		}
-		if len(timings) != 1 || len(timings[0].Group()) != 7 {
-			t.Fatalf("expected seven stages from one successful resolution, got %v", timings)
+		if len(timings) != 1 || len(timings[0].Group()) != 9 {
+			t.Fatalf("expected seven stages and paired query timings, got %v", timings)
 		}
+		stageNS := make(map[string]int64, 9)
 		for _, stage := range timings[0].Group() {
 			if stage.Value.Kind() != slog.KindInt64 || stage.Value.Int64() < 0 ||
 				(stage.Key == "session_snapshot" && stage.Value.Int64() == 0) {
 				t.Fatalf("invalid stage duration: %v", stage)
 			}
+			stageNS[stage.Key] = stage.Value.Int64()
 		}
+		server, wall := stageNS["session_snapshot_server_to_row"], stageNS["session_snapshot_query_wall"]
+		if server <= 0 || server > wall || wall > stageNS["session_snapshot"] {
+			t.Fatalf("invalid server/query/stage duration boundary: %v", stageNS)
+		}
+		t.Logf("session snapshot timing ns: server_to_row=%d query_wall=%d stage=%d", server, wall, stageNS["session_snapshot"])
 		if err := commonauth.ValidateAuthContext(*resolved); err != nil {
 			t.Fatalf("validate projected tenant AuthContext: %v", err)
 		}

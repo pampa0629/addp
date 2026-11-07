@@ -18,13 +18,18 @@ import (
 
 type authContextTimingKey struct{}
 
+type sessionSnapshotQueryTiming struct {
+	wall     time.Duration
+	serverNS int64
+}
+
 // WithAuthContextTiming observes successful resolutions in one synchronous
-// request. The callback receives only the existing stage durations in ns.
+// request. The callback receives only durations in ns.
 func WithAuthContextTiming(ctx context.Context, observe func(slog.Value)) context.Context {
 	return context.WithValue(ctx, authContextTimingKey{}, observe)
 }
 
-func recordAuthContextTiming(ctx context.Context, stages map[string]time.Duration) {
+func recordAuthContextTiming(ctx context.Context, stages map[string]time.Duration, query sessionSnapshotQueryTiming) {
 	if observe, ok := ctx.Value(authContextTimingKey{}).(func(slog.Value)); ok {
 		observe(slog.GroupValue(
 			slog.Int64("transaction_begin", stages["transaction_begin"].Nanoseconds()),
@@ -34,6 +39,8 @@ func recordAuthContextTiming(ctx context.Context, stages map[string]time.Duratio
 			slog.Int64("role_permissions", stages["role_permissions"].Nanoseconds()),
 			slog.Int64("projection", stages["projection"].Nanoseconds()),
 			slog.Int64("transaction_commit", stages["transaction_commit"].Nanoseconds()),
+			slog.Int64("session_snapshot_query_wall", query.wall.Nanoseconds()),
+			slog.Int64("session_snapshot_server_to_row", query.serverNS),
 		))
 	}
 }

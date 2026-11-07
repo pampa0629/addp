@@ -237,6 +237,7 @@ func (s *AuthContextService) resolveSessionCredential(
 	projectCredential func(*SessionCredentialAuthSnapshot) credentialProjection,
 ) (*commonauth.AuthContext, error) {
 	var authContext *commonauth.AuthContext
+	var queryTiming sessionSnapshotQueryTiming
 	startedAt := time.Now()
 	poolBefore, poolAvailable := s.authContextPoolStats()
 	stageDurations := make(map[string]time.Duration, 7)
@@ -252,6 +253,7 @@ func (s *AuthContextService) resolveSessionCredential(
 		if err != nil {
 			return err
 		}
+		queryTiming = snapshot.queryTiming
 
 		organization := commonauth.OrganizationContext{
 			Departments:   make([]commonauth.DepartmentMembership, 0),
@@ -384,7 +386,7 @@ func (s *AuthContextService) resolveSessionCredential(
 	}
 	finished := time.Now()
 	stageDurations[stage] += finished.Sub(stageStartedAt)
-	recordAuthContextTiming(ctx, stageDurations)
+	recordAuthContextTiming(ctx, stageDurations, queryTiming)
 	s.logSlowAuthContextResolution(ctx, startedAt, finished, stageDurations, poolBefore, poolAvailable)
 	return authContext, nil
 }

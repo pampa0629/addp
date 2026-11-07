@@ -70,6 +70,7 @@ CPU_LOAD_PROFILE = 'single_target_cpu'
 AUTH_CONTEXT_PHASES = ('route', 'pre_meta', 'rule_snapshot')
 AUTH_CONTEXT_STAGES = ('transaction_begin', 'session_snapshot', 'departments', 'project_groups',
                        'role_permissions', 'projection', 'transaction_commit')
+SNAPSHOT_QUERY_TIMINGS = ('session_snapshot_query_wall', 'session_snapshot_server_to_row')
 PG_CPU_SYSFS = Path('/sys/devices/system/cpu')
 
 
@@ -501,6 +502,11 @@ def collect_system_load_tail(directory, audits, *, rule_timings=None, wait_secon
                                 if (not all(type(value) is int and value >= 0 for value in values.values())
                                         or not 0 < sum(values.values()) <= 90_000_000_000):
                                     raise ValueError('invalid auth context stage timing')
+                                wall, server = (stages.get(key) for key in SNAPSHOT_QUERY_TIMINGS)
+                                if (type(wall) is not int or type(server) is not int or
+                                        not 0 < server <= wall <= values['session_snapshot']):
+                                    raise ValueError('invalid paired session snapshot query timing')
+                                values.update(zip(SNAPSHOT_QUERY_TIMINGS, (wall, server)))
                                 identity[phase] = values
                             rule_timings[request] = {'backend_pid': pid, 'started_unix_ns': int(start),
                                                      'finished_unix_ns': int(finish), 'auth_context_ns': identity}

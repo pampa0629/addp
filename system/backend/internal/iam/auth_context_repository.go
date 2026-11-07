@@ -46,6 +46,7 @@ type SessionCredentialAuthSnapshot struct {
 	TenantMembershipExpiresAt     *time.Time
 	TenantStatus                  *TenantStatus
 	DatabaseTime                  time.Time
+	queryTiming                   sessionSnapshotQueryTiming
 }
 
 type DepartmentMembershipProjection struct {
@@ -98,7 +99,17 @@ func (r *Repository) getAccessTokenAuthSnapshot(
 	if lookupColumn != "token_hash" && lookupColumn != "id" {
 		return nil, commonapi.ErrBadRequest
 	}
-	var snapshot SessionCredentialAuthSnapshot
+	var row struct {
+		SessionCredentialAuthSnapshot
+		SnapshotServerNS int64
+	}
+	var started time.Time
+	timingColumn := ""
+	if ctx.Value(authContextTimingKey{}) != nil {
+		// Only in the Hosted comparison. Keep the existing transaction and
+		// query; return the server clock at evaluation of this same result row.
+		timingColumn = ", (EXTRACT(EPOCH FROM (clock_timestamp() - statement_timestamp())) * 1000000000)::bigint AS snapshot_server_ns"
+	}
 	query := `
 		SELECT
 			access_token.id AS credential_id,
@@ -130,7 +141,7 @@ func (r *Repository) getAccessTokenAuthSnapshot(
 			membership.joined_at AS tenant_membership_joined_at,
 			membership.expires_at AS tenant_membership_expires_at,
 			tenant.status AS tenant_status,
-			statement_timestamp() AS database_time
+			statement_timestamp() AS database_time` + timingColumn + `
 		FROM system.access_tokens access_token
 		JOIN system.refresh_token_families family ON family.id = access_token.family_id
 		JOIN system.principals principal ON principal.id = family.principal_id
@@ -138,14 +149,20 @@ func (r *Repository) getAccessTokenAuthSnapshot(
 		LEFT JOIN system.tenants tenant ON tenant.id = membership.tenant_id
 		WHERE access_token.` + lookupColumn + ` = ?
 	`
-	result := r.db.WithContext(ctx).Raw(query, lookupValue).Scan(&snapshot)
+	if timingColumn != "" {
+		started = time.Now()
+	}
+	result := r.db.WithContext(ctx).Raw(query, lookupValue).Scan(&row)
+	if !started.IsZero() {
+		row.queryTiming = sessionSnapshotQueryTiming{wall: time.Since(started), serverNS: row.SnapshotServerNS}
+	}
 	if result.Error != nil {
 		return nil, wrapRepositoryError(result.Error)
 	}
 	if result.RowsAffected != 1 {
 		return nil, commonapi.ErrNotFound
 	}
-	return &snapshot, nil
+	return &row.SessionCredentialAuthSnapshot, nil
 }
 
 func (r *Repository) GetResourceAccessTicketAuthSnapshot(
