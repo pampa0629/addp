@@ -22862,7 +22862,8 @@ def test_dem_viewshed_async_cog_discovery_language_and_cleanup(tmp_path,monkeypa
     path=create_raster(tmp_path/'view-async.tif',values,(500000,1,0,3000000,0,-1),'EPSG:3857');before=path.read_bytes()
     target=tmp_path/'view.cog.tif'
     if case=='save-conflict':target.write_bytes(b'original-target')
-    spec=next(item for item in list_operators()if item['id']=='raster_viewshed')
+    from copy import deepcopy
+    spec=deepcopy(next(item for item in list_operators()if item['id']=='raster_viewshed'))
     assert spec['execution_modes']==['workflow']and spec['effects']==['read']and spec['attributes']['resource_groups']==['raster']
     assert all(p['required']for p in spec['parameters'])
     tasks=[{'id':'source','operator':'raster_load','depends_on':[],'params':{'access_plan':source_plan(path)}},

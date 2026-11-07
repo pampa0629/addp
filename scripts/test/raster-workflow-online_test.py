@@ -2677,3 +2677,14 @@ class WorkflowMetadataTest(unittest.TestCase):
                       "e.actor_principal_id=:'principal'", 'BEGIN READ ONLY'):
             self.assertIn(guard, statement)
         self.assertFalse(any(event[0] == 'list' for event in state['events']))
+
+class ExplicitRasterArtifactTypeTest(unittest.TestCase):
+    def test_byte_is_explicit_and_does_not_relax_original_float64_contract(self):
+        expected=m.fixture.artifact_expectation()
+        artifact={'artifact_type':'raster','format':'tiff','profile':'cog','width':expected['width'],'height':expected['height'],
+            'band_count':expected['band_count'],'source_crs':expected['source_crs'],'extent_srid':expected['extent_srid'],
+            'transform':expected['transform'],'bands':[{'dtype':'Byte','nodata':expected['band_nodata'],'nodata_is_nan':expected['band_nodata']is None}for _ in range(expected['band_count'])]}
+        m.validate_raster_artifact(artifact,expected,dtype='Byte')
+        with self.assertRaises(m.SuiteError):m.validate_raster_artifact(artifact,expected)
+        artifact['bands'][0]['dtype']='Float64'
+        with self.assertRaises(m.SuiteError):m.validate_raster_artifact(artifact,expected,dtype='Byte')

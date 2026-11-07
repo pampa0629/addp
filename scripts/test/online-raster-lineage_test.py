@@ -109,7 +109,7 @@ class RasterLineageTest(unittest.TestCase):
         with patch.dict(os.environ,self.env,clear=True),patch.object(m.BASE.HOSTED,'deployment_secret',return_value=self.secret):self.assertEqual(m.boundary(os.environ)[1:2],('raster-tpi-persistence',))
 
     def test_tri_is_only_an_additional_closed_suite_and_not_a_cross_suite_receipt(self):
-        for suite,prefix in [('raster-cut-fill-persistence','cut-fill'),('raster-tpi-persistence','tpi'),('raster-tri-persistence','tri'),('raster-roughness-persistence','roughness'),('raster-surface-area-persistence','surface-area'),('raster-line-of-sight-persistence','line-of-sight'),('raster-twi-persistence','twi')]:
+        for suite,prefix in [('raster-cut-fill-persistence','cut-fill'),('raster-tpi-persistence','tpi'),('raster-tri-persistence','tri'),('raster-roughness-persistence','roughness'),('raster-surface-area-persistence','surface-area'),('raster-line-of-sight-persistence','line-of-sight'),('raster-viewshed-persistence','viewshed'),('raster-twi-persistence','twi')]:
             env={**self.env,'ONLINE_SUITE':suite,'ADDP_ONLINE_TEST_RUN_ID':prefix+'-123-1'}
             with patch.dict(os.environ,env,clear=True),patch.object(m.BASE.HOSTED,'deployment_secret',return_value=self.secret):self.assertEqual(m.boundary(os.environ)[1:],(suite,prefix+'-123-1'))
             with patch.dict(os.environ,{**env,'ADDP_ONLINE_TEST_RUN_ID':'wrong-123-1'},clear=True),patch.object(m.BASE.HOSTED,'deployment_secret',return_value=self.secret),self.assertRaises(m.SuiteError):m.boundary(os.environ)

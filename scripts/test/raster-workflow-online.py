@@ -544,7 +544,7 @@ def validate_success(execution, source_locators, target_locator, mode, expectati
 
 
 
-def validate_raster_artifact(artifact, expectation):
+def validate_raster_artifact(artifact, expectation, *, dtype='Float64'):
     if (artifact.get('artifact_type'), artifact.get('format'), artifact.get('profile')) != ('raster', 'tiff', 'cog'):
         raise SuiteError('Develop result is not a public raster COG artifact')
     if (artifact.get('width'), artifact.get('height'), artifact.get('band_count')) != (expectation['width'], expectation['height'], expectation['band_count']):
@@ -558,7 +558,7 @@ def validate_raster_artifact(artifact, expectation):
     bands = array(artifact.get('bands'), 'artifact bands')
     expected_nodata = expectation['band_nodata']
     if len(bands) != expectation['band_count'] or any(
-        band.get('dtype') != 'Float64' or band.get('nodata_is_nan') is not (expected_nodata is None)
+        band.get('dtype') != dtype or band.get('nodata_is_nan') is not (expected_nodata is None)
         or band.get('nodata') != expected_nodata for band in bands
     ):
         raise SuiteError('Develop raster artifact did not preserve band dtype/NoData')

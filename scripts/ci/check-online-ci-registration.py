@@ -3466,6 +3466,44 @@ def validate_raster_surface_area(repository: Path, registered: set[str]) -> None
 
 
 
+def validate_raster_viewshed(repository: Path, registered: set[str]) -> None:
+    import ast
+    suite='raster-viewshed-persistence'
+    if suite not in registered:return
+    workflow=(repository/'.github/workflows/online-t4-gates.yml').read_text()
+    job=re.search(r'(?ms)^  raster-viewshed-hosted-t4:\n(.*?)(?=^  [a-z][a-z0-9-]*:\n|\Z)',workflow)
+    if (job is None or any(text not in job[1]for text in(
+        "if: github.event_name == 'workflow_dispatch' && inputs.suite == 'raster-viewshed-persistence'",
+        'runs-on: ubuntu-24.04','cancel-in-progress: false','nfs-kernel-server nfs-common',
+        'bash scripts/test/online-hosted-raster-viewshed-gate.sh --check-only','run: bash scripts/test/online-hosted-raster-viewshed-gate.sh','if: always()'))
+        or "&& inputs.suite != 'raster-viewshed-persistence'"not in workflow or load_suite_registry(repository)[suite].nightly):
+        raise RegistrationError('viewshed requires an isolated manual Hosted NFS job')
+    make=(repository/'Makefile').read_text()
+    if ('test_online_viewshed_fixture.py'not in make_target_commands(make,'test-geopython-workflow')
+        or 'test-raster-viewshed-online-runner:'not in make_target_commands(make,'test-raster-online-runner')):
+        raise RegistrationError('viewshed Native and Runner must use standard aggregate gates')
+    required={
+        'scripts/test/online-hosted-raster-viewshed-gate.sh':('ADDP_ONLINE_TEST_TIMEOUT_SECONDS=600','--suite raster-workflow','--wait-protection-owners develop,manager','start_online_geopython_runtime','online_raster_lineage.py prepare','online-raster-viewshed-fixture.py stop'),
+        'business/scripts/online-raster-viewshed-fixture.py':('def expected_pixels','enter>=leave','gdal.GDT_Byte','expected!=255','full_check=True','def prepare_oracle','def cleanup_oracle','def archive_cogs','source file changed'),
+        'scripts/test/raster-viewshed-persistence-online.py':('(16, 36, 712, 53)',"for language in ('zh-cn', 'en')",'dtype=\'Byte\'','raster.strict_sizes','lineage.collect','lineage.verify_archive','readonly.no_publication','ViewshedMetadata','ExactFileMetadataGrants','BEGIN READ ONLY','query language rewrote stored failure','source or prior target Meta snapshot changed','viewshed-cogs-manifest.json'),
+        'scripts/utils/online_raster_lineage.py':("'raster-viewshed-persistence': 'viewshed-lineage'",),
+        'engines/geopython-workflow/test_online_viewshed_fixture.py':('test_viewshed_real_sixteen_cogs_complete_pixels_masks_and_immutable_originals','checks==712','test_viewshed_real_exact_failure_node_language_and_zero_publication','test_viewshed_independent_oracle_rejects_corrupt_actual_or_frozen_facts'),
+        'scripts/test/raster-viewshed-persistence-online_test.py':('test_complete_fixed_matrix_rereads_and_original_manifest','test_identity_language_lineage_scan_size_and_metadata_fail_closed','test_unknown_write_outcome_remains_journalled_for_cleanup'),
+        'Makefile':('scripts/test/raster-viewshed-persistence-online_test.py','scripts/test/online-raster-viewshed-fixture_test.py','scripts/test/online-hosted-raster-viewshed-gate_test.py')}
+    for name,fragments in required.items():
+        path=repository/name
+        if not path.is_file()or any(not source_contract_contains(path.read_text(),text,repository)for text in fragments):
+            raise RegistrationError('viewshed evidence or registration is incomplete: '+name)
+    def literal(path,name):
+        try:
+            tree=ast.parse((repository/path).read_text())
+            return next(ast.literal_eval(node.value)for node in tree.body if isinstance(node,ast.Assign)and any(isinstance(t,ast.Name)and t.id==name for t in node.targets))
+        except (SyntaxError,ValueError,StopIteration):
+            raise RegistrationError('viewshed fixed matrix is invalid') from None
+    if len(literal('business/scripts/online-raster-viewshed-fixture.py','CASES'))!=16 or len(literal('scripts/test/raster-viewshed-persistence-online.py','FAILURES'))!=18:
+        raise RegistrationError('viewshed requires sixteen chains and eighteen bilingual failures')
+
+
 def validate_raster_line_of_sight(repository: Path, registered: set[str]) -> None:
     import ast
 
@@ -7609,6 +7647,7 @@ def check_registration(repository: Path) -> None:
     validate_raster_profile_curvature(repository, registered)
     validate_raster_cut_fill(repository, registered)
     validate_raster_surface_area(repository, registered)
+    validate_raster_viewshed(repository, registered)
     validate_raster_line_of_sight(repository, registered)
     validate_raster_tangential_curvature(repository, registered)
     validate_raster_plan_curvature(repository, registered)
