@@ -95,12 +95,14 @@ class ContinuousRunnerTest(unittest.TestCase):
 
     def test_scenario_error_survives_a_second_history_failure_during_cleanup(self):
         calls, report = [], {}
+        self_case = self
         class Actor:
             def request(self, method, path, expected, body=None):
                 calls.append((method, path))
                 if path.endswith('/scan/run/manual') or path.endswith('/start'):
                     return SimpleNamespace(payload={'execution_id': UUID, 'metadata': {}})
                 if path == '/api/v1/meta/executions/' + UUID:
+                    self_case.assertEqual(expected, (404,))
                     return SimpleNamespace(payload={'status': 'success'})
                 if path == M.OWNER + '/task-definitions':
                     return SimpleNamespace(payload={'id': 1, 'tenant_id': 2})
@@ -110,13 +112,19 @@ class ContinuousRunnerTest(unittest.TestCase):
                 if path == M.OWNER + '/task-definitions/1':
                     return SimpleNamespace(payload={'desired_state': 'stopped'})
                 raise AssertionError('unexpected fixture operation')
-        with patch.object(M, 'catalog_item', side_effect=[{'id': 9}, None, None]), \
+        class Preparer(Actor):
+            def request(self, method, path, expected, body=None):
+                if path == '/api/v1/meta/executions/' + UUID:
+                    return SimpleNamespace(payload={'status': 'success', 'triggered_by': 34})
+                return super().request(method, path, expected, body)
+        with patch.object(M.REGISTRATION, 'source_grant_participants', return_value=('34', '31')), \
+                patch.object(M, 'catalog_item', side_effect=[{'id': 9}, None, None]), \
                 patch.object(M.API, 'read_meta_scan_boundary', return_value={'sibling': {}, 'ancestors': [{}, {}]}), \
                 patch.object(M.API, 'wait_meta_scan_tick'), \
                 patch.object(M, 'wait_status', side_effect=M.SuiteError('execution reached an unexpected terminal status')), \
                 self.assertRaisesRegex(M.SuiteError, 'unexpected terminal status'):
-            M.run_suite(Actor(), None, None, None, None, None, None, 2, 'run-1', 10, 11,
-                        report, lambda: None, None)
+            M.run_suite(Actor(), None, None, Actor(), None, None, None, 2, 'run-1', 10, 11,
+                        report, lambda: None, None, preparer=Preparer())
         self.assertEqual(report['failure']['phase'], 'kafka_initial')
         self.assertEqual(report['failure']['reason'], 'unexpected_terminal_status')
         self.assertEqual(report['cleanup'], 'failed')
@@ -315,8 +323,9 @@ class ContinuousRunnerTest(unittest.TestCase):
             def request(self, method, path, expected, body=None, **kwargs):
                 calls.append((method, path, body))
                 if path == '/api/v1/meta/scan/run/manual':
-                    return SimpleNamespace(payload={'execution_id': UUID})
+                    raise AssertionError('log consumer must not prepare the source scan')
                 if path == '/api/v1/meta/executions/' + UUID:
+                    self_case.assertEqual(expected, (404,))
                     return SimpleNamespace(payload={'status': 'success'})
                 if path == M.OWNER + '/task-definitions':
                     self_payload = body
@@ -325,13 +334,25 @@ class ContinuousRunnerTest(unittest.TestCase):
                     raise M.SuiteError('stop after verified creation request')
                 return catalog.request(method, path, expected, **kwargs)
         report = {}
-        with patch.object(M.API, 'wait_meta_scan_tick') as tick, self.assertRaisesRegex(M.SuiteError, 'verified creation'):
-            M.run_suite(FixtureClient(), None, None, None, None, None, None, 2, 'run-1', 10, 11,
-                        report, lambda: None, None)
+        class Preparer(FixtureClient):
+            def request(self, method, path, expected, body=None, **kwargs):
+                if path == '/api/v1/meta/executions/' + UUID:
+                    self_case.assertEqual(expected, (200,))
+                    return SimpleNamespace(payload={'status': 'success', 'triggered_by': 34})
+                self_case.assertEqual(path, '/api/v1/meta/scan/run/manual')
+                calls.append((method, path, body))
+                return SimpleNamespace(payload={'execution_id': UUID})
+        self_case = self
+        with patch.object(M.REGISTRATION, 'source_grant_participants', return_value=('34', '31')), \
+                patch.object(M.API, 'wait_meta_scan_tick') as tick, self.assertRaisesRegex(M.SuiteError, 'verified creation'):
+            M.run_suite(FixtureClient(), None, None, FixtureClient(), None, None, None, 2, 'run-1', 10, 11,
+                        report, lambda: None, None, preparer=Preparer())
         tick.assert_called_once()
         self.assertEqual(len(tick.call_args.args[0]), 3)
         self.assertEqual(report['cleanup'], 'passed')
         self.assertEqual(report['precise_scan_scope']['scans'], [])
+        self.assertEqual(report['source_scan_preparation'], {'execution_id': UUID, 'principal_id': '34',
+            'consumer_read_denied': True, 'peer_read_denied': True})
         before = calls[:-1]
         self.assertTrue(all(method == 'GET' or path.endswith('/manual') for method, path, _ in before))
         self.assertEqual(sum(path.endswith('/items') for _, path, _ in before), 3)
@@ -346,7 +367,7 @@ class ContinuousRunnerTest(unittest.TestCase):
                    'metadata_scan_attempt': 1, 'to_revision': 2, 'metadata_scan_execution_id': scan_id}
         scan = {'execution_id': scan_id, 'status': 'success', 'triggered_by': 32}
         original = {'execution_id': UUID, 'status': 'failed', 'metadata': {}, 'trigger_by': 31}
-        def scenario(*, result=None, scan_change=None, initial_actor=31, historical_actor=31,
+        def scenario(*, result=None, scan_change=None, initial_actor=34, historical_actor=31,
                      historical_actor_after=31, source_visible_to_approver=False, approval_visible_to_initiator=False):
             calls = []
             class Actor:
@@ -355,7 +376,7 @@ class ContinuousRunnerTest(unittest.TestCase):
                     calls.append((self.principal, method, path, expected))
                     status = 200
                     if path == '/api/v1/meta/executions/' + initial_id:
-                        status = 200 if self.principal == 31 or source_visible_to_approver else 404
+                        status = 200 if self.principal == 34 or source_visible_to_approver else 404
                         payload = {'triggered_by': initial_actor}
                     elif path == '/api/v1/meta/executions/' + scan_id:
                         status = 200 if self.principal == 32 or approval_visible_to_initiator else 404
@@ -374,7 +395,8 @@ class ContinuousRunnerTest(unittest.TestCase):
                 self.assertEqual(body, {'fields': fields})
                 return {**applied, **(result or {})}
             output = M.apply_cdc_schema_approval(approver, 57, UUID, approve, initiator=initiator,
-                initial_scan_id=initial_id, initiator_id='31', approver_id='32')
+                initial_scan_id=initial_id, initial_reader=Actor(34), initial_principal='34',
+                initiator_id='31', approver_id='32')
             return output, calls
         output, calls = scenario()
         self.assertEqual(output[2], scan_id)
@@ -385,7 +407,7 @@ class ContinuousRunnerTest(unittest.TestCase):
             with self.subTest(change=change), self.assertRaises(M.SuiteError): scenario(result=change)
         for change in [{'parent_execution_id': UUID}, {'triggered_by': 31}, {'status': 'failed'}]:
             with self.subTest(change=change), self.assertRaises(M.SuiteError): scenario(scan_change=change)
-        for kwargs in [{'initial_actor': 32}, {'historical_actor': 32}, {'historical_actor_after': 32},
+        for kwargs in [{'initial_actor': 31}, {'historical_actor': 32}, {'historical_actor_after': 32},
                        {'source_visible_to_approver': True}, {'approval_visible_to_initiator': True}]:
             with self.subTest(change=kwargs), self.assertRaises(M.SuiteError): scenario(**kwargs)
 
@@ -393,7 +415,7 @@ class ContinuousRunnerTest(unittest.TestCase):
         for approver in ('31', 31):
             with self.subTest(approver=approver), self.assertRaisesRegex(M.SuiteError, 'two distinct User'):
                 M.apply_cdc_schema_approval(None, 57, UUID, None, initiator=None,
-                    initial_scan_id=UUID, initiator_id='31', approver_id=approver)
+                    initial_scan_id=UUID, initial_reader=None, initial_principal='34', initiator_id='31', approver_id=approver)
 
     def test_scan_clock_crosses_latest_ancestor_tick_and_has_bounded_wait(self):
         stamps = [{'scanned_at': '1970-01-01T00:00:01Z'}, {'scanned_at': '1970-01-01T00:00:02Z'}]

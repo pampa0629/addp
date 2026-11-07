@@ -1384,6 +1384,15 @@ func TestContinuousEventFixtureUsesMinimalTenantPermissions(t *testing.T) {
 	if strings.Join(permissions, ",") != strings.Join(want, ",") {
 		t.Fatalf("expanded continuous permissions=%v", permissions)
 	}
+	preparer := suiteSourceInitializerPermissions("transfer-continuous-events")
+	wantPreparation := append(slices.Clone(sourceInitializerPermissions), "meta.scan_task.execute", "meta.scan_task.read")
+	if !slices.Equal(preparer, wantPreparation) || !slices.Equal(sourceInitializerSupplement(preparer), []string{"meta.scan_task.execute", "meta.scan_task.read"}) {
+		t.Fatalf("continuous preparing User must use the existing preparation role and two scan functions: %v", preparer)
+	}
+	preparer[0] = "mutated"
+	if !slices.Equal(suiteSourceInitializerPermissions("transfer-continuous-events"), wantPreparation) {
+		t.Fatal("continuous preparation aliases the shared permission slice")
+	}
 }
 
 func TestContinuousApproverUsesMinimalTenantPermissions(t *testing.T) {

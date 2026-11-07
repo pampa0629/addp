@@ -120,7 +120,7 @@ var sourceInitializerPermissions = []string{
 
 func suiteSourceInitializerPermissions(suite string) []string {
 	switch suite {
-	case "sql-pool-consumer-flow":
+	case "sql-pool-consumer-flow", "transfer-continuous-events":
 		return append(slices.Clone(sourceInitializerPermissions), "meta.scan_task.execute", "meta.scan_task.read")
 	case "vector-topology-persistence":
 		if topologyLineagePermissions(suite) {

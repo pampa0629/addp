@@ -17,6 +17,7 @@ import uuid
 
 API = import_module('scripts.utils.online-api')
 FAULTS = import_module('scripts.test.continuous-execution-faults')
+REGISTRATION = import_module('scripts.test.online-engine-registration')
 SuiteError = API.SuiteError
 SUITE = 'transfer-continuous-events'
 ROOT = Path(__file__).resolve().parents[2]
@@ -286,12 +287,13 @@ def assert_schema_scan_origin(initiator, approver, scan_id, approver_id):
 
 
 def apply_cdc_schema_approval(client, task_id, blocked_execution, mutate, *, initiator,
-                              initial_scan_id, initiator_id, approver_id):
+                              initial_scan_id, initial_reader, initial_principal, initiator_id, approver_id):
     require(int(initiator_id) > 0 and int(approver_id) > 0 and int(initiator_id) != int(approver_id),
             'schema approval requires two distinct User Principals')
-    initial = initiator.request('GET', f'/api/v1/meta/executions/{initial_scan_id}', (200,)).payload
-    require(initial.get('triggered_by') == int(initiator_id), 'initial scan changed its initiating User')
-    client.request('GET', f'/api/v1/meta/executions/{initial_scan_id}', (404,))
+    initial = initial_reader.request('GET', f'/api/v1/meta/executions/{initial_scan_id}', (200,)).payload
+    require(initial.get('triggered_by') == int(initial_principal), 'initial scan changed its preparing User')
+    for reader in (initiator, client):
+        reader.request('GET', f'/api/v1/meta/executions/{initial_scan_id}', (404,))
     historical = detail(initiator, blocked_execution)
     require(historical.get('trigger_by') == int(initiator_id), 'blocked CDC changed its initiating User')
     path = f'{OWNER}/task-definitions/{task_id}/schema-change'
@@ -596,7 +598,7 @@ def cleanup_owned_tasks(client, tasks, mutate, report, checkpoint):
     return count == 0
 
 
-def run_suite(client, denied, foreign, peer, reader, admin, login, tenant, run_id, pg, kafka, report, checkpoint, faults):
+def run_suite(client, denied, foreign, peer, reader, admin, login, tenant, run_id, pg, kafka, report, checkpoint, faults, *, preparer):
     report.update(schema_version='addp.online-suite/v1', suite=SUITE, run_id=run_id, tenant_id=str(tenant),
                   result='failed', checks=[], resources=[], executions=[], cleanup='not_started',
                   history_cleanup='pending_deployment_destruction', uncertain_mutation=False)
@@ -652,14 +654,20 @@ def run_suite(client, denied, foreign, peer, reader, admin, login, tenant, run_i
     try:
         phase('source_scan')
         # Scan physical PostgreSQL facts through Meta; no fabricated catalog/task/runtime rows.
-        scan = mutate(client, '/api/v1/meta/scan/run/manual',
+        preparing_principal, _ = REGISTRATION.source_grant_participants(preparer, client, tenant, scan_preparation=True)
+        scan = mutate(preparer, '/api/v1/meta/scan/run/manual',
                       {'engine_id': pg, 'scan_depth': 'deep', 'trigger_type': 'manual', 'force': True}, (201,))
         formal_source_scan_id = canonical_uuid(scan.get('execution_id'))
         def scanned():
-            item = client.request('GET', f'/api/v1/meta/executions/{formal_source_scan_id}', (200,)).payload
+            item = preparer.request('GET', f'/api/v1/meta/executions/{formal_source_scan_id}', (200,)).payload
+            require(item.get('triggered_by') == int(preparing_principal), 'source scan lost its preparing User')
             require(item.get('status') not in {'failed', 'cancelled', 'timeout'}, 'physical source metadata scan failed')
             return item.get('status') == 'success'
         until(scanned)
+        for actor in (client, peer):
+            actor.request('GET', f'/api/v1/meta/executions/{formal_source_scan_id}', (404,))
+        report['source_scan_preparation'] = {'execution_id': formal_source_scan_id,
+            'principal_id': preparing_principal, 'consumer_read_denied': True, 'peer_read_denied': True}
         report['checks'].append('formal_source_catalog_scan')
         sibling = catalog_item(client, pg, tenant, 'continuous_scan_sibling')
         require(sibling is not None, 'physical scan sibling is missing')
@@ -812,7 +820,8 @@ def run_suite(client, denied, foreign, peer, reader, admin, login, tenant, run_i
         approving_user = report['peer_identity']['principal_id']
         phase('cdc_approval')
         path, approval, scan_id = apply_cdc_schema_approval(peer, cdc_task, cdc, mutate, initiator=client,
-            initial_scan_id=formal_source_scan_id, initiator_id=initiating_user, approver_id=approving_user)
+            initial_scan_id=formal_source_scan_id, initial_reader=preparer, initial_principal=preparing_principal,
+            initiator_id=initiating_user, approver_id=approving_user)
         migrated = target_scan('cdc', {'id', 'label', 'scan_extra'})
         require(migrated['scanned_at'] != cdc_scan['scanned_at'], 'approval reused old target metadata')
         report['precise_scan_scope']['scans'].append({'phase': 'cdc_schema_approval',
@@ -949,6 +958,9 @@ def main():
         tokens = [os.environ[f'ADDP_ONLINE_{name}_USER_ACCESS_TOKEN'] for name in names]
         require(all(tokens) and len(set(tokens)) == len(tokens), 'six distinct fixture User tokens required')
         client, denied, foreign, peer, reader, admin = [API.GatewayClient(gateway, token, timeout) for token in tokens]
+        preparation_token = os.environ['ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN']
+        require(bool(preparation_token) and preparation_token not in tokens, 'a distinct preparing User token is required')
+        preparer = API.GatewayClient(gateway, preparation_token, timeout)
         identities = []
         for name, actor, permissions in [('consumer', client, REQUIRED), ('monitor_only', denied, {'monitor.execution.read'}),
                                          ('peer', peer, {'monitor.execution.read', 'transfer.task.read',
@@ -969,7 +981,7 @@ def main():
         faults.wait_protection_ready(tenant)
         report['protection_projection_ready'] = True
         run_suite(client, denied, foreign, peer, reader, admin, API.GatewayClient(gateway, '', timeout),
-                  tenant, run_id, pg, kafka, report, checkpoint, faults)
+                  tenant, run_id, pg, kafka, report, checkpoint, faults, preparer=preparer)
     except Exception as error:
         report['result'] = 'failed'
         report.setdefault('failure', failure_diagnostic(report.get('phase', 'preflight'), error))

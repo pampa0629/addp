@@ -57,6 +57,7 @@ class HostedContinuousGateTest(unittest.TestCase):
             export ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN=provisioner-token
             export ADDP_ONLINE_TEST_TENANT_ID=2
             export ADDP_ONLINE_TEST_USER_ACCESS_TOKEN=consumer-token
+            export ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN=preparing-token
             EOF
                 exit 0
               fi
@@ -72,6 +73,7 @@ class HostedContinuousGateTest(unittest.TestCase):
               [ "$ADDP_ONLINE_CONTINUOUS_KAFKA_ENGINE_ID" = 18 ] &&
               [ "$TRANSFER_CONTINUOUS_LEASE_DURATION" = 8s ] &&
               [ "$TRANSFER_CONTINUOUS_HEARTBEAT_INTERVAL" = 2s ] &&
+              [ "$ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN" = preparing-token ] &&
               [ -z "${ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN:-}" ] || exit 1
             [ "${ADDP_TEST_SUITE_FAIL:-0}" != 1 ]
         ''')

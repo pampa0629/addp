@@ -32,6 +32,8 @@ done
 run_logged npm --prefix console/frontend exec -- playwright install --with-deps chromium
 run_logged bash -c 'cd system/backend && go run ./cmd/online-test-fixture --suite transfer-continuous-events --output "$1"' _ "$IDENTITY_ENV"
 source "$IDENTITY_ENV"
+: "${ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN:?independent preparing User required}"
+[ "$ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN" != "$ADDP_ONLINE_TEST_USER_ACCESS_TOKEN" ] || fail 'preparing User must differ from the log consumer'
 for kind in pg kafka; do
   result="$ADDP_ONLINE_SECRET_DIR/continuous-$kind.env"
   run_logged python3 scripts/test/online-engine-registration.py \
