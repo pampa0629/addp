@@ -1704,7 +1704,10 @@ class NativeCleanupRunnerTest(unittest.TestCase):
 
     def test_late_writer_requires_real_old_attempt_failed_assessment_and_unpublished_native_upload(self):
         for mutation in ('none', 'not_running', 'wrong_failure', 'replayed', 'cleanup_passed', 'other_owner_failed',
-                         'engine_changed', 'no_native_write', 'published', 'lost_hold', 'changed_terminal'):
+                         'engine_changed', 'no_native_write', 'published', 'lost_hold', 'changed_terminal',
+                         'foreign_request', 'wrong_action', 'foreign_parent', 'duplicate_child', 'invalid_child',
+                         'not_started', 'wrong_cleanup_attempt', 'authorization_denied', 'authorization_unavailable',
+                         'invented_receipt', 'wrong_plan_stage', 'parent_failed'):
             events, attempted = [], []
             state = dict(crashed=False, released=False, observed=False)
             model = SimpleNamespace(locator='owned-model', item={}, format='obj')
@@ -1760,9 +1763,28 @@ class NativeCleanupRunnerTest(unittest.TestCase):
                     if method == 'POST':
                         self.request_id = body['request_id']; return SimpleNamespace(payload={'assessment_id': self.request_id})
                     events.append('assessment_failed')
-                    return SimpleNamespace(payload=dict(status='success' if mutation == 'cleanup_passed' else 'failed',
-                        task={'context': {'engine_id': 9}, 'expected_modules': list(S.CONTRACT['cleanup_owners_by_cause']['engine.deleting']), 'requested_by': 17},
-                        module_executions=[dict(module='manager', status='success' if mutation == 'other_owner_failed' else 'failed')]))
+                    parent, child = str(uuid.uuid4()), str(uuid.uuid4())
+                    row = dict(module='manager', status='success' if mutation == 'other_owner_failed' else 'failed',
+                        execution_id=child, parent_execution_id=parent, task_type='cleanup_executor', attempt=1,
+                        started_at='started', current_step='manager_cleanup_plan',
+                        steps=[dict(id='manager_cleanup_plan', status='failed', phase='terminal')])
+                    payload = dict(task_id=self.request_id,
+                        status='success' if mutation == 'cleanup_passed' else 'failed' if mutation == 'parent_failed' else 'timeout',
+                        task={'task_id': self.request_id, 'execution_id': parent, 'action': 'scan',
+                              'context': {'engine_id': 9}, 'expected_modules': list(S.CONTRACT['cleanup_owners_by_cause']['engine.deleting']), 'requested_by': 17},
+                        module_executions=[row])
+                    if mutation == 'foreign_request': payload['task_id'] = str(uuid.uuid4())
+                    if mutation == 'wrong_action': payload['task']['action'] = 'execute'
+                    if mutation == 'foreign_parent': row['parent_execution_id'] = str(uuid.uuid4())
+                    if mutation == 'duplicate_child': payload['module_executions'].append(copy.deepcopy(row))
+                    if mutation == 'invalid_child': row['execution_id'] = 'private-invalid-identity'
+                    if mutation == 'not_started': row['started_at'] = None
+                    if mutation == 'wrong_cleanup_attempt': row['attempt'] = 2
+                    if mutation in {'authorization_denied', 'authorization_unavailable'}:
+                        row['error_details'] = {'code': 'cleanup_' + mutation}
+                    if mutation == 'invented_receipt': row['receipt'] = {'status': 'failed', 'reason': 'active_execution'}
+                    if mutation == 'wrong_plan_stage': row['current_step'] = 'manager_cleanup_inventory'
+                    return SimpleNamespace(payload=payload)
             workflow = SimpleNamespace(user=EngineUser(), principal='17',
                 engine=lambda engine: {'lifecycle_state': 'deleting' if mutation == 'engine_changed' else 'active'})
             def wait(read, predicate, message, **kwargs):
@@ -1775,13 +1797,20 @@ class NativeCleanupRunnerTest(unittest.TestCase):
                     self.assertEqual(set(report['checks']), set(S.CONTRACT['native_case_checks']['manager-late-writer']))
                     self.assertEqual(report['native_late_writer_acceptance'], 'passed')
                     self.assertEqual(report['entry'], 'engine_deletion_assessment')
+                    self.assertNotIn('engine_assessment_diagnostic', report)
                     self.assertEqual(attempted, ['new_generation'])
                 else:
                     with self.subTest(mutation=mutation), self.assertRaises(S.SuiteError):
                         M.run_late_writer(Manager(), workflow, Controls(), None, report, lambda: None)
                     self.assertNotIn('native_late_writer_acceptance', report)
                     if mutation == 'not_running': self.assertNotIn('crashed', events)
-                    if mutation in {'cleanup_passed', 'other_owner_failed', 'engine_changed'}: self.assertNotIn('released', events)
+                    if mutation not in {'no_native_write', 'published', 'lost_hold', 'changed_terminal'}:
+                        self.assertNotIn('released', events)
+                    if mutation in {'foreign_request', 'wrong_action', 'foreign_parent', 'duplicate_child', 'invalid_child',
+                                    'not_started', 'wrong_cleanup_attempt', 'authorization_denied', 'authorization_unavailable',
+                                    'invented_receipt', 'wrong_plan_stage', 'parent_failed', 'cleanup_passed', 'other_owner_failed'}:
+                        self.assertIn('engine_assessment_diagnostic', report)
+                        self.assertNotIn('private-invalid-identity', json.dumps(report))
 
     def test_manager_crash_and_model_pause_are_restricted_to_the_exact_late_writer_case(self):
         deployment = S.OwnedDeployment.__new__(S.OwnedDeployment)

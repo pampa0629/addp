@@ -1192,14 +1192,30 @@ def run_late_writer(manager, workflow, controls, source, report, checkpoint):
     accepted = workflow.user.request('POST', f'{ENGINE}/{engine_id}/deletion-assessments', (202,),
         {'request_id': request_id, 'external_artifact_policy': 'delete'}).payload
     require(accepted == {'assessment_id': request_id}, 'blocked assessment identity changed')
-    assessment = S.wait_for(lambda: workflow.user.request('GET', f'{ENGINE}/{engine_id}/deletion-assessments/{request_id}', (200,)).payload,
-        lambda x: x.get('status') in S.TERMINAL, 'unresolved writer assessment did not settle')
-    require(assessment['status'] == 'failed' and assessment['task']['context']['engine_id'] == engine_id
-            and engine_owners_match(assessment['task']['expected_modules'])
-            and assessment['task']['requested_by'] == int(workflow.principal), 'unresolved writer assessment was accepted or foreign')
-    rows = assessment.get('module_executions', [])
-    require(len([x for x in rows if x['module'] == 'manager' and x['status'] == 'failed']) == 1,
-            'assessment was not blocked by Manager')
+    last = dict(request_id=request_id, observation='not_observed')
+    def read_assessment():
+        nonlocal last
+        value = workflow.user.request('GET', f'{ENGINE}/{engine_id}/deletion-assessments/{request_id}', (200,)).payload
+        last = engine_task_observation(value, request_id, engine_id, workflow.principal, action='scan')
+        require(last['observation'] == 'observed' and last.get('children_observation') == 'observed',
+                'late writer assessment is incomplete or foreign')
+        return value
+    try:
+        assessment = S.wait_for(read_assessment,
+            lambda x: x.get('status') in S.TERMINAL, 'unresolved writer assessment did not settle')
+        # Owner failure has no fabricated receipt. The coordinator retains its
+        # independent deadline outcome while the real failed C remains visible.
+        require(assessment['status'] == 'timeout', 'unresolved writer assessment has an unexpected parent outcome')
+        rows = [row for row in last['children'] if row['module'] == 'manager']
+        require(len(rows) == 1 and rows[0]['status'] == 'failed' and rows[0]['attempt'] == 1
+                and rows[0]['started'] is True and rows[0].get('failure_step') == 'manager_cleanup_plan'
+                and rows[0]['receipt_status'] == 'not_observed'
+                and rows[0]['authorization_denied'] is False and rows[0]['authorization_unavailable'] is False,
+                'assessment did not observe the original Manager plan failure without a receipt')
+    except Exception:
+        report['engine_assessment_diagnostic'] = last
+        checkpoint()
+        raise
     require(workflow.engine(engine_id)['lifecycle_state'] == 'active', 'read-only failed assessment changed Engine lifecycle')
     controls.object(ref, present=False)
     assert_writer_evidence(controls.fault('object', key), controls.run_id, key, completed=False)

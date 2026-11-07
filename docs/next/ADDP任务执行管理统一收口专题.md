@@ -291,3 +291,12 @@ Manager 源准备保持其正式授权链；本批 Transfer CDC 仅验证既有 
 **索引未知复验通过。** `ba3406a40` 于 2026-11-07 22:36:36（Asia/Shanghai）成功结束，11 项断言全部通过。原生对象和索引实际清除；删除请求仅转发一次且回包丢失，绑定原操作的持久隔离保留，Engine 保持 deleting，重复删除及新生成被拒绝，源 OBJ／MTL／纹理未变。控制恢复、清理和零残留均通过。五份官方归档与 14 个服务源码／实例绑定已交叉核验；本轮仅触发一次、attempt=1，身份权限、范围及预算保持原契约。[通过的 Hosted 作业](https://github.com/pampa0629/addp/actions/runs/42375229408/job/128411336585)
 
 **剩余工作。** 验证旧 Runtime 迟到写入。新的 Hosted 须单独确认。正向和对象未知通过证据分别位于 `/tmp/addp-manager-success-hosted-eighth-20261106/` 与 `/tmp/addp-manager-object-unknown-hosted-third-20261106/`。
+
+
+### 8.44 Manager 迟到写入验收准备
+
+下一专项为已登记的 `manager-late-writer`，沿用原三业务 User、源授权办理员和 11 项目标；仅控制本轮 Model3D 暂停及准确 Manager 容器的终止／补回，保持原镜像与容器身份。暂扣准确 pending GLB 的真实上传，观察旧 attempt=1 在真实 lease 失效后失败，再发起同一 Engine 的只读删除评估；不得执行 DELETE。随后释放同一上传，核对原生对象出现、旧终态／pending 审计不变、公开结果不发布、新生成返回409、原源字节不变。Graph 高级恢复继续暂缓。
+
+准备核对发现并修正两处 runner 判断：评估响应须复用既有安全投影完整绑定请求、Engine、原用户、scan、Owner 集合及父子 execution；按现行无回执协议，Manager 计划冻结失败保留真实 failed 子项，父在原30秒协调截止后为 timeout，不能强求父failed。核验要求 Manager 子项 attempt=1、已开始、唯一 manager_cleanup_plan 失败阶段、无伪造回执且非授权失败；其它 Owner 或错误请求的失败不能代替。失败仅复用既有公开GET的安全诊断，不补读隐藏Owner、不增加请求或等待。
+
+部署120分钟、业务900秒、上传barrier180秒、旧lease收敛90秒及原就绪／评估等待上限不变；barrier过期失败关闭，不续期、不重发。标准门禁为 `make test-execution-online-ci-runner`，现有 Linux Execution runner 的 scripts 路径选择已覆盖，无新增环境、入口或权限；本地标准门禁已实际通过408项，修正前已复现父状态误判，12类新增反例均已拒绝；真实 Hosted 尚未运行，需单独确认。完整契约见 [T4 原生 Cleanup 规范](../spec/testing/T4-Online验收规范.md#原生-cleanup-的独立有限验收)。
