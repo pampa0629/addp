@@ -39,6 +39,22 @@ func TestBuildCapabilitiesViewIncludesTableSpatialEncoding(t *testing.T) {
 	assertCapabilityTag(t, *item, "native_spatial_functions")
 }
 
+func TestBuildCapabilitiesViewIncludesNewFilePublication(t *testing.T) {
+	caps := engineplugin.NewFileCapabilities("nfs")
+	caps.Storage.Store.NewFilePublication = true
+	payload, err := engineplugin.MarshalEngineCapabilities(caps)
+	if err != nil {
+		t.Fatal(err)
+	}
+	jsonValue := systemModels.JSONString(payload)
+	view := BuildCapabilitiesView(&jsonValue, "nfs")
+	item := findCapabilityItem(view, "storage", "content_write")
+	if item == nil {
+		t.Fatal("missing content publication capability")
+	}
+	assertCapabilityTag(t, *item, "new_file_publication")
+}
+
 func TestBuildCapabilitiesViewIncludesEncodedRecordFormats(t *testing.T) {
 	caps := engineplugin.NewDynamicSchemaCapabilities("mongodb")
 	caps.Storage.Store.EncodedRecordReadSession = &engineplugin.EncodedRecordReadSessionCapability{

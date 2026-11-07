@@ -1184,6 +1184,7 @@
     "filePathPlaceholder": "/path/to/data.sqlite or .spatialite",
     "nfsServer": "NFS Server",
     "nfsExportPath": "Export Path",
+    "nfsPublicationStagingPath": "Private publication staging directory",
     "nfsAccessMode": "Access Mode",
     "nfsAccessModeRw": "Read-Write (rw)",
     "nfsAccessModeRo": "Read-Only (ro)",
@@ -1220,6 +1221,7 @@
     "authSourcePlaceholder": "For example, admin; defaults to admin",
     "hints": {
       "nfs": "NFS filesystem uses IP-based access control, no username/password required. Enter the NFS server address and export path (e.g. /exports/data).",
+      "nfsPublicationStaging": "Pre-existing relative directory in this export, on the target filesystem, owned by the service UID with mode 0700.",
       "dorisPassword": "Doris default root user has no password. Leave blank if no password is set.",
       "clickhousePassword": "ClickHouse default user has no password. Default ports: 9000 (Native), 8123 (HTTP)",
       "mongoAuth": "MongoDB default port: 27017. The username and authentication database define the login principal; MongoDB user roles control which databases and collections are available. The default database only sets the initial workbench selection.",

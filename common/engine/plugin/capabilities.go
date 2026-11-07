@@ -195,6 +195,7 @@ type StoreCapability struct {
 	KeyValueRead                bool                                   `json:"key_value_read,omitempty"`
 	StreamRead                  bool                                   `json:"stream_read,omitempty"`
 	StreamWrite                 bool                                   `json:"stream_write,omitempty"`
+	NewFilePublication          bool                                   `json:"new_file_publication,omitempty"`
 	RangeRead                   bool                                   `json:"range_read,omitempty"`
 	RangeWrite                  bool                                   `json:"range_write,omitempty"`
 	Delete                      bool                                   `json:"delete,omitempty"`
@@ -346,7 +347,7 @@ func (c *EngineCapabilities) SupportsStorageOperation(operation string) bool {
 	case "read":
 		return store.StreamRead || store.BatchRead || store.TableReadSession || store.RecordReadSession
 	case "write":
-		return store.StreamWrite || store.BatchWrite || store.TableWriteSession
+		return store.StreamWrite || store.NewFilePublication || store.BatchWrite || store.TableWriteSession
 	default:
 		return false
 	}

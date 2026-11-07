@@ -1634,6 +1634,7 @@
           "batchRead": "批量读取",
           "recordReadSession": "连续记录读取",
           "encodedRecordReadSession": "类型保真记录导出",
+          "newFilePublication": "完整单文件无覆盖发布",
           "streamWrite": "流式写入",
           "rangeWrite": "范围写入",
           "batchWrite": "批量写入",

@@ -1184,6 +1184,7 @@
     "filePathPlaceholder": "/path/to/data.sqlite 或 .spatialite",
     "nfsServer": "NFS 服务器",
     "nfsExportPath": "导出路径",
+    "nfsPublicationStagingPath": "私有发布暂存目录",
     "nfsAccessMode": "访问模式",
     "nfsAccessModeRw": "读写 (rw)",
     "nfsAccessModeRo": "只读 (ro)",
@@ -1220,6 +1221,7 @@
     "authSourcePlaceholder": "例如 admin；不填时使用 admin",
     "hints": {
       "nfs": "NFS 文件系统，基于 IP 访问控制，无需用户名密码。server 填写 NFS 服务器地址，export_path 填写导出路径（如 /exports/data）。",
+      "nfsPublicationStaging": "导出内预先存在的相对目录；须与目标同文件系统、服务账号所有且权限为 0700。",
       "dorisPassword": "Doris 默认 root 用户无密码，可留空。如已设置密码请填写。",
       "clickhousePassword": "ClickHouse 默认 default 用户无密码。默认端口: 9000 (Native), 8123 (HTTP)",
       "mongoAuth": "MongoDB 默认端口：27017。用户名和认证数据库决定登录主体；可访问的数据库和集合由 MongoDB 用户角色控制。默认数据库仅用于打开工作台时的初始选择。",

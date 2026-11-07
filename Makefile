@@ -445,6 +445,7 @@ test-integration-hosted: test-integration ## 严格串行追加 hosted-only disp
 	@$(MAKE) test-common-gaussdb
 	@$(MAKE) test-common-ftp
 	@$(MAKE) test-common-starrocks
+	@$(MAKE) test-common-nfs-publication
 	@$(MAKE) test-system-audit-archive
 
 test-integration-owner-managed: ## 仅在满足各产品许可及平台要求的 owner 受控主机人工串行运行门禁
@@ -482,7 +483,12 @@ test-common-nfs-integration: ## Hosted 独占 NFSv3 实库：普通文件、范�
 
 .PHONY: test-common-nfs-unit
 test-common-nfs-unit: ## NFS 普通文件、软链接拒绝与句柄绑定读取回归
+	@python3 -m unittest scripts/test/common-nfs-publication-gate_test.py
 	@cd common && GOWORK=off go test ./engine/plugins/nfs -count=1
+
+.PHONY: test-common-nfs-publication
+test-common-nfs-publication: ## Hosted 独占原生 NFSv3：完整暂存、无覆盖发布及未知结果核清
+	@bash scripts/test/common-nfs-publication-gate.sh
 
 .PHONY: test-common-ftp test-common-ftp-unit
 test-common-ftp-unit: ## FTP 配置、路径、取消和生命周期静态验证

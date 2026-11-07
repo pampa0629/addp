@@ -204,6 +204,7 @@ Workflow Runtime 的直接存储接入由 `compute.workflow.storage_access.read_
 
 **边界**：
 - 该字段只表达引擎自身能力，例如 catalog、facts、store、change stream read、query、workflow、script。
+- `storage.store.new_file_publication` 表达 `NewFilePublicationProvider` 的完整单文件无覆盖发布能力上限；NFS 实际调用仍要求显式的同文件系统私有 `publication_staging_path`。该配置不参与引擎地址身份，准备回执和发布结果不产生数据或执行授权。
 - 不表达 Transfer、Manager Preview、Meta 等 ADDP 模块对某个引擎的适配状态。
 - 上层模块可以读取该字段形成自己的执行策略，但模块适配情况不写回该字段。
 - 旧版 `storage[]` / `compute[]`、`dev_modes`、`supported_sources` 结构已不再兼容，发现后应刷新为当前结构。

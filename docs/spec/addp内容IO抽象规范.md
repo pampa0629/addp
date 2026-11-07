@@ -142,6 +142,8 @@ Shapefile 这类格式应在 `common/format` 层声明相关 ref 规则，并由
 
 `contentio` 不提供 `OpenRole`、`Refs`、`Commit`、`Abort` 这类把多 content 绑定成一个对象的接口。需要事务或清理语义时，应由具体 engine writer、模块编排层或格式 writer 的一次会话负责。
 
+完整单文件的无覆盖发布由 Engine 的 `NewFilePublicationProvider` 承接，不给 `contentio.Writer` 增加事务方法。格式 writer 在私有本地暂存中完成格式检查并固定字节，Provider 只核对并发布这些字节；执行 owner 保管准备回执、授权放行和未知结果恢复。普通流式 `CreateContent` 的提交事实不等于完整文件的命名发布。
+
 Shapefile 这类格式必须写完整组 refs，不能只写主文件。
 
 ## 与 common/dataitem 的关系

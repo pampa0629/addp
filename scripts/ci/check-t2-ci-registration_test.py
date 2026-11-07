@@ -422,6 +422,34 @@ class T2CIRegistrationTest(unittest.TestCase):
 
         self.assertEqual([], MODULE.validate_registration(self.repository))
 
+    def _add_native_hosted_gate(self) -> tuple[Path, Path]:
+        self._add_hosted_only_gate()
+        lifecycle = self.repository / "scripts/utils/owned_native.py"
+        lifecycle.parent.mkdir(parents=True)
+        lifecycle.write_text("# owned disposable host service lifecycle\n")
+        script = self.repository / "scripts/test/common-opengauss-gate.sh"
+        script.write_text(
+            "#!/usr/bin/env bash\n# ADDP_T2_HOSTED_ONLY=native\n"
+            "# ADDP_T2_NATIVE_LIFECYCLE=scripts/utils/owned_native.py\n"
+            "# ADDP_T2_INPUT_FILES=scripts/utils/owned_native.py\n"
+            "# exclusive disposable GITHUB_ACTIONS RUNNER_OS owner\n"
+        )
+        return script, lifecycle
+
+    def test_accepts_declared_native_hosted_lifecycle(self) -> None:
+        self._add_native_hosted_gate()
+        self.assertEqual([], MODULE.validate_registration(self.repository))
+
+    def test_rejects_missing_native_hosted_lifecycle_input(self) -> None:
+        script, lifecycle = self._add_native_hosted_gate()
+        lifecycle.unlink()
+        self.assertIn(f"{script.relative_to(self.repository)}: native lifecycle must be an existing declared input", MODULE.validate_registration(self.repository))
+
+    def test_rejects_native_hosted_lifecycle_without_guards(self) -> None:
+        script, _ = self._add_native_hosted_gate()
+        script.write_text(script.read_text().replace("GITHUB_ACTIONS", "UNGUARDED"))
+        self.assertIn(f"{script.relative_to(self.repository)}: native lifecycle requires exclusive Hosted guards and disposable ownership", MODULE.validate_registration(self.repository))
+
     def test_accepts_owned_service_gate(self) -> None:
         self._add_owned_service_gate(
             "pingcap/tidb:v8.5.8@sha256:" + "d" * 64

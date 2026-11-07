@@ -340,6 +340,11 @@ type StoreProvider interface {
 - `ContentReadableProvider.OpenContent()`：读取对象或文件内容。
 - `ContentWritableProvider.CreateContent()`：写对象或文件内容。
   返回的 writer 可实现 `ContentWriteCommitter`，在同一次真实创建、写入和提交后给出中性 `ContentWriteEvidence`（精确 target、created/replaced、字节数及 committed）；证据只在成功 Close 后有效，不包含账号、Grant 或权限结论。NFS 首期提供该能力：新建使用原子 GUARDED 创建，并发撞名失败；已有目标保留原覆盖策略且标为 replaced，不能因删后重建变成 created。源读取/写入句柄只留在 Provider 内，不持久为授权身份。
+- `NewFilePublicationProvider`：完整单文件的新建发布。`PrepareNewFile` 在同文件系统的受控私有目录写完并核对长度及 SHA-256，返回须由执行 owner 在发布前持久化的私有准备回执；`PublishNewFile` 仅向绑定的精确叶子无覆盖发布；`ResolveNewFile` 只核清原操作，绝不重新发布；`CleanupNewFile` 仅清理回执证明归属的暂存项，未知状态拒绝清理。结果区分 `not_published`、`published`、`unknown`，清理待办单独表达。只有已证明发布才附带 `created` 的 `ContentWriteEvidence`。准备回执中的原生句柄只作私有 I/O 恢复证据，不作目录、Grant 或权限身份。
+  NFS 由连接配置 `publication_staging_path` 指定预先存在的相对私有目录（不参与引擎地址身份，无默认值）；必须为当前连接服务 UID 所有、权限 0700，且与目标父目录同一文件系统。目录及后代不进入普通 Catalog、Facts、内容读取、写入及删除。未配置、只读导出、跨文件系统、链接或无法核对私有目录均拒绝，不自动创建目录、不回退到直接流写最终文件。最终命名发布使用 NFSv3 LINK，不使用会覆盖的 RENAME。此能力只承诺完整文件的命名发布，不推导服务端断电持久性。
+  Provider 不作 IAM 裁决。Develop 持久化原 execution/attempt、批准、目标及 operation 归属，并在 LINK 前取得 System 的原子核验放行；已放行的在途发布允许完成，撤权或取消阻止后续放行。未知结果只能核清原操作，不能重发业务写入。现有 vmware RPC Client 在明确 GARBAGE_ARGS 回复后至多重发一次同 XID／同载荷；传输和接收失败不重发。不得把一次 Provider LINK 调用宣传为严格一次线缆请求，也不为该能力引入第二套传输。
+  `PublishNewFile` 显式消费 owner 在原子领取该次派发前的持久状态：只有 `not_published` 能领取，owner 必须先保存派发意图再进入 Provider；已可能派发的 `unknown` 输入直接拒绝新 LINK。原始派发收到明确 EEXIST 是确定拒绝，可只清自己的暂存，不是成功；原操作已未知时，事后目标缺失或身份不同不能推断历史未发布。
+  准备阶段错误也不保证没有副作用。GUARDED CREATE 回复未知、创建后身份确认失败或清理失败，返回 `NewFilePreparationError` 并明确 `CleanupPending`；另行返回的私有准备数据尽可能保留原 request、暂存目录和已取得的原始句柄。owner 在调用 Prepare 前即须持久化原 operation；遇此错误记录“准备未知／待核清”，不签发发布成功、初始 Grant 或已清理结论，不按文件名猜所有权。未确认身份或未完整提交的准备回执不能进入 Publish。证据不足的残留保持报告，由可信核清或受控运维处理；独占测试夹具整体销毁不等于业务操作清理已确认。
 - `RangeReadableProvider.OpenRange()`：按 byte range 读取对象或文件内容。
 - `RangeWritableProvider.WriteRange()`：按 byte range / offset 写入内容。
 - `BatchReadableProvider.ReadBatch()`：执行一次有界的固定 schema 批量读取；大表连续扫描优先使用 `TableReadSessionProvider`，动态 schema collection 使用 `RecordReadSessionProvider`，图数据使用 `GraphSampleProvider` / `GraphQueryProvider`。

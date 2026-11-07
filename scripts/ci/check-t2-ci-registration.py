@@ -620,7 +620,17 @@ def validate_registration(repository: Path) -> list[str]:
         if target_job is None:
             errors.append(f"{script}: GitHub Actions target {target} is missing")
         script_content = (repository / script).read_text(encoding="utf-8")
-        if "disposable" not in script_content or "docker run" not in script_content or "docker rm" not in script_content:
+        native = re.search(r"(?m)^# ADDP_T2_NATIVE_LIFECYCLE=(\S+)\s*$", script_content)
+        if native is not None:
+            lifecycle = Path(native[1])
+            inputs = re.search(r"(?m)^# ADDP_T2_INPUT_FILES=([^\n]+)$", script_content)
+            if (lifecycle.is_absolute() or ".." in lifecycle.parts
+                    or not (repository / lifecycle).is_file()
+                    or inputs is None or lifecycle.as_posix() not in inputs[1].split()):
+                errors.append(f"{script}: native lifecycle must be an existing declared input")
+            if not all(token in script_content for token in ("GITHUB_ACTIONS", "RUNNER_OS", "disposable")):
+                errors.append(f"{script}: native lifecycle requires exclusive Hosted guards and disposable ownership")
+        elif "disposable" not in script_content or "docker run" not in script_content or "docker rm" not in script_content:
             errors.append(
                 f"{script}: hosted-only {runtime} gate must own a disposable Docker lifecycle"
             )

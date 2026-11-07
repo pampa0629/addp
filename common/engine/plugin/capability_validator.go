@@ -98,6 +98,11 @@ func validateStorageCapabilities(p EnginePlugin, storage *StorageCapabilities) e
 }
 
 func validateStoreCapabilities(p EnginePlugin, store *StoreCapability) error {
+	if store.NewFilePublication {
+		if _, ok := p.(NewFilePublicationProvider); !ok {
+			return fmt.Errorf("%s declares new_file_publication but does not implement NewFilePublicationProvider", p.Type())
+		}
+	}
 	if store.KeyValueRead {
 		if _, ok := p.(KeyValueReadableProvider); !ok {
 			return fmt.Errorf("%s declares key_value_read but does not implement KeyValueReadableProvider", p.Type())
@@ -455,6 +460,9 @@ func validateStoreProviderCapabilities(p EnginePlugin, storage *StorageCapabilit
 	}
 	if _, ok := p.(ContentWritableProvider); ok && !declaresStoreCapability(storage, func(store *StoreCapability) bool { return store.StreamWrite }) {
 		return fmt.Errorf("%s implements ContentWritableProvider but does not declare stream_write", p.Type())
+	}
+	if _, ok := p.(NewFilePublicationProvider); ok && !declaresStoreCapability(storage, func(store *StoreCapability) bool { return store.NewFilePublication }) {
+		return fmt.Errorf("%s implements NewFilePublicationProvider but does not declare new_file_publication", p.Type())
 	}
 	if _, ok := p.(RangeReadableProvider); ok && !declaresStoreCapability(storage, func(store *StoreCapability) bool { return store.RangeRead }) {
 		return fmt.Errorf("%s implements RangeReadableProvider but does not declare range_read", p.Type())

@@ -1006,6 +1006,48 @@ jobs:
           if-no-files-found: warn
           retention-days: 14
 
+  common-nfs-publication:
+    name: NFS complete file publication (Linux amd64)
+    needs: selection
+    if: always() && needs.selection.outputs.common == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version-file: common/go.mod
+          cache: false
+      - name: Install native NFS server
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y nfs-kernel-server nfs-common
+      - name: Run NFS deterministic gate
+        run: make test-common-nfs-unit
+      - name: Run NFS publication gate
+        env:
+          ADDP_NFS_PUBLICATION_ARTIFACT_DIR: ${{ runner.temp }}/addp-nfs-publication-t2
+        run: make test-common-nfs-publication
+      - name: Summarize NFS publication gate
+        if: always()
+        uses: ./.github/actions/ci-gate-summary
+        with:
+          gate: NFS complete file publication (Linux amd64)
+          status: ${{ job.status }}
+      - name: Upload NFS publication evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: nfs-publication-t2-${{ github.run_id }}
+          path: ${{ runner.temp }}/addp-nfs-publication-t2/
+          if-no-files-found: error
+          retention-days: 14
+
   common-starrocks:
     name: StarRocks read-only Provider (${{ matrix.arch }})
     needs: selection

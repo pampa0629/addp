@@ -150,6 +150,7 @@ func (p *NFSPlugin) ConnectionSpec() plugin.ConnectionSpec {
 	spec := plugin.NewConnectionSpec(
 		plugin.ConnectionFieldSpec{Key: "server", LabelKey: "storageEngine.nfsServer", Input: plugin.ConnectionFieldText, Required: true, Identity: true, Placeholder: "192.168.1.100"},
 		plugin.ConnectionFieldSpec{Key: "export_path", LabelKey: "storageEngine.nfsExportPath", Input: plugin.ConnectionFieldText, Required: true, Identity: true, Default: "/exports/data", Placeholder: "/exports/data"},
+		plugin.ConnectionFieldSpec{Key: publicationStagingKey, LabelKey: "storageEngine.nfsPublicationStagingPath", HintKey: "storageEngine.hints.nfsPublicationStaging", Input: plugin.ConnectionFieldText},
 		plugin.ConnectionFieldSpec{Key: "access_mode", LabelKey: "storageEngine.nfsAccessMode", Input: plugin.ConnectionFieldSelect, Default: "rw", Options: []plugin.ConnectionFieldOption{
 			{Value: "rw", LabelKey: "storageEngine.nfsAccessModeRw"}, {Value: "ro", LabelKey: "storageEngine.nfsAccessModeRo"},
 		}},
@@ -174,7 +175,9 @@ func (p *NFSPlugin) ConnectionIdentityFields() []string {
 }
 
 func (p *NFSPlugin) Capabilities() plugin.EngineCapabilities {
-	return plugin.NewFileCapabilities(p.Type())
+	caps := plugin.NewFileCapabilities(p.Type())
+	caps.Storage.Store.NewFilePublication = true
+	return caps
 }
 
 func (p *NFSPlugin) StoreSemantics() plugin.StoreSemantics {
@@ -197,14 +200,23 @@ func (p *NFSPlugin) fileCatalogCallbacks() plugin.FileCatalogCallbacks {
 }
 
 func (p *NFSPlugin) ListChildren(ctx context.Context, connInfo plugin.ConnectionInfo, parent plugin.EngineCatalogPath, opts plugin.ListOptions) ([]plugin.EngineCatalogEntry, error) {
+	if err := allowPublicNFSPath(connInfo, parent.StringPath()); err != nil {
+		return nil, err
+	}
 	return plugin.ListFileCatalogChildren(ctx, p.fileCatalogCallbacks(), connInfo, parent.EngineID, parent, opts)
 }
 
 func (p *NFSPlugin) ResolvePath(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.EngineCatalogPath) (*plugin.EngineCatalogEntry, error) {
+	if err := allowPublicNFSPath(connInfo, path.StringPath()); err != nil {
+		return nil, err
+	}
 	return plugin.ResolveFileCatalogPath(ctx, p.fileCatalogCallbacks(), connInfo, path.EngineID, path)
 }
 
 func (p *NFSPlugin) DescribeEngineCatalogFacts(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.EngineCatalogPath, opts plugin.EngineCatalogFactsOptions) (*plugin.EngineCatalogFacts, error) {
+	if err := allowPublicNFSPath(connInfo, path.StringPath()); err != nil {
+		return nil, err
+	}
 	return plugin.DescribeFileCatalogFacts(ctx, p.fileCatalogCallbacks(), connInfo, path.EngineID, path)
 }
 
@@ -257,6 +269,9 @@ func (p *NFSPlugin) DeleteResource(ctx context.Context, connInfo plugin.Connecti
 }
 
 func (p *NFSPlugin) ValidateConnectionInfo(connInfo plugin.ConnectionInfo) error {
+	if _, err := publicationStagingPath(connInfo); err != nil {
+		return err
+	}
 	return plugin.ValidateRequiredFields(connInfo, p.RequiredFields())
 }
 
@@ -310,6 +325,9 @@ func (p *NFSPlugin) listDirectory(ctx context.Context, connInfo plugin.Connectio
 			continue
 		}
 		fullPath := joinPath(dirPath, name)
+		if allowPublicNFSPath(connInfo, fullPath) != nil {
+			continue
+		}
 
 		if entry.IsDir() {
 			nodes = append(nodes, plugin.FileDirectoryCatalogEntry(parent, name, fullPath+"/"))
@@ -340,6 +358,9 @@ func openNFSReadFile(ctx context.Context, target nfsReadProtocol, mu *sync.Mutex
 
 // readFile 流式读取文件内容
 func (p *NFSPlugin) readFile(ctx context.Context, connInfo plugin.ConnectionInfo, path string) (io.ReadCloser, error) {
+	if err := allowPublicNFSPath(connInfo, path); err != nil {
+		return nil, err
+	}
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -388,6 +409,9 @@ func (p *NFSPlugin) readFileRange(ctx context.Context, connInfo plugin.Connectio
 
 // getStorageObjectFacts 获取存储对象事实
 func (p *NFSPlugin) getStorageObjectFacts(ctx context.Context, connInfo plugin.ConnectionInfo, path string) (*plugin.StorageObjectFacts, error) {
+	if err := allowPublicNFSPath(connInfo, path); err != nil {
+		return nil, err
+	}
 	server, exportPath, err := p.parseConnInfo(connInfo)
 	if err != nil {
 		return nil, err
@@ -425,6 +449,9 @@ func (p *NFSPlugin) OpenFileForWrite(ctx context.Context, connInfo plugin.Connec
 }
 
 func (p *NFSPlugin) openFileForWrite(ctx context.Context, connInfo plugin.ConnectionInfo, path string, overwrite bool) (io.WriteCloser, error) {
+	if err := allowPublicNFSPath(connInfo, path); err != nil {
+		return nil, err
+	}
 	server, exportPath, err := p.parseConnInfo(connInfo)
 	if err != nil {
 		return nil, err
@@ -454,6 +481,9 @@ func (p *NFSPlugin) openFileForWrite(ctx context.Context, connInfo plugin.Connec
 }
 
 func (p *NFSPlugin) deleteFile(ctx context.Context, connInfo plugin.ConnectionInfo, path string) error {
+	if err := allowPublicNFSPath(connInfo, path); err != nil {
+		return err
+	}
 	server, exportPath, err := p.parseConnInfo(connInfo)
 	if err != nil {
 		return err
@@ -497,6 +527,9 @@ func mkdirAllLocked(entry *poolEntry, path string) error {
 
 // MkdirAll 在 NFS 上递归创建目录
 func (p *NFSPlugin) MkdirAll(ctx context.Context, connInfo plugin.ConnectionInfo, path string) error {
+	if err := allowPublicNFSPath(connInfo, path); err != nil {
+		return err
+	}
 	server, exportPath, err := p.parseConnInfo(connInfo)
 	if err != nil {
 		return err

@@ -25536,6 +25536,9 @@ const docTemplate = `{
                 "key_value_read": {
                     "type": "boolean"
                 },
+                "new_file_publication": {
+                    "type": "boolean"
+                },
                 "partitioned_table_change_apply": {
                     "$ref": "#/definitions/plugin.PartitionedTableChangeApplyCapability"
                 },

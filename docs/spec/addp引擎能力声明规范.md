@@ -264,6 +264,7 @@ type StoreCapability struct {
     KeyValueRead              bool                                  `json:"key_value_read,omitempty"`
     StreamRead                bool                                  `json:"stream_read,omitempty"`
     StreamWrite               bool                                  `json:"stream_write,omitempty"`
+    NewFilePublication        bool                                  `json:"new_file_publication,omitempty"`
     RangeRead                 bool                                  `json:"range_read,omitempty"`
     RangeWrite                bool                                  `json:"range_write,omitempty"`
     Delete                    bool                                  `json:"delete,omitempty"`
@@ -321,6 +322,7 @@ type NativeTableSpatialEncodingCapability struct {
 | `key_value_read` | 读取一个 key 的有界原生样本和实时类型、长度、TTL，不声明表或记录集合能力。 | `KeyValueReadableProvider`，能力与接口做双向校验 |
 | `stream_read` | 顺序流式读取单个对象、文件或二进制内容。 | `ContentReadableProvider` |
 | `stream_write` | 顺序流式创建或覆盖单个对象、文件内容。 | `ContentWritableProvider` |
+| `new_file_publication` | 受控私有暂存完整字节后无覆盖发布精确文件叶子；含私有准备回执、未知结果核清和独立清理，不产生 IAM 权限。NFS 必须配置同文件系统、当前服务 UID 所有且 0700 的 `publication_staging_path`。 | `NewFilePublicationProvider` |
 | `range_read` | 从指定 byte range 读取内容。 | `RangeReadableProvider`，或 `OpenContent()` 明确支持 offset / length |
 | `range_write` | 向指定 byte range / offset 写入内容。 | `RangeWritableProvider` |
 | `delete` | 删除 catalog leaf 或空 branch 对应的外部资源。 | `ResourceDeleteProvider` |

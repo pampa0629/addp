@@ -157,6 +157,7 @@ func buildStorageSection(caps *engineplugin.EngineCapabilities) *models.Capabili
 
 		writeTags := make([]models.CapabilityViewTag, 0, 3)
 		writeTags = appendBoolTag(writeTags, "stream_write", caps.Storage.Store.StreamWrite)
+		writeTags = appendBoolTag(writeTags, "new_file_publication", caps.Storage.Store.NewFilePublication)
 		writeTags = appendBoolTag(writeTags, "range_write", caps.Storage.Store.RangeWrite)
 		writeTags = appendBoolTag(writeTags, "batch_write", caps.Storage.Store.BatchWrite)
 		if len(writeTags) > 0 {

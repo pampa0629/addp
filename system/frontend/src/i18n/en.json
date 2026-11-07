@@ -1634,6 +1634,7 @@
           "batchRead": "Batch read",
           "recordReadSession": "Record read session",
           "encodedRecordReadSession": "Type-preserving record export",
+          "newFilePublication": "Complete file publication without overwrite",
           "streamWrite": "Stream write",
           "rangeWrite": "Range write",
           "batchWrite": "Batch write",

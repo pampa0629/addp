@@ -51,6 +51,8 @@ Workflow 只负责：
 
 不得提交一个永久排队、连接开发环境或始终 Skip 的占位 workflow。
 
+NFS 完整单文件发布的确定性验证沿 `make test-common-nfs-unit`；真实协议沿 `make test-common-nfs-publication`，只在独占 Hosted Linux amd64 使用既有 NFS export 生命周期创建并销毁临时导出。该门禁声明 `ADDP_T2_HOSTED_ONLY` 和 `ADDP_T2_NATIVE_LIFECYCLE`，后者必须是 `ADDP_T2_INPUT_FILES` 中的真实生命周期源码；这是内核原生服务的受控测试准备，不伪装成 Docker 生命周期，也不进入本地 `test-integration`。Release/T2 的 Common 变更选择负责实际执行、摘要和原始证据归档，拒绝跳过集成用例。测试准备未知时保留业务残留报告，独占夹具最终销毁另外记录；不以此替代资源授权或业务 T4。
+
 ### 辅助 macOS 定时巡检
 
 日常使用的 macOS 可以在独立 checkout 中定时运行 `make local-ci`，作为 GitHub Actions 之外的辅助反馈机制。该入口只复用已有 T0-T3 标准门禁，不产生第二套测试事实，也不替代 GitHub required checks。

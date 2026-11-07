@@ -18,6 +18,7 @@
 | 英文术语 | 中文术语 | 定义 | 备注 |
 |---|---|---|---|
 | engine | 引擎 | ADDP 连接和访问外部数据系统的能力入口。 | 例如 PostgreSQL、MinIO、NFS、Neo4j。 |
+| new file publication | 单文件无覆盖发布 | 将受控私有暂存中已完整校验的单文件一次命名到精确新叶子的 Provider 能力。 | 不等于流式写入提交；准备回执只用于原操作持久化与未知结果核清，不是访问或执行许可。 |
 | FTP Engine | FTP 文件引擎 | 以 `engine_type=ftp` 表达的远程文件系统连接，使用 `root -> directory -> file` 目录模型。 | FTP 是访问协议，不是 data type 或 format；首版仅用户名／密码、被动模式和只读内容。协议根为服务端账号看到的 `/`，对应 NFS 挂载后的根；不提供客户端 `root_path`，物理主目录隔离由服务端账号负责。 |
 | Explicit FTPS | 显式 FTPS | 在 FTP 控制连接上通过 AUTH TLS 建立加密会话，并保护数据连接的传输方式。 | 与普通 FTP 共用 `ftp` 引擎，以明确的传输安全配置区分；加密失败不降级为明文。 |
 | SFTP | SSH 文件传输协议 | 基于 SSH 的文件传输协议。 | 不属于 FTP 或 FTPS；不随 FTP 引擎接入自动获得支持。 |
