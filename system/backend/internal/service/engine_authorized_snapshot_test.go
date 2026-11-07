@@ -36,7 +36,19 @@ func TestAuthorizedExecutionSnapshotDoesNotRefetchOrMutate(t *testing.T) {
 	if got, err := svc.DecryptAuthorizedExecutionSnapshot(&minio); err != nil || got.ConnectionInfo["secret_key"] != "disposable-secret" {
 		t.Fatalf("MinIO snapshot: %v", err)
 	}
-	for _, kind := range []string{"s3", "postgresql"} {
+	for _, kind := range []string{"postgresql", "mysql"} {
+		t.Run(kind, func(t *testing.T) {
+			database := *engine
+			database.EngineType = kind
+			decoded, err := svc.DecryptAuthorizedExecutionSnapshot(&database)
+			if err != nil || decoded == nil || decoded == &database || decoded.EngineType != kind ||
+				decoded.Version != database.Version || decoded.ConnectionInfo["password"] != "disposable-secret" ||
+				database.ConnectionInfo["password"] != secret {
+				t.Fatalf("authorized FileGDB source snapshot: %v", err)
+			}
+		})
+	}
+	for _, kind := range []string{"s3", "mongodb"} {
 		copy := *engine
 		copy.EngineType = kind
 		if got, err := svc.DecryptAuthorizedExecutionSnapshot(&copy); err == nil || got != nil {
