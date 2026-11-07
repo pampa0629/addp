@@ -186,7 +186,6 @@ class InfraContractTest(unittest.TestCase):
         self.assertIn("-ontology|", start)
         self.assertIn('build_service "ontology" "ontology/backend"', start)
         self.assertIn('check_service_running "ontology" "$ONTOLOGY_BACKEND_PORT"', start)
-        self.assertIn('${ONTOLOGY_BACKEND_PORT}/health/ready', start)
         self.assertIn('START_ONTOLOGY_BACKEND=true', start)
         self.assertIn('START_ONTOLOGY_FRONTEND=false', start)
         self.assertIn('START_ONTOLOGY_FRONTEND=true', start)
@@ -198,6 +197,48 @@ class InfraContractTest(unittest.TestCase):
         self.assertIn("ontology-frontend:80", (REPOSITORY / "nginx/nginx.conf").read_text())
         self.assertEqual({"ontology-backend"}, set(frontend["depends_on"]))
         self.assertIn('-ontology|', (REPOSITORY / "scripts/dev/restart.sh").read_text())
+
+    def test_ontology_readiness_uses_configured_port_and_propagates_failure(self):
+        start = (REPOSITORY / "scripts/dev/start.sh").read_text()
+        begin = start.index("\nwait_backend_ready() {")
+        ready = start[begin:start.index("\n}", begin) + 2]
+        phase = start.index("# Phase 3: ")
+        begin = start.index('  if [ "$START_ONTOLOGY_BACKEND" = true ]; then', phase)
+        registration = start[begin:start.index("\n  fi", begin) + len("\n  fi")]
+        with tempfile.TemporaryDirectory(prefix="addp-ontology-ready-contract-") as directory:
+            root = Path(directory)
+            for selected, curl_status in (("true", 0), ("true", 22), ("false", 0)):
+                with self.subTest(selected=selected, curl_status=curl_status):
+                    trace, failure = root / "curl", root / "failure"
+                    trace.unlink(missing_ok=True)
+                    failure.unlink(missing_ok=True)
+                    shell = '''
+set -e
+MAX_WAIT=1
+HEALTH_CHECK_PIDS=()
+curl() { printf '%s\\n' "$*" >> "$TRACE"; return "$CURL_STATUS"; }
+sleep() { :; }
+report_backend_readiness_failure() { printf '%s|%s|%s\\n' "$1" "$2" "$3" >> "$FAILURE"; }
+''' + ready + "\n" + registration + '''
+status=0
+for pid in "${HEALTH_CHECK_PIDS[@]}"; do wait "$pid" || status=1; done
+exit "$status"
+'''
+                    result = subprocess.run(["bash", "-c", shell], env=dict(
+                        os.environ, TRACE=str(trace), FAILURE=str(failure), CURL_STATUS=str(curl_status),
+                        START_ONTOLOGY_BACKEND=selected, ONTOLOGY_BACKEND_PORT="32195", ONTOLOGY_PID="12345",
+                    ), capture_output=True, text=True, timeout=5)
+                    self.assertEqual(result.returncode, 1 if selected == "true" and curl_status else 0,
+                                     result.stdout + result.stderr)
+                    if selected == "true":
+                        self.assertEqual(trace.read_text().splitlines(), [
+                            "-f --max-time 5 http://localhost:32195/health/ready"])
+                    else:
+                        self.assertFalse(trace.exists())
+                    if selected == "true" and curl_status:
+                        self.assertEqual(failure.read_text().strip(), "ontology|12345|Ontology Backend")
+                    else:
+                        self.assertFalse(failure.exists())
 
     def render(self, path, password="contract-test-only"):
         result = subprocess.run(

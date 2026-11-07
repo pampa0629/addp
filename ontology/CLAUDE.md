@@ -1,3 +1,5 @@
+2026-11-07 平台 Transfer 创建修订 67／运行修订 11 复核 Agent `4eef6be488c1d929bc8939001bf0e230da663869` 的有界历史分页和旧引用定位；新增实际 `services/history.py` 历史交互投影及其测试依据，已完成交互按当前 User、Tenant、Session 重建，不重发创建、批准或执行。定义除 revision 外不变，执行读取修订 8 保持；来源冻结须在平台审查、Ontology owner T1 及 PG → 独占 FalkorDB 门禁通过后同批发布。来源审查不是运行激活或业务验收。
+
 # Ontology 模块
 
 2026-11-04 创建修订 61 仅前向冻结 Agent 稳定提交 `660ffa3a0` 的评测来源。更新 `parameter_model_test`、`parameter_model_runner`、`parameter_model_facts`，独立登记多候选暂停、长历史精确选稿、当前目标优先三个场景契约，共 53 项来源；原 47 项、既有覆盖及绑定全部保留。创建定义除 revision 外逐字段相同，运行 7／读取 5 及全部来源未变，不增加能力、权限、输入条件或业务效果。

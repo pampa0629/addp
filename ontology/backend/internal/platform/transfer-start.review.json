@@ -138,11 +138,11 @@
       "kind": "implementation",
       "path": "agent/frontend/src/views/ChatView.vue",
       "anchor": "if (action.name === 'owner.decide')",
-      "commit": "a656769264f7395a7e12b062c322aeb61028fbc9",
-      "sha256": "37a3a2769131791cc251054ad190e250cfcac0fe1754d13269246d6b76f1d774",
+      "commit": "4eef6be488c1d929bc8939001bf0e230da663869",
+      "sha256": "21d11dbf2e75c79ac343e8f83475f6f2aece33952f73c8196ea649f9c1cba3c2",
       "use": {
-        "zh-cn": "用户点击后以本人身份直接提交 Transfer 决定，成功响应核验后才恢复；409配approval_request_mismatch或410配approval_expired显示安全本地化原因，其余失败保持通用提示，不额外检查、恢复、重试或启动。",
-        "en": "User clicks submit a Transfer decision as that User; only verified success resumes. Exact 409/approval_request_mismatch or 410/approval_expired pairs select safe localized reasons; other failures remain generic with no extra check, resume, retry or start."
+        "zh-cn": "用户本人决定，成功核验才恢复；409/approval_request_mismatch和410/approval_expired只显示安全提示，其他失败通用，不检查、重试或启动。",
+        "en": "User decides; only verified success resumes. Exact 409/mismatch and 410/expired pairs show safe feedback; other failures are generic, with no check, retry or start."
       }
     },
     {
@@ -216,11 +216,11 @@
       "kind": "test",
       "path": "agent/backend/tests/test_messages.py",
       "anchor": "async def test_expired_owner_interaction_is_completed_in_reloaded_message_parts(",
-      "commit": "66e6556daea0df4eca311ef2f2dd35fe55f176c2",
-      "sha256": "f4efad0a67dbe10de43b1d5edd2b9b044d42b0dd07a0af1a989dd037a9b41c87",
+      "commit": "4eef6be488c1d929bc8939001bf0e230da663869",
+      "sha256": "9b6360bc9acf44c330f470b10822822a1c2558d24b4ec02dcea084b91d618959",
       "use": {
-        "zh-cn": "刷新从持久交互重建完成状态，不修改历史消息原件",
-        "en": "Reload reconstructs completed state from the persisted interaction without rewriting historical messages"
+        "zh-cn": "刷新重建持久交互终态，不改写历史消息；新历史窗口仍保持此约束。",
+        "en": "Reload reconstructs persisted interaction state without rewriting historical messages, including bounded windows."
       }
     },
     {
@@ -229,11 +229,11 @@
       "kind": "test",
       "path": "agent/frontend/e2e/clarification-resume.spec.js",
       "anchor": "test('formal Transfer expiry ends the wait and removes decision buttons after refresh'",
-      "commit": "a656769264f7395a7e12b062c322aeb61028fbc9",
-      "sha256": "9f447025d15d60a147659b01eb1938f6fd07218d6b5f0a92ac35ba58c7b2b627",
+      "commit": "4eef6be488c1d929bc8939001bf0e230da663869",
+      "sha256": "f174b0e8fd901b19f1f38409b88f939b68189e48713c05bb76025a183fd2259b",
       "use": {
-        "zh-cn": "保留正式过期结束等待、移除按钮及刷新保持的断言；增加决定失败的双语过期／不匹配提示及非法组合反例，不据失败提示改变交互状态，零恢复与刷新重发，未知Owner正文不展示。",
-        "en": "Retains formal-expiry completion, button removal and reload assertions; adds bilingual decision-expiry/mismatch feedback and invalid-pair cases. Feedback never changes interaction state, resumes or replays on reload, and unknown owner text stays hidden."
+        "zh-cn": "验证正式过期结束等待、移除按钮及刷新保持；双语决定失败与非法状态码组合均不恢复或重发，不显示Owner原文。",
+        "en": "Test expiry completion, button removal and reload; bilingual failed decisions and invalid status pairs never resume, replay or expose raw owner text."
       }
     },
     {
@@ -242,11 +242,37 @@
       "kind": "implementation",
       "path": "agent/backend/i18n.py",
       "anchor": "'transfer_run_expired'",
-      "commit": "b4e1dc1cc058e8a69aafdce04aebfd0e156ff435",
-      "sha256": "025c30cb4ff9e136e616e67efd78ffb0d7b3b76ad86607fd7227ece330f3e040",
+      "commit": "4eef6be488c1d929bc8939001bf0e230da663869",
+      "sha256": "d10b932fe89fa661ab50818af5cc313edc3644b23a0b30cce9ac2a3601f9ebd9",
       "use": {
-        "zh-cn": "仅重新冻结共享双语消息文件。新增文案用于新草稿的源引擎核验及零命中澄清，运行审批提示未变。",
-        "en": "Refresh provenance for the shared bilingual message file. New messages cover source-engine checks and zero-hit clarification for new drafts. Run approval messages are unchanged."
+        "zh-cn": "共享双语文案的历史界面变化不改变运行审批和过期提示。",
+        "en": "Shared history feedback changes leave run-approval and expiry messages unchanged."
+      }
+    },
+    {
+      "id": "history_projection",
+      "owner": "agent",
+      "kind": "implementation",
+      "path": "agent/backend/services/history.py",
+      "anchor": "async def project_messages(",
+      "commit": "4eef6be488c1d929bc8939001bf0e230da663869",
+      "sha256": "3869f9c625833a03370cf01d8c3a9cad2a0c559f51761afd54961b4dd7a554e2",
+      "use": {
+        "zh-cn": "按当前会话、用户与租户读取持久交互，重建历史回复和完成状态；不重发创建、批准或执行。",
+        "en": "Project historical replies and completion from persisted interactions bound to session, user and tenant; never replay creation, approval or execution."
+      }
+    },
+    {
+      "id": "history_projection_test",
+      "owner": "agent",
+      "kind": "test",
+      "path": "agent/backend/tests/test_history.py",
+      "anchor": "async def test_pending_counts_do_not_depend_on_the_loaded_message_window(",
+      "commit": "4eef6be488c1d929bc8939001bf0e230da663869",
+      "sha256": "f6d814b016cd1a3ed7cebd3078798941e7edde11d1468392a76a4d1b93a06d57",
+      "use": {
+        "zh-cn": "验证待答事实不受已加载窗口影响，旧已完成交互在按锚点重读后保持完成。",
+        "en": "Verify pending facts are independent of the loaded window and completed old interactions remain complete after anchor reads."
       }
     }
   ],
@@ -267,7 +293,9 @@
         "owner_interaction_test",
         "message_projection_test",
         "expiry_ui_test",
-        "runtime_messages"
+        "runtime_messages",
+        "history_projection",
+        "history_projection_test"
       ]
     },
     {
@@ -293,7 +321,9 @@
         "owner_interaction_test",
         "message_projection_test",
         "expiry_ui_test",
-        "runtime_messages"
+        "runtime_messages",
+        "history_projection",
+        "history_projection_test"
       ]
     },
     {
@@ -333,7 +363,9 @@
         "owner_interaction_test",
         "message_projection_test",
         "expiry_ui_test",
-        "runtime_messages"
+        "runtime_messages",
+        "history_projection",
+        "history_projection_test"
       ]
     },
     {
