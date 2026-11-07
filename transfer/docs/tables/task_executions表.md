@@ -106,7 +106,7 @@ continuous 恢复 metadata 中，本次恢复的审计事实与可变计数、ci
 | `GET` | `/executions` | 查询租户下 Transfer 执行记录。 |
 | `GET` | `/executions/statistics` | 查询执行统计。 |
 | `GET` | `/executions/:execution_id` | 用户专业执行详情入口，按统一 `common.task_executions.execution_id` 查询。 |
-| `POST` | `/executions/:execution_id/retry` | 按统一 `common.task_executions.execution_id` 和 restartable 语义重试失败执行。 |
+| `POST` | `/executions/:execution_id/retry` | 按统一 `common.task_executions.execution_id` 和 restartable 语义重试失败执行。该执行所属的 CDC 任务处于 `status=blocked` 时返回 `409 Conflict`。可审批的 additive 变更须先完成审批，再由用户显式 Resume 任务。 [审批落库与显式恢复](../../../docs/spec/tasks/Transfer数据库CDC.md#审批落库与显式恢复) |
 | `GET` | `/executions/:execution_id/progress` | 按统一 `common.task_executions.execution_id` 查询执行进度。 |
 | `GET` | `/executions/:execution_id/events` | 按统一 `common.task_executions.execution_id` 查询安全过程事件。 |
 | `GET` | `/task-definitions/:id/executions` | 查询某个任务的执行记录。 |
