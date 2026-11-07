@@ -39,6 +39,8 @@
 
 完整`make test-module MODULE=agent`首轮在平台来源审查发现本批10项来源及两项既有Transfer文档来源漂移后停止，后续阶段未执行，不计为通过。Ontology负责人已复核并前向冻结创建修订67／启动修订11，补入实际历史交互投影及其测试来源；平台来源审查、Ontology Go owner、PostgreSQL和独占FalkorDB顺序门禁通过。同批冻结首轮因定义格式膨胀和重复来源说明超出现有字节预算而停止，原始失败保留在`/tmp/addp-agent-history-freeze-gates.Sfnox1`；保留定义原格式并在原预算内精简重复说明后复验通过，未提高预算或删除验证。同期对已提交的两项Transfer文档做等价来源复核：区分任务占用与执行领取、明确CDC审批后的idle/paused及显式Resume；现有bounded/snapshot停止态能力未扩张，未修改Transfer文档。Falkor前置配置门禁的旧就绪URL字面量断言已改为执行生产统一就绪函数及Ontology注册分支，验证配置端口、失败传播和未选模块零请求；未修改启动脚本。完整Agent模块门禁首轮失败保留，不以专项通过替代完整通过。远端CI和用户重启后的真实页面复验仍须分别核对。交接为`/tmp/addp-agent-history-source-freeze-handoff-20261107.json`。
 
+来源收口后再次运行完整`make test-module MODULE=agent`，公共T0在`test-local-ci-runner`的3项MySQL夹具断言失败后停止，后续Agent阶段未执行；原件`/tmp/addp-agent-history-module-final.log`。这些断言所在文件不在本批改动内，本会话不扩修；此前独立执行的Agent离线、146项前端单测、45项受控浏览器、构建、PostgreSQL及Ontology来源／Go／PG／Falkor门禁通过仍按各自范围记录，不能记作完整模块通过。实现`4eef6be48`、冻结`c784f6d4c`及证据`3a3ced423`已同批推送；相关CI仍排队，用户重启后的真实复验待继续。
+
 ### 2026-11-06 单引擎验收与连接池 CI
 
 会话 66 的 Run `403cc305-3422-41ba-aa0a-236d3b965777` 使用 Transfer 创建能力修订 64。请求仅给出 MongoDB 类型，Runtime 将唯一的 Business MongoDB（引擎 11）写入检查点，一次限定搜索返回 4 个集合候选。页面展示候选并等待选择。确认 `Outdoor.Persons` 后，同一 Run 恢复并完成，构建返回的完整参数与正式预检入参相等，字段映射为 `_id` 和 `groups`。浏览器刷新后仍显示源引擎、配置快照和 `unknown` 报告。创建或运行业务任务的调用数为 0。原件见 `/tmp/addp-agent-r64-single-engine-20261106/receipt.json`，同目录保存了等待与恢复后的正式 Run。 [会话 66](http://localhost:5170/agent/sessions/66)
