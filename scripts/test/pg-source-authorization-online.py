@@ -944,11 +944,15 @@ def preview(reader, target, allowed, expected=None, *, columns=('person_id',), v
         require(result.get('error_code') != 'security_protection_required', 'Security failure is not source denial')
         return
     data = result.get('data', {})
+    rows = data.get('rows', [])
     require(result.get('preview_type') == 'table' and data.get('columns') == list(columns)
-            and sorted(row.get(columns[0]) for row in data.get('rows', [])) == list(values),
+            and sorted(row.get(columns[0]) for row in rows) == list(values),
             'Manager did not read the deterministic PG source')
     if expected is not None:
-        require(data.get('total') == expected, 'PG source row count changed')
+        total = data.get('total')
+        require(len(rows) == expected and 'total' in data and (
+            (type(total) is int and total == expected) or (total is None and data.get('has_more') is False)),
+            'PG source preview is incomplete or its row count changed')
 
 
 def mutate_source_content(action):

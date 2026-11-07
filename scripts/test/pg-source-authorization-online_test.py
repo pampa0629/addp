@@ -186,12 +186,15 @@ class Server:
                         allowed = True
                     status = 200 if allowed else 403
                     result = {'preview_type': 'table', 'data': {'columns': ['person_id'], 'rows': [
-                        {'person_id': value} for value in server.people], 'total': len(server.people)}} if allowed else {'error': 'denied'}
+                        {'person_id': value} for value in server.people], 'total': len(server.people),
+                        'has_more': False}} if allowed else {'error': 'denied'}
                     if allowed and server.fault == 'stale_content' and len(server.people) == 3:
-                        result['data'] = {'columns': ['person_id'], 'rows': [{'person_id': 'A'}, {'person_id': 'B'}], 'total': 2}
+                        result['data'] = {'columns': ['person_id'], 'rows': [{'person_id': 'A'}, {'person_id': 'B'}],
+                                          'total': 2, 'has_more': False}
                     if allowed and 'metric_events?' in target:
                         result['data'] = {'columns': ['event_id', 'event_date'],
-                            'rows': [{'event_id': value, 'event_date': '2026-01-01'} for value in ('e1', 'e2', 'e3', 'old')], 'total': 4}
+                            'rows': [{'event_id': value, 'event_date': '2026-01-01'} for value in ('e1', 'e2', 'e3', 'old')],
+                            'total': 4, 'has_more': False}
                     if server.fault == 'wrong_rows' and allowed:
                         result['data']['rows'][1]['person_id'] = 'wrong'
                     if server.fault == 'leaked_denial' and not allowed:
@@ -502,6 +505,25 @@ class AuditLatencyObservationTest(unittest.TestCase):
                 observer.__exit__(None, None, None)
         self.assertEqual(evidence['result'], 'failed')
         self.assertFalse(evidence['connection_closed'])
+
+
+class PGPreviewPaginationTest(unittest.TestCase):
+    def test_authorized_preview_requires_exact_rows_and_complete_pagination(self):
+        data = {'columns': ['person_id'], 'rows': [{'person_id': 'B'}, {'person_id': 'A'}]}
+        response = SimpleNamespace(payload={'preview_type': 'table'})
+        reader = Mock()
+        reader.request.return_value = response
+        for fields in ({'total': 2, 'has_more': False}, {'total': None, 'has_more': False}):
+            with self.subTest(fields=fields):
+                response.payload['data'] = {**data, **fields}
+                ONLINE.preview(reader, 'test', True, 2)
+        for fields in ({'total': None, 'has_more': True}, {'total': None}, {'has_more': False},
+                       {'total': 3, 'has_more': False}, {'total': 2.0, 'has_more': False},
+                       {'total': None, 'has_more': False, 'rows': [{'person_id': 'A'}]}):
+            with self.subTest(fields=fields):
+                response.payload['data'] = {**data, **fields}
+                with self.assertRaises(ONLINE.SuiteError):
+                    ONLINE.preview(reader, 'test', True, 2)
 
 
 class PGAuthorizationOnlineTest(unittest.TestCase):
