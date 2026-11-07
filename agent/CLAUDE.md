@@ -22,7 +22,7 @@
 
 2026-11-07 用户确认将共享检索链路的后续性能排查交给“数据权限-性能优化”会话（`01a03925-3e49-7bd3-a80b-9dc8e71651e0`）。交接已发送，原件与限制列在 `/tmp/addp-agent-search-performance-handoff-20261107.md`，本文件保留历史验收。Agent 会话回到模块自身的上下文、交互、运行恢复及模型回归。
 
-下面是源码核对后的推进建议。第一项的稳定续读、全会话索引及本批 Ontology 来源交接已获用户确认，正在实施；其他涉及新行为的项目仍待方案确认。
+下面是源码核对后的推进建议。第一项的稳定续读、全会话索引及本批 Ontology 来源交接已获用户确认，已实施并完成本地专项验证，待重启后的真实复验；其他涉及新行为的项目仍待方案确认。
 
 | 优先顺序 | 剩余工作 | 当前事实与验收重点 |
 | --- | --- | --- |
@@ -37,7 +37,7 @@
 
 `make test-agent-eval`、`make test-agent-frontend`（146项单测、45项受控浏览器及构建）、`make test-agent-postgres`和`bash scripts/swagger/check-route-coverage.sh agent`通过。PostgreSQL验证全新初始化和旧库升级，并覆盖上界续读、旧引用定位及真实索引。浏览器夹具覆盖超过首屏的成果和待答、局部加载失败保留正文、旧定位刷新、历史阅读期间增量及返回最新去重。该证据不等于真实身份、模型或部署验收。本轮未修改模型路由或执行业务任务。
 
-完整`make test-module MODULE=agent`首轮在平台来源审查发现本批10项来源漂移后停止，后续阶段未执行，不计为通过。经用户授权，已向现有ontology会话发送`/tmp/addp-agent-history-source-freeze-handoff-20261107.json`，等待语义复核及前向来源更新；发布、远端CI和用户重启后的真实页面复验尚待完成。
+完整`make test-module MODULE=agent`首轮在平台来源审查发现本批10项来源及两项既有Transfer文档来源漂移后停止，后续阶段未执行，不计为通过。Ontology负责人已复核并前向冻结创建修订67／启动修订11，补入实际历史交互投影及其测试来源；平台来源审查、Ontology Go owner、PostgreSQL和独占FalkorDB顺序门禁通过。同批冻结首轮因定义格式膨胀和重复来源说明超出现有字节预算而停止，原始失败保留在`/tmp/addp-agent-history-freeze-gates.Sfnox1`；保留定义原格式并在原预算内精简重复说明后复验通过，未提高预算或删除验证。同期对已提交的两项Transfer文档做等价来源复核：区分任务占用与执行领取、明确CDC审批后的idle/paused及显式Resume；现有bounded/snapshot停止态能力未扩张，未修改Transfer文档。Falkor前置配置门禁的旧就绪URL字面量断言已改为执行生产统一就绪函数及Ontology注册分支，验证配置端口、失败传播和未选模块零请求；未修改启动脚本。完整Agent模块门禁首轮失败保留，不以专项通过替代完整通过。远端CI和用户重启后的真实页面复验仍须分别核对。交接为`/tmp/addp-agent-history-source-freeze-handoff-20261107.json`。
 
 ### 2026-11-06 单引擎验收与连接池 CI
 
