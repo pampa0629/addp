@@ -1359,18 +1359,24 @@ class TransferRelationalSQLETLOnlineTest(unittest.TestCase):
                   "full_name": "public.source", "fingerprint": "source-fingerprint", "scanned_at": stamp,
                   "scanned_depth": "deep", "row_count": 5}
         schema = {"id": 9, "engine_id": 3, "tenant_id": 7, "parent_node_id": 1,
-                  "scan_status": "success", "scanned_depth": "deep", "scanned_at": stamp, "item_count": 1}
-        root = {"id": 1, "engine_id": 3, "tenant_id": 7, "scan_status": "success", "scanned_depth": "deep", "scanned_at": stamp}
-        facts = {"/api/v1/meta/items/5": source, "/api/v1/meta/nodes/9": schema, "/api/v1/meta/nodes/1": root}
+                  "scan_status": "completed", "scanned_depth": "deep", "scanned_at": stamp}
+        root = {"id": 1, "engine_id": 3, "tenant_id": 7, "scan_status": "completed", "scanned_depth": "deep", "scanned_at": stamp}
+        public_source = {key: value for key, value in source.items() if key != "row_count"}
+        public_schema = {key: schema[key] for key in ("id", "engine_id", "tenant_id", "parent_node_id")}
+        public_root = {key: root[key] for key in ("id", "engine_id", "tenant_id")}
+        facts = {"/api/v1/meta/items/5": public_source, "/api/v1/meta/nodes/9": public_schema, "/api/v1/meta/nodes/1": public_root}
+        stored = {"sibling": source, "ancestors": [schema, root]}
+        read = self.enterContext(patch.object(ONLINE.API, "_read_hosted_meta_scan_facts", return_value=stored))
         calls = []
         def request(method, path, expected):
             self.assertEqual((method, expected), ("GET", (200,)))
             calls.append(path)
             return SimpleNamespace(payload=copy.deepcopy(facts[path]))
         client = SimpleNamespace(request=request)
-        before = ONLINE.read_transfer_scan_boundary(client, 3, source)
-        schema.update(item_count=2, total_size_bytes=1024, has_children=True)
-        self.assertEqual(ONLINE.read_transfer_scan_boundary(client, 3, source), before)
+        before = ONLINE.read_transfer_scan_boundary(client, 3, public_source)
+        read.assert_called_once_with(7, 3, 5)
+        public_schema.update(item_count=2, total_size_bytes=1024, has_children=True)
+        self.assertEqual(ONLINE.read_transfer_scan_boundary(client, 3, public_source), before)
         self.assertEqual(calls[:3], list(facts))
         for item, field, changed in ((source, "scanned_at", "2026-10-16T09:01:00Z"),
                                       (source, "row_count", 8), (schema, "scan_status", "running"),
@@ -1378,15 +1384,37 @@ class TransferRelationalSQLETLOnlineTest(unittest.TestCase):
                                       (root, "scanned_depth", "basic")):
             original = item[field]
             item[field] = changed
-            self.assertNotEqual(ONLINE.read_transfer_scan_boundary(client, 3, source), before)
+            self.assertNotEqual(ONLINE.read_transfer_scan_boundary(client, 3, public_source), before)
             item[field] = original
         for item, field, changed in ((source, "engine_id", 4), (schema, "tenant_id", 8),
-                                      (source, "scanned_at", None), (schema, "parent_node_id", 9)):
+                                      (source, "scanned_at", None), (public_schema, "parent_node_id", 9)):
             original = item.get(field)
             item[field] = changed
             with self.assertRaises(ONLINE.SuiteError):
-                ONLINE.read_transfer_scan_boundary(client, 3, source)
+                ONLINE.read_transfer_scan_boundary(client, 3, public_source)
             item[field] = original
+        stored["ancestors"].pop()
+        with self.assertRaisesRegex(ONLINE.SuiteError, "ancestor chain is incomplete"):
+            ONLINE.read_transfer_scan_boundary(client, 3, public_source)
+
+    def test_hosted_scan_state_uses_exact_fixture_and_bounded_read_only_sql(self):
+        container_id = "a" * 64
+        env = {"ONLINE_SUITE": "transfer-relational-sql-etl", "ADDP_ONLINE_SCAN_POSTGRES_ID": container_id,
+               "ADDP_ONLINE_TEST_ENGINE_ID": "3", "ADDP_ONLINE_TEST_TENANT_ID": "7"}
+        with patch.dict(os.environ, env, clear=True), patch.object(ONLINE.API, "import_module") as load:
+            sql = load.return_value.sql
+            sql.return_value = '{"sibling":null,"ancestors":null}'
+            self.assertEqual(ONLINE.API._read_hosted_meta_scan_facts(7, 3, 5), {"sibling": None, "ancestors": None})
+            query, = sql.call_args.args
+            for text in ("BEGIN READ ONLY;", "statement_timeout", "lock_timeout", "id = 5 AND tenant_id = 7 AND engine_id = 3",
+                         "n.tenant_id = a.tenant_id AND n.engine_id = a.engine_id", "a.level < 128", "deleted_at IS NULL"):
+                self.assertIn(text, query)
+            self.assertEqual(sql.call_args.kwargs, {"expected_suite": env["ONLINE_SUITE"], "postgres_id": container_id})
+            sql.reset_mock()
+            for ids in ((8, 3, 5), (7, 4, 5), (7, 3, True), (7, 3, "5")):
+                with self.subTest(ids=ids), self.assertRaisesRegex(ONLINE.API.SuiteError, "exact Hosted fixture"):
+                    ONLINE.API._read_hosted_meta_scan_facts(*ids)
+            sql.assert_not_called()
 
     def test_native_scenario_requires_generated_replace_and_exact_two_hop_proofs(self):
         source = {"id": 5, "node_id": 9, "full_name": "public.source", "item_type": "table"}

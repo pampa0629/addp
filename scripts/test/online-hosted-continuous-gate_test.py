@@ -14,6 +14,11 @@ class HostedContinuousGateTest(unittest.TestCase):
         self.host = SUPPORT.OnlineHostedOpenGaussGateTest()
         self.host.setUp()
         self.host.prepare_run_fixture()
+        docker = self.host.bin / 'docker'
+        docker.write_text(docker.read_text().replace(
+            'if [ "$1 $2" = "compose version" ]; then',
+            'if [ "$1 $2" = "inspect --format" ]; then printf "%064d\\n" 1; exit; fi\n'
+            'if [ "$1 $2" = "compose version" ]; then'))
         shutil.copy2(SCRIPT, self.host.repository / 'scripts/test' / SCRIPT.name)
         self.host._write_repository_script('business/scripts/online-continuous-fixture.sh', '''
             #!/usr/bin/env bash
@@ -63,6 +68,7 @@ class HostedContinuousGateTest(unittest.TestCase):
             #!/usr/bin/env bash
             echo "make:$*" >> "$ADDP_TEST_GATE_TRACE"
             [ "$ADDP_ONLINE_CONTINUOUS_PG_ENGINE_ID" = 17 ] &&
+              [ "$ADDP_ONLINE_SCAN_POSTGRES_ID" = "$(printf '%064d' 1)" ] &&
               [ "$ADDP_ONLINE_CONTINUOUS_KAFKA_ENGINE_ID" = 18 ] &&
               [ "$TRANSFER_CONTINUOUS_LEASE_DURATION" = 8s ] &&
               [ "$TRANSFER_CONTINUOUS_HEARTBEAT_INTERVAL" = 2s ] &&

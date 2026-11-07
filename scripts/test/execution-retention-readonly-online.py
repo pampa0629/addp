@@ -76,12 +76,13 @@ def validate_container(container, expected, environment):
     return values['POSTGRES_USER']
 
 
-def sql(statement, expected_suite=SUITE):
+def sql(statement, expected_suite=SUITE, *, postgres_id=None):
     boundary(expected_suite)
     inspected = subprocess.run(['docker', 'inspect', 'addp-postgres'], check=True,
                                capture_output=True, text=True, timeout=10)
     container, = json.loads(inspected.stdout)
-    user = validate_container(container, os.environ.get('ADDP_ONLINE_RETENTION_POSTGRES_ID'), os.environ)
+    expected = os.environ.get('ADDP_ONLINE_RETENTION_POSTGRES_ID') if postgres_id is None else postgres_id
+    user = validate_container(container, expected, os.environ)
     result = subprocess.run(['docker', 'exec', '-i', container['Id'], 'psql', '-X', '-qAt',
                              '-v', 'ON_ERROR_STOP=1', '-v', 'VERBOSITY=sqlstate', '-U', user, '-d', 'addp_online'],
                             input=statement, capture_output=True, text=True, timeout=20)

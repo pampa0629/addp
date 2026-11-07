@@ -20,6 +20,9 @@ export ADDP_ONLINE_FIXTURE_ENGINE_DESCRIPTOR_FILE="$ADDP_ONLINE_SECRET_DIR/trans
 export ADDP_ONLINE_FIXTURE_MONGODB_ENGINE_DESCRIPTOR_FILE="$ADDP_ONLINE_SECRET_DIR/transfer-mongodb-engine.json"
 infra_owned=1
 run_logged bash scripts/infra/up.sh
+ADDP_ONLINE_SCAN_POSTGRES_ID=$(docker inspect --format '{{.Id}}' addp-postgres)
+[[ "$ADDP_ONLINE_SCAN_POSTGRES_ID" =~ ^[0-9a-f]{64}$ ]] || fail 'Hosted scan requires the exact Infra PostgreSQL container ID'
+export ADDP_ONLINE_SCAN_POSTGRES_ID
 fixture_owned=1
 run_logged bash business/scripts/online-transfer-relational-sql-etl-fixture.sh start
 application_owned=1

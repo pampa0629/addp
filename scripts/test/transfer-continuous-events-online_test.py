@@ -248,17 +248,25 @@ class ContinuousRunnerTest(unittest.TestCase):
                    'full_name': 'public.continuous_scan_sibling', 'fingerprint': 'sibling',
                    'scanned_at': '2026-10-16T09:00:00Z', 'scanned_depth': 'deep', 'row_count': 2}
         schema = {'id': 9, 'engine_id': 10, 'tenant_id': 2, 'parent_node_id': 1,
-                  'scan_status': 'success', 'scanned_depth': 'deep', 'scanned_at': sibling['scanned_at']}
+                  'scan_status': 'completed', 'scanned_depth': 'deep', 'scanned_at': sibling['scanned_at']}
         root = {**schema, 'id': 1, 'parent_node_id': None}
         target = {**sibling, 'id': 6, 'full_name': 'public.continuous_cdc_target', 'fingerprint': 'target',
                   'scanned_at': '2026-10-16T09:00:02Z', 'attributes': {'type_info': {'table': {
                       'fields': [{'name': 'id'}, {'name': 'label'}]}}}}
         facts = {'/api/v1/meta/items/5': sibling, '/api/v1/meta/nodes/9': schema,
                  '/api/v1/meta/nodes/1': root, '/api/v1/meta/engines/10/items': [sibling, target]}
+        self.enterContext(patch.object(M.API, '_read_hosted_meta_scan_facts', side_effect=lambda *_: {
+            'sibling': facts['/api/v1/meta/items/5'],
+            'ancestors': [facts['/api/v1/meta/nodes/9'], facts['/api/v1/meta/nodes/1']],
+        }))
         class CatalogClient:
             def request(self, method, path, expected, **kwargs):
                 assert method == 'GET' and expected == (200,)
-                return SimpleNamespace(payload=deepcopy(facts[path]))
+                payload = deepcopy(facts[path])
+                if path.startswith('/api/v1/meta/nodes/'):
+                    for field in ('scan_status', 'scanned_at', 'scanned_depth'):
+                        payload.pop(field)
+                return SimpleNamespace(payload=payload)
         return CatalogClient(), facts, sibling, target
 
     def test_target_scan_requires_fresh_deep_schema_and_preserves_outside_facts(self):

@@ -3,12 +3,16 @@
 from __future__ import annotations
 
 import json
+import os
+import re
+import subprocess
 import urllib.error
 import urllib.parse
 import urllib.request
 import time
 from dataclasses import dataclass
 from datetime import datetime
+from importlib import import_module
 from typing import Iterable
 
 
@@ -185,8 +189,56 @@ def wait_manager_read_boundary(client: GatewayClient, engine_id: int, deadline: 
     raise SuiteError("Manager initial Security protection synchronization did not become ready")
 
 
+def _read_hosted_meta_scan_facts(tenant_id, engine_id, source_id):
+    suite = os.environ.get("ONLINE_SUITE")
+    engine_env = {
+        "transfer-relational-sql-etl": "ADDP_ONLINE_TEST_ENGINE_ID",
+        "transfer-continuous-events": "ADDP_ONLINE_CONTINUOUS_PG_ENGINE_ID",
+    }.get(suite)
+    container_id = os.environ.get("ADDP_ONLINE_SCAN_POSTGRES_ID", "")
+    if (any(type(value) is not int or value <= 0 for value in (tenant_id, engine_id, source_id))
+            or engine_env is None or os.environ.get(engine_env) != str(engine_id)
+            or tenant_id <= 1 or os.environ.get("ADDP_ONLINE_TEST_TENANT_ID") != str(tenant_id)
+            or not re.fullmatch(r"[0-9a-f]{64}", container_id)):
+        raise SuiteError("scan state requires the exact Hosted fixture identities")
+    postgres = import_module("scripts.test.execution-retention-readonly-online")
+    # The identifiers above are exact positive integers from the formal catalog.
+    sql = f"""BEGIN READ ONLY;
+SET LOCAL statement_timeout='3s'; SET LOCAL lock_timeout='1s';
+WITH RECURSIVE sibling AS (
+  SELECT id, tenant_id, engine_id, node_id, item_type, full_name, fingerprint,
+         row_count, size_bytes, data_updated_at, scanned_at, scanned_depth
+  FROM meta.meta_item
+  WHERE id = {source_id} AND tenant_id = {tenant_id} AND engine_id = {engine_id}
+    AND item_type = 'table' AND deleted_at IS NULL
+), ancestors AS (
+  SELECT n.id, n.tenant_id, n.engine_id, n.parent_node_id, n.scan_status,
+         n.scanned_at, n.scanned_depth, 1 AS level
+  FROM meta.meta_node n JOIN sibling s ON n.id = s.node_id
+    AND n.tenant_id = s.tenant_id AND n.engine_id = s.engine_id
+  WHERE n.deleted_at IS NULL
+  UNION ALL
+  SELECT n.id, n.tenant_id, n.engine_id, n.parent_node_id, n.scan_status,
+         n.scanned_at, n.scanned_depth, a.level + 1
+  FROM meta.meta_node n JOIN ancestors a ON n.id = a.parent_node_id
+    AND n.tenant_id = a.tenant_id AND n.engine_id = a.engine_id
+  WHERE n.deleted_at IS NULL AND a.level < 128
+)
+SELECT jsonb_build_object('sibling', (SELECT to_jsonb(s) FROM sibling s),
+  'ancestors', (SELECT jsonb_agg(to_jsonb(a) - 'level' ORDER BY a.level) FROM ancestors a));
+COMMIT;
+"""
+    try:
+        raw = postgres.sql(sql, expected_suite=suite, postgres_id=container_id)
+        if 0 < len(raw.encode()) <= 65536:
+            return json.loads(raw)
+    except (KeyError, OSError, ValueError, RuntimeError, subprocess.SubprocessError):
+        pass
+    raise SuiteError("bounded Hosted scan state read unavailable") from None
+
+
 def read_meta_scan_boundary(client, engine_id, source):
-    """Freeze sibling facts and ancestor scan state through the canonical read APIs."""
+    """Bind the visible identities to independent, read-only Hosted scan facts."""
     def _object(value, resource):
         if not isinstance(value, dict):
             raise SuiteError(resource + " response must be an object")
@@ -214,21 +266,35 @@ def read_meta_scan_boundary(client, engine_id, source):
             raise SuiteError("scan boundary requires a completed baseline scan depth")
         return {field: item.get(field) for field in fields.split()}
 
-    result = {"sibling": scan_state(sibling, "id tenant_id engine_id node_id item_type full_name fingerprint row_count size_bytes data_updated_at scanned_at scanned_depth"),
+    observed = _object(_read_hosted_meta_scan_facts(tenant_id, engine_id, source_id), "Hosted scan state")
+    stored_sibling = _object(observed.get("sibling"), "Hosted scan sibling")
+    identity = "id tenant_id engine_id node_id item_type full_name fingerprint".split()
+    if any(stored_sibling.get(key) != sibling.get(key) for key in identity):
+        raise SuiteError("Hosted scan sibling differs from the visible identity")
+    result = {"sibling": scan_state(stored_sibling, "id tenant_id engine_id node_id item_type full_name fingerprint row_count size_bytes data_updated_at scanned_at scanned_depth"),
               "ancestors": []}
+    ancestors = observed.get("ancestors")
+    if not isinstance(ancestors, list) or not 1 <= len(ancestors) <= 128:
+        raise SuiteError("Hosted scan ancestor chain is absent or too deep")
     seen = set()
-    while parent_id is not None:
+    for stored_node in ancestors:
         parent_id = require_positive_int({"id": parent_id}, "id")
-        if parent_id in seen or len(seen) >= 128:
-            raise SuiteError("scan boundary ancestor chain is cyclic or too deep")
+        if parent_id in seen:
+            raise SuiteError("scan boundary ancestor chain is cyclic")
         seen.add(parent_id)
         node = _object(client.request("GET", f"/api/v1/meta/nodes/{parent_id}", (200,)).payload, "scan boundary ancestor")
+        stored_node = _object(stored_node, "Hosted scan ancestor")
         if (node.get("id") != parent_id or node.get("engine_id") != engine_id
-                or node.get("tenant_id") != tenant_id or not node.get("scan_status")):
+                or node.get("tenant_id") != tenant_id
+                or any(stored_node.get(key) != node.get(key) for key in ("id", "tenant_id", "engine_id", "parent_node_id"))):
             raise SuiteError("scan boundary ancestor identity changed")
+        if stored_node.get("scan_status") not in ("pending", "running", "completed", "failed"):
+            raise SuiteError("Hosted scan ancestor has an invalid scan status")
         # Counts are derived from the current subtree; creating a target legitimately changes them.
-        result["ancestors"].append(scan_state(node, "id tenant_id engine_id parent_node_id scan_status scanned_at scanned_depth"))
+        result["ancestors"].append(scan_state(stored_node, "id tenant_id engine_id parent_node_id scan_status scanned_at scanned_depth"))
         parent_id = node.get("parent_node_id")
+    if parent_id is not None:
+        raise SuiteError("Hosted scan ancestor chain is incomplete")
     return result
 
 

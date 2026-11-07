@@ -14,6 +14,11 @@ class HostedTransferGateTest(unittest.TestCase):
         self.host = SUPPORT.OnlineHostedOpenGaussGateTest()
         self.host.setUp()
         self.host.prepare_run_fixture()
+        docker = self.host.bin / 'docker'
+        docker.write_text(docker.read_text().replace(
+            'if [ "$1 $2" = "compose version" ]; then',
+            'if [ "$1 $2" = "inspect --format" ]; then printf "%064d\\n" 1; exit; fi\n'
+            'if [ "$1 $2" = "compose version" ]; then'))
         shutil.copy2(SCRIPT, self.host.repository / 'scripts/test/online-hosted-transfer-gate.sh')
         self.host._write_repository_script('business/scripts/online-transfer-relational-sql-etl-fixture.sh', '''
             #!/usr/bin/env bash
@@ -67,6 +72,7 @@ class HostedTransferGateTest(unittest.TestCase):
             #!/usr/bin/env bash
             echo "make:$*" >> "$ADDP_TEST_GATE_TRACE"
             [ "$ADDP_ONLINE_TEST_ENGINE_ID" = 17 ] &&
+              [ "$ADDP_ONLINE_SCAN_POSTGRES_ID" = "$(printf '%064d' 1)" ] &&
               [ "$SECURITY_URL" = http://127.0.0.1:8194 ] &&
               [ "$ADDP_ONLINE_TEST_ENGINE_NAME" = 'Hosted Transfer PostgreSQL' ] &&
               [ "$ADDP_ONLINE_TEST_MONGODB_ENGINE_ID" = 18 ] &&
