@@ -8,8 +8,8 @@
       "kind": "normative",
       "path": "transfer/docs/transfer-基本概念及配置说明.md",
       "anchor": "## 一、核心对象",
-      "commit": "bf28a6ebfe186602c2c72a4e4427708a960ec2c9",
-      "sha256": "2fe98f882bd3c34cb0a97e29a4aa0ec37cc77276006ec97948d3e941a3ca0ab4",
+      "commit": "fd3988529dc9bda0e613f15ef5e4a5ad22a07571",
+      "sha256": "6ece8491225530bde3c6c1125dbc8c7b5e2f5a8f788a706b12e64091bc819d9d",
       "use": {
         "zh-cn": "复核默认类型由 Transfer 推导及新草稿多源必须确认的改动。模型不复制源类型为覆盖参数；Runtime 基于正式搜索候选暂停并核对恢复选择。完整原参数绑定、预检三态、创建和运行审批边界保持。",
         "en": "Reviewed owner-derived default types and mandatory multi-source selection for new drafts. Source types are not copied as overrides; Runtime pauses on formal candidates and checks the resumed choice. Exact parameter binding, tri-state preflight, creation and run approval boundaries remain."
@@ -34,11 +34,11 @@
       "kind": "implementation",
       "path": "transfer/backend/internal/service/task_service.go",
       "anchor": "Status:       models.TaskStatusIdle,",
-      "commit": "5416461d7d721c87c9ed2b27eefb8c35d7b8c713",
-      "sha256": "b1f574a1d2c85fd0dd9a50b674c30575f1b5ddea34e04a501b5a1040f6f5fa1b",
+      "commit": "b4e1dc1cc058e8a69aafdce04aebfd0e156ff435",
+      "sha256": "a08568e832b54b4c8d4a763e74af51f8859ddf8794e155fa0b018450b2a4ac66",
       "use": {
-        "zh-cn": "复核只读草稿构建接入后的同文件变化。原创建、运行审批及执行读取边界保留，完整参数仍走正式预检和确认。",
-        "en": "Reviewed this file after read-only draft construction integration. Creation, owner run approval and execution read boundaries remain, with complete arguments still checked and reviewed."
+        "zh-cn": "复核只读草稿构建接入后的同文件变化。原创建、运行审批及执行读取边界保留，完整参数仍走正式预检和确认。 复核 FileGDB 单表导出的专属来源及授权约束。此改动属于 Manager 发起的导出，不扩大 Agent 的原生表任务创建范围。",
+        "en": "Reviewed this file after read-only draft construction integration. Creation, owner run approval and execution read boundaries remain, with complete arguments still checked and reviewed. Reviewed FileGDB single-table export source and authorization constraints. This applies to Manager-initiated export and does not expand the Agent native-table task creation scope."
       }
     },
     {
@@ -60,8 +60,8 @@
       "kind": "contract",
       "path": "common-python/addp_common/tools/manifest.json",
       "anchor": "\"name\": \"transfer.task.create\"",
-      "commit": "bf28a6ebfe186602c2c72a4e4427708a960ec2c9",
-      "sha256": "670b1e7dc92d42150735dd5bc1b0d257300117d349e6f22a5b747b15186d8072",
+      "commit": "b4e1dc1cc058e8a69aafdce04aebfd0e156ff435",
+      "sha256": "c72f5b3b35ff3c4bc4b4d7c0f2584b1d7ad65e8717eefd127800108e27e02a60",
       "use": {
         "zh-cn": "复核默认类型由 Transfer 推导及新草稿多源必须确认的改动。模型不复制源类型为覆盖参数；Runtime 基于正式搜索候选暂停并核对恢复选择。完整原参数绑定、预检三态、创建和运行审批边界保持。",
         "en": "Reviewed owner-derived default types and mandatory multi-source selection for new drafts. Source types are not copied as overrides; Runtime pauses on formal candidates and checks the resumed choice. Exact parameter binding, tri-state preflight, creation and run approval boundaries remain."
@@ -125,8 +125,8 @@
       "kind": "normative",
       "path": "transfer/docs/transfer-任务语义与同步模式.md",
       "anchor": "## 三、当前支持矩阵",
-      "commit": "1c721792592bc21f50ce42cf1e8300ca20ccc0ed",
-      "sha256": "400db0ce69703d67dba2cdc7fd636650183c171a862faa5155038d5094436771",
+      "commit": "873af542a4d9683a95226875ed9d573c9e94f21e",
+      "sha256": "391894a2b92d9372dab5421ea51cb9e5c0410d9fe588156d91004a2d6e2f9b82",
       "use": {
         "zh-cn": "支持矩阵、bounded语义及快照replace/append与增量upsert区分保持。复核continuous提交、租约恢复、诊断、停止清理与扫描的权威正文引用；Oracle及运行限制保留。写后仅扫目标表，创建仍禁扫描，不扩业务Kafka、watermark或停止态native创建，不把观测或声明当运行验收。",
         "en": "The matrix, bounded semantics and snapshot replace/append versus incremental upsert remain. Reviewed canonical references for continuous commits, leases/recovery, diagnostics, stop/cleanup and scans preserve Oracle/runtime limits. Post-write scans target only; creation disables scans. No expansion of business Kafka, watermark or stopped native creation, and no runtime proof from observations or declarations."
@@ -138,8 +138,8 @@
       "kind": "implementation",
       "path": "agent/backend/graph/factory.py",
       "anchor": "async def _run_config_check(",
-      "commit": "6e1c33401213fab33bce9bc54416e0d7082bed55",
-      "sha256": "ee4d5eba1e04860130b9765532b57887a0aed341139978c234f23bbb2399bbfc",
+      "commit": "b4e1dc1cc058e8a69aafdce04aebfd0e156ff435",
+      "sha256": "42d4cc2c38d12248db19fab84004b49043a8f520de31177a117e5e031ed522f3",
       "use": {
         "zh-cn": "所选源引擎约束新草稿的集合搜索及构建，原选择失效时撤销旧集合候选和确认。限定搜索成功且总数为零时，Runtime 根据正式引擎名称和实际搜索词生成纯文字澄清，暂停同一 Run 并阻断未执行的同批调用。用户补充后恢复该 Run，重读引擎清单并核验限定。",
         "en": "The selected source engine constrains collection search and construction for new drafts. When the selection becomes invalid, revoke the old collection choices and confirmations. When a scoped search succeeds with a total of zero, Runtime uses the formal engine name and actual search term to ask for a text reply, pauses the same Run, and blocks the remaining calls in the batch. The reply resumes that Run and refreshes and revalidates the engine scope."
@@ -164,8 +164,8 @@
       "kind": "implementation",
       "path": "agent/backend/i18n.py",
       "anchor": "def transfer_config_check_completed(",
-      "commit": "6e1c33401213fab33bce9bc54416e0d7082bed55",
-      "sha256": "9fb6a73acd20ff9fed4e5c015294a9655f96de8aca43350581eda62eb1ac966d",
+      "commit": "b4e1dc1cc058e8a69aafdce04aebfd0e156ff435",
+      "sha256": "025c30cb4ff9e136e616e67efd78ffb0d7b3b76ad86607fd7227ece330f3e040",
       "use": {
         "zh-cn": "新增源引擎选择、无法确认、跨引擎草稿拒绝及限定搜索零命中的双语提示。零命中提示使用正式引擎名称和实际搜索词。",
         "en": "Add bilingual messages for source-engine choice, unavailability, draft source mismatch, and a scoped search with zero hits. The zero-hit prompt uses the formal engine name and actual search term."
@@ -177,11 +177,11 @@
       "kind": "implementation",
       "path": "transfer/backend/internal/planner/table_export.go",
       "anchor": "func validateTableTransferSpec(",
-      "commit": "088248a95a0f97ade77babf877b55f2a442803c8",
-      "sha256": "10682cc5f6a21ea8fd95fb42cbe475d9f2f390d82056f51c48065c88721a8afc",
+      "commit": "b4e1dc1cc058e8a69aafdce04aebfd0e156ff435",
+      "sha256": "d82537efefa55655b5666e8b5c1624d80fae364c3006e6c89c640cd46a2cd996",
       "use": {
-        "zh-cn": "复核 Manager 一次性 FileGDB 导出，仅给未建模的 encoded 归档执行增加精确 Infra 对象目标。停止态 native table 的 bounded/snapshot、replace/append、查询与字段资格校验，以及创建权限、条件和效果保持；不执行、调度或扫描。",
-        "en": "Reviewed Manager one-off FileGDB export, which adds an exact Infra object target for unmodeled encoded archive execution. Stopped native creation retains bounded/snapshot, replace/append, query and field checks, permissions, conditions and effects; no execution, schedule or scan."
+        "zh-cn": "复核 Manager 一次性 FileGDB 导出，仅给未建模的 encoded 归档执行增加精确 Infra 对象目标。停止态 native table 的 bounded/snapshot、replace/append、查询与字段资格校验，以及创建权限、条件和效果保持；不执行、调度或扫描。 复核 FileGDB 单表导出的专属来源及授权约束。此改动属于 Manager 发起的导出，不扩大 Agent 的原生表任务创建范围。",
+        "en": "Reviewed Manager one-off FileGDB export, which adds an exact Infra object target for unmodeled encoded archive execution. Stopped native creation retains bounded/snapshot, replace/append, query and field checks, permissions, conditions and effects; no execution, schedule or scan. Reviewed FileGDB single-table export source and authorization constraints. This applies to Manager-initiated export and does not expand the Agent native-table task creation scope."
       }
     },
     {
@@ -411,8 +411,8 @@
       "kind": "normative",
       "path": "docs/spec/addp智能体Tool开放规范.md",
       "anchor": "同批 Tool 按模型返回顺序进入唯一 Runtime 调用路径",
-      "commit": "5416461d7d721c87c9ed2b27eefb8c35d7b8c713",
-      "sha256": "b66d83a390b12b1e8e8cae55850f2a29097c219e2b9a9cc5ac8c2e2625bcba05",
+      "commit": "b4e1dc1cc058e8a69aafdce04aebfd0e156ff435",
+      "sha256": "796b4ffee9c206c7e7a389c2324b341e0dd0c75a8d373e294bd54b2d0f764ef4",
       "use": {
         "zh-cn": "复核只读草稿构建接入后的同文件变化。原创建、运行审批及执行读取边界保留，完整参数仍走正式预检和确认。",
         "en": "Reviewed this file after read-only draft construction integration. Creation, owner run approval and execution read boundaries remain, with complete arguments still checked and reviewed."

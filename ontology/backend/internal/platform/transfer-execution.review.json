@@ -8,8 +8,8 @@
       "kind": "normative",
       "path": "docs/spec/addp智能体Tool开放规范.md",
       "anchor": "### 4.8 Transfer 运行审批与执行读取",
-      "commit": "5416461d7d721c87c9ed2b27eefb8c35d7b8c713",
-      "sha256": "b66d83a390b12b1e8e8cae55850f2a29097c219e2b9a9cc5ac8c2e2625bcba05",
+      "commit": "b4e1dc1cc058e8a69aafdce04aebfd0e156ff435",
+      "sha256": "796b4ffee9c206c7e7a389c2324b341e0dd0c75a8d373e294bd54b2d0f764ef4",
       "use": {
         "zh-cn": "复核只读草稿构建接入后的同文件变化。原创建、运行审批及执行读取边界保留，完整参数仍走正式预检和确认。",
         "en": "Reviewed this file after read-only draft construction integration. Creation, owner run approval and execution read boundaries remain, with complete arguments still checked and reviewed."
@@ -21,8 +21,8 @@
       "kind": "contract",
       "path": "common-python/addp_common/tools/manifest.json",
       "anchor": "\"name\": \"transfer.execution.get\"",
-      "commit": "bf28a6ebfe186602c2c72a4e4427708a960ec2c9",
-      "sha256": "670b1e7dc92d42150735dd5bc1b0d257300117d349e6f22a5b747b15186d8072",
+      "commit": "b4e1dc1cc058e8a69aafdce04aebfd0e156ff435",
+      "sha256": "c72f5b3b35ff3c4bc4b4d7c0f2584b1d7ad65e8717eefd127800108e27e02a60",
       "use": {
         "zh-cn": "复核默认类型由 Transfer 推导及新草稿多源必须确认的改动。模型不复制源类型为覆盖参数；Runtime 基于正式搜索候选暂停并核对恢复选择。完整原参数绑定、预检三态、创建和运行审批边界保持。",
         "en": "Reviewed owner-derived default types and mandatory multi-source selection for new drafts. Source types are not copied as overrides; Runtime pauses on formal candidates and checks the resumed choice. Exact parameter binding, tri-state preflight, creation and run approval boundaries remain."
@@ -86,8 +86,8 @@
       "kind": "implementation",
       "path": "agent/backend/graph/factory.py",
       "anchor": "async def _resume_confirmed_start(",
-      "commit": "6e1c33401213fab33bce9bc54416e0d7082bed55",
-      "sha256": "ee4d5eba1e04860130b9765532b57887a0aed341139978c234f23bbb2399bbfc",
+      "commit": "b4e1dc1cc058e8a69aafdce04aebfd0e156ff435",
+      "sha256": "42d4cc2c38d12248db19fab84004b49043a8f520de31177a117e5e031ed522f3",
       "use": {
         "zh-cn": "仅重新冻结共享 Runtime 文件。变更作用于新草稿的源引擎核验及零命中文字澄清，执行查询逻辑未变。",
         "en": "Refresh provenance for the shared Runtime file. The change covers new draft source-engine checks and text clarification on zero hits. Execution read logic is unchanged."
