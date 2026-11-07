@@ -236,8 +236,7 @@ def observe(engine, run_id):
         reader_log = sql(engine, f"""SELECT JSON_OBJECT('thread_id', thread_id, 'command_type', command_type,
             'reader', user_host LIKE '{READER}[%',
             'select', LOWER(CONVERT(argument USING utf8mb4)) REGEXP '^[[:space:]]*(select|with)[[:space:]]',
-            'sample', LOWER(CONVERT(argument USING utf8mb4)) REGEXP '[[:space:]]from[[:space:]]+(`?{DATABASE}`?[.])?`?{TABLE}`?([^a-z_0-9]|$)',
-            'prefix_hex', IF(user_host LIKE '{READER}[%', HEX(LEFT(argument, 96)), NULL))
+            'sample', LOWER(CONVERT(argument USING utf8mb4)) REGEXP '[[:space:]]from[[:space:]]+(`?{DATABASE}`?[.])?`?{TABLE}`?([^a-z_0-9]|$)')
             FROM mysql.general_log WHERE command_type IN ('Query','Execute');""").stdout
         log_entries = [json.loads(line) for line in reader_log.splitlines()]
         reader_ids = sorted({entry["thread_id"] for entry in log_entries if entry["reader"]})
