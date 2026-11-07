@@ -20,7 +20,18 @@
 
 初始刷新时 Standard 没有实例或失败记录。在隔离检出注入一个未定义符号后，`bash scripts/dev/start.sh -standard` 实际编译失败并退出 1。真实 Console 刷新后仍无 Standard 实例，System 返回一条仅含模块、失败时间、`build_failed` 原因的记录，服务监控显示“构建失败”。移除注入后，同一启动命令退出 0。刷新时 System 返回有效在线的 Standard Backend，失败列表为空，Console 实例可见且失败提示消失。验收结束时检出干净。
 
-控制面第一次启动时 Meta Worker 先于 Meta Backend 完成冷启动迁移而退出。迁移完成后，以同一标准入口启动成功。此记录覆盖 Standard 真实构建失败与重试，不含实际进程提前退出、真实就绪超时、生产 Compose 或 Hosted 验收。临时开发服务已停止，专属 VM 及其存储已删除。
+控制面第一次启动时 Meta Worker 先于 Meta Backend 完成冷启动迁移而退出。迁移完成后，以同一标准入口启动成功。此记录覆盖 Standard 真实构建失败与重试。进程退出及就绪超时由下方的 Catalog 验收覆盖。临时开发服务已停止，专属 VM 及其存储已删除。
+
+## 开发 Backend 进程退出与就绪超时的隔离运行验收（2026-11-07）
+
+沿用固定源码 `26aa994ec405585e9306a76c6d9ca6083d25553a`，在新的一次性 Lima Linux VM 内使用独立 Docker 与数据库。标准 `bash scripts/infra/up.sh` 和 `bash scripts/dev/start.sh -monitor` 成功。正式三员 Bootstrap 完成后，使用真实 Chromium Headless Shell、密码与 MFA 登录，核对平台 `platform.module.read` 权限。首次浏览器启动在解压期间报 `ETXTBSY`，尚未注入故障。安装完成后只重跑浏览器场景。
+
+Catalog 有标准入口的独立就绪探针。基线刷新时没有 Catalog 运行实例或启动失败。仅在隔离检出注入两种临时故障，各执行一次 `bash scripts/dev/start.sh -catalog`，两次均实际编译成功并由启动脚本退出 1。
+
+- 进程在登记前退出。确认进程已消失，接口返回 `process_exited`，服务监控显示「启动进程退出」。
+- 进程保持存活且未就绪。标准 60 秒等待耗尽，启动命令连同编译约 66 秒。接口返回更新的 `readiness_timeout`，服务监控显示「等待就绪超时」。
+
+两轮失败均没有运行实例，响应仅含模块、失败时间和固定原因。移除夹具并结束当次故障进程后，标准启动重新编译、退出 0，Catalog 就绪探针成功。再次刷新时 Backend 在线，失败记录及页面提示均清除。终端两种失败均打印「Catalog Backend 启动超时」，未区分提前退出，页面与接口已经区分。隔离检出最终干净，专属 VM 及其存储已删除。此记录仅为本地隔离运行与真实页面证据，生产 Compose、Worker 和 Hosted 不在验收范围。
 
 ## 清单接入与实例绑定
 

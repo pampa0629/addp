@@ -195,7 +195,7 @@ Business 认证目录首次切换须由部署方沿标准生命周期重建容�
 
 本批只增加页面可见性。运行确认仍由 System 租约判断，既有服务组失联告警不使用启动结果。验证沿 `make test-dev-lifecycle`、`make test-deployment-discovery`、System Go／Swagger 及 Monitor 页面门禁，覆盖新旧尝试隔离、局部启停、未执行与真实失败的区分、尚无实例的展示和拒绝身份。
 
-代码已接通。System 回归及 Swagger 覆盖通过，受控浏览器核对缺权不读取。已通过[真实 PostgreSQL 下的失败、重试、登记和注销回归](../spec/testing/evidence/Monitor实例与服务发现历史证据.md#开发-backend-启动失败与重试的-postgresql-t22026-11-07)。[隔离 Linux 的真实 Console 验收](../spec/testing/evidence/Monitor实例与服务发现历史证据.md#开发-backend-真实构建失败与重试的隔离运行验收2026-11-07)覆盖 Standard 首次构建失败、无实例时可见、重试登记在线和失败提示清除。真实进程提前退出及就绪超时仍待运行复验。
+代码已接通。System 回归及 Swagger 覆盖通过，受控浏览器核对缺权不读取。[真实 PostgreSQL 回归](../spec/testing/evidence/Monitor实例与服务发现历史证据.md#开发-backend-启动失败与重试的-postgresql-t22026-11-07)覆盖失败、重试、登记和注销。隔离 Linux 中的真实 Console 验收分别覆盖 [Standard 构建失败](../spec/testing/evidence/Monitor实例与服务发现历史证据.md#开发-backend-真实构建失败与重试的隔离运行验收2026-11-07)和 [Catalog 进程退出、就绪超时](../spec/testing/evidence/Monitor实例与服务发现历史证据.md#开发-backend-进程退出与就绪超时的隔离运行验收2026-11-07)，核对无实例时可见、重试登记在线及失败提示清除。Catalog 的终端启动提示仍把进程提前退出和就绪超时都显示为「启动超时」。
 
 
 ## 文件系统容量告警首期
