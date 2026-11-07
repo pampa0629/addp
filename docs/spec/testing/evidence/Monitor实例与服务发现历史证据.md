@@ -12,7 +12,15 @@
 
 标准 `make test-system-iam-postgres SYSTEM_IAM_POSTGRES_TEST_ARGS='--package repository --test observability-identity --source-root <隔离检出>'` 退出 0，无跳过。首次测试夹具把 Go 默认临时目录直接传入发布器，目录保护预检拒绝。改由正式发布器创建当次私有子目录后复验通过；未放宽保护规则。门禁只使用 `addp_iam_test`，退出后只读确认 `system` 和 `common` Schema 均无残留。
 
-该 T2 使用真实 PostgreSQL 与生产发布、登记代码，通过固定失败原因触发断言。完整标准启动中的真实构建或进程故障、正式登录和实际 Console 页面仍待隔离验收。
+该 T2 使用真实 PostgreSQL 与生产发布、登记代码，通过固定失败原因触发断言。真实构建失败、正式登录和实际 Console 页面由下方的独立运行验收覆盖。
+
+## 开发 Backend 真实构建失败与重试的隔离运行验收（2026-11-07）
+
+固定源码 `26aa994ec405585e9306a76c6d9ca6083d25553a`，在一次性 Lima Linux VM 内使用独立 Docker、数据库和回环端口。以 `bash scripts/infra/up.sh`、`bash scripts/dev/start.sh -monitor` 启动基础设施及控制面，使用正式三员 Bootstrap 和 Chromium 中的真实密码及 MFA 登录，确认当前身份具有平台 `platform.module.read`。
+
+初始刷新时 Standard 没有实例或失败记录。在隔离检出注入一个未定义符号后，`bash scripts/dev/start.sh -standard` 实际编译失败并退出 1。真实 Console 刷新后仍无 Standard 实例，System 返回一条仅含模块、失败时间、`build_failed` 原因的记录，服务监控显示“构建失败”。移除注入后，同一启动命令退出 0。刷新时 System 返回有效在线的 Standard Backend，失败列表为空，Console 实例可见且失败提示消失。验收结束时检出干净。
+
+控制面第一次启动时 Meta Worker 先于 Meta Backend 完成冷启动迁移而退出。迁移完成后，以同一标准入口启动成功。此记录覆盖 Standard 真实构建失败与重试，不含实际进程提前退出、真实就绪超时、生产 Compose 或 Hosted 验收。临时开发服务已停止，专属 VM 及其存储已删除。
 
 ## 清单接入与实例绑定
 
