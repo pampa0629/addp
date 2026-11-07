@@ -322,7 +322,7 @@ Schema 变化决定目标能否继续应用；Meta scan 只重新识别目标事
   -> task 进入 blocked
 ```
 
-PostgreSQL/MySQL 原 capture generation 唯一可恢复的变化是用户人工确认的 additive migration，且仅限当前阻塞消息实际包含的新增 nullable、非主键、非 geometry 字段。服务端重新验证源事实，复用目标 Provider 幂等加列，追加 mapping revision，并将任务置为 paused；用户随后 Resume，从原 committed position 重放当前消息。Oracle 第一期的任何 schema drift 均不允许在原 generation 审批恢复。
+PostgreSQL/MySQL 原 capture generation 唯一可恢复的变化是用户人工确认的 additive migration，且仅限当前阻塞消息实际包含的新增 nullable、非主键、非 geometry 字段。服务端重新验证源事实，复用目标 Provider 幂等加列并追加 mapping revision。审批落库后，任务状态为 `status=idle, desired_state=paused`。用户显式 Resume 创建新 execution，从原 committed position 重放当前消息。Oracle 第一期的任何 schema drift 均不允许在原 generation 审批恢复。 [审批落库与显式恢复](../../docs/spec/tasks/Transfer数据库CDC.md#审批落库与显式恢复)
 
 字段删除、类型或主键变化、非 nullable/geometry 新增和协议变化不能在原 generation 恢复，只能 Stop 后创建新任务和新目标表。当前不提供自动 DDL。
 
