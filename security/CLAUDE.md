@@ -715,3 +715,16 @@ T1/T3/构建验证：`make test-security-frontend` 退出0，260项单元、37�
 
 
 本轮最终 `make test-security-online-runner` 退出0：43／204／18／149／35／80／257 项、System Fixture Go 及登记 CLI 通过。单独领域200项、生命周期21项通过；独立元数据审计正常样本及8个反例通过。首次总门禁因共享 helper 类声明的静态登记未同步失败，已精确更新登记并完整重验，不改变文件许可语义或放宽断言。日志 `/tmp/p145-metadata-runner-gate.log`（首次失败）、`/tmp/p145-metadata-runner-final.log`（最终通过）、`/tmp/p145-metadata-domain-final.log`、`/tmp/p145-metadata-lifecycle-final.log`；文件摘要及证据边界见 `/tmp/p145-metadata-verification.json`。本轮仅确定性 T1，未新增真实数据库 T2、本地 HTTP 或 Hosted T4 通过记录。下一步交专门 CI 会话用本次精确提交运行 v44，回传 Run／Job 与准备／清理及完整领域／浏览器产物后独立核对。
+
+
+### v44 metadata-only 与字段检索断言冲突（2026-11-07）
+
+[Run 42367089598 / Job 128387317730](https://github.com/pampa0629/addp/actions/runs/42367089598/job/128387317730)，attempt1，精确 SHA `5bcac0793dd85d505c436f2d6e1aa4f95991da80`，实际 readiness 通过、Online gate 失败、原始产物上传成功。独立核对十个服务 preflight 均为此 SHA；三项 metadata_read 的准备／精确指纹、请求 UUID、两次准备扫描及三项撤销审计通过，pending 空、metadata_hidden=true、grants_revoked=true；总结果仍 failed，生命周期 cleanup=passed、Infra 零残留。无领域 suite_report，Service／Transfer 新场景与浏览器均未执行，不计通过，也不运行要求完整领域成功的总审计。
+
+新第一失败为 `protected technical field was not searchable before the deadline: Engine 3, Outdoor.Persons, userInfo.phone`。同轮日志证明该字段已作为 string、路径 `[userInfo,phone]` 写入 DataItem #12，Manager 在 11:56:22Z 接收索引批次并返回204，搜索持续200／total=0，System 的 Manager 搜索可见性检查取得1个候选。日志未归档搜索／裁决响应正文，不能只凭空结果猜测每项 visible/content_readable 值，也不把204扩大为字段搜索成功。
+
+固定源码和授权规范明确：仅 metadata_read 的 Manager 检索分支只搜索 name/full_name，只返回资源身份与定位；字段检索及字段高亮在当前 read 分支。旧 suite 却要求仅有元数据许可的 MongoDB userInfo.phone 和 MySQL email 字段搜索正例，包含 MongoDB 算法／重启检查和最终浏览器搜索到预览链路。这是验收前提与当前权限契约冲突，不能加等待或未经确认补 read Grant 解决，也不能静默删断言后记为原v44通过。
+
+待确认的具体适配方案：三项保持 metadata_read；正式核对 Manager 裁决 visible=true/content_readable=false，按名称／路径搜索同一 DataItem 并验证只返回安全身份；通过 Meta 当前用户字段结构核对精确组件路径、类型、指纹；字段检索与高亮的正例保留在现有已获 read 的 PostgreSQL 目标。MySQL／MongoDB 字段检索的原正例不再声明通过，报告与浏览器契约须同步新版本，原权限、数据脱敏输出、资格生命周期、失败原因、21图和清理仍严格保留。此方案改变原验收要求，当前仅记录方案，未实施／未重派；若要让 metadata_read 也搜索技术字段，则先讨论 Manager 检索产品规则，不能由本会话擅改。
+
+原始归档 `/tmp/addp-security-5bcac079/archive/_temp/addp-online-42367089598/`，独立失败核对 `/tmp/addp-security-5bcac079/p145-independent-failure-audit.json`，脚本 `/tmp/p145-5bc-failure-audit.py`；旧42322135716失败继续保留。已有5bc确定性门禁保持有效，本次仅归档核验和文档，未新增T1/T2/T4运行通过。
