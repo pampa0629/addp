@@ -458,6 +458,38 @@ class AgentEvaluationBaselineTests(unittest.IsolatedAsyncioTestCase):
                 else:
                     self.assertEqual(result["error_code"], "ontology_object_id_required")
 
+    async def test_ontology_unknown_stops_before_model_can_infer_a_business_result(self):
+        pin = {"ontology_id": "outdoor", "revision": 2, "generation": "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee", "activation_version": 3}
+        rule = "statistically_valid_activity"
+        request = {**pin, "rule_id": rule, "object_id": "test-activity-01"}
+        context = {**pin, "rules": [{"id": rule, "business_evaluable": True}]}
+        answer = {**pin, "rule_id": rule, "digest": "a" * 64, "outcome": "unknown"}
+        for language, expected in (
+            ("zh-cn", "现有业务证据不足，无法判断该记录是否符合规则。依据本体 outdoor 的修订 2，规则 statistically_valid_activity。"),
+            ("en", "The available business evidence does not establish whether the record matches the rule. Ontology outdoor, revision 2, rule statistically_valid_activity."),
+        ):
+            with self.subTest(language=language):
+                llm = _ScriptedLLM([
+                    _Response(tool_calls=[_tool_call("ontology.class.context", {**pin, "class_id": "activity"})]),
+                    _Response(tool_calls=[_tool_call("ontology.rule.evaluate", request, call_id="call-2")]),
+                    _Response(content="该活动是草稿，应排除统计。"),
+                ])
+                events = await self._run_factory(
+                    skill_name="ontology-exploration", agent_run_id="run-rule-unknown",
+                    user_request="本体 outdoor 中，活动 test-activity-01 计入统计吗？",
+                    tools=[_Tool("ontology.class.context", context), _Tool("ontology.rule.evaluate", answer)],
+                    allowed_tools=["ontology.class.context", "ontology.rule.evaluate"],
+                    responses=[], llm=llm, accept_language=language,
+                )
+                self.assertEqual(len(llm.inputs), 2)
+                self.assertEqual(len(llm.responses), 1)
+                text = "".join(event.payload["delta"] for event in events if event.kind == "text")
+                self.assertEqual(text, expected)
+                self.assertFalse(any(event.kind == "run_failed" for event in events))
+                result = next(event.payload for event in events if event.kind == "tool_result" and event.payload["tool_name"] == "ontology.rule.evaluate")
+                self.assertFalse(result["is_error"])
+                self.assertEqual(json.loads(result["content"])["outcome"], "unknown")
+
     async def test_platform_transfer_create_is_not_execution(self):
         scenario = load_scenario(SCENARIOS_ROOT / "platform-transfer-create")
         names = ["platform.capability.context", "engine.list", "resource.facts.get", "resource.children.list", "transfer.task.create"]

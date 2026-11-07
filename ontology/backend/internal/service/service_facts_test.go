@@ -61,33 +61,59 @@ func testPublishedOutdoorRule(t *testing.T, s *RevisionService, actor models.Act
 		call := authorization.OntologyRuleCall{AgentRunID: "run", ToolCallID: "call", PrincipalID: fmt.Sprint(actor.PrincipalID),
 			Evaluation: authorization.OntologyRuleEvaluation{OntologyID: d.Scope.OntologyID, Revision: active.Revision, Generation: active.Generation,
 				ActivationVersion: active.ActivationVersion, RuleID: rule.ID, ObjectID: "fixture"}}
-		for _, status := range []int{http.StatusOK, http.StatusForbidden} {
-			owner := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				var request authorization.OntologyRuleFactRequest
-				if r.Method != http.MethodPost || r.URL.Path != "/api/v1/service/runtime/ontology-facts/private-activity" ||
-					r.Header.Get("Authorization") != "Bearer addp_at_ontology_machine" || json.NewDecoder(r.Body).Decode(&request) != nil ||
-					request.Call != call || request.ServiceID != b.ServiceID || request.ServiceVersion != b.ServiceVersion || request.IDParameter != b.IDParameter ||
-					!slices.Equal(request.Fields, []string{"activity_id", "activity_date", "activity_status"}) {
-					t.Error("delegated fact request lost its binding or machine identity")
-					w.WriteHeader(http.StatusBadRequest)
+		for _, tc := range []struct {
+			name, factStatus, rows string
+			status                 int
+			outcome                semantic.Outcome
+		}{
+			{"verified", "verified", `[{"activity_id":"fixture","activity_status":"报名截止","activity_date":"2000-01-02"}]`, http.StatusOK, semantic.Matched},
+			{"forbidden", "verified", `[]`, http.StatusForbidden, ""},
+			{"protected_date", "unknown", `[]`, http.StatusOK, semantic.Undetermined},
+			{"masked_draft", "unknown", `[{"activity_id":"fixture","activity_status":"拟定中","activity_date":"2000-01-02"}]`, http.StatusOK, semantic.Undetermined},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				owner := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					var request authorization.OntologyRuleFactRequest
+					if r.Method != http.MethodPost || r.URL.Path != "/api/v1/service/runtime/ontology-facts/private-activity" ||
+						r.Header.Get("Authorization") != "Bearer addp_at_ontology_machine" || json.NewDecoder(r.Body).Decode(&request) != nil ||
+						request.Call != call || request.ServiceID != b.ServiceID || request.ServiceVersion != b.ServiceVersion || request.IDParameter != b.IDParameter ||
+						!slices.Equal(request.Fields, []string{"activity_id", "activity_date", "activity_status"}) {
+						t.Error("delegated fact request lost its binding or machine identity")
+						w.WriteHeader(http.StatusBadRequest)
+						return
+					}
+					w.Header().Set("Content-Type", "application/json")
+					w.WriteHeader(tc.status)
+					fmt.Fprintf(w, `{"fact_status":%q,"service_version":%q,"page":{"limit":2,"has_more":false},"data":%s}`, tc.factStatus, b.ServiceVersion, tc.rows)
+				}))
+				reader, err := NewServiceFactReader(owner.URL)
+				if err != nil {
+					t.Fatal(err)
+				}
+				reader.SetServiceTokens(fixtureOntologyFactTokens{})
+				s.SetServiceFactReader(reader)
+				got, err := s.EvaluateBusiness(WithOntologyRuleCall(ctx, call), actor, active.OntologyID, rule.ID, active.Revision, active.Generation, active.ActivationVersion, "fixture", "")
+				owner.Close()
+				s.SetServiceFactReader(nil)
+				if tc.status == http.StatusForbidden {
+					if err != ErrOntologyFactPermission || got != nil {
+						t.Fatalf("delegated fact refusal: %+v %v", got, err)
+					}
 					return
 				}
-				w.Header().Set("Content-Type", "application/json")
-				w.WriteHeader(status)
-				fmt.Fprintf(w, `{"fact_status":"verified","service_version":%q,"page":{"limit":2,"has_more":false},"data":[{"activity_id":"fixture","activity_status":"报名截止","activity_date":"2000-01-02"}]}`, b.ServiceVersion)
-			}))
-			reader, err := NewServiceFactReader(owner.URL)
-			if err != nil {
-				t.Fatal(err)
-			}
-			reader.SetServiceTokens(fixtureOntologyFactTokens{})
-			s.SetServiceFactReader(reader)
-			got, err := s.EvaluateBusiness(WithOntologyRuleCall(ctx, call), actor, active.OntologyID, rule.ID, active.Revision, active.Generation, active.ActivationVersion, "fixture", "")
-			owner.Close()
-			s.SetServiceFactReader(nil)
-			if status == http.StatusForbidden && err != ErrOntologyFactPermission || status == http.StatusOK && (err != nil || got.Decision.Outcome != semantic.Matched) {
-				t.Fatalf("delegated fact evaluation: %d %+v %v", status, got, err)
-			}
+				if err != nil || got.Decision.Outcome != tc.outcome || got.Decision.Mode != "business" ||
+					got.Digest != active.Digest || got.ServiceVersion != b.ServiceVersion {
+					t.Fatalf("delegated fact evaluation: %+v %v", got, err)
+				}
+				if tc.factStatus == "unknown" && (got.Decision.Code != "source_unverified" || len(got.Decision.Inputs) != 0) {
+					t.Fatalf("unverified fields became rule inputs: %+v", got.Decision)
+				}
+				encoded, err := json.Marshal(got)
+				if err != nil || strings.Contains(string(encoded), `"value":`) || strings.Contains(string(encoded), `"拟定中"`) ||
+					strings.Contains(string(encoded), "报名截止") || strings.Contains(string(encoded), "2000-01-02") {
+					t.Fatal("delegated evaluation exposed raw Service values")
+				}
+			})
 		}
 	})
 	for _, tc := range []struct {
