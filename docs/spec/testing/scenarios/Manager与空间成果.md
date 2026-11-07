@@ -76,7 +76,7 @@ case 路由、默认完整场景保留、未知值只读拒绝、子场景失败
 
 `filegdb-export` 复用既有 Manager Hosted suite、隔离 PostGIS 源和 GeoPython 产品镜像，使用 `ADDP_ONLINE_MANAGER_CASE=filegdb-export make test-online ONLINE_SUITE=manager-internal-artifact-lineage`。来源初始化用户扫描测试表并授予精确读范围。消费用户在真实 Manager 页面分别导出 EPSG:3857 点、EPSG:4326 MultiLineString 和 EPSG:4326 MultiPolygon，每次取得仅含单个图层的 `.gdb.zip`，同时核对 Monitor 执行归属、下载字节哈希及截图。同租户的另一位普通用户持有导出读取权限，对每个会话及下载均须被拒。独立 GDAL 进程解包并核对源 CRS、XY 坐标、各多部件边界、面内环、标量和空值。线核对每个部件的顶点次序，面允许环的起点和方向改变。前后核对三个源表的内容与结构。归档随本轮隔离 Infra 清理；此 case 与 NFS FileGDB 读授权分开报告。
 
-### MySQL FileGDB 实际页面导出（待正式验收）
+### MySQL FileGDB 实际页面导出
 
 独立选择`filegdb-mysql-export`，复用现有Manager Hosted suite、同一FileGDB owner/真实页面/独立OpenFileGDB回读/Transfer精确源授权及执行前撤权流程。只增加本轮独占的临时MySQL容器，使用既有T2登记的固定MySQL镜像、随机loopback端口、tmpfs数据卷和仅可读三个夹具表的来源账号；不连接个人Business MySQL。初始化用户仍13项、消费者仍6项、同租户旁观者仍1项权限，不修改角色模板、产品API或转换路线。
 
