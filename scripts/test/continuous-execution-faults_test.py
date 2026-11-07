@@ -15,12 +15,25 @@ class ContinuousFaultsTest(unittest.TestCase):
     def test_bounded_pause_requires_the_admitted_case_and_single_worker(self):
         faults = object.__new__(M.HostedFaults)
         faults.pin = unittest.mock.Mock()
-        for case, replicas in [('full', '1'), ('filegdb-export', '2'), ('', '1')]:
+        for case, replicas in [('full', '1'), ('filegdb-export', '2'), ('filegdb-mysql-export', '2'), ('', '1')]:
             with self.subTest(case=case, replicas=replicas), patch.dict(os.environ, {
                     'ADDP_ONLINE_MANAGER_CASE': case, 'ADDP_DEV_TRANSFER_BOUNDED_WORKER_REPLICAS': replicas}), \
                     self.assertRaisesRegex(ValueError, 'single-Worker'):
                 faults.stop_bounded_worker_during(lambda: True)
         faults.pin.assert_not_called()
+
+    def test_mysql_filegdb_case_recovers_the_same_pinned_worker(self):
+        faults = object.__new__(M.HostedFaults)
+        faults.pin = unittest.mock.Mock(return_value=(42, 123))
+        action = unittest.mock.Mock()
+        with patch.dict(os.environ, ADDP_ONLINE_MANAGER_CASE='filegdb-mysql-export',
+                        ADDP_DEV_TRANSFER_BOUNDED_WORKER_REPLICAS='1'), \
+                patch.object(M.signal, 'pidfd_send_signal', create=True), patch.object(M.os, 'close'), \
+                patch.object(M, 'wait_owner_state'):
+            result = faults.stop_bounded_worker_during(action)
+        faults.pin.assert_called_once_with('transfer-bounded-worker-1')
+        action.assert_called_once_with()
+        self.assertEqual(result, {'worker_pid': 42, 'stopped_verified': True, 'resumed_verified': True})
 
     def test_bounded_pause_resumes_the_pinned_worker_even_when_submission_fails(self):
         faults = object.__new__(M.HostedFaults)

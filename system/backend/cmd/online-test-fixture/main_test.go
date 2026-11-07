@@ -1714,6 +1714,23 @@ func TestFileGDBCaseUsesReadOnlyConsumerAndExistingSourceInitializer(t *testing.
 	}
 }
 
+func TestNativeFileGDBCasesReuseApprovedPermissions(t *testing.T) {
+	for _, name := range []string{"filegdb-export", "filegdb-mysql-export"} {
+		t.Run(name, func(t *testing.T) {
+			t.Setenv("ADDP_ONLINE_MANAGER_CASE", name)
+			got, err := suitePermissions("manager-internal-artifact-lineage")
+			want := []string{"manager.data_item.read", "manager.derived_artifact.create", "manager.derived_artifact.read", "meta.catalog.read", "monitor.execution.read", "transfer.task.read"}
+			if err != nil || !slices.Equal(got, want) || !slices.Equal(managerFileGDBOutsiderPermissions("manager-internal-artifact-lineage"), []string{"manager.derived_artifact.read"}) {
+				t.Fatal("native FileGDB source case changed consumer or outsider permissions")
+			}
+			issuer := append(slices.Clone(sourceInitializerPermissions), "meta.scan_task.execute", "meta.scan_task.read")
+			if !slices.Equal(suiteSourceInitializerPermissions("manager-internal-artifact-lineage"), issuer) {
+				t.Fatal("native FileGDB source case changed initializer permissions")
+			}
+		})
+	}
+}
+
 func TestFileGDBOutsiderHasOnlyReadFunctionsAndIsScopedToItsCase(t *testing.T) {
 	t.Setenv("ADDP_ONLINE_MANAGER_CASE", "filegdb-authorization")
 	want := []string{"manager.content.read", "manager.data_item.read"}

@@ -218,6 +218,7 @@ on:
           - native-envi
           - kml-export
           - filegdb-export
+          - filegdb-mysql-export
           - filegdb-authorization
       native_case:
         description: Explicit cleanup-native-effects case (manager-success, manager-object-unknown, manager-index-unknown, manager-late-writer, transfer-engine, transfer-dlq-unknown, transfer-capture-unknown)
@@ -1606,7 +1607,7 @@ jobs:
             libgpgme11t64 libgpgmepp6t64 nfs-kernel-server
 
       - name: Install isolated FileGDB verification tools
-        if: inputs.manager_case == 'filegdb-authorization' || inputs.manager_case == 'filegdb-export'
+        if: inputs.manager_case == 'filegdb-authorization' || inputs.manager_case == 'filegdb-export' || inputs.manager_case == 'filegdb-mysql-export'
         run: sudo apt-get install -y --no-install-recommends nfs-common gdal-bin python3-gdal
 
       - name: Validate Hosted Manager readiness

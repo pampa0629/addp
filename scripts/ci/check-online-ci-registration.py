@@ -574,13 +574,13 @@ def validate_manager_internal_artifact_lineage_profile(repository: Path, registe
         raise RegistrationError("manager-internal-artifact-lineage requires Ubuntu Hosted job")
     manager_input = re.search(r"(?ms)^      manager_case:\n(?P<body>.*?)(?=^      [a-z_]+:\n|^jobs:|\Z)", workflow)
     if (not manager_input or any(not source_contract_contains(manager_input.group('body'), fragment, repository) for fragment in
-            ('required: true', 'type: choice', 'default: full', '- full', '- native-raster-media', '- native-table-orc', '- native-netcdf', '- native-grib', '- native-envi', '- kml-export', '- filegdb-export', '- filegdb-authorization'))
+            ('required: true', 'type: choice', 'default: full', '- full', '- native-raster-media', '- native-table-orc', '- native-netcdf', '- native-grib', '- native-envi', '- kml-export', '- filegdb-export', '- filegdb-mysql-export', '- filegdb-authorization'))
             or any(not source_contract_contains(job.group('body'), fragment, repository) for fragment in (
                 'ADDP_ONLINE_MANAGER_CASE: ${{ inputs.manager_case }}',
                 'name: Online T4 (manager-internal-artifact-lineage, ${{ inputs.manager_case }}, Linux x86_64)',
                 'name: online-t4-manager-internal-artifact-lineage-${{ inputs.manager_case }}-${{ github.run_id }}'))
             or any(not source_contract_contains(hosted, fragment, repository) for fragment in (
-                'ADDP_ONLINE_MANAGER_CASE=${ADDP_ONLINE_MANAGER_CASE-full}', 'full|native-raster-media|native-table-orc|native-netcdf|native-grib|native-envi|kml-export|filegdb-export|filegdb-authorization)',
+                'ADDP_ONLINE_MANAGER_CASE=${ADDP_ONLINE_MANAGER_CASE-full}', 'full|native-raster-media|native-table-orc|native-netcdf|native-grib|native-envi|kml-export|filegdb-export|filegdb-mysql-export|filegdb-authorization)',
                 'manager-case.json', 'addp.manager-acceptance-case/v1'))):
         raise RegistrationError('Manager acceptance case requires explicit full/media selection and case-specific evidence')
     netcdf_paths = ('scripts/test/manager-netcdf-online.py', 'scripts/test/manager-netcdf-online_test.py',
@@ -616,7 +616,7 @@ def validate_manager_internal_artifact_lineage_profile(repository: Path, registe
     envi_browser=(repository/'console/frontend/e2e/online/manager-img.spec.js').read_text()
     if any(value not in envi_browser for value in ('enviContentMetadata','metadata_projection_verified','content_metadata_verified')):
         raise RegistrationError('ENVI requires separate public structure and protected browser content metadata')
-    if hosted.index('full|native-raster-media|native-table-orc|native-netcdf|native-grib|native-envi|kml-export|filegdb-export|filegdb-authorization)') > hosted.index('source "$ROOT_DIR/scripts/utils/hosted-online.sh"'):
+    if hosted.index('full|native-raster-media|native-table-orc|native-netcdf|native-grib|native-envi|kml-export|filegdb-export|filegdb-mysql-export|filegdb-authorization)') > hosted.index('source "$ROOT_DIR/scripts/utils/hosted-online.sh"'):
         raise RegistrationError('Manager acceptance case must reject invalid input before Hosted lifecycle')
     if "nfs-kernel-server" not in job.group("body"):
         raise RegistrationError("Manager content boundary acceptance requires its Hosted NFS package")
@@ -672,13 +672,21 @@ def validate_manager_internal_artifact_lineage_profile(repository: Path, registe
         raise RegistrationError('Manager KML export requires real button, physical oracle, identity and isolated cleanup regressions')
     filegdb_export = repository / 'scripts/test/manager-filegdb-export-online.py'
     if (not filegdb_export.is_file()
-            or "if case == 'filegdb-export':" not in manager_owner
+            or "if case in {'filegdb-export', 'filegdb-mysql-export'}:" not in manager_owner
             or 'scripts/test/manager-filegdb-export-online_test.py' not in make_target_commands(make, 'test-manager-online-runner')
             or any(fragment not in filegdb_export.read_text(encoding='utf-8') for fragment in (
                 'actual_button_download', 'unpack_archive', 'OpenFileGDB', 'initialize_exact_record_read_grants',
                 'same_tenant_non_owner_denied', 'source_unchanged=True'))
             or 'File Geodatabase (.gdb.zip)' not in kml_browser):
         raise RegistrationError('Manager FileGDB export requires actual download, independent readback and source and download authorization checks')
+    mysql_fixture = repository / 'business/scripts/online-manager-mysql-fixture.sh'
+    if (not mysql_fixture.is_file() or 'filegdb-mysql-export' not in workflow
+            or any(not source_contract_contains(hosted, part, repository) for part in (
+                'online-manager-mysql-fixture.sh start', 'online-manager-mysql-fixture.sh stop',
+                'ADDP_ONLINE_MANAGER_EXPORT_ENGINE_ID'))
+            or any(part not in filegdb_export.read_text(encoding='utf-8') for part in (
+                "'filegdb-mysql-export'", "'engine_type': 'mysql'", "'term': 'database'", 'source_profile'))):
+        raise RegistrationError('Manager MySQL FileGDB requires its explicit case, database scope and owned source lifecycle')
     if ("img_scene.run(repository, environment, sys.modules[__name__], source_format=source_format)" not in manager_owner
             or "for source_format in ('img', 'jpeg2000', 'grd', 'tiff')" not in manager_owner
             or not img_runner or '\t@python3 -m unittest scripts/test/manager-img-online_test.py' not in make_target_commands(make, "test-manager-online-runner")

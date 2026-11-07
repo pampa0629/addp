@@ -1,5 +1,8 @@
 import importlib
+import json
+import os
 from pathlib import Path
+import subprocess
 import tempfile
 from types import SimpleNamespace
 import unittest
@@ -7,9 +10,124 @@ from unittest.mock import Mock, patch
 import zipfile
 
 owner = importlib.import_module('scripts.test.manager-filegdb-export-online')
+MYSQL_FIXTURE = Path(__file__).resolve().parents[2] / 'business/scripts/online-manager-mysql-fixture.sh'
+
+
+class MySQLFixtureLifecycleTest(unittest.TestCase):
+    def setUp(self):
+        self.temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temporary.cleanup)
+        self.root = Path(self.temporary.name)
+        self.private = self.root / 'private'; self.private.mkdir(mode=0o700)
+        binary = self.root / 'bin'; binary.mkdir()
+        uname = binary / 'uname'; uname.write_text('#!/bin/sh\n[ "$1" = -s ] && echo Linux || echo x86_64\n'); uname.chmod(0o755)
+        docker = binary / 'docker'
+        docker.write_text('''#!/usr/bin/env python3
+import json,os,pathlib,sys
+p=pathlib.Path(os.environ['P82_MYSQL_STATE']);s=json.loads(p.read_text()) if p.exists() else {'exists':False,'calls':[]}
+a=sys.argv[1:];data=sys.stdin.read() if a and a[0]=='exec' else ''
+s['calls'].append({'args':a,'sql':data})
+code=0
+if a[:2]==['container','inspect']:code=0 if s['exists'] else 1
+elif a and a[0]=='compose':print(json.dumps({'services':{'mysql':{'image':'mysql:fixture-pin'}}}))
+elif a and a[0]=='run':
+ s.update(exists=True,root_password=os.environ['MYSQL_ROOT_PASSWORD'],labels={a[i+1].split('=',1)[0]:a[i+1].split('=',1)[1] for i,v in enumerate(a) if v=='--label'})
+ print('owned-mysql-id')
+elif a and a[0]=='inspect':
+ if not s['exists']:code=1
+ elif 'NetworkSettings.Ports' in a[2]:print('127.0.0.1:59306')
+ else:
+  key='com.addp.online-fixture' if 'com.addp.online-fixture' in a[2] else 'com.addp.online-run'
+  print(s['labels'][key])
+elif a and a[0]=='rm':s['exists']=False
+elif a and a[0]=='exec':
+ if 'CREATE DATABASE' in data and os.environ.get('P82_MYSQL_SEED_FAIL')=='1':
+  print('private seed detail '+os.environ['MYSQL_PWD'],file=sys.stderr);code=1
+ elif 'JSON_OBJECT' in data:print(json.dumps({'count':3,'rows':'a'*32,'columns':'b'*32}))
+ elif 'SELECT 1' in a:print('1')
+else:code=99
+p.write_text(json.dumps(s));sys.exit(code)
+''')
+        docker.chmod(0o755)
+        self.state = self.root / 'state.json'
+        self.descriptor = self.private / 'mysql.json'
+        self.env = dict(os.environ, PATH=str(binary) + os.pathsep + os.environ['PATH'], GITHUB_ACTIONS='true',
+            RUNNER_OS='Linux', ADDP_ONLINE_HOST='1', ADDP_ONLINE_HOSTED='1', POSTGRES_DB='addp_online',
+            ADDP_ONLINE_MANAGER_CASE='filegdb-mysql-export', ADDP_ONLINE_TEST='1',
+            ADDP_ONLINE_TEST_RUN_ID='manager-7-1', ADDP_ONLINE_SECRET_DIR=str(self.private),
+            ADDP_ONLINE_FIXTURE_ENGINE_DESCRIPTOR_FILE=str(self.descriptor), P82_MYSQL_STATE=str(self.state))
+
+    def invoke(self, *args, **environment):
+        return subprocess.run(['bash', str(MYSQL_FIXTURE), *args], env={**self.env, **environment},
+                              capture_output=True, text=True, timeout=20)
+
+    def test_owned_mysql_seed_snapshot_and_cleanup_keep_credentials_private(self):
+        started = self.invoke('start')
+        self.assertEqual(started.returncode, 0, started.stdout + started.stderr)
+        descriptor = json.loads(self.descriptor.read_text())
+        self.assertEqual((descriptor['engine_type'], descriptor['connection_info']['database'], descriptor['connection_info']['port']),
+                         ('mysql', 'filegdb_fixture', 59306))
+        self.assertEqual(self.descriptor.stat().st_mode & 0o777, 0o600)
+        state = json.loads(self.state.read_text())
+        for secret in [state['root_password'], descriptor['connection_info']['password']]:
+            self.assertNotIn(secret, started.stdout + started.stderr)
+        seed = next(c['sql'] for c in state['calls'] if 'CREATE DATABASE' in c['sql'])
+        self.assertEqual(seed.count('ENGINE=InnoDB'), 3)
+        self.assertEqual(seed.count('GRANT SELECT ON'), 3)
+        self.assertNotIn('GRANT ALL', seed)
+        snapshot = self.invoke('snapshot-filegdb', 'filegdb_export_points')
+        self.assertEqual(snapshot.returncode, 0, snapshot.stderr)
+        self.assertEqual(json.loads(snapshot.stdout)['count'], 3)
+        before = self.state.read_bytes()
+        self.assertNotEqual(self.invoke('snapshot-filegdb', 'another_table').returncode, 0)
+        self.assertEqual(self.state.read_bytes(), before)
+        self.assertEqual(self.invoke('stop').returncode, 0)
+        self.assertFalse(json.loads(self.state.read_text())['exists'])
+
+    def test_foreign_run_and_unapproved_case_are_rejected_without_removing_source(self):
+        self.assertNotEqual(self.invoke('start', ADDP_ONLINE_MANAGER_CASE='full').returncode, 0)
+        self.assertFalse(self.state.exists())
+        self.assertEqual(self.invoke('start').returncode, 0)
+        state = json.loads(self.state.read_text());state['labels']['com.addp.online-run'] = 'another-run';self.state.write_text(json.dumps(state))
+        self.assertNotEqual(self.invoke('stop').returncode, 0)
+        self.assertTrue(json.loads(self.state.read_text())['exists'])
+
+    def test_failed_seed_retains_private_diagnostics_and_allows_owned_cleanup(self):
+        failed = self.invoke('start', P82_MYSQL_SEED_FAIL='1')
+        self.assertNotEqual(failed.returncode, 0)
+        state = json.loads(self.state.read_text())
+        self.assertNotIn(state['root_password'], failed.stdout + failed.stderr)
+        self.assertEqual((self.private / 'mysql-seed.log').stat().st_mode & 0o777, 0o600)
+        self.assertFalse(self.descriptor.exists())
+        self.assertEqual(self.invoke('stop').returncode, 0)
+        self.assertFalse(json.loads(self.state.read_text())['exists'])
 
 
 class FileGDBArchiveProofTest(unittest.TestCase):
+    def test_native_profiles_are_explicit_and_mysql_uses_database_identity(self):
+        mysql = owner.source_profile({'ADDP_ONLINE_MANAGER_CASE': 'filegdb-mysql-export'})
+        self.assertEqual((mysql['engine_type'], mysql['namespace'], mysql['term']), ('mysql', 'filegdb_fixture', 'database'))
+        self.assertTrue(mysql['fixture'].endswith('online-manager-mysql-fixture.sh'))
+        pg = owner.source_profile({'ADDP_ONLINE_MANAGER_CASE': 'filegdb-export'})
+        self.assertEqual((pg['engine_type'], pg['namespace'], pg['term']), ('postgresql', 'public', 'schema'))
+        for value in (None, '', 'MYSQL', 'full'):
+            with self.subTest(value=value), self.assertRaises(ValueError):
+                owner.source_profile({'ADDP_ONLINE_MANAGER_CASE': value})
+
+    def test_mysql_snapshot_uses_only_its_owned_source_fixture(self):
+        import json
+        environment = {'ADDP_ONLINE_MANAGER_CASE': 'filegdb-mysql-export'}
+        output = {'count': 3, 'rows': 'a' * 32, 'columns': 'b' * 32}
+        with patch.object(owner.subprocess, 'run', return_value=SimpleNamespace(stdout=json.dumps(output))) as run:
+            self.assertEqual(owner.source_snapshot(Path('/repo'), environment, 'filegdb_export_points'), output)
+        self.assertEqual(run.call_args.args[0], ['bash', 'business/scripts/online-manager-mysql-fixture.sh',
+                                               'snapshot-filegdb', 'filegdb_export_points'])
+        helper, initializer = Mock(), Mock()
+        helper.wait_for_meta_scan.return_value = 'scan-7'
+        initializer.request.return_value = SimpleNamespace(payload={'metadata': {'items_scanned': 1, 'catalog_nodes_scanned': 0}})
+        locator, _ = owner.scan_source(helper, initializer, 2, 'filegdb_export_points', 'filegdb_fixture')
+        self.assertEqual(locator, 'addp://engine/2/path/filegdb_fixture/filegdb_export_points?type=table')
+
     def revocation_fixture(self, change=None):
         trace = []
         pending = {'execution_id': 'execution-7', 'module': 'transfer', 'source': 'manager', 'status': 'pending', 'attempt': 0}
@@ -120,10 +238,10 @@ class FileGDBArchiveProofTest(unittest.TestCase):
         initializer.request.return_value = SimpleNamespace(payload={
             'metadata': {'items_scanned': 1, 'catalog_nodes_scanned': 0},
         })
-        locator, execution = owner.scan_source(helper, initializer, 2, 'filegdb_export_points')
+        locator, execution = owner.scan_source(helper, initializer, 2, 'filegdb_export_points', 'public')
         self.assertEqual(locator, 'addp://engine/2/path/public/filegdb_export_points?type=table')
         self.assertEqual(execution, 'execution-7')
         self.assertEqual(helper.wait_for_meta_scan.call_args.kwargs, {'scope': {'targets': [locator]}})
         initializer.request.return_value.payload['metadata']['items_scanned'] = 0
         with self.assertRaisesRegex(ValueError, 'requires one scanned source table'):
-            owner.scan_source(helper, initializer, 2, 'filegdb_export_points')
+            owner.scan_source(helper, initializer, 2, 'filegdb_export_points', 'public')

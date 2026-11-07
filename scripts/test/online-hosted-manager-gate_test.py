@@ -56,6 +56,14 @@ class HostedManagerGateTest(unittest.TestCase):
             fi
             [ "$1" != stop ] || [ "${ADDP_TEST_KML_CLEANUP_FAIL:-0}" != 1 ] || exit 1
         ''')
+        self.host._write_repository_script("business/scripts/online-manager-mysql-fixture.sh", '''
+            #!/usr/bin/env bash
+            echo "mysql-filegdb-fixture:$1" >> "$ADDP_TEST_GATE_TRACE"
+            if [ "$1" = start ]; then
+              printf '{}\\n' > "$ADDP_ONLINE_FIXTURE_ENGINE_DESCRIPTOR_FILE"
+              [ "${ADDP_TEST_MYSQL_FIXTURE_FAIL:-0}" != 1 ] || exit 1
+            fi
+        ''')
         self.host._write_repository_script("scripts/infra/up.sh", '''
             #!/usr/bin/env bash
             set -euo pipefail
@@ -147,8 +155,10 @@ class HostedManagerGateTest(unittest.TestCase):
               touch "${ADDP_TEST_GATE_TRACE}.image"
               exit 0
             fi
-            if [ "$ADDP_ONLINE_MANAGER_CASE" = kml-export ] || [ "$ADDP_ONLINE_MANAGER_CASE" = filegdb-export ]; then
+            if [ "$ADDP_ONLINE_MANAGER_CASE" = kml-export ]; then
               [ "$ADDP_ONLINE_MANAGER_PG_ENGINE_ID" = 17 ]
+            elif [ "$ADDP_ONLINE_MANAGER_CASE" = filegdb-export ] || [ "$ADDP_ONLINE_MANAGER_CASE" = filegdb-mysql-export ]; then
+              [ "$ADDP_ONLINE_MANAGER_EXPORT_ENGINE_ID" = 17 ]
             elif [ "$ADDP_ONLINE_MANAGER_CASE" = filegdb-authorization ]; then
               [ "$ADDP_ONLINE_MANAGER_NFS_ENGINE_ID" = 18 ]
               [ -z "${ADDP_ONLINE_MANAGER_MINIO_ENGINE_ID:-}" ]
@@ -285,6 +295,20 @@ class HostedManagerGateTest(unittest.TestCase):
         for fragment in ('start:-model3d-workflow', 'nfs-fixture:start', 'source-fixture:start'):
             self.assertNotIn(fragment, trace)
         self.assertFalse(self.host.secrets.exists())
+
+    def test_mysql_filegdb_case_owns_only_mysql_and_retains_cleanup_on_failure(self):
+        for failure in ('', 'ADDP_TEST_SUITE_FAIL', 'ADDP_TEST_MYSQL_FIXTURE_FAIL'):
+            with self.subTest(failure=failure):
+                self.host.trace.write_text('')
+                result = self.run_gate(ADDP_ONLINE_MANAGER_CASE='filegdb-mysql-export', **({failure: '1'} if failure else {}))
+                self.assertEqual(result.returncode == 0, not failure, result.stdout + result.stderr)
+                trace = self.host.trace.read_text()
+                self.assertIn('mysql-filegdb-fixture:start', trace)
+                self.assertIn('mysql-filegdb-fixture:stop', trace)
+                self.assertIn('infra-down', trace)
+                self.assertNotIn('kml-pg-fixture:start', trace)
+                self.assertNotIn('nfs-fixture:start', trace)
+                self.assertFalse(self.host.secrets.exists())
 
     def run_gate(self, check=False, **overrides):
         env = dict(os.environ, PATH=f"{self.host.bin}:{os.environ['PATH']}", GITHUB_ACTIONS="true", RUNNER_OS="Linux",

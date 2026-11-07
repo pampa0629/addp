@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"reflect"
 	"testing"
 
@@ -12,6 +13,7 @@ import (
 	"github.com/addp/common/format"
 	"github.com/twpayne/go-geom"
 	"github.com/twpayne/go-geom/encoding/ewkb"
+	"github.com/twpayne/go-geom/encoding/wkt"
 	gormmysql "gorm.io/driver/mysql"
 	"gorm.io/gorm"
 )
@@ -86,6 +88,82 @@ func TestIntegrationMySQLGuardedSpatialTableRead(t *testing.T) {
 	point, ok := geometry.(*geom.Point)
 	if err != nil || !ok || point.SRID() != 3857 || point.X() != 12000 || point.Y() != 6000 {
 		t.Fatalf("guarded native geometry = %#v, %v", geometry, err)
+	}
+}
+
+func TestIntegrationMySQLFileGDBSourceShapes(t *testing.T) {
+	db, provider, connInfo, database := openMySQLUpsertIntegration(t)
+	defer db.Close()
+	defer dropMySQLIntegrationDatabase(db, database)
+	for _, tc := range []struct {
+		name, kind, text string
+		srid             int
+	}{
+		{"points", "POINT", "POINT (12000 6000)", 3857},
+		{"lines", "MULTILINESTRING", "MULTILINESTRING ((110 28,111 29,112 29.25),(114 30,115 30.5))", 4326},
+		{"polygons", "MULTIPOLYGON", "MULTIPOLYGON (((110 28,114 28,114 32,110 32,110 28),(111 29,111 30,112 30,112 29,111 29)),((115 28,117 28,117 29,115 28)))", 4326},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := t.Context()
+			qualified := mysqlDialect().QualifiedTable(database, tc.name)
+			if _, err := db.ExecContext(ctx, fmt.Sprintf("CREATE TABLE %s (id INTEGER PRIMARY KEY, shape %s SRID %d NULL) ENGINE=InnoDB", qualified, tc.kind, tc.srid)); err != nil {
+				t.Fatal(err)
+			}
+			constructor := "ST_GeomFromText(?, ?)"
+			if tc.srid == 4326 {
+				constructor = "ST_GeomFromText(?, ?, 'axis-order=long-lat')"
+			}
+			if _, err := db.ExecContext(ctx, "INSERT INTO "+qualified+" VALUES (1,"+constructor+"),(2,NULL)", tc.text, tc.srid); err != nil {
+				t.Fatal(err)
+			}
+			path := plugin.TabularItemPath(17, "database", database, tc.name)
+			checked := false
+			session, err := provider.OpenGuardedTableReadSession(ctx, connInfo, path, plugin.TableReadSessionOptions{Hints: map[string]any{
+				plugin.TableReadHintGeometryEncoding: string(format.GeometryEncodingEWKB),
+			}}, func(_ context.Context, set *plugin.QueryReadSet, _ []datatype.FieldInfo) error {
+				checked = true
+				if !reflect.DeepEqual(set.Paths, []plugin.EngineCatalogPath{path}) {
+					t.Fatal("FileGDB source shape has an imprecise read set")
+				}
+				return nil
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer session.Close(ctx)
+			batch, err := session.ReadBatch(ctx, 10)
+			if err != nil || !checked || batch == nil || len(batch.Rows) != 2 || batch.Spatial.PrimarySRIDValue() != tc.srid {
+				t.Fatalf("FileGDB source batch: %v", err)
+			}
+			want, err := wkt.Unmarshal(tc.text)
+			if err != nil {
+				t.Fatal(err)
+			}
+			canonical, _ := wkt.Marshal(want)
+			nulls, shapes := 0, 0
+			for _, row := range batch.Rows {
+				if row["shape"] == nil {
+					nulls++
+					continue
+				}
+				encoded, ok := row["shape"].([]byte)
+				if !ok {
+					t.Fatal("FileGDB source geometry is not EWKB")
+				}
+				value, err := ewkb.Unmarshal(encoded)
+				if err != nil || value.SRID() != tc.srid || value.Layout() != geom.XY {
+					t.Fatalf("FileGDB source CRS or dimension: %v", err)
+				}
+				got, _ := wkt.Marshal(value)
+				if got != canonical {
+					t.Fatalf("FileGDB source coordinates or parts differ: %s", got)
+				}
+				shapes++
+			}
+			if nulls != 1 || shapes != 1 {
+				t.Fatal("FileGDB source null geometry differs")
+			}
+		})
 	}
 }
 

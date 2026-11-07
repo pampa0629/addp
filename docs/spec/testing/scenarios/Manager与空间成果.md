@@ -42,7 +42,7 @@ NFS／MinIO 各两份独立字节编码源文件，每份三条单场消息，�
 
 2026-10-24 用户批准在同一 suite 内增加独立 `native-raster-media` case，专门验收 IMG 与 JPEG2000；2026-10-26 按用户确认的读取范围扩展 Surfer 7 GRD；默认 `full` 保留原完整场景、八模型、授权、基础 FBX 及其他已有断言。二者复用同一 Hosted disposable 部署、既有十项普通 User 权限和原生产品 Runtime，不增加服务、权限或 suite，也不通过旧源码或放宽模型源授权运行。
 
-唯一选择项为 `ADDP_ONLINE_MANAGER_CASE=full|native-raster-media|native-table-orc|native-netcdf|native-grib|native-envi|kml-export|filegdb-export|filegdb-authorization`，未提供时明确选择 `full`，未知或空值在任何 Hosted 生命周期动作前拒绝。标准业务入口仍为 `ADDP_ONLINE_MANAGER_CASE=native-raster-media make test-online ONLINE_SUITE=manager-internal-artifact-lineage`；人工 Hosted 使用既有 workflow 的 `suite=manager-internal-artifact-lineage` 和明确 `manager_case`。Job 名称、Artifact 名称和 `manager-case.json` 必须显式包含所选 case，不能把任一独立 case 的通过标为完整 Manager 场景通过。KML case 的独立数据、身份、导出与清理边界见下节。
+唯一选择项为 `ADDP_ONLINE_MANAGER_CASE=full|native-raster-media|native-table-orc|native-netcdf|native-grib|native-envi|kml-export|filegdb-export|filegdb-mysql-export|filegdb-authorization`，未提供时明确选择 `full`，未知或空值在任何 Hosted 生命周期动作前拒绝。标准业务入口仍为 `ADDP_ONLINE_MANAGER_CASE=native-raster-media make test-online ONLINE_SUITE=manager-internal-artifact-lineage`；人工 Hosted 使用既有 workflow 的 `suite=manager-internal-artifact-lineage` 和明确 `manager_case`。Job 名称、Artifact 名称和 `manager-case.json` 必须显式包含所选 case，不能把任一独立 case 的通过标为完整 Manager 场景通过。KML case 的独立数据、身份、导出与清理边界见下节。
 
 `native-raster-media` 执行既有 IMG/JPEG2000、Surfer GRD 只读及 TIFF 无定位小图 COG 布局子场景。前两者沿同一入口验证真实 Meta、原文件、COG、页面、缓存和领域／物理清理；GRD 验证完整数值源、元数据、页面原文件下载及无定位边界。四个子场景任一个失败即失败，不因另一个通过继续宣称整项通过。独立根报告为 `manager-native-raster-media.json`、`schema_version=addp.manager-native-raster-media/v2`，包含 `case=native-raster-media`、完整 `source_formats=[img,jpeg2000,grd,tiff]`、普通身份、四个子报告及真实失败状态；总 `online-report.json` 仍由统一分发器生成。未执行的模型、点云、文档、结构化数据及其他格式既不计通过，也不伪装成跳过后完整通过；完整 case 在新模型源授权迁移完成前仍可能受其原有正向断言阻断，须单独验收。成功／失败后的应用、夹具、凭据与 Infra 清理继续使用同一 Hosted 生命周期，不修改开发服务。
 
@@ -70,11 +70,19 @@ case 路由、默认完整场景保留、未知值只读拒绝、子场景失败
 
 ### FileGDB 实际页面导出
 
-`filegdb-export` 的业务报告 v4 保留每个已扫描 PostGIS 源表的无源 Grant 断言。同一消费用户在授予源 Grant 前通过 Gateway 提交精确表路径，必须收到403，且响应中没有会话、执行UUID或下载入口。随后按原精确Grant、页面导出、回读与清理链路验证。此项不增加部署或用户权限；MySQL页面仍独立取证。
+`filegdb-export` 的业务报告 v5 保留每个已扫描 PostGIS 源表的无源 Grant 断言。同一消费用户在授予源 Grant 前通过 Gateway 提交精确表路径，必须收到403，且响应中没有会话、执行UUID或下载入口。随后按原精确Grant、页面导出、回读与清理链路验证。此项不增加部署或用户权限；MySQL页面仍独立取证。
 
-在原三份页面成功下载和独立回读后，复用同一消费用户、点表Grant及隔离部署的唯一Transfer bounded Worker，新增一次API导出执行的撤权验收。仅在已证明归属的Linux Hosted部署使用现有进程故障工具及pidfd暂停Worker；提交202后，由Monitor确认pending、attempt=0、未开始，再以原来源初始化用户撤销该精确Grant，复核仍未领取。恢复同一进程后，必须以attempt=1在来源授权preparation阶段失败，公开计数不得报告内容IO；Manager会话failed且无download_url，文件请求409，撤权后重新提交403，源表内容和结构不变。暂停、恢复及中途异常恢复均有确定性反例；不改产品配置、不新增权限或服务、不暂停个人开发服务，不以该API拒绝场景冒充浏览器失败页、物理零读或缓存验收。报告必须包含独立execution_revocation通过记录，保留原browser v2三份页面断言及全部清理，旧v3不能证明本项撤权。
+在原三份页面成功下载和独立回读后，复用同一消费用户、点表Grant及隔离部署的唯一Transfer bounded Worker，新增一次API导出执行的撤权验收。仅在已证明归属的Linux Hosted部署使用现有进程故障工具及pidfd暂停Worker；提交202后，由Monitor确认pending、attempt=0、未开始，再以原来源初始化用户撤销该精确Grant，复核仍未领取。恢复同一进程后，必须以attempt=1在来源授权preparation阶段失败，公开计数不得报告内容IO；Manager会话failed且无download_url，文件请求409，撤权后重新提交403，源表内容和结构不变。暂停、恢复及中途异常恢复均有确定性反例；不改产品配置、不新增权限或服务、不暂停个人开发服务，不以该API拒绝场景冒充浏览器失败页、物理零读或缓存验收。报告必须包含独立execution_revocation通过记录，保留原三份页面断言并绑定browser v3及全部清理，旧v3不能证明本项撤权。
 
 `filegdb-export` 复用既有 Manager Hosted suite、隔离 PostGIS 源和 GeoPython 产品镜像，使用 `ADDP_ONLINE_MANAGER_CASE=filegdb-export make test-online ONLINE_SUITE=manager-internal-artifact-lineage`。来源初始化用户扫描测试表并授予精确读范围。消费用户在真实 Manager 页面分别导出 EPSG:3857 点、EPSG:4326 MultiLineString 和 EPSG:4326 MultiPolygon，每次取得仅含单个图层的 `.gdb.zip`，同时核对 Monitor 执行归属、下载字节哈希及截图。同租户的另一位普通用户持有导出读取权限，对每个会话及下载均须被拒。独立 GDAL 进程解包并核对源 CRS、XY 坐标、各多部件边界、面内环、标量和空值。线核对每个部件的顶点次序，面允许环的起点和方向改变。前后核对三个源表的内容与结构。归档随本轮隔离 Infra 清理；此 case 与 NFS FileGDB 读授权分开报告。
+
+### MySQL FileGDB 实际页面导出（待正式验收）
+
+独立选择`filegdb-mysql-export`，复用现有Manager Hosted suite、同一FileGDB owner/真实页面/独立OpenFileGDB回读/Transfer精确源授权及执行前撤权流程。只增加本轮独占的临时MySQL容器，使用既有T2登记的固定MySQL镜像、随机loopback端口、tmpfs数据卷和仅可读三个夹具表的来源账号；不连接个人Business MySQL。初始化用户仍13项、消费者仍6项、同租户旁观者仍1项权限，不修改角色模板、产品API或转换路线。
+
+三个InnoDB普通表为点3857、复线/含内环复面4326，各含三行及中文/空串/null、布尔/小数、空几何。源身份必须是server→database→table，按原数据库轴序规则保持经纬与源CRS；来源初始化、普通页面下载、内容/结构前后快照、跨账号拒绝与排队撤权分别取证，视图/自定义SQL仍由既有guarded reader拒绝。来源和PostGIS独立注册/运行/清理，不能借用PostGIS的schema路径或其旧正式通过。
+
+两种FileGDB case使用同一owner v5及browser v3，报告显式绑定case和source_engine_type；旧v4不表示MySQL通过。唯一新增业务夹具为`business/scripts/online-manager-mysql-fixture.sh`，start/精确快照/stop均校验独占case与容器归属，原Registry/GeoPython/部署及Infra清理保留。根`make test-manager-online-runner`、进程工具/身份夹具与既有Online登记和workflow同次覆盖；正式结果未核对前不得回填通过。运行中途撤权、自然到期、其他引擎/ZM/多图层/复杂字段及容量均不因此扩展；SKP精确组成授权关闭。
 
 ### TIFF 无定位小图的 COG 布局回归
 

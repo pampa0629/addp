@@ -5,16 +5,20 @@ import { resolve } from 'node:path'
 import { createBrowserGpuDiagnostics } from '../../../../common-frontend/basic/src/utils/browserGpuDiagnostics.mjs'
 import { browserAPIFromResponse, isAnonymousRefreshConsoleError, isAnonymousRefreshResponse, json, login } from './transfer-browser-support.js'
 
-test('ordinary user exports PostGIS through real buttons and downloads the file', async ({ page }) => {
+test('ordinary user exports a native spatial table through real buttons and downloads the file', async ({ page }) => {
   test.setTimeout(300_000)
   const env = process.env
-  const filegdb = env.ADDP_ONLINE_MANAGER_CASE === 'filegdb-export'
+  const filegdb = ['filegdb-export', 'filegdb-mysql-export'].includes(env.ADDP_ONLINE_MANAGER_CASE)
   const profile = filegdb
     ? { format: 'filegdb', name: 'File Geodatabase (.gdb.zip)', suffix: '.gdb.zip', mime: 'application/zip', srids: [3857, 4326, 4326], records: 3, permissionCount: 6 }
     : { format: 'kml', name: 'KML', suffix: '.kml', mime: 'application/vnd.google-earth.kml+xml', srids: [4326, 3857], records: 8, permissionCount: 8 }
   const caseName = filegdb ? 'filegdb' : 'kml'
   const context = JSON.parse((filegdb ? env.ADDP_ONLINE_MANAGER_FILEGDB_EXPORT_JSON : env.ADDP_ONLINE_MANAGER_KML_JSON) || '{}')
   expect(context.run_id).toBe(env.ADDP_ONLINE_TEST_RUN_ID)
+  if (filegdb) {
+    expect(context.acceptance_case).toBe(env.ADDP_ONLINE_MANAGER_CASE)
+    expect(context.source_engine_type).toBe(env.ADDP_ONLINE_MANAGER_CASE === 'filegdb-mysql-export' ? 'mysql' : 'postgresql')
+  }
   expect(context.cases.map(source => source.source_srid)).toEqual(profile.srids)
   const expected = { principalID: context.identity.principal_id, tenantID: context.identity.tenant_id,
     permissions: new Set(context.identity.permissions_verified) }
@@ -119,7 +123,8 @@ test('ordinary user exports PostGIS through real buttons and downloads the file'
     passed = true
   } finally {
     writeFileSync(resolve(env.ADDP_ONLINE_ARTIFACT_DIR, 'manager-' + caseName + '-export-browser.json'), JSON.stringify({
-      schema_version: 'addp.manager-' + caseName + '-export-browser/' + (filegdb ? 'v2' : 'v1'), result: passed ? 'passed' : 'failed', run_id: context.run_id,
+      schema_version: 'addp.manager-' + caseName + '-export-browser/' + (filegdb ? 'v3' : 'v1'), result: passed ? 'passed' : 'failed', run_id: context.run_id,
+      ...(filegdb ? { acceptance_case: context.acceptance_case, source_engine_type: context.source_engine_type } : {}),
       identity: context.identity, cases, warnings, failed_responses: failedResponses,
       gpu_diagnostics: diagnostics.snapshot()
     }, null, 2) + '\n')

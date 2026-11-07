@@ -3740,7 +3740,7 @@ class OnlineCIRegistrationTest(unittest.TestCase):
             + job, encoding="utf-8")
         fixture = self.repository / "business/scripts/online-manager-minio-fixture.sh"
         fixture.parent.mkdir(parents=True, exist_ok=True)
-        for name in ("online-manager-nfs-fixture.sh", "online-content-boundary-fixture.py", "online-metric-postgres-fixture.sh"):
+        for name in ("online-manager-nfs-fixture.sh", "online-content-boundary-fixture.py", "online-metric-postgres-fixture.sh", "online-manager-mysql-fixture.sh"):
             source = SCRIPT.parents[2] / "business/scripts" / name
             (fixture.parent / name).write_text(source.read_text(), encoding="utf-8")
         fixture.write_text(
@@ -3788,7 +3788,7 @@ class OnlineCIRegistrationTest(unittest.TestCase):
         for target in (kml_owner, kml_owner.with_name('manager-kml-export-online_test.py'), kml_browser,
                        kml_owner.with_name('manager-filegdb-export-online.py')):
             target.write_text((SCRIPT.parents[2] / target.relative_to(self.repository)).read_text())
-        owner.write_text(owner.read_text() + "\nif case == 'kml-export':\nmanager-kml-export-online\nif case == 'filegdb-export':\nmanager-filegdb-export-online\n")
+        owner.write_text(owner.read_text() + "\nif case == 'kml-export':\nmanager-kml-export-online\nif case in {'filegdb-export', 'filegdb-mysql-export'}:\nmanager-filegdb-export-online\n")
         owner.write_text(owner.read_text() + "\nfor source_format in ('img', 'jpeg2000', 'grd', 'tiff'):\n" + '\nimg_scene.run(repository, environment, sys.modules[__name__], source_format=source_format)\n')
         owner.write_text(owner.read_text() + '\ndef manager_case(\ndef run_full_case(\ndef run_raster_media_scenes(\ndef run_native_raster_media_case(\nmanager-native-raster-media.json addp.manager-native-raster-media/v2\ncase = manager_case(os.environ)\nif case == "native-raster-media":\n')
         make = self.repository / 'Makefile'
@@ -3848,7 +3848,7 @@ class OnlineCIRegistrationTest(unittest.TestCase):
             (self.repository/'scripts/test/manager-envi-online.py','source_scans','ENVI'),
             (img_browser,'enviContentMetadata','ENVI'),
             (hosted, 'manager-case.json', 'acceptance case'),
-            (hosted, 'full|native-raster-media|native-table-orc|native-netcdf|native-grib|native-envi|kml-export|filegdb-export|filegdb-authorization)', 'acceptance case'),
+            (hosted, 'full|native-raster-media|native-table-orc|native-netcdf|native-grib|native-envi|kml-export|filegdb-export|filegdb-mysql-export|filegdb-authorization)', 'acceptance case'),
             (kml_owner, 'source_unchanged=True', 'KML export'),
             (kml_browser, 'actual_button_download: true', 'KML export'),
             (self.workflow, 'ADDP_ONLINE_MANAGER_CASE: ${{ inputs.manager_case }}', 'acceptance case'),
@@ -3990,6 +3990,12 @@ class OnlineCIRegistrationTest(unittest.TestCase):
                 with self.assertRaisesRegex(CHECK.RegistrationError, reason):
                     CHECK.check_registration(self.repository)
                 file.write_text(original, encoding="utf-8")
+        mysql_source = self.repository / 'business/scripts/online-manager-mysql-fixture.sh'
+        original_mysql = mysql_source.read_text()
+        mysql_source.unlink()
+        with self.assertRaisesRegex(CHECK.RegistrationError, 'MySQL FileGDB'):
+            CHECK.check_registration(self.repository)
+        mysql_source.write_text(original_mysql)
         browser.unlink()
         with self.assertRaisesRegex(CHECK.RegistrationError, "requires"):
             CHECK.check_registration(self.repository)

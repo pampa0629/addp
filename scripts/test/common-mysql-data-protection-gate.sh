@@ -141,7 +141,7 @@ if [ "$recovery_mode" = cleanup ]; then
     exit 0
 fi
 
-test_pattern='^TestIntegrationMySQL(TypedJSONWrites|AnalyticalInstance|AnalyticalText|AnalyticalDateBuckets|AnalyticalScan|AnalyticalRelations|AnalyticalCalendar|AnalyticalExpressions|AnalyticalArithmetic|LosslessAnalyticalInteger|BoundedWatermarkResumeAndIdempotentUpsert|DataProtectionReadContracts|GuardedSpatialTableRead|ResultSchema|SharedSQLPool|OutputRewrite|QueryReadSession)$'
+test_pattern='^TestIntegrationMySQL(TypedJSONWrites|AnalyticalInstance|AnalyticalText|AnalyticalDateBuckets|AnalyticalScan|AnalyticalRelations|AnalyticalCalendar|AnalyticalExpressions|AnalyticalArithmetic|LosslessAnalyticalInteger|BoundedWatermarkResumeAndIdempotentUpsert|DataProtectionReadContracts|GuardedSpatialTableRead|FileGDBSourceShapes|ResultSchema|SharedSQLPool|OutputRewrite|QueryReadSession)$'
 if [ "$test_group" = shared-sql-pool ]; then
     test_pattern='^TestIntegrationMySQLSharedSQLPool$'
 fi
@@ -149,7 +149,7 @@ if [ "$test_group" = typed-write ]; then
     test_pattern='^TestIntegrationMySQLTypedJSONWrites$'
 fi
 if [ "$test_group" = guarded-spatial-read ]; then
-    test_pattern='^TestIntegrationMySQLGuardedSpatialTableRead$'
+    test_pattern='^TestIntegrationMySQL(GuardedSpatialTableRead|FileGDBSourceShapes)$'
 fi
 
 cd "$ROOT_DIR/common"
@@ -173,6 +173,10 @@ fi
 if [ "$test_group" = all ] || [ "$test_group" = guarded-spatial-read ]; then
     grep -q -- '--- PASS: TestIntegrationMySQLGuardedSpatialTableRead ' "$WORK_DIR/common-mysql-data-protection.log" || {
         echo 'MySQL guarded spatial table read test did not pass' >&2
+        exit 1
+    }
+    grep -q -- '--- PASS: TestIntegrationMySQLFileGDBSourceShapes ' "$WORK_DIR/common-mysql-data-protection.log" || {
+        echo 'MySQL FileGDB source shapes test did not pass' >&2
         exit 1
     }
 fi

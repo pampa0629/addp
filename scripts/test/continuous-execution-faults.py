@@ -119,7 +119,7 @@ class HostedFaults:
         return self._stop_during('transfer', operation, 'owner_pid')
 
     def stop_bounded_worker_during(self, operation):
-        if (os.environ.get('ADDP_ONLINE_MANAGER_CASE') != 'filegdb-export' or
+        if (os.environ.get('ADDP_ONLINE_MANAGER_CASE') not in {'filegdb-export', 'filegdb-mysql-export'} or
                 os.environ.get('ADDP_DEV_TRANSFER_BOUNDED_WORKER_REPLICAS', '1') != '1'):
             raise ValueError('bounded Worker pause requires the single-Worker FileGDB Hosted case')
         return self._stop_during('transfer-bounded-worker-1', operation, 'worker_pid')

@@ -1,4 +1,4 @@
-"""Manager PostGIS FileGDB export and independent archive readback."""
+"""Manager native spatial table FileGDB export and independent archive readback."""
 from __future__ import annotations
 
 import hashlib
@@ -29,6 +29,18 @@ FIXTURES = {
     )),
 }
 ATTRIBUTES = {1: ('长沙', 1, 1.25), 2: ('', 0, 2.5), 3: (None, 1, None)}
+SOURCE_PROFILES = {
+    'filegdb-export': {'engine_type': 'postgresql', 'namespace': 'public', 'term': 'schema',
+                       'fixture': 'business/scripts/online-metric-postgres-fixture.sh'},
+    'filegdb-mysql-export': {'engine_type': 'mysql', 'namespace': 'filegdb_fixture', 'term': 'database',
+                            'fixture': 'business/scripts/online-manager-mysql-fixture.sh'},
+}
+
+
+def source_profile(environment):
+    case = environment.get('ADDP_ONLINE_MANAGER_CASE')
+    require(case in SOURCE_PROFILES, 'FileGDB export requires an explicit native source case')
+    return SOURCE_PROFILES[case]
 
 
 def unpack_archive(archive_path, destination, root_name):
@@ -112,7 +124,7 @@ def readback(archive_path, root_name, case):
 
 
 def source_snapshot(repository, environment, table):
-    result = subprocess.run(['bash', 'business/scripts/online-metric-postgres-fixture.sh', 'snapshot-filegdb', table],
+    result = subprocess.run(['bash', source_profile(environment)['fixture'], 'snapshot-filegdb', table],
                             cwd=repository, env=environment, text=True, capture_output=True, timeout=30, check=True)
     snapshot = json.loads(result.stdout)
     require(snapshot.get('count') == len(ATTRIBUTES) and all(
@@ -121,8 +133,8 @@ def source_snapshot(repository, environment, table):
     return snapshot
 
 
-def scan_source(helpers, initializer, engine, table):
-    locator = f'addp://engine/{engine}/path/public/{table}?type=table'
+def scan_source(helpers, initializer, engine, table, namespace):
+    locator = f'addp://engine/{engine}/path/{namespace}/{table}?type=table'
     execution = helpers.wait_for_meta_scan(
         initializer, engine, time.monotonic() + 180, scope={'targets': [locator]})
     scanned = initializer.request('GET', f'/api/v1/meta/executions/{execution}', (200,)).payload
@@ -208,11 +220,13 @@ def verify_execution_revocation(client, initializer, engine, source, grant, run_
 
 def run(repository, environment, helpers):
     artifact_dir = Path(environment['ADDP_ONLINE_ARTIFACT_DIR'])
-    report = {'schema_version': 'addp.manager-filegdb-export/v4', 'case': 'filegdb-export',
+    profile = source_profile(environment)
+    report = {'schema_version': 'addp.manager-filegdb-export/v5', 'case': environment['ADDP_ONLINE_MANAGER_CASE'],
+              'source_engine_type': profile['engine_type'],
               'run_id': environment['ADDP_ONLINE_TEST_RUN_ID'], 'result': 'failed'}
     try:
         tenant = helpers.positive_int(environment['ADDP_ONLINE_TEST_TENANT_ID'], 'Tenant')
-        engine = helpers.positive_int(environment['ADDP_ONLINE_MANAGER_PG_ENGINE_ID'], 'PostgreSQL engine')
+        engine = helpers.positive_int(environment['ADDP_ONLINE_MANAGER_EXPORT_ENGINE_ID'], 'native source engine')
         gateway = environment['GATEWAY_URL']
         client = helpers.GatewayClient(gateway, environment['ADDP_ONLINE_TEST_USER_ACCESS_TOKEN'], 30)
         initializer = helpers.GatewayClient(gateway, environment['ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN'], 30)
@@ -226,26 +240,29 @@ def run(repository, environment, helpers):
         for case, (table, srid, _) in FIXTURES.items():
             proof = {'source_case': case, 'source_before': source_snapshot(repository, environment, table)}
             report['cases'].append(proof)
-            table_locator, proof['scan_execution_id'] = scan_source(helpers, initializer, engine, table)
+            table_locator, proof['scan_execution_id'] = scan_source(helpers, initializer, engine, table, profile['namespace'])
             proof['without_source_grant_status'] = require_export_denied_without_source_grant(client, table_locator)
             grant, = registration.initialize_exact_record_read_grants(
-                initializer, client, tenant, [(engine, 'schema', 'public', table)], scan_preparation=True)
+                initializer, client, tenant, [(engine, profile['term'], profile['namespace'], table)], scan_preparation=True)
             grants.append(grant)
             proof['source_grant'] = {key: grant[key] for key in ('request_id', 'item_fingerprint', 'boundary_hash')}
-            items = client.request('GET', f'/api/v1/meta/engines/{engine}/items?branch=public', (200,)).payload
+            items = client.request('GET', f'/api/v1/meta/engines/{engine}/items?branch={profile["namespace"]}', (200,)).payload
             item, = [item for item in items if item.get('fingerprint') == grant['item_fingerprint']]
             sources.append({'source_case': case, 'source_srid': srid, 'locator': f'{table_locator}&item_id={item["id"]}',
                             'filename': f'FileGDB-成果-{case}-' + report['run_id'],
                             'download_file': f'manager-filegdb-{case}.gdb.zip',
                             'dialog_screenshot': f'manager-filegdb-{case}-dialog.png',
                             'screenshot': f'manager-filegdb-{case}.png'})
-        context = {'run_id': report['run_id'], 'identity': identity, 'cases': sources}
+        context = {'run_id': report['run_id'], 'identity': identity, 'cases': sources,
+                   'acceptance_case': report['case'], 'source_engine_type': profile['engine_type']}
         browser_env = dict(environment, ADDP_ONLINE_MANAGER_FILEGDB_EXPORT_JSON=json.dumps(context, ensure_ascii=False))
         subprocess.run(['npm', 'exec', '--', 'playwright', 'test', 'e2e/online/manager-kml-export.spec.js',
                         '--config=playwright.online.config.js'], cwd=repository / 'console/frontend', env=browser_env, check=True)
         browser = json.loads((artifact_dir / 'manager-filegdb-export-browser.json').read_text())
-        require(browser.get('schema_version') == 'addp.manager-filegdb-export-browser/v2'
+        require(browser.get('schema_version') == 'addp.manager-filegdb-export-browser/v3'
                 and browser.get('result') == 'passed' and browser.get('run_id') == report['run_id']
+                and browser.get('acceptance_case') == report['case']
+                and browser.get('source_engine_type') == profile['engine_type']
                 and browser.get('identity') == identity and browser.get('warnings') == []
                 and browser.get('failed_responses') == [], 'FileGDB real page evidence incomplete')
         for source, proof, outcome in zip(sources, report['cases'], browser['cases'], strict=True):
