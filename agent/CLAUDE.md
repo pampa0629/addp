@@ -51,6 +51,21 @@
 
 两次请求的 System 裁决累计分别为 3.629／3.541 秒，Meta 事实读取及校验阶段分别为 2.537／2.219 秒，Meta 处理请求的完成日志累计为 1.993／1.643 秒。两者相差约 544／576 毫秒，包含 System 客户端处理、传输及未独立计时的工作，无法直接归因到其中一项。运行日志采集器脱敏了两项凭据计时字段，88 批均缺这两项数值。建议修正字段名并验证完整采集，再拆分 Meta 事实客户端阶段；逐项查询整目录引擎未在这两条请求中出现。
 
+`692d87f2f` 的字段修正已在 2026-11-07 无痕 Chrome 普通账号复验中确认加载。两条原查询各执行一次，页面继续分别为 0 条和 2 条，正例目标 COG 路径可见。对应 Manager 请求为 `ba66f1c2-9883-48ea-8882-ee38c247277e` 和 `cc51b26b-3eb3-48ce-a289-2c7b1652a610`，耗时 4.597／5.585 秒。每条请求的 44 批 System 裁决全部返回 200，并保留全部 16 项非负整数诊断字段；各有 174 次 Meta 事实请求、8,698 个提交候选、0 个已证明的整目录候选和 46 次引擎查询。累计计时如下，各阶段存在上述包含关系。
+
+| 当次累计耗时 | 反例 | GeoTIFF 正例 |
+| --- | ---: | ---: |
+| System 路由 | 4.173 s | 5.109 s |
+| 路由认证与守卫 | 270 ms | 288 ms |
+| Meta 前身份核验 | 259 ms | 294 ms |
+| Meta 事实读取及校验 | 2,444 ms | 3,079 ms |
+| Meta 服务端路由 | 1,871 ms | 2,459 ms |
+| 规则观察内身份复核 | 590 ms | 713 ms |
+| 规则查询 | 156 ms | 223 ms |
+| 引擎查询 | 56 ms | 74 ms |
+
+Meta 事实阶段减去 Meta 服务端路由后，残差约 573／620 毫秒。建议下一步分段测量 Common Meta 客户端的请求准备、HTTP 往返及读取、严格 JSON 检查、事实解码和边界校验，再选择热点优化。每条关键词仅测一次，运行负载未控制。原始字段汇总在 `/tmp/addp-manager-search-auth-live-20261107.json`。本轮真实操作仅为两条 Manager 查询。字段修正的 System Go runner 和 System IAM PostgreSQL CI 均通过；Platform CI 整体为失败，不计整套通过。 [System Go runner](https://github.com/pampa0629/addp/actions/runs/42317463598/job/128233508706) · [System IAM PostgreSQL](https://github.com/pampa0629/addp/actions/runs/42317463517/job/128248212969)
+
 本次只做 Manager 页面查询和权限配置的只读核对。`outdoor-develop` 仍缺 `ontology.semantic.read` 和 `system.engine.read`，开发租户当前无具备本场景工具权限的普通账号，因此未发起新的 Agent Run。修复提交的 Manager、System IAM PostgreSQL 集成作业以及 Go workspace 和平台一致性作业已通过，Platform CI 整体状态为取消。 [Manager 集成](https://github.com/pampa0629/addp/actions/runs/42206312117/job/127868138784) · [System IAM 集成](https://github.com/pampa0629/addp/actions/runs/42206312117/job/127868137640) · [Go workspace](https://github.com/pampa0629/addp/actions/runs/42206311898/job/127853722302) · [平台一致性](https://github.com/pampa0629/addp/actions/runs/42206311898/job/127853722389)
 
 ### 2026-11-04 历史验收
