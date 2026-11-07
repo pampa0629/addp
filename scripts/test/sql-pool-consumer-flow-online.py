@@ -120,6 +120,7 @@ def start(private, run_id):
             "name": f"Hosted SQL pool {engine}", "engine_type": engine, "engine_origin": "general",
             "description": "Disposable connection pool acceptance", "connection_info": connection,
         }))
+        verify_native_passwords(engine, run_id, rotated_password, next_password, "preflight")
 
 
 def stop(artifacts, run_id):
@@ -223,6 +224,29 @@ def fixture_identity(engine, run_id):
     return {"container_id": info[0], "database": DATABASE, "native_id": native}
 
 
+def verify_native_passwords(engine, run_id, rejected_password, accepted_password, stage):
+    reader = READERS[1]
+    if engine == "postgresql":
+        command = f'IFS= read -r PGPASSWORD; export PGPASSWORD; exec psql -XAt -v ON_ERROR_STOP=1 -h127.0.0.1 -U {reader} -d {DATABASE} -c "SELECT 1"'
+    else:
+        command = f'IFS= read -r MYSQL_PWD; export MYSQL_PWD; exec mysql --batch --skip-column-names -h127.0.0.1 -u{reader} {DATABASE} -e "SELECT 1"'
+    old = docker("exec", "-i", container(engine), "sh", "-c", command, sql=rejected_password + "\n", check=False)
+    new = docker("exec", "-i", container(engine), "sh", "-c", command, sql=accepted_password + "\n", check=False)
+    rejected = old.returncode != 0 and ("password authentication failed" in old.stderr if engine == "postgresql"
+                                      else "ERROR 1045 (28000)" in old.stderr)
+    diagnostic = {"engine": engine, "run_id": run_id, "stage": stage,
+                  "rejected_attempt": {"exit_code": old.returncode, "returned_one": old.stdout.strip() == "1", "authentication_denied": rejected},
+                  "accepted_attempt": {"exit_code": new.returncode, "returned_one": new.stdout.strip() == "1"}}
+    if engine == "postgresql":
+        diagnostic["host_authentication_rules"] = json.loads(sql(engine, """SELECT json_agg(json_build_object(
+            'type',type,'address',address,'method',auth_method,'error',error) ORDER BY line_number)
+            FROM pg_hba_file_rules;""").stdout)
+    artifact = Path(SUPPORT.required_environment("ADDP_ONLINE_ARTIFACT_DIR")) / "sql-pool-auth-observations.jsonl"
+    with artifact.open("a") as stream:
+        stream.write(json.dumps(diagnostic) + "\n")
+    require(rejected and new.returncode == 0 and new.stdout.strip() == "1", "native password authentication proof failed")
+
+
 def rotate_password(engine, private, artifacts, run_id):
     before = fixture_identity(engine, run_id)
     marker = private / f"{engine}-password-rotated"
@@ -235,15 +259,7 @@ def rotate_password(engine, private, artifacts, run_id):
                  if engine == "postgresql" else f"SET sql_log_off=1; ALTER USER '{reader}'@'%' IDENTIFIED BY '{password}';")
     sql(engine, statement)
     marker.write_text("rotated\n")
-    if engine == "postgresql":
-        command = f'IFS= read -r PGPASSWORD; export PGPASSWORD; exec psql -XAt -v ON_ERROR_STOP=1 -h127.0.0.1 -U {reader} -d {DATABASE} -c "SELECT 1"'
-    else:
-        command = f'IFS= read -r MYSQL_PWD; export MYSQL_PWD; exec mysql --batch --skip-column-names -h127.0.0.1 -u{reader} {DATABASE} -e "SELECT 1"'
-    old = docker("exec", "-i", container(engine), "sh", "-c", command, sql=credentials["account"] + "\n", check=False)
-    new = docker("exec", "-i", container(engine), "sh", "-c", command, sql=password + "\n", check=False)
-    rejected = old.returncode != 0 and ("password authentication failed" in old.stderr if engine == "postgresql"
-                                      else "ERROR 1045 (28000)" in old.stderr)
-    require(rejected and new.returncode == 0 and new.stdout.strip() == "1", "native password rotation proof failed")
+    verify_native_passwords(engine, run_id, credentials["account"], password, "rotated")
     require(fixture_identity(engine, run_id) == before, "password rotation changed the source")
     proof = {"engine": engine, "run_id": run_id, "reader": reader, "source_identity": before,
              "old_password_rejected": True, "new_password_accepted": True}

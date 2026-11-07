@@ -170,7 +170,9 @@ pid=44 user=pool_reader_next LOG:  statement: SELECT id FROM public.pool_source_
                                POOL.subprocess.CompletedProcess([], 0, stdout="1\n", stderr="")]
                     output = StringIO()
                     with patch.object(POOL, "fixture_identity", return_value={"native_id": "same"}), \
-                         patch.object(POOL, "sql"), patch.object(POOL, "docker", side_effect=replies), redirect_stdout(output):
+                         patch.object(POOL, "sql", return_value=POOL.subprocess.CompletedProcess([], 0, stdout="[]")), \
+                         patch.dict(POOL.os.environ, {"ADDP_ONLINE_ARTIFACT_DIR": tmp}), \
+                         patch.object(POOL, "docker", side_effect=replies), redirect_stdout(output):
                         if authentication_error:
                             POOL.rotate_password(engine, private, private, "run-pool")
                             proof = json.loads(output.getvalue())
@@ -180,6 +182,6 @@ pid=44 user=pool_reader_next LOG:  statement: SELECT id FROM public.pool_source_
                             with self.assertRaisesRegex(POOL.SUPPORT.SuiteError, "cannot be repeated"):
                                 POOL.rotate_password(engine, private, private, "run-pool")
                         else:
-                            with self.assertRaisesRegex(POOL.SUPPORT.SuiteError, "rotation proof failed"):
+                            with self.assertRaisesRegex(POOL.SUPPORT.SuiteError, "authentication proof failed"):
                                 POOL.rotate_password(engine, private, private, "run-pool")
                             self.assertFalse((private / "sql-pool-password-probes.jsonl").exists())
