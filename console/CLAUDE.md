@@ -34,6 +34,7 @@ console/frontend/
 - Transfer 有任务读取权限时，Console 侧栏只显示“传输任务”，创建操作由任务列表的主按钮进入；仅有创建权限且具备 `meta.catalog.read` 时，侧栏以“创建传输任务”作为模块入口。创建页对前者保持任务列表菜单选中，对后者保持创建菜单选中；直接地址仍按各页面 Permission 校验。
 - Ontology 入口按互斥上下文分离：Tenant 的“领域本体建模”（`/ontology/ontologies`）要求 `ontology.revision.read`；Platform User 的“平台本体核实”（`/ontology/platform/definitions`）要求 `ontology.platform_definition.read`，只读已发布能力及依据，不提供建模/发布。权限过滤后没有可见子项的模块不渲染空父菜单。
 - Console 只做入口聚合，不承载业务模块的核心业务逻辑。
+- Agent 公开入口保留能力首页与独立会话深链；会话身份、分页正文和全会话待答事实按同一可取消请求范围读取，路由同时恢复`session_id`与历史锚点`message_id`。Console只核对入口接线，Agent以真实内存路由和共享请求范围验证切换、取消及迟到响应隔离，不以旧的全量消息API调用文本定义契约。沿既有`test-console-frontend`和`test-agent-frontend`自动发现测试，无新增CI入口；完整模块门禁和实际CI执行步骤分别记证据。
 - 右上角账号菜单只提供一个“个人中心”入口 `/system/account`，由 System 页面分类展示基本信息、组织归属和账号安全。无需 IAM 管理 Permission；分类以 `tab=organization|security` 恢复，默认基本信息省略 query。Console 不复制组织成员事实或个人页面逻辑。
 - AuthContext 刷新期间清空旧候选权限，隐藏并保留当前路由 iframe；加载失败提供重试。同一 Principal、Context 和 Tenant Membership 重新获得当前页权限后恢复原实例，权限撤销、身份或上下文改变、退出及跨页导航卸载旧实例。`make test-console-frontend` 覆盖未保存草稿、故障重试和身份隔离；真实 Nginx T4 必须确认 iframe 实例及内存状态未因刷新丢失。
 - 已认证会话的故障重试调用共享 `refreshAuthorization()`，通过 Token 更新同步恢复 Console 与保留的真实模块，不仅重读宿主权限。引擎授权刷新回归加载真实 System 页面，覆盖重复轮换、故障重试、页面撤权与授权标签撤权后的地址收敛；不写开发授权数据。

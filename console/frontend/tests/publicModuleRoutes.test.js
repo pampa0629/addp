@@ -132,7 +132,8 @@ describe('P2 module public route contracts', () => {
     const chat = readRepoFile('agent/frontend/src/views/ChatView.vue')
     expect(chat).toContain("navigateAgentRoute(router, { name: 'Chat' })")
     expect(chat).toContain('await restoreRouteSession(route.params.session_id)')
-    expect(chat).toContain("watch(() => route.params.session_id, sessionId => {\n  restoreRouteSession(sessionId)")
+    expect(chat).toContain('watch(() => [route.params.session_id, route.query.message_id]')
+    expect(chat).toContain('restoreRouteSession(route.params.session_id)')
     expect(chat).toContain('if (sessionId) return loadSessionMessages(String(sessionId))')
     expect(chat).toContain('currentSessionId.value = null; currentSession.value = null; messages.value = []')
     // A populated or filtered page must never select the first session for /agent.
@@ -176,7 +177,9 @@ describe('P2 module public route contracts', () => {
     const chat = readRepoFile('agent/frontend/src/views/ChatView.vue')
     expect(chat).toContain("navigateAgentRoute(router, { name: 'ChatSession', params: { session_id: String(sessionId) } })")
     expect(chat).toContain('sessionAPI.get(sessionId, options)')
-    expect(chat).toContain('sessionAPI.getMessages(sessionId, options)')
+    // Behavioral restoration/cancellation is exercised by Agent historyRoutes.test.js.
+    expect(chat).toContain('sessionAPI.getMessages(sessionId, anchor ? { anchor_message_id: anchor } : {}, options)')
+    expect(chat).toContain('sessionAPI.workspace(sessionId, options)')
     expect(chat).not.toContain('sessions.value.find(')
     expect(chat).toContain('const ticket = detailScope.invalidate()')
     expect(chat).toContain('if (!detailScope.current(ticket)) return')

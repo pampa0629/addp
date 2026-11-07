@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test'
+import { historyResponse } from '../../../agent/frontend/e2e/history-fixture'
 
 async function installAgentReader(page) {
   const unexpected = []
@@ -6,7 +7,7 @@ async function installAgentReader(page) {
     pinned: false, archived: false, created_at: '2026-11-03T00:00:00Z', updated_at: '2026-11-03T00:00:00Z' }))
   await page.addInitScript(() => localStorage.setItem('addp-lang', 'zh-cn'))
   await page.route('**/api/v1/**', route => {
-    const request = route.request(), path = new URL(request.url()).pathname
+    const request = route.request(), url = new URL(request.url()), path = url.pathname
     if (path === '/api/v1/system/refresh' && request.method() === 'POST') {
       return route.fulfill({ json: { access_token: 'agent-reader-fixture', expires_in: 3600 } })
     }
@@ -23,8 +24,13 @@ async function installAgentReader(page) {
       } })
       const session = sessions.find(value => path === `/api/v1/agent/sessions/${value.id}`)
       if (session) return route.fulfill({ json: session })
-      const messages = sessions.find(value => path === `/api/v1/agent/sessions/${value.id}/messages`)
-      if (messages) return route.fulfill({ json: [{ id: messages.id, role: 'assistant', content: `历史正文 ${messages.id}`, is_complete: true }] })
+      for (const value of sessions) {
+        const history = [{ id: value.id * 10 + 1, protocol_message_id: `reader-${value.id}`,
+          role: 'assistant', content: `历史正文 ${value.id}`, parts: [{ type: 'text', text: `历史正文 ${value.id}` }],
+          is_complete: true, created_at: value.created_at }]
+        const response = historyResponse(path, value.id, history, url)
+        if (response) return route.fulfill({ json: response })
+      }
     }
     unexpected.push(`${request.method()} ${path}`)
     return route.fulfill({ status: 500, json: { error: 'unexpected_fixture_request' } })
@@ -58,6 +64,34 @@ test('Agent session switch preserves one public history entry through reload, ba
   await expect(agent.getByText('历史正文 36', { exact: true })).toBeVisible()
   expect(unexpected).toEqual([])
   expect(errors).toEqual([])
+})
+
+test('Agent history anchor survives public reload and returns latest without a new iframe or history entry', async ({ page }) => {
+  const unexpected = await installAgentReader(page)
+  const anchorRequest = () => page.waitForRequest(request => {
+    const url = new URL(request.url())
+    return url.pathname === '/api/v1/agent/sessions/50/messages' && url.searchParams.get('anchor_message_id') === '501'
+  })
+  const first = anchorRequest()
+  await page.goto('/agent/sessions/50?message_id=501')
+  await first
+  const agent = page.frameLocator('iframe[data-testid="module-iframe"]')
+  await expect(agent.getByText('历史正文 50', { exact: true })).toBeVisible()
+  await expect(agent.getByText('正在查看历史片段', { exact: true })).toBeVisible()
+  const restored = anchorRequest()
+  await page.reload()
+  await restored
+  await expect(page).toHaveURL('/agent/sessions/50?message_id=501')
+  await expect(agent.getByText('历史正文 50', { exact: true })).toBeVisible()
+  const frame = page.frames().find(value => value.parentFrame())
+  const documentID = await frame.evaluate(() => performance.timeOrigin)
+  const historyLength = await page.evaluate(() => history.length)
+  await agent.getByRole('button', { name: '返回最新消息', exact: true }).click()
+  await expect(page).toHaveURL('/agent/sessions/50')
+  await expect(agent.getByText('正在查看历史片段', { exact: true })).toHaveCount(0)
+  expect(await frame.evaluate(() => performance.timeOrigin)).toBe(documentID)
+  expect(await page.evaluate(() => history.length)).toBe(historyLength)
+  expect(unexpected).toEqual([])
 })
 
 // Inject descriptor delivery independently of navigation to cover both message
