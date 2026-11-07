@@ -33,17 +33,30 @@ func (*documentRecordSetPreviewProvider) Preview(ctx context.Context, req *Previ
 	}
 	pageSize = min(pageSize, 50)
 	// Preview is bounded independently of a query language and native cursor batch size.
-	if page > 1000 {
+	const maxPreviewPage = 1000
+	if page > maxPreviewPage {
 		return nil, fmt.Errorf("record preview page exceeds limit")
 	}
 	conn := plugin.ConnectionInfo(req.Engine.ConnectionInfo)
-	facts, err := factsProvider.DescribeEngineCatalogFacts(ctx, conn, req.ProviderPath, plugin.EngineCatalogFactsOptions{SampleSize: 100, IncludeStatistics: req.ItemRowCount == nil})
+	facts, err := factsProvider.DescribeEngineCatalogFacts(ctx, conn, req.ProviderPath, plugin.EngineCatalogFactsOptions{SampleSize: 100})
 	if err != nil {
 		return nil, err
 	}
 	table := plugin.EngineCatalogFactsTableInfo(facts)
 	if table == nil {
 		return nil, fmt.Errorf("record provider returned no field facts")
+	}
+	rowCount := req.ItemRowCount
+	if rowCount == nil || *rowCount < 0 {
+		rowCount = table.RowCount
+	}
+	var total *int
+	if rowCount != nil && *rowCount >= 0 {
+		total = models.ExactPreviewTotal(int(*rowCount))
+	}
+	readLimit := pageSize
+	if total == nil && page < maxPreviewPage {
+		readLimit++
 	}
 	session, err := provider.OpenRecordReadSession(ctx, conn, req.ProviderPath, plugin.RecordReadSessionOptions{})
 	if err != nil {
@@ -70,8 +83,8 @@ func (*documentRecordSetPreviewProvider) Preview(ctx context.Context, req *Previ
 	}
 	rows := []map[string]interface{}{}
 	if skip == 0 {
-		for len(rows) < pageSize {
-			batch, readErr := session.ReadBatch(ctx, pageSize-len(rows))
+		for len(rows) < readLimit {
+			batch, readErr := session.ReadBatch(ctx, readLimit-len(rows))
 			if readErr != nil {
 				return nil, readErr
 			}
@@ -80,6 +93,10 @@ func (*documentRecordSetPreviewProvider) Preview(ctx context.Context, req *Previ
 			}
 			rows = append(rows, batch.Records...)
 		}
+	}
+	hasMore := len(rows) > pageSize
+	if hasMore {
+		rows = rows[:pageSize]
 	}
 	keys := map[string]bool{}
 	for _, row := range rows {
@@ -92,15 +109,12 @@ func (*documentRecordSetPreviewProvider) Preview(ctx context.Context, req *Previ
 		columns = append(columns, name)
 	}
 	sort.Strings(columns)
-	total := int64(len(rows))
-	if req.ItemRowCount != nil && *req.ItemRowCount >= 0 {
-		total = *req.ItemRowCount
-	} else if table.RowCount != nil {
-		total = *table.RowCount
-	} else if table.EstimatedRowCount != nil {
-		total = *table.EstimatedRowCount
-	}
-	return &models.TablePreview{Mode: PreviewModeTable, PreviewKind: "dynamic_schema_record_set", Columns: columns, Fields: table.Fields, ColumnMetadata: buildDynamicSchemaColumnMetadata(table.Fields), Rows: rows, Total: models.ExactPreviewTotal(int(total)), Page: page, PageSize: pageSize, EngineID: req.Engine.ID, Schema: req.Schema, Table: req.Table, EngineType: req.Engine.EngineType}, nil
+	return &models.TablePreview{
+		Mode: PreviewModeTable, PreviewKind: "dynamic_schema_record_set",
+		Columns: columns, Fields: table.Fields, ColumnMetadata: buildDynamicSchemaColumnMetadata(table.Fields),
+		Rows: rows, Total: total, HasMore: hasMore, Page: page, PageSize: pageSize,
+		EngineID: req.Engine.ID, Schema: req.Schema, Table: req.Table, EngineType: req.Engine.EngineType,
+	}, nil
 }
 
 func buildDynamicSchemaColumnMetadata(fields []datatype.FieldInfo) []models.ColumnMetadata {

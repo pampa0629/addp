@@ -54,6 +54,9 @@ func TestIntegrationManagerMongoOutdoorPersonsPreviewMasksPhone(t *testing.T) {
 	if len(table.Rows) == 0 || len(table.Fields) == 0 {
 		t.Fatal("MongoDB preview returned no rows or schema fields")
 	}
+	if table.Total != nil || len(table.Rows) > 50 {
+		t.Fatalf("unexpected MongoDB preview pagination: total=%v rows=%d", table.Total, len(table.Rows))
+	}
 
 	req := &preview.PreviewResolverRequest{
 		ItemName: "Persons", ItemFingerprint: "sha256:mongodb-outdoor-persons",
