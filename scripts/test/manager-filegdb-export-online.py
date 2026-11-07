@@ -142,9 +142,73 @@ def require_export_denied_without_source_grant(client, locator):
     return denied.status
 
 
+def observe_export_execution(client, execution_id):
+    observed = client.request('GET', '/api/v1/monitor/executions/by-execution-id/' + execution_id, (200,)).payload
+    require(isinstance(observed, dict) and observed.get('execution_id') == execution_id
+            and observed.get('module') == 'transfer' and observed.get('source') == 'manager',
+            'FileGDB revocation execution identity differs')
+    return observed
+
+
+def verify_execution_revocation(client, initializer, engine, source, grant, run_id, proof):
+    faults = importlib.import_module('scripts.test.continuous-execution-faults').HostedFaults()
+
+    def submit_and_revoke():
+        created = client.request('POST', '/api/v1/manager/exports', (202,), {
+            'source_item_locator': source['locator'], 'format': 'filegdb',
+            'file_name': 'FileGDB-revoked-' + run_id,
+        }).payload
+        require(isinstance(created, dict) and created.get('status') == 'pending',
+                'FileGDB revocation export was not queued')
+        session_id, execution_id = created['id'], created['transfer_execution_id']
+        require(type(session_id) is int and session_id > 0 and isinstance(execution_id, str),
+                'FileGDB revocation export identity missing')
+        proof.update(session_id=session_id, execution_id=execution_id)
+        for phase in ('before_revoke', 'after_revoke'):
+            if phase == 'after_revoke':
+                initializer.request('POST', f'/api/v1/system/engines/{engine}/access_grants/{grant["request_id"]}/revoke',
+                                    (200,), {'reason': 'Disposable FileGDB queued execution revocation'})
+                proof['grant_revoked'] = True
+            observed = observe_export_execution(client, execution_id)
+            require(observed.get('status') == 'pending' and observed.get('attempt') == 0
+                    and not observed.get('started_at'), 'FileGDB execution started before revocation')
+            proof[phase] = {'status': 'pending', 'attempt': 0}
+
+    proof['worker'] = faults.stop_bounded_worker_during(submit_and_revoke)
+    worker = proof['worker']
+    require(isinstance(worker, dict) and type(worker.get('worker_pid')) is int and worker['worker_pid'] > 1
+            and worker.get('stopped_verified') is True and worker.get('resumed_verified') is True,
+            'FileGDB revoked execution lacks verified Worker recovery')
+    deadline = time.monotonic() + 90
+    while True:
+        observed = observe_export_execution(client, proof['execution_id'])
+        if observed.get('status') not in {'pending', 'running'}:
+            break
+        require(time.monotonic() < deadline, 'FileGDB revoked execution did not terminate')
+        time.sleep(.5)
+    require(observed.get('status') == 'failed' and observed.get('attempt') == 1,
+            'FileGDB revoked execution succeeded, retried or never ran')
+    details = observed.get('error_details', {})
+    require(details.get('code') == 'data_protection_required'
+            and details.get('diagnostic', {}).get('stage') == 'preparation',
+            'FileGDB revoked execution failed outside source authorization preparation')
+    counters = {key: observed.get(key) for key in ('records_read', 'records_written', 'bytes_read', 'bytes_written')}
+    require(all(value is None or type(value) is int and value == 0 for value in counters.values()),
+            'FileGDB revoked execution reported content IO')
+    path = f'/api/v1/manager/exports/{proof["session_id"]}'
+    session = client.request('GET', path, (200,)).payload
+    require(session.get('status') == 'failed' and not session.get('download_url'),
+            'FileGDB revoked execution published a downloadable session')
+    client.request('GET', path + '/file', (409,))
+    require_export_denied_without_source_grant(client, source['locator'])
+    proof.update(result='passed', terminal={'status': 'failed', 'attempt': 1,
+                 'error_code': details['code'], 'stage': 'preparation', 'reported_counters': counters},
+                 file_status=409, resubmit_status=403, download_url_absent=True)
+
+
 def run(repository, environment, helpers):
     artifact_dir = Path(environment['ADDP_ONLINE_ARTIFACT_DIR'])
-    report = {'schema_version': 'addp.manager-filegdb-export/v3', 'case': 'filegdb-export',
+    report = {'schema_version': 'addp.manager-filegdb-export/v4', 'case': 'filegdb-export',
               'run_id': environment['ADDP_ONLINE_TEST_RUN_ID'], 'result': 'failed'}
     try:
         tenant = helpers.positive_int(environment['ADDP_ONLINE_TEST_TENANT_ID'], 'Tenant')
@@ -158,7 +222,7 @@ def run(repository, environment, helpers):
         require(identity['principal_id'] != denied_identity['principal_id'], 'expected distinct same-tenant users')
         report.update(identity=identity, outsider_identity=denied_identity, cases=[])
         registration = importlib.import_module('scripts.test.online-engine-registration')
-        sources = []
+        sources, grants = [], []
         for case, (table, srid, _) in FIXTURES.items():
             proof = {'source_case': case, 'source_before': source_snapshot(repository, environment, table)}
             report['cases'].append(proof)
@@ -166,6 +230,7 @@ def run(repository, environment, helpers):
             proof['without_source_grant_status'] = require_export_denied_without_source_grant(client, table_locator)
             grant, = registration.initialize_exact_record_read_grants(
                 initializer, client, tenant, [(engine, 'schema', 'public', table)], scan_preparation=True)
+            grants.append(grant)
             proof['source_grant'] = {key: grant[key] for key in ('request_id', 'item_fingerprint', 'boundary_hash')}
             items = client.request('GET', f'/api/v1/meta/engines/{engine}/items?branch=public', (200,)).payload
             item, = [item for item in items if item.get('fingerprint') == grant['item_fingerprint']]
@@ -206,6 +271,12 @@ def run(repository, environment, helpers):
             proof['same_tenant_non_owner_denied'] = True
             proof['source_after'] = source_snapshot(repository, environment, FIXTURES[case][0])
             require(proof['source_after'] == proof['source_before'], 'FileGDB export changed source data or structure')
+        report['execution_revocation'] = {'result': 'failed'}
+        verify_execution_revocation(client, initializer, engine, sources[0], grants[0], report['run_id'],
+                                    report['execution_revocation'])
+        after = source_snapshot(repository, environment, FIXTURES['points'][0])
+        require(after == report['cases'][0]['source_before'], 'FileGDB revoked execution changed source data or structure')
+        report['execution_revocation']['source_unchanged'] = True
         report.update(result='passed', source_unchanged=True)
         return report
     finally:

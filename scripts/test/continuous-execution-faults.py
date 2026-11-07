@@ -17,8 +17,8 @@ SUPPORT = importlib.import_module('scripts.test.orchestrator-execution-faults')
 def validate_process(process: Path, root: Path, secret: Path, module: str):
     executable = (process / 'exe').resolve(strict=True)
     environment = dict(x.split('=', 1) for x in (process / 'environ').read_bytes().decode().split('\0') if '=' in x)
-    binary = 'transfer-continuous-worker' if module == 'transfer-continuous-worker-1' else module
-    if (module not in {'transfer', 'transfer-continuous-worker-1'} or
+    binary = module.removesuffix('-1') if module.endswith('-worker-1') else module
+    if (module not in {'transfer', 'transfer-continuous-worker-1', 'transfer-bounded-worker-1'} or
         executable != root / f'.dev-bins/addp-{binary}' or process.stat().st_uid != os.getuid() or
         environment.get('ADDP_ONLINE_SECRET_DIR') != str(secret) or
         environment.get('POSTGRES_DB') != 'addp_online' or environment.get('ADDP_ONLINE_HOSTED') != '1'):
@@ -116,7 +116,16 @@ class HostedFaults:
                 'executable_sha256': hashlib.sha256(binary.read_bytes()).hexdigest()}
 
     def stop_owner_during(self, operation):
-        pid, descriptor = self.pin('transfer')
+        return self._stop_during('transfer', operation, 'owner_pid')
+
+    def stop_bounded_worker_during(self, operation):
+        if (os.environ.get('ADDP_ONLINE_MANAGER_CASE') != 'filegdb-export' or
+                os.environ.get('ADDP_DEV_TRANSFER_BOUNDED_WORKER_REPLICAS', '1') != '1'):
+            raise ValueError('bounded Worker pause requires the single-Worker FileGDB Hosted case')
+        return self._stop_during('transfer-bounded-worker-1', operation, 'worker_pid')
+
+    def _stop_during(self, module, operation, pid_key):
+        pid, descriptor = self.pin(module)
         try:
             signal.pidfd_send_signal(descriptor, signal.SIGSTOP)
             wait_owner_state(pid, True)
@@ -127,4 +136,4 @@ class HostedFaults:
                 wait_owner_state(pid, False)
             finally:
                 os.close(descriptor)
-        return {'owner_pid': pid, 'stopped_verified': True, 'resumed_verified': True}
+        return {pid_key: pid, 'stopped_verified': True, 'resumed_verified': True}

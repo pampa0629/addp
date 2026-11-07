@@ -12,6 +12,47 @@ M = import_module('scripts.test.continuous-execution-faults')
 
 
 class ContinuousFaultsTest(unittest.TestCase):
+    def test_bounded_pause_requires_the_admitted_case_and_single_worker(self):
+        faults = object.__new__(M.HostedFaults)
+        faults.pin = unittest.mock.Mock()
+        for case, replicas in [('full', '1'), ('filegdb-export', '2'), ('', '1')]:
+            with self.subTest(case=case, replicas=replicas), patch.dict(os.environ, {
+                    'ADDP_ONLINE_MANAGER_CASE': case, 'ADDP_DEV_TRANSFER_BOUNDED_WORKER_REPLICAS': replicas}), \
+                    self.assertRaisesRegex(ValueError, 'single-Worker'):
+                faults.stop_bounded_worker_during(lambda: True)
+        faults.pin.assert_not_called()
+
+    def test_bounded_pause_resumes_the_pinned_worker_even_when_submission_fails(self):
+        faults = object.__new__(M.HostedFaults)
+        faults.pin = unittest.mock.Mock(return_value=(42, 123))
+        operation = unittest.mock.Mock(side_effect=ValueError('submission failed'))
+        with patch.dict(os.environ, ADDP_ONLINE_MANAGER_CASE='filegdb-export',
+                        ADDP_DEV_TRANSFER_BOUNDED_WORKER_REPLICAS='1'), \
+                patch.object(M.signal, 'pidfd_send_signal', create=True) as send, \
+                patch.object(M.os, 'close') as close, patch.object(M, 'wait_owner_state') as wait:
+            with self.assertRaisesRegex(ValueError, 'submission failed'):
+                faults.stop_bounded_worker_during(operation)
+        faults.pin.assert_called_once_with('transfer-bounded-worker-1')
+        self.assertEqual([call.args for call in send.call_args_list], [(123, signal.SIGSTOP), (123, signal.SIGCONT)])
+        self.assertEqual([call.args for call in wait.call_args_list], [(42, True), (42, False)])
+        close.assert_called_once_with(123)
+
+    def test_bounded_worker_process_identity_remains_exact(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary).resolve()
+            binary = root / '.dev-bins/addp-transfer-bounded-worker'
+            binary.parent.mkdir(); binary.write_text('fixture binary')
+            process = root / 'process'; process.mkdir()
+            (process / 'exe').symlink_to(binary)
+            (process / 'environ').write_bytes(b'ADDP_ONLINE_SECRET_DIR=/private\0POSTGRES_DB=addp_online\0ADDP_ONLINE_HOSTED=1\0')
+            M.validate_process(process, root, Path('/private'), 'transfer-bounded-worker-1')
+            for module in ['transfer-bounded-worker', 'transfer-bounded-worker-2', 'transfer-continuous-worker-1']:
+                with self.subTest(module=module), self.assertRaisesRegex(ValueError, 'unowned'):
+                    M.validate_process(process, root, Path('/private'), module)
+            (process / 'environ').write_bytes(b'ADDP_ONLINE_SECRET_DIR=/foreign\0POSTGRES_DB=addp_online\0ADDP_ONLINE_HOSTED=1\0')
+            with self.assertRaisesRegex(ValueError, 'unowned'):
+                M.validate_process(process, root, Path('/private'), 'transfer-bounded-worker-1')
+
     def test_protection_readiness_uses_only_the_proven_hosted_owner_checkpoint(self):
         faults = object.__new__(M.HostedFaults)
         faults.root, faults.secret = Path('/owned'), Path('/private')

@@ -70,7 +70,9 @@ case 路由、默认完整场景保留、未知值只读拒绝、子场景失败
 
 ### FileGDB 实际页面导出
 
-`filegdb-export` 的业务报告 v3 为每个已扫描的 PostGIS 源表增加无源 Grant 断言。同一消费用户在授予源 Grant 前通过 Gateway 提交精确表路径，必须收到 403，且响应中没有会话、执行 UUID 或下载入口。随后按原精确 Grant、页面导出、回读与清理链路验证。此项不增加部署或用户权限。MySQL 页面与执行前撤权独立取证。
+`filegdb-export` 的业务报告 v4 保留每个已扫描 PostGIS 源表的无源 Grant 断言。同一消费用户在授予源 Grant 前通过 Gateway 提交精确表路径，必须收到403，且响应中没有会话、执行UUID或下载入口。随后按原精确Grant、页面导出、回读与清理链路验证。此项不增加部署或用户权限；MySQL页面仍独立取证。
+
+在原三份页面成功下载和独立回读后，复用同一消费用户、点表Grant及隔离部署的唯一Transfer bounded Worker，新增一次API导出执行的撤权验收。仅在已证明归属的Linux Hosted部署使用现有进程故障工具及pidfd暂停Worker；提交202后，由Monitor确认pending、attempt=0、未开始，再以原来源初始化用户撤销该精确Grant，复核仍未领取。恢复同一进程后，必须以attempt=1在来源授权preparation阶段失败，公开计数不得报告内容IO；Manager会话failed且无download_url，文件请求409，撤权后重新提交403，源表内容和结构不变。暂停、恢复及中途异常恢复均有确定性反例；不改产品配置、不新增权限或服务、不暂停个人开发服务，不以该API拒绝场景冒充浏览器失败页、物理零读或缓存验收。报告必须包含独立execution_revocation通过记录，保留原browser v2三份页面断言及全部清理，旧v3不能证明本项撤权。
 
 `filegdb-export` 复用既有 Manager Hosted suite、隔离 PostGIS 源和 GeoPython 产品镜像，使用 `ADDP_ONLINE_MANAGER_CASE=filegdb-export make test-online ONLINE_SUITE=manager-internal-artifact-lineage`。来源初始化用户扫描测试表并授予精确读范围。消费用户在真实 Manager 页面分别导出 EPSG:3857 点、EPSG:4326 MultiLineString 和 EPSG:4326 MultiPolygon，每次取得仅含单个图层的 `.gdb.zip`，同时核对 Monitor 执行归属、下载字节哈希及截图。同租户的另一位普通用户持有导出读取权限，对每个会话及下载均须被拒。独立 GDAL 进程解包并核对源 CRS、XY 坐标、各多部件边界、面内环、标量和空值。线核对每个部件的顶点次序，面允许环的起点和方向改变。前后核对三个源表的内容与结构。归档随本轮隔离 Infra 清理；此 case 与 NFS FileGDB 读授权分开报告。
 
