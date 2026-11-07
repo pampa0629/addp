@@ -31,6 +31,13 @@ BRANCH_LINEAGE_OUTPUTS = {'a1': ('a', 'b1'), 'a2': ('a', 'b1+1'),
 SCHEMA = 'addp.raster-workflow-online/v2'
 
 
+def raster_case(env):
+    case = env.get('ADDP_ONLINE_RASTER_CASE', 'full')
+    if case not in {'full', 'branch-lineage'}:
+        raise SuiteError('raster case must be full or branch-lineage')
+    return case
+
+
 def validate_identity(client, tenant_id, *, required_permissions=PERMISSIONS):
     context = obj(client.request('GET', '/api/v1/system/auth/context', (200,)).payload, 'AuthContext')
     principal = obj(context.get('principal'), 'principal')
@@ -1525,6 +1532,15 @@ def run_branch_lineage(repository, env, client, browser_runner=raster_browser_re
 
     stage = 'source_grants'
     try:
+        if raster_case(env) == 'branch-lineage':
+            stage = 'source_scans'
+            source_scans = []
+            for engine in source_engines.values():
+                execution = support.wait_for_meta_scan(client, engine, time.monotonic()+180)
+                source_scans.append({'engine_id': engine, 'execution_id': execution})
+            report['source_scans'] = source_scans
+            persist()
+        stage = 'source_grants'
         for branch, engine in source_engines.items():
             bucket = 'raster-source' if branch == 'a' else 'raster-source-'+branch
             evidence['sources'][branch], receipt = bind(engine, f'{bucket}/mosaic-{branch}.tif', 'branch source')
@@ -1567,10 +1583,11 @@ def run_branch_lineage(repository, env, client, browser_runner=raster_browser_re
             raise SuiteError('raster branch sources and outputs must be seven distinct DataItems')
         c_query = urllib.parse.urlencode({'subject_kind': 'data_item', 'direction': 'downstream', 'depth': 1,
                                            'item_id': evidence['sources']['c']['item_id']})
-        c_graph = obj(client.request('GET', '/api/v1/meta/lineage/graph?'+c_query, (200,)).payload, 'unused source graph')
+        c_graph = obj(reader.request('GET', '/api/v1/meta/lineage/graph?'+c_query, (200,)).payload, 'unused source graph')
         if (c_graph.get('truncated') is not False or c_graph.get('permission_filtered') is not False
             or c_graph.get('subject', {}).get('item_id') != evidence['sources']['c']['item_id']
-            or any(edge.get('evidence', {}).get('execution_id') == identifier for edge in c_graph['edges'])):
+            or [node.get('item_id') for node in c_graph.get('nodes', [])] != [evidence['sources']['c']['item_id']]
+            or c_graph.get('edges') != []):
             raise SuiteError('unused raster input published a branch lineage edge')
         report['unused_source_graph'] = c_graph
         persist()
@@ -1653,26 +1670,38 @@ def finish_resource_policy(platform, tenant, setup, timeout):
             'restored_applied_version': recovered['applied_version'], 'result': 'passed',
             'management_identity': 'separate-disposable-platform-and-tenant-users', 'consumer_admin_permission': False}
 
-def main():
-    env = dict(os.environ)
-    required = ('ADDP_ONLINE_TEST_RUN_ID', 'ADDP_ONLINE_TEST_TENANT_ID', 'ADDP_ONLINE_TEST_USER_ACCESS_TOKEN',
-                'ADDP_ONLINE_RASTER_SOURCE_ENGINE_ID', 'ADDP_ONLINE_RASTER_SOURCE_B_ENGINE_ID',
-                'ADDP_ONLINE_RASTER_SOURCE_C_ENGINE_ID', 'ADDP_ONLINE_RASTER_TARGET_ENGINE_ID',
-                'ADDP_ONLINE_TEST_USER_USERNAME', 'ADDP_ONLINE_TEST_USER_PASSWORD',
-                'ADDP_ONLINE_ARTIFACT_DIR', 'GATEWAY_URL', 'CONSOLE_URL',
-                'ADDP_ONLINE_RASTER_POLICY_PLATFORM_TOKEN', 'ADDP_ONLINE_RASTER_POLICY_TENANT_TOKEN')
-    if any(not env.get(key) for key in (*required, *BRANCH_LINEAGE_CREDENTIALS)):
-        raise SuiteError('required raster Online environment is missing')
-    client = GatewayClient(env['GATEWAY_URL'], env['ADDP_ONLINE_TEST_USER_ACCESS_TOKEN'], 30)
+def run_selected_scenario(repository, env, client):
+    case = raster_case(env)
+    if case == 'branch-lineage':
+        return {'schema_version': SCHEMA, 'case': case,
+                'branch_lineage': run_branch_lineage(repository, env, client)}
     platform = GatewayClient(env['GATEWAY_URL'], env['ADDP_ONLINE_RASTER_POLICY_PLATFORM_TOKEN'], 30)
     tenant = GatewayClient(env['GATEWAY_URL'], env['ADDP_ONLINE_RASTER_POLICY_TENANT_TOKEN'], 30)
     setup = prepare_resource_policy(platform, tenant, client)
     producer_env = {key: value for key, value in env.items() if key not in BRANCH_LINEAGE_CREDENTIALS}
-    report = run_scenario(Path(__file__).resolve().parents[2], producer_env, client)
+    report = run_scenario(repository, producer_env, client)
     images = importlib.import_module('scripts.test.raster-image-export-online')
-    report['image_exports'] = images.run_scenario(sys.modules[__name__], Path(__file__).resolve().parents[2], producer_env, client)
-    report['branch_lineage'] = run_branch_lineage(Path(__file__).resolve().parents[2], env, client)
+    report['image_exports'] = images.run_scenario(sys.modules[__name__], repository, producer_env, client)
+    report['branch_lineage'] = run_branch_lineage(repository, env, client)
     report['resource_policy'] = finish_resource_policy(platform, tenant, setup, 30)
+    report['case'] = case
+    return report
+
+
+def main():
+    env = dict(os.environ)
+    case = raster_case(env)
+    required = ('ADDP_ONLINE_TEST_RUN_ID', 'ADDP_ONLINE_TEST_TENANT_ID', 'ADDP_ONLINE_TEST_USER_ACCESS_TOKEN',
+                'ADDP_ONLINE_RASTER_SOURCE_ENGINE_ID', 'ADDP_ONLINE_RASTER_SOURCE_B_ENGINE_ID',
+                'ADDP_ONLINE_RASTER_SOURCE_C_ENGINE_ID', 'ADDP_ONLINE_RASTER_TARGET_ENGINE_ID',
+                'ADDP_ONLINE_TEST_USER_USERNAME', 'ADDP_ONLINE_TEST_USER_PASSWORD',
+                'ADDP_ONLINE_ARTIFACT_DIR', 'GATEWAY_URL', 'CONSOLE_URL')
+    if case == 'full':
+        required += ('ADDP_ONLINE_RASTER_POLICY_PLATFORM_TOKEN', 'ADDP_ONLINE_RASTER_POLICY_TENANT_TOKEN')
+    if any(not env.get(key) for key in (*required, *BRANCH_LINEAGE_CREDENTIALS)):
+        raise SuiteError('required raster Online environment is missing')
+    client = GatewayClient(env['GATEWAY_URL'], env['ADDP_ONLINE_TEST_USER_ACCESS_TOKEN'], 30)
+    report = run_selected_scenario(Path(__file__).resolve().parents[2], env, client)
     print(json.dumps(report, ensure_ascii=False, sort_keys=True))
 
 

@@ -1,4 +1,5 @@
 import importlib
+import json
 import os
 from pathlib import Path
 import shutil
@@ -119,6 +120,22 @@ class HostedRasterGateTest(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertFalse(self.host.trace.exists())
         self.assertFalse(self.host.secrets.exists())
+
+    def test_unknown_or_empty_case_is_rejected_before_lifecycle_actions(self):
+        for case in ('', 'unknown'):
+            with self.subTest(case=case):
+                result = self.run_gate(ADDP_ONLINE_RASTER_CASE=case)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertFalse(self.host.trace.exists())
+                self.assertFalse(self.host.secrets.exists())
+
+    def test_selected_branch_case_is_recorded_and_keeps_owned_cleanup(self):
+        result = self.run_gate(ADDP_ONLINE_RASTER_CASE='branch-lineage')
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(json.loads((self.host.artifacts/'raster-case.json').read_text()),
+                         {'schema_version': 'addp.raster-case/v1', 'case': 'branch-lineage'})
+        self.assertIn('raster-fixture:stop', self.host.trace.read_text())
+        self.assertIn('infra_cleanup=zero_residuals', (self.host.artifacts/'summary.txt').read_text())
 
     def test_startup_registers_distinct_engines_and_removes_credentials_before_business_scene(self):
         result = self.run_gate()

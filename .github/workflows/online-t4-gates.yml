@@ -194,6 +194,14 @@ on:
           - geometry-difference
           - polygon-dissolve
           - intersection-overlay
+      raster_case:
+        description: Raster acceptance scope (branch-lineage runs only its selected case)
+        required: true
+        type: choice
+        default: full
+        options:
+          - full
+          - branch-lineage
       manager_case:
         description: Manager acceptance case (full preserves all model assertions)
         required: true
@@ -2090,7 +2098,7 @@ jobs:
 
 
   raster-hosted-t4:
-    name: Online T4 (raster-workflow, Linux x86_64)
+    name: Online T4 (raster-workflow, ${{ inputs.raster_case }}, Linux x86_64)
     if: github.event_name == 'workflow_dispatch' && inputs.suite == 'raster-workflow'
     concurrency:
       group: online-t4-raster-workflow
@@ -2101,6 +2109,7 @@ jobs:
       ADDP_ONLINE_HOST: "1"
       ADDP_ONLINE_HOSTED: "1"
       ONLINE_SUITE_INPUT: raster-workflow
+      ADDP_ONLINE_RASTER_CASE: ${{ inputs.raster_case }}
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -2142,7 +2151,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
-          name: online-t4-raster-workflow-${{ github.run_id }}
+          name: online-t4-raster-workflow-${{ inputs.raster_case }}-${{ github.run_id }}
           path: |
             ${{ runner.temp }}/addp-online-${{ github.run_id }}/
             logs/
@@ -2153,7 +2162,7 @@ jobs:
         if: always()
         uses: ./.github/actions/ci-gate-summary
         with:
-          gate: Online T4 (raster-workflow, Linux x86_64)
+          gate: Online T4 (raster-workflow, ${{ inputs.raster_case }}, Linux x86_64)
           status: ${{ job.status }}
           details-file: ${{ runner.temp }}/addp-online-${{ github.run_id }}/summary.txt
 

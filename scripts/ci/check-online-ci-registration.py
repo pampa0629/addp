@@ -2601,6 +2601,14 @@ def validate_raster_workflow_profile(repository: Path, registered: set[str]) -> 
         raise RegistrationError("raster-workflow must not also dispatch on self-hosted")
     if load_suite_registry(repository)["raster-workflow"].nightly:
         raise RegistrationError("raster-workflow requires real evidence before schedule registration")
+    case_input = re.search(r"(?ms)^      raster_case:\n(?P<body>.*?)(?=^      [a-z_]+:\n|\Z)", workflow)
+    if (case_input is None or "type: choice" not in case_input.group("body")
+        or "default: full" not in case_input.group("body")
+        or re.findall(r"(?m)^          - ([a-z-]+)$", case_input.group("body")) != ["full", "branch-lineage"]
+        or "ADDP_ONLINE_RASTER_CASE: ${{ inputs.raster_case }}" not in job.group("body")
+        or "name: Online T4 (raster-workflow, ${{ inputs.raster_case }}, Linux x86_64)" not in job.group("body")
+        or "name: online-t4-raster-workflow-${{ inputs.raster_case }}-${{ github.run_id }}" not in job.group("body")):
+        raise RegistrationError("raster-workflow requires explicit full/branch-lineage input, propagation and evidence names")
     required = {
         "scripts/test/online-hosted-raster-gate.sh": (
             'source "$ROOT_DIR/scripts/utils/hosted-online.sh"', '--suite raster-workflow',
@@ -2608,6 +2616,7 @@ def validate_raster_workflow_profile(repository: Path, registered: set[str]) -> 
             'env -u POSTGRES_PASSWORD make test-online', 'start_online_geopython_runtime',
             'RUNTIME_CONTAINER=addp-raster-online-runtime',
             'online-raster-minio-fixture.py stop',
+            'full|branch-lineage)', 'raster-case.json', '${ADDP_ONLINE_RASTER_CASE-full}',
         ),
         "scripts/utils/hosted-online.sh": (
             'source "$ROOT_DIR/scripts/utils/hosted-product-runtime.sh"',
@@ -2630,6 +2639,8 @@ def validate_raster_workflow_profile(repository: Path, registered: set[str]) -> 
             "spatial_workflow", "raster_reproject", "raster_clip", "raster_mosaic", "spatial_cases",
             "analysis_workflow", "raster_statistics", "raster_histogram", "validate_analysis", "analysis_cases",
             "scripts.test.raster-image-export-online", "report['image_exports']",
+            "def raster_case(", "def run_selected_scenario(", "if case == 'branch-lineage':",
+            "report['source_scans']", "run_branch_lineage(repository, env, client)",
         ),
         "scripts/test/raster-image-export-online.py": (
             "validate_editor", "validate_artifact", "EDITOR_PERMISSIONS", "preserved_sha256",

@@ -3,6 +3,11 @@
 # ADDP_ONLINE_SUITES=raster-workflow
 # ADDP_ONLINE_RUNNER=github-hosted-linux-x86_64
 set -euo pipefail
+export ADDP_ONLINE_RASTER_CASE="${ADDP_ONLINE_RASTER_CASE-full}"
+case "$ADDP_ONLINE_RASTER_CASE" in
+  full|branch-lineage) ;;
+  *) echo 'raster case must be full or branch-lineage' >&2; exit 2 ;;
+esac
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)
 ROOT_DIR=$(cd "$SCRIPT_DIR/../.." && pwd -P)
 ONLINE_SUITE=raster-workflow
@@ -29,6 +34,7 @@ stop_online_fixture() {
   return "$status"
 }
 source "$ROOT_DIR/scripts/utils/hosted-online.sh"
+printf '{"schema_version":"addp.raster-case/v1","case":"%s"}\n' "$ADDP_ONLINE_RASTER_CASE" > "$ADDP_ONLINE_ARTIFACT_DIR/raster-case.json"
 # This manual scene verifies each accepted output in a browser plus byte/lineage checks.
 export ADDP_ONLINE_TEST_TIMEOUT_SECONDS=1740
 export ADDP_ONLINE_RASTER_BRANCH_LINEAGE=1

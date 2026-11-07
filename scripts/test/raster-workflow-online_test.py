@@ -1,5 +1,6 @@
 import copy
 import importlib
+import os
 from pathlib import Path
 import unittest
 import tempfile
@@ -2150,11 +2151,50 @@ class RasterBranchLineageTest(unittest.TestCase):
         with self.assertRaisesRegex(m.SuiteError, 'disposable Hosted'):
             m.run_branch_lineage(Path('.'), {}, None)
 
+    def test_case_selection_defaults_to_full_and_rejects_empty_or_unknown_before_credentials(self):
+        self.assertEqual(m.raster_case({}), 'full')
+        for case in ('', 'unknown'):
+            with self.subTest(case=case), patch.dict(os.environ, {'ADDP_ONLINE_RASTER_CASE': case}, clear=True):
+                with patch.object(m, 'GatewayClient') as clients:
+                    with self.assertRaisesRegex(m.SuiteError, 'raster case'):
+                        m.main()
+                    clients.assert_not_called()
+
+    def test_case_dispatch_preserves_full_phases_and_isolates_branch_only(self):
+        images = importlib.import_module('scripts.test.raster-image-export-online')
+        client = Mock()
+        env = {'GATEWAY_URL': 'http://fixture', 'ADDP_ONLINE_RASTER_POLICY_PLATFORM_TOKEN': 'platform',
+               'ADDP_ONLINE_RASTER_POLICY_TENANT_TOKEN': 'tenant',
+               **{key: 'private' for key in m.BRANCH_LINEAGE_CREDENTIALS}}
+        for case in ('full', 'branch-lineage'):
+            with (self.subTest(case=case), patch.object(m, 'GatewayClient'),
+                  patch.object(m, 'prepare_resource_policy') as prepare,
+                  patch.object(m, 'finish_resource_policy') as finish,
+                  patch.object(m, 'run_scenario', return_value={}) as full,
+                  patch.object(images, 'run_scenario') as image_scene,
+                  patch.object(m, 'run_branch_lineage', return_value={'result': 'passed'}) as branch):
+                selected = {**env, 'ADDP_ONLINE_RASTER_CASE': case}
+                result = m.run_selected_scenario(Path('.'), selected, client)
+                self.assertEqual(result['case'], case)
+                branch.assert_called_once_with(Path('.'), selected, client)
+                if case == 'full':
+                    prepare.assert_called_once()
+                    finish.assert_called_once()
+                    image_scene.assert_called_once()
+                    self.assertFalse(m.BRANCH_LINEAGE_CREDENTIALS & full.call_args.args[1].keys())
+                    self.assertFalse(m.BRANCH_LINEAGE_CREDENTIALS & image_scene.call_args.args[2].keys())
+                else:
+                    full.assert_not_called()
+                    image_scene.assert_not_called()
+                    prepare.assert_not_called()
+                    finish.assert_not_called()
+
     def test_scene_cleans_up_after_success_and_after_unused_input_gets_an_edge(self):
         registration = importlib.import_module('scripts.test.online-engine-registration')
-        for unused_edge in (False, True):
-            with self.subTest(unused_edge=unused_edge), tempfile.TemporaryDirectory() as directory:
+        for case, unused_edge in (('full', False), ('branch-lineage', False), ('branch-lineage', True)):
+            with self.subTest(case=case, unused_edge=unused_edge), tempfile.TemporaryDirectory() as directory:
                 env = {
+                    'ADDP_ONLINE_RASTER_CASE': case,
                     'ADDP_ONLINE_HOST': '1', 'ADDP_ONLINE_HOSTED': '1', 'GITHUB_ACTIONS': 'true', 'RUNNER_OS': 'Linux',
                     'ADDP_ONLINE_RASTER_BRANCH_LINEAGE': '1', 'ADDP_ONLINE_ARTIFACT_DIR': directory,
                     'ADDP_ONLINE_TEST_TENANT_ID': '2', 'ADDP_ONLINE_TEST_RUN_ID': 'branch-fixture',
@@ -2174,12 +2214,14 @@ class RasterBranchLineageTest(unittest.TestCase):
                 _, outputs = m.branch_lineage_workflow(self.evidence['sources'], 12)
                 scans = [{'target_locator': target['resource']['locator'], 'status': 'submitted', 'execution_id': 'scan-'+port}
                          for port, target in outputs.items()]
-                client, grants = Mock(), Mock()
+                client, reader, issuer, grants = Mock(), Mock(), Mock(), Mock()
                 client.request.side_effect = [
                     SimpleNamespace(payload=[{'id': 6, 'engine_type': 'geopython_workflow', 'connection_status': 'online'}]),
-                    SimpleNamespace(payload={'subject': {'item_id': 103}, 'truncated': False, 'permission_filtered': False,
-                        'edges': [{'evidence': {'execution_id': 'fixture-execution'}}] if unused_edge else []}),
                 ]
+                reader.request.return_value = SimpleNamespace(payload={
+                    'subject': {'item_id': 103}, 'nodes': [{'item_id': 103}], 'truncated': False,
+                    'permission_filtered': False,
+                    'edges': [{'evidence': {'execution_id': 'fixture-execution'}}] if unused_edge else []})
                 grants.metadata_facts.return_value = {'boundary': {'layout': 'single'}}
                 grants.grant.side_effect = lambda engine, name, *args, **kwargs: {
                     'item_fingerprint': items[engine, name]['fingerprint'],
@@ -2193,7 +2235,7 @@ class RasterBranchLineageTest(unittest.TestCase):
                     self.assertNotIn('ADDP_ONLINE_READ_USER_ACCESS_TOKEN', browser_env)
                     return {**self.report, 'binding': evidence}
 
-                with (patch.object(m, 'GatewayClient', side_effect=[Mock(), Mock()]),
+                with (patch.object(m, 'GatewayClient', side_effect=[reader, issuer]),
                       patch.object(m, 'validate_identity', side_effect=[{'principal_id': '41'}, observed]),
                       patch.object(registration, 'ExactFileMetadataGrants', return_value=grants),
                       patch.object(m.support, 'find_fixture_item', side_effect=lambda reader, engine, name, label: items[engine, name]),
@@ -2201,7 +2243,8 @@ class RasterBranchLineageTest(unittest.TestCase):
                       patch.object(m, 'wait_execution', side_effect=[
                           {'triggered_by': 41, 'outputs': {'save_'+port: {'resource': value['resource']} for port, value in outputs.items()},
                            'metadata': {'result': {'meta_scan_runs': scans}}}, *[{'parent_execution_id': 'fixture-execution'}]*4]),
-                      patch.object(m, 'wait_lineage') as wait):
+                      patch.object(m, 'wait_lineage') as wait,
+                      patch.object(m.support, 'wait_for_meta_scan', side_effect=['scan-a','scan-b','scan-c']) as source_scan):
                     if unused_edge:
                         with self.assertRaisesRegex(m.SuiteError, 'unused raster input'):
                             m.run_branch_lineage(Path('.'), env, client, browser)
@@ -2210,6 +2253,10 @@ class RasterBranchLineageTest(unittest.TestCase):
                         self.assertEqual(report['result'], 'passed')
                     self.assertEqual([call.args[1:3] for call in wait.call_args_list],
                                      [(101, 201), (101, 202), (102, 203), (102, 204)])
+                    self.assertTrue(all(call.args[0] is reader for call in wait.call_args_list))
+                    self.assertEqual([call.args[1] for call in source_scan.call_args_list],
+                                     [11,13,14] if case == 'branch-lineage' else [])
+                    reader.request.assert_called_once()
                 self.assertEqual([call.args[:2] for call in grants.grant.call_args_list],
                                  [(engine, name) for engine, name, _ in specs])
                 self.assertTrue(all(call.kwargs.get('expires_at') for call in grants.grant.call_args_list))

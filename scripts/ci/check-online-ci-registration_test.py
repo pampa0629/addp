@@ -3639,6 +3639,11 @@ class OnlineCIRegistrationTest(unittest.TestCase):
         registered = {"raster-workflow"}
         CHECK.validate_raster_workflow_profile(self.repository, registered)
         faults = (
+            (".github/workflows/online-t4-gates.yml", "      raster_case:", "      renamed_raster_case:"),
+            (".github/workflows/online-t4-gates.yml", "ADDP_ONLINE_RASTER_CASE: ${{ inputs.raster_case }}", "ADDP_ONLINE_RASTER_CASE: full"),
+            (".github/workflows/online-t4-gates.yml", "name: online-t4-raster-workflow-${{ inputs.raster_case }}-", "name: online-t4-raster-workflow-"),
+            ("scripts/test/online-hosted-raster-gate.sh", "full|branch-lineage)", "full)"),
+            ("scripts/test/raster-workflow-online.py", "report['source_scans']", "report['omitted_scans']"),
             ("scripts/utils/hosted-product-runtime.sh", "verify_online_product_runtime", "omitted_identity_check"),
             ("scripts/utils/hosted-online.sh", "stop_online_product_runtime || status=1", "true"),
             ("scripts/test/online-hosted-raster-gate.sh", "start_online_geopython_runtime", "start_native_runtime"),
