@@ -289,6 +289,8 @@ Meta 夹具仅在当轮 Hosted 独占 `addp_online`、同一非默认 Tenant／�
 
 普通 Meta 响应继续独立核验安全结构投影。原三方正整数大小、完整 TIFF 属性及普通图片源前后快照改由当轮 Hosted PostgreSQL 固定有界只读查询取证，绑定 `addp_online` 容器 ID／启动时刻、suite／Run ID、非默认 Tenant、真实 User、源扫描或当前 Develop 父执行及其精确自动扫描；容器变更、身份或目标不符即失败。对已确认发布但父执行失败的切片，只认原切片夹具白名单和实际返回的扫描绑定；失败前缀下的完整 Meta 对象集合另从相同受控快照核对，避免普通列表的权限过滤掩盖额外登记。保留公开身份与持久事实一致、完整像元／掩膜、COG、源与先前成果不变、当前血缘／浏览器及全部清理，原 1740 秒总预算保持。该调整的真实结论待 CI 协调原 suite 验收。
 
+Develop 公开执行投影不返回 `tenant_id`。成果候选登记前，父执行的 Tenant 和内部发起主体由同一受控只读快照核验；公开 UUID、模块、任务类型、状态和发起用户仍须匹配，不能要求接口恢复内部身份字段。
+
 ### 多来源计算与页面构图
 
 多来源栅格验收继续使用同一 suite：分别加载源 Engine 的 EPSG:4326 TIFF 和目标 Engine 已自动扫描的 EPSG:3857 COG，显式参考网格对齐、选波段及组合后，验证跨文件加权表达式和 RGB 通道合成。Develop 与 Monitor 输入事实必须绑定完整的两个 ResourceLocator，Meta 必须存在同一执行从两个源 DataItem 到目标的 derive 边；Console 按完整输入集合验证卡片及链接，并分别绑定来源证据。物理夹具以独立像元公式验证所有波段、NaN、mask、Red/Green/Blue 解释、网格、CRS 和 nearest 金字塔，核对源及所有已接受成果哈希、精确对象集合；新成果必须保持 `size_bytes == physical stat size == Meta DataItem size > 0`。两个新执行增加四份浏览器来源证据，总数为 29；总预算扩展不改变 Runtime 执行、物理校验和单次浏览器的超时，也不放宽大小、像元或血缘断言。RGB 通道生成不代表显示拉伸、自动最佳波段推荐或 Manager RGB 渲染已经验收。

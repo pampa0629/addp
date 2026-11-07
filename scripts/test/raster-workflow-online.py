@@ -984,10 +984,10 @@ class WorkflowMetadata:
         identifier = execution.get('execution_id')
         if (not isinstance(identifier, str) or not re.fullmatch(UUID_PATTERN, identifier)
                 or execution.get('module') != 'develop' or execution.get('task_type') != 'workflow'
-                or execution.get('tenant_id') != int(self.identity['tenant_id'])
+                or 'tenant_id' in execution
                 or execution.get('triggered_by') != int(self.identity['principal_id'])
                 or execution.get('status') not in ('success', 'failed')):
-            raise SuiteError('raster metadata binding has the wrong execution/User/Tenant')
+            raise SuiteError('raster metadata binding has the wrong public execution/User projection')
         outputs = array(obj(metadata.get('lineage_facts'), 'metadata lineage binding').get('outputs'), 'metadata outputs')
         target = int(self.env['ADDP_ONLINE_RASTER_TARGET_ENGINE_ID'])
         if (len({scan.get('target_locator') for scan in scans}) != len(scans)
@@ -1008,6 +1008,27 @@ class WorkflowMetadata:
                 raise SuiteError('failed raster metadata binding is not a confirmed tile')
             bindings[name] = {'execution_id': identifier, 'scan_id': scan['execution_id'],
                               'status': execution['status'], 'locator': locator}
+        # Owner responses deliberately omit Tenant and internal actor facts.
+        # Verify the current parent before making any output eligible for a Grant.
+        expected = {'execution_id': identifier, 'tenant_id': int(self.identity['tenant_id']),
+                    'principal_id': int(self.identity['principal_id']), 'triggered_by': execution['triggered_by'],
+                    'module': 'develop', 'task_type': 'workflow', 'status': execution['status']}
+        statement = """BEGIN READ ONLY; SET LOCAL statement_timeout='3s'; SET LOCAL lock_timeout='1s';
+SELECT json_build_object('execution_id',e.execution_id,'tenant_id',e.tenant_id,
+ 'principal_id',e.actor_principal_id,'triggered_by',e.triggered_by,
+ 'module',e.module,'task_type',e.task_type,'status',e.status)
+FROM common.task_executions e
+WHERE e.execution_id=:'execution' AND e.tenant_id=:'tenant'::integer
+ AND e.actor_principal_id=:'principal'::bigint AND e.triggered_by=:'principal'::integer
+ AND e.module='develop' AND e.task_type='workflow' AND e.status=:'status'
+ AND e.created_at>=:'started_at'::timestamptz;
+COMMIT;
+"""
+        parent = self.query(statement, dict(execution=identifier, tenant=self.identity['tenant_id'],
+            principal=self.identity['principal_id'], status=execution['status'],
+            started_at=self.owner['State']['StartedAt']), set(expected))
+        if any(parent[key] != value or type(parent[key]) is not type(value) for key, value in expected.items()):
+            raise SuiteError('raster metadata parent has the wrong persisted execution/User/Tenant')
         self.bindings.update(bindings)
 
     def target_name(self, locator):

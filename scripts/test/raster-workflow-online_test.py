@@ -2424,15 +2424,47 @@ class WorkflowMetadataTest(unittest.TestCase):
         self.enterContext(patch.object(m, 'validate_identity', return_value=self.identity))
         return m.WorkflowMetadata(self.env, client), client, facts, state, public
 
-    def bind(self, owner, name='raster-target/result.cog.tif', status='success'):
+    def execution(self, name='raster-target/result.cog.tif', status='success'):
         locator = 'addp://engine/9/path/'+name+'?type=object'
-        execution = {'execution_id': self.execution_id, 'module': 'develop', 'task_type': 'workflow', 'tenant_id': 2,
+        return {'execution_id': self.execution_id, 'module': 'develop', 'task_type': 'workflow',
                      'triggered_by': 7, 'status': status, 'metadata': {
                      'lineage_facts': {'outputs': [{'locator': locator}]},
                      'result': {'meta_scan_runs': [{'execution_id': self.scan_id,
                                                    'target_locator': locator, 'status': 'submitted'}]}}}
-        owner.bind(execution)
+
+    def bind(self, owner, name='raster-target/result.cog.tif', status='success'):
+        execution = self.execution(name, status)
+        parent = {'execution_id': self.execution_id, 'tenant_id': 2, 'principal_id': 7,
+                  'triggered_by': 7, 'module': 'develop', 'task_type': 'workflow', 'status': status}
+        with patch.object(owner, 'query', return_value=parent):
+            owner.bind(execution)
         return execution
+
+    def test_public_execution_omits_tenant_and_parent_is_verified_before_output_grants(self):
+        owner, client, facts, state, public = self.owner()
+        execution = self.execution()
+        self.assertNotIn('tenant_id', execution)
+        parent = {'execution_id': self.execution_id, 'tenant_id': 2, 'principal_id': 7,
+                  'triggered_by': 7, 'module': 'develop', 'task_type': 'workflow', 'status': 'success'}
+        for field, value in (('execution_id', self.scan_id), ('tenant_id', 3), ('principal_id', 8),
+                             ('triggered_by', 8), ('module', 'meta'), ('task_type', 'scan'),
+                             ('status', 'failed'), ('tenant_id', '2')):
+            with self.subTest(field=field, value=value), patch.object(m.subprocess, 'run',
+                    return_value=SimpleNamespace(returncode=0, stdout=self.json.dumps({**parent, field: value}), stderr='')):
+                with self.assertRaises(m.SuiteError):
+                    owner.bind(execution)
+                self.assertFalse(owner.bindings)
+                self.assertFalse(owner.report['issued'])
+        with patch.object(m.subprocess, 'run', return_value=SimpleNamespace(
+                returncode=0, stdout=self.json.dumps(parent), stderr='')) as query:
+            owner.bind(execution)
+        self.assertIn('raster-target/result.cog.tif', owner.bindings)
+        statement = query.call_args.kwargs['input']
+        for guard in ('BEGIN READ ONLY', "e.tenant_id=:'tenant'", "e.actor_principal_id=:'principal'",
+                      "e.triggered_by=:'principal'", "e.created_at>=:'started_at'", "e.status=:'status'"):
+            self.assertIn(guard, statement)
+        self.assertIn('addp_online', query.call_args.args[0])
+        self.assertFalse(owner.report['issued'])
 
     def test_hidden_source_is_granted_before_ordinary_enumeration_and_revoked(self):
         owner, client, facts, state, public = self.owner()
