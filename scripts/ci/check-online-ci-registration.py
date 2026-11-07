@@ -1101,8 +1101,8 @@ def validate_security_mysql_owner_protection_profile(
         'security-mongodb.json', 'ADDP_ONLINE_SECURITY_MONGODB_ENGINE_ID', 'addp-security-online-mongodb',
         '"scripts/test/$INITIALIZER_SCRIPT" --initialize',
         'before_online_application_stop() (', 'source "$IDENTITY_ENV" || return 1',
-        'security-record-metadata-grants.json',
-        'scripts/test/security-mysql-owner-protection-online.py --cleanup-metadata',
+        'security-record-grants.json',
+        'scripts/test/security-mysql-owner-protection-online.py --cleanup-record-grants',
         'unset ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN ADDP_ONLINE_FIXTURE_SECURITY_ACCESS_TOKEN',
         'make test-online "ONLINE_SUITE=$ONLINE_SUITE"',
     ):
@@ -1150,13 +1150,14 @@ def validate_security_mysql_owner_protection_profile(
         repository / "scripts/test/security-mysql-owner-protection-online.py"
     ).read_text(encoding="utf-8")
     for fragment in (
-        'def record_metadata_targets(', 'database != "security_fixture"',
+        'def record_grant_targets(', 'database != "security_fixture"',
         'target(mongo, "Outdoor", "Persons", "collection")', 'for name in (SOURCE_TABLE, BANK_SOURCE)',
-        'def initialize_record_metadata_grants(', 'def cleanup_record_metadata_grants(',
-        'REGISTRATION.ExactRecordMetadataGrants', 'write_metadata_checkpoint(state, new=True)',
-        'metadata_receipt("preparation", state', 'metadata_receipt("cleanup", state',
-        'len(state["pending"]) > 3', 'row not in state["issued"]',
-        'grants.cleanup()', 'cleanup_final_visibility',
+        'def initialize_record_grants(', 'def cleanup_record_grants(',
+        'REGISTRATION.ExactRecordGrants', 'write_record_grant_checkpoint(state, new=True)',
+        'record_grant_receipt("preparation", state', 'record_grant_receipt("cleanup", state',
+        'len(state["pending"]) > 6', 'row not in state["issued"]',
+        'grant.cleanup()', 'cleanup_final_visibility', 'cleanup_final_content_read',
+        'RECORD_GRANT_ACTIONS = ("metadata_read", "read")', 'for action in reversed(RECORD_GRANT_ACTIONS)',
     ):
         if not source_contract_contains(owner, fragment, repository):
             raise RegistrationError("security-mysql-owner-protection metadata preparation is missing " + fragment)
@@ -6742,7 +6743,7 @@ def validate_raster_capacity_profile(repository: Path, registered: set[str]) -> 
             'test_capacity_directory_oracle_rejects_corrupt_components_and_scope',
         ),
         "scripts/test/online-engine-registration.py": (
-            "class ExactFileMetadataGrants(_ExactMetadataGrantLifecycle):", "class _ExactMetadataGrantLifecycle:", "expires_at=None", "remaining <= 10800",
+            "class ExactFileMetadataGrants(_ExactGrantLifecycle):", "class _ExactGrantLifecycle:", "expires_at=None", "remaining <= 10800",
             'class MetadataGrantError(', 'def metadata_facts_evidence(', 'def metadata_error_evidence(',
             'def metadata_facts(', 'layout_not_allowed', 'basis_not_complete',
             "body.update(expiry_mode='at_time', expires_at=expires_at)",

@@ -3272,11 +3272,11 @@ class OnlineCIRegistrationTest(unittest.TestCase):
         CHECK.validate_security_mysql_owner_protection_profile(self.repository, registered)
         for relative, fragment, message in (
             ("scripts/test/online-hosted-security-gate.sh", "before_online_application_stop() (", "Hosted profile is missing"),
-            ("scripts/test/online-hosted-security-gate.sh", "scripts/test/security-mysql-owner-protection-online.py --cleanup-metadata", "Hosted profile is missing"),
+            ("scripts/test/online-hosted-security-gate.sh", "scripts/test/security-mysql-owner-protection-online.py --cleanup-record-grants", "Hosted profile is missing"),
             ("scripts/test/security-mysql-owner-protection-online.py", 'database != "security_fixture"', "metadata preparation is missing"),
             ("scripts/test/security-mysql-owner-protection-online.py", 'target(mongo, "Outdoor", "Persons", "collection")', "metadata preparation is missing"),
             ("scripts/test/security-mysql-owner-protection-online.py", 'for name in (SOURCE_TABLE, BANK_SOURCE)', "metadata preparation is missing"),
-            ("scripts/test/security-mysql-owner-protection-online.py", 'len(state["pending"]) > 3', "metadata preparation is missing"),
+            ("scripts/test/security-mysql-owner-protection-online.py", 'len(state["pending"]) > 6', "metadata preparation is missing"),
             ("scripts/test/security-mysql-owner-protection-online.py", 'row not in state["issued"]', "metadata preparation is missing"),
             ("scripts/test/security-mysql-owner-protection-online.py", '"rollback_verified"', "owner contract is missing"),
             ("scripts/test/online-hosted-security-gate.sh", "playwright install --with-deps chromium", "Hosted profile is missing"),

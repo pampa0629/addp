@@ -728,3 +728,17 @@ T1/T3/构建验证：`make test-security-frontend` 退出0，260项单元、37�
 待确认的具体适配方案：三项保持 metadata_read；正式核对 Manager 裁决 visible=true/content_readable=false，按名称／路径搜索同一 DataItem 并验证只返回安全身份；通过 Meta 当前用户字段结构核对精确组件路径、类型、指纹；字段检索与高亮的正例保留在现有已获 read 的 PostgreSQL 目标。MySQL／MongoDB 字段检索的原正例不再声明通过，报告与浏览器契约须同步新版本，原权限、数据脱敏输出、资格生命周期、失败原因、21图和清理仍严格保留。此方案改变原验收要求，当前仅记录方案，未实施／未重派；若要让 metadata_read 也搜索技术字段，则先讨论 Manager 检索产品规则，不能由本会话擅改。
 
 原始归档 `/tmp/addp-security-5bcac079/archive/_temp/addp-online-42367089598/`，独立失败核对 `/tmp/addp-security-5bcac079/p145-independent-failure-audit.json`，脚本 `/tmp/p145-5bc-failure-audit.py`；旧42322135716失败继续保留。已有5bc确定性门禁保持有效，本次仅归档核验和文档，未新增T1/T2/T4运行通过。
+
+
+### Hosted 三项精确读取权临时前提（2026-11-07）
+
+用户已明确选择：先给原验收账号增加数据读取权，继续脱敏验收；同时把“有元数据查看权就应能搜索字段名”的正式调整交给「数据权限-性能优化」会话。该会话为 `01a03925-3e49-7bd3-a80b-9dc8e71651e0 / local`，已收到用户原文、固定失败Run／SHA、字段事实和Manager当前分支的证据。p145仅改自己的Hosted夹具，不实施该会话的产品权限变更，也不采用此前拟议的名称检索替代方案。
+
+现有正式Grant签发可验证MySQL普通表和MongoDB集合的可信native边界及当前结构。夹具保留原三个metadata_read来源，再对同三个精确项分别签发read；依次核对普通用户固定Manager检索裁决content_readable=false→true、回执action／主体／指纹／边界，以及同一Meta项。只增加三个数据项的read，原七张PG、角色、功能Permission、原值授权、源数据和脱敏规则保持；read不等于获准查看敏感原值。原v44字段高亮、算法与重启检查、v9浏览器及21图全部保留。
+
+共享注册 helper 改为显式action的唯一 `ExactRecordGrants`，元数据与read使用同一登记／签发／回执和持久清理路径，移除仅元数据的旧helper名称与旧CLI／checkpoint路线。`security-record-grants.json`为0600原子checkpoint，绑定三目标×两动作、六个独立UUID；仅当前Run、同租户与同主体的唯一组合可清理。应用停止前先撤read及核对不可读，再撤metadata_read及核对不可见；单项失败仍尝试其余项及另一类动作，支持未知写入和中断后续办。成功回执使用 `addp.security-record-grant-fixture/v2` 和 `security-record-grant-{preparation,cleanup}.json`，不接受旧三项产物代替六项。
+
+正式权限规则仍由上述会话负责。持有临时read的字段检索成功只能证明本轮脱敏验收前提，不证明metadata-only字段检索已实现；后续须由其完成并提供独立验证。原42322135716及42367089598两次失败继续保留。本轮无本地账号写入、服务启停或新增workflow；实际6条许可签发、清理和领域T4须由专门CI会话运行后再认定。
+
+
+本轮必需门禁按输入范围完成：完整 `make test-security-online-runner` 的43／204／18／149／35／80组、System Fixture Go及登记CLI通过，最后258组因CLI清理flag更名后的两处旧属性引用报3项错误，首次失败保留。修正属性并新增真实CLI入口→六项精确清理回归后，复用输入未变的已通过依赖，沿原Make目标以 `-o test-protection-deployment-runner -o test-graph-online-runner -o test-online-dispatcher-unit -o test-online-registration-unit` 重跑所属门禁，259项和System Fixture Go退出0；当前登记反例主测试及CLI再次通过。读取/元数据清理聚焦7项、原共享文件元数据27项通过；独立六项审计正常样本+10反例通过。固定摘要及完整命令见 `/tmp/p145-read-verification.json`；首次 `/tmp/p145-read-runner-gate.log`、最终 `/tmp/p145-read-owner-final.log`、`/tmp/p145-read-registration-final.log`。这是T1组合证据，未把复用项、失败项或待Hosted项写成实际重跑通过；本轮未新增真实T2／本地HTTP／T4通过。CI继续由专门会话用新精确提交单次安排，回传真实六项准备/清理及原领域/浏览器产物后再独立审计。

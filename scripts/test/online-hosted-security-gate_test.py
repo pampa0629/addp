@@ -127,14 +127,14 @@ class HostedSecurityGateTest(unittest.TestCase):
             import os, sys
             from pathlib import Path
             assert os.environ["ADDP_ONLINE_TEST_RUN_ID"] == "security-123-1"
-            assert sys.argv[1:] in (['--initialize'], ['--cleanup-metadata'])
+            assert sys.argv[1:] in (['--initialize'], ['--cleanup-record-grants'])
             assert os.environ['ADDP_ONLINE_SECURITY_MONGODB_ENGINE_ID'] == '29'
             assert os.environ['ADDP_ONLINE_FIXTURE_SECURITY_ACCESS_TOKEN'] == 'initializer-token'
             assert os.environ['ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN'] == 'source-initializer-token'
-            if sys.argv[1:] == ['--cleanup-metadata']:
+            if sys.argv[1:] == ['--cleanup-record-grants']:
                 with open(os.environ['ADDP_TEST_GATE_TRACE'], 'a') as out: out.write('metadata-cleanup\\n')
                 sys.exit(1 if os.environ.get('ADDP_TEST_METADATA_CLEANUP_FAIL') == '1' else 0)
-            Path(os.environ['ADDP_ONLINE_SECRET_DIR'], 'security-record-metadata-grants.json').write_text('{}')
+            Path(os.environ['ADDP_ONLINE_SECRET_DIR'], 'security-record-grants.json').write_text('{}')
             with open(os.environ['ADDP_TEST_GATE_TRACE'], 'a') as out: out.write('initialize\\n')
             sys.exit(1 if os.environ.get('ADDP_TEST_INITIALIZE_FAIL') == '1' else 0)
         ''')

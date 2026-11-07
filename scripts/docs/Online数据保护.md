@@ -14,17 +14,19 @@
 
 保护方式、角色资格及导出有效性的能力契约见[数据安全规范](../../docs/spec/addp数据安全与隐私保护实现规范.md#711-默认方式与角色可选方式)。本文维护 suite 断言与版本差异；已归档的固定源码、运行尝试、失败和清理结果见[数据保护与执行血缘历史证据](../../docs/spec/testing/evidence/数据保护与执行血缘历史证据.md)，不由版本号推导某次验收已通过。其中[四出口实际停机 v9](../../docs/spec/testing/evidence/数据保护与执行血缘历史证据.md#四出口实际停机--t4-v9)、[四出口重新发现 v10](../../docs/spec/testing/evidence/数据保护与执行血缘历史证据.md#四出口重新发现--t4-v10)分别维护对应旧证据，不作为 v23～v33 新增范围的通过记录。
 
-### Hosted 精确元数据许可准备与清理
+### Hosted 精确许可准备与清理
 
-普通验收 User 仅补三项 `metadata_read`：MongoDB `Outdoor.Persons`、MySQL `security_fixture.customers`、`security_fixture.bank_card_accounts`。独立源授权准备账号沿既有扫描权限先完成这两个引擎的 basic 识别，再从 System 读取可信 DataItem 指纹与边界，通过正式 Grant API 签发；不新增角色、功能权限、MySQL／MongoDB 内容读取 Grant 或原值授权，原七张 PostgreSQL `read` 范围保持。
+2026-11-07 用户确认：为继续现有字段检索及脱敏验收，原普通消费 User 在 MongoDB `Outdoor.Persons`、MySQL `security_fixture.customers`、`security_fixture.bank_card_accounts` 三项上各保留独立 `metadata_read`，另补一项精确 `read`。六项仅存在于当次 disposable Hosted 环境，原七张 PostgreSQL `read` 范围、角色、功能 Permission 及原值审批不变。read 只解决源读取资格，不能绕过 Security 脱敏。正式“元数据查看权应允许搜索字段名”规则由「数据权限-性能优化」会话调整，本轮不能以持有read的成功替代metadata-only能力验收。
 
-写入前把每个 request_id、精确目标、执行身份与本轮 Run 记录到私有 checkpoint，含未知写入结果。普通消费与浏览器子进程不接收准备账号凭据。Hosted 在停止应用之前，经独立清理子进程重载私有凭据，逐条撤销并验证不可见；初始化失败、场景失败或正常结束都走同一收尾，单项失败仍尝试其余项，清理失败不能报告通过。可归档的准备／清理 receipt 不含令牌。没有 checkpoint 表示尚未签发，不得伪报三项已清理；清理 checkpoint 不允许超出这三个目标或跨 Run／身份。
+独立准备账号沿既有扫描权限先 basic 识别两个引擎，再从 System 读取可信指纹／边界。先签发三项 metadata_read 并核对同一DataItem可见性，再逐项签发 read，核对当前用户固定Manager检索裁决的 content_readable 从false到true。不得更换账号、对父节点授权或扩大数据项范围。原v44字段高亮、算法／重启与v9浏览器断言保留，不以名称检索替代。
 
-此项只修复既有 v44 suite 的前置条件，领域报告仍为 v44、浏览器仍为 v9，不新增产品能力或验收路线。确定性夹具门禁通过不代表 Hosted T4 已通过；原 Run 42322135716 的前置失败继续保留。
+每项写入前把 request_id、action、精确目标、身份及Run记录到0600私有 `security-record-grants.json`，包含未知写入结果。普通消费与浏览器不接收准备凭据。应用停止前，独立子进程重载私有凭据，按动作先撤销read并核对不可读，再撤销metadata_read并核对不可见；任一项失败仍尝试其余项，两类动作均尝试。初始化失败、场景失败、中断及正常结束都走此收尾，清理失败影响总结果。checkpoint仅允许同Run／主体、三目标×两动作的六条唯一请求，拒绝动作错配、重复、跨范围或丢失已签发关系。
+
+准备／清理回执改用 `addp.security-record-grant-fixture/v2`，文件为 `security-record-grant-preparation.json`、`security-record-grant-cleanup.json`；成功须三项read和三项metadata_read、pending为空、content_unreadable与metadata_hidden确认。新旧夹具回执不兼容，不将此前三项元数据许可通过当作六项通过。领域仍v44、浏览器仍v9；原两次Hosted失败保留，现有确定性门禁与真实T4分别认定。
 
 ### 统一门禁与结果认定
 
-确定性入口为 `make test-security-online-runner`，由 `make test-online-runner` 与既有 Platform CI 覆盖；共享存储与 Provider 的 PostgreSQL／MySQL 门禁仍各自认定 T2。真实 HTTP／浏览器使用既有 `security-mysql-owner-protection` Hosted suite，由专门 CI 会话安排与回传。本次文档整理不新增部署、账号、角色、权限、产品接口或 CI 路线；各场景明确列出的最小身份和权限仍是独立前提。
+确定性入口为 `make test-security-online-runner`，由 `make test-online-runner` 与既有 Platform CI 覆盖；共享存储与 Provider 的 PostgreSQL／MySQL 门禁仍各自认定 T2。真实 HTTP／浏览器使用既有 `security-mysql-owner-protection` Hosted suite，由专门 CI 会话安排与回传。套件复用现有部署、账号、角色、产品接口与 CI 路线；各场景经用户确认的最小身份及精确许可范围仍是独立前提。
 
 确定性回归、协议单元格、旧版本结果与实际 T4 分开记录。本文没有新增或刷新运行证据，各新增断言原有的“未运行／待回传”状态仍保留；尤其 v27 不证明自然到期或其他出口、v30 不证明 v31 的新错误区分、v24 不证明 v25 的新增 runtime 单元格，v37可选默认参数、v38默认值修订及v39新默认续页范围仍待独立Hosted证据。未运行、失败、跳过或清理失败均不能计为通过，身份、敏感信息和清理要求继续按各主题执行。
 

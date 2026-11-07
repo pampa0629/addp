@@ -5042,10 +5042,10 @@ def initialize_postgres_read_grants(
     wait_for_manager_search_ready(consumer, postgres_engine_id, "value_c", time.monotonic() + 60)
 
 
-METADATA_CHECKPOINT = "security-record-metadata-grants.json"
+RECORD_GRANT_CHECKPOINT = "security-record-grants.json"
 
 
-def record_metadata_targets(environment):
+def record_grant_targets(environment):
     def value(name):
         result = environment.get(name)
         if not isinstance(result, str) or not result.strip():
@@ -5056,13 +5056,13 @@ def record_metadata_targets(environment):
     database = value("ADDP_ONLINE_WORKBENCH_MYSQL_DATABASE")
     if mysql == mongo or database != "security_fixture":
         raise SuiteError("metadata preparation requires distinct disposable MySQL/MongoDB engines")
-    return [REGISTRATION.ExactRecordMetadataGrants.target(mongo, "Outdoor", "Persons", "collection"),
-            *[REGISTRATION.ExactRecordMetadataGrants.target(mysql, database, name, "table")
+    return [REGISTRATION.ExactRecordGrants.target(mongo, "Outdoor", "Persons", "collection"),
+            *[REGISTRATION.ExactRecordGrants.target(mysql, database, name, "table")
               for name in (SOURCE_TABLE, BANK_SOURCE)]]
 
 
-def write_metadata_checkpoint(state, *, new=False):
-    path = Path(required_environment("ADDP_ONLINE_SECRET_DIR"), METADATA_CHECKPOINT)
+def write_record_grant_checkpoint(state, *, new=False):
+    path = Path(required_environment("ADDP_ONLINE_SECRET_DIR"), RECORD_GRANT_CHECKPOINT)
     temporary = path.with_name(path.name + "." + uuid.uuid4().hex + ".tmp")
     try:
         with os.fdopen(os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600), "w") as stream:
@@ -5077,87 +5077,108 @@ def write_metadata_checkpoint(state, *, new=False):
         temporary.unlink(missing_ok=True)
 
 
-def metadata_receipt(stage, state, **details):
-    path = Path(required_environment("ADDP_ONLINE_ARTIFACT_DIR"), "security-record-metadata-" + stage + ".json")
+def record_grant_receipt(stage, state, **details):
+    path = Path(required_environment("ADDP_ONLINE_ARTIFACT_DIR"), "security-record-grant-" + stage + ".json")
     path.write_text(json.dumps({**state, **details}, indent=2, allow_nan=False) + "\n")
 
 
-def initialize_record_metadata_grants(authorizer, consumer, tenant_id):
-    targets = record_metadata_targets(os.environ)
-    state = dict(schema_version="addp.security-record-metadata-fixture/v1",
+RECORD_GRANT_ACTIONS = ("metadata_read", "read")
+
+
+def initialize_record_grants(authorizer, consumer, tenant_id):
+    targets = record_grant_targets(os.environ)
+    state = dict(schema_version="addp.security-record-grant-fixture/v2",
         run_id=required_environment("ADDP_ONLINE_TEST_RUN_ID"), tenant_id=tenant_id,
-        targets=targets, pending=[], issued=[], scan_executions=[])
-    def checkpoint(rows):
-        state["pending"] = copy.deepcopy(rows)
-        # Preserve each issued/uncertain request even after pending cleanup shrinks.
+        targets=targets, actions=list(RECORD_GRANT_ACTIONS), pending=[], issued=[], scan_executions=[])
+    def checkpoint(action, rows):
+        state["pending"] = [row for row in state["pending"] if row["action"] != action] + copy.deepcopy(rows)
         for row in rows:
             previous = next((r for r in state["issued"] if r["request_id"] == row["request_id"]), None)
             if previous is None: state["issued"].append(copy.deepcopy(row))
             else: previous.update(copy.deepcopy(row))
-        write_metadata_checkpoint(state)
-    grants = REGISTRATION.ExactRecordMetadataGrants(authorizer, consumer, tenant_id,
-        on_change=checkpoint, scan_preparation=True)
-    state.update(operator=grants.operator, recipient=grants.recipient)
-    write_metadata_checkpoint(state, new=True)
-    # Trusted preparation does not require the recipient to discover hidden items.
+        write_record_grant_checkpoint(state)
+    grants = {action: REGISTRATION.ExactRecordGrants(authorizer, consumer, tenant_id,
+        action=action, on_change=lambda rows, action=action: checkpoint(action, rows), scan_preparation=True)
+        for action in RECORD_GRANT_ACTIONS}
+    state.update(operator=grants["metadata_read"].operator, recipient=grants["metadata_read"].recipient)
+    if any((g.operator, g.recipient) != (state["operator"], state["recipient"]) for g in grants.values()):
+        raise SuiteError("record Grant preparation identity changed")
+    write_record_grant_checkpoint(state, new=True)
     for engine in dict.fromkeys(target["engine_id"] for target in targets):
         execution = wait_for_scan(authorizer, engine, time.monotonic() + 180, scan_depth="basic")
         state["scan_executions"].append(dict(engine_id=engine, execution_id=execution))
-        write_metadata_checkpoint(state)
+        write_record_grant_checkpoint(state)
     items = []
-    for target in targets:
-        segments = target["segments"]
-        receipt = grants.grant(target["engine_id"], segments[1]["name"], segments[2]["name"], segments[2]["term"])
-        item = find_item(consumer, target["engine_id"], segments[1]["name"] + "." + segments[2]["name"], segments[2]["term"])
-        if item.get("fingerprint") != receipt["item_fingerprint"]:
-            raise SuiteError("metadata Grant must expose the same persisted DataItem fingerprint")
-        items.append(dict(engine_id=target["engine_id"], item_id=item["id"], item_fingerprint=item["fingerprint"]))
-    metadata_receipt("preparation", state, status="passed", action="metadata_read", visible_items=items)
+    for action in RECORD_GRANT_ACTIONS:
+        for target in targets:
+            segments = target["segments"]
+            receipt = grants[action].grant(target["engine_id"], segments[1]["name"], segments[2]["name"], segments[2]["term"])
+            item = find_item(consumer, target["engine_id"], segments[1]["name"] + "." + segments[2]["name"], segments[2]["term"])
+            if item.get("fingerprint") != receipt["item_fingerprint"]:
+                raise SuiteError("record Grant must expose the same persisted DataItem fingerprint")
+            items.append(dict(action=action, engine_id=target["engine_id"], item_id=item["id"], item_fingerprint=item["fingerprint"]))
+    record_grant_receipt("preparation", state, status="passed", visible_items=items,
+        metadata_grants=3, read_grants=3, content_readable=True)
 
 
-def cleanup_record_metadata_grants(authorizer, consumer, tenant_id):
-    targets = record_metadata_targets(os.environ)
-    path = Path(required_environment("ADDP_ONLINE_SECRET_DIR"), METADATA_CHECKPOINT)
+def cleanup_record_grants(authorizer, consumer, tenant_id):
+    targets = record_grant_targets(os.environ)
+    path = Path(required_environment("ADDP_ONLINE_SECRET_DIR"), RECORD_GRANT_CHECKPOINT)
     with os.fdopen(os.open(path, os.O_RDONLY | os.O_NOFOLLOW), "r") as stream:
         info = os.fstat(stream.fileno())
         if not stat.S_ISREG(info.st_mode) or stat.S_IMODE(info.st_mode) != 0o600 or info.st_uid != os.getuid():
-            raise SuiteError("metadata checkpoint must be a private owned regular file")
+            raise SuiteError("record Grant checkpoint must be a private owned regular file")
         state = json.load(stream)
-    grants = REGISTRATION.ExactRecordMetadataGrants(authorizer, consumer, tenant_id, scan_preparation=True)
-    expected = dict(schema_version="addp.security-record-metadata-fixture/v1",
+    grants = {action: REGISTRATION.ExactRecordGrants(authorizer, consumer, tenant_id,
+        action=action, scan_preparation=True) for action in RECORD_GRANT_ACTIONS}
+    expected = dict(schema_version="addp.security-record-grant-fixture/v2",
         run_id=required_environment("ADDP_ONLINE_TEST_RUN_ID"), tenant_id=tenant_id,
-        targets=targets, operator=grants.operator, recipient=grants.recipient)
+        targets=targets, actions=list(RECORD_GRANT_ACTIONS),
+        operator=grants["metadata_read"].operator, recipient=grants["metadata_read"].recipient)
     if (not isinstance(state, dict) or set(state) != set(expected) | {"pending", "issued", "scan_executions"}
         or any(state.get(k) != v for k, v in expected.items())
+        or any((g.operator, g.recipient) != (expected["operator"], expected["recipient"]) for g in grants.values())
         or not isinstance(state["pending"], list) or not isinstance(state["issued"], list)
-        or len(state["pending"]) > 3 or len(state["issued"]) > 3):
-        raise SuiteError("metadata checkpoint does not match this Run and its exact three targets")
+        or len(state["pending"]) > 6 or len(state["issued"]) > 6):
+        raise SuiteError("record Grant checkpoint does not match this Run and its exact six Grants")
     for key in ("pending", "issued"):
-        seen_ids, seen_targets = set(), []
+        seen_ids, seen_pairs = set(), []
         for row in state[key]:
-            if (not isinstance(row, dict) or set(row) != {"engine", "request_id", "target", "confirmed"}
+            if (not isinstance(row, dict) or set(row) != {"engine", "request_id", "target", "action", "confirmed"}
                 or row["target"] not in targets or row["engine"] != row["target"]["engine_id"]
+                or row["action"] not in RECORD_GRANT_ACTIONS
                 or type(row["engine"]) is not int or type(row["confirmed"]) is not bool
                 or not isinstance(row["request_id"], str)
                 or re.fullmatch(r"[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}", row["request_id"]) is None
-                or row["request_id"] in seen_ids or row["target"] in seen_targets):
-                raise SuiteError("metadata checkpoint contains an unapproved Grant")
-            seen_ids.add(row["request_id"]); seen_targets.append(row["target"])
+                or row["request_id"] in seen_ids or (row["action"], row["target"]) in seen_pairs):
+                raise SuiteError("record Grant checkpoint contains an unapproved Grant")
+            seen_ids.add(row["request_id"]); seen_pairs.append((row["action"], row["target"]))
     if any(row not in state["issued"] for row in state["pending"]):
-        raise SuiteError("metadata checkpoint lost its issued request")
-    grants.pending = copy.deepcopy(state["pending"])
-    def checkpoint(rows):
-        state["pending"] = copy.deepcopy(rows)
-        write_metadata_checkpoint(state)
-    grants.on_change = checkpoint
-    try:
-        result = grants.cleanup()
-        # Also recheck previously cleaned targets if recovering interrupted cleanup.
-        for row in state["issued"]: grants.observe(row["target"], False, phase="cleanup_final_visibility")
-        metadata_receipt("cleanup", state, status="passed", action="metadata_read", **result)
-    except Exception:
-        metadata_receipt("cleanup", state, status="failed", action="metadata_read")
-        raise
+        raise SuiteError("record Grant checkpoint lost its issued request")
+    def checkpoint(action, rows):
+        state["pending"] = [row for row in state["pending"] if row["action"] != action] + copy.deepcopy(rows)
+        write_record_grant_checkpoint(state)
+    errors = []
+    # Read is removed first; independent metadata visibility survives until its own revoke.
+    for action in reversed(RECORD_GRANT_ACTIONS):
+        grant = grants[action]
+        grant.pending = copy.deepcopy([row for row in state["pending"] if row["action"] == action])
+        grant.on_change = lambda rows, action=action: checkpoint(action, rows)
+        try:
+            grant.cleanup()
+        except Exception as error:
+            errors.append(REGISTRATION.metadata_error_evidence(error, "cleanup_" + action))
+    for target in targets:
+        try:
+            grants["read"].observe(target, False, phase="cleanup_final_content_read")
+            grants["metadata_read"].observe(target, False, phase="cleanup_final_visibility")
+        except Exception as error:
+            errors.append(REGISTRATION.metadata_error_evidence(error, "cleanup_final_observation"))
+    record_grant_receipt("cleanup", state, status="failed" if errors else "passed", errors=errors,
+        grants_revoked=not state["pending"], content_unreadable=not errors, metadata_hidden=not errors)
+    if errors:
+        raise SuiteError("record Grant cleanup or final observation failed")
+
 
 
 def initialize_governance(client: GatewayClient, tenant_id: int) -> None:
@@ -5318,14 +5339,14 @@ def run_export_browser(repository: Path, environment: Mapping[str, str], locator
 def main() -> int:
     parser = argparse.ArgumentParser()
     mode = parser.add_mutually_exclusive_group()
-    mode.add_argument("--initialize", action="store_true", help="prepare Hosted governance, seven PostgreSQL reads and three metadata-only Grants")
-    mode.add_argument("--cleanup-metadata", action="store_true", help="revoke only this Run's three metadata-only Grants")
+    mode.add_argument("--initialize", action="store_true", help="prepare Hosted governance, seven PostgreSQL reads and three metadata/read Grant pairs")
+    mode.add_argument("--cleanup-record-grants", action="store_true", help="revoke only this Run's six exact record Grants")
     arguments = parser.parse_args()
     signal.signal(signal.SIGTERM, handle_termination)
-    if arguments.initialize or arguments.cleanup_metadata:
+    if arguments.initialize or arguments.cleanup_record_grants:
         require_hosted_initialization(os.environ)
-        if arguments.cleanup_metadata:
-            cleanup_record_metadata_grants(
+        if arguments.cleanup_record_grants:
+            cleanup_record_grants(
                 GatewayClient(required_environment("GATEWAY_URL"), required_environment("ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN"), 30),
                 GatewayClient(required_environment("GATEWAY_URL"), required_environment("ADDP_ONLINE_TEST_USER_ACCESS_TOKEN"), 30),
                 positive_int(required_environment("ADDP_ONLINE_TEST_TENANT_ID"), "Tenant id"))
@@ -5339,11 +5360,11 @@ def main() -> int:
             positive_int(required_environment("ADDP_ONLINE_TEST_TENANT_ID"), "Tenant id"),
             positive_int(required_environment("ADDP_ONLINE_TEST_ENGINE_ID"), "PostgreSQL Engine id"),
         )
-        initialize_record_metadata_grants(
+        initialize_record_grants(
             GatewayClient(required_environment("GATEWAY_URL"), required_environment("ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN"), 30),
             GatewayClient(required_environment("GATEWAY_URL"), required_environment("ADDP_ONLINE_TEST_USER_ACCESS_TOKEN"), 30),
             positive_int(required_environment("ADDP_ONLINE_TEST_TENANT_ID"), "Tenant id"))
-        print("Disposable Security governance, PostgreSQL reads and three metadata-only Grants are ready")
+        print("Disposable Security governance, PostgreSQL reads and three metadata/read Grant pairs are ready")
         return 0
     if os.environ.get("ADDP_ONLINE_TEST") != "1":
         raise SuiteError("ADDP_ONLINE_TEST must be exactly 1")

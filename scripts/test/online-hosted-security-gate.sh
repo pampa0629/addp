@@ -85,12 +85,12 @@ source "$ROOT_DIR/scripts/utils/hosted-online.sh"
 if [ "$ONLINE_SUITE" = security-mysql-owner-protection ]; then
   before_online_application_stop() (
     # Reload preparation credentials only into this cleanup subshell, never the suite/browser.
-    if [ ! -e "$ADDP_ONLINE_SECRET_DIR/security-record-metadata-grants.json" ]; then
-      printf '{"status":"not_started","issued_count":0}\n' > "$ADDP_ONLINE_ARTIFACT_DIR/security-record-metadata-cleanup.json"
+    if [ ! -e "$ADDP_ONLINE_SECRET_DIR/security-record-grants.json" ]; then
+      printf '{"status":"not_started","issued_count":0}\n' > "$ADDP_ONLINE_ARTIFACT_DIR/security-record-grant-cleanup.json"
       return 0
     fi
     source "$IDENTITY_ENV" || return 1
-    run_logged python3 scripts/test/security-mysql-owner-protection-online.py --cleanup-metadata
+    run_logged python3 scripts/test/security-mysql-owner-protection-online.py --cleanup-record-grants
   )
 fi
 if [ -n "$EXECUTION_PROFILE" ]; then

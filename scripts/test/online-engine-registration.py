@@ -149,7 +149,7 @@ def source_grant_participants(authorizer, consumer, tenant_id, *, scan_preparati
     return initializer_id, recipient_id
 
 
-class _ExactMetadataGrantLifecycle:
+class _ExactGrantLifecycle:
     """Shared formal identity, visibility observations and precise revocation."""
     def __init__(self, authorizer, consumer, tenant_id, *, on_change=None, on_evidence=None, scan_preparation=False):
         self.phase = 'participants'
@@ -193,7 +193,7 @@ class _ExactMetadataGrantLifecycle:
 
 
 
-class ExactFileMetadataGrants(_ExactMetadataGrantLifecycle):
+class ExactFileMetadataGrants(_ExactGrantLifecycle):
     """Existing metadata-only file contract; never a content completeness proof."""
     @staticmethod
     def target(engine, full_name, storage, *, layout='single'):
@@ -309,8 +309,27 @@ class ExactFileMetadataGrants(_ExactMetadataGrantLifecycle):
 
 
 
-class ExactRecordMetadataGrants(_ExactMetadataGrantLifecycle):
-    """Metadata visibility on one native table/collection; never content reads."""
+class ExactRecordGrants(_ExactGrantLifecycle):
+    """Exact formal table/collection grants with an explicit action."""
+    def __init__(self, authorizer, consumer, tenant_id, *, action, **options):
+        if action not in {'metadata_read', 'read'}:
+            raise MetadataGrantError('action_validate', 'record_action_invalid')
+        self.action = action
+        super().__init__(authorizer, consumer, tenant_id, **options)
+
+    def observe(self, target, allowed, *, phase='visibility_check'):
+        if self.action == 'metadata_read':
+            return super().observe(target, allowed, phase=phase)
+        self.phase = phase
+        result = self.consumer.request('POST', '/api/v1/system/engine-access/metadata-checks/manager-search',
+            (200,), {'targets': [target]}).payload
+        if (not isinstance(result, dict) or not result.get('observed_at')
+            or not isinstance(result.get('targets'), list) or len(result['targets']) != 1):
+            raise MetadataGrantError(phase, 'read_observation_invalid')
+        row = result['targets'][0]
+        if (not isinstance(row, dict) or row.get('target') != target or type(row.get('visible')) is not bool
+            or row.get('content_readable') is not allowed or (allowed and not row['visible'])):
+            raise MetadataGrantError(phase, 'read_observation_mismatch')
     @staticmethod
     def target(engine, namespace, name, item_term):
         if (type(engine) is not int or engine <= 0 or item_term not in {'table', 'collection'}
@@ -328,8 +347,8 @@ class ExactRecordMetadataGrants(_ExactMetadataGrantLifecycle):
         command = str(uuid.uuid4())
         body = dict(request_id=command, catalog_path=target, item_fingerprint=facts['item_fingerprint'],
             expected_boundary_hash=facts['boundary_hash'], recipient_type='user', recipient_id=self.recipient,
-            action='metadata_read', expiry_mode='until_revoked', reason='Disposable Online exact record metadata acceptance')
-        pending = dict(engine=engine, request_id=command, target=target, confirmed=False)
+            action=self.action, expiry_mode='until_revoked', reason='Disposable Online exact record access acceptance')
+        pending = dict(engine=engine, request_id=command, target=target, action=self.action, confirmed=False)
         self.pending.append(pending)
         self.checkpoint()  # Persist before POST, including an uncertain write outcome.
         receipt = self.authorizer.request('POST', f'/api/v1/system/engines/{engine}/access_grants', (201,), body).payload
