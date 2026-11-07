@@ -406,7 +406,7 @@ def run_published_portal_browser(workbench: dict, run_id: str) -> dict[str, obje
     publisher = assert_context_permissions(token, {
         "iam.department.create", "standard.domain.create",
         "catalog.entry.read", "catalog.entry.update", "catalog.inventory.read",
-        "asset.management.read", "asset.entry.read", "asset.entry.create", "asset.entry.publish",
+        "asset.management.read", "asset.entry.read", "asset.entry.update", "asset.entry.publish",
         "asset.entry.offline", "asset.entry.delete",
     })["principal"]["id"]
     if publisher == os.environ["ADDP_ONLINE_PUBLIC_MFA_PRINCIPAL_ID"]:

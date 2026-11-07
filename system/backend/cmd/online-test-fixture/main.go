@@ -832,7 +832,7 @@ func run(args []string, environment []string) error {
 				tenant.ID, administrator.PrincipalID, "external-online-public-asset-publisher", []string{
 					"iam.department.create", "standard.domain.create",
 					"catalog.entry.read", "catalog.entry.update", "catalog.inventory.read",
-					"asset.management.read", "asset.entry.read", "asset.entry.create", "asset.entry.publish",
+					"asset.management.read", "asset.entry.read", "asset.entry.update", "asset.entry.publish",
 					"asset.entry.offline", "asset.entry.delete",
 				})
 			if err != nil {
