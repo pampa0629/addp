@@ -1203,7 +1203,7 @@ test-online-runner: test-opengauss-online-runner test-execution-retention-online
 .PHONY: test-sql-pool-online-runner
 test-sql-pool-online-runner: ## 验证 PostgreSQL 与 MySQL 连接池页面验收的证据约束
 	@bash -n scripts/test/online-hosted-sql-pool-gate.sh
-	@node --check console/frontend/e2e/online/sql-pool-consumer-flow.spec.js
+	@cd console/frontend && npm exec -- playwright test e2e/online/sql-pool-consumer-flow.spec.js --config=playwright.online.config.js --list
 	@python3 -m unittest scripts/test/sql-pool-consumer-flow-online_test.py
 
 .PHONY: test-workflow-runtime-health-online-runner

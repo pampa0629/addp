@@ -1,10 +1,10 @@
 import { expect, request, test } from '@playwright/test'
 import { execFileSync } from 'node:child_process'
 import { readFileSync, writeFileSync } from 'node:fs'
-import { fileURLToPath } from 'node:url'
+import { resolve } from 'node:path'
 import { browserAPIFromResponse, identity, json, login, selectSearchResult } from './transfer-browser-support.js'
 
-const root = fileURLToPath(new URL('../../../../', import.meta.url))
+const root = resolve(process.cwd(), '../..')
 const frameOf = page => page.frameLocator('iframe[data-testid="module-iframe"]')
 const previewRoute = sample => `/manager/data-explorer?locator=${encodeURIComponent(sample.locator)}`
 const openKey = 'pool_max_open_conns'
