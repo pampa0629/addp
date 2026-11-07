@@ -141,7 +141,7 @@ Manager 源准备保持其正式授权链；本批 Transfer CDC 仅验证既有 
 | --- | --- | --- |
 | 1 | 后继 Neo4j CI 启动夹具故障 | 九阶段 T2 的42ae源码已获 Linux 实际通过；后继19e源码启动前置 exit64 由 CI 会话跟进，不计专项通过，不自动重跑 |
 | 2 | Graph 高级恢复（已暂缓） | 用户决定近期沿用 System 永久登记身份；恢复证据 Provider、可信原生绑定和正向 reopen 暂不实施，不扩大托管／权限边界，缺证据保持阻断 |
-| 3 | 其余真实故障验收 | Graph 原生写图回包丢失、两引擎生命周期（正向恢复随第2项暂缓）；Manager 索引未知效果和真正迟到 writer；Cleanup 协调／授权／真实浏览器全矩阵。runner 或 PG 通过不计已完成 T4 |
+| 3 | 其余真实故障验收 | Graph 原生写图回包丢失、两引擎生命周期（正向恢复随第2项暂缓）；Manager 真正迟到 writer；Cleanup 协调／授权／真实浏览器全矩阵。runner 或 PG 通过不计已完成 T4 |
 | 4 | Quality 新实现运行复验 | 历史 bounded-recovery 已通过；是否可复用须按本轮实际输入核对，不能直接升级为全部 Owner 的新实现证据 |
 | 5 | 旧环境一次性切换 | 研发旧记录允许清理；准确清单、引用关系、活动运行体及外部未决效果须重新盘点，实际切换与重启仍独立确认 |
 
@@ -151,7 +151,7 @@ Manager 源准备保持其正式授权链；本批 Transfer CDC 仅验证既有 
 
 用户已确认由本会话统一牵头，正式契约先提交，按 Common → Graph → Cleanup 实施；已确认细节直接推进。已批准的补充边界包括 Graph 窄 reconcile／原目标 reopen、Cleanup 安全展示、目的限定执行授权、专业结果窄读取、Meta／Manager 独立治理和显式配对、原生三身份／双入口、Engine 授权用途分离、Manager 专属 CI 基线以及 Transfer capture_cleanup 连接用途。
 
-用户于 2026-11-02 明确“后续无需单独确认”，适用于已确认范围内、相关门禁通过后的原生专项继续推进；不扩大为新的权限、概念、模块边界或共享环境切换。遇到新的边界歧义只暂停依赖该决定的工作，其余独立门禁继续。
+已确认方案内的实现和确定性门禁直接推进；每次新的 Hosted、环境切换仍须单独确认。遇到新的权限、概念、模块边界或操作范围歧义，只暂停依赖该决定的工作，其余独立门禁继续。
 
 | 负责人 | 当前职责 |
 | --- | --- |
@@ -255,9 +255,9 @@ Manager 源准备保持其正式授权链；本批 Transfer CDC 仅验证既有 
 
 ### 8.43 Manager 原生成功基线准备
 
-`manager-success` 与 `manager-object-unknown` 已验收，后续分别验证索引未知效果和旧 Runtime 迟到写入。Graph 高级恢复继续暂缓。沿原三业务 User、独立源办理员、精确权限、九项断言及独占 Hosted 部署推进。120分钟总预算、900秒业务预算、保护投影、扫描与 MinIO 就绪共用的180秒窗口不变；完整协议以 [T4 原生 Cleanup 契约](../spec/testing/T4-Online验收规范.md#原生-cleanup-的独立有限验收)为准。
+`manager-success`、`manager-object-unknown` 与 `manager-index-unknown` 已验收，后续验证旧 Runtime 迟到写入。Graph 高级恢复继续暂缓。沿原三业务 User、独立源办理员、精确权限、各 case 原有断言及独占 Hosted 部署推进。120分钟总预算、900秒业务预算、保护投影、扫描与 MinIO 就绪共用的180秒窗口不变；完整协议以 [T4 原生 Cleanup 契约](../spec/testing/T4-Online验收规范.md#原生-cleanup-的独立有限验收)为准。
 
-**最新真实结果。** 第八轮 `9f1f68d5` 于 2026-11-06 06:21:43（Asia/Shanghai）成功结束。16 个镜像、Model3D smoke 和 14 个服务准入通过。首扫后实际观察到原生对象和索引投影，Engine 删除后读回终态并确认对象与索引均已清除。九项断言全部通过，含专业回执一致、清理审计保留及源 OBJ／MTL／纹理保持不变。控制恢复、显式清理和零残留均通过。官方五件归档与作业原始日志已交叉核验。[第八轮 Hosted](https://github.com/pampa0629/addp/actions/runs/42109764720/job/127533929017)
+**成功基线通过。** 第八轮 `9f1f68d5` 于 2026-11-06 06:21:43（Asia/Shanghai）成功结束。16 个镜像、Model3D smoke 和 14 个服务准入通过。首扫后实际观察到原生对象和索引投影，Engine 删除后读回终态并确认对象与索引均已清除。九项断言全部通过，含专业回执一致、清理审计保留及源 OBJ／MTL／纹理保持不变。控制恢复、显式清理和零残留均通过。官方五件归档与作业原始日志已交叉核验。[第八轮 Hosted](https://github.com/pampa0629/addp/actions/runs/42109764720/job/127533929017)
 
 | 已落地的收口 | 验证证据及边界 |
 | --- | --- |
@@ -284,8 +284,10 @@ Manager 源准备保持其正式授权链；本批 Transfer CDC 仅验证既有 
 
 **索引未知诊断轮。** `69ecb66c` 于 2026-11-07 20:05:34（Asia/Shanghai）失败，正式记录仍为 5/11。首个失败探针为 `manager_unknown_index_hold`：准确代理绑定成立、仅转发一次且已有上游响应，索引目标为一条，投递 unknown 计数为零；Manager 子项在 `manager_cleanup_index_effect` 失败，Transfer 成功，Engine 保持 deleting。控制恢复、清理和零残留均通过。[诊断轮 Hosted](https://github.com/pampa0629/addp/actions/runs/42364486834/job/128379566458)
 
-现行只读关联回执恢复允许投递离开 unknown，但不能结束原 Cleanup 或解除 hold。专项原先依赖瞬时状态，无法正确核验该合法恢复。修正只读取原快照中的精确 Tenant＋Engine／物理索引、原 execution／attempt、端点及代次一致的 prepared 操作、唯一删除投递、目标与隔离出口；拒绝前后排除瞬时 unknown 计数，其余事实仍完整比较。失败诊断仅增加该绑定 hold 的安全计数分类，不增加读取、重试、权限或等待预算，原 11 项验收目标保留。该轮未归档恢复后的具体投递状态，不能声称已证明 Hosted 中实际恢复为 succeeded。 本地标准 Manager Go T1、完整 PostgreSQL T2（含原回执恢复、不重发与 hold 保留）和 Execution runner 406 项已通过；原生 11 项完整链路尚待新的 Hosted 复验。
+现行只读关联回执恢复允许投递离开 unknown，但不能结束原 Cleanup 或解除 hold。专项原先依赖瞬时状态，无法正确核验该合法恢复。修正只读取原快照中的精确 Tenant＋Engine／物理索引、原 execution／attempt、端点及代次一致的 prepared 操作、唯一删除投递、目标与隔离出口；拒绝前后排除瞬时 unknown 计数，其余事实仍完整比较。失败诊断仅增加该绑定 hold 的安全计数分类，不增加读取、重试、权限或等待预算，原 11 项验收目标保留。该轮未归档恢复后的具体投递状态，不能声称已证明 Hosted 中实际恢复为 succeeded。 本地标准 Manager Go T1、完整 PostgreSQL T2（含原回执恢复、不重发与 hold 保留）和 Execution runner 406 项已通过。
 
 修正 `baa0965d4` 的同提交 Linux [Execution runner](https://github.com/pampa0629/addp/actions/runs/42371923824/job/128401640079) 实际通过 406 项；[Manager PostgreSQL T2](https://github.com/pampa0629/addp/actions/runs/42371923680/job/128401773028) 通过完整门禁，包含原回执恢复用例及数据库资源零残留。[Go 工作区](https://github.com/pampa0629/addp/actions/runs/42371923824/job/128401640127) 中 Manager 的 15 个有测试包通过，9 包无测试；该作业整体因 Ontology 的 Transfer 文档来源校验失败，不能记为全仓通过。[平台一致性](https://github.com/pampa0629/addp/actions/runs/42371923824/job/128401640129) 在 SQL pool 的 Node 前置检查失败，尚未进入平台检查主体；两项范围外失败未扩展修复。
 
-**剩余工作。** 分别验证索引未知效果和旧 Runtime 迟到写入。新的 Hosted 须单独确认。正向和对象未知通过证据分别位于 `/tmp/addp-manager-success-hosted-eighth-20261106/` 与 `/tmp/addp-manager-object-unknown-hosted-third-20261106/`。
+**索引未知复验通过。** `ba3406a40` 于 2026-11-07 22:36:36（Asia/Shanghai）成功结束，11 项断言全部通过。原生对象和索引实际清除；删除请求仅转发一次且回包丢失，绑定原操作的持久隔离保留，Engine 保持 deleting，重复删除及新生成被拒绝，源 OBJ／MTL／纹理未变。控制恢复、清理和零残留均通过。五份官方归档与 14 个服务源码／实例绑定已交叉核验；本轮仅触发一次、attempt=1，身份权限、范围及预算保持原契约。[通过的 Hosted 作业](https://github.com/pampa0629/addp/actions/runs/42375229408/job/128411336585)
+
+**剩余工作。** 验证旧 Runtime 迟到写入。新的 Hosted 须单独确认。正向和对象未知通过证据分别位于 `/tmp/addp-manager-success-hosted-eighth-20261106/` 与 `/tmp/addp-manager-object-unknown-hosted-third-20261106/`。
