@@ -196,3 +196,14 @@ type ConfigurationManagementEntryView struct {
 	ModuleStatus string `json:"module_status"`
 	Available    bool   `json:"available"`
 }
+
+// ModuleStartupFailure is a safe deployment observation, independent of instance status.
+type ModuleStartupFailure struct {
+	ModuleName string    `json:"module_name"`
+	FailedAt   time.Time `json:"failed_at"`
+	Reason     string    `json:"reason" enums:"build_failed,process_exited,readiness_timeout"`
+}
+
+type ModuleStartupFailuresResponse struct {
+	Data []ModuleStartupFailure `json:"data"`
+}

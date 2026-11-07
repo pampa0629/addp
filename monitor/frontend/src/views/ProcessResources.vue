@@ -7,6 +7,13 @@
     </div>
     <el-alert v-if="!canRead" :title="t('monitor.process.denied')" type="warning" :closable="false" />
     <template v-else>
+      <el-alert v-if="startupFailures.length" :title="t('monitor.process.startupFailures.title')" type="warning" :closable="false" data-testid="process-startup-failures">
+        <ul>
+          <li v-for="failure in startupFailures" :key="failure.module_name">
+            {{ failure.module_name }} · {{ t(`monitor.process.startupFailures.${failure.reason}`) }} · {{ date(failure.failed_at) }}
+          </li>
+        </ul>
+      </el-alert>
       <form class="process-filters" @submit.prevent="filter">
         <el-input v-model="moduleName" :placeholder="t('monitor.process.moduleFilter')" :aria-label="t('monitor.process.moduleFilter')" clearable @input="queueFilter" @keydown.enter="filterInput.enter" @clear="filter" />
         <div class="endpoint-filter">
@@ -126,7 +133,7 @@ const canReadHost = computed(() => canRead.value && auth.hasPermission('platform
 const identity = computed(() => JSON.stringify([auth.authContext?.principal, auth.authContext?.context, auth.authContext?.delegation, auth.permissions]))
 const state = computed(() => resolveProcessRoute(route.query))
 const instances = ref([]), summaries = ref(new Map()), total = ref(0), loading = ref(false), errorKey = ref(''), summaryErrorKey = ref('')
-const hostReferences = ref({})
+const hostReferences = ref({}), startupFailures = ref([])
 const stopReason = ref('')
 const timeBasis = ref('registered'), period = ref('all'), customRange = ref(null)
 const validTimeDraft = computed(() => period.value !== 'custom' || validRuntimeInstanceRange(customRange.value))
@@ -245,6 +252,7 @@ async function reload({ automatic = false } = {}) {
   const context = JSON.stringify([{ ...state.value.query, refresh: undefined }, identity.value])
   if (context !== dataContext) {
     dataContext = context
+    startupFailures.value = []
     instances.value = []; summaries.value = new Map(); hostReferences.value = {}; total.value = 0; trend.value = null; comparisons.value = null; container.value = null
   }
   if (!automatic) refreshBlocked.value = false
@@ -258,6 +266,7 @@ async function reload({ automatic = false } = {}) {
     const list = await requests.request(config => api.instances(listParams, config))
     if (!requests.current(ticket)) return
     validateProcessInstances(list, state.value.page, listParams)
+    void loadStartupFailures(ticket)
     if (!instances.value.length) { instances.value = list.data; total.value = list.total }
     let currentSummaries = new Map(), currentTrend = null, currentComparisons = null
     if (list.data.length) {
@@ -308,8 +317,16 @@ async function reload({ automatic = false } = {}) {
     errorKey.value = processErrorKey(error)
     if ([401, 403, 404].includes(error.response?.status)) refreshBlocked.value = true
     trend.value = null; comparisons.value = null; trendErrorKey.value = errorKey.value
+    startupFailures.value = []
     instances.value = []; summaries.value = new Map(); hostReferences.value = {}; total.value = 0
   } finally { if (requests.current(ticket)) { loading.value = false; refreshCycle.schedule() } }
+}
+async function loadStartupFailures(ticket) {
+  const result = await requests.request(config => api.startupFailures(config)).catch(() => null)
+  if (!requests.current(ticket) || errorKey.value) return
+  startupFailures.value = Array.isArray(result?.data) ? result.data.filter(row =>
+    typeof row?.module_name === 'string' && ['build_failed', 'process_exited', 'readiness_timeout'].includes(row.reason) &&
+    typeof row.failed_at === 'string' && Number.isFinite(Date.parse(row.failed_at))) : []
 }
 watch([() => JSON.stringify({ ...state.value.query, refresh: undefined }), identity], () => { trendZoom.value = {} }, { flush: 'sync' })
 watch([errorKey, trendErrorKey], ([error, trendError]) => { if (error || trendError) trendZoom.value = {} }, { flush: 'sync' })

@@ -85,5 +85,5 @@ addp_dev_publish_service_expectations() (
     while IFS= read -r unit; do selected+=("$unit"); done <<< "$units"
   done
   [ "${#selected[@]}" -gt 0 ] || return 0
-  python3 "$ROOT_DIR/scripts/utils/deployment-inventory.py" service-expectations --state running --units "${selected[@]}"
+  python3 "$ROOT_DIR/scripts/utils/deployment-inventory.py" service-expectations --state running "$@" --units "${selected[@]}"
 )

@@ -892,6 +892,12 @@
       }
     },
     "process": {
+      "startupFailures": {
+        "title": "启动失败",
+        "build_failed": "构建失败",
+        "process_exited": "启动进程退出",
+        "readiness_timeout": "等待就绪超时"
+      },
       "title": "服务监控",
       "moduleFilter": "模块名称（精确匹配）",
       "hostNameFilter": "宿主名或运行环境名",

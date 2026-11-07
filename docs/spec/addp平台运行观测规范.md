@@ -263,6 +263,12 @@ System 在唯一 `/runtime/observability-identities` 中只读提供 `service_gr
 
 首次运行确认、连续窗口与告警规则管理权限统一见 [7.1.1](#711-服务组失联规则)；部署声明和组计数只提供事实，失联／恢复仍由 Monitor 按该规则判定，不能把文件发布或零在线直接当作告警验收。
 
+#### 开发 Backend 启动失败
+
+标准开发入口在成功发布运行预期后，为所选 Go Backend 开始本次尝试。受管目录中的 `service-startup-results.json` 使用 `addp.service-startup-results/v1`，以同一 `deployment_id` 和模块定位最近尝试，保留尝试标识、开始时间及可选失败时间和固定原因 `build_failed`、`process_exited`、`readiness_timeout`。选择性重试只替换所选模块，旧尝试不得写入新尝试。只记录实际执行到的检查，进程退出优先于同次就绪超时；不公开原始错误、命令、路径、PID 或凭据。无明确结果、未执行、探测暂停或文档无法核验不产生失败。生产、Worker、Agent 和 Copilot 另行接入。
+
+System 按同一部署和当前 Backend 运行预期核验，并剔除计划停用、已被有效在线实例或失败后登记覆盖的记录。标准生产入口使用同一发现目录时清除开发结果，不把它作为生产部署的结果。只读 `GET /api/v1/system/platform/module_startup_failures` 复用一方平台用户和 `platform.module.read`，返回模块、失败时刻及固定原因。服务监控在原权限下独立展示，不插入实例列表或影响其分页。本投影不进入失联告警、租约或就绪判定。控制面未就绪时由启动终端提供诊断。
+
 ## 五、技术路线与故障隔离
 
 ### 5.1 唯一数据路径

@@ -587,6 +587,9 @@ def publish_platform_service_expectations(directory, compose_files):
     groups = service_groups_from_compose(document, profiles)
     directory = Path(directory)
     private_directory(directory)
+    # Production may reuse the same discovery directory as native development.
+    if os.path.lexists(directory / STARTUP_RESULTS):
+        publish_startup_result(directory, clear=True)
     overlay = {'services': {'system-backend': {
         'environment': {'ADDP_DEPLOYMENT_DISCOVERY_DIR': '/etc/addp/deployment-discovery'},
         'volumes': [{'type': 'bind', 'source': str(directory), 'target': '/etc/addp/deployment-discovery',
@@ -602,6 +605,50 @@ def unique_service_intent_object(pairs):
             raise InventoryError('服务部署意图字段重复')
         result[key] = value
     return result
+
+
+STARTUP_REASONS = ('build_failed', 'readiness_timeout', 'process_exited')
+STARTUP_RESULTS = 'service-startup-results.json'
+STARTUP_SCHEMA = 'addp.service-startup-results/v1'
+
+
+def publish_startup_result(directory, *, modules=(), attempt='', module='', reason='', clear=False):
+    directory = Path(directory)
+    private_directory(directory)
+    owner = hashlib.sha256(str(REPOSITORY).encode()).hexdigest()
+    with private_lock(directory, 'service-startup-results.lock'):
+        document = read_private_document(directory, STARTUP_RESULTS, DISCOVERY_LIMIT)
+        if document is None:
+            if clear:
+                return None
+            document = {'schema': STARTUP_SCHEMA, 'deployment_id': owner, 'modules': {}}
+        if (not isinstance(document, dict) or set(document) != {'schema', 'deployment_id', 'modules'}
+                or document['schema'] != STARTUP_SCHEMA or document['deployment_id'] != owner
+                or not isinstance(document['modules'], dict)):
+            raise InventoryError('服务启动结果文件不属于当前工作区')
+        rows = document['modules']
+        now = service_intent_time()
+        if clear:
+            rows.clear()
+        elif modules:
+            attempt = uuid.uuid4().hex
+            for name in modules:
+                if not service_intent_name(name) or (name in rows and now <= rows[name]['started_at']):
+                    raise InventoryError('服务启动结果的模块或时间无效')
+                rows[name] = {'attempt': attempt, 'started_at': now}
+        else:
+            row = rows.get(module)
+            if not row or row['attempt'] != attempt:
+                return None
+            if reason not in STARTUP_REASONS or now < row['started_at']:
+                raise InventoryError('服务启动结果的原因或时间无效')
+            if 'reason' in row and (row['reason'] != 'readiness_timeout' or reason != 'process_exited'):
+                return None
+            row.update(reason=reason, failed_at=now)
+        if len(rows) > 1000 or len(json.dumps(document).encode()) > DISCOVERY_LIMIT:
+            raise InventoryError('服务启动结果超过预算')
+        write_document(directory, STARTUP_RESULTS, document)
+        return attempt
 
 
 def service_intent_name(value):
@@ -692,16 +739,19 @@ def publish_container_proofs(directory):
         write_document(directory, 'container-proofs.json', value)
 
 
-def read_private_document(directory, name):
+def read_private_document(directory, name, limit=4096):
     try:
         fd = os.open(directory / name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
     except FileNotFoundError:
         return None
     with os.fdopen(fd, 'r', encoding='utf-8') as source:
         info = os.fstat(source.fileno())
-        if not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid() or info.st_mode & 0o077 or info.st_size > 4096:
+        if not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid() or info.st_mode & 0o077 or info.st_size > limit or info.st_nlink != 1:
             raise InventoryError('部署发现运行记录权限或大小无效')
-        return json.loads(source.read(4097))
+        raw = source.read(limit + 1)
+        if len(raw.encode()) > limit:
+            raise InventoryError('部署发现运行记录超过预算')
+        return json.loads(raw, object_pairs_hook=unique_service_intent_object)
 
 
 def observer_record(directory):
@@ -964,10 +1014,16 @@ def main():
     intents.add_argument('--state', required=True, choices=('running', 'planned_stopped'))
     intents.add_argument('--modules', nargs='+')
     intents.add_argument('--all', action='store_true')
+    intents.add_argument('--observe-startup', action='store_true')
     source = intents.add_mutually_exclusive_group()
     source.add_argument('--units', nargs='+')
     source.add_argument('--compose-file', action='append')
     intents.add_argument('--directory', default=os.environ.get('ADDP_DEPLOYMENT_DISCOVERY_DIR') or str(REPOSITORY / '.dev-state/deployment-discovery'))
+    result = commands.add_parser('backend-startup-failure', help='记录本次开发 Backend 的固定失败结果')
+    result.add_argument('--attempt', required=True)
+    result.add_argument('--module', required=True)
+    result.add_argument('--reason', required=True, choices=STARTUP_REASONS)
+    result.add_argument('--directory', default=intents.get_default('directory'))
     for name in ('start', 'stop', 'watch'):
         command = commands.add_parser(name, help='部署发现观测进程的标准生命周期')
         command.add_argument('--directory', default=os.environ.get('ADDP_DEPLOYMENT_DISCOVERY_DIR') or str(REPOSITORY / '.dev-state/deployment-discovery'))
@@ -975,12 +1031,23 @@ def main():
             command.add_argument('--observer-token', required=True)
     args = parser.parse_args()
     try:
+        if args.command == 'backend-startup-failure':
+            publish_startup_result(args.directory, attempt=args.attempt, module=args.module, reason=args.reason)
+            return 0
         if args.command == 'service-expectations':
+            if args.observe_startup and (args.state != 'running' or not args.units):
+                raise InventoryError('服务启动结果只接受标准开发启动单元')
             if args.state == 'running':
                 if args.modules or args.all:
                     raise InventoryError('服务启动声明不接受停止范围')
                 if args.units:
-                    service_expectations(args.directory, service_groups_from_units(args.units))
+                    groups = service_groups_from_units(args.units)
+                    service_expectations(args.directory, groups)
+                    if args.observe_startup:
+                        modules = [group['module_name'] for group in groups if group['role'] == 'backend'
+                                   and group['module_name'] not in ('agent', 'copilot')]
+                        if modules:
+                            print(publish_startup_result(args.directory, modules=modules))
                     return 0
                 if args.compose_file:
                     publish_platform_service_expectations(args.directory, args.compose_file)

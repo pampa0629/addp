@@ -258,6 +258,28 @@ func (h *ModuleRegistryHandler) ListModulesPlatform(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"modules": modules, "count": len(modules)})
 }
 
+// ListModuleStartupFailuresPlatform godoc
+// @Summary      查询开发后端启动失败 | List development backend startup failures
+// @Description  只返回当前部署已证实的后端启动失败，不改变实例状态 | Returns confirmed startup failures in the current deployment without changing instance status
+// @Tags         平台模块管理 | Platform Module Management
+// @Produce      json
+// @Security     BearerAuth
+// @Success      200 {object} models.ModuleStartupFailuresResponse
+// @Failure      401 {object} models.ErrorResponse
+// @Failure      403 {object} models.ErrorResponse
+// @Failure      500 {object} models.ErrorResponse
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["platform.module.read"]
+// @Router       /platform/module_startup_failures [get]
+func (h *ModuleRegistryHandler) ListModuleStartupFailuresPlatform(c *gin.Context) {
+	failures, err := h.service.ListModuleStartupFailures(c.Request.Context())
+	if err != nil {
+		commonapi.RespondError(c, http.StatusInternalServerError, commoni18n.T(c, sysi18n.MsgInternalError))
+		return
+	}
+	c.JSON(http.StatusOK, models.ModuleStartupFailuresResponse{Data: failures})
+}
+
 // GetModulePlatform godoc
 // @Summary      查询平台模块详情 | Get platform module details
 // @Tags         平台模块管理 | Platform Module Management

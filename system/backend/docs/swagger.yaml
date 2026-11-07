@@ -3165,6 +3165,26 @@ definitions:
       updated_at:
         type: string
     type: object
+  github_com_addp_system_internal_models.ModuleStartupFailure:
+    properties:
+      failed_at:
+        type: string
+      module_name:
+        type: string
+      reason:
+        enum:
+        - build_failed
+        - process_exited
+        - readiness_timeout
+        type: string
+    type: object
+  github_com_addp_system_internal_models.ModuleStartupFailuresResponse:
+    properties:
+      data:
+        items:
+          $ref: '#/definitions/github_com_addp_system_internal_models.ModuleStartupFailure'
+        type: array
+    type: object
   github_com_addp_system_internal_models.RasterPolicyView:
     properties:
       effective_running:
@@ -11717,6 +11737,37 @@ paths:
       x-addp-auth-mode: permission
       x-addp-required-permissions:
       - platform.module_log.read
+  /platform/module_startup_failures:
+    get:
+      description: 只返回当前部署已证实的后端启动失败，不改变实例状态 | Returns confirmed startup failures
+        in the current deployment without changing instance status
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ModuleStartupFailuresResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 查询开发后端启动失败 | List development backend startup failures
+      tags:
+      - 平台模块管理 | Platform Module Management
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - platform.module.read
   /platform/modules:
     get:
       description: 平台系统管理员读取持久模块定义及 Backend、Worker、Scheduler 当前租约投影 | A platform system

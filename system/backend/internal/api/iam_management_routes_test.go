@@ -44,6 +44,7 @@ func TestRegisterIAMManagementRoutes(t *testing.T) {
 		"GET /api/v1/system/platform/modules/:module_name/instances/:instance_id/logs",
 		"GET /api/v1/system/platform/module-instances",
 		"GET /api/v1/system/platform/module-log-sources",
+		"GET /api/v1/system/platform/module_startup_failures",
 		"GET /api/v1/system/platform/security_policy",
 		"GET /api/v1/system/platform/tenant_administrator_candidates",
 		"GET /api/v1/system/platform/tenants",

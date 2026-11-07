@@ -731,6 +731,21 @@ build_if_service_stopped() {
     fi
 }
 
+report_backend_startup_failure() {
+  [ -n "${BACKEND_STARTUP_ATTEMPT:-}" ] || return 0
+  python3 "$ROOT_DIR/scripts/utils/deployment-inventory.py" backend-startup-failure \
+    --attempt "$BACKEND_STARTUP_ATTEMPT" --module "$1" --reason "$2" ||
+    echo 'Service startup result unavailable; original startup outcome preserved' >&2
+}
+
+report_backend_readiness_failure() {
+  if [ -n "$2" ] && ! kill -0 "$2" 2>/dev/null; then
+    report_backend_startup_failure "$1" process_exited
+  else
+    report_backend_startup_failure "$1" readiness_timeout
+  fi
+}
+
 # 编译 Server 二进制
 # 参数: $1=服务名称 $2=源码路径
 build_service() {
@@ -757,6 +772,7 @@ build_service() {
     echo "  🔨 编译 ${binary_name}..."
 
     addp_atomic_go_build "$name" "$src_dir" "$binary_path" "${build_args[@]}" || {
+        report_backend_startup_failure "$name" build_failed
         echo "  ✗ 编译失败: ${name}"
         return 1
     }
@@ -1013,7 +1029,10 @@ fi
 
 # Refresh deployment-side facts even when healthy Infra was reused above.
 export ADDP_DEPLOYMENT_DISCOVERY_DIR="${ADDP_DEPLOYMENT_DISCOVERY_DIR:-${ROOT_DIR}/.dev-state/deployment-discovery}"
-addp_dev_publish_service_expectations || echo 'Service expectations unavailable; business startup continues' >&2
+BACKEND_STARTUP_ATTEMPT=''
+if ! BACKEND_STARTUP_ATTEMPT=$(addp_dev_publish_service_expectations --observe-startup); then
+  echo 'Service expectations or startup results unavailable; business startup continues' >&2
+fi
 python3 "$ROOT_DIR/scripts/utils/deployment-inventory.py" start || echo 'Deployment discovery unavailable; business startup continues' >&2
 for deployment_scope in infra business; do
   python3 "$ROOT_DIR/scripts/utils/deployment-inventory.py" refresh --scope "$deployment_scope" || echo "Deployment discovery unavailable: $deployment_scope; business startup continues" >&2
@@ -1042,6 +1061,7 @@ if [ "$START_SYSTEM_BACKEND" = true ]; then
       sleep 1
       WAIT_COUNT=$((WAIT_COUNT + 1))
       if [ $WAIT_COUNT -ge $MAX_WAIT ]; then
+        report_backend_readiness_failure system "${SYSTEM_PID:-}"
         echo -e "${RED}✗ System Backend 启动超时${NC}"
         echo "查看日志: tail -f logs/runtime/system/*/*.jsonl"
         exit 1
@@ -1269,7 +1289,10 @@ require_started_backends() {
   if [ "${#BACKEND_STARTS[@]}" -gt 0 ]; then
     for started_backend in "${BACKEND_STARTS[@]}"; do
       IFS=':' read -r name pid <<< "$started_backend"
-      require_started_process "$name" "$pid" || return 1
+      require_started_process "$name" "$pid" || {
+        report_backend_startup_failure "$name" process_exited
+        return 1
+      }
     done
   fi
 }
@@ -1556,6 +1579,7 @@ if [ "$START_MANAGER_BACKEND" = true ] || [ "$START_META_BACKEND" = true ] || [ 
         sleep 1
         WAIT_COUNT=$((WAIT_COUNT + 1))
         if [ $WAIT_COUNT -ge $MAX_WAIT ]; then
+          [ "$WAIT_LIVE" = true ] || report_backend_readiness_failure manager "${MANAGER_PID:-}"
           echo -e "${RED}✗ Manager Backend 启动超时${NC}"
           echo "查看日志: tail -f logs/runtime/manager/*/*.jsonl"
           exit 1
@@ -1573,6 +1597,7 @@ if [ "$START_MANAGER_BACKEND" = true ] || [ "$START_META_BACKEND" = true ] || [ 
         sleep 1
         WAIT_COUNT=$((WAIT_COUNT + 1))
         if [ $WAIT_COUNT -ge $MAX_WAIT ]; then
+          report_backend_readiness_failure meta "${META_PID:-}"
           echo -e "${RED}✗ Meta Backend 启动超时${NC}"
           echo "查看日志: tail -f logs/runtime/meta/*/*.jsonl"
           exit 1
@@ -1590,6 +1615,7 @@ if [ "$START_MANAGER_BACKEND" = true ] || [ "$START_META_BACKEND" = true ] || [ 
         sleep 1
         WAIT_COUNT=$((WAIT_COUNT + 1))
         if [ $WAIT_COUNT -ge $MAX_WAIT ]; then
+          report_backend_readiness_failure transfer "${TRANSFER_PID:-}"
           echo -e "${RED}✗ Transfer Backend 启动超时${NC}"
           echo "查看日志: tail -f logs/runtime/transfer/*/*.jsonl"
           exit 1
@@ -1607,6 +1633,7 @@ if [ "$START_MANAGER_BACKEND" = true ] || [ "$START_META_BACKEND" = true ] || [ 
         sleep 1
         WAIT_COUNT=$((WAIT_COUNT + 1))
         if [ $WAIT_COUNT -ge $MAX_WAIT ]; then
+          report_backend_readiness_failure orchestrator "${ORCHESTRATOR_PID:-}"
           echo -e "${RED}✗ Orchestrator Backend 启动超时${NC}"
           echo "查看日志: tail -f logs/runtime/orchestrator/*/*.jsonl"
           exit 1
@@ -1624,6 +1651,7 @@ if [ "$START_MANAGER_BACKEND" = true ] || [ "$START_META_BACKEND" = true ] || [ 
         sleep 1
         WAIT_COUNT=$((WAIT_COUNT + 1))
         if [ $WAIT_COUNT -ge $MAX_WAIT ]; then
+          report_backend_readiness_failure develop "${DEVELOP_PID:-}"
           echo -e "${RED}✗ Develop Backend 启动超时${NC}"
           echo "查看日志: tail -f logs/runtime/develop/*/*.jsonl"
           exit 1
@@ -1641,6 +1669,7 @@ if [ "$START_MANAGER_BACKEND" = true ] || [ "$START_META_BACKEND" = true ] || [ 
         sleep 1
         WAIT_COUNT=$((WAIT_COUNT + 1))
         if [ $WAIT_COUNT -ge $MAX_WAIT ]; then
+          report_backend_readiness_failure service "${SERVICE_PID:-}"
           echo -e "${RED}✗ Service Backend 启动超时${NC}"
           echo "查看日志: tail -f logs/runtime/service/*/*.jsonl"
           exit 1
@@ -1657,6 +1686,7 @@ if [ "$START_MANAGER_BACKEND" = true ] || [ "$START_META_BACKEND" = true ] || [ 
         sleep 1
         WAIT_COUNT=$((WAIT_COUNT + 1))
         if [ $WAIT_COUNT -ge $MAX_WAIT ]; then
+          report_backend_readiness_failure inference "${INFERENCE_PID:-}"
           echo -e "${RED}✗ Inference Backend 启动超时${NC}"
           echo "查看日志: tail -f logs/runtime/inference/*/*.jsonl"
           exit 1
@@ -1673,6 +1703,7 @@ if [ "$START_MANAGER_BACKEND" = true ] || [ "$START_META_BACKEND" = true ] || [ 
         sleep 1
         WAIT_COUNT=$((WAIT_COUNT + 1))
         if [ $WAIT_COUNT -ge $MAX_WAIT ]; then
+          report_backend_readiness_failure catalog "${CATALOG_PID:-}"
           echo -e "${RED}✗ Catalog Backend 启动超时${NC}"
           echo "查看日志: tail -f logs/runtime/catalog/*/*.jsonl"
           exit 1
@@ -1689,6 +1720,7 @@ if [ "$START_MANAGER_BACKEND" = true ] || [ "$START_META_BACKEND" = true ] || [ 
         sleep 1
         WAIT_COUNT=$((WAIT_COUNT + 1))
         if [ $WAIT_COUNT -ge $MAX_WAIT ]; then
+          report_backend_readiness_failure workbench "${WORKBENCH_PID:-}"
           echo -e "${RED}✗ Workbench Backend 启动超时${NC}"
           echo "查看日志: tail -f logs/runtime/workbench/*/*.jsonl"
           exit 1
@@ -1706,6 +1738,7 @@ if [ "$START_MANAGER_BACKEND" = true ] || [ "$START_META_BACKEND" = true ] || [ 
         sleep 1
         WAIT_COUNT=$((WAIT_COUNT + 1))
         if [ $WAIT_COUNT -ge $MAX_WAIT ]; then
+          report_backend_readiness_failure ontology "${ONTOLOGY_PID:-}"
           echo "Ontology Backend 启动超时；查看 logs/runtime/ontology/*/*.jsonl" >&2
           exit 1
         fi

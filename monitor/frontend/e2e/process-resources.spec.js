@@ -7,6 +7,28 @@ const boundHostID = '10000000-0000-4000-8000-000000000001'
 const boundInstances = () => [{ id: 1, node_id: boundHostID, host_node_name: 'old-deployment-alias' }, { id: 2, node_id: boundHostID, host_node_name: 'old-deployment-alias' }, { id: 3, node_id: '', host_node_name: 'Current managed host' }]
 const hostPermissions = [...processPermissions, 'platform.host_node.read']
 
+test('a confirmed backend startup failure is visible without a registered instance and clears on refresh', async ({ page }) => {
+  const startupFailures = [{ module_name: 'transfer', failed_at: '2026-10-10T00:00:00Z', reason: 'readiness_timeout' }]
+  await backend(page, { instances: [], startupFailures })
+  await page.goto('/service-resources?refresh=off')
+  const failure = page.getByTestId('process-startup-failures')
+  await expect(failure).toContainText('transfer')
+  await expect(failure).toContainText('等待就绪超时')
+  startupFailures.pop()
+  await page.getByRole('button', { name: '刷新', exact: true }).click()
+  await expect(failure).toHaveCount(0)
+})
+
+test('without System module read permission the service page never requests startup failures', async ({ page }) => {
+  const reads = []
+  page.on('request', request => { if (request.url().endsWith('/platform/module_startup_failures')) reads.push(request.url()) })
+  await backend(page, { identity: identity(['monitor.resource_observation.read']) })
+  await page.goto('/service-resources?refresh=off')
+  await expect(page.getByText('无权访问此页面', { exact: true })).toBeVisible()
+  await expect(page.getByTestId('process-startup-failures')).toHaveCount(0)
+  expect(reads).toEqual([])
+})
+
 for (const locale of ['zh-cn', 'en']) test(`service endpoints show registered addresses and never infer a Worker listener (${locale})`, async ({ page }, testInfo) => {
   await backend(page, { locale, instances: [
     { id: 1, role: 'backend', module_url: 'http://service.internal:8180/api?private=value#fragment' },

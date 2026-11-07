@@ -19,6 +19,50 @@ SPEC.loader.exec_module(inventory)
 CID = 'a' * 64
 
 
+class StartupResultsTest(unittest.TestCase):
+    def test_standard_deployment_entry_only_selects_native_backends(self):
+        with tempfile.TemporaryDirectory() as directory:
+            script = [sys.executable, str(ROOT / 'scripts/utils/deployment-inventory.py')]
+            result = subprocess.run(script + ['service-expectations', '--state', 'running', '--observe-startup',
+                                              '--units', 'meta-backend', 'agent-backend', 'meta-worker-1',
+                                              '--directory', directory], check=True, text=True, capture_output=True)
+            attempt = result.stdout.strip()
+            self.assertRegex(attempt, r'^[0-9a-f]{32}$')
+            start = (ROOT / 'scripts/dev/start.sh').read_text()
+            checks = start[start.index('report_backend_startup_failure()'):start.index('# 编译 Worker 二进制')]
+            result = subprocess.run(['bash', '-ec', checks + """
+addp_go_build_is_current() { return 1; }
+addp_atomic_go_build() { return 1; }
+build_service meta meta/backend
+"""], env=dict(os.environ, ROOT_DIR=str(ROOT), BACKEND_STARTUP_ATTEMPT=attempt,
+               ADDP_DEPLOYMENT_DISCOVERY_DIR=directory), capture_output=True, text=True)
+            self.assertEqual(result.returncode, 1)
+            self.assertIn('编译失败: meta', result.stdout)
+            document = json.loads((Path(directory) / inventory.STARTUP_RESULTS).read_text())
+            self.assertEqual(set(document['modules']), {'meta'})
+            self.assertEqual(document['modules']['meta']['reason'], 'build_failed')
+
+    def test_local_retry_fences_previous_failure_and_preserves_other_modules(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / inventory.STARTUP_RESULTS
+            first = inventory.publish_startup_result(directory, modules=['meta', 'transfer'])
+            for module in ('meta', 'transfer'):
+                inventory.publish_startup_result(directory, attempt=first, module=module, reason='readiness_timeout')
+            inventory.publish_startup_result(directory, attempt=first, module='transfer', reason='process_exited')
+            second = inventory.publish_startup_result(directory, modules=['meta'])
+            self.assertNotEqual(first, second)
+            inventory.publish_startup_result(directory, attempt=first, module='meta', reason='build_failed')
+            inventory.publish_startup_result(directory, attempt=second, module='quality', reason='build_failed')
+            rows = json.loads(path.read_text())['modules']
+            self.assertEqual(set(rows['meta']), {'attempt', 'started_at'})
+            self.assertEqual(rows['transfer']['reason'], 'process_exited')
+            self.assertNotIn('quality', rows)
+            self.assertEqual(path.stat().st_mode & 0o777, 0o600)
+            inventory.publish_startup_result(directory, clear=True)
+            inventory.publish_startup_result(directory, attempt=first, module='transfer', reason='process_exited')
+            self.assertEqual(json.loads(path.read_text())['modules'], {})
+
+
 class Source:
     def __init__(self):
         self.info = {'id': 'daemon-identity', 'os_type': 'linux', 'operating_system': 'Docker Desktop'}
