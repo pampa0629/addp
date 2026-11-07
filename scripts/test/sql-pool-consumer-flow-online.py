@@ -208,7 +208,9 @@ def observe(engine, run_id):
     require(owned == run_id, "SQL pool observer requires the owned fixture")
     if engine == "postgresql":
         result = docker("logs", container(engine))
-        statements = pg_statement_ids(result.stdout + "\n" + result.stderr)
+        native_log = result.stdout + "\n" + result.stderr
+        statements = pg_statement_ids(native_log)
+        reader_ids = sorted({int(match[1]) for match in re.finditer(r"(?m)^pid=(\d+) user=pool_reader\b", native_log)})
         active = sql(engine, f"SELECT pid FROM pg_stat_activity WHERE usename='{READER}';").stdout
     else:
         logged = sql(engine, f"""SELECT DISTINCT thread_id FROM mysql.general_log
@@ -217,7 +219,13 @@ def observe(engine, run_id):
             AND LOWER(argument) REGEXP '[[:space:]]from[[:space:]]+(`?{DATABASE}`?[.])?`?{TABLE}`?([^a-z_0-9]|$)';""").stdout
         statements = sorted(int(value) for value in logged.split())
         active = sql(engine, f"SELECT ID FROM information_schema.PROCESSLIST WHERE USER='{READER}';").stdout
-    return {"statement_ids": statements, "active_ids": sorted(int(value) for value in active.split())}
+        reader_ids = statements
+    observation = {"statement_ids": statements, "active_ids": sorted(int(value) for value in active.split()),
+                   "reader_ids": reader_ids}
+    artifact = Path(SUPPORT.required_environment("ADDP_ONLINE_ARTIFACT_DIR")) / "sql-pool-observations.jsonl"
+    with artifact.open("a") as stream:
+        stream.write(json.dumps({"run_id": run_id, "engine": engine, **observation}) + "\n")
+    return observation
 
 
 def validate_browser(evidence, expected):

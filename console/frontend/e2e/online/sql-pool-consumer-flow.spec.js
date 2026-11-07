@@ -128,7 +128,7 @@ async function savePool(page, sample, operator) {
 function baseline(engine, start) {
   const state = observe(engine)
   const ids = state.statement_ids.filter(id => !start.statement_ids.includes(id))
-  expect(ids.some(id => state.active_ids.includes(id))).toBe(true)
+  expect(ids.some(id => state.active_ids.includes(id)), JSON.stringify({ engine, start, state })).toBe(true)
   return { state, ids: ids.filter(id => state.active_ids.includes(id)) }
 }
 
