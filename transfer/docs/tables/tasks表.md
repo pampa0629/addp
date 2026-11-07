@@ -136,10 +136,10 @@ Console 与 Transfer 页面使用 `/task-definitions`。每次请求独立校验
 | `POST` | `/task-definitions/:id/start` | `execute` | bounded 创建 execution 并入队；continuous 原子设置 running 并创建 pending execution。 |
 | `POST` | `/task-definitions/:id/replay` | `execute` | 业务 Kafka 的独立 bounded replay；范围与主状态隔离见[Checkpoint 与 Replay](../transfer-任务语义与同步模式.md#五状态checkpoint-与-replay)。 |
 | `POST` | `/task-definitions/:id/pause` | `update` | bounded 关闭 owner schedule；continuous 设置 paused 并通知 runtime 取消 execution。 |
-| `POST` | `/task-definitions/:id/resume` | `update` | bounded 恢复 owner schedule；未阻塞的 continuous 设置 running 并创建新 pending execution；CDC `status=blocked` 返回 409。 |
+| `POST` | `/task-definitions/:id/resume` | `update` | bounded 恢复 owner schedule。符合恢复资格的 continuous 设置 running 并创建新 pending execution。CDC `status=blocked` 返回 `409 Conflict`。 [CDC 恢复资格与拒绝条件](../../../docs/spec/tasks/Transfer数据库CDC.md#恢复资格与终态判定) |
 | `POST` | `/task-definitions/:id/stop` | `update` | 仅 continuous：设置 stopped 并通知 runtime 取消 execution。 |
 | `GET` | `/task-definitions/:id/schema-change` | `read` | 查询当前数据库 CDC schema change request 与可审批建议。 |
-| `POST` | `/task-definitions/:id/schema-change/approve` | `update` | 审批当前 additive request；成功后任务进入 paused，不隐式 Resume。 |
+| `POST` | `/task-definitions/:id/schema-change/approve` | `update` | 审批当前可处理的 PostgreSQL／MySQL additive request。审批落库后任务为 `status=idle, desired_state=paused`，由用户另行 Resume。 [审批提交与实时源复核](../../../docs/spec/tasks/Transfer数据库CDC.md#审批提交与实时源复核) |
 | `GET` | `/task-definitions/:id/dead-letters` | `read` | 查询当前任务的 DLQ 安全控制索引。 |
 | `GET` | `/task-definitions/:id/dead-letters/:identity` | `read` | 查询单条控制索引，不返回原始消息或 payload reference。 |
 | `GET` | `/task-definitions/:id/executions` | `read` | 查询任务执行记录；专业读取范围见[执行记录表](task_executions表.md)。 |
@@ -161,7 +161,9 @@ Agent 委托只沿上述创建入口，必须满足精确 scope/audience 与当�
 
 ### 执行、恢复与验收边界
 
-bounded 的 `/task-definitions/:id/resume` 是调度控制 API；PostgreSQL/MySQL/OceanBase/openGauss/TiDB watermark execution 的 resume 由新 execution 自动读取 `transfer.sync_states` 完成，OceanBase/openGauss/TiDB 限非空间表。普通 continuous resume 总是创建新 execution，不复用已取消 execution；数据库 CDC blocked generation 必须先完成专用 additive 审批，其他 schema drift 不支持 resume 或 retry。
+bounded 的 `/task-definitions/:id/resume` 是调度控制 API。PostgreSQL/MySQL/OceanBase/openGauss/TiDB watermark execution 的 resume 由新 execution 自动读取 `transfer.sync_states` 完成，OceanBase/openGauss/TiDB 限非空间表。符合恢复资格的 continuous Resume 创建新 execution。
+
+CDC 在 `status=blocked` 时拒绝普通 Start／Resume，返回 `409 Conflict`。只有可审批的 PostgreSQL／MySQL additive 变更能在原 capture generation 内恢复。审批落库后，用户须显式 Resume，由新 execution 从未推进的 committed offset 继续。其他 schema drift 沿 Stop 后新建任务和目标表的流程处理。 [恢复资格与终态判定](../../../docs/spec/tasks/Transfer数据库CDC.md#恢复资格与终态判定) · [审批落库与显式恢复](../../../docs/spec/tasks/Transfer数据库CDC.md#审批落库与显式恢复)
 
 恢复分级与 snapshot 重跑条件统一见[恢复契约](../transfer-基本概念及配置说明.md#恢复分级)，continuous 的真实停止与恢复闭环见[停止契约](../../../docs/spec/tasks/Transfer同步执行.md#continuous-的真实停止)。bounded pause/resume 不中断 active execution；continuous stop 不等于整个 `sync` task type 已支持标准取消。当前 TaskProvider `supports_cancel=false`，不提供标准 execution cancel 入口，`transfer.task.cancel` 仍为 disabled。
 
