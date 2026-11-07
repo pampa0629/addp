@@ -748,6 +748,20 @@ report_backend_readiness_failure() {
   fi
 }
 
+wait_backend_ready() {
+  local module="$1" pid="$2" port="$3" label="$4" waited=0
+  shift 4
+  until curl -f "$@" "http://localhost:${port}/health/ready" > /dev/null 2>&1; do
+    sleep 1
+    waited=$((waited + 1))
+    if [ "$waited" -ge "$MAX_WAIT" ]; then
+      report_backend_readiness_failure "$module" "$pid" "$label"
+      echo "查看日志: tail -f logs/runtime/${module}/*/*.jsonl"
+      return 1
+    fi
+  done
+}
+
 # 编译 Server 二进制
 # 参数: $1=服务名称 $2=源码路径
 build_service() {
@@ -1054,26 +1068,15 @@ if [ "$START_SYSTEM_BACKEND" = true ]; then
     SYSTEM_PID=$!
     echo $SYSTEM_PID > .dev-pids/system.pid
 
-    # 等待 System Backend 就绪
-    echo "等待 System Backend 就绪..."
     MAX_WAIT=60
-    WAIT_COUNT=0
-    until curl -f http://localhost:${SYSTEM_PORT}/health/ready > /dev/null 2>&1; do
-      echo -n "."
-      sleep 1
-      WAIT_COUNT=$((WAIT_COUNT + 1))
-      if [ $WAIT_COUNT -ge $MAX_WAIT ]; then
-        report_backend_readiness_failure system "${SYSTEM_PID:-}" "System Backend"
-        echo "查看日志: tail -f logs/runtime/system/*/*.jsonl"
-        exit 1
-      fi
-    done
-    echo -e "${GREEN}✓ System Backend 就绪 (PID: $SYSTEM_PID, 端口: $SYSTEM_PORT)${NC}"
   else
     # 服务已运行，从 PID 文件读取 PID
     SYSTEM_PID=$(cat .dev-pids/system.pid 2>/dev/null)
     echo -e "${GREEN}✓ System Backend 已在运行 (PID: $SYSTEM_PID)${NC}"
   fi
+  echo "等待 System Backend 就绪..."
+  wait_backend_ready system "${SYSTEM_PID:-}" "$SYSTEM_PORT" "System Backend" || exit 1
+  echo -e "${GREEN}✓ System Backend 就绪 (PID: $SYSTEM_PID, 端口: $SYSTEM_PORT)${NC}"
   echo ""
 else
   echo -e "${YELLOW}Step 2/7: 跳过 System Backend${NC}"
@@ -1563,183 +1566,112 @@ fi
 # ============================================================
 # Phase 3: 并行等待所有 Backends 健康检查
 # ============================================================
-if [ "$START_MANAGER_BACKEND" = true ] || [ "$START_META_BACKEND" = true ] || [ "$START_TRANSFER_BACKEND" = true ] || [ "$START_ORCHESTRATOR_BACKEND" = true ] || [ "$START_DEVELOP_BACKEND" = true ] || [ "$START_SERVICE_BACKEND" = true ] || [ "$START_STANDARD_BACKEND" = true ] || [ "$START_MONITOR_BACKEND" = true ] || [ "$START_MODEL_BACKEND" = true ] || [ "$START_ASSET_BACKEND" = true ] || [ "$START_ONTOLOGY_BACKEND" = true ] || [ "$START_CATALOG_BACKEND" = true ] || [ "$START_PORTAL_BACKEND" = true ] || [ "$START_GRAPH_BACKEND" = true ] || [ "$START_INFERENCE_BACKEND" = true ]; then
+if [ "$START_MANAGER_BACKEND" = true ] || [ "$START_META_BACKEND" = true ] || [ "$START_TRANSFER_BACKEND" = true ] || [ "$START_ORCHESTRATOR_BACKEND" = true ] || [ "$START_DEVELOP_BACKEND" = true ] || [ "$START_SERVICE_BACKEND" = true ] || [ "$START_MONITOR_BACKEND" = true ] || [ "$START_STANDARD_BACKEND" = true ] || [ "$START_MODEL_BACKEND" = true ] || [ "$START_QUALITY_BACKEND" = true ] || [ "$START_SECURITY_BACKEND" = true ] || [ "$START_ASSET_BACKEND" = true ] || [ "$START_INFERENCE_BACKEND" = true ] || [ "$START_CATALOG_BACKEND" = true ] || [ "$START_WORKBENCH_BACKEND" = true ] || [ "$START_ONTOLOGY_BACKEND" = true ] || [ "$START_PORTAL_BACKEND" = true ] || [ "$START_GRAPH_BACKEND" = true ]; then
   echo "  [3/3] 并行健康检查..."
-
   HEALTH_CHECK_PIDS=()
 
-  # 并发等待 Manager Backend
   if [ "$START_MANAGER_BACKEND" = true ]; then
-    (
-      WAIT_COUNT=0
-      MANAGER_HEALTH_PATH=ready
-      if [ "$WAIT_LIVE" = true ]; then
-        MANAGER_HEALTH_PATH=live
-      fi
-      until curl -f "http://localhost:${MANAGER_BACKEND_PORT}/health/${MANAGER_HEALTH_PATH}" > /dev/null 2>&1; do
-        sleep 1
-        WAIT_COUNT=$((WAIT_COUNT + 1))
-        if [ $WAIT_COUNT -ge $MAX_WAIT ]; then
-          if [ "$WAIT_LIVE" = true ]; then
+    if [ "$WAIT_LIVE" = true ]; then
+      (
+        WAIT_COUNT=0
+        until curl -f "http://localhost:${MANAGER_BACKEND_PORT}/health/live" > /dev/null 2>&1; do
+          sleep 1
+          WAIT_COUNT=$((WAIT_COUNT + 1))
+          if [ "$WAIT_COUNT" -ge "$MAX_WAIT" ]; then
             echo -e "${RED}✗ Manager Backend 启动超时${NC}"
-          else
-            report_backend_readiness_failure manager "${MANAGER_PID:-}" "Manager Backend"
+            echo "查看日志: tail -f logs/runtime/manager/*/*.jsonl"
+            exit 1
           fi
-          echo "查看日志: tail -f logs/runtime/manager/*/*.jsonl"
-          exit 1
-        fi
-      done
-    ) &
+        done
+      ) &
+    else
+      wait_backend_ready manager "${MANAGER_PID:-}" "$MANAGER_BACKEND_PORT" "Manager Backend" &
+    fi
     HEALTH_CHECK_PIDS+=($!)
   fi
 
-  # 并发等待 Meta Backend
   if [ "$START_META_BACKEND" = true ]; then
-    (
-      WAIT_COUNT=0
-      until curl -f http://localhost:${META_BACKEND_PORT}/health/ready > /dev/null 2>&1; do
-        sleep 1
-        WAIT_COUNT=$((WAIT_COUNT + 1))
-        if [ $WAIT_COUNT -ge $MAX_WAIT ]; then
-          report_backend_readiness_failure meta "${META_PID:-}" "Meta Backend"
-          echo "查看日志: tail -f logs/runtime/meta/*/*.jsonl"
-          exit 1
-        fi
-      done
-    ) &
+    wait_backend_ready meta "${META_PID:-}" "$META_BACKEND_PORT" "Meta Backend" &
     HEALTH_CHECK_PIDS+=($!)
   fi
 
-  # 并发等待 Transfer Backend
   if [ "$START_TRANSFER_BACKEND" = true ]; then
-    (
-      WAIT_COUNT=0
-      until curl -f http://localhost:${TRANSFER_BACKEND_PORT}/health/ready > /dev/null 2>&1; do
-        sleep 1
-        WAIT_COUNT=$((WAIT_COUNT + 1))
-        if [ $WAIT_COUNT -ge $MAX_WAIT ]; then
-          report_backend_readiness_failure transfer "${TRANSFER_PID:-}" "Transfer Backend"
-          echo "查看日志: tail -f logs/runtime/transfer/*/*.jsonl"
-          exit 1
-        fi
-      done
-    ) &
+    wait_backend_ready transfer "${TRANSFER_PID:-}" "$TRANSFER_BACKEND_PORT" "Transfer Backend" &
     HEALTH_CHECK_PIDS+=($!)
   fi
 
-  # 并发等待 Orchestrator Backend
   if [ "$START_ORCHESTRATOR_BACKEND" = true ]; then
-    (
-      WAIT_COUNT=0
-      until curl -f http://localhost:${ORCHESTRATOR_BACKEND_PORT}/health/ready > /dev/null 2>&1; do
-        sleep 1
-        WAIT_COUNT=$((WAIT_COUNT + 1))
-        if [ $WAIT_COUNT -ge $MAX_WAIT ]; then
-          report_backend_readiness_failure orchestrator "${ORCHESTRATOR_PID:-}" "Orchestrator Backend"
-          echo "查看日志: tail -f logs/runtime/orchestrator/*/*.jsonl"
-          exit 1
-        fi
-      done
-    ) &
+    wait_backend_ready orchestrator "${ORCHESTRATOR_PID:-}" "$ORCHESTRATOR_BACKEND_PORT" "Orchestrator Backend" &
     HEALTH_CHECK_PIDS+=($!)
   fi
 
-  # 并发等待 Develop Backend
   if [ "$START_DEVELOP_BACKEND" = true ]; then
-    (
-      WAIT_COUNT=0
-      until curl -f http://localhost:${DEVELOP_BACKEND_PORT}/health/ready > /dev/null 2>&1; do
-        sleep 1
-        WAIT_COUNT=$((WAIT_COUNT + 1))
-        if [ $WAIT_COUNT -ge $MAX_WAIT ]; then
-          report_backend_readiness_failure develop "${DEVELOP_PID:-}" "Develop Backend"
-          echo "查看日志: tail -f logs/runtime/develop/*/*.jsonl"
-          exit 1
-        fi
-      done
-    ) &
+    wait_backend_ready develop "${DEVELOP_PID:-}" "$DEVELOP_BACKEND_PORT" "Develop Backend" &
     HEALTH_CHECK_PIDS+=($!)
   fi
 
-  # 并发等待 Service Backend
   if [ "$START_SERVICE_BACKEND" = true ]; then
-    (
-      WAIT_COUNT=0
-      until curl -f http://localhost:${SERVICE_BACKEND_PORT}/health/ready > /dev/null 2>&1; do
-        sleep 1
-        WAIT_COUNT=$((WAIT_COUNT + 1))
-        if [ $WAIT_COUNT -ge $MAX_WAIT ]; then
-          report_backend_readiness_failure service "${SERVICE_PID:-}" "Service Backend"
-          echo "查看日志: tail -f logs/runtime/service/*/*.jsonl"
-          exit 1
-        fi
-      done
-    ) &
+    wait_backend_ready service "${SERVICE_PID:-}" "$SERVICE_BACKEND_PORT" "Service Backend" &
+    HEALTH_CHECK_PIDS+=($!)
+  fi
+
+  if [ "$START_MONITOR_BACKEND" = true ]; then
+    wait_backend_ready monitor "${MONITOR_PID:-}" "$MONITOR_BACKEND_PORT" "Monitor Backend" &
+    HEALTH_CHECK_PIDS+=($!)
+  fi
+
+  if [ "$START_STANDARD_BACKEND" = true ]; then
+    wait_backend_ready standard "${STANDARD_PID:-}" "$STANDARD_BACKEND_PORT" "Standard Backend" &
+    HEALTH_CHECK_PIDS+=($!)
+  fi
+
+  if [ "$START_MODEL_BACKEND" = true ]; then
+    wait_backend_ready model "${MODEL_PID:-}" "$MODEL_BACKEND_PORT" "Model Backend" &
+    HEALTH_CHECK_PIDS+=($!)
+  fi
+
+  if [ "$START_QUALITY_BACKEND" = true ]; then
+    wait_backend_ready quality "${QUALITY_PID:-}" "$QUALITY_BACKEND_PORT" "Quality Backend" &
+    HEALTH_CHECK_PIDS+=($!)
+  fi
+
+  if [ "$START_SECURITY_BACKEND" = true ]; then
+    wait_backend_ready security "${SECURITY_PID:-}" "$SECURITY_BACKEND_PORT" "Security Backend" &
+    HEALTH_CHECK_PIDS+=($!)
+  fi
+
+  if [ "$START_ASSET_BACKEND" = true ]; then
+    wait_backend_ready asset "${ASSET_PID:-}" "$ASSET_BACKEND_PORT" "Asset Backend" &
     HEALTH_CHECK_PIDS+=($!)
   fi
 
   if [ "$START_INFERENCE_BACKEND" = true ]; then
-    (
-      WAIT_COUNT=0
-      until curl -f "http://localhost:${INFERENCE_BACKEND_PORT:-8191}/health/ready" > /dev/null 2>&1; do
-        sleep 1
-        WAIT_COUNT=$((WAIT_COUNT + 1))
-        if [ $WAIT_COUNT -ge $MAX_WAIT ]; then
-          report_backend_readiness_failure inference "${INFERENCE_PID:-}" "Inference Backend"
-          echo "查看日志: tail -f logs/runtime/inference/*/*.jsonl"
-          exit 1
-        fi
-      done
-    ) &
+    wait_backend_ready inference "${INFERENCE_PID:-}" "${INFERENCE_BACKEND_PORT:-8191}" "Inference Backend" &
     HEALTH_CHECK_PIDS+=($!)
   fi
 
   if [ "$START_CATALOG_BACKEND" = true ]; then
-    (
-      WAIT_COUNT=0
-      until curl -f "http://localhost:${CATALOG_BACKEND_PORT}/health/ready" > /dev/null 2>&1; do
-        sleep 1
-        WAIT_COUNT=$((WAIT_COUNT + 1))
-        if [ $WAIT_COUNT -ge $MAX_WAIT ]; then
-          report_backend_readiness_failure catalog "${CATALOG_PID:-}" "Catalog Backend"
-          echo "查看日志: tail -f logs/runtime/catalog/*/*.jsonl"
-          exit 1
-        fi
-      done
-    ) &
+    wait_backend_ready catalog "${CATALOG_PID:-}" "$CATALOG_BACKEND_PORT" "Catalog Backend" &
     HEALTH_CHECK_PIDS+=($!)
   fi
 
   if [ "$START_WORKBENCH_BACKEND" = true ]; then
-    (
-      WAIT_COUNT=0
-      until curl -f "http://localhost:${WORKBENCH_BACKEND_PORT}/health/ready" > /dev/null 2>&1; do
-        sleep 1
-        WAIT_COUNT=$((WAIT_COUNT + 1))
-        if [ $WAIT_COUNT -ge $MAX_WAIT ]; then
-          report_backend_readiness_failure workbench "${WORKBENCH_PID:-}" "Workbench Backend"
-          echo "查看日志: tail -f logs/runtime/workbench/*/*.jsonl"
-          exit 1
-        fi
-      done
-    ) &
+    wait_backend_ready workbench "${WORKBENCH_PID:-}" "$WORKBENCH_BACKEND_PORT" "Workbench Backend" &
     HEALTH_CHECK_PIDS+=($!)
   fi
 
-  # 等待所有并发的 health check 完成；任何目标失败都必须使启动失败。
   if [ "$START_ONTOLOGY_BACKEND" = true ]; then
-    (
-      WAIT_COUNT=0
-      until curl --max-time 5 -f "http://localhost:${ONTOLOGY_BACKEND_PORT}/health/ready" > /dev/null 2>&1; do
-        sleep 1
-        WAIT_COUNT=$((WAIT_COUNT + 1))
-        if [ $WAIT_COUNT -ge $MAX_WAIT ]; then
-          report_backend_readiness_failure ontology "${ONTOLOGY_PID:-}" "Ontology Backend" >&2
-          echo "查看日志: tail -f logs/runtime/ontology/*/*.jsonl" >&2
-          exit 1
-        fi
-      done
-    ) &
+    wait_backend_ready ontology "${ONTOLOGY_PID:-}" "$ONTOLOGY_BACKEND_PORT" "Ontology Backend" --max-time 5 >&2 &
+    HEALTH_CHECK_PIDS+=($!)
+  fi
+
+  if [ "$START_PORTAL_BACKEND" = true ]; then
+    wait_backend_ready portal "${PORTAL_PID:-}" "$PORTAL_BACKEND_PORT" "Portal Backend" &
+    HEALTH_CHECK_PIDS+=($!)
+  fi
+
+  if [ "$START_GRAPH_BACKEND" = true ]; then
+    wait_backend_ready graph "${GRAPH_PID:-}" "$GRAPH_BACKEND_PORT" "Graph Backend" &
     HEALTH_CHECK_PIDS+=($!)
   fi
 

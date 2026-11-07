@@ -39,6 +39,14 @@ Go Backend 就绪检查原本正确记录 `process_exited` 或 `readiness_timeou
 
 `make test-deployment-discovery` 通过 48 项部署测试及 6 项容器证明测试。新增回归用真实临时子进程验证存活和退出两种状态，核对终端文字与私有结果文件一致，修复前两种文字断言均失败。标准脚本入口 `bash scripts/test/dev-lifecycle-and-build.sh` 通过。完整 `make test-dev-lifecycle` 在进入本轮脚本回归前，被栅格容量 owner 的 Online 登记契约拒绝，错误为 `raster capacity owner contract is incomplete: scripts/test/online-engine-registration.py`。该总入口不计通过，本轮未修复其他 owner 的登记。
 
+## 开发 Backend 就绪屏障覆盖（2026-11-07）
+
+核对后补齐 Standard、Monitor、Model、Quality、Security、Asset、Portal、Graph 的就绪等待，以及 Workbench 单独选择时的外层条件和复用 System 时的前置检查。System 与十八个 Backend 使用同一个等待函数，等待各自的 `/health/ready`，失败沿现有原因发布、日志指引和后续启动屏障。原重复就绪循环删除，Manager 的专用存活路径与 Ontology 的单请求 5 秒限制分别沿原契约。
+
+`make test-deployment-discovery` 通过 49 项部署测试及 6 项容器证明测试。新增受控回归从实际 Backend 启动段提取所选模块，覆盖全选成功、逐模块单独未就绪、复用 System 未就绪、Workbench 单独选择、并行失败、Standard 短暂未就绪后成功、全部未选及 Manager 存活路径。修复前出现 13 项子场景断言失败，修复后全部通过，且核对请求次数与保存原因。`bash scripts/test/dev-lifecycle-and-build.sh` 完整通过。
+
+完整 `make test-dev-lifecycle` 在 GDAL 前置用例 `test_native_identity_cache_hit_and_same_version_library_replacement` 和 `test_launch_owns_listener_and_cleans_up_failure` 分别超时，不计为通过。此次为本地受控回归，真实 Linux 启动与 Hosted 继续按各自固定源码验收。
+
 ## 清单接入与实例绑定
 
 主机组合筛选、详情返回及重置已有个人 Safari 验证。System 清单接入 → Monitor 采集保存已通过 [Hosted 专项](https://github.com/pampa0629/addp/actions/runs/39127927703)（受验源码 `fb13955d8f3cc48b254f2c840e55b8f8f638d2cc`，包含 `70c62a09a`、`9263ab6ee`）：单台 Linux VM 创建一次主机，正式 400 拒绝后只重试同一主机采集，刷新、两 Owner 独立读取及准确数量均通过。场景约 63.535 秒，浏览器约 39.370 秒；配置退役通过 API 删除采集并核验 404、停用主机且核验版本递增，随后独占部署销毁与外层零残留通过，不表示产品已提供主机 DELETE。

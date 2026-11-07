@@ -7,6 +7,7 @@ from pathlib import Path
 import subprocess
 import tempfile
 import os
+import re
 import sys
 import time
 import unittest
@@ -20,6 +21,76 @@ CID = 'a' * 64
 
 
 class StartupResultsTest(unittest.TestCase):
+    def test_every_selected_backend_reaches_the_health_barrier(self):
+        source = (ROOT / 'scripts/dev/start.sh').read_text()
+        launch = source[source.index('BACKEND_STARTS=()'):source.index('# Phase 3:')]
+        modules = sorted(set(name.lower() for name in re.findall(
+            r'^  if \[ "\$START_([A-Z_]+)_BACKEND" = true \]; then', launch, re.M)))
+        self.assertIn('standard', modules)
+        phase = source[source.index('# Phase 3:'):source.index('# 等待所有模块的 Worker 启动任务')]
+        system = source[source.index('# 2. 启动 System Backend'):source.index('# 3. 并行启动所有后端服务')]
+        helpers = source[source.index('report_backend_startup_failure()'):source.index('# 编译 Server 二进制')]
+        ports = {module: str(21000 + index) for index, module in enumerate(['system', *modules])}
+        cases = [('all-ready', modules, '', 'ready', False),
+                 ('none-selected', [], '', 'ready', False),
+                 ('parallel-failure', ['monitor', 'standard'], 'standard', 'failed', False),
+                 ('transient-standard', ['standard'], 'standard', 'transient', False),
+                 ('manager-live-ready', ['manager'], '', 'ready', True),
+                 ('manager-live-failed', ['manager'], 'manager', 'failed', True)]
+        cases += [(module + '-failed', [module], module, 'failed', False) for module in ['system', *modules]]
+        with tempfile.TemporaryDirectory() as directory:
+            for name, selected, failed, mode, live in cases:
+                with self.subTest(case=name):
+                    case = Path(directory) / name
+                    (case / '.dev-pids').mkdir(parents=True)
+                    (case / '.dev-pids/system.pid').write_text(str(os.getpid()))
+                    script = '''
+set -eu
+RED= GREEN= YELLOW= NC=
+MAX_WAIT=2
+check_service_running() { return 1; }
+sleep() { :; }
+curl() {
+  local url argument
+  for argument in "$@"; do url="$argument"; done
+  printf '%s\\n' "$url" >> "$CASE_ROOT/requests"
+  case "$url" in
+    "http://localhost:$FAIL_PORT/health/"*)
+      if [ "$CURL_MODE" = transient ]; then
+        [ ! -f "$CASE_ROOT/attempt" ] || return 0
+        touch "$CASE_ROOT/attempt"
+      fi
+      return 1 ;;
+    *) return 0 ;;
+  esac
+}
+''' + helpers + '''
+report_backend_startup_failure() {
+  printf '%s|%s\\n' "$1" "$2" >> "$CASE_ROOT/failures"
+}
+''' + (system if selected == ['system'] else phase) + '\ntouch "$CASE_ROOT/completed"\n'
+                    environment = dict(os.environ, CASE_ROOT=str(case), FAIL_PORT=ports.get(failed, '0'),
+                                       CURL_MODE=mode, WAIT_LIVE=str(live).lower())
+                    for module in ['system', *modules]:
+                        environment.update({
+                            'START_' + module.upper() + '_BACKEND': str(module in selected).lower(),
+                            module.upper() + '_BACKEND_PORT': ports[module],
+                            module.upper() + '_PID': str(os.getpid()),
+                        })
+                    result = subprocess.run(['bash', '-ec', script], cwd=case, env=environment,
+                                            capture_output=True, text=True, timeout=5)
+                    self.assertEqual(result.returncode, int(bool(failed) and mode == 'failed'),
+                                     result.stdout + result.stderr)
+                    self.assertEqual((case / 'completed').exists(), result.returncode == 0)
+                    requests = (case / 'requests').read_text().splitlines() if (case / 'requests').exists() else []
+                    expected = {'http://localhost:' + ports[module] + '/health/' + ('live' if live else 'ready')
+                                for module in selected}
+                    self.assertEqual(set(requests), expected)
+                    for endpoint in expected:
+                        self.assertEqual(requests.count(endpoint), 2 if ':' + ports.get(failed, '0') + '/' in endpoint else 1)
+                    failures = (case / 'failures').read_text().splitlines() if (case / 'failures').exists() else []
+                    self.assertEqual(failures, [failed + '|readiness_timeout'] if failed and mode == 'failed' and not live else [])
+
     def test_readiness_failure_message_matches_the_recorded_process_state(self):
         start = (ROOT / 'scripts/dev/start.sh').read_text()
         checks = start[start.index('report_backend_startup_failure()'):start.index('# 编译 Server 二进制')]

@@ -193,7 +193,9 @@ Business 认证目录首次切换须由部署方沿标准生命周期重建容�
 
 部署入口发布结果，System 核验归属及新鲜度后提供只读事实。服务监控沿现有平台读取权限单独展示有证据的启动失败，保留现有实例列表、分页和租约状态。首次未登记的失败也可见，无需构造实例。只展示模块、时间和固定原因；日志正文、命令、路径和凭据沿原有诊断边界。新尝试、明确的计划停用及已确认运行使旧失败退出当前视图，其他模块的启动不清除该条结果。无法读取或匹配结果时继续显示原有状态。全量启动若使 Console、Gateway 或 System 不可用，仍由终端报告失败。
 
-本批只增加页面可见性。运行确认仍由 System 租约判断，既有服务组失联告警不使用启动结果。验证沿 `make test-dev-lifecycle`、`make test-deployment-discovery`、System Go／Swagger 及 Monitor 页面门禁，覆盖新旧尝试隔离、局部启停、未执行与真实失败的区分、尚无实例的展示和拒绝身份。
+启动结果用于诊断展示。运行确认仍由 System 租约判断，既有服务组失联告警不使用启动结果。验证沿 `make test-dev-lifecycle`、`make test-deployment-discovery`、System Go／Swagger 及 Monitor 页面门禁，覆盖新旧尝试隔离、局部启停、未执行与真实失败的区分、尚无实例的展示和拒绝身份。
+
+标准开发启动的就绪屏障覆盖 System 及十八个 Go Backend。System 前置等待，其余模块并行等待各自的 `/health/ready`，复用运行进程也须检查。共用等待函数沿现有预算发布失败原因，任一失败阻止后续 Runtime、Gateway 和前端阶段。Manager 专用存活检查沿既有契约执行。
 
 代码已接通。System 回归及 Swagger 覆盖通过，受控浏览器核对缺权不读取。[真实 PostgreSQL 回归](../spec/testing/evidence/Monitor实例与服务发现历史证据.md#开发-backend-启动失败与重试的-postgresql-t22026-11-07)覆盖失败、重试、登记和注销。隔离 Linux 中的真实 Console 验收分别覆盖 [Standard 构建失败](../spec/testing/evidence/Monitor实例与服务发现历史证据.md#开发-backend-真实构建失败与重试的隔离运行验收2026-11-07)和 [Catalog 进程退出、就绪超时](../spec/testing/evidence/Monitor实例与服务发现历史证据.md#开发-backend-进程退出与就绪超时的隔离运行验收2026-11-07)，核对无实例时可见、重试登记在线及失败提示清除。Go Backend 就绪检查的终端提示复用同一次 PID 判定，分别输出「启动进程退出」或「等待就绪超时」，与保存的失败原因一致。
 
