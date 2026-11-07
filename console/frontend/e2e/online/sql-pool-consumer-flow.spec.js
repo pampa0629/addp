@@ -10,9 +10,11 @@ const previewRoute = sample => `/manager/data-explorer?locator=${encodeURICompon
 const openKey = 'pool_max_open_conns'
 const idleKey = 'pool_max_idle_conns'
 const responseTimeout = 30_000
+const readers = ['pool_reader', 'pool_reader_next']
+const phases = ['address', 'account', 'password', 'pool']
 
-function observe(engine) {
-  return JSON.parse(execFileSync('python3', ['-m', 'scripts.test.sql-pool-consumer-flow-online', 'observe', '--engine', engine],
+function observe(engine, reader) {
+  return JSON.parse(execFileSync('python3', ['-m', 'scripts.test.sql-pool-consumer-flow-online', 'observe', '--engine', engine, '--reader', reader],
     { cwd: root, encoding: 'utf8', timeout: 30_000 }))
 }
 
@@ -89,56 +91,100 @@ async function developQuery(page, sample, phase, consumer) {
   return execution.execution_id
 }
 
-async function savePool(page, sample, operator) {
+async function saveChange(page, sample, operator, phase, credentials) {
   const frame = frameOf(page)
   const path = `/api/v1/system/engines/${sample.engine_id}`
   const row = frame.getByRole('row').filter({ hasText: sample.name })
   const api = await request.newContext({ baseURL: process.env.GATEWAY_URL, extraHTTPHeaders: { Authorization: `Bearer ${operator}` } })
+  const patch = {
+    address: { host: 'localhost' },
+    account: { user: readers[1], password: credentials.account },
+    password: { password: credentials.rotated },
+    pool: { [idleKey]: 0 },
+  }[phase]
   try {
-    const before = await json(await api.get(path), 'System pool config before edit')
+    const before = await json(await api.get(path), 'System config before edit')
     expect(before.id).toBe(sample.engine_id)
-    expect(before.connection_info).toMatchObject({ [openKey]: 2, [idleKey]: 1 })
+    expect(before.connection_info).toMatchObject({ database: 'pool_fixture', [openKey]: 2, [idleKey]: 1 })
     await row.getByRole('button', { name: '编辑', exact: true }).click({ timeout: responseTimeout })
     const dialog = frame.getByRole('dialog', { name: '编辑引擎', exact: true })
-    const idle = dialog.locator('.el-form-item').filter({ hasText: '最大空闲连接数' }).getByRole('spinbutton')
-    await expect(idle).toHaveValue('1')
-    await idle.fill('0')
-    await idle.press('Tab')
+    for (const [key, value] of Object.entries(patch)) {
+      const label = { host: '主机地址', user: '用户名', password: '密码', [idleKey]: '最大空闲连接数' }[key]
+      const item = dialog.locator('.el-form-item').filter({ hasText: label })
+      const input = key === idleKey ? item.getByRole('spinbutton') : item.locator('input')
+      if (key === 'password') {
+        try { await input.fill(value) } catch { throw new Error('System sensitive input was unavailable') }
+      } else {
+        await input.fill(String(value))
+      }
+      await input.press('Tab')
+    }
     const saved = page.waitForResponse(response => new URL(response.url()).pathname === path && response.request().method() === 'PUT',
       { timeout: responseTimeout })
     await dialog.getByRole('button', { name: '保存', exact: true }).click()
+    if (phase === 'address') {
+      const confirmation = frame.locator('.el-message-box').filter({ hasText: '确认引擎地址变更' })
+      await expect(confirmation).toBeVisible()
+      await confirmation.getByRole('button', { name: '保存', exact: true }).click()
+    }
     const response = await saved
     const body = response.request().postDataJSON()
     expect(body.version).toBe(before.version)
-    expect(body.connection_info).toMatchObject({ [openKey]: 2, [idleKey]: 0 })
-    const receipt = await json(response, 'System pool config save')
+    expect(Boolean(body.confirm_same_engine)).toBe(phase === 'address')
+    for (const [key, value] of Object.entries(patch)) {
+      // A failing assertion must never print a database password.
+      expect(body.connection_info[key] === value, `System submitted ${phase} field ${key}`).toBe(true)
+    }
+    const receipt = await json(response, 'System config save')
     expect(receipt.version).toBeGreaterThan(before.version)
     await expect(dialog).toBeHidden()
-    const after = await json(await api.get(path), 'System pool config readback')
+    const after = await json(await api.get(path), 'System config readback')
     expect(after.id).toBe(sample.engine_id)
     expect(after.version).toBe(receipt.version)
-    expect(after.connection_info).toMatchObject({ [openKey]: 2, [idleKey]: 0 })
+    expect(after.connection_info.database).toBe('pool_fixture')
+    expect(after.connection_info.port).toBe(before.connection_info.port)
+    expect(after.connection_info[openKey]).toBe(2)
+    for (const [key, value] of Object.entries(patch)) {
+      expect(key === 'password' ? after.connection_info[key] !== value : after.connection_info[key] === value,
+        `System readback ${phase} field ${key}`).toBe(true)
+    }
+    const tested = page.waitForResponse(response => new URL(response.url()).pathname === `${path}/test`
+      && response.request().method() === 'POST', { timeout: responseTimeout })
+    await row.getByRole('button', { name: '测试', exact: true }).click()
+    expect((await json(await tested, 'System current connection test')).success).toBe(true)
+    const online = await json(await api.get(path), 'System current connection observation')
+    expect(online.connection_status).toBe('online')
+    expect(online.version).toBe(after.version)
     return {
-      before_version: before.version, after_version: after.version,
-      max_open: after.connection_info[openKey], idle_before: before.connection_info[idleKey], idle_after: after.connection_info[idleKey],
+      before_version: before.version, after_version: after.version, phase,
+      changed_fields: Object.keys(patch).sort(), same_engine_confirmed: phase === 'address',
+      host: after.connection_info.host, database: after.connection_info.database,
+      reader: after.connection_info.user, max_open: after.connection_info[openKey],
+      max_idle: after.connection_info[idleKey], connection_online: true,
     }
   } finally { await api.dispose() }
 }
 
-function baseline(engine, start) {
-  const state = observe(engine)
+function baseline(engine, reader, start, source) {
+  const state = observe(engine, reader)
+  expect(state.source_identity).toEqual(source)
   const ids = state.statement_ids.filter(id => !start.statement_ids.includes(id))
-  expect(ids.some(id => state.active_ids.includes(id)), JSON.stringify({ engine, start, state })).toBe(true)
+  expect(ids.some(id => state.active_ids.includes(id)), JSON.stringify({ engine, reader, start, state })).toBe(true)
   return { state, ids: ids.filter(id => state.active_ids.includes(id)) }
 }
 
-async function replacement(engine, start, oldIDs) {
+async function replacement(engine, reader, start, oldReader, oldIDs, idle, source) {
   let proof
   await expect.poll(() => {
-    const state = observe(engine)
+    const state = observe(engine, reader)
+    const old = oldReader === reader ? state : observe(engine, oldReader)
+    expect(state.source_identity).toEqual(source)
+    expect(old.source_identity).toEqual(source)
     const newIDs = state.statement_ids.filter(id => !start.statement_ids.includes(id))
-    proof = { old_ids: oldIDs, new_ids: newIDs, active_after: state.active_ids }
-    return newIDs.length > 0 && ![...oldIDs, ...newIDs].some(id => state.active_ids.includes(id))
+    proof = { old_ids: oldIDs, new_ids: newIDs, old_active_after: old.active_ids,
+      active_after: state.active_ids, old_reader: oldReader, reader }
+    return newIDs.length > 0 && !oldIDs.some(id => old.active_ids.includes(id))
+      && (idle === 0 ? !newIDs.some(id => state.active_ids.includes(id)) : newIDs.every(id => state.active_ids.includes(id)))
   }, { timeout: 15_000 }).toBe(true)
   return proof
 }
@@ -171,7 +217,11 @@ test('System pool edit replaces physical sessions in Manager and Develop for bot
   try {
     for (const sample of expected.cases) {
       const engine = sample.engine_type
-      const start = observe(engine)
+      const credentials = JSON.parse(readFileSync(resolve(process.env.ADDP_ONLINE_POOL_PRIVATE, `${engine}-credentials.json`), 'utf8'))
+      let reader = readers[0]
+      const source = sample.source_identity
+      const start = observe(engine, reader)
+      expect(start.source_identity).toEqual(source)
       await test.step(`${engine} Manager baseline`, async () => {
         const token = await managerPreview(page, sample, () => consumer
           ? page.goto(previewRoute(sample))
@@ -182,26 +232,41 @@ test('System pool edit replaces physical sessions in Manager and Develop for bot
           expect(configIdentity.principalID).not.toBe(consumer.principalID)
         }
       })
-      const managerBefore = baseline(engine, start)
-      const originalExecution = await test.step(`${engine} Develop baseline`, () => developQuery(page, sample, 'before', consumer))
-      const developBefore = baseline(engine, managerBefore.state)
-      expect(managerBefore.ids.every(id => developBefore.state.active_ids.includes(id))).toBe(true)
-
-      const version = await test.step(`${engine} System save`, () => savePool(operatorPage, sample, operator))
-      const afterSave = observe(engine)
-      await test.step(`${engine} Manager replacement`, () => managerPreview(page, sample, () => page.goto(previewRoute(sample))))
-      const manager = await replacement(engine, afterSave, managerBefore.ids)
-      const beforeSecondQuery = observe(engine)
-      const nextExecution = await test.step(`${engine} Develop replacement`, () => developQuery(page, sample, 'after', consumer))
-      const develop = await replacement(engine, beforeSecondQuery, developBefore.ids)
-      expect(nextExecution).not.toBe(originalExecution)
-      cases.push({ engine_id: sample.engine_id, engine_type: engine, ...version, consumers: {
-        manager: { ...manager, before_rows: 1, after_rows: 1 },
-        develop: { ...develop, before_rows: 1, after_rows: 1, execution_ids: [originalExecution, nextExecution] },
-      } })
+      let managerBefore = baseline(engine, reader, start, source)
+      let originalExecution = await test.step(`${engine} Develop baseline`, () => developQuery(page, sample, 'initial', consumer))
+      let developBefore = baseline(engine, reader, managerBefore.state, source)
+      const changes = []
+      for (const phase of phases) {
+        const nextReader = phase === 'address' ? readers[0] : readers[1]
+        let passwordProof
+        if (phase === 'password') {
+          passwordProof = JSON.parse(execFileSync('python3', ['-m', 'scripts.test.sql-pool-consumer-flow-online',
+            'rotate-password', '--engine', engine], { cwd: root, encoding: 'utf8', timeout: 30_000 }))
+          expect(passwordProof.old_password_rejected).toBe(true)
+          expect(passwordProof.new_password_accepted).toBe(true)
+          expect(passwordProof.source_identity).toEqual(source)
+        }
+        const version = await test.step(`${engine} System ${phase} save`, () => saveChange(operatorPage, sample, operator, phase, credentials))
+        const afterSave = observe(engine, nextReader)
+        await test.step(`${engine} Manager ${phase}`, () => managerPreview(page, sample, () => page.goto(previewRoute(sample))))
+        const manager = await replacement(engine, nextReader, afterSave, reader, managerBefore.ids, version.max_idle, source)
+        const beforeSecondQuery = observe(engine, nextReader)
+        const nextExecution = await test.step(`${engine} Develop ${phase}`, () => developQuery(page, sample, phase, consumer))
+        const develop = await replacement(engine, nextReader, beforeSecondQuery, reader, developBefore.ids, version.max_idle, source)
+        expect(nextExecution).not.toBe(originalExecution)
+        changes.push({ ...version, ...(passwordProof ? { password_proof: passwordProof } : {}), consumers: {
+          manager: { ...manager, before_rows: 1, after_rows: 1 },
+          develop: { ...develop, before_rows: 1, after_rows: 1, execution_ids: [originalExecution, nextExecution] },
+        } })
+        managerBefore = { ids: manager.new_ids }
+        developBefore = { ids: develop.new_ids }
+        reader = nextReader
+        originalExecution = nextExecution
+      }
+      cases.push({ engine_id: sample.engine_id, engine_type: engine, source_identity: source, changes })
     }
     writeFileSync(process.env.ADDP_ONLINE_POOL_REPORT, JSON.stringify({
-      schema_version: 'addp.sql-pool-console/v1', run_id: expected.run_id, consumer_principal_id: consumer.principalID, operator_principal_id: configIdentity.principalID, cases,
+      schema_version: 'addp.sql-pool-console/v2', run_id: expected.run_id, consumer_principal_id: consumer.principalID, operator_principal_id: configIdentity.principalID, cases,
     }))
   } finally {
     if (!operatorPage.isClosed()) await operatorContext.close()

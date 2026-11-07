@@ -18,6 +18,8 @@ NAME = "sql-pool-consumer-flow"
 DATABASE = "pool_fixture"
 TABLE = "pool_source"
 READER = "pool_reader"
+READERS = (READER, "pool_reader_next")
+PHASES = ("address", "account", "password", "pool")
 LABEL = "addp.online.sql-pool"
 PROVISIONER_ROLE = "tenant.infrastructure_administrator"
 PROFILES = {"postgresql": ("postgres", 5432, "public", "schema"), "mysql": ("mysql", 3306, DATABASE, "database")}
@@ -65,7 +67,10 @@ def start(private, run_id):
     for engine, (service, port, namespace, _) in PROFILES.items():
         match = re.search(rf"(?m)^  {service}:\n    image: ([\w:.-]+@sha256:[0-9a-f]{{64}})$", pins)
         require(match, f"fixed {service} fixture image is missing")
-        admin, password = secrets.token_hex(24), secrets.token_hex(24)
+        admin, password, next_password, rotated_password = (secrets.token_hex(24) for _ in range(4))
+        private_write(private / f"{engine}-credentials.json", json.dumps({
+            "initial": password, "account": next_password, "rotated": rotated_password,
+        }))
         settings = (
             f"POSTGRES_DB={DATABASE}\nPOSTGRES_USER=fixture_admin\nPOSTGRES_PASSWORD={admin}\n"
             if engine == "postgresql" else f"MYSQL_DATABASE={DATABASE}\nMYSQL_ROOT_PASSWORD={admin}\n"
@@ -91,11 +96,15 @@ def start(private, run_id):
             statement += (
                 f"CREATE ROLE {READER} LOGIN PASSWORD '{password}';"
                 f"GRANT SELECT ON {namespace}.{TABLE} TO {READER};"
+                f"CREATE ROLE {READERS[1]} LOGIN PASSWORD '{next_password}';"
+                f"GRANT SELECT ON {namespace}.{TABLE} TO {READERS[1]};"
             )
         else:
             statement += (
                 f"CREATE USER '{READER}'@'%' IDENTIFIED BY '{password}';"
                 f"GRANT SELECT ON {DATABASE}.{TABLE} TO '{READER}'@'%';"
+                f"CREATE USER '{READERS[1]}'@'%' IDENTIFIED BY '{next_password}';"
+                f"GRANT SELECT ON {DATABASE}.{TABLE} TO '{READERS[1]}'@'%';"
                 "SET GLOBAL log_output='TABLE'; SET GLOBAL general_log=ON;"
             )
         sql(engine, statement)
@@ -171,6 +180,7 @@ def prepare(private, run_id):
             "engine_id": engine_id, "engine_type": engine, "name": descriptor["name"], "namespace": namespace,
             "sample": f"pool-{engine}-sample", "table": TABLE, "scan_execution_id": scan_id,
             "locator": SUPPORT.build_item_locator(engine_id, item),
+            "source_identity": fixture_identity(engine, run_id),
         })
     private_write(private / "pool-expectations.json", json.dumps({
         "run_id": run_id, "tenant_id": str(tenant), "principal_id": str(context["principal"]["id"]),
@@ -193,14 +203,53 @@ def cleanup(private, artifacts, run_id):
     (artifacts / "sql-pool-grant-cleanup.json").write_text(json.dumps({"run_id": run_id, "grants": revoked}))
 
 
-def pg_statement_ids(log):
+def pg_statement_ids(log, reader=READER):
+    require(reader in READERS, "unknown SQL pool fixture reader")
     entries = re.split(r"(?m)(?=^pid=)", log)
     table = r'\bFROM\s+(?:ONLY\s+)?(?:"?public"?\.)?"?pool_source"?(?![a-z_0-9])'
     return sorted({
         int(match.group(1)) for entry in entries
-        if (match := re.match(r"^pid=(\d+) user=pool_reader LOG:\s+(?:statement:|execute [^:]+:)\s*(?:SELECT|WITH)\b", entry, re.I))
+        if (match := re.match(r"^pid=(\d+) user=" + re.escape(reader) + r" LOG:\s+(?:statement:|execute [^:]+:)\s*(?:SELECT|WITH)\b", entry, re.I))
         and re.search(table, entry, re.I)
     })
+
+
+def fixture_identity(engine, run_id):
+    info = docker("inspect", "--format", '{{.Id}} {{index .Config.Labels "' + LABEL + '"}}', container(engine)).stdout.split()
+    require(len(info) == 2 and info[1] == run_id, "SQL pool operation requires the owned fixture")
+    native = sql(engine, f"SELECT oid::text FROM pg_database WHERE datname='{DATABASE}';"
+                 if engine == "postgresql" else "SELECT @@server_uuid;").stdout.strip()
+    require(bool(native), "native SQL pool source identity missing")
+    return {"container_id": info[0], "database": DATABASE, "native_id": native}
+
+
+def rotate_password(engine, private, artifacts, run_id):
+    before = fixture_identity(engine, run_id)
+    marker = private / f"{engine}-password-rotated"
+    require(not marker.exists(), "fixture password rotation cannot be repeated")
+    credentials = json.loads((private / f"{engine}-credentials.json").read_text())
+    require(all(re.fullmatch(r"[0-9a-f]{48}", value) for value in credentials.values()), "invalid fixture credentials")
+    reader = READERS[1]
+    password = credentials["rotated"]
+    statement = (f"SET log_statement='none'; ALTER ROLE {reader} PASSWORD '{password}';"
+                 if engine == "postgresql" else f"SET sql_log_off=1; ALTER USER '{reader}'@'%' IDENTIFIED BY '{password}';")
+    sql(engine, statement)
+    marker.write_text("rotated\n")
+    if engine == "postgresql":
+        command = f'IFS= read -r PGPASSWORD; export PGPASSWORD; exec psql -XAt -v ON_ERROR_STOP=1 -h127.0.0.1 -U {reader} -d {DATABASE} -c "SELECT 1"'
+    else:
+        command = f'IFS= read -r MYSQL_PWD; export MYSQL_PWD; exec mysql --batch --skip-column-names -h127.0.0.1 -u{reader} {DATABASE} -e "SELECT 1"'
+    old = docker("exec", "-i", container(engine), "sh", "-c", command, sql=credentials["account"] + "\n", check=False)
+    new = docker("exec", "-i", container(engine), "sh", "-c", command, sql=password + "\n", check=False)
+    rejected = old.returncode != 0 and ("password authentication failed" in old.stderr if engine == "postgresql"
+                                      else "ERROR 1045 (28000)" in old.stderr)
+    require(rejected and new.returncode == 0 and new.stdout.strip() == "1", "native password rotation proof failed")
+    require(fixture_identity(engine, run_id) == before, "password rotation changed the source")
+    proof = {"engine": engine, "run_id": run_id, "reader": reader, "source_identity": before,
+             "old_password_rejected": True, "new_password_accepted": True}
+    with (artifacts / "sql-pool-password-probes.jsonl").open("a") as stream:
+        stream.write(json.dumps(proof) + "\n")
+    print(json.dumps(proof))
 
 
 def mysql_log_contract():
@@ -216,31 +265,31 @@ def mysql_log_contract():
     return facts
 
 
-def observe(engine, run_id):
-    owned = docker("inspect", "--format", '{{index .Config.Labels "' + LABEL + '"}}', container(engine)).stdout.strip()
-    require(owned == run_id, "SQL pool observer requires the owned fixture")
+def observe(engine, run_id, reader=READER):
+    require(reader in READERS, "unknown SQL pool fixture reader")
+    source = fixture_identity(engine, run_id)
     if engine == "postgresql":
         result = docker("logs", container(engine))
         native_log = result.stdout + "\n" + result.stderr
-        statements = pg_statement_ids(native_log)
-        reader_ids = sorted({int(match[1]) for match in re.finditer(r"(?m)^pid=(\d+) user=pool_reader\b", native_log)})
-        active = sql(engine, f"SELECT pid FROM pg_stat_activity WHERE usename='{READER}';").stdout
+        statements = pg_statement_ids(native_log, reader)
+        reader_ids = sorted({int(match[1]) for match in re.finditer(r"(?m)^pid=(\d+) user=" + re.escape(reader) + r"(?=\s|$)", native_log)})
+        active = sql(engine, f"SELECT pid FROM pg_stat_activity WHERE usename='{reader}';").stdout
     else:
         log_contract = mysql_log_contract()
         logged = sql(engine, f"""SELECT DISTINCT thread_id FROM mysql.general_log
-            WHERE user_host LIKE '{READER}[%' AND command_type IN ('Query','Execute')
+            WHERE SUBSTRING_INDEX(user_host, '[', 1) = '{reader}' AND command_type IN ('Query','Execute')
             AND LOWER(CONVERT(argument USING utf8mb4)) REGEXP '^[[:space:]]*(select|with)[[:space:]]'
             AND LOWER(CONVERT(argument USING utf8mb4)) REGEXP '[[:space:]]from[[:space:]]+(`?{DATABASE}`?[.])?`?{TABLE}`?([^a-z_0-9]|$)';""").stdout
         statements = sorted(int(value) for value in logged.split())
-        active = sql(engine, f"SELECT ID FROM information_schema.PROCESSLIST WHERE USER='{READER}';").stdout
+        active = sql(engine, f"SELECT ID FROM information_schema.PROCESSLIST WHERE USER='{reader}';").stdout
         reader_log = sql(engine, f"""SELECT JSON_OBJECT('thread_id', thread_id, 'command_type', command_type,
-            'reader', user_host LIKE '{READER}[%',
+            'reader', SUBSTRING_INDEX(user_host, '[', 1) = '{reader}',
             'select', LOWER(CONVERT(argument USING utf8mb4)) REGEXP '^[[:space:]]*(select|with)[[:space:]]',
             'sample', LOWER(CONVERT(argument USING utf8mb4)) REGEXP '[[:space:]]from[[:space:]]+(`?{DATABASE}`?[.])?`?{TABLE}`?([^a-z_0-9]|$)')
             FROM mysql.general_log WHERE command_type IN ('Query','Execute');""").stdout
         log_entries = [json.loads(line) for line in reader_log.splitlines()]
         reader_ids = sorted({entry["thread_id"] for entry in log_entries if entry["reader"]})
-    observation = {"statement_ids": statements, "active_ids": sorted(int(value) for value in active.split()),
+    observation = {"reader": reader, "source_identity": source, "statement_ids": statements, "active_ids": sorted(int(value) for value in active.split()),
                    "reader_ids": reader_ids}
     if engine == "mysql":
         observation["native_log_filters"] = log_entries
@@ -252,7 +301,9 @@ def observe(engine, run_id):
 
 
 def validate_browser(evidence, expected):
-    require(evidence.get("schema_version") == "addp.sql-pool-console/v1"
+    require(set(evidence) == {"schema_version", "run_id", "consumer_principal_id", "operator_principal_id", "cases"},
+            "unexpected Console report fields")
+    require(evidence.get("schema_version") == "addp.sql-pool-console/v2"
             and evidence.get("run_id") == expected["run_id"], "wrong Console evidence identity")
     require(evidence.get("consumer_principal_id") == expected["principal_id"], "wrong Console consumer")
     require(evidence.get("operator_principal_id") == expected["operator_principal_id"]
@@ -262,28 +313,72 @@ def validate_browser(evidence, expected):
     require([case["engine_id"] for case in cases] == [case["engine_id"] for case in expected["cases"]], "missing or reordered Console cases")
     executions = set()
     for case, sample in zip(cases, expected["cases"], strict=True):
-        require(case["engine_type"] == sample["engine_type"],
-                "wrong Console engine type")
-        require(case["after_version"] > case["before_version"], "configuration version did not advance")
-        require((case["max_open"], case["idle_before"], case["idle_after"]) == (2, 1, 0),
-                "pool settings differ from the test contract")
-        require(set(case["consumers"]) == {"manager", "develop"}, "missing one of the two consumers")
-        old, fresh = set(), set()
-        for consumer, proof in case["consumers"].items():
-            require(proof["before_rows"] == proof["after_rows"] == 1, "expected one row before and after the pool change")
-            require(proof["old_ids"] and proof["new_ids"] and not (set(proof["old_ids"]) & set(proof["new_ids"])),
-                    "missing physical pool change")
-            require(not ((set(proof["old_ids"]) | set(proof["new_ids"])) & set(proof["active_after"])),
-                    "an old or new session remained open")
-            require(not (old & set(proof["old_ids"]) or fresh & set(proof["new_ids"])),
-                    "one physical connection was attributed to both consumers")
-            old.update(proof["old_ids"])
-            fresh.update(proof["new_ids"])
-            if consumer == "develop":
-                require(len(set(proof["execution_ids"])) == 2 and not (executions & set(proof["execution_ids"])),
-                        "Develop execution IDs must be distinct")
-                executions.update(proof["execution_ids"])
-        require(not (old & fresh), "one consumer reused the other's old pool")
+        require(set(case) == {"engine_id", "engine_type", "source_identity", "changes"}, "unexpected Console case fields")
+        require(case["engine_type"] == sample["engine_type"] and case["source_identity"] == sample["source_identity"],
+                "Console source identity changed")
+        require(set(case["source_identity"]) == {"container_id", "database", "native_id"}, "unexpected source identity fields")
+        changes = case["changes"]
+        require([change["phase"] for change in changes] == list(PHASES), "missing or reordered configuration phases")
+        version, previous, previous_execution = None, None, None
+        for change in changes:
+            phase = change["phase"]
+            fields = {"address": ["host"], "account": ["password", "user"], "password": ["password"], "pool": ["pool_max_idle_conns"]}[phase]
+            allowed = {"before_version", "after_version", "phase", "changed_fields", "same_engine_confirmed",
+                       "host", "database", "reader", "max_open", "max_idle", "connection_online", "consumers"}
+            require(set(change) == allowed | ({"password_proof"} if phase == "password" else set()), "unexpected configuration evidence fields")
+            require(change["changed_fields"] == fields and change["same_engine_confirmed"] is (phase == "address"),
+                    "configuration change differs from its phase")
+            require(change["after_version"] > change["before_version"]
+                    and (version is None or change["before_version"] == version), "configuration version did not advance continuously")
+            version = change["after_version"]
+            reader = READERS[0] if phase == "address" else READERS[1]
+            old_reader = READERS[0] if phase in ("address", "account") else READERS[1]
+            idle = 0 if phase == "pool" else 1
+            require(change["host"] == "localhost" and change["database"] == DATABASE and change["reader"] == reader
+                    and change["max_open"] == 2 and change["max_idle"] == idle and change["connection_online"] is True,
+                    "source or pool settings differ from the confirmed contract")
+            if phase == "password":
+                require(change["password_proof"] == {
+                    "engine": case["engine_type"], "run_id": expected["run_id"], "reader": READERS[1],
+                    "source_identity": sample["source_identity"], "old_password_rejected": True, "new_password_accepted": True,
+                }, "missing native password rotation proof")
+            require(set(change["consumers"]) == {"manager", "develop"}, "missing one of the two consumers")
+            old_ids, new_ids = set(), set()
+            for consumer, proof in change["consumers"].items():
+                require(set(proof) == {"old_ids", "new_ids", "old_active_after", "active_after", "old_reader", "reader",
+                                       "before_rows", "after_rows"} | ({"execution_ids"} if consumer == "develop" else set()),
+                        "unexpected physical session evidence fields")
+                require(proof["before_rows"] == proof["after_rows"] == 1, "expected one row before and after the change")
+                require(proof["old_reader"] == old_reader and proof["reader"] == reader, "physical connection belongs to wrong reader")
+                for field in ("old_ids", "new_ids", "old_active_after", "active_after"):
+                    values = proof[field]
+                    require(isinstance(values, list) and all(type(value) is int and value > 0 for value in values)
+                            and len(set(values)) == len(values), "invalid native session IDs")
+                old, fresh = set(proof["old_ids"]), set(proof["new_ids"])
+                require(old and fresh and not (old & fresh), "missing physical pool change")
+                require(not (old & set(proof["old_active_after"])), "old physical connection remains open")
+                require(old_reader != reader or proof["old_active_after"] == proof["active_after"],
+                        "same reader has inconsistent active-session evidence")
+                require(not (fresh & set(proof["active_after"])) if idle == 0 else fresh <= set(proof["active_after"]),
+                        "new physical connection has wrong idle lifecycle")
+                require(not (old_ids & old or new_ids & fresh), "one physical connection was attributed to both consumers")
+                if previous is not None:
+                    require(old == set(previous["consumers"][consumer]["new_ids"]), "physical session chain is discontinuous")
+                old_ids.update(old)
+                new_ids.update(fresh)
+                if consumer == "develop":
+                    pair = proof["execution_ids"]
+                    require(len(pair) == 2 and pair[0] != pair[1] and pair[1] not in executions,
+                            "Develop execution IDs must be distinct")
+                    if previous_execution is None:
+                        require(pair[0] not in executions, "Develop initial execution was reused")
+                        executions.add(pair[0])
+                    else:
+                        require(pair[0] == previous_execution, "Develop execution chain is discontinuous")
+                    executions.add(pair[1])
+                    previous_execution = pair[1]
+            require(not (old_ids & new_ids), "one consumer reused the other's old pool")
+            previous = change
 
 
 def process_identity():
@@ -308,7 +403,8 @@ def run(private, artifacts):
         ["npm", "exec", "--", "playwright", "test", "e2e/online/sql-pool-consumer-flow.spec.js",
          "--config=playwright.online.config.js"],
         cwd=ROOT / "console/frontend",
-        env={**os.environ, "ADDP_ONLINE_POOL_EXPECTATIONS": str(source), "ADDP_ONLINE_POOL_REPORT": str(report)},
+        env={**os.environ, "ADDP_ONLINE_POOL_EXPECTATIONS": str(source), "ADDP_ONLINE_POOL_REPORT": str(report),
+             "ADDP_ONLINE_POOL_PRIVATE": str(private)},
     )
     require(result.returncode == 0 and report.is_file(), "SQL pool Console flow failed or omitted evidence")
     evidence = json.loads(report.read_text())
@@ -320,8 +416,9 @@ def run(private, artifacts):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("action", nargs="?", default="run", choices=("start", "stop", "prepare", "cleanup", "observe", "run"))
+    parser.add_argument("action", nargs="?", default="run", choices=("start", "stop", "prepare", "cleanup", "observe", "rotate-password", "run"))
     parser.add_argument("--engine", choices=PROFILES)
+    parser.add_argument("--reader", choices=READERS, default=READER)
     args = parser.parse_args()
     require(os.environ.get("GITHUB_ACTIONS") == "true" and os.environ.get("ADDP_ONLINE_HOSTED") == "1"
             and os.environ.get("ADDP_ONLINE_TEST") == "1" and os.environ.get("ONLINE_SUITE") == NAME,
@@ -339,7 +436,10 @@ def main():
         cleanup(private, artifacts, run_id)
     elif args.action == "observe":
         require(args.engine is not None, "observer engine is required")
-        print(json.dumps(observe(args.engine, run_id)))
+        print(json.dumps(observe(args.engine, run_id, args.reader)))
+    elif args.action == "rotate-password":
+        require(args.engine is not None, "password rotation engine is required")
+        rotate_password(args.engine, private, artifacts, run_id)
     else:
         run(private, artifacts)
 
