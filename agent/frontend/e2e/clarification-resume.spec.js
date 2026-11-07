@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test'
+import { historyResponse } from './history-fixture'
 
 // T3: production UI and protocol client; HTTP/SSE responses are controlled.
 // Same-business-Run persistence is checked by the backend Harness regression.
@@ -89,7 +90,7 @@ async function installBackend(page, { multiple = false, rejectResume = false, dr
   await page.addInitScript(language => localStorage.setItem('addp-lang', language), language)
   await page.route(/^https?:\/\/[^/]+\/api\//, async route => {
     const request = route.request()
-    const path = new URL(request.url()).pathname
+    const url = new URL(request.url()), path = url.pathname
     let body
     if (path === '/api/v1/system/refresh') {
       if (decisionError?.status === 401 && decisions.length) {
@@ -106,7 +107,7 @@ async function installBackend(page, { multiple = false, rejectResume = false, dr
     else if (path === '/api/v1/agent/sessions' && request.method() === 'GET') body = { data: [{ id: sessionId, title: goal, version: 1, pinned: false, archived: false }], total: 1, page: 1, page_size: 20, total_pages: 1 }
     else if (path === '/api/v1/agent/skills') body = []
     else if (path === `/api/v1/agent/sessions/${sessionId}`) body = { id: sessionId, title: goal, version: 1, pinned: false, archived: false }
-    else if (path === `/api/v1/agent/sessions/${sessionId}/messages`) body = messages
+    else if (historyResponse(path, sessionId, messages, url)) body = historyResponse(path, sessionId, messages, url)
     else if (runApproval && path === `/api/v1/transfer/run-approvals/${approvalId}/decision` && request.method() === 'POST') {
       expect(request.headers().authorization).toBe('Bearer fixture-token')
       const decision = request.postDataJSON()

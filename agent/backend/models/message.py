@@ -1,4 +1,4 @@
-from sqlalchemy import Boolean, Column, Integer, String, Text, DateTime, ForeignKey, func
+from sqlalchemy import Boolean, Column, Index, Integer, String, Text, DateTime, ForeignKey, func
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import relationship
 from . import Base
@@ -6,7 +6,7 @@ from . import Base
 
 class Message(Base):
     __tablename__ = "messages"
-    __table_args__ = {"schema": "agent"}
+    __table_args__ = (Index("ix_agent_messages_session_order", "session_id", "created_at", "id"), {"schema": "agent"})
 
     id = Column(Integer, primary_key=True, index=True)
     session_id = Column(Integer, ForeignKey("agent.sessions.id", ondelete="CASCADE"), nullable=False)

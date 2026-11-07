@@ -73,6 +73,15 @@
         "completed": "已完成"
       }
     },
+    "history": {
+      "loadFailed": "历史内容加载失败，已加载内容仍保留",
+      "fragment": "正在查看历史片段",
+      "older": "加载更早消息",
+      "newer": "加载更新消息",
+      "latest": "返回最新消息",
+      "indexScope": "显示已加载的索引条目，可继续加载全会话索引",
+      "moreIndex": "加载更多索引"
+    },
     "workspace": {
       "incomplete": "未完成的回复",
       "home": "能力首页",

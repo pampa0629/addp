@@ -21,7 +21,8 @@ from services.runs import create_agent_run, retry_agent_run
 from models.run_event import AgentRunEvent
 from models.session import Session
 from models.message import Message
-from api.chat import _project_assistant_message, _load_agent_history
+from api.chat import _project_assistant_message, _load_agent_history, get_messages, get_message_index, get_workspace
+from config import settings
 from agents.context import HISTORY_MESSAGE_LIMIT
 from services.run_events import append_run_event
 from starlette.requests import Request
@@ -33,6 +34,38 @@ def request():
     result.state.principal_id = 7
     result.state.tenant_id = 10
     return result
+
+
+async def check_history_windows(db):
+    session = Session(user_id=7, tenant_id=10, title="history fixture")
+    db.add(session)
+    await db.flush()
+    rows = [Message(session_id=session.id, role="user" if i == 0 else "assistant",
+                    content=f"history {i}", parts=[]) for i in range(45)]
+    db.add_all(rows)
+    await db.flush()
+    rows[0].parts = [{"type": "result_ref", "owner_module": "develop", "kind": "execution", "ref": "execution:fixture"}]
+    await db.flush()
+    with patch.object(settings, "AGENT_SERVICE_CLIENT_SECRET", "isolated-history-fixture-secret"):
+        first = await get_messages(session.id, request(), db)
+        assert len(first["data"]) == 20 and first["data"][0]["id"] == rows[25].id
+        db.add(Message(session_id=session.id, role="user", content="appended", parts=[]))
+        await db.flush()
+        older = await get_messages(session.id, request(), db, cursor=first["page"]["older_cursor"])
+        assert [m["id"] for m in older["data"]] == [m.id for m in rows[5:25]]
+        index = await get_message_index(session.id, request(), "results", db)
+        references = list(index["data"])
+        while index["page"]["older_cursor"]:
+            index = await get_message_index(session.id, request(), "results", db, cursor=index["page"]["older_cursor"])
+            references.extend(index["data"])
+        original = next(row for row in references if row["message_id"] == rows[0].id)
+        assert original["entries"][0]["kind"] == "execution"
+        anchored = await get_messages(session.id, request(), db, anchor_message_id=original["message_id"])
+        assert anchored["data"][0]["id"] == rows[0].id
+        assert (await get_workspace(session.id, request(), db))["goal"] == "history 0"
+        definition = (await db.execute(text("SELECT indexdef FROM pg_indexes WHERE schemaname='agent' AND indexname='ix_agent_messages_session_order'"))).scalar_one()
+        assert "(session_id, created_at, id)" in definition
+    print("PASS history keyset upper bound, source index, anchor projection and ordered index")
 
 
 async def check_partial_messages(db, run):
@@ -203,7 +236,7 @@ async def main():
                         await migrate(connection)
                         await migrate(connection)
                         versions = (await connection.execute(text('SELECT version FROM agent.schema_migrations ORDER BY version'))).scalars().all()
-                        assert versions == [1,2,3]
+                        assert versions == [1,2,3,4]
                         session = AsyncSession(bind=connection, expire_on_commit=False, join_transaction_mode='create_savepoint')
                         async with session:
                             if legacy:
@@ -222,6 +255,7 @@ async def main():
                             assert page['total'] == 1 and page['data'][0]['title'] == '100%_renamed'
                             run = await create_agent_run(session,session_id=1,user_id=7,tenant_id=10,protocol_run_id='plan-fixture',reply_detail='concise')
                             await check_partial_messages(session, run)
+                            await check_history_windows(session)
                             await session.refresh(run)
                             run.status='failed'; await session.commit(); await session.refresh(run)
                             assert run.checkpoint['reply_detail']=='concise'

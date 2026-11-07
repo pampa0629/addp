@@ -16,7 +16,9 @@ export const sessionAPI = {
   create(data) { return agentClient.post('/agent/sessions', data) },
   update(id, data) { return agentClient.patch(`/agent/sessions/${id}`, data) },
   delete(id, version) { return agentClient.delete(`/agent/sessions/${id}`, { data: { version } }) },
-  getMessages(id, options = {}) { return agentClient.get(`/agent/sessions/${id}/messages`, options) },
+  getMessages(id, params = {}, options = {}) { return agentClient.get(`/agent/sessions/${id}/messages`, { params, ...options }) },
+  workspace(id, options = {}) { return agentClient.get(`/agent/sessions/${id}/workspace`, options) },
+  messageIndex(id, params, options = {}) { return agentClient.get(`/agent/sessions/${id}/message-index`, { params, ...options }) },
 }
 
 export const runAPI = {

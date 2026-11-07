@@ -6,7 +6,8 @@ from unittest.mock import AsyncMock, Mock, patch
 from ag_ui.core import RunAgentInput
 from starlette.requests import Request
 
-from api.chat import _save_user_input, get_messages
+from api.chat import _save_user_input
+from services.history import project_messages
 from models.interaction import Interaction
 from models.message import Message
 from models.session import Session
@@ -62,15 +63,13 @@ class ClarificationDisplayTests(unittest.IsolatedAsyncioTestCase):
             parts=[{"type": "interaction_ref", "interaction_id": str(self.interaction.id),
                     "kind": "owner_approval", "status": "pending"}],
             created_at=datetime.now(timezone.utc))
-        messages, interactions = Mock(), Mock()
-        messages.scalars.return_value.all.return_value = [historical]
+        interactions = Mock()
         interactions.scalars.return_value.all.return_value = [self.interaction]
         db = AsyncMock()
-        db.execute.side_effect = [messages, interactions]
+        db.execute.side_effect = [interactions]
         request = Request({"type": "http", "headers": []})
         request.state.principal_id, request.state.tenant_id = 3, 5
-        with patch("api.chat._get_owned_session", return_value=Session(id=12)):
-            result = await get_messages(12, request, db)
+        result = await project_messages(db, request, [historical])
         self.assertEqual(result[0]["parts"][0]["status"], "completed")
         self.assertEqual(historical.parts[0]["status"], "pending")
 
@@ -140,17 +139,14 @@ class ClarificationDisplayTests(unittest.IsolatedAsyncioTestCase):
         message = Message(id=1, session_id=12, role="user", content=format_resume_message(self.interaction),
                           protocol_message_id=f"resume:{self.interaction.id}",
                           parts=[], created_at=datetime.now(timezone.utc))
-        messages = Mock()
-        messages.scalars.return_value.all.return_value = [message]
         interactions = Mock()
         interactions.scalars.return_value.all.return_value = [self.interaction]
         db = AsyncMock()
-        db.execute.side_effect = [messages, interactions]
+        db.execute.side_effect = [interactions]
         request = Request({"type": "http", "headers": []})
         request.state.principal_id = 3
         request.state.tenant_id = 5
-        with patch("api.chat._get_owned_session", return_value=Session(id=12)):
-            result = await get_messages(12, request, db)
+        result = await project_messages(db, request, [message])
         self.assertEqual(result[0]["content"], "只投影标量字段")
         self.assertEqual(result[0]["parts"], [{"type": "text", "text": "只投影标量字段"}])
 
@@ -167,23 +163,20 @@ class ClarificationDisplayTests(unittest.IsolatedAsyncioTestCase):
             protocol_message_id="user-2", parts=[{"type": "text", "text": "请解释 digest 的含义"}],
             created_at=datetime.now(timezone.utc),
         )
-        messages = Mock()
-        messages.scalars.return_value.all.return_value = [message, ordinary]
         interactions = Mock()
         interactions.scalars.return_value.all.return_value = [self.interaction]
         db = AsyncMock()
-        db.execute.side_effect = [messages, interactions]
+        db.execute.side_effect = [interactions]
         request = Request({"type": "http", "headers": []})
         request.state.principal_id = 3
         request.state.tenant_id = 5
-        with patch("api.chat._get_owned_session", return_value=Session(id=12)):
-            result = await get_messages(12, request, db)
+        result = await project_messages(db, request, [message, ordinary])
         self.assertEqual(result[0]["content"], "确认创建")
         self.assertEqual(result[0]["parts"], [{"type": "text", "text": "确认创建"}])
         self.assertEqual(result[1]["parts"], ordinary.parts)
         self.assertEqual(message.content, original)
         self.assertEqual(message.parts[0]["text"], original)
-        query = str(db.execute.call_args_list[1].args[0])
+        query = str(db.execute.call_args_list[0].args[0])
         for scope in ("session_id", "user_id", "tenant_id"):
             self.assertIn(f"interactions.{scope}", query)
 

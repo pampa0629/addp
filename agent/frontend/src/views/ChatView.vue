@@ -77,7 +77,7 @@
         <span class="conversation-title">{{ currentSession.title || t('agent.chat.newSession') }}</span>
         <div class="conversation-actions">
           <el-button text :icon="Search" :aria-label="t('agent.workspace.find')" :aria-expanded="findVisible" @click="findVisible = !findVisible" />
-          <el-button text :icon="Bottom" :aria-label="t('agent.workspace.latest')" @click="scrollToBottom" />
+          <el-button text :icon="Bottom" :aria-label="t('agent.workspace.latest')" @click="showLatestMessages" />
           <el-button text :icon="Download" :aria-label="t('agent.workspace.export')" :disabled="isLoading || !messages.length" @click="exportConversation" />
           <el-button :aria-expanded="panelVisible" @click="panelVisible = !panelVisible">{{ t(panelVisible ? 'agent.workspace.collapsePanel' : 'agent.workspace.panel') }}</el-button>
         </div>
@@ -93,6 +93,14 @@
         <el-button v-if="authStore.hasPermission('agent.session.update')" @click="updateOrganization(currentSession, { archived: false })">{{ t('agent.workspace.restore') }}</el-button>
       </div>
       <div ref="messagesAreaRef" class="messages-area">
+        <div v-if="currentSession && !sessionUnavailable" class="history-controls">
+          <el-alert v-if="historyError" :title="t('agent.history.loadFailed')" type="error" :closable="false" />
+          <el-button v-if="historyError" @click="loadSessionMessages(currentSessionId)">{{ t('agent.workspace.refresh') }}</el-button>
+          <span v-if="viewingHistory">{{ t('agent.history.fragment') }}</span>
+          <el-button v-if="messagePage.older_cursor" :loading="historyLoading" @click="loadHistoryPage('older')">{{ t('agent.history.older') }}</el-button>
+          <el-button v-if="viewingHistory && messagePage.newer_cursor" :loading="historyLoading" @click="loadHistoryPage('newer')">{{ t('agent.history.newer') }}</el-button>
+          <el-button v-if="viewingHistory" @click="showLatestMessages">{{ t('agent.history.latest') }}</el-button>
+        </div>
         <el-empty
           v-if="sessionUnavailable"
           class="empty-hint"
@@ -112,7 +120,7 @@
         </section>
 
         <div
-          v-for="message in messages"
+          v-for="message in visibleMessages"
           :key="message.protocol_message_id || message.id"
           :data-message-id="String(message.protocol_message_id || message.id)"
           class="message-row"
@@ -162,8 +170,8 @@
           v-model="inputText"
           type="textarea"
           :rows="3"
-          :placeholder="t(pendingClarifications.length === 1 ? 'agent.chat.clarificationPlaceholder' : preferences.sendShortcut === 'enter' ? 'agent.workspace.enterPlaceholder' : 'agent.chat.inputPlaceholder')"
-          :maxlength="pendingClarifications.length ? 2000 : undefined"
+          :placeholder="t(workspaceContext?.pending_clarifications === 1 ? 'agent.chat.clarificationPlaceholder' : preferences.sendShortcut === 'enter' ? 'agent.workspace.enterPlaceholder' : 'agent.chat.inputPlaceholder')"
+          :maxlength="workspaceContext?.pending_clarifications ? 2000 : undefined"
           resize="none"
           :disabled="isLoading || !canRun"
           @keydown="handleInputKey"
@@ -190,7 +198,7 @@
         </div>
       </div>
     </main>
-    <WorkspacePanel v-if="panelVisible && currentSessionId && !sessionUnavailable" :session-id="currentSessionId" :messages="panelMessages" :can-read-runs="authStore.hasPermission('agent.run.read')" :revision="runRevision" :active-run-id="activeRunId" :expand-details="preferences.expandDetails" @locate="locateMessage" @close="panelVisible = false" />
+    <WorkspacePanel v-if="panelVisible && currentSessionId && !sessionUnavailable" :session-id="currentSessionId" :messages="panelMessages" :workspace="workspaceContext" :can-read-runs="authStore.hasPermission('agent.run.read')" :revision="runRevision" :active-run-id="activeRunId" :expand-details="preferences.expandDetails" @locate="locateMessage" @close="panelVisible = false" />
   </div>
 </template>
 
@@ -210,7 +218,8 @@ import MessagePartsRenderer from '../components/MessagePartsRenderer.vue'
 import WorkspacePanel from '../components/WorkspacePanel.vue'
 import WorkspacePreferences from '../components/WorkspacePreferences.vue'
 import { useWorkspacePreferences } from '../composables/useWorkspacePreferences'
-import { createMessageDraft, readMessageDraft, conversationMarkdown, messageIdentity, messageText, pendingSessionInteractions } from '../utils/conversation'
+import { createMessageDraft, readMessageDraft, conversationMarkdown, messageIdentity, messageText } from '../utils/conversation'
+import { mergeMessageWindow } from '../utils/history'
 import { useAuthStore } from '../store/auth'
 import { navigateAgentRoute } from '../utils/moduleNavigation'
 import { createLatestRequestScope, DataPagination } from '@common-ui'
@@ -236,8 +245,13 @@ useConsolePageDescriptor(router, 'agent', {
   ready: computed(() => Boolean(currentSession.value?.title))
 })
 const sessionUnavailable = ref(false)
+const workspaceContext = ref(null)
+const messagePage = ref({ older_cursor: null, newer_cursor: null })
+const historyLoading = ref(false), historyError = ref(false), viewingHistory = ref(false)
+const historyScope = createLatestRequestScope()
 const canRun = computed(() =>
   !navigationDraftPending.value && !sessionUnavailable.value && !currentSession.value?.archived &&
+  (!currentSessionId.value || workspaceContext.value !== null) &&
   ['agent.run.create', 'agent.run.execute'].every(permission => authStore.hasPermission(permission)) &&
   (Boolean(currentSessionId.value) || authStore.hasPermission('agent.session.create'))
 )
@@ -245,28 +259,17 @@ const sessionsLoaded = ref(false)
 const messages = ref([])
 const canBranch = computed(() => ['agent.session.create', 'agent.run.create', 'agent.run.execute'].every(permission => authStore.hasPermission(permission)))
 const findMatches = computed(() => findQuery.value.trim() ? messages.value.filter(message => messageText(message).toLocaleLowerCase().includes(findQuery.value.trim().toLocaleLowerCase())).map(messageIdentity) : [])
-const pendingInteractions = computed(() => pendingSessionInteractions(messages.value))
-const attentionStatus = computed(() => isLoading.value ? 'running' : pendingInteractions.value.length ? 'waiting' : retryRunId.value ? 'failed' : null)
-const pendingClarifications = computed(() => {
-  const interactions = new Map()
-  for (const message of messages.value) {
-    for (const part of message.parts || []) {
-      if (part.type === 'interaction_ref' && part.kind === 'clarification') {
-        interactions.set(part.interaction_id, part)
-      }
-    }
-  }
-  return [...interactions.values()].filter(part => part.status === 'pending')
-})
+const attentionStatus = computed(() => isLoading.value ? 'running' : (workspaceContext.value?.pending_clarifications || workspaceContext.value?.pending_approvals) ? 'waiting' : retryRunId.value ? 'failed' : null)
 const inputText = ref('')
 const isLoading = ref(false)
 const ownerDecisionPending = ref(false)
 const isCancelling = ref(false)
 const liveMessage = ref(null)
+const visibleMessages = computed(() => messages.value.filter(message => !liveMessage.value?.protocol_message_id || messageIdentity(message) !== liveMessage.value.protocol_message_id))
 const liveTools = ref([])
 const messagesAreaRef = ref(null)
 const panelVisible = ref(false), runRevision = ref(0)
-const panelMessages = computed(() => liveMessage.value ? [...messages.value, liveMessage.value] : messages.value)
+const panelMessages = computed(() => liveMessage.value ? [...visibleMessages.value, liveMessage.value] : messages.value)
 const activeRunId = ref(null)
 const retryRunId = ref(null)
 
@@ -402,6 +405,7 @@ async function createSession() {
   try {
     const session = await sessionAPI.create({ title: null })
     currentSession.value = session
+    workspaceContext.value = { goal: '', pending_clarifications: 0, pending_approvals: 0, clarification_id: null }
     await loadSessions()
     await navigateAgentRoute(router, {
       name: 'ChatSession',
@@ -415,22 +419,79 @@ async function createSession() {
 }
 
 async function loadSessionMessages(sessionId) {
-  if (isLoading.value || !sessionId) return
+  if (!sessionId || (isLoading.value && currentSessionId.value !== String(sessionId))) return
   const ticket = detailScope.invalidate()
+  historyScope.invalidate()
+  historyLoading.value = false
+  historyError.value = false
+  const changed = currentSessionId.value !== String(sessionId)
+  const anchor = route.query.message_id ? Number(route.query.message_id) : null
+  const replace = changed || Boolean(anchor) || !messages.value.length
   if (currentSessionId.value !== String(sessionId)) {
-    currentSession.value = null; messages.value = []; retryRunId.value = null
+    currentSession.value = null; messages.value = []; retryRunId.value = null; workspaceContext.value = null
   }
   currentSessionId.value = String(sessionId)
   sessionUnavailable.value = false
   try {
-    const [session, history] = await detailScope.request(options => Promise.all([sessionAPI.get(sessionId, options), sessionAPI.getMessages(sessionId, options)]))
+    const [session, history, workspace] = await detailScope.request(options => Promise.all([
+      sessionAPI.get(sessionId, options),
+      sessionAPI.getMessages(sessionId, anchor ? { anchor_message_id: anchor } : {}, options),
+      sessionAPI.workspace(sessionId, options)
+    ]))
     if (!detailScope.current(ticket)) return
     if (!currentSession.value || currentSession.value.version <= session.version) currentSession.value = session
-    messages.value = history
-    scrollToBottom()
+    messages.value = replace ? history.data : mergeMessageWindow(messages.value, history.data)
+    workspaceContext.value = workspace
+    messagePage.value = { ...history.page, older_cursor: !replace ? messagePage.value.older_cursor : history.page.older_cursor }
+    viewingHistory.value = Boolean(anchor)
+    if (anchor) focusMessage(String(anchor))
+    else scrollToBottom()
   } catch {
-    if (detailScope.current(ticket)) { currentSession.value = null; messages.value = []; sessionUnavailable.value = true }
+    if (detailScope.current(ticket)) {
+      workspaceContext.value = null
+      if (changed || !messages.value.length) { currentSession.value = null; messages.value = []; sessionUnavailable.value = true }
+      else historyError.value = true
+    }
   }
+}
+
+async function loadHistoryPage(direction) {
+  const cursor = messagePage.value[`${direction}_cursor`]
+  if (!cursor || historyLoading.value) return
+  const ticket = historyScope.invalidate()
+  const element = messagesAreaRef.value
+  const previousHeight = element?.scrollHeight || 0
+  const previousTop = element?.scrollTop || 0
+  historyLoading.value = true
+  historyError.value = workspaceContext.value === null
+  try {
+    const page = await historyScope.request(options => sessionAPI.getMessages(currentSessionId.value, { cursor }, options))
+    if (!historyScope.current(ticket)) return
+    messages.value = mergeMessageWindow(messages.value, page.data, direction === 'older')
+    messagePage.value = { ...messagePage.value, [`${direction}_cursor`]: page.page[`${direction}_cursor`] }
+    await nextTick()
+    if (element && direction === 'older') element.scrollTop = previousTop + element.scrollHeight - previousHeight
+  } catch { if (historyScope.current(ticket)) historyError.value = true }
+  finally { if (historyScope.current(ticket)) historyLoading.value = false }
+}
+
+async function showLatestMessages() {
+  detailScope.invalidate()
+  const ticket = historyScope.invalidate()
+  historyLoading.value = false
+  try {
+    const [page, workspace] = await historyScope.request(options => Promise.all([
+      sessionAPI.getMessages(currentSessionId.value, {}, options), sessionAPI.workspace(currentSessionId.value, options)
+    ]))
+    if (!historyScope.current(ticket)) return
+    messages.value = page.data
+    workspaceContext.value = workspace
+    messagePage.value = page.page
+    viewingHistory.value = false
+    historyError.value = false
+    if (route.query.message_id) await navigateAgentRoute(router, { name: 'ChatSession', params: { session_id: currentSessionId.value } }, { history: 'replace' })
+  } catch { if (historyScope.current(ticket)) historyError.value = true }
+  scrollToBottom()
 }
 async function switchSession(sessionId) {
   if (isLoading.value || navigationDraftPending.value || String(sessionId) === currentSessionId.value) return
@@ -440,7 +501,8 @@ async function restoreRouteSession(sessionId) {
   if (!sessionsLoaded.value) return
   if (sessionId) return loadSessionMessages(String(sessionId))
   detailScope.invalidate()
-  currentSessionId.value = null; currentSession.value = null; messages.value = []; sessionUnavailable.value = false; retryRunId.value = null
+  historyScope.invalidate()
+  currentSessionId.value = null; currentSession.value = null; messages.value = []; sessionUnavailable.value = false; retryRunId.value = null; workspaceContext.value = null
 }
 async function deleteSession(session) {
   if (isLoading.value) return
@@ -454,6 +516,7 @@ async function deleteSession(session) {
 function startLiveMessage() {
   liveMessage.value = {
     id: `live:${crypto.randomUUID()}`,
+    created_at: new Date().toISOString(),
     role: 'assistant',
     content: '',
     parts: []
@@ -513,6 +576,7 @@ function applyReplayEvent(event) {
   switch (event.type) {
     case 'TEXT_MESSAGE_START':
       ensureLiveTextPart()
+      liveMessage.value.protocol_message_id = event.messageId
       break
     case 'TEXT_MESSAGE_CONTENT':
       ensureLiveTextPart().text += event.delta || ''
@@ -537,6 +601,10 @@ function applyReplayEvent(event) {
 
 function createSubscriber() {
   return {
+    onTextMessageStartEvent({ event }) {
+      ensureLiveTextPart()
+      liveMessage.value.protocol_message_id = event.messageId
+    },
     onTextMessageContentEvent({ event }) {
       ensureLiveTextPart().text += event.delta
       scrollToBottom()
@@ -651,12 +719,13 @@ async function handleSend() {
   const content = inputText.value.trim()
   if (!content || isLoading.value || !canRun.value) return
 
-  if (pendingClarifications.value.length > 1) {
+  if (workspaceContext.value?.pending_clarifications > 1) {
     ElMessage.warning(t('agent.chat.multipleClarifications'))
     return
   }
-  if (pendingClarifications.value.length === 1) {
-    const interactionId = pendingClarifications.value[0].interaction_id
+  if (workspaceContext.value?.pending_clarifications === 1) {
+    const interactionId = workspaceContext.value.clarification_id
+    if (!interactionId) { ElMessage.error(t('agent.history.loadFailed')); return }
     inputText.value = ''
     const succeeded = await resumeInteraction(interactionId, { text: content })
     if (!succeeded) inputText.value = content
@@ -671,6 +740,7 @@ async function handleSend() {
   messages.value.push({
     id: `local:${protocolMessageId}`,
     protocol_message_id: protocolMessageId,
+    created_at: new Date().toISOString(),
     role: 'user',
     content,
     parts: [{ type: 'text', text: content }]
@@ -737,15 +807,25 @@ function handlePresentationError(error) {
   ElMessage.error(t('agent.chat.presentationFailed'))
 }
 
-function locateMessage(source) {
+async function locateMessage(source) {
+  if (liveMessage.value && [String(liveMessage.value.id), liveMessage.value.protocol_message_id].includes(String(source))) return focusMessage(String(liveMessage.value.id))
+  const loaded = messages.value.find(message => String(message.id) === String(source) || messageIdentity(message) === String(source))
+  if (loaded) return focusMessage(messageIdentity(loaded))
+  await navigateAgentRoute(router, { name: 'ChatSession', params: { session_id: currentSessionId.value }, query: { message_id: String(source) } }, { history: 'replace' })
+}
+
+function focusMessage(source) {
   nextTick(() => {
-    const element = [...(messagesAreaRef.value?.querySelectorAll('[data-message-id]') || [])].find(item => item.dataset.messageId === source)
+    const message = messages.value.find(item => String(item.id) === source || messageIdentity(item) === source)
+    const key = message ? messageIdentity(message) : source
+    const element = [...(messagesAreaRef.value?.querySelectorAll('[data-message-id]') || [])].find(item => item.dataset.messageId === key)
     element?.scrollIntoView({ behavior: 'smooth', block: 'center' })
     if (element) { element.setAttribute('tabindex', '-1'); element.focus({ preventScroll: true }) }
   })
 }
 
 function scrollToBottom() {
+  if (viewingHistory.value) return
   nextTick(() => {
     const element = messagesAreaRef.value
     if (element) element.scrollTop = element.scrollHeight
@@ -766,10 +846,10 @@ onMounted(async () => {
   } finally { navigationDraftPending.value = false }
 })
 
-onBeforeUnmount(() => { listScope.dispose(); detailScope.dispose() })
+onBeforeUnmount(() => { listScope.dispose(); detailScope.dispose(); historyScope.dispose() })
 
-watch(() => route.params.session_id, sessionId => {
-  restoreRouteSession(sessionId)
+watch(() => [route.params.session_id, route.query.message_id], () => {
+  restoreRouteSession(route.params.session_id)
 })
 
 onBeforeRouteUpdate((to, from) => {
@@ -993,6 +1073,7 @@ onBeforeRouteUpdate((to, from) => {
 .conversation-actions { flex-shrink: 0; flex-wrap: wrap; justify-content: flex-end; }
 .conversation-find { padding: 8px 16px; border-bottom: 1px solid var(--addp-border-color); color: var(--addp-text-secondary); }
 .conversation-find .el-input { flex: 1; min-width: 0; }
+.history-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 8px; color: var(--addp-text-secondary); }
 .message-actions { margin-top: 8px; }
 .message-row.user .message-actions .el-button { color: var(--el-color-white); }
 .find-match .message-bubble { outline: 2px solid var(--el-color-primary); outline-offset: 2px; }

@@ -230,6 +230,8 @@ _WORKSPACE_MESSAGES = {
     'ontology_rule_binding_required': {'zh-cn': '请先读取当前类上下文并核对可求值规则及其激活版本。', 'en': 'Read the current class context and verify the evaluable rule and active revision first.'},
     'ontology_rule_evaluation_failed': {'zh-cn': '正式规则求值失败。', 'en': 'The published rule evaluation failed.'},
     'session_missing': {'zh-cn': '会话不存在或无权访问', 'en': 'Session not found or inaccessible'},
+    'history_cursor_invalid': {'zh-cn': '历史续读位置无效，请重新加载会话', 'en': 'Invalid history position. Reload the conversation.'},
+    'history_message_missing': {'zh-cn': '目标消息不存在或不属于当前会话', 'en': 'The target message is missing or belongs to another conversation.'},
     'session_archived': {'zh-cn': '会话已归档，请恢复后继续', 'en': 'Restore this archived session to continue'},
     'version_conflict': {'zh-cn': '会话已变化，请保留修改并重新加载后重试', 'en': 'Session changed; keep your edits and reload before retrying'},
 }

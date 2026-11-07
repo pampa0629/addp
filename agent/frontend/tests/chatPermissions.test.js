@@ -16,7 +16,11 @@ vi.mock('../src/api/index', () => ({
     list: vi.fn(async () => ({ data: availableSessions, total: availableSessions.length })),
     skills: vi.fn(async () => []),
     get: vi.fn(async id => availableSessions.find(item => String(item.id) === String(id))),
-    getMessages: vi.fn(async () => availableMessages)
+    getMessages: vi.fn(async () => ({ data: availableMessages, page: { limit: 20, older_cursor: null, newer_cursor: null } })),
+    workspace: vi.fn(async () => {
+      const pending = availableMessages.flatMap(message => message.parts || []).filter(part => part.type === 'interaction_ref' && part.kind === 'clarification' && part.status === 'pending')
+      return { goal: '', pending_clarifications: pending.length, pending_approvals: 0, clarification_id: pending.length === 1 ? pending[0].interaction_id : null }
+    })
   },
   runAPI: {}
 }))
@@ -31,7 +35,7 @@ vi.mock('@common-ui', () => ({
   resolveTaskOwnerUrl: vi.fn()
 }))
 vi.mock('vue-router', () => ({
-  useRoute: () => ({ params: routeParams }),
+  useRoute: () => ({ params: routeParams, query: {} }),
   useRouter: () => ({}),
   onBeforeRouteUpdate: vi.fn()
 }))

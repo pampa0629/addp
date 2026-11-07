@@ -23,6 +23,8 @@ class AgentOpenAPIContractTests(unittest.TestCase):
             ("get", "/api/v1/agent/skills"): ("permission", ["agent.session.read"]),
             ("delete", "/api/v1/agent/sessions/{session_id}"): ("permission", ["agent.session.delete"]),
             ("get", "/api/v1/agent/sessions/{session_id}/messages"): ("permission", ["agent.session.read"]),
+            ("get", "/api/v1/agent/sessions/{session_id}/workspace"): ("permission", ["agent.session.read"]),
+            ("get", "/api/v1/agent/sessions/{session_id}/message-index"): ("permission", ["agent.session.read"]),
             ("post", "/api/v1/agent/chat"): (
                 "permission",
                 ["agent.run.create", "agent.run.execute"],

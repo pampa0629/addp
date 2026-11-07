@@ -785,6 +785,43 @@
         "title": "FunctionCall",
         "type": "object"
       },
+      "HistoryPage": {
+        "properties": {
+          "limit": {
+            "title": "Limit",
+            "type": "integer"
+          },
+          "newer_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Newer Cursor"
+          },
+          "older_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Older Cursor"
+          }
+        },
+        "required": [
+          "limit",
+          "older_cursor",
+          "newer_cursor"
+        ],
+        "title": "HistoryPage",
+        "type": "object"
+      },
       "ImageInputContent": {
         "additionalProperties": true,
         "description": "An image input content fragment.",
@@ -978,6 +1015,116 @@
           "value"
         ],
         "title": "InputContentUrlSource",
+        "type": "object"
+      },
+      "MessageIndexEntry": {
+        "properties": {
+          "interaction_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Interaction Id"
+          },
+          "key": {
+            "title": "Key",
+            "type": "string"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Label"
+          },
+          "locator": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Locator"
+          }
+        },
+        "required": [
+          "key",
+          "kind"
+        ],
+        "title": "MessageIndexEntry",
+        "type": "object"
+      },
+      "MessageIndexPage": {
+        "properties": {
+          "data": {
+            "items": {
+              "$ref": "#/components/schemas/MessageIndexRow"
+            },
+            "title": "Data",
+            "type": "array"
+          },
+          "page": {
+            "$ref": "#/components/schemas/HistoryPage"
+          }
+        },
+        "required": [
+          "data",
+          "page"
+        ],
+        "title": "MessageIndexPage",
+        "type": "object"
+      },
+      "MessageIndexRow": {
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "entries": {
+            "items": {
+              "$ref": "#/components/schemas/MessageIndexEntry"
+            },
+            "title": "Entries",
+            "type": "array"
+          },
+          "message_id": {
+            "title": "Message Id",
+            "type": "integer"
+          },
+          "protocol_message_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Protocol Message Id"
+          }
+        },
+        "required": [
+          "message_id",
+          "protocol_message_id",
+          "created_at",
+          "entries"
+        ],
+        "title": "MessageIndexRow",
         "type": "object"
       },
       "PlanItem": {
@@ -1242,6 +1389,26 @@
           }
         },
         "title": "SessionCreate",
+        "type": "object"
+      },
+      "SessionMessagePage": {
+        "properties": {
+          "data": {
+            "items": {
+              "$ref": "#/components/schemas/SessionMessageResponse"
+            },
+            "title": "Data",
+            "type": "array"
+          },
+          "page": {
+            "$ref": "#/components/schemas/HistoryPage"
+          }
+        },
+        "required": [
+          "data",
+          "page"
+        ],
+        "title": "SessionMessagePage",
         "type": "object"
       },
       "SessionMessageResponse": {
@@ -1790,6 +1957,41 @@
           "source"
         ],
         "title": "VideoInputContent",
+        "type": "object"
+      },
+      "WorkspaceContext": {
+        "properties": {
+          "clarification_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Clarification Id"
+          },
+          "goal": {
+            "title": "Goal",
+            "type": "string"
+          },
+          "pending_approvals": {
+            "title": "Pending Approvals",
+            "type": "integer"
+          },
+          "pending_clarifications": {
+            "title": "Pending Clarifications",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "goal",
+          "pending_clarifications",
+          "pending_approvals",
+          "clarification_id"
+        ],
+        "title": "WorkspaceContext",
         "type": "object"
       }
     },
@@ -2719,10 +2921,10 @@
         ]
       }
     },
-    "/api/v1/agent/sessions/{session_id}/messages": {
+    "/api/v1/agent/sessions/{session_id}/message-index": {
       "get": {
-        "description": "只返回当前 Tenant 内当前用户拥有的会话消息；澄清回复只展示服务端确认的选项名称，不输出运行时候选事实。 | Returns messages owned by the current user and Tenant; clarification replies show only the server-confirmed option label, not runtime candidate facts.",
-        "operationId": "get_messages_api_v1_agent_sessions__session_id__messages_get",
+        "description": "按来源消息稳定分页，投影成果、资源或当前待答的轻量引用；空条目页仍可续读。点击后读取目标附近正文。 | Paginates source messages in stable order and projects lightweight result, resource or pending references. Empty entry pages can still have a continuation cursor. Load the target message window on selection.",
+        "operationId": "get_message_index_api_v1_agent_sessions__session_id__message_index_get",
         "parameters": [
           {
             "in": "path",
@@ -2732,6 +2934,49 @@
               "title": "Session Id",
               "type": "integer"
             }
+          },
+          {
+            "in": "query",
+            "name": "kind",
+            "required": true,
+            "schema": {
+              "enum": [
+                "results",
+                "resources",
+                "pending"
+              ],
+              "title": "Kind",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 1024,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
           }
         ],
         "responses": {
@@ -2739,11 +2984,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "items": {
-                    "$ref": "#/components/schemas/SessionMessageResponse"
-                  },
-                  "title": "Response Get Messages Api V1 Agent Sessions  Session Id  Messages Get",
-                  "type": "array"
+                  "$ref": "#/components/schemas/MessageIndexPage"
                 }
               }
             },
@@ -2785,7 +3026,131 @@
             "BearerAuth": []
           }
         ],
-        "summary": "获取会话消息 | List Session Messages",
+        "summary": "续读全会话轻量索引 | Continue conversation reference index",
+        "tags": [
+          "对话 | Chat"
+        ],
+        "x-addp-auth-mode": "permission",
+        "x-addp-required-permissions": [
+          "agent.session.read"
+        ]
+      }
+    },
+    "/api/v1/agent/sessions/{session_id}/messages": {
+      "get": {
+        "description": "默认读取最新20条，最多100条；cursor沿稳定顺序续读，anchor_message_id定位附近正文且与cursor互斥。每次重验User/Tenant归属；澄清回复仅展示已确认名称。 | Latest 20 messages by default, at most 100. A signed cursor continues stable ordering; anchor_message_id loads a nearby window and excludes cursor. User/Tenant ownership is checked on every read; clarification replies display confirmed labels only.",
+        "operationId": "get_messages_api_v1_agent_sessions__session_id__messages_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "窗口大小 | Window size",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "description": "窗口大小 | Window size",
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "服务端续读游标 | Server-issued cursor",
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 1024,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "服务端续读游标 | Server-issued cursor",
+              "title": "Cursor"
+            }
+          },
+          {
+            "description": "目标消息身份 | Target message identity",
+            "in": "query",
+            "name": "anchor_message_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "目标消息身份 | Target message identity",
+              "title": "Anchor Message Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionMessagePage"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "认证失效 | Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "权限不足 | Permission denied"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "请求参数不合法 | Invalid request parameters"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "续读会话消息 | Continue Session Messages",
         "tags": [
           "对话 | Chat"
         ],
@@ -2897,6 +3262,78 @@
         "x-addp-auth-mode": "permission",
         "x-addp-required-permissions": [
           "agent.run.read"
+        ]
+      }
+    },
+    "/api/v1/agent/sessions/{session_id}/workspace": {
+      "get": {
+        "description": "从现有消息和Interaction投影首条用户请求、全会话待答数量及唯一澄清身份，不返回选项或批准载荷。 | Projects the first user request, all-session pending counts and sole clarification identity from existing messages and interactions, without options or approval payloads.",
+        "operationId": "get_workspace_api_v1_agent_sessions__session_id__workspace_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkspaceContext"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "认证失效 | Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "权限不足 | Permission denied"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "请求参数不合法 | Invalid request parameters"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "读取会话目标和待答事实 | Read conversation goal and pending facts",
+        "tags": [
+          "对话 | Chat"
+        ],
+        "x-addp-auth-mode": "permission",
+        "x-addp-required-permissions": [
+          "agent.session.read"
         ]
       }
     },

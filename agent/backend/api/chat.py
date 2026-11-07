@@ -8,7 +8,7 @@ import httpx
 import anyio
 import uuid
 from datetime import datetime
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 from uuid import UUID
 
 from ag_ui.core import (
@@ -30,7 +30,7 @@ from ag_ui.core import (
     ToolCallStartEvent,
 )
 from ag_ui.encoder import EventEncoder
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import func, select
@@ -102,6 +102,7 @@ from services.plans import PLAN_ACTIVITY, PLAN_TOOL, plan_todos, read_run_plan
 from services.drafts import DRAFT_INSPECT, list_session_drafts, read_session_draft, read_checked_draft_step, draft_presentation, read_parameter_source
 from agents.platform_conditions import CHECK_TOOL
 from utils.summary import maybe_update_summary
+from services.history import message_entries, message_window, project_messages, workspace_context
 
 
 class AgentForwardedProps(BaseModel):
@@ -134,6 +135,44 @@ class SessionMessageResponse(BaseModel):
     content: str
     parts: list[dict[str, Any]]
     created_at: datetime
+
+
+class HistoryPage(BaseModel):
+    limit: int
+    older_cursor: str | None
+    newer_cursor: str | None
+
+
+class SessionMessagePage(BaseModel):
+    data: list[SessionMessageResponse]
+    page: HistoryPage
+
+
+class WorkspaceContext(BaseModel):
+    goal: str
+    pending_clarifications: int
+    pending_approvals: int
+    clarification_id: str | None
+
+
+class MessageIndexEntry(BaseModel):
+    key: str
+    kind: str
+    label: str | None = None
+    locator: str | None = None
+    interaction_id: str | None = None
+
+
+class MessageIndexRow(BaseModel):
+    message_id: int
+    protocol_message_id: str | None
+    created_at: datetime
+    entries: list[MessageIndexEntry]
+
+
+class MessageIndexPage(BaseModel):
+    data: list[MessageIndexRow]
+    page: HistoryPage
 
 
 def _plain_text(content: Any) -> str:
@@ -1035,16 +1074,21 @@ async def retry_chat(
 
 @router.get(
     "/sessions/{session_id}/messages",
-    response_model=list[SessionMessageResponse],
-    summary="获取会话消息 | List Session Messages",
-    description="只返回当前 Tenant 内当前用户拥有的会话消息；澄清回复只展示服务端确认的选项名称，不输出运行时候选事实。 | Returns messages owned by the current user and Tenant; clarification replies show only the server-confirmed option label, not runtime candidate facts.",
+    response_model=SessionMessagePage,
+    summary="续读会话消息 | Continue Session Messages",
+    description="默认读取最新20条，最多100条；cursor沿稳定顺序续读，anchor_message_id定位附近正文且与cursor互斥。每次重验User/Tenant归属；澄清回复仅展示已确认名称。 | Latest 20 messages by default, at most 100. A signed cursor continues stable ordering; anchor_message_id loads a nearby window and excludes cursor. User/Tenant ownership is checked on every read; clarification replies display confirmed labels only.",
     dependencies=[Depends(require_permissions(AGENT_SESSION_READ))],
     openapi_extra={
         "x-addp-auth-mode": "permission",
         "x-addp-required-permissions": [AGENT_SESSION_READ],
     },
 )
-async def get_messages(session_id: int, request: Request, db: AsyncSession = Depends(get_db)):
+async def get_messages(
+    session_id: int, request: Request, db: AsyncSession = Depends(get_db),
+    limit: Annotated[int, Query(ge=1, le=100, description="窗口大小 | Window size")] = 20,
+    cursor: Annotated[str | None, Query(max_length=1024, description="服务端续读游标 | Server-issued cursor")] = None,
+    anchor_message_id: Annotated[int | None, Query(ge=1, description="目标消息身份 | Target message identity")] = None,
+):
     await _get_owned_session(
         db,
         session_id,
@@ -1052,44 +1096,36 @@ async def get_messages(session_id: int, request: Request, db: AsyncSession = Dep
         int(request.state.tenant_id),
     )
 
-    msg_result = await db.execute(
-        select(Message)
-        .where(Message.session_id == session_id)
-        .order_by(Message.created_at.asc(), Message.id.asc())
-    )
-    messages = msg_result.scalars().all()
-    interaction_result = await db.execute(
-        select(Interaction).where(
-            Interaction.session_id == session_id,
-            Interaction.user_id == int(request.state.principal_id),
-            Interaction.tenant_id == int(request.state.tenant_id),
-        )
-    )
-    interactions = {str(interaction.id): interaction for interaction in interaction_result.scalars().all()}
-    resume_interactions = {f"resume:{key}": interaction for key, interaction in interactions.items()}
+    messages, page = await message_window(db, request, session_id, limit=limit, cursor=cursor, anchor=anchor_message_id)
+    return {"data": await project_messages(db, request, messages), "page": page}
 
-    response = []
-    for message in messages:
-        parts = copy.deepcopy(message.parts or [])
-        content = message.content
-        interaction = resume_interactions.get(message.protocol_message_id) if message.role == "user" else None
-        if interaction is not None:
-            content = format_resume_display(interaction)
-            parts = bounded_message_parts([{"type": "text", "text": content}])
-        for part in parts:
-            if part.get("type") == "interaction_ref":
-                linked = interactions.get(part.get("interaction_id"))
-                if linked is not None:
-                    part["status"] = linked.status
-        response.append(
-            {
-                "id": message.id,
-                "protocol_message_id": message.protocol_message_id,
-                "is_complete": message.is_complete,
-                "role": message.role,
-                "content": content,
-                "parts": parts,
-                "created_at": message.created_at.isoformat(),
-            }
-        )
-    return response
+
+@router.get(
+    "/sessions/{session_id}/workspace", response_model=WorkspaceContext,
+    summary="读取会话目标和待答事实 | Read conversation goal and pending facts",
+    description="从现有消息和Interaction投影首条用户请求、全会话待答数量及唯一澄清身份，不返回选项或批准载荷。 | Projects the first user request, all-session pending counts and sole clarification identity from existing messages and interactions, without options or approval payloads.",
+    dependencies=[Depends(require_permissions(AGENT_SESSION_READ))],
+    openapi_extra={"x-addp-auth-mode": "permission", "x-addp-required-permissions": [AGENT_SESSION_READ]},
+)
+async def get_workspace(session_id: int, request: Request, db: AsyncSession = Depends(get_db)):
+    await _get_owned_session(db, session_id, int(request.state.principal_id), int(request.state.tenant_id))
+    return await workspace_context(db, request, session_id)
+
+
+@router.get(
+    "/sessions/{session_id}/message-index", response_model=MessageIndexPage,
+    summary="续读全会话轻量索引 | Continue conversation reference index",
+    description="按来源消息稳定分页，投影成果、资源或当前待答的轻量引用；空条目页仍可续读。点击后读取目标附近正文。 | Paginates source messages in stable order and projects lightweight result, resource or pending references. Empty entry pages can still have a continuation cursor. Load the target message window on selection.",
+    dependencies=[Depends(require_permissions(AGENT_SESSION_READ))],
+    openapi_extra={"x-addp-auth-mode": "permission", "x-addp-required-permissions": [AGENT_SESSION_READ]},
+)
+async def get_message_index(
+    session_id: int, request: Request, kind: Literal["results", "resources", "pending"],
+    db: AsyncSession = Depends(get_db), limit: Annotated[int, Query(ge=1, le=100)] = 20,
+    cursor: Annotated[str | None, Query(max_length=1024)] = None,
+):
+    await _get_owned_session(db, session_id, int(request.state.principal_id), int(request.state.tenant_id))
+    rows, page = await message_window(db, request, session_id, limit=limit, cursor=cursor, kind="index:" + kind)
+    projected = await project_messages(db, request, rows)
+    return {"data": [dict(message_id=row["id"], protocol_message_id=row["protocol_message_id"], created_at=row["created_at"],
+                          entries=message_entries(row, kind)) for row in reversed(projected)], "page": page}

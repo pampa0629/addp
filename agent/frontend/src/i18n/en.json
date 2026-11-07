@@ -73,6 +73,15 @@
         "completed": "Completed"
       }
     },
+    "history": {
+      "loadFailed": "History could not be loaded. Loaded content is retained.",
+      "fragment": "Viewing a history excerpt",
+      "older": "Load earlier messages",
+      "newer": "Load newer messages",
+      "latest": "Return to latest messages",
+      "indexScope": "Showing loaded index entries. More conversation entries can be loaded.",
+      "moreIndex": "Load more index entries"
+    },
     "workspace": {
       "incomplete": "Incomplete response",
       "home": "Capabilities",

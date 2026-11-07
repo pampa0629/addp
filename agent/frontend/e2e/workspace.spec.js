@@ -1,6 +1,7 @@
 import { readFile } from 'node:fs/promises'
 import { dirname, resolve } from 'node:path'
 import { expect, test } from '@playwright/test'
+import { historyResponse } from './history-fixture'
 
 const runId = 'ace1d263-f309-4c67-8f47-761cfa691f35'
 const plan = [{ content: '确认输入', status: 'completed' }, { content: '检查结果', status: 'pending' }]
@@ -38,7 +39,7 @@ async function installWorkspace(page, { conflict = false, configuration = false,
       }
       expect(value.version).toBe(session.version)
       Object.assign(session, value, { version: session.version + 1 }); body = session
-    } else if (path === '/api/v1/agent/sessions/61/messages') body = history
+    } else if (historyResponse(path, 61, history, url)) body = historyResponse(path, 61, history, url)
     else if (path === '/api/v1/agent/sessions/61/runs') {
       runQueries.push(Object.fromEntries(url.searchParams))
       body = { data: [{ id: runId, skill_name: 'query-generation', status: runDetail.status || 'waiting', created_at: '2026-10-30T00:00:00Z' }], total: paginated ? 41 : 1, page: Number(url.searchParams.get('page')), page_size: 20, total_pages: paginated ? 3 : 1 }
@@ -142,6 +143,35 @@ test('answer grows while archived, then reloads the exact completed text without
   await expect(page.locator('.incomplete-message')).toHaveCount(0)
   await expect(page.locator('textarea')).toBeDisabled()
   expect(backend.writes).toEqual([{ version: 1, archived: true }])
+  expect(backend.unexpected).toEqual([])
+})
+
+test('reading historical and latest windows during streaming keeps one growing answer', async ({ page }) => {
+  const history = []
+  const backend = await installWorkspace(page, { history })
+  await installAnswerStream(page)
+  await page.goto('/module-ui/agent/sessions/61')
+  await page.locator('textarea').fill('只解释，不调用工具')
+  await page.getByRole('button', { name: '发送', exact: true }).click()
+  await expect(page.locator('.messages-area')).toContainText('第一段🙂')
+  history.push({ id: 73, protocol_message_id: 'stream-answer', role: 'assistant', content: '第一段🙂', is_complete: false })
+  await page.locator('.conversation-actions button').nth(1).click()
+  await expect(page.locator('.message-row.assistant')).toHaveCount(1)
+  // The old result is indexed by the server but absent from the loaded body.
+  history.unshift(resultMessage)
+  await page.getByRole('button', { name: '过程与成果', exact: true }).click()
+  await page.getByRole('tab', { name: /^成果/ }).click()
+  await page.locator('.result-link').filter({ hasText: '表格' }).click()
+  await expect(page).toHaveURL(/message_id=71/)
+  await expect(page.getByText('正在查看历史片段', { exact: true })).toBeVisible()
+  await page.evaluate(() => window.answerFixture.append('第二段中文'))
+  await expect(page.locator('.message-row.assistant').filter({ hasText: '第一段🙂' })).toHaveCount(1)
+  await expect(page.locator('.live-message')).toContainText('第一段🙂第二段中文')
+  await page.getByRole('button', { name: '返回最新消息', exact: true }).click()
+  Object.assign(history[1], { content: '第一段🙂第二段中文', is_complete: true })
+  await page.evaluate(() => window.answerFixture.end(false))
+  await expect(page.locator('[data-message-id="stream-answer"]')).toHaveCount(1)
+  await expect(page.locator('[data-message-id="stream-answer"]')).toContainText('第一段🙂第二段中文')
   expect(backend.unexpected).toEqual([])
 })
 
