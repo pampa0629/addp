@@ -152,9 +152,20 @@ func (r *Repository) getAccessTokenAuthSnapshot(
 	if timingColumn != "" {
 		started = time.Now()
 	}
-	result := r.db.WithContext(ctx).Raw(query, lookupValue).Scan(&row)
+	statement := r.db.WithContext(ctx).Raw(query, lookupValue)
+	// Scan initializes its result to zero, so keep the in-flight clock outside it.
+	var timing sessionSnapshotQueryTiming
 	if !started.IsZero() {
-		row.queryTiming = sessionSnapshotQueryTiming{wall: time.Since(started), serverNS: row.SnapshotServerNS}
+		statement.Statement.ConnPool = snapshotQueryConnection{ConnPool: statement.Statement.ConnPool, timing: &timing}
+	}
+	result := statement.Scan(&row)
+	if !started.IsZero() {
+		finished := time.Now()
+		timing.wall, timing.serverNS = finished.Sub(started), row.SnapshotServerNS
+		timing.beforeDispatch = timing.dispatch.Sub(started)
+		timing.toFirstRow = timing.firstRow.Sub(timing.dispatch)
+		timing.afterFirstRow = finished.Sub(timing.firstRow)
+		row.queryTiming = timing
 	}
 	if result.Error != nil {
 		return nil, wrapRepositoryError(result.Error)

@@ -14,13 +14,33 @@ import (
 	"github.com/addp/common/logger"
 	"github.com/addp/common/middleware/requestid"
 	"github.com/jackc/pgx/v5/pgconn"
+	"gorm.io/gorm"
 )
 
 type authContextTimingKey struct{}
 
 type sessionSnapshotQueryTiming struct {
-	wall     time.Duration
-	serverNS int64
+	wall           time.Duration
+	serverNS       int64
+	dispatch       time.Time
+	firstRow       time.Time
+	beforeDispatch time.Duration
+	toFirstRow     time.Duration
+	afterFirstRow  time.Duration
+}
+
+// The existing pgx stdlib QueryContext preloads the first row before returning.
+// Wrap only this statement's existing connection, which may be a transaction.
+type snapshotQueryConnection struct {
+	gorm.ConnPool
+	timing *sessionSnapshotQueryTiming
+}
+
+func (c snapshotQueryConnection) QueryContext(ctx context.Context, query string, args ...interface{}) (*sql.Rows, error) {
+	c.timing.dispatch = time.Now()
+	rows, err := c.ConnPool.QueryContext(ctx, query, args...)
+	c.timing.firstRow = time.Now()
+	return rows, err
 }
 
 // WithAuthContextTiming observes successful resolutions in one synchronous
@@ -41,6 +61,9 @@ func recordAuthContextTiming(ctx context.Context, stages map[string]time.Duratio
 			slog.Int64("transaction_commit", stages["transaction_commit"].Nanoseconds()),
 			slog.Int64("session_snapshot_query_wall", query.wall.Nanoseconds()),
 			slog.Int64("session_snapshot_server_to_row", query.serverNS),
+			slog.Int64("session_snapshot_before_query", query.beforeDispatch.Nanoseconds()),
+			slog.Int64("session_snapshot_to_first_row", query.toFirstRow.Nanoseconds()),
+			slog.Int64("session_snapshot_after_first_row", query.afterFirstRow.Nanoseconds()),
 		))
 	}
 }

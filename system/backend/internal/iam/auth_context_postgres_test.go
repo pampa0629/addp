@@ -155,15 +155,19 @@ func TestAuthContextServiceAgainstPostgres(t *testing.T) {
 		observed := WithAuthContextTiming(ctx, func(timing slog.Value) {
 			timings = append(timings, timing)
 		})
+		originalPool := repository.db.Statement.ConnPool
 		resolved, err := authContextService.ResolveFirstPartyAccessToken(observed, session.AccessToken)
 		if err != nil {
 			logCredentialValidationBoundaries(t, err)
 			t.Fatalf("resolve tenant AuthContext: %v", err)
 		}
-		if len(timings) != 1 || len(timings[0].Group()) != 9 {
-			t.Fatalf("expected seven stages and paired query timings, got %v", timings)
+		if repository.db.Statement.ConnPool != originalPool {
+			t.Fatal("query observation changed the repository connection pool")
 		}
-		stageNS := make(map[string]int64, 9)
+		if len(timings) != 1 || len(timings[0].Group()) != 12 {
+			t.Fatalf("expected seven stages and five query timings, got %v", timings)
+		}
+		stageNS := make(map[string]int64, 12)
 		for _, stage := range timings[0].Group() {
 			if stage.Value.Kind() != slog.KindInt64 || stage.Value.Int64() < 0 ||
 				(stage.Key == "session_snapshot" && stage.Value.Int64() == 0) {
@@ -172,10 +176,12 @@ func TestAuthContextServiceAgainstPostgres(t *testing.T) {
 			stageNS[stage.Key] = stage.Value.Int64()
 		}
 		server, wall := stageNS["session_snapshot_server_to_row"], stageNS["session_snapshot_query_wall"]
-		if server <= 0 || server > wall || wall > stageNS["session_snapshot"] {
+		before, first, after := stageNS["session_snapshot_before_query"], stageNS["session_snapshot_to_first_row"], stageNS["session_snapshot_after_first_row"]
+		if server <= 0 || server > first || wall > stageNS["session_snapshot"] || before+first+after != wall {
 			t.Fatalf("invalid server/query/stage duration boundary: %v", stageNS)
 		}
-		t.Logf("session snapshot timing ns: server_to_row=%d query_wall=%d stage=%d", server, wall, stageNS["session_snapshot"])
+		t.Logf("session snapshot timing ns: server_to_row=%d query_wall=%d before=%d to_first_row=%d after=%d",
+			server, wall, before, first, after)
 		if err := commonauth.ValidateAuthContext(*resolved); err != nil {
 			t.Fatalf("validate projected tenant AuthContext: %v", err)
 		}
