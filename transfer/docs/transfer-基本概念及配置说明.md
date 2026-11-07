@@ -37,7 +37,7 @@
 | `batch_size` | 批大小；config 内未声明时作为 planner 默认值。 |
 | `enabled` | 定时任务是否启用。 |
 | `auto_scan_metadata` | 成功后是否触发 Meta deep scan，默认 true。 |
-| `status` | 任务实际状态：`idle`、`running`、`blocked`；`blocked` 当前用于数据库 CDC schema drift，审批成功后收敛为 `idle`。 |
+| `status` | 任务级状态：`idle`、`running`、`blocked`。各状态含义及与 execution 开始时点的区别见[任务状态](tables/tasks表.md#四任务状态)和[领取时序](tables/tasks表.md#任务状态与执行领取时序)。 |
 | `desired_state` | continuous runtime 的用户期望状态：`running`、`paused`、`stopped`，初始为 `stopped`。bounded 任务不消费该字段。 |
 | `progress` | 任务进度百分比。 |
 

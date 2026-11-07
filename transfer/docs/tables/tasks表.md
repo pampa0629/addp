@@ -4,7 +4,7 @@
 
 `transfer.transfer_tasks` 存储 Transfer 任务定义。任务的执行历史不在本表中保存，统一写入 `common.task_executions`。
 
-阅读导航：[首次扫描](#首次扫描的提交与结果核对)、[配置结构](#二config-字段结构)、[endpoint 规则](#三endpoint-规则)、[任务状态](#四任务状态)、[用户入口](#用户任务定义与控制)、[TaskProvider 入口](#taskprovider-机器发现与执行)、[执行、恢复与验收](#执行恢复与验收边界)。
+阅读导航：[首次扫描](#首次扫描的提交与结果核对)、[配置结构](#二config-字段结构)、[endpoint 规则](#三endpoint-规则)、[任务状态](#四任务状态)、[领取时序](#任务状态与执行领取时序)、[用户入口](#用户任务定义与控制)、[TaskProvider 入口](#taskprovider-机器发现与执行)、[执行、恢复与验收](#执行恢复与验收边界)。
 
 ## 一、核心字段
 
@@ -109,11 +109,18 @@ bounded 与 continuous 扫描的固定版本、失败和清理结果分别见[SQ
 
 | 状态 | 说明 |
 |---|---|
-| `idle` | 未运行或执行已结束。 |
-| `running` | 当前有执行正在运行。 |
+| `idle` | 任务级未运行或执行已结束，不代表不存在 pending execution。 |
+| `running` | 任务级运行占用，可能仍有待领取的 bounded execution，具体时点见下方领取时序。 |
 | `blocked` | 数据库 CDC schema drift 已阻塞当前消息和 offset；禁止直接 start/resume/retry。 |
 
 任务是否成功、失败或重试，应查询 `common.task_executions` 对应记录；用户期望 `desired_state`、实际任务 `status` 和最近 execution status 的分工统一见[期望与实际运行状态](../../../docs/spec/tasks/Transfer同步执行.md#用户期望与实际运行状态)。
+
+### 任务状态与执行领取时序
+
+- bounded 普通有定义执行（非 replay）在创建 pending execution 的事务中就将任务置为 `status=running`，并保存 `last_execution_status=pending`，以阻止同一任务重复启动。此时 Worker 尚未领取。Worker 领取后，execution 才进入 `running`，并更新最近执行状态和运行时间。
+- continuous 用户启动或显式恢复时保存 `desired_state=running`、`status=idle` 和 pending execution。supervisor 领取并建立 runtime session／lease 后，才将任务与 execution 置为 `running`。因此 `status=idle` 也可能对应等待领取的 continuous execution。
+
+execution 的取值与开始时间统一见[公共执行状态](../../../docs/spec/tasks/执行记录与租约.md#执行状态枚举)和[执行记录字段](../../../docs/spec/tasks/执行记录与租约.md#执行记录规范)，bounded 领取与租约见[公共领取契约](../../../docs/spec/tasks/执行记录与租约.md#bounded-execution-领取租约和恢复契约)，continuous session 见[运行控制与执行身份](../../../docs/spec/tasks/Transfer同步执行.md#运行控制与执行身份)。任务状态与领取成功不代替实际读写、目标提交或[执行验收](#执行恢复与验收边界)。
 
 ## 五、API
 
