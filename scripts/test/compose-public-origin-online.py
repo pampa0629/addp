@@ -9,6 +9,7 @@ import re
 import subprocess
 import sys
 import time
+from functools import partial
 from pathlib import Path
 import urllib.error
 import urllib.parse
@@ -30,8 +31,11 @@ LOGIN_BACKENDS = {
 }
 PUBLISHED_WORKBENCH = "ADDP_ONLINE_PUBLIC_ORIGIN_PUBLISHED_WORKBENCH"
 WORKBENCH_PREPARATION_TOKEN = "ADDP_ONLINE_PUBLIC_WORKBENCH_PREPARATION_TOKEN"
+ASSET_PUBLISHER_TOKEN = "ADDP_ONLINE_PUBLIC_ASSET_PUBLISHER_TOKEN"
 WORKBENCH_APPLICATIONS = "/api/v1/workbench/data_applications"
 QUERY_SERVICES = "/api/v1/service/query"
+ASSET_ENTRIES = "/api/v1/asset/assets"
+PORTAL_HOME = "/api/v1/portal/home"
 WORKBENCH_PRESET_KEY = "person-a"
 WORKBENCH_PRESET_PERSON_ID = "A"
 WORKBENCH_DEFAULT_PERSON_ID = "B"
@@ -82,6 +86,9 @@ def assert_platform_ports() -> None:
     login_backends = dict(LOGIN_BACKENDS)
     if os.environ.get(PUBLISHED_WORKBENCH) == "1":
         login_backends["service-backend"] = {"POSTGRES_HOST": "postgres", "POSTGRES_DB": "addp_online", "SECURITY_URL": "http://security-backend:8194"}
+        login_backends["standard-backend"] = {"POSTGRES_HOST": "postgres", "POSTGRES_DB": "addp_online"}
+        login_backends["catalog-backend"] = {"POSTGRES_HOST": "postgres", "POSTGRES_DB": "addp_online",
+                                             "STANDARD_URL": "http://standard-backend:8110", "WORKBENCH_URL": "http://workbench-backend:8193"}
     for name in ("system-backend", "gateway", "console", "security-backend", "meta-backend",
                  "manager-backend", "transfer-backend", "orchestrator-backend", *login_backends,
                  *(f"{module}-frontend" for module in MODULE_FRONTENDS), "portal-frontend", "addp-nginx"):
@@ -370,16 +377,93 @@ def published_workbench_payload(service_id: int, fingerprint: str, run_id: str) 
     }
 
 
+def fixture_request(token: str, method: str, path: str, status: int, body: dict | None = None):
+    code, raw, _ = request(path, token, method=method, body=None if body is None else json.dumps(body).encode())
+    if code != status:
+        raise AcceptanceError(f"{method} {path} returned HTTP {code}, expected {status}")
+    return json.loads(raw) if raw else None
+
+
+def wait_for_workbench_catalog_entry(api, application_id: str) -> dict:
+    reference = {"source_module": "workbench", "source_type": "data_application", "source_identity": application_id}
+    api("GET", "/api/v1/catalog/entries?view=inventory&page=1&page_size=1", 200)
+    deadline = time.monotonic() + 150
+    while time.monotonic() < deadline:
+        result, = api("POST", "/api/v1/catalog/entries/resolve-sources", 200, {"references": [reference]})["results"]
+        if result["found"]:
+            entry = result["entry"]
+            if (any(result[key] != value for key, value in reference.items())
+                    or entry["source_status"] != "active" or entry["governance_status"] != "discovered"):
+                raise AcceptanceError("Catalog did not resolve the new active Workbench application")
+            return entry
+        time.sleep(2)
+    raise AcceptanceError("Workbench CatalogEntry did not converge")
+
+
+def run_published_portal_browser(workbench: dict, run_id: str) -> dict[str, object]:
+    token = os.environ[ASSET_PUBLISHER_TOKEN]
+    api = partial(fixture_request, token)
+    publisher = assert_context_permissions(token, {
+        "iam.department.create", "standard.domain.create",
+        "catalog.entry.read", "catalog.entry.update", "catalog.inventory.read",
+        "asset.management.read", "asset.entry.read", "asset.entry.create", "asset.entry.publish",
+        "asset.entry.offline", "asset.entry.delete",
+    })["principal"]["id"]
+    if publisher == os.environ["ADDP_ONLINE_PUBLIC_MFA_PRINCIPAL_ID"]:
+        raise AcceptanceError("Portal fixture publisher must be separate from the browser User")
+
+    name = f"Public origin asset {run_id}"
+    description = "Published Workbench application for Portal acceptance"
+    department = api("POST", "/api/v1/system/tenant/departments", 201, {"code": "public_origin", "name": name})
+    domain = api("POST", "/api/v1/standard/domains", 201, {"code": "public_origin", "name": name})
+    entry = wait_for_workbench_catalog_entry(api, workbench["application_id"])
+    entry_id = entry["id"]
+    curated = api("PUT", f"/api/v1/catalog/entries/{entry_id}", 200, {
+        "version": entry["version"], "business_name": name, "business_description": description,
+        "governance_status": "curated", "visibility": "tenant",
+        "domains": [{"id": str(domain["id"]), "role": "primary"}],
+        "responsibilities": [
+            {"role": "accountable_department", "subject_type": "department", "subject_id": department["id"]},
+            {"role": "business_owner", "subject_type": "user", "subject_id": publisher},
+            {"role": "data_steward", "subject_type": "user", "subject_id": publisher},
+        ],
+    })
+    if curated["id"] != entry_id or curated["governance_status"] != "curated":
+        raise AcceptanceError("Workbench CatalogEntry did not become curated")
+    types = api("GET", "/api/v1/asset/type-definitions", 200)
+    application_types = [item for item in types if item["enabled"] and item["code"] == "application"]
+    if len(application_types) != 1:
+        raise AcceptanceError("Asset did not expose the enabled data application type")
+    asset = api("POST", ASSET_ENTRIES, 201, {
+        "name": name, "description": description, "type_id": application_types[0]["id"],
+        "components": [{"catalog_entry_id": entry_id, "role": "primary", "sort_order": 0}],
+    })
+    asset_path = f"{ASSET_ENTRIES}/{asset['id']}"
+    portal_path = f"/api/v1/portal/assets/{asset['id']}"
+    try:
+        api("POST", f"{asset_path}/publish", 200)
+        browser = run_browser({**workbench, "portal_asset": {"id": asset["id"], "name": name, "description": description}})
+    finally:
+        current = api("GET", asset_path, 200)
+        if current["status"] == "published":
+            api("POST", f"{asset_path}/offline", 200)
+        try:
+            api("GET", portal_path, 404)
+            home = api("GET", PORTAL_HOME, 200)
+            if home["total_published"] != 0 or home["latest_assets"]:
+                raise AcceptanceError("Portal home did not become empty after offlining the asset")
+        finally:
+            api("DELETE", asset_path, 200)
+            api("GET", asset_path, 404)
+    browser["published_portal_cleanup"] = "offline_and_asset_deleted"
+    return browser
+
+
 def run_published_workbench_browser() -> dict[str, object]:
     token = os.environ[WORKBENCH_PREPARATION_TOKEN]
     engine_id = int(os.environ["ADDP_ONLINE_CONSUMER_ENGINE_ID"])
     run_id = os.environ["ADDP_ONLINE_TEST_RUN_ID"]
-
-    def api(method: str, path: str, status: int, body: dict | None = None) -> dict:
-        code, raw, _ = request(path, token, method=method, body=None if body is None else json.dumps(body).encode())
-        if code != status:
-            raise AcceptanceError(f"{method} {path} returned HTTP {code}, expected {status}")
-        return json.loads(raw) if raw else {}
+    api = partial(fixture_request, token)
 
     context = assert_context_permissions(token, {
         "asset.entry.read", "service.data_read.execute",
@@ -411,12 +495,12 @@ def run_published_workbench_browser() -> dict[str, object]:
         revision = published["current_revision_number"]
         if published["publication_status"] != "published" or type(revision) is not int or revision <= 0:
             raise AcceptanceError("Workbench did not return a published revision")
-        browser = run_browser({
+        browser = run_published_portal_browser({
             "application_id": app["id"], "published_revision": revision, "preset_key": WORKBENCH_PRESET_KEY,
             "default_person_id": WORKBENCH_DEFAULT_PERSON_ID, "query_path": f"/api/query/{service_name}/query",
             "query_filter": {"field": "person_id", "op": "eq", "value": WORKBENCH_PRESET_PERSON_ID},
             "table_values": [WORKBENCH_PRESET_PERSON_ID],
-        })
+        }, run_id)
     finally:
         try:
             if app_path is not None:
@@ -450,6 +534,7 @@ def run_browser(published_workbench: dict | None = None) -> dict[str, object]:
     browser_env = {**os.environ, "CONSOLE_URL": os.environ["ADDP_ONLINE_PUBLIC_ORIGIN"],
                    "ADDP_ONLINE_PUBLIC_ORIGIN_BROWSER_REPORT": str(report_file)}
     browser_env.pop(WORKBENCH_PREPARATION_TOKEN, None)
+    browser_env.pop(ASSET_PUBLISHER_TOKEN, None)
     browser_env.pop("ADDP_ONLINE_PUBLIC_ORIGIN_WORKBENCH_FIXTURE", None)
     if published_workbench is not None:
         browser_env["ADDP_ONLINE_PUBLIC_ORIGIN_WORKBENCH_FIXTURE"] = json.dumps(published_workbench)
@@ -487,7 +572,8 @@ def run_browser(published_workbench: dict | None = None) -> dict[str, object]:
                             workbench_published_revision=published_workbench["published_revision"],
                             workbench_preset_key=published_workbench["preset_key"],
                             workbench_query_filter=published_workbench["query_filter"],
-                            workbench_table_values=published_workbench["table_values"])
+                            workbench_table_values=published_workbench["table_values"],
+                            portal_published_asset=published_workbench["portal_asset"])
     login_evidence = {}
     for entry, path in login_reports.items():
         login_expected = {**login_fields, "entry": entry}
@@ -521,10 +607,13 @@ def main() -> int:
     assert_module_gateway_route("Transfer", "/api/v1/transfer/task-definitions")
     assert_module_gateway_route("Orchestrator", "/api/v1/orchestrator/orchestrations")
     assert_module_gateway_route("Workbench", "/api/v1/workbench/data_applications")
-    assert_module_gateway_route("Portal", "/api/v1/portal/home")
+    assert_module_gateway_route("Portal", PORTAL_HOME)
     assert_partial_permission_matrix()
     if os.environ.get(PUBLISHED_WORKBENCH) == "1":
         assert_module_gateway_route("Service", QUERY_SERVICES)
+        assert_module_gateway_route("Standard", "/api/v1/standard/domains")
+        assert_module_gateway_route("Catalog", "/api/v1/catalog/entries")
+        assert_module_gateway_route("Asset", ASSET_ENTRIES)
         browser = run_published_workbench_browser()
     else:
         browser = run_browser()

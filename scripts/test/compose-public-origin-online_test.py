@@ -118,6 +118,7 @@ class ComposePublicOriginOnlineTest(unittest.TestCase):
                 self.assertEqual(Path(command[command.index("--output") + 1]), Path(secrets).resolve() / "public-origin-playwright")
                 self.assertEqual(env["CONSOLE_URL"], "http://127.0.0.1:18080")
                 self.assertNotIn(MODULE.WORKBENCH_PREPARATION_TOKEN, env)
+                self.assertNotIn(MODULE.ASSET_PUBLISHER_TOKEN, env)
                 self.assertEqual(json.loads(env.get("ADDP_ONLINE_PUBLIC_ORIGIN_WORKBENCH_FIXTURE", "null")), published)
                 Path(env["ADDP_ONLINE_PUBLIC_ORIGIN_BROWSER_REPORT"]).write_text(json.dumps(payload))
                 for name in ("console", "independent"):
@@ -150,21 +151,24 @@ class ComposePublicOriginOnlineTest(unittest.TestCase):
                 portal_payload = portal_evidence
 
                 query_filter = {"field": "person_id", "op": "eq", "value": "A"}
+                asset = {"id": 9, "name": "Fixture asset", "description": "Fixture description"}
                 published = {"application_id": "temporary-app", "published_revision": 1, "preset_key": "person-a",
                              "default_person_id": "B", "query_path": "/api/query/temporary/query",
-                             "query_filter": query_filter, "table_values": ["A"]}
+                             "query_filter": query_filter, "table_values": ["A"], "portal_asset": asset}
                 published_evidence = {**login_evidence, "workbench_runtime_status": 200,
                                       "workbench_application_id": "temporary-app", "workbench_published_revision": 1,
                                       "workbench_preset_key": "person-a", "workbench_query_filter": query_filter,
-                                      "workbench_table_values": ["A"]}
+                                      "workbench_table_values": ["A"], "portal_published_asset": asset}
                 workbench_evidence = {**published_evidence, "entry": "workbench"}
                 published_portal = {**published_evidence, "entry": "portal"}
                 portal_payload = published_portal
-                with patch.dict(os.environ, {MODULE.WORKBENCH_PREPARATION_TOKEN: "preparation-only"}):
+                with patch.dict(os.environ, {MODULE.WORKBENCH_PREPARATION_TOKEN: "preparation-only",
+                                             MODULE.ASSET_PUBLISHER_TOKEN: "publishing-only"}):
                     self.assertEqual(MODULE.run_browser(published)["public_login"]["portal"], portal_payload)
                 for invalid in ({"workbench_preset_key": "unknown"},
                                 {"workbench_query_filter": {**query_filter, "value": "B"}},
-                                {"workbench_table_values": ["A", "B"]}):
+                                {"workbench_table_values": ["A", "B"]},
+                                {"portal_published_asset": {**asset, "id": 10}}):
                     portal_payload = {**published_portal, **invalid}
                     with self.subTest(invalid=invalid), self.assertRaisesRegex(MODULE.AcceptanceError, "portal production login evidence"):
                         MODULE.run_browser(published)
@@ -184,6 +188,53 @@ class ComposePublicOriginOnlineTest(unittest.TestCase):
             with patch.object(MODULE.subprocess, "run", side_effect=browser_without_screenshot):
                 with self.assertRaises(MODULE.AcceptanceError):
                     MODULE.run_browser()
+
+    def test_published_portal_asset_is_offlined_and_deleted_even_if_browser_fails(self):
+        asset_path = "/api/v1/asset/assets/9"
+        steps = [
+            ("POST", "/api/v1/system/tenant/departments", 201, {"id": "3"}),
+            ("POST", "/api/v1/standard/domains", 201, {"id": 5}),
+            ("GET", "/api/v1/catalog/entries?view=inventory&page=1&page_size=1", 200, {}),
+            ("POST", "/api/v1/catalog/entries/resolve-sources", 200, {"results": [{
+                "source_module": "workbench", "source_type": "data_application", "source_identity": "application",
+                "found": True, "entry": {"id": "entry", "version": "1", "source_status": "active", "governance_status": "discovered"},
+            }]}),
+            ("PUT", "/api/v1/catalog/entries/entry", 200, {"id": "entry", "governance_status": "curated"}),
+            ("GET", "/api/v1/asset/type-definitions", 200, [{"id": 6, "code": "application", "enabled": True}]),
+            ("POST", "/api/v1/asset/assets", 201, {"id": 9}),
+            ("POST", f"{asset_path}/publish", 200, {}),
+            ("GET", asset_path, 200, {"status": "published"}),
+            ("POST", f"{asset_path}/offline", 200, {}),
+            ("GET", "/api/v1/portal/assets/9", 404, {}),
+            ("GET", "/api/v1/portal/home", 200, {"total_published": 0, "latest_assets": []}),
+            ("DELETE", asset_path, 200, {}),
+            ("GET", asset_path, 404, {}),
+        ]
+        for browser_fails in (False, True):
+            with self.subTest(browser_fails=browser_fails):
+                calls = iter(steps)
+
+                def api(token, method, path, status, body=None):
+                    expected_method, expected_path, expected_status, payload = next(calls)
+                    self.assertEqual((token, method, path, status), ("publisher-token", expected_method, expected_path, expected_status))
+                    if method == "POST" and path == "/api/v1/asset/assets":
+                        self.assertEqual(body["type_id"], 6)
+                        self.assertEqual(body["components"], [{"catalog_entry_id": "entry", "role": "primary", "sort_order": 0}])
+                    return payload
+
+                with (patch.dict(os.environ, {MODULE.ASSET_PUBLISHER_TOKEN: "publisher-token"}),
+                      patch.object(MODULE, "assert_context_permissions", return_value={"principal": {"id": "7"}}),
+                      patch.object(MODULE, "fixture_request", side_effect=api),
+                      patch.object(MODULE, "run_browser", return_value={},
+                                   side_effect=MODULE.AcceptanceError("browser failed") if browser_fails else None) as browser):
+                    if browser_fails:
+                        with self.assertRaisesRegex(MODULE.AcceptanceError, "browser failed"):
+                            MODULE.run_published_portal_browser({"application_id": "application"}, "run")
+                    else:
+                        self.assertEqual(MODULE.run_published_portal_browser({"application_id": "application"}, "run"),
+                                         {"published_portal_cleanup": "offline_and_asset_deleted"})
+                    self.assertEqual(browser.call_args.args[0]["portal_asset"]["id"], 9)
+                    self.assertIsNone(next(calls, None))
 
     def test_real_token_matrix_checks_lists_writes_and_cross_tenant_detail(self):
         read_permissions = ["meta.catalog.read", "manager.content.read", "manager.data_item.read", "transfer.task.read", "orchestrator.workflow.read"]

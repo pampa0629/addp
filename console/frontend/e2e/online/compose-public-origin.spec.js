@@ -255,12 +255,28 @@ test.describe('production public login', () => {
           await check(`${phase}: Workbench missing application message`, () =>
             expect(tab.getByTestId('data-application-runtime').getByRole('alert')).toContainText('数据应用不存在'))
         } else {
-          await check(`${phase}: Portal empty fixture response`, async () =>
-            expect((await response.json()).total_published).toBe(0))
           await check(`${phase}: Portal home heading`, () =>
             expect(tab.getByRole('heading', { name: '资产门户', exact: true })).toBeVisible())
-          await check(`${phase}: Portal empty fixture message`, () =>
-            expect(tab.getByText('暂无已上架资产', { exact: true })).toBeVisible())
+          if (published) {
+            const asset = published.portal_asset
+            const home = await check(`${phase}: Portal home response`, () => response.json())
+            check(`${phase}: Portal returned the published asset`, () => {
+              expect(home.total_published).toBe(1)
+              expect(home.latest_assets).toMatchObject([{ ...asset, status: 'published' }])
+            })
+            const card = tab.getByTestId('portal-asset-card')
+            await check(`${phase}: Portal asset card identity`, () =>
+              expect(card).toHaveAttribute('data-asset-id', String(asset.id)))
+            await check(`${phase}: Portal asset card name`, () =>
+              expect(card.getByText(asset.name, { exact: true })).toBeVisible())
+            await check(`${phase}: Portal asset card description`, () =>
+              expect(card.getByText(asset.description, { exact: true })).toBeVisible())
+          } else {
+            await check(`${phase}: Portal empty fixture response`, async () =>
+              expect((await response.json()).total_published).toBe(0))
+            await check(`${phase}: Portal empty fixture message`, () =>
+              expect(tab.getByText('暂无已上架资产', { exact: true })).toBeVisible())
+          }
         }
       }
       let businessRequests = 0
@@ -396,6 +412,7 @@ test.describe('production public login', () => {
             workbench_preset_key: published.preset_key,
             workbench_query_filter: published.query_filter,
             workbench_table_values: published.table_values,
+            portal_published_asset: published.portal_asset,
           } : {}),
         }))
       } catch {

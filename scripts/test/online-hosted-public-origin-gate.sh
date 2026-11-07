@@ -13,7 +13,7 @@ COMPOSE_OVERLAY="$ROOT_DIR/scripts/test/docker-compose.public-origin-t4.yml"
 published_workbench="${ADDP_ONLINE_PUBLIC_ORIGIN_PUBLISHED_WORKBENCH:-0}"
 case "$published_workbench" in
   0) ;;
-  1) HOSTED_FIXTURE_CONTAINERS+=(service-backend addp-metric-online-disposable) ;;
+  1) HOSTED_FIXTURE_CONTAINERS+=(service-backend standard-backend catalog-backend addp-metric-online-disposable) ;;
   *) echo "invalid published Workbench case selector" >&2; exit 1 ;;
 esac
 
@@ -89,7 +89,7 @@ backends=system-backend,security-backend,gateway,meta-backend,manager-backend,tr
 frontends=console,system-frontend,meta-frontend,manager-frontend,transfer-frontend,orchestrator-frontend,workbench-frontend,portal-frontend
 protection_owners=manager,transfer
 if [ "$published_workbench" = 1 ]; then
-  backends="$backends,service-backend"
+  backends="$backends,service-backend,standard-backend,catalog-backend"
   protection_owners="$protection_owners,service"
   export ADDP_ONLINE_FIXTURE_ENGINE_DESCRIPTOR_FILE="$ADDP_ONLINE_SECRET_DIR/public-origin-postgres.json"
   run_logged bash business/scripts/online-metric-postgres-fixture.sh start
@@ -110,9 +110,12 @@ run_logged compose_app up -d --no-deps --wait transfer-frontend
 run_logged compose_app up -d --no-deps --wait orchestrator-backend
 run_logged compose_app up -d --no-deps --wait orchestrator-frontend
 if [ "$published_workbench" = 1 ]; then
-  run_logged compose_app up -d --no-deps --wait service-backend
+  run_logged compose_app up -d --no-deps --wait service-backend standard-backend
 fi
 run_logged compose_app up -d --no-deps --wait workbench-backend asset-backend
+if [ "$published_workbench" = 1 ]; then
+  run_logged compose_app up -d --no-deps --wait catalog-backend
+fi
 run_logged compose_app up -d --no-deps --wait portal-backend
 run_logged compose_app up -d --no-deps --wait workbench-frontend portal-frontend
 

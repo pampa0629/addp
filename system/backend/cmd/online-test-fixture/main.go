@@ -828,6 +828,17 @@ func run(args []string, environment []string) error {
 				return err
 			}
 			values["ADDP_ONLINE_PUBLIC_WORKBENCH_PREPARATION_TOKEN"] = preparation.AccessToken
+			assetPublisher, _, _, err := createPermissionFixture(ctx, repository, identity, membershipService, roleService, selectionService,
+				tenant.ID, administrator.PrincipalID, "external-online-public-asset-publisher", []string{
+					"iam.department.create", "standard.domain.create",
+					"catalog.entry.read", "catalog.entry.update", "catalog.inventory.read",
+					"asset.management.read", "asset.entry.read", "asset.entry.create", "asset.entry.publish",
+					"asset.entry.offline", "asset.entry.delete",
+				})
+			if err != nil {
+				return err
+			}
+			values["ADDP_ONLINE_PUBLIC_ASSET_PUBLISHER_TOKEN"] = assetPublisher.AccessToken
 		}
 
 		readerSession, _, readerPassword, err := createPermissionFixture(ctx, repository, identity, membershipService, roleService, selectionService,
@@ -1628,6 +1639,7 @@ func writeEnvironmentFile(path string, values map[string]string) error {
 		"ADDP_ONLINE_EVENTS_FOREIGN_TENANT_ID",
 		"ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN",
 		"ADDP_ONLINE_PUBLIC_WORKBENCH_PREPARATION_TOKEN",
+		"ADDP_ONLINE_PUBLIC_ASSET_PUBLISHER_TOKEN",
 		"ADDP_ONLINE_FIXTURE_QUALITY_ACCESS_TOKEN",
 		"ADDP_ONLINE_FIXTURE_SECURITY_ACCESS_TOKEN",
 		"ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN",
