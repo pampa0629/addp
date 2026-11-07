@@ -280,4 +280,8 @@ Manager 源准备保持其正式授权链；本批 Transfer CDC 仅验证既有 
 
 **对象未知复验通过。** `c105b4ba` 于 2026-11-07 00:29:01（Asia/Shanghai）通过全部 11 项。实际对象变更后代理丢弃回包，持久隔离保留、Engine 保持 deleting、重复删除返回 409 且未重发、新生成被拒绝、源 OBJ／MTL／纹理不变。控制恢复、清理与零残留均通过。快显拒绝的精确 409 和错误码由回归测试验证，Hosted 按既有断言核对拒绝行为。[通过的 Hosted 作业](https://github.com/pampa0629/addp/actions/runs/42240606344/job/127969596209)
 
+**索引未知首轮。** `f85842e7` 于 2026-11-07 10:56:42（Asia/Shanghai）失败，正式记录 5/11；GLB、原生对象与索引可见、删除受理及对象实际消失已通过。断言失败仍标为 `engine_tombstone_read`，无法区分代理回执、隔离记录或索引探针，未归档其现场值，实际根因保留未知。控制恢复、清理和零残留均通过。[首轮 Hosted](https://github.com/pampa0629/addp/actions/runs/42320210994/job/128242675201)
+
+专项仅细分既有核验阶段，失败时分类原快照／原代理观测并复用已取得的 Manager 子执行安全阶段；不增加读取、重试、权限或等待预算，原 11 项断言保留。
+
 **剩余工作。** 分别验证索引未知效果和旧 Runtime 迟到写入。新的 Hosted 须单独确认。正向和对象未知通过证据分别位于 `/tmp/addp-manager-success-hosted-eighth-20261106/` 与 `/tmp/addp-manager-object-unknown-hosted-third-20261106/`。

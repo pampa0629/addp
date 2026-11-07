@@ -1447,7 +1447,7 @@ class NativeCleanupRunnerTest(unittest.TestCase):
                     def arm(self, kind, **target): return ID
                     def fault(self, kind, key):
                         return dict(run_id='native-1', key=ID, forwarded=1, upstream_response=mutation != 'missing_effect', blocked_replays=0)
-                workflow = SimpleNamespace(user=User(), register=lambda descriptor: 9, begin=lambda engine: None,
+                workflow = SimpleNamespace(user=User(), cleanup_observation={'engine_id': 9}, register=lambda descriptor: 9, begin=lambda engine: None,
                     settled=lambda engine, **kwargs: {'task': {'based_on_scan': ID}},
                     engine=lambda engine, **scope: {'version': 3, 'name': 'owned', 'engine_type': 'minio',
                         'lifecycle_state': 'active', 'connection_status': 'online'})
@@ -1467,9 +1467,36 @@ class NativeCleanupRunnerTest(unittest.TestCase):
                         M.run_manager(User(), workflow, Controls(), User(), case, report, lambda: None)
                         self.assertEqual(reads, [True, False])
                         self.assertEqual(report['entry'], 'engine_deletion')
+                        self.assertNotIn('manager_unknown_diagnostic', report)
                     else:
                         with self.subTest(case=case, mutation=mutation), self.assertRaises(S.SuiteError):
                             M.run_manager(User(), workflow, Controls(), User(), case, report, lambda: None)
+                        if case == 'manager-success': continue
+                        diagnostic = report['manager_unknown_diagnostic']
+                        expected_probe = {'missing_effect': 'proxy_receipt',
+                            'lost_hold': 'object_hold' if case == 'manager-object-unknown' else 'index_hold',
+                            'changed_after_refusal': 'facts_recheck'}[mutation]
+                        self.assertEqual(diagnostic['probe'], expected_probe)
+                        self.assertEqual(report['engine_cleanup_diagnostic'], {'engine_id': 9})
+                        self.assertEqual(report['stage'], 'manager_unknown_' + expected_probe)
+                        self.assertEqual(diagnostic['index_unknown'], 'one' if case == 'manager-index-unknown' else 'zero')
+                        self.assertEqual(diagnostic['index_targets'], 'zero' if mutation == 'lost_hold' else 'one')
+                        self.assertEqual(diagnostic['forwarded'], 'one')
+                        self.assertTrue(diagnostic['binding_matches'])
+                        self.assertEqual(diagnostic['upstream_response'], 'false' if mutation == 'missing_effect' else 'true')
+
+    def test_manager_unknown_diagnostic_has_only_closed_safe_observations(self):
+        secret = 'private binding and response'
+        diagnostic = M.manager_unknown_diagnostics('index_hold',
+            {'index_unknown': True, 'index_targets': 3},
+            {'forwarded': secret, 'upstream_response': secret, 'run_id': secret, 'key': secret},
+            'native-1', ID)
+        self.assertEqual(diagnostic, {'probe': 'index_hold', 'index_unknown': 'unrecognized',
+            'index_targets': 'multiple', 'forwarded': 'unrecognized',
+            'upstream_response': 'unrecognized', 'binding_matches': False})
+        self.assertNotIn(secret, json.dumps(diagnostic))
+        for value, category in ((-1, 'unrecognized'), (None, 'unrecognized'), (0, 'zero'), (1, 'one'), (2, 'multiple')):
+            self.assertEqual(M.native_count_category(value), category)
 
     def test_manager_inventory_failure_identifies_the_first_unproven_probe(self):
         model = SimpleNamespace(result_id=7, execution_id=ID)

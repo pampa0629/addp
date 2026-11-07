@@ -96,6 +96,24 @@ def assert_proxy(value, run_id, key):
             'fault did not observe exactly one sent request and its real upstream response')
 
 
+def native_count_category(value):
+    if type(value) is not int or value < 0:
+        return 'unrecognized'
+    return {0: 'zero', 1: 'one'}.get(value, 'multiple')
+
+
+def manager_unknown_diagnostics(probe, snapshot, fault, run_id, key):
+    snapshot = snapshot if type(snapshot) is dict else {}
+    fault = fault if type(fault) is dict else {}
+    response = fault.get('upstream_response')
+    return dict(probe=probe,
+        index_unknown=native_count_category(snapshot.get('index_unknown')),
+        index_targets=native_count_category(snapshot.get('index_targets')),
+        forwarded=native_count_category(fault.get('forwarded')),
+        binding_matches=fault.get('run_id') == run_id and fault.get('key') == key,
+        upstream_response=str(response).lower() if type(response) is bool else 'unrecognized')
+
+
 def engine_owners_match(owners):
     expected = S.CONTRACT['cleanup_owners_by_cause']['engine.deleting']
     return (type(owners) is list and all(type(owner) is str for owner in owners)
@@ -965,29 +983,49 @@ def run_manager(manager, workflow, controls, source, case, report, checkpoint):
                 and inputs and all(x.get('cleaned') is True for x in inputs), 'Cleaned input audit was not retained')
         report['checks'].extend(['native_index_absent', 'professional_receipt_equal', 'cleaned_input_audit_retained'])
     else:
-        kind = 'object' if case == 'manager-object-unknown' else 'index'
-        assert_proxy(controls.fault(kind, key), controls.run_id, key)
-        if kind == 'object':
-            require(after['artifact_unknown'] == 1 and after['target_holds'] > 0,
-                    'unknown object response lost its durable operation or target hold')
-        else:
-            require(after['index_unknown'] == 1 and after['index_targets'] == 1,
-                    'unknown index response lost its delivery or target hold')
-            S.wait_for(lambda: controls.index_count(engine_id), lambda n: n == 0, 'native index deletion did not happen')
-        # Repeated Engine DELETE is an observed refusal, never a cleanup retry.
-        report['stage'] = 'manager_unknown_engine_read'; checkpoint()
-        current = workflow.engine(engine_id)
-        report['stage'] = 'manager_repeated_delete_refusal'; checkpoint()
-        workflow.user.request('DELETE', f'{ENGINE}/{engine_id}', (409,),
-            {'version': current['version'], 'assessment_id': completed['task'].get('based_on_scan', ''),
-             'confirmation_token': current['name'], 'external_artifact_policy': 'delete'})
-        report['stage'] = 'manager_new_generation_refusal'; checkpoint()
-        manager.request('POST', '/api/v1/manager/quick-view/actions', (400, 403, 404, 409),
-                        {'locator': model.locator, 'action': 'generate_model_3d_glb'})
-        require(controls.manager_snapshot(engine_id, model.result_id) == after, 'blocked request changed isolated native facts')
-        assert_proxy(controls.fault(kind, key), controls.run_id, key)
-        report['checks'].extend(['native_mutation_sent_response_lost', 'unknown_effect_hold_retained',
-                                'engine_remains_deleting', 'repeated_delete_not_resent', 'new_generation_rejected'])
+        probe, fault = 'proxy_receipt', None
+        try:
+            kind = 'object' if case == 'manager-object-unknown' else 'index'
+            report['stage'] = 'manager_unknown_' + probe; checkpoint()
+            fault = controls.fault(kind, key)
+            assert_proxy(fault, controls.run_id, key)
+            probe = 'object_hold' if kind == 'object' else 'index_hold'
+            report['stage'] = 'manager_unknown_' + probe; checkpoint()
+            if kind == 'object':
+                require(after['artifact_unknown'] == 1 and after['target_holds'] > 0,
+                        'unknown object response lost its durable operation or target hold')
+            else:
+                require(after['index_unknown'] == 1 and after['index_targets'] == 1,
+                        'unknown index response lost its delivery or target hold')
+                probe = 'index_absence'
+                report['stage'] = 'manager_unknown_' + probe; checkpoint()
+                S.wait_for(lambda: controls.index_count(engine_id), lambda n: n == 0, 'native index deletion did not happen')
+            # Repeated Engine DELETE is an observed refusal, never a cleanup retry.
+            probe = 'engine_read'
+            report['stage'] = 'manager_unknown_engine_read'; checkpoint()
+            current = workflow.engine(engine_id)
+            probe = 'repeated_delete'
+            report['stage'] = 'manager_repeated_delete_refusal'; checkpoint()
+            workflow.user.request('DELETE', f'{ENGINE}/{engine_id}', (409,),
+                {'version': current['version'], 'assessment_id': completed['task'].get('based_on_scan', ''),
+                 'confirmation_token': current['name'], 'external_artifact_policy': 'delete'})
+            probe = 'new_generation'
+            report['stage'] = 'manager_new_generation_refusal'; checkpoint()
+            manager.request('POST', '/api/v1/manager/quick-view/actions', (400, 403, 404, 409),
+                            {'locator': model.locator, 'action': 'generate_model_3d_glb'})
+            probe = 'facts_recheck'
+            report['stage'] = 'manager_unknown_' + probe; checkpoint()
+            require(controls.manager_snapshot(engine_id, model.result_id) == after, 'blocked request changed isolated native facts')
+            probe = 'proxy_recheck'
+            report['stage'] = 'manager_unknown_' + probe; checkpoint()
+            fault = controls.fault(kind, key)
+            assert_proxy(fault, controls.run_id, key)
+            report['checks'].extend(['native_mutation_sent_response_lost', 'unknown_effect_hold_retained',
+                                    'engine_remains_deleting', 'repeated_delete_not_resent', 'new_generation_rejected'])
+        except Exception:
+            report['manager_unknown_diagnostic'] = manager_unknown_diagnostics(probe, after, fault, controls.run_id, key)
+            report['engine_cleanup_diagnostic'] = workflow.cleanup_observation
+            raise
     controls.source_objects()
     report['checks'].append('source_objects_unchanged')
     report['entry'] = 'engine_deletion'
