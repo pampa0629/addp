@@ -6765,6 +6765,9 @@ def validate_sql_pool_profile(repository: Path, registry: dict[str, object]) -> 
         raise RegistrationError("SQL pool requires its fixed-source manual Hosted job")
     if not make_target_commands((repository / "Makefile").read_text(), "test-sql-pool-online-runner"):
         raise RegistrationError("SQL pool deterministic gate is missing")
+    lifecycle = (repository / "scripts/test/online-hosted-sql-pool-gate.sh").read_text()
+    if "for target in -system -security -meta -manager -develop; do" not in lifecycle:
+        raise RegistrationError("SQL pool page acceptance requires the System frontend lifecycle")
 
 
 def validate_hdfs_spark_profile(repository: Path, registered: set[str]) -> None:

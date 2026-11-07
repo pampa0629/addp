@@ -24,7 +24,7 @@ run_logged bash scripts/infra/up.sh
 fixture_owned=1
 run_logged python3 -m scripts.test.sql-pool-consumer-flow-online start
 application_owned=1
-for target in -security -meta -manager -develop; do
+for target in -system -security -meta -manager -develop; do
   run_daemon_launcher_logged env SKIP_MODTIDY=1 bash scripts/dev/start.sh "$target"
 done
 run_logged npm --prefix console/frontend exec -- playwright install --with-deps chromium

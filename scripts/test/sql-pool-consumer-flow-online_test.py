@@ -10,9 +10,25 @@ from unittest.mock import patch
 
 POOL = import_module("scripts.test.sql-pool-consumer-flow-online")
 DISPATCH = import_module("scripts.test.online-gate")
+CI = import_module("scripts.ci.check-online-ci-registration")
 
 
 class SQLPoolEvidenceTest(unittest.TestCase):
+    def test_page_lifecycle_cannot_omit_system_frontend(self):
+        root = Path(__file__).resolve().parents[2]
+        registry = {POOL.NAME: DISPATCH.SUITES[POOL.NAME]}
+        CI.validate_sql_pool_profile(root, registry)
+        lifecycle = root / "scripts/test/online-hosted-sql-pool-gate.sh"
+        original = Path.read_text
+
+        def without_system(path, *args, **kwargs):
+            text = original(path, *args, **kwargs)
+            return text.replace("in -system -security", "in -security") if path == lifecycle else text
+
+        with patch.object(Path, "read_text", without_system):
+            with self.assertRaisesRegex(CI.RegistrationError, "System frontend lifecycle"):
+                CI.validate_sql_pool_profile(root, registry)
+
     def test_verified_browser_output_is_returned_to_online_dispatcher(self):
         evidence = {"schema_version": "addp.sql-pool-console/v1", "run_id": "run-pool", "cases": []}
         processes = {"system": [19, "9"]}

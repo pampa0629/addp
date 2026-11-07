@@ -98,7 +98,7 @@ async function savePool(page, sample, operator) {
     const before = await json(await api.get(path), 'System pool config before edit')
     expect(before.id).toBe(sample.engine_id)
     expect(before.connection_info).toMatchObject({ [openKey]: 2, [idleKey]: 1 })
-    await row.getByRole('button', { name: '编辑', exact: true }).click()
+    await row.getByRole('button', { name: '编辑', exact: true }).click({ timeout: responseTimeout })
     const dialog = frame.getByRole('dialog', { name: '编辑引擎', exact: true })
     const idle = dialog.locator('.el-form-item').filter({ hasText: '最大空闲连接数' }).getByRole('spinbutton')
     await expect(idle).toHaveValue('1')
@@ -150,8 +150,18 @@ test('System pool edit replaces physical sessions in Manager and Develop for bot
   const operatorPage = await operatorContext.newPage()
   await operatorPage.addInitScript(() => localStorage.setItem('addp-lang', 'zh-cn'))
   await page.addInitScript(() => localStorage.setItem('addp-lang', 'zh-cn'))
-  const operator = await login(operatorPage, process.env.ADDP_ONLINE_POOL_OPERATOR_USERNAME,
-    process.env.ADDP_ONLINE_POOL_OPERATOR_PASSWORD, '/system/engines')
+  const [operator, engineListResponse] = await Promise.all([
+    login(operatorPage, process.env.ADDP_ONLINE_POOL_OPERATOR_USERNAME,
+      process.env.ADDP_ONLINE_POOL_OPERATOR_PASSWORD, '/system/engines'),
+    operatorPage.waitForResponse(response =>
+      new URL(response.url()).pathname === '/api/v1/system/engines' && response.request().method() === 'GET',
+    { timeout: responseTimeout }),
+  ])
+  const engineList = await json(engineListResponse, 'System engine management page')
+  for (const sample of expected.cases) {
+    expect(engineList.some(engine => engine.id === sample.engine_id && engine.name === sample.name)).toBe(true)
+    await expect(frameOf(operatorPage).getByRole('row').filter({ hasText: sample.name })).toBeVisible()
+  }
   const configIdentity = await checkIdentity(operator, expected.tenant_id, expected.operator_permissions, expected.operator_role)
   expect(configIdentity.principalID).toBe(expected.operator_principal_id)
   await page.context().grantPermissions(['clipboard-read', 'clipboard-write'])
