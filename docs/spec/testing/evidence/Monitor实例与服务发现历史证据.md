@@ -47,6 +47,12 @@ Go Backend 就绪检查原本正确记录 `process_exited` 或 `readiness_timeou
 
 完整 `make test-dev-lifecycle` 在 GDAL 前置用例 `test_native_identity_cache_hit_and_same_version_library_replacement` 和 `test_launch_owns_listener_and_cleans_up_failure` 分别超时，不计为通过。此次为本地受控回归，真实 Linux 启动与 Hosted 继续按各自固定源码验收。
 
+## Standard 就绪实源验证的环境准备失败（2026-11-07）
+
+固定源码 `201a8fcec71fb7ae3632f7beca08d2870de763b6`，在一次性 Lima Linux ARM64／独立 Docker overlay2 中准备 Standard 持续未就绪与恢复场景。Go、Node 和正式 Bootstrap CLI 构建完成，Infra 镜像及浏览器安装先后遇到下载 EOF／502。准备过程中宿主可用空间降至约 1.5 GiB，随后 BuildKit 元数据库写入及浏览器安装均报 `read-only file system`／`EROFS`。取证时 guest 根分区仍有约 7.4 GiB 可用，底层触发原因未确认，不能据此认定为 guest 分区耗尽。
+
+控制面尚未就绪，未执行 Bootstrap、真实页面登录或 Standard 故障注入，所需实源场景不计通过。已只读确认临时故障文件不存在。专属 VM 及其存储已删除，宿主可用空间恢复至约 13 GiB。后续先增加宿主磁盘余量，再核对临时 VM 存储状态；既有受控回归和旧固定源码的实源证据保持各自范围。
+
 ## 清单接入与实例绑定
 
 主机组合筛选、详情返回及重置已有个人 Safari 验证。System 清单接入 → Monitor 采集保存已通过 [Hosted 专项](https://github.com/pampa0629/addp/actions/runs/39127927703)（受验源码 `fb13955d8f3cc48b254f2c840e55b8f8f638d2cc`，包含 `70c62a09a`、`9263ab6ee`）：单台 Linux VM 创建一次主机，正式 400 拒绝后只重试同一主机采集，刷新、两 Owner 独立读取及准确数量均通过。场景约 63.535 秒，浏览器约 39.370 秒；配置退役通过 API 删除采集并核验 404、停用主机且核验版本递增，随后独占部署销毁与外层零残留通过，不表示产品已提供主机 DELETE。
