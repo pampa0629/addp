@@ -18,7 +18,7 @@ def target_item(name,identifier):
     spec=m.fixture.artifact_expectation(name)
     return {'id':identifier,'full_name':'outputs/'+name,'item_type':'file','size_bytes':256,'fingerprint':name,'scanned_at':'now','attributes':{
         'item':{'format':'tiff'},'type_info':{'media':{'width':spec['width'],'height':spec['height']}},
-        'format_info':{'tiff':{'profile':'cog'if m.fixture.overview_count(name)else'geotiff','is_cloud_optimized':True,'cog_check_level':'heuristic','is_tiled':True,'has_overviews':bool(m.fixture.overview_count(name))}},
+        'format_info':{'tiff':{'profile':'cog','is_cloud_optimized':True,'cog_check_level':'heuristic','is_tiled':True,'has_overviews':bool(m.fixture.overview_count(name))}},
         'capabilities':{'spatial':{'srid':spec['extent_srid'],'extent':spec['extent']}} if spec['extent_srid'] else {}}}
 def expectations():return {n:[[0.]] for n in m.fixture.CASES}
 

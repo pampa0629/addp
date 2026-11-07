@@ -15,7 +15,7 @@ def artifact(name):
  'bands':[{'dtype':'Byte','nodata':255,'nodata_is_nan':False}]}
 def private_attributes(name):
  exp=fixture.artifact_expectation(name)
- return {'item':{'format':'tiff'},'type_info':{'media':{'width':exp['width'],'height':exp['height']}},'format_info':{'tiff':{'profile':'cog','is_tiled':True,'has_overviews':True}},'capabilities':{'spatial':{'srid':exp['extent_srid'],'extent':exp['extent']}}}
+ return {'item':{'format':'tiff'},'type_info':{'media':{'width':exp['width'],'height':exp['height']}},'format_info':{'tiff':{'profile':'cog','is_cloud_optimized':True,'cog_check_level':'heuristic','is_tiled':True,'has_overviews':True}},'capabilities':{'spatial':{'srid':exp['extent_srid'],'extent':exp['extent']}}}
 def physical(repository,env,action,names,timeout):
  assert 0<timeout<=600
  if action=='cleanup-oracle':return {'oracle_cache_removed':True}

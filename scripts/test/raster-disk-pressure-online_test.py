@@ -44,7 +44,7 @@ class Client:
                 self.scans.append(scan); self.targets[name] = {'id': 10+len(self.targets), 'item_type': 'file', 'full_name': 'outputs/'+name,
                     'size_bytes': 2000, 'fingerprint': name, 'scanned_at': '2026-10-21T00:00:00Z', 'attributes': {
                         'item': {'format': 'tiff'}, 'type_info': {'media': {'width': 1024, 'height': 1024}},
-                        'format_info': {'tiff': {'profile': 'geotiff', 'is_tiled': True, 'has_overviews': False}},
+                        'format_info': {'tiff': {'is_cloud_optimized': True, 'cog_check_level': 'heuristic', 'profile': 'cog', 'is_tiled': True, 'has_overviews': False}},
                         'capabilities': {'spatial': {'srid': 3857, 'extent': m.fixture.expectation()['extent']}}}}
                 facts = {'schema_version': 'addp.lineage-facts/v1', 'inputs': [{'locator': tasks[0]['params']['locator']}],
                          'outputs': [{'locator': target, 'write_mode': 'create'}]}

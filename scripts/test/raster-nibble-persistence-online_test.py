@@ -16,7 +16,7 @@ def target_item(name,identifier):
     expected=m.fixture.artifact_expectation()
     return {'id':identifier,'item_type':'file','full_name':'outputs/'+name,'fingerprint':name,'size_bytes':2048,'scanned_at':'2026-10-19T00:00:00Z',
         'attributes':{'item':{'format':'tiff'},'type_info':{'media':{'width':m.fixture.WIDTH,'height':m.fixture.HEIGHT}},
-            'format_info':{'tiff':{'profile':'cog','is_tiled':True,'has_overviews':True}},
+            'format_info':{'tiff':{'is_cloud_optimized': True, 'cog_check_level': 'heuristic', 'profile':'cog','is_tiled':True,'has_overviews':True}},
             'capabilities':{'spatial':{'srid':3857,'extent':expected['extent']}}}}
 
 

@@ -28,7 +28,7 @@ def target_item(name,identifier):
     expected=m.fixture.artifact_expectation(name)
     return {'id':identifier,'item_type':'file','full_name':'outputs/'+name,'fingerprint':name,'size_bytes':2048,'scanned_at':'2026-10-19T00:00:00Z',
         'attributes':{'item':{'format':'tiff'},'type_info':{'media':{'width':expected['width'],'height':expected['height']}},
-            'format_info':{'tiff':{'profile':'geotiff' if name in ('small.cog.tif','stationary.cog.tif') else 'cog','is_tiled':True,'has_overviews':name not in ('small.cog.tif','stationary.cog.tif')}},
+            'format_info':{'tiff':{'is_cloud_optimized': True, 'cog_check_level': 'heuristic', 'profile':'cog','is_tiled':True,'has_overviews':name not in ('small.cog.tif','stationary.cog.tif')}},
             'capabilities':{'spatial':{'srid':expected['extent_srid'],'extent':expected['extent']}}}}
 
 
