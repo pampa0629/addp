@@ -86,7 +86,7 @@ non-table raw copy 按原始字节复制 encoded single file/object，目标仅�
 
 [Continuous/Kafka 配置](./docs/transfer-基本概念及配置说明.md#八continuouskafka-v1-契约与当前实现边界)维护业务 Kafka keyed JSON upsert、显式 `block|dead_letter` 和写入新 PostgreSQL 隔离表的 bounded replay；[CDC 配置](./docs/transfer-基本概念及配置说明.md#九数据库-cdc-v1-已冻结边界)维护 PostgreSQL/MySQL/Oracle 单表 initial snapshot + upsert/delete。两类路线复用同一个 continuous worker 与 `PartitionedTableChangeApplyProvider`；Oracle 空间捕获、目标 ledger 和类型限制由该配置正文维护，Infra Kafka 不进入 System engines 或用户任务 JSON。
 
-CDC schema drift 使任务进入 `blocked` 且不推进当前 offset；PostgreSQL/MySQL 仅当前阻塞消息中的新增 nullable、非主键、非 geometry 字段可人工审批，审批后进入 paused，由用户显式 Resume。Oracle 任意 drift 和其他不可审批变化须 Stop 后新建任务与目标表，完整条件见[Schema drift 与审批恢复](./docs/transfer-基本概念及配置说明.md#schema-drift-与审批恢复)。
+CDC schema drift 使任务进入 `status=blocked`，当前 offset 保持原位。PostgreSQL/MySQL 仅当前阻塞消息中的新增 nullable、非主键、非 geometry 字段可人工审批。审批落库后，任务为 `status=idle, desired_state=paused`，由用户显式 Resume。Oracle 任意 drift 和其他不可审批变化须 Stop 后新建任务与目标表。 [Schema drift 与审批恢复](./docs/transfer-基本概念及配置说明.md#schema-drift-与审批恢复)
 
 重跑和续读见[恢复分级](./docs/transfer-基本概念及配置说明.md#恢复分级)：snapshot replace 失败可从头 retry，append retry 被拒绝；watermark 与未阻塞的 continuous/CDC 从 `transfer.sync_states` committed position resume。retention 越界必须明确失败，不静默重置；目标锁等待须响应 context 取消并回滚未完成的业务行与 apply ledger，细则见[位置恢复与取消](./docs/transfer-基本概念及配置说明.md#位置恢复与取消)。
 
