@@ -61,9 +61,29 @@ func TestMetaAuthorizationFactsStrictRuntimeClient(t *testing.T) {
 				_, _ = w.Write([]byte(test.body))
 			}))
 			defer server.Close()
-			value, err := newTestMetaClient(server.URL).ReadAuthorizationFacts(context.Background(), 7, []string{facts.ItemFingerprint})
+			var observed []MetaAuthorizationFactsTiming
+			ctx := WithMetaAuthorizationFactsTiming(t.Context(), func(value MetaAuthorizationFactsTiming) { observed = append(observed, value) })
+			value, err := newTestMetaClient(server.URL).ReadAuthorizationFacts(ctx, 7, []string{facts.ItemFingerprint})
 			if (err == nil) != test.success || calls != 1 {
 				t.Fatalf("value=%+v err=%v calls=%d", value, err, calls)
+			}
+			if test.success {
+				if len(observed) != 1 {
+					t.Fatalf("successful query observations: %d", len(observed))
+				}
+				timing := observed[0]
+				var sum time.Duration
+				for _, stage := range []time.Duration{timing.Preparation, timing.HTTP, timing.ResponseRead, timing.StrictJSON, timing.Decode, timing.Validation} {
+					if stage < 0 {
+						t.Fatal("negative client timing")
+					}
+					sum += stage
+				}
+				if timing.Total < sum || sum <= 0 || timing.HTTP <= 0 || timing.StrictJSON <= 0 || timing.Validation <= 0 {
+					t.Fatalf("invalid non-overlapping timing boundaries: %+v", timing)
+				}
+			} else if len(observed) != 0 {
+				t.Fatal("failed owner response reported a successful observation")
 			}
 			if err != nil && strings.Contains(err.Error(), "secret") {
 				t.Fatal("upstream response leaked")
@@ -82,6 +102,30 @@ func TestMetaAuthorizationFactsStrictRuntimeClient(t *testing.T) {
 	var apiError *TenantAPIError
 	if !errors.As(err, &apiError) || apiError.StatusCode != 302 {
 		t.Fatal("runtime redirect followed", err)
+	}
+}
+
+func TestMetaFactsQueryTimingIsContextLocal(t *testing.T) {
+	facts := metaAuthorizationTestFacts(t)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(authorizationfacts.AuthorizationFactsBatch{Data: []authorizationfacts.AuthorizationFactsResult{{ItemFingerprint: facts.ItemFingerprint, Facts: &facts}}})
+	}))
+	defer server.Close()
+	client := newTestMetaClient(server.URL)
+	counts := [2]int{}
+	contexts := []context.Context{
+		WithMetaAuthorizationFactsTiming(t.Context(), func(MetaAuthorizationFactsTiming) { counts[0]++ }),
+		t.Context(),
+		WithMetaAuthorizationFactsTiming(t.Context(), func(MetaAuthorizationFactsTiming) { counts[1]++ }),
+	}
+	for _, ctx := range contexts {
+		value, err := client.ReadAuthorizationFacts(ctx, 7, []string{facts.ItemFingerprint})
+		if err != nil || len(value.Data) != 1 || value.Data[0].ItemFingerprint != facts.ItemFingerprint {
+			t.Fatalf("timing changed owner response: %+v %v", value, err)
+		}
+	}
+	if counts != [2]int{1, 1} {
+		t.Fatalf("client timing leaked across contexts: %v", counts)
 	}
 }
 

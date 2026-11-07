@@ -115,7 +115,8 @@ func TestManagerSearchMetadataCheckUsesFixedAudienceAndScope(t *testing.T) {
 			keys := []string{"candidate_count", "whole_candidate_count", "engine_query_count", "rule_item_count",
 				"rule_query_count", "route_auth_and_guards_ns", "request_binding_ns", "pre_meta_auth_ns",
 				"metadata_binding_ns", "meta_facts_ns", "engine_lookup_ns", "rule_preparation_ns", "rule_observation_ns",
-				"rule_recheck_auth_ns", "rule_query_ns", "response_ns"}
+				"rule_recheck_auth_ns", "rule_query_ns", "response_ns", "meta_client_call_count", "meta_client_prepare_ns",
+				"meta_client_http_ns", "meta_client_read_ns", "meta_client_json_ns", "meta_client_decode_ns", "meta_client_validate_ns", "meta_client_total_ns"}
 			if len(completion.Diagnostics) != 1 || len(fields) != len(keys) {
 				t.Fatalf("unexpected diagnostic fields: %v", fields)
 			}

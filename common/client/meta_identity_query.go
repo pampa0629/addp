@@ -7,6 +7,7 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"time"
 
 	"github.com/addp/common/jsonmap"
 )
@@ -28,7 +29,16 @@ func (c *MetaClient) postMetaOwnerQuery(ctx context.Context, tenantID uint, path
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.GetBody = nil
+	timing, _ := ctx.Value(metaFactsTimingKey{}).(*metaFactsTiming)
+	var started time.Time
+	if timing != nil {
+		timing.Preparation = time.Since(timing.started)
+		started = time.Now()
+	}
 	response, err := copy.do(req)
+	if timing != nil {
+		timing.HTTP = time.Since(started)
+	}
 	if err != nil {
 		return nil, &TenantTransportError{Method: http.MethodPost, Path: path, Cause: err}
 	}
@@ -40,11 +50,24 @@ func (c *MetaClient) postMetaOwnerQuery(ctx context.Context, tenantID uint, path
 		_ = json.NewDecoder(io.LimitReader(response.Body, 8192)).Decode(&failure)
 		return nil, &TenantAPIError{Method: http.MethodPost, Path: path, StatusCode: response.StatusCode, ErrorCode: failure.ErrorCode}
 	}
+	if timing != nil {
+		started = time.Now()
+	}
 	encoded, err := io.ReadAll(io.LimitReader(response.Body, int64(maxBytes+1)))
+	if timing != nil {
+		timing.ResponseRead = time.Since(started)
+	}
 	if err != nil {
 		return nil, errors.New("invalid Meta identity response")
 	}
-	if _, err := jsonmap.DecodeObjectStrict(encoded, maxBytes, maxDepth); err != nil {
+	if timing != nil {
+		started = time.Now()
+	}
+	_, err = jsonmap.DecodeObjectStrict(encoded, maxBytes, maxDepth)
+	if timing != nil {
+		timing.StrictJSON = time.Since(started)
+	}
+	if err != nil {
 		return nil, errors.New("invalid Meta identity response")
 	}
 	return encoded, nil

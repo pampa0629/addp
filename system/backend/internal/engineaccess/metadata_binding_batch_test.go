@@ -57,13 +57,24 @@ func TestMetadataFactQueriesUseFourOwnerHTTPCallsForTwoHundredItems(t *testing.T
 			for i := range paths {
 				paths[i] = plugin.TabularItemPath(9, "schema", "public", fmt.Sprint(i))
 			}
-			bindings, err := svc.resolveMetadataBindings(t.Context(), 7, paths)
+			ctx, timing := ObserveManagerSearchTiming(t.Context())
+			bindings, err := svc.resolveMetadataBindings(ctx, 7, paths)
 			if absentRoute {
 				if calls != 1 || !errors.Is(err, ErrAuthorizationFactsUnavailable) || bindings != nil {
 					t.Fatal("missing owner route became absent items", err)
 				}
 			} else if err != nil || len(bindings) != 200 || calls != 4 {
 				t.Fatalf("RPC budget violated: calls=%d err=%v", calls, err)
+			}
+			if absentRoute {
+				if timing.metaClientCalls != 0 {
+					t.Fatal("failed owner call became a successful client timing")
+				}
+			} else {
+				stages := timing.metaClient.Preparation + timing.metaClient.HTTP + timing.metaClient.ResponseRead + timing.metaClient.StrictJSON + timing.metaClient.Decode + timing.metaClient.Validation
+				if timing.metaClientCalls != calls || stages <= 0 || timing.metaClient.Total < stages || timing.metaFacts < timing.metaClient.Total {
+					t.Fatalf("client timing escaped the existing Meta facts interval: calls=%d client=%+v facts=%v", timing.metaClientCalls, timing.metaClient, timing.metaFacts)
+				}
 			}
 		})
 	}
