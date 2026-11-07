@@ -9,6 +9,7 @@ const frameOf = page => page.frameLocator('iframe[data-testid="module-iframe"]')
 const previewRoute = sample => `/manager/data-explorer?locator=${encodeURIComponent(sample.locator)}`
 const openKey = 'pool_max_open_conns'
 const idleKey = 'pool_max_idle_conns'
+const responseTimeout = 30_000
 
 function observe(engine) {
   return JSON.parse(execFileSync('python3', ['-m', 'scripts.test.sql-pool-consumer-flow-online', 'observe', '--engine', engine],
@@ -33,7 +34,7 @@ async function managerPreview(page, sample, navigate) {
   const loaded = page.waitForResponse(response => {
     const url = new URL(response.url())
     return url.pathname === '/api/v1/manager/preview' && url.searchParams.get('locator') === sample.locator
-  })
+  }, { timeout: responseTimeout })
   const token = await navigate()
   const data = await json(await loaded, 'Manager pool preview')
   expect(data.preview_type).toBe('table')
@@ -45,7 +46,8 @@ async function managerPreview(page, sample, navigate) {
 }
 
 async function developQuery(page, sample, phase, consumer) {
-  const engines = page.waitForResponse(response => new URL(response.url()).pathname === '/api/v1/develop/engines')
+  const engines = page.waitForResponse(response => new URL(response.url()).pathname === '/api/v1/develop/engines',
+    { timeout: responseTimeout })
   await page.goto('/develop/sql?action=create')
   const api = await browserAPIFromResponse(await engines, process.env.GATEWAY_URL, consumer)
   await api.dispose()
@@ -63,17 +65,18 @@ async function developQuery(page, sample, phase, consumer) {
   await frame.locator('.monaco-editor').click({ position: { x: 70, y: 20 } })
   await page.keyboard.press('ControlOrMeta+A')
   await page.keyboard.press('ControlOrMeta+V')
-  const created = page.waitForResponse(response => {
-    if (new URL(response.url()).pathname !== '/api/v1/develop/executions' || response.request().method() !== 'POST') return false
-    return response.request().postDataJSON().content?.query === query
-  })
+  const created = page.waitForResponse(response =>
+    new URL(response.url()).pathname === '/api/v1/develop/executions' && response.request().method() === 'POST',
+  { timeout: responseTimeout })
   const finished = page.waitForResponse(async response => {
     if (!/^\/api\/v1\/develop\/executions\/[^/]+\/result$/.test(new URL(response.url()).pathname) || !response.ok()) return false
     return ['success', 'failed', 'timeout', 'cancelled'].includes((await response.json()).status)
   }, { timeout: 120_000 })
   await frame.locator('.toolbar-actions').getByRole('button', { name: /^(执行|Execute)$/ }).click()
   const response = await created
-  expect(response.request().postDataJSON().execution_config.engine_id).toBe(sample.engine_id)
+  const body = response.request().postDataJSON()
+  expect(body.content.query).toBe(query)
+  expect(body.execution_config.engine_id).toBe(sample.engine_id)
   const execution = await json(response, 'Develop pool execution submission')
   const terminal = await finished
   expect(new URL(terminal.url()).pathname).toBe(`/api/v1/develop/executions/${execution.execution_id}/result`)
@@ -101,7 +104,8 @@ async function savePool(page, sample, operator) {
     await expect(idle).toHaveValue('1')
     await idle.fill('0')
     await idle.press('Tab')
-    const saved = page.waitForResponse(response => new URL(response.url()).pathname === path && response.request().method() === 'PUT')
+    const saved = page.waitForResponse(response => new URL(response.url()).pathname === path && response.request().method() === 'PUT',
+      { timeout: responseTimeout })
     await dialog.getByRole('button', { name: '保存', exact: true }).click()
     const response = await saved
     const body = response.request().postDataJSON()
@@ -189,5 +193,7 @@ test('System pool edit replaces physical sessions in Manager and Develop for bot
     writeFileSync(process.env.ADDP_ONLINE_POOL_REPORT, JSON.stringify({
       schema_version: 'addp.sql-pool-console/v1', run_id: expected.run_id, consumer_principal_id: consumer.principalID, operator_principal_id: configIdentity.principalID, cases,
     }))
-  } finally { await operatorContext.close() }
+  } finally {
+    if (!operatorPage.isClosed()) await operatorContext.close()
+  }
 })
