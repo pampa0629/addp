@@ -14,6 +14,18 @@ CI = import_module("scripts.ci.check-online-ci-registration")
 
 
 class SQLPoolEvidenceTest(unittest.TestCase):
+    def test_mysql_observer_rejects_unverified_native_log_type_or_conversion(self):
+        valid = {"argument_type": "mediumblob", "binary_lower": "53454C454354", "decoded_lower": "73656C656374"}
+        for facts in (valid, {**valid, "decoded_lower": valid["binary_lower"]}, {**valid, "argument_type": "mediumtext"}):
+            with self.subTest(facts=facts), patch.object(POOL, "sql", return_value=POOL.subprocess.CompletedProcess(
+                [], 0, stdout=json.dumps(facts), stderr=""
+            )):
+                if facts == valid:
+                    self.assertEqual(POOL.mysql_log_contract(), valid)
+                else:
+                    with self.assertRaisesRegex(POOL.SUPPORT.SuiteError, "native log text contract"):
+                        POOL.mysql_log_contract()
+
     def test_page_lifecycle_cannot_omit_system_frontend(self):
         root = Path(__file__).resolve().parents[2]
         registry = {POOL.NAME: DISPATCH.SUITES[POOL.NAME]}

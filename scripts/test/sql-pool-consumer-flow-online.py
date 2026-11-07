@@ -203,6 +203,19 @@ def pg_statement_ids(log):
     })
 
 
+def mysql_log_contract():
+    # general_log.argument is a BLOB; LOWER alone preserves its uppercase bytes.
+    result = sql("mysql", """SELECT JSON_OBJECT(
+        'argument_type', (SELECT DATA_TYPE FROM information_schema.COLUMNS
+            WHERE TABLE_SCHEMA='mysql' AND TABLE_NAME='general_log' AND COLUMN_NAME='argument'),
+        'binary_lower', HEX(LOWER(_binary 'SELECT')),
+        'decoded_lower', HEX(LOWER(CONVERT(_binary 'SELECT' USING utf8mb4))));""")
+    facts = json.loads(result.stdout)
+    require(facts == {"argument_type": "mediumblob", "binary_lower": "53454C454354",
+                      "decoded_lower": "73656C656374"}, "MySQL native log text contract changed")
+    return facts
+
+
 def observe(engine, run_id):
     owned = docker("inspect", "--format", '{{index .Config.Labels "' + LABEL + '"}}', container(engine)).stdout.strip()
     require(owned == run_id, "SQL pool observer requires the owned fixture")
@@ -213,16 +226,18 @@ def observe(engine, run_id):
         reader_ids = sorted({int(match[1]) for match in re.finditer(r"(?m)^pid=(\d+) user=pool_reader\b", native_log)})
         active = sql(engine, f"SELECT pid FROM pg_stat_activity WHERE usename='{READER}';").stdout
     else:
+        log_contract = mysql_log_contract()
         logged = sql(engine, f"""SELECT DISTINCT thread_id FROM mysql.general_log
             WHERE user_host LIKE '{READER}[%' AND command_type IN ('Query','Execute')
-            AND LOWER(argument) REGEXP '^[[:space:]]*(select|with)[[:space:]]'
-            AND LOWER(argument) REGEXP '[[:space:]]from[[:space:]]+(`?{DATABASE}`?[.])?`?{TABLE}`?([^a-z_0-9]|$)';""").stdout
+            AND LOWER(CONVERT(argument USING utf8mb4)) REGEXP '^[[:space:]]*(select|with)[[:space:]]'
+            AND LOWER(CONVERT(argument USING utf8mb4)) REGEXP '[[:space:]]from[[:space:]]+(`?{DATABASE}`?[.])?`?{TABLE}`?([^a-z_0-9]|$)';""").stdout
         statements = sorted(int(value) for value in logged.split())
         active = sql(engine, f"SELECT ID FROM information_schema.PROCESSLIST WHERE USER='{READER}';").stdout
         reader_log = sql(engine, f"""SELECT JSON_OBJECT('thread_id', thread_id, 'command_type', command_type,
             'reader', user_host LIKE '{READER}[%',
-            'select', LOWER(argument) REGEXP '^[[:space:]]*(select|with)[[:space:]]',
-            'sample', LOWER(argument) REGEXP '[[:space:]]from[[:space:]]+(`?{DATABASE}`?[.])?`?{TABLE}`?([^a-z_0-9]|$)')
+            'select', LOWER(CONVERT(argument USING utf8mb4)) REGEXP '^[[:space:]]*(select|with)[[:space:]]',
+            'sample', LOWER(CONVERT(argument USING utf8mb4)) REGEXP '[[:space:]]from[[:space:]]+(`?{DATABASE}`?[.])?`?{TABLE}`?([^a-z_0-9]|$)',
+            'prefix_hex', IF(user_host LIKE '{READER}[%', HEX(LEFT(argument, 96)), NULL))
             FROM mysql.general_log WHERE command_type IN ('Query','Execute');""").stdout
         log_entries = [json.loads(line) for line in reader_log.splitlines()]
         reader_ids = sorted({entry["thread_id"] for entry in log_entries if entry["reader"]})
@@ -230,6 +245,7 @@ def observe(engine, run_id):
                    "reader_ids": reader_ids}
     if engine == "mysql":
         observation["native_log_filters"] = log_entries
+        observation["native_log_contract"] = log_contract
     artifact = Path(SUPPORT.required_environment("ADDP_ONLINE_ARTIFACT_DIR")) / "sql-pool-observations.jsonl"
     with artifact.open("a") as stream:
         stream.write(json.dumps({"run_id": run_id, "engine": engine, **observation}) + "\n")
