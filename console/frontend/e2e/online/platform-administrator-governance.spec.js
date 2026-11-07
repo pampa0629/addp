@@ -72,25 +72,11 @@ test('three officers request review and recover through real Console and System'
     await expect(auditFrame.getByRole('button', { name: '创建管理员变更请求', exact: true })).toHaveCount(0)
     await expect(securityFrame.getByRole('button', { name: '创建管理员变更请求', exact: true })).toBeVisible()
     await expect(systemFrame.getByRole('button', { name: '创建管理员变更请求', exact: true })).toBeVisible()
+    await verifyLateRecoveryAcrossTabs({ audit, security, anonymous, oldToken: tokens[2], stage })
     stage('request')
-    await securityFrame.getByRole('button', { name: '创建管理员变更请求', exact: true }).click()
-    const dialog = securityFrame.getByRole('dialog')
-    await dialog.locator('.el-select').nth(0).click()
-    await securityFrame.getByRole('option', { name: '恢复密码与 MFA', exact: true }).click()
-    await dialog.locator('.el-select').nth(2).click()
-    await securityFrame.getByRole('option').filter({ hasText: process.env.ADDP_ONLINE_GOV_SYSTEM_ID + ')' }).click()
-    await dialog.locator('textarea').fill(process.env.ADDP_ONLINE_TEST_RUN_ID + ':browser-recovery')
-    const created = security.waitForResponse(r => new URL(r.url()).pathname === changes && r.request().method() === 'POST')
-    await dialog.getByRole('button', { name: '提交', exact: true }).click()
-    const pending = await json(await created)
-    expect(pending.status).toBe('pending')
-    expect(pending.requested_by_principal_id).toBe(process.env.ADDP_ONLINE_GOV_SECURITY_ID)
+    const pending = await createBrowserRecovery(security, 'browser-recovery')
     stage('review')
-    await auditFrame.getByRole('button', { name: '刷新', exact: true }).click()
-    const row = auditFrame.getByRole('row').filter({ hasText: process.env.ADDP_ONLINE_TEST_RUN_ID + ':browser-recovery' })
-    await row.getByRole('button', { name: '批准', exact: true }).click()
-    const review = auditFrame.getByRole('dialog')
-    await review.locator('textarea').fill(process.env.ADDP_ONLINE_TEST_RUN_ID + ':browser-review')
+    const review = await openBrowserRecoveryReview(audit, pending, 'browser-review')
     const approvedResponse = audit.waitForResponse(r => new URL(r.url()).pathname === `${changes}/${pending.id}/approve`)
     await review.getByRole('button', { name: '确认', exact: true }).click()
     const approved = await json(await approvedResponse)
@@ -136,10 +122,134 @@ test('three officers request review and recover through real Console and System'
     stage('passed')
     writeFileSync(resolve(process.env.ADDP_ONLINE_ARTIFACT_DIR, 'administrator-browser.json'), JSON.stringify({
       real_mfa: true, role_matrix: true, request_created: true, independent_review: true,
-      one_time_recovery: true, secret_memory_only: true, old_session_revoked: true, new_login: true
+      one_time_recovery: true, secret_memory_only: true, old_session_revoked: true, new_login: true,
+      cross_tab_logout_revoked_old_session: true, same_reviewer_reauthenticated: true,
+      late_approval_discarded_with_old_frame: true, unseen_recovery_proof_cancelled: true
     }))
   } finally { for (const context of contexts) await context.close() }
 })
+
+async function createBrowserRecovery(page, marker) {
+  const frame = systemModule(page)
+  await button(frame, '创建管理员变更请求').click()
+  const dialog = frame.getByRole('dialog')
+  await dialog.locator('.el-select').nth(0).click()
+  await frame.getByRole('option', { name: '恢复密码与 MFA', exact: true }).click()
+  await dialog.locator('.el-select').nth(2).click()
+  await frame.getByRole('option').filter({ hasText: fixture('system', 'ID') + ')' }).click()
+  const reason = `${process.env.ADDP_ONLINE_TEST_RUN_ID}:${marker}`
+  await dialog.locator('textarea').fill(reason)
+  const created = writeResponse(page, changes)
+  await button(dialog, '提交').click()
+  const pending = await json(await created)
+  expect(pending).toMatchObject({ status: 'pending', requested_by_principal_id: fixture('security', 'ID'), reason })
+  return pending
+}
+
+async function refreshRecoveryRow(page, request) {
+  const frame = systemModule(page)
+  await button(frame, '刷新').click()
+  return frame.getByRole('row').filter({ hasText: request.reason })
+}
+
+async function openBrowserRecoveryReview(page, pending, marker) {
+  const row = await refreshRecoveryRow(page, pending)
+  await button(row, '批准').click()
+  const review = systemModule(page).getByRole('dialog', { name: '批准', exact: true })
+  await review.locator('textarea').fill(`${process.env.ADDP_ONLINE_TEST_RUN_ID}:${marker}`)
+  return review
+}
+
+function authContextResponse(page, token) {
+  return page.waitForResponse(async response =>
+    new URL(response.url()).pathname === contextPath && response.ok() &&
+    await response.request().headerValue('authorization') === `Bearer ${token}`)
+}
+
+async function verifyLateRecoveryAcrossTabs({ audit, security, anonymous, oldToken, stage }) {
+  stage('cross-tab-shared-session')
+  const control = await audit.context().newPage()
+  const controlIdentity = authContextResponse(control, oldToken)
+  await control.goto(route)
+  expect((await json(await controlIdentity)).principal.id).toBe(fixture('audit', 'ID'))
+
+  stage('cross-tab-hold-approval')
+  const pending = await createBrowserRecovery(security, 'cross-tab-stale-recovery')
+  const review = await openBrowserRecoveryReview(audit, pending, 'cross-tab-review')
+  const approvePath = `${changes}/${pending.id}/approve`
+  const isApproval = request => new URL(request.url()).pathname === approvePath && request.method() === 'POST'
+  let held
+  let approvals = 0
+  let approvalResponses = 0
+  audit.on('request', request => { if (isApproval(request)) approvals++ })
+  audit.on('response', response => { if (isApproval(response.request())) approvalResponses++ })
+  await audit.route(new URL(approvePath, process.env.CONSOLE_URL).href, async intercepted => {
+    if (!isApproval(intercepted.request())) return intercepted.fallback()
+    if (held) return intercepted.abort()
+    const response = await intercepted.fetch({ maxRetries: 0, maxRedirects: 0 })
+    held = { intercepted, response }
+  })
+  await button(review, '确认').click()
+  await expect.poll(() => Boolean(held)).toBe(true)
+  expect(held.response.status()).toBe(200)
+  const originalRequest = held.intercepted.request()
+  const originalFrame = originalRequest.frame()
+  expect(await originalRequest.headerValue('authorization')).toBe(`Bearer ${oldToken}`)
+  const approved = await held.response.json()
+  expect(approved).toMatchObject({ id: pending.id, status: 'approved', review: { principal_id: fixture('audit', 'ID') } })
+  expect(Boolean(approved.recovery_token)).toBe(true)
+  expect(approvalResponses).toBe(0)
+
+  stage('cross-tab-logout')
+  const interrupted = audit.waitForEvent('requestfailed', isApproval)
+  const logout = writeResponse(control, '/api/v1/system/logout')
+  await control.locator('.user-dropdown').hover()
+  await control.getByRole('menuitem', { name: '退出登录', exact: true }).click()
+  expect((await logout).status()).toBe(204)
+  await expect(control).toHaveURL(/\/login(?:\?|$)/)
+  await expect(audit).toHaveURL(/\/login(?:\?|$)/)
+  expect(await interrupted).toBe(originalRequest)
+  expect(originalRequest.failure()?.errorText).toContain('ERR_ABORTED')
+  await expect.poll(() => originalFrame.isDetached()).toBe(true)
+  expect((await audit.request.get(contextPath, { headers: bearer(oldToken) })).status()).toBe(401)
+
+  stage('cross-tab-relogin-and-release')
+  await freshStep()
+  const newToken = await login(control, 'audit')
+  expect(newToken !== oldToken).toBe(true)
+  const newIdentity = authContextResponse(audit, newToken)
+  await audit.goto(route)
+  expect((await json(await newIdentity)).principal.id).toBe(fixture('audit', 'ID'))
+  const current = systemModule(audit)
+  await expect(button(current, '刷新')).toBeVisible()
+
+  // Attempt delivery only after the real replacement session is active.
+  // Chromium already cancelled the originating request with its old frame.
+  await held.intercepted.fulfill({ response: held.response })
+  const row = await refreshRecoveryRow(audit, pending)
+  await expect(row.getByText('已批准', { exact: true })).toBeVisible()
+  await expect(current.getByRole('dialog', { name: '一次性恢复凭据', exact: true })).toHaveCount(0)
+  const frameContents = await current.locator('body').evaluate(body => JSON.stringify({
+    text: body.innerText, url: location.href, local: { ...localStorage }, session: { ...sessionStorage },
+    fields: [...body.querySelectorAll('input, textarea')].map(field => field.value)
+  }))
+  expect(frameContents.includes(approved.recovery_token)).toBe(false)
+  expect(approvalResponses).toBe(0)
+  expect(approvals).toBe(1)
+
+  stage('cross-tab-cancel-unseen-proof')
+  const requesterRow = await refreshRecoveryRow(security, pending)
+  await button(requesterRow, '取消').click()
+  const cancellation = systemModule(security).getByRole('dialog', { name: '取消', exact: true })
+  await cancellation.locator('textarea').fill('Cancel the recovery after the original reviewer session ended')
+  const cancelled = writeResponse(security, `${changes}/${pending.id}/cancel`)
+  await button(cancellation, '确认').click()
+  expect(await json(await cancelled)).toMatchObject({ id: pending.id, status: 'cancelled' })
+  expect((await anonymous.request.post('/api/v1/system/auth/administrator-recovery/enrollments', {
+    data: { recovery_token: approved.recovery_token }
+  })).status()).toBe(401)
+  await control.close()
+}
 
 async function authContext(page, token) {
   return json(await page.request.get(contextPath, { headers: bearer(token) }))

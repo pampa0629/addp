@@ -73,7 +73,7 @@ const createVisible = ref(false), reviewVisible = ref(false), recoveryVisible = 
 const createForm = reactive({ change_type: changeTypes[0], target_role_key: '', target_principal_id: '', successor_principal_id: '', reason: '' })
 const review = reactive({ row: null, action: 'approve', reason: '' })
 const candidates = ref([]), candidatesLoading = ref(false)
-let loadVersion = 0, candidateVersion = 0, alive = true
+let loadVersion = 0, candidateVersion = 0, authorityVersion = 0, alive = true
 const successorCandidates = computed(() => candidates.value.filter(u => u.id !== principalId.value && u.status === 'active' && u.mfa_enrolled && !u.role_key))
 const targetCandidates = computed(() => createForm.change_type === 'platform_role_grant' ? successorCandidates.value : candidates.value.filter(u => u.role_key === createForm.target_role_key && u.id !== principalId.value && (createForm.change_type === 'platform_identity_suspend' ? u.status === 'active' : createForm.change_type === 'platform_identity_reactivate' ? u.status === 'suspended' : true)))
 const canSubmit = computed(() => canCreate.value && createForm.target_principal_id && createForm.target_role_key && createForm.reason.trim() && (createForm.change_type !== 'platform_role_replace' || createForm.successor_principal_id))
@@ -100,38 +100,52 @@ async function loadCandidates(search = '') {
   finally { if (alive && version === candidateVersion) candidatesLoading.value = false }
 }
 function openCreate() { Object.assign(createForm, { change_type: changeTypes[0], target_role_key: targetRoles.value[0] || '', target_principal_id: '', successor_principal_id: '', reason: '' }); createVisible.value = true; loadCandidates() }
-async function createRequest() {
-  if (!canSubmit.value || submitting.value) return
+async function submitMutation(send, accept, errorKey) {
+  const version = authorityVersion
+  const isCurrent = () => alive && version === authorityVersion
   submitting.value = true
   try {
-    const data = { change_type: createForm.change_type, target_principal_id: createForm.target_principal_id, reason: createForm.reason.trim() }
-    if (createForm.change_type.startsWith('platform_role_')) data.target_role_key = createForm.target_role_key
-    if (createForm.change_type === 'platform_role_replace') data.successor_principal_id = createForm.successor_principal_id
-    await iamAPI.administratorChanges.create(data)
-    if (!alive) return
+    const result = await send()
+    if (isCurrent()) await accept(result)
+  } catch (error) { if (isCurrent()) ElMessage.error(error.response?.data?.error || t(errorKey)) }
+  finally { if (isCurrent()) submitting.value = false }
+}
+async function createRequest() {
+  if (!canSubmit.value || submitting.value) return
+  const data = { change_type: createForm.change_type, target_principal_id: createForm.target_principal_id, reason: createForm.reason.trim() }
+  if (createForm.change_type.startsWith('platform_role_')) data.target_role_key = createForm.target_role_key
+  if (createForm.change_type === 'platform_role_replace') data.successor_principal_id = createForm.successor_principal_id
+  await submitMutation(() => iamAPI.administratorChanges.create(data), async () => {
     createVisible.value = false; ElMessage.success(t('system.iam.common.submitted')); await load()
-  } catch (error) { if (alive) ElMessage.error(error.response?.data?.error || t('system.iam.common.submitFailed')) }
-  finally { if (alive) submitting.value = false }
+  }, 'system.iam.common.submitFailed')
 }
 function openReview(row, action) { Object.assign(review, { row, action, reason: '' }); reviewVisible.value = true }
 async function submitReview() {
   if (submitting.value || !review.row) return
-  submitting.value = true
-  try {
-    const result = await iamAPI.administratorChanges[review.action](review.row.id, review.row.version, review.reason.trim())
-    if (!alive) return
+  const { action, row, reason } = review
+  await submitMutation(() => iamAPI.administratorChanges[action](row.id, row.version, reason.trim()), async result => {
     reviewVisible.value = false
     if (result.recovery_token) { recoveryToken.value = result.recovery_token; recoveryVisible.value = true }
     ElMessage.success(t('system.iam.common.updated')); await load()
-  } catch (error) { if (alive) ElMessage.error(error.response?.data?.error || t('system.iam.common.updateFailed')) }
-  finally { if (alive) submitting.value = false }
+  }, 'system.iam.common.updateFailed')
 }
+// Invalidate in-flight mutations even if the original identity later returns.
+watch([
+  () => auth.token, principalId, () => auth.contextType, actorRole,
+  () => auth.authContext?.authorization?.authorization_version,
+  () => can('read'), canCreate, () => can('approve'), () => can('reject')
+], () => {
+  authorityVersion++
+  submitting.value = false
+  createVisible.value = false; reviewVisible.value = false; recoveryVisible.value = false
+  review.row = null; review.reason = ''; recoveryToken.value = ''
+}, { flush: 'sync' })
 let stableIdentity = `${principalId.value}/${auth.contextType}/${actorRole.value}`
 watch(() => `${principalId.value}/${auth.contextType}/${actorRole.value}`, identity => {
   if (auth.isAuthenticated && !principalId.value) return
   if (identity === stableIdentity) return
   stableIdentity = identity
-  loadVersion++; candidateVersion++; rows.value = []; candidates.value = []; createVisible.value = false; reviewVisible.value = false; recoveryVisible.value = false; recoveryToken.value = ''
+  loadVersion++; candidateVersion++; rows.value = []; candidates.value = []
 })
 onMounted(load)
 onBeforeUnmount(() => { alive = false; loadVersion++; candidateVersion++; recoveryToken.value = '' })

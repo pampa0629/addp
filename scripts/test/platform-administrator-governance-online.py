@@ -35,7 +35,9 @@ RECOVERY = '/api/v1/system/auth/administrator-recovery'
 CONTEXT = '/api/v1/system/auth/context'
 ROLES = ('system', 'security', 'audit')
 BROWSER_PROOFS = {'real_mfa', 'role_matrix', 'request_created', 'independent_review',
-                  'one_time_recovery', 'secret_memory_only', 'old_session_revoked', 'new_login'}
+                  'one_time_recovery', 'secret_memory_only', 'old_session_revoked', 'new_login',
+                  'cross_tab_logout_revoked_old_session', 'same_reviewer_reauthenticated',
+                  'late_approval_discarded_with_old_frame', 'unseen_recovery_proof_cancelled'}
 EMERGENCY_BROWSER_PROOFS = {'real_console', 'exact_tenant_family', 'two_independent_approvals',
                             'ten_fifteen_minute_windows', 'single_consumption_receipt', 'target_session_revoked',
                             'unrelated_session_unchanged', 'independent_audit', 'committed_receipt_withheld',
