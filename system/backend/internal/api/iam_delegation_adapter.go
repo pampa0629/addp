@@ -8,6 +8,7 @@ import (
 	"time"
 
 	commonapi "github.com/addp/common/api"
+	"github.com/addp/common/authorization"
 	commoni18n "github.com/addp/common/middleware/i18n"
 	sysi18n "github.com/addp/system/i18n"
 	"github.com/addp/system/internal/iam"
@@ -23,7 +24,45 @@ type iamDelegationService interface {
 
 type IAMDelegationHandler struct {
 	service iamDelegationService
+	consume func(context.Context, int64, authorization.OntologyRuleCall, iam.AuditMetadata) (*authorization.CurrentSubjectRoles, error)
 	now     func() time.Time
+}
+
+// ConsumeOntologyRuleEvaluation godoc
+// @Summary 消费单记录规则取数授权 | Consume a single-record rule read authorization
+// @Tags 认证 | Authentication
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param request body authorization.OntologyRuleCall true "本次规则求值绑定 | Rule evaluation binding"
+// @Success 200 {object} authorization.CurrentSubjectRoles
+// @Failure 400,401,403,409,500 {object} IAMErrorResponse
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["system.ontology_fact.execute"]
+// @Router /runtime/ontology-rule-evaluations/consume [post]
+func (h *IAMDelegationHandler) ConsumeOntologyRuleEvaluation(c *gin.Context) {
+	c.Header("Cache-Control", "no-store")
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 8<<10)
+	var request authorization.OntologyRuleCall
+	if c.Request.URL.RawQuery != "" || commonapi.BindOptionalJSONStrict(c, &request) != nil {
+		respondIAMDelegationError(c, commonapi.ErrBadRequest)
+		return
+	}
+	_, tenantID, _, err := iamTenantActor(c)
+	if err != nil {
+		respondIAMDelegationError(c, commonapi.ErrForbidden)
+		return
+	}
+	if h.consume == nil {
+		respondIAMDelegationError(c, commonapi.ErrInternalServerError)
+		return
+	}
+	result, err := h.consume(c.Request.Context(), int64(tenantID), request, iamAuditMetadataWithStatus(c, http.StatusOK))
+	if err != nil {
+		respondIAMDelegationError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, result)
 }
 
 func NewIAMDelegationHandler(
@@ -69,6 +108,7 @@ func (h *IAMDelegationHandler) CreateDelegation(c *gin.Context) {
 		Scopes:            append([]string(nil), request.Scopes...),
 		AgentRunID:        request.AgentRunID,
 		ToolCallID:        request.ToolCallID,
+		RuleEvaluation:    request.RuleEvaluation,
 		Audit:             audit,
 	})
 	if err != nil {

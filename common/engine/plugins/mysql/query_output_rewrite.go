@@ -312,19 +312,11 @@ func expandMySQLOutputWildcard(statement *sqlparser.Select, lineage *plugin.Quer
 	}
 	qualified := mysqlDialect().QualifiedTable(parts[1].Name, parts[2].Name)
 	return func(ctx context.Context, tx *sql.Tx) error {
-		// Even a zero-row SELECT acquires the transaction's metadata lock.
-		rows, err := tx.QueryContext(ctx, "SELECT 1 FROM "+qualified+" LIMIT 0")
+		baseTable, err := lockMySQLInnoDBBaseTable(ctx, tx, parts[1].Name, parts[2].Name)
 		if err != nil {
 			return err
 		}
-		if err := rows.Close(); err != nil {
-			return err
-		}
-		var kind, engine string
-		if err := tx.QueryRowContext(ctx, "SELECT TABLE_TYPE,COALESCE(ENGINE,'') FROM information_schema.tables WHERE TABLE_SCHEMA=? AND TABLE_NAME=?", parts[1].Name, parts[2].Name).Scan(&kind, &engine); err != nil {
-			return err
-		}
-		if kind != "BASE TABLE" || engine != "InnoDB" {
+		if !baseTable {
 			return plugin.ErrQueryOutputTransformUnsupported
 		}
 		if err := plugin.ValidateSQLQueryOutputColumns(ctx, tx, "SELECT * FROM "+qualified+" LIMIT 0", source.Fields); err != nil {

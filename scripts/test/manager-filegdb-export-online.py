@@ -132,9 +132,19 @@ def scan_source(helpers, initializer, engine, table):
     return locator, execution
 
 
+def require_export_denied_without_source_grant(client, locator):
+    denied = client.request('POST', '/api/v1/manager/exports', (403,), {
+        'source_item_locator': locator, 'format': 'filegdb',
+    })
+    require(isinstance(denied.payload, dict) and not {
+        'id', 'transfer_execution_id', 'download_url',
+    }.intersection(denied.payload), 'source denial exposed an export session')
+    return denied.status
+
+
 def run(repository, environment, helpers):
     artifact_dir = Path(environment['ADDP_ONLINE_ARTIFACT_DIR'])
-    report = {'schema_version': 'addp.manager-filegdb-export/v2', 'case': 'filegdb-export',
+    report = {'schema_version': 'addp.manager-filegdb-export/v3', 'case': 'filegdb-export',
               'run_id': environment['ADDP_ONLINE_TEST_RUN_ID'], 'result': 'failed'}
     try:
         tenant = helpers.positive_int(environment['ADDP_ONLINE_TEST_TENANT_ID'], 'Tenant')
@@ -153,6 +163,7 @@ def run(repository, environment, helpers):
             proof = {'source_case': case, 'source_before': source_snapshot(repository, environment, table)}
             report['cases'].append(proof)
             table_locator, proof['scan_execution_id'] = scan_source(helpers, initializer, engine, table)
+            proof['without_source_grant_status'] = require_export_denied_without_source_grant(client, table_locator)
             grant, = registration.initialize_exact_record_read_grants(
                 initializer, client, tenant, [(engine, 'schema', 'public', table)], scan_preparation=True)
             proof['source_grant'] = {key: grant[key] for key in ('request_id', 'item_fingerprint', 'boundary_hash')}

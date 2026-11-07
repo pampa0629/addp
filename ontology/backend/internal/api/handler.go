@@ -23,6 +23,7 @@ import (
 
 type RevisionCommands interface {
 	Trial(context.Context, models.Actor, string, string, uint64, string, uint64, map[string]semantic.Fact) (*service.TrialResult, error)
+	EvaluateBusiness(context.Context, models.Actor, string, string, uint64, string, uint64, string, string) (*service.BusinessEvaluation, error)
 	ListClasses(context.Context, models.Actor, string) (*service.ClassDirectory, error)
 	ClassContext(context.Context, models.Actor, string, string, uint64, string, uint64) (*service.SemanticContext, error)
 	ListOntologies(context.Context, models.Actor, models.ListPage) ([]models.Ontology, int64, error)
@@ -97,6 +98,10 @@ func bind(c *gin.Context, request any) bool {
 func fail(c *gin.Context, err error) {
 	status, code, key := http.StatusInternalServerError, "ontology_operation_failed", modulei18n.Failed
 	switch {
+	case errors.Is(err, service.ErrOntologyFactPermission):
+		status, code, key = http.StatusForbidden, "permission_denied", commoni18n.MsgForbidden
+	case errors.Is(err, service.ErrOntologyFactUnavailable):
+		status, code, key = http.StatusServiceUnavailable, "ontology_fact_unavailable", modulei18n.Failed
 	case errors.Is(err, repository.ErrNotActive):
 		status, code, key = http.StatusConflict, "ontology_not_active", modulei18n.NotActive
 	case errors.Is(err, service.ErrActivationChanged):

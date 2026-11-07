@@ -1,4 +1,5 @@
 import asyncio
+import json
 import httpx
 from jsonschema import Draft202012Validator
 
@@ -58,6 +59,47 @@ def test_ontology_context_requires_binding_and_rejects_unbounded_arguments():
     assert list(validator.iter_errors({**args, "cypher": "MATCH (n) RETURN n"}))
     assert list(validator.iter_errors({**args, "tenant_id": 102}))
     assert tool.risk == "read"
+
+
+def test_rule_evaluation_delegates_exact_binding_and_projects_decision(monkeypatch):
+    async def run():
+        args = {key: BINDING[key] for key in ("ontology_id", "revision", "generation", "activation_version")}
+        args.update(rule_id="valid_activity", object_id="synthetic-object")
+        seen = []
+
+        async def transport(request):
+            seen.append(request.url.path)
+            payload = json.loads(request.content)
+            if request.url.path.endswith("/auth/delegations"):
+                assert request.headers["Authorization"] == "Bearer addp_at_private"
+                assert payload == {"audience": "ontology", "scopes": ["ontology.rule.evaluate"],
+                                   "agent_run_id": "run", "tool_call_id": "call", "rule_evaluation": args}
+                return httpx.Response(201, json={**payload, "access_token": "addp_dat_fixture"})
+            assert request.headers["Authorization"] == "Bearer addp_dat_fixture"
+            assert payload == {key: args[key] for key in ("revision", "generation", "activation_version", "object_id")}
+            return httpx.Response(200, json={**BINDING, "observation_date": "2026-11-07", "decision": {
+                "mode": "business", "rule_id": "valid_activity", "digest": BINDING["digest"],
+                "outcome": "matched", "basis": "untrusted fixture text",
+            }})
+
+        from addp_common.client import SystemClient
+        for client_type in (SystemClient, OntologyClient):
+            original = client_type.__init__
+
+            def init(self, *args, _original=original, **kwargs):
+                _original(self, *args, **kwargs)
+                self._client._transport = httpx.MockTransport(transport)
+
+            monkeypatch.setattr(client_type, "__init__", init)
+        result = await ToolExecutor("http://gateway", "addp_at_private").call(
+            "ontology.rule.evaluate", args, agent_run_id="run", tool_call_id="call",
+        )
+        assert result == {key: value for key, value in args.items() if key != "object_id"} | {
+            "digest": BINDING["digest"], "outcome": "matched", "observation_date": "2026-11-07",
+        }
+        assert seen == ["/api/v1/system/auth/delegations", "/api/v1/ontology/ontologies/beijing_outdoor/semantic/rules/valid_activity/evaluate"]
+
+    asyncio.run(run())
 
 
 def test_ontology_owner_activation_error_is_not_a_success_or_retry():

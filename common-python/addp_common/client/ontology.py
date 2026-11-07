@@ -20,3 +20,10 @@ class OntologyClient(BaseClient):
             f"/api/v1/ontology/ontologies/{quote(ontology_id, safe='')}/semantic/classes/{quote(class_id, safe='')}",
             params={"revision": revision, "generation": generation, "activation_version": activation_version},
         )
+
+    async def evaluate_rule(self, ontology_id: str, rule_id: str, revision: int,
+                            generation: str, activation_version: int, object_id: str) -> dict:
+        return await self.post(
+            f"/api/v1/ontology/ontologies/{quote(ontology_id, safe='')}/semantic/rules/{quote(rule_id, safe='')}/evaluate",
+            json={"revision": revision, "generation": generation, "activation_version": activation_version, "object_id": object_id},
+        )

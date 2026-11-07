@@ -8,6 +8,10 @@ type QueryExecutionRequest struct {
 	OrderBy    []QueryOrder           `json:"order_by,omitempty"`
 	Page       QueryPageRequest       `json:"page"`
 	Format     string                 `json:"format,omitempty" enums:"json,csv,geojson"`
+	// RequireUntransformed 要求确认 select 中的字段未经保护变换。 | Require all selected fields to be free of protection transformations.
+	RequireUntransformed   bool   `json:"require_untransformed,omitempty"`
+	ExpectedServiceID      uint   `json:"expected_service_id,omitempty"`
+	ExpectedServiceVersion string `json:"expected_service_version,omitempty"`
 }
 
 // QueryFilter 使用叶子谓词或 and/or/not 中的一种表达过滤条件。
@@ -45,6 +49,13 @@ type QueryExecutionResult struct {
 	Data           []map[string]interface{} `json:"data"`
 	Page           QueryPageResult          `json:"page"`
 	ServiceVersion string                   `json:"service_version"`
-	Fields         []string                 `json:"-"`
-	FeatureIDs     []string                 `json:"-"`
+	// FactStatus 仅用于规则事实读取；unknown 不包含数据。 | Fact-read status; unknown carries no data.
+	FactStatus string   `json:"fact_status,omitempty" enums:"verified,unknown"`
+	Fields     []string `json:"-"`
+	FeatureIDs []string `json:"-"`
 }
+
+const (
+	QueryFactsVerified = "verified"
+	QueryFactsUnknown  = "unknown"
+)

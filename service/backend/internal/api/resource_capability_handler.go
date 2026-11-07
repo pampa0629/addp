@@ -204,6 +204,7 @@ func graphInfoFromMetaAttributes(attrs map[string]interface{}) *datatype.GraphIn
 
 // GetSQLOutputContract 检测 SQL 查询结果的标准输出契约。
 // @Summary 获取 SQL 输出契约 | Get SQL output contract
+// @Description 普通 SQL 的驱动未报告可空性时，输出字段标为可空。 | For direct SQL, output fields are marked nullable when the driver does not report nullability.
 // @Tags 资源能力 | Resource Capabilities
 // @Accept json
 // @Produce json
@@ -306,14 +307,14 @@ func (h *ResourceCapabilityHandler) detectSQLOutputContract(
 		if nativeType == "geography" {
 			fieldType = datatype.FieldTypeGeometry
 		}
-		nullable, _ := colType.Nullable()
+		nullable, nullabilityKnown := colType.Nullable()
 		length, hasLength := colType.Length()
 		precision, scale, _ := colType.DecimalSize()
 		field := datatype.FieldInfo{
 			Name:            colType.Name(),
 			Type:            fieldType,
 			NativeType:      nativeType,
-			Nullable:        nullable,
+			Nullable:        !nullabilityKnown || nullable,
 			OrdinalPosition: index + 1,
 			Size:            queryOutputFieldSize(length, hasLength),
 			Precision:       int(precision),

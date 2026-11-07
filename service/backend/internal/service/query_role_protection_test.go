@@ -18,6 +18,7 @@ import (
 	"github.com/addp/common/engine/plugin"
 	commonmodels "github.com/addp/common/models"
 	"github.com/addp/service/internal/models"
+	"github.com/addp/service/internal/protection"
 	"github.com/addp/service/internal/repository"
 )
 
@@ -255,9 +256,9 @@ type roleExecutionGate struct {
 	selected bool
 }
 
-func (g *roleExecutionGate) BeginPreparedQuery(_ context.Context, _ uint, _ plugin.EnginePlugin, _ plugin.PreparedQuery, selection *dataprotection.QueryRoleSelection, _ ...string) (func(*plugin.QueryResult) error, func(), error) {
+func (g *roleExecutionGate) BeginPreparedQuery(_ context.Context, _ uint, _ plugin.EnginePlugin, _ plugin.PreparedQuery, selection *dataprotection.QueryRoleSelection, _ ...string) (*protection.PreparedQueryProtection, func(), error) {
 	g.selected = selection != nil
-	return func(result *plugin.QueryResult) error {
+	return &protection.PreparedQueryProtection{Apply: func(result *plugin.QueryResult) error {
 		g.applied++
 		for _, row := range result.Rows {
 			if g.selected {
@@ -267,7 +268,7 @@ func (g *roleExecutionGate) BeginPreparedQuery(_ context.Context, _ uint, _ plug
 			}
 		}
 		return nil
-	}, func() {}, nil
+	}}, func() {}, nil
 }
 
 func TestServiceExecutionRechecksActualCallingUserBeforeDeliveryAndDefaultHasNoRoleDependency(t *testing.T) {

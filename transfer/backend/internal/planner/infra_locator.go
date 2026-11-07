@@ -55,6 +55,11 @@ func (l *InfraLocator) Child(name string, resourceType resourcetree.ResourceType
 	}, nil
 }
 
+func IsFileGDBArchiveTarget(formatName, locator, parentLocator string) bool {
+	return strings.EqualFold(strings.TrimSpace(formatName), "filegdb") &&
+		(IsInfraLocatorURI(locator) || IsInfraLocatorURI(parentLocator))
+}
+
 func IsInfraLocatorURI(value string) bool {
 	return strings.HasPrefix(strings.TrimSpace(value), infraLocatorScheme+"://")
 }

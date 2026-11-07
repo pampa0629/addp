@@ -523,4 +523,150 @@ func TestSQLRoleSelectionAgainstPostgres(t *testing.T) {
 			})
 		}
 	})
+
+	t.Run("private-activity-lookup", func(t *testing.T) {
+		activities := `"` + schema + `"."activities"`
+		_, err := db.Exec(`CREATE TABLE ` + activities + ` (
+			activity_id text NOT NULL, activity_status text NOT NULL, activity_date date,
+			PRIMARY KEY (activity_id, activity_status)
+		); INSERT INTO ` + activities + ` VALUES
+			('unique','published','2026-01-02'),('undated','published',NULL),
+			('duplicate','published','2026-01-02'),('duplicate','draft','2026-01-02')`)
+		if err != nil {
+			t.Fatal(err)
+		}
+		lookupSQL := `SELECT activity_id,activity_status,activity_date FROM ` + activities + ` WHERE activity_id = :activity_id`
+		output := &datatype.TableInfo{Fields: []datatype.FieldInfo{
+			{Name: "activity_id", Type: datatype.FieldTypeString},
+			{Name: "activity_status", Type: datatype.FieldTypeString},
+			{Name: "activity_date", Type: datatype.FieldTypeDate, Nullable: true},
+		}, PrimaryKey: []string{"activity_id", "activity_status"}}
+		lookup := &models.QueryService{
+			ID: 42, TenantID: tenant, EngineID: &engineID, ServiceName: "private-activity-lookup",
+			Version: 1, Status: "active", ConfigType: "sql", SqlQuery: lookupSQL,
+			Protocols:       models.JSONB{"rest_api": map[string]any{"enabled": true, "formats": []any{"json"}}},
+			NamedParameters: []models.QueryServiceNamedParameter{{Name: "activity_id", Type: datatype.FieldTypeString, Required: true}},
+			DataConfig: models.JSONB{
+				models.QueryServiceSourceSnapshotKey: queryServiceSnapshotPayload(buildSQLDependencySnapshot(lookupSQL, &models.QueryServiceOutputContract{Table: output}, now)),
+				"default_fields":                     []string{"activity_id", "activity_status", "activity_date"},
+				"stable_key":                         output.PrimaryKey,
+			},
+		}
+		query := func(id string, count int, factStatus string) *models.QueryExecutionResult {
+			t.Helper()
+			request := &models.QueryExecutionRequest{
+				Parameters:           map[string]any{"activity_id": id},
+				Page:                 models.QueryPageRequest{Limit: 2},
+				Select:               []string{"activity_id", "activity_status", "activity_date"},
+				RequireUntransformed: factStatus != "",
+			}
+			if request.RequireUntransformed {
+				request.ExpectedServiceID, request.ExpectedServiceVersion = lookup.ID, QueryServiceVersion(lookup)
+			}
+			result, err := executor.ExecuteQuery(ctx, lookup, request)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(result.Data) != count || result.Page.HasMore || result.Page.NextCursor != "" ||
+				result.ServiceVersion != QueryServiceVersion(lookup) || result.FactStatus != factStatus {
+				t.Fatalf("lookup %q: %+v", id, result)
+			}
+			for _, row := range result.Data {
+				if row["activity_id"] != id {
+					t.Fatalf("lookup %q returned a different ID: %v", id, row)
+				}
+			}
+			return result
+		}
+		unique := query("unique", 1, models.QueryFactsVerified)
+		row, err := json.Marshal(unique.Data[0])
+		if err != nil || !strings.Contains(string(row), `"activity_date":"2026-01-02`) || unique.Data[0]["activity_status"] != "published" {
+			t.Fatalf("unique lookup did not preserve status and date: %s %v", row, err)
+		}
+		if value, present := query("undated", 1, models.QueryFactsVerified).Data[0]["activity_date"]; !present || value != nil {
+			t.Fatalf("SQL NULL is expected to be an explicit null in JSON: %v (present=%t)", value, present)
+		}
+		query("duplicate", 2, models.QueryFactsVerified)
+		query("missing", 0, models.QueryFactsVerified)
+		for _, pin := range []struct {
+			id      uint
+			version string
+		}{{lookup.ID + 1, QueryServiceVersion(lookup)}, {lookup.ID, strings.Repeat("0", 64)}} {
+			// A mismatched binding must be rejected before resolving any engine or SQL.
+			detached := NewQueryExecutorService(nil, nil, nil)
+			got, err := detached.ExecuteQuery(ctx, lookup, &models.QueryExecutionRequest{
+				Select: []string{"activity_id", "activity_status", "activity_date"}, Page: models.QueryPageRequest{Limit: 2},
+				RequireUntransformed: true, ExpectedServiceID: pin.id, ExpectedServiceVersion: pin.version,
+			})
+			if err != nil || got.FactStatus != models.QueryFactsUnknown || len(got.Data) != 0 {
+				t.Fatalf("stale identity delivered facts: %+v %v", got, err)
+			}
+		}
+
+		prepared, err := engine.(plugin.QueryRuntimeProvider).PrepareQuery(t.Context(), conn, plugin.QueryRequest{
+			EngineID: engineID, Language: "sql", Query: `SELECT activity_id,activity_status,activity_date FROM ` + activities,
+			Options: plugin.QueryOptions{EngineID: engineID, EngineType: "postgresql", ReadOnly: true},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		lineage, err := prepared.OutputLineage(t.Context())
+		if err != nil {
+			t.Fatal(err)
+		}
+		fields := lineage.Sources[0].Fields
+		date := dataprotection.Component{Key: "activity_date", Path: []dataprotection.PathSegment{{Name: "activity_date", Container: "scalar"}}, ValueType: "date"}
+		date.SchemaFingerprint, err = dataprotection.ComponentSchemaFingerprint(fields, date)
+		if err != nil {
+			t.Fatal(err)
+		}
+		activityProjection := projection
+		activityProjection.ProjectionID = "activity-date-projection"
+		activityProjection.Revision = "00000000000000000001"
+		activityProjection.Target.ResourceIdentity = commonmodels.GenerateItemFingerprint(engineID, schema+".activities")
+		activityProjection.SourceSnapshotHash, err = dataprotection.TableSchemaSnapshotHash(fields)
+		if err != nil {
+			t.Fatal(err)
+		}
+		activityProjection.Rules = []dataprotection.Rule{{
+			Action: "service_execute", Component: date, Decision: dataprotection.Decision{Effect: dataprotection.EffectSuppress},
+		}}
+		applyActivityProjection := func(previous, next string) {
+			t.Helper()
+			if err := activityProjection.Seal(); err != nil {
+				t.Fatal(err)
+			}
+			if err := store.ApplyBatch(t.Context(), int64(tenant), previous, &dataprotection.ProjectionChangesResponse{
+				SchemaVersion: dataprotection.ProjectionChangesSchemaV1, NextCursor: next,
+				Changes: []dataprotection.ProjectionChange{{ChangeID: next, Operation: dataprotection.ChangeOperationUpsert, Projection: &activityProjection}},
+			}, time.Now().UTC()); err != nil {
+				t.Fatal(err)
+			}
+		}
+		applyActivityProjection("sql-role-2", "activity-protection-1")
+		protected := query("unique", 1, "")
+		if _, present := protected.Data[0]["activity_date"]; present || protected.Data[0]["activity_status"] != "published" {
+			t.Fatalf("date suppression did not preserve the other fields: %+v", protected.Data)
+		}
+		query("unique", 0, models.QueryFactsUnknown)
+		status := dataprotection.Component{Key: "activity_status", Path: []dataprotection.PathSegment{{Name: "activity_status", Container: "scalar"}}, ValueType: "string"}
+		status.SchemaFingerprint, err = dataprotection.ComponentSchemaFingerprint(fields, status)
+		if err != nil {
+			t.Fatal(err)
+		}
+		activityProjection.Revision = "00000000000000000002"
+		activityProjection.Rules = []dataprotection.Rule{{
+			Action: "service_execute", Component: status, Decision: dataprotection.Decision{
+				Effect: dataprotection.EffectMask, Algorithm: dataprotection.AlgorithmConstantV1,
+				Parameters: map[string]any{"value": "draft"}, InvalidValueEffect: dataprotection.EffectSuppress,
+			},
+		}}
+		applyActivityProjection("activity-protection-1", "activity-protection-2")
+		masked := query("unique", 1, "")
+		maskedRow, err := json.Marshal(masked.Data[0])
+		if err != nil || !strings.Contains(string(maskedRow), `"activity_date":"2026-01-02`) || masked.Data[0]["activity_status"] != "draft" {
+			t.Fatalf("typed status mask did not preserve the date: %s %v", maskedRow, err)
+		}
+		query("unique", 0, models.QueryFactsUnknown)
+	})
 }

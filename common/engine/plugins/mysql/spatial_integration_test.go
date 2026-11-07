@@ -3,6 +3,8 @@ package mysql
 import (
 	"context"
 	"database/sql"
+	"errors"
+	"reflect"
 	"testing"
 
 	"github.com/addp/common/datatype"
@@ -13,6 +15,79 @@ import (
 	gormmysql "gorm.io/driver/mysql"
 	"gorm.io/gorm"
 )
+
+func TestIntegrationMySQLGuardedSpatialTableRead(t *testing.T) {
+	db, provider, connInfo, database := openMySQLUpsertIntegration(t)
+	defer db.Close()
+	defer dropMySQLIntegrationDatabase(db, database)
+	ctx := context.Background()
+	table := mysqlDialect().QualifiedTable(database, "locations")
+	view := mysqlDialect().QualifiedTable(database, "same_shape_view")
+	for _, statement := range []string{
+		"CREATE TABLE " + table + " (id BIGINT PRIMARY KEY, position POINT SRID 3857 NOT NULL) ENGINE=InnoDB",
+		"INSERT INTO " + table + " VALUES (1, ST_GeomFromText('POINT(12000 6000)', 3857))",
+		"CREATE VIEW " + view + " AS SELECT id, position FROM " + table,
+	} {
+		if _, err := db.ExecContext(ctx, statement); err != nil {
+			t.Fatal(err)
+		}
+	}
+	path := plugin.TabularItemPath(17, "database", database, "locations")
+	opts := plugin.TableReadSessionOptions{Hints: map[string]any{
+		plugin.TableReadHintGeometryEncoding: string(format.GeometryEncodingEWKB),
+	}}
+	calls := 0
+	var guarded plugin.GuardedTableReadSessionProvider = provider
+	checkPath := func(_ context.Context, set *plugin.QueryReadSet, fields []datatype.FieldInfo) error {
+		calls++
+		if !reflect.DeepEqual(set.Paths, []plugin.EngineCatalogPath{path}) {
+			t.Fatalf("read set does not prove the exact table: %#v", set)
+		}
+		if len(fields) != 2 || fields[0].Name != "id" || fields[1].Name != "position" || !datatype.IsSpatialFieldType(fields[1].Type) {
+			t.Fatalf("actual guarded field schema: %#v", fields)
+		}
+		return nil
+	}
+	rejected := errors.New("source read denied")
+	if session, err := guarded.OpenGuardedTableReadSession(ctx, connInfo, path, opts, func(ctx context.Context, set *plugin.QueryReadSet, fields []datatype.FieldInfo) error {
+		_ = checkPath(ctx, set, fields)
+		return rejected
+	}); session != nil || !errors.Is(err, rejected) || calls != 1 {
+		t.Fatalf("denied source returned a session or skipped authorization: %v, %v, %d", session, err, calls)
+	}
+	viewPath := plugin.TabularItemPath(17, "database", database, "same_shape_view")
+	if session, err := guarded.OpenGuardedTableReadSession(ctx, connInfo, viewPath, opts, checkPath); session != nil ||
+		!errors.Is(err, plugin.ErrQueryReadSetUnresolved) || calls != 1 {
+		t.Fatalf("view reached the authorization callback or opened a session: %v, %v, %d", session, err, calls)
+	}
+	wrongRoot := plugin.TabularItemPath(17, "database", database, "locations")
+	wrongRoot.Segments[0] = plugin.EngineCatalogSegment{Term: plugin.EngineCatalogTermService, Kind: plugin.EngineCatalogTermService}
+	if session, err := guarded.OpenGuardedTableReadSession(ctx, connInfo, wrongRoot, opts, checkPath); session != nil ||
+		!errors.Is(err, plugin.ErrQueryReadSetUnresolved) || calls != 1 {
+		t.Fatalf("malformed source identity reached the callback: %v, %v, %d", session, err, calls)
+	}
+	session, err := guarded.OpenGuardedTableReadSession(ctx, connInfo, path, opts, checkPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer session.Close(ctx)
+	if calls != 2 {
+		t.Fatalf("allowed source must be checked exactly once, calls=%d", calls)
+	}
+	set, err := session.(plugin.ReadSessionEvidence).ReadSet(ctx)
+	if err != nil || !reflect.DeepEqual(set.Paths, []plugin.EngineCatalogPath{path}) {
+		t.Fatalf("session read evidence = %#v, %v", set, err)
+	}
+	batch, err := session.ReadBatch(ctx, 10)
+	if err != nil || len(batch.Rows) != 1 || batch.Spatial.PrimarySRIDValue() != 3857 {
+		t.Fatalf("guarded spatial batch = %#v, %v", batch, err)
+	}
+	geometry, err := ewkb.Unmarshal(batch.Rows[0]["position"].([]byte))
+	point, ok := geometry.(*geom.Point)
+	if err != nil || !ok || point.SRID() != 3857 || point.X() != 12000 || point.Y() != 6000 {
+		t.Fatalf("guarded native geometry = %#v, %v", geometry, err)
+	}
+}
 
 func TestMySQLSpatialFactsAndReadIntegration(t *testing.T) {
 	db, mysqlPlugin, connInfo, database := openMySQLUpsertIntegration(t)

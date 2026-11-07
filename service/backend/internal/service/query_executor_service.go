@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -16,6 +17,7 @@ import (
 	"github.com/addp/common/datatype"
 	"github.com/addp/common/engine/plugin"
 	"github.com/addp/service/internal/models"
+	"github.com/addp/service/internal/protection"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 )
@@ -27,13 +29,13 @@ type QueryExecutorService struct {
 	systemService  *client.SystemServiceClient
 	tokenCodec     *queryTokenCodec
 	protectionGate interface {
-		BeginPreparedQuery(context.Context, uint, plugin.EnginePlugin, plugin.PreparedQuery, *dataprotection.QueryRoleSelection, ...string) (func(*plugin.QueryResult) error, func(), error)
+		BeginPreparedQuery(context.Context, uint, plugin.EnginePlugin, plugin.PreparedQuery, *dataprotection.QueryRoleSelection, ...string) (*protection.PreparedQueryProtection, func(), error)
 		BeginUnresolvedRead(context.Context, uint) (func(), error)
 	}
 }
 
 func (s *QueryExecutorService) SetProtectionGate(gate interface {
-	BeginPreparedQuery(context.Context, uint, plugin.EnginePlugin, plugin.PreparedQuery, *dataprotection.QueryRoleSelection, ...string) (func(*plugin.QueryResult) error, func(), error)
+	BeginPreparedQuery(context.Context, uint, plugin.EnginePlugin, plugin.PreparedQuery, *dataprotection.QueryRoleSelection, ...string) (*protection.PreparedQueryProtection, func(), error)
 	BeginUnresolvedRead(context.Context, uint) (func(), error)
 }) {
 	s.protectionGate = gate
@@ -79,6 +81,22 @@ func (s *QueryExecutorService) execute(
 	if queryService == nil || request == nil {
 		return nil, fmt.Errorf("%w: query service request is incomplete", ErrInvalidStructuredQuery)
 	}
+	if request.RequireUntransformed {
+		if protocol != queryProtocolREST || len(request.Select) == 0 || request.Page.Limit < 1 || request.Page.Limit > 2 ||
+			request.Page.Cursor != "" || (request.Format != "" && request.Format != "json") ||
+			request.ExpectedServiceID == 0 || request.ExpectedServiceVersion == "" {
+			return nil, ErrInvalidStructuredQuery
+		}
+		version := QueryServiceVersion(queryService)
+		snapshot := queryService.SourceSnapshot()
+		if queryService.PublicAccess || queryService.UsesFederatedQueryRuntime() || queryService.ConfigType != "sql" ||
+			snapshot == nil || snapshot.VerificationStatus != "verified" ||
+			request.ExpectedServiceID != queryService.ID || request.ExpectedServiceVersion != version {
+			return unknownQueryFacts(version, request.Page.Limit), nil
+		}
+	} else if request.ExpectedServiceID != 0 || request.ExpectedServiceVersion != "" {
+		return nil, ErrInvalidStructuredQuery
+	}
 	if err := s.validateMetricSource(ctx, queryService, request.Parameters); err != nil {
 		return nil, err
 	}
@@ -100,6 +118,9 @@ func (s *QueryExecutorService) executeDirectQuery(
 	engine, err := s.systemClient.GetEngineForTenant(ctx, queryService.TenantID, queryService.GetEngineID())
 	if err != nil {
 		return nil, fmt.Errorf("failed to get engine: %w", err)
+	}
+	if request.RequireUntransformed && engine.EngineType != "postgresql" {
+		return unknownQueryFacts(QueryServiceVersion(queryService), request.Page.Limit), nil
 	}
 	var execution *compiledQueryPlan
 	var query plugin.QueryRequest
@@ -145,13 +166,17 @@ func (s *QueryExecutorService) executeDirectQuery(
 	if err != nil {
 		return nil, err
 	}
-	if len(choices) > 0 {
+	if len(choices) > 0 || request.RequireUntransformed {
 		if queryService.ConfigType == "sql" {
-			roleSource, err = sqlRoleSource(ctx, enginePlugin, prepared, queryService.GetEngineID(), baseSQL)
+			roleSQL := ""
+			if len(choices) > 0 {
+				roleSQL = baseSQL
+			}
+			roleSource, err = sqlRoleSource(ctx, enginePlugin, prepared, queryService.GetEngineID(), roleSQL)
 		} else {
 			roleSource, err = tableRoleSource(queryService)
 		}
-		if err != nil {
+		if err != nil && len(choices) > 0 {
 			return nil, err
 		}
 	}
@@ -179,7 +204,29 @@ func (s *QueryExecutorService) executeDirectQuery(
 			return nil, err
 		}
 	}
-	return s.finalizeResult(queryService, execution, result, protect)
+	delivered, err := s.finalizeResult(queryService, execution, result, protect.Apply)
+	if err != nil || !request.RequireUntransformed {
+		return delivered, err
+	}
+	for _, field := range execution.SelectedFields {
+		if roleSource == nil || !roleSource.outputs[field] || slices.Contains(protect.DerivedFields, field) ||
+			!slices.Contains(delivered.Fields, field) {
+			return unknownQueryFacts(delivered.ServiceVersion, delivered.Page.Limit), nil
+		}
+		for _, row := range delivered.Data {
+			if _, present := row[field]; !present {
+				return unknownQueryFacts(delivered.ServiceVersion, delivered.Page.Limit), nil
+			}
+		}
+	}
+	delivered.FactStatus = models.QueryFactsVerified
+	delivered.Page.NextCursor = ""
+	return delivered, nil
+}
+
+func unknownQueryFacts(version string, limit int) *models.QueryExecutionResult {
+	return &models.QueryExecutionResult{Data: []map[string]any{}, Page: models.QueryPageResult{Limit: limit},
+		ServiceVersion: version, FactStatus: models.QueryFactsUnknown}
 }
 
 func directSourceSQL(queryService *models.QueryService, engineType string) (string, error) {

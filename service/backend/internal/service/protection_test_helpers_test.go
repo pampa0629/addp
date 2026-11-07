@@ -5,12 +5,13 @@ import (
 
 	"github.com/addp/common/dataprotection"
 	"github.com/addp/common/engine/plugin"
+	"github.com/addp/service/internal/protection"
 )
 
 type allowServiceProtectionGate struct{}
 
-func (allowServiceProtectionGate) BeginPreparedQuery(context.Context, uint, plugin.EnginePlugin, plugin.PreparedQuery, *dataprotection.QueryRoleSelection, ...string) (func(*plugin.QueryResult) error, func(), error) {
-	return func(*plugin.QueryResult) error { return nil }, func() {}, nil
+func (allowServiceProtectionGate) BeginPreparedQuery(context.Context, uint, plugin.EnginePlugin, plugin.PreparedQuery, *dataprotection.QueryRoleSelection, ...string) (*protection.PreparedQueryProtection, func(), error) {
+	return &protection.PreparedQueryProtection{Apply: func(*plugin.QueryResult) error { return nil }}, func() {}, nil
 }
 
 func (allowServiceProtectionGate) BeginCatalogPath(context.Context, uint, plugin.EnginePlugin, plugin.EngineCatalogPath) (func(), error) {

@@ -3,13 +3,15 @@ package service
 import (
 	"context"
 	"errors"
-	commonAPI "github.com/addp/common/api"
-	"github.com/addp/common/authorization/authtest"
-	commonClient "github.com/addp/common/client"
 	"strings"
 	"testing"
 	"time"
 
+	commonAPI "github.com/addp/common/api"
+	"github.com/addp/common/authorization/authtest"
+	commonClient "github.com/addp/common/client"
+	"github.com/addp/common/dataitem/authorizationfacts"
+	engineplugin "github.com/addp/common/engine/plugin"
 	commonExecution "github.com/addp/common/execution"
 	"github.com/addp/common/execution/executiontest"
 	"github.com/addp/common/format"
@@ -155,6 +157,54 @@ func TestCreateAdHocExecutionPersistsNoTransferTaskDefinition(t *testing.T) {
 	claimed, lease, err := taskService.taskRepo.ClaimNextBoundedExecution(context.Background(), "transfer-test-worker", time.Minute)
 	if err != nil || claimed == nil || lease == nil || claimed.ExecutionID != result.ExecutionID {
 		t.Fatalf("claim = %#v lease = %#v error = %v", claimed, lease, err)
+	}
+}
+
+func TestCreateAdHocFileGDBFreezesVerifiedActorAndWaitsForAuthorization(t *testing.T) {
+	db := newTransferTaskServiceTestDB(t)
+	repo := commonExecution.NewTaskExecutionRepository(db)
+	service := NewTaskService(db, nil, nil)
+	service.SetExecutionService(NewExecutionService(db, repo))
+	binding, err := authorizationfacts.NativeCandidateBinding(engineplugin.TabularItemPath(5, "database", "business", "roads"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	req := &models.CreateAdHocExecutionRequest{
+		Name: "FileGDB export", ExportSession: &commonClient.TransferExportSessionReference{SessionID: 9, ExecutionID: "9db937cf-ff91-45eb-b77e-cd436cf34c0d"},
+		Config: commonClient.TransferExecutionConfig{
+			FileGDBSource: &commonExecution.FileGDBExportSource{EngineVersion: "8", Binding: binding},
+			Runtime:       commonClient.TransferExecutionRuntime{Boundary: "bounded"}, Load: commonClient.TransferExecutionLoad{Mode: "snapshot"},
+			Source: commonClient.TransferExecutionEndpoint{Locator: "addp://engine/5/path/business/roads?type=table", DataType: "table", Representation: "native"},
+			Target: commonClient.TransferExecutionEndpoint{ParentLocator: "addp-infra://minio/manager/tenant_7/export/manager/session?type=prefix",
+				Name: "roads.gdb.zip", DataType: "table", Representation: "encoded", Format: "filegdb", Policy: map[string]any{"apply_mode": "replace"}},
+		},
+	}
+	service.SetExportExecutionSourceResolver(roleExportSourceResolverFunc(func(_ context.Context, owner string, tenant uint, ref commonClient.TransferExportSessionReference, digest string) (*commonClient.ExportExecutionSource, error) {
+		wantDigest, err := commonClient.ExportRequestDigest(req)
+		if err != nil || digest != wantDigest || owner != "manager" || tenant != 7 || ref != *req.ExportSession {
+			t.Fatal("Transfer did not check the exact owner request")
+		}
+		return &commonClient.ExportExecutionSource{TenantID: tenant, UserID: 11}, nil
+	}))
+	if _, err := service.CreateAdHocExecution(t.Context(), req, "manager", 7); !errors.Is(err, commonAPI.ErrForbidden) {
+		t.Fatalf("archive without frozen actor was accepted: %v", err)
+	}
+	req.FileGDBActor = &commonClient.FileGDBExportActor{PrincipalID: 11, TenantMembershipID: 12, AuthorizationVersion: 3}
+	result, err := service.CreateAdHocExecution(t.Context(), req, "manager", 7)
+	if err != nil {
+		t.Fatal(err)
+	}
+	record, err := repo.GetByExecutionID(t.Context(), result.ExecutionID, 7)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if record.ActorPrincipalID == nil || *record.ActorPrincipalID != 11 || record.ActorTenantMembershipID == nil ||
+		*record.ActorTenantMembershipID != 12 || record.IssuedAuthorizationVersion == nil || *record.IssuedAuthorizationVersion != 3 ||
+		record.ExecutionAuthorizationID != nil || record.Status != commonExecution.ExecutionStatusPending {
+		t.Fatal("pending record did not retain exact actor and admission state")
+	}
+	if claimed, lease, err := service.taskRepo.ClaimNextBoundedExecution(t.Context(), "filegdb-worker", time.Minute); err != nil || claimed != nil || lease != nil {
+		t.Fatalf("unbound FileGDB export reached the worker: %#v %#v %v", claimed, lease, err)
 	}
 }
 

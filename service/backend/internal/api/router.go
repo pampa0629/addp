@@ -111,6 +111,10 @@ func SetupRouter(
 	permission := func(keys ...string) gin.HandlerFunc {
 		return authMiddleware.MustNewPermissionGuard(keys...)
 	}
+	if systemServiceClient != nil {
+		facts := ontologyRuleFactsHandler{query: queryServiceHandler, system: systemServiceClient}
+		api.POST("/runtime/ontology-facts/:service_name", authMiddleware.MustNewServiceClientGuard("addp-ontology"), permission(serviceauthorization.PermissionServiceOntologyFactRead), facts.ReadOntologyRuleFacts)
+	}
 	{
 		// 审计日志中间件（记录到 System 模块）
 		if systemClient != nil {

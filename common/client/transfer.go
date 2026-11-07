@@ -6,12 +6,14 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/addp/common/dataprotection"
-	"github.com/addp/common/httptrace"
 	"io"
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/addp/common/dataprotection"
+	"github.com/addp/common/execution"
+	"github.com/addp/common/httptrace"
 )
 
 // TransferClient Transfer 服务客户端
@@ -75,6 +77,7 @@ type TriggerTaskResponse struct {
 // Transfer task definition or its private database identity.
 type CreateTransferExecutionRequest struct {
 	ExecutionAuthorization *IssuedExecutionAuthorization   `json:"execution_authorization,omitempty"`
+	FileGDBActor           *FileGDBExportActor             `json:"filegdb_actor,omitempty"`
 	Name                   string                          `json:"name" binding:"required"`
 	Config                 TransferExecutionConfig         `json:"config" binding:"required"`
 	BatchSize              int                             `json:"batch_size,omitempty"`
@@ -84,12 +87,13 @@ type CreateTransferExecutionRequest struct {
 }
 
 type TransferExecutionConfig struct {
-	Runtime    TransferExecutionRuntime     `json:"runtime"`
-	Load       TransferExecutionLoad        `json:"load"`
-	Source     TransferExecutionEndpoint    `json:"source"`
-	Target     TransferExecutionEndpoint    `json:"target"`
-	Transforms []TransferExecutionTransform `json:"transforms,omitempty"`
-	BatchSize  int                          `json:"batch_size,omitempty"`
+	FileGDBSource *execution.FileGDBExportSource `json:"filegdb_source,omitempty"`
+	Runtime       TransferExecutionRuntime       `json:"runtime"`
+	Load          TransferExecutionLoad          `json:"load"`
+	Source        TransferExecutionEndpoint      `json:"source"`
+	Target        TransferExecutionEndpoint      `json:"target"`
+	Transforms    []TransferExecutionTransform   `json:"transforms,omitempty"`
+	BatchSize     int                            `json:"batch_size,omitempty"`
 }
 
 type TransferExecutionRuntime struct {

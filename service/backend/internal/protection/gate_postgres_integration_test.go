@@ -77,7 +77,7 @@ func TestServiceExecuteProtectionAgainstPostgres(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := protect(result); err != nil {
+	if err := protect.Apply(result); err != nil {
 		t.Fatal(err)
 	}
 	if len(result.Rows) != 1 || result.Rows[0]["phone"] != "136****4499" {
@@ -217,7 +217,7 @@ func TestServiceRoleChoiceAgainstPostgres(t *testing.T) {
 		}
 		result, err := q.Execute(t.Context())
 		if err == nil {
-			err = protect(result)
+			err = protect.Apply(result)
 		}
 		end()
 		if err != nil {
@@ -244,7 +244,7 @@ func TestServiceRoleChoiceAgainstPostgres(t *testing.T) {
 	p.Revision = "00000000000000000003"
 	p.Rules[0].RoleOptions = nil
 	apply("role-2", "role-3", "role-revoke")
-	if err := protect(result); !errors.Is(err, dataprotection.ErrRoleOptionUnavailable) {
+	if err := protect.Apply(result); !errors.Is(err, dataprotection.ErrRoleOptionUnavailable) {
 		end()
 		t.Fatalf("revoked prepared delivery: %v", err)
 	}

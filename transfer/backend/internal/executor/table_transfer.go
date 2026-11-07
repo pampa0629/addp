@@ -165,6 +165,7 @@ type TableTransferExecutor struct {
 	CRSDefinitionConverter     CRSDefinitionConverter
 	TargetCRSRequirements      format.CRSDefinitionWriteRequirementProvider
 	SourceProtector            TableSourceProtector
+	AuthorizeNativeSource      engineplugin.GuardedTableReadAuthorizer
 	PrivateImportSource        *client.ManagerImportSource
 }
 
@@ -225,6 +226,9 @@ func (e *TableTransferExecutor) Execute(ctx context.Context, plan TableTransferP
 	if e == nil {
 		return nil, fmt.Errorf("table transfer executor cannot be nil")
 	}
+	if e.AuthorizeNativeSource != nil && (plan.Source.Kind != TableEndpointNative || !plan.Target.IsFileGDBArchive()) {
+		return nil, fmt.Errorf("%w: exact native authorization requires a FileGDB export", ErrProtectionPreparation)
+	}
 	source, err := e.openSource(plan.Source)
 	if err != nil {
 		return nil, err
@@ -270,6 +274,7 @@ func (e *TableTransferExecutor) openSource(plan TableSourcePlan) (TableBatchSour
 			catalogFacts:         e.SourceCatalogFacts,
 			reader:               e.SourceNativeReader,
 			tableSessionProvider: e.SourceTableSessionProvider,
+			authorize:            e.AuthorizeNativeSource,
 			protector:            e.SourceProtector,
 			connInfo:             plan.ConnInfo,
 			path:                 plan.Path,

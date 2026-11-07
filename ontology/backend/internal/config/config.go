@@ -13,6 +13,7 @@ type Config struct {
 	commonconfig.BaseConfig
 	Port                string
 	SystemURL           string
+	ServiceURL          string
 	ServiceClientSecret string
 	FalkorAddress       string
 	FalkorPassword      string
@@ -30,6 +31,7 @@ func Load() (*Config, error) {
 func fromEnvironment() *Config {
 	c := &Config{Port: commonconfig.GetEnv("ONTOLOGY_BACKEND_PORT", "8195"),
 		SystemURL:           commonconfig.GetEnv("SYSTEM_URL", "http://localhost:8180"),
+		ServiceURL:          commonconfig.GetEnv("SERVICE_URL", commonconfig.BuildServiceURL("localhost", commonconfig.GetEnv("SERVICE_BACKEND_PORT", "8086"))),
 		ServiceClientSecret: os.Getenv("ONTOLOGY_SERVICE_CLIENT_SECRET"),
 		FalkorAddress:       commonconfig.GetEnv("INFRA_FALKORDB_ADDRESS", "127.0.0.1:16479"),
 		FalkorPassword:      os.Getenv("INFRA_FALKORDB_PASSWORD")}

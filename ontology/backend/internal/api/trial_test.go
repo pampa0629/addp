@@ -13,6 +13,50 @@ import (
 	"github.com/addp/ontology/internal/service"
 )
 
+func (f *fakeCommands) EvaluateBusiness(_ context.Context, a models.Actor, id, rule string, revision uint64, g string, activation uint64, objectID, token string) (*service.BusinessEvaluation, error) {
+	f.record(a, semantic.Scope{TenantID: a.TenantID, OntologyID: id, Revision: revision}, activation)
+	f.generation, f.action, f.token = g, rule, token
+	f.trialFacts = map[string]semantic.Fact{"object_id": {Value: objectID}}
+	return &service.BusinessEvaluation{Decision: semantic.Decision{Mode: "business", Outcome: semantic.Undetermined}}, f.err
+}
+
+func TestBusinessEvaluationOnlyUsesCurrentUserAndObjectID(t *testing.T) {
+	path := "/ontologies/outdoor/semantic/rules/statistically_valid_activity/evaluate"
+	body := `{"revision":2,"generation":"` + generation + `","activation_version":3,"object_id":"activity-001"}`
+	for _, tc := range []struct {
+		name           string
+		body           string
+		delegatedScope string
+		want           int
+	}{
+		{"current_user", body, "", 200},
+		{"caller_cannot_supply_facts", strings.Replace(body, `"object_id"`, `"inputs":{},"object_id"`, 1), "", 400},
+		{"caller_cannot_supply_binding", strings.Replace(body, `"object_id"`, `"service_id":42,"object_id"`, 1), "", 400},
+		{"wrong_delegation_denied", body, "ontology.classes.list", 403},
+		{"exact_delegation", body, authorization.OntologyRuleEvaluateTool, 200},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			a := authtest.NewTenantUserAuthContext("101", "9", []string{"ontology.semantic.read"})
+			bearer := "addp_at_test"
+			if tc.delegatedScope != "" {
+				delegatedSemantic(&a)
+				a.Client.Scopes = []string{tc.delegatedScope}
+				bearer = ""
+			}
+			f := &fakeCommands{}
+			w := perform(testRouter(t, f, a, true), "POST", path, tc.body, "addp_at_test", "en")
+			if w.Code != tc.want || (tc.want != 200 && f.calls != 0) {
+				t.Fatalf("status=%d calls=%d body=%s", w.Code, f.calls, w.Body)
+			}
+			if tc.want == 200 && (f.actor.TenantID != 101 || f.scope.Revision != 2 || f.version != 3 || f.generation != generation ||
+				f.action != "statistically_valid_activity" || f.token != bearer || f.trialFacts["object_id"].Value != "activity-001" ||
+				w.Header().Get("Cache-Control") != "no-store") {
+				t.Fatal("lost current user, active version or object ID")
+			}
+		})
+	}
+}
+
 func (f *fakeCommands) Trial(_ context.Context, a models.Actor, id, ruleID string, revision uint64, g string, activation uint64, facts map[string]semantic.Fact) (*service.TrialResult, error) {
 	f.record(a, semantic.Scope{TenantID: a.TenantID, OntologyID: id, Revision: revision}, activation)
 	f.generation, f.action, f.trialFacts = g, ruleID, facts

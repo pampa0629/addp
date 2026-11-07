@@ -93,7 +93,7 @@ const docTemplate = `{
         },
         "/api/query/{serviceName}/query": {
             "post": {
-                "description": "保护门禁拒绝返回 403、data_protection_required 和本地化提示，不返回原始错误或数据 | Protection refusals return 403, data_protection_required and a localized explanation without raw errors or data\nCSV 中缺失字段及空值输出为空单元格，保留实际字符串与非空标量 | CSV encodes missing and null fields as empty cells while preserving literal strings and non-null scalars",
+                "description": "保护门禁拒绝返回 403、data_protection_required 和本地化提示，不返回原始错误或数据 | Protection refusals return 403, data_protection_required and a localized explanation without raw errors or data\nCSV 中缺失字段及空值输出为空单元格，保留实际字符串与非空标量 | CSV encodes missing and null fields as empty cells while preserving literal strings and non-null scalars\nrequire_untransformed 仅用于当前用户的私有 JSON 查询；要求 select、expected_service_id、expected_service_version 和 1 或 2 行首屏。unknown 不交付数据。 | require_untransformed is for private JSON reads by the current user. Requires select, expected_service_id, expected_service_version, and a first page of one or two rows. Unknown delivers no data.",
                 "consumes": [
                     "application/json"
                 ],
@@ -3370,6 +3370,100 @@ const docTemplate = `{
                 ]
             }
         },
+        "/runtime/ontology-facts/{service_name}": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "QueryService"
+                ],
+                "summary": "读取已授权的单记录规则事实 | Read authorized single-record rule facts",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "固定查询服务名称 | Pinned query service name",
+                        "name": "service_name",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "已发布规则的单记录绑定 | Single-record binding from a published rule",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/authorization.OntologyRuleFactRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_service_internal_models.QueryExecutionResult"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "service.ontology_fact.read"
+                ]
+            }
+        },
         "/settings/runtime-policy": {
             "get": {
                 "security": [
@@ -3454,6 +3548,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
+                "description": "普通 SQL 的驱动未报告可空性时，输出字段标为可空。 | For direct SQL, output fields are marked nullable when the driver does not report nullability.",
                 "consumes": [
                     "application/json"
                 ],
@@ -4166,6 +4261,69 @@ const docTemplate = `{
         }
     },
     "definitions": {
+        "authorization.OntologyRuleCall": {
+            "type": "object",
+            "properties": {
+                "agent_run_id": {
+                    "type": "string"
+                },
+                "evaluation": {
+                    "$ref": "#/definitions/authorization.OntologyRuleEvaluation"
+                },
+                "principal_id": {
+                    "type": "string"
+                },
+                "tool_call_id": {
+                    "type": "string"
+                }
+            }
+        },
+        "authorization.OntologyRuleEvaluation": {
+            "type": "object",
+            "properties": {
+                "activation_version": {
+                    "type": "integer"
+                },
+                "generation": {
+                    "type": "string"
+                },
+                "object_id": {
+                    "type": "string"
+                },
+                "ontology_id": {
+                    "type": "string"
+                },
+                "revision": {
+                    "type": "integer"
+                },
+                "rule_id": {
+                    "type": "string"
+                }
+            }
+        },
+        "authorization.OntologyRuleFactRequest": {
+            "type": "object",
+            "properties": {
+                "call": {
+                    "$ref": "#/definitions/authorization.OntologyRuleCall"
+                },
+                "fields": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "id_parameter": {
+                    "type": "string"
+                },
+                "service_id": {
+                    "type": "integer"
+                },
+                "service_version": {
+                    "type": "string"
+                }
+            }
+        },
         "cleanup.Result": {
             "type": "object",
             "properties": {
@@ -5788,6 +5946,12 @@ const docTemplate = `{
         "github_com_addp_service_internal_models.QueryExecutionRequest": {
             "type": "object",
             "properties": {
+                "expected_service_id": {
+                    "type": "integer"
+                },
+                "expected_service_version": {
+                    "type": "string"
+                },
                 "filter": {
                     "$ref": "#/definitions/github_com_addp_service_internal_models.QueryFilter"
                 },
@@ -5811,6 +5975,10 @@ const docTemplate = `{
                 "parameters": {
                     "type": "object"
                 },
+                "require_untransformed": {
+                    "description": "RequireUntransformed 要求确认 select 中的字段未经保护变换。 | Require all selected fields to be free of protection transformations.",
+                    "type": "boolean"
+                },
                 "select": {
                     "type": "array",
                     "items": {
@@ -5828,6 +5996,14 @@ const docTemplate = `{
                         "type": "object",
                         "additionalProperties": true
                     }
+                },
+                "fact_status": {
+                    "description": "FactStatus 仅用于规则事实读取；unknown 不包含数据。 | Fact-read status; unknown carries no data.",
+                    "type": "string",
+                    "enum": [
+                        "verified",
+                        "unknown"
+                    ]
                 },
                 "page": {
                     "$ref": "#/definitions/github_com_addp_service_internal_models.QueryPageResult"

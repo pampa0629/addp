@@ -1,6 +1,6 @@
 schema_version: addp.permission_manifest/v1
 owner_module: system
-manifest_version: 44
+manifest_version: 45
 permissions:
   - key: audit.event.create
     allowed_scope_types: [platform]
@@ -1306,6 +1306,14 @@ permissions:
     status: active
     name_i18n_key: permissions.system.observability_identity.read.name
     description_i18n_key: permissions.system.observability_identity.read.description
+  - key: system.ontology_fact.execute
+    allowed_scope_types: [tenant]
+    risk_level: medium
+    tenant_customizable: false
+    delegable: false
+    status: active
+    name_i18n_key: permissions.system.ontology_fact.execute.name
+    description_i18n_key: permissions.system.ontology_fact.execute.description
   - key: system.runtime_registry.read
     allowed_scope_types: [platform]
     risk_level: low

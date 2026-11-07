@@ -42,6 +42,7 @@ while [ "$#" -gt 0 ]; do
             echo "Unified human data authorizer: --package migration --test unified-data-authorizer" >&2
             echo "Owned-container crash recovery: --test database-crash-recovery (no external DSN)" >&2
             echo "Execution subject roles: --package iam --test execution-subject-roles" >&2
+            echo "Ontology rule delegation: --package iam --test ontology-rule-delegation" >&2
             echo "Cleanup execution authorization: --package iam --test cleanup-authorization" >&2
             echo "usage: $0 [--source-root checkout] [--package iam|oauth|api|migration|engineaccess|repository|online-fixture] [--test database-crash-recovery|oauth-client-credentials|prometheus-credential|credential-context|engine-access-coordination|service-account|tenant-invitation|catalog-reference-candidates|catalog-integrity|standard-collection-removal|invitation-enrollment-removal|execution-audience|duckdb-runtime-catalog|security-module-repair|security-access-request-repair|execution-authorization-lease-boundary|internal-task-authorization|portal-runtime-removal|service-execution-audit|develop-execution-audit|workbench-runtime|workbench-data-application|workbench-catalog-read|workbench-resource-grant|model-catalog-read|standard-catalog-read|service-catalog-read|develop-catalog-read|develop-transfer-execution|quality-catalog-read|quality-plans|model-writer-decoupling|catalog-engine-descriptor-read|catalog-project-group-read|transfer-task-provider|transfer-task-create|transfer-run|export-execution-provenance]" >&2
             exit 2
@@ -253,6 +254,10 @@ case "$TEST_FILTER" in
         fi
         test_pattern='^TestExecutionAuthorizationServiceAgainstPostgres$'
         ;;
+    ontology-rule-delegation)
+        [ "$PACKAGE_FILTER" = "iam" ] || { echo "ontology-rule-delegation requires --package iam" >&2; exit 2; }
+        test_pattern='^TestDelegationServiceAgainstPostgres$'
+        ;;
     administrator-governance)
         case "$PACKAGE_FILTER" in
             iam) test_pattern='^TestAdministratorGovernanceAgainstPostgres$' ;;
@@ -286,6 +291,10 @@ case "$TEST_FILTER" in
     manager-source)
         [ "$PACKAGE_FILTER" = engineaccess ] || { echo "manager-source requires --package engineaccess" >&2; exit 2; }
         test_pattern='^TestFulfillmentArbitrationAgainstPostgres$/^production_first_acceptance_and_historical_retry$/^(current_complete_source_read_rules|file_composition_source_grants)$/^(Manager_complete_source_execution_authorization|ftp|nfs)$'
+        ;;
+    filegdb-export-source)
+        [ "$PACKAGE_FILTER" = engineaccess ] || { echo "filegdb-export-source requires --package engineaccess" >&2; exit 2; }
+        test_pattern='^TestFulfillmentArbitrationAgainstPostgres$/^production_first_acceptance_and_historical_retry$/^current_complete_source_read_rules$/^FileGDB_export_exact_source_authorization$'
         ;;
     engine-deployments)
         case "$PACKAGE_FILTER" in

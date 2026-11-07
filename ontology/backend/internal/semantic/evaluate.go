@@ -59,7 +59,17 @@ type Decision struct {
 // Every declared input is validated before evaluation, even if a boolean
 // short-circuit could hide malformed or contradictory evidence.
 func (s *Snapshot) Evaluate(ctx context.Context, scope Scope, ruleID string, facts map[string]Fact) Decision {
-	out := Decision{Outcome: Failed, Mode: "hypothetical"}
+	return s.evaluate(ctx, scope, ruleID, facts, "hypothetical")
+}
+
+// EvaluateServiceFacts accepts inputs assembled from a verified owner result.
+// A nil facts map represents an unavailable or unverified result.
+func (s *Snapshot) EvaluateServiceFacts(ctx context.Context, ruleID string, facts map[string]Fact) Decision {
+	return s.evaluate(ctx, s.Scope(), ruleID, facts, "business")
+}
+
+func (s *Snapshot) evaluate(ctx context.Context, scope Scope, ruleID string, facts map[string]Fact, mode string) Decision {
+	out := Decision{Outcome: Failed, Mode: mode}
 	if scope != s.definition.Scope {
 		out.Code = "scope_mismatch"
 		return out
@@ -75,6 +85,12 @@ func (s *Snapshot) Evaluate(ctx context.Context, scope Scope, ruleID string, fac
 	}
 	out.Scope, out.Digest, out.RuleID = scope, s.digest, ruleID
 	out.Expression, out.Basis = c.definition.Expression, c.definition.Basis
+	if mode == "business" {
+		if c.definition.ServiceBinding == nil || facts == nil {
+			out.Outcome, out.Code = Undetermined, "source_unverified"
+			return out
+		}
+	}
 	if len(facts) > maxInputs {
 		out.Code = "input_limit"
 		return out

@@ -106,6 +106,7 @@ Manifest 不保存第二套 HTTP 路径事实。ToolExecutor 通过 Python SDK �
 | `execution.get` | Develop | `develop.task.read` | read | none | execution | 128 KiB |
 | `ontology.classes.list` | Ontology | `ontology.semantic.read` | read | none | none | 128 KiB |
 | `ontology.class.context` | Ontology | `ontology.semantic.read` | read | none | none | 128 KiB |
+| `ontology.rule.evaluate` | Ontology | `ontology.semantic.read`，签发及事实读取另核验 `service.data_read.execute` | read | none | none | 128 KiB |
 | `platform.capability.context` | Ontology | `ontology.semantic.read` | read | none | none | 32 KiB |
 | `platform.capabilities.list` | Ontology | `ontology.semantic.read` | read | none | none | 128 KiB |
 | `transfer.task.create` | Transfer | `transfer.task.create` | write | none | none | 256 KiB |
@@ -131,6 +132,8 @@ Manifest 不保存第二套 HTTP 路径事实。ToolExecutor 通过 Python SDK �
 Agent 检查点只从已校验的 `engine.list` 结果数组直接成员保存引擎事实，不递归识别嵌套对象，不接受 `engines` 包装或 `type` 别名。
 
 `ontology.classes.list` 要求用户明确指定 ontology_id，只枚举已激活原生定义的类并返回版本绑定。`ontology.class.context` 必须携带前者返回的 revision、generation、activation_version；只返回确定类、完整祖先、继承属性、直接端点关系及直接绑定规则。两者标记 `knowledge_kind=native_definition`，不认证实例事实、不执行规则、不读取业务数据，不产生 ResultRef。激活变化时返回 `ontology_activation_changed`，调用方需重新读取并确认，不能回退旧快照。管理修订权限仍不可委托，独立的 `ontology.semantic.read` 由租户显式授权。
+
+`ontology.rule.evaluate` 使用当次正式类上下文的激活绑定及规则标识，并要求用户明确给出对象 ID。Agent Runtime 核对当次用户原文和已观察到的规则绑定后才调用 Tool，直接展示 owner 返回的判定及修订。Tool 参数不接受服务名称、查询、原始事实或来源凭证。授权绑定和一次性消费见 [OAuth 授权规范](addp%20OAuth授权规范.md#九受委托访问令牌)。结果只供解释该单记录在指定观察日的规则结论。`unknown` 表示业务证据不足，权限或授权协议失败作为 Tool 错误处理。
 
 ## 四、执行语义
 

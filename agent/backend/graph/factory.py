@@ -4,6 +4,7 @@ import asyncio
 import copy
 import json
 import logging
+import re
 import uuid
 from contextlib import aclosing
 from typing import Any, AsyncIterator
@@ -32,7 +33,7 @@ from agents.events import AgentEvent, text_event
 from agents.result_refs import build_result_ref
 from agents.platform_conditions import CHECK_TOOL, CREATE_TOOL, REVIEW_REASON, ConfigCheckUnsupported, capture_config_check, config_check_report, config_arguments_digest, prepare_review, review_json, validate_create
 from agents.transfer_run import START_TOOL, GET_TOOL, capture_run_review, validate_start, platform_identity
-from i18n import transfer_run_result
+from i18n import ontology_evaluation_result, transfer_run_result
 from graph.state import TaskContext
 from i18n import bound_draft_review_error, invocation_stopped, transfer_config_check_completed, transfer_config_check_details, transfer_config_check_error, transfer_config_check_unsupported, transfer_create_review_messages, transfer_creation_completed, transfer_creation_stopped
 from services.drafts import validate_draft_arguments
@@ -141,7 +142,7 @@ def _emit(event_kind: str, **payload: Any) -> None:
 class _PlatformBoundary(AgentMiddleware):
     """平台边界中间件，不实现模型／工具执行循环，不持久化框架状态。"""
 
-    def __init__(self, tools: list[StructuredTool], checkpoint: dict, max_iterations: int, accept_language: str, draft_arguments: dict | None = None, resuming: bool = False, source_arguments: dict | None = None):
+    def __init__(self, tools: list[StructuredTool], checkpoint: dict, max_iterations: int, accept_language: str, draft_arguments: dict | None = None, resuming: bool = False, source_arguments: dict | None = None, user_request: str = ""):
         super().__init__()
         self.names = {tool.name: stable_tool_name(tool) for tool in tools}
         self.platform_tools = {stable_tool_name(tool): tool for tool in tools}
@@ -151,6 +152,8 @@ class _PlatformBoundary(AgentMiddleware):
         self.draft_arguments = draft_arguments
         self.resuming = resuming
         self.source_arguments = copy.deepcopy(source_arguments)
+        self.user_request = user_request
+        self.observed_ontology_rules: set[tuple] = set()
         self.build_used = bool(checkpoint["parameter_source"] and checkpoint["parameter_source"]["kind"] == "build" and not resuming)
         self.model_calls = 0
         self.halted = False
@@ -320,6 +323,16 @@ class _PlatformBoundary(AgentMiddleware):
             return await self._clarify(call)
         if call["name"] not in self.names:
             return self._error(call, name, "tool_not_allowed", "错误：工具不在该 Skill 的白名单内")
+        if name == "ontology.rule.evaluate":
+            args = call["args"]
+            object_id = args.get("object_id")
+            if (not isinstance(object_id, str) or not object_id or len(object_id) > 512
+                    or not re.search(rf"(?<![\w./:-]){re.escape(object_id)}(?![\w./:-])", self.user_request, flags=re.ASCII)):
+                return self._error(call, name, "ontology_object_id_required", workspace_message(self.accept_language, "ontology_object_id_required"))
+            rule = self._ontology_rule_key(args, args.get("rule_id"))
+            if rule is None or rule not in self.observed_ontology_rules:
+                return self._error(call, name, "ontology_rule_binding_required", workspace_message(self.accept_language, "ontology_rule_binding_required"))
+            self.observed_ontology_rules.clear()
         if name == "platform.capability.context":
             capability = call["args"].get("capability")
             if isinstance(capability, str) and capability:
@@ -387,6 +400,13 @@ class _PlatformBoundary(AgentMiddleware):
             _emit("interaction_required", tool_call_id=call["id"], **approval)
             return Command(update={"messages": [message]}, goto=END)
         return message
+
+    @staticmethod
+    def _ontology_rule_key(value, rule_id):
+        ontology_id, revision, generation, activation = (value.get(key) for key in ("ontology_id", "revision", "generation", "activation_version"))
+        if not all(isinstance(part, str) and part for part in (ontology_id, generation, rule_id)) or type(revision) is not int or type(activation) is not int:
+            return None
+        return ontology_id, revision, generation, activation, rule_id
 
     def _stop_resume(self, code):
         self.halted = True
@@ -748,6 +768,13 @@ class _PlatformBoundary(AgentMiddleware):
                 self.checkpoint["observed"]["workflow_engines"].clear()
         scoped_source_empty = False
         if result is not None:
+            if name == "ontology.class.context" and not code and isinstance(result, dict):
+                self.observed_ontology_rules.clear()
+                for rule in result.get("rules") or []:
+                    if isinstance(rule, dict) and rule.get("business_evaluable") is True:
+                        key = self._ontology_rule_key(result, rule.get("id"))
+                        if key is not None:
+                            self.observed_ontology_rules.add(key)
             facts = capture_owner_facts(name, result, self.checkpoint)
             if name == "data.search" and not code and self._new_transfer_draft():
                 rows = result.get("results")
@@ -789,6 +816,16 @@ class _PlatformBoundary(AgentMiddleware):
                     _emit("presentation", kind="workflow_dag", workflow=definition)
         _emit("tool_result", tool_call_id=call["id"], tool_name=name, content=content,
               is_error=code is not None, error_source=source, error_code=code)
+        if name == "ontology.rule.evaluate":
+            self.halted = True
+            if code:
+                _emit("run_failed", error_source=source, error_code=code,
+                      message=workspace_message(self.accept_language, "ontology_rule_evaluation_failed"))
+            else:
+                get_stream_writer()(text_event(ontology_evaluation_result(self.accept_language, result)))
+            return Command(update={"messages": [ToolMessage(
+                content=content, tool_call_id=call["id"], name=call["name"],
+            )]}, goto=END)
         halted = self._halt_failed_evidence(
             call, name, source, code, error.get("message", code) if isinstance(error, dict) else None, content, parent_call,
         )
@@ -918,7 +955,7 @@ class AgentFactory:
             human_input += '\n\n当前计划（仅安排，不是执行证据）：\n' + json.dumps(todos, ensure_ascii=False)
         planning = TodoListMiddleware(system_prompt=_PLAN_INSTRUCTIONS)
         tools = [tool_map[name] for name in allowed_tool_names] + [_clarification_tool(), _answer_tool()]
-        boundary = _PlatformBoundary(tools + planning.tools, checkpoint, max_iterations, task_context.get("accept_language", "zh-cn"), draft_arguments, task_context.get("resuming", False), source_arguments)
+        boundary = _PlatformBoundary(tools + planning.tools, checkpoint, max_iterations, task_context.get("accept_language", "zh-cn"), draft_arguments, task_context.get("resuming", False), source_arguments, task_context["user_request"])
         loop_detection = LoopDetectionMiddleware()
         graph = create_deerflow_agent(
             model=llm or get_llm(task_context["tenant_id"], "reasoning"), tools=tools,

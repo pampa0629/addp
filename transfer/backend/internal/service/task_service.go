@@ -418,6 +418,9 @@ func validateNewTaskConfig(config map[string]interface{}, batchSize int) error {
 }
 
 func (s *TaskService) validateTaskConfig(_ context.Context, tenantID uint, config map[string]interface{}, batchSize int) error {
+	if _, present := config["filegdb_source"]; present {
+		return ErrInvalidTaskConfig
+	}
 	if err := validateNewTaskConfig(config, batchSize); err != nil {
 		return err
 	}
@@ -563,11 +566,30 @@ func (s *TaskService) CreateAdHocExecution(
 	if err := json.Unmarshal(configBytes, &config); err != nil {
 		return nil, fmt.Errorf("%w: decode config: %v", ErrInvalidTaskConfig, err)
 	}
+	target := req.Config.Target
+	fileGDBArchive := planner.IsFileGDBArchiveTarget(target.Format, target.Locator, target.ParentLocator)
+	if fileGDBArchive {
+		actor := req.FileGDBActor
+		if source != commonExecution.ModuleManager || req.ExportSession == nil || actor == nil || triggeredBy == nil ||
+			actor.PrincipalID != int64(*triggeredBy) || actor.TenantMembershipID <= 0 || actor.AuthorizationVersion <= 0 ||
+			req.AutoScanMetadata || req.ExecutionAuthorization != nil {
+			return nil, commonAPI.ErrForbidden
+		}
+		if req.Config.FileGDBSource == nil {
+			return nil, ErrInvalidTaskConfig
+		}
+	} else if req.Config.FileGDBSource != nil || req.FileGDBActor != nil {
+		return nil, ErrInvalidTaskConfig
+	}
 	batchSize := req.BatchSize
 	if batchSize <= 0 {
 		batchSize = 1000
 	}
-	if err := s.validateTaskConfig(ctx, tenantID, config, batchSize); err != nil {
+	if fileGDBArchive {
+		if _, err := planner.ParseTableExportTaskSpec(config, batchSize); err != nil {
+			return nil, fmt.Errorf("%w: %v", ErrInvalidTaskConfig, err)
+		}
+	} else if err := s.validateTaskConfig(ctx, tenantID, config, batchSize); err != nil {
 		return nil, err
 	}
 	boundary, err := planner.TaskRuntimeBoundary(config)
@@ -590,6 +612,12 @@ func (s *TaskService) CreateAdHocExecution(
 	if req.ExportSession != nil {
 		record.Metadata[models.ExportProtectionMetadataKey] = &models.ExportProtectionReceipt{}
 	}
+	if fileGDBArchive {
+		actor := req.FileGDBActor
+		record.ActorPrincipalID = &actor.PrincipalID
+		record.ActorTenantMembershipID = &actor.TenantMembershipID
+		record.IssuedAuthorizationVersion = &actor.AuthorizationVersion
+	}
 	choices, err := models.SourceProtectionChoices(config)
 	if err != nil {
 		return nil, err
@@ -608,6 +636,13 @@ func (s *TaskService) CreateAdHocExecution(
 		return nil, fmt.Errorf("create ad-hoc transfer execution: %w", err)
 	}
 	return &models.CreateAdHocExecutionResponse{ExecutionID: record.ExecutionID, Status: record.Status}, nil
+}
+
+func (s *TaskService) BindFileGDBExportAuthorization(ctx context.Context, tenant uint, id string, issued *commonClient.IssuedFileGDBExportAuthorization) error {
+	if s == nil || s.taskRepo == nil {
+		return ErrExportSourceUnavailable
+	}
+	return s.taskRepo.BindFileGDBExportAuthorization(ctx, tenant, id, issued)
 }
 
 // ReplayTask 为业务 Kafka continuous owner task 创建独立 bounded replay execution。

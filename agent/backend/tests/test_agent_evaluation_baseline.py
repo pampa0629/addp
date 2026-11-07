@@ -430,6 +430,34 @@ class AgentEvaluationBaselineTests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(EvaluationFailure):
             evaluate_trace(scenario, trace)
 
+    async def test_ontology_business_answer_uses_only_observed_rule_and_explicit_object(self):
+        pin = {"ontology_id": "outdoor", "revision": 2, "generation": "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee", "activation_version": 3}
+        rule = "statistically_valid_activity"
+        request = {**pin, "rule_id": rule, "object_id": "test-activity-01"}
+        context = {**pin, "rules": [{"id": rule, "business_evaluable": True}]}
+        answer = {**pin, "rule_id": rule, "digest": "a" * 64, "outcome": "matched"}
+        tools = [_Tool("ontology.class.context", context), _Tool("ontology.rule.evaluate", answer)]
+        for object_id in (request["object_id"], "guessed-activity"):
+            with self.subTest(object_id=object_id):
+                events = await self._run_factory(
+                    skill_name="ontology-exploration", agent_run_id="run-rule",
+                    user_request="Outdoor 的活动 test-activity-01 计入统计吗？",
+                    tools=tools, allowed_tools=["ontology.class.context", "ontology.rule.evaluate"],
+                    responses=[_Response(tool_calls=[_tool_call("ontology.class.context", {**pin, "class_id": "activity"})]),
+                               _Response(tool_calls=[_tool_call("ontology.rule.evaluate", {**request, "object_id": object_id}, call_id="call-2")]),
+                               _Response(content="需要提供活动标识。")],
+                )
+                result = next(event.payload for event in events if event.kind == "tool_result" and event.payload["tool_name"] == "ontology.rule.evaluate")
+                if object_id == request["object_id"]:
+                    self.assertFalse(result["is_error"])
+                    text = "".join(event.payload["delta"] for event in events if event.kind == "text")
+                    self.assertIn("该记录符合规则。", text)
+                    self.assertIn("修订 2", text)
+                    self.assertIn(rule, text)
+                    self.assertNotIn("需要提供活动标识", text)
+                else:
+                    self.assertEqual(result["error_code"], "ontology_object_id_required")
+
     async def test_platform_transfer_create_is_not_execution(self):
         scenario = load_scenario(SCENARIOS_ROOT / "platform-transfer-create")
         names = ["platform.capability.context", "engine.list", "resource.facts.get", "resource.children.list", "transfer.task.create"]

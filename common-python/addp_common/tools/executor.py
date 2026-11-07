@@ -49,6 +49,7 @@ class ToolExecutor:
             "execution.get": self._execution_get,
             "ontology.classes.list": self._ontology_classes_list,
             "ontology.class.context": self._ontology_class_context,
+            "ontology.rule.evaluate": self._ontology_rule_evaluate,
             "platform.capability.context": self._platform_capability_context,
             "platform.capabilities.list": self._platform_capabilities_list,
             "transfer.task.create": self._transfer_task_create,
@@ -92,6 +93,7 @@ class ToolExecutor:
                 definition,
                 agent_run_id=agent_run_id,
                 tool_call_id=tool_call_id,
+                **({"rule_evaluation": arguments} if name == "ontology.rule.evaluate" else {}),
             )
         except httpx.HTTPStatusError as exc:
             raise ToolExecutionError(
@@ -154,6 +156,7 @@ class ToolExecutor:
         *,
         agent_run_id: str,
         tool_call_id: str,
+        rule_evaluation: dict[str, Any] | None = None,
     ) -> str:
         async with SystemClient(base_url=self.base_url, user_token=self.source_token) as client:
             response = await client.create_delegation(
@@ -161,6 +164,7 @@ class ToolExecutor:
                 scopes=definition.auth.required_scopes,
                 agent_run_id=agent_run_id,
                 tool_call_id=tool_call_id,
+                **({"rule_evaluation": rule_evaluation} if rule_evaluation is not None else {}),
             )
         if response.get("audience") != definition.auth.audience:
             raise ValueError("system delegation response audience mismatch")
@@ -208,6 +212,22 @@ class ToolExecutor:
     async def _ontology_class_context(self, arguments: dict[str, Any], delegated_token: str) -> Any:
         async with self._client(OntologyClient, delegated_token) as client:
             return await client.class_context(**arguments)
+
+    async def _ontology_rule_evaluate(self, arguments: dict[str, Any], delegated_token: str) -> Any:
+        async with self._client(OntologyClient, delegated_token) as client:
+            result = await client.evaluate_rule(**arguments)
+        keys = ("ontology_id", "revision", "generation", "activation_version")
+        decision = result.get("decision") if isinstance(result, dict) else None
+        if (not isinstance(decision, dict) or decision.get("mode") != "business"
+                or decision.get("rule_id") != arguments["rule_id"]
+                or not all(result.get(key) == arguments[key] for key in keys)
+                or result.get("digest") != decision.get("digest")):
+            raise ToolExecutionError("invalid_owner_response", "本体业务求值结果与请求绑定不一致")
+        projection = {key: result[key] for key in keys}
+        projection.update(digest=result.get("digest"), rule_id=decision["rule_id"], outcome=decision.get("outcome"))
+        if "observation_date" in result:
+            projection["observation_date"] = result["observation_date"]
+        return projection
 
     async def _engine_list(self, arguments: dict[str, Any], delegated_token: str) -> Any:
         async with self._client(SystemClient, delegated_token) as client:

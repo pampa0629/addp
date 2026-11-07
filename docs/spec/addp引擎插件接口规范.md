@@ -521,6 +521,10 @@ Provider 只返回原始 ChangeRecord，不负责 JSON、Debezium、Avro 或 Pro
 
 `BatchReadOptions.Hints`、`TableReadSessionOptions.Hints` 和 `BatchData.Hints` 只用于同一次运行时读写链路中的控制提示，例如字段选择、空间字段输出编码、批大小或写入方法。Hints 不是 catalog facts，不得写入 `EngineCatalogFacts`，也不得作为 Meta item attributes 的兜底口袋。
 
+有精确源授权要求的 MySQL 原生表读取使用 `GuardedTableReadSessionProvider`。Provider 先在同一只读事务中取得表的元数据锁，确认真实目标为同名的 InnoDB 基表，再由回调核对 Provider 证明的唯一读取目标。字段查询、原生读取语句和读取会话使用同一事务。视图、临时表和自定义 SQL 不属于这个证明范围。未取得证明或回调拒绝时，不执行内容查询。
+
+PostGIS 通过同一契约证明普通表的原生 EWKB 读取。表锁保持到游标关闭，回调在游标打开前执行。首期只接受具有一个 PostGIS geometry 列的普通表，排除视图、继承、分区、行级安全策略、生成列、表达式／部分索引和未知类型的读取依赖。空间编码使用数据库实际安装的 PostGIS 扩展函数，保留源坐标。导出期间源 schema 和 PostGIS 扩展的迁移、重命名沿用原生读取的结构运维边界。
+
 `WriteOptions.UserMetadata` 只表达对象 / 文件写入时需要传给底层存储的用户自定义 metadata，例如 S3 / MinIO user metadata。它不是 engine catalog facts，也不用于表格读写控制；表格读写控制必须使用 Hints 或强类型 options 字段。
 
 对象存储和文件系统不得互相继承，不共享 Engine Catalog Model 或 Engine Catalog 拼装实现；二者最多共享内容流读写接口、MIME 推断、格式解析等底层 helper。

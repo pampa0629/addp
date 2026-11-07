@@ -393,6 +393,7 @@ func main() {
 		minioClient,
 		minioBucket,
 	)
+	exportService.SetFileGDBAuthorization(commonClient.NewSystemExecutionAuthorizationClient(cfg.SystemServiceURL, nil), transferClient)
 	exportHandler := api.NewExportHandler(exportService)
 	rasterMosaicRuntimeClient := service.NewHTTPRasterMosaicRuntimeClient(
 		cfg.RasterMosaicRuntime.BaseURL,

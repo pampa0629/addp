@@ -1408,6 +1408,19 @@ const docTemplate = `{
                             }
                         }
                     },
+                    "401": {
+                        "description": "当前用户凭据失效 | Current user credential rejected",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        },
+                        "headers": {
+                            "Cache-Control": {
+                                "type": "string",
+                                "description": "no-store；禁止缓存此响应 | no-store; do not cache this response"
+                            }
+                        }
+                    },
                     "403": {
                         "description": "无权访问 | Access denied",
                         "schema": {

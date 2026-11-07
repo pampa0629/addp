@@ -49,6 +49,7 @@ func TestRegisterIAMRoutesExposesOnlyTargetIAMSurface(t *testing.T) {
 		http.MethodPost + " /api/v1/system/auth/context-selections",
 		http.MethodPost + " /api/v1/system/auth/context-switches",
 		http.MethodPost + " /api/v1/system/auth/delegations",
+		http.MethodPost + " /api/v1/system/runtime/ontology-rule-evaluations/consume",
 		http.MethodPost + " /api/v1/system/auth/execution-authorizations",
 		http.MethodPost + " /api/v1/system/auth/notebook-session-authorizations",
 		http.MethodPost + " /api/v1/system/auth/task-authorization-subjects",

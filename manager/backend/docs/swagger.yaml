@@ -4338,6 +4338,15 @@ paths:
           schema:
             additionalProperties: true
             type: object
+        "401":
+          description: 当前用户凭据失效 | Current user credential rejected
+          headers:
+            Cache-Control:
+              description: no-store；禁止缓存此响应 | no-store; do not cache this response
+              type: string
+          schema:
+            additionalProperties: true
+            type: object
         "403":
           description: 无权访问 | Access denied
           headers:

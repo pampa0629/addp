@@ -37,6 +37,7 @@ func SetupRouter(systemURL string, lifecycle *modulelifecycle.Controller, revisi
 	api.GET("/platform/capabilities/:capability", semanticBoundary("platform.capability.context"), tenantPermissions(permissions.PermissionOntologySemanticRead), h.PlatformCapabilityContext)
 	api.GET("/ontologies/:ontology_id/semantic/classes", semanticBoundary("ontology.classes.list"), tenantPermissions(permissions.PermissionOntologySemanticRead), h.ListClasses)
 	api.GET("/ontologies/:ontology_id/semantic/classes/:class_id", semanticBoundary("ontology.class.context"), tenantPermissions(permissions.PermissionOntologySemanticRead), h.ClassContext)
+	api.POST("/ontologies/:ontology_id/semantic/rules/:rule_id/evaluate", semanticBoundaryWithTimeout("ontology.rule.evaluate", 15*time.Second), tenantPermissions(permissions.PermissionOntologySemanticRead), h.EvaluateBusiness)
 	api.Use(userBoundary)
 	api.POST("/ontologies/:ontology_id/semantic/rules/:rule_id/trial", commonauth.MustNewPermissionGuard(permissions.PermissionOntologySemanticRead), tenantPermissions(permissions.PermissionOntologySemanticRead), h.Trial)
 	api.GET("/ontologies", commonauth.MustNewPermissionGuard(permissions.PermissionOntologyRevisionRead), tenantPermissions(permissions.PermissionOntologyRevisionRead), h.ListOntologies)
@@ -56,6 +57,10 @@ func SetupRouter(systemURL string, lifecycle *modulelifecycle.Controller, revisi
 }
 
 func semanticBoundary(tool string) gin.HandlerFunc {
+	return semanticBoundaryWithTimeout(tool, 5*time.Second)
+}
+
+func semanticBoundaryWithTimeout(tool string, timeout time.Duration) gin.HandlerFunc {
 	guard, err := commonauth.NewDelegatedRouteGuard(commonauth.DelegatedRouteGuardConfig{
 		Audience: "ontology", RequiredScopes: []string{tool}, RequiredPermissions: []string{permissions.PermissionOntologySemanticRead},
 	})
@@ -69,7 +74,7 @@ func semanticBoundary(tool string) gin.HandlerFunc {
 				c.AbortWithStatusJSON(http.StatusForbidden, ErrorResponse{Error: commoni18n.T(c, commoni18n.MsgForbidden), ErrorCode: "permission_denied"})
 				return
 			}
-			ctx, cancel := context.WithTimeout(c.Request.Context(), 5*time.Second)
+			ctx, cancel := context.WithTimeout(c.Request.Context(), timeout)
 			defer cancel()
 			c.Request = c.Request.WithContext(ctx)
 			guard(c)

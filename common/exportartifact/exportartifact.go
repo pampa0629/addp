@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	commonAPI "github.com/addp/common/api"
 	commonClient "github.com/addp/common/client"
 	"github.com/addp/common/dataprotection"
 	"github.com/addp/common/format"
@@ -256,6 +257,8 @@ type ProtectionValidator func(context.Context, *commonClient.TransferSourceProte
 
 type CreateRequest struct {
 	AuthorizeExecution func(context.Context, string, commonClient.TransferExecutionConfig) (*commonClient.IssuedExecutionAuthorization, error)
+	AdmitFileGDB       func(context.Context, string, commonClient.TransferExecutionConfig) error
+	FileGDBActor       *commonClient.FileGDBExportActor
 	TenantID           uint
 	UserID             uint
 	SourceRef          string
@@ -337,6 +340,10 @@ func (s *Service) Create(ctx context.Context, req CreateRequest) (*SessionRespon
 	}
 	transferRequest := &commonClient.CreateTransferExecutionRequest{
 		Name: executionName, Config: config, AutoScanMetadata: false, BatchSize: 1000, TenantID: req.TenantID,
+		FileGDBActor: req.FileGDBActor,
+	}
+	if formatType == format.FormatFileGDB && (config.FileGDBSource == nil || req.FileGDBActor == nil || req.AdmitFileGDB == nil) {
+		return nil, commonAPI.ErrForbidden
 	}
 	if len(config.Source.ProtectionChoices) > 0 {
 		if req.AuthorizeExecution == nil || dataprotection.ValidateFieldRoleChoices(config.Source.ProtectionChoices) != nil {
@@ -373,6 +380,16 @@ func (s *Service) Create(ctx context.Context, req CreateRequest) (*SessionRespon
 		session.ErrorMessage = "transfer export execution does not match session"
 		_ = s.store.UpdateStatus(ctx, session)
 		return nil, errors.New("transfer export execution does not match session")
+	}
+	if formatType == format.FormatFileGDB {
+		if err := req.AdmitFileGDB(ctx, session.TransferExecutionID, config); err != nil {
+			session.Status = StatusFailed
+			session.ErrorMessage = "failed to authorize FileGDB export source"
+			cleanup, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
+			defer cancel()
+			_ = s.store.UpdateStatus(cleanup, session)
+			return nil, err
+		}
 	}
 	return s.response(session), nil
 }

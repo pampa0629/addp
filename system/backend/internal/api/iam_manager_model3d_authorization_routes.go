@@ -50,8 +50,15 @@ func RegisterIAMManagerRasterCOGAuthorizationRoutes(api *gin.RouterGroup, runtim
 }
 
 func managerFileAuthorizationHandlers(api *gin.RouterGroup, runtime *IAMRuntime, handler *IAMManagerFileAuthorizationHandler) ([]gin.HandlerFunc, []gin.HandlerFunc, error) {
-	if api == nil || runtime == nil || runtime.Authentication == nil || runtime.UserAccessCredential == nil || runtime.ServiceCredential == nil || handler == nil || handler.service == nil {
+	if handler == nil || handler.service == nil {
 		return nil, nil, errors.New("Manager exact-file execution authorization dependencies required")
+	}
+	return exactSourceAuthorizationHandlers(api, runtime, "addp-manager", handler.Issue, handler.Authorize)
+}
+
+func exactSourceAuthorizationHandlers(api *gin.RouterGroup, runtime *IAMRuntime, clientID string, issueHandler, consumeHandler gin.HandlerFunc) ([]gin.HandlerFunc, []gin.HandlerFunc, error) {
+	if api == nil || runtime == nil || runtime.Authentication == nil || runtime.UserAccessCredential == nil || runtime.ServiceCredential == nil {
+		return nil, nil, errors.New("exact source execution authorization dependencies required")
 	}
 	tenant, err := middleware.NewIAMContextGuard("tenant")
 	if err != nil {
@@ -61,7 +68,7 @@ func managerFileAuthorizationHandlers(api *gin.RouterGroup, runtime *IAMRuntime,
 	if err != nil {
 		return nil, nil, err
 	}
-	manager, err := middleware.NewIAMClientGuard("addp-manager")
+	client, err := middleware.NewIAMClientGuard(clientID)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -74,7 +81,7 @@ func managerFileAuthorizationHandlers(api *gin.RouterGroup, runtime *IAMRuntime,
 		return nil, nil, err
 	}
 	noStore := func(c *gin.Context) { c.Header("Cache-Control", "no-store"); c.Next() }
-	return []gin.HandlerFunc{noStore, runtime.Authentication, runtime.UserAccessCredential, tenant, issue, handler.Issue}, []gin.HandlerFunc{noStore, runtime.Authentication, runtime.ServiceCredential, service, manager, consume, handler.Authorize}, nil
+	return []gin.HandlerFunc{noStore, runtime.Authentication, runtime.UserAccessCredential, tenant, issue, issueHandler}, []gin.HandlerFunc{noStore, runtime.Authentication, runtime.ServiceCredential, service, client, consume, consumeHandler}, nil
 }
 
 // Keep the canonical SDK DTOs while rejecting duplicate members and casing

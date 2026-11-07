@@ -132,7 +132,8 @@ func SetupRouter(
 	// 执行记录路由
 	executions := protected.Group("/executions")
 	{
-		executions.POST("", permission(transferauthorization.PermissionTransferExecutionCreate), executionHandler.CreateExecution)                           // 创建一次性同步执行
+		executions.POST("", permission(transferauthorization.PermissionTransferExecutionCreate), executionHandler.CreateExecution) // 创建一次性同步执行
+		executions.PUT("/:execution_id/filegdb-source-authorization", commonAuth.MustNewContextGuard("tenant"), commonAuth.MustNewServiceClientGuard("addp-manager"), permission(transferauthorization.PermissionTransferExecutionCreate), executionHandler.BindFileGDBExportAuthorization)
 		executions.GET("/:execution_id/result", permission(transferauthorization.PermissionTransferExecutionRead), executionHandler.GetOwnedExecutionResult) // 回查当前模块自己创建的一次性执行
 		executions.GET("", permission(transferauthorization.PermissionTransferTaskRead), executionHandler.ListExecutions)                                    // 获取执行记录列表
 		executions.GET("/statistics", permission(transferauthorization.PermissionTransferTaskRead), executionHandler.GetExecutionStatistics)                 // 获取执行统计

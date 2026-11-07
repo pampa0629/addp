@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"path/filepath"
+	"reflect"
 	"strings"
 
 	"github.com/addp/common/client"
@@ -290,6 +291,7 @@ type nativeTableBatchSource struct {
 	catalogFacts         engineplugin.EngineCatalogFactsProvider
 	reader               engineplugin.BatchReadableProvider
 	tableSessionProvider engineplugin.TableReadSessionProvider
+	authorize            engineplugin.GuardedTableReadAuthorizer
 	protector            TableSourceProtector
 	connInfo             engineplugin.ConnectionInfo
 	path                 engineplugin.EngineCatalogPath
@@ -468,6 +470,7 @@ func (r *queryTableBatchReader) ResumeMarker() *resume.Marker { return nil }
 
 func (s *nativeTableBatchSource) Open(ctx context.Context) (TableBatchReader, error) {
 	var protect func(*engineplugin.QueryResult) error
+	var validateSchema func([]datatype.FieldInfo) error
 	var derivedFields []string
 	var err error
 	if s.protector != nil {
@@ -480,13 +483,14 @@ func (s *nativeTableBatchSource) Open(ctx context.Context) (TableBatchReader, er
 		if prepared != nil {
 			protect = prepared.Apply
 			derivedFields = prepared.DerivedFields
+			validateSchema = prepared.ValidateSourceSchema
 		}
 		if err != nil {
 			return nil, fmt.Errorf("%w: native table: %w", ErrProtectionPreparation, err)
 		}
 		// The managed-source validator captures the same projections as Apply.
 		// Unmanaged sources retain their existing native read path.
-		if prepared != nil && prepared.ValidateSourceSchema != nil {
+		if validateSchema != nil && s.authorize == nil {
 			if s.catalogFacts == nil {
 				return nil, fmt.Errorf("%w: native source catalog facts required", ErrProtectionPreparation)
 			}
@@ -498,10 +502,18 @@ func (s *nativeTableBatchSource) Open(ctx context.Context) (TableBatchReader, er
 			if table := engineplugin.EngineCatalogFactsTableInfo(facts); table != nil {
 				liveFields = table.Fields
 			}
-			if err := prepared.ValidateSourceSchema(liveFields); err != nil {
+			if err := validateSchema(liveFields); err != nil {
 				return nil, fmt.Errorf("%w: native table: %w", ErrProtectionPreparation, err)
 			}
 		}
+	}
+	if s.authorize != nil {
+		session, err := s.openGuardedSession(ctx, validateSchema)
+		if err != nil {
+			return nil, err
+		}
+		reader := &nativeTableSessionBatchReader{session: session, tableInfo: s.tableInfo, spatialInfo: s.spatialInfo}
+		return protectTableBatchReader(reader, protect, derivedFields)
 	}
 	if s.tableSessionProvider != nil {
 		session, err := s.tableSessionProvider.OpenTableReadSession(ctx, s.connInfo, s.path, engineplugin.TableReadSessionOptions{
@@ -528,6 +540,52 @@ func (s *nativeTableBatchSource) Open(ctx context.Context) (TableBatchReader, er
 		spatialInfo: s.spatialInfo,
 	})
 	return protectTableBatchReader(reader, protect, derivedFields)
+}
+
+func (s *nativeTableBatchSource) openGuardedSession(ctx context.Context, validateSchema func([]datatype.FieldInfo) error) (engineplugin.TableReadSession, error) {
+	provider, ok := s.tableSessionProvider.(engineplugin.GuardedTableReadSessionProvider)
+	if !ok {
+		return nil, fmt.Errorf("%w: source does not support guarded native reads", ErrProtectionPreparation)
+	}
+	expected, err := engineplugin.NewQueryReadSet(s.path)
+	if err != nil {
+		return nil, fmt.Errorf("%w: %w", ErrProtectionPreparation, err)
+	}
+	calls := 0
+	authorized := false
+	session, err := provider.OpenGuardedTableReadSession(ctx, s.connInfo, s.path, engineplugin.TableReadSessionOptions{
+		Query: s.query, Hints: s.readOptions, ResumeMarker: cloneResumeMarker(s.resumeMarker),
+	}, func(ctx context.Context, actual *engineplugin.QueryReadSet, fields []datatype.FieldInfo) error {
+		calls++
+		if calls != 1 || !reflect.DeepEqual(expected, actual) || len(fields) == 0 {
+			return engineplugin.ErrQueryReadSetUnresolved
+		}
+		if validateSchema != nil {
+			if err := validateSchema(fields); err != nil {
+				return err
+			}
+		}
+		if err := s.authorize(ctx, actual, fields); err != nil {
+			return err
+		}
+		authorized = true
+		return nil
+	})
+	if err != nil || session == nil || calls != 1 || !authorized {
+		if session != nil {
+			_ = session.Close(context.Background())
+		}
+		if err == nil {
+			err = engineplugin.ErrQueryReadSetUnresolved
+		}
+		return nil, fmt.Errorf("%w: guarded source: %w", ErrProtectionPreparation, err)
+	}
+	observed, err := readActualSessionSet(ctx, session)
+	if err != nil || !reflect.DeepEqual(expected, observed) {
+		_ = session.Close(context.Background())
+		return nil, fmt.Errorf("%w: guarded session evidence changed: %w", ErrProtectionPreparation, engineplugin.ErrQueryReadSetUnresolved)
+	}
+	return session, nil
 }
 
 type nativeTableSessionBatchReader struct {

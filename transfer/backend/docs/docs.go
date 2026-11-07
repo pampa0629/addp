@@ -542,6 +542,95 @@ const docTemplate = `{
                 ]
             }
         },
+        "/executions/{execution_id}/filegdb-source-authorization": {
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "仅 Manager 租户服务可以绑定自己的待执行导出。Transfer 核对冻结配置与授权范围，执行时由 System 按实际租约重新验证。| Only the Manager tenant service may bind its pending export. Transfer checks the frozen config and scope. System checks the actual lease at execution time.",
+                "consumes": [
+                    "application/json"
+                ],
+                "tags": [
+                    "执行管理 | Execution Management"
+                ],
+                "summary": "绑定 FileGDB 导出源表授权 | Bind FileGDB export source authorization",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "执行 UUID | Execution UUID",
+                        "name": "execution_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "System 签发的源表授权 | System-issued source authorization",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/client.IssuedFileGDBExportAuthorization"
+                        }
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "transfer.execution.create"
+                ]
+            }
+        },
         "/executions/{execution_id}/progress": {
             "get": {
                 "security": [
@@ -3050,6 +3139,94 @@ const docTemplate = `{
         }
     },
     "definitions": {
+        "authorizationfacts.Binding": {
+            "type": "object",
+            "properties": {
+                "boundary_hash": {
+                    "type": "string"
+                },
+                "file_composition": {
+                    "$ref": "#/definitions/authorizationfacts.FileCompositionBoundary"
+                },
+                "item_fingerprint": {
+                    "type": "string"
+                },
+                "metadata_target": {
+                    "$ref": "#/definitions/authorizationfacts.MetadataBoundary"
+                },
+                "native_target": {
+                    "$ref": "#/definitions/plugin.EngineCatalogPath"
+                },
+                "scope": {
+                    "$ref": "#/definitions/authorizationfacts.ScopeBoundary"
+                }
+            }
+        },
+        "authorizationfacts.FileCompositionBoundary": {
+            "type": "object",
+            "properties": {
+                "format": {
+                    "type": "string"
+                },
+                "refs": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/authorizationfacts.FileCompositionRef"
+                    }
+                }
+            }
+        },
+        "authorizationfacts.FileCompositionRef": {
+            "type": "object",
+            "properties": {
+                "primary": {
+                    "type": "boolean"
+                },
+                "required": {
+                    "type": "boolean"
+                },
+                "role": {
+                    "type": "string"
+                },
+                "target": {
+                    "$ref": "#/definitions/plugin.EngineCatalogPath"
+                }
+            }
+        },
+        "authorizationfacts.MetadataBoundary": {
+            "type": "object",
+            "properties": {
+                "composition_digest": {
+                    "type": "string"
+                },
+                "data_type": {
+                    "type": "string"
+                },
+                "format": {
+                    "type": "string"
+                },
+                "layout": {
+                    "type": "string"
+                },
+                "target": {
+                    "$ref": "#/definitions/plugin.EngineCatalogPath"
+                }
+            }
+        },
+        "authorizationfacts.ScopeBoundary": {
+            "type": "object",
+            "properties": {
+                "format": {
+                    "type": "string"
+                },
+                "root": {
+                    "$ref": "#/definitions/plugin.EngineCatalogPath"
+                },
+                "rule_version": {
+                    "type": "integer"
+                }
+            }
+        },
         "cleanup.Result": {
             "type": "object",
             "properties": {
@@ -3105,6 +3282,20 @@ const docTemplate = `{
                 }
             }
         },
+        "client.FileGDBExportActor": {
+            "type": "object",
+            "properties": {
+                "authorization_version": {
+                    "type": "integer"
+                },
+                "principal_id": {
+                    "type": "integer"
+                },
+                "tenant_membership_id": {
+                    "type": "integer"
+                }
+            }
+        },
         "client.IssuedExecutionAuthorization": {
             "type": "object",
             "properties": {
@@ -3152,11 +3343,37 @@ const docTemplate = `{
                 }
             }
         },
+        "client.IssuedFileGDBExportAuthorization": {
+            "type": "object",
+            "properties": {
+                "audience": {
+                    "type": "string"
+                },
+                "execution_id": {
+                    "type": "string"
+                },
+                "expires_at": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "source_read_scope": {
+                    "$ref": "#/definitions/execution.FileGDBExportReadScope"
+                },
+                "tenant_id": {
+                    "type": "string"
+                }
+            }
+        },
         "client.TransferExecutionConfig": {
             "type": "object",
             "properties": {
                 "batch_size": {
                     "type": "integer"
+                },
+                "filegdb_source": {
+                    "$ref": "#/definitions/execution.FileGDBExportSource"
                 },
                 "load": {
                     "$ref": "#/definitions/client.TransferExecutionLoad"
@@ -3576,6 +3793,28 @@ const docTemplate = `{
                 }
             }
         },
+        "execution.FileGDBExportReadScope": {
+            "type": "object",
+            "properties": {
+                "config_digest": {
+                    "type": "string"
+                },
+                "filegdb_source": {
+                    "$ref": "#/definitions/execution.FileGDBExportSource"
+                }
+            }
+        },
+        "execution.FileGDBExportSource": {
+            "type": "object",
+            "properties": {
+                "binding": {
+                    "$ref": "#/definitions/authorizationfacts.Binding"
+                },
+                "engine_version": {
+                    "type": "string"
+                }
+            }
+        },
         "execution.InternalTaskScope": {
             "type": "object",
             "properties": {
@@ -3810,6 +4049,9 @@ const docTemplate = `{
                 },
                 "export_session": {
                     "$ref": "#/definitions/client.TransferExportSessionReference"
+                },
+                "filegdb_actor": {
+                    "$ref": "#/definitions/client.FileGDBExportActor"
                 },
                 "name": {
                     "type": "string"

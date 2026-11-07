@@ -17,8 +17,8 @@ while [ "$#" -gt 0 ]; do
             shift
             ;;
         --test)
-            [ "$#" -eq 2 ] || { echo 'expected --test all|shared-sql-pool|typed-write' >&2; exit 2; }
-            case "$2" in all|shared-sql-pool|typed-write) test_group="$2" ;; *) echo 'unknown MySQL test group' >&2; exit 2 ;; esac
+            [ "$#" -eq 2 ] || { echo 'expected --test all|shared-sql-pool|typed-write|guarded-spatial-read' >&2; exit 2; }
+            case "$2" in all|shared-sql-pool|typed-write|guarded-spatial-read) test_group="$2" ;; *) echo 'unknown MySQL test group' >&2; exit 2 ;; esac
             shift 2
             ;;
         --inspect-owned-databases)
@@ -141,12 +141,15 @@ if [ "$recovery_mode" = cleanup ]; then
     exit 0
 fi
 
-test_pattern='^TestIntegrationMySQL(TypedJSONWrites|AnalyticalInstance|AnalyticalText|AnalyticalDateBuckets|AnalyticalScan|AnalyticalRelations|AnalyticalCalendar|AnalyticalExpressions|AnalyticalArithmetic|LosslessAnalyticalInteger|BoundedWatermarkResumeAndIdempotentUpsert|DataProtectionReadContracts|ResultSchema|SharedSQLPool|OutputRewrite|QueryReadSession)$'
+test_pattern='^TestIntegrationMySQL(TypedJSONWrites|AnalyticalInstance|AnalyticalText|AnalyticalDateBuckets|AnalyticalScan|AnalyticalRelations|AnalyticalCalendar|AnalyticalExpressions|AnalyticalArithmetic|LosslessAnalyticalInteger|BoundedWatermarkResumeAndIdempotentUpsert|DataProtectionReadContracts|GuardedSpatialTableRead|ResultSchema|SharedSQLPool|OutputRewrite|QueryReadSession)$'
 if [ "$test_group" = shared-sql-pool ]; then
     test_pattern='^TestIntegrationMySQLSharedSQLPool$'
 fi
 if [ "$test_group" = typed-write ]; then
     test_pattern='^TestIntegrationMySQLTypedJSONWrites$'
+fi
+if [ "$test_group" = guarded-spatial-read ]; then
+    test_pattern='^TestIntegrationMySQLGuardedSpatialTableRead$'
 fi
 
 cd "$ROOT_DIR/common"
@@ -163,6 +166,13 @@ fi
 if [ "$test_group" = all ] || [ "$test_group" = shared-sql-pool ]; then
     grep -q -- '--- PASS: TestIntegrationMySQLSharedSQLPool ' "$WORK_DIR/common-mysql-data-protection.log" || {
         echo 'MySQL gate requires the native shared SQL pool test' >&2
+        exit 1
+    }
+fi
+
+if [ "$test_group" = all ] || [ "$test_group" = guarded-spatial-read ]; then
+    grep -q -- '--- PASS: TestIntegrationMySQLGuardedSpatialTableRead ' "$WORK_DIR/common-mysql-data-protection.log" || {
+        echo 'MySQL guarded spatial table read test did not pass' >&2
         exit 1
     }
 fi

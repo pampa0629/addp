@@ -37,6 +37,7 @@ type IssueDelegatedAccessTokenInput struct {
 	Scopes            []string
 	AgentRunID        string
 	ToolCallID        string
+	RuleEvaluation    *commonauth.OntologyRuleEvaluation
 	Audit             AuditMetadata
 }
 
@@ -92,6 +93,16 @@ func (s *DelegationService) IssueDelegatedAccessToken(
 	tool, err := s.validateRequest(input)
 	if err != nil {
 		return nil, err
+	}
+	var ruleDigest *string
+	if tool.Name == commonauth.OntologyRuleEvaluateTool {
+		if input.RuleEvaluation == nil || input.RuleEvaluation.Digest() == "" {
+			return nil, commonapi.ErrBadRequest
+		}
+		digest := input.RuleEvaluation.Digest()
+		ruleDigest = &digest
+	} else if input.RuleEvaluation != nil {
+		return nil, commonapi.ErrBadRequest
 	}
 	sourceSnapshot, err := resolveDelegationSourceAccessTokenSnapshot(ctx, s.repository, input.SourceAccessToken)
 	if err != nil {
@@ -155,6 +166,9 @@ func (s *DelegationService) IssueDelegatedAccessToken(
 		if !containsAllDelegationPermissions(permissionRows, tool.RequiredPermissions) {
 			return ErrDelegationPermissionDenied
 		}
+		if ruleDigest != nil && (tenantID == nil || !canEvaluateOntologyRule(permissionRows, *tenantID)) {
+			return ErrDelegationPermissionDenied
+		}
 
 		now := lockedSnapshot.DatabaseTime.UTC()
 		expiresAt := earlierTime(now.Add(s.ttl), sourceAccessToken.ExpiresAt.UTC())
@@ -163,14 +177,15 @@ func (s *DelegationService) IssueDelegatedAccessToken(
 			return commonapi.ErrUnauthorized
 		}
 		token := &DelegatedAccessToken{
-			TokenHash:           hashOpaqueToken(plainToken),
-			SourceAccessTokenID: sourceAccessToken.ID,
-			Audience:            tool.Owner,
-			Scopes:              pq.StringArray(append([]string(nil), tool.RequiredScopes...)),
-			AgentRunID:          input.AgentRunID,
-			ToolCallID:          input.ToolCallID,
-			ExpiresAt:           expiresAt,
-			CreatedAt:           now,
+			TokenHash:            hashOpaqueToken(plainToken),
+			SourceAccessTokenID:  sourceAccessToken.ID,
+			Audience:             tool.Owner,
+			Scopes:               pq.StringArray(append([]string(nil), tool.RequiredScopes...)),
+			AgentRunID:           input.AgentRunID,
+			ToolCallID:           input.ToolCallID,
+			ExpiresAt:            expiresAt,
+			CreatedAt:            now,
+			RuleEvaluationDigest: ruleDigest,
 		}
 		if err := tx.CreateDelegatedAccessToken(ctx, token); err != nil {
 			return err

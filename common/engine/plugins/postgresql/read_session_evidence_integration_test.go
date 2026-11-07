@@ -9,8 +9,84 @@ import (
 	"testing"
 	"time"
 
+	"github.com/addp/common/datatype"
 	"github.com/addp/common/engine/plugin"
+	"github.com/addp/common/format"
+	"github.com/twpayne/go-geom"
+	"github.com/twpayne/go-geom/encoding/ewkb"
 )
+
+func TestIntegrationPostgresQueryReadSessionGuardedPostGIS(t *testing.T) {
+	db, provider, info := openPostgresPrepareIntegration(t, true)
+	defer db.Close()
+	ctx, cancel := context.WithTimeout(t.Context(), 20*time.Second)
+	defer cancel()
+	schema := fmt.Sprintf("guarded_postgis_%d", time.Now().UnixNano())
+	table := fmt.Sprintf(`"%s"."locations"`, schema)
+	view := fmt.Sprintf(`"%s"."same_shape_view"`, schema)
+	createPostgresPrepareBaseTable(t, ctx, db, schema, "locations", "id bigint PRIMARY KEY, position geometry(Point,3857) NOT NULL")
+	defer func() {
+		if _, err := db.ExecContext(context.Background(), `DROP SCHEMA "`+schema+`" CASCADE`); err != nil {
+			t.Error(err)
+		}
+	}()
+	for _, statement := range []string{
+		"INSERT INTO " + table + " VALUES (1, ST_SetSRID(ST_MakePoint(12000,6000),3857))",
+		"CREATE VIEW " + view + " AS SELECT id, position FROM " + table,
+	} {
+		if _, err := db.ExecContext(ctx, statement); err != nil {
+			t.Fatal(err)
+		}
+	}
+	path := plugin.TabularItemPath(91, "schema", schema, "locations")
+	opts := plugin.TableReadSessionOptions{Hints: map[string]any{
+		plugin.TableReadHintGeometryEncoding: string(format.GeometryEncodingEWKB),
+	}}
+	calls := 0
+	var guarded plugin.GuardedTableReadSessionProvider = provider
+	authorize := func(_ context.Context, set *plugin.QueryReadSet, fields []datatype.FieldInfo) error {
+		calls++
+		if !reflect.DeepEqual(set.Paths, []plugin.EngineCatalogPath{path}) {
+			t.Fatalf("actual source evidence: %#v", set)
+		}
+		if len(fields) != 2 || fields[0].Name != "id" || fields[1].Name != "position" || !datatype.IsSpatialFieldType(fields[1].Type) {
+			t.Fatalf("actual guarded field schema: %#v", fields)
+		}
+		return nil
+	}
+	rejected := errors.New("source read denied")
+	if session, err := guarded.OpenGuardedTableReadSession(ctx, info, path, opts, func(ctx context.Context, set *plugin.QueryReadSet, fields []datatype.FieldInfo) error {
+		_ = authorize(ctx, set, fields)
+		return rejected
+	}); session != nil || !errors.Is(err, rejected) || calls != 1 {
+		t.Fatalf("denied source: session=%v error=%v calls=%d", session, err, calls)
+	}
+	viewPath := plugin.TabularItemPath(91, "schema", schema, "same_shape_view")
+	if session, err := guarded.OpenGuardedTableReadSession(ctx, info, viewPath, opts, authorize); session != nil ||
+		!errors.Is(err, plugin.ErrQueryReadSetUnresolved) || calls != 1 {
+		t.Fatalf("unproven view reached the callback or opened a session: %v, %v, %d", session, err, calls)
+	}
+	wrongRoot := plugin.TabularItemPath(91, "schema", schema, "locations")
+	wrongRoot.Segments[0] = plugin.EngineCatalogSegment{Term: plugin.EngineCatalogTermService, Kind: plugin.EngineCatalogTermService}
+	if session, err := guarded.OpenGuardedTableReadSession(ctx, info, wrongRoot, opts, authorize); session != nil ||
+		!errors.Is(err, plugin.ErrQueryReadSetUnresolved) || calls != 1 {
+		t.Fatalf("malformed source identity reached the callback: %v, %v, %d", session, err, calls)
+	}
+	session, err := guarded.OpenGuardedTableReadSession(ctx, info, path, opts, authorize)
+	if err != nil || calls != 2 {
+		t.Fatalf("guarded source: session=%v error=%v calls=%d", session, err, calls)
+	}
+	defer session.Close(context.Background())
+	batch, err := session.ReadBatch(ctx, 10)
+	if err != nil || len(batch.Rows) != 1 || batch.Spatial.PrimarySRIDValue() != 3857 {
+		t.Fatalf("guarded spatial batch = %#v, %v", batch, err)
+	}
+	value, err := ewkb.Unmarshal(batch.Rows[0]["position"].([]byte))
+	point, ok := value.(*geom.Point)
+	if err != nil || !ok || point.SRID() != 3857 || point.X() != 12000 || point.Y() != 6000 {
+		t.Fatalf("guarded native geometry = %#v, %v", value, err)
+	}
+}
 
 // Included by the existing QueryReadSession prefix in both the full Common PG
 // gate and its query-read-set selection. Source DDL is confined to this fixture.

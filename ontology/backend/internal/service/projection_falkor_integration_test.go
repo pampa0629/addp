@@ -41,7 +41,7 @@ func TestPostgresProjectionRuntime(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	actor := testActor(101)
-	d := testDefinition("outdoor_beijing_runtime")
+	d := outdoorRuleFixture(testDefinition("outdoor_beijing_runtime"))
 	old := publishRuntimeFixture(t, s, actor, d)
 	run := func(executionID string, g ProjectionGraph) error {
 		t.Helper()
@@ -69,7 +69,12 @@ func TestPostgresProjectionRuntime(t *testing.T) {
 	if err := graph.Verify(ctx, plan); err != nil {
 		t.Fatal(err)
 	}
+	oldBinding, ok := snapshot.RuleServiceBinding(d.Rules[0].ID)
+	if !ok || oldBinding.ServiceVersion != d.Rules[0].ServiceBinding.ServiceVersion {
+		t.Fatal("rule binding was lost from the first published snapshot")
+	}
 	d.Scope.Revision++
+	d.Rules[0].ServiceBinding.ServiceVersion = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
 	next := publishRuntimeFixture(t, s, actor, d)
 	if err := run(*next.BuildExecutionID, rejectVerifiedProjection{graph}); err == nil {
 		t.Fatal("failed verification activated")
@@ -80,6 +85,14 @@ func TestPostgresProjectionRuntime(t *testing.T) {
 	}
 	if head.ActiveRevision == nil || *head.ActiveRevision != old.Revision || head.ActiveGeneration == nil || *head.ActiveGeneration != *old.Generation {
 		t.Fatal("failed replacement changed active pointer")
+	}
+	kept, _, err := s.activeSnapshot(ctx, actor, d.Scope.OntologyID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	keptBinding, ok := kept.RuleServiceBinding(d.Rules[0].ID)
+	if !ok || keptBinding.ServiceVersion != oldBinding.ServiceVersion {
+		t.Fatal("a failed projection exposed the new service binding")
 	}
 	for _, item := range []struct {
 		r                     *models.Revision
@@ -123,6 +136,14 @@ func TestPostgresProjectionRuntime(t *testing.T) {
 	}
 	if head.ActiveGeneration == nil || *head.ActiveGeneration != rebuilt.Generation || head.ActiveRevision == nil || *head.ActiveRevision != next.Revision {
 		t.Fatal("verified rebuilt graph not activated")
+	}
+	current, _, err := s.activeSnapshot(ctx, actor, d.Scope.OntologyID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	currentBinding, ok := current.RuleServiceBinding(d.Rules[0].ID)
+	if !ok || currentBinding.ServiceVersion != d.Rules[0].ServiceBinding.ServiceVersion || current.Digest() == snapshot.Digest() {
+		t.Fatal("the activated revision did not retain its new service binding")
 	}
 	var failed models.Projection
 	if err := db.Where("generation=?", next.Generation).First(&failed).Error; err != nil || failed.Status != "failed" {

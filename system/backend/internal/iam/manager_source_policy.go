@@ -21,18 +21,35 @@ const (
 	managerSourceProfile   managerSourcePurpose = "data_profiling"
 	managerSourceModel3D   managerSourcePurpose = "model_3d_glb_generation"
 	managerSourceRasterCOG managerSourcePurpose = "raster_cog_generation"
+	managerSourceFileGDB   managerSourcePurpose = "filegdb_export"
 )
+
+func (p managerSourcePurpose) audience() string {
+	if p == managerSourceFileGDB {
+		return execution.AudienceTransfer
+	}
+	return "manager"
+}
+
+func (p managerSourcePurpose) consumer() string { return "addp-" + p.audience() }
 
 func (p managerSourcePurpose) permission() string {
 	switch p {
 	case managerSourceProfile:
 		return "manager.data_profile.execute"
-	case managerSourceModel3D, managerSourceRasterCOG:
+	case managerSourceModel3D, managerSourceRasterCOG, managerSourceFileGDB:
 		return "manager.derived_artifact.create"
 	}
 	return ""
 }
 func (p managerSourcePurpose) scope(raw json.RawMessage) (*ManagerSourceReadScope, error) {
+	if p == managerSourceFileGDB {
+		scope, err := execution.NewFileGDBExportReadScope(raw)
+		if err != nil {
+			return nil, ErrExecutionAuthorizationUnavailable
+		}
+		return NewFileGDBExportSourceScope(scope), nil
+	}
 	if p == managerSourceProfile {
 		scope, err := managerProfileScope(raw)
 		if err != nil {
@@ -64,7 +81,19 @@ func (p managerSourcePurpose) scope(raw json.RawMessage) (*ManagerSourceReadScop
 	return NewManagerFileSourceScope(scope), nil
 }
 func (p managerSourcePurpose) matches(scope *ManagerSourceReadScope) bool {
-	return scope != nil && scope.Validate() == nil && ((p == managerSourceProfile && scope.Profile() != nil) || ((p == managerSourceModel3D || p == managerSourceRasterCOG) && scope.File() != nil && scope.File().Purpose() == string(p)))
+	if scope == nil || scope.Validate() != nil {
+		return false
+	}
+	switch p {
+	case managerSourceProfile:
+		return scope.profile != nil
+	case managerSourceModel3D, managerSourceRasterCOG:
+		return scope.file != nil && scope.file.Purpose() == string(p)
+	case managerSourceFileGDB:
+		return scope.fileGDB != nil
+	default:
+		return false
+	}
 }
 
 // System reads only the owner-frozen common execution. Owner task definitions
@@ -74,10 +103,16 @@ func (r *Repository) managerSourceExecutionConfig(ctx context.Context, auth *Exe
 		return nil, commonapi.ErrBadRequest
 	}
 	var row struct{ ExecutionConfig json.RawMessage }
+	taskType := string(purpose)
+	if purpose == managerSourceFileGDB {
+		taskType = execution.TaskTypeSync
+	}
 	query := r.db.WithContext(ctx).Table("common.task_executions e").Select("e.execution_config").
-		Where("e.execution_id=? AND e.tenant_id=? AND e.module='manager' AND e.source='manager' AND e.task_type=? AND e.execution_boundary='bounded' AND e.trigger_type='manual' AND e.parent_execution_id IS NULL", auth.ExecutionID.String(), auth.TenantID, string(purpose)).
+		Where("e.execution_id=? AND e.tenant_id=? AND e.module=? AND e.source='manager' AND e.task_type=? AND e.execution_boundary='bounded' AND e.trigger_type='manual' AND e.parent_execution_id IS NULL", auth.ExecutionID.String(), auth.TenantID, purpose.audience(), taskType).
 		Where("e.actor_principal_id=? AND e.actor_tenant_membership_id=? AND e.issued_authorization_version=?", auth.ActorPrincipalID, auth.TenantMembershipID, auth.IssuedAuthorizationVersion)
-	if purpose == managerSourceProfile {
+	if purpose == managerSourceFileGDB {
+		query = query.Where("e.source_task_id IS NULL AND e.triggered_by=e.actor_principal_id AND e.max_attempts=1 AND jsonb_typeof(e.metadata->'export_artifact_protection')='object'")
+	} else if purpose == managerSourceProfile {
 		query = query.Where("e.source_task_id IS NULL")
 	} else {
 		query = query.Where("e.source_task_id IS NOT NULL AND e.source_task_id=e.execution_config->'owner_task'->>'id' AND e.triggered_by=e.actor_principal_id")
@@ -128,16 +163,16 @@ func managerSourcePermissions(rows []RoleAssignmentPermissionProjection, purpose
 	return permissions[purpose.permission()] && permissions["manager.data_item.read"]
 }
 
-func (r *Repository) currentManagerSourceConsumer(ctx context.Context, input authorizeManagerSourceInput) error {
+func (r *Repository) currentManagerSourceConsumer(ctx context.Context, input authorizeManagerSourceInput, purpose managerSourcePurpose) error {
 	var id int64
 	result := r.db.WithContext(ctx).Raw(`SELECT member.id FROM system.oauth_clients client
 		JOIN system.principals principal ON principal.id=client.service_principal_id
 		JOIN system.service_principals service ON service.id=principal.id
 		JOIN system.tenant_memberships member ON member.principal_id=principal.id
-		WHERE client.client_id='addp-manager' AND client.status='active' AND principal.id=? AND principal.status='active'
-		AND service.name='addp-manager' AND service.owner_scope='platform' AND member.tenant_id=? AND member.status='active'
+		WHERE client.client_id=? AND client.status='active' AND principal.id=? AND principal.status='active'
+		AND service.name=? AND service.owner_scope='platform' AND member.tenant_id=? AND member.status='active'
 		AND (member.expires_at IS NULL OR member.expires_at>clock_timestamp())
-		FOR SHARE OF client,principal,service,member`, input.ServicePrincipalID, input.TenantID).Scan(&id)
+		FOR SHARE OF client,principal,service,member`, purpose.consumer(), input.ServicePrincipalID, purpose.consumer(), input.TenantID).Scan(&id)
 	if result.Error != nil {
 		return wrapRepositoryError(result.Error)
 	}

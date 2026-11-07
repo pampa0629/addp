@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"strconv"
 
+	"github.com/addp/common/authorization"
 	commonclient "github.com/addp/common/client"
 	authmiddleware "github.com/addp/common/middleware/auth"
 	requestidmiddleware "github.com/addp/common/middleware/requestid"
@@ -48,6 +49,7 @@ type queryExecutionAuditState struct {
 	serviceVersion string
 	rowCount       int
 	hasMore        bool
+	ontologyCall   *authorization.OntologyRuleCall
 }
 
 func (h *QueryServiceHandler) writeQueryExecutionAudit(c *gin.Context, state *queryExecutionAuditState) {
@@ -86,7 +88,13 @@ func (h *QueryServiceHandler) writeQueryExecutionAudit(c *gin.Context, state *qu
 		"has_more": state.hasMore, "query_shape_fingerprint": shapeFingerprint,
 		"error_code": state.errorCode,
 	}
-	if authContext, exists := authmiddleware.AuthContextFromGin(c); exists {
+	if state.ontologyCall != nil {
+		details["source_principal_id"] = state.ontologyCall.PrincipalID
+		details["source_principal_type"] = "user"
+		details["source_tenant_id"] = strconv.FormatUint(uint64(state.service.TenantID), 10)
+		details["agent_run_id"] = state.ontologyCall.AgentRunID
+		details["tool_call_id"] = state.ontologyCall.ToolCallID
+	} else if authContext, exists := authmiddleware.AuthContextFromGin(c); exists {
 		details["source_principal_id"] = authContext.Principal.ID
 		details["source_principal_type"] = authContext.Principal.Type
 		if authContext.Context.TenantID != nil {

@@ -20,17 +20,20 @@ func TestSwaggerContainsConcreteNativeDefinition(t *testing.T) {
 		t.Fatal(err)
 	}
 	for suffix, fields := range map[string][]string{
-		".TrialRequest":           {"revision", "generation", "activation_version", "inputs"},
-		".TrialInput":             {"state", "value"},
-		".TrialResponse":          {"ontology_id", "revision", "generation", "activation_version", "digest", "decision"},
-		".CreateRequest":          {"revision", "definition"},
-		".DefinitionInput":        {"classes", "properties", "relations", "rules"},
-		".Class":                  {"id", "name", "parents"},
-		".Rule":                   {"id", "class_id", "expression", "basis", "inputs"},
-		".RebuildRequest":         {"version", "failed_generation", "activation_version"},
-		".RevisionSummary":        {"ontology_id", "revision", "version", "status", "digest", "initial_generation", "initial_execution_id"},
-		".ClassDirectoryResponse": {"ontology_id", "revision", "generation", "activation_version", "digest", "knowledge_kind", "classes"},
-		".ClassContextResponse":   {"ontology_id", "revision", "generation", "activation_version", "digest", "knowledge_kind", "class", "ancestors", "properties", "relations", "rules"},
+		".TrialRequest":               {"revision", "generation", "activation_version", "inputs"},
+		".TrialInput":                 {"state", "value"},
+		".TrialResponse":              {"ontology_id", "revision", "generation", "activation_version", "digest", "decision"},
+		".CreateRequest":              {"revision", "definition"},
+		".DefinitionInput":            {"classes", "properties", "relations", "rules"},
+		".Class":                      {"id", "name", "parents"},
+		".Rule":                       {"id", "class_id", "expression", "basis", "inputs", "service_binding"},
+		".ServiceBinding":             {"service_name", "service_id", "service_version", "id_parameter", "id_field", "time_zone", "inputs"},
+		".BusinessEvaluationRequest":  {"revision", "generation", "activation_version", "object_id"},
+		".BusinessEvaluationResponse": {"service_id", "service_version", "observation_date", "decision"},
+		".RebuildRequest":             {"version", "failed_generation", "activation_version"},
+		".RevisionSummary":            {"ontology_id", "revision", "version", "status", "digest", "initial_generation", "initial_execution_id"},
+		".ClassDirectoryResponse":     {"ontology_id", "revision", "generation", "activation_version", "digest", "knowledge_kind", "classes"},
+		".ClassContextResponse":       {"ontology_id", "revision", "generation", "activation_version", "digest", "knowledge_kind", "class", "ancestors", "properties", "relations", "rules"},
 	} {
 		found := false
 		for name, definition := range document.Definitions {

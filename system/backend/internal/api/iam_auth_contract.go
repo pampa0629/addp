@@ -8,6 +8,7 @@ import (
 	"time"
 
 	commonapi "github.com/addp/common/api"
+	"github.com/addp/common/authorization"
 	"github.com/addp/system/internal/iam"
 )
 
@@ -76,10 +77,11 @@ type IAMErrorResponse struct {
 }
 
 type IAMDelegationRequest struct {
-	Audience   string   `json:"audience"`
-	Scopes     []string `json:"scopes"`
-	AgentRunID string   `json:"agent_run_id"`
-	ToolCallID string   `json:"tool_call_id"`
+	Audience       string                                `json:"audience"`
+	Scopes         []string                              `json:"scopes"`
+	AgentRunID     string                                `json:"agent_run_id"`
+	ToolCallID     string                                `json:"tool_call_id"`
+	RuleEvaluation *authorization.OntologyRuleEvaluation `json:"rule_evaluation,omitempty"`
 }
 
 type IAMDelegationResponse struct {

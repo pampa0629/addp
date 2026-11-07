@@ -87,14 +87,14 @@ func TestGateMasksManagedMongoQueryForServiceExecute(t *testing.T) {
 	result := &plugin.QueryResult{Columns: []string{"userInfo"}, Rows: []map[string]interface{}{{
 		"userInfo": map[string]interface{}{"phone": "13661384499"},
 	}}}
-	if err := protect(result); err != nil {
+	if err := protect.Apply(result); err != nil {
 		t.Fatal(err)
 	}
 	if got := result.Rows[0]["userInfo"].(map[string]interface{})["phone"]; got != "136****4499" {
 		t.Fatalf("masked phone = %#v", got)
 	}
 
-	if err := protect(nil); !errors.Is(err, ErrRequired) {
+	if err := protect.Apply(nil); !errors.Is(err, ErrRequired) {
 		t.Fatalf("result protection cause lost: %v", err)
 	}
 }
@@ -128,7 +128,7 @@ func TestGateAllowsUnmanagedPostgresQueryWithoutOutputLineage(t *testing.T) {
 	if lineageCalls != 0 {
 		t.Fatalf("OutputLineage calls = %d, want zero", lineageCalls)
 	}
-	if err := protect(&plugin.QueryResult{}); err != nil {
+	if err := protect.Apply(&plugin.QueryResult{}); err != nil {
 		t.Fatal(err)
 	}
 }

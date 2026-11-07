@@ -429,7 +429,11 @@ func (r *Repository) CreateExecutionAuthorization(
 	}
 	if authorization.Audience == "manager" || authorization.SourceReadScope != nil {
 		targets, scopeErr := authorization.SourceReadScope.Targets()
-		if authorization.Audience != "manager" || authorization.InternalTask != nil ||
+		expectedAudience := "manager"
+		if authorization.SourceReadScope.FileGDB() != nil {
+			expectedAudience = "transfer"
+		}
+		if authorization.Audience != expectedAudience || authorization.InternalTask != nil ||
 			scopeErr != nil || len(targets) == 0 || len(accesses) != 1 ||
 			accesses[0].EngineID != int64(targets[0].EngineID) ||
 			len(accesses[0].Effects) != 1 || accesses[0].Effects[0] != "read" {

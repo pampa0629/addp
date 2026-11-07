@@ -10,6 +10,8 @@
 
 MinIO 扩展（2026-11-04）：000270 只扩展现有节点路径约束和引擎 profile guard，允许 bucket／普通 prefix 的 metadata_read、read 与显式递归；服务根只导航。既有 Grant、期限、撤销与审计不改写。Meta 使用已有最小身份机器权限核对；整体容器继续为精确 DataItem。节点范围不能把仅元数据边界升级为可读内容边界。
 
+FileGDB 精确源表授权（实施中）：沿用 `execution_authorizations.source_read_scope`，新增只用于 Manager 发起、Transfer 执行的 `filegdb_source`。范围冻结完整执行配置摘要、PostGIS／MySQL 原生单表的身份及边界摘要、引擎版本。签发要求同一用户的精确待执行任务、现有两项 Manager 功能权限和当前源 Grant。消费只允许固定 Transfer Runtime 的当前租约，重新读取 Meta 和源规则后返回同版本的受控源引擎连接。既有通用引擎访问接口拒绝消费此授权。数据库迁移不改写已有授权、角色或 Grant。实际 Manager 派发、下载和 Hosted 验收分别登记。
+
 状态：持续节点主路径、最小节点事实及前向迁移已实现并通过本地 PG T2。MinIO bucket／prefix 的 ENVI→Manager 实际读取、未来新项、撤权、自然到期和清理，已在 `516822366` 的独立 Hosted 通过，见[限定正式证据](../../docs/spec/testing/evidence/资源读取与预览历史证据.md#envi-双文件读取与-cog-hosted-t4)。本次不代表其他格式、引擎节点或授权表单全流程均已取得真实闭环；其余范围按各自证据登记，旧版本验证不能替代本节新模型。
 
 - 使用同一 `engine_access_grants` 承载精确 DataItem 与持续节点范围，节点不是 DataItem，不新增独立目录 ACL 表。节点范围绑定 Tenant、Engine、类型化路径及显式递归选项；非递归只覆盖直属项，递归覆盖后代，期限内当前及以后新识别项均可命中，不逐项复制 Grant。

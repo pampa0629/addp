@@ -16,7 +16,17 @@ import (
 )
 
 func (p *PostgreSQLPlugin) OpenTableReadSession(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.EngineCatalogPath, opts plugin.TableReadSessionOptions) (plugin.TableReadSession, error) {
-	return p.openTableReadSession(ctx, connInfo, path, opts, 0, 0)
+	return p.openTableReadSession(ctx, connInfo, path, opts, 0, 0, nil)
+}
+
+func (p *PostgreSQLPlugin) OpenGuardedTableReadSession(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.EngineCatalogPath,
+	opts plugin.TableReadSessionOptions, authorize plugin.GuardedTableReadAuthorizer) (plugin.TableReadSession, error) {
+	if authorize == nil || p.Type() != "postgresql" || strings.TrimSpace(opts.Query) != "" || len(opts.Args) != 0 ||
+		postgresGeometryEncodingHint(opts.Hints) != format.GeometryEncodingEWKB ||
+		postgresGeometryTargetSRID(opts.Hints) != 0 || strings.TrimSpace(hintString(opts.Hints, plugin.TableReadHintGeometryField)) != "" {
+		return nil, plugin.ErrQueryReadSetUnresolved
+	}
+	return p.openTableReadSession(ctx, connInfo, path, opts, 0, 0, authorize)
 }
 
 func (p *PostgreSQLPlugin) readBatch(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.EngineCatalogPath, opts plugin.BatchReadOptions) (*plugin.BatchData, error) {
@@ -28,7 +38,7 @@ func (p *PostgreSQLPlugin) readBatch(ctx context.Context, connInfo plugin.Connec
 		Query: opts.Query,
 		Args:  opts.Args,
 		Hints: opts.Hints,
-	}, limit, opts.Offset)
+	}, limit, opts.Offset, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -36,7 +46,7 @@ func (p *PostgreSQLPlugin) readBatch(ctx context.Context, connInfo plugin.Connec
 	return session.ReadBatch(ctx, opts.Limit)
 }
 
-func (p *PostgreSQLPlugin) openTableReadSession(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.EngineCatalogPath, opts plugin.TableReadSessionOptions, limit int, offset int64) (plugin.TableReadSession, error) {
+func (p *PostgreSQLPlugin) openTableReadSession(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.EngineCatalogPath, opts plugin.TableReadSessionOptions, limit int, offset int64, authorize plugin.GuardedTableReadAuthorizer) (plugin.TableReadSession, error) {
 	if err := resume.RejectUnsupported(opts.ResumeMarker, "postgresql.table_read_session"); err != nil {
 		return nil, err
 	}
@@ -48,27 +58,48 @@ func (p *PostgreSQLPlugin) openTableReadSession(ctx context.Context, connInfo pl
 	if err != nil {
 		return nil, fmt.Errorf("failed to open postgresql connection: %w", err)
 	}
-	query, fields, spatialInfo, encoding, err := postgresReadSessionQuery(ctx, db, path, opts, limit, offset)
-	if err != nil {
-		db.Close()
-		return nil, err
-	}
 	tx, err := db.BeginTx(ctx, &sql.TxOptions{ReadOnly: true, Isolation: sql.LevelRepeatableRead})
 	if err != nil {
 		db.Close()
 		return nil, fmt.Errorf("begin postgresql table read session: %w", err)
 	}
+	opened := false
+	defer func() {
+		if !opened {
+			_ = tx.Rollback()
+			_ = db.Close()
+		}
+	}()
+	var readSet *plugin.QueryReadSet
+	if authorize != nil {
+		readSet, err = proveGuardedPostGISTable(ctx, tx, path)
+		if err != nil {
+			return nil, err
+		}
+		path = readSet.Paths[0]
+	}
+	query, fields, spatialInfo, encoding, err := postgresReadSessionQuery(ctx, tx, path, opts, limit, offset)
+	if err != nil {
+		return nil, err
+	}
+	if readSet != nil {
+		if err := authorize(ctx, readSet.Clone(), datatype.CloneFieldInfos(fields)); err != nil {
+			return nil, err
+		}
+	}
 
 	cursorName := "addp_transfer_read_cursor"
 	declareSQL := fmt.Sprintf("DECLARE %s NO SCROLL CURSOR FOR %s", cursorName, query)
 	if _, err := tx.ExecContext(ctx, declareSQL, opts.Args...); err != nil {
-		tx.Rollback()
-		db.Close()
 		return nil, fmt.Errorf("declare postgresql read cursor: %w", err)
 	}
 
+	if readSet == nil {
+		readSet = p.observeSessionReadSet(ctx, tx, plugin.QueryRequest{EngineID: path.EngineID, Language: "sql", Query: query, Options: plugin.QueryOptions{ReadOnly: true}})
+	}
+	opened = true
 	return &postgresTableReadSession{
-		readSet:          p.observeSessionReadSet(ctx, tx, plugin.QueryRequest{EngineID: path.EngineID, Language: "sql", Query: query, Options: plugin.QueryOptions{ReadOnly: true}}),
+		readSet:          readSet,
 		db:               db,
 		tx:               tx,
 		cursorName:       cursorName,
@@ -79,7 +110,9 @@ func (p *PostgreSQLPlugin) openTableReadSession(ctx context.Context, connInfo pl
 	}, nil
 }
 
-func postgresReadSessionQuery(ctx context.Context, db *sql.DB, path plugin.EngineCatalogPath, opts plugin.TableReadSessionOptions, limit int, offset int64) (string, []datatype.FieldInfo, *datatype.SpatialInfo, format.GeometryEncoding, error) {
+func postgresReadSessionQuery(ctx context.Context, db interface {
+	QueryContext(context.Context, string, ...any) (*sql.Rows, error)
+}, path plugin.EngineCatalogPath, opts plugin.TableReadSessionOptions, limit int, offset int64) (string, []datatype.FieldInfo, *datatype.SpatialInfo, format.GeometryEncoding, error) {
 	encoding := postgresGeometryEncodingHint(opts.Hints)
 	encodingHint := strings.ToLower(strings.TrimSpace(hintString(opts.Hints, plugin.TableReadHintGeometryEncoding)))
 	if encodingHint != "" && encoding == "" {

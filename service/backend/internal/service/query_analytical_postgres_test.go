@@ -9,6 +9,7 @@ import (
 	"github.com/addp/common/engine/plugin"
 	commonmodels "github.com/addp/common/models"
 	"github.com/addp/service/internal/models"
+	"github.com/addp/service/internal/protection"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -24,7 +25,7 @@ type analyticalExecutionGate struct {
 	deny               bool
 }
 
-func (g *analyticalExecutionGate) BeginPreparedQuery(ctx context.Context, tenant uint, p plugin.EnginePlugin, q plugin.PreparedQuery, _ *dataprotection.QueryRoleSelection, _ ...string) (func(*plugin.QueryResult) error, func(), error) {
+func (g *analyticalExecutionGate) BeginPreparedQuery(ctx context.Context, tenant uint, p plugin.EnginePlugin, q plugin.PreparedQuery, _ *dataprotection.QueryRoleSelection, _ ...string) (*protection.PreparedQueryProtection, func(), error) {
 	g.entered = true
 	if _, err := q.ReadSet(ctx); err != nil {
 		return nil, nil, err
@@ -35,7 +36,7 @@ func (g *analyticalExecutionGate) BeginPreparedQuery(ctx context.Context, tenant
 	if g.deny {
 		return nil, nil, errors.New("test protection rejection")
 	}
-	return func(r *plugin.QueryResult) error { g.protected = true; return nil }, func() {}, nil
+	return &protection.PreparedQueryProtection{Apply: func(*plugin.QueryResult) error { g.protected = true; return nil }}, func() {}, nil
 }
 func (g *analyticalExecutionGate) BeginUnresolvedRead(context.Context, uint) (func(), error) {
 	return nil, errors.New("unexpected alternate execution route")

@@ -401,13 +401,14 @@ func TestPublishedSQLStableKeyBecomesNonNullOutputContract(t *testing.T) {
 
 	snapshot := &models.QueryServiceDependencySnapshot{Table: &datatype.TableInfo{Fields: []datatype.FieldInfo{
 		{Name: "business_key", Type: datatype.FieldTypeString, Nullable: true},
+		{Name: "activity_date", Type: datatype.FieldTypeDate, Nullable: true},
 	}}}
 	stableKey, err := publishedStableKey("sql", models.JSONB{"stable_key": []interface{}{"business_key"}}, snapshot)
 	if err != nil {
 		t.Fatalf("publishedStableKey() error = %v", err)
 	}
-	if !reflect.DeepEqual(stableKey, []string{"business_key"}) || snapshot.Table.Fields[0].Nullable {
-		t.Fatalf("stable key = %#v, field = %#v", stableKey, snapshot.Table.Fields[0])
+	if !reflect.DeepEqual(stableKey, []string{"business_key"}) || snapshot.Table.Fields[0].Nullable || !snapshot.Table.Fields[1].Nullable {
+		t.Fatalf("stable key = %#v, fields = %#v", stableKey, snapshot.Table.Fields)
 	}
 }
 

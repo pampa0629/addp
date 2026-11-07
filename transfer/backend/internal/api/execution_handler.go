@@ -9,6 +9,7 @@ import (
 
 	commonAPI "github.com/addp/common/api"
 	commonAuthorization "github.com/addp/common/authorization"
+	commonClient "github.com/addp/common/client"
 	commonExecution "github.com/addp/common/execution"
 	commonAuth "github.com/addp/common/middleware/auth"
 	i18nmiddleware "github.com/addp/common/middleware/i18n"
@@ -23,6 +24,46 @@ import (
 type ExecutionHandler struct {
 	executionService *service.ExecutionService
 	taskService      *service.TaskService
+}
+
+// BindFileGDBExportAuthorization 绑定 Manager 取得的精确源表授权。
+// @Summary 绑定 FileGDB 导出源表授权 | Bind FileGDB export source authorization
+// @Description 仅 Manager 租户服务可以绑定自己的待执行导出。Transfer 核对冻结配置与授权范围，执行时由 System 按实际租约重新验证。| Only the Manager tenant service may bind its pending export. Transfer checks the frozen config and scope. System checks the actual lease at execution time.
+// @Tags 执行管理 | Execution Management
+// @Accept json
+// @Param execution_id path string true "执行 UUID | Execution UUID"
+// @Param request body commonClient.IssuedFileGDBExportAuthorization true "System 签发的源表授权 | System-issued source authorization"
+// @Success 204
+// @Failure 400 {object} map[string]string
+// @Failure 403 {object} map[string]string
+// @Failure 404 {object} map[string]string
+// @Failure 409 {object} map[string]string
+// @Failure 500 {object} map[string]string
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["transfer.execution.create"]
+// @Router /executions/{execution_id}/filegdb-source-authorization [put]
+// @Security BearerAuth
+func (h *ExecutionHandler) BindFileGDBExportAuthorization(c *gin.Context) {
+	if h == nil || h.taskService == nil {
+		commonAPI.InternalServerError(c, i18nmiddleware.T(c, i18nmiddleware.MsgExportSourceUnavailable))
+		return
+	}
+	var issued commonClient.IssuedFileGDBExportAuthorization
+	if err := commonAPI.BindOptionalJSONStrict(c, &issued); err != nil {
+		commonAPI.BadRequestError(c, i18nmiddleware.T(c, i18nmiddleware.MsgInvalidParams))
+		return
+	}
+	err := h.taskService.BindFileGDBExportAuthorization(c.Request.Context(), commonAuth.GetTenantID(c), c.Param("execution_id"), &issued)
+	switch {
+	case err == nil:
+		c.Status(http.StatusNoContent)
+	case errors.Is(err, commonAPI.ErrForbidden):
+		commonAPI.ForbiddenError(c, i18nmiddleware.T(c, i18nmiddleware.MsgForbidden))
+	case errors.Is(err, commonAPI.ErrConflict):
+		commonAPI.ErrorResponse(c, http.StatusConflict, i18nmiddleware.T(c, i18nmiddleware.MsgExportSourceUnavailable))
+	default:
+		respondExecutionReadError(c, err)
+	}
 }
 
 // NewExecutionHandler 创建 ExecutionHandler

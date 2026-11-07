@@ -18,7 +18,16 @@ import (
 // Remote owner facts are read without IAM locks. The returned verifier is bound
 // to that exact identity and immutable execution scope, and performs only SQL.
 func (s *Service) PrepareExecutionSourceRead(ctx context.Context, auth *iam.ExecutionAuthorization) (iam.ExecutionSourceReadVerifier, error) {
-	if auth == nil || auth.Audience != "manager" || auth.SourceType != "user" || auth.SourceReadScope == nil {
+	if auth == nil || auth.SourceType != "user" || auth.SourceReadScope == nil {
+		return nil, commonapi.ErrForbidden
+	}
+	scope := auth.SourceReadScope.Clone()
+	fileGDBScope := scope.FileGDB()
+	expectedAudience := "manager"
+	if fileGDBScope != nil {
+		expectedAudience = commonexecution.AudienceTransfer
+	}
+	if auth.Audience != expectedAudience {
 		return nil, commonapi.ErrForbidden
 	}
 	targets, err := auth.SourceReadScope.Targets()
@@ -27,7 +36,6 @@ func (s *Service) PrepareExecutionSourceRead(ctx context.Context, auth *iam.Exec
 	}
 	request := sourceReadRequest{Action: "read", TenantID: auth.TenantID, Source: userProvenance{PrincipalID: auth.ActorPrincipalID,
 		MembershipID: auth.TenantMembershipID, AuthorizationVersion: auth.IssuedAuthorizationVersion}, Targets: targets}
-	scope := auth.SourceReadScope.Clone()
 	paths, _, err := encodeSourceReadTargets(request.Targets)
 	if err != nil || len(paths) == 0 || len(paths) != len(request.Targets) || len(paths) > 200 {
 		return nil, commonapi.ErrForbidden
@@ -40,8 +48,12 @@ func (s *Service) PrepareExecutionSourceRead(ctx context.Context, auth *iam.Exec
 	if fileScope != nil && (s.executionEngineSnapshot == nil || len(request.Bindings) != 1 || !reflect.DeepEqual(request.Bindings[0].FileComposition, &fileScope.FileComposition)) {
 		return nil, commonapi.ErrForbidden
 	}
+	if fileGDBScope != nil && (s.executionEngineSnapshot == nil || len(request.Bindings) != 1 ||
+		!reflect.DeepEqual(request.Bindings[0], fileGDBScope.FileGDBSource.Binding)) {
+		return nil, commonapi.ErrForbidden
+	}
 	return func(ctx context.Context, db *gorm.DB, current *iam.ExecutionAuthorization) (*iam.ExecutionSourceReadObservation, error) {
-		if db == nil || current == nil || current.Audience != "manager" || current.SourceType != "user" ||
+		if db == nil || current == nil || current.Audience != expectedAudience || current.SourceType != "user" ||
 			current.TenantID != request.TenantID || current.ActorPrincipalID != request.Source.PrincipalID ||
 			current.TenantMembershipID != request.Source.MembershipID || current.IssuedAuthorizationVersion != request.Source.AuthorizationVersion ||
 			!reflect.DeepEqual(current.SourceReadScope, scope) {
@@ -56,6 +68,17 @@ func (s *Service) PrepareExecutionSourceRead(ctx context.Context, auth *iam.Exec
 				return nil, commonapi.ErrForbidden
 			}
 			if !commonexecution.ManagerFileSourceComposition(engine.EngineType, &fileScope.FileComposition) {
+				return nil, commonapi.ErrForbidden
+			}
+			stored = &engine
+		}
+		if fileGDBScope != nil {
+			source := fileGDBScope.FileGDBSource
+			version, _ := strconv.ParseInt(source.EngineVersion, 10, 64)
+			var engine models.Engine
+			if err := db.WithContext(ctx).Table("system.engines").Clauses(clause.Locking{Strength: "SHARE"}).
+				Where("id=? AND tenant_id=? AND version=? AND engine_type=? AND lifecycle_state='active' AND deleted_at IS NULL",
+					source.Binding.NativeTarget.EngineID, request.TenantID, version, source.EngineType()).Take(&engine).Error; err != nil {
 				return nil, commonapi.ErrForbidden
 			}
 			stored = &engine

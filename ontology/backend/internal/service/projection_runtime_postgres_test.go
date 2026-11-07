@@ -131,6 +131,14 @@ func testProjectionRuntime(t *testing.T, db *gorm.DB, s *RevisionService, actor 
 		}
 	}
 	auth := testProjectionAuthorizer(testProjectionReceipt)
+	t.Run("published_outdoor_activity_rule", func(t *testing.T) {
+		d := outdoorRuleFixture(definition())
+		r := publishRuntimeFixture(t, s, actor, d)
+		if err := executor(testProjectionGraph{}, auth).Execute(ctx, claim(r)); err != nil {
+			t.Fatal(err)
+		}
+		testPublishedOutdoorRule(t, s, actor, d)
+	})
 	t.Run("activate_and_withdraw", func(t *testing.T) {
 		d := definition()
 		r := publishRuntimeFixture(t, s, actor, d)

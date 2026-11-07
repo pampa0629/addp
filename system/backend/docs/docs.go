@@ -639,6 +639,86 @@ const docTemplate = `{
                 ]
             }
         },
+        "/auth/execution-authorizations/filegdb-export": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "从 Manager 创建的待执行 Transfer 导出读取冻结配置，由当前普通用户授权并核对 Meta 和当前 Grant。不接受调用方声明源表、用户或租户 | Read frozen configuration from the Manager-created pending Transfer export. Authorize the current ordinary user and check Meta and the current Grant. No caller-supplied source table, user or tenant",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "执行授权 | Execution Authorization"
+                ],
+                "summary": "签发 FileGDB 精确源表执行授权 | Issue FileGDB exact source table execution authorization",
+                "parameters": [
+                    {
+                        "description": "执行 UUID 和可选有效期秒数 | Execution UUID and optional lifetime in seconds",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/client.IssueManagerFileAuthorizationRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "精确源表执行授权 | Exact source table execution authorization",
+                        "schema": {
+                            "$ref": "#/definitions/client.IssuedFileGDBExportAuthorization"
+                        }
+                    },
+                    "400": {
+                        "description": "签发失败 | Issuance failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "签发失败 | Issuance failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "签发失败 | Issuance failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "签发失败 | Issuance failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "签发失败 | Issuance failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "签发失败 | Issuance failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "manager.derived_artifact.create",
+                    "manager.data_item.read"
+                ]
+            }
+        },
         "/auth/execution-authorizations/manager-model3d-glb": {
             "post": {
                 "security": [
@@ -4503,6 +4583,92 @@ const docTemplate = `{
                     },
                     "404": {
                         "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "system.execution_authorization.execute"
+                ]
+            }
+        },
+        "/execution-authorizations/{id}/filegdb-export-accesses": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "仅固定 addp-transfer Tenant Service，核对实际运行租约、冻结配置、引擎版本和当前源 Grant。只返回当次受控读取所需连接 | Fixed addp-transfer Tenant Service only. Check the active lease, frozen configuration, engine version and current source Grant. Return the connection only for this guarded read",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "执行授权 | Execution Authorization"
+                ],
+                "summary": "复核 FileGDB 导出当前源表权限 | Recheck current FileGDB export source table permission",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "规范正整数授权 ID | Canonical positive authorization ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "真实执行租约及冻结源范围 | Actual execution lease and frozen source scope",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/client.FileGDBExportAccessRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "不可缓存的当前源引擎观察 | Non-cacheable current source engine observation",
+                        "schema": {
+                            "$ref": "#/definitions/client.ManagerFileAccessObservation"
+                        }
+                    },
+                    "400": {
+                        "description": "复核失败 | Recheck failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "复核失败 | Recheck failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "复核失败 | Recheck failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "复核失败 | Recheck failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "复核失败 | Recheck failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "复核失败 | Recheck failed",
                         "schema": {
                             "$ref": "#/definitions/internal_api.IAMErrorResponse"
                         }
@@ -11495,6 +11661,78 @@ const docTemplate = `{
                 ]
             }
         },
+        "/runtime/ontology-rule-evaluations/consume": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "认证 | Authentication"
+                ],
+                "summary": "消费单记录规则取数授权 | Consume a single-record rule read authorization",
+                "parameters": [
+                    {
+                        "description": "本次规则求值绑定 | Rule evaluation binding",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/authorization.OntologyRuleCall"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/authorization.CurrentSubjectRoles"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "system.ontology_fact.execute"
+                ]
+            }
+        },
         "/runtime/platform-definition-publication-checks": {
             "post": {
                 "security": [
@@ -16428,6 +16666,46 @@ const docTemplate = `{
                 }
             }
         },
+        "authorization.OntologyRuleCall": {
+            "type": "object",
+            "properties": {
+                "agent_run_id": {
+                    "type": "string"
+                },
+                "evaluation": {
+                    "$ref": "#/definitions/authorization.OntologyRuleEvaluation"
+                },
+                "principal_id": {
+                    "type": "string"
+                },
+                "tool_call_id": {
+                    "type": "string"
+                }
+            }
+        },
+        "authorization.OntologyRuleEvaluation": {
+            "type": "object",
+            "properties": {
+                "activation_version": {
+                    "type": "integer"
+                },
+                "generation": {
+                    "type": "string"
+                },
+                "object_id": {
+                    "type": "string"
+                },
+                "ontology_id": {
+                    "type": "string"
+                },
+                "revision": {
+                    "type": "integer"
+                },
+                "rule_id": {
+                    "type": "string"
+                }
+            }
+        },
         "authorization.OrganizationContext": {
             "type": "object",
             "properties": {
@@ -17114,6 +17392,23 @@ const docTemplate = `{
                 }
             }
         },
+        "client.FileGDBExportAccessRequest": {
+            "type": "object",
+            "properties": {
+                "attempt": {
+                    "type": "integer"
+                },
+                "execution_id": {
+                    "type": "string"
+                },
+                "lease_token": {
+                    "type": "string"
+                },
+                "source_read_scope": {
+                    "$ref": "#/definitions/execution.FileGDBExportReadScope"
+                }
+            }
+        },
         "client.IssueManagerFileAuthorizationRequest": {
             "type": "object",
             "properties": {
@@ -17122,6 +17417,29 @@ const docTemplate = `{
                 },
                 "expires_in": {
                     "type": "integer"
+                }
+            }
+        },
+        "client.IssuedFileGDBExportAuthorization": {
+            "type": "object",
+            "properties": {
+                "audience": {
+                    "type": "string"
+                },
+                "execution_id": {
+                    "type": "string"
+                },
+                "expires_at": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "source_read_scope": {
+                    "$ref": "#/definitions/execution.FileGDBExportReadScope"
+                },
+                "tenant_id": {
+                    "type": "string"
                 }
             }
         },
@@ -17757,6 +18075,28 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "status": {
+                    "type": "string"
+                }
+            }
+        },
+        "execution.FileGDBExportReadScope": {
+            "type": "object",
+            "properties": {
+                "config_digest": {
+                    "type": "string"
+                },
+                "filegdb_source": {
+                    "$ref": "#/definitions/execution.FileGDBExportSource"
+                }
+            }
+        },
+        "execution.FileGDBExportSource": {
+            "type": "object",
+            "properties": {
+                "binding": {
+                    "$ref": "#/definitions/authorizationfacts.Binding"
+                },
+                "engine_version": {
                     "type": "string"
                 }
             }
@@ -22106,6 +22446,9 @@ const docTemplate = `{
                 },
                 "audience": {
                     "type": "string"
+                },
+                "rule_evaluation": {
+                    "$ref": "#/definitions/authorization.OntologyRuleEvaluation"
                 },
                 "scopes": {
                     "type": "array",

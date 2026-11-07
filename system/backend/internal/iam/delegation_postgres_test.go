@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"os"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -315,4 +316,61 @@ func TestDelegationServiceAgainstPostgres(t *testing.T) {
 			}
 		})
 	}
+
+	t.Run("ontology fact claim binds object and is atomic", func(t *testing.T) {
+		role, err := NewTenantRoleService(repository, time.Now).CreateRole(ctx, CreateTenantRoleInput{
+			TenantID: tenant.ID, RoleKey: "tenant.ontology_fixture", Name: "Ontology fixture",
+			PermissionKeys: []string{"ontology.semantic.read"}, ActorPrincipalID: user.PrincipalID, Audit: audit,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		insertRoleAssignment(t, db, user.PrincipalID, role.RoleKey, "tenant", &tenant.ID, nil, nil, time.Now().UTC().Add(-time.Minute), nil, "manual")
+		insertRoleAssignment(t, db, user.PrincipalID, "tenant.data_viewer", "tenant", &tenant.ID, nil, nil, time.Now().UTC().Add(-time.Minute), nil, "manual")
+		now, err := repository.CurrentDatabaseTime(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		session, err := selectionService.BeginContextSelection(ctx, BeginContextSelectionInput{PrincipalID: user.PrincipalID,
+			Authentication: SessionAuthentication{Methods: []string{"password"}, AssuranceLevel: AssuranceLevelAAL1, AuthenticatedAt: now.Add(-time.Second)}, Audit: audit})
+		if err != nil || session.Session == nil {
+			t.Fatalf("issue source session: %v", err)
+		}
+		binding := commonauth.OntologyRuleEvaluation{OntologyID: "outdoor", Revision: 2, Generation: uuid.NewString(), ActivationVersion: 3, RuleID: "valid_activity", ObjectID: "synthetic-sensitive-id"}
+		request := IssueDelegatedAccessTokenInput{SourceAccessToken: session.Session.AccessToken, Audience: "ontology", Scopes: []string{commonauth.OntologyRuleEvaluateTool}, AgentRunID: uuid.NewString(), ToolCallID: "call-evaluation", Audit: audit}
+		if _, err = delegationService.IssueDelegatedAccessToken(ctx, request); !errors.Is(err, commonapi.ErrBadRequest) {
+			t.Fatalf("unbound evaluation issuance: %v", err)
+		}
+		request.RuleEvaluation = &binding
+		if _, err = delegationService.IssueDelegatedAccessToken(ctx, request); err != nil {
+			t.Fatal(err)
+		}
+		call := commonauth.OntologyRuleCall{AgentRunID: request.AgentRunID, ToolCallID: request.ToolCallID, PrincipalID: strconv.FormatInt(user.PrincipalID, 10), Evaluation: binding}
+		wrong := call
+		wrong.Evaluation.ObjectID = "another-record"
+		if _, err = delegationService.ConsumeOntologyRuleEvaluation(ctx, tenant.ID, wrong, audit); !errors.Is(err, commonapi.ErrForbidden) {
+			t.Fatalf("substituted object: %v", err)
+		}
+		if _, err = delegationService.ConsumeOntologyRuleEvaluation(ctx, tenant.ID+1, call, audit); !errors.Is(err, commonapi.ErrForbidden) {
+			t.Fatalf("substituted tenant: %v", err)
+		}
+		results := make(chan error, 2)
+		for range 2 {
+			go func() {
+				roles, err := delegationService.ConsumeOntologyRuleEvaluation(ctx, tenant.ID, call, audit)
+				if err == nil && (roles.ActorPrincipalID != call.PrincipalID || roles.TenantID != strconv.FormatInt(tenant.ID, 10)) {
+					err = errors.New("wrong subject returned")
+				}
+				results <- err
+			}()
+		}
+		first, second := <-results, <-results
+		if !(first == nil && errors.Is(second, commonapi.ErrConflict) || second == nil && errors.Is(first, commonapi.ErrConflict)) {
+			t.Fatalf("concurrent consumption: %v, %v", first, second)
+		}
+		var count int64
+		if err = db.Table("system.audit_logs").Where("details::text LIKE ?", "%"+binding.ObjectID+"%").Count(&count).Error; err != nil || count != 0 {
+			t.Fatalf("object leaked into audit: %d, %v", count, err)
+		}
+	})
 }

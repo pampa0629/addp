@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"log/slog"
 	"net"
@@ -14,9 +15,11 @@ import (
 	"strconv"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	commonClient "github.com/addp/common/client"
 	"github.com/addp/common/contentio"
+	"github.com/addp/common/dataitem/authorizationfacts"
 	"github.com/addp/common/datatype"
 	engineplugin "github.com/addp/common/engine/plugin"
 	supermapworkflow "github.com/addp/common/engine/plugins/supermap_workflow"
@@ -27,6 +30,7 @@ import (
 	"github.com/addp/transfer/internal/executor"
 	"github.com/addp/transfer/internal/models"
 	"github.com/addp/transfer/internal/planner"
+	"github.com/google/uuid"
 )
 
 func newExecutionTestMetaClient(baseURL string) *commonClient.MetaClient {
@@ -43,6 +47,75 @@ func (executionTestTokenSource) Token(context.Context, uint) (string, error) {
 
 func (executionTestTokenSource) PlatformToken(context.Context) (string, error) {
 	return "platform-test-token", nil
+}
+
+func TestFileGDBWorkerChecksCurrentLeaseAndLockedSource(t *testing.T) {
+	for _, engine := range []struct{ name, namespace string }{{"postgresql", "schema"}, {"mysql", "database"}} {
+		t.Run(engine.name, func(t *testing.T) {
+			target := engineplugin.TabularItemPath(5, engine.namespace, "business", "roads")
+			binding, err := authorizationfacts.NativeCandidateBinding(target)
+			if err != nil {
+				t.Fatal(err)
+			}
+			lease := commonExecution.Lease{ExecutionID: uuid.NewString(), TenantID: 7, Attempt: 1, Token: uuid.NewString()}
+			ctx := commonExecution.ContextWithLease(t.Context(), lease)
+			authorizationID, expires, tenant := int64(17), time.Now().UTC().Add(time.Minute), uint(7)
+			record := &commonExecution.TaskExecution{
+				ExecutionID: lease.ExecutionID, Source: "manager", TenantID: 7, Attempt: 1, ExecutionAuthorizationID: &authorizationID,
+				AuthorizationExpiresAt: &expires, Metadata: commonModels.JSONMap{models.ExportProtectionMetadataKey: map[string]any{}},
+				ExecutionConfig: commonModels.JSONMap{
+					"runtime": map[string]any{"boundary": "bounded"}, "load": map[string]any{"mode": "snapshot"},
+					"source": map[string]any{"locator": "addp://engine/5/path/business/roads?type=table", "data_type": "table", "representation": "native"},
+					"target": map[string]any{"parent_locator": "addp-infra://minio/manager/tenant_7/export/manager/session?type=prefix", "name": "roads.gdb.zip",
+						"data_type": "table", "representation": "encoded", "format": "filegdb"},
+					"filegdb_source": commonExecution.FileGDBExportSource{EngineVersion: "8", Binding: binding},
+				},
+			}
+			var checks atomic.Int32
+			system := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				var got commonClient.FileGDBExportAccessRequest
+				if r.URL.Path != "/api/v1/system/execution-authorizations/17/filegdb-export-accesses" ||
+					json.NewDecoder(r.Body).Decode(&got) != nil || got.ExecutionID != lease.ExecutionID ||
+					got.Attempt != lease.Attempt || got.LeaseToken != lease.Token ||
+					!reflect.DeepEqual(got.SourceReadScope.FileGDBSource.Binding.NativeTarget, target) {
+					t.Error("System did not receive the exact FileGDB lease and source")
+					w.WriteHeader(http.StatusBadRequest)
+					return
+				}
+				if checks.Add(1) != 1 {
+					w.WriteHeader(http.StatusForbidden)
+					return
+				}
+				_ = json.NewEncoder(w).Encode(commonClient.ManagerFileAccessObservation{
+					ObservedAt: time.Now().UTC(), Engine: &commonModels.Engine{ID: 5, TenantID: &tenant, Version: 8,
+						LifecycleState: "active", EngineType: engine.name, ConnectionInfo: commonModels.ConnectionInfo{"host": "authorized"}},
+				})
+			}))
+			defer system.Close()
+			svc := &ExecutionEngineService{systemRuntime: commonClient.NewSystemServiceClient(system.URL, roleTestTokens{}, system.Client())}
+			if _, _, err := svc.fileGDBExportSource(t.Context(), record); !errors.Is(err, executor.ErrProtectionPreparation) || checks.Load() != 0 {
+				t.Fatalf("missing lease accepted: %v", err)
+			}
+			resolver, authorize, err := svc.fileGDBExportSource(ctx, record)
+			if err != nil {
+				t.Fatal(err)
+			}
+			conn, err := resolver.ResolveEngine(planner.EngineRef{ID: 5})
+			if err != nil || conn.ConnInfo["host"] != "authorized" {
+				t.Fatalf("resolver did not use the lease-scoped connection: %v", err)
+			}
+			if _, err := resolver.ResolveEngine(planner.EngineRef{ID: 6}); err == nil {
+				t.Fatal("resolver returned credentials for an unrelated engine")
+			}
+			sibling := engineplugin.TabularItemPath(5, engine.namespace, "business", "sibling")
+			if err := authorize(ctx, &engineplugin.QueryReadSet{Paths: []engineplugin.EngineCatalogPath{sibling}}, nil); !errors.Is(err, executor.ErrProtectionPreparation) || checks.Load() != 1 {
+				t.Fatalf("sibling accepted: %v", err)
+			}
+			if err := authorize(ctx, &engineplugin.QueryReadSet{Paths: []engineplugin.EngineCatalogPath{target}}, nil); !errors.Is(err, executor.ErrProtectionPreparation) || checks.Load() != 2 {
+				t.Fatalf("revoked grant passed the locked read checkpoint: %v", err)
+			}
+		})
+	}
 }
 
 func TestNativeTargetScanTargetsIgnoresEncodedObjectTarget(t *testing.T) {

@@ -1,5 +1,46 @@
 basePath: /api/v1/service
 definitions:
+  authorization.OntologyRuleCall:
+    properties:
+      agent_run_id:
+        type: string
+      evaluation:
+        $ref: '#/definitions/authorization.OntologyRuleEvaluation'
+      principal_id:
+        type: string
+      tool_call_id:
+        type: string
+    type: object
+  authorization.OntologyRuleEvaluation:
+    properties:
+      activation_version:
+        type: integer
+      generation:
+        type: string
+      object_id:
+        type: string
+      ontology_id:
+        type: string
+      revision:
+        type: integer
+      rule_id:
+        type: string
+    type: object
+  authorization.OntologyRuleFactRequest:
+    properties:
+      call:
+        $ref: '#/definitions/authorization.OntologyRuleCall'
+      fields:
+        items:
+          type: string
+        type: array
+      id_parameter:
+        type: string
+      service_id:
+        type: integer
+      service_version:
+        type: string
+    type: object
   cleanup.Result:
     properties:
       action:
@@ -1116,6 +1157,10 @@ definitions:
     type: object
   github_com_addp_service_internal_models.QueryExecutionRequest:
     properties:
+      expected_service_id:
+        type: integer
+      expected_service_version:
+        type: string
       filter:
         $ref: '#/definitions/github_com_addp_service_internal_models.QueryFilter'
       format:
@@ -1132,6 +1177,10 @@ definitions:
         $ref: '#/definitions/github_com_addp_service_internal_models.QueryPageRequest'
       parameters:
         type: object
+      require_untransformed:
+        description: RequireUntransformed 要求确认 select 中的字段未经保护变换。 | Require all selected
+          fields to be free of protection transformations.
+        type: boolean
       select:
         items:
           type: string
@@ -1144,6 +1193,13 @@ definitions:
           additionalProperties: true
           type: object
         type: array
+      fact_status:
+        description: FactStatus 仅用于规则事实读取；unknown 不包含数据。 | Fact-read status; unknown
+          carries no data.
+        enum:
+        - verified
+        - unknown
+        type: string
       page:
         $ref: '#/definitions/github_com_addp_service_internal_models.QueryPageResult'
       service_version:
@@ -2397,6 +2453,7 @@ paths:
       description: |-
         保护门禁拒绝返回 403、data_protection_required 和本地化提示，不返回原始错误或数据 | Protection refusals return 403, data_protection_required and a localized explanation without raw errors or data
         CSV 中缺失字段及空值输出为空单元格，保留实际字符串与非空标量 | CSV encodes missing and null fields as empty cells while preserving literal strings and non-null scalars
+        require_untransformed 仅用于当前用户的私有 JSON 查询；要求 select、expected_service_id、expected_service_version 和 1 或 2 行首屏。unknown 不交付数据。 | require_untransformed is for private JSON reads by the current user. Requires select, expected_service_id, expected_service_version, and a first page of one or two rows. Unknown delivers no data.
       parameters:
       - description: 服务名称 | Service name
         in: path
@@ -4581,6 +4638,67 @@ paths:
       x-addp-auth-mode: permission
       x-addp-required-permissions:
       - service.catalog.read
+  /runtime/ontology-facts/{service_name}:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 固定查询服务名称 | Pinned query service name
+        in: path
+        name: service_name
+        required: true
+        type: string
+      - description: 已发布规则的单记录绑定 | Single-record binding from a published rule
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/authorization.OntologyRuleFactRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_addp_service_internal_models.QueryExecutionResult'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: Forbidden
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "409":
+          description: Conflict
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "503":
+          description: Service Unavailable
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 读取已授权的单记录规则事实 | Read authorized single-record rule facts
+      tags:
+      - QueryService
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - service.ontology_fact.read
   /settings/runtime-policy:
     get:
       produces:
@@ -4633,6 +4751,8 @@ paths:
     post:
       consumes:
       - application/json
+      description: 普通 SQL 的驱动未报告可空性时，输出字段标为可空。 | For direct SQL, output fields are
+        marked nullable when the driver does not report nullability.
       parameters:
       - description: SQL 输出契约请求 | SQL output contract request
         in: body

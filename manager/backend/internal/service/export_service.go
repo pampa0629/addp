@@ -2,13 +2,21 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"path"
+	"strconv"
 	"strings"
+	"time"
 
+	commonAPI "github.com/addp/common/api"
 	commonClient "github.com/addp/common/client"
+	"github.com/addp/common/dataitem/authorizationfacts"
+	engineplugin "github.com/addp/common/engine/plugin"
+	"github.com/addp/common/execution"
 	"github.com/addp/common/exportartifact"
 	"github.com/addp/common/format"
+	commonModels "github.com/addp/common/models"
 	"github.com/addp/common/resourcetree"
 	"github.com/addp/manager/internal/engineaccess"
 	"github.com/minio/minio-go/v7"
@@ -22,8 +30,14 @@ var (
 )
 
 type ExportService struct {
-	systemClient SystemClient
-	artifacts    *exportartifact.Service
+	systemClient    SystemClient
+	artifacts       *exportartifact.Service
+	fileGDBIssuer   *commonClient.SystemExecutionAuthorizationClient
+	fileGDBTransfer fileGDBExportBinder
+}
+
+type fileGDBExportBinder interface {
+	BindFileGDBExportAuthorization(context.Context, uint, *commonClient.IssuedFileGDBExportAuthorization) error
 }
 
 type ExportRequest struct {
@@ -32,6 +46,7 @@ type ExportRequest struct {
 	FileName          string `json:"file_name,omitempty"`
 	TenantID          uint   `json:"-"`
 	UserID            uint   `json:"-"`
+	UserCredential    string `json:"-"`
 }
 
 type ExportSessionResponse struct {
@@ -56,6 +71,10 @@ func NewExportService(systemClient SystemClient, transferClient exportartifact.T
 		systemClient: systemClient,
 		artifacts:    exportartifact.NewService(transferClient, sessionStore, minioClient, minioBucket, "manager", "/api/v1/manager/exports"),
 	}
+}
+
+func (s *ExportService) SetFileGDBAuthorization(issuer *commonClient.SystemExecutionAuthorizationClient, transfer fileGDBExportBinder) {
+	s.fileGDBIssuer, s.fileGDBTransfer = issuer, transfer
 }
 
 func (s *ExportService) CreateExport(ctx context.Context, req *ExportRequest) (*ExportSessionResponse, error) {
@@ -109,15 +128,86 @@ func (s *ExportService) CreateExport(ctx context.Context, req *ExportRequest) (*
 	if loc.Type == resourcetree.TypeCollection {
 		config = buildEncodedRecordExportExecutionConfig(sourceLocator, "", "", formatType)
 	}
-	created, err := s.artifacts.Create(ctx, exportartifact.CreateRequest{
+	create := exportartifact.CreateRequest{
 		TenantID: req.TenantID, UserID: req.UserID, SourceRef: sourceLocator,
 		Format: formatType, FileName: fileName, ExecutionName: "manager_export_" + strings.TrimSuffix(path.Base(fileName), path.Ext(fileName)),
 		ExecutionConfig: config,
-	})
+	}
+	if formatType == format.FormatFileGDB {
+		if err := s.prepareFileGDBExport(ctx, req, loc, engine, &create); err != nil {
+			return nil, err
+		}
+	}
+	created, err := s.artifacts.Create(ctx, create)
 	if err != nil {
 		return nil, err
 	}
 	return managerExportResponse(created), nil
+}
+
+func (s *ExportService) prepareFileGDBExport(ctx context.Context, req *ExportRequest, loc *resourcetree.ResourceLocator, engine *commonModels.Engine, create *exportartifact.CreateRequest) error {
+	if s.fileGDBIssuer == nil || s.fileGDBTransfer == nil {
+		return engineaccess.ErrUnavailable
+	}
+	actor := int(req.UserID)
+	origin := execution.TaskExecution{TenantID: int(req.TenantID), TriggeredBy: &actor}
+	if req.UserCredential == "" || execution.ApplyUserOrigin(ctx, &origin) != nil {
+		return commonAPI.ErrForbidden
+	}
+	namespace := engineplugin.EngineCatalogTermSchema
+	if strings.EqualFold(engine.EngineType, "mysql") {
+		namespace = engineplugin.EngineCatalogTermDatabase
+	}
+	target, err := resourcetree.EngineCatalogPathFromLocator(engineplugin.TabularCatalogModel(namespace), loc)
+	if err != nil {
+		return ErrExportSourceUnsupported
+	}
+	candidate, err := authorizationfacts.NativeCandidateBinding(target)
+	if err != nil {
+		return ErrExportSourceUnsupported
+	}
+	source := &execution.FileGDBExportSource{EngineVersion: strconv.FormatInt(engine.Version, 10), Binding: candidate}
+	if source.Validate() != nil {
+		return ErrExportSourceUnsupported
+	}
+	create.ExecutionConfig.Source.Locator = loc.ToURI()
+	create.ExecutionConfig.FileGDBSource = source
+	create.FileGDBActor = &commonClient.FileGDBExportActor{
+		PrincipalID: *origin.ActorPrincipalID, TenantMembershipID: *origin.ActorTenantMembershipID, AuthorizationVersion: *origin.IssuedAuthorizationVersion,
+	}
+	create.AdmitFileGDB = func(ctx context.Context, id string, config commonClient.TransferExecutionConfig) error {
+		raw, err := json.Marshal(config)
+		if err != nil {
+			return ErrExportSourceUnsupported
+		}
+		scope, err := execution.NewFileGDBExportReadScope(raw)
+		if err != nil {
+			return ErrExportSourceUnsupported
+		}
+		admitCtx, cancel := context.WithTimeout(ctx, time.Minute)
+		defer cancel()
+		issued, err := s.fileGDBIssuer.IssueFileGDBExport(admitCtx, req.UserCredential, commonClient.IssueManagerFileAuthorizationRequest{ExecutionID: id, ExpiresIn: 3600})
+		if err != nil {
+			var upstream *commonClient.SystemAPIError
+			if errors.As(err, &upstream) {
+				switch upstream.StatusCode {
+				case 401:
+					return commonClient.ErrManagerPreviewCredentialRejected
+				case 403, 404, 409:
+					return commonAPI.ErrForbidden
+				}
+			}
+			return engineaccess.ErrUnavailable
+		}
+		if !issued.Matches(req.TenantID, id, scope) {
+			return commonAPI.ErrForbidden
+		}
+		if err := s.fileGDBTransfer.BindFileGDBExportAuthorization(admitCtx, req.TenantID, issued); err != nil {
+			return engineaccess.ErrUnavailable
+		}
+		return nil
+	}
+	return nil
 }
 
 func (s *ExportService) GetExport(ctx context.Context, id, tenantID, userID uint) (*ExportSessionResponse, error) {

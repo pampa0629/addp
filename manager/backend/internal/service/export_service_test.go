@@ -1,11 +1,93 @@
 package service
 
 import (
+	"context"
+	"encoding/json"
+	"errors"
+	"net/http"
+	"net/http/httptest"
 	"testing"
+	"time"
 
+	commonAPI "github.com/addp/common/api"
+	"github.com/addp/common/authorization/authtest"
+	commonClient "github.com/addp/common/client"
+	"github.com/addp/common/execution"
+	"github.com/addp/common/exportartifact"
 	"github.com/addp/common/format"
 	_ "github.com/addp/common/format/builtin"
+	commonModels "github.com/addp/common/models"
+	"github.com/addp/common/resourcetree"
+	"github.com/google/uuid"
 )
+
+type fileGDBExportBindFunc func(context.Context, uint, *commonClient.IssuedFileGDBExportAuthorization) error
+
+func (f fileGDBExportBindFunc) BindFileGDBExportAuthorization(ctx context.Context, tenant uint, issued *commonClient.IssuedFileGDBExportAuthorization) error {
+	return f(ctx, tenant, issued)
+}
+
+func TestPrepareFileGDBExportIssuesAsCurrentUserAndBindsExactSource(t *testing.T) {
+	for _, engineType := range []string{"postgresql", "mysql"} {
+		t.Run(engineType, func(t *testing.T) {
+			const locator = "addp://engine/5/path/business/roads?type=table&item_id=6"
+			loc, err := resourcetree.ParseURI(locator)
+			if err != nil {
+				t.Fatal(err)
+			}
+			engine := &commonModels.Engine{ID: 5, EngineType: engineType, Version: 8}
+			req := &ExportRequest{TenantID: 7, UserID: 31, UserCredential: "addp_at_filegdb_user"}
+			create := exportartifact.CreateRequest{ExecutionConfig: buildTableExportExecutionConfig(
+				locator, "addp-infra://minio/manager/tenant_7/export/manager/session?type=prefix", "roads.gdb.zip", format.FormatFileGDB)}
+			executionID := uuid.NewString()
+			var scope *execution.FileGDBExportReadScope
+			system := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				var got commonClient.IssueManagerFileAuthorizationRequest
+				if r.URL.Path != "/api/v1/system/auth/execution-authorizations/filegdb-export" ||
+					r.Header.Get("Authorization") != "Bearer "+req.UserCredential ||
+					json.NewDecoder(r.Body).Decode(&got) != nil || got.ExecutionID != executionID {
+					t.Error("System did not receive the current user and exact pending execution")
+					w.WriteHeader(http.StatusBadRequest)
+					return
+				}
+				w.WriteHeader(http.StatusCreated)
+				_ = json.NewEncoder(w).Encode(commonClient.IssuedFileGDBExportAuthorization{
+					ID: "17", ExecutionID: executionID, TenantID: "7", Audience: execution.AudienceTransfer,
+					SourceReadScope: *scope, ExpiresAt: time.Now().Add(time.Hour),
+				})
+			}))
+			defer system.Close()
+			var bound bool
+			svc := &ExportService{}
+			svc.SetFileGDBAuthorization(commonClient.NewSystemExecutionAuthorizationClient(system.URL, system.Client()),
+				fileGDBExportBindFunc(func(_ context.Context, tenant uint, issued *commonClient.IssuedFileGDBExportAuthorization) error {
+					if !issued.Matches(tenant, executionID, scope) {
+						t.Fatal("Transfer did not receive the exact issued authorization")
+					}
+					bound = true
+					return nil
+				}))
+			if err := svc.prepareFileGDBExport(t.Context(), req, loc, engine, &create); !errors.Is(err, commonAPI.ErrForbidden) {
+				t.Fatalf("request without verified user context was accepted: %v", err)
+			}
+			ctx := execution.WithUserOrigin(t.Context(), authtest.NewTenantUserAuthContext("7", "31", nil))
+			if err := svc.prepareFileGDBExport(ctx, req, loc, engine, &create); err != nil {
+				t.Fatal(err)
+			}
+			raw, err := json.Marshal(create.ExecutionConfig)
+			if err != nil {
+				t.Fatal(err)
+			}
+			scope, err = execution.NewFileGDBExportReadScope(raw)
+			if err != nil || scope.FileGDBSource.EngineType() != engineType || create.FileGDBActor.PrincipalID != 31 {
+				t.Fatalf("exact actor or source was not frozen: %v", err)
+			}
+			if err := create.AdmitFileGDB(ctx, executionID, create.ExecutionConfig); err != nil || !bound {
+				t.Fatalf("authorization was not bound: %v", err)
+			}
+		})
+	}
+}
 
 func TestBuildTableExportTaskConfigUsesTransferSyncShape(t *testing.T) {
 	config := buildTableExportExecutionConfig(

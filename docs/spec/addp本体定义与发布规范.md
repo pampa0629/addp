@@ -1,6 +1,6 @@
 # ADDP 本体定义与发布规范
 
-本文维护 Ontology 已实现的 Tenant 原生定义、修订发布、假设性试算与平台能力发布消费契约。未实施的专业来源引用、本体数据绑定、可信业务求值和 Graph 职责迁移见[后续设计](../next/ADDP%20Ontology最小设计契约.md)。本文不将关系声明或手工试算解释为业务实例事实。
+本文维护 Ontology 的 Tenant 原生定义、修订发布、假设性试算、单记录业务求值与平台能力发布消费契约。未实施的专业来源引用、跨来源绑定和 Graph 职责迁移见[后续设计](../next/ADDP%20Ontology最小设计契约.md)。关系声明和手工试算不提供业务实例事实。
 
 ## 一、语义层次与依赖
 
@@ -20,7 +20,7 @@ Ontology 不假设除 System 之外的任何业务模块已经部署或被用户
 
 ## 二、原生定义与语义内核
 
-一个 Tenant 内的 Ontology 是定义聚合；成员以同一修订发布，草稿并发 version、业务 revision 和投影 generation 不可混用。当前只支持原生类、属性、继承、关系声明及受限分类条件；专业 owner 来源引用和本体数据绑定尚未实现。
+一个 Tenant 内的 Ontology 是定义聚合；成员以同一修订发布，草稿并发 version、业务 revision 和投影 generation 不可混用。支持原生类、属性、继承、关系声明、受限分类条件和规则的单记录 QueryService 绑定。
 
 - 类、属性、关系和规则具有聚合内稳定身份。编译拒绝继承环、悬空引用、继承属性歧义、不一致逆关系及类型错误；声明传递性或逆关系不表示已执行实例推理。
 - 确定修订形成不可变快照；规范化 JSON 和 SHA-256 包含 Tenant、本体、修订、内核契约与编译器版本，快照本身不是发布成功或激活证明。
@@ -113,6 +113,18 @@ Console 在本体详情提供 `/ontologies/:ontology_id/trial` 页面，使用�
 服务端复用唯一 CEL 内核，执行前后核对同一 published/ready 激活绑定；未激活或版本变化返回 409，不回退历史版本。HTTP 200 只表示试算得到结果，响应包含激活绑定、摘要及 `decision.mode=hypothetical`、规则依据、四态结果、输入状态和未决变量，不回显原始值，不持久化输入或输出。页面修改输入、规则、本体或重新加载时清除旧结果；冲突后保留输入但禁止继续试算，显式重新加载建立新基线。试算不是可信业务事实，也不是人数统计或质量检测。
 
 令牌轮换后的 AuthContext 重取不是本体或规则切换。重取期间隐藏定义和输入、取消在途试算并清除结果；只有同一 User、Tenant 和 Tenant Membership 经权威上下文重新确认且仍有语义读取权限时，才恢复同一路由下的内存输入，不自动重新提交试算。换主体、换租户/成员身份、退出、权限撤销或重取失败均清空旧数据；仍由试算接口验证原激活绑定，409 锁定不会被普通令牌刷新解除。输入不写入浏览器持久存储。
+
+### 单记录业务求值
+
+规则可随修订冻结 `service_binding`。绑定包含私有 QueryService 名称、服务 ID、消费版本、对象 ID 参数与输出字段，以及从服务字段到全部规则输入的显式映射。首版支持字符串和按观察日判断的日期。日期映射要求绑定 IANA 时区；观察日由服务端在本次请求内取得，调用者只提交对象 ID 和当前激活身份。绑定随规则进入同一个 PG 快照及摘要，变更须发布新修订。
+
+`POST /ontologies/{ontology_id}/semantic/rules/{rule_id}/evaluate` 沿用 Tenant User 及 `ontology.semantic.read`。Ontology 同步转发本次已验证的 User Bearer 到 Service，Service 再核对本人的执行权限和数据保护。只有 Service 确认字段未经保护变换、版本一致、恰有一条匹配 ID 且无后续行时才运行正式规则。无法确认时返回 `unknown`，不附原始业务值。求值前后核对同一激活绑定，变更返回 409。Service 缺席仅使依赖它的业务求值不可确定。
+
+同一求值入口允许精确的 `ontology.rule.evaluate` 委托。System 在现有委托签发事务中额外核验当前 User 的租户级 `service.data_read.execute`，并记录本体、激活绑定、规则、对象的摘要。Service 只接受 Ontology Runtime 的内部单记录事实调用，使用自身机器身份向 System 核对并一次性消费原调用的委托记录。原用户令牌和委托令牌均不转交给 Service。Service 复核当前执行权限、私有服务版本及数据保护。Agent 只收到规则判定及版本化证据。授权失效、重放及参数替换均不得触发数据读取。
+
+类上下文以 `business_evaluable=true` 标记具有已发布事实绑定的规则。物理服务映射仍属于冻结定义，不进入语义读取结果。
+
+Outdoor 的统计有效活动规则 `statistically_valid_activity` 使用治理后的状态和 SQL `DATE`。当服务发布的状态字段使用业务中文值时，表达式为 `date_eligible && status != '拟定中' && status != '已取消'`。`status` 使用 `string` 映射并保留缺失为未知。`date_eligible` 使用 `date_on_or_before_observation` 映射并显式配置 `on_absent=false`，使 SQL NULL 排除活动。若发布字段使用码值，表达式须使用该来源明确发布的草稿、取消码值。字段未观察到或受保护时，整次求值未知。具体服务身份、实际字段和指标观察日时区须在发布前核实。[Outdoor 统计有效活动口径](../concepts/Outdoor业务语义.md#统计有效活动)
 
 ## 六、平台定义来源与编译
 

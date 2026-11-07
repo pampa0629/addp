@@ -336,7 +336,7 @@ func databaseTableExportFormats(engine *commonModels.Engine) []string {
 
 func databaseTableExportFormat(engine *commonModels.Engine, formatType format.FormatType) bool {
 	if formatType == format.FormatFileGDB {
-		return engine != nil && strings.EqualFold(engine.EngineType, "postgresql")
+		return engine != nil && (strings.EqualFold(engine.EngineType, "postgresql") || strings.EqualFold(engine.EngineType, "mysql"))
 	}
 	return supportedExportFormat(formatType)
 }

@@ -7,8 +7,11 @@ import (
 	"strconv"
 
 	commonAPI "github.com/addp/common/api"
+	commonClient "github.com/addp/common/client"
+	"github.com/addp/common/execution"
 	"github.com/addp/common/exportartifact"
 	"github.com/addp/common/middleware/auth"
+	commoni18n "github.com/addp/common/middleware/i18n"
 	"github.com/addp/manager/internal/engineaccess"
 	"github.com/addp/manager/internal/service"
 	"github.com/gin-gonic/gin"
@@ -56,6 +59,7 @@ func (h *ExportHandler) ResolveExecutionSource(c *gin.Context) {
 // @Param request body service.ExportRequest true "导出请求 | Export request"
 // @Success 202 {object} service.ExportSessionResponse "导出会话已创建 | Export session created"
 // @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
+// @Failure 401 {object} map[string]interface{} "当前用户凭据失效 | Current user credential rejected"
 // @Failure 403 {object} map[string]interface{} "无权访问 | Access denied"
 // @Failure 500 {object} map[string]interface{} "服务器内部错误 | Internal server error"
 // @Failure 503 {object} map[string]interface{} "引擎不可用 | Engine unavailable"
@@ -76,7 +80,10 @@ func (h *ExportHandler) CreateExport(c *gin.Context) {
 	}
 	req.TenantID = auth.GetTenantID(c)
 	req.UserID = auth.GetUserID(c)
-	result, err := h.exportService.CreateExport(c.Request.Context(), &req)
+	req.UserCredential = auth.CanonicalBearerToken(c.GetHeader("Authorization"))
+	facts, _ := auth.AuthContextFromGin(c)
+	ctx := execution.WithUserOrigin(c.Request.Context(), facts)
+	result, err := h.exportService.CreateExport(ctx, &req)
 	if err != nil {
 		exportError(c, err)
 		return
@@ -164,6 +171,10 @@ func exportError(c *gin.Context, err error) {
 		return
 	}
 	switch {
+	case errors.Is(err, commonClient.ErrManagerPreviewCredentialRejected):
+		commonAPI.UnauthorizedError(c, commoni18n.T(c, commoni18n.MsgUnauthorized))
+	case errors.Is(err, commonAPI.ErrForbidden):
+		commonAPI.ForbiddenError(c, commoni18n.T(c, commoni18n.MsgForbidden))
 	case errors.Is(err, engineaccess.ErrUnavailable):
 		engineUnavailable(c)
 	case errors.Is(err, service.ErrEngineAccessDenied):

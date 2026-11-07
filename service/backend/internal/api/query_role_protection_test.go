@@ -8,6 +8,7 @@ import (
 	"github.com/addp/common/client"
 	"github.com/addp/common/engine/plugin"
 	_ "github.com/addp/common/engine/plugins/postgresql"
+	"github.com/addp/service/internal/protection"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -65,7 +66,7 @@ func (apiRoleTestTokens) PlatformToken(context.Context) (string, error) {
 
 type apiRoleOptionsGate struct{}
 
-func (apiRoleOptionsGate) BeginPreparedQuery(context.Context, uint, plugin.EnginePlugin, plugin.PreparedQuery, *dataprotection.QueryRoleSelection, ...string) (func(*plugin.QueryResult) error, func(), error) {
+func (apiRoleOptionsGate) BeginPreparedQuery(context.Context, uint, plugin.EnginePlugin, plugin.PreparedQuery, *dataprotection.QueryRoleSelection, ...string) (*protection.PreparedQueryProtection, func(), error) {
 	return nil, nil, errors.New("must not execute")
 }
 func (apiRoleOptionsGate) BeginUnresolvedRead(context.Context, uint) (func(), error) {

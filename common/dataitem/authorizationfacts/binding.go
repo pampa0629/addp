@@ -188,18 +188,26 @@ func (f AuthorizationFacts) ProvePrimaryTarget(path plugin.EngineCatalogPath) (B
 // is established by reading that record from Meta and comparing its complete
 // typed boundary; a candidate (including a dotted-name collision) is no proof.
 func NativeCandidateFingerprint(path plugin.EngineCatalogPath) (string, error) {
+	binding, err := NativeCandidateBinding(path)
+	return binding.ItemFingerprint, err
+}
+
+// NativeCandidateBinding describes the proposed path. Authorization must still
+// verify the complete boundary independently against the current Meta record.
+func NativeCandidateBinding(path plugin.EngineCatalogPath) (Binding, error) {
 	itemType, fullName, err := nativeSingleIdentity(path)
 	if err != nil {
-		return "", err
+		return Binding{}, err
 	}
 	fingerprint := models.GenerateItemFingerprint(path.EngineID, fullName)
 	f := AuthorizationFacts{SchemaVersion: AuthorizationFactsSchemaV1, EngineID: path.EngineID,
 		ItemFingerprint: fingerprint, ItemType: itemType, FullName: fullName,
 		Boundary: &AuthorizationBoundary{Layout: "single", NativeTarget: path}}
-	if _, err := f.ComputeBoundaryHash(); err != nil {
-		return "", err
+	hash, err := f.ComputeBoundaryHash()
+	if err != nil {
+		return Binding{}, err
 	}
-	return fingerprint, nil
+	return Binding{ItemFingerprint: fingerprint, BoundaryHash: hash, NativeTarget: path}, nil
 }
 
 // ProveNativeTarget must only consume facts read from the trusted Meta owner.

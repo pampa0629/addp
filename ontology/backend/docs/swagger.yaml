@@ -195,6 +195,23 @@ definitions:
           type: string
         type: array
     type: object
+  github_com_addp_ontology_internal_semantic.ContextRule:
+    properties:
+      basis:
+        type: string
+      business_evaluable:
+        type: boolean
+      class_id:
+        type: string
+      expression:
+        type: string
+      id:
+        type: string
+      inputs:
+        items:
+          $ref: '#/definitions/github_com_addp_ontology_internal_semantic.Input'
+        type: array
+    type: object
   github_com_addp_ontology_internal_semantic.Decision:
     properties:
       basis:
@@ -320,6 +337,8 @@ definitions:
         items:
           $ref: '#/definitions/github_com_addp_ontology_internal_semantic.Input'
         type: array
+      service_binding:
+        $ref: '#/definitions/github_com_addp_ontology_internal_semantic.ServiceBinding'
     type: object
   github_com_addp_ontology_internal_semantic.Scope:
     properties:
@@ -329,6 +348,37 @@ definitions:
         type: integer
       tenant_id:
         type: integer
+    type: object
+  github_com_addp_ontology_internal_semantic.ServiceBinding:
+    properties:
+      id_field:
+        type: string
+      id_parameter:
+        type: string
+      inputs:
+        items:
+          $ref: '#/definitions/github_com_addp_ontology_internal_semantic.ServiceInput'
+        type: array
+      service_id:
+        type: integer
+      service_name:
+        type: string
+      service_version:
+        type: string
+      time_zone:
+        type: string
+    type: object
+  github_com_addp_ontology_internal_semantic.ServiceInput:
+    properties:
+      conversion:
+        enum:
+        - string
+        - date_on_or_before_observation
+        type: string
+      field:
+        type: string
+      variable:
+        type: string
     type: object
   internal_api.AcceptedResponse:
     properties:
@@ -342,6 +392,46 @@ definitions:
         type: integer
       version:
         type: integer
+    type: object
+  internal_api.BusinessEvaluationRequest:
+    properties:
+      activation_version:
+        type: integer
+      generation:
+        type: string
+      object_id:
+        maxLength: 512
+        type: string
+      revision:
+        type: integer
+    required:
+    - activation_version
+    - generation
+    - object_id
+    - revision
+    type: object
+  internal_api.BusinessEvaluationResponse:
+    properties:
+      activation_version:
+        type: integer
+      decision:
+        $ref: '#/definitions/github_com_addp_ontology_internal_semantic.Decision'
+      digest:
+        type: string
+      generation:
+        type: string
+      knowledge_kind:
+        type: string
+      observation_date:
+        type: string
+      ontology_id:
+        type: string
+      revision:
+        type: integer
+      service_id:
+        type: integer
+      service_version:
+        type: string
     type: object
   internal_api.ClassContextResponse:
     properties:
@@ -373,7 +463,7 @@ definitions:
         type: integer
       rules:
         items:
-          $ref: '#/definitions/github_com_addp_ontology_internal_semantic.Rule'
+          $ref: '#/definitions/github_com_addp_ontology_internal_semantic.ContextRule'
         type: array
     type: object
   internal_api.ClassDirectoryResponse:
@@ -1539,6 +1629,77 @@ paths:
       security:
       - BearerAuth: []
       summary: 获取确定类的语义上下文 | Get a pinned class context
+      tags:
+      - Ontology
+      x-addp-auth-mode: delegated_tool
+      x-addp-required-permissions:
+      - ontology.semantic.read
+  /ontologies/{ontology_id}/semantic/rules/{rule_id}/evaluate:
+    post:
+      consumes:
+      - application/json
+      description: 使用已发布规则的版本化服务绑定；保护变换或证据不可确认时返回 unknown，不交付原始业务字段。 | Uses the published
+        rule's versioned service binding; returns unknown when protected transformations
+        or incomplete evidence prevent verification, with no raw business fields.
+      parameters:
+      - description: 本体标识 | Ontology identifier
+        in: path
+        name: ontology_id
+        required: true
+        type: string
+      - description: 规则标识 | Rule identifier
+        in: path
+        name: rule_id
+        required: true
+        type: string
+      - description: 激活身份与对象标识 | Active identity and object identifier
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_api.BusinessEvaluationRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_api.BusinessEvaluationResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "413":
+          description: Request Entity Too Large
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 求值单条业务记录 | Evaluate a single business record
       tags:
       - Ontology
       x-addp-auth-mode: delegated_tool

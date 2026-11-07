@@ -266,6 +266,7 @@ func NewIAMRuntime(db *gorm.DB, cfg *config.Config, securityPolicy iam.SecurityP
 	if err != nil {
 		return nil, fmt.Errorf("装配 IAM Delegation Handler: %w", err)
 	}
+	delegationHandler.consume = delegationService.ConsumeOntologyRuleEvaluation
 	catalogReferenceHandler, err := NewIAMCatalogReferenceHandler(catalogReferenceService)
 	if err != nil {
 		return nil, fmt.Errorf("装配 IAM Catalog Reference Handler: %w", err)

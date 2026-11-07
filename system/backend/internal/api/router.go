@@ -152,6 +152,9 @@ func SetupRouter(db *gorm.DB, cfg *config.Config) *gin.Engine {
 	}); err != nil {
 		panic(err)
 	}
+	if err := registerFileGDBExportAuthorizationRoutes(api, runtime, iam.NewFileGDBExportAuthorizationService(runtime.Repository, fulfillmentService.PrepareExecutionSourceRead)); err != nil {
+		panic(err)
+	}
 	if secret := cfg.ServiceClientSecrets["addp-system"]; secret != "" {
 		tokens, err := commonClient.NewOAuthServiceTokenSource(cfg.SystemServiceURL, "addp-system", secret, nil)
 		if err != nil {

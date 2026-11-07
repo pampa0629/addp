@@ -48,6 +48,12 @@ var toolAuthorizations = map[string]commonauth.ToolAuthorization{
 		RequiredScopes:      []string{"ontology.classes.list"},
 		RequiredPermissions: []string{"ontology.semantic.read"},
 	},
+	"ontology.rule.evaluate": {
+		Name:                "ontology.rule.evaluate",
+		Owner:               "ontology",
+		RequiredScopes:      []string{"ontology.rule.evaluate"},
+		RequiredPermissions: []string{"ontology.semantic.read"},
+	},
 	"platform.capabilities.list": {
 		Name:                "platform.capabilities.list",
 		Owner:               "ontology",

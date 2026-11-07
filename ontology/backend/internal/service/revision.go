@@ -12,7 +12,12 @@ import (
 )
 
 type RevisionService struct {
-	repo *repository.RevisionRepository
+	repo         *repository.RevisionRepository
+	serviceFacts *ServiceFactReader
+}
+
+func (s *RevisionService) SetServiceFactReader(reader *ServiceFactReader) {
+	s.serviceFacts = reader
 }
 
 func NewRevisionService(repo *repository.RevisionRepository) *RevisionService {

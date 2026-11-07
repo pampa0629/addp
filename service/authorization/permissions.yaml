@@ -1,6 +1,6 @@
 schema_version: addp.permission_manifest/v1
 owner_module: service
-manifest_version: 9
+manifest_version: 10
 permissions:
   - key: service.catalog.read
     allowed_scope_types: [tenant]
@@ -122,3 +122,11 @@ permissions:
     status: active
     name_i18n_key: permissions.service.external_registration.update.name
     description_i18n_key: permissions.service.external_registration.update.description
+  - key: service.ontology_fact.read
+    allowed_scope_types: [tenant]
+    risk_level: medium
+    tenant_customizable: false
+    delegable: false
+    status: active
+    name_i18n_key: permissions.service.ontology_fact.read.name
+    description_i18n_key: permissions.service.ontology_fact.read.description

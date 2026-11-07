@@ -10,6 +10,18 @@ owner = importlib.import_module('scripts.test.manager-filegdb-export-online')
 
 
 class FileGDBArchiveProofTest(unittest.TestCase):
+    def test_source_denial_requires_the_real_export_request_and_no_session(self):
+        client = Mock()
+        client.request.return_value = SimpleNamespace(status=403, payload={'error': 'forbidden'})
+        locator = 'addp://engine/2/path/public/filegdb_export_points?type=table'
+        self.assertEqual(owner.require_export_denied_without_source_grant(client, locator), 403)
+        client.request.assert_called_once_with('POST', '/api/v1/manager/exports', (403,), {
+            'source_item_locator': locator, 'format': 'filegdb',
+        })
+        client.request.return_value.payload['transfer_execution_id'] = 'unexpected'
+        with self.assertRaisesRegex(ValueError, 'source denial exposed an export session'):
+            owner.require_export_denied_without_source_grant(client, locator)
+
     def test_unpack_requires_one_safe_geodatabase(self):
         for invalid in (None, 'another.gdb/extra', 'points.gdb/../escape', 'points.gdb/nested/extra'):
             with self.subTest(invalid=invalid), tempfile.TemporaryDirectory() as workspace:

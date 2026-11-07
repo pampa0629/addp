@@ -67,7 +67,8 @@ func ExportRequestDigest(request *CreateTransferExecutionRequest) (string, error
 		BatchSize              int                           `json:"batch_size"`
 		AutoScanMetadata       bool                          `json:"auto_scan_metadata"`
 		ExecutionAuthorization *IssuedExecutionAuthorization `json:"execution_authorization,omitempty"`
-	}{request.Name, request.Config, request.BatchSize, request.AutoScanMetadata, request.ExecutionAuthorization})
+		FileGDBActor           *FileGDBExportActor           `json:"filegdb_actor,omitempty"`
+	}{request.Name, request.Config, request.BatchSize, request.AutoScanMetadata, request.ExecutionAuthorization, request.FileGDBActor})
 	if err != nil {
 		return "", err
 	}

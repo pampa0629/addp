@@ -7,7 +7,9 @@ import (
 	"math"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strconv"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -17,7 +19,42 @@ import (
 	"github.com/addp/common/datatype"
 	commonAuth "github.com/addp/common/middleware/auth"
 	"github.com/gin-gonic/gin"
+	"gorm.io/driver/postgres"
+	"gorm.io/gorm"
 )
+
+func TestSQLOutputContractNullabilityAgainstPostgres(t *testing.T) {
+	dsn := strings.TrimSpace(os.Getenv("SERVICE_POSTGRES_TEST_DSN"))
+	if dsn == "" {
+		t.Skip("requires Service PostgreSQL gate")
+	}
+	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	pool, err := db.DB()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = pool.Close() })
+
+	const query = `SELECT activity_id, activity_date
+FROM (VALUES ('undated', NULL::date), ('dated', DATE '2026-01-02')) AS activities(activity_id, activity_date)
+WHERE activity_id = ?`
+	for _, id := range []string{"undated", "dated", "missing"} {
+		t.Run(id, func(t *testing.T) {
+			contract, err := (&ResourceCapabilityHandler{}).detectSQLOutputContract(t.Context(), db, "postgresql", query, []any{id})
+			if err != nil {
+				t.Fatal(err)
+			}
+			fields := contract.Table.Fields
+			if len(fields) != 2 || fields[0].Name != "activity_id" || fields[1].Name != "activity_date" ||
+				fields[1].Type != datatype.FieldTypeDate || !fields[1].Nullable {
+				t.Fatalf("unexpected output contract: %+v", fields)
+			}
+		})
+	}
+}
 
 func TestQueryOutputFieldSizeOmitsUnboundedAndUnsafeLengths(t *testing.T) {
 	t.Parallel()

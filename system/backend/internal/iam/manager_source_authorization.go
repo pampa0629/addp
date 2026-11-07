@@ -102,7 +102,7 @@ func (s *managerSourceAuthorizationService) issue(ctx context.Context, input iss
 	}
 	preRow := &ExecutionAuthorization{ActorPrincipalID: snapshot.FamilyPrincipalID, TenantID: *snapshot.TenantID,
 		TenantMembershipID: *snapshot.TenantMembershipID, IssuedAuthorizationVersion: snapshot.FamilyAuthorizationVersion,
-		SourceType: executionAuthorizationSourceUser, Audience: "manager", ExecutionID: input.ExecutionID}
+		SourceType: executionAuthorizationSourceUser, Audience: s.purpose.audience(), ExecutionID: input.ExecutionID}
 	preRaw, err := s.repository.managerSourceExecutionConfig(ctx, preRow, 0, uuid.Nil, true, s.purpose)
 	if err != nil {
 		return nil, err
@@ -155,7 +155,7 @@ func (s *managerSourceAuthorizationService) issue(ctx context.Context, input iss
 		}
 		row := &ExecutionAuthorization{ActorPrincipalID: principal.ID, TenantID: *current.TenantID,
 			TenantMembershipID: *current.TenantMembershipID, IssuedAuthorizationVersion: principal.AuthorizationVersion,
-			SourceType: executionAuthorizationSourceUser, Audience: "manager", ExecutionID: input.ExecutionID,
+			SourceType: executionAuthorizationSourceUser, Audience: s.purpose.audience(), ExecutionID: input.ExecutionID,
 			CreatedAt: current.DatabaseTime.UTC(), ExpiresAt: current.DatabaseTime.UTC().Add(ttl)}
 		raw, err := tx.managerSourceExecutionConfig(ctx, row, 0, uuid.Nil, true, s.purpose)
 		if err != nil {
@@ -165,9 +165,9 @@ func (s *managerSourceAuthorizationService) issue(ctx context.Context, input iss
 		if err != nil {
 			return err
 		}
-		if row.SourceReadScope.File() != nil {
+		if row.SourceReadScope.file != nil || row.SourceReadScope.fileGDB != nil {
 			var prior ExecutionAuthorization
-			lookup := tx.db.WithContext(ctx).Clauses(clause.Locking{Strength: "SHARE"}).Where("audience='manager' AND execution_id=?", input.ExecutionID).Take(&prior)
+			lookup := tx.db.WithContext(ctx).Clauses(clause.Locking{Strength: "SHARE"}).Where("audience=? AND execution_id=?", s.purpose.audience(), input.ExecutionID).Take(&prior)
 			if lookup.Error == nil {
 				if prior.TenantID != row.TenantID || prior.ActorPrincipalID != row.ActorPrincipalID || prior.TenantMembershipID != row.TenantMembershipID || prior.IssuedAuthorizationVersion != row.IssuedAuthorizationVersion || prior.SourceType != executionAuthorizationSourceUser || prior.SealedAt == nil || prior.RevokedAt != nil || prior.ExpiresAt.Sub(prior.CreatedAt) != ttl || !reflect.DeepEqual(prior.SourceReadScope, row.SourceReadScope) {
 					return ErrExecutionAuthorizationConflict
@@ -211,7 +211,7 @@ func (s *managerSourceAuthorizationService) issue(ctx context.Context, input iss
 		if err := NewAuditWriter(tx).Write(ctx, AuditEvent{Metadata: audit,
 			EventName: "iam.execution_authorization.issued", Result: AuditResultSucceeded, RiskLevel: AuditRiskLow,
 			ModuleName: "system", EntityType: "execution_authorization", EntityID: strconv.FormatInt(row.ID, 10),
-			Details: map[string]any{"audience": "manager", "execution_id": row.ExecutionID.String(), "source_read_scope": row.SourceReadScope}}); err != nil {
+			Details: map[string]any{"audience": s.purpose.audience(), "execution_id": row.ExecutionID.String(), "source_read_scope": row.SourceReadScope}}); err != nil {
 			return err
 		}
 		// A slow audit must not turn expired credentials, assignments or source
@@ -246,7 +246,7 @@ func (s *managerSourceAuthorizationService) issue(ctx context.Context, input iss
 func (s *managerSourceAuthorizationService) authorize(ctx context.Context, input authorizeManagerSourceInput) (*ExecutionSourceReadObservation, error) {
 	if s == nil || s.repository == nil || s.prepare == nil || input.AuthorizationID <= 0 || input.ExecutionID == uuid.Nil ||
 		input.Attempt <= 0 || input.LeaseToken == uuid.Nil || input.TenantID <= 0 || input.ServicePrincipalID <= 0 ||
-		input.ServiceClientID != "addp-manager" || !s.purpose.matches(&input.SourceReadScope) {
+		input.ServiceClientID != s.purpose.consumer() || !s.purpose.matches(&input.SourceReadScope) {
 		return nil, commonapi.ErrBadRequest
 	}
 	if input.Audit.PrincipalID == nil || *input.Audit.PrincipalID != input.ServicePrincipalID ||
@@ -262,14 +262,14 @@ func (s *managerSourceAuthorizationService) authorize(ctx context.Context, input
 		if err != nil {
 			return ErrExecutionAuthorizationUnavailable
 		}
-		if preRow.Audience != "manager" || preRow.TenantID != input.TenantID || preRow.ExecutionID != input.ExecutionID ||
+		if preRow.Audience != s.purpose.audience() || preRow.TenantID != input.TenantID || preRow.ExecutionID != input.ExecutionID ||
 			preRow.SourceType != executionAuthorizationSourceUser || !reflect.DeepEqual(preRow.SourceReadScope, &input.SourceReadScope) {
 			return ErrExecutionAuthorizationPermissionDenied
 		}
 		if _, _, _, err := lockAndValidateExecutionSource(ctx, tx, preRow); err != nil {
 			return err
 		}
-		if err := tx.currentManagerSourceConsumer(ctx, input); err != nil {
+		if err := tx.currentManagerSourceConsumer(ctx, input, s.purpose); err != nil {
 			return err
 		}
 		raw, err := tx.managerSourceExecutionConfig(ctx, preRow, input.Attempt, input.LeaseToken, false, s.purpose)
@@ -299,7 +299,7 @@ func (s *managerSourceAuthorizationService) authorize(ctx context.Context, input
 		if err != nil {
 			return ErrExecutionAuthorizationUnavailable
 		}
-		if snapshot.Audience != "manager" || snapshot.TenantID != input.TenantID || snapshot.ExecutionID != input.ExecutionID ||
+		if snapshot.Audience != s.purpose.audience() || snapshot.TenantID != input.TenantID || snapshot.ExecutionID != input.ExecutionID ||
 			snapshot.SourceType != executionAuthorizationSourceUser || !reflect.DeepEqual(snapshot.SourceReadScope, &input.SourceReadScope) {
 			return ErrExecutionAuthorizationPermissionDenied
 		}
@@ -322,7 +322,7 @@ func (s *managerSourceAuthorizationService) authorize(ctx context.Context, input
 		if err != nil || !reflect.DeepEqual(currentScope, row.SourceReadScope) {
 			return ErrExecutionAuthorizationUnavailable
 		}
-		if err := tx.currentManagerSourceConsumer(ctx, input); err != nil {
+		if err := tx.currentManagerSourceConsumer(ctx, input, s.purpose); err != nil {
 			return err
 		}
 		observation, err = verify(ctx, tx.db, row)
@@ -344,7 +344,7 @@ func (s *managerSourceAuthorizationService) authorize(ctx context.Context, input
 		if err := NewAuditWriter(tx).Write(ctx, AuditEvent{Metadata: input.Audit,
 			EventName: "iam.execution_authorization.consumed", Result: AuditResultSucceeded, RiskLevel: AuditRiskLow,
 			ModuleName: "system", EntityType: "execution_authorization", EntityID: strconv.FormatInt(row.ID, 10),
-			Details: map[string]any{"audience": "manager", "execution_id": row.ExecutionID.String(), "attempt": input.Attempt,
+			Details: map[string]any{"audience": s.purpose.audience(), "execution_id": row.ExecutionID.String(), "attempt": input.Attempt,
 				"source_read_scope": row.SourceReadScope}}); err != nil {
 			return err
 		}
@@ -362,7 +362,7 @@ func (s *managerSourceAuthorizationService) authorize(ctx context.Context, input
 		if !managerSourcePermissions(permissions, s.purpose) {
 			return ErrExecutionAuthorizationPermissionDenied
 		}
-		if err := tx.currentManagerSourceConsumer(ctx, input); err != nil {
+		if err := tx.currentManagerSourceConsumer(ctx, input, s.purpose); err != nil {
 			return err
 		}
 		if observedAt.IsZero() || !row.ExpiresAt.After(observedAt) || (membership.ExpiresAt != nil && !membership.ExpiresAt.After(observedAt)) {

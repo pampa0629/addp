@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"github.com/addp/common/dataprotection"
 	"math"
 	pathpkg "path"
 	"path/filepath"
@@ -12,8 +11,10 @@ import (
 	"strings"
 
 	"github.com/addp/common/dataitem"
+	"github.com/addp/common/dataprotection"
 	"github.com/addp/common/datatype"
 	engineplugin "github.com/addp/common/engine/plugin"
+	"github.com/addp/common/execution"
 	"github.com/addp/common/format"
 	commonJSON "github.com/addp/common/jsonmap"
 	commonquery "github.com/addp/common/query"
@@ -77,12 +78,13 @@ type QueryInputSpec struct {
 }
 
 type TableExportTaskSpec struct {
-	Runtime    RuntimeSpec     `json:"runtime"`
-	Load       LoadSpec        `json:"load"`
-	Source     EndpointSpec    `json:"source"`
-	Target     EndpointSpec    `json:"target,omitempty"`
-	Transforms []TransformSpec `json:"transforms,omitempty"`
-	BatchSize  int             `json:"batch_size,omitempty"`
+	FileGDBSource *execution.FileGDBExportSource `json:"filegdb_source,omitempty"`
+	Runtime       RuntimeSpec                    `json:"runtime"`
+	Load          LoadSpec                       `json:"load"`
+	Source        EndpointSpec                   `json:"source"`
+	Target        EndpointSpec                   `json:"target,omitempty"`
+	Transforms    []TransformSpec                `json:"transforms,omitempty"`
+	BatchSize     int                            `json:"batch_size,omitempty"`
 }
 
 type RuntimeSpec struct {
@@ -316,6 +318,11 @@ func ParseTableExportTaskSpec(config map[string]interface{}, fallbackBatchSize i
 	}
 	if err := decodeStrictTaskConfig(configBytes, &spec, "transfer"); err != nil {
 		return TableExportTaskSpec{}, err
+	}
+	if spec.FileGDBSource != nil {
+		if _, err := execution.NewFileGDBExportReadScope(configBytes); err != nil {
+			return TableExportTaskSpec{}, err
+		}
 	}
 	if spec.BatchSize <= 0 {
 		spec.BatchSize = fallbackBatchSize

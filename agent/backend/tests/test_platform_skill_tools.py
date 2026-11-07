@@ -117,10 +117,10 @@ class PlatformSkillToolTests(unittest.TestCase):
         registry = _load_skill_registry()
         self.assertEqual(registry["notebook-generation"].tools, ["notebook.draft.generate"])
 
-    def test_ontology_skill_exposes_only_definition_tools(self):
+    def test_ontology_skill_exposes_definition_and_single_record_tools(self):
         registry = _load_skill_registry()
         skill = registry["ontology-exploration"]
-        self.assertEqual(skill.tools, ["ontology.classes.list", "ontology.class.context"])
+        self.assertEqual(skill.tools, ["ontology.classes.list", "ontology.class.context", "ontology.rule.evaluate"])
         self.assertEqual(skill.required_skills, [])
         self.assertEqual(skill.max_iterations, 6)
         self.assertIn("native_definition", skill.load_body(registry))

@@ -3,6 +3,8 @@ package api
 import (
 	"errors"
 
+	sharedauth "github.com/addp/common/middleware/auth"
+	systemauthorization "github.com/addp/system/internal/authorization"
 	"github.com/addp/system/internal/middleware"
 	"github.com/gin-gonic/gin"
 	redisv9 "github.com/redis/go-redis/v9"
@@ -103,6 +105,8 @@ func RegisterIAMRoutes(
 	}
 
 	api.POST("/execution-authorizations/:id/engine-accesses", runtime.Authentication, runtime.ServiceCredential, tenantServiceContext, executionAuthorizationExecute, runtime.ExecutionAuthorizationHandler.AuthorizeEngineAccess)
+	api.POST("/runtime/ontology-rule-evaluations/consume", runtime.Authentication, runtime.ServiceCredential, tenantServiceContext,
+		sharedauth.MustNewServiceClientGuard("addp-service"), sharedauth.MustNewPermissionGuard(systemauthorization.PermissionSystemOntologyFactExecute), runtime.DelegationHandler.ConsumeOntologyRuleEvaluation)
 	api.POST("/execution-authorizations/:id/subject-roles", runtime.Authentication, runtime.ServiceCredential, tenantServiceContext, executionAuthorizationExecute, runtime.ExecutionAuthorizationHandler.ResolveSubjectRoles)
 	api.POST("/execution-authorizations/:id/internal-task-accesses", runtime.Authentication, runtime.ServiceCredential, tenantServiceContext, executionAuthorizationExecute, runtime.ExecutionAuthorizationHandler.AuthorizeInternalTask)
 	api.POST("/execution-authorizations/:id/cleanup-accesses", runtime.Authentication, runtime.ServiceCredential, tenantServiceContext, cleanupAuthorizationExecute, runtime.ExecutionAuthorizationHandler.AuthorizeCleanup)

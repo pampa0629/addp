@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"path/filepath"
+	"reflect"
 	"sort"
 	"strconv"
 	"strings"
@@ -441,6 +442,12 @@ func (s *ExecutionEngineService) attachSourceMetaAttributes(ctx context.Context,
 	if item.EngineID != spec.Source.LocatorEngineID() {
 		return fmt.Errorf("source meta item engine_id %d does not match source locator engine id %d", item.EngineID, spec.Source.LocatorEngineID())
 	}
+	if planner.IsFileGDBArchiveTarget(string(spec.Target.Format), spec.Target.Locator, spec.Target.ParentLocator) {
+		loc, err := spec.Source.ResourceLocator()
+		if err != nil || item.ItemType != "table" || item.Fingerprint != commonModels.GenerateItemFingerprint(loc.EngineID, loc.FullName()) {
+			return fmt.Errorf("%w: FileGDB source metadata does not match the selected table", executor.ErrProtectionPreparation)
+		}
+	}
 	spec.Source.Attributes = item.Attributes
 	return nil
 }
@@ -496,14 +503,21 @@ func (s *ExecutionEngineService) runCommonTableTransferData(
 	spec planner.TableExportTaskSpec,
 	resolver planner.EngineResolver,
 ) (*planner.TableTransferBuildResult, *executor.TablePipelineMetrics, error) {
+	var authorizeNative engineplugin.GuardedTableReadAuthorizer
+	if planner.IsFileGDBArchiveTarget(string(spec.Target.Format), spec.Target.Locator, spec.Target.ParentLocator) {
+		var err error
+		resolver, authorizeNative, err = s.fileGDBExportSource(ctx, execution)
+		if err != nil {
+			return nil, nil, err
+		}
+	}
 	buildResult, err := planner.BuildTableTransferPlan(spec, resolver)
 	if err != nil {
 		return nil, nil, fmt.Errorf("build common table transfer plan: %w", err)
 	}
 	if buildResult.Plan.Target.IsFileGDBArchive() {
-		if execution == nil || execution.Source != "manager" || execution.Metadata[models.ExportProtectionMetadataKey] == nil ||
-			buildResult.Plan.Source.Kind != executor.TableEndpointNative || !strings.EqualFold(buildResult.SourceEngine.Type, "postgresql") {
-			return nil, nil, fmt.Errorf("FileGDB archive requires a Manager PostgreSQL export session")
+		if authorizeNative == nil || buildResult.Plan.Source.Kind != executor.TableEndpointNative {
+			return nil, nil, fmt.Errorf("%w: FileGDB archive requires an exact source authorization", executor.ErrProtectionPreparation)
 		}
 	}
 	buildResult.Plan.ProgressCallback = s.tableProgressCallback(task, executionID)
@@ -517,6 +531,7 @@ func (s *ExecutionEngineService) runCommonTableTransferData(
 	if err != nil {
 		return nil, nil, fmt.Errorf("create common table transfer executor: %w", err)
 	}
+	tableExecutor.AuthorizeNativeSource = authorizeNative
 	if err := s.configureInstanceTableProviders(ctx, task.TenantID, spec, buildResult, tableExecutor); err != nil {
 		return nil, nil, fmt.Errorf("configure instance table providers: %w", err)
 	}
@@ -572,6 +587,53 @@ func (s *ExecutionEngineService) runCommonTableTransferData(
 	s.updateTableTargetRefs(executionID, metrics.TargetRefs)
 
 	return buildResult, metrics, nil
+}
+
+func (s *ExecutionEngineService) fileGDBExportSource(ctx context.Context, record *commonExecution.TaskExecution) (planner.EngineResolver, engineplugin.GuardedTableReadAuthorizer, error) {
+	denied := fmt.Errorf("%w: FileGDB export source authorization unavailable", executor.ErrProtectionPreparation)
+	if record == nil || record.Source != commonExecution.ModuleManager || record.SourceTaskID != nil ||
+		record.TenantID <= 0 || record.Metadata[models.ExportProtectionMetadataKey] == nil ||
+		record.ExecutionAuthorizationID == nil || *record.ExecutionAuthorizationID <= 0 ||
+		record.AuthorizationExpiresAt == nil || s.systemRuntime == nil {
+		return nil, nil, denied
+	}
+	lease, ok := commonExecution.LeaseFromContext(ctx)
+	if !ok || lease.ExecutionID != record.ExecutionID || lease.TenantID != record.TenantID || lease.Attempt != record.Attempt {
+		return nil, nil, denied
+	}
+	raw, err := json.Marshal(record.ExecutionConfig)
+	if err != nil {
+		return nil, nil, denied
+	}
+	scope, err := commonExecution.NewFileGDBExportReadScope(raw)
+	if err != nil {
+		return nil, nil, denied
+	}
+	client := s.systemRuntime.WithTenantID(uint(record.TenantID))
+	id := strconv.FormatInt(*record.ExecutionAuthorizationID, 10)
+	request := commonClient.FileGDBExportAccessRequest{
+		ExecutionID: lease.ExecutionID, Attempt: lease.Attempt, LeaseToken: lease.Token, SourceReadScope: *scope,
+	}
+	observed, err := client.CheckFileGDBExportAccess(ctx, id, request)
+	if err != nil {
+		return nil, nil, denied
+	}
+	binding, err := planner.EngineBindingFromEngine(observed.Engine)
+	if err != nil {
+		return nil, nil, denied
+	}
+	target := scope.FileGDBSource.Binding.NativeTarget
+	resolver := planner.NewHybridEngineResolver(planner.StaticEngineResolver{target.EngineID: binding}, s.infraEngineResolver())
+	authorize := func(ctx context.Context, readSet *engineplugin.QueryReadSet, _ []datatype.FieldInfo) error {
+		if readSet == nil || len(readSet.Paths) != 1 || !reflect.DeepEqual(readSet.Paths[0], target) {
+			return denied
+		}
+		if _, err := client.CheckFileGDBExportAccess(ctx, id, request); err != nil {
+			return denied
+		}
+		return nil
+	}
+	return resolver, authorize, nil
 }
 
 func prepareBoundedTableSourceProtection(

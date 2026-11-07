@@ -226,6 +226,9 @@ _WORKSPACE_MESSAGES = {
     'invalid_request': {'zh-cn': '请求参数不合法', 'en': 'Invalid request parameters'},
     'session_deleted': {'zh-cn': '会话已删除', 'en': 'Session deleted'},
     'invalid_plan': {'zh-cn': '任务计划格式不合法', 'en': 'Invalid task plan'},
+    'ontology_object_id_required': {'zh-cn': '请提供本次要求判断的确切业务对象 ID。', 'en': 'Provide the exact business object ID for this evaluation.'},
+    'ontology_rule_binding_required': {'zh-cn': '请先读取当前类上下文并核对可求值规则及其激活版本。', 'en': 'Read the current class context and verify the evaluable rule and active revision first.'},
+    'ontology_rule_evaluation_failed': {'zh-cn': '正式规则求值失败。', 'en': 'The published rule evaluation failed.'},
     'session_missing': {'zh-cn': '会话不存在或无权访问', 'en': 'Session not found or inaccessible'},
     'session_archived': {'zh-cn': '会话已归档，请恢复后继续', 'en': 'Restore this archived session to continue'},
     'version_conflict': {'zh-cn': '会话已变化，请保留修改并重新加载后重试', 'en': 'Session changed; keep your edits and reload before retrying'},
@@ -234,6 +237,21 @@ _WORKSPACE_MESSAGES = {
 
 def workspace_message(accept_language, key):
     return _WORKSPACE_MESSAGES[key][_language(accept_language or 'zh-cn')]
+
+
+def ontology_evaluation_result(accept_language, result):
+    language = _language(accept_language or 'zh-cn')
+    summaries = {
+        'matched': ('该记录符合规则。', 'The record matches the rule.'),
+        'not_matched': ('该记录不符合规则。', 'The record does not match the rule.'),
+        'unknown': ('现有业务证据不足，无法判断该记录是否符合规则。', 'The available business evidence does not establish whether the record matches the rule.'),
+        'error': ('规则求值出错，无法给出业务结论。', 'The rule returned an evaluation error and could not determine the result.'),
+    }
+    ontology, revision, rule = result['ontology_id'], result['revision'], result['rule_id']
+    zh, en = summaries[result['outcome']]
+    if language == 'en':
+        return f'{en} Ontology {ontology}, revision {revision}, rule {rule}.'
+    return f'{zh}依据本体 {ontology} 的修订 {revision}，规则 {rule}。'
 
 
 def transfer_run_result(accept_language, result):

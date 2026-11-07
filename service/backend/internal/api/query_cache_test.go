@@ -43,10 +43,13 @@ func TestQueryDataRefusalsAreNotCacheable(t *testing.T) {
 		{"missing", `{}`, http.StatusNotFound, 0},
 		{"private", `{}`, http.StatusUnauthorized, 0},
 		{"private", `{}`, http.StatusForbidden, 8},
+		{"private", `{"require_untransformed":true}`, http.StatusUnauthorized, 0},
+		{"private", `{"require_untransformed":true}`, http.StatusForbidden, 8},
 		{"inactive", `{}`, http.StatusServiceUnavailable, 0},
 		{"disabled", `{}`, http.StatusNotImplemented, 0},
 		{"public", `{`, http.StatusBadRequest, 0},
 		{"public", `{"format":"invalid"}`, http.StatusBadRequest, 0},
+		{"public", `{"require_untransformed":true}`, http.StatusForbidden, 7},
 	} {
 		t.Run(item.name+item.body+http.StatusText(item.status), func(t *testing.T) {
 			recorder := httptest.NewRecorder()

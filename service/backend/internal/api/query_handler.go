@@ -6,12 +6,14 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"slices"
 	"strconv"
 	"strings"
 
 	commonapi "github.com/addp/common/api"
 	"github.com/addp/common/dataprotection"
 	"github.com/addp/common/engine/plugin"
+	commonauth "github.com/addp/common/middleware/auth"
 	commoni18n "github.com/addp/common/middleware/i18n"
 	servicei18n "github.com/addp/service/i18n"
 	"github.com/addp/service/internal/models"
@@ -409,6 +411,7 @@ func (h *QueryServiceHandler) RefreshSourceSnapshot(c *gin.Context) {
 // @Summary 执行查询服务 | Execute query service
 // @Description 保护门禁拒绝返回 403、data_protection_required 和本地化提示，不返回原始错误或数据 | Protection refusals return 403, data_protection_required and a localized explanation without raw errors or data
 // @Description CSV 中缺失字段及空值输出为空单元格，保留实际字符串与非空标量 | CSV encodes missing and null fields as empty cells while preserving literal strings and non-null scalars
+// @Description require_untransformed 仅用于当前用户的私有 JSON 查询；要求 select、expected_service_id、expected_service_version 和 1 或 2 行首屏。unknown 不交付数据。 | require_untransformed is for private JSON reads by the current user. Requires select, expected_service_id, expected_service_version, and a first page of one or two rows. Unknown delivers no data.
 // @Tags QueryExecution
 // @Accept json
 // @Produce json
@@ -532,6 +535,23 @@ func (h *QueryServiceHandler) QueryData(c *gin.Context) {
 	request.Format = strings.ToLower(strings.TrimSpace(request.Format))
 	if request.Format == "" {
 		request.Format = "json"
+	}
+	if request.RequireUntransformed {
+		facts, user := commonauth.AuthContextFromGin(c)
+		_, application := c.Get(apiConsumerContextKey)
+		validToken := facts.Token.Type == "first_party_access_token" ||
+			(facts.Token.Type == "oauth_access_token" && slices.Contains(facts.Client.Scopes, "addp.api") && slices.Contains(facts.Client.Audiences, "addp.api"))
+		if service.PublicAccess || application || c.GetHeader("X-API-Key") != "" || !user ||
+			facts.Principal.Type != "user" || facts.Delegation != nil || !validToken {
+			auditState.errorCode = "permission_denied"
+			c.JSON(http.StatusForbidden, gin.H{"error": commoni18n.T(c, commoni18n.MsgForbidden), "error_code": auditState.errorCode})
+			return
+		}
+		if intent != "query" {
+			auditState.errorCode = "invalid_query_intent"
+			c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, servicei18n.MsgInvalidQueryIntent), "error_code": auditState.errorCode})
+			return
+		}
 	}
 	if !svc.QueryServiceSupportsRESTFormat(service, request.Format) {
 		auditState.errorCode = "invalid_query_format"

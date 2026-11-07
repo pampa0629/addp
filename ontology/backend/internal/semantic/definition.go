@@ -73,15 +73,15 @@ type Input struct {
 }
 
 type Rule struct {
-	ID         string  `json:"id"`
-	ClassID    string  `json:"class_id"`
-	Expression string  `json:"expression"`
-	Basis      string  `json:"basis"`
-	Inputs     []Input `json:"inputs"`
+	ID             string          `json:"id"`
+	ClassID        string          `json:"class_id"`
+	Expression     string          `json:"expression"`
+	Basis          string          `json:"basis"`
+	Inputs         []Input         `json:"inputs"`
+	ServiceBinding *ServiceBinding `json:"service_binding,omitempty"`
 }
 
-// Definition currently accepts native members only. External owner capture and
-// publication are intentionally not represented by editable placeholder fields.
+// Definition freezes native members and their declared rule inputs together.
 type Definition struct {
 	Scope      Scope      `json:"scope"`
 	Classes    []Class    `json:"classes"`
@@ -320,6 +320,9 @@ func validate(d Definition) (map[string][]string, error) {
 			}
 			variables[input.Variable], bound[input.PropertyID] = true, true
 		}
+		if err := validateServiceBinding(r, properties); err != nil {
+			return nil, err
+		}
 	}
 	return ancestors, nil
 }
@@ -355,5 +358,8 @@ func normalize(d *Definition) {
 			d.Rules[i].Inputs = []Input{}
 		}
 		slices.SortFunc(d.Rules[i].Inputs, func(a, b Input) int { return strings.Compare(a.Variable, b.Variable) })
+		if b := d.Rules[i].ServiceBinding; b != nil {
+			slices.SortFunc(b.Inputs, func(a, b ServiceInput) int { return strings.Compare(a.Variable, b.Variable) })
+		}
 	}
 }

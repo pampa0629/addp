@@ -19,13 +19,21 @@ import (
 )
 
 func (p *MySQLPlugin) OpenTableReadSession(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.EngineCatalogPath, opts plugin.TableReadSessionOptions) (plugin.TableReadSession, error) {
-	return p.openTableReadSession(ctx, connInfo, path, opts, 0, 0, false)
+	return p.openTableReadSession(ctx, connInfo, path, opts, 0, 0, false, nil)
+}
+
+func (p *MySQLPlugin) OpenGuardedTableReadSession(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.EngineCatalogPath,
+	opts plugin.TableReadSessionOptions, authorize plugin.GuardedTableReadAuthorizer) (plugin.TableReadSession, error) {
+	if authorize == nil {
+		return nil, plugin.ErrQueryReadSetUnresolved
+	}
+	return p.openTableReadSession(ctx, connInfo, path, opts, 0, 0, false, authorize)
 }
 
 func (p *MySQLPlugin) readBatch(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.EngineCatalogPath, opts plugin.BatchReadOptions) (*plugin.BatchData, error) {
 	session, err := p.openTableReadSession(ctx, connInfo, path, plugin.TableReadSessionOptions{
 		Query: opts.Query, Args: opts.Args, Hints: opts.Hints,
-	}, opts.Limit, opts.Offset, plugin.PoolEngineVersion(ctx, path.EngineID) > 0)
+	}, opts.Limit, opts.Offset, plugin.PoolEngineVersion(ctx, path.EngineID) > 0, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -34,36 +42,77 @@ func (p *MySQLPlugin) readBatch(ctx context.Context, connInfo plugin.ConnectionI
 }
 
 type mysqlTableSessionConnection interface {
-	QueryContext(context.Context, string, ...any) (*sql.Rows, error)
+	mysqlTableQueryer
 	BeginTx(context.Context, *sql.TxOptions) (*sql.Tx, error)
 	Close() error
 }
 
-func (p *MySQLPlugin) openTableReadSession(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.EngineCatalogPath, opts plugin.TableReadSessionOptions, limit int, offset int64, shared bool) (plugin.TableReadSession, error) {
+type mysqlTableQueryer interface {
+	QueryContext(context.Context, string, ...any) (*sql.Rows, error)
+}
+
+func (p *MySQLPlugin) openTableReadSession(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.EngineCatalogPath, opts plugin.TableReadSessionOptions, limit int, offset int64, shared bool, authorize plugin.GuardedTableReadAuthorizer) (plugin.TableReadSession, error) {
 	if err := resume.RejectUnsupported(opts.ResumeMarker, "mysql.table_read_session"); err != nil {
 		return nil, err
+	}
+	var readSet *plugin.QueryReadSet
+	if authorize != nil {
+		if p.Type() != "mysql" || shared || strings.TrimSpace(opts.Query) != "" || len(opts.Args) != 0 ||
+			len(path.Segments) != 3 || path.Segments[0] != (plugin.EngineCatalogSegment{Term: plugin.EngineCatalogTermServer, Kind: plugin.EngineCatalogTermServer}) ||
+			path.Segments[1].Term != plugin.EngineCatalogTermDatabase || path.Segments[1].Kind != plugin.EngineCatalogKindNamespace ||
+			path.Segments[2].Term != plugin.EngineCatalogTermTable || path.Segments[2].Kind != plugin.EngineCatalogKindTable ||
+			strings.TrimSpace(path.Segments[1].Name) != path.Segments[1].Name ||
+			strings.TrimSpace(path.Segments[2].Name) != path.Segments[2].Name {
+			return nil, plugin.ErrQueryReadSetUnresolved
+		}
+		var err error
+		readSet, err = plugin.NewQueryReadSet(path)
+		if err != nil {
+			return nil, err
+		}
+		path = readSet.Paths[0]
 	}
 	db, err := p.openTableSessionConnection(ctx, connInfo, path.EngineID, shared)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open mysql connection: %w", err)
-	}
-	query, fields, spatialInfo, encoding, err := mysqlReadSessionQuery(ctx, db, path, opts, limit, offset)
-	if err != nil {
-		db.Close()
-		return nil, err
 	}
 	tx, err := db.BeginTx(ctx, &sql.TxOptions{ReadOnly: true, Isolation: sql.LevelRepeatableRead})
 	if err != nil {
 		db.Close()
 		return nil, fmt.Errorf("begin mysql table read session: %w", err)
 	}
+	session := &mysqlTableReadSession{db: db, tx: tx}
+	defer func() {
+		if session.rows == nil {
+			_ = session.Close(ctx)
+		}
+	}()
+	if readSet != nil {
+		parts := path.Segments
+		baseTable, err := lockMySQLInnoDBBaseTable(ctx, tx, parts[1].Name, parts[2].Name)
+		if err != nil {
+			return nil, err
+		}
+		if !baseTable {
+			return nil, plugin.ErrQueryReadSetUnresolved
+		}
+	}
+	query, fields, spatialInfo, encoding, err := mysqlReadSessionQuery(ctx, tx, path, opts, limit, offset)
+	if err != nil {
+		return nil, err
+	}
+	if readSet != nil {
+		if err := authorize(ctx, readSet.Clone(), datatype.CloneFieldInfos(fields)); err != nil {
+			return nil, err
+		}
+		session.readSet = readSet
+	}
 	rows, err := tx.QueryContext(ctx, query, opts.Args...)
 	if err != nil {
-		tx.Rollback()
-		db.Close()
 		return nil, fmt.Errorf("query mysql table read session: %w", err)
 	}
-	return &mysqlTableReadSession{db: db, tx: tx, rows: rows, fields: fields, spatialInfo: spatialInfo, geometryEncoding: encoding}, nil
+	session.rows, session.fields, session.spatialInfo, session.geometryEncoding = rows, fields, spatialInfo, encoding
+	return session, nil
 }
 
 func (p *MySQLPlugin) openTableSessionConnection(ctx context.Context, info plugin.ConnectionInfo, engineID uint, shared bool) (mysqlTableSessionConnection, error) {
@@ -86,7 +135,26 @@ func (p *MySQLPlugin) openTableSessionConnection(ctx context.Context, info plugi
 	return sql.Open("mysql", dsn)
 }
 
-func mysqlReadSessionQuery(ctx context.Context, db mysqlTableSessionConnection, path plugin.EngineCatalogPath, opts plugin.TableReadSessionOptions, limit int, offset int64) (string, []datatype.FieldInfo, *datatype.SpatialInfo, format.GeometryEncoding, error) {
+func lockMySQLInnoDBBaseTable(ctx context.Context, tx *sql.Tx, database, table string) (bool, error) {
+	qualified := mysqlDialect().QualifiedTable(database, table)
+	// A zero-row query holds the metadata lock through the read transaction.
+	rows, err := tx.QueryContext(ctx, "SELECT 1 FROM "+qualified+" LIMIT 0")
+	if err != nil {
+		return false, err
+	}
+	if err := rows.Close(); err != nil {
+		return false, err
+	}
+	// The column metadata query uses the catalog's comparison semantics.
+	// Refuse ambiguous names even when the live table uses a binary match.
+	var matchingNames, exactBaseTables int
+	err = tx.QueryRowContext(ctx, `SELECT COUNT(*), COUNT(CASE WHEN BINARY TABLE_SCHEMA=? AND BINARY TABLE_NAME=?
+		AND TABLE_TYPE='BASE TABLE' AND ENGINE='InnoDB' THEN 1 END) FROM information_schema.tables
+		WHERE TABLE_SCHEMA=? AND TABLE_NAME=?`, database, table, database, table).Scan(&matchingNames, &exactBaseTables)
+	return matchingNames == 1 && exactBaseTables == 1, err
+}
+
+func mysqlReadSessionQuery(ctx context.Context, db mysqlTableQueryer, path plugin.EngineCatalogPath, opts plugin.TableReadSessionOptions, limit int, offset int64) (string, []datatype.FieldInfo, *datatype.SpatialInfo, format.GeometryEncoding, error) {
 	encoding := mysqlGeometryEncodingHint(opts.Hints)
 	query := strings.TrimSpace(opts.Query)
 	if query != "" {
@@ -302,12 +370,20 @@ type mysqlTableReadSession struct {
 	db               mysqlTableSessionConnection
 	tx               *sql.Tx
 	rows             *sql.Rows
+	readSet          *plugin.QueryReadSet
 	fields           []datatype.FieldInfo
 	spatialInfo      *datatype.SpatialInfo
 	geometryEncoding format.GeometryEncoding
 	offset           int64
 	exhausted        bool
 	closed           bool
+}
+
+func (s *mysqlTableReadSession) ReadSet(context.Context) (*plugin.QueryReadSet, error) {
+	if s.readSet == nil {
+		return nil, plugin.ErrQueryReadSetUnresolved
+	}
+	return s.readSet.Clone(), nil
 }
 
 func (s *mysqlTableReadSession) ReadBatch(_ context.Context, limit int) (*plugin.BatchData, error) {

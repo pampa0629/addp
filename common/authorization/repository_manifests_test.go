@@ -45,10 +45,14 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 		t.Fatalf("LoadRepositoryAuthorizationCatalog() error = %v", err)
 	}
 	descriptors := report.Permissions
-	if len(descriptors) != 542 {
-		t.Fatalf("descriptor count = %d, want 542", len(descriptors))
+	if len(descriptors) != 544 {
+		t.Fatalf("descriptor count = %d, want 544", len(descriptors))
 	}
 	for _, descriptor := range descriptors {
+		if (descriptor.Key == "service.ontology_fact.read" || descriptor.Key == "system.ontology_fact.execute") &&
+			(descriptor.TenantCustomizable || descriptor.Delegable || !reflect.DeepEqual(descriptor.AllowedScopeTypes, []string{"tenant"})) {
+			t.Fatalf("ontology fact permission escaped its fixed runtime scope: %+v", descriptor)
+		}
 		if descriptor.Key == "system.meta_collection.execute" && (descriptor.Delegable || !reflect.DeepEqual(descriptor.AllowedScopeTypes, []string{"tenant"}) || descriptor.TenantCustomizable == (descriptor.Action == "execute")) {
 			t.Fatalf("collection permission escaped its fixed scope: %+v", descriptor)
 		}
@@ -180,7 +184,7 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 	assertRepositoryRolePrincipalTypes(t, roles, "tenant.system_runtime", []string{"service_principal"})
 	assertRepositoryRolePermissions(t, roles, "platform.duckdb_runtime", []string{"system.runtime_registry.update"})
 	assertRepositoryRolePermissions(t, roles, "tenant.duckdb_runtime", []string{"system.execution_authorization.execute"})
-	assertRepositoryRolePermissions(t, roles, "tenant.ontology_runtime", []string{"system.execution_authorization.execute"})
+	assertRepositoryRolePermissions(t, roles, "tenant.ontology_runtime", []string{"service.ontology_fact.read", "system.execution_authorization.execute"})
 	assertRepositoryRolePermissions(t, roles, "platform.ontology_runtime", []string{PlatformDefinitionPublishPermission, "system.runtime_registry.update"})
 	assertRepositoryRolePrincipalTypes(t, roles, "platform.ontology_runtime", []string{"service_principal"})
 	assertRepositoryRolePrincipalTypes(t, roles, "tenant.ontology_runtime", []string{"service_principal"})
@@ -521,6 +525,7 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 		"system.engine_catalog.read",
 		"system.engine_descriptor.read",
 		"system.execution_authorization.execute",
+		"system.ontology_fact.execute",
 	})
 	assertRepositoryRolePermissions(t, roles, "tenant.asset_consumer", []string{
 		"asset.application.create",

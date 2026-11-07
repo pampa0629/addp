@@ -2,13 +2,21 @@ package repository
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"testing"
 	"time"
 
+	commonAPI "github.com/addp/common/api"
+	commonClient "github.com/addp/common/client"
+	"github.com/addp/common/dataitem/authorizationfacts"
+	"github.com/addp/common/engine/plugin"
 	commonExecution "github.com/addp/common/execution"
 	"github.com/addp/common/execution/executiontest"
+	commonModels "github.com/addp/common/models"
 	"github.com/addp/transfer/internal/models"
+	"github.com/google/uuid"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 )
@@ -132,6 +140,107 @@ func TestBoundedExecutionClaimUsesDatabaseLeaseAndRecoveryFailsClosed(t *testing
 	if storedTask.Status != models.TaskStatusIdle || storedTask.LastExecutionStatus == nil || *storedTask.LastExecutionStatus != commonExecution.ExecutionStatusFailed {
 		t.Fatalf("recovered task = %#v", storedTask)
 	}
+}
+
+func TestBoundedClaimWaitsForFileGDBSourceAuthorization(t *testing.T) {
+	testBoundedClaimWaitsForFileGDBSourceAuthorization(t, newTaskRepositoryTestDB(t))
+}
+
+func testBoundedClaimWaitsForFileGDBSourceAuthorization(t *testing.T, db *gorm.DB) {
+	t.Helper()
+	ctx := context.Background()
+	exportID, ordinaryID, abandonedID := uuid.NewString(), uuid.NewString(), uuid.NewString()
+	ids := []string{exportID, ordinaryID, abandonedID}
+	repo := NewTaskRepository(db.Where("execution_id IN ?", ids))
+	t.Cleanup(func() {
+		if err := db.Where("execution_id IN ?", ids).Delete(&commonExecution.TaskExecution{}).Error; err != nil {
+			t.Error(err)
+		}
+	})
+	now := time.Now().UTC()
+	principal, membership, version, actor := int64(11), int64(12), int64(3), 11
+	target := plugin.TabularItemPath(5, "schema", "business", "roads")
+	binding, err := authorizationfacts.NativeCandidateBinding(target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	export := commonExecution.TaskExecution{
+		ExecutionID: exportID, TenantID: 7, Module: commonExecution.ModuleTransfer,
+		TaskType: commonExecution.TaskTypeSync, Source: "manager", Status: commonExecution.ExecutionStatusPending,
+		ExecutionBoundary: commonExecution.ExecutionBoundaryBounded, TriggerType: commonExecution.TriggerTypeManual,
+		MaxAttempts: 1,
+		ExecutionConfig: commonModels.JSONMap{
+			"runtime": map[string]any{"boundary": "bounded"}, "load": map[string]any{"mode": "snapshot"},
+			"filegdb_source": commonExecution.FileGDBExportSource{EngineVersion: "1", Binding: binding},
+			"source":         map[string]any{"locator": "addp://engine/5/path/business/roads?type=table", "data_type": "table", "representation": "native"},
+			"target": map[string]any{"parent_locator": "addp-infra://minio/manager/tenant_7/export/manager/session?type=prefix", "name": "roads.gdb.zip",
+				"data_type": "table", "representation": "encoded", "format": "filegdb"},
+		},
+		Metadata:    commonModels.JSONMap{models.ExportProtectionMetadataKey: &models.ExportProtectionReceipt{}},
+		TriggeredBy: &actor, ActorPrincipalID: &principal, ActorTenantMembershipID: &membership, IssuedAuthorizationVersion: &version,
+		CreatedAt: now.Add(-time.Minute),
+	}
+	ordinary := export
+	ordinary.ExecutionID, ordinary.CreatedAt = ordinaryID, now
+	ordinary.ExecutionConfig = commonModels.JSONMap{"source": map[string]any{"data_type": "table"}}
+	abandoned := export
+	abandoned.ExecutionID, abandoned.CreatedAt = abandonedID, now.Add(-3*time.Minute)
+	for _, item := range []*commonExecution.TaskExecution{&export, &ordinary, &abandoned} {
+		if err := commonExecution.CreatePending(ctx, db, item); err != nil {
+			t.Fatal(err)
+		}
+	}
+	claim := func(want string) {
+		t.Helper()
+		row, lease, err := repo.ClaimNextBoundedExecution(ctx, "transfer-bounded-worker-1", time.Minute)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if want == "" {
+			if row != nil || lease != nil {
+				t.Fatal("worker claimed an incomplete FileGDB authorization")
+			}
+			return
+		}
+		if row == nil || lease == nil || row.ExecutionID != want || lease.Attempt != 1 {
+			t.Fatalf("claim = %#v, lease = %#v, want %s on first attempt", row, lease, want)
+		}
+	}
+	claim(ordinary.ExecutionID)
+	claim("")
+	if count, err := repo.FailExpiredBoundedExecutions(ctx, 10); err != nil || count != 1 {
+		t.Fatalf("recovered %d executions, want only the abandoned FileGDB preparation: %v", count, err)
+	}
+	var rejected commonExecution.TaskExecution
+	if err := db.First(&rejected, abandoned.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if rejected.Status != commonExecution.ExecutionStatusFailed || rejected.Attempt != 0 || rejected.StartedAt != nil ||
+		rejected.ErrorDetails["code"] != "transfer.execution.source_authorization_required" {
+		t.Fatalf("abandoned FileGDB preparation = %#v", rejected)
+	}
+	raw, err := json.Marshal(export.ExecutionConfig)
+	if err != nil {
+		t.Fatal(err)
+	}
+	scope, err := commonExecution.NewFileGDBExportReadScope(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	issued := commonClient.IssuedFileGDBExportAuthorization{ID: "17", TenantID: "7", Audience: commonExecution.AudienceTransfer,
+		ExecutionID: exportID, ExpiresAt: now.Add(time.Hour).Truncate(time.Microsecond), SourceReadScope: *scope}
+	changed := issued
+	changed.SourceReadScope.FileGDBSource.EngineVersion = "2"
+	if err := repo.BindFileGDBExportAuthorization(ctx, 7, exportID, &changed); !errors.Is(err, commonAPI.ErrForbidden) {
+		t.Fatalf("modified source authorization admitted: %v", err)
+	}
+	claim("")
+	for range 2 {
+		if err := repo.BindFileGDBExportAuthorization(ctx, 7, exportID, &issued); err != nil {
+			t.Fatal(err)
+		}
+	}
+	claim(export.ExecutionID)
 }
 
 func TestTargetOverrideExecutionExpiredLeaseFailsClosed(t *testing.T) {

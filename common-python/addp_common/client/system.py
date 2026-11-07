@@ -27,6 +27,7 @@ class SystemClient(BaseClient):
         scopes: List[str],
         agent_run_id: str,
         tool_call_id: str,
+        rule_evaluation: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         """Issue one short-lived delegated token for an ADDP Tool call."""
         response = await self.post(
@@ -36,6 +37,7 @@ class SystemClient(BaseClient):
                 "scopes": scopes,
                 "agent_run_id": agent_run_id,
                 "tool_call_id": tool_call_id,
+                **({"rule_evaluation": rule_evaluation} if rule_evaluation is not None else {}),
             },
         )
         if not isinstance(response, dict) or not str(response.get("access_token") or "").startswith("addp_dat_"):

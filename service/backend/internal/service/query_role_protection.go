@@ -17,6 +17,7 @@ import (
 )
 
 type queryProtectionUserKey struct{}
+type ontologyFactRolesKey struct{}
 type queryProtectionUser struct {
 	facts  authorization.AuthContext
 	bearer string
@@ -27,12 +28,23 @@ func WithQueryProtectionUser(ctx context.Context, facts authorization.AuthContex
 	return context.WithValue(ctx, queryProtectionUserKey{}, queryProtectionUser{authorization.CloneAuthContext(facts), bearer})
 }
 
+// WithOntologyFactRoles carries the System observation from the one-time claim.
+func WithOntologyFactRoles(ctx context.Context, roles *authorization.CurrentSubjectRoles) context.Context {
+	return context.WithValue(ctx, ontologyFactRolesKey{}, roles)
+}
+
 type queryRoleGate interface {
 	RoleOptions(context.Context, int64, dataprotection.ResourceReference, []string) ([]dataprotection.FieldRoleOptions, error)
 	ValidateRoleChoices(context.Context, int64, *dataprotection.QueryRoleSelection) error
 }
 
 func (s *QueryExecutorService) currentProtectionRoles(ctx context.Context, tenant uint) (*authorization.CurrentSubjectRoles, error) {
+	if roles, ok := ctx.Value(ontologyFactRolesKey{}).(*authorization.CurrentSubjectRoles); ok {
+		if roles == nil || roles.TenantID != strconv.FormatUint(uint64(tenant), 10) || !roles.ExpiresAt.After(time.Now()) {
+			return nil, dataprotection.ErrRoleOptionIneligible
+		}
+		return roles, nil
+	}
 	user, ok := ctx.Value(queryProtectionUserKey{}).(queryProtectionUser)
 	if !ok || user.facts.Context.TenantID == nil || *user.facts.Context.TenantID != strconv.FormatUint(uint64(tenant), 10) || s == nil || s.systemService == nil {
 		return nil, dataprotection.ErrRoleOptionIneligible

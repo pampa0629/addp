@@ -1435,6 +1435,111 @@ const docTemplate = `{
                 ]
             }
         },
+        "/ontologies/{ontology_id}/semantic/rules/{rule_id}/evaluate": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "使用已发布规则的版本化服务绑定；保护变换或证据不可确认时返回 unknown，不交付原始业务字段。 | Uses the published rule's versioned service binding; returns unknown when protected transformations or incomplete evidence prevent verification, with no raw business fields.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Ontology"
+                ],
+                "summary": "求值单条业务记录 | Evaluate a single business record",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "本体标识 | Ontology identifier",
+                        "name": "ontology_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "规则标识 | Rule identifier",
+                        "name": "rule_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "激活身份与对象标识 | Active identity and object identifier",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.BusinessEvaluationRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.BusinessEvaluationResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "413": {
+                        "description": "Request Entity Too Large",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "delegated_tool",
+                "x-addp-required-permissions": [
+                    "ontology.semantic.read"
+                ]
+            }
+        },
         "/ontologies/{ontology_id}/semantic/rules/{rule_id}/trial": {
             "post": {
                 "security": [
@@ -2129,6 +2234,32 @@ const docTemplate = `{
                 }
             }
         },
+        "github_com_addp_ontology_internal_semantic.ContextRule": {
+            "type": "object",
+            "properties": {
+                "basis": {
+                    "type": "string"
+                },
+                "business_evaluable": {
+                    "type": "boolean"
+                },
+                "class_id": {
+                    "type": "string"
+                },
+                "expression": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "inputs": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_ontology_internal_semantic.Input"
+                    }
+                }
+            }
+        },
         "github_com_addp_ontology_internal_semantic.Decision": {
             "type": "object",
             "properties": {
@@ -2311,6 +2442,9 @@ const docTemplate = `{
                     "items": {
                         "$ref": "#/definitions/github_com_addp_ontology_internal_semantic.Input"
                     }
+                },
+                "service_binding": {
+                    "$ref": "#/definitions/github_com_addp_ontology_internal_semantic.ServiceBinding"
                 }
             }
         },
@@ -2325,6 +2459,53 @@ const docTemplate = `{
                 },
                 "tenant_id": {
                     "type": "integer"
+                }
+            }
+        },
+        "github_com_addp_ontology_internal_semantic.ServiceBinding": {
+            "type": "object",
+            "properties": {
+                "id_field": {
+                    "type": "string"
+                },
+                "id_parameter": {
+                    "type": "string"
+                },
+                "inputs": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_ontology_internal_semantic.ServiceInput"
+                    }
+                },
+                "service_id": {
+                    "type": "integer"
+                },
+                "service_name": {
+                    "type": "string"
+                },
+                "service_version": {
+                    "type": "string"
+                },
+                "time_zone": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_addp_ontology_internal_semantic.ServiceInput": {
+            "type": "object",
+            "properties": {
+                "conversion": {
+                    "type": "string",
+                    "enum": [
+                        "string",
+                        "date_on_or_before_observation"
+                    ]
+                },
+                "field": {
+                    "type": "string"
+                },
+                "variable": {
+                    "type": "string"
                 }
             }
         },
@@ -2345,6 +2526,65 @@ const docTemplate = `{
                 },
                 "version": {
                     "type": "integer"
+                }
+            }
+        },
+        "internal_api.BusinessEvaluationRequest": {
+            "type": "object",
+            "required": [
+                "activation_version",
+                "generation",
+                "object_id",
+                "revision"
+            ],
+            "properties": {
+                "activation_version": {
+                    "type": "integer"
+                },
+                "generation": {
+                    "type": "string"
+                },
+                "object_id": {
+                    "type": "string",
+                    "maxLength": 512
+                },
+                "revision": {
+                    "type": "integer"
+                }
+            }
+        },
+        "internal_api.BusinessEvaluationResponse": {
+            "type": "object",
+            "properties": {
+                "activation_version": {
+                    "type": "integer"
+                },
+                "decision": {
+                    "$ref": "#/definitions/github_com_addp_ontology_internal_semantic.Decision"
+                },
+                "digest": {
+                    "type": "string"
+                },
+                "generation": {
+                    "type": "string"
+                },
+                "knowledge_kind": {
+                    "type": "string"
+                },
+                "observation_date": {
+                    "type": "string"
+                },
+                "ontology_id": {
+                    "type": "string"
+                },
+                "revision": {
+                    "type": "integer"
+                },
+                "service_id": {
+                    "type": "integer"
+                },
+                "service_version": {
+                    "type": "string"
                 }
             }
         },
@@ -2393,7 +2633,7 @@ const docTemplate = `{
                 "rules": {
                     "type": "array",
                     "items": {
-                        "$ref": "#/definitions/github_com_addp_ontology_internal_semantic.Rule"
+                        "$ref": "#/definitions/github_com_addp_ontology_internal_semantic.ContextRule"
                     }
                 }
             }

@@ -7,6 +7,9 @@ import (
 	"testing"
 
 	commonClient "github.com/addp/common/client"
+	"github.com/addp/common/dataitem/authorizationfacts"
+	"github.com/addp/common/engine/plugin"
+	"github.com/addp/common/execution"
 	"github.com/addp/common/format"
 	commonModels "github.com/addp/common/models"
 	"github.com/minio/minio-go/v7"
@@ -85,6 +88,57 @@ func TestCreateOwnsInfraTargetAndDisablesMetadataScan(t *testing.T) {
 	}
 	if request.Config.Target.Locator != "" || request.Config.Target.Name != "orders.csv" {
 		t.Fatalf("target = %#v", request.Config.Target)
+	}
+}
+
+func TestFileGDBCreateAdmitsOnlyAfterFreezingSessionAndPendingExecution(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := EnsureStore(db, "export_sessions"); err != nil {
+		t.Fatal(err)
+	}
+	transfer := &transferStub{}
+	store := NewGormStore(db, "export_sessions")
+	service := NewService(transfer, store, testMinIOClient(t), "manager", "manager", "/api/v1/manager/exports")
+	binding, err := authorizationfacts.NativeCandidateBinding(plugin.TabularItemPath(5, "schema", "business", "roads"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	const locator = "addp://engine/5/path/business/roads?type=table"
+	denied := errors.New("source authorization denied")
+	_, err = service.Create(t.Context(), CreateRequest{
+		TenantID: 7, UserID: 9, SourceRef: locator, Format: format.FormatFileGDB, FileName: "roads",
+		FileGDBActor: &commonClient.FileGDBExportActor{PrincipalID: 9, TenantMembershipID: 10, AuthorizationVersion: 3},
+		ExecutionConfig: commonClient.TransferExecutionConfig{
+			FileGDBSource: &execution.FileGDBExportSource{EngineVersion: "1", Binding: binding},
+			Source:        commonClient.TransferExecutionEndpoint{Locator: locator, DataType: "table", Representation: "native"},
+			Target:        commonClient.TransferExecutionEndpoint{DataType: "table", Representation: "encoded", Format: "filegdb"},
+		},
+		AdmitFileGDB: func(ctx context.Context, id string, cfg commonClient.TransferExecutionConfig) error {
+			request := transfer.request
+			if request == nil || request.ExportSession.ExecutionID != id || cfg.Target.Name != "roads.gdb.zip" {
+				t.Fatal("admission did not receive the frozen pending export")
+			}
+			digest, err := commonClient.ExportRequestDigest(request)
+			if err != nil {
+				t.Fatal(err)
+			}
+			provenance := commonClient.ExportExecutionSourceRequest{ExecutionID: id, RequestDigest: digest}
+			session, err := store.GetExecutionSource(ctx, request.ExportSession.SessionID, 7, provenance)
+			if err != nil || session == nil || session.UserID != 9 {
+				t.Fatalf("pending owner session is not observable: %v", err)
+			}
+			return denied
+		},
+	})
+	if !errors.Is(err, denied) {
+		t.Fatalf("source denial was lost: %v", err)
+	}
+	session, err := store.Get(t.Context(), transfer.request.ExportSession.SessionID, 7, 9)
+	if err != nil || session == nil || session.Status != StatusFailed {
+		t.Fatalf("denied export session did not close: %v", err)
 	}
 }
 

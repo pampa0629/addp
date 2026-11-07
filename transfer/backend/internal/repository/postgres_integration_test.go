@@ -25,6 +25,24 @@ func (runtimeLeaseMigrationFixture) TableName() string {
 	return "transfer_runtime_lease_migration_test.runtime_leases"
 }
 
+func TestIntegrationPostgresFileGDBClaimWaitsForSourceAuthorization(t *testing.T) {
+	if os.Getenv("ADDP_POSTGRES_INTEGRATION") != "1" {
+		t.Skip("set ADDP_POSTGRES_INTEGRATION=1 to run PostgreSQL integration test")
+	}
+	dsn, err := (&postgresql.PostgreSQLPlugin{}).BuildDSN(testpg.ConnInfoFromEnv(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	db, err := gorm.Open(postgresdriver.Open(dsn), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := commonExecution.EnsureStore(db); err != nil {
+		t.Fatal(err)
+	}
+	testBoundedClaimWaitsForFileGDBSourceAuthorization(t, db)
+}
+
 func TestIntegrationPostgresExecutionEventsRemoveRetiredText(t *testing.T) {
 	if os.Getenv("ADDP_POSTGRES_INTEGRATION") != "1" {
 		t.Skip("set ADDP_POSTGRES_INTEGRATION=1 to run PostgreSQL integration test")

@@ -313,6 +313,8 @@ Authorization: Bearer <current_user_access_token>
 11. `(agent_run_id, tool_call_id)` 是一次 Tool Call 的幂等冲突边界；已存在时返回 HTTP 409，不返回或复用之前的明文 Token。
 12. owner 模块对委托令牌默认拒绝，只在挂载 Delegated Route Guard 的 Tool Manifest 精确路由校验唯一 audience、required scopes 精确集合和 Role Permission all-of 后进入 Handler；额外 Scope 也拒绝。必要审批继续由 owner Handler 校验，审批闭环尚未启用的 write Tool 必须返回 403。非委托的第一方 Web 和 OAuth API 调用继续执行原 Principal 的 Role Permission 与 owner 资源授权路径。
 
+`ontology.rule.evaluate` 的签发必须带完整单记录求值绑定。System 在现有事务内附加验证租户级 `service.data_read.execute`，保存绑定摘要。此权限的不可委托属性仍适用于通用查询。Ontology 用机器身份调用 Service 的固定事实入口，传原调用标识及绑定。Service 用固定机器身份在 System 原子消费记录，核验摘要、Tenant、源凭据、当前 User 和功能权限。每条记录至多消费一次。调用标识不具备独立访问权，消费也不签发第二枚令牌。对象标识不写入授权记录或授权审计正文。
+
 委托签发错误语义固定为：非法 JSON、未知 Tool 或 audience/Scope 不匹配返回 400 + `invalid_delegation_request`；源 Token 无效返回 401 + `authentication_required`；Role Permission 不足或 OAuth Scope 扩张返回 403 + `permission_denied`；AgentRun/ToolCall 冲突返回 409 + `delegation_conflict`；内部故障返回 500 + `delegation_internal_error`。稳定机器语义放在可选 `error_code`，对外 `error` 使用国际化消息，不得暴露 Token 失效、授权事实或数据库约束的内部原因。
 
 成功响应只返回短期委托令牌及其明确边界：
