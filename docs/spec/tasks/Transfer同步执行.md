@@ -401,7 +401,7 @@ continuous 的 Owner 信号和 schema blocked 恢复沿[专用告警契约](#con
 
 #### 运行控制与执行身份
 
-- `start` 原子设置 `desired_state=running` 并创建 pending execution；`pause` 设置 `paused`，`resume` 设置 `running` 并创建新 execution，`stop` 设置 `stopped`。
+- `start` 原子设置 `desired_state=running` 并创建 `status=pending` 的 execution。`pause` 设置 `desired_state=paused`，`resume` 设置 `desired_state=running` 并创建新的 pending execution，`stop` 设置 `desired_state=stopped`。
 - 同一 task 已有合法 active session 时不得重复创建 execution。
 - 每次启动或自动恢复都创建新的 pending execution；一个 execution 对应一个 runtime session，结束后不得重新变回 running。
 

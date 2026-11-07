@@ -133,11 +133,11 @@ Console 与 Transfer 页面使用 `/task-definitions`。每次请求独立校验
 | `GET` | `/task-definitions/:id` | `read` | 查询任务定义详情。 |
 | `PUT` | `/task-definitions/:id` | `update` | 更新任务定义。 |
 | `DELETE` | `/task-definitions/:id` | `delete` | 删除任务定义；运行态与私有状态清理前提见[任务删除](../transfer-任务语义与同步模式.md#51-私有状态与任务删除)。 |
-| `POST` | `/task-definitions/:id/start` | `execute` | bounded 创建 execution 并入队；continuous 原子设置 running 并创建 pending execution。 |
+| `POST` | `/task-definitions/:id/start` | `execute` | bounded 创建 execution 并入队。continuous 原子设置 `desired_state=running` 并创建 `status=pending` 的 execution。 |
 | `POST` | `/task-definitions/:id/replay` | `execute` | 业务 Kafka 的独立 bounded replay；范围与主状态隔离见[Checkpoint 与 Replay](../transfer-任务语义与同步模式.md#五状态checkpoint-与-replay)。 |
-| `POST` | `/task-definitions/:id/pause` | `update` | bounded 关闭 owner schedule；continuous 设置 paused 并通知 runtime 取消 execution。 |
-| `POST` | `/task-definitions/:id/resume` | `update` | bounded 恢复 owner schedule。符合恢复资格的 continuous 设置 running 并创建新 pending execution。CDC `status=blocked` 返回 `409 Conflict`。 [CDC 恢复资格与拒绝条件](../../../docs/spec/tasks/Transfer数据库CDC.md#恢复资格与终态判定) |
-| `POST` | `/task-definitions/:id/stop` | `update` | 仅 continuous：设置 stopped 并通知 runtime 取消 execution。 |
+| `POST` | `/task-definitions/:id/pause` | `update` | bounded 关闭 owner schedule。continuous 设置 `desired_state=paused` 并通知 runtime 取消 execution。 |
+| `POST` | `/task-definitions/:id/resume` | `update` | bounded 恢复 owner schedule。符合恢复资格的 continuous 设置 `desired_state=running` 并创建 `status=pending` 的新 execution。CDC 任务 `status=blocked` 时返回 `409 Conflict`。 [CDC 恢复资格与拒绝条件](../../../docs/spec/tasks/Transfer数据库CDC.md#恢复资格与终态判定) |
+| `POST` | `/task-definitions/:id/stop` | `update` | 仅用于 continuous，设置 `desired_state=stopped` 并通知 runtime 取消 execution。 |
 | `GET` | `/task-definitions/:id/schema-change` | `read` | 查询当前数据库 CDC schema change request 与可审批建议。 |
 | `POST` | `/task-definitions/:id/schema-change/approve` | `update` | 审批当前可处理的 PostgreSQL／MySQL additive request。审批落库后任务为 `status=idle, desired_state=paused`，由用户另行 Resume。 [审批提交与实时源复核](../../../docs/spec/tasks/Transfer数据库CDC.md#审批提交与实时源复核) |
 | `GET` | `/task-definitions/:id/dead-letters` | `read` | 查询当前任务的 DLQ 安全控制索引。 |

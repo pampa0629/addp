@@ -59,7 +59,7 @@ transfer/
 
 ## 核心 API
 
-Agent `transfer.task.create` 使用精确 `audience=transfer`／同名 Scope 与当前 Tenant 创建权限，只保存禁用、无调度和无自动扫描的 bounded snapshot native table 任务，初始状态为 idle/stopped。Owner 再次校验，不继承运行授权、不创建 execution 或读写业务数据；该创建委托不得用于其他路由，也不增加角色权限。创建限制、不确定结果处理、Ontology 平台定义及资源 Owner 分工统一见[Transfer Tool 契约](../docs/spec/addp智能体Tool开放规范.md#47-平台-transfer-语义与创建)，不在 Transfer 保存第二份平台定义。
+Agent `transfer.task.create` 使用精确 `audience=transfer`／同名 Scope 与当前 Tenant 创建权限，只保存禁用、无调度和无自动扫描的 bounded snapshot native table 任务，初始持久字段为 `status=idle, desired_state=stopped`，其中 bounded 任务不消费 `desired_state`。Owner 再次校验，不继承运行授权、不创建 execution 或读写业务数据；该创建委托不得用于其他路由，也不增加角色权限。创建限制、不确定结果处理、Ontology 平台定义及资源 Owner 分工统一见[Transfer Tool 契约](../docs/spec/addp智能体Tool开放规范.md#47-平台-transfer-语义与创建)，不在 Transfer 保存第二份平台定义。
 
 `transfer.task.start` 的独立委托只进入原 start 路由，要求当前 Tenant 的 execute/read 权限交集；首次只保存 `transfer.run_approvals` 中的一次性审批，不创建 execution。用户在 Agent 卡片手动确认，浏览器直接以本人身份调用 Transfer 决定接口；Delegated／Service 不能代批。审批绑定用户、Membership、授权版本、AgentRun 和全部任务执行输入，配置变化拒绝；同一 task lock／事务消费批准并关联唯一执行，拒绝／过期／失败均不自动重试。首期只运行无调度、未启用、无自动扫描的 bounded/snapshot/native table，replace/append，不借用特殊角色保护方式；既有 System／Worker 的实际授权与 Security 校验保持。读取使用精确 `transfer.execution.get` 及原专业执行接口的受限投影，不能从受理推导完成，详见[运行契约](../docs/spec/addp智能体Tool开放规范.md#48-transfer-运行审批与执行读取)。
 

@@ -38,9 +38,10 @@
 | `enabled` | 定时任务是否启用。 |
 | `auto_scan_metadata` | 成功后是否触发 Meta deep scan，默认 true。 |
 | `status` | 任务实际状态：`idle`、`running`、`blocked`；`blocked` 当前用于数据库 CDC schema drift，审批成功后收敛为 `idle`。 |
+| `desired_state` | continuous runtime 的用户期望状态：`running`、`paused`、`stopped`，初始为 `stopped`。bounded 任务不消费该字段。 |
 | `progress` | 任务进度百分比。 |
 
-任务状态只表达当前任务是否正在运行；成功或失败等结果在统一执行记录中查看。
+任务 `status`、continuous 的 `desired_state` 和最近 execution 的状态分别维护。成功、失败等运行结果从对应的统一执行记录读取。 [期望与实际运行状态](../../docs/spec/tasks/Transfer同步执行.md#用户期望与实际运行状态) · [执行状态枚举](../../docs/spec/tasks/执行记录与租约.md#执行状态枚举)
 
 ### 1.2 执行记录
 
