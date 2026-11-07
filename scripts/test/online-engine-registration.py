@@ -149,8 +149,8 @@ def source_grant_participants(authorizer, consumer, tenant_id, *, scan_preparati
     return initializer_id, recipient_id
 
 
-class ExactFileMetadataGrants:
-    """Existing metadata-only Grant contract; never a content completeness proof."""
+class _ExactMetadataGrantLifecycle:
+    """Shared formal identity, visibility observations and precise revocation."""
     def __init__(self, authorizer, consumer, tenant_id, *, on_change=None, on_evidence=None, scan_preparation=False):
         self.phase = 'participants'
         self.operator, self.recipient = source_grant_participants(authorizer, consumer, tenant_id, scan_preparation=scan_preparation)
@@ -163,6 +163,38 @@ class ExactFileMetadataGrants:
         if self.on_change is not None:
             self.on_change(self.pending)
 
+    def observe(self, target, visible, *, phase='visibility_check'):
+        self.phase=phase
+        result = self.consumer.request('POST', '/api/v1/system/engine-access/metadata-checks/meta-query',
+                                       (200,), {'targets': [target]}).payload
+        if (not isinstance(result, dict) or not result.get('observed_at')
+            or result.get('targets') != [dict(target=target, visible=visible)]):
+            raise MetadataGrantError(phase,'visibility_mismatch')
+
+    def cleanup(self):
+        errors = []
+        for row in list(self.pending):
+            try:
+                self.phase='grant_revoke'
+                self.authorizer.request('POST', f"/api/v1/system/engines/{row['engine']}/access_grants/{row['request_id']}/revoke",
+                    (200,) if row['confirmed'] else (200,404), {'reason':'Disposable Online metadata cleanup'})
+                self.observe(row['target'],False,phase='visibility_after_revoke')
+                self.pending.remove(row)
+                self.checkpoint()
+            except Exception as error:
+                errors.append(row['request_id'])
+                if self.on_evidence:
+                    try:self.on_evidence({'stage':'failure','request_id':row['request_id'],
+                        'error':metadata_error_evidence(error,self.phase)})
+                    except Exception:errors.append('evidence_write_failed')
+        if errors:
+            raise MetadataGrantError('cleanup','revoke_or_visibility_failed')
+        return {'grants_revoked': True, 'metadata_hidden': True}
+
+
+
+class ExactFileMetadataGrants(_ExactMetadataGrantLifecycle):
+    """Existing metadata-only file contract; never a content completeness proof."""
     @staticmethod
     def target(engine, full_name, storage, *, layout='single'):
         parts = full_name.split('/') if isinstance(full_name, str) else []
@@ -181,14 +213,6 @@ class ExactFileMetadataGrants:
             segments += [dict(term='directory', kind='directory', name=p) for p in parts[:-1]]
             segments += [dict(term='file', kind='file', name=parts[-1])]
         return dict(version='catalog.path/v1', engine_id=engine, segments=segments)
-
-    def observe(self, target, visible, *, phase='visibility_check'):
-        self.phase=phase
-        result = self.consumer.request('POST', '/api/v1/system/engine-access/metadata-checks/meta-query',
-                                       (200,), {'targets': [target]}).payload
-        if (not isinstance(result, dict) or not result.get('observed_at')
-            or result.get('targets') != [dict(target=target, visible=visible)]):
-            raise MetadataGrantError(phase,'visibility_mismatch')
 
     def metadata_facts(self, engine, full_name, storage, *, data_type, format_name, layouts):
         if (not isinstance(layouts,tuple) or not layouts
@@ -283,25 +307,46 @@ class ExactFileMetadataGrants:
         self.observe(target,True,phase='visibility_after_grant')
         return receipt
 
-    def cleanup(self):
-        errors = []
-        for row in list(self.pending):
-            try:
-                self.phase='grant_revoke'
-                self.authorizer.request('POST', f"/api/v1/system/engines/{row['engine']}/access_grants/{row['request_id']}/revoke",
-                    (200,) if row['confirmed'] else (200,404), {'reason':'Disposable Online metadata cleanup'})
-                self.observe(row['target'],False,phase='visibility_after_revoke')
-                self.pending.remove(row)
-                self.checkpoint()
-            except Exception as error:
-                errors.append(row['request_id'])
-                if self.on_evidence:
-                    try:self.on_evidence({'stage':'failure','request_id':row['request_id'],
-                        'error':metadata_error_evidence(error,self.phase)})
-                    except Exception:errors.append('evidence_write_failed')
-        if errors:
-            raise MetadataGrantError('cleanup','revoke_or_visibility_failed')
-        return {'grants_revoked': True, 'metadata_hidden': True}
+
+
+class ExactRecordMetadataGrants(_ExactMetadataGrantLifecycle):
+    """Metadata visibility on one native table/collection; never content reads."""
+    @staticmethod
+    def target(engine, namespace, name, item_term):
+        if (type(engine) is not int or engine <= 0 or item_term not in {'table', 'collection'}
+            or any(not isinstance(v, str) or not v or any(c in v for c in '/\\.\x00') for v in (namespace, name))):
+            raise MetadataGrantError('target_validate', 'record_target_invalid')
+        return dict(version='catalog.path/v1', engine_id=engine, segments=[
+            dict(term='server', kind='server', name=''),
+            dict(term='database', kind='namespace', name=namespace),
+            dict(term=item_term, kind=item_term, name=name)])
+
+    def grant(self, engine, namespace, name, item_term):
+        target = self.target(engine, namespace, name, item_term)
+        facts = read_exact_record_authorization_facts(self.authorizer, target)
+        self.observe(target, False, phase='visibility_before_grant')
+        command = str(uuid.uuid4())
+        body = dict(request_id=command, catalog_path=target, item_fingerprint=facts['item_fingerprint'],
+            expected_boundary_hash=facts['boundary_hash'], recipient_type='user', recipient_id=self.recipient,
+            action='metadata_read', expiry_mode='until_revoked', reason='Disposable Online exact record metadata acceptance')
+        pending = dict(engine=engine, request_id=command, target=target, confirmed=False)
+        self.pending.append(pending)
+        self.checkpoint()  # Persist before POST, including an uncertain write outcome.
+        receipt = self.authorizer.request('POST', f'/api/v1/system/engines/{engine}/access_grants', (201,), body).payload
+        expected = {key: body[key] for key in ('request_id', 'catalog_path', 'item_fingerprint',
+            'recipient_type', 'recipient_id', 'action', 'expiry_mode')}
+        expected.update(engine_id=str(engine), boundary_hash=facts['boundary_hash'],
+            approval_mode='independent', operator_principal_id=self.operator, revocation=None, expires_at=None)
+        if (not isinstance(receipt, dict) or any(receipt.get(k) != v for k, v in expected.items())
+            or receipt.get('metadata_target') or receipt.get('file_composition') or receipt.get('scope')
+            or receipt.get('node_recursive') is not None
+            or receipt.get('native_target')):
+            raise MetadataGrantError('receipt_validate', 'record_boundary_mismatch')
+        pending['confirmed'] = True
+        self.checkpoint()
+        self.observe(target, True, phase='visibility_after_grant')
+        return receipt
+
 
 
 def initialize_exact_record_read_grants(authorizer, consumer, tenant_id, targets, *, item_term="table", scan_preparation=False, on_pending=None):

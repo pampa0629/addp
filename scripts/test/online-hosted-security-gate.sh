@@ -15,6 +15,10 @@ case "$ONLINE_SUITE" in
   graph-protection|cleanup-execution) INITIALIZER_SCRIPT= ;;
   *) echo 'Unsupported Hosted Security suite' >&2; exit 1 ;;
 esac
+if [ "$ONLINE_SUITE" = security-mysql-owner-protection ]; then
+  export ADDP_ONLINE_TEST_RUN_ID="${ADDP_ONLINE_TEST_RUN_ID:-security-${GITHUB_RUN_ID:?GITHUB_RUN_ID is required}-${GITHUB_RUN_ATTEMPT:?GITHUB_RUN_ATTEMPT is required}}"
+  [[ "$ADDP_ONLINE_TEST_RUN_ID" =~ ^[A-Za-z0-9_-]{1,100}$ ]] || { echo 'Invalid protection run identity' >&2; exit 1; }
+fi
 HOSTED_FIXTURE_CONTAINERS=(addp-security-online-postgres addp-security-online-mysql addp-security-online-mongodb)
 if [ "$ONLINE_SUITE" = graph-protection ]; then
   case "${ADDP_ONLINE_GRAPH_ENGINE:-}" in
@@ -78,6 +82,17 @@ stop_online_fixture() {
   fi
 }
 source "$ROOT_DIR/scripts/utils/hosted-online.sh"
+if [ "$ONLINE_SUITE" = security-mysql-owner-protection ]; then
+  before_online_application_stop() (
+    # Reload preparation credentials only into this cleanup subshell, never the suite/browser.
+    if [ ! -e "$ADDP_ONLINE_SECRET_DIR/security-record-metadata-grants.json" ]; then
+      printf '{"status":"not_started","issued_count":0}\n' > "$ADDP_ONLINE_ARTIFACT_DIR/security-record-metadata-cleanup.json"
+      return 0
+    fi
+    source "$IDENTITY_ENV" || return 1
+    run_logged python3 scripts/test/security-mysql-owner-protection-online.py --cleanup-metadata
+  )
+fi
 if [ -n "$EXECUTION_PROFILE" ]; then
   export GRAPH_BUILD_LEASE_SECONDS=30 GRAPH_BUILD_HEARTBEAT_SECONDS=5
   export ADDP_ONLINE_GRAPH_PEER_URL=http://127.0.0.1:18186

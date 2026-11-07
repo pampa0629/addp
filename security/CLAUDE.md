@@ -702,4 +702,16 @@ T1/T3/构建验证：`make test-security-frontend` 退出0，260项单元、37�
 
 [Run 42322135716 / Job 128248930706](https://github.com/pampa0629/addp/actions/runs/42322135716/job/128248930706) 在精确源码 `0af01095941be47c97d2d0383bcb69b23781fd68` 实际执行并失败，首错误为 `Meta must return exactly one Outdoor.Persons DataItem`。独立核对 Meta 日志，扫描执行 `4de30e87-8064-4140-9561-746222e8595f` 成功写入一条 MongoDB `Outdoor.Persons`，7 行、6 字段。随后普通 User 的数据项列表经过现有元数据可见性过滤，夹具仅准备了原七张 PostgreSQL 表的读取许可，没有 MongoDB 数据项的元数据查看许可，无法取得该项。
 
-该轮没有领域 suite_report，Service 两表角色场景和浏览器均未执行，不记为通过。标准生命周期 cleanup=passed、Infra=zero_residuals 仅证明隔离环境收尾。完整归档及独立失败核对在 `/tmp/p145-v44-42322135716/`。仅补精确 metadata_read 夹具许可涉及此前确认范围之外的权限准备，待用户确认，原 MySQL／MongoDB 内容授权边界继续由对应会话负责。
+该轮没有领域 suite_report，Service 两表角色场景和浏览器均未执行，不记为通过。标准生命周期 cleanup=passed、Infra=zero_residuals 仅证明隔离环境收尾。完整归档及独立失败核对在 `/tmp/p145-v44-42322135716/`。用户随后明确同意仅补三个数据项的 `metadata_read` 夹具许可：MongoDB `Outdoor.Persons`、MySQL `security_fixture.customers`、`security_fixture.bank_card_accounts`；原 MySQL／MongoDB 内容授权边界继续由对应会话负责。
+
+
+### v44 三项元数据查看许可夹具适配（2026-11-07）
+
+按用户确认范围，仅通过 System 现有正式 API，为原普通消费 User 准备上述三项 `metadata_read`。独立准备账号沿已有 exact 权限集合先 basic 扫描两个引擎，再读取可信指纹／完整 native_target 边界；逐项核对签发前不可见、签发回执、签发后可见及消费账号取得的同一 DataItem 指纹。不增加角色、功能权限、MySQL／MongoDB 内容 Grant 或原值授权，原七张 PostgreSQL `read` 准备保持。
+
+共享注册脚本抽取既有身份、可见性与逐条撤销生命周期，文件许可行为保持；新的普通表／集合 metadata helper 使用相同生命周期，正式 `action` 只允许 `metadata_read`。写入前原子记录 request_id／目标及执行身份到 0600 私有 checkpoint，包含未知写入结果，拒绝接管已有 checkpoint。Hosted 在初始化前固定本轮 Run ID，消费与浏览器不接收准备凭据；`before_online_application_stop` 独立子进程才重载私有身份文件，校验 Run／租户／主体、三项目标、UUID、重复项和待清理关系，逐条撤销并验证不可见。正常、失败和中断共用收尾，单条失败继续尝试剩余项，清理失败影响总结果。
+
+准备与清理产物分别为 `security-record-metadata-preparation.json`、`security-record-metadata-cleanup.json`，不含令牌；未知写入、错 action 回执、单项撤销失败、跨 Run／主体／目标、重复项、非法 UUID、checkpoint 权限及重复接管均有确定性反例。总入口仍为 `make test-security-online-runner`，已有 Platform CI／Online 聚合入口覆盖，无需新增 workflow 或本地重启。领域报告保留 v44、浏览器 v9；首次 Hosted 前置失败及本轮确定性结果分开保留，尚未以新夹具完成真实 T4。
+
+
+本轮最终 `make test-security-online-runner` 退出0：43／204／18／149／35／80／257 项、System Fixture Go 及登记 CLI 通过。单独领域200项、生命周期21项通过；独立元数据审计正常样本及8个反例通过。首次总门禁因共享 helper 类声明的静态登记未同步失败，已精确更新登记并完整重验，不改变文件许可语义或放宽断言。日志 `/tmp/p145-metadata-runner-gate.log`（首次失败）、`/tmp/p145-metadata-runner-final.log`（最终通过）、`/tmp/p145-metadata-domain-final.log`、`/tmp/p145-metadata-lifecycle-final.log`；文件摘要及证据边界见 `/tmp/p145-metadata-verification.json`。本轮仅确定性 T1，未新增真实数据库 T2、本地 HTTP 或 Hosted T4 通过记录。下一步交专门 CI 会话用本次精确提交运行 v44，回传 Run／Job 与准备／清理及完整领域／浏览器产物后独立核对。

@@ -14,6 +14,14 @@
 
 保护方式、角色资格及导出有效性的能力契约见[数据安全规范](../../docs/spec/addp数据安全与隐私保护实现规范.md#711-默认方式与角色可选方式)。本文维护 suite 断言与版本差异；已归档的固定源码、运行尝试、失败和清理结果见[数据保护与执行血缘历史证据](../../docs/spec/testing/evidence/数据保护与执行血缘历史证据.md)，不由版本号推导某次验收已通过。其中[四出口实际停机 v9](../../docs/spec/testing/evidence/数据保护与执行血缘历史证据.md#四出口实际停机--t4-v9)、[四出口重新发现 v10](../../docs/spec/testing/evidence/数据保护与执行血缘历史证据.md#四出口重新发现--t4-v10)分别维护对应旧证据，不作为 v23～v33 新增范围的通过记录。
 
+### Hosted 精确元数据许可准备与清理
+
+普通验收 User 仅补三项 `metadata_read`：MongoDB `Outdoor.Persons`、MySQL `security_fixture.customers`、`security_fixture.bank_card_accounts`。独立源授权准备账号沿既有扫描权限先完成这两个引擎的 basic 识别，再从 System 读取可信 DataItem 指纹与边界，通过正式 Grant API 签发；不新增角色、功能权限、MySQL／MongoDB 内容读取 Grant 或原值授权，原七张 PostgreSQL `read` 范围保持。
+
+写入前把每个 request_id、精确目标、执行身份与本轮 Run 记录到私有 checkpoint，含未知写入结果。普通消费与浏览器子进程不接收准备账号凭据。Hosted 在停止应用之前，经独立清理子进程重载私有凭据，逐条撤销并验证不可见；初始化失败、场景失败或正常结束都走同一收尾，单项失败仍尝试其余项，清理失败不能报告通过。可归档的准备／清理 receipt 不含令牌。没有 checkpoint 表示尚未签发，不得伪报三项已清理；清理 checkpoint 不允许超出这三个目标或跨 Run／身份。
+
+此项只修复既有 v44 suite 的前置条件，领域报告仍为 v44、浏览器仍为 v9，不新增产品能力或验收路线。确定性夹具门禁通过不代表 Hosted T4 已通过；原 Run 42322135716 的前置失败继续保留。
+
 ### 统一门禁与结果认定
 
 确定性入口为 `make test-security-online-runner`，由 `make test-online-runner` 与既有 Platform CI 覆盖；共享存储与 Provider 的 PostgreSQL／MySQL 门禁仍各自认定 T2。真实 HTTP／浏览器使用既有 `security-mysql-owner-protection` Hosted suite，由专门 CI 会话安排与回传。本次文档整理不新增部署、账号、角色、权限、产品接口或 CI 路线；各场景明确列出的最小身份和权限仍是独立前提。

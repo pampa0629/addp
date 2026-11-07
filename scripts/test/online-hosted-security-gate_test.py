@@ -125,10 +125,16 @@ class HostedSecurityGateTest(unittest.TestCase):
         ''')
         self.host._write_repository_script('scripts/test/security-mysql-owner-protection-online.py', '''
             import os, sys
-            assert sys.argv[1:] == ['--initialize']
+            from pathlib import Path
+            assert os.environ["ADDP_ONLINE_TEST_RUN_ID"] == "security-123-1"
+            assert sys.argv[1:] in (['--initialize'], ['--cleanup-metadata'])
             assert os.environ['ADDP_ONLINE_SECURITY_MONGODB_ENGINE_ID'] == '29'
             assert os.environ['ADDP_ONLINE_FIXTURE_SECURITY_ACCESS_TOKEN'] == 'initializer-token'
             assert os.environ['ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN'] == 'source-initializer-token'
+            if sys.argv[1:] == ['--cleanup-metadata']:
+                with open(os.environ['ADDP_TEST_GATE_TRACE'], 'a') as out: out.write('metadata-cleanup\\n')
+                sys.exit(1 if os.environ.get('ADDP_TEST_METADATA_CLEANUP_FAIL') == '1' else 0)
+            Path(os.environ['ADDP_ONLINE_SECRET_DIR'], 'security-record-metadata-grants.json').write_text('{}')
             with open(os.environ['ADDP_TEST_GATE_TRACE'], 'a') as out: out.write('initialize\\n')
             sys.exit(1 if os.environ.get('ADDP_TEST_INITIALIZE_FAIL') == '1' else 0)
         ''')
@@ -178,6 +184,7 @@ class HostedSecurityGateTest(unittest.TestCase):
             [ "$ADDP_ONLINE_TEST_ENGINE_ID" = 17 ]
             [ "$ADDP_ONLINE_WORKBENCH_MYSQL_ENGINE_ID" = 23 ]
             if [ "$ONLINE_SUITE_INPUT" = security-mysql-owner-protection ]; then
+              [ "$ADDP_ONLINE_TEST_RUN_ID" = security-123-1 ]
               [ "$ADDP_ONLINE_SECURITY_MONGODB_ENGINE_ID" = 29 ]
               [ "$ADDP_ONLINE_TEST_TIMEOUT_SECONDS" = 1200 ]
             else
@@ -370,9 +377,26 @@ class HostedSecurityGateTest(unittest.TestCase):
         self.assertIn('make:test-online ONLINE_SUITE=security-mysql-owner-protection', trace)
         self.assertLess(trace.index('initialize'), trace.index('make:'))
         self.assertLess(trace.index('chromium'), trace.index('make:'))
+        self.assertLess(trace.index('make:test-online'), trace.index('metadata-cleanup'))
+        self.assertLess(trace.index('metadata-cleanup'), trace.index('application-stop'))
         self.assertLess(trace.index('application-stop'), trace.index('security-fixture:stop'))
         self.assertFalse(self.host.secrets.exists())
         self.assertIn('cleanup=passed', (self.host.artifacts / 'summary.txt').read_text())
+
+    def test_metadata_cleanup_runs_after_initialization_or_suite_failure_and_failure_still_stops(self):
+        for fault in ("ADDP_TEST_INITIALIZE_FAIL", "ADDP_TEST_SUITE_FAIL", "ADDP_TEST_METADATA_CLEANUP_FAIL"):
+            with self.subTest(fault=fault):
+                self.host.trace.unlink(missing_ok=True)
+                result = self.run_gate(**{fault: "1"})
+                self.assertNotEqual(result.returncode, 0)
+                trace = self.host.trace.read_text()
+                self.assertIn("metadata-cleanup", trace)
+                self.assertLess(trace.index("metadata-cleanup"), trace.index("application-stop"))
+                self.assertIn("security-fixture:stop", trace)
+                self.assertFalse(self.host.secrets.exists())
+                summary = (self.host.artifacts / "summary.txt").read_text()
+                self.assertIn("result=failed", summary)
+                self.assertIn("cleanup=" + ("failed" if fault == "ADDP_TEST_METADATA_CLEANUP_FAIL" else "passed"), summary)
 
     def test_system_has_independent_meta_fact_credentials_before_any_application_start(self):
         self.host._write_repository_script('scripts/dev/start.sh', '''

@@ -1,6 +1,7 @@
 import importlib.util
 import ast
 import json
+import hashlib
 import os
 import sys
 import copy
@@ -1950,7 +1951,7 @@ class HostedGovernanceInitializationTest(unittest.TestCase):
         self.search_ready.side_effect=ready
         ONLINE.initialize_postgres_read_grants(authorizer,consumer,2,17)
 
-    def test_initializer_does_not_require_mysql_or_mongodb_authorization_inputs(self):
+    def test_initializer_uses_separate_metadata_preparation_without_content_grants(self):
         environment = {
             "GATEWAY_URL": "http://gateway", "ADDP_ONLINE_TEST_TENANT_ID": "2",
             "ADDP_ONLINE_TEST_ENGINE_ID": "17",
@@ -1962,14 +1963,16 @@ class HostedGovernanceInitializationTest(unittest.TestCase):
              patch.object(sys, "argv", [str(SCRIPT), "--initialize"]), \
              patch.object(ONLINE.signal, "signal"), \
              patch.object(ONLINE, "require_hosted_initialization"), \
-             patch.object(ONLINE, "GatewayClient", side_effect=["governance-user", "source-user", "consumer"]), \
+             patch.object(ONLINE, "GatewayClient", side_effect=["governance-user", "source-user", "consumer", "source-user", "consumer"]), \
              patch.object(ONLINE, "initialize_governance") as governance, \
              patch.object(ONLINE, "initialize_postgres_read_grants") as grants, \
+             patch.object(ONLINE, "initialize_record_metadata_grants") as metadata, \
              patch("builtins.print") as notice:
             self.assertEqual(ONLINE.main(), 0)
         governance.assert_called_once_with("governance-user", 2)
         grants.assert_called_once_with("source-user", "consumer", 2, 17)
-        notice.assert_called_once_with("Disposable Security governance and PostgreSQL table read Grants are ready")
+        metadata.assert_called_once_with("source-user", "consumer", 2)
+        notice.assert_called_once_with("Disposable Security governance, PostgreSQL reads and three metadata-only Grants are ready")
 
     def test_source_preparation_rejects_wrong_tenant_and_self_grant_before_writing(self):
         for tenant, principal in (("9", "8"), ("2", "7")):
@@ -4730,13 +4733,138 @@ class PostgresExactRefreshContractTest(unittest.TestCase):
             if not isinstance(fn,ast.FunctionDef):continue
             for call in ast.walk(fn):
                 if isinstance(call,ast.Call) and isinstance(call.func,ast.Name) and call.func.id=="wait_for_scan":sites.append((fn.name,call))
-        self.assertEqual({name for name,_ in sites},{"wait_for_postgres_item_scan","prepare_mongodb_source","run_scenario","initialize_postgres_read_grants"})
+        self.assertEqual({name for name,_ in sites},{"wait_for_postgres_item_scan","prepare_mongodb_source","run_scenario","initialize_postgres_read_grants","initialize_record_metadata_grants"})
         for name,call in sites:
             if name=="run_scenario":self.assertEqual(ast.unparse(call.args[1]),"source_engine_id")
-            if name=="initialize_postgres_read_grants":
+            if name in {"initialize_postgres_read_grants","initialize_record_metadata_grants"}:
                 self.assertEqual(ast.unparse(call.args[0]),"authorizer")
                 self.assertEqual({kw.arg:ast.literal_eval(kw.value) for kw in call.keywords},{"scan_depth":"basic"})
             if name=="wait_for_postgres_item_scan":self.assertEqual({kw.arg for kw in call.keywords},{"item_id"})
+
+class RecordMetadataPreparationTest(unittest.TestCase):
+    def setUp(self):
+        self.directory = tempfile.TemporaryDirectory()
+        self.addCleanup(self.directory.cleanup)
+        root = Path(self.directory.name)
+        (root / "secret").mkdir(); (root / "artifacts").mkdir()
+        environment = dict(ADDP_ONLINE_SECRET_DIR=str(root / "secret"), ADDP_ONLINE_ARTIFACT_DIR=str(root / "artifacts"),
+            ADDP_ONLINE_TEST_RUN_ID="metadata-test", ADDP_ONLINE_WORKBENCH_MYSQL_ENGINE_ID="23",
+            ADDP_ONLINE_SECURITY_MONGODB_ENGINE_ID="29", ADDP_ONLINE_WORKBENCH_MYSQL_DATABASE="security_fixture")
+        self.env = patch.dict(os.environ, environment, clear=True); self.env.start(); self.addCleanup(self.env.stop)
+        self.targets = ONLINE.record_metadata_targets(os.environ)
+        self.rows, self.calls = {}, []
+        self.fault = None
+        self.authorizer, self.consumer = Mock(), Mock()
+        def identity(principal, preparer=False):
+            return {"principal": {"type": "user", "id": principal}, "context": {"type": "tenant", "tenant_id": "2"},
+                "authorization": {"role_assignments": ([{"role_key": ONLINE.REGISTRATION.SOURCE_INITIALIZER_ROLE,
+                    "permissions": sorted(ONLINE.REGISTRATION.SOURCE_INITIALIZER_PERMISSIONS | {"meta.scan_task.execute", "meta.scan_task.read"})}] if preparer else [])}}
+        def authorize(method, path, expected, body=None):
+            self.calls.append((method,path,expected,copy.deepcopy(body)))
+            if path.endswith("/auth/context"): return ONLINE.SUPPORT.Response(200, identity("8", True))
+            if method == "GET":
+                fingerprint = path.split("/")[-2]
+                target = next(t for t in self.targets if hashlib.sha256(f"{t['engine_id']}:{t['segments'][1]['name']}.{t['segments'][2]['name']}".encode()).hexdigest() == fingerprint)
+                return ONLINE.SUPPORT.Response(200, dict(schema_version="meta.data_item_authorization_facts/v1",
+                    engine_id=str(target["engine_id"]), item_fingerprint=fingerprint, item_type=target["segments"][2]["term"],
+                    full_name=target["segments"][1]["name"] + "." + target["segments"][2]["name"], basis_state="complete",
+                    boundary_hash="a" * 64, observed_at="2026-11-07T00:00:00Z", boundary=dict(layout="single",native_target=target)))
+            if path.endswith("/revoke"):
+                command = path.split("/")[-2]
+                if self.fault == "revoke_first" and command == next(iter(self.rows)):
+                    raise ONLINE.SuiteError("revoke failed")
+                self.rows[command]["revoked"] = True
+                return ONLINE.SUPPORT.Response(200, {})
+            self.assertEqual(body["action"], "metadata_read")
+            self.assertIn(body["catalog_path"], self.targets)
+            checkpoint = json.loads((root / "secret" / ONLINE.METADATA_CHECKPOINT).read_text())
+            self.assertEqual(checkpoint["pending"][-1]["request_id"],body["request_id"])
+            self.assertFalse(checkpoint["pending"][-1]["confirmed"])
+            self.rows[body["request_id"]] = dict(target=body["catalog_path"],revoked=False)
+            if self.fault == "unknown_write": raise ONLINE.SuiteError("response lost after write")
+            receipt = dict(body, engine_id=str(body["catalog_path"]["engine_id"]), boundary_hash="a"*64,
+                approval_mode="independent",operator_principal_id="8",expires_at=None,revocation=None)
+            if self.fault == "content_receipt": receipt["action"] = "read"
+            return ONLINE.SUPPORT.Response(201,receipt)
+        def consume(method,path,expected,body=None):
+            if path.endswith("/auth/context"): return ONLINE.SUPPORT.Response(200, identity("7"))
+            self.assertEqual(path,"/api/v1/system/engine-access/metadata-checks/meta-query")
+            target = body["targets"][0]
+            visible = any(r["target"] == target and not r["revoked"] for r in self.rows.values())
+            return ONLINE.SUPPORT.Response(200,dict(observed_at="2026-11-07T00:00:00Z",targets=[dict(target=target,visible=visible)]))
+        self.authorizer.request.side_effect=authorize; self.consumer.request.side_effect=consume
+        self.scan = patch.object(ONLINE,"wait_for_scan",return_value="b99f26af-2bcb-4ab2-9ad3-a10e531da162").start()
+        self.addCleanup(patch.stopall)
+        def find(client, engine, name, term):
+            return dict(id=101, full_name=name, item_type=term, fingerprint=hashlib.sha256(f"{engine}:{name}".encode()).hexdigest())
+        self.find = patch.object(ONLINE,"find_item",side_effect=find).start()
+        self.checkpoint = root / "secret" / ONLINE.METADATA_CHECKPOINT
+        self.artifacts = root / "artifacts"
+
+    def initialize(self): ONLINE.initialize_record_metadata_grants(self.authorizer,self.consumer,2)
+    def cleanup(self): ONLINE.cleanup_record_metadata_grants(self.authorizer,self.consumer,2)
+
+    def test_exact_three_metadata_only_grants_and_recovery_share_precise_lifecycle(self):
+        self.initialize()
+        self.assertEqual(self.checkpoint.stat().st_mode & 0o777,0o600)
+        self.assertEqual([call.args[1] for call in self.scan.call_args_list],[29,23])
+        self.assertTrue(all(c.args[0] is self.authorizer and c.kwargs == {"scan_depth":"basic"} for c in self.scan.call_args_list))
+        self.assertEqual(len(self.rows),3)
+        self.assertEqual(self.find.call_count,3)
+        self.cleanup()
+        receipt=json.loads((self.artifacts/"security-record-metadata-cleanup.json").read_text())
+        self.assertEqual(receipt["status"],"passed"); self.assertEqual(receipt["pending"],[])
+        self.assertEqual(len(receipt["issued"]),3)
+        self.assertTrue(all(r["revoked"] for r in self.rows.values()))
+        self.assertTrue(receipt["metadata_hidden"] and receipt["grants_revoked"])
+        self.assertFalse(any("read-checks" in c[1] for c in self.calls))
+        self.cleanup()  # Interrupted cleanup can be re-observed, no second revoke.
+        self.assertEqual(sum(c[1].endswith("/revoke") for c in self.calls),3)
+
+    def test_uncertain_write_or_wrong_action_receipt_is_retained_and_revoked(self):
+        for fault in ("unknown_write","content_receipt"):
+            with self.subTest(fault=fault):
+                self.checkpoint.unlink(missing_ok=True); self.rows.clear(); self.fault=fault
+                with self.assertRaises((ONLINE.SuiteError,ONLINE.REGISTRATION.MetadataGrantError)): self.initialize()
+                self.assertEqual(len(self.rows),1)
+                self.assertFalse(json.loads(self.checkpoint.read_text())["pending"][0]["confirmed"])
+                self.fault=None; self.cleanup()
+                self.assertTrue(all(r["revoked"] for r in self.rows.values()))
+
+    def test_cleanup_attempts_all_pending_after_a_single_revoke_failure(self):
+        self.initialize(); self.fault="revoke_first"
+        with self.assertRaises(ONLINE.REGISTRATION.MetadataGrantError): self.cleanup()
+        self.assertEqual(sum(r["revoked"] for r in self.rows.values()),2)
+        state=json.loads(self.checkpoint.read_text()); self.assertEqual(len(state["pending"]),1)
+        self.assertEqual(json.loads((self.artifacts/"security-record-metadata-cleanup.json").read_text())["status"],"failed")
+        self.fault=None; self.cleanup()
+        self.assertTrue(all(r["revoked"] for r in self.rows.values()))
+
+    def test_checkpoint_scope_identity_duplicates_or_mode_rejected_before_revocation(self):
+        self.initialize(); original=self.checkpoint.read_text()
+        def mutate(state,fault):
+            if fault=="run":state["run_id"]="other"
+            if fault=="recipient":state["recipient"]="99"
+            if fault=="target":state["pending"][0]["target"]["segments"][2]["name"]="Other"
+            if fault=="duplicate":state["pending"][1]=copy.deepcopy(state["pending"][0])
+            if fault=="uuid":state["pending"][0]["request_id"]="not-a-uuid"
+            if fault=="lost":state["issued"]=[]
+            if fault=="extra":state["extra"]="unrecognized"
+        for fault in ("run","recipient","target","duplicate","uuid","lost","extra","mode"):
+            with self.subTest(fault=fault):
+                state=json.loads(original); mutate(state,fault); self.checkpoint.write_text(json.dumps(state))
+                self.checkpoint.chmod(0o644 if fault=="mode" else 0o600)
+                with self.assertRaises(ONLINE.SuiteError): self.cleanup()
+                self.assertFalse(any(c[1].endswith("/revoke") for c in self.calls))
+        self.checkpoint.chmod(0o600); self.checkpoint.write_text(original); self.cleanup()
+
+    def test_no_takeover_and_unapproved_database_rejected(self):
+        self.initialize(); initial=len(self.calls)
+        with self.assertRaises(FileExistsError): self.initialize()
+        self.assertFalse(any(c[0]=="POST" for c in self.calls[initial:]))
+        with patch.dict(os.environ,ADDP_ONLINE_WORKBENCH_MYSQL_DATABASE="business"):
+            with self.assertRaises(ONLINE.SuiteError): ONLINE.record_metadata_targets(os.environ)
+
 
 if __name__ == "__main__":
     unittest.main()
