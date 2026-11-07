@@ -80,7 +80,8 @@ class Client:
         self.source = {'id': 10, 'item_type': 'object', 'full_name': 'raster-source/source.tif', 'fingerprint': 'source-fp'}
         self.target = {'id': 20, 'item_type': 'object', 'full_name': 'raster-target/result.cog.tif', 'fingerprint': 'target-fp', 'size_bytes': 1024,
                        'attributes': {'item': {'format': 'tiff'}, 'type_info': {'media': {'width': 256, 'height': 256}},
-                                      'format_info': {'tiff': {'profile': 'cog', 'is_tiled': True, 'has_overviews': True}},
+                                      'format_info': {'tiff': {'profile': 'cog', 'is_cloud_optimized': True,
+                                          'cog_check_level': 'heuristic', 'is_tiled': True, 'has_overviews': True}},
                                       'capabilities': {'spatial': {'srid': 4326, 'extent': [110, 17.76, 112.56, 20.32]}}}}
         self.spatial_source = {'id': 11, 'item_type': 'object', 'full_name': 'raster-source/spatial.tif', 'fingerprint': 'spatial-fp'}
         self.multiband_source = {'id': 12, 'item_type': 'object', 'full_name': 'raster-source/multiband.tif', 'fingerprint': 'multiband-fp'}
@@ -105,7 +106,7 @@ class Client:
             item.update(id=item_id, full_name=f'raster-target/{name}.cog.tif', fingerprint=name)
             item['attributes']['type_info']['media'] = {'width': expectation['width'], 'height': expectation['height']}
             item['attributes']['capabilities']['spatial'] = {'srid': 4326, 'extent': expectation['extent']}
-            item['attributes']['format_info']['tiff'] = {'profile': 'cog' if name=='clip-polygon' or 'bilinear' in name or 'fractional' in name or 'finite' in name else 'geotiff',
+            item['attributes']['format_info']['tiff'] = {'profile': 'cog', 'is_cloud_optimized': True, 'cog_check_level': 'heuristic',
                 'is_tiled': True, 'has_overviews': name=='clip-polygon' or 'bilinear' in name or 'fractional' in name or 'finite' in name}
             self.targets[item_id] = item
         for item_id, name in enumerate(m.fixture.UTILITY_CASES, 36):
@@ -139,7 +140,8 @@ class Client:
             item['attributes']['type_info']['media'] = {'width': expectation['width'], 'height': expectation['height']}
             item['attributes']['capabilities']['spatial'] = {'srid':4326, 'extent':expectation['extent']}
             overviews = key != 'r160_c160'
-            item['attributes']['format_info']['tiff'] = {'profile': 'cog' if overviews else 'geotiff', 'is_tiled': True, 'has_overviews':overviews}
+            item['attributes']['format_info']['tiff'] = {'profile': 'cog', 'is_cloud_optimized': True,
+                'cog_check_level': 'heuristic', 'is_tiled': True, 'has_overviews': overviews}
             self.targets[item_id] = item
         for item_id,name in enumerate(m.fixture.TERRAIN_CASES,80):
             item=copy.deepcopy(self.targets[21]);expected=m.fixture.terrain_expectation()
@@ -2016,15 +2018,21 @@ class RasterWorkflowOnlineTest(unittest.TestCase):
     def test_small_cog_keeps_physical_validity_separate_from_metadata_hint(self):
         report = self.run_scene()
         self.assertEqual(len(report['grid_cases']),3)
-        self.assertEqual(self.client.targets[23]['attributes']['format_info']['tiff']['profile'],'geotiff')
+        tiff = self.client.targets[23]['attributes']['format_info']['tiff']
+        self.assertEqual(tiff['profile'], 'cog')
+        self.assertIs(tiff['is_cloud_optimized'], True)
+        self.assertEqual(tiff['cog_check_level'], 'heuristic')
+        self.assertIs(tiff['has_overviews'], False)
 
     def test_rejects_invalid_physical_cog_missing_or_inconsistent_overview_and_profile_facts(self):
-        for fault in ('invalid-cog','missing-overviews','overviews','profile','tiled'):
+        for fault in ('invalid-cog','missing-overviews','overviews','profile','cloud','check-level','tiled'):
             with self.subTest(fault=fault):
                 self.setUp()
                 tiff = self.client.targets[23]['attributes']['format_info']['tiff']
                 if fault=='overviews': tiff['has_overviews']=True
-                if fault=='profile': tiff['profile']='cog'
+                if fault=='profile': tiff['profile']='geotiff'
+                if fault=='cloud': tiff['is_cloud_optimized']=False
+                if fault=='check-level': tiff['cog_check_level']='complete'
                 if fault=='tiled': tiff['is_tiled']=False
                 def physical(repo,env,action):
                     result = self.physical(repo,env,action)

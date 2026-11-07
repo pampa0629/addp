@@ -595,9 +595,10 @@ def validate_target_item(item, expectation, physical_evidence):
         raise SuiteError('Meta target dimensions are invalid')
     tiff = obj(obj(attributes.get('format_info'), 'format info').get('tiff'), 'TIFF facts')
     has_overviews = physical_evidence['has_overviews']
-    # Meta exposes a lightweight hint; GDAL validates the actual COG layout.
-    profile_hint = 'cog' if has_overviews else 'geotiff'
-    if (tiff.get('profile') != profile_hint or tiff.get('is_tiled') is not True
+    # These bounded Classic TIFF fixtures have independently validated COG
+    # layouts. Overview presence is a separate fact, never the profile test.
+    if (tiff.get('profile') != 'cog' or tiff.get('is_cloud_optimized') is not True
+        or tiff.get('cog_check_level') != 'heuristic' or tiff.get('is_tiled') is not True
         or tiff.get('has_overviews') is not has_overviews):
         raise SuiteError('Meta TIFF structure/profile hint differs from the physical COG')
     spatial = obj(obj(attributes.get('capabilities'), 'capabilities').get('spatial'), 'spatial facts')
