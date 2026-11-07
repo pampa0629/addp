@@ -394,9 +394,9 @@ func (s *HybridSearchService) searchVisibleKeywords(ctx context.Context, filter,
 			AttributesToHighlight: []string{"name", "title", "full_name", "content_preview", "description", "tags", "keywords", "author", "fields.name", "fields.data_type", "fields.comment"},
 		}
 		if group.metadataOnly {
-			request.AttributesToSearchOn = []string{"name", "full_name"}
+			request.AttributesToSearchOn = []string{"name", "full_name", "fields.name"}
 			request.AttributesToHighlight = request.AttributesToSearchOn
-			request.AttributesToRetrieve = []string{"document_id", "locator", "engine_id", "engine_name", "engine_type", "data_item_type", "name", "full_name", "schema", "bucket", "path"}
+			request.AttributesToRetrieve = []string{"document_id", "locator", "engine_id", "engine_name", "engine_type", "data_item_type", "name", "full_name", "schema", "bucket", "path", "fields.name"}
 		}
 		response, err := index.SearchWithContext(ctx, query, request)
 		if err != nil {
@@ -414,10 +414,17 @@ func (s *HybridSearchService) searchVisibleKeywords(ctx context.Context, filter,
 				return nil, ErrSearchVisibilityUnavailable
 			}
 			if group.metadataOnly {
+				var fields []SearchFieldMatch
+				for _, match := range doc.FieldMatches {
+					if highlight, ok := match.Highlights["name"]; ok {
+						fields = append(fields, SearchFieldMatch{Name: match.Name, Highlights: map[string]string{"name": highlight}})
+					}
+				}
 				doc = SearchDocument{
 					DocumentID: doc.DocumentID, Locator: doc.Locator, EngineID: doc.EngineID, EngineName: doc.EngineName,
 					EngineType: doc.EngineType, DataItemType: doc.DataItemType, Name: doc.Name, FileName: doc.FileName,
 					FullName: doc.FullName, Schema: doc.Schema, Bucket: doc.Bucket, Path: doc.Path,
+					FieldMatches: fields,
 				}
 			}
 			score, _ := hit["_rankingScore"].(float64)

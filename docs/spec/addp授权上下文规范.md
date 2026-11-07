@@ -481,7 +481,7 @@ Service Token 仅进入显式机器契约，不因持有同名 Permission 就可
 
 Meta 既有 `resource.children.list`／`resource.ancestors.get` 工具的委托凭据，仅可转交 System 固定元数据可见性核验入口。委托必须绑定原用户、唯一 `meta` audience、恰好一个原工具 Scope 及原 Client／AgentRun／ToolCall，当前功能与 DataItem 规则仍须成立；该入口不授予内容、扫描或其他 System 操作权限。
 
-Manager 检索统一使用 System 固定检索裁决，核验 `manager.search.execute` 与每个 DataItem 的当前 `metadata_read`、`read`。接受当前 Tenant 第一方或 OAuth User，以及绑定原 User、原 Client／AgentRun／ToolCall、唯一 `manager` audience 和唯一 `data.search` Scope 的委托。System 沿既有 Meta 可信身份及 Grant 裁决返回逐项结果，不授予可缓存的许可、通用数据读取、预览或扫描权限。Manager 页面与 Agent 工具使用相同的检索出口。仅有元数据查看权时，关键词只匹配安全的资源名称和逻辑路径，响应只包含身份与定位信息。正文、内容摘要、内容向量命中和其他内容衍生字段要求当前读取权，并继续服从既有保护投影。授权筛选在融合排名、计数及分页之前完成。无法核验时本次检索整体失败。
+Manager 检索统一使用 System 固定检索裁决，核验 `manager.search.execute` 与每个 DataItem 的当前 `metadata_read`、`read`。接受当前 Tenant 第一方或 OAuth User，以及绑定原 User、原 Client／AgentRun／ToolCall、唯一 `manager` audience 和唯一 `data.search` Scope 的委托。System 沿既有 Meta 可信身份及 Grant 裁决返回逐项结果，不授予可缓存的许可、通用数据读取、预览或扫描权限。Manager 页面与 Agent 工具使用相同的检索出口。仅有元数据查看权时，关键词可匹配安全的资源名称、逻辑路径和已登记的技术字段名；对应搜索属性白名单为 `name`、`full_name`、`fields.name`。响应只包含身份、定位和实际命中的字段名及其高亮，不返回未命中的完整结构，也不按字段类型、注释、表达式、样本或值匹配。字段名匹配仍由搜索服务给出实际高亮，不由调用方猜测命中。正文、内容摘要、内容向量命中和其他内容衍生字段要求当前读取权，并继续服从既有保护投影。授权筛选在融合排名、计数及分页之前完成。无法核验时本次检索整体失败。
 
 ## 九、实施范围与验证
 

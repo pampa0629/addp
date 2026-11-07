@@ -4487,7 +4487,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "仅返回当前用户可见的项。仅元数据可见时只匹配名称及路径。内容和向量命中要求当前数据读取权。授权后去重、融合、计数及分页 | Returns only items visible to the current user. Metadata-only access matches names and paths. Content and vector matches require current data-read access. Deduplication, ranking, counts and pagination follow authorization",
+                "description": "仅返回当前用户可见的项。仅元数据可见时匹配资源名称、路径和已登记字段名，只返回身份定位及真实字段名高亮。正文和向量命中要求当前数据读取权。授权后去重、融合、计数及分页 | Returns only visible items. Metadata-only access searches resource names, paths and registered field names, returning identity, location and actual field-name highlights only. Content and vector matches require current data-read access. Deduplication, ranking, counts and pagination follow authorization",
                 "produces": [
                     "application/json"
                 ],

@@ -644,7 +644,7 @@ Manager 正式 Upsert 必须允许首次创建搜索文档，不得设置会跳�
 
 当前结构字段投影只读取已登记的 `type_info.table.fields`。graph、keyspace、topic 等 item 接入统一名称与路径投影，不代表它们全部具备关系表字段模型；Neo4j 的 `type_info.graph` 标签、关系及属性尚未作为搜索结构投影。扫描代码覆盖、历史投递覆盖和结构可检索范围必须分别说明，不能相互替代。
 
-Manager `GET /search` 的 `results[].field_matches` 只包含搜索服务实际高亮命中的已登记字段，保留 `name`、`data_type`、`comment` 与对应 `highlights`。不返回未命中的完整结构，不新增业务行读取或采样，不由前端按关键词猜测命中；纯向量命中不声明字段命中。页面展示字段上下文，较多字段按需展开；源文本先转义，仅允许无属性的 `mark` 标签表达高亮，不执行源字段中的 HTML。
+Manager `GET /search` 的 `results[].field_matches` 只包含搜索服务实际高亮命中的已登记字段。仅有元数据查看权时只搜索字段名，返回 `name` 与对应 `highlights.name`，不返回类型、注释或其他字段值；具备当前内容读取权时，保留既有 `name`、`data_type`、`comment` 与对应 `highlights`。不返回未命中的完整结构，不新增业务行读取或采样，不由前端按关键词猜测命中；纯向量命中不声明字段命中。页面展示字段上下文，较多字段按需展开；源文本先转义，仅允许无属性的 `mark` 标签表达高亮，不执行源字段中的 HTML。
 
 可选 `engine_id` 在 Manager 全文和向量查询中同时生效，调用方不得先全局截断再过滤。技术投影仍按现有载荷职责处理，正文仍执行既有 Security 保护，字段展示不改变权限或保护路线。验证沿用 Meta/Manager PostgreSQL、Manager 前端、Go 及 Swagger 标准门禁，不增加独立索引写入或目录枚举兜底。
 

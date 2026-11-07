@@ -1,10 +1,77 @@
 package service
 
 import (
+	"context"
 	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"reflect"
 	"testing"
+
+	"github.com/meilisearch/meilisearch-go"
 )
+
+func TestMetadataOnlyKeywordSearchReturnsOnlyActualFieldNames(t *testing.T) {
+	for _, test := range []struct {
+		name      string
+		formatted map[string]interface{}
+		matched   bool
+	}{
+		{"name_highlight", map[string]interface{}{"name": "userInfo.<mark>phone</mark>", "data_type": "<mark>string</mark>", "comment": "<mark>private</mark>"}, true},
+		{"comment_highlight_is_not_a_name_match", map[string]interface{}{"name": "userInfo.phone", "comment": "<mark>private</mark>"}, false},
+		{"missing_highlights", nil, false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			identity := testSearchIdentity(t, 7, 11, 80, "Persons")
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				switch r.Method + " " + r.URL.Path {
+				case "GET /indexes/content/settings/pagination":
+					_, _ = w.Write([]byte(`{"maxTotalHits":1000}`))
+				case "POST /indexes/content/search":
+					var request meilisearch.SearchRequest
+					if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+						t.Error(err)
+					}
+					want := []string{"name", "full_name", "fields.name"}
+					if !reflect.DeepEqual(request.AttributesToSearchOn, want) || !reflect.DeepEqual(request.AttributesToHighlight, want) {
+						t.Errorf("metadata keyword/highlight scope: %+v / %+v", request.AttributesToSearchOn, request.AttributesToHighlight)
+					}
+					wantRetrieve := []string{"document_id", "locator", "engine_id", "engine_name", "engine_type", "data_item_type", "name", "full_name", "schema", "bucket", "path", "fields.name"}
+					if !reflect.DeepEqual(request.AttributesToRetrieve, wantRetrieve) {
+						t.Errorf("metadata retrieval scope: %+v", request.AttributesToRetrieve)
+					}
+					hit := map[string]interface{}{
+						"document_id": identity.ID, "locator": identity.Locator, "engine_id": 11, "name": "Persons", "_rankingScore": 0.9,
+						"fields": []interface{}{map[string]interface{}{"name": "userInfo.phone", "data_type": "string", "comment": "private", "sample_value": "private value"}},
+						"title":  "private title", "content_preview": "private body", "metadata": map[string]interface{}{"sample": "private sample"},
+						"_formatted": map[string]interface{}{"content_preview": "<mark>private</mark> body"},
+					}
+					if test.formatted != nil {
+						hit["_formatted"].(map[string]interface{})["fields"] = []interface{}{test.formatted}
+					}
+					_ = json.NewEncoder(w).Encode(map[string]interface{}{"hits": []interface{}{hit}})
+				default:
+					t.Errorf("unexpected request: %s %s", r.Method, r.URL.Path)
+					w.WriteHeader(http.StatusBadRequest)
+				}
+			}))
+			defer server.Close()
+			svc := &HybridSearchService{client: meilisearch.New(server.URL, meilisearch.DisableRetries()), contentIndex: "content"}
+			result, err := svc.searchVisibleKeywords(context.Background(), "tenant_id = 7", "phone", searchVisibility{metadata: map[string]indexedSearchIdentity{identity.ID: identity}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			want := SearchDocument{DocumentID: identity.ID, Locator: identity.Locator, EngineID: 11, Name: "Persons", FileName: "Persons"}
+			if test.matched {
+				want.FieldMatches = []SearchFieldMatch{{Name: "userInfo.phone", Highlights: map[string]string{"name": "userInfo.<mark>phone</mark>"}}}
+			}
+			if !reflect.DeepEqual(result, []SearchDocument{want}) {
+				t.Fatalf("metadata response exceeded field-name projection or lost the actual match: %+v", result)
+			}
+		})
+	}
+}
 
 func TestMapMeilisearchHitPreservesActualFieldMatches(t *testing.T) {
 	t.Parallel()

@@ -74,7 +74,7 @@ manager/
 
 ## 核心 API
 
-数据检索的结果对象仍为 DataItem。字段命中只来自搜索服务实际高亮的已登记事实，页面展示上下文并转义源文本；纯向量命中不声明字段命中。技术／正文快照分别幂等更新、精确删除、结构覆盖范围及历史补录均以 `docs/spec/addp元数据扫描机制规范.md` 的“DataItem 技术元数据搜索投影”和“技术投影的检索消费与覆盖边界”为准，不在本入口另存一份契约。验证沿用 `make test-manager-frontend`、`make test-manager-postgres`、`make test-go` 及 Swagger 标准检查。
+数据检索的结果对象仍为 DataItem。仅有元数据查看权时可搜索资源名称、路径和已登记技术字段名，只返回身份、定位及实际命中的字段名高亮；不搜索字段类型、注释、正文、样本值或内容向量，也不返回完整结构。当前内容读取权的既有字段上下文与 Security 保护路线保留。字段命中只来自搜索服务实际高亮的已登记事实，页面展示上下文并转义源文本；纯向量命中不声明字段命中。技术／正文快照分别幂等更新、精确删除、结构覆盖范围及历史补录均以 `docs/spec/addp元数据扫描机制规范.md` 的“DataItem 技术元数据搜索投影”和“技术投影的检索消费与覆盖边界”为准，不在本入口另存一份契约。验证沿用 `make test-manager-frontend`、`make test-manager-postgres`、`make test-go` 及 Swagger 标准检查。
 
 路由前缀：`/api/v1/manager`。
 

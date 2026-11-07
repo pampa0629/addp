@@ -257,7 +257,8 @@ func TestIntegrationPostgresManagerContentSnapshots(t *testing.T) {
 			name := []string{"BudgetMeta", "BudgetRead", "BudgetHidden"}[i]
 			size := int64(99)
 			technical := commonClient.ManagerContentDocument{DocumentID: identity.ID, EngineType: identity.EngineType, Locator: identity.Locator, EngineID: engineID,
-				PayloadKind: commonClient.ManagerContentPayloadTechnicalMetadata, DataItemType: "collection", Name: name, FullName: "Outdoor." + name, SizeBytes: &size}
+				PayloadKind: commonClient.ManagerContentPayloadTechnicalMetadata, DataItemType: "collection", Name: name, FullName: "Outdoor." + name, SizeBytes: &size,
+				Fields: []commonClient.ManagerContentField{{Name: "userInfo.phone", DataType: "string", Comment: "annotationtoken"}}}
 			body := commonClient.ManagerContentDocument{DocumentID: identity.ID, EngineID: engineID, PayloadKind: commonClient.ManagerContentPayloadExtractedContent, DataItemType: "collection", Name: name,
 				Content: "secretonly", ContentPreview: "secretonly"}
 			for _, doc := range []commonClient.ManagerContentDocument{technical, body} {
@@ -286,6 +287,35 @@ func TestIntegrationPostgresManagerContentSnapshots(t *testing.T) {
 		result, err := svc.SearchDocuments(ctx, &tenantID, &engineID, "addp_at_test", checker, "secretonly", 1, 10)
 		if err != nil || result.Total != 1 || len(result.Hits) != 1 || result.Hits[0].DocumentID != content.ID {
 			t.Fatalf("content-only match escaped access filter: %+v %v", result, err)
+		}
+		result, err = svc.SearchDocuments(ctx, &tenantID, &engineID, "addp_at_test", checker, "phone", 1, 10)
+		if err != nil || result.Total != 2 || len(result.Hits) != 2 {
+			t.Fatalf("metadata field-name query: %+v %v", result, err)
+		}
+		for _, hit := range result.Hits {
+			if len(hit.FieldMatches) != 1 || hit.FieldMatches[0].Name != "userInfo.phone" || hit.FieldMatches[0].Highlights["name"] != "userInfo.<mark>phone</mark>" {
+				t.Fatalf("lost actual nested field-name match: %+v", hit.FieldMatches)
+			}
+			if hit.DocumentID == metadata.ID && (hit.ContentPreview != "" || hit.Metadata != nil || hit.FieldMatches[0].DataType != "" || hit.FieldMatches[0].Comment != "" || len(hit.FieldMatches[0].Highlights) != 1) {
+				t.Fatalf("metadata-only field query disclosed content or field annotations: %+v", hit)
+			}
+			if hit.DocumentID == content.ID && (hit.FieldMatches[0].DataType != "string" || hit.FieldMatches[0].Comment != "annotationtoken") {
+				t.Fatalf("content-readable field context changed: %+v", hit)
+			}
+		}
+		for _, query := range []string{"annotationtoken", "string"} {
+			result, err = svc.SearchDocuments(ctx, &tenantID, &engineID, "addp_at_test", checker, query, 1, 10)
+			if err != nil || result.Total != 1 || len(result.Hits) != 1 || result.Hits[0].DocumentID != content.ID {
+				t.Fatalf("metadata-only query searched annotations or types (%q): %+v %v", query, result, err)
+			}
+		}
+		withdrawn := searchVisibilityFixture{classify: func(target plugin.EngineCatalogPath) (bool, bool) {
+			name := target.Segments[len(target.Segments)-1].Name
+			return name == "BudgetRead", name == "BudgetRead"
+		}}
+		result, err = svc.SearchDocuments(ctx, &tenantID, &engineID, "addp_at_test", withdrawn, "phone", 1, 10)
+		if err != nil || result.Total != 1 || len(result.Hits) != 1 || result.Hits[0].DocumentID != content.ID {
+			t.Fatalf("metadata withdrawal retained field-name hit: %+v %v", result, err)
 		}
 		visibility, err := svc.observeSearchVisibility(ctx, tenantID, &engineID, "addp_at_test", checker)
 		if err != nil {
