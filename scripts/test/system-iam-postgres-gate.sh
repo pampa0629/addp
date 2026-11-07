@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # ADDP_T2_SERVICES=postgres
 # ADDP_T2_REQUIRED_ENV=ADDP_SYSTEM_POSTGRES_TEST_DSN
-# ADDP_T2_INPUT_FILES=.node-version .github/actions/prepare-frontend-gate/ scripts/utils/node-runtime.sh scripts/test/system-iam-postgres-gate_test.py scripts/test/system-iam-browser-login.mjs console/frontend/e2e/online/local-identity-support.mjs workbench/frontend/src/ workbench/frontend/public/ workbench/frontend/index.html workbench/frontend/vite.config.js workbench/frontend/package.json workbench/frontend/package-lock.json workbench/frontend/e2e/fixtures/metricApplication.js portal/frontend/src/ portal/frontend/public/ portal/frontend/index.html portal/frontend/vite.config.js portal/frontend/package.json portal/frontend/package-lock.json common-frontend/basic/src/ common-frontend/chart/src/ common-frontend/map/src/
+# ADDP_T2_INPUT_FILES=.node-version .github/actions/prepare-frontend-gate/ scripts/utils/node-runtime.sh scripts/test/system-iam-postgres-gate_test.py scripts/test/system-iam-browser-login.mjs console/frontend/e2e/online/local-identity-support.mjs workbench/frontend/src/ workbench/frontend/public/ workbench/frontend/index.html workbench/frontend/vite.config.js workbench/frontend/package.json workbench/frontend/package-lock.json workbench/frontend/e2e/fixtures/metricApplication.js portal/frontend/src/ portal/frontend/public/ portal/frontend/index.html portal/frontend/vite.config.js portal/frontend/package.json portal/frontend/package-lock.json common-frontend/basic/src/ common-frontend/chart/src/ common-frontend/map/src/ scripts/utils/deployment-inventory.py scripts/utils/metrics-project.py
 # system-iam-postgres-gate.sh - Run destructive System IAM tests against a disposable PostgreSQL database.
 
 set -euo pipefail

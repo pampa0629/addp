@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"net/url"
 	"os"
+	"os/exec"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"sync/atomic"
@@ -412,6 +414,67 @@ func TestObservabilityIdentityProjectionAgainstPostgres(t *testing.T) {
 		if err != nil || value.ServiceGroups.State != "unavailable" || len(value.ServiceGroups.Groups) != 0 {
 			t.Fatalf("invalid intent leaked: %+v %v", value, err)
 		}
+	})
+	t.Run("startup failure follows deployment attempts and persisted Backend registration", func(t *testing.T) {
+		dir := filepath.Join(t.TempDir(), "deployment")
+		inventory, err := filepath.Abs("../../../../scripts/utils/deployment-inventory.py")
+		if err != nil {
+			t.Fatal(err)
+		}
+		publish := func(args ...string) string {
+			t.Helper()
+			arguments := append([]string{inventory}, args...)
+			output, err := exec.CommandContext(ctx, "python3", append(arguments, "--directory", dir)...).CombinedOutput()
+			if err != nil {
+				t.Fatalf("startup result publication failed: %v (%s)", err, output)
+			}
+			return strings.TrimSpace(string(output))
+		}
+		begin := func() string {
+			t.Helper()
+			attempt := publish("service-expectations", "--state", "running", "--observe-startup", "--units", "standard-backend")
+			if len(attempt) != 32 {
+				t.Fatal("publisher did not open a new attempt")
+			}
+			return attempt
+		}
+		view := service.NewModuleRegistryService(repository.NewModuleRegistryRepository(db))
+		view.SetDeploymentDiscovery(&service.DeploymentDiscoveryService{Directory: dir})
+		expect := func(reason string) {
+			t.Helper()
+			rows, err := view.ListModuleStartupFailures(ctx)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if reason == "" {
+				if len(rows) != 0 {
+					t.Fatalf("unexpected startup failure: %+v", rows)
+				}
+				return
+			}
+			if len(rows) != 1 || rows[0].ModuleName != "standard" || rows[0].Reason != reason || rows[0].FailedAt.IsZero() {
+				t.Fatalf("expected current startup result %q, got %+v", reason, rows)
+			}
+		}
+		first := begin()
+		publish("backend-startup-failure", "--attempt", first, "--module", "standard", "--reason", "build_failed")
+		expect("build_failed")
+		second := begin()
+		publish("backend-startup-failure", "--attempt", first, "--module", "standard", "--reason", "process_exited")
+		expect("")
+		publish("backend-startup-failure", "--attempt", second, "--module", "standard", "--reason", "readiness_timeout")
+		expect("readiness_timeout")
+		if err := view.Register(&models.ModuleRegistrationRequest{
+			ModuleName: "standard", InstanceID: "startup-retry-backend", Role: "backend",
+			RoutePrefix: "/standard", ModuleURL: "http://127.0.0.1:8110", ProcessStartedAt: time.Now().UTC(),
+		}); err != nil {
+			t.Fatal(err)
+		}
+		expect("")
+		if err := view.Deregister("standard", "startup-retry-backend"); err != nil {
+			t.Fatal(err)
+		}
+		expect("")
 	})
 	// A failed engine read cannot return the nodes/modules already read.
 	if err := db.Exec("ALTER TABLE system.engine_deployments RENAME TO unavailable_engines").Error; err != nil {

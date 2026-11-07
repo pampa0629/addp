@@ -195,7 +195,7 @@ Business 认证目录首次切换须由部署方沿标准生命周期重建容�
 
 本批只增加页面可见性。运行确认仍由 System 租约判断，既有服务组失联告警不使用启动结果。验证沿 `make test-dev-lifecycle`、`make test-deployment-discovery`、System Go／Swagger 及 Monitor 页面门禁，覆盖新旧尝试隔离、局部启停、未执行与真实失败的区分、尚无实例的展示和拒绝身份。
 
-代码已接通。本地使用标准发布入口和受控构建失败验证实际脚本的结果发布，System 回归及 Swagger 覆盖通过，受控浏览器核对无实例展示、刷新清除和缺权不读取。尚未在完整运行环境执行真实 Backend 启动故障与恢复复验。
+代码已接通。本地使用标准发布入口和受控构建失败验证实际脚本的结果发布，System 回归及 Swagger 覆盖通过，受控浏览器核对无实例展示、刷新清除和缺权不读取。已补[真实 PostgreSQL 下的失败、重试、登记和注销回归](../spec/testing/evidence/Monitor实例与服务发现历史证据.md#开发-backend-启动失败与重试的-postgresql-t22026-11-07)。尚未在完整运行环境执行真实 Backend 启动故障与恢复复验。
 
 
 ## 文件系统容量告警首期

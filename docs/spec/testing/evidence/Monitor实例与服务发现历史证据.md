@@ -6,6 +6,14 @@
 
 原始过程、逐步诊断及详细归档清单见[精简前的固定记录](https://github.com/pampa0629/addp/blob/be8f8daa4d38a7830585577f03b77bf2b5ed3931/docs/spec/testing/evidence/Monitor%E5%AE%9E%E4%BE%8B%E4%B8%8E%E6%9C%8D%E5%8A%A1%E5%8F%91%E7%8E%B0%E5%8E%86%E5%8F%B2%E8%AF%81%E6%8D%AE.md)。
 
+## 开发 Backend 启动失败与重试的 PostgreSQL T2（2026-11-07）
+
+产品基线 `51b5b26c7c5e88fc8d7e301c29c0dd01b540df56`，隔离检出仅叠加本批测试。标准发布器写入实际部署意图和启动结果，System 通过实际 PostgreSQL 模块登记读取失败。覆盖首次可见、重试清除、拒绝旧尝试迟到结果、本轮第二种失败可见、Backend 成功登记后清除，以及随后注销不会重新显示历史失败。
+
+标准 `make test-system-iam-postgres SYSTEM_IAM_POSTGRES_TEST_ARGS='--package repository --test observability-identity --source-root <隔离检出>'` 退出 0，无跳过。首次测试夹具把 Go 默认临时目录直接传入发布器，目录保护预检拒绝。改由正式发布器创建当次私有子目录后复验通过；未放宽保护规则。门禁只使用 `addp_iam_test`，退出后只读确认 `system` 和 `common` Schema 均无残留。
+
+该 T2 使用真实 PostgreSQL 与生产发布、登记代码，通过固定失败原因触发断言。完整标准启动中的真实构建或进程故障、正式登录和实际 Console 页面仍待隔离验收。
+
 ## 清单接入与实例绑定
 
 主机组合筛选、详情返回及重置已有个人 Safari 验证。System 清单接入 → Monitor 采集保存已通过 [Hosted 专项](https://github.com/pampa0629/addp/actions/runs/39127927703)（受验源码 `fb13955d8f3cc48b254f2c840e55b8f8f638d2cc`，包含 `70c62a09a`、`9263ab6ee`）：单台 Linux VM 创建一次主机，正式 400 拒绝后只重试同一主机采集，刷新、两 Owner 独立读取及准确数量均通过。场景约 63.535 秒，浏览器约 39.370 秒；配置退役通过 API 删除采集并核验 404、停用主机且核验版本递增，随后独占部署销毁与外层零残留通过，不表示产品已提供主机 DELETE。
