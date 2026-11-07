@@ -32,6 +32,14 @@
 
 2026-11-07 用户确认仅修隔离验收夹具后重跑一次。准备身份复用现有 `tenant.engine_access_delegation_administrator`，仅增加扫描执行／读取两项测试功能权限，整引擎扫描及其结果由该独立身份完成。普通消费用户仍核对原十项功能权限，消费用户与审批用户读取准备扫描均须返回 404；CDC 历史发起人和审批扫描归属继续分别验证。身份生成仍走现有 System-owned helper，主场景仅接收独立准备凭据。准备身份不得与六个业务／控制身份复用 Token。
 
+修订提交 `ee6d3032578b0e0428bfa6293986838843a3449c` 已推送。最终 `make test-transfer-continuous-online-runner` 退出 0，88 项 Python 回归、JavaScript／Bash 语法及 System 身份夹具 Go 包通过，包含已复用准备 helper 的现有回归。
+
+[复验 Run 42364909753／Job 128380830423](https://github.com/pampa0629/addp/actions/runs/42364909753/job/128380830423) attempt 1 固定实际源码 `80b9369963941456b9c9a3e82e2e26d7d6d0f82c`，包含上述修订。相比修订提交仅增加 Monitor 指标验收文件，夹具和本场景代码一致。干净检出及准入通过，独立准备 User 38 提交扫描返回 201，读取扫描并等待 success，通过扫描发起人绑定断言。普通消费用户和审批用户读取该扫描分别返回 404，报告 `source_scan_preparation` 中两项拒绝证明均为真。源扫描 execution 为 `7811a757-2c06-4733-83e9-ceee8fa11f1e`，`checks` 仅含 `formal_source_catalog_scan`。
+
+本次整套仍失败于 `source_scan/request_or_contract_failed`。扫描完成及拒绝断言后，普通用户 `GET /api/v1/meta/engines/:engine_id/items` 返回 200，夹具在目录基线读取期间停止。归档未保存该响应正文及更细的异常原因，暂不能把空列表、字段契约或身份校验中的某一项认定为已观测根因。Kafka 任务尚未创建，持续写入续页、刷新、同页终态及后续业务断言均未运行。`uncertain_mutation=false`、套件 `cleanup=passed`、领域残留 0，外层 `cleanup=passed`、`infra_cleanup=zero_residuals`。
+
+官方归档 `13571857121` 的 ZIP SHA-256 已独立匹配声明，为 `fa628f6f900640098330ef81b997e6a6e15b5342fedcde29a596be89fabbfcd8`。本次授权的一次复验已使用，保留首次失败和本次分层结果。独立准备身份完成扫描的修订已获真实运行证据，租户日志新增核心场景仍待验收。
+
 ## 2026-10-24 概览保留只读评估第一期
 
 Common 增加 `AssessRetention`，System 沿已有公共维护循环输出有界批次汇总。数据库强制只读／可重复读，使用数据库时间计算 180 天时间候选，并检查完整父子树、租约、关系异常、树外重试／恢复引用及预算。首期始终保留 Owner 行内事实释放和跨模块引用覆盖未核验的原因；不调用 Owner 私表、不新增用户 API、不提供物理删除或专业结果期限。批次不是全库唯一树数，不能累加为完整盘点。
