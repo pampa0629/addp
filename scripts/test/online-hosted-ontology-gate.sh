@@ -21,6 +21,10 @@ if [ "$ONLINE_SUITE" = ontology-agent-protection ]; then
   }
 fi
 source "$ROOT_DIR/scripts/utils/hosted-online.sh"
+if [ "$ONLINE_SUITE" = ontology-agent-protection ]; then
+  # All owners share this deployment key before encrypting any fixture data.
+  export ENCRYPTION_KEY="$(python3 -c 'import base64,secrets; print(base64.b64encode(secrets.token_bytes(32)).decode())')"
+fi
 export ONTOLOGY_URL=http://127.0.0.1:8195
 export SERVICE_URL=http://127.0.0.1:8086 SECURITY_URL=http://127.0.0.1:8194
 export META_URL=http://127.0.0.1:8082 MANAGER_URL=http://127.0.0.1:8081

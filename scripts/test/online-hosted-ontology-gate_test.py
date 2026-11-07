@@ -79,6 +79,10 @@ class HostedOntologyGateTest(unittest.TestCase):
         self.assertIn("infra_cleanup=failed", (self.host.artifacts / "summary.txt").read_text())
 
     def test_agent_protection_starts_real_owners_and_cleans_business_fixture(self):
+        launcher = self.host.repository / "scripts/dev/start.sh"
+        launcher.write_text(launcher.read_text().replace("#!/usr/bin/env bash\n", '''#!/usr/bin/env bash
+python3 -c 'import base64,hashlib,os; key=base64.b64decode(os.environ["ENCRYPTION_KEY"],validate=True); assert len(key)==32; open(os.environ["ADDP_TEST_GATE_TRACE"],"a").write("ephemeral-key:"+hashlib.sha256(key).hexdigest()+"\\n")'
+''', 1))
         self.host._write_repository_script("business/scripts/online-security-owner-fixture.sh", '''
             #!/usr/bin/env bash
             echo "ontology-business:$1" >> "$ADDP_TEST_GATE_TRACE"
@@ -100,6 +104,9 @@ class HostedOntologyGateTest(unittest.TestCase):
                 self.assertIn("make:test-online ONLINE_SUITE=ontology-agent-protection", trace)
                 self.assertIn("ontology-business:start", trace)
                 self.assertIn("ontology-business:stop", trace)
+                keys = {line for line in trace.splitlines() if line.startswith("ephemeral-key:")}
+                self.assertEqual(len(keys), 1 if failed == "0" else 2,
+                                 "each deployment needs one fresh key shared by every owner")
                 self.assertFalse(self.host.secrets.exists())
 
     def test_agent_protection_refuses_existing_business_container(self):
