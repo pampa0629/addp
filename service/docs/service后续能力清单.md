@@ -11,7 +11,7 @@
 | 查询来源与消费契约 | 表、普通/联邦 SQL、analytical 来源，结构化筛选、稳定键、cursor 与有界导出，见[查询发布与执行](architecture/查询发布与执行.md)。 |
 | 指标契约与页面操作 | 精确修订、管理/消费版本、重绑与编译契约见[指标来源与版本](architecture/指标来源与版本.md)，页面操作与验证见[操作索引](architecture/管理界面与模块协作.md#查询服务创建与详情)；编译成功不代替取数验收。 |
 | 当前查询协议与入口 | REST/Features、DTO 与页面地址、公开入口及客户端验证，见[查询与要素协议](testing/查询与要素协议.md)。 |
-| 身份、授权与查询保护 | opaque Token / AuthContext、User 权限、API Consumer Grant 与单表角色方式，见[身份与保护](architecture/查询发布与执行.md#身份授权与资源限制)；不等于下表 User 资源级授权或其他来源的角色方式已接通。 |
+| 身份、授权与查询保护 | opaque Token / AuthContext、User 权限、API Consumer Grant、单表与 PostgreSQL 直接字段两表 JOIN 的角色方式，见[身份与保护](architecture/查询发布与执行.md#身份授权与资源限制)；不等于下表 User 资源级授权或其他来源的角色方式已接通。 |
 | OAuth 第三方应用接入 | OAuth 与外部 Client 规则见[消费规范](../../docs/spec/addp数据服务消费与数据应用规范.md)；客户端适配与证据缺口见[Workbench 后续事项](../../docs/next/ADDP%20Workbench数据服务消费与数据应用专题.md#三后续推进边界)。 |
 | 现有限流与单次查询上限 | API Consumer 分钟限流与 Query 单次 `max_features` 上限，见[资源限制](architecture/查询发布与执行.md#身份授权与资源限制)。 |
 | 现有消费访问记录 | API Consumer Query 请求的 Gateway 访问记录，范围与落库失败边界见[访问记录说明](../../gateway/docs/gateway架构说明.md#6-数据库)；不代替全入口计量或 System 审计。 |

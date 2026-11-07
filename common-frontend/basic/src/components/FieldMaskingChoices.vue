@@ -4,8 +4,8 @@
     <el-button :disabled="loading || disabled" @click="$emit('refresh')">{{ t('fieldMaskingChoices.refresh') }}</el-button>
     <el-alert v-if="error" :title="error" type="error" :closable="false" />
     <el-form label-position="top" :disabled="disabled || loading || Boolean(error)">
-      <el-form-item v-for="field in fields" :key="maskingFieldKey(field)" :label="field.component_key">
-        <el-select :model-value="selected(field)" style="width: 100%" @change="value => choose(field, value)">
+      <el-form-item v-for="field in fields" :key="maskingFieldKey(field)" :label="fieldLabel(field)">
+        <el-select :model-value="selected(field)" :placeholder="t('fieldMaskingChoices.default')" style="width: 100%" @change="value => choose(field, value)">
           <el-option :label="t('fieldMaskingChoices.default')" value="" />
           <el-option v-if="stale(field)" :value="'__unavailable__'" :label="t('fieldMaskingChoices.stale')" disabled />
           <el-option v-for="option in field.options" :key="option.id" :label="option.name" :value="option.id" />
@@ -23,7 +23,7 @@
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { maskingFieldKey, currentMaskingChoice, isCurrentMaskingChoice, setMaskingChoice } from '../utils/fieldMaskingChoices.mjs'
-const props = defineProps({ modelValue: { type: Array, default: () => [] }, fields: { type: Array, default: () => [] }, loading: Boolean, disabled: Boolean, error: { type: String, default: '' } })
+const props = defineProps({ modelValue: { type: Array, default: () => [] }, fields: { type: Array, default: () => [] }, fieldLabel: { type: Function, default: field => field.component_key }, loading: Boolean, disabled: Boolean, error: { type: String, default: '' } })
 const emit = defineEmits(['update:modelValue', 'refresh'])
 const { t } = useI18n()
 const orphans = computed(() => props.modelValue.filter(choice => !props.fields.some(field => maskingFieldKey(field) === maskingFieldKey(choice))))

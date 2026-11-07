@@ -48,15 +48,15 @@ func TestSQLRoleSourceUsesProviderIdentityAndDirectAliasCopies(t *testing.T) {
 		return &roleSourcePreparedTest{set: set, lineage: &plugin.QueryOutputLineage{Sources: []plugin.QueryOutputSource{{Path: path, Fields: []datatype.FieldInfo{{Name: "id", Type: datatype.FieldTypeBigInt}, {Name: "phone", Type: datatype.FieldTypeString}}, Bindings: []plugin.QueryOutputBinding{{SourcePath: []string{"id"}, OutputPath: []string{"person_id"}, Transformation: "direct"}, {SourcePath: []string{"phone"}, OutputPath: []string{"phone_alias"}, Transformation: "direct"}, {SourcePath: []string{"phone"}, OutputPath: []string{"phone_copy"}, Transformation: "direct"}}}}}}
 	}
 	prepared := fixture()
-	source, err := sqlRoleSource(t.Context(), engine, prepared, 91)
+	source, err := sqlRoleSource(t.Context(), engine, prepared, 91, "")
 	expected, _ := dataprotection.DataItemTargetFromCatalogPath(engine.(plugin.EngineCatalogModelProvider).EngineCatalogModel(), prepared.set.Paths[0])
-	if err != nil || source.target != expected || !source.fields["phone"] || source.fields["phone_alias"] || prepared.executed {
+	if err != nil || len(source.targets) != 1 || len(source.targets[expected]["phone"]) != 2 || len(source.targets[expected]["phone_alias"]) != 0 || prepared.executed {
 		t.Fatalf("incorrect source identity or alias inference: %+v %v", source, err)
 	}
 	unused := fixture()
 	unused.lineage.Sources[0].Bindings = unused.lineage.Sources[0].Bindings[:1]
-	unusedSource, err := sqlRoleSource(t.Context(), engine, unused, 91)
-	if err != nil || unusedSource.fields["phone"] || !unusedSource.fields["id"] {
+	unusedSource, err := sqlRoleSource(t.Context(), engine, unused, 91, "")
+	if err != nil || len(unusedSource.targets[expected]["phone"]) != 0 || len(unusedSource.targets[expected]["id"]) != 1 {
 		t.Fatalf("unused source field became a selectable output: %+v %v", unusedSource, err)
 	}
 	cases := map[string]func(*roleSourcePreparedTest){
@@ -82,7 +82,7 @@ func TestSQLRoleSourceUsesProviderIdentityAndDirectAliasCopies(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			p := fixture()
 			mutate(p)
-			source, err := sqlRoleSource(t.Context(), engine, p, 91)
+			source, err := sqlRoleSource(t.Context(), engine, p, 91, "")
 			if source != nil || !errors.Is(err, dataprotection.ErrRoleOptionUnavailable) || p.executed {
 				t.Fatalf("unproven source admitted: %+v %v", source, err)
 			}

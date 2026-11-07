@@ -396,7 +396,8 @@
       "executionQueryParameter": "Bound parameter",
       "executionQueryType": "Type",
       "executionQueryValue": "Value (canonical text)",
-      "maskingUnsupported": "Role-specific masking supports native single-table services and SQL services with provable direct fields from one ordinary table. Other sources retain default protection; explicitly remove any saved selection.",
+      "maskingUnsupported": "Role-specific masking supports native single-table sources, SQL with provable direct fields from one ordinary table, and eligible PostgreSQL two-table joins. Other sources use default protection and require you to remove any saved selection.",
+      "maskingOutputFieldLabel": "{field} (output columns {outputs})",
       "maskingLoadFailed": "Failed to load field masking methods",
       "namedParametersEditHelp": "Only optional parameter defaults can be changed after publication; all other declarations stay unchanged."
     },

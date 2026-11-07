@@ -67,23 +67,6 @@ definitions:
       role:
         type: string
     type: object
-  dataprotection.FieldRoleOptions:
-    properties:
-      assessment_revision:
-        type: integer
-      component_key:
-        type: string
-      options:
-        items:
-          $ref: '#/definitions/dataprotection.RoleOptionCandidate'
-        type: array
-      policy_id:
-        type: string
-      policy_revision:
-        type: integer
-      target:
-        $ref: '#/definitions/dataprotection.ResourceReference'
-    type: object
   dataprotection.ResourceReference:
     properties:
       component_key:
@@ -1227,6 +1210,29 @@ definitions:
       next_cursor:
         type: string
     type: object
+  github_com_addp_service_internal_models.QueryProtectionFieldOptions:
+    properties:
+      assessment_revision:
+        type: integer
+      component_key:
+        type: string
+      options:
+        items:
+          $ref: '#/definitions/dataprotection.RoleOptionCandidate'
+        type: array
+      output_fields:
+        description: Direct result column names for a two-table JOIN, for display
+          only.
+        items:
+          type: string
+        type: array
+      policy_id:
+        type: string
+      policy_revision:
+        type: integer
+      target:
+        $ref: '#/definitions/dataprotection.ResourceReference'
+    type: object
   github_com_addp_service_internal_models.QueryProtectionOptionsRequest:
     properties:
       config_type:
@@ -1244,7 +1250,7 @@ definitions:
     properties:
       fields:
         items:
-          $ref: '#/definitions/dataprotection.FieldRoleOptions'
+          $ref: '#/definitions/github_com_addp_service_internal_models.QueryProtectionFieldOptions'
         type: array
     type: object
   github_com_addp_service_internal_models.QueryServiceDTO:
@@ -3799,13 +3805,13 @@ paths:
     post:
       consumes:
       - application/json
-      description: 当前第一方用户的原生表或可证明单表直接字段 SQL 候选；SQL 只准备不执行，沿 Service 独立投影核验，不接受角色或算法参数
-        | Native-table or provable direct-field single-table SQL methods for the current
-        first-party User; SQL is prepared without execution against the Service projection;
-        caller roles and algorithm parameters are not accepted
+      description: 返回当前第一方用户对原生单表、直接字段单表 SQL 或 PostgreSQL 直接字段两表 JOIN 的候选。SQL 只准备不执行，双表候选按来源列出对应输出列
+        | Lists options for the current first-party User for native tables, direct-field
+        single-table SQL, or PostgreSQL two-table joins with direct output fields.
+        Prepares SQL without executing it and lists output columns per joined source
+        field
       parameters:
-      - description: 原生表或可证明的单表 SQL 来源 | Native table or provable single-table SQL
-          source
+      - description: 原生表或可证明来源的 SQL | Native table or SQL with provable sources
         in: body
         name: request
         required: true

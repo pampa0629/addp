@@ -260,7 +260,7 @@ Develop 业务选择首期保存在 Query 的 `content.protection_choices`，每
 
 Transfer 首期业务选择保存在 `config.source.protection_choices`，只开放当前第一方登录用户手动发起的 bounded/snapshot/native table（含同一 PreparedQuery 查询源）路径；候选及保存核验只针对显式选择的精确源 DataItem，复用 System 本人当前角色事实与本地 export 投影。选择只保存字段及选项身份／修订，不保存角色快照、令牌或算法参数。切换来源、运行边界或加载方式不能自动丢弃旧选择；不支持的形态、调度、委托、应用或编排入口显式拒绝。没有选择的现有默认链路不增加角色依赖。
 
-Service 首期角色方式保存于 QueryService 的 `data_config.protection_choices`，沿同一聚合的管理版本与消费版本更新，配置只接受共享 `FieldRoleChoice` 身份引用。先接入具有确定 Meta DataItem 快照的原生单表来源；普通 SQL、联邦、对象表和指标来源继续既有默认保护，尚未接入角色方式时明确拒绝非空选择。候选只读取当前显式 locator，不枚举租户资源；保存时校验目标、源字段、当前本人角色与 Service 本地 `service_execute` 投影，保留旧选择的更新同样校验。已有服务更新权限的用户可仅提交版本与 `status=inactive` 直接停用，保留原选择，不依赖角色方式仍有效；重新启用、携带其他配置的更新及实际调用仍严格核验，不自动清除选择或恢复默认。REST Query、CSV／GeoJSON 与 OGC Features 共用查询内核，在准备及最终交付前重新核验调用用户的当前角色和选项。没有选择时不增加本人角色接口依赖。服务公开设置不赋予角色资格，匿名、应用凭据、委托及跨租户用户不能执行角色专用方式，不借用发布者角色，也不能静默恢复默认；AK/SK 的保护方式绑定仍搁置。修改来源不得隐式丢弃已保存选择，应先明确移除。受影响门禁由既有 Service 模块 Go、PostgreSQL、前端与 Swagger 入口自动发现，不因 T1／T2／T3 通过宣称实际用户或 Hosted T4 已验收。
+Service 首期角色方式保存于 QueryService 的 `data_config.protection_choices`，沿同一聚合的管理版本与消费版本更新，配置只接受共享 `FieldRoleChoice` 身份引用。适用于具有确定 Meta DataItem 快照的原生单表、可证明直接输出的普通单表 SQL，以及同一 PostgreSQL 引擎下两个不同普通表的显式 JOIN ON。双表首期只支持直接列与显式别名，以 Provider 的 ReadSet 与 OutputLineage 核验两个来源及唯一输出列；视图、CTE、集合操作、通配符、计算输出及其他多来源形态继续拒绝非空选择。候选只读取当前 locator 或 SQL 已证明且直接输出的源字段，不枚举租户资源；同名字段按 DataItem 与字段身份分别显示和保存；保存时校验目标、源字段、当前本人角色与 Service 本地 `service_execute` 投影，保留旧选择的更新同样校验。已有服务更新权限的用户可仅提交版本与 `status=inactive` 直接停用，保留原选择，不依赖角色方式仍有效；重新启用、携带其他配置的更新及实际调用仍严格核验，不自动清除选择或恢复默认。REST Query、CSV／GeoJSON 与 OGC Features 共用查询内核，在准备及最终交付前重新核验调用用户的当前角色和选项。没有选择时不增加本人角色接口依赖。服务公开设置不赋予角色资格，匿名、应用凭据、委托及跨租户用户不能执行角色专用方式，不借用发布者角色，也不能静默恢复默认；AK/SK 的保护方式绑定仍搁置。修改来源不得隐式丢弃已保存选择，应先明确移除。受影响门禁由既有 Service 模块 Go、PostgreSQL、前端与 Swagger 入口自动发现，不因 T1／T2／T3 通过宣称实际用户或 Hosted T4 已验收。
 
 用户手动启动角色专用 Transfer 任务、或 Develop 创建角色专用全量导出时，在当前同步用户请求内签发 audience=transfer、绑定本次 execution UUID 和实际源读／业务目标写引擎效果的现有 Execution Authorization。使用者必须具备 system.execution_authorization.create、transfer.task.execute 和对应效果资格，不借用机器、创建人或发布人角色，不补授权限。导出 Owner 先按当前 User 验证选项，再为共享导出会话生成的确切 UUID 签发授权；授权事实纳入完整请求摘要，Transfer 仍通过精确会话来源核对发起人，随后将事实写入统一执行记录。Worker 必须按同一 execution/attempt/lease 取得 System 当前角色事实，每批输出刷新资格并复核本地投影，失效拒绝交付，不能回退默认。
 
@@ -647,7 +647,7 @@ Service 将有效排序字段（含稳定键）从本次查询计划传给共享
 
 当前不能提供完整 PreparedQuery 读取闭包与输出血缘的联邦查询、图查询，以及尚未建立独立 `service_publish` 或其他动作执行器的数据查询辅助、查询样例和瓦片路径，继续使用资源级失效关闭，不得借用 `service_execute` 或 Manager 规则开放。
 
-Service 登录用户的角色选择同时覆盖原生表和 Provider 可证明唯一普通表、直接字段及别名的非联邦 SQL 服务；具体配置、候选接口和仅准备不执行的保存期证明以 [Service 查询发布规范](../../service/docs/architecture/查询发布与执行.md#登录用户的角色脱敏选择) 为唯一细节来源。SQL 发布快照仍只保存输出契约；不得把输出别名、候选请求或角色方式当成 Meta 来源授权或新增发布血缘事实。
+Service 登录用户的角色选择覆盖原生单表、可证明直接字段及别名的单表 SQL，以及符合本规范两表范围的 PostgreSQL JOIN；具体配置、候选接口和仅准备不执行的保存期证明以 [Service 查询发布规范](../../service/docs/architecture/查询发布与执行.md#登录用户的角色脱敏选择) 为唯一细节来源。SQL 发布快照仍只保存输出契约；不得把输出别名、候选请求或角色方式当成 Meta 来源授权或新增发布血缘事实。
 
 ### 10.4 Transfer `export` 动作
 

@@ -176,6 +176,161 @@ func TestSQLRoleSelectionAgainstPostgres(t *testing.T) {
 	if q.SourceSnapshot().Source != nil {
 		t.Fatal("SQL invented a Meta source snapshot")
 	}
+	t.Run("two-table-join-separates-same-named-fields", func(t *testing.T) {
+		right := "\"" + schema + "\".\"contacts\""
+		if _, err := db.Exec(`CREATE TABLE ` + right + ` (id bigint PRIMARY KEY,phone text); INSERT INTO ` + right + ` VALUES(1,'13512348888'),(2,'13912347777')`); err != nil {
+			t.Fatal(err)
+		}
+		join := ` FROM ` + qualified + ` AS p JOIN ` + right + ` AS c ON p.id=c.id`
+		sql := `SELECT p.id,p.phone AS person_phone,p.phone AS person_copy,c.phone AS contact_phone` + join
+		joinDB, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := joinDB.Exec("ATTACH DATABASE ':memory:' AS service").Error; err != nil {
+			t.Fatal(err)
+		}
+		joinStore, err := projectionstore.Migrate(joinDB, "service", "service", nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		leftPolicy := projection
+		rightPolicy := projection
+		rightPolicy.ProjectionID = "sql-role-contacts"
+		rightPolicy.Target.ResourceIdentity = commonmodels.GenerateItemFingerprint(engineID, schema+".contacts")
+		rightPolicy.Rules = append([]dataprotection.Rule(nil), projection.Rules...)
+		rightOptions := *projection.Rules[0].RoleOptions
+		rightOptions.PolicyID = "c4d8478d-5a76-49de-a073-0c107c34b0fe"
+		rightPolicy.Rules[0].RoleOptions = &rightOptions
+		applyPolicies := func(previous, next string, policies ...*dataprotection.Projection) {
+			t.Helper()
+			var changes []dataprotection.ProjectionChange
+			for _, policy := range policies {
+				if err := policy.Seal(); err != nil {
+					t.Fatal(err)
+				}
+				changes = append(changes, dataprotection.ProjectionChange{ChangeID: next + "-" + policy.ProjectionID, Operation: dataprotection.ChangeOperationUpsert, Projection: policy})
+			}
+			if err := joinStore.ApplyBatch(t.Context(), int64(tenant), previous, &dataprotection.ProjectionChangesResponse{
+				SchemaVersion: dataprotection.ProjectionChangesSchemaV1, NextCursor: next, Changes: changes,
+			}, time.Now().UTC()); err != nil {
+				t.Fatal(err)
+			}
+		}
+		applyPolicies("", "join-1", &leftPolicy, &rightPolicy)
+		joinExecutor := *executor
+		joinExecutor.SetProtectionGate(protection.NewGate(joinStore))
+		options := func(sql string) (*models.QueryProtectionOptionsResponse, error) {
+			return joinExecutor.QueryProtectionOptions(ctx, tenant, &models.QueryProtectionOptionsRequest{ConfigType: "sql", EngineID: engineID, SQL: sql})
+		}
+		candidates, err := options(sql)
+		if err != nil || len(candidates.Fields) != 2 {
+			t.Fatalf("join candidates: %+v %v", candidates, err)
+		}
+		for _, candidate := range candidates.Fields {
+			want := map[dataprotection.ResourceReference]string{leftPolicy.Target: "person_copy,person_phone", rightPolicy.Target: "contact_phone"}[candidate.Target]
+			if want == "" || strings.Join(candidate.OutputFields, ",") != want || candidate.ComponentKey != "phone" || len(candidate.Options) != 1 {
+				t.Fatalf("incorrect join candidate: %+v", candidate)
+			}
+		}
+		for _, denied := range []string{
+			`SELECT p.*,c.phone AS contact_phone` + join,
+			`SELECT p.id,lower(p.phone) AS person_phone,c.phone AS contact_phone` + join,
+			`SELECT p.id,p.phone,c.phone` + join,
+			`WITH q AS (SELECT * FROM ` + qualified + `) SELECT q.id,q.phone AS p,c.phone AS c FROM q JOIN ` + right + ` AS c ON q.id=c.id`,
+		} {
+			if _, err := options(denied); !errors.Is(err, dataprotection.ErrRoleOptionUnavailable) {
+				t.Fatalf("unapproved JOIN shape admitted: %v", err)
+			}
+		}
+
+		joined := *q
+		joined.ID, joined.Version, joined.ServiceName = 0, 1, "sql-joined-role"
+		joined.SqlQuery, joined.NamedParameters = sql, nil
+		table := &datatype.TableInfo{Fields: []datatype.FieldInfo{
+			{Name: "id", Type: datatype.FieldTypeBigInt},
+			{Name: "person_phone", Type: datatype.FieldTypeString, Nullable: true},
+			{Name: "person_copy", Type: datatype.FieldTypeString, Nullable: true},
+			{Name: "contact_phone", Type: datatype.FieldTypeString, Nullable: true},
+		}, PrimaryKey: []string{"id"}}
+		joined.DataConfig = models.JSONB{
+			models.QueryServiceSourceSnapshotKey: queryServiceSnapshotPayload(buildSQLDependencySnapshot(sql, &models.QueryServiceOutputContract{Table: table}, now)),
+			"default_fields":                     []string{"id", "person_phone", "person_copy", "contact_phone"},
+			"stable_key":                         []string{"id"},
+		}
+		if err := ownerDB.Create(&joined).Error; err != nil {
+			t.Fatal(err)
+		}
+		joinOwner := NewQueryServiceService(repository.NewQueryServiceRepository(ownerDB), nil, nil, "")
+		joinOwner.SetRoleProtection(&joinExecutor)
+		save := func(choices []dataprotection.FieldRoleChoice) error {
+			_, err := joinOwner.UpdateService(ctx, joined.ID, tenant, &models.UpdateQueryServiceRequest{
+				Version: joined.Version, DataConfig: map[string]any{models.QueryProtectionChoicesKey: choices},
+			})
+			return err
+		}
+		choice := choices[0]
+		wrong := choice
+		wrong.Target = rightPolicy.Target
+		if err := save([]dataprotection.FieldRoleChoice{wrong}); !errors.Is(err, dataprotection.ErrRoleOptionUnavailable) {
+			t.Fatalf("accepted policy from the other source: %v", err)
+		}
+		if err := save([]dataprotection.FieldRoleChoice{choice}); err != nil {
+			t.Fatal(err)
+		}
+		saved, err := joinOwner.repo.GetByIDAndTenant(joined.ID, tenant)
+		if err != nil {
+			t.Fatal(err)
+		}
+		request := &models.QueryExecutionRequest{Page: models.QueryPageRequest{Limit: 1}}
+		first, err := joinExecutor.ExecuteQuery(ctx, saved, request)
+		if err != nil || len(first.Data) != 1 || first.Page.NextCursor == "" ||
+			first.Data[0]["person_phone"] != "***********" || first.Data[0]["person_copy"] != "***********" ||
+			first.Data[0]["contact_phone"] != "135****8888" {
+			t.Fatalf("first joined page: %+v %v", first, err)
+		}
+		request.Page.Cursor = first.Page.NextCursor
+		second, err := joinExecutor.ExecuteQuery(ctx, saved, request)
+		if err != nil || len(second.Data) != 1 || second.Page.HasMore ||
+			second.Data[0]["person_phone"] != nil || second.Data[0]["person_copy"] != nil ||
+			second.Data[0]["contact_phone"] != "139****7777" {
+			t.Fatalf("second joined page: %+v %v", second, err)
+		}
+		csv, err := joinExecutor.FormatAsCSV(second)
+		if err != nil || !strings.Contains(string(csv), "2,,,139****7777") {
+			t.Fatalf("joined CSV did not preserve empty fields and default mask: %v", err)
+		}
+		ineligible.Store(true)
+		_, err = joinExecutor.ExecuteQuery(ctx, saved, request)
+		ineligible.Store(false)
+		if !errors.Is(err, dataprotection.ErrRoleOptionIneligible) {
+			t.Fatalf("joined cursor accepted lost eligibility: %v", err)
+		}
+		leftPolicy.Revision = "00000000000000000002"
+		leftOptions := *leftPolicy.Rules[0].RoleOptions
+		leftOptions.PolicyRevision++
+		leftPolicy.Rules = append([]dataprotection.Rule(nil), leftPolicy.Rules...)
+		leftPolicy.Rules[0].RoleOptions = &leftOptions
+		applyPolicies("join-1", "join-2", &leftPolicy)
+		if _, err := joinExecutor.ExecuteQuery(ctx, saved, request); !errors.Is(err, dataprotection.ErrRoleOptionUnavailable) {
+			t.Fatalf("joined cursor accepted stale method: %v", err)
+		}
+		joined.Version = saved.Version
+		if err := save([]dataprotection.FieldRoleChoice{}); err != nil {
+			t.Fatal(err)
+		}
+		saved, err = joinOwner.repo.GetByIDAndTenant(joined.ID, tenant)
+		if err != nil {
+			t.Fatal(err)
+		}
+		request.Page.Cursor = ""
+		restored, err := joinExecutor.ExecuteQuery(ctx, saved, request)
+		if err != nil || len(restored.Data) != 1 || restored.Data[0]["person_phone"] != "136****4499" ||
+			restored.Data[0]["person_copy"] != "136****4499" || restored.Data[0]["contact_phone"] != "135****8888" {
+			t.Fatalf("default joined output not restored: %+v %v", restored, err)
+		}
+	})
+
 	t.Run("optional-default-revision-preserves-masking", func(t *testing.T) {
 		optional := *q
 		optional.ID = 0

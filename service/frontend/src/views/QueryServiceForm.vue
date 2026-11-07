@@ -427,6 +427,7 @@
         <FieldMaskingChoices
           v-model="form.protection_choices"
           :fields="maskingFields"
+          :field-label="maskingFieldLabel"
           :loading="maskingLoading"
           :error="maskingError || (!maskingSupported ? t('service.query.maskingUnsupported') : '')"
           :disabled="submitting || loading"
@@ -557,6 +558,9 @@ const tableUsesRuntime = ref(false)
 let engineLoadPromise = null
 const maskingFields = ref([])
 const maskingLoading = ref(false)
+const maskingFieldLabel = field => field.output_fields?.length
+  ? t('service.query.maskingOutputFieldLabel', { field: field.component_key, outputs: field.output_fields.join(', ') })
+  : field.component_key
 const maskingError = ref('')
 let maskingSequence = 0
 const maskingSupported = computed(() => !form.runtime_engine_id && (form.config_type === 'sql' || (form.config_type === 'table' && !tableUsesRuntime.value)))

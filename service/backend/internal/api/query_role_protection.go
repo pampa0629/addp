@@ -30,13 +30,13 @@ func queryProtectionContext(c *gin.Context) context.Context {
 	return svc.WithQueryProtectionUser(ctx, facts, commonauth.CanonicalBearerToken(c.GetHeader("Authorization")))
 }
 
-// QueryProtectionOptions returns only this user's methods for one explicit source.
+// QueryProtectionOptions returns this user's methods for the sources proven by one request.
 // @Summary 查询字段脱敏可选方式 | List selectable field masking methods
-// @Description 当前第一方用户的原生表或可证明单表直接字段 SQL 候选；SQL 只准备不执行，沿 Service 独立投影核验，不接受角色或算法参数 | Native-table or provable direct-field single-table SQL methods for the current first-party User; SQL is prepared without execution against the Service projection; caller roles and algorithm parameters are not accepted
+// @Description 返回当前第一方用户对原生单表、直接字段单表 SQL 或 PostgreSQL 直接字段两表 JOIN 的候选。SQL 只准备不执行，双表候选按来源列出对应输出列 | Lists options for the current first-party User for native tables, direct-field single-table SQL, or PostgreSQL two-table joins with direct output fields. Prepares SQL without executing it and lists output columns per joined source field
 // @Tags QueryService
 // @Accept json
 // @Produce json
-// @Param request body models.QueryProtectionOptionsRequest true "原生表或可证明的单表 SQL 来源 | Native table or provable single-table SQL source"
+// @Param request body models.QueryProtectionOptionsRequest true "原生表或可证明来源的 SQL | Native table or SQL with provable sources"
 // @Success 200 {object} models.QueryProtectionOptionsResponse
 // @Failure 400 {object} map[string]string
 // @Failure 401 {object} map[string]string

@@ -2199,7 +2199,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "当前第一方用户的原生表或可证明单表直接字段 SQL 候选；SQL 只准备不执行，沿 Service 独立投影核验，不接受角色或算法参数 | Native-table or provable direct-field single-table SQL methods for the current first-party User; SQL is prepared without execution against the Service projection; caller roles and algorithm parameters are not accepted",
+                "description": "返回当前第一方用户对原生单表、直接字段单表 SQL 或 PostgreSQL 直接字段两表 JOIN 的候选。SQL 只准备不执行，双表候选按来源列出对应输出列 | Lists options for the current first-party User for native tables, direct-field single-table SQL, or PostgreSQL two-table joins with direct output fields. Prepares SQL without executing it and lists output columns per joined source field",
                 "consumes": [
                     "application/json"
                 ],
@@ -2212,7 +2212,7 @@ const docTemplate = `{
                 "summary": "查询字段脱敏可选方式 | List selectable field masking methods",
                 "parameters": [
                     {
-                        "description": "原生表或可证明的单表 SQL 来源 | Native table or provable single-table SQL source",
+                        "description": "原生表或可证明来源的 SQL | Native table or SQL with provable sources",
                         "name": "request",
                         "in": "body",
                         "required": true,
@@ -4268,32 +4268,6 @@ const docTemplate = `{
                 }
             }
         },
-        "dataprotection.FieldRoleOptions": {
-            "type": "object",
-            "properties": {
-                "assessment_revision": {
-                    "type": "integer"
-                },
-                "component_key": {
-                    "type": "string"
-                },
-                "options": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/dataprotection.RoleOptionCandidate"
-                    }
-                },
-                "policy_id": {
-                    "type": "string"
-                },
-                "policy_revision": {
-                    "type": "integer"
-                },
-                "target": {
-                    "$ref": "#/definitions/dataprotection.ResourceReference"
-                }
-            }
-        },
         "dataprotection.ResourceReference": {
             "type": "object",
             "properties": {
@@ -5948,6 +5922,39 @@ const docTemplate = `{
                 }
             }
         },
+        "github_com_addp_service_internal_models.QueryProtectionFieldOptions": {
+            "type": "object",
+            "properties": {
+                "assessment_revision": {
+                    "type": "integer"
+                },
+                "component_key": {
+                    "type": "string"
+                },
+                "options": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/dataprotection.RoleOptionCandidate"
+                    }
+                },
+                "output_fields": {
+                    "description": "Direct result column names for a two-table JOIN, for display only.",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "policy_id": {
+                    "type": "string"
+                },
+                "policy_revision": {
+                    "type": "integer"
+                },
+                "target": {
+                    "$ref": "#/definitions/dataprotection.ResourceReference"
+                }
+            }
+        },
         "github_com_addp_service_internal_models.QueryProtectionOptionsRequest": {
             "type": "object",
             "properties": {
@@ -5974,7 +5981,7 @@ const docTemplate = `{
                 "fields": {
                     "type": "array",
                     "items": {
-                        "$ref": "#/definitions/dataprotection.FieldRoleOptions"
+                        "$ref": "#/definitions/github_com_addp_service_internal_models.QueryProtectionFieldOptions"
                     }
                 }
             }

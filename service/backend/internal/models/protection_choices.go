@@ -21,10 +21,16 @@ func (q *QueryService) ProtectionChoices() ([]dataprotection.FieldRoleChoice, er
 }
 
 type QueryProtectionOptionsResponse struct {
-	Fields []dataprotection.FieldRoleOptions `json:"fields"`
+	Fields []QueryProtectionFieldOptions `json:"fields"`
 }
 
-// QueryProtectionOptionsRequest identifies one explicit source; SQL stays out of URLs.
+type QueryProtectionFieldOptions struct {
+	dataprotection.FieldRoleOptions
+	// Direct result column names for a two-table JOIN, for display only.
+	OutputFields []string `json:"output_fields,omitempty"`
+}
+
+// QueryProtectionOptionsRequest identifies one explicit table or query; SQL stays out of URLs.
 type QueryProtectionOptionsRequest struct {
 	ConfigType    string         `json:"config_type"`
 	TargetLocator string         `json:"target_locator,omitempty"`

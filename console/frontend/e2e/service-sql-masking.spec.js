@@ -4,14 +4,26 @@ import en from '../../../service/frontend/src/i18n/en.json' with { type: 'json' 
 import commonZh from '../../../common-frontend/basic/src/i18n/zh-cn.json' with { type: 'json' }
 import commonEn from '../../../common-frontend/basic/src/i18n/en.json' with { type: 'json' }
 
-for (const language of ['zh-cn', 'en']) {
-  test(`SQL role choices use source fields, survive failed saves and restore defaults (${language})`, async ({ page }) => {
+for (const language of ['zh-cn', 'en']) for (const joined of [false, true]) {
+  test(`SQL role choices use source fields, survive failed saves and restore defaults (${language}, ${joined ? 'join' : 'single'})`, async ({ page }) => {
     const words = (language === 'en' ? en : zh).service.query
     const common = (language === 'en' ? commonEn : commonZh).fieldMaskingChoices
     const target = { owner_module: 'meta', resource_type: 'data_item', resource_identity: 'sql-persons-source' }
     const field = { target, component_key: 'phone', policy_id: 'sql-role-policy', policy_revision: 1, assessment_revision: 1, options: [{ id: 'full-mask', name: 'SQL full mask' }] }
     const choice = { target, component_key: 'phone', selection: { policy_id: field.policy_id, policy_revision: 1, assessment_revision: 1, option_id: 'full-mask' } }
     let definition = { id: 41, version: 3, service_name: 'sql_masking_fixture', title: 'SQL role masking', config_type: 'sql', engine_id: 1, sql_query: 'SELECT id, phone AS phone_alias, phone AS phone_copy FROM public.persons', named_parameters: [], stable_key: ['id'], max_features: 100, protocols: { rest_api: { enabled: true }, ogc_features: { enabled: false } }, output_contract: { table: { fields: [{name:'id',type:'bigint',nullable:false},{name:'phone_alias',type:'string'},{name:'phone_copy',type:'string'}], primary_key: ['id'] } }, data_config: { protection_choices: [] } }
+    const other = {
+      ...field,
+      target: { ...target, resource_identity: 'sql-contacts-source' },
+      policy_id: 'sql-contact-policy',
+      output_fields: ['contact_phone'],
+      options: [{ id: 'contact-mask', name: 'Contact mask' }]
+    }
+    if (joined) {
+      field.output_fields = ['phone_alias', 'phone_copy']
+      definition.sql_query = 'SELECT p.id, p.phone AS phone_alias, p.phone AS phone_copy, c.phone AS contact_phone FROM public.persons p JOIN public.contacts c ON p.id=c.id'
+      definition.output_contract.table.fields.push({ name: 'contact_phone', type: 'string' })
+    }
     let failSave = true
     let revoked = false
     const writes = [], candidateRequests = []
@@ -26,7 +38,9 @@ for (const language of ['zh-cn', 'en']) {
         expect(body).toEqual({config_type:'sql',engine_id:1,sql:definition.sql_query,parameters:{}})
         expect(request.url()).not.toContain('SELECT')
         candidateRequests.push(body)
-        return route.fulfill({json:{fields:[{...field,options:revoked?[]:field.options}]}})
+        const candidates = [{ ...field, options: revoked ? [] : field.options }]
+        if (joined) candidates.unshift(other)
+        return route.fulfill({ json: { fields: candidates } })
       }
       if (path === '/api/v1/service/query/41' && request.method() === 'GET') return route.fulfill({json:definition})
       if (path === '/api/v1/service/query/41' && request.method() === 'PUT') {
@@ -44,16 +58,24 @@ for (const language of ['zh-cn', 'en']) {
     await expect(editor.getByRole('heading',{name:words.formEditTitle,exact:true})).toBeVisible()
     const panel = editor.locator('.field-masking-choices')
     await panel.getByRole('button',{name:common.refresh,exact:true}).click()
-    await panel.locator('.el-select').click()
+    const sourceRow = panel.locator('.el-form-item').filter({
+      hasText: joined ? words.maskingOutputFieldLabel.replace('{field}', 'phone').replace('{outputs}', 'phone_alias, phone_copy') : 'phone'
+    })
+    const sourceSelect = sourceRow.locator('.el-select')
+    if (joined) {
+      const otherLabel = words.maskingOutputFieldLabel.replace('{field}', 'phone').replace('{outputs}', 'contact_phone')
+      await expect(panel.locator('.el-form-item').filter({ hasText: otherLabel }).locator('.el-select')).toContainText(common.default)
+    }
+    await sourceSelect.click()
     await editor.getByRole('option',{name:'SQL full mask',exact:true}).click()
     await editor.getByRole('button',{name:words.updateBtn,exact:true}).click()
     await expect(editor.getByText(words.submitFailed + ': fixture method unavailable',{exact:true})).toBeVisible()
-    await expect(panel.locator('.el-select')).toContainText('SQL full mask')
+    await expect(sourceSelect).toContainText('SQL full mask')
     expect(writes[0].version).toBe(3)
     expect(writes[0].data_config.protection_choices).toEqual([choice])
     failSave = false
     await expect(editor.getByText(words.submitFailed + ': fixture method unavailable',{exact:true})).toBeHidden()
-    await panel.screenshot({path:`/tmp/p145-service-sql-role-ui-${language}.png`})
+    await panel.screenshot({path:`/tmp/p145-service-sql-role-ui-${language}-${joined ? 'join' : 'single'}.png`})
     await editor.getByRole('button',{name:words.updateBtn,exact:true}).click()
     await expect(editor.getByRole('heading',{name:'Query service list',exact:true})).toBeVisible()
     expect(writes[1].version).toBe(3)
@@ -62,8 +84,8 @@ for (const language of ['zh-cn', 'en']) {
     await page.goto(editURL)
     await page.addStyleTag({content:'iframe { width:100%; height:960px; border:0; }'})
     await panel.getByRole('button',{name:common.refresh,exact:true}).click()
-    await expect(panel.locator('.el-select')).toContainText(common.stale)
-    await panel.locator('.el-select').click()
+    await expect(sourceSelect).toContainText(common.stale)
+    await sourceSelect.click()
     await editor.getByRole('option',{name:common.default,exact:true}).click()
     await editor.getByRole('button',{name:words.updateBtn,exact:true}).click()
     await expect(editor.getByRole('heading',{name:'Query service list',exact:true})).toBeVisible()

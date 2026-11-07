@@ -3,6 +3,8 @@ package service
 import (
 	"context"
 	"errors"
+	"slices"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -50,8 +52,7 @@ func (s *QueryExecutorService) QueryProtectionOptions(ctx context.Context, tenan
 	if request == nil {
 		return nil, dataprotection.ErrRoleOptionUnavailable
 	}
-	var target dataprotection.ResourceReference
-	var sqlSource *queryRoleSource
+	var sources map[dataprotection.ResourceReference]map[string][]string
 	switch request.ConfigType {
 	case "table":
 		if request.EngineID != 0 || request.SQL != "" || request.Parameters != nil {
@@ -73,10 +74,11 @@ func (s *QueryExecutorService) QueryProtectionOptions(ctx context.Context, tenan
 		if err != nil {
 			return nil, dataprotection.ErrRoleOptionUnavailable
 		}
-		target, err = dataprotection.DataItemTargetFromCatalogPath(model, path)
+		target, err := dataprotection.DataItemTargetFromCatalogPath(model, path)
 		if err != nil {
 			return nil, dataprotection.ErrRoleOptionUnavailable
 		}
+		sources = map[dataprotection.ResourceReference]map[string][]string{target: nil}
 	case "sql":
 		if request.TargetLocator != "" {
 			return nil, dataprotection.ErrRoleOptionUnavailable
@@ -85,8 +87,7 @@ func (s *QueryExecutorService) QueryProtectionOptions(ctx context.Context, tenan
 		if err != nil {
 			return nil, err
 		}
-		target = source.target
-		sqlSource = source
+		sources = source.targets
 	default:
 		return nil, dataprotection.ErrRoleOptionUnavailable
 	}
@@ -94,19 +95,31 @@ func (s *QueryExecutorService) QueryProtectionOptions(ctx context.Context, tenan
 	if !ok {
 		return nil, dataprotection.ErrRoleOptionUnavailable
 	}
-	fields, err := gate.RoleOptions(ctx, int64(tenant), target, roles.RoleKeys)
-	if err != nil {
-		return nil, err
-	}
-	if sqlSource != nil {
-		eligible := make([]dataprotection.FieldRoleOptions, 0, len(fields))
-		for _, field := range fields {
-			if sqlSource.fields[field.ComponentKey] {
-				eligible = append(eligible, field)
-			}
+	fields := []models.QueryProtectionFieldOptions{}
+	for target, eligible := range sources {
+		candidates, err := gate.RoleOptions(ctx, int64(tenant), target, roles.RoleKeys)
+		if err != nil {
+			return nil, err
 		}
-		fields = eligible
+		for _, field := range candidates {
+			outputs, selected := eligible[field.ComponentKey]
+			if eligible != nil && !selected {
+				continue
+			}
+			candidate := models.QueryProtectionFieldOptions{FieldRoleOptions: field}
+			if len(sources) > 1 {
+				candidate.OutputFields = slices.Clone(outputs)
+				sort.Strings(candidate.OutputFields)
+			}
+			fields = append(fields, candidate)
+		}
 	}
+	sort.Slice(fields, func(i, j int) bool {
+		if fields[i].ComponentKey != fields[j].ComponentKey {
+			return fields[i].ComponentKey < fields[j].ComponentKey
+		}
+		return fields[i].Target.ResourceIdentity < fields[j].Target.ResourceIdentity
+	})
 	if !roles.ExpiresAt.After(time.Now().UTC()) {
 		return nil, dataprotection.ErrRoleOptionIneligible
 	}
@@ -147,7 +160,7 @@ func (s *QueryExecutorService) roleSelectionForSource(ctx context.Context, servi
 		return nil, dataprotection.ErrRoleOptionUnavailable
 	}
 	for _, choice := range choices {
-		if choice.Target != source.target || !source.fields[choice.ComponentKey] {
+		if _, ok := source.targets[choice.Target][choice.ComponentKey]; !ok {
 			return nil, dataprotection.ErrRoleOptionUnavailable
 		}
 	}

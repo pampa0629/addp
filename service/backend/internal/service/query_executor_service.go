@@ -103,10 +103,10 @@ func (s *QueryExecutorService) executeDirectQuery(
 	}
 	var execution *compiledQueryPlan
 	var query plugin.QueryRequest
+	var baseSQL string
 	if queryService.ConfigType == "analytical" {
 		execution, query, err = compileAnalyticalQuery(queryService, request, protocol, engine, s.tokenCodec)
 	} else {
-		var baseSQL string
 		baseSQL, err = directSourceSQL(queryService, engine.EngineType)
 		if err != nil {
 			return nil, err
@@ -147,7 +147,7 @@ func (s *QueryExecutorService) executeDirectQuery(
 	}
 	if len(choices) > 0 {
 		if queryService.ConfigType == "sql" {
-			roleSource, err = sqlRoleSource(ctx, enginePlugin, prepared, queryService.GetEngineID())
+			roleSource, err = sqlRoleSource(ctx, enginePlugin, prepared, queryService.GetEngineID(), baseSQL)
 		} else {
 			roleSource, err = tableRoleSource(queryService)
 		}
