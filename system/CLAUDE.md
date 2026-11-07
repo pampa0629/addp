@@ -22,7 +22,7 @@ Standard 平台计量目录：000212 将既有 `standard.unit.*` Permission 扩�
 
 > 源数据授权职责：System 的引擎访问控制领域唯一维护以 Meta DataItem 为目标的源数据规则；PG 普通表及 FTP IFC／3DS 精确文件组成的已验收范围、其他入口和格式的剩余边界统一见 `docs/spec/addp授权上下文规范.md` 第九节及其验收证据索引。System IAM 不接管所有业务对象 ACL，不建立可独立编辑的 Catalog 责任副本。Catalog 与 System 的办理入口应使用同一规则写路径；各访问模块执行同一权威规则。业务确认／办理分工、共享期限及责任移交以该规范 5.5 为准，不能把现有 Engine ID + read/write/ddl 执行范围视为表级授权已经实现。
 
-Manager 检索裁决 `POST /engine-access/metadata-checks/manager-search` 成功后，在既有 `http.request.completed` 日志中附加 `diagnostics.manager_search`，沿原请求 ID 关联。只记录非负整数计数和纳秒耗时。计数包括输入候选、证明为整目录布局的候选、引擎查询及生成的规则项。耗时覆盖路由认证与守卫、请求绑定、Meta 前凭据核验、目录绑定、Meta 事实读取及校验、规则准备、规则观察、观察内凭据复核与规则查询、响应校验与写出。Meta 耗时包含在目录绑定内，规则查询和凭据复核包含在规则观察内，引擎查询耗时分布在目录绑定和规则准备中，汇总时不得重复计入。无可裁决项时仍记录现有凭据复核与观察耗时，规则查询计数和耗时为零。诊断不收录关键词、资源路径、身份与引擎标识、凭据、规则正文或逐项裁决，不进入 HTTP 响应。裁决顺序、权限和事务边界见[授权上下文规范](../docs/spec/addp授权上下文规范.md)。
+Manager 检索裁决 `POST /engine-access/metadata-checks/manager-search` 成功后，在既有 `http.request.completed` 日志中附加 `diagnostics.manager_search`，沿原请求 ID 关联。只记录非负整数计数和纳秒耗时。计数包括输入候选、证明为整目录布局的候选、引擎查询及生成的规则项。耗时覆盖路由认证与守卫、请求绑定、Meta 前凭据核验（`pre_meta_auth_ns`）、目录绑定、Meta 事实读取及校验、规则准备、规则观察、观察内凭据复核（`rule_recheck_auth_ns`）与规则查询、响应校验与写出。Meta 耗时包含在目录绑定内，规则查询和凭据复核包含在规则观察内，引擎查询耗时分布在目录绑定和规则准备中，汇总时不得重复计入。无可裁决项时仍记录现有凭据复核与观察耗时，规则查询计数和耗时为零。诊断不收录关键词、资源路径、身份与引擎标识、凭据、规则正文或逐项裁决，不进入 HTTP 响应。诊断回归须检查运行日志采集器脱敏后的字段类型。裁决顺序、权限和事务边界见[授权上下文规范](../docs/spec/addp授权上下文规范.md)。
 
 PG 新成果初始授权的内部准备消费 Transfer 不可变实际 ReadSet，逐项核验来源／目标引擎版本及 Meta 完整边界；当前源规则、执行 IAM 和目标批准／办理／Grant／Deny 历史在同一只读快照观察，不签发或冻结期限，不把未知来源、已解除限制或空历史解释为首次新建证明。正式签发在准备之后沿唯一 Grant 写入链执行，只以已证明的新建提交为资格，不要求跨库保持原物理对象。标准验证为 `make test-system-iam-postgres SYSTEM_IAM_POSTGRES_TEST_ARGS="--package engineaccess --test production-sources"`；新增 exercise 也由默认 engineaccess 门禁自动发现，使用独立操作预算，不延长已有测试的资格期限。
 

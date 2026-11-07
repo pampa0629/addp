@@ -47,6 +47,10 @@
 
 三组的路由凭据解析、读取 Meta 前的凭据核验和规则事务内的凭据复核，中位耗时分别在 1.35–2.19、1.51–2.95 和 1.24–2.12 毫秒。服务耗时单独计量，路由凭据解析与响应编码在服务计时之外。整目录夹具的额外引擎查询来自同一批次逐项目读取 NFS 引擎类型，真实检索的候选布局分布仍未知。下一步应先采集两条原查询的布局数、引擎查询次数及分段耗时，确认实测热点后再选择优化项。
 
+`3c29742a7` 重启后，用无痕 Chrome 的 `outdoor-develop` 在原 Manager 页面各复跑一次。反例 `Outdoor.Photos` 为 0 条，Manager 请求 `bb1f34b9-8d7b-4b64-841e-3c8f85048a45`，耗时 3.977 秒。正例 `p312-focal7-verified-20261106-075711` 为 2 条，Business NFS 的目标 COG 路径仍可见，Manager 请求 `0f430b42-8c08-42f9-8440-c6ceabddd907`，耗时 4.012 秒。两次请求各有 44 批 System 裁决、174 次 Meta 事实请求和 8,698 个提交裁决的候选，已证明为整目录布局的候选均为 0。引擎查询各 46 次，累计 52／59 毫秒；规则查询各 15 次，累计 107／133 毫秒。
+
+两次请求的 System 裁决累计分别为 3.629／3.541 秒，Meta 事实读取及校验阶段分别为 2.537／2.219 秒，Meta 处理请求的完成日志累计为 1.993／1.643 秒。两者相差约 544／576 毫秒，包含 System 客户端处理、传输及未独立计时的工作，无法直接归因到其中一项。运行日志采集器脱敏了两项凭据计时字段，88 批均缺这两项数值。建议修正字段名并验证完整采集，再拆分 Meta 事实客户端阶段；逐项查询整目录引擎未在这两条请求中出现。
+
 本次只做 Manager 页面查询和权限配置的只读核对。`outdoor-develop` 仍缺 `ontology.semantic.read` 和 `system.engine.read`，开发租户当前无具备本场景工具权限的普通账号，因此未发起新的 Agent Run。修复提交的 Manager、System IAM PostgreSQL 集成作业以及 Go workspace 和平台一致性作业已通过，Platform CI 整体状态为取消。 [Manager 集成](https://github.com/pampa0629/addp/actions/runs/42206312117/job/127868138784) · [System IAM 集成](https://github.com/pampa0629/addp/actions/runs/42206312117/job/127868137640) · [Go workspace](https://github.com/pampa0629/addp/actions/runs/42206311898/job/127853722302) · [平台一致性](https://github.com/pampa0629/addp/actions/runs/42206311898/job/127853722389)
 
 ### 2026-11-04 历史验收

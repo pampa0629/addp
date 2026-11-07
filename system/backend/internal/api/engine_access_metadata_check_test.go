@@ -13,6 +13,7 @@ import (
 	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/logger"
 	"github.com/addp/common/modulelifecycle"
+	"github.com/addp/common/runtimelog"
 	"github.com/addp/system/internal/engineaccess"
 	"github.com/addp/system/internal/middleware"
 	"github.com/gin-gonic/gin"
@@ -99,7 +100,8 @@ func TestManagerSearchMetadataCheckUsesFixedAudienceAndScope(t *testing.T) {
 				RequestID   string                      `json:"request_id"`
 				Diagnostics map[string]map[string]int64 `json:"diagnostics"`
 			}
-			if err := json.Unmarshal(logs.Bytes(), &completion); err != nil || completion.Message != "http.request.completed" ||
+			entry := runtimelog.Normalize(runtimelog.Options{Module: "system", Role: "backend", InstanceID: "fixture"}, "stdout", logs.Bytes(), 1, false)
+			if err := json.Unmarshal([]byte(entry.Message), &completion); err != nil || completion.Message != "http.request.completed" ||
 				completion.RequestID == "" || completion.RequestID != response.Header().Get("X-Request-ID") {
 				t.Fatalf("invalid request completion log: %v", err)
 			}
@@ -111,9 +113,9 @@ func TestManagerSearchMetadataCheckUsesFixedAudienceAndScope(t *testing.T) {
 			}
 			fields := completion.Diagnostics["manager_search"]
 			keys := []string{"candidate_count", "whole_candidate_count", "engine_query_count", "rule_item_count",
-				"rule_query_count", "route_auth_and_guards_ns", "request_binding_ns", "pre_meta_credential_ns",
+				"rule_query_count", "route_auth_and_guards_ns", "request_binding_ns", "pre_meta_auth_ns",
 				"metadata_binding_ns", "meta_facts_ns", "engine_lookup_ns", "rule_preparation_ns", "rule_observation_ns",
-				"observed_credential_ns", "rule_query_ns", "response_ns"}
+				"rule_recheck_auth_ns", "rule_query_ns", "response_ns"}
 			if len(completion.Diagnostics) != 1 || len(fields) != len(keys) {
 				t.Fatalf("unexpected diagnostic fields: %v", fields)
 			}
