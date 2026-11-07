@@ -192,7 +192,6 @@ class ComposePublicOriginOnlineTest(unittest.TestCase):
     def test_published_portal_asset_is_offlined_and_deleted_even_if_browser_fails(self):
         asset_path = "/api/v1/asset/assets/9"
         steps = [
-            ("POST", "/api/v1/system/tenant/departments", 201, {"id": "3"}),
             ("POST", "/api/v1/standard/domains", 201, {"id": 5}),
             ("GET", "/api/v1/catalog/entries?view=inventory&page=1&page_size=1", 200, {}),
             ("POST", "/api/v1/catalog/entries/resolve-sources", 200, {"results": [{
@@ -222,7 +221,8 @@ class ComposePublicOriginOnlineTest(unittest.TestCase):
                         self.assertEqual(body["components"], [{"catalog_entry_id": "entry", "role": "primary", "sort_order": 0}])
                     return payload
 
-                with (patch.dict(os.environ, {MODULE.ASSET_PUBLISHER_TOKEN: "publisher-token"}),
+                with (patch.dict(os.environ, {MODULE.ASSET_PUBLISHER_TOKEN: "publisher-token",
+                                              "ADDP_ONLINE_PUBLIC_ASSET_DEPARTMENT_ID": "3"}),
                       patch.object(MODULE, "assert_context_permissions", return_value={"principal": {"id": "7"}}),
                       patch.object(MODULE, "fixture_request", side_effect=api),
                       patch.object(MODULE, "run_browser", return_value={},

@@ -325,6 +325,11 @@ func TestFixtureAuthorizationContractMatchesPublishedCatalog(t *testing.T) {
 	for _, permission := range catalog.Permissions {
 		permissions[permission.Key] = permission
 	}
+	for _, key := range publicOriginAssetPublisherPermissions {
+		if !permissions[key].TenantCustomizable {
+			t.Errorf("public origin asset publisher permission must be tenant customizable: %s", key)
+		}
+	}
 	found := map[string]bool{}
 	combined := slices.Clone(pgAuthorizationOperatorPermissions)
 	for _, role := range catalog.Roles {

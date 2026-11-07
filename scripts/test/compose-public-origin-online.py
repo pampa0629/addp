@@ -404,7 +404,7 @@ def run_published_portal_browser(workbench: dict, run_id: str) -> dict[str, obje
     token = os.environ[ASSET_PUBLISHER_TOKEN]
     api = partial(fixture_request, token)
     publisher = assert_context_permissions(token, {
-        "iam.department.create", "standard.domain.create",
+        "standard.domain.create",
         "catalog.entry.read", "catalog.entry.update", "catalog.inventory.read",
         "asset.management.read", "asset.entry.read", "asset.entry.update", "asset.entry.publish",
         "asset.entry.offline", "asset.entry.delete",
@@ -414,7 +414,6 @@ def run_published_portal_browser(workbench: dict, run_id: str) -> dict[str, obje
 
     name = f"Public origin asset {run_id}"
     description = "Published Workbench application for Portal acceptance"
-    department = api("POST", "/api/v1/system/tenant/departments", 201, {"code": "public_origin", "name": name})
     domain = api("POST", "/api/v1/standard/domains", 201, {"code": "public_origin", "name": name})
     entry = wait_for_workbench_catalog_entry(api, workbench["application_id"])
     entry_id = entry["id"]
@@ -423,7 +422,8 @@ def run_published_portal_browser(workbench: dict, run_id: str) -> dict[str, obje
         "governance_status": "curated", "visibility": "tenant",
         "domains": [{"id": str(domain["id"]), "role": "primary"}],
         "responsibilities": [
-            {"role": "accountable_department", "subject_type": "department", "subject_id": department["id"]},
+            {"role": "accountable_department", "subject_type": "department",
+             "subject_id": os.environ["ADDP_ONLINE_PUBLIC_ASSET_DEPARTMENT_ID"]},
             {"role": "business_owner", "subject_type": "user", "subject_id": publisher},
             {"role": "data_steward", "subject_type": "user", "subject_id": publisher},
         ],

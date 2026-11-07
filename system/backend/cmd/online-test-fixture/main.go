@@ -314,6 +314,13 @@ var publicOriginReadPermissions = []string{
 	"transfer.task.read", "orchestrator.workflow.read",
 }
 
+var publicOriginAssetPublisherPermissions = []string{
+	"standard.domain.create",
+	"catalog.entry.read", "catalog.entry.update", "catalog.inventory.read",
+	"asset.management.read", "asset.entry.read", "asset.entry.update", "asset.entry.publish",
+	"asset.entry.offline", "asset.entry.delete",
+}
+
 var publicOriginCreatePermissions = []string{
 	"meta.scan_task.create", "transfer.task.create",
 	"orchestrator.workflow.create", "orchestrator.workflow.execute",
@@ -828,13 +835,16 @@ func run(args []string, environment []string) error {
 				return err
 			}
 			values["ADDP_ONLINE_PUBLIC_WORKBENCH_PREPARATION_TOKEN"] = preparation.AccessToken
+			department, err := iam.NewOrganizationService(repository, clock).CreateDepartment(ctx, iam.CreateDepartmentInput{
+				TenantID: tenant.ID, ActorPrincipalID: administrator.PrincipalID,
+				Code: "public_origin", Name: "Public origin asset department", Audit: audit("external-online-public-asset-department"),
+			})
+			if err != nil {
+				return fmt.Errorf("create public origin asset department: %w", err)
+			}
+			values["ADDP_ONLINE_PUBLIC_ASSET_DEPARTMENT_ID"] = strconv.FormatInt(department.ID, 10)
 			assetPublisher, _, _, err := createPermissionFixture(ctx, repository, identity, membershipService, roleService, selectionService,
-				tenant.ID, administrator.PrincipalID, "external-online-public-asset-publisher", []string{
-					"iam.department.create", "standard.domain.create",
-					"catalog.entry.read", "catalog.entry.update", "catalog.inventory.read",
-					"asset.management.read", "asset.entry.read", "asset.entry.update", "asset.entry.publish",
-					"asset.entry.offline", "asset.entry.delete",
-				})
+				tenant.ID, administrator.PrincipalID, "external-online-public-asset-publisher", publicOriginAssetPublisherPermissions)
 			if err != nil {
 				return err
 			}
@@ -1640,6 +1650,7 @@ func writeEnvironmentFile(path string, values map[string]string) error {
 		"ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN",
 		"ADDP_ONLINE_PUBLIC_WORKBENCH_PREPARATION_TOKEN",
 		"ADDP_ONLINE_PUBLIC_ASSET_PUBLISHER_TOKEN",
+		"ADDP_ONLINE_PUBLIC_ASSET_DEPARTMENT_ID",
 		"ADDP_ONLINE_FIXTURE_QUALITY_ACCESS_TOKEN",
 		"ADDP_ONLINE_FIXTURE_SECURITY_ACCESS_TOKEN",
 		"ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN",
