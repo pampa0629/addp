@@ -299,6 +299,10 @@ Meta 夹具仅在当轮 Hosted 独占 `addp_online`、同一非默认 Tenant／�
 
 Develop 公开执行投影不返回 `tenant_id`。成果候选登记前，父执行的 Tenant 和内部发起主体由同一受控只读快照核验；公开 UUID、模块、任务类型、状态和发起用户仍须匹配，不能要求接口恢复内部身份字段。
 
+物理 oracle 在同一校验进程内，以已有的独立单波段期望元组推导平均插值的覆盖 alpha 和保存重读后的联合结果、双线性插值的联合结果，避免重复计算相同权重与有效贡献。只复用确定性期望，不缓存实际对象、GDAL 读取、哈希或校验结论；每轮仍重读全部源、既有成果和当前成果，核对所有像元、掩膜、布局及大小。业务与页面矩阵、权限和 1740 秒预算保持。
+
+固定源码 `0bee3c249cdc08424f6b97b9aab11d3a1e445655` 的 [完整 Hosted 42383359430](https://github.com/pampa0629/addp/actions/runs/42383359430/job/128435478324) 在 1740113 毫秒触发 `online_scenario_timeout`，不计 full 通过。七个服务同提交；归档含 67 份已通过的页面回执，最后元数据取证为 `dem-slope.cog.tif`，尚无普通图片和末尾分支撤权的完整结果。58 份元数据 Grant 的撤销回执仍为 pending，不能宣称撤权清理通过；隔离部署清理通过及 Infra 零残留单独成立。该轮 223 次血缘图 HTTP 请求合计 21.81 秒、最长 419 毫秒，不据总超时推断血缘接口变慢；oracle 优化后的完整结果仍须新一轮实际 Hosted 验证。
+
 ### 多来源计算与页面构图
 
 多来源栅格验收继续使用同一 suite：分别加载源 Engine 的 EPSG:4326 TIFF 和目标 Engine 已自动扫描的 EPSG:3857 COG，显式参考网格对齐、选波段及组合后，验证跨文件加权表达式和 RGB 通道合成。Develop 与 Monitor 输入事实必须绑定完整的两个 ResourceLocator，Meta 必须存在同一执行从两个源 DataItem 到目标的 derive 边；Console 按完整输入集合验证卡片及链接，并分别绑定来源证据。物理夹具以独立像元公式验证所有波段、NaN、mask、Red/Green/Blue 解释、网格、CRS 和 nearest 金字塔，核对源及所有已接受成果哈希、精确对象集合；新成果必须保持 `size_bytes == physical stat size == Meta DataItem size > 0`。两个新执行增加四份浏览器来源证据，总数为 29；总预算扩展不改变 Runtime 执行、物理校验和单次浏览器的超时，也不放宽大小、像元或血缘断言。RGB 通道生成不代表显示拉伸、自动最佳波段推荐或 Manager RGB 渲染已经验收。

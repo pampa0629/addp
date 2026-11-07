@@ -234,18 +234,17 @@ def average_pixels(band, *, source=False, joint=False, width=SIZE // 2):
     # Only fixed independent expectations are reused. Actual object bytes,
     # GDAL reads, hashes and verification verdicts are checked on every call.
     width = SIZE if source else width
+    if not source and (band == 3 or joint):
+        first, second = average_pixels(1, joint=False, width=width), average_pixels(2, joint=False, width=width)
+        if band == 3:
+            # Coverage uses either band's valid contributors, independently of opacity.
+            return tuple(255. if a is not None or b is not None else 0. for a, b in zip(first, second))
+        return tuple(a + b if a is not None and b is not None else None for a, b in zip(first, second))
     def values():
         for row in range(width):
             for column in range(width):
                 if source:
                     yield average_source_pixel(band, row, column)
-                elif band == 3 or joint:
-                    first, second = area_average(1, row, column, width), area_average(2, row, column, width)
-                    if band == 3:
-                        # GDAL average generates coverage; source opacity is not copied.
-                        yield 255. if first is not None or second is not None else 0.
-                    else:
-                        yield first + second if first is not None and second is not None else None
                 else:
                     yield area_average(band, row, column, width)
     return tuple(values())
@@ -272,15 +271,15 @@ def bilinear_value(band, row, column):
 def bilinear_pixels(band, *, joint=False):
     # Only fixed independent expectations are reused. Actual object bytes,
     # GDAL reads, hashes and verification verdicts are checked on every call.
+    if joint and band != 3:
+        first, second = bilinear_pixels(1, joint=False), bilinear_pixels(2, joint=False)
+        return tuple(a + b if a is not None and b is not None else None for a, b in zip(first, second))
     def values():
         for row in range(SIZE * 2):
             for column in range(SIZE * 2):
                 if band == 3:
                     # This Warp kernel generates alpha from the covered containing source cell.
                     yield average_source_pixel(3, row // 2, column // 2)
-                elif joint:
-                    first, second = bilinear_value(1, row, column), bilinear_value(2, row, column)
-                    yield first + second if first is not None and second is not None else None
                 else:
                     yield bilinear_value(band, row, column)
     return tuple(values())
