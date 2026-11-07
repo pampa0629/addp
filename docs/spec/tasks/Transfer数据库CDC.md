@@ -234,7 +234,9 @@ Oracle 单表 -> Debezium Oracle Connector -> Infra Kafka
 
 #### 审批补扫验证与验收边界
 
-审批主体、精确目标、Common 来源快照与父执行互斥统一见[结构审批补扫来源](生产来源与产物扫描.md#transfer-结构审批补扫来源)；请求权限、显式 Resume 及公共投影分别见[审批与恢复](../../../transfer/docs/数据库架构.md#审批与显式恢复)和[公共观测与验收](../../../transfer/docs/数据库架构.md#schema-change-公共观测与验收)。Meta 的读取隔离、过期 claim 与越界拒绝等标准回归见[专项验证入口](../../../meta/CLAUDE.md#专项验证入口)，单用户／双用户审批的固定版本、失败、清理与未覆盖项见[精确扫描与审批证据](../../../transfer/CLAUDE.md#continuous-精确扫描与审批归属)。审批 applied、Meta 提交 success 与实际扫描完成分别认定；确定性门禁通过不替代真实身份、源目标、接管故障、显式恢复和清理的实际结果，不将既有局部证据外推为全部能力通过。
+- **接口与服务回归**。`make test-transfer-backend` 中的接口用例核对 CDC 阻塞时 Resume 和失败 execution 的 Retry 返回 `409 Conflict`。服务层用例覆盖同一阻塞状态下 Start、Resume 和 Retry 的拒绝。 [恢复资格与终态判定](#恢复资格与终态判定)
+- **补扫契约与回归**。审批主体、精确目标、Common 来源快照与父执行互斥按来源契约核对。请求权限、显式 Resume、公共投影、Meta 读取隔离、过期 claim 与越界拒绝沿各自入口验证。 [结构审批补扫来源](生产来源与产物扫描.md#transfer-结构审批补扫来源) · [审批与恢复](../../../transfer/docs/数据库架构.md#审批与显式恢复) · [公共观测与验收](../../../transfer/docs/数据库架构.md#schema-change-公共观测与验收) · [Meta 专项验证入口](../../../meta/CLAUDE.md#专项验证入口)
+- **真实链路与历史证据**。分别核对真实身份与源目标、审批 `applied`、Meta 提交 `success`、实际扫描完成、接管故障、显式 Resume 后新 execution 的目标提交及清理。单用户和双用户审批的结论按各轮实际回执认定，固定版本、失败、清理与未覆盖项分别保留。 [精确扫描与审批证据](../../../transfer/CLAUDE.md#continuous-精确扫描与审批归属)
 
 ### 捕获资源与生命周期
 
