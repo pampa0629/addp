@@ -4186,7 +4186,7 @@ class UnreadySourceFixtureTest(unittest.TestCase):
                                    'projection_state': 'enrolling', 'acknowledged': True, 'rules': []} for owner in ONLINE.PROTECTION_OWNERS]}
 
     def test_completed_empty_discovery_keeps_all_outlets_before_manual_assessment(self):
-        for fault in ('none', 'finding', 'active', 'after_active', 'after_revision', 'after_receipt', 'after_discovery', 'reused'):
+        for fault in ('none', 'finding', 'active', 'after_active', 'after_revision', 'after_receipt', 'after_discovery', 'reused', 'missing_discovery', 'missing_snapshot'):
             before = self.enrollment(); after = copy.deepcopy(before)
             if fault == 'finding': before['discovery_summary']['finding_count'] = 1
             if fault == 'active': before['state'] = 'active'
@@ -4194,10 +4194,13 @@ class UnreadySourceFixtureTest(unittest.TestCase):
             if fault == 'after_revision': after['owner_progress'][0]['revision'] = '00000000000000000003'
             if fault == 'after_receipt': after['owner_progress'][0]['acknowledged'] = False
             if fault == 'after_discovery': after['latest_discovery_execution_id'] = str(uuid.uuid4())
+            if fault == 'missing_discovery': before['latest_discovery_execution_id'] = ''
+            if fault == 'missing_snapshot': before['latest_source_snapshot_hash'] = ''
             client = Mock(); client.request.side_effect = [ONLINE.SUPPORT.Response(200, item) for item in (before, after)]
             source = {'id': 3, 'full_name': ONLINE.TARGET_SCHEMA + '.' + ONLINE.SPATIAL_SOURCE, 'item_type': 'table'}
             target = {'id': 4, 'node_id': 5, 'full_name': ONLINE.TARGET_SCHEMA + '.' + ONLINE.BANK_TARGET, 'item_type': 'table'}
-            with self.subTest(fault=fault), patch.object(ONLINE, 'find_item', side_effect=[source,target]), \
+            with self.subTest(fault=fault), patch.object(ONLINE, 'wait_for_postgres_item_scan') as refresh, \
+                    patch.object(ONLINE, 'find_item', side_effect=[source,target]), \
                     patch.object(ONLINE, 'ensure_enrollment', return_value=('enrollment', fault != 'reused')), \
                     patch.object(ONLINE, 'exercise_enrolling_refusal', return_value={'enrolling_acknowledged': True}) as develop, \
                     patch.object(ONLINE, 'bank_outlet_refusals', return_value={}) as outlets:
@@ -4209,8 +4212,9 @@ class UnreadySourceFixtureTest(unittest.TestCase):
                     self.assertEqual(outlets.call_args.args[1:5], (17,17,source,ONLINE.SPATIAL_FIELDS))
                 else:
                     with self.assertRaises(ONLINE.SuiteError): ONLINE.exercise_unready_source(client,17,7,time.monotonic()+10)
-                    if fault in ('finding','active','reused'):
+                    if fault in ('finding','active','reused','missing_discovery','missing_snapshot'):
                         develop.assert_not_called(); outlets.assert_not_called()
+                refresh.assert_called_once_with(client,17,ONLINE.SPATIAL_SOURCE,unittest.mock.ANY)
 
     def test_empty_discovery_must_actually_complete_within_original_deadline(self):
         ready = self.enrollment()
@@ -4218,18 +4222,42 @@ class UnreadySourceFixtureTest(unittest.TestCase):
         source = {'id': 3, 'full_name': ONLINE.TARGET_SCHEMA + '.' + ONLINE.SPATIAL_SOURCE, 'item_type': 'table'}
         target = {'id': 4, 'node_id': 5, 'full_name': ONLINE.TARGET_SCHEMA + '.' + ONLINE.BANK_TARGET, 'item_type': 'table'}
         client = Mock(); client.request.side_effect = [ONLINE.SUPPORT.Response(200,v) for v in (pending,ready,ready)]
-        with patch.object(ONLINE, 'find_item', side_effect=[source,target]), patch.object(ONLINE, 'ensure_enrollment', return_value=('enrollment',True)), \
+        with patch.object(ONLINE, 'wait_for_postgres_item_scan'), \
+                patch.object(ONLINE, 'find_item', side_effect=[source,target]), patch.object(ONLINE, 'ensure_enrollment', return_value=('enrollment',True)), \
                 patch.object(ONLINE, 'exercise_enrolling_refusal', return_value={}) as develop, patch.object(ONLINE,'bank_outlet_refusals',return_value={}), \
                 patch.object(ONLINE.time,'sleep') as sleep:
             ONLINE.exercise_unready_source(client,17,7,time.monotonic()+10)
             sleep.assert_called_once_with(1); develop.assert_called_once()
         client.request.side_effect = None; client.request.return_value = ONLINE.SUPPORT.Response(200,pending)
-        with patch.object(ONLINE, 'find_item', side_effect=[source,target]), patch.object(ONLINE, 'ensure_enrollment', return_value=('enrollment',True)), \
+        with patch.object(ONLINE, 'wait_for_postgres_item_scan'), \
+                patch.object(ONLINE, 'find_item', side_effect=[source,target]), patch.object(ONLINE, 'ensure_enrollment', return_value=('enrollment',True)), \
                 patch.object(ONLINE, 'exercise_enrolling_refusal') as develop, patch.object(ONLINE.time,'sleep'), \
                 patch.object(ONLINE.time,'monotonic',side_effect=[0,11]):
             with self.assertRaisesRegex(ONLINE.SuiteError, 'did not complete'):
                 ONLINE.exercise_unready_source(client,17,7,10)
             develop.assert_not_called()
+
+    def test_exact_deep_refresh_precedes_fresh_identity_and_enrollment(self):
+        client = Mock()
+        source = {'id': 3, 'full_name': ONLINE.TARGET_SCHEMA + '.' + ONLINE.SPATIAL_SOURCE, 'item_type': 'table'}
+        calls = Mock()
+        with patch.object(ONLINE, 'wait_for_postgres_item_scan') as refresh, \
+                patch.object(ONLINE, 'find_item', side_effect=[source, source]) as find, \
+                patch.object(ONLINE, 'ensure_enrollment', return_value=('enrollment', False)) as enroll:
+            calls.attach_mock(refresh, 'refresh'); calls.attach_mock(find, 'find'); calls.attach_mock(enroll, 'enroll')
+            with self.assertRaisesRegex(ONLINE.SuiteError, 'fresh isolated'):
+                ONLINE.exercise_unready_source(client, 17, 7, 123)
+        self.assertEqual([call[0] for call in calls.mock_calls], ['refresh', 'find', 'find', 'enroll'])
+        refresh.assert_called_once_with(client, 17, ONLINE.SPATIAL_SOURCE, 123)
+
+    def test_failed_exact_refresh_cannot_enroll_or_probe_outlets(self):
+        with patch.object(ONLINE, 'wait_for_postgres_item_scan', side_effect=ONLINE.SuiteError('exact deep scan failed')) as refresh, \
+                patch.object(ONLINE, 'find_item') as find, patch.object(ONLINE, 'ensure_enrollment') as enroll, \
+                patch.object(ONLINE, 'exercise_enrolling_refusal') as develop, patch.object(ONLINE, 'bank_outlet_refusals') as outlets:
+            with self.assertRaisesRegex(ONLINE.SuiteError, 'exact deep scan failed'):
+                ONLINE.exercise_unready_source(Mock(), 17, 7, 123)
+        self.assertEqual(refresh.call_args.args[1:], (17, ONLINE.SPATIAL_SOURCE, 123))
+        for action in (find, enroll, develop, outlets): action.assert_not_called()
 
 
 class FourOutletReasonMatrixTest(unittest.TestCase):

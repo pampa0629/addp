@@ -82,6 +82,8 @@ Hosted `security-mysql-owner-protection` 报告 v23 的 `bank_card_metadata.deve
 
 未就绪探针不能依赖“尚未人工复核”的自动发现窗口：命中检测器置信度的 Finding 会直接采用默认保护并进入 active。
 
+纳管前，普通消费账号通过既有精确刷新入口，对原七张已获 read 的 PostgreSQL 表之一 `spatial_algorithm_source` 完成 deep 扫描，再读取同一 DataItem 并创建全新 Enrollment。准备账号的 basic 扫描只证明目录身份，不证明字段结构已就绪；无字段事实的零命中发现可以合法完成，但没有字段快照 Hash，不能代替本探针要求的有结构、零命中发现。不扩大扫描范围、权限或原总 deadline，也不放宽发现 UUID／字段快照 Hash 和前后修订不变的断言。
+
 在既有、字段名不会命中检测器的 PostgreSQL 合成表人工指定敏感字段之前，先等待自动发现真实完成且 Finding 数为零，再等待五个 Owner 的 enrolling 空规则投影回执齐备，确认仍处于尚无人工 Assessment 的真实 enrolling 阶段后验证四出口 `protection_not_ready`；全部请求后再次核对同一发现、投影修订和 enrolling 状态不变，随后才沿原流程人工指定敏感字段并验正常脱敏。探针期间不暂停 Worker、不加锁、不改检测器阈值或产品状态。报告记录该组实际源与发现完成事实，后续人工指定、三算法、SQL拒绝和银行卡流程沿原路径继续。
 
 #### 操作与结构拒绝

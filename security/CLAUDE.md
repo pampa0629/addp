@@ -742,3 +742,19 @@ T1/T3/构建验证：`make test-security-frontend` 退出0，260项单元、37�
 
 
 本轮必需门禁按输入范围完成：完整 `make test-security-online-runner` 的43／204／18／149／35／80组、System Fixture Go及登记CLI通过，最后258组因CLI清理flag更名后的两处旧属性引用报3项错误，首次失败保留。修正属性并新增真实CLI入口→六项精确清理回归后，复用输入未变的已通过依赖，沿原Make目标以 `-o test-protection-deployment-runner -o test-graph-online-runner -o test-online-dispatcher-unit -o test-online-registration-unit` 重跑所属门禁，259项和System Fixture Go退出0；当前登记反例主测试及CLI再次通过。读取/元数据清理聚焦7项、原共享文件元数据27项通过；独立六项审计正常样本+10反例通过。固定摘要及完整命令见 `/tmp/p145-read-verification.json`；首次 `/tmp/p145-read-runner-gate.log`、最终 `/tmp/p145-read-owner-final.log`、`/tmp/p145-read-registration-final.log`。这是T1组合证据，未把复用项、失败项或待Hosted项写成实际重跑通过；本轮未新增真实T2／本地HTTP／T4通过。CI继续由专门会话用新精确提交单次安排，回传真实六项准备/清理及原领域/浏览器产物后再独立审计。
+
+### v44 六项许可实测与未就绪探针扫描前提（2026-11-07）
+
+历史 fb719 SHA 直接作为 workflow ref 派发返回 HTTP422，未产生 Run，不算产品失败。随后核对 main 的直接后继 `b4779ba443c42e423240132c332ccb08cbb8fd23`：仅其他套件测试／文档变化，本会话七个输入摘要一致，按真实后继 SHA 单次派发。证据 `/tmp/p145-read-dispatch-revision-review.json`。
+
+[Run 42378933245 / Job 128422248189](https://github.com/pampa0629/addp/actions/runs/42378933245/job/128422248189)，attempt1，实际 SHA b477：readiness 成功、gate 失败、Hosted 产物上传成功，执行产物条件未满足而跳过；十个服务 preflight 均为同一 SHA、干净检出、专用 addp_online 和 loopback 边界。独立审计确认六个唯一 UUID、三个精确目标×metadata_read/read 两动作、两次准备扫描、同项指纹及签发后的 content_readable=true；六项最终撤销，pending／errors 空，content_unreadable／metadata_hidden 均 true。总结果仍 failed，生命周期 cleanup=passed、Infra=zero_residuals；没有领域 suite_report 和浏览器 PNG，不认定 v44／v9／21图通过。
+
+本轮第一失败为 `unready source has no completed discovery identity`。Meta 原始落库行证明 PostgreSQL `addp_online_security.spatial_algorithm_source` 的准备扫描为 basic，attributes 无字段结构；固定源码中该表的 deep 刷新排在此探针之后。固定源码规定零字段事实可合法完成零命中发现、字段快照 Hash 为空；旧夹具却在该表首次 deep 刷新之前纳管并要求非空快照。该轮未归档 Enrollment 响应正文，不把具体缺失成员当作直接捕获的 HTTP 证据；根因判断来自落库事实与 Meta／Common／Security 发现契约的联合核对。
+
+修复仅在 `exercise_unready_source` 纳管之前调用已有 `wait_for_postgres_item_scan`，以普通消费账号刷新原七表之一的精确 DataItem，使用同一原 deadline，再读取新结构并创建全新 Enrollment。不改变空字段事实、发现状态、检测器、源／原值授权或扫描范围，不延长预算，不放宽 UUID、快照、零 Finding、四出口及前后修订不变断言。报告保留 v44、浏览器保留 v9；标准入口自动发现已覆盖，无需新增 workflow、Swagger 或本地服务重启。
+
+验证：`python3 scripts/test/security-mysql-owner-protection-online_test.py UnreadySourceFixtureTest -v` 四项通过，覆盖精确刷新先于读取／纳管、原 deadline、刷新失败后不纳管／不执行出口，以及缺失发现／快照仍拒绝。所属标准 `make -o test-protection-deployment-runner -o test-graph-online-runner -o test-online-dispatcher-unit -o test-online-registration-unit test-security-online-runner` 261项和System Fixture Go通过；四个依赖目标未在本次重跑，前轮有效证据保留，本次不冒称完整聚合重跑。当前登记反例主测试及登记CLI通过，限定diff检查通过。日志 `/tmp/p145-unready-owner-gate.log`、`/tmp/p145-unready-registration.log`、`/tmp/p145-unready-registration-cli.log`；独立失败审计 `/tmp/addp-security-read-revised/p145-independent-failure-audit.json`。这是夹具T1修正；修正后的真实 deep 扫描、领域和浏览器T4仍须专门CI会话回传，旧失败保留。
+
+权限主责会话回报：`20d03f724` 已实现 metadata_read 搜索已登记字段名及高亮，Manager T1、PG＋Meilisearch T2与对应Linux CI通过，跨服务／真实浏览器仍待验；不能以本轮临时read证明该metadata-only产品规则已完成全链验收。
+
+2026-11-08，原共享main待发布提交阻塞已解除；本会话五路径摘要与前轮已验证输入一致。发布前再次沿上述根Make所属recipe验证，261项及System Fixture Go通过；登记反例主测试和登记CLI再次通过。四个依赖目标本次仍未重跑，未声称完整聚合门禁通过。新日志 `/tmp/p145-unready-owner-20261108.log`、`/tmp/p145-unready-registration-20261108.log`、`/tmp/p145-unready-registration-cli-20261108.log`。只发布本会话五路径，专门CI会话接收新完整SHA后单次安排v44/v9；运行与领域／浏览器结果须以实际回传独立核验，不将派发或排队算通过。

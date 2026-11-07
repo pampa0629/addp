@@ -2193,6 +2193,9 @@ def bank_outlet_refusals(client: GatewayClient, engine_id: int, query_engine_id:
 
 
 def exercise_unready_source(client: GatewayClient, engine_id: int, principal_id: int, deadline: float) -> dict[str, object]:
+    # The initializer's basic scan proves identity only. Discovery must consume
+    # structured facts before its zero-Finding result can prove this probe.
+    wait_for_postgres_item_scan(client, engine_id, SPATIAL_SOURCE, deadline)
     source = find_item(client, engine_id, TARGET_SCHEMA + "." + SPATIAL_SOURCE, "table")
     target = find_item(client, engine_id, TARGET_SCHEMA + "." + BANK_TARGET, "table")
     locator = build_item_locator(engine_id, source)
