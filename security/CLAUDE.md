@@ -696,3 +696,10 @@ T1/T3/构建验证：`make test-security-frontend` 退出0，260项单元、37�
 在固定提交 `df3efe83ec32bbc2c38eea96863b0704cf477cd5` 补验真实 Transfer HTTP 路由、bounded Worker 首次领取、执行详情与事件。正常执行读写各两行，两次敏感计算均返回 `preparation / protection_computed_output_unsupported`，读写均为零，物理结果与前轮一致。任务、执行和事件记录已回滚，专用 schema 已清理。使用 System 身份与引擎事实夹具，经同一 PostgreSQL 门禁的定向运行通过四个主测试，零跳过。此前全量门禁在 continuous 仓储检查失败，首次定向还遇到 PostgreSQL 恢复和测试夹具编译问题。最终报告保留各轮日志与三个执行 UUID，位于 `/tmp/p145-transfer-worker-join.RRZjuA/verification.json`。
 
 提交 `9c0d82b51448138578e7a1cdecb80580c1d45fcb` 将三种场景纳入既有 Security Hosted 领域报告 v43。最终领域 190 项、登记 149 项通过。聚合入口的指标夹具清理测试超过 20 秒，保留失败记录。真实 Hosted 待专门 CI 会话回传。独立审核脚本以一组模拟产物与八个反例检查 SHA、运行步骤、UUID、拒绝计数和清理，位于 `/tmp/p145-v43-transfer-join-audit.py`。[Hosted 验收约定](../scripts/docs/Online数据保护.md#transfer-postgresql-两表查询脱敏落盘)
+
+
+### v44 Hosted 前置元数据可见性阻塞（2026-11-07）
+
+[Run 42322135716 / Job 128248930706](https://github.com/pampa0629/addp/actions/runs/42322135716/job/128248930706) 在精确源码 `0af01095941be47c97d2d0383bcb69b23781fd68` 实际执行并失败，首错误为 `Meta must return exactly one Outdoor.Persons DataItem`。独立核对 Meta 日志，扫描执行 `4de30e87-8064-4140-9561-746222e8595f` 成功写入一条 MongoDB `Outdoor.Persons`，7 行、6 字段。随后普通 User 的数据项列表经过现有元数据可见性过滤，夹具仅准备了原七张 PostgreSQL 表的读取许可，没有 MongoDB 数据项的元数据查看许可，无法取得该项。
+
+该轮没有领域 suite_report，Service 两表角色场景和浏览器均未执行，不记为通过。标准生命周期 cleanup=passed、Infra=zero_residuals 仅证明隔离环境收尾。完整归档及独立失败核对在 `/tmp/p145-v44-42322135716/`。仅补精确 metadata_read 夹具许可涉及此前确认范围之外的权限准备，待用户确认，原 MySQL／MongoDB 内容授权边界继续由对应会话负责。
