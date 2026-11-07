@@ -586,7 +586,7 @@ schema drift 的阻塞流程统一见[Schema 变化](transfer-任务语义与同
 
 只有 PostgreSQL/MySQL 原 capture generation 中，当前阻塞消息实际包含、源表仍存在、允许 NULL、非主键且非 geometry 的新增字段可以人工审批。使用 `GET /task-definitions/:id/schema-change` 读取当前请求和复查建议；`POST /task-definitions/:id/schema-change/approve` 必须逐字段提交 `source`、`target`、`target_type` 和 `nullable=true`，完整覆盖本次新增字段。实时源复核、Provider 幂等加列及 mapping/revision 的事务规则统一见[CDC 正式契约](../../docs/spec/tasks/Transfer数据库CDC.md#transfer-数据库-cdc-v1-契约postgresqlmysqloracle)。审批后为 `status=idle, desired_state=paused`，不隐式恢复；用户显式 Resume 从原 committed offset 继续。Oracle 的任何 schema drift 及其他不可审批变化只能永久 Stop 后创建新任务和新目标表，具体范围见上述 Schema 变化专题。
 
-审批后的 request 级 Meta 补扫 claim、CAS 接管和旧 token 拒绝统一见[审批补扫 claim 与失败边界](数据库架构.md#审批补扫-claim-与失败边界)及 CDC 正式契约；仅相同重复审批 POST 可接管过期 `running`，GET 始终只读。真实 Meta 调用失败为 `failed`，不由重复审批自动重试，可在 Meta 手动扫描；补扫失败不回滚已提交的 DDL/mapping revision。`TRANSFER_META_SCAN_CLAIM_TTL` 为部署配置，默认 2 分钟且必须大于 Meta client 的 HTTP 超时，不进入任务 JSON。扫描提交成功也不等于扫描完成或恢复成功，实际通过范围见[验证范围](transfer-任务语义与同步模式.md#十一验证范围)。
+审批后的 request 级 Meta 补扫 claim、CAS 接管和旧 token 拒绝统一见[审批补扫 claim 与失败边界](数据库架构.md#审批补扫-claim-与失败边界)及 CDC 正式契约；仅相同重复审批 POST 可接管过期 `running`，GET 始终只读。真实 Meta 调用失败为 `failed`，不由重复审批自动重试，可在 Meta 手动扫描；补扫失败不回滚已提交的 DDL/mapping revision。`TRANSFER_META_SCAN_CLAIM_TTL` 为部署配置，默认 2 分钟且必须大于 Meta client 的 HTTP 超时，不进入任务 JSON。扫描提交、扫描完成和恢复成功分别认定。 [审批补扫验证与验收边界](../../docs/spec/tasks/Transfer数据库CDC.md#审批补扫验证与验收边界)
 
 ### CDC 生命周期与清理
 
