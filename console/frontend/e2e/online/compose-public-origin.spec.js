@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test'
 import { randomUUID } from 'node:crypto'
-import { writeFileSync } from 'node:fs'
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { localIdentityTOTP } from './local-identity-support.mjs'
 import { login } from './transfer-browser-support.js'
@@ -160,8 +160,15 @@ test('production Nginx shares one rotating browser session across Console, ifram
 
 test.describe('production public login', () => {
   for (const entry of ['workbench', 'portal']) {
-    test(`${entry} requires TOTP and explicit tenant selection before restoring the public URL`, async ({ context, page }) => {
+    test(`${entry} requires TOTP and explicit tenant selection before restoring the public URL`, async ({ playwright, headless, launchOptions, viewport }) => {
       const origin = required('ADDP_ONLINE_PUBLIC_ORIGIN')
+      const profile = mkdtempSync(resolve(required('ADDP_ONLINE_SECRET_DIR'), `public-origin-${entry}-profile-`))
+      const launch = () => playwright.chromium.launchPersistentContext(profile, {
+        ...launchOptions, headless, viewport, locale: 'zh-CN', baseURL: origin,
+      })
+      let context
+      let page
+      let loginEvidence
       const tenantID = required('ADDP_ONLINE_TEST_TENANT_ID')
       const principalID = required('ADDP_ONLINE_PUBLIC_MFA_PRINCIPAL_ID')
       const membershipID = required('ADDP_ONLINE_PUBLIC_MFA_MEMBERSHIP_ID')
@@ -187,7 +194,6 @@ test.describe('production public login', () => {
       const system = suffix => '/api/v1/system/' + suffix
       const refreshCookie = async () => (await context.cookies(origin + system('refresh')))
         .find(cookie => cookie.name === 'addp_refresh_token')
-      const primary = page.locator('.auth-login-primary')
       const responseFor = (tab, path, method = 'GET', documentPath) => tab.waitForResponse(response => {
         const url = new URL(response.url())
         const request = response.request()
@@ -207,7 +213,7 @@ test.describe('production public login', () => {
       const queryFor = (tab, destination) => published && destination === workbench
         ? responseFor(tab, published.query_path, 'POST').then(captureJSON)
         : undefined
-      let stage = 'anonymous redirect'
+      let stage = 'launch persistent browser'
       const check = (label, assertion) => {
         stage = label
         return assertion()
@@ -281,6 +287,7 @@ test.describe('production public login', () => {
       }
       let businessRequests = 0
       let refreshRequests = 0
+      let authenticationRequests = 0
       const statuses = {}
       const observedPaths = {
         [system('login')]: 'password',
@@ -291,15 +298,19 @@ test.describe('production public login', () => {
         [workbench.api]: 'workbench',
         [portal.api]: 'portal',
       }
-      context.on('response', response => {
-        const name = observedPaths[new URL(response.url()).pathname]
-        if (name) statuses[name] = response.status()
-      })
-      context.on('request', request => {
-        const url = new URL(request.url())
-        if (url.pathname === system('refresh')) refreshRequests++
-        if (url.pathname.startsWith('/api/') && !url.pathname.startsWith('/api/v1/system/')) businessRequests++
-      })
+      const observeContext = () => {
+        context.setDefaultTimeout(15000)
+        context.on('response', response => {
+          const name = observedPaths[new URL(response.url()).pathname]
+          if (name) statuses[name] = response.status()
+        })
+        context.on('request', request => {
+          const url = new URL(request.url())
+          if (url.pathname === system('refresh')) refreshRequests++
+          if (request.method() === 'POST' && ['password', 'mfa', 'selection'].includes(observedPaths[url.pathname])) authenticationRequests++
+          if (url.pathname.startsWith('/api/') && !url.pathname.startsWith('/api/v1/system/')) businessRequests++
+        })
+      }
       const assertAnonymous = async () => {
         await expect(page).toHaveURL(url => url.origin === origin && url.pathname === target.login && url.searchParams.get('redirect') === target.url)
         expect(Boolean(await refreshCookie())).toBe(false)
@@ -307,6 +318,11 @@ test.describe('production public login', () => {
       }
 
       try {
+        context = await launch()
+        observeContext()
+        page = await context.newPage()
+        const primary = page.locator('.auth-login-primary')
+        stage = 'anonymous redirect'
         await page.goto(target.url, { timeout: 20000 })
         await assertAnonymous()
 
@@ -383,6 +399,47 @@ test.describe('production public login', () => {
         stage = 'rotated HttpOnly refresh cookie at System endpoint'
         const renewedCookie = await refreshCookie()
         expect(Boolean(renewedCookie?.httpOnly && renewedCookie.value !== cookie.value)).toBe(true)
+        const storeID = entry === 'workbench' ? 'workbench-auth' : 'portal-auth'
+        await check('before restart keeps the token in memory', async () =>
+          expect(await page.evaluate(sessionProbe, { storeID })).toMatchObject({
+            authenticated: true, tenantID, principalID, tokenPersisted: false,
+          }))
+
+        stage = 'close the browser process'
+        const originalBrowser = context.browser()
+        const beforeRestartRefreshes = refreshRequests
+        const beforeRestartAuthentication = authenticationRequests
+        await context.close()
+        expect(originalBrowser.isConnected()).toBe(false)
+
+        stage = 'restart with the same browser profile'
+        context = await launch()
+        expect(context.browser()).not.toBe(originalBrowser)
+        expect(context.browser().isConnected()).toBe(true)
+        observeContext()
+        const persistedCookie = await refreshCookie()
+        expect(Boolean(persistedCookie?.httpOnly && persistedCookie.value === renewedCookie.value &&
+          persistedCookie.expires > Date.now() / 1000)).toBe(true)
+        page = await context.newPage()
+        const [restartRefresh, restartIdentity, restartLanding, restartQuery] = await Promise.all([
+          responseFor(page, system('refresh'), 'POST'),
+          responseFor(page, system('auth/context')).then(captureJSON),
+          responseFor(page, target.api),
+          queryFor(page, target),
+          page.goto(target.url, { timeout: 20000 }),
+        ])
+        check('restart refresh status', () => expect(restartRefresh.status()).toBe(200))
+        assertIdentity('after process restart', restartIdentity)
+        await assertLanding('after process restart', page, target, restartLanding, restartQuery)
+        await check('restart restores the in-memory authenticated store', async () =>
+          expect(await page.evaluate(sessionProbe, { storeID })).toMatchObject({
+            authenticated: true, tenantID, principalID, tokenPersisted: false,
+          }))
+        check('restart uses one refresh', () => expect(refreshRequests - beforeRestartRefreshes).toBe(1))
+        check('restart restores without authentication prompts', () => expect(authenticationRequests).toBe(beforeRestartAuthentication))
+        const restartedCookie = await refreshCookie()
+        check('restart rotates the HttpOnly refresh cookie', () =>
+          expect(Boolean(restartedCookie?.httpOnly && restartedCookie.value !== persistedCookie.value)).toBe(true))
 
         stage = 'other module reuses the session'
         const before = refreshRequests
@@ -396,15 +453,16 @@ test.describe('production public login', () => {
         assertIdentity('other module', sharedIdentity)
         await assertLanding('other module', otherPage, other, sharedLanding, sharedQuery)
         stage = 'other module uses the same bearer'
-        const bearer = await reloadedLanding.request().headerValue('authorization')
+        const bearer = await restartLanding.request().headerValue('authorization')
         expect(Boolean(bearer?.startsWith('Bearer ') && bearer === await sharedLanding.request().headerValue('authorization'))).toBe(true)
         check('other module opens without another refresh', () => expect(refreshRequests).toBe(before))
 
         stage = 'write public login evidence'
-        writeFileSync(resolve(required('ADDP_ONLINE_ARTIFACT_DIR'), `public-origin-${entry}-login.json`), JSON.stringify({
+        loginEvidence = {
           run_id: required('ADDP_ONLINE_TEST_RUN_ID'), entry, origin, tenant_id: tenantID,
           mfa: true, explicit_tenant_selection: true, full_return_url: true, http_only_refresh: true,
           reload_preserved_identity: true, cross_module_session_reused: true,
+          browser_process_restarted: true, restart_restored_identity: true, restart_cookie_rotated: true,
           workbench_runtime_status: workbench.status, portal_home_status: 200,
           ...(published ? {
             workbench_application_id: appID,
@@ -414,10 +472,18 @@ test.describe('production public login', () => {
             workbench_table_values: published.table_values,
             portal_published_asset: published.portal_asset,
           } : {}),
-        }))
+        }
       } catch {
         throw new Error(`${entry} public login failed at ${stage} (${JSON.stringify(statuses)})`)
+      } finally {
+        try {
+          await context?.close()
+        } finally {
+          rmSync(profile, { recursive: true, force: true })
+        }
       }
+      writeFileSync(resolve(required('ADDP_ONLINE_ARTIFACT_DIR'), `public-origin-${entry}-login.json`),
+        JSON.stringify({ ...loginEvidence, browser_profile_removed: true }))
     })
   }
 })

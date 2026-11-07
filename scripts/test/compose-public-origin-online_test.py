@@ -104,6 +104,8 @@ class ComposePublicOriginOnlineTest(unittest.TestCase):
             "run_id": "origin-run", "origin": "http://127.0.0.1:18080", "tenant_id": "42",
             "mfa": True, "explicit_tenant_selection": True, "full_return_url": True, "http_only_refresh": True,
             "reload_preserved_identity": True, "cross_module_session_reused": True,
+            "browser_process_restarted": True, "restart_restored_identity": True,
+            "restart_cookie_rotated": True, "browser_profile_removed": True,
             "workbench_runtime_status": 404, "portal_home_status": 200,
         }
         workbench_evidence = {**login_evidence, "entry": "workbench"}
@@ -144,6 +146,10 @@ class ComposePublicOriginOnlineTest(unittest.TestCase):
                 payload = expected
                 for invalid in (None, workbench_evidence, {**portal_evidence, "explicit_tenant_selection": False},
                                 {**portal_evidence, "mfa": 1}, {**portal_evidence, "portal_home_status": 403},
+                                {**portal_evidence, "browser_process_restarted": False},
+                                {**portal_evidence, "restart_restored_identity": False},
+                                {**portal_evidence, "restart_cookie_rotated": False},
+                                {**portal_evidence, "browser_profile_removed": False},
                                 {**portal_evidence, "password": "must-not-be-in-evidence"}):
                     portal_payload = invalid
                     with self.subTest(invalid=invalid), self.assertRaisesRegex(MODULE.AcceptanceError, "portal production login evidence"):

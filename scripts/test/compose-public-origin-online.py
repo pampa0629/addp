@@ -565,6 +565,8 @@ def run_browser(published_workbench: dict | None = None) -> dict[str, object]:
         "run_id": expected["run_id"], "origin": expected["origin"], "tenant_id": expected["tenant_id"],
         "mfa": True, "explicit_tenant_selection": True, "full_return_url": True, "http_only_refresh": True,
         "reload_preserved_identity": True, "cross_module_session_reused": True,
+        "browser_process_restarted": True, "restart_restored_identity": True,
+        "restart_cookie_rotated": True, "browser_profile_removed": True,
         "workbench_runtime_status": 404, "portal_home_status": 200,
     }
     if published_workbench is not None:
