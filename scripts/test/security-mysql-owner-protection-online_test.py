@@ -3181,6 +3181,119 @@ class MembershipBackend(ServiceRoleCursorClient):
         return value
 
 
+class ServiceRoleJoinEligibilityTest(unittest.TestCase):
+    def setUp(self):
+        self.sources = []
+        self.candidates = []
+        for index, outputs in enumerate((["left_copy", "left_secret"], ["right_secret"]), 1):
+            item = {"fingerprint": f"sha256:fixture-{index}"}
+            policy = {"id": f"policy-{index}", "current_revision": 2,
+                      "current": {"role_options": [{"id": str(uuid.UUID(int=index))}]}}
+            self.sources.append({"item": item, "outputs": outputs, "policy": policy})
+            self.candidates.append({"target": ONLINE.role_choice_target(item), "component_key": "value_a",
+                "output_fields": outputs, "policy_id": policy["id"], "assessment_revision": 1,
+                "policy_revision": 2, "options": [{"id": str(uuid.UUID(int=index)), "name": "Online cursor full mask"}]})
+
+    def test_two_same_named_fields_bind_separately_in_any_response_order(self):
+        reader = Mock()
+        reader.request.return_value = ONLINE.SUPPORT.Response(200, {"fields": list(reversed(self.candidates))})
+        choices = ONLINE.service_join_choices(reader, {}, self.sources, eligible=True)
+        self.assertEqual([choice["target"] for choice in choices],
+                         [candidate["target"] for candidate in self.candidates])
+        self.assertEqual([choice["selection"]["policy_id"] for choice in choices], ["policy-1", "policy-2"])
+        for candidate in self.candidates:
+            candidate["options"] = []
+        self.assertEqual(ONLINE.service_join_choices(reader, {}, self.sources, eligible=False), choices)
+
+    def test_preparation_saves_only_left_choice_and_tracks_owned_resources_before_reads(self):
+        policy_ids, service_ids = [], []
+        tables = [ONLINE.SPATIAL_SOURCE, ONLINE.SPATIAL_TARGET]
+        for source in self.sources:
+            source["item"]["attributes"] = {"type_info": {"table": {
+                "fields": [{"name": "id", "type": "bigint", "nullable": False},
+                           {"name": "value_a", "type": "string", "nullable": True}],
+                "primary_key": ["id"]}}}
+        governor, reader = Mock(), Mock()
+        governor.request.side_effect = [ONLINE.SUPPORT.Response(200, source["policy"]) for source in self.sources]
+        saved = {}
+
+        def request(method, path, expected, body=None):
+            if path == "/api/v1/service/query-protection-options":
+                self.assertIn("JOIN", body["sql"])
+                self.assertEqual(body["engine_id"], 24)
+                return ONLINE.SUPPORT.Response(200, {"fields": self.candidates})
+            if method == "POST":
+                self.assertEqual(path, "/api/v1/service/query")
+                self.assertEqual(policy_ids, ["policy-1", "policy-2"])
+                self.assertEqual([field["name"] for field in body["output_contract"]["table"]["fields"]],
+                                 list(ONLINE.SERVICE_JOIN_OUTPUTS))
+                self.assertEqual(body["data_config"]["stable_key"], ["id"])
+                self.assertEqual([choice["target"] for choice in body["data_config"]["protection_choices"]],
+                                 [self.candidates[0]["target"]])
+                saved.update(body, status="active", id=703)
+                return ONLINE.SUPPORT.Response(201, {"id": 703})
+            self.assertEqual((path, service_ids), ("/api/v1/service/query/703", [703]))
+            return ONLINE.SUPPORT.Response(200, saved)
+
+        reader.request.side_effect = request
+        with (patch.object(ONLINE, "find_item", side_effect=[source["item"] for source in self.sources]) as items,
+              patch.object(ONLINE, "current_enrollment", side_effect=[{"id": table} for table in tables]),
+              patch.object(ONLINE, "list_pages", side_effect=[[{"id": table, "component_key": "value_a"}] for table in tables]),
+              patch.object(ONLINE, "role_projection", return_value={}),
+              patch.object(ONLINE, "wait_role_projection", return_value={"acknowledged": True}),
+              patch.object(ONLINE, "create_role_policy", side_effect=[source["policy"] for source in self.sources]),
+              patch.object(ONLINE, "assert_service_role_page", side_effect=[({}, "cursor", "v1"), ({}, "", "v1")]) as page):
+            prepared = ONLINE.prepare_service_join_eligibility(governor, reader, 24, "join", 10, service_ids, policy_ids)
+        self.assertEqual(prepared["service_id"], 703)
+        self.assertEqual([call.args[2] for call in items.call_args_list],
+                         [f"{ONLINE.TARGET_SCHEMA}.{table}" for table in tables])
+        self.assertEqual([call.args[2] for call in page.call_args_list], [["1", "2", "3", "4"], ["5"]])
+        self.assertEqual(page.call_args.args[4], "cursor")
+
+    def test_misbound_alias_or_policy_and_surviving_option_fail(self):
+        for name, value, eligible in (
+                ("output_fields", ["right_secret"], True),
+                ("policy_id", "policy-2", True),
+                ("target", self.candidates[1]["target"], True),
+                ("options", self.candidates[0]["options"], False)):
+            with self.subTest(name=name):
+                rows = copy.deepcopy(self.candidates)
+                if not eligible:
+                    rows[1]["options"] = []
+                rows[0][name] = value
+                reader = Mock()
+                reader.request.return_value = ONLINE.SUPPORT.Response(200, {"fields": rows})
+                with self.assertRaises(ONLINE.SuiteError):
+                    ONLINE.service_join_choices(reader, {}, self.sources, eligible=eligible)
+
+    def test_join_page_rejects_role_mask_on_right_leak_on_left_or_wrong_csv(self):
+        for fault in ("none", "right_role_mask", "left_plaintext", "csv_changed", "pagination_header"):
+            with self.subTest(fault=fault):
+                right = "a" + "*" * 62 + "b"
+                row = {"id": 1, "left_secret": "***********", "left_copy": "***********", "right_secret": right}
+                if fault == "right_role_mask":
+                    row["right_secret"] = "*" * 64
+                if fault == "left_plaintext":
+                    row["left_copy"] = "13812345678"
+                json_result = ONLINE.SUPPORT.Response(200, {"data": [row], "page": {"has_more": True, "next_cursor": "first"},
+                    "service_version": "fixture"}, content_type="application/json", cache_control=("no-store",))
+                csv_value = "13812345678" if fault == "csv_changed" else row["left_copy"]
+                csv_result = ONLINE.SUPPORT.Response(200,
+                    f'id,left_secret,left_copy,right_secret\n1,{row["left_secret"]},{csv_value},{row["right_secret"]}\n'.encode(),
+                    content_type="text/csv", cache_control=("no-store",),
+                    pagination_has_more=("false" if fault == "pagination_header" else "true",), pagination_versions=("fixture",))
+                client = Mock()
+                client.request.side_effect = [json_result, csv_result]
+                def check():
+                    return ONLINE.assert_service_role_page(client, "/join", ["1"], True, output_sources=ONLINE.SERVICE_JOIN_OUTPUTS,
+                        expected_output=ONLINE.service_join_values(role_selected=True), verify_pagination_headers=True)
+                if fault == "none":
+                    self.assertTrue(check()[0]["csv_pagination_headers_verified"])
+                else:
+                    with self.assertRaises(ONLINE.SuiteError):
+                        check()
+
+
 class ServiceRoleMembershipRevocationTest(unittest.TestCase):
     def run_case(self, backend):
         source = {"id": 1, "full_name": "fixture.bank_card_accounts", "item_type": "table", "fingerprint": "sha256:bank-fixture", "attributes": {"type_info": {"table": {"fields": [
@@ -3188,9 +3301,36 @@ class ServiceRoleMembershipRevocationTest(unittest.TestCase):
         environment = dict(zip(ONLINE.SERVICE_ROLE_ENVIRONMENT,
             ("reader-old", "external-online-security-role-reader", "private-password", "42", "controller")))
         factory = lambda base, token, timeout: MembershipClient(backend, token)
+        def prepare_join(governor, reader, engine_id, name, deadline, service_ids, policy_ids):
+            self.assertEqual((governor.token, reader.token, engine_id), ("governor", "reader-old", 24))
+            self.assertFalse(backend.revoked)
+            policy_ids.extend(["join-left-policy", "join-right-policy"])
+            service_ids.append(703)
+            return {"service_id": 703}
+
+        def verify_join(governor, reader, prepared):
+            self.assertTrue(backend.revoked)
+            self.assertEqual((governor.token, reader.token, prepared["service_id"]), ("governor", "reader-fresh", 703))
+            if backend.member_fault == "join_interrupt_refusal":
+                raise KeyboardInterrupt("controlled JOIN refusal interruption")
+            return prepared
+
+        cleanup = ONLINE.cleanup_service_role_resources
+        backend.join_cleanup = []
+        def cleanup_join(governor, policy_id, service_id, cause):
+            if service_id == 703 or policy_id in {"join-left-policy", "join-right-policy"}:
+                backend.join_cleanup.append((policy_id, service_id))
+                if policy_id == "join-left-policy" and backend.member_fault == "join_policy_cleanup":
+                    raise ONLINE.SuiteError("controlled JOIN cleanup failure")
+                return {}
+            return cleanup(governor, policy_id, service_id, cause)
+
         with (patch.object(ONLINE, "GatewayClient", side_effect=factory),
+              patch.object(ONLINE, "prepare_service_join_eligibility", side_effect=prepare_join),
+              patch.object(ONLINE, "verify_service_join_eligibility", side_effect=verify_join),
+              patch.object(ONLINE, "cleanup_service_role_resources", side_effect=cleanup_join),
               patch.object(ONLINE, "find_item", return_value=source), patch.object(ONLINE, "list_pages", return_value=[])):
-            return ONLINE.exercise_service_role_membership_revocation(MembershipClient(backend, "governor"), 23, "fixture",
+            return ONLINE.exercise_service_role_membership_revocation(MembershipClient(backend, "governor"), 23, 24, "fixture",
                 {"enrollment_id": "enrollment", "assessment_id": "assessment"}, {"principal_id": "9", "tenant_id": "2"},
                 "run-42", time.monotonic() + 30, environment)
 
@@ -3219,9 +3359,21 @@ class ServiceRoleMembershipRevocationTest(unittest.TestCase):
         self.assertEqual(set(sql["eligibility_refusals"]), {"json","csv","no_cursor","no_cursor_csv"})
         self.assertEqual(sql["explicit_default_recovery"]["total_rows"],5)
         self.assertEqual(sql["protected_output_fields"],["card_alias","card_copy"])
-        self.assertEqual((report["created_resources"],report["deleted_resources"]),(2,2))
+        self.assertEqual(report["postgres_join_eligibility"], {"service_id": 703})
+        self.assertEqual(report["postgres_join_policies_revoked"], 2)
+        self.assertEqual(backend.join_cleanup, [(None, 703), ("join-left-policy", None), ("join-right-policy", None)])
+        self.assertEqual((report["created_resources"],report["deleted_resources"]),(3,3))
         for secret in ("private-password", "reader-old", "reader-fresh", "controller", backend.cursor):
             self.assertNotIn('"'+secret+'"', json.dumps(report))
+
+    def test_join_interruption_or_policy_cleanup_failure_still_cleans_each_owned_resource(self):
+        for fault, error in (("join_interrupt_refusal", KeyboardInterrupt), ("join_policy_cleanup", ONLINE.SuiteError)):
+            backend = MembershipBackend(fault)
+            with self.subTest(fault=fault), self.assertRaises(error):
+                self.run_case(backend)
+            self.assertEqual(backend.join_cleanup, [(None, 703), ("join-left-policy", None), ("join-right-policy", None)])
+            self.assertEqual(backend.routed_deleted, {701, 702})
+            self.assertEqual(backend.policy["state"], "revoked")
 
     def test_sql_only_failures_cannot_be_hidden_by_native_success(self):
         for fault in ("sql_denial_status","sql_denial_code","sql_denial_rows","sql_denial_cache",

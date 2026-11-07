@@ -430,12 +430,7 @@ def exercise_default_protection_transaction(
     return evidence
 
 
-def ensure_enrollment(
-    client: GatewayClient,
-    source_engine_id: int,
-    source_full_name: str,
-    source_locator: str,
-) -> tuple[str, bool]:
+def current_enrollment(client: GatewayClient, engine_id: int, full_name: str) -> dict[str, object] | None:
     enrollments = list_pages(
         client, "/api/v1/security/protection-enrollments?scope=current"
     )
@@ -443,14 +438,24 @@ def ensure_enrollment(
         item
         for item in enrollments
         if isinstance(item.get("target_snapshot"), dict)
-        and item["target_snapshot"].get("engine_id") == source_engine_id
-        and item["target_snapshot"].get("full_name") == source_full_name
+        and item["target_snapshot"].get("engine_id") == engine_id
+        and item["target_snapshot"].get("full_name") == full_name
     ]
     if len(matches) > 1:
         raise SuiteError("the protected fixture has multiple enrollments")
+    return matches[0] if matches else None
+
+
+def ensure_enrollment(
+    client: GatewayClient,
+    source_engine_id: int,
+    source_full_name: str,
+    source_locator: str,
+) -> tuple[str, bool]:
+    current = current_enrollment(client, source_engine_id, source_full_name)
     initialized = False
-    if matches:
-        enrollment_id = matches[0].get("id")
+    if current is not None:
+        enrollment_id = current.get("id")
     else:
         created = _object(
             client.request(
@@ -2668,7 +2673,8 @@ def assert_service_role_page(client: GatewayClient, path: str, expected_ids: lis
                              role_selected: bool, cursor: str = "", *,
                              output_sources: Mapping[str, str] | None = None,
                              parameters: Mapping[str, object] | None = None, page_limit: int = 4,
-                             verify_pagination_headers: bool = False) -> tuple[dict[str, object], str, str]:
+                             verify_pagination_headers: bool = False,
+                             expected_output: Mapping[str, Mapping[str, object]] | None = None) -> tuple[dict[str, object], str, str]:
     output_sources = output_sources if output_sources is not None else {field: field for field in BANK_FIELDS}
     fields = list(output_sources)
     request = service_role_query_request(fields, cursor, parameters=parameters, page_limit=page_limit)
@@ -2690,17 +2696,23 @@ def assert_service_role_page(client: GatewayClient, path: str, expected_ids: lis
         raise SuiteError("role cursor pagination or service version is invalid")
     protected_fields = {name for name, source in output_sources.items() if source == BANK_FIELD}
     for key, row in zip(expected_ids, rows):
-        original = BANK_SOURCE_VALUES[key]
-        protected = ("*" * len(original) if original else None) if role_selected else BANK_MASKED[key]
-        source = {"id": key, "customer_code": "CUST-1000" + key, BANK_FIELD: protected,
-                  "bank_account_no": "account-" + key, "card_id": "card-" + key,
-                  "bank_card_verified": "verified-" + key, "credit_card_number": str(100 + int(key))}
-        allowed = [set(fields)] + ([set(fields) - protected_fields] if key == "5" else [])
+        if expected_output is None:
+            original = BANK_SOURCE_VALUES[key]
+            protected = ("*" * len(original) if original else None) if role_selected else BANK_MASKED[key]
+            source = {"id": key, "customer_code": "CUST-1000" + key, BANK_FIELD: protected,
+                      "bank_account_no": "account-" + key, "card_id": "card-" + key,
+                      "bank_card_verified": "verified-" + key, "credit_card_number": str(100 + int(key))}
+            expected = {output: source[source_name] for output, source_name in output_sources.items()}
+            optional = protected_fields
+        else:
+            expected = expected_output[key]
+            optional = {field for field in fields if expected[field] is None}
+        allowed = [set(fields)] + ([set(fields) - optional] if key == "5" else [])
         if set(row) not in allowed:
             raise SuiteError("role cursor output field identities or suppressed aliases differ from the fixture")
         for output, source_name in output_sources.items():
             actual = normalize_id(row.get(output)) if source_name in {"id", "credit_card_number"} else row.get(output)
-            if actual != source[source_name]:
+            if actual != expected[output]:
                 raise SuiteError("role cursor protected or adjacent field differs from the independent fixture")
     csv_response = client.request("POST", path, (200,), dict(request, format="csv"), raw_response=True)
     csv_cache = export_no_store(csv_response)
@@ -2779,7 +2791,12 @@ def create_role_policy(client: GatewayClient, assessment_id: str, role_keys: lis
     return _object(client.request("POST", "/api/v1/security/protection-policies", (201,),
         dict(body, assessment_id=assessment_id, consumer_owner=owner, action=action)).payload, "role cursor Policy")
 
-def owner_role_choice(client: GatewayClient, locator: str, source: Mapping[str, object], policy: Mapping[str, object], owner: str = "service", engine_id: int | None = None, *, service_sql: str | None = None, parameters: Mapping[str, object] | None = None) -> dict[str, object]:
+def role_choice_target(source: Mapping[str, object]) -> dict[str, object]:
+    return {"owner_module": "meta", "resource_type": "data_item", "resource_identity": source["fingerprint"]}
+
+
+def role_choice_from_candidate(field: Mapping[str, object], target: Mapping[str, object],
+        component: str, policy: Mapping[str, object], *, eligible: bool = True) -> dict[str, object]:
     policy_id = str(policy["id"])
     saved_options = _array(_object(policy.get("current"), "role Policy current").get("role_options"), "saved role options")
     if len(saved_options) != 1:
@@ -2790,6 +2807,17 @@ def owner_role_choice(client: GatewayClient, locator: str, source: Mapping[str, 
             raise ValueError
     except (ValueError, TypeError, AttributeError) as error:
         raise SuiteError("role cursor Policy did not return a canonical option UUID") from error
+    options = [{"id": option_id, "name": "Online cursor full mask"}] if eligible else []
+    if (field.get("target") != target or field.get("component_key") != component or field.get("policy_id") != policy_id
+            or positive_int(field.get("policy_revision"), "role policy revision") != positive_int(policy.get("current_revision"), "Policy revision")
+            or field.get("options") != options):
+        raise SuiteError("role cursor choice does not bind this source, qualification and Policy revision")
+    return {"target": target, "component_key": component, "selection": {
+        "policy_id": policy_id, "assessment_revision": positive_int(field.get("assessment_revision"), "Assessment revision"),
+        "policy_revision": positive_int(field["policy_revision"], "Policy revision"), "option_id": option_id}}
+
+
+def owner_role_choice(client: GatewayClient, locator: str, source: Mapping[str, object], policy: Mapping[str, object], owner: str = "service", engine_id: int | None = None, *, service_sql: str | None = None, parameters: Mapping[str, object] | None = None) -> dict[str, object]:
     if owner == "service":
         request = ({"config_type": "table", "target_locator": locator} if service_sql is None else
                    {"config_type": "sql", "engine_id": positive_int(engine_id, "SQL role engine"), "sql": service_sql, "parameters": dict(parameters or {})})
@@ -2805,21 +2833,14 @@ def owner_role_choice(client: GatewayClient, locator: str, source: Mapping[str, 
                if isinstance(field, dict) and field.get("component_key") == BANK_FIELD]
     if len(matches) != 1:
         raise SuiteError("role cursor requires exactly one eligible bank-card field")
-    field = matches[0]
-    target = {"owner_module": "meta", "resource_type": "data_item", "resource_identity": source["fingerprint"]}
-    if (field.get("target") != target or field.get("policy_id") != policy_id
-            or positive_int(field.get("policy_revision"), "role policy revision") != positive_int(policy.get("current_revision"), "Policy revision")
-            or field.get("options") != [{"id": option_id, "name": "Online cursor full mask"}]):
-        raise SuiteError("role cursor available choice does not bind this source and Policy revision")
-    choice = {"target": target, "component_key": BANK_FIELD, "selection": {
-        "policy_id": policy_id, "assessment_revision": positive_int(field.get("assessment_revision"), "Assessment revision"),
-        "policy_revision": positive_int(field["policy_revision"], "Policy revision"), "option_id": option_id}}
-    return choice
+    return role_choice_from_candidate(matches[0], role_choice_target(source), BANK_FIELD, policy)
 
 
 def restore_service_default(client: GatewayClient, service_path: str, query_path: str, choice: Mapping[str, object], retained: Mapping[str, object], *,
                             output_sources: Mapping[str, str] | None = None,
-                            parameters: Mapping[str, object] | None = None) -> tuple[dict[str, object], str]:
+                            parameters: Mapping[str, object] | None = None,
+                            expected_output: Mapping[str, Mapping[str, object]] | None = None,
+                            verify_pagination_headers: bool = False) -> tuple[dict[str, object], str]:
     def definition():
         return _object(client.request("GET", service_path, (200,)).payload, "role cursor saved Service")
     if retained.get("status") != "inactive":
@@ -2833,8 +2854,12 @@ def restore_service_default(client: GatewayClient, service_path: str, query_path
     if cleared["data_config"].get("protection_choices") != [] or cleared.get("status") != "inactive":
         raise SuiteError("role cursor explicit removal did not persist")
     client.request("PUT", service_path, (200,), {"version": cleared["version"], "status": "active"})
-    recovery, recovered_cursor, recovered_version = assert_service_role_page(client, query_path, ["1", "2", "3", "4"], False, output_sources=output_sources, parameters=parameters)
-    recovered_last, _, last_version = assert_service_role_page(client, query_path, ["5"], False, recovered_cursor, output_sources=output_sources, parameters=parameters)
+    recovery, recovered_cursor, recovered_version = assert_service_role_page(client, query_path, ["1", "2", "3", "4"], False,
+        output_sources=output_sources, parameters=parameters, expected_output=expected_output,
+        verify_pagination_headers=verify_pagination_headers)
+    recovered_last, _, last_version = assert_service_role_page(client, query_path, ["5"], False, recovered_cursor,
+        output_sources=output_sources, parameters=parameters, expected_output=expected_output,
+        verify_pagination_headers=verify_pagination_headers)
     recovery.update(continuation=recovered_last, total_rows=5)
     if last_version != recovered_version:
         raise SuiteError("default recovery pagination changed its Service version")
@@ -3434,7 +3459,139 @@ def cleanup_service_sql_eligibility(client: GatewayClient, service_ids: list[int
         raise SuiteError("SQL eligibility cleanup failed: " + "; ".join(errors)) from cause
 
 
-def exercise_service_role_membership_revocation(client: GatewayClient, engine_id: int, database: str,
+SERVICE_JOIN_OUTPUTS = {"id": "id", "left_secret": "value_a", "left_copy": "value_a", "right_secret": "value_a"}
+
+
+def prepare_service_join_eligibility(governor: GatewayClient, reader: GatewayClient, engine_id: int,
+        name: str, deadline: float, service_ids: list[int], policy_ids: list[str]) -> dict[str, object]:
+    fields = list(SERVICE_JOIN_OUTPUTS)
+    sql = (f"SELECT l.id,l.value_a AS left_secret,l.value_a AS left_copy,r.value_a AS right_secret "
+           f"FROM {TARGET_SCHEMA}.{SPATIAL_SOURCE} l JOIN {TARGET_SCHEMA}.{SPATIAL_TARGET} r ON l.id=r.id")
+    body = service_payload(name, engine_id, "", fields)
+    body.update(config_type="sql", sql_query=sql)
+    body["data_config"].pop("locator")
+    body["data_config"]["stable_key"] = ["id"]
+    body["protocols"]["rest_api"]["formats"] = ["json", "csv"]
+    sources = []
+    for table, outputs in ((SPATIAL_SOURCE, ["left_copy", "left_secret"]), (SPATIAL_TARGET, ["right_secret"])):
+        full_name = f"{TARGET_SCHEMA}.{table}"
+        item = find_item(governor, engine_id, full_name, "table")
+        enrollment = current_enrollment(governor, engine_id, full_name)
+        if enrollment is None:
+            raise SuiteError("Service JOIN requires the previously assessed spatial sources")
+        enrollment_id = str(enrollment["id"])
+        assessments = [item for item in list_pages(governor, "/api/v1/security/assessments?" +
+                       urllib.parse.urlencode({"enrollment_id": enrollment_id})) if item.get("component_key") == "value_a"]
+        if len(assessments) != 1:
+            raise SuiteError("Service JOIN requires one value_a Assessment per source")
+        previous = role_projection(governor, enrollment_id)
+        policy = create_role_policy(governor, str(assessments[0]["id"]), [SERVICE_ELIGIBILITY_ROLE])
+        policy_id = str(policy["id"])
+        policy_ids.append(policy_id)
+        installed = wait_role_projection(governor, enrollment_id, previous, deadline)
+        policy_path = "/api/v1/security/protection-policies/" + policy_id
+        published = _object(governor.request("GET", policy_path, (200,)).payload, "Service JOIN Policy")
+        sources.append({"item": item, "outputs": outputs, "enrollment_id": enrollment_id, "policy_path": policy_path,
+                        "policy": published, "projection": installed})
+    if len({source["item"]["fingerprint"] for source in sources}) != 2:
+        raise SuiteError("Service JOIN candidates require two distinct DataItems")
+    contract = []
+    for output, source_name in SERVICE_JOIN_OUTPUTS.items():
+        item = sources[1 if output == "right_secret" else 0]["item"]
+        table = _object(item["attributes"]["type_info"]["table"], "Service JOIN source structure")
+        matches = [field for field in _array(table.get("fields"), "Service JOIN source fields") if field.get("name") == source_name]
+        if len(matches) != 1 or table.get("primary_key") != ["id"]:
+            raise SuiteError("Service JOIN needs each source's actual fields and id primary key")
+        field = dict(matches[0], name=output)
+        field.pop("path", None)
+        contract.append(field)
+    body["output_contract"] = {"table": {"fields": contract, "primary_key": ["id"]}}
+    request = {"config_type": "sql", "engine_id": engine_id, "sql": sql, "parameters": {}}
+    choices = service_join_choices(reader, request, sources, eligible=True)
+    choice = choices[0]
+    body["data_config"]["protection_choices"] = [choice]
+    created = _object(reader.request("POST", "/api/v1/service/query", (201,), body).payload, "Service JOIN definition")
+    service_id = positive_int(created.get("id"), "Service JOIN ID")
+    service_ids.append(service_id)
+    path = f"/api/v1/service/query/{service_id}"
+    selected = _object(reader.request("GET", path, (200,)).payload, "saved Service JOIN definition")
+    config = _object(selected.get("data_config"), "Service JOIN config")
+    if (selected.get("config_type") != "sql" or selected.get("engine_id") != engine_id or selected.get("sql_query") != sql
+            or selected.get("status") != "active" or selected.get("public_access") is not False
+            or config.get("protection_choices") != [choice]
+            or _object(config.get("source_snapshot", {}), "Service JOIN output snapshot").get("source") is not None):
+        raise SuiteError("Service JOIN definition did not preserve its exact private left-side choice")
+    query_path = "/api/query/" + urllib.parse.quote(name, safe="") + "/query"
+    expected = service_join_values(role_selected=True)
+    first, cursor, version = assert_service_role_page(reader, query_path, ["1", "2", "3", "4"], True,
+        output_sources=SERVICE_JOIN_OUTPUTS, expected_output=expected, verify_pagination_headers=True)
+    last, _, last_version = assert_service_role_page(reader, query_path, ["5"], True, cursor,
+        output_sources=SERVICE_JOIN_OUTPUTS, expected_output=expected, verify_pagination_headers=True)
+    if last_version != version:
+        raise SuiteError("Service JOIN positive control changed service version")
+    return {"service_id": service_id, "service_path": path, "query_path": query_path, "choice": choice,
+            "selected": selected, "request": request, "sources": sources, "cursor": cursor, "version": version,
+            "first_page": first, "valid_cursor_continuation": last}
+
+
+def service_join_choices(reader: GatewayClient, request: Mapping[str, object],
+                         sources: list[dict[str, object]], *, eligible: bool) -> list[dict[str, object]]:
+    options = _object(reader.request("POST", "/api/v1/service/query-protection-options", (200,), request).payload, "Service JOIN candidates")
+    fields = [_object(field, "Service JOIN candidate") for field in _array(options.get("fields"), "Service JOIN fields")]
+    if len(fields) != 2:
+        raise SuiteError("Service JOIN must return two source fields")
+    choices = []
+    for source in sources:
+        target = role_choice_target(source["item"])
+        matches = [field for field in fields if field.get("target") == target and field.get("component_key") == "value_a"]
+        if len(matches) != 1 or matches[0].get("output_fields") != source["outputs"]:
+            raise SuiteError("Service JOIN same-named fields did not bind to distinct output columns")
+        choices.append(role_choice_from_candidate(matches[0], target, "value_a", source["policy"], eligible=eligible))
+    return choices
+
+
+def service_join_values(*, role_selected: bool) -> dict[str, dict[str, str | None]]:
+    # Check the fixed spatial seed and the previous stage's independent SM3 vectors.
+    left_default = {"1": "1*********8", "2": "张***c", "3": "a*c", "4": None, "5": None}
+    right_default = {key: value[0] + "*" * 62 + value[-1] if value else None for key, value in SM3_VALUES.items()}
+    rows = {}
+    for key, original in SOURCE_VALUES.items():
+        left = ("*" * len(original) if original else None) if role_selected else left_default[key]
+        rows[key] = {"id": key, "left_secret": left, "left_copy": left, "right_secret": right_default[key]}
+    return rows
+
+
+def verify_service_join_eligibility(governor: GatewayClient, reader: GatewayClient,
+                                   prepared: Mapping[str, object]) -> dict[str, object]:
+    path, query_path = str(prepared["service_path"]), str(prepared["query_path"])
+    if reader.request("GET", path, (200,)).payload != prepared["selected"]:
+        raise SuiteError("Service JOIN eligibility loss changed the saved definition")
+    sources = prepared["sources"]
+    service_join_choices(reader, prepared["request"], sources, eligible=False)
+    denials = assert_service_eligibility_denials(reader, query_path, str(prepared["cursor"]),
+        output_sources=SERVICE_JOIN_OUTPUTS)
+    for source in sources:
+        if (governor.request("GET", source["policy_path"], (200,)).payload != source["policy"]
+                or role_projection(governor, source["enrollment_id"]) != source["projection"]):
+            raise SuiteError("Service JOIN qualification loss changed a source Policy or projection")
+    recovery, version = restore_service_default(reader, path, query_path, prepared["choice"], prepared["selected"],
+        output_sources=SERVICE_JOIN_OUTPUTS, expected_output=service_join_values(role_selected=False),
+        verify_pagination_headers=True)
+    if version == prepared["version"]:
+        raise SuiteError("Service JOIN recovery retained the selected version")
+    return {"service_id": prepared["service_id"], "choice": prepared["choice"],
+            "source_fields": [{"target": role_choice_target(source["item"]), "component_key": "value_a",
+                               "output_fields": source["outputs"], "projection": source["projection"]}
+                              for source in sources],
+            "first_page": prepared["first_page"], "valid_cursor_continuation": prepared["valid_cursor_continuation"],
+            "old_cursor": {"length": len(str(prepared["cursor"])),
+                           "sha256": hashlib.sha256(str(prepared["cursor"]).encode()).hexdigest()},
+            "eligibility_refusals": denials, "explicit_default_recovery": recovery,
+            "policies_projections_and_saved_choice_unchanged_at_refusal": True,
+            "ineligible_options_absent": True}
+
+
+def exercise_service_role_membership_revocation(client: GatewayClient, engine_id: int, postgres_engine_id: int, database: str,
         bank: Mapping[str, object], owner_identity: Mapping[str, object], run_id: str, deadline: float,
         environment: Mapping[str, str] | None = None) -> dict[str, object]:
     env = os.environ if environment is None else environment
@@ -3459,6 +3616,7 @@ def exercise_service_role_membership_revocation(client: GatewayClient, engine_id
     failure = None
     result = {}
     sql_service_ids = []
+    join_policy_ids = []
     try:
         source = find_item(client, engine_id, database + "." + BANK_SOURCE, "table")
         locator = build_item_locator(engine_id, source)
@@ -3489,6 +3647,9 @@ def exercise_service_role_membership_revocation(client: GatewayClient, engine_id
             raise SuiteError("membership Service version changed before role revocation")
         sql_prepared = prepare_service_sql_eligibility(reader, engine_id, source, locator, policy,
             ("online-security-sql-membership-" + run_suffix(run_id, "-"))[:120].rstrip("-"), sql_service_ids)
+        join_prepared = prepare_service_join_eligibility(client, reader, postgres_engine_id,
+            ("online-security-join-membership-" + run_suffix(run_id, "-"))[:120].rstrip("-"),
+            deadline, sql_service_ids, join_policy_ids)
         revoked = assert_service_eligibility_assignment(controller.request("POST", assignment_path + "/revoke", (200,),
             {"reason": "Disposable masking eligibility revocation; keep functional permissions and Policy unchanged"}).payload,
             identity, assignment_id, "revoked")
@@ -3516,6 +3677,7 @@ def exercise_service_role_membership_revocation(client: GatewayClient, engine_id
             raise SuiteError("revoked User still observes eligible masking options")
         denials = assert_service_eligibility_denials(fresh, query_path, cursor)
         sql_result = verify_service_sql_eligibility(fresh, sql_prepared)
+        join_result = verify_service_join_eligibility(client, fresh, join_prepared)
         recovery, recovered_version = restore_service_default(fresh, service_path, query_path, choice, selected)
         if (recovered_version == version or client.request("GET", policy_path, (200,)).payload != published_policy
                 or role_projection(client, enrollment_id) != installed
@@ -3529,7 +3691,8 @@ def exercise_service_role_membership_revocation(client: GatewayClient, engine_id
             "old_session_http_status": 401, "formal_same_user_login_verified": True,
             "first_page": first, "valid_cursor_continuation": continuation,
             "old_cursor": {"length": len(cursor), "sha256": hashlib.sha256(cursor.encode()).hexdigest()},
-            "fresh_user_refusals": denials, "explicit_default_recovery": recovery, "sql_eligibility": sql_result}
+            "fresh_user_refusals": denials, "explicit_default_recovery": recovery, "sql_eligibility": sql_result,
+            "postgres_join_eligibility": join_result}
     except BaseException as error:
         failure = error
     errors = []
@@ -3551,11 +3714,17 @@ def exercise_service_role_membership_revocation(client: GatewayClient, engine_id
         cleanup_service_role_resources(client, policy_id, service_id, failure)
     except BaseException as error:
         errors.append(str(error))
+    for join_policy_id in join_policy_ids:
+        try:
+            cleanup_service_role_resources(client, join_policy_id, None, failure)
+        except BaseException as error:
+            errors.append(str(error))
     if errors:
         raise SuiteError("membership revocation cleanup failed: " + "; ".join(errors)) from failure
     if failure:
         raise failure
-    return dict(result, created_resources=2, deleted_resources=2, residual_resources=0,
+    return dict(result, created_resources=3, deleted_resources=3, residual_resources=0,
+                postgres_join_policies_revoked=len(join_policy_ids),
                 eligibility_assignment_revoked=True, policy_revoked=True, service_deleted=True)
 
 
@@ -4691,7 +4860,7 @@ def run_scenario(
         client, source_engine_id, source_database, bank_card_metadata, identity, run_id, deadline,
         config_type="sql", parameters={}, parameter_default=1)
     service_role_membership_revocation = exercise_service_role_membership_revocation(
-        client, source_engine_id, source_database, bank_card_metadata, identity, run_id, deadline, role_environment)
+        client, source_engine_id, target_engine_id, source_database, bank_card_metadata, identity, run_id, deadline, role_environment)
     service_role_membership_expiry = exercise_service_role_membership_expiry(
         client, source_engine_id, source_database, bank_card_metadata, identity, run_id, deadline, role_environment)
     develop_role_membership_expiry = exercise_develop_role_membership_expiry(
@@ -4784,7 +4953,7 @@ def run_scenario(
             source_locator, target_parent_locator, target_locator, service_name, task_name, identity, deadline, task_ids)
         result = {
             "resource_validity": resource_validity,
-            "schema_version": "addp.security-mysql-owner-protection-online/v43",
+            "schema_version": "addp.security-mysql-owner-protection-online/v44",
             "postgres_refresh_scope": {"mode": "exact_items", "initializer_depth": "basic",
                 "schema": TARGET_SCHEMA, "tables": list(POSTGRES_READ_TARGETS)},
             "result": "passed",

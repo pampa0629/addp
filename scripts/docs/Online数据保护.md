@@ -10,7 +10,7 @@
 
 ## 现行契约与证据边界
 
-当前领域报告为 `addp.security-mysql-owner-protection-online/v43`、浏览器报告为 `addp.security-manager-export-browser/v9`，以[现行校验器](../test/security-mysql-owner-protection-online.py)为准。本页按主题保留 v23～v43 的增量要求。当前报告继承仍适用的断言。
+当前领域报告为 `addp.security-mysql-owner-protection-online/v44`、浏览器报告为 `addp.security-manager-export-browser/v9`，以[现行校验器](../test/security-mysql-owner-protection-online.py)为准。本页按主题保留 v23～v44 的增量要求。当前报告继承仍适用的断言。
 
 保护方式、角色资格及导出有效性的能力契约见[数据安全规范](../../docs/spec/addp数据安全与隐私保护实现规范.md#711-默认方式与角色可选方式)。本文维护 suite 断言与版本差异；已归档的固定源码、运行尝试、失败和清理结果见[数据保护与执行血缘历史证据](../../docs/spec/testing/evidence/数据保护与执行血缘历史证据.md)，不由版本号推导某次验收已通过。其中[四出口实际停机 v9](../../docs/spec/testing/evidence/数据保护与执行血缘历史证据.md#四出口实际停机--t4-v9)、[四出口重新发现 v10](../../docs/spec/testing/evidence/数据保护与执行血缘历史证据.md#四出口重新发现--t4-v10)分别维护对应旧证据，不作为 v23～v33 新增范围的通过记录。
 
@@ -273,3 +273,9 @@ Transfer 的这两个 SQL 查询源拒绝复用套件已纳管的 PostgreSQL `sp
 查询按右表原值排序，使用 `LIMIT 2 OFFSET 1`，目标表应只有 ID 1 和 3。ID 1 左列为掩码，ID 3 左列因源值过短写入 NULL，右列均为固定替换值。两个别名分别保留左、右字段来源。敏感表达式 `pg_catalog.lower` 分别写向已存在目标和未创建目标，两次均在准备阶段以 `protection_computed_output_unsupported` 拒绝，读写计数为零。每条用例核对原执行 UUID、发起人和首个 Worker attempt 的开始及终态事件。
 
 当次 PostgreSQL 夹具提前创建一个空目标，随后由 Worker 写入。物理核对检查两个精确目标的表标识、行和不存在状态，并以两个源表的摘要核对源数据。领域报告只保存判定及数量。任务按 API 删除并确认 404，固定替换策略按版本撤销并等待同步。物理清理只处理本轮预检时已证明不存在的目标名，校验两表均无残留。右表的治理记录与执行审计随隔离环境销毁。确定性校验仍使用 `make test-security-online-runner`，真实 T4 由专门 CI 会话执行。
+
+## Service PostgreSQL 两表 JOIN 角色资格撤销（v44）
+
+复用空间算法及 Transfer JOIN 已准备的两个 PostgreSQL 普通表 `spatial_algorithm_source` 与 `spatial_algorithm_transfer`、原有精确表范围和 Service 普通用户。两个来源的 `value_a` 各自安装 Service 角色选项。候选必须按 DataItem 返回两条同名字段及各自输出列，保存只选择左表。撤销前逐页核对 JSON 与 CSV，左表两个别名全遮盖，右表保持默认掩码，NULL 与 CSV 空单元格对应。查询按 id 分页，每页状态及 CSV 响应头独立核验。
+
+沿现有真实 IAM 撤销，仅撤销同一个资格分配。旧会话核对 401，同一普通用户重新登录后，两种格式的旧游标及无游标查询均须精确 403 / `query_protection_roles_unavailable`、无结果且 `no-store`。两侧 Policy、投影和已保存选择保持。主动移除选择后恢复双表默认脱敏及两页结果。临时服务与两条角色策略在成功、失败或中断后精确清理。领域报告在 `service_role_membership_revocation.postgres_join_eligibility` 留存候选列、分页、拒绝和恢复证据。浏览器合同仍为 v9。
