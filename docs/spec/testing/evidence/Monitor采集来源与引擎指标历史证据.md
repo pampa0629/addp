@@ -16,6 +16,14 @@
 
 区分固定 Linux 来源 T2、正式密码／MFA 的 Hosted 及本地契约。实际 Job 及各次清理依附其固定输入，重跑结果与首轮失败分列。
 
+### PostgreSQL 测试数据库初始化就绪竞态（2026-11-07）
+
+[原失败 Job](https://github.com/pampa0629/addp/actions/runs/42249614265/job/128044721608)在重建数据库后，将初始化用的临时 socket 服务判为 Healthy。随后临时服务退出、正式进程启动，首条 `SHOW hba_file` 失败。夹具原健康检查未指定主机。现改为 `pg_isready -h 127.0.0.1 -p 5432 -U addp -d addp_test`，等待正式 TCP 服务；原 1 秒间隔、3 秒超时、45 次重试及实库断言保持。
+
+固定基线 `4d8a8cc2e3b391cdfe2cdc46707d131397b25dac` 仅叠加该 Compose 修复，文件 SHA-256 为 `d7b4729fe69fafbecf91aec98acd469b5f13c3ed8b03f952ce7f0b9eda645688`。在一次性 Lima Linux ARM64 与独立 Docker 内执行 `make test-monitor-metrics MONITOR_METRICS_TEST_ARGS=--case=postgres-observation`，退出 0。139 项配置、27 项生命周期测试，以及普通认证、Infra／Business 汇总及权限拒绝、重建后的目录认证均通过。目录分支首次 HBA 读取、只读挂载、原子更新、真实重载及完整恢复通过；没有新增查询重试。运行中只读核对健康命令及主服务 PID 1，退出后核验容器、网络、卷和临时文件清零，专属 VM 及存储删除。
+
+本地 `make test-monitor-metrics-config` 与 `make test-t2-ci-registration` 通过。既有 T2 自动发现与 Release 输入登记已覆盖该文件。本次证据覆盖测试数据库就绪及认证流程，专业来源采样、查询页面和 Hosted 沿各自独立证据认定。
+
 ### Infra与Business PostgreSQL 自动接入
 
 2026-10-20 固定 `b3dcae5a3e62b37dbbb15f9e28067a94b6454545` 的 Hosted 专项通过，含审计修复 `0155d5db578ef3324d81db8aa7a8d2482539f55e`。真实非委托 Platform User 以密码／MFA 一次接入 Infra 和 Business 两个单容器 PostgreSQL，并绑定同一新建主机。覆盖列表／详情、刷新恢复、重复拒绝、版本冲突、整批回滚及停用退役，业务约 62.544 秒，浏览器约 26.469 秒。业务、清理通过，Infra 零残留。[实际 Hosted Job](https://github.com/pampa0629/addp/actions/runs/39324018076/job/118305077445)
