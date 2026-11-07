@@ -68,11 +68,14 @@ func TestIntegrationNFSPublicationCompleteFileAndPrivateNamespace(t *testing.T) 
 	if e != nil {
 		t.Fatal(e)
 	}
+	source := requireNFSReadSource(t, reader, request.Target)
+	source.Paths[0].Segments[len(source.Paths[0].Segments)-1].Name = "not-the-source.gpkg"
 	data, e := io.ReadAll(reader)
 	reader.Close()
 	if e != nil || string(data) != "native complete immutable content" {
 		t.Fatal("wrong final bytes", e)
 	}
+	requireNFSReadSource(t, reader, request.Target)
 	entries, e := p.ListChildren(ctx, info, plugin.FileRootPath(14), plugin.ListOptions{})
 	if e != nil {
 		t.Fatal(e)

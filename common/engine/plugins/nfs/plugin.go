@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"sync"
 
@@ -31,9 +32,19 @@ func (r *limitedReadCloser) Close() error {
 
 type nfsFileReadCloser struct {
 	io.ReadCloser
-	mu     *sync.Mutex
-	size   int64
-	closed bool
+	mu      *sync.Mutex
+	size    int64
+	closed  bool
+	readSet *plugin.QueryReadSet
+}
+
+// ReadSet describes the bound source, not byte consumption or current access.
+// The immutable proof survives Close; untyped/internal readers have no proof.
+func (r *nfsFileReadCloser) ReadSet(context.Context) (*plugin.QueryReadSet, error) {
+	if r == nil || r.readSet == nil {
+		return nil, plugin.ErrQueryReadSetUnresolved
+	}
+	return r.readSet.Clone(), nil
 }
 
 func (r *nfsFileReadCloser) Read(p []byte) (int, error) {
@@ -221,11 +232,25 @@ func (p *NFSPlugin) DescribeEngineCatalogFacts(ctx context.Context, connInfo plu
 }
 
 func (p *NFSPlugin) OpenContent(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.EngineCatalogPath, opts plugin.ReadOptions) (io.ReadCloser, error) {
+	// Freeze before any connection/LOOKUP callback can mutate caller-owned
+	// segments. A missing proof must not turn an ordinary read into a new route.
+	readSet, proofErr := plugin.NewQueryReadSet(path)
+	if proofErr == nil {
+		path = readSet.Paths[0]
+	}
 	filePath, err := plugin.RequireFileLeafPath(path)
 	if err != nil {
 		return nil, err
 	}
-	return p.readFile(ctx, connInfo, filePath)
+	if proofErr != nil || !reflect.DeepEqual(path, plugin.FileItemPath(path.EngineID, filePath)) {
+		readSet = nil
+	}
+	reader, err := p.readFile(ctx, connInfo, filePath)
+	if err != nil {
+		return nil, err
+	}
+	reader.readSet = readSet
+	return reader, nil
 }
 
 func (p *NFSPlugin) OpenRange(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.EngineCatalogPath, opts plugin.ReadOptions) (io.ReadCloser, error) {
@@ -357,7 +382,7 @@ func openNFSReadFile(ctx context.Context, target nfsReadProtocol, mu *sync.Mutex
 }
 
 // readFile 流式读取文件内容
-func (p *NFSPlugin) readFile(ctx context.Context, connInfo plugin.ConnectionInfo, path string) (io.ReadCloser, error) {
+func (p *NFSPlugin) readFile(ctx context.Context, connInfo plugin.ConnectionInfo, path string) (*nfsFileReadCloser, error) {
 	if err := allowPublicNFSPath(connInfo, path); err != nil {
 		return nil, err
 	}
@@ -392,12 +417,7 @@ func (p *NFSPlugin) readFileRange(ctx context.Context, connInfo plugin.Connectio
 	if err != nil {
 		return nil, err
 	}
-	seeker, ok := rc.(io.Seeker)
-	if !ok {
-		_ = rc.Close()
-		return nil, fmt.Errorf("NFS file reader does not support seek")
-	}
-	if _, err := seeker.Seek(opts.Offset, io.SeekStart); err != nil {
+	if _, err := rc.Seek(opts.Offset, io.SeekStart); err != nil {
 		_ = rc.Close()
 		return nil, fmt.Errorf("failed to seek NFS file %s to offset %d: %w", normalizePath(path), opts.Offset, err)
 	}
