@@ -73,6 +73,7 @@ def start(private, run_id):
         }))
         settings = (
             f"POSTGRES_DB={DATABASE}\nPOSTGRES_USER=fixture_admin\nPOSTGRES_PASSWORD={admin}\n"
+            "POSTGRES_INITDB_ARGS=--auth-host=scram-sha-256 --auth-local=trust\n"
             if engine == "postgresql" else f"MYSQL_DATABASE={DATABASE}\nMYSQL_ROOT_PASSWORD={admin}\n"
         )
         directory = "/var/lib/postgresql/data" if engine == "postgresql" else "/var/lib/mysql"

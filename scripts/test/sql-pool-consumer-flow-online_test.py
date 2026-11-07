@@ -160,20 +160,21 @@ pid=44 user=pool_reader_next LOG:  statement: SELECT id FROM public.pool_source_
 
     def test_password_rotation_requires_authentication_denial_not_network_failure(self):
         for engine in POOL.PROFILES:
-            for authentication_error in (True, False):
-                with self.subTest(engine=engine, authentication_error=authentication_error), tempfile.TemporaryDirectory() as tmp:
+            for outcome in ("authentication", "network", "trusted"):
+                with self.subTest(engine=engine, outcome=outcome), tempfile.TemporaryDirectory() as tmp:
                     private = Path(tmp)
                     credentials = {"initial": "0" * 48, "account": "a" * 48, "rotated": "b" * 48}
                     (private / f"{engine}-credentials.json").write_text(json.dumps(credentials))
                     denied = "password authentication failed" if engine == "postgresql" else "ERROR 1045 (28000)"
-                    replies = [POOL.subprocess.CompletedProcess([], 2, stdout="", stderr=denied if authentication_error else "network failed"),
+                    replies = [POOL.subprocess.CompletedProcess([], 0 if outcome == "trusted" else 2,
+                               stdout="1\n" if outcome == "trusted" else "", stderr=denied if outcome == "authentication" else "network failed"),
                                POOL.subprocess.CompletedProcess([], 0, stdout="1\n", stderr="")]
                     output = StringIO()
                     with patch.object(POOL, "fixture_identity", return_value={"native_id": "same"}), \
                          patch.object(POOL, "sql", return_value=POOL.subprocess.CompletedProcess([], 0, stdout="[]")), \
                          patch.dict(POOL.os.environ, {"ADDP_ONLINE_ARTIFACT_DIR": tmp}), \
                          patch.object(POOL, "docker", side_effect=replies), redirect_stdout(output):
-                        if authentication_error:
+                        if outcome == "authentication":
                             POOL.rotate_password(engine, private, private, "run-pool")
                             proof = json.loads(output.getvalue())
                             self.assertTrue(proof["old_password_rejected"])
@@ -185,3 +186,6 @@ pid=44 user=pool_reader_next LOG:  statement: SELECT id FROM public.pool_source_
                             with self.assertRaisesRegex(POOL.SUPPORT.SuiteError, "authentication proof failed"):
                                 POOL.rotate_password(engine, private, private, "run-pool")
                             self.assertFalse((private / "sql-pool-password-probes.jsonl").exists())
+                        diagnostic = json.loads((private / "sql-pool-auth-observations.jsonl").read_text())
+                        self.assertEqual(diagnostic["rejected_attempt"]["authentication_denied"], outcome == "authentication")
+                        self.assertEqual(diagnostic["rejected_attempt"]["returned_one"], outcome == "trusted")
