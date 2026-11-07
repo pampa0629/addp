@@ -132,9 +132,9 @@ func suiteSourceInitializerPermissions(suite string) []string {
 			return slices.Clone(sourceInitializerPermissions)
 		}
 		return nil
-	case "raster-workflow-capacity", "ftp-consumer-flow", "manager-internal-artifact-lineage", "highgo-consumer-flow", "security-mysql-owner-protection", "security-plaintext-access", "hdfs-spark-consumer-flow", "cleanup-native-effects", "opengauss-consumer-flow", "transfer-relational-sql-etl":
+	case "ontology-agent-protection", "raster-workflow-capacity", "ftp-consumer-flow", "manager-internal-artifact-lineage", "highgo-consumer-flow", "security-mysql-owner-protection", "security-plaintext-access", "hdfs-spark-consumer-flow", "cleanup-native-effects", "opengauss-consumer-flow", "transfer-relational-sql-etl":
 		permissions := append([]string{}, sourceInitializerPermissions...)
-		if suite == "hdfs-spark-consumer-flow" || suite == "security-mysql-owner-protection" || suite == "transfer-relational-sql-etl" || (suite == "manager-internal-artifact-lineage" && slices.Contains([]string{"native-envi", "filegdb-export"}, os.Getenv("ADDP_ONLINE_MANAGER_CASE"))) {
+		if suite == "ontology-agent-protection" || suite == "hdfs-spark-consumer-flow" || suite == "security-mysql-owner-protection" || suite == "transfer-relational-sql-etl" || (suite == "manager-internal-artifact-lineage" && slices.Contains([]string{"native-envi", "filegdb-export"}, os.Getenv("ADDP_ONLINE_MANAGER_CASE"))) {
 			permissions = append(permissions, "meta.scan_task.execute", "meta.scan_task.read")
 		}
 		return permissions
@@ -247,6 +247,22 @@ var metricPermissions = []string{
 var ontologyPermissions = []string{
 	"ontology.revision.read", "ontology.revision.update", "ontology.revision.publish",
 	"system.execution_authorization.create",
+}
+
+var ontologyAgentReaderPermissions = []string{
+	"agent.session.create", "agent.session.read", "agent.run.create", "agent.run.execute", "agent.run.read",
+	"ontology.semantic.read", "service.data_read.execute",
+}
+
+var ontologyAgentPreparationPermissions = []string{
+	"meta.catalog.read", "meta.scan_task.execute", "meta.scan_task.read", "manager.data_item.read",
+	"ontology.revision.read", "ontology.revision.update", "ontology.revision.publish", "system.execution_authorization.create",
+	"service.definition.create", "service.definition.read", "service.definition.delete", "service.data_read.execute",
+	"agent.configuration.read", "agent.configuration.update",
+	"inference.provider.create", "inference.provider.read", "inference.provider_credential.update",
+	"inference.deployment.create", "inference.profile.create",
+	"security.enrollment.create", "security.enrollment.read", "security.assessment.create", "security.assessment.read",
+	"security.policy.create", "security.policy.read", "security.policy.delete", "security.sensitive_data_type.read",
 }
 
 var orchestratorPermissions = []string{
@@ -404,6 +420,8 @@ func suitePermissions(suite string) ([]string, error) {
 		return catalogDomainPermissions(), nil
 	case "ontology-revision-lifecycle":
 		return ontologyPermissions, nil
+	case "ontology-agent-protection":
+		return ontologyAgentPreparationPermissions, nil
 	case "orchestrator-execution":
 		return orchestratorPermissions, nil
 	case "manager-internal-artifact-lineage":
@@ -444,7 +462,7 @@ func needsEngineProvisioner(suite string) bool {
 	if suite == "quality-dynamic-binding" {
 		return true
 	}
-	return suite == "vector-topology-persistence" || suite == "vector-pmtiles-workflow" || suite == "highgo-consumer-flow" || suite == "gaussdb-consumer-flow" || suite == "starrocks-consumer-flow" || suite == "transfer-continuous-events" || suite == "security-plaintext-access" || suite == "hdfs-spark-consumer-flow" || suite == "elasticsearch-consumer-flow" || (suite == "raster-workflow" || suite == "raster-workflow-capacity" || suite == "raster-nibble-capacity") || suite == "redis-consumer-flow" || suite == "ftp-consumer-flow" || suite == "security-mysql-owner-protection" || suite == "transfer-relational-sql-etl" || suite == "manager-internal-artifact-lineage" || suite == "opengauss-consumer-flow" || suite == "kingbase-consumer-flow" || suite == "metric-service-revision-lifecycle" || suite == "orchestrator-execution"
+	return suite == "ontology-agent-protection" || suite == "vector-topology-persistence" || suite == "vector-pmtiles-workflow" || suite == "highgo-consumer-flow" || suite == "gaussdb-consumer-flow" || suite == "starrocks-consumer-flow" || suite == "transfer-continuous-events" || suite == "security-plaintext-access" || suite == "hdfs-spark-consumer-flow" || suite == "elasticsearch-consumer-flow" || (suite == "raster-workflow" || suite == "raster-workflow-capacity" || suite == "raster-nibble-capacity") || suite == "redis-consumer-flow" || suite == "ftp-consumer-flow" || suite == "security-mysql-owner-protection" || suite == "transfer-relational-sql-etl" || suite == "manager-internal-artifact-lineage" || suite == "opengauss-consumer-flow" || suite == "kingbase-consumer-flow" || suite == "metric-service-revision-lifecycle" || suite == "orchestrator-execution"
 }
 
 func consumerEnvironment(suite string, tenantID int64, accessToken, password string) map[string]string {
@@ -1084,13 +1102,21 @@ func run(args []string, environment []string) error {
 		values["ADDP_ONLINE_TEST_APPROVER_USERNAME"] = "external-online-plaintext-approver"
 		values["ADDP_ONLINE_TEST_APPROVER_PASSWORD"] = approverPassword
 	}
-	if *suite == "security-mysql-owner-protection" || *suite == "security-plaintext-access" {
+	if *suite == "ontology-agent-protection" || *suite == "security-mysql-owner-protection" || *suite == "security-plaintext-access" {
 		initializer, _, _, err := createPermissionFixture(ctx, repository, identity, membershipService, roleService, selectionService,
 			tenant.ID, administrator.PrincipalID, "external-online-security-initializer", securityInitializerPermissions)
 		if err != nil {
 			return err
 		}
 		values["ADDP_ONLINE_FIXTURE_SECURITY_ACCESS_TOKEN"] = initializer.AccessToken
+	}
+	if *suite == "ontology-agent-protection" {
+		reader, _, _, err := createPermissionFixture(ctx, repository, identity, membershipService, roleService, selectionService,
+			tenant.ID, administrator.PrincipalID, "external-online-ontology-reader", ontologyAgentReaderPermissions)
+		if err != nil {
+			return err
+		}
+		values["ADDP_ONLINE_ONTOLOGY_READER_ACCESS_TOKEN"] = reader.AccessToken
 	}
 	if sourcePermissions := suiteSourceInitializerPermissions(*suite); len(sourcePermissions) > 0 {
 		sourceInitializer, _, _, err := createPermissionFixture(ctx, repository, identity, membershipService, roleService, selectionService,
@@ -1653,6 +1679,7 @@ func writeEnvironmentFile(path string, values map[string]string) error {
 		"ADDP_ONLINE_PUBLIC_ASSET_DEPARTMENT_ID",
 		"ADDP_ONLINE_FIXTURE_QUALITY_ACCESS_TOKEN",
 		"ADDP_ONLINE_FIXTURE_SECURITY_ACCESS_TOKEN",
+		"ADDP_ONLINE_ONTOLOGY_READER_ACCESS_TOKEN",
 		"ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN",
 		"ADDP_ONLINE_SECURITY_TRANSFER_ROLE_USERNAME",
 		"ADDP_ONLINE_SECURITY_TRANSFER_ROLE_PASSWORD",

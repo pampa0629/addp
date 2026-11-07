@@ -250,6 +250,7 @@ class OnlineGateTest(unittest.TestCase):
                 "manager-hybrid-search",
                 "metric-service-revision-lifecycle",
                 "ontology-revision-lifecycle",
+                "ontology-agent-protection",
                 "orchestrator-execution",
                 "execution-retention-readonly",
                 "execution-events-pagination",
@@ -470,6 +471,13 @@ class OnlineGateTest(unittest.TestCase):
     def test_rejects_unregistered_suite(self):
         with self.assertRaisesRegex(ONLINE_GATE.OnlineGateError, "registered suites"):
             ONLINE_GATE.run_online("missing", self.repository, self.environment, self.suites)
+
+    @patch.object(ONLINE_GATE, "run_stage", side_effect=(({}, 1), ({"result": "passed"}, 1)))
+    def test_ontology_passed_label_requires_complete_owner_evidence(self, _run_stage):
+        with self.assertRaises(ONLINE_GATE.OnlineStageError) as failed:
+            ONLINE_GATE.run_online("ontology-agent-protection", self.repository, self.environment,
+                                   {"ontology-agent-protection": self.suites["owner-scenario"]})
+        self.assertEqual(failed.exception.error_code, "ontology_evidence_incomplete")
 
     def test_requires_explicit_online_switch(self):
         self.environment.pop("ADDP_ONLINE_TEST")

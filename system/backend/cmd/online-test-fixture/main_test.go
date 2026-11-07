@@ -675,6 +675,19 @@ func TestWriteEnvironmentFileUsesOwnerOnlyPermissionsAndShellQuoting(t *testing.
 }
 
 func TestSuitePermissionsAreExplicitAndSeparate(t *testing.T) {
+	reader := []string{"agent.session.create", "agent.session.read", "agent.run.create", "agent.run.execute", "agent.run.read", "ontology.semantic.read", "service.data_read.execute"}
+	if !slices.Equal(ontologyAgentReaderPermissions, reader) || !needsEngineProvisioner("ontology-agent-protection") {
+		t.Fatal("Ontology Agent must use a separate exact reader and an isolated Engine provisioner")
+	}
+	preparation, err := suitePermissions("ontology-agent-protection")
+	if err != nil || !slices.Equal(preparation, ontologyAgentPreparationPermissions) ||
+		!contains(preparation, "inference.provider_credential.update") || contains(preparation, "agent.run.execute") {
+		t.Fatalf("Ontology preparation and Agent reader permissions were mixed: %v", err)
+	}
+	sourcePreparation := suiteSourceInitializerPermissions("ontology-agent-protection")
+	if !contains(sourcePreparation, "meta.scan_task.execute") || !contains(sourcePreparation, "meta.scan_task.read") {
+		t.Fatal("Ontology source initializer must hold its own scan preparation permissions")
+	}
 	ontology, err := suitePermissions("ontology-revision-lifecycle")
 	if err != nil || len(ontology) != 4 || needsEngineProvisioner("ontology-revision-lifecycle") {
 		t.Fatalf("ontology requires exactly four permissions and no Engine provisioner: %v, %v", ontology, err)

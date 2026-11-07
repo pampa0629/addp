@@ -78,6 +78,36 @@ class HostedOntologyGateTest(unittest.TestCase):
         self.assertNotEqual(0, result.returncode)
         self.assertIn("infra_cleanup=failed", (self.host.artifacts / "summary.txt").read_text())
 
+    def test_agent_protection_starts_real_owners_and_cleans_business_fixture(self):
+        self.host._write_repository_script("business/scripts/online-security-owner-fixture.sh", '''
+            #!/usr/bin/env bash
+            echo "ontology-business:$1" >> "$ADDP_TEST_GATE_TRACE"
+        ''')
+        self.host._write_repository_script("scripts/test/online-engine-registration.py", '''
+            import pathlib, sys
+            output = pathlib.Path(sys.argv[sys.argv.index('--output') + 1])
+            output.write_text("export ADDP_ONLINE_CONSUMER_ENGINE_ID=42\\n")
+        ''')
+        subprocess.run(["git", "add", "."], cwd=self.host.repository, check=True)
+        subprocess.run(["git", "commit", "-qm", "ontology business fixture"], cwd=self.host.repository, check=True)
+        for failed in ("0", "1"):
+            with self.subTest(suite_failed=failed):
+                result = self.run_gate(ONLINE_SUITE_INPUT="ontology-agent-protection", ADDP_TEST_SUITE_FAIL=failed)
+                self.assertEqual(result.returncode == 0, failed == "0", result.stdout + result.stderr)
+                trace = self.host.trace.read_text()
+                for owner in ("ontology", "security", "service", "agent", "inference"):
+                    self.assertIn("start:-" + owner, trace)
+                self.assertIn("make:test-online ONLINE_SUITE=ontology-agent-protection", trace)
+                self.assertIn("ontology-business:start", trace)
+                self.assertIn("ontology-business:stop", trace)
+                self.assertFalse(self.host.secrets.exists())
+
+    def test_agent_protection_refuses_existing_business_container(self):
+        result = self.run_gate(check=True, ONLINE_SUITE_INPUT="ontology-agent-protection",
+                               ADDP_TEST_EXISTING_CONTAINER="addp-security-online-postgres")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertFalse(self.host.trace.exists())
+
 
 if __name__ == "__main__":
     unittest.main()

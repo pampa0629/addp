@@ -749,6 +749,13 @@ SUITES: Mapping[str, Suite] = {
         services=(("gateway", "GATEWAY_URL"), ("system", "SYSTEM_URL")),
         nightly=True,
     ),
+    "ontology-agent-protection": Suite(
+        command=(sys.executable, "-m", "scripts.test.ontology-agent-protection-online"),
+        services=(("gateway", "GATEWAY_URL"), ("system", "SYSTEM_URL"),
+                  ("meta", "META_URL"), ("manager", "MANAGER_URL"), ("security", "SECURITY_URL"),
+                  ("service", "SERVICE_URL"), ("ontology", "ONTOLOGY_URL"),
+                  ("inference", "INFERENCE_URL"), ("agent", "AGENT_URL")),
+    ),
     "ontology-revision-lifecycle": Suite(
         command=(sys.executable, "-m", "scripts.test.ontology-revision-lifecycle-online"),
         services=(("gateway", "GATEWAY_URL"), ("system", "SYSTEM_URL"), ("ontology", "ONTOLOGY_URL")),
@@ -1418,6 +1425,13 @@ def run_online(
                 timeout=remaining,
             )
             report["suite_report"] = suite_report
+            if suite_name == "ontology-agent-protection":
+                from importlib import import_module
+                protection = import_module("scripts.test.ontology-agent-protection-online")
+                try:
+                    protection.validate_report(suite_report, run_id)
+                except protection.API.SuiteError as error:
+                    raise OnlineStageError("scenario", "ontology_evidence_incomplete", str(error)) from error
             if profile:
                 validate_execution_archive(profile, suite_report, report_path.parent, environment)
             report["stages"] = {
