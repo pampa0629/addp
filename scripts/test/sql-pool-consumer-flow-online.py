@@ -219,9 +219,17 @@ def observe(engine, run_id):
             AND LOWER(argument) REGEXP '[[:space:]]from[[:space:]]+(`?{DATABASE}`?[.])?`?{TABLE}`?([^a-z_0-9]|$)';""").stdout
         statements = sorted(int(value) for value in logged.split())
         active = sql(engine, f"SELECT ID FROM information_schema.PROCESSLIST WHERE USER='{READER}';").stdout
-        reader_ids = statements
+        reader_log = sql(engine, f"""SELECT JSON_OBJECT('thread_id', thread_id, 'command_type', command_type,
+            'reader', user_host LIKE '{READER}[%',
+            'select', LOWER(argument) REGEXP '^[[:space:]]*(select|with)[[:space:]]',
+            'sample', LOWER(argument) REGEXP '[[:space:]]from[[:space:]]+(`?{DATABASE}`?[.])?`?{TABLE}`?([^a-z_0-9]|$)')
+            FROM mysql.general_log WHERE command_type IN ('Query','Execute');""").stdout
+        log_entries = [json.loads(line) for line in reader_log.splitlines()]
+        reader_ids = sorted({entry["thread_id"] for entry in log_entries if entry["reader"]})
     observation = {"statement_ids": statements, "active_ids": sorted(int(value) for value in active.split()),
                    "reader_ids": reader_ids}
+    if engine == "mysql":
+        observation["native_log_filters"] = log_entries
     artifact = Path(SUPPORT.required_environment("ADDP_ONLINE_ARTIFACT_DIR")) / "sql-pool-observations.jsonl"
     with artifact.open("a") as stream:
         stream.write(json.dumps({"run_id": run_id, "engine": engine, **observation}) + "\n")
