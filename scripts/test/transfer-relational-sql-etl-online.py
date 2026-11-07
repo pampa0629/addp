@@ -351,17 +351,86 @@ def validate_field_graph(payload: object, item_id: int, field: str, expected: se
     return graph
 
 
+def field_graph_diagnostic_snapshot(payload, fields):
+    """Retain only bounded public identities and fixed diagnostic enums."""
+    def node(raw):
+        raw = raw if isinstance(raw, dict) else {}
+        identifier, name = raw.get("item_id"), raw.get("field_name")
+        return {"item_id": identifier if type(identifier) is int and 0 < identifier < 2**63 else None,
+                "field_name": name if isinstance(name, str) and name in fields else None}
+
+    graph = payload if isinstance(payload, dict) else {}
+    nodes, edges = graph.get("nodes"), graph.get("edges")
+    observed = []
+    for edge in edges[:100] if isinstance(edges, list) else []:
+        edge = edge if isinstance(edge, dict) else {}
+        evidence = edge.get("evidence")
+        identifier = evidence.get("execution_id") if isinstance(evidence, dict) else None
+        try:
+            canonical = str(uuid.UUID(identifier))
+            identifier = canonical if identifier == canonical else None
+        except (ValueError, TypeError, AttributeError):
+            identifier = None
+        transformation = edge.get("transformation")
+        status = edge.get("status")
+        observed.append({"source": node(edge.get("source")), "target": node(edge.get("target")),
+                         "transformation": transformation if transformation in ("direct", "derived") else None,
+                         "transformation_present": "transformation" in edge,
+                         "execution_id": identifier,
+                         "status": status if status in ("active", "stale", "closed") else None})
+    return {"subject": node(graph.get("subject")),
+            "complete": graph.get("field_lineage_status") == "complete",
+            "truncated": graph.get("truncated") is True,
+            "permission_filtered": graph.get("permission_filtered") is True,
+            "node_count": len(nodes) if isinstance(nodes, list) else None,
+            "edge_count": len(edges) if isinstance(edges, list) else None,
+            "nodes": [node(raw) for raw in nodes[:100]] if isinstance(nodes, list) else [],
+            "edges": observed}
+
+
+def record_field_graph_diagnostic(item_id, field, expected, first, last, attempts, result):
+    fields = {field} | {edge[1] for edge in expected} | {edge[3] for edge in expected}
+    expected_graph = {"edges": [
+        {"source": {"item_id": row[0], "field_name": row[1]}, "target": {"item_id": row[2], "field_name": row[3]},
+         "transformation": row[4], "evidence": {"execution_id": row[5]}, "status": "active"}
+        for row in sorted(expected)
+    ]}
+    receipt = {"schema_version": "addp.field-lineage-diagnostic/v1", "result": result,
+               "run_id": required_environment("ADDP_ONLINE_TEST_RUN_ID"), "item_id": item_id,
+               "field_name": field, "observations": attempts,
+               "expected_edges": field_graph_diagnostic_snapshot(expected_graph, fields)["edges"],
+               "first_observation": first, "last_observation": last}
+    name = f"field-lineage-diagnostic-{item_id}-{hashlib.sha256(field.encode()).hexdigest()[:12]}.json"
+    artifact = Path(required_environment("ADDP_ONLINE_ARTIFACT_DIR")) / name
+    artifact.write_text(json.dumps(receipt, sort_keys=True) + "\n")
+
+
 def wait_field_graph(client: GatewayClient, item_id: int, field: str, expected: set[tuple[int, str, int, str, str, str]], timeout: float) -> dict[str, object]:
     deadline = time.monotonic() + timeout
     query = urllib.parse.urlencode({"subject_kind": "field_ref", "item_id": item_id, "field_name": field, "direction": "upstream", "depth": 3, "limit": 100})
     last_error = "collector has not converged"
+    first = last = None
+    attempts = 0
+    fields = {field} | {edge[1] for edge in expected} | {edge[3] for edge in expected}
     while time.monotonic() < deadline:
         payload = client.request("GET", "/api/v1/meta/lineage/graph?" + query, (200,)).payload
+        attempts += 1
         try:
-            return validate_field_graph(payload, item_id, field, expected)
+            graph = validate_field_graph(payload, item_id, field, expected)
         except SuiteError as error:
             last_error = str(error)
+            last = field_graph_diagnostic_snapshot(payload, fields)
+            if first is None:
+                first = last
+                record_field_graph_diagnostic(item_id, field, expected, first, last, attempts, "observed_mismatch")
+        else:
+            if first is not None:
+                record_field_graph_diagnostic(item_id, field, expected, first,
+                                              field_graph_diagnostic_snapshot(payload, fields), attempts, "converged")
+            return graph
         time.sleep(1)
+    if first is not None:
+        record_field_graph_diagnostic(item_id, field, expected, first, last, attempts, "timeout")
     raise SuiteError("field lineage did not converge: " + last_error)
 
 

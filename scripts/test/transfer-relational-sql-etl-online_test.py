@@ -1116,6 +1116,61 @@ class TransferRelationalSQLETLOnlineTest(unittest.TestCase):
                 with self.assertRaises(ONLINE.SuiteError):
                     ONLINE.validate_field_graph(graph, 11, "area", expected)
 
+    def test_field_graph_diagnostic_bounds_and_redacts_untrusted_response(self):
+        marker = "PRIVATE_EXPRESSION_TOKEN"
+        edge = {"source": {"item_id": 5, "field_name": "status", "attributes": marker},
+                "target": {"item_id": 7, "field_name": marker}, "transformation": marker,
+                "status": marker, "evidence": {"execution_id": marker, "expression": marker}}
+        graph = {"subject": {"item_id": True, "field_name": marker},
+                 "nodes": [edge["source"]] * 105, "edges": [edge] * 105,
+                 "message": marker, "field_lineage_status": marker}
+        snapshot = ONLINE.field_graph_diagnostic_snapshot(graph, {"status"})
+        self.assertNotIn(marker, json.dumps(snapshot))
+        self.assertEqual((snapshot["node_count"], snapshot["edge_count"]), (105, 105))
+        self.assertEqual((len(snapshot["nodes"]), len(snapshot["edges"])), (100, 100))
+        self.assertIsNone(snapshot["subject"]["item_id"])
+        self.assertEqual(snapshot["edges"][0]["source"], {"item_id": 5, "field_name": "status"})
+        self.assertIsNone(snapshot["edges"][0]["target"]["field_name"])
+        self.assertIsNone(snapshot["edges"][0]["execution_id"])
+        self.assertIsNone(snapshot["edges"][0]["transformation"])
+
+    def test_field_graph_wait_records_first_and_final_mismatch_without_relaxing_assertions(self):
+        execution_ids = [str(uuid.uuid4()), str(uuid.uuid4())]
+        graph = self.field_graph()
+        for edge, identifier in zip(graph["edges"], execution_ids):
+            edge["evidence"]["execution_id"] = identifier
+        expected = {(5, "status", 7, "region_name", "direct", execution_ids[0]),
+                    (7, "region_name", 11, "area", "direct", execution_ids[1])}
+        first = copy.deepcopy(graph)
+        first["edges"][0].pop("transformation")
+        final = copy.deepcopy(graph)
+        final["edges"][0]["evidence"]["execution_id"] = str(uuid.uuid4())
+        for converges in (False, True):
+            with self.subTest(converges=converges), tempfile.TemporaryDirectory() as directory:
+                client = Mock()
+                client.request.side_effect = [SimpleNamespace(payload=first),
+                                              SimpleNamespace(payload=graph if converges else final)]
+                env = {"ADDP_ONLINE_ARTIFACT_DIR": directory, "ADDP_ONLINE_TEST_RUN_ID": "test-run"}
+                with patch.dict(os.environ, env), patch.object(ONLINE.time, "monotonic", side_effect=[0, 0, 1, 4]), patch.object(ONLINE.time, "sleep"):
+                    if converges:
+                        self.assertEqual(ONLINE.wait_field_graph(client, 11, "area", expected, 3), graph)
+                    else:
+                        with self.assertRaisesRegex(ONLINE.SuiteError, "exact mappings/executions"):
+                            ONLINE.wait_field_graph(client, 11, "area", expected, 3)
+                path, = Path(directory).glob("field-lineage-diagnostic-*.json")
+                receipt = json.loads(path.read_text())
+                self.assertEqual(receipt["result"], "converged" if converges else "timeout")
+                self.assertEqual(receipt["observations"], 2)
+                self.assertEqual(receipt["run_id"], "test-run")
+                self.assertEqual(receipt["item_id"], 11)
+                self.assertEqual(receipt["field_name"], "area")
+                self.assertEqual(len(receipt["expected_edges"]), 2)
+                observed = receipt["first_observation"]["edges"][0]
+                self.assertFalse(observed["transformation_present"])
+                self.assertEqual(observed["execution_id"], execution_ids[0])
+                last = receipt["last_observation"]["edges"][0]
+                self.assertEqual(last["execution_id"], execution_ids[0] if converges else final["edges"][0]["evidence"]["execution_id"])
+
     def test_schema_scan_rejects_old_edges_false_completeness_and_mixed_hashes(self):
         def response(client, item, field):
             node = {"kind": "field_ref", "item_id": item, "field_name": field, "schema_snapshot_hash": "sha256:new"}
