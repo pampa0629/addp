@@ -2013,6 +2013,90 @@ def finish_resource_policy(platform, tenant, setup, timeout):
             'restored_applied_version': recovered['applied_version'], 'result': 'passed',
             'management_identity': 'separate-disposable-platform-and-tenant-users', 'consumer_admin_permission': False}
 
+def cleanup_full_metadata(env, client=None):
+    """Compensate an interrupted full scene before Hosted shuts its owners down.
+
+    This does not change the failed Online result or extend its business budget.
+    The original journal is archived before any current-run revoke is attempted.
+    """
+    directory = Path(env['ADDP_ONLINE_ARTIFACT_DIR'])
+    path = directory/'raster-workflow-metadata.json'
+    result_path = directory/'raster-workflow-metadata-exit-cleanup.json'
+    if not path.exists() and not path.is_symlink():
+        return {'result': 'not_started', 'recovered_requests': 0}
+    if path.is_symlink() or not path.is_file() or not 0 < path.stat().st_size <= 4*1024*1024:
+        raise SuiteError('invalid full metadata journal')
+    raw = path.read_bytes()
+    report = obj(json.loads(raw), 'full metadata journal')
+    if (report.get('schema_version') != 'addp.raster-workflow-metadata/v1'
+            or report.get('run_id') != env['ADDP_ONLINE_TEST_RUN_ID']
+            or any(not isinstance(report.get(key), list) for key in ('pending','issued','facts','queries','failures'))
+            or len(report['pending']) > 256):
+        raise SuiteError('metadata journal is outside the current full scene')
+    owner = WorkflowMetadata.__new__(WorkflowMetadata)
+    owner.env = env
+    owner.observer = importlib.import_module('scripts.utils.online_raster_lineage')
+    owner.registration = importlib.import_module('scripts.test.online-engine-registration')
+    owner.boundary()
+    owner.owner = {'Id': report['container_id'], 'State': {'StartedAt': report['started_at']}}
+    owner.container_user(owner.observer.inspect())
+    owner.path, owner.report = path, report
+    if client is None:
+        client = GatewayClient(env['GATEWAY_URL'], env['ADDP_ONLINE_TEST_USER_ACCESS_TOKEN'], 30)
+    owner.client = client
+    owner.identity = validate_identity(client, positive(env['ADDP_ONLINE_TEST_TENANT_ID'], 'metadata Tenant'),
+                                       required_permissions=EDITOR_PERMISSIONS)
+    if owner.identity != report['identity']:
+        raise SuiteError('metadata journal belongs to another consumer identity')
+    if not report['pending'] and report['cleanup'] == {'grants_revoked': True, 'metadata_hidden': True}:
+        return {'result': 'already_clean', 'recovered_requests': 0}
+    pending_ids = set()
+    for row in report['pending']:
+        if (not isinstance(row, dict) or set(row) != {'engine','request_id','target','confirmed'}
+                or type(row['engine']) is not int or row['engine'] <= 0 or type(row['confirmed']) is not bool
+                or not isinstance(row['request_id'], str) or not re.fullmatch(UUID_PATTERN, row['request_id'])
+                or row['request_id'] in pending_ids):
+            raise SuiteError('invalid pending exact metadata command')
+        target = obj(row['target'], 'pending exact metadata target')
+        segments = array(target.get('segments'), 'pending metadata path')
+        if len(segments) < 3 or any(not isinstance(v,dict) or not isinstance(v.get('name'),str) for v in segments):
+            raise SuiteError('invalid pending exact metadata path')
+        name = '/'.join(v['name'] for v in segments[1:])
+        owner.scope(row['engine'], name)
+        layout = 'whole' if segments[-1].get('kind') == 'prefix' else 'single'
+        if target != owner.registration.ExactFileMetadataGrants.target(row['engine'],name,'minio',layout=layout):
+            raise SuiteError('pending metadata target differs from its fixed fixture')
+        if row['confirmed']:
+            receipts = [v for v in report['issued'] if isinstance(v,dict) and v.get('request_id') == row['request_id']]
+            if (len(receipts) != 1 or any(receipts[0].get(k) != v for k,v in {
+                    'engine_id':str(row['engine']),'catalog_path':target,'action':'metadata_read',
+                    'recipient_type':'user','recipient_id':owner.identity['principal_id']}.items())):
+                raise SuiteError('pending revoke is not the current consumer exact Grant receipt')
+        pending_ids.add(row['request_id'])
+    original = directory/'raster-workflow-metadata-before-exit-cleanup.json'
+    if original.is_symlink():
+        raise SuiteError('metadata cleanup archive must not be symlink')
+    if not original.exists():
+        with original.open('xb') as stream: stream.write(raw)
+    elif json.loads(original.read_text()).get('run_id') != report['run_id']:
+        raise SuiteError('metadata cleanup archive belongs to another run')
+    evidence = {'schema_version':'addp.raster-metadata-exit-cleanup/v1','run_id':report['run_id'],
+                'result':'failed','recovered_requests':0,'pending_before':len(report['pending']),
+                'original_journal_sha256':hashlib.sha256(original.read_bytes()).hexdigest(),
+                'business_result_unchanged':True}
+    try:
+        issuer = GatewayClient(env['GATEWAY_URL'], env['ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN'], 30)
+        owner.grants = owner.registration.ExactFileMetadataGrants(issuer,client,int(owner.identity['tenant_id']),
+                                      on_change=owner.checkpoint,on_evidence=owner.capture)
+        owner.grants.pending = list(report['pending'])
+        owner.cleanup()
+        evidence.update(result='passed',recovered_requests=len(pending_ids))
+        return evidence
+    finally:
+        evidence['pending_after'] = len(owner.report['pending'])
+        result_path.write_text(json.dumps(evidence,ensure_ascii=False,sort_keys=True)+'\n')
+
+
 def run_full_scenario(repository, env, client):
     """Original business matrix, with one run-owned metadata evidence controller."""
     platform = GatewayClient(env['GATEWAY_URL'], env['ADDP_ONLINE_RASTER_POLICY_PLATFORM_TOKEN'], 30)
@@ -2054,6 +2138,11 @@ def run_selected_scenario(repository, env, client):
 def main():
     env = dict(os.environ)
     case = raster_case(env)
+    if sys.argv[1:] == ['--cleanup-metadata']:
+        print(json.dumps(cleanup_full_metadata(env), ensure_ascii=False, sort_keys=True))
+        return
+    if sys.argv[1:]:
+        raise SuiteError('unknown Raster Online command')
     required = ('ADDP_ONLINE_TEST_RUN_ID', 'ADDP_ONLINE_TEST_TENANT_ID', 'ADDP_ONLINE_TEST_USER_ACCESS_TOKEN',
                 'ADDP_ONLINE_RASTER_SOURCE_ENGINE_ID', 'ADDP_ONLINE_RASTER_SOURCE_B_ENGINE_ID',
                 'ADDP_ONLINE_RASTER_SOURCE_C_ENGINE_ID', 'ADDP_ONLINE_RASTER_TARGET_ENGINE_ID',

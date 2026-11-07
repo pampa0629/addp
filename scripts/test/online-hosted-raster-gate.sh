@@ -18,6 +18,11 @@ RUNTIME_IMAGE=localhost:5001/addp-geopython-workflow-engine:$RUNTIME_TAG
 export ADDP_ONLINE_RASTER_RUNTIME_IMAGE="$RUNTIME_IMAGE"
 HOSTED_FIXTURE_IMAGES=("$RUNTIME_IMAGE" localhost:5001/python:3.11-slim)
 registry_owned=0
+before_online_application_stop() {
+  # A hard scenario timeout cannot execute its Python finally block.
+  # Recover only its exact metadata journal while System and owners are alive.
+  run_logged python3 -B -m scripts.test.raster-workflow-online --cleanup-metadata
+}
 stop_online_fixture() {
   local status=0 image
   run_logged python3 business/scripts/online-raster-minio-fixture.py stop || status=1

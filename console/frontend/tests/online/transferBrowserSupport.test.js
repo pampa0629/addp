@@ -1,10 +1,10 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { createServer } from 'node:http'
 import { readFileSync } from 'node:fs'
 import ts from 'typescript'
 import { buildDevelopTaskEditorLocation } from '../../../../develop/frontend/src/utils/developTaskRoute.js'
 import { createMemoryHistory, createRouter } from 'vue-router'
-import { browserAPIFromResponse, browserAPIFromNavigation, identity, isAnonymousRefreshConsoleError, matchesRedirectURL, isReadonlyTaskConfigCheckRequest } from '../../e2e/online/transfer-browser-support.js'
+import { login, browserAPIFromResponse, browserAPIFromNavigation, identity, isAnonymousRefreshConsoleError, matchesRedirectURL, isReadonlyTaskConfigCheckRequest } from '../../e2e/online/transfer-browser-support.js'
 
 const base = 'http://addp.invalid'
 
@@ -234,5 +234,49 @@ describe('anonymous session refresh diagnostics', () => {
       message(`${base}/api/v1/system/refresh`, 'Failed to load resource: the server responded with a status of 500 (Internal Server Error)'),
       message(`${base}/api/v1/system/refresh`, native.text(), 'warning')
     ]) expect(isAnonymousRefreshConsoleError(other, false)).toBe(false)
+  })
+})
+
+
+describe('Online login completes on the actual landing state', () => {
+  function pageFixture(mode = 'direct') {
+    const destination = '/monitor/executions?execution_id=current'
+    let href = 'http://addp.invalid/login', listener, submitted = false, chosen = false, polls = 0
+    const emit = () => listener({ url: () => 'http://addp.invalid/api/v1/system/auth/context',
+      headers: () => ({ authorization: 'Bearer observed-browser-request' }) })
+    const absentContextWait = vi.fn(() => Promise.reject(new Error('absent context must not be awaited')))
+    const choose = vi.fn(async () => { chosen = true; href = new URL(destination, base).href; emit() })
+    const context = { waitFor: absentContextWait,
+      isVisible: async () => submitted && mode === 'context' && ++polls >= 2 && !chosen,
+      locator: () => ({ click: choose }) }
+    const page = { on: (_event, callback) => { listener = callback }, url: () => href,
+      goto: async path => { href = new URL(path, base).href },
+      locator: selector => {
+        if (selector === '.auth-login-contexts') return context
+        if (selector.includes('one-time-code')) return { isVisible: async () => mode === 'mfa' }
+        return { fill: async () => {}, click: async () => {
+          submitted = true
+          if (mode === 'direct') { href = new URL(destination, base).href; emit() }
+        } }
+      },
+      waitForURL: async predicate => { expect(predicate(new URL(href))).toBe(true) } }
+    return { page, destination, absentContextWait, choose }
+  }
+  it('returns after the exact redirect without a five-second absent-context wait', async () => {
+    const fixture = pageFixture()
+    expect(await login(fixture.page, 'ordinary', 'not-a-real-password', fixture.destination)).toBe('observed-browser-request')
+    expect(fixture.absentContextWait).not.toHaveBeenCalled()
+    expect(fixture.choose).not.toHaveBeenCalled()
+  })
+  it('waits for and selects a delayed real tenant-context step', async () => {
+    const fixture = pageFixture('context')
+    expect(await login(fixture.page, 'ordinary', 'not-a-real-password', fixture.destination)).toBe('observed-browser-request')
+    expect(fixture.choose).toHaveBeenCalledTimes(1)
+    expect(fixture.absentContextWait).not.toHaveBeenCalled()
+  })
+  it('continues to reject an MFA requirement without bypassing it', async () => {
+    const fixture = pageFixture('mfa')
+    await expect(login(fixture.page, 'ordinary', 'not-a-real-password', fixture.destination)).rejects.toThrow('must not require MFA')
+    expect(fixture.choose).not.toHaveBeenCalled()
   })
 })

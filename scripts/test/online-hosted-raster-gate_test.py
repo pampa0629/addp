@@ -45,6 +45,12 @@ class HostedRasterGateTest(unittest.TestCase):
                     Path(os.environ['ADDP_ONLINE_SECRET_DIR'], 'raster-' + role + '-engine.json').write_text('{}')
             if os.environ.get('ADDP_TEST_FAIL_ACTION') == action: sys.exit(1)
         ''')
+        self.host._write_repository_script('scripts/test/raster-workflow-online.py', '''
+            import os, sys
+            assert sys.argv[1:] == ['--cleanup-metadata']
+            with open(os.environ['ADDP_TEST_GATE_TRACE'], 'a') as stream: stream.write('metadata-exit-cleanup\\n')
+            if os.environ.get('ADDP_TEST_METADATA_EXIT_FAIL') == '1': sys.exit(7)
+        ''')
         self.host._write_repository_script('scripts/test/online-engine-registration.py', '''
             import argparse
             parser = argparse.ArgumentParser()
@@ -160,6 +166,19 @@ class HostedRasterGateTest(unittest.TestCase):
         evidence = result.stdout + ''.join(path.read_text() for path in self.host.artifacts.rglob('*') if path.is_file())
         self.assertNotIn('private-database-marker', evidence)
         self.assertNotIn('provisioner-token', evidence)
+
+    def test_metadata_exit_cleanup_precedes_owner_stop_and_preserves_business_failure(self):
+        for fail in ('0','1'):
+            with self.subTest(cleanup_failure=fail):
+                result=self.run_gate(ADDP_TEST_SUITE_FAIL='1',ADDP_TEST_METADATA_EXIT_FAIL=fail)
+                self.assertNotEqual(result.returncode,0)
+                trace=self.host.trace.read_text()
+                self.assertIn('metadata-exit-cleanup',trace)
+                self.assertLess(trace.index('metadata-exit-cleanup'),trace.index('application-stop'))
+                self.assertIn('infra-down',trace)
+                summary=(self.host.artifacts/'summary.txt').read_text()
+                self.assertIn('result=failed',summary)
+                self.assertIn('cleanup='+('failed'if fail=='1'else'passed'),summary)
 
     def test_preflight_requires_security_with_the_same_build_identity(self):
         gate = importlib.import_module('scripts.test.online-gate')

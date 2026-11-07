@@ -99,10 +99,14 @@ export async function login(page, username, password, redirect) {
   await page.locator('input[autocomplete="current-password"]').fill(password)
   await page.locator('button.auth-login-primary').click()
   const contextStep = page.locator('.auth-login-contexts')
-  const needsContext = await contextStep.waitFor({ state: 'visible', timeout: 5000 })
-    .then(() => true)
-    .catch(() => false)
-  if (needsContext) await contextStep.locator('button.auth-login-primary').click()
+  let landing = 'pending'
+  await expect.poll(async () => {
+    if (await page.locator('input[autocomplete="one-time-code"]').isVisible()) landing = 'mfa'
+    else if (matchesRedirectURL(new URL(page.url()), expectedRedirect)) landing = 'redirect'
+    else if (await contextStep.isVisible()) landing = 'context'
+    return landing
+  }, { timeout: 20_000 }).not.toBe('pending')
+  if (landing === 'context') await contextStep.locator('button.auth-login-primary').click()
   if (await page.locator('input[autocomplete="one-time-code"]').isVisible().catch(() => false)) {
     throw new Error('the dedicated Online browser user must not require MFA')
   }

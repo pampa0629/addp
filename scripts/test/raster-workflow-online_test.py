@@ -2474,6 +2474,49 @@ class WorkflowMetadataTest(unittest.TestCase):
         self.assertIn('addp_online', query.call_args.args[0])
         self.assertFalse(owner.report['issued'])
 
+    def test_exit_hook_resumes_only_current_journal_and_preserves_timeout(self):
+        owner, client, facts, state, public = self.owner()
+        owner.find(8, 'raster-source/source.tif', 'source')
+        original = owner.path.read_bytes()
+        gate = {'run_id':self.env['ADDP_ONLINE_TEST_RUN_ID'],'result':'failed','error_code':'online_scenario_timeout'}
+        gate_path=self.artifacts/'online-report.json';gate_path.write_text(self.json.dumps(gate))
+        result=m.cleanup_full_metadata(self.env,client)
+        self.assertEqual(result['result'],'passed');self.assertEqual(result['recovered_requests'],1)
+        self.assertFalse(state['visible']);self.assertEqual(self.json.loads(owner.path.read_text())['pending'],[])
+        self.assertEqual((self.artifacts/'raster-workflow-metadata-before-exit-cleanup.json').read_bytes(),original)
+        self.assertEqual(self.json.loads(gate_path.read_text()),gate)
+        self.assertEqual(m.cleanup_full_metadata(self.env,client)['result'],'already_clean')
+
+    def test_exit_hook_refuses_cross_run_identity_foreign_target_and_container(self):
+        owner, client, facts, state, public = self.owner()
+        owner.find(8, 'raster-source/source.tif', 'source')
+        original=owner.path.read_bytes();report=self.json.loads(original)
+        for field in ('run','identity','target','container','pending_type'):
+            import copy
+            bad=copy.deepcopy(report)
+            if field=='run':bad['run_id']='raster-999-1'
+            elif field=='identity':bad['identity']['principal_id']='99'
+            elif field=='target':bad['pending'][0]['target']['segments'][-1]['name']='foreign.tif'
+            elif field=='container':bad['container_id']='b'*64
+            else:bad['pending'][0]['confirmed']='true'
+            owner.path.write_text(self.json.dumps(bad))
+            with self.subTest(field=field),self.assertRaises(Exception):m.cleanup_full_metadata(self.env,client)
+            self.assertTrue(state['visible'])
+        owner.path.write_bytes(original);owner.cleanup()
+
+    def test_exit_hook_cleanup_failure_never_turns_timeout_into_success(self):
+        owner, client, facts, state, public = self.owner()
+        owner.find(8, 'raster-source/source.tif', 'source')
+        issuer=owner.grants.authorizer;old=issuer.request.side_effect
+        def fail(method,path,expected,body=None):
+            if path.endswith('/revoke'):raise RuntimeError('injected revoke failure')
+            return old(method,path,expected,body)
+        with patch.object(issuer.request,'side_effect',fail),self.assertRaises(Exception):m.cleanup_full_metadata(self.env,client)
+        self.assertTrue(state['visible']);self.assertTrue(self.json.loads(owner.path.read_text())['pending'])
+        self.assertEqual(self.json.loads((self.artifacts/'raster-workflow-metadata-exit-cleanup.json').read_text())['result'],'failed')
+        issuer.request.side_effect=old
+        owner.cleanup()
+
     def test_hidden_source_is_granted_before_ordinary_enumeration_and_revoked(self):
         owner, client, facts, state, public = self.owner()
         self.assertEqual(client.request('GET', '/api/v1/meta/engines/8/items', (200,)).payload, [])

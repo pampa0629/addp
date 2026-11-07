@@ -1,6 +1,6 @@
 import { browserTestOrigin } from '../../../common-frontend/basic/src/utils/browserTestIsolation.mjs'
 import { expect, test } from '@playwright/test'
-import { isAnonymousRefreshConsoleError, isAnonymousRefreshResponse } from './online/transfer-browser-support.js'
+import { login, isAnonymousRefreshConsoleError, isAnonymousRefreshResponse } from './online/transfer-browser-support.js'
 
 test('only the native anonymous refresh 401 is an expected initialization diagnostic', async ({ page }) => {
   const messages = []
@@ -231,5 +231,52 @@ for (const peers of [1, 2]) {
     await testInfo.attach('identity-recovery-chain', {
       body: JSON.stringify({ refreshRequests, identityRequests }), contentType: 'application/json'
     })
+  })
+}
+
+
+for (const mode of ['direct', 'context', 'mfa']) {
+  test(`Online login helper follows the actual ${mode} landing state`, async ({ page }) => {
+    const destination = `/__online-login-landing?case=${mode}&execution_id=exact`
+    let requests = 0
+    await page.route('**/api/v1/system/auth/context', async route => {
+      requests += 1
+      expect(route.request().headers().authorization).toBe('Bearer browser-helper-fixture')
+      await route.fulfill({ json: { principal: { id: 7, type: 'user' } } })
+    })
+    await page.route('**/__online-login-landing?*', route => route.fulfill({
+      contentType: 'text/html', body: '<h1>exact login landing</h1>'
+    }))
+    await page.route('**/login?redirect=*', route => route.fulfill({ contentType: 'text/html', body: `
+      <input autocomplete="username"><input autocomplete="current-password" type="password">
+      <button class="auth-login-primary" id="submit">登录</button>
+      <div class="auth-login-contexts" hidden></div>
+      <input autocomplete="one-time-code" hidden>
+      <script>
+        const destination = new URL(location.href).searchParams.get('redirect');
+        async function enter() {
+          await fetch('/api/v1/system/auth/context', { headers: { Authorization: 'Bearer browser-helper-fixture' } });
+          location.href = destination;
+        }
+        document.querySelector('#submit').onclick = () => {
+          if ('${mode}' === 'context') {
+            const contexts = document.querySelector('.auth-login-contexts');
+            contexts.innerHTML = '<button class="auth-login-primary" id="choice">choose context</button>';
+            contexts.hidden = false;
+            document.querySelector('#choice').onclick = enter;
+          }
+          else if ('${mode}' === 'mfa') document.querySelector('input[autocomplete="one-time-code"]').hidden = false;
+          else enter();
+        };
+      </script>` }))
+    if (mode === 'mfa') {
+      await expect(login(page, 'ordinary', 'fixture-only', destination)).rejects.toThrow('must not require MFA')
+      expect(requests).toBe(0)
+    } else {
+      expect(await login(page, 'ordinary', 'fixture-only', destination)).toBe('browser-helper-fixture')
+      await expect(page.getByRole('heading', { name: 'exact login landing' })).toBeVisible()
+      expect(new URL(page.url()).pathname + new URL(page.url()).search).toBe(destination)
+      expect(requests).toBe(1)
+    }
   })
 }
