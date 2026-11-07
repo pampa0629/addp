@@ -286,4 +286,6 @@ Manager 源准备保持其正式授权链；本批 Transfer CDC 仅验证既有 
 
 现行只读关联回执恢复允许投递离开 unknown，但不能结束原 Cleanup 或解除 hold。专项原先依赖瞬时状态，无法正确核验该合法恢复。修正只读取原快照中的精确 Tenant＋Engine／物理索引、原 execution／attempt、端点及代次一致的 prepared 操作、唯一删除投递、目标与隔离出口；拒绝前后排除瞬时 unknown 计数，其余事实仍完整比较。失败诊断仅增加该绑定 hold 的安全计数分类，不增加读取、重试、权限或等待预算，原 11 项验收目标保留。该轮未归档恢复后的具体投递状态，不能声称已证明 Hosted 中实际恢复为 succeeded。 本地标准 Manager Go T1、完整 PostgreSQL T2（含原回执恢复、不重发与 hold 保留）和 Execution runner 406 项已通过；原生 11 项完整链路尚待新的 Hosted 复验。
 
+修正 `baa0965d4` 的同提交 Linux [Execution runner](https://github.com/pampa0629/addp/actions/runs/42371923824/job/128401640079) 实际通过 406 项；[Manager PostgreSQL T2](https://github.com/pampa0629/addp/actions/runs/42371923680/job/128401773028) 通过完整门禁，包含原回执恢复用例及数据库资源零残留。[Go 工作区](https://github.com/pampa0629/addp/actions/runs/42371923824/job/128401640127) 中 Manager 的 15 个有测试包通过，9 包无测试；该作业整体因 Ontology 的 Transfer 文档来源校验失败，不能记为全仓通过。[平台一致性](https://github.com/pampa0629/addp/actions/runs/42371923824/job/128401640129) 在 SQL pool 的 Node 前置检查失败，尚未进入平台检查主体；两项范围外失败未扩展修复。
+
 **剩余工作。** 分别验证索引未知效果和旧 Runtime 迟到写入。新的 Hosted 须单独确认。正向和对象未知通过证据分别位于 `/tmp/addp-manager-success-hosted-eighth-20261106/` 与 `/tmp/addp-manager-object-unknown-hosted-third-20261106/`。
