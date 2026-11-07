@@ -33,6 +33,12 @@ Catalog 有标准入口的独立就绪探针。基线刷新时没有 Catalog 运
 
 两轮失败均没有运行实例，响应仅含模块、失败时间和固定原因。移除夹具并结束当次故障进程后，标准启动重新编译、退出 0，Catalog 就绪探针成功。再次刷新时 Backend 在线，失败记录及页面提示均清除。终端两种失败均打印「Catalog Backend 启动超时」，未区分提前退出，页面与接口已经区分。隔离检出最终干净，专属 VM 及其存储已删除。此记录仅为本地隔离运行与真实页面证据，生产 Compose、Worker 和 Hosted 不在验收范围。
 
+## 开发 Backend 终端失败原因一致性（2026-11-07）
+
+Go Backend 就绪检查原本正确记录 `process_exited` 或 `readiness_timeout`，调用处仍固定打印「启动超时」。现由同一判定同时记录原因并输出「启动进程退出」或「等待就绪超时」，现有十一处调用统一提供服务名称，日志位置指引保留。Manager 的独立 `--wait-live` 分支仍沿原语义。
+
+`make test-deployment-discovery` 通过 48 项部署测试及 6 项容器证明测试。新增回归用真实临时子进程验证存活和退出两种状态，核对终端文字与私有结果文件一致，修复前两种文字断言均失败。标准脚本入口 `bash scripts/test/dev-lifecycle-and-build.sh` 通过。完整 `make test-dev-lifecycle` 在进入本轮脚本回归前，被栅格容量 owner 的 Online 登记契约拒绝，错误为 `raster capacity owner contract is incomplete: scripts/test/online-engine-registration.py`。该总入口不计通过，本轮未修复其他 owner 的登记。
+
 ## 清单接入与实例绑定
 
 主机组合筛选、详情返回及重置已有个人 Safari 验证。System 清单接入 → Monitor 采集保存已通过 [Hosted 专项](https://github.com/pampa0629/addp/actions/runs/39127927703)（受验源码 `fb13955d8f3cc48b254f2c840e55b8f8f638d2cc`，包含 `70c62a09a`、`9263ab6ee`）：单台 Linux VM 创建一次主机，正式 400 拒绝后只重试同一主机采集，刷新、两 Owner 独立读取及准确数量均通过。场景约 63.535 秒，浏览器约 39.370 秒；配置退役通过 API 删除采集并核验 404、停用主机且核验版本递增，随后独占部署销毁与外层零残留通过，不表示产品已提供主机 DELETE。

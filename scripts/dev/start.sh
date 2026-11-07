@@ -741,8 +741,10 @@ report_backend_startup_failure() {
 report_backend_readiness_failure() {
   if [ -n "$2" ] && ! kill -0 "$2" 2>/dev/null; then
     report_backend_startup_failure "$1" process_exited
+    echo -e "${RED}✗ ${3} 启动进程退出${NC}"
   else
     report_backend_startup_failure "$1" readiness_timeout
+    echo -e "${RED}✗ ${3} 等待就绪超时${NC}"
   fi
 }
 
@@ -1061,8 +1063,7 @@ if [ "$START_SYSTEM_BACKEND" = true ]; then
       sleep 1
       WAIT_COUNT=$((WAIT_COUNT + 1))
       if [ $WAIT_COUNT -ge $MAX_WAIT ]; then
-        report_backend_readiness_failure system "${SYSTEM_PID:-}"
-        echo -e "${RED}✗ System Backend 启动超时${NC}"
+        report_backend_readiness_failure system "${SYSTEM_PID:-}" "System Backend"
         echo "查看日志: tail -f logs/runtime/system/*/*.jsonl"
         exit 1
       fi
@@ -1579,8 +1580,11 @@ if [ "$START_MANAGER_BACKEND" = true ] || [ "$START_META_BACKEND" = true ] || [ 
         sleep 1
         WAIT_COUNT=$((WAIT_COUNT + 1))
         if [ $WAIT_COUNT -ge $MAX_WAIT ]; then
-          [ "$WAIT_LIVE" = true ] || report_backend_readiness_failure manager "${MANAGER_PID:-}"
-          echo -e "${RED}✗ Manager Backend 启动超时${NC}"
+          if [ "$WAIT_LIVE" = true ]; then
+            echo -e "${RED}✗ Manager Backend 启动超时${NC}"
+          else
+            report_backend_readiness_failure manager "${MANAGER_PID:-}" "Manager Backend"
+          fi
           echo "查看日志: tail -f logs/runtime/manager/*/*.jsonl"
           exit 1
         fi
@@ -1597,8 +1601,7 @@ if [ "$START_MANAGER_BACKEND" = true ] || [ "$START_META_BACKEND" = true ] || [ 
         sleep 1
         WAIT_COUNT=$((WAIT_COUNT + 1))
         if [ $WAIT_COUNT -ge $MAX_WAIT ]; then
-          report_backend_readiness_failure meta "${META_PID:-}"
-          echo -e "${RED}✗ Meta Backend 启动超时${NC}"
+          report_backend_readiness_failure meta "${META_PID:-}" "Meta Backend"
           echo "查看日志: tail -f logs/runtime/meta/*/*.jsonl"
           exit 1
         fi
@@ -1615,8 +1618,7 @@ if [ "$START_MANAGER_BACKEND" = true ] || [ "$START_META_BACKEND" = true ] || [ 
         sleep 1
         WAIT_COUNT=$((WAIT_COUNT + 1))
         if [ $WAIT_COUNT -ge $MAX_WAIT ]; then
-          report_backend_readiness_failure transfer "${TRANSFER_PID:-}"
-          echo -e "${RED}✗ Transfer Backend 启动超时${NC}"
+          report_backend_readiness_failure transfer "${TRANSFER_PID:-}" "Transfer Backend"
           echo "查看日志: tail -f logs/runtime/transfer/*/*.jsonl"
           exit 1
         fi
@@ -1633,8 +1635,7 @@ if [ "$START_MANAGER_BACKEND" = true ] || [ "$START_META_BACKEND" = true ] || [ 
         sleep 1
         WAIT_COUNT=$((WAIT_COUNT + 1))
         if [ $WAIT_COUNT -ge $MAX_WAIT ]; then
-          report_backend_readiness_failure orchestrator "${ORCHESTRATOR_PID:-}"
-          echo -e "${RED}✗ Orchestrator Backend 启动超时${NC}"
+          report_backend_readiness_failure orchestrator "${ORCHESTRATOR_PID:-}" "Orchestrator Backend"
           echo "查看日志: tail -f logs/runtime/orchestrator/*/*.jsonl"
           exit 1
         fi
@@ -1651,8 +1652,7 @@ if [ "$START_MANAGER_BACKEND" = true ] || [ "$START_META_BACKEND" = true ] || [ 
         sleep 1
         WAIT_COUNT=$((WAIT_COUNT + 1))
         if [ $WAIT_COUNT -ge $MAX_WAIT ]; then
-          report_backend_readiness_failure develop "${DEVELOP_PID:-}"
-          echo -e "${RED}✗ Develop Backend 启动超时${NC}"
+          report_backend_readiness_failure develop "${DEVELOP_PID:-}" "Develop Backend"
           echo "查看日志: tail -f logs/runtime/develop/*/*.jsonl"
           exit 1
         fi
@@ -1669,8 +1669,7 @@ if [ "$START_MANAGER_BACKEND" = true ] || [ "$START_META_BACKEND" = true ] || [ 
         sleep 1
         WAIT_COUNT=$((WAIT_COUNT + 1))
         if [ $WAIT_COUNT -ge $MAX_WAIT ]; then
-          report_backend_readiness_failure service "${SERVICE_PID:-}"
-          echo -e "${RED}✗ Service Backend 启动超时${NC}"
+          report_backend_readiness_failure service "${SERVICE_PID:-}" "Service Backend"
           echo "查看日志: tail -f logs/runtime/service/*/*.jsonl"
           exit 1
         fi
@@ -1686,8 +1685,7 @@ if [ "$START_MANAGER_BACKEND" = true ] || [ "$START_META_BACKEND" = true ] || [ 
         sleep 1
         WAIT_COUNT=$((WAIT_COUNT + 1))
         if [ $WAIT_COUNT -ge $MAX_WAIT ]; then
-          report_backend_readiness_failure inference "${INFERENCE_PID:-}"
-          echo -e "${RED}✗ Inference Backend 启动超时${NC}"
+          report_backend_readiness_failure inference "${INFERENCE_PID:-}" "Inference Backend"
           echo "查看日志: tail -f logs/runtime/inference/*/*.jsonl"
           exit 1
         fi
@@ -1703,8 +1701,7 @@ if [ "$START_MANAGER_BACKEND" = true ] || [ "$START_META_BACKEND" = true ] || [ 
         sleep 1
         WAIT_COUNT=$((WAIT_COUNT + 1))
         if [ $WAIT_COUNT -ge $MAX_WAIT ]; then
-          report_backend_readiness_failure catalog "${CATALOG_PID:-}"
-          echo -e "${RED}✗ Catalog Backend 启动超时${NC}"
+          report_backend_readiness_failure catalog "${CATALOG_PID:-}" "Catalog Backend"
           echo "查看日志: tail -f logs/runtime/catalog/*/*.jsonl"
           exit 1
         fi
@@ -1720,8 +1717,7 @@ if [ "$START_MANAGER_BACKEND" = true ] || [ "$START_META_BACKEND" = true ] || [ 
         sleep 1
         WAIT_COUNT=$((WAIT_COUNT + 1))
         if [ $WAIT_COUNT -ge $MAX_WAIT ]; then
-          report_backend_readiness_failure workbench "${WORKBENCH_PID:-}"
-          echo -e "${RED}✗ Workbench Backend 启动超时${NC}"
+          report_backend_readiness_failure workbench "${WORKBENCH_PID:-}" "Workbench Backend"
           echo "查看日志: tail -f logs/runtime/workbench/*/*.jsonl"
           exit 1
         fi
@@ -1738,8 +1734,8 @@ if [ "$START_MANAGER_BACKEND" = true ] || [ "$START_META_BACKEND" = true ] || [ 
         sleep 1
         WAIT_COUNT=$((WAIT_COUNT + 1))
         if [ $WAIT_COUNT -ge $MAX_WAIT ]; then
-          report_backend_readiness_failure ontology "${ONTOLOGY_PID:-}"
-          echo "Ontology Backend 启动超时；查看 logs/runtime/ontology/*/*.jsonl" >&2
+          report_backend_readiness_failure ontology "${ONTOLOGY_PID:-}" "Ontology Backend" >&2
+          echo "查看日志: tail -f logs/runtime/ontology/*/*.jsonl" >&2
           exit 1
         fi
       done

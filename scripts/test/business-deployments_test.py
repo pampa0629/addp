@@ -20,6 +20,33 @@ CID = 'a' * 64
 
 
 class StartupResultsTest(unittest.TestCase):
+    def test_readiness_failure_message_matches_the_recorded_process_state(self):
+        start = (ROOT / 'scripts/dev/start.sh').read_text()
+        checks = start[start.index('report_backend_startup_failure()'):start.index('# 编译 Server 二进制')]
+        with tempfile.TemporaryDirectory() as directory:
+            process = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(30)'])
+            try:
+                for reason, message in [('readiness_timeout', '等待就绪超时'),
+                                        ('process_exited', '启动进程退出')]:
+                    with self.subTest(reason=reason):
+                        if reason == 'process_exited':
+                            process.terminate()
+                            process.wait(timeout=5)
+                        attempt = inventory.publish_startup_result(directory, modules=['catalog'])
+                        result = subprocess.run(['bash', '-ec', checks + """
+report_backend_readiness_failure catalog "$TARGET_PID" "Catalog Backend"
+"""], env=dict(os.environ, ROOT_DIR=str(ROOT), BACKEND_STARTUP_ATTEMPT=attempt,
+                               TARGET_PID=str(process.pid), ADDP_DEPLOYMENT_DISCOVERY_DIR=directory),
+                            capture_output=True, text=True, timeout=5)
+                        self.assertEqual(result.returncode, 0, result.stderr)
+                        self.assertIn('Catalog Backend ' + message, result.stdout)
+                        document = json.loads((Path(directory) / inventory.STARTUP_RESULTS).read_text())
+                        self.assertEqual(document['modules']['catalog']['reason'], reason)
+            finally:
+                if process.poll() is None:
+                    process.terminate()
+                    process.wait(timeout=5)
+
     def test_standard_deployment_entry_only_selects_native_backends(self):
         with tempfile.TemporaryDirectory() as directory:
             script = [sys.executable, str(ROOT / 'scripts/utils/deployment-inventory.py')]
