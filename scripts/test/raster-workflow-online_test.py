@@ -46,6 +46,33 @@ def footprint_result(case_name):
 
 
 
+class SceneMetadata:
+    """Independent fixture snapshots for the pre-existing algorithm/UI tests."""
+    def __init__(self, client):
+        self.client = client
+        self.bound = []
+
+    def bind(self, execution):
+        self.bound.append(execution)
+
+    def bind_source(self, engine, scan_id):
+        pass
+
+    def find(self, engine, name, label):
+        item = m.support.find_fixture_item(self.client, engine, name, label)
+        if engine == 2:
+            try:
+                item = self.client.request('GET', f'/api/v1/meta/items/{item["id"]}', (200,)).payload
+            except KeyError:
+                raise m.SuiteError('fixture item identity does not match its persisted snapshot') from None
+        return item
+
+    def target_inventory(self, prefix, execution):
+        items = self.client.request('GET', '/api/v1/meta/engines/2/items', (200,)).payload
+        return [item['full_name'] for item in items
+                if item.get('full_name', '').startswith('raster-target/'+prefix+'/') and item.get('item_type') == 'object']
+
+
 class Client:
     def __init__(self):
         self.calls = []
@@ -886,6 +913,8 @@ class RasterWorkflowOnlineTest(unittest.TestCase):
                     'ADDP_ONLINE_RASTER_SOURCE_C_ENGINE_ID': '5', 'ADDP_ONLINE_TEST_RUN_ID': 'raster-test',
                     'ADDP_ONLINE_TEST_TIMEOUT_SECONDS': '.01'}
         self.physical_actions = []
+        self.metadata = SceneMetadata(self.client)
+        self.enterContext(patch.object(m, 'WorkflowMetadata', return_value=self.metadata))
 
     def physical(self, repo, env, action):
         self.physical_actions.append(action)
@@ -2171,6 +2200,7 @@ class RasterBranchLineageTest(unittest.TestCase):
                   patch.object(m, 'prepare_resource_policy') as prepare,
                   patch.object(m, 'finish_resource_policy') as finish,
                   patch.object(m, 'run_scenario', return_value={}) as full,
+                  patch.object(m, 'WorkflowMetadata') as metadata,
                   patch.object(images, 'run_scenario') as image_scene,
                   patch.object(m, 'run_branch_lineage', return_value={'result': 'passed'}) as branch):
                 selected = {**env, 'ADDP_ONLINE_RASTER_CASE': case}
@@ -2324,3 +2354,272 @@ class ResourcePolicyAcceptanceTest(unittest.TestCase):
         self.state['runtime'] = {'enabled': False}
         with self.assertRaises(m.SuiteError):
             m.finish_resource_policy(self.platform, self.tenant, setup, 0)
+
+
+class WorkflowMetadataTest(unittest.TestCase):
+    def setUp(self):
+        import json
+        self.json = json
+        self.root = Path(self.enterContext(tempfile.TemporaryDirectory()))
+        self.secret = self.root/'secret'; self.secret.mkdir(mode=0o700)
+        self.artifacts = self.root/'artifacts'; self.artifacts.mkdir()
+        self.env = {'ONLINE_SUITE': 'raster-workflow', 'ADDP_ONLINE_TEST': '1',
+                    'ADDP_ONLINE_TEST_RUN_ID': 'raster-123-1', 'ADDP_ONLINE_TEST_TIMEOUT_SECONDS': '1740', 'GITHUB_RUN_ID': '123', 'GITHUB_RUN_ATTEMPT': '1',
+                    'ADDP_ONLINE_SECRET_DIR': str(self.secret), 'ADDP_ONLINE_ARTIFACT_DIR': str(self.artifacts),
+                    'ADDP_ONLINE_TEST_TENANT_ID': '2', 'GATEWAY_URL': 'http://fixture',
+                    'ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN': 'issuer-private', 'ADDP_ONLINE_RASTER_SOURCE_ENGINE_ID': '8',
+                    'ADDP_ONLINE_RASTER_SOURCE_B_ENGINE_ID': '10', 'ADDP_ONLINE_RASTER_SOURCE_C_ENGINE_ID': '11',
+                    'ADDP_ONLINE_RASTER_TARGET_ENGINE_ID': '9'}
+        self.container = {'Id': 'a'*64, 'State': {'Running': True, 'StartedAt': '2026-11-07T00:00:00Z'},
+                          'Config': {'Labels': {'com.docker.compose.project': 'addp-infra',
+                          'com.docker.compose.service': 'postgres', 'com.docker.compose.project.working_dir': str(m.Path(__file__).resolve().parents[2])},
+                          'Env': ['POSTGRES_DB=addp_online', 'POSTGRES_USER=addp', 'POSTGRES_PASSWORD=private']}}
+        self.identity = {'tenant_id': '2', 'principal_id': '7'}
+        self.execution_id = '12345678-1234-1234-1234-123456789abc'
+        self.scan_id = '12345678-1234-1234-1234-123456789def'
+
+    def owner(self, engine=8, name='raster-source/source.tif', format_name='tiff', layout='multi'):
+        observer = importlib.import_module('scripts.utils.online_raster_lineage')
+        builder = importlib.import_module('scripts.test.online-engine-registration_test').OnlineEngineRegistrationTest()
+        issuer, client, facts, state = builder.metadata_clients(
+            engine, name, 'minio', 'media', format_name, layout)
+        original = client.request.side_effect
+        public = {'id': 12, 'tenant_id': 2, 'engine_id': engine, 'node_id': 3, 'name': name.rsplit('/',1)[-1],
+                  'full_name': name, 'item_type': 'object', 'fingerprint': facts['item_fingerprint'],
+                  'attributes': {'schema_version': 1, 'item': {'data_type': 'media', 'format': format_name, 'layout': layout}}}
+
+        def request(method, path, expected, body=None):
+            if path == f'/api/v1/meta/engines/{engine}/items':
+                state['events'].append(('list', state['visible'], None))
+                return SimpleNamespace(payload=[copy.deepcopy(public)] if state['visible'] else [])
+            return original(method, path, expected, body)
+
+        client.request.side_effect = request
+        self.enterContext(patch.dict(os.environ, self.env, clear=True))
+        self.enterContext(patch.object(observer.BASE.HOSTED, 'deployment_secret', return_value=self.secret))
+        self.enterContext(patch.object(observer, 'inspect', return_value=self.container))
+        self.enterContext(patch.object(m, 'GatewayClient', return_value=issuer))
+        self.enterContext(patch.object(m, 'validate_identity', return_value=self.identity))
+        return m.WorkflowMetadata(self.env, client), client, facts, state, public
+
+    def bind(self, owner, name='raster-target/result.cog.tif', status='success'):
+        locator = 'addp://engine/9/path/'+name+'?type=object'
+        execution = {'execution_id': self.execution_id, 'module': 'develop', 'task_type': 'workflow', 'tenant_id': 2,
+                     'triggered_by': 7, 'status': status, 'metadata': {
+                     'lineage_facts': {'outputs': [{'locator': locator}]},
+                     'result': {'meta_scan_runs': [{'execution_id': self.scan_id,
+                                                   'target_locator': locator, 'status': 'submitted'}]}}}
+        owner.bind(execution)
+        return execution
+
+    def test_hidden_source_is_granted_before_ordinary_enumeration_and_revoked(self):
+        owner, client, facts, state, public = self.owner()
+        self.assertEqual(client.request('GET', '/api/v1/meta/engines/8/items', (200,)).payload, [])
+        result = owner.find(8, 'raster-source/source.tif', 'source')
+        self.assertEqual(result, public)
+        self.assertEqual([event[1] for event in state['events'] if event[0] == 'list'], [False, True])
+        receipt, = owner.report['issued']
+        self.assertEqual(receipt['action'], 'metadata_read')
+        self.assertEqual(receipt['expiry_mode'], 'at_time')
+        self.assertEqual(receipt['recipient_id'], '7')
+        self.assertNotIn('node_recursive', receipt)
+        self.assertNotIn('scope', receipt)
+        owner.cleanup()
+        self.assertFalse(state['visible'])
+        self.assertFalse(owner.report['pending'])
+        self.assertNotIn('issuer-private', owner.path.read_text())
+        self.assertEqual(owner.report['cleanup'], {'grants_revoked': True, 'metadata_hidden': True})
+
+    def test_exact_sources_and_confirmed_targets_cannot_expand(self):
+        owner, client, facts, state, public = self.owner()
+        for engine, name in ((8, 'raster-source/source.tif.bak'), (10, 'raster-source/source.tif'),
+                             (9, 'raster-target/unconfirmed.tif'), (9, 'raster-target/result.cog.tif'),
+                             (8, '../raster-source/source.tif'), (12, 'raster-source/source.tif')):
+            with self.subTest(engine=engine, name=name), self.assertRaises(m.SuiteError):
+                owner.find(engine, name, 'wrong')
+        self.assertFalse(state['visible'])
+        self.assertFalse(any(event[0] == 'list' for event in state['events']))
+
+    def test_grant_write_unknown_outcome_still_has_cleanup_record(self):
+        owner, client, facts, state, public = self.owner()
+        original = owner.grants.authorizer.request.side_effect
+        def lost(method, path, expected, body=None):
+            result = original(method, path, expected, body)
+            if method == 'POST' and path.endswith('/access_grants'):
+                raise TimeoutError('private write response')
+            return result
+        owner.grants.authorizer.request.side_effect = lost
+        with self.assertRaises(TimeoutError):
+            owner.find(8, 'raster-source/source.tif', 'source')
+        self.assertTrue(state['visible'])
+        self.assertEqual(len(owner.report['pending']), 1)
+        owner.cleanup()
+        self.assertFalse(state['visible'])
+        self.assertFalse(owner.report['pending'])
+
+    def test_single_and_multi_layouts_remain_actual_facts(self):
+        for layout in ('single', 'multi'):
+            with self.subTest(layout=layout):
+                owner, client, facts, state, public = self.owner(layout=layout)
+                owner.find(8, 'raster-source/source.tif', 'source')
+                self.assertEqual(owner.report['issued'][0]['metadata_target']['layout'], layout)
+                owner.cleanup()
+
+    def test_metadata_fact_or_fingerprint_drift_stops_before_enumeration(self):
+        owner, client, facts, state, public = self.owner()
+        facts['full_name'] = 'raster-source/another.tif'
+        with self.assertRaises(owner.registration.MetadataGrantError):
+            owner.find(8, 'raster-source/source.tif', 'source')
+        self.assertFalse(state['visible'])
+        self.assertFalse(any(event[0] == 'list' for event in state['events']))
+
+    def test_produced_item_keeps_public_projection_and_equal_current_identity(self):
+        owner, client, facts, state, public = self.owner(engine=9, name='raster-target/result.cog.tif')
+        self.bind(owner)
+        stored = {**public, 'size_bytes': 1024, 'scanned_depth': 'basic'}
+        stored['attributes'] = {'item': public['attributes']['item'], 'format_info': {'tiff': {'is_tiled': True}}}
+        with patch.object(m.subprocess, 'run', return_value=SimpleNamespace(
+                returncode=0, stdout=self.json.dumps(stored), stderr='')) as query:
+            result = owner.find(9, public['full_name'], 'target')
+        self.assertEqual(result, stored)
+        self.assertNotIn('size_bytes', public)
+        statement = query.call_args.kwargs['input']
+        for guard in ('BEGIN READ ONLY', "e.status=:'status'", "s.parent_execution_id=e.execution_id",
+                      "i.fingerprint=:'fingerprint'", "e.actor_principal_id=:'principal'",
+                      "s.execution_config->>'engine_id'=i.engine_id::text",
+                      "e.metadata->'result'->'meta_scan_runs'", "i.created_at>=:'started_at'"):
+            self.assertIn(guard, statement)
+        command = query.call_args.args[0]
+        self.assertIn('addp_online', command)
+        self.assertNotIn('private', command)
+        self.assertIn('execution='+self.execution_id, command)
+        self.assertIn('scan='+self.scan_id, command)
+        owner.cleanup()
+
+    def test_wrong_public_private_identity_and_leaked_size_are_rejected(self):
+        owner, client, facts, state, public = self.owner(engine=9, name='raster-target/result.cog.tif')
+        self.bind(owner)
+        for fault in ('id', 'engine_id', 'fingerprint'):
+            stored = {**public, 'size_bytes': 1024, 'scanned_depth': 'basic'}
+            stored[fault] = 'wrong'
+            with self.subTest(fault=fault), patch.object(m.subprocess, 'run', return_value=SimpleNamespace(
+                    returncode=0, stdout=self.json.dumps(stored), stderr='')):
+                with self.assertRaises(m.SuiteError):
+                    owner.find(9, public['full_name'], 'target')
+        public['size_bytes'] = 1024
+        with patch.object(m.subprocess, 'run') as query, self.assertRaises(m.SuiteError):
+            owner.find(9, public['full_name'], 'target')
+        query.assert_not_called()
+        owner.cleanup()
+
+    def test_restarted_or_foreign_postgres_and_wrong_run_never_execute_sql(self):
+        owner, client, facts, state, public = self.owner(engine=9, name='raster-target/result.cog.tif')
+        self.bind(owner)
+        for fault in ('restart', 'container', 'database', 'workspace', 'run', 'suite'):
+            container = copy.deepcopy(self.container)
+            env = dict(self.env)
+            if fault == 'restart': container['State']['StartedAt'] = '2026-11-07T01:00:00Z'
+            elif fault == 'container': container['Id'] = 'b'*64
+            elif fault == 'database': container['Config']['Env'][0] = 'POSTGRES_DB=addp_test'
+            elif fault == 'workspace': container['Config']['Labels']['com.docker.compose.project.working_dir'] = '/tmp/other'
+            elif fault == 'run': env['ADDP_ONLINE_TEST_RUN_ID'] = 'raster-124-1'
+            else: env['ONLINE_SUITE'] = 'another-suite'
+            with self.subTest(fault=fault), patch.dict(os.environ, env, clear=True),                     patch.object(owner.observer, 'inspect', return_value=container), patch.object(m.subprocess, 'run') as query:
+                with self.assertRaises(Exception):
+                    owner.find(9, public['full_name'], 'target')
+                query.assert_not_called()
+        owner.cleanup()
+
+    def test_bad_execution_or_unconfirmed_failed_output_never_binds(self):
+        owner, client, facts, state, public = self.owner()
+        execution = self.bind(owner)
+        for field, value in (('execution_id', 'wrong'), ('tenant_id', 1), ('triggered_by', 8),
+                             ('module', 'manager'), ('task_type', 'sql'), ('status', 'failed')):
+            bad = copy.deepcopy(execution); bad[field] = value
+            with self.subTest(field=field), self.assertRaises(m.SuiteError):
+                owner.bind(bad)
+        for prefix in (m.fixture.TILE_FAILURE_PREFIX, *m.fixture.TILE_CLEANUP_CASES):
+            name = 'raster-target/'+prefix+'/'+next(iter(m.fixture.TILE_WINDOWS))+'.tif'
+            self.bind(owner, name, status='failed')
+            self.assertEqual(owner.bindings[name]['status'], 'failed')
+
+    def test_empty_oversized_multirow_or_error_query_cannot_replace_evidence(self):
+        owner, client, facts, state, public = self.owner(engine=9, name='raster-target/result.cog.tif')
+        self.bind(owner)
+        for rc, raw in ((0, ''), (0, ' '*65537), (0, '{}\n{}'), (1, 'private failure'), (0, 'null')):
+            with self.subTest(rc=rc, raw_length=len(raw)), patch.object(m.subprocess, 'run',
+                    return_value=SimpleNamespace(returncode=rc, stdout=raw, stderr='private password')):
+                with self.assertRaises((m.SuiteError, ValueError)):
+                    owner.find(9, public['full_name'], 'target')
+        self.assertNotIn('private password', owner.path.read_text())
+        owner.cleanup()
+
+    def test_source_preservation_snapshot_is_fresh_and_bound_to_original_scan(self):
+        owner, client, facts, state, public = self.owner()
+        with self.assertRaises(m.SuiteError):
+            owner.source_snapshot(8, public['full_name'], 'source')
+        owner.bind_source(8, self.scan_id)
+        stored = {**public, 'size_bytes': 2048, 'scanned_depth': 'basic', 'data_updated_at': '2026-11-07T00:00:01Z', 'scanned_at': '2026-11-07T00:00:01Z'}
+        with patch.object(m.subprocess, 'run', return_value=SimpleNamespace(
+                returncode=0, stdout=self.json.dumps(stored), stderr='')) as query:
+            result = owner.source_snapshot(8, public['full_name'], 'source')
+            changed = {**stored, 'size_bytes': 2049, 'scanned_at': '2026-11-07T00:00:02Z'}
+            query.return_value.stdout = self.json.dumps(changed)
+            after = owner.source_snapshot(8, public['full_name'], 'source')
+        self.assertEqual(result, stored)
+        self.assertNotEqual(after['size_bytes'], result['size_bytes'])
+        self.assertNotEqual(after['scanned_at'], result['scanned_at'])
+        self.assertIn("'scanned_at',i.scanned_at", query.call_args.kwargs['input'])
+        self.assertEqual(query.call_count, 2)
+        self.assertIn("s.execution_id=:'scan'", query.call_args.kwargs['input'])
+        self.assertIn("s.actor_principal_id=:'principal'", query.call_args.kwargs['input'])
+        self.assertEqual(owner.report['source_snapshots'], [stored, changed])
+        owner.cleanup()
+
+    def test_wrong_run_is_rejected_before_any_grant_is_created(self):
+        owner, client, facts, state, public = self.owner()
+        wrong = {**self.env, 'GITHUB_RUN_ID': '124'}
+        with patch.dict(os.environ, wrong, clear=True), self.assertRaises(m.SuiteError):
+            owner.find(8, public['full_name'], 'source')
+        self.assertFalse(state['visible'])
+        self.assertFalse(any(event[0] == 'POST' for event in state['events']))
+
+    def test_full_dispatch_keeps_first_business_error_if_metadata_cleanup_also_fails(self):
+        images = importlib.import_module('scripts.test.raster-image-export-online')
+        owner = Mock()
+        owner.report = {'failures': []}
+        registration = importlib.import_module('scripts.test.online-engine-registration')
+        owner.registration = registration
+        primary = m.SuiteError('original business failure')
+        owner.cleanup.side_effect = m.SuiteError('cleanup failure')
+        env = {**self.env, 'ADDP_ONLINE_RASTER_POLICY_PLATFORM_TOKEN': 'platform-private',
+               'ADDP_ONLINE_RASTER_POLICY_TENANT_TOKEN': 'tenant-private'}
+        with (patch.object(m, 'GatewayClient'), patch.object(m, 'prepare_resource_policy'),
+              patch.object(m, 'WorkflowMetadata', return_value=owner),
+              patch.object(m, 'run_scenario', side_effect=primary) as business,
+              patch.object(images, 'run_scenario') as image_scene):
+            with self.assertRaises(m.SuiteError) as raised:
+                m.run_full_scenario(Path('.'), env, Mock())
+        self.assertIs(raised.exception, primary)
+        self.assertIs(business.call_args.kwargs['metadata_evidence'], owner)
+        self.assertFalse(m.BRANCH_LINEAGE_CREDENTIALS & business.call_args.args[1].keys())
+        self.assertEqual(len(owner.report['failures']), 2)
+        owner.cleanup.assert_called_once()
+        owner.save.assert_called_once()
+        image_scene.assert_not_called()
+
+    def test_failed_tile_inventory_includes_ungranted_extra_items(self):
+        owner, client, facts, state, public = self.owner()
+        prefix = m.fixture.TILE_FAILURE_PREFIX
+        names = ['raster-target/'+prefix+'/'+next(iter(m.fixture.TILE_WINDOWS))+'.tif',
+                 'raster-target/'+prefix+'/unconfirmed.tif']
+        with patch.object(m.subprocess, 'run', return_value=SimpleNamespace(
+                returncode=0, stdout=self.json.dumps({'names': names}), stderr='')) as query:
+            actual = owner.target_inventory(prefix, {'execution_id': self.execution_id})
+        self.assertEqual(actual, names)
+        self.assertFalse(state['visible'])
+        statement = query.call_args.kwargs['input']
+        for guard in ("i.tenant_id=:'tenant'", "i.engine_id=:'engine'", "e.status='failed'",
+                      "e.actor_principal_id=:'principal'", 'BEGIN READ ONLY'):
+            self.assertIn(guard, statement)
+        self.assertFalse(any(event[0] == 'list' for event in state['events']))

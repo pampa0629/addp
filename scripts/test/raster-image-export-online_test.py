@@ -38,7 +38,7 @@ class Client:
         self.items={}
         for i,(p,name) in enumerate(owner.fixture.IMAGE_SOURCES.items(),10):
             self.items[i]={'id':i,'full_name':'raster-source/'+name,'item_type':'object',
-                'fingerprint':name,'size_bytes':2048,'updated_at':'unchanged','attributes':{'item':{'format':'tiff'}}}
+                'fingerprint':name,'size_bytes':2048,'data_updated_at':'unchanged','scanned_at':'unchanged','attributes':{'item':{'format':'tiff'}}}
         for i,(p,name) in enumerate(owner.fixture.IMAGE_TARGETS.items(),20):
             self.items[i]={'id':i,'full_name':'raster-target/'+name,'item_type':'object','size_bytes':1024,
                 'attributes':{'item':{'format':p},'type_info':{'media':{'width':37,'height':23}}}}
@@ -106,6 +106,8 @@ class OrdinaryImages(unittest.TestCase):
             if fault=='jpeg_loss' and action=='verify-images':data['images']['jpeg']['mean_absolute_error']=5
             if fault=='jpeg_nan' and action=='verify-images':data['images']['jpeg']['mean_absolute_error']=float('nan')
             if fault=='native_size' and action=='verify-images':data['images']['png']['width']=38
+            if fault=='source_scanned_at' and action=='verify-images':client.items[10]['scanned_at']='changed'
+            if fault=='source_data_updated_at' and action=='verify-images':client.items[10]['data_updated_at']='changed'
             return data
         def editor(repo,env,evidence):
             report=browser_report(evidence)
@@ -127,7 +129,10 @@ class OrdinaryImages(unittest.TestCase):
         with (patch.object(owner,'validate_identity',return_value=identity()) as validate,
               patch.object(owner.support,'find_fixture_item',side_effect=client.find),
               patch.object(owner,'wait_execution',side_effect=wait)):
-            result=m.run_scenario(owner,Path('.'),env,client,physical_runner=native,editor_runner=editor)
+            result=m.run_scenario(owner,Path('.'),env,client,physical_runner=native,editor_runner=editor,
+                metadata_evidence=SimpleNamespace(find=lambda engine,name,label:client.find(client,engine,name,label),
+                    source_snapshot=lambda engine,name,label:client.find(client,engine,name,label),
+                                                  bind=lambda execution:None))
         self.assertEqual(validate.call_args.kwargs['required_permissions'],owner.EDITOR_PERMISSIONS)
         self.assertEqual(observed,['prepare-images','verify-images'])
         return result
@@ -140,7 +145,7 @@ class OrdinaryImages(unittest.TestCase):
         self.assertTrue(all(c['source_unchanged'] for c in report['cases']))
 
     def test_incomplete_or_modified_evidence_is_rejected(self):
-        for fault in ('changed_prior','missing_image','png_loss','jpeg_loss','jpeg_nan','native_size','quality','private_plan','not_deleted',
+        for fault in ('source_scanned_at','source_data_updated_at','changed_prior','missing_image','png_loss','jpeg_loss','jpeg_nan','native_size','quality','private_plan','not_deleted',
                       'not_reloaded','wrong_writes','spatial','missing_scan','wrong_size','wrong_source_task'):
             with self.subTest(fault=fault), self.assertRaises(owner.SuiteError):self.run_scene(fault)
 

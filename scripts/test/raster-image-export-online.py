@@ -71,7 +71,7 @@ def validate_artifact(owner, artifact, profile, quality):
         raise owner.SuiteError('ordinary-image artifact changed bit depth or colour roles')
 
 
-def run_scenario(owner, repository, env, client, *, physical_runner=None, editor_runner=None):
+def run_scenario(owner, repository, env, client, *, physical_runner=None, editor_runner=None, metadata_evidence=None):
     physical_runner = physical_runner or owner.physical
     editor_runner = editor_runner or (lambda r,e,v: owner.raster_browser_report(r,e,v,'image-editor','栅格普通图片'))
     identity = owner.validate_identity(client, owner.positive(env['ADDP_ONLINE_TEST_TENANT_ID'],'tenant'),
@@ -82,11 +82,12 @@ def run_scenario(owner, repository, env, client, *, physical_runner=None, editor
     runtime = [item for item in owner.array(client.request('GET','/api/v1/develop/workflow-engines',(200,)).payload,'runtimes')
                if item.get('engine_type')=='geopython_workflow' and item.get('connection_status')=='online']
     if len(runtime)!=1: raise owner.SuiteError('ordinary images require the exact product Runtime')
+    metadata_evidence = metadata_evidence or owner.WorkflowMetadata(env, client)
     sources, snapshots = {}, {}
     for profile,name in owner.fixture.IMAGE_SOURCES.items():
-        item = owner.support.find_fixture_item(client,source_engine,'raster-source/'+name,'ordinary image source')
-        snapshot = owner.obj(client.request('GET',f'/api/v1/meta/items/{item["id"]}',(200,)).payload,'image source item')
-        snapshots[profile] = copy.deepcopy({k:snapshot.get(k) for k in ('attributes','fingerprint','full_name','size_bytes','updated_at')})
+        item = metadata_evidence.find(source_engine,'raster-source/'+name,'ordinary image source')
+        snapshot = metadata_evidence.source_snapshot(source_engine, 'raster-source/'+name, 'image source snapshot')
+        snapshots[profile] = copy.deepcopy({k:snapshot.get(k) for k in ('attributes','fingerprint','full_name','size_bytes','data_updated_at','scanned_at')})
         sources[profile] = {'id':item['id'],'name':name,'locator':owner.support.build_item_locator(source_engine,item)}
     parent = f'addp://engine/{target_engine}/path/raster-target?type=bucket'
     evidence = {'run_id':env['ADDP_ONLINE_TEST_RUN_ID'],'case_name':'ordinary-images',**identity,
@@ -109,6 +110,7 @@ def run_scenario(owner, repository, env, client, *, physical_runner=None, editor
     for case in cases:
         profile = case['profile'];name = owner.fixture.IMAGE_TARGETS[profile]
         execution = owner.wait_execution(client,'develop',case['execution_id'],timeout)
+        metadata_evidence.bind(execution)
         if execution.get('source_task_id') != str(case['task_id']):
             raise owner.SuiteError('ordinary-image execution has a different saved task')
         result = owner.obj(owner.obj(execution.get('metadata'),'image metadata').get('result'),'image result')
@@ -123,8 +125,7 @@ def run_scenario(owner, repository, env, client, *, physical_runner=None, editor
         if len(scans)!=1 or scans[0].get('target_locator')!=locator or scans[0].get('status')!='submitted':
             raise owner.SuiteError('ordinary image is missing its exact automatic metadata scan')
         owner.wait_execution(client,'meta',scans[0]['execution_id'],timeout)
-        target = owner.support.find_fixture_item(client,target_engine,'raster-target/'+name,'ordinary image target')
-        target = owner.obj(client.request('GET',f'/api/v1/meta/items/{target["id"]}',(200,)).payload,'ordinary image Meta item')
+        target = metadata_evidence.find(target_engine,'raster-target/'+name,'ordinary image target')
         attrs = owner.obj(target.get('attributes'),'ordinary image attrs')
         media = owner.obj(owner.obj(attrs.get('type_info'),'image type info').get('media'),'image media facts')
         if (attrs.get('item',{}).get('format')!=profile or (media.get('width'),media.get('height'))!=(37,23)
@@ -142,7 +143,8 @@ def run_scenario(owner, repository, env, client, *, physical_runner=None, editor
             or (profile=='jpeg' and (mean_error>=5 or max_error>=15))):
             raise owner.SuiteError('ordinary-image native pixel/codec/spatial evidence is incomplete')
         sizes = owner.strict_sizes(artifact,native,target,name)
-        current = owner.obj(client.request('GET',f'/api/v1/meta/items/{sources[profile]["id"]}',(200,)).payload,'unchanged image source')
+        current = metadata_evidence.source_snapshot(
+            source_engine, 'raster-source/'+sources[profile]['name'], 'unchanged image source')
         if {k:current.get(k) for k in snapshots[profile]}!=snapshots[profile]:
             raise owner.SuiteError('ordinary-image export modified source metadata')
         results.append({'profile':profile,'execution_id':case['execution_id'],'task_id':case['task_id'],

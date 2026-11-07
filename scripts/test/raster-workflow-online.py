@@ -7,6 +7,7 @@ import importlib
 import json
 import math
 import os
+import re
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 import subprocess
@@ -29,6 +30,7 @@ BRANCH_LINEAGE_CREDENTIALS = {'ADDP_ONLINE_READ_USER_ACCESS_TOKEN', 'ADDP_ONLINE
 BRANCH_LINEAGE_OUTPUTS = {'a1': ('a', 'b1'), 'a2': ('a', 'b1+1'),
                           'b1': ('b', 'b1'), 'b2': ('b', 'b1+1')}
 SCHEMA = 'addp.raster-workflow-online/v2'
+UUID_PATTERN = r'[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}'
 
 
 def raster_case(env):
@@ -861,10 +863,9 @@ def validate_editor_report(report, evidence):
 
 
 def queue_output_inspection(pending, client, run_id, source, source_locator, target_engine, target_name,
-                            execution_id, case_name, identity, browser_runner, expectation, physical_evidence, source_locators, artifact, size_evidence):
-    target = support.find_fixture_item(client, target_engine, 'raster-target/' + target_name, 'COG target')
+                            execution_id, case_name, identity, browser_runner, expectation, physical_evidence, source_locators, artifact, size_evidence, metadata_evidence):
+    target = metadata_evidence.find(target_engine, 'raster-target/' + target_name, 'COG target')
     # No manual target scan or collect: both facts must converge automatically.
-    target = obj(client.request('GET', f'/api/v1/meta/items/{target["id"]}', (200,)).payload, 'target DataItem')
     validate_target_item(target, expectation, physical_evidence)
     size_evidence.setdefault(execution_id, {})[target_name] = strict_sizes(artifact, physical_evidence, target, target_name)
     target_locator = f'addp://engine/{target_engine}/path/raster-target/{target_name}?type=object'
@@ -890,7 +891,309 @@ def finish_output_inspections(pending, repository, env, client, timeout):
         report.update(browser_runner(repository, env, evidence))
 
 
-def run_scenario(repository, env, client, physical_runner=physical, browser_runner=browser, diagnostic_runner=duplicate_create_diagnostic, editor_runner=browser_editor):
+class WorkflowMetadata:
+    """Run-owned metadata Grants and read-only facts for the original full scene."""
+
+    def __init__(self, env, client):
+        self.env, self.client = env, client
+        self.registration = importlib.import_module('scripts.test.online-engine-registration')
+        self.observer = importlib.import_module('scripts.utils.online_raster_lineage')
+        self.boundary()
+        self.owner = self.observer.inspect()
+        self.container_user(self.owner)
+        self.identity = validate_identity(client, positive(env['ADDP_ONLINE_TEST_TENANT_ID'], 'metadata Tenant'),
+                                          required_permissions=EDITOR_PERMISSIONS)
+        self.path = Path(env['ADDP_ONLINE_ARTIFACT_DIR'])/'raster-workflow-metadata.json'
+        self.report = {'schema_version': 'addp.raster-workflow-metadata/v1',
+                       'run_id': env['ADDP_ONLINE_TEST_RUN_ID'], 'identity': self.identity,
+                       'container_id': self.owner['Id'], 'started_at': self.owner['State']['StartedAt'],
+                       'issued': [], 'pending': [], 'already_visible': [], 'facts': [], 'queries': [],
+                       'failures': [], 'cleanup': 'pending'}
+        self.bindings, self.issued, self.source_scans = {}, {}, {}
+        self.expires_at = (datetime.now(timezone.utc)+timedelta(seconds=1740)).isoformat()
+        self.save()
+        issuer = GatewayClient(env['GATEWAY_URL'], env['ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN'], 30)
+        self.grants = self.registration.ExactFileMetadataGrants(
+            issuer, client, int(self.identity['tenant_id']), on_change=self.checkpoint, on_evidence=self.capture)
+
+    def boundary(self):
+        self.observer.BASE.boundary('raster-workflow')
+        keys = ('ONLINE_SUITE', 'ADDP_ONLINE_TEST_RUN_ID', 'ADDP_ONLINE_SECRET_DIR',
+                'ADDP_ONLINE_ARTIFACT_DIR', 'GITHUB_RUN_ID', 'GITHUB_RUN_ATTEMPT', 'ADDP_ONLINE_RASTER_CASE')
+        if (any(self.env.get(key) != os.environ.get(key) for key in keys)
+                or self.env.get('ADDP_ONLINE_TEST_RUN_ID') !=
+                    f"raster-{self.env.get('GITHUB_RUN_ID')}-{self.env.get('GITHUB_RUN_ATTEMPT')}"
+                or not re.fullmatch(r'raster-[0-9]+-[0-9]+', self.env.get('ADDP_ONLINE_TEST_RUN_ID', ''))
+                or self.env.get('ADDP_ONLINE_RASTER_CASE', 'full') != 'full'
+                or self.env.get('ADDP_ONLINE_TEST_TIMEOUT_SECONDS') != '1740'):
+            raise SuiteError('raster metadata evidence requires its exact full Hosted run')
+
+    def container_user(self, container):
+        owner = getattr(self, 'owner', container)
+        values = dict(value.split('=', 1) for value in container.get('Config', {}).get('Env', []) if '=' in value)
+        user = self.observer.BASE.validate_container(container, owner.get('Id'), values)
+        if (not re.fullmatch(r'[0-9a-f]{64}', container['Id'])
+                or not owner['State'].get('StartedAt')
+                or container['State']['StartedAt'] != owner['State']['StartedAt']):
+            raise SuiteError('raster metadata PostgreSQL changed or restarted')
+        return user
+
+    def save(self):
+        self.path.write_text(json.dumps(self.report, ensure_ascii=False, sort_keys=True)+'\n')
+
+    def checkpoint(self, pending):
+        self.report['pending'] = list(pending)
+        self.save()
+
+    def capture(self, fact):
+        self.report['facts'].append(fact)
+        self.save()
+
+    def scope(self, engine, full_name):
+        sources = {int(self.env['ADDP_ONLINE_RASTER_SOURCE'+suffix+'_ENGINE_ID']): {
+            'raster-'+role+'/'+name for name, _, _ in fixture.SOURCE_FILES_BY_ROLE[role]}
+            for role, suffix in (('source', ''), ('source-b', '_B'), ('source-c', '_C'))}
+        source = int(self.env['ADDP_ONLINE_RASTER_SOURCE_ENGINE_ID'])
+        sources[source].update('raster-source/'+name for name in (*fixture.IMAGE_SOURCES.values(), fixture.NON_COG_SOURCE))
+        if full_name in sources.get(engine, set()):
+            return 'tiff', True
+        target = int(self.env['ADDP_ONLINE_RASTER_TARGET_ENGINE_ID'])
+        names = (fixture.preterrain_target_names()-{fixture.TILE_KEEP_NAME}
+                 | {name+'.cog.tif' for name in fixture.TERRAIN_CASES}
+                 | set(fixture.IMAGE_TARGETS.values()))
+        if engine != target or not isinstance(full_name, str) or full_name not in {'raster-target/'+name for name in names}:
+            raise SuiteError('raster metadata target is outside the fixed fixture')
+        name = full_name.removeprefix('raster-target/')
+        return ('png' if name == fixture.IMAGE_TARGETS['png'] else
+                'jpeg' if name == fixture.IMAGE_TARGETS['jpeg'] else 'tiff'), False
+
+    def bind_source(self, engine, scan_id):
+        if (engine not in {int(self.env[key]) for key in (
+                'ADDP_ONLINE_RASTER_SOURCE_ENGINE_ID', 'ADDP_ONLINE_RASTER_SOURCE_B_ENGINE_ID',
+                'ADDP_ONLINE_RASTER_SOURCE_C_ENGINE_ID')}
+                or not isinstance(scan_id, str) or not re.fullmatch(UUID_PATTERN, scan_id)):
+            raise SuiteError('raster metadata source scan is outside its fixture')
+        self.source_scans[engine] = scan_id
+
+    def bind(self, execution):
+        metadata = obj(execution.get('metadata', {}), 'metadata output binding')
+        scans = array(obj(metadata.get('result', {}), 'metadata result binding').get('meta_scan_runs', []),
+                      'metadata scan binding')
+        if not scans:
+            return
+        identifier = execution.get('execution_id')
+        if (not isinstance(identifier, str) or not re.fullmatch(UUID_PATTERN, identifier)
+                or execution.get('module') != 'develop' or execution.get('task_type') != 'workflow'
+                or execution.get('tenant_id') != int(self.identity['tenant_id'])
+                or execution.get('triggered_by') != int(self.identity['principal_id'])
+                or execution.get('status') not in ('success', 'failed')):
+            raise SuiteError('raster metadata binding has the wrong execution/User/Tenant')
+        outputs = array(obj(metadata.get('lineage_facts'), 'metadata lineage binding').get('outputs'), 'metadata outputs')
+        target = int(self.env['ADDP_ONLINE_RASTER_TARGET_ENGINE_ID'])
+        if (len({scan.get('target_locator') for scan in scans}) != len(scans)
+                or len({scan.get('execution_id') for scan in scans}) != len(scans)
+                or len(outputs) != len(scans)):
+            raise SuiteError('raster metadata confirmed outputs or automatic scans are duplicated')
+        bindings = {}
+        for scan in scans:
+            locator = scan.get('target_locator')
+            name = self.target_name(locator)
+            self.scope(target, name)
+            if (scan.get('status') != 'submitted' or not isinstance(scan.get('execution_id'), str)
+                    or not re.fullmatch(UUID_PATTERN, scan['execution_id'])
+                    or sum(output.get('locator') == locator for output in outputs) != 1):
+                raise SuiteError('raster metadata scan is not an exact confirmed output')
+            if execution['status'] == 'failed' and name.split('/')[1] not in {
+                    fixture.TILE_FAILURE_PREFIX, *fixture.TILE_CLEANUP_CASES}:
+                raise SuiteError('failed raster metadata binding is not a confirmed tile')
+            bindings[name] = {'execution_id': identifier, 'scan_id': scan['execution_id'],
+                              'status': execution['status'], 'locator': locator}
+        self.bindings.update(bindings)
+
+    def target_name(self, locator):
+        engine = int(self.env['ADDP_ONLINE_RASTER_TARGET_ENGINE_ID'])
+        prefix = f'addp://engine/{engine}/path/'
+        if not isinstance(locator, str) or not locator.startswith(prefix) or not locator.endswith('?type=object'):
+            raise SuiteError('raster metadata output locator differs from its target Engine')
+        name = locator[len(prefix):-len('?type=object')]
+        if locator != prefix+name+'?type=object':
+            raise SuiteError('raster metadata locator is not exact')
+        return name
+
+    def ensure(self, engine, full_name):
+        self.boundary()
+        self.container_user(self.observer.inspect())
+        format_name, source = self.scope(engine, full_name)
+        if not source and full_name not in self.bindings:
+            raise SuiteError('raster metadata target has no current automatic scan binding')
+        key = (engine, full_name)
+        facts = self.grants.metadata_facts(engine, full_name, 'minio', data_type='media',
+                                          format_name=format_name, layouts=('single', 'multi'))
+        target = self.registration.ExactFileMetadataGrants.target(
+            engine, full_name, 'minio', layout=facts['boundary']['layout'])
+        expected = {'target': target, 'boundary_hash': facts['boundary_hash'],
+                    'item_fingerprint': facts['item_fingerprint']}
+        previous = self.issued.get(key)
+        if previous is not None and previous != expected:
+            raise SuiteError('raster metadata Grant identity or boundary changed')
+        visibility = obj(self.client.request('POST', '/api/v1/system/engine-access/metadata-checks/meta-query',
+                                             (200,), {'targets': [target]}).payload, 'raster metadata visibility')
+        rows = visibility.get('targets')
+        if (not visibility.get('observed_at') or not isinstance(rows, list) or len(rows) != 1
+                or rows[0].get('target') != target or type(rows[0].get('visible')) is not bool):
+            raise SuiteError('raster metadata visibility response is incomplete')
+        if not rows[0]['visible']:
+            if previous is not None:
+                raise SuiteError('raster metadata Grant lost current visibility')
+            receipt = self.grants.grant(engine, full_name, 'minio', data_type='media', format_name=format_name,
+                                        layout=facts['boundary']['layout'], expires_at=self.expires_at)
+            if receipt.get('boundary_hash') != facts['boundary_hash'] or receipt.get('item_fingerprint') != facts['item_fingerprint']:
+                raise SuiteError('raster metadata changed during Grant creation')
+            self.report['issued'].append(receipt)
+        elif previous is None:
+            self.report['already_visible'].append(expected)
+        self.issued[key] = expected
+        self.save()
+        return facts
+
+    def find(self, engine, full_name, label):
+        facts = self.ensure(engine, full_name)
+        public = support.find_fixture_item(self.client, engine, full_name, label)
+        attrs = obj(public.get('attributes'), 'public raster metadata')
+        if (any(public.get(key) is not None for key in ('size_bytes', 'row_count', 'data_updated_at'))
+                or set(attrs)-{'schema_version', 'item', 'type_info', 'capabilities'}
+                or attrs.get('type_info', {}).get('media')
+                or attrs.get('capabilities', {}).get('spatial', {}).get('extent') is not None):
+            raise SuiteError('public Meta disclosed content-derived raster facts')
+        if public['fingerprint'] != facts['item_fingerprint']:
+            raise SuiteError('raster metadata Grant and public DataItem identity differ')
+        if self.scope(engine, full_name)[1]:
+            return public
+        return self.produced_item(public, self.bindings[full_name])
+
+    def query(self, statement, values, fields):
+        self.boundary()
+        user = self.container_user(self.observer.inspect())
+        if len(self.report['queries']) >= 256:
+            raise SuiteError('raster metadata evidence query bound exceeded')
+        command = ['docker', 'exec', '-i', self.owner['Id'], 'psql', '-X', '-qAt',
+                   '-v', 'ON_ERROR_STOP=1', '-v', 'VERBOSITY=sqlstate', '-U', user, '-d', 'addp_online']
+        for key, value in values.items():
+            command.extend(['-v', key+'='+str(value)])
+        receipt = {'statement_sha256': hashlib.sha256(statement.encode()).hexdigest(), 'result': 'failed'}
+        try:
+            result = subprocess.run(command, input=statement, capture_output=True, text=True, timeout=8)
+            raw = result.stdout.encode()
+            if result.returncode != 0 or not 0 < len(raw) <= 65536:
+                raise SuiteError('raster metadata bounded read failed')
+            def invalid_constant(_):
+                raise SuiteError('raster metadata read contains a nonfinite JSON number')
+            payload = json.loads(raw, parse_constant=invalid_constant)
+            if not isinstance(payload, dict) or set(payload) != fields:
+                raise SuiteError('raster metadata read has an unexpected shape')
+            receipt.update(result='passed', stdout_bytes=len(raw), stdout_sha256=hashlib.sha256(raw).hexdigest())
+            return payload
+        finally:
+            self.report['queries'].append(receipt)
+            self.save()
+
+    def produced_item(self, public, binding):
+        statement = """BEGIN READ ONLY; SET LOCAL statement_timeout='3s'; SET LOCAL lock_timeout='1s';
+SELECT json_build_object('id',i.id,'tenant_id',i.tenant_id,'engine_id',i.engine_id,'node_id',i.node_id,
+ 'name',i.name,'full_name',i.full_name,'item_type',i.item_type,'fingerprint',i.fingerprint,
+ 'size_bytes',i.size_bytes,'attributes',i.attributes,'scanned_depth',i.scanned_depth)
+FROM meta.meta_item i JOIN common.task_executions e ON e.execution_id=:'execution'
+JOIN common.task_executions s ON s.execution_id=:'scan' AND s.parent_execution_id=e.execution_id
+WHERE i.id=:'item'::integer AND i.tenant_id=:'tenant'::integer AND i.engine_id=:'engine'::integer
+ AND i.full_name=:'full_name' AND i.fingerprint=:'fingerprint' AND i.deleted_at IS NULL
+ AND i.created_at>=:'started_at'::timestamptz AND e.created_at>=:'started_at'::timestamptz
+ AND e.tenant_id=i.tenant_id AND s.tenant_id=i.tenant_id
+ AND e.actor_principal_id=:'principal'::bigint AND s.actor_principal_id=e.actor_principal_id
+ AND e.triggered_by=:'principal'::integer AND s.triggered_by=e.triggered_by
+ AND e.module='develop' AND e.task_type='workflow' AND e.status=:'status'
+ AND s.module='meta' AND s.task_type='scan' AND s.status='success'
+ AND s.execution_config->>'engine_id'=i.engine_id::text
+ AND e.metadata->'lineage_facts'->'outputs' @> jsonb_build_array(jsonb_build_object('locator',:'locator'))
+ AND e.metadata->'result'->'meta_scan_runs' @> jsonb_build_array(jsonb_build_object(
+ 'execution_id',s.execution_id,'target_locator',:'locator','status','submitted'))
+ AND octet_length(i.attributes::text)<=32768;
+COMMIT;
+"""
+        values = dict(item=positive(public.get('id'), 'public raster item'), tenant=self.identity['tenant_id'],
+                      principal=self.identity['principal_id'], engine=int(self.env['ADDP_ONLINE_RASTER_TARGET_ENGINE_ID']),
+                      full_name=public['full_name'], fingerprint=public['fingerprint'],
+                      execution=binding['execution_id'], scan=binding['scan_id'], status=binding['status'],
+                      locator=binding['locator'], started_at=self.owner['State']['StartedAt'])
+        fields = {'id', 'tenant_id', 'engine_id', 'node_id', 'name', 'full_name', 'item_type',
+                  'fingerprint', 'size_bytes', 'attributes', 'scanned_depth'}
+        result = self.query(statement, values, fields)
+        if any(result.get(key) != public.get(key) for key in
+               ('id', 'tenant_id', 'engine_id', 'node_id', 'name', 'full_name', 'item_type', 'fingerprint')):
+            raise SuiteError('raster metadata persisted and public identities differ')
+        self.report.setdefault('items', []).append({'execution_id': binding['execution_id'],
+                                                    'scan_id': binding['scan_id'], 'item': result})
+        self.save()
+        return result
+
+    def source_snapshot(self, engine, name, label):
+        public = self.find(engine, name, label)
+        if not self.scope(engine, name)[1] or engine not in self.source_scans:
+            raise SuiteError('raster source snapshot requires its completed source scan')
+        statement = """BEGIN READ ONLY; SET LOCAL statement_timeout='3s'; SET LOCAL lock_timeout='1s';
+SELECT json_build_object('id',i.id,'tenant_id',i.tenant_id,'engine_id',i.engine_id,'node_id',i.node_id,
+ 'name',i.name,'full_name',i.full_name,'item_type',i.item_type,'fingerprint',i.fingerprint,
+ 'size_bytes',i.size_bytes,'attributes',i.attributes,'scanned_depth',i.scanned_depth,'data_updated_at',i.data_updated_at,'scanned_at',i.scanned_at)
+FROM meta.meta_item i JOIN common.task_executions s ON s.execution_id=:'scan'
+WHERE i.id=:'item'::integer AND i.tenant_id=:'tenant'::integer AND i.engine_id=:'engine'::integer
+ AND i.full_name=:'full_name' AND i.fingerprint=:'fingerprint' AND i.deleted_at IS NULL
+ AND i.created_at>=:'started_at'::timestamptz AND s.created_at>=:'started_at'::timestamptz
+ AND s.tenant_id=i.tenant_id AND s.actor_principal_id=:'principal'::bigint
+ AND s.triggered_by=:'principal'::integer AND s.module='meta' AND s.task_type='scan' AND s.status='success'
+ AND s.execution_config->>'engine_id'=i.engine_id::text AND octet_length(i.attributes::text)<=32768;
+COMMIT;
+"""
+        result = self.query(statement, dict(item=public['id'], tenant=self.identity['tenant_id'],
+            principal=self.identity['principal_id'], engine=engine, full_name=name, fingerprint=public['fingerprint'],
+            scan=self.source_scans[engine], started_at=self.owner['State']['StartedAt']),
+            {'id', 'tenant_id', 'engine_id', 'node_id', 'name', 'full_name', 'item_type',
+             'fingerprint', 'size_bytes', 'attributes', 'scanned_depth', 'data_updated_at', 'scanned_at'})
+        if any(result.get(key) != public.get(key) for key in
+               ('id', 'tenant_id', 'engine_id', 'node_id', 'name', 'full_name', 'item_type', 'fingerprint')):
+            raise SuiteError('raster source snapshot and public identity differ')
+        self.report.setdefault('source_snapshots', []).append(result)
+        self.save()
+        return result
+
+    def target_inventory(self, prefix, execution):
+        if prefix not in {fixture.TILE_FAILURE_PREFIX, *fixture.TILE_CLEANUP_CASES}:
+            raise SuiteError('raster metadata inventory requires a fixed failed tile prefix')
+        statement = """BEGIN READ ONLY; SET LOCAL statement_timeout='3s'; SET LOCAL lock_timeout='1s';
+SELECT json_build_object('names',coalesce(json_agg(i.full_name ORDER BY i.full_name),'[]'::json))
+FROM meta.meta_item i
+WHERE i.tenant_id=:'tenant'::integer AND i.engine_id=:'engine'::integer AND i.deleted_at IS NULL
+ AND left(i.full_name,length(:'prefix'))=:'prefix' AND i.created_at>=:'started_at'::timestamptz
+ AND EXISTS (SELECT 1 FROM common.task_executions e WHERE e.execution_id=:'execution'
+ AND e.tenant_id=i.tenant_id AND e.actor_principal_id=:'principal'::bigint AND e.triggered_by=:'principal'::integer
+ AND e.module='develop' AND e.task_type='workflow' AND e.status='failed'
+ AND e.created_at>=:'started_at'::timestamptz);
+COMMIT;
+"""
+        result = self.query(statement, dict(tenant=self.identity['tenant_id'], principal=self.identity['principal_id'],
+                            engine=int(self.env['ADDP_ONLINE_RASTER_TARGET_ENGINE_ID']), prefix='raster-target/'+prefix+'/',
+                            execution=execution['execution_id'], started_at=self.owner['State']['StartedAt']), {'names'})
+        return array(result['names'], 'private raster target inventory')
+
+    def cleanup(self):
+        try:
+            self.report['cleanup'] = self.grants.cleanup()
+        except BaseException:
+            self.report['cleanup'] = 'failed'
+            raise
+        finally:
+            self.save()
+
+
+def run_scenario(repository, env, client, physical_runner=physical, browser_runner=browser, diagnostic_runner=duplicate_create_diagnostic, editor_runner=browser_editor, metadata_evidence=None):
     tenant = positive(env['ADDP_ONLINE_TEST_TENANT_ID'], 'tenant')
     if tenant <= 1:
         raise SuiteError('raster acceptance forbids the default Tenant')
@@ -903,6 +1206,7 @@ def run_scenario(repository, env, client, physical_runner=physical, browser_runn
         raise SuiteError('raster fixture requires three distinct source Engines and a separate target')
     timeout = float(env.get('ADDP_ONLINE_TEST_TIMEOUT_SECONDS', '180'))
     identity = validate_identity(client, tenant, required_permissions=EDITOR_PERMISSIONS)
+    metadata_evidence = metadata_evidence or WorkflowMetadata(env, client)
     pending_outputs = []
     size_evidence = {}
     engines = array(client.request('GET', '/api/v1/develop/workflow-engines', (200,)).payload, 'workflow engines')
@@ -911,13 +1215,14 @@ def run_scenario(repository, env, client, physical_runner=physical, browser_runn
         raise SuiteError('exactly one online GeoPython Workflow Runtime must be registered')
     engine_id = positive(runtime[0].get('id'), 'runtime engine')
     for source_id in source_engines.values():
-        support.wait_for_meta_scan(client, source_id, time.monotonic() + timeout)
+        source_scan = support.wait_for_meta_scan(client, source_id, time.monotonic() + timeout)
+        metadata_evidence.bind_source(source_id, source_scan)
     catalog_engines = array(client.request('GET', '/api/v1/meta/engines', (200,)).payload, 'source catalog engines')
     engine_names = {positive(item.get('id'), 'catalog engine'): item.get('name') for item in catalog_engines}
     if any(not isinstance(engine_names.get(identifier), str) or not engine_names[identifier]
            for identifier in source_engines.values()):
         raise SuiteError('all three registered source Engines must be visible to the same User')
-    source = support.find_fixture_item(client, source_engine, 'raster-source/source.tif', 'raster source')
+    source = metadata_evidence.find(source_engine, 'raster-source/source.tif', 'raster source')
     source_locator = support.build_item_locator(source_engine, source)
     target_locator = f'addp://engine/{target_engine}/path/raster-target/result.cog.tif?type=object'
     executions = []
@@ -927,6 +1232,7 @@ def run_scenario(repository, env, client, physical_runner=physical, browser_runn
     for mode, expression, status in [('create', 'b2-b1', 'success'), ('create', 'b2+b1', 'failed'), ('replace', 'b2+b1', 'success')]:
         identifier = submit(client, engine_id, workflow(source_locator, target_engine, expression, mode))
         execution = wait_execution(client, 'develop', identifier, timeout, status)
+        metadata_evidence.bind(execution)
         metadata = obj(execution.get('metadata', {}), 'execution metadata')
         if status == 'success':
             facts, last_scan = validate_success(execution, [source_locator], target_locator, mode)
@@ -949,14 +1255,14 @@ def run_scenario(repository, env, client, physical_runner=physical, browser_runn
         if mode == 'replace' and native.get('sha256') == physical_evidence[0].get('sha256'):
             raise SuiteError('replace did not change the target pixels')
         if status == 'success':
-            target = support.find_fixture_item(client, target_engine, 'raster-target/result.cog.tif', 'band-math target')
+            target = metadata_evidence.find(target_engine, 'raster-target/result.cog.tif', 'band-math target')
             size_evidence[identifier] = {'result.cog.tif': strict_sizes(metadata['result']['final_result'], native, target, 'result.cog.tif')}
         physical_evidence.append(native)
         executions.append({'execution_id': identifier, 'write_mode': mode, 'status': status})
     lineage, browser_evidence = queue_output_inspection(pending_outputs, client, env['ADDP_ONLINE_TEST_RUN_ID'], source, source_locator,
         target_engine, 'result.cog.tif', executions[-1]['execution_id'], 'band-math', identity,
-        browser_runner, fixture.artifact_expectation(), physical_evidence[-1], [source_locator], execution['metadata']['result']['final_result'], size_evidence)
-    spatial_source = support.find_fixture_item(client, source_engine, 'raster-source/spatial.tif', 'spatial source')
+        browser_runner, fixture.artifact_expectation(), physical_evidence[-1], [source_locator], execution['metadata']['result']['final_result'], size_evidence, metadata_evidence)
+    spatial_source = metadata_evidence.find(source_engine, 'raster-source/spatial.tif', 'spatial source')
     spatial_locator = support.build_item_locator(source_engine, spatial_source)
     spatial_cases = []
     for overlap in ('first', 'last'):
@@ -964,6 +1270,7 @@ def run_scenario(repository, env, client, physical_runner=physical, browser_runn
         locator = f'addp://engine/{target_engine}/path/raster-target/{name}?type=object'
         identifier = submit(client, engine_id, spatial_workflow(spatial_locator, target_engine, overlap))
         execution = wait_execution(client, 'develop', identifier, timeout)
+        metadata_evidence.bind(execution)
         facts, scan_id = validate_success(execution, [spatial_locator], locator, 'create', fixture.artifact_expectation(True))
         wait_execution(client, 'meta', scan_id, timeout)
         monitor = obj(client.request('GET', f'/api/v1/monitor/executions/by-execution-id/{identifier}', (200,)).payload, 'Monitor spatial execution')
@@ -978,13 +1285,14 @@ def run_scenario(repository, env, client, physical_runner=physical, browser_runn
             raise SuiteError('last mosaic modified the first artifact or did not change overlap pixels')
         graph, browser_report = queue_output_inspection(pending_outputs, client, env['ADDP_ONLINE_TEST_RUN_ID'], spatial_source, spatial_locator,
             target_engine, name, identifier, 'mosaic-' + overlap, identity,
-            browser_runner, fixture.artifact_expectation(True), native, [spatial_locator], execution['metadata']['result']['final_result'], size_evidence)
+            browser_runner, fixture.artifact_expectation(True), native, [spatial_locator], execution['metadata']['result']['final_result'], size_evidence, metadata_evidence)
         spatial_cases.append({'case_name': 'mosaic-' + overlap, 'execution_id': identifier,
             'automatic_target_scan_execution_id': scan_id, 'lineage': graph, 'physical': native, 'browser': browser_report})
     analysis_cases = []
     for case_name, expectation in fixture.analysis_expectations().items():
         identifier = submit(client, engine_id, analysis_workflow(source_locator, case_name))
         execution = wait_execution(client, 'develop', identifier, timeout)
+        metadata_evidence.bind(execution)
         numeric_result = validate_analysis(execution, expectation)
         monitor = obj(client.request('GET', f'/api/v1/monitor/executions/by-execution-id/{identifier}', (200,)).payload, 'Monitor analysis execution')
         if (monitor.get('status') != 'success' or monitor.get('module') != 'develop'
@@ -1014,7 +1322,7 @@ def run_scenario(repository, env, client, physical_runner=physical, browser_runn
         definition = grid_workflow
         if case_name in fixture.MULTIBAND_CASES:
             joint = case_name.endswith('-joint')
-            case_source = support.find_fixture_item(client, target_engine if joint else source_engine,
+            case_source = metadata_evidence.find(target_engine if joint else source_engine,
                 ('raster-target/' if joint else 'raster-source/') + fixture.multiband_source_name(case_name), 'multiband source')
             case_locator = support.build_item_locator(target_engine if joint else source_engine, case_source)
             definition = multiband_workflow
@@ -1022,6 +1330,7 @@ def run_scenario(repository, env, client, physical_runner=physical, browser_runn
         locator = f'addp://engine/{target_engine}/path/raster-target/{name}?type=object'
         identifier = submit(client, engine_id, definition(case_locator, target_engine, case_name))
         execution = wait_execution(client, 'develop', identifier, timeout)
+        metadata_evidence.bind(execution)
         facts, scan_id = validate_success(execution, [case_locator], locator, 'create', expectation)
         wait_execution(client, 'meta', scan_id, timeout)
         monitor = obj(client.request('GET', f'/api/v1/monitor/executions/by-execution-id/{identifier}', (200,)).payload, 'Monitor grid execution')
@@ -1041,19 +1350,20 @@ def run_scenario(repository, env, client, physical_runner=physical, browser_runn
                 or native.get('band_nodata_is_nan') is not (expectation['band_nodata'] is None)):
                 raise SuiteError('multiband independent validity/partial alpha evidence is incomplete')
         graph, browser_report = queue_output_inspection(pending_outputs, client, env['ADDP_ONLINE_TEST_RUN_ID'], case_source, case_locator,
-            target_engine, name, identifier, case_name, identity, browser_runner, expectation, native, [case_locator], execution['metadata']['result']['final_result'], size_evidence)
+            target_engine, name, identifier, case_name, identity, browser_runner, expectation, native, [case_locator], execution['metadata']['result']['final_result'], size_evidence, metadata_evidence)
         cases = multiband_cases if case_name in fixture.MULTIBAND_CASES else grid_cases
         cases.append({'case_name': case_name, 'execution_id': identifier,
             'automatic_target_scan_execution_id': scan_id, 'lineage': graph, 'physical': native, 'browser': browser_report})
         preserved[name] = native['sha256']
     utility_cases = []
     utility_sources = {}
-    non_cog_source = support.find_fixture_item(client, source_engine, 'raster-source/' + fixture.NON_COG_SOURCE, 'non-COG source')
+    non_cog_source = metadata_evidence.find(source_engine, 'raster-source/' + fixture.NON_COG_SOURCE, 'non-COG source')
     for case_name in fixture.UTILITY_CASES:
         name = case_name + '.cog.tif'
         locator = f'addp://engine/{target_engine}/path/raster-target/{name}?type=object'
         identifier = submit(client, engine_id, utility_workflow(source_locator, target_engine, case_name))
         execution = wait_execution(client, 'develop', identifier, timeout)
+        metadata_evidence.bind(execution)
         output_node = 'convert' if case_name == 'to-cog' else 'save'
         facts, scan_id = validate_success(execution, [source_locator], locator, 'create', fixture.utility_expectation(), output_node)
         wait_execution(client, 'meta', scan_id, timeout)
@@ -1069,8 +1379,8 @@ def run_scenario(repository, env, client, physical_runner=physical, browser_runn
             or any(band.get('overviews') != expected_levels for band in artifact['bands'])):
             raise SuiteError('utility workflow lost band validity, explicit levels or existing artifacts')
         graph, browser_report = queue_output_inspection(pending_outputs, client, env['ADDP_ONLINE_TEST_RUN_ID'], source, source_locator,
-            target_engine, name, identifier, case_name, identity, browser_runner, fixture.utility_expectation(), native, [source_locator], artifact, size_evidence)
-        utility_sources[case_name] = support.find_fixture_item(client, target_engine, 'raster-target/' + name, 'utility source')
+            target_engine, name, identifier, case_name, identity, browser_runner, fixture.utility_expectation(), native, [source_locator], artifact, size_evidence, metadata_evidence)
+        utility_sources[case_name] = metadata_evidence.find(target_engine, 'raster-target/' + name, 'utility source')
         utility_cases.append({'case_name': case_name, 'execution_id': identifier,
             'automatic_target_scan_execution_id': scan_id, 'lineage': graph, 'physical': native, 'browser': browser_report})
         preserved[name] = native['sha256']
@@ -1080,6 +1390,7 @@ def run_scenario(repository, env, client, physical_runner=physical, browser_runn
         query_locator = support.build_item_locator(source_engine if case_name == 'validate-cog-invalid' else target_engine, query_source)
         identifier = submit(client, engine_id, utility_workflow(query_locator, target_engine, case_name))
         execution = wait_execution(client, 'develop', identifier, timeout)
+        metadata_evidence.bind(execution)
         native = physical_runner(repository, env, 'verify-utility-queries')
         if native.get('preserved_sha256') != preserved:
             raise SuiteError('read-only utility workflow modified an accepted artifact')
@@ -1104,24 +1415,24 @@ def run_scenario(repository, env, client, physical_runner=physical, browser_runn
     update_cases = []
     mosaic_source_cases = []
     mosaic_editor_cases = []
-    mosaic_sources = {name: support.find_fixture_item(client, source_engine, 'raster-source/' + name, 'independent mosaic source')
+    mosaic_sources = {name: metadata_evidence.find(source_engine, 'raster-source/' + name, 'independent mosaic source')
                       for name in fixture.MOSAIC_SOURCE_WINDOWS}
     mosaic_locators = {name: support.build_item_locator(source_engine, item) for name, item in mosaic_sources.items()}
     if len({item['id'] for item in mosaic_sources.values()}) != 3 or len(set(mosaic_locators.values())) != 3:
         raise SuiteError('independent mosaic sources do not have three distinct registered identities')
-    cross_sources = {name: support.find_fixture_item(client, source_engines[role], 'raster-' + role + '/' + name,
+    cross_sources = {name: metadata_evidence.find(source_engines[role], 'raster-' + role + '/' + name,
                                                     'cross-engine mosaic source')
                      for name, role in fixture.MOSAIC_SOURCE_ROLES.items()}
     cross_locators = {name: support.build_item_locator(source_engines[fixture.MOSAIC_SOURCE_ROLES[name]], item)
                       for name, item in cross_sources.items()}
     if len({item['id'] for item in cross_sources.values()}) != 3 or len(set(cross_locators.values())) != 3:
         raise SuiteError('cross-engine sources must have three independent registered identities')
-    patch_source = support.find_fixture_item(client, source_engine, 'raster-source/multiband.tif', 'update source')
+    patch_source = metadata_evidence.find(source_engine, 'raster-source/multiband.tif', 'update source')
     patch_locator = support.build_item_locator(source_engine, patch_source)
-    reference_source = support.find_fixture_item(client, target_engine, 'raster-target/mosaic-first.cog.tif', 'reference raster')
+    reference_source = metadata_evidence.find(target_engine, 'raster-target/mosaic-first.cog.tif', 'reference raster')
     reference_locator = support.build_item_locator(target_engine, reference_source)
     aggregate_sources = {
-        name: support.find_fixture_item(client, source_engine, 'raster-source/'+name, 'aggregation source')
+        name: metadata_evidence.find(source_engine, 'raster-source/'+name, 'aggregation source')
         for name in {fixture.aggregate_config(case)['source_name'] for case in fixture.AGGREGATE_CASES}}
     for case_name in fixture.FOUNDATION_CASES + fixture.RECLASS_CASES + fixture.AGGREGATE_CASES + fixture.OUTSIDE_CASES + fixture.UPDATE_CASES + fixture.MOSAIC_CASES:
         single = case_name in fixture.RECLASS_CASES + fixture.AGGREGATE_CASES + fixture.OUTSIDE_CASES
@@ -1170,6 +1481,7 @@ def run_scenario(repository, env, client, physical_runner=physical, browser_runn
                           foundation_workflow(spatial_locator, reference_locator, target_engine, case_name))
             identifier = submit(client, engine_id, definition)
         execution = wait_execution(client, 'develop', identifier, timeout)
+        metadata_evidence.bind(execution)
         if editor_report and execution.get('source_task_id') != str(editor_report['task_id']):
             raise SuiteError('raster editor execution belongs to another saved task')
         facts, scan_id = validate_success(execution, source_locators, locator, 'create', expectation, output_node=output_node)
@@ -1197,11 +1509,11 @@ def run_scenario(repository, env, client, physical_runner=physical, browser_runn
         if (case_name == fixture.MOSAIC_EDITOR_CASES[1]
             and native.get('sha256') == preserved[fixture.MOSAIC_EDITOR_CASES[0] + '.cog.tif']):
             raise SuiteError('cross-engine output reused the same-named original source pixels')
-        target = support.find_fixture_item(client, target_engine, 'raster-target/' + name, 'multi-raster target')
+        target = metadata_evidence.find(target_engine, 'raster-target/' + name, 'multi-raster target')
         graphs, browsers = [], []
         for case_source, case_locator, suffix in case_sources:
             graph, report = queue_output_inspection(pending_outputs, client, env['ADDP_ONLINE_TEST_RUN_ID'], case_source, case_locator, target_engine,
-                name, identifier, case_name + suffix, identity, browser_runner, expectation, native, source_locators, artifact, size_evidence)
+                name, identifier, case_name + suffix, identity, browser_runner, expectation, native, source_locators, artifact, size_evidence, metadata_evidence)
             graphs.append(graph)
             browsers.append(report)
         cases = mosaic_source_cases if case_name in fixture.MOSAIC_SOURCE_CASES else update_cases if case_name in fixture.UPDATE_CASES else outside_cases if case_name in fixture.OUTSIDE_CASES else aggregate_cases if case_name in fixture.AGGREGATE_CASES else reclass_cases if case_name in fixture.RECLASS_CASES else foundation_cases
@@ -1219,10 +1531,10 @@ def run_scenario(repository, env, client, physical_runner=physical, browser_runn
         preserved[name] = native['sha256']
     footprint_cases = []
     footprint_sources = {
-        fixture.TOPOLOGY_SOURCE: (source_engine, support.find_fixture_item(client, source_engine, 'raster-source/' + fixture.TOPOLOGY_SOURCE, 'topology footprint source')),
-        fixture.ROTATED_SOURCE: (source_engine, support.find_fixture_item(client, source_engine, 'raster-source/' + fixture.ROTATED_SOURCE, 'rotated footprint source')),
-        'multiband.tif': (source_engine, support.find_fixture_item(client, source_engine, 'raster-source/multiband.tif', 'footprint source')),
-        'clip-outside.cog.tif': (target_engine, support.find_fixture_item(client, target_engine, 'raster-target/clip-outside.cog.tif', 'footprint holes source')),
+        fixture.TOPOLOGY_SOURCE: (source_engine, metadata_evidence.find(source_engine, 'raster-source/' + fixture.TOPOLOGY_SOURCE, 'topology footprint source')),
+        fixture.ROTATED_SOURCE: (source_engine, metadata_evidence.find(source_engine, 'raster-source/' + fixture.ROTATED_SOURCE, 'rotated footprint source')),
+        'multiband.tif': (source_engine, metadata_evidence.find(source_engine, 'raster-source/multiband.tif', 'footprint source')),
+        'clip-outside.cog.tif': (target_engine, metadata_evidence.find(target_engine, 'raster-target/clip-outside.cog.tif', 'footprint holes source')),
     }
     for case_name in fixture.FOOTPRINT_CASES:
         source_name = fixture.footprint_source_name(case_name)
@@ -1230,6 +1542,7 @@ def run_scenario(repository, env, client, physical_runner=physical, browser_runn
         footprint_locator = support.build_item_locator(footprint_engine, footprint_source)
         identifier = submit(client, engine_id, footprint_workflow(footprint_locator, case_name))
         execution = wait_execution(client, 'develop', identifier, timeout)
+        metadata_evidence.bind(execution)
         result = validate_footprint(execution, case_name)
         monitor = obj(client.request('GET', f'/api/v1/monitor/executions/by-execution-id/{identifier}', (200,)).payload, 'Monitor footprint execution')
         if (monitor.get('status') != 'success' or monitor.get('module') != 'develop'
@@ -1263,6 +1576,7 @@ def run_scenario(repository, env, client, physical_runner=physical, browser_runn
                 raise SuiteError('batch replace preparation changed accepted tiles or omitted the unrelated file')
         identifier = submit(client, engine_id, tiling_workflow(source_locator, target_engine, mode, compression))
         execution = wait_execution(client, 'develop', identifier, timeout)
+        metadata_evidence.bind(execution)
         manifest, locators, scans = validate_tiles_publication(execution, source_locator, target_engine, mode)
         monitor = obj(client.request('GET', f'/api/v1/monitor/executions/by-execution-id/{identifier}', (200,)).payload, 'tiling Monitor')
         if (monitor.get('status') != 'success' or monitor.get('module') != 'develop'
@@ -1281,7 +1595,7 @@ def run_scenario(repository, env, client, physical_runner=physical, browser_runn
                 or physical_tile.get('valid_pixels') != fixture.tile_expectation(key)['valid_pixels']
                 or [band.get('overviews') for band in fact['bands']] != [physical_tile.get('overview_sizes')]*2):
                 raise SuiteError('tile physical validity or overview facts differ')
-            target = support.find_fixture_item(client, target_engine, f'raster-target/tiles-basic/{key}.tif', 'tile target')
+            target = metadata_evidence.find(target_engine, f'raster-target/tiles-basic/{key}.tif', 'tile target')
             if mode == 'replace':
                 original = tiling_results['create']['cases'][len(tiling_cases)]
                 if (target['id'] != original['browser']['target_item_id']
@@ -1292,7 +1606,7 @@ def run_scenario(repository, env, client, physical_runner=physical, browser_runn
                 return browser_runner(repo, browser_env, {**evidence, 'target_locators': list(locators.values())})
             graph, report = queue_output_inspection(pending_outputs, client, env['ADDP_ONLINE_TEST_RUN_ID'], source, source_locator, target_engine,
                 'tiles-basic/'+key+'.tif', identifier, ('tiles-' if mode == 'create' else 'tiles-replace-')+key, identity, tile_browser,
-                fixture.tile_expectation(key), physical_tile, [source_locator], fact, size_evidence)
+                fixture.tile_expectation(key), physical_tile, [source_locator], fact, size_evidence, metadata_evidence)
             tiling_cases.append({'tile_key': key, 'execution_id': identifier, 'artifact': fact,
                 'physical': physical_tile, 'data_item_size_bytes': target['size_bytes'],
                 'lineage': graph, 'browser': report})
@@ -1308,6 +1622,7 @@ def run_scenario(repository, env, client, physical_runner=physical, browser_runn
     for prefix, action in [(fixture.TILE_FAILURE_PREFIX, 'verify-tiles-failure')] + [(prefix, 'verify-' + prefix) for prefix in fixture.TILE_CLEANUP_CASES]:
         identifier = submit(client, engine_id, tiling_workflow(source_locator, target_engine, target_name=prefix))
         execution = wait_execution(client, 'develop', identifier, timeout, expected='failed')
+        metadata_evidence.bind(execution)
         manifest, locators, scans = validate_tiles_publication(execution, source_locator, target_engine, failure_prefix=prefix)
         monitor = obj(client.request('GET', f'/api/v1/monitor/executions/by-execution-id/{identifier}', (200,)).payload, 'failed tiling Monitor')
         if (monitor.get('status') != 'failed' or monitor.get('module') != 'develop'
@@ -1342,12 +1657,11 @@ def run_scenario(repository, env, client, physical_runner=physical, browser_runn
                 or tile.get('valid_pixels') != fixture.tile_expectation(key)['valid_pixels']
                 or [band.get('overviews') for band in fact['bands']] != [tile.get('overview_sizes')]*2):
                 raise SuiteError('confirmed partial tile physical facts differ')
-            target = support.find_fixture_item(client, target_engine, 'raster-target/'+prefix+'/'+key+'.tif', 'confirmed partial tile')
+            target = metadata_evidence.find(target_engine, 'raster-target/'+prefix+'/'+key+'.tif', 'confirmed partial tile')
             size_evidence.setdefault(identifier, {})[prefix+'/'+key+'.tif'] = strict_sizes(fact, tile, target, prefix+'/'+key+'.tif')
             confirmed_items[key] = {'target_item_id': target['id'], 'data_item_size_bytes': target['size_bytes'],
                 'lineage': wait_lineage(client, source['id'], target['id'], identifier, timeout)}
-        items = array(client.request('GET', f'/api/v1/meta/engines/{target_engine}/items', (200,)).payload, 'target items')
-        partial_names = [item['full_name'] for item in items if item.get('full_name', '').startswith('raster-target/'+prefix+'/') and item.get('item_type') == 'object']
+        partial_names = metadata_evidence.target_inventory(prefix, execution)
         if set(partial_names) != {'raster-target/'+prefix+'/'+key+'.tif' for key in manifest['tiles']} or len(partial_names) != len(manifest['tiles']):
             raise SuiteError('unconfirmed failed tiles entered the Meta catalog')
         failures[prefix] = {'execution_id': identifier, 'status': 'failed', 'manifest': manifest,
@@ -1365,6 +1679,7 @@ def run_scenario(repository, env, client, physical_runner=physical, browser_runn
     for case_name in fixture.TERRAIN_CASES+('dem-contour',):
         identifier=submit(client,engine_id,terrain_workflow(terrain_locator,target_engine,case_name))
         execution=wait_execution(client,'develop',identifier,timeout)
+        metadata_evidence.bind(execution)
         monitor=obj(client.request('GET',f'/api/v1/monitor/executions/by-execution-id/{identifier}',(200,)).payload,'DEM Monitor execution')
         if monitor.get('status')!='success' or monitor.get('module')!='develop':raise SuiteError('DEM Monitor status/owner differs')
         native=physical_runner(repository,env,'verify-'+case_name)
@@ -1400,9 +1715,9 @@ def run_scenario(repository, env, client, physical_runner=physical, browser_runn
         pending=[]
         terrain_lineage,browser=queue_output_inspection(pending,client,env['ADDP_ONLINE_TEST_RUN_ID'],terrain_source,
             terrain_locator,target_engine,name,identifier,case_name,identity,browser_runner,expectation,terrain_physical,
-            [terrain_locator],artifact,size_evidence)
+            [terrain_locator],artifact,size_evidence,metadata_evidence)
         finish_output_inspections(pending,repository,env,client,timeout)
-        target=support.find_fixture_item(client,target_engine,'raster-target/'+name,'DEM target')
+        target=metadata_evidence.find(target_engine,'raster-target/'+name,'DEM target')
         terrain_hashes[case_name]=terrain_physical['sha256']
         terrain_cases.append({'case_name':case_name,'execution_id':identifier,'artifact':artifact,
             'data_item_size_bytes':target['size_bytes'],'automatic_target_scan_execution_id':scan,
@@ -1670,22 +1985,42 @@ def finish_resource_policy(platform, tenant, setup, timeout):
             'restored_applied_version': recovered['applied_version'], 'result': 'passed',
             'management_identity': 'separate-disposable-platform-and-tenant-users', 'consumer_admin_permission': False}
 
+def run_full_scenario(repository, env, client):
+    """Original business matrix, with one run-owned metadata evidence controller."""
+    platform = GatewayClient(env['GATEWAY_URL'], env['ADDP_ONLINE_RASTER_POLICY_PLATFORM_TOKEN'], 30)
+    tenant = GatewayClient(env['GATEWAY_URL'], env['ADDP_ONLINE_RASTER_POLICY_TENANT_TOKEN'], 30)
+    setup = prepare_resource_policy(platform, tenant, client)
+    producer_env = {key: value for key, value in env.items() if key not in BRANCH_LINEAGE_CREDENTIALS}
+    metadata_evidence = WorkflowMetadata(env, client)
+    try:
+        report = run_scenario(repository, producer_env, client, metadata_evidence=metadata_evidence)
+        images = importlib.import_module('scripts.test.raster-image-export-online')
+        report['image_exports'] = images.run_scenario(
+            sys.modules[__name__], repository, producer_env, client, metadata_evidence=metadata_evidence)
+        report['branch_lineage'] = run_branch_lineage(repository, env, client)
+        report['resource_policy'] = finish_resource_policy(platform, tenant, setup, 30)
+    except BaseException as error:
+        metadata_evidence.report['failures'].append(
+            metadata_evidence.registration.metadata_error_evidence(error, 'business'))
+        try:
+            metadata_evidence.cleanup()
+        except BaseException as cleanup_error:
+            metadata_evidence.report['failures'].append(
+                metadata_evidence.registration.metadata_error_evidence(cleanup_error, 'metadata_cleanup'))
+        metadata_evidence.save()
+        raise
+    metadata_evidence.cleanup()
+    report['case'] = 'full'
+    report['metadata_evidence'] = {'path': metadata_evidence.path.name, 'cleanup': metadata_evidence.report['cleanup']}
+    return report
+
+
 def run_selected_scenario(repository, env, client):
     case = raster_case(env)
     if case == 'branch-lineage':
         return {'schema_version': SCHEMA, 'case': case,
                 'branch_lineage': run_branch_lineage(repository, env, client)}
-    platform = GatewayClient(env['GATEWAY_URL'], env['ADDP_ONLINE_RASTER_POLICY_PLATFORM_TOKEN'], 30)
-    tenant = GatewayClient(env['GATEWAY_URL'], env['ADDP_ONLINE_RASTER_POLICY_TENANT_TOKEN'], 30)
-    setup = prepare_resource_policy(platform, tenant, client)
-    producer_env = {key: value for key, value in env.items() if key not in BRANCH_LINEAGE_CREDENTIALS}
-    report = run_scenario(repository, producer_env, client)
-    images = importlib.import_module('scripts.test.raster-image-export-online')
-    report['image_exports'] = images.run_scenario(sys.modules[__name__], repository, producer_env, client)
-    report['branch_lineage'] = run_branch_lineage(repository, env, client)
-    report['resource_policy'] = finish_resource_policy(platform, tenant, setup, 30)
-    report['case'] = case
-    return report
+    return run_full_scenario(repository, env, client)
 
 
 def main():
