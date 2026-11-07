@@ -136,6 +136,16 @@ Manager 的配置／签发绑定／可领取发布和最终结果切换各自保
 
 模型原始内容同步读取与受管成果读取复用同一 `expected_source` 裁决：FTP／NFS／MinIO 的 IFC／3DS／DAE／OBJ／STL 主项及全部确认依赖，在既有 `storage-stream`、`storage-assets` 和 `downloads/file` 请求内，以当前普通 User Bearer 核验完整组成及 Engine 版本。每次源 Facts／Open 前重核，不缓存 Allow，不以 Resource Ticket 或后台 Service 身份替代；连接只消费与已核验版本一致的请求级快照。源 Grant 不替代入口自身的内容或下载 Permission。未准入模型／缺少组成事实的原始读取拒绝，非模型消费不因本轮调整扩大或缩小。STL 保持 single 且仅一个必需主文件；组成完整性来自独立基础结构观察，不使用 deep 几何 `scan_complete` 推断。
 
+### 5.2.4 Develop GeoPackage 工作流的精确读写
+
+几何差集首期范围为同一非默认 Tenant 普通 User 的五份已识别 NFS GeoPackage 源，以及一次执行新建 `outputs/difference.gpkg`。保留现有十一项用户功能权限。Meta 证明每份源的类型化 DataItem 及完整文件组成，System 按当前 User 的精确 `read` 规则裁决，Develop 冻结规范输入清单。GeoPython 只读取经核验的输入内容。`metadata_target` 继续只用于元数据查看。单文件 GeoPackage 的内容边界须证明可独立读取。依赖 SQLite 日志或其他外部文件、越界引用、链接及无法证明完整组成的输入保持拒绝。
+
+单次写入批准由 System 办理。批准人必须同时具备目标引擎的管理范围和专用批准资格。批准绑定原发起人、Tenant、Engine 及版本、规范目标叶子、`create` 效果与唯一 execution。父目录 `outputs` 只参与定位，引擎级 `write` 效果、选择目录和用户自报目标均不产生独立的目录写权。首期仅接受 `mode=fail`。并发同名、已有文件、改名、相邻路径、不同执行与迟到 attempt 均不得借用这次批准。
+
+Develop 在真实读取及发布前使用同一冻结计划复核当前授权与执行租约，Runtime 不消费可用于任意业务路径的挂载或连接。本次编码使用私有暂存，最终发布保留 GeoPackage 完整文件的无覆盖语义。Provider 的 `ContentWriteEvidence` 可用于表达实际提交事实，仍须证明无覆盖发布与原执行、精确目标的归属，不能仅凭成功返回、目标路径或事后扫描推断新建。GeoPackage 现有格式、几何及保存模式规则见[矢量算子契约](workflow/矢量算子契约.md#save-geopackage-业务字段与发布契约)。
+
+成功提交后，Develop 在有效 lease 下保存同一次实际读取和新建提交的私有回执，Meta 沿可信产出执行只识别该成果，System 按[任务产出数据与初始使用权](#558-任务产出数据与初始使用权)向原发起人签发唯一精确 `read` Grant 并核定期限。签发待处理、拒绝和产出成功分别表达。签发故障只核清或续办原命令，不能重发写入。现有其他算子、引擎、发布服务和目录持续写入不纳入此首期。以上为接入规范，实施及真实授权证据仍待补齐。
+
 ### 5.3 Notebook 会话授权
 
 Notebook Session Authorization 是独立的短期用户派生事实，不是 Delegated Token。Develop 在 Session 创建的同步栈用当前 User Bearer 请求签发，随后丢弃 Bearer；授权绑定 Session、Task、Tenant、Principal、Membership、Token Family、授权版本、固定 `develop` audience、操作和期限，不保存连接或 Engine 白名单。

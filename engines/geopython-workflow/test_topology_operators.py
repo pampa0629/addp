@@ -8370,7 +8370,9 @@ def test_difference_t4_mixed_mask_and_four_refusals_independent_ogr(tmp_path,pro
     assert loaded.geometry.name!='geometry'and 'geometry'in loaded.columns and 'source_id'not in loaded.columns
     if problem is None:
         for spec in f.DIFFERENCE_FAILURES:
-            failed=execute_workflow(definition(spec[0]));assert failed['status']=='failed'and failed['error_code']=='INVALID_PARAMS',failed
+            negative_workflow = definition(spec[0])
+            assert [task['operator'] for task in negative_workflow['tasks']] == ['difference', 'load', 'load']
+            failed=execute_workflow(negative_workflow);assert failed['status']=='failed'and failed['error_code']=='INVALID_PARAMS',failed
             assert failed['diagnostic']==a.difference_diagnostic(spec),failed
             assert f.worker('verify',tmp_path,f.DIFFERENCE_CASE)==native
         return

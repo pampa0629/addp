@@ -1145,6 +1145,8 @@ GeoPackage沿普通矢量容器保存契约，不虚构RasterArtifact／COG或�
 
 `vector-topology-persistence` 的 `geometry-difference` 独立 case 仅一次成功与四次失败，沿同一非默认Tenant普通User、精确11功能权限、既有Hosted隔离生命周期及600秒总业务预算。不执行full、旧业务T4或容量。正式源/成果资源授权仍由共享专项负责；metadata_read不替代内容read，正式部署及授权证据具备前不派发真实T4，不增加管理员、NFS例外或绕过不可见血缘。
 
+首期成功链只批准一次执行新建 `outputs/difference.gpkg`，见[精确读写规范](../../addp授权上下文规范.md#524-develop-geopackage-工作流的精确读写)。授权专项先证明五份源真实可读、无内容授权或撤权后拒绝、目标无覆盖新建与范围外拒绝，以及同一发起者取得唯一成果初始 Grant 和可见双源血缘。四条算子负例是只读工作流，均保留两次 `load` 和 `difference`。范围外写入拒绝由授权专项独立验证，不能当作四项算子拒绝。
+
 手写A十二条有限有效二维点/线/面、多部件及GeometryCollection，B三条面/多面包含重复和重叠扩展范围。整体扣除得九条完整非空结果，源内点、边界点和共边线三条完全扣除而省略；保留不相交、MultiPoint部分移除、线被切成多段、MultiLineString退成单线、面切成多部件/内孔、MultiPolygon部分扣除、含面线点的完整GeometryCollection及面仅共边。B最后一行扩展首行扣除区，必须参与整体扣除；不能只用第一行或逐对拼接。预期由原生点坐标和手写几何冻结，不调用产品求并/差集生成答案，无epsilon/舍入；按契约允许的环向/部件顺序规范化比较。
 
 A显式唯一非空来源ID与FID不同且在JSON安全整数内；输出每源最多一行、按A相对顺序，仅保A全部字段名/类型/值/NULL和真实几何/CRS，不新增source_id/面积/长度/B属性列。B故意带与A同名的业务属性及空/重复a_key，不要求B标识。可空Int64/Boolean/String及普通geometry业务字段与真实几何隔离。空批、超大整数和原生计算异常沿既有Native，不冒充本轮实页覆盖。

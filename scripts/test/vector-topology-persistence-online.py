@@ -600,11 +600,16 @@ def difference_definition(sources,parent,failure=None):
     spec=next((v for v in fixture.DIFFERENCE_FAILURES if v[0]==failure),None)
     if failure is not None and spec is None:raise SuiteError('unknown difference failure')
     a,b=spec[1:3]if spec else(0,1)
-    return {'tasks':[
+    tasks = [
         {'id':'PRIVATE_DIFFERENCE_NODE','operator':'difference','depends_on':['load_a','load_b'],'params':{'input_gdf':{'$ref':'load_a'},'gdf_b':{'$ref':'load_b'},'id_field':'PRIVATE_DIFFERENCE_MISSING'if failure=='difference-id'else'a_key'}},
         {'id':'load_a','operator':'load','depends_on':[],'params':{'locator':sources[a]}},
         {'id':'load_b','operator':'load','depends_on':[],'params':{'locator':sources[b]}},
-        {'id':'save_result','operator':'save','depends_on':['PRIVATE_DIFFERENCE_NODE'],'params':{'input_df':{'$ref':'PRIVATE_DIFFERENCE_NODE'},'target_parent_locator':parent,'target_name':('failed-'+failure+'-'if failure else'')+fixture.DIFFERENCE_TARGET,'mode':'fail'}}]}
+    ]
+    if spec is None:
+        tasks.append({'id':'save_result','operator':'save','depends_on':['PRIVATE_DIFFERENCE_NODE'],
+                      'params':{'input_df':{'$ref':'PRIVATE_DIFFERENCE_NODE'},'target_parent_locator':parent,
+                                'target_name':fixture.DIFFERENCE_TARGET,'mode':'fail'}})
+    return {'tasks': tasks}
 
 
 def difference_diagnostic(spec):

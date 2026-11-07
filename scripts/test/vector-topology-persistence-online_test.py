@@ -2327,9 +2327,10 @@ class OverlayClient(InputDiagnosticClient):
               'outputs':[{'locator':target,'write_mode':'create'}]},'result':{'meta_scan_runs':[{'execution_id':'overlay-output-scan','target_locator':target,'status':'submitted'}]}}}
     def request(self,method,path,expected,body=None):
         if method=='POST' and path.endswith('/develop/executions'):
-            self.calls.append((method,path,body));definition=body['content']['workflow_definition'];name=definition['tasks'][-1]['params']['target_name']
-            if name.startswith('failed-'):
-                spec=next(v for v in self.profile['failures'] if name.startswith('failed-'+v[0]+'-'))
+            self.calls.append((method,path,body));definition=body['content']['workflow_definition']
+            spec = next((entry for entry in self.profile['failures']
+                         if definition == self.profile['definition'](self.locators, self.parent, entry[0])), None)
+            if spec is not None:
                 value={'execution_id':('overlay-failed-'if self.case==m.fixture.OVERLAY_CASE else'difference-failed-')+spec[0],'status':'failed','triggered_by':33,'outputs':{},'metadata':{},
                     'execution_config':{'content':{'workflow_definition':definition}},'error_details':{'code':'develop.workflow.invalid_params','message':'controlled','diagnostic':self.profile['diagnostic'](spec)}}
                 if self.mutate_failed:self.mutate_failed(value)
@@ -2708,6 +2709,11 @@ class DifferenceOnlineTest(unittest.TestCase):
         self.assertEqual([len(report[k])for k in('sources','outputs','failures','initial_scan_inventory','final_scan_inventory','meta_after')],[5,1,4,5,6,6])
         self.assertEqual(len(report['browser']['expected']['result']),9);self.assertEqual(len(report['raw_lineage']['edges']),2)
         self.assertEqual(sum(method=='POST'and path.endswith('/develop/executions')for method,path,_ in client.calls),5)
+        for failure in report['failures']:
+            tasks = failure['definition']['tasks']
+            self.assertEqual([task['operator'] for task in tasks], ['difference', 'load', 'load'])
+            self.assertEqual(tasks[0]['depends_on'], ['load_a', 'load_b'])
+            self.assertTrue(all('target_parent_locator' not in task['params'] and 'target_name' not in task['params'] for task in tasks))
     def test_difference_requires_resource_visibility_before_any_execution(self):
         client=DifferenceClient();client.preflight_denied=True
         with self.assertRaisesRegex(m.SuiteError,'resource authorization'):self.run_case(client)
