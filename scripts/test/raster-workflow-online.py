@@ -1899,13 +1899,19 @@ def run_branch_lineage(repository, env, client, browser_runner=raster_browser_re
         c_query = urllib.parse.urlencode({'subject_kind': 'data_item', 'direction': 'downstream', 'depth': 1,
                                            'item_id': evidence['sources']['c']['item_id']})
         c_graph = obj(reader.request('GET', '/api/v1/meta/lineage/graph?'+c_query, (200,)).payload, 'unused source graph')
-        if (c_graph.get('truncated') is not False or c_graph.get('permission_filtered') is not False
+        c_execution_ids = [obj(edge.get('evidence'), 'unused source edge evidence').get('execution_id')
+                           for edge in array(c_graph.get('edges'), 'unused source edges')]
+        if (c_graph.get('truncated') is not False or type(c_graph.get('permission_filtered')) is not bool
             or c_graph.get('subject', {}).get('item_id') != evidence['sources']['c']['item_id']
-            or [node.get('item_id') for node in c_graph.get('nodes', [])] != [evidence['sources']['c']['item_id']]
-            or c_graph.get('edges') != []):
+            or sum(node.get('item_id') == evidence['sources']['c']['item_id']
+                   for node in array(c_graph.get('nodes'), 'unused source nodes')) != 1
+            or any(not isinstance(value, str) or not value or value == identifier for value in c_execution_ids)):
             raise SuiteError('unused raster input published a branch lineage edge')
         report['unused_source_graph'] = c_graph
         persist()
+        # Full-scene mosaics can already use C. The four fully visible output
+        # graphs below must still exclude C from this exact execution, even
+        # when its historical downstream relations are hidden from the reader.
         stage = 'manager_permissions'
         browser_env = {key: env[key] for key in ('ADDP_ONLINE_ARTIFACT_DIR', 'CONSOLE_URL', 'GATEWAY_URL',
             'ADDP_ONLINE_READ_USER_USERNAME', 'ADDP_ONLINE_READ_USER_PASSWORD', 'ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN')}

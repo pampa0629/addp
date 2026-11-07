@@ -2221,8 +2221,12 @@ class RasterBranchLineageTest(unittest.TestCase):
 
     def test_scene_cleans_up_after_success_and_after_unused_input_gets_an_edge(self):
         registration = importlib.import_module('scripts.test.online-engine-registration')
-        for case, unused_edge in (('full', False), ('branch-lineage', False), ('branch-lineage', True)):
-            with self.subTest(case=case, unused_edge=unused_edge), tempfile.TemporaryDirectory() as directory:
+        cases = [('full', False, None), ('branch-lineage', False, None), ('branch-lineage', True, None),
+                 ('full', False, 'visible'), ('full', False, 'hidden'),
+                 ('full', True, 'visible'), ('full', True, 'hidden'),
+                 ('full', False, 'hidden-current-output')]
+        for case, unused_edge, history in cases:
+            with self.subTest(case=case, unused_edge=unused_edge, history=history), tempfile.TemporaryDirectory() as directory:
                 env = {
                     'ADDP_ONLINE_RASTER_CASE': case,
                     'ADDP_ONLINE_HOST': '1', 'ADDP_ONLINE_HOSTED': '1', 'GITHUB_ACTIONS': 'true', 'RUNNER_OS': 'Linux',
@@ -2252,6 +2256,13 @@ class RasterBranchLineageTest(unittest.TestCase):
                     'subject': {'item_id': 103}, 'nodes': [{'item_id': 103}], 'truncated': False,
                     'permission_filtered': False,
                     'edges': [{'evidence': {'execution_id': 'fixture-execution'}}] if unused_edge else []})
+                if history == 'visible':
+                    reader.request.return_value.payload['nodes'].append({'item_id': 901})
+                    reader.request.return_value.payload['edges'].append({
+                        'source': {'item_id': 103}, 'target': {'item_id': 901},
+                        'evidence': {'execution_id': 'earlier-mosaic-execution'}})
+                if history in {'hidden', 'hidden-current-output'}:
+                    reader.request.return_value.payload['permission_filtered'] = True
                 grants.metadata_facts.return_value = {'boundary': {'layout': 'single'}}
                 grants.grant.side_effect = lambda engine, name, *args, **kwargs: {
                     'item_fingerprint': items[engine, name]['fingerprint'],
@@ -2263,7 +2274,15 @@ class RasterBranchLineageTest(unittest.TestCase):
                     self.assertEqual(evidence['withdraw_a'], {'engine_id': 11, 'request_id': 'grant-a'})
                     self.assertNotIn('ADDP_ONLINE_TEST_USER_ACCESS_TOKEN', browser_env)
                     self.assertNotIn('ADDP_ONLINE_READ_USER_ACCESS_TOKEN', browser_env)
-                    return {**self.report, 'binding': evidence}
+                    result = {**copy.deepcopy(self.report), 'binding': evidence}
+                    if history == 'hidden-current-output':
+                        graph = result['observations'][0]['graph']
+                        graph['nodes'].append({'item_id': 103})
+                        graph['edges'].append({
+                            'source': {'item_id': 103}, 'target': {'item_id': 201},
+                            'relation_kind': 'derive', 'status': 'active',
+                            'evidence': {'execution_id': 'fixture-execution'}})
+                    return result
 
                 with (patch.object(m, 'GatewayClient', side_effect=[reader, issuer]),
                       patch.object(m, 'validate_identity', side_effect=[{'principal_id': '41'}, observed]),
@@ -2277,6 +2296,9 @@ class RasterBranchLineageTest(unittest.TestCase):
                       patch.object(m.support, 'wait_for_meta_scan', side_effect=['scan-a','scan-b','scan-c']) as source_scan):
                     if unused_edge:
                         with self.assertRaisesRegex(m.SuiteError, 'unused raster input'):
+                            m.run_branch_lineage(Path('.'), env, client, browser)
+                    elif history == 'hidden-current-output':
+                        with self.assertRaisesRegex(m.SuiteError, 'raster branch a1'):
                             m.run_branch_lineage(Path('.'), env, client, browser)
                     else:
                         report = m.run_branch_lineage(Path('.'), env, client, browser)
