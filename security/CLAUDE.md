@@ -842,3 +842,15 @@ T1/T3/构建验证：`make test-security-frontend` 退出0，260项单元、37�
 ### Service 具体保护原因的解释接入（2026-11-08）
 
 DP-06已完成代码：Service复用Common类型分类，在原HTTP错误形状内给出七原因与中英文建议，预览区域持续展示，不改变保护或授权规则。Service Go、12项真实PG、120项前端和构建、10项相关受控浏览器及Swagger65方法覆盖通过；完整模块在共享Manager验收登记失败，未算通过。新版个人HTTP／Hosted未运行，不继承前一节bd68的T4；原隔离自然到期浏览器断言同次改为精确原因／建议和持续区域，报告v44/v9与清理边界保持。详细首次失败及验证见[Service记录](../service/docs/testing/查询与要素协议.md#service-保护拒绝细分与持续提示2026-11-08)，证据 `/tmp/p145-service-reasons/verification.json`。
+
+### Service 提示修复的 v44/v9 Hosted 闭环（2026-11-08）
+
+产品提交 `e32ac5db079f7b8bc5d8f4dc7f18993ba433af86` 的新增断言已在新运行中实际验证：[Run42472539366／Job128706485615](https://github.com/pampa0629/addp/actions/runs/42472539366/job/128706485615)，attempt 1，实际源码 `5a00785ae3640c7543b4822d97d4904c15e562a8`。已独立核对 checkout、十服务 preflight、实际 Hosted 步骤及证据上传成功；条件式执行证据上传 skipped 不计通过。本轮不是沿用旧 bd68 的 T4。
+
+v44领域、v9浏览器和27阶段实际完成，耗时1961940ms。21张原始1440×900截图全部逐张目视：Service英文页面持续错误区域明确显示保护规则已到期，并给出续期／设长期有效、同步后重查的建议；旧数据清空，恢复后提示消失并重新显示五行安全结果。其余截图覆盖三组真实原因的Develop历史／Monitor同UUID、计算拒绝、Transfer准备／结果阶段拒绝、Manager检索／预览／导出与过滤。七类文案的T1/T3仍有效，但这些真实截图只新增证明Service到期原因的英文页面，不代表其余六原因或中文页面逐项完成真实UI验收。
+
+独立审计通过六份默认导出CSV原字节与42条边界回执、五组同构建新实例／更晚启动、六个精确 `metadata_read/read` 许可的签发与正式撤销；pending／errors空。领域23建／23删／0残留，浏览器两组各2建／2删／0残留；wrapper result／cleanup通过，独占Infra零残留。20格runtime与8格protocol_only保持分开；future-start仅既有PostgreSQL T2，不算HTTP／浏览器T4。多数子场景未归档原始HTTP正文，部分方式撤销回执未单列cache_control；独立审计不补造这些证据。临时read许可前提保留，不证明metadata-only字段搜索。
+
+原始产物 `/tmp/addp-ci-20261108-200020/security-archive/_temp/addp-online-42472539366/`；artifact13615761493，99成员ZIP的SHA256为 `8f86150dab54143e163090d21f3c516a56ee370a25f3aaca04da26a88b8025a6`，CRC及解压原件逐字节核对通过。独立审计 `python3 /tmp/p145-e32-hosted-audit/audit.py` 和 `python3 /tmp/p145-e32-hosted-audit/test_audit.py` 退出0，正常全量样本及43个拒绝反例通过；21图哈希／目视记录 `visual-review.json`，限定结论 `acceptance-audit.json`。首次临时审计器漏替换旧运行身份而拒绝正常样本的日志保留，修正身份输入后通过，没有放宽业务断言或重跑产品门禁。
+
+本地用户重启后已确认新版Service、账号#33及服务#6/#7可读；两者停用，前轮仅只读未执行查询。临时脚本的代理、认证响应、注销状态码和目标前置核对失败保留，不能记为产品脱敏失败或本地通过。用户已另行批准仅私有#7临时启停，当前实际输出及恢复仍待本地报告；Hosted不替代该状态收尾。后续优先完成这个既定本地闭环，再按已确认契约选择一个具体SQL形态扩展；不扩大为全部引擎／出口或静态加密已完成。
