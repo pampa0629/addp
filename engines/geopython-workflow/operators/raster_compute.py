@@ -5070,8 +5070,9 @@ def raster_viewshed(input_raster, band, elevation_unit, observer_xy,
                 path.unlink(missing_ok=True)
 
 
-def _dem_source(input_raster, elevation_unit, band, minimum_size, *, diagnostic=None):
-    dataset, horizontal_metres = _dem_admission(input_raster, elevation_unit, band, minimum_size, diagnostic=diagnostic)
+def _dem_source(input_raster, elevation_unit, band, minimum_size, *, diagnostic=None, grid_units=None):
+    dataset, horizontal_metres = _dem_admission(input_raster, elevation_unit, band, minimum_size,
+                                               diagnostic=diagnostic, grid_units=grid_units)
     def invalid(code, message):
         return diagnostic(code) if diagnostic is not None else ValueError(message)
     normalized = _numeric_output(dataset, 1)
@@ -6229,11 +6230,44 @@ def raster_stream_to_vector_d8(input_raster, stream_raster, band, stream_band):
     return _d8_stream_lines(directions, streams, source.GetGeoTransform(), horizontal_metres, source.GetProjection())
 
 
+_SLOPE_MESSAGES = {
+    key: (zh.replace('DEM 填洼', 'DEM 坡度'), en.replace('DEM depression filling', 'DEM slope'))
+    for key, (zh, en) in _FILL_MESSAGES.items()
+}
+_SLOPE_MESSAGES.update({
+    'grid': ('DEM 坡度需要已知线性单位的二维投影及保持北向轴手性的正交网格，请显式重投影',
+             'DEM slope requires a two-dimensional projected orthogonal grid with known linear units and north-up handedness; reproject explicitly'),
+    'step': ('DEM 坡度横纵网格及米制步长必须为有限正数',
+             'DEM slope grid and metre steps must be finite and positive'),
+    'slope-unit': ('DEM 坡度输出单位必须为degree或percent', 'DEM slope slope_unit must be degree or percent'),
+})
+
+
+def _slope_error(code):
+    return ValueError(_SLOPE_MESSAGES[code][1 if _DISK_LANGUAGE.get() == 'en' else 0])
+
+
 def _terrain(input_raster, elevation_unit, band, processing, **options):
-    source, horizontal_metres, _ = _dem_source(input_raster, elevation_unit, band, 3)
-    raw = gdal.DEMProcessing(str(_path()), source, processing,
-        format='GTiff', creationOptions=['TILED=YES', 'COMPRESS=DEFLATE'],
-        alg='Horn', computeEdges=False, scale=horizontal_metres, **options)
+    slope = processing == 'slope'
+    source, horizontal_metres, _ = _dem_source(input_raster, elevation_unit, band, 3,
+        diagnostic=_slope_error if slope else None,
+        grid_units=(lambda dataset: _projected_orthogonal_grid_units(dataset, lambda: _slope_error('grid'))) if slope else None)
+    transform = source.GetGeoTransform()
+    if slope:
+        # Horn operates on row/column differences. Orthogonal axis lengths give
+        # the same gradient magnitude without resampling or rotating elevations.
+        dx = _sqrt_fraction(Fraction(transform[1])**2 + Fraction(transform[4])**2, error=lambda: _slope_error('step'))
+        dy = _sqrt_fraction(Fraction(transform[2])**2 + Fraction(transform[5])**2, error=lambda: _slope_error('step'))
+        if any(not math.isfinite(step * horizontal_metres) or step * horizontal_metres <= 0 for step in (dx, dy)):
+            raise _slope_error('step')
+        source.SetGeoTransform((transform[0], dx, 0., transform[3], 0., -dy))
+    try:
+        raw = gdal.DEMProcessing(str(_path()), source, processing,
+            format='GTiff', creationOptions=['TILED=YES', 'COMPRESS=DEFLATE'],
+            alg='Horn', computeEdges=False, scale=horizontal_metres, **options)
+    finally:
+        if slope:
+            source.SetGeoTransform(transform)
     if raw is None:
         raise ValueError('GDAL terrain analysis failed')
     output = _numeric_output(source, 1)
@@ -6872,7 +6906,7 @@ def raster_curvature(input_raster, band, elevation_unit, method='mean'):
 
 def raster_slope(input_raster, elevation_unit, band=1, slope_unit='degree'):
     if slope_unit not in ('degree', 'percent'):
-        raise ValueError('slope_unit must be degree or percent')
+        raise _slope_error('slope-unit')
     return _terrain(input_raster, elevation_unit, band, 'slope', slopeFormat=slope_unit)
 
 
@@ -7003,7 +7037,7 @@ _SPECS = [
     (raster_tri, OperatorCategory.RASTER_TERRAIN, 'DEM 地形崎岖度', [_INPUT(), _param('band', 'int', '显式高程数据波段；固定3×3 Riley中心与8邻居高差平方和开方，不除以8'), _param('elevation_unit', 'str', '显式高程单位；输出米，完整九点有效才计算，合法零保留', enum=list(_ELEVATION_METRES))], 'raster', ['read']),
     (raster_roughness, OperatorCategory.RASTER_TERRAIN, 'DEM 地形粗糙度', [_INPUT(), _param('band', 'int', '显式高程数据波段；固定3×3包含中心的九点最大高程减最小高程，不取半高差'), _param('elevation_unit', 'str', '显式高程单位；输出米，完整九点有效才计算，合法零保留', enum=list(_ELEVATION_METRES))], 'raster', ['read']),
     (raster_curvature, OperatorCategory.RASTER_TERRAIN, 'DEM 曲率', [_INPUT(), _param('band', 'int', '显式高程数据波段；完整有效3×3九点等权二次曲面拟合，凸正凹负'), _param('elevation_unit', 'str', '显式高程单位；输出每米（1/metre），边缘及无效邻域NoData', enum=list(_ELEVATION_METRES)), _param('method', 'str', 'mean：平均曲率；profile：剖面曲率；tangential：切向曲率；plan：平面曲率；方向方法九点等高平地0、其他零梯度NoData', 'mean', False, enum=['mean', 'profile', 'tangential', 'plan'])], 'raster', ['read']),
-    (raster_slope, OperatorCategory.RASTER_TERRAIN, 'DEM 坡度', [*_DEM_PARAMS(), _param('slope_unit', 'str', '坡度输出单位', 'degree', False, enum=['degree', 'percent'])], 'raster', ['read']),
+    (raster_slope, OperatorCategory.RASTER_TERRAIN, 'DEM 坡度', [*_DEM_PARAMS(), _param('slope_unit', 'str', '坡度输出单位；北向矩形／严格正交旋转网格按实际轴长计算Horn 3×3，保留完整原网格', 'degree', False, enum=['degree', 'percent'])], 'raster', ['read']),
     (raster_aspect, OperatorCategory.RASTER_TERRAIN, 'DEM 坡向', _DEM_PARAMS(), 'raster', ['read']),
     (raster_hillshade, OperatorCategory.RASTER_TERRAIN, 'DEM 地形晕渲', [*_DEM_PARAMS(), _param('azimuth', 'float', '光照方位角，北起顺时针 [0,360)', 315., False), _param('altitude', 'float', '光照高度角 (0,90]', 45., False)], 'raster', ['read']),
     (raster_contour, OperatorCategory.RASTER_TERRAIN, 'DEM 等值线', [*_DEM_PARAMS(), _param('interval', 'float', '等高距（米），与指定高程二选一', None, False), _param('levels', 'list[float]', '严格递增的指定高程（米）', None, False)], 'GeoDataFrame', ['read']),

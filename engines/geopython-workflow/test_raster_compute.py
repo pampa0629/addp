@@ -23072,5 +23072,182 @@ def test_dem_sight_orthogonal_does_not_relax_other_dem_grid_admission(tmp_path):
     path=create_raster(tmp_path/'other-dem.tif',np.zeros((3,3)),_SIGHT_ORTHOGONAL_GRIDS[1],'EPSG:3857')
     with raster_workspace():
         source=raster_load(source_plan(path))
-        with pytest.raises(ValueError,match='north-up grid'): c.raster_slope(source,'metre',1)
+        with pytest.raises(ValueError,match='north-up grid'): c.raster_aspect(source,'metre',1)
         with pytest.raises(ValueError,match='北向无旋转'): c.raster_fill_depressions(source,1,'metre')
+
+
+_SLOPE_ORTHOGONAL_GRIDS = [
+    (600000., 2., 0., 4000000., 0., -3.),
+    (600000., 3., 8., 4000000., 4., -6.),
+    (600000., 0., 3., 4000000., 2., 0.),
+    (600000., -2., 0., 4000000., 0., 3.),
+    (float(2**60), 3., -8., float(2**60), -4., -6.),
+]
+
+
+@pytest.mark.parametrize('grid', _SLOPE_ORTHOGONAL_GRIDS)
+@pytest.mark.parametrize('crs', ['EPSG:32617', 'EPSG:2277', '+proj=utm +zone=17 +datum=WGS84 +units=ft +type=crs'])
+@pytest.mark.parametrize('slope_unit', ['degree', 'percent'])
+def test_dem_slope_orthogonal_plane_metric_axes_second_band_and_cog(tmp_path, grid, crs, slope_unit):
+    reference = osr.SpatialReference(); assert reference.SetFromUserInput(crs) == 0
+    factor = reference.GetLinearUnits()
+    rows, cols = np.indices((9, 11))
+    # A known world-coordinate plane, constructed from relative affine offsets
+    # so an enormous stored origin cannot erase centre-to-centre differences.
+    east, north = .25, -.5
+    z = 10 + factor * (east * (cols * grid[1] + rows * grid[2]) + north * (cols * grid[4] + rows * grid[5]))
+    path = create_raster(tmp_path/'slope-plane.tif', np.stack([np.full(z.shape, -9999.), z/.3048]), grid, crs)
+    ds = gdal.Open(str(path), gdal.GA_Update); ds.GetRasterBand(2).SetUnitType('foot'); ds = None
+    before = path.read_bytes()
+    expected = math.hypot(east, north)
+    expected = math.degrees(math.atan(expected)) if slope_unit == 'degree' else 100*expected
+    with raster_workspace():
+        result = raster_slope(raster_load(source_plan(path)), 'foot', band=2, slope_unit=slope_unit)
+        target = tmp_path/'slope-plane.cog.tif'
+        declared = raster_save(result, target_plan(target), profile='cog', blocksize=128)
+        assert type(declared['size_bytes']) is int and declared['size_bytes'] == target.stat().st_size > 0
+        assert validate_cog(raster_load(source_plan(target)))['valid']
+        ds = gdal.Open(str(target)); band = ds.GetRasterBand(1); values = read_band_values(band)
+        valid = np.zeros(z.shape, bool); valid[1:-1, 1:-1] = True
+        np.testing.assert_array_equal(band.GetMaskBand().ReadAsArray() != 0, valid)
+        np.testing.assert_allclose(values[valid], expected, atol=4e-4, rtol=0)
+        assert np.isnan(values[~valid]).all()
+        assert ds.GetGeoTransform() == grid and ds.GetSpatialRef().IsSame(reference)
+        assert band.GetUnitType() == slope_unit and band.DataType == gdal.GDT_Float64
+        assert ds.GetMetadata('IMAGE_STRUCTURE')['LAYOUT'] == 'COG'
+        band = ds = None
+    assert path.read_bytes() == before
+
+
+@pytest.mark.parametrize('grid', _SLOPE_ORTHOGONAL_GRIDS)
+@pytest.mark.parametrize('slope_unit', ['degree', 'percent'])
+def test_dem_slope_orthogonal_horn_full_block_pixels_north_up_bits_and_mask(tmp_path, grid, slope_unit):
+    rows, cols = np.indices((519, 523))
+    values = (cols % 13 + .25 * (rows % 17)**2 + (cols*rows) % 7).astype(float)
+    values[127, 129] = np.nan; values[511, 512] = np.nan
+    path = create_raster(tmp_path/'slope-blocks.tif', values, grid, 'EPSG:3857', nodata=math.nan)
+    before = path.read_bytes()
+    # Independent GDAL reference: all old north-up Horn arithmetic retained,
+    # including Float32 elevation quantization and output rounding.
+    dx, dy = math.hypot(grid[1], grid[4]), math.hypot(grid[2], grid[5])
+    reference = gdal.GetDriverByName('MEM').Create('', 523, 519, 1, gdal.GDT_Float64)
+    reference.SetGeoTransform((0, dx, 0, 0, 0, -dy))
+    reference.GetRasterBand(1).SetNoDataValue(math.nan); reference.GetRasterBand(1).WriteArray(values)
+    original = gdal.DEMProcessing('', reference, 'slope', format='MEM', alg='Horn', computeEdges=False, scale=1., slopeFormat=slope_unit)
+    wanted = original.ReadAsArray().astype(float)
+    wanted[original.GetRasterBand(1).GetMaskBand().ReadAsArray() == 0] = np.nan
+    original = reference = None
+    with raster_workspace():
+        result = raster_slope(raster_load(source_plan(path)), 'metre', slope_unit=slope_unit)
+        target = tmp_path/'blocks.cog.tif'
+        raster_save(result, target_plan(target), profile='cog', blocksize=128)
+        ds = gdal.Open(str(target)); band = ds.GetRasterBand(1)
+        actual = read_band_values(band)
+        np.testing.assert_array_equal(actual, wanted)
+        np.testing.assert_array_equal(actual[np.isfinite(wanted)].view(np.uint64), wanted[np.isfinite(wanted)].view(np.uint64))
+        np.testing.assert_array_equal(band.GetMaskBand().ReadAsArray() != 0, np.isfinite(wanted))
+        assert ds.GetGeoTransform() == grid and ds.GetSpatialRef().GetAuthorityCode(None) == '3857'
+        assert ds.GetMetadata('IMAGE_STRUCTURE')['LAYOUT'] == 'COG'
+        band = ds = None
+    assert path.read_bytes() == before
+
+
+@pytest.mark.parametrize('fault', ['nodata', 'mask', 'alpha', 'nan', 'inf', 'all-invalid', 'flat'])
+def test_dem_slope_orthogonal_validity_complete_nine_and_legal_zero(tmp_path, fault):
+    rows, cols = np.indices((9, 9)); values = (2*rows + cols).astype(float); alpha = np.full(values.shape, 128.)
+    if fault == 'flat': values[:] = 5.
+    if fault == 'nodata': values[4, 4] = -9999.
+    if fault == 'alpha': alpha[4, 4] = 0
+    if fault in ('nan', 'inf'): values[4, 4] = math.nan if fault == 'nan' else math.inf
+    if fault == 'all-invalid': values[:] = -9999.
+    path = create_raster(tmp_path/'slope-invalid.tif', np.stack([values, alpha]), _SLOPE_ORTHOGONAL_GRIDS[1], 'EPSG:3857')
+    ds = gdal.Open(str(path), gdal.GA_Update); ds.GetRasterBand(2).SetColorInterpretation(gdal.GCI_AlphaBand)
+    if fault == 'mask':
+        with gdal.config_option('GDAL_TIFF_INTERNAL_MASK', 'YES'): ds.CreateMaskBand(gdal.GMF_PER_DATASET)
+        valid = np.full(values.shape, 255, np.uint8); valid[4, 4] = 0; ds.GetRasterBand(1).GetMaskBand().WriteArray(valid)
+    ds = None
+    before = path.read_bytes()
+    with raster_workspace():
+        result = raster_slope(raster_load(source_plan(path)), 'metre')
+        ds = gdal.Open(str(result.path)); actual = read_band_values(ds.GetRasterBand(1))
+        valid = np.zeros(values.shape, bool); valid[1:-1, 1:-1] = True
+        if fault not in ('flat', 'all-invalid'): valid[3:6, 3:6] = False
+        if fault == 'all-invalid': valid[:] = False
+        np.testing.assert_array_equal(np.isfinite(actual), valid)
+        if fault == 'flat': np.testing.assert_array_equal(actual[valid], 0.)
+        ds = None
+    assert path.read_bytes() == before
+
+
+@pytest.mark.parametrize('language', ['zh-cn', 'en'])
+@pytest.mark.parametrize('grid', [
+    (0, 3, 8, 0, 4, math.nextafter(-6., 0.)),
+    (0, 1, .125, 0, 0, -1), (0, 3, -8, 0, 4, 6),
+    (0, 1, 0, 0, 0, 1), (0, 0, 0, 0, 0, 0),
+])
+def test_dem_slope_orthogonal_exact_grid_refusal_before_normalizing(tmp_path, monkeypatch, language, grid):
+    import operators.raster_compute as c
+    path = create_raster(tmp_path/'slope-bad.tif', np.ones((5, 5)), grid, 'EPSG:3857')
+    monkeypatch.setattr(gdal, 'DEMProcessing', lambda *a, **k: pytest.fail('invalid grid reached Horn'))
+    with raster_workspace(), raster_error_language(language):
+        source = raster_load(source_plan(path)); before = set(source.workspace.iterdir())
+        with pytest.raises(ValueError) as error: raster_slope(source, 'metre')
+        assert str(error.value) == c._SLOPE_MESSAGES['grid'][language == 'en']
+        assert set(source.workspace.iterdir()) == before
+
+
+@pytest.mark.parametrize('language', ['zh-cn', 'en'])
+@pytest.mark.parametrize('case', ['direct', 'bad-grid', 'bad-unit', 'save-existing'])
+def test_dem_slope_orthogonal_async_full_cog_language_and_cleanup(tmp_path, monkeypatch, language, case):
+    import api_server, workflow_engine, operators.raster_compute as c
+    grid = (100., 3., 8., 200., 4., -6.)
+    if case == 'bad-grid': grid = (100., 3., 8., 200., 4., math.nextafter(-6., 0.))
+    path = create_raster(tmp_path/'source.tif', np.tile(np.arange(9, dtype=float), (9, 1)), grid, 'EPSG:3857')
+    before = path.read_bytes(); target = tmp_path/'slope.cog.tif'
+    if case == 'save-existing': target.write_bytes(b'original result')
+    tasks = [
+        {'id': 'load', 'operator': 'raster_load', 'depends_on': [], 'params': {'access_plan': source_plan(path)}},
+        {'id': 'slope', 'operator': 'raster_slope', 'depends_on': ['load'], 'params': {'input_raster': {'$ref': 'load'}, 'elevation_unit': 'metre', 'slope_unit': 'radian' if case == 'bad-unit' else 'percent'}},
+        {'id': 'save', 'operator': 'raster_save', 'depends_on': ['slope'], 'params': {'input_raster': {'$ref': 'slope'}, 'access_plan': target_plan(target), 'profile': 'cog'}},
+    ]
+    workspaces = []; original = workflow_engine._execute_operator
+    def capture(name, params):
+        if name == 'raster_slope': workspaces.append(params['input_raster'].workspace)
+        return original(name, params)
+    monkeypatch.setattr(workflow_engine, '_execute_operator', capture)
+    client = api_server.app.test_client()
+    assert client.post('/api/operators/raster_slope/invoke', json={'params': {}}).status_code == 403
+    response = client.post('/api/workflow', headers={'Accept-Language': language}, json={'workflow_def': {'tasks': tasks}, 'input_data': {}, 'runtime': {'tenant_id': 7, 'execution_authorization': {'id': 1, 'effects': ['read', 'write']}}})
+    assert response.status_code == 202, response.json
+    deadline = time.monotonic()+15
+    while time.monotonic() < deadline:
+        status = client.get('/api/executions/'+response.json['execution_id'], headers={'Accept-Language': 'en' if language == 'zh-cn' else 'zh-cn'}).json
+        if status['status'] in ('success', 'failed'): break
+        time.sleep(.01)
+    assert status['status'] == ('success' if case == 'direct' else 'failed'), status
+    assert workspaces and all(not workspace.exists() for workspace in workspaces) and path.read_bytes() == before
+    if case == 'direct':
+        ds = gdal.Open(str(target)); band = ds.GetRasterBand(1); actual = read_band_values(band)
+        valid = np.zeros((9, 9), bool); valid[1:-1, 1:-1] = True
+        np.testing.assert_allclose(actual[valid], 20., atol=1e-5, rtol=0)
+        np.testing.assert_array_equal(band.GetMaskBand().ReadAsArray() != 0, valid)
+        assert np.isnan(actual[~valid]).all() and ds.GetGeoTransform() == grid
+        assert band.GetUnitType() == 'percent' and ds.GetMetadata('IMAGE_STRUCTURE')['LAYOUT'] == 'COG'
+        band = ds = None
+        assert json.loads(status['result'])['size_bytes'] == target.stat().st_size > 0
+    elif case == 'save-existing': assert target.read_bytes() == b'original result'
+    else:
+        assert not target.exists()
+        cause = c._SLOPE_MESSAGES['grid' if case == 'bad-grid' else 'slope-unit'][language == 'en']
+        assert status['error'] == '任务 slope 执行失败: '+cause
+
+
+@pytest.mark.parametrize('grid', _SLOPE_ORTHOGONAL_GRIDS[1:])
+def test_dem_slope_orthogonal_does_not_relax_other_terrain_or_d8(tmp_path, grid):
+    import operators.raster_compute as c
+    path = create_raster(tmp_path/'other-terrain.tif', np.ones((5, 5)), grid, 'EPSG:3857')
+    with raster_workspace():
+        source = raster_load(source_plan(path))
+        for operation, args in [(c.raster_aspect, ('metre',)), (c.raster_hillshade, ('metre',)),
+                                (c.raster_flow_direction_d8, (1, 'metre')), (c.raster_fill_depressions, (1, 'metre'))]:
+            with pytest.raises(ValueError): operation(source, *args)
