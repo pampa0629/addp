@@ -3508,6 +3508,66 @@ def validate_raster_surface_area(repository: Path, registered: set[str]) -> None
 
 
 
+def validate_raster_slope_orthogonal(repository: Path, registered: set[str]) -> None:
+    import ast
+    suite='raster-slope-orthogonal-persistence'
+    if suite not in registered:return
+    workflow=(repository/'.github/workflows/online-t4-gates.yml').read_text()
+    job=re.search(r'(?ms)^  raster-slope-orthogonal-hosted-t4:\n(.*?)(?=^  [a-z][a-z0-9-]*:\n|\Z)',workflow)
+    if (job is None or any(text not in job[1]for text in(
+        "if: github.event_name == 'workflow_dispatch' && inputs.suite == 'raster-slope-orthogonal-persistence'",
+        'runs-on: ubuntu-24.04','cancel-in-progress: false','nfs-kernel-server nfs-common',
+        'bash scripts/test/online-hosted-raster-slope-orthogonal-gate.sh --check-only',
+        'run: bash scripts/test/online-hosted-raster-slope-orthogonal-gate.sh','if: always()'))
+        or "&& inputs.suite != 'raster-slope-orthogonal-persistence'"not in workflow or load_suite_registry(repository)[suite].nightly):
+        raise RegistrationError('orthogonal slope requires an isolated manual Hosted NFS job')
+    source_input=re.search(r'(?ms)^      slope_orthogonal_source_commit:\n(.*?)(?=^      [a-z][a-z0-9_]*:\n|^jobs:\n|\Z)',workflow)
+    fixed_source_fragments=(
+        'name: Validate requested orthogonal slope source commit',
+        '[[ "$SOURCE_COMMIT" =~ ^[0-9a-f]{40}$ ]]',
+        'ref: ${{ inputs.slope_orthogonal_source_commit }}',
+        'name: Verify orthogonal slope source ancestry',
+        'SOURCE_COMMIT: ${{ inputs.slope_orthogonal_source_commit }}',
+        'DISPATCH_COMMIT: ${{ github.sha }}',
+        '[ "$(git rev-parse HEAD)" = "$SOURCE_COMMIT" ]',
+        'git merge-base --is-ancestor "$SOURCE_COMMIT" "$DISPATCH_COMMIT"',
+        "printf 'Orthogonal slope source commit=%s; dispatch commit=%s")
+    if (source_input is None or 'type: string'not in source_input[1] or 'required: false'not in source_input[1]
+        or any(fragment not in job[1]for fragment in fixed_source_fragments)
+        or job[1].index('Validate requested orthogonal slope source commit')>job[1].index('Check out repository')
+        or job[1].index('Verify orthogonal slope source ancestry')>job[1].index('Set up Go')):
+        raise RegistrationError('orthogonal slope requires an explicit full ancestor source SHA and exact checkout')
+    make=(repository/'Makefile').read_text()
+    if ('test_online_slope_orthogonal_fixture.py'not in make_target_commands(make,'test-geopython-workflow')
+        or 'test-raster-slope-orthogonal-online-runner:'not in make_target_commands(make,'test-raster-online-runner')):
+        raise RegistrationError('orthogonal slope must use standard Native/Runner aggregates')
+    required={
+        'scripts/test/online-hosted-raster-slope-orthogonal-gate.sh':('ADDP_ONLINE_TEST_TIMEOUT_SECONDS=600','--suite raster-slope-orthogonal-persistence','--wait-protection-owners develop,manager','start_online_geopython_runtime','online_raster_lineage.py prepare','online-raster-slope-orthogonal-fixture.py stop'),
+        'business/scripts/online-raster-slope-orthogonal-fixture.py':('def reference','independent_horn_verified','full_check=True','def prepare_oracle','def cleanup_oracle','def archive_files','actual north-up COG contrast differs','source file changed'),
+        'scripts/test/raster-slope-orthogonal-persistence-online.py':('COUNTS=(16,36,712,53)','view.run_scenario','raster.strict_sizes','def check_and_archive','def validate_frozen','ViewshedMetadata','source_scan_client=orth.source_scan_client','check_scan_inventory=orth.check_scan_inventory'),
+        'scripts/test/raster-sight-orthogonal-persistence-online.py':('scan_preparation=True','source_grant_participants','def source_scan_client','def check_scan_inventory'),
+        'scripts/test/raster-viewshed-persistence-online.py':('profile.COUNTS','profile.validate_persisted','profile.check_and_archive','lineage.collect','lineage.verify_archive','readonly.no_publication','BEGIN READ ONLY','ExactFileMetadataGrants','query language rewrote stored failure','source or prior target Meta snapshot changed'),
+        'scripts/utils/online_raster_lineage.py':("'raster-slope-orthogonal-persistence': 'slope-orthogonal-lineage'",),
+        'system/backend/cmd/online-test-fixture/main.go':('case \"raster-slope-orthogonal-persistence\", \"raster-sight-orthogonal-persistence\", \"sql-pool-consumer-flow\", \"transfer-continuous-events\":',),
+        'system/backend/cmd/online-test-fixture/main_test.go':('TestSlopeOrthogonalPreparationKeepsConsumerTwelveAndSeparateThirteen',),
+        'engines/geopython-workflow/test_online_slope_orthogonal_fixture.py':('test_slope_orthogonal_sixteen_real_chains_and_712_complete_original_checks','checks==712','test_slope_orthogonal_exact_failure_node_language_and_zero_private_output','test_slope_orthogonal_corrupt_actual_or_expected_never_passes'),
+        'Makefile':('scripts/test/raster-slope-orthogonal-persistence-online_test.py','scripts/test/online-raster-slope-orthogonal-fixture_test.py','scripts/test/online-hosted-raster-slope-orthogonal-gate_test.py')}
+    for name,fragments in required.items():
+        path=repository/name
+        if not path.is_file()or any(not source_contract_contains(path.read_text(),fragment,repository)for fragment in fragments):raise RegistrationError('orthogonal slope registration/evidence is incomplete: '+name)
+    def literal(path,name):
+        try:
+            tree=ast.parse((repository/path).read_text())
+            return next(ast.literal_eval(node.value)for node in tree.body if isinstance(node,ast.Assign)and any(isinstance(t,ast.Name)and t.id==name for t in node.targets))
+        except (StopIteration,ValueError,SyntaxError):raise RegistrationError('orthogonal slope matrix is invalid')from None
+    groups=literal('business/scripts/online-raster-slope-orthogonal-fixture.py','GROUPS')
+    failures=literal('scripts/test/raster-slope-orthogonal-persistence-online.py','FAILURES')
+    if groups!=('north','rotated','quarter-turn','half-turn','feet','survey','coverage-cross-block','invalid') or set(failures)!=set(('shear','near-orthogonal','reflect-column','reflect-row','geographic','no-crs','no-grid','degenerate','band-zero','band-high','alpha','unit','unit-bool','unit-conflict','unit-unknown','scale','offset','slope-unit')):
+        raise RegistrationError('orthogonal slope requires eight fixed groups and eighteen bilingual categories')
+    fixture=(repository/'business/scripts/online-raster-slope-orthogonal-fixture.py').read_text()
+    if "for g in GROUPS for u in('degree','percent')"not in fixture or "'expected_array_count':16"not in fixture:
+        raise RegistrationError('orthogonal slope requires degree/percent and sixteen frozen complete arrays')
+
 def validate_raster_sight_orthogonal(repository: Path, registered: set[str]) -> None:
     import ast
     suite='raster-sight-orthogonal-persistence'
@@ -3547,7 +3607,7 @@ def validate_raster_sight_orthogonal(repository: Path, registered: set[str]) -> 
         'scripts/test/raster-sight-orthogonal-persistence-online.py':('COUNTS=(16,40,776,57)','view.run_scenario','fixture.parse_csv','raster.strict_sizes','def check_and_archive','def validate_frozen','ViewshedMetadata','file_contract','scan_preparation=True','source_grant_participants','def source_scan_client','def check_scan_inventory'),
         'scripts/test/raster-viewshed-persistence-online.py':('profile.COUNTS','profile.validate_persisted','profile.check_and_archive','lineage.collect','lineage.verify_archive','readonly.no_publication','BEGIN READ ONLY','ExactFileMetadataGrants','query language rewrote stored failure','source or prior target Meta snapshot changed'),
         'scripts/utils/online_raster_lineage.py':("'raster-sight-orthogonal-persistence': 'sight-orthogonal-lineage'",),
-        'system/backend/cmd/online-test-fixture/main.go':('case \"raster-sight-orthogonal-persistence\", \"sql-pool-consumer-flow\", \"transfer-continuous-events\":',),
+        'system/backend/cmd/online-test-fixture/main.go':('case \"raster-slope-orthogonal-persistence\", \"raster-sight-orthogonal-persistence\", \"sql-pool-consumer-flow\", \"transfer-continuous-events\":',),
         'system/backend/cmd/online-test-fixture/main_test.go':('TestSightOrthogonalPreparationKeepsConsumerTwelveAndSeparateThirteen',),
         'engines/geopython-workflow/test_online_sight_orthogonal_fixture.py':('test_sight_orthogonal_sixteen_real_chains_and_776_complete_original_checks','checks==776','test_sight_orthogonal_exact_failure_node_language_and_zero_private_output','test_sight_orthogonal_corrupt_actual_or_expected_never_passes'),
         'Makefile':('scripts/test/raster-sight-orthogonal-persistence-online_test.py','scripts/test/online-raster-sight-orthogonal-fixture_test.py','scripts/test/online-hosted-raster-sight-orthogonal-gate_test.py')}
@@ -6610,7 +6670,7 @@ def validate_raster_nibble_capacity_profile(repository: Path, registered: set[st
             'triggered_by', 'scan_ids(client)', 'policy_restored', 'previous_artifacts_unchanged',
             'private_allocated_peak_bytes', 'runtime_container_id'),
         'system/backend/cmd/online-test-fixture/main.go': (
-            'case "raster-workflow", "raster-nibble-capacity", "raster-sight-orthogonal-persistence":',
+            'case "raster-workflow", "raster-nibble-capacity", "raster-slope-orthogonal-persistence", "raster-sight-orthogonal-persistence":',
             'suite == "raster-workflow-capacity" || suite == "raster-nibble-capacity"'),
         'system/backend/cmd/online-test-fixture/main_test.go': (
             'TestCapacityFixtureSessionLastsBeyondTheThreeHourBudget',
@@ -7744,6 +7804,7 @@ def check_registration(repository: Path) -> None:
     validate_raster_profile_curvature(repository, registered)
     validate_raster_cut_fill(repository, registered)
     validate_raster_surface_area(repository, registered)
+    validate_raster_slope_orthogonal(repository, registered)
     validate_raster_sight_orthogonal(repository, registered)
     validate_raster_viewshed(repository, registered)
     validate_raster_line_of_sight(repository, registered)

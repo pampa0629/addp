@@ -531,7 +531,7 @@ def run_scenario(repository, env, client, physical_runner=physical, diagnostic_r
             for language in ('zh-cn', 'en'):
                 stages.append({'problem': problem, 'language': language, 'status': 'running'})
                 progress('running')
-                dag = profile.definition(sources, parent, 'flat.cog.tif', invalid=problem, language=language)
+                dag = profile.definition(sources, parent, fixture.TARGETS[0], invalid=problem, language=language)
                 identifier, execution, monitor = submit(dag, language, 'failed')
                 for terminal in (execution, monitor):
                     readonly.no_publication(terminal)

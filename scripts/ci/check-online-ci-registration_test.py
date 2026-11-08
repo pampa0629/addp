@@ -597,6 +597,81 @@ class OnlineCIRegistrationTest(unittest.TestCase):
 
 
     @staticmethod
+    def slope_orthogonal_source_steps():
+        workflow=(SCRIPT.parents[2]/'.github/workflows/online-t4-gates.yml').read_text()
+        job=re.search(r'(?ms)^  raster-slope-orthogonal-hosted-t4:\n(.*?)(?=^  [a-z][a-z0-9-]*:\n|\Z)',workflow)[1]
+        steps={}
+        for name,body in re.findall(r'(?ms)^      - name: ([^\n]+)\n(.*?)(?=^      - name: |\Z)',job):
+            run=re.search(r'(?ms)^        run: \|\n(.*)',body)
+            if run:steps[name]=textwrap.dedent(run[1])
+        return steps
+
+    def test_slope_orthogonal_source_sha_rejects_empty_short_uppercase_and_ref(self):
+        import os
+        script=self.slope_orthogonal_source_steps()['Validate requested orthogonal slope source commit']
+        for source,accepted in (('',False),('d240f16bc',False),('A'*40,False),('a'*39,False),
+            ('a'*41,False),('refs/heads/main',False),('a'*40+'\n',False),
+            ('$(echo unsafe)',False),('d240f16bc9c8838d38f803b8b07fdb488fa0de89',True)):
+            result=subprocess.run(['bash','-euc',script],env={**os.environ,'SOURCE_COMMIT':source},capture_output=True,text=True)
+            with self.subTest(source=source):self.assertEqual(result.returncode==0,accepted,result.stderr)
+
+    def test_slope_orthogonal_checkout_and_ancestry_fail_before_business(self):
+        import os
+        script=self.slope_orthogonal_source_steps()['Verify orthogonal slope source ancestry']
+        with tempfile.TemporaryDirectory()as directory:
+            repo=Path(directory)
+            def git(*args):return subprocess.check_output(['git',*args],cwd=repo,stderr=subprocess.DEVNULL).decode().strip()
+            git('init','--initial-branch=main');git('config','user.name','source-contract');git('config','user.email','source-contract@example.invalid')
+            git('commit','--allow-empty','-m','source');source=git('rev-parse','HEAD')
+            git('commit','--allow-empty','-m','dispatch');dispatch=git('rev-parse','HEAD')
+            tree=git('rev-parse','HEAD^{tree}');foreign=git('commit-tree',tree,'-m','unrelated source')
+            for selected,head,planned,accepted in ((source,source,dispatch,True),(dispatch,source,dispatch,False),
+                (foreign,foreign,dispatch,False),(source,source,foreign,False)):
+                git('checkout','--detach',head)
+                result=subprocess.run(['bash','-euc',script],cwd=repo,env={**os.environ,'SOURCE_COMMIT':selected,'DISPATCH_COMMIT':planned},capture_output=True,text=True)
+                with self.subTest(selected=selected,head=head,dispatch=planned):
+                    self.assertEqual(result.returncode==0,accepted,result.stderr)
+                    if accepted:self.assertIn(f'source commit={selected}; dispatch commit={planned}',result.stdout)
+
+    def test_slope_orthogonal_requires_manual_fixed_slope_matrix(self):
+        source=SCRIPT.parents[2]
+        paths=('Makefile','.github/workflows/online-t4-gates.yml','scripts/test/online-gate.py',
+            'scripts/test/online-hosted-raster-slope-orthogonal-gate.sh',
+            'business/scripts/online-raster-slope-orthogonal-fixture.py',
+            'scripts/test/raster-slope-orthogonal-persistence-online.py',
+            'scripts/test/raster-viewshed-persistence-online.py',
+            'scripts/utils/online_raster_lineage.py',
+            'engines/geopython-workflow/test_online_slope_orthogonal_fixture.py',
+            'system/backend/cmd/online-test-fixture/main.go','system/backend/cmd/online-test-fixture/main_test.go')
+        for relative in paths:
+            target=self.repository/relative;target.parent.mkdir(parents=True,exist_ok=True);shutil.copy2(source/relative,target)
+        extra=self.repository/'scripts/test/raster-sight-orthogonal-persistence-online.py';shutil.copy2(source/'scripts/test/raster-sight-orthogonal-persistence-online.py',extra)
+        registered={'raster-slope-orthogonal-persistence'}
+        CHECK.validate_raster_slope_orthogonal(self.repository,registered)
+        for relative,fragment in ((paths[0],'test_online_slope_orthogonal_fixture.py'),
+            (paths[1],"inputs.suite != 'raster-slope-orthogonal-persistence'"),
+            (paths[1],'      slope_orthogonal_source_commit:\n'),
+            (paths[1],'[[ "$SOURCE_COMMIT" =~ ^[0-9a-f]{40}$ ]]'),
+            (paths[1],'ref: ${{ inputs.slope_orthogonal_source_commit }}'),
+            (paths[1],'[ "$(git rev-parse HEAD)" = "$SOURCE_COMMIT" ]'),
+            (paths[1],'git merge-base --is-ancestor "$SOURCE_COMMIT" "$DISPATCH_COMMIT"'),
+            (paths[1],"printf 'Orthogonal slope source commit=%s; dispatch commit=%s"),
+            (paths[3],'ADDP_ONLINE_TEST_TIMEOUT_SECONDS=600'),
+            (paths[3],'--suite raster-slope-orthogonal-persistence'),
+            (paths[5],'source_scan_client=orth.source_scan_client'),(paths[5],'check_scan_inventory=orth.check_scan_inventory'),
+            (paths[4],"'north','rotated','quarter-turn','half-turn'"),
+            (paths[5],'COUNTS=(16,36,712,53)'),(paths[5],'raster.strict_sizes'),
+            (paths[6],'profile.validate_persisted'),(paths[6],'lineage.verify_archive'),
+            (paths[7],"'raster-slope-orthogonal-persistence': 'slope-orthogonal-lineage'"),
+            (paths[8],'checks==712'),
+            (paths[9],'case \"raster-slope-orthogonal-persistence\", \"raster-sight-orthogonal-persistence\", \"sql-pool-consumer-flow\", \"transfer-continuous-events\":'),
+            (paths[10],'TestSlopeOrthogonalPreparationKeepsConsumerTwelveAndSeparateThirteen')):
+            target=self.repository/relative;original=target.read_text();self.assertIn(fragment,original)
+            target.write_text(original.replace(fragment,''if relative==paths[4]else'omitted'))
+            with self.subTest(fragment=fragment),self.assertRaises(CHECK.RegistrationError):CHECK.validate_raster_slope_orthogonal(self.repository,registered)
+            target.write_text(original)
+
+    @staticmethod
     def orthogonal_source_steps():
         workflow=(SCRIPT.parents[2]/'.github/workflows/online-t4-gates.yml').read_text()
         job=re.search(r'(?ms)^  raster-sight-orthogonal-hosted-t4:\n(.*?)(?=^  [a-z][a-z0-9-]*:\n|\Z)',workflow)[1]
@@ -664,7 +739,7 @@ class OnlineCIRegistrationTest(unittest.TestCase):
             (paths[6],'profile.validate_persisted'),(paths[6],'lineage.verify_archive'),
             (paths[7],"'raster-sight-orthogonal-persistence': 'sight-orthogonal-lineage'"),
             (paths[8],'checks==776'),
-            (paths[9],'case \"raster-sight-orthogonal-persistence\", \"sql-pool-consumer-flow\", \"transfer-continuous-events\":'),
+            (paths[9],'case \"raster-slope-orthogonal-persistence\", \"raster-sight-orthogonal-persistence\", \"sql-pool-consumer-flow\", \"transfer-continuous-events\":'),
             (paths[10],'TestSightOrthogonalPreparationKeepsConsumerTwelveAndSeparateThirteen')):
             target=self.repository/relative;original=target.read_text();self.assertIn(fragment,original)
             target.write_text(original.replace(fragment,''if relative==paths[4]else'omitted'))
@@ -2128,7 +2203,7 @@ class OnlineCIRegistrationTest(unittest.TestCase):
                 (paths[4], 'raster.strict_sizes'), (paths[4], 'capacity.validate_measurement'),
                 (paths[4], 'validate_disk'), (paths[5], 'expected_block'),
                 (paths[5], 'running*size**2*64'), (paths[6], 'test_capacity_analytical_oracle_matches_original_donor_bruteforce'),
-                (paths[7], 'case "raster-workflow", "raster-nibble-capacity", "raster-sight-orthogonal-persistence":'),
+                (paths[7], 'case "raster-workflow", "raster-nibble-capacity", "raster-slope-orthogonal-persistence", "raster-sight-orthogonal-persistence":'),
                 (paths[8], 'TestNibbleCapacityRetainsExactlyTheOrdinaryRasterPermissions'))):
             target = self.repository/relative; original = target.read_text()
             target.write_text(original.replace(fragment, 'omitted'))

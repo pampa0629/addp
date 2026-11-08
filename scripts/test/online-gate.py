@@ -232,6 +232,13 @@ SUITES: Mapping[str, Suite] = {
                   ("manager", "MANAGER_URL"), ("monitor", "MONITOR_URL"),
                   ("security", "SECURITY_URL")),
     ),
+    "raster-slope-orthogonal-persistence": Suite(
+        command=(sys.executable, "-m", "scripts.test.raster-slope-orthogonal-persistence-online"),
+        services=(("gateway", "GATEWAY_URL"), ("system", "SYSTEM_URL"),
+                  ("develop", "DEVELOP_URL"), ("meta", "META_URL"),
+                  ("manager", "MANAGER_URL"), ("monitor", "MONITOR_URL"),
+                  ("security", "SECURITY_URL")),
+    ),
     "raster-sight-orthogonal-persistence": Suite(
         command=(sys.executable, "-m", "scripts.test.raster-sight-orthogonal-persistence-online"),
         services=(("gateway", "GATEWAY_URL"), ("system", "SYSTEM_URL"),
