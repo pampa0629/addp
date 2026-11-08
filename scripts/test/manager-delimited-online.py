@@ -45,9 +45,10 @@ def run(repository, environment, owner, *, physical_runner=None, browser_runner=
     initializer = owner.GatewayClient(environment['GATEWAY_URL'], environment['ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN'], 30)
     report = {'schema_version': 'addp.manager-delimited/v1', 'case': 'delimited-read-settings',
               'run_id': environment['ADDP_ONLINE_TEST_RUN_ID'], 'result': 'failed', 'cases': []}
-    report['identity'] = owner.validate_user_identity(client, owner.positive_int(environment['ADDP_ONLINE_TEST_TENANT_ID'], 'Tenant'))
+    tenant = owner.positive_int(environment['ADDP_ONLINE_TEST_TENANT_ID'], 'Tenant')
+    report['identity'] = owner.validate_user_identity(client, tenant)
     require(len(report['identity']['permissions_verified']) == 10, 'delimited consumer permissions differ')
-    grants = REGISTRATION.ExactFileMetadataGrants(initializer, client, report['identity']['tenant_id'], scan_preparation=True)
+    grants = REGISTRATION.ExactFileMetadataGrants(initializer, client, tenant, scan_preparation=True)
     seeded = False
     stage = 'seed'
     try:

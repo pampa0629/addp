@@ -63,7 +63,7 @@ class DelimitedCaseTest(unittest.TestCase):
             scans.append(kw)
             return 'scan-' + str(len(scans))
         helper = SimpleNamespace(GatewayClient=lambda *a: client, positive_int=lambda v, _: int(v),
-            validate_user_identity=lambda *a: {'tenant_id': 2, 'principal_id': '33', 'permissions_verified': list(OWNER.REQUIRED_PERMISSIONS)},
+            validate_user_identity=lambda *a: {'tenant_id': '2', 'principal_id': '33', 'permissions_verified': list(OWNER.REQUIRED_PERMISSIONS)},
             wait_for_meta_scan=scan, find_fixture_item=lambda c, e, name, *a: client.item(e, name),
             build_item_locator=lambda e, item: f'addp://engine/{e}/path/{item["full_name"]}?type=file')
         def physical(action):
@@ -93,6 +93,8 @@ class DelimitedCaseTest(unittest.TestCase):
             else:
                 SCENE.run(root, env, helper, physical_runner=physical, browser_runner=browser)
             self.assertTrue(factory.call_args.kwargs['scan_preparation'])
+            self.assertEqual(factory.call_args.args[2], 2)
+            self.assertIs(type(factory.call_args.args[2]), int)
         return actions, scans, json.loads((root / 'manager-delimited.json').read_text())
 
     def test_four_sources_basic_scan_pages_originals_and_cleanup(self):
