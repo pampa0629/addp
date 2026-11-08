@@ -858,3 +858,11 @@ v44领域、v9浏览器和27阶段实际完成，耗时1961940ms。21张原始14
 ### Service #7 本地输出与停用收尾（2026-11-08）
 
 已完成用户批准的私有#7限定状态周期：#33／Tenant1，v11停用→v12启用→v13停用；四次中英文JSON／CSV实际200、各五行，双phone别名运行时保护检查和no-store正确，两CSV摘要相同且与历史默认基线一致。配置摘要保持，最终GET与恢复响应一致，会话注销；没有策略、角色或授权写入。保留报告独立审计及12反例通过，原脚本失败保留，非产品失败；不把只有报告／摘要的证据写成原始响应／CSV逐格独立复核，也不扩大为新拒绝／页面／T4。完整原件、版本及限制见[Service本地收尾](../service/docs/testing/查询与要素协议.md#私有-sql-服务本地启停收尾2026-11-08)，独立审计 `/tmp/p145-service-reasons/local-readiness/local-cycle-independent-audit.json`。本轮只记录本地结果，已有e32限定Hosted结论保持独立。
+
+### Service 五类已有 HTTP 拒绝的文案断言（2026-11-08）
+
+沿已获同意的提示验收范围，收紧既有未就绪／结构不匹配／操作不支持／计算输出不支持／自然到期五个Service HTTP场景：同一验证器必须接收由夹具确定的预期原因，继续严格403、两成员及data_protection_required，并核对完整中文原因及恢复建议。不从响应正文推断原因，不导入产品翻译生成期望，不接受通用保护、源权限、其他原因或附带私有细节的消息替代。正式无Accept-Language请求默认中文；已有英文到期页面仍为另一份证据，未新增其他语言请求或UI场景。
+
+此轮只增强原场景断言，没有业务实现／API／部署变更。AST对照基线f2c93af2d确认209处HTTP request表达式完全相同，仅验证器及三个场景调用处改变；v44/v9结构、20runtime／8protocol_only、资源、身份、40分钟预算及清理保持。已确认根Make现有自动发现和Platform CI路径覆盖，未新增入口／workflow。新增五类消息匹配、错原因／缺建议／权限提示／私有后缀等反例；已有计算与四出口组合测试同时执行，正例夹具改成各自实际协议文案。
+
+定向12项通过；标准 `make -o test-protection-deployment-runner -o test-graph-online-runner -o test-online-dispatcher-unit -o test-online-registration-unit test-security-online-runner` 所属272项Python及System Fixture Go退出0；四个聚合依赖目标本轮未运行，不称完整聚合通过。登记CLI、Python语法及本会话diff检查通过。首轮新增定向测试因旧验证器不接收原因参数而失败，红／绿日志保留。证据 `/tmp/p145-service-reason-assertions-{red,green,owner-gate,registration-cli}.log`，请求／版本不变证明 `...-scope.json`，固定输入 `...-verification.json`。未新跑数据库、本地HTTP或Hosted；旧5a成功不追认为这些新增内容断言通过，新实际运行仍由专门CI会话安排回传，不自行调度、轮询或设置定时。

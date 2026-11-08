@@ -84,6 +84,12 @@ Hosted `security-mysql-owner-protection` 报告 v23 的 `bank_card_metadata.deve
 
 保护原因细分沿用 execution-failure/v3 的闭合 reason：v23 必须精确核对 MySQL 六种计算及其历史为 `protection_computed_output_unsupported`，MongoDB 无法证明的派生输出为 `protection_lineage_unverified`，自然到期的 Develop／Transfer 为 `protection_expired`。浏览器同时核对具体原因与对应处理建议，不接受通用保护原因代替这些已证明原因；非法值导致的结果阶段拒绝尚无进一步类型化事实时仍为 `data_protection_required`。不得解析错误正文猜测子原因、放宽为任意保护错误或将原值授权扩大为计算许可。
 
+### Service 已有拒绝场景的具体说明
+
+未就绪、结构不匹配、操作不支持、计算输出不支持、自然到期的五个既有Service HTTP场景，除原403、`data_protection_required`及严格两成员响应外，还须校验各自完整的原因与处理建议。场景已确定预期原因，不从错误正文反推原因。领域客户端未设置Accept-Language，沿正式中间件默认中文校验独立固定文案；不导入产品翻译文件来生成期望值，也不接受通用保护、读取权限不足、其他原因或附带私有细节的文案替代。
+
+本项仅收紧原请求的运行断言，v44领域／v9浏览器报告结构、20runtime／8protocol_only矩阵、资源、身份、请求数、预算和清理保持；没有新语言请求或新页面场景。新断言尚须专门CI会话安排真实运行，旧5a00785ae运行只证明原断言，不视为本项通过。Service尚未生效、无法证明血缘的原协议范围不扩为HTTP；既有英文到期页面证据保持独立。标准入口和自动发现已覆盖，不新增Make目标、workflow或部署依赖。
+
 ### v24／浏览器 v9：未就绪与结构拒绝
 
 #### 未就绪探针

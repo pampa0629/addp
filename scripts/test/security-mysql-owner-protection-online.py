@@ -1621,12 +1621,20 @@ def validate_manager_protection_refusal(response: SUPPORT.Response) -> None:
         raise SuiteError("Manager refusal must preserve its safe localized 403 contract")
 
 
-def validate_service_protection_refusal(response: SUPPORT.Response) -> None:
+def validate_service_protection_refusal(response: SUPPORT.Response, reason: str) -> None:
+    # Independent fixed expectations for the existing controlled causes. The
+    # fixture supplies the cause; response text is never used to infer one.
+    expected = {
+        "protection_not_ready": "数据保护配置尚未就绪，本次查询已被阻止。请等待保护纳管和规则同步完成；持续未就绪时，联系安全管理员检查同步状态。",
+        "protection_expired": "该资源的数据保护规则已到期，本次查询已被阻止。请联系安全管理员续期或设为长期有效，规则同步后重新查询。",
+        "protection_schema_mismatch": "当前数据结构与保护规则不匹配，本次查询已被阻止。请联系管理员更新元数据并重新确认保护规则，完成同步后重新查询。",
+        "protection_computed_output_unsupported": "计算或组合输出引用了受保护字段，暂时无法安全脱敏，本次查询已被阻止。请直接读取受保护字段，由系统执行脱敏；原值授权不能解除此限制。",
+        "protection_operation_unsupported": "当前操作暂不支持所需的数据脱敏保护，本次查询已被阻止。请改用支持该保护规则的执行方式，或联系管理员核对当前引擎和操作的保护能力。",
+    }.get(reason)
     payload = _object(response.payload, "Service protection refusal")
-    if (response.status != 403 or set(payload) != {"error", "error_code"}
-            or payload.get("error_code") != "data_protection_required"
-            or not isinstance(payload.get("error"), str) or not payload["error"].strip()):
-        raise SuiteError("Service protection refusal must use its safe localized 403 contract")
+    if (expected is None or response.status != 403 or set(payload) != {"error", "error_code"}
+            or payload.get("error_code") != "data_protection_required" or payload.get("error") != expected):
+        raise SuiteError("Service refusal must preserve its safe 403 contract and explain the expected cause and recovery action")
 
 
 def verify_mongodb_query_boundaries(client: GatewayClient, engine_id: int,
@@ -2189,7 +2197,7 @@ def bank_outlet_refusals(client: GatewayClient, engine_id: int, query_engine_id:
         response = client.request("POST", "/api/query/" + name + "/query", (403,), {
             "select": service["data_config"]["default_fields"], "order_by": [{"field": "id", "direction": "asc"}],
             "page": {"limit": 2}, "format": "json"})
-        validate_service_protection_refusal(response)
+        validate_service_protection_refusal(response, reason)
         outcomes["service"] = {"http_status": 403, "error_code": "data_protection_required", "result_absent": True}
         if query:
             outcomes["transfer"] = postgres_query_transfer_refusal(client, query_engine_id, parent, target_locator, reason, deadline, principal_id)
@@ -2588,7 +2596,7 @@ def exercise_bank_card_metadata(client: GatewayClient, source_engine_id: int,
         computed_service_id = positive_int(computed_service.get("id"), "bank-card computed SQL service ID")
         refusal = client.request("POST", "/api/query/" + urllib.parse.quote(computed_name, safe="") + "/query", (403,),
             {"select": ["id", "computed"], "order_by": [{"field": "id", "direction": "asc"}], "page": {"limit": 2}, "format": "json"})
-        validate_service_protection_refusal(refusal)
+        validate_service_protection_refusal(refusal, "protection_computed_output_unsupported")
         computed_outputs["service_refusal"] = {"http_status": 403, "error_code": "data_protection_required", "result_absent": True}
         computed_outputs["transfer_refusal"] = postgres_query_transfer_refusal(client, target_engine_id, parent,
             target_locator, "protection_computed_output_unsupported", deadline, positive_int(identity["principal_id"], "ordinary principal"))
@@ -4795,7 +4803,7 @@ def exercise_resource_validity(client: GatewayClient, enrollment_id: str, source
             "select": ["id", "customer_code", "email"], "order_by": [{"field": "id", "direction": "asc"}],
             "page": {"limit": 100}, "format": "json",
         })
-        validate_service_protection_refusal(service)
+        validate_service_protection_refusal(service, "protection_expired")
         columns_before, rows_before = preview_rows(client, target_locator)
         _, transfer = create_and_run_task(client, transfer_payload(task_name + "_validity_expired", locator, parent_locator),
                                           deadline, tasks, expected_status="failed")

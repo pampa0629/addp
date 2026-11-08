@@ -2250,7 +2250,7 @@ class BankCardMetadataAcceptanceTest(unittest.TestCase):
         client = Mock()
         def request(method, path, expected, body=None):
             if path.startswith("/api/query/") and expected == (403,):
-                payload = {"error": "protected output denied", "error_code": "data_protection_required"}
+                payload = {"error": SERVICE_REFUSAL_MESSAGES["protection_computed_output_unsupported"], "error_code": "data_protection_required"}
             elif path.startswith("/api/query/"):
                 cursor = body["page"].get("cursor", "")
                 index = {"": 0, "page-1": 1, "page-2": 2}[cursor]
@@ -4099,13 +4099,34 @@ class DevelopProtectionDiagnosticTest(unittest.TestCase):
 
 
 
+SERVICE_REFUSAL_MESSAGES = {
+    "protection_not_ready": "数据保护配置尚未就绪，本次查询已被阻止。请等待保护纳管和规则同步完成；持续未就绪时，联系安全管理员检查同步状态。",
+    "protection_expired": "该资源的数据保护规则已到期，本次查询已被阻止。请联系安全管理员续期或设为长期有效，规则同步后重新查询。",
+    "protection_schema_mismatch": "当前数据结构与保护规则不匹配，本次查询已被阻止。请联系管理员更新元数据并重新确认保护规则，完成同步后重新查询。",
+    "protection_computed_output_unsupported": "计算或组合输出引用了受保护字段，暂时无法安全脱敏，本次查询已被阻止。请直接读取受保护字段，由系统执行脱敏；原值授权不能解除此限制。",
+    "protection_operation_unsupported": "当前操作暂不支持所需的数据脱敏保护，本次查询已被阻止。请改用支持该保护规则的执行方式，或联系管理员核对当前引擎和操作的保护能力。",
+}
+
 class TransferProtectionDiagnosticContractTests(unittest.TestCase):
+
+
+    def test_service_refusal_requires_its_actual_cause_and_full_advice(self):
+        for reason, message in SERVICE_REFUSAL_MESSAGES.items():
+            response = ONLINE.SUPPORT.Response(403, {"error": message, "error_code": "data_protection_required"})
+            with self.subTest(reason=reason):
+                ONLINE.validate_service_protection_refusal(response, reason)
+            for bad in ["数据访问权限不足", "本次查询已被数据保护阻止", message.split("。", 1)[0] + "。", message + " private SQL secret", *[other for key, other in SERVICE_REFUSAL_MESSAGES.items() if key != reason]]:
+                with self.subTest(reason=reason, mutation=bad), self.assertRaises(ONLINE.SuiteError):
+                    ONLINE.validate_service_protection_refusal(ONLINE.SUPPORT.Response(403, {"error": bad, "error_code": "data_protection_required"}), reason)
+
     def test_service_refusal_has_only_safe_403_contract(self):
-        response = ONLINE.SUPPORT.Response(403, {"error":"localized protection explanation", "error_code":"data_protection_required"})
-        ONLINE.validate_service_protection_refusal(response)
-        for status, payload in [(500,response.payload), (403,{"error":"generic", "error_code":"query_execution_failed"}), (403,{**response.payload,"data":[]}), (403,{**response.payload,"details":"private"}), (403,{**response.payload,"error":""})]:
-            with self.subTest(status=status,payload=payload), self.assertRaises(ONLINE.SuiteError):
-                ONLINE.validate_service_protection_refusal(ONLINE.SUPPORT.Response(status,payload))
+        payload = {"error": SERVICE_REFUSAL_MESSAGES["protection_not_ready"], "error_code": "data_protection_required"}
+        for status, bad in [(500, payload), (403, {**payload, "error_code": "query_execution_failed"}), (403, {**payload, "data": []}), (403, {**payload, "details": "private"}), (403, {**payload, "error": ""})]:
+            with self.subTest(status=status, payload=bad), self.assertRaises(ONLINE.SuiteError):
+                ONLINE.validate_service_protection_refusal(ONLINE.SUPPORT.Response(status, bad), "protection_not_ready")
+        for reason in ("protection_not_yet_valid", "protection_lineage_unverified", "data_protection_required"):
+            with self.subTest(reason=reason), self.assertRaises(ONLINE.SuiteError):
+                ONLINE.validate_service_protection_refusal(ONLINE.SUPPORT.Response(403, payload), reason)
 
     def test_precise_diagnostic_rejects_generic_or_private_failures(self):
         import copy
@@ -4464,7 +4485,7 @@ class FourOutletReasonMatrixTest(unittest.TestCase):
                 def request(method,path,status,body=None):
                     if method=='GET': return ONLINE.SUPPORT.Response(403,{'error':'safe','error_code':'security_protection_required'})
                     if status==(201,): return ONLINE.SUPPORT.Response(201,{'id':41})
-                    return ONLINE.SUPPORT.Response(403,{'error':'safe','error_code':'data_protection_required',**({'rows':['private']} if fault=='service' else {})})
+                    return ONLINE.SUPPORT.Response(403,{'error':SERVICE_REFUSAL_MESSAGES[reason],'error_code':'data_protection_required',**({'rows':['private']} if fault=='service' else {})})
                 client.request.side_effect=request
                 query="SELECT id,bank_card_number FROM bank_card_accounts WHERE customer_code='CUST-10001'" if name=='operation_unsupported' else None
                 with self.subTest(name=name,fault=fault),patch.object(ONLINE,'cleanup_service') as cleanup, \
