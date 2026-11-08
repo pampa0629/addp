@@ -162,6 +162,34 @@ class MetricsSourcesTest(unittest.TestCase):
                 manager.apply('recover','minio','business',{})
             self.assertEqual(str(error.exception),'操作失败；清理未确认')
 
+    def test_tls_reason_is_identical_for_check_and_application_without_private_output(self):
+        for reason,phrase in {'chain':'证书链','not-yet-valid':'尚未生效','expired':'已过期',
+                'purpose':'服务器认证','name':'IP SAN','key':'私钥不匹配','unknown':'原因未能确认'}.items():
+            for kind in ('redis','minio'):
+                failure=ValueError('private-password /private/server.crt')
+                failure.source_tls_reason=reason;failure.observation_stage='transport-check'
+                code,output,_=self.invoke('check',['infra'],[kind],env={manager.PROVIDERS[kind][1]+'_ENABLED':'true'},check={'side_effect':failure})
+                self.assertEqual(code,1);self.assertIn(phrase,output);self.assertNotIn('private',output)
+                for action in ('up','recover'):
+                    completed=subprocess.CompletedProcess([],1,'private-output',
+                        '[stage=transport-check] [tls-reason='+reason+'] [cleanup=failed] private-password /private/server.crt')
+                    with patch.object(manager.subprocess,'run',return_value=completed),self.assertRaises(ValueError) as error:
+                        manager.apply(action,kind,'infra',{})
+                    self.assertIn(phrase,str(error.exception));self.assertTrue(str(error.exception).endswith('清理未确认'))
+                    self.assertNotIn('private',str(error.exception))
+
+    def test_tls_reason_requires_unique_known_transport_evidence(self):
+        for markers in ('[tls-reason=private-password]','[tls-reason=chain] [tls-reason=name]',
+                '[tls-reason=chain] [tls-reason=chain]',''):
+            result=subprocess.CompletedProcess([],1,'','[stage=transport-check] '+markers+' /private/path')
+            with patch.object(manager.subprocess,'run',return_value=result),self.assertRaises(ValueError) as error:
+                manager.apply('up','minio','business',{})
+            self.assertEqual(str(error.exception),'操作失败：'+manager.FAILURE_STAGES['transport-check'])
+        result=subprocess.CompletedProcess([],1,'','[stage=source-build] [tls-reason=chain] private-password')
+        with patch.object(manager.subprocess,'run',return_value=result),self.assertRaises(ValueError) as error:
+            manager.apply('up','redis','infra',{})
+        self.assertEqual(str(error.exception),'操作失败：'+manager.FAILURE_STAGES['source-build'])
+
     def test_image_recovery_failure_is_actionable_without_echoing_provider_output(self):
         for kind in ('redis','minio','node'):
             result=subprocess.CompletedProcess([],1,'private-output','[reason=source-image-unavailable] [cleanup=failed] private-password')

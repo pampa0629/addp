@@ -22,6 +22,12 @@ spec=importlib.util.spec_from_file_location('source_metrics_project',Path(__file
 group=importlib.util.module_from_spec(spec);spec.loader.exec_module(group)
 
 RECOVERY_REASONS = frozenset({'source-image-unavailable','source-layout-changed'})
+TLS_REASONS = frozenset({'chain', 'not-yet-valid', 'expired', 'purpose', 'name', 'key', 'unknown'})
+# OpenSSL X509_V_ERR values; unlisted or conflicting evidence stays unknown.
+TLS_VERIFY_CODES = {2:'chain', 7:'chain', 18:'chain', 19:'chain', 20:'chain', 21:'chain',
+    9:'not-yet-valid', 10:'expired', 26:'purpose', 62:'name', 64:'name',
+    79:'chain', 80:'chain', 81:'chain', 82:'chain', 85:'chain', 86:'chain',
+    89:'chain', 90:'chain', 91:'chain', 92:'chain'}
 OBSERVATION_STAGES = frozenset({'transport-check', 'private-state', 'identity-recheck',
     'connection-check', 'deployment-check', 'account-plan', 'account-update',
     'source-check', 'source-stop', 'source-build', 'source-start'})
@@ -49,6 +55,30 @@ RUNTIME = ('{"image":{{json .Image}},"user":{{json .Config.User}},'
            '"nano_cpus":{{json .HostConfig.NanoCpus}},"pids":{{json .HostConfig.PidsLimit}}}')
 
 def decode(value): return json.loads(value)
+
+
+def tls_verify_reason(output):
+    if isinstance(output, bytes):
+        if len(output) > 4096: return 'unknown'
+        try: output = output.decode('utf-8')
+        except UnicodeDecodeError: return 'unknown'
+    if not isinstance(output, str): return 'unknown'
+    try:
+        if len(output.encode('utf-8')) > 4096: return 'unknown'
+    except UnicodeEncodeError:
+        return 'unknown'
+    codes = re.findall(r'^error ([0-9]{1,3}) at [0-9]{1,3} depth lookup: [^\r\n]+$', output, re.MULTILINE)
+    if not 1 <= len(codes) <= 8: return 'unknown'
+    reasons = {TLS_VERIFY_CODES.get(int(code), 'unknown') for code in codes}
+    return reasons.pop() if len(reasons) == 1 else 'unknown'
+
+
+def tls_error(kind, reason, message='Metrics source TLS verification failed'):
+    error = kind(message)
+    error.source_tls_reason = reason if reason in TLS_REASONS else 'unknown'
+    return error
+
+
 def write(path,value):
     previous=private.read(path,0o600)[0] if os.path.lexists(path) else None
     private.atomic(path,value,0o600,previous=previous)
@@ -82,12 +112,17 @@ def transport(env, root, prefix, error=ValueError):
         raise Error('Metrics source private key ownership rejected')
     try:
         subprocess.run(['openssl', 'verify', '-x509_strict', '-CAfile', str(directory/'ca.crt'), '-purpose', 'sslserver', '-verify_ip', str(ip), str(directory/'server.crt')], check=True, capture_output=True, timeout=5)
+    except subprocess.CalledProcessError as failure:
+        raise tls_error(Error, tls_verify_reason(failure.stderr)) from None
+    except (OSError, subprocess.SubprocessError):
+        raise tls_error(Error, 'unknown') from None
+    try:
         public = subprocess.run(['openssl', 'x509', '-in', str(directory/'server.crt'), '-pubkey', '-noout'], check=True, capture_output=True, timeout=5).stdout
         key = subprocess.run(['openssl', 'pkey', '-in', str(directory/'server.key'), '-passin', 'pass:', '-pubout'], check=True, capture_output=True, timeout=5).stdout
-        if public != key:
-            raise Error('Metrics source certificate key mismatch')
     except (OSError, subprocess.SubprocessError):
-        raise Error('Metrics source TLS verification failed') from None
+        raise tls_error(Error, 'unknown') from None
+    if public != key:
+        raise tls_error(Error, 'key', 'Metrics source certificate key mismatch')
     return str(ip), port, material
 
 

@@ -49,7 +49,7 @@ class TransportCertificateTest(unittest.TestCase):
         self.openssl('x509','-req','-in',str(self.root/'server.csr'),'-CA',str(self.tls/'ca.crt'),
             '-CAkey',str(self.root/'ca.key'),'-set_serial','2','-days','1','-extfile',str(extension),'-out',str(self.tls/'server.crt'))
 
-    def preflight(self, *, rejected=False):
+    def preflight(self, *, rejected=False, reason=None):
         before = {name:((self.tls/name).read_bytes(), (self.tls/name).stat()) for name in self.original}
         for kind in ('REDIS','MINIO'):
             prefix = 'ADDP_'+kind+'_METRICS'
@@ -59,6 +59,8 @@ class TransportCertificateTest(unittest.TestCase):
                     with self.assertRaisesRegex(ValueError, '^Metrics source TLS verification failed$') as failure:
                         M.transport(env, ROOT, prefix)
                     self.assertEqual(failure.exception.observation_stage, 'transport-check')
+                    if reason:
+                        self.assertEqual(getattr(failure.exception, 'source_tls_reason', None), reason)
                 else:
                     ip, port, material = M.transport(env, ROOT, prefix)
                     self.assertEqual((ip,port), ('127.0.0.1',19443))
@@ -81,7 +83,7 @@ class TransportCertificateTest(unittest.TestCase):
     def test_missing_leaf_aki_rejected_despite_ordinary_chain_success(self):
         self.sign(authority='none')
         self.ordinary_chain_passes()
-        self.preflight(rejected=True)
+        self.preflight(rejected=True, reason='chain')
 
     def test_missing_ca_ski_rejected_despite_ordinary_chain_success(self):
         self.openssl('req','-x509','-key',str(self.root/'ca.key'),'-days','1','-subj','/CN=metrics-source-t2-ca',
@@ -89,7 +91,7 @@ class TransportCertificateTest(unittest.TestCase):
             '-addext','subjectKeyIdentifier=none','-out',str(self.tls/'ca.crt'))
         self.sign(authority='issuer:always')
         self.ordinary_chain_passes()
-        self.preflight(rejected=True)
+        self.preflight(rejected=True, reason='chain')
 
     def test_wrong_server_purpose_ip_and_key_remain_rejected(self):
         for variation in ('purpose','san','key'):
@@ -103,10 +105,84 @@ class TransportCertificateTest(unittest.TestCase):
                         prefix='ADDP_'+kind+'_METRICS'
                         with self.assertRaisesRegex(ValueError, '^Metrics source certificate key mismatch$'):
                             M.transport({prefix+'_LISTEN':'127.0.0.1:19443',prefix+'_TLS_DIR':str(self.tls)},ROOT,prefix)
-                else: self.preflight(rejected=True)
+                else: self.preflight(rejected=True, reason='purpose' if variation=='purpose' else 'name')
+
+    def test_key_mismatch_and_unavailable_tool_never_expose_raw_details(self):
+        prefix='ADDP_REDIS_METRICS';env={prefix+'_LISTEN':'127.0.0.1:19443',prefix+'_TLS_DIR':str(self.tls)}
+        (self.tls/'server.key').write_bytes((self.root/'client.key').read_bytes())
+        with self.assertRaises(ValueError) as mismatch: M.transport(env,ROOT,prefix)
+        self.assertEqual(getattr(mismatch.exception,'source_tls_reason',None),'key')
+        self.setUp()
+        for failure in (FileNotFoundError('/private/password'),subprocess.TimeoutExpired('secret-command',5,stderr=b'secret-password')):
+            with self.subTest(failure=type(failure).__name__),patch.object(M.subprocess,'run',side_effect=failure):
+                with self.assertRaises(ValueError) as result:M.transport(env,ROOT,prefix)
+                self.assertEqual(getattr(result.exception,'source_tls_reason',None),'unknown')
+                self.assertNotIn('private',str(result.exception));self.assertNotIn('secret',str(result.exception))
+
+    def test_standard_check_reports_real_certificates_without_reading_personal_configuration(self):
+        for variation,phrase in (('valid','部署输入检查通过'),('aki','证书链'),('purpose','服务器认证'),('san','IP SAN'),('key','私钥不匹配')):
+            self.setUp()
+            if variation=='aki': self.sign(authority='none')
+            elif variation=='purpose': self.sign(purpose='clientAuth')
+            elif variation=='san': self.sign(san='IP:127.0.0.2')
+            elif variation=='key': (self.tls/'server.key').write_bytes((self.root/'client.key').read_bytes())
+            before = {name:(self.tls/name).read_bytes() for name in self.original}
+            for kind in ('redis','minio'):
+                prefix='ADDP_'+kind.upper()+'_METRICS'
+                env={'PATH':os.environ['PATH'],'OPENSSL_CONF':os.environ['OPENSSL_CONF'],prefix+'_ENABLED':'true',
+                    prefix+'_LISTEN':'127.0.0.1:19443',prefix+'_TLS_DIR':str(self.tls),prefix+'_STATE_DIR':str(self.root/'state')}
+                with self.subTest(variation=variation,kind=kind):
+                    result=subprocess.run([sys.executable,str(ROOT/'scripts/infra/metrics-sources.py'),'check','--resolved-env',
+                        '--scope','infra','--kind',kind],env=env,capture_output=True,text=True,timeout=10)
+                    self.assertEqual(result.returncode,0 if variation=='valid' else 1)
+                    self.assertIn(phrase,result.stdout)
+                    self.assertNotIn(str(self.tls),result.stdout+result.stderr)
+                    self.assertNotIn('BEGIN ',result.stdout+result.stderr)
+                    self.assertFalse(result.stderr)
+            self.assertEqual(before,{name:(self.tls/name).read_bytes() for name in self.original})
+
+
+class CertificateDiagnosisTest(unittest.TestCase):
+    def test_all_protocol_reason_codes_have_one_cli_translation(self):
+        spec=importlib.util.spec_from_file_location('tls_reason_manager',ROOT/'scripts/infra/metrics-sources.py')
+        manager=importlib.util.module_from_spec(spec);spec.loader.exec_module(manager)
+        self.assertEqual(set(manager.TLS_FAILURES),M.TLS_REASONS)
+
+    def test_only_canonical_numeric_verify_errors_classify_without_raw_disclosure(self):
+        cases={85:'chain',86:'chain',20:'chain',9:'not-yet-valid',10:'expired',26:'purpose',62:'name',64:'name'}
+        for code,reason in cases.items():
+            with self.subTest(code=code):
+                output=f'CN=private-subject\nerror {code} at 0 depth lookup: private-password\nerror /private/server.crt: verification failed\n'
+                self.assertEqual(M.tls_verify_reason(output.encode()),reason)
+                self.assertEqual(M.tls_verify_reason(output),reason)
+        self.assertEqual(M.tls_verify_reason('error 85 at 0 depth lookup: private\nerror 86 at 1 depth lookup: private\n'),'chain')
+
+    def test_unknown_conflicting_unbounded_or_noncanonical_output_is_not_guessed(self):
+        cases=(None,42,b'\xff','\ud800',b'certificate expired private-path',b'prefix error 85 at 0 depth lookup: private',
+            b'error 999 at 0 depth lookup: private\n',b'error 85 at 0 depth lookup: private\nerror 10 at 1 depth lookup: private\n',
+            b'error 85 at 0 depth lookup: private\nerror 999 at 1 depth lookup: private\n',
+            b'error 85 at 0 depth lookup: '+b'x'*4096,
+            b'error 85 at 0 depth lookup: private\n'*9)
+        for output in cases:
+            with self.subTest(size=len(output) if isinstance(output,(bytes,str)) else None):
+                self.assertEqual(M.tls_verify_reason(output),'unknown')
 
 
 class ObservationStageTest(unittest.TestCase):
+    def test_protocol_clis_forward_only_known_tls_reason_at_transport_stage(self):
+        for name in ('redis-metrics.py','minio-observation.py'):
+            spec=importlib.util.spec_from_file_location('tls_cli_'+name,ROOT/'scripts/infra'/name)
+            provider=importlib.util.module_from_spec(spec);spec.loader.exec_module(provider)
+            for stage,reason,expected in (('transport-check','chain',True),('transport-check','unknown',True),
+                    ('transport-check','private-password',False),('source-start','chain',False)):
+                failure=provider.Error('Metrics source TLS verification failed')
+                failure.observation_stage=stage;failure.source_tls_reason=reason
+                output=io.StringIO()
+                with patch.object(provider,'run',side_effect=failure),patch.object(sys,'argv',[name,'up','--scope','infra']),redirect_stderr(output):
+                    self.assertEqual(provider.main(),1)
+                self.assertEqual('[tls-reason=' in output.getvalue(),expected)
+                self.assertNotIn('private-password',output.getvalue())
+
     def test_nested_stage_keeps_original_exception_and_cleanup_metadata(self):
         failure = subprocess.TimeoutExpired('private-command', 5, output='private-output')
         failure.source_recovery_cleanup_failed = True

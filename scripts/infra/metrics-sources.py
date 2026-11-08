@@ -48,6 +48,21 @@ FAILURE_STAGES = {
     'source-stop': '移除采集来源阶段失败；请核对来源容器及专属卷的归属和实际状态',
     'source-build': '构建采集来源镜像阶段失败；请核对构建输入、Docker 状态及构建依赖的可达性',
 }
+TLS_FAILURES = {
+    'chain': '证书链或必要扩展不符合严格要求；请核对签发 CA 和证书扩展',
+    'not-yet-valid': '证书尚未生效；请核对证书有效期与系统时间',
+    'expired': '证书已过期；请更新证书并核对系统时间',
+    'purpose': '证书用途不符合服务器认证要求；请核对服务器用途',
+    'name': '证书名称与监听 IP 不匹配；请核对服务器 IP SAN',
+    'key': '证书与私钥不匹配；请核对是否使用同一组证书和私钥',
+    'unknown': '证书校验失败，原因未能确认；请核对证书材料和校验工具',
+}
+
+
+def tls_failure_detail(stage, reasons):
+    if stage == 'transport-check' and len(reasons) == 1 and isinstance(reasons[0],str) and reasons[0] in TLS_FAILURES:
+        return '校验采集证书阶段失败；'+TLS_FAILURES[reasons[0]]
+    return None
 
 
 def load(path):
@@ -154,7 +169,8 @@ def apply(action, kind, scope, env):
         if reason and reason[1] in FAILURE_REASONS:
             raise ValueError('操作失败：'+FAILURE_REASONS[reason[1]]+cleanup+'；命令：python3 scripts/infra/metrics-sources.py up --scope '+scope+' --kind '+kind)
         stage = re.search(r'\[stage=([a-z-]+)\]', result.stderr)
-        detail = ('：'+FAILURE_STAGES[stage[1]]) if stage and stage[1] in FAILURE_STAGES else ''
+        tls = tls_failure_detail(stage[1] if stage else None, re.findall(r'\[tls-reason=([a-z-]+)\]', result.stderr)) if kind in ('redis','minio') else None
+        detail = '：'+tls if tls else ('：'+FAILURE_STAGES[stage[1]]) if stage and stage[1] in FAILURE_STAGES else ''
         raise ValueError('操作失败'+detail+cleanup)
     if action == 'recover':
         if 'healthy; source unchanged' in result.stdout:
@@ -210,9 +226,15 @@ def run(action, scopes=(), kinds=(), inherited=None, resolved=False):
             print(f'{label:<24} {result}')
         except (OSError, ValueError, KeyError, TypeError, subprocess.SubprocessError) as error:
             failures += 1
-            detail = ('操作超时，结果未知；请核对状态，勿自动重试' if isinstance(error, subprocess.TimeoutExpired)
-                      else str(error) if type(error) is ValueError and str(error).startswith(('操作失败', '配置读取失败', '尚不支持'))
-                      else '检查或操作未通过，请核对部署配置与来源归属')
+            tls = tls_failure_detail(getattr(error,'observation_stage',None), [getattr(error,'source_tls_reason',None)]) if action == 'check' and kind in ('redis','minio') else None
+            if isinstance(error, subprocess.TimeoutExpired):
+                detail = '操作超时，结果未知；请核对状态，勿自动重试'
+            elif tls:
+                detail = tls
+            elif type(error) is ValueError and str(error).startswith(('操作失败', '配置读取失败', '尚不支持')):
+                detail = str(error)
+            else:
+                detail = '检查或操作未通过，请核对部署配置与来源归属'
             print(f'{label:<24} 失败：{detail}')
     print(f'汇总：共 {len(rows)} 项，失败 {failures} 项。来源运行状态不代表实际采集成功，请在 Monitor 核对。')
     return int(bool(failures))

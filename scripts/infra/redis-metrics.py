@@ -347,6 +347,8 @@ def main():
         if recovery_reason in sources.RECOVERY_REASONS: detail+=' [reason='+recovery_reason+']'
         stage=getattr(error,'observation_stage',None)
         if stage in sources.OBSERVATION_STAGES: detail+=' [stage='+stage+']'
+        tls_reason=getattr(error,'source_tls_reason',None)
+        if stage=='transport-check' and isinstance(tls_reason,str) and tls_reason in sources.TLS_REASONS: detail+=' [tls-reason='+tls_reason+']'
         reason=str(error) if isinstance(error,(Error,private.PrivateStateError)) else 'deployment ownership, private state or source configuration rejected'
         print('Redis metrics unavailable'+detail+': '+reason+'; core services remain independent',file=sys.stderr)
         return 1

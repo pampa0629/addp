@@ -893,3 +893,15 @@ Prometheus 的 Infra Redis 部署 `90d49af7-a198-410f-a525-0e633f87a00c` 仅一�
 Safari 第二个标签页真实可见、自动刷新开启，显示 Infra Redis、已确认的 Docker Desktop VM 主机、内存／连接及运行时长。Redis 没有配置内存上限，当前占用率与该趋势保持不可计算；不改配置或补为 0%。吞吐分组每秒命令趋势 21／21 点有效，手动刷新前、后及自然自动刷新三个查询时刻依次为 `12:05:29.127988Z`、`12:05:31.335168Z`、`12:05:46.653689Z`，各阶段可见且无页面／趋势错误。独立内存曲线读取 `redis.memory.allocated_bytes`，亦为 21／21 点有效。原件 `/tmp/addp-infra-redis-page-initial-20261108.json`、`/tmp/addp-infra-redis-safari-reapply-20261108.json`、`/tmp/addp-infra-redis-memory-correct-action-20261108.json`。
 
 首轮内存自动化错误选择了卡片内第一个按钮，实际为 `FieldHelp`，指标未切换，仍停在不可计算的默认上限占用率，导致该轮整脚本断言失败。通过组件定义确认选择器原因后，改为明确的“查看趋势”按钮及目标指标后置核对，取得上述独立内存收据；原失败保留，不把整脚本记为通过，吞吐三阶段按各自收据独立断言。此次仅覆盖个人来源修证后的传输、新鲜采样、两个短窗趋势和刷新，不代表重新验收缩放、全部指标、故障注入或正式 Hosted。无产品代码变更，不重复前批有效 T1；CI／Hosted仍等专门会话回传，没有设置定时任务。
+
+### Redis／MinIO 证书预检中文诊断（2026-11-08）
+
+用户确认继续后，先补运行观测规范与来源指南，再沿共享 `metrics-source.py` 将同次 OpenSSL 标准验证错误码映射到封闭类别；[上游错误码定义](https://github.com/openssl/openssl/blob/openssl-3.0.13/include/openssl/x509_vfy.h.in)为依据，不按自由文本推测。分类器只解析最多 4 KiB／8 条标准错误行，未知码、冲突、非法编码及超限均为未确认；私钥不匹配只来自既有公钥比较。没有增加校验命令、网络请求、重试或放宽严格校验。
+
+两协议来源仅在原 transport 阶段传递白名单类别，统一部署入口在直接 `check` 及子进程 `up/recover` 使用唯一中文映射，提示链／必要扩展、有效期、用途、IP SAN、密钥或未确认。旧阶段及非零结果、清理未确认标记保持，原始错误、主题、路径、命令及凭据不进入中文输出；非本批协议和其他阶段不据标记猜 TLS 原因。没有 API／Swagger、IAM、账号或配置变更。
+
+标准门禁先复现缺失分类与输出：`/tmp/addp-source-tls-diagnosis-red-20261108.log`；共享分类落地后，再通过原入口复现统一 CLI 仍只报通用错误：`/tmp/addp-source-tls-diagnosis-cli-red-20261108.log`。实现后 `make test-metrics-source-recovery test-metrics-sources` 通过，日志 `/tmp/addp-source-tls-diagnosis-green-20261108.log`。后续最终组合 `make test-metrics-source-recovery test-metrics-sources test-monitor-minio-observation-unit test-monitor-redis-source-unit test-t2-ci-registration` 中，本批 21 项证书／恢复 T1、23 项统一入口、两协议生命周期及五个来源 Go 包均通过；真实临时证书另贯通标准 `check --resolved-env` 的有效、缺 AKI、用途、IP SAN 和密钥场景，不读个人环境或操作服务。最终原件 `/tmp/addp-source-tls-diagnosis-gates-20261108.log`。
+
+该最终组合整体退出 2：登记脚本的 85 项测试通过后，原 Manager 假进程夹具 `test_cleanup_failure_is_a_failure_even_after_tests_pass` 及 `test_foreign_resource_prevents_compose_deletion/foreign-container` 分别超过 20 秒预算；9 项夹具中 2 项错误，后续实际登记检查未执行。该夹具只复制 Manager 门禁、ports 和 observability-env 脚本，不加载本批修改，相关文件本批未变；超时的具体环境根因未确认，没有改其预算／实现、盲目重试或将局部成功计为完整登记门禁通过。既有两个协议 T2 元数据已覆盖本次实现、测试、证书夹具及标准目标，无须新增 Make／workflow 路线；后继 CI／Hosted 仍由专门会话回传。
+
+本机只读四来源 `check --scope infra --scope business --kind minio --kind redis` 退出 0，日志 `/tmp/addp-source-tls-diagnosis-personal-check-20261108.log`；未修改个人证书／环境或启停服务，不重复前批真实采样及页面验收，不把本次预检当作新实链证据。
