@@ -20,6 +20,12 @@
 
 本轮未执行个人来源的 `up/recover`、重启、改写安装证明或配置，不处理 Infra Redis 的原镜像缺失；CI／Hosted 继续等专门会话回传，未查询、触发或设置定时任务。
 
+## 设备号修复后的个人主机恢复复验（2026-11-08）
+
+产品修复 `af08710844e13c79eab7cd45fa68974dba644491` 生效后，先确认个人主机来源已运行，再执行标准 `python3 scripts/infra/metrics-sources.py recover --scope host --kind node`，退出 0，报告“来源运行正常，未重建”，失败 0 项。前后读取的完整容器事实一致，安装证明内容摘要、inode 和修改时间均保持原样；未重建或重启来源，未改写安装证明。日志 `/tmp/addp-node-device-personal-recover.log`。
+
+同轮只读 `status --scope infra --kind redis` 显示启用／运行中；本轮没有操作该来源。以上证明当前恢复与运行状态，不代表实际主机／Redis指标、趋势或宿主重挂场景已验收；旧设备号差异仍由上一节受控与隔离 T2 覆盖。CI／Hosted继续等专门会话回传，未查询、触发或设置定时任务。
+
 <a id="pg-source-history"></a>
 
 ## PostgreSQL 来源、身份投影与正式验收
