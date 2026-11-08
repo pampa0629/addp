@@ -778,3 +778,13 @@ T1/T3/构建验证：`make test-security-frontend` 退出0，260项单元、37�
 按已有Swagger数组契约，仅在Service唯一DTO转换边界用非nil空切片复制声明，无参数返回[]，非空声明保持；创建、更新、详情和列表共用。未改SQL、参数定义／默认值、快照、执行绑定、角色、授权或操作范围。正式文档先明确数组语义，Swagger结构／注解本来即array、不变，未生成无差异文件；无新路由／迁移／依赖，原Service T1及Security Runner自动发现覆盖，无新增CI编排。夹具严格拒绝null／遗漏参数成员，不作兼容兜底；错误拆成Meta Source、SQL改变、参数数组三类，各有缺失／null／修改的受控反例，失败前不写Policy并按原版本清理。
 
 验证：Go定向红／绿各一次；`make test-module MODULE=service GO_ONLY=1`实际通过，覆盖本轮Service Go T1。SQL角色无参数、必填和默认参数组32项通过；根Make所属recipe265项及System Fixture Go、登记反例和CLI通过，四个依赖目标未重跑，不声称完整聚合或真实数据库T2通过。没有新增本地HTTP／Hosted通过，不启停用户本地服务；新运行由专门CI会话继续。日志 `/tmp/p145-service-empty-parameters-{red,green,module}.log`、`/tmp/p145-service-definition-{diagnostic-red,diagnostic-green,owner-gate,registration,registration-cli}.log`；独立失败审计 `/tmp/addp-security-spatial-754412/p145-independent-service-definition-failure-audit.json`，原始归档 `/tmp/addp-security-spatial-754412/archive/_temp/addp-online-42413276305/`。
+
+### v44 精确3afbae复验总超时（2026-11-08，预算方案待确认）
+
+[Run42432701298 / Job128584861739](https://github.com/pampa0629/addp/actions/runs/42432701298/job/128584861739)，attempt1，精确提交 `3afbae0ec2921e237ee711b62d3d909a417504fc`，十服务preflight同SHA。readiness成功、gate失败、原始产物上传成功；原始job.log5252行 `scenario exceeded the Online total timeout`，online-report为 `failure_stage=scenario / error_code=online_scenario_timeout / duration_ms=1200105`。没有最终suite_report、浏览器PNG为0，不把未再次出现DTO／Point错误或部分文件解释为早期阶段完整通过。六精确Grant签发及最终撤销再次独立核对通过，pending／errors为空，撤销不可读／不可见，wrapper cleanup=passed、Infra零残留。
+
+只读耗时定位：四出口启动入口均给共享Projection Runner传固定30秒，保护变化不经同步请求直接读取Security。日志中多轮Policy变更与后续步骤相隔约30秒；三组角色资格自然到期按原代码分别等待90秒、串行执行。177次Service公开查询的服务端记录耗时合计4471ms，811次Enrollment详情读取合计3396ms；这些累计服务端耗时不等于完整墙钟时间，也不据此排除所有其他慢点。01:39:22.971Z最后一份Develop restored文件返回200，01:39:23.014Z原查询再次读取200，随后Meta数据项读取、新Enrollment创建201及Finding／Assessment循环200，距01:39:27Z总终止仅约4秒。按固定串行代码，已进入默认导出之后的邮箱发现准备；原响应正文未归档，不猜测该次Finding／Assessment具体状态，不计此阶段通过。当前证据支持主要预算消耗来自既有同步及自然到期等待，尚无完整阶段耗时报告，不能给出所有阶段的精确占比。
+
+独立核对归档六份CSV的内容：两个Owner各before／tightened／restored，均五行七字段，默认掩码、收紧全遮盖、空单元格及所有非敏感合成字段正确，恢复文件与原文件逐字节一致，Owner间三阶段文件相同。只认定这六份文件内容证据，不代替42次响应／会话归属／角色资格／浏览器全链验收。明细和限制在 `/tmp/addp-security-service-3afbae/p145-independent-timeout-audit.json`；时间线 `/tmp/addp-security-service-3afbae/p145-request-timeline.json`、`p145-security-mutation-timeline.json`；审计脚本 `/tmp/p145-3af-timeout-audit.py`。
+
+当前没有代码、超时、轮询、权限或运行环境变更，也未复派。待用户明确决定的方案：仅 `security-mysql-owner-protection` 的Hosted场景总预算1200→2400秒，增加安全的阶段计时／当前阶段记录；保留单请求30秒、产品Projection Runner30秒、三个90秒自然到期、全部场景／断言／21图及其他套件预算。2400秒是拟议上限，不是已测保证。现有Hosted Job上限120分钟无需修改。拟影响现有 `online-hosted-security-gate.sh`及其唯一分套件预算测试、领域Runner及测试的阶段计时、相关登记与文档；阶段记录只存固定阶段名／状态／耗时，不含SQL、结果、凭据或原值，不代替最终领域报告。确认后运行既有Security Runner／登记最小充分门禁，再交专门CI单次复验；确认前不实施预算变化，不为验收新增产品同步配置或修改各Owner轮询策略。
