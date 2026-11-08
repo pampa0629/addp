@@ -17,6 +17,10 @@ type FileExecution struct {
 	IssuedAuthorizationJSON json.RawMessage `gorm:"type:jsonb"`
 	AdmissionState          string          `gorm:"type:varchar(16);not null"`
 	AdmissionJSON           json.RawMessage `gorm:"type:jsonb"`
+	RuntimeExecutionID      *string         `gorm:"type:varchar(64)"`
+	RuntimeManifestJSON     json.RawMessage `gorm:"type:jsonb"`
+	InputOwnerInstanceID    string          `gorm:"type:text"`
+	InputDirectory          string          `gorm:"type:text"`
 	AdmissionExpiresAt      *time.Time
 	Version                 int64 `gorm:"not null"`
 	CreatedAt               time.Time

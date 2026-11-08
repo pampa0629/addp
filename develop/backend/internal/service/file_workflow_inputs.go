@@ -13,6 +13,7 @@ import (
 	"github.com/addp/common/client"
 	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/execution"
+	"github.com/addp/develop/backend/internal/repository"
 	"github.com/google/uuid"
 )
 
@@ -21,7 +22,7 @@ var errFileWorkflowInputs = errors.New("invalid or incomplete private workflow i
 // Recording must durably bind the original Runtime UUID and complete manifest
 // to the same Owner execution before any remote mutation. A lost acknowledgement
 // is not permission to repeat registration or create a second Runtime UUID.
-type fileWorkflowRuntimeRecorder func(context.Context, string, plugin.WorkflowPrivateFileManifest) error
+type fileWorkflowRuntimeRecorder func(context.Context, repository.PrivateFileRuntimeRecord) error
 
 type fileWorkflowInputCleanup struct {
 	SourcesStopped       bool
@@ -31,11 +32,13 @@ type fileWorkflowInputCleanup struct {
 }
 
 type fileWorkflowInputs struct {
-	ctx       context.Context
-	cancel    context.CancelCauseFunc
-	directory string
-	sources   []*fileSourceReader
-	manifest  plugin.WorkflowPrivateFileManifest
+	ctx        context.Context
+	cancel     context.CancelCauseFunc
+	directory  string
+	instanceID string
+	runtimeID  string
+	sources    []*fileSourceReader
+	manifest   plugin.WorkflowPrivateFileManifest
 
 	prepared   bool
 	attempted  bool
@@ -49,9 +52,9 @@ type fileWorkflowInputs struct {
 // Preparation is a component of the file-purpose Owner executor, not a public
 // submission route or a replacement for System admission. On error a non-nil
 // batch retains its original sessions so callers can observe pending cleanup.
-func prepareFileWorkflowInputs(ctx context.Context, authority fileSourceAuthority, provider plugin.ContentReadableProvider,
-	facts *client.DevelopFileExecutionFacts, issued client.IssuedDevelopFileAuthorization, lease execution.Lease) (*fileWorkflowInputs, error) {
-	if ctx == nil || authority == nil || provider == nil || facts.Validate() != nil || issued.Validate() != nil || facts.AdmissionState != "ready" ||
+func prepareFileWorkflowInputs(ctx context.Context, instanceID string, authority fileSourceAuthority, provider plugin.ContentReadableProvider,
+	facts *client.DevelopFileExecutionFacts, issued client.IssuedDevelopFileAuthorization, lease execution.Lease, registerDirectory func(context.Context, string, string) error) (*fileWorkflowInputs, error) {
+	if ctx == nil || instanceID == "" || registerDirectory == nil || authority == nil || provider == nil || facts.Validate() != nil || issued.Validate() != nil || facts.AdmissionState != "ready" ||
 		facts.ExecutionID != issued.Authorization.ExecutionID || facts.AuthorizationID != issued.Authorization.ID || facts.ScopeDigest != issued.ScopeDigest ||
 		!reflect.DeepEqual(facts.BoundScope, &issued.Scope) || facts.TenantID != issued.Authorization.TenantID ||
 		facts.Actor.PrincipalID != issued.Authorization.ActorPrincipalID || facts.Actor.TenantMembershipID != issued.Authorization.TenantMembershipID ||
@@ -76,11 +79,15 @@ func prepareFileWorkflowInputs(ctx context.Context, authority fileSourceAuthorit
 		return nil, errFileWorkflowInputs
 	}
 	batchCtx, cancel := context.WithCancelCause(ctx)
-	b := &fileWorkflowInputs{ctx: batchCtx, cancel: cancel, directory: root, manifest: plugin.WorkflowPrivateFileManifest{
+	b := &fileWorkflowInputs{ctx: batchCtx, cancel: cancel, directory: root, instanceID: instanceID, manifest: plugin.WorkflowPrivateFileManifest{
 		SchemaVersion: plugin.WorkflowPrivateFilesAPIV1, TenantID: uint(tenant), ExecutionID: facts.ExecutionID, Attempt: lease.Attempt,
 		AuthorizationID: authorization, ScopeDigest: facts.ScopeDigest, WorkflowJSON: workflow, Inputs: []plugin.WorkflowPrivateFile{}, Outputs: []string{}}}
 	if facts.Intent.Target != nil {
 		b.manifest.Outputs = append(b.manifest.Outputs, facts.Intent.Target.NodeID)
+	}
+	if err := registerDirectory(b.ctx, instanceID, root); err != nil {
+		b.cancel(err)
+		return b, err
 	}
 	for index, source := range facts.Intent.Sources {
 		req := client.DevelopFileSourceAccessRequest{ExecutionID: facts.ExecutionID, Attempt: lease.Attempt, LeaseToken: lease.Token, ScopeDigest: facts.ScopeDigest, Source: source.Target}
@@ -191,7 +198,8 @@ func (b *fileWorkflowInputs) Upload(ctx context.Context, connection plugin.Conne
 	callCtx, stop := b.bounded(ctx)
 	defer stop()
 	b.attempted = true
-	if err := record(callCtx, runtimeID, cloneFileWorkflowManifest(b.manifest)); err != nil {
+	b.runtimeID = runtimeID
+	if err := record(callCtx, repository.PrivateFileRuntimeRecord{RuntimeExecutionID: runtimeID, Manifest: cloneFileWorkflowManifest(b.manifest), OwnerInstanceID: b.instanceID, InputDirectory: b.directory}); err != nil {
 		return err
 	}
 	if err := b.live(); err != nil {
@@ -278,4 +286,26 @@ func (b *fileWorkflowInputs) Cleanup(ctx context.Context) (fileWorkflowInputClea
 	}
 	state.LocalRemoved = true
 	return state, nil
+}
+
+// A persisted path is not deletion authority. Recovery must still hold the
+// original local batch/source handles and match the existing supervisor's
+// instance identity. A new process cannot reconstruct ownership from a string.
+func (b *fileWorkflowInputs) CleanupRecorded(ctx context.Context, currentInstanceID string, record repository.PrivateFileRuntimeRecord) (fileWorkflowInputCleanup, error) {
+	if currentInstanceID != b.instanceID || record.OwnerInstanceID != b.instanceID || record.InputDirectory != b.directory || record.RuntimeExecutionID != b.runtimeID ||
+		record.Manifest.ExecutionID != b.manifest.ExecutionID || record.Manifest.Attempt != b.manifest.Attempt || record.Manifest.TenantID != b.manifest.TenantID ||
+		record.Manifest.AuthorizationID != b.manifest.AuthorizationID || record.Manifest.ScopeDigest != b.manifest.ScopeDigest {
+		return fileWorkflowInputCleanup{RuntimeCleanup: "pending"}, errFileSourceCleanupPending
+	}
+	return b.Cleanup(ctx)
+}
+
+// Directory-only recovery never invents a Runtime request. Once a Runtime
+// identity was reserved, the full original Runtime record is required instead.
+func (b *fileWorkflowInputs) CleanupInputDirectory(ctx context.Context, currentInstanceID string, record repository.PrivateInputDirectoryRecord) (fileWorkflowInputCleanup, error) {
+	if b.runtimeID != "" || currentInstanceID != b.instanceID || record.OwnerInstanceID != b.instanceID || record.InputDirectory != b.directory ||
+		record.ExecutionID != b.manifest.ExecutionID || record.Attempt != b.manifest.Attempt || record.TenantID != b.manifest.TenantID || record.AuthorizationID != b.manifest.AuthorizationID || record.ScopeDigest != b.manifest.ScopeDigest {
+		return fileWorkflowInputCleanup{RuntimeCleanup: "pending"}, errFileSourceCleanupPending
+	}
+	return b.Cleanup(ctx)
 }

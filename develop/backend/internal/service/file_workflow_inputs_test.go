@@ -23,6 +23,7 @@ import (
 	"github.com/addp/common/client"
 	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/execution"
+	"github.com/addp/develop/backend/internal/repository"
 )
 
 const fileInputRuntimeID = "5cb603c1-7544-42ca-a998-6a196a7e31c4"
@@ -111,7 +112,7 @@ func TestFileWorkflowInputsSpoolExactBytesAndRawDefinition(t *testing.T) {
 			facts, issued, lease, base := fileInputsFixture(t, save)
 			data := fileInputsData()
 			original := bytes.Clone(facts.ConfigJSON)
-			b, err := prepareFileWorkflowInputs(t.Context(), fileInputsAuthority(base), fileInputsProvider(data), facts, issued, lease)
+			b, err := prepareFileWorkflowInputs(t.Context(), "fixture-instance", fileInputsAuthority(base), fileInputsProvider(data), facts, issued, lease, recordFileInputsDirectory)
 			if b != nil {
 				defer cleanupFileInputs(t, b)
 			}
@@ -139,7 +140,7 @@ func TestFileWorkflowInputsSpoolExactBytesAndRawDefinition(t *testing.T) {
 			if !bytes.Equal(facts.ConfigJSON, original) || !strings.Contains(b.manifest.WorkflowJSON, `9007199254740993`) {
 				t.Fatal("numeric lexeme lost through float projection", b.manifest.WorkflowJSON)
 			}
-			for _, secret := range []string{"addp://", "sources/A.gpkg", "outputs/result.gpkg", "source_resource", "test-only", b.directory} {
+			for _, secret := range []string{"addp://", "sources/A.gpkg", "outputs/result.gpkg", "source_resource", "test-only", b.directory, "fixture-instance"} {
 				if strings.Contains(b.manifest.WorkflowJSON, secret) {
 					t.Fatal("business identity/connection entered Runtime", secret)
 				}
@@ -191,7 +192,7 @@ func TestFileWorkflowInputsRejectOwnerMismatchBeforeOpen(t *testing.T) {
 				calls.Add(1)
 				return auth(c, i, r)
 			})
-			b, err := prepareFileWorkflowInputs(t.Context(), count, fileInputsProvider(fileInputsData()), facts, issued, lease)
+			b, err := prepareFileWorkflowInputs(t.Context(), "fixture-instance", count, fileInputsProvider(fileInputsData()), facts, issued, lease, recordFileInputsDirectory)
 			if b != nil {
 				cleanupFileInputs(t, b)
 			}
@@ -365,7 +366,8 @@ func newFileInputsHTTP(t *testing.T, fault string) *fileInputsHTTP {
 	h.connection = plugin.ConnectionInfo{"host": u.Hostname(), "port": port, "protocol": "http"}
 	return h
 }
-func (h *fileInputsHTTP) record(ctx context.Context, id string, m plugin.WorkflowPrivateFileManifest) error {
+func (h *fileInputsHTTP) record(ctx context.Context, record repository.PrivateFileRuntimeRecord) error {
+	id, m := record.RuntimeExecutionID, record.Manifest
 	if ctx.Err() != nil || id != fileInputRuntimeID || m.ExecutionID != fileSourceExecution {
 		return errors.New("invalid registration")
 	}
@@ -378,7 +380,7 @@ func runtimeFileInputsCredential(context.Context) (string, error) {
 
 func TestFileWorkflowInputsActualSDKUploadsAndCanonicalDispatchOnce(t *testing.T) {
 	facts, issued, lease, base := fileInputsFixture(t, true)
-	b, err := prepareFileWorkflowInputs(t.Context(), fileInputsAuthority(base), fileInputsProvider(fileInputsData()), facts, issued, lease)
+	b, err := prepareFileWorkflowInputs(t.Context(), "fixture-instance", fileInputsAuthority(base), fileInputsProvider(fileInputsData()), facts, issued, lease, recordFileInputsDirectory)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -419,14 +421,14 @@ func TestFileWorkflowInputsUnknownOutcomesNeverReplay(t *testing.T) {
 	for _, fault := range []string{"register-unknown", "create-unknown", "upload-unknown", "execute-unknown"} {
 		t.Run(fault, func(t *testing.T) {
 			facts, issued, lease, base := fileInputsFixture(t, false)
-			b, err := prepareFileWorkflowInputs(t.Context(), fileInputsAuthority(base), fileInputsProvider(fileInputsData()), facts, issued, lease)
+			b, err := prepareFileWorkflowInputs(t.Context(), "fixture-instance", fileInputsAuthority(base), fileInputsProvider(fileInputsData()), facts, issued, lease, recordFileInputsDirectory)
 			if err != nil {
 				t.Fatal(err)
 			}
 			h := newFileInputsHTTP(t, fault)
 			record := fileWorkflowRuntimeRecorder(h.record)
 			if fault == "register-unknown" {
-				record = func(context.Context, string, plugin.WorkflowPrivateFileManifest) error {
+				record = func(context.Context, repository.PrivateFileRuntimeRecord) error {
 					return errors.New("lost registration acknowledgement")
 				}
 			}
@@ -462,7 +464,7 @@ func TestFileWorkflowInputsTransferIntegrityCannotDispatch(t *testing.T) {
 	for _, fault := range []string{"size", "same-size-content"} {
 		t.Run(fault, func(t *testing.T) {
 			facts, issued, lease, base := fileInputsFixture(t, false)
-			b, err := prepareFileWorkflowInputs(t.Context(), fileInputsAuthority(base), fileInputsProvider(fileInputsData()), facts, issued, lease)
+			b, err := prepareFileWorkflowInputs(t.Context(), "fixture-instance", fileInputsAuthority(base), fileInputsProvider(fileInputsData()), facts, issued, lease, recordFileInputsDirectory)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -516,7 +518,7 @@ func TestFileWorkflowInputsSourceFailureRetainsPendingCleanup(t *testing.T) {
 	}
 	done := make(chan result, 1)
 	go func() {
-		b, e := prepareFileWorkflowInputs(t.Context(), auth, provider, facts, issued, lease)
+		b, e := prepareFileWorkflowInputs(t.Context(), "fixture-instance", auth, provider, facts, issued, lease, recordFileInputsDirectory)
 		done <- result{b, e}
 	}()
 	<-entered
@@ -542,7 +544,7 @@ func TestFileWorkflowInputsRuntimeCleanupPendingIsNotLocalSuccess(t *testing.T) 
 	for _, fault := range []string{"cleanup-pending", "cleanup-unknown"} {
 		t.Run(fault, func(t *testing.T) {
 			facts, issued, lease, base := fileInputsFixture(t, false)
-			b, err := prepareFileWorkflowInputs(t.Context(), fileInputsAuthority(base), fileInputsProvider(fileInputsData()), facts, issued, lease)
+			b, err := prepareFileWorkflowInputs(t.Context(), "fixture-instance", fileInputsAuthority(base), fileInputsProvider(fileInputsData()), facts, issued, lease, recordFileInputsDirectory)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -575,7 +577,7 @@ func TestFileWorkflowInputsRevocationCancelsUploadAndPreventsDispatch(t *testing
 		}
 		return original(c, i, r)
 	})
-	b, err := prepareFileWorkflowInputs(t.Context(), auth, fileInputsProvider(fileInputsData()), facts, issued, lease)
+	b, err := prepareFileWorkflowInputs(t.Context(), "fixture-instance", auth, fileInputsProvider(fileInputsData()), facts, issued, lease, recordFileInputsDirectory)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -618,7 +620,7 @@ func TestFileWorkflowInputsDifferentSourceDeadlinesRejectWholeBatch(t *testing.T
 		}
 		return response, err
 	})
-	b, err := prepareFileWorkflowInputs(t.Context(), auth, fileInputsProvider(fileInputsData()), facts, issued, lease)
+	b, err := prepareFileWorkflowInputs(t.Context(), "fixture-instance", auth, fileInputsProvider(fileInputsData()), facts, issued, lease, recordFileInputsDirectory)
 	if b != nil {
 		defer cleanupFileInputs(t, b)
 	}
@@ -628,5 +630,99 @@ func TestFileWorkflowInputsDifferentSourceDeadlinesRejectWholeBatch(t *testing.T
 	h := newFileInputsHTTP(t, "")
 	if err := b.Upload(t.Context(), h.connection, fileInputRuntimeID, runtimeFileInputsCredential, h.record); err == nil || h.calls.Load() != 0 {
 		t.Fatal("partial or inconsistent batch reached Runtime")
+	}
+}
+
+func TestFileWorkflowInputsRecordedCleanupRequiresOriginalInstanceAndBatch(t *testing.T) {
+	facts, issued, lease, base := fileInputsFixture(t, false)
+	b, err := prepareFileWorkflowInputs(t.Context(), "fixture-instance", fileInputsAuthority(base), fileInputsProvider(fileInputsData()), facts, issued, lease, recordFileInputsDirectory)
+	if err != nil {
+		t.Fatal(err)
+	}
+	h := newFileInputsHTTP(t, "")
+	var registered repository.PrivateFileRuntimeRecord
+	record := func(ctx context.Context, r repository.PrivateFileRuntimeRecord) error {
+		registered = r
+		return h.record(ctx, r)
+	}
+	if err := b.Upload(t.Context(), h.connection, fileInputRuntimeID, runtimeFileInputsCredential, record); err != nil {
+		t.Fatal(err)
+	}
+	if registered.OwnerInstanceID != "fixture-instance" || registered.InputDirectory != b.directory {
+		t.Fatal("local ownership not registered")
+	}
+	for _, fault := range []string{"current-instance", "record-instance", "directory", "runtime", "execution", "attempt", "scope", "tenant", "authorization"} {
+		bad := registered
+		current := "fixture-instance"
+		switch fault {
+		case "current-instance":
+			current = "other-instance"
+		case "record-instance":
+			bad.OwnerInstanceID = "other-instance"
+		case "directory":
+			bad.InputDirectory = t.TempDir()
+		case "runtime":
+			bad.RuntimeExecutionID = fileSourceLease
+		case "execution":
+			bad.Manifest.ExecutionID = fileSourceLease
+		case "attempt":
+			bad.Manifest.Attempt = 2
+		case "scope":
+			bad.Manifest.ScopeDigest = strings.Repeat("f", 64)
+		case "tenant":
+			bad.Manifest.TenantID = 4
+		case "authorization":
+			bad.Manifest.AuthorizationID = 10
+		}
+		state, err := b.CleanupRecorded(t.Context(), current, bad)
+		if err == nil || state.LocalRemoved || state.RuntimeCleanup != "pending" || h.cleanup.Load() != 0 {
+			t.Fatal("unproven cleanup changed resources", fault, state, err)
+		}
+		if _, err := os.Stat(b.directory); err != nil {
+			t.Fatal("foreign recovery deleted original directory", fault, err)
+		}
+	}
+	state, err := b.CleanupRecorded(t.Context(), "fixture-instance", registered)
+	if err != nil || !state.LocalRemoved || !state.SourcesStopped || state.RuntimeCleanup != "passed" || h.cleanup.Load() != 1 {
+		t.Fatal(state, err)
+	}
+}
+
+// Explicit persistence double for tests that isolate preparation/transport.
+func recordFileInputsDirectory(ctx context.Context, instanceID, directory string) error {
+	return ctx.Err()
+}
+
+func TestFileWorkflowInputsDirectoryFailureStopsBeforeSourceAccess(t *testing.T) {
+	facts, issued, lease, base := fileInputsFixture(t, false)
+	var checks atomic.Int32
+	original := fileInputsAuthority(base)
+	authority := fileSourceAuthorityFunc(func(c context.Context, i client.IssuedDevelopFileAuthorization, r client.DevelopFileSourceAccessRequest) (*client.DevelopFileSourceAccessObservation, error) {
+		checks.Add(1)
+		return original(c, i, r)
+	})
+	b, err := prepareFileWorkflowInputs(t.Context(), "fixture-instance", authority, fileInputsProvider(fileInputsData()), facts, issued, lease, func(context.Context, string, string) error { return errors.New("directory registration unknown") })
+	if b != nil {
+		defer cleanupFileInputs(t, b)
+	}
+	if b == nil || err == nil || checks.Load() != 0 {
+		t.Fatal("unconfirmed directory reached source IO", err, checks.Load())
+	}
+}
+
+func TestFileWorkflowInputsDirectoryOnlyRecoveryDoesNotInventRuntime(t *testing.T) {
+	facts, issued, lease, base := fileInputsFixture(t, false)
+	b, err := prepareFileWorkflowInputs(t.Context(), "fixture-instance", fileInputsAuthority(base), fileInputsProvider(fileInputsData()), facts, issued, lease, recordFileInputsDirectory)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := repository.PrivateInputDirectoryRecord{ExecutionID: facts.ExecutionID, TenantID: 3, Attempt: 1, AuthorizationID: 9, ScopeDigest: facts.ScopeDigest, OwnerInstanceID: "fixture-instance", InputDirectory: b.directory}
+	state, err := b.CleanupInputDirectory(t.Context(), "other-instance", r)
+	if err == nil || state.LocalRemoved {
+		t.Fatal("cross-instance directory cleanup allowed")
+	}
+	state, err = b.CleanupInputDirectory(t.Context(), "fixture-instance", r)
+	if err != nil || !state.LocalRemoved || !state.SourcesStopped || state.RuntimeCleanup != "not_created" {
+		t.Fatal(state, err)
 	}
 }

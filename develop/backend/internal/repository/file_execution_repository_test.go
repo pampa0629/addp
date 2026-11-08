@@ -276,6 +276,7 @@ func runFileQueueCase(t *testing.T, db *gorm.DB, repo *FileExecutionRepository, 
 	if err != nil || claimed == nil || lease == nil || claimed.ExecutionID != item.ExecutionID || claimed.Attempt != 1 || claimed.StartedAt == nil {
 		t.Fatalf("original admitted purpose was not claimed exactly once: %#v %v", claimed, err)
 	}
+	runPrivateRuntimeRecordCase(t, db, repo, claimed, *lease, bound)
 }
 
 func TestFileExecutionKnownUnissuedRejectionIsAtomicAndNeverStarts(t *testing.T) {
