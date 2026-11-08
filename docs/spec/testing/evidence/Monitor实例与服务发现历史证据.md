@@ -563,3 +563,14 @@ Safari 默认“在线＋已启用采集”展示 System、Manager、Meta、Tran
 三个已在根采集计划中选择的 Worker 未采集原因已精确复现：配置键为 meta-worker、transfer-bounded-worker、transfer-continuous-worker，而标准 addp_worker_units 即使单副本也发布对应的 -1 启动单元，start_module_workers 原样将单元传给唯一 process-metrics-launch.py。对当前同一计划调用纯 select_deployment，旧键能命中，实际 -1 单元全部返回未选择；规范和 .env.example 已明确具体副本名称，不应新增旧名兼容或猜测映射。Quality Worker 未列入当前计划，另行表达。三个已选 Worker 的现有证书通过共享严格链／用途／IP SAN／密钥预检，未输出或改写凭据、未改证书。收据 `/tmp/addp-service-live-config-selection-20261108.json`、`/tmp/addp-service-live-worker-unit-mismatch-20261108.json`、`/tmp/addp-service-live-worker-cert-check-20261108.json`。已单独请求用户确认仅修正三个本机配置键名；此条记录时尚未修改配置或重启，不能将纯匹配诊断计为 Worker 采集恢复。后续原生主机绑定亦仍未实施。
 
 本轮没有产品代码、API、权限或环境变更，最小验证为上述真实只读脚本、原标准状态／页面路径及同输入纯匹配，未重复无关开发门禁。本次证据只支持五个 Backend 的当前读数／选中短趋势、完整在线清单及配置缺口，不能认定 27 实例资源、Worker、主机绑定、多副本或 CI／Hosted 全部通过。
+
+
+### 本机三个 Worker 的具体副本采集键修正（2026-11-08）
+
+用户在讨论独立副本、每次启动实例 UUID 与进程内并发的区别后同意先修正三个 Worker 的配置，再接通现有单副本采集。本批仅将忽略版本控制的根 `.env` 中 `ADDP_DEV_PROCESS_METRICS_PLAN` 的三个键改为 `meta-worker-1`、`transfer-bounded-worker-1`、`transfer-continuous-worker-1`。沿用规范和标准启动的唯一具体单元名称，删除旧未编号配置键，不新增兼容读取或备用路线。8 项计划总数、各项五字段值与可选字段保持，未新增 Quality／Security 等其他采集项，也未改变副本数、任务并发、主机关联、账号或权限。
+
+执行 `python3 /tmp/addp-fix-worker-plan-keys-20261108.py` 退出 0。写入前用唯一启动适配器验证全部八项，并对预期环境内容做 Bash 语法检查；写入后重读真实 shell 环境，确认唯一变化的变量为该计划、JSON 恰好只改三个键、其他文件字节及原 inode／模式／UID／GID不变。每个具体单元能够选到自己的单项 SDK 输入，不靠模块／角色猜选其他副本。原 `.env` 与任何凭据未复制到仓库证据或提交；收据 `/tmp/addp-worker-plan-keys-fix-20261108.json` 只记录封闭结果和公开单元名。
+
+`python3 /tmp/addp-worker-plan-preflight-20261108.py` 退出 0：三个现有端点均已包含在原 Monitor CIDR／端口准入和 Desktop 转发列表；原来源证书严格链、用途、IP SAN、密钥及 Monitor 服务器信任检查通过；原监听端口目前无监听者。未变更端点、证书、准入或指标中心，也未使用临时 listener 证明采集。收据 `/tmp/addp-worker-plan-preflight-20261108.json`。沿 `make test-dev-lifecycle` 已有脚本文件执行定向 `python3 -m unittest scripts/test/dev-process-metrics-plan_test.py`，退出 0，15 项现有 T1 通过，日志 `/tmp/addp-worker-plan-tests-20261108.log`；不据此认定完整生命周期门禁或实际来源已通过。纯私有配置键修正不涉及源码、API、标准入口或 CI 登记变化。
+
+当前未启停个人服务；既有 Worker 仍是旧声明，不能计采样恢复，也不能改写原未绑定状态。交接用户在仓库根目录执行标准 `./scripts/dev/restart.sh -meta -transfer`，由新进程载入修正后的计划并生成新实例身份；该命令重启这两个模块及其 Worker。用户完成后继续核对三个真实 Worker 的声明、唯一目标、当前身份、采样新鲜度及 CPU／RSS 趋势。原生 Mac 主机登记和允许模块集合、N 副本扩展及正式 CI／Hosted 分别推进，本批均未实施或触发，没有设置定时任务。
