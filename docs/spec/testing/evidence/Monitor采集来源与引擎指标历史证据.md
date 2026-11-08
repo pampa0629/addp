@@ -855,3 +855,13 @@ Safari 使用现有平台管理员会话，通过正常发现、主机选择和�
 当前原生来源未提供离线盘数、扫描统计、部分请求错误及接收流量字段，页面显示无有效值，不补造零值。此批仅完成个人 Desktop 已有来源的真实接入与可用指标／趋势复验，不代表 17 项均有数据、完整缺样／恢复／缩放验收、CI 或 Hosted 通过。下一步先核对原生指标缺项及零值省略行为，再讨论是否需要调整采集映射，不能从“没有发布”推定为零。
 
 脱敏原件：`/tmp/addp-business-minio-mtls-first-failure.json`、`/tmp/addp-business-minio-strict-certificate-fix.json`、`/tmp/addp-business-minio-source-check.json`、`/tmp/addp-business-minio-clientless-rejection.json`、`/tmp/addp-business-minio-prometheus-check.json`、`/tmp/addp-business-minio-admission.json`、`/tmp/addp-business-minio-monitor-page.json`、`/tmp/addp-business-minio-monitor-capacity.json`（隐藏页前提失败）、`/tmp/addp-business-minio-monitor-traffic.json`、`/tmp/addp-business-minio-traffic-refresh.json`、`/tmp/addp-business-minio-capacity-final.json`。私有环境和证书未进入版本控制；未自行重启服务、执行 CI／Hosted 或设置定时任务。
+
+### MinIO 缺项的原生响应与采集映射对照（2026-11-08）
+
+按前节后续建议，只读核对两作用域的原始端点与来源输出。沿既有安装记录核验账号状态、部署归属及数据卷身份，仅用各自受限采集账号的短 JWT 请求原定四个 v3 端点；请求前后确认原容器事实未变，不读取业务对象、桶明细或其他管理接口。每项响应限制三秒／256 KiB，全部 HTTP 200；随后以原 Monitor 客户端严格 mTLS 读取对应来源。只保存固定指标的存在性，不保存原始响应、标签或凭据。命令为 `python3 /tmp/addp-minio-native-presence-20261108.py`，收据为同名 `.json`。
+
+当次 Infra 在固定 16 项原始字段中发布 12 项，缺离线盘数、在途请求、4xx 和 5xx 计数；Business 发布 7 项，除上述四项外还缺四项扫描字段及接收字节计数。逐字段对照均没有无法解释的采集遗漏；扫描距今字段沿原逻辑转换为扫描时间。这里的 16 项含进程身份／扫描时间等原始输入，不等同于产品的 17 项派生指标，也不把来源附加的观测时间计入原生字段数。
+
+固定源码 `9e49d5e7a648f00e26f2246f4dc28e6b07f8c84a` 的 [MetricValues.Set](https://github.com/minio/minio/blob/9e49d5e7a648f00e26f2246f4dc28e6b07f8c84a/cmd/metrics-v3-types.go#L199-L230) 只存入大于零的值；[扫描汇总加载](https://github.com/minio/minio/blob/9e49d5e7a648f00e26f2246f4dc28e6b07f8c84a/cmd/metrics-v3-cluster-usage.go#L54-L99)在缓存读取失败或没有最近扫描时间时都可返回空指标。因此实测能证明缺项已发生于原生响应，不能进一步把 Business 扫描缺席解释为“空库”“扫描失败”，或把未发布计数补零。本批维持现行规范，不增加 v2、S3 枚举或额外权限路线。
+
+`make test-monitor-minio-observation-unit` 退出 0：Python 两组 11／25 项及五个 Go 包均通过，现有映射测试覆盖缺席不造零、真实显式零保留和无扫描时间不发布扫描统计。日志 `/tmp/addp-minio-omission-t1-20261108.log`；该 T1 与上述个人端点只读比对分列，不冒充独占实源 T2、完整页面或 Hosted 验收。仅补证据文档，未修改产品、配置或服务状态，CI／Hosted仍由专门会话安排。
