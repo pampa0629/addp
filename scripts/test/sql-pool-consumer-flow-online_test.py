@@ -42,7 +42,7 @@ class SQLPoolEvidenceTest(unittest.TestCase):
                 CI.validate_sql_pool_profile(root, registry)
 
     def test_verified_browser_output_is_returned_to_online_dispatcher(self):
-        evidence = {"schema_version": "addp.sql-pool-console/v3", "run_id": "run-pool", "cases": []}
+        evidence = {"schema_version": "addp.sql-pool-console/v4", "run_id": "run-pool", "cases": []}
         processes = {"system": [19, "9"]}
         with tempfile.TemporaryDirectory() as tmp:
             private = Path(tmp)
@@ -87,7 +87,7 @@ pid=44 user=pool_reader_next LOG:  statement: SELECT id FROM public.pool_source_
 
     def connection_evidence(self):
         expected = {"run_id": "run-pool", "principal_id": "4", "operator_principal_id": "6", "cases": []}
-        evidence = {"schema_version": "addp.sql-pool-console/v3", "run_id": "run-pool",
+        evidence = {"schema_version": "addp.sql-pool-console/v4", "run_id": "run-pool",
                     "consumer_principal_id": "4", "operator_principal_id": "6", "cases": []}
         for engine_id, engine in ((5, "postgresql"), (8, "mysql")):
             source = {"container_id": engine, "database": "pool_fixture", "native_id": "native-" + engine}
@@ -133,6 +133,20 @@ pid=44 user=pool_reader_next LOG:  statement: SELECT id FROM public.pool_source_
                 recovery["online" if restored else "offline"] = {"engine_version": 5,
                     "connection_status": "online" if restored else "offline", "probe_success": restored}
             case["recovery"] = recovery
+            concurrency = {"source_identity": source,
+                "configuration": {**deepcopy(case["changes"][-1]), "before_version": 5, "after_version": 6,
+                                  "phase": "concurrent", "max_idle": 1},
+                "old_id": 14, "new_id": 15, "old_execution_id": f"{engine}-concurrent-old",
+                "new_execution_id": f"{engine}-concurrent-new", "query_active_after": [15],
+                "manager_new_ids": [16], "manager_active_after": [15, 16], "rows": {"old": 1, "new": 1, "manager": 1}}
+            concurrency["configuration"].pop("consumers")
+            for stage, operation, held, waiters in (("acquired", "acquire", True, []),
+                    ("old_blocked", "observe", True, [{"id": 14, "phase": "old"}]),
+                    ("both_blocked", "observe", True, [{"id": 14, "phase": "old"}, {"id": 15, "phase": "new"}]),
+                    ("released", "release", False, [])):
+                concurrency[stage] = {"engine": engine, "run_id": "run-pool", "source_identity": source,
+                                      "stage": operation, "holder_id": 99, "held": held, "waiters": waiters}
+            case["concurrency"] = concurrency
             evidence["cases"].append(case)
         return evidence, expected
 
@@ -268,3 +282,76 @@ pid=44 user=pool_reader_next LOG:  statement: SELECT id FROM public.pool_source_
                     self.assertEqual([p["configured_password_accepted"] for p in proofs], [False, True])
                     self.assertEqual([json.loads(line) for line in (private / "sql-pool-recovery-probes.jsonl").read_text().splitlines()], proofs)
                     self.assertFalse(any(secret in output.getvalue() for secret in credentials.values()))
+
+    def test_concurrency_requires_native_overlap_two_executions_and_retired_connection_close(self):
+        evidence, expected = self.connection_evidence()
+        POOL.validate_browser(evidence, expected)
+        mutations = [
+            lambda p: p["configuration"].update(before_version=4),
+            lambda p: p["configuration"].update(max_idle=0),
+            lambda p: p["acquired"].update(held=False),
+            lambda p: p["both_blocked"].update(waiters=[{"id": 15, "phase": "new"}]),
+            lambda p: p["both_blocked"]["waiters"][0].update(id=17),
+            lambda p: p["released"].update(held=True),
+            lambda p: p.update(old_id=13),
+            lambda p: p.update(query_active_after=[14, 15]),
+            lambda p: p.update(query_active_after=[]),
+            lambda p: p.update(manager_new_ids=[15]),
+            lambda p: p.update(manager_active_after=[16]),
+            lambda p: p["rows"].update(old=0),
+            lambda p: p.update(old_execution_id="postgresql-restored"),
+            lambda p: p.update(new_execution_id="postgresql-concurrent-old"),
+            lambda p: p.update(sql="must-not-be-exported"),
+        ]
+        for index, mutation in enumerate(mutations):
+            with self.subTest(index=index):
+                invalid = deepcopy(evidence)
+                mutation(invalid["cases"][0]["concurrency"])
+                with self.assertRaises(POOL.SUPPORT.SuiteError):
+                    POOL.validate_browser(invalid, expected)
+        for mutation in (lambda e: e.update(schema_version="addp.sql-pool-console/v3"),
+                         lambda e: e["cases"][0].pop("concurrency")):
+            invalid = deepcopy(evidence)
+            mutation(invalid)
+            with self.assertRaises(POOL.SUPPORT.SuiteError):
+                POOL.validate_browser(invalid, expected)
+
+    def test_native_barrier_only_releases_its_owned_connection_and_records_no_sql(self):
+        for engine in POOL.PROFILES:
+            with self.subTest(engine=engine), tempfile.TemporaryDirectory() as tmp:
+                directory = Path(tmp)
+                source = {"container_id": "owned", "database": POOL.DATABASE, "native_id": "same"}
+                both = [{"id": 12, "phase": "old"}, {"id": 13, "phase": "new"}]
+                snapshots = iter([{"holder_id": None, "waiters": []}, {"holder_id": 11, "waiters": []},
+                                  {"holder_id": 11, "waiters": both[:1]}, {"holder_id": 11, "waiters": both},
+                                  {"holder_id": 11, "waiters": both}, {"holder_id": None, "waiters": []}])
+                calls = []
+
+                def native(_, statement):
+                    calls.append(statement)
+                    kill = statement.startswith(("SELECT pg_terminate_backend", "KILL CONNECTION"))
+                    return POOL.subprocess.CompletedProcess([], 0, stdout="" if kill else json.dumps(next(snapshots)))
+
+                output = StringIO()
+                with patch.object(POOL, "fixture_identity", return_value=source), patch.object(POOL, "docker") as docker, \
+                     patch.object(POOL, "sql", side_effect=native), patch.object(POOL.time, "sleep"), redirect_stdout(output):
+                    for operation in ("acquire", "observe", "observe", "release"):
+                        POOL.concurrency_barrier(engine, directory, directory, "run-pool", operation)
+                    with self.assertRaisesRegex(POOL.SUPPORT.SuiteError, "cannot be repeated"):
+                        POOL.concurrency_barrier(engine, directory, directory, "run-pool", "acquire")
+                    expected = "SELECT pg_terminate_backend(11);" if engine == "postgresql" else "KILL CONNECTION 11;"
+                    self.assertIn(expected, calls)
+                    statement = docker.call_args.args[-1]
+                    self.assertIn("LOCK TABLE", statement)
+                    self.assertIn(POOL.TABLE, statement)
+                    proofs = [json.loads(line) for line in output.getvalue().splitlines()]
+                    self.assertEqual([p["held"] for p in proofs], [True, True, True, False])
+                    self.assertEqual(proofs[2]["waiters"], both)
+                    self.assertEqual([json.loads(line) for line in (directory / "sql-pool-concurrency-barriers.jsonl").read_text().splitlines()], proofs)
+                    self.assertNotIn("SELECT", output.getvalue())
+                for actual_source, holder in (({**source, "native_id": "other"}, 11), (source, 22)):
+                    with patch.object(POOL, "fixture_identity", return_value=actual_source), \
+                         patch.object(POOL, "sql", return_value=POOL.subprocess.CompletedProcess([], 0, stdout=json.dumps({"holder_id": holder, "waiters": []}))) as query:
+                        with self.assertRaises(POOL.SUPPORT.SuiteError):
+                            POOL.concurrency_barrier(engine, directory, directory, "run-pool", "release")
+                        self.assertFalse(any("terminate" in call.args[1] or "KILL" in call.args[1] for call in query.call_args_list))

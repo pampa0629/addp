@@ -101,11 +101,12 @@ async function saveChange(page, sample, operator, phase, credentials) {
     account: { user: readers[1], password: credentials.account },
     password: { password: credentials.rotated },
     pool: { [idleKey]: 0 },
+    concurrent: { [idleKey]: 1 },
   }[phase]
   try {
     const before = await json(await api.get(path), 'System config before edit')
     expect(before.id).toBe(sample.engine_id)
-    expect(before.connection_info).toMatchObject({ database: 'pool_fixture', [openKey]: 2, [idleKey]: 1 })
+    expect(before.connection_info).toMatchObject({ database: 'pool_fixture', [openKey]: 2, [idleKey]: phase === 'concurrent' ? 0 : 1 })
     await row.getByRole('button', { name: '编辑', exact: true }).click({ timeout: responseTimeout })
     const dialog = frame.getByRole('dialog', { name: '编辑引擎', exact: true })
     for (const [key, value] of Object.entries(patch)) {
@@ -296,6 +297,63 @@ async function credentialRecovery(page, operatorPage, sample, operator, consumer
   }
 }
 
+function barrierAction(engine, operation) {
+  return JSON.parse(execFileSync('python3', ['-m', 'scripts.test.sql-pool-consumer-flow-online',
+    'barrier', '--engine', engine, '--barrier-operation', operation],
+  { cwd: root, encoding: 'utf8', timeout: 30_000 }))
+}
+
+async function concurrentUpdate(page, operatorPage, sample, operator, consumer, credentials) {
+  const engine = sample.engine_type
+  const before = observe(engine, readers[1])
+  const secondPage = await page.context().newPage()
+  const pending = []
+  let released, oldBlocked, bothBlocked
+  const acquired = barrierAction(engine, 'acquire')
+  try {
+    pending.push(developQuery(page, sample, 'concurrent_old', consumer))
+    // Retain failures for the final await while the native barrier is inspected.
+    pending.at(-1).catch(() => {})
+    await expect.poll(() => {
+      oldBlocked = barrierAction(engine, 'observe')
+      return oldBlocked.held && oldBlocked.waiters.length === 1 && oldBlocked.waiters[0].phase === 'old'
+    }, { timeout: 15_000 }).toBe(true)
+    const version = await saveChange(operatorPage, sample, operator, 'concurrent', credentials)
+    pending.push(developQuery(secondPage, sample, 'concurrent_new', consumer))
+    pending.at(-1).catch(() => {})
+    await expect.poll(() => {
+      bothBlocked = barrierAction(engine, 'observe')
+      return bothBlocked.held && bothBlocked.waiters.length === 2
+        && ['new', 'old'].every(phase => bothBlocked.waiters.some(waiter => waiter.phase === phase))
+        && bothBlocked.waiters.some(waiter => waiter.id === oldBlocked.waiters[0].id && waiter.phase === 'old')
+    }, { timeout: 15_000 }).toBe(true)
+    released = barrierAction(engine, 'release')
+    expect(released.held).toBe(false)
+    const [oldExecution, newExecution] = await Promise.all(pending)
+    await page.screenshot({ path: resolve(process.env.ADDP_ONLINE_ARTIFACT_DIR, `${engine}-concurrent-old-completed.png`) })
+    await secondPage.screenshot({ path: resolve(process.env.ADDP_ONLINE_ARTIFACT_DIR, `${engine}-concurrent-new-completed.png`) })
+    const oldID = oldBlocked.waiters[0].id
+    const newID = bothBlocked.waiters.find(waiter => waiter.phase === 'new').id
+    const queryState = observe(engine, readers[1])
+    expect(queryState.active_ids).not.toContain(oldID)
+    expect(queryState.active_ids).toContain(newID)
+    expect(queryState.source_identity).toEqual(sample.source_identity)
+    await managerPreview(page, sample, () => page.goto(previewRoute(sample)))
+    const manager = await replacement(engine, readers[1], queryState, readers[1], before.statement_ids, 1, sample.source_identity)
+    expect(manager.new_ids).not.toContain(oldID)
+    expect(manager.new_ids).not.toContain(newID)
+    await page.screenshot({ path: resolve(process.env.ADDP_ONLINE_ARTIFACT_DIR, `${engine}-concurrent-manager-completed.png`) })
+    return { acquired, old_blocked: oldBlocked, both_blocked: bothBlocked, released, configuration: version,
+      source_identity: sample.source_identity, old_execution_id: oldExecution, new_execution_id: newExecution,
+      old_id: oldID, new_id: newID, query_active_after: queryState.active_ids,
+      manager_new_ids: manager.new_ids, manager_active_after: manager.active_after, rows: { old: 1, new: 1, manager: 1 } }
+  } finally {
+    if (!released) barrierAction(engine, 'release')
+    await Promise.allSettled(pending)
+    await secondPage.close()
+  }
+}
+
 test('System pool edit replaces physical sessions in Manager and Develop for both engines', async ({ browser, page }) => {
   test.setTimeout(420_000)
   const expected = JSON.parse(readFileSync(process.env.ADDP_ONLINE_POOL_EXPECTATIONS, 'utf8'))
@@ -372,10 +430,12 @@ test('System pool edit replaces physical sessions in Manager and Develop for bot
       }
       const recovery = await test.step(`${engine} credential failure and recovery`, () =>
         credentialRecovery(page, operatorPage, sample, operator, consumer, credentials, changes.at(-1)))
-      cases.push({ engine_id: sample.engine_id, engine_type: engine, source_identity: source, changes, recovery })
+      const concurrency = await test.step(`${engine} active query during System pool update`, () =>
+        concurrentUpdate(page, operatorPage, sample, operator, consumer, credentials))
+      cases.push({ engine_id: sample.engine_id, engine_type: engine, source_identity: source, changes, recovery, concurrency })
     }
     writeFileSync(process.env.ADDP_ONLINE_POOL_REPORT, JSON.stringify({
-      schema_version: 'addp.sql-pool-console/v3', run_id: expected.run_id, consumer_principal_id: consumer.principalID, operator_principal_id: configIdentity.principalID, cases,
+      schema_version: 'addp.sql-pool-console/v4', run_id: expected.run_id, consumer_principal_id: consumer.principalID, operator_principal_id: configIdentity.principalID, cases,
     }))
   } finally {
     if (!operatorPage.isClosed()) await operatorContext.close()

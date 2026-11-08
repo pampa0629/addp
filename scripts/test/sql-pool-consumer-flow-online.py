@@ -299,6 +299,66 @@ def credential_fault(engine, private, artifacts, run_id, restore):
     print(json.dumps(proof))
 
 
+def concurrency_barrier(engine, private, artifacts, run_id, operation):
+    source = fixture_identity(engine, run_id)
+    require(bool(re.fullmatch(r"run-[a-z0-9-]+", run_id)), "invalid barrier run identity")
+    marker = "addp_pool_" + run_id
+    journal = private / f"{engine}-concurrency-barrier.json"
+    if engine == "postgresql":
+        holder = f"(SELECT pid FROM pg_stat_activity WHERE application_name='{marker}' AND datname='{DATABASE}' AND wait_event='PgSleep')"
+        inspection = f"""SELECT json_build_object('holder_id', {holder}, 'waiters', COALESCE(json_agg(
+            json_build_object('id',pid,'phase',CASE WHEN strpos(query,'pool concurrent_old')>0 THEN 'old' ELSE 'new' END)
+            ORDER BY pid),'[]'::json)) FROM pg_stat_activity
+            WHERE usename='{READERS[1]}' AND datname='{DATABASE}' AND state='active' AND wait_event_type='Lock'
+              AND {holder}=ANY(pg_blocking_pids(pid)) AND query ~* 'FROM[[:space:]]+(["[:alnum:]_]+[.])?[" ]*{TABLE}'
+              AND (strpos(query,'pool concurrent_old')>0 OR strpos(query,'pool concurrent_new')>0);"""
+    else:
+        holder = f"(SELECT ID FROM information_schema.PROCESSLIST WHERE ID=IS_USED_LOCK('{marker}') AND USER='root' AND DB='{DATABASE}' AND STATE='User sleep')"
+        inspection = f"""SELECT JSON_OBJECT('holder_id',{holder},'waiters',COALESCE(JSON_ARRAYAGG(
+            JSON_OBJECT('id',ID,'phase',IF(INSTR(INFO,'pool concurrent_old')>0,'old','new'))),JSON_ARRAY()))
+            FROM information_schema.PROCESSLIST WHERE USER='{READERS[1]}' AND DB='{DATABASE}'
+              AND STATE='Waiting for table metadata lock' AND INFO REGEXP '[[:space:]]FROM[[:space:]]+(`?{DATABASE}`?[.])?`?{TABLE}`?'
+              AND (INSTR(INFO,'pool concurrent_old')>0 OR INSTR(INFO,'pool concurrent_new')>0);"""
+
+    def snapshot():
+        return json.loads(sql(engine, inspection).stdout)
+
+    if operation == "acquire":
+        require(not journal.exists(), "concurrency barrier cannot be repeated")
+        if engine == "postgresql":
+            statement = f"SET application_name='{marker}'; BEGIN; LOCK TABLE public.{TABLE} IN ACCESS EXCLUSIVE MODE; SELECT pg_sleep(90); ROLLBACK;"
+            command = 'export PGPASSWORD="$POSTGRES_PASSWORD"; exec psql -XAt -v ON_ERROR_STOP=1 -h127.0.0.1 -U fixture_admin -d pool_fixture -c "$1"'
+        else:
+            statement = f"SELECT GET_LOCK('{marker}',0); LOCK TABLES {TABLE} WRITE; SELECT SLEEP(90); UNLOCK TABLES; DO RELEASE_LOCK('{marker}');"
+            command = 'export MYSQL_PWD="$MYSQL_ROOT_PASSWORD"; exec mysql --batch -h127.0.0.1 -uroot pool_fixture -e "$1"'
+        docker("exec", "-d", container(engine), "sh", "-c", command, "sh", statement)
+        deadline = time.monotonic() + 10
+        while not (state := snapshot())["holder_id"]:
+            require(time.monotonic() < deadline, "native table barrier was not acquired")
+            time.sleep(0.1)
+        receipt = {"source_identity": source, "holder_id": state["holder_id"]}
+        private_write(journal, json.dumps(receipt))
+    else:
+        receipt = json.loads(journal.read_text())
+        require(receipt["source_identity"] == source, "barrier source changed")
+        state = snapshot()
+        require(state["holder_id"] == receipt["holder_id"], "owned native barrier disappeared")
+        if operation == "release":
+            identity = receipt["holder_id"]
+            require(type(identity) is int and identity > 0, "invalid owned barrier connection")
+            sql(engine, f"SELECT pg_terminate_backend({identity});" if engine == "postgresql" else f"KILL CONNECTION {identity};")
+            deadline = time.monotonic() + 10
+            while (state := snapshot())["holder_id"] is not None or state["waiters"]:
+                require(time.monotonic() < deadline, "owned native barrier was not released")
+                time.sleep(0.1)
+    proof = {"engine": engine, "run_id": run_id, "source_identity": source, "stage": operation,
+             "holder_id": receipt["holder_id"], "held": state["holder_id"] == receipt["holder_id"],
+             "waiters": sorted(state["waiters"], key=lambda item: item["id"])}
+    with (artifacts / "sql-pool-concurrency-barriers.jsonl").open("a") as stream:
+        stream.write(json.dumps(proof) + "\n")
+    print(json.dumps(proof))
+
+
 def mysql_log_contract():
     # general_log.argument is a BLOB; LOWER alone preserves its uppercase bytes.
     result = sql("mysql", """SELECT JSON_OBJECT(
@@ -390,10 +450,54 @@ def validate_recovery(case, run_id, executions):
             executions.add(reading["execution_id"])
 
 
+def validate_concurrency(case, run_id, executions):
+    proof = case["concurrency"]
+    require(set(proof) == {"acquired", "old_blocked", "both_blocked", "released", "configuration", "source_identity",
+            "old_execution_id", "new_execution_id", "old_id", "new_id", "query_active_after", "manager_new_ids",
+            "manager_active_after", "rows"}, "unexpected concurrency evidence fields")
+    require(proof["source_identity"] == case["source_identity"], "concurrent source changed")
+    last = case["changes"][-1]
+    require(proof["configuration"] == {"before_version": last["after_version"], "after_version": last["after_version"] + 1,
+            "phase": "concurrent", "changed_fields": ["pool_max_idle_conns"], "same_engine_confirmed": False,
+            "host": "localhost", "database": DATABASE, "reader": READERS[1], "max_open": 2, "max_idle": 1,
+            "connection_online": True}, "concurrent configuration differs from the confirmed change")
+    ids = [proof["old_id"], proof["new_id"]]
+    require(all(type(value) is int and value > 0 for value in ids) and len(set(ids)) == 2, "invalid concurrent session identities")
+    used = {value for change in case["changes"] for consumer in change["consumers"].values()
+            for field in ("old_ids", "new_ids") for value in consumer[field]}
+    for consumer in case["recovery"]["consumers"].values():
+        used.update(consumer["new_ids"])
+        used.update(consumer.get("before_ids", []))
+    require(not used.intersection(ids), "concurrent query reused a closed connection")
+    holder = proof["acquired"]["holder_id"]
+    require(type(holder) is int and holder > 0 and holder not in ids, "invalid owned barrier connection")
+    old = [{"id": ids[0], "phase": "old"}]
+    both = sorted(old + [{"id": ids[1], "phase": "new"}], key=lambda item: item["id"])
+    for stage, operation, held, waiters in (("acquired", "acquire", True, []), ("old_blocked", "observe", True, old),
+                                           ("both_blocked", "observe", True, both), ("released", "release", False, [])):
+        require(proof[stage] == {"engine": case["engine_type"], "run_id": run_id, "source_identity": case["source_identity"],
+                "stage": operation, "holder_id": holder, "held": held, "waiters": waiters}, "native query overlap is unproven")
+    for field in ("query_active_after", "manager_new_ids", "manager_active_after"):
+        values = proof[field]
+        require(isinstance(values, list) and len(values) == len(set(values))
+                and all(type(value) is int and value > 0 for value in values), "invalid concurrent native session list")
+    manager = set(proof["manager_new_ids"])
+    require(proof["rows"] == {"old": 1, "new": 1, "manager": 1}, "missing concurrent page result")
+    require(proof["old_id"] not in proof["query_active_after"] and proof["new_id"] in proof["query_active_after"],
+            "retired connection or new idle lifecycle differs from contract")
+    require(manager and not manager.intersection(used | set(ids))
+            and manager | {proof["new_id"]} <= set(proof["manager_active_after"])
+            and proof["old_id"] not in proof["manager_active_after"], "Manager did not adopt the replacement configuration")
+    for field in ("old_execution_id", "new_execution_id"):
+        value = proof[field]
+        require(isinstance(value, str) and bool(value) and value not in executions, "reused concurrent execution")
+        executions.add(value)
+
+
 def validate_browser(evidence, expected):
     require(set(evidence) == {"schema_version", "run_id", "consumer_principal_id", "operator_principal_id", "cases"},
             "unexpected Console report fields")
-    require(evidence.get("schema_version") == "addp.sql-pool-console/v3"
+    require(evidence.get("schema_version") == "addp.sql-pool-console/v4"
             and evidence.get("run_id") == expected["run_id"], "wrong Console evidence identity")
     require(evidence.get("consumer_principal_id") == expected["principal_id"], "wrong Console consumer")
     require(evidence.get("operator_principal_id") == expected["operator_principal_id"]
@@ -403,7 +507,7 @@ def validate_browser(evidence, expected):
     require([case["engine_id"] for case in cases] == [case["engine_id"] for case in expected["cases"]], "missing or reordered Console cases")
     executions = set()
     for case, sample in zip(cases, expected["cases"], strict=True):
-        require(set(case) == {"engine_id", "engine_type", "source_identity", "changes", "recovery"}, "unexpected Console case fields")
+        require(set(case) == {"engine_id", "engine_type", "source_identity", "changes", "recovery", "concurrency"}, "unexpected Console case fields")
         require(case["engine_type"] == sample["engine_type"] and case["source_identity"] == sample["source_identity"],
                 "Console source identity changed")
         require(set(case["source_identity"]) == {"container_id", "database", "native_id"}, "unexpected source identity fields")
@@ -470,6 +574,7 @@ def validate_browser(evidence, expected):
             require(not (old_ids & new_ids), "one consumer reused the other's old pool")
             previous = change
         validate_recovery(case, expected["run_id"], executions)
+        validate_concurrency(case, expected["run_id"], executions)
 
 
 def process_identity():
@@ -507,9 +612,10 @@ def run(private, artifacts):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("action", nargs="?", default="run", choices=("start", "stop", "prepare", "cleanup", "observe", "rotate-password", "invalidate-password", "restore-password", "run"))
+    parser.add_argument("action", nargs="?", default="run", choices=("start", "stop", "prepare", "cleanup", "observe", "rotate-password", "invalidate-password", "restore-password", "barrier", "run"))
     parser.add_argument("--engine", choices=PROFILES)
     parser.add_argument("--reader", choices=READERS, default=READER)
+    parser.add_argument("--barrier-operation", choices=("acquire", "observe", "release"))
     args = parser.parse_args()
     require(os.environ.get("GITHUB_ACTIONS") == "true" and os.environ.get("ADDP_ONLINE_HOSTED") == "1"
             and os.environ.get("ADDP_ONLINE_TEST") == "1" and os.environ.get("ONLINE_SUITE") == NAME,
@@ -534,6 +640,9 @@ def main():
     elif args.action in ("invalidate-password", "restore-password"):
         require(args.engine is not None, "credential fault engine is required")
         credential_fault(args.engine, private, artifacts, run_id, args.action == "restore-password")
+    elif args.action == "barrier":
+        require(args.engine is not None and args.barrier_operation is not None, "barrier engine and operation are required")
+        concurrency_barrier(args.engine, private, artifacts, run_id, args.barrier_operation)
     else:
         run(private, artifacts)
 
