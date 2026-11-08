@@ -100,13 +100,11 @@ class Client:
 
     def request(self, method, path, expected, body=None, headers=None):
         if path.endswith('/auth/context'):
-            data = {'principal': {'id': 33, 'type': 'user'}, 'context': {'type': 'tenant', 'tenant_id': '2'},
+            data = {'principal': {'id': '33', 'type': 'user'}, 'context': {'type': 'tenant', 'tenant_id': '2'},
                     'token': {'type': 'first_party_access_token'}, 'authorization': {'role_assignments': [
                         {'role_key': 'raster-consumer', 'permissions': sorted(scene.raster.EDITOR_PERMISSIONS)}]}}
         elif path.endswith('/scan/run/manual'):
-            assert body['targets'] == [f'addp://engine/3/path/{n}?type=file' for n in fixture.SOURCES]
-            self.scans['source-scan'] = None
-            data = {'execution_id': 'source-scan'}
+            raise scene.SuiteError('ordinary business source initialization returned HTTP 403')
         elif '/meta/executions/' in path:
             identifier = path.rsplit('/', 1)[-1]
             parent = self.scans[identifier]
@@ -120,7 +118,9 @@ class Client:
         elif '/meta/items/' in path:
             data = next(v for v in self.items.values() if v['id'] == int(path.rsplit('/', 1)[-1]))
         elif '/meta/scan/runs?' in path:
-            data = {'total': len(self.scans), 'items': [{'execution_id': n} for n in self.scans]}
+            ids=[n for n,parent in self.scans.items() if parent is not None]
+            if self.fault=='consumer-extra-source-scan':ids.append('source-scan')
+            data = {'total': len(ids), 'items': [{'execution_id': n} for n in ids]}
         elif '/meta/lineage/graph?' in path:
             query = urllib.parse.parse_qs(path.split('?', 1)[1])
             side = 'target' if query['direction'] == ['upstream'] else 'source'
@@ -142,13 +142,48 @@ class Client:
         return SimpleNamespace(payload=copy.deepcopy(data), raw=json.dumps(data).encode(), status=expected[0])
 
 
+class SourceClient:
+    timeout=30
+    def __init__(self,business):
+        self.business=business
+        self.calls=[]
+    def request(self,method,path,expected,body=None,headers=None):
+        self.calls.append((method,path))
+        fault=self.business.fault
+        if path.endswith('/auth/context'):
+            registration=importlib.import_module('scripts.test.online-engine-registration')
+            permissions=registration.SOURCE_INITIALIZER_PERMISSIONS|{'meta.scan_task.execute','meta.scan_task.read'}
+            if fault=='source-extra-permission':permissions=permissions|{'develop.task.execute'}
+            if fault=='source-missing-permission':permissions=permissions-{'meta.scan_task.execute'}
+            data={'principal':{'id':'33'if fault=='source-same-principal'else'44','type':'user'},
+                'context':{'type':'tenant','tenant_id':'3'if fault=='source-tenant'else'2'},
+                'authorization':{'role_assignments':[{'role_key':'wrong'if fault=='source-role'else registration.SOURCE_INITIALIZER_ROLE,'permissions':sorted(permissions)}]}}
+        elif path.endswith('/scan/run/manual'):
+            assert body['targets']==[f'addp://engine/3/path/{n}?type=file'for n in fixture.SOURCES]
+            self.business.scans['source-scan']=None
+            data={'execution_id':'source-scan'}
+        elif path.endswith('/meta/executions/source-scan'):
+            data={'execution_id':'source-scan','parent_execution_id':'wrong'if fault=='source-parent'else None,
+                'module':'meta','task_type':'scan','status':'success','tenant_id':2,
+                'triggered_by':33 if fault=='source-actor'else 44,
+                'scan_context':{'engine_id':4 if fault=='source-engine'else 3}}
+        elif '/meta/scan/runs?'in path:
+            ids=[n for n,parent in self.business.scans.items()if parent is None]
+            if fault=='source-extra-scan':ids.append('unexpected')
+            data={'total':len(ids),'items':[{'execution_id':n}for n in ids]}
+        else:raise AssertionError(('preparer must never submit/read business execution',method,path))
+        return SimpleNamespace(payload=copy.deepcopy(data),raw=json.dumps(data).encode(),status=expected[0])
+
+
 class SightOrthogonalWorkflowTest(unittest.TestCase):
     def run_case(self, fault=None, worker=physical, diagnostic_runner=diagnostic, budget='600'):
         root = Path(self.enterContext(tempfile.TemporaryDirectory()))
-        env = {'GATEWAY_URL':'http://ordinary-fixture.invalid','ADDP_ONLINE_TEST_USER_ACCESS_TOKEN':'ordinary-fixture-token', 'ONLINE_SUITE': scene.SUITE, 'ADDP_ONLINE_TEST_RUN_ID': 'sight-orthogonal-123-1',
+        env = {'ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN':'separate-source-token','GATEWAY_URL':'http://ordinary-fixture.invalid','ADDP_ONLINE_TEST_USER_ACCESS_TOKEN':'ordinary-fixture-token', 'ONLINE_SUITE': scene.SUITE, 'ADDP_ONLINE_TEST_RUN_ID': 'sight-orthogonal-123-1',
                'ADDP_ONLINE_TEST_TENANT_ID': '2', 'ADDP_ONLINE_SIGHT_ORTHOGONAL_NFS_ENGINE_ID': '3',
                'ADDP_ONLINE_TEST_TIMEOUT_SECONDS': budget, 'ADDP_ONLINE_ARTIFACT_DIR': str(root/'evidence')}
         client = Client(fault)
+        self.source_client=SourceClient(client)
+        if fault=='source-token-missing':env.pop('ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN')
         self.evidence = root/'evidence'
 
         def reader(env, identifier, tenant, principal, dag):
@@ -169,7 +204,7 @@ class SightOrthogonalWorkflowTest(unittest.TestCase):
             self.assertIs(kwargs['profile'],scene)
             return lifecycle(repository,actual_env,actual_client,worker,diagnostic_runner,reader,metadata_factory=Metadata,profile=scene)
         output=io.StringIO()
-        with patch.dict(os.environ,env,clear=True), patch.object(scene,'DiagnosticClient',return_value=client)as constructor, patch.object(scene.view,'run_scenario',side_effect=isolated_lifecycle), contextlib.redirect_stdout(output):
+        with patch.dict(os.environ,env,clear=True), patch.object(scene,'DiagnosticClient',return_value=client)as constructor, patch.object(scene.view.support,'GatewayClient',return_value=self.source_client), patch.object(scene.view,'run_scenario',side_effect=isolated_lifecycle), contextlib.redirect_stdout(output):
             scene.main()
         constructor.assert_called_once_with(env['GATEWAY_URL'],env['ADDP_ONLINE_TEST_USER_ACCESS_TOKEN'],30,env['ADDP_ONLINE_ARTIFACT_DIR'])
         report=json.loads((self.evidence/(scene.PREFIX+'-persistence.json')).read_bytes())
@@ -197,10 +232,26 @@ class SightOrthogonalWorkflowTest(unittest.TestCase):
             data = (self.evidence/value['path']).read_bytes()
             self.assertEqual(data,raw_cog(name))
             self.assertEqual({'size_bytes':len(data),'sha256':hashlib.sha256(data).hexdigest()}, {key: value[key] for key in ('size_bytes', 'sha256')})
+        self.assertEqual(result['source_scan_identity']['triggered_by'],44)
+        source_identity=json.loads((self.evidence/'source-preparation-identity.json').read_bytes())
+        self.assertEqual((source_identity['principal_id'],len(source_identity['permissions_verified'])),('44',13))
+        self.assertNotIn('separate-source-token',json.dumps(result))
         for case in result['cases']:
             self.assertEqual(case['meta_relation']['execution_id'], case['execution_id'])
             self.assertEqual(case['scan_identity']['parent_execution_id'], case['execution_id'])
             self.assertEqual(case['meta_size_bytes'], case['physical_size_bytes'])
+
+    def test_source_preparation_identity_scan_and_inventory_fail_closed(self):
+        for fault in ('source-token-missing','source-same-principal','source-tenant','source-role',
+                      'source-extra-permission','source-missing-permission','source-actor',
+                      'source-parent','source-engine','source-extra-scan','consumer-extra-source-scan'):
+            with self.subTest(fault=fault),self.assertRaises(scene.SuiteError):
+                self.run_case(fault=fault)
+
+    def test_old_business_initial_scan_is_refused_without_expanding_permissions(self):
+        with patch.object(scene,'source_scan_client',side_effect=lambda env,client,identity,remaining:(client,identity)):
+            with self.assertRaisesRegex(scene.SuiteError,'HTTP 403'):
+                self.run_case()
 
     def test_identity_language_lineage_scan_size_and_metadata_fail_closed(self):
         for fault in ('size', 'public-lineage', 'internal-lineage', 'extra-meta-relationship', 'scan-engine', 'monitor',
@@ -250,6 +301,14 @@ class SightMetadataTest(unittest.TestCase):
             'com.docker.compose.project':'addp-infra','com.docker.compose.service':'postgres','com.docker.compose.project.working_dir':str(Path(__file__).resolve().parents[2])},'Env':['POSTGRES_DB=addp_online','POSTGRES_USER=addp','POSTGRES_PASSWORD=private']}}
         helper=importlib.import_module('scripts.test.online-engine-registration_test').OnlineEngineRegistrationTest()
         self.issuer,self.client,self.facts,self.state=helper.metadata_clients(3,'outputs/north.csv','nfs','table','csv','single');self.issuer.timeout=self.client.timeout=30
+        issuer_request=self.issuer.request.side_effect
+        def authorize(method,path,expected,body=None):
+            result=issuer_request(method,path,expected,body)
+            if path.endswith('/auth/context'):
+                result=SimpleNamespace(payload=copy.deepcopy(result.payload))
+                result.payload['authorization']['role_assignments'][0]['permissions']=sorted(scene.view.importlib.import_module('scripts.test.online-engine-registration').SOURCE_INITIALIZER_PERMISSIONS|{'meta.scan_task.execute','meta.scan_task.read'})
+            return result
+        self.issuer.request.side_effect=authorize
         self.public={'id':12,'tenant_id':2,'engine_id':3,'node_id':4,'name':'north.csv','full_name':'outputs/north.csv','fingerprint':self.facts['item_fingerprint'],'item_type':'file','attributes':{'item':{'format':'csv'}}}
         original=self.client.request.side_effect
         def request(method,path,expected,body=None):
@@ -276,6 +335,21 @@ class SightMetadataTest(unittest.TestCase):
         statement=query.call_args.kwargs['input']
         for text in('BEGIN READ ONLY','s.parent_execution_id=e.execution_id',"s.actor_principal_id=:'principal'","i.tenant_id=:'tenant'", "i.fingerprint=:'fingerprint'"):
             self.assertIn(text,statement)
+        self.owner.cleanup()
+
+    def test_source_snapshot_binds_preparer_while_outputs_keep_business_actor(self):
+        public={**self.public,'id':13,'name':'north.tif','full_name':'north.tif'}
+        self.owner.items[13]=public
+        stored={**public,'size_bytes':4096}
+        with patch.object(self.owner,'find',return_value=public),patch.object(self.owner,'query',return_value=stored)as query:
+            self.assertEqual(self.owner.snapshot(13),stored)
+        statement,values,_=query.call_args.args
+        self.assertEqual((values['principal'],values['scan']),(self.owner.grants.operator,self.owner.source_scan))
+        self.assertNotEqual(values['principal'],self.owner.identity['principal_id'])
+        self.assertIn('s.parent_execution_id IS NULL',statement)
+        self.assertIn("s.actor_principal_id=:'principal'",statement)
+        self.assertIn("s.triggered_by=:'principal'",statement)
+        self.assertNotIn('JOIN common.task_executions e',statement)
         self.owner.cleanup()
 
     def test_unknown_grant_write_outcome_remains_journalled(self):

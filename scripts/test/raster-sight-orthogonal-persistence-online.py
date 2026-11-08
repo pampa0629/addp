@@ -80,10 +80,37 @@ def physical(repository,env,action,names,timeout):
     return obj(json.loads(response.stdout),'physical report')
 
 
+def source_scan_client(env, client, identity, remaining):
+    registration=importlib.import_module('scripts.test.online-engine-registration')
+    token=env.get('ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN')
+    if not isinstance(token,str) or not token:
+        raise SuiteError('orthogonal sight requires its separate source preparation User')
+    initializer=view.BudgetClient(view.support.GatewayClient(env['GATEWAY_URL'],token,30),remaining)
+    try:
+        principal,recipient=registration.source_grant_participants(initializer,client,int(identity['tenant_id']),scan_preparation=True)
+    except registration.RegistrationError as error:
+        raise SuiteError('orthogonal sight source preparation identity differs') from error
+    if recipient!=identity['principal_id']:
+        raise SuiteError('orthogonal sight preparation recipient differs from business User')
+    source_identity={'principal_id':principal,'tenant_id':identity['tenant_id'],'principal_type':'user',
+                     'permissions_verified':sorted(registration.SOURCE_INITIALIZER_PERMISSIONS|{'meta.scan_task.execute','meta.scan_task.read'})}
+    view.immutable(Path(env['ADDP_ONLINE_ARTIFACT_DIR'])/'source-preparation-identity.json',encoded(source_identity))
+    return initializer,source_identity
+
+
+def check_scan_inventory(client, initializer, scan, scans):
+    if initializer is client or base.scan_ids(initializer)!=[scan] or base.scan_ids(client)!=sorted(scans):
+        raise SuiteError('orthogonal sight preparation or business scan inventory differs')
+
+
 class ViewshedMetadata(view.ViewshedMetadata):
     prefix=PREFIX
     suite=SUITE
     fixture=fixture
+    scan_preparation=True
+
+    def source_scan_principal(self):
+        return self.grants.operator
     def file_contract(self,name):
         return ('table','csv',('single',))if name.endswith('.csv')else super().file_contract(name)
 

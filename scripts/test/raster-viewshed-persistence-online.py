@@ -197,6 +197,11 @@ def current(execution, identity, identifier, dag, runtime, language, status):
 
 class ViewshedMetadata(raster.WorkflowMetadata):
     """Only this NFS suite: exact structural Grants and run-bound persisted facts."""
+    scan_preparation = False
+
+    def source_scan_principal(self):
+        return self.identity['principal_id']
+
     prefix=PREFIX
     suite=SUITE
     fixture=fixture
@@ -225,7 +230,7 @@ class ViewshedMetadata(raster.WorkflowMetadata):
         self.expires_at=(datetime.now(timezone.utc)+timedelta(seconds=remaining())).isoformat();self.save()
         issuer=BudgetClient(support.GatewayClient(env['GATEWAY_URL'],env['ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN'],30),remaining)
         self.grants=self.registration.ExactFileMetadataGrants(issuer,client,int(identity['tenant_id']),
-            on_change=self.checkpoint,on_evidence=self.capture)
+            on_change=self.checkpoint,on_evidence=self.capture,scan_preparation=self.scan_preparation)
 
     def boundary(self):
         _,suite,run=lineage.boundary(self.env)
@@ -304,7 +309,7 @@ COMMIT;
         output=name.startswith('outputs/');binding=self.bindings.get(name)
         joins="JOIN common.task_executions s ON s.execution_id=:'scan'"
         extra=" AND s.parent_execution_id IS NULL"
-        values={'item':identifier,'engine':self.engine,'tenant':self.identity['tenant_id'],'principal':self.identity['principal_id'],
+        values={'item':identifier,'engine':self.engine,'tenant':self.identity['tenant_id'],'principal':self.identity['principal_id'] if output else self.source_scan_principal(),
                 'full_name':name,'fingerprint':public['fingerprint'],'started_at':self.owner['State']['StartedAt'],'scan':self.source_scan}
         if output:
             joins+=" JOIN common.task_executions e ON e.execution_id=:'execution' AND s.parent_execution_id=e.execution_id"
@@ -357,6 +362,15 @@ def validate_final(result,name,frozen):
 def validate_persisted(result,native,item,name):
     raster.validate_target_item(item,fixture.artifact_expectation(name),native)
     return raster.strict_sizes(result['final_result'],native,item,name)
+
+
+def source_scan_client(env, client, identity, remaining):
+    return client, identity
+
+
+def check_scan_inventory(client, initializer, scan, scans):
+    if base.scan_ids(client) != sorted([scan, *scans]):
+        raise SuiteError('unexpected source or business scan inventory')
 
 
 def run_scenario(repository, env, client, physical_runner=physical, diagnostic_runner=invalid_diagnostic,
@@ -412,18 +426,18 @@ def run_scenario(repository, env, client, physical_runner=physical, diagnostic_r
         principal = int(identity['principal_id'])
         engine = positive(env['ADDP_ONLINE_'+prefix.upper().replace('-','_')+'_NFS_ENGINE_ID'], 'NFS engine')
         scopes = {name: f'addp://engine/{engine}/path/{name}?type=file' for name in fixture.SOURCES}
-        scan = support.wait_for_meta_scan(client, engine, time.monotonic()+remaining(), scope={'targets': list(scopes.values())})
+        initializer, source_identity = profile.source_scan_client(env, client, identity, remaining)
+        scan = support.wait_for_meta_scan(initializer, engine, time.monotonic()+remaining(), scope={'targets': list(scopes.values())})
         metadata = (metadata_factory or profile.ViewshedMetadata)(env,client,engine,identity,scan,remaining)
         producer_env={k:v for k,v in env.items()if k!='ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN'}
         items = {name: metadata.find(name) for name in scopes}
         sources = {name: scopes[name]+f'&item_id={items[name]["id"]}' for name in scopes}
         before = {name: metadata.snapshot(item['id']) for name, item in items.items()}
         immutable(directory/'source-meta-before.json', encoded(before))
-        scanned = raster.wait_execution(client, 'meta', scan, remaining())
-        source_scan = base.validate_scan(scanned, scan, None, tenant, principal, engine)
+        scanned = raster.wait_execution(initializer, 'meta', scan, remaining())
+        source_scan = base.validate_scan(scanned, scan, None, tenant, int(source_identity['principal_id']), engine)
         immutable(directory/'meta-source-scan.json', encoded(scanned))
-        if base.scan_ids(client) != [scan]:
-            raise SuiteError('unexpected source initialization scan')
+        profile.check_scan_inventory(client, initializer, scan, [])
         runtimes = array(client.request('GET', '/api/v1/develop/workflow-engines', (200,)).payload, 'Runtime engines')
         selected = [value for value in runtimes if value.get('engine_type') == 'geopython_workflow'
                     and value.get('connection_status') == 'online']
@@ -511,9 +525,7 @@ def run_scenario(repository, env, client, physical_runner=physical, diagnostic_r
             stages[-1]['status'] = 'passed'
             progress('running')
 
-        expected_scans = sorted([scan, *scans])
-        if base.scan_ids(client) != expected_scans:
-            raise SuiteError('unexpected successful scan inventory')
+        profile.check_scan_inventory(client, initializer, scan, scans)
         edges = {name: source_edges(client, item['id']) for name, item in items.items()}
         for problem in profile.FAILURES:
             for language in ('zh-cn', 'en'):
@@ -532,8 +544,7 @@ def run_scenario(repository, env, client, physical_runner=physical, diagnostic_r
                 queried = opposite.request('GET', '/api/v1/develop/executions/'+identifier, (200,)).payload
                 if any(queried.get(key) != execution.get(key) for key in ('error_msg', 'error_details', 'execution_config')):
                     raise SuiteError('query language rewrote stored failure')
-                if base.scan_ids(client) != expected_scans:
-                    raise SuiteError('failed execution added an automatic scan')
+                profile.check_scan_inventory(client, initializer, scan, scans)
                 if any(source_edges(client, item['id']) != edges[n] for n, item in items.items()):
                     raise SuiteError('failed execution added derived lineage')
                 native = physical_runner(repository, producer_env, 'verify', names, remaining())

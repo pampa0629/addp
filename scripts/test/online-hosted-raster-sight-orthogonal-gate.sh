@@ -53,8 +53,8 @@ for start_target in -security -develop -manager -monitor; do
 done
 start_online_geopython_runtime "$RUNTIME_TAG" --mount "type=bind,source=$SIGHT_ORTHOGONAL_ROOT,target=$SIGHT_ORTHOGONAL_ROOT"
 run_logged python3 business/scripts/online-raster-sight-orthogonal-fixture.py seed
-# Reuse the existing ordinary raster identity and its exact twelve permissions.
-run_logged bash -c 'cd system/backend && go run ./cmd/online-test-fixture --suite raster-workflow --wait-protection-owners develop,manager --output "$1"' _ "$IDENTITY_ENV"
+# Keep the ordinary Raster twelve permissions; source preparation is a separate User.
+run_logged bash -c 'cd system/backend && go run ./cmd/online-test-fixture --suite raster-sight-orthogonal-persistence --wait-protection-owners develop,manager --output "$1"' _ "$IDENTITY_ENV"
 source "$IDENTITY_ENV"
 run_logged python3 scripts/test/online-engine-registration.py --descriptor "$ADDP_ONLINE_SECRET_DIR/sight-orthogonal-nfs-engine.json" --output "$ENGINE_RESULT_ENV"
 source "$ENGINE_RESULT_ENV"

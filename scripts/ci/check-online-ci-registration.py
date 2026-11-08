@@ -3542,11 +3542,13 @@ def validate_raster_sight_orthogonal(repository: Path, registered: set[str]) -> 
         or 'test-raster-sight-orthogonal-online-runner:'not in make_target_commands(make,'test-raster-online-runner')):
         raise RegistrationError('orthogonal sight must use standard Native/Runner aggregates')
     required={
-        'scripts/test/online-hosted-raster-sight-orthogonal-gate.sh':('ADDP_ONLINE_TEST_TIMEOUT_SECONDS=600','--suite raster-workflow','--wait-protection-owners develop,manager','start_online_geopython_runtime','online_raster_lineage.py prepare','online-raster-sight-orthogonal-fixture.py stop'),
+        'scripts/test/online-hosted-raster-sight-orthogonal-gate.sh':('ADDP_ONLINE_TEST_TIMEOUT_SECONDS=600','--suite raster-sight-orthogonal-persistence','--wait-protection-owners develop,manager','start_online_geopython_runtime','online_raster_lineage.py prepare','online-raster-sight-orthogonal-fixture.py stop'),
         'business/scripts/online-raster-sight-orthogonal-fixture.py':('def reference','enter>=leave','expected!=255','full_check=True','def prepare_oracle','def cleanup_oracle','def archive_files','actual north-up COG contrast differs','source file changed'),
-        'scripts/test/raster-sight-orthogonal-persistence-online.py':('COUNTS=(16,40,776,57)','view.run_scenario','fixture.parse_csv','raster.strict_sizes','def check_and_archive','def validate_frozen','ViewshedMetadata','file_contract'),
+        'scripts/test/raster-sight-orthogonal-persistence-online.py':('COUNTS=(16,40,776,57)','view.run_scenario','fixture.parse_csv','raster.strict_sizes','def check_and_archive','def validate_frozen','ViewshedMetadata','file_contract','scan_preparation=True','source_grant_participants','def source_scan_client','def check_scan_inventory'),
         'scripts/test/raster-viewshed-persistence-online.py':('profile.COUNTS','profile.validate_persisted','profile.check_and_archive','lineage.collect','lineage.verify_archive','readonly.no_publication','BEGIN READ ONLY','ExactFileMetadataGrants','query language rewrote stored failure','source or prior target Meta snapshot changed'),
         'scripts/utils/online_raster_lineage.py':("'raster-sight-orthogonal-persistence': 'sight-orthogonal-lineage'",),
+        'system/backend/cmd/online-test-fixture/main.go':('case \"raster-sight-orthogonal-persistence\", \"sql-pool-consumer-flow\", \"transfer-continuous-events\":',),
+        'system/backend/cmd/online-test-fixture/main_test.go':('TestSightOrthogonalPreparationKeepsConsumerTwelveAndSeparateThirteen',),
         'engines/geopython-workflow/test_online_sight_orthogonal_fixture.py':('test_sight_orthogonal_sixteen_real_chains_and_776_complete_original_checks','checks==776','test_sight_orthogonal_exact_failure_node_language_and_zero_private_output','test_sight_orthogonal_corrupt_actual_or_expected_never_passes'),
         'Makefile':('scripts/test/raster-sight-orthogonal-persistence-online_test.py','scripts/test/online-raster-sight-orthogonal-fixture_test.py','scripts/test/online-hosted-raster-sight-orthogonal-gate_test.py')}
     for name,fragments in required.items():
@@ -6608,7 +6610,7 @@ def validate_raster_nibble_capacity_profile(repository: Path, registered: set[st
             'triggered_by', 'scan_ids(client)', 'policy_restored', 'previous_artifacts_unchanged',
             'private_allocated_peak_bytes', 'runtime_container_id'),
         'system/backend/cmd/online-test-fixture/main.go': (
-            'case "raster-workflow", "raster-nibble-capacity":',
+            'case "raster-workflow", "raster-nibble-capacity", "raster-sight-orthogonal-persistence":',
             'suite == "raster-workflow-capacity" || suite == "raster-nibble-capacity"'),
         'system/backend/cmd/online-test-fixture/main_test.go': (
             'TestCapacityFixtureSessionLastsBeyondTheThreeHourBudget',

@@ -641,7 +641,8 @@ class OnlineCIRegistrationTest(unittest.TestCase):
             'scripts/test/raster-sight-orthogonal-persistence-online.py',
             'scripts/test/raster-viewshed-persistence-online.py',
             'scripts/utils/online_raster_lineage.py',
-            'engines/geopython-workflow/test_online_sight_orthogonal_fixture.py')
+            'engines/geopython-workflow/test_online_sight_orthogonal_fixture.py',
+            'system/backend/cmd/online-test-fixture/main.go','system/backend/cmd/online-test-fixture/main_test.go')
         for relative in paths:
             target=self.repository/relative;target.parent.mkdir(parents=True,exist_ok=True);shutil.copy2(source/relative,target)
         registered={'raster-sight-orthogonal-persistence'}
@@ -655,11 +656,16 @@ class OnlineCIRegistrationTest(unittest.TestCase):
             (paths[1],'git merge-base --is-ancestor "$SOURCE_COMMIT" "$DISPATCH_COMMIT"'),
             (paths[1],"printf 'Orthogonal sight source commit=%s; dispatch commit=%s"),
             (paths[3],'ADDP_ONLINE_TEST_TIMEOUT_SECONDS=600'),
+            (paths[3],'--suite raster-sight-orthogonal-persistence'),
+            (paths[5],'scan_preparation=True'),(paths[5],'source_grant_participants'),
+            (paths[5],'def source_scan_client'),(paths[5],'def check_scan_inventory'),
             (paths[4],"'north.csv':('north.tif','sight'),"),
             (paths[5],'COUNTS=(16,40,776,57)'),(paths[5],'raster.strict_sizes'),
             (paths[6],'profile.validate_persisted'),(paths[6],'lineage.verify_archive'),
             (paths[7],"'raster-sight-orthogonal-persistence': 'sight-orthogonal-lineage'"),
-            (paths[8],'checks==776')):
+            (paths[8],'checks==776'),
+            (paths[9],'case \"raster-sight-orthogonal-persistence\", \"sql-pool-consumer-flow\", \"transfer-continuous-events\":'),
+            (paths[10],'TestSightOrthogonalPreparationKeepsConsumerTwelveAndSeparateThirteen')):
             target=self.repository/relative;original=target.read_text();self.assertIn(fragment,original)
             target.write_text(original.replace(fragment,''if relative==paths[4]else'omitted'))
             with self.subTest(fragment=fragment),self.assertRaises(CHECK.RegistrationError):CHECK.validate_raster_sight_orthogonal(self.repository,registered)
@@ -2122,7 +2128,7 @@ class OnlineCIRegistrationTest(unittest.TestCase):
                 (paths[4], 'raster.strict_sizes'), (paths[4], 'capacity.validate_measurement'),
                 (paths[4], 'validate_disk'), (paths[5], 'expected_block'),
                 (paths[5], 'running*size**2*64'), (paths[6], 'test_capacity_analytical_oracle_matches_original_donor_bruteforce'),
-                (paths[7], 'case "raster-workflow", "raster-nibble-capacity":'),
+                (paths[7], 'case "raster-workflow", "raster-nibble-capacity", "raster-sight-orthogonal-persistence":'),
                 (paths[8], 'TestNibbleCapacityRetainsExactlyTheOrdinaryRasterPermissions'))):
             target = self.repository/relative; original = target.read_text()
             target.write_text(original.replace(fragment, 'omitted'))

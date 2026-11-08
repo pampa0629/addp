@@ -768,7 +768,8 @@ test-raster-sight-orthogonal-online-runner: test-raster-lineage-observer-unit te
 .PHONY: test-raster-sight-orthogonal-scenario-unit
 test-raster-sight-orthogonal-scenario-unit:
 	@bash -n scripts/test/online-hosted-raster-sight-orthogonal-gate.sh
-	@python3 -m unittest scripts/test/raster-sight-orthogonal-persistence-online_test.py scripts/test/online-raster-sight-orthogonal-fixture_test.py scripts/test/online-hosted-raster-sight-orthogonal-gate_test.py
+	@python3 -m unittest scripts/test/raster-sight-orthogonal-persistence-online_test.py scripts/test/online-raster-sight-orthogonal-fixture_test.py scripts/test/online-hosted-raster-sight-orthogonal-gate_test.py scripts/test/raster-viewshed-persistence-online_test.py
+	@cd system/backend && GOWORK=off go test ./cmd/online-test-fixture
 
 .PHONY: test-raster-viewshed-online-runner
 test-raster-viewshed-online-runner: test-raster-lineage-observer-unit test-online-dispatcher-unit test-online-registration-unit ## 验证16条三态COG、36次双语拒绝、712次全检与600秒生命周期

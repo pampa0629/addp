@@ -1937,3 +1937,24 @@ func TestDelimitedCaseKeepsTenConsumerAndThirteenInitializerPermissions(t *testi
 		t.Fatal("delimited initializer differs from approved bounded scan profile")
 	}
 }
+
+func TestSightOrthogonalPreparationKeepsConsumerTwelveAndSeparateThirteen(t *testing.T) {
+	const suite = "raster-sight-orthogonal-persistence"
+	got, err := suitePermissions(suite)
+	want, originalErr := suitePermissions("raster-workflow")
+	if err != nil || originalErr != nil || len(got) != 12 || !slices.Equal(got, want) {
+		t.Fatal("orthogonal sight must retain the exact original twelve business permissions")
+	}
+	prep := suiteSourceInitializerPermissions(suite)
+	expected := append(slices.Clone(sourceInitializerPermissions), "meta.scan_task.execute", "meta.scan_task.read")
+	if len(prep) != 13 || !slices.Equal(prep, expected) || rasterBranchLineage(suite) || !needsEngineProvisioner(suite) {
+		t.Fatal("orthogonal sight needs its explicit separate scan/issuance preparer, not ordinary-user escalation or a branch flag")
+	}
+	if len(suiteSourceInitializerPermissions("raster-workflow")) != 0 {
+		t.Fatal("the original Raster identity must not acquire preparation rights")
+	}
+	cfg := fixtureSessionConfig(suite)
+	if cfg.AccessTokenTTL != 30*time.Minute || cfg.RefreshTokenFamilyTTL != 45*time.Minute {
+		t.Fatal("the 600-second scene must retain the original short fixture session")
+	}
+}
