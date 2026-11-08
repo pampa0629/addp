@@ -13,7 +13,7 @@ type JSONMap = commonModels.JSONMap
 // ScanRequest 扫描请求
 type ScanRequest struct {
 	SchemaChangeSource *commonExecution.SchemaChangeScanSource `json:"schema_change_source,omitempty"`                         // 已应用结构审批的来源关联 | Applied schema approval source
-	Encoding           string                                  `json:"encoding,omitempty" enums:"utf-8,gbk,utf-16le,utf-16be"` // 单个 CSV/TSV item 深度刷新编码 | Encoding for a single CSV/TSV item deep refresh
+	Encoding           string                                  `json:"encoding,omitempty" enums:"utf-8,gbk,gb18030,utf-16le,utf-16be"` // 单个 CSV/TSV item 深度刷新编码 | Encoding for a single CSV/TSV item deep refresh
 	HasHeader          *bool                                   `json:"has_header,omitempty"`                                   // 首行是否表头；省略保留已扫描模式 | First record is a header; omit to retain scanned mode
 	ParentExecutionID  string                                  `json:"parent_execution_id"`                                    // 后台产物扫描的直接父执行 UUID | Direct parent execution UUID for background output scans
 	EngineID           uint                                    `json:"engine_id"`                                              // 存储引擎 ID

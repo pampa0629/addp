@@ -4806,7 +4806,8 @@ const docTemplate = `{
                 "statistics": {
                     "type": "object",
                     "additionalProperties": {
-                        "type": "integer"
+                        "type": "integer",
+                        "format": "int64"
                     }
                 },
                 "status": {
@@ -6236,6 +6237,7 @@ const docTemplate = `{
                     "enum": [
                         "utf-8",
                         "gbk",
+                        "gb18030",
                         "utf-16le",
                         "utf-16be"
                     ]

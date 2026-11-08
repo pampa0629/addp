@@ -711,6 +711,17 @@ func TestManualItemEncodingScopeAndFrozenExecution(t *testing.T) {
 	if persisted.ExecutionConfig["has_header"] != false {
 		t.Fatal("header declaration was not frozen")
 	}
+	run, err = svc.CreateManualRun(withMetaTestUserOrigin(t.Context(), tenantID, 7), tenantID, 7, &models.ScanRequest{EngineID: 9, ItemID: item.ID, Encoding: " GB18030 ", ScanDepth: "deep"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var gb18030Execution commonExecution.TaskExecution
+	if err := db.First(&gb18030Execution, run.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if config := scanflow.ParseExecutionConfig(gb18030Execution.ExecutionConfig); config.Encoding != "gb18030" {
+		t.Fatalf("GB18030 worker config=%#v", config)
+	}
 	// A structured document must not accept the delimited-file setting.
 	item.Attributes["item"] = map[string]interface{}{"layout": "single", "data_type": "document", "format": "json"}
 	if err := db.Model(&item).Update("attributes", item.Attributes).Error; err != nil {

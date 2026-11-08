@@ -2859,7 +2859,7 @@ func TestMultiRefUnknownTotalUsesLookahead(t *testing.T) {
 func TestFileTablePreviewProviderConsumesEncodingFact(t *testing.T) {
 	provider := &FileTablePreviewProvider{}
 	for _, formatType := range []format.FormatType{format.FormatCSV, format.FormatTSV} {
-		for _, encoding := range []string{"utf-16be", "gbk"} {
+		for _, encoding := range []string{"utf-16be", "gbk", "gb18030"} {
 			req := &PreviewRequest{Attributes: map[string]interface{}{
 				"format_info": map[string]interface{}{string(formatType): map[string]interface{}{"encoding": encoding}},
 			}}
@@ -2879,7 +2879,7 @@ func TestCSVEncodedPreviewLogicalPagesWithoutIndexAdvice(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, encoding := range []string{"utf-16le", "utf-16be", "gbk"} {
+	for _, encoding := range []string{"utf-16le", "utf-16be", "gbk", "gb18030"} {
 		var order binary.ByteOrder = binary.BigEndian
 		if encoding == "utf-16le" {
 			order = binary.LittleEndian
@@ -2895,12 +2895,18 @@ func TestCSVEncodedPreviewLogicalPagesWithoutIndexAdvice(t *testing.T) {
 		}
 		city := "城市😀"
 		describeOptions := format.DefaultParseOptions()
-		if encoding == "gbk" {
+		if encoding == "gbk" || encoding == "gb18030" {
 			city = "城市"
 			data.Reset()
 			data.WriteString("\"id\",\xc3\xfb\xb3\xc6,\xb1\xb8\xd7\xa2\r\n")
 			for i := 0; i < 25; i++ {
 				fmt.Fprintf(&data, "%d,\xb3\xc7\xca\xd0%d,\"\xb5\xda\xd2\xbb\xd0\xd0\r\n\xb5\xda\xb6\xfe\xd0\xd0,\xba\xac\xb6\xba\xba\xc5\"\r\n", i, i)
+			}
+			if encoding == "gb18030" {
+				city = "城市𠀀😀"
+				encoded := bytes.ReplaceAll(data.Bytes(), []byte("\xb3\xc7\xca\xd0"), []byte("\xb3\xc7\xca\xd0\x95\x32\x82\x36\x94\x39\xfc\x36"))
+				data.Reset()
+				data.Write(encoded)
 			}
 			describeOptions.Encoding = encoding
 		}
@@ -2911,7 +2917,7 @@ func TestCSVEncodedPreviewLogicalPagesWithoutIndexAdvice(t *testing.T) {
 		for _, withMeta := range []bool{true, false} {
 			for page := 1; page <= 3; page++ {
 				req := &PreviewRequest{Page: page, PageSize: 20, ItemType: "file", ScannedDepth: "deep", Table: "sample.csv", Attributes: map[string]interface{}{}}
-				if withMeta || encoding == "gbk" {
+				if withMeta || encoding == "gbk" || encoding == "gb18030" {
 					req.Attributes["format_info"] = map[string]interface{}{"csv": description.FormatInfo}
 				}
 				if withMeta {

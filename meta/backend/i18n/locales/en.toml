@@ -61,7 +61,7 @@ other = "Metadata item snapshot not found"
 other = "Failed to read metadata item snapshot"
 
 [meta.scan.delimited_options_invalid]
-other = "Read settings require a single CSV/TSV item deep refresh; encoding must be UTF-8, GBK, UTF-16LE or UTF-16BE, and has_header must be boolean."
+other = "Read settings require a single CSV/TSV item deep refresh; encoding must be UTF-8, GBK, GB18030, UTF-16LE or UTF-16BE, and has_header must be boolean."
 [meta.authorization_facts.invalid]
 other = "Invalid authorization resource facts query"
 

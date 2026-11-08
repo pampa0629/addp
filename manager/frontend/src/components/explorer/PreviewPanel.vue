@@ -58,7 +58,7 @@
           <template v-if="showDelimitedReadSettings">
             <el-select v-model="csvEncoding" size="small" class="csv-encoding-select"
               :aria-label="t('manager.explorer.fileEncoding')" :disabled="refreshingPreviewItem">
-              <el-option v-for="encoding in ['utf-8', 'gbk', 'utf-16le', 'utf-16be']"
+              <el-option v-for="encoding in ['utf-8', 'gbk', 'gb18030', 'utf-16le', 'utf-16be']"
                 :key="encoding" :value="encoding" :label="encoding.toUpperCase()" />
             </el-select>
             <el-select v-model="csvHasHeader" size="small" class="csv-header-select"

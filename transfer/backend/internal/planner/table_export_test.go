@@ -1367,7 +1367,7 @@ func TestBuildTableTransferPlanDelimitedHeaderPrecedence(t *testing.T) {
 
 func TestBuildTableTransferPlanConsumesDelimitedEncodingFact(t *testing.T) {
 	for _, formatType := range []format.FormatType{format.FormatCSV, format.FormatTSV} {
-		for _, encoding := range []string{"gbk", "utf-16le", "utf-16be"} {
+		for _, encoding := range []string{"gbk", "gb18030", "utf-16le", "utf-16be"} {
 			t.Run(string(formatType)+"/"+encoding, func(t *testing.T) {
 				delimiter := ","
 				if formatType == format.FormatTSV {
@@ -1395,7 +1395,11 @@ func TestBuildTableTransferPlanConsumesDelimitedEncodingFact(t *testing.T) {
 				}
 				// Fixed GBK bytes and independent UTF-16 encoding; no BOM can hide a missing plan encoding.
 				data := []byte("id" + delimiter + "\xc3\xfb\xb3\xc6\r\n1" + delimiter + "\xb3\xc7\xca\xd0\r\n")
-				if encoding != "gbk" {
+				wantCity := "城市"
+				if encoding == "gb18030" {
+					wantCity = "城市𠀀😀"
+					data = []byte("id" + delimiter + "\xc3\xfb\xb3\xc6\r\n1" + delimiter + "\xb3\xc7\xca\xd0\x95\x32\x82\x36\x94\x39\xfc\x36\r\n")
+				} else if encoding != "gbk" {
 					var encoded bytes.Buffer
 					var order binary.ByteOrder = binary.BigEndian
 					if encoding == "utf-16le" {
@@ -1416,7 +1420,7 @@ func TestBuildTableTransferPlanConsumesDelimitedEncodingFact(t *testing.T) {
 				}
 				defer reader.Close(context.Background())
 				rows, err := reader.ReadRows(context.Background(), 10)
-				if err != nil || len(rows) != 1 || rows[0]["id"] != int64(1) || rows[0]["名称"] != "城市" {
+				if err != nil || len(rows) != 1 || rows[0]["id"] != int64(1) || rows[0]["名称"] != wantCity {
 					t.Fatalf("planned source rows = %v, %v", rows, err)
 				}
 			})

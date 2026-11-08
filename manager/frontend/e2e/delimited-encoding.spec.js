@@ -1,13 +1,15 @@
 import { expect, test } from '@playwright/test'
 import { managerAuthContext } from './managerAuthContext.js'
 
-for (const { language, initiallyFailed, format = 'csv' } of [
+for (const { language, initiallyFailed, format = 'csv', targetEncoding = 'gbk' } of [
   { language: 'zh-cn', initiallyFailed: false },
   { language: 'en', initiallyFailed: false },
   { language: 'zh-cn', initiallyFailed: true },
-  { language: 'en', initiallyFailed: false, format: 'tsv' }
+  { language: 'en', initiallyFailed: false, format: 'tsv' },
+  { language: 'zh-cn', initiallyFailed: true, targetEncoding: 'gb18030' },
+  { language: 'en', initiallyFailed: false, format: 'tsv', targetEncoding: 'gb18030' }
 ]) {
-  test(`${format} read settings apply after refresh and failure preserves the last schema (${language}, initial failure=${initiallyFailed})`, async ({ page }) => {
+  test(`${format} read settings apply after refresh and failure preserves the last schema (${language}, initial failure=${initiallyFailed}, encoding=${targetEncoding})`, async ({ page }) => {
     const locator = `addp://engine/2/path/sample.${format}?type=file&item_id=8`
     const rootLocator = 'addp://engine/2/path/?type=server&node_id=1'
     const item = { id: locator, locator, label: `sample.${format}`, type: 'file', hasChildren: false }
@@ -17,7 +19,8 @@ for (const { language, initiallyFailed, format = 'csv' } of [
     const requests = []
     let encoding = 'utf-8'
     let hasHeader = true
-    const tableFields = () => [{ name: !hasHeader ? 'Column1' : encoding === 'gbk' ? '城市' : 'old_column', type: 'string', nullable: true }]
+    const tableFields = () => [{ name: !hasHeader ? 'Column1' : encoding === targetEncoding ? '城市' : 'old_column', type: 'string', nullable: true }]
+    const city = targetEncoding === 'gb18030' ? '城市𠀀😀' : '北京'
     let fail = false
     let releaseRefresh
     const apply = language === 'en' ? 'Apply read settings and refresh' : '应用读取设置并刷新'
@@ -50,10 +53,10 @@ for (const { language, initiallyFailed, format = 'csv' } of [
       })
       if (path.endsWith('/manager/preview')) {
         if (initiallyFailed && encoding === 'utf-8') return json(route, { error: 'invalid UTF-8' }, 500)
-        const translated = encoding === 'gbk'
+        const translated = encoding === targetEncoding
         const column = !hasHeader ? 'Column1' : translated ? '城市' : 'old_column'
         return json(route, { preview_type: 'table', data: {
-          mode: 'table', columns: [column], rows: [...(!hasHeader ? [{ [column]: '城市' }] : []), { [column]: translated ? '北京' : 'old_value' }], total: hasHeader ? 1 : 2, page: 1, page_size: 20,
+          mode: 'table', columns: [column], rows: [...(!hasHeader ? [{ [column]: '城市' }] : []), { [column]: translated ? city : 'old_value' }], total: hasHeader ? 1 : 2, page: 1, page_size: 20,
           object: { path: `sample.${format}`, content: { kind: format } },
           item_meta: { item_type: 'file', full_name: `sample.${format}`, attributes: [
             { key: 'item', value: { layout: 'single', data_type: 'table', format } },
@@ -73,19 +76,19 @@ for (const { language, initiallyFailed, format = 'csv' } of [
     if (!initiallyFailed) await expect(page.getByRole('cell', { name: 'old_value', exact: true })).toBeVisible()
     await expect(selector).toContainText('UTF-8')
     await selector.click()
-    await page.getByRole('option', { name: 'GBK', exact: true }).click()
+    await page.getByRole('option', { name: targetEncoding.toUpperCase(), exact: true }).click()
     await expect(headerSelector).toContainText(firstRowHeader)
     await headerSelector.click()
     await page.getByRole('option', { name: firstRowData, exact: true }).click()
     expect(requests).toEqual([])
     await button.click()
-    await expect.poll(() => requests).toEqual([{ encoding: 'gbk', has_header: false }])
+    await expect.poll(() => requests).toEqual([{ encoding: targetEncoding, has_header: false }])
     if (!initiallyFailed) await expect(page.getByRole('cell', { name: 'old_value', exact: true })).toBeVisible()
     await expect(selector.locator('.el-select__wrapper')).toHaveClass(/is-disabled/)
     await expect(headerSelector.locator('.el-select__wrapper')).toHaveClass(/is-disabled/)
     releaseRefresh()
-    await expect(page.getByRole('cell', { name: '北京', exact: true })).toBeVisible()
-    await expect(selector).toContainText('GBK')
+    await expect(page.getByRole('cell', { name: city, exact: true })).toBeVisible()
+    await expect(selector).toContainText(targetEncoding.toUpperCase())
     // The retained Attributes pane has its own three-column field table.
     await page.getByRole('tab', { name: language === 'en' ? 'Attributes' : '属性', exact: true }).click()
     await page.getByRole('tab', { name: language === 'en' ? 'Preview' : '预览', exact: true }).click()
@@ -105,8 +108,8 @@ for (const { language, initiallyFailed, format = 'csv' } of [
     await expect.poll(() => requests.length).toBe(2)
     expect(requests[1]).toEqual({ encoding: 'utf-8', has_header: true })
     await expect(headerSelector).toContainText(firstRowData)
-    await expect(selector).toContainText('GBK')
-    await expect(page.getByRole('cell', { name: '北京', exact: true })).toBeVisible()
+    await expect(selector).toContainText(targetEncoding.toUpperCase())
+    await expect(page.getByRole('cell', { name: city, exact: true })).toBeVisible()
     for (const width of [1000, 900]) {
       await page.setViewportSize({ width, height: 800 })
       await expect(button).toBeVisible()

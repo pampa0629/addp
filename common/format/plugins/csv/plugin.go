@@ -559,7 +559,7 @@ func (p *Plugin) newReader(input io.Reader, opts *format.ParseOptions) (*csv.Rea
 	switch encoding {
 	case "":
 		encoding = "utf-8"
-	case "utf-8", "utf-16le", "utf-16be", "gbk":
+	case "utf-8", "utf-16le", "utf-16be", "gbk", "gb18030":
 	default:
 		return nil, 0, "", fmt.Errorf("unsupported CSV encoding %q", opts.Encoding)
 	}
@@ -588,6 +588,8 @@ func (p *Plugin) newReader(input io.Reader, opts *format.ParseOptions) (*csv.Rea
 		input = unicode.UTF16(order, unicode.IgnoreBOM).NewDecoder().Reader(input)
 	} else if encoding == "gbk" {
 		input = simplifiedchinese.GBK.NewDecoder().Reader(input)
+	} else if encoding == "gb18030" {
+		input = simplifiedchinese.GB18030.NewDecoder().Reader(input)
 	}
 	reader := csv.NewReader(input)
 	p.configureReaderWithOptions(reader, opts)

@@ -84,7 +84,7 @@ func (s *ScanExecutionService) createManualRun(ctx context.Context, tenantID, us
 			return nil, metaErrors.ErrInvalidDelimitedOptions
 		}
 		switch req.Encoding {
-		case "", "utf-8", "gbk", "utf-16le", "utf-16be":
+		case "", "utf-8", "gbk", "gb18030", "utf-16le", "utf-16be":
 		default:
 			return nil, metaErrors.ErrInvalidDelimitedOptions
 		}

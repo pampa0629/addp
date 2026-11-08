@@ -25,7 +25,7 @@
 
 | 格式/能力 | 尚需完善或验证 |
 | --- | --- |
-| CSV / TSV | 有／无表头声明、首条记录保留、普通刷新继承、重开、分页、模式恢复与原文件下载已有 Hosted T4 证据，见[验收证据索引](../spec/testing/验收证据索引.md#manager-预览与私有导入历史证据)。剩余边界：源大小、ETag 和修改时间全部不变的原位写入不能由索引版本校验识别，不提供不可变读取快照；UTF-32/GB18030 不由已有 UTF-16/显式 GBK 覆盖。既有 Meta 全量 PostgreSQL 入口的 Transfer schema-change 来源拒绝子例失败原记录保持，不由本轮 T4 改记通过 |
+| CSV / TSV | 有／无表头声明、首条记录保留、普通刷新继承、重开、分页、模式恢复与原文件下载已有 Hosted T4 证据，见[验收证据索引](../spec/testing/验收证据索引.md#manager-预览与私有导入历史证据)。剩余边界：源大小、ETag 和修改时间全部不变的原位写入不能由索引版本校验识别，不提供不可变读取快照；GB18030 已接入同一共享显式解码和读取设置，四模块Go、Meta PostgreSQL及Manager隔离前端已通过，实际服务/Hosted待验，见[专项记录](../spec/testing/evidence/资源读取与预览历史证据.md#csv--tsv-的-gb18030-显式读取--本地门禁)，不能由既有 GBK Hosted 证据追认；UTF-32 仍未支持。既有 Meta 全量 PostgreSQL 入口的 Transfer schema-change 来源拒绝子例失败原记录保持，不由本轮 T4 改记通过 |
 | JSON / GeoJSON | 空/混合 geometry 的扫描与跨批字段可空声明、JSON 空值同名列归并已有 Common Go T1；四份 NFS 样例的本机页面已验证可空字段、20＋5 分页、全空集合与 WKB 临时 CRS 地图，两类原文件下载哈希不变，见[验收证据索引](../spec/testing/验收证据索引.md#manager-预览与私有导入历史证据)。S3 SDK 协议夹具与 contentadapter 的元信息／分页，以及 Transfer 写前字段核验、普通 records JSON／GeoJSON 的跨批空值和 Parquet 输出已有确定性回归；动态 reader 尚无字段时复用或执行同格式 Describe，不跳过写前校验。仍缺该组合的真实对象存储／原生数据库集成和正式 Hosted T4；records JSON 尚未开放 EWKB 连续输出，另有大文件、复杂嵌套数组与更多 WKB/EWKB 变体。静态轨迹三源的完成不代替这些组合 |
 | Parquet | whole scope 描述、分页和连续读取已共用 Range 打开路径；可用 Range／大小时不先下载完整文件，未提供可用大小的流输入仍需完整读取。后续包括单文件流输入成本、footer／单页预算、schema 不兼容诊断及复杂结构读取 |
 | Shapefile | DBF `N` 小数字段的分页／连续读取已统一保留精确十进制文本，Manager JSON 出口有精度与空值回归；FTP／NFS 的 farmland 本机表格、地图及全 127 行精确值复验通过，范围见[验收证据索引](../spec/testing/验收证据索引.md#manager-预览与私有导入历史证据)，不替代 Hosted 或授权验收。后续覆盖 NFS/MinIO/嵌套 ZIP 的 refs 归并、物化 fallback 的 shx 分页及未支持 shape 诊断 |

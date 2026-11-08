@@ -312,6 +312,7 @@ definitions:
         type: string
       statistics:
         additionalProperties:
+          format: int64
           type: integer
         type: object
       status:
@@ -1276,6 +1277,7 @@ definitions:
         enum:
         - utf-8
         - gbk
+        - gb18030
         - utf-16le
         - utf-16be
         type: string

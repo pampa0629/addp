@@ -63,6 +63,8 @@ func testDelimitedEncodingRefresh(t *testing.T, openDB func(*testing.T) *gorm.DB
 	}{
 		{"GBK CSV", "csv", gbk, "gbk", "gbk", true, nil},
 		{"GBK TSV", "tsv", "\xd0\xd5\xc3\xfb\t\xb3\xc7\xca\xd0\n\xd5\xc5\xc8\xfd\t\xb1\xb1\xbe\xa9\n", "gbk", "gbk", true, nil},
+		{"GB18030 CSV", "csv", "\xd0\xd5\xc3\xfb\x95\x32\x82\x36,\xb3\xc7\xca\xd0\n\xd5\xc5\xc8\xfd\x94\x39\xfc\x36,\xb1\xb1\xbe\xa9\n", "gb18030", "gb18030", true, nil},
+		{"GB18030 TSV", "tsv", "\xd0\xd5\xc3\xfb\x95\x32\x82\x36\t\xb3\xc7\xca\xd0\n\xd5\xc5\xc8\xfd\x94\x39\xfc\x36\t\xb1\xb1\xbe\xa9\n", "gb18030", "gb18030", true, nil},
 		{"BOM wins over choice", "csv", "\xef\xbb\xbf姓名,城市\n张三,北京\n", "gbk", "utf-8", true, nil},
 		{"empty header keeps snapshot", "csv", "", "utf-8", "", false, nil},
 		{"headerless CSV", "csv", "姓名,城市\n张三,北京\n", "utf-8", "utf-8", true, &headerless},
@@ -133,6 +135,9 @@ func testDelimitedEncodingRefresh(t *testing.T, openDB func(*testing.T) *gorm.DB
 					t.Fatalf("encoding=%q want %q", actual, tc.actual)
 				}
 				wantFields, wantRows, wantHeader := []string{"姓名", "城市"}, int64(1), true
+				if tc.actual == "gb18030" {
+					wantFields[0] = "姓名𠀀"
+				}
 				if tc.header != nil && !*tc.header {
 					wantFields, wantRows, wantHeader = []string{"Column1", "Column2"}, 2, false
 				}
