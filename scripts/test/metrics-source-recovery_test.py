@@ -6,6 +6,7 @@ import copy
 import importlib.util
 import io
 import json
+import os
 from pathlib import Path
 import subprocess
 import sys
@@ -17,6 +18,92 @@ from unittest.mock import Mock, patch
 ROOT = Path(__file__).resolve().parents[2]
 spec = importlib.util.spec_from_file_location('metrics_source_recovery', ROOT/'scripts/utils/metrics-source.py')
 M = importlib.util.module_from_spec(spec); spec.loader.exec_module(M)
+
+
+class TransportCertificateTest(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.temporary = tempfile.TemporaryDirectory()
+        cls.addClassCleanup(cls.temporary.cleanup)
+        cls.environment = patch.dict(os.environ, {})
+        cls.environment.start()
+        cls.addClassCleanup(cls.environment.stop)
+        cls.root = Path(cls.temporary.name).resolve()
+        spec = importlib.util.spec_from_file_location('transport_tls_fixture', ROOT/'scripts/test/metrics-source-fixture.py')
+        fixture = importlib.util.module_from_spec(spec); spec.loader.exec_module(fixture)
+        cls.tls = fixture.certificates(cls.root)
+        cls.original = {name:(cls.tls/name).read_bytes() for name in ('ca.crt','server.crt','server.key')}
+
+    def setUp(self):
+        for name, data in self.original.items():
+            (self.tls/name).write_bytes(data)
+
+    def openssl(self, *args):
+        return subprocess.run(['openssl', *args], check=True, capture_output=True, timeout=5)
+
+    def sign(self, *, authority='keyid:always', purpose='serverAuth', san='IP:127.0.0.1', subject='hash'):
+        extension = self.root/'transport.ext'
+        extension.write_text('basicConstraints=critical,CA:FALSE\nkeyUsage=critical,digitalSignature,keyEncipherment\n'
+            +'authorityKeyIdentifier='+authority+'\nsubjectKeyIdentifier='+subject
+            +'\nextendedKeyUsage='+purpose+'\nsubjectAltName='+san+'\n')
+        self.openssl('x509','-req','-in',str(self.root/'server.csr'),'-CA',str(self.tls/'ca.crt'),
+            '-CAkey',str(self.root/'ca.key'),'-set_serial','2','-days','1','-extfile',str(extension),'-out',str(self.tls/'server.crt'))
+
+    def preflight(self, *, rejected=False):
+        before = {name:((self.tls/name).read_bytes(), (self.tls/name).stat()) for name in self.original}
+        for kind in ('REDIS','MINIO'):
+            prefix = 'ADDP_'+kind+'_METRICS'
+            env = {prefix+'_LISTEN':'127.0.0.1:19443', prefix+'_TLS_DIR':str(self.tls)}
+            with self.subTest(kind=kind):
+                if rejected:
+                    with self.assertRaisesRegex(ValueError, '^Metrics source TLS verification failed$') as failure:
+                        M.transport(env, ROOT, prefix)
+                    self.assertEqual(failure.exception.observation_stage, 'transport-check')
+                else:
+                    ip, port, material = M.transport(env, ROOT, prefix)
+                    self.assertEqual((ip,port), ('127.0.0.1',19443))
+                    self.assertEqual(material, {name:data for name,(data,_) in before.items()})
+        for name,(data,stat) in before.items():
+            self.assertEqual((self.tls/name).read_bytes(), data)
+            current = (self.tls/name).stat()
+            self.assertEqual((current.st_ino,current.st_mtime_ns,current.st_mode,current.st_uid),
+                (stat.st_ino,stat.st_mtime_ns,stat.st_mode,stat.st_uid))
+
+    def ordinary_chain_passes(self):
+        self.openssl('verify','-CAfile',str(self.tls/'ca.crt'),'-purpose','sslserver',
+            '-verify_ip','127.0.0.1',str(self.tls/'server.crt'))
+
+    def test_valid_strict_certificate_and_optional_leaf_ski(self):
+        self.preflight()
+        self.sign(subject='none')
+        self.preflight()
+
+    def test_missing_leaf_aki_rejected_despite_ordinary_chain_success(self):
+        self.sign(authority='none')
+        self.ordinary_chain_passes()
+        self.preflight(rejected=True)
+
+    def test_missing_ca_ski_rejected_despite_ordinary_chain_success(self):
+        self.openssl('req','-x509','-key',str(self.root/'ca.key'),'-days','1','-subj','/CN=metrics-source-t2-ca',
+            '-addext','basicConstraints=critical,CA:TRUE','-addext','keyUsage=critical,keyCertSign,cRLSign',
+            '-addext','subjectKeyIdentifier=none','-out',str(self.tls/'ca.crt'))
+        self.sign(authority='issuer:always')
+        self.ordinary_chain_passes()
+        self.preflight(rejected=True)
+
+    def test_wrong_server_purpose_ip_and_key_remain_rejected(self):
+        for variation in ('purpose','san','key'):
+            with self.subTest(variation=variation):
+                self.setUp()
+                if variation=='purpose': self.sign(purpose='clientAuth')
+                elif variation=='san': self.sign(san='IP:127.0.0.2')
+                else: (self.tls/'server.key').write_bytes((self.root/'client.key').read_bytes())
+                if variation=='key':
+                    for kind in ('REDIS','MINIO'):
+                        prefix='ADDP_'+kind+'_METRICS'
+                        with self.assertRaisesRegex(ValueError, '^Metrics source certificate key mismatch$'):
+                            M.transport({prefix+'_LISTEN':'127.0.0.1:19443',prefix+'_TLS_DIR':str(self.tls)},ROOT,prefix)
+                else: self.preflight(rejected=True)
 
 
 class ObservationStageTest(unittest.TestCase):

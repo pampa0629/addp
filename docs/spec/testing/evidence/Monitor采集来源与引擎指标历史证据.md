@@ -865,3 +865,13 @@ Safari 使用现有平台管理员会话，通过正常发现、主机选择和�
 固定源码 `9e49d5e7a648f00e26f2246f4dc28e6b07f8c84a` 的 [MetricValues.Set](https://github.com/minio/minio/blob/9e49d5e7a648f00e26f2246f4dc28e6b07f8c84a/cmd/metrics-v3-types.go#L199-L230) 只存入大于零的值；[扫描汇总加载](https://github.com/minio/minio/blob/9e49d5e7a648f00e26f2246f4dc28e6b07f8c84a/cmd/metrics-v3-cluster-usage.go#L54-L99)在缓存读取失败或没有最近扫描时间时都可返回空指标。因此实测能证明缺项已发生于原生响应，不能进一步把 Business 扫描缺席解释为“空库”“扫描失败”，或把未发布计数补零。本批维持现行规范，不增加 v2、S3 枚举或额外权限路线。
 
 `make test-monitor-minio-observation-unit` 退出 0：Python 两组 11／25 项及五个 Go 包均通过，现有映射测试覆盖缺席不造零、真实显式零保留和无扫描时间不发布扫描统计。日志 `/tmp/addp-minio-omission-t1-20261108.log`；该 T1 与上述个人端点只读比对分列，不冒充独占实源 T2、完整页面或 Hosted 验收。仅补证据文档，未修改产品、配置或服务状态，CI／Hosted仍由专门会话安排。
+
+### Redis／MinIO 来源严格证书预检（2026-11-08）
+
+用户确认继续补齐证书预检。先修订正式运行观测规范及来源指南，再在唯一 `scripts/utils/metrics-source.py::transport` 的原 `openssl verify` 增加 `-x509_strict`；原服务器用途、监听 IP、密钥配对、文件保护及封闭错误保留。两协议的 `check/up/recover` 沿原共同入口，不新增证书生成、信任、网络请求或回退路径；PostgreSQL 与主机来源实现未变。
+
+在既有 `metrics-source-recovery_test.py` 加入真实临时 CA／叶证书回归，不连接 Docker 或服务。修改实现前，普通链验证通过但缺叶 AKI／CA SKI 的两组证书在 Redis、MinIO 共四个负例均未被拒绝，标准 `make test-metrics-source-recovery` 失败；原件 `/tmp/addp-source-strict-tls-red-20261108.log`。实现后 15 项通过，包含上述严格拒绝、有效证书及允许缺叶 SKI 的正例、错误用途／IP／密钥拒绝，并核对验证前后材料、inode、mtime、权限及归属未变；原件 `/tmp/addp-source-strict-tls-green-20261108.log`。
+
+`make test-metrics-sources test-monitor-minio-observation-unit test-monitor-redis-source-unit test-t2-ci-registration` 完整退出 0，覆盖来源分组、恢复、主机拒绝、两协议及来源 HTTP/TLS Go 包、85 项登记和 9 项 PostgreSQL runner 契约；原件 `/tmp/addp-source-strict-tls-gates-20261108.log`。现有两个协议 T2 的 `ADDP_T2_INPUT_FILES` 已登记共用实现、测试及证书夹具，并经原标准目标执行 T1，不需新增 Make／workflow 路线。本批未执行新的独占协议 T2、CI 或 Hosted，其正式结果仍由专门会话回传；无 API、Swagger 或前端变更。
+
+本机只读 `python3 scripts/infra/metrics-sources.py check --scope infra --scope business --kind minio --kind redis` 实际返回 1：Infra MinIO、Business MinIO 和 Business Redis 部署输入通过，Infra Redis 失败。进一步只读严格验证确认其叶证书缺 AKI（OpenSSL 错误 85、深度 0），不把该拒绝计为全批通过；现有来源未被重启或重新应用，个人证书和环境未改。后续 Infra Redis 的检查／恢复会沿新边界拒绝，须由部署方先修证再显式应用。收据 `/tmp/addp-source-strict-tls-personal-check-20261108.log`、`/tmp/addp-infra-redis-strict-certificate-20261108.json`；预检通过的其余三项也不等同本次已重新验证真实采样。

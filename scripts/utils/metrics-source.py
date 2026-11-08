@@ -81,7 +81,7 @@ def transport(env, root, prefix, error=ValueError):
     if (directory/'server.key').stat().st_uid != os.getuid() or (directory/'server.key').stat().st_mode & 0o077:
         raise Error('Metrics source private key ownership rejected')
     try:
-        subprocess.run(['openssl', 'verify', '-CAfile', str(directory/'ca.crt'), '-purpose', 'sslserver', '-verify_ip', str(ip), str(directory/'server.crt')], check=True, capture_output=True, timeout=5)
+        subprocess.run(['openssl', 'verify', '-x509_strict', '-CAfile', str(directory/'ca.crt'), '-purpose', 'sslserver', '-verify_ip', str(ip), str(directory/'server.crt')], check=True, capture_output=True, timeout=5)
         public = subprocess.run(['openssl', 'x509', '-in', str(directory/'server.crt'), '-pubkey', '-noout'], check=True, capture_output=True, timeout=5).stdout
         key = subprocess.run(['openssl', 'pkey', '-in', str(directory/'server.key'), '-passin', 'pass:', '-pubout'], check=True, capture_output=True, timeout=5).stdout
         if public != key:

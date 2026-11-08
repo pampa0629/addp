@@ -241,6 +241,8 @@ MinIO来源仅读部署方提供的当前私网IP:9000，以受限账号签发�
 
 TLS来源复用Monitor内部唯一固定来源HTTP／TLS服务内核：非root、只读、0.25CPU／128MiB，mTLS TLS1.3，仅GET /metrics、无query／请求体，单并发，失败503且无失效数据。Redis沿同一内核删除重复HTTP／TLS实现，仍保留各自协议与字段适配。来源配置只含受限AK／SK、明确当前MinIO容器／启动身份和目标IP，不含根凭据、Docker Socket或数据卷；部署方提供证书，不签发CA。来源启停、私有卷及发现／查询／页面继续分层验证，不将账号准备或来源运行计为完整17项产品验收。
 
+Redis／MinIO 共用的来源证书预检在原信任链、服务器用途、监听 IP SAN 和密钥配对校验中启用 OpenSSL `-x509_strict`，提前拒绝缺少非自签发叶证书 AKI、CA SKI 或其他严格链约束的材料；不把可选的叶证书 SKI 单独设为必填。`check`、`up` 和 `recover` 复用同一校验，不降级重试、不改写证书或私钥，不增加网络请求。预检通过仍不代表实际 mTLS、客户端认证或新鲜采样通过。
+
 两个部署使用各自独立、非root的MinIO原生受限Access Key（service account），仅附加自定义内联策略`admin:Prometheus`，不得授予S3权限、内置readonly／diagnostics或admin:*。它是MinIO内部采集凭据，不是ADDP角色或Service Principal，不改生产IAM内核。该原生权限允许全套运维指标，可能包含桶级元数据，不能宣称仅能读取17项；实际采集仅允许上述端点及固定数值字段，进入Prometheus前排除桶名、对象名／内容、节点地址、磁盘路径及原始输出，过滤不冒充权限隔离。采集侧只持该受限Access Key／Secret Key，按MinIO原生HS512、issuer=prometheus、subject=Access Key生成最多300秒JWT，不持root密钥、不照搬mc默认百年Token，不增加续期运维进程。
 
 唯一部署owner复用固定镜像内mc与既有Docker归属／私有文件内核，核验工作区、scope、Docker引擎、Compose项目／服务、固定版本镜像和命名数据卷；凭据、安装日志状态仅保存在仓库外0700目录／0600文件，密钥不进入argv、外部环境、日志或System普通DTO。管理身份只在当次安装／核验内使用。创建前写入私有归属意图，原生账号的名称／描述／parent／明确内联策略必须与本方事实一致；同卷容器重建可复用账号，异卷、外来账号、策略漂移或凭据丢失拒绝接管／自动重置。显式安装／应用失败或停用时，先移除经核验的本方来源及配置卷，再关闭本方原生Key并核验旧JWT拒绝，不撤销其他账号、修改root或重启MinIO；账号／策略沿MinIO原生数据卷持久化，不复制第二份用户库或在启动时批量重写IAM。未知创建结果不自动再造账号，后续先核对本方事实并失败关闭。
