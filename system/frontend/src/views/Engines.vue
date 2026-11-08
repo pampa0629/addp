@@ -640,6 +640,13 @@
         </el-tabs>
       </div>
       <template #footer>
+        <el-button
+          v-if="!isAuthorizationView && selectedEngine?.engine_origin === 'general'"
+          data-testid="engine-configuration-note"
+          :loading="exportingConfiguration"
+          :disabled="detailsLoading || Boolean(detailError) || !selectedConnectionDescriptor"
+          @click="exportEngineConfiguration"
+        >{{ t('system.engine.configurationNote.action') }}</el-button>
         <el-button @click="closeEngineDetails">{{ t('system.engine.dialog.close') }}</el-button>
       </template>
     </el-dialog>
@@ -768,7 +775,7 @@ import { ref, onMounted, onUnmounted, computed, watch } from 'vue'
 import { enginesAPI } from '../api/engines'
 import { Plus, Edit, Delete, Refresh, Search } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { StorageEngineForm, EngineTypeIcon, requestConsoleBridge, hasDeclaredStorageCapability, hasLiveEngineCatalogCapability, parseCleanupExecutions } from '@common-ui'
+import { StorageEngineForm, EngineTypeIcon, requestConsoleBridge, hasDeclaredStorageCapability, hasLiveEngineCatalogCapability, parseCleanupExecutions, saveBlobDownload } from '@common-ui'
 import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'
 import { useConsolePageDescriptor } from '@common-ui'
@@ -785,6 +792,7 @@ import EngineFilterBar from '../components/engines/EngineFilterBar.vue'
 import EngineTableStructure from '../components/engines/EngineTableStructure.vue'
 import { supportsEngineTableStructure } from '../utils/engineTableStructure'
 import { useEngineAuthorizationSession } from '../utils/engineAuthorizationSession'
+import { buildEngineConfigurationNote } from '../utils/engineConfigurationNote'
 
 const { t, te } = useI18n()
 const authStore = useAuthStore()
@@ -1065,6 +1073,40 @@ const hasSelectedCapabilitiesView = computed(() => {
   const view = selectedCapabilitiesView.value
   return view.summary.length > 0 || view.sections.length > 0 || view.json_view.length > 0
 })
+
+const exportingConfiguration = ref(false)
+const selectedConnectionDescriptor = computed(() => engineTypeDescriptors.value.find(
+  descriptor => descriptor.type === selectedEngine.value?.engine_type && descriptor.connection_spec?.fields
+))
+
+const exportEngineConfiguration = async () => {
+  const id = selectedEngine.value.id
+  exportingConfiguration.value = true
+  try {
+    const engine = await enginesAPI.getById(id)
+    const descriptor = engineTypeDescriptors.value.find(item => item.type === engine.engine_type)
+    const view = normalizeCapabilitiesView(engine.capabilities_view)
+    const note = buildEngineConfigurationNote({
+      engine, descriptor, generatedAt: new Date().toISOString(), t,
+      summary: view.summary.map(getCapabilityViewText),
+      sections: view.sections.map(section => ({
+        title: translateCapabilityKey(section.title_key, section.id),
+        description: section.description_key ? translateCapabilityKey(section.description_key) : '',
+        status: getCapabilityStatusLabel(section.status),
+        rows: (section.items || []).map(item => [getCapabilityItemLabel(item), [
+          getCapabilityStatusLabel(item.status), getCapabilityItemValue(item),
+          item.reason_key ? translateCapabilityKey(item.reason_key) : '',
+          ...(item.tags || []).map(getCapabilityTagText)
+        ].filter(Boolean).join(' / ')])
+      }))
+    })
+    saveBlobDownload(new Blob([note.content], { type: 'text/markdown;charset=utf-8' }), note.fileName)
+  } catch {
+    ElMessage.error(t('system.engine.configurationNote.failed'))
+  } finally {
+    exportingConfiguration.value = false
+  }
+}
 
 const superMapWorkspaces = computed(() => findSuperMapSpatialWorkspaces(editingEngine.value))
 

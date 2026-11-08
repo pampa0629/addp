@@ -1354,6 +1354,19 @@
         "script": "Script",
         "none": "None"
       },
+      "configurationNote": {
+        "action": "Export configuration note",
+        "title": "Engine configuration note",
+        "field": "Field",
+        "value": "Value",
+        "configurationVersion": "Configuration version",
+        "generatedAt": "Exported at",
+        "notRecorded": "Not recorded",
+        "notice": "This note records saved engine configuration at export time. It is not an importable configuration backup.",
+        "connectionNotice": "Only saved non-sensitive fields declared by the plugin are included. Passwords, tokens, private keys and undeclared fields are omitted. Defaults are not inferred for absent fields.",
+        "capabilityNotice": "These are declared capabilities, not evidence of connectivity, data access permission or product certification.",
+        "failed": "Could not export the configuration note. Check that you still have engine detail read access before trying again."
+      },
       "actions": {
         "refresh": "Refresh",
         "test": "Test",

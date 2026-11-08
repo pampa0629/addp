@@ -1354,6 +1354,19 @@
         "script": "脚本",
         "none": "无"
       },
+      "configurationNote": {
+        "action": "导出配置说明",
+        "title": "引擎配置说明",
+        "field": "字段",
+        "value": "值",
+        "configurationVersion": "配置版本",
+        "generatedAt": "导出时间",
+        "notRecorded": "未记录",
+        "notice": "本说明记录导出时已保存的引擎配置，不是可导入的配置备份。",
+        "connectionNotice": "仅列出插件声明的已保存非敏感字段。密码、Token、私钥等敏感字段及未声明字段不导出；未填写的字段不推测默认值。",
+        "capabilityNotice": "以下是引擎的能力声明，不代表本次已验证连通性、数据权限或产品认证。",
+        "failed": "导出配置说明失败，请确认仍有引擎详情读取权限后重试。"
+      },
       "actions": {
         "refresh": "刷新",
         "test": "测试",
