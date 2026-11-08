@@ -347,6 +347,34 @@ class SlopeMetadataTest(unittest.TestCase):
         self.assertNotIn('JOIN common.task_executions e',statement)
         self.owner.cleanup()
 
+    def test_empty_spatial_declaration_preserves_real_find_and_grant_cleanup(self):
+        # no-crs.tif stores extent/index facts but has no CRS declaration. The
+        # current MetadataOnlyItem + SpatialInfoPayload contract emits null.
+        self.public['attributes']['capabilities']={'spatial':None}
+        self.assertEqual(self.owner.find('outputs/north-degree.cog.tif',binding=self.binding),self.public)
+        self.owner.cleanup()
+        self.assertEqual(self.owner.report['cleanup'],{'grants_revoked':True,'metadata_hidden':True})
+        self.assertFalse(self.state['visible']);self.assertFalse(self.owner.report['pending'])
+
+    def test_source_find_accepts_empty_spatial_declaration_without_snapshot_or_write(self):
+        source={**self.public,'name':'no-crs.tif','full_name':'no-crs.tif',
+            'attributes':{'schema_version':1,'item':{'data_type':'media','format':'tiff','layout':'multi'},'capabilities':{'spatial':None}}}
+        with patch.object(self.owner,'ensure',return_value=self.facts),patch.object(scene.view.support,'find_fixture_item',return_value=source):
+            self.assertEqual(self.owner.find('no-crs.tif'),source)
+        self.assertEqual(self.owner.items[source['id']],source)
+        self.assertEqual(self.owner.report['queries'],[])
+        self.owner.cleanup()
+
+    def test_malformed_or_content_bearing_structural_projection_still_fails_closed(self):
+        for section in ({'type_info':None},{'type_info':[]},{'capabilities':None},{'capabilities':False},
+                        {'capabilities':{'spatial':[]}},{'capabilities':{'spatial':False}},
+                        {'capabilities':{'spatial':{'extent':[1,2,3,4]}}},{'type_info':{'media':{'width':19}}},
+                        {'format_info':{'tiff':{'profile':'cog'}}}):
+            source={**self.public,'name':'no-crs.tif','full_name':'no-crs.tif','attributes':{'item':{'format':'tiff'},**section}}
+            with self.subTest(section=section),patch.object(self.owner,'ensure',return_value=self.facts),patch.object(scene.view.support,'find_fixture_item',return_value=source),self.assertRaises(scene.SuiteError):
+                self.owner.find('no-crs.tif')
+        self.owner.cleanup()
+
     def test_unknown_grant_write_outcome_remains_journalled(self):
         original=self.issuer.request.side_effect
         def lost(method,path,expected,body=None):
@@ -356,3 +384,20 @@ class SlopeMetadataTest(unittest.TestCase):
         self.issuer.request.side_effect=lost
         with self.assertRaises(TimeoutError):self.owner.find('outputs/north-degree.cog.tif',binding=self.binding)
         self.assertTrue(self.owner.report['pending']);self.owner.cleanup();self.assertFalse(self.state['visible'])
+
+
+class SlopeFailureDiagnosticTest(unittest.TestCase):
+    def test_unexpected_attribute_failure_keeps_redacted_frame_evidence_and_fails(self):
+        import contextlib,io,os,runpy
+        error=AttributeError('private-token-must-not-leak',name='get',obj={'token':'private-token-must-not-leak'})
+        stderr=io.StringIO()
+        env={'GATEWAY_URL':'http://fixture.invalid','ADDP_ONLINE_TEST_USER_ACCESS_TOKEN':'private-token-must-not-leak','ADDP_ONLINE_ARTIFACT_DIR':'unused'}
+        with patch.dict(os.environ,env,clear=True),patch.object(scene.view,'run_scenario',side_effect=error),contextlib.redirect_stderr(stderr),self.assertRaises(SystemExit)as caught:
+            runpy.run_path(scene.__file__,run_name='__main__')
+        self.assertEqual(caught.exception.code,1)
+        diagnostic=json.loads(next(line.removeprefix('Slope orthogonal diagnostic: ')for line in stderr.getvalue().splitlines()if line.startswith('Slope orthogonal diagnostic: ')))
+        self.assertEqual((diagnostic['exception_type'],diagnostic['attribute']),('AttributeError','get'))
+        self.assertTrue(diagnostic['frames'])
+        self.assertTrue(all(set(frame)=={'file','function','line'}and type(frame['line'])is int for frame in diagnostic['frames']))
+        self.assertNotIn('private-token-must-not-leak',stderr.getvalue())
+        self.assertIn('Slope orthogonal acceptance failed: AttributeError',stderr.getvalue())

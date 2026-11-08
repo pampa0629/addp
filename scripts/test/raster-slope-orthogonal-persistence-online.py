@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """16 slope COGs, 36 precise bilingual refusals and 712 complete rereads in 600s."""
 from __future__ import annotations
-import importlib,json,math,os,re,subprocess,sys,time
+import importlib,json,math,os,re,subprocess,sys,time,traceback
 from pathlib import Path
 view=importlib.import_module('scripts.test.raster-viewshed-persistence-online')
 orth=importlib.import_module('scripts.test.raster-sight-orthogonal-persistence-online')
@@ -138,4 +138,12 @@ def main():
     view.immutable(Path(env['ADDP_ONLINE_ARTIFACT_DIR'])/(PREFIX+'-persistence.json'),encoded(report));print(json.dumps(report,sort_keys=True))
 if __name__=='__main__':
     try:main()
-    except Exception as error:print('Slope orthogonal acceptance failed: '+(str(error)if isinstance(error,SuiteError)else type(error).__name__),file=sys.stderr);raise SystemExit(1)
+    except Exception as error:
+        if not isinstance(error,SuiteError):
+            attribute=error.name if isinstance(error,AttributeError)else None
+            diagnostic={'exception_type':type(error).__name__,
+                'attribute':attribute if isinstance(attribute,str)and re.fullmatch(r'[A-Za-z_][A-Za-z_0-9]*',attribute)else None,
+                'frames':[{'file':Path(frame.filename).name,'function':frame.name,'line':frame.lineno}for frame in traceback.extract_tb(error.__traceback__)]}
+            print('Slope orthogonal diagnostic: '+json.dumps(diagnostic,sort_keys=True),file=sys.stderr)
+        print('Slope orthogonal acceptance failed: '+(str(error)if isinstance(error,SuiteError)else type(error).__name__),file=sys.stderr)
+        raise SystemExit(1)

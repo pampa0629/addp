@@ -296,9 +296,13 @@ COMMIT;
         facts=self.ensure(name)
         public=support.find_fixture_item(self.client,self.engine,name,'viewshed TIFF')
         attrs=obj(public.get('attributes'),'public structural metadata')
+        type_info=obj(attrs.get('type_info',{}),'public structural type_info')
+        capabilities=obj(attrs.get('capabilities',{}),'public structural capabilities')
+        spatial=capabilities.get('spatial')
+        if spatial is not None:spatial=obj(spatial,'public structural spatial declaration')
         if (public.get('fingerprint')!=facts['item_fingerprint']or any(public.get(k)is not None for k in('size_bytes','row_count','data_updated_at'))
-            or set(attrs)-{'schema_version','item','type_info','capabilities'}or attrs.get('type_info',{}).get('media')
-            or attrs.get('capabilities',{}).get('spatial',{}).get('extent')is not None):
+            or set(attrs)-{'schema_version','item','type_info','capabilities'}or type_info.get('media')
+            or (spatial is not None and spatial.get('extent')is not None)):
             raise SuiteError('public structural projection or exact Grant identity differs')
         self.items[positive(public.get('id'),'public item')]=public
         return public
