@@ -2241,7 +2241,9 @@ tool('go', '''import json, os
 from pathlib import Path
 import sys
 root = Path.cwd()
-if sys.argv[1] == 'env':
+if sys.argv[1:3] == ['version', '-m']:
+    print('\\tmod\\tgithub.com/swaggo/swag\\tv1.16.6')
+elif sys.argv[1] == 'env':
     print(json.dumps({'GOWORK': str(root / 'go.work'), 'GOFLAGS': os.environ.get('GOFLAGS', '')}))
 else:
     for name in ('system', 'manager', 'common'):
@@ -2250,6 +2252,9 @@ else:
 ''')
 tool('swag', '''from pathlib import Path
 import os, time, sys
+if sys.argv[1:] == ['--version']:
+    print('swag version v1.16.6')
+    sys.exit(0)
 root = Path.cwd().parents[1]
 with (root / 'calls').open('a') as stream:
     stream.write(Path.cwd().parent.name + '\\n')

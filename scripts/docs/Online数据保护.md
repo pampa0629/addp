@@ -56,6 +56,8 @@ Enrollment、Assessment、申请、授权及不可变修订在业务验收期间
 
 2026-11-08 用户确认：仅此套件的一次性身份复用 System 验收夹具已有的长场景会话配置，AccessTokenTTL 与 RefreshTokenFamilyTTL 均为4小时，完整身份及凭据仍随本轮 Job 的隔离生命周期销毁。原因是实际运行超过32分钟后，旧30分钟准备令牌在六Grant收尾时被正式认证以 token_expired 拒绝；从私有文件重载同一旧令牌不会续期。只调整 fixtureSessionConfig 的本套件分支，不改变产品默认会话、其他套件、权限、保护／授权有效期、90秒角色资格到期或40分钟场景预算，不新增刷新重试路线。更早运行的清理缺口保留，调整后的真实收尾须重新验收。
 
+同构建重启仍必须保持 build_id／git_commit／source_fingerprint，不以重新生成文档为由放宽断言。标准Swagger入口按技术栈规定的swag模块构建版本选用工具，避免旧生成器修改docs.go导致验收中重编译；`swag --version`展示常量不作为版本事实。工具修复与本地生成稳定性只计T1，实际Hosted重启仍须由运行产物证明。
+
 Develop 查询几何输出严格遵守[查询几何值契约](../../docs/spec/addp引擎插件接口规范.md)：在原生 EWKB 完成保护后，唯一 JSON 形状是 `{wkt, srid}`。空间属性保护夹具要求该对象恰含这两个成员，WKT 为有限二维 Point、SRID 为整数4326、坐标与合成源逐行一致；不把 GeoJSON、裸WKT或十六进制原生值作为 Develop 的兼容输入。Manager 预览、Service 原生表读取和 Transfer 成果预览保持各自现行表协议，不套用 Develop 查询投影。原查询、保护字段与四出口算法断言不变，不通过 SQL 空间函数改写规避原生输出核验。
 
 `security-mysql-owner-protection` 的唯一 Hosted 部署、临时 workspace 和四出口参与链路统一见[正式准备规则](../../docs/spec/testing/scenarios/数据保护.md#部署与四出口主链路)，由[Security Host Gate](../test/online-hosted-security-gate.sh)复用共享生命周期。初始 MySQL 与空间表子场景使用当次 PostGIS PostgreSQL 与 MySQL；System owner helper 创建一次性 Tenant、最小权限非管理员 User、独立引擎登记用户和独立治理初始化用户；Business 只管理物理数据及 owner-only Engine descriptor，引擎登记和分类、等级、email/phone 敏感类型及默认保护初始化分别通过 System、Security 正式 API 完成。初始化令牌在业务验收前移除，凭据隔离沿[T4 专用环境](../../docs/spec/testing/T4-Online验收规范.md#专用环境)。

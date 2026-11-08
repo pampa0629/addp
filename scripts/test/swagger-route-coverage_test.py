@@ -208,5 +208,79 @@ class SwaggerRouteCoverageTest(unittest.TestCase):
             self.assertTrue(document.endswith("\n"))
 
 
+
+class SwaggerToolVersionTest(unittest.TestCase):
+    def run_generation(self, version, *, install_fails=False):
+        with tempfile.TemporaryDirectory(prefix='addp-swag-version-') as temporary:
+            root = Path(temporary)
+            scripts = root / 'scripts/swagger'
+            scripts.mkdir(parents=True)
+            shutil.copy2(ROOT / 'scripts/swagger/gen-swagger.sh', scripts / 'gen-swagger.sh')
+            tools = root / 'tools'
+            tools.mkdir()
+            home = root / 'home'
+            backend = root / 'system/backend'
+            (backend / 'cmd/server').mkdir(parents=True)
+            (backend / 'cmd/server/main.go').write_text('package main\n')
+            (backend / 'go.mod').write_text('module example/system\n')
+            swag_body = (
+                '#!' + sys.executable + '\n# MODULE_VERSION=@VERSION@\nimport sys\nfrom pathlib import Path\n'
+                "if sys.argv[1:] == ['--version']:\n print('swag version v1.16.4');sys.exit(0)\n"
+                "root=Path.cwd().parents[1]\n"
+                "with (root/'generated-by').open('a') as out:out.write(str(Path(sys.argv[0]))+'\\n')\n"
+                "Path('docs').mkdir(exist_ok=True)\n"
+                "for name in ('docs.go','swagger.json','swagger.yaml'):Path('docs',name).write_text('canonical')\n"
+            )
+            if version is not None:
+                binary = tools / 'swag'
+                binary.write_text(swag_body.replace('@VERSION@', version))
+                binary.chmod(0o755)
+            go = tools / 'go'
+            go.write_text('#!' + sys.executable + '\n' +
+                'import json,sys,os,re\nfrom pathlib import Path\n' +
+                'root=Path(' + repr(str(root)) + ')\n' +
+                "if sys.argv[1]=='env':print(json.dumps({'GOWORK':'off'}))\n" +
+                "elif sys.argv[1]=='list':print(json.dumps({'Path':'example/system','Main':True,'Dir':str(root/'system/backend')}))\n" +
+                "elif sys.argv[1:3]==['version','-m']:\n print('\\tmod\\tgithub.com/swaggo/swag\\t'+re.search(r'MODULE_VERSION=(v[0-9.]+)',Path(sys.argv[3]).read_text()).group(1))\n" +
+                "elif sys.argv[1]=='install':\n" +
+                " (root/'install-args').write_text(' '.join(sys.argv[1:]))\n" +
+                (' sys.exit(7)\n' if install_fails else
+                 " binary=Path(os.environ['HOME'])/'go/bin/swag'\n binary.parent.mkdir(parents=True)\n binary.write_text(" + repr(swag_body.replace('@VERSION@', 'v1.16.6')) + ")\n binary.chmod(0o755)\n"))
+            go.chmod(0o755)
+            env = dict(os.environ, HOME=str(home), PATH=str(tools)+os.pathsep+'/usr/bin:/bin')
+            result = subprocess.run(['bash', str(scripts / 'gen-swagger.sh'), 'system'], cwd=root,
+                                    env=env, capture_output=True, text=True, timeout=15)
+            install = (root / 'install-args').read_text() if (root / 'install-args').exists() else None
+            generated = (root / 'generated-by').read_text().splitlines() if (root / 'generated-by').exists() else []
+            return result, install, generated
+
+    def test_missing_tool_installs_the_declared_version(self):
+        result, install, generated = self.run_generation(None)
+        self.assertEqual(result.returncode, 0, result.stdout+result.stderr)
+        self.assertEqual(install, 'install github.com/swaggo/swag/cmd/swag@v1.16.6')
+        self.assertEqual(len(generated), 1)
+        self.assertTrue(generated[0].endswith('/home/go/bin/swag'))
+
+    def test_outdated_path_tool_is_replaced_before_generation(self):
+        result, install, generated = self.run_generation('v1.16.4')
+        self.assertEqual(result.returncode, 0, result.stdout+result.stderr)
+        self.assertEqual(install, 'install github.com/swaggo/swag/cmd/swag@v1.16.6')
+        self.assertEqual(len(generated), 1)
+        self.assertTrue(generated[0].endswith('/home/go/bin/swag'))
+
+    def test_matching_tool_is_reused_without_installation(self):
+        result, install, generated = self.run_generation('v1.16.6')
+        self.assertEqual(result.returncode, 0, result.stdout+result.stderr)
+        self.assertIsNone(install)
+        self.assertEqual(len(generated), 1)
+        self.assertTrue(generated[0].endswith('/tools/swag'))
+
+    def test_failed_install_does_not_run_the_old_generator(self):
+        result, install, generated = self.run_generation('v1.16.4', install_fails=True)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(install, 'install github.com/swaggo/swag/cmd/swag@v1.16.6')
+        self.assertEqual(generated, [])
+
+
 if __name__ == "__main__":
     unittest.main()

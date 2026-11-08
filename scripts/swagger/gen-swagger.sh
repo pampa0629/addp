@@ -29,16 +29,22 @@ find_swag() {
     fi
 }
 
-# 安装 swag（如果未安装）
+# 与技术栈规约保持一致；旧工具生成的 docs.go 会改变重启构建输入。
 ensure_swag() {
-    local swag_bin
+    local swag_bin version required_version=v1.16.6
     swag_bin=$(find_swag)
-    if [ -z "$swag_bin" ]; then
-        echo "⚙️  swag 未安装，正在安装..." >&2
-        go install github.com/swaggo/swag/cmd/swag@v1.16.4
-        swag_bin="${HOME}/go/bin/swag"
-        echo "✅ swag 安装完成: $swag_bin" >&2
+    if [ -n "$swag_bin" ]; then
+        # v1.16.6 的 --version 常量仍为 v1.16.4，以 Go 构建模块版本为准。
+        version=$(go version -m "$swag_bin" 2>/dev/null | awk '$1 == "mod" && $2 == "github.com/swaggo/swag" {print $3; exit}') || version=""
+        if [ "$version" = "$required_version" ]; then
+            echo "$swag_bin"
+            return 0
+        fi
     fi
+    echo "⚙️  需要 swag ${required_version}，正在安装规定版本..." >&2
+    go install "github.com/swaggo/swag/cmd/swag@${required_version}" || return 1
+    swag_bin="${HOME}/go/bin/swag"
+    echo "✅ swag 安装完成: $swag_bin" >&2
     echo "$swag_bin"
 }
 

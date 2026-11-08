@@ -47,7 +47,7 @@ FastAPI 继续实时导出 OpenAPI，避免遗漏运行环境对动态 schema �
 
 ## 依赖版本
 
-`swag`、`gin-swagger`、`files` 的统一版本以[技术栈规约](addp技术栈规约.md)为准，模块依赖在各自 `go.mod` / `go.sum` 中维护；本指南不再维护另一张版本表。
+`swag`、`gin-swagger`、`files` 的统一版本以[技术栈规约](addp技术栈规约.md)为准，模块依赖在各自 `go.mod` / `go.sum` 中维护；本指南不再维护另一张版本表。 生成入口在使用 `swag` 前通过 `go version -m` 核对二进制内嵌的 `github.com/swaggo/swag` 模块版本（不使用仍可能报告旧常量的 `swag --version`）；缺失或与技术栈规定不一致时，沿原安装入口安装规定版本并使用该产物，安装失败终止生成。不得因 PATH 中已有旧工具而改变生成结果，也不得跳过文档同步或放宽重启时构建身份核对。
 
 ## 工具安装
 
