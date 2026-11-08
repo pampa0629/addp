@@ -822,3 +822,18 @@ T1/T3/构建验证：`make test-security-frontend` 退出0，260项单元、37�
 证据：原始 `/tmp/addp-security-session-d7635042/`，ZIP SHA256 `9f93f1c9e3b0ed13b1479b3e8d6a7de461bfd364f27ee3636d2c4468f2f11dc9`；独立失败审计 `p145-independent-failure-audit.json`；重现 `/tmp/p145-restart-{docs.go,swagger.json,swagger.yaml}.diff`。最终标准生成入口两次、三文档逐字节一致、构建指纹前后相同见 `/tmp/p145-swag-standard-repro.json`（完整Go workspace及已提交go.work.sum，真实macOS工具；无服务运行）。首次不完整workspace及遗漏sum造成的重现准备失败、旧版展示常量和测试桩占位符误替换导致的失败均保留，不计产品失败或通过；详见 `/tmp/p145-swag-version-red.log`、`/tmp/p145-swag-build-version-{red,green,green-final}.log`。本轮仅T1生成与身份输入验证，不算数据库T2、本地重启或Hosted通过。
 
 本轮最终门禁：`make test-swagger` 退出0，22项脚本测试、全部Go模块路由覆盖与两个FastAPI投影检查通过；`bash scripts/test/dev-lifecycle-and-build.sh` 标准脚本退出0，包含原Swagger缓存／内容／工具版本与并发、局部重启保留其他进程、构建指纹与原子替换断言。`bash -n` 和本会话限定diff检查通过。日志 `/tmp/p145-swag-standard-gate-verified.log`、`/tmp/p145-swag-dev-lifecycle-final.log`，输入摘要 `/tmp/p145-swag-version-verification.json`。未运行根 `make test-dev-lifecycle` 的其他依赖／Go聚合，不冒称完整平台聚合或新Hosted通过；既有Security Runner业务输入未改，前轮271项有效证据保留、不为仅工具修正重复执行。新运行仍由专门CI会话单次安排；必须核对重启前后真实构建三字段、领域／浏览器报告、六Grant正式撤销及完整清理。
+
+
+### v44 完整 Hosted 验收与清理闭环（2026-11-08）
+
+[Run42454542147／Job128650659824](https://github.com/pampa0629/addp/actions/runs/42454542147/job/128650659824)，attempt1，实际完整 SHA `bd68a07014353d5c4a693fd863b3a3428bfdf460`。这是经审阅且本会话相关输入不变的2b42a752修复后继，不标作2b42精确运行。GitHub原始Run／Job均completed／success；readiness、Hosted Security gate及Hosted evidence上传实际成功，另一条件式execution evidence上传为skipped，不把它算通过。十服务preflight同SHA、干净检出、专用addp_online、loopback-only。领域v44及浏览器v9报告passed，业务1951989ms（约32.5分钟），27个固定阶段均完成。最终wrapper result=passed／cleanup=passed／infra_cleanup=zero_residuals；此前8a7d令牌到期与839a重启构建失败继续保留，本次不追改旧运行结论。
+
+独立保留产物审计通过：31个必需领域段；六计算各独立UUID、准备阶段精确拒绝及同历史无结果；新增not_ready／operation_unsupported／schema_mismatch三条实际UUID分别为 `189376fd-7c1a-4318-941d-8acf5c9948b0`、`1d207fc0-9ec2-4ff8-aa00-963e3cfa86a5`、`c466820f-0a13-4c11-b28c-f4b1d3ec767c`，五行脱敏恢复且规则修订未变。七原因×四出口仍严格分为20个runtime、8个protocol_only格；`protection_not_yet_valid`仅有此前真实PostgreSQL T2，不新增开始时间配置、不改时钟，也不记HTTP／浏览器T4。四出口邮箱移除、三算法、Mongo嵌套字段身份与派生血缘拒绝、三组资格90秒自然到期、Service方式撤销及资格撤销／到期后的旧游标、Develop历史默认保护均按留存合同核对。Service参数SQL的int／string默认修订、显式与省略参数双向续页、非法默认更新和旧游标拒绝亦核对实际报告的行标识、版本、状态、缓存头及CSV摘要；不将这些摘要写成独立原始CSV正文。
+
+默认导出矩阵42条响应记录、六份实际CSV已逐字节核对固定合成oracle，包含Unicode、NULL／空单元格、非敏感字段、双Owner一致及恢复默认；规则变化后24次旧会话／文件拒绝，新导出恢复。Transfer两表JOIN三条执行UUID互异，成功读写2／2，两条敏感计算拒绝均0／0，精确目标和三任务清理无残留。空间及Mongo重启两处分别核对Manager／Security：build_id、git_commit、source_fingerprint保持，instance_id不同且started_at更晚；Security不可达场景另核对同构建重启及四Owner进程不变，没有用重新构建或重扫代替恢复。
+
+21张原始1440×900 PNG全部逐一目视，含三组新增Develop历史／Monitor的六张图，具体提示、处理建议、准备阶段及同UUID一致；其余15图覆盖Manager检索／预览／导出及Monitor、资源交集与重置、计算拒绝、Service清空旧预览／恢复、Transfer准备／结果阶段拒绝及Monitor。Service当前截图仍使用保护类别总提示，不能宣称其已呈现每个子原因；列入后续提示一致性工作。临时三目标×metadata_read/read共六个唯一签发UUID在最终清理回执逐项身份／目标／动作一致，pending／errors空，grants_revoked／content_unreadable／metadata_hidden均true。领域23建／23删／0残留，浏览器两组各2建／2删／0残留；保留执行、导出审计及文件随独占Infra销毁，不能混为领域对象清理。
+
+原始证据 `/tmp/addp-security-swag-2b42a752/archive/_temp/addp-online-42454542147/`；GitHub artifact ID13609052160，99成员ZIP CRC通过，SHA256 `552ec77a075975c55470e1a156a4eb649a254b28ddb0285e5de44b6a0addd56f`，解压文件逐字节等于归档。独立审计 `/tmp/p145-bd68-audit/independent-evidence-audit.json`，目视清单及逐图摘要 `visual-review.json`；命令 `python3 /tmp/p145-bd68-audit/audit.py` 与 `python3 /tmp/p145-bd68-audit/test_audit.py` 退出0，正常样本及43个受控拒绝反例通过。审计不导入生产校验器、不调用运行服务。多数子场景原始HTTP正文未归档，方式撤销拒绝回执也未单列cache_control，独立审计不补造这些证据；运行脚本的实时断言与保留报告、六份CSV原字节及浏览器目视证据分别陈述。
+
+本次可认定上述v44/v9已覆盖范围的完整Hosted T4通过；不是全平台、全部SQL／引擎或静态加密完成，不证明metadata-only搜索，原临时read前提保留。无新产品实现或本地服务启停，本轮仅归档与文档校验；既有271项、System Fixture、Swagger／生命周期及后继Common插件隔离验证按输入复用，不声称重新运行。湖南实际行155／156大项仍为部分实现；默认导出与Transfer JOIN限定Hosted缺口已闭环，后续优先细化Service保护拒绝的具体原因及处理建议，再按已确认范围逐项扩大SQL保护能力。

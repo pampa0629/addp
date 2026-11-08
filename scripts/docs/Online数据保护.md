@@ -286,7 +286,7 @@ Transfer 的这两个 SQL 查询源拒绝复用套件已纳管的 PostgreSQL `sp
 
 ### 策略恢复、审计与未覆盖范围
 
-本轮策略变更必须绑定自己的Assessment、Transfer/export和唯一验收原因，采用当前版本的乐观并发控制；已有活动覆盖或并发他人变更时拒绝接管。失败、中断以及写请求结果不确定时均按真实读回的本次归属／修订恢复为revoked，不重放写请求、不覆盖他人修改。身份和功能资格、保护基线及原查询快照保持不变。成功保留6个导出会话、执行与策略修订审计及文件证据，随既有隔离Infra最终销毁，不新增清理接口或声称领域零残留包含这些保留审计；不得把物理清理报告与本轮实际保留范围混淆。真实隔离运行尚需专门CI会话回传，确定性Runner门禁及此前本地Persons验收均不能替代新的Hosted证据。
+本轮策略变更必须绑定自己的Assessment、Transfer/export和唯一验收原因，采用当前版本的乐观并发控制；已有活动覆盖或并发他人变更时拒绝接管。失败、中断以及写请求结果不确定时均按真实读回的本次归属／修订恢复为revoked，不重放写请求、不覆盖他人修改。身份和功能资格、保护基线及原查询快照保持不变。成功保留6个导出会话、执行与策略修订审计及文件证据，随既有隔离Infra最终销毁，不新增清理接口或声称领域零残留包含这些保留审计；不得把物理清理报告与本轮实际保留范围混淆。此矩阵现已由文末v44／v9实际Hosted运行补证；确定性Runner门禁及此前本地Persons验收本身仍不能替代Hosted证据。
 
 ## Transfer PostgreSQL 两表查询脱敏落盘
 
@@ -301,3 +301,10 @@ Transfer 的这两个 SQL 查询源拒绝复用套件已纳管的 PostgreSQL `sp
 复用空间算法及 Transfer JOIN 已准备的两个 PostgreSQL 普通表 `spatial_algorithm_source` 与 `spatial_algorithm_transfer`、原有精确表范围和 Service 普通用户。两个来源的 `value_a` 各自安装 Service 角色选项。候选必须按 DataItem 返回两条同名字段及各自输出列，保存只选择左表。撤销前逐页核对 JSON 与 CSV，左表两个别名全遮盖，右表保持默认掩码，NULL 与 CSV 空单元格对应。查询按 id 分页，每页状态及 CSV 响应头独立核验。
 
 沿现有真实 IAM 撤销，仅撤销同一个资格分配。旧会话核对 401，同一普通用户重新登录后，两种格式的旧游标及无游标查询均须精确 403 / `query_protection_roles_unavailable`、无结果且 `no-store`。两侧 Policy、投影和已保存选择保持。主动移除选择后恢复双表默认脱敏及两页结果。临时服务与两条角色策略在成功、失败或中断后精确清理。领域报告在 `service_role_membership_revocation.postgres_join_eligibility` 留存候选列、分页、拒绝和恢复证据。浏览器合同仍为 v9。
+
+
+## v44／v9 实际 Hosted 证据（2026-11-08）
+
+[Run42454542147／Job128650659824](https://github.com/pampa0629/addp/actions/runs/42454542147/job/128650659824)，attempt1，实际SHA `bd68a07014353d5c4a693fd863b3a3428bfdf460`。领域v44、浏览器v9、27阶段及完整清理通过，21图全部目视，六项临时metadata/read许可最终正式撤销；默认导出42条边界和六份CSV、Transfer两表JOIN、Service SQL资格与默认参数修订等限定范围由本次运行补证。不是早期v33／v43提交的精确重跑，原失败仍保留。
+
+独立审计核对原始Run／Job与实际步骤、归档SHA／CRC、同构建新实例重启、拒绝原因与UUID、六份CSV固定值及全部清理回执；报告断言和未保留的原始HTTP正文不混淆。七原因四出口保持20个runtime／8个protocol_only，尚未生效仅T2。证据、未验范围和全部审计命令统一见[Security本次验收记录](../../security/CLAUDE.md#v44-完整-hosted-验收与清理闭环2026-11-08)。本节只记录实际验收，不改变上述稳定合同或扩展权限；后续不再将本次已覆盖的导出、JOIN和资格生命周期统列为“Hosted未运行”。
