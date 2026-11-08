@@ -853,7 +853,7 @@ ORC 嵌套扩展复用同一 `native-table-orc` case、原 11 项权限与精确
 
 ### 正交旋转网格通视与可视域独立 Hosted 验收
 
-独立手工 `raster-sight-orthogonal-persistence` 复用同源默认入口GeoPython Runtime、Hosted/NFS与普通User原12权限，600秒业务预算，nightly关闭。8组各保存一份通视CSV及一份可视域COG：北向矩形基线、一般正交旋转矩形、90°、180°、子像元/格角格边、NoData/mask/alpha及已知遮挡优先、国际英尺、美制测量英尺跨块；核本轮实际北向与旋转成果对照。半径等号及相邻浮点、重合目标中心、显式第二波段按完整六项仿射与独立逐格矩形相交参考验证。
+独立手工 `raster-sight-orthogonal-persistence` 复用同源默认入口GeoPython Runtime、Hosted/NFS与普通User原12权限，600秒业务预算，nightly关闭。8组各保存一份通视CSV及一份可视域COG：北向矩形基线、一般正交旋转矩形、90°、180°、子像元/格角格边、NoData/mask/alpha及已知遮挡优先、国际英尺、美制测量英尺跨块；核本轮实际北向与旋转成果对照。半径等号及相邻浮点、重合目标中心、显式第二波段按完整六项仿射与独立逐格矩形相交参考验证。 派发该suite必须显式提供`sight_orthogonal_source_commit`完整40位小写SHA；编排仍从当前main读取，但checkout必须等于所选业务源，且业务源必须为编排提交的祖先。Job分别记录业务源与编排SHA，不允许省略后静默改用main；此输入不影响其他suite。
 
 剪切、近似正交、两种单轴镜像、地理坐标、缺CRS、缺定位和退化网格，两算子各中英文提交32次；通视重合端点/半开边界外端点、可视域零半径/范围外观察点再按中英文提交8次，共40次实际业务节点准确拒绝，反向查询不改提交语言。数值极限与故障注入单列Native。
 

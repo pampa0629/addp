@@ -596,6 +596,43 @@ class OnlineCIRegistrationTest(unittest.TestCase):
             target.write_text(original)
 
 
+    @staticmethod
+    def orthogonal_source_steps():
+        workflow=(SCRIPT.parents[2]/'.github/workflows/online-t4-gates.yml').read_text()
+        job=re.search(r'(?ms)^  raster-sight-orthogonal-hosted-t4:\n(.*?)(?=^  [a-z][a-z0-9-]*:\n|\Z)',workflow)[1]
+        steps={}
+        for name,body in re.findall(r'(?ms)^      - name: ([^\n]+)\n(.*?)(?=^      - name: |\Z)',job):
+            run=re.search(r'(?ms)^        run: \|\n(.*)',body)
+            if run:steps[name]=textwrap.dedent(run[1])
+        return steps
+
+    def test_sight_orthogonal_source_sha_rejects_empty_short_uppercase_and_ref(self):
+        import os
+        script=self.orthogonal_source_steps()['Validate requested orthogonal sight source commit']
+        for source,accepted in (('',False),('d240f16bc',False),('A'*40,False),('a'*39,False),
+            ('a'*41,False),('refs/heads/main',False),('a'*40+'\n',False),
+            ('$(echo unsafe)',False),('d240f16bc9c8838d38f803b8b07fdb488fa0de89',True)):
+            result=subprocess.run(['bash','-euc',script],env={**os.environ,'SOURCE_COMMIT':source},capture_output=True,text=True)
+            with self.subTest(source=source):self.assertEqual(result.returncode==0,accepted,result.stderr)
+
+    def test_sight_orthogonal_checkout_and_ancestry_fail_before_business(self):
+        import os
+        script=self.orthogonal_source_steps()['Verify orthogonal sight source ancestry']
+        with tempfile.TemporaryDirectory()as directory:
+            repo=Path(directory)
+            def git(*args):return subprocess.check_output(['git',*args],cwd=repo,stderr=subprocess.DEVNULL).decode().strip()
+            git('init','--initial-branch=main');git('config','user.name','source-contract');git('config','user.email','source-contract@example.invalid')
+            git('commit','--allow-empty','-m','source');source=git('rev-parse','HEAD')
+            git('commit','--allow-empty','-m','dispatch');dispatch=git('rev-parse','HEAD')
+            tree=git('rev-parse','HEAD^{tree}');foreign=git('commit-tree',tree,'-m','unrelated source')
+            for selected,head,planned,accepted in ((source,source,dispatch,True),(dispatch,source,dispatch,False),
+                (foreign,foreign,dispatch,False),(source,source,foreign,False)):
+                git('checkout','--detach',head)
+                result=subprocess.run(['bash','-euc',script],cwd=repo,env={**os.environ,'SOURCE_COMMIT':selected,'DISPATCH_COMMIT':planned},capture_output=True,text=True)
+                with self.subTest(selected=selected,head=head,dispatch=planned):
+                    self.assertEqual(result.returncode==0,accepted,result.stderr)
+                    if accepted:self.assertIn(f'source commit={selected}; dispatch commit={planned}',result.stdout)
+
     def test_sight_orthogonal_requires_manual_fixed_mixed_matrix(self):
         source=SCRIPT.parents[2]
         paths=('Makefile','.github/workflows/online-t4-gates.yml','scripts/test/online-gate.py',
@@ -611,6 +648,12 @@ class OnlineCIRegistrationTest(unittest.TestCase):
         CHECK.validate_raster_sight_orthogonal(self.repository,registered)
         for relative,fragment in ((paths[0],'test_online_sight_orthogonal_fixture.py'),
             (paths[1],"inputs.suite != 'raster-sight-orthogonal-persistence'"),
+            (paths[1],'      sight_orthogonal_source_commit:\n'),
+            (paths[1],'[[ "$SOURCE_COMMIT" =~ ^[0-9a-f]{40}$ ]]'),
+            (paths[1],'ref: ${{ inputs.sight_orthogonal_source_commit }}'),
+            (paths[1],'[ "$(git rev-parse HEAD)" = "$SOURCE_COMMIT" ]'),
+            (paths[1],'git merge-base --is-ancestor "$SOURCE_COMMIT" "$DISPATCH_COMMIT"'),
+            (paths[1],"printf 'Orthogonal sight source commit=%s; dispatch commit=%s"),
             (paths[3],'ADDP_ONLINE_TEST_TIMEOUT_SECONDS=600'),
             (paths[4],"'north.csv':('north.tif','sight'),"),
             (paths[5],'COUNTS=(16,40,776,57)'),(paths[5],'raster.strict_sizes'),

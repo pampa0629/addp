@@ -3502,6 +3502,22 @@ def validate_raster_sight_orthogonal(repository: Path, registered: set[str]) -> 
         'run: bash scripts/test/online-hosted-raster-sight-orthogonal-gate.sh','if: always()'))
         or "&& inputs.suite != 'raster-sight-orthogonal-persistence'"not in workflow or load_suite_registry(repository)[suite].nightly):
         raise RegistrationError('orthogonal sight requires an isolated manual Hosted NFS job')
+    source_input=re.search(r'(?ms)^      sight_orthogonal_source_commit:\n(.*?)(?=^      [a-z][a-z0-9_]*:\n|^jobs:\n|\Z)',workflow)
+    fixed_source_fragments=(
+        'name: Validate requested orthogonal sight source commit',
+        '[[ "$SOURCE_COMMIT" =~ ^[0-9a-f]{40}$ ]]',
+        'ref: ${{ inputs.sight_orthogonal_source_commit }}',
+        'name: Verify orthogonal sight source ancestry',
+        'SOURCE_COMMIT: ${{ inputs.sight_orthogonal_source_commit }}',
+        'DISPATCH_COMMIT: ${{ github.sha }}',
+        '[ "$(git rev-parse HEAD)" = "$SOURCE_COMMIT" ]',
+        'git merge-base --is-ancestor "$SOURCE_COMMIT" "$DISPATCH_COMMIT"',
+        "printf 'Orthogonal sight source commit=%s; dispatch commit=%s")
+    if (source_input is None or 'type: string'not in source_input[1] or 'required: false'not in source_input[1]
+        or any(fragment not in job[1]for fragment in fixed_source_fragments)
+        or job[1].index('Validate requested orthogonal sight source commit')>job[1].index('Check out repository')
+        or job[1].index('Verify orthogonal sight source ancestry')>job[1].index('Set up Go')):
+        raise RegistrationError('orthogonal sight requires an explicit full ancestor source SHA and exact checkout')
     make=(repository/'Makefile').read_text()
     if ('test_online_sight_orthogonal_fixture.py'not in make_target_commands(make,'test-geopython-workflow')
         or 'test-raster-sight-orthogonal-online-runner:'not in make_target_commands(make,'test-raster-online-runner')):
