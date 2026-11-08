@@ -31,6 +31,7 @@ class TransportCertificateTest(unittest.TestCase):
         cls.root = Path(cls.temporary.name).resolve()
         spec = importlib.util.spec_from_file_location('transport_tls_fixture', ROOT/'scripts/test/metrics-source-fixture.py')
         fixture = importlib.util.module_from_spec(spec); spec.loader.exec_module(fixture)
+        cls.fixture = fixture
         cls.tls = fixture.certificates(cls.root)
         cls.original = {name:(cls.tls/name).read_bytes() for name in ('ca.crt','server.crt','server.key')}
 
@@ -42,12 +43,7 @@ class TransportCertificateTest(unittest.TestCase):
         return subprocess.run(['openssl', *args], check=True, capture_output=True, timeout=5)
 
     def sign(self, *, authority='keyid:always', purpose='serverAuth', san='IP:127.0.0.1', subject='hash'):
-        extension = self.root/'transport.ext'
-        extension.write_text('basicConstraints=critical,CA:FALSE\nkeyUsage=critical,digitalSignature,keyEncipherment\n'
-            +'authorityKeyIdentifier='+authority+'\nsubjectKeyIdentifier='+subject
-            +'\nextendedKeyUsage='+purpose+'\nsubjectAltName='+san+'\n')
-        self.openssl('x509','-req','-in',str(self.root/'server.csr'),'-CA',str(self.tls/'ca.crt'),
-            '-CAkey',str(self.root/'ca.key'),'-set_serial','2','-days','1','-extfile',str(extension),'-out',str(self.tls/'server.crt'))
+        self.fixture.sign_server(self.root,self.tls,authority=authority,purpose=purpose,san=san,subject=subject)
 
     def preflight(self, *, rejected=False, reason=None):
         before = {name:((self.tls/name).read_bytes(), (self.tls/name).stat()) for name in self.original}

@@ -169,7 +169,7 @@ def apply(action, kind, scope, env):
         if reason and reason[1] in FAILURE_REASONS:
             raise ValueError('操作失败：'+FAILURE_REASONS[reason[1]]+cleanup+'；命令：python3 scripts/infra/metrics-sources.py up --scope '+scope+' --kind '+kind)
         stage = re.search(r'\[stage=([a-z-]+)\]', result.stderr)
-        tls = tls_failure_detail(stage[1] if stage else None, re.findall(r'\[tls-reason=([a-z-]+)\]', result.stderr)) if kind in ('redis','minio') else None
+        tls = tls_failure_detail(stage[1] if stage else None, re.findall(r'\[tls-reason=([a-z-]+)\]', result.stderr)) if kind in ('postgresql','redis','minio') else None
         detail = '：'+tls if tls else ('：'+FAILURE_STAGES[stage[1]]) if stage and stage[1] in FAILURE_STAGES else ''
         raise ValueError('操作失败'+detail+cleanup)
     if action == 'recover':
@@ -226,7 +226,7 @@ def run(action, scopes=(), kinds=(), inherited=None, resolved=False):
             print(f'{label:<24} {result}')
         except (OSError, ValueError, KeyError, TypeError, subprocess.SubprocessError) as error:
             failures += 1
-            tls = tls_failure_detail(getattr(error,'observation_stage',None), [getattr(error,'source_tls_reason',None)]) if action == 'check' and kind in ('redis','minio') else None
+            tls = tls_failure_detail(getattr(error,'observation_stage',None), [getattr(error,'source_tls_reason',None)]) if action == 'check' and kind in ('postgresql','redis','minio') else None
             if isinstance(error, subprocess.TimeoutExpired):
                 detail = '操作超时，结果未知；请核对状态，勿自动重试'
             elif tls:

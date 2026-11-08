@@ -79,6 +79,23 @@ def tls_error(kind, reason, message='Metrics source TLS verification failed'):
     return error
 
 
+def verify_tls(directory, ip, error=ValueError):
+    """One offline strict certificate check; callers own file protection rules."""
+    try:
+        subprocess.run(['openssl', 'verify', '-x509_strict', '-CAfile', str(directory/'ca.crt'), '-purpose', 'sslserver', '-verify_ip', str(ip), str(directory/'server.crt')], check=True, capture_output=True, timeout=5)
+    except subprocess.CalledProcessError as failure:
+        raise tls_error(error, tls_verify_reason(failure.stderr)) from None
+    except (OSError, subprocess.SubprocessError):
+        raise tls_error(error, 'unknown') from None
+    try:
+        public = subprocess.run(['openssl', 'x509', '-in', str(directory/'server.crt'), '-pubkey', '-noout'], check=True, capture_output=True, timeout=5).stdout
+        key = subprocess.run(['openssl', 'pkey', '-in', str(directory/'server.key'), '-passin', 'pass:', '-pubout'], check=True, capture_output=True, timeout=5).stdout
+    except (OSError, subprocess.SubprocessError):
+        raise tls_error(error, 'unknown') from None
+    if public != key:
+        raise tls_error(error, 'key', 'Metrics source certificate key mismatch')
+
+
 def write(path,value):
     previous=private.read(path,0o600)[0] if os.path.lexists(path) else None
     private.atomic(path,value,0o600,previous=previous)
@@ -110,19 +127,7 @@ def transport(env, root, prefix, error=ValueError):
             raise Error('Metrics source TLS material rejected')
     if (directory/'server.key').stat().st_uid != os.getuid() or (directory/'server.key').stat().st_mode & 0o077:
         raise Error('Metrics source private key ownership rejected')
-    try:
-        subprocess.run(['openssl', 'verify', '-x509_strict', '-CAfile', str(directory/'ca.crt'), '-purpose', 'sslserver', '-verify_ip', str(ip), str(directory/'server.crt')], check=True, capture_output=True, timeout=5)
-    except subprocess.CalledProcessError as failure:
-        raise tls_error(Error, tls_verify_reason(failure.stderr)) from None
-    except (OSError, subprocess.SubprocessError):
-        raise tls_error(Error, 'unknown') from None
-    try:
-        public = subprocess.run(['openssl', 'x509', '-in', str(directory/'server.crt'), '-pubkey', '-noout'], check=True, capture_output=True, timeout=5).stdout
-        key = subprocess.run(['openssl', 'pkey', '-in', str(directory/'server.key'), '-passin', 'pass:', '-pubout'], check=True, capture_output=True, timeout=5).stdout
-    except (OSError, subprocess.SubprocessError):
-        raise tls_error(Error, 'unknown') from None
-    if public != key:
-        raise tls_error(Error, 'key', 'Metrics source certificate key mismatch')
+    verify_tls(directory, ip, error=Error)
     return str(ip), port, material
 
 

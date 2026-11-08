@@ -9,6 +9,15 @@ def command(args,**kwargs):
     return subprocess.run(args,check=True,capture_output=True,timeout=30,**kwargs)
 
 
+def sign_server(root, tls, *, authority='keyid:always', purpose='serverAuth', san='IP:127.0.0.1', subject='hash'):
+    extension = root/'transport.ext'
+    extension.write_text('basicConstraints=critical,CA:FALSE\nkeyUsage=critical,digitalSignature,keyEncipherment\n'
+        +'authorityKeyIdentifier='+authority+'\nsubjectKeyIdentifier='+subject
+        +'\nextendedKeyUsage='+purpose+'\nsubjectAltName='+san+'\n')
+    command(['openssl','x509','-req','-in',str(root/'server.csr'),'-CA',str(tls/'ca.crt'),
+        '-CAkey',str(root/'ca.key'),'-set_serial','2','-days','1','-extfile',str(extension),'-out',str(tls/'server.crt')])
+
+
 def certificates(root):
     config=root/'request.cnf';config.write_text('[req]\nprompt=no\ndistinguished_name=dn\n[dn]\nCN=metrics-source-t2\n')
     environment=dict(os.environ,OPENSSL_CONF=str(config))

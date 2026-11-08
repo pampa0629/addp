@@ -165,7 +165,7 @@ class MetricsSourcesTest(unittest.TestCase):
     def test_tls_reason_is_identical_for_check_and_application_without_private_output(self):
         for reason,phrase in {'chain':'证书链','not-yet-valid':'尚未生效','expired':'已过期',
                 'purpose':'服务器认证','name':'IP SAN','key':'私钥不匹配','unknown':'原因未能确认'}.items():
-            for kind in ('redis','minio'):
+            for kind in ('postgresql','redis','minio'):
                 failure=ValueError('private-password /private/server.crt')
                 failure.source_tls_reason=reason;failure.observation_stage='transport-check'
                 code,output,_=self.invoke('check',['infra'],[kind],env={manager.PROVIDERS[kind][1]+'_ENABLED':'true'},check={'side_effect':failure})

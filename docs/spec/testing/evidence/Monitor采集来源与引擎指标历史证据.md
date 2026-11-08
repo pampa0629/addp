@@ -905,3 +905,15 @@ Safari 第二个标签页真实可见、自动刷新开启，显示 Infra Redis�
 该最终组合整体退出 2：登记脚本的 85 项测试通过后，原 Manager 假进程夹具 `test_cleanup_failure_is_a_failure_even_after_tests_pass` 及 `test_foreign_resource_prevents_compose_deletion/foreign-container` 分别超过 20 秒预算；9 项夹具中 2 项错误，后续实际登记检查未执行。该夹具只复制 Manager 门禁、ports 和 observability-env 脚本，不加载本批修改，相关文件本批未变；超时的具体环境根因未确认，没有改其预算／实现、盲目重试或将局部成功计为完整登记门禁通过。既有两个协议 T2 元数据已覆盖本次实现、测试、证书夹具及标准目标，无须新增 Make／workflow 路线；后继 CI／Hosted 仍由专门会话回传。
 
 本机只读四来源 `check --scope infra --scope business --kind minio --kind redis` 退出 0，日志 `/tmp/addp-source-tls-diagnosis-personal-check-20261108.log`；未修改个人证书／环境或启停服务，不重复前批真实采样及页面验收，不把本次预检当作新实链证据。
+
+### PostgreSQL 采集来源统一严格证书校验与中文诊断（2026-11-08）
+
+用户确认继续统一 PostgreSQL。先修订正式规范与来源指南，再将证书链、用途、IP SAN、公钥配对及封闭错误分类收敛到 `metrics-source.py::verify_tls`，PostgreSQL 和原 Redis／MinIO 都调用同一实现，删除 PostgreSQL 原普通校验与重复公钥读取。各自材料检查仍由来源承担，PostgreSQL 的外部三文件目录、禁止符号链接和读取上限保留。原 `check/up/recover` 的 transport 阶段传递同一白名单类别和中文映射，非零／清理未确认语义不变；没有改变 SQL 连接、账号权限、两容器部署或个人环境。
+
+临时证书签发用例沿既有 `metrics-source-fixture.py` 共享，删除原测试中的重复签发代码。PostgreSQL 新增有效、可选叶 SKI、缺叶 AKI／CA SKI、用途、IP SAN、密钥场景及标准 `check --resolved-env` 贯通，核对材料与 inode／mtime 不变；另验额外文件、链接、超预算在共用校验前拒绝，以及 CLI 未确认类别与清理标记。标准 `make test-monitor-metrics MONITOR_METRICS_TEST_ARGS=--case=postgres-source` 首轮在新增 T1 失败，未进入 Docker；原件 `/tmp/addp-postgres-source-tls-red-20261108.log`。
+
+实现后同一标准门禁完整退出 0：前置配置 139 项、PostgreSQL 生命周期 30 项通过；两套独占 PostgreSQL 的真实固定指标、严格 mTLS、HTTP 路径限制、SQL 失败清值／恢复、权限拒绝、安装／停用／恢复、同容器重启与当前绑定、原账号／HBA 保持等均通过。目录只读挂载、宿主原子更新的容器可见性、真实重载及完整恢复也在当次夹具通过；不据此推定此前 Docker 共享层问题的根因已修复或独立 Mac 候选版本验收完成。标准退出核验零容器／网络／卷及临时文件，随后独立只读核验项目残留同为零。日志 `/tmp/addp-postgres-source-tls-green-t2-20261108.log`，收据 `/tmp/addp-postgres-source-tls-cleanup-20261108.json`。
+
+`make test-metrics-sources test-monitor-minio-observation-unit test-monitor-redis-source-unit` 退出 0，覆盖原共享校验／恢复与两协议适配，日志 `/tmp/addp-postgres-source-tls-shared-t1-20261108.log`。现有 Metrics T2 的输入声明同步增加新共用实现及证书夹具；`make test-t2-ci-registration` 本批完整退出 0，85 项登记测试、9 项 Manager 假进程夹具及实际登记检查均通过，日志 `/tmp/addp-postgres-source-tls-registration-20261108.log`。上一批 Manager 两项超时保留，其具体根因并未由本轮通过追认。
+
+标准只读 `python3 scripts/infra/metrics-sources.py check --scope infra --scope business --kind postgresql --kind redis --kind minio` 退出 0，六项部署输入均通过；日志 `/tmp/addp-postgres-source-tls-personal-check-20261108.log`。本轮只在独占夹具应用／重启服务，个人证书、配置、数据库及服务未改；没有新 API／Swagger、前端或 Hosted 用途。CI／Hosted仍由专门会话安排回传，不以本地 T2 或个人预检代替正式身份全链路验收，没有设置定时任务。

@@ -40,6 +40,7 @@ ACTIVATION_STAGES = frozenset({'session-check', 'transport-check', 'private-stat
 
 
 deployment = load('postgres_deployment_transport', ROOT / 'scripts/utils/deployment-docker.py')
+sources = load('postgres_source_transport', ROOT / 'scripts/utils/metrics-source.py')
 Docker = deployment.Docker
 LifecycleError = deployment.DeploymentError
 
@@ -308,6 +309,7 @@ def file_write(path, value, mode):
     auth._atomic(path, value, mode, previous=previous)
 
 
+@sources.observed('transport-check')
 def transport(env):
     listen = env.get('ADDP_POSTGRES_METRICS_LISTEN', '')
     match = re.fullmatch(r'(\[[0-9a-f:]+\]|[0-9.]+):([1-9][0-9]{0,4})', listen)
@@ -328,17 +330,7 @@ def transport(env):
         path = directory / name
         if path.is_symlink() or not path.is_file() or not 0 < path.stat().st_size <= source.HBA_LIMIT:
             raise LifecycleError('Invalid PostgreSQL source certificate material')
-    try:
-        subprocess.run(['openssl', 'verify', '-CAfile', str(directory/'ca.crt'), '-purpose', 'sslserver',
-                        '-verify_ip', str(ip), str(directory/'server.crt')], check=True, capture_output=True, timeout=5)
-        public = subprocess.run(['openssl', 'x509', '-in', str(directory/'server.crt'), '-pubkey', '-noout'],
-                                check=True, capture_output=True, timeout=5).stdout
-        private = subprocess.run(['openssl', 'pkey', '-in', str(directory/'server.key'), '-passin', 'pass:', '-pubout'],
-                                 check=True, capture_output=True, timeout=5).stdout
-        if public != private:
-            raise LifecycleError('PostgreSQL source certificate key mismatch')
-    except (OSError, subprocess.SubprocessError):
-        raise LifecycleError('PostgreSQL source certificate verification failed') from None
+    sources.verify_tls(directory, ip, error=LifecycleError)
     return directory, str(ip), port
 
 
@@ -625,6 +617,9 @@ def main():
         reason = str(error) if isinstance(error, (LifecycleError, auth.AuthenticationError)) else 'deployment ownership, authentication or source configuration failed'
         stage = getattr(error, 'observation_stage', None)
         detail = ' [stage=' + stage + ']' if stage in ACTIVATION_STAGES else ''
+        tls_reason = getattr(error, 'source_tls_reason', None)
+        if stage == 'transport-check' and isinstance(tls_reason,str) and tls_reason in sources.TLS_REASONS:
+            detail += ' [tls-reason=' + tls_reason + ']'
         if getattr(error, 'source_recovery_reason', '') == 'source-layout-changed':
             detail += ' [reason=source-layout-changed]'
         if isinstance(error, OSError) and type(error.errno) is int:

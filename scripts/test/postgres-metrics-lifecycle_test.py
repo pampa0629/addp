@@ -19,6 +19,72 @@ module = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(module)
 
 
+class TransportCertificateTest(unittest.TestCase):
+    def test_strict_certificates_and_cli_diagnosis_share_the_existing_source_kernel(self):
+        spec=importlib.util.spec_from_file_location('pg_tls_fixture',ROOT/'scripts/test/metrics-source-fixture.py')
+        fixture=importlib.util.module_from_spec(spec);spec.loader.exec_module(fixture)
+        with tempfile.TemporaryDirectory() as temporary,mock.patch.dict(os.environ,{}):
+            root=Path(temporary).resolve();tls=fixture.certificates(root)
+            original={name:(tls/name).read_bytes() for name in ('ca.crt','server.crt','server.key')}
+            for variation,reason,phrase in (('valid',None,'部署输入检查通过'),('leaf-ski',None,'部署输入检查通过'),
+                    ('aki','chain','证书链'),('ca-ski','chain','证书链'),('purpose','purpose','服务器认证'),
+                    ('san','name','IP SAN'),('key','key','私钥不匹配')):
+                with self.subTest(variation=variation):
+                    for name,data in original.items():(tls/name).write_bytes(data)
+                    if variation=='leaf-ski': fixture.sign_server(root,tls,subject='none')
+                    elif variation=='aki': fixture.sign_server(root,tls,authority='none')
+                    elif variation=='ca-ski':
+                        fixture.command(['openssl','req','-x509','-key',str(root/'ca.key'),'-days','1','-subj','/CN=metrics-source-t2-ca',
+                            '-addext','basicConstraints=critical,CA:TRUE','-addext','keyUsage=critical,keyCertSign,cRLSign',
+                            '-addext','subjectKeyIdentifier=none','-out',str(tls/'ca.crt')])
+                        fixture.sign_server(root,tls,authority='issuer:always')
+                    elif variation=='purpose': fixture.sign_server(root,tls,purpose='clientAuth')
+                    elif variation=='san': fixture.sign_server(root,tls,san='IP:127.0.0.2')
+                    elif variation=='key': (tls/'server.key').write_bytes((root/'client.key').read_bytes())
+                    before={name:((tls/name).read_bytes(),(tls/name).stat().st_ino,(tls/name).stat().st_mtime_ns) for name in original}
+                    env={'PATH':os.environ['PATH'],'OPENSSL_CONF':os.environ['OPENSSL_CONF'],'ADDP_POSTGRES_METRICS_ENABLED':'true',
+                        'ADDP_POSTGRES_METRICS_TLS_DIR':str(tls),'ADDP_POSTGRES_METRICS_LISTEN':'127.0.0.1:19443',
+                        'ADDP_POSTGRES_METRICS_STATE_DIR':str(root/'state')}
+                    if reason:
+                        with self.assertRaises(module.LifecycleError) as failure:module.transport(env)
+                        self.assertEqual(getattr(failure.exception,'source_tls_reason',None),reason)
+                        self.assertEqual(getattr(failure.exception,'observation_stage',None),'transport-check')
+                    else:
+                        self.assertEqual(module.transport(env),(tls,'127.0.0.1',19443))
+                    result=subprocess.run([sys.executable,str(ROOT/'scripts/infra/metrics-sources.py'),'check','--resolved-env',
+                        '--scope','infra','--kind','postgresql'],env=env,capture_output=True,text=True,timeout=10)
+                    self.assertEqual(result.returncode,1 if reason else 0)
+                    self.assertIn(phrase,result.stdout);self.assertFalse(result.stderr)
+                    self.assertNotIn(str(tls),result.stdout);self.assertNotIn('BEGIN ',result.stdout)
+                    self.assertEqual(before,{name:((tls/name).read_bytes(),(tls/name).stat().st_ino,(tls/name).stat().st_mtime_ns) for name in original})
+
+    def test_postgres_directory_and_file_budget_are_checked_before_shared_verification(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            tls=Path(temporary).resolve()
+            for name in ('ca.crt','server.crt','server.key'):(tls/name).write_text('fixture')
+            env={'ADDP_POSTGRES_METRICS_TLS_DIR':str(tls),'ADDP_POSTGRES_METRICS_LISTEN':'127.0.0.1:19443'}
+            for variation in ('extra','link','oversized'):
+                with self.subTest(variation=variation),mock.patch.object(module.sources,'verify_tls') as verify:
+                    if variation=='extra':(tls/'other').write_text('fixture')
+                    elif variation=='link':(tls/'server.crt').unlink();(tls/'server.crt').symlink_to(tls/'ca.crt')
+                    else:(tls/'server.crt').write_bytes(b'x'*(module.source.HBA_LIMIT+1))
+                    with self.assertRaises(module.LifecycleError):module.transport(env)
+                    verify.assert_not_called()
+                    (tls/'other').unlink(missing_ok=True);(tls/'server.crt').unlink();(tls/'server.crt').write_text('fixture')
+
+    def test_protocol_cli_forwards_only_known_transport_tls_reason_and_preserves_cleanup(self):
+        from contextlib import redirect_stderr
+        for stage,reason,expected in (('transport-check','chain',True),('transport-check','unknown',True),
+                ('source-health','chain',False),('transport-check','private-password',False)):
+            failure=module.LifecycleError('source TLS verification failed');failure.observation_stage=stage
+            failure.source_tls_reason=reason;failure.observation_cleanup_failed=True
+            output=io.StringIO()
+            with mock.patch.object(module,'run',side_effect=failure),mock.patch.object(sys,'argv',['lifecycle.py','up','--scope','infra']),redirect_stderr(output):
+                self.assertEqual(module.main(),1)
+            self.assertEqual('[tls-reason=' in output.getvalue(),expected)
+            self.assertIn('[cleanup=failed]',output.getvalue());self.assertNotIn('private-password',output.getvalue())
+
+
 class LifecycleTest(unittest.TestCase):
     @contextmanager
     def recovery_fixture(self, *, running=True, restarted=False):
