@@ -220,6 +220,7 @@ on:
           - native-raster-media
           - native-table-orc
           - native-table-avro
+          - delimited-read-settings
           - native-netcdf
           - native-grib
           - native-envi

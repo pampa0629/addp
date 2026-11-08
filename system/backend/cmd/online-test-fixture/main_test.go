@@ -1925,3 +1925,15 @@ func TestNFSUploadInitialCaseHasNoScanningOrGrantHandlingPermission(t *testing.T
 		t.Fatal("upload does not need extra human scan or issuance permissions")
 	}
 }
+
+func TestDelimitedCaseKeepsTenConsumerAndThirteenInitializerPermissions(t *testing.T) {
+	t.Setenv("ADDP_ONLINE_MANAGER_CASE", "delimited-read-settings")
+	got, err := suitePermissions("manager-internal-artifact-lineage")
+	if err != nil || len(got) != 10 || !slices.Equal(got, managerArtifactPermissions) {
+		t.Fatal("delimited changed approved ordinary user functions")
+	}
+	want := append(slices.Clone(sourceInitializerPermissions), "meta.scan_task.execute", "meta.scan_task.read")
+	if len(want) != 13 || !slices.Equal(suiteSourceInitializerPermissions("manager-internal-artifact-lineage"), want) {
+		t.Fatal("delimited initializer differs from approved bounded scan profile")
+	}
+}

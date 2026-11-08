@@ -240,6 +240,17 @@ class HostedManagerGateTest(unittest.TestCase):
         report=json.loads((self.host.artifacts/'manager-case.json').read_text())
         self.assertEqual(report['case'],'native-table-orc')
 
+    def test_delimited_case_keeps_existing_runtime_without_transfer_or_models(self):
+        result = self.run_gate(ADDP_ONLINE_MANAGER_CASE='delimited-read-settings')
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        trace = self.host.trace.read_text()
+        self.assertIn('manager-case:delimited-read-settings', trace)
+        self.assertNotIn('start:-transfer', trace)
+        self.assertNotIn('start:-pointcloud-workflow', trace)
+        self.assertNotIn('--services model3d-workflow-engine', trace)
+        self.assertNotIn('raster-seed', trace)
+        self.assertEqual(json.loads((self.host.artifacts/'manager-case.json').read_text())['case'], 'delimited-read-settings')
+
     def test_avro_case_uses_transfer_and_only_native_table_runtime(self):
         result=self.run_gate(ADDP_ONLINE_MANAGER_CASE='native-table-avro')
         self.assertEqual(result.returncode,0,result.stdout+result.stderr)

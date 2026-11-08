@@ -1489,3 +1489,11 @@ uniform／quartic各12条成功COG链，共24条：省略权重、显式全1、�
 ### 正交旋转网格邻近距离独立保存
 
 `raster-proximity-orthogonal-persistence`复用Hosted、NFS、同源默认入口Runtime及普通用户原12权限，4CPU／2GiB／无额外swap；固定600秒，不重试、不扩预算。18条COG保存链覆盖原北向三单位对照、90／180／270度与斜向正交方形／非方形、真实最近目标反转、第二波段、零负目标、NoData／mask／alpha与跨块概览；30类各中英文共60次准确拒绝。每次成功复查全部已生成成果、每次失败复查18成果，共1251次。完整仿射／CRS／米制距离与mask由独立世界向量枚举oracle核验；严格核COG、artifact＝物理＝Meta正整数大小、扫描父执行／用户／租户／引擎、当前血缘／Monitor、源旧成果不变与零残留。归档18份原始COG和大小／SHA256清单及冻结预期；失败无发布／新增扫描血缘，反向查询不改提交语言。数值极限、私有故障注入和等距目标身份单列Native，不冒充Hosted。实际Linux／Hosted由CI会话协调，登记与本地通过不计真实验收通过。
+
+### CSV/TSV GB18030 独立读取设置 case
+
+2026-11-08 用户批准在既有 `manager-internal-artifact-lineage` suite 新增 `delimited-read-settings`，保留 `full` 和其他 case 的原断言。复用 NFS/MinIO 与既有 Hosted 部署，不增加 Runtime 类型或产品解码路线；产品仍由 Common 唯一 Go CSV/TSV reader 读取，既有物理 worker 只准备、核对和删除本轮源文件。
+
+普通消费用户保持原十项功能权限，来源初始化用户仅在本 case 使用已批准的十三项，补现有 `meta.scan_task.execute`、`meta.scan_task.read`，不修改个人或生产账号。来源为各25行、含四字节字段名/数据及引号内CRLF的CSV和TSV，在NFS与MinIO各两份；先由来源初始化用户有界basic扫描，再授予已有精确单文件Grant。实际页面经原读取设置提交 `encoding=gb18030`；验证25行的20＋5分页、无表头26行的20＋6分页、首条记录保留、普通刷新继承、重开和恢复表头；Meta实际编码/结构/源哈希一致且无源字节索引。API与页面原文件按钮分别核对完整字节/大小/SHA256。
+
+成功、失败均撤销本轮Grant，核对元数据不可见及精确物理源零残留，再执行既有部署和Infra清理。该case不创建派生产物，不以其页面读取替代Transfer批量传输T4。运行前状态为未验收；既有GBK Hosted及GB18030本地/Linux分项不追认本case通过。标准门禁为 `make test-manager-online-runner` 和受影响的System Go T1；既有在线分发与workflow显式case选择及登记检查同步维护。
