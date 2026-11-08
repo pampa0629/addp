@@ -314,11 +314,17 @@ func (a *WorkflowStorageAccessCapability) Supports(engineType, operation string)
 	return slices.Contains(a.EngineTypes(operation), engineType)
 }
 
-func validateWorkflowStorageAccess(compute *ComputeCapabilities) error {
-	if compute == nil || compute.Workflow == nil || compute.Workflow.StorageAccess == nil {
+func validateWorkflowAccessCapabilities(compute *ComputeCapabilities) error {
+	if compute == nil || compute.Workflow == nil {
 		return nil
 	}
 	workflow := compute.Workflow
+	if workflow.PrivateFilesAPI != "" && (workflow.PrivateFilesAPI != WorkflowPrivateFilesAPIV1 || !workflow.Supported || workflow.RuntimeAPI != WorkflowRuntimeAPIAddpV1) {
+		return fmt.Errorf("private_files_api requires supported addp.workflow/v1 and addp.workflow.private-files/v1")
+	}
+	if workflow.StorageAccess == nil {
+		return nil
+	}
 	if !workflow.Supported {
 		return fmt.Errorf("storage_access requires a supported workflow runtime")
 	}
@@ -355,6 +361,7 @@ func (c *EngineCapabilities) SupportsStorageOperation(operation string) bool {
 
 type WorkflowCapability struct {
 	StorageAccess         *WorkflowStorageAccessCapability `json:"storage_access,omitempty"`
+	PrivateFilesAPI       string                           `json:"private_files_api,omitempty"`
 	Supported             bool                             `json:"supported"`
 	RuntimeAPI            string                           `json:"runtime_api"`
 	DynamicOperators      bool                             `json:"dynamic_operators"`
@@ -377,7 +384,7 @@ type InferenceCapability struct {
 }
 
 func MarshalEngineCapabilities(capabilities EngineCapabilities) (string, error) {
-	if err := validateWorkflowStorageAccess(capabilities.Compute); err != nil {
+	if err := validateWorkflowAccessCapabilities(capabilities.Compute); err != nil {
 		return "", err
 	}
 	if err := validateAnalyticalQueryCapability(capabilities.Compute); err != nil {
@@ -402,7 +409,7 @@ func ParseEngineCapabilities(capabilitiesJSON string) (*EngineCapabilities, erro
 	if err := json.Unmarshal([]byte(capabilitiesJSON), &capabilities); err != nil {
 		return nil, err
 	}
-	if err := validateWorkflowStorageAccess(capabilities.Compute); err != nil {
+	if err := validateWorkflowAccessCapabilities(capabilities.Compute); err != nil {
 		return nil, err
 	}
 	if err := validateAnalyticalQueryCapability(capabilities.Compute); err != nil {

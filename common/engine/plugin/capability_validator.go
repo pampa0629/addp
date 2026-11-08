@@ -13,7 +13,7 @@ func ValidatePluginCapabilities(p EnginePlugin) error {
 		return fmt.Errorf("plugin cannot be nil")
 	}
 	caps := p.Capabilities()
-	if err := validateWorkflowStorageAccess(caps.Compute); err != nil {
+	if err := validateWorkflowAccessCapabilities(caps.Compute); err != nil {
 		return err
 	}
 	if caps.SchemaVersion != CapabilitiesSchemaVersion {
@@ -306,6 +306,11 @@ func validateComputeCapabilities(p EnginePlugin, compute *ComputeCapabilities) e
 	if compute.Workflow != nil && compute.Workflow.Supported {
 		if _, ok := p.(WorkflowRuntimeProvider); !ok {
 			return fmt.Errorf("%s declares workflow support but does not implement WorkflowRuntimeProvider", p.Type())
+		}
+		if compute.Workflow.PrivateFilesAPI != "" {
+			if _, ok := p.(WorkflowPrivateFileRuntimeProvider); !ok {
+				return fmt.Errorf("%s declares private workflow files without a private-file transport provider", p.Type())
+			}
 		}
 	}
 	if compute.Script != nil && compute.Script.Supported {

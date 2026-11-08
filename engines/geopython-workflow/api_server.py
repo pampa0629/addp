@@ -79,6 +79,7 @@ from geometry_batches import (
 from operators import get_operator, list_operators
 from raster_resources import RasterResources, RasterPolicyUnavailable, requires_raster
 from addp_common.workflow_runtime.admission import RuntimeBusy
+from private_file_api import PrivateFileAPI
 
 # 配置日志
 LOG_LEVEL = os.getenv('LOG_LEVEL', 'INFO').upper()
@@ -97,6 +98,7 @@ start_time = datetime.now()
 # 内存存储（生产环境应使用数据库）
 executions = ExecutionRegistry()
 raster_resources = RasterResources()
+private_file_api = PrivateFileAPI(app)
 
 _RASTER_MESSAGES = {
     'zh-cn': {'RUNTIME_BUSY': '栅格运行时容量已满，请稍后重试',
@@ -316,6 +318,8 @@ def execute_workflow_api():
     if not isinstance(data, dict) or not isinstance(data.get('input_data', {}), dict):
         return jsonify(error_response(ErrorCode.INVALID_PARAMS, 'Request and input_data must be objects')), 400
     try:
+        if isinstance(data.get('runtime'), dict) and 'private_files' in data['runtime']:
+            return private_file_api.execute(data, _request_language())
         operators = {op['id']: op['effects'] for op in list_operators() if 'workflow' in op['execution_modes']}
         validate_execution_authorization(data.get('workflow_def'), operator_effects=operators, runtime=data.get('runtime'))
         metadata = {op['id']: op for op in list_operators()}
@@ -470,6 +474,8 @@ def invoke_operator_endpoint(operator_name):
 
 @app.route('/api/executions/<execution_id>', methods=['GET'])
 def get_execution_status(execution_id):
+    if private_file_api.contains(execution_id):
+        return jsonify(private_file_api.execution_snapshot(execution_id)), 200
     snapshot = executions.get(execution_id)
     if snapshot is None:
         return jsonify(error_response(ErrorCode.EXECUTION_NOT_FOUND, 'Execution not found')), 404
@@ -511,6 +517,7 @@ def register_to_system():
                 "workflow": {
                     "supported": True,
                     "runtime_api": "addp.workflow/v1",
+                    "private_files_api": "addp.workflow.private-files/v1",
                     "dynamic_operators": True,
                     "storage_access": STORAGE_ACCESS
                 }

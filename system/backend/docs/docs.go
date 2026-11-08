@@ -26161,6 +26161,9 @@ const docTemplate = `{
                 "dynamic_operators": {
                     "type": "boolean"
                 },
+                "private_files_api": {
+                    "type": "string"
+                },
                 "runtime_api": {
                     "type": "string"
                 },

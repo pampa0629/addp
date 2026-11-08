@@ -117,11 +117,12 @@ def _execute_workflow_operator(operator, params):
 
 
 class GeoPythonWorkflowRunner(WorkflowRunner):
-    def __init__(self, *, language='zh-cn'):
+    def __init__(self, *, language='zh-cn', result_projector=None):
         self.language = language
         super().__init__({name for name, meta in OPERATORS.items() if 'workflow' in meta['execution_modes']},
                          self._execute_operator,
-                         result_projector=lambda value: json.dumps(_project(value), ensure_ascii=False, allow_nan=False))
+                         result_projector=(lambda value: json.dumps(_project(value), ensure_ascii=False, allow_nan=False))
+                         if result_projector is None else result_projector)
 
     def _execute_operator(self, operator, params):
         try:

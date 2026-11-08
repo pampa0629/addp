@@ -514,6 +514,7 @@ PG/MySQL 的静态模板不声明 analytical supported。原生 InstanceCapabili
 type WorkflowCapability struct {
     Supported             bool     `json:"supported"`
     RuntimeAPI            string   `json:"runtime_api"`
+    PrivateFilesAPI       string   `json:"private_files_api,omitempty"`
     DynamicOperators      bool     `json:"dynamic_operators"`
     SupportedOperatorMode []string `json:"supported_operator_mode,omitempty"`
 }
@@ -523,6 +524,7 @@ type WorkflowCapability struct {
 | --- | --- |
 | `supported` | 是否可作为工作流运行时。 |
 | `runtime_api` | 工作流运行时接口版本或协议。 |
+| `private_files_api` | 可选的执行私有文件传输协议；首期唯一版本 `addp.workflow.private-files/v1`，只能随已支持的 `addp.workflow/v1` 声明。未声明即不支持，调用方不得按引擎类型猜测或回退为业务挂载。它不表示读取或发布授权。 |
 | `dynamic_operators` | 算子是否可动态发现。 |
 | `supported_operator_mode` | 支持的算子运行模式。 |
 | `storage_access` | 当前 Workflow Runtime 直接连接存储引擎的接入能力；`read_engine_types`、`write_engine_types` 分别声明已实现的读取与写入引擎类型。 |

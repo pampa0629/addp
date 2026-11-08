@@ -81,6 +81,13 @@ func HTTPExecuteWorkflow(ctx context.Context, connInfo ConnectionInfo, req Workf
 	if req.Runtime != nil {
 		payload["runtime"] = req.Runtime
 	}
+	private := req.Runtime != nil && req.Runtime.PrivateFiles != nil
+	if private {
+		if req.WorkflowDef != nil || req.InputData != nil || req.EngineID != 0 || !workflowPrivateUUID(req.Runtime.PrivateFiles.ExecutionID) {
+			return nil, fmt.Errorf("prepared private workflow cannot replace its frozen DAG")
+		}
+		payload = map[string]interface{}{"runtime": req.Runtime}
+	}
 	body, err := json.Marshal(payload)
 	if err != nil {
 		return nil, err
@@ -91,7 +98,13 @@ func HTTPExecuteWorkflow(ctx context.Context, connInfo ConnectionInfo, req Workf
 	}
 	httpReq.Header.Set("Content-Type", "application/json")
 	httpReq.Header.Set("Accept-Language", req.DisplayLanguage)
+	if err := authorizeWorkflowRequest(ctx, httpReq, private); err != nil {
+		return nil, err
+	}
 	client := &http.Client{Timeout: workflowRuntimeTimeout(req.Timeout)}
+	if private {
+		client.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
+	}
 	resp, err := client.Do(httpReq)
 	if err != nil {
 		return nil, err
@@ -131,6 +144,9 @@ func HTTPExecuteWorkflow(ctx context.Context, connInfo ConnectionInfo, req Workf
 		if key != "status" && key != "execution_id" && key != "error" && key != "error_code" && key != "details" && key != "execution_time_ms" {
 			result.Result[key] = value
 		}
+	}
+	if private && resp.StatusCode != http.StatusAccepted {
+		return result, fmt.Errorf("private workflow dispatch returned HTTP %d", resp.StatusCode)
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return result, fmt.Errorf("execute workflow failed with status %d: %s", resp.StatusCode, string(respBody))
@@ -274,7 +290,13 @@ func HTTPGetExecutionStatus(ctx context.Context, connInfo ConnectionInfo, execut
 	if err != nil {
 		return nil, err
 	}
+	if err := authorizeWorkflowRequest(ctx, httpReq, false); err != nil {
+		return nil, err
+	}
 	client := &http.Client{Timeout: 30 * time.Second}
+	if _, private := ctx.Value(workflowPrivateCredentialKey{}).(WorkflowRuntimeCredential); private {
+		client.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
+	}
 	resp, err := client.Do(httpReq)
 	if err != nil {
 		return nil, err

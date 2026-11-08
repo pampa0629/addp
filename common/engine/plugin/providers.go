@@ -843,6 +843,11 @@ type WorkflowExecuteRequest struct {
 type WorkflowRuntimeContext struct {
 	TenantID               uint                           `json:"tenant_id"`
 	ExecutionAuthorization WorkflowExecutionAuthorization `json:"execution_authorization"`
+	PrivateFiles           *WorkflowPrivateFilesReference `json:"private_files,omitempty"`
+}
+
+type WorkflowPrivateFilesReference struct {
+	ExecutionID string `json:"execution_id"`
 }
 
 type WorkflowExecutionAuthorization struct {

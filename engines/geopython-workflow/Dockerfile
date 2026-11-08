@@ -77,6 +77,7 @@ COPY engines/geopython-workflow/geometry_batches.py .
 COPY engines/geopython-workflow/raster_resources.py .
 COPY engines/geopython-workflow/workflow_engine.py .
 COPY engines/geopython-workflow/api_server.py .
+COPY engines/geopython-workflow/private_execution.py engines/geopython-workflow/private_files.py engines/geopython-workflow/private_file_api.py ./
 COPY engines/geopython-workflow/container_entrypoint.sh .
 
 RUN python -c "from osgeo import gdal; assert gdal.GetDriverByName('GRIB'), 'GRIB2 requires GRIB'; assert gdal.GetDriverByName('JP2OpenJPEG'), 'JPEG2000 requires JP2OpenJPEG'; assert gdal.GetDriverByName('GS7BG'), 'Surfer 7 requires GS7BG'; assert gdal.GetDriverByName('GSBG'), 'Surfer 6 Binary requires GSBG'; assert gdal.GetDriverByName('GSAG'), 'Surfer 6 ASCII requires GSAG'"

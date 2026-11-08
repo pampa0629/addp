@@ -41,6 +41,7 @@
 | Engine Instance | 引擎实例 | System 中一条代表同一实际引擎、具有永久平台 ID 的登记事实。 | `engine_id` 单调分配、永久保留且不得复用；同一实际引擎搬迁时，有 `system.engine.update` 权限的用户可确认后更新连接地址并保留 ID 与已有引用。不同实际引擎必须创建新实例，不得借编辑改挂旧引用。连接地址键只用于当前非删除实例去重。 |
 | Engine Server Version | 引擎实例原生产品版本 | 插件在真实只读连接探测中返回的产品版本。 | System 将其与独立探测时间保存为只读 `server_version` / `server_version_checked_at`，不属于能力声明，不等同于聚合根 `version`。探测失败保留最后一次成功结果。 |
 | Workflow storage access | 工作流直接存储接入能力 | 计算引擎在 `compute.workflow.storage_access` 中声明自身直接连接的存储引擎类型与读写方向。 | 不是存储引擎自身能力，也不是算子名单；仅约束直接使用执行期 `connection_info` 的接入路径。受控 access-plan 路径按对应 Provider 能力校验。 |
+| Workflow private files | 工作流执行私有文件 | Develop 为同一 execution、attempt 和截止时间准备并与 Runtime 交换的输入及编码成果。 | 只在本次执行内使用，不是 DataItem 或源数据授权。Runtime 不取得业务存储连接；Develop 核验完整读取与成果后负责最终发布。私有文件关闭、在途发布及未知清理分别记录。 |
 | Engine Runtime Descriptor | 引擎运行时描述 | System 面向受信 Runtime Service Principal 提供的脱敏 Engine Instance 控制面投影。 | 只包含实例身份、生命周期、能力声明和工作流/脚本运行时的 `protocol/host/port`；不包含数据引擎凭据、数据库连接参数或可直接读取业务数据的明文连接。 |
 | Workflow Runtime readiness | 工作流运行时整体就绪 | `addp.workflow/v1` Runtime 当前算子目录所承诺能力的本地必需条件全部满足。 | `/health` 只使用 `healthy`（HTTP 200）与 `unhealthy`（HTTP 503）；依赖事实统一声明 `available`、`required`。可选依赖不可用不改变整体就绪；不证明某次任务的输入、远端连接或权限有效。身份登记、Engine Instance 生命周期和最近连通性观测分别维护，注册成功不代表就绪。 |
 | engine lifecycle state | 引擎生命周期状态 | Engine Instance 当前能否被正常消费、正在退出平台或已成为墓碑的状态。 | 统一使用 `active`、`disabled`、`deleting`、`deleted`；`deleting` 保留连接只用于 cleanup，`deleted` 仅保留永久身份和审计并移除敏感凭据，二者都不进入正常业务选择。 |
