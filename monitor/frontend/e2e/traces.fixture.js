@@ -6,6 +6,7 @@ export async function tracesBackend(page, options = {}) {
   const targetStart = new Date(Date.now() - 2 * 3600000).toISOString()
   const calls = []; let mode = 'valid', release, held
   await page.route('**/api/v1/system/platform/module-instances?**', route => {
+    if (mode === 'list_failed') return route.fulfill({ status: 503, json: { error_code: 'system_unavailable' } })
     const target = new URL(route.request().url()).searchParams.get('ids') === '2'
     return route.fulfill({ status: target && options.targetDenied ? 403 : 200, json: target && options.targetDenied ? { error_code: 'denied' } : { data: [{ id: target ? 2 : 1, module_name: target ? 'system' : 'monitor', instance_id: target ? 'two' : 'one', role: 'backend', status: 'down', node_id: '', process_started_at: '2026-10-19T00:00:00Z', process_metrics_declared: false }], total: 1, page: 1, page_size: 10 } })
   })
@@ -31,7 +32,7 @@ export async function tracesBackend(page, options = {}) {
     }
     const data = [{ trace_id: isTarget ? 'a'.repeat(32) : '1'.repeat(32), start, end, duration_ms: base.duration_ms, partial: true, policy_version: 2, coverage: 'sampled', edges, spans }]
     if (held) await held
-    await route.fulfill({ status: own === 'failed' ? 503 : 200, json: own === 'failed' ? { error_code: 'trace_backend_unavailable' } : { start: queryStart, end, queried_at: new Date().toISOString(), coverage: 'sampled', policy_version: 2, data } })
+    await route.fulfill({ status: own === 'failed' ? 503 : own === 'denied' ? 403 : 200, json: own === 'failed' ? { error_code: 'trace_backend_unavailable' } : own === 'denied' ? { error_code: 'permission_denied' } : { start: queryStart, end, queried_at: new Date().toISOString(), coverage: 'sampled', policy_version: 2, data } })
   })
   return { calls, targetStart, mode(v) { mode = v }, hold() { held = new Promise(resolve => { release = resolve }) }, release() { held = null; release?.() } }
 }

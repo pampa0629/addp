@@ -124,6 +124,27 @@ Monitor 查询通过独立 `MONITOR_TEMPO_URL` HTTPS origin 和 `MONITOR_TRACE_T
 
 本轮只使用 `make test-monitor-traces` 的当次隔离设施验证，不接管个人服务，不扩展或运行 Hosted。
 
+### 本机开发的 Trace 部署准备
+
+复用 `scripts/infra/generate-trace-config.py` 的显式 `prepare-development` 操作，准备部署输入，不新增采集管理工具或常驻服务。目录、两个不同的回环端口及 producer 的正式模块／backend 或 ingress 角色由调用者明确指定；不从个人配置或当前实例推断。准备仅支持非生产环境，在一个尚不存在、父目录已存在的仓库外绝对目录生成 30 天有效的本机开发证书：独立 server／source／query CA，中心服务端证书及每个 producer、Monitor 查询的独立客户端证书。目录 0700、文件 0600，渲染的非秘密 Tempo 配置沿原 0644。证书只覆盖 localhost／127.0.0.1；私钥、签发材料均留在该私有目录，来源／查询运行目录仍只含原有三文件。已有目录拒绝覆盖，不自动轮换或续期；生成失败只删除本次新建目录，不修改其他配置。OpenSSL 子进程使用本次私有配置，单命令最多十秒、整组最多六十秒，不访问网络或 Docker。
+
+准备结束调用同一个渲染器生成合并 Alloy／Tempo 配置，并写出只含既有 Trace 部署变量的 `deployment.env` 供部署者审阅；不写个人根 `.env`，不生成第二套应用配置读取路径，不应用部署、创建 MinIO 账号或启停任何服务。Trace 的 S3 独立密钥仍由既有观测环境准备流程在实际显式启用时处理；生产环境继续由部署者提供证书，不使用本机开发 CA。
+
+例如，部署者确认后可选择仓库外位置，先创建其父目录，再运行以下准备命令（本条不是自动执行授权）：
+
+```bash
+mkdir -p "$HOME/.config/addp/observability"
+python3 scripts/infra/generate-trace-config.py prepare-development \
+  --directory "$HOME/.config/addp/observability/traces" \
+  --otlp-port 14318 --query-port 14320 \
+  --producer gateway:ingress --producer system:backend \
+  --producer monitor:backend --producer agent:backend --producer copilot:backend
+```
+
+这两个端口是示例首选值；实际启用前核对标准 Infra 分配的真实端口与生成的端点一致，不因端口调整绕过证书或改用 HTTP。后续经用户确认，将准备文件中的配置项合并到根 `.env`，保留其他项，然后由部署者运行原 `bash scripts/infra/up.sh`，再由用户执行原 `./scripts/dev/restart.sh -all`。不把 `source` 命令写进供 Compose 解析的 `.env`。Infra 开启会沿原配置更新共享 Alloy，验证须同时覆盖既有日志接收、Trace 查询和真实采样；配置渲染成功不代表数据已经送达。真实启用、服务重启与读取验收另行确认，不运行 Hosted、容量或定时。
+
+最小确定性门禁沿原 `make test-infra-runtime-log-lifecycle` 自动发现，覆盖命令参数／目录边界、现有材料不覆盖、失败清理、私有 OpenSSL 配置、证书用途／有效期、来源与查询信任隔离、SDK 四字段接线及未修改个人环境；不新增 Make 或 workflow 入口。
+
 ## 节点设备容量扩展
 
 `ADDP_NODE_BLOCK_CAPACITY_ENABLED=false` 为默认关闭的部署选项，仅在节点来源启用时校验。选择 true 后由 `scripts/infra/node-metrics.py` 统一准备只读采集及专属 Textfile 目录、启停和清理；不要求用户执行采样脚本或导入 JSON。协议、限额及 VM 边界沿[块设备容量规范](../addp平台运行观测规范.md#磁盘与卷容量)。开关变更由部署者沿标准节点入口应用，不影响其他观测或业务 Ready；不修改根环境文件或自动重启个人来源。

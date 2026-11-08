@@ -741,7 +741,7 @@ Span 名称由阶段固定生成，唯一阶段属性为 `addp.execution.phase/a
 
 Monitor 只接受两种已定义 scope 和对应 kind／属性契约，HTTP Span 不接收 Link。执行阶段可独立为 root，不以无 parent 判不完整。每个 Link 目标与实际参与 Span 一起，沿当前 Platform User 的 System 实例读取逐项核验；授权不可裁决、目标身份不匹配或超出预算整份拒绝。目标不必出现在本次 Trace 中，不递归拉取 Link 目标。原 100 实例、1000 Span、2 MiB、5 秒及主体／Monitor／上游并发上限不变；Tenant、Service、Delegated 无新增入口。
 
-平台 DTO 增加 scope、阶段、attempt、outcome 与独立 links；目标数字 runtime_instance_id 仅由本次 System 裁决绑定，不能相信采集自报数字 ID。页面显示阶段与因果 Link，点击目标作为一次新的普通授权查询，按 target.started_at 建立小窗口，不沿来源 Trace 的当前窗口误查数小时前的入口；保留期、未来时刻和原查询窗口约束继续执行。撤权和失败清除旧详情及链接；查无数据仍可能由采样、过期或丢弃造成，不断言未执行。
+平台 DTO 增加 scope、阶段、attempt、outcome 与独立 links；目标数字 runtime_instance_id 仅由本次 System 裁决绑定，不能相信采集自报数字 ID。页面显示阶段与因果 Link，点击目标作为一次新的普通授权查询，按 target.started_at 建立小窗口，不沿来源 Trace 的当前窗口误查数小时前的入口；保留期、未来时刻和原查询窗口约束继续执行。撤权和失败清除旧详情及链接；查无数据仍可能由采样、过期或丢弃造成，不断言未执行。实例列表与 Trace 查询分别解释：仅同次成功读取并通过校验的授权实例列表，可在后续 Trace 返回既有 `503 trace_backend_unavailable` 时保留；清空 Trace 详情／Link 并显示服务不可用，不将 503 推断为未启用。列表读取失败、权限失效或其他查询失败沿原清空行为；任何失败都不得显示正常空结果结论，迟到响应仍受原请求代数约束。
 
 最小验收（先识别门禁，再实现）：
 

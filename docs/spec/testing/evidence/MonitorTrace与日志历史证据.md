@@ -362,3 +362,31 @@ System／Gateway 产物分别为 `sha256:aaf46c29ca32cfad6782cdc55197f2671300b08
 私有证据目录`/var/folders/r1/l7b49c757dz02zftf_l9vl9r0000gn/T/addp-p19-common-python-trace-evidence-20261102-5vrcf3cb/`（0700／0600），含两份原件、isolated_config_diagnostic.log、final.log及audit.json。诊断复现8210字节，SHA256=`f69688b4be216d723110b6aafe38417f4722e8ef739cb94492d92800c57f7b69`；最终日志638字节，SHA256=`a0e0dc9ae41701afc7f469c1f8858b72fdfe1f2b070dac18ac2b45b41eaa7637`；最终测试文件SHA256=`9ad58b363494566227ff98411a38686efe46973944c9da12a7eb727850b2e841`。本批仅测试夹具、T0–T3条款及两份既有证据，不改变生产导出器，也不增加正式产品／Hosted／容量通过结论；自然Linux结果另记。
 
 自然Linux复核：四个自有路径已提交推送为`a5945380cbf5e415a93a73a2d91200d3e8173ee2`。[Platform自然push／Common Python tests作业125094948224](https://github.com/pampa0629/addp/actions/runs/41388636491/job/125094948224)实际checkout该完整SHA，经共享矩阵选中并执行原`make test-common-python`，北京时间2026-11-02 12:28:17—12:30:01作业success；原始测试输出为461 passed、1 skipped、54 subtests passed／18.08秒。测试文件逐字节匹配上述本地通过的9ad58b36摘要；这次干净提交快照也通过，不依赖共享工作区未提交的workflow_runtime/errors.py。日志已独立保存为上述私有证据目录linux.log，59326字节，SHA256=`df702cefad3b7637e33c769427bad0144b985e8dd31d0e4e098ffd604c664fe3`。本条只认定Common Python命名作业及原四项回归通过，不推导整个Platform workflow、另一组HTTP／Trace本地runner、交叉语言实链、产品页面、Hosted或容量通过；APT历史网络问题与SDK HTTP T2目录消失仍独立保留。
+
+
+<a id="trace-linux-a21ee1f8-20261108"></a>
+
+## 2026-11-08 固定提交 a21ee1f8b 的自然 Linux Trace 实链通过
+
+仅手动只读跟进已自然触发的 Run `42446113613`，未手动触发或重跑 CI。Job `128625414188`（Monitor HTTP trace infrastructure）与原始 checkout 日志均匹配提交 `a21ee1f8b16304b073e730a51cac8c7e2d799dcd`，于北京时间 2026-11-08 12:27:11 结束为 success；实际 `Verify isolated trace lifecycle` 步骤成功，而非只依据 workflow 汇总。[实际作业](https://github.com/pampa0629/addp/actions/runs/42446113613/job/128625414188)
+
+原日志确认标准 `make test-monitor-traces` 的 Nginx 路由契约及独占 Trace Pipeline 通过，`TestOwnedTracePipeline` 耗时 327.44 秒。真实 Go → Python → Go 的五 Span／两条匹配边、官方安全投影、历史参与实例、当前 User 撤权、mTLS／只读代理、collector 停止与恢复及 Alloy → Loki 精确 Trace 元数据关联均经过该测试断言。三个生产进程导出分别为 204／404／404，排队、丢弃和导出失败计数均零；策略 v2 的失败短阶段、独立 root、跨进程持久 Link 及目标撤权亦实际通过。原 120 秒尾采样未缩短，保留失败／慢链和 7/200 普通链，小样本结果不能当作 5% 采样率统计证明。`TestOwnedTraceProcess` 是受控子进程专用 helper，父进程未启用 child 标记的 Skip 不计业务通过。退出日志确认当次容器、网络、卷和临时文件零残留。
+
+原始日志 48314 字节，SHA256 `756ce0ecd8570ff5d88448482a7e7acc43d2515cc839cf8b8b5e0878febb6579`，Job 元数据和日志位于 `/var/folders/r1/l7b49c757dz02zftf_l9vl9r0000gn/T/addp-p19-ci-a21ee1f8.B7CRY8UU/`。同提交 Platform CI 的 Platform consistency 作业在 Node 前置检查失败，`Run platform consistency gate` 被跳过，原 Make 聚合中的 HTTP／Trace local runner 没有在该远端步骤执行；本地 53／208 项 runner 通过结果仍按本地层级保留，不宣称其远端通过。该分项不代表整个 workflow 或最新 main 通过，不验证新增启动交接回执和暂停后并行测量的真实性能，也不替代正式 Agent／Copilot 页面、Hosted、容量或长期保留验收。本轮未运行本地窗口、Hosted、容量或定时，未修复或跟进无关门禁。
+
+
+<a id="trace-development-preparation-and-ui-20261108"></a>
+
+## 2026-11-08 本机 Trace 接入准备复用及 503 页面修正（本地）
+
+用户发现个人调用链页面显示查询失败。只读核对当时的运行日志：System 实例列表返回 200，Monitor `/platform/traces` 返回 503；根部署未选择 Trace，状态显示 HTTP Trace center Disabled。原页面在后续 Trace 失败时清空同次实例列表，使失败与“没有符合条件的当前实例”同时出现。此事实来自个人环境排查，不将此前隔离设施／Linux T2 通过外推为该环境已启用 Trace。用户随后确认继续梳理现有流程、只补必要配置及证书准备，不新增独立管理工具，实际启用待确认。
+
+已先修订配置与观测规范。Trace 页面仅在同次成功授权实例列表之后收到原 `503 trace_backend_unavailable` 时保留该列表，清除 Trace 详情／Link 并显示中英文服务不可用提示；列表读取失败、401／403及其他失败保持原清空，等待和失败均不展示正常空结果，沿原请求代数防止迟到响应恢复数据。未新增 API、权限或“未启用”状态，也不将通用 503 推断为未启用。原缺陷先由受控浏览器用例复现，旧实现显示通用重试提示，新增断言失败；最终沿 `node ../../scripts/test/frontend-browser-gate.mjs e2e/traces.spec.js`（在 monitor/frontend，既有 scripts/test 标准隔离入口）13 项通过，含中英文、503保留已授权实例、列表失败、等待／撤权及 Link 清空。未操作个人浏览器会话，未冒充个人页面实测；整套 Monitor 前端、其他浏览器和生产构建本轮未运行。
+
+部署准备只扩展现有 `scripts/infra/generate-trace-config.py` 的显式 `prepare-development` 操作；无参仍沿唯一原配置渲染路线，未新增管理脚本或常驻组件。调用者明确指定新建仓库外目录、两个不同的回环端口及 module:backend／ingress 绑定。临时验证生成独立 server／source／query CA、每生产端及查询端独立证书、30天有效期、0700目录及0600私有文件；中心非秘密 Tempo 配置沿原0644。OpenSSL统一使用本次私有配置，单命令十秒、整组六十秒，不访问网络／Docker、不改父进程环境。已有目录拒绝覆盖，失败只删除当次新建目录，生产环境拒绝该开发准备操作。
+
+准备文件 `deployment.env` 仅表达既有 Trace 部署变量，不写个人 `.env`；SDK、Alloy／Tempo渲染、独立S3密钥准备及设施启停继续复用原生命周期。目录、端口和模块没有新增自动发现或另一条配置读取路线。源码与精确SHA记录于 `/var/folders/r1/l7b49c757dz02zftf_l9vl9r0000gn/T/addp-p19-trace-preparation.0DmAU8CG/inputs.json`。
+
+最终 `make test-infra-runtime-log-lifecycle` 退出0：指标来源既有聚合通过，HTTP local runner 53项Python／7项Node及System身份夹具通过，Trace local runner 208项Python／登记及System身份夹具通过，生命周期／预算／Trace配置／容量规则／PostgreSQL来源聚合154项通过。新增回归在临时目录通过真实OpenSSL签发与证书验证，覆盖用途／30天期限、来源与查询CA交叉验证拒绝、私有配置、标准CLI与无参渲染、现有目录不覆盖、非法输入／生产拒绝及命令／整组超时清理。这里的证书链验证不是网络mTLS／真实采样验收。现有Make聚合及路径自动发现已覆盖，无需新增workflow或标准测试入口；本批diff空白检查通过。
+
+浏览器旧实现复现与首轮13项通过见 `/var/folders/r1/l7b49c757dz02zftf_l9vl9r0000gn/T/addp-p19-trace-ui.i8PomC7t/`；最终生命周期和13项浏览器日志见 `/var/folders/r1/l7b49c757dz02zftf_l9vl9r0000gn/T/addp-p19-trace-preparation.0DmAU8CG/`。本批改动尚未提交／推送。所有证书生成只在自动清理的临时目录，未创建个人部署目录、修改个人 `.env`、启动设施、重启开发服务，未运行Hosted、容量实链或定时。个人环境仍未启用Trace；后续实际材料生成／配置合并与共享Alloy更新、用户标准重启须另行确认。

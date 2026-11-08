@@ -1408,3 +1408,20 @@ Go 编译容器完成启动及退出等待。编译阶段首个完整检查耗�
 本地标准 `make test-monitor-http-local-runner` 退出 0：53 项 Python、7 项 Node 浏览器契约、JS 语法、HTTP 登记校验及 System Go 身份夹具通过。`make test-monitor-traces-local-runner` 退出 0：208 项 Python、JS 语法、Online 登记及 System Go 身份夹具通过。新增回归覆盖真实命令内核的单次启动、锁等待、等锁超时不发命令、启动超时与取消实际耗时、失败停止与原清理、回执归属／缺失／异常／脱敏／超限、两个报告入口。原首因和生命周期回归继续通过。六个本批影响文件 diff 空白检查通过，根 Make 聚合与既有登记自动发现已覆盖，无需新增入口或 workflow。
 
 门禁日志及 AST 自查归档于 `/var/folders/r1/l7b49c757dz02zftf_l9vl9r0000gn/T/addp-p19-start-handoff.JZ2mjQQS/`。本批代码和证据尚未提交或推送，没有运行真实构建、启动新产品窗口、Hosted、容量或定时；不能据本地门禁把暂停后并行测量、启动交接性能或正式 Agent／Copilot 到页面闭环记为已验收。上条历史基线已按 `source.json` 与 bundle 前置提交更正为 `d0c2d782db7dc409d5954c57da860294f165df8b`，私有快照及历史失败／清理结论保持。
+
+
+<a id="http-linux-a21ee1f8-20261108"></a>
+
+### 2026-11-08 固定提交 a21ee1f8b 的自然 Linux HTTP 实链及预算归档通过
+
+本轮仅只读核对已自然触发的 Run `42446113613`，head SHA 为 `a21ee1f8b16304b073e730a51cac8c7e2d799dcd`。HTTP Job `128625414275`（Monitor metrics infrastructure (http-quality)）于北京时间 2026-11-08 12:31:34 终态 success；实际 `Verify isolated metrics lifecycle` 与 `Preserve HTTP functional budget evidence` 均成功，未手动触发、重跑或取消 CI。[实际作业](https://github.com/pampa0629/addp/actions/runs/42446113613/job/128625414275)
+
+原始日志确认 Go 真实来源查询、HTTP 窗口、告警打开／签名重试／同一事件恢复通过，Go 与两 Python SDK 来源的相应链路完成。两次停源后的 `TestIntegrationMetricsHTTPRealSource` 均明确记录已有 Prometheus 窗口保留、实时查询为空；Python 来源停源可见及另一来源隔离沿原用例核验，不将此结果当作正式 Agent／Copilot 产品登录或页面验收。Python 两源 startup 均 running／passed，原生扩展导入通过，各自正式框架声明生效；退出均正常、发现恢复且无清理阶段失败。
+
+官方 Artifact `13603723953`（monitor-http-budget-42446113613-1）ZIP 为 28303 字节，SHA256 `f55dbb01b2897e7b8e6d11553bb8161ee68ec4574e3b8cccd2b283cd724a3c7a`，与 GitHub 元数据 digest 及大小一致，CRC 检查通过。Artifact 所属运行／分支／提交一致，377 项输入逐项对比该固定提交 Git blob 的 SHA256 全部一致，不借当前工作区替代。预算 result=passed、exit_code=0、error_code=null、inputs_unchanged=true；四阶段 process_source／resource_windows／http_query／http_alert 均自然完成、退出 0，无编译清理错误。[官方预算归档](https://github.com/pampa0629/addp/actions/runs/42446113613/artifacts/13603723953)
+
+整轮 856.217644 秒，245 次受控请求（Go 133、两 Python 源 82／30；失败／健康分别 90／43、45／37、15／15），均在原阶段额度及合计 300 次内。208 次完整资源检查逐项核验均小于四秒，最长 1.234364 秒；硬配额峰值 3.25 CPU／4026531840 字节内存，私有可写保守上界峰值 1547624511 字节，分别在原 4 CPU／4 GiB／2 GiB／1200 秒边界内。配额不是 CPU／RSS 实际用量，本轮不是容量基线。日志和预算均确认退出当次容器／网络／卷／临时文件零残留、cleanup_verified=true、private_directory_removed=true。
+
+同提交的 Trace 实链也通过，详情见[Trace 分项记录](MonitorTrace与日志历史证据.md#trace-linux-a21ee1f8-20261108)。Platform CI Run `42446113580` 的 Platform consistency Job `128625273097` 在 Node 前置检查失败，`make test-platform` 实际步骤被跳过；本专项 HTTP／Trace local runner 位于其 Make 生命周期聚合中，因此不能记该远端取证 runner 已执行或通过，原 53／208 项本地结果保持本地层级。不扩展修复或跟进无关检查，不用两个 T2 Job 通过推定整个 workflow／最新 main 通过。
+
+HTTP 原始日志 136709 字节、SHA256 `a81bd4cdc6a703512b381af0867681dcdc82ba11827a9861de7c4e64a5087fd5`；原预算 JSON SHA256 `a682984c74c3dcfa428f3e176b5b2204845a2b1954f0c1f04737fad5cfbfcae5`。原始日志、Job 元数据、官方 ZIP、预算与逐项审计位于 `/var/folders/r1/l7b49c757dz02zftf_l9vl9r0000gn/T/addp-p19-ci-a21ee1f8.B7CRY8UU/`。本轮没有新开本地窗口或运行 Hosted、容量、定时；新增启动交接回执、暂停后并行测量的真实性能，以及正式 Agent／Copilot 到 Console／Monitor 两阶段页面／注销／旧会话 401 继续列为待验。此轮仅追加既有证据文档，未提交或推送，未因证据维护触发新构建。

@@ -1345,6 +1345,8 @@
       "invalid": "请使用有效实例、Trace ID 和不超过一小时的时间范围",
       "invalidResponse": "调用链响应无效，数据已清除",
       "failed": "调用链查询失败，请稍后重试",
+      "unavailable": "调用链服务不可用，请检查服务状态与部署配置",
+      "notLoaded": "查询未成功，暂不显示结果",
       "caller": "调用方",
       "callee": "被调用方",
       "parentSpan": "父 Span ID"

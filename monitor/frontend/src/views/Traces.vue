@@ -10,7 +10,7 @@
         <el-button native-type="submit">{{ t('common.search') }}</el-button>
       </form>
       <el-alert v-if="error" :title="t(error)" type="warning" :closable="false" data-testid="trace-error" />
-      <el-table :data="instances" v-loading="loading" :empty-text="t('monitor.http.empty')">
+      <el-table :data="instances" v-loading="loading" :empty-text="t(error ? 'monitor.traces.notLoaded' : 'monitor.http.empty')" data-testid="trace-instances">
         <el-table-column prop="module_name" :label="t('monitor.process.module')" min-width="130" />
         <el-table-column prop="instance_id" :label="t('monitor.http.instance')" min-width="240" show-overflow-tooltip />
         <el-table-column :label="t('monitor.traces.title')" width="130"><template #default="{ row }"><el-button link @click="select(row)">{{ t('monitor.traces.open') }}</el-button></template></el-table-column>
@@ -23,7 +23,7 @@
           <el-input v-model="traceDraft" :placeholder="t('monitor.traces.traceID')" :aria-label="t('monitor.traces.traceID')" clearable />
           <el-button native-type="submit">{{ t('common.search') }}</el-button>
         </form>
-        <el-table :data="data" :empty-text="t('monitor.traces.empty')" data-testid="trace-results">
+        <el-table :data="data" :empty-text="t(error ? 'monitor.traces.notLoaded' : loading ? 'common.loading' : 'monitor.traces.empty')" data-testid="trace-results">
           <el-table-column prop="trace_id" :label="t('monitor.traces.traceID')" min-width="260" />
           <el-table-column :label="t('monitor.traces.start')" min-width="170"><template #default="{ row }">{{ date(row.start) }}</template></el-table-column>
           <el-table-column prop="duration_ms" :label="t('monitor.traces.duration')" min-width="140"><template #default="{ row }">{{ number(row.duration_ms) }}</template></el-table-column>
@@ -116,6 +116,7 @@ async function reload() {
   moduleDraft.value = current.module; roleDraft.value = current.role; traceDraft.value = current.query.trace_id || ''
   rangeDraft.value = current.query.start ? [new Date(current.query.start), new Date(current.query.end)] : null
   const params = { page: current.instanceID ? 1 : current.page, page_size: 10, role: current.role, ...(current.module ? { module_name: current.module } : {}), ...(current.instanceID ? { ids: String(current.instanceID) } : {}) }
+  let listed = false
   loading.value = true
   try {
     const list = await requests.request(config => traceAPI.instances(params, config))
@@ -123,15 +124,19 @@ async function reload() {
     if (list.data.some(row => row.role !== current.role || (current.module && row.module_name !== current.module))) throw new Error('invalid_trace_response')
     const subject = list.data.find(row => row.id === current.instanceID)
     if (current.instanceID && !subject) throw new Error('invalid_trace_response')
+    if (!requests.current(ticket)) return
+    instances.value = list.data; total.value = list.total; listed = true
     let result = { data: [] }
     if (subject) result = validateTraces(await requests.request(config => traceAPI.read({ instance_id: String(subject.id), ...(current.query.trace_id ? { trace_id: current.query.trace_id } : {}), ...(current.query.start ? { start: current.query.start, end: current.query.end } : {}) }, config)), subject, current.query.trace_id)
     if (!requests.current(ticket)) return
-    instances.value = list.data; total.value = list.total; data.value = result.data
+    data.value = result.data
     if (subject && !current.query.start) rangeDraft.value = [new Date(result.start), new Date(result.end)]
   } catch (e) {
     if (!requests.current(ticket)) return
-    data.value = []; instances.value = []; total.value = 0
-    error.value = e.response?.status === 404 ? 'monitor.traces.empty' : e.response?.status === 403 || e.response?.status === 401 ? 'monitor.traces.denied' : e.message === 'invalid_trace_response' ? 'monitor.traces.invalidResponse' : 'monitor.traces.failed'
+    data.value = []
+    const unavailable = listed && e.response?.status === 503 && e.response?.data?.error_code === 'trace_backend_unavailable'
+    if (!unavailable) { instances.value = []; total.value = 0 }
+    error.value = unavailable ? 'monitor.traces.unavailable' : e.response?.status === 404 ? 'monitor.traces.empty' : e.response?.status === 403 || e.response?.status === 401 ? 'monitor.traces.denied' : e.message === 'invalid_trace_response' ? 'monitor.traces.invalidResponse' : 'monitor.traces.failed'
   } finally { if (requests.current(ticket)) loading.value = false }
 }
 function visibility() { if (document.hidden) { requests.invalidate(); data.value = []; loading.value = false } else reload() }

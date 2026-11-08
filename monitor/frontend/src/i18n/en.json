@@ -1345,6 +1345,8 @@
       "invalid": "Use a valid instance, Trace ID and a time range of up to one hour",
       "invalidResponse": "Invalid trace response; data cleared",
       "failed": "Trace query failed; try again later",
+      "unavailable": "Trace service is unavailable. Check its status and configuration.",
+      "notLoaded": "Query failed; results are unavailable",
       "caller": "Caller",
       "callee": "Callee",
       "parentSpan": "Parent Span ID"
