@@ -20,7 +20,26 @@ def validate_metadata(detail, spec):
     attrs = detail.get('attributes', {})
     require(attrs.get('item') == {'format': spec['format'], 'data_type': 'table', 'layout': 'single'}, 'delimited identity differs')
     table = attrs.get('type_info', {}).get('table', {})
-    require(detail.get('row_count') == 25 and table.get('row_count') == 25
+    require('row_count' not in detail and attrs.get('schema_version') == 1
+            and not set(attrs) - {'schema_version', 'item', 'type_info'}
+            and 'row_count' not in table and 'native' not in table
+            and [(f['name'], f['type']) for f in table.get('fields', [])] == list(zip(FIXTURE.COLUMNS, ['int', 'string', 'string'])),
+            'delimited public metadata leaked content or lost structure')
+
+
+def validate_content_metadata(preview, spec, fingerprint):
+    table_data = preview.get('data', {})
+    meta = table_data.get('item_meta', {})
+    entries = meta.get('attributes', [])
+    require(isinstance(entries, list) and all(isinstance(row, dict) and set(row) == {'key', 'value'}
+            and isinstance(row['key'], str) and row['key'] for row in entries), 'delimited guarded metadata shape differs')
+    attrs = {row['key']: row['value'] for row in entries}
+    require(len(attrs) == len(entries), 'delimited guarded metadata keys duplicated')
+    require(preview.get('preview_type') == 'table' and meta.get('fingerprint') == fingerprint
+            and attrs.get('item') == {'format': spec['format'], 'data_type': 'table', 'layout': 'single'},
+            'delimited guarded metadata identity differs')
+    table = attrs.get('type_info', {}).get('table', {})
+    require(meta.get('row_count') == 25 and table.get('row_count') == 25
             and table.get('native', {}).get('has_header') is True
             and [(f['name'], f['type']) for f in table.get('fields', [])] == list(zip(FIXTURE.COLUMNS, ['int', 'string', 'string']))
             and attrs.get('format_info', {}).get(spec['format'], {}).get('encoding') == 'gb18030'
@@ -82,7 +101,8 @@ def run(repository, environment, owner, *, physical_runner=None, browser_runner=
             browser = json.loads((artifact / 'manager-delimited-browser.json').read_text())
         require(browser.get('schema_version') == 'addp.manager-delimited-browser/v1' and browser.get('result') == 'passed'
                 and browser.get('run_id') == report['run_id'] and len(browser.get('cases', [])) == 4, 'delimited browser incomplete')
-        flags = ('encoding_request_verified', 'header_mode_verified', 'ordinary_refresh_verified', 'reopened', 'header_restored', 'original_button_download_verified')
+        flags = ('encoding_request_verified', 'header_mode_verified', 'ordinary_refresh_verified', 'reopened',
+                 'header_restored', 'original_button_download_verified', 'metadata_projection_verified', 'content_metadata_verified')
         for case, observed in zip(report['cases'], browser['cases'], strict=True):
             spec = case['spec']
             require(observed.get('locator') == case['locator'] and all(observed.get(f) is True for f in flags)
@@ -99,7 +119,11 @@ def run(repository, environment, owner, *, physical_runner=None, browser_runner=
             case['pages'] = []
             for page in (1, 2, 3):
                 preview = client.request('GET', '/api/v1/manager/preview?' + urlencode({'locator': case['locator'], 'page': page, 'page_size': 20}), (200,)).payload
+                validate_content_metadata(preview, spec, case['fingerprint'])
                 case['pages'].append({'page': page, 'rows': validate_page(preview, page), 'values_verified': True})
+                if page == 1:
+                    (artifact / f'delimited-{case["storage"]}-{spec["format"]}-content.json').write_text(json.dumps(preview, ensure_ascii=False, indent=2) + '\n')
+            case['content_metadata_verified'] = True
             stage = 'api_download'
             raw = client.request('GET', '/api/v1/manager/downloads/file?' + urlencode({'locator': case['locator']}), (200,)).raw
             require(raw == FIXTURE.source_bytes(spec['format']), 'delimited original bytes differ')

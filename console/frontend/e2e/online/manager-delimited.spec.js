@@ -42,12 +42,30 @@ test('ordinary user applies GB18030 and preserves read settings for four CSV/TSV
         const metadata = async hasHeader => {
           const detail = await json(await api.get(`/api/v1/meta/items/${source.item_id}`), 'delimited metadata')
           expect(detail.fingerprint).toBe(source.fingerprint)
-          expect(detail.row_count).toBe(hasHeader ? 25 : 26)
-          expect(detail.attributes.format_info[source.spec.format].encoding).toBe('gb18030')
-          expect(detail.attributes.type_info.table.native.has_header).toBe(hasHeader)
+          expect(detail).not.toHaveProperty('row_count')
+          expect(Object.keys(detail.attributes).sort()).toEqual(['item', 'schema_version', 'type_info'])
+          expect(detail.attributes.schema_version).toBe(1)
+          expect(detail.attributes.type_info.table).not.toHaveProperty('row_count')
+          expect(detail.attributes.type_info.table).not.toHaveProperty('native')
           expect(detail.attributes.type_info.table.fields.map(f => f.name)).toEqual(hasHeader ? columns : ['Column1', 'Column2', 'Column3'])
-          expect(detail.attributes.storage.content_hash).toBe(source.spec.sha256)
-          expect(detail.attributes.access_index?.table).toBeUndefined()
+          const content = await json(await api.get('/api/v1/manager/preview', {
+            params: { locator: source.locator, page: 1, page_size: 20 }
+          }), 'delimited guarded content metadata')
+          expect(content.preview_type).toBe('table')
+          expect(content.data.total).toBe(hasHeader ? 25 : 26)
+          const observed = content.data.item_meta
+          expect(observed.fingerprint).toBe(source.fingerprint)
+          expect(observed.row_count).toBe(hasHeader ? 25 : 26)
+          expect(Array.isArray(observed.attributes)).toBe(true)
+          expect(new Set(observed.attributes.map(a => a.key)).size).toBe(observed.attributes.length)
+          const attrs = Object.fromEntries(observed.attributes.map(a => [a.key, a.value]))
+          expect(attrs.item).toEqual({ format: source.spec.format, data_type: 'table', layout: 'single' })
+          expect(attrs.format_info[source.spec.format].encoding).toBe('gb18030')
+          expect(attrs.type_info.table.row_count).toBe(hasHeader ? 25 : 26)
+          expect(attrs.type_info.table.native.has_header).toBe(hasHeader)
+          expect(attrs.type_info.table.fields.map(f => f.name)).toEqual(hasHeader ? columns : ['Column1', 'Column2', 'Column3'])
+          expect(attrs.storage.content_hash).toBe(source.spec.sha256)
+          expect(attrs.access_index?.table).toBeUndefined()
         }
         const cells = async (hasHeader, offset, count) => {
           await expect(table.locator('.el-table__header-wrapper th')).toHaveText(hasHeader ? columns : ['Column1', 'Column2', 'Column3'])
@@ -123,6 +141,7 @@ test('ordinary user applies GB18030 and preserves read settings for four CSV/TSV
         await apply(true)
         cases.push({ locator: source.locator, encoding_request_verified: true, header_mode_verified: true,
           ordinary_refresh_verified: true, reopened: true, header_restored: true,
+          metadata_projection_verified: true, content_metadata_verified: true,
           original_button_download_verified: true, download_sha256: downloaded.sha, download_size: downloaded.size })
       } finally { await api.dispose() }
     }

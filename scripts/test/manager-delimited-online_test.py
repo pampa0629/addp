@@ -33,14 +33,24 @@ class Client:
 
     def request(self, method, path, expected, body=None):
         if '/meta/items/' in path:
-            result = copy.deepcopy(self.items[int(path.rsplit('/', 1)[1])])
+            stored = self.items[int(path.rsplit('/', 1)[1])]
+            result = {k: stored[k] for k in ('id', 'fingerprint', 'full_name')}
+            result['attributes'] = {'schema_version': 1, 'item': copy.deepcopy(stored['attributes']['item']),
+                                    'type_info': {'table': {'fields': copy.deepcopy(stored['attributes']['type_info']['table']['fields'])}}}
             if self.failure == 'metadata':
-                result['attributes']['format_info']['csv'] = {'encoding': 'gbk'}
+                result['row_count'] = 25
         elif '/manager/preview?' in path:
             query = parse_qs(urlsplit(path).query)
             start = (int(query['page'][0]) - 1) * 20
+            locator = query['locator'][0]
+            identifier = int(urlsplit(locator).path.split('/')[1]) * 10 + (0 if '.csv' in locator else 1)
+            stored = copy.deepcopy(self.items[identifier])
+            if self.failure == 'content':
+                stored['attributes']['storage']['content_hash'] = 'wrong'
             result = {'preview_type': 'table', 'data': {'total': 25,
-                      'rows': [FIXTURE.public_row(i) for i in range(start, min(start + 20, 25))]}}
+                      'rows': [FIXTURE.public_row(i) for i in range(start, min(start + 20, 25))],
+                      'item_meta': {'fingerprint': stored['fingerprint'], 'row_count': stored['row_count'],
+                                    'attributes': [{'key': k, 'value': v} for k, v in stored['attributes'].items()]}}}
             if self.failure == 'page' and result['data']['rows']:
                 result['data']['rows'][0][FIXTURE.COLUMNS[1]] = 'wrong'
         elif '/downloads/file?' in path:
@@ -79,7 +89,8 @@ class DelimitedCaseTest(unittest.TestCase):
                 for mode in ('header', 'headerless'):
                     (root / f'delimited-{case["storage"]}-{case["spec"]["format"]}-{mode}.png').write_bytes(b'\x89PNG\r\n\x1a\nfixture')
                 cases.append({'locator': case['locator'], **dict.fromkeys(('encoding_request_verified', 'header_mode_verified',
-                    'ordinary_refresh_verified', 'reopened', 'header_restored', 'original_button_download_verified'), True),
+                    'ordinary_refresh_verified', 'reopened', 'header_restored', 'original_button_download_verified',
+                    'metadata_projection_verified', 'content_metadata_verified'), True),
                     'download_sha256': case['spec']['sha256'], 'download_size': case['spec']['size_bytes']})
             if failure == 'browser': cases[0]['reopened'] = False
             return {'schema_version': 'addp.manager-delimited-browser/v1', 'result': 'passed', 'run_id': 'manager-1-1', 'cases': cases}
@@ -105,9 +116,10 @@ class DelimitedCaseTest(unittest.TestCase):
         self.assertTrue(all(s['depth'] == 'basic' and len(s['scope']['targets']) == 2 for s in scans))
         self.assertEqual(len(report['cases']), 4)
         self.assertTrue(all([p['rows'] for p in c['pages']] == [20, 5, 0] for c in report['cases']))
+        self.assertTrue(all(c['content_metadata_verified'] for c in report['cases']))
 
     def test_failure_does_not_pass_and_cleanup_runs(self):
-        for failure in ('seed', 'metadata', 'page', 'download', 'physical', 'browser', 'cleanup'):
+        for failure in ('seed', 'metadata', 'content', 'page', 'download', 'physical', 'browser', 'cleanup'):
             with self.subTest(failure=failure):
                 actions, _, report = self.run_scene(failure)
                 self.assertEqual(report['result'], 'failed')
@@ -126,14 +138,36 @@ class DelimitedCaseTest(unittest.TestCase):
 
     def test_wrong_page_and_wrong_read_facts_rejected(self):
         with self.assertRaises(ValueError): SCENE.validate_page({'preview_type': 'table', 'data': {'rows': [], 'total': 26}}, 3)
-        detail = Client().item(12, 'test/gb18030-quoted.csv')
+        client = Client()
+        detail = client.item(12, 'test/gb18030-quoted.csv')
+        public = client.request('GET', '/api/v1/meta/items/120', (200,)).payload
+        SCENE.validate_metadata(public, FIXTURE.sources()[0])
+        self.assertNotIn('row_count', public)
+        for key in ('format_info', 'storage', 'access_index'):
+            self.assertNotIn(key, public['attributes'])
+            changed = copy.deepcopy(public)
+            changed['attributes'][key] = {}
+            with self.assertRaises(ValueError): SCENE.validate_metadata(changed, FIXTURE.sources()[0])
         for mutation in ('index', 'encoding', 'header', 'hash'):
             changed = copy.deepcopy(detail)
             if mutation == 'index': changed['attributes']['access_index'] = {'table': {'kind': 'stale'}}
             if mutation == 'encoding': changed['attributes']['format_info']['csv']['encoding'] = 'gbk'
             if mutation == 'header': changed['attributes']['type_info']['table']['native']['has_header'] = False
             if mutation == 'hash': changed['attributes']['storage']['content_hash'] = 'wrong'
-            with self.assertRaises(ValueError): SCENE.validate_metadata(changed, FIXTURE.sources()[0])
+            preview = {'preview_type': 'table', 'data': {'item_meta': {'fingerprint': detail['fingerprint'],
+                'row_count': changed['row_count'], 'attributes': [{'key': k, 'value': v} for k, v in changed['attributes'].items()]}}}
+            with self.assertRaises(ValueError): SCENE.validate_content_metadata(preview, FIXTURE.sources()[0], detail['fingerprint'])
+
+    def test_guarded_metadata_requires_current_source_and_unambiguous_attributes(self):
+        client = Client()
+        detail = client.item(12, 'test/gb18030-quoted.csv')
+        preview = client.request('GET', '/api/v1/manager/preview?locator=addp://engine/12/path/test/gb18030-quoted.csv&page=1', (200,)).payload
+        SCENE.validate_content_metadata(preview, FIXTURE.sources()[0], detail['fingerprint'])
+        with self.assertRaises(ValueError): SCENE.validate_metadata(detail, FIXTURE.sources()[0])
+        with self.assertRaises(ValueError): SCENE.validate_content_metadata(preview, FIXTURE.sources()[0], 'other-source')
+        with self.assertRaises(ValueError): SCENE.validate_content_metadata({'data': {}}, FIXTURE.sources()[0], detail['fingerprint'])
+        preview['data']['item_meta']['attributes'].append(preview['data']['item_meta']['attributes'][0])
+        with self.assertRaises(ValueError): SCENE.validate_content_metadata(preview, FIXTURE.sources()[0], detail['fingerprint'])
 
     def test_profile_rejects_unowned_environment(self):
         self.assertEqual(OWNER.manager_case({'ADDP_ONLINE_MANAGER_CASE': 'delimited-read-settings'}), 'delimited-read-settings')
