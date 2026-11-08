@@ -387,6 +387,7 @@
 | runtime queue | 运行时队列 | execution 从创建到被执行 worker 领取之间的持久领取机制。 | bounded execution 的唯一主路线是 PostgreSQL execution claim；continuous runtime 使用专用 runtime lease。Redis/Asynq 和进程内 channel 不作为 bounded execution 路线。 |
 | execution attempt | 执行尝试 | 同一未终态 execution 在一次合法 claim 下的实际运行尝试。 | 每次 claim 原子递增 `attempt` 并生成新的 `lease_token`；用户 retry 不是新 attempt，而是创建新的 execution。 |
 | execution lease | 执行租约 | bounded execution worker 对当前 execution attempt 的限时运行所有权。 | 由不可复用 `lease_token`、观测用 `lease_owner` 和 `lease_expires_at` 构成；heartbeat、进度和终态写入必须匹配当前 attempt 与 token。 |
+| business deadline | 业务截止时间 | 一次执行在原始 StartedAt 与执行预算内允许继续业务操作的固定绝对上限。 | Develop 文件执行由 System 在首次真实运行读取时按更早 EA、全部必要源和人员资格期限封存；不包含可续期机器凭据或租约，不随续租延长，也不代替每次当前授权核验。 |
 | background runtime heartbeat | 后台运行实例心跳 | ADDP 应用层后台运行组件周期写入的公共活性观测事实。 | 统一记录模块、运行时角色、运行时名称、实例、容量、当前占用和过期时间；只用于 Monitor 判断 execution worker、execution supervisor、continuous worker 与 dispatcher 的运行健康，不授予 execution/runtime/delivery 所有权，也不替代对应 lease。 |
 | module definition | 模块定义 | System 中按稳定 `module_name` 保存的持久模块身份、路由前缀、管理员启用状态和模块级能力入口声明。 | 模块进程离线不删除定义；业务模块的 `enabled` 表示管理员意图，不由心跳覆盖。System 与 Gateway 是引导控制面，`enabled` 固定为 true；Gateway 不声明业务路由前缀。 |
 | module runtime instance | 模块运行实例 | 某模块 Backend、Worker、Scheduler 或 Gateway Ingress 进程的一次具体运行登记。 | 使用进程级唯一 `instance_id`，保存 role、端点、进程启动时间、元数据和租约状态；只有 `enabled + backend + up + lease valid` 的实例可进入 Gateway 路由。Ingress 只供平台观测，不参与路由。平台模块列表只返回当前运行投影，全部实例历史通过模块下的只读分页集合查询；实例历史不是追加式审计事件。 |

@@ -148,7 +148,7 @@ func (h *IAMDevelopFileAuthorizationHandler) Admission(c *gin.Context) {
 
 // Source godoc
 // @Summary 复核 Develop 原执行的精确文件读取 | Recheck exact file read for original Develop execution
-// @Description 固定 addp-develop 当前机器凭据；核同一 Scope、当前 User、完整源规则、真实 running attempt/lease、StartedAt 固定截止及同版本 NFS；只返回指定源连接。元数据边界不能用作内容许可 | Fixed current addp-develop machine credential; checks identical scope, current User, complete source rules, actual running attempt and lease, original StartedAt deadline and unchanged NFS version. Returns only the selected source connection; metadata boundaries never grant content access
+// @Description 固定 addp-develop 当前机器凭据；核同一 Scope、当前 User、完整源规则、真实 running attempt/lease、StartedAt 固定截止及同版本 NFS；只返回指定源连接、不可续期的 business_deadline 与受当前租约／机器凭据限制的 expires_at。元数据边界不能用作内容许可 | Fixed current addp-develop machine credential; checks identical scope, current User, complete source rules, actual running attempt and lease, original StartedAt deadline and unchanged NFS version. Returns only the selected source connection, a sealed business_deadline independent of renewal, and expires_at bounded by the current lease and machine credential; metadata boundaries never grant content access
 // @Tags 执行授权 | Execution Authorization
 // @Accept json
 // @Produce json

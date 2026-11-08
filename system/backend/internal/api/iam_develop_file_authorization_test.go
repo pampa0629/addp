@@ -45,7 +45,7 @@ func (f *developFileHTTPFixture) Check(_ context.Context, input iam.CheckDevelop
 		return &client.DevelopFileAdmissionObservation{AuthorizationID: "9", ExecutionID: input.ExecutionID.String(), ExpectedAttempt: 1, ScopeDigest: input.ScopeDigest, State: "ready", ObservedAt: time.Now().Add(-time.Second), ExpiresAt: time.Now().Add(time.Minute)}, nil, nil
 	}
 	tenant := uint(input.TenantID)
-	return nil, &client.DevelopFileSourceAccessObservation{AuthorizationID: "9", ExecutionID: input.ExecutionID.String(), Attempt: 1, ScopeDigest: input.ScopeDigest, Source: *input.Source, ObservedAt: time.Now().Add(-time.Second), ExpiresAt: time.Now().Add(time.Minute), Engine: &models.Engine{ID: 11, TenantID: &tenant, EngineType: "nfs", Version: 2, LifecycleState: "active", ConnectionInfo: models.ConnectionInfo{"server": "fixture-only"}}}, nil
+	return nil, &client.DevelopFileSourceAccessObservation{AuthorizationID: "9", ExecutionID: input.ExecutionID.String(), Attempt: 1, ScopeDigest: input.ScopeDigest, Source: *input.Source, ObservedAt: time.Now().Add(-time.Second), ExpiresAt: time.Now().Add(time.Minute), BusinessDeadline: time.Now().Add(2 * time.Minute), Engine: &models.Engine{ID: 11, TenantID: &tenant, EngineType: "nfs", Version: 2, LifecycleState: "active", ConnectionInfo: models.ConnectionInfo{"server": "fixture-only"}}}, nil
 }
 
 type developFileHTTPResolver struct{ current authorization.AuthContext }
@@ -164,7 +164,7 @@ func TestDevelopFileSDKConsumesFormalSystemRouteShapes(t *testing.T) {
 		t.Fatal(admission, err)
 	}
 	access, err := system.CheckDevelopFileSourceAccess(t.Context(), *value, client.DevelopFileSourceAccessRequest{ExecutionID: profileHTTPExecution, Attempt: 1, LeaseToken: profileHTTPLease, ScopeDigest: value.ScopeDigest, Source: value.Scope.Sources[0].Target})
-	if err != nil || access.Engine == nil || fixture.input.ServiceAccessToken != "addp_at_service" {
+	if err != nil || access.Engine == nil || access.BusinessDeadline.IsZero() || access.ExpiresAt.After(access.BusinessDeadline) || fixture.input.ServiceAccessToken != "addp_at_service" {
 		t.Fatal(access, err)
 	}
 }

@@ -126,6 +126,7 @@ func TestDevelopFileAuthorizationAgainstPostgres(t *testing.T) {
 	path := plugin.FileItemPath(uint(engineID), "sources/A.gpkg")
 	owner := developFileOwnerFixture{}
 	allowed := true
+	var sourceExpiresAt *time.Time // Explicit source-rule double; never a real GPKG Grant.
 	prepare := func(ctx context.Context, auth *ExecutionAuthorization, intent execution.DevelopFileIntent) (*DevelopFileReadPreparation, error) {
 		version := ""
 		if intent.Target != nil {
@@ -143,7 +144,7 @@ func TestDevelopFileAuthorizationAgainstPostgres(t *testing.T) {
 			if err := tx.Raw("SELECT clock_timestamp()").Scan(&stamp).Error; err != nil {
 				return nil, err
 			}
-			out := &DevelopFileReadObservation{ObservedAt: stamp}
+			out := &DevelopFileReadObservation{ObservedAt: stamp, ExpiresAt: sourceExpiresAt}
 			if source != nil {
 				if !reflect.DeepEqual(*source, path) {
 					return nil, commonapi.ErrForbidden
@@ -210,9 +211,19 @@ func TestDevelopFileAuthorizationAgainstPostgres(t *testing.T) {
 		if err != nil || access != nil || admission == nil || admission.State != "ready" || admission.ApprovalID != "" {
 			t.Fatal("admission", admission, err)
 		}
-		_, lease, err := execution.ClaimPending(ctx, db, execution.PendingIdentity{ExecutionID: facts.ExecutionID, TenantID: int(tenant.ID), Module: "develop", TaskType: "workflow", Source: "develop"}, execution.ClaimOptions{Module: "develop", TaskType: "workflow", WorkerID: "develop-file-test", LeaseDuration: time.Minute, RequireAuthorization: true}, nil)
+		var pending ExecutionAuthorization
+		if err := db.First(&pending, id).Error; err != nil || pending.DevelopFileBusinessDeadline != nil {
+			t.Fatal("pending manufactured a business deadline", err)
+		}
+		if err := db.Model(&ExecutionAuthorization{}).Where("id=?", id).UpdateColumn("develop_file_business_deadline", time.Now().Add(time.Second)).Error; err == nil {
+			t.Fatal("pending deadline write accepted")
+		}
+		_, lease, err := execution.ClaimPending(ctx, db, execution.PendingIdentity{ExecutionID: facts.ExecutionID, TenantID: int(tenant.ID), Module: "develop", TaskType: "workflow", Source: "develop"}, execution.ClaimOptions{Module: "develop", TaskType: "workflow", WorkerID: "develop-file-test", LeaseDuration: 10 * time.Second, RequireAuthorization: true}, nil)
 		if err != nil || lease == nil {
 			t.Fatal("claim", err)
+		}
+		if err := db.Exec("UPDATE common.task_executions SET started_at=started_at-interval '12 seconds' WHERE execution_id=?", facts.ExecutionID).Error; err != nil {
+			t.Fatal(err)
 		}
 		facts.AdmissionState = "ready"
 		check.LeaseToken = uuid.MustParse(lease.Token)
@@ -225,8 +236,26 @@ func TestDevelopFileAuthorizationAgainstPostgres(t *testing.T) {
 		if err := db.Raw("SELECT started_at FROM common.task_executions WHERE execution_id=?", facts.ExecutionID).Scan(&start).Error; err != nil {
 			t.Fatal(err)
 		}
-		if access.ExpiresAt.After(start.Add(45 * time.Second)) {
-			t.Fatal("deadline renewed from now")
+		fixed := start.Add(45 * time.Second)
+		if !access.BusinessDeadline.Equal(fixed) || !access.ExpiresAt.Before(fixed) {
+			t.Fatal("business deadline conflated with short lease or renewed from now", access)
+		}
+		firstWindow := access.ExpiresAt
+		if err := execution.RenewLease(ctx, db, *lease, time.Minute); err != nil {
+			t.Fatal(err)
+		}
+		_, renewed, err := svc.Check(ctx, check)
+		if err != nil || renewed == nil || !renewed.BusinessDeadline.Equal(fixed) || !renewed.ExpiresAt.After(firstWindow) {
+			t.Fatal("renewal failed to preserve fixed business deadline", renewed, err)
+		}
+		var sealed ExecutionAuthorization
+		if err := db.First(&sealed, id).Error; err != nil || sealed.DevelopFileBusinessDeadline == nil || !sealed.DevelopFileBusinessDeadline.Equal(fixed) {
+			t.Fatal("business deadline was not sealed in original EA", err)
+		}
+		for _, value := range []any{nil, fixed.Add(time.Second), fixed.Add(-time.Second)} {
+			if err := db.Model(&ExecutionAuthorization{}).Where("id=?", id).UpdateColumn("develop_file_business_deadline", value).Error; err == nil {
+				t.Fatal("sealed business deadline changed", value)
+			}
 		}
 		for _, mutate := range []func(*CheckDevelopFileInput){func(i *CheckDevelopFileInput) { i.ExpectedAttempt = 2 }, func(i *CheckDevelopFileInput) { i.LeaseToken = uuid.New() }, func(i *CheckDevelopFileInput) { i.TenantID++ }, func(i *CheckDevelopFileInput) { i.ScopeDigest = strings.Repeat("b", 64) }, func(i *CheckDevelopFileInput) {
 			p := plugin.FileItemPath(uint(engineID), "sources/neighbor.gpkg")
@@ -284,6 +313,119 @@ func TestDevelopFileAuthorizationAgainstPostgres(t *testing.T) {
 		facts.AdmissionState = "rejected"
 		if value, err := svc.Issue(ctx, input); err == nil || value != nil {
 			t.Fatal("rejected unissued execution accepted")
+		}
+	})
+	for _, bound := range []string{"ea", "role", "membership"} {
+		t.Run("earlier "+bound+" bounds fixed business deadline", func(t *testing.T) {
+			originalUser, originalMember, originalPrincipal, originalToken := user, member, principal, userToken
+			defer func() {
+				user, member, principal, userToken = originalUser, originalMember, originalPrincipal, originalToken
+			}()
+			stamp, err := repo.internalTaskDatabaseTime(ctx)
+			if err != nil {
+				t.Fatal(err)
+			}
+			cap := stamp.Add(5 * time.Minute)
+			var membershipExpiry, roleExpiry *time.Time
+			if bound == "role" {
+				roleExpiry = &cap
+			}
+			if bound == "membership" {
+				membershipExpiry = &cap
+			}
+			user = createContextSelectionUser(t, ctx, NewIdentityService(repo, nil), "deadline-"+bound, audit)
+			member, err = members.EstablishMembership(ctx, EstablishTenantMembershipInput{TenantID: tenant.ID, PrincipalID: user.PrincipalID, SourceType: TenantMembershipSourceManual, CreatedByPrincipalID: &user.PrincipalID, ExpiresAt: membershipExpiry, Audit: audit})
+			if err != nil {
+				t.Fatal(err)
+			}
+			insertRoleAssignment(t, db, user.PrincipalID, "tenant.data_engineer", "tenant", &tenant.ID, nil, nil, stamp.Add(-time.Minute), roleExpiry, "manual")
+			principal = Principal{}
+			if err := db.First(&principal, user.PrincipalID).Error; err != nil {
+				t.Fatal(err)
+			}
+			selected, err := selection.BeginContextSelection(ctx, BeginContextSelectionInput{PrincipalID: user.PrincipalID, Authentication: SessionAuthentication{Methods: []string{"password"}, AssuranceLevel: AssuranceLevelAAL1, AuthenticatedAt: stamp}, Audit: audit})
+			if err != nil || selected.Session == nil {
+				t.Fatal("select bounded user", err)
+			}
+			userToken = selected.Session.AccessToken
+			facts, executionID := newPending(t, false)
+			facts.Intent.TimeoutSeconds = 3600
+			digest, _ := facts.Intent.Digest()
+			issued, err := svc.Issue(ctx, IssueDevelopFileAuthorizationInput{SourceAccessToken: userToken, ExecutionID: executionID, IntentDigest: digest, Audit: audit})
+			if err != nil {
+				t.Fatal("issue bounded user", err)
+			}
+			id, _ := strconv.ParseInt(issued.Authorization.ID, 10, 64)
+			facts.AuthorizationID = issued.Authorization.ID
+			facts.BoundScope = issued.Scope.Clone()
+			facts.ScopeDigest = issued.ScopeDigest
+			facts.AdmissionState = "ready"
+			if err := db.Table("common.task_executions").Where("execution_id=?", facts.ExecutionID).Updates(map[string]any{"execution_authorization_id": id, "authorization_expires_at": issued.Authorization.ExpiresAt}).Error; err != nil {
+				t.Fatal(err)
+			}
+			_, lease, err := execution.ClaimPending(ctx, db, execution.PendingIdentity{ExecutionID: facts.ExecutionID, TenantID: int(tenant.ID), Module: "develop", TaskType: "workflow", Source: "develop"}, execution.ClaimOptions{Module: "develop", TaskType: "workflow", WorkerID: "deadline-person-test", LeaseDuration: time.Minute, RequireAuthorization: true}, nil)
+			if err != nil || lease == nil {
+				t.Fatal(err)
+			}
+			_, access, err := svc.Check(ctx, CheckDevelopFileInput{ServiceAccessToken: serviceToken, AuthorizationID: id, ExecutionID: executionID, TenantID: tenant.ID, ExpectedAttempt: 1, ScopeDigest: issued.ScopeDigest, LeaseToken: uuid.MustParse(lease.Token), Source: &path, Audit: serviceAudit})
+			if bound == "ea" {
+				cap = issued.Authorization.ExpiresAt
+			}
+			if err != nil || access == nil || !access.BusinessDeadline.Equal(cap) || !access.ExpiresAt.Before(cap) {
+				t.Fatal("earlier human/EA cap ignored", bound, access, err)
+			}
+		})
+	}
+	t.Run("earlier source eligibility is sealed and later renewal cannot extend it", func(t *testing.T) {
+		stamp, err := repo.internalTaskDatabaseTime(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		cap := stamp.Add(30 * time.Second)
+		sourceExpiresAt = &cap
+		defer func() { sourceExpiresAt = nil }()
+		facts, issued, input := issue(t, false)
+		id, _ := strconv.ParseInt(issued.Authorization.ID, 10, 64)
+		_, lease, err := execution.ClaimPending(ctx, db, execution.PendingIdentity{ExecutionID: facts.ExecutionID, TenantID: int(tenant.ID), Module: "develop", TaskType: "workflow", Source: "develop"}, execution.ClaimOptions{Module: "develop", TaskType: "workflow", WorkerID: "deadline-cap-test", LeaseDuration: time.Minute, RequireAuthorization: true}, nil)
+		if err != nil || lease == nil {
+			t.Fatal(err)
+		}
+		facts.AdmissionState = "ready"
+		check := CheckDevelopFileInput{ServiceAccessToken: serviceToken, AuthorizationID: id, ExecutionID: input.ExecutionID, TenantID: tenant.ID, ExpectedAttempt: 1, ScopeDigest: issued.ScopeDigest, LeaseToken: uuid.MustParse(lease.Token), Source: &path, Audit: serviceAudit}
+		shortBearer := "addp_at_short_develop_file_deadline_fixture"
+		shortFamily := *family
+		shortFamily.ID = 0
+		shortProtocol := uuid.New()
+		shortFamily.ProtocolRequestID = &shortProtocol
+		if err := repo.CreateRefreshTokenFamily(ctx, &shortFamily); err != nil {
+			t.Fatal(err)
+		}
+		shortToken := &AccessToken{TokenHash: hashOpaqueToken(shortBearer), FamilyID: shortFamily.ID, ExpiresAt: stamp.Add(5 * time.Second), CreatedAt: stamp}
+		if err := repo.CreateAccessToken(ctx, shortToken); err != nil {
+			t.Fatal(err)
+		}
+		check.ServiceAccessToken = shortBearer
+		_, first, err := svc.Check(ctx, check)
+		if err != nil || first == nil || !first.BusinessDeadline.Equal(cap) || !first.ExpiresAt.Equal(shortToken.ExpiresAt) {
+			t.Fatal("source cap not sealed", first, err)
+		}
+		sourceExpiresAt = nil
+		check.ServiceAccessToken = serviceToken
+		_, renewed, err := svc.Check(ctx, check)
+		if err != nil || renewed == nil || !renewed.BusinessDeadline.Equal(cap) {
+			t.Fatal("source renewal extended original deadline", renewed, err)
+		}
+		shorter := cap.Add(-time.Second)
+		sourceExpiresAt = &shorter
+		_, narrowed, err := svc.Check(ctx, check)
+		if err != nil || narrowed == nil || !narrowed.BusinessDeadline.Equal(cap) || narrowed.ExpiresAt.After(shorter) {
+			t.Fatal("current shorter source eligibility ignored", narrowed, err)
+		}
+		if err := db.Model(&ExecutionAuthorization{}).Where("id=?", id).Updates(map[string]any{"revoked_at": gorm.Expr("clock_timestamp()"), "revoked_reason": "test revocation"}).Error; err != nil {
+			t.Fatal("fixed deadline prevented revocation", err)
+		}
+		if a, b, err := svc.Check(ctx, check); err == nil || a != nil || b != nil {
+			t.Fatal("revoked EA accepted")
 		}
 	})
 	t.Run("deadline crossed during audit returns no connection", func(t *testing.T) {

@@ -632,6 +632,7 @@ func (DelegatedAccessToken) TableName() string { return "system.delegated_access
 // ExecutionAuthorization records a short-lived authorization boundary for one
 // execution. It is an auditable database fact, not a bearer credential.
 type ExecutionAuthorization struct {
+	DevelopFileBusinessDeadline          *time.Time                                 `gorm:"column:develop_file_business_deadline"`
 	DevelopFileScope                     *commonExecution.DevelopBoundFileScope     `gorm:"column:develop_file_scope;type:jsonb;serializer:json"`
 	CleanupScope                         *commonExecution.CleanupAuthorizationScope `gorm:"column:cleanup_scope;type:jsonb;serializer:json"`
 	SourceReadScope                      *ManagerSourceReadScope                    `gorm:"column:source_read_scope;type:jsonb;serializer:json"`

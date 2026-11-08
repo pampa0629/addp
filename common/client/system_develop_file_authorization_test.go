@@ -58,7 +58,7 @@ func developFileClientAdmission(issued IssuedDevelopFileAuthorization) DevelopFi
 func developFileClientSource(issued IssuedDevelopFileAuthorization) DevelopFileSourceAccessObservation {
 	tenant := uint(3)
 	return DevelopFileSourceAccessObservation{AuthorizationID: "9", ExecutionID: developFileClientExecution, Attempt: 1, ScopeDigest: issued.ScopeDigest,
-		Source: issued.Scope.Sources[0].Target, ObservedAt: time.Now().Add(-time.Second), ExpiresAt: time.Now().Add(time.Minute),
+		Source: issued.Scope.Sources[0].Target, ObservedAt: time.Now().Add(-time.Second), ExpiresAt: time.Now().Add(20 * time.Second), BusinessDeadline: time.Now().Add(40 * time.Second),
 		Engine: &models.Engine{ID: 11, TenantID: &tenant, EngineType: "nfs", Version: 2, LifecycleState: models.EngineLifecycleActive,
 			ConnectionInfo: models.ConnectionInfo{"server": "fixture-only", "export_path": "/owned"}}}
 }
@@ -208,7 +208,7 @@ func TestDevelopFileClientReadOnlyAdmissionCannotAcquireWriteApproval(t *testing
 }
 
 func TestDevelopFileClientBindsCurrentExactSourceAndTenant(t *testing.T) {
-	for _, fault := range []string{"version", "tenant", "source", "engine-type", "inactive", "expired", "missing-engine"} {
+	for _, fault := range []string{"version", "tenant", "source", "engine-type", "inactive", "expired", "missing-engine", "missing-business-deadline", "window-after-business-deadline", "business-deadline-after-ea", "expired-business-deadline"} {
 		t.Run(fault, func(t *testing.T) {
 			_, issued := developFileClientFixture(t, false)
 			response := developFileClientSource(issued)
@@ -228,6 +228,14 @@ func TestDevelopFileClientBindsCurrentExactSourceAndTenant(t *testing.T) {
 				response.ExpiresAt = time.Now().Add(-time.Second)
 			case "missing-engine":
 				response.Engine = nil
+			case "missing-business-deadline":
+				response.BusinessDeadline = time.Time{}
+			case "window-after-business-deadline":
+				response.BusinessDeadline = response.ExpiresAt.Add(-time.Second)
+			case "business-deadline-after-ea":
+				response.BusinessDeadline = issued.Authorization.ExpiresAt.Add(time.Second)
+			case "expired-business-deadline":
+				response.BusinessDeadline = time.Now().Add(-time.Second)
 			}
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { _ = json.NewEncoder(w).Encode(response) }))
 			defer server.Close()

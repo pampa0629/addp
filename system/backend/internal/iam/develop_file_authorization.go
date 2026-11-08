@@ -244,7 +244,7 @@ func (s *DevelopFileAuthorizationService) Check(ctx context.Context, input Check
 			return err
 		}
 		var observation *DevelopFileReadObservation
-		var expires, observedAt time.Time
+		var expires, observedAt, businessDeadline time.Time
 		check := func() error {
 			currentService, err := tx.developFileService(ctx, input)
 			if err != nil {
@@ -253,7 +253,7 @@ func (s *DevelopFileAuthorizationService) Check(ctx context.Context, input Check
 			if currentService.Principal.ID != service.Principal.ID {
 				return ErrExecutionAuthorizationPermissionDenied
 			}
-			deadline, err := tx.developFileExecution(ctx, row, facts, input.ExpectedAttempt, input.LeaseToken, input.Source == nil)
+			window, err := tx.developFileExecution(ctx, row, facts, input.ExpectedAttempt, input.LeaseToken, input.Source == nil)
 			if err != nil {
 				return err
 			}
@@ -276,7 +276,7 @@ func (s *DevelopFileAuthorizationService) Check(ctx context.Context, input Check
 				return ErrExecutionAuthorizationPermissionDenied
 			}
 			expires = row.ExpiresAt
-			for _, bound := range []*time.Time{membership.ExpiresAt, observation.ExpiresAt, &currentService.Token.ExpiresAt, &deadline} {
+			for _, bound := range []*time.Time{membership.ExpiresAt, observation.ExpiresAt} {
 				if bound != nil && !bound.IsZero() && bound.Before(expires) {
 					expires = *bound
 				}
@@ -300,6 +300,37 @@ func (s *DevelopFileAuthorizationService) Check(ctx context.Context, input Check
 					expires = *latest
 				}
 			}
+			if input.Source != nil {
+				businessDeadline = window.BudgetDeadline
+				if expires.Before(businessDeadline) {
+					businessDeadline = expires
+				}
+				if row.DevelopFileBusinessDeadline == nil {
+					if !businessDeadline.After(observedAt) {
+						return ErrExecutionAuthorizationUnavailable
+					}
+					result := tx.db.WithContext(ctx).Model(&ExecutionAuthorization{}).
+						Where("id=? AND develop_file_business_deadline IS NULL", row.ID).
+						UpdateColumn("develop_file_business_deadline", businessDeadline)
+					if result.Error != nil || result.RowsAffected != 1 {
+						return ErrExecutionAuthorizationUnavailable
+					}
+					fixed := businessDeadline
+					row.DevelopFileBusinessDeadline = &fixed
+				}
+				businessDeadline = *row.DevelopFileBusinessDeadline
+				if businessDeadline.After(window.BudgetDeadline) {
+					return ErrExecutionAuthorizationUnavailable
+				}
+				for _, bound := range []time.Time{businessDeadline, window.LeaseExpiresAt} {
+					if bound.Before(expires) {
+						expires = bound
+					}
+				}
+			}
+			if currentService.Token.ExpiresAt.Before(expires) {
+				expires = currentService.Token.ExpiresAt
+			}
 			if !expires.After(observedAt) {
 				return ErrExecutionAuthorizationUnavailable
 			}
@@ -317,7 +348,7 @@ func (s *DevelopFileAuthorizationService) Check(ctx context.Context, input Check
 		if input.Source == nil {
 			admission = &client.DevelopFileAdmissionObservation{AuthorizationID: strconv.FormatInt(row.ID, 10), ExecutionID: row.ExecutionID.String(), ExpectedAttempt: input.ExpectedAttempt, ScopeDigest: input.ScopeDigest, State: "ready", ObservedAt: observedAt, ExpiresAt: expires}
 		} else {
-			access = &client.DevelopFileSourceAccessObservation{AuthorizationID: strconv.FormatInt(row.ID, 10), ExecutionID: row.ExecutionID.String(), Attempt: input.ExpectedAttempt, ScopeDigest: input.ScopeDigest, Source: *input.Source, ObservedAt: observedAt, ExpiresAt: expires, Engine: observation.Engine}
+			access = &client.DevelopFileSourceAccessObservation{AuthorizationID: strconv.FormatInt(row.ID, 10), ExecutionID: row.ExecutionID.String(), Attempt: input.ExpectedAttempt, ScopeDigest: input.ScopeDigest, Source: *input.Source, ObservedAt: observedAt, ExpiresAt: expires, BusinessDeadline: businessDeadline, Engine: observation.Engine}
 			if access.Engine == nil {
 				return ErrExecutionAuthorizationUnavailable
 			}
@@ -416,7 +447,13 @@ func (r *Repository) developFileService(ctx context.Context, input CheckDevelopF
 	return current, nil
 }
 
-func (r *Repository) developFileExecution(ctx context.Context, auth *ExecutionAuthorization, facts *client.DevelopFileExecutionFacts, attempt int, lease uuid.UUID, pending bool) (time.Time, error) {
+// The fixed budget and renewable claim window have distinct meanings.
+type developFileExecutionWindow struct {
+	BudgetDeadline time.Time
+	LeaseExpiresAt time.Time
+}
+
+func (r *Repository) developFileExecution(ctx context.Context, auth *ExecutionAuthorization, facts *client.DevelopFileExecutionFacts, attempt int, lease uuid.UUID, pending bool) (developFileExecutionWindow, error) {
 	var row struct {
 		Status                   string
 		Attempt                  int
@@ -430,34 +467,31 @@ func (r *Repository) developFileExecution(ctx context.Context, auth *ExecutionAu
 	}
 	query := r.db.WithContext(ctx).Table("common.task_executions e").Select("e.status,e.attempt,e.started_at,e.lease_token,e.lease_owner,e.lease_expires_at,e.execution_authorization_id,e.authorization_expires_at,e.execution_config").Where("e.execution_id=? AND e.tenant_id=? AND e.module='develop' AND e.source='develop' AND e.task_type='workflow' AND e.execution_boundary='bounded' AND e.trigger_type='manual' AND e.parent_execution_id IS NULL AND e.retry_of_execution_id IS NULL AND e.max_attempts=1 AND e.triggered_by=e.actor_principal_id AND e.actor_principal_id=? AND e.actor_tenant_membership_id=? AND e.issued_authorization_version=?", facts.ExecutionID, auth.TenantID, auth.ActorPrincipalID, auth.TenantMembershipID, auth.IssuedAuthorizationVersion)
 	if err := query.Clauses(clause.Locking{Strength: "SHARE", Table: clause.Table{Name: "e"}}).Take(&row).Error; err != nil {
-		return time.Time{}, ErrExecutionAuthorizationUnavailable
+		return developFileExecutionWindow{}, ErrExecutionAuthorizationUnavailable
 	}
 	intent, err := execution.NewDevelopFileIntent(row.ExecutionConfig, facts.Intent.ExpectedAttempt, facts.Intent.TimeoutSeconds, facts.Intent.Sources, facts.Intent.Target)
 	if err != nil || !reflect.DeepEqual(intent, &facts.Intent) || facts.Intent.ExpectedAttempt != 1 {
-		return time.Time{}, ErrExecutionAuthorizationUnavailable
+		return developFileExecutionWindow{}, ErrExecutionAuthorizationUnavailable
 	}
 	now, err := r.internalTaskDatabaseTime(ctx)
 	if err != nil {
-		return time.Time{}, err
+		return developFileExecutionWindow{}, err
 	}
 	bound := row.ExecutionAuthorizationID != nil && auth.ID > 0 && *row.ExecutionAuthorizationID == auth.ID && row.AuthorizationExpiresAt != nil && row.AuthorizationExpiresAt.Equal(auth.ExpiresAt)
 	if pending {
 		if row.Status != "pending" || row.Attempt != 0 || row.StartedAt != nil || row.LeaseToken != nil || row.LeaseOwner != nil || row.LeaseExpiresAt != nil || (row.ExecutionAuthorizationID != nil || row.AuthorizationExpiresAt != nil) && !bound || attempt > 0 && !bound {
-			return time.Time{}, ErrExecutionAuthorizationUnavailable
+			return developFileExecutionWindow{}, ErrExecutionAuthorizationUnavailable
 		}
-		return time.Time{}, nil
+		return developFileExecutionWindow{}, nil
 	}
 	if !bound || row.Status != "running" || attempt != facts.Intent.ExpectedAttempt || row.Attempt != attempt || row.StartedAt == nil || row.LeaseToken == nil || *row.LeaseToken != lease.String() || row.LeaseOwner == nil || strings.TrimSpace(*row.LeaseOwner) == "" || row.LeaseExpiresAt == nil || !row.LeaseExpiresAt.After(now) {
-		return time.Time{}, ErrExecutionAuthorizationUnavailable
+		return developFileExecutionWindow{}, ErrExecutionAuthorizationUnavailable
 	}
 	deadline, err := auth.DevelopFileScope.Deadline(*row.StartedAt)
 	if err != nil || !deadline.After(now) {
-		return time.Time{}, ErrExecutionAuthorizationUnavailable
+		return developFileExecutionWindow{}, ErrExecutionAuthorizationUnavailable
 	}
-	if row.LeaseExpiresAt.Before(deadline) {
-		deadline = *row.LeaseExpiresAt
-	}
-	return deadline, nil
+	return developFileExecutionWindow{BudgetDeadline: deadline, LeaseExpiresAt: *row.LeaseExpiresAt}, nil
 }
 
 func sameDevelopActor(a, b *ExecutionAuthorization) bool {

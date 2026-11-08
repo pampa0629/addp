@@ -44,6 +44,8 @@ FileGDB 精确源表授权（实施中）：沿用 `execution_authorizations.sou
 
 结构迁移及生命周期验证沿 `make test-system-iam-postgres SYSTEM_IAM_POSTGRES_TEST_ARGS="--package iam --test develop-file-authorization"`；默认 IAM AgainstPostgres 门禁自动发现同一测试。该组 Owner/Meta 事实与源规则准备为显式测试双，不代表真实 GeoPackage Grant、OAuth 签发流程、实际数据读取或 Hosted/T4；精确事实/源规则守卫另在 engineaccess 验证，权限发布及真实业务证据分别补齐。
 
+前向迁移 000275 在同一 EA 增加可空 `develop_file_business_deadline`，不是新的授权实体。仅同一真实 running 执行的首次精确读取可将其从空值封存为原 StartedAt＋预算及更早授权／资格上限；数据库禁止清空、修改或跨用途赋值，既有 Scope 和 EA 到期不改写。pending 不写截止。短租约与机器 Token 只约束本次 `expires_at`，续租不能修改已封存的 `business_deadline`。当前源／人员资格每次仍需复核，不能消费旧观察作为 Allow。验证复用既有 `--package iam --test develop-file-authorization` 和 migration 完整 Runner 门禁，不新增实际角色或 Grant。
+
 Owner 事实读取的 `develop.file_execution.read` 仅登记为 Tenant、不可定制／委托的低风险 Permission 定义；迁移 000274 不写 Role Permission、Role Assignment、资源 Grant，不推进现有主体授权版本或撤销 Token。新增目录项本身不赋予 System 服务读取资格。目录／权限关系前后不变由 `make test-system-iam-postgres SYSTEM_IAM_POSTGRES_TEST_ARGS="--package migration --test develop-file-definition"` 验证。定义及真实 Owner GET／Swagger 须同批发布；Runtime 私有交换权限的目录覆盖和实际服务资格另行核定。
 
 ## 一、事实边界

@@ -55,6 +55,9 @@ type DevelopFileSourceAccessObservation struct {
 	ObservedAt      time.Time                `json:"observed_at"`
 	ExpiresAt       time.Time                `json:"expires_at"`
 	Engine          *models.Engine           `json:"engine"`
+	// BusinessDeadline is sealed once from original DB StartedAt and human/source
+	// eligibility. Renewable machine credentials and leases never extend it.
+	BusinessDeadline time.Time `json:"business_deadline" binding:"required"`
 }
 
 // IssueDevelopFile sends only an execution and expected intent digest. System
@@ -186,6 +189,7 @@ func (c *SystemServiceClient) CheckDevelopFileSourceAccess(ctx context.Context, 
 	version, _ := strconv.ParseInt(reference.EngineVersion, 10, 64)
 	if result.AuthorizationID != issued.Authorization.ID || result.ExecutionID != request.ExecutionID || result.Attempt != request.Attempt || result.ScopeDigest != request.ScopeDigest ||
 		!reflect.DeepEqual(result.Source, request.Source) || !developFileObservationWindow(result.ObservedAt, result.ExpiresAt, issued.Authorization.ExpiresAt) ||
+		result.BusinessDeadline.IsZero() || result.ExpiresAt.After(result.BusinessDeadline) || result.BusinessDeadline.After(issued.Authorization.ExpiresAt) ||
 		engine == nil || engine.ID != request.Source.EngineID || engine.TenantID == nil || *engine.TenantID != *c.tenantID || engine.EngineType != "nfs" ||
 		engine.Version != version || engine.LifecycleState != models.EngineLifecycleActive || engine.DeletedAt != nil || len(engine.ConnectionInfo) == 0 {
 		return nil, errors.New("invalid current Develop file source observation")
