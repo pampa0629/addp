@@ -5,6 +5,8 @@ import importlib.util
 import io
 import json
 import os
+import subprocess
+import sys
 from pathlib import Path
 import tempfile
 from types import SimpleNamespace
@@ -15,6 +17,50 @@ ROOT = Path(__file__).resolve().parents[2]
 spec = importlib.util.spec_from_file_location('node_recovery_provider_test', ROOT/'scripts/infra/node-metrics.py')
 provider = importlib.util.module_from_spec(spec); spec.loader.exec_module(provider)
 M = provider.recovery
+
+
+class NodeCertificateTest(unittest.TestCase):
+    def test_real_node_certificates_and_standard_check_are_strict_and_private(self):
+        spec=importlib.util.spec_from_file_location('node_tls_fixture',ROOT/'scripts/test/metrics-source-fixture.py')
+        fixture=importlib.util.module_from_spec(spec);spec.loader.exec_module(fixture)
+        with tempfile.TemporaryDirectory() as temporary,patch.dict(os.environ,{}):
+            root=Path(temporary).resolve();tls=fixture.certificates(root)
+            original={name:(tls/name).read_bytes() for name in ('ca.crt','server.crt','server.key')}
+            for variation,reason,phrase in (('valid',None,'部署输入检查通过'),('leaf-ski',None,'部署输入检查通过'),
+                    ('aki','chain','证书链'),('purpose','purpose','服务器认证'),('san','name','IP SAN'),('key','key','私钥不匹配')):
+                with self.subTest(variation=variation):
+                    for name,data in original.items():(tls/name).write_bytes(data)
+                    if variation=='leaf-ski':fixture.sign_server(root,tls,subject='none')
+                    elif variation=='aki':fixture.sign_server(root,tls,authority='none')
+                    elif variation=='purpose':fixture.sign_server(root,tls,purpose='clientAuth')
+                    elif variation=='san':fixture.sign_server(root,tls,san='IP:127.0.0.2')
+                    elif variation=='key':(tls/'server.key').write_bytes((root/'client.key').read_bytes())
+                    env={'PATH':os.environ['PATH'],'OPENSSL_CONF':os.environ['OPENSSL_CONF'],
+                        'ADDP_NODE_METRICS_ENABLED':'true','ADDP_NODE_METRICS_TLS_DIR':str(tls),'ADDP_NODE_METRICS_LISTEN':'127.0.0.1:19443'}
+                    before={name:((tls/name).read_bytes(),(tls/name).stat().st_ino,(tls/name).stat().st_mtime_ns) for name in original}
+                    if reason:
+                        with self.assertRaises(ValueError) as failure:provider.deployment(env)
+                        self.assertEqual(getattr(failure.exception,'source_tls_reason',None),reason)
+                        with patch.object(provider.recovery,'manage') as apply:
+                            with self.assertRaises(ValueError):provider.run('up',env)
+                            apply.assert_not_called()
+                    else:self.assertEqual(provider.deployment(env),tls)
+                    result=subprocess.run([sys.executable,str(ROOT/'scripts/infra/metrics-sources.py'),'check','--resolved-env',
+                        '--scope','host','--kind','node'],env=env,capture_output=True,text=True,timeout=10)
+                    self.assertEqual(result.returncode,1 if reason else 0);self.assertIn(phrase,result.stdout)
+                    self.assertFalse(result.stderr);self.assertNotIn(str(tls),result.stdout);self.assertNotIn('BEGIN ',result.stdout)
+                    self.assertEqual(before,{name:((tls/name).read_bytes(),(tls/name).stat().st_ino,(tls/name).stat().st_mtime_ns) for name in original})
+
+    def test_node_cli_only_forwards_known_transport_reasons_and_preserves_cleanup(self):
+        from contextlib import redirect_stderr
+        for stage,reason,expected in (('transport-check','chain',True),('transport-check','unknown',True),
+                ('source-start','chain',False),('transport-check','private-secret',False)):
+            error=ValueError('private-secret');error.observation_stage=stage;error.source_tls_reason=reason;error.node_recovery_cleanup_failed=True
+            output=io.StringIO()
+            with patch.object(provider,'run',side_effect=error),patch.object(sys,'argv',['node-metrics.py','up']),redirect_stderr(output):
+                self.assertEqual(provider.main(),1)
+            self.assertEqual('[tls-reason=' in output.getvalue(),expected)
+            self.assertIn('[cleanup=failed]',output.getvalue());self.assertNotIn('private-secret',output.getvalue())
 
 
 class NodeRecoveryTest(unittest.TestCase):
@@ -81,6 +127,15 @@ class NodeRecoveryTest(unittest.TestCase):
             self.assertEqual(self.mutations(),[])
             self.assertEqual(before,(path.read_bytes(),path.stat().st_ino,path.stat().st_mtime_ns))
             self.assertEqual(self.inputs,current)
+
+    def test_rejected_certificate_never_changes_an_existing_recovery_proof_or_starts_sources(self):
+        self.manage('up');proof=self.folder/'installation.json'
+        before=(proof.read_bytes(),proof.stat().st_ino,proof.stat().st_mtime_ns);self.commands.clear()
+        failure=ValueError('source TLS verification failed');failure.source_tls_reason='chain';failure.observation_stage='transport-check'
+        with patch.object(provider,'deployment',side_effect=failure),self.assertRaises(ValueError) as result:
+            M.manage('recover',self.env,self.project,provider.installation_inputs,Mock())
+        self.assertIs(result.exception,failure);self.assertEqual(self.commands,[])
+        self.assertEqual(before,(proof.read_bytes(),proof.stat().st_ino,proof.stat().st_mtime_ns))
 
     def test_prior_device_number_allows_only_original_stopped_source_recovery(self):
         self.file_inputs();self.capacity();self.manage('up')
@@ -310,7 +365,7 @@ class NodeRecoveryTest(unittest.TestCase):
         env=dict(self.env,ADDP_NODE_METRICS_TLS_DIR=str(tls),ADDP_NODE_METRICS_LISTEN='127.0.0.1:9100')
         docker=Mock(); info={'id':'engine','kernel':'6.12.0-test','os':'Docker Desktop','type':'linux'}
         docker.run.side_effect=lambda *a,**k:json.dumps(info)
-        with patch.object(provider.platform,'system',return_value='Darwin'):
+        with patch.object(provider.platform,'system',return_value='Darwin'),patch.object(provider.sources,'verify_tls'):
             before=provider.installation_inputs(env,docker)
             self.assertNotIn('private-',json.dumps(before))
             pending=tls/'pending'; pending.write_text('private-server.key'); pending.replace(tls/'server.key')
@@ -342,7 +397,7 @@ class NodeRecoveryTest(unittest.TestCase):
             result=SimpleNamespace(**{name:getattr(value,name) for name in fields})
             if calls==2:result.st_dev+=1
             return result
-        with patch.object(provider.platform,'system',return_value='Darwin'),patch.object(provider.os,'fstat',changed_device):
+        with patch.object(provider.platform,'system',return_value='Darwin'),patch.object(provider.os,'fstat',changed_device),patch.object(provider.sources,'verify_tls'):
             with self.assertRaisesRegex(ValueError,'input changed while reading'):provider.installation_inputs(env,docker)
         self.assertEqual(calls,2)
 

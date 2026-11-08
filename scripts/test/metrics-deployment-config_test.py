@@ -1795,6 +1795,7 @@ class NodeMetricsDeploymentTest(unittest.TestCase):
     def setUp(self):
         # This class tests original Compose configuration; proof transactions have
         # their own isolated tests and must never publish personal state here.
+        certificate = mock.patch.object(node_config.sources, 'verify_tls'); certificate.start(); self.addCleanup(certificate.stop)
         retirement = mock.patch.object(node_config.group, 'retire'); retirement.start(); self.addCleanup(retirement.stop)
         transport = mock.patch.object(node_config.recovery.deployment, 'Docker'); transport.start(); self.addCleanup(transport.stop)
         transaction = mock.patch.object(node_config.recovery, 'manage', side_effect=lambda action,env,project,signature,operation:operation())
@@ -2633,6 +2634,7 @@ if __name__ == '__main__':
 
 class BlockCapacitySamplerTest(unittest.TestCase):
     def setUp(self):
+        certificate = mock.patch.object(node_config.sources, 'verify_tls'); certificate.start(); self.addCleanup(certificate.stop)
         retirement = mock.patch.object(node_config.group, 'retire'); retirement.start(); self.addCleanup(retirement.stop)
         transport = mock.patch.object(node_config.recovery.deployment, 'Docker'); transport.start(); self.addCleanup(transport.stop)
         transaction = mock.patch.object(node_config.recovery, 'manage', side_effect=lambda action,env,project,signature,operation:operation())

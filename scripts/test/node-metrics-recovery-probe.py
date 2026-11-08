@@ -15,6 +15,7 @@ from unittest.mock import patch
 ROOT = Path(__file__).resolve().parents[2]
 spec=importlib.util.spec_from_file_location('node_recovery_t2',ROOT/'scripts/infra/node-recovery.py')
 M=importlib.util.module_from_spec(spec);spec.loader.exec_module(M)
+source_tls=M.load('metrics-source.py')
 
 
 def main():
@@ -46,6 +47,7 @@ def main():
         def inputs(env,transport):
             # This fixture deliberately uses bridge namespaces on Linux too.
             # The product provider's native/Desktop signature is tested in T1.
+            source_tls.verify_tls(tls,config['ADDP_NODE_METRICS_PUBLISH_IP'])
             paths=[*files,ROOT/'scripts/infra/node-metrics-web.yml',ROOT/'scripts/infra/block-capacity.py',*[tls/name for name in ('ca.crt','server.crt','server.key')]]
             def fingerprint(path):
                 stat=path.stat()
@@ -120,12 +122,21 @@ def main():
                 prior=(tls/'server.crt').read_bytes();(tls/'server.crt').write_bytes(prior+b'\n')
                 before=inspect();expect_rejected(lambda:manage('recover'), 'node-inputs-changed');assert inspect()==before
                 (tls/'server.crt').write_bytes(prior)
+                # An invalid certificate fails before recovery mutation or proof publication.
+                persisted=(proof.read_bytes(),proof.stat().st_ino,proof.stat().st_mtime_ns)
+                (tls/'server.crt').write_text('invalid disposable certificate')
+                try:manage('recover')
+                except ValueError as error:assert getattr(error,'source_tls_reason',None)=='unknown'
+                else:raise AssertionError('Node recovery accepted invalid source TLS')
+                assert inspect()==before
+                assert persisted==(proof.read_bytes(),proof.stat().st_ino,proof.stat().st_mtime_ns)
+                (tls/'server.crt').write_bytes(prior)
                 volume=M.volume(docker,project)
                 compose('rm','-f','-s','block-capacity');expect_rejected(lambda:manage('recover'), 'node-source-incomplete')
                 assert M.volume(docker,project)==volume
                 assert inspect()=={'node-exporter':before['node-exporter']}
                 manage('down');expect_rejected(lambda:manage('recover'), 'node-proof-disabled')
-                print('Node recovery T2: prior device numbers preserve healthy source/proof, sampler-only/full stop recovery, lost-reply cleanup, exact identities, mTLS, drift/missing-source/retired-proof rejection PASS')
+                print('Node recovery T2: prior device numbers preserve healthy source/proof, sampler-only/full stop recovery, lost-reply cleanup, exact identities, mTLS, invalid TLS preserves proof/containers, drift/missing-source/retired-proof rejection PASS')
         finally:
             compose('down','--volumes','--remove-orphans')
             for kind in ('container','network','volume'):

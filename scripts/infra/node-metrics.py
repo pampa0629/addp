@@ -15,12 +15,15 @@ import sys
 ROOT = Path(__file__).resolve().parents[2]
 _group_spec = importlib.util.spec_from_file_location('node_metrics_group', ROOT/'scripts/utils/metrics-project.py')
 group = importlib.util.module_from_spec(_group_spec); _group_spec.loader.exec_module(group)
+_tls_spec = importlib.util.spec_from_file_location('node_source_tls', ROOT/'scripts/utils/metrics-source.py')
+sources = importlib.util.module_from_spec(_tls_spec); _tls_spec.loader.exec_module(sources)
 PROJECT = group.PROJECT
 _spec = importlib.util.spec_from_file_location('node_recovery', Path(__file__).with_name('node-recovery.py'))
 recovery = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(recovery)
 
 
+@sources.observed('transport-check')
 def deployment(env):
     selected = env.get('ADDP_NODE_METRICS_ENABLED', 'false')
     if selected not in ('true', 'false'):
@@ -49,6 +52,7 @@ def deployment(env):
     if (listen != authority or port > 65535 or address.is_unspecified
             or address.is_link_local or address.is_multicast):
         raise ValueError('Node metrics listen address is forbidden or noncanonical')
+    sources.verify_tls(directory, address)
     return directory
 
 
@@ -272,7 +276,7 @@ def _run(action, env, *, node_kind=None, display_name=None, addresses=(), host_o
         print(f'Node metrics: deployed {scope}; source readiness and Monitor admission require mTLS verification')
 
 
-if __name__ == '__main__':
+def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('action', choices=('up', 'down', 'status', 'recover', 'export-admission'))
     parser.add_argument('--host-only', action='store_true', help='Export the current native host without Docker or host collection')
@@ -286,9 +290,20 @@ if __name__ == '__main__':
     try:
         run(args.action, os.environ, node_kind=args.node_kind, display_name=args.display_name, addresses=args.address, host_only=args.host_only, modules=args.module)
     except KeyboardInterrupt as error:
-        sys.exit('Node metrics interrupted'+(' [cleanup=failed]' if getattr(error,'node_recovery_cleanup_failed',False) else ''))
+        print('Node metrics interrupted'+(' [cleanup=failed]' if getattr(error,'node_recovery_cleanup_failed',False) else ''),file=sys.stderr)
+        return 1
     except (OSError, ValueError, KeyError, TypeError, subprocess.SubprocessError) as error:
         cleanup = ' [cleanup=failed]' if getattr(error, 'node_recovery_cleanup_failed', False) else ''
         reason = getattr(error, 'node_recovery_reason', '')
         reason = ' [reason='+reason+']' if reason in recovery.REASONS else ''
-        sys.exit('Node metrics deployment rejected'+reason+cleanup+'; check deployment environment, explicit inputs and project ownership')
+        stage = getattr(error,'observation_stage',None)
+        tls_reason = getattr(error,'source_tls_reason',None)
+        if stage == 'transport-check' and isinstance(tls_reason,str) and tls_reason in sources.TLS_REASONS:
+            reason += ' [stage=transport-check] [tls-reason='+tls_reason+']'
+        print('Node metrics deployment rejected'+reason+cleanup+'; check deployment environment, explicit inputs and project ownership',file=sys.stderr)
+        return 1
+    return 0
+
+
+if __name__ == '__main__':
+    sys.exit(main())

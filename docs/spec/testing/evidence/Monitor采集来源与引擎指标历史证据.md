@@ -917,3 +917,16 @@ Safari 第二个标签页真实可见、自动刷新开启，显示 Infra Redis�
 `make test-metrics-sources test-monitor-minio-observation-unit test-monitor-redis-source-unit` 退出 0，覆盖原共享校验／恢复与两协议适配，日志 `/tmp/addp-postgres-source-tls-shared-t1-20261108.log`。现有 Metrics T2 的输入声明同步增加新共用实现及证书夹具；`make test-t2-ci-registration` 本批完整退出 0，85 项登记测试、9 项 Manager 假进程夹具及实际登记检查均通过，日志 `/tmp/addp-postgres-source-tls-registration-20261108.log`。上一批 Manager 两项超时保留，其具体根因并未由本轮通过追认。
 
 标准只读 `python3 scripts/infra/metrics-sources.py check --scope infra --scope business --kind postgresql --kind redis --kind minio` 退出 0，六项部署输入均通过；日志 `/tmp/addp-postgres-source-tls-personal-check-20261108.log`。本轮只在独占夹具应用／重启服务，个人证书、配置、数据库及服务未改；没有新 API／Swagger、前端或 Hosted 用途。CI／Hosted仍由专门会话安排回传，不以本地 T2 或个人预检代替正式身份全链路验收，没有设置定时任务。
+
+
+### 主机采集来源统一严格证书预检与恢复保护（2026-11-08）
+
+用户确认继续后，先将正式运行观测规范及来源指南扩展到主机 node_exporter，再在原部署输入检查调用既有 `metrics-source.py::verify_tls`。主机、PostgreSQL、Redis、MinIO 共用严格证书链、服务器用途、监听 IP SAN、密钥配对及封闭中文诊断；没有另建校验路线、增加网络请求或降级重试。主机原三文件目录、读取预算与保护规则保持，未增加其他来源专属的密钥权限限制；安装证明 schema、指纹、元数据及 Docker 归属校验不变。启用时的安装／恢复在无效证书处拒绝，既有证明不被提前退役；停用、未启用和仅导出原生宿主声明仍不依赖有效证书。CLI 保留非零退出、原恢复原因及清理未确认标记，仅传递白名单 transport 类别，不泄漏证书内容、路径或原始错误。
+
+标准 `make test-node-metrics-recovery` 先复现四项严格校验缺失，退出 2；缺 AKI、错误用途、IP SAN 及密钥的材料此前被原实现接受，日志 `/tmp/addp-node-source-tls-red-20261108.log`。实现后 `make test-node-metrics-recovery test-metrics-sources test-monitor-metrics-config` 退出 0，主机 26 项、统一入口 23 项及配置 139 项等既有前置测试通过，日志 `/tmp/addp-node-source-tls-green-t1-20261108.log`。临时真实证书贯通标准 `check --resolved-env`，覆盖有效、可选叶 SKI、缺 AKI、用途、IP SAN 和密钥场景，核对证书文件、inode／mtime 不变；恢复单测核对无效证书不调用 Docker、不改安装证明。原配置／指纹测试的虚拟证书只在该测试范围隔离严格校验，真实证书用例独立承担该验证。
+
+`make test-monitor-metrics MONITOR_METRICS_TEST_ARGS=--case=node-recovery` 输出完整 PASS：独占 bridge 来源的真实 mTLS、精确容器身份、原设备号归一化、部分／全部停止恢复、丢失启动响应清理、输入变化／缺失来源／退役证明拒绝均通过；新加无效证书场景保持原证明内容、inode／mtime 和原容器事实不变。标准退出核验容器／网络／卷及私有状态均为零，日志 `/tmp/addp-node-source-tls-t2-20261108.log`。该门禁不挂载宿主根目录、proc／sys 或使用宿主命名空间，不据此外推原生 Linux 全宿主部署、个人来源恢复或正式 Hosted。
+
+`make test-t2-ci-registration` 的 85 项登记测试、9 项配套夹具及实际登记检查全部输出通过，日志 `/tmp/addp-node-source-tls-registration-20261108.log`。现有 Metrics 输入声明已覆盖本批实现、测试、探针、共享证书内核与临时证书夹具，原 `node-recovery` 矩阵及 Make 入口能够命中，无需新增编排。两项长门禁的原执行工具结果在上下文截断中未保留退出码／会话号；按完整终端成功结果、标准末尾清零及进程已退出核对上述结论，未为补工具收据重复执行。
+
+本机只读 `python3 scripts/infra/metrics-sources.py check` 输出七项部署输入全部通过、汇总失败 0，日志 `/tmp/addp-node-source-tls-personal-check-20261108.log`；这不是七项实际采样的新证据。本批没有修改个人证书、配置、数据库或启停个人服务；不涉及 API／Swagger 或页面改动。CI／Hosted继续由专门会话安排回传，没有设置定时任务。
