@@ -4,7 +4,7 @@
 
 Transfer 执行记录统一存储在 `common.task_executions`。本文说明关联、计数、checkpoint 及恢复的持久事实；HTTP 公开字段与读取身份统一见[Transfer 专业读取与响应](../../../docs/spec/tasks/执行监控.md#transfer-专业执行读取与响应)，持久字段不自动成为响应字段。
 
-阅读导航：[时间与恢复边界](#execution-与-attempt-的恢复分工)、[checkpoint 样例](#三metadata-中的-checkpoint-字段)、[恢复类型与位置](#恢复类型与位置)、[自动恢复字段与安全 DTO](#自动恢复字段与安全-dto)、[API 与权限](#六api)、[验证边界](#验证边界)。
+阅读导航：[时间与恢复边界](#execution-与-attempt-的恢复分工)、[checkpoint 样例](#三metadata-中的-checkpoint-字段)、[过程事件与错误](#四执行过程事件和错误)、[恢复类型与位置](#恢复类型与位置)、[自动恢复字段与安全 DTO](#自动恢复字段与安全-dto)、[API 与权限](#六api)、[验证边界](#验证边界)。
 
 ## 一、关联规则
 
@@ -74,9 +74,11 @@ Transfer 将 checkpoint 观测信息写入 `metadata`。以下仅为持久结构
 
 ## 四、执行过程事件和错误
 
-bounded 执行的开始、批次计数和终态，以及 continuous 的实际 claim、累计提交计数和终态，写入共享 `common.execution_events`，按 execution + attempt 关联，bounded 在当前有效 execution lease 下写入，continuous 由 Transfer 的 Runtime lease/fencing 同事务裁决；过期终态由 Owner supervisor 收敛，未开始的 pending 取消只保留概览。事件只保存闭合类型和非负整数计数，不保存 source offset、checkpoint marker、自由文本或业务数据。每个 attempt 每 UTC 日最多 1000 条（含截断标记）；接口使用 ID 游标，每页最多 100 条。Monitor 和 Transfer 复用共享运行过程组件，不从日志文字推断后处理结果。
+bounded 执行的开始、批次计数和终态，以及 continuous 的实际 claim、累计提交计数和终态，写入共享 `common.execution_events`，按 execution + attempt 关联。bounded 在当前有效 execution lease 下写入，continuous 由 Transfer 的 Runtime lease/fencing 同事务裁决。过期终态由 Owner supervisor 收敛，未开始的 pending 取消只保留概览。
 
-过程事件保留 30 天，由 System 的公共存储维护循环分批清理。概览和步骤暂不自动删除；180 天概览目标仍待 Owner 引用裁决落地。连续执行复用相同事件与保留规则，不允许绕过既有 fencing 写入。错误事实继续位于 `error_details`，Monitor 只提供安全投影，领域诊断由 Transfer 负责。
+事件闭合结构、敏感字段禁入、每日预算、ID 游标、读取授权和事件留存窗口统一见[通用执行读取与过程事件](../../../docs/spec/tasks/执行监控.md#通用执行读取与过程事件)，continuous 的事务、attempt、终态安全错误及预算耗尽行为见[continuous 过程事件](../../../docs/spec/tasks/执行监控.md#transfer-continuous-过程事件)。Monitor 和 Transfer 复用共享运行过程组件，不从日志文字推断后处理结果。错误事实仍位于 `error_details`，Monitor 只提供安全投影，领域诊断由 Transfer 负责。
+
+System 的公共存储维护循环分批清理过期过程事件，当前概览和步骤不自动删除。概览保留目标、Owner 引用裁决、只读候选评估与物理删除边界统一见[概览保留与清理契约](../../../docs/spec/tasks/执行监控.md#概览保留与清理契约)，不将目标保留期或只读报告计为已完成删除。
 
 Backend schema 版本 2 单向删除历史 `metadata.execution_logs` 和 `error_details.logs`，保留其他字段。旧文本不转换为结构化事实，不再保留日志 API 或追加路径。
 
