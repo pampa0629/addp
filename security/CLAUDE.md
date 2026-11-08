@@ -866,3 +866,17 @@ v44领域、v9浏览器和27阶段实际完成，耗时1961940ms。21张原始14
 此轮只增强原场景断言，没有业务实现／API／部署变更。AST对照基线f2c93af2d确认209处HTTP request表达式完全相同，仅验证器及三个场景调用处改变；v44/v9结构、20runtime／8protocol_only、资源、身份、40分钟预算及清理保持。已确认根Make现有自动发现和Platform CI路径覆盖，未新增入口／workflow。新增五类消息匹配、错原因／缺建议／权限提示／私有后缀等反例；已有计算与四出口组合测试同时执行，正例夹具改成各自实际协议文案。
 
 定向12项通过；标准 `make -o test-protection-deployment-runner -o test-graph-online-runner -o test-online-dispatcher-unit -o test-online-registration-unit test-security-online-runner` 所属272项Python及System Fixture Go退出0；四个聚合依赖目标本轮未运行，不称完整聚合通过。登记CLI、Python语法及本会话diff检查通过。首轮新增定向测试因旧验证器不接收原因参数而失败，红／绿日志保留。证据 `/tmp/p145-service-reason-assertions-{red,green,owner-gate,registration-cli}.log`，请求／版本不变证明 `...-scope.json`，固定输入 `...-verification.json`。未新跑数据库、本地HTTP或Hosted；旧5a成功不追认为这些新增内容断言通过，新实际运行仍由专门CI会话安排回传，不自行调度、轮询或设置定时。
+
+### Service 五类具体原因与建议的 Hosted 闭环（2026-11-08）
+
+断言提交 `a06d7433e46bd1265134251ee2f3af9ce77c0ae8` 已在精确 [Run42480965474／Job128732582625](https://github.com/pampa0629/addp/actions/runs/42480965474/job/128732582625)、attempt1实际通过：checkout和十服务preflight同SHA，Hosted门禁及Hosted产物上传success；条件式execution证据上传skipped，未计通过。业务耗时1974146ms，27阶段、v44领域和v9浏览器均完成；本次不是继承旧5a成功。
+
+已独立审阅精确源码中的强制验证器和三个调用处，并与本次成功执行、五个既有场景回执对应：未就绪、结构不匹配、操作不支持、计算输出不支持、自然到期五类Service真实HTTP，均通过完整默认中文原因和恢复建议的精确匹配，同时保留403、两成员响应及稳定错误码。原因来自已知夹具，未从响应正文推断；原始子场景HTTP正文未归档，因此这项结论依据固定源码强制实时断言与本次执行，不冒充事后独立逐字重读原始HTTP正文。
+
+21张原始1440×900截图全部逐张目视：Service英文到期原因和续期／长期有效建议持续显示，旧行清空，恢复后提示消失并显示五行安全结果；Develop三组具体原因历史／Monitor的UUID、准备阶段、建议与无结果一致，计算拒绝和Transfer准备／结果阶段边界保持。其余Service原因及中文真实页面未逐项验收；not_yet_valid仍仅既有PostgreSQL T2，lineage_unverified的Service仍为协议层证据。20runtime／8protocol_only矩阵未扩大。
+
+六份默认CSV原字节固定oracle、42条边界回执、五组同构建新实例与更晚启动、六项精确metadata_read/read许可签发及正式撤销均独立审计通过，pending/errors空。领域23建23删0残留，浏览器两组各2建2删0残留；wrapper result和cleanup为passed，Infra为zero_residuals。多数子场景仅保留报告及摘要，方式撤销部分回执未单列cache_control，不补造原件；临时read前提保留，不证明metadata-only字段搜索。
+
+artifact13618624695，99成员ZIP SHA256 `9f01ecc15147305b9d2d89d457396072b05b40c30f3b408c7b943bcfa897cd82`；CRC和解压原件逐字节核对通过。原件 `/tmp/addp-ci-20261108-220021/security-a06-archive/_temp/addp-online-42480965474/`；独立 `python3 /tmp/p145-a06-hosted-audit/audit.py` 与 `python3 /tmp/p145-a06-hosted-audit/test_audit.py` 退出0，正常样本及43个拒绝反例通过；新增源码／场景证据 `five-message-source-audit.json`，逐图哈希／观察 `visual-review.json`，限定结论 `acceptance-audit.json`。
+
+本轮仅补记录，复用a06已有12定向、272项Python及System Fixture Go／登记CLI有效结果，不重复运行数据库、产品或本地服务；四个聚合依赖未重跑仍不计完整聚合通过。既往失败和本地#7独立收尾均保留，湖南实际行155／156大项仍部分实现；不扩为所有SQL／引擎／语言／页面或静态加密完成。下一步优先复用既有真实原因场景，补齐Service中文页面的具体提示、旧结果清空和恢复展示，避免仅验证HTTP而遗漏用户可见效果。
