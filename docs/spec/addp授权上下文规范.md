@@ -138,6 +138,8 @@ Manager 的配置／签发绑定／可领取发布和最终结果切换各自保
 
 ### 5.2.4 Develop GeoPackage 工作流的精确读写
 
+授权最小单元始终是 Meta 识别的整个 DataItem。GeoPackage 内部图层、表和字段，以及同一 DataItem 的组成文件，不另建授权对象、逐项 Grant 或第二套 ACL；System 以整项 DataItem 及其明确边界为对象裁决当前读取权。Meta 提供的格式、布局和组成事实仅用于确定完整输入与实际 I/O 范围，不代替权限、不产生新的组件权限要求。读取 Owner 按该整项已经核验的范围打开组成，不逐个要求组成文件具有独立 DataItem 身份或授权。格式／组成未确认时阻断的是该输入的完整读取准入，不解释为用户还需申请内部组成权限。
+
 共享协议分为同一阶段链上的声明与封存：Develop 保存 `DevelopFileIntent`，绑定完整持久配置摘要、DAG 读取节点与规范文件目标、预期 attempt、实际策略的 `timeout_seconds` 及可选保存目标；声明不包含由 Owner 推算的数据项指纹或边界摘要。System 用当前 User 请求反查可信 pending Intent，通过自己的 Meta 授权事实接口独立核验完整组成及当前源规则，再生成并持久封存 `DevelopBoundFileScope` 与唯一 EA。封存范围包含 Intent 摘要、实际源引用的指纹／边界摘要／Engine 版本和可选目标版本；Owner 保存原 EA 返回的范围引用，后续批准、资格观察、真实读取及发布均绑定同一 EA／Scope，不另算 Meta 投影，也不给 Develop 增加完整 Meta 授权事实读取权限。两个值类型分别表达声明和已核验范围，不是两条读取或授权路线；纯值工厂及摘要均不授予许可。
 
 System 将本用途封存到既有 EA 的唯一 `develop_file_scope`，与 Manager 来源范围、内部任务和清理用途互斥；通用 engine-accesses 及从父执行派生均不能将它降为引擎级授权。可信 Owner 投影固定为 `GET /api/v1/develop/runtime/file-executions/{execution_id}`，仅当前 `addp-system` Tenant Service、专用 `develop.file_execution.read`；它只携带原执行、租户、Actor、完整原始 `config_json`、Intent、可缺的原 EA／封存范围及 Owner 私有准入状态，不重复公共生命周期或传输租约秘密。System 在锁外读取该投影及 Meta 事实，再在本地 IAM 事务核 common 执行原始配置、主体、真实 pending／running 状态、固定 attempt 与 lease，并在审计后复核当前凭据、权限、源规则及全部到期边界。签发请求只含 execution UUID 与预期 Intent 摘要；准入观察不返回连接；精确读取仅返回本次指定源的同版本 NFS 连接，不返回其他源连接。保存范围在正式批准消费未实现时保持关闭；Meta 未证明单文件 GeoPackage 完整内容组成时保持关闭，不将 metadata_target 或文件扩展名替代内容授权。该接口接线与结构迁移本身不发布角色能力、不新增实际授权。
