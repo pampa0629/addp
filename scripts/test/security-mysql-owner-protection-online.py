@@ -5361,7 +5361,7 @@ def result_browser_context(client: GatewayClient, engine_id: int, source: Mappin
 def validate_export_browser_report(payload: object, run_id: str, tenant_id: str) -> dict[str, object]:
     report = _object(payload, "Manager export browser report")
     expected = {
-        "schema_version": "addp.security-manager-export-browser/v9", "result": "passed",
+        "schema_version": "addp.security-manager-export-browser/v10", "result": "passed",
         "run_id": run_id, "tenant_id": tenant_id, "records": 5,
         "email_field_present": False, "non_sensitive_fields_preserved": True,
         "same_user_verified": True, "initiator_verified": True, "taskless_execution": True,
@@ -5380,10 +5380,11 @@ def validate_export_browser_report(payload: object, run_id: str, tenant_id: str)
         "additional_protection_refusal_count": 3,
         "service_normal_output_verified": True, "service_refusal_http_status": 403,
         "service_refusal_visible": True, "service_old_preview_cleared": True, "service_restored_output_verified": True,
+        "service_chinese_expiry_verified": True, "service_chinese_recovery_verified": True,
         "transfer_refusal_diagnostic_verified": True, "transfer_refusal_visible": True, "transfer_monitor_same_execution": True,
         "transfer_target_unchanged": True, "output_protection_permanent_restored": True,
         "output_browser_created_resources": 2, "output_browser_deleted_resources": 2, "output_browser_residual_resources": 0,
-        "expected_service_refusal_403": 1,
+        "expected_service_refusal_403": 2,
         "transfer_result_stage": "result", "transfer_result_diagnostic_verified": True,
         "transfer_result_visible": True, "transfer_result_monitor_same_execution": True,
         "transfer_result_target_unchanged": True, "transfer_result_records_written": 0,
@@ -5440,7 +5441,7 @@ def run_export_browser(repository: Path, environment: Mapping[str, str], locator
         "security-resource-combination-filters.png", "security-resource-empty-intersection.png",
         "security-resource-filter-reset.png", "security-develop-protection-refusal.png",
         "security-develop-protection-monitor.png", "security-service-protection-refusal.png",
-        "security-service-protection-restored.png", "security-transfer-protection-refusal.png",
+        "security-service-protection-restored.png", "security-service-protection-refusal-zh-cn.png", "security-service-protection-restored-zh-cn.png", "security-transfer-protection-refusal.png",
         "security-transfer-protection-monitor.png", "security-transfer-result-refusal.png", "security-transfer-result-monitor.png",
     )] + [report_path.parent / f"security-develop-{name}-{view}.png"
           for name in ("not_ready", "operation_unsupported", "schema_mismatch") for view in ("history", "monitor")]

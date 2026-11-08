@@ -1437,6 +1437,102 @@ class ExplicitRediscoveryTest(unittest.TestCase):
 
 
 class ManagerExportBrowserTest(unittest.TestCase):
+    def test_expiry_browser_requires_exact_language_message_and_cleared_preview(self):
+        probe = r"""
+import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
+const source = readFileSync(0, 'utf8')
+const helper = source.slice(source.indexOf('async function checkServiceExpiryPreview('), source.indexOf('async function verifyServiceTransferProtectionRefusal('))
+const expect = value => ({
+  toEqual: expected => assert.deepEqual(value, expected),
+  toBe: expected => assert.equal(value, expected),
+  toContainText: expected => assert.ok(value.text.includes(expected)),
+  toBeVisible: () => assert.equal(value.visible, true),
+  toHaveCount: expected => assert.equal(value.count, expected)
+})
+const run = new Function('expect', helper + ';return checkServiceExpiryPreview')(expect)
+const messages = {
+  'zh-cn': '该资源的数据保护规则已到期，本次查询已被阻止。请联系安全管理员续期或设为长期有效，规则同步后重新查询。',
+  en: 'The data protection rules for this resource have expired. The query was blocked. Ask a security administrator to renew protection or set permanent validity, then query again after synchronization.'
+}
+for (const language of ['zh-cn', 'en']) {
+  const good = { error: messages[language], error_code: 'data_protection_required' }
+  const frame = (fault = '') => ({ locator: selector => ({
+    text: fault === 'wrong-panel' ? 'generic failure' : good.error,
+    visible: fault !== 'hidden',
+    count: ((fault === 'stale-rows' && selector === '.preview-content') ||
+      (fault === 'empty-overlay' && selector === '.preview-empty')) ? 1 : 0
+  }) })
+  await run(frame(), good, language)
+  for (const response of [
+    { ...good, error: '无法满足数据保护要求' },
+    { ...good, error: messages[language === 'en' ? 'zh-cn' : 'en'] },
+    { ...good, error: language === 'en' ? good.error.split(' Ask ')[0] : good.error.split('。请')[0] },
+    { ...good, error: good.error + 'private SQL text' },
+    { ...good, error_code: 'permission_denied' },
+    { ...good, result: [] }
+  ]) {
+    await assert.rejects(run(frame(), response, language))
+  }
+  for (const fault of ['wrong-panel', 'hidden', 'stale-rows', 'empty-overlay'])
+    await assert.rejects(run(frame(fault), good, language))
+}
+await assert.rejects(run({locator:()=>({})}, {error:'x',error_code:'data_protection_required'}, 'fr'))
+"""
+        result = subprocess.run(["node", "--input-type=module", "-e", probe], input=(
+            SCRIPT.resolve().parents[2] / "console/frontend/e2e/online/security-manager-export.spec.js").read_text(), capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_browser_language_uses_console_menu_and_checks_actual_request_header(self):
+        probe = r"""
+import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
+const source = readFileSync(0, 'utf8')
+const start = source.indexOf('  async function selectServiceLanguage(')
+const helper = source.slice(start, source.indexOf('  try {', start))
+const calls = []
+let header, selected
+const expect = value => ({
+  toBe: expected => assert.equal(value, expected),
+  toHaveText: expected => assert.equal(selected === '中文' ? 'CN' : 'EN', expected),
+  toBeVisible: () => { assert.equal(value.name.test(selected === '中文' ? '加载数据' : 'Load Data'), true) }
+})
+const frame = { locator: selector => ({getByRole: (role, options) => ({name: options.name, click: async()=>calls.push(['preview',selector])})}) }
+const page = {
+  locator: selector => ({click:async()=>calls.push(['open',selector])}),
+  getByRole: (role, options) => ({click:async()=>{calls.push([role,options]);selected=options.name}}),
+  waitForResponse: async()=>({status:()=>403, request:()=>({headers:()=>({'accept-language':header})}), json:async()=>({error:'safe'})})
+}
+const {selectServiceLanguage, previewService} = new Function('page','frame','expect','servicePath',helper+';return {selectServiceLanguage,previewService}')(page,frame,expect,'/api/query/test/query')
+for (const [language,label] of [['zh-cn','中文'],['en','English']]) {
+  await selectServiceLanguage(language)
+  assert.deepEqual(calls.at(-2),['open','.lang-icon'])
+  assert.deepEqual(calls.at(-1),['menuitem',{name:label,exact:true}])
+  header=language
+  assert.deepEqual(await previewService(403,language),{error:'safe'})
+  for(const wrong of [undefined, language==='en'?'zh-cn':'en']) {
+    header=wrong
+    await assert.rejects(previewService(403,language))
+  }
+}
+"""
+        result = subprocess.run(["node", "--input-type=module", "-e", probe], input=(
+            SCRIPT.resolve().parents[2] / "console/frontend/e2e/online/security-manager-export.spec.js").read_text(), capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_chinese_browser_receipts_cannot_inherit_v9_or_omit_new_facts(self):
+        valid = self.report()
+        for key in ('service_chinese_expiry_verified', 'service_chinese_recovery_verified'):
+            for value in (None, False, 1, 'true'):
+                changed = copy.deepcopy(valid)
+                if value is None: del changed[key]
+                else: changed[key] = value
+                with self.subTest(key=key, value=value), self.assertRaises(ONLINE.SuiteError):
+                    ONLINE.validate_export_browser_report(changed, 'run-42', '2')
+        changed = dict(valid, schema_version='addp.security-manager-export-browser/v9')
+        with self.assertRaises(ONLINE.SuiteError):
+            ONLINE.validate_export_browser_report(changed, 'run-42', '2')
+
     def test_browser_required_owner_catalogue_and_complete_progress_are_strict(self):
         probe = r"""
 import assert from 'node:assert/strict'
@@ -1652,7 +1748,7 @@ for (const fault of ['none', 'stage', 'target', 'writes', 'deny-response', 'rest
 
     def report(self):
         return {
-            "schema_version": "addp.security-manager-export-browser/v9", "result": "passed",
+            "schema_version": "addp.security-manager-export-browser/v10", "result": "passed",
             "run_id": "run-42", "tenant_id": "2", "records": 5,
             "execution_id": "53834320-203b-4d8c-838e-15e01024d484",
             "protection_transfer_execution_id": "64834320-203b-4d8c-838e-15e01024d484",
@@ -1673,10 +1769,11 @@ for (const fault of ['none', 'stage', 'target', 'writes', 'deny-response', 'rest
             "additional_protection_histories_verified": True, "additional_protection_monitors_verified": True, "additional_protection_refusal_count": 3,
             "service_normal_output_verified": True, "service_refusal_http_status": 403,
             "service_refusal_visible": True, "service_old_preview_cleared": True, "service_restored_output_verified": True,
+            "service_chinese_expiry_verified": True, "service_chinese_recovery_verified": True,
             "transfer_refusal_diagnostic_verified": True, "transfer_refusal_visible": True, "transfer_monitor_same_execution": True,
             "transfer_target_unchanged": True, "output_protection_permanent_restored": True,
             "output_browser_created_resources": 2, "output_browser_deleted_resources": 2, "output_browser_residual_resources": 0,
-            "expected_service_refusal_403": 1,
+            "expected_service_refusal_403": 2,
             "transfer_result_stage": "result", "transfer_result_diagnostic_verified": True,
             "transfer_result_visible": True, "transfer_result_monitor_same_execution": True,
             "transfer_result_target_unchanged": True, "transfer_result_records_written": 0,
@@ -1714,7 +1811,7 @@ for (const fault of ['none', 'stage', 'target', 'writes', 'deny-response', 'rest
             ("transfer_monitor_same_execution", False), ("transfer_target_unchanged", False),
             ("output_protection_permanent_restored", False), ("output_browser_created_resources", 0),
             ("output_browser_deleted_resources", 1), ("output_browser_residual_resources", 1),
-            ("expected_service_refusal_403", 0), ("expected_service_refusal_403", 2),
+            ("expected_service_refusal_403", 0), ("expected_service_refusal_403", 1),
             ("expected_service_refusal_403", True), ("protection_transfer_execution_id", "bad"),
             ("protection_transfer_execution_id", None), ("protection_transfer_execution_id", True),
             ("protection_transfer_execution_id", "00000000-0000-0000-0000-000000000000"),
@@ -1835,7 +1932,7 @@ for (const data of [
                              "security-resource-combination-filters.png", "security-resource-empty-intersection.png",
                              "security-resource-filter-reset.png", "security-develop-protection-refusal.png",
                              "security-develop-protection-monitor.png", "security-service-protection-refusal.png",
-                             "security-service-protection-restored.png", "security-transfer-protection-refusal.png",
+                             "security-service-protection-restored.png", "security-service-protection-refusal-zh-cn.png", "security-service-protection-restored-zh-cn.png", "security-transfer-protection-refusal.png",
                              "security-transfer-protection-monitor.png", "security-transfer-result-refusal.png", "security-transfer-result-monitor.png", "security-develop-not_ready-history.png", "security-develop-not_ready-monitor.png", "security-develop-operation_unsupported-history.png", "security-develop-operation_unsupported-monitor.png", "security-develop-schema_mismatch-history.png", "security-develop-schema_mismatch-monitor.png"):
                     (artifact / name).write_bytes(b"test screenshot")
                 return Mock(returncode=0, stdout="", stderr="")
@@ -1846,7 +1943,7 @@ for (const data of [
                             "security-resource-combination-filters.png", "security-resource-empty-intersection.png",
                             "security-resource-filter-reset.png", "security-develop-protection-refusal.png",
                              "security-develop-protection-monitor.png", "security-service-protection-refusal.png",
-                             "security-service-protection-restored.png", "security-transfer-protection-refusal.png",
+                             "security-service-protection-restored.png", "security-service-protection-refusal-zh-cn.png", "security-service-protection-restored-zh-cn.png", "security-transfer-protection-refusal.png",
                              "security-transfer-protection-monitor.png", "security-transfer-result-refusal.png", "security-transfer-result-monitor.png", "security-develop-not_ready-history.png", "security-develop-not_ready-monitor.png", "security-develop-operation_unsupported-history.png", "security-develop-operation_unsupported-monitor.png", "security-develop-schema_mismatch-history.png", "security-develop-schema_mismatch-monitor.png"):
                 def incomplete_browser(command, **kwargs):
                     result = browser(command, **kwargs)

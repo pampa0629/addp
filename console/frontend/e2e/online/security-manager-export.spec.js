@@ -401,6 +401,21 @@ async function verifyTransferResultProtection(page, env, navigate, getAPI, runTr
   return { ...outcome, result_browser_created_resources: 2, result_browser_deleted_resources: 2, result_browser_residual_resources: 0 }
 }
 
+async function checkServiceExpiryPreview(frame, refusal, language) {
+  const messages = {
+    'zh-cn': '该资源的数据保护规则已到期，本次查询已被阻止。请联系安全管理员续期或设为长期有效，规则同步后重新查询。',
+    en: 'The data protection rules for this resource have expired. The query was blocked. Ask a security administrator to renew protection or set permanent validity, then query again after synchronization.'
+  }
+  expect(Object.keys(refusal).sort()).toEqual(['error', 'error_code'])
+  expect(refusal.error_code).toBe('data_protection_required')
+  expect(Object.hasOwn(messages, language)).toBe(true)
+  expect(refusal.error).toBe(messages[language])
+  await expect(frame.locator('.preview-error')).toContainText(refusal.error)
+  await expect(frame.locator('.preview-error')).toBeVisible()
+  await expect(frame.locator('.preview-empty')).toHaveCount(0)
+  await expect(frame.locator('.preview-content')).toHaveCount(0)
+}
+
 async function verifyServiceTransferProtectionRefusal(page, env, navigate, getAPI, expectServiceRefusal, sourceColumns) {
   const requiredOwners = requiredProtectionOwners(env)
   const input = JSON.parse(env.ADDP_ONLINE_SECURITY_OUTPUT_BROWSER_CONTEXT)
@@ -464,11 +479,20 @@ async function verifyServiceTransferProtectionRefusal(page, env, navigate, getAP
     expect(synchronized.validity_mode).toBe(mode)
     return synchronized
   }
-  async function previewService(status) {
+  async function selectServiceLanguage(language) {
+    await page.locator('.lang-icon').click()
+    await page.getByRole('menuitem', { name: language === 'zh-cn' ? '中文' : 'English', exact: true }).click()
+    await expect(page.locator('.lang-icon')).toHaveText(language === 'zh-cn' ? 'CN' : 'EN')
+    await expect(frame.locator('.preview-controls').getByRole('button', {
+      name: language === 'zh-cn' ? /^(加载数据|刷新数据)$/ : /^(Load Data|Refresh Data)$/
+    })).toBeVisible()
+  }
+  async function previewService(status, language) {
     const response = page.waitForResponse(response => new URL(response.url()).pathname === servicePath && response.request().method() === 'POST')
     await frame.locator('.preview-controls').getByRole('button', { name: /加载数据|刷新数据|Load Data|Refresh Data/ }).click()
     const received = await response
     expect(received.status()).toBe(status)
+    expect(received.request().headers()['accept-language']).toBe(language)
     return received.json()
   }
   try {
@@ -485,8 +509,13 @@ async function verifyServiceTransferProtectionRefusal(page, env, navigate, getAP
     expect(Number(baseline.records_written)).toBe(5)
     const before = await targetRows()
     await navigate(`/service/query-services/${serviceID}`, `/api/v1/service/query/${serviceID}`)
-    checkRows((await previewService(200)).data)
+    await selectServiceLanguage('en')
+    checkRows((await previewService(200, 'en')).data)
     await expect(frame.locator('.preview-content .el-table__body tbody tr')).toHaveCount(5)
+    await selectServiceLanguage('zh-cn')
+    checkRows((await previewService(200, 'zh-cn')).data)
+    await expect(frame.locator('.preview-content .el-table__body tbody tr')).toHaveCount(5)
+    await selectServiceLanguage('en')
     const until = new Date(Date.now() + 90_000).toISOString()
     validityChanged = true
     const installed = await updateValidity('until', until)
@@ -497,15 +526,13 @@ async function verifyServiceTransferProtectionRefusal(page, env, navigate, getAP
     expect(expired.owner_progress.every(owner => owner.validity === 'expired')).toBe(true)
     expect(expired.owner_progress.map(owner => [owner.consumer_owner, owner.projection_id, owner.revision, owner.published_cursor])).toEqual(revisions)
     expectServiceRefusal(servicePath)
-    const refusal = await previewService(403)
-    expect(Object.keys(refusal).sort()).toEqual(['error', 'error_code'])
-    expect(refusal.error_code).toBe('data_protection_required')
-    expect(refusal.error).toMatch(/数据保护规则已到期|data protection rules for this resource have expired/i)
-    expect(refusal.error).toMatch(/续期或设为长期有效|renew protection or set permanent validity/i)
-    await expect(frame.locator('.preview-error')).toContainText(refusal.error)
-    await expect(frame.locator('.preview-empty')).toHaveCount(0)
-    await expect(frame.locator('.preview-content')).toHaveCount(0)
+    const refusal = await previewService(403, 'en')
+    await checkServiceExpiryPreview(frame, refusal, 'en')
     await page.screenshot({ path: resolve(env.ADDP_ONLINE_ARTIFACT_DIR, 'security-service-protection-refusal.png') })
+    await selectServiceLanguage('zh-cn')
+    await checkServiceExpiryPreview(frame, await previewService(403, 'zh-cn'), 'zh-cn')
+    await page.screenshot({ path: resolve(env.ADDP_ONLINE_ARTIFACT_DIR, 'security-service-protection-refusal-zh-cn.png') })
+    await selectServiceLanguage('en')
     const denied = await runTransfer('failed')
     expect(denied.execution_id).not.toBe(baseline.execution_id)
     const details = denied.error_details
@@ -540,12 +567,19 @@ async function verifyServiceTransferProtectionRefusal(page, env, navigate, getAP
     expect(Number(restored.records_written)).toBe(5)
     expect(await targetRows()).toEqual(before)
     await navigate(`/service/query-services/${serviceID}`, `/api/v1/service/query/${serviceID}`)
-    checkRows((await previewService(200)).data)
+    await selectServiceLanguage('zh-cn')
+    checkRows((await previewService(200, 'zh-cn')).data)
+    await expect(frame.locator('.preview-content .el-table__body tbody tr')).toHaveCount(5)
+    await expect(frame.locator('.preview-error')).toHaveCount(0)
+    await page.screenshot({ path: resolve(env.ADDP_ONLINE_ARTIFACT_DIR, 'security-service-protection-restored-zh-cn.png') })
+    await selectServiceLanguage('en')
+    checkRows((await previewService(200, 'en')).data)
     await expect(frame.locator('.preview-content .el-table__body tbody tr')).toHaveCount(5)
     await expect(frame.locator('.preview-error')).toHaveCount(0)
     await page.screenshot({ path: resolve(env.ADDP_ONLINE_ARTIFACT_DIR, 'security-service-protection-restored.png') })
     outcome = { service_normal_output_verified: true, service_refusal_http_status: 403,
       service_refusal_visible: true, service_old_preview_cleared: true, service_restored_output_verified: true,
+      service_chinese_expiry_verified: true, service_chinese_recovery_verified: true,
       transfer_refusal_diagnostic_verified: true, transfer_refusal_visible: true, transfer_monitor_same_execution: true,
       protection_transfer_execution_id: denied.execution_id, transfer_target_unchanged: true,
       output_protection_permanent_restored: true }
@@ -807,9 +841,9 @@ test('ordinary-user queries and Manager export preserve protection diagnostics a
     expect(browserErrors).toEqual([])
     expect(anonymousRefresh401).toBe(1)
     expect(browserSessionRebinds).toBe(16)
-    expect(serviceRefusal403).toBe(1)
+    expect(serviceRefusal403).toBe(2)
     writeFileSync(resolve(env.ADDP_ONLINE_ARTIFACT_DIR, 'security-manager-export-browser.json'), `${JSON.stringify({
-      schema_version: 'addp.security-manager-export-browser/v9', result: 'passed',
+      schema_version: 'addp.security-manager-export-browser/v10', result: 'passed',
       run_id: env.ADDP_ONLINE_TEST_RUN_ID, tenant_id: actual.tenantID,
       execution_id: session.transfer_execution_id, records: rows.length,
       email_field_present: false, non_sensitive_fields_preserved: true,
