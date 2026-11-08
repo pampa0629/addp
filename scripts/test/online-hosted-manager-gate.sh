@@ -8,8 +8,8 @@ ROOT_DIR=$(cd "$SCRIPT_DIR/../.." && pwd -P)
 ONLINE_SUITE=manager-internal-artifact-lineage
 export ADDP_ONLINE_MANAGER_CASE=${ADDP_ONLINE_MANAGER_CASE-full}
 case "$ADDP_ONLINE_MANAGER_CASE" in
-  full|native-raster-media|native-table-orc|native-netcdf|native-grib|native-envi|kml-export|filegdb-export|filegdb-mysql-export|filegdb-authorization) ;;
-  *) echo 'ADDP_ONLINE_MANAGER_CASE must be full, native-raster-media, native-table-orc, native-netcdf, native-grib, native-envi, kml-export, filegdb-export, filegdb-mysql-export or filegdb-authorization' >&2; exit 1 ;;
+  full|native-raster-media|native-table-orc|native-table-avro|native-netcdf|native-grib|native-envi|kml-export|filegdb-export|filegdb-mysql-export|filegdb-authorization) ;;
+  *) echo 'ADDP_ONLINE_MANAGER_CASE must be full, native-raster-media, native-table-orc, native-table-avro, native-netcdf, native-grib, native-envi, kml-export, filegdb-export, filegdb-mysql-export or filegdb-authorization' >&2; exit 1 ;;
 esac
 HOSTED_FIXTURE_CONTAINERS=(addp-manager-model3d-runtime business-minio addp-manager-online-registry addp-manager-raster-runtime addp-manager-raster-verifier)
 if [ "$ADDP_ONLINE_MANAGER_CASE" = kml-export ]; then
@@ -186,7 +186,7 @@ for attempt in $(seq 1 30); do
   [ "$attempt" -lt 30 ] || fail "temporary image registry did not become ready"
   sleep 1
 done
-if [ "$ADDP_ONLINE_MANAGER_CASE" != native-table-orc ] && [ "$ADDP_ONLINE_MANAGER_CASE" != native-netcdf ] && [ "$ADDP_ONLINE_MANAGER_CASE" != native-grib ] && [ "$ADDP_ONLINE_MANAGER_CASE" != native-envi ]; then
+if [ "$ADDP_ONLINE_MANAGER_CASE" != native-table-orc ] && [ "$ADDP_ONLINE_MANAGER_CASE" != native-table-avro ] && [ "$ADDP_ONLINE_MANAGER_CASE" != native-netcdf ] && [ "$ADDP_ONLINE_MANAGER_CASE" != native-grib ] && [ "$ADDP_ONLINE_MANAGER_CASE" != native-envi ]; then
 run_logged bash scripts/build/build-images.sh --verify --jobs 1 \
   --registry 127.0.0.1:5001 --tag online --services model3d-workflow-engine
 fi
@@ -205,7 +205,7 @@ if [ "$ADDP_ONLINE_MANAGER_CASE" = native-netcdf ] || [ "$ADDP_ONLINE_MANAGER_CA
   done
   nfs_root=$(cat "$ADDP_ONLINE_SECRET_DIR/nfs-root")
   start_online_geopython_runtime "$RUNTIME_TAG" --mount "type=bind,src=$nfs_root,dst=$nfs_root,readonly"
-elif [ "$ADDP_ONLINE_MANAGER_CASE" = native-table-orc ]; then
+elif [ "$ADDP_ONLINE_MANAGER_CASE" = native-table-orc ] || [ "$ADDP_ONLINE_MANAGER_CASE" = native-table-avro ]; then
   for start_target in -security -meta -manager -monitor -transfer; do
     run_daemon_launcher_logged env SKIP_MODTIDY=1 bash scripts/dev/start.sh "$start_target"
   done
@@ -219,12 +219,12 @@ start_online_model3d_runtime addp-manager-model3d-runtime 127.0.0.1:5001/addp-mo
 start_online_geopython_runtime "$RUNTIME_TAG"
 fi
 export ADDP_ONLINE_MANAGER_MINIO_RASTER_OBJECT=raster/source.tif
-if [ "$ADDP_ONLINE_MANAGER_CASE" != native-table-orc ] && [ "$ADDP_ONLINE_MANAGER_CASE" != native-netcdf ] && [ "$ADDP_ONLINE_MANAGER_CASE" != native-grib ] && [ "$ADDP_ONLINE_MANAGER_CASE" != native-envi ]; then
+if [ "$ADDP_ONLINE_MANAGER_CASE" != native-table-orc ] && [ "$ADDP_ONLINE_MANAGER_CASE" != native-table-avro ] && [ "$ADDP_ONLINE_MANAGER_CASE" != native-netcdf ] && [ "$ADDP_ONLINE_MANAGER_CASE" != native-grib ] && [ "$ADDP_ONLINE_MANAGER_CASE" != native-envi ]; then
   run_logged python3 business/scripts/online-raster-minio-fixture.py manager-seed
 fi
 run_logged npm --prefix console/frontend exec -- playwright install --with-deps chromium
 protection_owners=manager
-if [ "$ADDP_ONLINE_MANAGER_CASE" = native-table-orc ]; then protection_owners=manager,transfer; fi
+if [ "$ADDP_ONLINE_MANAGER_CASE" = native-table-orc ] || [ "$ADDP_ONLINE_MANAGER_CASE" = native-table-avro ]; then protection_owners=manager,transfer; fi
 run_logged bash -c 'cd system/backend && go run ./cmd/online-test-fixture --suite manager-internal-artifact-lineage --wait-protection-owners "$2" --output "$1"' _ "$IDENTITY_ENV" "$protection_owners"
 source "$IDENTITY_ENV"
 run_logged python3 scripts/test/online-engine-registration.py \

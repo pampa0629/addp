@@ -380,7 +380,7 @@ class ORCSceneTest(unittest.TestCase):
                     delivered.append(json.loads(result.stdout)["action"])
                 return result
 
-            with patch.object(fixture.subprocess, "run", side_effect=launch):
+            with patch.object(importlib.import_module("scripts.test.online-table-fixture-support").subprocess, "run", side_effect=launch):
                 for action in ["seed", "verify", "delete"]:
                     self.assertEqual(
                         fixture.physical(action, Path("/tmp"), env)["action"], action
@@ -391,7 +391,7 @@ class ORCSceneTest(unittest.TestCase):
                 stdout='{"error_code":"output_columns_or_count"}',
                 stderr="private credentials must not enter diagnostics",
             )
-            with patch.object(fixture.subprocess, "run", return_value=failure):
+            with patch.object(importlib.import_module("scripts.test.online-table-fixture-support").subprocess, "run", return_value=failure):
                 with self.assertRaisesRegex(
                     ValueError, "output_columns_or_count"
                 ) as raised:

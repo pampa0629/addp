@@ -1365,7 +1365,7 @@ def run_online(
         suite = replace(suite, command=(sys.executable, "-m", "scripts.test.graph-execution-online"),
                         services=(*suite.services, ("graph-peer", "ADDP_ONLINE_GRAPH_PEER_URL")))
 
-    if suite_name == 'manager-internal-artifact-lineage' and environment.get('ADDP_ONLINE_MANAGER_CASE') in {'kml-export', 'filegdb-export', 'filegdb-mysql-export', 'native-table-orc'}:
+    if suite_name == 'manager-internal-artifact-lineage' and environment.get('ADDP_ONLINE_MANAGER_CASE') in {'kml-export', 'filegdb-export', 'filegdb-mysql-export', 'native-table-orc', 'native-table-avro'}:
         suite = replace(suite, services=(*suite.services, ('transfer', 'TRANSFER_URL')))
 
     timeout = parse_positive_timeout(

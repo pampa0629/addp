@@ -3829,8 +3829,20 @@ class OnlineCIRegistrationTest(unittest.TestCase):
             target.write_text((SCRIPT.parents[2]/relative).read_text())
         owner.write_text(owner.read_text()+"\nif case == 'native-grib':\nmanager-grib-online\n")
         make.write_text(make.read_text()+'\t@python3 -m unittest scripts/test/manager-grib-online_test.py\n\t@node --check --input-type=module < console/frontend/e2e/online/manager-grib.spec.js\n\t@echo test_online_grib_fixture.py\n')
+        for relative in ('scripts/test/manager-avro-online.py', 'scripts/test/manager-avro-online_test.py',
+                         'business/scripts/online-avro-fixture.py', 'scripts/test/online-table-fixture-support.py',
+                         'console/frontend/e2e/online/manager-avro.spec.js',
+                         'engines/geopython-workflow/test_online_avro_fixture.py'):
+            target = self.repository / relative
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text((SCRIPT.parents[2] / relative).read_text())
+        owner.write_text(owner.read_text() + "\nif case == 'native-table-avro':\nmanager-avro-online\n")
+        make.write_text(make.read_text() + '\t@python3 -m unittest scripts/test/manager-avro-online_test.py\n\t@node --check --input-type=module < console/frontend/e2e/online/manager-avro.spec.js\n')
+        make.write_text(make.read_text() + '\ntest-geopython-workflow:\n\t@echo test_online_avro_fixture.py\n')
         CHECK.check_registration(self.repository)
         for file, fragment, reason in (
+            (self.repository/'scripts/test/manager-avro-online.py', 'validate_page', 'Avro'),
+            (self.repository/'console/frontend/e2e/online/manager-avro.spec.js', 'page_button_verified: true', 'Avro'),
             (self.repository/'scripts/test/manager-grib-online.py','source_drift_denied','GRIB'),
             (owner, "if case == 'filegdb-authorization':", 'NFS FileGDB'),
             (make, 'console/frontend/e2e/online/manager-filegdb.spec.js', 'NFS FileGDB'),
@@ -3848,7 +3860,7 @@ class OnlineCIRegistrationTest(unittest.TestCase):
             (self.repository/'scripts/test/manager-envi-online.py','source_scans','ENVI'),
             (img_browser,'enviContentMetadata','ENVI'),
             (hosted, 'manager-case.json', 'acceptance case'),
-            (hosted, 'full|native-raster-media|native-table-orc|native-netcdf|native-grib|native-envi|kml-export|filegdb-export|filegdb-mysql-export|filegdb-authorization)', 'acceptance case'),
+            (hosted, 'full|native-raster-media|native-table-orc|native-table-avro|native-netcdf|native-grib|native-envi|kml-export|filegdb-export|filegdb-mysql-export|filegdb-authorization)', 'acceptance case'),
             (kml_owner, 'source_unchanged=True', 'KML export'),
             (kml_browser, 'actual_button_download: true', 'KML export'),
             (self.workflow, 'ADDP_ONLINE_MANAGER_CASE: ${{ inputs.manager_case }}', 'acceptance case'),

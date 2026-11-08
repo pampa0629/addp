@@ -1,0 +1,184 @@
+"""Independent OCF scalar encoder and full Parquet output oracle for Hosted Avro."""
+from __future__ import annotations
+
+import base64
+import hashlib
+import io
+import json
+from pathlib import Path
+import struct
+import sys
+import zlib
+
+COUNT = 2503
+CODECS = ('null', 'deflate', 'snappy')
+SCHEMA = {'type': 'record', 'name': 'AvroScalars', 'fields': [
+    {'name': 'id', 'type': 'long'}, {'name': 'small', 'type': 'int'},
+    {'name': 'flag', 'type': ['null', 'boolean']},
+    {'name': 'label', 'type': ['null', 'string']},
+    {'name': 'ratio', 'type': 'float'}, {'name': 'value', 'type': 'double'},
+    {'name': 'payload', 'type': ['null', 'bytes']},
+]}
+
+
+def row(index):
+    return {'id': (-1 if index % 2 else 1) * (2**53 + 1 + index),
+            'small': index - 1251,
+            'flag': None if index % 7 == 0 else index % 2 == 0,
+            'label': None if index % 11 == 0 else '' if index % 5 == 0 else f'设备-{index:04d}',
+            'ratio': index / 4, 'value': -index / 2,
+            'payload': None if index % 13 == 0 else b'' if index % 3 == 0 else bytes([0, index % 256, 255])}
+
+
+def public_row(index):
+    result = row(index)
+    result['id'] = str(result['id'])
+    if result['payload'] is not None:
+        result['payload'] = base64.b64encode(result['payload']).decode()
+    return result
+
+
+def unsigned(value):
+    result = bytearray()
+    while value > 127:
+        result.append((value & 127) | 128)
+        value >>= 7
+    result.append(value)
+    return bytes(result)
+
+
+def number(value):
+    return unsigned((value << 1) ^ (value >> 63))
+
+
+def blob(value):
+    return number(len(value)) + value
+
+
+def source_bytes(codec):
+    if codec not in CODECS:
+        raise ValueError('unsupported Avro fixture codec')
+    # Independent Apache OCF framing, no product reader or Go codec involved.
+    sync = hashlib.sha256(('addp-avro-fixture-' + codec).encode()).digest()[:16]
+    metadata = {'avro.schema': json.dumps(SCHEMA, separators=(',', ':')).encode(), 'avro.codec': codec.encode()}
+    result = b'Obj\x01' + number(len(metadata))
+    for key, value in metadata.items():
+        result += blob(key.encode()) + blob(value)
+    result += number(0) + sync
+    for start in range(0, COUNT, 257):
+        raw = bytearray()
+        for i in range(start, min(start + 257, COUNT)):
+            value = row(i)
+            raw.extend(number(value['id']) + number(value['small']))
+            for name in ('flag', 'label'):
+                v = value[name]
+                raw.extend(number(0 if v is None else 1))
+                if v is not None:
+                    raw.extend(bytes([v]) if name == 'flag' else blob(v.encode()))
+            raw.extend(struct.pack('<fd', value['ratio'], value['value']))
+            v = value['payload']
+            raw.extend(number(0 if v is None else 1))
+            if v is not None:
+                raw.extend(blob(v))
+        payload = bytes(raw)
+        if codec == 'deflate':
+            compressor = zlib.compressobj(wbits=-15)
+            payload = compressor.compress(payload) + compressor.flush()
+        elif codec == 'snappy':
+            # A legal raw Snappy literal block, per Google's format_description.
+            n = len(payload) - 1
+            width = max(1, (n.bit_length() + 7) // 8)
+            tag = bytes([n << 2]) if n < 60 else bytes([(59 + width) << 2]) + n.to_bytes(width, 'little')
+            payload = unsigned(len(payload)) + tag + payload + struct.pack('>I', zlib.crc32(payload))
+        result += number(min(257, COUNT - start)) + blob(payload) + sync
+    return result
+
+
+def sources():
+    return [{'codec': c, 'name': c + '.avro', 'count': COUNT, 'schema': SCHEMA,
+             'size_bytes': len(raw), 'sha256': hashlib.sha256(raw).hexdigest()}
+            for c in CODECS for raw in [source_bytes(c)]]
+
+
+def worker(request):
+    from minio import Minio
+    access = request['storage']
+    client = Minio(access['endpoint'], access_key=access['access_key'], secret_key=access['secret_key'], secure=False)
+    bucket = access['bucket']
+    directory = Path(request['nfs_root']) / 'avro'
+    action = request['action']
+    outputs = [f'avro-output/from-{storage}-{codec}.parquet' for storage in ('minio', 'nfs') for codec in CODECS]
+    marker = directory / '.addp-avro-fixture'
+    if directory.is_symlink():
+        raise ValueError('Avro fixture directory is a symlink')
+
+    def remote(name):
+        response = client.get_object(bucket, name)
+        try:
+            return response.read()
+        finally:
+            response.close()
+            response.release_conn()
+
+    if action == 'seed':
+        assert not list(client.list_objects(bucket, prefix='avro/', recursive=True)), 'existing_inputs'
+        assert not list(client.list_objects(bucket, prefix='avro-output/', recursive=True)), 'existing_outputs'
+        directory.mkdir(exist_ok=False)
+        with marker.open('x') as out:
+            out.write('addp.avro-fixture/v1')
+        for codec in CODECS:
+            raw = source_bytes(codec)
+            path = directory / (codec + '.avro')
+            path.write_bytes(raw)
+            path.chmod(0o644)
+            client.put_object(bucket, 'avro/' + path.name, io.BytesIO(raw), len(raw), content_type='application/avro')
+        client.put_object(bucket, 'avro-output/.keep', io.BytesIO(b''), 0)
+        return {'sources': sources(), 'count': COUNT}
+    if action not in {'verify', 'delete'}:
+        raise ValueError('unknown Avro fixture action')
+    if not directory.exists() and action == 'delete':
+        assert not list(client.list_objects(bucket, prefix='avro/', recursive=True)), 'unowned_inputs'
+        assert not list(client.list_objects(bucket, prefix='avro-output/', recursive=True)), 'unowned_outputs'
+        return {'objects_removed': True, 'files_removed': True, 'outputs_removed': True}
+    assert not marker.is_symlink() and marker.read_text() == 'addp.avro-fixture/v1', 'fixture_ownership'
+    assert all(not (directory / (c + '.avro')).is_symlink() for c in CODECS), 'source_symlink'
+    if action == 'verify':
+        import pyarrow.parquet as pq
+        for spec in sources():
+            assert (directory / spec['name']).read_bytes() == remote('avro/' + spec['name']) == source_bytes(spec['codec']), 'source_changed'
+        facts = []
+        for name in outputs:
+            raw = remote(name)
+            table = pq.read_table(io.BytesIO(raw))
+            assert table.column_names == [f['name'] for f in SCHEMA['fields']], 'output_fields'
+            assert table.to_pylist() == [row(i) for i in range(COUNT)], 'output_values'
+            assert str(table.schema.field('id').type) == 'int64' and str(table.schema.field('payload').type) == 'binary', 'output_types'
+            facts.append({'object': name, 'size_bytes': len(raw), 'sha256': hashlib.sha256(raw).hexdigest(),
+                          'all_values_and_nulls_verified': True, 'content_base64': base64.b64encode(raw).decode()})
+        return {'sources_unchanged': True, 'outputs': facts}
+    if action == 'delete':
+        for name in outputs + ['avro-output/.keep'] + ['avro/' + c + '.avro' for c in CODECS]:
+            client.remove_object(bucket, name)
+        for codec in CODECS:
+            (directory / (codec + '.avro')).unlink(missing_ok=True)
+        marker.unlink()
+        if directory.exists():
+            directory.rmdir()
+        assert not list(client.list_objects(bucket, prefix='avro/', recursive=True)), 'input_cleanup'
+        assert not list(client.list_objects(bucket, prefix='avro-output/', recursive=True)), 'output_cleanup'
+        return {'objects_removed': True, 'files_removed': True, 'outputs_removed': True}
+    raise ValueError('unknown Avro fixture action')
+
+
+def physical(action, repository, environment):
+    import importlib
+    return importlib.import_module('scripts.test.online-table-fixture-support').physical_worker(
+        action, repository, environment, profile='avro', script='business/scripts/online-avro-fixture.py')
+
+
+if __name__ == '__main__':
+    try:
+        print(json.dumps(worker(json.load(sys.stdin))))
+    except Exception as error:
+        print(json.dumps({'error_code': type(error).__name__}))
+        raise SystemExit(1)

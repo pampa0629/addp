@@ -1885,3 +1885,15 @@ func TestSecurityFixtureScanPreparationKeepsConsumerUnprivileged(t *testing.T) {
 		t.Fatal("scan preparation leaked to plaintext suite")
 	}
 }
+
+func TestAvroCaseReusesExistingTableFixturePermissions(t *testing.T) {
+	t.Setenv("ADDP_ONLINE_MANAGER_CASE", "native-table-avro")
+	got, err := suitePermissions("manager-internal-artifact-lineage")
+	if err != nil || !slices.Equal(got, managerORCPermissions) {
+		t.Fatal("Avro changed existing table consumer functions")
+	}
+	want := append(slices.Clone(sourceInitializerPermissions), "meta.scan_task.execute", "meta.scan_task.read")
+	if !slices.Equal(suiteSourceInitializerPermissions("manager-internal-artifact-lineage"), want) {
+		t.Fatal("Avro initializer is missing existing bounded scan functions")
+	}
+}

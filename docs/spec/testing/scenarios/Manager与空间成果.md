@@ -42,7 +42,7 @@ NFS／MinIO 各两份独立字节编码源文件，每份三条单场消息，�
 
 2026-10-24 用户批准在同一 suite 内增加独立 `native-raster-media` case，专门验收 IMG 与 JPEG2000；2026-10-26 按用户确认的读取范围扩展 Surfer 7 GRD；默认 `full` 保留原完整场景、八模型、授权、基础 FBX 及其他已有断言。二者复用同一 Hosted disposable 部署、既有十项普通 User 权限和原生产品 Runtime，不增加服务、权限或 suite，也不通过旧源码或放宽模型源授权运行。
 
-唯一选择项为 `ADDP_ONLINE_MANAGER_CASE=full|native-raster-media|native-table-orc|native-netcdf|native-grib|native-envi|kml-export|filegdb-export|filegdb-mysql-export|filegdb-authorization`，未提供时明确选择 `full`，未知或空值在任何 Hosted 生命周期动作前拒绝。标准业务入口仍为 `ADDP_ONLINE_MANAGER_CASE=native-raster-media make test-online ONLINE_SUITE=manager-internal-artifact-lineage`；人工 Hosted 使用既有 workflow 的 `suite=manager-internal-artifact-lineage` 和明确 `manager_case`。Job 名称、Artifact 名称和 `manager-case.json` 必须显式包含所选 case，不能把任一独立 case 的通过标为完整 Manager 场景通过。KML case 的独立数据、身份、导出与清理边界见下节。
+唯一选择项为 `ADDP_ONLINE_MANAGER_CASE=full|native-raster-media|native-table-orc|native-table-avro|native-netcdf|native-grib|native-envi|kml-export|filegdb-export|filegdb-mysql-export|filegdb-authorization`，未提供时明确选择 `full`，未知或空值在任何 Hosted 生命周期动作前拒绝。标准业务入口仍为 `ADDP_ONLINE_MANAGER_CASE=native-raster-media make test-online ONLINE_SUITE=manager-internal-artifact-lineage`；人工 Hosted 使用既有 workflow 的 `suite=manager-internal-artifact-lineage` 和明确 `manager_case`。Job 名称、Artifact 名称和 `manager-case.json` 必须显式包含所选 case，不能把任一独立 case 的通过标为完整 Manager 场景通过。KML case 的独立数据、身份、导出与清理边界见下节。
 
 `native-raster-media` 执行既有 IMG/JPEG2000、Surfer GRD 只读及 TIFF 无定位小图 COG 布局子场景。前两者沿同一入口验证真实 Meta、原文件、COG、页面、缓存和领域／物理清理；GRD 验证完整数值源、元数据、页面原文件下载及无定位边界。四个子场景任一个失败即失败，不因另一个通过继续宣称整项通过。独立根报告为 `manager-native-raster-media.json`、`schema_version=addp.manager-native-raster-media/v2`，包含 `case=native-raster-media`、完整 `source_formats=[img,jpeg2000,grd,tiff]`、普通身份、四个子报告及真实失败状态；总 `online-report.json` 仍由统一分发器生成。未执行的模型、点云、文档、结构化数据及其他格式既不计通过，也不伪装成跳过后完整通过；完整 case 在新模型源授权迁移完成前仍可能受其原有正向断言阻断，须单独验收。成功／失败后的应用、夹具、凭据与 Infra 清理继续使用同一 Hosted 生命周期，不修改开发服务。
 
@@ -67,6 +67,12 @@ case 路由、默认完整场景保留、未知值只读拒绝、子场景失败
 源表分别声明 EPSG:4326 与 EPSG:3857，覆盖七类二维非空几何、内洞和 null 几何，以及 int32、bool、double、中文／XML 特殊字符、空字符串和 null。同一普通用户在真实 Console iframe 查看表，打开共享导出弹窗，选择 KML 并修改文件名，经真实按钮建立导出会话、等待 Transfer 完成和接收浏览器下载；不以 API 下载替代按钮。独立 XML oracle 核对完整 Placemark、几何／坐标、Folder、Schema／标量、null／空字符串及数值布尔，保留文件名、文件哈希、截图和同一用户／无任务定义的执行归属。EPSG:3857 输出须恢复已知 WGS84 坐标，源数据、结构和行数前后不变。原生 LIBKML 跨版本读取仍沿已登记 GeoPython 门禁验证，XML oracle 不冒充产品 KML 读侧增强。
 
 新 case 的报告、异常和下载证据不得泄漏凭据。导出会话沿现有保留与生命周期规则，不新建业务删除 API；成功和失败均销毁本轮源容器／数据、应用、临时凭据及 Infra，并核零残留。业务结果和清理结果独立报告：业务失败且夹具清理成功时仍是 `result=failed / cleanup=passed`；夹具清理实际失败必须保留 `cleanup=failed`，不能由 Infra 零残留替代。部署清理不冒充会话业务 DELETE 或缓存验收。根 `make test-manager-online-runner`、`make test-online-runner`、System Go、共享前端及现有 Platform CI 覆盖新增路由、最小身份、页面脚本、物理 oracle 拒绝样例和失败清理；正式 Hosted 尚未通过前不得回填已验收。此 case 不扩展 bigint／decimal／时序／嵌套字段、Z/M、样式、KMZ 或其他目标格式。
+
+### Avro 单文件表格读取（待正式验收）
+
+独立`native-table-avro` case复用Manager Hosted的NFS/MinIO隔离来源、Transfer与既有GeoPython物理回读夹具，不新增产品服务或依赖。首期仅现有OCF平坦标量及可空字段，分别覆盖null/deflate/snappy三种codec，每份2503行、多个OCF块；核对Meta结构schema、Manager完整读取的精确总数及首页/第二页/末页、页面下一页与原件按钮下载、跨批Avro→Parquet全部字段和行值、大整数/二进制/空值。来源前后字节哈希不变，任务及物理输入/输出、部署与Infra分别清理。嵌套/逻辑类型/whole/写出不在该case范围。
+
+复用现有ORC临时用户十一项功能权限及已批准的来源初始化十三项权限集合，仅服务于本轮临时夹具；源扫描由来源初始化用户办理，Meta可见性沿现有精确metadata_read契约，不开发或放宽任何授权接口。受现行契约阻断时如实记录，不绕过或扩展角色。测试与CI同次登记至现有Manager标准入口与Hosted workflow；正式通过之前不得回填已完成，SKP准入状态不变。
 
 ### FileGDB 实际页面导出
 

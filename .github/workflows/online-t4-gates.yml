@@ -213,6 +213,7 @@ on:
           - full
           - native-raster-media
           - native-table-orc
+          - native-table-avro
           - native-netcdf
           - native-grib
           - native-envi

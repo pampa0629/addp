@@ -220,6 +220,17 @@ class HostedManagerGateTest(unittest.TestCase):
         report=json.loads((self.host.artifacts/'manager-case.json').read_text())
         self.assertEqual(report['case'],'native-table-orc')
 
+    def test_avro_case_uses_transfer_and_only_native_table_runtime(self):
+        result=self.run_gate(ADDP_ONLINE_MANAGER_CASE='native-table-avro')
+        self.assertEqual(result.returncode,0,result.stdout+result.stderr)
+        trace=self.host.trace.read_text()
+        self.assertIn('manager-case:native-table-avro',trace)
+        self.assertIn('manager,transfer',trace)
+        self.assertNotIn('start:-pointcloud-workflow',trace)
+        self.assertNotIn('--services model3d-workflow-engine',trace)
+        report=json.loads((self.host.artifacts/'manager-case.json').read_text())
+        self.assertEqual(report['case'],'native-table-avro')
+
     def test_netcdf_case_uses_six_permission_profile_without_model_or_transfer_runtime(self):
         result=self.run_gate(ADDP_ONLINE_MANAGER_CASE='native-netcdf')
         self.assertEqual(result.returncode,0,result.stdout+result.stderr)
