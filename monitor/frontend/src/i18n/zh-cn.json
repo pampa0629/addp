@@ -1363,6 +1363,10 @@
       "metric": "监控指标",
       "viewTrend": "查看趋势",
       "missing": "暂无有效值；采集未就绪、样本不足或统计重置时留空。",
+      "missingReasons": {
+        "redisNoLimit": "当前未设置 Redis 内存上限，无法计算当前占用率。",
+        "redisNoLookups": "当前一分钟没有键查询，当前命中率不计算。"
+      },
       "trendScope": "只显示当前数据库容器运行段，最长七天；重启、统计重置和缺样处可能出现断点。",
       "units": {
         "connections": "个",

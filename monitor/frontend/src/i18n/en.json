@@ -1363,6 +1363,10 @@
       "metric": "Metric",
       "viewTrend": "View trend",
       "missing": "No valid value yet; collection startup, insufficient samples or statistics resets leave gaps.",
+      "missingReasons": {
+        "redisNoLimit": "No Redis memory limit is set; the current limit usage cannot be calculated.",
+        "redisNoLookups": "No key lookups in the current one-minute window; the current hit ratio is undefined."
+      },
       "trendScope": "Current database container only, up to seven days. Restarts, statistics resets and missing samples may leave gaps.",
       "units": {
         "connections": "connections",

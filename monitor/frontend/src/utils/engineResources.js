@@ -1,6 +1,6 @@
 import { autoRefreshOptions } from '../../../../common-frontend/basic/src/utils/autoRefresh.mjs'
 import { isTargetUUID } from './monitoringTargets.js'
-import { resourceRanges } from './nodeResources.js'
+import { currentResourceValue, resourceRanges } from './nodeResources.js'
 
 export const engineMetrics = [
   ['connections.total', 'total', 'connections'], ['connections.active', 'active', 'connections'],
@@ -53,6 +53,21 @@ export function engineDetailMetrics(kind, metric) {
   const catalog = engineMetricsFor(kind)
   const selected = catalog.find(item => item.key === metric)
   return engineGroups(kind).length ? catalog.filter(item => item.group === selected?.group) : catalog
+}
+export function engineMetricMissingReason(row, key) {
+  if (row?.subject?.engine_type !== 'redis' || row.collection?.state !== 'collecting') return ''
+  const series = name => row.series?.find(item => item.metric_key === name)
+  const target = series(key)
+  if (target?.points?.length !== 1 || target.points[0].data_state !== 'no_data') return ''
+  const evaluated = Date.parse(target.points[0].evaluated_at), sampled = Date.parse(row.collection.sampled_at)
+  if (!Number.isFinite(evaluated) || !Number.isFinite(sampled)) return ''
+  const dependency = name => {
+    const points = series(name)?.points, point = points?.[0]
+    return points?.length === 1 && Date.parse(point.evaluated_at) === evaluated && Date.parse(point.sampled_at) === sampled ? currentResourceValue(point) : null
+  }
+  if (key === 'redis.memory.used_percent' && dependency('redis.memory.limit_bytes') === 0) return 'redisNoLimit'
+  if (key === 'redis.keyspace.hit_percent' && dependency('redis.keyspace.hits_per_second') === 0 && dependency('redis.keyspace.misses_per_second') === 0) return 'redisNoLookups'
+  return ''
 }
 const invalid = () => { throw new Error('invalid_resource_response') }
 export function resolveEngineRoute(input = {}) {

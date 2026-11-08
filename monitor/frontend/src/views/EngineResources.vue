@@ -41,7 +41,7 @@
           <article v-for="metric in detailMetrics" :key="metric.key" class="metric-card" :data-testid="`engine-metric-${metric.name}`">
             <h3 class="metric-heading" :aria-label="t(`monitor.engines.metrics.${metric.name}`)"><span>{{ t(`monitor.engines.metrics.${metric.name}`) }}</span><FieldHelp :content="t(`monitor.engines.hints.${metric.name}`)" /></h3>
             <strong :data-testid="`engine-value-${metric.name}`">{{ value(observation(state.deploymentID)?.series.find(item => item.metric_key === metric.key)?.points[0], metric) }}</strong>
-            <p v-if="observation(state.deploymentID)?.series.find(item => item.metric_key === metric.key)?.points[0]?.data_state !== 'valid'" class="hint">{{ t('monitor.engines.missing') }}</p>
+            <p v-if="observation(state.deploymentID)?.series.find(item => item.metric_key === metric.key)?.points[0]?.data_state !== 'valid'" class="hint" :data-testid="`engine-missing-${metric.name}`">{{ missingMessage(metric) }}</p>
             <el-button text type="primary" :disabled="loading" @click="navigate({ ...state.query, metric: metric.key })">{{ t('monitor.engines.viewTrend') }}</el-button>
           </article>
         </div>
@@ -53,6 +53,7 @@
             <el-select :model-value="state.range" :aria-label="t('monitor.resources.range')" @update:model-value="range => navigate({ ...state.query, range })"><el-option v-for="(_, range) in resourceRanges" :key="range" :value="range" :label="t(`monitor.resources.ranges.${range}`)" /></el-select>
             <span class="metric-heading" data-testid="engine-range-help"><FieldHelp :content="t('monitor.engines.trendScope')" /></span>
           </div>
+          <p v-if="currentMissingReason" class="hint" data-testid="engine-current-missing">{{ t(`monitor.engines.missingReasons.${currentMissingReason}`) }}</p>
           <el-alert v-if="trendError" :title="t(trendError)" type="warning" :closable="false" />
           <template v-if="chart">
             <p class="hint">{{ t('monitor.resources.window', { start: date(history.start), end: date(history.end), step: history.step_seconds }) }}</p>
@@ -82,7 +83,7 @@ import { engineResourcesAPI as api } from '../api/engineResources'
 import { nodeResourcesAPI as hostsAPI } from '../api/nodeResources'
 import { loadHostReferences } from '../utils/hostReferences'
 import MonitoredHostLink from '../components/MonitoredHostLink.vue'
-import { engineGroups, engineMetricsFor, engineSummaryFor, engineDetailMetrics, defaultEngineMetric, resolveEngineRoute, validateEnginePage, validateEngineDeployment, validateEngineResources, engineTrendParameters } from '../utils/engineResources'
+import { engineGroups, engineMetricsFor, engineSummaryFor, engineDetailMetrics, engineMetricMissingReason, defaultEngineMetric, resolveEngineRoute, validateEnginePage, validateEngineDeployment, validateEngineResources, engineTrendParameters } from '../utils/engineResources'
 import { currentResourceValue, resourceErrorKey, resourceChartRows, resourceRanges } from '../utils/nodeResources'
 import { navigateMonitorRoute } from '../utils/moduleNavigation'
 
@@ -103,6 +104,11 @@ const engineNames = { postgresql: 'PostgreSQL', redis: 'Redis', minio: 'MinIO' }
 const selectedMetric = computed(() => engineMetricsFor(state.value.engineType).find(item => item.key === state.value.metric))
 const observation = id => observed.value?.data.find(row => row.subject.deployment_id === id)
 const collection = id => t(`monitor.engines.states.${observation(id)?.collection.state || 'no_sample'}`)
+const currentMissingReason = computed(() => engineMetricMissingReason(observation(state.value.deploymentID), state.value.metric))
+function missingMessage(metric) {
+  const reason = engineMetricMissingReason(observation(state.value.deploymentID), metric.key)
+  return t(reason ? `monitor.engines.missingReasons.${reason}` : 'monitor.engines.missing')
+}
 const date = value => formatFieldPresentationValue(value, { temporal_format: 'datetime' }, locale.value)
 function value(point, metric) {
   const number = currentResourceValue(point)

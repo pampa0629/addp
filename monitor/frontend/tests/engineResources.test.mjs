@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
-import { engineMetrics, engineSummaryMetrics, redisMetrics, minioMetrics, engineDetailMetrics, engineSummaryFor, resolveEngineRoute, validateEnginePage, validateEngineResources, engineTrendParameters } from '../src/utils/engineResources.js'
+import { engineMetrics, engineSummaryMetrics, redisMetrics, minioMetrics, engineDetailMetrics, engineMetricMissingReason, engineSummaryFor, resolveEngineRoute, validateEnginePage, validateEngineResources, engineTrendParameters } from '../src/utils/engineResources.js'
 
 const id = '10000000-0000-4000-8000-000000000001', node = '10000000-0000-4000-8000-000000000002'
 const owner = { scope: 'infra', deployment_id: id, display_name: 'Infra PostgreSQL', version: 1, enabled: true, node_id: node, host_binding_state: 'bound', engine_type: 'postgresql' }
@@ -22,6 +22,57 @@ test('service and engine host navigation share one domain component and bounded 
 function response(metrics = engineSummaryMetrics) {
   return { queried_at: at, start: at, end: at, step_seconds: 15, policy_version: 1, lookback_seconds: 300, data: [{ subject: { kind: 'engine_deployment', deployment_id: id, display_name: owner.display_name, engine_type: 'postgresql' }, node_id: node, collection: { state: 'collecting', sampled_at: at }, series: metrics.map(metric => ({ metric_key: metric.key, unit: metric.unit, window_seconds: metric.windowSeconds, dimensions: {}, points: [{ evaluated_at: at, sampled_at: at, value: 0, data_state: 'valid' }] })) }] }
 }
+
+function undefinedRedisRatio(key) {
+ const value=response(engineDetailMetrics('redis',key)),row=value.data[0]
+ row.subject.engine_type='redis'
+ Object.assign(row.series.find(s=>s.metric_key===key).points[0],{value:null,sampled_at:null,data_state:'no_data'})
+ return row
+}
+test('Redis undefined ratios explain only current exact zero dependencies without altering data',()=>{
+ for(const [key,reason] of [['redis.memory.used_percent','redisNoLimit'],['redis.keyspace.hit_percent','redisNoLookups']]){
+  const row=undefinedRedisRatio(key),before=structuredClone(row)
+  assert.equal(engineMetricMissingReason(row,key),reason)
+  assert.deepEqual(row,before)
+  row.series.find(s=>s.metric_key===key).points[0]={evaluated_at:at,sampled_at:at,value:0,data_state:'valid'}
+  assert.equal(engineMetricMissingReason(row,key),'')
+ }
+})
+test('Redis explanations reject partial, stale, rounded or differently timed dependency evidence',()=>{
+ for(const [key,dependencies] of [
+  ['redis.memory.used_percent',['redis.memory.limit_bytes']],
+  ['redis.keyspace.hit_percent',['redis.keyspace.hits_per_second','redis.keyspace.misses_per_second']]
+ ])for(const dependency of dependencies)for(const change of [
+  point=>{point.value=0.0000001},point=>{point.data_state='stale'},
+  point=>{point.data_state='no_data';point.value=null;point.sampled_at=null},
+  point=>{point.evaluated_at='2026-10-20T13:59:45Z'},point=>{point.sampled_at='2026-10-20T13:59:45Z'}
+ ]){
+  const row=undefinedRedisRatio(key);change(row.series.find(s=>s.metric_key===dependency).points[0])
+  assert.equal(engineMetricMissingReason(row,key),'')
+ }
+ const row=undefinedRedisRatio('redis.keyspace.hit_percent');row.series=row.series.filter(s=>s.metric_key!=='redis.keyspace.misses_per_second')
+ assert.equal(engineMetricMissingReason(row,'redis.keyspace.hit_percent'),'')
+})
+test('Redis explanations clear with unavailable source, other engine and incomplete or historical rows',()=>{
+ const key='redis.memory.used_percent'
+ for(const state of ['no_sample','failed','stale','snapshot_unavailable','source_unavailable','not_active','not_connected']){
+  const row=undefinedRedisRatio(key);row.collection.state=state
+  assert.equal(engineMetricMissingReason(row,key),'')
+ }
+ for(const mutate of [
+  row=>{row.subject.engine_type='postgresql'},row=>{row.collection.sampled_at=null},
+  row=>{row.series.find(s=>s.metric_key===key).points.push({...row.series[0].points[0]})},
+  row=>{row.series.find(s=>s.metric_key==='redis.memory.limit_bytes').points.push({...row.series[0].points[0]})},
+  row=>{row.series=row.series.filter(s=>s.metric_key!==key)}
+ ]){const row=undefinedRedisRatio(key);mutate(row);assert.equal(engineMetricMissingReason(row,key),'')}
+ assert.equal(engineMetricMissingReason(null,key),'')
+})
+test('Redis dependency timestamps compare instants rather than textual fractions',()=>{
+ const key='redis.memory.used_percent',row=undefinedRedisRatio(key)
+ const point=row.series.find(s=>s.metric_key==='redis.memory.limit_bytes').points[0]
+ point.evaluated_at=point.sampled_at='2026-10-20T14:00:00.000Z'
+ assert.equal(engineMetricMissingReason(row,key),'redisNoLimit')
+})
 
 test('PostgreSQL catalog has twelve metrics and three explicit one-minute rates', () => {
   assert.equal(engineMetrics.length, 12)

@@ -37,6 +37,14 @@
 
 收据目录 `/var/folders/r1/l7b49c757dz02zftf_l9vl9r0000gn/T/addp-monitor-live-20261108-ts58dwin/` 保存页面、图表数值、采样新鲜度和 `summary.json`，不含凭据。区域截图未匹配目标 Safari 窗口，已删除，不计像素显示验收；本轮结论限于当前真实会话页面／图表数据及后台采样。未改产品代码、服务配置、数据库或账号，未启停服务、制造故障、查询／触发 CI 或 Hosted、设置定时任务；不将个人复验外推为正式 T4。
 
+## Redis 无定义比率的就近说明（2026-11-08）
+
+沿既有数值／空值口径，唯一 `engineMetricMissingReason` 只消费当前已校验的 Redis 即时观测：collection 为 collecting、目标为 no_data，且同评估／采样时点的有效上限为零，或完整一分钟的有效命中／未命中速率均精确为零，才分别说明“当前未设置 Redis 内存上限，无法计算当前占用率”“当前一分钟没有键查询，当前命中率不计算”。卡片和选中趋势复用同一判断；说明仅指当前值，不推定历史原因或清空历史曲线。未知、缺样、陈旧、不同采样时点、显示舍入为零、来源失效／撤权仍不补判具体原因，不用当前瞬时值解释整段历史。中英文词条沿既有语言机制，未新增查询、API、权限或预算，列表不补查依赖。
+
+- 新增中英文页面场景在旧实现均失败（2 项，缺少就近说明）；修复后两项通过。最终 `npm --prefix monitor/frontend test`：140 项 T1 通过；`npm --prefix monitor/frontend run test:e2e -- engine-resources.spec.js redis-resources.spec.js`：62 项 T3 全部通过（2.0 分钟），含原 PostgreSQL／Redis／MinIO、撤权清空、分组预算、原位刷新／缩放，以及本批有效零、无定义比率、历史有效点保留和 390 像素宽度。`npm --prefix monitor/frontend run build` 退出 0（4.08 秒），保留既有大 chunk 提示。未以这两个文件的通过宣称整个 Monitor 浏览器聚合通过。
+- Safari 当前平台管理员会话的个人 Infra Redis 页面无需重启即显示新说明，真实上限仍为未设置；选择占用率趋势后，同一条当前原因就近显示，数值继续为“—”。只记录本次真实中文卡片／趋势说明，未修改 Redis 配额或读取业务键，也未制造无查询窗口；“当前无键查询”的中英文及失效边界由受控 T1／T3 覆盖。
+- 既有 Platform CI 的 Monitor frontend 与 Make 自动发现覆盖本批文件，未新增测试路线或 workflow；未运行未改的后端／来源 T2，不查询或调度 CI／Hosted，不设置定时任务。日志 `/tmp/addp-redis-missing-reasons-{red,green,unit,browser,build}.log`；个人页面收据沿上一节目录的 `redis-no-limit-new-{explanation,trend-explanation}.json`。格式检查通过。
+
 <a id="pg-source-history"></a>
 
 ## PostgreSQL 来源、身份投影与正式验收

@@ -126,6 +126,35 @@ test('Redis missing ratios stay blank in provenance cards and on detail return',
  await expect(page.getByTestId('engine-list')).toBeVisible()
 })
 
+for (const locale of ['zh-cn', 'en']) test(`Redis explains undefined ratios beside current cards and trends (${locale})`, async ({ page }) => {
+ const en=locale==='en',state=await engineBackend(page,{locale,owner:{...engineOwner,engine_type:'redis',display_name:'Infra Redis'},mode:'current-no-limit'})
+ const noLimit=en?'No Redis memory limit is set; the current limit usage cannot be calculated.':'当前未设置 Redis 内存上限，无法计算当前占用率。'
+ const noLookups=en?'No key lookups in the current one-minute window; the current hit ratio is undefined.':'当前一分钟没有键查询，当前命中率不计算。'
+ await page.goto(`/engine-resources?engine_type=redis&deployment_id=${engineID}&refresh=off`)
+ await expect(page.getByTestId('engine-value-redisPercent')).toHaveText('—')
+ await expect(page.getByTestId('engine-missing-redisPercent')).toHaveText(noLimit)
+ await expect(page.getByTestId('engine-current-missing')).toHaveText(noLimit)
+ const history=await resourceChartProps(page,page.getByTestId('engine-trend').locator('.chart-renderer'))
+ expect(history.rows.some(row=>row.value!==null)).toBe(true)
+ expect(history.rows.at(-1).value).toBeNull()
+ await page.setViewportSize({width:390,height:844})
+ const box=await page.getByTestId('engine-current-missing').boundingBox()
+ expect(box.x).toBeGreaterThanOrEqual(0);expect(box.x+box.width).toBeLessThanOrEqual(390)
+ await page.setViewportSize({width:1280,height:800})
+ state.setMode('valid');await page.getByRole('button',{name:en?'Refresh':'刷新',exact:true}).click()
+ await expect(page.getByTestId('engine-value-redisPercent')).toHaveText('0.00 %')
+ await expect(page.getByTestId('engine-current-missing')).toHaveCount(0)
+ await page.getByRole('tab',{name:en?'Throughput and hits':'吞吐与命中',exact:true}).click()
+ state.setMode('no-lookups');await page.getByRole('button',{name:en?'Refresh':'刷新',exact:true}).click()
+ await page.getByTestId('engine-metric-redisHitPercent').getByRole('button',{name:en?'View trend':'查看趋势',exact:true}).click()
+ await expect(page.getByTestId('engine-value-redisHitPercent')).toHaveText('—')
+ await expect(page.getByTestId('engine-missing-redisHitPercent')).toHaveText(noLookups)
+ await expect(page.getByTestId('engine-current-missing')).toHaveText(noLookups)
+ state.setMode('source-unavailable');await page.getByRole('button',{name:en?'Refresh':'刷新',exact:true}).click()
+ await expect(page.getByTestId('engine-current-missing')).toHaveCount(0)
+ await expect(page.getByTestId('engine-missing-redisHitPercent')).not.toHaveText(noLookups)
+})
+
 for(const kind of ['redis','minio'])for(const automatic of [false,true])test(`${kind} ${automatic?'automatic':'manual'} refresh keeps data, zoom and DOM`,async({page})=>{
  trackResourceChart(page)
  const state=await engineBackend(page,{owner:{...engineOwner,engine_type:kind,display_name:'Infra Redis'}})

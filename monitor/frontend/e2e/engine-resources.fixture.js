@@ -65,10 +65,11 @@ export async function engineBackend(page, { locale = 'zh-cn', auth = identity(en
               const at = new Date(Date.parse(start) + index * 15000).toISOString()
               // A failed current scrape can coexist with valid earlier history.
               const missing = mode==='minio-unpublished' && ['minioOffline','minioInflight','minio4xx','minio5xx','minioErrorPercent'].includes(metric.name) || mode==='no-scan' && ['minioObjectBytes','minioObjects','minioBuckets','minioScanAge'].includes(metric.name) || absentState || mode === 'no-sample' || failure && (!trend || index >= count - 2)
-                || mode === 'no-limit' && metric.name === 'redisPercent' || mode === 'no-lookups' && metric.name === 'redisHitPercent' || trend && index === 2
+                || mode === 'no-limit' && metric.name === 'redisPercent' || mode === 'current-no-limit' && metric.name === 'redisPercent' && (!trend || index === count-1)
+                || mode === 'no-lookups' && metric.name === 'redisHitPercent' || trend && index === 2
               return {
                 evaluated_at: at, sampled_at: missing ? null : at,
-                value: missing ? null : mode === 'over-limit' && metric.name === 'redisPercent' ? 180 : mode === 'no-limit' && metric.name === 'redisLimit' ? 0 : metric.unit === 'bytes' ? capacity : 0,
+                value: missing ? null : mode === 'over-limit' && metric.name === 'redisPercent' ? 180 : ['no-limit','current-no-limit'].includes(mode) && metric.name === 'redisLimit' ? 0 : metric.unit === 'bytes' ? capacity : 0,
                 data_state: absentState || (missing ? 'no_data' : 'valid')
               }
             })
