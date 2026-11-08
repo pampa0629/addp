@@ -43,15 +43,17 @@
 | 编号 | 最小交错及判定 | 主要责任／验证层级 | 源码定位／待补项 |
 | --- | --- | --- | --- |
 | C2a | 候选发现后父关闭先提交：后续P→C不得claim；Owner拒绝C，attempt0、无started_at／耗时／lease、failed且原因明确未开始，无外部调用 | System＋Common＋Owner；T1与PG T2 | cleanup_lock_order/parent_closure_commits_before_waiting_child已有PG。 |
-| C2b | 子claim先提交后父关闭：仅一次有效claim；合法子可按自身lease收尾，父不取消／改写子；父关闭不得被宣称为实际停止 | System＋Owner；PG T2，外部效果用既有原生T2补证 | claimed_child_can_finish_after_parent_with_atomic_receipt复用于PG；claim先提交的双连接交错待补。 |
-| C2c | 父pending或lease过期但deadline未到：C不claim也不拒绝；System恢复只更换父attempt而不刷新deadline／子集合；窗口恢复后可重新核验准入 | System＋Common；PG T2 | unleased_parent_waits与CoordinatorRecovery已定位；父短暂失租后同一C再准入的整链PG待补。 |
+| C2b | 子claim先提交后父关闭：仅一次有效claim；合法子可按自身lease收尾，父不取消／改写子；父关闭不得被宣称为实际停止 | System＋Owner；PG T2，外部效果用既有原生T2补证 | child_claim_commits_before_parent_closure以真实PG阻塞链确认子claim先提交，随后父timeout，子仍可提交回执且父不变。 |
+| C2c | 父pending或lease过期但deadline未到：C不claim也不拒绝；System恢复只更换父attempt而不刷新deadline／子集合；窗口恢复后可重新核验准入 | System＋Common；PG T2 | ParentRecoveryAdmission以数据库时间等父失租，核子等待、父换attempt且输入不变、旧父失权及同一C重新准入。 |
 | C2d | 等待P／C／领域锁期间跨过deadline或lease到期：锁后时钟拒绝；无部分摘要、token或业务写入；父锁繁忙被跳过不计关闭／失败 | Common＋Owner；真实行锁PG T2 | deadline_rechecked_after_owner_lock及Graph等G失权已定位；完整P/C/G/T锁组合待补。 |
-| C2e | 候选C已改变、两个父交错或同Owner两实例：仍锁原P与同一C，不让ClaimNext另选其他父子；单次claim或单次拒绝，无C→P死锁 | Common＋System＋Owner；PG T2 | 代码锁定准确候选P/C；未定位两父交错／同Owner争用的专用PG。 |
+| C2e | 候选C已改变、两个父交错或同Owner两实例：仍锁原P与同一C，不让ClaimNext另选其他父子；单次claim或单次拒绝，无C→P死锁 | Common＋System＋Owner；PG T2 | two_parents_same_owner_exact_single_claim覆盖同Tenant两父、同Owner四领取者；PG阻塞链释放后每个准确C仅一方领取，另两方冲突。 |
 | C2f | 错Tenant／module／type／source／父子摘要、缺父、非法deadline：失败关闭且零执行／零拒绝更新；不补造绑定，不借模块字符串授予权限 | System创建约束＋Owner入口＋Common；T1与PG T2 | 严格binding、唯一Owner及schema校验已接；非法身份／摘要／deadline的端到端拒绝组合待补。 |
 | C2g | attempt>0的恢复pending、残留lease／started_at、操作证据不完整：拒绝走未领取原语；已运行失联仍按自身围栏失败／核清，不重放 | Common＋Owner；T1与PG T2 | lifecycle/exact_pending_and_unstarted_termination拒绝恢复pending；Cleanup残留字段组合待补。 |
-| C2h | 未领取拒绝并发／重复／写失败：只有一次pending→failed，completed_at／安全原因原子；失败回滚，重复不改时间；无cleanup_receipt／假零统计／attempt1事件，观测namespace保留 | Common＋Owner；T1与PG T2 | RejectUnstarted事务原语存在；拒绝并发／重复／写失败／时间不变的专用PG未定位。 |
-| C2i | 父冻结缺项后Owner离线恢复／合法子迟到：Owner只拒本模块未领取项；已运行合法完成保留子事实，父结论／观察快照不变；GET零状态写入，父可读不授予子专业详情权 | System＋Owner；PG T2与安全读取T1 | AdmissionRace／ReadOnlySnapshot覆盖迟到不改父与只读；跨Owner离线恢复T4待证。 |
+| C2h | 未领取拒绝并发／重复／写失败：只有一次pending→failed，completed_at／安全原因原子；失败回滚，重复不改时间；无cleanup_receipt／假零统计／attempt1事件，观测namespace保留 | Common＋Owner；T1与PG T2 | concurrent_and_duplicate_unstarted_rejection及rejection_outer_rollback／rejection_sql_failure覆盖唯一拒绝、completed_at不变、观测保留、无回执／attempt事件和真实PG写失败回滚。 |
+| C2i | 父冻结缺项后Owner离线恢复／合法子迟到：Owner只拒本模块未领取项；已运行合法完成保留子事实，父结论／观察快照不变；GET零状态写入，父可读不授予子专业详情权 | System＋Owner；PG T2与安全读取T1 | AdmissionRace／ReadOnlySnapshot覆盖迟到不改父与只读；ClosureRollback核截止结论／父终态／审计原子回滚与重复关闭不变；跨Owner离线恢复T4待证。 |
 | C2j | Graph组合P→C→G→T/B；未领取拒绝不改G或业务表；已领取结果只C→G且不回P，父关闭不撤领域证据，最终清理不反锁构建E | Graph＋Common；扩既有Graph PG包／筛选，验证真实外键锁与回滚 | Graph runtime的parent_closed／unknown_effect／result_rollback复用于PG；P/C/G外键争用未齐。 |
+
+本轮补测仍复用上述Common生命周期PG与 `make test-system-cleanup`。Common另覆盖prepare失败及外层claim事务回滚；System领取竞争改为准确backend PID的PG阻塞屏障，不用50ms推测先后。新增System主测试被标准入口逐项要求PASS，登记反例同时拒绝缺项、skip、错名和仅子项PASS。固定源码与实际结果见[专题记录](../../next/ADDP任务执行管理统一收口专题.md#本轮-pg-增补验证)。
 
 ### C5协调关闭安全展示子矩阵
 

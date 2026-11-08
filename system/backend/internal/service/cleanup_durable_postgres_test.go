@@ -197,6 +197,23 @@ func cleanupClaimOptions(e execution.TaskExecution) execution.ClaimOptions {
 	return execution.ClaimOptions{Module: e.Module, TaskType: e.TaskType, Source: e.Source, WorkerID: "owner-fixture", LeaseDuration: time.Minute}
 }
 
+func waitCleanupPGCondition(t *testing.T, f *cleanupPGFixture, query string, args ...interface{}) {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(f.ctx, 5*time.Second)
+	defer cancel()
+	for ctx.Err() == nil {
+		var ready bool
+		if err := f.db.WithContext(ctx).Raw(query, args...).Scan(&ready).Error; err != nil {
+			t.Fatal(err)
+		}
+		if ready {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatal("Cleanup PG condition did not become observable")
+}
+
 func TestIntegrationPostgresCleanupAcceptanceAtomicity(t *testing.T) {
 	t.Run("engine_workflow", testCleanupEngineWorkflowPostgres)
 	t.Run("meta_pair_required", testCleanupMetaPairPostgres)
@@ -351,6 +368,91 @@ func TestIntegrationPostgresCleanupCoordinatorRecovery(t *testing.T) {
 	}
 }
 
+func TestIntegrationPostgresCleanupParentRecoveryAdmission(t *testing.T) {
+	f := newCleanupPGFixture(t, time.Minute)
+	f.accept(t)
+	f.advance(t, "first")
+	before := f.snapshot(t)
+	old, err := execution.LeaseFromExecution(before.Parent)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := execution.RenewLease(f.ctx, f.db, old, 100*time.Millisecond); err != nil {
+		t.Fatal(err)
+	}
+	var expiry time.Time
+	if err := f.db.Model(&execution.TaskExecution{}).Select("lease_expires_at").Where("execution_id=?", old.ExecutionID).Scan(&expiry).Error; err != nil {
+		t.Fatal(err)
+	}
+	waitCleanupPGCondition(t, f, "SELECT clock_timestamp() >= ?", expiry)
+	child := before.Children[0]
+	item, lease, err := execution.ClaimCleanupChild(f.ctx, f.db, cleanupPending(child), cleanupClaimOptions(child), nil)
+	if err != nil || item != nil || lease != nil || !reflect.DeepEqual(before.Children, f.snapshot(t).Children) {
+		t.Fatalf("temporary parent lease loss rejected or claimed the child: %v", err)
+	}
+	f.advance(t, "recovered")
+	after := f.snapshot(t)
+	if after.Parent.Attempt != old.Attempt+1 || after.Parent.LeaseToken == nil || *after.Parent.LeaseToken == old.Token || after.Record.Protocol != before.Record.Protocol || after.Record.Cutoff != nil || !reflect.DeepEqual(before.Children, after.Children) {
+		t.Fatal("parent recovery changed deadline/children or failed to acquire a new attempt")
+	}
+	if err := execution.RenewLease(f.ctx, f.db, old, time.Minute); !errors.Is(err, commonapi.ErrConflict) {
+		t.Fatalf("stale parent regained ownership: %v", err)
+	}
+	item, lease, err = execution.ClaimCleanupChild(f.ctx, f.db, cleanupPending(child), cleanupClaimOptions(child), nil)
+	if err != nil || item == nil || lease == nil || item.ExecutionID != child.ExecutionID || item.Attempt != 1 || item.StartedAt == nil {
+		t.Fatalf("same child was not admitted after recovery: %+v %+v %v", item, lease, err)
+	}
+	if !reflect.DeepEqual(after.Parent, f.snapshot(t).Parent) {
+		t.Fatal("child admission changed the recovered coordinator")
+	}
+}
+
+func TestIntegrationPostgresCleanupClosureRollback(t *testing.T) {
+	f := newCleanupPGFixture(t, 500*time.Millisecond)
+	f.accept(t)
+	f.advance(t, "parent")
+	waitCleanupPGCondition(t, f, "SELECT clock_timestamp() >= ?", f.input.Deadline)
+	before := f.snapshot(t)
+	var facts int64
+	if err := f.db.Table(f.probe + ".facts").Count(&facts).Error; err != nil {
+		t.Fatal(err)
+	}
+	injected := errors.New("closure audit persistence failed")
+	audit := f.coordinator.audit
+	f.coordinator.audit = func(ctx context.Context, tx *gorm.DB, event iam.AuditEvent) error {
+		if err := audit(ctx, tx, event); err != nil {
+			return err
+		}
+		return injected
+	}
+	if err := f.coordinator.advance(f.ctx, f.parent.ExecutionID, "parent"); !errors.Is(err, injected) {
+		t.Fatalf("did not reach audit after cutoff and parent writes: %v", err)
+	}
+	after := f.snapshot(t)
+	if !reflect.DeepEqual(before.Record, after.Record) || !reflect.DeepEqual(before.Parent, after.Parent) || !reflect.DeepEqual(before.Children, after.Children) || !reflect.DeepEqual(before.Input, after.Input) {
+		t.Fatal("audit failure partially committed cutoff, parent terminal, or child state")
+	}
+	var afterFacts int64
+	if err := f.db.Table(f.probe + ".facts").Count(&afterFacts).Error; err != nil || afterFacts != facts {
+		t.Fatalf("failed audit write survived rollback: before=%d after=%d err=%v", facts, afterFacts, err)
+	}
+	f.coordinator.audit = audit
+	f.advance(t, "parent")
+	closed := f.snapshot(t)
+	cutoff, err := closed.Record.FrozenCutoff()
+	if err != nil || cutoff == nil || closed.Parent.Status != execution.ExecutionStatusTimeout || len(cutoff.Missing) != len(before.Children) || !reflect.DeepEqual(before.Children, closed.Children) {
+		t.Fatalf("coordinator did not close the original request after rollback: %v", err)
+	}
+	if err := f.db.Table(f.probe + ".facts").Count(&afterFacts).Error; err != nil || afterFacts != facts+1 {
+		t.Fatalf("closure audit count=%d err=%v", afterFacts, err)
+	}
+	f.advance(t, "parent")
+	duplicate := f.snapshot(t)
+	if !reflect.DeepEqual(closed.Record, duplicate.Record) || !reflect.DeepEqual(closed.Parent, duplicate.Parent) || !reflect.DeepEqual(closed.Children, duplicate.Children) || !reflect.DeepEqual(closed.Input, duplicate.Input) {
+		t.Fatal("duplicate closure changed the frozen parent conclusion")
+	}
+}
+
 func TestIntegrationPostgresCleanupAdmissionRace(t *testing.T) {
 	f := newCleanupPGFixture(t, 900*time.Millisecond)
 	f.accept(t)
@@ -400,18 +502,33 @@ func TestIntegrationPostgresCleanupAdmissionRace(t *testing.T) {
 	}
 	claimCtx, cancel := context.WithTimeout(f.ctx, 3*time.Second)
 	defer cancel()
+	var blocker int
+	if err := tx.Raw("SELECT pg_backend_pid()").Scan(&blocker).Error; err != nil {
+		t.Fatal(err)
+	}
+	pids := make(chan int, 1)
 	done := make(chan error, 1)
 	go func() {
-		item, l, err := execution.ClaimCleanupChild(claimCtx, f.db, cleanupPending(other), cleanupClaimOptions(other), nil)
-		if err == nil && (l != nil || item == nil || item.Status != "failed" || item.Attempt != 0 || item.StartedAt != nil) {
-			err = fmt.Errorf("claimed after closure")
-		}
-		done <- err
+		done <- f.db.WithContext(claimCtx).Connection(func(conn *gorm.DB) error {
+			var pid int
+			if err := conn.Raw("SELECT pg_backend_pid()").Scan(&pid).Error; err != nil {
+				return err
+			}
+			pids <- pid
+			item, l, err := execution.ClaimCleanupChild(claimCtx, conn, cleanupPending(other), cleanupClaimOptions(other), nil)
+			if err == nil && (l != nil || item == nil || item.Status != "failed" || item.Attempt != 0 || item.StartedAt != nil) {
+				return fmt.Errorf("claimed after closure")
+			}
+			return err
+		})
 	}()
 	select {
+	case pid := <-pids:
+		waitCleanupPGCondition(t, f, "SELECT ? = ANY(pg_blocking_pids(?))", blocker, pid)
 	case err := <-done:
 		t.Fatalf("claim bypassed held parent: %v", err)
-	case <-time.After(50 * time.Millisecond):
+	case <-claimCtx.Done():
+		t.Fatal(claimCtx.Err())
 	}
 	if err := tx.Commit().Error; err != nil {
 		t.Fatal(err)

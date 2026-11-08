@@ -1191,6 +1191,8 @@ class SystemCleanupPostgresRunnerTest(unittest.TestCase):
         "TestIntegrationPostgresCleanupAcceptanceAtomicity",
         "TestIntegrationPostgresCleanupIdempotence",
         "TestIntegrationPostgresCleanupCoordinatorRecovery",
+        "TestIntegrationPostgresCleanupParentRecoveryAdmission",
+        "TestIntegrationPostgresCleanupClosureRollback",
         "TestIntegrationPostgresCleanupAdmissionRace",
         "TestIntegrationPostgresCleanupReadOnlySnapshot",
     )
@@ -1266,7 +1268,7 @@ class SystemCleanupPostgresRunnerTest(unittest.TestCase):
         self.assertEqual(list(self.root.glob("addp-system-cleanup.*")), [], result.stderr)
         return result, json.loads(trace.read_text()) if trace.exists() else None
 
-    def test_runs_only_service_prefix_with_bounded_uncached_go_and_all_five_passes(self):
+    def test_runs_only_service_prefix_with_bounded_uncached_go_and_all_required_passes(self):
         result, trace = self.run_gate()
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertEqual(trace, {

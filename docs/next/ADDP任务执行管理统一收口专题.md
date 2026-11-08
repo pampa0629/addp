@@ -139,7 +139,7 @@ Manager 源准备保持其正式授权链；本批 Transfer CDC 仅验证既有 
 
 ### 对账口径与已落地项
 
-2026-11-08按已提交源码 `31a653f7639821ae83ad88ba06397a08b2984b4f` 对账；共享工作区其它会话未提交改动不计交付。逐项要求G1—G9、C1—C6、V1、C2a—C2j及C5a—C5m共39项的代码／用例定位见[Owner矩阵](../spec/testing/Owner补充门禁.md#graphcleanup-执行管理最小验证矩阵)。定位列只证明源码和入口存在，部分用例不等于全行覆盖；以下实际结果仅归属于列明的固定源码，不升格为当前HEAD或全模块最新验收。本轮只读核对证据和修订文档，未新运行T1／T2、Hosted或环境切换。
+2026-11-08按已提交源码 `31a653f7639821ae83ad88ba06397a08b2984b4f` 对账；共享工作区其它会话未提交改动不计交付。逐项要求G1—G9、C1—C6、V1、C2a—C2j及C5a—C5m共39项的代码／用例定位见[Owner矩阵](../spec/testing/Owner补充门禁.md#graphcleanup-执行管理最小验证矩阵)。定位列只证明源码和入口存在，部分用例不等于全行覆盖；以下实际结果仅归属于列明的固定源码，不升格为当前HEAD或全模块最新验收。原对账轮只读核证、未新运行T1／T2；后续父子PG补测见下方“本轮PG增补验证”。均未新增Hosted或环境切换。
 
 | 项目 | 已定位代码／标准门禁 | 实际证据与剩余边界 |
 | --- | --- | --- |
@@ -160,7 +160,7 @@ Manager 源准备保持其正式授权链；本批 Transfer CDC 仅验证既有 
 
 | 顺序 | 事项／性质 | 具体交付与完成条件 |
 | --- | --- | --- |
-| P1a | Common／System父子竞争，测试工程 | 先补C2e两父／同Owner争用、C2h拒绝并发／重复／写失败；再补C2b/c/f/g与C2d完整锁组合。沿已有Common lifecycle／System Cleanup PG入口；System AdmissionRace的50ms等待须改为可观测锁门闩。先写反例，若暴露已确认协议缺陷再修实现，不预设全部业务代码要重写 |
+| P1a剩余 | Common／System父子细矩阵，测试工程 | C2b/c/e/h核心竞争／拒绝／回滚已补真实PG，System 50ms推测屏障已替换；见下方本轮记录。剩C2f非法绑定完整组合、C2g恢复pending／残留字段组合，以及C2d其余锁后截止／失租组合；Graph领域锁交错归P1b，不将已补核心用例计为全部细矩阵通过 |
 | P1b | Graph清理与输入冻结，测试及按证据修复 | 补G2摘要回滚、G3成功先提交、G8输入／登记目标漂移、G9在途审核，以及C3/C4/C2j真实PG交错。C4当前代码核execute首尾候选一致，尚未定位原scan后候选漂移的完整反例；先验证上游生命周期围栏及原scan确认是否已足够，再决定修复，不将风险观察写成已复现漏洞 |
 | P2 | System／Monitor消费者状态矩阵，T3工程 | C5g/k/l补撤去父读取权、404／503、User／Tenant／execution切换、closed pending替换及矛盾／迟到响应；C5c/h补隐藏计数与完整页面语义。复用共享组件／请求失效能力，补C5e/j相应PG交错，不复制组件 |
 | 并行待授权 | Manager迟到writer真实验收 | runner与CI已就绪，按§8.44单独确认一次Hosted；同一原请求、原身份及原预算，核11项、控制恢复与零残留；不能先记完成 |
@@ -170,6 +170,14 @@ Manager 源准备保持其正式授权链；本批 Transfer CDC 仅验证既有 
 | 暂缓 | Graph高级恢复，未实施功能 | 恢复证据Provider、可信原生身份绑定、正向reopen继续搁置；System永久登记身份不替代物理代际、准确操作结果和停止证明；现有缺证据409及隔离不变 |
 
 共享环境切换顺序保持：刷新只读清单 → 准备默认只读、绑定清单摘要的一次性入口并在标准夹具演练 → 明确窗口和操作范围 → 用户停止旧受理／旧运行体 → 无活动和unknown后准确清理 → 用户标准脚本启动 → 核新协议与旧路径退出。历史“9父＋63子／11个Redis键”仅为旧快照，不作当前删除输入；不创建第三个本地测试database，不模糊删除、不恢复旧兼容路线。
+
+### 本轮 PG 增补验证
+
+2026-11-08仅新增测试及门禁断言，不改产品状态机、权限、预算或环境。Common `cleanup_lock_order` 增加七个子项：同Tenant两父／同Owner四领取者、子领取先提交／父随后关闭、并发与重复拒绝、prepare失败、claim外层回滚、拒绝外层回滚、PG AFTER UPDATE触发原生写失败；System增加ParentRecoveryAdmission和ClosureRollback，并将AdmissionRace改用准确PG backend阻塞屏障。触发器仅匹配本轮随机execution，退出删除本轮触发器、函数、表与记录。
+
+标准验证沿既有入口：`make test-common-postgres COMMON_POSTGRES_TEST_ARGS="--test execution-lifecycle"`、`make test-system-cleanup`、`make test-t2-ci-registration`；没有新Job或服务依赖，两个新增System主测试已加入必需PASS及其缺项／跳过拒绝反例。本地只使用Infra实际映射的addp_test，两个PG入口串行。
+
+首轮Common的多等待者屏障只认直接阻塞者而超时，后改为核验PG实际阻塞链；System首轮新断言误比较每次读取变化的observed_at，后改核全部持久事实。首轮日志保留，未据此改产品逻辑。本地最终：Common lifecycle及专业结果原子提交两个主测试通过，包含全部七个新增子项；System Cleanup八个主测试通过；两者均0SKIP。`make test-t2-ci-registration`的85项runner／选择反例、9项Manager入口反例及登记检查通过。仅修改测试和门禁断言，未运行包含其他会话变更的全工作区test-changed；这些结果不计全量模块／Hosted验收，固定源码Linux CI另核。Graph高级恢复保持暂缓。
 
 ## 七、确认范围与协作分工
 

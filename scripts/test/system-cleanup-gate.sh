@@ -76,6 +76,8 @@ for test_name in \
     TestIntegrationPostgresCleanupAcceptanceAtomicity \
     TestIntegrationPostgresCleanupIdempotence \
     TestIntegrationPostgresCleanupCoordinatorRecovery \
+    TestIntegrationPostgresCleanupParentRecoveryAdmission \
+    TestIntegrationPostgresCleanupClosureRollback \
     TestIntegrationPostgresCleanupAdmissionRace \
     TestIntegrationPostgresCleanupReadOnlySnapshot; do
     grep -q -- "^--- PASS: $test_name " "$WORK_DIR/cleanup.log" || {
