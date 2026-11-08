@@ -166,11 +166,12 @@ func (r *FileExecutionRepository) BindAuthorization(ctx context.Context, tenant 
 			return err
 		}
 		authorizationID, _ := strconv.ParseInt(issued.Authorization.ID, 10, 64)
+		// Normalize only SQL clock columns; original receipt JSON is unchanged.
 		changed := tx.Model(&commonexecution.TaskExecution{}).Where(
 			"execution_id = ? AND tenant_id = ? AND module = ? AND source = ? AND task_type = ? AND status = ? AND attempt = 0 AND execution_authorization_id IS NULL AND lease_token IS NULL AND started_at IS NULL",
 			executionID, tenant, commonexecution.ModuleDevelop, commonexecution.ModuleDevelop, commonexecution.TaskTypeWorkflow, commonexecution.ExecutionStatusPending).
 			Where("actor_principal_id = ? AND actor_tenant_membership_id = ? AND issued_authorization_version = ?", row.ActorPrincipalID, row.ActorMembershipID, row.AuthorizationVersion).
-			Updates(map[string]any{"execution_authorization_id": authorizationID, "authorization_expires_at": issued.Authorization.ExpiresAt})
+			Updates(map[string]any{"execution_authorization_id": authorizationID, "authorization_expires_at": issued.Authorization.ExpiresAt.UTC()})
 		if changed.Error != nil {
 			return changed.Error
 		}
@@ -247,6 +248,39 @@ func (r *FileExecutionRepository) ApplyAdmission(ctx context.Context, tenant uin
 			}
 		}
 		return tx.Model(&row).Updates(map[string]any{"admission_state": state, "admission_json": encoded,
-			"admission_expires_at": observation.ExpiresAt, "version": row.Version + 1}).Error
+			"admission_expires_at": observation.ExpiresAt.UTC(), "version": row.Version + 1}).Error
 	})
+}
+
+// PendingAdmissions contains only original, bound, still-unstarted executions.
+// An observation is not content access and cannot create a new execution or EA.
+type PendingFileAdmission struct {
+	Facts  *commonclient.DevelopFileExecutionFacts
+	Issued commonclient.IssuedDevelopFileAuthorization
+}
+
+func (r *FileExecutionRepository) PendingAdmissions(ctx context.Context, limit int) ([]PendingFileAdmission, error) {
+	var rows []models.FileExecution
+	err := r.db.WithContext(ctx).Model(&models.FileExecution{}).
+		Joins("JOIN common.task_executions AS original ON original.execution_id = file_executions.execution_id AND original.tenant_id = file_executions.tenant_id").
+		Where("original.module = ? AND original.source = ? AND original.task_type = ? AND original.status = ? AND original.attempt = 0 AND original.lease_token IS NULL AND original.started_at IS NULL", commonexecution.ModuleDevelop, commonexecution.ModuleDevelop, commonexecution.TaskTypeWorkflow, commonexecution.ExecutionStatusPending).
+		Where("original.execution_authorization_id IS NOT NULL AND original.authorization_expires_at > CURRENT_TIMESTAMP AND file_executions.issued_authorization_json IS NOT NULL").
+		Where("file_executions.admission_state = ? OR (file_executions.admission_state = ? AND file_executions.admission_expires_at <= CURRENT_TIMESTAMP)", "pending", "ready").
+		Order("file_executions.updated_at ASC, file_executions.execution_id ASC").Limit(limit).Find(&rows).Error
+	if err != nil {
+		return nil, err
+	}
+	candidates := make([]PendingFileAdmission, 0, len(rows))
+	for i := range rows {
+		facts, err := privateFileFacts(&rows[i])
+		if err != nil {
+			return nil, err
+		}
+		var issued commonclient.IssuedDevelopFileAuthorization
+		if err := json.Unmarshal(rows[i].IssuedAuthorizationJSON, &issued); err != nil {
+			return nil, err
+		}
+		candidates = append(candidates, PendingFileAdmission{Facts: facts, Issued: issued})
+	}
+	return candidates, nil
 }

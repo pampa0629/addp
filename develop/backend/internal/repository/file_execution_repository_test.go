@@ -236,6 +236,9 @@ func runFileQueueCase(t *testing.T, db *gorm.DB, repo *FileExecutionRepository, 
 	if err != nil {
 		t.Fatal(err)
 	}
+	if rows, err := repo.PendingAdmissions(t.Context(), 100); err != nil || len(rows) != 0 {
+		t.Fatal("unbound execution observed", rows, err)
+	}
 	ordinary := commonexecution.TaskExecution{ExecutionID: uuid.NewString(), TenantID: 7, Module: "develop", Source: "develop",
 		TaskType: "workflow", Status: "pending", ExecutionBoundary: "bounded", TriggerType: "manual", MaxAttempts: 1,
 		ExecutionConfig: commonmodels.JSONMap{"timeout": 60}}
@@ -253,6 +256,9 @@ func runFileQueueCase(t *testing.T, db *gorm.DB, repo *FileExecutionRepository, 
 	if err := repo.BindAuthorization(t.Context(), 7, item.ExecutionID, fileIssuedFixture(t, facts)); err != nil {
 		t.Fatal(err)
 	}
+	if rows, err := repo.PendingAdmissions(t.Context(), 100); err != nil || len(rows) != 1 || rows[0].Facts.ExecutionID != item.ExecutionID {
+		t.Fatal("original bound pending missing", rows, err)
+	}
 	if candidate, _, err := queue.ClaimNext("workflow", t.Context(), "file-worker", time.Now(), time.Minute, nil); err != nil || candidate != nil {
 		t.Fatalf("bound but unadmitted purpose claimed: %#v %v", candidate, err)
 	}
@@ -260,12 +266,18 @@ func runFileQueueCase(t *testing.T, db *gorm.DB, repo *FileExecutionRepository, 
 	if err := repo.ApplyAdmission(t.Context(), 7, item.ExecutionID, fileAdmissionFixture(bound)); err != nil {
 		t.Fatal(err)
 	}
+	if rows, err := repo.PendingAdmissions(t.Context(), 100); err != nil || len(rows) != 0 {
+		t.Fatal("fresh ready unnecessarily reobserved", rows, err)
+	}
 	if err := db.Model(&models.FileExecution{}).Where("execution_id = ?", item.ExecutionID).
 		Update("admission_expires_at", time.Now().UTC().Add(-time.Minute)).Error; err != nil {
 		t.Fatal(err)
 	}
 	if candidate, _, err := queue.ClaimNext("workflow", t.Context(), "file-worker", time.Now(), time.Minute, nil); err != nil || candidate != nil {
 		t.Fatalf("expired admission claimed: %#v %v", candidate, err)
+	}
+	if rows, err := repo.PendingAdmissions(t.Context(), 100); err != nil || len(rows) != 1 {
+		t.Fatal("expired ready not scheduled for fresh observation", rows, err)
 	}
 	// An expired observation is not an Allow. A fresh System observation may
 	// refresh pending eligibility; the original attempt and EA do not change.
@@ -275,6 +287,12 @@ func runFileQueueCase(t *testing.T, db *gorm.DB, repo *FileExecutionRepository, 
 	claimed, lease, err := queue.ClaimNext("workflow", t.Context(), "file-worker", time.Now(), time.Minute, nil)
 	if err != nil || claimed == nil || lease == nil || claimed.ExecutionID != item.ExecutionID || claimed.Attempt != 1 || claimed.StartedAt == nil {
 		t.Fatalf("original admitted purpose was not claimed exactly once: %#v %v", claimed, err)
+	}
+	if err := db.Model(&models.FileExecution{}).Where("execution_id = ?", item.ExecutionID).Update("admission_expires_at", time.Now().UTC().Add(-time.Minute)).Error; err != nil {
+		t.Fatal(err)
+	}
+	if rows, err := repo.PendingAdmissions(t.Context(), 100); err != nil || len(rows) != 0 {
+		t.Fatal("running execution entered pending observer", rows, err)
 	}
 	runPrivateRuntimeRecordCase(t, db, repo, claimed, *lease, bound)
 }

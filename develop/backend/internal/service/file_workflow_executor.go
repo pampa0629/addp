@@ -29,7 +29,8 @@ type privateFileCleanup struct {
 type privateFileWorkflowExecutor struct {
 	repository *repository.FileExecutionRepository
 	instanceID string
-	authority  fileSourceAuthority
+	authority  func(uint) fileSourceAuthority
+	admission  func(uint) fileAdmissionAuthority
 	provider   plugin.ContentReadableProvider
 	endpoint   func(context.Context, uint, uint) (plugin.ConnectionInfo, error)
 	credential func(context.Context, uint) (string, error)
@@ -42,7 +43,8 @@ func newPrivateFileWorkflowExecutor(repo *repository.FileExecutionRepository, wo
 	if workflow == nil || workflow.systemService == nil {
 		return f
 	}
-	f.authority = workflow.systemService
+	f.authority = func(tenant uint) fileSourceAuthority { return workflow.systemService.WithTenantID(tenant) }
+	f.admission = func(tenant uint) fileAdmissionAuthority { return workflow.systemService.WithTenantID(tenant) }
 	f.credential = workflow.systemService.TenantServiceAccessToken
 	if p, err := plugin.Get("nfs"); err == nil {
 		f.provider, _ = p.(plugin.ContentReadableProvider)
@@ -119,6 +121,9 @@ func (s *ExecutionService) RecoverPrivateFiles(ctx context.Context) error {
 			failures = append(failures, errFileSourceCleanupPending)
 		}
 	}
+	if err := s.refreshPrivateFileAdmissions(ctx); err != nil {
+		failures = append(failures, err)
+	}
 	return errors.Join(failures...)
 }
 
@@ -164,7 +169,7 @@ func (s *ExecutionService) executePrivateFileWorkflow(ctx context.Context, item 
 	if err != nil {
 		return unavailable()
 	}
-	b, err := prepareFileWorkflowInputs(runCtx, f.instanceID, f.authority, f.provider, facts, issued, lease, func(c context.Context, instance, dir string) error {
+	b, err := prepareFileWorkflowInputs(runCtx, f.instanceID, f.authority(uint(item.TenantID)), f.provider, facts, issued, lease, func(c context.Context, instance, dir string) error {
 		return f.repository.RecordPrivateInputDirectory(c, lease, instance, dir)
 	})
 	defer f.cleanup(b)

@@ -73,6 +73,27 @@ func TestFileWorkflowInputsDurableOwnerRecordBeforeRuntimeCreate(t *testing.T) {
 
 func privateFileWorkerFixture(t *testing.T, save bool) (*gorm.DB, *repository.FileExecutionRepository, *execution.TaskExecution, *execution.Lease, *client.DevelopFileExecutionFacts, client.IssuedDevelopFileAuthorization, client.DevelopFileSourceAccessObservation) {
 	t.Helper()
+	db, repo, item, _, issued, base := privateFilePendingFixture(t, save)
+	approval := ""
+	if save {
+		approval = "81"
+	}
+	if err := repo.ApplyAdmission(t.Context(), 3, item.ExecutionID, client.DevelopFileAdmissionObservation{ApprovalID: approval, AuthorizationID: issued.Authorization.ID, ExecutionID: item.ExecutionID, ExpectedAttempt: 1, ScopeDigest: issued.ScopeDigest, State: "ready", ObservedAt: time.Now(), ExpiresAt: time.Now().Add(time.Minute)}); err != nil {
+		t.Fatal(err)
+	}
+	_, lease, err := repository.NewExecutionRepository(db).ClaimNext("workflow", t.Context(), "private-input-worker", time.Now(), time.Minute, nil)
+	if err != nil || lease == nil {
+		t.Fatal(lease, err)
+	}
+	frozen, err := repo.Read(t.Context(), 3, item.ExecutionID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return db, repo, item, lease, frozen, issued, base
+}
+
+func privateFilePendingFixture(t *testing.T, save bool) (*gorm.DB, *repository.FileExecutionRepository, *execution.TaskExecution, *client.DevelopFileExecutionFacts, client.IssuedDevelopFileAuthorization, client.DevelopFileSourceAccessObservation) {
+	t.Helper()
 	facts, issued, _, base := fileInputsFixture(t, save)
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	if err != nil {
@@ -116,20 +137,9 @@ func privateFileWorkerFixture(t *testing.T, save bool) (*gorm.DB, *repository.Fi
 	if err := repo.BindAuthorization(t.Context(), 3, item.ExecutionID, issued); err != nil {
 		t.Fatal(err)
 	}
-	approval := ""
-	if save {
-		approval = "81"
-	}
-	if err := repo.ApplyAdmission(t.Context(), 3, item.ExecutionID, client.DevelopFileAdmissionObservation{ApprovalID: approval, AuthorizationID: issued.Authorization.ID, ExecutionID: item.ExecutionID, ExpectedAttempt: 1, ScopeDigest: issued.ScopeDigest, State: "ready", ObservedAt: time.Now(), ExpiresAt: time.Now().Add(time.Minute)}); err != nil {
-		t.Fatal(err)
-	}
-	_, lease, err := repository.NewExecutionRepository(db).ClaimNext("workflow", t.Context(), "private-input-worker", time.Now(), time.Minute, nil)
-	if err != nil || lease == nil {
-		t.Fatal(lease, err)
-	}
 	frozen, err := repo.Read(t.Context(), 3, item.ExecutionID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	return db, repo, item, lease, frozen, issued, base
+	return db, repo, item, frozen, issued, base
 }

@@ -41,7 +41,7 @@ func TestPrivateFileWorkerDispatchRecoveryAndCapacity(t *testing.T) {
 				base.ObservedAt = time.Now()
 				base.ExpiresAt = time.Now().Add(300 * time.Millisecond)
 			}
-			f.authority = fileInputsAuthority(base)
+			f.authority = func(uint) fileSourceAuthority { return fileInputsAuthority(base) }
 			f.provider = fileInputsProvider(fileInputsData())
 			f.credential = func(context.Context, uint) (string, error) { return "addp_at_runtime_current", nil }
 			var creates, uploads, dispatches, deletes atomic.Int32
@@ -236,7 +236,7 @@ func TestPrivateFileWorkerClosesSaveAndUsesOriginalDeadline(t *testing.T) {
 				t.Fatal(err)
 			}
 			var ioCalls atomic.Int32
-			s.privateFiles.authority = fileInputsAuthority(base)
+			s.privateFiles.authority = func(uint) fileSourceAuthority { return fileInputsAuthority(base) }
 			s.privateFiles.provider = &sourceWindowProvider{open: func(context.Context, plugin.ConnectionInfo, plugin.EngineCatalogPath, plugin.ReadOptions) (io.ReadCloser, error) {
 				ioCalls.Add(1)
 				return nil, fmt.Errorf("must not open")
@@ -259,9 +259,11 @@ func TestPrivateFileWorkerClosesSaveAndUsesOriginalDeadline(t *testing.T) {
 				_ = db.Model(&claimed).Update("started_at", past).Error
 			}
 			if scenario == "source-rejected" {
-				s.privateFiles.authority = fileSourceAuthorityFunc(func(context.Context, client.IssuedDevelopFileAuthorization, client.DevelopFileSourceAccessRequest) (*client.DevelopFileSourceAccessObservation, error) {
-					return nil, fmt.Errorf("read denied")
-				})
+				s.privateFiles.authority = func(uint) fileSourceAuthority {
+					return fileSourceAuthorityFunc(func(context.Context, client.IssuedDevelopFileAuthorization, client.DevelopFileSourceAccessRequest) (*client.DevelopFileSourceAccessObservation, error) {
+						return nil, fmt.Errorf("read denied")
+					})
+				}
 			}
 			if err := s.Execute(t.Context(), &claimed, *lease); err != nil {
 				t.Fatal(err)
@@ -288,7 +290,7 @@ func TestPrivateFileWorkerBlockedSourceRetainsOriginalBatchAndCapacity(t *testin
 	base.ObservedAt = time.Now()
 	base.ExpiresAt = time.Now().Add(500 * time.Millisecond)
 	f := s.privateFiles
-	f.authority = fileInputsAuthority(base)
+	f.authority = func(uint) fileSourceAuthority { return fileInputsAuthority(base) }
 	f.provider = &sourceWindowProvider{open: func(_ context.Context, _ plugin.ConnectionInfo, p plugin.EngineCatalogPath, _ plugin.ReadOptions) (io.ReadCloser, error) {
 		set, _ := plugin.NewQueryReadSet(p)
 		return &sourceWindowHandle{Reader: bytes.NewReader(nil), set: set, close: func() error { <-release; return nil }}, nil
