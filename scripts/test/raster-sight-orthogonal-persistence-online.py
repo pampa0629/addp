@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """16 actual CSV/COG chains, 40 exact refusals, 776 rereads, one 600s budget."""
 from __future__ import annotations
-import base64,importlib,json,math,re,subprocess,sys,time
+import base64,importlib,json,math,os,re,subprocess,sys,time
 from pathlib import Path
 view=importlib.import_module('scripts.test.raster-viewshed-persistence-online')
 sight=importlib.import_module('scripts.test.raster-line-of-sight-persistence-online')

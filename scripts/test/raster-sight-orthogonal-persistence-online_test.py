@@ -145,7 +145,7 @@ class Client:
 class SightOrthogonalWorkflowTest(unittest.TestCase):
     def run_case(self, fault=None, worker=physical, diagnostic_runner=diagnostic, budget='600'):
         root = Path(self.enterContext(tempfile.TemporaryDirectory()))
-        env = {'ONLINE_SUITE': scene.SUITE, 'ADDP_ONLINE_TEST_RUN_ID': 'sight-orthogonal-123-1',
+        env = {'GATEWAY_URL':'http://ordinary-fixture.invalid','ADDP_ONLINE_TEST_USER_ACCESS_TOKEN':'ordinary-fixture-token', 'ONLINE_SUITE': scene.SUITE, 'ADDP_ONLINE_TEST_RUN_ID': 'sight-orthogonal-123-1',
                'ADDP_ONLINE_TEST_TENANT_ID': '2', 'ADDP_ONLINE_SIGHT_ORTHOGONAL_NFS_ENGINE_ID': '3',
                'ADDP_ONLINE_TEST_TIMEOUT_SECONDS': budget, 'ADDP_ONLINE_ARTIFACT_DIR': str(root/'evidence')}
         client = Client(fault)
@@ -162,7 +162,19 @@ class SightOrthogonalWorkflowTest(unittest.TestCase):
                 expected['operations'] = []
             return expected
 
-        return scene.run_scenario(root, env, client, worker, diagnostic_runner, reader,metadata_factory=Metadata)
+        # Exercise the production entrypoint; only external I/O is isolated.
+        import contextlib,io,os
+        lifecycle=scene.view.run_scenario
+        def isolated_lifecycle(repository,actual_env,actual_client,*args,**kwargs):
+            self.assertIs(kwargs['profile'],scene)
+            return lifecycle(repository,actual_env,actual_client,worker,diagnostic_runner,reader,metadata_factory=Metadata,profile=scene)
+        output=io.StringIO()
+        with patch.dict(os.environ,env,clear=True), patch.object(scene,'DiagnosticClient',return_value=client)as constructor, patch.object(scene.view,'run_scenario',side_effect=isolated_lifecycle), contextlib.redirect_stdout(output):
+            scene.main()
+        constructor.assert_called_once_with(env['GATEWAY_URL'],env['ADDP_ONLINE_TEST_USER_ACCESS_TOKEN'],30,env['ADDP_ONLINE_ARTIFACT_DIR'])
+        report=json.loads((self.evidence/(scene.PREFIX+'-persistence.json')).read_bytes())
+        self.assertEqual(json.loads(output.getvalue()),report)
+        return report
 
     def test_complete_fixed_matrix_rereads_and_original_manifest(self):
         calls = []
