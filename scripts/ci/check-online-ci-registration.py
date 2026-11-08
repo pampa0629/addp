@@ -3489,6 +3489,43 @@ def validate_raster_surface_area(repository: Path, registered: set[str]) -> None
 
 
 
+def validate_raster_sight_orthogonal(repository: Path, registered: set[str]) -> None:
+    import ast
+    suite='raster-sight-orthogonal-persistence'
+    if suite not in registered:return
+    workflow=(repository/'.github/workflows/online-t4-gates.yml').read_text()
+    job=re.search(r'(?ms)^  raster-sight-orthogonal-hosted-t4:\n(.*?)(?=^  [a-z][a-z0-9-]*:\n|\Z)',workflow)
+    if (job is None or any(text not in job[1]for text in(
+        "if: github.event_name == 'workflow_dispatch' && inputs.suite == 'raster-sight-orthogonal-persistence'",
+        'runs-on: ubuntu-24.04','cancel-in-progress: false','nfs-kernel-server nfs-common',
+        'bash scripts/test/online-hosted-raster-sight-orthogonal-gate.sh --check-only',
+        'run: bash scripts/test/online-hosted-raster-sight-orthogonal-gate.sh','if: always()'))
+        or "&& inputs.suite != 'raster-sight-orthogonal-persistence'"not in workflow or load_suite_registry(repository)[suite].nightly):
+        raise RegistrationError('orthogonal sight requires an isolated manual Hosted NFS job')
+    make=(repository/'Makefile').read_text()
+    if ('test_online_sight_orthogonal_fixture.py'not in make_target_commands(make,'test-geopython-workflow')
+        or 'test-raster-sight-orthogonal-online-runner:'not in make_target_commands(make,'test-raster-online-runner')):
+        raise RegistrationError('orthogonal sight must use standard Native/Runner aggregates')
+    required={
+        'scripts/test/online-hosted-raster-sight-orthogonal-gate.sh':('ADDP_ONLINE_TEST_TIMEOUT_SECONDS=600','--suite raster-workflow','--wait-protection-owners develop,manager','start_online_geopython_runtime','online_raster_lineage.py prepare','online-raster-sight-orthogonal-fixture.py stop'),
+        'business/scripts/online-raster-sight-orthogonal-fixture.py':('def reference','enter>=leave','expected!=255','full_check=True','def prepare_oracle','def cleanup_oracle','def archive_files','actual north-up COG contrast differs','source file changed'),
+        'scripts/test/raster-sight-orthogonal-persistence-online.py':('COUNTS=(16,40,776,57)','view.run_scenario','fixture.parse_csv','raster.strict_sizes','def check_and_archive','def validate_frozen','ViewshedMetadata','file_contract'),
+        'scripts/test/raster-viewshed-persistence-online.py':('profile.COUNTS','profile.validate_persisted','profile.check_and_archive','lineage.collect','lineage.verify_archive','readonly.no_publication','BEGIN READ ONLY','ExactFileMetadataGrants','query language rewrote stored failure','source or prior target Meta snapshot changed'),
+        'scripts/utils/online_raster_lineage.py':("'raster-sight-orthogonal-persistence': 'sight-orthogonal-lineage'",),
+        'engines/geopython-workflow/test_online_sight_orthogonal_fixture.py':('test_sight_orthogonal_sixteen_real_chains_and_776_complete_original_checks','checks==776','test_sight_orthogonal_exact_failure_node_language_and_zero_private_output','test_sight_orthogonal_corrupt_actual_or_expected_never_passes'),
+        'Makefile':('scripts/test/raster-sight-orthogonal-persistence-online_test.py','scripts/test/online-raster-sight-orthogonal-fixture_test.py','scripts/test/online-hosted-raster-sight-orthogonal-gate_test.py')}
+    for name,fragments in required.items():
+        path=repository/name
+        if not path.is_file()or any(not source_contract_contains(path.read_text(),fragment,repository)for fragment in fragments):raise RegistrationError('orthogonal sight registration/evidence is incomplete: '+name)
+    def literal(path,name):
+        tree=ast.parse((repository/path).read_text())
+        try:return next(ast.literal_eval(node.value)for node in tree.body if isinstance(node,ast.Assign)and any(isinstance(t,ast.Name)and t.id==name for t in node.targets))
+        except (StopIteration,ValueError):raise RegistrationError('orthogonal sight matrix is invalid')from None
+    cases=literal('business/scripts/online-raster-sight-orthogonal-fixture.py','CASES')
+    failures=literal('scripts/test/raster-sight-orthogonal-persistence-online.py','FAILURES')
+    if len(cases)!=16 or sum(n.endswith('.csv')for n in cases)!=8 or len(failures)!=20:raise RegistrationError('orthogonal sight requires eight CSV/eight COG and twenty bilingual categories')
+
+
 def validate_raster_viewshed(repository: Path, registered: set[str]) -> None:
     import ast
     suite='raster-viewshed-persistence'
@@ -3508,7 +3545,7 @@ def validate_raster_viewshed(repository: Path, registered: set[str]) -> None:
     required={
         'scripts/test/online-hosted-raster-viewshed-gate.sh':('ADDP_ONLINE_TEST_TIMEOUT_SECONDS=600','--suite raster-workflow','--wait-protection-owners develop,manager','start_online_geopython_runtime','online_raster_lineage.py prepare','online-raster-viewshed-fixture.py stop'),
         'business/scripts/online-raster-viewshed-fixture.py':('def expected_pixels','enter>=leave','gdal.GDT_Byte','expected!=255','full_check=True','def prepare_oracle','def cleanup_oracle','def archive_cogs','source file changed'),
-        'scripts/test/raster-viewshed-persistence-online.py':('(16, 36, 712, 53)',"for language in ('zh-cn', 'en')",'dtype=\'Byte\'','raster.strict_sizes','lineage.collect','lineage.verify_archive','readonly.no_publication','ViewshedMetadata','ExactFileMetadataGrants','BEGIN READ ONLY','query language rewrote stored failure','source or prior target Meta snapshot changed','viewshed-cogs-manifest.json'),
+        'scripts/test/raster-viewshed-persistence-online.py':('(16, 36, 712, 53)',"for language in ('zh-cn', 'en')",'dtype=\'Byte\'','raster.strict_sizes','lineage.collect','lineage.verify_archive','readonly.no_publication','ViewshedMetadata','ExactFileMetadataGrants','BEGIN READ ONLY','query language rewrote stored failure','source or prior target Meta snapshot changed',"ARCHIVE_NAME='viewshed-cogs'","profile.ARCHIVE_NAME+'-manifest.json'"),
         'scripts/utils/online_raster_lineage.py':("'raster-viewshed-persistence': 'viewshed-lineage'",),
         'engines/geopython-workflow/test_online_viewshed_fixture.py':('test_viewshed_real_sixteen_cogs_complete_pixels_masks_and_immutable_originals','checks==712','test_viewshed_real_exact_failure_node_language_and_zero_publication','test_viewshed_independent_oracle_rejects_corrupt_actual_or_frozen_facts'),
         'scripts/test/raster-viewshed-persistence-online_test.py':('test_complete_fixed_matrix_rereads_and_original_manifest','test_identity_language_lineage_scan_size_and_metadata_fail_closed','test_unknown_write_outcome_remains_journalled_for_cleanup'),
@@ -7670,6 +7707,7 @@ def check_registration(repository: Path) -> None:
     validate_raster_profile_curvature(repository, registered)
     validate_raster_cut_fill(repository, registered)
     validate_raster_surface_area(repository, registered)
+    validate_raster_sight_orthogonal(repository, registered)
     validate_raster_viewshed(repository, registered)
     validate_raster_line_of_sight(repository, registered)
     validate_raster_tangential_curvature(repository, registered)

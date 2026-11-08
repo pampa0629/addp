@@ -22,6 +22,11 @@ obj, array, positive, SuiteError = base.obj, base.array, base.positive, base.Sui
 SubmittedLanguageClient, BudgetClient = base.SubmittedLanguageClient, base.BudgetClient
 encoded, immutable = base.encoded, base.immutable
 SUITE = fixture.SUITE
+PREFIX='viewshed'
+ARCHIVE_NAME='viewshed-cogs'
+MANIFEST_KEY='archived_cogs'
+COUNTS=(16, 36, 712, 53)
+
 
 # Each case is an ordinary JSON request that must reach the actual sight node.
 FAILURES = {
@@ -192,6 +197,13 @@ def current(execution, identity, identifier, dag, runtime, language, status):
 
 class ViewshedMetadata(raster.WorkflowMetadata):
     """Only this NFS suite: exact structural Grants and run-bound persisted facts."""
+    prefix=PREFIX
+    suite=SUITE
+    fixture=fixture
+
+    def file_contract(self,name):
+        return 'media','tiff',('single','multi')
+
     def __init__(self, env, client, engine, identity, source_scan, remaining):
         from datetime import datetime,timedelta,timezone
         self.env,self.client,self.engine,self.identity=env,client,engine,identity
@@ -205,9 +217,9 @@ class ViewshedMetadata(raster.WorkflowMetadata):
         if owner!={'schema':'addp.raster-lineage-owner/v1','suite':suite,'run_id':run,
             'container_id':self.owner['Id'],'started_at':self.owner['State']['StartedAt'],'postgres_user':user}:
             raise SuiteError('metadata observer differs from initial Hosted PostgreSQL owner')
-        self.path=Path(env['ADDP_ONLINE_ARTIFACT_DIR'])/'viewshed-metadata.json'
+        self.path=Path(env['ADDP_ONLINE_ARTIFACT_DIR'])/(self.prefix+'-metadata.json')
         self.source_scan=source_scan;self.bindings={};self.issued={};self.items={}
-        self.report={'schema_version':'addp.viewshed-metadata/v1','run_id':env['ADDP_ONLINE_TEST_RUN_ID'],
+        self.report={'schema_version':'addp.'+self.prefix+'-metadata/v1','run_id':env['ADDP_ONLINE_TEST_RUN_ID'],
             'identity':identity,'container_id':self.owner['Id'],'started_at':self.owner['State']['StartedAt'],
             'pending':[],'issued':[],'facts':[],'queries':[],'failures':[],'cleanup':'pending'}
         self.expires_at=(datetime.now(timezone.utc)+timedelta(seconds=remaining())).isoformat();self.save()
@@ -217,7 +229,7 @@ class ViewshedMetadata(raster.WorkflowMetadata):
 
     def boundary(self):
         _,suite,run=lineage.boundary(self.env)
-        if suite!=SUITE or self.env.get('ADDP_ONLINE_TEST_TIMEOUT_SECONDS')!='600' or run!=f"viewshed-{self.env.get('GITHUB_RUN_ID')}-{self.env.get('GITHUB_RUN_ATTEMPT')}":
+        if suite!=self.suite or self.env.get('ADDP_ONLINE_TEST_TIMEOUT_SECONDS')!='600' or run!=f"{self.prefix}-{self.env.get('GITHUB_RUN_ID')}-{self.env.get('GITHUB_RUN_ATTEMPT')}":
             raise SuiteError('viewshed metadata requires its exact 600-second Hosted run')
 
     def execution(self,identifier,dag,runtime,language,status):
@@ -250,10 +262,11 @@ COMMIT;
 
     def ensure(self,name):
         self.boundary();self.container_user(self.observer.inspect())
-        if name not in fixture.SOURCES and name not in {'outputs/'+n for n in fixture.TARGETS}:
+        if name not in self.fixture.SOURCES and name not in {'outputs/'+n for n in self.fixture.TARGETS}:
             raise SuiteError('metadata target is outside fixed viewshed fixture')
         if name.startswith('outputs/')and name not in self.bindings:raise SuiteError('unconfirmed viewshed target')
-        facts=self.grants.metadata_facts(self.engine,name,'nfs',data_type='media',format_name='tiff',layouts=('single','multi'))
+        data_type,format_name,layouts=self.file_contract(name)
+        facts=self.grants.metadata_facts(self.engine,name,'nfs',data_type=data_type,format_name=format_name,layouts=layouts)
         target=self.grants.target(self.engine,name,'nfs',layout=facts['boundary']['layout'])
         expected=(facts['boundary_hash'],facts['item_fingerprint'],target)
         if name in self.issued and self.issued[name]!=expected:raise SuiteError('metadata fingerprint or boundary changed')
@@ -262,7 +275,7 @@ COMMIT;
         if not response.get('observed_at')or not isinstance(rows,list)or len(rows)!=1 or rows[0].get('target')!=target or type(rows[0].get('visible'))is not bool:raise SuiteError('invalid metadata visibility facts')
         if not rows[0]['visible']:
             if name in self.issued:raise SuiteError('metadata visibility was lost')
-            receipt=self.grants.grant(self.engine,name,'nfs',data_type='media',format_name='tiff',layout=facts['boundary']['layout'],expires_at=self.expires_at)
+            receipt=self.grants.grant(self.engine,name,'nfs',data_type=data_type,format_name=format_name,layout=facts['boundary']['layout'],expires_at=self.expires_at)
             if (receipt.get('boundary_hash'),receipt.get('item_fingerprint'))!=expected[:2]:raise SuiteError('Grant identity changed')
             self.report['issued'].append(receipt);self.save()
         self.issued[name]=expected
@@ -270,7 +283,7 @@ COMMIT;
 
     def find(self,name,binding=None):
         if binding is not None:
-            if (name not in {'outputs/'+n for n in fixture.TARGETS} or set(binding)!={'execution','scan','locator'}
+            if (name not in {'outputs/'+n for n in self.fixture.TARGETS} or set(binding)!={'execution','scan','locator'}
                 or any(not re.fullmatch(raster.UUID_PATTERN,binding.get(key,''))for key in('execution','scan'))
                 or binding['locator']!=f'addp://engine/{self.engine}/path/{name}?type=file'):
                 raise SuiteError('wrong current viewshed execution or automatic scan binding')
@@ -321,8 +334,38 @@ WHERE i.id=:'item'::integer AND i.tenant_id=:'tenant'::integer AND i.engine_id=:
         return result
 
 
+def success_language(index):
+    return 'zh-cn' if index%2==0 else 'en'
+
+
+def validate_frozen(baseline):
+    frozen=obj(baseline.get('expectations'),'frozen independent reference')
+    if (set(frozen)!=set(fixture.CASES) or baseline.get('expected_array_count')!=16
+        or any(frozen[n]['artifact']!=fixture.artifact_expectation(n)for n in frozen)):
+        raise SuiteError('sixteen frozen independent three-state references required')
+    for field in('scope_sha256','anchor_sha256'):
+        if not isinstance(baseline.get(field),str)or not re.fullmatch('[0-9a-f]{64}',baseline[field]):raise SuiteError('invalid frozen oracle scope or anchor')
+    for fact in frozen.values():
+        counts=fact.get('state_counts')
+        if not isinstance(counts,dict)or set(counts)!={'0','1','2','255'}or any(type(v)is not int or v<0 for v in counts.values())or sum(counts.values())!=fixture.WIDTH*fixture.HEIGHT:raise SuiteError('invalid frozen complete state counts')
+
+
+def validate_final(result,name,frozen):
+    validate_artifact(obj(result.get('final_result'),'Byte COG artifact'),name)
+
+
+def validate_persisted(result,native,item,name):
+    raster.validate_target_item(item,fixture.artifact_expectation(name),native)
+    return raster.strict_sizes(result['final_result'],native,item,name)
+
+
 def run_scenario(repository, env, client, physical_runner=physical, diagnostic_runner=invalid_diagnostic,
-                 lineage_reader=lineage.read_current, metadata_factory=None):
+                 lineage_reader=lineage.read_current, metadata_factory=None, profile=None):
+    profile = profile or sys.modules[__name__]
+    fixture = profile.fixture
+    prefix = profile.PREFIX
+    suite = profile.SUITE
+    anchor_key = "ADDP_ONLINE_"+prefix.upper().replace("-","_")+"_ORACLE_ANCHOR_SHA256"
     started = time.monotonic()
     budget = float(env.get('ADDP_ONLINE_TEST_TIMEOUT_SECONDS', '600'))
     if budget != 600:
@@ -337,13 +380,13 @@ def run_scenario(repository, env, client, physical_runner=physical, diagnostic_r
     client = BudgetClient(client, remaining)
     directory = Path(env['ADDP_ONLINE_ARTIFACT_DIR'])
     directory.mkdir(parents=True, exist_ok=True)
-    archive = directory/'viewshed-cogs'
+    archive = directory/profile.ARCHIVE_NAME
     archive.mkdir(exist_ok=False)
     stages = []
 
     def progress(status):
-        (directory/'viewshed-progress.json').write_bytes(encoded({
-            'suite': SUITE, 'result': status, 'budget_ms': 600000,
+        (directory/(prefix+'-progress.json')).write_bytes(encoded({
+            'suite': suite, 'result': status, 'budget_ms': 600000,
             'elapsed_ms': round((time.monotonic()-started)*1000), 'stages': stages,
         }))
 
@@ -367,10 +410,10 @@ def run_scenario(repository, env, client, physical_runner=physical, diagnostic_r
             raise SuiteError('viewshed acceptance forbids the default tenant')
         identity = raster.validate_identity(client, tenant, required_permissions=raster.EDITOR_PERMISSIONS)
         principal = int(identity['principal_id'])
-        engine = positive(env['ADDP_ONLINE_VIEWSHED_NFS_ENGINE_ID'], 'NFS engine')
+        engine = positive(env['ADDP_ONLINE_'+prefix.upper().replace('-','_')+'_NFS_ENGINE_ID'], 'NFS engine')
         scopes = {name: f'addp://engine/{engine}/path/{name}?type=file' for name in fixture.SOURCES}
         scan = support.wait_for_meta_scan(client, engine, time.monotonic()+remaining(), scope={'targets': list(scopes.values())})
-        metadata = (metadata_factory or ViewshedMetadata)(env,client,engine,identity,scan,remaining)
+        metadata = (metadata_factory or profile.ViewshedMetadata)(env,client,engine,identity,scan,remaining)
         producer_env={k:v for k,v in env.items()if k!='ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN'}
         items = {name: metadata.find(name) for name in scopes}
         sources = {name: scopes[name]+f'&item_id={items[name]["id"]}' for name in scopes}
@@ -390,20 +433,14 @@ def run_scenario(repository, env, client, physical_runner=physical, diagnostic_r
         parent = f'addp://engine/{engine}/path/outputs?type=directory'
 
         baseline = physical_runner(repository, producer_env, 'prepare-oracle', [], remaining())
-        env=dict(env,ADDP_ONLINE_VIEWSHED_ORACLE_ANCHOR_SHA256=baseline['anchor_sha256'])
-        producer_env=dict(producer_env,ADDP_ONLINE_VIEWSHED_ORACLE_ANCHOR_SHA256=baseline['anchor_sha256'])
+        env=dict(env,**{anchor_key:baseline['anchor_sha256']})
+        producer_env=dict(producer_env,**{anchor_key:baseline['anchor_sha256']})
         frozen = obj(baseline.get('expectations'), 'frozen independent reference')
         source_bytes = obj(baseline.get('sources'), 'physical sources')
-        verify_sources(source_bytes)
-        if (set(frozen)!=set(fixture.CASES)or baseline.get('expected_array_count')!=16 or any(frozen[n]['artifact']!=fixture.artifact_expectation(n)for n in frozen)):
-            raise SuiteError('sixteen frozen independent three-state references required')
-        for field in('scope_sha256','anchor_sha256'):
-            if not isinstance(baseline.get(field),str)or not re.fullmatch('[0-9a-f]{64}',baseline[field]):raise SuiteError('invalid frozen oracle scope or anchor')
-        for fact in frozen.values():
-            counts=fact.get('state_counts')
-            if not isinstance(counts,dict)or set(counts)!={'0','1','2','255'}or any(type(v)is not int or v<0 for v in counts.values())or sum(counts.values())!=fixture.WIDTH*fixture.HEIGHT:raise SuiteError('invalid frozen complete state counts')
-        oracle = immutable(directory/'viewshed-expectations.json', encoded(frozen))
-        check_and_archive(baseline, [], source_bytes, frozen, archive, {},baseline['scope_sha256'])
+        profile.verify_sources(source_bytes)
+        profile.validate_frozen(baseline)
+        oracle = immutable(directory/(prefix+'-expectations.json'), encoded(frozen))
+        profile.check_and_archive(baseline, [], source_bytes, frozen, archive, {},baseline['scope_sha256'])
         if any(type(before[n].get('size_bytes')) is not int or before[n]['size_bytes'] != fact['size_bytes']
                for n, fact in source_bytes.items()):
             raise SuiteError('source physical and Meta sizes differ')
@@ -425,19 +462,19 @@ def run_scenario(repository, env, client, physical_runner=physical, diagnostic_r
         for index, name in enumerate(fixture.TARGETS):
             stages.append({'case': name, 'status': 'running'})
             progress('running')
-            language = 'zh-cn' if index % 2 == 0 else 'en'
-            dag = definition(sources, parent, name)
+            language = profile.success_language(index)
+            dag = profile.definition(sources, parent, name)
             identifier, execution, monitor = submit(dag, language, 'success')
             source_name = fixture.CASES[name][0]
             source = sources[source_name]
             target = f'addp://engine/{engine}/path/outputs/{name}?type=file'
-            expected = expected_lineage(source, target)
+            expected = profile.expected_lineage(source, target)
             facts, automatic_scan, result = file_flow.validate_success(execution, [source], target)
             lineage.validate(facts, expected, public=True)
-            proof = lineage.collect(env, SUITE, identifier, name, expected, execution, tenant, principal, dag, lineage_reader)
+            proof = lineage.collect(env, suite, identifier, name, expected, execution, tenant, principal, dag, lineage_reader)
             if obj(monitor.get('metadata'), 'Monitor metadata').get('lineage_facts') != facts:
                 raise SuiteError('Monitor current public lineage differs')
-            validate_artifact(obj(result.get('final_result'),'Byte COG artifact'),name)
+            profile.validate_final(result,name,frozen[name])
             if automatic_scan in [scan, *scans]:
                 raise SuiteError('duplicate automatic COG scan')
             scans.append(automatic_scan)
@@ -446,7 +483,7 @@ def run_scenario(repository, env, client, physical_runner=physical, diagnostic_r
             immutable(directory/f'meta-{name}.json', encoded(scanned))
             names.append(name)
             native = physical_runner(repository, producer_env, 'verify', names, remaining())
-            previous = check_and_archive(native, names, source_bytes, frozen, archive, previous,baseline['scope_sha256'])
+            previous = profile.check_and_archive(native, names, source_bytes, frozen, archive, previous,baseline['scope_sha256'])
             physical_calls += 1
             full_checks += len(names)
             hit = metadata.find('outputs/'+name,binding={'execution':identifier,'scan':automatic_scan,'locator':target})
@@ -454,11 +491,10 @@ def run_scenario(repository, env, client, physical_runner=physical, diagnostic_r
             descriptor = obj(obj(item.get('attributes'), 'Meta attributes').get('item'), 'Meta file')
             if (item.get('id') != hit['id'] or hit['id'] in target_metadata or not item.get('scanned_at')
                     or item.get('item_type') != 'file' or item.get('full_name') != 'outputs/'+name
-                    or descriptor.get('format') != 'tiff' or type(item.get('size_bytes')) is not int
+                    or descriptor.get('format') != ('csv' if name.endswith('.csv') else 'tiff') or type(item.get('size_bytes')) is not int
                     or item['size_bytes'] != previous[name]['size_bytes']):
                 raise SuiteError('COG identity or equal positive physical/Meta size differs')
-            raster.validate_target_item(item,fixture.artifact_expectation(name),native['targets'][name])
-            sizes=raster.strict_sizes(result['final_result'],native['targets'][name],item,name)
+            sizes=profile.validate_persisted(result,native['targets'][name],item,name)
             target_metadata[hit['id']] = item
             immutable(directory/f'target-{name}-meta-before.json', encoded(item))
             source_id = items[source_name]['id']
@@ -479,18 +515,18 @@ def run_scenario(repository, env, client, physical_runner=physical, diagnostic_r
         if base.scan_ids(client) != expected_scans:
             raise SuiteError('unexpected successful scan inventory')
         edges = {name: source_edges(client, item['id']) for name, item in items.items()}
-        for problem in FAILURES:
+        for problem in profile.FAILURES:
             for language in ('zh-cn', 'en'):
                 stages.append({'problem': problem, 'language': language, 'status': 'running'})
                 progress('running')
-                dag = definition(sources, parent, 'flat.cog.tif', invalid=problem, language=language)
+                dag = profile.definition(sources, parent, 'flat.cog.tif', invalid=problem, language=language)
                 identifier, execution, monitor = submit(dag, language, 'failed')
                 for terminal in (execution, monitor):
                     readonly.no_publication(terminal)
                     if obj(terminal.get('error_details'), 'terminal error').get('category') != 'execution_failed':
                         raise SuiteError('wrong failed execution category')
                 diagnostic = diagnostic_runner(repository, env, identifier, problem, language, remaining())
-                if diagnostic != diagnostic_fact(identifier, problem, language):
+                if diagnostic != profile.diagnostic_fact(identifier, problem, language):
                     raise SuiteError('wrong exact failure node, language or cause')
                 opposite = SubmittedLanguageClient(client, 'en' if language == 'zh-cn' else 'zh-cn')
                 queried = opposite.request('GET', '/api/v1/develop/executions/'+identifier, (200,)).payload
@@ -501,24 +537,24 @@ def run_scenario(repository, env, client, physical_runner=physical, diagnostic_r
                 if any(source_edges(client, item['id']) != edges[n] for n, item in items.items()):
                     raise SuiteError('failed execution added derived lineage')
                 native = physical_runner(repository, producer_env, 'verify', names, remaining())
-                previous = check_and_archive(native, names, source_bytes, frozen, archive, previous,baseline['scope_sha256'])
+                previous = profile.check_and_archive(native, names, source_bytes, frozen, archive, previous,baseline['scope_sha256'])
                 physical_calls += 1
                 full_checks += len(names)
                 failures.append({**diagnostic, 'no_publication_or_scan_or_lineage': True})
                 stages[-1]['status'] = 'passed'
                 progress('running')
 
-        if (len(cases), len(failures), full_checks, physical_calls) != (16, 36, 712, 53):
-            raise SuiteError('requires 16 successful chains, 36 failures and 712 actual COG checks')
+        if (len(cases), len(failures), full_checks, physical_calls) != profile.COUNTS:
+            raise SuiteError(f'{suite} requires exact success/failure/reread/call counts {profile.COUNTS}')
         final_targets = {key: metadata.snapshot(key) for key in target_metadata}
         final_sources = {name: metadata.snapshot(item['id']) for name, item in items.items()}
         immutable(directory/'target-meta-after.json', encoded(final_targets))
         immutable(directory/'source-meta-after.json', encoded(final_sources))
         if final_targets != target_metadata or final_sources != before:
             raise SuiteError('source or prior target Meta snapshot changed')
-        lineage.verify_archive(env, SUITE, cases)
+        lineage.verify_archive(env, suite, cases)
         cog_manifest = {name: {key: value for key, value in fact.items() if key != 'row'} for name, fact in previous.items()}
-        manifest = immutable(directory/'viewshed-cogs-manifest.json', encoded(cog_manifest))
+        manifest = immutable(directory/(profile.ARCHIVE_NAME+'-manifest.json'), encoded(cog_manifest))
         progress('passed')
         remaining()
     except BaseException:
@@ -537,15 +573,15 @@ def run_scenario(repository, env, client, physical_runner=physical, diagnostic_r
         if cleanup_errors:
             progress('failed')
             if pending_error is None:raise SuiteError('viewshed cleanup failed: '+','.join(cleanup_errors))
-            immutable(directory/'viewshed-cleanup-errors.json',encoded({'business_error':type(pending_error).__name__,'cleanup_errors':cleanup_errors}))
+            immutable(directory/(prefix+'-cleanup-errors.json'),encoded({'business_error':type(pending_error).__name__,'cleanup_errors':cleanup_errors}))
         if pending_error is None:remaining()
-    return {'schema_version': 'addp.'+SUITE+'/v1', 'suite': SUITE, 'result': 'passed',
+    return {'schema_version': 'addp.'+suite+'/v1', 'suite': suite, 'result': 'passed',
             'run_id': env['ADDP_ONLINE_TEST_RUN_ID'], 'identity': identity, 'runtime_engine_id': runtime,
             'sources': sources, 'physical_sources': source_bytes, 'source_scan_identity': source_scan,
-            'cases': cases, 'failed_parameters': failures, 'archived_cogs': cog_manifest,
+            'cases': cases, 'failed_parameters': failures, profile.MANIFEST_KEY: cog_manifest,
             'manifest': manifest, 'oracle': oracle, 'source_and_target_metadata_unchanged': True,
             'full_target_checks': full_checks, 'physical_verification_calls': physical_calls,
-            'elapsed_ms': round((time.monotonic()-started)*1000), 'business_budget_ms': 600000,'metadata_evidence':'viewshed-metadata.json','oracle_cache_removed':True}
+            'elapsed_ms': round((time.monotonic()-started)*1000), 'business_budget_ms': 600000,'metadata_evidence':prefix+'-metadata.json','oracle_cache_removed':True}
 
 
 def main():
