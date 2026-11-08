@@ -930,3 +930,18 @@ Safari 第二个标签页真实可见、自动刷新开启，显示 Infra Redis�
 `make test-t2-ci-registration` 的 85 项登记测试、9 项配套夹具及实际登记检查全部输出通过，日志 `/tmp/addp-node-source-tls-registration-20261108.log`。现有 Metrics 输入声明已覆盖本批实现、测试、探针、共享证书内核与临时证书夹具，原 `node-recovery` 矩阵及 Make 入口能够命中，无需新增编排。两项长门禁的原执行工具结果在上下文截断中未保留退出码／会话号；按完整终端成功结果、标准末尾清零及进程已退出核对上述结论，未为补工具收据重复执行。
 
 本机只读 `python3 scripts/infra/metrics-sources.py check` 输出七项部署输入全部通过、汇总失败 0，日志 `/tmp/addp-node-source-tls-personal-check-20261108.log`；这不是七项实际采样的新证据。本批没有修改个人证书、配置、数据库或启停个人服务；不涉及 API／Swagger 或页面改动。CI／Hosted继续由专门会话安排回传，没有设置定时任务。
+
+
+### 七项本机采集来源与真实 Safari 联合核验（2026-11-08）
+
+用户确认继续核对七项来源的实际采样、新鲜度和主机关联。本轮只读复验现有部署，不修改个人配置／证书／账号或登记，不启停来源、数据库或 ADDP。先执行标准 `bash scripts/infra/status.sh` 确认实际 Infra 及指标中心映射，再以 `python3 scripts/infra/metrics-sources.py status` 核对主机与两域各三个引擎：七项启用／运行中、失败 0；不以此状态代替下述实际链路证据。
+
+执行临时只读核验 `python3 /tmp/addp-seven-sources-live-20261108.py` 退出 0。七项来源均使用原 Monitor 客户端与严格 TLS，请求固定 `/metrics` 返回 HTTP 200；不持久化原始指标响应。Prometheus 中按各自完整目标标签核对唯一目标及 UP／无抓取错误。主机使用固定内存指标的真实样本时间；六个引擎分别使用 PostgreSQL 采样时间或 Redis／MinIO 观测时间，核对真实样本时间和观测时间，未用查询评估时间冒充新鲜采样。核验时七项样本距当前约 1.85—12.91 秒，六个引擎观测距当前约 2.28—12.90 秒，均小于既有 60 秒新鲜度。六个目标的数据库容器完整身份、启动时刻、实际 Compose 作用域、服务及工作区均与当前 Docker 事实匹配。收据 `/tmp/addp-seven-sources-live-20261108.json`；该临时脚本出现 Python 正则位置参数的弃用提示，不影响退出或断言，没有修改产品代码以处理该提示。
+
+执行 `python3 /tmp/addp-seven-sources-safari-20261108.py` 退出 0。在本会话原第二个 Safari 标签页，通过正常返回、Infra／Business 页签、卡片“查看监控”和指标“查看趋势”按钮逐项操作；没有新建窗口、修改认证、强行改写可见性或调用后台身份代替用户。两个作用域各三张卡片，名称与分类正常，均显示“正在采集”；六个详情页真实可见、自动刷新状态开启，当前读数和已授权主机引用正常，无页面／趋势错误。PostgreSQL 选择每秒事务提交、Redis 选择分配内存、MinIO 选择空间占用率，各自近五分钟趋势均为 21／21 有效点。这只覆盖当次选中曲线，不代表所有专业指标、全部分组、七天或缩放／故障恢复重新验收。收据 `/tmp/addp-seven-sources-safari-20261108.json`。
+
+随后由当前引擎卡片的关联主机按钮进入主机资源页，`python3 /tmp/addp-seven-sources-host-page-20261108.py` 退出 0。实际对象为 `755953df-488c-410a-88d4-0ecc47eb1351`、Docker Desktop Linux VM（Business / Infra），类型 virtual、纳管启用；不是原生 macOS。页面可见、采集状态 collecting，CPU 核数／忙碌率、内存总量／使用率及运行时长五项当前值有效。页面内存总量与相同主机 Prometheus 原始值精确一致；当时选中的一小时内存组合趋势三条曲线各 241／241 点有效，画布存在。TCP 当前连接数因 Desktop 来源能力仍无数据；不据此推定实际 TCP 为零。收据 `/tmp/addp-seven-sources-host-page-20261108.json`。
+
+最后执行 `python3 /tmp/addp-seven-sources-crosscheck-20261108.py` 退出 0：六个页面的当前部署、即时响应和趋势主体分别与六个 Prometheus 目标逐项一致，主机 UUID 和显示名称匹配；重新只读检查数据库容器仍在运行，启动身份未变。页面有效点的实际采样距其评估时刻最大约 14.69 秒。两张作用域列表不存在混入另一域的卡片；七页均可见。交叉收据 `/tmp/addp-seven-sources-crosscheck-20261108.json`。
+
+缺项继续按真实来源表达：Infra Redis 未设置内存上限，对应占用率不可计算；当次 Business Redis 已有内存上限，所展示资源分组没有缺点。两个 MinIO 的离线盘数仍未由原生端点发布，Business 另缺四项扫描字段；不补造零值、不以来源 UP 宣称全部 17 项有效。本轮没有源码、API、权限或环境变更，不重跑无关开发门禁；仅验证上述实际运行范围。正式 CI／Hosted 继续由专门会话回传，没有设置定时任务。
