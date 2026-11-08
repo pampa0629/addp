@@ -25,6 +25,7 @@
       </el-table>
       <p class="overview-note">{{ t('system.engine.instanceOverview.notice') }}</p>
     </template>
+    <p v-else-if="!loading" class="overview-note">{{ t('system.engine.instanceOverview.refreshRequired') }}</p>
   </section>
 </template>
 
@@ -62,7 +63,17 @@ async function load() {
     if (requests.current(ticket)) loading.value = false
   }
 }
-watch([authorizationKey, allowed, () => props.engine.version], load, { immediate: true })
+let initialReadStarted = false
+watch([authorizationKey, allowed, () => props.engine.version], () => {
+  if (!initialReadStarted && allowed.value) {
+    initialReadStarted = true
+    load()
+    return
+  }
+  // A changed identity or background health observation invalidates the display;
+  // it must not turn health polling into automatic source-statistics retries.
+  requests.invalidate(); snapshot.value = null; error.value = ''; loading.value = false
+}, { immediate: true })
 onBeforeUnmount(() => requests.dispose())
 </script>
 

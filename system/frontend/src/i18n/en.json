@@ -1364,6 +1364,7 @@
         "notice": "Native statistics use the registered account and do not represent platform data read grants. Cumulative values are not throughput. Query time does not guarantee fresh source statistics.",
         "failed": "Could not read the instance overview. Check the connection and account permissions before trying again.",
         "versionChanged": "Engine configuration changed. Reopen the details before reading the overview.",
+        "refreshRequired": "State changed. Select Refresh to read the current overview.",
         "metrics": {
           "database_size_bytes": "Current database disk usage",
           "database_connections": "Current database connections",

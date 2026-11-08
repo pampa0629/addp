@@ -13,6 +13,7 @@ async function fixture(page, { language = 'zh-cn', metrics = profiles.pg, suppor
   const engine = { id: '71', name: 'Native overview fixture', version: 1, engine_type: 'future_native', engine_origin: 'general',
     lifecycle_state: 'active', connection_status: 'online', connection_info: {},
     capabilities: { schema_version: 'engine.capabilities/v1', engine_family: 'tabular', storage: {}, ...(supported ? { instance_overview: true } : {}) } }
+  state.engine = engine
   await page.addInitScript(language => localStorage.setItem('addp-lang', language), language)
   await page.route('**/module-health/**', route => route.fulfill({ json: { status: 'ready' } }))
   await page.route('**/api/v1/system/**', async route => {
@@ -111,4 +112,27 @@ test('restores the overview from the existing engine detail URL', async ({ page 
   await expect(page.getByTestId('overview-metrics')).toContainText('账号可列出的桶数')
   await expect(page.getByRole('tab', { name: '实例概况', exact: true })).toHaveAttribute('aria-selected', 'true')
   expect(state.reads).toBe(1)
+})
+
+test('background health changes invalidate statistics without issuing source reads', async ({ page }) => {
+  await page.clock.install()
+  const state = await fixture(page)
+  await openOverview(page)
+  const panel = page.getByTestId('engine-instance-overview')
+  await expect(panel.getByTestId('overview-metrics')).toBeVisible()
+  const poll = async () => {
+    const response = page.waitForResponse(response => new URL(response.url()).pathname === '/api/v1/system/engines')
+    await page.clock.fastForward(120001)
+    await response
+  }
+  state.engine.connection_status = 'offline'
+  await poll()
+  await expect(panel.getByTestId('overview-metrics')).toHaveCount(0)
+  await expect(panel).toContainText('状态已变化，请点击刷新读取当前概况。')
+  state.engine.connection_status = 'online'
+  await poll()
+  expect(state.reads).toBe(1)
+  await panel.getByRole('button', { name: '刷新', exact: true }).click()
+  await expect(panel.getByTestId('overview-metrics')).toBeVisible()
+  expect(state.reads).toBe(2)
 })
