@@ -890,3 +890,17 @@ artifact13618624695，99成员ZIP SHA256 `9f01ecc15147305b9d2d89d457396072b05b40
 根Make所属recipe实际执行274项，其中未改动的 `HostedSecurityGateTest.test_graph_same_color_case_reaches_only_its_isolated_owner_and_cleans` 超出既有60秒超时，整入口失败，未记通过；System Fixture Go已通过，其余记录不代替整入口。保留 `/tmp/p145-chinese-expiry-owner-gate.log`，不为此修复或派发Graph。四个聚合依赖目标未重跑。该独立Graph用例不消费本轮Security浏览器源码，受影响领域另以254项固定范围验证通过。登记CLI首次漏传必需repository参数的用法错误另存，补参数后退出0；未涉及产品故障。
 
 完整固定输入、日志与所属补丁见 `/tmp/p145-chinese-expiry/verification.json`；新版真实HTTP／Console／Hosted尚未运行，既有a06/v9成功不追认v10通过。变更只有测试、登记和已有文档，无产品／API／Swagger变化，不要求重启。现有Make、Platform CI自动发现和标准Hosted入口承接；CI仍交专门会话，不自行调度或定时。下一步先取得v10实际回传、独立核中文原图和清理，再补其他原因的真实页面，整体大项仍部分实现。
+
+### v10 首轮准备失败与检索续查消费者修正（2026-11-09）
+
+唯一首轮 [Run42498980263／Job128787376318](https://github.com/pampa0629/addp/actions/runs/42498980263/job/128787376318)，attempt1、精确 `6efcd87d366b2e41b299ac4af14a94a84caae25d`，实际失败于PG源授权准备后的Manager搜索就绪探针：原日志5257行为 `GET /api/v1/manager/search?q=value_c&engine_id=1&page_size=100 returned HTTP 400 (unknown)`。固定源码的消费者仍传100，Manager唯一解析器只允许1..50；原HTTP正文未归档，根因由固定代码与严格消费者回归确认，不冒充重读原错误体。前次只审a93以后的55路径增量，未发现已在a93内的这一原有消费者假设；本轮补足该协议遗漏，不把中文页面本身记作失败。
+
+artifact13625431998，44成员ZIP SHA256 `567219276ab0c15b5d6ef83cd9e1c58acdddd9e8bb112ea6db13189ca8964a1d`，独立CRC、安全路径和解压原件逐字节检查通过。原件 `/tmp/addp-security-chinese-v10-6ef/`，独立记录 `/tmp/p145-security-search-continuation/original-failure-audit.json`。没有online-report或PNG，领域v44和浏览器v10未执行；wrapper result=failed、cleanup=passed、Infra=zero_residuals不等于业务通过。后续record-grant journal仅not_started／issued0；此前PG授权准备已调用，不据此宣称所有Grant均未签发或六项均已正式撤销。未自动重试该运行。
+
+修正仅限Security验收消费者：Python准备／技术字段等待改用固定q／engine／page_size50，以原deadline续查直到exhausted；空批／短批仍按next_cursor继续，重复或缺失游标、畸形分页、跨引擎、跨批重复目标及错误响应均拒绝，不发布部分命中。原JSON字段仍为data.results，未改名为Go内部成员Hits。Python意外续查错误仅遮去当前不透明游标，保留HTTP诊断，不把完整游标带入日志。浏览器恢复就绪探针同样续查，实际页面必须点击已有继续查找／加载更多按钮并核累积行数、原查询／范围／大小及游标，最后再核真实字段高亮与精确资源定位；不能用API命中替代UI。保护未就绪及索引隔离仍仅按既有稳定码等待，权限／参数／无效游标等不自动重开查询。
+
+验证：原页100代码上的新增三批（空批→短批→目标）回归实际红；修后25项定向、260项领域／组合检查通过。初轮所属门禁因两个旧算法模拟客户端没有page_size/exhausted，在正式新校验前中止了原场景，23失败／5错误日志保留；已只更新它们的响应为真实终态契约，并增加合法页大小请求断言，未放宽生产校验。最终标准 `make -o test-protection-deployment-runner -o test-graph-online-runner -o test-online-dispatcher-unit -o test-online-registration-unit test-security-online-runner` 的281项Python及System Fixture Go通过；四聚合依赖本轮未运行，不称完整聚合通过。旧Graph超时历史保持，本轮不由此改写此前失败。
+
+`make test-module MODULE=manager GO_ONLY=1`通过，只有Go T1，不计PostgreSQL T2。标准隔离 `npm run test:e2e -- data-retrieval-continuation.spec.js data-retrieval-field-matches.spec.js` 的3项受控页面回归通过，覆盖空批按钮续查、字段高亮以及409／410失效清空，不是用户本地HTTP或Hosted。登记删除反例、登记CLI、JS/Python语法及本会话diff检查通过。证据 `/tmp/p145-security-search-continuation/{red.log,focused-final-privacy.log,domain-final.log,owner-gate.log,owner-gate-final.log,manager-go.log,manager-ui.log,registration-test.log,registration-cli.log,scope-proof.json,verification.json}`。
+
+没有Manager产品、权限、保护／原值授权、数据、API或Swagger变更；Python生产diff仅三个检索消费函数，沿既有唯一端点，不留页码或旧格式兼容。Make／CI自动发现已覆盖，无新入口、依赖或部署。v44/v10、90秒、23PNG、两个Service403、20runtime／8protocol_only及原清理要求保持；无个人服务启停、数据库或时钟操作。修复不等于新T4通过；新版Hosted复验需用户重新明确授权，再交专门CI会话单次执行，不自行派发、轮询或设置定时。

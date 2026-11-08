@@ -1032,19 +1032,48 @@ def restore_algorithm_state(client: GatewayClient, baseline_id: str, original: d
         raise SuiteError("algorithm cleanup failed: " + "; ".join(errors))
 
 
-def manager_search_results(client: GatewayClient, engine_id: int, field_name: str) -> list[object] | None:
-    query = urllib.parse.urlencode({"q": field_name, "engine_id": engine_id, "page_size": 100})
-    response = client.request("GET", "/api/v1/manager/search?" + query, (200, 403, 503))
-    payload = _object(response.payload, "Manager field search")
-    if response.status == 403:
-        if payload.get("error_code") != "security_protection_required":
-            raise SuiteError("Manager field search was denied")
-        return None
-    if response.status == 503:
-        if payload.get("error_code") != "manager_search_isolated":
-            raise SuiteError("Manager field search is unavailable")
-        return None
-    return _array(_object(payload.get("data"), "Manager search data").get("results"), "Manager search results")
+def manager_search_results(client: GatewayClient, engine_id: int, field_name: str,
+                           deadline: float) -> list[object] | None:
+    results: list[object] = []
+    cursor = ""
+    seen_cursors: set[str] = set()
+    while time.monotonic() < deadline:
+        params = {"q": field_name, "engine_id": engine_id, "page_size": 50}
+        if cursor:
+            params["cursor"] = cursor
+        try:
+            response = client.request("GET", "/api/v1/manager/search?" + urllib.parse.urlencode(params), (200, 403, 503))
+        except SuiteError as error:
+            if cursor:
+                detail = str(error).replace(urllib.parse.quote_plus(cursor), "[redacted]").replace(cursor, "[redacted]")
+                raise SuiteError(detail) from None
+            raise
+        payload = _object(response.payload, "Manager field search")
+        if response.status == 403:
+            if payload.get("error_code") != "security_protection_required":
+                raise SuiteError("Manager field search was denied")
+            return None
+        if response.status == 503:
+            if payload.get("error_code") != "manager_search_isolated":
+                raise SuiteError("Manager field search is unavailable")
+            return None
+        data = _object(payload.get("data"), "Manager search data")
+        batch = _array(data.get("results"), "Manager search results")
+        if (set(data) - {"results", "page_size", "next_cursor", "exhausted"}
+                or type(data.get("page_size")) is not int or data["page_size"] != 50
+                or type(data.get("exhausted")) is not bool or len(batch) > 50):
+            raise SuiteError("Manager search continuation has an invalid batch contract")
+        following = data.get("next_cursor", "")
+        if not isinstance(following, str) or (data["exhausted"] and following):
+            raise SuiteError("Manager search continuation has an invalid terminal cursor")
+        results.extend(batch)
+        if data["exhausted"]:
+            return results
+        if not following or following in seen_cursors:
+            raise SuiteError("Manager search continuation is missing or repeated")
+        seen_cursors.add(following)
+        cursor = following
+    raise SuiteError("Manager search continuation exceeded the existing deadline")
 
 
 def wait_for_manager_search_ready(client: GatewayClient, engine_id: int, field_name: str, deadline: float) -> None:
@@ -1052,7 +1081,7 @@ def wait_for_manager_search_ready(client: GatewayClient, engine_id: int, field_n
     # Wait before scanning: a rejected initial batch cannot be repaired by
     # merely polling the field search after the scan has finished.
     while time.monotonic() < deadline:
-        if manager_search_results(client, engine_id, field_name) is not None:
+        if manager_search_results(client, engine_id, field_name, deadline) is not None:
             return
         time.sleep(min(1, max(0, deadline - time.monotonic())))
     raise SuiteError("Manager protection/search boundary was not ready before the initial scan")
@@ -1061,7 +1090,7 @@ def wait_for_manager_search_ready(client: GatewayClient, engine_id: int, field_n
 def wait_for_technical_field(client: GatewayClient, engine_id: int, item: Mapping[str, object],
                              field_name: str, deadline: float) -> dict[str, object]:
     while time.monotonic() < deadline:
-        results = manager_search_results(client, engine_id, field_name)
+        results = manager_search_results(client, engine_id, field_name, deadline)
         if results is not None:
             hits = [_object(raw, "Manager search hit") for raw in results]
             if any(positive_int(hit.get("engine_id"), "search Engine id") != engine_id for hit in hits):

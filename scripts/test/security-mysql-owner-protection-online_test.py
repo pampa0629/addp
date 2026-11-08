@@ -126,9 +126,10 @@ class SpatialClient:
         if path.startswith("/api/v1/manager/search?"):
             query = urllib.parse.parse_qs(urllib.parse.urlsplit(path).query)
             assert query["q"] == ["value_c"] and query["engine_id"] == ["17"]
+            assert query["page_size"] == ["50"] and "cursor" not in query
             self.search_calls.append(self.baseline["algorithm"])
             item = {"id": 1, "full_name": "addp_online_security." + ONLINE.SPATIAL_SOURCE, "item_type": "table"}
-            return response(200, {"data": {"results": [{
+            return response(200, {"data": {"page_size": 50, "exhausted": True, "results": [{
                 "document_id": "sha256:fixture", "engine_id": 17, "full_name": item["full_name"],
                 "locator": ONLINE.build_item_locator(17, item), "field_matches": [
                     {"name": "value_c", "data_type": "string", "highlights": {"name": "<mark>value_c</mark>"}}
@@ -435,7 +436,8 @@ class MongoClient(SpatialClient):
         if path.startswith("/api/v1/manager/search?"):
             query = urllib.parse.parse_qs(urllib.parse.urlsplit(path).query)
             assert query["q"] == [ONLINE.MONGODB_FIELD] and query["engine_id"] == ["29"]
-            return response(200, {"data": {"results": [{"document_id": self.item["fingerprint"], "engine_id": 29,
+            assert query["page_size"] == ["50"] and "cursor" not in query
+            return response(200, {"data": {"page_size": 50, "exhausted": True, "results": [{"document_id": self.item["fingerprint"], "engine_id": 29,
                 "full_name": ONLINE.MONGODB_SOURCE, "locator": ONLINE.build_item_locator(29, self.item),
                 "field_matches": [{"name": ONLINE.MONGODB_FIELD, "data_type": "string",
                     "highlights": {"name": "userInfo.<mark>phone</mark>"}}]}]}})
@@ -1185,8 +1187,78 @@ class ProtectedTechnicalFieldSearchTest(unittest.TestCase):
 
     def search(self, hits):
         client = Mock()
-        client.request.return_value = ONLINE.SUPPORT.Response(200, {"data": {"results": hits}})
+        client.request.return_value = ONLINE.SUPPORT.Response(200, {"data": {"results": hits, "page_size": 50, "exhausted": True}})
         return ONLINE.wait_for_technical_field(client, 17, self.item, "value_c", time.monotonic() + 5)
+
+    def test_complete_search_follows_empty_and_short_batches_without_changing_query(self):
+        first, second = str(uuid.uuid4()), str(uuid.uuid4())
+        pages = [([], first, False), ([dict(self.hit, document_id='other')], second, False), ([self.hit], None, True)]
+        seen = []
+        def request(method, path, statuses):
+            params = urllib.parse.parse_qs(urllib.parse.urlsplit(path).query)
+            if params.get('page_size') != ['50']:
+                raise ONLINE.SuiteError('Manager rejects page_size outside 1..50')
+            self.assertEqual(method, 'GET')
+            self.assertEqual(params.get('q'), ['value_c'])
+            self.assertEqual(params.get('engine_id'), ['17'])
+            self.assertEqual(params.get('cursor'), None if not seen else [first if len(seen)==1 else second])
+            self.assertNotIn('page', params)
+            rows, cursor, exhausted = pages[len(seen)]
+            seen.append(params)
+            data = {'results': rows, 'page_size': 50, 'exhausted': exhausted}
+            if cursor: data['next_cursor'] = cursor
+            return ONLINE.SUPPORT.Response(200, {'data': data})
+        client = Mock(); client.request.side_effect = request
+        evidence = ONLINE.wait_for_technical_field(client, 17, self.item, 'value_c', time.monotonic()+5)
+        self.assertTrue(evidence['same_item_verified'])
+        self.assertEqual(len(seen), 3)
+
+    def test_cursor_cycle_malformed_page_and_partial_permission_failure_never_return_partial_hits(self):
+        cursor = str(uuid.uuid4())
+        initial = {'results': [self.hit], 'page_size': 50, 'exhausted': False, 'next_cursor': cursor}
+        bad_pages = [
+            {'results': [], 'page_size': 100, 'exhausted': True},
+            {'results': [], 'page_size': 50, 'exhausted': 'true'},
+            {'results': [], 'page_size': 50, 'exhausted': False},
+            {'results': [], 'page_size': 50, 'exhausted': False, 'next_cursor': cursor},
+            {'results': [], 'page_size': 50, 'exhausted': True, 'next_cursor': str(uuid.uuid4())},
+            {'results': [self.hit]*51, 'page_size': 50, 'exhausted': True},
+            {'results': [], 'page_size': 50},
+            {'results': [], 'page_size': 50, 'exhausted': True, 'total': 1},
+        ]
+        for bad in bad_pages:
+            client = Mock();client.request.side_effect = [ONLINE.SUPPORT.Response(200, {'data': initial}), ONLINE.SUPPORT.Response(200, {'data': bad})]
+            with self.subTest(page=bad), self.assertRaises(ONLINE.SuiteError):
+                ONLINE.wait_for_technical_field(client, 17, self.item, 'value_c', time.monotonic()+5)
+        client = Mock();client.request.side_effect = [ONLINE.SUPPORT.Response(200, {'data': initial}), ONLINE.SUPPORT.Response(403, {'error_code':'permission_denied'})]
+        with self.assertRaises(ONLINE.SuiteError):
+            ONLINE.wait_for_technical_field(client, 17, self.item, 'value_c', time.monotonic()+5)
+
+    def test_continuation_transport_failure_does_not_persist_the_opaque_cursor(self):
+        cursor = 'opaque/private+cursor'
+        client = Mock();client.request.side_effect = [
+            ONLINE.SUPPORT.Response(200, {'data':{'results':[], 'page_size':50, 'exhausted':False, 'next_cursor':cursor}}),
+            ONLINE.SuiteError('HTTP 410 for cursor='+urllib.parse.quote_plus(cursor))]
+        with self.assertRaises(ONLINE.SuiteError) as caught:
+            ONLINE.wait_for_technical_field(client,17,self.item,'value_c',time.monotonic()+5)
+        self.assertIn('HTTP 410',str(caught.exception))
+        self.assertNotIn(cursor,str(caught.exception))
+        self.assertNotIn(urllib.parse.quote_plus(cursor),str(caught.exception))
+        self.assertEqual(client.request.call_count,2)
+
+    def test_duplicate_target_across_cursor_batches_is_rejected(self):
+        client = Mock();client.request.side_effect = [
+            ONLINE.SUPPORT.Response(200, {'data': {'results': [self.hit], 'page_size': 50, 'exhausted': False, 'next_cursor':str(uuid.uuid4())}}),
+            ONLINE.SUPPORT.Response(200, {'data': {'results': [self.hit], 'page_size': 50, 'exhausted': True}})]
+        with self.assertRaises(ONLINE.SuiteError):
+            ONLINE.wait_for_technical_field(client, 17, self.item, 'value_c', time.monotonic()+5)
+
+    def test_continuation_uses_original_deadline_and_never_publishes_partial_results(self):
+        client = Mock();client.request.return_value = ONLINE.SUPPORT.Response(200, {'data':{
+            'results':[self.hit], 'page_size':50, 'exhausted':False, 'next_cursor':str(uuid.uuid4())}})
+        with patch.object(ONLINE.time,'monotonic',side_effect=[1,1,3]), self.assertRaises(ONLINE.SuiteError):
+            ONLINE.wait_for_technical_field(client,17,self.item,'value_c',2)
+        self.assertEqual(client.request.call_count,1)
 
     def test_accepts_registered_identity_and_real_field_highlight(self):
         evidence = self.search([self.hit])
@@ -1197,7 +1269,7 @@ class ProtectedTechnicalFieldSearchTest(unittest.TestCase):
         client = Mock()
         client.request.side_effect = [ONLINE.SUPPORT.Response(403, {"error_code": "security_protection_required"}),
                                      ONLINE.SUPPORT.Response(503, {"error_code": "manager_search_isolated"}),
-                                     ONLINE.SUPPORT.Response(200, {"data": {"results": []}})]
+                                     ONLINE.SUPPORT.Response(200, {"data": {"results": [], "page_size": 50, "exhausted": True}})]
         with patch.object(ONLINE.time, "sleep"):
             ONLINE.wait_for_manager_search_ready(client, 17, "value_c", time.monotonic() + 5)
         self.assertEqual(client.request.call_count, 3)
@@ -1208,7 +1280,7 @@ class ProtectedTechnicalFieldSearchTest(unittest.TestCase):
                          ONLINE.SUPPORT.Response(403, {"error_code": "permission_denied"}),
                          ONLINE.SUPPORT.Response(403, {"error_code": "security_protection_required"})):
             client.request.return_value = response
-            with patch.object(ONLINE.time, "monotonic", side_effect=[1, 1, 3]), patch.object(ONLINE.time, "sleep"):
+            with patch.object(ONLINE.time, "monotonic", side_effect=[1, 1, 3, 3, 3]), patch.object(ONLINE.time, "sleep"):
                 with self.assertRaises(ONLINE.SuiteError):
                     ONLINE.wait_for_manager_search_ready(client, 17, "value_c", 2)
 
@@ -1242,7 +1314,7 @@ class ProtectedTechnicalFieldSearchTest(unittest.TestCase):
         client = Mock()
         client.request.side_effect = [ONLINE.SUPPORT.Response(403, {"error_code": "security_protection_required"}),
                                      ONLINE.SUPPORT.Response(503, {"error_code": "manager_search_isolated"}),
-                                     ONLINE.SUPPORT.Response(200, {"data": {"results": [self.hit]}})]
+                                     ONLINE.SUPPORT.Response(200, {"data": {"results": [self.hit], "page_size": 50, "exhausted": True}})]
         with patch.object(ONLINE.time, "sleep"):
             self.assertTrue(ONLINE.wait_for_technical_field(client, 17, self.item, "value_c", time.monotonic() + 5)["same_item_verified"])
         self.assertEqual(client.request.call_count, 3)
@@ -1253,9 +1325,9 @@ class ProtectedTechnicalFieldSearchTest(unittest.TestCase):
         for response in (ONLINE.SUPPORT.Response(403, {"error_code": "permission_denied"}),
                          ONLINE.SUPPORT.Response(503, {"error_code": "search_unconfigured"}),
                          ONLINE.SUPPORT.Response(403, {"error_code": "security_protection_required"}),
-                         ONLINE.SUPPORT.Response(200, {"data": {"results": []}})):
+                         ONLINE.SUPPORT.Response(200, {"data": {"results": [], "page_size": 50, "exhausted": True}})):
             client.request.return_value = response
-            with patch.object(ONLINE.time, "monotonic", side_effect=[1, 1, 3]), patch.object(ONLINE.time, "sleep"):
+            with patch.object(ONLINE.time, "monotonic", side_effect=[1, 1, 3, 3, 3]), patch.object(ONLINE.time, "sleep"):
                 with self.assertRaises(ONLINE.SuiteError):
                     ONLINE.wait_for_technical_field(client, 17, self.item, "value_c", 2)
 
@@ -1437,6 +1509,78 @@ class ExplicitRediscoveryTest(unittest.TestCase):
 
 
 class ManagerExportBrowserTest(unittest.TestCase):
+    def test_browser_search_consumes_continuations_and_ui_buttons_without_first_batch_assumptions(self):
+        probe = r"""
+import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
+const source = readFileSync(0, 'utf8')
+const helpers = source.slice(source.indexOf('function managerSearchBatch('), source.indexOf('async function checkServiceExpiryPreview('))
+const expect = value => ({toBe: expected=>assert.equal(value,expected), toHaveCount: expected=>assert.equal(value.count,expected)})
+const json = async response=>{if(response.status()!==200)throw Error('request refused');return response.json()}
+let clock=0
+const {managerSearchBatch: batch, managerSearchResults: read, collectManagerSearchResults: collect} =
+  new Function('expect','json','Date',helpers+';return {managerSearchBatch,managerSearchResults,collectManagerSearchResults}')(expect,json,{now:()=>clock})
+const hit={engine_id:17,document_id:'target'}
+const response=(data,status=200,url='')=>({status:()=>status,json:async()=>data,url:()=>url,request:()=>({method:()=>'GET'})})
+const good=(results,next_cursor='',exhausted=true,size=50)=>({data:{results,page_size:size,exhausted,...(next_cursor?{next_cursor}:{})}})
+for(const bad of [
+ {data:{results:[],page_size:100,exhausted:true}},
+ {data:{results:[],page_size:50,exhausted:1}},
+ {data:{results:[],page_size:50,exhausted:false}},
+ {data:{results:[],page_size:50,exhausted:false,next_cursor:null}},
+ {data:{results:[],page_size:50,exhausted:true,next_cursor:'opaque'}},
+ {data:{results:Array(51).fill(hit),page_size:50,exhausted:true}},
+ {data:{results:[],page_size:50,total:0}},
+ {data:{results:[],page_size:50,exhausted:true,total:0}}
+])assert.throws(()=>batch(bad,50,new Set()))
+for(const fault of ['none','cycle','permission','isolated','wrong-isolation-code','engine','deadline']) {
+ let calls=[];clock=0
+ const pages=[good([],'first',false),good([hit],'second',false),good([hit])]
+ const api={get:async(path,{params})=>{
+  assert.equal(path,'/api/v1/manager/search')
+  assert.deepEqual(params,{q:'email',engine_id:17,page_size:50,...(calls.length?{cursor:calls.length===1?'first':'second'}:{})})
+  calls.push(params)
+  if(calls.length===2) {
+   if(fault==='permission')return response({error_code:'permission_denied'},403)
+   if(fault==='isolated'||fault==='wrong-isolation-code')return response({error_code:fault==='isolated'?'manager_search_isolated':'search_unconfigured'},503)
+   if(fault==='cycle')return response(good([hit],'first',false))
+   if(fault==='engine')return response(good([{...hit,engine_id:19}]))
+  }
+  if(fault==='deadline')clock=11
+  return response(pages[calls.length-1])
+ }}
+ if(fault==='none') {assert.deepEqual(await read(api,17,'email',10),[hit,hit]);assert.equal(calls.length,3)}
+ else if(fault==='isolated')assert.equal(await read(api,17,'email',10),null)
+ else await assert.rejects(read(api,17,'email',10))
+}
+// Drive the real browser continuation helper through an empty first batch,
+// a short middle batch and final target; it must click the actual UI buttons.
+for(const fault of ['none','query','size','cursor','cycle','stale-ui']) {
+ let index=0,shown=0,clicks=0
+ const rows=[[],[{document_id:'other'}],[hit]]
+ const pages=rows.map((items,i)=>good(items,i<2?['first','second'][i]:'',i===2,10))
+ if(fault==='cycle')pages[1]=good(rows[1],'first',false,10)
+ const urls=rows.map((_,i)=>'http://localhost/api/v1/manager/search?'+new URLSearchParams({q:'email',page_size:'10',...(i?{cursor:['first','second'][i-1]}:{})}))
+ if(fault==='query')urls[1]=urls[1].replace('email','other')
+ if(fault==='size')urls[1]=urls[1].replace('10','20')
+ if(fault==='cursor')urls[1]=urls[1].replace('first','wrong')
+ const replies=pages.map((p,i)=>response(p,200,urls[i]))
+ const page={waitForResponse: predicate=>{
+   if(fault!=='cursor')assert.equal(predicate(replies[index+1]),true)
+   return Promise.resolve(replies[index+1])
+ }}
+ const frame={locator:()=>({count:fault==='stale-ui'?99:shown}),getByRole:(role,options)=>({click:async()=>{
+   assert.equal(role,'button');assert.equal(options.name.test(index===0?'Continue searching':'Load more'),true)
+   index++;clicks++;shown+=rows[index].length
+ }})}
+ if(fault==='none'){assert.deepEqual(await collect(page,frame,replies[0]),[rows[1][0],hit]);assert.equal(clicks,2)}
+ else await assert.rejects(collect(page,frame,replies[0]))
+}
+"""
+        result = subprocess.run(["node", "--input-type=module", "-e", probe], input=(
+            SCRIPT.resolve().parents[2] / "console/frontend/e2e/online/security-manager-export.spec.js").read_text(), capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+
     def test_expiry_browser_requires_exact_language_message_and_cleared_preview(self):
         probe = r"""
 import assert from 'node:assert/strict'

@@ -401,6 +401,71 @@ async function verifyTransferResultProtection(page, env, navigate, getAPI, runTr
   return { ...outcome, result_browser_created_resources: 2, result_browser_deleted_resources: 2, result_browser_residual_resources: 0 }
 }
 
+function managerSearchBatch(payload, pageSize, cursors) {
+  const batch = payload?.data
+  if (!Number.isInteger(pageSize) || pageSize < 1 || pageSize > 50 || !batch ||
+      !Array.isArray(batch.results) || batch.results.length > pageSize || batch.page_size !== pageSize ||
+      typeof batch.exhausted !== 'boolean' ||
+      Object.keys(batch).some(key => !['results', 'page_size', 'next_cursor', 'exhausted'].includes(key))) {
+    throw new Error('Manager search continuation has an invalid batch contract')
+  }
+  const next = batch.next_cursor === undefined ? '' : batch.next_cursor
+  if (typeof next !== 'string' || (batch.exhausted && next) ||
+      (!batch.exhausted && (!next || cursors.has(next)))) {
+    throw new Error('Manager search continuation is missing, repeated or inconsistent')
+  }
+  if (!batch.exhausted) cursors.add(next)
+  return batch
+}
+
+async function managerSearchResults(api, engineID, fieldName, deadline) {
+  const cursors = new Set(), results = []
+  let cursor = ''
+  while (Date.now() < deadline) {
+    const params = { q: fieldName, engine_id: engineID, page_size: 50 }
+    if (cursor) params.cursor = cursor
+    const response = await api.get('/api/v1/manager/search', { params })
+    if (response.status() === 503) {
+      expect((await response.json()).error_code).toBe('manager_search_isolated')
+      return null
+    }
+    const batch = managerSearchBatch(await json(response, 'browser technical field continuation'), 50, cursors)
+    expect(batch.results.every(hit => hit.engine_id === engineID)).toBe(true)
+    results.push(...batch.results)
+    if (batch.exhausted) return results
+    cursor = batch.next_cursor
+  }
+  throw new Error('Manager search continuation exceeded the existing deadline')
+}
+
+async function collectManagerSearchResults(page, frame, firstResponse) {
+  const cursors = new Set(), results = []
+  let received = await firstResponse, cursor = ''
+  const initial = new URL(received.url())
+  expect(initial.pathname).toBe('/api/v1/manager/search')
+  expect(initial.searchParams.get('q')).toBe('email')
+  expect(initial.searchParams.has('cursor')).toBe(false)
+  const pageSize = Number(initial.searchParams.get('page_size'))
+  for (;;) {
+    const current = new URL(received.url())
+    expect(current.pathname).toBe(initial.pathname)
+    for (const key of ['q', 'engine_id', 'page_size']) {
+      expect(current.searchParams.get(key)).toBe(initial.searchParams.get(key))
+    }
+    expect((current.searchParams.get('cursor') || '') === cursor).toBe(true)
+    const batch = managerSearchBatch(await json(received, 'protected field search from browser'), pageSize, cursors)
+    results.push(...batch.results)
+    await expect(frame.locator('.result-item')).toHaveCount(results.length)
+    if (batch.exhausted) return results
+    cursor = batch.next_cursor
+    const pending = page.waitForResponse(response =>
+      new URL(response.url()).pathname === initial.pathname && response.request().method() === 'GET' &&
+      new URL(response.url()).searchParams.get('cursor') === cursor)
+    await frame.getByRole('button', { name: /^(加载更多|继续查找|Load more|Continue searching)$/ }).click()
+    received = await pending
+  }
+}
+
 async function checkServiceExpiryPreview(frame, refusal, language) {
   const messages = {
     'zh-cn': '该资源的数据保护规则已到期，本次查询已被阻止。请联系安全管理员续期或设为长期有效，规则同步后重新查询。',
@@ -608,16 +673,11 @@ async function verifyServiceTransferProtectionRefusal(page, env, navigate, getAP
   // Require the same source field to be searchable again before the UI search.
   const source = new URL(env.ADDP_ONLINE_SECURITY_EXPORT_LOCATOR)
   source.searchParams.sort()
+  const searchDeadline = Date.now() + 120_000
   await expect.poll(async () => {
-    const response = await getAPI().get('/api/v1/manager/search', { params: {
-      q: 'email', engine_id: Number(source.pathname.split('/')[1]), page_size: 100
-    } })
-    if (response.status() === 503) {
-      expect((await response.json()).error_code).toBe('manager_search_isolated')
-      return false
-    }
-    const search = await json(response, 'browser restored technical field readiness')
-    const matches = search.data.results.filter(hit => {
+    const results = await managerSearchResults(getAPI(), Number(source.pathname.split('/')[1]), 'email', searchDeadline)
+    if (results === null) return false
+    const matches = results.filter(hit => {
       const locator = new URL(hit.locator)
       locator.searchParams.sort()
       return locator.href === source.href
@@ -745,10 +805,10 @@ test('ordinary-user queries and Manager export preserve protection diagnostics a
       new URL(response.url()).pathname === '/api/v1/manager/search' && response.request().method() === 'GET'
     )
     await frame.getByRole('button', { name: /^(搜索|Search)$/ }).click()
-    const search = await json(await searchResponse, 'protected field search from browser')
+    const searchResults = await collectManagerSearchResults(page, frame, searchResponse)
     const expectedLocator = new URL(env.ADDP_ONLINE_SECURITY_EXPORT_LOCATOR)
     expectedLocator.searchParams.sort()
-    const hits = search.data.results.filter(hit => {
+    const hits = searchResults.filter(hit => {
       if (!hit.locator) return false
       const locator = new URL(hit.locator)
       locator.searchParams.sort()
