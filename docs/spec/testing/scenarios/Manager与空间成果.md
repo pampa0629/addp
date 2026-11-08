@@ -70,7 +70,7 @@ case 路由、默认完整场景保留、未知值只读拒绝、子场景失败
 
 ### Avro 单文件表格读取（待正式验收）
 
-独立`native-table-avro` case复用Manager Hosted的NFS/MinIO隔离来源、Transfer与既有GeoPython物理回读夹具，不新增产品服务或依赖。首期仅现有OCF平坦标量及可空字段，分别覆盖null/deflate/snappy三种codec，每份2503行、多个OCF块；核对Meta结构schema、Manager完整读取的精确总数及首页/第二页/末页、页面下一页与原件按钮下载、跨批Avro→Parquet全部字段和行值、大整数/二进制/空值。来源前后字节哈希不变，任务及物理输入/输出、部署与Infra分别清理。嵌套/逻辑类型/whole/写出不在该case范围。
+独立`native-table-avro` case复用Manager Hosted的NFS/MinIO隔离来源、Transfer与既有GeoPython物理回读夹具，不新增产品服务或依赖。首期仅现有OCF平坦标量及可空字段，分别覆盖null/deflate/snappy三种codec，每份2503行、多个OCF块；核对Meta结构schema、Manager完整读取的精确总数及首页/第二页/末页、页面下一页与原件按钮下载、跨批Avro→Parquet全部字段和行值、大整数/二进制/空值。来源前后字节哈希不变，任务及物理输入/输出、部署与Infra分别清理。Parquet物理列沿现有writer按字段名排序，按列名完整核对类型、可空性与值，不把OCF声明顺序误作物理列顺序。嵌套/逻辑类型/whole/写出不在该case范围。
 
 复用现有ORC临时用户十一项功能权限及已批准的来源初始化十三项权限集合，仅服务于本轮临时夹具；源扫描由来源初始化用户办理，Meta可见性沿现有精确metadata_read契约，不开发或放宽任何授权接口。受现行契约阻断时如实记录，不绕过或扩展角色。测试与CI同次登记至现有Manager标准入口与Hosted workflow；正式通过之前不得回填已完成，SKP准入状态不变。
 

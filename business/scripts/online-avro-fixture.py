@@ -143,6 +143,7 @@ def worker(request):
     assert not marker.is_symlink() and marker.read_text() == 'addp.avro-fixture/v1', 'fixture_ownership'
     assert all(not (directory / (c + '.avro')).is_symlink() for c in CODECS), 'source_symlink'
     if action == 'verify':
+        import pyarrow as pa
         import pyarrow.parquet as pq
         for spec in sources():
             assert (directory / spec['name']).read_bytes() == remote('avro/' + spec['name']) == source_bytes(spec['codec']), 'source_changed'
@@ -150,9 +151,14 @@ def worker(request):
         for name in outputs:
             raw = remote(name)
             table = pq.read_table(io.BytesIO(raw))
-            assert table.column_names == [f['name'] for f in SCHEMA['fields']], 'output_fields'
+            expected_types = {'id': pa.int64(), 'small': pa.int32(), 'flag': pa.bool_(), 'label': pa.string(),
+                              'ratio': pa.float32(), 'value': pa.float64(), 'payload': pa.binary()}
+            # The existing parquet-go Group writer emits fields by name. Bind
+            # every type and value by its name rather than the OCF ordinal.
+            assert table.column_names == sorted(expected_types) and table.num_rows == COUNT, 'output_fields'
+            assert all(table.schema.field(name).type == kind and table.schema.field(name).nullable ==
+                       (name in {'flag', 'label', 'payload'}) for name, kind in expected_types.items()), 'output_types'
             assert table.to_pylist() == [row(i) for i in range(COUNT)], 'output_values'
-            assert str(table.schema.field('id').type) == 'int64' and str(table.schema.field('payload').type) == 'binary', 'output_types'
             facts.append({'object': name, 'size_bytes': len(raw), 'sha256': hashlib.sha256(raw).hexdigest(),
                           'all_values_and_nulls_verified': True, 'content_base64': base64.b64encode(raw).decode()})
         return {'sources_unchanged': True, 'outputs': facts}
@@ -176,9 +182,16 @@ def physical(action, repository, environment):
         action, repository, environment, profile='avro', script='business/scripts/online-avro-fixture.py')
 
 
+def worker_error(error):
+    codes = {'existing_inputs', 'existing_outputs', 'unowned_inputs', 'unowned_outputs',
+             'fixture_ownership', 'source_symlink', 'source_changed', 'output_fields',
+             'output_types', 'output_values', 'input_cleanup', 'output_cleanup'}
+    return str(error) if isinstance(error, AssertionError) and str(error) in codes else type(error).__name__
+
+
 if __name__ == '__main__':
     try:
         print(json.dumps(worker(json.load(sys.stdin))))
     except Exception as error:
-        print(json.dumps({'error_code': type(error).__name__}))
+        print(json.dumps({'error_code': worker_error(error)}))
         raise SystemExit(1)

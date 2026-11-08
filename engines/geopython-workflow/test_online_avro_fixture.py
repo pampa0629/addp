@@ -15,6 +15,12 @@ FIXTURE = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(FIXTURE)
 
 
+def test_hosted_avro_errors_only_expose_known_assertion_codes():
+    assert FIXTURE.worker_error(AssertionError('output_fields')) == 'output_fields'
+    assert FIXTURE.worker_error(AssertionError('privateCredential123')) == 'AssertionError'
+    assert FIXTURE.worker_error(ValueError('private input')) == 'ValueError'
+
+
 @pytest.fixture
 def avro_physical(tmp_path, monkeypatch):
     objects = {}
@@ -42,8 +48,10 @@ def avro_physical(tmp_path, monkeypatch):
 
     monkeypatch.setitem(sys.modules, 'minio', types.SimpleNamespace(Minio=Client))
     request = {'nfs_root': str(tmp_path), 'storage': {'endpoint': 'fixture', 'access_key': 'test', 'secret_key': 'test', 'bucket': 'fixture'}}
-    schema = pa.schema([('id', pa.int64()), ('small', pa.int32()), ('flag', pa.bool_()), ('label', pa.string()),
-                        ('ratio', pa.float32()), ('value', pa.float64()), ('payload', pa.binary())])
+    schema = pa.schema([pa.field(name, kind, nullable=name in {'flag', 'label', 'payload'})
+                        for name, kind in [('id', pa.int64()), ('small', pa.int32()), ('flag', pa.bool_()), ('label', pa.string()),
+                                           ('ratio', pa.float32()), ('value', pa.float64()), ('payload', pa.binary())]])
+    schema = pa.schema(sorted(schema, key=lambda field: field.name))
 
     def write_outputs(change=None):
         rows = [FIXTURE.row(i) for i in range(FIXTURE.COUNT)]
@@ -70,7 +78,7 @@ def test_hosted_avro_actual_parquet_oracle_and_cleanup(avro_physical):
     assert not objects and not (Path(request['nfs_root']) / 'avro').exists()
 
 
-@pytest.mark.parametrize('mutation', ['bigint', 'empty_bytes', 'source'])
+@pytest.mark.parametrize('mutation', ['bigint', 'empty_bytes', 'source', 'field'])
 def test_hosted_avro_oracle_rejects_real_parquet_or_source_corruption(avro_physical, mutation):
     request, objects, write_outputs = avro_physical
     FIXTURE.worker(dict(request, action='seed'))
@@ -78,10 +86,18 @@ def test_hosted_avro_oracle_rejects_real_parquet_or_source_corruption(avro_physi
         write_outputs(lambda rows: rows[0].update(id=9007199254740992))
     elif mutation == 'empty_bytes':
         write_outputs(lambda rows: rows[3].update(payload=None))
-    else:
+    elif mutation == 'source':
         write_outputs()
         objects['avro/null.avro'] += b'changed'
-    with pytest.raises(AssertionError):
+    else:
+        write_outputs()
+        name = 'avro-output/from-minio-null.parquet'
+        broken = pq.read_table(io.BytesIO(objects[name])).drop(['small'])
+        sink = io.BytesIO()
+        pq.write_table(broken, sink)
+        objects[name] = sink.getvalue()
+    expected = 'source_changed' if mutation == 'source' else 'output_fields' if mutation == 'field' else 'output_values'
+    with pytest.raises(AssertionError, match=expected):
         FIXTURE.worker(dict(request, action='verify'))
     FIXTURE.worker(dict(request, action='delete'))
     assert not objects
