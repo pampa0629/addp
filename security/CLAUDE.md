@@ -904,3 +904,9 @@ artifact13625431998，44成员ZIP SHA256 `567219276ab0c15b5d6ef83cd9e1c58acdddd9
 `make test-module MODULE=manager GO_ONLY=1`通过，只有Go T1，不计PostgreSQL T2。标准隔离 `npm run test:e2e -- data-retrieval-continuation.spec.js data-retrieval-field-matches.spec.js` 的3项受控页面回归通过，覆盖空批按钮续查、字段高亮以及409／410失效清空，不是用户本地HTTP或Hosted。登记删除反例、登记CLI、JS/Python语法及本会话diff检查通过。证据 `/tmp/p145-security-search-continuation/{red.log,focused-final-privacy.log,domain-final.log,owner-gate.log,owner-gate-final.log,manager-go.log,manager-ui.log,registration-test.log,registration-cli.log,scope-proof.json,verification.json}`。
 
 没有Manager产品、权限、保护／原值授权、数据、API或Swagger变更；Python生产diff仅三个检索消费函数，沿既有唯一端点，不留页码或旧格式兼容。Make／CI自动发现已覆盖，无新入口、依赖或部署。v44/v10、90秒、23PNG、两个Service403、20runtime／8protocol_only及原清理要求保持；无个人服务启停、数据库或时钟操作。修复不等于新T4通过；新版Hosted复验需用户重新明确授权，再交专门CI会话单次执行，不自行派发、轮询或设置定时。
+
+### 检索续查修复的自然 CI 证据（2026-11-09）
+
+修复提交 `0792d77993dd8015f4a3611416955768fd69846b` 的自然 push CI，Run42502098196、attempt1，已独立核对两个所属Job的head SHA、成功执行步骤和原日志SHA256：[Platform consistency Job128796860668](https://github.com/pampa0629/addp/actions/runs/42502098196/job/128796860668) 实际执行System Fixture Go及281项Python（13.318秒、OK）；[Console frontend Job128796860653](https://github.com/pampa0629/addp/actions/runs/42502098196/job/128796860653) 实际执行257项单元、318项受控Playwright及生产构建。两个门禁均selected=true，目标执行步骤未跳过；Console条件依赖和失败证据上传的skipped不记通过。
+
+原日志 `/tmp/addp-ci-20261109-013023/security-{128796860668,128796860653}.log`，本会话严格独立核对脚本及报告 `/tmp/p145-security-search-continuation/{audit-natural-ci.py,natural-ci-independent-audit.json}`。这些是精确修复提交的CI／受控页面证据，不是v44/v10真实Hosted，不能把原6ef失败升级为通过，也不据此宣布全部矩阵闭环。本轮仅归档证据、未新增产品变更，复用有效测试；下一步仍是由专门CI会话在用户确认后单次同范围Hosted复验，保持23图、真实90秒到期和原清理标准，不自行调度或定时。
