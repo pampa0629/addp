@@ -177,6 +177,12 @@ run_without_skips() {
         echo "PostgreSQL release gate refuses skipped tests in $package" >&2
         exit 1
     fi
+    if [ "$TEST_FILTER" = develop-file-authorization ] && [ "$package" = ./internal/iam ]; then
+        grep -q -- '^--- PASS: TestDevelopFileAuthorizationAgainstPostgres ' "$log_path" || {
+            echo "PostgreSQL gate requires real Develop file authorization test" >&2
+            exit 1
+        }
+    fi
     if [ "$TEST_FILTER" = cleanup-authorization ] && [ "$package" = ./internal/iam ]; then
         grep -q -- '^--- PASS: TestCleanupAuthorizationAgainstPostgres ' "$log_path" || {
             echo "PostgreSQL release gate requires the real Cleanup authorization test" >&2
@@ -239,6 +245,10 @@ case "$TEST_FILTER" in
             api) test_pattern='^TestBootstrapBrowserLoginAgainstPostgres$' ;;
             *) echo "browser-login requires --package iam or api" >&2; exit 2 ;;
         esac
+        ;;
+    develop-file-authorization)
+        [ "$PACKAGE_FILTER" = iam ] || { echo "develop-file-authorization requires --package iam" >&2; exit 2; }
+        test_pattern='^TestDevelopFileAuthorizationAgainstPostgres$'
         ;;
     cleanup-authorization)
         test_pattern='^TestCleanupAuthorizationAgainstPostgres$'

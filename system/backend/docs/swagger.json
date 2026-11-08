@@ -632,6 +632,86 @@
                 ]
             }
         },
+        "/auth/execution-authorizations/develop-geopackage-workflows": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "当前普通 API User；独立读取 Owner 冻结 Intent 和 Meta 完整内容边界，核当前人员、精确源规则和原 pending，封存同一 EA；不新增源 Grant 或目标写权 | Ordinary API User only; independently reads frozen Owner intent and complete Meta content facts, checks current actor, exact source rules and original pending execution, and seals one EA without source Grants or target write access",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "执行授权 | Execution Authorization"
+                ],
+                "summary": "签发 Develop 精确文件执行授权 | Issue Develop exact file execution authorization",
+                "parameters": [
+                    {
+                        "description": "原执行 UUID 与预期 Intent 摘要；正文 512 KiB，无 query | Original execution UUID and expected Intent digest; 512 KiB body, no query",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMIssueDevelopFileRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "封存的来源读取范围 | Sealed source read scope",
+                        "schema": {
+                            "$ref": "#/definitions/client.IssuedDevelopFileAuthorization"
+                        }
+                    },
+                    "400": {
+                        "description": "拒绝或依赖不可用 | Rejected or dependency unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "拒绝或依赖不可用 | Rejected or dependency unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "拒绝或依赖不可用 | Rejected or dependency unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "拒绝或依赖不可用 | Rejected or dependency unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "拒绝或依赖不可用 | Rejected or dependency unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "拒绝或依赖不可用 | Rejected or dependency unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "develop.task.execute",
+                    "develop.data_read.execute"
+                ]
+            }
+        },
         "/auth/execution-authorizations/filegdb-export": {
             "post": {
                 "security": [
@@ -4510,6 +4590,178 @@
                 "x-addp-auth-mode": "permission",
                 "x-addp-required-permissions": [
                     "system.cleanup_authorization.execute"
+                ]
+            }
+        },
+        "/execution-authorizations/{id}/develop-geopackage-admission-checks": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "固定 addp-develop Tenant Service；复核原 EA、Scope、pending、主体和当前源规则；无连接、不放行发布。未实现正式目标批准时保存范围关闭 | Fixed addp-develop Tenant Service; rechecks original EA, scope, pending execution, actor and current source rules; no connection or publication release. Save scopes remain closed until formal approval consumption is implemented",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "执行授权 | Execution Authorization"
+                ],
+                "summary": "观察 Develop 文件执行当前准入资格 | Observe current Develop file execution eligibility",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "规范正整数 EA ID | Canonical positive EA ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "原执行、预期 attempt 与同一范围摘要；512 KiB，无 query | Original execution, expected attempt and identical scope digest; 512 KiB, no query",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/client.DevelopFileAdmissionRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "当次资格观察，非缓存许可 | Current eligibility observation, not cached permission",
+                        "schema": {
+                            "$ref": "#/definitions/client.DevelopFileAdmissionObservation"
+                        }
+                    },
+                    "400": {
+                        "description": "拒绝或依赖不可用 | Rejected or dependency unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "拒绝或依赖不可用 | Rejected or dependency unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "拒绝或依赖不可用 | Rejected or dependency unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "拒绝或依赖不可用 | Rejected or dependency unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "拒绝或依赖不可用 | Rejected or dependency unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "拒绝或依赖不可用 | Rejected or dependency unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "system.execution_authorization.execute"
+                ]
+            }
+        },
+        "/execution-authorizations/{id}/develop-geopackage-source-accesses": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "固定 addp-develop 当前机器凭据；核同一 Scope、当前 User、完整源规则、真实 running attempt/lease、StartedAt 固定截止及同版本 NFS；只返回指定源连接。元数据边界不能用作内容许可 | Fixed current addp-develop machine credential; checks identical scope, current User, complete source rules, actual running attempt and lease, original StartedAt deadline and unchanged NFS version. Returns only the selected source connection; metadata boundaries never grant content access",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "执行授权 | Execution Authorization"
+                ],
+                "summary": "复核 Develop 原执行的精确文件读取 | Recheck exact file read for original Develop execution",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "规范正整数 EA ID | Canonical positive EA ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "同一执行租约、范围摘要与精确源；512 KiB，无 query | Identical execution lease, scope digest and exact source; 512 KiB, no query",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/client.DevelopFileSourceAccessRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "当次精确读取观察，非引擎级授权 | Current exact read observation, not engine-wide authorization",
+                        "schema": {
+                            "$ref": "#/definitions/client.DevelopFileSourceAccessObservation"
+                        }
+                    },
+                    "400": {
+                        "description": "拒绝或依赖不可用 | Rejected or dependency unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "拒绝或依赖不可用 | Rejected or dependency unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "拒绝或依赖不可用 | Rejected or dependency unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "拒绝或依赖不可用 | Rejected or dependency unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "拒绝或依赖不可用 | Rejected or dependency unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "拒绝或依赖不可用 | Rejected or dependency unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "system.execution_authorization.execute"
                 ]
             }
         },
@@ -17385,6 +17637,112 @@
                 }
             }
         },
+        "client.DevelopFileAdmissionObservation": {
+            "type": "object",
+            "properties": {
+                "approval_id": {
+                    "type": "string"
+                },
+                "authorization_id": {
+                    "type": "string"
+                },
+                "execution_id": {
+                    "type": "string"
+                },
+                "expected_attempt": {
+                    "type": "integer"
+                },
+                "expires_at": {
+                    "type": "string"
+                },
+                "observed_at": {
+                    "type": "string"
+                },
+                "scope_digest": {
+                    "type": "string"
+                },
+                "state": {
+                    "type": "string"
+                }
+            }
+        },
+        "client.DevelopFileAdmissionRequest": {
+            "type": "object",
+            "properties": {
+                "execution_id": {
+                    "type": "string"
+                },
+                "expected_attempt": {
+                    "type": "integer"
+                },
+                "scope_digest": {
+                    "type": "string"
+                }
+            }
+        },
+        "client.DevelopFileSourceAccessObservation": {
+            "type": "object",
+            "properties": {
+                "attempt": {
+                    "type": "integer"
+                },
+                "authorization_id": {
+                    "type": "string"
+                },
+                "engine": {
+                    "$ref": "#/definitions/github_com_addp_common_models.Engine"
+                },
+                "execution_id": {
+                    "type": "string"
+                },
+                "expires_at": {
+                    "type": "string"
+                },
+                "observed_at": {
+                    "type": "string"
+                },
+                "scope_digest": {
+                    "type": "string"
+                },
+                "source": {
+                    "$ref": "#/definitions/plugin.EngineCatalogPath"
+                }
+            }
+        },
+        "client.DevelopFileSourceAccessRequest": {
+            "type": "object",
+            "properties": {
+                "attempt": {
+                    "type": "integer"
+                },
+                "execution_id": {
+                    "type": "string"
+                },
+                "lease_token": {
+                    "type": "string"
+                },
+                "scope_digest": {
+                    "type": "string"
+                },
+                "source": {
+                    "$ref": "#/definitions/plugin.EngineCatalogPath"
+                }
+            }
+        },
+        "client.ExecutionEngineAccessScope": {
+            "type": "object",
+            "properties": {
+                "effects": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "engine_id": {
+                    "type": "string"
+                }
+            }
+        },
         "client.FileGDBExportAccessRequest": {
             "type": "object",
             "properties": {
@@ -17410,6 +17768,67 @@
                 },
                 "expires_in": {
                     "type": "integer"
+                }
+            }
+        },
+        "client.IssuedDevelopFileAuthorization": {
+            "type": "object",
+            "properties": {
+                "authorization": {
+                    "$ref": "#/definitions/client.IssuedExecutionAuthorization"
+                },
+                "scope": {
+                    "$ref": "#/definitions/execution.DevelopBoundFileScope"
+                },
+                "scope_digest": {
+                    "type": "string"
+                }
+            }
+        },
+        "client.IssuedExecutionAuthorization": {
+            "type": "object",
+            "properties": {
+                "accesses": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/client.ExecutionEngineAccessScope"
+                    }
+                },
+                "actor_principal_id": {
+                    "type": "string"
+                },
+                "audience": {
+                    "type": "string"
+                },
+                "execution_id": {
+                    "type": "string"
+                },
+                "expires_at": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "internal_task": {
+                    "$ref": "#/definitions/execution.InternalTaskScope"
+                },
+                "issued_authorization_version": {
+                    "type": "string"
+                },
+                "source_definition_id": {
+                    "type": "string"
+                },
+                "source_definition_version": {
+                    "type": "string"
+                },
+                "source_type": {
+                    "type": "string"
+                },
+                "tenant_id": {
+                    "type": "string"
+                },
+                "tenant_membership_id": {
+                    "type": "string"
                 }
             }
         },
@@ -18043,6 +18462,63 @@
                 },
                 "tenant_id": {
                     "type": "integer"
+                }
+            }
+        },
+        "execution.DevelopBoundFileScope": {
+            "type": "object",
+            "properties": {
+                "expected_attempt": {
+                    "type": "integer"
+                },
+                "intent_digest": {
+                    "type": "string"
+                },
+                "schema_version": {
+                    "type": "string"
+                },
+                "sources": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/execution.DevelopFileSourceReference"
+                    }
+                },
+                "target": {
+                    "$ref": "#/definitions/execution.DevelopBoundFileTarget"
+                },
+                "timeout_seconds": {
+                    "type": "integer"
+                }
+            }
+        },
+        "execution.DevelopBoundFileTarget": {
+            "type": "object",
+            "properties": {
+                "engine_version": {
+                    "type": "string"
+                },
+                "mode": {
+                    "type": "string"
+                },
+                "target": {
+                    "$ref": "#/definitions/plugin.EngineCatalogPath"
+                }
+            }
+        },
+        "execution.DevelopFileSourceReference": {
+            "type": "object",
+            "properties": {
+                "boundary_hash": {
+                    "type": "string"
+                },
+                "engine_version": {
+                    "type": "string"
+                },
+                "item_fingerprint": {
+                    "type": "string"
+                },
+                "target": {
+                    "$ref": "#/definitions/plugin.EngineCatalogPath"
                 }
             }
         },
@@ -22824,6 +23300,17 @@
                     "type": "string"
                 },
                 "username": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_api.IAMIssueDevelopFileRequest": {
+            "type": "object",
+            "properties": {
+                "execution_id": {
+                    "type": "string"
+                },
+                "intent_digest": {
                     "type": "string"
                 }
             }

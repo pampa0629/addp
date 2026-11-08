@@ -38,6 +38,12 @@ FileGDB 精确源表授权（实施中）：沿用 `execution_authorizations.sou
 
 前向迁移扩展同一 `valid_source_file_composition`：ENVI 仅同目录、两个必需文件，主角色 `raster`、另一角色 `header` 且扩展名 `.hdr`。SQL 的唯一 `valid_manager_file_scope` 替换模型专用函数，保留原模型闭合范围，SKP 不开放。pending 触发器按真实 task type 区分 Model3D 和 COG 配置版本与组成；不重建 Grant、EA 或新增权限。验证沿 `make test-system-iam-postgres SYSTEM_IAM_POSTGRES_TEST_ARGS="--package engineaccess --test file-composition"`，覆盖 NFS／MinIO 完整批准、旧清单失效、当前 Grant 撤销、当前用户与目的隔离；没有实际 Hosted 前不记完成。
 
+## Develop 精确文件执行授权（实施中）
+
+同一 Execution Authorization 增加不可变 `develop_file_scope`，仅当前普通 User 的 Develop/manual/root/workflow/bounded、MaxAttempts=1 用途；不复用 Manager 私域来源 sum，不新增 Grant 或角色关系。System 在 IAM 锁外读取 Develop 唯一私有 Intent 投影和 Meta 完整内容事实，再在事务内重核原始公共执行配置、Actor、current User/Service 凭据、全部当前源规则、真实 attempt/lease 与 DB StartedAt 固定截止。通用 engine-accesses 不得消费该范围；保存批准未接线和 GeoPackage 内容组成尚未正式准入时保持关闭，metadata_target 不产生内容读取权。
+
+结构迁移及生命周期验证沿 `make test-system-iam-postgres SYSTEM_IAM_POSTGRES_TEST_ARGS="--package iam --test develop-file-authorization"`；默认 IAM AgainstPostgres 门禁自动发现同一测试。该组 Owner/Meta 事实与源规则准备为显式测试双，不代表真实 GeoPackage Grant、OAuth 签发流程、实际数据读取或 Hosted/T4；精确事实/源规则守卫另在 engineaccess 验证，权限发布及真实业务证据分别补齐。
+
 ## 一、事实边界
 
 System 是 ADDP 唯一 IAM 逻辑权威，负责 Principal、账号、认证方式、Tenant Membership、组织关系、Role/Permission、会话、OAuth 协议事实和 IAM 安全审计。

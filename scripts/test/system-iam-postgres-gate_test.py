@@ -78,6 +78,14 @@ if "^TestResetDisposablePostgresForGate$" in sys.argv:
 if "./internal/iam" in sys.argv:
     import re
     pattern = sys.argv[sys.argv.index("-run") + 1]
+    if re.search(pattern, "TestDevelopFileAuthorizationAgainstPostgres"):
+        result = os.environ.get("TEST_GO_DEVELOP_FILE_RESULT", "pass")
+        if result == "pass":
+            print("--- PASS: TestDevelopFileAuthorizationAgainstPostgres (0.01s)")
+        elif result == "skip":
+            print("--- SKIP: TestDevelopFileAuthorizationAgainstPostgres (0.00s)")
+        elif result == "wrong":
+            print("--- PASS: TestDevelopFileAuthorizationAgainstPostgresOther (0.01s)")
     if re.search(pattern, "TestCleanupAuthorizationAgainstPostgres"):
         result = os.environ.get("TEST_GO_CLEANUP_RESULT", "pass")
         if result == "pass":
@@ -409,6 +417,17 @@ elif args[:2] != ["volume", "ls"]:
         result = self.run_gate(arguments=("--package", "iam", "--test", "engine-deployments"))
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("requires --package repository, api or migration", result.stderr)
+
+    def test_develop_file_authorization_filter_requires_real_main_pass(self):
+        result = self.run_gate(arguments=("--package", "iam", "--test", "develop-file-authorization"))
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("./internal/iam -run ^TestDevelopFileAuthorizationAgainstPostgres$", (self.root / "trace-1").read_text())
+        for package in ("api", "migration", "engineaccess"):
+            result = self.run_gate(arguments=("--package", package, "--test", "develop-file-authorization"))
+            self.assertNotEqual(result.returncode, 0)
+        for value in ("missing", "skip", "wrong"):
+            result = self.run_gate(arguments=("--package", "iam", "--test", "develop-file-authorization"), TEST_GO_DEVELOP_FILE_RESULT=value)
+            self.assertNotEqual(result.returncode, 0)
 
     def test_host_nodes_filter_keeps_default_discovery_and_rejects_other_packages(self):
         result = self.run_gate(arguments=("--package", "repository", "--test", "host-nodes"))

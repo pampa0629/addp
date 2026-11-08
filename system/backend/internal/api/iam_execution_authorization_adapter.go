@@ -480,6 +480,10 @@ func respondExecutionAuthorizationError(c *gin.Context, err error) {
 	messageID := sysi18n.MsgInternalError
 	errorCode := "execution_authorization_internal_error"
 	switch {
+	case errors.Is(err, iam.ErrDevelopFileDependencyUnavailable):
+		status = http.StatusServiceUnavailable
+		messageID = sysi18n.MsgExecutionAuthorizationUnavailable
+		errorCode = "execution_authorization_unavailable"
 	case errors.Is(err, engineaccess.ErrAuthorizationFactsUnavailable):
 		status = http.StatusServiceUnavailable
 		messageID = sysi18n.MsgAuthorizationFactsUnavailable

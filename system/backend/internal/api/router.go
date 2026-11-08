@@ -126,6 +126,10 @@ func SetupRouter(db *gorm.DB, cfg *config.Config) *gin.Engine {
 	}
 	fulfillmentService := engineaccess.NewService(engineaccess.NewRepository(db), nil).
 		WithExecutionEngineSnapshot(engineService.DecryptAuthorizedExecutionSnapshot)
+	developFileAuthorization := iam.NewDevelopFileAuthorizationService(runtime.Repository, nil, fulfillmentService.PrepareDevelopFileRead)
+	if err := RegisterIAMDevelopFileAuthorizationRoutes(api, runtime, &IAMDevelopFileAuthorizationHandler{service: developFileAuthorization}); err != nil {
+		panic(err)
+	}
 	authorizationFactsService := engineaccess.NewService(engineaccess.NewRepository(db), nil)
 	var metaFacts engineaccess.AuthorizationFactsReader
 	var metaIdentities engineaccess.DataItemIdentityReader
@@ -160,6 +164,7 @@ func SetupRouter(db *gorm.DB, cfg *config.Config) *gin.Engine {
 		if err != nil {
 			panic("invalid System fulfillment credential configuration")
 		}
+		developFileAuthorization.SetOwnerReader(commonClient.NewDevelopClient(cfg.DevelopServiceURL, tokens, nil))
 		fulfillmentService.WithFulfillmentBasisReader(commonClient.NewCatalogFulfillmentClient(cfg.CatalogServiceURL, tokens, nil))
 		metaClient := commonClient.NewMetaClient(cfg.MetaServiceURL, tokens)
 		metaFacts, metaScanFacts, metaIdentities, metaNodes = metaClient, metaClient, metaClient, metaClient

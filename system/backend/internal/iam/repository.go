@@ -413,6 +413,20 @@ func (r *Repository) CreateExecutionAuthorization(
 	if authorization == nil {
 		return fmt.Errorf("%w: execution authorization is required", commonapi.ErrBadRequest)
 	}
+	if authorization.DevelopFileScope != nil {
+		if authorization.DevelopFileScope.Validate() != nil || authorization.Audience != "develop" || authorization.SourceType != "user" || authorization.SourceReadScope != nil || authorization.InternalTask != nil || authorization.CleanupScope != nil || authorization.SourceDefinitionID != nil || authorization.SourceDefinitionVersion != nil || authorization.SourceNotebookSessionAuthorizationID != nil || authorization.SourceExecutionAttempt != nil || authorization.SourceExecutionLeaseToken != nil {
+			return fmt.Errorf("%w: invalid Develop file authorization purpose", commonapi.ErrBadRequest)
+		}
+		expected := developFileAccessRows(authorization.DevelopFileScope)
+		if len(expected) != len(accesses) {
+			return commonapi.ErrBadRequest
+		}
+		for i := range expected {
+			if expected[i].EngineID != accesses[i].EngineID || len(accesses[i].Effects) != 1 || accesses[i].Effects[0] != "read" {
+				return commonapi.ErrBadRequest
+			}
+		}
+	}
 	purposes := 0
 	if len(accesses) > 0 {
 		purposes++
