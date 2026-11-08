@@ -75,12 +75,22 @@ func EnrichContainerChildren(ctx context.Context, attrs models.JSONMap, detected
 	if err != nil {
 		return err
 	}
+	return enrichContainerChildrenData(ctx, attrs, detected, formatType, data)
+}
+
+func enrichContainerChildrenData(ctx context.Context, attrs models.JSONMap, detected *metaitem.DetectedItem, formatType format.FormatType, data []byte) error {
 	if infoProvider, err := format.GetFormatInfoProvider(formatType); err == nil {
 		formatInfo, err := infoProvider.DescribeFormat(ctx, bytes.NewReader(data), format.ContainerParseOptions(containerChildLimit, 0))
 		if err != nil {
 			return err
 		}
-		metaattr.MergeStandardAttributes(attrs, metaattr.FormatInfoAttributes(string(formatType), formatInfo))
+		if formatType == format.FormatGeoPackage {
+			// Byte inspection cannot prove that a business source has no journals.
+			formatInfo["composition_complete"] = false
+			metaattr.ReplaceAttributeNamespace(attrs, "format_info", string(formatType), formatInfo)
+		} else {
+			metaattr.MergeStandardAttributes(attrs, metaattr.FormatInfoAttributes(string(formatType), formatInfo))
+		}
 	}
 	return enrichContainerChildrenFromProvider(ctx, attrs, detected, formatType, bytes.NewReader(data), format.ContainerParseOptions(containerChildLimit, 0))
 }

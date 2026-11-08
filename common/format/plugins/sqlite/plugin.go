@@ -92,6 +92,9 @@ func (p *Plugin) Descriptor() format.FormatDescriptor {
 }
 
 func (p *Plugin) DescribeFormat(ctx context.Context, input io.Reader, options *format.ParseOptions) (map[string]interface{}, error) {
+	if p.Format() == format.FormatGeoPackage {
+		return p.describeGeoPackageFormat(ctx, input, options)
+	}
 	db, cleanup, err := p.openDatabase(input)
 	if err != nil {
 		return nil, err

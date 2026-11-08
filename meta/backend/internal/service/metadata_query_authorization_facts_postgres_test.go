@@ -56,6 +56,7 @@ scanned_depth TEXT, attributes JSONB, created_at TIMESTAMPTZ, deleted_at TIMESTA
 	exerciseUploadScanTerminalIdentity(t, tx)
 	exerciseFileAuthorizationFacts(t, tx)
 	exerciseGeoPackageAuthorizationFacts(t, tx)
+	exerciseGeoPackageDeepScanAuthorizationFacts(t, tx)
 	exerciseWholeContainerAuthorizationFacts(t, tx)
 	exerciseScannedFileAuthorizationFacts(t, tx)
 	exerciseScannedWholeAuthorizationFacts(t, tx)

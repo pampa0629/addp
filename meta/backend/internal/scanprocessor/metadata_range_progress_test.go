@@ -171,6 +171,61 @@ func TestAttributeObservationPreservesCatalogAndSequentialStreamCapabilities(t *
 	}
 }
 
+type sourceFactsFixture struct{ calls *int }
+
+func (p sourceFactsFixture) DescribeEngineCatalogFacts(_ context.Context, _ plugin.ConnectionInfo, path plugin.EngineCatalogPath, _ plugin.EngineCatalogFactsOptions) (*plugin.EngineCatalogFacts, error) {
+	*p.calls++
+	return &plugin.EngineCatalogFacts{Path: path, Kind: "file"}, nil
+}
+
+func TestAttributeObservationPreservesOnlyExistingSourceFacts(t *testing.T) {
+	if _, added := observeMetadataRanges(&staticObjectContentReader{}).(plugin.EngineCatalogFactsProvider); added {
+		t.Fatal("source-facts capability invented for a stream-only provider")
+	}
+	for _, ranges := range []bool{false, true} {
+		for _, catalog := range []bool{false, true} {
+			calls := 0
+			facts := sourceFactsFixture{calls: &calls}
+			var source plugin.ContentReadableProvider = struct {
+				*staticObjectContentReader
+				sourceFactsFixture
+			}{&staticObjectContentReader{}, facts}
+			if ranges {
+				source = struct {
+					*metadataRangeSource
+					sourceFactsFixture
+				}{&metadataRangeSource{}, facts}
+			}
+			if catalog {
+				if ranges {
+					source = struct {
+						catalogRangeSource
+						sourceFactsFixture
+					}{catalogRangeSource{&metadataRangeSource{}}, facts}
+				} else {
+					source = struct {
+						*staticObjectContentReader
+						metadataCatalog
+						sourceFactsFixture
+					}{&staticObjectContentReader{}, metadataCatalog{catalogRangeSource{&metadataRangeSource{}}}, facts}
+				}
+			}
+			observed := observeMetadataRanges(source)
+			_, hasRange := observed.(plugin.RangeReadableProvider)
+			_, hasCatalog := observed.(plugin.EngineCatalogProvider)
+			p, hasFacts := observed.(plugin.EngineCatalogFactsProvider)
+			if hasRange != ranges || hasCatalog != catalog || !hasFacts {
+				t.Fatal("optional capabilities changed", ranges, catalog)
+			}
+			path := plugin.FileItemPath(14, "source.gpkg")
+			f, err := p.DescribeEngineCatalogFacts(t.Context(), nil, path, plugin.EngineCatalogFactsOptions{})
+			if err != nil || f.Path.StringPath() != "source.gpkg" || calls != 1 {
+				t.Fatal("source-facts call was not delegated exactly once", f, err, calls)
+			}
+		}
+	}
+}
+
 func TestAttributeRangeCountsOnlyActualReadBytesAndOneCountPerStream(t *testing.T) {
 	recorder := &hashProgressRecorder{}
 	ctx, progress := scanflow.WithFileProgress(context.Background(), recorder)

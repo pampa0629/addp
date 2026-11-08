@@ -528,7 +528,9 @@ System 的数据授权消费 Meta 已可靠识别的 DataItem，不要求 deep �
 
 ### 授权资源描述契约
 
-GeoPackage 单文件事实沿同一 DataItem 边界表达，不为内部图层、表或文件组成设独立 ACL。已提交的 `item.format=geopackage`、`item.data_type=container`、`item.layout=single` 与唯一必需主 `container` ref 必须相符，且 `format_info.geopackage.composition_complete` 必须是基础格式观察确认的布尔 `true`，才可投影完整内容组成。该状态不由文件名、deep 容器枚举、子表数量或 `metadata_target` 推导；未有完整观察时，元数据身份仍按既有规则提供，内容边界保持关闭。事实投影查询只读取 Meta 已提交记录，不访问源端、不补扫或补造成功观察；格式检查不等于新增用户权限。
+GeoPackage 单文件事实沿同一 DataItem 边界表达，不为内部图层、表或文件组成设独立 ACL。已提交的 `item.format=geopackage`、`item.data_type=container`、`item.layout=single` 与唯一必需主 `container` ref 必须相符，且 `format_info.geopackage.composition_complete` 必须是原生格式完整性观察确认的布尔 `true`，才可投影完整内容组成。该状态不由文件名、deep 容器枚举、子表数量或 `metadata_target` 推导；未有完整观察时，元数据身份仍按既有规则提供，内容边界保持关闭。事实投影查询只读取 Meta 已提交记录，不访问源端、不补扫或补造成功观察；格式检查不等于新增用户权限。
+
+GeoPackage 首版完整读取事实由现有 deep 扫描生产，basic 不读取整文件、不生成完整性结论。Common SQLite 格式插件只对同次完整暂存的字节做只读原生结构核验：GPKG 应用标识、1.2—1.4 版本、非 WAL 读写版本、文件长度与页数、SQLite quick_check／foreign_key_check、真实普通核心表、features 声明与几何列／SRS 一致性；仅准入标准矢量及声明匹配的 gpkg_rtree_index、gpkg_crs_wkt 扩展，不执行视图或自定义虚表证明完整性，不验证每个要素的几何有效性。Meta 在读取前后用已有 NFS Provider 精确观察主文件及其 -wal／-shm／-journal 三个相邻目标，不枚举父目录、不打开附属文件；主文件类型化身份、大小及已有版本／修改时间必须稳定，完整 EOF 的实际字节数必须相等，三附属目标只有明确不存在才满足独立单文件范围。文件仍在写入、任一附属目标存在、无法核实或不支持的格式均不得标记完整，不自动 checkpoint、合并或修复。成功后按真实原名生成唯一必需主 container ref，替换本格式原有完整性状态；内部表和索引仍属于同一 DataItem，不产生组件授权。该观察是已扫描文件状态而非源端快照锁，真实执行仍须核对当前边界与实际输入字节，不能凭旧扫描状态承诺后续源内容不变。
 
 元数据查看的可靠身份与内容可读边界分别表达：现有 native／file composition／whole 内容边界可供元数据查看复用；其他 DataItem 使用互斥的 `boundary.metadata_target`，含真实 `target`、`layout`、`data_type`、`format`、`composition_digest`，外层 layout 必须一致。whole 元数据目标绑定已识别 DataItem 自身的 directory／bucket／prefix 根，其身份来自该 item 的持久归属节点；它不是普通目录节点范围授权，不允许据此读取整个目录。既有完整 FileGDB 内容 scope 保持原契约。它来自同一已提交快照中的 item 和完整父链，不读取源内容、不扫描；组成摘要只包含已持久的身份／组成声明，不含样本、大小、时间、字段值或统计。`basis_state=complete` 在此表示元数据身份完整，不能当作内容读取完整。Common 的内容绑定方法明确拒绝 metadata_target，System 只允许该边界签发 metadata_read；普通内容入口不因新增事实表示扩权。缺失根、断裂父链、身份不符和路径歧义仍拒绝，不从显示 full_name 拆分猜测。
 

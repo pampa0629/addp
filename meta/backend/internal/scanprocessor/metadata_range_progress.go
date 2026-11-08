@@ -17,23 +17,58 @@ func observeMetadataRanges(reader plugin.ContentReadableProvider) plugin.Content
 	}
 	content := &metadataContentProvider{ContentReadableProvider: reader}
 	catalog, hasCatalog := reader.(plugin.EngineCatalogProvider)
+	facts, hasFacts := reader.(plugin.EngineCatalogFactsProvider)
 	if ranges, ok := reader.(plugin.RangeReadableProvider); ok {
 		observed := &metadataRangeProvider{metadataContentProvider: content, ranges: ranges}
 		if hasCatalog {
+			if hasFacts {
+				return struct {
+					*metadataRangeProvider
+					metadataCatalog
+					metadataFacts
+				}{observed, metadataCatalog{catalog}, metadataFacts{facts}}
+			}
 			return struct {
 				*metadataRangeProvider
 				metadataCatalog
 			}{observed, metadataCatalog{catalog}}
 		}
+		if hasFacts {
+			return struct {
+				*metadataRangeProvider
+				metadataFacts
+			}{observed, metadataFacts{facts}}
+		}
 		return observed
 	}
 	if hasCatalog {
+		if hasFacts {
+			return struct {
+				*metadataContentProvider
+				metadataCatalog
+				metadataFacts
+			}{content, metadataCatalog{catalog}, metadataFacts{facts}}
+		}
 		return struct {
 			*metadataContentProvider
 			metadataCatalog
 		}{content, metadataCatalog{catalog}}
 	}
+	if hasFacts {
+		return struct {
+			*metadataContentProvider
+			metadataFacts
+		}{content, metadataFacts{facts}}
+	}
 	return content
+}
+
+type metadataFacts struct {
+	facts plugin.EngineCatalogFactsProvider
+}
+
+func (p metadataFacts) DescribeEngineCatalogFacts(ctx context.Context, conn plugin.ConnectionInfo, path plugin.EngineCatalogPath, opts plugin.EngineCatalogFactsOptions) (*plugin.EngineCatalogFacts, error) {
+	return p.facts.DescribeEngineCatalogFacts(ctx, conn, path, opts)
 }
 
 type metadataContentProvider struct{ plugin.ContentReadableProvider }

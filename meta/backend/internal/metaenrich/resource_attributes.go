@@ -135,6 +135,9 @@ func EnrichResourceAttributes(ctx context.Context, attrs models.JSONMap, input R
 		return item, item.Fields, nil
 	}
 	if item.DataType == datatype.Container && canReadContent {
+		if item.Format == string(format.FormatGeoPackage) {
+			return item, item.Fields, enrichGeoPackageSource(ctx, attrs, input)
+		}
 		reader, err := input.ContentReader.OpenContent(ctx, input.ConnInfo, input.EngineCatalogPathFor(input.PhysicalPath), plugin.ReadOptions{})
 		if err != nil {
 			return item, item.Fields, err
