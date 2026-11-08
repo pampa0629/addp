@@ -126,3 +126,24 @@ func (r *FileExecutionRepository) ReadPrivateRuntime(ctx context.Context, tenant
 	}
 	return &PrivateFileRuntimeRecord{RuntimeExecutionID: *row.RuntimeExecutionID, Manifest: manifest, OwnerInstanceID: row.InputOwnerInstanceID, InputDirectory: row.InputDirectory}, nil
 }
+
+// ReadForDispatch returns the original private binding before the first I/O.
+// An existing directory/Runtime registration is recovery-only, never replay.
+func (r *FileExecutionRepository) ReadForDispatch(ctx context.Context, tenant uint, executionID string) (*commonclient.DevelopFileExecutionFacts, *commonclient.IssuedDevelopFileAuthorization, error) {
+	var row models.FileExecution
+	if err := r.db.WithContext(ctx).Where("execution_id = ? AND tenant_id = ?", executionID, tenant).First(&row).Error; err != nil {
+		return nil, nil, err
+	}
+	if row.InputDirectory != "" || row.RuntimeExecutionID != nil {
+		return nil, nil, commonapi.ErrConflict
+	}
+	facts, err := privateFileFacts(&row)
+	if err != nil {
+		return nil, nil, err
+	}
+	var issued commonclient.IssuedDevelopFileAuthorization
+	if err := json.Unmarshal(row.IssuedAuthorizationJSON, &issued); err != nil {
+		return nil, nil, err
+	}
+	return facts, &issued, nil
+}

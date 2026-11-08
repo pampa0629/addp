@@ -387,3 +387,9 @@ other = "1–100 的整数，默认 90。JPEG 有损；较高质量通常生成�
 
 [develop.query.federated_binding_invalid]
 other = "联邦查询执行绑定缺失、已变化或不可用，请重新发起执行。"
+
+[develop.workflow.private_file_unavailable]
+other = "精确文件工作流执行当前不可用。"
+
+[develop.workflow.private_file_failed]
+other = "精确文件工作流执行失败。"

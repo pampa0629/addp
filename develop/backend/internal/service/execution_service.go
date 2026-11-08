@@ -2,7 +2,9 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"gorm.io/gorm"
 	"strings"
 	"time"
 
@@ -17,18 +19,22 @@ import (
 // ExecutionService dispatches all claimed Develop tasks through their owner domain executor.
 // Query keeps its existing policy, authorization and result implementation.
 type ExecutionService struct {
-	executor *DevExecutor
-	queue    *repository.ExecutionRepository
-	query    *QueryExecutionService
+	executor     *DevExecutor
+	queue        *repository.ExecutionRepository
+	query        *QueryExecutionService
+	privateFiles *privateFileWorkflowExecutor
 }
 
-func NewExecutionService(executor *DevExecutor, queue *repository.ExecutionRepository) (*ExecutionService, error) {
+func NewExecutionService(executor *DevExecutor, queue *repository.ExecutionRepository, files *repository.FileExecutionRepository, instanceID string) (*ExecutionService, error) {
+	if files == nil || instanceID == "" {
+		return nil, fmt.Errorf("Develop private file execution dependencies are required")
+	}
 	query, err := NewQueryExecutionService(executor, queue)
 	if err != nil {
 		return nil, err
 	}
 	executor.executionQueue = queue
-	return &ExecutionService{executor: executor, queue: queue, query: query}, nil
+	return &ExecutionService{executor: executor, queue: queue, query: query, privateFiles: newPrivateFileWorkflowExecutor(files, executor.workflowEngine, instanceID)}, nil
 }
 
 func (s *ExecutionService) Execute(ctx context.Context, item *commonExecution.TaskExecution, lease commonExecution.Lease) error {
@@ -52,6 +58,15 @@ func (s *ExecutionService) Execute(ctx context.Context, item *commonExecution.Ta
 	}
 	if item.TaskType != commonExecution.TaskTypeWorkflow && item.TaskType != commonExecution.TaskTypeScript {
 		return fmt.Errorf("unsupported Develop execution type")
+	}
+	if item.TaskType == commonExecution.TaskTypeWorkflow && item.Source == commonExecution.ModuleDevelop {
+		facts, issued, readErr := s.privateFiles.repository.ReadForDispatch(ctx, uint(item.TenantID), item.ExecutionID)
+		if readErr == nil {
+			return s.executePrivateFileWorkflow(ctx, item, lease, facts, *issued, lang)
+		}
+		if !errors.Is(readErr, gorm.ErrRecordNotFound) {
+			return s.fail(ctx, item, lease, startedAt, "authorization_failed", fmt.Errorf("%s", commoni18n.ForLanguage(lang, "develop.workflow.private_file_unavailable")))
+		}
 	}
 	task, err := devRuntimeTaskFromExecution(item)
 	if err != nil {

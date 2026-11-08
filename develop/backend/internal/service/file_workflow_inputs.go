@@ -25,7 +25,9 @@ var errFileWorkflowInputs = errors.New("invalid or incomplete private workflow i
 type fileWorkflowRuntimeRecorder func(context.Context, repository.PrivateFileRuntimeRecord) error
 
 type fileWorkflowInputCleanup struct {
+	observed             bool
 	SourcesStopped       bool
+	RuntimeStopped       bool
 	SourceCleanupPending bool
 	RuntimeCleanup       string
 	LocalRemoved         bool
@@ -259,7 +261,7 @@ func (b *fileWorkflowInputs) Execute(ctx context.Context, language string) (*plu
 // remain visible even after the initiating request has returned.
 func (b *fileWorkflowInputs) Cleanup(ctx context.Context) (fileWorkflowInputCleanup, error) {
 	b.cancel(context.Canceled)
-	state := fileWorkflowInputCleanup{SourcesStopped: true, RuntimeCleanup: "not_created"}
+	state := fileWorkflowInputCleanup{observed: true, SourcesStopped: true, RuntimeStopped: true, RuntimeCleanup: "not_created"}
 	for _, reader := range b.sources {
 		_ = reader.Close()
 		source := reader.State()
@@ -271,9 +273,13 @@ func (b *fileWorkflowInputs) Cleanup(ctx context.Context) (fileWorkflowInputClea
 	var err error
 	if b.runtime != nil {
 		state.RuntimeCleanup = "pending"
+		state.RuntimeStopped = false
 		result, cleanupErr := b.runtime.Cleanup(ctx)
 		if cleanupErr == nil {
 			state.RuntimeCleanup = result.Cleanup
+			// This fixed Runtime receipt is emitted only after the worker and all
+			// transfers stopped; only removal of its private directory failed.
+			state.RuntimeStopped = result.Cleanup == "passed" || result.ErrorCode == "PRIVATE_FILES_CLEANUP_FAILED"
 		} else {
 			err = cleanupErr
 		}

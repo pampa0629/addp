@@ -25,6 +25,8 @@ type ExecutionSupervisor struct {
 	queue   *repository.ExecutionRepository
 	service interface {
 		Execute(context.Context, *commonExecution.TaskExecution, commonExecution.Lease) error
+		PrivateFilesUnstopped(map[string]struct{}) int
+		RecoverPrivateFiles(context.Context) error
 	}
 	config          ExecutionSupervisorConfig
 	logger          *slog.Logger
@@ -32,14 +34,17 @@ type ExecutionSupervisor struct {
 	capacity        map[string]*atomic.Int64
 	nextOwner       uint64
 	wake            chan struct{}
-	activeEnginesMu sync.Mutex
+	activeMu        sync.Mutex
 	activeEngines   map[uint]int
+	activeWorkflows map[string]struct{}
 }
 
 func NewExecutionSupervisor(
 	queue *repository.ExecutionRepository,
 	executor interface {
 		Execute(context.Context, *commonExecution.TaskExecution, commonExecution.Lease) error
+		PrivateFilesUnstopped(map[string]struct{}) int
+		RecoverPrivateFiles(context.Context) error
 	},
 	config ExecutionSupervisorConfig,
 	logger *slog.Logger,
@@ -57,7 +62,7 @@ func NewExecutionSupervisor(
 	}
 	return &ExecutionSupervisor{
 		queue: queue, service: executor, config: config, logger: logger,
-		wake: make(chan struct{}, 1), activeEngines: make(map[uint]int),
+		wake: make(chan struct{}, 1), activeEngines: make(map[uint]int), activeWorkflows: map[string]struct{}{},
 		active: executionCounters(), capacity: executionCounters(),
 	}, nil
 }
@@ -69,8 +74,17 @@ func executionCounters() map[string]*atomic.Int64 {
 	}
 	return counters
 }
-func (s *ExecutionSupervisor) Capacity(taskType string) int    { return int(s.capacity[taskType].Load()) }
-func (s *ExecutionSupervisor) ActiveCount(taskType string) int { return int(s.active[taskType].Load()) }
+func (s *ExecutionSupervisor) Capacity(taskType string) int { return int(s.capacity[taskType].Load()) }
+func (s *ExecutionSupervisor) ActiveCount(taskType string) int {
+	if taskType == commonExecution.TaskTypeWorkflow {
+		s.activeMu.Lock()
+		defer s.activeMu.Unlock()
+		// The same UUID can briefly be both returning from Execute and retained
+		// for physical cleanup. It owns exactly one slot during that handoff.
+		return len(s.activeWorkflows) + s.service.PrivateFilesUnstopped(s.activeWorkflows)
+	}
+	return int(s.active[taskType].Load())
+}
 
 // Notify wakes scheduling after a local execution or policy change. PostgreSQL
 // polling discovers changes committed by other Backend instances.
@@ -143,7 +157,13 @@ func (s *ExecutionSupervisor) claimAvailable(ctx context.Context, group *sync.Wa
 			if hasEngineID {
 				s.reserveEngine(engineID)
 			}
-			s.active[taskType].Add(1)
+			if taskType == commonExecution.TaskTypeWorkflow {
+				s.activeMu.Lock()
+				s.activeWorkflows[execution.ExecutionID] = struct{}{}
+				s.activeMu.Unlock()
+			} else {
+				s.active[taskType].Add(1)
+			}
 			group.Add(1)
 			go func() {
 				defer group.Done()
@@ -151,7 +171,13 @@ func (s *ExecutionSupervisor) claimAvailable(ctx context.Context, group *sync.Wa
 					if hasEngineID {
 						s.releaseEngine(engineID)
 					}
-					s.active[taskType].Add(-1)
+					if taskType == commonExecution.TaskTypeWorkflow {
+						s.activeMu.Lock()
+						delete(s.activeWorkflows, execution.ExecutionID)
+						s.activeMu.Unlock()
+					} else {
+						s.active[taskType].Add(-1)
+					}
 					s.Notify()
 				}()
 				s.processClaimed(ctx, execution, *lease)
@@ -161,8 +187,8 @@ func (s *ExecutionSupervisor) claimAvailable(ctx context.Context, group *sync.Wa
 }
 
 func (s *ExecutionSupervisor) saturatedEngineIDs(limit int) []uint {
-	s.activeEnginesMu.Lock()
-	defer s.activeEnginesMu.Unlock()
+	s.activeMu.Lock()
+	defer s.activeMu.Unlock()
 	engineIDs := make([]uint, 0, len(s.activeEngines))
 	for engineID, count := range s.activeEngines {
 		if count >= limit {
@@ -173,14 +199,14 @@ func (s *ExecutionSupervisor) saturatedEngineIDs(limit int) []uint {
 }
 
 func (s *ExecutionSupervisor) reserveEngine(engineID uint) {
-	s.activeEnginesMu.Lock()
-	defer s.activeEnginesMu.Unlock()
+	s.activeMu.Lock()
+	defer s.activeMu.Unlock()
 	s.activeEngines[engineID]++
 }
 
 func (s *ExecutionSupervisor) releaseEngine(engineID uint) {
-	s.activeEnginesMu.Lock()
-	defer s.activeEnginesMu.Unlock()
+	s.activeMu.Lock()
+	defer s.activeMu.Unlock()
 	if s.activeEngines[engineID] <= 1 {
 		delete(s.activeEngines, engineID)
 		return
@@ -257,6 +283,9 @@ func (s *ExecutionSupervisor) recoveryLoop(ctx context.Context, canRecover func(
 	defer ticker.Stop()
 	for {
 		if canRecover == nil || canRecover() {
+			if err := s.service.RecoverPrivateFiles(ctx); err != nil && ctx.Err() == nil {
+				s.logger.Error("recover original Develop private files failed", "error", err)
+			}
 			now := time.Now().UTC()
 			if count, err := s.queue.RecoverUnleased(ctx, now, 100); err != nil {
 				if ctx.Err() == nil {

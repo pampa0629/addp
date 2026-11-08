@@ -18,6 +18,10 @@ import (
 // Called by the same queue fixture in SQLite T1 and the standard PostgreSQL T2.
 func runPrivateRuntimeRecordCase(t *testing.T, db *gorm.DB, repo *FileExecutionRepository, item *commonexecution.TaskExecution, lease commonexecution.Lease, facts *commonclient.DevelopFileExecutionFacts) {
 	t.Helper()
+	ready, issued, readErr := repo.ReadForDispatch(t.Context(), 7, item.ExecutionID)
+	if readErr != nil || ready.ScopeDigest != facts.ScopeDigest || issued.ScopeDigest != facts.ScopeDigest {
+		t.Fatal("original dispatch binding unavailable", ready, issued, readErr)
+	}
 	id := uuid.NewString()
 	directory := t.TempDir()
 	registration := func(runtimeID string, manifest plugin.WorkflowPrivateFileManifest) PrivateFileRuntimeRecord {
@@ -26,6 +30,9 @@ func runPrivateRuntimeRecordCase(t *testing.T, db *gorm.DB, repo *FileExecutionR
 	manifest := plugin.WorkflowPrivateFileManifest{SchemaVersion: plugin.WorkflowPrivateFilesAPIV1, TenantID: 7, ExecutionID: item.ExecutionID, Attempt: 1, AuthorizationID: 101, ScopeDigest: facts.ScopeDigest, Deadline: item.StartedAt.Add(time.Minute), WorkflowJSON: `{"tasks":[],"wide":9007199254740993}`, Inputs: []plugin.WorkflowPrivateFile{{NodeID: "source", Size: 123, SHA256: strings.Repeat("a", 64)}}, Outputs: []string{}}
 	if err := repo.RecordPrivateInputDirectory(t.Context(), lease, "fixture-instance", directory); err != nil {
 		t.Fatal(err)
+	}
+	if _, _, err := repo.ReadForDispatch(t.Context(), 7, item.ExecutionID); err == nil {
+		t.Fatal("registered input was dispatchable again")
 	}
 	inputRecord, err := repo.ReadPrivateInputDirectory(t.Context(), 7, item.ExecutionID)
 	if err != nil || inputRecord.InputDirectory != directory || inputRecord.OwnerInstanceID != "fixture-instance" || inputRecord.ScopeDigest != facts.ScopeDigest {

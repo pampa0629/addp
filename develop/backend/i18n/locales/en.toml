@@ -387,3 +387,9 @@ other = "An integer from 1 to 100, default 90. JPEG is lossy; higher quality usu
 
 [develop.query.federated_binding_invalid]
 other = "The federated query execution binding is missing, changed, or unavailable. Start a new execution."
+
+[develop.workflow.private_file_unavailable]
+other = "Private file workflow execution is unavailable."
+
+[develop.workflow.private_file_failed]
+other = "The private file workflow execution failed."

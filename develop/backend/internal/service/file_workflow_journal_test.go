@@ -22,51 +22,7 @@ import (
 // Real Owner SQL and Common HTTP consumer, with explicit authority/storage and
 // Runtime doubles. This is T1, not a real IAM/NFS or business execution.
 func TestFileWorkflowInputsDurableOwnerRecordBeforeRuntimeCreate(t *testing.T) {
-	facts, issued, _, base := fileInputsFixture(t, false)
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	sqlDB, _ := db.DB()
-	sqlDB.SetMaxOpenConns(1)
-	defer sqlDB.Close()
-	for _, schema := range []string{"common", "develop"} {
-		if err := db.Exec("ATTACH DATABASE ':memory:' AS " + schema).Error; err != nil {
-			t.Fatal(err)
-		}
-	}
-	if err := executiontest.EnsureSQLiteStore(db); err != nil {
-		t.Fatal(err)
-	}
-	if err := db.AutoMigrate(&models.FileExecution{}); err != nil {
-		t.Fatal(err)
-	}
-	decoder := json.NewDecoder(bytes.NewReader(facts.ConfigJSON))
-	decoder.UseNumber()
-	var config commonModels.JSONMap
-	if err := decoder.Decode(&config); err != nil {
-		t.Fatal(err)
-	}
-	actor, membership, version, trigger := int64(31), int64(41), int64(5), 31
-	item := &execution.TaskExecution{ExecutionID: facts.ExecutionID, TenantID: 3, Module: execution.ModuleDevelop, Source: execution.ModuleDevelop, TaskType: execution.TaskTypeWorkflow, TriggerType: execution.TriggerTypeManual, Status: execution.ExecutionStatusPending, ExecutionBoundary: execution.ExecutionBoundaryBounded, MaxAttempts: 1, ActorPrincipalID: &actor, ActorTenantMembershipID: &membership, IssuedAuthorizationVersion: &version, TriggeredBy: &trigger, ExecutionConfig: config}
-	repo := repository.NewFileExecutionRepository(db)
-	if _, err := repo.CreatePending(t.Context(), item, facts.Intent.Sources, nil); err != nil {
-		t.Fatal(err)
-	}
-	if err := repo.BindAuthorization(t.Context(), 3, item.ExecutionID, issued); err != nil {
-		t.Fatal(err)
-	}
-	if err := repo.ApplyAdmission(t.Context(), 3, item.ExecutionID, client.DevelopFileAdmissionObservation{AuthorizationID: issued.Authorization.ID, ExecutionID: item.ExecutionID, ExpectedAttempt: 1, ScopeDigest: issued.ScopeDigest, State: "ready", ObservedAt: time.Now(), ExpiresAt: time.Now().Add(time.Minute)}); err != nil {
-		t.Fatal(err)
-	}
-	_, lease, err := repository.NewExecutionRepository(db).ClaimNext("workflow", t.Context(), "private-input-worker", time.Now(), time.Minute, nil)
-	if err != nil || lease == nil {
-		t.Fatal(lease, err)
-	}
-	frozen, err := repo.Read(t.Context(), 3, item.ExecutionID)
-	if err != nil {
-		t.Fatal(err)
-	}
+	db, repo, item, lease, frozen, issued, base := privateFileWorkerFixture(t, false)
 	registerDirectory := func(ctx context.Context, instanceID, directory string) error {
 		return repo.RecordPrivateInputDirectory(ctx, *lease, instanceID, directory)
 	}
@@ -113,4 +69,67 @@ func TestFileWorkflowInputsDurableOwnerRecordBeforeRuntimeCreate(t *testing.T) {
 	if err != nil || !result.LocalRemoved {
 		t.Fatal(result, err)
 	}
+}
+
+func privateFileWorkerFixture(t *testing.T, save bool) (*gorm.DB, *repository.FileExecutionRepository, *execution.TaskExecution, *execution.Lease, *client.DevelopFileExecutionFacts, client.IssuedDevelopFileAuthorization, client.DevelopFileSourceAccessObservation) {
+	t.Helper()
+	facts, issued, _, base := fileInputsFixture(t, save)
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sqlDB, _ := db.DB()
+	sqlDB.SetMaxOpenConns(1)
+	t.Cleanup(func() { _ = sqlDB.Close() })
+	for _, schema := range []string{"common", "develop"} {
+		if err := db.Exec("ATTACH DATABASE ':memory:' AS " + schema).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := executiontest.EnsureSQLiteStore(db); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.AutoMigrate(&models.FileExecution{}); err != nil {
+		t.Fatal(err)
+	}
+	decoder := json.NewDecoder(bytes.NewReader(facts.ConfigJSON))
+	decoder.UseNumber()
+	var config commonModels.JSONMap
+	if err := decoder.Decode(&config); err != nil {
+		t.Fatal(err)
+	}
+	config["engine_id"] = json.Number("91")
+	config[execution.DisplayLanguageKey] = "zh-cn"
+	actor, membership, version, trigger := int64(31), int64(41), int64(5), 31
+	item := &execution.TaskExecution{ExecutionID: facts.ExecutionID, TenantID: 3, Module: execution.ModuleDevelop, Source: execution.ModuleDevelop, TaskType: execution.TaskTypeWorkflow, TriggerType: execution.TriggerTypeManual, Status: execution.ExecutionStatusPending, ExecutionBoundary: execution.ExecutionBoundaryBounded, MaxAttempts: 1, ActorPrincipalID: &actor, ActorTenantMembershipID: &membership, IssuedAuthorizationVersion: &version, TriggeredBy: &trigger, ExecutionConfig: config}
+	repo := repository.NewFileExecutionRepository(db)
+	pending, err := repo.CreatePending(t.Context(), item, facts.Intent.Sources, facts.Intent.Target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	scope, err := execution.NewDevelopBoundFileScope(pending.Intent, facts.BoundScope.Sources, map[bool]string{false: "", true: "2"}[save])
+	if err != nil {
+		t.Fatal(err)
+	}
+	issued.Scope = *scope
+	issued.ScopeDigest, _ = scope.Digest()
+	if err := repo.BindAuthorization(t.Context(), 3, item.ExecutionID, issued); err != nil {
+		t.Fatal(err)
+	}
+	approval := ""
+	if save {
+		approval = "81"
+	}
+	if err := repo.ApplyAdmission(t.Context(), 3, item.ExecutionID, client.DevelopFileAdmissionObservation{ApprovalID: approval, AuthorizationID: issued.Authorization.ID, ExecutionID: item.ExecutionID, ExpectedAttempt: 1, ScopeDigest: issued.ScopeDigest, State: "ready", ObservedAt: time.Now(), ExpiresAt: time.Now().Add(time.Minute)}); err != nil {
+		t.Fatal(err)
+	}
+	_, lease, err := repository.NewExecutionRepository(db).ClaimNext("workflow", t.Context(), "private-input-worker", time.Now(), time.Minute, nil)
+	if err != nil || lease == nil {
+		t.Fatal(lease, err)
+	}
+	frozen, err := repo.Read(t.Context(), 3, item.ExecutionID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return db, repo, item, lease, frozen, issued, base
 }

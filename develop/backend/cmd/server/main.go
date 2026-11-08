@@ -146,7 +146,9 @@ func main() {
 	devExecutor := service.NewDevExecutor(devTaskRepo, taskExecutionRepo, workflowEngine, operatorDiscovery, metaClient, sqlEngine, federatedQueryService, notebookExecutionService)
 	log.Printf("✅ DevExecutor 初始化完成（使用统一执行表）")
 	executionQueue := repository.NewExecutionRepository(db)
-	executionService, err := service.NewExecutionService(devExecutor, executionQueue)
+	hostname, _ := os.Hostname()
+	executionSupervisorInstanceID := fmt.Sprintf("%s-%d-%s", hostname, os.Getpid(), uuid.NewString())
+	executionService, err := service.NewExecutionService(devExecutor, executionQueue, repository.NewFileExecutionRepository(db), executionSupervisorInstanceID)
 	if err != nil {
 		log.Fatalf("Execution Service 初始化失败: %v", err)
 	}
@@ -197,8 +199,6 @@ func main() {
 	serviceURL := commonConfig.BuildServiceURL(serviceHost, cfg.ServerAddr)
 	runtimeContext, stopRuntime := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stopRuntime()
-	hostname, _ := os.Hostname()
-	executionSupervisorInstanceID := fmt.Sprintf("%s-%d-%s", hostname, os.Getpid(), uuid.NewString())
 	executionSupervisor, err := worker.NewExecutionSupervisor(
 		executionQueue,
 		executionService,

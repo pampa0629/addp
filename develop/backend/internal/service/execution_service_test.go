@@ -167,7 +167,7 @@ func testClaimedWorkflowLanguage(t *testing.T, dsn string, scenarios []string) {
 				},
 			}
 			executor := NewDevExecutor(nil, commonExecution.NewTaskExecutionRepository(db), NewWorkflowEngineService(client), discovery, nil, NewSQLEngineService(&config.Config{}, client, nil), nil, nil)
-			runner, err := NewExecutionService(executor, queue)
+			runner, err := NewExecutionService(executor, queue, repository.NewFileExecutionRepository(db), "fixture-instance")
 			if err != nil {
 				t.Fatal(err)
 			}

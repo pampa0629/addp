@@ -3,6 +3,7 @@ package worker
 import (
 	"context"
 	"fmt"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -29,8 +30,15 @@ func TestExecutionSupervisorClaimsAndConvergesInvalidQuery(t *testing.T) {
 	if err := executiontest.EnsureSQLiteStore(db); err != nil {
 		t.Fatal(err)
 	}
+	if err := db.Exec("ATTACH DATABASE ':memory:' AS develop").Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.AutoMigrate(&models.FileExecution{}); err != nil {
+		t.Fatal(err)
+	}
 	execution := &commonExecution.TaskExecution{
-		TenantID: 7, ExecutionID: uuid.NewString(), Module: commonExecution.ModuleDevelop,
+		ExecutionConfig: commonModels.JSONMap{commonExecution.DisplayLanguageKey: "zh-cn"},
+		TenantID:        7, ExecutionID: uuid.NewString(), Module: commonExecution.ModuleDevelop,
 		TaskType: commonExecution.TaskTypeQuery, Source: "unsupported", Status: commonExecution.ExecutionStatusPending,
 		ExecutionBoundary: commonExecution.ExecutionBoundaryBounded, TriggerType: commonExecution.TriggerTypeManual,
 		CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC(),
@@ -41,7 +49,7 @@ func TestExecutionSupervisorClaimsAndConvergesInvalidQuery(t *testing.T) {
 	queries := repository.NewExecutionRepository(db)
 	executor := service.NewDevExecutor(nil, commonExecution.NewTaskExecutionRepository(db), nil, nil, nil,
 		service.NewSQLEngineService(&config.Config{}, nil, nil), nil, nil)
-	queryService, err := service.NewQueryExecutionService(executor, queries)
+	queryService, err := service.NewExecutionService(executor, queries, repository.NewFileExecutionRepository(db), "backend-1")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -101,9 +109,12 @@ func TestExecutionSupervisorTracksSaturatedEngines(t *testing.T) {
 }
 
 type blockedQueryService struct {
-	queries  *repository.ExecutionRepository
-	releases map[string]chan struct{}
-	started  chan string
+	unstopped            atomic.Int64
+	unstoppedExecutionID string
+	recoverPrivate       func(context.Context) error
+	queries              *repository.ExecutionRepository
+	releases             map[string]chan struct{}
+	started              chan string
 }
 
 func (b *blockedQueryService) Execute(ctx context.Context, execution *commonExecution.TaskExecution, lease commonExecution.Lease) error {
@@ -238,4 +249,17 @@ UNIQUE(scope_type,tenant_id))`).Error; err != nil {
 		t.Fatalf("started above reduced limits: %s", id)
 	case <-time.After(30 * time.Millisecond):
 	}
+}
+
+func (b *blockedQueryService) PrivateFilesUnstopped(active map[string]struct{}) int {
+	if _, running := active[b.unstoppedExecutionID]; running {
+		return 0
+	}
+	return int(b.unstopped.Load())
+}
+func (b *blockedQueryService) RecoverPrivateFiles(ctx context.Context) error {
+	if b.recoverPrivate != nil {
+		return b.recoverPrivate(ctx)
+	}
+	return nil
 }
