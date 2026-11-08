@@ -875,3 +875,11 @@ Safari 使用现有平台管理员会话，通过正常发现、主机选择和�
 `make test-metrics-sources test-monitor-minio-observation-unit test-monitor-redis-source-unit test-t2-ci-registration` 完整退出 0，覆盖来源分组、恢复、主机拒绝、两协议及来源 HTTP/TLS Go 包、85 项登记和 9 项 PostgreSQL runner 契约；原件 `/tmp/addp-source-strict-tls-gates-20261108.log`。现有两个协议 T2 的 `ADDP_T2_INPUT_FILES` 已登记共用实现、测试及证书夹具，并经原标准目标执行 T1，不需新增 Make／workflow 路线。本批未执行新的独占协议 T2、CI 或 Hosted，其正式结果仍由专门会话回传；无 API、Swagger 或前端变更。
 
 本机只读 `python3 scripts/infra/metrics-sources.py check --scope infra --scope business --kind minio --kind redis` 实际返回 1：Infra MinIO、Business MinIO 和 Business Redis 部署输入通过，Infra Redis 失败。进一步只读严格验证确认其叶证书缺 AKI（OpenSSL 错误 85、深度 0），不把该拒绝计为全批通过；现有来源未被重启或重新应用，个人证书和环境未改。后续 Infra Redis 的检查／恢复会沿新边界拒绝，须由部署方先修证再显式应用。收据 `/tmp/addp-source-strict-tls-personal-check-20261108.log`、`/tmp/addp-infra-redis-strict-certificate-20261108.json`；预检通过的其余三项也不等同本次已重新验证真实采样。
+
+### Infra Redis 本机叶证书修正与应用交接（2026-11-08）
+
+用户确认继续修正上一节的 Infra Redis 叶证书。先只读核对该来源独立 TLS 目录、当前监听 `127.0.0.1:19112`、原 CA 及其签名密钥和服务器私钥归属／保护，确认仅原叶证书缺 AKI。用原 CA 和原服务器私钥公钥重签，补齐 AKI／SKI，保留原主题、IP／DNS SAN、用途／约束和有效期（截至 `2026-12-25T17:09:26Z`，未超过 CA）。候选在临时目录中先通过严格服务器链、IP、DNS及密钥配对校验，再沿现有私有文件 CAS 原子发布；保留原证书模式／UID／GID，原 CA、签名密钥、服务器私钥及两个环境文件的内容和元数据前后均未改变。旧公有叶证书备份及脱敏收据位于 `/tmp/addp-infra-redis-server-before-aki-20261108.crt`、`/tmp/addp-infra-redis-certificate-fix-20261108.json`。
+
+标准只读 `python3 scripts/infra/metrics-sources.py check --scope infra --scope business --kind minio --kind redis` 现退出 0，四项部署输入均通过；日志 `/tmp/addp-source-strict-tls-after-redis-cert-20261108.log`。当前运行中的采集器仍使用原私有卷证书，真实 Python 严格 mTLS 握手仍报错误 85／Missing Authority Key Identifier，收据 `/tmp/addp-infra-redis-runtime-before-reapply-20261108.json`。因此此次仅认定部署侧证书已修正，不能认定运行时问题已修复。
+
+已交用户执行唯一一条 `python3 scripts/infra/metrics-sources.py up --scope infra --kind redis`，仅重新应用该来源，随后再核对真实 mTLS、Prometheus 及页面。没有自行重启 Redis、Monitor 或其他来源，没有改变网络、账号、业务数据或指标历史；本批没有产品代码变更，既有严格证书回归无需重复，CI／Hosted仍由专门会话安排。
