@@ -768,3 +768,13 @@ T1/T3/构建验证：`make test-security-frontend` 退出0，260项单元、37�
 仅修改本会话空间验收：Develop只接受恰含wkt／srid的对象，SRID必须为整数4326，WKT必须为有限二维Point且坐标逐行等于合成源；旧裸WKT／GeoJSON／hex不作为Develop兼容输入。其他三个出口保留各自现行表协议及原算法、NULL、坐标和清理断言，不改业务SQL、不用ST_AsGeoJSON绕过原生几何、不更改产品API／授权／算法。报告v44、浏览器v9及21图保持；既有Make与登记自动发现覆盖，无新增workflow或本地服务重启。
 
 验证：先把合成Develop响应改为规范对象，两项测试准确重现同一Point错误；首份新增测试的保护值预期曾与Client初始参数不一致，已先修正测试前提，再取得 `/tmp/p145-spatial-query-contract-red-final.log` 的两项Point失败。修正后所属空间／Owner组20项通过；当前根Make所属recipe262项及System Fixture Go通过，登记反例主测试和登记CLI通过。四个依赖目标未重跑，不把所属门禁当完整聚合；这是夹具T1，未新增真实数据库T2、本地HTTP或Hosted通过。错误／缺失／非整数SRID、旧形状、额外成员、NULL、空或三维Point、非有限值、其他几何及坐标改变均有拒绝反例。日志 `/tmp/p145-spatial-query-contract-{red,red-final,green}.log`、`/tmp/p145-spatial-query-owner-gate.log`、`/tmp/p145-spatial-query-registration{,-cli}.log`；原始归档 `/tmp/addp-security-unready-006507/archive/_temp/addp-online-42389802508/`，独立失败审计 `/tmp/addp-security-unready-006507/p145-independent-spatial-failure-audit.json`。后续仍交专门CI会话单次复验，原失败保留。
+
+### v44 SQL角色服务空参数数组修正（2026-11-08）
+
+[Run42413276305 / Job128525779027](https://github.com/pampa0629/addp/actions/runs/42413276305/job/128525779027)，attempt1，实际SHA `3f34efd2da97ef172a6ded15037bae246c83c1df`，不是754412精确运行；CI会话回报后继仅Agent／Console测试及文档变化，五个修复输入相同。独立审计十服务同SHA、readiness成功、gate失败、原产物上传成功；job.log5254行在scenario499325ms后报 `SQL role service invented a Meta source or changed the query`。未再次报旧Point错误，但无最终suite_report或浏览器PNG，不认定空间、SQL角色或完整v44/v9通过。六个精确metadata/read许可的真实签发／动作／UUID和完整撤销再次通过，pending／errors为空，撤销不可读／不可见，cleanup=passed、Infra零残留。
+
+原始Service日志7947行保存了该轮无参数SQL服务#9：SQL逐字等于夹具发布表达，`named_parameters`持久值为[]，source_snapshot有query_hash且没有source。旧错误由三项合并断言产生，不能据此指认伪造来源。固定源码的DTO从 `GetNamedParameters()`取得nil空切片，JSON序列化为null；新增仓储读取→正式GetService→JSON的确定性回归准确复现 `named_parameters = null, want array []`。原管理HTTP响应正文未归档，具体线上的null值是固定代码与重现支持的判断，不冒充原响应直接捕获。
+
+按已有Swagger数组契约，仅在Service唯一DTO转换边界用非nil空切片复制声明，无参数返回[]，非空声明保持；创建、更新、详情和列表共用。未改SQL、参数定义／默认值、快照、执行绑定、角色、授权或操作范围。正式文档先明确数组语义，Swagger结构／注解本来即array、不变，未生成无差异文件；无新路由／迁移／依赖，原Service T1及Security Runner自动发现覆盖，无新增CI编排。夹具严格拒绝null／遗漏参数成员，不作兼容兜底；错误拆成Meta Source、SQL改变、参数数组三类，各有缺失／null／修改的受控反例，失败前不写Policy并按原版本清理。
+
+验证：Go定向红／绿各一次；`make test-module MODULE=service GO_ONLY=1`实际通过，覆盖本轮Service Go T1。SQL角色无参数、必填和默认参数组32项通过；根Make所属recipe265项及System Fixture Go、登记反例和CLI通过，四个依赖目标未重跑，不声称完整聚合或真实数据库T2通过。没有新增本地HTTP／Hosted通过，不启停用户本地服务；新运行由专门CI会话继续。日志 `/tmp/p145-service-empty-parameters-{red,green,module}.log`、`/tmp/p145-service-definition-{diagnostic-red,diagnostic-green,owner-gate,registration,registration-cli}.log`；独立失败审计 `/tmp/addp-security-spatial-754412/p145-independent-service-definition-failure-audit.json`，原始归档 `/tmp/addp-security-spatial-754412/archive/_temp/addp-online-42413276305/`。

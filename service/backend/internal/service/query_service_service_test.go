@@ -55,6 +55,52 @@ func TestCreateServiceUsesTenantContextForDirectSQLEngine(t *testing.T) {
 	}
 }
 
+func TestQueryServiceReadKeepsNamedParameterArrayContract(t *testing.T) {
+	db := openQueryServiceCreateTestDB(t)
+	repo := repository.NewQueryServiceRepository(db)
+	svc := NewQueryServiceService(repo, nil, nil, "")
+	engineID := uint(3)
+	for i, definitions := range [][]serviceModels.QueryServiceNamedParameter{
+		nil, {}, {{Name: "minimum_id", Type: datatype.FieldTypeInt, Required: true}},
+	} {
+		query := "SELECT id FROM accounts ORDER BY id"
+		if len(definitions) > 0 {
+			query = "SELECT id FROM accounts WHERE id>=:minimum_id ORDER BY id"
+		}
+		snapshot := buildSQLDependencySnapshot(query, &serviceModels.QueryServiceOutputContract{Table: &datatype.TableInfo{
+			Fields: []datatype.FieldInfo{{Name: "id", Type: datatype.FieldTypeBigInt}},
+		}}, time.Now())
+		item := &serviceModels.QueryService{TenantID: 7, ServiceName: fmt.Sprintf("array_contract_%d", i), Title: "Array contract",
+			ConfigType: "sql", EngineID: &engineID, SqlQuery: query, CreatedBy: 11,
+			NamedParameters: append([]serviceModels.QueryServiceNamedParameter{}, definitions...),
+			DataConfig:      serviceModels.JSONB{serviceModels.QueryServiceSourceSnapshotKey: queryServiceSnapshotPayload(snapshot)},
+			Protocols:       serviceModels.JSONB{},
+		}
+		if err := repo.Create(item); err != nil {
+			t.Fatal(err)
+		}
+		dto, err := svc.GetService(item.ID, 7)
+		if err != nil {
+			t.Fatal(err)
+		}
+		encoded, err := json.Marshal(dto)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var wire map[string]json.RawMessage
+		if err := json.Unmarshal(encoded, &wire); err != nil {
+			t.Fatal(err)
+		}
+		want, _ := json.Marshal(append([]serviceModels.QueryServiceNamedParameter{}, definitions...))
+		if string(wire["named_parameters"]) != string(want) {
+			t.Fatalf("named_parameters = %s, want array %s", wire["named_parameters"], want)
+		}
+		if dto.SqlQuery != query || dto.DataConfig[serviceModels.QueryServiceSourceSnapshotKey].(map[string]interface{})["source"] != nil {
+			t.Fatal("parameter serialization changed SQL or invented a Meta source")
+		}
+	}
+}
+
 func TestCreateServiceRemovesRecordWhenLineagePublicationFails(t *testing.T) {
 	db := openQueryServiceCreateTestDB(t)
 	metaServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

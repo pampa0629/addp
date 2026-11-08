@@ -2464,11 +2464,18 @@ class ServiceRoleCursorClient:
         if path == "/api/v1/service/query":
             self.service = {**copy.deepcopy(body), "id": 701, "version": 1, "service_version": "default-version", "status": "active"}
             if body["config_type"] == "sql":
+                self.service.setdefault("named_parameters", [])
                 assert "locator" not in body["data_config"] and "source_snapshot" not in body["data_config"]
                 assert body["data_config"]["stable_key"] == ["id"]
                 assert [f["name"] for f in body["output_contract"]["table"]["fields"]] == list(ONLINE.BANK_ROLE_SQL_OUTPUTS)
                 if self.fault == "invented_source":
                     self.service["data_config"]["source_snapshot"] = {"source": {"item_id": 1}}
+                if self.fault == "created_sql_changed":
+                    self.service["sql_query"] += " LIMIT 5"
+                if self.fault == "parameter_declarations_null":
+                    self.service["named_parameters"] = None
+                if self.fault == "parameter_declarations_missing":
+                    self.service.pop("named_parameters")
                 if self.fault == "persisted_parameter_value" and self.service.get("named_parameters"):
                     self.service["named_parameters"][0]["default"] = 1
             return response(201, copy.deepcopy(self.service))
@@ -2873,6 +2880,17 @@ class ServiceRoleSQLCursorRevocationTest(unittest.TestCase):
         self.assertTrue(report["default_csv_restored_exactly"])
         self.assertTrue(report["service_deleted"] and report["policy_revoked"])
         self.assertNotIn(client.cursor, json.dumps(report))
+
+    def test_definition_refusals_distinguish_source_sql_and_parameter_array(self):
+        for fault, reason in (("invented_source", "must not declare a Meta source"),
+                              ("created_sql_changed", "changed the published SQL"),
+                              ("parameter_declarations_null", "named parameter array"),
+                              ("parameter_declarations_missing", "named parameter array")):
+            client = ServiceRoleCursorClient(fault)
+            with self.subTest(fault=fault), self.assertRaisesRegex(ONLINE.SuiteError, reason):
+                self.run_case(client)
+            self.assertTrue(client.deleted)
+            self.assertIsNone(client.policy)
 
 
     def test_sql_candidates_use_post_body_and_default_initially_precedes_policy_mutation(self):

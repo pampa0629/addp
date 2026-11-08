@@ -103,6 +103,8 @@ Hosted `security-mysql-owner-protection` 报告 v23 的 `bank_card_metadata.deve
 
 ## Service 角色方式撤销后的旧游标
 
+SQL角色服务定义检查分别验证：快照没有单一Meta Source、SQL文本与发布请求一致、`named_parameters` 与发布的参数数组完全一致。无命名参数的管理DTO仍必须返回 `[]`，不接受null或省略成员；不得把三项检查合并为“伪造来源或SQL改变”，也不在夹具中把null兜底成空数组。Service统一DTO转换边界负责保留已声明数组形状，不改变SQL、实际绑定、保护方式或来源快照。
+
 同一 `security-mysql-owner-protection` 领域报告 v26 增加 `service_role_cursor_revocation` HTTP 验收，复用当轮 MySQL 银行卡合成表、正式 Assessment 和普通 User。通过本人角色自查与 Service 可选方式接口取得当前资格及引用；临时 Policy 只作用于 `service/service_execute`，默认前后保留 1/1，角色全遮盖 0/0，不新增或撤销用户角色、原值授权及源授权。只为该套件的一次性账号补已有 `service.definition.update`，其他套件权限不变。
 
 先保存角色方式并发布私有原生表服务，JSON 与 CSV 实际读取 4 行及同一 JSON 游标的最后 1 行，独立核对五个唯一 ID、非敏感字段、全星号、Unicode、null 与 CSV 空单元格。撤销临时 Policy 后，必须等待 Service 同一投影 ID 的更高 revision、新发布 cursor 和 acknowledged 回执；保持服务定义及失效选择不变，用原游标分别请求 JSON、CSV，二者以及无游标对照必须精确返回 409／`query_protection_choice_invalid`，仅有安全错误、没有结果。随后验证可以保留失效选择直接停用，明确清除选择并保存、启用后恢复默认脱敏；不把选择撤销当作用户角色成员撤销。

@@ -1019,7 +1019,7 @@ func (s *QueryServiceService) convertToDTO(service *models.QueryService) *models
 		CreatedAt: service.CreatedAt,
 		UpdatedAt: service.UpdatedAt,
 	}
-	dto.NamedParameters = service.GetNamedParameters()
+	dto.NamedParameters = append([]models.QueryServiceNamedParameter{}, service.GetNamedParameters()...)
 	dto.OutputContract = &models.QueryServiceOutputContract{Table: service.GetTableInfo()}
 	if snapshot := service.SourceSnapshot(); snapshot != nil {
 		dto.OutputContract.Spatial = snapshot.Spatial.Clone()

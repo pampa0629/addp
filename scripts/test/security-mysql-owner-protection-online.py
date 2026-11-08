@@ -3194,9 +3194,12 @@ def exercise_service_role_cursor_revocation(client: GatewayClient, engine_id: in
                 raise SuiteError("role cursor Service must retain its private source configuration")
             if config_type == "sql":
                 snapshot = _object(_object(current.get("data_config"), "SQL role config").get("source_snapshot", {}), "SQL role snapshot")
-                if (snapshot.get("source") is not None or current.get("sql_query") != body["sql_query"]
-                        or current.get("named_parameters", []) != body.get("named_parameters", [])):
-                    raise SuiteError("SQL role service invented a Meta source or changed the query")
+                if snapshot.get("source") is not None:
+                    raise SuiteError("SQL role service snapshot must not declare a Meta source")
+                if current.get("sql_query") != body["sql_query"]:
+                    raise SuiteError("SQL role service changed the published SQL")
+                if current.get("named_parameters") != body.get("named_parameters", []):
+                    raise SuiteError("SQL role service named parameter array differs from its published declaration")
             return current
         initial = definition()
         if initial.get("status") != "active" or initial["data_config"].get("protection_choices") != []:
