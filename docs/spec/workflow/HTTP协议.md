@@ -214,3 +214,5 @@ Manifest 固定 `schema_version=addp.workflow.private-files/v1`，包含十进�
 | `INTERNAL_ERROR` | 内部错误 | 500 |
 
 ---
+
+Feather V2内置direct读取算子`feather.inspect`／`feather.read_batch`使用`feather.table-batch/v1`，沿既有source-only access plan绑定；错误`FEATHER_SOURCE_CHANGED`为409、`FEATHER_READ_REJECTED`为400、`FEATHER_READ_FAILED`为500，返回当前请求语言的脱敏提示，不回显原生异常或资源路径。具体标量、预算及只读边界见[列式文件规范](../builtin-formats/列式文件与数据容器.md#feather-v2-单文件只读)。

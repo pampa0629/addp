@@ -9,7 +9,7 @@ import subprocess
 
 
 def physical_worker(action, repository, environment, *, profile, script):
-    cases = {'orc': 'native-table-orc', 'avro': 'native-table-avro', 'delimited': 'delimited-read-settings'}
+    cases = {'orc': 'native-table-orc', 'avro': 'native-table-avro', 'feather': 'native-table-feather', 'delimited': 'delimited-read-settings'}
     if profile not in cases or action not in {'seed', 'verify', 'delete'}:
         raise ValueError('unknown table fixture profile or action')
     if script != f'business/scripts/online-{profile}-fixture.py':

@@ -4013,8 +4013,18 @@ class OnlineCIRegistrationTest(unittest.TestCase):
         owner.write_text(owner.read_text() + "\nif case == 'delimited-read-settings':\nmanager-delimited-online\n")
         make.write_text(make.read_text() + '\t@python3 -m unittest scripts/test/manager-delimited-online_test.py\n\t@node --check --input-type=module < console/frontend/e2e/online/manager-delimited.spec.js\n')
         make.write_text(make.read_text() + '\ntest-geopython-workflow:\n\t@echo test_online_avro_fixture.py\n')
+        for relative in ('scripts/test/manager-feather-online.py','scripts/test/manager-feather-online_test.py',
+                         'business/scripts/online-feather-fixture.py','console/frontend/e2e/online/manager-feather.spec.js',
+                         'engines/geopython-workflow/test_online_feather_fixture.py'):
+            target=self.repository/relative;target.parent.mkdir(parents=True,exist_ok=True)
+            target.write_text((SCRIPT.parents[2]/relative).read_text())
+        owner.write_text(owner.read_text()+"\nif case == 'native-table-feather':\nmanager-feather-online\n")
+        make.write_text(make.read_text().replace('\ntest-geopython-workflow:', '\n\t@python3 -m unittest scripts/test/manager-feather-online_test.py\n\t@node --check --input-type=module < console/frontend/e2e/online/manager-feather.spec.js\n\ntest-geopython-workflow:'))
+        make.write_text(make.read_text().replace('@echo test_online_avro_fixture.py', '@echo test_online_avro_fixture.py test_online_feather_fixture.py'))
         CHECK.check_registration(self.repository)
         for file, fragment, reason in (
+            (self.repository/'scripts/test/manager-feather-online.py', 'validate_content', 'Feather'),
+            (self.repository/'console/frontend/e2e/online/manager-feather.spec.js', 'original_button_download_verified: true', 'Feather'),
             (self.repository/'scripts/test/manager-delimited-online.py', 'validate_page', 'delimited'),
             (self.repository/'console/frontend/e2e/online/manager-delimited.spec.js', 'header_mode_verified: true', 'delimited'),
             (self.repository/'scripts/test/manager-avro-online.py', 'validate_page', 'Avro'),
@@ -4036,7 +4046,7 @@ class OnlineCIRegistrationTest(unittest.TestCase):
             (self.repository/'scripts/test/manager-envi-online.py','source_scans','ENVI'),
             (img_browser,'enviContentMetadata','ENVI'),
             (hosted, 'manager-case.json', 'acceptance case'),
-            (hosted, 'full|native-raster-media|native-table-orc|native-table-avro|delimited-read-settings|native-netcdf|native-grib|native-envi|kml-export|filegdb-export|filegdb-mysql-export|filegdb-authorization|nfs-upload-initial)', 'acceptance case'),
+            (hosted, 'full|native-raster-media|native-table-orc|native-table-avro|native-table-feather|delimited-read-settings|native-netcdf|native-grib|native-envi|kml-export|filegdb-export|filegdb-mysql-export|filegdb-authorization|nfs-upload-initial)', 'acceptance case'),
             (kml_owner, 'source_unchanged=True', 'KML export'),
             (kml_browser, 'actual_button_download: true', 'KML export'),
             (self.workflow, 'ADDP_ONLINE_MANAGER_CASE: ${{ inputs.manager_case }}', 'acceptance case'),

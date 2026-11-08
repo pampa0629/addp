@@ -574,13 +574,13 @@ def validate_manager_internal_artifact_lineage_profile(repository: Path, registe
         raise RegistrationError("manager-internal-artifact-lineage requires Ubuntu Hosted job")
     manager_input = re.search(r"(?ms)^      manager_case:\n(?P<body>.*?)(?=^      [a-z_]+:\n|^jobs:|\Z)", workflow)
     if (not manager_input or any(not source_contract_contains(manager_input.group('body'), fragment, repository) for fragment in
-            ('required: true', 'type: choice', 'default: full', '- full', '- native-raster-media', '- native-table-orc', '- native-table-avro', '- delimited-read-settings', '- native-netcdf', '- native-grib', '- native-envi', '- kml-export', '- filegdb-export', '- filegdb-mysql-export', '- filegdb-authorization'))
+            ('required: true', 'type: choice', 'default: full', '- full', '- native-raster-media', '- native-table-orc', '- native-table-avro', '- native-table-feather', '- delimited-read-settings', '- native-netcdf', '- native-grib', '- native-envi', '- kml-export', '- filegdb-export', '- filegdb-mysql-export', '- filegdb-authorization'))
             or any(not source_contract_contains(job.group('body'), fragment, repository) for fragment in (
                 'ADDP_ONLINE_MANAGER_CASE: ${{ inputs.manager_case }}',
                 'name: Online T4 (manager-internal-artifact-lineage, ${{ inputs.manager_case }}, Linux x86_64)',
                 'name: online-t4-manager-internal-artifact-lineage-${{ inputs.manager_case }}-${{ github.run_id }}'))
             or any(not source_contract_contains(hosted, fragment, repository) for fragment in (
-                'ADDP_ONLINE_MANAGER_CASE=${ADDP_ONLINE_MANAGER_CASE-full}', 'full|native-raster-media|native-table-orc|native-table-avro|delimited-read-settings|native-netcdf|native-grib|native-envi|kml-export|filegdb-export|filegdb-mysql-export|filegdb-authorization|nfs-upload-initial)',
+                'ADDP_ONLINE_MANAGER_CASE=${ADDP_ONLINE_MANAGER_CASE-full}', 'full|native-raster-media|native-table-orc|native-table-avro|native-table-feather|delimited-read-settings|native-netcdf|native-grib|native-envi|kml-export|filegdb-export|filegdb-mysql-export|filegdb-authorization|nfs-upload-initial)',
                 'manager-case.json', 'addp.manager-acceptance-case/v1'))):
         raise RegistrationError('Manager acceptance case requires explicit full/media selection and case-specific evidence')
     netcdf_paths = ('scripts/test/manager-netcdf-online.py', 'scripts/test/manager-netcdf-online_test.py',
@@ -616,7 +616,7 @@ def validate_manager_internal_artifact_lineage_profile(repository: Path, registe
     envi_browser=(repository/'console/frontend/e2e/online/manager-img.spec.js').read_text()
     if any(value not in envi_browser for value in ('enviContentMetadata','metadata_projection_verified','content_metadata_verified')):
         raise RegistrationError('ENVI requires separate public structure and protected browser content metadata')
-    if hosted.index('full|native-raster-media|native-table-orc|native-table-avro|delimited-read-settings|native-netcdf|native-grib|native-envi|kml-export|filegdb-export|filegdb-mysql-export|filegdb-authorization|nfs-upload-initial)') > hosted.index('source "$ROOT_DIR/scripts/utils/hosted-online.sh"'):
+    if hosted.index('full|native-raster-media|native-table-orc|native-table-avro|native-table-feather|delimited-read-settings|native-netcdf|native-grib|native-envi|kml-export|filegdb-export|filegdb-mysql-export|filegdb-authorization|nfs-upload-initial)') > hosted.index('source "$ROOT_DIR/scripts/utils/hosted-online.sh"'):
         raise RegistrationError('Manager acceptance case must reject invalid input before Hosted lifecycle')
     if "nfs-kernel-server" not in job.group("body"):
         raise RegistrationError("Manager content boundary acceptance requires its Hosted NFS package")
@@ -747,6 +747,20 @@ def validate_manager_internal_artifact_lineage_profile(repository: Path, registe
             or any(part not in avro_owner for part in ("physical('verify')", "physical('delete')", 'task-definitions', 'validate_page', 'manager-avro.json'))
             or any(part not in avro_browser for part in ('page_button_verified: true', 'values_verified: true', 'download_sha256', 'expect(identity.permissions.size).toBe(11)'))):
         raise RegistrationError('Manager Avro requires complete page, original download, batch and cleanup proofs')
+    feather_paths = ('scripts/test/manager-feather-online.py','scripts/test/manager-feather-online_test.py',
+                     'business/scripts/online-feather-fixture.py','console/frontend/e2e/online/manager-feather.spec.js',
+                     'engines/geopython-workflow/test_online_feather_fixture.py')
+    if any(not (repository/p).is_file() for p in feather_paths):
+        raise RegistrationError('Manager Feather requires its owner, physical, browser and regressions')
+    feather_owner=(repository/feather_paths[0]).read_text()
+    feather_browser=(repository/feather_paths[3]).read_text()
+    if ("if case == 'native-table-feather':" not in manager_owner
+            or 'manager-feather-online_test.py' not in make_target_commands(make,'test-manager-online-runner')
+            or 'manager-feather.spec.js' not in make_target_commands(make,'test-manager-online-runner')
+            or 'test_online_feather_fixture.py' not in make_target_commands(make,'test-geopython-workflow')
+            or any(part not in feather_owner for part in ("physical('verify')", "physical('delete')",'validate_content','task-definitions','manager-feather.json','ExactFileMetadataGrants'))
+            or any(part not in feather_browser for part in ('page_button_verified: true','original_button_download_verified: true','download_sha256','browserAPIFromNavigation','toBe(11)'))):
+        raise RegistrationError('Manager Feather requires exact sources, real pages, originals, batch and cleanup')
     browser_config = (repository / "console/frontend/playwright.online.config.js").read_text(encoding="utf-8")
     for flag in ("--use-gl=angle", "--use-angle=swiftshader-webgl", "--enable-unsafe-swiftshader"):
         if flag not in browser_config:

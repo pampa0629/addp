@@ -53,6 +53,7 @@ const (
 	FormatXML                  FormatType = "xml"
 	FormatParquet              FormatType = "parquet"
 	FormatORC                  FormatType = "orc"
+	FormatFeather              FormatType = "feather"
 	FormatNetCDF               FormatType = "netcdf"
 	FormatGRIB                 FormatType = "grib"
 	FormatAvro                 FormatType = "avro"

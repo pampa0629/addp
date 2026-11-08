@@ -226,6 +226,7 @@ on:
           - native-raster-media
           - native-table-orc
           - native-table-avro
+          - native-table-feather
           - delimited-read-settings
           - native-netcdf
           - native-grib

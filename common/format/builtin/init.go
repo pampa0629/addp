@@ -18,6 +18,7 @@ import (
 	_ "github.com/addp/common/format/plugins/ept"
 	_ "github.com/addp/common/format/plugins/excel"
 	_ "github.com/addp/common/format/plugins/fbx"
+	_ "github.com/addp/common/format/plugins/feather"
 	_ "github.com/addp/common/format/plugins/filegdb"
 	_ "github.com/addp/common/format/plugins/geojson"
 	_ "github.com/addp/common/format/plugins/glb"

@@ -1979,3 +1979,15 @@ func TestSlopeOrthogonalPreparationKeepsConsumerTwelveAndSeparateThirteen(t *tes
 		t.Fatal("the 600-second scene must retain the original short fixture session")
 	}
 }
+
+func TestFeatherCaseRetainsApprovedConsumerAndInitializerPermissions(t *testing.T) {
+	t.Setenv("ADDP_ONLINE_MANAGER_CASE", "native-table-feather")
+	got, err := suitePermissions("manager-internal-artifact-lineage")
+	if err != nil || len(got) != 11 || !slices.Equal(got, managerORCPermissions) {
+		t.Fatal("Feather ordinary functions differ", got, err)
+	}
+	want := append(slices.Clone(sourceInitializerPermissions), "meta.scan_task.execute", "meta.scan_task.read")
+	if len(want) != 13 || !slices.Equal(suiteSourceInitializerPermissions("manager-internal-artifact-lineage"), want) {
+		t.Fatal("Feather initializer functions differ")
+	}
+}

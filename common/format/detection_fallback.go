@@ -44,6 +44,7 @@ var fallbackIdentifications = []fallbackIdentification{
 	{FormatXML, ".xml", "application/xml", datatype.Document},
 	{FormatParquet, ".parquet", "application/parquet", datatype.Table},
 	{FormatORC, ".orc", "application/orc", datatype.Table},
+	{FormatFeather, ".feather", "application/vnd.apache.arrow.file", datatype.Table},
 	{FormatAvro, ".avro", "application/avro", datatype.Table},
 	{FormatZIP, ".zip", "application/zip", datatype.Container},
 	{FormatPMTiles, ".pmtiles", "application/vnd.pmtiles", datatype.Media},

@@ -3,21 +3,17 @@
 from __future__ import annotations
 import base64
 import datetime as dt
-import hashlib
-import io
 import json
 import math
-import os
 from pathlib import Path
-import stat
 import sys
 from functools import wraps
 from addp_common.workflow_access import (
     require_source_plan,
     _object_store_client,
-    _source_storage_name,
 )
 from . import _native_process
+from ._table_source import TableSourceFile
 from .base import (
     OperatorCategory,
     OperatorMetadata,
@@ -44,108 +40,6 @@ class SourceChanged(ValueError):
     pass
 
 
-class SourceFile(io.RawIOBase):
-    """Seek on a bound descriptor or conditional object ranges; never stage all bytes."""
-
-    def __init__(self, plan, expected=""):
-        self.position = self.read_bytes = 0
-        self.file = self.client = None
-        access = plan["source"]["access"]
-        try:
-            if access["method"] == "mounted_path":
-                self.file = os.fdopen(
-                    os.open(access["path"], os.O_RDONLY | os.O_NOFOLLOW), "rb"
-                )
-                self.size = os.fstat(self.file.fileno()).st_size
-            else:
-                self.client = _object_store_client(access)
-                self.bucket = _source_storage_name(access, "bucket")
-                self.object = _source_storage_name(access, "object")
-                fact = self.client.stat_object(self.bucket, self.object)
-                self.size, self.etag = fact.size, fact.etag
-                if not self.etag:
-                    raise ValueError("ORC source has no stable object version")
-            if not 4 <= self.size <= MAX_FILE_BYTES:
-                raise ValueError("ORC encoded file size exceeds budget")
-            self.version = self.current_version()
-            if expected and self.version != expected:
-                raise SourceChanged("ORC source version changed; refresh metadata")
-        except Exception:
-            self.close()
-            raise
-
-    def current_version(self):
-        if self.file:
-            f = os.fstat(self.file.fileno())
-            if not stat.S_ISREG(f.st_mode):
-                raise ValueError("ORC source must be a regular file")
-            identity = [f.st_dev, f.st_ino, f.st_size, f.st_mtime_ns, f.st_ctime_ns]
-        else:
-            fact = self.client.stat_object(self.bucket, self.object)
-            identity = [self.bucket, self.object, fact.size, fact.etag, fact.version_id]
-        return hashlib.sha256(
-            json.dumps(identity, separators=(",", ":")).encode()
-        ).hexdigest()
-
-    def check(self):
-        if self.current_version() != self.version:
-            raise SourceChanged("ORC source version changed; refresh metadata")
-
-    def readable(self):
-        return True
-
-    def seekable(self):
-        return True
-
-    def tell(self):
-        return self.position
-
-    def seek(self, offset, whence=0):
-        if whence not in (0, 1, 2):
-            raise ValueError("invalid ORC seek origin")
-        position = offset + (
-            0 if whence == 0 else self.position if whence == 1 else self.size
-        )
-        if not 0 <= position <= self.size:
-            raise ValueError("ORC seek outside source")
-        self.position = position
-        return position
-
-    def read(self, size=-1):
-        if size is None or size < 0:
-            size = self.size - self.position
-        size = min(size, self.size - self.position)
-        if size > MAX_SINGLE_READ or self.read_bytes + size > MAX_READ_BYTES:
-            raise ValueError("ORC read exceeds byte budget")
-        if not size:
-            return b""
-        if self.file:
-            self.file.seek(self.position)
-            data = self.file.read(size)
-        else:
-            response = self.client.get_object(
-                self.bucket,
-                self.object,
-                offset=self.position,
-                length=size,
-                request_headers={"If-Match": '"' + self.etag + '"'},
-            )
-            try:
-                data = response.read(size + 1)
-            finally:
-                response.close()
-                response.release_conn()
-        if len(data) != size:
-            raise ValueError("ORC source range is incomplete")
-        self.position += len(data)
-        self.read_bytes += len(data)
-        return data
-
-    def close(self):
-        if self.file:
-            self.file.close()
-            self.file = None
-        super().close()
 
 
 def _open(access_plan, source_version):
@@ -154,7 +48,9 @@ def _open(access_plan, source_version):
         raise ValueError("ORC requires one file source")
     if not isinstance(source_version, str):
         raise ValueError("ORC source version must be text")
-    return SourceFile(plan, source_version)
+    return TableSourceFile(plan, source_version, label="ORC", changed_error=SourceChanged,
+                           client_factory=_object_store_client, max_file_bytes=MAX_FILE_BYTES,
+                           max_read_bytes=MAX_READ_BYTES, max_single_read=MAX_SINGLE_READ)
 
 
 def _converters(pyorc):

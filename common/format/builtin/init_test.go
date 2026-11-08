@@ -238,3 +238,21 @@ func TestGRIBExposesOnlyBoundedContainerReads(t *testing.T) {
 		t.Fatalf("incorrect GRIB capabilities: %#v", snapshot)
 	}
 }
+
+func TestFeatherRuntimeIdentityIsSingleReadOnlyFile(t *testing.T) {
+	snapshot, ok := format.GetFormatCapabilitySnapshot(format.FormatFeather)
+	if !ok || !snapshot.Implementations.RuntimeTable || snapshot.Implementations.TableWriterProvider || snapshot.Implementations.TableSampleReader {
+		t.Fatalf("invalid Feather capability: %#v", snapshot)
+	}
+	if len(snapshot.Descriptor.Layouts) != 1 || snapshot.Descriptor.Layouts[0] != format.LayoutSingle {
+		t.Fatal("Feather advertised another layout")
+	}
+	for _, name := range []string{"sample.feather", "sample.arrow"} {
+		if format.DetectFormat(name, nil) != format.FormatFeather {
+			t.Fatal("Feather missing:", name)
+		}
+	}
+	if format.DetectFormat("unknown.bin", []byte("ARROW1")) != format.FormatFeather {
+		t.Fatal("Arrow file signature missing")
+	}
+}

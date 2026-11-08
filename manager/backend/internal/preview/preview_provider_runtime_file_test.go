@@ -10,11 +10,12 @@ import (
 
 type boundFileTableStub struct {
 	format.BoundTableProvider
+	kind    format.FormatType
 	nested  bool
 	changed bool
 }
 
-func (*boundFileTableStub) Format() format.FormatType { return format.FormatORC }
+func (s *boundFileTableStub) Format() format.FormatType { return s.kind }
 func (s *boundFileTableStub) DescribeTable(_ context.Context, opts *format.ParseOptions) (*format.TableDescribeResult, error) {
 	if opts == nil || opts.ExtraParams["source_version"] != "v1" || s.changed {
 		return nil, fmt.Errorf("source changed")
@@ -38,16 +39,16 @@ func (s *boundFileTableStub) SampleTable(_ context.Context, offset, limit int64,
 	return rows, nil
 }
 func TestRuntimeFilePreviewUsesScannedVersionAndTrueTail(t *testing.T) {
-	req := &PreviewRequest{Page: 2, PageSize: 20, RuntimeTableProvider: &boundFileTableStub{}, Attributes: map[string]interface{}{"format_info": map[string]interface{}{"orc": map[string]interface{}{"source_version": "v1"}}}}
+	req := &PreviewRequest{Page: 2, PageSize: 20, RuntimeTableProvider: &boundFileTableStub{kind: format.FormatORC}, Attributes: map[string]interface{}{"format_info": map[string]interface{}{"orc": map[string]interface{}{"source_version": "v1"}}}}
 	result, err := NewFileTablePreviewProvider().Preview(context.Background(), req)
 	if err != nil || len(result.Rows) != 3 || result.HasMore || result.Total == nil || *result.Total != 23 || result.Rows[0]["id"] != int64(9007199254741013) {
 		t.Fatalf("preview: %#v %v", result, err)
 	}
-	req.RuntimeTableProvider = &boundFileTableStub{changed: true}
+	req.RuntimeTableProvider = &boundFileTableStub{kind: format.FormatORC, changed: true}
 	if _, err = NewFileTablePreviewProvider().Preview(context.Background(), req); err == nil {
 		t.Fatal("changed source accepted")
 	}
-	req.RuntimeTableProvider = &boundFileTableStub{}
+	req.RuntimeTableProvider = &boundFileTableStub{kind: format.FormatORC}
 	req.Attributes = nil
 	if _, err = NewFileTablePreviewProvider().Preview(context.Background(), req); err == nil {
 		t.Fatal("unscanned source accepted")
@@ -55,7 +56,7 @@ func TestRuntimeFilePreviewUsesScannedVersionAndTrueTail(t *testing.T) {
 }
 
 func TestNestedRuntimeFilePreviewRetainsTypedObjectsForPublicSerialization(t *testing.T) {
-	req := &PreviewRequest{Page: 2, PageSize: 20, RuntimeTableProvider: &boundFileTableStub{nested: true}, Attributes: map[string]interface{}{"format_info": map[string]interface{}{"orc": map[string]interface{}{"source_version": "v1"}}}}
+	req := &PreviewRequest{Page: 2, PageSize: 20, RuntimeTableProvider: &boundFileTableStub{kind: format.FormatORC, nested: true}, Attributes: map[string]interface{}{"format_info": map[string]interface{}{"orc": map[string]interface{}{"source_version": "v1"}}}}
 	result, err := NewFileTablePreviewProvider().Preview(context.Background(), req)
 	if err != nil {
 		t.Fatal(err)
@@ -63,5 +64,21 @@ func TestNestedRuntimeFilePreviewRetainsTypedObjectsForPublicSerialization(t *te
 	rows, err := datatype.RowsForJSON(result.Fields, result.Rows)
 	if err != nil || len(rows) != 3 || rows[0]["object"].(map[string]interface{})["id"] != "9007199254741013" {
 		t.Fatal(rows, err)
+	}
+}
+
+func TestFeatherPreviewUsesItsOwnVersionAndRetainsBigIntegers(t *testing.T) {
+	req := &PreviewRequest{Page: 2, PageSize: 20, RuntimeTableProvider: &boundFileTableStub{kind: format.FormatFeather}, Attributes: map[string]interface{}{"format_info": map[string]interface{}{"feather": map[string]interface{}{"source_version": "v1"}}}}
+	result, err := NewFileTablePreviewProvider().Preview(context.Background(), req)
+	if err != nil || len(result.Rows) != 3 || *result.Total != 23 || result.HasMore {
+		t.Fatalf("Feather preview: %#v %v", result, err)
+	}
+	rows, err := datatype.RowsForJSON(result.Fields, result.Rows)
+	if err != nil || rows[0]["id"] != "9007199254741013" {
+		t.Fatal(rows, err)
+	}
+	req.Attributes = map[string]interface{}{"format_info": map[string]interface{}{"orc": map[string]interface{}{"source_version": "v1"}}}
+	if _, err := NewFileTablePreviewProvider().Preview(context.Background(), req); err != ErrPreviewSourceRefreshRequired {
+		t.Fatal("unbound Feather version accepted", err)
 	}
 }

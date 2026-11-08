@@ -9,6 +9,7 @@ from addp_common.workflow_runtime import OperatorInputError, WorkflowRunner, Wor
 from operators import OPERATORS, get_operator
 from operators.io_operators import GeoPackageSaveError
 from operators.orc_table import SourceChanged as OrcSourceChanged
+from operators.feather_table import SourceChanged as FeatherSourceChanged, ReadRejected as FeatherReadRejected, ReadFailed as FeatherReadFailed
 from operators.properties_operators import MeasurementInputError, BoundsInputError
 from operators.spatial_relations import DistanceInputError, RelationInputError
 from operators.spatial_transform_operators import VectorReprojectInputError
@@ -259,6 +260,12 @@ def execute_single_operator(operator_name, params):
             if isinstance(result, gpd.GeoDataFrame):
                 projected = json.dumps(projected, ensure_ascii=False, allow_nan=False)
             return {'status': 'success', 'result': projected}
+    except FeatherSourceChanged:
+        return {'status': 'failed', 'error_code': 'FEATHER_SOURCE_CHANGED'}
+    except FeatherReadRejected:
+        return {'status': 'failed', 'error_code': 'FEATHER_READ_REJECTED'}
+    except FeatherReadFailed:
+        return {'status': 'failed', 'error_code': 'FEATHER_READ_FAILED'}
     except OrcSourceChanged:
         return {'status':'failed','error_code':'ORC_SOURCE_CHANGED','error':'ORC source changed; refresh metadata'}
     except Exception as exc:

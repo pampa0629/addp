@@ -26,6 +26,7 @@ from .raster_band_recommendation import OPERATORS as RASTER_BAND_RECOMMENDATION_
 from .vector_tile_operators import vector_to_pmtiles
 from .gdal_vector_dataset import OPERATORS as GDAL_VECTOR_DATASET_OPERATORS
 from .orc_table import OPERATORS as ORC_TABLE_OPERATORS
+from .feather_table import OPERATORS as FEATHER_TABLE_OPERATORS
 from .netcdf import OPERATORS as NETCDF_OPERATORS
 from .grib import OPERATORS as GRIB_OPERATORS
 from .data_operations import (
@@ -71,6 +72,7 @@ for ops_dict in [
     VECTOR_TILE_OPERATORS,
     GDAL_VECTOR_DATASET_OPERATORS,
     ORC_TABLE_OPERATORS,
+    FEATHER_TABLE_OPERATORS,
     NETCDF_OPERATORS,
     GRIB_OPERATORS,
     DATA_OPERATORS,

@@ -110,6 +110,16 @@ _RASTER_MESSAGES = {
 }
 
 
+_FEATHER_MESSAGES = {
+    'zh-cn': {'FEATHER_SOURCE_CHANGED': 'Feather 源文件已变化，请刷新元数据',
+              'FEATHER_READ_REJECTED': 'Feather 输入损坏、超出预算或不在支持范围内',
+              'FEATHER_READ_FAILED': 'Feather 读取执行失败'},
+    'en': {'FEATHER_SOURCE_CHANGED': 'Feather source changed; refresh metadata',
+           'FEATHER_READ_REJECTED': 'Feather input is invalid, exceeds a budget or is unsupported',
+           'FEATHER_READ_FAILED': 'Feather read execution failed'},
+}
+
+
 def _request_language():
     return request.accept_languages.best_match(['zh-cn', 'en']) or 'zh-cn'
 
@@ -424,6 +434,10 @@ def invoke_operator_endpoint(operator_name):
 
         execution_time = (time.time() - start) * 1000
 
+        feather_code = result.get('error_code')
+        if feather_code in _FEATHER_MESSAGES['en']:
+            status = {'FEATHER_SOURCE_CHANGED': 409, 'FEATHER_READ_REJECTED': 400, 'FEATHER_READ_FAILED': 500}[feather_code]
+            return jsonify(error_response(feather_code, _FEATHER_MESSAGES[_request_language()][feather_code])), status
         if result.get('error_code') == 'ORC_SOURCE_CHANGED':
             return jsonify(error_response('ORC_SOURCE_CHANGED', 'ORC source changed; refresh metadata')), 409
         if result['status'] == 'success':
