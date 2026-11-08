@@ -1,8 +1,8 @@
 # ADDP 任务执行管理统一收口专题
 
-更新时间：2026-11-03
+更新时间：2026-11-08
 
-**当前状态：公共执行收口、Graph 受控运行与十个 Cleanup Owner 接线已提交；三项 Transfer 原生验收通过。整体仍为部分完成：Graph 恢复证据 Provider、可信原生身份绑定与正向 reopen 尚未实现，用户已决定暂缓；其他原生故障及共享环境切换仍有缺口。**
+**当前状态：公共执行、Graph 基础持久运行、十个 Cleanup Owner 及安全读取已接线；Manager 三项及 Transfer 三项原生 Hosted 已验收。Manager 迟到 writer 仅完成 runner／CI，尚未 Hosted。剩余开发是明确的竞争／展示／原生故障用例和切换准备，逐项见第六节；Graph 恢复证据 Provider、可信原生绑定和正向 reopen 继续暂缓。**
 
 本专题保留当前方案、已确认边界、关键证据及剩余工作。逐轮排队快照、命令流水、临时测试计数和重复失败过程已合并；历史原件沿固定提交、GitHub Run／Job 和原有私有证据目录追溯。整理不改变契约，也不将历史失败或未运行项改记为通过。
 
@@ -137,15 +137,39 @@ Manager 源准备保持其正式授权链；本批 Transfer CDC 仅验证既有 
 
 ## 六、剩余工作与共享环境
 
-| 优先级 | 剩余项 | 继续条件／交付要求 |
-| --- | --- | --- |
-| 1 | 后继 Neo4j CI 启动夹具故障 | 九阶段 T2 的42ae源码已获 Linux 实际通过；后继19e源码启动前置 exit64 由 CI 会话跟进，不计专项通过，不自动重跑 |
-| 2 | Graph 高级恢复（已暂缓） | 用户决定近期沿用 System 永久登记身份；恢复证据 Provider、可信原生绑定和正向 reopen 暂不实施，不扩大托管／权限边界，缺证据保持阻断 |
-| 3 | 其余真实故障验收 | Graph 原生写图回包丢失、两引擎生命周期（正向恢复随第2项暂缓）；Manager 真正迟到 writer；Cleanup 协调／授权／真实浏览器全矩阵。runner 或 PG 通过不计已完成 T4 |
-| 4 | Quality 新实现运行复验 | 历史 bounded-recovery 已通过；是否可复用须按本轮实际输入核对，不能直接升级为全部 Owner 的新实现证据 |
-| 5 | 旧环境一次性切换 | 研发旧记录允许清理；准确清单、引用关系、活动运行体及外部未决效果须重新盘点，实际切换与重启仍独立确认 |
+### 对账口径与已落地项
 
-共享环境切换顺序保持：刷新只读清单 → 准备默认只读、绑定清单摘要的一次性入口并在标准夹具演练 → 明确窗口和操作范围 → 用户停止旧受理／旧运行体 → 无活动和 unknown 后准确清理 → 用户标准脚本启动 → 核新协议与旧路径退出。历史“9 父＋63 子／11 个 Redis 键”仅为旧盘点快照，不能作为当前删除输入。不创建第三个本地测试 database，不模糊删除、不恢复旧消费者兼容路线。
+2026-11-08按已提交源码 `31a653f7639821ae83ad88ba06397a08b2984b4f` 对账；共享工作区其它会话未提交改动不计交付。逐项要求G1—G9、C1—C6、V1、C2a—C2j及C5a—C5m共39项的代码／用例定位见[Owner矩阵](../spec/testing/Owner补充门禁.md#graphcleanup-执行管理最小验证矩阵)。定位列只证明源码和入口存在，部分用例不等于全行覆盖；以下实际结果仅归属于列明的固定源码，不升格为当前HEAD或全模块最新验收。本轮只读核对证据和修订文档，未新运行T1／T2、Hosted或环境切换。
+
+| 项目 | 已定位代码／标准门禁 | 实际证据与剩余边界 |
+| --- | --- | --- |
+| Common公共执行、P→C、回执与结果原子提交 | `common/execution/cleanup.go`、`common/cleanup/runtime.go`；`make test-common-postgres COMMON_POSTGRES_TEST_ARGS="--test execution-lifecycle"`，包含cleanup_protocol／cleanup_lock_order及professional-result原子提交 | `8ceefc5b0` [Common PG](https://github.com/pampa0629/addp/actions/runs/41427877912/job/125224108033) 原日志包含生命周期、两项Cleanup锁交错及结果原子提交，0SKIP；C2细矩阵仍为部分覆盖 |
+| Graph持久构建／取消／准入、Cleanup三阶段 | `execution_control.go`、`build_runtime.go`、`cleanup_runtime.go`；Graph PG分组已包含repository与service runtime | 同一Common PG日志包含ExactClaimAndCancellation、WaitForAdmissionPastLease、UncertainEffects及GraphCleanupRuntime；不代表全部锁排列、真实原生回包丢失或positive reopen |
+| System请求／幂等／父协调／只读结果 | `cleanup_acceptance.go`、`cleanup_durable.go`、`cleanup_read.go`；已有 `make test-system-cleanup`，不借IAM代验 | `8ceefc5b0` [System Cleanup PG](https://github.com/pampa0629/addp/actions/runs/41427877912/job/125224107007) 实际通过6个顶层用例，含PublicScopeSerialization，0SKIP |
+| System／Monitor安全展示与专业结果 | 公共ProjectCleanupAdmission、System读取、Monitor查询及共享CleanupAdmission／CleanupModuleResults已接；Common前端、System／Monitor前端与Monitor PG标准入口已登记 | `66d0321de` [Monitor PG](https://github.com/pampa0629/addp/actions/runs/40880761833/job/123475011425) 含CleanupObservationSnapshot，0SKIP；共享parser／唯一所有权T1及页面代码存在，C5消费者T3／服务T4尚非全矩阵 |
+| System永久登记身份 | EngineService.Create／Restore与 `TestDeletedEngineCanRestoreItsIDAndDoesNotReserveAddress` 已定位；复原旧登记保留ID，新登记取得新ID | 代码／用例存在，不据此声明迁移、恢复、跨Owner重绑完整T4通过，更不当作严格原物理代际证明 |
+| Manager原生成功／对象未知／索引未知 | `cleanup-native-effects`三个显式case，原权限及9／11／11项 | 三个固定源码Hosted已通过，见§8.43；本次复核各Job的success／源码，与原官方报告记录对照，不重跑 |
+| Transfer Engine／DLQ unknown／Capture unknown | 三个显式case及两种产品删除入口，原7／7／8项 | 三个固定源码Hosted已通过，见§8.2；不升级为源撤权或所有Owner的物理清理证明 |
+| Manager迟到writer | `run_late_writer`及精确容器／上传barrier控制已实现；`make test-execution-online-ci-runner` | `9cd0b267d` [Linux runner](https://github.com/pampa0629/addp/actions/runs/42397885129/job/128479082973) 实际408项；12类新增反例及父timeout／子failed契约已收口，真实Hosted仍待单独确认 |
+| Graph／Cleanup受控故障runner | `graph-execution-online.py`、`cleanup-execution-online.py`及浏览器撤权脚本已登记；`make test-graph-online-runner`／Execution runner | 受控提取、十Owner逻辑结果、Owner故障、截止、撤权／分页／迟到响应均有runner；本专题尚无这两个profile的固定源码Hosted通过记录，不重复开发已存在入口 |
+| Neo4j身份反例T2 | `make test-common-neo4j`固定5.26.24、九阶段；启动与清理夹具已修正 | `9cc552de2` [Linux T2](https://github.com/pampa0629/addp/actions/runs/42216557525/job/127891879034) 实际success、九阶段、0SKIP、zero_residuals；后继包含19e，旧启动故障已关闭，不再列待办；高级恢复能力未实现 |
+
+本次对Common、System Cleanup、Monitor及Neo4j重新读取官方Job／原日志，确认具体用例／阶段和固定SHA；六个已验收原生Hosted及迟到writer runner复核Job元数据并对照原报告记录。历史失败仍保留，当前缺少独立用例的项标为“未定位”，不推断产品必有漏洞，也不计全矩阵通过。范围外SQL pool Node前置失败不列为本会话开发待办。
+
+### 准确剩余清单与推进顺序
+
+| 顺序 | 事项／性质 | 具体交付与完成条件 |
+| --- | --- | --- |
+| P1a | Common／System父子竞争，测试工程 | 先补C2e两父／同Owner争用、C2h拒绝并发／重复／写失败；再补C2b/c/f/g与C2d完整锁组合。沿已有Common lifecycle／System Cleanup PG入口；System AdmissionRace的50ms等待须改为可观测锁门闩。先写反例，若暴露已确认协议缺陷再修实现，不预设全部业务代码要重写 |
+| P1b | Graph清理与输入冻结，测试及按证据修复 | 补G2摘要回滚、G3成功先提交、G8输入／登记目标漂移、G9在途审核，以及C3/C4/C2j真实PG交错。C4当前代码核execute首尾候选一致，尚未定位原scan后候选漂移的完整反例；先验证上游生命周期围栏及原scan确认是否已足够，再决定修复，不将风险观察写成已复现漏洞 |
+| P2 | System／Monitor消费者状态矩阵，T3工程 | C5g/k/l补撤去父读取权、404／503、User／Tenant／execution切换、closed pending替换及矛盾／迟到响应；C5c/h补隐藏计数与完整页面语义。复用共享组件／请求失效能力，补C5e/j相应PG交错，不复制组件 |
+| 并行待授权 | Manager迟到writer真实验收 | runner与CI已就绪，按§8.44单独确认一次Hosted；同一原请求、原身份及原预算，核11项、控制恢复与零残留；不能先记完成 |
+| P3 | Graph／Cleanup完整故障与Meta扫描闭环，runner／集成验收 | 已有profile先按场景核对并补缺：Cleanup规范§13的平台上下文、审计、Monitor父子树；Graph原生写图回包丢失及两引擎故障。受控runner与真实原生效果分开；若需新的Provider入口或身份／权限边界先讨论，不能借此重启高级恢复。新增Hosted均单独确认 |
+| P4 | Quality新实现复验准备，证据核对 | 历史bounded-recovery只属于原源码；先核本轮输入能否复用，存在变化才补夹具／门禁，不预设所有Owner须重跑或重新开发 |
+| P5 | 旧协议切换，工具及运维准备 | 尚未定位已登记的一次性切换入口。先刷新只读清单、引用与活动／unknown事实，再准备默认只读、绑定清单摘要的入口及标准夹具演练；不得在本轮直接删除／重启。确有新操作范围或接口／权限歧义先讨论，实际窗口单独确认 |
+| 暂缓 | Graph高级恢复，未实施功能 | 恢复证据Provider、可信原生身份绑定、正向reopen继续搁置；System永久登记身份不替代物理代际、准确操作结果和停止证明；现有缺证据409及隔离不变 |
+
+共享环境切换顺序保持：刷新只读清单 → 准备默认只读、绑定清单摘要的一次性入口并在标准夹具演练 → 明确窗口和操作范围 → 用户停止旧受理／旧运行体 → 无活动和unknown后准确清理 → 用户标准脚本启动 → 核新协议与旧路径退出。历史“9父＋63子／11个Redis键”仅为旧快照，不作当前删除输入；不创建第三个本地测试database，不模糊删除、不恢复旧兼容路线。
 
 ## 七、确认范围与协作分工
 
@@ -232,7 +256,7 @@ Manager 源准备保持其正式授权链；本批 Transfer CDC 仅验证既有 
 
 **Linux 实际终态。** `3527dccc5` 没有独立 push Run；已推送后继 `42ae2bc5996b389fceea940f3ed3825457744bc7` 包含该提交，十个任务文件及 CI Make 输入已独立核同。[Run41529522013／Job125579406480](https://github.com/pampa0629/addp/actions/runs/41529522013/job/125579406480) 于北京时间2026-11-03 **06:09:42—06:17:38** 实际 success（push／attempt1）。主责 fresh API 和独立原日志确认真实选中、标准 Make、六项 T1、原 Common／Graph 主项、九个唯一阶段全部通过，版本5.26.24／community、0SKIP、zero_residuals；整卷克隆身份反例同样成立。原日志82718字节，SHA-256 `d0a9c169a8882a0087f4b1bf7aedfaf3fde2a7981fdcacaa15002d3db5358882`；独立证明 `/tmp/addp-neo4j-identity-t2-20261103/linux-final/root-independent-proof.json`。
 
-该成功只收口准确42ae的身份反例 T2，不声明可信身份、Provider／绑定／正向 reopen 已实现或重复运行稳定。后继19e05289c的 [Job125628721437](https://github.com/pampa0629/addp/actions/runs/41548048797/job/125628721437) 启动前置 exit64／缺少 initial-password 参数，未进入领域或九阶段测试；由 CI 会话跟进，保持失败事实，不用前序成功覆盖、不在本轮追加运行。
+该成功只收口准确42ae的身份反例 T2，不声明可信身份、Provider／绑定／正向 reopen 已实现或重复运行稳定。后继19e05289c的 [Job125628721437](https://github.com/pampa0629/addp/actions/runs/41548048797/job/125628721437) 曾在启动前置exit64／缺少initial-password参数，未进入九阶段；该失败保留。夹具故障后由包含19e的 `9cc552de2` 收口：[Run42216557525／Job127891879034](https://github.com/pampa0629/addp/actions/runs/42216557525/job/127891879034) 于2026-11-06 20:41:02（Asia/Shanghai）实际success，九个唯一身份阶段、0SKIP、zero_residuals。本次只读复核官方原日志与祖先关系，不新增运行；该成功不升级为可信原生绑定或高级恢复实现。
 
 ### 8.42 正向恢复的新边界（待讨论）
 
