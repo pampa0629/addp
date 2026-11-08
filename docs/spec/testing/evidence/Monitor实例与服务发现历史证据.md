@@ -546,3 +546,20 @@ CI 专门会话回传 `c1adee620787b0c205e60f6f6fe7d6000e78f417` 的两个确切
 原始回执为 `/tmp/addp-ci-20261108-180349/fix-platform.log`、`fix-falkor.log`。按该固定 SHA 的门禁 EXIT trap，成功退出包含 PostgreSQL 测试资源清理、受管 Compose 容器／网络／卷残留检查；不是把测试名称中的 cleanup 当作独立的宿主 inspect 收据。此次闭环仅指上节共享就绪变更遗漏的确定性夹具及对应两个真实步骤，原 `c1adee620`／`76b5fc0a7` 失败与本地修复前记录保留，不重跑已有有效验收，不据此认定父 workflow、其他 Job 或后续 main 全通过。
 
 本次未操作个人服务、Business MinIO 来源、用户 Monitor 或浏览器。Business MinIO 的配置准备与待用户标准应用状态仍见[本机准备记录](Monitor采集来源与引擎指标历史证据.md#business-minio-本机采集配置与证书准备2026-11-08)，不由此 CI 替代实际 mTLS、采样和页面复验；Standard 的正式身份 Hosted 场景也不在本次通过范围。不设置定时任务。
+
+
+## 本机服务实例读数、趋势与未绑定／Worker 未采集诊断（2026-11-08）
+
+用户确认继续核对现有 Backend／Worker 的实例、主机绑定和 CPU／RSS。本轮只读检查当前部署及原 Safari 第二个标签页，不修改个人配置、账号或主机台账，不启停服务；CI／Hosted 由专门会话安排，未设置定时任务。首次自动化把 Element Plus Table 的 setupState 当作页面状态，导致空观察；检查组件链后定位到父 ProcessResources，后续只读明确页面状态，未以重载或伪造数据取得结果。
+
+Safari 默认“在线＋已启用采集”展示 System、Manager、Meta、Transfer、Monitor 五个 Backend，均无列表／摘要错误、采集状态 collecting，CPU 核占用、RSS、运行时长有效。`python3 /tmp/addp-service-live-prom-20261108.py` 退出 0：五个实例各有唯一 Prometheus 进程目标，均 UP 且无抓取错误；进程身份指标中的 module、role、instance 与当前用户列表一一对应，原始进程启动时刻与登记的 process_started_at 在微秒内一致，操作系统均为 darwin。实际 RSS 样本距核验时约 1.23—10.86 秒，CPU 当前一分钟各四个样本；该原始样本数单独不替代产品完整窗口判定。收据 `/tmp/addp-service-live-initial-20261108.json`、`/tmp/addp-service-live-prom-20261108.json`。
+
+`python3 /tmp/addp-service-live-trends-20261108.py` 退出 0：通过当前列表各实例的“查看趋势”按钮依次打开原弹窗并正常关闭，核对所选记录 ID、实例身份、趋势主体一致。五个弹窗的页面／弹窗 DOM 可见，两个图表画布均存在，无趋势错误；近五分钟 CPU／RSS 十条曲线各 21／21 点有效，同轮摘要三项均有效。交叉核验当前用户记录与 Prometheus 身份一致。收据 `/tmp/addp-service-live-trends-20261108.json`。本轮未取得新截图，不将 DOM／画布核对外推为新的截图验收、拖动缩放或正式身份 Hosted。
+
+通过原“采集配置”下拉选全部、保留在线条件，正常翻页核对两页共 27 个不同当前实例：21 Backend、5 Worker、1 Ingress。仅五个 Backend 已声明采集；Meta Worker、两类 Transfer Worker、Quality Worker 及清单中的 Security Worker 均未声明。本轮对 Security、Agent、Copilot 只保留正常实例清单事实，不开展其开发或专门验收。两页未出现当前 Backend 启动失败提示；不据此证明未登记进程不存在或全部业务健康。清单收据 `/tmp/addp-service-live-all-current-20261108.json`、`/tmp/addp-service-live-all-current-page2-20261108.json`。
+
+27 个实例的 declared_node_id／node_id 均为空、node_binding_state 为 unbound。主机监控当前仅一项 Docker Desktop Linux VM，未登记原生 Mac；根部署环境未提供 ADDP_HOST_NODE_ID。不能把运行于 darwin 的进程绑定到数据库所在 VM，也不能在线改挂已有实例。当前自身资源观测继续有效，主机关联验收尚未通过。后续须先确认原生宿主登记与允许模块集合，再由标准部署为新实例注入显式主机身份。主机清单收据 `/tmp/addp-service-live-current-hosts-20261108.json`；不从名称或地址猜测关联。
+
+三个已在根采集计划中选择的 Worker 未采集原因已精确复现：配置键为 meta-worker、transfer-bounded-worker、transfer-continuous-worker，而标准 addp_worker_units 即使单副本也发布对应的 -1 启动单元，start_module_workers 原样将单元传给唯一 process-metrics-launch.py。对当前同一计划调用纯 select_deployment，旧键能命中，实际 -1 单元全部返回未选择；规范和 .env.example 已明确具体副本名称，不应新增旧名兼容或猜测映射。Quality Worker 未列入当前计划，另行表达。三个已选 Worker 的现有证书通过共享严格链／用途／IP SAN／密钥预检，未输出或改写凭据、未改证书。收据 `/tmp/addp-service-live-config-selection-20261108.json`、`/tmp/addp-service-live-worker-unit-mismatch-20261108.json`、`/tmp/addp-service-live-worker-cert-check-20261108.json`。已单独请求用户确认仅修正三个本机配置键名；此条记录时尚未修改配置或重启，不能将纯匹配诊断计为 Worker 采集恢复。后续原生主机绑定亦仍未实施。
+
+本轮没有产品代码、API、权限或环境变更，最小验证为上述真实只读脚本、原标准状态／页面路径及同输入纯匹配，未重复无关开发门禁。本次证据只支持五个 Backend 的当前读数／选中短趋势、完整在线清单及配置缺口，不能认定 27 实例资源、Worker、主机绑定、多副本或 CI／Hosted 全部通过。
