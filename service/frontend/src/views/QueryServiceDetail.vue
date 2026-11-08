@@ -391,6 +391,8 @@
         </div>
       </div>
 
+      <el-alert v-if="previewError" class="preview-error" :title="previewError" type="error" show-icon :closable="false" />
+
       <div v-if="previewData.length > 0" class="preview-content">
         <TablePreview
           :data="previewTableData"
@@ -400,7 +402,7 @@
       </div>
 
       <!-- 空状态 -->
-      <div v-if="previewData.length === 0 && !previewLoading" class="preview-empty">
+      <div v-if="previewData.length === 0 && !previewLoading && !previewError" class="preview-empty">
         <el-empty :description="t('service.query.previewEmpty')" />
       </div>
     </el-card>
@@ -470,6 +472,7 @@ const previewNamedParameterValues = reactive({})
 
 // 数据预览相关状态
 const previewData = ref([])
+const previewError = ref('')
 const previewLoading = ref(false)
 const previewPagination = ref({
   page: 1,
@@ -654,6 +657,7 @@ const testRestAPI = () => {
 // 方法：加载服务详情
 const loadService = async () => {
   loading.value = true
+  previewError.value = ''
   try {
     const response = await queryServiceAPI.getService(serviceId.value)
     service.value = response
@@ -690,6 +694,7 @@ const toggleServiceStatus = async () => {
   try {
     const status = service.value.status === 'active' ? 'inactive' : 'active'
     service.value = await queryServiceAPI.updateService(serviceId.value, { version: service.value.version, status })
+    previewError.value = ''
     previewData.value = []
     previewPagination.value = { ...previewPagination.value, page: 1, hasMore: false, nextCursor: '', cursors: [''] }
     ElMessage.success(t(status === 'active' ? 'service.query.activated' : 'service.query.deactivated'))
@@ -753,6 +758,7 @@ const rebindMetricSource = async () => {
       version: service.value.version
     })
     rebindDialogOpen.value = false
+    previewError.value = ''
     previewData.value = []
     previewPagination.value = { ...previewPagination.value, page: 1, hasMore: false, nextCursor: '', cursors: [''] }
     metricRevisionRefresh.value++
@@ -850,6 +856,7 @@ const loadPreviewData = async () => {
   }
 
   previewLoading.value = true
+  previewError.value = ''
   previewData.value = []
   previewPagination.value.hasMore = false
   previewPagination.value.nextCursor = ''
@@ -888,7 +895,9 @@ const loadPreviewData = async () => {
     if (!protectionRefusal) {
       console.error('加载数据预览失败:', error)
     }
-    ElMessage.error(t('service.query.loadPreviewFailed') + ': ' + (error.response?.data?.error || error.message))
+    previewPagination.value = { ...previewPagination.value, page: 1, hasMore: false, nextCursor: '', cursors: [''] }
+    previewError.value = t('service.query.loadPreviewFailed') + ': ' + (error.response?.data?.error || error.message)
+    if (!protectionRefusal) ElMessage.error(previewError.value)
   } finally {
     previewLoading.value = false
   }

@@ -500,8 +500,10 @@ async function verifyServiceTransferProtectionRefusal(page, env, navigate, getAP
     const refusal = await previewService(403)
     expect(Object.keys(refusal).sort()).toEqual(['error', 'error_code'])
     expect(refusal.error_code).toBe('data_protection_required')
-    expect(refusal.error).toMatch(/数据保护要求未满足|data protection requirements/i)
-    await expect(frame.locator('.el-message--error').filter({ hasText: refusal.error })).toBeVisible()
+    expect(refusal.error).toMatch(/数据保护规则已到期|data protection rules for this resource have expired/i)
+    expect(refusal.error).toMatch(/续期或设为长期有效|renew protection or set permanent validity/i)
+    await expect(frame.locator('.preview-error')).toContainText(refusal.error)
+    await expect(frame.locator('.preview-empty')).toHaveCount(0)
     await expect(frame.locator('.preview-content')).toHaveCount(0)
     await page.screenshot({ path: resolve(env.ADDP_ONLINE_ARTIFACT_DIR, 'security-service-protection-refusal.png') })
     const denied = await runTransfer('failed')
@@ -540,6 +542,7 @@ async function verifyServiceTransferProtectionRefusal(page, env, navigate, getAP
     await navigate(`/service/query-services/${serviceID}`, `/api/v1/service/query/${serviceID}`)
     checkRows((await previewService(200)).data)
     await expect(frame.locator('.preview-content .el-table__body tbody tr')).toHaveCount(5)
+    await expect(frame.locator('.preview-error')).toHaveCount(0)
     await page.screenshot({ path: resolve(env.ADDP_ONLINE_ARTIFACT_DIR, 'security-service-protection-restored.png') })
     outcome = { service_normal_output_verified: true, service_refusal_http_status: 403,
       service_refusal_visible: true, service_old_preview_cleared: true, service_restored_output_verified: true,

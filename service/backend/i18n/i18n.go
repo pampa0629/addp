@@ -42,16 +42,27 @@ const (
 	MsgInvalidQueryIntent            = "service.err.invalid_query_intent"
 	MsgInvalidStructuredQuery        = "service.err.invalid_structured_query"
 	MsgDataProtectionRequired        = "service.err.data_protection_required"
-	MsgQueryExecutionFailed          = "service.err.query_execution_failed"
-	MsgQueryFormatFailed             = "service.err.query_format_failed"
-	MsgInvalidFeatureID              = "service.err.invalid_feature_id"
-	MsgConsumerFilterInvalid         = "service.consumer.filter_invalid"
-	MsgConsumerReferenceInvalid      = "service.consumer.reference_invalid"
-	MsgConsumerCatalogFailed         = "service.consumer.catalog_failed"
-	MsgConfigurationLoadFailed       = "service.configuration.load_failed"
-	MsgConfigurationInvalid          = "service.configuration.invalid"
-	MsgConfigurationAuthentication   = "service.configuration.authentication_required"
-	MsgConfigurationConflict         = "service.configuration.version_conflict"
+
+	MsgQueryExecutionFailed        = "service.err.query_execution_failed"
+	MsgQueryFormatFailed           = "service.err.query_format_failed"
+	MsgInvalidFeatureID            = "service.err.invalid_feature_id"
+	MsgConsumerFilterInvalid       = "service.consumer.filter_invalid"
+	MsgConsumerReferenceInvalid    = "service.consumer.reference_invalid"
+	MsgConsumerCatalogFailed       = "service.consumer.catalog_failed"
+	MsgConfigurationLoadFailed     = "service.configuration.load_failed"
+	MsgConfigurationInvalid        = "service.configuration.invalid"
+	MsgConfigurationAuthentication = "service.configuration.authentication_required"
+	MsgConfigurationConflict       = "service.configuration.version_conflict"
+)
+
+const (
+	MsgProtectionNotReady                  = "service.err.protection_not_ready"
+	MsgProtectionExpired                   = "service.err.protection_expired"
+	MsgProtectionNotYetValid               = "service.err.protection_not_yet_valid"
+	MsgProtectionSchemaMismatch            = "service.err.protection_schema_mismatch"
+	MsgProtectionLineageUnverified         = "service.err.protection_lineage_unverified"
+	MsgProtectionComputedOutputUnsupported = "service.err.protection_computed_output_unsupported"
+	MsgProtectionOperationUnsupported      = "service.err.protection_operation_unsupported"
 )
 
 func init() {

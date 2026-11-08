@@ -118,3 +118,24 @@ other = "Field masking methods are temporarily unavailable. Please try again lat
 
 [service.err.invalid_named_parameter_defaults]
 other = "Only defaults of existing optional SQL parameters can be changed. Check the parameter type and allowed values."
+
+[service.err.protection_not_ready]
+other = "Data protection configuration is not ready. The query was blocked. Wait for protection enrollment and rule synchronization; if it remains unready, ask a security administrator to check synchronization."
+
+[service.err.protection_expired]
+other = "The data protection rules for this resource have expired. The query was blocked. Ask a security administrator to renew protection or set permanent validity, then query again after synchronization."
+
+[service.err.protection_not_yet_valid]
+other = "The data protection rules for this resource are not yet effective. The query was blocked. Ask a security administrator to confirm their start time and query again after they become effective."
+
+[service.err.protection_schema_mismatch]
+other = "The current data structure does not match its protection rules. The query was blocked. Ask an administrator to update metadata and reconfirm protection rules, then query again after synchronization."
+
+[service.err.protection_lineage_unverified]
+other = "The sources of protected query output fields could not be verified. Data protection blocked the query. Use direct fields or aliases with provable sources; a plaintext grant does not remove this restriction."
+
+[service.err.protection_computed_output_unsupported]
+other = "The computed or combined output uses protected fields and cannot yet be safely masked. The query was blocked. Read protected fields directly so the system can mask them; a plaintext grant does not remove this restriction."
+
+[service.err.protection_operation_unsupported]
+other = "This operation does not yet support the required data masking protection. The query was blocked. Use a supported execution method, or ask an administrator to check protection support for this engine and operation."

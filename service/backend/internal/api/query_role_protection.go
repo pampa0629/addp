@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/addp/common/dataprotection"
+	"github.com/addp/common/execution"
 	commonauth "github.com/addp/common/middleware/auth"
 	commoni18n "github.com/addp/common/middleware/i18n"
 	servicei18n "github.com/addp/service/i18n"
@@ -77,9 +78,31 @@ func writeQueryProtectionError(c *gin.Context, err error) bool {
 	case errors.Is(err, dataprotection.ErrRoleOptionUnavailable):
 		c.JSON(http.StatusConflict, gin.H{"error": commoni18n.T(c, servicei18n.MsgProtectionChoiceInvalid), "error_code": "query_protection_choice_invalid"})
 	case errors.Is(err, protection.ErrRequired), errors.Is(err, dataprotection.ErrDenied):
-		c.JSON(http.StatusForbidden, gin.H{"error": commoni18n.T(c, servicei18n.MsgDataProtectionRequired), "error_code": "data_protection_required"})
+		c.JSON(http.StatusForbidden, gin.H{"error": commoni18n.T(c, queryProtectionMessageID(err)), "error_code": "data_protection_required"})
 	default:
 		return false
 	}
 	return true
+}
+
+// Only typed facts at a confirmed protection boundary select a specific message.
+func queryProtectionMessageID(cause error) string {
+	switch execution.ProtectionFailureReason(cause) {
+	case "protection_not_ready":
+		return servicei18n.MsgProtectionNotReady
+	case "protection_expired":
+		return servicei18n.MsgProtectionExpired
+	case "protection_not_yet_valid":
+		return servicei18n.MsgProtectionNotYetValid
+	case "protection_schema_mismatch":
+		return servicei18n.MsgProtectionSchemaMismatch
+	case "protection_lineage_unverified":
+		return servicei18n.MsgProtectionLineageUnverified
+	case "protection_computed_output_unsupported":
+		return servicei18n.MsgProtectionComputedOutputUnsupported
+	case "protection_operation_unsupported":
+		return servicei18n.MsgProtectionOperationUnsupported
+	default:
+		return servicei18n.MsgDataProtectionRequired
+	}
 }

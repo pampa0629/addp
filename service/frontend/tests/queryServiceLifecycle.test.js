@@ -13,6 +13,7 @@ function harness(updateService) {
     serviceId: { value: 35 }, statusUpdating: { value: false }, versionConflict: { value: false },
     metricBindingRequired: { value: false },
     previewNamedParameterValues: { subject_id: 'person', grain: 'month' },
+    previewError: { value: 'previous failure' },
     previewData: { value: [{ value: 5 }] },
     previewPagination: { value: { page: 2, pageSize: 20, hasMore: true, nextCursor: 'old', cursors: ['', 'old'] } },
     queryServiceAPI: { updateService }, ElMessage: { success() {}, error() {}, warning() {} }, t: key => key
@@ -31,6 +32,7 @@ test('activation and deactivation use the returned version and preserve query pa
   assert.equal(state.service.value.version, 4)
   assert.equal(state.service.value.public_access, false)
   assert.equal(state.previewNamedParameterValues.subject_id, 'person')
+  assert.equal(state.previewError.value, '')
   assert.equal(state.previewData.value.length, 0)
   assert.equal(state.previewPagination.value.page, 1)
   assert.equal(state.previewPagination.value.nextCursor, '')
@@ -63,6 +65,7 @@ test('metric rebind sends an exact revision with the current version and clears 
     sourceSnapshot: { value: { metric_source: { implementation_id: 4, revision_id: 16, result_kind: 'summary' } } },
     rebindSelection: { value: null }, rebindDialogOpen: { value: false }, rebindSaving: { value: false },
     service: { value: { id: 41, version: 3, status: 'active' } }, serviceId: { value: 41 }, versionConflict: { value: false },
+    previewError: { value: 'previous failure' },
     previewData: { value: [{ group_key: 'old' }] },
     previewPagination: { value: { page: 2, hasMore: true, nextCursor: 'old', cursors: ['', 'old'] } },
     metricRevisionRefresh: { value: 0 },
@@ -81,6 +84,7 @@ test('metric rebind sends an exact revision with the current version and clears 
   assert.deepEqual(requests, [{ id: 41, body: { metric_source: { implementation_id: 4, revision_id: 19 }, version: 3 } }])
   assert.equal(state.service.value.version, 4)
   assert.equal(state.rebindDialogOpen.value, false)
+  assert.equal(state.previewError.value, '')
   assert.equal(state.previewData.value.length, 0)
   assert.equal(state.previewPagination.value.nextCursor, '')
   assert.equal(state.metricRevisionRefresh.value, 1)

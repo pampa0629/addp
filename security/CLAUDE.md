@@ -837,3 +837,8 @@ T1/T3/构建验证：`make test-security-frontend` 退出0，260项单元、37�
 原始证据 `/tmp/addp-security-swag-2b42a752/archive/_temp/addp-online-42454542147/`；GitHub artifact ID13609052160，99成员ZIP CRC通过，SHA256 `552ec77a075975c55470e1a156a4eb649a254b28ddb0285e5de44b6a0addd56f`，解压文件逐字节等于归档。独立审计 `/tmp/p145-bd68-audit/independent-evidence-audit.json`，目视清单及逐图摘要 `visual-review.json`；命令 `python3 /tmp/p145-bd68-audit/audit.py` 与 `python3 /tmp/p145-bd68-audit/test_audit.py` 退出0，正常样本及43个受控拒绝反例通过。审计不导入生产校验器、不调用运行服务。多数子场景原始HTTP正文未归档，方式撤销拒绝回执也未单列cache_control，独立审计不补造这些证据；运行脚本的实时断言与保留报告、六份CSV原字节及浏览器目视证据分别陈述。
 
 本次可认定上述v44/v9已覆盖范围的完整Hosted T4通过；不是全平台、全部SQL／引擎或静态加密完成，不证明metadata-only搜索，原临时read前提保留。无新产品实现或本地服务启停，本轮仅归档与文档校验；既有271项、System Fixture、Swagger／生命周期及后继Common插件隔离验证按输入复用，不声称重新运行。湖南实际行155／156大项仍为部分实现；默认导出与Transfer JOIN限定Hosted缺口已闭环，后续优先细化Service保护拒绝的具体原因及处理建议，再按已确认范围逐项扩大SQL保护能力。
+
+
+### Service 具体保护原因的解释接入（2026-11-08）
+
+DP-06已完成代码：Service复用Common类型分类，在原HTTP错误形状内给出七原因与中英文建议，预览区域持续展示，不改变保护或授权规则。Service Go、12项真实PG、120项前端和构建、10项相关受控浏览器及Swagger65方法覆盖通过；完整模块在共享Manager验收登记失败，未算通过。新版个人HTTP／Hosted未运行，不继承前一节bd68的T4；原隔离自然到期浏览器断言同次改为精确原因／建议和持续区域，报告v44/v9与清理边界保持。详细首次失败及验证见[Service记录](../service/docs/testing/查询与要素协议.md#service-保护拒绝细分与持续提示2026-11-08)，证据 `/tmp/p145-service-reasons/verification.json`。

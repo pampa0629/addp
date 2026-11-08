@@ -204,7 +204,7 @@ func (h *OGCFeaturesHandler) GetCollections(c *gin.Context) {
 
 // GetItems 获取 Collection 中的 Items（即查询数据）
 // @Summary OGC API Features Items | OGC API Features Items
-// @Description 保护门禁拒绝返回 403 和 data_protection_required，不返回数据 | Protection refusals return 403 and data_protection_required without data
+// @Description 保护门禁拒绝返回 403 和 data_protection_required，并提供按类型细分的本地化原因及处理建议，不返回数据 | Protection refusals return 403 and data_protection_required with a typed localized reason and suggested action, without data
 // @Tags OGC Features
 // @Produce json
 // @Param serviceName path string true "服务名称 | Service name"
@@ -320,7 +320,7 @@ func (h *OGCFeaturesHandler) GetItems(c *gin.Context) {
 
 // GetItem 获取单个 Feature
 // @Summary OGC API Features Item | OGC API Features Item
-// @Description 保护门禁拒绝返回 403 和 data_protection_required，不返回数据 | Protection refusals return 403 and data_protection_required without data
+// @Description 保护门禁拒绝返回 403 和 data_protection_required，并提供按类型细分的本地化原因及处理建议，不返回数据 | Protection refusals return 403 and data_protection_required with a typed localized reason and suggested action, without data
 // @Tags OGC Features
 // @Produce json
 // @Param serviceName path string true "服务名称 | Service name"

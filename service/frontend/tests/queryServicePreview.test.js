@@ -18,6 +18,7 @@ test('a new preview clears previous rows and cursor metadata even when it fails 
     })
     const state = {
       service: { value: { service_name: 'metric', config_type: 'sql', named_parameters: [] } },
+      previewError: { value: 'previous failure' },
       previewData: { value: [{ subject_id: 'previous-person', value: 224 }] },
       previewLoading: { value: false },
       previewPagination: { value: { page: 1, pageSize: 20, cursors: [''], hasMore: true, nextCursor: 'old-cursor' } },
@@ -29,6 +30,7 @@ test('a new preview clears previous rows and cursor metadata even when it fails 
     const context = vm.createContext(state)
     const load = vm.runInContext(`${method}\nloadPreviewData`, context)
     const result = load()
+    assert.equal(state.previewError.value, '', `${outcome}: old failure remains during request`)
     assert.equal(state.previewData.value.length, 0, `${outcome}: old rows remain during request`)
     assert.equal(state.previewPagination.value.hasMore, false)
     assert.equal(state.previewPagination.value.nextCursor, '')
@@ -52,6 +54,7 @@ test('a handled protection refusal stays visible without a runtime console error
     const error = { message: 'request failed', response: status ? { status, data: { error_code: code, error: 'controlled reason' } } : undefined }
     const state = {
       service: { value: { service_name: 'protected', named_parameters: [] } },
+      previewError: { value: 'previous failure' },
       previewData: { value: [{ id: 'old-result' }] }, previewLoading: { value: false },
       previewPagination: { value: { hasMore: true, nextCursor: 'old-cursor' } },
       queryUnavailable: { value: false }, previewNamedParameterValues: {},
@@ -62,7 +65,11 @@ test('a handled protection refusal stays visible without a runtime console error
     const load = vm.runInContext(`${method}\nloadPreviewData`, vm.createContext(state))
     await load()
     assert.equal(logs.length, expectedLogs, `${status}/${code}`)
-    assert.deepEqual(messages, [`service.query.loadPreviewFailed: ${error.response?.data.error || error.message}`])
+    const visibleError = `service.query.loadPreviewFailed: ${error.response?.data.error || error.message}`
+    assert.equal(state.previewError.value, visibleError)
+    assert.deepEqual(messages, expectedLogs ? [visibleError] : [])
+    assert.equal(state.previewPagination.value.page, 1)
+    assert.deepEqual(Array.from(state.previewPagination.value.cursors), [''])
     assert.equal(state.previewData.value.length, 0)
     assert.equal(state.previewLoading.value, false)
     assert.equal(state.previewPagination.value.hasMore, false)

@@ -2,6 +2,8 @@
 
 2026-11-08，修复查询服务管理DTO的空命名参数数组：数据库保存 `[]`，`GetNamedParameters()`以nil切片复制空集合，旧DTO因此输出null，与已声明的数组契约不符。唯一 `convertToDTO` 边界改用非nil空集合复制，创建／更新／详情／列表共享；不改内部绑定、SQL或快照，不加null兼容路线。已有Swagger的 `named_parameters` 类型仍为array，无接口／注解结构变化，不需生成同内容产物。新增SQLite仓储读取→正式GetService→JSON序列化回归覆盖nil、空及非空声明，并核对SQL和无Meta Source保持。先重现null与[]失败，再转绿；`make test-module MODULE=service GO_ONLY=1`通过，仅Go T1，未新增PostgreSQL T2／本地HTTP／Hosted通过。Security隔离套件已拆开来源、SQL及参数声明错误，32项相关检查及根Make所属recipe265项、登记反例与CLI通过；四个聚合依赖目标本轮未重跑。日志 `/tmp/p145-service-empty-parameters-{red,green,module}.log`、`/tmp/p145-service-definition-{diagnostic-green,owner-gate,registration,registration-cli}.log`。实际T4仍待专门CI会话复验；完整失败、落库证据和范围见[Security记录](../security/CLAUDE.md#v44-sql角色服务空参数数组修正2026-11-08)。
 
+2026-11-08，保护门禁HTTP解释与详情预览提示已细分：七种实际类型原因及对应中英文建议，原状态码、错误码、角色与查询错误分类保持；详情持续展示并清旧行／游标，成功恢复。代码及Service T1、12项PG T2、120项前端／构建和10项相关受控浏览器通过；完整模块被无关Manager登记错误阻断，新版真实HTTP／Hosted待验。实现边界、首次失败及证据见[本轮专题](docs/testing/查询与要素协议.md#service-保护拒绝细分与持续提示2026-11-08)。
+
 ## 模块定位
 
 Service 模块负责数据服务发布与外部服务注册，覆盖查询服务、图查询服务、注册服务代理、瓦片服务、OGC API Features、OGC Tiles、WMTS 和公开访问端点。
