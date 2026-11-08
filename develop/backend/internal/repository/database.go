@@ -40,6 +40,7 @@ func InitDatabase(cfg *config.Config) (*gorm.DB, error) {
 		&models.DevTask{},         // 开发任务（query、workflow、script）
 		&models.ToolApproval{},    // 委托 workflow.run 审批事实
 		&models.ExecutionPolicy{}, // Develop 执行策略
+		&models.FileExecution{},   // 私有文件执行意图和原授权绑定
 		&models.CatalogResourceChangeRow{},
 	); err != nil {
 		return nil, fmt.Errorf("failed to auto migrate: %w", err)

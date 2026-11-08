@@ -20,6 +20,7 @@ import (
 	commoni18n "github.com/addp/common/middleware/i18n"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/develop/backend/internal/config"
+	"github.com/addp/develop/backend/internal/models"
 	"github.com/addp/develop/backend/internal/repository"
 	"github.com/google/uuid"
 	"gorm.io/driver/sqlite"
@@ -78,6 +79,16 @@ func testClaimedWorkflowLanguage(t *testing.T, dsn string, scenarios []string) {
 				if err := commonExecution.EnsureStore(db); err != nil {
 					t.Fatal(err)
 				}
+			}
+			if dsn == "" {
+				if err := db.Exec("ATTACH DATABASE ':memory:' AS develop").Error; err != nil {
+					t.Fatal(err)
+				}
+			} else if err := db.Exec("CREATE SCHEMA IF NOT EXISTS develop").Error; err != nil {
+				t.Fatal(err)
+			}
+			if err := db.AutoMigrate(&models.FileExecution{}); err != nil {
+				t.Fatal(err)
 			}
 			queue := repository.NewExecutionRepository(db)
 			engineType := "test_leased_workflow_" + scenario
@@ -294,6 +305,16 @@ func testWorkflowCommittedEffects(t *testing.T, dsn string) {
 				if err := commonExecution.EnsureStore(db); err != nil {
 					t.Fatal(err)
 				}
+			}
+			if dsn == "" {
+				if err := db.Exec("ATTACH DATABASE ':memory:' AS develop").Error; err != nil {
+					t.Fatal(err)
+				}
+			} else if err := db.Exec("CREATE SCHEMA IF NOT EXISTS develop").Error; err != nil {
+				t.Fatal(err)
+			}
+			if err := db.AutoMigrate(&models.FileExecution{}); err != nil {
+				t.Fatal(err)
 			}
 			queue := repository.NewExecutionRepository(db)
 			item := &commonExecution.TaskExecution{ExecutionID: uuid.NewString(), TenantID: 7, Module: "develop", TaskType: "workflow", Source: "develop", Status: "pending", ExecutionBoundary: "bounded", TriggerType: "manual", MaxAttempts: 1}

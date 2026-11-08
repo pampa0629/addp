@@ -87,6 +87,21 @@ func (r *ExecutionRepository) ClaimNext(
 		if filterErr != nil {
 			return filterErr
 		}
+		if taskType == commonExecution.TaskTypeWorkflow {
+			// A registered file purpose cannot escape through the generic queue
+			// before its original EA/scope admission. Other workflows, including
+			// parent-derived execution paths, retain their existing claim rules.
+			claimDB = claimDB.Where(`NOT EXISTS (
+				SELECT 1 FROM develop.file_executions AS private_file
+				WHERE private_file.execution_id = task_executions.execution_id AND private_file.tenant_id = task_executions.tenant_id
+			) OR (
+				execution_authorization_id IS NOT NULL AND authorization_expires_at > CURRENT_TIMESTAMP AND EXISTS (
+					SELECT 1 FROM develop.file_executions AS private_file
+					WHERE private_file.execution_id = task_executions.execution_id AND private_file.tenant_id = task_executions.tenant_id
+					AND private_file.admission_state = 'ready' AND private_file.admission_expires_at > CURRENT_TIMESTAMP
+				)
+			)`)
+		}
 		var err error
 		execution, lease, err = commonExecution.ClaimNext(ctx, claimDB, commonExecution.ClaimOptions{
 			Module: commonExecution.ModuleDevelop, TaskType: taskType,

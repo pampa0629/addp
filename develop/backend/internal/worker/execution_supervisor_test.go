@@ -26,6 +26,14 @@ func TestExecutionSupervisorBudgetsAreIndependentAndShrinkDoesNotCancel(t *testi
 	if err := executiontest.EnsureSQLiteStore(db); err != nil {
 		t.Fatal(err)
 	}
+	if err := db.Exec("ATTACH DATABASE ':memory:' AS develop").Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Exec(`CREATE TABLE develop.file_executions (
+		execution_id TEXT PRIMARY KEY, tenant_id INTEGER, admission_state TEXT, admission_expires_at DATETIME
+	)`).Error; err != nil {
+		t.Fatal(err)
+	}
 	queue := repository.NewExecutionRepository(db)
 	blocked := &blockedQueryService{queries: queue, releases: map[string]chan struct{}{}, started: make(chan string, 20)}
 	kinds := []string{"query", "workflow", "script"}

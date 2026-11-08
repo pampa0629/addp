@@ -27,6 +27,40 @@ definitions:
       summary:
         $ref: '#/definitions/events.CleanupResultSummary'
     type: object
+  client.DevelopFileExecutionActor:
+    properties:
+      authorization_version:
+        type: string
+      principal_id:
+        type: string
+      tenant_membership_id:
+        type: string
+    type: object
+  client.DevelopFileExecutionFacts:
+    properties:
+      actor:
+        $ref: '#/definitions/client.DevelopFileExecutionActor'
+      admission_state:
+        type: string
+      authorization_id:
+        type: string
+      bound_scope:
+        $ref: '#/definitions/execution.DevelopBoundFileScope'
+      config_json:
+        items:
+          type: integer
+        type: array
+      execution_id:
+        type: string
+      intent:
+        $ref: '#/definitions/execution.DevelopFileIntent'
+      schema_version:
+        type: string
+      scope_digest:
+        type: string
+      tenant_id:
+        type: string
+    type: object
   client.EngineCatalogEntry:
     properties:
       kind:
@@ -289,6 +323,76 @@ definitions:
         type: integer
       skipped_items:
         type: integer
+    type: object
+  execution.DevelopBoundFileScope:
+    properties:
+      expected_attempt:
+        type: integer
+      intent_digest:
+        type: string
+      schema_version:
+        type: string
+      sources:
+        items:
+          $ref: '#/definitions/execution.DevelopFileSourceReference'
+        type: array
+      target:
+        $ref: '#/definitions/execution.DevelopBoundFileTarget'
+      timeout_seconds:
+        type: integer
+    type: object
+  execution.DevelopBoundFileTarget:
+    properties:
+      engine_version:
+        type: string
+      mode:
+        type: string
+      target:
+        $ref: '#/definitions/plugin.EngineCatalogPath'
+    type: object
+  execution.DevelopFileIntent:
+    properties:
+      config_digest:
+        type: string
+      expected_attempt:
+        type: integer
+      schema_version:
+        type: string
+      sources:
+        items:
+          $ref: '#/definitions/execution.DevelopFileSourceIntent'
+        type: array
+      target:
+        $ref: '#/definitions/execution.DevelopFileTargetIntent'
+      timeout_seconds:
+        type: integer
+    type: object
+  execution.DevelopFileSourceIntent:
+    properties:
+      node_id:
+        type: string
+      target:
+        $ref: '#/definitions/plugin.EngineCatalogPath'
+    type: object
+  execution.DevelopFileSourceReference:
+    properties:
+      boundary_hash:
+        type: string
+      engine_version:
+        type: string
+      item_fingerprint:
+        type: string
+      target:
+        $ref: '#/definitions/plugin.EngineCatalogPath'
+    type: object
+  execution.DevelopFileTargetIntent:
+    properties:
+      mode:
+        type: string
+      node_id:
+        type: string
+      target:
+        $ref: '#/definitions/plugin.EngineCatalogPath'
     type: object
   execution.DiagnosticStep:
     properties:
@@ -1816,6 +1920,26 @@ definitions:
         type: object
       ui_type:
         description: UI 组件类型 (resource_tree_picker 等)
+        type: string
+    type: object
+  plugin.EngineCatalogPath:
+    properties:
+      engine_id:
+        type: integer
+      segments:
+        items:
+          $ref: '#/definitions/plugin.EngineCatalogSegment'
+        type: array
+      version:
+        type: string
+    type: object
+  plugin.EngineCatalogSegment:
+    properties:
+      kind:
+        type: string
+      name:
+        type: string
+      term:
         type: string
     type: object
   plugin.EngineCatalogStorageFacts:
@@ -3967,6 +4091,62 @@ paths:
       x-addp-auth-mode: permission
       x-addp-required-permissions:
       - develop.export_provenance.read
+  /runtime/file-executions/{execution_id}:
+    get:
+      description: 仅同租户 addp-system Service；返回原始配置、Intent、主体及绑定范围，不返回连接、凭据、租约或授权结论
+        | Same-tenant addp-system Service only; returns original config, intent, actor
+        and bound scope without connections, credentials, leases or permission decisions
+      parameters:
+      - description: 原执行 UUID | Original execution UUID
+        in: path
+        name: execution_id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/client.DevelopFileExecutionFacts'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: Forbidden
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 读取 Develop 冻结文件执行事实 | Read frozen Develop file execution facts
+      tags:
+      - Execution authorization
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - develop.file_execution.read
   /settings/execution-policy:
     get:
       produces:

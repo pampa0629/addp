@@ -2841,6 +2841,89 @@ const docTemplate = `{
                 ]
             }
         },
+        "/runtime/file-executions/{execution_id}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "仅同租户 addp-system Service；返回原始配置、Intent、主体及绑定范围，不返回连接、凭据、租约或授权结论 | Same-tenant addp-system Service only; returns original config, intent, actor and bound scope without connections, credentials, leases or permission decisions",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Execution authorization"
+                ],
+                "summary": "读取 Develop 冻结文件执行事实 | Read frozen Develop file execution facts",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "原执行 UUID | Original execution UUID",
+                        "name": "execution_id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/client.DevelopFileExecutionFacts"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "develop.file_execution.read"
+                ]
+            }
+        },
         "/settings/execution-policy": {
             "get": {
                 "security": [
@@ -3926,6 +4009,58 @@ const docTemplate = `{
                 }
             }
         },
+        "client.DevelopFileExecutionActor": {
+            "type": "object",
+            "properties": {
+                "authorization_version": {
+                    "type": "string"
+                },
+                "principal_id": {
+                    "type": "string"
+                },
+                "tenant_membership_id": {
+                    "type": "string"
+                }
+            }
+        },
+        "client.DevelopFileExecutionFacts": {
+            "type": "object",
+            "properties": {
+                "actor": {
+                    "$ref": "#/definitions/client.DevelopFileExecutionActor"
+                },
+                "admission_state": {
+                    "type": "string"
+                },
+                "authorization_id": {
+                    "type": "string"
+                },
+                "bound_scope": {
+                    "$ref": "#/definitions/execution.DevelopBoundFileScope"
+                },
+                "config_json": {
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    }
+                },
+                "execution_id": {
+                    "type": "string"
+                },
+                "intent": {
+                    "$ref": "#/definitions/execution.DevelopFileIntent"
+                },
+                "schema_version": {
+                    "type": "string"
+                },
+                "scope_digest": {
+                    "type": "string"
+                },
+                "tenant_id": {
+                    "type": "string"
+                }
+            }
+        },
         "client.EngineCatalogEntry": {
             "type": "object",
             "properties": {
@@ -4308,6 +4443,114 @@ const docTemplate = `{
                 },
                 "skipped_items": {
                     "type": "integer"
+                }
+            }
+        },
+        "execution.DevelopBoundFileScope": {
+            "type": "object",
+            "properties": {
+                "expected_attempt": {
+                    "type": "integer"
+                },
+                "intent_digest": {
+                    "type": "string"
+                },
+                "schema_version": {
+                    "type": "string"
+                },
+                "sources": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/execution.DevelopFileSourceReference"
+                    }
+                },
+                "target": {
+                    "$ref": "#/definitions/execution.DevelopBoundFileTarget"
+                },
+                "timeout_seconds": {
+                    "type": "integer"
+                }
+            }
+        },
+        "execution.DevelopBoundFileTarget": {
+            "type": "object",
+            "properties": {
+                "engine_version": {
+                    "type": "string"
+                },
+                "mode": {
+                    "type": "string"
+                },
+                "target": {
+                    "$ref": "#/definitions/plugin.EngineCatalogPath"
+                }
+            }
+        },
+        "execution.DevelopFileIntent": {
+            "type": "object",
+            "properties": {
+                "config_digest": {
+                    "type": "string"
+                },
+                "expected_attempt": {
+                    "type": "integer"
+                },
+                "schema_version": {
+                    "type": "string"
+                },
+                "sources": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/execution.DevelopFileSourceIntent"
+                    }
+                },
+                "target": {
+                    "$ref": "#/definitions/execution.DevelopFileTargetIntent"
+                },
+                "timeout_seconds": {
+                    "type": "integer"
+                }
+            }
+        },
+        "execution.DevelopFileSourceIntent": {
+            "type": "object",
+            "properties": {
+                "node_id": {
+                    "type": "string"
+                },
+                "target": {
+                    "$ref": "#/definitions/plugin.EngineCatalogPath"
+                }
+            }
+        },
+        "execution.DevelopFileSourceReference": {
+            "type": "object",
+            "properties": {
+                "boundary_hash": {
+                    "type": "string"
+                },
+                "engine_version": {
+                    "type": "string"
+                },
+                "item_fingerprint": {
+                    "type": "string"
+                },
+                "target": {
+                    "$ref": "#/definitions/plugin.EngineCatalogPath"
+                }
+            }
+        },
+        "execution.DevelopFileTargetIntent": {
+            "type": "object",
+            "properties": {
+                "mode": {
+                    "type": "string"
+                },
+                "node_id": {
+                    "type": "string"
+                },
+                "target": {
+                    "$ref": "#/definitions/plugin.EngineCatalogPath"
                 }
             }
         },
@@ -6534,6 +6777,37 @@ const docTemplate = `{
                 },
                 "ui_type": {
                     "description": "UI 组件类型 (resource_tree_picker 等)",
+                    "type": "string"
+                }
+            }
+        },
+        "plugin.EngineCatalogPath": {
+            "type": "object",
+            "properties": {
+                "engine_id": {
+                    "type": "integer"
+                },
+                "segments": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/plugin.EngineCatalogSegment"
+                    }
+                },
+                "version": {
+                    "type": "string"
+                }
+            }
+        },
+        "plugin.EngineCatalogSegment": {
+            "type": "object",
+            "properties": {
+                "kind": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "term": {
                     "type": "string"
                 }
             }

@@ -197,6 +197,9 @@ func newQueryExecutionTestDB(t *testing.T) *gorm.DB {
 	)`).Error; err != nil {
 		t.Fatalf("create dev_tasks: %v", err)
 	}
+	if err := db.AutoMigrate(&models.FileExecution{}); err != nil {
+		t.Fatalf("create private file executions: %v", err)
+	}
 	return db
 }
 

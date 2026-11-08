@@ -180,6 +180,14 @@ Python 实现的 Workflow Runtime 应共享 `common-python` 中的协议执行�
 
 ## 工作流任务执行输入与输出
 
+### GeoPackage 执行私有意图
+
+首期 NFS GeoPackage 精确文件执行沿[授权上下文 5.2.4](../addp授权上下文规范.md#524-develop-geopackage-工作流的精确读写)及[Runtime 私有文件协议](HTTP协议.md#工作流执行私有文件)。Develop 在同一 Owner 事务保存原 `common.task_executions` pending 及 `develop.file_executions` 私有记录，再在事务外用本次同步栈的原 User Bearer 签发。私有记录保存发起人、原始配置、Intent、System 原封存范围及准入状态，不进入公共 Metadata、任务定义、结果或日志，不存令牌与明文连接。
+
+`config_json` 是数据库实际存下的完整 `common.task_executions.execution_config` JSON 原值，不从 JSONMap 浮点往返还原、不只截取 DAG、不添加 Runtime 私有路径。Intent 与配置由同一共享工厂冻结；签发回包必须与原 Actor、Tenant、execution、预期 attempt 精确一致。目标缺失仍是同一只读路径，不生成虚拟批准或发布操作。
+
+Owner 唯一事实接口为 `GET /api/v1/develop/runtime/file-executions/{execution_id}`，只供持 `develop.file_execution.read` 的同 Tenant `addp-system` Service。返回 Common `DevelopFileExecutionFacts`，含原配置和 Intent 及可缺的原 EA／Scope；不复制公共 execution 生命周期或 lease secret。System 自行读取 common 权威行核状态、真实 claim 和期限。未签发即明确拒绝允许 `admission_state=rejected` 且无 Scope，未知签发不能伪造明确拒绝。私有记录只对本 purpose 关联原 pending 做领取过滤；普通工作流、查询及父子执行不走此新协议。 pending 准入观察到期后只能用新的 System 观察刷新资格，不能据旧回包领取，刷新也不改变原 EA、预期 attempt 或开始运行后的固定业务预算。已知签发拒绝可原子关闭未开始的原执行；丢失回包、超时或依赖不可用不能被写成明确拒绝。
+
 保存成功的 Develop 工作流必须包含完整、可直接执行的公开参数；执行输入只允许对本次 execution 覆盖保存值，不能用于补齐不完整任务。工作流任务的执行输入契约由 Develop 根据当前 `workflow_definition`、目标 Workflow Runtime 的 Public Operator Spec 和 Develop Adapter Spec 动态生成，不在任务内容中复制保存第二份 Schema 或默认值。
 
 执行输入自动包含每个节点中未被内部数据连线占用、可序列化且可完整校验的 Public Operator 参数：

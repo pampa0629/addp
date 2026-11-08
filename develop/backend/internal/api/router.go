@@ -14,6 +14,7 @@ import (
 	_ "github.com/addp/develop/backend/i18n"
 	developauthorization "github.com/addp/develop/backend/internal/authorization"
 	"github.com/addp/develop/backend/internal/config"
+	"github.com/addp/develop/backend/internal/repository"
 	"github.com/addp/develop/backend/internal/service"
 	"github.com/gin-gonic/gin"
 	swaggerFiles "github.com/swaggo/files"
@@ -129,6 +130,7 @@ func SetupRouter(
 		catalogResources.Use(commonAuth.MustNewServiceClientGuard("addp-catalog"))
 		catalogResources.GET("/catalog-resources/changes", permission(developauthorization.PermissionDevelopCatalogRead), catalogResourceHandler.ListChanges)
 		catalogResources.POST("/runtime/catalog-references/resolve", permission(developauthorization.PermissionDevelopCatalogRead), catalogResourceHandler.ResolveReferences)
+		registerFileExecutionRoutes(api, repository.NewFileExecutionRepository(db))
 
 		taskProvider := api.Group("/task-provider")
 		taskProvider.Use(commonAuth.MustNewServiceClientGuard("addp-orchestrator"))

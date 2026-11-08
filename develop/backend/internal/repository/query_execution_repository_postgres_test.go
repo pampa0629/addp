@@ -44,7 +44,7 @@ func TestQueryExecutionEventsAgainstPostgres(t *testing.T) {
 		if err := tx.Exec("CREATE SCHEMA IF NOT EXISTS develop").Error; err != nil {
 			t.Fatal(err)
 		}
-		if err := tx.AutoMigrate(&models.DevTask{}); err != nil {
+		if err := tx.AutoMigrate(&models.DevTask{}, &models.FileExecution{}); err != nil {
 			t.Fatal(err)
 		}
 		return tx
