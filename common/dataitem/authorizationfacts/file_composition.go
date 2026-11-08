@@ -44,6 +44,9 @@ func (b *FileCompositionBoundary) Layout() string {
 
 // PrimaryRole accompanies the same fixed model identity in owner projections.
 func (b *FileCompositionBoundary) PrimaryRole() string {
+	if b != nil && b.Format == "geopackage" {
+		return "container"
+	}
 	if b != nil && b.Format == "envi" {
 		return "raster"
 	}
@@ -60,6 +63,8 @@ func (b *FileCompositionBoundary) DataType() string {
 		return ""
 	}
 	switch b.Format {
+	case "geopackage":
+		return "container"
 	case "envi":
 		return "media"
 	case "ifc", "3ds", "dae", "obj", "stl", "glb", "gltf", "fbx":
@@ -103,6 +108,9 @@ func NewFileCompositionBoundary(format string, refs []FileCompositionRef) (*File
 func (b *FileCompositionBoundary) Validate(engineID uint) error {
 	if b == nil || engineID == 0 || uint64(engineID) > math.MaxInt64 || !fileCompositionToken(b.Format) ||
 		len(b.Refs) == 0 || len(b.Refs) > MaxFileCompositionRefs {
+		return errFileComposition
+	}
+	if b.Format == "geopackage" && (len(b.Refs) != 1 || !b.Refs[0].Primary || !b.Refs[0].Required || b.Refs[0].Role != "container") {
 		return errFileComposition
 	}
 	primaryIndex := -1

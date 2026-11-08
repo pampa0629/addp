@@ -44,6 +44,11 @@ func projectFileAuthorizationFacts(lookup metadataNodeLookup, item models.MetaIt
 	if layout == "whole" {
 		return projectWholeContainerAuthorizationFacts(lookup, item, facts)
 	}
+	// This first projection describes one file DataItem, never its internal
+	// tables. Object storage is not admitted by the GeoPackage file contract.
+	if format == "geopackage" && item.ItemType != plugin.EngineCatalogTermFile {
+		return finish(authorizationfacts.AuthorizationBasisUnsupported)
+	}
 	identity := authorizationfacts.FileCompositionBoundary{Format: format}
 	if layout != identity.Layout() || dataType != identity.DataType() || identity.DataType() == "" {
 		return finish(authorizationfacts.AuthorizationBasisUnsupported)
@@ -56,8 +61,12 @@ func projectFileAuthorizationFacts(lookup metadataNodeLookup, item models.MetaIt
 		return plugin.FileItemPath(item.EngineID, name)
 	}
 	primary := targetFor(item.FullName)
+	extensionMatches := strings.ToLower(path.Ext(item.FullName)) == "."+format
+	if format == "geopackage" {
+		extensionMatches = strings.ToLower(path.Ext(item.FullName)) == ".gpkg"
+	}
 	if primary.StringPath() != item.FullName || path.Base(item.FullName) != item.Name ||
-		(format != "envi" && strings.ToLower(path.Ext(item.FullName)) != "."+format) || commonjson.String(item.Attributes, "storage", "physical_path") != item.FullName {
+		(format != "envi" && !extensionMatches) || commonjson.String(item.Attributes, "storage", "physical_path") != item.FullName {
 		return finish(authorizationfacts.AuthorizationBasisNeedsRefresh)
 	}
 	state, err := validateFileAuthorizationParents(lookup, item)
@@ -90,6 +99,14 @@ func projectFileAuthorizationFacts(lookup metadataNodeLookup, item models.MetaIt
 	}
 	if len(refs) > authorizationfacts.MaxFileCompositionRefs {
 		return finish(authorizationfacts.AuthorizationBasisNeedsRefresh)
+	}
+	if format == "geopackage" {
+		if commonjson.Section(item.Attributes, "format_info.geopackage")["composition_complete"] != true {
+			return finish(authorizationfacts.AuthorizationBasisIncomplete)
+		}
+		if len(refs) != 1 {
+			return finish(authorizationfacts.AuthorizationBasisNeedsRefresh)
+		}
 	}
 	byPath := make(map[string]fileAuthorizationRef, len(refs))
 	compositionRefs := make([]authorizationfacts.FileCompositionRef, 0, len(refs))
