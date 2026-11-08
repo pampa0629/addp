@@ -832,6 +832,7 @@
           "notification_destination": "通知目标",
           "oauth_client": "OAuth 客户端",
           "ontology": "本体",
+          "ontology_fact": "本体事实",
           "operation": "操作记录",
           "permission": "权限",
           "platform_definition": "平台能力定义",

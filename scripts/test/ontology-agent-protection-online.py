@@ -292,7 +292,7 @@ def wait_service_projection(client, enrollment_id, deadline, previous=None):
     raise API.SuiteError("Service did not acknowledge this protection revision")
 
 
-def run_suite(preparer, reader, authorizer, tenant_id, engine_id, run_id, report, checkpoint):
+def run_suite(preparer, reader, authorizer, tenant_id, engine_id, run_id, report, checkpoint, *, configuration):
     suffix = hashlib.sha256(run_id.encode()).hexdigest()[:24]
     ontology_id = "protected_record_" + suffix
     report.update(schema_version="addp.ontology-agent-protection/v1", suite=SUITE, run_id=run_id,
@@ -313,7 +313,7 @@ def run_suite(preparer, reader, authorizer, tenant_id, engine_id, run_id, report
     with model_server(model) as (endpoint, credential):
         report["stage"] = "model_configuration"
         checkpoint()
-        report["model_configuration"] = configure_model(preparer, endpoint, credential)
+        report["model_configuration"] = configure_model(configuration, endpoint, credential)
         report["stage"] = "unprotected_fact_read"
         checkpoint()
         path = "/api/query/" + service["service_name"] + "/query"
@@ -451,7 +451,8 @@ def main():
         SECURITY.initialize_governance(governor, tenant)
         run_suite(preparer, reader, client("ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN"),
                   tenant, int(os.environ["ADDP_ONLINE_CONSUMER_ENGINE_ID"]),
-                  os.environ["ADDP_ONLINE_TEST_RUN_ID"], report, checkpoint)
+                  os.environ["ADDP_ONLINE_TEST_RUN_ID"], report, checkpoint,
+                  configuration=client("ADDP_ONLINE_ADMIN_USER_ACCESS_TOKEN"))
         validate_report(report, os.environ["ADDP_ONLINE_TEST_RUN_ID"])
     except Exception as error:
         report["result"] = "failed"

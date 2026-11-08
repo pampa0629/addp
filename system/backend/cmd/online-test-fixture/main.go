@@ -258,9 +258,6 @@ var ontologyAgentPreparationPermissions = []string{
 	"meta.catalog.read", "meta.scan_task.execute", "meta.scan_task.read", "manager.data_item.read",
 	"ontology.revision.read", "ontology.revision.update", "ontology.revision.publish", "system.execution_authorization.create",
 	"service.definition.create", "service.definition.read", "service.definition.delete", "service.data_read.execute",
-	"agent.configuration.read", "agent.configuration.update",
-	"inference.provider.create", "inference.provider.read", "inference.provider_credential.update",
-	"inference.deployment.create", "inference.profile.create",
 	"security.enrollment.create", "security.enrollment.read", "security.assessment.create", "security.assessment.read",
 	"security.policy.create", "security.policy.read", "security.policy.delete", "security.sensitive_data_type.read",
 }
@@ -1111,6 +1108,13 @@ func run(args []string, environment []string) error {
 		values["ADDP_ONLINE_FIXTURE_SECURITY_ACCESS_TOKEN"] = initializer.AccessToken
 	}
 	if *suite == "ontology-agent-protection" {
+		// Configuration permissions are not tenant-customizable. Only the
+		// existing disposable Tenant administrator configures the model/bindings.
+		configuration, err := issueSession(ctx, repository, selectionService, administrator.PrincipalID, "external-online-ontology-configuration-session")
+		if err != nil {
+			return err
+		}
+		values["ADDP_ONLINE_ADMIN_USER_ACCESS_TOKEN"] = configuration.AccessToken
 		reader, _, _, err := createPermissionFixture(ctx, repository, identity, membershipService, roleService, selectionService,
 			tenant.ID, administrator.PrincipalID, "external-online-ontology-reader", ontologyAgentReaderPermissions)
 		if err != nil {

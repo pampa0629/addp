@@ -325,6 +325,23 @@ func TestFixtureAuthorizationContractMatchesPublishedCatalog(t *testing.T) {
 	for _, permission := range catalog.Permissions {
 		permissions[permission.Key] = permission
 	}
+	configurationRoleFound := false
+	for _, role := range catalog.Roles {
+		if role.Key != "tenant.administrator" {
+			continue
+		}
+		configurationRoleFound = true
+		for _, key := range []string{"agent.configuration.read", "agent.configuration.update",
+			"inference.provider.create", "inference.provider.read", "inference.provider_credential.update",
+			"inference.deployment.create", "inference.profile.create"} {
+			if !contains(role.Permissions, key) || permissions[key].TenantCustomizable {
+				t.Fatalf("Ontology configuration must reuse the existing administrator permission: %s", key)
+			}
+		}
+	}
+	if !configurationRoleFound {
+		t.Fatal("Ontology configuration requires the existing Tenant administrator")
+	}
 	for _, key := range publicOriginAssetPublisherPermissions {
 		if !permissions[key].TenantCustomizable {
 			t.Errorf("public origin asset publisher permission must be tenant customizable: %s", key)
@@ -382,6 +399,8 @@ func TestFixtureAuthorizationContractMatchesPublishedCatalog(t *testing.T) {
 	allPermissions = append(allPermissions, graphServiceReaderPermissions...)
 	allPermissions = append(allPermissions, graphProtectionPreparerPermissions...)
 	allPermissions = append(allPermissions, graphProtectionOutsiderPermissions...)
+	allPermissions = append(allPermissions, ontologyAgentPreparationPermissions...)
+	allPermissions = append(allPermissions, ontologyAgentReaderPermissions...)
 	for _, key := range allPermissions {
 		permission, exists := permissions[key]
 		if !exists {
@@ -681,7 +700,7 @@ func TestSuitePermissionsAreExplicitAndSeparate(t *testing.T) {
 	}
 	preparation, err := suitePermissions("ontology-agent-protection")
 	if err != nil || !slices.Equal(preparation, ontologyAgentPreparationPermissions) ||
-		!contains(preparation, "inference.provider_credential.update") || contains(preparation, "agent.run.execute") {
+		contains(preparation, "inference.provider_credential.update") || contains(preparation, "agent.configuration.update") || contains(preparation, "agent.run.execute") {
 		t.Fatalf("Ontology preparation and Agent reader permissions were mixed: %v", err)
 	}
 	sourcePreparation := suiteSourceInitializerPermissions("ontology-agent-protection")

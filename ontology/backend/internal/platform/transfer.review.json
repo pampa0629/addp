@@ -8,11 +8,11 @@
       "kind": "normative",
       "path": "transfer/docs/transfer-基本概念及配置说明.md",
       "anchor": "## 一、核心对象",
-      "commit": "8ab1fb2c265d929ea0dcc30641a69e4971183598",
-      "sha256": "7b6fd5dba99291e56114b6642428f190a7add371684702a9ad3a6f7219e9def9",
+      "commit": "34e19346fe84fccc77c5f5c25c52b91d54520faf",
+      "sha256": "52b56acd442511534e6cf174176a89a09910018e5e1fcf261225d4c110a1e8dc",
       "use": {
-        "zh-cn": "核心对象与配置；区分任务、continuous期望态及execution。停止态bounded创建、预检和显式运行边界不变。",
-        "en": "Core objects/configuration distinguish task, continuous desired state and execution. Stopped bounded creation, preflight and explicit execution remain unchanged."
+        "zh-cn": "复核 execution/attempt 恢复职责导航；停止态 bounded 创建、snapshot replace/append、显式运行及观测不等于验收的边界保持。",
+        "en": "Reviewed execution/attempt recovery navigation; stopped bounded creation, snapshot replace/append, explicit execution and observation limits remain unchanged."
       }
     },
     {

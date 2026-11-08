@@ -1,3 +1,7 @@
+2026-11-08 平台 Transfer 创建修订 68 前向复核 `34e19346fe84fccc77c5f5c25c52b91d54520faf` 的 execution／attempt 恢复导航，仅更新 config 文档来源；不扩张停止态 bounded/snapshot 创建、运行、权限或效果，运行修订 11／执行读取修订 8 不变。其余来源、绑定、覆盖与发布预算保持，审查不等于真实恢复验收。
+
+本批场景夹具正式目录回归、平台来源审查、Ontology Go owner、PG → 独占 FalkorDB（含真实 PG/图投影）及 System IAM migration 通过。System 前端 175 单测和构建通过；完整浏览器 267 通过／13 失败，两份 IAM 浏览器 4 通过／1 失败，未把整套门禁计为通过；本次资源译名相关的角色编辑／本地化权限选择用例通过。Hosted `42382793838` 在场景前因把不可自定义的配置管理权限放入角色而失败；修正后复用隔离环境已有管理员，仅配置模型及 Agent 绑定，业务准备与普通读取身份不变，不改权限目录或新增角色。端到端 matched／unknown 仍待新 Hosted 回执，不记通过。证据 `/tmp/addp-ontology-{fixture-customizable-green,r68-review-green,r68-owner-pg-falkor-20261108,system-iam-20261108,system-frontend-20261108,system-iam-frontend-scoped-20261108,system-build-20261108}.log`。
+
 2026-11-07 平台 Transfer 创建修订 67／运行修订 11 复核 Agent `4eef6be488c1d929bc8939001bf0e230da663869` 的有界历史分页和旧引用定位；新增实际 `services/history.py` 历史交互投影及其测试依据，已完成交互按当前 User、Tenant、Session 重建，不重发创建、批准或执行。定义除 revision 外不变，执行读取修订 8 保持；来源冻结须在平台审查、Ontology owner T1 及 PG → 独占 FalkorDB 门禁通过后同批发布。来源审查不是运行激活或业务验收。
 
 # Ontology 模块

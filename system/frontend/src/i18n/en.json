@@ -832,6 +832,7 @@
           "notification_destination": "Notification Destination",
           "oauth_client": "OAuth Client",
           "ontology": "Ontology",
+          "ontology_fact": "Ontology Facts",
           "operation": "Operation",
           "permission": "Permission",
           "platform_definition": "Platform Capability Definition",
