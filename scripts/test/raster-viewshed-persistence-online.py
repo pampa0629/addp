@@ -44,7 +44,7 @@ ERRORS = {
  'invalid':('DEM 单观察点可视域的端点落入无效高程像元','DEM viewshed endpoint has no valid elevation'),
  'band':('DEM 单观察点可视域必须显式选择有效的一基高程数据波段','DEM viewshed requires an explicit valid one-based elevation band'),
  'alpha':('DEM 单观察点可视域不能选择 alpha 波段作为高程','DEM viewshed cannot use an alpha band as elevation'),
- 'grid':('DEM 单观察点可视域需要已知线性单位的二维投影、北向无旋转网格，请先显式重投影','DEM viewshed requires a projected north-up grid with known linear units; reproject explicitly'),
+ 'grid':('DEM 单观察点可视域需要已知线性单位的二维投影及保持北向轴手性的正交网格，请显式重投影','DEM viewshed requires a two-dimensional projected orthogonal grid with known linear units and north-up handedness; reproject explicitly'),
  'unit':('DEM 单观察点可视域必须明确声明 metre、foot 或 us_survey_foot 高程单位','DEM viewshed requires elevation_unit metre, foot or us_survey_foot'),
  'unit-conflict':('DEM 单观察点可视域高程波段单位未知或与声明单位冲突','DEM viewshed band unit is unknown or conflicts with elevation_unit'),
  'scale':('DEM 单观察点可视域前必须显式应用高程 scale/offset','DEM viewshed requires elevation scale/offset to be applied first'),

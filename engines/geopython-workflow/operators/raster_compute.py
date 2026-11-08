@@ -4646,13 +4646,14 @@ def _fill_error(code):
     return ValueError(_FILL_MESSAGES[code][1 if _DISK_LANGUAGE.get() == 'en' else 0])
 
 
-def _dem_admission(input_raster, elevation_unit, band, minimum_size, *, diagnostic=None):
+def _dem_admission(input_raster, elevation_unit, band, minimum_size, *, diagnostic=None,
+                   grid_units=None):
     # One DEM admission path; preserve native values for consumers needing exact comparisons.
     def invalid(code, message):
         return diagnostic(code) if diagnostic is not None else ValueError(message)
     dataset = _open(input_raster)
     try:
-        horizontal_metres = _projected_north_up_grid(dataset)
+        horizontal_metres = (grid_units or _projected_north_up_grid)(dataset)
     except ValueError as error:
         if diagnostic is None:
             raise
@@ -4853,6 +4854,8 @@ _SIGHT_MESSAGES = {
     for key, (zh, en) in _FILL_MESSAGES.items() if key != 'overflow'
 }
 _SIGHT_MESSAGES.update({
+    'grid': ('DEM 两点通视需要已知线性单位的二维投影及保持北向轴手性的正交网格，请显式重投影',
+             'DEM line of sight requires a two-dimensional projected orthogonal grid with known linear units and north-up handedness; reproject explicitly'),
     'xy': ('DEM 两点通视的每个端点必须是两个有限投影坐标 [x,y]',
            'DEM line of sight requires two finite projected coordinates [x,y] for each endpoint'),
     'height': ('DEM 两点通视的两端离地高度必须是有限非负米数',
@@ -4913,13 +4916,17 @@ class _SightDEM:
     """One native DEM reader and one exact sightline decision path."""
     def __init__(self, input_raster, band, elevation_unit, error):
         self.error = error
-        self.source, horizontal = _dem_admission(input_raster, elevation_unit, band, 1, diagnostic=error)
+        self.source, horizontal = _dem_admission(
+            input_raster, elevation_unit, band, 1, diagnostic=error,
+            grid_units=lambda source: _projected_orthogonal_grid_units(source, lambda: error('grid')))
         self.band = band
         self.width, self.height = self.source.RasterXSize, self.source.RasterYSize
-        self.x0, self.xstep, _, self.y0, _, self.ystep = map(Fraction, self.source.GetGeoTransform())
+        self.x0, self.ux, self.vx, self.y0, self.uy, self.vy = map(Fraction, self.source.GetGeoTransform())
+        self.determinant = self.ux*self.vy - self.vx*self.uy
         self.vertical = Fraction(_ELEVATION_METRES[elevation_unit])
-        self.xmetres = self.xstep * Fraction(horizontal)
-        self.ymetres = self.ystep * Fraction(horizontal)
+        factor_squared = Fraction(horizontal)**2
+        self.column_squared = (self.ux**2 + self.uy**2)*factor_squared
+        self.row_squared = (self.vx**2 + self.vy**2)*factor_squared
         self.tile = lru_cache(maxsize=4)(self._read_tile)
 
     def __enter__(self):
@@ -4938,7 +4945,9 @@ class _SightDEM:
         if not isinstance(point, (list, tuple)) or len(point) != 2:
             raise self.error('xy')
         x, y = (_sight_number(value, 'xy', self.error) for value in point)
-        col, row = (x-self.x0)/self.xstep, (y-self.y0)/self.ystep
+        dx, dy = x-self.x0, y-self.y0
+        col = (dx*self.vy - dy*self.vx)/self.determinant
+        row = (dy*self.ux - dx*self.uy)/self.determinant
         if not (0 <= col < self.width and 0 <= row < self.height):
             raise self.error('outside')
         return col, row
@@ -4961,7 +4970,8 @@ class _SightDEM:
         return elevation + self.height_offset(above_ground)
 
     def squared_distance(self, observer, target):
-        return ((target[0]-observer[0])*self.xmetres)**2 + ((target[1]-observer[1])*self.ymetres)**2
+        return ((target[0]-observer[0])**2*self.column_squared
+                + (target[1]-observer[1])**2*self.row_squared)
 
     def status(self, observer, target, start, end):
         rise, status = end-start, 'visible'

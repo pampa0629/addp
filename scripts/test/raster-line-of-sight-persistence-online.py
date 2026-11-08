@@ -52,7 +52,7 @@ ERRORS = {
     'invalid': ('DEM 两点通视的端点落入无效高程像元', 'DEM line of sight endpoint has no valid elevation'),
     'band': ('DEM 两点通视必须显式选择有效的一基高程数据波段', 'DEM line of sight requires an explicit valid one-based elevation band'),
     'alpha': ('DEM 两点通视不能选择 alpha 波段作为高程', 'DEM line of sight cannot use an alpha band as elevation'),
-    'grid': ('DEM 两点通视需要已知线性单位的二维投影、北向无旋转网格，请先显式重投影', 'DEM line of sight requires a projected north-up grid with known linear units; reproject explicitly'),
+    'grid': ('DEM 两点通视需要已知线性单位的二维投影及保持北向轴手性的正交网格，请显式重投影', 'DEM line of sight requires a two-dimensional projected orthogonal grid with known linear units and north-up handedness; reproject explicitly'),
     'unit': ('DEM 两点通视必须明确声明 metre、foot 或 us_survey_foot 高程单位', 'DEM line of sight requires elevation_unit metre, foot or us_survey_foot'),
     'unit-conflict': ('DEM 两点通视高程波段单位未知或与声明单位冲突', 'DEM line of sight band unit is unknown or conflicts with elevation_unit'),
     'scale': ('DEM 两点通视前必须显式应用高程 scale/offset', 'DEM line of sight requires elevation scale/offset to be applied first'),

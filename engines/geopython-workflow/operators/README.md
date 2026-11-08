@@ -331,4 +331,4 @@ SPI只有`raster_spi`一个入口：显式m2汇流面积与degree/percent坡度�
 
 `extract_vertices(input_gdf,id_field)`逐原始坐标位置输出Point，保闭环首尾、重复坐标/部件/孔洞及全部来源属性，追加source_id/part_no/ring_no/vertex_no/vertex_id；不去重、不补交点或计算网络度数。部件和源准入复用多部拆分，原XY/CRS不变；GeometryCollection/NULL/EMPTY及固定字段重名整批拒绝。完整规则见[顶点提取契约](../../../docs/spec/workflow/矢量算子契约.md#顶点提取契约)。
 
-`raster_viewshed`提供单观察点、显式米制半径的同网格Byte可视域；遮挡0／可见1／路径未知2，半径外及无效目标NoData255，半径等号纳入，精确重合中心可见。与两点通视共享原生逐格地表、贴地／格角／格边及NoData优先级，不改变原两点结果；源瓦片缓存与块写有界，逐目标射线成本随范围增长，不计容量认证。沿原COG保存和失败清理；Linux由CI协调，独立Hosted范围另议。详见[可视域契约](../../../docs/spec/workflow/栅格算子契约.md#dem-单观察点可视域)。
+`raster_line_of_sight`与`raster_viewshed`共用严格正交网格准入：已知线性单位二维投影，轴点积精确为0、行列式为负，支持北向矩形和正交旋转矩形；按完整六参数仿射定位与计算米制距离，不设epsilon，剪切和单轴镜像拒绝，不改变其他DEM准入。可视域采用显式米制半径和同网格Byte三态（遮挡0／可见1／路径未知2，半径外及无效目标NoData255），半径等号纳入、精确重合中心可见。原两点结果、逐格地表、贴地／格角／格边、NoData优先级、源瓦片缓存和块写保持，沿原COG保存及失败清理，不计容量认证。正交旋转扩展的Linux及独立Hosted分别验收，Hosted范围另议，不挪用既有固定版本证据。详见[通视契约](../../../docs/spec/workflow/栅格算子契约.md#dem-两点通视)与[可视域契约](../../../docs/spec/workflow/栅格算子契约.md#dem-单观察点可视域)。

@@ -22555,7 +22555,7 @@ def test_dem_line_of_sight_cross_block_reads_native_bounded_windows(tmp_path, mo
     ('outside', {'target_xy': [3, .5]}, ('超出栅格范围', 'outside the raster')),
     ('invalid', {'target_xy': [1.5, .5]}, ('落入无效高程像元', 'no valid elevation')),
     ('band', {'band': True}, ('有效的一基高程', 'valid one-based elevation band')),
-    ('grid', {}, ('北向无旋转网格', 'north-up grid')),
+    ('grid', {}, ('保持北向轴手性的正交网格', 'orthogonal grid')),
     ('unit-conflict', {'elevation_unit': 'foot'}, ('与声明单位冲突', 'conflicts with elevation_unit')),
     ('scale', {}, ('显式应用高程 scale/offset', 'requires elevation scale/offset')),
 ])
@@ -22587,7 +22587,7 @@ def test_dem_line_of_sight_distance_range_fails_without_publishing(tmp_path, mon
     import operators.raster_compute as compute
 
     path = create_raster(tmp_path / 'distance-range.tif', np.zeros((1, 3)), (0, 1, 0, 1, 0, -1), 'EPSG:3857')
-    monkeypatch.setattr(compute, '_projected_north_up_grid', lambda _: factor)
+    monkeypatch.setattr(compute, '_projected_orthogonal_grid_units', lambda dataset, error: factor)
     with raster_workspace(), raster_error_language(language):
         source = raster_load(source_plan(path))
         before = set(source.workspace.iterdir())
@@ -22774,12 +22774,13 @@ def test_dem_viewshed_rectangular_units_second_band_and_zero_values(tmp_path,eps
 
 
 @pytest.mark.parametrize('coverage',['native-int64','native-uint64','internal-mask','alpha','partial-alpha'])
-def test_dem_viewshed_native_elevation_and_coverage_no_float_aliasing(tmp_path,coverage):
+@pytest.mark.parametrize('grid',[(0,1,0,1,0,-1),(40,3,4,80,4,-3)])
+def test_dem_viewshed_native_elevation_and_coverage_no_float_aliasing(tmp_path,coverage,grid):
     from operators.raster_compute import raster_viewshed
     path=tmp_path/'native-view.tif';native=coverage.startswith('native-')
     dtype={'native-int64':gdal.GDT_Int64,'native-uint64':gdal.GDT_UInt64}.get(coverage,gdal.GDT_Float64)
     ds=gdal.GetDriverByName('GTiff').Create(str(path),4,1,2 if 'alpha' in coverage else 1,dtype)
-    crs=osr.SpatialReference();crs.ImportFromEPSG(3857);ds.SetSpatialRef(crs);ds.SetGeoTransform((0,1,0,1,0,-1))
+    crs=osr.SpatialReference();crs.ImportFromEPSG(3857);ds.SetSpatialRef(crs);ds.SetGeoTransform(grid)
     band=ds.GetRasterBand(1)
     if native:
         base=2**61 if coverage=='native-int64' else 2**63
@@ -22795,7 +22796,7 @@ def test_dem_viewshed_native_elevation_and_coverage_no_float_aliasing(tmp_path,c
             alpha.WriteArray(np.array([[255,128 if coverage=='partial-alpha' else 0,255,255]],float));alpha=None
     band=ds=None;before=path.read_bytes()
     with raster_workspace():
-        source=raster_load(source_plan(path));result=raster_viewshed(source,1,'metre',[.5,.5],1,1,10)
+        source=raster_load(source_plan(path));result=raster_viewshed(source,1,'metre',_sight_world(grid,(.5,.5)),1,1,10)
         ds=gdal.Open(str(result.path));actual=ds.ReadAsArray();ds=None
         assert actual[0,0]==1
         assert actual[0,2]==(0 if native or coverage=='partial-alpha' else 2)
@@ -22804,17 +22805,19 @@ def test_dem_viewshed_native_elevation_and_coverage_no_float_aliasing(tmp_path,c
     assert path.read_bytes()==before
 
 
-def test_dem_viewshed_giant_origin_does_not_round_target_centres_to_observer(tmp_path):
+@pytest.mark.parametrize('axes',[(.25,0,0,-.25),(.25,.25,.25,-.25)])
+def test_dem_viewshed_giant_origin_does_not_round_target_centres_to_observer(tmp_path,axes):
     from operators.raster_compute import raster_viewshed
-    path=create_raster(tmp_path/'large-origin.tif',np.zeros((2,3)),(2.**60,.25,0,2.**60,0,-.25),'EPSG:3857')
+    path=create_raster(tmp_path/'large-origin.tif',np.zeros((2,3)),(2.**60,axes[0],axes[1],2.**60,axes[2],axes[3]),'EPSG:3857')
     with raster_workspace():
         result=raster_viewshed(raster_load(source_plan(path)),1,'metre',[2.**60,2.**60],0,0,2)
         ds=gdal.Open(str(result.path));np.testing.assert_array_equal(ds.ReadAsArray(),np.zeros((2,3),np.uint8));ds=None
 
 
-def test_dem_viewshed_cross_block_writes_and_bounded_native_source_reads(tmp_path,monkeypatch):
+@pytest.mark.parametrize('grid,radius', [((0,1,0,3,0,-1),4),((40,3,4,80,4,-3),20)])
+def test_dem_viewshed_cross_block_writes_and_bounded_native_source_reads(tmp_path,monkeypatch,grid,radius):
     import operators.raster_compute as c
-    path=create_raster(tmp_path/'wide-view.tif',np.zeros((3,520)),(0,1,0,3,0,-1),'EPSG:3857')
+    path=create_raster(tmp_path/'wide-view.tif',np.zeros((3,520)),grid,'EPSG:3857')
     read=c._blocks;windows=[]
     def capture(dataset,bands,**kwargs):
         if kwargs.get('native'):
@@ -22823,16 +22826,24 @@ def test_dem_viewshed_cross_block_writes_and_bounded_native_source_reads(tmp_pat
         return read(dataset,bands,**kwargs)
     monkeypatch.setattr(c,'_blocks',capture)
     with raster_workspace():
-        source=raster_load(source_plan(path));result=c.raster_viewshed(source,1,'metre',[511.5,1.5],1,1,4)
+        source=raster_load(source_plan(path));result=c.raster_viewshed(source,1,'metre',_sight_world(grid,(511.5,1.5)),1,1,radius)
         ds=gdal.Open(str(result.path));rows,cols=np.indices((3,520));expected=np.where((cols-511)**2+(rows-1)**2<=16,1,255).astype(np.uint8)
         np.testing.assert_array_equal(ds.ReadAsArray(),expected);ds=None
+        target=tmp_path/'cross-block.cog.tif'
+        raster_save(result,target_plan(target),profile='cog',blocksize=128)
+        saved=gdal.Open(str(target));assert saved.GetGeoTransform()==grid
+        np.testing.assert_array_equal(saved.ReadAsArray(),expected)
+        np.testing.assert_array_equal(saved.GetRasterBand(1).GetMaskBand().ReadAsArray(),(expected!=255)*255)
+        from osgeo_utils.samples.validate_cloud_optimized_geotiff import validate
+        assert not validate(saved,full_check=True)[1];saved=None
     assert windows and any(x>=512 for x,y,w,h in windows) and any(x==256 for x,y,w,h in windows)
 
 
 @pytest.mark.parametrize('failure',['write','flush','raster'])
-def test_dem_viewshed_partial_private_output_is_removed_on_failure(tmp_path,monkeypatch,failure):
+@pytest.mark.parametrize('grid',[(0,1,0,3,0,-1),(40,3,4,80,4,-3)])
+def test_dem_viewshed_partial_private_output_is_removed_on_failure(tmp_path,monkeypatch,failure,grid):
     import operators.raster_compute as c
-    path=create_raster(tmp_path/'fail-view.tif',np.zeros((3,3)),(0,1,0,3,0,-1),'EPSG:3857')
+    path=create_raster(tmp_path/'fail-view.tif',np.zeros((3,3)),grid,'EPSG:3857')
     with raster_workspace():
         source=raster_load(source_plan(path));before=set(source.workspace.iterdir())
         if failure=='write':
@@ -22849,17 +22860,18 @@ def test_dem_viewshed_partial_private_output_is_removed_on_failure(tmp_path,monk
             monkeypatch.setattr(gdal.Dataset,'FlushCache',broken)
         else:
             monkeypatch.setattr(c,'_raster',lambda *args,**kwargs:(_ for _ in ()).throw(RuntimeError('view object failed')))
-        with pytest.raises((ValueError,RuntimeError)):c.raster_viewshed(source,1,'metre',[.5,2.5],1,1,10)
+        with pytest.raises((ValueError,RuntimeError)):c.raster_viewshed(source,1,'metre',_sight_world(grid,(.5,.5)),1,1,10)
         assert set(source.workspace.iterdir())==before
 
 
 @pytest.mark.parametrize('language',['zh-cn','en'])
 @pytest.mark.parametrize('case',['success','invalid','save-conflict'])
-def test_dem_viewshed_async_cog_discovery_language_and_cleanup(tmp_path,monkeypatch,language,case):
+@pytest.mark.parametrize('grid',[(500000,1,0,3000000,0,-1),(500000,0,1,3000000,1,0)])
+def test_dem_viewshed_async_cog_discovery_language_and_cleanup(tmp_path,monkeypatch,language,case,grid):
     import api_server
     import workflow_engine
     values=np.zeros((3,3));values[0,1]=np.nan;values[1,1]=3
-    path=create_raster(tmp_path/'view-async.tif',values,(500000,1,0,3000000,0,-1),'EPSG:3857');before=path.read_bytes()
+    path=create_raster(tmp_path/'view-async.tif',values,grid,'EPSG:3857');before=path.read_bytes()
     target=tmp_path/'view.cog.tif'
     if case=='save-conflict':target.write_bytes(b'original-target')
     from copy import deepcopy
@@ -22869,7 +22881,7 @@ def test_dem_viewshed_async_cog_discovery_language_and_cleanup(tmp_path,monkeypa
     tasks=[{'id':'source','operator':'raster_load','depends_on':[],'params':{'access_plan':source_plan(path)}},
         {'id':'view',**spec['detailed_description']['workflow_example'],'depends_on':['source']},
         {'id':'save','operator':'raster_save','depends_on':['view'],'params':{'input_raster':{'$ref':'view'},'access_plan':target_plan(target),'profile':'cog','blocksize':128}}]
-    params=tasks[1]['params'];params.update(observer_xy=[500000.5,2999999.5],observer_height_m=1,target_height_m=1,radius_metres=10)
+    params=tasks[1]['params'];params.update(observer_xy=_sight_world(grid,(.5,.5)),observer_height_m=1,target_height_m=1,radius_metres=10)
     if case=='invalid':params['radius_metres']=-1
     workspaces=[];original=workflow_engine._execute_operator
     def capture(name,params):
@@ -22888,7 +22900,9 @@ def test_dem_viewshed_async_cog_discovery_language_and_cleanup(tmp_path,monkeypa
     if case=='success':
         assert status['status']=='success',status
         ds=gdal.Open(str(target));expected=_viewshed_reference(values,np.isfinite(values),(.5,.5),10)
+        assert ds.GetGeoTransform()==grid
         np.testing.assert_array_equal(ds.ReadAsArray(),expected)
+        np.testing.assert_array_equal(ds.GetRasterBand(1).GetMaskBand().ReadAsArray(),(expected!=255)*255)
         from osgeo_utils.samples.validate_cloud_optimized_geotiff import validate
         assert not validate(ds,full_check=True)[1];ds=None
     elif case=='invalid':
@@ -22940,3 +22954,123 @@ def test_dem_viewshed_tiny_radius_can_have_no_target_without_coincident_override
         result=raster_viewshed(raster_load(source_plan(path)),1,'metre',[.25,1.75],0,0,.01)
         ds=gdal.Open(str(result.path));np.testing.assert_array_equal(ds.ReadAsArray(),np.full((2,2),255,np.uint8))
         assert not np.any(ds.GetRasterBand(1).GetMaskBand().ReadAsArray());ds=None
+
+
+# Integer-axis rotations keep every submitted dyadic coordinate exact. The
+# independent clipping oracle works in pixel space and never calls product math.
+_SIGHT_ORTHOGONAL_GRIDS = [
+    (40, 5, 0, 80, 0, -10), (40, 3, 8, 80, 4, -6),
+    (40, 0, 10, 80, 5, 0), (40, -3, -8, 80, -4, 6),
+    (40, -5, 0, 80, 0, 10),
+]
+
+
+def _sight_world(grid, pixel):
+    from fractions import Fraction as F
+    x0, ux, vx, y0, uy, vy = map(F, grid)
+    col, row = map(F, pixel)
+    return [float(x0+ux*col+vx*row), float(y0+uy*col+vy*row)]
+
+
+@pytest.mark.parametrize('grid', _SIGHT_ORTHOGONAL_GRIDS)
+@pytest.mark.parametrize('observer', [(.5,.5), (1,1), (.25,.75)])
+@pytest.mark.parametrize('epsg,unit', [(3857,'metre'), (2277,'foot'), (2222,'us_survey_foot')])
+def test_dem_sight_orthogonal_complete_viewshed_oracle_cog_and_affine(tmp_path, grid, observer, epsg, unit):
+    from fractions import Fraction as F
+    import operators.raster_compute as c
+    from osgeo_utils.samples.validate_cloud_optimized_geotiff import validate
+    values = np.array([[0,0,0,0,0],[0,2,np.nan,0,0],[0,0,0,0,0],[0,0,-2,0,0]],float)
+    path = create_raster(tmp_path/'rotated-view.tif', values, grid, f'EPSG:{epsg}')
+    before = path.read_bytes()
+    crs = osr.SpatialReference(); crs.ImportFromEPSG(epsg)
+    horizontal, vertical = F(crs.GetLinearUnits()), F(c._ELEVATION_METRES[unit])
+    expected = _viewshed_reference(values, np.isfinite(values), observer, 12,
+                                   step=(5*horizontal,10*horizontal), vertical=vertical)
+    with raster_workspace():
+        loaded = raster_load(source_plan(path))
+        result = c.raster_viewshed(loaded,1,unit,_sight_world(grid,observer),1,1,12)
+        target = tmp_path/'rotated.cog.tif'
+        fact = raster_save(result,target_plan(target),profile='cog',blocksize=128)
+        assert fact['size_bytes'] == target.stat().st_size > 0
+        for filename in (result.path, target):
+            ds=gdal.Open(str(filename)); band=ds.GetRasterBand(1)
+            assert ds.GetGeoTransform()==grid and ds.GetSpatialRef().IsSame(crs)
+            assert band.DataType==gdal.GDT_Byte and band.GetNoDataValue()==255
+            np.testing.assert_array_equal(band.ReadAsArray(),expected)
+            np.testing.assert_array_equal(band.GetMaskBand().ReadAsArray(),(expected!=255)*255)
+            if filename == target:
+                assert ds.GetMetadataItem('LAYOUT','IMAGE_STRUCTURE')=='COG'
+                assert not validate(ds,full_check=True)[1]
+            band=ds=None
+    assert path.read_bytes()==before
+
+
+@pytest.mark.parametrize('grid', _SIGHT_ORTHOGONAL_GRIDS[1:])
+@pytest.mark.parametrize('kind', ['touch','below-touch','unknown','known-over-unknown','corner','edge'])
+def test_dem_sight_orthogonal_los_reversible_exact_touch_corner_edge(tmp_path,grid,kind):
+    import operators.raster_compute as c
+    values=np.zeros((4,4));observer,target=(.5,.5),(3.5,.5);wanted='blocked'
+    if kind=='touch': values[0,1]=1
+    elif kind=='below-touch': values[0,1]=np.nextafter(1.,0.);wanted='visible'
+    elif kind=='unknown': values[0,1]=np.nan;wanted='indeterminate'
+    elif kind=='known-over-unknown': values[0,1]=np.nan;values[0,2]=2
+    elif kind=='corner': values[0,1]=10;target=(3.5,3.5);wanted='visible'
+    else: observer,target=(.5,2),(3.5,2);values[1,1]=10
+    path=create_raster(tmp_path/'rotated-sight.tif',values,grid,'EPSG:3857');raw=path.read_bytes()
+    start,end=_sight_world(grid,observer),_sight_world(grid,target)
+    # Full world-space displacement, independently of the product's axis metric.
+    distance=math.hypot(end[0]-start[0],end[1]-start[1])
+    with raster_workspace():
+        source=raster_load(source_plan(path));before=set(source.workspace.iterdir())
+        for a,b in ((start,end),(end,start)):
+            row=c.raster_line_of_sight(source,1,'metre',a,b,1,1).iloc[0]
+            assert row.status==wanted and row.distance_m==distance
+        assert set(source.workspace.iterdir())==before
+    assert path.read_bytes()==raw
+
+
+@pytest.mark.parametrize('language',['zh-cn','en'])
+@pytest.mark.parametrize('grid',[(0,3,8,0,4,np.nextafter(-6.,0.)), # near, not exactly orthogonal
+    (0,1,.25,0,0,-1), (0,3,-8,0,4,6), # shear and single-axis reflection
+    (0,0,0,0,0,0)])
+def test_dem_sight_orthogonal_strict_grid_refusal_and_no_output(tmp_path,language,grid):
+    import operators.raster_compute as c
+    path=create_raster(tmp_path/'bad-sight-grid.tif',np.zeros((3,3)),grid,'EPSG:3857')
+    with raster_workspace(),raster_error_language(language):
+        source=raster_load(source_plan(path));before=set(source.workspace.iterdir())
+        for function,messages,args in [
+            (c.raster_line_of_sight,c._SIGHT_MESSAGES,([1,1],1,1)),
+            (c.raster_viewshed,c._VIEWSHED_MESSAGES,(1,1,10))]:
+            with pytest.raises(ValueError)as caught:function(source,1,'metre',[0,0],*args)
+            assert str(caught.value)==messages['grid'][language=='en']
+            assert set(source.workspace.iterdir())==before
+
+
+@pytest.mark.parametrize('grid',_SIGHT_ORTHOGONAL_GRIDS[1:])
+@pytest.mark.parametrize('radius',[5.,np.nextafter(5.,0.),np.nextafter(5.,10.)])
+def test_dem_sight_orthogonal_exact_radius_coincidence_and_half_open(tmp_path,grid,radius):
+    import operators.raster_compute as c
+    path=create_raster(tmp_path/'radius-rotated.tif',np.zeros((1,3)),grid,'EPSG:3857')
+    with raster_workspace():
+        source=raster_load(source_plan(path));observer=_sight_world(grid,(1.5,.5))
+        result=c.raster_viewshed(source,1,'metre',observer,0,0,radius)
+        ds=gdal.Open(str(result.path))
+        np.testing.assert_array_equal(ds.ReadAsArray(),[[0 if radius>=5 else 255,1,0 if radius>=5 else 255]])
+        ds=None
+        for pixel,accepted in [((0,0),True),((3,.5),False),((1.5,1),False),((-.5,.5),False)]:
+            point=_sight_world(grid,pixel)
+            if accepted: c.raster_viewshed(source,1,'metre',point,1,1,1)
+            else:
+                with pytest.raises(ValueError,match='超出栅格范围'):
+                    c.raster_viewshed(source,1,'metre',point,1,1,1)
+        with pytest.raises(ValueError,match='不能重合'):
+            c.raster_line_of_sight(source,1,'metre',observer,observer,1,1)
+
+
+def test_dem_sight_orthogonal_does_not_relax_other_dem_grid_admission(tmp_path):
+    import operators.raster_compute as c
+    path=create_raster(tmp_path/'other-dem.tif',np.zeros((3,3)),_SIGHT_ORTHOGONAL_GRIDS[1],'EPSG:3857')
+    with raster_workspace():
+        source=raster_load(source_plan(path))
+        with pytest.raises(ValueError,match='north-up grid'): c.raster_slope(source,'metre',1)
+        with pytest.raises(ValueError,match='北向无旋转'): c.raster_fill_depressions(source,1,'metre')
