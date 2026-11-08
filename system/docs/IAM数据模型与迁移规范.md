@@ -44,6 +44,8 @@ FileGDB 精确源表授权（实施中）：沿用 `execution_authorizations.sou
 
 结构迁移及生命周期验证沿 `make test-system-iam-postgres SYSTEM_IAM_POSTGRES_TEST_ARGS="--package iam --test develop-file-authorization"`；默认 IAM AgainstPostgres 门禁自动发现同一测试。该组 Owner/Meta 事实与源规则准备为显式测试双，不代表真实 GeoPackage Grant、OAuth 签发流程、实际数据读取或 Hosted/T4；精确事实/源规则守卫另在 engineaccess 验证，权限发布及真实业务证据分别补齐。
 
+Owner 事实读取的 `develop.file_execution.read` 仅登记为 Tenant、不可定制／委托的低风险 Permission 定义；迁移 000274 不写 Role Permission、Role Assignment、资源 Grant，不推进现有主体授权版本或撤销 Token。新增目录项本身不赋予 System 服务读取资格。目录／权限关系前后不变由 `make test-system-iam-postgres SYSTEM_IAM_POSTGRES_TEST_ARGS="--package migration --test develop-file-definition"` 验证。定义及真实 Owner GET／Swagger 须同批发布；Runtime 私有交换权限的目录覆盖和实际服务资格另行核定。
+
 ## 一、事实边界
 
 System 是 ADDP 唯一 IAM 逻辑权威，负责 Principal、账号、认证方式、Tenant Membership、组织关系、Role/Permission、会话、OAuth 协议事实和 IAM 安全审计。

@@ -736,6 +736,7 @@
           "update": "修改"
         },
         "resources": {
+          "file_execution": "文件执行事实",
           "meta_collection": "集中元数据扫描",
           "alert_incident": "告警事件",
           "alert_rule": "告警规则",

@@ -4189,9 +4189,17 @@ func assertExecutionAuthorizationConstraints(t *testing.T, db *sql.DB) {
 	`).Scan(&triggerCount); err != nil {
 		t.Fatalf("count execution authorization triggers: %v", err)
 	}
-	if permissionCount != 8 || rolePermissionCount != 21 || triggerCount != 6 || audienceConstraintCount != 1 || attemptBoundaryCount != 2 {
+	if permissionCount != 8 || rolePermissionCount != 21 || triggerCount != 7 || audienceConstraintCount != 1 || attemptBoundaryCount != 2 {
 		t.Fatalf("execution authorization catalog permissions=%d role_permissions=%d triggers=%d audience_constraints=%d attempt_columns=%d", permissionCount, rolePermissionCount, triggerCount, audienceConstraintCount, attemptBoundaryCount)
 	}
+	var fileGuards int
+	if err := db.QueryRow(`SELECT count(*) FROM pg_trigger t JOIN pg_class r ON r.oid=t.tgrelid
+        JOIN pg_namespace n ON n.oid=r.relnamespace WHERE n.nspname='system' AND NOT t.tgisinternal
+        AND (r.relname,t.tgname) IN (('execution_authorizations','trg_develop_file_authorization'),
+        ('execution_authorization_engine_accesses','trg_develop_file_engine_access'))`).Scan(&fileGuards); err != nil || fileGuards != 2 {
+		t.Fatalf("Develop file scope guards=%d want=2: %v", fileGuards, err)
+	}
+
 }
 
 func assertSecurityModuleRuntimeConstraints(t *testing.T, db *sql.DB, hasMetaFactsRuntime bool) {

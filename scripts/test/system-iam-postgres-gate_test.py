@@ -75,6 +75,9 @@ if "^TestBrowserLoginE2E$" in sys.argv:
         print("    --- PASS: TestBrowserLoginE2E/Portal (0.01s)")
 if "^TestResetDisposablePostgresForGate$" in sys.argv:
     print("--- PASS: TestResetDisposablePostgresForGate (0.01s)")
+if "./internal/migration" in sys.argv and "^Test(DevelopFileReadPermissionDefinition|Runner)AgainstPostgres$" in sys.argv:
+    print("--- PASS: TestDevelopFileReadPermissionDefinitionAgainstPostgres (0.01s)")
+    print("--- PASS: TestRunnerAgainstPostgres (0.01s)")
 if "./internal/iam" in sys.argv:
     import re
     pattern = sys.argv[sys.argv.index("-run") + 1]
@@ -417,6 +420,14 @@ elif args[:2] != ["volume", "ls"]:
         result = self.run_gate(arguments=("--package", "iam", "--test", "engine-deployments"))
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("requires --package repository, api or migration", result.stderr)
+
+    def test_develop_file_definition_filter_requires_migration_owner(self):
+        result = self.run_gate(arguments=("--package", "migration", "--test", "develop-file-definition"))
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("./internal/migration -run ^Test(DevelopFileReadPermissionDefinition|Runner)AgainstPostgres$", (self.root / "trace-1").read_text())
+        for package in ("iam", "api", "engineaccess"):
+            result = self.run_gate(arguments=("--package", package, "--test", "develop-file-definition"))
+            self.assertNotEqual(result.returncode, 0)
 
     def test_develop_file_authorization_filter_requires_real_main_pass(self):
         result = self.run_gate(arguments=("--package", "iam", "--test", "develop-file-authorization"))

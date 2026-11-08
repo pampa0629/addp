@@ -736,6 +736,7 @@
           "update": "Update"
         },
         "resources": {
+          "file_execution": "File execution facts",
           "meta_collection": "Centralized metadata scanning",
           "alert_incident": "Alert Incident",
           "alert_rule": "Alert Rule",

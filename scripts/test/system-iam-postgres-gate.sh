@@ -177,6 +177,13 @@ run_without_skips() {
         echo "PostgreSQL release gate refuses skipped tests in $package" >&2
         exit 1
     fi
+    if [ "$TEST_FILTER" = develop-file-definition ] && [ "$package" = ./internal/migration ]; then
+        grep -q -- '^--- PASS: TestRunnerAgainstPostgres ' "$log_path" || { echo "PostgreSQL gate requires full migration runner PASS" >&2; exit 1; }
+        grep -q -- '^--- PASS: TestDevelopFileReadPermissionDefinitionAgainstPostgres ' "$log_path" || {
+            echo "PostgreSQL gate requires the real unassigned permission definition migration test" >&2
+            exit 1
+        }
+    fi
     if [ "$TEST_FILTER" = develop-file-authorization ] && [ "$package" = ./internal/iam ]; then
         grep -q -- '^--- PASS: TestDevelopFileAuthorizationAgainstPostgres ' "$log_path" || {
             echo "PostgreSQL gate requires real Develop file authorization test" >&2
@@ -245,6 +252,10 @@ case "$TEST_FILTER" in
             api) test_pattern='^TestBootstrapBrowserLoginAgainstPostgres$' ;;
             *) echo "browser-login requires --package iam or api" >&2; exit 2 ;;
         esac
+        ;;
+    develop-file-definition)
+        [ "$PACKAGE_FILTER" = migration ] || { echo "develop-file-definition requires --package migration" >&2; exit 2; }
+        test_pattern='^Test(DevelopFileReadPermissionDefinition|Runner)AgainstPostgres$'
         ;;
     develop-file-authorization)
         [ "$PACKAGE_FILTER" = iam ] || { echo "develop-file-authorization requires --package iam" >&2; exit 2; }
