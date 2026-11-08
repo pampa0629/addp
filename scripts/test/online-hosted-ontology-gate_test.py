@@ -83,12 +83,24 @@ class HostedOntologyGateTest(unittest.TestCase):
         launcher.write_text(launcher.read_text().replace("#!/usr/bin/env bash\n", '''#!/usr/bin/env bash
 python3 -c 'import base64,hashlib,os; key=base64.b64decode(os.environ["ENCRYPTION_KEY"],validate=True); assert len(key)==32; open(os.environ["ADDP_TEST_GATE_TRACE"],"a").write("ephemeral-key:"+hashlib.sha256(key).hexdigest()+"\\n")'
 ''', 1))
+        producer = SCRIPT.resolve().parents[2] / "business/scripts/online-security-owner-fixture.sh"
+        descriptor_export = next(line for line in producer.read_text().splitlines()
+                                 if line.startswith("export ADDP_ONLINE_SECURITY_POSTGRES_DESCRIPTOR="))
         self.host._write_repository_script("business/scripts/online-security-owner-fixture.sh", '''
             #!/usr/bin/env bash
             echo "ontology-business:$1" >> "$ADDP_TEST_GATE_TRACE"
-        ''')
+            if [ "$1" = start ] && [ "${ADDP_TEST_MISSING_DESCRIPTOR:-0}" != 1 ]; then
+              #PRODUCER_DESCRIPTOR_EXPORT
+              printf '{}\\n' > "$ADDP_ONLINE_SECURITY_POSTGRES_DESCRIPTOR"
+              chmod 600 "$ADDP_ONLINE_SECURITY_POSTGRES_DESCRIPTOR"
+            fi
+        '''.replace("#PRODUCER_DESCRIPTOR_EXPORT", descriptor_export))
         self.host._write_repository_script("scripts/test/online-engine-registration.py", '''
-            import pathlib, sys
+            import os, pathlib, stat, sys
+            descriptor = pathlib.Path(sys.argv[sys.argv.index('--descriptor') + 1])
+            assert descriptor.is_absolute() and descriptor.is_file() and not descriptor.is_symlink()
+            assert descriptor.parent == pathlib.Path(os.environ['ADDP_ONLINE_SECRET_DIR'])
+            assert stat.S_IMODE(descriptor.stat().st_mode) == 0o600
             output = pathlib.Path(sys.argv[sys.argv.index('--output') + 1])
             output.write_text("export ADDP_ONLINE_CONSUMER_ENGINE_ID=42\\n")
         ''')
@@ -108,6 +120,15 @@ python3 -c 'import base64,hashlib,os; key=base64.b64decode(os.environ["ENCRYPTIO
                 self.assertEqual(len(keys), 1 if failed == "0" else 2,
                                  "each deployment needs one fresh key shared by every owner")
                 self.assertFalse(self.host.secrets.exists())
+
+        previous = len(self.host.trace.read_text())
+        result = self.run_gate(ONLINE_SUITE_INPUT="ontology-agent-protection", ADDP_TEST_MISSING_DESCRIPTOR="1")
+        self.assertNotEqual(result.returncode, 0)
+        trace = self.host.trace.read_text()[previous:]
+        self.assertNotIn("start:-ontology", trace, "missing fixture output must fail before backend startup")
+        self.assertIn("ontology-business:stop", trace)
+        self.assertIn("infra-down", trace)
+        self.assertFalse(self.host.secrets.exists())
 
     def test_agent_protection_refuses_existing_business_container(self):
         result = self.run_gate(check=True, ONLINE_SUITE_INPUT="ontology-agent-protection",

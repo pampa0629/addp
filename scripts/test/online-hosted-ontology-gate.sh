@@ -33,10 +33,11 @@ infra_owned=1
 run_logged bash scripts/infra/up.sh
 if [ "$ONLINE_SUITE" = ontology-agent-protection ]; then
   fixture_owned=1
-  export ADDP_ONLINE_SECURITY_POSTGRES_DESCRIPTOR="$ADDP_ONLINE_SECRET_DIR/ontology-pg.json"
-  export ADDP_ONLINE_SECURITY_MYSQL_DESCRIPTOR="$ADDP_ONLINE_SECRET_DIR/unused-mysql.json"
-  export ADDP_ONLINE_SECURITY_MONGODB_DESCRIPTOR="$ADDP_ONLINE_SECRET_DIR/unused-mongodb.json"
+  export ADDP_ONLINE_SECURITY_POSTGRES_DESCRIPTOR="$ADDP_ONLINE_SECRET_DIR/security-postgres.json"
   run_logged bash business/scripts/online-security-owner-fixture.sh start
+  # Check producer output before starting backends; registration still owns
+  # the descriptor schema, private-file and authorization validation.
+  [ -f "$ADDP_ONLINE_SECURITY_POSTGRES_DESCRIPTOR" ] || fail "Security fixture PostgreSQL descriptor is missing"
 fi
 application_owned=1
 run_daemon_launcher_logged env SKIP_MODTIDY=1 bash scripts/dev/start.sh -ontology
