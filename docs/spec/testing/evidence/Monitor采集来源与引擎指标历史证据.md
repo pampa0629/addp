@@ -10,6 +10,16 @@
 
 [PostgreSQL 来源、身份投影与正式验收](#pg-source-history) · [PostgreSQL 本机恢复与共享目录取证](#pg-directory-history) · [Redis 账号、来源与专业查询](#redis-source-history) · [MinIO 账号、采样与专业查询](#minio-source-history) · [引擎页面、导航与刷新](#engine-ui-history) · [统一采集、主机恢复与部署分组](#source-lifecycle-history)
 
+## 主机恢复跨次设备号变化的判定修正（2026-11-08）
+
+用户重启报告 `node-inputs-changed` 后，只读比对确认三份模板和三份 TLS 文件的内容、inode、大小、时间、模式及 UID／GID 均未变，仅 `st_dev` 不同；其余 Docker、容器、网络、挂载及卷事实与安装证明一致。用户确认只修正设备号判定，保留内容、权限和归属校验。先同步运行观测规范及来源指南，再在跨次证明比较的内存视图中排除有效设备号的数值差异；证明仍保存完整八项元数据，不迁移、不重写。同次读取、安装及恢复操作中的设备号稳定性检查继续有效，不采用未知文件或容器。
+
+- 红绿回归：新增场景在旧实现运行 `make test-node-metrics-recovery`，23 项中出现 2 项错误与 1 项失败；分别确认旧设备号误拒绝及过早拒绝导致未进入同次稳定性核验。修复后最终同入口的 23 项通过，含模板／证书内容、权限／UID／GID、inode／大小／时间、文件集合、非法元数据、同次设备号变化和证明保持原样。
+- 最终 `make test-metrics-sources` 退出 0，共 65 项 T1 通过（7＋11＋23＋21＋3）。最终 `make test-monitor-metrics MONITOR_METRICS_TEST_ARGS=--case=node-recovery` 退出 0：专属临时来源以既有 mTLS 实际采样；仅在当次私有证明模拟旧设备号，核对健康容器／证明不变、采样器及全来源停止后的精确恢复、丢失启动回执的限定清理，以及证书漂移、组件缺失和停用证明拒绝。临时容器／网络／卷和私有目录均清零。该 T2 不是宿主实际重新挂载或 Hosted 验收。
+- 既有 Make／Release 的 `node-recovery` 场景和输入登记已覆盖本批源码与测试，无需新增路线或 workflow。日志 `/tmp/addp-node-device-recovery-red.log`、`/tmp/addp-node-device-sources-final.log`、`/tmp/addp-node-device-t2-final.log`；格式检查通过。
+
+本轮未执行个人来源的 `up/recover`、重启、改写安装证明或配置，不处理 Infra Redis 的原镜像缺失；CI／Hosted 继续等专门会话回传，未查询、触发或设置定时任务。
+
 <a id="pg-source-history"></a>
 
 ## PostgreSQL 来源、身份投影与正式验收

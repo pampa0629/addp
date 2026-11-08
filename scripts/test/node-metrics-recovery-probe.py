@@ -47,9 +47,14 @@ def main():
             # This fixture deliberately uses bridge namespaces on Linux too.
             # The product provider's native/Desktop signature is tested in T1.
             paths=[*files,ROOT/'scripts/infra/node-metrics-web.yml',ROOT/'scripts/infra/block-capacity.py',*[tls/name for name in ('ca.crt','server.crt','server.key')]]
+            def fingerprint(path):
+                stat=path.stat()
+                return {'sha256':hashlib.sha256(path.read_bytes()).hexdigest(),
+                        'metadata':[stat.st_dev,stat.st_ino,stat.st_size,stat.st_mtime_ns,stat.st_ctime_ns,stat.st_mode,stat.st_uid,stat.st_gid]}
             return {'capacity':True,'engine':json.loads(transport.run(['info','--format','{{json .ID}}'])),
                     'kernel':config['ADDP_NODE_METRICS_KERNEL'],
-                    'files':{str(p):hashlib.sha256(p.read_bytes()).hexdigest() for p in paths}}
+                    'templates':{p.name:fingerprint(p) for p in paths if p.parent!=tls},
+                    'tls':{p.name:fingerprint(p) for p in paths if p.parent==tls}}
         def inspect():return M.containers(docker,project)
         def expect_rejected(operation, reason=None):
             try:operation()
@@ -84,8 +89,15 @@ def main():
                     allowed={'/sampler.py','/textfile'} if name=='block-capacity' else {'/etc/addp/node-metrics/web.yml','/etc/addp/node-metrics/tls/ca.crt','/etc/addp/node-metrics/tls/server.crt','/etc/addp/node-metrics/tls/server.key','/textfile'}
                     assert {m['Destination'] for m in fact['mounts']}==allowed
                     assert all(not m['RW'] for m in fact['mounts'] if name!='block-capacity' or m['Destination']!='/textfile')
-                collected(); proof=work/'proof/installation.json'; metadata=proof.stat()
+                collected(); proof=work/'proof/installation.json'
+                # Simulate a prior mount's device numbers only; never remount the
+                # host or change source files, container identities or security.
+                prior=json.loads(proof.read_text())
+                for group in ('templates','tls'):
+                    for item in prior['inputs'][group].values():item['metadata'][0]+=1
+                M.write(proof,prior);metadata=proof.stat();persisted=proof.read_bytes()
                 manage('recover');assert inspect()==facts
+                assert proof.read_bytes()==persisted
                 assert proof.stat().st_ino==metadata.st_ino and proof.stat().st_mtime_ns==metadata.st_mtime_ns
                 compose('stop','block-capacity');manage('recover');assert inspect()['node-exporter']==facts['node-exporter']
                 collected()
@@ -113,7 +125,7 @@ def main():
                 assert M.volume(docker,project)==volume
                 assert inspect()=={'node-exporter':before['node-exporter']}
                 manage('down');expect_rejected(lambda:manage('recover'), 'node-proof-disabled')
-                print('Node recovery T2: healthy unchanged, sampler-only/full stop recovery, lost-reply cleanup, exact identities, mTLS, drift/missing-source/retired-proof rejection PASS')
+                print('Node recovery T2: prior device numbers preserve healthy source/proof, sampler-only/full stop recovery, lost-reply cleanup, exact identities, mTLS, drift/missing-source/retired-proof rejection PASS')
         finally:
             compose('down','--volumes','--remove-orphans')
             for kind in ('container','network','volume'):

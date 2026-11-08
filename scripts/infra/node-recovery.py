@@ -90,6 +90,27 @@ def stable(items):
     return canonical_containers({name:{k:v for k,v in item.items() if k!='running'} for name,item in items.items()})
 
 
+def persistent_inputs(inputs):
+    """Compare prior file facts without treating st_dev as durable identity.
+
+    Keep the raw eight-field proof and in-operation snapshots unchanged. Tuples
+    distinguish the comparison view from malformed persisted metadata lists.
+    """
+    if not isinstance(inputs,dict): return inputs
+    result = dict(inputs)
+    for group_name in ('templates','tls'):
+        group = inputs.get(group_name)
+        if not isinstance(group,dict): continue
+        result[group_name] = dict(group)
+        for name,item in group.items():
+            if not isinstance(item,dict): continue
+            metadata = item.get('metadata')
+            if (type(metadata) is list and len(metadata)==8
+                    and all(type(value) is int for value in metadata) and metadata[0]>=0):
+                result[group_name][name] = dict(item,metadata=tuple(metadata[1:]))
+    return result
+
+
 def volume(docker,project):
     name = project+'_block-capacity'
     names = docker.run(['volume','ls','-q','--filter','name=^'+name+'$']).split()
@@ -129,8 +150,9 @@ def recover(docker,project,env,signature,path):
         saved = dict(saved,containers=canonical_containers(saved['containers']))
     inputs = signature(env,docker)
     desired,items = snapshot(docker,project,inputs)
-    if saved != dict(desired,enabled=True):
-        reason = 'node-inputs-changed' if saved.get('inputs') != inputs else 'node-installation-changed'
+    prior_inputs,current_inputs = persistent_inputs(saved.get('inputs')),persistent_inputs(inputs)
+    if dict(saved,inputs=prior_inputs) != dict(desired,enabled=True,inputs=current_inputs):
+        reason = 'node-inputs-changed' if prior_inputs != current_inputs else 'node-installation-changed'
         raise rejected('Node recovery installation or inputs changed; explicitly apply up', reason)
     started = []
     def unchanged():

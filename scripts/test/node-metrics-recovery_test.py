@@ -7,6 +7,7 @@ import json
 import os
 from pathlib import Path
 import tempfile
+from types import SimpleNamespace
 import unittest
 from unittest.mock import Mock, patch
 
@@ -60,6 +61,80 @@ class NodeRecoveryTest(unittest.TestCase):
         return output.getvalue()
 
     def mutations(self): return [c for c in self.commands if c[0] in ('start','stop','run','create','pull','build')]
+
+    def file_inputs(self):
+        self.inputs.update(templates={'node.yml':{'sha256':'template', 'metadata':[11,22,33,44,55,0o100644,501,20]}},
+                           tls={'server.key':{'sha256':'certificate', 'metadata':[11,23,34,45,56,0o100600,501,20]}})
+
+    def test_prior_device_numbers_do_not_rewrite_proof_or_rebuild_healthy_sources(self):
+        self.file_inputs()
+        # Signed timestamps remain exact facts; only st_dev has a nonnegative constraint.
+        self.inputs['templates']['node.yml']['metadata'][3]=-44
+        for capacity in (False,True):
+            if capacity:self.capacity()
+            self.manage('up'); path=self.folder/'installation.json'
+            before=(path.read_bytes(),path.stat().st_ino,path.stat().st_mtime_ns)
+            for group in ('templates','tls'):
+                for item in self.inputs[group].values():item['metadata'][0]+=1
+            current=copy.deepcopy(self.inputs);self.commands.clear()
+            self.assertIn('healthy; source unchanged',self.manage('recover'))
+            self.assertEqual(self.mutations(),[])
+            self.assertEqual(before,(path.read_bytes(),path.stat().st_ino,path.stat().st_mtime_ns))
+            self.assertEqual(self.inputs,current)
+
+    def test_prior_device_number_allows_only_original_stopped_source_recovery(self):
+        self.file_inputs();self.capacity();self.manage('up')
+        self.inputs['tls']['server.key']['metadata'][0]+=1
+        self.items['block-capacity']['running']=False;self.commands.clear()
+        self.assertIn('source recovered',self.manage('recover'))
+        self.assertEqual(self.mutations(),[['start','block-capacity-identity']])
+
+    def test_device_difference_does_not_mask_content_permissions_ownership_or_file_identity(self):
+        self.file_inputs();self.manage('up');original=copy.deepcopy(self.inputs)
+        for group in ('templates','tls'):
+            name=next(iter(original[group]))
+            for field in ['sha256',*range(1,8),'missing-file','extra-field']:
+                with self.subTest(group=group,field=field):
+                    self.inputs=copy.deepcopy(original);item=self.inputs[group][name]
+                    item['metadata'][0]+=1
+                    if field=='sha256':item['sha256']='changed'
+                    elif field=='missing-file':self.inputs[group].pop(name)
+                    elif field=='extra-field':item['unexpected']=True
+                    else:item['metadata'][field]+=1
+                    self.commands.clear()
+                    with self.assertRaises(ValueError) as result:self.manage('recover')
+                    self.assertEqual(result.exception.node_recovery_reason,'node-inputs-changed')
+                    self.assertEqual(self.mutations(),[])
+
+    def test_invalid_saved_device_metadata_is_not_normalized(self):
+        self.file_inputs();self.manage('up');path=self.folder/'installation.json'
+        original=json.loads(path.read_text())
+        for metadata in ([None,22,33,44,55,0o100644,501,20],
+                         [True,22,33,44,55,0o100644,501,20],
+                         [-1,22,33,44,55,0o100644,501,20],
+                         ['11',22,33,44,55,0o100644,501,20],
+                         [11,22],[22,33,44,55,0o100644,501,20],
+                         [11,22,33,44,55,0o100644,501,20,0],{'device':11}):
+            with self.subTest(metadata=metadata):
+                value=copy.deepcopy(original);value['inputs']['templates']['node.yml']['metadata']=metadata
+                M.write(path,value);self.commands.clear()
+                with self.assertRaises(ValueError):self.manage('recover')
+                self.assertEqual(self.mutations(),[])
+
+    def test_device_change_during_the_same_recovery_or_up_is_rejected(self):
+        self.file_inputs();self.manage('up');self.commands.clear();calls=0
+        def signature(env,docker):
+            nonlocal calls
+            calls+=1
+            value=copy.deepcopy(self.inputs)
+            value['tls']['server.key']['metadata'][0]+=calls
+            return value
+        with redirect_stdout(io.StringIO()),self.assertRaises(ValueError) as result:
+            M.manage('recover',self.env,self.project,signature,lambda:None)
+        self.assertEqual(result.exception.node_recovery_reason,'node-inputs-changed')
+        self.assertEqual(calls,2);self.assertEqual(self.mutations(),[])
+        with self.assertRaisesRegex(ValueError,'changed during up'):
+            self.manage('up',lambda:self.inputs['tls']['server.key']['metadata'].__setitem__(0,99))
 
     def test_healthy_is_readonly_and_does_not_republish_proof(self):
         for capacity in (False, True):
@@ -253,6 +328,23 @@ class NodeRecoveryTest(unittest.TestCase):
                 original.assert_not_called()
                 call.args[4]();original.assert_called_once_with(action,self.env);original.reset_mock()
             with self.assertRaises(ValueError):provider.run('recover',self.env,display_name='host')
+
+    def test_provider_keeps_device_stability_check_within_a_single_read(self):
+        tls=self.folder.parent/'tls';tls.mkdir()
+        for name in ('ca.crt','server.crt','server.key'):(tls/name).write_text('private-'+name)
+        env=dict(self.env,ADDP_NODE_METRICS_TLS_DIR=str(tls),ADDP_NODE_METRICS_LISTEN='127.0.0.1:9100')
+        docker=Mock();docker.run.return_value=json.dumps({'id':'engine','kernel':'6.12.0-test','os':'Docker Desktop','type':'linux'})
+        original=os.fstat;calls=0
+        def changed_device(fd):
+            nonlocal calls
+            calls+=1;value=original(fd)
+            fields=('st_dev','st_ino','st_size','st_mtime_ns','st_ctime_ns','st_mode','st_uid','st_gid')
+            result=SimpleNamespace(**{name:getattr(value,name) for name in fields})
+            if calls==2:result.st_dev+=1
+            return result
+        with patch.object(provider.platform,'system',return_value='Darwin'),patch.object(provider.os,'fstat',changed_device):
+            with self.assertRaisesRegex(ValueError,'input changed while reading'):provider.installation_inputs(env,docker)
+        self.assertEqual(calls,2)
 
     def test_ci_and_changed_selection_include_all_recovery_inputs(self):
         gate=(ROOT/'scripts/test/monitor-metrics-gate.sh').read_text()
