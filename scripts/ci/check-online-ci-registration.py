@@ -2218,6 +2218,7 @@ def validate_platform_node_metrics_profile(repository: Path, registered: set[str
                      "scripts/infra/node-metrics.py down", "--suite platform-node-metrics", 'modules=(-monitor)',
                      'if [ "$ADDP_ONLINE_NODE_METRICS_CASE" = host-admission ] || [ "$ADDP_ONLINE_NODE_METRICS_CASE" = engine-admission ] || [ "$ADDP_ONLINE_NODE_METRICS_CASE" = redis-engine-admission ]; then modules+=(-system); fi',
                      'scripts/dev/start.sh "${modules[@]}"',
+                     'run_logged python3 scripts/test/platform-node-metrics-fixture.py standard-cleanup || status=1',
                      'make test-online "ONLINE_SUITE=$ONLINE_SUITE"'):
         if not source_contract_contains(gate, fragment, repository):
             raise RegistrationError(f"platform-node-metrics lifecycle is missing {fragment}")
@@ -2232,9 +2233,9 @@ def validate_platform_node_metrics_profile(repository: Path, registered: set[str
     options = re.search(r"(?m)^        options:\n(?P<body>(?:          - [a-z-]+\n)+)", choice)
     if ("        type: choice\n" not in choice or "        required: true\n" not in choice
             or "        default: regression\n" not in choice or options is None
-            or re.findall(r"(?m)^          - ([a-z-]+)$", options.group("body")) != ["regression", "complete-comparison", "cpu-pressure", "host-admission", "engine-admission", "redis-engine-admission", "meta-workers", "transfer-workers", "quality-workers", "service-availability"]
+            or re.findall(r"(?m)^          - ([a-z-]+)$", options.group("body")) != ["regression", "complete-comparison", "cpu-pressure", "host-admission", "engine-admission", "redis-engine-admission", "meta-workers", "transfer-workers", "quality-workers", "service-availability", "standard-startup"]
             or "      ADDP_ONLINE_NODE_METRICS_CASE: ${{ inputs.node_metrics_case }}\n" not in job.group("body")
-            or "regression|complete-comparison|cpu-pressure|host-admission|engine-admission|redis-engine-admission|meta-workers|transfer-workers|quality-workers|service-availability)" not in gate):
+            or "regression|complete-comparison|cpu-pressure|host-admission|engine-admission|redis-engine-admission|meta-workers|transfer-workers|quality-workers|service-availability|standard-startup)" not in gate):
         raise RegistrationError("platform-node-metrics must select a closed, bounded acceptance case")
 
 

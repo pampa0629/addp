@@ -13,6 +13,7 @@ import secrets
 import signal
 import shlex
 import socket
+import stat
 import subprocess
 import sys
 import time
@@ -855,12 +856,98 @@ def availability_pauses(directory):
                 os.close(fd)
 
 
+STANDARD_FAULT = 'standard/backend/cmd/server/zz_online_startup_failure.go'
+STANDARD_FAULT_CONTENT = b'package main\n\nimport "time"\n\nfunc init() { for { time.Sleep(time.Second) } }\n'
+STANDARD_FAULT_OWNER = 'standard-startup-owner.json'
+
+
+def standard_startup_boundary(directory):
+    if boundary() != directory or os.environ.get('ADDP_ONLINE_NODE_METRICS_CASE') != 'standard-startup':
+        raise ValueError('Standard startup requires its isolated Hosted case')
+
+
+def standard_owned_file(path, content=None):
+    info = path.lstat()
+    if (not stat.S_ISREG(info.st_mode) or stat.S_IMODE(info.st_mode) != 0o600
+            or info.st_uid != os.getuid() or info.st_nlink != 1 or info.st_size > 2048):
+        raise ValueError('Standard startup file ownership changed')
+    value = path.read_bytes()
+    if content is not None and value != content:
+        raise ValueError('Standard startup fault content changed')
+    return value
+
+
+def standard_create_file(path, value):
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+    with os.fdopen(fd, 'wb') as output:
+        output.write(value)
+        output.flush()
+        os.fsync(output.fileno())
+
+
+def standard_fault(directory, action):
+    """One fixed source fault; never an arbitrary file edit or process command."""
+    standard_startup_boundary(directory)
+    if action not in {'install', 'remove'}:
+        raise ValueError('invalid Standard startup action')
+    target = ROOT / STANDARD_FAULT
+    if target.parent.resolve(strict=True) != target.parent:
+        raise ValueError('Standard fault parent is not the current source directory')
+    owner = directory / STANDARD_FAULT_OWNER
+    proof = {'schema': 'addp.standard-startup-fault/v1', 'root': str(ROOT),
+             'commit': command(['git', '-C', str(ROOT), 'rev-parse', 'HEAD'], timeout=5).strip(),
+             'run_id': os.environ['ADDP_ONLINE_TEST_RUN_ID'],
+             'sha256': hashlib.sha256(STANDARD_FAULT_CONTENT).hexdigest()}
+    if action == 'install':
+        if (command(['git', '-C', str(ROOT), 'status', '--porcelain', '--untracked-files=all'], timeout=5).strip()
+                or target.exists() or target.is_symlink() or owner.exists() or owner.is_symlink()
+                or any((ROOT / '.dev-pids' / (unit+'.pid')).exists()
+                       or (ROOT / '.dev-pids' / (unit+'.pid')).is_symlink()
+                       for unit in ('standard', 'standard-frontend'))):
+            raise ValueError('Standard startup requires a clean, unused target')
+        # Persist ownership first, so an interruption before source creation is cleanable.
+        standard_create_file(owner, json.dumps(proof).encode())
+        standard_create_file(target, STANDARD_FAULT_CONTENT)
+    elif not owner.exists() and not owner.is_symlink():
+        if target.exists() or target.is_symlink():
+            raise ValueError('unowned Standard fault cannot be removed')
+    else:
+        if json.loads(standard_owned_file(owner)) != proof:
+            raise ValueError('Standard startup ownership proof changed')
+        if target.exists() or target.is_symlink():
+            standard_owned_file(target, STANDARD_FAULT_CONTENT)
+            target.unlink()
+        owner.unlink()
+
+
+def standard_process_record(directory, unit):
+    standard_startup_boundary(directory)
+    if unit not in {'standard', 'system', 'monitor'}:
+        raise ValueError('Standard startup process selector rejected')
+    path = ROOT / '.dev-pids' / (unit+'.pid')
+    if path.is_symlink():
+        raise ValueError('Standard startup PID file is a symlink')
+    raw = path.read_text().strip()
+    if re.fullmatch(r'[1-9][0-9]*', raw) is None or int(raw) <= 1:
+        raise ValueError('invalid Standard startup PID')
+    proc = Path('/proc') / raw
+    if (proc.joinpath('cwd').resolve(strict=True) != ROOT
+            or proc.joinpath('exe').resolve(strict=True) != (ROOT / '.dev-bins' / ('addp-'+unit)).resolve(strict=True)):
+        raise ValueError('Standard startup process belongs to another checkout or binary')
+    fields = proc.joinpath('stat').read_text().rsplit(')', 1)[1].split()
+    if fields[0] in {'X', 'Z'}:
+        raise ValueError('Standard startup process is not live')
+    return {'unit': unit, 'pid': int(raw), 'start_ticks': fields[19]}
+
+
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("action", choices=("prepare", "query", "up", "down", "engine-up", "engine-restart", "engine-down", "engine-metrics-up", "engine-metrics-pause", "engine-metrics-resume", "resume-workers"))
+    parser.add_argument("action", choices=("prepare", "query", "up", "down", "engine-up", "engine-restart", "engine-down", "engine-metrics-up", "engine-metrics-pause", "engine-metrics-resume", "resume-workers", "standard-cleanup"))
     args = parser.parse_args()
     directory = boundary()
-    if args.action == "resume-workers":
+    if args.action == 'standard-cleanup':
+        standard_fault(directory, 'remove')
+    elif args.action == "resume-workers":
         resume_paused_workers(directory)
     elif args.action.startswith("engine-"):
         engine_source_action(directory,args.action)

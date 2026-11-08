@@ -31,6 +31,7 @@ class HostedMetricsGateTest(unittest.TestCase):
               [ "$2" != engine-up ] || [ "${ADDP_TEST_ENGINE_UP_FAIL:-0}" != 1 ] || exit 1
               [ "$2" != engine-down ] || [ "${ADDP_TEST_ENGINE_DOWN_FAIL:-0}" != 1 ] || exit 1
               [ "$2" != query ] || [ "${ADDP_TEST_QUERY_FAIL:-0}" != 1 ] || exit 1
+              [ "$2" != standard-cleanup ] || [ "${ADDP_TEST_STANDARD_CLEANUP_FAIL:-0}" != 1 ] || exit 1
               [ "$2" != down ] || [ "${ADDP_TEST_CLEANUP_FAIL:-0}" != 1 ]
               exit
             elif [[ "${1:-}" == *scripts/infra/node-metrics.py ]]; then
@@ -135,6 +136,24 @@ class HostedMetricsGateTest(unittest.TestCase):
         self.assertEqual(result.returncode,0,result.stdout+result.stderr)
         self.assertIn("metrics-case:cpu-pressure",self.host.trace.read_text())
         self.assertIn("infra_cleanup=zero_residuals",(self.host.artifacts/"summary.txt").read_text())
+
+    def test_standard_startup_preserves_readonly_preflight_and_cleans_after_application_stop(self):
+        result = self.run_gate(check=True, ADDP_ONLINE_NODE_METRICS_CASE='standard-startup')
+        self.assertEqual(result.returncode, 0, result.stdout+result.stderr)
+        self.assertFalse(self.host.trace.exists())
+        for failure in (None, 'ADDP_TEST_SUITE_FAIL', 'ADDP_TEST_STANDARD_CLEANUP_FAIL'):
+            with self.subTest(failure=failure):
+                if self.host.trace.exists(): self.host.trace.unlink()
+                result = self.run_gate(ADDP_ONLINE_NODE_METRICS_CASE='standard-startup', **({failure: '1'} if failure else {}))
+                self.assertEqual(result.returncode == 0, failure is None, result.stdout+result.stderr)
+                trace = self.host.trace.read_text()
+                self.assertIn('start:-monitor\n', trace)
+                self.assertNotIn('start:-standard', trace)
+                self.assertIn('suite-timeout:1800', trace)
+                self.assertLess(trace.index('application-stop'), trace.index('metrics-fixture:standard-cleanup'))
+                self.assertLess(trace.index('metrics-fixture:standard-cleanup'), trace.index('metrics-fixture:down'))
+                self.assertIn('infra-down', trace)
+                self.assertFalse(self.host.secrets.exists())
 
     def test_admission_case_uses_the_same_owned_lifecycle_and_cleanup(self):
         result = self.run_gate(ADDP_ONLINE_NODE_METRICS_CASE="host-admission")

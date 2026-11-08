@@ -7,7 +7,7 @@ import { formatFieldPresentationValue } from '../../../../common-frontend/basic/
 import { processMetrics, validateProcessInstances, validateProcessSummaries, validateProcessTrend } from '../../../../monitor/frontend/src/utils/processResources.js'
 import { validateResourceOverview } from '../../../../monitor/frontend/src/utils/resourceOverview.js'
 import { json, matchesRedirectURL } from './transfer-browser-support.js'
-import { scalarResourceReceipts, readFilesystemMountTable, readResourceHeatmap, readBlockCapacityTable } from './node-resource-receipts.js'
+import { scalarResourceReceipts, readFilesystemMountTable, readResourceHeatmap, readBlockCapacityTable, readStandardStartupPage } from './node-resource-receipts.js'
 import { engineMetricsFor, engineSummaryFor, engineDetailMetrics, validateEngineResources } from '../../../../monitor/frontend/src/utils/engineResources.js'
 
 // Login failures must never capture MFA input or credentials.
@@ -48,7 +48,7 @@ test('platform node resources through real Console password MFA and Monitor ifra
       return
     }
     // Admission records its own write receipts; resource polling belongs to the resource cases.
-    if (expected.admission || expected.engine_admission || expected.service_availability) return
+    if (expected.admission || expected.engine_admission || expected.service_availability || expected.standard_startup) return
     const url = new URL(response.url())
     if (url.pathname === '/api/v1/system/platform/module-instances') {
       pending.push(response.json().then(value => instancePages.push({ query: Object.fromEntries(url.searchParams), value })))
@@ -106,6 +106,34 @@ test('platform node resources through real Console password MFA and Monitor ifra
     save('administrator-password-mfa')
     report.identity = await login(page, 'ADDP_ONLINE_METRICS_ADMIN', expected.admin_id, 'platform.system_administrator')
     const monitor = page.frameLocator('iframe[data-testid="module-iframe"]')
+    if (expected.standard_startup) {
+      save('standard-startup-'+expected.standard_startup.phase)
+      const readPage = async navigate => {
+        const failureRead = page.waitForResponse(r => new URL(r.url()).pathname === '/api/v1/system/platform/module_startup_failures')
+        const instanceRead = page.waitForResponse(r => {
+          const url = new URL(r.url())
+          return url.pathname === '/api/v1/system/platform/module-instances' && url.searchParams.get('module_name') === 'standard'
+        })
+        await navigate()
+        const receipt = async response => {
+          const url = new URL(response.url())
+          expect([...url.searchParams.keys()].length).toBe(new Set(url.searchParams.keys()).size)
+          return { path: url.pathname, query: Object.fromEntries(url.searchParams), status: response.status(), value: await json(response, 'Standard startup') }
+        }
+        const read = { failures: await receipt(await failureRead), instances: await receipt(await instanceRead) }
+        return readStandardStartupPage(monitor, read, expected.standard_startup, expect)
+      }
+      const first = await readPage(() => page.goto('/monitor/service-resources?refresh=off&module_name=standard&process_metrics_declared=all'))
+      const reloaded = await readPage(() => page.reload())
+      const restored = new URL(page.url())
+      expect(restored.pathname).toBe('/monitor/service-resources')
+      expect(Object.fromEntries(restored.searchParams)).toEqual({ module_name: 'standard', process_metrics_declared: 'all', refresh: 'off' })
+      await page.screenshot({ path: resolve(artifact, 'standard-startup-'+expected.standard_startup.phase+'.png'), fullPage: true })
+      report.standard_startup = { phase: expected.standard_startup.phase, reload_restored: true, reads: [first, reloaded] }
+      report.result = 'passed'
+      save('complete')
+      return
+    }
     if (expected.service_availability) {
       const { rule, incident } = expected.service_availability
       const rulePath = '/api/v1/monitor/platform/service-availability-alert-rules'

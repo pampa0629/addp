@@ -3,6 +3,53 @@ import { formatBytes } from '../../../../common-frontend/basic/src/utils/formatt
 import { formatFieldPresentationValue } from '../../../../common-frontend/basic/src/utils/fieldPresentation.mjs'
 import zhCN from '../../../../monitor/frontend/src/i18n/zh-cn.json'
 
+export function standardStartupReceipt(read, expected) {
+  const fail = () => { throw new Error('Standard startup receipt mismatch') }
+  const { failures, instances } = read || {}
+  if (!['failed', 'recovered'].includes(expected?.phase) ||
+      failures?.path !== '/api/v1/system/platform/module_startup_failures' || failures.status !== 200 ||
+      Object.keys(failures.query || {}).length !== 0 || Object.keys(failures.value || {}).join(',') !== 'data' ||
+      !Array.isArray(failures.value.data) || failures.value.data.length !== expected.failures?.length) fail()
+  for (const [index, row] of failures.value.data.entries()) {
+    if (Object.keys(row).sort().join(',') !== 'failed_at,module_name,reason' ||
+        ['failed_at', 'module_name', 'reason'].some(key => row[key] !== expected.failures[index][key])) fail()
+  }
+  if (instances?.path !== '/api/v1/system/platform/module-instances' || instances.status !== 200 ||
+      Object.keys(instances.query || {}).sort().join(',') !== 'module_name,page,page_size,status' ||
+      Object.entries({ module_name: 'standard', page: '1', page_size: '20', status: 'up' }).some(([k, v]) => instances.query[k] !== v)) fail()
+  const value = instances.value
+  if (!Array.isArray(value?.data) || value.page !== 1 || value.page_size !== 20 || value.total !== value.data.length) fail()
+  if (expected.phase === 'failed') {
+    if (expected.instance !== null || expected.failures.length !== 1 || expected.failures[0].module_name !== 'standard' ||
+        expected.failures[0].reason !== 'readiness_timeout' || !Number.isFinite(Date.parse(expected.failures[0].failed_at)) || value.data.length) fail()
+  } else {
+    if (expected.failures.length || !expected.instance || value.data.length !== 1 ||
+        ['id', 'instance_id', 'module_name', 'role', 'status'].some(key => value.data[0][key] !== expected.instance[key]) ||
+        value.data[0].module_name !== 'standard' || value.data[0].role !== 'backend' || value.data[0].status !== 'up') fail()
+  }
+  return read
+}
+
+// Same reader may be exercised by controlled iframe tests without replacing Online business APIs.
+export async function readStandardStartupPage(monitor, read, expected, expect) {
+  standardStartupReceipt(read, expected)
+  const alert = monitor.getByTestId('process-startup-failures')
+  const rows = monitor.getByTestId('process-list').locator('.el-table__body tr')
+  if (expected.phase === 'failed') {
+    await expect(alert).toBeVisible()
+    await expect(alert.locator('li')).toHaveCount(1)
+    const at = formatFieldPresentationValue(expected.failures[0].failed_at, { temporal_format: 'datetime' }, 'zh-CN')
+    await expect(alert.locator('li')).toHaveText(`standard · 等待就绪超时 · ${at}`)
+    await expect(rows).toHaveCount(0)
+  } else {
+    await expect(alert).toHaveCount(0)
+    await expect(rows).toHaveCount(1)
+    await expect(rows.first()).toContainText('standard')
+    await expect(rows.first()).toContainText('UP · 在线')
+  }
+  return read
+}
+
 // Resource families arrive concurrently. Request identity, not arrival order, owns the receipt.
 function resourceReceipts(receipts, nodeId, catalog) {
   const keys = catalog.map(metric => metric.key)

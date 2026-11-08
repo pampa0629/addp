@@ -2860,7 +2860,8 @@ class OnlineCIRegistrationTest(unittest.TestCase):
         CHECK.validate_platform_node_metrics_profile(self.repository, {"platform-node-metrics"})
         gate = self.repository / "scripts/test/online-hosted-node-metrics-gate.sh"
         original_gate = gate.read_text()
-        for fragment in ('modules=(-monitor)', 'modules+=(-system)', 'scripts/dev/start.sh "${modules[@]}"'):
+        for fragment in ('modules=(-monitor)', 'modules+=(-system)', 'scripts/dev/start.sh "${modules[@]}"',
+                         'run_logged python3 scripts/test/platform-node-metrics-fixture.py standard-cleanup || status=1'):
             gate.write_text(original_gate.replace(fragment, "removed"))
             with self.assertRaises(CHECK.RegistrationError):
                 CHECK.validate_platform_node_metrics_profile(self.repository, {"platform-node-metrics"})
@@ -2877,6 +2878,7 @@ class OnlineCIRegistrationTest(unittest.TestCase):
             original.replace("          - transfer-workers\n", ""),
             original.replace("          - quality-workers\n", ""),
             original.replace("          - service-availability\n", ""),
+            original.replace("          - standard-startup\n", ""),
             original.replace("ADDP_ONLINE_NODE_METRICS_CASE: ${{ inputs.node_metrics_case }}", "ADDP_ONLINE_NODE_METRICS_CASE: regression"),
         ):
             self.workflow.write_text(changed)

@@ -39,6 +39,7 @@ OVERVIEW = "/api/v1/monitor/platform/resource_overview"
 TRENDS = "/api/v1/monitor/platform/resource_trends"
 QUERY_POLICY = "/api/v1/monitor/settings/resource-query-policy"
 INSTANCES = "/api/v1/system/platform/module-instances"
+STARTUP_FAILURES = "/api/v1/system/platform/module_startup_failures"
 PROCESS_SUMMARIES = "/api/v1/monitor/platform/process_resource_summaries"
 PROCESS_METRICS = {"process.cpu.core_equivalents": ("cores", 60),
                    "process.memory.resident_bytes": ("bytes", 0), "process.uptime_seconds": ("seconds", 0)}
@@ -2650,9 +2651,167 @@ def run_workers_case(base, directory, admin, admin_identity, machine, denied, re
     retire_owned_configuration(renew_admin(base, admin_identity["principal"]["id"]), node, target, node_input, report)
 
 
+def standard_failures(client):
+    value = client.request('GET', STARTUP_FAILURES, (200,)).payload
+    require(type(value) is dict and set(value) == {'data'} and type(value['data']) is list,
+            'startup failure response is not minimal')
+    seen = set()
+    for row in value['data']:
+        require(type(row) is dict and set(row) == {'module_name', 'failed_at', 'reason'}
+                and isinstance(row['module_name'], str) and row['module_name'] not in seen
+                and row['reason'] in {'build_failed', 'process_exited', 'readiness_timeout'}, 'invalid startup failure fact')
+        utc_timestamp(row['failed_at'])
+        seen.add(row['module_name'])
+    return value['data']
+
+
+def standard_lifecycle(directory, action, phase):
+    FIXTURE.standard_startup_boundary(directory)
+    require(action in {'start', 'stop'} and phase in {'fault', 'retry', 'cleanup'}, 'invalid Standard lifecycle selector')
+    started = time.monotonic()
+    path = directory / ('standard-'+phase+'-'+action+'.log')
+    with path.open('w') as output:
+        result = subprocess.run(['bash', 'scripts/dev/'+action+'.sh', '-standard'], cwd=FIXTURE.ROOT,
+                                env=dict(os.environ, SKIP_MODTIDY='1'), stdout=output,
+                                stderr=subprocess.STDOUT, timeout=300)
+    return {'returncode': result.returncode, 'duration_ms': round((time.monotonic()-started)*1000),
+            'output': path.read_text()}
+
+
+def standard_control_ready(directory, controls, instance=None):
+    ports = (FIXTURE.ROOT / '.dev-state/ports.env').read_text()
+    commit = FIXTURE.command(['git', '-C', str(FIXTURE.ROOT), 'rev-parse', 'HEAD'], timeout=5).strip()
+    for unit, record in controls.items():
+        require(FIXTURE.standard_process_record(directory, unit) == record, 'Standard case replaced a control service')
+        matches = re.findall(r'(?m)^'+unit.upper()+r'_BACKEND_PORT=([0-9]+)$', ports)
+        require(len(matches) == 1 and 0 < int(matches[0]) < 65536, 'control service actual port is ambiguous')
+        service = PREFLIGHT.Service(module=unit, base_url='http://127.0.0.1:'+matches[0])
+        try:
+            ready = PREFLIGHT.load_health(service, '/health/ready', 10)
+            PREFLIGHT.validate_health(service, ready, commit, 'ready')
+        except PREFLIGHT.PreflightError:
+            raise SuiteError('Standard case service health or build identity changed') from None
+        if unit == 'standard':
+            require(instance and ready.get('instance_id') == instance and ready.get('role') == 'backend',
+                    'Standard ready identity does not match its registered instance')
+
+
+def validate_standard_browser(value, expected, artifacts):
+    require(value.get('schema_version') == 'addp.node-resources-browser/v1' and value.get('result') == 'passed'
+            and value.get('stage') == 'complete' and value.get('run_id') == expected['run_id'], 'Standard browser incomplete')
+    platform_identity(value.get('identity', {}), 'platform.system_administrator')
+    require(value['identity']['principal'].get('id') == expected['admin_id'], 'Standard browser changed administrator')
+    detail = value.get('standard_startup', {})
+    phase = expected['standard_startup']['phase']
+    require(detail.get('phase') == phase and detail.get('reload_restored') is True, 'Standard browser phase mismatch')
+    reads = detail.get('reads', [])
+    require(type(reads) is list and len(reads) == 2, 'Standard browser lacks navigation and reload receipts')
+    for read in reads:
+        failures, instances = read.get('failures', {}), read.get('instances', {})
+        require(failures.get('path') == STARTUP_FAILURES and failures.get('query') == {} and failures.get('status') == 200
+                and failures.get('value') == {'data': expected['standard_startup']['failures']}, 'Standard failure browser receipt mismatch')
+        require(instances.get('path') == INSTANCES and instances.get('status') == 200
+                and instances.get('query') == {'page': '1', 'page_size': '20', 'module_name': 'standard', 'status': 'up'},
+                'Standard browser instance request expanded scope')
+        payload = instances.get('value', {})
+        rows = payload.get('data', [])
+        require(payload.get('total') == len(rows) and payload.get('page') == 1 and payload.get('page_size') == 20,
+                'Standard browser pagination incomplete')
+        wanted = expected['standard_startup']['instance']
+        require(rows == [] if wanted is None else len(rows) == 1 and all(rows[0].get(key) == wanted[key]
+                for key in ('id', 'instance_id', 'module_name', 'role', 'status')), 'Standard browser runtime identity changed')
+    image = artifacts / ('standard-startup-'+phase+'.png')
+    require(image.is_file() and image.stat().st_size > 1000 and image.read_bytes()[:8] == b'\x89PNG\r\n\x1a\n',
+            'Standard browser screenshot missing')
+    return detail
+
+
+def standard_browser_phase(directory, artifacts, admin_identity, phase, failures, instance):
+    expected = {'run_id': os.environ['ADDP_ONLINE_TEST_RUN_ID'], 'admin_id': admin_identity['principal']['id'],
+                'standard_startup': {'phase': phase, 'failures': failures, 'instance': instance}}
+    (artifacts / 'node-resources-browser-input.json').write_text(json.dumps(expected))
+    try:
+        value = execute_resource_browser(artifacts)
+        return validate_standard_browser(value, expected, artifacts)
+    finally:
+        # Preserve the first failure phase even if a later phase fails or overwrites the shared report.
+        for name in ('node-resources-browser.json', 'node-resources-browser-runtime.json'):
+            path = artifacts / name
+            if path.is_file():
+                (artifacts / ('standard-startup-'+phase+'-'+name)).write_bytes(path.read_bytes())
+
+
+def run_standard_startup_case(base, directory, admin, admin_identity, denied, report):
+    FIXTURE.standard_startup_boundary(directory)
+    require('platform.module.read' in permissions(admin_identity), 'Standard case lacks existing module read permission')
+    for client in denied:
+        client.request('GET', STARTUP_FAILURES, (401,) if not client.token else (403,))
+    require(not standard_failures(admin) and not instance_list(admin, module_name='standard', status='up'),
+            'Standard case requires an unused deployment')
+    controls = {unit: FIXTURE.standard_process_record(directory, unit) for unit in ('system', 'monitor')}
+    standard_control_ready(directory, controls)
+    artifacts = Path(os.environ['ADDP_ONLINE_ARTIFACT_DIR'])
+    detail = report['standard_startup'] = {}
+    report['stage'] = 'standard-startup-fault'; write_evidence(report)
+    # Partial installation failures are handled by the outer Hosted trap, after its application stop.
+    FIXTURE.standard_fault(directory, 'install')
+    fault_installed = True
+    try:
+        attempted_at = time.time()
+        failed = standard_lifecycle(directory, 'start', 'fault')
+        attempt = detail['attempt'] = {key: failed[key] for key in ('returncode', 'duration_ms')}
+        attempt.update(readiness_timeout_message='Standard Backend 等待就绪超时' in failed['output'],
+                       barrier_message='一个或多个后端未达到目标健康状态' in failed['output'])
+        write_evidence(report)
+        require(attempt['returncode'] != 0 and attempt['duration_ms'] >= 59000
+                and attempt['readiness_timeout_message'] and attempt['barrier_message'],
+                'Standard did not reach its unchanged readiness timeout')
+        FIXTURE.standard_process_record(directory, 'standard')
+        require(not (FIXTURE.ROOT / '.dev-pids/standard-frontend.pid').exists(), 'failed Standard startup reached frontend stage')
+        failures = standard_failures(admin)
+        require(len(failures) == 1 and failures[0]['module_name'] == 'standard'
+                and failures[0]['reason'] == 'readiness_timeout'
+                and attempted_at-1 <= utc_timestamp(failures[0]['failed_at']) <= time.time()+1,
+                'Standard startup failure is not from this attempt')
+        require(not instance_list(admin, module_name='standard', status='up'), 'unready Standard registered online')
+        standard_control_ready(directory, controls)
+        detail['failure'] = {'reason': failures[0]['reason'], 'failed_at': failures[0]['failed_at'],
+                             'duration_ms': failed['duration_ms'], 'process_live': True, 'frontend_started': False}
+        report['stage'] = 'standard-startup-failed-console'; write_evidence(report)
+        detail['failed_browser'] = standard_browser_phase(directory, artifacts, admin_identity, 'failed', failures, None)
+        require(standard_lifecycle(directory, 'stop', 'fault')['returncode'] == 0, 'standard stop failed before retry')
+        FIXTURE.standard_fault(directory, 'remove')
+        fault_installed = False
+        require(not (FIXTURE.ROOT / '.dev-pids/standard.pid').exists(), 'Standard fault process survived stop')
+        report['stage'] = 'standard-startup-retry'; write_evidence(report)
+        retried = standard_lifecycle(directory, 'start', 'retry')
+        detail['retry'] = {key: retried[key] for key in ('returncode', 'duration_ms')}
+        write_evidence(report)
+        require(retried['returncode'] == 0, 'Standard retry failed')
+        FIXTURE.standard_process_record(directory, 'standard')
+        require((FIXTURE.ROOT / '.dev-pids/standard-frontend.pid').is_file(), 'Standard retry did not start its frontend')
+        admin = renew_admin(base, admin_identity['principal']['id'])
+        rows = instance_list(admin, module_name='standard', status='up', role='backend')
+        require(len(rows) == 1 and rows[0]['module_name'] == 'standard' and rows[0]['status'] == 'up'
+                and rows[0]['role'] == 'backend' and not standard_failures(admin), 'Standard retry did not clear failure and register online')
+        ready = dict(controls, standard=FIXTURE.standard_process_record(directory, 'standard'))
+        standard_control_ready(directory, ready, rows[0]['instance_id'])
+        detail['instance'] = {key: rows[0][key] for key in ('id', 'instance_id', 'module_name', 'role', 'status')}
+        report['stage'] = 'standard-startup-recovered-console'; write_evidence(report)
+        detail['recovered_browser'] = standard_browser_phase(directory, artifacts, admin_identity, 'recovered', [], rows[0])
+        standard_control_ready(directory, ready, rows[0]['instance_id'])
+        require(not FIXTURE.command(['git', '-C', str(FIXTURE.ROOT), 'status', '--porcelain', '--untracked-files=all'], timeout=5).strip(),
+                'Standard startup left source changes')
+        report.update(result='passed', stage='complete', cleanup='awaiting-hosted-deployment-destruction')
+    finally:
+        if fault_installed:
+            require(standard_lifecycle(directory, 'stop', 'cleanup')['returncode'] == 0, 'Standard fault cleanup stop failed')
+            FIXTURE.standard_fault(directory, 'remove')
+
+
 def acceptance_case():
     value = os.environ.get("ADDP_ONLINE_NODE_METRICS_CASE", "regression")
-    require(value in {"regression", "complete-comparison", "cpu-pressure", "host-admission", "engine-admission", "redis-engine-admission", "meta-workers", "transfer-workers", "quality-workers", "service-availability"}, "unsupported Hosted metrics acceptance case")
+    require(value in {"regression", "complete-comparison", "cpu-pressure", "host-admission", "engine-admission", "redis-engine-admission", "meta-workers", "transfer-workers", "quality-workers", "service-availability", "standard-startup"}, "unsupported Hosted metrics acceptance case")
     return value
 
 
@@ -2738,6 +2897,10 @@ def run(base, directory, report):
     for client in [admin, security, *tenant_clients]:
         client.request("GET", DISCOVERY, (403,))
     report["identity_isolation"] = True
+    if selected_case == 'standard-startup':
+        run_standard_startup_case(base, directory, admin, admin_identity,
+                                  [security, machine, *tenant_clients, API.GatewayClient(base, '', 10)], report)
+        return
     if selected_case in FIXTURE.WORKER_PROFILES:
         run_workers_case(base, directory, admin, admin_identity, machine, [security, machine, *tenant_clients], report)
         return

@@ -7,8 +7,8 @@ ROOT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)
 ONLINE_SUITE=platform-node-metrics
 ADDP_ONLINE_NODE_METRICS_CASE=${ADDP_ONLINE_NODE_METRICS_CASE-regression}
 case "$ADDP_ONLINE_NODE_METRICS_CASE" in
-  regression|complete-comparison|cpu-pressure|host-admission|engine-admission|redis-engine-admission|meta-workers|transfer-workers|quality-workers|service-availability) export ADDP_ONLINE_NODE_METRICS_CASE ;;
-  *) echo 'Hosted node metrics case must be regression, complete-comparison, cpu-pressure, host-admission, engine-admission, redis-engine-admission, meta-workers, transfer-workers, quality-workers or service-availability' >&2; exit 2 ;;
+  regression|complete-comparison|cpu-pressure|host-admission|engine-admission|redis-engine-admission|meta-workers|transfer-workers|quality-workers|service-availability|standard-startup) export ADDP_ONLINE_NODE_METRICS_CASE ;;
+  *) echo 'Hosted node metrics case must be regression, complete-comparison, cpu-pressure, host-admission, engine-admission, redis-engine-admission, meta-workers, transfer-workers, quality-workers, service-availability or standard-startup' >&2; exit 2 ;;
 esac
 HOSTED_FIXTURE_CONTAINERS=()
 HOSTED_FIXTURE_IMAGES=()
@@ -34,6 +34,9 @@ stop_online_fixture() {
     remaining=$(docker volume ls -q --filter "name=^$volume$") || status=1
     [ -z "$remaining" ] || status=1
   done
+  if [ "$ADDP_ONLINE_NODE_METRICS_CASE" = standard-startup ]; then
+    run_logged python3 scripts/test/platform-node-metrics-fixture.py standard-cleanup || status=1
+  fi
   run_logged python3 scripts/test/platform-node-metrics-fixture.py down || status=1
   if [ "$node_owned" -eq 1 ]; then
     run_logged python3 scripts/infra/node-metrics.py down || status=1

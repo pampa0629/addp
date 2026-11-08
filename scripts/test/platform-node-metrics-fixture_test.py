@@ -13,6 +13,79 @@ from unittest.mock import patch
 FIXTURE = importlib.import_module("scripts.test.platform-node-metrics-fixture")
 
 
+class StandardStartupFixtureTest(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory(prefix='addp-standard-fixture-test-')
+        self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name).resolve() / 'repository'
+        self.target = self.root / FIXTURE.STANDARD_FAULT
+        self.target.parent.mkdir(parents=True)
+        self.secret = Path(self.temp.name).resolve() / 'private'
+        self.secret.mkdir(mode=0o700)
+        self.owner = self.secret / FIXTURE.STANDARD_FAULT_OWNER
+        self.addCleanup(patch.stopall)
+        patch.object(FIXTURE, 'ROOT', self.root).start()
+        patch.object(FIXTURE, 'boundary', return_value=self.secret).start()
+        patch.dict(os.environ, ADDP_ONLINE_NODE_METRICS_CASE='standard-startup', ADDP_ONLINE_TEST_RUN_ID='owned-run').start()
+        self.command = patch.object(FIXTURE, 'command', side_effect=lambda args, **kw: 'a'*40 if 'rev-parse' in args else '').start()
+
+    def test_install_and_idempotent_cleanup_verify_exact_private_files(self):
+        FIXTURE.standard_fault(self.secret, 'install')
+        self.assertEqual(self.target.read_bytes(), FIXTURE.STANDARD_FAULT_CONTENT)
+        self.assertEqual(self.target.stat().st_mode & 0o777, 0o600)
+        self.assertEqual(self.owner.stat().st_mode & 0o777, 0o600)
+        FIXTURE.standard_fault(self.secret, 'remove')
+        FIXTURE.standard_fault(self.secret, 'remove')
+        self.assertFalse(self.target.exists())
+        self.assertFalse(self.owner.exists())
+        self.assertTrue(all(call.kwargs == {'timeout': 5} for call in self.command.call_args_list))
+
+    def test_interrupted_install_can_be_cleaned_but_foreign_file_is_preserved(self):
+        original = FIXTURE.standard_create_file
+        def interrupted(path, value):
+            if path == self.target: raise OSError('interrupted')
+            original(path, value)
+        with patch.object(FIXTURE, 'standard_create_file', side_effect=interrupted), self.assertRaises(OSError):
+            FIXTURE.standard_fault(self.secret, 'install')
+        self.assertTrue(self.owner.exists())
+        FIXTURE.standard_fault(self.secret, 'remove')
+        self.target.write_text('foreign')
+        with self.assertRaises(ValueError): FIXTURE.standard_fault(self.secret, 'remove')
+        with self.assertRaises(ValueError): FIXTURE.standard_fault(self.secret, 'install')
+        self.assertEqual(self.target.read_text(), 'foreign')
+
+    def test_ownership_content_mode_link_run_and_commit_changes_refuse_deletion(self):
+        for mutation in ('content', 'mode', 'symlink', 'hardlink', 'run', 'commit', 'owner-mode'):
+            with self.subTest(mutation=mutation):
+                FIXTURE.standard_fault(self.secret, 'install')
+                if mutation == 'content': self.target.write_text('changed')
+                if mutation == 'mode': self.target.chmod(0o644)
+                if mutation == 'owner-mode': self.owner.chmod(0o644)
+                if mutation == 'symlink':
+                    self.target.unlink(); self.target.symlink_to(self.owner)
+                if mutation == 'hardlink': os.link(self.target, self.root / 'extra-link')
+                if mutation == 'run':
+                    proof = json.loads(self.owner.read_text()); proof['run_id'] = 'foreign'; self.owner.write_text(json.dumps(proof))
+                if mutation == 'commit':
+                    proof = json.loads(self.owner.read_text()); proof['commit'] = 'b'*40; self.owner.write_text(json.dumps(proof))
+                with self.assertRaises(ValueError): FIXTURE.standard_fault(self.secret, 'remove')
+                self.assertTrue(self.target.exists())
+                self.target.unlink(); self.owner.unlink()
+                if (self.root / 'extra-link').exists(): (self.root / 'extra-link').unlink()
+
+    def test_dirty_checkout_existing_pid_and_wrong_case_rejected_before_installation(self):
+        self.command.side_effect = lambda args, **kw: 'a'*40 if 'rev-parse' in args else ' M tracked.go'
+        with self.assertRaises(ValueError): FIXTURE.standard_fault(self.secret, 'install')
+        self.command.side_effect = lambda args, **kw: 'a'*40 if 'rev-parse' in args else ''
+        pid = self.root / '.dev-pids/standard.pid'; pid.parent.mkdir(); pid.write_text('123')
+        with self.assertRaises(ValueError): FIXTURE.standard_fault(self.secret, 'install')
+        pid.unlink()
+        with patch.dict(os.environ, ADDP_ONLINE_NODE_METRICS_CASE='regression'), self.assertRaises(ValueError):
+            FIXTURE.standard_fault(self.secret, 'install')
+        self.assertFalse(self.owner.exists())
+        self.assertFalse(self.target.exists())
+
+
 class MetricsFixtureTest(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory(prefix="addp-metrics-fixture-test-")

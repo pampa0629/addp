@@ -487,3 +487,21 @@ CI：`cgroup-source` 作为现有 Release 指标矩阵第五个真实分项，�
 - 原用例独立结果及阶段证据：`/tmp/addp-monitor-stop-preflight.log`、`/tmp/addp-monitor-stop-stage-summary.json`。初次临时xtrace读取发生解码失败，未作时间结论；修正临时诊断解码后取得上述阶段记录，未改变产品或测试时限。
 
 本批仅证明配置T1及空拓扑夹具隔离，不将旧聚合超时改写为通过；未重跑完整开发生命周期、真实来源T2、CI或Hosted。未改Docker设置、个人数据库／凭据或服务启停，未设置定时任务；外部结果仍等专门会话回传。
+
+
+## Standard 启动失败与重试恢复的 Hosted 场景接入（2026-11-08）
+
+本批仅准备 `platform-node-metrics / standard-startup`，未调度 CI、Hosted 或新定时任务，未在个人环境注入故障或启停服务。正式用途与操作边界见[场景规范](../scenarios/平台观测与语义生命周期.md#standard-开发-backend-启动失败与重试恢复)。沿用既有三员 Bootstrap、真实密码／MFA、平台模块读取权限和正式 Console；没有新增生产权限、旁路登记或伪造业务 API 的 Online 路线。
+
+实现固定的 Standard Go `init` 未就绪故障，走标准开发启动的原 60 秒就绪屏障；要求进程仍存活、终端给出超时及屏障失败、System 仅发布本次 `readiness_timeout`、没有有效 Standard 实例且前端阶段未启动。故障与恢复分别通过真实 Console 登录读取服务列表、失败提示和刷新重载，并对请求路径、精确模块筛选、分页、失败时间、实例启动身份和实际页面文字作绑定核验。标准停止后仅清除归属证明匹配的故障，再由标准启动重试；Ready 必须来自实际端口、当前提交和这次登记的 Standard 实例，原 System／Monitor 进程不得被替换。
+
+清理沿既有 Hosted trap：先停止当次应用，再清理故障，然后销毁来源、基础设施和私有身份目录；清理失败不能通过。故障记录绑定检出、提交和运行 ID；脏检出、既有 PID／文件、内容／权限／UID／硬链接／符号链接或归属记录异常均拒绝处理。未完成的安装由外层 trap 收尾。首次失败、后续恢复的浏览器 JSON／运行预算回执和截图分别保存，失败阶段的脱敏终端判定和返回码不会被后续结果覆盖；原始命令输出留在随后销毁的私有目录。总预算 1800 秒、浏览器 240 秒／子进程 300 秒、Job 60 分钟均未扩大。
+
+本地验证：
+
+- `make test-node-metrics-online-runner`：153 项 Online 登记回归、188 项指标 runner／归属／生命周期回归及 System 身份夹具 Go 测试通过；覆盖新分支封闭选择、只读预检、完整成功、首次页面失败、清理失败仍销毁其他资源、超时预算拒绝、来源／启动身份不符、过期或伪造页面回执及首次失败证据保留。
+- `make test-console-frontend`：257 项确定性测试、316 项受控浏览器 T3 及生产构建通过。新增的受控 Console 场景复用正式 Online 的同一页面回执读取器，覆盖失败、恢复及两次刷新重读；此处使用受控 API，不能计为真实 Hosted 通过。
+- 加强失败提示的完整时间文字核对后，`npm --prefix console/frontend run test:e2e -- e2e/process-resource-navigation.spec.js --grep 'Standard failure'`：1 项定向 T3 通过；`python3 -m unittest scripts.test.platform-node-metrics-online_test.StandardStartupOnlineTest scripts.test.platform-node-metrics-fixture_test.StandardStartupFixtureTest`：12 项定向 T1 通过。
+- 首轮新增 T1 曾因夹具使用未解析的 macOS 临时路径和 `+00:00` 时间戳而失败，分别改为真实路径和既有 UTC `Z` 契约后通过；未修改产品就绪规则。首次日志 `/tmp/addp-standard-startup-runner.log` 保留；最终标准 runner 日志 `/tmp/addp-standard-startup-runner-release.log`，Console 完整／定向日志 `/tmp/addp-standard-startup-console.log`、`/tmp/addp-standard-startup-console-final.log`。本地成功的浏览器临时目录由标准入口清理，不将其记作可下载 Hosted 产物。
+
+CI 登记沿现有 `test-node-metrics-online-runner`／`test-online-runner`、Console 前端门禁及 `online-t4-gates.yml` 的封闭 case 选择；删除新分支或退出清理调用会被登记回归拒绝。实际执行继续由专门会话选择 `suite=platform-node-metrics`、`node_metrics_case=standard-startup`，核对两阶段真实报告及零残留。当前状态为“场景已接入，本地验证通过，真实 Hosted 未执行”，不以旧源码的隔离 Linux 结果替代。

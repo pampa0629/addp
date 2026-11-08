@@ -273,6 +273,7 @@ on:
           - transfer-workers
           - quality-workers
           - service-availability
+          - standard-startup
 
 permissions:
   contents: read

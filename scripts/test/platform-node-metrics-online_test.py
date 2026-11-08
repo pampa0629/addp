@@ -1349,7 +1349,7 @@ class CompleteComparisonCaseTest(unittest.TestCase):
         return value
 
     def test_case_selection_is_closed_and_rejects_before_login(self):
-        for value in ("regression", "complete-comparison", "cpu-pressure", "host-admission", "engine-admission", "redis-engine-admission", "meta-workers", "transfer-workers", "quality-workers", "service-availability"):
+        for value in ("regression", "complete-comparison", "cpu-pressure", "host-admission", "engine-admission", "redis-engine-admission", "meta-workers", "transfer-workers", "quality-workers", "service-availability", "standard-startup"):
             with patch.dict(ONLINE.os.environ, ADDP_ONLINE_NODE_METRICS_CASE=value):
                 self.assertEqual(ONLINE.acceptance_case(), value)
         for value in ("", "unknown", "cpu-pressure ", "regression "):
@@ -2567,6 +2567,153 @@ class RedisEngineProfessionalEvidenceTest(unittest.TestCase):
                            lambda v:v['engine_resources'].update(denied=False)]:
                 invalid=copy.deepcopy(value);change(invalid)
                 with self.assertRaises(ONLINE.SuiteError):ONLINE.validate_engine_professional_browser(invalid,wanted,directory)
+
+
+
+
+class StandardStartupOnlineTest(unittest.TestCase):
+    def setUp(self):
+        from unittest.mock import Mock
+        self.temp = tempfile.TemporaryDirectory(prefix='addp-standard-online-test-')
+        self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name)
+        self.directory = self.root / 'private'; self.directory.mkdir(mode=0o700)
+        self.artifacts = self.root / 'artifacts'; self.artifacts.mkdir()
+        (self.root / '.dev-pids').mkdir()
+        self.actor = identity(); self.actor['principal']['id'] = 'admin-id'
+        self.actor['authorization']['role_assignments'][0]['permissions'].append('platform.module.read')
+        self.admin = Mock(token='admin')
+        self.denied = [Mock(token='security'), Mock(token='machine'), Mock(token='tenant'), Mock(token='')]
+        self.fact = {'module_name': 'standard', 'failed_at': datetime.datetime.now(datetime.timezone.utc).isoformat().replace('+00:00', 'Z'), 'reason': 'readiness_timeout'}
+        self.instance = {'id': 3, 'instance_id': 'standard-this-boot', 'module_name': 'standard', 'role': 'backend', 'status': 'up'}
+        self.addCleanup(patch.stopall)
+        patch.dict(ONLINE.os.environ, ADDP_ONLINE_NODE_METRICS_CASE='standard-startup', ADDP_ONLINE_TEST_RUN_ID='standard-run', ADDP_ONLINE_ARTIFACT_DIR=str(self.artifacts)).start()
+        patch.object(ONLINE.FIXTURE, 'ROOT', self.root).start()
+        patch.object(ONLINE.FIXTURE, 'standard_startup_boundary').start()
+        self.fault = patch.object(ONLINE.FIXTURE, 'standard_fault').start()
+        patch.object(ONLINE.FIXTURE, 'standard_process_record', side_effect=lambda directory, unit: {'unit': unit, 'pid': 100, 'start_ticks': '123'}).start()
+        patch.object(ONLINE.FIXTURE, 'command', return_value='').start()
+        self.original_control_ready = ONLINE.standard_control_ready
+        patch.object(ONLINE, 'standard_control_ready').start()
+        patch.object(ONLINE, 'write_evidence').start()
+        patch.object(ONLINE, 'renew_admin', return_value=self.admin).start()
+        patch.object(ONLINE, 'standard_failures', side_effect=[[], [self.fact], []]).start()
+        patch.object(ONLINE, 'instance_list', side_effect=[[], [], [self.instance]]).start()
+        self.lifecycle = patch.object(ONLINE, 'standard_lifecycle', side_effect=self.launch).start()
+        self.original_browser_phase = ONLINE.standard_browser_phase
+        self.browser = patch.object(ONLINE, 'standard_browser_phase', return_value={'result': 'passed'}).start()
+
+    def launch(self, directory, action, phase):
+        if action == 'start' and phase == 'retry':
+            (self.root / '.dev-pids/standard-frontend.pid').write_text('123')
+        return {'returncode': int(action == 'start' and phase == 'fault'), 'duration_ms': 60000,
+                'output': 'Standard Backend 等待就绪超时\n一个或多个后端未达到目标健康状态'}
+
+    def run_case(self):
+        report = {}
+        ONLINE.run_standard_startup_case('http://example.invalid', self.directory, self.admin, self.actor, self.denied, report)
+        return report
+
+    def test_failure_and_retry_require_two_browser_phases_and_existing_identity_isolation(self):
+        report = self.run_case()
+        self.assertEqual(report['result'], 'passed')
+        self.assertEqual(report['cleanup'], 'awaiting-hosted-deployment-destruction')
+        self.assertEqual(report['standard_startup']['attempt'], {'returncode': 1, 'duration_ms': 60000,
+                                                               'readiness_timeout_message': True, 'barrier_message': True})
+        self.assertEqual(report['standard_startup']['retry']['returncode'], 0)
+        self.assertNotIn('output', json.dumps(report))
+        self.assertEqual([call.args[3] for call in self.browser.call_args_list], ['failed', 'recovered'])
+        self.assertEqual([call.args[1:] for call in self.lifecycle.call_args_list], [('start', 'fault'), ('stop', 'fault'), ('start', 'retry')])
+        self.assertEqual([call.args[1] for call in self.fault.call_args_list], ['install', 'remove'])
+        for client in self.denied:
+            client.request.assert_called_once_with('GET', ONLINE.STARTUP_FAILURES, (401,) if not client.token else (403,))
+
+    def test_failed_browser_stops_fault_and_removes_it_without_retrying_or_claiming_pass(self):
+        self.browser.side_effect = ONLINE.SuiteError('browser failed')
+        with self.assertRaisesRegex(ONLINE.SuiteError, 'browser failed'): self.run_case()
+        self.assertEqual([call.args[1:] for call in self.lifecycle.call_args_list], [('start', 'fault'), ('stop', 'cleanup')])
+        self.assertEqual(self.fault.call_args_list[-1].args[1], 'remove')
+
+    def test_shortened_timeout_or_wrong_reason_cannot_pass(self):
+        for change in ('duration_ms', 'output'):
+            def failure(directory, action, phase):
+                value = self.launch(directory, action, phase)
+                value[change] = 1000 if change == 'duration_ms' else 'Standard Backend 启动进程退出'
+                return value
+            self.lifecycle.side_effect = failure
+            with self.subTest(change=change), self.assertRaises(ONLINE.SuiteError): self.run_case()
+            self.browser.assert_not_called()
+            self.assertEqual(self.fault.call_args_list[-1].args[1], 'remove')
+            # Restore the baseline read fixtures consumed by this rejected attempt.
+            ONLINE.standard_failures.side_effect = [[], [self.fact], []]
+            ONLINE.instance_list.side_effect = [[], [], [self.instance]]
+
+    def test_failed_cleanup_is_never_accepted(self):
+        self.browser.side_effect = ONLINE.SuiteError('browser failed')
+        def failed_stop(directory, action, phase):
+            value = self.launch(directory, action, phase)
+            if action == 'stop': value['returncode'] = 1
+            return value
+        self.lifecycle.side_effect = failed_stop
+        with self.assertRaisesRegex(ONLINE.SuiteError, 'cleanup stop failed'): self.run_case()
+        self.assertEqual([call.args[1] for call in self.fault.call_args_list], ['install'])
+
+    def test_incomplete_install_leaves_cleanup_to_outer_hosted_trap(self):
+        self.fault.side_effect = ValueError('foreign file')
+        with self.assertRaises(ValueError): self.run_case()
+        self.lifecycle.assert_not_called()
+
+    def test_control_ready_uses_actual_ports_source_commit_and_exact_standard_runtime(self):
+        (self.root / '.dev-state').mkdir()
+        (self.root / '.dev-state/ports.env').write_text('STANDARD_BACKEND_PORT=21110\n')
+        record = ONLINE.FIXTURE.standard_process_record(self.directory, 'standard')
+        health = {'status': 'ready', 'module': 'standard', 'git_commit': 'a'*40, 'instance_id': self.instance['instance_id'], 'role': 'backend',
+                  'build_id': 'build', 'source_fingerprint': 'source', 'built_at': 'built', 'started_at': 'started'}
+        with patch.object(ONLINE.FIXTURE, 'command', return_value='a'*40), patch.object(ONLINE.PREFLIGHT, 'load_health', return_value=health) as read:
+            self.original_control_ready(self.directory, {'standard': record}, self.instance['instance_id'])
+            self.assertEqual(read.call_args.args[0].base_url, 'http://127.0.0.1:21110')
+            self.assertEqual(read.call_args.args[1:], ('/health/ready', 10))
+            for key, value in (('git_commit', 'other-source'), ('instance_id', 'other-boot'), ('role', 'worker'), ('status', 'live')):
+                with self.subTest(key=key):
+                    changed = dict(health, **{key: value}); read.return_value = changed
+                    with self.assertRaises(ONLINE.SuiteError):
+                        self.original_control_ready(self.directory, {'standard': record}, self.instance['instance_id'])
+
+    def test_first_browser_failure_evidence_survives_a_later_browser_failure(self):
+        def failure(artifacts):
+            (artifacts / 'node-resources-browser.json').write_text(json.dumps({'stage': self.phase, 'result': 'failed'}))
+            (artifacts / 'node-resources-browser-runtime.json').write_text(json.dumps({'phase': self.phase, 'subprocess_timeout_seconds': 300}))
+            raise ONLINE.SuiteError('browser failed')
+        with patch.object(ONLINE, 'execute_resource_browser', side_effect=failure):
+            for phase in ('failed', 'recovered'):
+                self.phase = phase
+                with self.assertRaises(ONLINE.SuiteError):
+                    self.original_browser_phase(self.directory, self.artifacts, self.actor, phase, [], None)
+        for phase in ('failed', 'recovered'):
+            value = json.loads((self.artifacts / ('standard-startup-'+phase+'-node-resources-browser.json')).read_text())
+            self.assertEqual(value, {'stage': phase, 'result': 'failed'})
+
+    def test_browser_validator_rejects_stale_or_fabricated_receipts(self):
+        for phase in ('failed', 'recovered'):
+            expected = {'run_id': 'standard-run', 'admin_id': 'admin-id', 'standard_startup': {
+                'phase': phase, 'failures': [self.fact] if phase == 'failed' else [], 'instance': None if phase == 'failed' else self.instance}}
+            rows = [] if phase == 'failed' else [self.instance]
+            read = {'failures': {'path': ONLINE.STARTUP_FAILURES, 'query': {}, 'status': 200, 'value': {'data': expected['standard_startup']['failures']}},
+                    'instances': {'path': ONLINE.INSTANCES, 'query': {'module_name': 'standard', 'page': '1', 'page_size': '20', 'status': 'up'}, 'status': 200,
+                                  'value': {'data': rows, 'total': len(rows), 'page': 1, 'page_size': 20}}}
+            value = {'schema_version': 'addp.node-resources-browser/v1', 'result': 'passed', 'stage': 'complete', 'run_id': 'standard-run', 'identity': self.actor,
+                     'standard_startup': {'phase': phase, 'reload_restored': True, 'reads': [copy.deepcopy(read), copy.deepcopy(read)]}}
+            (self.artifacts / ('standard-startup-'+phase+'.png')).write_bytes(b'\x89PNG\r\n\x1a\n'+b'x'*1100)
+            self.assertEqual(ONLINE.validate_standard_browser(value, expected, self.artifacts)['phase'], phase)
+            for mutation in ('phase', 'scope', 'identity', 'missing-read', 'old-fact'):
+                changed = copy.deepcopy(value)
+                if mutation == 'phase': changed['standard_startup']['phase'] = 'other'
+                if mutation == 'scope': changed['standard_startup']['reads'][0]['instances']['query']['module_name'] = 'catalog'
+                if mutation == 'identity': changed['identity']['principal']['id'] = 'other'
+                if mutation == 'missing-read': changed['standard_startup']['reads'].pop()
+                if mutation == 'old-fact': changed['standard_startup']['reads'][0]['failures']['value']['data'] = [{'module_name': 'standard', 'reason': 'build_failed', 'failed_at': 'old'}]
+                with self.subTest(phase=phase, mutation=mutation), self.assertRaises(ONLINE.SuiteError):
+                    ONLINE.validate_standard_browser(changed, expected, self.artifacts)
 
 
 if __name__ == "__main__":

@@ -5,6 +5,7 @@ import { join } from 'node:path'
 import { backend, permissions } from '../../../monitor/frontend/e2e/process-resources.fixture'
 import { identity } from '../../../monitor/frontend/e2e/monitoring-targets.fixture'
 import { observations, serverEnd } from '../../../monitor/frontend/e2e/resource-observations.fixture'
+import { readStandardStartupPage } from './online/node-resource-receipts.js'
 
 test('Console opens the exact managed host without reloading and one Back restores service filters', async ({ page }, testInfo) => {
   const nodeID = '10000000-0000-4000-8000-000000000001'
@@ -382,4 +383,25 @@ test('Console host monitoring precedes services and service filters commit autom
   expect(await monitor.locator('body').evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
   await page.screenshot({ path: join(visualDir, 'service-filters-narrow.png'), fullPage: true, animations: 'disabled' })
   expect(await frame.evaluate(() => performance.timeOrigin)).toBe(origin)
+})
+
+
+test('Console Standard failure and retry reuse the Online response reader after reload', async ({ page }, testInfo) => {
+  const failure = { module_name: 'standard', reason: 'readiness_timeout', failed_at: '2026-11-08T00:00:00Z' }
+  const instance = { id: 3, instance_id: 'standard-current-boot', module_name: 'standard', role: 'backend', status: 'up', process_metrics_declared: false }
+  const monitor = page.frameLocator('iframe[data-testid="module-iframe"]')
+  for (const phase of ['failed', 'recovered']) {
+    const expected = { phase, failures: phase === 'failed' ? [failure] : [], instance: phase === 'failed' ? null : instance }
+    await backend(page, { instances: expected.instance ? [expected.instance] : [], startupFailures: expected.failures })
+    const readPage = async navigate => {
+      const failures = page.waitForResponse(r => new URL(r.url()).pathname === '/api/v1/system/platform/module_startup_failures')
+      const instances = page.waitForResponse(r => new URL(r.url()).pathname === '/api/v1/system/platform/module-instances' && new URL(r.url()).searchParams.get('module_name') === 'standard')
+      await navigate()
+      const receipt = async response => { const url = new URL(response.url()); return { path: url.pathname, query: Object.fromEntries(url.searchParams), status: response.status(), value: await response.json() } }
+      return readStandardStartupPage(monitor, { failures: await receipt(await failures), instances: await receipt(await instances) }, expected, expect)
+    }
+    await readPage(() => page.goto('/monitor/service-resources?refresh=off&module_name=standard&process_metrics_declared=all'))
+    await readPage(() => page.reload())
+    await page.screenshot({ path: testInfo.outputPath('standard-startup-'+phase+'.png'), fullPage: true })
+  }
 })

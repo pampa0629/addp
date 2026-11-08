@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { scalarResourceReceipts, filesystemMountReceipt, resourceHeatmapReceipt, blockCapacityReceipt } from '../../e2e/online/node-resource-receipts.js'
+import { scalarResourceReceipts, filesystemMountReceipt, resourceHeatmapReceipt, blockCapacityReceipt, standardStartupReceipt } from '../../e2e/online/node-resource-receipts.js'
 import { resourceMetrics, filesystemMetrics, inodeMetrics, mountMetrics, networkMetrics, blockCapacityMetrics } from '../../../../monitor/frontend/src/utils/nodeResources.js'
 
 const node = '10000000-0000-4000-8000-000000000001'
@@ -158,5 +158,43 @@ describe('Online block capacity complete-frame DOM receipt', () => {
   ])('rejects invalid scope, structure, duplicated device or capacity', mutate => {
     const row = capacity(); mutate(row)
     expect(() => blockCapacityReceipt([row], node)).toThrow()
+  })
+})
+
+
+describe('Standard startup real response receipts', () => {
+  const fact = { module_name: 'standard', reason: 'readiness_timeout', failed_at: '2026-11-08T00:00:00Z' }
+  const instance = { id: 3, instance_id: 'standard-current-boot', module_name: 'standard', role: 'backend', status: 'up' }
+  const setup = phase => {
+    const expected = { phase, failures: phase === 'failed' ? [fact] : [], instance: phase === 'failed' ? null : instance }
+    return { expected, read: {
+      failures: { path: '/api/v1/system/platform/module_startup_failures', query: {}, status: 200, value: { data: structuredClone(expected.failures) } },
+      instances: { path: '/api/v1/system/platform/module-instances', query: { page: '1', page_size: '20', module_name: 'standard', status: 'up' }, status: 200,
+        value: { data: expected.instance ? [structuredClone(instance)] : [], total: expected.instance ? 1 : 0, page: 1, page_size: 20 } }
+    } }
+  }
+  it.each(['failed', 'recovered'])('binds %s to exact response, attempt and runtime', phase => {
+    const { read, expected } = setup(phase)
+    expect(standardStartupReceipt(read, expected)).toBe(read)
+  })
+  it.each(['wrong-module', 'extra-query', 'wrong-page', 'error', 'old-attempt', 'private-fact', 'missing-fact', 'fabricated-runtime'])('rejects %s', change => {
+    const { read, expected } = setup('failed')
+    if (change === 'wrong-module') read.instances.query.module_name = 'catalog'
+    if (change === 'extra-query') read.failures.query.module_name = 'standard'
+    if (change === 'wrong-page') read.instances.value.page = 2
+    if (change === 'error') read.failures.status = 403
+    if (change === 'old-attempt') read.failures.value.data[0].failed_at = '2026-11-07T00:00:00Z'
+    if (change === 'private-fact') read.failures.value.data[0].endpoint = 'private'
+    if (change === 'missing-fact') read.failures.value.data = []
+    if (change === 'fabricated-runtime') read.instances.value = { data: [instance], total: 1, page: 1, page_size: 20 }
+    expect(() => standardStartupReceipt(read, expected)).toThrow('Standard startup receipt mismatch')
+  })
+  it.each(['old-instance', 'down', 'extra-instance', 'failure-retained'])('rejects recovered %s', change => {
+    const { read, expected } = setup('recovered')
+    if (change === 'old-instance') read.instances.value.data[0].instance_id = 'old-boot'
+    if (change === 'down') read.instances.value.data[0].status = 'down'
+    if (change === 'extra-instance') { read.instances.value.data.push(instance); read.instances.value.total = 2 }
+    if (change === 'failure-retained') read.failures.value.data = [fact]
+    expect(() => standardStartupReceipt(read, expected)).toThrow('Standard startup receipt mismatch')
   })
 })
