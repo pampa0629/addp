@@ -8,11 +8,11 @@
       "kind": "normative",
       "path": "docs/spec/addp智能体Tool开放规范.md",
       "anchor": "### 4.8 Transfer 运行审批与执行读取",
-      "commit": "b4e1dc1cc058e8a69aafdce04aebfd0e156ff435",
-      "sha256": "796b4ffee9c206c7e7a389c2324b341e0dd0c75a8d373e294bd54b2d0f764ef4",
+      "commit": "a4005807a565ce1d685698310256ba68b606c79a",
+      "sha256": "834165b1cf48a8d194c8666fd8bed3b13ab94093ce36e30a32a1fbe568f0c17c",
       "use": {
-        "zh-cn": "复核只读草稿构建接入后的同文件变化。原创建、运行审批及执行读取边界保留，完整参数仍走正式预检和确认。",
-        "en": "Reviewed this file after read-only draft construction integration. Creation, owner run approval and execution read boundaries remain, with complete arguments still checked and reviewed."
+        "zh-cn": "复核data.search在原委托ToolCall内消费续查；Transfer创建、审批、读取契约及权限不变。",
+        "en": "Reviewed search continuation within the original delegated ToolCall; Transfer creation, approval and read contracts and permissions remain unchanged."
       }
     },
     {
@@ -21,11 +21,11 @@
       "kind": "contract",
       "path": "common-python/addp_common/tools/manifest.json",
       "anchor": "\"name\": \"transfer.task.start\"",
-      "commit": "b4e1dc1cc058e8a69aafdce04aebfd0e156ff435",
-      "sha256": "c72f5b3b35ff3c4bc4b4d7c0f2584b1d7ad65e8717eefd127800108e27e02a60",
+      "commit": "a4005807a565ce1d685698310256ba68b606c79a",
+      "sha256": "e509240d8592e3b186b71a34ed38ce2eda8b3e4850de19f32416339f0aa6295e",
       "use": {
-        "zh-cn": "复核默认类型由 Transfer 推导及新草稿多源必须确认的改动。模型不复制源类型为覆盖参数；Runtime 基于正式搜索候选暂停并核对恢复选择。完整原参数绑定、预检三态、创建和运行审批边界保持。",
-        "en": "Reviewed owner-derived default types and mandatory multi-source selection for new drafts. Source types are not copied as overrides; Runtime pauses on formal candidates and checks the resumed choice. Exact parameter binding, tri-state preflight, creation and run approval boundaries remain."
+        "zh-cn": "复核data.search 2.0.0顺序续查及失效错误；Transfer创建、运行审批、执行读取的权限、参数与效果保持。",
+        "en": "Reviewed data.search 2.0.0 continuation and invalidation errors; Transfer creation, run approval and execution-read permissions, arguments and effects remain unchanged."
       }
     },
     {
@@ -151,11 +151,11 @@
       "kind": "implementation",
       "path": "agent/backend/graph/factory.py",
       "anchor": "async def _resume_confirmed_start(",
-      "commit": "b4e1dc1cc058e8a69aafdce04aebfd0e156ff435",
-      "sha256": "42d4cc2c38d12248db19fab84004b49043a8f520de31177a117e5e031ed522f3",
+      "commit": "a4005807a565ce1d685698310256ba68b606c79a",
+      "sha256": "64c6fcb00dd44aefb26869bdaaf282212a52bb52518bb9ffe1be5448b7120e68",
       "use": {
-        "zh-cn": "仅重新冻结共享 Runtime 文件。变更作用于新草稿的源引擎核验及零命中文字澄清，已保存任务的启动审批和提交逻辑未变。",
-        "en": "Refresh provenance for the shared Runtime file. The change covers new draft source-engine checks and text clarification on zero hits. Saved-task run approval and submission logic are unchanged."
+        "zh-cn": "复核搜索零召回由exhausted证明；原同Run源选择、参数确认、Owner审批及执行读取边界保持。",
+        "en": "Reviewed exhausted-based zero-recall proof; same-run source selection, exact argument review, owner approval and execution-read boundaries remain unchanged."
       }
     },
     {

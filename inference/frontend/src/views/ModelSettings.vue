@@ -345,7 +345,7 @@
           <div class="form-grid">
             <el-form-item :label="t('inference.common.scope')"><el-input :model-value="scopeLabel" disabled /></el-form-item>
             <el-form-item :label="t('inference.provider.adapter')" required>
-              <el-select v-model="form.adapter_type"><el-option label="OpenAI Compatible" value="openai_compatible" /><el-option label="DashScope Multimodal" value="dashscope_multimodal" /></el-select>
+              <el-select v-model="form.adapter_type"><el-option label="OpenAI Compatible" value="openai_compatible" /><el-option label="Local SAM" value="local_image_segmentation" /><el-option label="DashScope Multimodal" value="dashscope_multimodal" /></el-select>
             </el-form-item>
           </div>
           <el-form-item :label="t('inference.provider.endpoint')" required><el-input v-model="form.endpoint" placeholder="https://example.com/v1" /></el-form-item>
@@ -362,7 +362,7 @@
             <el-form-item :label="t('inference.common.name')" required><el-input v-model="form.name" /></el-form-item>
             <el-form-item :label="t('inference.deployment.upstreamModel')" required><el-input v-model="form.upstream_model" /></el-form-item>
           </div>
-          <el-form-item :label="t('inference.deployment.operations')" required><el-checkbox-group v-model="form.operations"><el-checkbox value="chat">chat</el-checkbox><el-checkbox value="embedding">embedding</el-checkbox><el-checkbox value="rerank">rerank</el-checkbox></el-checkbox-group></el-form-item>
+          <el-form-item :label="t('inference.deployment.operations')" required><el-checkbox-group v-model="form.operations"><el-checkbox value="chat">chat</el-checkbox><el-checkbox value="embedding">embedding</el-checkbox><el-checkbox value="segmentation">segmentation</el-checkbox><el-checkbox value="rerank">rerank</el-checkbox></el-checkbox-group></el-form-item>
           <el-form-item :label="t('inference.deployment.modalities')" required><el-checkbox-group v-model="form.modalities"><el-checkbox value="text">text</el-checkbox><el-checkbox value="image">image</el-checkbox></el-checkbox-group></el-form-item>
           <el-form-item v-if="form.operations.includes('chat')" :label="t('inference.deployment.chatMaxOutputTokensParameter')" required>
             <el-select v-model="form.chat_max_output_tokens_parameter">

@@ -1,5 +1,19 @@
 {
   "manager": {
+    "segment": {
+      "title": "Image segmentation",
+      "point": "Point",
+      "box": "Box",
+      "positive": "Add foreground point",
+      "negative": "Add background point",
+      "window": "Select analysis window",
+      "concept": "Target category",
+      "conceptExample": "English category, e.g. laptop",
+      "find": "Find instances",
+      "full": "Full image",
+      "working": "Processing…",
+      "count": "{n} instances"
+    },
     "maxTextures": {
       "optionsLabel": "MAX conversion options",
       "button": "External textures ({count})",

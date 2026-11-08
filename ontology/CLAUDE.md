@@ -1,3 +1,5 @@
+2026-11-08 Transfer创建69／运行12／执行读取9前向复核检索续查消费来源 `a4005807a565ce1d685698310256ba68b606c79a`：data.search 2.0.0在原委托ToolCall内消费空批，零召回由exhausted证明，依据变化终止。仅更新实际变更来源的提交、摘要和用途；定义除revision外、原覆盖与绑定保持，不扩张条件、权限或效果。`make test-platform-review`、Ontology Go owner、`make test-ontology-postgres`及`make test-ontology-falkor`全部通过，含真实PG／图投影与标准入口自动清理；定义除revision外及原覆盖／绑定逐字段相同。未提交、未推送，原103项暂存树保持；不激活运行态，不代表真实模型或Hosted验收。
+
 2026-11-08 平台 Transfer 创建修订 68 前向复核 `34e19346fe84fccc77c5f5c25c52b91d54520faf` 的 execution／attempt 恢复导航，仅更新 config 文档来源；不扩张停止态 bounded/snapshot 创建、运行、权限或效果，运行修订 11／执行读取修订 8 不变。其余来源、绑定、覆盖与发布预算保持，审查不等于真实恢复验收。
 
 本批场景夹具正式目录回归、平台来源审查、Ontology Go owner、PG → 独占 FalkorDB（含真实 PG/图投影）及 System IAM migration 通过。System 前端 175 单测和构建通过；完整浏览器 267 通过／13 失败，两份 IAM 浏览器 4 通过／1 失败，未把整套门禁计为通过；本次资源译名相关的角色编辑／本地化权限选择用例通过。Hosted `42382793838` 在场景前因把不可自定义的配置管理权限放入角色而失败；修正后复用隔离环境已有管理员，仅配置模型及 Agent 绑定，业务准备与普通读取身份不变，不改权限目录或新增角色。端到端 matched／unknown 仍待新 Hosted 回执，不记通过。证据 `/tmp/addp-ontology-{fixture-customizable-green,r68-review-green,r68-owner-pg-falkor-20261108,system-iam-20261108,system-frontend-20261108,system-iam-frontend-scoped-20261108,system-build-20261108}.log`。

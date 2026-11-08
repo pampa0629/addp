@@ -183,6 +183,7 @@ definitions:
       default_parameter_values:
         additionalProperties:
           items:
+            format: int32
             type: integer
           type: array
         type: object

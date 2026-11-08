@@ -55,6 +55,7 @@ func SetupRouter(cfg *config.Config, handler *Handler, lifecycle *modulelifecycl
 	internal.POST("/chat", handler.Chat)
 	internal.POST("/profiles/resolve", handler.ResolveProfile)
 	internal.POST("/embeddings", handler.Embed)
+	internal.POST("/segment", commonauth.MustNewServiceClientGuard("addp-manager"), handler.Segment)
 	internal.POST("/rerank", handler.Rerank)
 	return router
 }

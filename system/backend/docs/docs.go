@@ -17578,6 +17578,10 @@ const docTemplate = `{
                     "items": {
                         "$ref": "#/definitions/authorizationfacts.FileCompositionRef"
                     }
+                },
+                "source_layout": {
+                    "description": "TIFF layout as observed by Meta, independent of its physical file count.",
+                    "type": "string"
                 }
             }
         },

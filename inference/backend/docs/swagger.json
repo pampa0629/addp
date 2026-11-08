@@ -242,6 +242,61 @@
                 ]
             }
         },
+        "/internal/segment": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "首期只接受本租户 Manager 服务调用 | Tenant-scoped Manager service only",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Inference Runtime"
+                ],
+                "summary": "执行影像分割 | Execute segment inference",
+                "parameters": [
+                    {
+                        "description": "Segment request",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/inference.SegmentRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/inference.SegmentResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/inference.ErrorResponse"
+                        }
+                    },
+                    "502": {
+                        "description": "Bad Gateway",
+                        "schema": {
+                            "$ref": "#/definitions/inference.ErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "inference.runtime.execute"
+                ]
+            }
+        },
         "/model-deployments": {
             "get": {
                 "security": [
@@ -759,7 +814,8 @@
                                     "type": "integer"
                                 },
                                 "total": {
-                                    "type": "integer"
+                                    "type": "integer",
+                                    "format": "int64"
                                 },
                                 "total_pages": {
                                     "type": "integer"
@@ -1579,7 +1635,8 @@
                     "items": {
                         "type": "array",
                         "items": {
-                            "type": "number"
+                            "type": "number",
+                            "format": "float32"
                         }
                     }
                 }
@@ -1593,6 +1650,29 @@
                 },
                 "error_code": {
                     "type": "string"
+                }
+            }
+        },
+        "inference.InstanceMask": {
+            "type": "object",
+            "properties": {
+                "height": {
+                    "type": "integer"
+                },
+                "png": {
+                    "type": "string"
+                },
+                "score": {
+                    "type": "number"
+                },
+                "width": {
+                    "type": "integer"
+                },
+                "x": {
+                    "type": "integer"
+                },
+                "y": {
+                    "type": "integer"
                 }
             }
         },
@@ -1747,6 +1827,85 @@
                 },
                 "strict": {
                     "type": "boolean"
+                }
+            }
+        },
+        "inference.SegmentPrompt": {
+            "type": "object",
+            "properties": {
+                "labels": {
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    }
+                },
+                "points": {
+                    "type": "array",
+                    "items": {
+                        "type": "array",
+                        "items": {
+                            "type": "integer"
+                        }
+                    }
+                },
+                "text": {
+                    "type": "string"
+                }
+            }
+        },
+        "inference.SegmentRequest": {
+            "type": "object",
+            "properties": {
+                "action": {
+                    "type": "string"
+                },
+                "image": {
+                    "type": "string"
+                },
+                "model_profile_id": {
+                    "type": "string"
+                },
+                "prompt": {
+                    "$ref": "#/definitions/inference.SegmentPrompt"
+                },
+                "schema_version": {
+                    "type": "string"
+                },
+                "scope": {
+                    "description": "Caller-derived digest of user, source and analysis window.",
+                    "type": "string"
+                },
+                "session_id": {
+                    "type": "string"
+                },
+                "tenant_id": {
+                    "type": "integer"
+                }
+            }
+        },
+        "inference.SegmentResponse": {
+            "type": "object",
+            "properties": {
+                "deployment_id": {
+                    "type": "string"
+                },
+                "height": {
+                    "type": "integer"
+                },
+                "masks": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/inference.InstanceMask"
+                    }
+                },
+                "profile_version": {
+                    "type": "integer"
+                },
+                "session_id": {
+                    "type": "string"
+                },
+                "width": {
+                    "type": "integer"
                 }
             }
         },

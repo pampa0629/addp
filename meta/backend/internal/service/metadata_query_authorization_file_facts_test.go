@@ -75,6 +75,51 @@ func seedFileAuthorizationFacts(t *testing.T, db *gorm.DB, engineID uint, format
 
 func exerciseFileAuthorizationFacts(t *testing.T, db *gorm.DB) {
 	t.Helper()
+	t.Run("single JPEG and embedded GeoTIFF only", func(t *testing.T) {
+		for i, kind := range []string{"jpeg", "tiff"} {
+			item := seedFileAuthorizationFacts(t, db, uint(790+i), kind)
+			name := []string{"photo.jpg", "ortho.tif"}[i]
+			item.FullName = "models/" + name
+			item.Name = name
+			item.Fingerprint = commonModels.GenerateItemFingerprint(item.EngineID, item.FullName)
+			item.Attributes["item"] = map[string]any{"format": kind, "data_type": "media", "layout": "single"}
+			item.Attributes["storage"] = map[string]any{"physical_path": item.FullName}
+			item.Attributes["format_info"] = map[string]any{"tiff": map[string]any{"profile": "geotiff"}}
+			if err := db.Save(&item).Error; err != nil {
+				t.Fatal(err)
+			}
+			svc := NewMetadataQueryService(db)
+			get := func() *authorizationfacts.AuthorizationFacts {
+				v, err := svc.GetDataItemAuthorizationFacts(t.Context(), item.TenantID, item.Fingerprint)
+				if err != nil {
+					t.Fatal(err)
+				}
+				return v
+			}
+			v := get()
+			if v.Boundary == nil || !v.Boundary.FileComposition.SingleImage() || len(v.Boundary.FileComposition.Refs) != 1 {
+				t.Fatalf("missing image content boundary: %+v", v)
+			}
+			if kind == "tiff" {
+				item.Attributes["item"] = map[string]any{"format": kind, "data_type": "media", "layout": "multi", "refs": []map[string]any{{"path": item.FullName, "role": "main", "primary": true, "required": true}}}
+				if err := db.Save(&item).Error; err != nil {
+					t.Fatal(err)
+				}
+				multi := get()
+				if multi.Boundary == nil || multi.Boundary.FileComposition == nil || multi.Boundary.Layout != "multi" || multi.Boundary.FileComposition.Layout() != "multi" {
+					t.Fatal("lost scanned one-ref TIFF layout")
+				}
+			}
+			item.Attributes["item"].(map[string]any)["refs"] = []map[string]any{{"path": item.FullName + ".aux.xml", "role": "image", "primary": true, "required": true}}
+			if err := db.Save(&item).Error; err != nil {
+				t.Fatal(err)
+			}
+			v = get()
+			if v.Boundary != nil && v.Boundary.FileComposition != nil {
+				t.Fatal("accepted substituted ref")
+			}
+		}
+	})
 	for i, fixture := range []struct{ kind, format string }{{"file", "ifc"}, {"file", "3ds"}, {"file", "dae"}, {"object", "ifc"}, {"object", "3ds"}, {"object", "dae"}, {"file", "obj"}, {"object", "obj"}, {"file", "stl"}, {"object", "stl"}, {"file", "glb"}, {"object", "glb"}, {"file", "gltf"}, {"object", "gltf"}, {"file", "fbx"}, {"object", "fbx"}, {"file", "envi"}, {"object", "envi"}} {
 		format := fixture.format
 		t.Run(fixture.kind+"/"+format, func(t *testing.T) {

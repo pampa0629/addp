@@ -74,6 +74,17 @@ func (c *InferenceClient) Embed(ctx context.Context, req commoninference.Embeddi
 	return response, err
 }
 
+func (c *InferenceClient) Segment(ctx context.Context, req commoninference.SegmentRequest) (*commoninference.SegmentResponse, error) {
+	var response *commoninference.SegmentResponse
+	err := c.call(ctx, req.TenantID, func(provider engineplugin.InferenceRuntimeProvider, connInfo engineplugin.ConnectionInfo, token string) error {
+		req.CallerToken = token
+		var err error
+		response, err = provider.Segment(ctx, connInfo, req)
+		return err
+	})
+	return response, err
+}
+
 func (c *InferenceClient) Rerank(ctx context.Context, req commoninference.RerankRequest) (*commoninference.RerankResponse, error) {
 	var response *commoninference.RerankResponse
 	err := c.call(ctx, req.TenantID, func(provider engineplugin.InferenceRuntimeProvider, connInfo engineplugin.ConnectionInfo, token string) error {

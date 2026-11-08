@@ -1,14 +1,3 @@
-[manager.search.context_changed]
-other = "Search context changed. Start a new search."
-
-[manager.search.continuation_expired]
-other = "Search continuation is no longer available. Start a new search."
-
-[manager.search.parameters_invalid]
-other = "Invalid search parameters. Start a new search."
-
-[manager.search.capacity_exceeded]
-other = "Search capacity was exceeded. This query has stopped."
 [manager.cache.cleared_all]
 other = "All resource caches cleared"
 
@@ -372,3 +361,27 @@ other = "Grid slice selection is invalid or outside the supported bounds"
 other = "Read committed upload receipts"
 [permissions.manager.upload_receipt.read.description]
 other = "Only Meta/System Runtime may read exact committed upload writes in the current tenant; no content or data access is granted"
+
+[manager.error.segment_unsupported]
+other = "Unsupported image encoding, size, or window"
+
+[manager.error.segment_unavailable]
+other = "Segmentation unavailable or window expired. Open the analysis window again."
+
+[manager.error.segment_binding]
+other = "Image segmentation model is not configured"
+
+[manager.error.segment_busy]
+other = "Another window is being prepared. Try again shortly."
+
+[manager.search.context_changed]
+other = "Search context changed. Start a new search."
+
+[manager.search.continuation_expired]
+other = "Search continuation is no longer available. Start a new search."
+
+[manager.search.parameters_invalid]
+other = "Invalid search parameters. Start a new search."
+
+[manager.search.capacity_exceeded]
+other = "Search capacity was exceeded. This query has stopped."

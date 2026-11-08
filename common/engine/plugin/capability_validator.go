@@ -334,7 +334,7 @@ func validateComputeCapabilities(p EnginePlugin, compute *ComputeCapabilities) e
 			return fmt.Errorf("%s declares invalid inference runtime capability", p.Type())
 		}
 		for _, operation := range compute.Inference.Operations {
-			if operation != "chat" && operation != "embedding" && operation != "rerank" {
+			if operation != "chat" && operation != "embedding" && operation != "rerank" && operation != "segmentation" {
 				return fmt.Errorf("%s declares unsupported inference operation %q", p.Type(), operation)
 			}
 		}

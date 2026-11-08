@@ -60,11 +60,11 @@
       "kind": "contract",
       "path": "common-python/addp_common/tools/manifest.json",
       "anchor": "\"name\": \"transfer.task.create\"",
-      "commit": "b4e1dc1cc058e8a69aafdce04aebfd0e156ff435",
-      "sha256": "c72f5b3b35ff3c4bc4b4d7c0f2584b1d7ad65e8717eefd127800108e27e02a60",
+      "commit": "a4005807a565ce1d685698310256ba68b606c79a",
+      "sha256": "e509240d8592e3b186b71a34ed38ce2eda8b3e4850de19f32416339f0aa6295e",
       "use": {
-        "zh-cn": "复核默认类型由 Transfer 推导及新草稿多源必须确认的改动。模型不复制源类型为覆盖参数；Runtime 基于正式搜索候选暂停并核对恢复选择。完整原参数绑定、预检三态、创建和运行审批边界保持。",
-        "en": "Reviewed owner-derived default types and mandatory multi-source selection for new drafts. Source types are not copied as overrides; Runtime pauses on formal candidates and checks the resumed choice. Exact parameter binding, tri-state preflight, creation and run approval boundaries remain."
+        "zh-cn": "复核data.search 2.0.0顺序续查及失效错误；Transfer创建、运行审批、执行读取的权限、参数与效果保持。",
+        "en": "Reviewed data.search 2.0.0 continuation and invalidation errors; Transfer creation, run approval and execution-read permissions, arguments and effects remain unchanged."
       }
     },
     {
@@ -138,11 +138,11 @@
       "kind": "implementation",
       "path": "agent/backend/graph/factory.py",
       "anchor": "async def _run_config_check(",
-      "commit": "b4e1dc1cc058e8a69aafdce04aebfd0e156ff435",
-      "sha256": "42d4cc2c38d12248db19fab84004b49043a8f520de31177a117e5e031ed522f3",
+      "commit": "a4005807a565ce1d685698310256ba68b606c79a",
+      "sha256": "64c6fcb00dd44aefb26869bdaaf282212a52bb52518bb9ffe1be5448b7120e68",
       "use": {
-        "zh-cn": "所选源引擎约束新草稿的集合搜索及构建，原选择失效时撤销旧集合候选和确认。限定搜索成功且总数为零时，Runtime 根据正式引擎名称和实际搜索词生成纯文字澄清，暂停同一 Run 并阻断未执行的同批调用。用户补充后恢复该 Run，重读引擎清单并核验限定。",
-        "en": "The selected source engine constrains collection search and construction for new drafts. When the selection becomes invalid, revoke the old collection choices and confirmations. When a scoped search succeeds with a total of zero, Runtime uses the formal engine name and actual search term to ask for a text reply, pauses the same Run, and blocks the remaining calls in the batch. The reply resumes that Run and refreshes and revalidates the engine scope."
+        "zh-cn": "复核搜索零召回由exhausted证明；原同Run源选择、参数确认、Owner审批及执行读取边界保持。",
+        "en": "Reviewed exhausted-based zero-recall proof; same-run source selection, exact argument review, owner approval and execution-read boundaries remain unchanged."
       }
     },
     {
@@ -398,11 +398,11 @@
       "kind": "test",
       "path": "agent/backend/tests/test_agent_factory_events.py",
       "anchor": "async def test_search_failure_stops_without_retry_enumeration_or_write(",
-      "commit": "dee60ec6b170ea58858266922751eb13d8bd091b",
-      "sha256": "9b6f14952b99ab54068ae2a94007a21dd657263bb74ec7e455d232ad4f2686cc",
+      "commit": "a4005807a565ce1d685698310256ba68b606c79a",
+      "sha256": "767e3076cd6f52420d1cecffcd3940a2d3a7f98363092d49c97ca89f4d70aa12",
       "use": {
-        "zh-cn": "受控批次夹具显式传入创建能力；搜索失败不得重试、枚举或写入等原断言保持。",
-        "en": "Controlled batch fixtures explicitly select creation capability; original no-retry, no-enumeration and no-write assertions after search failure remain."
+        "zh-cn": "复核零召回夹具使用exhausted；搜索失败停止及原工具边界断言保持。",
+        "en": "Reviewed exhausted-based empty-search fixtures; search-failure termination and existing tool-boundary assertions remain unchanged."
       }
     },
     {
@@ -411,11 +411,11 @@
       "kind": "normative",
       "path": "docs/spec/addp智能体Tool开放规范.md",
       "anchor": "同批 Tool 按模型返回顺序进入唯一 Runtime 调用路径",
-      "commit": "b4e1dc1cc058e8a69aafdce04aebfd0e156ff435",
-      "sha256": "796b4ffee9c206c7e7a389c2324b341e0dd0c75a8d373e294bd54b2d0f764ef4",
+      "commit": "a4005807a565ce1d685698310256ba68b606c79a",
+      "sha256": "834165b1cf48a8d194c8666fd8bed3b13ab94093ce36e30a32a1fbe568f0c17c",
       "use": {
-        "zh-cn": "复核只读草稿构建接入后的同文件变化。原创建、运行审批及执行读取边界保留，完整参数仍走正式预检和确认。",
-        "en": "Reviewed this file after read-only draft construction integration. Creation, owner run approval and execution read boundaries remain, with complete arguments still checked and reviewed."
+        "zh-cn": "复核data.search在原委托ToolCall内消费续查；Transfer创建、审批、读取契约及权限不变。",
+        "en": "Reviewed search continuation within the original delegated ToolCall; Transfer creation, approval and read contracts and permissions remain unchanged."
       }
     },
     {
@@ -580,11 +580,11 @@
       "kind": "test",
       "path": "agent/backend/tests/test_transfer_parameters.py",
       "anchor": "class TransferParameterRuntimeTests(",
-      "commit": "6e1c33401213fab33bce9bc54416e0d7082bed55",
-      "sha256": "a5eadc97de15792038c3c370c8ae5c57d8c26858eca81ce538a6988350a38579",
+      "commit": "a4005807a565ce1d685698310256ba68b606c79a",
+      "sha256": "0c0f4676a60bf27641f64610eb5acd3cdd3dddf6b6193f5d8c8d070e8dbad3d9",
       "use": {
-        "zh-cn": "受控测试确认失效后撤销旧集合及确认，旧 locator 在构建前被拒绝。限定搜索零命中后，用户补充集合名可恢复同一 Run，Runtime 重读引擎清单并仍按已选引擎搜索。",
-        "en": "Controlled tests verify that invalidation revokes old collections and confirmations and that an old locator is rejected before construction. After scoped zero hits, a collection name supplied by the user resumes the same Run, refreshes the engine inventory, and searches within the selected engine."
+        "zh-cn": "复核实际SDK的搜索响应夹具改为exhausted；源范围、候选确认及原参数拒绝断言保持。",
+        "en": "Reviewed exhausted-based real-SDK search fixtures; source scope, candidate confirmation and exact-argument rejection assertions remain unchanged."
       }
     },
     {
@@ -645,11 +645,11 @@
       "kind": "test",
       "path": "evals/agent-scenarios/model_cases.py",
       "anchor": "result['responses']['data.search']",
-      "commit": "6e1c33401213fab33bce9bc54416e0d7082bed55",
-      "sha256": "85744f42c4fbf51d9b7cc210480c798cbe478fb614130589844cda9ced7efe95",
+      "commit": "a4005807a565ce1d685698310256ba68b606c79a",
+      "sha256": "ab8548dac63a30e331863f7f6be1ec63c006d0cc8e688a4551e193e1f1c05c5a",
       "use": {
-        "zh-cn": "夹具提供多个同类型源引擎、目标引擎及限定搜索零命中，供两项受控评测复现。",
-        "en": "Fixtures provide multiple source engines of the same type, a target engine, and scoped zero hits for the two controlled evaluations."
+        "zh-cn": "复核搜索模型事实使用exhausted及顺序批次契约；场景条件与期望效果保持，不代表重跑真实模型。",
+        "en": "Reviewed exhausted-based search model facts; scenario conditions and expected effects remain unchanged, without claiming a new real-model run."
       }
     },
     {

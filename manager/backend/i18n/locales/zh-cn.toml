@@ -1,14 +1,3 @@
-[manager.search.context_changed]
-other = "检索依据已变化，请重新检索"
-
-[manager.search.continuation_expired]
-other = "检索状态已失效，请重新检索"
-
-[manager.search.parameters_invalid]
-other = "检索参数无效，请重新检索"
-
-[manager.search.capacity_exceeded]
-other = "检索容量不足，本次查询已停止"
 [manager.cache.cleared_all]
 other = "已清除所有资源缓存"
 
@@ -372,3 +361,27 @@ other = "网格切片选择无效或超出支持范围"
 other = "读取上传提交回执"
 [permissions.manager.upload_receipt.read.description]
 other = "仅 Meta、System 运行身份读取本租户真实成功上传的精确写入事实；不返回文件内容或数据权限"
+
+[manager.error.segment_unsupported]
+other = "当前影像格式、尺寸或分析窗口不受支持"
+
+[manager.error.segment_unavailable]
+other = "分割服务不可用或窗口已过期，请重新打开分析窗口"
+
+[manager.error.segment_binding]
+other = "尚未配置影像分割模型"
+
+[manager.error.segment_busy]
+other = "其他影像窗口正在准备，请稍后再试"
+
+[manager.search.context_changed]
+other = "检索依据已变化，请重新检索"
+
+[manager.search.continuation_expired]
+other = "检索状态已失效，请重新检索"
+
+[manager.search.parameters_invalid]
+other = "检索参数无效，请重新检索"
+
+[manager.search.capacity_exceeded]
+other = "检索容量不足，本次查询已停止"

@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import hashlib
+from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 import io
 import struct
@@ -1111,22 +1112,27 @@ def verify_import_private_access(outsider, task_id, owner_identity, timeout):
     identity = validate_user_identity(outsider, int(owner_identity["tenant_id"]))
     if identity["principal_id"] == owner_identity["principal_id"]:
         raise SuiteError("import private-source proof requires a distinct User")
-    started = _object(outsider.request("POST", f"/api/v1/transfer/task-definitions/{task_id}/start", (200,)).payload, "non-uploader execution")
+    return verify_unreadable_source_execution(outsider, task_id, timeout)
+
+
+def verify_unreadable_source_execution(client, task_id, timeout):
+    started = _object(client.request("POST", f"/api/v1/transfer/task-definitions/{task_id}/start", (200,)).payload, "denied source execution")
     identifier = started.get("execution_id")
     if not isinstance(identifier, str) or str(uuid.UUID(identifier)) != identifier:
-        raise SuiteError("non-uploader admission lost its execution UUID")
+        raise SuiteError("denied source admission lost its execution UUID")
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
-        result = _object(outsider.request("GET", f"/api/v1/transfer/executions/{identifier}", (200,)).payload, "non-uploader execution")
+        result = _object(client.request("GET", f"/api/v1/transfer/executions/{identifier}", (200,)).payload, "denied source execution")
         assert_transfer_execution_projection(result)
         if result.get("status") in SUPPORT.TERMINAL_STATUSES:
-            if (result.get("status") != "failed" or result.get("error_details", {}).get("code") != "data_protection_required"
+            if (result.get("execution_id") != identifier or result.get("status") != "failed"
+                    or result.get("error_details", {}).get("code") != "data_protection_required"
                     or result.get("records_read") != 0 or result.get("records_written") != 0
                     or "metadata_scan" in result.get("metadata", {})):
-                raise SuiteError("non-uploader was not rejected before reading and writing")
+                raise SuiteError("unreadable source was not rejected before reading and writing")
             return identifier
         time.sleep(1)
-    raise SuiteError("non-uploader execution did not fail before timeout")
+    raise SuiteError("denied source execution did not fail before timeout")
 
 
 def execution_schema_hashes(execution: dict[str, object]) -> tuple[str, str]:
@@ -1416,6 +1422,83 @@ def validate_mongodb_execution(execution: dict[str, object], source_locator: str
     if observed != expected or len(mappings) != len(expected):
         raise SuiteError("MongoDB execution must prove all six exact direct field mappings")
     return hashes
+
+
+def verify_mongodb_source_visibility(client, engine_id, visible, source=None):
+    namespace, _ = MONGODB_SOURCE.split(".")
+    route = f"/api/v1/meta/engines/{engine_id}/items?branch=" + urllib.parse.quote(namespace, safe="")
+    items = _array(client.request("GET", route, (200,)).payload, "MongoDB source directory")
+    matches = [item for item in items if isinstance(item, dict) and item.get("full_name") == MONGODB_SOURCE]
+    if len(matches) != int(visible):
+        raise SuiteError("MongoDB source directory differs from its exact Grant")
+    if source is not None:
+        if visible and any(matches[0].get(key) != source.get(key) for key in ("id", "engine_id", "fingerprint", "item_type")):
+            raise SuiteError("MongoDB source directory changed its persisted identity")
+        client.request("GET", f"/api/v1/meta/items/{source['id']}", (200,) if visible else (404,))
+
+
+@contextmanager
+def mongodb_source_access(initializer, client, tenant_id, engine_id, timeout):
+    if os.environ.get("ONLINE_SUITE") != "transfer-relational-sql-etl":
+        raise SuiteError("MongoDB source Grant requires its dedicated Hosted suite")
+    import_module("scripts.test.orchestrator-execution-faults").deployment_secret()
+    grants = REGISTRATION.ExactRecordGrants(initializer, client, tenant_id, action="read", scan_preparation=True)
+    namespace, collection = MONGODB_SOURCE.split(".")
+    target = grants.target(engine_id, namespace, collection, "collection")
+    proof = {"schema_version": "addp.mongodb-source-access/v1", "run_id": required_environment("ADDP_ONLINE_TEST_RUN_ID"),
+             "source_engine_id": engine_id, "result": "incomplete", "grant_request_ids": []}
+    state = {"proof": proof}
+    source = None
+    scenario_failed = False
+    artifact = Path(required_environment("ADDP_ONLINE_ARTIFACT_DIR")) / "mongodb-source-access.json"
+    try:
+        scan = wait_for_scan(initializer, engine_id, time.monotonic() + timeout,
+                             targets=[f"addp://engine/{engine_id}/path/{namespace}/{collection}?type=collection"])
+        proof["scan_execution_id"] = scan
+        verify_mongodb_source_visibility(client, engine_id, False)
+        proof["hidden_before_grant"] = True
+        receipt = grants.grant(engine_id, namespace, collection, "collection")
+        proof["grant_request_ids"] = [str(uuid.UUID(receipt["request_id"]))]
+        source = find_item(client, engine_id, MONGODB_SOURCE, "collection")
+        if source.get("fingerprint") != receipt["item_fingerprint"]:
+            raise SuiteError("MongoDB source Grant and visible DataItem identity differ")
+        verify_mongodb_source_visibility(client, engine_id, True, source)
+        proof.update(source_item_id=source["id"], visible_after_grant=True)
+        state.update(source=source, scan_execution_id=scan)
+        artifact.write_text(json.dumps(proof, sort_keys=True) + "\n")
+        yield state
+    except BaseException:
+        scenario_failed = True
+        raise
+    finally:
+        try:
+            if not proof["grant_request_ids"]:
+                proof["grant_request_ids"] = [row["request_id"] for row in grants.pending]
+            grants.cleanup()
+            verify_mongodb_source_visibility(client, engine_id, False, source)
+            client.request("POST", "/api/v1/system/engine-access/read-checks/manager-preview", (403,), {"targets": [target]})
+            proof.update(grants_revoked=True, hidden_after_revoke=True, source_read_denied_after_revoke=True)
+            transfer = state.get("transfer")
+            if transfer is not None:
+                identifiers = transfer.get("execution_ids")
+                if (transfer.get("records_read") != 3 or transfer.get("records_written") != 3
+                        or transfer.get("rerun_verified") is not True or not isinstance(identifiers, list)
+                        or len(identifiers) != 2 or len(set(identifiers)) != 2):
+                    raise SuiteError("MongoDB source proof requires two actual three-row transfers")
+                proof["successful_execution_ids"] = [str(uuid.UUID(identifier)) for identifier in identifiers]
+                proof["rejected_execution_id"] = verify_unreadable_source_execution(client, transfer["task_id"], timeout)
+                proof.update(result="passed", records_per_execution=3, task_id=transfer["task_id"],
+                             rejected_before_read_write=True)
+            artifact.write_text(json.dumps(proof, sort_keys=True) + "\n")
+        except Exception:
+            proof["result"] = "failed"
+            try:
+                artifact.write_text(json.dumps(proof, sort_keys=True) + "\n")
+            except OSError:
+                print("MongoDB source Grant failure receipt could not be saved", file=sys.stderr)
+            if not scenario_failed:
+                raise
+            print("MongoDB source Grant cleanup also failed", file=sys.stderr)
 
 
 def run_mongodb_lineage(client: GatewayClient, source_engine_id: int, target_engine_id: int, source: dict[str, object], pg_source: dict[str, object], name: str, timeout: float, owned_ids: list[int]) -> dict[str, object]:
@@ -2103,22 +2186,22 @@ def main() -> int:
         wait_manager_read_boundary(client, engine_id, time.monotonic() + convergence_timeout)
         object_upload = run_object_upload(client, initializer, repository, identity_report, convergence_timeout)
         manager_import = run_manager_import_with_grant(client, engine_id, identity_report, convergence_timeout, owned_ids, outsider, initializer)
-        del initializer
         record_manager_import_receipt(repository, required_environment("ADDP_ONLINE_ARTIFACT_DIR"), run_id, identity_report, engine_id, manager_import)
         trace_visibility = record_scan_trace_receipt(client, outsider, identity_report, outsider_identity, object_upload, manager_import)
         lineage = run_native_lineage(client, engine_id, source, owned_name, convergence_timeout, owned_ids)
 
-        mongodb_scan = wait_for_scan(client, mongodb_engine_id, time.monotonic() + convergence_timeout)
-        mongodb_source = find_item(client, mongodb_engine_id, MONGODB_SOURCE, "collection")
-        mongodb_lineage = run_mongodb_lineage(client, mongodb_engine_id, engine_id, mongodb_source, source, owned_name, convergence_timeout, owned_ids)
-
-        chain = run_orchestrated_lineage(client, engine_id, tenant_id, mongodb_lineage, owned_name, convergence_timeout, owned_paths)
-
-        wide = run_wide_lineage(client, engine_id, owned_name, convergence_timeout, owned_ids)
-        write_failures = run_write_failures(client, engine_id, owned_name, convergence_timeout, owned_ids)
-        browser = run_browser(repository, dict(os.environ), owned_name, lineage, mongodb_lineage, chain, wide, write_failures)
-        verify_browser_query_transformations(client, engine_id, source, convergence_timeout)
-        multi = run_multi_source_lineage(client, engine_id, source, lineage, owned_name, convergence_timeout, owned_ids)
+        with mongodb_source_access(initializer, client, tenant_id, mongodb_engine_id, convergence_timeout) as mongodb_access:
+            del initializer
+            mongodb_scan = mongodb_access["scan_execution_id"]
+            mongodb_source = mongodb_access["source"]
+            mongodb_lineage = run_mongodb_lineage(client, mongodb_engine_id, engine_id, mongodb_source, source, owned_name, convergence_timeout, owned_ids)
+            mongodb_access["transfer"] = mongodb_lineage
+            chain = run_orchestrated_lineage(client, engine_id, tenant_id, mongodb_lineage, owned_name, convergence_timeout, owned_paths)
+            wide = run_wide_lineage(client, engine_id, owned_name, convergence_timeout, owned_ids)
+            write_failures = run_write_failures(client, engine_id, owned_name, convergence_timeout, owned_ids)
+            browser = run_browser(repository, dict(os.environ), owned_name, lineage, mongodb_lineage, chain, wide, write_failures)
+            verify_browser_query_transformations(client, engine_id, source, convergence_timeout)
+            multi = run_multi_source_lineage(client, engine_id, source, lineage, owned_name, convergence_timeout, owned_ids)
         cleanup_definitions(client, owned_paths)
         cleanup_tasks(client, owned_ids)
         owned_ids.clear()
@@ -2126,7 +2209,7 @@ def main() -> int:
         if residual:
             raise SuiteError("browser left the owned Transfer relational SQL ETL task behind")
         report = {
-            "schema_version": "addp.transfer-relational-sql-etl-online/v16",
+            "schema_version": "addp.transfer-relational-sql-etl-online/v17",
             "suite": "transfer-relational-sql-etl",
             "run_id": run_id,
             "result": "passed",
@@ -2138,6 +2221,7 @@ def main() -> int:
             "field_lineage": lineage,
             "mongodb_engine": mongodb_engine,
             "mongodb_source_scan_execution_id": mongodb_scan,
+            "mongodb_source_access": mongodb_access["proof"],
             "mongodb_field_lineage": mongodb_lineage,
             "orchestrated_field_lineage": chain,
             "multi_source_field_lineage": multi,

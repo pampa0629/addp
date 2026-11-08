@@ -3173,6 +3173,10 @@ const docTemplate = `{
                     "items": {
                         "$ref": "#/definitions/authorizationfacts.FileCompositionRef"
                     }
+                },
+                "source_layout": {
+                    "description": "TIFF layout as observed by Meta, independent of its physical file count.",
+                    "type": "string"
                 }
             }
         },
@@ -3257,7 +3261,8 @@ const docTemplate = `{
                 "statistics": {
                     "type": "object",
                     "additionalProperties": {
-                        "type": "integer"
+                        "type": "integer",
+                        "format": "int64"
                     }
                 },
                 "status": {
@@ -4188,6 +4193,13 @@ const docTemplate = `{
                 "ExecutionStatusRunning": "运行中",
                 "ExecutionStatusSuccess": "成功"
             },
+            "x-enum-descriptions": [
+                "待执行",
+                "运行中",
+                "成功",
+                "失败",
+                "已取消"
+            ],
             "x-enum-varnames": [
                 "ExecutionStatusPending",
                 "ExecutionStatusRunning",
@@ -4613,6 +4625,11 @@ const docTemplate = `{
                 "TaskStatusIdle": "空闲（未执行或执行完成）",
                 "TaskStatusRunning": "执行中"
             },
+            "x-enum-descriptions": [
+                "空闲（未执行或执行完成）",
+                "执行中",
+                "运行被 schema change 阻塞，禁止直接启动或恢复"
+            ],
             "x-enum-varnames": [
                 "TaskStatusIdle",
                 "TaskStatusRunning",

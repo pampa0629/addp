@@ -488,6 +488,7 @@ type ScriptRuntimeProvider interface {
 }
 
 type InferenceRuntimeProvider interface {
+	Segment(ctx context.Context, connInfo ConnectionInfo, req commoninference.SegmentRequest) (*commoninference.SegmentResponse, error)
 	EnginePlugin
 	ResolveProfile(ctx context.Context, connInfo ConnectionInfo, req commoninference.ResolveProfileRequest) (*commoninference.ResolveProfileResponse, error)
 	Chat(ctx context.Context, connInfo ConnectionInfo, req commoninference.ChatRequest) (*commoninference.ChatResponse, error)

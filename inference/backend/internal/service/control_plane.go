@@ -17,6 +17,7 @@ import (
 )
 
 const (
+	AdapterLocalSegment        = "local_image_segmentation"
 	AdapterOpenAICompatible    = "openai_compatible"
 	AdapterDashScopeMultimodal = "dashscope_multimodal"
 
@@ -459,7 +460,7 @@ func normalizeProvider(actor Actor, input ProviderInput) (*models.ProviderConnec
 		return nil, nil, err
 	}
 	input.Name, input.AdapterType, input.Endpoint, input.Status = strings.TrimSpace(input.Name), strings.TrimSpace(input.AdapterType), strings.TrimRight(strings.TrimSpace(input.Endpoint), "/"), status
-	if input.Name == "" || (input.AdapterType != AdapterOpenAICompatible && input.AdapterType != AdapterDashScopeMultimodal) || !validEndpoint(input.Endpoint) {
+	if input.Name == "" || (input.AdapterType != AdapterOpenAICompatible && input.AdapterType != AdapterDashScopeMultimodal && input.AdapterType != AdapterLocalSegment) || !validEndpoint(input.Endpoint) {
 		return nil, nil, fmt.Errorf("%w: invalid provider fields", ErrInvalidRequest)
 	}
 	if input.ScopeType != actor.ContextType || (input.ScopeType != models.ScopePlatform && input.ScopeType != models.ScopeTenant) {
@@ -478,6 +479,9 @@ func normalizeProvider(actor Actor, input ProviderInput) (*models.ProviderConnec
 	}
 	if input.AllowAllTenants && len(grants) > 0 {
 		return nil, nil, fmt.Errorf("%w: allow_all_tenants and allowlist are mutually exclusive", ErrInvalidRequest)
+	}
+	if input.AdapterType == AdapterLocalSegment && !localSegmentEndpoint(input.Endpoint) {
+		return nil, nil, ErrInvalidRequest
 	}
 	return &models.ProviderConnection{Name: input.Name, ScopeType: input.ScopeType, TenantID: tenantID, AdapterType: input.AdapterType, Endpoint: input.Endpoint, AllowAllTenants: input.AllowAllTenants, Status: input.Status}, grants, nil
 }
@@ -504,7 +508,7 @@ func (s *ControlPlane) normalizeDeployment(ctx context.Context, actor Actor, inp
 	if input.ChatThinkingMode == "" {
 		input.ChatThinkingMode = ChatThinkingModeUpstreamDefault
 	}
-	operations, err := normalizeEnumSet(input.Operations, map[string]bool{"chat": true, "embedding": true, "rerank": true})
+	operations, err := normalizeEnumSet(input.Operations, map[string]bool{"chat": true, "embedding": true, "rerank": true, "segmentation": true})
 	if err != nil {
 		return nil, err
 	}
@@ -526,6 +530,11 @@ func (s *ControlPlane) normalizeDeployment(ctx context.Context, actor Actor, inp
 	}
 	if input.ChatThinkingMode == ChatThinkingModeDisabled && provider.AdapterType != AdapterOpenAICompatible {
 		return nil, fmt.Errorf("%w: thinking control requires openai_compatible adapter", ErrInvalidRequest)
+	}
+	if contains(operations, "segmentation") || provider.AdapterType == AdapterLocalSegment {
+		if provider.AdapterType != AdapterLocalSegment || len(operations) != 1 || operations[0] != "segmentation" || len(modalities) != 1 || modalities[0] != "image" {
+			return nil, ErrInvalidRequest
+		}
 	}
 	if !contains(operations, "embedding") && input.Dimension != 0 {
 		return nil, fmt.Errorf("%w: dimension requires embedding operation", ErrInvalidRequest)

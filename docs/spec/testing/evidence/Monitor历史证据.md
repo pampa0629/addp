@@ -45,6 +45,13 @@
 | [11-04 Gateway 构建期间检查](MonitorHTTP质量与采样历史证据.md#http-full-stream-resource-deadline-20261104) | 资源检查累计耗尽四秒，末步骤为卷测量 | Go 编译、缓存回收、System 镜像 |
 | [11-05 Agent 构建期间卷读取](MonitorHTTP质量与采样历史证据.md#http-full-logout-agent-volume-read-failed-20261105) | `measure_owned_volumes` 读卷失败，`du` 报路径消失，删除者未知 | Go 编译、缓存回收、System／Gateway／Monitor 镜像 |
 | [11-05 System 构建期间检查](MonitorHTTP质量与采样历史证据.md#http-full-system-list-inspect-deadline-20261105) | 容器列表耗去大部分四秒预算，`inspect_owned_containers` 耗尽余量 | Go 编译、缓存回收 |
+| [11-06 Go 编译期间容器检查](MonitorHTTP质量与采样历史证据.md#http-full-compile-inspect-command-failed-20261106) | `inspect_owned_containers` 在约 39 毫秒内退出 1，缺失对象和原因未知 | 源码与环境准入、当次配置、构建器及采样辅助准备 |
+| [11-06 Go 编译期间测量和恢复截止](MonitorHTTP质量与采样历史证据.md#http-full-compile-inspect-resume-deadline-20261106) | 容器列表和暂停后，inspect 耗尽 3.5 秒测量预算，恢复未在四秒内确认 | 源码与环境准入、当次配置、45 次完整编译暂停与恢复 |
+| [11-06 冻结快照 Go 编译恢复超时](MonitorHTTP质量与采样历史证据.md#http-full-frozen-compile-resume-deadline-20261106) | 暂停前余量符合门槛且完整测量完成，恢复未在四秒内确认 | 冻结源码及环境准入、当次配置、9 次完整编译暂停与恢复 |
+| [11-07 Agent 构建期间卷测量超时](MonitorHTTP质量与采样历史证据.md#http-full-resume-snapshot-agent-volume-deadline-20261107) | 卷测量触发四秒截止，已见进入测量，未见管道返回 | Go 编译、56 次暂停与恢复、缓存回收后首个完整样本、System／Gateway／Monitor 镜像 |
+| [11-07 Go 编译启动期间状态校验](MonitorHTTP质量与采样历史证据.md#http-full-volume-snapshot-compile-state-changed-20261107) | 容器列表及 inspect 返回后，编译容器状态校验失败，未进入卷测量 | 冻结输入与 Docker 准入、当次配置及两次完整准入采样 |
+| [11-07 编译启动协调与 Agent APT 下载](MonitorHTTP质量与采样历史证据.md#http-full-compile-start-agent-apt-connect-20261107) | Agent 镜像 APT 包下载连接超时，APT 退出 100，端点未知 | Go 编译、64 次暂停与恢复、缓存回收后首个完整样本、System／Gateway／Monitor 镜像 |
+| [11-07 编译阶段私有目录测量截止](MonitorHTTP质量与采样历史证据.md#http-full-apt-candidates-private-measurement-deadline-20261107) | 私有目录测量开始时约剩 77 毫秒，触发 3.5 秒测量截止；恢复在四秒内完成 | 冻结输入、环境准入、39 次编译暂停与恢复、失败检查中的完整卷测量 |
 
 表中各轮均为运行失败、当次资源零残留。正式密码／MFA、采集与 API、Console／Monitor 页面、停源、两阶段注销及旧会话拒绝均未执行。[自然 Linux HTTP 四阶段 T2](MonitorHTTP质量与采样历史证据.md#http-natural-four-stage-budget-passed-20261104)、Hosted 和容量验收按各自证据认定。
 

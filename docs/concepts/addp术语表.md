@@ -603,6 +603,7 @@ Agent Harness 是 Agent 进程内的执行内核，负责模型与工具调度�
 | query policy | 查询策略 | Develop 对查询超时和结果预览规模的强类型运行约束。 | 平台定义上限，租户可以覆盖默认查询超时。 |
 | quick view policy | 快显策略 | Manager 对空间数据预览中间结果规模、超时和重试的运行约束。 | 归 Manager 所有，当前为平台级。 |
 | AI Inference Runtime | AI 推理运行时 | 对 ADDP 调用方提供统一 `addp.inference/v1` 数据面的推理服务。 | Runtime 按网络区域、安全域、GPU 集群、故障域或 SLA 增长，不按模型厂商、账号或模型数量增长。 |
+| interactive image segmentation | 交互式影像分割 | 对已授权源影像的确定像素窗口，通过点、框、修正点或类别短语推理得到逐实例临时掩膜。 | 窗口句柄只用于复用特征，不能充当源读取授权、业务数据项或持久任务。 |
 | AI Inference Runtime Engine Instance | AI 推理运行时引擎实例 | System 中登记一个确定 AI Inference Runtime 端点的 Engine Instance。 | `engine_type=inference_runtime`；默认平台级，只登记 Runtime 端点、生命周期和 `compute.inference` 能力，不保存上游 Provider、模型或 API Key。 |
 | Provider Template | 模型服务模板 | Inference owner 提供的只读接入模板，预置在线厂商或本地推理运行时的协议适配器、默认 Endpoint、凭据要求、模型发现方式和建议模型。 | 只用于创建 Provider Connection、Model Deployment 和 Model Profile，不是新的运行时资源，不持有凭据，也不参与推理解析。 |
 | Provider Connection | 模型提供方连接 | Inference owner 保存的一个确定在线厂商账号端点或内网推理服务端点。 | 是强类型资源，不是普通键值配置；可为平台级或 Tenant 级，凭据使用专用加密字段。 |

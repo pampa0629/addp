@@ -20,6 +20,7 @@ definitions:
         type: string
       statistics:
         additionalProperties:
+          format: int64
           type: integer
         type: object
       status:

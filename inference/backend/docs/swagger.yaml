@@ -284,6 +284,7 @@ definitions:
       vectors:
         items:
           items:
+            format: float32
             type: number
           type: array
         type: array
@@ -294,6 +295,21 @@ definitions:
         type: string
       error_code:
         type: string
+    type: object
+  inference.InstanceMask:
+    properties:
+      height:
+        type: integer
+      png:
+        type: string
+      score:
+        type: number
+      width:
+        type: integer
+      x:
+        type: integer
+      "y":
+        type: integer
     type: object
   inference.Message:
     properties:
@@ -394,6 +410,58 @@ definitions:
         type: array
       strict:
         type: boolean
+    type: object
+  inference.SegmentPrompt:
+    properties:
+      labels:
+        items:
+          type: integer
+        type: array
+      points:
+        items:
+          items:
+            type: integer
+          type: array
+        type: array
+      text:
+        type: string
+    type: object
+  inference.SegmentRequest:
+    properties:
+      action:
+        type: string
+      image:
+        type: string
+      model_profile_id:
+        type: string
+      prompt:
+        $ref: '#/definitions/inference.SegmentPrompt'
+      schema_version:
+        type: string
+      scope:
+        description: Caller-derived digest of user, source and analysis window.
+        type: string
+      session_id:
+        type: string
+      tenant_id:
+        type: integer
+    type: object
+  inference.SegmentResponse:
+    properties:
+      deployment_id:
+        type: string
+      height:
+        type: integer
+      masks:
+        items:
+          $ref: '#/definitions/inference.InstanceMask'
+        type: array
+      profile_version:
+        type: integer
+      session_id:
+        type: string
+      width:
+        type: integer
     type: object
   inference.ToolCall:
     properties:
@@ -577,6 +645,41 @@ paths:
       security:
       - BearerAuth: []
       summary: 执行重排推理 | Execute rerank inference
+      tags:
+      - Inference Runtime
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - inference.runtime.execute
+  /internal/segment:
+    post:
+      consumes:
+      - application/json
+      description: 首期只接受本租户 Manager 服务调用 | Tenant-scoped Manager service only
+      parameters:
+      - description: Segment request
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/inference.SegmentRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/inference.SegmentResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/inference.ErrorResponse'
+        "502":
+          description: Bad Gateway
+          schema:
+            $ref: '#/definitions/inference.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 执行影像分割 | Execute segment inference
       tags:
       - Inference Runtime
       x-addp-auth-mode: permission
@@ -916,6 +1019,7 @@ paths:
               page_size:
                 type: integer
               total:
+                format: int64
                 type: integer
               total_pages:
                 type: integer

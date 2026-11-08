@@ -8,12 +8,12 @@ export function updateEmbeddingConfiguration(payload) {
   return client.put('/manager/settings/embedding', payload)
 }
 
-export function getInferenceBinding() {
-  return client.get('/manager/settings/inference-binding')
+export function getInferenceBinding(scenario = 'semantic_search_embedding') {
+  return client.get(`/manager/settings/inference-bindings/${encodeURIComponent(scenario)}`)
 }
 
-export function updateInferenceBinding(payload) {
-  return client.put('/manager/settings/inference-binding', payload)
+export function updateInferenceBinding(payload, scenario = 'semantic_search_embedding') {
+  return client.put(`/manager/settings/inference-bindings/${encodeURIComponent(scenario)}`, payload)
 }
 
 export function listInferenceModelLabels() {

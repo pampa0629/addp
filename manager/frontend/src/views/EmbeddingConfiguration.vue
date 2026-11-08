@@ -58,6 +58,16 @@
       <el-tab-pane v-if="isPlatform" :label="t('manager.embeddingConfiguration.tabs.quickViewPolicy')" name="quick-view-policy">
         <QuickViewPolicyConfiguration />
       </el-tab-pane>
+      <el-tab-pane :label="t('manager.segment.title')" name="segmentation" lazy>
+        <el-form label-position="top" @submit.prevent>
+          <el-form-item :label="t('manager.embeddingConfiguration.profileSection')">
+            <el-select v-model="segmentBinding.profile">
+              <el-option v-for="item in segmentProfiles" :key="item.id" :value="item.id" :label="item.name" />
+            </el-select>
+          </el-form-item>
+          <el-button type="primary" :disabled="!segmentBinding.profile" :loading="saving" @click="saveSegment">{{ t('manager.embeddingConfiguration.save') }}</el-button>
+        </el-form>
+      </el-tab-pane>
     </el-tabs>
   </main>
 </template>
@@ -105,6 +115,20 @@ const compatibleProfiles = computed(() => profiles.value.filter(profile => {
     deployment.operations?.includes('embedding') &&
     deployment.modalities?.includes('text') && deployment.modalities?.includes('image')
 }))
+const segmentBinding = reactive({version:0,profile:''})
+const segmentProfiles = computed(() => profiles.value.filter(p => {
+  const d = deploymentByID.value.get(p.model_deployment_id)
+  return p.status === 'active' && d?.status === 'active' && d.operations?.includes('segmentation') && d.modalities?.includes('image')
+}))
+async function saveSegment(){
+  saving.value=true
+  try {
+    const result=await updateInferenceBinding({version:segmentBinding.version,model_profile_id:segmentBinding.profile},'image_segmentation')
+    segmentBinding.version=result.version
+    ElMessage.success(t('manager.embeddingConfiguration.saveSuccess'))
+  } catch {ElMessage.error(t('manager.embeddingConfiguration.saveFailed'))}
+  finally {saving.value=false}
+}
 const rules = {
   modelProfileID: [{ required: true, message: () => t('manager.embeddingConfiguration.modelProfileRequired'), trigger: 'change' }]
 }
@@ -112,9 +136,10 @@ const rules = {
 async function load() {
   loading.value = true
   try {
-    const requests = [getInferenceBinding(), listInferenceProfiles(), listInferenceDeployments()]
+    const requests = [getInferenceBinding(), listInferenceProfiles(), listInferenceDeployments(), getInferenceBinding('image_segmentation')]
     if (isPlatform.value) requests.push(getEmbeddingConfiguration())
-    const [bindingValue, profilePage, deploymentPage, policy] = await Promise.all(requests)
+    const [bindingValue, profilePage, deploymentPage, segment, policy] = await Promise.all(requests)
+    Object.assign(segmentBinding,{version:segment.version || 0,profile:segment.model_profile_id || ''})
     Object.assign(binding, { version: bindingValue.version || 0, scopeType: bindingValue.scope_type, effective: bindingValue.effective })
     form.modelProfileID = bindingValue.model_profile_id || ''
     profiles.value = profilePage.data || []

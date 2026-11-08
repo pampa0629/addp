@@ -1884,7 +1884,8 @@ const docTemplate = `{
                                     "type": "integer"
                                 },
                                 "total": {
-                                    "type": "integer"
+                                    "type": "integer",
+                                    "format": "int64"
                                 },
                                 "total_pages": {
                                     "type": "integer"
@@ -1999,7 +2000,8 @@ const docTemplate = `{
                                     "type": "integer"
                                 },
                                 "total": {
-                                    "type": "integer"
+                                    "type": "integer",
+                                    "format": "int64"
                                 },
                                 "total_pages": {
                                     "type": "integer"
@@ -2285,7 +2287,8 @@ const docTemplate = `{
                                     "type": "integer"
                                 },
                                 "total": {
-                                    "type": "integer"
+                                    "type": "integer",
+                                    "format": "int64"
                                 },
                                 "total_pages": {
                                     "type": "integer"
@@ -2407,7 +2410,8 @@ const docTemplate = `{
                                     "type": "integer"
                                 },
                                 "total": {
-                                    "type": "integer"
+                                    "type": "integer",
+                                    "format": "int64"
                                 },
                                 "total_pages": {
                                     "type": "integer"
@@ -2743,7 +2747,8 @@ const docTemplate = `{
                                     "type": "integer"
                                 },
                                 "total": {
-                                    "type": "integer"
+                                    "type": "integer",
+                                    "format": "int64"
                                 },
                                 "total_pages": {
                                     "type": "integer"
@@ -4316,6 +4321,10 @@ const docTemplate = `{
                     "items": {
                         "$ref": "#/definitions/authorizationfacts.FileCompositionRef"
                     }
+                },
+                "source_layout": {
+                    "description": "TIFF layout as observed by Meta, independent of its physical file count.",
+                    "type": "string"
                 }
             }
         },

@@ -51,7 +51,7 @@ PHYSICAL_ACTIONS = {'produce-initial', 'produce-after-recovery', 'produce-invali
 OWNER_OUTAGE_CHECKS = ['previously_readable', 'event_transport_failure_isolated', 'event_transport_recovered',
                        'real_owner_503', 'old_details_tree_steps_events_cleared', 'old_list_and_total_cleared',
                        'recovered_authorized_reads', 'no_samples']
-PHASES = {'preflight', 'source_scan', 'kafka_initial', 'kafka_visibility', 'kafka_browser', 'worker_recovery',
+PHASES = {'preflight', 'source_scan', 'source_catalog', 'kafka_initial', 'kafka_visibility', 'kafka_browser', 'worker_recovery',
           'kafka_record_failure', 'owner_unavailable', 'reader_revocation', 'cdc_initial', 'cdc_owner_outage',
           'cdc_mutation', 'cdc_approval', 'cdc_resume', 'cdc_stop', 'scheduled_create', 'scheduled_admission',
           'scheduled_pause', 'scheduled_completion', 'scheduled_scan', 'scheduled_result', 'cleanup', 'deleted_history'}
@@ -231,18 +231,26 @@ def until(operation, timeout=120):
     raise SuiteError('continuous execution did not converge before the deadline')
 
 
-def catalog_item(client, engine_id, tenant, name):
+def catalog_item(client, engine_id, tenant, name, *, evidence=None):
+    if evidence is not None:
+        evidence.update(state='request_started')
     items = client.request('GET', f'/api/v1/meta/engines/{engine_id}/items', (200,), response_type=list).payload
     require(isinstance(items, list), 'Meta engine items must be an array')
     matches = [item for item in items if isinstance(item, dict) and item.get('full_name') == 'public.' + name]
+    if evidence is not None:
+        evidence.update(state='listed', visible_items=len(items), matching_items=len(matches))
     require(len(matches) <= 1, 'Meta target identity is duplicated')
     if not matches:
         return None
     item = matches[0]
+    if evidence is not None:
+        evidence.update(state='identity_check')
     require(item.get('engine_id') == engine_id and item.get('tenant_id') == tenant
             and item.get('item_type') == 'table' and bool(item.get('fingerprint')), 'Meta target identity changed')
     API.require_positive_int(item, 'id')
     API.require_positive_int(item, 'node_id')
+    if evidence is not None:
+        evidence.update(state='identity_verified')
     return item
 
 
@@ -561,6 +569,9 @@ def failure_diagnostic(phase, error):
                'Owner exposed invalid initial authorization status facts': 'owner_authorization_status_contract_mismatch',
                'execution reached an unexpected terminal status': 'unexpected_terminal_status',
                'continuous execution did not converge before the deadline': 'convergence_timeout',
+               'physical scan sibling is missing': 'source_catalog_sibling_unavailable',
+               'Meta target identity is duplicated': 'source_catalog_identity_duplicated',
+               'Meta target identity changed': 'source_catalog_identity_invalid',
                'continuous task cleanup failed': 'cleanup_incomplete',
                'continuous Hosted acceptance interrupted': 'interrupted'}
     reason = reasons.get(str(error)) if isinstance(error, SuiteError) else None
@@ -669,7 +680,9 @@ def run_suite(client, denied, foreign, peer, reader, admin, login, tenant, run_i
         report['source_scan_preparation'] = {'execution_id': formal_source_scan_id,
             'principal_id': preparing_principal, 'consumer_read_denied': True, 'peer_read_denied': True}
         report['checks'].append('formal_source_catalog_scan')
-        sibling = catalog_item(client, pg, tenant, 'continuous_scan_sibling')
+        phase('source_catalog')
+        report['source_catalog_baseline'] = {}
+        sibling = catalog_item(client, pg, tenant, 'continuous_scan_sibling', evidence=report['source_catalog_baseline'])
         require(sibling is not None, 'physical scan sibling is missing')
         boundary = API.read_meta_scan_boundary(client, pg, sibling)
         require(len(boundary['ancestors']) >= 2, 'scan baseline must include schema and root')

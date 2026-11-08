@@ -721,3 +721,5 @@ Manager 检索统一使用 System 固定检索裁决，核验 `manager.search.ex
 验证遵循[测试与验收规范](addp测试与验收规范.md)：工作区使用 `make test-changed`，明确 owner 使用 `make test-module MODULE=<模块>`；共享契约专项使用 `make test-authorization`。文档修改按标准影响选择运行对应门禁；确定性测试不代替真实跨模块验收，跳过、失败及未运行分别说明。
 
 实现入口：[System IAM 数据模型](../../system/docs/IAM数据模型与迁移规范.md)、[System Swagger](../../system/backend/docs/swagger.yaml)、[企业资源目录实现规范](addp企业资源目录实现规范.md)、[Manager 模块说明](../../manager/CLAUDE.md)。迁移编号、接口参数、调度批量和当前验收记录留在各自 owner，不再追加到本规范。
+
+Manager 交互分割只消费当前普通 User 的读取裁决。对于单文件 JPEG 和带内嵌空间信息的 GeoTIFF，Meta 以已扫描的 media 身份、物理路径和完整祖先链投影唯一必需主 image ref。JPEG 使用 single 布局。TIFF 要求 geotiff 或 cog 格式 profile，文件组成的 source_layout 保留扫描所得的 single 或 multi。multi 只在 refs 显式列出唯一必需主文件且与物理路径一致时成立。提供 refs 时必须与这一个主项一致；其他组合、外部地理参考和独立附属对象不按该规则授予内容读取。System 使用既有精确／节点 read 规则及 expected_source 比较，metadata_read 继续不能授权传输像素。该边界不签发后台任务执行授权。

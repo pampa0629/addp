@@ -2729,6 +2729,7 @@ class WorkflowMetadataTest(unittest.TestCase):
             self.assertIn(guard, statement)
         self.assertFalse(any(event[0] == 'list' for event in state['events']))
 
+
 class ExplicitRasterArtifactTypeTest(unittest.TestCase):
     def test_byte_is_explicit_and_does_not_relax_original_float64_contract(self):
         expected=m.fixture.artifact_expectation()

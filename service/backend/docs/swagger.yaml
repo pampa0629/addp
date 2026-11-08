@@ -61,6 +61,7 @@ definitions:
         type: string
       statistics:
         additionalProperties:
+          format: int64
           type: integer
         type: object
       status:
@@ -87,6 +88,7 @@ definitions:
       scopePath:
         type: string
       sizeBytes:
+        format: int64
         type: integer
       storageBucket:
         type: string

@@ -28,7 +28,7 @@ func (p *Plugin) ConnectionIdentityFields() []string {
 	return []string{"protocol", "host", "port"}
 }
 func (p *Plugin) Capabilities() plugin.EngineCapabilities {
-	return plugin.NewInferenceCapabilities(p.Type(), []string{"chat", "embedding", "rerank"}, []string{"text", "image"}, true)
+	return plugin.NewInferenceCapabilities(p.Type(), []string{"chat", "embedding", "rerank", "segmentation"}, []string{"text", "image"}, true)
 }
 func (p *Plugin) ValidateConnectionInfo(connInfo plugin.ConnectionInfo) error {
 	return plugin.ValidateRequiredFields(connInfo, p.RequiredFields())
@@ -74,6 +74,14 @@ func (p *Plugin) Embed(ctx context.Context, connInfo plugin.ConnectionInfo, req 
 	}
 	return &response, nil
 }
+func (p *Plugin) Segment(ctx context.Context, connInfo plugin.ConnectionInfo, req commoninference.SegmentRequest) (*commoninference.SegmentResponse, error) {
+	var response commoninference.SegmentResponse
+	if err := post(ctx, connInfo, "/api/v1/inference/internal/segment", req.CallerToken, req, &response); err != nil {
+		return nil, err
+	}
+	return &response, nil
+}
+
 func (p *Plugin) Rerank(ctx context.Context, connInfo plugin.ConnectionInfo, req commoninference.RerankRequest) (*commoninference.RerankResponse, error) {
 	var response commoninference.RerankResponse
 	if err := post(ctx, connInfo, "/api/v1/inference/internal/rerank", req.CallerToken, req, &response); err != nil {

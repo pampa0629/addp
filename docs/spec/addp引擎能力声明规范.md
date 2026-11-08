@@ -593,7 +593,7 @@ type InferenceCapability struct {
 | --- | --- |
 | `supported` | 是否可作为统一 AI 推理运行时。 |
 | `runtime_api` | 固定为当前实现的 `addp.inference/v1`。 |
-| `operations` | Runtime 真正支持的标准操作，取值为 `chat`、`embedding`、`rerank` 的子集。 |
+| `operations` | Runtime 真正支持的标准操作，取值为 `chat`、`embedding`、`rerank`、`segmentation` 的子集。 |
 | `modalities` | Runtime 可接收的输入模态，取值为 `text`、`image` 的子集。 |
 | `streaming` | `chat` 是否支持标准流式响应。 |
 

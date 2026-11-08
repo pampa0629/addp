@@ -52,7 +52,7 @@ func TestImportRouteChecksUserAndAllPermissionsBeforeReadingFiles(t *testing.T) 
 	cfg.SystemServiceURL = authServer.URL
 	router := SetupRouter(NewCleanupResultHandler(nil), cfg, service.NewMetadataService(nil, nil, nil, nil, nil), nil, nil, nil, nil, nil, nil, nil, nil, nil, nil,
 		nil, nil, nil, nil, nil, nil, nil, NewTaskProviderHandler(nil, nil, nil, nil, nil), NewImportHandler(nil), nil, nil, nil,
-		nil, nil, nil, nil, nil, nil, nil, managerprotection.NewReadBoundary(&readBoundaryTestStore{}), modulelifecycle.NewStandalone("manager"), nil, nil)
+		nil, nil, nil, nil, nil, nil, nil, managerprotection.NewReadBoundary(&readBoundaryTestStore{}), modulelifecycle.NewStandalone("manager"), nil, nil, nil)
 	for token := range identities {
 		t.Run(token, func(t *testing.T) {
 			body := &uploadReadProbe{}
@@ -128,7 +128,7 @@ func TestImportSourceProductionRouteRequiresTransferAndPrivateExactBinding(t *te
 	cfg.SystemServiceURL = system.URL
 	router := SetupRouter(NewCleanupResultHandler(nil), cfg, service.NewMetadataService(nil, nil, nil, nil, nil), nil, nil, nil, nil, nil, nil, nil, nil, nil, nil,
 		nil, nil, nil, nil, nil, nil, nil, NewTaskProviderHandler(nil, nil, nil, nil, nil), NewImportHandler(service.NewImportService(nil, "manager", nil, nil, store)), nil, nil, nil,
-		nil, nil, nil, nil, nil, nil, nil, managerprotection.NewReadBoundary(&readBoundaryTestStore{}), modulelifecycle.NewStandalone("manager"), nil, nil)
+		nil, nil, nil, nil, nil, nil, nil, managerprotection.NewReadBoundary(&readBoundaryTestStore{}), modulelifecycle.NewStandalone("manager"), nil, nil, nil)
 	request := client.ManagerImportSourceRequest{ExecutionID: uuid.NewString(), TaskID: 42, PrincipalID: 31, SourceLocator: store.source.SourceLocator}
 	for _, kind := range []string{"transfer", "wrong-client", "no-permission", "foreign", "user", "uploader", "task", "source", "unknown-field"} {
 		t.Run(kind, func(t *testing.T) {

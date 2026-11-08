@@ -29,23 +29,35 @@ type FileCompositionRef struct {
 // FileCompositionBoundary carries complete, Meta-confirmed file composition.
 // It has no content versions, byte counts, credentials or permission decisions.
 type FileCompositionBoundary struct {
-	Format string               `json:"format"`
-	Refs   []FileCompositionRef `json:"refs"`
+	Format       string               `json:"format"`
+	SourceLayout string               `json:"source_layout,omitempty"` // TIFF layout as observed by Meta, independent of its physical file count.
+	Refs         []FileCompositionRef `json:"refs"`
 }
 
 // Layout is fixed by the admitted format identity, never by reference count.
 // glTF and ENVI keep their multi identities; existing file models stay single.
 func (b *FileCompositionBoundary) Layout() string {
+	if b != nil && b.Format == "tiff" {
+		return b.SourceLayout
+	}
 	if b != nil && (b.Format == "gltf" || b.Format == "envi") {
 		return "multi"
 	}
 	return "single"
 }
 
+// SingleImage reports a single-file image content identity. For TIFF the owner must prove an embedded geospatial profile.
+func (b *FileCompositionBoundary) SingleImage() bool {
+	return b != nil && (b.Format == "jpeg" || b.Format == "tiff")
+}
+
 // PrimaryRole accompanies the same fixed model identity in owner projections.
 func (b *FileCompositionBoundary) PrimaryRole() string {
 	if b != nil && b.Format == "geopackage" {
 		return "container"
+	}
+	if b.SingleImage() {
+		return "image"
 	}
 	if b != nil && b.Format == "envi" {
 		return "raster"
@@ -65,7 +77,7 @@ func (b *FileCompositionBoundary) DataType() string {
 	switch b.Format {
 	case "geopackage":
 		return "container"
-	case "envi":
+	case "envi", "jpeg", "tiff":
 		return "media"
 	case "ifc", "3ds", "dae", "obj", "stl", "glb", "gltf", "fbx":
 		return "model_3d"
@@ -80,10 +92,18 @@ var errFileComposition = errors.New("invalid exact file composition boundary")
 // NewFileCompositionBoundary canonicalizes facts supplied by the owner. It
 // neither discovers dependencies nor proves that their discovery is complete.
 func NewFileCompositionBoundary(format string, refs []FileCompositionRef) (*FileCompositionBoundary, error) {
+	return NewScannedFileCompositionBoundary(format, "", refs)
+}
+
+func NewScannedFileCompositionBoundary(format, layout string, refs []FileCompositionRef) (*FileCompositionBoundary, error) {
+	sourceLayout := ""
+	if format == "tiff" {
+		sourceLayout = layout
+	}
 	if len(refs) == 0 || len(refs) > MaxFileCompositionRefs {
 		return nil, errFileComposition
 	}
-	result := (&FileCompositionBoundary{Format: format, Refs: refs}).Clone()
+	result := (&FileCompositionBoundary{Format: format, SourceLayout: sourceLayout, Refs: refs}).Clone()
 	sort.Slice(result.Refs, func(i, j int) bool { return fileRefKey(result.Refs[i]) < fileRefKey(result.Refs[j]) })
 	unique := result.Refs[:0]
 	for _, ref := range result.Refs {
@@ -108,6 +128,12 @@ func NewFileCompositionBoundary(format string, refs []FileCompositionRef) (*File
 func (b *FileCompositionBoundary) Validate(engineID uint) error {
 	if b == nil || engineID == 0 || uint64(engineID) > math.MaxInt64 || !fileCompositionToken(b.Format) ||
 		len(b.Refs) == 0 || len(b.Refs) > MaxFileCompositionRefs {
+		return errFileComposition
+	}
+	if (b.Format == "tiff" && b.SourceLayout != "single" && b.SourceLayout != "multi") || (b.Format != "tiff" && b.SourceLayout != "") {
+		return errFileComposition
+	}
+	if b.SingleImage() && (len(b.Refs) != 1 || !b.Refs[0].Primary || !b.Refs[0].Required || b.Refs[0].Role != b.PrimaryRole()) {
 		return errFileComposition
 	}
 	if b.Format == "geopackage" && (len(b.Refs) != 1 || !b.Refs[0].Primary || !b.Refs[0].Required || b.Refs[0].Role != "container") {
@@ -182,7 +208,7 @@ func (b *FileCompositionBoundary) Clone() *FileCompositionBoundary {
 	if b == nil {
 		return nil
 	}
-	clone := &FileCompositionBoundary{Format: b.Format, Refs: make([]FileCompositionRef, len(b.Refs))}
+	clone := &FileCompositionBoundary{Format: b.Format, SourceLayout: b.SourceLayout, Refs: make([]FileCompositionRef, len(b.Refs))}
 	for i, ref := range b.Refs {
 		clone.Refs[i] = ref
 		clone.Refs[i].Target.Segments = append([]plugin.EngineCatalogSegment(nil), ref.Target.Segments...)
@@ -302,7 +328,7 @@ func (b *FileCompositionBoundary) UnmarshalJSON(encoded []byte) error {
 	decoder := json.NewDecoder(bytes.NewReader(encoded))
 	decoder.UseNumber()
 	keys, err := authorizationJSONValue(decoder, 0, 8)
-	if err != nil || len(keys) != 2 || !keys["format"] || !keys["refs"] {
+	if err != nil || (len(keys) != 2 && !(len(keys) == 3 && keys["source_layout"])) || !keys["format"] || !keys["refs"] {
 		return errFileComposition
 	}
 	if _, err := decoder.Token(); err != io.EOF {
@@ -312,7 +338,7 @@ func (b *FileCompositionBoundary) UnmarshalJSON(encoded []byte) error {
 	var result wire
 	decoder = json.NewDecoder(bytes.NewReader(encoded))
 	decoder.DisallowUnknownFields()
-	if decoder.Decode(&result) != nil || len(result.Refs) == 0 ||
+	if decoder.Decode(&result) != nil || keys["source_layout"] != (result.Format == "tiff") || len(result.Refs) == 0 ||
 		(*FileCompositionBoundary)(&result).Validate(result.Refs[0].Target.EngineID) != nil {
 		return errFileComposition
 	}

@@ -35,7 +35,7 @@ func NewHandler(control *service.ControlPlane, runtime *service.Runtime) *Handle
 // @x-addp-auth-mode "public"
 // @Router /capabilities [get]
 func (h *Handler) Capabilities(c *gin.Context) {
-	c.JSON(http.StatusOK, gin.H{"schema_version": commoninference.SchemaVersion, "operations": []string{"chat", "embedding", "rerank"}, "modalities": []string{"text", "image"}, "streaming": true})
+	c.JSON(http.StatusOK, gin.H{"schema_version": commoninference.SchemaVersion, "operations": []string{"chat", "embedding", "rerank", "segmentation"}, "modalities": []string{"text", "image"}, "streaming": true})
 }
 
 // ListModelLabels godoc
@@ -520,6 +520,34 @@ func (h *Handler) Embed(c *gin.Context) {
 		return
 	}
 	value, err := h.runtime.Embed(c.Request.Context(), input)
+	respond(c, value, err)
+}
+
+// Segment godoc
+// @Description 首期只接受本租户 Manager 服务调用 | Tenant-scoped Manager service only
+// @Summary 执行影像分割 | Execute segment inference
+// @Tags Inference Runtime
+// @Accept json
+// @Produce json
+// @Param request body commoninference.SegmentRequest true "Segment request"
+// @Success 200 {object} commoninference.SegmentResponse
+// @Failure 400 {object} commoninference.ErrorResponse
+// @Failure 502 {object} commoninference.ErrorResponse
+// @Security BearerAuth
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["inference.runtime.execute"]
+// @Router /internal/segment [post]
+func (h *Handler) Segment(c *gin.Context) {
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 8<<20)
+	var input commoninference.SegmentRequest
+	if !bind(c, &input) {
+		return
+	}
+	enforceTenant(c, &input.TenantID)
+	if c.IsAborted() {
+		return
+	}
+	value, err := h.runtime.Segment(c.Request.Context(), input)
 	respond(c, value, err)
 }
 

@@ -60,6 +60,7 @@ func SetupRouter(
 	readBoundary *managerprotection.ReadBoundary,
 	lifecycle *modulelifecycle.Controller,
 	pptxPDFHandler *PPTXPDFHandler,
+	segment *ImageSegmentationHandler,
 	notifyExecutionEnqueued func(),
 ) *gin.Engine {
 	router := modulelifecycle.NewRouter()
@@ -105,8 +106,8 @@ func SetupRouter(
 		bindingHandler := NewInferenceScenarioBindingHandler(inferenceScenarioBindingService)
 		settings := router.Group("/api/v1/manager")
 		settings.Use(auth.MustNewMiddleware(auth.MiddlewareConfig{SystemURL: cfg.SystemServiceURL}))
-		settings.GET("/settings/inference-binding", auth.MustNewPermissionGuard(managerauthorization.PermissionManagerConfigurationRead), bindingHandler.Get)
-		settings.PUT("/settings/inference-binding", auth.MustNewPermissionGuard(managerauthorization.PermissionManagerConfigurationUpdate), bindingHandler.Update)
+		settings.GET("/settings/inference-bindings/:scenario", auth.MustNewPermissionGuard(managerauthorization.PermissionManagerConfigurationRead), bindingHandler.Get)
+		settings.PUT("/settings/inference-bindings/:scenario", auth.MustNewPermissionGuard(managerauthorization.PermissionManagerConfigurationUpdate), bindingHandler.Update)
 	}
 	if baseMapProviderService != nil {
 		handler := NewBaseMapProviderHandler(baseMapProviderService)
@@ -309,6 +310,7 @@ func SetupRouter(
 
 		api.GET("/engines", permission(managerauthorization.PermissionManagerDataItemRead), explorerHandler.ListEngines) // 获取存储引擎选择项（只读）
 		api.POST("/engines/:id/items/refresh", permission(managerauthorization.PermissionManagerDataItemUpdate, "meta.scan_task.execute"), metadataHandler.RefreshItem)
+		api.POST("/image-segmentation", permission(managerauthorization.PermissionManagerContentRead, managerauthorization.PermissionManagerDataItemRead), segment.Run)
 		api.GET("/preview", permission(managerauthorization.PermissionManagerDataItemRead), explorerHandler.Preview)
 		api.GET("/resource-facts", permission(managerauthorization.PermissionManagerDataItemRead), explorerHandler.ResourceFacts)
 		api.GET("/downloads/file", permission(managerauthorization.PermissionManagerContentRead), downloadHandler.DownloadFile)

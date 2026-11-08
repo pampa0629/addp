@@ -1069,6 +1069,7 @@ services:
       - SERVICE_HOST=ontology-backend
       - ONTOLOGY_BACKEND_PORT=8195
       - SYSTEM_URL=http://system-backend:8180
+      - SERVICE_URL=http://service-backend:8086
       - ONTOLOGY_SERVICE_CLIENT_SECRET=${ONTOLOGY_SERVICE_CLIENT_SECRET}
       - INFRA_FALKORDB_ADDRESS=falkordb:6379
       - INFRA_FALKORDB_PASSWORD=${INFRA_FALKORDB_PASSWORD}

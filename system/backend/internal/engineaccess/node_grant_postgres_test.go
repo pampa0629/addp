@@ -430,16 +430,23 @@ func exercisePersistentNodeGrants(t *testing.T, db *gorm.DB, service *Service, a
 				boundary = &authorizationfacts.AuthorizationBoundary{Layout: "whole", MetadataTarget: &authorizationfacts.MetadataBoundary{Target: primary, Layout: "whole", DataType: "table", Format: "parquet", CompositionDigest: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}}
 			} else {
 				refs := []authorizationfacts.FileCompositionRef{{Target: primary, Primary: true, Required: true, Role: "model"}}
-				format := "ifc"
+				format, layout := "ifc", "single"
+				if strings.HasSuffix(name, ".jpg") {
+					format = "jpeg"
+					refs[0].Role = "image"
+				} else if strings.HasSuffix(name, ".tif") {
+					format, layout = "tiff", "multi"
+					refs[0].Role = "image"
+				}
 				if dependency != "" {
 					format = "3ds"
 					refs = append(refs, authorizationfacts.FileCompositionRef{Target: plugin.ObjectItemPath(base.EngineID, "models", strings.TrimPrefix(dependency, "models/")), Required: true, Role: "texture"})
 				}
-				composition, err := authorizationfacts.NewFileCompositionBoundary(format, refs)
+				composition, err := authorizationfacts.NewScannedFileCompositionBoundary(format, layout, refs)
 				if err != nil {
 					t.Fatal(err)
 				}
-				boundary = &authorizationfacts.AuthorizationBoundary{Layout: "single", FileComposition: composition}
+				boundary = &authorizationfacts.AuthorizationBoundary{Layout: layout, FileComposition: composition}
 			}
 			fp, err := authorizationfacts.PrimaryCandidateFingerprint(primary)
 			if err != nil {
@@ -479,6 +486,8 @@ func exercisePersistentNodeGrants(t *testing.T, db *gorm.DB, service *Service, a
 		whole := bindingFor("whole.parquet", true, "")
 		nested := bindingFor("child/nested.ifc", false, "")
 		cross := bindingFor("scene.3ds", false, scope.StringPath()+"/child/texture.png")
+		check(bindingFor("photo.jpg", false, ""), true)
+		check(bindingFor("nested/scene.tif", false, ""), false)
 		check(current, true)
 		check(future, true)
 		check(whole, true)
@@ -532,6 +541,7 @@ func exercisePersistentNodeGrants(t *testing.T, db *gorm.DB, service *Service, a
 		if err != nil {
 			t.Fatal(err)
 		}
+		check(bindingFor("nested/scene.tif", false, ""), true)
 		check(nested, true)
 		check(cross, true)
 		time.Sleep(time.Until(expiry) + 20*time.Millisecond)

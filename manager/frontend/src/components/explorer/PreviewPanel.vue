@@ -275,6 +275,8 @@
             </el-button>
           </div>
 
+          <ImageSegmentation v-if="canSegmentSelectedImage" :key="selectedNode.locator" :locator="selectedNode.locator" />
+
           <!-- 下载按钮 -->
           <el-tooltip
             v-if="showDownloadControl && downloadDisabled && downloadTip"
@@ -533,6 +535,7 @@ import { useCurrentResultConfirmation } from '@/composables/useCurrentResultConf
 import { toQuickViewExistingResultPayload } from '@/utils/currentResultConfirmation'
 import FlatGeobufQuickView from '@/components/map/FlatGeobufQuickView.vue'
 import VectorTilePreview from '@/components/map/VectorTilePreview.vue'
+import ImageSegmentation from "./ImageSegmentation.vue"
 import RasterTIFFQuickView from '@/components/map/RasterTIFFQuickView.vue'
 import Model3DPreview from '@/components/explorer/Model3DPreview.vue'
 import GaussianSplatPreview from '@/components/explorer/GaussianSplatPreview.vue'
@@ -2590,6 +2593,16 @@ const objectCanonicalFormat = computed(() => {
     props.selectedNode?.format ||
     ''
   ).trim()
+})
+const canSegmentSelectedImage = computed(() => {
+  const attrs = scannedItemFacts.value || {}
+  const item = objectData.value?.attributes?.item || attrs.item || {}
+  const file = item.refs?.length === 1 ? item.refs[0] : null
+  const oneTiff = item.format === 'tiff' && item.layout === 'multi' && file?.primary && file?.required
+  if (!props.selectedNode?.locator || (item.layout !== 'single' && !oneTiff) || store.selectedChildName || (store.selectedRefPath && store.selectedRefPath !== file?.path)) return false
+  if (objectCanonicalFormat.value === 'jpeg') return previewPluginName.value === 'image'
+  const profile = objectData.value?.attributes?.format_info?.tiff?.profile || attrs.format_info?.tiff?.profile
+  return objectCanonicalFormat.value === 'tiff' && ['geotiff', 'cog'].includes(profile)
 })
 const showStaticTrajectory = computed(() => canPreviewStaticTrajectory({
   format: objectCanonicalFormat.value,

@@ -87,7 +87,7 @@ erDiagram
 
 #### 适配器选择
 
-`adapter_type` 第一阶段允许 `openai_compatible` 和 `dashscope_multimodal`。DashScope compatible mode、OpenAI、vLLM、Ollama 的 OpenAI-compatible endpoint 通过前者接入；DashScope 多模态向量接口因使用 `input.contents` 而通过后者接入。适配器由 Provider 创建时显式选择，不根据 endpoint 或模型名称猜测协议；只有协议语义确实不同且无法由标准字段表达时才新增适配器类型。
+`adapter_type` 允许 `openai_compatible`、`dashscope_multimodal` 和仅绑定回环 IP 的 `local_image_segmentation`。DashScope compatible mode、OpenAI、vLLM、Ollama 的 OpenAI-compatible endpoint 通过前者接入；DashScope 多模态向量接口因使用 `input.contents` 而通过后者接入。适配器由 Provider 创建时显式选择，不根据 endpoint 或模型名称猜测协议；只有协议语义确实不同且无法由标准字段表达时才新增适配器类型。
 
 #### Chat 输出上限
 
@@ -244,6 +244,7 @@ Provider 或 Deployment 存在 Inference 本地的下游引用时，删除必须
 | `POST /chat` | `messages`、可选 `tools/tool_choice`、`response_schema`、`temperature/max_output_tokens` | `message`（含标准化 `tool_calls`）、`usage`、`deployment_id`、`profile_version` |
 | `POST /embeddings` | `inputs[]`，每项为 text 或受控 image content | `vectors[]`、`dimension`、`usage`、`deployment_id`、`profile_version` |
 | `POST /rerank` | `query`、`documents[]`、`top_n` | `results[]`、`usage`、`deployment_id`、`profile_version` |
+| `POST /segment` | 窗口、租户绑定的临时会话及提示 | 窗口像素坐标上的逐实例掩膜 |
 | `POST /profiles/resolve` | `operation`、`modality` | `model_profile_id`、`profile_version`、`deployment_id`、`dimension` |
 
 ### 输入与输出协议
@@ -333,3 +334,16 @@ Provider、Deployment 和 Profile 是强类型资源，使用独立 API、表、
 5. 上游错误到 ADDP 稳定错误的映射，且不存在隐藏 fallback。 相关正文：[错误与重试](#错误与重试边界)、[超时分类](#超时与响应完整性)、[诊断日志](#诊断日志与提示)。
 6. Agent、Copilot、Manager 代码和根 `.env.example` 中不存在厂商 API Key 或直连模型 endpoint 路径。 相关正文：[调用方边界](#七调用方边界)、[凭据规则](#四凭据)。
 7. Chat 思考控制的默认省略、显式关闭、非法值拒绝、持久化更新及快速接入/高级编辑；关闭思考不改变 Tool Choice、不产生额外请求。真实厂商调用须在部署新代码后另行验证，不能以受控上游测试代替。 相关正文：[思考模式](#chat-思考模式)、[复用配置冲突](#复用部署与配置冲突)。
+
+### 本机交互式影像分割
+
+Manager 的 image_segmentation 场景使用一个 Profile，Deployment 声明 segmentation/image。local_image_segmentation 适配器只连接 Inference 所在主机的 HTTP 回环 IP，禁止重定向及代理。模型凭据只由 Inference 保存。Manager 使用当前租户 User 的现行源读取及本地保护规则；准备、提示和释放均绑定当前主体、来源、窗口和部署，只产生临时结果。
+
+统一操作分 prepare、prompt、release。prepare 只提交一次经授权的影像窗口，返回短期句柄及像素宽高；prompt 提交窗口内像素坐标（左上为原点）或一个类别短语。正负点用于修正同一对象，框角用于单对象提示，文字按实例返回局部掩膜及偏移。切换源、版本、窗口或 Profile 后重新准备。句柄不代替授权。模型服务将会话和编码保存在本机内存并按容量及空闲时间回收。
+
+
+首期由固定 Manager 服务身份调用分割操作。
+
+本机上游契约为带 Bearer 凭据的 `POST /segment`。Inference 将用户与源窗口摘要和 tenant、Profile 版本、Deployment 合成不透明 scope，传给上游；上游以 scope 校验随机会话句柄。prepare 携带 base64 PNG，prompt 的几何提示使用点序列和标签（0 背景、1 前景、2／3 一对框角），类别提示使用 text。返回的每个 mask 包含窗口像素 x、y、width、height、局部黑白 PNG 及模型分数。同一窗口短时间复用，同一模型服务只监听回环；本机上游不承担 System、Manager 或 Meta 职责。
+
+Manager 将 image_segmentation 绑定到单独 Profile，场景管理使用 `/api/v1/manager/settings/inference-bindings/{scenario}`。当前实现的有界读取预算为压缩源 64 MiB、解码 32 Mi 像素、单边 32768 像素，单次模型输入最长边 1024；取窗从同一经授权的源像素解码，不包含底图，第一版不处理依赖附属文件、多页切换或无限尺寸的整幅 COG。JPEG／GeoTIFF 内容准入以授权上下文规范为准。真实浏览器验收以打开分割面板、切换窗口、点击到下一次画布绘制的耗时为依据。受控上游、模型进程与页面夹具分别验证契约，均不能代替在线用户链路。

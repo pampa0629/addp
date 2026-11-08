@@ -1901,6 +1901,76 @@ const docTemplate = `{
                 ]
             }
         },
+        "/image-segmentation": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "数据探查 | Data Explorer"
+                ],
+                "summary": "交互式影像分割 | Segment a preview image",
+                "parameters": [
+                    {
+                        "description": "分割操作 | Segmentation operation",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_manager_internal_service.ImageSegmentInput"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_manager_internal_service.ImageSegmentResult"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "manager.content.read",
+                    "manager.data_item.read"
+                ]
+            }
+        },
         "/imports": {
             "post": {
                 "security": [
@@ -4884,7 +4954,7 @@ const docTemplate = `{
                 ]
             }
         },
-        "/settings/inference-binding": {
+        "/settings/inference-bindings/{scenario}": {
             "get": {
                 "security": [
                     {
@@ -4898,6 +4968,15 @@ const docTemplate = `{
                     "配置管理 | Configuration Management"
                 ],
                 "summary": "获取 Manager 推理场景绑定 | Get Manager inference scenario binding",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "推理场景 | Inference scenario",
+                        "name": "scenario",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -4936,6 +5015,13 @@ const docTemplate = `{
                         "schema": {
                             "$ref": "#/definitions/github_com_addp_manager_internal_service.UpdateInferenceScenarioBindingInput"
                         }
+                    },
+                    {
+                        "type": "string",
+                        "description": "推理场景 | Inference scenario",
+                        "name": "scenario",
+                        "in": "path",
+                        "required": true
                     }
                 ],
                 "responses": {
@@ -8320,6 +8406,67 @@ const docTemplate = `{
                 }
             }
         },
+        "github_com_addp_manager_internal_service.ImageSegmentInput": {
+            "type": "object",
+            "required": [
+                "action",
+                "locator"
+            ],
+            "properties": {
+                "action": {
+                    "type": "string"
+                },
+                "locator": {
+                    "type": "string"
+                },
+                "prompt": {
+                    "$ref": "#/definitions/inference.SegmentPrompt"
+                },
+                "session_id": {
+                    "type": "string"
+                },
+                "window": {
+                    "$ref": "#/definitions/github_com_addp_manager_internal_service.ImageWindow"
+                }
+            }
+        },
+        "github_com_addp_manager_internal_service.ImageSegmentResult": {
+            "type": "object",
+            "properties": {
+                "image": {
+                    "type": "string"
+                },
+                "masks": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/inference.InstanceMask"
+                    }
+                },
+                "session_id": {
+                    "type": "string"
+                },
+                "window": {
+                    "$ref": "#/definitions/github_com_addp_manager_internal_service.ImageWindow"
+                }
+            }
+        },
+        "github_com_addp_manager_internal_service.ImageWindow": {
+            "type": "object",
+            "properties": {
+                "height": {
+                    "type": "integer"
+                },
+                "width": {
+                    "type": "integer"
+                },
+                "x": {
+                    "type": "integer"
+                },
+                "y": {
+                    "type": "integer"
+                }
+            }
+        },
         "github_com_addp_manager_internal_service.ImportResult": {
             "type": "object",
             "properties": {
@@ -9387,6 +9534,52 @@ const docTemplate = `{
                 },
                 "tile_budget": {
                     "type": "integer"
+                }
+            }
+        },
+        "inference.InstanceMask": {
+            "type": "object",
+            "properties": {
+                "height": {
+                    "type": "integer"
+                },
+                "png": {
+                    "type": "string"
+                },
+                "score": {
+                    "type": "number"
+                },
+                "width": {
+                    "type": "integer"
+                },
+                "x": {
+                    "type": "integer"
+                },
+                "y": {
+                    "type": "integer"
+                }
+            }
+        },
+        "inference.SegmentPrompt": {
+            "type": "object",
+            "properties": {
+                "labels": {
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    }
+                },
+                "points": {
+                    "type": "array",
+                    "items": {
+                        "type": "array",
+                        "items": {
+                            "type": "integer"
+                        }
+                    }
+                },
+                "text": {
+                    "type": "string"
                 }
             }
         },

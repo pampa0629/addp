@@ -1285,6 +1285,46 @@ definitions:
       updated_at:
         type: string
     type: object
+  github_com_addp_manager_internal_service.ImageSegmentInput:
+    properties:
+      action:
+        type: string
+      locator:
+        type: string
+      prompt:
+        $ref: '#/definitions/inference.SegmentPrompt'
+      session_id:
+        type: string
+      window:
+        $ref: '#/definitions/github_com_addp_manager_internal_service.ImageWindow'
+    required:
+    - action
+    - locator
+    type: object
+  github_com_addp_manager_internal_service.ImageSegmentResult:
+    properties:
+      image:
+        type: string
+      masks:
+        items:
+          $ref: '#/definitions/inference.InstanceMask'
+        type: array
+      session_id:
+        type: string
+      window:
+        $ref: '#/definitions/github_com_addp_manager_internal_service.ImageWindow'
+    type: object
+  github_com_addp_manager_internal_service.ImageWindow:
+    properties:
+      height:
+        type: integer
+      width:
+        type: integer
+      x:
+        type: integer
+      "y":
+        type: integer
+    type: object
   github_com_addp_manager_internal_service.ImportResult:
     properties:
       status:
@@ -1993,6 +2033,36 @@ definitions:
         type: string
       tile_budget:
         type: integer
+    type: object
+  inference.InstanceMask:
+    properties:
+      height:
+        type: integer
+      png:
+        type: string
+      score:
+        type: number
+      width:
+        type: integer
+      x:
+        type: integer
+      "y":
+        type: integer
+    type: object
+  inference.SegmentPrompt:
+    properties:
+      labels:
+        items:
+          type: integer
+        type: array
+      points:
+        items:
+          items:
+            type: integer
+          type: array
+        type: array
+      text:
+        type: string
     type: object
   internal_api.DerivedTaskRequest:
     properties:
@@ -4679,6 +4749,51 @@ paths:
       x-addp-auth-mode: permission
       x-addp-required-permissions:
       - manager.derived_artifact.read
+  /image-segmentation:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 分割操作 | Segmentation operation
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_addp_manager_internal_service.ImageSegmentInput'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_addp_manager_internal_service.ImageSegmentResult'
+        "403":
+          description: Forbidden
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "422":
+          description: Unprocessable Entity
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "503":
+          description: Service Unavailable
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 交互式影像分割 | Segment a preview image
+      tags:
+      - 数据探查 | Data Explorer
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - manager.content.read
+      - manager.data_item.read
   /imports:
     post:
       consumes:
@@ -6760,8 +6875,14 @@ paths:
       x-addp-auth-mode: permission
       x-addp-required-permissions:
       - manager.configuration.update
-  /settings/inference-binding:
+  /settings/inference-bindings/{scenario}:
     get:
+      parameters:
+      - description: 推理场景 | Inference scenario
+        in: path
+        name: scenario
+        required: true
+        type: string
       produces:
       - application/json
       responses:
@@ -6787,6 +6908,11 @@ paths:
         required: true
         schema:
           $ref: '#/definitions/github_com_addp_manager_internal_service.UpdateInferenceScenarioBindingInput'
+      - description: 推理场景 | Inference scenario
+        in: path
+        name: scenario
+        required: true
+        type: string
       produces:
       - application/json
       responses:

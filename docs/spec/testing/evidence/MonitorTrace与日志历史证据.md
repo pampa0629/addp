@@ -390,3 +390,42 @@ System／Gateway 产物分别为 `sha256:aaf46c29ca32cfad6782cdc55197f2671300b08
 最终 `make test-infra-runtime-log-lifecycle` 退出0：指标来源既有聚合通过，HTTP local runner 53项Python／7项Node及System身份夹具通过，Trace local runner 208项Python／登记及System身份夹具通过，生命周期／预算／Trace配置／容量规则／PostgreSQL来源聚合154项通过。新增回归在临时目录通过真实OpenSSL签发与证书验证，覆盖用途／30天期限、来源与查询CA交叉验证拒绝、私有配置、标准CLI与无参渲染、现有目录不覆盖、非法输入／生产拒绝及命令／整组超时清理。这里的证书链验证不是网络mTLS／真实采样验收。现有Make聚合及路径自动发现已覆盖，无需新增workflow或标准测试入口；本批diff空白检查通过。
 
 浏览器旧实现复现与首轮13项通过见 `/var/folders/r1/l7b49c757dz02zftf_l9vl9r0000gn/T/addp-p19-trace-ui.i8PomC7t/`；最终生命周期和13项浏览器日志见 `/var/folders/r1/l7b49c757dz02zftf_l9vl9r0000gn/T/addp-p19-trace-preparation.0DmAU8CG/`。本批改动尚未提交／推送。所有证书生成只在自动清理的临时目录，未创建个人部署目录、修改个人 `.env`、启动设施、重启开发服务，未运行Hosted、容量实链或定时。个人环境仍未启用Trace；后续实际材料生成／配置合并与共享Alloy更新、用户标准重启须另行确认。
+
+
+<a id="trace-personal-materials-prepared-20261108"></a>
+
+## 2026-11-08 本机实际 Trace 部署材料准备通过，尚未启用
+
+用户确认继续后，仅沿已发布的原 `generate-trace-config.py prepare-development` 在仓库外 `/Users/pampa/.config/addp/observability/traces` 生成本机部署输入；本机首次生成，不覆盖既有目录。明确绑定 Gateway ingress 及 System／Monitor／Agent／Copilot backend，采集与查询端点分别使用回环 14318／14320；这些是准备值，实际启用前仍须核对标准 Infra 分配，不当作端口已监听。父目录以私有权限新建，未改变既有目录权限。
+
+准备时已提交 main 为 `2b05bc27c8452cc58a7775449a413725abaac0a2`；生成器及模板／策略输入摘要保存在私有报告，不借后续 main 替代。原标准命令一次完成，耗时 0.528172 秒，生成材料共 51664 字节。只读核验全部七张叶证书的证书链、预定用途、密钥匹配、29天仍有效／31天失效、localhost／127.0.0.1服务端SAN；来源／查询CA互验拒绝。全部目录0700、文件0600，原非秘密Tempo配置0644；客户端目录只含原三文件，配置片段仅含原七项Trace变量，正式五模块四字段部署绑定和72小时策略均匹配。该记录是实际材料的离线核验，不是网络mTLS、真实采样、SDK运行或产品页面验收。
+
+报告：`/var/folders/r1/l7b49c757dz02zftf_l9vl9r0000gn/T/addp-p19-trace-personal-preparation-kydz7xm0/report.json`。准备前后根 `.env` 与 `.dev-state/ports.env` 摘要一致，生成器／模板／策略摘要一致；未将私钥正文输出到日志，未访问Docker、网络或MinIO，未创建存储账号／bucket、启停共享Alloy／Tempo或重启服务。实际材料保留在用户私有目录，不提交仓库；证据只保存封闭摘要。原本地生命周期及13项受控页面测试继续是相同输入下的既有验证，本轮未重跑这些测试或镜像构建。
+
+个人环境仍未应用Trace配置。下一步先复核标准Infra真实端口、现有MinIO及共享Alloy的应用影响，再经用户确认合并七项配置、沿原Infra入口启用，由用户执行开发服务标准重启；实际采样、查询、日志接收及页面读取须另行验证。本轮没有新开隔离验收窗口，没有运行Hosted、容量或定时；历史full待验与原失败结论均不变。
+
+
+<a id="trace-personal-activation-readonly-20261108"></a>
+
+## 2026-11-08 本机 Trace 启用前只读核对，实际应用待确认
+
+沿标准 `bash scripts/infra/status.sh` 与只读Docker／宿主监听核对：Infra MinIO健康、实际宿主API／Console为19000／19001；共享Alloy和日志查询Ready，保留的最近观察探针投递成功。Trace仍Disabled；14318／14320未发现监听，仅为当时快照，不预留端口。Docker为28.5.1／aarch64、18 CPU／67304611840字节内存；原固定摘要的Alloy／Tempo／Nginx查询代理镜像均已缓存linux/arm64，无需将镜像存在性当网络或运行验证。当前工作区MinIO／Alloy／Loki归属校验通过。只读inspect首轮模板误取未声明Health的容器字段，纠正字段选择后成功，不将模板错误当作daemon故障。
+
+当前Alloy只读日志配置，尚无CPU／内存硬限制；单次使用约315MiB不能证明峰值。启用Trace将沿原合并配置重建同一Alloy，设置1 CPU／1GiB，新增Tempo 2 CPU／2GiB、查询代理0.25 CPU／128MiB，三者合计3.25 CPU／3.125GiB；会短暂影响共享采集，现有日志亦须复核。原MinIO独立Trace账号／bucket、20GiB配额、72小时策略及约5GiB WAL／工作空间预算不变。宿主文件系统可用空间不是Docker VM或MinIO卷可用量，本轮未查询存储账号／bucket状态或证明72小时容量。既有源累计丢弃等计数非零，不将Ready或最近探针成功表述为历史无丢失。
+
+源码确认根 `infra/up.sh` 不提供仅Trace选项：会走核心镜像构建／检查、核心服务启动校验／初始化、指标来源停止与重建、日志组件编排，再启动Trace。因此实际应用方案必须包含整套标准Infra影响，不能表述成仅启动两个容器，也不自行绕过生命周期直接Compose。后续拟经用户确认合并原七项Trace配置，由原生命周期准备独立S3密钥；由用户运行Infra入口及 `./scripts/dev/restart.sh -all` 后，再查真实采样／日志／权限／页面。实际命令执行前重新核对端口和共享状态，采集端点必须与实际映射一致。
+
+只读摘要：`/var/folders/r1/l7b49c757dz02zftf_l9vl9r0000gn/T/addp-p19-trace-activation-preflight-joy3ofb5/report.json`。本轮没有修改.env、端口文件、证书、采集配置、源码或运行服务；未运行构建、Hosted、容量、定时或任何新验收窗口。仅追加既有证据，尚未提交；实际启用、真实查询及完整产品闭环保持待验。
+
+
+<a id="trace-personal-env-applied-await-user-start-20261108"></a>
+
+## 2026-11-08 本机七项 Trace 配置合并，等待用户标准启用与重启
+
+用户明确授权只合并七项Trace配置、保留其他配置，由用户执行标准Infra和开发重启，之后核验真实链路／日志／页面。已将现有私有deployment.env中的七项原变量追加到根.env：ADDP_OBSERVABILITY_TRACES_ENABLED、ADDP_TRACE_DEPLOYMENT_DIR、TRACE_OTLP_PORT、TRACE_QUERY_PORT、ADDP_TRACE_DEPLOYMENTS、MONITOR_TEMPO_URL、MONITOR_TRACE_TLS_DIR。合并前七项均不存在；原字节保留为新文件前缀，原0600及开发端口文件保持。未写入S3秘密或改变其他项；独立S3账号／密钥仍由用户后续标准Infra入口准备。
+
+只读验证每项恰有一条、bash语法及子进程实际读取值与准备材料一致。原Compose离线渲染验证通过：Alloy使用合并配置及只读证书目录、回环14318／14320、三组件原3.25CPU／3.125GiB限额和独立Trace bucket一致。首次后置校验将Compose返回的内存十进制字符串与整数比较而误报断言，明确为核验脚本类型问题；修正只读断言后通过，未再次写入或变更运行配置。未把该误报当作产品或daemon失败。
+
+核验摘要：`/var/folders/r1/l7b49c757dz02zftf_l9vl9r0000gn/T/addp-p19-trace-env-verified-xzx_c_4u/report.json`。根.env受Git忽略，个人秘密与实际部署材料不入仓库；本轮仅追加此证据且未提交。没有执行Infra启用、服务重启、构建、真实请求／页面、Hosted、容量或定时。配置已选择Trace，但既有运行进程尚未应用，不能宣称Trace实际可查询。
+
+交给用户从仓库根执行 `bash scripts/infra/up.sh`，仅成功后执行 `./scripts/dev/restart.sh -all`。前者走原整套Infra生命周期并更新共享Alloy；后者由用户在自己的终端重启以加载采集／查询配置，AI不执行keepalive或接管进程。收到执行结果后再只读核验实际端口与状态、正式身份下Trace／日志和页面；如任一步失败，先保留输出定位，不自动重试。原Hosted、容量和定时禁令保持。

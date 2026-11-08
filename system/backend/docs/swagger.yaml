@@ -577,6 +577,10 @@ definitions:
         items:
           $ref: '#/definitions/authorizationfacts.FileCompositionRef'
         type: array
+      source_layout:
+        description: TIFF layout as observed by Meta, independent of its physical
+          file count.
+        type: string
     type: object
   authorizationfacts.FileCompositionRef:
     properties:

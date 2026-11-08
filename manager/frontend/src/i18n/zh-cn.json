@@ -1,5 +1,19 @@
 {
   "manager": {
+    "segment": {
+      "title": "影像分割",
+      "point": "点选",
+      "box": "框选",
+      "positive": "增加前景点",
+      "negative": "排除背景点",
+      "window": "框选分析窗口",
+      "concept": "目标类别",
+      "conceptExample": "英文类别，如 laptop",
+      "find": "查找同类",
+      "full": "整幅影像",
+      "working": "正在处理…",
+      "count": "找到 {n} 个实例"
+    },
     "maxTextures": {
       "optionsLabel": "MAX 转换选项",
       "button": "外部贴图（{count}）",

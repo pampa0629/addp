@@ -50,6 +50,12 @@ func projectFileAuthorizationFacts(lookup metadataNodeLookup, item models.MetaIt
 		return finish(authorizationfacts.AuthorizationBasisUnsupported)
 	}
 	identity := authorizationfacts.FileCompositionBoundary{Format: format}
+	if format == "tiff" {
+		identity.SourceLayout = layout
+		if layout != "single" && layout != "multi" {
+			return finish(authorizationfacts.AuthorizationBasisUnsupported)
+		}
+	}
 	if layout != identity.Layout() || dataType != identity.DataType() || identity.DataType() == "" {
 		return finish(authorizationfacts.AuthorizationBasisUnsupported)
 	}
@@ -61,9 +67,21 @@ func projectFileAuthorizationFacts(lookup metadataNodeLookup, item models.MetaIt
 		return plugin.FileItemPath(item.EngineID, name)
 	}
 	primary := targetFor(item.FullName)
-	extensionMatches := strings.ToLower(path.Ext(item.FullName)) == "."+format
+	ext := strings.ToLower(path.Ext(item.FullName))
+	extensionMatches := ext == "."+format
 	if format == "geopackage" {
-		extensionMatches = strings.ToLower(path.Ext(item.FullName)) == ".gpkg"
+		extensionMatches = ext == ".gpkg"
+	}
+	if identity.SingleImage() {
+		if format == "jpeg" {
+			extensionMatches = ext == ".jpeg" || ext == ".jpg"
+		} else {
+			extensionMatches = ext == ".tif" || ext == ".tiff"
+			p := commonjson.String(item.Attributes, "format_info.tiff", "profile")
+			if p != "geotiff" && p != "cog" {
+				return finish(authorizationfacts.AuthorizationBasisUnsupported)
+			}
+		}
 	}
 	if primary.StringPath() != item.FullName || path.Base(item.FullName) != item.Name ||
 		(format != "envi" && !extensionMatches) || commonjson.String(item.Attributes, "storage", "physical_path") != item.FullName {
@@ -90,9 +108,15 @@ func projectFileAuthorizationFacts(lookup metadataNodeLookup, item models.MetaIt
 			return finish(authorizationfacts.AuthorizationBasisNeedsRefresh)
 		}
 	}
-	if !hasRefs && format == "ifc" {
+	if !hasRefs && layout == "single" && (format == "ifc" || identity.SingleImage()) {
 		required := true
-		refs = []fileAuthorizationRef{{Path: item.FullName, Role: "model", Required: &required, Primary: true}}
+		refs = []fileAuthorizationRef{{Path: item.FullName, Role: identity.PrimaryRole(), Required: &required, Primary: true}}
+	}
+	if identity.SingleImage() && hasRefs {
+		if len(refs) != 1 || refs[0].Path != item.FullName || !refs[0].Primary || refs[0].Required == nil || !*refs[0].Required || (refs[0].Role != "main" && refs[0].Role != "image") {
+			return finish(authorizationfacts.AuthorizationBasisNeedsRefresh)
+		}
+		refs[0].Role = identity.PrimaryRole()
 	}
 	if len(refs) == 0 {
 		return finish(authorizationfacts.AuthorizationBasisIncomplete)
@@ -222,7 +246,7 @@ func projectFileAuthorizationFacts(lookup metadataNodeLookup, item models.MetaIt
 			return finish(authorizationfacts.AuthorizationBasisNeedsRefresh)
 		}
 	}
-	composition, err := authorizationfacts.NewFileCompositionBoundary(format, compositionRefs)
+	composition, err := authorizationfacts.NewScannedFileCompositionBoundary(format, layout, compositionRefs)
 	if err != nil {
 		return finish(authorizationfacts.AuthorizationBasisNeedsRefresh)
 	}

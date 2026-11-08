@@ -48,7 +48,11 @@ func (s *InferenceScenarioBindingService) Resolve(ctx context.Context, tenantID 
 	if s == nil || s.repo == nil {
 		return ResolvedInferenceScenarioBinding{}, errors.New("inference scenario binding service is required")
 	}
-	value, err := s.repo.Resolve(ctx, tenantID, models.InferenceScenarioSemanticSearchEmbedding)
+	return s.ResolveScenario(ctx, tenantID, models.InferenceScenarioSemanticSearchEmbedding)
+}
+
+func (s *InferenceScenarioBindingService) ResolveScenario(ctx context.Context, tenantID uint, scenario string) (ResolvedInferenceScenarioBinding, error) {
+	value, err := s.repo.Resolve(ctx, tenantID, scenario)
 	if err != nil {
 		return ResolvedInferenceScenarioBinding{}, err
 	}
@@ -58,13 +62,13 @@ func (s *InferenceScenarioBindingService) Resolve(ctx context.Context, tenantID 
 	return ResolvedInferenceScenarioBinding{ModelProfileID: value.ModelProfileID, BindingVersion: value.Version, SourceScope: value.ScopeType}, nil
 }
 
-func (s *InferenceScenarioBindingService) Get(ctx context.Context, scopeType string, tenantID *uint) (InferenceScenarioBindingResponse, error) {
-	value, err := s.repo.Get(ctx, scopeType, tenantID, models.InferenceScenarioSemanticSearchEmbedding)
+func (s *InferenceScenarioBindingService) Get(ctx context.Context, scenario, scopeType string, tenantID *uint) (InferenceScenarioBindingResponse, error) {
+	value, err := s.repo.Get(ctx, scopeType, tenantID, scenario)
 	if err != nil {
 		return InferenceScenarioBindingResponse{}, err
 	}
 	if value == nil && scopeType == "tenant" && tenantID != nil {
-		resolved, resolveErr := s.repo.Resolve(ctx, *tenantID, models.InferenceScenarioSemanticSearchEmbedding)
+		resolved, resolveErr := s.repo.Resolve(ctx, *tenantID, scenario)
 		if resolveErr != nil {
 			return InferenceScenarioBindingResponse{}, resolveErr
 		}
@@ -73,12 +77,12 @@ func (s *InferenceScenarioBindingService) Get(ctx context.Context, scopeType str
 		}
 	}
 	if value == nil {
-		return InferenceScenarioBindingResponse{ScenarioCode: models.InferenceScenarioSemanticSearchEmbedding, ScopeType: scopeType, TenantID: tenantID}, nil
+		return InferenceScenarioBindingResponse{ScenarioCode: scenario, ScopeType: scopeType, TenantID: tenantID}, nil
 	}
 	return bindingResponse(value, true), nil
 }
 
-func (s *InferenceScenarioBindingService) Update(ctx context.Context, scopeType string, tenantID *uint, input UpdateInferenceScenarioBindingInput, updatedBy uint) (InferenceScenarioBindingResponse, error) {
+func (s *InferenceScenarioBindingService) Update(ctx context.Context, scenario, scopeType string, tenantID *uint, input UpdateInferenceScenarioBindingInput, updatedBy uint) (InferenceScenarioBindingResponse, error) {
 	input.ModelProfileID = strings.TrimSpace(input.ModelProfileID)
 	if _, err := uuid.Parse(input.ModelProfileID); err != nil {
 		return InferenceScenarioBindingResponse{}, fmt.Errorf("model_profile_id must be a UUID")
@@ -89,7 +93,7 @@ func (s *InferenceScenarioBindingService) Update(ctx context.Context, scopeType 
 		return InferenceScenarioBindingResponse{}, fmt.Errorf("invalid inference scenario binding scope")
 	}
 	value := &models.InferenceScenarioBinding{
-		ScenarioCode: models.InferenceScenarioSemanticSearchEmbedding, ScopeType: scopeType,
+		ScenarioCode: scenario, ScopeType: scopeType,
 		TenantID: tenantID, ModelProfileID: input.ModelProfileID, UpdatedBy: updatedBy,
 	}
 	if err := s.repo.Save(ctx, value, input.Version); err != nil {

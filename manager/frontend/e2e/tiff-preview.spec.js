@@ -47,7 +47,7 @@ function fixture(farDirectory = false) {
   return bytes.subarray(0, pixelOffset)
 }
 
-async function installBackend(page, { summary = { page_summary_status: 'parsed', page_count: 2, pages: PAGES }, fullResponse = false, external = false, locale = 'zh-cn', firstRequestGate, farDirectory = false, gateRequest = 1 } = {}) {
+async function installBackend(page, { summary = { page_summary_status: 'parsed', page_count: 2, pages: PAGES }, fullResponse = false, external = false, locale = 'zh-cn', firstRequestGate, farDirectory = false, gateRequest = 1, descriptor = { data_type: 'media', format: 'tiff', layout: 'single' } } = {}) {
   const binary = fixture(farDirectory)
   const requests = []
   const item = { id: LOCATOR, locator: LOCATOR, label: 'pages.tiff', type: 'file', path: 'pages.tiff', children: [], metadata: { item_id: 1201, data_type: 'media', format: 'tiff' } }
@@ -63,10 +63,10 @@ async function installBackend(page, { summary = { page_summary_status: 'parsed',
     if (path.endsWith('/ancestors')) return json({ target_locator: LOCATOR, ancestors: [root, item] })
     if (path.endsWith('/node')) return json({ parent_locator: ROOT, children: [item] })
     if (path === `/api/v1/meta/resource-tree/${ENGINE.id}`) return json(root)
-    if (path === '/api/v1/meta/items/1201') return json({ id: 1201, item_type: 'file', full_name: 'pages.tiff', attributes: { item: { data_type: 'media', format: 'tiff', layout: 'single' }, format_info: { tiff: summary } } })
+    if (path === '/api/v1/meta/items/1201') return json({ id: 1201, item_type: 'file', full_name: 'pages.tiff', attributes: { item: descriptor, format_info: { tiff: summary } } })
     if (path === '/api/v1/manager/preview') return json({ preview_type: 'object', data: {
       mode: 'object', object: { path: 'pages.tiff', size_bytes: binary.length, content_type: 'image/tiff',
-        attributes: { item: { data_type: 'media', format: 'tiff', layout: 'single' }, type_info: { media: { width: 2, height: 1 } }, format_info: { tiff: summary } },
+        attributes: { item: descriptor, type_info: { media: { width: 2, height: 1 } }, format_info: { tiff: summary } },
         content: { kind: 'image', frontend_renderer: 'image', preview_material: 'url', url: external ? 'https://external.invalid/pages.tiff' : '/api/v1/manager/storage-stream?locator=fixture', metadata: { format: 'tiff' } }
       }
     } })
@@ -194,3 +194,42 @@ for (const locale of ['zh-cn', 'en']) {
     await expect(page.getByRole('columnheader', { name: locale === 'zh-cn' ? '页高（像素）' : 'Page height (pixels)', exact: true })).toBeVisible()
   })
 }
+
+test('segmentation reuses a window for point, correction, box and text', async ({ page }) => {
+  await installBackend(page, {
+    summary: { page_summary_status: 'parsed', page_count: 2, pages: PAGES, profile: 'geotiff' },
+    descriptor: {
+      data_type: 'media', format: 'tiff', layout: 'multi',
+      refs: [{ path: 'pages.tiff', role: 'main', required: true, primary: true }]
+    }
+  })
+  const image = await page.evaluate(() => {const c=document.createElement('canvas');c.width=c.height=96;return c.toDataURL().split(',')[1]})
+  const calls=[]
+  await page.route('**/api/v1/manager/image-segmentation', async route=>{
+    const body=route.request().postDataJSON();calls.push(body)
+    await route.fulfill({json:body.action==='prepare'?{session_id:'s',image,window:body.window||{x:0,y:0,width:960,height:960}}:{session_id:'s',masks:[]}})
+  })
+  await open(page)
+  await page.getByRole('button',{name:'影像分割',exact:true}).click()
+  const dialog=page.getByRole('dialog'),canvas=dialog.locator('canvas')
+  await expect(canvas).toBeVisible()
+  await canvas.click({position:{x:20,y:20}})
+  await expect.poll(()=>calls.at(-1).prompt?.labels).toEqual([1])
+  await dialog.getByText('排除背景点',{exact:true}).click()
+  await canvas.click({position:{x:42,y:42}})
+  await expect.poll(()=>calls.at(-1).prompt?.labels).toEqual([1,0])
+  await dialog.getByRole('textbox',{name:'目标类别'}).fill('building')
+  await dialog.getByRole('button',{name:'查找同类'}).click()
+  await expect.poll(()=>calls.at(-1).prompt?.text).toBe('building')
+  async function drag(label){
+    await dialog.getByText(label,{exact:true}).click()
+    const b=await canvas.boundingBox()
+    await page.mouse.move(b.x+8,b.y+8);await page.mouse.down()
+    await page.mouse.move(b.x+50,b.y+51);await page.mouse.up()
+  }
+  await drag('框选')
+  await expect.poll(()=>calls.at(-1).prompt?.labels).toEqual([2,3])
+  await drag('框选分析窗口')
+  await expect.poll(()=>calls.filter(c=>c.action==='prepare').length).toBe(2)
+  expect(calls.filter(c=>c.action==='prompt').every(c=>c.session_id==='s' && !c.image)).toBeTruthy()
+})

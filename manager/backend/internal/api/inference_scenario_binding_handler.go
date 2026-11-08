@@ -27,14 +27,20 @@ func NewInferenceScenarioBindingHandler(value *service.InferenceScenarioBindingS
 // @Success 200 {object} service.InferenceScenarioBindingResponse
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["manager.configuration.read"]
-// @Router /settings/inference-binding [get]
+// @Param scenario path string true "推理场景 | Inference scenario"
+// @Router /settings/inference-bindings/{scenario} [get]
 func (h *InferenceScenarioBindingHandler) Get(c *gin.Context) {
+	scenario := c.Param("scenario")
+	if scenario != "semantic_search_embedding" && scenario != "image_segmentation" {
+		managerError(c, http.StatusNotFound, manageri18n.MsgInvalidParam)
+		return
+	}
 	scopeType, tenantID, ok := bindingScope(c)
 	if !ok {
 		managerError(c, http.StatusForbidden, manageri18n.MsgUnauthorized)
 		return
 	}
-	response, err := h.service.Get(c.Request.Context(), scopeType, tenantID)
+	response, err := h.service.Get(c.Request.Context(), scenario, scopeType, tenantID)
 	if err != nil {
 		managerErrorWithDetail(c, http.StatusInternalServerError, manageri18n.MsgEmbeddingConfigurationLoadFailed, err.Error())
 		return
@@ -53,11 +59,17 @@ func (h *InferenceScenarioBindingHandler) Get(c *gin.Context) {
 // @Failure 409 {object} map[string]string
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["manager.configuration.update"]
-// @Router /settings/inference-binding [put]
+// @Param scenario path string true "推理场景 | Inference scenario"
+// @Router /settings/inference-bindings/{scenario} [put]
 func (h *InferenceScenarioBindingHandler) Update(c *gin.Context) {
 	var input service.UpdateInferenceScenarioBindingInput
 	if err := c.ShouldBindJSON(&input); err != nil {
 		managerErrorWithDetail(c, http.StatusBadRequest, manageri18n.MsgInvalidRequestBody, err.Error())
+		return
+	}
+	scenario := c.Param("scenario")
+	if scenario != "semantic_search_embedding" && scenario != "image_segmentation" {
+		managerError(c, http.StatusNotFound, manageri18n.MsgInvalidParam)
 		return
 	}
 	scopeType, tenantID, ok := bindingScope(c)
@@ -70,7 +82,7 @@ func (h *InferenceScenarioBindingHandler) Update(c *gin.Context) {
 		managerError(c, http.StatusUnauthorized, manageri18n.MsgUnauthorized)
 		return
 	}
-	response, err := h.service.Update(c.Request.Context(), scopeType, tenantID, input, uint(principalID))
+	response, err := h.service.Update(c.Request.Context(), scenario, scopeType, tenantID, input, uint(principalID))
 	if errors.Is(err, repository.ErrInferenceScenarioBindingVersionConflict) {
 		managerError(c, http.StatusConflict, manageri18n.MsgEmbeddingConfigurationVersionConflict)
 		return

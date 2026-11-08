@@ -32,6 +32,23 @@ class Client:
 
 
 class ContinuousRunnerTest(unittest.TestCase):
+    def test_empty_visible_catalog_cannot_supply_a_physical_scan_baseline(self):
+        evidence = {}
+        self.assertIsNone(M.catalog_item(Client([[]]), 10, 2, 'continuous_scan_sibling', evidence=evidence))
+        self.assertEqual(evidence, {'state': 'listed', 'visible_items': 0, 'matching_items': 0})
+        diagnostic = M.failure_diagnostic('source_catalog', M.SuiteError('physical scan sibling is missing'))
+        self.assertEqual(diagnostic, {'phase': 'source_catalog', 'reason': 'source_catalog_sibling_unavailable'})
+
+    def test_catalog_baseline_diagnostics_exclude_items_and_distinguish_invalid_identity(self):
+        private = 'business-value-sentinel password=private'
+        item = {'full_name': 'public.continuous_scan_sibling', 'tenant_id': 3, 'metadata': private}
+        evidence = {}
+        with self.assertRaises(M.SuiteError) as caught:
+            M.catalog_item(Client([[item]]), 10, 2, 'continuous_scan_sibling', evidence=evidence)
+        self.assertEqual(evidence, {'state': 'identity_check', 'visible_items': 1, 'matching_items': 1})
+        self.assertEqual(M.failure_diagnostic('source_catalog', caught.exception)['reason'], 'source_catalog_identity_invalid')
+        self.assertNotIn(private, json.dumps(evidence))
+
     def test_professional_initial_authorization_is_closed_status_only(self):
         for initial in [{'status': 'pending'}, {'status': 'pending', 'code': 'scan_pending'},
                         {'status': 'issued'}, {'status': 'denied', 'code': 'source_access_denied'}]:

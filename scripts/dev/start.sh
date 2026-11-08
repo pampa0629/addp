@@ -1471,10 +1471,10 @@ if [ "$START_MANAGER_BACKEND" = true ] || [ "$START_META_BACKEND" = true ] || [ 
     fi
   fi
 
-  # 启动 Ontology Backend；只消费私有 Infra 和 System 授权。
+  # 启动 Ontology Backend；Service 仅用于按需业务求值。
   if [ "$START_ONTOLOGY_BACKEND" = true ]; then
     if check_service_running "ontology" "$ONTOLOGY_BACKEND_PORT"; then
-      python3 "${PROJECT_ROOT}/scripts/dev/process-metrics-launch.py" ontology ontology backend "${PROJECT_ROOT}/.dev-bins/addp-runtime-log" "${PROJECT_ROOT}/.dev-bins/addp-ontology" &
+      SERVICE_URL="http://localhost:${SERVICE_BACKEND_PORT}" python3 "${PROJECT_ROOT}/scripts/dev/process-metrics-launch.py" ontology ontology backend "${PROJECT_ROOT}/.dev-bins/addp-runtime-log" "${PROJECT_ROOT}/.dev-bins/addp-ontology" &
       ONTOLOGY_PID=$!
       echo $ONTOLOGY_PID > .dev-pids/ontology.pid
       BACKEND_STARTS+=("ontology:$ONTOLOGY_PID")
