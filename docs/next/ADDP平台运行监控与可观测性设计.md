@@ -200,6 +200,8 @@ Business 认证目录首次切换须由部署方沿标准生命周期重建容�
 代码已接通。System 回归及 Swagger 覆盖通过，受控浏览器核对缺权不读取。[真实 PostgreSQL 回归](../spec/testing/evidence/Monitor实例与服务发现历史证据.md#开发-backend-启动失败与重试的-postgresql-t22026-11-07)覆盖失败、重试、登记和注销。隔离 Linux 中的真实 Console 验收分别覆盖 [Standard 构建失败](../spec/testing/evidence/Monitor实例与服务发现历史证据.md#开发-backend-真实构建失败与重试的隔离运行验收2026-11-07)和 [Catalog 进程退出、就绪超时](../spec/testing/evidence/Monitor实例与服务发现历史证据.md#开发-backend-进程退出与就绪超时的隔离运行验收2026-11-07)，核对无实例时可见、重试登记在线及失败提示清除。Go Backend 就绪检查的终端提示复用同一次 PID 判定，分别输出「启动进程退出」或「等待就绪超时」，与保存的失败原因一致。
 
 
+共用后端就绪等待已补连接／响应的剩余预算限制，以及复用 System 前的统一预算初始化，见[本地修复证据](../spec/testing/evidence/Monitor实例与服务发现历史证据.md#backend-就绪等待的总预算与复用进程初始化修复2026-11-08)。该修复不增加失败状态或替代真实 Hosted。
+
 Standard 持续未就绪与标准重试恢复另已接入现有 Hosted 的 `standard-startup` 分支，限定用途、故障归属、两阶段 Console 证据及清理规则统一见[验收场景](../spec/testing/scenarios/平台观测与语义生命周期.md#standard-开发-backend-启动失败与重试恢复)。当前为实现与本地验证，真实 Hosted 由专门会话执行，不以旧源码的隔离证据代替新场景通过。
 
 ## 文件系统容量告警首期

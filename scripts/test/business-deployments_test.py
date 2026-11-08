@@ -1,5 +1,8 @@
 """Shared Infra/Business discovery and admission tests; no real Docker daemon."""
 import copy
+import http.server
+import signal
+import threading
 import importlib.util
 import io
 import json
@@ -49,7 +52,7 @@ set -eu
 RED= GREEN= YELLOW= NC=
 MAX_WAIT=2
 check_service_running() { return 1; }
-sleep() { :; }
+sleep() { SECONDS=$((SECONDS + 1)); }
 curl() {
   local url argument
   for argument in "$@"; do url="$argument"; done
@@ -90,6 +93,101 @@ report_backend_startup_failure() {
                         self.assertEqual(requests.count(endpoint), 2 if ':' + ports.get(failed, '0') + '/' in endpoint else 1)
                     failures = (case / 'failures').read_text().splitlines() if (case / 'failures').exists() else []
                     self.assertEqual(failures, [failed + '|readiness_timeout'] if failed and mode == 'failed' and not live else [])
+
+    def readiness_helpers(self):
+        source = (ROOT / 'scripts/dev/start.sh').read_text()
+        return source[source.index('report_backend_startup_failure()'):source.index('# 编译 Server 二进制')]
+
+    def test_ready_probe_cannot_hang_past_the_existing_wait_budget(self):
+        received, release = threading.Event(), threading.Event()
+        class HeldResponse(http.server.BaseHTTPRequestHandler):
+            def do_GET(self):
+                received.set()
+                release.wait(8)
+                try:
+                    self.send_response(200); self.end_headers()
+                except OSError:
+                    pass
+            def log_message(self, *args):
+                pass
+        server = http.server.ThreadingHTTPServer(('127.0.0.1', 0), HeldResponse)
+        server.daemon_threads = True
+        thread = threading.Thread(target=server.serve_forever, daemon=True); thread.start()
+        script = ('set -eu\nRED= NC= MAX_WAIT=2\n' + self.readiness_helpers() +
+                  '\nreport_backend_startup_failure(){ printf "%s|%s\\n" "$1" "$2"; }\n'
+                  'wait_backend_ready standard "$$" ' + str(server.server_port) + ' "Standard Backend"\n')
+        environment = dict(os.environ, NO_PROXY='localhost,127.0.0.1', no_proxy='localhost,127.0.0.1')
+        process = subprocess.Popen(['bash', '-ec', script], env=environment, stdout=subprocess.PIPE,
+                                   stderr=subprocess.PIPE, text=True, start_new_session=True)
+        started = time.monotonic()
+        try:
+            try:
+                out, err = process.communicate(timeout=5)
+            except subprocess.TimeoutExpired:
+                os.killpg(process.pid, signal.SIGKILL)
+                process.communicate(timeout=3)
+                self.fail('a held HTTP response bypassed MAX_WAIT=2')
+            self.assertTrue(received.is_set(), 'real curl must reach the owned HTTP fixture')
+            self.assertEqual(process.returncode, 1, out+err)
+            self.assertIn('standard|readiness_timeout', out)
+            self.assertIn('Standard Backend 等待就绪超时', out)
+            self.assertLess(time.monotonic()-started, 5)
+        finally:
+            release.set(); server.shutdown(); server.server_close(); thread.join(timeout=2)
+            if process.poll() is None:
+                os.killpg(process.pid, signal.SIGKILL); process.communicate(timeout=3)
+
+    def test_probe_request_and_sleep_share_one_deadline_and_preserve_the_optional_cap(self):
+        for cap, expected in [('', ['5', '2']), (' 1', ['1', '1'])]:
+            with tempfile.TemporaryDirectory() as directory, self.subTest(cap=cap):
+                trace = Path(directory) / 'requests'
+                script = r'''
+set -eu
+RED= NC= MAX_WAIT=5
+SECONDS=0
+sleep() { SECONDS=$((SECONDS + 1)); }
+curl() {
+  local limit=missing previous= arg
+  for arg in "$@"; do
+    [ "$previous" != --max-time ] || limit="$arg"
+    previous="$arg"
+  done
+  printf '%s\n' "$limit" >> "$TRACE"
+  SECONDS=$((SECONDS + 2))
+  return 1
+}
+''' + self.readiness_helpers() + '\nreport_backend_startup_failure(){ :; }\nwait_backend_ready standard "$$" 1 "Standard Backend"'+cap+'\n'
+                result = subprocess.run(['bash', '-ec', script], env=dict(os.environ, TRACE=str(trace)), capture_output=True, text=True, timeout=5)
+                self.assertEqual(result.returncode, 1, result.stdout+result.stderr)
+                self.assertEqual(trace.read_text().splitlines(), expected)
+
+    def test_response_after_deadline_is_not_counted_as_ready(self):
+        script = ('set -eu\nRED= NC= MAX_WAIT=2\nSECONDS=0\ncurl(){ SECONDS=$((SECONDS + 3)); return 0; }\n' +
+                  self.readiness_helpers() + '\nreport_backend_startup_failure(){ printf "%s\\n" "$2"; }\n'
+                  'wait_backend_ready standard "$$" 1 "Standard Backend"\n')
+        result = subprocess.run(['bash', '-ec', script], capture_output=True, text=True, timeout=5)
+        self.assertEqual(result.returncode, 1, result.stdout+result.stderr)
+        self.assertIn('readiness_timeout', result.stdout)
+
+    def test_reused_system_initializes_the_same_budget_before_checking_readiness(self):
+        source = (ROOT / 'scripts/dev/start.sh').read_text()
+        system_at = source.index('# 2. 启动 System Backend')
+        prefix = source[:system_at]
+        match = list(re.finditer(r'^MAX_WAIT=60$', prefix, re.M))
+        self.assertTrue(match, 'the shared Backend budget must be initialized before either System launch branch')
+        block = source[system_at:source.index('# 3. 并行启动所有后端服务')]
+        self.assertNotIn('MAX_WAIT=', block, 'reusing System must not depend on the new-process branch')
+        with tempfile.TemporaryDirectory() as directory:
+            case = Path(directory); (case / '.dev-pids').mkdir()
+            (case / '.dev-pids/system.pid').write_text(str(os.getpid()))
+            script = ('set -eu\nRED= GREEN= YELLOW= NC=\nSTART_SYSTEM_BACKEND=true\n'
+                      'check_service_running(){ return 1; }\ncurl(){ printf "%s\\n" "$*" >> requests; return 0; }\n' +
+                      self.readiness_helpers() + '\n' + match[-1].group() + '\n' + block)
+            environment = dict(os.environ); environment.pop('MAX_WAIT', None)
+            result = subprocess.run(['bash', '-ec', script], cwd=case, env=environment, capture_output=True, text=True, timeout=5)
+            self.assertEqual(result.returncode, 0, result.stdout+result.stderr)
+            self.assertIn('--connect-timeout 60 --max-time 60', (case / 'requests').read_text())
+            self.assertIn('System Backend 就绪', result.stdout)
 
     def test_readiness_failure_message_matches_the_recorded_process_state(self):
         start = (ROOT / 'scripts/dev/start.sh').read_text()

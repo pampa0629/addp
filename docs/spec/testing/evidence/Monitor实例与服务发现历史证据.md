@@ -505,3 +505,20 @@ CI：`cgroup-source` 作为现有 Release 指标矩阵第五个真实分项，�
 - 首轮新增 T1 曾因夹具使用未解析的 macOS 临时路径和 `+00:00` 时间戳而失败，分别改为真实路径和既有 UTC `Z` 契约后通过；未修改产品就绪规则。首次日志 `/tmp/addp-standard-startup-runner.log` 保留；最终标准 runner 日志 `/tmp/addp-standard-startup-runner-release.log`，Console 完整／定向日志 `/tmp/addp-standard-startup-console.log`、`/tmp/addp-standard-startup-console-final.log`。本地成功的浏览器临时目录由标准入口清理，不将其记作可下载 Hosted 产物。
 
 CI 登记沿现有 `test-node-metrics-online-runner`／`test-online-runner`、Console 前端门禁及 `online-t4-gates.yml` 的封闭 case 选择；删除新分支或退出清理调用会被登记回归拒绝。实际执行继续由专门会话选择 `suite=platform-node-metrics`、`node_metrics_case=standard-startup`，核对两阶段真实报告及零残留。当前状态为“场景已接入，本地验证通过，真实 Hosted 未执行”，不以旧源码的隔离 Linux 结果替代。
+
+
+## Backend 就绪等待的总预算与复用进程初始化修复（2026-11-08）
+
+继续核对 Standard 启动链路时，发现共用 `wait_backend_ready` 的 `curl` 未限定连接和响应时限，`waited` 也只累计失败后的休眠次数。因此，端口已接受连接但不返回响应时，原 60 秒等待不会正常结束。隔离的本机临时 HTTP 服务复现：设置 `MAX_WAIT=2` 后，真实请求已到达，但 3 秒外层截止仍被触发；没有操作个人 Backend 或数据库。复现记录 `/tmp/addp-backend-readiness-slow-response-before.json`，三项新回归在旧实现下失败的记录 `/tmp/addp-backend-readiness-budget-red.log`。
+
+同次检查发现，`MAX_WAIT=60` 原来只在新建 System 进程的分支初始化，复用 System 时可能没有预算。将初始化移到两个分支之前，保持新建、复用和其余所选 Backend 使用相同预算；定向回归的修复前失败保留于 `/tmp/addp-backend-readiness-reuse-red.log`。
+
+先补[开发生命周期规范](../../addp开发服务生命周期与构建身份规范.md)的共用等待规则，再实现单一截止循环：连接、响应与重试间隔共同扣减预算，单次连接和总时限取剩余时间与原请求上限的较小值，截止后到达的 HTTP 成功不计就绪。Ontology 原单请求 5 秒上限保留，删除原额外 curl 参数路径；Manager 专用存活检查仍沿原入口。超时仍由既有 PID 判定发布 `process_exited` 或 `readiness_timeout`，没有新增状态、权限、配置项或公开接口。
+
+验证：
+
+- `make test-deployment-discovery`：53 项部署／启动回归及 6 项容器证明回归通过。覆盖所有所选 Go Backend 屏障、真实慢响应被截止、请求／重试共享预算、单请求上限、过期成功拒绝、System 复用预算及原有失败原因判定。中间新增测试误从已被重定向的标准输出读取 curl 参数，改为读取夹具日志后通过；该测试断言失败记录保留于 `/tmp/addp-backend-readiness-budget-final.log`，最终结果为 `/tmp/addp-backend-readiness-budget-final-verified.log`。
+- `make test-dev-lifecycle`：完整开发生命周期门禁通过；日志 `/tmp/addp-backend-readiness-lifecycle.log`。其中出现的来源／T2 名称属于门禁的受控编排测试，不据此认定真实来源或 Hosted 通过。
+- `bash -n scripts/dev/start.sh`、本批 `git diff --check` 通过。Platform consistency 既有 `make test-platform` 已包含开发生命周期及 Business 配置／发现门禁，新方法由原测试文件自动发现；无需新增 CI 路线或调度。
+
+本批仅本地实现与验证，未触发或跟踪 CI／Hosted，未设置定时任务，也未重启个人服务。Standard 的真实超时与重试恢复继续由专门会话运行 `platform-node-metrics / standard-startup`；当前修复不能作为该 Hosted 已执行或已通过的证据。

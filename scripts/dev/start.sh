@@ -749,17 +749,24 @@ report_backend_readiness_failure() {
 }
 
 wait_backend_ready() {
-  local module="$1" pid="$2" port="$3" label="$4" waited=0
-  shift 4
-  until curl -f "$@" "http://localhost:${port}/health/ready" > /dev/null 2>&1; do
-    sleep 1
-    waited=$((waited + 1))
-    if [ "$waited" -ge "$MAX_WAIT" ]; then
-      report_backend_readiness_failure "$module" "$pid" "$label"
-      echo "查看日志: tail -f logs/runtime/${module}/*/*.jsonl"
-      return 1
+  local module="$1" pid="$2" port="$3" label="$4" request_cap="${5:-$MAX_WAIT}"
+  local deadline=$((SECONDS + MAX_WAIT)) remaining request_limit
+  while :; do
+    remaining=$((deadline - SECONDS))
+    [ "$remaining" -gt 0 ] || break
+    request_limit="$remaining"
+    [ "$request_cap" -ge "$request_limit" ] || request_limit="$request_cap"
+    if curl -f --connect-timeout "$request_limit" --max-time "$request_limit" \
+      "http://localhost:${port}/health/ready" > /dev/null 2>&1; then
+      [ "$SECONDS" -ge "$deadline" ] || return 0
+      break
     fi
+    [ "$SECONDS" -lt "$deadline" ] || break
+    sleep 1
   done
+  report_backend_readiness_failure "$module" "$pid" "$label"
+  echo "查看日志: tail -f logs/runtime/${module}/*/*.jsonl"
+  return 1
 }
 
 # 编译 Server 二进制
@@ -1054,6 +1061,8 @@ for deployment_scope in infra business; do
   python3 "$ROOT_DIR/scripts/utils/deployment-inventory.py" refresh --scope "$deployment_scope" || echo "Deployment discovery unavailable: $deployment_scope; business startup continues" >&2
 done
 
+MAX_WAIT=60
+
 # 2. 启动 System Backend
 if [ "$START_SYSTEM_BACKEND" = true ]; then
   echo -e "${YELLOW}Step 2/7: 启动 System Backend${NC}"
@@ -1068,7 +1077,6 @@ if [ "$START_SYSTEM_BACKEND" = true ]; then
     SYSTEM_PID=$!
     echo $SYSTEM_PID > .dev-pids/system.pid
 
-    MAX_WAIT=60
   else
     # 服务已运行，从 PID 文件读取 PID
     SYSTEM_PID=$(cat .dev-pids/system.pid 2>/dev/null)
@@ -1661,7 +1669,7 @@ if [ "$START_MANAGER_BACKEND" = true ] || [ "$START_META_BACKEND" = true ] || [ 
   fi
 
   if [ "$START_ONTOLOGY_BACKEND" = true ]; then
-    wait_backend_ready ontology "${ONTOLOGY_PID:-}" "$ONTOLOGY_BACKEND_PORT" "Ontology Backend" --max-time 5 >&2 &
+    wait_backend_ready ontology "${ONTOLOGY_PID:-}" "$ONTOLOGY_BACKEND_PORT" "Ontology Backend" 5 >&2 &
     HEALTH_CHECK_PIDS+=($!)
   fi
 
