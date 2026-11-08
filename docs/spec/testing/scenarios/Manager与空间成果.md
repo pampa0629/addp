@@ -68,7 +68,7 @@ case 路由、默认完整场景保留、未知值只读拒绝、子场景失败
 
 新 case 的报告、异常和下载证据不得泄漏凭据。导出会话沿现有保留与生命周期规则，不新建业务删除 API；成功和失败均销毁本轮源容器／数据、应用、临时凭据及 Infra，并核零残留。业务结果和清理结果独立报告：业务失败且夹具清理成功时仍是 `result=failed / cleanup=passed`；夹具清理实际失败必须保留 `cleanup=failed`，不能由 Infra 零残留替代。部署清理不冒充会话业务 DELETE 或缓存验收。根 `make test-manager-online-runner`、`make test-online-runner`、System Go、共享前端及现有 Platform CI 覆盖新增路由、最小身份、页面脚本、物理 oracle 拒绝样例和失败清理；正式 Hosted 尚未通过前不得回填已验收。此 case 不扩展 bigint／decimal／时序／嵌套字段、Z/M、样式、KMZ 或其他目标格式。
 
-### Avro 单文件表格读取（待正式验收）
+### Avro 单文件表格读取
 
 独立`native-table-avro` case复用Manager Hosted的NFS/MinIO隔离来源、Transfer与既有GeoPython物理回读夹具，不新增产品服务或依赖。首期仅现有OCF平坦标量及可空字段，分别覆盖null/deflate/snappy三种codec，每份2503行、多个OCF块；核对Meta结构schema、Manager完整读取的精确总数及首页/第二页/末页、页面下一页与原件按钮下载、跨批Avro→Parquet全部字段和行值、大整数/二进制/空值。来源前后字节哈希不变，任务及物理输入/输出、部署与Infra分别清理。Parquet物理列沿现有writer按字段名排序，按列名完整核对类型、可空性与值，不把OCF声明顺序误作物理列顺序。嵌套/逻辑类型/whole/写出不在该case范围。
 

@@ -11,7 +11,7 @@
 
 | 优先范围 | 当前缺口与推进边界 |
 | --- | --- |
-| 通用表格读取 | Avro 已从 descriptor 补为单文件 OCF 读取，复杂 schema、writer 与正式运行验收仍缺；ORC 已沿 GeoPython 内置 PyORC 接通单文件标量元数据、分页及连续批量读取，struct/list 元数据与分页只读预览也已接通，NFS／MinIO 的两阶段普通 User Hosted 证据见[索引](../spec/testing/验收证据索引.md)。ORC 的 Map／Union、嵌套批量传输、加密／ACID／whole 和写出仍未开放，不能把既有读取继续记为 descriptor-only |
+| 通用表格读取 | Avro 单文件OCF平坦标量/可空字段的三codec读取、NFS/MinIO页面分页/原件下载和Transfer→Parquet全量回读已通过[限定正式Hosted](../spec/testing/evidence/资源读取与预览历史证据.md#avro-单文件标量读取--hosted-验收)；复杂schema、逻辑类型、whole与writer仍缺；ORC 已沿 GeoPython 内置 PyORC 接通单文件标量元数据、分页及连续批量读取，struct/list 元数据与分页只读预览也已接通，NFS／MinIO 的两阶段普通 User Hosted 证据见[索引](../spec/testing/验收证据索引.md)。ORC 的 Map／Union、嵌套批量传输、加密／ACID／whole 和写出仍未开放，不能把既有读取继续记为 descriptor-only |
 | ENVI 双文件读取 | NFS／MinIO 同目录主数据＋头文件已接通元数据、精确组成 Grant、原件 ZIP 及 COG。固定 `81be9c022` 的六份 Byte 代表源、四 COG 完整数值／掩膜／CRS／网格、六份按钮下载、缓存／授权边界和完整清理已通过[正式 Hosted](../spec/testing/evidence/资源读取与预览历史证据.md#envi-双文件读取与-cog-hosted-t4)。本机基本类型／端序／NoData Native 62 项另证，不扩大成全部类型页面或容量认证；外部资源、复杂／64 位整数、FTP及ENVI写出仍未开放 |
 | 清单 Excel 206 / B205 二维矢量导出 | KML 已补单文件二维简单要素 writer 和标准导出能力发现，复用固定 CRS 约束及既有空间转换；本地 writer／Transfer／Manager 与 PostGIS、LIBKML 独立验证见内置规范。尚无该出口的正式页面／Hosted 证据；复杂字段、Z/M、样式／KMZ不在首期范围，现有 KML 读侧对扩展属性和空几何的限制仍保留。其余 DWG/VCT/UDB 等目标不由 KML 覆盖 |
 | 清单 Excel 207 / B206 栅格导出 | GeoTIFF／COG 与普通 PNG/JPG 出口已实现；PNG/JPG 的原完整 `raster-workflow` Hosted [40270870466](https://github.com/pampa0629/addp/actions/runs/40270870466) 已核源码、真实保存／重载／执行、完整像元／mask／哈希／三方大小、自动扫描及零残留。普通图片不带 GIS 定位或旁文件；PNG 接受 Byte／UInt16 灰度、RGB 及 alpha，JPEG 接受全部有效的 Byte 灰度／RGB，有损质量 1–100、默认90，不自动拉伸、缩减位深或合成背景。限定 MinIO；定位图片、NFS Hosted、IMG／GRD 写出仍缺。IMG 既有读取／COG 快显不等于 IMG 导出，写出继续按用户要求暂缓；对应 Platform CI 整体失败边界见[证据索引](../spec/testing/验收证据索引.md) |
@@ -40,7 +40,7 @@
 
 ## 后续能力准入
 
-- Avro：单文件 OCF 的普通标量／可空字段已补元信息、分页样本及连续读取，沿用共享格式接口；支持 null/deflate/snappy 并限制头部和块预算。复杂结构、逻辑类型、whole 合并、writer、真实存储及 Hosted 仍待补，不能将 Common T1 等同运行验收。
+- Avro：单文件 OCF 的普通标量／可空字段已补元信息、分页样本及连续读取，沿用共享格式接口；支持 null/deflate/snappy 并限制头部和块预算。NFS/MinIO的三codec读取、页面/原件及批量传输已有上述限定Hosted；复杂结构、逻辑类型、whole合并、writer和容量仍待补，不能将本次子集等同全部Avro或所有生产者支持。
 - ORC：既有单文件 table info／sample／标量 reader 及 struct/list 只读预览以[正式规范](../spec/builtin-formats/列式文件与数据容器.md#orc-单文件只读)与分层验收为准；后续只推进尚未开放的复杂类型、嵌套批量传输、whole 和 writer，不重复实现另一条解码路线。
 - SVG/AVIF/HEIC：明确安全渲染、解码依赖、MediaInfoProvider 和真实端到端边界。
 - Video/Audio：固定 type_info.media 元信息与受控内容通道；URL 可播放不等于后端解析全部容器。
