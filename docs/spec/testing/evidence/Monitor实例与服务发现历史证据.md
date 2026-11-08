@@ -537,3 +537,12 @@ CI 专门会话回传 `c1adee620787b0c205e60f6f6fe7d6000e78f417` 的两个确切
 `make test-gate-selection-unit` 的 33 项选择回归，以及 `make test-t2-ci-registration` 的 85＋9 项回归与实际登记校验均通过；日志 `/tmp/addp-ontology-readiness-selection.log`、`/tmp/addp-ontology-readiness-registration.log`。
 
 生产等待实现、总预算、Ontology 原单请求上限、ready 判定及接口均未修改。实测原变更矩阵对该 runner 文件给出零受影响模块，未选中 Ontology；仅在既有 `ADDP_T2_INPUT_FILES` 中补共享启动脚本、runner 测试及原门禁入口，并增加三条路径各自必须选中 Ontology 的回归。登记缺口的修复前失败保留于 `/tmp/addp-ontology-readiness-selection-red.log`。Platform 的 `make test-platform` 和 Release 的 `make test-ontology-falkor` 都已包含该根标准入口，沿现有矩阵命中，不新增 CI 路线。本批未重跑 Hosted 或 FalkorDB 产品链路，未启停个人服务；新提交的两个相关 CI 实际步骤继续等专门会话回传，不以本地通过认定其已通过，也不设置定时任务。
+
+
+### Ontology runner 修复的固定提交 CI 闭环回传（2026-11-08）
+
+专门 CI 会话随后回传并提供原始日志，本会话核对 checkout 的完整 SHA 均为 `2b05bc27c8452cc58a7775449a413725abaac0a2`：[Platform Run 42462171750／Job 128673609447](https://github.com/pampa0629/addp/actions/runs/42462171750/job/128673609447) 的 `Run platform consistency gate` 实际 success；[Release Run 42462171776／Job 128673807568](https://github.com/pampa0629/addp/actions/runs/42462171776/job/128673807568) 的 `Run Ontology FalkorDB gate` 实际 success。Falkor 日志含 11 项 runner 单测通过，并实际执行且通过 `TestFalkorIntegration`（投影、取消、连接隔离及清理拒绝）和 `TestPostgresProjectionRuntime` 两个真实图运行用例。
+
+原始回执为 `/tmp/addp-ci-20261108-180349/fix-platform.log`、`fix-falkor.log`。按该固定 SHA 的门禁 EXIT trap，成功退出包含 PostgreSQL 测试资源清理、受管 Compose 容器／网络／卷残留检查；不是把测试名称中的 cleanup 当作独立的宿主 inspect 收据。此次闭环仅指上节共享就绪变更遗漏的确定性夹具及对应两个真实步骤，原 `c1adee620`／`76b5fc0a7` 失败与本地修复前记录保留，不重跑已有有效验收，不据此认定父 workflow、其他 Job 或后续 main 全通过。
+
+本次未操作个人服务、Business MinIO 来源、用户 Monitor 或浏览器。Business MinIO 的配置准备与待用户标准应用状态仍见[本机准备记录](Monitor采集来源与引擎指标历史证据.md#business-minio-本机采集配置与证书准备2026-11-08)，不由此 CI 替代实际 mTLS、采样和页面复验；Standard 的正式身份 Hosted 场景也不在本次通过范围。不设置定时任务。
