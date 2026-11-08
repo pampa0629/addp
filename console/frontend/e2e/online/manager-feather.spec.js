@@ -9,7 +9,7 @@ function expectedRow(i) {
     tiny: i % 256 - 128, small: i % 17 === 0 ? null : i - 1251, number: i * 100000 - 125100000,
     flag: i % 7 === 0 ? null : i % 2 === 0,
     label: i % 11 === 0 ? null : i % 5 === 0 ? '' : `设备𠀀😀-${String(i).padStart(4, '0')}`,
-    ratio: i / 4, value: -i / 2,
+    ratio: i / 4, value: (0 - i) / 2,
     payload: i % 13 === 0 ? null : i % 3 === 0 ? '' : Buffer.from([0, i % 256, 255]).toString('base64') }
 }
 

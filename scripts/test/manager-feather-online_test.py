@@ -2,6 +2,7 @@ import base64
 import hashlib
 import importlib
 import json
+import subprocess
 from pathlib import Path
 from types import SimpleNamespace
 import tempfile
@@ -166,3 +167,21 @@ class FeatherSceneTest(unittest.TestCase):
         self.assertEqual(FIXTURE.public_row(3)['payload'],'')
         self.assertEqual(len(SCENE.PERMISSIONS),11)
         with self.assertRaises(ValueError):SCENE.validate_content({'data':{}},{'sha256':'fixture'},'id')
+
+
+    def test_browser_oracle_matches_all_source_scalars_including_positive_zero(self):
+        # Execute the real JS oracle. Python's integer unary minus yields +0;
+        # JS unary minus applied to numeric zero yields -0 and deep equality differs.
+        code = r"""
+const fs = require('node:fs'), vm = require('node:vm'), assert = require('node:assert/strict')
+const source = fs.readFileSync(process.argv[1], 'utf8')
+const declaration = source.slice(source.indexOf('function expectedRow('), source.indexOf('\ntest('))
+const row = vm.runInNewContext(declaration + '; expectedRow', { Buffer })
+const expected = JSON.parse(fs.readFileSync(0, 'utf8'))
+for (let i = 0; i < expected.length; i++) assert.deepStrictEqual({ ...row(i) }, expected[i], `source row ${i}`)
+"""
+        path = Path(__file__).resolve().parents[2] / 'console/frontend/e2e/online/manager-feather.spec.js'
+        completed = subprocess.run(['node', '-e', code, str(path)],
+            input=json.dumps([FIXTURE.public_row(i) for i in range(FIXTURE.COUNT)], ensure_ascii=False),
+            capture_output=True, text=True, timeout=15)
+        self.assertEqual(completed.returncode, 0, completed.stderr)
