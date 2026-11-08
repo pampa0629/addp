@@ -910,3 +910,15 @@ artifact13625431998，44成员ZIP SHA256 `567219276ab0c15b5d6ef83cd9e1c58acdddd9
 修复提交 `0792d77993dd8015f4a3611416955768fd69846b` 的自然 push CI，Run42502098196、attempt1，已独立核对两个所属Job的head SHA、成功执行步骤和原日志SHA256：[Platform consistency Job128796860668](https://github.com/pampa0629/addp/actions/runs/42502098196/job/128796860668) 实际执行System Fixture Go及281项Python（13.318秒、OK）；[Console frontend Job128796860653](https://github.com/pampa0629/addp/actions/runs/42502098196/job/128796860653) 实际执行257项单元、318项受控Playwright及生产构建。两个门禁均selected=true，目标执行步骤未跳过；Console条件依赖和失败证据上传的skipped不记通过。
 
 原日志 `/tmp/addp-ci-20261109-013023/security-{128796860668,128796860653}.log`，本会话严格独立核对脚本及报告 `/tmp/p145-security-search-continuation/{audit-natural-ci.py,natural-ci-independent-audit.json}`。这些是精确修复提交的CI／受控页面证据，不是v44/v10真实Hosted，不能把原6ef失败升级为通过，也不据此宣布全部矩阵闭环。本轮仅归档证据、未新增产品变更，复用有效测试；下一步仍是由专门CI会话在用户确认后单次同范围Hosted复验，保持23图、真实90秒到期和原清理标准，不自行调度或定时。
+
+### v10 第二轮准备失败与源许可观察消费者修正（2026-11-09）
+
+唯一一次 [Run42506020215／Job128808727268](https://github.com/pampa0629/addp/actions/runs/42506020215/job/128808727268)，workflow_dispatch、attempt1，实际提交 `f0792f6f1b8255b5b9457428495b9c7c525f970f`，准备阶段失败，未进入test-online、领域v44或浏览器v10，0/23图、无online-report。原日志5245行是 `POST /api/v1/system/engine-access/metadata-checks/manager-search returned HTTP 400 (unknown)`。固定源码的共享 `ExactRecordGrants.observe(read)` 仍只发targets，现行System绑定器要求targets/query_nonce/expected_observation_tag恰三键，后二者缺失；原HTTP正文未归档，不编造原错误体。
+
+artifact13628130958的44成员ZIP SHA256 `8d7aaed0fb5e60fa452d85b4b751b16fbdbbd8bbedf5264b3f505ba5bca7bb4b`，本会话独立核对Run/Job/SHA、实际失败步骤、CRC、安全路径及全部解压原件字节。三项metadata_read已签发且回执记录撤销，pending为空；三次最终read观察仍HTTP400，因此wrapper result=failed、cleanup=failed、Infra零残留。metadata_hidden/content_unreadable为false是未证明最终观察，不据此推断内容泄露，不称六Grant全部闭环。原6ef失败和本次失败均保留；原件 `/tmp/addp-security-hosted-f0792/`，独立审计 `/tmp/p145-record-observation-contract/failed-run-independent-audit.json`。
+
+修正沿现行System唯一协议和共享生命周期：每次独立read观察建立新nonce及显式null期望，校验当前精确目标、布尔可见／可读裁决、可见指纹、时间与合法不透明标记；同次再以相同nonce及原标记复核。签发／撤销后重新建立独立观察，不把变更前标记跨写入使用；409、协议错配或目标变化直接失败，不自动重开／重试。标记与nonce不持久化、不进入报告。metadata_read原观察、权限、产品API／Swagger、四出口保护、原值授权、v44/v10／90秒／23图／40分钟预算及清理范围不变。共享实现只改一个方法，无兼容路线或新依赖；现有Security确定性入口已覆盖实际消费者，Transfer沿原标准入口核对共享调用影响，不新增工作流。真实修后Hosted尚未执行。
+
+验证：先将Security现有模拟端收敛到System严格三键请求及观察标签语义，旧消费者实际因缺nonce/tag失败，保留red.log；修后11项精确许可生命周期定向检查通过，包含18种畸形回执、第二次标签／裁决错配、真实模拟依据变化409不重开、六许可签发／撤销及最终观察、24次read观察的12个独立nonce和不落盘检查。原metadata_read路线和不确定写入／清理失败回归保持。只有T0/T1，不计真实HTTP、PostgreSQL T2或Hosted。
+
+标准 `make -o test-protection-deployment-runner -o test-graph-online-runner -o test-online-dispatcher-unit test-security-online-runner test-transfer-online-runner` 退出0：登记156项及登记CLI一致、Security所属285项、Transfer118项、System Fixture Go和Transfer定向planner Go均实际通过；三个被省略的独立聚合依赖未运行，不称完整Security依赖聚合通过。JS／Shell语法检查由Transfer原入口执行，Python编译、限定diff与文档链接检查通过；共享脚本无新增依赖，仅标准库base64。现有Make／CI登记已覆盖，无需为同步改workflow。原日志和作用域证明位于 `/tmp/p145-record-observation-contract/{red.log,focused-final.log,owner-gates.log,scope-proof.json,failed-run-independent-audit.json}`。修复后的真实六Grant最终观察、领域及中文页面仍待新运行；不自动重派，不操作个人服务。

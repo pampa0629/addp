@@ -329,3 +329,9 @@ Transfer 的这两个 SQL 查询源拒绝复用套件已纳管的 PostgreSQL `sp
 Security准备、重新发现／重启恢复及浏览器中的技术字段检索沿Manager唯一 `GET /search` 契约，固定q和engine范围，API批次采用合法page_size=50；不传管理页码、不接受旧total／页码模型。JSON仍是 `data.results`，并明确核对page_size、布尔exhausted及不透明next_cursor。直到exhausted为true才完成本次完整查找；短批或空批不能代替耗尽，空批有游标必须继续。保持同一查询和页大小，将游标原样传回，重复游标、畸形分页及跨引擎／重复目标身份均拒绝；不在日志／报告保存完整游标。既有短deadline约束完整续查，不因分页追加等待或每页重置deadline。
 
 浏览器准备的同源技术索引探针同样续查所有批次；实际检索页面通过现有“继续查找／加载更多”按钮完成同一游标链，不能仅检查首页或以直接API命中代替页面展示。继续保留真实字段名高亮、精确locator和资源身份核对。保护尚未就绪与搜索隔离只按原稳定码等待；403权限不足、400、无效／到期游标等明确失败，不自动重开查询掩盖错误。此为已授权Security验收消费者适配，不改变Manager产品协议、权限、数据或保护规则；v44/v10、90秒、23PNG、两个Service403及全部清理要求保持。新增分页模拟反例纳入原Security Runner／登记入口，不新增workflow。新的Hosted复验需用户明确授权，不能将原6ef失败或清理成功记为中文页面通过。
+
+### 精确源许可准备与清理的观察协议
+
+Security隔离夹具复用 `online-engine-registration.py` 的 `ExactRecordGrants`，read许可的准备／签发后／撤销后及最终观察必须遵守[System搜索观察协议](../../docs/spec/addp授权上下文规范.md)。每次独立观察生成新的16字节小写十六进制query_nonce，首次显式expected_observation_tag=null，验证规范观察时间、精确目标、布尔裁决、可见目标指纹及合法不透明标记；同次观察再带原nonce和标记复核，依据变化或协议不符直接失败，不重开或重试。签发／撤销故意改变依据，因此下一观察另起新nonce，不把变更前标记跨写入当作预期不变事实。标记不落盘、不写日志、不成为权限或未来Allow；metadata_read仍使用原meta-query观察，不修改System接口／权限／业务保护规则。
+
+这是现行消费者契约修正，新增真实请求形状／标签时序的确定性拒绝回归，由既有Security Runner标准入口及其当前Platform CI覆盖；共享调用方Transfer沿原入口验证。没有新增运行时、数据库、配置或Hosted重派授权。旧失败、清理失败和未执行部分分别保留，修复测试不能替代真实六Grant和v44/v10验收。

@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import base64
 from datetime import datetime, timezone
 import hashlib
 import re
@@ -321,15 +322,40 @@ class ExactRecordGrants(_ExactGrantLifecycle):
         if self.action == 'metadata_read':
             return super().observe(target, allowed, phase=phase)
         self.phase = phase
-        result = self.consumer.request('POST', '/api/v1/system/engine-access/metadata-checks/manager-search',
-            (200,), {'targets': [target]}).payload
-        if (not isinstance(result, dict) or not result.get('observed_at')
-            or not isinstance(result.get('targets'), list) or len(result['targets']) != 1):
-            raise MetadataGrantError(phase, 'read_observation_invalid')
-        row = result['targets'][0]
-        if (not isinstance(row, dict) or row.get('target') != target or type(row.get('visible')) is not bool
-            or row.get('content_readable') is not allowed or (allowed and not row['visible'])):
-            raise MetadataGrantError(phase, 'read_observation_mismatch')
+        # Each grant/revoke deliberately changes the basis: start a fresh query
+        # for this observation, then prove the same basis before accepting it.
+        nonce, expected_tag = uuid.uuid4().hex, None
+        full_name = target['segments'][1]['name'] + '.' + target['segments'][2]['name']
+        fingerprint = hashlib.sha256(f"{target['engine_id']}:{full_name}".encode()).hexdigest()
+        for _ in range(2):
+            result = self.consumer.request('POST', '/api/v1/system/engine-access/metadata-checks/manager-search',
+                (200,), dict(targets=[target], query_nonce=nonce, expected_observation_tag=expected_tag)).payload
+            if not isinstance(result, dict):
+                raise MetadataGrantError(phase, 'read_observation_invalid')
+            tag, observed_at = result.get('observation_tag'), result.get('observed_at')
+            try:
+                if not isinstance(tag, str) or not re.fullmatch('[A-Za-z0-9_-]{43}', tag):
+                    raise ValueError()
+                decoded = base64.urlsafe_b64decode(tag + '=')
+                if len(decoded) != 32 or base64.urlsafe_b64encode(decoded).decode().rstrip('=') != tag:
+                    raise ValueError()
+                if not isinstance(observed_at, str): raise ValueError()
+                observed = datetime.fromisoformat(observed_at.replace('Z', '+00:00'))
+                if observed.tzinfo is None or observed == datetime.min.replace(tzinfo=timezone.utc):
+                    raise ValueError()
+            except (ValueError, TypeError):
+                raise MetadataGrantError(phase, 'read_observation_invalid') from None
+            if expected_tag is not None and tag != expected_tag:
+                raise MetadataGrantError(phase, 'read_observation_mismatch')
+            if not isinstance(result.get('targets'), list) or len(result['targets']) != 1:
+                raise MetadataGrantError(phase, 'read_observation_invalid')
+            row = result['targets'][0]
+            if (not isinstance(row, dict) or row.get('target') != target
+                or type(row.get('visible')) is not bool or type(row.get('content_readable')) is not bool
+                or row['content_readable'] is not allowed or (allowed and not row['visible'])
+                or row.get('item_fingerprint', '') != (fingerprint if row['visible'] else '')):
+                raise MetadataGrantError(phase, 'read_observation_mismatch')
+            expected_tag = tag
     @staticmethod
     def target(engine, namespace, name, item_term):
         if (type(engine) is not int or engine <= 0 or item_term not in {'table', 'collection'}

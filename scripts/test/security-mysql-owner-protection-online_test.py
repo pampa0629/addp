@@ -1,6 +1,7 @@
 import importlib.util
 from contextlib import ExitStack
 import ast
+import base64
 import json
 import hashlib
 import os
@@ -5093,6 +5094,7 @@ class RecordGrantPreparationTest(unittest.TestCase):
         self.env = patch.dict(os.environ, environment, clear=True); self.env.start(); self.addCleanup(self.env.stop)
         self.targets = ONLINE.record_grant_targets(os.environ)
         self.rows, self.calls = {}, []
+        self.search_calls = []
         self.fault = None
         self.authorizer, self.consumer = Mock(), Mock()
         def identity(principal, preparer=False):
@@ -5136,9 +5138,22 @@ class RecordGrantPreparationTest(unittest.TestCase):
             target = body["targets"][0]
             visible = any(r["target"] == target and not r["revoked"] for r in self.rows.values())
             result = dict(target=target, visible=visible)
+            response = dict(observed_at="2026-11-07T00:00:00Z", targets=[result])
             if path.endswith("/manager-search"):
+                # Model the real strict binder and unchanged observation basis.
+                self.assertEqual(set(body), {"targets", "query_nonce", "expected_observation_tag"})
+                self.assertRegex(body["query_nonce"], r"^[0-9a-f]{32}$")
+                self.search_calls.append(copy.deepcopy(body))
+                material = json.dumps([body["query_nonce"], self.rows], sort_keys=True).encode()
+                tag = base64.urlsafe_b64encode(hashlib.sha256(material).digest()).decode().rstrip("=")
+                if body["expected_observation_tag"] is not None and body["expected_observation_tag"] != tag:
+                    raise ONLINE.SuiteError("manager search context changed: HTTP 409")
+                response["observation_tag"] = tag
                 result["content_readable"] = any(r["target"] == target and r["action"] == "read" and not r["revoked"] for r in self.rows.values())
-            return ONLINE.SUPPORT.Response(200,dict(observed_at="2026-11-07T00:00:00Z",targets=[result]))
+                if visible:
+                    name = target["segments"][1]["name"] + "." + target["segments"][2]["name"]
+                    result["item_fingerprint"] = hashlib.sha256(f"{target['engine_id']}:{name}".encode()).hexdigest()
+            return ONLINE.SUPPORT.Response(200, response)
         self.authorizer.request.side_effect=authorize; self.consumer.request.side_effect=consume
         self.scan = patch.object(ONLINE,"wait_for_scan",return_value="b99f26af-2bcb-4ab2-9ad3-a10e531da162").start()
         self.addCleanup(patch.stopall)
@@ -5150,6 +5165,98 @@ class RecordGrantPreparationTest(unittest.TestCase):
 
     def initialize(self): ONLINE.initialize_record_grants(self.authorizer,self.consumer,2)
     def cleanup(self): ONLINE.cleanup_record_grants(self.authorizer,self.consumer,2)
+
+    def read_observer(self):
+        return ONLINE.REGISTRATION.ExactRecordGrants(self.authorizer, self.consumer, 2,
+            action="read", scan_preparation=True)
+
+    def test_read_observation_lifecycle_uses_fresh_queries_and_matching_final_tags(self):
+        self.initialize(); self.cleanup()
+        self.assertEqual(len(self.search_calls), 24)
+        nonces = []
+        for first, final in zip(self.search_calls[::2], self.search_calls[1::2]):
+            self.assertIsNone(first["expected_observation_tag"])
+            self.assertEqual(first["query_nonce"], final["query_nonce"])
+            self.assertEqual(first["targets"], final["targets"])
+            self.assertRegex(final["expected_observation_tag"], r"^[A-Za-z0-9_-]{43}$")
+            nonces.append(first["query_nonce"])
+        self.assertEqual(len(set(nonces)), 12)
+        retained = self.checkpoint.read_text() + (self.artifacts/"security-record-grant-cleanup.json").read_text()
+        for body in self.search_calls:
+            self.assertNotIn(body["query_nonce"], retained)
+            if body["expected_observation_tag"]:
+                self.assertNotIn(body["expected_observation_tag"], retained)
+
+    def test_read_observation_rejects_malformed_contract_without_legacy_fallback(self):
+        target = self.targets[0]
+        self.rows["metadata"] = dict(target=target, action="metadata_read", revoked=False)
+        normal = self.consumer.request.side_effect
+        faults = ["missing_tag", "invalid_tag", "padded_tag", "noncanonical_tag", "missing_time", "invalid_time", "naive_time", "zero_time",
+            "missing_targets", "extra_target", "wrong_target", "nonbool_visible", "nonbool_readable",
+            "missing_fingerprint", "wrong_fingerprint", "uppercase_fingerprint", "hidden_fingerprint", "hidden_readable"]
+        for fault in faults:
+            with self.subTest(fault=fault):
+                def response(method, path, expected, body=None):
+                    out = normal(method, path, expected, body)
+                    if not path.endswith("/manager-search"): return out
+                    v = out.payload; row = v["targets"][0]
+                    if fault == "missing_tag": del v["observation_tag"]
+                    elif fault == "invalid_tag": v["observation_tag"] = "raw-invalid-tag"
+                    elif fault == "padded_tag": v["observation_tag"] += "="
+                    elif fault == "noncanonical_tag": v["observation_tag"] = "A" * 42 + "B"
+                    elif fault == "missing_time": del v["observed_at"]
+                    elif fault == "invalid_time": v["observed_at"] = "not-a-time"
+                    elif fault == "naive_time": v["observed_at"] = "2026-11-07T00:00:00"
+                    elif fault == "zero_time": v["observed_at"] = "0001-01-01T00:00:00Z"
+                    elif fault == "missing_targets": del v["targets"]
+                    elif fault == "extra_target": v["targets"].append(copy.deepcopy(row))
+                    elif fault == "wrong_target": row["target"] = self.targets[1]
+                    elif fault == "nonbool_visible": row["visible"] = 1
+                    elif fault == "nonbool_readable": row["content_readable"] = 0
+                    elif fault == "missing_fingerprint": del row["item_fingerprint"]
+                    elif fault == "wrong_fingerprint": row["item_fingerprint"] = "f" * 64
+                    elif fault == "uppercase_fingerprint": row["item_fingerprint"] = row["item_fingerprint"].upper()
+                    elif fault == "hidden_fingerprint": row["visible"] = False
+                    elif fault == "hidden_readable": row.update(visible=False, content_readable=True, item_fingerprint="")
+                    return out
+                self.consumer.request.side_effect = response
+                before = len(self.search_calls)
+                with self.assertRaises(ONLINE.REGISTRATION.MetadataGrantError):
+                    self.read_observer().observe(target, False)
+                self.assertEqual(len(self.search_calls) - before, 1)
+        self.consumer.request.side_effect = normal
+
+    def test_read_observation_rejects_changed_final_tag_without_reopening(self):
+        normal = self.consumer.request.side_effect
+        for mode in ["wrong_tag", "context_changed", "wrong_readability"]:
+            with self.subTest(mode=mode):
+                def response(method, path, expected, body=None):
+                    out = normal(method, path, expected, body)
+                    if path.endswith("/manager-search") and body["expected_observation_tag"] is not None:
+                        if mode == "context_changed": raise ONLINE.SuiteError("manager search context changed: HTTP 409")
+                        if mode == "wrong_tag": out.payload["observation_tag"] = "A" * 43
+                        if mode == "wrong_readability": out.payload["targets"][0]["content_readable"] = True
+                    return out
+                self.consumer.request.side_effect = response
+                before = len(self.search_calls)
+                with self.assertRaises((ONLINE.SuiteError, ONLINE.REGISTRATION.MetadataGrantError)):
+                    self.read_observer().observe(self.targets[0], False)
+                self.assertEqual(len(self.search_calls) - before, 2)
+        self.consumer.request.side_effect = normal
+
+    def test_read_observation_source_change_between_checks_rejects_original_basis(self):
+        normal = self.consumer.request.side_effect
+        def change_after_first(method, path, expected, body=None):
+            out = normal(method, path, expected, body)
+            if path.endswith("/manager-search") and body["expected_observation_tag"] is None:
+                self.rows["concurrent-change"] = dict(target=self.targets[1], action="metadata_read", revoked=False)
+            return out
+        self.consumer.request.side_effect = change_after_first
+        with self.assertRaisesRegex(ONLINE.SuiteError, "HTTP 409"):
+            self.read_observer().observe(self.targets[0], False)
+        self.assertEqual(len(self.search_calls), 2)
+        self.assertIsNone(self.search_calls[0]["expected_observation_tag"])
+        self.assertIsNotNone(self.search_calls[1]["expected_observation_tag"])
 
     def test_cleanup_cli_runs_only_scoped_grant_cleanup(self):
         self.initialize()
