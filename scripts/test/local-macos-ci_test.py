@@ -231,6 +231,8 @@ class LocalMacOSCiTest(unittest.TestCase):
               "${ADDP_TEST_MYSQL_PASSWORD-UNSET}" >> "$GO_LOG"
             case "$*" in *SharedSQLPool*) printf '%s\n' '--- PASS: TestIntegrationMySQLSharedSQLPool (0.01s)' ;; esac
             case "$*" in *OutputRewrite*) printf '%s\n' '--- PASS: TestIntegrationMySQLOutputRewrite (0.01s)' ;; esac
+            case "$*" in *GuardedSpatialTableRead*) printf '%s\n' '--- PASS: TestIntegrationMySQLGuardedSpatialTableRead (0.01s)' ;; esac
+            case "$*" in *FileGDBSourceShapes*) printf '%s\n' '--- PASS: TestIntegrationMySQLFileGDBSourceShapes (0.01s)' ;; esac
             printf '%s|%s|%s|%s|%s|%s|%s\n' "$*" \
               "${ADDP_TEST_OCEANBASE_HOST-UNSET}" \
               "${ADDP_TEST_OCEANBASE_PORT-UNSET}" \
@@ -434,15 +436,37 @@ class LocalMacOSCiTest(unittest.TestCase):
         self.assertFalse(any(" up " in command or " down " in command for command in self._docker_commands()))
 
     def test_mysql_gate_requires_pass_evidence_for_each_native_contract(self) -> None:
-        for passing_test, expected_error in (
-            ("TestIntegrationMySQLSharedSQLPool", "output rewrite equivalence test did not pass"),
-            ("TestIntegrationMySQLOutputRewrite", "MySQL gate requires the native shared SQL pool test"),
-        ):
-            with self.subTest(passing_test=passing_test):
-                self._executable("go", f"#!/bin/sh\nprintf '%s\\n' '--- PASS: {passing_test} (0.01s)'\n")
-                result = self._run_mysql_gate()
-                self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
-                self.assertIn(expected_error, result.stderr)
+        required = {
+            "TestIntegrationMySQLSharedSQLPool": "MySQL gate requires the native shared SQL pool test",
+            "TestIntegrationMySQLGuardedSpatialTableRead": "MySQL guarded spatial table read test did not pass",
+            "TestIntegrationMySQLFileGDBSourceShapes": "MySQL FileGDB source shapes test did not pass",
+            "TestIntegrationMySQLOutputRewrite": "MySQL output rewrite equivalence test did not pass",
+        }
+        for absent, expected_error in required.items():
+            for status in (None, "SKIP", "FAIL"):
+                with self.subTest(required=absent, status=status):
+                    lines = [f"--- PASS: {name} (0.01s)" for name in required if name != absent]
+                    if status is not None:
+                        lines.append(f"--- {status}: {absent} (0.01s)")
+                    output = "\n".join(lines)
+                    # Exit zero deliberately: every named contract still needs PASS evidence.
+                    self._executable("go", f"#!/bin/sh\nprintf '%s\n' '{output}'\n")
+                    result = self._run_mysql_gate()
+                    self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+                    self.assertIn("refuses skipped tests" if status == "SKIP" else expected_error, result.stderr)
+
+    def test_mysql_guarded_spatial_group_checks_only_its_two_contracts(self) -> None:
+        spatial = ("TestIntegrationMySQLGuardedSpatialTableRead", "TestIntegrationMySQLFileGDBSourceShapes")
+        for absent in (None, *spatial):
+            with self.subTest(absent=absent):
+                output = "\n".join(f"--- PASS: {name} (0.01s)" for name in spatial if name != absent)
+                self._executable("go", f"#!/bin/sh\nprintf '%s\n' '{output}'\n")
+                result = self._run_mysql_gate("--test", "guarded-spatial-read")
+                self.assertEqual(result.returncode, 0 if absent is None else 1, result.stdout + result.stderr)
+                if absent is None:
+                    self.assertIn("Common MySQL guarded-spatial-read group passed (not the full gate)", result.stdout)
+                else:
+                    self.assertIn("test did not pass", result.stderr)
 
     def _run_oceanbase_gate(self) -> subprocess.CompletedProcess[str]:
         environment = os.environ.copy()
