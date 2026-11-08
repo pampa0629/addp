@@ -883,3 +883,13 @@ Safari 使用现有平台管理员会话，通过正常发现、主机选择和�
 标准只读 `python3 scripts/infra/metrics-sources.py check --scope infra --scope business --kind minio --kind redis` 现退出 0，四项部署输入均通过；日志 `/tmp/addp-source-strict-tls-after-redis-cert-20261108.log`。当前运行中的采集器仍使用原私有卷证书，真实 Python 严格 mTLS 握手仍报错误 85／Missing Authority Key Identifier，收据 `/tmp/addp-infra-redis-runtime-before-reapply-20261108.json`。因此此次仅认定部署侧证书已修正，不能认定运行时问题已修复。
 
 已交用户执行唯一一条 `python3 scripts/infra/metrics-sources.py up --scope infra --kind redis`，仅重新应用该来源，随后再核对真实 mTLS、Prometheus 及页面。没有自行重启 Redis、Monitor 或其他来源，没有改变网络、账号、业务数据或指标历史；本批没有产品代码变更，既有严格证书回归无需重复，CI／Hosted仍由专门会话安排。
+
+### Infra Redis 修证后来源应用与真实页面复验（2026-11-08）
+
+用户确认重新应用成功后，标准 `status --scope infra --kind redis` 退出 0，来源启用／运行中。真实 Python 严格 TLS 1.3 握手呈送的叶证书 DER 与修正后的服务器文件完全一致；使用现有 Monitor 客户端请求 `/metrics` 返回 HTTP 200、固定原始指标 19 项，无客户端证书请求被 TLS 拒绝。此次与前节旧卷错误 85 分列，证明新证书已在运行时载入，而非仅本机文件校验通过。
+
+Prometheus 的 Infra Redis 部署 `90d49af7-a198-410f-a525-0e633f87a00c` 仅一个目标且 UP、无抓取错误，固定 HTTPS 地址为 Desktop 转发的 19112／`/metrics`。目标数据库容器完整 ID／启动时刻与当前 Infra Redis Docker 归属事实匹配。按目标完整标签读取真实样本时间和来源观测时间，核验时分别距当前 2.00 秒及 2.24 秒，未用查询评估时间代替采样时间。脱敏原件 `/tmp/addp-infra-redis-reapply-live-20261108.json`。
+
+Safari 第二个标签页真实可见、自动刷新开启，显示 Infra Redis、已确认的 Docker Desktop VM 主机、内存／连接及运行时长。Redis 没有配置内存上限，当前占用率与该趋势保持不可计算；不改配置或补为 0%。吞吐分组每秒命令趋势 21／21 点有效，手动刷新前、后及自然自动刷新三个查询时刻依次为 `12:05:29.127988Z`、`12:05:31.335168Z`、`12:05:46.653689Z`，各阶段可见且无页面／趋势错误。独立内存曲线读取 `redis.memory.allocated_bytes`，亦为 21／21 点有效。原件 `/tmp/addp-infra-redis-page-initial-20261108.json`、`/tmp/addp-infra-redis-safari-reapply-20261108.json`、`/tmp/addp-infra-redis-memory-correct-action-20261108.json`。
+
+首轮内存自动化错误选择了卡片内第一个按钮，实际为 `FieldHelp`，指标未切换，仍停在不可计算的默认上限占用率，导致该轮整脚本断言失败。通过组件定义确认选择器原因后，改为明确的“查看趋势”按钮及目标指标后置核对，取得上述独立内存收据；原失败保留，不把整脚本记为通过，吞吐三阶段按各自收据独立断言。此次仅覆盖个人来源修证后的传输、新鲜采样、两个短窗趋势和刷新，不代表重新验收缩放、全部指标、故障注入或正式 Hosted。无产品代码变更，不重复前批有效 T1；CI／Hosted仍等专门会话回传，没有设置定时任务。
