@@ -798,3 +798,15 @@ T1/T3/构建验证：`make test-security-frontend` 退出0，260项单元、37�
 验证：阶段及主入口定向7项通过；独立审计正常全量／部分样本及12项拒绝样本通过，脚本 `/tmp/p145-v44-phase-audit.py` 继续组合原严格领域、六Grant及浏览器审计，实际图片仍须目视检查。根Make所属recipe的首次271项因旧main测试桩缺少产物目录而报1失败／1错误；补齐目录、mock计时并保持原断言后，新增上下文触及Python静态嵌套上限的首次语法失败也保留，测试改用标准ExitStack。最终所属271项及System Fixture Go、登记反例1项和CLI、语法与限定diff检查通过。四个依赖目标未在本轮重跑，不声称完整聚合运行。日志 `/tmp/p145-budget-phase-owner-gate{,-final}.log`、`/tmp/p145-phase-main-focused-green{,-final}.log`、`/tmp/p145-budget-phase-registration{,-cli}.log`、`/tmp/p145-phase-independent-audit.log`；业务流比较 `/tmp/p145-stage-flow-proof.json`；固定输入摘要及完整命令 `/tmp/p145-budget-phase-verification.json`。仅夹具T1及审计工具验证，无新增数据库T2、本地HTTP或Hosted通过。
 
 下一步由专门CI会话对新代码提交安排一次完整v44／v9，回传真实Run／Job／SHA、原始报告、CSV、27阶段诊断、21图及六Grant／领域／浏览器／Infra清理。原42432701298总超时和更早失败继续保留；不能以增加预算、诊断文件或此前局部CSV正确认定全套通过。
+
+### v44 业务报告与清理令牌到期（2026-11-08）
+
+[Run42438722028／Job128603163154](https://github.com/pampa0629/addp/actions/runs/42438722028/job/128603163154)，attempt1，精确提交 `8a7d36a28283401962f685da102e49734a04e2b4`。原始元信息核对completed／failure；readiness成功，gate实际执行失败，Hosted产物上传成功。十服务preflight同SHA且干净检出。业务online-report和v44领域报告标记passed，耗时1952614ms（约32.5分钟），27阶段均已结束；浏览器v9报告passed并有21张必需PNG。wrapper最终 `result=failed / cleanup=failed / infra_cleanup=zero_residuals`，因此不认定完整T4通过，也不把阶段passed当作清理证明。
+
+关键部分已独立审计：原六种计算的不同UUID及同历史无结果、三类新增准备拒绝的具体原因与五行恢复、20个runtime／8个protocol_only原因格、四出口邮箱移除、三算法及Mongo字段身份、Transfer JOIN三独立执行／拒绝零写入、Service方式撤销旧游标及SQL资格403、三组自然到期的数据库时间／身份不变、默认导出42条响应记录与六份CSV逐字节固定oracle及恢复一致。独立工具不导入生产校验器；其正常输入与20个拒绝反例通过。该重建工具明确是部分审计：多数子场景原始响应正文未归档，方法撤销的no-store也未保留在对应拒绝回执中，不能将报告断言升格为独立原始响应取证。`protection_not_yet_valid`及其余protocol_only格保持协议／T2范围，不冒称出口HTTP或浏览器T4。三组共六张新增Owner／Monitor截图已目视比对具体提示、建议、准备阶段与相同UUID；另看Manager预览／导出Monitor、Service拒绝／恢复、Transfer结果拒绝／Monitor，共12张关键图，其他9张仅检查完整集合及PNG头，不声称全部目视。
+
+六Grant准备回执包含三个精确目标×metadata_read／read、六个唯一签发UUID及可读裁决，但没有最终撤销回执。原job.log5280行的清理401，与System原始日志request_id `55520e69-9735-4ac3-ad1f-064c3b3d6385`一致：03:18:19.939Z `iam.auth_context.rejected / reason=token_expired / family_id=22`。固定源码清理先校验准备操作者，再校验消费用户；私有IDENTITY_ENV重载的是初始会话，不会续期。System隔离fixture原AccessTokenTTL为30分钟，短于本轮32.5分钟业务实际耗时。这里的30分钟不是产品默认；正式TokenFamilyService代码默认15分钟，本次均不改。Infra销毁不代替六项正式撤销成功，原失败及缺口保留。
+
+用户已确认仅该套件复用既有长场景会话：在唯一 `fixtureSessionConfig` 的长场景分支增加security-mysql-owner-protection，Access和RefreshFamily均4小时，随独占Job销毁；产品会话、其他套件、40分钟场景预算、功能权限／源授权／原值授权、角色资格90秒到期、业务断言及清理流程保持。不新增续期、重登、重试或绕过认证分支。新增Go回归覆盖本套件4小时及其余四套件原30／45分钟，原容量两套件回归亦通过；初始红色失败后修改，绿测试通过。沿根Make所属recipe验证System Fixture Go及271项通过；登记反例1项通过；全仓登记CLI本轮因未修改的raster-viewshed-persistence证据登记不完整失败，未处理或计通过。四依赖目标本轮未重跑，非完整聚合；无需新workflow、API、Swagger、迁移或用户本地重启，新Go测试被既有SecurityFixture选择模式命中。
+
+原始产物 `/tmp/addp-security-budget-8a7d36a2/archive/_temp/addp-online-42438722028/`；元信息及归档SHA核对、部分审计、12图目视记录、20反例及最初审计工具拼写／回执字段误读均保留在 `/tmp/p145-8a7d-audit/`，不将初始审计错误改记成功。归档ZIP SHA256 `6426d2080a2341018aa5a0abf371133de233346bcfbc7967042d0cb177fde38b`。修复门禁 `/tmp/p145-fixture-session-{red,green,owner-gate,registration,registration-cli}.log`；固定输入与发布证据 `/tmp/p145-fixture-session-verification.json`。下一步由专门CI会话对新提交单次完整复验，重点闭环六Grant正式撤销及清理报告；本会话不自行派发、定时或启停本地服务。新版会话期限尚无实际Hosted通过，旧run整体保持失败。

@@ -1248,6 +1248,19 @@ func TestRasterFixtureSeparatesConsumerAndProvisioner(t *testing.T) {
 	}
 }
 
+func TestSecurityFixtureSessionCoversTheOwnerSuiteAndCleanupOnly(t *testing.T) {
+	for _, suite := range []string{"security-mysql-owner-protection", "security-plaintext-access", "graph-protection", "cleanup-execution", "pg-source-authorization"} {
+		config := fixtureSessionConfig(suite)
+		access, refresh := 30*time.Minute, 45*time.Minute
+		if suite == "security-mysql-owner-protection" {
+			access, refresh = 4*time.Hour, 4*time.Hour
+		}
+		if config.AccessTokenTTL != access || config.RefreshTokenFamilyTTL != refresh {
+			t.Fatalf("%s: unexpected isolated fixture session duration", suite)
+		}
+	}
+}
+
 func TestCapacityFixtureSessionLastsBeyondTheThreeHourBudget(t *testing.T) {
 	ordinary := fixtureSessionConfig("raster-workflow")
 	for _, suite := range []string{"raster-workflow-capacity", "raster-nibble-capacity"} {

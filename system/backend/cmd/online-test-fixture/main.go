@@ -484,9 +484,9 @@ func fixtureSessionConfig(suite string) iam.BrowserSessionConfig {
 		RefreshTokenFamilyTTL: 45 * time.Minute,
 		ResourceTicketOwners:  models.BrowserResourceAccessOwners,
 	}
-	// Full-scene capacity can outlast the ordinary 1740-second raster suite.
+	// Long suites and their cleanup can outlast the ordinary fixture session.
 	// These identities exist only in the disposable Hosted platform database.
-	if suite == "raster-workflow-capacity" || suite == "raster-nibble-capacity" {
+	if suite == "raster-workflow-capacity" || suite == "raster-nibble-capacity" || suite == "security-mysql-owner-protection" {
 		config.AccessTokenTTL = 4 * time.Hour
 		config.RefreshTokenFamilyTTL = 4 * time.Hour
 	}

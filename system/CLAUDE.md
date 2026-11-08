@@ -50,6 +50,8 @@ Meta 授权资源事实核对使用 `GET /api/v1/system/engines/:id/data-items/:
 
 Hosted Security T4 的一次性 IAM 夹具复用 `backend/cmd/online-test-fixture` 正式 IAM Service 路径；验收 User、引擎登记 User 与治理初始化 User 分别授权。Security 分类、等级和检测绑定的创建权限仅授予准备用户，不进入四出口验收身份；凭据由 Hosted 生命周期在业务验收前移除，完整身份随当次 Infra 销毁。
 
+2026-11-08：用户确认仅 `security-mysql-owner-protection` 复用 `cmd/online-test-fixture` 已有的4小时Access／RefreshFamily长场景配置，以覆盖40分钟业务预算与清理。原30分钟准备令牌在Run42438722028清理时token_expired，六Grant撤销未闭环；产品默认、其他suite、权限及90秒资格到期不变，不新增刷新路线。新增回归沿 `make test-security-online-runner` 的 `TestSecurityFixture` 选择自动覆盖；实际新版清理仍待Hosted。完整失败与修复证据统一见 [Security记录](../security/CLAUDE.md#v44-业务报告与清理令牌到期2026-11-08)。
+
 正式 Runtime 首次受理（2026-10-03）：`POST /runtime/engine-access-fulfillments/:request_id/accept` 限定当前 `addp-catalog` Tenant Service 身份及 `.execute`。System 在本地锁外使用独立 `addp-system` Tenant Service OAuth 反查 Catalog 精确待核清依据，再按稳定 IAM 锁顺序核验原办理人、确认人、接收主体、独立办理权限／委派及有效业务依据；结果和审计原子提交。000180 仅给 `tenant.system_runtime` 最小 Catalog 依据读取权。可选 `SYSTEM_SERVICE_CLIENT_SECRET` 缺失不影响 Ready，只阻断新受理并返回明确 503；历史结果恢复和关闭不依赖它。移除配置停用 Client 并撤销原 Token Family，不借用其他模块凭据。受理回执本身不是 Grant 或实际读取许可；PG 的自动签发、Manager 真实读取、Deny 与收权另由 `pg-source-authorization` Hosted T4 验收，不把该结果推广到其他引擎或消费入口。
 
 幂等 Grant 签发：`system.engine_access_grants` 是精确源规则的唯一不可变存储。`approval_mode` 仅记录 `catalog/independent/task_production` 签发来源，不是 DataItem 可切换的批准模式。Catalog 来源从 accepted 回执提取规则并核验原窗口，不读取直接许可；直接来源仅按独立 Grant 创建权限、当前引擎办理范围和完整 Meta 边界签发，不配置逐项许可。公开 `POST /api/v1/system/engines/:id/access_grants` 只在当前 User 具备 Grant 创建 Permission、引擎管理资格、有效接收方及完整 Meta 边界时签发，Grant 与审计原子提交。`GET` 同路径展示当前关系，`GET /access_grants/history` 查询历史；关系存在与否不替代实际读取裁决。原编号同参重试仅恢复原历史，不续期、不复活撤销、不因后续配置变化改写结果；不同新编号不得重复发放有效关系。读取与撤销只消费同一 Grant，不拼接受理回执或许可配置。
