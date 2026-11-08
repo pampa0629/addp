@@ -138,11 +138,19 @@ Manager 的配置／签发绑定／可领取发布和最终结果切换各自保
 
 ### 5.2.4 Develop GeoPackage 工作流的精确读写
 
+共享协议分为同一阶段链上的声明与封存：Develop 保存 `DevelopFileIntent`，绑定完整持久配置摘要、DAG 读取节点与规范文件目标、预期 attempt、实际策略的 `timeout_seconds` 及可选保存目标；声明不包含由 Owner 推算的数据项指纹或边界摘要。System 用当前 User 请求反查可信 pending Intent，通过自己的 Meta 授权事实接口独立核验完整组成及当前源规则，再生成并持久封存 `DevelopBoundFileScope` 与唯一 EA。封存范围包含 Intent 摘要、实际源引用的指纹／边界摘要／Engine 版本和可选目标版本；Owner 保存原 EA 返回的范围引用，后续批准、资格观察、真实读取及发布均绑定同一 EA／Scope，不另算 Meta 投影，也不给 Develop 增加完整 Meta 授权事实读取权限。两个值类型分别表达声明和已核验范围，不是两条读取或授权路线；纯值工厂及摘要均不授予许可。
+
+来源清单必填且非空，保存目标可缺。无 `save` 的只读 DAG 仍逐项执行精确读取、主体、attempt、租约与预算核验，但不要求写目标或批准，禁止生成发布 operation、Prepare、放行、成果文件或初始 Grant。几何差集四条算子负例保留两次 `load` 和一次 `difference`，不能以写权限拒绝替代算子拒绝；只有真实保存链进入单次 create 批准与发布。
+
 几何差集首期范围为同一非默认 Tenant 普通 User 的五份已识别 NFS GeoPackage 源，以及一次执行新建 `outputs/difference.gpkg`。保留现有十一项用户功能权限。Meta 证明每份源的类型化 DataItem 及完整文件组成，System 按当前 User 的精确 `read` 规则裁决，Develop 冻结规范输入清单。GeoPython 只读取经核验的输入内容。`metadata_target` 继续只用于元数据查看。单文件 GeoPackage 的内容边界须证明可独立读取。依赖 SQLite 日志或其他外部文件、越界引用、链接及无法证明完整组成的输入保持拒绝。
 
 单次写入批准由 System 办理。批准人必须同时具备目标引擎的管理范围和专用批准资格。批准绑定原发起人、Tenant、Engine 及版本、规范目标叶子、`create` 效果与唯一 execution。父目录 `outputs` 只参与定位，引擎级 `write` 效果、选择目录和用户自报目标均不产生独立的目录写权。首期仅接受 `mode=fail`。并发同名、已有文件、改名、相邻路径、不同执行与迟到 attempt 均不得借用这次批准。
 
+仅新文件 purpose 的未激活 pending 执行被 Owner 排除领取，不全局改变 Develop 的领取或父子执行生命周期。原 User 已表达 execute 意图后，现有监督器可在锁外向 System 查询原 EA／Scope／预期 attempt 的当前资格；只读范围不等待写批准，保存范围须满足原批准。该观察不返回业务连接、不消费发布放行，也不是缓存 Allow。Owner 只对同一 pending 及未变绑定作 CAS 激活，不新增用户手动激活动作或第二套队列。实际 claim 产生的 attempt 必须匹配，执行截止固定为数据库 `StartedAt + timeout_seconds` 并受更早的授权／Grant／成员／租约期限约束；审批等待不消耗 execution 预算，也不延长 EA 或批准。原 T4 套件整体 600 秒上限独立保留，不按 execution 重新起算。返回 pending 或再次领取不能沿用原批准。
+
 Develop 在真实读取及发布前使用同一冻结计划复核当前授权与执行租约，Runtime 不消费可用于任意业务路径的挂载或连接。本次编码使用私有暂存，最终发布保留 GeoPackage 完整文件的无覆盖语义。System 原子核验并放行是该次在途发布的准入时点；已放行的在途发布允许完成，撤权或取消阻止后续放行。Develop 在放行及实际发布前持久化原 execution、attempt、批准、目标和 operation 的归属及 Provider 准备回执；未知结果只核清原操作，不重发业务写入。Provider 不裁决 IAM。Provider 的 `ContentWriteEvidence` 可用于表达实际提交事实，仍须证明无覆盖发布与原执行、精确目标的归属，不能仅凭成功返回、目标路径或事后扫描推断新建。GeoPackage 现有格式、几何及保存模式规则见[矢量算子契约](workflow/矢量算子契约.md#save-geopackage-业务字段与发布契约)。
+
+Prepare 前即须持久化并登记原 operation，恢复不只依赖已存在的 release。租约失效后的专用恢复投影只能为原已登记 operation、原 Engine 同版及原绑定提供 Resolve／私有暂存清理，不重发 Prepare／Publish，不成为新的业务 Allow，也不长期封存请求级业务连接。截止后晚到的发布观察只追加到原 operation 的私有核清事实，不改 terminal execution、不复活旧 attempt；首次晚到事实不能补造有效租约内的成功提交或自动签发 Grant。现有 NFS 阻塞 RPC 不承诺立即随 Context 中断，未核清的操作如实保留 unknown／cleanup_pending，不能宣称全部副作用或清理已在截止内结束。
 
 成功提交后，Develop 在有效 lease 下保存同一次实际读取和新建提交的私有回执，Meta 沿可信产出执行只识别该成果，System 按[任务产出数据与初始使用权](#558-任务产出数据与初始使用权)向原发起人签发唯一精确 `read` Grant 并核定期限。签发待处理、拒绝和产出成功分别表达。签发故障只核清或续办原命令，不能重发写入。现有其他算子、引擎、发布服务和目录持续写入不纳入此首期。以上为接入规范，实施及真实授权证据仍待补齐。
 
