@@ -53,7 +53,7 @@ class PersistedScanObservation:
                 and storage in {'postgresql', 'nfs'}, 'disposable refresh identity required')
         self.tenant, self.engine, self.storage = tenant, engine, storage
 
-    def snapshot(self):
+    def _read(self, query):
         require(all(os.environ.get(k) == v for k, v in dict(ADDP_ONLINE_HOST='1', ADDP_ONLINE_HOSTED='1',
                 ADDP_ONLINE_TEST='1', GITHUB_ACTIONS='true', RUNNER_OS='Linux', POSTGRES_DB='addp_online').items())
                 and sys.platform == 'linux' and not (Path(__file__).resolve().parents[2] / '.env').exists(),
@@ -63,6 +63,13 @@ class PersistedScanObservation:
         owner = json.loads(inspected.stdout)
         require(owner['State']['Running'] is True and owner['Config']['Labels'].get('com.docker.compose.service') == 'postgres'
                 and 'POSTGRES_DB=addp_online' in owner['Config']['Env'], 'foreign refresh observation database')
+        result = subprocess.run(['docker', 'exec', '-i', owner['Id'], 'psql', '-XqAt', '-v', 'ON_ERROR_STOP=1',
+            '-U', os.environ['POSTGRES_USER'], '-d', 'addp_online'], input=query, text=True,
+            capture_output=True, check=True, timeout=10)
+        require(len(result.stdout) <= 131072, 'refresh observation exceeded its budget')
+        return json.loads(result.stdout)
+
+    def snapshot(self):
         query = f"""BEGIN TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY;
           SELECT json_build_object('engine',EXISTS(SELECT 1 FROM system.engines
             WHERE id={self.engine} AND tenant_id={self.tenant} AND engine_type='{self.storage}'),
@@ -74,17 +81,37 @@ class PersistedScanObservation:
                  AND n.tenant_id=i.tenant_id AND n.engine_id=i.engine_id
                WHERE i.tenant_id={self.tenant} AND i.engine_id={self.engine} ORDER BY i.id LIMIT 257) s),'[]'::json));
           COMMIT;"""
-        result = subprocess.run(['docker', 'exec', '-i', owner['Id'], 'psql', '-XqAt', '-v', 'ON_ERROR_STOP=1',
-            '-U', os.environ['POSTGRES_USER'], '-d', 'addp_online'], input=query, text=True,
-            capture_output=True, check=True, timeout=10)
-        require(len(result.stdout) <= 131072, 'refresh observation exceeded its budget')
-        payload = json.loads(result.stdout)
+        payload = self._read(query)
         rows = payload.get('items')
         require(payload.get('engine') is True and type(rows) is list and len(rows) == payload.get('count') <= 256
                 and all(type(r.get('id')) is int and type(r.get('node_id')) is int and isinstance(r.get('full_name'), str)
                         for r in rows) and len({r['full_name'] for r in rows}) == len(rows),
                 'refresh observation lost its complete engine snapshot')
         return {r['full_name']: r for r in rows}
+
+    def upload_scans(self, upload_ids):
+        require(self.storage == 'nfs' and 0 < len(upload_ids) <= 16
+                and len(set(upload_ids)) == len(upload_ids)
+                and all(isinstance(value, str) and str(uuid.UUID(value)) == value for value in upload_ids),
+                'invalid owned upload observation')
+        parents = ','.join("'" + value + "'" for value in upload_ids)
+        payload = self._read(f"""BEGIN TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY;
+          SELECT json_build_object('count',count(*),'scans',COALESCE(json_agg(json_build_object(
+            'execution_id',execution_id,'parent_execution_id',parent_execution_id,'status',status,
+            'engine_id',execution_config->'upload_receipt'->>'engine_id',
+            'upload_id',execution_config->'upload_receipt'->>'upload_id',
+            'scan_depth',execution_config->>'scan_depth','source',source)), '[]'::json))
+          FROM common.task_executions WHERE tenant_id={self.tenant} AND module='meta' AND task_type='scan'
+            AND parent_execution_id IN ({parents}); COMMIT;""")
+        rows = payload.get('scans')
+        require(type(rows) is list and len(rows) == payload.get('count') == len(upload_ids)
+                and {r.get('parent_execution_id') for r in rows} == set(upload_ids)
+                and len({r.get('execution_id') for r in rows}) == len(rows)
+                and all(r.get('status') == 'success' and r.get('engine_id') == str(self.engine)
+                        and r.get('upload_id') == r.get('parent_execution_id')
+                        and r.get('scan_depth') == 'basic' and r.get('source') == 'manager' for r in rows),
+                'upload child scan duplicated, incomplete or outside its receipt')
+        return {r['parent_execution_id']: r['execution_id'] for r in rows}
 
 
 class ScopedRefreshScenario:

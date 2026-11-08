@@ -12,12 +12,13 @@ import uuid
 
 API = importlib.import_module('scripts.utils.online-api')
 FILES = importlib.import_module('scripts.test.ftp-consumer-flow-online')
+REFRESH = importlib.import_module('scripts.test.metadata-refresh-scope-online')
 PERMISSIONS = {'manager.data_item.create', 'manager.data_item.read', 'manager.content.read', 'meta.catalog.read'}
 DIRECTORY = 'upload-initial'
 MODEL = b'v 0 0 0\nv 1 0 0\nv 0 1 0\nf 1 2 3\n'
 REQUIRED_CHECKS = {'created_read_and_metadata_only', 'same_tenant_outsider_denied',
                    'existing_and_replaced_never_gain', 'revoked_replay_never_restores', 'logical_identity_never_regains',
-                   'partial_failure_settles_without_extra_grant', 'physical_bytes_verified'}
+                   'partial_failure_settles_without_extra_grant', 'physical_bytes_verified', 'upload_child_scan_unique'}
 
 
 def require(value, message):
@@ -107,6 +108,7 @@ def run(repository, environment, owner):
     other = FILES.exact_user_principal(outsider, tenant, PERMISSIONS)
     require(principal != other and tenant > 1, 'isolated upload users required')
     runtime = runtime_client(environment, tenant)
+    observer = REFRESH.PersistedScanObservation(tenant, engine, 'nfs')
     base = f'/api/v1/system/engines/{engine}/access_grants'
     report = dict(schema_version='addp.manager-upload-initial/v1', suite='manager-internal-artifact-lineage', case='nfs-upload-initial',
                   run_id=environment['ADDP_ONLINE_TEST_RUN_ID'], tenant_id=tenant, engine_id=engine,
@@ -116,6 +118,8 @@ def run(repository, environment, owner):
     names = {'created.obj', 'metadata.csv', 'existing.obj', 'partial.obj', 'blocked.obj'}
     deadline = time.monotonic() + 180
     pending_uploads = set()
+    download_items = {}
+    report['download_items'] = download_items
     uncertain_upload = False
     def fp(name):
         return hashlib.sha256(f'{engine}:{DIRECTORY}/{name}'.encode()).hexdigest()
@@ -133,6 +137,12 @@ def run(repository, environment, owner):
     def revoke(row):
         issuer.request('POST', base + '/' + row['request_id'] + '/revoke', (200,),
                        {'reason': 'Disposable upload initial authorization withdrawal'})
+    def observe_scans():
+        scans = observer.upload_scans([row['upload_id'] for row in report['uploads']])
+        for row in report['uploads']:
+            identity = scans[row['upload_id']]
+            require(row.get('scan_execution_id', identity) == identity, 'upload child scan identity changed')
+            row['scan_execution_id'] = identity
     def upload(files):
         nonlocal uncertain_upload
         # Physical target ownership is registered before the POST, even if the response is lost.
@@ -148,12 +158,22 @@ def run(repository, environment, owner):
         require(upload_id == value['upload_id'], 'noncanonical upload identity')
         state = wait_upload(client, upload_id, deadline)
         pending_uploads.remove(upload_id)
+        observe_scans()
         return value, state
     def metadata(actor, name, status):
         return actor.request('GET', '/api/v1/meta/items/by-catalog-path?' + urlencode({
             'engine_id': engine, 'catalog_path': DIRECTORY + '/' + name}), (status,)).payload
     def content(actor, name, status, expected=None):
-        locator = f'addp://engine/{engine}/path/{DIRECTORY}/{name}?type=file'
+        if name not in download_items:
+            # The existing Manager Runtime resolves fixture identity only. The
+            # original User still performs every authorized/denied content read.
+            item = metadata(runtime, name, 200)
+            require(type(item.get('id')) is int and item['id'] > 0
+                    and item.get('tenant_id') == tenant and item.get('engine_id') == engine
+                    and item.get('fingerprint') == fp(name) and item.get('item_type') == 'file'
+                    and item.get('full_name') == DIRECTORY + '/' + name, 'download Meta identity mismatch')
+            download_items[name] = item['id']
+        locator = f'addp://engine/{engine}/path/{DIRECTORY}/{name}?type=file&item_id={download_items[name]}'
         result = actor.request('GET', '/api/v1/manager/downloads/file?' + urlencode({'locator': locator}),
                                (status,), raw_response=True)
         if status == 200:
@@ -197,6 +217,7 @@ def run(repository, environment, owner):
         replay = runtime.request('POST', '/api/v1/system/runtime/initial-upload-grants/' + value['upload_id']
                                  + '/items/' + fp('created.obj'), (200,)).payload
         require(replay == issued and history() == withdrawn_history, 'replayed upload restored or replaced Grant history')
+        observe_scans()
         metadata(client, 'created.obj', 404)
         content(client, 'created.obj', 403)
         report['checks'].append('revoked_replay_never_restores')
@@ -227,6 +248,7 @@ def run(repository, environment, owner):
         report['physical'] = {name: {'size': len(data), 'sha256': hashlib.sha256(data).hexdigest()}
                               for name, data in expected.items()}
         report['checks'].append('physical_bytes_verified')
+        report['checks'].append('upload_child_scan_unique')
         require(set(report['checks']) == REQUIRED_CHECKS, 'upload checks incomplete')
         report['result'] = 'passed'
     except Exception as error:

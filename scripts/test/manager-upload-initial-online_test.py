@@ -21,12 +21,19 @@ class FakeDeployment:
         self.grants, self.uploads, self.outcomes, self.replays = [], {}, {}, 0
         self.posts = 0
         self.known = set()
+        self.item_ids = {}
+        self.downloads = []
 
     def fingerprint(self, name):
         return hashlib.sha256(f'9:upload-initial/{name}'.encode()).hexdigest()
 
     def client(self, base, token, timeout):
         return types.SimpleNamespace(token=token, request=lambda *args, **kw: self.request(token, *args, **kw))
+
+    def upload_scans(self, upload_ids):
+        if self.fault == 'duplicate_upload_scan':
+            raise API.SuiteError('upload child scan duplicated')
+        return {value: str(uuid.uuid5(uuid.UUID(value), 'scan')) for value in upload_ids}
 
     def request(self, token, method, path, expected, body=None, **kw):
         url = urlsplit(path); query = parse_qs(url.query)
@@ -60,6 +67,7 @@ class FakeDeployment:
                     outcome = {'item_fingerprint': fp, 'outcome': 'issued', 'request_id': str(uuid.uuid4()), 'action': action}
                     self.grants.append({**outcome, 'approval_mode': 'upload_creation', 'revocation': None, 'recipient_type': 'user', 'recipient_id': '31', 'expiry_mode': 'until_revoked', 'expires_at': None, 'upload_id': upload_id, 'boundary_hash': 'a'*64})
                 self.known.add(name)
+                self.item_ids.setdefault(name, len(self.item_ids) + 101)
                 outcome.update(tenant_id='7', upload_id=upload_id)
                 outcomes.append(outcome); files.append({'file_name': name})
                 self.outcomes[(upload_id, fp)] = outcome
@@ -74,10 +82,18 @@ class FakeDeployment:
         elif url.path.startswith('/api/v1/meta/items/by-catalog-path'):
             name = query['catalog_path'][0].split('/')[-1]
             readable = token != 'outsider' and any(g['item_fingerprint'] == self.fingerprint(name) and g['revocation'] is None for g in self.grants)
-            status = 200 if readable else 404
-            data = {'fingerprint': self.fingerprint(name)} if readable else {}
+            status = 200 if readable or (token == 'runtime' and name in self.item_ids) else 404
+            data = {'id': self.item_ids[name], 'tenant_id': 7, 'engine_id': 9,
+                    'item_type': 'file', 'full_name': 'upload-initial/' + name,
+                    'fingerprint': self.fingerprint(name)} if status == 200 else {}
+            if self.fault == 'wrong_item_identity' and token == 'runtime': data['engine_id'] = 10
         elif url.path == '/api/v1/manager/downloads/file':
-            name = urlsplit(query['locator'][0]).path.split('/')[-1]
+            locator = urlsplit(query['locator'][0])
+            name = locator.path.split('/')[-1]
+            identity = parse_qs(locator.query)
+            if identity.get('item_id') != [str(self.item_ids[name])] or identity.get('type') != ['file']:
+                raise API.SuiteError('download locator must bind the real scanned item_id')
+            self.downloads.append((token, name, self.item_ids[name]))
             readable = token != 'outsider' and any(g['item_fingerprint'] == self.fingerprint(name) and g['revocation'] is None and g['action'] == 'read' for g in self.grants)
             status = 200 if readable else 403
             data = (self.root / name).read_bytes() if readable else {'error_code': 'permission_denied'}
@@ -110,6 +126,7 @@ class UploadAcceptanceTest(unittest.TestCase):
                  mock.patch.object(API, 'GatewayClient', side_effect=server.client), \
                  mock.patch.object(SCENE, 'runtime_client', return_value=server.client('', 'runtime', 30)), \
                  mock.patch.object(API, 'wait_manager_read_boundary'), \
+                 mock.patch.object(SCENE.REFRESH, 'PersistedScanObservation', return_value=server), \
                  mock.patch.object(SCENE.FILES, 'exact_user_principal', side_effect=lambda c, *_: '31' if c.token == 'user' else '32'):
                 if fault:
                     with self.assertRaises(API.SuiteError): SCENE.run(repo, env, None)
@@ -118,6 +135,9 @@ class UploadAcceptanceTest(unittest.TestCase):
                     self.assertEqual(set(report['checks']), SCENE.REQUIRED_CHECKS)
                     self.assertEqual(server.posts, 5)
                     self.assertEqual(server.replays, 1)
+                    self.assertTrue(server.downloads)
+                    self.assertTrue(all(token in {'user', 'outsider'} for token, _, _ in server.downloads))
+                    self.assertTrue(all(row.get('scan_execution_id') for row in report['uploads']))
             report = json.loads((base / 'manager-upload-initial.json').read_text())
             self.assertTrue(all(g['revocation'] for g in server.grants))
             self.assertFalse(root.exists())
@@ -137,6 +157,12 @@ class UploadAcceptanceTest(unittest.TestCase):
 
     def test_replayed_revoked_grant_is_detected_and_cleanup_retires_it(self):
         self.exercise('replay_restores_grant')
+
+    def test_download_refuses_a_meta_identity_outside_the_fixture_engine(self):
+        self.exercise('wrong_item_identity')
+
+    def test_duplicate_child_scan_fails_and_still_cleans_owned_resources(self):
+        self.exercise('duplicate_upload_scan')
 
     def test_outcome_validator_rejects_missing_duplicated_or_wrong_action(self):
         for rows in ([], [{'item_fingerprint': 'fp', 'outcome': 'issued', 'action': 'metadata_read', 'request_id': str(uuid.uuid4())}]):

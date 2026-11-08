@@ -179,6 +179,26 @@ class ScopedRefreshTest(unittest.TestCase):
                 REFRESH.PersistedScanObservation(3, 8, 'nfs').snapshot()
             run.assert_not_called()
 
+    def test_upload_observation_requires_one_successful_bound_scan_per_receipt(self):
+        upload_id, scan_id = str(uuid.uuid4()), str(uuid.uuid4())
+        row = dict(execution_id=scan_id, parent_execution_id=upload_id, status='success',
+                   engine_id='8', upload_id=upload_id, scan_depth='basic', source='manager')
+        observer = REFRESH.PersistedScanObservation(3, 8, 'nfs')
+        for mutation in (None, 'duplicate', 'missing', 'engine_id', 'upload_id', 'scan_depth', 'source', 'status'):
+            rows = [deepcopy(row)]
+            if mutation == 'duplicate': rows.append(deepcopy(row))
+            elif mutation == 'missing': rows = []
+            elif mutation: rows[0][mutation] = 'wrong'
+            with patch.object(observer, '_read', return_value={'count': len(rows), 'scans': rows}) as read:
+                if mutation:
+                    with self.assertRaises(REFRESH.API.SuiteError): observer.upload_scans([upload_id])
+                else:
+                    self.assertEqual(observer.upload_scans([upload_id]), {upload_id: scan_id})
+                    query = read.call_args.args[0]
+                    self.assertIn('READ ONLY', query)
+                    self.assertIn('tenant_id=3', query)
+                    self.assertIn("parent_execution_id IN ('" + upload_id + "')", query)
+
     def test_nfs_fixture_refuses_personal_environment_before_disk_or_api(self):
         client = SimpleNamespace(request=lambda *a: self.fail('must not call a personal API'))
         with self.assertRaises(REFRESH.API.SuiteError):
