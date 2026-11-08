@@ -33,7 +33,7 @@ func (s *LineageService) buildLineageGraph(ctx context.Context, tenantID uint, r
 	}
 	if request.SubjectKind == "data_item" {
 		var item models.MetaItem
-		if err := s.db.WithContext(ctx).Where("tenant_id = ? AND id = ?", tenantID, *request.ItemID).First(&item).Error; err != nil {
+		if err := s.db.WithContext(ctx).Select("id").Where("tenant_id = ? AND id = ?", tenantID, *request.ItemID).First(&item).Error; err != nil {
 			return response, err
 		}
 	}
@@ -161,15 +161,15 @@ func (s *LineageService) buildLineageGraph(ctx context.Context, tenantID uint, r
 			if err != nil {
 				return response, err
 			}
+			observations, err := s.itemLineageEvidence(ctx, tenantID, relations)
+			if err != nil {
+				return response, err
+			}
 			for _, relation := range relations {
-				evidence, err := s.latestEvidence(ctx, tenantID, relation)
-				if err != nil {
-					return response, err
-				}
 				edge := models.LineageEdge{
 					Source:       models.LineageNode{Kind: "data_item", ItemID: uintPtr(relation.SourceItemID)},
 					Target:       models.LineageNode{Kind: "data_item", ItemID: uintPtr(relation.TargetItemID)},
-					RelationKind: relation.RelationKind, Granularity: relation.Granularity, Status: relation.Status, LastObservedAt: relation.LastObservedAt, Evidence: evidence,
+					RelationKind: relation.RelationKind, Granularity: relation.Granularity, Status: relation.Status, LastObservedAt: relation.LastObservedAt, Evidence: observations[relation.ID],
 				}
 				if !addEdge(fmt.Sprintf("item:%d", relation.ID), edge) {
 					continue
@@ -266,7 +266,7 @@ func (s *LineageService) buildLineageGraph(ctx context.Context, tenantID uint, r
 	}
 	var items []models.MetaItem
 	if len(ids) > 0 {
-		if err := s.db.WithContext(ctx).Where("tenant_id = ? AND id IN ?", tenantID, ids).Find(&items).Error; err != nil {
+		if err := s.db.WithContext(ctx).Select("id, engine_id, fingerprint, item_type, name, full_name").Where("tenant_id = ? AND id IN ?", tenantID, ids).Find(&items).Error; err != nil {
 			return response, err
 		}
 	}

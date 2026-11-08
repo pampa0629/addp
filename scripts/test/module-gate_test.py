@@ -495,7 +495,7 @@ package = args[1]
 pattern = args[args.index('-run')+1]
 catalog = {
     './internal/repository':['TestClaimedComponentsAgainstPostgres'],
-    './internal/service':['TestDataItemAuthorizationFactsAgainstPostgres','TestScanPlanFactsAgainstPostgres','TestProductionBasicScanAgainstPostgres','TestCleanupRuntimeAtomicityAgainstPostgres'],
+    './internal/service':['TestDataItemAuthorizationFactsAgainstPostgres','TestScanPlanFactsAgainstPostgres','TestProductionBasicScanAgainstPostgres','TestCleanupRuntimeAtomicityAgainstPostgres','TestLineageGraphPerformanceAgainstPostgres'],
     './internal/scanadapter':['TestPreciseCatalogScanAgainstPostgres'],
     './internal/scanprocessor':['TestDelimitedEncodingRefreshAgainstPostgres'],
     './internal/scanruntime':['TestObjectModelRelatedRefsAgainstPostgres','TestFTPBasicCompositionAgainstPostgres'],
@@ -531,7 +531,8 @@ else:
         all_packages = ['repository','service','scanadapter','scanprocessor','scanruntime','api']
         for args, packages in (([],all_packages),(['--test','all'],all_packages),
                                (['--test','authorization-facts'],['service']),
-                               (['--test','file-composition'],['scanruntime'])):
+                               (['--test','file-composition'],['scanruntime']),
+                               (['--test','lineage-graph'],['service'])):
             with self.subTest(arguments=args):
                 result, calls, owner = self._run_meta_postgres_group(args)
                 self.assertEqual(0,result.returncode,result.stderr)
@@ -539,7 +540,11 @@ else:
                 self.assertEqual('postgres://fixture/addp_test',owner)
                 if packages == all_packages:
                     self.assertIn('--- PASS: TestCleanupRuntimeAtomicityAgainstPostgres ',result.stdout)
-                if packages == ['service']:
+                    self.assertIn('--- PASS: TestLineageGraphPerformanceAgainstPostgres ',result.stdout)
+                if args == ['--test','lineage-graph']:
+                    self.assertIn('--- PASS: TestLineageGraphPerformanceAgainstPostgres ',result.stdout)
+                    self.assertNotIn('TestDataItemAuthorizationFactsAgainstPostgres',result.stdout)
+                elif packages == ['service']:
                     self.assertNotIn('TestProductionBasicScanAgainstPostgres',result.stdout)
                     self.assertNotIn('TestCleanupRuntimeAtomicityAgainstPostgres',result.stdout)
                     self.assertIn('--- PASS: TestDataItemAuthorizationFactsAgainstPostgres ',result.stdout)
@@ -550,10 +555,10 @@ else:
                     self.assertIn('--- PASS: TestFTPBasicCompositionAgainstPostgres ',result.stdout)
 
     def test_meta_postgres_each_group_rejects_missing_required_proofs_skips_zero_matches_and_go_failure(self) -> None:
-        for group in ('all','authorization-facts','file-composition'):
-            required = ('TestObjectModelRelatedRefsAgainstPostgres','TestFTPBasicCompositionAgainstPostgres') if group == 'file-composition' else ('TestDataItemAuthorizationFactsAgainstPostgres','TestScanPlanFactsAgainstPostgres')
+        for group in ('all','authorization-facts','file-composition','lineage-graph'):
+            required = ('TestObjectModelRelatedRefsAgainstPostgres','TestFTPBasicCompositionAgainstPostgres') if group == 'file-composition' else ('TestLineageGraphPerformanceAgainstPostgres',) if group == 'lineage-graph' else ('TestDataItemAuthorizationFactsAgainstPostgres','TestScanPlanFactsAgainstPostgres')
             if group == 'all':
-                required += ('TestCleanupRuntimeAtomicityAgainstPostgres',)
+                required += ('TestCleanupRuntimeAtomicityAgainstPostgres','TestLineageGraphPerformanceAgainstPostgres')
             for mode in ('skip','empty','failure',*('omit:'+name for name in required)):
                 with self.subTest(group=group,mode=mode):
                     result, calls, owner = self._run_meta_postgres_group(['--test',group],mode)

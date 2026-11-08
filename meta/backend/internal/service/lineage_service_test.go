@@ -26,6 +26,51 @@ func (lineageTestEngineCatalog) GetEnginesByTenant(tenantID uint) ([]*commonMode
 	}, nil
 }
 
+func TestLineageItemEvidenceBatchPreservesExactIdentityAndLatestTieBreak(t *testing.T) {
+	db := openLineageTestDB(t)
+	a := createLineageItem(t, db, 7, "a", "batch-a")
+	b := createLineageItem(t, db, 7, "b", "batch-b")
+	c := createLineageItem(t, db, 7, "c", "batch-c")
+	relations := []models.LineageItemRelation{
+		{TenantID: 7, SourceItemID: a.ID, TargetItemID: b.ID, RelationKind: "derive", Granularity: "item", Status: "active"},
+		{TenantID: 7, SourceItemID: a.ID, TargetItemID: b.ID, RelationKind: "reference", Granularity: "item", Status: "active"},
+		{TenantID: 7, SourceItemID: b.ID, TargetItemID: c.ID, RelationKind: "derive", Granularity: "item", Status: "active"},
+	}
+	if err := db.Create(&relations).Error; err != nil {
+		t.Fatal(err)
+	}
+	at := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	observation := func(tenant uint, kind, execution string, observed time.Time) models.LineageObservation {
+		return models.LineageObservation{TenantID: tenant, SourceItemID: &a.ID, TargetItemID: &b.ID,
+			RelationKind: kind, Granularity: "item", ProducerModule: "develop", CaptureMethod: "runtime",
+			SourceSnapshot: models.JSONMap{}, TargetSnapshot: models.JSONMap{},
+			Evidence: models.JSONMap{"execution_id": execution, "custom": "retained"}, ObservedAt: observed}
+	}
+	rows := []models.LineageObservation{
+		observation(7, "derive", "old", at), observation(7, "derive", "latest-id", at),
+		observation(7, "derive", "older-time-larger-id", at.Add(-time.Second)),
+		observation(7, "reference", "reference", at), observation(8, "derive", "other-tenant", at.Add(time.Hour)),
+		observation(7, "derive", "other-field", at.Add(time.Hour)),
+	}
+	rows[len(rows)-1].SourceFieldName = "different"
+	if err := db.Create(&rows).Error; err != nil {
+		t.Fatal(err)
+	}
+	svc := NewLineageService(db, lineageTestEngineCatalog{})
+	actual, err := svc.itemLineageEvidence(t.Context(), 7, relations)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(actual) != 2 || actual[relations[0].ID]["execution_id"] != "latest-id" ||
+		actual[relations[1].ID]["execution_id"] != "reference" || actual[relations[2].ID] != nil ||
+		actual[relations[0].ID]["custom"] != "retained" {
+		t.Fatalf("batched evidence = %+v", actual)
+	}
+	if empty, err := svc.itemLineageEvidence(t.Context(), 7, nil); err != nil || len(empty) != 0 {
+		t.Fatalf("empty batch = %+v, err=%v", empty, err)
+	}
+}
+
 func TestLineageCollectorIsIdempotentAndBuildsGraph(t *testing.T) {
 	db := openLineageTestDB(t)
 	svc := NewLineageService(db, lineageTestEngineCatalog{})

@@ -570,7 +570,7 @@ func (s *LineageService) lineageEngineNames(tenantID uint, items []models.MetaIt
 
 func (s *LineageService) latestServiceEvidence(ctx context.Context, tenantID uint, dependency models.LineageServiceDependency) (map[string]interface{}, error) {
 	var observation models.LineageObservation
-	err := s.db.WithContext(ctx).Where("tenant_id = ? AND relation_kind = 'serve' AND source_item_id = ? AND service_id = ? AND published_revision = ?", tenantID, dependency.SourceItemID, dependency.ServiceID, dependency.PublishedRevision).Order("observed_at DESC, id DESC").First(&observation).Error
+	err := s.db.WithContext(ctx).Select("evidence").Where("tenant_id = ? AND relation_kind = 'serve' AND source_item_id = ? AND service_id = ? AND published_revision = ?", tenantID, dependency.SourceItemID, dependency.ServiceID, dependency.PublishedRevision).Order("observed_at DESC, id DESC").First(&observation).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, nil
 	}
@@ -580,17 +580,36 @@ func (s *LineageService) latestServiceEvidence(ctx context.Context, tenantID uin
 	return map[string]interface{}(observation.Evidence), nil
 }
 
-func (s *LineageService) latestEvidence(ctx context.Context, tenantID uint, relation models.LineageItemRelation) (map[string]interface{}, error) {
-	var observation models.LineageObservation
-	err := s.db.WithContext(ctx).
-		Where("tenant_id = ? AND relation_kind = ? AND source_item_id = ? AND target_item_id = ?", tenantID, relation.RelationKind, relation.SourceItemID, relation.TargetItemID).
-		Where("granularity = ? AND source_field_name = ? AND target_field_name = ? AND source_schema_hash = ? AND target_schema_hash = ?", relation.Granularity, relation.SourceFieldName, relation.TargetFieldName, relation.SourceSchemaHash, relation.TargetSchemaHash).
-		Order("observed_at DESC, id DESC").First(&observation).Error
-	if errors.Is(err, gorm.ErrRecordNotFound) {
-		return nil, nil
+func (s *LineageService) itemLineageEvidence(ctx context.Context, tenantID uint, relations []models.LineageItemRelation) (map[uint]map[string]interface{}, error) {
+	result := make(map[uint]map[string]interface{}, len(relations))
+	if len(relations) == 0 {
+		return result, nil
 	}
-	if err != nil {
+	ids := make([]uint, 0, len(relations))
+	for _, relation := range relations {
+		ids = append(ids, relation.ID)
+	}
+	// Rank matching observations together; do not read either schema snapshot.
+	// Keep the full evidence object and the existing observed_at/id tie-break.
+	query := s.db.WithContext(ctx).Table("meta.lineage_observations AS o").
+		Select(`r.id AS relation_id, o.evidence,
+			ROW_NUMBER() OVER (PARTITION BY r.id ORDER BY o.observed_at DESC, o.id DESC) AS evidence_rank`).
+		Joins(`JOIN meta.lineage_item_relations AS r ON r.tenant_id = o.tenant_id
+			AND r.relation_kind = o.relation_kind AND r.granularity = o.granularity
+			AND r.source_item_id = o.source_item_id AND r.target_item_id = o.target_item_id
+			AND r.source_field_name = o.source_field_name AND r.target_field_name = o.target_field_name
+			AND r.source_schema_hash = o.source_schema_hash AND r.target_schema_hash = o.target_schema_hash`).
+		Where("r.tenant_id = ? AND r.granularity = 'item' AND r.id IN ?", tenantID, ids)
+	var observations []struct {
+		RelationID uint
+		Evidence   commonModels.JSONMap
+	}
+	if err := s.db.WithContext(ctx).Table("(?) AS ranked_evidence", query).
+		Where("evidence_rank = 1").Scan(&observations).Error; err != nil {
 		return nil, err
 	}
-	return map[string]interface{}(observation.Evidence), nil
+	for _, observation := range observations {
+		result[observation.RelationID] = map[string]interface{}(observation.Evidence)
+	}
+	return result, nil
 }
