@@ -133,3 +133,25 @@ func exerciseUploadLeaseScope(t *testing.T, db *gorm.DB) {
 		}
 	})
 }
+
+func exerciseUploadScanTerminalIdentity(t *testing.T, db *gorm.DB) {
+	t.Run("upload scan identity survives terminal metadata replacement", func(t *testing.T) {
+		id := uuid.NewString()
+		run := &execution.TaskExecution{TenantID: 7, ExecutionID: uuid.NewString(), Module: "meta", TaskType: "scan", Source: "manager", TriggerType: "manual", Status: "pending", ExecutionBoundary: "bounded", ParentExecutionID: &id,
+			ExecutionConfig: commonmodels.JSONMap{"upload_receipt": map[string]any{"upload_id": id}}, Metadata: commonmodels.JSONMap{"manager_upload_id": id}}
+		if err := db.Create(run).Error; err != nil {
+			t.Fatal(err)
+		}
+		for _, status := range []string{"pending", "success", "failed"} {
+			if status != "pending" {
+				if err := db.Model(run).Updates(map[string]any{"status": status, "metadata": commonmodels.JSONMap{"storage_type": "nfs"}}).Error; err != nil {
+					t.Fatal(err)
+				}
+			}
+			restored, err := findUploadScan(db, 7, id)
+			if err != nil || restored.ExecutionID != run.ExecutionID || restored.Status != status {
+				t.Fatalf("original upload child lost after %s: child=%v err=%v", status, restored, err)
+			}
+		}
+	})
+}

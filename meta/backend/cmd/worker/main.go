@@ -62,6 +62,7 @@ func main() {
 	}
 	executionService := service.NewScanExecutionService(db, scanService, engineService, redisClient)
 	executionService.SetCollectionAuthorizationClient(systemClient)
+	executionService.WithUploadReceiptReader(commonClient.NewManagerUploadClient(cfg.ManagerServiceURL, tokenSource, nil))
 
 	hostname, _ := os.Hostname()
 	workerInstanceID := fmt.Sprintf("%s-%d-%s", hostname, os.Getpid(), uuid.NewString())

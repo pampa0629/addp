@@ -94,10 +94,6 @@ func (s *ScanExecutionService) EnsureUploadBasicScan(ctx context.Context, tenant
 		child.ActorPrincipalID = &receipt.Uploader.PrincipalID
 		child.ActorTenantMembershipID = &receipt.Uploader.MembershipID
 		child.IssuedAuthorizationVersion = &receipt.Uploader.AuthorizationVersion
-		if child.Metadata == nil {
-			child.Metadata = commonmodels.JSONMap{}
-		}
-		child.Metadata["manager_upload_id"] = id
 		child.ExecutionConfig["upload_receipt"] = receipt
 		child.ExecutionConfig["upload_new_candidates"] = candidates
 		return nil, nil
@@ -123,7 +119,7 @@ func uploadReceiptRefGroups(paths []string) []models.ScanRefGroup {
 }
 func findUploadScan(db *gorm.DB, tenant uint, id string) (*execution.TaskExecution, error) {
 	var run execution.TaskExecution
-	err := db.Where("tenant_id=? AND module=? AND task_type=? AND parent_execution_id=? AND metadata->>'manager_upload_id'=?", tenant, execution.ModuleMeta, execution.TaskTypeScan, id, id).Order("id").Take(&run).Error
+	err := db.Where("tenant_id=? AND module=? AND task_type=? AND parent_execution_id=? AND execution_config->'upload_receipt'->>'upload_id'=?", tenant, execution.ModuleMeta, execution.TaskTypeScan, id, id).Order("id").Take(&run).Error
 	return &run, err
 }
 func (s *ScanExecutionService) ReadUploadIdentification(ctx context.Context, tenant uint, id string) (*client.MetaUploadIdentification, error) {
