@@ -86,6 +86,35 @@ func TestNormalizePrunesEmptyStandardSections(t *testing.T) {
 	}
 }
 
+func TestNormalizeRejectsDuplicatedLogicalFullName(t *testing.T) {
+	t.Parallel()
+
+	for _, layout := range []string{"single", "multi", "whole"} {
+		t.Run(layout, func(t *testing.T) {
+			input := models.JSONMap{
+				"item": map[string]interface{}{"layout": layout, "data_type": "table", "format": "csv", "full_name": "stale/other.csv",
+					"refs": []interface{}{map[string]interface{}{"path": "physical/data.csv", "role": "data", "primary": true}}},
+				"storage": map[string]interface{}{"physical_path": "physical/data.csv"},
+			}
+			normalized := Normalize(input)
+			item := Section(normalized, "item")
+			if _, exists := item["full_name"]; exists {
+				t.Fatal("logical identity must not be duplicated inside attributes")
+			}
+			if item["layout"] != layout || item["format"] != "csv" || len(item["refs"].([]interface{})) != 1 ||
+				Section(normalized, "storage")["physical_path"] != "physical/data.csv" {
+				t.Fatalf("normalization changed source composition or physical location: %#v", normalized)
+			}
+			if Section(input, "item")["full_name"] != "stale/other.csv" {
+				t.Fatal("normalization mutated the caller's existing snapshot")
+			}
+		})
+	}
+	if _, exists := Normalize(models.JSONMap{"item": map[string]interface{}{"full_name": "stale.csv"}})["item"]; exists {
+		t.Fatal("an empty item partition must be pruned after removing forbidden identity")
+	}
+}
+
 func TestAttributeHelpersWriteStandardPartitions(t *testing.T) {
 	t.Parallel()
 

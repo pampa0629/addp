@@ -420,6 +420,9 @@ func TestRefreshKnownSingleOSGBItemRedetectsStaleGLBFormat(t *testing.T) {
 	if got := commonJSON.String(refreshed.Attributes, "storage", "physical_path"); got != physicalPath {
 		t.Fatalf("storage.physical_path = %q, want %q", got, physicalPath)
 	}
+	if refreshed.FullName != physicalPath || commonJSON.String(refreshed.Attributes, "item", "full_name") != "" {
+		t.Fatal("single-item refresh duplicated or changed its logical identity")
+	}
 }
 
 func TestRefreshKnownWholeOSGBSceneRedetectsStaleOSGBFormat(t *testing.T) {
@@ -497,6 +500,9 @@ func TestRefreshKnownWholeOSGBSceneRedetectsStaleOSGBFormat(t *testing.T) {
 	}
 	if got := commonJSON.String(refreshed.Attributes, "storage", "physical_path"); got != scopePath {
 		t.Fatalf("storage.physical_path = %q, want %q", got, scopePath)
+	}
+	if refreshed.FullName != scopePath || commonJSON.String(refreshed.Attributes, "item", "full_name") != "" {
+		t.Fatal("whole-item refresh duplicated or changed its logical identity")
 	}
 	if got := commonJSON.String(refreshed.Attributes, "type_info.model_3d", "model_kind"); got != datatype.Model3DKindPhotogrammetryScene {
 		t.Fatalf("type_info.model_3d.model_kind = %q, want photogrammetry_scene", got)

@@ -222,14 +222,14 @@ func (r *ItemRefreshRuntime) RefreshKnownItemWithPlugin(
 		descriptor = knownItemDescriptorFromDetected(redetected, descriptor)
 		physicalPath = scanflow.KnownItemPhysicalPath(descriptor, &item)
 		attrs = metaattr.JSONMap(metaattr.BuildAttributes(metaitem.AttributeInput(redetected)))
-		restoreKnownItemStorage(attrs, descriptor, &item)
+		restoreKnownItemStorage(attrs, descriptor)
 		detected = redetected
 	} else {
 		if scanDepth == scanflow.ScanDepthDeep {
 			descriptor = r.reDetectKnownSingleItemFormat(ctx, contentReader, connInfo, catalogPathFor, descriptor, physicalPath)
 		}
 		attrs = metaattr.JSONMap(cloneJSONMap(item.Attributes))
-		restoreKnownItemStorage(attrs, descriptor, &item)
+		restoreKnownItemStorage(attrs, descriptor)
 		detected = scanflow.KnownItemDetectedItem(&item, descriptor)
 		metaattr.MergeDataItemAttributes(attrs, metaitem.AttributeInput(detected))
 	}
@@ -649,7 +649,7 @@ func (r *ItemRefreshRuntime) refreshKnownDirectCatalogLeafFactsItem(
 	return scanprocessor.Result{Item: refreshed}, true, nil
 }
 
-func restoreKnownItemStorage(attrs models.JSONMap, descriptor dataitem.ItemDescriptor, item *models.MetaItem) {
+func restoreKnownItemStorage(attrs models.JSONMap, descriptor dataitem.ItemDescriptor) {
 	if descriptor.StorageBucket != "" {
 		metaattr.SetStorage(attrs, "bucket", descriptor.StorageBucket)
 	}
@@ -661,9 +661,6 @@ func restoreKnownItemStorage(attrs models.JSONMap, descriptor dataitem.ItemDescr
 	}
 	if descriptor.PhysicalPath != "" {
 		metaattr.SetStorage(attrs, "physical_path", descriptor.PhysicalPath)
-	}
-	if item != nil && item.FullName != "" {
-		metaattr.SetItem(attrs, "full_name", item.FullName)
 	}
 }
 

@@ -41,6 +41,8 @@ test('ordinary user applies GB18030 and preserves read settings for four CSV/TSV
         })
         const metadata = async hasHeader => {
           const detail = await json(await api.get(`/api/v1/meta/items/${source.item_id}`), 'delimited metadata')
+          const phase = hasHeader ? 'header' : 'headerless'
+          writeFileSync(resolve(env.ADDP_ONLINE_ARTIFACT_DIR, `delimited-${source.storage}-${source.spec.format}-${phase}-meta-observed.json`), JSON.stringify(detail, null, 2) + '\n')
           expect(detail.fingerprint).toBe(source.fingerprint)
           expect(detail).not.toHaveProperty('row_count')
           expect(Object.keys(detail.attributes).sort()).toEqual(['item', 'schema_version', 'type_info'])
@@ -51,6 +53,7 @@ test('ordinary user applies GB18030 and preserves read settings for four CSV/TSV
           const content = await json(await api.get('/api/v1/manager/preview', {
             params: { locator: source.locator, page: 1, page_size: 20 }
           }), 'delimited guarded content metadata')
+          writeFileSync(resolve(env.ADDP_ONLINE_ARTIFACT_DIR, `delimited-${source.storage}-${source.spec.format}-${phase}-content-observed.json`), JSON.stringify(content, null, 2) + '\n')
           expect(content.preview_type).toBe('table')
           expect(content.data.total).toBe(hasHeader ? 25 : 26)
           const observed = content.data.item_meta

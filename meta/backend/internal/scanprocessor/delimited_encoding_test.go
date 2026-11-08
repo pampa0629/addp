@@ -91,6 +91,12 @@ func testDelimitedEncodingRefresh(t *testing.T, openDB func(*testing.T) *gorm.DB
 			if err != nil {
 				t.Fatal(err)
 			}
+			// Model an already persisted duplicate from the previous refresh writer.
+			// Bypass repository normalization only while constructing this bad fixture.
+			item.Attributes["item"].(map[string]interface{})["full_name"] = "stale/other.csv"
+			if err := db.Model(&models.MetaItem{}).Where("id = ?", item.ID).Update("attributes", item.Attributes).Error; err != nil {
+				t.Fatal(err)
+			}
 			// Compare persisted snapshots: PostgreSQL stores timestamps at microsecond precision.
 			item, err = repo.GetItemByID(1, item.ID)
 			if err != nil {
@@ -131,6 +137,9 @@ func testDelimitedEncodingRefresh(t *testing.T, openDB func(*testing.T) *gorm.DB
 			}
 			assertFacts := func(current *models.MetaItem) {
 				t.Helper()
+				if current.FullName != fullName || commonJSON.String(current.Attributes, "item", "full_name") != "" {
+					t.Fatal("successful refresh changed or duplicated its canonical full_name")
+				}
 				if actual := commonJSON.String(current.Attributes, "format_info."+tc.format, "encoding"); actual != tc.actual {
 					t.Fatalf("encoding=%q want %q", actual, tc.actual)
 				}

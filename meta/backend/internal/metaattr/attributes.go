@@ -30,6 +30,13 @@ func Normalize(attrs models.JSONMap) models.JSONMap {
 			normalized[section] = sectionAttrs
 		}
 	}
+	// Logical identity belongs only to meta_item.full_name, never attributes.
+	// The cleaned partitions above are copies, so a failed refresh keeps its input snapshot.
+	identity := Section(normalized, "item")
+	delete(identity, "full_name")
+	if len(identity) == 0 {
+		delete(normalized, "item")
+	}
 	removePersistedContentDerivatives(normalized)
 	return normalized
 }
