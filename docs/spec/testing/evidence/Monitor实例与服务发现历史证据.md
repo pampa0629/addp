@@ -574,3 +574,31 @@ Safari 默认“在线＋已启用采集”展示 System、Manager、Meta、Tran
 `python3 /tmp/addp-worker-plan-preflight-20261108.py` 退出 0：三个现有端点均已包含在原 Monitor CIDR／端口准入和 Desktop 转发列表；原来源证书严格链、用途、IP SAN、密钥及 Monitor 服务器信任检查通过；原监听端口目前无监听者。未变更端点、证书、准入或指标中心，也未使用临时 listener 证明采集。收据 `/tmp/addp-worker-plan-preflight-20261108.json`。沿 `make test-dev-lifecycle` 已有脚本文件执行定向 `python3 -m unittest scripts/test/dev-process-metrics-plan_test.py`，退出 0，15 项现有 T1 通过，日志 `/tmp/addp-worker-plan-tests-20261108.log`；不据此认定完整生命周期门禁或实际来源已通过。纯私有配置键修正不涉及源码、API、标准入口或 CI 登记变化。
 
 当前未启停个人服务；既有 Worker 仍是旧声明，不能计采样恢复，也不能改写原未绑定状态。交接用户在仓库根目录执行标准 `./scripts/dev/restart.sh -meta -transfer`，由新进程载入修正后的计划并生成新实例身份；该命令重启这两个模块及其 Worker。用户完成后继续核对三个真实 Worker 的声明、唯一目标、当前身份、采样新鲜度及 CPU／RSS 趋势。原生 Mac 主机登记和允许模块集合、N 副本扩展及正式 CI／Hosted 分别推进，本批均未实施或触发，没有设置定时任务。
+
+
+### 用户重启后的三个 Worker 实际采集与 Safari 趋势恢复（2026-11-08）
+
+用户完成标准重启后，本轮只读核对修正键名后的实际进程来源与原 Safari 第二个标签页，不启停个人服务、不修改配置或主机关联。服务监控默认在线／已启用采集列表实际显示 8 项：5 个 Backend 加 Meta、Transfer bounded、Transfer continuous 三个 Worker，均正在采集，CPU 核占用、RSS 和运行时长有读数。UI 没有 Worker 业务 HTTP 监听端点属正常，不代表专业采集端点缺失；来源端点继续保留在私有链路。
+
+执行 `python3 /tmp/addp-worker-restarted-live-20261108.py` 退出 0：当前八项计划各匹配唯一 Prometheus 进程目标，均 UP 且无抓取错误，原 Monitor 客户端严格 mTLS 读取各固定来源均 HTTP 200。来源身份指标的 module、role、runtime_instance_id 与对应目标标签一致，操作系统均为 darwin。三个 Worker 的当前实例为 Meta `e2df4a5c-2a19-4934-916c-f95bd16547f5`、Transfer bounded `acff65de-b75b-416f-a17d-32712cc6fc19`、Transfer continuous `b4dd668b-950f-43d3-bb67-4974bbcc9b5e`，与 Safari 真实列表的实例 UUID 逐项一致。三者 RSS 样本距核验时分别约 7.91、2.92、11.05 秒；各 CPU 原始一分钟窗口四样本且当前累计值不低于一分钟前值，原始计数检查不替代 Monitor 产品完整窗口判定。重启前记录的实例 UUID 均已从当前活动目标消失，未删除或改写历史。脱敏收据 `/tmp/addp-worker-restarted-live-20261108.json`，不持久化原始指标响应或凭据。
+
+原生 `cua_repl` 通过实际 Safari 菜单、表格行“查看趋势”和弹窗刷新按钮完成检查，未执行浏览器 JavaScript、改写可见性或读取认证凭据，第一标签页保持不动。三个弹窗的用途名称和实例 UUID 分别与上述来源匹配，近五分钟 CPU 核占用／RSS 两张曲线都在真实截图中可见，弹窗也实际显示；原生 macOS 的资源组区域保持“未接入资源组采集”，不生成容器限额或组利用率。截图作为本次工具返回原件留在会话中；结构化摘录 `/tmp/addp-worker-restarted-safari-observations-20261108.json` 明确标注为可访问性／截图观察记录，不冒充浏览器 API 响应。
+
+Transfer continuous 弹窗手动刷新前后的窗口结束时刻为 `23:00:24` 和 `23:00:33`，后续无手动刷新时推进到 `23:00:49`；同一实例与 CPU／RSS 曲线保持。Meta 手动刷新从 `23:01:04` 推进至 `23:01:14`，后续截图继续显示正确实例及两张曲线。当前页面显示自动刷新开启。未读取本轮产品趋势点数组，因此不声称全部 21 点有效，也未重新验收缩放、环比、故障恢复或多副本任务竞争。
+
+本机这三个 Worker 的单副本采集恢复已实际验证；当前八项实例仍显示未关联主机，原生 Mac 登记／显式绑定并未由此次重启补齐，不能借用 Docker Desktop VM 身份。Quality 不在这次采集计划中，Security、Agent、Copilot未展开；N 副本能力、正式身份 Hosted 与生产仍分别推进。本轮没有产品代码、API、权限或环境变更，最小验证为上述真实只读脚本、原生界面及截图和跨层实例 UUID 对照，不重复既有纯配置 T1；CI／Hosted仍等专门会话回传，没有设置定时任务。
+
+
+### Gateway／Service／Quality／Standard 五项采集部署准备（2026-11-08）
+
+用户确认优先接通 Gateway、Service、Quality Backend／Worker 和 Standard。只读核对各入口已沿共享 System 客户端的 RegisterAndHeartbeat 启动可选 processmetrics，Quality Worker 使用正式 worker 角色；标准开发入口均由唯一 process-metrics-launch.py 注入对应具体单元，Backend／Gateway 的 HTTP 采集沿共享路由内核。无需新建注册表、手工服务清单或逐模块复制采集代码。本批不实施主机登记／绑定、N 副本、Security Worker 或 Agent／Copilot。
+
+本机新增五项明确的回环来源：gateway（ingress）19115、service（backend）19116、quality（backend）19117、quality-worker-1（worker）19118、standard（backend）19119。准备前五端口均无监听，对应证书目录不存在；Quality 副本配置未设置，沿既有默认单副本。各来源分别在仓库外 process-<unit> 目录保存三文件，目录 0700、文件 0600；沿用原 source CA 和采集客户端身份，各自新建服务器私钥及 30 天叶证书，包含明确回环 IP 与 host.docker.internal SAN、serverAuth、AKI／SKI及必要约束，不修改现有 CA、账号、私钥或其他来源证书。
+
+第一轮临时准备已完成证书签发及验证，向外部目录发布五套材料后，在写根环境前的“完整 stat_result 相等”断言失败。根 `.env` 尚未写入，新来源未启动；随后只读核对仍为原八项计划、五新端口未入准入、五目录各三文件。该次元数据差异的确切原因未确定，不归因为 Docker、并发修改或访问时间。没有重新签发或覆盖这些材料；后续直接复验已准备材料，按本次实际需求核对文件身份／权限及原内容，完成限定三变量写入。临时脚本 `/tmp/addp-prepare-next-process-sources-20261108.py` 的失败保留，不计整脚本通过。
+
+`python3 /tmp/addp-finish-next-process-config-20261108.py` 退出 0：现有八项计划保持原值，追加五项后共十三项；根环境只改变 ADDP_DEV_PROCESS_METRICS_PLAN、MONITOR_METRICS_ALLOWED_PORTS 和 ADDP_METRICS_DESKTOP_LOOPBACK_PORTS。十三项具体单元各自能选中自身单项 SDK 输入；五端口仅追加到既有准入／转发列表。严格证书链、IP SAN、DNS SAN、服务器用途、公钥配对及原采集客户端用途／信任检查通过，Bash 语法通过。根环境保留 inode／模式／UID／GID，不保存或输出原环境或私钥；`.env` 忽略版本控制。脱敏收据 `/tmp/addp-next-process-sources-prepared-20261108.json`。
+
+独立只读预检调用既有桌面转发渲染器（未调用会写文件的 render），确认当前 Docker Desktop 本地传输及五条新转发各恰一次，十三项计划匹配通过，未写实际 Prometheus 生成配置。收据 `/tmp/addp-next-process-sources-preflight-20261108.json`。`python3 -m unittest scripts/test/dev-process-metrics-plan_test.py` 退出 0，15 项 T1 通过；`make test-monitor-metrics-config` 完整退出 0，含共享来源前置回归及 139 项配置测试，日志分别 `/tmp/addp-next-process-plan-tests-20261108.log`、`/tmp/addp-next-process-metrics-config-20261108.log`。沿既有 Make／Platform 自动发现和生命周期输入登记，无产品或编排文件变化，不新增测试路线。配置门禁中的受控夹具诊断不计个人真实来源或 T4。
+
+尚未应用或重启。交用户在根目录依次执行 `bash scripts/infra/up.sh --metrics` 和 `./scripts/dev/restart.sh -monitor -gateway -service -quality -standard`：前者加载新增转发，并重新应用既有已选 Infra 来源；后者加载 Monitor 新准入和五个应用来源（Quality 模块含 Worker）。标准重启会短暂停止所选模块，不删除业务数据或指标历史；本会话未代执行。用户完成后核对新增五项声明、唯一 UP 目标、当前实例、严格 mTLS、新鲜读数及真实页面，再逐步接通接口质量。本批只计部署准备及本地预检，不能认定十三来源实际采样已验；CI／Hosted由专门会话安排，无定时任务。
