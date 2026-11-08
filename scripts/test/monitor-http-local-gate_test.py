@@ -1,5 +1,6 @@
 """No Docker: profile, strict sampling, product projection and ownership contracts."""
 from pathlib import Path
+import hashlib
 import importlib.util
 import json
 import os
@@ -14,6 +15,92 @@ spec=importlib.util.spec_from_file_location('http_local',Path(__file__).with_nam
 m=importlib.util.module_from_spec(spec);spec.loader.exec_module(m)
 
 class HTTPProductLocalTests(unittest.TestCase):
+    def test_archived_compile_resume_requires_a_unique_pair_before_cancel(self):
+        container_id = 'a'*64
+        identity = m.core.compile_resume_request_identity(container_id)
+        run = 'addp-http-local-archive-fixture'
+        wall = 1_800_000_000
+        def anchor(seconds):
+            return {'monotonic_before_ns':seconds*10**9,'monotonic_after_ns':seconds*10**9,
+                    'wall_utc_ns':(wall+seconds)*10**9}
+        def line(seconds, message, component='apiproxy'):
+            stamp = m.datetime.fromtimestamp(wall+seconds,m.timezone.utc).isoformat().replace('+00:00','Z')
+            return json.dumps({'time':stamp,'component':component,'msg':message})+'\n'
+        path = f'/v1.51/containers/{container_id}/unpause'
+        command = {**identity,'run_id':run,'phase':'product_compile','command_id':153,'record_complete':True,
+                   'result':'failed','entered_monotonic_ns':10*10**9,'cancel_started_monotonic_ns':11*10**9,
+                   'finished_monotonic_ns':11_100_000_000}
+        steps = lambda c: [{'operation':'resume_owned_compile_container','commands':[c]}]
+        report = {'case':'full','run_id':run,'stage':'product_compile','result':'failed',
+                  'error_code':'resource_sample_deadline_exceeded','cleanup':{'zero_owned_resources':True},
+                  'resource_guard_failure':{'operation':'resume_owned_compile_container','steps':steps(command)},
+                  'sampler_image_inspect':{'run_id':run,'record_complete':True,'result':'passed','host_clock_end':anchor(0)},
+                  'resource_samples':[]}
+        begin = line(10.1,'>> POST '+path)
+        end = line(10.4,'<< POST '+path+' (300ms) PRIVATE')
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            log = root/'init.log'
+            cases = (
+                ('unique',begin+end,'unique_candidate'),
+                ('different_target', (begin+end).replace(container_id,'b'*64),'indeterminate'),
+                ('other_component', (begin+end).replace('apiproxy','dockerd'),'indeterminate'),
+                ('extra_query', (begin+end).replace('/unpause','/unpause?private=1'),'indeterminate'),
+                ('missing_return',begin,'indeterminate'),
+                ('late_return',begin+line(11.01,'<< POST '+path),'indeterminate'),
+                ('multiple_pairs',begin+end+line(10.6,'>> POST '+path)+line(10.7,'<< POST '+path),'indeterminate'),
+                ('older_pair',line(8.5,'>> POST '+path)+line(8.6,'<< POST '+path)+begin+end,'unique_candidate'),
+            )
+            for name, body, expected in cases:
+                with self.subTest(case=name):
+                    log.write_text(line(7,'first')+body+line(14,'last'))
+                    original = json.dumps(report,sort_keys=True)
+                    result = m.archived_compile_resume_candidate(report,root,anchor(14))
+                    self.assertEqual(result['status'],expected)
+                    self.assertEqual(json.dumps(report,sort_keys=True),original)
+                    self.assertNotIn(container_id,json.dumps(result))
+                    self.assertNotIn('PRIVATE',json.dumps(result))
+            self.assertEqual(result,{'status':'unique_candidate','command_id':153,'proxy_log_span_ns':300_000_000})
+            competitor = {**command,'command_id':152,'result':'passed','decision_monotonic_ns':11*10**9}
+            report['resource_samples'] = [{'steps':steps(competitor)}]
+            self.assertEqual(m.archived_compile_resume_candidate(report,root,anchor(14))['reason'],'api_request_reused')
+            report['resource_samples'] = []
+            (root/'init.log.1').write_text(line(6,'old'))
+            self.assertEqual(m.archived_compile_resume_candidate(report,root,anchor(14))['reason'],'api_log_coverage_unconfirmed')
+            (root/'init.log.1').unlink()
+            with log.open('wb') as stream:
+                stream.truncate(24*1024**2+1)
+            self.assertEqual(m.archived_compile_resume_candidate(report,root,anchor(14))['reason'],'api_log_byte_limit')
+            command.pop('request_signature_sha256')
+            self.assertEqual(m.archived_compile_resume_candidate(report,root,anchor(14))['reason'],'command_not_correlatable')
+            report['cleanup']['zero_owned_resources'] = False
+            self.assertIsNone(m.archived_compile_resume_candidate(report,root,anchor(14)))
+
+    def test_resume_log_diagnostic_runs_after_report_and_cannot_replace_first_failure(self):
+        with tempfile.TemporaryDirectory() as directory:
+            life = SimpleNamespace(run_id='fixture-resume',phase='product_compile',started=m.time.monotonic(),
+                samples=[],command_evidence=SimpleNamespace(snapshot=lambda:[]),docker=mock.Mock(return_value='arm64'),
+                cleanup=mock.Mock(return_value=[]),resource_failure={'operation':'resume_owned_compile_container'})
+            original = Path(directory)/(life.run_id+'-report.json')
+            def diagnostic(report):
+                life.cleanup.assert_called_once()
+                self.assertEqual(json.loads(original.read_text()),report)
+                raise OSError('PRIVATE')
+            with mock.patch.object(m.sys,'argv',['gate','--case=full']), \
+                 mock.patch.object(m,'Lifecycle',return_value=life),mock.patch.object(m,'validate_profile'), \
+                 mock.patch.object(m.core,'effective_docker_endpoint',return_value='unix:///fixture'), \
+                 mock.patch.object(m.core,'private_docker_client'), \
+                 mock.patch.object(m,'build',side_effect=m.core.GateError('resource_sample_deadline_exceeded')), \
+                 mock.patch.object(m,'archived_compile_resume_candidate',side_effect=diagnostic) as diagnose, \
+                 mock.patch.object(m.tempfile,'gettempdir',return_value=directory),mock.patch('builtins.print') as output:
+                self.assertEqual(m.main(),1)
+            diagnose.assert_called_once()
+            saved = json.loads(original.read_text())
+            self.assertEqual(saved['error_code'],'resource_sample_deadline_exceeded')
+            self.assertEqual(saved['resource_guard_failure']['operation'],'resume_owned_compile_container')
+            self.assertTrue(saved['cleanup']['zero_owned_resources'])
+            self.assertNotIn('PRIVATE',str(output.call_args_list))
+
     def test_archived_list_candidate_keeps_full_deadline_failure(self):
         run = 'addp-http-local-archive-fixture'
         identity = m.core.owned_list_identity(
@@ -121,6 +208,7 @@ class HTTPProductLocalTests(unittest.TestCase):
 
     def test_sampling_cadence_and_cleanup_share_absolute_window(self):
         life=m.Lifecycle.__new__(m.Lifecycle)
+        life.stop=threading.Event()
         life.sample_lock=threading.Lock();life.samples=[{'sample_started_monotonic':0}]
         with mock.patch.object(m.core.time,'monotonic',return_value=6),self.assertRaisesRegex(m.core.GateError,'cadence'):
             life.sample()
@@ -150,9 +238,76 @@ class HTTPProductLocalTests(unittest.TestCase):
         m.admit_sampler_image(life)
         self.assertEqual(life.sampler_image_proof['image_id'],image['id'])
         self.assertEqual(life.docker.call_count,1);self.assertEqual(life.docker.call_args.args[:2],('image','inspect'))
+        self.assertEqual(life.docker.call_args.kwargs['timeout'],5)
+        self.assertIs(life.docker.call_args.kwargs['timing_receipt'],life.sampler_image_inspect)
         life=SimpleNamespace(docker=mock.Mock(side_effect=m.core.GateError('command_failed_1')))
         with self.assertRaises(m.core.GateError):m.admit_sampler_image(life)
         self.assertEqual(life.docker.call_count,1)
+
+    def test_sampler_admission_timeout_report_preserves_command_boundary_and_first_failure(self):
+        with tempfile.TemporaryDirectory() as directory, mock.patch.object(m.tempfile,'gettempdir',return_value=directory):
+            clock = [0.]
+            monotonic_ns = lambda: round(clock[0]*1e9)
+            wall_base = 1_790_000_000_000_000_000
+            process = mock.Mock(pid=654321, returncode=0)
+            process.poll.return_value = None
+
+            def start(*args, **kwargs):
+                clock[0] = .01
+                kwargs['stdout'].write(b'PRIVATE-IMAGE-INSPECT-OUTPUT')
+                return process
+
+            def wait(timeout):
+                if timeout <= .05:
+                    clock[0] = 5.
+                    raise subprocess.TimeoutExpired('PRIVATE-COMMAND', timeout)
+                clock[0] = 5.2
+                process.poll.return_value = 0
+
+            process.wait.side_effect = wait
+            life = m.Lifecycle()
+            life.started = 0.
+            docker = life.docker
+            life.docker = lambda *args, **kwargs: 'arm64' if args[0]=='info' else docker(*args, **kwargs)
+            life.cleanup = mock.Mock(return_value=[])
+            with mock.patch.object(m.sys,'argv',['gate','--case=compile-checkpoints']), \
+                 mock.patch.object(m,'Lifecycle',return_value=life), mock.patch.object(m,'validate_profile'), \
+                 mock.patch.object(m.core,'effective_docker_endpoint',return_value='unix:///private'), \
+                 mock.patch.object(m.core,'private_docker_client'), \
+                 mock.patch.object(m,'build',side_effect=lambda *args,**kwargs:m.admit_sampler_image(life)), \
+                 mock.patch.object(m.core.time,'monotonic',side_effect=lambda:clock[0]), \
+                 mock.patch.object(m.core.time,'monotonic_ns',side_effect=monotonic_ns), \
+                 mock.patch.object(m.core.time,'time_ns',side_effect=lambda:wall_base+monotonic_ns()), \
+                 mock.patch.object(m.core.subprocess,'Popen',side_effect=start) as spawn, \
+                 mock.patch.object(m.core.os,'killpg') as kill, mock.patch('builtins.print'):
+                self.assertEqual(m.main(),1)
+
+            spawn.assert_called_once()
+            kill.assert_called_once_with(process.pid,m.core.signal.SIGTERM)
+            life.cleanup.assert_called_once()
+            raw = (Path(directory)/(life.run_id+'-report.json')).read_text()
+            report = json.loads(raw)
+            self.assertEqual((report['stage'],report['error_code']),('sampler_image_admission','command_deadline_exceeded'))
+            self.assertNotIn('sampler_image',report)
+            self.assertEqual(report['owned_list_commands'],[])
+            self.assertNotIn('PRIVATE',raw)
+            self.assertNotIn(m.SAMPLER_IMAGE,raw)
+            receipt = report['sampler_image_inspect']
+            canonical = '{"method":"GET","path":"/images/'+m.SAMPLER_IMAGE+'/json","query":{}}'
+            self.assertEqual(receipt['request_signature_sha256'],hashlib.sha256(canonical.encode()).hexdigest())
+            self.assertEqual(receipt['run_id'],life.run_id)
+            self.assertEqual(receipt['phase'],'sampler_image_admission')
+            self.assertEqual(receipt['result'],'failed')
+            self.assertTrue(receipt['record_complete'])
+            self.assertEqual(receipt['deadline_monotonic_ns'],5_000_000_000)
+            self.assertEqual(receipt['spawn_finished_monotonic_ns'],10_000_000)
+            self.assertEqual(receipt['wait_finished_monotonic_ns'],5_000_000_000)
+            self.assertIsNone(receipt['output_started_monotonic_ns'])
+            self.assertEqual(receipt['cancel_cleanup_seconds'],.2)
+            self.assertEqual(receipt['exit_observed_monotonic_ns'],5_200_000_000)
+            self.assertEqual(receipt['host_clock_start'],{'monotonic_before_ns':0,'wall_utc_ns':wall_base,'monotonic_after_ns':0})
+            self.assertEqual(receipt['host_clock_end'],{'monotonic_before_ns':5_200_000_000,
+                'wall_utc_ns':wall_base+5_200_000_000,'monotonic_after_ns':5_200_000_000})
 
     def test_source_tls_helpers_use_admitted_id_without_implicit_pull(self):
         image_id='sha256:'+'a'*64
@@ -262,21 +417,30 @@ class CompileCheckpointCaseTests(unittest.TestCase):
                 life=SimpleNamespace(work=work,checkout=work/'source',phase='prepared',env={'PATH':os.defpath},
                     run_id='owned',label=m.LABEL,builder='owned',compile_services=m.Lifecycle.compile_services,
                     product_services=m.Lifecycle.product_services,docker=mock.Mock(),command=mock.Mock(return_value=str(cache)),
+                    sampling_lease=mock.MagicMock(),strict_resources=True,check=mock.Mock(),
                     resume_builder=mock.Mock(side_effect=AssertionError('no image build')))
                 if fail:life.docker.side_effect=m.core.GateError('compile_failed')
+                else:life.docker.side_effect=['a'*64,'a'*64,'0']
                 with mock.patch.object(m.core,'reclaim_go_build_cache',side_effect=AssertionError('no cache reclaim')) as reclaim:
                     if fail:
                         with self.assertRaisesRegex(m.core.GateError,'compile_failed'):m.core.build_products(life,life.env,{},compile_only=True)
                     else:self.assertEqual(m.core.build_products(life,life.env,{},compile_only=True),{})
                 reclaim.assert_not_called();life.resume_builder.assert_not_called()
-                life.docker.assert_called_once();args=life.docker.call_args.args
+                calls=[call.args for call in life.docker.call_args_list]
+                self.assertEqual([args[0] for args in calls],['create'] if fail else ['create','start','wait'])
+                args=calls[0]
                 self.assertEqual(args[args.index('--cpus')+1],'2');self.assertEqual(args[args.index('--memory')+1],'3g')
                 self.assertIn('make',args);self.assertIn('BUILD_ARGS=--arch arm64 --services system-backend,gateway,monitor-backend,runtime-log',args)
                 self.assertEqual(life.command.call_count,1)
+                if fail:life.sampling_lease.assert_not_called()
+                else:
+                    self.assertEqual(calls[1:],[('start','a'*64),('wait','a'*64)])
+                    life.sampling_lease.assert_called_once()
 
     def test_main_compile_case_never_prepares_identity_or_business(self):
         with tempfile.TemporaryDirectory() as directory:
             life=SimpleNamespace(run_id='synthetic-compile',phase='compile_checkpoint_summary',env={},started=time.monotonic(),
+                compile_start_handoff={'status':'unavailable'},
                 samples=self.samples(),command_evidence=SimpleNamespace(snapshot=lambda:[]),docker=mock.Mock(return_value='arm64'),
                 cleanup=mock.Mock(return_value=[]),sample=mock.Mock(),check=mock.Mock())
             with mock.patch.object(m.sys,'argv',['gate','--case=compile-checkpoints']),mock.patch.object(m,'Lifecycle',return_value=life), \
@@ -289,6 +453,7 @@ class CompileCheckpointCaseTests(unittest.TestCase):
             build.assert_called_once_with(life,compile_only=True);setup.assert_not_called();business.assert_not_called()
             payload=json.loads((Path(directory)/'synthetic-compile-report.json').read_text())
             self.assertEqual(payload['case'],'compile-checkpoints');self.assertEqual(payload['limits']['seconds'],900)
+            self.assertEqual(payload['compile_start_handoff'],{'status':'unavailable'})
             self.assertEqual(payload['assertions'],{});self.assertTrue(payload['cleanup']['zero_owned_resources'])
             self.assertEqual(payload['compile_checkpoint_diagnostic']['controlled_requests'],0)
             self.assertIn('product_images',payload['not_accepted'])
@@ -312,6 +477,113 @@ class CompileCheckpointCaseTests(unittest.TestCase):
             payload=json.loads((Path(directory)/'synthetic-full-report.json').read_text())
             self.assertEqual(payload['case'],'full');self.assertEqual(payload['limits']['seconds'],3600)
             self.assertNotIn('compile_checkpoint_diagnostic',payload)
+
+
+class VolumeExecEventEvidenceTests(unittest.TestCase):
+    run_id = 'synthetic-compile'
+    exec_id = 'a'*64
+
+    def event(self, kind, timestamp, *, exec_id=None, name=None):
+        action = kind if kind=='exec_die' else kind+': /bin/sh -ec '+m.core.VOLUME_SCAN_COMMAND
+        return {'Type':'container','Action':action,'timeNano':timestamp,
+                'Actor':{'ID':'b'*64,'Attributes':{'name':name or self.run_id+'-space',
+                         m.LABEL:self.run_id,'execID':exec_id or self.exec_id,'private':'PRIVATE'}}}
+
+    @staticmethod
+    def stream(events):
+        return ''.join(json.dumps(event)+'\n' for event in events)
+
+    def test_event_candidate_pairs_exact_exec_and_preserves_missing_exit(self):
+        create, start, exit_event = [self.event(kind,100+index) for index,kind in enumerate(m.VOLUME_EXEC_ACTIONS)]
+        for events in ((create,start,exit_event),(create,start)):
+            with self.subTest(events=len(events)):
+                candidate=m.volume_exec_event_candidate(self.stream(events),self.run_id,95,110)
+                self.assertEqual(candidate['status'],'unique_candidate')
+                self.assertEqual(candidate['exit_observed'],len(events)==3)
+                self.assertEqual(candidate['exec_start_path_sha256'],
+                                 hashlib.sha256(('/exec/'+self.exec_id+'/start').encode()).hexdigest())
+                self.assertNotIn(self.exec_id,json.dumps(candidate))
+                self.assertNotIn('PRIVATE',json.dumps(candidate))
+
+    def test_event_candidate_rejects_duplicates_other_helpers_competition_and_truncation(self):
+        create, start, exit_event = [self.event(kind,100+index) for index,kind in enumerate(m.VOLUME_EXEC_ACTIONS)]
+        for raw,reason in (
+            (self.stream((create,start,start,exit_event)),'event_sequence_incomplete'),
+            (self.stream((create,self.event('exec_start',101,name=self.run_id+'-other'))),'event_owner_mismatch'),
+            (self.stream((create,start,self.event('exec_create',103,exec_id='c'*64))),'events_ambiguous'),
+            (self.stream((create,start))[:-1],'events_truncated'),
+            ('x'*(m.VOLUME_EVENT_OUTPUT_LIMIT+1),'event_limit'),
+        ):
+            with self.subTest(reason=reason),self.assertRaisesRegex(m.core.GateError,reason):
+                m.volume_exec_event_candidate(raw,self.run_id,95,110)
+
+    def test_volume_timeout_collects_once_after_cleanup_and_preserves_first_failure(self):
+        epoch = 1_790_000_000_000_000_000
+        compile_case = ('compile-checkpoints','product_compile')
+        image_case = ('full','product_image_agent_backend')
+        cases = (
+            (*compile_case,[],0,False,None,'unique_candidate'),
+            (*image_case,[],0,False,None,'unique_candidate'),
+            (*image_case,['container_residue'],0,False,None,None),
+            (*image_case,[],100_000_000,False,None,'host_clock_unavailable'),
+            (*image_case,[],0,True,None,'event_query_failed'),
+            (*image_case,[],0,False,'product_compile','command_unavailable'),
+            ('full','product_compile',[],0,False,None,None),
+            ('full','product_image_unknown',[],0,False,None,None),
+            ('compile-checkpoints','product_image_agent_backend',[],0,False,None,None),
+        )
+        for case, phase, cleanup_errors, shift, query_fails, command_phase, expected in cases:
+            with self.subTest(case=case,phase=phase,expected=expected), \
+                 tempfile.TemporaryDirectory() as directory:
+                life=SimpleNamespace(run_id=self.run_id,phase=phase,env={},started=0.,samples=[],
+                    command_evidence=SimpleNamespace(snapshot=lambda:[]),docker=mock.Mock(return_value='arm64'),
+                    cleanup=mock.Mock(return_value=cleanup_errors))
+                life.sampler_image_inspect={'run_id':self.run_id,'phase':'sampler_image_admission','record_complete':True,
+                    'result':'passed','host_clock_end':{'wall_utc_ns':epoch,'monotonic_before_ns':0,'monotonic_after_ns':0}}
+                life.resource_failure={'phase':phase,'operation':'measure_owned_volumes','steps':[{'operation':'measure_owned_volumes',
+                    'commands':[{'run_id':self.run_id,'phase':command_phase or phase,'command_id':193,'result':'failed',
+                                 'record_complete':True,'entered_monotonic_ns':8*10**9,'finished_monotonic_ns':11*10**9}]}]}
+                anchor={'wall_utc_ns':epoch+15*10**9+shift,'monotonic_before_ns':15*10**9,'monotonic_after_ns':15*10**9}
+                records=[self.event(kind,epoch+(9+index)*10**9) for index,kind in enumerate(m.VOLUME_EXEC_ACTIONS)]
+
+                def read_events(instance,args,**kwargs):
+                    life.cleanup.assert_called_once()
+                    self.assertIs(instance,life)
+                    self.assertEqual(args[:6],['docker','events','--since','1790000006.000000000',
+                                              '--until','1790000013.000000000'])
+                    self.assertIn('container='+self.run_id+'-space',args)
+                    self.assertIn('label='+m.LABEL+'='+self.run_id,args)
+                    self.assertEqual(kwargs,{'timeout':3,'guarded':False,'output_limit':64*1024})
+                    if query_fails:
+                        raise subprocess.TimeoutExpired('PRIVATE-COMMAND',3)
+                    return self.stream(records)
+
+                with mock.patch.object(m.sys,'argv',['gate','--case='+case]), \
+                     mock.patch.object(m,'Lifecycle',return_value=life),mock.patch.object(m,'validate_profile'), \
+                     mock.patch.object(m.core,'effective_docker_endpoint',return_value='unix:///synthetic'), \
+                     mock.patch.object(m.core,'private_docker_client'),mock.patch.object(m.core,'host_clock_anchor',return_value=anchor), \
+                     mock.patch.object(m,'build',side_effect=m.core.GateError('resource_sample_deadline_exceeded')), \
+                     mock.patch.object(m.core.Lifecycle,'command',side_effect=read_events) as events, \
+                     mock.patch.object(m.tempfile,'gettempdir',return_value=directory),mock.patch('builtins.print'):
+                    self.assertEqual(m.main(),1)
+                report=json.loads((Path(directory)/(self.run_id+'-report.json')).read_text())
+                self.assertEqual(report['error_code'],'resource_sample_deadline_exceeded')
+                self.assertEqual(report['result'],'failed')
+                if expected in ('unique_candidate','event_query_failed'):
+                    events.assert_called_once()
+                else:
+                    events.assert_not_called()
+                receipt=report.get('volume_exec_timeout_events')
+                if expected is None:
+                    self.assertIsNone(receipt)
+                elif expected=='unique_candidate':
+                    self.assertEqual(receipt['command_id'],193)
+                    self.assertEqual(receipt['status'],'unique_candidate')
+                    self.assertTrue(receipt['exit_observed'])
+                    self.assertEqual(receipt['exec_start_path_sha256'],
+                        hashlib.sha256(('/exec/'+self.exec_id+'/start').encode()).hexdigest())
+                else:
+                    self.assertEqual((receipt['status'],receipt['reason']),('unknown',expected))
 
 
 class HTTPPrivateTLSConfigTests(unittest.TestCase):

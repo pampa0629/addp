@@ -242,7 +242,7 @@ class PublicAPTBuildEvidence(unittest.TestCase):
                 v=self.transport('E: Failed to fetch http://deb.debian.org/debian/pool/main/p/pkg.deb '+
                     phrase+' http.docker.internal:3128 (192.0.2.17), connection timed out')
                 self.assertEqual(v,{'operation':'connect','operation_status':'explicit',
-                    'endpoint':'desktop_proxy','endpoint_status':'explicit'})
+                    'endpoint':'desktop_proxy','endpoint_status':'explicit','endpoint_candidates':['desktop_proxy']})
 
     def test_transport_body_read_requires_explicit_body_error(self):
         for phrase in ('Error reading response body from','Failed to read response body from',
@@ -250,7 +250,7 @@ class PublicAPTBuildEvidence(unittest.TestCase):
             with self.subTest(phrase=phrase):
                 v=self.transport('E: '+phrase+' deb.debian.org:80')
                 self.assertEqual(v,{'operation':'body_read','operation_status':'explicit',
-                    'endpoint':'official_debian','endpoint_status':'explicit'})
+                    'endpoint':'official_debian','endpoint_status':'explicit','endpoint_candidates':['official_debian']})
 
     def test_transport_generic_timeout_ip_and_source_do_not_guess(self):
         for body in ('E: Failed to fetch http://deb.debian.org/debian/pool/main/p/pkg.deb Connection timed out [IP: 192.0.2.17 80]',
@@ -259,7 +259,7 @@ class PublicAPTBuildEvidence(unittest.TestCase):
                      'Get:1 http://deb.debian.org/debian/pool/main/p/pkg.deb\nE: Unable to fetch some archives'):
             with self.subTest(body=body):
                 self.assertEqual(self.transport(body),{'operation':'unknown','operation_status':'unavailable',
-                    'endpoint':'unknown','endpoint_status':'unavailable'})
+                    'endpoint':'unknown','endpoint_status':'unavailable','endpoint_candidates':[]})
 
     def test_transport_endpoint_is_closed_and_exact(self):
         for target,endpoint in [('security.debian.org:443','official_debian'),
@@ -274,45 +274,70 @@ class PublicAPTBuildEvidence(unittest.TestCase):
                 v=self.transport('E: Could not connect to '+target+', connection refused')
                 self.assertEqual(v['operation'],'connect');self.assertEqual(v['endpoint'],endpoint)
                 self.assertEqual(v['endpoint_status'],'unavailable' if endpoint=='unknown' else 'explicit')
+                self.assertEqual(v['endpoint_candidates'],[endpoint])
                 for secret in ('PRIVATE','SECRET','192.0.2','2001:db8','3128','http.docker.internal','deb.debian.org'):
                     self.assertNotIn(secret,repr(v))
 
     def test_transport_conflicts_are_independent_and_never_last_wins(self):
         v=self.transport('E: Could not connect to deb.debian.org:80\nE: Error reading response body from deb.debian.org:80')
         self.assertEqual(v,{'operation':'unknown','operation_status':'ambiguous',
-            'endpoint':'official_debian','endpoint_status':'explicit'})
-        for body in ('E: Could not connect to deb.debian.org:80\nE: Could not connect to http.docker.internal:3128',
-                     'E: Could not connect to http.docker.internal:3128\nE: Could not connect to 192.0.2.17:3128'):
+            'endpoint':'official_debian','endpoint_status':'explicit','endpoint_candidates':['official_debian']})
+        for body,candidates in (
+                ('E: Could not connect to deb.debian.org:80\nE: Could not connect to http.docker.internal:3128',
+                 ['desktop_proxy','official_debian']),
+                ('E: Could not connect to http.docker.internal:3128\nE: Could not connect to 192.0.2.17:3128',
+                 ['desktop_proxy','unknown'])):
             v=self.transport(body)
             self.assertEqual(v,{'operation':'connect','operation_status':'explicit',
-                'endpoint':'unknown','endpoint_status':'ambiguous'})
+                'endpoint':'unknown','endpoint_status':'ambiguous','endpoint_candidates':candidates})
 
     def test_transport_ignores_other_steps_successes_and_command_text(self):
         prefix='#2 [1/3] RUN apt-get update\n#2 4.0 E: Could not connect to http.docker.internal:3128'
         v=self.transport('Get:1 http://deb.debian.org/debian/pool/main/p/Could-not-connect-to.deb\nE: Connection timed out',prefix=prefix)
         self.assertEqual(v['operation_status'],'unavailable');self.assertEqual(v['endpoint_status'],'unavailable')
+        self.assertEqual(v['endpoint_candidates'],[])
         v=self.transport('ERROR: process "echo Could not connect to http.docker.internal:3128" failed')
         self.assertEqual(v['operation_status'],'unavailable');self.assertEqual(v['endpoint_status'],'unavailable')
+        self.assertEqual(v['endpoint_candidates'],[])
         v=self.transport('Fetched package description: Error reading response body from deb.debian.org:80')
         self.assertEqual(v['operation_status'],'unavailable');self.assertEqual(v['endpoint_status'],'unavailable')
 
     def test_transport_operation_and_endpoint_can_be_missing_independently(self):
         v=self.transport('  Could not connect')
         self.assertEqual(v,{'operation':'connect','operation_status':'explicit',
-            'endpoint':'unknown','endpoint_status':'unavailable'})
+            'endpoint':'unknown','endpoint_status':'unavailable','endpoint_candidates':[]})
         v=self.transport('  Error reading response body')
         self.assertEqual(v,{'operation':'body_read','operation_status':'explicit',
-            'endpoint':'unknown','endpoint_status':'unavailable'})
+            'endpoint':'unknown','endpoint_status':'unavailable','endpoint_candidates':[]})
 
     def test_transport_unavailable_or_over_budget_cannot_keep_classification(self):
         raw=self.output('E: Could not connect to http.docker.internal:3128')
         for output in (b'',raw+self.output('E: Could not connect to deb.debian.org:80',step='8'),raw+b'x'*131073):
             v=m.public_build_failure_diagnostic(output)['apt']['transport']
             self.assertEqual(v,{'operation':'unknown','operation_status':'unavailable',
-                'endpoint':'unknown','endpoint_status':'unavailable'})
+                'endpoint':'unknown','endpoint_status':'unavailable','endpoint_candidates':[]})
         with mock.patch.object(m.json,'dumps',return_value='x'*4097):
             v=m.public_build_failure_diagnostic(raw)
         self.assertEqual(v['status'],'over_budget');self.assertEqual(v['apt']['transport']['operation'],'unknown')
+        self.assertEqual(v['apt']['transport']['endpoint_candidates'],[])
+
+    def test_endpoint_candidates_are_bounded_deduplicated_and_do_not_resolve_conflicts(self):
+        lines = [
+            'E: Could not connect to private.invalid:3128',
+            'E: Could not connect to security.debian.org:443',
+            'E: Could not connect to http.docker.internal:3128',
+            'E: Could not connect to deb.debian.org:80',
+            'E: Could not connect to http://user:SECRET@private.invalid:80',
+        ]
+        for body in ('\n'.join(lines*20),'\n'.join(reversed(lines))):
+            with self.subTest(repeated=len(body)):
+                diagnostic=m.public_build_failure_diagnostic(self.output(body))
+                transport=diagnostic['apt']['transport']
+                self.assertEqual(transport['endpoint_candidates'],['desktop_proxy','official_debian','unknown'])
+                self.assertEqual((transport['endpoint'],transport['endpoint_status']),('unknown','ambiguous'))
+                self.assertLessEqual(len(json.dumps(diagnostic,separators=(',',':')).encode()),4096)
+                for secret in ('SECRET','private.invalid','3128','security.debian.org','user'):
+                    self.assertNotIn(secret,json.dumps(diagnostic))
 
     def test_missing_or_ambiguous_failure_number_does_not_guess(self):
         v=m.public_build_failure_diagnostic(b'ERROR: failed to solve: apt-get timed out exit code: 100')
@@ -410,7 +435,8 @@ class PublicAPTBuildEvidence(unittest.TestCase):
         apt=m.public_build_failure_diagnostic(self.output(body))['apt']
         self.assertEqual(apt['phase'],'index_download');self.assertEqual(apt['http_statuses'],[502])
         self.assertEqual(apt['signature_kinds'],['expired_key']);self.assertIn('signature',apt['error_kinds'])
-        self.assertEqual(apt['transport'],{'operation':'connect','operation_status':'explicit','endpoint':'desktop_proxy','endpoint_status':'explicit'})
+        self.assertEqual(apt['transport'],{'operation':'connect','operation_status':'explicit','endpoint':'desktop_proxy',
+            'endpoint_status':'explicit','endpoint_candidates':['desktop_proxy']})
         for secret in ('PRIVATE','192.0.2','3128'):self.assertNotIn(secret,repr(apt))
 
     def test_error_continuations_stop_at_boundaries_and_never_adopt_other_output(self):
@@ -1171,6 +1197,502 @@ class LocalTraceResourceGuardTests(unittest.TestCase):
         life.docker = docker
         return life, calls
 
+    def compile_lifecycle(self, directory, *, state='running', role='oneshot'):
+        life, calls = self.sample_lifecycle(directory, 1024)
+        life.strict_resources = True
+        life.phase = 'product_compile'
+        life.sampler_volumes = ('owned-volume',)
+        compile_id, other_id = 'a'*64, 'b'*64
+        name = life.run_id + '-compile'
+        compile_row = row(cpu=2, memory=3*1024**3, status=state)
+        compile_row.update(Id=compile_id, Name='/'+name, SizeRw=128)
+        compile_row['Config']['Labels'].update({life.label: life.run_id, life.label+'.role': 'oneshot'})
+        compile_row['State']['Paused'] = False
+        other_row = dict(row(), Id=other_id, SizeRw=256)
+        docker = life.docker
+
+        def compile_docker(*args, **kwargs):
+            if args[:2] == ('container', 'ls') and '--format' in args:
+                calls.append((args, kwargs))
+                return f'{compile_id}\t{name}\t{state}\t{role}\n{other_id}\t{name}-other\trunning\t\n'
+            if args[0] in ('pause', 'unpause'):
+                calls.append((args, kwargs))
+                self.assertEqual(args[1:], (compile_id,))
+                compile_row['State']['Paused'] = args[0] == 'pause'
+                return ''
+            if args[0] == 'inspect':
+                calls.append((args, kwargs))
+                self.assertEqual(args[1:], ('--size', compile_id, other_id))
+                return json.dumps([compile_row, other_row])
+            return docker(*args, **kwargs)
+
+        life.docker = compile_docker
+        @m.contextmanager
+        def pending_private(*args, **kwargs):
+            yield lambda: str(life.owned_bind_bytes(timeout=kwargs['timeout'])//1024)+'\tprivate\n'
+        life.pending_command = pending_private
+        return life, calls, compile_row
+
+    def test_compile_pauses_owned_container_for_full_check_then_resumes_before_success(self):
+        with tempfile.TemporaryDirectory() as directory:
+            life, calls, compile_row = self.compile_lifecycle(directory)
+            clock = [0.]
+            docker = life.docker
+
+            def timed_docker(*args, **kwargs):
+                clock[0] += .25
+                if args[0] == 'unpause':
+                    self.assertEqual(life.samples, [])
+                return docker(*args, **kwargs)
+
+            def private_bytes(**kwargs):
+                self.assertTrue(compile_row['State']['Paused'])
+                self.assertEqual(kwargs['timeout'], 3)
+                clock[0] += .25
+                return 1024
+
+            life.docker = timed_docker
+            life.owned_bind_bytes = private_bytes
+            with mock.patch.object(m.time, 'monotonic', side_effect=lambda: clock[0]):
+                life.sample()
+            self.assertEqual([args[0] for args, _ in calls],
+                ['container', 'pause', 'inspect', 'volume', 'exec', 'unpause'])
+            self.assertEqual([kw['timeout'] for _, kw in calls], [4, 3.25, 3, 2.75, 2.5, 2.5])
+            self.assertTrue(all(not kw['guarded'] for _, kw in calls))
+            self.assertFalse(compile_row['State']['Paused'])
+            sample = life.samples[0]
+            self.assertEqual(sample['steps'][-1]['operation'], 'resume_owned_compile_container')
+            self.assertEqual(sample['sample_duration_seconds'], 1.75)
+            self.assertEqual(sample['container_count'], 2)
+            self.assertEqual(sample['cpu_hard_limit'], 3)
+            self.assertEqual(sample['memory_hard_limit_bytes'], 3584*1024**2)
+            self.assertEqual(sample['volume_allocated_bytes'], 1024+128+256+1024)
+            self.assertNotIn(compile_row['Id'], json.dumps(sample))
+            actual = m.owned_list_identity(['docker', *calls[0][0]], life.run_id)
+            expected = m.owned_list_identity(['docker', *m.owned_container_list_args(life.run_id, life.label)], life.run_id)
+            self.assertIsNotNone(actual)
+            self.assertEqual(actual, expected)
+
+    def test_parallel_private_measurement_completes_or_reaps_before_resume(self):
+        for mode in ('private_first','docker_first','private_error','docker_error','both_error',
+                     'private_timeout','docker_timeout','unreaped'):
+            with self.subTest(mode=mode), tempfile.TemporaryDirectory() as directory:
+                life, _, compile_row = self.compile_lifecycle(directory)
+                del life.pending_command
+                clock = [0.]
+                events = []
+                process = mock.Mock(pid=765432,returncode=None)
+                process.poll.side_effect = lambda: process.returncode
+                docker = life.docker
+
+                def spawn(args, **kwargs):
+                    self.assertTrue(compile_row['State']['Paused'])
+                    self.assertEqual(args,['du','-sk',str(life.work)])
+                    kwargs['stdout'].write(b'2\tPRIVATE\n')
+                    events.append('spawn_du')
+                    return process
+
+                def wait(timeout):
+                    events.append('wait_du')
+                    clock[0] += .02
+                    if mode == 'unreaped':
+                        raise m.subprocess.TimeoutExpired('du',timeout)
+                    if mode == 'private_timeout' and timeout <= .05:
+                        clock[0] = 3.51
+                        raise m.subprocess.TimeoutExpired('du',timeout)
+                    process.returncode = 23 if mode == 'private_error' else 0
+                    return process.returncode
+
+                def observed_docker(*args,**kwargs):
+                    events.append(args[0])
+                    clock[0] += .05
+                    if args[0]=='inspect':
+                        if mode in ('private_first','both_error'):
+                            process.returncode = 23 if mode=='both_error' else 0
+                        if mode in ('docker_error','both_error','unreaped'):
+                            raise m.GateError('docker_first')
+                        if mode == 'docker_timeout':
+                            clock[0] = 3.51
+                            raise m.GateError('command_deadline_exceeded')
+                    if args[0]=='unpause':
+                        self.assertIsNotNone(process.poll())
+                    return docker(*args,**kwargs)
+
+                process.wait.side_effect = wait
+                life.docker = observed_docker
+                with mock.patch.object(m.time,'monotonic',side_effect=lambda:clock[0]), \
+                     mock.patch.object(m.time,'monotonic_ns',side_effect=lambda:round(clock[0]*10**9)), \
+                     mock.patch.object(m.subprocess,'Popen',side_effect=spawn), \
+                     mock.patch.object(m.os,'killpg') as cancel:
+                    if mode in ('private_first','docker_first'):
+                        life.sample()
+                        self.assertEqual(life.samples[0]['volume_allocated_bytes'],1024+128+256+2048)
+                    else:
+                        expected = ('command_failed_23' if mode=='private_error' else
+                                    'command_deadline_exceeded' if mode in ('private_timeout','docker_timeout') else 'docker_first')
+                        with self.assertRaisesRegex(m.GateError,expected):
+                            life.sample()
+                        self.assertEqual(life.samples,[])
+                    self.assertLess(events.index('spawn_du'),events.index('inspect'))
+                    if mode=='unreaped':
+                        self.assertNotIn('unpause',events)
+                        self.assertIs(life.private_measurement_process,process)
+                        self.assertEqual(life.cleanup(),['private_measurement_child_not_stopped'])
+                    else:
+                        self.assertIn('unpause',events)
+                        self.assertFalse(hasattr(life,'private_measurement_process'))
+                    if mode=='docker_error':
+                        cancel.assert_called_once_with(process.pid,m.signal.SIGTERM)
+                    if mode in ('private_error','private_timeout'):
+                        self.assertEqual(life.resource_failure['operation'],'measure_private_bindings')
+                    elif mode in ('docker_error','both_error','docker_timeout','unreaped'):
+                        self.assertEqual(life.resource_failure['operation'],'inspect_owned_containers')
+
+    def test_compile_without_measurement_budget_never_attempts_pause_or_resume(self):
+        for full_deadline, listing_time in ((4., 3.5), (4., 3.75), (3., 2.5)):
+            with self.subTest(deadline=full_deadline, listing_time=listing_time), tempfile.TemporaryDirectory() as directory:
+                life, calls, _ = self.compile_lifecycle(directory)
+                clock = [0.]
+                docker = life.docker
+
+                def timed_docker(*args, **kwargs):
+                    self.assertEqual(args[:2], ('container', 'ls'))
+                    clock[0] = listing_time
+                    return docker(*args, **kwargs)
+
+                life.docker = timed_docker
+                with mock.patch.object(m.time, 'monotonic', side_effect=lambda: clock[0]):
+                    with self.assertRaisesRegex(m.GateError, 'resource_sample_deadline_exceeded'):
+                        life.sample(deadline=full_deadline)
+                self.assertEqual(len(calls), 1)
+                self.assertEqual(life.resource_failure['operation'], 'pause_owned_compile_container')
+                self.assertEqual(life.samples, [])
+
+    def test_compile_pause_requires_enough_measurement_time_after_lock_and_listing(self):
+        cases = (
+            (4., 0., 1.249, True),
+            (4., 0., 1.25, True),
+            (4., 0., 1.251, False),
+            (4., .5, .8, False),
+            (3., 0., .3, False),
+        )
+        for deadline, lock_wait, list_time, allowed in cases:
+            with self.subTest(deadline=deadline, lock_wait=lock_wait, list_time=list_time), tempfile.TemporaryDirectory() as directory:
+                life, calls, _ = self.compile_lifecycle(directory)
+                clock = [0.]
+                docker = life.docker
+                lock = life.sample_lock
+
+                def acquire_lock(*, timeout):
+                    clock[0] += lock_wait
+                    return lock.acquire(timeout=timeout)
+
+                def timed_docker(*args, **kwargs):
+                    if args[:2] == ('container', 'ls'):
+                        clock[0] += list_time
+                    return docker(*args, **kwargs)
+
+                life.sample_lock = mock.Mock(acquire=acquire_lock, release=lock.release)
+                life.docker = timed_docker
+                life.owned_bind_bytes = mock.Mock(return_value=1024)
+                with mock.patch.object(m.time, 'monotonic', side_effect=lambda: clock[0]):
+                    if allowed:
+                        life.sample(deadline=deadline)
+                    else:
+                        with self.assertRaisesRegex(m.GateError, '^compile_pause_budget_insufficient$'):
+                            life.sample(deadline=deadline)
+                if allowed:
+                    self.assertEqual([args[0] for args, _ in calls],
+                        ['container', 'pause', 'inspect', 'volume', 'exec', 'unpause'])
+                    self.assertAlmostEqual(calls[1][1]['timeout'], deadline - .5 - lock_wait - list_time)
+                    self.assertAlmostEqual(calls[-1][1]['timeout'], deadline - lock_wait - list_time)
+                    self.assertEqual(life.samples[0]['volume_allocated_bytes'], 1024+128+256+1024)
+                    life.owned_bind_bytes.assert_called_once()
+                else:
+                    self.assertEqual([args[0] for args, _ in calls], ['container'])
+                    self.assertEqual(life.resource_failure['operation'], 'pause_owned_compile_container')
+                    self.assertEqual(life.resource_failure['steps'][-1]['commands'], [])
+                    self.assertEqual(life.samples, [])
+                    life.owned_bind_bytes.assert_not_called()
+
+    def test_compile_late_listing_stops_monitor_before_pause_and_allows_cleanup(self):
+        with tempfile.TemporaryDirectory() as directory:
+            work = Path(directory)/'private';work.mkdir()
+            life, calls, compile_row = self.compile_lifecycle(work)
+            docker = life.docker
+            clock = [0.]
+            owned = {compile_row['Id']}
+
+            def timed_docker(*args, **kwargs):
+                if life.phase == 'cleanup':
+                    if args[:2] == ('container', 'ls'):
+                        self.assertIn(f'label={life.label}={life.run_id}', args)
+                        return '\n'.join(owned)
+                    if args[:2] == ('container', 'rm'):
+                        self.assertEqual(args[2:], ('-fv', compile_row['Id']))
+                        owned.clear()
+                    return ''
+                if args[:2] == ('container', 'ls'):
+                    clock[0] = 1.323251  # Last full run's boundary before pause.
+                return docker(*args, **kwargs)
+
+            life.docker = timed_docker
+            with (mock.patch.object(m.time, 'monotonic', side_effect=lambda: clock[0]),
+                  mock.patch.object(life.stop, 'wait', side_effect=lambda _: life.stop.set())):
+                life.monitor()
+                self.assertEqual(life.failure, 'compile_pause_budget_insufficient')
+                self.assertEqual([args[0] for args, _ in calls], ['container'])
+                self.assertEqual(life.samples, [])
+                self.assertFalse(compile_row['State']['Paused'])
+                self.assertEqual(life.cleanup(), [])
+            self.assertFalse(owned)
+            self.assertFalse(work.exists())
+
+    def test_compile_measurement_cutoff_leaves_remaining_time_for_resume(self):
+        with tempfile.TemporaryDirectory() as directory:
+            life, calls, compile_row = self.compile_lifecycle(directory)
+            clock = [0.]
+            docker = life.docker
+
+            def timed_docker(*args, **kwargs):
+                result = docker(*args, **kwargs)
+                if args[:2] == ('volume', 'ls'):
+                    self.assertAlmostEqual(clock[0] + kwargs['timeout'], 3.5)
+                    clock[0] = 3.52  # Cancellation and reaping took another 20 ms.
+                    raise m.GateError('command_deadline_exceeded')
+                if args[0] == 'unpause':
+                    self.assertAlmostEqual(kwargs['timeout'], .48)
+                    clock[0] = 3.9
+                else:
+                    clock[0] += .25
+                return result
+
+            life.docker = timed_docker
+            with mock.patch.object(m.time, 'monotonic', side_effect=lambda: clock[0]):
+                life.monitor()
+            self.assertEqual([args[0] for args, _ in calls], ['container', 'pause', 'inspect', 'volume', 'unpause'])
+            self.assertFalse(compile_row['State']['Paused'])
+            self.assertEqual(life.resource_failure['operation'], 'list_owned_volumes')
+            self.assertEqual(life.failure, 'resource_sample_deadline_exceeded')
+            self.assertEqual(life.resource_failure['steps'][-1]['result'], 'passed')
+            self.assertEqual(life.samples, [])
+
+    def test_compile_never_pauses_foreign_role_or_already_paused_container(self):
+        for state, role in (('running', 'other'), ('paused', 'oneshot')):
+            with self.subTest(state=state, role=role), tempfile.TemporaryDirectory() as directory:
+                life, calls, _ = self.compile_lifecycle(directory, state=state, role=role)
+                with mock.patch.object(m.time, 'monotonic', return_value=1):
+                    with self.assertRaisesRegex(m.GateError, 'owned_compile_container_identity_invalid'):
+                        life.sample()
+                self.assertEqual([args[0] for args, _ in calls], ['container'])
+                self.assertEqual(life.samples, [])
+
+    def test_nonrunning_compile_remains_in_measurement_without_pause(self):
+        for state in ('created', 'exited'):
+            with self.subTest(state=state), tempfile.TemporaryDirectory() as directory:
+                life, calls, _ = self.compile_lifecycle(directory, state=state)
+                clock = [0.]
+                docker = life.docker
+
+                def timed_docker(*args, **kwargs):
+                    if args[:2] == ('container', 'ls'):
+                        clock[0] = 1.5
+                    return docker(*args, **kwargs)
+
+                life.docker = timed_docker
+                with mock.patch.object(m.time, 'monotonic', side_effect=lambda: clock[0]):
+                    life.sample()
+                self.assertEqual([args[0] for args, _ in calls], ['container', 'inspect', 'volume', 'exec'])
+                self.assertEqual(life.samples[0]['container_writable_bytes'], 384)
+
+    def test_compile_state_or_identity_must_match_the_size_inspection(self):
+        for mode, error in (('identity', 'identity_invalid'), ('unpaused', 'not_paused'),
+                            ('started', 'state_changed')):
+            with self.subTest(mode=mode), tempfile.TemporaryDirectory() as directory:
+                life, calls, compile_row = self.compile_lifecycle(directory, state='created' if mode == 'started' else 'running')
+                docker = life.docker
+
+                def change_before_inspect(*args, **kwargs):
+                    if args[0] == 'inspect':
+                        if mode == 'identity':
+                            compile_row['Config']['Labels'][life.label] = 'foreign'
+                        elif mode == 'unpaused':
+                            compile_row['State']['Paused'] = False
+                        else:
+                            compile_row['State'].update(Running=True, Status='running')
+                    return docker(*args, **kwargs)
+
+                life.docker = change_before_inspect
+                with mock.patch.object(m.time, 'monotonic', return_value=1):
+                    with self.assertRaisesRegex(m.GateError, 'owned_compile_container_'+error):
+                        life.sample()
+                expected = ['container', 'inspect'] if mode == 'started' else ['container', 'pause', 'inspect', 'unpause']
+                self.assertEqual([args[0] for args, _ in calls], expected)
+                self.assertEqual(life.samples, [])
+
+    def test_compile_start_holds_sampling_lock_but_wait_does_not(self):
+        with tempfile.TemporaryDirectory() as directory:
+            life, sample_calls, _ = self.compile_lifecycle(directory,state='created')
+            life.public_modcache = Path(directory)/'public'
+            clock = [100.]
+            sample_docker = life.docker
+            sampling_lease = life.sampling_lease
+            commands = []
+
+            @m.contextmanager
+            def delayed_lease(began, *, deadline=None):
+                with sampling_lease(began,deadline=deadline):
+                    if deadline is not None:
+                        clock[0] += 1
+                    yield
+
+            def docker(*args, **kwargs):
+                if args[0] == 'create':
+                    self.assertFalse(life.sample_lock.locked())
+                    commands.append((args[0],kwargs['timeout']))
+                    clock[0] += 10
+                    life.sample()
+                    return 'a'*64+'\n'
+                if args[0] == 'start':
+                    self.assertTrue(life.sample_lock.locked())
+                    self.assertEqual(args[1:],('a'*64,))
+                    commands.append((args[0],kwargs['timeout']))
+                    clock[0] += 2
+                    return ''
+                if args[0] == 'wait':
+                    self.assertFalse(life.sample_lock.locked())
+                    self.assertEqual(args[1:],('a'*64,))
+                    commands.append((args[0],kwargs['timeout']))
+                    return '0\n'
+                return sample_docker(*args,**kwargs)
+
+            life.sampling_lease = delayed_lease
+            life.docker = docker
+            with mock.patch.object(m.time,'monotonic',side_effect=lambda:clock[0]):
+                m.compile_product_binaries(life)
+            self.assertEqual(commands,[('create',2200),('start',3),('wait',2187)])
+            self.assertEqual([args[0] for args, _ in sample_calls],['container','inspect','volume','exec'])
+            self.assertEqual(len(life.samples),1)
+
+    def test_compile_start_failure_closes_sampling_and_preserves_first_cause(self):
+        for mode, expected in (
+                ('start_error','compile_start_failed'), ('start_deadline','command_deadline_exceeded'),
+                ('sample_first','resource_sample_deadline_exceeded'), ('exit_nonzero','command_failed_17'),
+                ('exit_invalid','compile_container_exit_invalid'), ('wait_deadline','command_deadline_exceeded')):
+            with self.subTest(mode=mode), tempfile.TemporaryDirectory() as directory:
+                work = Path(directory)/'private'
+                work.mkdir()
+                life, _, _ = self.compile_lifecycle(work,state='created')
+                life.public_modcache = work/'public'
+                clock = [100.]
+                commands = []
+                owned = {'a'*64}
+
+                def docker(*args, **kwargs):
+                    if life.phase == 'cleanup':
+                        if args[:2] == ('container','ls'):
+                            self.assertIn(f'label={life.label}={life.run_id}',args)
+                            return '\n'.join(owned)
+                        if args[:2] == ('container','rm'):
+                            self.assertEqual(args[2:],('-fv','a'*64))
+                            owned.clear()
+                        return ''
+                    commands.append(args[0])
+                    if args[0] == 'create':
+                        if mode == 'sample_first':
+                            life.resource_failure = {'error_code':'command_deadline_exceeded'}
+                        return 'a'*64
+                    if args[0] == 'start':
+                        self.assertTrue(life.sample_lock.locked())
+                        if mode == 'start_error':
+                            raise m.GateError('compile_start_failed')
+                        if mode == 'start_deadline':
+                            clock[0] += kwargs['timeout']
+                        return ''
+                    if args[0] == 'wait':
+                        self.assertFalse(life.sample_lock.locked())
+                        if mode == 'wait_deadline':
+                            clock[0] += kwargs['timeout']
+                        return {'exit_nonzero':'17','exit_invalid':'0\n0'}.get(mode,'0')
+                    self.fail('unexpected Docker request')
+
+                life.docker = docker
+                with mock.patch.object(m.time,'monotonic',side_effect=lambda:clock[0]):
+                    with self.assertRaisesRegex(m.GateError,'^'+expected+'$'):
+                        m.compile_product_binaries(life)
+                    if mode in ('start_error','start_deadline','sample_first'):
+                        self.assertTrue(life.stop.is_set())
+                        life.sample()
+                        self.assertEqual(commands,['create'] if mode=='sample_first' else ['create','start'])
+                        self.assertEqual(life.samples,[])
+                        self.assertEqual(life.cleanup(),[])
+                        self.assertFalse(owned)
+                        self.assertFalse(work.exists())
+                    else:
+                        self.assertEqual(commands,['create','start','wait'])
+                self.assertFalse(life.sample_lock.locked())
+                if mode == 'exit_nonzero':
+                    self.assertEqual(life.last_failure,{'exit_code':17})
+
+    def test_compile_failures_preserve_first_operation_and_restore_when_possible(self):
+        for first in ('pause', 'inspect', 'unpause'):
+            with self.subTest(first=first), tempfile.TemporaryDirectory() as directory:
+                life, calls, _ = self.compile_lifecycle(directory)
+                docker = life.docker
+                first_failure = {'exit_code': 1, 'diagnostic_markers': ['no such file or directory']}
+
+                def fail(*args, **kwargs):
+                    if args[0] == first or args[0] == 'unpause':
+                        calls.append((args, kwargs))
+                        life.last_failure = first_failure if args[0] == first else {'exit_code': 2}
+                        raise m.GateError('command_failed_'+str(life.last_failure['exit_code']))
+                    return docker(*args, **kwargs)
+
+                life.docker = fail
+                with mock.patch.object(m.time, 'monotonic', return_value=1):
+                    life.monitor()
+                operation = {'pause': 'pause_owned_compile_container', 'inspect': 'inspect_owned_containers',
+                             'unpause': 'resume_owned_compile_container'}[first]
+                self.assertEqual(life.resource_failure['operation'], operation)
+                self.assertEqual(life.failure, 'command_failed_1')
+                self.assertEqual(life.last_failure, first_failure)
+                self.assertEqual([args[0] for args, _ in calls].count('unpause'), 1)
+                self.assertEqual(life.resource_failure['steps'][-1]['operation'], 'resume_owned_compile_container')
+                self.assertEqual(life.samples, [])
+
+    def test_compile_pause_or_resume_cannot_extend_deadline_and_cleanup_removes_owned_container(self):
+        for late in ('pause', 'inspect', 'unpause'):
+            with self.subTest(late=late), tempfile.TemporaryDirectory() as directory:
+                work = Path(directory)/'private';work.mkdir()
+                life, calls, compile_row = self.compile_lifecycle(work)
+                docker = life.docker
+                clock = [0.]
+                owned = {compile_row['Id']}
+
+                def timed_docker(*args, **kwargs):
+                    if life.phase == 'cleanup':
+                        if args[:2] == ('container', 'ls'):
+                            self.assertIn(f'label={life.label}={life.run_id}', args)
+                            return '\n'.join(owned)
+                        if args[:2] == ('container', 'rm'):
+                            self.assertEqual(args[2:], ('-fv', compile_row['Id']))
+                            owned.clear()
+                        return ''
+                    result = docker(*args, **kwargs)
+                    if args[0] == late:
+                        clock[0] = 4.
+                    return result
+
+                life.docker = timed_docker
+                with mock.patch.object(m.time, 'monotonic', side_effect=lambda: clock[0]):
+                    life.monitor()
+                self.assertEqual(life.failure, 'resource_sample_deadline_exceeded')
+                self.assertEqual(life.samples, [])
+                self.assertEqual([args[0] for args, _ in calls].count('unpause'), int(late == 'unpause'))
+                self.assertEqual(life.cleanup(), [])
+                self.assertFalse(owned)
+                self.assertFalse(work.exists())
+
     def test_last_read_cannot_turn_an_expired_scan_into_success(self):
         for finished in (4, 4.01):
             with self.subTest(finished=finished), tempfile.TemporaryDirectory() as directory:
@@ -1664,11 +2186,129 @@ class HostCLIComparisonTests(unittest.TestCase):
             self.assertNotIn('PRIVATE',json.dumps(record))
 
 
+class CompileStartHandoffTests(unittest.TestCase):
+    def fixture(self, directory):
+        life = bare_lifecycle(directory)
+        handoff = dict.fromkeys(m.COMPILE_START_LOCK_POINTS,100)
+        handoff.update(result='passed',command_attempted=True)
+        timing = dict.fromkeys(m.COMPILE_START_COMMAND_POINTS,101)
+        timing.update(command_id=7,run_id=life.run_id,phase='product_compile',result='passed',record_complete=True,
+            pid=123456,args=['PRIVATE-PATH'],env={'PRIVATE':'PRIVATE'},output='PRIVATE-TOKEN')
+        return life,handoff,timing
+
+    def test_closed_projection_binds_the_original_start_and_excludes_secrets(self):
+        with tempfile.TemporaryDirectory() as directory:
+            life,handoff,timing = self.fixture(directory)
+            result = m.compile_start_handoff_receipt(life,handoff,timing,'a'*64)
+            self.assertEqual(result['status'],'complete')
+            self.assertEqual(result['command']['request_signature_sha256'],
+                m.docker_request_signature('POST','/containers/'+'a'*64+'/start',{}))
+            self.assertEqual(result['command']['command_id'],7)
+            self.assertNotIn('PRIVATE',json.dumps(result));self.assertNotIn('a'*64,json.dumps(result))
+            self.assertNotIn('pid',result['command'])
+            self.assertLessEqual(len(json.dumps(result,separators=(',',':')).encode()),2048)
+            handoff['command_attempted']=False
+            self.assertIsNone(m.compile_start_handoff_receipt(life,handoff,{},'a'*64)['command'])
+            timing.pop('finished_monotonic_ns');handoff['command_attempted']=True
+            self.assertEqual(m.compile_start_handoff_receipt(life,handoff,timing,'a'*64),{'status':'unavailable'})
+
+    def test_foreign_malformed_or_failed_diagnostics_never_export_partial_data(self):
+        for invalid in ({'run_id':'foreign'},{'phase':'cleanup'},{'command_id':True},
+                        {'record_complete':False},{'result':'PRIVATE'},{'entered_monotonic_ns':'PRIVATE'}):
+            with self.subTest(invalid=invalid),tempfile.TemporaryDirectory() as directory:
+                life,handoff,timing = self.fixture(directory)
+                self.assertEqual(m.compile_start_handoff_receipt(life,handoff,timing|invalid,'a'*64),{'status':'unavailable'})
+        with tempfile.TemporaryDirectory() as directory:
+            life,handoff,timing = self.fixture(directory)
+            timing['command_id'] = 10**2048
+            self.assertEqual(m.compile_start_handoff_receipt(life,handoff,timing,'a'*64),{'status':'over_budget'})
+            with mock.patch.object(m,'docker_request_signature',side_effect=OSError('PRIVATE')):
+                self.assertEqual(m.compile_start_handoff_receipt(life,handoff,timing,'a'*64),{'status':'unavailable'})
+
+    def test_actual_command_kernel_records_lock_wait_start_cancel_and_release(self):
+        for mode in ('passed','start_error','start_timeout','lock_timeout','diagnostic_error'):
+            with self.subTest(mode=mode),tempfile.TemporaryDirectory() as directory:
+                life = bare_lifecycle(directory)
+                life.strict_resources = True;life.public_modcache=Path(directory)/'public'
+                clock=[100.];calls=[]
+                process=mock.Mock(pid=123456,returncode=None)
+                process.poll.side_effect=lambda:process.returncode
+                def wait(timeout):
+                    if mode=='start_timeout' and timeout<=.05:
+                        clock[0]=104.01
+                        raise m.subprocess.TimeoutExpired('PRIVATE',timeout)
+                    clock[0]+=.01
+                    process.returncode=23 if mode in ('start_error','diagnostic_error') else 0
+                process.wait.side_effect=wait
+                @m.contextmanager
+                def lease(began,*,deadline=None):
+                    self.assertEqual((began,deadline),(100.,104.))
+                    if mode=='lock_timeout':
+                        clock[0]=104.01
+                        raise m.GateError('resource_sample_deadline_exceeded')
+                    with life.sample_lock:
+                        clock[0]+=.4
+                        yield
+                        clock[0]+=.01
+                life.sampling_lease=lease
+                def docker(*args,**kwargs):
+                    calls.append(args[0])
+                    if args[0]=='create':return 'a'*64
+                    if args[0]=='wait':
+                        self.assertFalse(life.sample_lock.locked());return '0'
+                    self.assertEqual(args,('start','a'*64));self.assertTrue(life.sample_lock.locked())
+                    self.assertAlmostEqual(kwargs['timeout'],3.6)
+                    return m.Lifecycle.docker(life,*args,**kwargs)
+                life.docker=docker
+                def spawn(args,**kwargs):
+                    self.assertEqual(args,['docker','start','a'*64])
+                    kwargs['stdout'].write(b'PRIVATE-TOKEN\n');return process
+                signature=m.docker_request_signature
+                def sign(*args):
+                    if mode=='diagnostic_error':raise OSError('PRIVATE')
+                    return signature(*args)
+                with mock.patch.object(m.time,'monotonic',side_effect=lambda:clock[0]), \
+                     mock.patch.object(m.time,'monotonic_ns',side_effect=lambda:round(clock[0]*1e9)), \
+                     mock.patch.object(m.subprocess,'Popen',side_effect=spawn) as popen, \
+                     mock.patch.object(m.os,'killpg') as cancel, \
+                     mock.patch.object(m,'docker_request_signature',side_effect=sign):
+                    if mode=='passed':m.compile_product_binaries(life)
+                    else:
+                        expected={'start_error':'command_failed_23','diagnostic_error':'command_failed_23',
+                            'start_timeout':'command_deadline_exceeded','lock_timeout':'resource_sample_deadline_exceeded'}[mode]
+                        with self.assertRaisesRegex(m.GateError,'^'+expected+'$'):m.compile_product_binaries(life)
+                self.assertFalse(life.sample_lock.locked())
+                result=life.compile_start_handoff
+                self.assertLessEqual(len(json.dumps(result,separators=(',',':')).encode()),2048)
+                self.assertNotIn('PRIVATE',json.dumps(result));self.assertNotIn('pid',json.dumps(result))
+                if mode=='diagnostic_error':
+                    self.assertEqual(result,{'status':'unavailable'});continue
+                self.assertEqual(result['status'],'complete')
+                self.assertEqual(result['deadline_monotonic_ns'],104000000000)
+                if mode=='lock_timeout':
+                    popen.assert_not_called();self.assertEqual(calls,['create'])
+                    self.assertIsNone(result['command']);self.assertIsNone(result['lock_acquired_monotonic_ns'])
+                    self.assertIsNone(result['lock_released_monotonic_ns']);continue
+                self.assertEqual(popen.call_count,1)
+                self.assertEqual(result['lock_acquired_monotonic_ns']-result['lock_requested_monotonic_ns'],400000000)
+                command=result['command']
+                self.assertEqual(command['deadline_monotonic_ns'],104000000000)
+                self.assertLessEqual(command['finished_monotonic_ns'],result['lock_release_started_monotonic_ns'])
+                self.assertLessEqual(result['lock_release_started_monotonic_ns'],result['lock_released_monotonic_ns'])
+                if mode=='start_timeout':
+                    self.assertGreater(command['cancel_finished_monotonic_ns'],command['deadline_monotonic_ns'])
+                    cancel.assert_called_once_with(process.pid,m.signal.SIGTERM)
+                if mode in ('start_error','start_timeout'):
+                    self.assertTrue(life.stop.is_set());self.assertEqual(calls,['create','start'])
+                    self.assertEqual(result['result'],'failed')
+
+
 class CommandBoundaryEvidenceTests(unittest.TestCase):
     def test_formal_report_exports_cleanup_records_even_on_admission_failure(self):
         with tempfile.TemporaryDirectory() as directory:
             work=Path(directory)/'owned';work.mkdir()
             life=bare_lifecycle(work);target=Path(directory)/'report.json'
+            life.compile_start_handoff={'status':'unavailable'}
             def cleanup():
                 record=life.command_evidence.begin(['docker','volume','ls','-q','--filter',
                     f'label={m.LABEL}={life.run_id}'],life.run_id,'cleanup')
@@ -1686,6 +2326,7 @@ class CommandBoundaryEvidenceTests(unittest.TestCase):
             self.assertEqual(report['owned_list_commands'][0]['phase'],'cleanup')
             self.assertTrue(report['owned_list_commands'][0]['record_complete'])
             self.assertEqual(report['result'],'failed')
+            self.assertEqual(report['compile_start_handoff'],{'status':'unavailable'})
 
     def test_standalone_nginx_cleanup_does_not_require_a_formal_report(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -1772,6 +2413,36 @@ class CommandBoundaryEvidenceTests(unittest.TestCase):
                             'owned','preparation')
         ledger.finish(record)
         self.assertEqual(ledger.snapshot(),[])
+
+    def test_strict_compile_resume_timing_keeps_only_the_exact_request_signature(self):
+        container_id = 'a'*64
+        with tempfile.TemporaryDirectory() as directory:
+            life = bare_lifecycle(directory)
+            life.strict_resources = True
+            life.sample_thread_id = m.threading.get_ident()
+            life.sample_deadline = 5.
+            life.sample_phase = 'product_compile'
+            for operation,args,signed in (
+                    ('resume_owned_compile_container',['docker','unpause',container_id],True),
+                    ('resume_owned_compile_container',['docker','unpause',container_id[:12]],False),
+                    ('cleanup',['docker','unpause',container_id],False)):
+                with self.subTest(operation=operation,signed=signed):
+                    life.sample_operation = operation
+                    life.sample_step = {'commands':[]}
+                    with mock.patch.object(m.time,'monotonic_ns',return_value=10**9), \
+                         mock.patch.object(m.time,'monotonic',return_value=1.), \
+                         mock.patch.object(m.subprocess,'Popen',side_effect=OSError('fixture')):
+                        with self.assertRaises(OSError):
+                            life.command(args,guarded=False)
+                    record, = life.sample_step['commands']
+                    self.assertTrue(record['record_complete'])
+                    self.assertEqual(record['result'],'failed')
+                    self.assertEqual('request_signature_sha256' in record,signed)
+                    if signed:
+                        self.assertEqual(record['request_signature_sha256'],
+                            m.docker_request_signature('POST',f'/containers/{container_id}/unpause',{}))
+                    self.assertNotIn(container_id,json.dumps(record))
+            self.assertEqual(life.command_evidence.snapshot(),[])
 
     def test_clock_interval_uses_bounds_not_symmetric_midpoint(self):
         self.assertEqual(m.apiproxy_clock_interval(100,200,1000,1050),(-900,-850))

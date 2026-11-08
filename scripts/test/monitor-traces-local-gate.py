@@ -7,7 +7,7 @@ runs a capacity model. Product images and Compose contracts remain authoritative
 from __future__ import annotations
 
 import base64
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 import copy
 import hashlib
 import importlib
@@ -178,19 +178,41 @@ def capture_volume_checkpoints(args, run_id, output, timing, sampling, *, volume
             timing['checkpoint_processing_seconds'] = round((time.monotonic_ns()-began)/1e9, 6)
 
 
+def owned_container_list_args(run_id, label, *, compile_details=False):
+    selector = ['--filter', f'label={label}={run_id}']
+    if compile_details:
+        fields = '{{.ID}}\t{{.Names}}\t{{.State}}\t{{.Label "' + label + '.role"}}'
+        return ['container', 'ls', '-a', *selector, '--no-trunc', '--format', fields]
+    return ['container', 'ls', '-a', '-q', *selector]
+
+
+def docker_request_signature(method, path, query):
+    canonical = json.dumps({'method': method, 'path': path, 'query': query}, sort_keys=True, separators=(',', ':'))
+    return hashlib.sha256(canonical.encode()).hexdigest()
+
+
+def compile_resume_request_identity(container_id):
+    if not re.fullmatch('[a-f0-9]{64}', container_id):
+        return None
+    return {'operation': 'resume_owned_compile_container', 'method': 'POST',
+            'api_family': '/containers/{id}/unpause',
+            'request_signature_sha256': docker_request_signature('POST', f'/containers/{container_id}/unpause', {})}
+
+
 def owned_list_identity(args, run_id, label=LABEL):
     """Semantic API signature for the only owned list route, never raw argv."""
     for kind, path in (('container', '/containers/json'), ('volume', '/volumes')):
-        expected = ['docker', kind, 'ls', *(['-a'] if kind == 'container' else []),
-                    '-q', '--filter', f'label={label}={run_id}']
-        if list(args) == expected:
+        expected = ['docker', *owned_container_list_args(run_id, label)] if kind == 'container' else [
+            'docker', kind, 'ls', '-q', '--filter', f'label={label}={run_id}']
+        compile_list = kind == 'container' and list(args) == [
+            'docker', *owned_container_list_args(run_id, label, compile_details=True)]
+        if list(args) == expected or compile_list:
             query = {'filters': {'label': [f'{label}={run_id}']}}
             if kind == 'container':
                 query['all'] = True
-            canonical = json.dumps({'method': 'GET', 'path': path, 'query': query}, sort_keys=True, separators=(',', ':'))
             return {'operation': 'list_owned_containers' if kind == 'container' else 'list_owned_volumes',
                     'method': 'GET', 'api_family': path,
-                    'request_signature_sha256': hashlib.sha256(canonical.encode()).hexdigest()}
+                    'request_signature_sha256': docker_request_signature('GET', path, query)}
     return None
 
 
@@ -234,6 +256,12 @@ class CommandEvidence:
             # Even a worker that failed to stop must not erase the error report.
             # An unfinished record stays explicitly incomplete, never successful.
             return copy.deepcopy(self.records)
+
+
+def host_clock_anchor():
+    before = time.monotonic_ns()
+    wall = time.time_ns()
+    return {'monotonic_before_ns': before, 'wall_utc_ns': wall, 'monotonic_after_ns': time.monotonic_ns()}
 
 
 def require_apiproxy_clock_semantics(proof, desktop_version):
@@ -737,7 +765,7 @@ def public_build_failure_diagnostic(raw, proxy_provenance=None):
                (role!='host_cli' or 'desktop_internal' not in (item['http'],item['https'])))
         proxies[role]={'status':'observed',**item} if valid else {'status':'unavailable'}
     unknown_transport={'operation':'unknown','operation_status':'unavailable',
-                       'endpoint':'unknown','endpoint_status':'unavailable'}
+                       'endpoint':'unknown','endpoint_status':'unavailable','endpoint_candidates':[]}
     value={'status':'complete',
            'limits_exceeded':[], 'reasons':['unclassified'],'steps':[], 'inputs':[],
            'dockerfile_lines':[], 'http_statuses':[], 'process_exit_codes':[],
@@ -873,6 +901,7 @@ def public_build_failure_diagnostic(raw, proxy_provenance=None):
                     operations.add(operation)
                     if match[1]:endpoints.add(endpoint_kind(match[1]))
         transport=dict(unknown_transport)
+        transport['endpoint_candidates']=sorted(endpoints)
         for field,candidates in (('operation',operations),('endpoint',endpoints)):
             if len(candidates)>1:transport[field+'_status']='ambiguous'
             elif candidates and candidates!={'unknown'}:
@@ -1113,7 +1142,9 @@ class Lifecycle:
             self.check()
             time.sleep(min(.1, max(0, deadline-time.monotonic())))
 
-    def command(self, args, *, env=None, cwd=None, data=None, timeout=600, guarded=True, output_limit=None, process_observer=None):
+    @contextmanager
+    def pending_command(self, args, *, env=None, cwd=None, data=None, timeout=600, guarded=True, output_limit=None,
+                process_observer=None, timing_receipt=None, step=None):
         entered_ns = time.monotonic_ns()
         began = entered_ns / 1e9
         deadline = began + timeout
@@ -1130,10 +1161,13 @@ class Lifecycle:
             'cancel_started_monotonic_ns', 'cancel_finished_monotonic_ns'), None))
         timing['entered_monotonic_ns'] = entered_ns
         timing['result'] = 'failed'
+        if timing_receipt is not None:
+            timing['deadline_monotonic_ns'] = round(deadline * 1e9)
+            timing['host_clock_start'] = host_clock_anchor()
         if sampling:
             timing['wait_poll'] = {'calls': 0, 'timeouts': 0,
                 'timeout_overrun_total_ns': 0, 'timeout_overrun_max_ns': 0}
-            self.sample_step['commands'].append(timing)
+            (self.sample_step if step is None else step)['commands'].append(timing)
 
         def check_deadline():
             now = time.monotonic()
@@ -1157,10 +1191,11 @@ class Lifecycle:
                 finally:
                     timing['spawn_finished_monotonic_ns'] = time.monotonic_ns()
                     timing['spawn_seconds'] = round((timing['spawn_finished_monotonic_ns']-timing['spawn_started_monotonic_ns'])/1e9, 6)
-                try:
-                    if process_observer is not None:process_observer(p)
+                timing['wait_started_monotonic_ns'] = time.monotonic_ns() if step is not None else None
+                def finish():
                     check_deadline()
-                    timing['wait_started_monotonic_ns'] = time.monotonic_ns()
+                    if timing['wait_started_monotonic_ns'] is None:
+                        timing['wait_started_monotonic_ns'] = time.monotonic_ns()
                     try:
                         if data is not None:
                             p.stdin.write(data.encode() if isinstance(data, str) else data)
@@ -1195,7 +1230,38 @@ class Lifecycle:
                         timing['wait_finished_monotonic_ns'] = time.monotonic_ns()
                         timing['wait_seconds'] = round((timing['wait_finished_monotonic_ns']-timing['wait_started_monotonic_ns'])/1e9, 6)
                     check_deadline()
+                    timing['output_started_monotonic_ns'] = time.monotonic_ns()
+                    try:
+                        output.seek(0)
+                        raw = output.read() if output_limit is None else output.read(output_limit+1)
+                        require(output_limit is None or len(raw) <= output_limit, 'command_output_limit_exceeded')
+                        text = raw.decode(errors='replace')
+                    finally:
+                        timing['output_finished_monotonic_ns'] = time.monotonic_ns()
+                        timing['output_seconds'] = round((timing['output_finished_monotonic_ns']-timing['output_started_monotonic_ns'])/1e9, 6)
+                    check_deadline()
+                    if p.returncode:
+                        # Raw output may carry login/SQL details. Export closed fields only.
+                        self.last_failure = {'exit_code': p.returncode, 'output_sha256': hashlib.sha256(raw).hexdigest(),
+                                             'diagnostic_markers': diagnostic_markers(raw)}
+                        if self.phase.startswith('product_image_'):
+                            self.last_failure['public_build']=public_build_failure_diagnostic(raw,getattr(self,'build_proxy_provenance',None))
+                        if args[0] == 'du':
+                            diagnostics=[line for line in text.splitlines() if not re.fullmatch(r'\d+\s+.+',line)]
+                            self.last_failure['du_missing_file'] = bool(diagnostics) and all(line.startswith('du:') and line.endswith('No such file or directory') for line in diagnostics)
+                        raise GateError('command_failed_' + str(p.returncode))
+                    check_deadline()
+                    timing['decision_monotonic_ns'] = time.monotonic_ns()
+                    timing['result'] = 'passed'
+                    return text
+                try:
+                    if process_observer is not None:
+                        process_observer(p)
+                    yield finish
                 finally:
+                    if timing['wait_started_monotonic_ns'] is not None and timing['wait_finished_monotonic_ns'] is None:
+                        timing['wait_finished_monotonic_ns'] = time.monotonic_ns()
+                        timing['wait_seconds'] = round((timing['wait_finished_monotonic_ns']-timing['wait_started_monotonic_ns'])/1e9,6)
                     if p.poll() is None:
                         if guarded and build_progress is not None:
                             record_build_before_resource_cancel(self, build_progress, output, timing, deadline, sys.exc_info()[1])
@@ -1213,36 +1279,27 @@ class Lifecycle:
                             timing['cancel_cleanup_seconds'] = round((timing['cancel_finished_monotonic_ns']-timing['cancel_started_monotonic_ns'])/1e9, 6)
                     elif timing['exit_observed_monotonic_ns'] is None:
                         timing['exit_observed_monotonic_ns'] = time.monotonic_ns()
-                timing['output_started_monotonic_ns'] = time.monotonic_ns()
-                try:
-                    output.seek(0)
-                    raw = output.read() if output_limit is None else output.read(output_limit+1)
-                    require(output_limit is None or len(raw) <= output_limit, 'command_output_limit_exceeded')
-                    text = raw.decode(errors='replace')
-                finally:
-                    timing['output_finished_monotonic_ns'] = time.monotonic_ns()
-                    timing['output_seconds'] = round((timing['output_finished_monotonic_ns']-timing['output_started_monotonic_ns'])/1e9, 6)
-                check_deadline()
-            if p.returncode:
-                # Raw output may carry login/SQL details. Export closed fields only.
-                self.last_failure = {'exit_code': p.returncode, 'output_sha256': hashlib.sha256(raw).hexdigest(),
-                                     'diagnostic_markers': diagnostic_markers(raw)}
-                if self.phase.startswith('product_image_'):
-                    self.last_failure['public_build']=public_build_failure_diagnostic(raw,getattr(self,'build_proxy_provenance',None))
-                if args[0] == 'du':
-                    diagnostics=[line for line in text.splitlines() if not re.fullmatch(r'\d+\s+.+',line)]
-                    self.last_failure['du_missing_file'] = bool(diagnostics) and all(line.startswith('du:') and line.endswith('No such file or directory') for line in diagnostics)
-                raise GateError('command_failed_' + str(p.returncode))
             check_deadline()
-            timing['decision_monotonic_ns'] = time.monotonic_ns()
-            timing['result'] = 'passed'
-            return text
+        except BaseException:
+            timing['result'] = 'failed'
+            raise
         finally:
             if timing['decision_monotonic_ns'] is None:
                 timing['decision_monotonic_ns'] = time.monotonic_ns()
             timing['finished_monotonic_ns'] = time.monotonic_ns()
             timing['duration_seconds'] = round((timing['finished_monotonic_ns']-entered_ns)/1e9, 6)
             self.command_evidence.finish(timing)
+            if (sampling and self.strict_resources and self.sample_phase == 'product_compile' and
+                    self.sample_operation == 'resume_owned_compile_container' and
+                    len(args) == 3 and args[:2] == ['docker', 'unpause']):
+                timing.update(compile_resume_request_identity(args[2]) or {})
+            if timing_receipt is not None:
+                timing['host_clock_end'] = host_clock_anchor()
+                timing_receipt.update(timing)
+
+    def command(self, args, **kwargs):
+        with Lifecycle.pending_command(self, args, **kwargs) as finish:
+            return finish()
 
     def docker(self, *args, **kw):
         if args and args[0]=='run' and self.label+'.role=oneshot' in args:
@@ -1256,8 +1313,9 @@ class Lifecycle:
         return p
 
     def owned(self, kind, **kw):
-        return self.docker(kind, 'ls', *(['-a'] if kind == 'container' else []), '-q', '--filter',
-                           f'label={self.label}={self.run_id}', guarded=False, **kw).split()
+        args = owned_container_list_args(self.run_id, self.label) if kind == 'container' else [
+            kind, 'ls', '-q', '--filter', f'label={self.label}={self.run_id}']
+        return self.docker(*args, guarded=False, **kw).split()
 
     def resume_builder(self):
         require(self.builder_stopped and bool(self.builder_ids),'owned_builder_resume_requires_planned_stop')
@@ -1272,6 +1330,47 @@ class Lifecycle:
     def owned_bind_bytes(self, *, timeout):
         output=self.command(['du','-sk',str(self.work)],guarded=False,timeout=timeout)
         return int(output.split()[0])*1024
+
+    @contextmanager
+    def parallel_private_measurement(self, enabled, remaining):
+        if not enabled:
+            yield None
+            return
+        began = time.monotonic()
+        step = {'operation':'measure_private_bindings','commands':[],'result':'failed'}
+        self.sample_steps.append(step)
+        primary = None
+        def observe(process):
+            self.private_measurement_process = process
+        try:
+            with self.pending_command(['du','-sk',str(self.work)],guarded=False,timeout=remaining(),
+                    process_observer=observe,step=step) as finish:
+                def read():
+                    try:
+                        result = int(finish().split()[0])*1024
+                        remaining()
+                        step['result'] = 'passed'
+                        return result
+                    except BaseException:
+                        self.sample_operation = 'measure_private_bindings'
+                        raise
+                try:
+                    yield read
+                except BaseException as error:
+                    primary = error
+                    raise
+        except BaseException:
+            if primary is not None:
+                raise primary
+            self.sample_operation = 'measure_private_bindings'
+            raise
+        finally:
+            process = getattr(self,'private_measurement_process',None)
+            if process is not None and process.poll() is not None:
+                del self.private_measurement_process
+            step['duration_seconds'] = round(time.monotonic()-began,6)
+            step['processing_seconds'] = round(max(0,step['duration_seconds']-
+                sum(c['duration_seconds'] for c in step['commands'])),6)
 
     def prepare_volume_sampler(self, volumes, *, timeout):
         require(not self.sampler_started, 'volume_sampler_already_started')
@@ -1296,6 +1395,8 @@ class Lifecycle:
     def sample(self, *, deadline=None):
         waiting = time.monotonic()
         with self.sampling_lease(waiting,deadline=deadline):
+            if self.stop.is_set():
+                return
             if self.strict_resources and self.samples:
                 require(waiting-self.samples[-1]['sample_started_monotonic'] <= 5, 'resource_sample_cadence_exceeded')
             acquired = time.monotonic()
@@ -1361,21 +1462,106 @@ class Lifecycle:
             'exit_code':r['State'].get('ExitCode'),'oom':r['State'].get('OOMKilled')} for r in rows]
         validate_resources(rows,self.builder_ids)
 
+    def compile_container_targets(self, output):
+        ids = set()
+        target = None
+        for line in output.splitlines():
+            fields = line.split('\t')
+            require(len(fields) == 4, 'owned_compile_container_listing_invalid')
+            container_id, name, state, role = fields
+            require(re.fullmatch('[a-f0-9]{64}', container_id) and container_id not in ids,
+                    'owned_compile_container_listing_invalid')
+            ids.add(container_id)
+            if name == self.run_id + '-compile':
+                require(role == 'oneshot' and state in ('running', 'created', 'exited'),
+                        'owned_compile_container_identity_invalid')
+                require(target is None, 'owned_compile_container_identity_invalid')
+                target = (container_id, state)
+        return ids, target
+
+    @contextmanager
+    def stable_compile_measurement(self, container_id, remaining):
+        if container_id is None:
+            yield
+            return
+        full_deadline = self.sample_deadline
+        self.sample_deadline = full_deadline - 0.5
+        pause_attempted = False
+        try:
+            with self.measure_step('pause_owned_compile_container'):
+                timeout = remaining()
+                require(timeout >= 2.25, 'compile_pause_budget_insufficient')
+                pause_attempted = True
+                self.docker('pause', container_id, guarded=False, timeout=timeout)
+            yield
+        finally:
+            self.sample_deadline = full_deadline
+            child = getattr(self,'private_measurement_process',None)
+            if pause_attempted and (child is None or child.poll() is not None):
+                primary = sys.exc_info()[1]
+                operation = self.sample_operation
+                command_failure = getattr(self, 'last_failure', None)
+                try:
+                    with self.measure_step('resume_owned_compile_container'):
+                        self.docker('unpause', container_id, guarded=False, timeout=remaining())
+                except BaseException:
+                    if primary is None:
+                        raise
+                finally:
+                    if primary is not None:
+                        self.sample_operation = operation
+                        if command_failure is None:
+                            self.__dict__.pop('last_failure', None)
+                        else:
+                            self.last_failure = command_failure
+
     def _sample(self):
-        retries={'volume':0,'private':0}
-        no_retry=getattr(self,'sample_no_retry',self.strict_resources)
-        if hasattr(self,'measurement_failure'):del self.measurement_failure
         def remaining():
             value=self.sample_deadline-time.monotonic()
             require(value>0, 'resource_sample_deadline_exceeded')
             return value
+        if hasattr(self,'measurement_failure'):del self.measurement_failure
+        compile_target = None
         with self.measure_step('list_owned_containers'):
             if self.builder_created and not self.builder_ids:
                 self.builder_ids.update(self.docker('ps','-aq','--filter','name=^buildx_buildkit_'+self.builder+'0$',guarded=False,timeout=remaining()).split())
-            ids = set(self.owned('container', timeout=remaining())) | self.builder_ids
+            if self.strict_resources and self.sample_phase == 'product_compile':
+                args = owned_container_list_args(self.run_id, self.label, compile_details=True)
+                listing = self.docker(*args, guarded=False, timeout=remaining())
+                ids, compile_target = self.compile_container_targets(listing)
+            else:
+                ids = set(self.owned('container', timeout=remaining()))
+            ids |= self.builder_ids
             self.sample_counts['container_count'] = len(ids)
+        pause_id = compile_target[0] if compile_target and compile_target[1] == 'running' else None
+        with self.stable_compile_measurement(pause_id, remaining):
+            with self.parallel_private_measurement(pause_id is not None,remaining) as private_read:
+                sample = self.measure_owned_resources(ids, compile_target, remaining, private_read)
+        sample.update(elapsed_seconds=round(time.monotonic()-self.started, 2), **self.sample_diagnostics())
+        remaining()
+        self.samples.append(sample)
+
+    def measure_owned_resources(self, ids, compile_target, remaining, private_read=None):
+        retries={'volume':0,'private':0}
+        no_retry=getattr(self,'sample_no_retry',self.strict_resources)
         with self.measure_step('inspect_owned_containers'):
             rows = json.loads(self.docker('inspect', *(['--size'] if self.strict_resources else []), *sorted(ids), guarded=False, timeout=remaining())) if ids else []
+            if compile_target is not None:
+                compile_id, previous_state = compile_target
+                matching = [row for row in rows if row['Id'] == compile_id]
+                require(len(matching) == 1, 'owned_compile_container_identity_invalid')
+                row = matching[0]
+                labels = row.get('Config', {}).get('Labels') or {}
+                require(row.get('Name') == '/' + self.run_id + '-compile' and
+                        labels.get(self.label) == self.run_id and labels.get(self.label + '.role') == 'oneshot',
+                        'owned_compile_container_identity_invalid')
+                state = row['State']
+                if previous_state == 'running':
+                    require(state.get('Paused') is True and state.get('Running') is True,
+                            'owned_compile_container_not_paused')
+                else:
+                    require(state.get('Running') is False and state.get('Status') in ('created', 'exited'),
+                            'owned_compile_container_state_changed')
             remaining()
         with self.measure_step('validate_container_states'):
             try:
@@ -1431,25 +1617,25 @@ class Lifecycle:
                         self.sample_step['result'] = 'retry'
                         retries['volume']+=1;remaining();continue
                     raise GateError('owned_volume_measurement_invalid') from None
-        while True:
-            with self.measure_step('measure_private_bindings'):
-                try:
-                    total += self.owned_bind_bytes(timeout=remaining());remaining();break
-                except GateError:
-                    if no_retry or not getattr(self,'last_failure',{}).get('du_missing_file'):raise
-                    self.sample_step['result'] = 'retry'
-                    retries['private']+=1;remaining()
+        if private_read is not None:
+            total += private_read()
+        else:
+            while True:
+                with self.measure_step('measure_private_bindings'):
+                    try:
+                        total += self.owned_bind_bytes(timeout=remaining());remaining();break
+                    except GateError:
+                        if no_retry or not getattr(self,'last_failure',{}).get('du_missing_file'):raise
+                        self.sample_step['result'] = 'retry'
+                        retries['private']+=1;remaining()
         if hasattr(self,'measurement_failure'):del self.measurement_failure
         if getattr(self,'last_failure',{}).get('du_missing_file'):del self.last_failure
         self.sample_measured['volume_allocated_bytes'] = total
         with self.measure_step('final_validation'):
             require(total < VOLUME_STOP, 'owned_volume_stop_line_reached')
             remaining()
-        sample = {'elapsed_seconds': round(time.monotonic()-self.started, 2), **self.sample_diagnostics(),
-                  'cpu_hard_limit': cpu, 'memory_hard_limit_bytes': memory,
-                  'volume_allocated_bytes': total, 'container_writable_bytes': writable, 'complete_scan_retries': retries}
-        remaining()
-        self.samples.append(sample)
+        return {'cpu_hard_limit': cpu, 'memory_hard_limit_bytes': memory,
+                'volume_allocated_bytes': total, 'container_writable_bytes': writable, 'complete_scan_retries': retries}
 
     def monitor(self):
         while not self.stop.is_set():
@@ -1473,6 +1659,14 @@ class Lifecycle:
     def cleanup(self):
         self.stop.set()
         errors = []
+        private_child = getattr(self,'private_measurement_process',None)
+        if private_child is not None and private_child.poll() is None:
+            try:
+                os.killpg(private_child.pid,signal.SIGKILL)
+                private_child.wait(timeout=1)
+                require(private_child.poll() is not None,'private_measurement_child_not_stopped')
+            except (OSError,subprocess.SubprocessError,GateError):
+                return ['private_measurement_child_not_stopped']
         child=getattr(self,'cache_reclaim_process',None)
         try:child_running=child is not None and child.poll() is None
         except OSError:
@@ -1714,6 +1908,123 @@ def reclaim_go_build_cache(life):
             raise GateError(step['error_code'])
 
 
+COMPILE_START_COMMAND_POINTS = (
+    'entered_monotonic_ns', 'deadline_monotonic_ns',
+    'spawn_started_monotonic_ns', 'spawn_finished_monotonic_ns',
+    'wait_started_monotonic_ns', 'wait_finished_monotonic_ns', 'exit_observed_monotonic_ns',
+    'output_started_monotonic_ns', 'output_finished_monotonic_ns', 'decision_monotonic_ns',
+    'cancel_started_monotonic_ns', 'cancel_finished_monotonic_ns', 'finished_monotonic_ns')
+COMPILE_START_LOCK_POINTS = ('lock_requested_monotonic_ns', 'deadline_monotonic_ns',
+    'lock_acquired_monotonic_ns', 'lock_release_started_monotonic_ns', 'lock_released_monotonic_ns')
+
+
+def compile_start_handoff_receipt(life, handoff, timing, container_id):
+    """Project only owned, closed fields; diagnostics never change the first cause."""
+    try:
+        require(isinstance(life.run_id,str) and re.fullmatch('addp-(?:http|trace)-local-[a-z0-9-]{1,64}',life.run_id),
+                'handoff_identity_invalid')
+        require(handoff['result'] in ('passed','failed') and type(handoff['command_attempted']) is bool,
+                'handoff_result_invalid')
+        points = {key:handoff[key] for key in COMPILE_START_LOCK_POINTS}
+        require(all(value is None or type(value) is int and value >= 0 for value in points.values()),
+                'handoff_points_invalid')
+        require(type(points['lock_requested_monotonic_ns']) is int and type(points['deadline_monotonic_ns']) is int,
+                'handoff_points_missing')
+        if points['lock_acquired_monotonic_ns'] is None:
+            require(handoff['result'] == 'failed' and not handoff['command_attempted'] and
+                    points['lock_release_started_monotonic_ns'] is None and points['lock_released_monotonic_ns'] is None,
+                    'handoff_lock_incomplete')
+        else:
+            ordered = [points[key] for key in COMPILE_START_LOCK_POINTS if key != 'deadline_monotonic_ns']
+            require(all(type(point) is int for point in ordered) and ordered == sorted(ordered),
+                    'handoff_lock_incomplete')
+        value = {'status':'complete','run_id':life.run_id,'phase':'product_compile',
+            'result':handoff['result'],'command_attempted':handoff['command_attempted'],**points,'command':None}
+        if handoff['command_attempted']:
+            require(re.fullmatch('[a-f0-9]{64}',container_id) and timing.get('run_id') == life.run_id and
+                    timing.get('phase') == 'product_compile' and type(timing.get('command_id')) is int and
+                    timing['command_id'] > 0 and timing.get('record_complete') is True and
+                    timing.get('result') in ('passed','failed'), 'handoff_command_unavailable')
+            command_points = {key:timing[key] for key in COMPILE_START_COMMAND_POINTS}
+            require(all(point is None or type(point) is int and point >= 0 for point in command_points.values()),
+                    'handoff_command_invalid')
+            require(all(type(command_points[key]) is int for key in ('entered_monotonic_ns',
+                    'deadline_monotonic_ns','decision_monotonic_ns','finished_monotonic_ns')),
+                    'handoff_command_incomplete')
+            value['command'] = {'command_id':timing['command_id'],'result':timing['result'],
+                'record_complete':True,'method':'POST','api_family':'/containers/{id}/start',
+                'request_signature_sha256':docker_request_signature('POST',f'/containers/{container_id}/start',{}),
+                **command_points}
+        if len(json.dumps(value,separators=(',',':')).encode()) > 2048:
+            return {'status':'over_budget'}
+        return value
+    except Exception:
+        return {'status':'unavailable'}
+
+
+def compile_product_binaries(life):
+    life.phase = 'product_compile'
+    compile_deadline = time.monotonic() + 2200
+
+    def remaining(deadline):
+        seconds = deadline - time.monotonic()
+        require(seconds > 0, 'command_deadline_exceeded')
+        return seconds
+
+    created = life.docker('create', '--name', life.run_id+'-compile', '--label', f'{life.label}={life.run_id}',
+        '--label', life.label+'.role=oneshot', '--cpus', '2', '--memory', '3g',
+        '--mount', f'type=bind,source={life.checkout},target=/workspace',
+        '--mount', f'type=bind,source={life.public_modcache},target=/dependencies,readonly',
+        '-e', 'ADDP_BUILD_GOMODCACHE=/dependencies', '-w', '/workspace',
+        '-e', 'GOMAXPROCS=2', '-e', 'GOFLAGS=-p=2', 'golang:1.24',
+        'make', 'build', 'BUILD_ARGS=--arch arm64 --services '+','.join(life.compile_services),
+        timeout=remaining(compile_deadline)).splitlines()
+    require(created and re.fullmatch('[a-f0-9]{64}', created[-1]), 'compile_container_id_invalid')
+    container_id = created[-1]
+
+    start_began = time.monotonic()
+    start_deadline = min(start_began + 4, compile_deadline) if life.strict_resources else compile_deadline
+    lease = life.sampling_lease(start_began, deadline=start_deadline) if life.strict_resources else nullcontext()
+    timing = {}
+    handoff = dict.fromkeys(COMPILE_START_LOCK_POINTS)
+    handoff.update(lock_requested_monotonic_ns=round(start_began*1e9),deadline_monotonic_ns=round(start_deadline*1e9),
+        result='failed',command_attempted=False)
+    try:
+        with lease:
+            if life.strict_resources:
+                handoff['lock_acquired_monotonic_ns'] = time.monotonic_ns()
+            try:
+                life.check()
+                sample_failure = getattr(life, 'resource_failure', None)
+                if sample_failure:
+                    error = sample_failure['error_code']
+                    raise GateError('resource_sample_deadline_exceeded' if error == 'command_deadline_exceeded' else error)
+                timeout = remaining(start_deadline)
+                handoff['command_attempted'] = True
+                life.docker('start', container_id, timeout=timeout,
+                    **({'timing_receipt':timing} if life.strict_resources else {}))
+                remaining(start_deadline)
+                handoff['result'] = 'passed'
+            except BaseException:
+                life.stop.set()
+                raise
+            finally:
+                if life.strict_resources:
+                    handoff['lock_release_started_monotonic_ns'] = time.monotonic_ns()
+    finally:
+        if handoff['lock_acquired_monotonic_ns'] is not None:
+            handoff['lock_released_monotonic_ns'] = time.monotonic_ns()
+        if life.strict_resources:
+            life.compile_start_handoff = compile_start_handoff_receipt(life,handoff,timing,container_id)
+
+    status = life.docker('wait', container_id, timeout=remaining(compile_deadline), output_limit=32).strip()
+    remaining(compile_deadline)
+    require(re.fullmatch('0|[1-9][0-9]{0,2}', status) and int(status) <= 255, 'compile_container_exit_invalid')
+    if status != '0':
+        life.last_failure = {'exit_code':int(status)}
+        raise GateError('command_failed_'+status)
+
+
 def build_products(life,env,proxies,*,compile_only=False):
     docker_path = shutil.which('docker', path=env['PATH'])
     shim = life.work/'tools';shim.mkdir()
@@ -1737,13 +2048,7 @@ def build_products(life,env,proxies,*,compile_only=False):
     life.build_proxy_provenance={**getattr(life,'build_proxy_provenance',{}),
                                  'host_cli':build_proxy_facts(client_proxies,'host_environment')}
     build_env={**env, **client_proxies, 'PATH':str(shim)+os.pathsep+env['PATH'], 'TRACE_LOCAL_DOCKER':docker_path, 'TRACE_LOCAL_BUILDER':life.builder, 'TRACE_LOCAL_LABEL':life.label+'='+life.run_id, 'TRACE_LOCAL_ROLE_LABEL':life.label+'.role=oneshot', 'ADDP_BUILD_GOMODCACHE':str(life.public_modcache), **{'TRACE_LOCAL_'+k:v for k,v in proxies.items()}}
-    life.phase='product_compile'
-    life.docker('run', '--name', life.run_id+'-compile', '--label', f'{life.label}={life.run_id}', '--label', life.label+'.role=oneshot', '--cpus', '2', '--memory', '3g',
-                '--mount', f'type=bind,source={life.checkout},target=/workspace',
-                '--mount', f'type=bind,source={life.public_modcache},target=/dependencies,readonly',
-                '-e','ADDP_BUILD_GOMODCACHE=/dependencies','-w', '/workspace',
-                '-e', 'GOMAXPROCS=2', '-e', 'GOFLAGS=-p=2', 'golang:1.24',
-                'make', 'build', 'BUILD_ARGS=--arch arm64 --services '+','.join(life.compile_services), timeout=2200)
+    compile_product_binaries(life)
     if compile_only:
         return {}
     # Product binaries are complete; reclaim only this run's disposable Go
@@ -2185,6 +2490,7 @@ def main():
         if diagnostics:report['failed_service_diagnostics']=diagnostics
     finally:
         if hasattr(life,'cache_reclaim_receipt'):report['go_cache_reclaim']=life.cache_reclaim_receipt
+        if hasattr(life,'compile_start_handoff'):report['compile_start_handoff']=life.compile_start_handoff
         report['resource_samples']=life.samples
         if hasattr(life,'source_commit'):report['source_commit']=life.source_commit
         if hasattr(life,'minio_provenance'):report['minio_product']=life.minio_provenance

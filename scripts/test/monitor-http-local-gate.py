@@ -11,6 +11,8 @@ import re
 import secrets
 import shutil
 import signal
+import subprocess
+import stat
 import sys
 import tempfile
 import threading
@@ -103,8 +105,15 @@ def validate_sampler_image(metadata):
 
 def admit_sampler_image(life):
     life.phase='sampler_image_admission'
+    life.sampler_image_inspect = {
+        'operation': 'inspect_sampler_image',
+        'method': 'GET',
+        'api_family': '/images/{reference}/json',
+        'request_signature_sha256': core.docker_request_signature('GET', '/images/'+SAMPLER_IMAGE+'/json', {}),
+    }
     metadata=json.loads(life.docker('image','inspect',SAMPLER_IMAGE,'--format',
-        '{"id":{{json .Id}},"os":{{json .Os}},"architecture":{{json .Architecture}},"repo_digests":{{json .RepoDigests}}}',timeout=5))
+        '{"id":{{json .Id}},"os":{{json .Os}},"architecture":{{json .Architecture}},"repo_digests":{{json .RepoDigests}}}',
+        timeout=5,timing_receipt=life.sampler_image_inspect))
     life.sampler_image_proof=validate_sampler_image(metadata)
 
 
@@ -363,6 +372,218 @@ def compile_checkpoint_summary(life):
             'controlled_requests':0,'scope':'compile_checkpoint_collection_only'}
 
 
+VOLUME_EXEC_ACTIONS = ('exec_create', 'exec_start', 'exec_die')
+VOLUME_EVENT_OUTPUT_LIMIT = 64 * 1024
+
+
+def volume_exec_event_candidate(raw, run_id, since, until):
+    lines = raw.splitlines()
+    require(len(raw.encode()) <= VOLUME_EVENT_OUTPUT_LIMIT and len(lines) <= 256, 'event_limit')
+    require(not raw or raw.endswith('\n'), 'events_truncated')
+    groups = {}
+    container_ids = set()
+    for line in lines:
+        event = json.loads(line)
+        actor = event['Actor']
+        attributes = actor['Attributes']
+        kind, _, command = event['Action'].partition(': ')
+        timestamp = event['timeNano']
+        require(event['Type'] == 'container' and attributes.get('name') == run_id+'-space' and
+                attributes.get(LABEL) == run_id, 'event_owner_mismatch')
+        require(kind in VOLUME_EXEC_ACTIONS and type(timestamp) is int and since <= timestamp <= until,
+                'event_shape_invalid')
+        if kind != 'exec_die' and command != '/bin/sh -ec '+core.VOLUME_SCAN_COMMAND:
+            continue
+        container_id, exec_id = actor['ID'], attributes['execID']
+        require(re.fullmatch('[a-f0-9]{64}', container_id) and re.fullmatch('[a-f0-9]{64}', exec_id),
+                'event_identity_invalid')
+        container_ids.add(container_id)
+        groups.setdefault(exec_id, []).append({'event':kind,'time_utc_ns':timestamp})
+
+    candidates = [(exec_id, events) for exec_id, events in groups.items()
+                  if any(event['event'] != 'exec_die' for event in events)]
+    require(len(container_ids) <= 1 and len(candidates) <= 1, 'events_ambiguous')
+    require(candidates, 'events_missing')
+    exec_id, events = candidates[0]
+    times = [event['time_utc_ns'] for event in events]
+    actions = tuple(event['event'] for event in events)
+    require(actions in (VOLUME_EXEC_ACTIONS[:2], VOLUME_EXEC_ACTIONS) and
+            all(a < b for a,b in zip(times,times[1:])), 'event_sequence_incomplete')
+    return {'status':'unique_candidate','exit_observed':len(events)==3,'events':events,
+            'container_id_sha256':hashlib.sha256(next(iter(container_ids)).encode()).hexdigest(),
+            'exec_id_sha256':hashlib.sha256(exec_id.encode()).hexdigest(),
+            'exec_start_path_sha256':hashlib.sha256(('/exec/'+exec_id+'/start').encode()).hexdigest()}
+
+
+def volume_exec_event_window(command, image_anchor, cleanup_anchor):
+    offsets = []
+    for anchor in (image_anchor, cleanup_anchor):
+        before, after, wall = (anchor[key] for key in ('monotonic_before_ns','monotonic_after_ns','wall_utc_ns'))
+        require(all(type(value) is int for value in (before,after,wall)) and 0 <= after-before <= 50_000_000,
+                'host_clock_unavailable')
+        offsets.extend((wall-after, wall-before))
+    entered, finished = command['entered_monotonic_ns'], command['finished_monotonic_ns']
+    require(max(offsets)-min(offsets) <= 50_000_000 and type(entered) is int and type(finished) is int and
+            image_anchor['monotonic_after_ns'] <= entered < finished <= cleanup_anchor['monotonic_before_ns'] and
+            finished-entered <= 6_000_000_000, 'host_clock_unavailable')
+    return entered+min(offsets)-2_000_000_000, min(finished+max(offsets)+2_000_000_000,cleanup_anchor['wall_utc_ns'])
+
+
+def collect_volume_exec_timeout_events(life, report):
+    failure = report.get('resource_guard_failure', {})
+    case, stage = report['case'], report.get('stage')
+    compile_stage = case == 'compile-checkpoints' and stage == 'product_compile'
+    image_stage = case == 'full' and any(
+        stage == 'product_image_'+service.replace('-','_') for service in BACKENDS+FRONTENDS)
+    if (not (compile_stage or image_stage) or
+            (report.get('result'),report.get('error_code'),failure.get('operation'),failure.get('phase')) !=
+            ('failed','resource_sample_deadline_exceeded','measure_owned_volumes',stage) or
+            report.get('cleanup',{}).get('zero_owned_resources') is not True):
+        return
+    commands = [command for step in failure.get('steps',[]) if step['operation']=='measure_owned_volumes'
+                for command in step['commands'] if command['result']=='failed']
+    receipt = {'status':'unknown','reason':'command_unavailable'}
+    report['volume_exec_timeout_events'] = receipt
+    if len(commands) != 1:
+        return
+    command = commands[0]
+    if (command.get('run_id') != life.run_id or command.get('phase') != stage or
+            command.get('record_complete') is not True or type(command.get('command_id')) is not int):
+        return
+    receipt['command_id'] = command['command_id']
+    try:
+        image = report['sampler_image_inspect']
+        require(image['run_id']==life.run_id and image['phase']=='sampler_image_admission' and
+                image['record_complete'] is True and image['result']=='passed', 'host_clock_unavailable')
+        since, until = volume_exec_event_window(command,image['host_clock_end'],core.host_clock_anchor())
+    except (KeyError, TypeError, core.GateError):
+        receipt['reason'] = 'host_clock_unavailable'
+        return
+
+    def unix_time(value):
+        return f'{value//10**9}.{value%10**9:09d}'
+
+    args = ['docker','events','--since',unix_time(since),'--until',unix_time(until),'--format','{{json .}}',
+            '--filter','type=container','--filter','container='+life.run_id+'-space',
+            '--filter',f'label={LABEL}={life.run_id}']
+    for kind in VOLUME_EXEC_ACTIONS:
+        args.extend(('--filter','event='+kind))
+    try:
+        # The original cleanup is over, so its command deadline does not govern this read.
+        raw = core.Lifecycle.command(life,args,timeout=3,guarded=False,output_limit=VOLUME_EVENT_OUTPUT_LIMIT)
+    except core.GateError as error:
+        receipt['reason'] = 'event_limit' if str(error)=='command_output_limit_exceeded' else 'event_query_failed'
+        return
+    except (OSError, ValueError, subprocess.SubprocessError, KeyboardInterrupt):
+        receipt['reason'] = 'event_query_failed'
+        return
+    try:
+        candidate = volume_exec_event_candidate(raw,life.run_id,since,until)
+    except core.GateError as error:
+        receipt['reason'] = str(error)
+    except (KeyError, TypeError, ValueError, AttributeError):
+        receipt['reason'] = 'event_shape_invalid'
+    else:
+        receipt.pop('reason')
+        receipt.update(candidate)
+
+
+def resume_apiproxy_events(log_directory, signature, since, until):
+    """Read only the fixed Desktop VM stream, refusing ambiguous rotations."""
+    paths = [log_directory/'init.log'] + [log_directory/f'init.log.{i}' for i in range(9)]
+
+    def inventory():
+        files = {}
+        for path in paths:
+            try:
+                info = path.lstat()
+            except FileNotFoundError:
+                continue
+            require(stat.S_ISREG(info.st_mode), 'api_log_unavailable')
+            files[path] = (info.st_dev, info.st_ino, info.st_size)
+        return files
+
+    files = inventory()
+    require(list(files) == paths[:len(files)] and files, 'api_log_coverage_unconfirmed')
+    require(sum(size for _, _, size in files.values()) <= 24*1024**2, 'api_log_byte_limit')
+    events, first, last = [], None, None
+    for path, (device, inode, size) in reversed(files.items()):
+        with open(path,'rb',opener=lambda name,flags:os.open(name,flags | os.O_NOFOLLOW | os.O_NONBLOCK)) as stream:
+            opened = os.fstat(stream.fileno())
+            require(stat.S_ISREG(opened.st_mode) and (opened.st_dev, opened.st_ino) == (device, inode),
+                    'api_log_coverage_unconfirmed')
+            data = stream.read(size)
+        require(len(data) == size and data.endswith(b'\n'), 'api_log_coverage_unconfirmed')
+        for line in data.splitlines():
+            row = json.loads(line)
+            stamp = re.fullmatch(r'(20\d\d-\d\d-\d\dT\d\d:\d\d:\d\d)(?:\.(\d{1,9}))?Z', row['time'])
+            require(stamp is not None, 'api_log_coverage_unconfirmed')
+            ns = int(datetime.fromisoformat(stamp[1]+'+00:00').timestamp())*10**9 + int((stamp[2] or '').ljust(9,'0'))
+            first = ns if first is None else min(first, ns)
+            last = ns if last is None else max(last, ns)
+            if not since <= ns <= until or row.get('component') != 'apiproxy':
+                continue
+            match = re.match(r'(>>|<<) POST (?:/v\d+\.\d+)?/containers/([a-f0-9]{64})/unpause(?:\s|$)', row['msg'])
+            if match and core.compile_resume_request_identity(match[2])['request_signature_sha256'] == signature:
+                require(len(events) < 24, 'api_archive_limit')
+                events.append({'direction':match[1], 'timestamp_ns':ns, 'request_signature_sha256':signature})
+    latest = inventory()
+    require(list(latest) == list(files) and
+            all(latest[p][:2] == files[p][:2] and latest[p][2] >= files[p][2] for p in files) and
+            first is not None and first <= since < until <= last, 'api_log_coverage_unconfirmed')
+    return events
+
+
+def archived_compile_resume_candidate(report, log_directory=None, cleanup_anchor=None):
+    failure = report.get('resource_guard_failure', {})
+    if (report.get('case') not in CASE_LIMITS or report.get('result') != 'failed' or
+            not report.get('cleanup', {}).get('zero_owned_resources') or
+            (report.get('stage'), report.get('error_code'), failure.get('operation')) !=
+            ('product_compile', 'resource_sample_deadline_exceeded', 'resume_owned_compile_container')):
+        return None
+    try:
+        def resumes(sample):
+            return [c for s in sample['steps'] if s['operation']=='resume_owned_compile_container' for c in s['commands']]
+
+        command, = resumes(failure)
+        signature = command.get('request_signature_sha256')
+        entered, canceled = command['entered_monotonic_ns'], command['cancel_started_monotonic_ns']
+        require(command.get('run_id') == report['run_id'] and command.get('phase') == 'product_compile' and
+                command.get('record_complete') is True and command.get('result') == 'failed' and
+                type(command.get('command_id')) is int and
+                command.get('method') == 'POST' and command.get('api_family') == '/containers/{id}/unpause' and
+                isinstance(signature,str) and re.fullmatch('[a-f0-9]{64}',signature) and
+                type(entered) is int and type(canceled) is int and entered < canceled <= command['finished_monotonic_ns'],
+                'command_not_correlatable')
+        image = report['sampler_image_inspect']
+        require(image.get('run_id') == report['run_id'] and image.get('record_complete') is True and
+                image.get('result') == 'passed', 'host_clock_unavailable')
+        anchor = image['host_clock_end']
+        if cleanup_anchor is None:
+            cleanup_anchor = core.host_clock_anchor()
+        if log_directory is None:
+            log_directory = Path.home()/'Library/Containers/com.docker.docker/Data/log/vm'
+        since, until = volume_exec_event_window(command, anchor, cleanup_anchor)
+        coarse = (anchor['monotonic_before_ns']+anchor['monotonic_after_ns'])//2-anchor['wall_utc_ns']
+        pairs = core.pair_apiproxy_events(resume_apiproxy_events(log_directory,signature,since,until))
+        target = {**command,'decision_monotonic_ns':canceled}
+        candidates = [p for p in pairs if entered <= p['started_ns']+coarse < canceled]
+        require(len(candidates) == 1 and candidates[0]['started_ns'] < candidates[0]['finished_ns'] and
+                core.apiproxy_pair_fits(target,candidates[0],(coarse,coarse)), 'api_request_missing_or_ambiguous')
+        pair = candidates[0]
+        competitors = [c for sample in report['resource_samples'] for c in resumes(sample)
+                       if c.get('request_signature_sha256') == signature]
+        require(len(competitors) < 4104 and all(c['run_id'] == report['run_id'] and c['record_complete'] is True and
+                c['command_id'] != command['command_id'] and not core.apiproxy_pair_fits(c,pair,(coarse,coarse))
+                for c in competitors), 'api_request_reused')
+        return {'status':'unique_candidate','command_id':command['command_id'],
+                'proxy_log_span_ns':pair['finished_ns']-pair['started_ns']}
+    except core.GateError as error:
+        return {'status':'indeterminate','reason':str(error)}
+    except (KeyError, TypeError, ValueError, AttributeError, OSError):
+        return {'status':'indeterminate','reason':'api_archive_unavailable'}
+
+
 def main():
     case=local_case(sys.argv[1:])
     life=Lifecycle()
@@ -392,7 +613,9 @@ def main():
         if hasattr(life,'api_failure'):report['api_failure']=life.api_failure
     finally:
         for key,attribute in [('source_commit','source_commit'),('input_sha256','input_hashes'),('images','images'),
-                ('python_dependencies','python_proof'),('resource_guard_failure','resource_failure'),('sampler_image','sampler_image_proof'),('go_cache_reclaim','cache_reclaim_receipt')]:
+                ('python_dependencies','python_proof'),('resource_guard_failure','resource_failure'),
+                ('sampler_image','sampler_image_proof'),('sampler_image_inspect','sampler_image_inspect'),
+                ('go_cache_reclaim','cache_reclaim_receipt'),('compile_start_handoff','compile_start_handoff')]:
             if hasattr(life,attribute):report[key]=getattr(life,attribute)
         if hasattr(life,'request_budget'):
             report['request_attempt_counts']={'controlled':life.request_budget.controlled,'control':life.request_budget.control}
@@ -402,7 +625,17 @@ def main():
         report.update(elapsed_seconds=elapsed,owned_list_commands=life.command_evidence.snapshot(),
             cleanup={'zero_owned_resources':not errors,'failures':errors})
         if errors or elapsed>life.total_seconds:report['result']='failed'
+        if not errors:
+            collect_volume_exec_timeout_events(life,report)
         with open(target,'x',opener=lambda p,f:os.open(p,f,0o600)) as stream:json.dump(report,stream,indent=2)
+        try:
+            attribution = archived_compile_resume_candidate(report)
+            if attribution is not None:
+                sidecar = target.with_name(life.run_id+'-resume-attribution.json')
+                with open(sidecar,'x',opener=lambda p,f:os.open(p,f,0o600)) as stream:
+                    json.dump({'run_id':life.run_id,**attribution},stream,indent=2)
+        except (Exception, KeyboardInterrupt):
+            print('Local formal Python HTTP: resume attribution unavailable',file=sys.stderr)
     print('Local formal Python HTTP: '+report['result']+'; case='+case+'; report='+str(target),flush=True)
     return 0 if report['result']=='passed' else 1
 

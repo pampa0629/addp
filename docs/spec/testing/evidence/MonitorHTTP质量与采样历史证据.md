@@ -1223,6 +1223,148 @@ System 镜像及后续 Agent／Copilot 构建、正式密码／MFA、采集／AP
 
 `make test-monitor-http-local-runner` 与 `make test-monitor-traces-local-runner` 均退出 0，分别覆盖 HTTP Python 47 项、Node 7 项、Trace Python 190 项，以及既有身份、登记和离线 TLS 子门禁。归属的可靠分支仅有确定性回归证据。无真实校时、构建重试、新窗口、Hosted、容量或定时。
 
+<a id="http-full-compile-inspect-command-failed-20261106"></a>
+
+### 2026-11-06 正式 HTTP full 在 Go 编译期间遇到容器检查命令失败
+
+北京时间 07:51:56 至 07:54:55，本机 ARM64 单次执行 `make test-monitor-http-local MONITOR_HTTP_LOCAL_CASE=full`。固定已提交 main `e7fdd1cf99739025f6ff3e416fee35f20be1c7ac`，13 项专项及 3 项集成输入摘要匹配，Docker Unix socket、固定 Nginx 镜像本地缓存及代理准入通过。窗口保持 60 分钟、55 分钟停止新业务、单镜像 600 秒、完整资源检查四秒、8 CPU／12 GiB 和 4 GiB 停止线。含准备及清理共 179.194 秒，标准入口退出 2。
+
+首次失败发生在运行约 173.88 秒的 `product_compile`。容器列表成功，用时 0.061415 秒，列出 3 个当次容器。随后 `inspect_owned_containers` 的 `docker inspect --size` 在 0.038957 秒内以退出码 1 返回，CLI 等待 0.034254 秒，等待轮询超时计数为 0。失败样本耗时 0.100566 秒，首因保留为 `command_failed_1`。输出只留摘要与固定关键词 `no such file or directory`、`timeout`、`error response from daemon`。关键词无法确定缺失对象、错误所在层或触发原因。该样本在容器检查处中止，卷列表和测量未执行。
+
+此前 41 次完整检查最长 0.379026 秒，最大开始间隔 4.005040 秒，读取重试 0。已完成样本硬配额峰值 2.25 CPU／3288334336 字节内存，私有可写峰值 4036382720 字节（约 3.76 GiB）。失败样本缺完整占用数据。标准清理和独立只读复核确认当次容器、网络、卷、构建器容器及状态卷、镜像标签和私有工作目录零残留。
+
+Go 编译中止于缓存回收前，产品镜像构建、正式密码／MFA、采集／API、Console／Monitor 页面、Copilot 停源、两阶段浏览器注销及旧会话 401 均未执行。没有本轮卷归属或取消前镜像构建步骤回执。既有 Linux SDK 和停源历史趋势证据按各自范围保留。本轮未重试、续窗或运行 Hosted、容量、定时。
+
+Run `addp-http-local-82f77b11a9594cd18639cbad6271d691`。报告 SHA256 `f84cbcb6d43c099efe8c146cd5ed52584b37bf767003d9b8144aa66a9f4b505c`，入口日志 SHA256 `f0c80434365b0c02cea3ef650a651a0c475905d98698f3380931bb17017a8e11`。原始报告、入口日志、准入、预算摘要和独立清理回执位于 `/var/folders/r1/l7b49c757dz02zftf_l9vl9r0000gn/T/addp-p19-http-full-20261106.h5NuyXiY/`。
+
+事后只读关联同一时段 Docker VM 日志。带当次标签的容器列表之后，三次 `size=1` 请求中的第三次由 dockerd 报告 `snapshotter.Usage` 的 `lstat` 遇到 Go 编译临时子目录消失。同一容器在该错误约 48 毫秒后收到停止信号。缺失对象及报错环节已定位，具体删除进程和跨时钟分段耗时未知。原报告未改写，轮转前的时间点和错误行哈希保存在同目录 `inspect-offline-attribution.json`。
+
+<a id="http-compile-pause-sampler-admission-timeout-20261106"></a>
+
+### 2026-11-06 编译短暂停写实测止于采样镜像准入
+
+在 15 分钟单次窗口内，基于已提交 main `6e1c33401213fab33bce9bc54416e0d7082bed55` 和本批四个文件生成私有验证快照 `4489c36b87ebefdd3365404a181810474c2116ae`，13 项专项和 3 项集成输入与实际入口报告匹配。准备阶段第一次确定性门禁因监督脚本 umask 使公开目录负例变为私有目录而失败，标准入口尚未启动。仅纠正门禁子进程的 umask 并沿原窗口完成准入。HTTP Python 47 项、Node 7 项、Trace Python 196 项以及身份和登记检查均通过。预先只读核验 ARM64 Docker、固定 Nginx 和 Go 镜像缓存、代理及只读 Go 依赖布局通过。
+
+唯一一次 `make test-monitor-http-local MONITOR_HTTP_LOCAL_CASE=compile-checkpoints` 于北京时间 09:46:39 启动，入口退出 2。首失败为 `sampler_image_admission` 的固定 Nginx 镜像 `docker image inspect` 达到五秒命令期限，记录 `command_deadline_exceeded`。未进入网络创建或 Go 编译，资源样本为 0，暂停／恢复及至少 12 次完整编译检查均待实测。现有报告未定位五秒等待所在层。含准备、标准清理和首次独立复核共 185.410 秒，保留四秒完整检查、8 CPU／12 GiB、4 GiB、13 分钟停止新工作及 15 分钟总限。
+
+入口清理报告确认零残留，私有验证快照已移除。首次独立只读复核中容器、网络及卷列表未返回结果，随后仅查询这三项，合并原已核对项确认当次资源均为零。未再次启动真实入口、产品 full、Hosted、容量或定时。Run `addp-http-local-9705c9d5d5064b13b0638af199a6fe42`，报告 SHA256 `dd5f51969ce63c8def5235bf4dab06cb19ab9d6a11d130e7691fc282e7c2999f`。报告、准入、门禁日志和清理回执位于 `/var/folders/r1/l7b49c757dz02zftf_l9vl9r0000gn/T/addp-p19-http-compile-pause-20261106.1SEfPXcw/runtime/`。
+
+<a id="http-compile-pause-runtime-volume-list-deadline-20261106"></a>
+
+### 2026-11-06 编译阶段完成 38 次真实暂停恢复后触发完整检查期限
+
+本机 ARM64 单次执行 `make test-monitor-http-local MONITOR_HTTP_LOCAL_CASE=compile-checkpoints`，基于已提交 main `d31331719bf4f86e33b87fa1491a1f2a5d62e9a8` 与本批五个文件生成私有验证快照 `18910272a61767501e3991b81b3ad09e94857939`。13 项专项及 3 项集成输入摘要匹配。HTTP Python 48 项、Node 7 项、Trace Python 196 项、身份及登记门禁通过。固定 Nginx 的正式准入检查在 0.054149 秒完成，回执含请求签名和宿主分步计时，本轮没有镜像准入超时。
+
+编译阶段有 38 次完整检查，逐次核对真实暂停、暂停状态下的完整资源检查、卷进入／返回检查点和恢复均成功。全轮已完成样本共 40 次，最长 1.026301 秒，最大开始间隔 4.005083 秒。已完成样本的硬配额峰值为 2.25 CPU／3288334336 字节内存，私有可写峰值 3676610560 字节，加私有稀疏验证检出共 3679477760 字节，低于 4 GiB 停止线。
+
+首失败发生在随后的 `product_compile` 样本。列容器耗时 2.425075 秒，暂停 0.237020 秒，容器可写层检查 0.478473 秒，列卷耗尽四秒剩余预算，保留 `resource_sample_deadline_exceeded`。含取消回收，失败样本耗时 4.016242 秒。该次暂停成功，截止时已无预算发出恢复命令，随后由统一清理回收编译容器。编译未完成，整轮失败，38 次成功配对作为分项证据。标准入口退出 2，含准备、清理与独立复核共 217.221 秒。容器、网络、卷、构建器及状态卷、镜像标签和私有目录均为零，私有验证快照已移除。
+
+Run `addp-http-local-544a595190874079b7ba292da52d05e2`。报告 SHA256 `71abfaf78b32f0df6a9cd53a0e1b60e7ae48e2c57403e1607903ef72324c2bbc`。原报告、配对审计、准入和清理证据保存在 `/var/folders/r1/l7b49c757dz02zftf_l9vl9r0000gn/T/addp-p19-http-compile-receipt-20261106.T0eAYxoO/`。
+
+<a id="http-compile-pause-reserve-runtime-20261106"></a>
+
+### 2026-11-06 编译阶段在测量截止后用预留时间恢复
+
+本机 ARM64 单次执行 `make test-monitor-http-local MONITOR_HTTP_LOCAL_CASE=compile-checkpoints`。基于已提交 main `c9aeb254cadd2ee6c73b07f351097b8f40ed097b` 和本批五个文件生成私有验证提交 `db93474c13fc5164f07e5decf81ad0983888aaed`，13 项专项与 3 项集成输入摘要匹配。HTTP Python 48 项、Node 7 项、Trace Python 198 项及身份、登记门禁通过。固定 Nginx 镜像检查耗时 0.068293 秒。
+
+编译阶段完成 15 次完整检查及真实暂停／恢复配对，逐次验证卷测量检查点。成功配对的最晚测量命令结束于样本开始后 2.956810 秒，恢复启动时最少还剩 1.043022 秒。全轮 17 次完整检查最长 3.013060 秒，最大开始间隔 4.005025 秒。已完成样本峰值为 2.25 CPU／3288334336 字节内存，私有可写峰值加稀疏验证检出为 741191680 字节。
+
+第 16 次编译阶段检查在 `measure_owned_volumes` 触发 3.5 秒测量截止，宿主在第 3.501369 秒开始取消，回收耗时 0.003876 秒。恢复从第 3.505821 秒起执行，在第 3.972092 秒完成，距原四秒截止约 28 毫秒。未观测到卷测量进入或返回检查点，首因仍为 `resource_sample_deadline_exceeded`，失败样本不计入 15 次完整配对。Go 编译中止，入口退出 2，含准备、清理和独立复核共 125.801 秒。容器、网络、卷、构建器及状态卷、镜像标签和私有目录均为零，私有验证快照已移除。本轮未重试或续窗。
+
+清理后立即只读摘取同期 Docker Desktop 日志。VM 代理记录包含当次卷测量容器的 lookup／exec 创建请求，并有一对同路径的 `exec start` 候选，日志跨度约 2.664 秒。缺少创建响应与 exec ID 的直接关联、同一请求的 daemon 入口和独立跨时钟校准，不能将候选跨度认作 daemon 或卷扫描耗时。原报告及脱敏摘取分开保存。Run `addp-http-local-3df75e72618342f7a38e61c969fee534`，报告 SHA256 `4f60aae47b9248964914cd2ec7ef84d1ea67e1095f15c8de9919635e4b4fff70`，归档位于 `/var/folders/r1/l7b49c757dz02zftf_l9vl9r0000gn/T/addp-p19-http-compile-reserve-20261106.p9Rwjq4j/`。
+
+<a id="http-compile-pause-reserve-checkpoints-passed-20261106"></a>
+
+### 2026-11-06 编译阶段检查点实测通过
+
+本机 ARM64 单次执行 `make test-monitor-http-local MONITOR_HTTP_LOCAL_CASE=compile-checkpoints`。基于已提交 main `afb299e0ffa919aa2bbc817170c59b8abdb1b621` 和本批五个文件生成私有验证提交 `88b27a2d6a352a3868ae58bc39e7b4d435c77500`，13 项专项与 3 项集成输入摘要匹配。HTTP Python 51 项、Node 7 项、Trace Python 198 项及身份、登记门禁通过。固定 Nginx 镜像检查耗时 0.039767 秒，命令期限仍为五秒。
+
+编译阶段完成 48 次真实暂停／恢复及同次完整卷检查点。最晚测量命令结束于样本开始后 1.070989 秒，距四秒截止的恢复启动余量最少 2.928762 秒，恢复步骤最长 0.108358 秒。全轮 51 次完整检查最长 1.126765 秒，最大开始间隔 4.005062 秒。已完成样本的硬配额峰值为 2.25 CPU／3288334336 字节内存，私有可写峰值加稀疏验证检出为 4032557056 字节，均低于原上限。
+
+标准入口退出 0，含准备、清理和独立复核共 241.018 秒。容器、网络、卷、构建器及状态卷、镜像标签和私有目录均为零，私有验证快照已移除。本轮无卷测量超时，事件回执和代理日志比对未触发。3.5 秒截止触发后从预留时间恢复的实测仍见上一轮失败证据。本轮结论为编译阶段检查点实测通过，产品镜像构建及正式身份页面闭环另列。
+
+Run `addp-http-local-25f19e5178594dffbb59656d5d238fb2`，报告 SHA256 `73f4288b4592961e403fee2358a2a0548c47facb947bf84d1600233e0707572a`。报告、配对审计、准入和清理证据保存在 `/var/folders/r1/l7b49c757dz02zftf_l9vl9r0000gn/T/addp-p19-http-compile-events-20261106.B31p49Oo/`。
+
+<a id="http-full-compile-inspect-resume-deadline-20261106"></a>
+
+### 2026-11-06 正式 HTTP full 在 Go 编译期间触发测量和恢复截止
+
+本机 ARM64 单次执行 `make test-monitor-http-local MONITOR_HTTP_LOCAL_CASE=full`。冻结已提交 main `e52be373587c64525ac8cc8e83d7a790141ccc2d`，以此前已验的五个文件生成私有验证提交 `270203125b65dde2bb6bd18902ae925e40162502`。五个文件与前轮摘要一致，报告中 13 项专项输入及 3 项集成输入与快照相符。HTTP Python 51 项、Node 7 项及 Trace Python 198 项和附带的身份、登记门禁通过。固定 Nginx 缓存检查耗时 0.057864 秒，在原五秒期限内。
+
+首因是 `product_compile` 阶段 `inspect_owned_containers` 的 `resource_sample_deadline_exceeded`。同次检查中容器列表和暂停分别耗时 1.323093 秒及 0.956600 秒，暂停命令成功。inspect 在样本开始后第 3.501989 秒开始取消，第 3.511444 秒完成取消回收。恢复命令从第 3.512070 秒起尝试，在第 4.001062 秒开始取消，四秒内未确认恢复，含取消总耗时 4.013453 秒。恢复失败未覆盖 inspect 首因。失败检查未到卷列表或卷测量，也没有完整占用读数。
+
+首失败前有 47 次完整检查，其中 45 次在编译阶段完成真实暂停与恢复。最长完整检查 3.069577 秒，最大开始间隔 4.005091 秒，硬配额峰值 2.25 CPU／3288334336 字节内存，私有可写已测峰值连同稀疏验证快照为 3169394688 字节。Go 编译中止，缓存回收未开始，故无回收后首个完整样本。Agent／Copilot 等产品镜像、正式密码／MFA、采集／API、Console／Monitor 页面、停源、两阶段注销和旧会话 401 均未执行。
+
+清理后只读摘取同期 Docker Desktop 日志，找到两组容器列表代理候选，缺少独立校时及同一 inspect 和恢复请求的可核对边界，无法将宿主等待分配到客户端、代理或 daemon。该失败没有进入卷测量，因此没有 exec start 路径哈希可归属。
+
+标准入口退出 2，含准备、清理及独立复核共 282.131 秒。当次容器、网络、卷、构建器及状态卷、镜像标签和私有目录零残留，私有验证快照已移除。未重试、续窗、运行 Hosted、容量或定时。Run `addp-http-local-ffa950cf2cf84fbb969ff5128dc7e2b5`，原始报告 SHA256 `46c235d906e87e69c785ae8d1f5ea1daabbb60573796546fbe5793e728b64641`。原始报告、缓存回收样本审计、脱敏日志摘取及清理回执位于 `/var/folders/r1/l7b49c757dz02zftf_l9vl9r0000gn/T/addp-p19-http-full-final-20261106.PrnP5Xil/`。
+
+<a id="http-full-frozen-compile-resume-deadline-20261106"></a>
+
+### 2026-11-06 冻结快照的正式 HTTP full 在 Go 编译恢复阶段超时
+
+本机 ARM64 单次执行 `make test-monitor-http-local MONITOR_HTTP_LOCAL_CASE=full`。从私有归档恢复 `46c02dc60343b06519f5587c107e7bcc3f6f8258`，其父提交为已提交 main `9c0d82b51448138578e7a1cdecb80580c1d45fcb`。五个专项文件及 16 项报告输入摘要一致，沿用该快照已通过的 HTTP／Trace 确定性门禁。Docker Unix socket、原生 ARM64、无凭据代理及固定 Nginx 缓存准入通过，入口内镜像检查耗时 0.057160 秒。
+
+本次首因是 `product_compile` 阶段 `resume_owned_compile_container` 的 `resource_sample_deadline_exceeded`。同次检查中列表耗时 0.639786 秒，发出暂停前测量余量约 2.860 秒，达到 2.25 秒门槛。暂停、inspect、卷列表、卷测量和私有目录测量均完成，卷测量进入及管道返回标记齐全，完整测量及校验约在样本开始后第 3.001 秒完成。恢复命令在第 3.002079 秒开始，距四秒截止约 0.998 秒。宿主在第 4.001260 秒开始取消，第 4.011694 秒完成取消回收，含取消的整次检查耗时 4.014898 秒。四秒内未确认恢复，失败检查未写入成功样本。同期 Docker Desktop 的有界日志摘录只找到容器列表、卷列表和测量 exec 创建请求候选，缺少可归属到同一恢复命令的分步边界及独立校时，无法区分恢复请求的宿主、转发或 daemon 耗时，也无法确认其在 daemon 内的结果。
+
+首失败前有 11 次完整检查，其中 9 次完成编译容器暂停与恢复。最长成功检查 1.579549 秒，最大开始间隔 4.004075 秒，成功样本峰值为 2.25 CPU／3288334336 字节内存及 937345024 字节私有可写（含稀疏验证快照）。失败检查在恢复前测得 986484736 字节私有可写（未含稀疏验证快照），低于停止线。Go 编译中止，未到缓存回收，故没有回收后首个完整样本。Agent／Copilot 正式镜像、密码／MFA、采集／API、Console／Monitor 页面、停源、两阶段注销和旧会话 401 均未执行。
+
+标准入口退出 2，含准备、清理和独立复核共 86.867 秒。当次容器、网络、卷、构建器及状态卷、镜像标签和私有目录零残留，私有验证检出已移除。未重试、续窗、运行 Hosted、容量或定时。Run `addp-http-local-5a76fb01e0064b5da5beca5261ed2785`，原始报告 SHA256 `56b15a142d105e0c67dbd8ec1710d8b0c4985ee19ede9e037618307a4327e9a6`。报告、冻结输入、脱敏日志摘录及清理回执见 `/var/folders/r1/l7b49c757dz02zftf_l9vl9r0000gn/T/addp-p19-http-full-frozen-20261106.QkyfQ3qh/`。
+
+<a id="http-full-resume-snapshot-agent-volume-deadline-20261107"></a>
+
+### 2026-11-07 含恢复取证快照的 HTTP full 在 Agent 构建期间卷测量超时
+
+本机 ARM64 单次执行 `make test-monitor-http-local MONITOR_HTTP_LOCAL_CASE=full`。从私有归档恢复 `3c4b0b51723c94df97170f114a857afb7c25abda`，基于已提交 main `2b5b7d41f6bca658b5a95e7012555894db83d9cd`。五个专项文件与 16 项验收输入摘要一致，复用该快照已通过的 HTTP／Trace 确定性门禁。Docker 准入通过，固定 Nginx 镜像检查耗时 0.055886 秒。
+
+Go 编译、56 次编译容器完整暂停／恢复、缓存回收和 System／Gateway／Monitor 镜像阶段完成。回收前完整预检约 2.477 GiB。回收后的首个完整样本来自 `bounded_builder_resume`，在回收结束约 0.544 秒后开始，耗时 0.208104 秒，测得 979132416 字节，连同稀疏验证检出为 982286336 字节（约 0.915 GiB）。全轮 287 次完整检查最长 2.710284 秒，最大开始间隔 4.009921 秒，硬配额峰值 2.25 CPU／3288334336 字节，已完成样本私有可写峰值连同稀疏检出为 4040646656 字节（约 3.763 GiB）。
+
+首因是 `product_image_agent_backend` 阶段 `measure_owned_volumes` 的 `resource_sample_deadline_exceeded`。同次检查的列表、inspect 和卷列表合计先占用约 0.909 秒，卷测量命令等待 3.043176 秒后触发取消，含取消及报告处理整次 4.039410 秒。原输出残片观察到进入测量，未观察到管道返回，缺完整占用读数，路径消失判定为未知。现存日志的有界摘录仅有容器列表、卷列表和测量 exec 创建的候选记录。该阶段没有对应的 exec start 事件回执，代理／daemon 内部耗时和消失对象均未定位。此首因未触发恢复取证旁文件。
+
+Agent 构建因资源守卫在启动后约 565.757 秒被取消。冻结回执识别当次构建命令 930，已扫描 2735 字节、观察 5 步，增量摘要为 `invalid`，具体未完成的构建步骤未知。Agent、Copilot 正式镜像、密码／MFA、采集／API、Console／Monitor 页面、停源、两阶段注销及旧会话 401 均未完成。
+
+标准入口退出 2，含准备、清理和独立复核 1178.923 秒。容器、网络、卷、构建器及状态卷、镜像标签和私有目录零残留，私有验证检出已移除。未重试、续窗、运行 Hosted、容量或定时。Run `addp-http-local-3b37b826b9ed4196a7fe8d53bdda9164`，原始报告 SHA256 `61db34f4a705a74d1bcdd9ca25a58e5ff3e454167fcbde4825cb0e28ebab00e7`。报告、回收后首个完整样本、脱敏日志和清理复核见 `/var/folders/r1/l7b49c757dz02zftf_l9vl9r0000gn/T/addp-p19-http-full-resume-20261106.L7MmacLT/`。
+
+<a id="http-full-volume-snapshot-compile-state-changed-20261107"></a>
+
+### 2026-11-07 含卷事件取证快照的 HTTP full 在编译容器状态校验处停止
+
+本机 ARM64 单次执行 `make test-monitor-http-local MONITOR_HTTP_LOCAL_CASE=full`。恢复私有快照 `3cbf0c7ac01341363bd344564e99a8bde2974ab7`，其父提交为已提交 main `9bcd6b3c9977998f1461290923c3775d83be9e50`。五个专项文件及 16 项验收输入摘要一致，复用该快照已通过的 HTTP／Trace 确定性门禁。Docker 准入通过，入口内固定 Nginx 检查耗时 0.220327 秒。
+
+首因是 `product_compile` 阶段 `inspect_owned_containers` 的 `owned_compile_container_state_changed`。列表步骤耗时 0.634181 秒，宿主命令 84 成功。随后 `inspect --size` 宿主命令 85 亦成功返回，状态校验失败，同次检查在 1.898136 秒结束。冻结源码表明，该错误只从列表中编译容器处于 `created` 或 `exited`、后续检查却未满足非运行且仍为 `created` 或 `exited` 的路径产生。报告未保留两个具体状态值。本轮未触发暂停，失败样本未进入卷列表或卷测量，没有卷测量超时事件回执。
+
+同期 Docker Desktop VM 日志中，可见当次编译容器名称的创建候选、当次标签的列表候选，以及同一对象哈希的启动和 `inspect --size` 请求在代理侧重叠。日志缺少创建响应中容器 ID、列表与检查状态正文和独立跨时钟校时，状态转换只记候选。脱敏摘录在 `compile-state-offline-audit.json`。
+
+失败前完成两次准入采样，最长 2.499261 秒，硬配额峰值 1.25 CPU／2214592512 字节内存，私有可写已测峰值含稀疏验证检出为 728641536 字节。Go 编译中止，缓存回收及其后首个完整样本均未到达。Agent／Copilot 构建、正式密码／MFA、采集／API、Console／Monitor 页面、停源、两阶段注销和旧会话 401 均未执行。
+
+标准入口退出 2，含准备、清理和独立复核共 103.936 秒。容器、网络、卷、构建器及状态卷、镜像标签和私有目录零残留，私有验证检出已移除。未重试、续窗、运行 Hosted、容量或定时。Run `addp-http-local-06b805f3adef4c67a750e701c2aad470`，原始报告 SHA256 `b7aff4a0eaab2d5f56f2f40b14353a7166d41c34c1147e296122c225728fc402`。报告、冻结输入、脱敏摘录及清理复核见 `/var/folders/r1/l7b49c757dz02zftf_l9vl9r0000gn/T/addp-p19-http-full-volume-20261107.BFCG66Ps/`。
+
+<a id="http-full-compile-start-agent-apt-connect-20261107"></a>
+
+### 2026-11-07 编译启动协调实测通过，正式 HTTP full 在 Agent APT 包下载处停止
+
+本机 ARM64 单次执行 `make test-monitor-http-local MONITOR_HTTP_LOCAL_CASE=full`，从私有归档恢复 `3de738545c517a31277203dd42a485cf8b354867`，基于已提交 main `7b663785dc771f1adc3ef6826a1467f1e11cd67b`。五个专项文件和 16 项验收输入摘要一致，复用该快照已通过的 HTTP／Trace 确定性门禁。Docker 准入通过，固定 Nginx 镜像检查耗时 0.058386 秒。
+
+Go 编译容器完成启动及退出等待。编译阶段首个完整检查耗时 0.457218 秒，覆盖 3 个容器、7 个卷以及私有目录，暂停、inspect、测量和恢复均通过。共完成 64 次编译容器暂停与恢复。Go 缓存回收后首个完整样本来自 `bounded_builder_resume`，在回收结束约 0.268 秒后开始，耗时 0.310407 秒，测得 972464128 字节，计入稀疏验证检出后为 975630336 字节（约 0.909 GiB）。随后 System／Gateway／Monitor 镜像阶段完成。
+
+首因是 `product_image_agent_backend` 阶段 `command_failed_2`，Agent 构建阶段在约 107.49 秒后进入清理。BuildKit 结构化诊断完整，指向 Dockerfile 第 5 行系统包安装，APT 退出 100，子阶段为 `deb_download`。下载错误含连接、超时，传输操作明确为 `connect`，端点有歧义，HTTP 状态未取得。软件源分类包含 Debian 及 Debian Security 的 HTTP 源，具体套件未知。基础镜像解析为 `python_3_12_slim`，摘要 `sha256:5ca4bfc4580d33083387dfc582569b7ec8cf12438961469c74b765c49780aa02`。既有代理来源记录 BuildKit 与构建参数为 Desktop 内部代理类别，宿主 CLI 为回环类别。未定位连接失败的具体网络端点。原报告没有资源守卫首失败，卷测量及恢复超时取证条件均未触发。
+
+全轮 121 次完整检查，最长 2.136050 秒，最大开始间隔 4.014327 秒。硬配额峰值 2.25 CPU／3288334336 字节内存，已完成样本私有可写峰值计入稀疏检出为 4161413120 字节（约 3.876 GiB）。Agent 镜像未完成，Copilot、正式密码／MFA、采集／API、Console／Monitor 页面、停源、两阶段注销及旧会话 401 均未执行。
+
+标准入口退出 2，含准备、清理及独立复核 494.589 秒。容器、网络、卷、构建器及状态卷、镜像标签、私有目录和私有检出零残留。未重试、续窗、运行 Hosted、容量或定时。Run `addp-http-local-b29b117d9e324a688cd49ee4d8a03ec2`，原始报告 SHA256 `6977e476f997761d69e33c764ff3b180c0f4292b22546f1038ce6dce53390978`。报告、回收后样本、冻结输入及清理复核见 `/var/folders/r1/l7b49c757dz02zftf_l9vl9r0000gn/T/addp-p19-http-full-compile-start-20261107.M3pGdZAo/`。
+
+<a id="http-full-apt-candidates-private-measurement-deadline-20261107"></a>
+
+### 2026-11-07 APT 候选快照的 HTTP full 在编译阶段私有目录测量处停止
+
+本机 ARM64 单次执行 `make test-monitor-http-local MONITOR_HTTP_LOCAL_CASE=full`，恢复私有快照 `368e96296550c2b968d254776ea3207c9301e8cd`，基于已提交 main `ba3406a40f02788f65d078226375abc9f484a807`。五个专项文件及 16 项验收输入摘要一致，复用该快照已通过的 HTTP／Trace 确定性门禁。Docker 准入通过，固定 Nginx 镜像检查耗时 0.053521 秒。
+
+首因是 `product_compile` 阶段 `measure_private_bindings` 的 `resource_sample_deadline_exceeded`。失败检查中，容器列表步骤耗时 1.224607 秒，暂停前剩余测量预算约 2.275 秒，符合 2.25 秒门槛。暂停、inspect、卷列表及卷测量均通过，卷测量的进入／返回检查点完整。私有目录测量命令 364 在第 3.422537 秒开始，距 3.5 秒测量截止约 77 毫秒；第 3.502647 秒开始取消，第 3.506215 秒完成命令收尾。恢复命令 365 成功，在第 3.760666 秒完成，含诊断的整次检查耗时 3.762114 秒。原测量超时首因保留，失败检查不计成功样本。报告只能证明累计预算在私有目录测量处耗尽，不能据此判断该目录扫描自身异常。
+
+首失败前有 41 次完整检查，其中 39 次编译容器暂停与恢复，最长成功检查 1.672887 秒，最大开始间隔 4.005189 秒。硬配额峰值 2.25 CPU／3288334336 字节内存，已完成样本私有可写峰值含稀疏检出为 2861150208 字节。Go 编译中止，未到缓存回收及其后首个完整样本。APT 端点候选字段、镜像阶段卷事件和恢复超时取证均未触发。Agent／Copilot 镜像、正式密码／MFA、采集／API、Console／Monitor 页面、停源、两阶段注销及旧会话 401 均未执行。
+
+标准入口退出 2，含准备、清理和独立复核 212.331 秒。当次容器、网络、卷、构建器及状态卷、镜像标签、私有目录和私有检出零残留。未重试、续窗、运行 Hosted、容量或定时。Run `addp-http-local-b4adab26b1be431f9f977bf34c13b95b`，原始报告 SHA256 `026141d0d4ed579908afc5f5a3607e44e0d676e6d9f0da3f9e1b03bd1a376692`。原报告、冻结输入、同期脱敏日志和清理复核见 `/var/folders/r1/l7b49c757dz02zftf_l9vl9r0000gn/T/addp-p19-http-full-apt-candidates-20261107.Q41uEJQe/`。
+
 ## 停源实例 HTTP 历史趋势首期
 
 实现与以下本地结果归档于 `3de409013281be94adf19387189196d6c05df6f2`。
@@ -1236,3 +1378,33 @@ System 镜像及后续 Agent／Copilot 构建、正式密码／MFA、采集／AP
 官方预算归档 13439382065 的 ZIP SHA256 为 `1a703c060bfbc3640982638661abc861a84f9110ecd1a11c84b7007ccaa46ca0`，与 GitHub 元数据一致，CRC 正常，377 项输入与固定源码逐项匹配。四阶段编译退出 0，241 次受控请求（Go 148、两 Python 源 67／26）。整轮 879.867 秒，213 次完整资源检查最长 0.847 秒，硬配额峰值 3.25 CPU／3.75 GiB，私有可写保守上界峰值 1547116607 字节，均在原 1200 秒／四秒／4 CPU／4 GiB／2 GiB 边界内。日志及回执确认当次容器、网络、卷和私有目录零残留。[预算归档](https://github.com/pampa0629/addp/actions/runs/42051463127/artifacts/13439382065)
 
 该实测覆盖既有 Linux SDK／Prometheus 停源历史读取和实时空观测。正式 Agent／Copilot 产品到 Console／Monitor 的真实身份页面闭环仍单列。本次未手动重跑、开启新的本地验收窗口或运行 Hosted、容量、定时任务。
+
+
+<a id="http-compile-parallel-admission-lock-20261107"></a>
+
+### 2026-11-07 暂停后并行测量首轮实测止于启动阶段锁等待
+
+用户在暂停后并行宿主 du 与 Docker 只读测量的实现及确定性门禁交付后，确认继续原建议的单次 15 分钟 compile-checkpoints 验证。本机 ARM64 运行唯一标准入口 `make test-monitor-http-local MONITOR_HTTP_LOCAL_CASE=compile-checkpoints`。基于已提交 main `d0c2d782db7dc409d5954c57da860294f165df8b`，仅将本专项五个文件冻结为私有验证提交 `b40fca70f70ad0a4eed4a11ac161cef3c32089bd`；未将其他会话未提交改动纳入运行，未向共享 main 提交或推送。快照 HTTP runner 的 53 项 Python、7 项 Node 及 System Go 身份夹具通过；Trace runner 的 205 项 Python、JS 语法、Online 登记及 System Go 身份夹具通过，16 项运行准入输入与快照一致。Docker、ARM64 Go 缓存及固定 Nginx 缓存准入通过，入口内五秒镜像检查实际耗时 0.054779 秒。
+
+首因是 `product_compile` 阶段 `pause_owned_compile_container` 的 `resource_sample_deadline_exceeded`。同次检查先等待采样锁 2.997655 秒；容器列表步骤再耗时 0.707421 秒，其中宿主命令 86 为 0.705742 秒。列表返回后原 3.5 秒测量截止已过，整次失败检查在 3.706307 秒结束。暂停步骤没有命令回执，未发送暂停或恢复命令，未启动并行宿主 du，也未执行本次卷测量。该失败证明启动阶段锁等待与列表读取累计耗尽预算，不能证明并行测量改善或异常；锁内具体命令的完整等待回执本轮未归档，不将源码中的启动互斥推断为已直接观测的全部耗时。原四秒包含锁等待、2.25 秒暂停前门槛、3.5 秒测量及 0.5 秒恢复预留均未放宽。
+
+首失败前仅完成两次准入采样，最长 2.007020 秒，硬配额峰值 1.25 CPU／2214592512 字节内存；已完成样本私有可写峰值加上稀疏验证检出为 731656192 字节。没有完整编译暂停恢复样本，至少 12 次完整暂停恢复、并行路径及 Go 编译完成均未验收。未执行缓存回收、Agent／Copilot 镜像、真实密码／MFA、采集／API、Console／Monitor 页面、停源、两阶段注销或旧会话 401。
+
+清理后立即有界读取同期现存 Docker Desktop 日志，找到两组容器列表代理候选，代理记录区间分别约 155.607375 毫秒及 4.237875 毫秒。没有独立校时和唯一请求归属，daemon 日志没有该时段覆盖；不能用代理候选扣减宿主等待或确定锁内请求耗时。未触发卷 exec 事件取证，事件路径比较为未知，原超时首因不变。
+
+标准入口退出 2，入口及清理耗时 45.262968 秒；将前置准备按保守窗口起点计入后共 178.415177 秒，处于原 900 秒上限内。容器、网络、卷、构建器及状态卷、镜像标签、私有目录和私有验证检出均零残留。首次失败即停，未重试、补样、续窗或运行 Hosted、容量、定时。Run `addp-http-local-81ebc6b4f559403cb507be3886bfed9e`，原报告 SHA256 `189fa5337c859e853070140e247aba977800dfad880dda4181ef54e3362a3a42`。冻结快照 bundle、源码输入、两项门禁日志、原报告、脱敏同期日志及独立清理复核归档于 `/var/folders/r1/l7b49c757dz02zftf_l9vl9r0000gn/T/addp-p19-parallel-compile-20261107.esu_zbzg/`。本条仅更新部分验收结论，未据失败样本修改采样或启动协调。
+
+2026-11-08 基线记录更正：本条及此前维护报告曾将冻结前较早的 main `3bd3d2ff624ded8f4dabc88308df4ef500bccbdb` 误记为基线；`source.json` 与 `snapshot.bundle` 前置提交均确认实际基线为 `d0c2d782db7dc409d5954c57da860294f165df8b`。私有验证提交、16 项输入摘要、原报告哈希及失败／清理结论不变。
+
+
+<a id="http-compile-start-handoff-deterministic-20261108"></a>
+
+### 2026-11-08 编译启动交接有界回执及确定性验证
+
+用户确认先补启动交接回执与门禁，真实采集待另行授权。已先修订运行观测规范，仅在原严格 Go 编译启动路径保留一份 `compile_start_handoff`，最大 2 KiB（紧凑 JSON UTF-8）。记录原四秒启动期限、锁请求／取得／释放前后单调观察边界，以及同一次原 `docker start` 的命令号、请求签名、宿主启动／等待／输出／取消／判定端点和结果。HTTP full／compile-checkpoints 与 Trace 原报告入口统一导出；未发命令为空，未到达端点为空，缺失／归属冲突／取证异常为不可用，超限不保留部分摘要。字段白名单排除原始容器 ID、PID、路径、输出、环境及墙钟锚点。该回执仅描述宿主观察，不能证明 daemon 时间或把释放观察端点当作精确释放瞬间。
+
+代码未改变启动／采样排期、计时起点、互斥、取消或清理策略，不新增命令、线程、进程、Docker 请求或探针。保持原四秒完整检查、3.5 秒测量／0.5 秒恢复预留、2.25 秒暂停前门槛、单镜像 600 秒和全部资源／窗口边界。回执投影异常只记不可用，不替换原启动或采样首因。与上轮私有快照的 AST 核对确认原 Lifecycle 命令、采样、恢复及清理类未改；仅新增回执投影函数、扩展原编译启动记录与两个报告导出位置。
+
+本地标准 `make test-monitor-http-local-runner` 退出 0：53 项 Python、7 项 Node 浏览器契约、JS 语法、HTTP 登记校验及 System Go 身份夹具通过。`make test-monitor-traces-local-runner` 退出 0：208 项 Python、JS 语法、Online 登记及 System Go 身份夹具通过。新增回归覆盖真实命令内核的单次启动、锁等待、等锁超时不发命令、启动超时与取消实际耗时、失败停止与原清理、回执归属／缺失／异常／脱敏／超限、两个报告入口。原首因和生命周期回归继续通过。六个本批影响文件 diff 空白检查通过，根 Make 聚合与既有登记自动发现已覆盖，无需新增入口或 workflow。
+
+门禁日志及 AST 自查归档于 `/var/folders/r1/l7b49c757dz02zftf_l9vl9r0000gn/T/addp-p19-start-handoff.JZ2mjQQS/`。本批代码和证据尚未提交或推送，没有运行真实构建、启动新产品窗口、Hosted、容量或定时；不能据本地门禁把暂停后并行测量、启动交接性能或正式 Agent／Copilot 到页面闭环记为已验收。上条历史基线已按 `source.json` 与 bundle 前置提交更正为 `d0c2d782db7dc409d5954c57da860294f165df8b`，私有快照及历史失败／清理结论保持。
