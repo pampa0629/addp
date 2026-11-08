@@ -828,3 +828,14 @@ PostgreSQL已有十二项固定失败阶段，统一入口此前直接显示英�
 修复 `ca6c675ad` 推送后，用户在本机执行 `python3 scripts/infra/metrics-sources.py recover --scope host --kind node` 并确认成功。
 
 用户随后回传本机全量启动的末尾只读摘要。指标中心和采集控制入口均运行中，主机、Infra PostgreSQL、Infra MinIO 和 Business PostgreSQL 均启用并运行中，其余三项停用且未部署。摘要共 7 项、失败 0 项，所贴输出未出现前序观测失败提示。此次复验覆盖本机全量启动的监控摘要，实际采样、主机关联和有效指标仍需在 Monitor 核对。CI／Hosted 结果由专门会话回传。
+
+
+## Business MinIO 本机采集配置与证书准备（2026-11-08）
+
+用户确认继续接通 Business MinIO。只读核对原 `business-minio` 健康运行，实际 API／Console 映射为 19002／19003；当前 Business 管理员配置与容器输入一致，原镜像提供固定 `minio-observation-status/v1`，不需要为本批重建引擎。原先未启用专业采集，监听和 TLS 目录均未配置，因此“停用／未部署”描述的是采集来源。
+
+本批为该来源明确选择未占用的 `127.0.0.1:19114`，使用仓库外独立 `minio-business` TLS 目录，复用原采集 CA 签发专用服务器证书；覆盖回环 IP 与 `host.docker.internal`，有效期截至 2027-01-04，不越过原 CA 的有效期。私钥仅当前用户可读，目录仅本人访问。Business 私有环境中启用 MinIO 来源并填入监听与 TLS 目录；根私有环境仅向原 Monitor 端口准入和 Desktop 回环转发列表追加 19114，保留所有原值。环境文件均忽略版本控制，密钥和管理员凭据不进入本记录。
+
+首轮签发遇到本机 OpenSSL 4 的默认配置 `/opt/homebrew/etc/openssl@4/openssl.cnf` 缺失；当时新目录为空，环境配置尚未写入。随后为本次证书显式提供临时 CSR 配置完成签发，不修改系统 OpenSSL 设置或既有 CA／证书。`python3 scripts/infra/metrics-sources.py check --scope business --kind minio` 退出 0：部署输入通过；另核验服务器信任链、IP／DNS SAN、密钥配对、原 Monitor 客户端用途与信任，以及两个端口列表中无重复且只有一处新增端口。脱敏收据 `/tmp/addp-business-minio-preparation-20261108.json`。
+
+当前仅“启用／未部署”：尚未安装采集账号、启动来源或重启 Monitor，因此不能认定实际 mTLS、Prometheus、专业读数或页面通过。已将三条标准应用命令交用户依次执行：`bash scripts/infra/up.sh --metrics`、`python3 scripts/infra/metrics-sources.py up --scope business --kind minio`、`./scripts/dev/restart.sh -monitor`。无需重启 Business MinIO；本会话未操作原引擎、业务数据或指标历史，也未执行 CI／Hosted 或设置定时任务。用户应用后继续确认平台部署登记、精确来源关联、新鲜采样与专业页面。
