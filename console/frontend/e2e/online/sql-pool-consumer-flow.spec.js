@@ -148,13 +148,8 @@ async function saveChange(page, sample, operator, phase, credentials) {
       expect(key === 'password' ? after.connection_info[key] !== value : after.connection_info[key] === value,
         `System readback ${phase} field ${key}`).toBe(true)
     }
-    const tested = page.waitForResponse(response => new URL(response.url()).pathname === `${path}/test`
-      && response.request().method() === 'POST', { timeout: responseTimeout })
-    await row.getByRole('button', { name: '测试', exact: true }).click()
-    expect((await json(await tested, 'System current connection test')).success).toBe(true)
-    const online = await json(await api.get(path), 'System current connection observation')
-    expect(online.connection_status).toBe('online')
-    expect(online.version).toBe(after.version)
+    const online = await connectionObservation(page, sample, operator, true, credentials)
+    expect(online.engine_version).toBe(after.version)
     return {
       before_version: before.version, after_version: after.version, phase,
       changed_fields: Object.keys(patch).sort(), same_engine_confirmed: phase === 'address',
@@ -187,6 +182,118 @@ async function replacement(engine, reader, start, oldReader, oldIDs, idle, sourc
       && (idle === 0 ? !newIDs.some(id => state.active_ids.includes(id)) : newIDs.every(id => state.active_ids.includes(id)))
   }, { timeout: 15_000 }).toBe(true)
   return proof
+}
+
+async function connectionObservation(page, sample, operator, available, credentials) {
+  const frame = frameOf(page)
+  const path = `/api/v1/system/engines/${sample.engine_id}`
+  const api = await request.newContext({ baseURL: process.env.GATEWAY_URL, extraHTTPHeaders: { Authorization: `Bearer ${operator}` } })
+  try {
+    const before = await json(await api.get(path), 'System observation baseline')
+    const tested = page.waitForResponse(response => new URL(response.url()).pathname === `${path}/test`
+      && response.request().method() === 'POST', { timeout: responseTimeout })
+    await frame.getByRole('row').filter({ hasText: sample.name }).getByRole('button', { name: '测试', exact: true }).click()
+    const result = await json(await tested, 'System current connection observation')
+    expect(result.success).toBe(available)
+    for (const secret of Object.values(credentials)) {
+      expect(JSON.stringify(result).includes(secret), 'connection observation must not expose credentials').toBe(false)
+    }
+    const after = await json(await api.get(path), 'System observation readback')
+    expect(after.connection_status).toBe(available ? 'online' : 'offline')
+    expect(after.version).toBe(before.version)
+    return { engine_version: after.version, connection_status: after.connection_status, probe_success: result.success }
+  } finally { await api.dispose() }
+}
+
+function faultAction(engine, restore) {
+  return JSON.parse(execFileSync('python3', ['-m', 'scripts.test.sql-pool-consumer-flow-online',
+    restore ? 'restore-password' : 'invalidate-password', '--engine', engine],
+  { cwd: root, encoding: 'utf8', timeout: 30_000 }))
+}
+
+async function credentialRecovery(page, operatorPage, sample, operator, consumer, credentials, lastChange) {
+  const engine = sample.engine_type
+  const reader = readers[1]
+  const source = sample.source_identity
+  const before = observe(engine, reader)
+  await managerPreview(page, sample, () => page.goto(previewRoute(sample)))
+  const warm = await replacement(engine, reader, before, reader, lastChange.consumers.manager.new_ids, 0, source)
+  const beforeFailure = observe(engine, reader)
+  const requests = { preview: 0, execution: 0 }
+  const watchRequest = outgoing => {
+    const path = new URL(outgoing.url()).pathname
+    if (path === '/api/v1/manager/preview') requests.preview++
+    if (path === '/api/v1/develop/executions' && outgoing.method() === 'POST') requests.execution++
+  }
+  page.on('request', watchRequest)
+  let api
+  try {
+    const invalidated = faultAction(engine, false)
+    expect(invalidated.source_identity).toEqual(source)
+    expect(invalidated.configured_password_accepted).toBe(false)
+    const offline = await connectionObservation(operatorPage, sample, operator, false, credentials)
+    expect(offline.engine_version).toBe(lastChange.after_version)
+    const frame = frameOf(page)
+    const notice = frame.locator('.engine-unavailable-panel')
+    await expect(notice).toBeVisible({ timeout: 45_000 })
+    await expect(notice).toContainText('引擎当前不可用')
+    await expect(notice).toContainText('离线')
+    await expect(notice).toContainText(sample.name)
+    await expect(frame.getByRole('cell', { name: sample.sample, exact: true })).toHaveCount(0)
+    await page.screenshot({ path: resolve(process.env.ADDP_ONLINE_ARTIFACT_DIR, `${engine}-credentials-manager-offline.png`) })
+    const managerUnavailable = { notice_visible: true, stale_rows_visible: false, preview_requests: requests.preview }
+    expect(managerUnavailable.preview_requests).toBe(0)
+
+    const listed = page.waitForResponse(response => new URL(response.url()).pathname === '/api/v1/develop/engines',
+      { timeout: responseTimeout })
+    await page.goto('/develop/sql?action=create')
+    const listing = await listed
+    const descriptors = await json(listing, 'Develop offline selection')
+    expect(descriptors.find(item => item.id === sample.engine_id)?.connection_status).toBe('offline')
+    api = await browserAPIFromResponse(listing, process.env.GATEWAY_URL, consumer)
+    const readCheck = await api.post('/api/v1/system/engine-access/read-checks/manager-preview', { data: { targets: [sample.read_target] } })
+    expect(readCheck.status()).toBe(200)
+    const selector = frameOf(page).locator('.engine-select')
+    await selector.click()
+    const option = frameOf(page).getByRole('option').filter({ hasText: sample.name })
+    await expect(option).toContainText('离线')
+    await expect(option).toHaveAttribute('aria-disabled', 'true')
+    expect(requests.execution).toBe(0)
+    await page.screenshot({ path: resolve(process.env.ADDP_ONLINE_ARTIFACT_DIR, `${engine}-credentials-develop-offline.png`) })
+    const developUnavailable = { engine_id: sample.engine_id, connection_status: 'offline', disabled: true,
+      submitted_executions: requests.execution, source_read_status: readCheck.status() }
+    const failed = observe(engine, reader)
+    expect(failed.source_identity).toEqual(source)
+    const failedReads = failed.statement_ids.filter(id => !beforeFailure.statement_ids.includes(id))
+    expect(failedReads).toEqual([])
+    page.off('request', watchRequest)
+
+    const restored = faultAction(engine, true)
+    expect(restored.source_identity).toEqual(source)
+    expect(restored.configured_password_accepted).toBe(true)
+    const online = await connectionObservation(operatorPage, sample, operator, true, credentials)
+    expect(online.engine_version).toBe(offline.engine_version)
+    const restoredRead = await api.post('/api/v1/system/engine-access/read-checks/manager-preview', { data: { targets: [sample.read_target] } })
+    expect(restoredRead.status()).toBe(200)
+    const restoredStart = observe(engine, reader)
+    await managerPreview(page, sample, () => page.goto(previewRoute(sample)))
+    const manager = await replacement(engine, reader, restoredStart, reader, warm.new_ids, 0, source)
+    await page.screenshot({ path: resolve(process.env.ADDP_ONLINE_ARTIFACT_DIR, `${engine}-credentials-manager-restored.png`) })
+    const beforeQuery = observe(engine, reader)
+    const execution = await developQuery(page, sample, 'restored', consumer)
+    const develop = await replacement(engine, reader, beforeQuery, reader, lastChange.consumers.develop.new_ids, 0, source)
+    await page.screenshot({ path: resolve(process.env.ADDP_ONLINE_ARTIFACT_DIR, `${engine}-credentials-develop-restored.png`) })
+    return { source_identity: source, invalidated, offline, manager_unavailable: managerUnavailable,
+      develop_unavailable: developUnavailable, failed_read_ids: failedReads, restored, online,
+      restored_read_status: restoredRead.status(), consumers: {
+        manager: { before_ids: warm.new_ids, new_ids: manager.new_ids, active_after: manager.active_after, rows: 1 },
+        develop: { new_ids: develop.new_ids, active_after: develop.active_after, rows: 1,
+          previous_execution_id: lastChange.consumers.develop.execution_ids[1], execution_id: execution },
+      } }
+  } finally {
+    page.off('request', watchRequest)
+    if (api) await api.dispose()
+  }
 }
 
 test('System pool edit replaces physical sessions in Manager and Develop for both engines', async ({ browser, page }) => {
@@ -263,10 +370,12 @@ test('System pool edit replaces physical sessions in Manager and Develop for bot
         reader = nextReader
         originalExecution = nextExecution
       }
-      cases.push({ engine_id: sample.engine_id, engine_type: engine, source_identity: source, changes })
+      const recovery = await test.step(`${engine} credential failure and recovery`, () =>
+        credentialRecovery(page, operatorPage, sample, operator, consumer, credentials, changes.at(-1)))
+      cases.push({ engine_id: sample.engine_id, engine_type: engine, source_identity: source, changes, recovery })
     }
     writeFileSync(process.env.ADDP_ONLINE_POOL_REPORT, JSON.stringify({
-      schema_version: 'addp.sql-pool-console/v2', run_id: expected.run_id, consumer_principal_id: consumer.principalID, operator_principal_id: configIdentity.principalID, cases,
+      schema_version: 'addp.sql-pool-console/v3', run_id: expected.run_id, consumer_principal_id: consumer.principalID, operator_principal_id: configIdentity.principalID, cases,
     }))
   } finally {
     if (!operatorPage.isClosed()) await operatorContext.close()

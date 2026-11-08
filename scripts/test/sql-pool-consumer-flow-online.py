@@ -67,9 +67,10 @@ def start(private, run_id):
     for engine, (service, port, namespace, _) in PROFILES.items():
         match = re.search(rf"(?m)^  {service}:\n    image: ([\w:.-]+@sha256:[0-9a-f]{{64}})$", pins)
         require(match, f"fixed {service} fixture image is missing")
-        admin, password, next_password, rotated_password = (secrets.token_hex(24) for _ in range(4))
+        admin, password, next_password, rotated_password, invalidated_password = (secrets.token_hex(24) for _ in range(5))
         private_write(private / f"{engine}-credentials.json", json.dumps({
             "initial": password, "account": next_password, "rotated": rotated_password,
+            "invalidated": invalidated_password,
         }))
         settings = (
             f"POSTGRES_DB={DATABASE}\nPOSTGRES_USER=fixture_admin\nPOSTGRES_PASSWORD={admin}\n"
@@ -183,6 +184,7 @@ def prepare(private, run_id):
             "sample": f"pool-{engine}-sample", "table": TABLE, "scan_execution_id": scan_id,
             "locator": SUPPORT.build_item_locator(engine_id, item),
             "source_identity": fixture_identity(engine, run_id),
+            "read_target": next(entry["target"] for entry in grants if entry["engine_id"] == engine_id),
         })
     private_write(private / "pool-expectations.json", json.dumps({
         "run_id": run_id, "tenant_id": str(tenant), "principal_id": str(context["principal"]["id"]),
@@ -256,15 +258,43 @@ def rotate_password(engine, private, artifacts, run_id):
     require(all(re.fullmatch(r"[0-9a-f]{48}", value) for value in credentials.values()), "invalid fixture credentials")
     reader = READERS[1]
     password = credentials["rotated"]
-    statement = (f"SET log_statement='none'; ALTER ROLE {reader} PASSWORD '{password}';"
-                 if engine == "postgresql" else f"SET sql_log_off=1; ALTER USER '{reader}'@'%' IDENTIFIED BY '{password}';")
-    sql(engine, statement)
+    set_reader_password(engine, password)
     marker.write_text("rotated\n")
     verify_native_passwords(engine, run_id, credentials["account"], password, "rotated")
     require(fixture_identity(engine, run_id) == before, "password rotation changed the source")
     proof = {"engine": engine, "run_id": run_id, "reader": reader, "source_identity": before,
              "old_password_rejected": True, "new_password_accepted": True}
     with (artifacts / "sql-pool-password-probes.jsonl").open("a") as stream:
+        stream.write(json.dumps(proof) + "\n")
+    print(json.dumps(proof))
+
+
+def set_reader_password(engine, password):
+    require(bool(re.fullmatch(r"[0-9a-f]{48}", password)), "invalid fixture password")
+    reader = READERS[1]
+    statement = (f"SET log_statement='none'; ALTER ROLE {reader} PASSWORD '{password}';"
+                 if engine == "postgresql" else f"SET sql_log_off=1; ALTER USER '{reader}'@'%' IDENTIFIED BY '{password}';")
+    sql(engine, statement)
+
+
+def credential_fault(engine, private, artifacts, run_id, restore):
+    before = fixture_identity(engine, run_id)
+    require((private / f"{engine}-password-rotated").is_file(), "credential fault requires the completed rotation")
+    invalidated = private / f"{engine}-password-invalidated"
+    restored = private / f"{engine}-password-restored"
+    require(invalidated.exists() is restore and not restored.exists(), "invalid credential fault transition")
+    credentials = json.loads((private / f"{engine}-credentials.json").read_text())
+    require(all(re.fullmatch(r"[0-9a-f]{48}", value) for value in credentials.values()), "invalid fixture credentials")
+    accepted = credentials["rotated" if restore else "invalidated"]
+    rejected = credentials["invalidated" if restore else "rotated"]
+    set_reader_password(engine, accepted)
+    (restored if restore else invalidated).write_text("applied\n")
+    stage = "restored" if restore else "invalidated"
+    verify_native_passwords(engine, run_id, rejected, accepted, stage)
+    require(fixture_identity(engine, run_id) == before, "credential fault changed the source")
+    proof = {"engine": engine, "run_id": run_id, "stage": stage, "reader": READERS[1], "source_identity": before,
+             "configured_password_accepted": restore, "alternative_password_accepted": not restore}
+    with (artifacts / "sql-pool-recovery-probes.jsonl").open("a") as stream:
         stream.write(json.dumps(proof) + "\n")
     print(json.dumps(proof))
 
@@ -317,10 +347,53 @@ def observe(engine, run_id, reader=READER):
     return observation
 
 
+def validate_recovery(case, run_id, executions):
+    proof = case["recovery"]
+    require(set(proof) == {"source_identity", "invalidated", "offline", "manager_unavailable", "develop_unavailable",
+                           "failed_read_ids", "restored", "online", "restored_read_status", "consumers"},
+            "unexpected credential recovery evidence fields")
+    source, last = case["source_identity"], case["changes"][-1]
+    require(proof["source_identity"] == source, "credential recovery source changed")
+    for stage, restored in (("invalidated", False), ("restored", True)):
+        require(proof[stage] == {"engine": case["engine_type"], "run_id": run_id, "stage": stage,
+                "reader": READERS[1], "source_identity": source, "configured_password_accepted": restored,
+                "alternative_password_accepted": not restored}, "missing native credential recovery proof")
+    for stage, online in (("offline", False), ("online", True)):
+        require(proof[stage] == {"engine_version": last["after_version"],
+                "connection_status": "online" if online else "offline", "probe_success": online},
+                "credential observation changed configuration or missed availability")
+    require(proof["manager_unavailable"] == {"notice_visible": True, "stale_rows_visible": False, "preview_requests": 0},
+            "Manager must clear stale rows and suppress unavailable preview")
+    require(proof["develop_unavailable"] == {"engine_id": case["engine_id"], "connection_status": "offline",
+            "disabled": True, "submitted_executions": 0, "source_read_status": 200},
+            "Develop unavailable selection or unchanged authorization unproven")
+    require(proof["failed_read_ids"] == [] and proof["restored_read_status"] == 200,
+            "credential failure read or unchanged authorization unproven")
+    require(set(proof["consumers"]) == {"manager", "develop"}, "missing recovery consumer")
+    used = {value for change in case["changes"] for consumer in change["consumers"].values()
+            for field in ("old_ids", "new_ids") for value in consumer[field]}
+    for consumer, reading in proof["consumers"].items():
+        require(set(reading) == {"new_ids", "active_after", "rows"} |
+                ({"before_ids"} if consumer == "manager" else {"previous_execution_id", "execution_id"}),
+                "unexpected recovery consumer fields")
+        require(reading["rows"] == 1 and reading["active_after"] == [], "restored read or idle lifecycle unproven")
+        fields = ("before_ids", "new_ids") if consumer == "manager" else ("new_ids",)
+        for field in fields:
+            values = reading[field]
+            require(isinstance(values, list) and bool(values) and all(type(value) is int and value > 0 for value in values)
+                    and len(set(values)) == len(values) and not used.intersection(values), "invalid or reused recovery sessions")
+            used.update(values)
+        if consumer == "develop":
+            require(reading["previous_execution_id"] == last["consumers"]["develop"]["execution_ids"][1]
+                    and isinstance(reading["execution_id"], str) and bool(reading["execution_id"])
+                    and reading["execution_id"] not in executions, "reused or discontinuous recovery execution")
+            executions.add(reading["execution_id"])
+
+
 def validate_browser(evidence, expected):
     require(set(evidence) == {"schema_version", "run_id", "consumer_principal_id", "operator_principal_id", "cases"},
             "unexpected Console report fields")
-    require(evidence.get("schema_version") == "addp.sql-pool-console/v2"
+    require(evidence.get("schema_version") == "addp.sql-pool-console/v3"
             and evidence.get("run_id") == expected["run_id"], "wrong Console evidence identity")
     require(evidence.get("consumer_principal_id") == expected["principal_id"], "wrong Console consumer")
     require(evidence.get("operator_principal_id") == expected["operator_principal_id"]
@@ -330,7 +403,7 @@ def validate_browser(evidence, expected):
     require([case["engine_id"] for case in cases] == [case["engine_id"] for case in expected["cases"]], "missing or reordered Console cases")
     executions = set()
     for case, sample in zip(cases, expected["cases"], strict=True):
-        require(set(case) == {"engine_id", "engine_type", "source_identity", "changes"}, "unexpected Console case fields")
+        require(set(case) == {"engine_id", "engine_type", "source_identity", "changes", "recovery"}, "unexpected Console case fields")
         require(case["engine_type"] == sample["engine_type"] and case["source_identity"] == sample["source_identity"],
                 "Console source identity changed")
         require(set(case["source_identity"]) == {"container_id", "database", "native_id"}, "unexpected source identity fields")
@@ -396,6 +469,7 @@ def validate_browser(evidence, expected):
                     previous_execution = pair[1]
             require(not (old_ids & new_ids), "one consumer reused the other's old pool")
             previous = change
+        validate_recovery(case, expected["run_id"], executions)
 
 
 def process_identity():
@@ -433,7 +507,7 @@ def run(private, artifacts):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("action", nargs="?", default="run", choices=("start", "stop", "prepare", "cleanup", "observe", "rotate-password", "run"))
+    parser.add_argument("action", nargs="?", default="run", choices=("start", "stop", "prepare", "cleanup", "observe", "rotate-password", "invalidate-password", "restore-password", "run"))
     parser.add_argument("--engine", choices=PROFILES)
     parser.add_argument("--reader", choices=READERS, default=READER)
     args = parser.parse_args()
@@ -457,6 +531,9 @@ def main():
     elif args.action == "rotate-password":
         require(args.engine is not None, "password rotation engine is required")
         rotate_password(args.engine, private, artifacts, run_id)
+    elif args.action in ("invalidate-password", "restore-password"):
+        require(args.engine is not None, "credential fault engine is required")
+        credential_fault(args.engine, private, artifacts, run_id, args.action == "restore-password")
     else:
         run(private, artifacts)
 

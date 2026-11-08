@@ -42,7 +42,7 @@ class SQLPoolEvidenceTest(unittest.TestCase):
                 CI.validate_sql_pool_profile(root, registry)
 
     def test_verified_browser_output_is_returned_to_online_dispatcher(self):
-        evidence = {"schema_version": "addp.sql-pool-console/v2", "run_id": "run-pool", "cases": []}
+        evidence = {"schema_version": "addp.sql-pool-console/v3", "run_id": "run-pool", "cases": []}
         processes = {"system": [19, "9"]}
         with tempfile.TemporaryDirectory() as tmp:
             private = Path(tmp)
@@ -87,7 +87,7 @@ pid=44 user=pool_reader_next LOG:  statement: SELECT id FROM public.pool_source_
 
     def connection_evidence(self):
         expected = {"run_id": "run-pool", "principal_id": "4", "operator_principal_id": "6", "cases": []}
-        evidence = {"schema_version": "addp.sql-pool-console/v2", "run_id": "run-pool",
+        evidence = {"schema_version": "addp.sql-pool-console/v3", "run_id": "run-pool",
                     "consumer_principal_id": "4", "operator_principal_id": "6", "cases": []}
         for engine_id, engine in ((5, "postgresql"), (8, "mysql")):
             source = {"container_id": engine, "database": "pool_fixture", "native_id": "native-" + engine}
@@ -119,6 +119,20 @@ pid=44 user=pool_reader_next LOG:  statement: SELECT id FROM public.pool_source_
                     change["password_proof"] = {"engine": engine, "run_id": "run-pool", "reader": POOL.READERS[1],
                         "source_identity": source, "old_password_rejected": True, "new_password_accepted": True}
                 case["changes"].append(change)
+            recovery = {"source_identity": source, "failed_read_ids": [], "restored_read_status": 200,
+                        "manager_unavailable": {"notice_visible": True, "stale_rows_visible": False, "preview_requests": 0},
+                        "develop_unavailable": {"engine_id": engine_id, "connection_status": "offline", "disabled": True,
+                                                "submitted_executions": 0, "source_read_status": 200},
+                        "consumers": {"manager": {"before_ids": [11], "new_ids": [12], "active_after": [], "rows": 1},
+                                      "develop": {"new_ids": [13], "active_after": [], "rows": 1,
+                                                  "previous_execution_id": previous_execution, "execution_id": f"{engine}-restored"}}}
+            for stage, restored in (("invalidated", False), ("restored", True)):
+                recovery[stage] = {"engine": engine, "run_id": "run-pool", "stage": stage, "reader": POOL.READERS[1],
+                                   "source_identity": source, "configured_password_accepted": restored,
+                                   "alternative_password_accepted": not restored}
+                recovery["online" if restored else "offline"] = {"engine_version": 5,
+                    "connection_status": "online" if restored else "offline", "probe_success": restored}
+            case["recovery"] = recovery
             evidence["cases"].append(case)
         return evidence, expected
 
@@ -189,3 +203,68 @@ pid=44 user=pool_reader_next LOG:  statement: SELECT id FROM public.pool_source_
                         diagnostic = json.loads((private / "sql-pool-auth-observations.jsonl").read_text())
                         self.assertEqual(diagnostic["rejected_attempt"]["authentication_denied"], outcome == "authentication")
                         self.assertEqual(diagnostic["rejected_attempt"]["returned_one"], outcome == "trusted")
+
+    def test_recovery_requires_both_ui_states_unchanged_authorization_and_fresh_reads(self):
+        evidence, expected = self.connection_evidence()
+        mutations = [
+            lambda r: r["source_identity"].update(native_id="other"),
+            lambda r: r["invalidated"].update(configured_password_accepted=True),
+            lambda r: r["restored"].update(stage="invalidated"),
+            lambda r: r["offline"].update(engine_version=6),
+            lambda r: r["online"].update(probe_success=False),
+            lambda r: r["manager_unavailable"].update(stale_rows_visible=True),
+            lambda r: r["manager_unavailable"].update(preview_requests=1),
+            lambda r: r["develop_unavailable"].update(disabled=False),
+            lambda r: r["develop_unavailable"].update(source_read_status=403),
+            lambda r: r["develop_unavailable"].update(submitted_executions=1),
+            lambda r: r.update(failed_read_ids=[77]),
+            lambda r: r.update(restored_read_status=403),
+            lambda r: r["consumers"]["manager"].update(before_ids=[9]),
+            lambda r: r["consumers"]["manager"].update(new_ids=[]),
+            lambda r: r["consumers"]["develop"].update(active_after=[13]),
+            lambda r: r["consumers"]["develop"].update(new_ids=[12]),
+            lambda r: r["consumers"]["develop"].update(previous_execution_id="another"),
+            lambda r: r["consumers"]["develop"].update(execution_id="postgresql-pool"),
+            lambda r: r.update(password="must-not-be-exported"),
+        ]
+        for index, mutation in enumerate(mutations):
+            with self.subTest(index=index):
+                invalid = deepcopy(evidence)
+                mutation(invalid["cases"][0]["recovery"])
+                with self.assertRaises(POOL.SUPPORT.SuiteError):
+                    POOL.validate_browser(invalid, expected)
+        for mutate in (lambda e: e.update(schema_version="addp.sql-pool-console/v2"),
+                       lambda e: e["cases"][0].pop("recovery")):
+            invalid = deepcopy(evidence)
+            mutate(invalid)
+            with self.assertRaises(POOL.SUPPORT.SuiteError):
+                POOL.validate_browser(invalid, expected)
+
+    def test_native_credential_fault_is_one_shot_ordered_and_never_exports_secrets(self):
+        for engine in POOL.PROFILES:
+            with self.subTest(engine=engine), tempfile.TemporaryDirectory() as tmp:
+                private = Path(tmp)
+                credentials = {"rotated": "b" * 48, "invalidated": "c" * 48}
+                (private / f"{engine}-credentials.json").write_text(json.dumps(credentials))
+                source = {"native_id": "same"}
+                output = StringIO()
+                with patch.object(POOL, "fixture_identity", return_value=source), \
+                     patch.object(POOL, "set_reader_password") as set_password, \
+                     patch.object(POOL, "verify_native_passwords") as verify, redirect_stdout(output):
+                    with self.assertRaisesRegex(POOL.SUPPORT.SuiteError, "completed rotation"):
+                        POOL.credential_fault(engine, private, private, "run-pool", False)
+                    (private / f"{engine}-password-rotated").touch()
+                    with self.assertRaisesRegex(POOL.SUPPORT.SuiteError, "transition"):
+                        POOL.credential_fault(engine, private, private, "run-pool", True)
+                    for restore in (False, True):
+                        POOL.credential_fault(engine, private, private, "run-pool", restore)
+                        accepted, rejected = (credentials["rotated"], credentials["invalidated"]) if restore else (
+                            credentials["invalidated"], credentials["rotated"])
+                        set_password.assert_called_with(engine, accepted)
+                        verify.assert_called_with(engine, "run-pool", rejected, accepted, "restored" if restore else "invalidated")
+                        with self.assertRaisesRegex(POOL.SUPPORT.SuiteError, "transition"):
+                            POOL.credential_fault(engine, private, private, "run-pool", restore)
+                    proofs = [json.loads(line) for line in output.getvalue().splitlines()]
+                    self.assertEqual([p["configured_password_accepted"] for p in proofs], [False, True])
+                    self.assertEqual([json.loads(line) for line in (private / "sql-pool-recovery-probes.jsonl").read_text().splitlines()], proofs)
+                    self.assertFalse(any(secret in output.getvalue() for secret in credentials.values()))
