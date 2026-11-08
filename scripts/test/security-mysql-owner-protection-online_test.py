@@ -1,4 +1,5 @@
 import importlib.util
+from contextlib import ExitStack
 import ast
 import json
 import hashlib
@@ -1588,26 +1589,27 @@ for (const fault of ['none', 'stage', 'target', 'writes', 'deny-response', 'rest
             mongo_report = scenario_report.pop('mongodb_algorithms')
             mongo_report['enrollment_id'] = 'mongo-enrollment'
             scenario_report.update(identity={'principal_id': '7'}, fixture={'security_enrollment_id': 'enrollment'})
-            with (
-                self.subTest(unavailable=unavailable),
-                patch.dict(os.environ, environment, clear=True),
-                patch.object(sys, 'argv', [str(SCRIPT)]),
-                patch.object(ONLINE.signal, 'signal'),
-                patch.object(ONLINE.SUPPORT, 'require_hosted_security_lifecycle'),
-                patch.object(ONLINE, 'validate_user_identity', return_value={}) as identity,
-                patch.object(ONLINE, 'wait_for_manager_search_ready', create=True) as initial_readiness,
-                patch.object(ONLINE, 'prepare_mongodb_source', return_value={'scan_execution_id': 'prepared', 'item': {'id': 1}}) as prepare,
-                patch.object(ONLINE, 'prepare_mongodb_transfer_targets', return_value={}) as targets,
-                patch.object(ONLINE, 'run_scenario', return_value=scenario_report) as scenario,
-                patch.object(ONLINE, 'exercise_mongodb_algorithms', return_value=mongo_report) as mongo,
-                patch.object(ONLINE, 'protection_reason_matrix', wraps=ONLINE.protection_reason_matrix) as matrix,
-                patch.object(ONLINE, 'result_browser_context', return_value={'fixture': 'result'}),
-                patch.object(ONLINE, 'find_item', return_value={'fingerprint': 'source', 'node_id': 12}),
-                patch.object(ONLINE, 'build_item_locator', return_value='source-locator'),
-                patch.object(ONLINE, 'wait_for_technical_field') as readiness,
-                patch.object(ONLINE, 'run_export_browser') as browser,
-                patch('builtins.print'),
-            ):
+            with ExitStack() as stack:
+                stack.enter_context(self.subTest(unavailable=unavailable))
+                artifact_dir = stack.enter_context(tempfile.TemporaryDirectory())
+                stack.enter_context(patch.dict(os.environ, {**environment, 'ADDP_ONLINE_ARTIFACT_DIR': artifact_dir}, clear=True))
+                timing_factory = stack.enter_context(patch.object(ONLINE, 'PhaseTimings'))
+                stack.enter_context(patch.object(sys, 'argv', [str(SCRIPT)]))
+                stack.enter_context(patch.object(ONLINE.signal, 'signal'))
+                stack.enter_context(patch.object(ONLINE.SUPPORT, 'require_hosted_security_lifecycle'))
+                identity = stack.enter_context(patch.object(ONLINE, 'validate_user_identity', return_value={}))
+                initial_readiness = stack.enter_context(patch.object(ONLINE, 'wait_for_manager_search_ready', create=True))
+                prepare = stack.enter_context(patch.object(ONLINE, 'prepare_mongodb_source', return_value={'scan_execution_id': 'prepared', 'item': {'id': 1}}))
+                targets = stack.enter_context(patch.object(ONLINE, 'prepare_mongodb_transfer_targets', return_value={}))
+                scenario = stack.enter_context(patch.object(ONLINE, 'run_scenario', return_value=scenario_report))
+                mongo = stack.enter_context(patch.object(ONLINE, 'exercise_mongodb_algorithms', return_value=mongo_report))
+                matrix = stack.enter_context(patch.object(ONLINE, 'protection_reason_matrix', wraps=ONLINE.protection_reason_matrix))
+                stack.enter_context(patch.object(ONLINE, 'result_browser_context', return_value={'fixture': 'result'}))
+                stack.enter_context(patch.object(ONLINE, 'find_item', return_value={'fingerprint': 'source', 'node_id': 12}))
+                stack.enter_context(patch.object(ONLINE, 'build_item_locator', return_value='source-locator'))
+                readiness = stack.enter_context(patch.object(ONLINE, 'wait_for_technical_field'))
+                browser = stack.enter_context(patch.object(ONLINE, 'run_export_browser'))
+                stack.enter_context(patch('builtins.print'))
                 order = Mock()
                 order.attach_mock(identity, 'identity')
                 order.attach_mock(initial_readiness, 'initial_readiness')
@@ -1644,6 +1646,9 @@ for (const fault of ['none', 'stage', 'target', 'writes', 'deny-response', 'rest
                     self.assertEqual(readiness.call_args.args[1:4], (23, {'fingerprint': 'source', 'node_id': 12}, 'email'))
                 matrix.assert_called_once_with(scenario_report)
                 self.assertIs(scenario_report['mongodb_algorithms'], mongo_report)
+                timing_factory.assert_called_once_with(Path(artifact_dir) / 'security-phase-timings.json')
+                self.assertIs(scenario.call_args.kwargs['timings'], timing_factory.return_value)
+                timing_factory.return_value.finish.assert_called_once_with('failed' if unavailable else 'passed')
 
     def report(self):
         return {
@@ -4972,6 +4977,122 @@ class RecordGrantPreparationTest(unittest.TestCase):
         self.assertFalse(any(c[0]=="POST" for c in self.calls[initial:]))
         with patch.dict(os.environ,ADDP_ONLINE_WORKBENCH_MYSQL_DATABASE="business"):
             with self.assertRaises(ONLINE.SuiteError): ONLINE.record_grant_targets(os.environ)
+
+
+
+class PhaseTimingsTest(unittest.TestCase):
+    def test_complete_journal_requires_all_fixed_phases(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / 'security-phase-timings.json'
+            journal = ONLINE.PhaseTimings(path)
+            for name in ONLINE.PROTECTION_PHASES:
+                with journal.phase(name):
+                    wire = json.loads(path.read_text())
+                    self.assertEqual(wire['result'], 'running')
+                    self.assertEqual(wire['phases'][-1]['status'], 'running')
+                    self.assertIsNone(wire['phases'][-1]['elapsed_ms'])
+            journal.finish('passed')
+            wire = json.loads(path.read_text())
+            self.assertEqual(wire['result'], 'passed')
+            self.assertEqual([r['phase'] for r in wire['phases']], list(ONLINE.PROTECTION_PHASES))
+            self.assertTrue(all(r['status'] == 'passed' and type(r['elapsed_ms']) is int and r['elapsed_ms'] >= 0 for r in wire['phases']))
+            self.assertEqual(path.stat().st_mode & 0o777, 0o600)
+            self.assertEqual(list(Path(folder).iterdir()), [path])
+
+    def test_failed_or_partial_journal_never_claims_completion_or_records_error_values(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / 'security-phase-timings.json'
+            journal = ONLINE.PhaseTimings(path)
+            with self.assertRaises(ONLINE.SuiteError): journal.finish('passed')
+            with self.assertRaisesRegex(ONLINE.SuiteError, 'PRIVATE-SQL-RESULT-TOKEN'):
+                with journal.phase(ONLINE.PROTECTION_PHASES[0]):
+                    raise ONLINE.SuiteError('PRIVATE-SQL-RESULT-TOKEN')
+            journal.finish('failed')
+            wire = json.loads(path.read_text())
+            self.assertEqual((wire['result'], wire['phases'][0]['status']), ('failed', 'failed'))
+            self.assertNotIn('PRIVATE', path.read_text())
+            with self.assertRaises(ONLINE.SuiteError): journal.finish('passed')
+
+    def test_unknown_nested_duplicate_and_existing_journals_fail_closed(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / 'security-phase-timings.json'
+            journal = ONLINE.PhaseTimings(path)
+            with self.assertRaises(ONLINE.SuiteError):
+                with journal.phase('PRIVATE-SQL'): pass
+            first = ONLINE.PROTECTION_PHASES[0]
+            with journal.phase(first):
+                with self.assertRaises(ONLINE.SuiteError):
+                    with journal.phase(ONLINE.PROTECTION_PHASES[1]): pass
+            with self.assertRaises(ONLINE.SuiteError):
+                with journal.phase(first): pass
+            before = path.read_bytes()
+            with self.assertRaises(ONLINE.SuiteError): ONLINE.PhaseTimings(path)
+            self.assertEqual(path.read_bytes(), before)
+            self.assertNotIn('PRIVATE', path.read_text())
+
+    def test_force_killed_process_retains_running_phase(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / 'security-phase-timings.json'
+            code = """import importlib.util,sys,time
+spec=importlib.util.spec_from_file_location('timing_subject',sys.argv[1]);m=importlib.util.module_from_spec(spec);sys.modules[spec.name]=m;spec.loader.exec_module(m)
+journal=m.PhaseTimings(m.Path(sys.argv[2]))
+with journal.phase(m.PROTECTION_PHASES[0]): time.sleep(30)
+"""
+            child = subprocess.Popen([sys.executable, '-c', code, str(SCRIPT), str(path)], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            try:
+                deadline = time.monotonic() + 5
+                while time.monotonic() < deadline:
+                    if path.exists() and json.loads(path.read_text())['phases']: break
+                    if child.poll() is not None: self.fail(child.communicate()[1].decode())
+                    time.sleep(0.01)
+                else: self.fail('phase was not durably recorded before execution')
+                child.kill(); child.communicate(timeout=5)
+                wire = json.loads(path.read_text())
+                self.assertEqual((wire['result'], wire['phases'][-1]['status']), ('running', 'running'))
+                self.assertIsNone(wire['phases'][-1]['finished_at'])
+            finally:
+                if child.poll() is None: child.kill(); child.communicate(timeout=5)
+
+    def test_io_errors_preserve_first_failure_and_cannot_publish_success(self):
+        for fault in ('entry', 'exception', 'completion'):
+            with self.subTest(fault=fault), tempfile.TemporaryDirectory() as folder:
+                path = Path(folder) / 'security-phase-timings.json'
+                journal = ONLINE.PhaseTimings(path)
+                if fault == 'completion':
+                    for name in ONLINE.PROTECTION_PHASES:
+                        with journal.phase(name): pass
+                    with patch.object(journal, '_write', side_effect=OSError('PRIVATE-DISK')), self.assertRaises(OSError):
+                        journal.finish('passed')
+                else:
+                    writes = [None, OSError('PRIVATE-DISK')] if fault == 'exception' else OSError('PRIVATE-DISK')
+                    with patch.object(journal, '_write', side_effect=writes), patch.object(ONLINE.sys, 'stderr', io.StringIO()) as stderr:
+                        if fault == 'exception':
+                            with self.assertRaisesRegex(ONLINE.SuiteError, 'PRIVATE-FIRST'):
+                                with journal.phase(ONLINE.PROTECTION_PHASES[0]): raise ONLINE.SuiteError('PRIVATE-FIRST')
+                        else:
+                            with self.assertRaises(OSError):
+                                with journal.phase(ONLINE.PROTECTION_PHASES[0]): self.fail('execution began without durable phase')
+                        self.assertNotIn('PRIVATE', stderr.getvalue())
+                journal.finish('failed')
+                self.assertEqual(json.loads(path.read_text())['result'], 'failed')
+                self.assertNotIn('PRIVATE', path.read_text())
+
+    def test_every_fixed_phase_is_used_once_by_the_existing_entry_path(self):
+        tree = ast.parse(SCRIPT.read_text())
+        functions = {f.name: f for f in tree.body if isinstance(f, ast.FunctionDef)}
+        found = []
+        for name in ('main', 'run_scenario'):
+            for node in ast.walk(functions[name]):
+                if isinstance(node, ast.With):
+                    for item in node.items:
+                        call = item.context_expr
+                        if isinstance(call, ast.Call) and isinstance(call.func, ast.Attribute) and call.func.attr == 'phase':
+                            self.assertEqual(ast.unparse(call.func.value), 'timings')
+                            self.assertIsInstance(call.args[0], ast.Constant)
+                            found.append(call.args[0].value)
+        self.assertEqual(len(found), len(set(found)))
+        self.assertEqual(set(found), set(ONLINE.PROTECTION_PHASES))
+        self.assertIn('timings=timings', ast.unparse(functions['main']))
 
 
 if __name__ == "__main__":

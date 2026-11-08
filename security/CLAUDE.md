@@ -788,3 +788,13 @@ T1/T3/构建验证：`make test-security-frontend` 退出0，260项单元、37�
 独立核对归档六份CSV的内容：两个Owner各before／tightened／restored，均五行七字段，默认掩码、收紧全遮盖、空单元格及所有非敏感合成字段正确，恢复文件与原文件逐字节一致，Owner间三阶段文件相同。只认定这六份文件内容证据，不代替42次响应／会话归属／角色资格／浏览器全链验收。明细和限制在 `/tmp/addp-security-service-3afbae/p145-independent-timeout-audit.json`；时间线 `/tmp/addp-security-service-3afbae/p145-request-timeline.json`、`p145-security-mutation-timeline.json`；审计脚本 `/tmp/p145-3af-timeout-audit.py`。
 
 当前没有代码、超时、轮询、权限或运行环境变更，也未复派。待用户明确决定的方案：仅 `security-mysql-owner-protection` 的Hosted场景总预算1200→2400秒，增加安全的阶段计时／当前阶段记录；保留单请求30秒、产品Projection Runner30秒、三个90秒自然到期、全部场景／断言／21图及其他套件预算。2400秒是拟议上限，不是已测保证。现有Hosted Job上限120分钟无需修改。拟影响现有 `online-hosted-security-gate.sh`及其唯一分套件预算测试、领域Runner及测试的阶段计时、相关登记与文档；阶段记录只存固定阶段名／状态／耗时，不含SQL、结果、凭据或原值，不代替最终领域报告。确认后运行既有Security Runner／登记最小充分门禁，再交专门CI单次复验；确认前不实施预算变化，不为验收新增产品同步配置或修改各Owner轮询策略。
+
+### v44 预算与安全阶段诊断（2026-11-08）
+
+用户已确认上一节的限定方案。仅 `security-mysql-owner-protection` 的Hosted总场景预算由1200调整为2400秒；其他套件预算、单请求最多30秒、产品Projection Runner的30秒及三组资格自然到期各90秒不变。原业务调用、顺序、参数、断言和清理经独立AST去包装比较保持一致，v44／v9／21图和六项许可生命周期仍为通过条件。没有产品接口、身份、授权、同步配置或本地服务启停变更；2400秒只是批准的上限，尚不保证完整运行可以在此内完成。
+
+同一领域入口增加27个固定有序阶段，在开始及结束时将 `security-phase-timings.json` 原子保存到现有产物目录。文件仅含固定阶段名、状态、UTC起止及单调时钟耗时，权限0600；不记录SQL、结果、参数、凭据或异常正文。不覆盖已有journal；未知／重复／逆序／嵌套阶段拒绝。全部阶段实际结束才允许诊断result=passed；强制终止保留running，异常保留失败状态，诊断落盘故障不得取代原业务异常。该文件仅说明停止位置和耗时，不是领域或浏览器验收替代品。现有Make唯一测试入口及workflow的产物目录自动覆盖；Security Job既有120分钟上限足够，不新增workflow或登记分支。
+
+验证：阶段及主入口定向7项通过；独立审计正常全量／部分样本及12项拒绝样本通过，脚本 `/tmp/p145-v44-phase-audit.py` 继续组合原严格领域、六Grant及浏览器审计，实际图片仍须目视检查。根Make所属recipe的首次271项因旧main测试桩缺少产物目录而报1失败／1错误；补齐目录、mock计时并保持原断言后，新增上下文触及Python静态嵌套上限的首次语法失败也保留，测试改用标准ExitStack。最终所属271项及System Fixture Go、登记反例1项和CLI、语法与限定diff检查通过。四个依赖目标未在本轮重跑，不声称完整聚合运行。日志 `/tmp/p145-budget-phase-owner-gate{,-final}.log`、`/tmp/p145-phase-main-focused-green{,-final}.log`、`/tmp/p145-budget-phase-registration{,-cli}.log`、`/tmp/p145-phase-independent-audit.log`；业务流比较 `/tmp/p145-stage-flow-proof.json`；固定输入摘要及完整命令 `/tmp/p145-budget-phase-verification.json`。仅夹具T1及审计工具验证，无新增数据库T2、本地HTTP或Hosted通过。
+
+下一步由专门CI会话对新代码提交安排一次完整v44／v9，回传真实Run／Job／SHA、原始报告、CSV、27阶段诊断、21图及六Grant／领域／浏览器／Infra清理。原42432701298总超时和更早失败继续保留；不能以增加预算、诊断文件或此前局部CSV正确认定全套通过。

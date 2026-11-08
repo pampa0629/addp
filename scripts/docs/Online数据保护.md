@@ -52,6 +52,8 @@ Enrollment、Assessment、申请、授权及不可变修订在业务验收期间
 
 ## MySQL 与空间字段保护
 
+该套件扩展至v44后的Hosted总场景预算为2400秒，单请求仍最多30秒；其他套件预算、产品保护同步30秒及三组资格自然到期各90秒保持。阶段观测沿同一领域Runner写入 `security-phase-timings.json`（`addp.security-phase-timings/v1`），每个固定阶段开始／结束原子保存状态、UTC时间及单调时钟耗时，包含准备、关系出口、角色生命周期、默认导出、清理、MongoDB与浏览器。未完成的阶段保留running，失败不写错误正文，记录不含SQL、数据、参数、凭据或原值。此文件只用于耗时／停止位置定位，不能替代原v44报告、v9浏览器、21图或清理证明；进程被强制终止时不得根据最后一次快照声称该阶段完成。
+
 Develop 查询几何输出严格遵守[查询几何值契约](../../docs/spec/addp引擎插件接口规范.md)：在原生 EWKB 完成保护后，唯一 JSON 形状是 `{wkt, srid}`。空间属性保护夹具要求该对象恰含这两个成员，WKT 为有限二维 Point、SRID 为整数4326、坐标与合成源逐行一致；不把 GeoJSON、裸WKT或十六进制原生值作为 Develop 的兼容输入。Manager 预览、Service 原生表读取和 Transfer 成果预览保持各自现行表协议，不套用 Develop 查询投影。原查询、保护字段与四出口算法断言不变，不通过 SQL 空间函数改写规避原生输出核验。
 
 `security-mysql-owner-protection` 的唯一 Hosted 部署、临时 workspace 和四出口参与链路统一见[正式准备规则](../../docs/spec/testing/scenarios/数据保护.md#部署与四出口主链路)，由[Security Host Gate](../test/online-hosted-security-gate.sh)复用共享生命周期。初始 MySQL 与空间表子场景使用当次 PostGIS PostgreSQL 与 MySQL；System owner helper 创建一次性 Tenant、最小权限非管理员 User、独立引擎登记用户和独立治理初始化用户；Business 只管理物理数据及 owner-only Engine descriptor，引擎登记和分类、等级、email/phone 敏感类型及默认保护初始化分别通过 System、Security 正式 API 完成。初始化令牌在业务验收前移除，凭据隔离沿[T4 专用环境](../../docs/spec/testing/T4-Online验收规范.md#专用环境)。

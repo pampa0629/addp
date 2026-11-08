@@ -186,7 +186,7 @@ class HostedSecurityGateTest(unittest.TestCase):
             if [ "$ONLINE_SUITE_INPUT" = security-mysql-owner-protection ]; then
               [ "$ADDP_ONLINE_TEST_RUN_ID" = security-123-1 ]
               [ "$ADDP_ONLINE_SECURITY_MONGODB_ENGINE_ID" = 29 ]
-              [ "$ADDP_ONLINE_TEST_TIMEOUT_SECONDS" = 1200 ]
+              [ "$ADDP_ONLINE_TEST_TIMEOUT_SECONDS" = 2400 ]
             else
               [ -z "${ADDP_ONLINE_SECURITY_MONGODB_ENGINE_ID:-}" ]
               [ "$ADDP_ONLINE_TEST_TIMEOUT_SECONDS" = 900 ]

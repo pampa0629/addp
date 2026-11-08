@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import copy
+from contextlib import contextmanager
 import csv
 import hashlib
 import io
@@ -19,6 +20,7 @@ import signal
 import stat
 import subprocess
 import sys
+import tempfile
 import time
 import urllib.parse
 import uuid
@@ -4834,6 +4836,99 @@ def exercise_resource_validity(client: GatewayClient, enrollment_id: str, source
     return result
 
 
+PROTECTION_PHASES = (
+    "metadata_preparation", "identity_governance", "initial_scans", "unready_source",
+    "spatial_algorithms", "postgres_transfer_join", "bank_card_metadata",
+    "service_role_cursor_revocation", "service_sql_role_cursor_revocation",
+    "service_sql_parameter_role_cursor_revocation", "service_sql_default_parameter_role_cursor_revocation",
+    "service_role_membership_revocation", "service_role_membership_expiry",
+    "develop_role_membership_expiry", "transfer_role_membership_expiry", "default_export_protection",
+    "email_source_preparation", "email_four_owner_outputs", "security_unavailability",
+    "transfer_output", "explicit_rediscovery", "resource_validity", "relational_cleanup",
+    "mongodb_algorithms", "reason_matrix", "browser_preparation", "browser_acceptance",
+)
+
+
+class PhaseTimings:
+    """Durable diagnostics only; never a substitute for domain acceptance."""
+    def __init__(self, path: Path):
+        self.path = path
+        self._records = []
+        self._result = "running"
+        self._active = False
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        self._write(new=True)
+
+    def _write(self, *, new=False):
+        temporary = None
+        try:
+            with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", dir=self.path.parent,
+                    prefix="." + self.path.name + ".", delete=False) as stream:
+                temporary = Path(stream.name)
+                json.dump({"schema_version": "addp.security-phase-timings/v1", "result": self._result,
+                           "phases": self._records}, stream, allow_nan=False)
+                stream.flush()
+                os.fsync(stream.fileno())
+            if new:
+                try:
+                    os.link(temporary, self.path)
+                except FileExistsError as error:
+                    raise SuiteError("phase timing journal already exists") from error
+            else:
+                os.replace(temporary, self.path)
+        finally:
+            if temporary is not None:
+                temporary.unlink(missing_ok=True)
+
+    def _save_failure(self):
+        try:
+            self._write()
+        except OSError:
+            # Preserve the original scenario exception, without recording its values.
+            print("Security phase timing failure could not be persisted", file=sys.stderr)
+
+    @contextmanager
+    def phase(self, name):
+        if (self._result != "running" or self._active or name not in PROTECTION_PHASES
+                or (self._records and PROTECTION_PHASES.index(name) <= PROTECTION_PHASES.index(self._records[-1]["phase"]))):
+            raise SuiteError("invalid phase timing transition")
+        record = {"phase": name, "status": "running", "started_at": datetime.now(timezone.utc).isoformat(),
+                  "finished_at": None, "elapsed_ms": None}
+        self._records.append(record)
+        self._active = True
+        started = time.monotonic()
+        try:
+            self._write()
+            yield
+        except BaseException:
+            record.update(status="failed", finished_at=datetime.now(timezone.utc).isoformat(),
+                          elapsed_ms=int((time.monotonic() - started) * 1000))
+            self._active = False
+            self._save_failure()
+            raise
+        else:
+            record.update(status="passed", finished_at=datetime.now(timezone.utc).isoformat(),
+                          elapsed_ms=int((time.monotonic() - started) * 1000))
+            self._active = False
+            self._write()
+
+    def finish(self, result):
+        if self._result != "running" or self._active or result not in {"passed", "failed"}:
+            raise SuiteError("invalid phase timing completion")
+        if result == "passed" and (tuple(r["phase"] for r in self._records) != PROTECTION_PHASES
+                or any(r["status"] != "passed" for r in self._records)):
+            raise SuiteError("phase timing completion requires every fixed stage")
+        self._result = result
+        if result == "failed":
+            self._save_failure()
+        else:
+            try:
+                self._write()
+            except OSError:
+                self._result = "running"
+                raise
+
+
 def run_scenario(
     client: GatewayClient,
     tenant_id: int,
@@ -4842,63 +4937,79 @@ def run_scenario(
     source_database: str,
     run_id: str,
     timeout: float,
-    *, role_environment: Mapping[str, str] | None = None,
+    *, role_environment: Mapping[str, str] | None = None, timings: PhaseTimings,
 ) -> dict[str, object]:
     deadline = time.monotonic() + timeout
-    identity = validate_user_identity(client, tenant_id)
-    governance = validate_governance(client)
-    default_protection_transaction = exercise_default_protection_transaction(
-        client,
-        positive_int(
-            governance.get("security_classification_id"),
-            "governance security classification id",
-        ),
-        positive_int(governance.get("security_grade_id"), "governance security grade id"),
-    )
-    source_scan = wait_for_scan(client, source_engine_id, deadline)
-    target_scan = wait_for_postgres_item_scan(client, target_engine_id, TARGET_TABLE, deadline)
-    enrolling_refusal = exercise_unready_source(client, target_engine_id, positive_int(identity["principal_id"], "ordinary principal"), deadline)
-    spatial_algorithms = exercise_spatial_algorithms(client, target_engine_id, run_id, deadline, timeout)
-    postgres_transfer_join = exercise_postgres_transfer_join(
-        client, target_engine_id, run_id, positive_int(identity["principal_id"], "ordinary principal"), deadline)
-    bank_card_metadata = exercise_bank_card_metadata(
-        client, source_engine_id, target_engine_id, source_database, run_id, identity, deadline, enrolling_refusal)
-    service_role_cursor_revocation = exercise_service_role_cursor_revocation(
-        client, source_engine_id, source_database, bank_card_metadata, identity, run_id, deadline)
-    service_sql_role_cursor_revocation = exercise_service_role_cursor_revocation(
-        client, source_engine_id, source_database, bank_card_metadata, identity, run_id, deadline, config_type="sql")
-    service_sql_parameter_role_cursor_revocation = exercise_service_role_cursor_revocation(
-        client, source_engine_id, source_database, bank_card_metadata, identity, run_id, deadline,
-        config_type="sql", parameters={"minimum_id": 1})
-    service_sql_default_parameter_role_cursor_revocation = exercise_service_role_cursor_revocation(
-        client, source_engine_id, source_database, bank_card_metadata, identity, run_id, deadline,
-        config_type="sql", parameters={}, parameter_default=1)
-    service_role_membership_revocation = exercise_service_role_membership_revocation(
-        client, source_engine_id, target_engine_id, source_database, bank_card_metadata, identity, run_id, deadline, role_environment)
-    service_role_membership_expiry = exercise_service_role_membership_expiry(
-        client, source_engine_id, source_database, bank_card_metadata, identity, run_id, deadline, role_environment)
-    develop_role_membership_expiry = exercise_develop_role_membership_expiry(
-        client, source_engine_id, source_database, bank_card_metadata, identity, deadline, role_environment)
-    transfer_role_membership_expiry = exercise_transfer_role_membership_expiry(
-        client, source_engine_id, target_engine_id, source_database, bank_card_metadata, identity, run_id, deadline, role_environment)
-    default_export_protection = exercise_default_export_protection(
-        client, source_engine_id, source_database, bank_card_metadata, identity, deadline,
-        Path(required_environment("ADDP_ONLINE_ARTIFACT_DIR")) / "default-export-protection")
-    source_full_name = f"{source_database}.{SOURCE_TABLE}"
-    source_item = find_item(client, source_engine_id, source_full_name, "table")
-    target_item = find_item(
-        client, target_engine_id, f"{TARGET_SCHEMA}.{TARGET_TABLE}", "table"
-    )
-    source_locator = build_item_locator(source_engine_id, source_item)
-    target_locator = build_item_locator(target_engine_id, target_item)
-    target_parent_locator = build_schema_locator(target_engine_id, target_item)
-    enrollment_id, enrollment_initialized = ensure_enrollment(
-        client, source_engine_id, source_full_name, source_locator
-    )
-    assessment_id, assessment_initialized, finding_id = ensure_detected_assessment(
-        client, enrollment_id, deadline, "email", EMAIL_DETECTOR,
-    )
-    projections = wait_for_owner_projections(client, enrollment_id, deadline)
+    with timings.phase('identity_governance'):
+        identity = validate_user_identity(client, tenant_id)
+        governance = validate_governance(client)
+        default_protection_transaction = exercise_default_protection_transaction(
+            client,
+            positive_int(
+                governance.get("security_classification_id"),
+                "governance security classification id",
+            ),
+            positive_int(governance.get("security_grade_id"), "governance security grade id"),
+        )
+    with timings.phase('initial_scans'):
+        source_scan = wait_for_scan(client, source_engine_id, deadline)
+        target_scan = wait_for_postgres_item_scan(client, target_engine_id, TARGET_TABLE, deadline)
+    with timings.phase('unready_source'):
+        enrolling_refusal = exercise_unready_source(client, target_engine_id, positive_int(identity["principal_id"], "ordinary principal"), deadline)
+    with timings.phase('spatial_algorithms'):
+        spatial_algorithms = exercise_spatial_algorithms(client, target_engine_id, run_id, deadline, timeout)
+    with timings.phase('postgres_transfer_join'):
+        postgres_transfer_join = exercise_postgres_transfer_join(
+            client, target_engine_id, run_id, positive_int(identity["principal_id"], "ordinary principal"), deadline)
+    with timings.phase('bank_card_metadata'):
+        bank_card_metadata = exercise_bank_card_metadata(
+            client, source_engine_id, target_engine_id, source_database, run_id, identity, deadline, enrolling_refusal)
+    with timings.phase('service_role_cursor_revocation'):
+        service_role_cursor_revocation = exercise_service_role_cursor_revocation(
+            client, source_engine_id, source_database, bank_card_metadata, identity, run_id, deadline)
+    with timings.phase('service_sql_role_cursor_revocation'):
+        service_sql_role_cursor_revocation = exercise_service_role_cursor_revocation(
+            client, source_engine_id, source_database, bank_card_metadata, identity, run_id, deadline, config_type="sql")
+    with timings.phase('service_sql_parameter_role_cursor_revocation'):
+        service_sql_parameter_role_cursor_revocation = exercise_service_role_cursor_revocation(
+            client, source_engine_id, source_database, bank_card_metadata, identity, run_id, deadline,
+            config_type="sql", parameters={"minimum_id": 1})
+    with timings.phase('service_sql_default_parameter_role_cursor_revocation'):
+        service_sql_default_parameter_role_cursor_revocation = exercise_service_role_cursor_revocation(
+            client, source_engine_id, source_database, bank_card_metadata, identity, run_id, deadline,
+            config_type="sql", parameters={}, parameter_default=1)
+    with timings.phase('service_role_membership_revocation'):
+        service_role_membership_revocation = exercise_service_role_membership_revocation(
+            client, source_engine_id, target_engine_id, source_database, bank_card_metadata, identity, run_id, deadline, role_environment)
+    with timings.phase('service_role_membership_expiry'):
+        service_role_membership_expiry = exercise_service_role_membership_expiry(
+            client, source_engine_id, source_database, bank_card_metadata, identity, run_id, deadline, role_environment)
+    with timings.phase('develop_role_membership_expiry'):
+        develop_role_membership_expiry = exercise_develop_role_membership_expiry(
+            client, source_engine_id, source_database, bank_card_metadata, identity, deadline, role_environment)
+    with timings.phase('transfer_role_membership_expiry'):
+        transfer_role_membership_expiry = exercise_transfer_role_membership_expiry(
+            client, source_engine_id, target_engine_id, source_database, bank_card_metadata, identity, run_id, deadline, role_environment)
+    with timings.phase('default_export_protection'):
+        default_export_protection = exercise_default_export_protection(
+            client, source_engine_id, source_database, bank_card_metadata, identity, deadline,
+            Path(required_environment("ADDP_ONLINE_ARTIFACT_DIR")) / "default-export-protection")
+    with timings.phase('email_source_preparation'):
+        source_full_name = f"{source_database}.{SOURCE_TABLE}"
+        source_item = find_item(client, source_engine_id, source_full_name, "table")
+        target_item = find_item(
+            client, target_engine_id, f"{TARGET_SCHEMA}.{TARGET_TABLE}", "table"
+        )
+        source_locator = build_item_locator(source_engine_id, source_item)
+        target_locator = build_item_locator(target_engine_id, target_item)
+        target_parent_locator = build_schema_locator(target_engine_id, target_item)
+        enrollment_id, enrollment_initialized = ensure_enrollment(
+            client, source_engine_id, source_full_name, source_locator
+        )
+        assessment_id, assessment_initialized, finding_id = ensure_detected_assessment(
+            client, enrollment_id, deadline, "email", EMAIL_DETECTOR,
+        )
+        projections = wait_for_owner_projections(client, enrollment_id, deadline)
 
     safe_run_id = run_suffix(run_id, "-")
     service_name = (SERVICE_PREFIX + safe_run_id)[:120].rstrip("-")
@@ -4909,62 +5020,67 @@ def run_scenario(
     cleanup_errors: list[str] = []
     result: dict[str, object] = {}
     try:
-        manager_columns, manager_data = preview_rows(client, source_locator)
-        manager = assert_email_suppressed(manager_data, "manager", manager_columns)
-        develop = assert_email_suppressed(
-            develop_rows(client, source_engine_id, source_locator, deadline), "develop"
-        )
-        created_service = _object(
-            client.request(
-                "POST",
-                "/api/v1/service/query",
-                (201,),
-                service_payload(service_name, source_engine_id, source_locator),
-            ).payload,
-            "Query Service",
-        )
-        service_id = positive_int(created_service.get("id"), "Query Service id")
-        service = assert_email_suppressed(service_rows(client, service_name), "service")
+        with timings.phase('email_four_owner_outputs'):
+            manager_columns, manager_data = preview_rows(client, source_locator)
+            manager = assert_email_suppressed(manager_data, "manager", manager_columns)
+            develop = assert_email_suppressed(
+                develop_rows(client, source_engine_id, source_locator, deadline), "develop"
+            )
+            created_service = _object(
+                client.request(
+                    "POST",
+                    "/api/v1/service/query",
+                    (201,),
+                    service_payload(service_name, source_engine_id, source_locator),
+                ).payload,
+                "Query Service",
+            )
+            service_id = positive_int(created_service.get("id"), "Query Service id")
+            service = assert_email_suppressed(service_rows(client, service_name), "service")
 
-        outage = exercise_owner_unavailability(client, tenant_id, {
-            "develop": lambda: assert_email_suppressed(
-                develop_rows(client, source_engine_id, source_locator, deadline), "Develop during Security outage"),
-            "service": lambda: assert_email_suppressed(service_rows(client, service_name), "Service during Security outage"),
-            "transfer": lambda: verify_mysql_outage_transfer(client, target_engine_id, source_locator,
-                target_parent_locator, target_locator, task_name + "_outage", identity, deadline, task_ids),
-        }, deadline)
+        with timings.phase('security_unavailability'):
+            outage = exercise_owner_unavailability(client, tenant_id, {
+                "develop": lambda: assert_email_suppressed(
+                    develop_rows(client, source_engine_id, source_locator, deadline), "Develop during Security outage"),
+                "service": lambda: assert_email_suppressed(service_rows(client, service_name), "Service during Security outage"),
+                "transfer": lambda: verify_mysql_outage_transfer(client, target_engine_id, source_locator,
+                    target_parent_locator, target_locator, task_name + "_outage", identity, deadline, task_ids),
+            }, deadline)
 
-        _, transfer_execution = create_and_run_task(
-            client,
-            transfer_payload(task_name, source_locator, target_parent_locator),
-            deadline,
-            task_ids,
-        )
-        target_rescan = wait_for_postgres_item_scan(client, target_engine_id, TARGET_TABLE, deadline)
-        current_target = find_item(
-            client, target_engine_id, f"{TARGET_SCHEMA}.{TARGET_TABLE}", "table"
-        )
-        target_columns, target_rows = preview_rows(
-            client, build_item_locator(target_engine_id, current_target)
-        )
-        transfer = assert_email_suppressed(target_rows, "transfer", target_columns)
-        if "customer_code" not in target_columns:
-            raise SuiteError("Transfer target lost non-sensitive customer fields")
+        with timings.phase('transfer_output'):
+            _, transfer_execution = create_and_run_task(
+                client,
+                transfer_payload(task_name, source_locator, target_parent_locator),
+                deadline,
+                task_ids,
+            )
+            target_rescan = wait_for_postgres_item_scan(client, target_engine_id, TARGET_TABLE, deadline)
+            current_target = find_item(
+                client, target_engine_id, f"{TARGET_SCHEMA}.{TARGET_TABLE}", "table"
+            )
+            target_columns, target_rows = preview_rows(
+                client, build_item_locator(target_engine_id, current_target)
+            )
+            transfer = assert_email_suppressed(target_rows, "transfer", target_columns)
+            if "customer_code" not in target_columns:
+                raise SuiteError("Transfer target lost non-sensitive customer fields")
 
         def manager_after_rediscovery():
             columns, rows = preview_rows(client, source_locator)
             return assert_mysql_customer_rows(rows, "Manager after rediscovery", columns)
 
-        rediscovery = exercise_explicit_rediscovery(client, enrollment_id, {
-            "manager": manager_after_rediscovery,
-            "develop": lambda: assert_mysql_customer_rows(develop_rows(client, source_engine_id, source_locator, deadline), "Develop after rediscovery"),
-            "service": lambda: assert_mysql_customer_rows(service_rows(client, service_name), "Service after rediscovery"),
-            "transfer": lambda: verify_mysql_transfer_output(client, target_engine_id, source_locator,
-                target_parent_locator, task_name + "_rediscovery", identity, deadline, task_ids),
-        }, deadline)
+        with timings.phase('explicit_rediscovery'):
+            rediscovery = exercise_explicit_rediscovery(client, enrollment_id, {
+                "manager": manager_after_rediscovery,
+                "develop": lambda: assert_mysql_customer_rows(develop_rows(client, source_engine_id, source_locator, deadline), "Develop after rediscovery"),
+                "service": lambda: assert_mysql_customer_rows(service_rows(client, service_name), "Service after rediscovery"),
+                "transfer": lambda: verify_mysql_transfer_output(client, target_engine_id, source_locator,
+                    target_parent_locator, task_name + "_rediscovery", identity, deadline, task_ids),
+            }, deadline)
 
-        resource_validity = exercise_resource_validity(client, enrollment_id, source_engine_id, target_engine_id,
-            source_locator, target_parent_locator, target_locator, service_name, task_name, identity, deadline, task_ids)
+        with timings.phase('resource_validity'):
+            resource_validity = exercise_resource_validity(client, enrollment_id, source_engine_id, target_engine_id,
+                source_locator, target_parent_locator, target_locator, service_name, task_name, identity, deadline, task_ids)
         result = {
             "resource_validity": resource_validity,
             "schema_version": "addp.security-mysql-owner-protection-online/v44",
@@ -5017,17 +5133,18 @@ def run_scenario(
         }
     except BaseException as error:
         scenario_error = error
-    try:
-        cleanup_tasks(client, task_ids)
-    except BaseException as error:
-        cleanup_errors.append(str(error))
-    try:
-        cleanup_service(client, service_id)
-    except BaseException as error:
-        cleanup_errors.append(str(error))
-    if cleanup_errors:
-        prefix = f"scenario failed: {scenario_error}; " if scenario_error else ""
-        raise SuiteError(prefix + "cleanup failed: " + "; ".join(cleanup_errors))
+    with timings.phase('relational_cleanup'):
+        try:
+            cleanup_tasks(client, task_ids)
+        except BaseException as error:
+            cleanup_errors.append(str(error))
+        try:
+            cleanup_service(client, service_id)
+        except BaseException as error:
+            cleanup_errors.append(str(error))
+        if cleanup_errors:
+            prefix = f"scenario failed: {scenario_error}; " if scenario_error else ""
+            raise SuiteError(prefix + "cleanup failed: " + "; ".join(cleanup_errors))
     if scenario_error is not None:
         raise scenario_error
     return result
@@ -5410,45 +5527,56 @@ def main() -> int:
     )
     # Submit the initial technical snapshot while no protection mutation can
     # isolate Manager's index. A successful Meta scan alone is not index proof.
-    validate_user_identity(client, tenant_id)
-    wait_for_manager_search_ready(client, mongodb_engine_id, MONGODB_FIELD, time.monotonic() + min(timeout, 60))
-    mongodb_source = prepare_mongodb_source(client, mongodb_engine_id, time.monotonic() + timeout)
-    mongodb_transfer_targets = prepare_mongodb_transfer_targets(client, target_engine_id, time.monotonic() + timeout)
-    report = run_scenario(
-        client,
-        tenant_id,
-        source_engine_id,
-        target_engine_id,
-        required_environment("ADDP_ONLINE_WORKBENCH_MYSQL_DATABASE"),
-        required_environment("ADDP_ONLINE_TEST_RUN_ID"),
-        timeout,
-        role_environment=role_environment,
-    )
-    report["mongodb_algorithms"] = exercise_mongodb_algorithms(client, mongodb_engine_id, mongodb_source,
-        mongodb_transfer_targets, time.monotonic() + timeout, timeout)
-    report["protection_reason_matrix"] = protection_reason_matrix(report)
-    source_item = find_item(client, source_engine_id,
-                            f"{required_environment('ADDP_ONLINE_WORKBENCH_MYSQL_DATABASE')}.{SOURCE_TABLE}", "table")
-    # Projection changes and owned-resource cleanup queue external index purges.
-    # Require the final protected field to be searchable before browser entry.
-    report["manager_export_search_readiness"] = wait_for_technical_field(
-        client, source_engine_id, source_item, "email", time.monotonic() + min(timeout, 120))
-    target_item = find_item(client, target_engine_id, f"{TARGET_SCHEMA}.{TARGET_TABLE}", "table")
-    source_locator = build_item_locator(source_engine_id, source_item)
-    browser_name = "online-security-browser-" + run_suffix(required_environment("ADDP_ONLINE_TEST_RUN_ID"), "-")
-    output_context = {
-        "principal_id": report["identity"]["principal_id"],
-        "enrollment_id": report["fixture"]["security_enrollment_id"],
-        "target_locator": build_item_locator(target_engine_id, target_item),
-        "service_payload": service_payload(browser_name, source_engine_id, source_locator),
-        "transfer_payload": transfer_payload(browser_name, source_locator, build_schema_locator(target_engine_id, target_item)),
-        "result_protection": result_browser_context(client, mongodb_engine_id, mongodb_source["item"],
-            mongodb_transfer_targets, report["mongodb_algorithms"]["enrollment_id"]),
-        "additional_refusals": {name: report["bank_card_metadata"]["refusal_causes"][name]
-                                for name in ("not_ready", "operation_unsupported", "schema_mismatch")},
-    }
-    report["manager_export_browser"] = run_export_browser(
-        Path(__file__).resolve().parents[2], dict(os.environ), source_locator, output_context)
+    timings = PhaseTimings(Path(required_environment("ADDP_ONLINE_ARTIFACT_DIR")) / "security-phase-timings.json")
+    try:
+        with timings.phase('metadata_preparation'):
+            validate_user_identity(client, tenant_id)
+            wait_for_manager_search_ready(client, mongodb_engine_id, MONGODB_FIELD, time.monotonic() + min(timeout, 60))
+            mongodb_source = prepare_mongodb_source(client, mongodb_engine_id, time.monotonic() + timeout)
+            mongodb_transfer_targets = prepare_mongodb_transfer_targets(client, target_engine_id, time.monotonic() + timeout)
+        report = run_scenario(
+            client,
+            tenant_id,
+            source_engine_id,
+            target_engine_id,
+            required_environment("ADDP_ONLINE_WORKBENCH_MYSQL_DATABASE"),
+            required_environment("ADDP_ONLINE_TEST_RUN_ID"),
+            timeout,
+            role_environment=role_environment, timings=timings,
+        )
+        with timings.phase('mongodb_algorithms'):
+            report["mongodb_algorithms"] = exercise_mongodb_algorithms(client, mongodb_engine_id, mongodb_source,
+                mongodb_transfer_targets, time.monotonic() + timeout, timeout)
+        with timings.phase('reason_matrix'):
+            report["protection_reason_matrix"] = protection_reason_matrix(report)
+        with timings.phase('browser_preparation'):
+            source_item = find_item(client, source_engine_id,
+                                    f"{required_environment('ADDP_ONLINE_WORKBENCH_MYSQL_DATABASE')}.{SOURCE_TABLE}", "table")
+            # Projection changes and owned-resource cleanup queue external index purges.
+            # Require the final protected field to be searchable before browser entry.
+            report["manager_export_search_readiness"] = wait_for_technical_field(
+                client, source_engine_id, source_item, "email", time.monotonic() + min(timeout, 120))
+            target_item = find_item(client, target_engine_id, f"{TARGET_SCHEMA}.{TARGET_TABLE}", "table")
+            source_locator = build_item_locator(source_engine_id, source_item)
+            browser_name = "online-security-browser-" + run_suffix(required_environment("ADDP_ONLINE_TEST_RUN_ID"), "-")
+            output_context = {
+                "principal_id": report["identity"]["principal_id"],
+                "enrollment_id": report["fixture"]["security_enrollment_id"],
+                "target_locator": build_item_locator(target_engine_id, target_item),
+                "service_payload": service_payload(browser_name, source_engine_id, source_locator),
+                "transfer_payload": transfer_payload(browser_name, source_locator, build_schema_locator(target_engine_id, target_item)),
+                "result_protection": result_browser_context(client, mongodb_engine_id, mongodb_source["item"],
+                    mongodb_transfer_targets, report["mongodb_algorithms"]["enrollment_id"]),
+                "additional_refusals": {name: report["bank_card_metadata"]["refusal_causes"][name]
+                                        for name in ("not_ready", "operation_unsupported", "schema_mismatch")},
+            }
+        with timings.phase('browser_acceptance'):
+            report["manager_export_browser"] = run_export_browser(
+                Path(__file__).resolve().parents[2], dict(os.environ), source_locator, output_context)
+        timings.finish("passed")
+    except BaseException:
+        timings.finish("failed")
+        raise
     print(json.dumps(report, ensure_ascii=False, sort_keys=True))
     return 0
 

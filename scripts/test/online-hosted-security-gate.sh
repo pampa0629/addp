@@ -120,10 +120,10 @@ if [ "$ONLINE_SUITE" = graph-protection ] || [ "$ONLINE_SUITE" = cleanup-executi
   export ALLOWED_ORIGINS="$ADDP_PUBLIC_ORIGIN"
   export REGISTRY=localhost:5001 IMAGE_TAG=latest
 fi
-# The v11 suite adds discovery, required Owner acknowledgements and a real bank-card
-# transfer to the existing serial algorithm/outage/index-convergence acceptance.
+# The v44 suite retains serial projection barriers, three natural role expiries,
+# all Owner outputs and the browser checks. Only this suite has the approved budget.
 if [ "$ONLINE_SUITE" = security-mysql-owner-protection ]; then
-  export ADDP_ONLINE_TEST_TIMEOUT_SECONDS=1200
+  export ADDP_ONLINE_TEST_TIMEOUT_SECONDS=2400
 fi
 export SECURITY_URL=http://127.0.0.1:8194
 export GRAPH_URL=http://127.0.0.1:8186
