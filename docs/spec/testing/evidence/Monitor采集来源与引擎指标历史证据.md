@@ -839,3 +839,19 @@ PostgreSQL已有十二项固定失败阶段，统一入口此前直接显示英�
 首轮签发遇到本机 OpenSSL 4 的默认配置 `/opt/homebrew/etc/openssl@4/openssl.cnf` 缺失；当时新目录为空，环境配置尚未写入。随后为本次证书显式提供临时 CSR 配置完成签发，不修改系统 OpenSSL 设置或既有 CA／证书。`python3 scripts/infra/metrics-sources.py check --scope business --kind minio` 退出 0：部署输入通过；另核验服务器信任链、IP／DNS SAN、密钥配对、原 Monitor 客户端用途与信任，以及两个端口列表中无重复且只有一处新增端口。脱敏收据 `/tmp/addp-business-minio-preparation-20261108.json`。
 
 当前仅“启用／未部署”：尚未安装采集账号、启动来源或重启 Monitor，因此不能认定实际 mTLS、Prometheus、专业读数或页面通过。已将三条标准应用命令交用户依次执行：`bash scripts/infra/up.sh --metrics`、`python3 scripts/infra/metrics-sources.py up --scope business --kind minio`、`./scripts/dev/restart.sh -monitor`。无需重启 Business MinIO；本会话未操作原引擎、业务数据或指标历史，也未执行 CI／Hosted 或设置定时任务。用户应用后继续确认平台部署登记、精确来源关联、新鲜采样与专业页面。
+
+### Business MinIO 本机实际接入与 Safari 复验（2026-11-08）
+
+用户确认上述三条标准应用命令均成功。首次实际 Python 严格 TLS 请求失败，错误为 `Missing Authority Key Identifier`：本会话签发的服务器证书缺少 AKI／SKI，前节普通信任链预检未覆盖该严格校验，不能据此前置结果认定实际接入通过。随后保留原 CA 和服务器私钥，补齐叶证书 AKI／SKI，显式保留服务器用途、基本约束及 IP／DNS SAN；严格链、IP、DNS 和密钥配对校验通过。用户再次执行仅 Business MinIO 的 `up`，载入私有配置卷中的新证书。没有关闭严格 TLS、放宽信任或重启原 MinIO。
+
+重新应用后，`status --scope business --kind minio` 显示启用／运行中；使用原 Monitor 客户端证书严格请求回环 19114 返回 HTTP 200，无客户端证书请求被 TLS 拒绝。实源提供 8 个原始指标，包括总／剩余容量、在线盘数、运行时长、请求累计、发送字节累计及来源身份／时间指标。未为验收写入对象、桶或其他业务数据。
+
+Safari 使用现有平台管理员会话，通过正常发现、主机选择和保存界面登记唯一 Business MinIO，部署 ID 为 `547d5a79-428f-4e43-85d2-00dc63231fd2`。显式选择已确认的 Docker Desktop Linux VM 主机 `755953df-488c-410a-88d4-0ecc47eb1351`；发现与既有平台部署的 Docker 引擎身份一致。登记后 Prometheus 唯一匹配目标为 UP，`lastError` 为空；目标数据库容器 ID、启动时刻与实际 `business-minio` inspect 完全一致。以目标完整标签查询真实样本时间和来源观测时间，核验时分别距当前约 11.54 秒、12.37 秒，未以即时查询的评估时间代替采样时间。
+
+真实 Safari 详情页可见、自动刷新开启，显示正确主机名称和“正在采集”。当次容量读数约为总容量 1.87 TiB、剩余 761 GiB、空间占用率 60.19%、在线盘数 1；请求／流量分组有有效请求速率及发送速率，趋势画布存在。运行时长趋势 21 个评估点均有效；请求趋势首轮 21 点中 14 点有效，后续 15 点有效，缺点保持留空，不宣称完整时段均有效。手动刷新前、刷新后及后续自动刷新三个可见阶段的查询时间依次为 `10:42:41.261350Z`、`10:42:45.805006Z`、`10:43:00.973291Z`，各阶段均有画布和有效请求趋势。此轮没有重新验收拖动缩放。
+
+原隐藏页读取返回空观测／趋势，作为可见性前提未满足保留；随后激活 Safari 后获得上述真实结果。另有收据断言要求 `performance.timeOrigin` 完全相等，三个阶段相差 1 毫秒而失败；该断言不足以判定文档是否重新加载，未据此宣称刷新期间 DOM／文档身份保持通过。查询推进、可见性和有效趋势分别按实际收据核对。
+
+当前原生来源未提供离线盘数、扫描统计、部分请求错误及接收流量字段，页面显示无有效值，不补造零值。此批仅完成个人 Desktop 已有来源的真实接入与可用指标／趋势复验，不代表 17 项均有数据、完整缺样／恢复／缩放验收、CI 或 Hosted 通过。下一步先核对原生指标缺项及零值省略行为，再讨论是否需要调整采集映射，不能从“没有发布”推定为零。
+
+脱敏原件：`/tmp/addp-business-minio-mtls-first-failure.json`、`/tmp/addp-business-minio-strict-certificate-fix.json`、`/tmp/addp-business-minio-source-check.json`、`/tmp/addp-business-minio-clientless-rejection.json`、`/tmp/addp-business-minio-prometheus-check.json`、`/tmp/addp-business-minio-admission.json`、`/tmp/addp-business-minio-monitor-page.json`、`/tmp/addp-business-minio-monitor-capacity.json`（隐藏页前提失败）、`/tmp/addp-business-minio-monitor-traffic.json`、`/tmp/addp-business-minio-traffic-refresh.json`、`/tmp/addp-business-minio-capacity-final.json`。私有环境和证书未进入版本控制；未自行重启服务、执行 CI／Hosted 或设置定时任务。
