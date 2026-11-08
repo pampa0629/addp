@@ -2,7 +2,7 @@ import { expect, test } from '@playwright/test'
 import { createHash } from 'node:crypto'
 import { writeFileSync } from 'node:fs'
 import { resolve } from 'node:path'
-import { browserAPIFromResponse, json, login } from './transfer-browser-support.js'
+import { browserAPIFromNavigation, json, login } from './transfer-browser-support.js'
 
 const columns = ['id', '名称𠀀😀', '备注']
 const dataRows = Array.from({ length: 25 }, (_, i) => [String(i), `城市𠀀😀${i}`, '第一行\n第二行,含逗号'])
@@ -23,11 +23,10 @@ test('ordinary user applies GB18030 and preserves read settings for four CSV/TSV
   try {
     await login(page, env.ADDP_ONLINE_TEST_USER_USERNAME, env.ADDP_ONLINE_TEST_USER_PASSWORD, '/')
     for (const source of context.cases) {
-      const observed = page.waitForResponse(response => new URL(response.url()).pathname === `/api/v1/meta/items/${source.item_id}`)
-      observed.catch(() => {})
+      const matchesItem = response => response.request().method() === 'GET' &&
+        new URL(response.url()).pathname === `/api/v1/meta/items/${source.item_id}`
       const route = '/manager/data-explorer?locator=' + encodeURIComponent(source.locator)
-      await page.goto(route)
-      const api = await browserAPIFromResponse(await observed, env.GATEWAY_URL, identity)
+      let api = await browserAPIFromNavigation(page, env.GATEWAY_URL, identity, () => page.goto(route), matchesItem)
       try {
         const frame = page.frameLocator('iframe[data-testid="module-iframe"]')
         const selector = frame.locator('.csv-encoding-select')
@@ -126,7 +125,10 @@ test('ordinary user applies GB18030 and preserves read settings for four CSV/TSV
         await frame.locator('.preview-panel').screenshot({ path: resolve(env.ADDP_ONLINE_ARTIFACT_DIR, `delimited-${source.storage}-${source.spec.format}-header.png`) })
         const downloaded = await downloadOriginal('header')
         await ordinaryRefresh(true)
-        await page.goto(route)
+        // A new document restores/rotates the browser session; bind assertions to its current identity.
+        const reopenedAPI = await browserAPIFromNavigation(page, env.GATEWAY_URL, identity, () => page.goto(route), matchesItem)
+        await api.dispose()
+        api = reopenedAPI
         await expect(selector).toContainText('GB18030')
         await cells(true, 0, 20)
         await apply(false)
@@ -137,7 +139,9 @@ test('ordinary user applies GB18030 and preserves read settings for four CSV/TSV
         await frame.locator('.preview-panel').screenshot({ path: resolve(env.ADDP_ONLINE_ARTIFACT_DIR, `delimited-${source.storage}-${source.spec.format}-headerless.png`) })
         expect(await downloadOriginal('headerless')).toEqual(downloaded)
         await ordinaryRefresh(false)
-        await page.reload()
+        const reloadedAPI = await browserAPIFromNavigation(page, env.GATEWAY_URL, identity, () => page.reload(), matchesItem)
+        await api.dispose()
+        api = reloadedAPI
         await expect(selector).toContainText('GB18030')
         await expect(header).toContainText(/首行为数据|First row is data/)
         await cells(false, 0, 20)
