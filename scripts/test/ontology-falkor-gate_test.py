@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Verify disposable FalkorDB gate policy without running Docker or Go."""
 import os
+import importlib.util
 import json
 from pathlib import Path
 import shlex
@@ -174,6 +175,15 @@ bash() {
 
 
 class InfraContractTest(unittest.TestCase):
+    def test_shared_readiness_inputs_select_existing_ontology_gate(self):
+        spec = importlib.util.spec_from_file_location('ontology_ready_change_contract', REPOSITORY / 'scripts/test/changed-gate.py')
+        changed = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(changed)
+        for path in ('scripts/dev/start.sh', 'scripts/test/ontology-falkor-gate_test.py',
+                     'scripts/test/ontology-falkor-gate.sh'):
+            with self.subTest(path=path):
+                self.assertIn('ontology', changed.affected_modules(REPOSITORY, [path]))
+
     def test_backend_runtime_and_build_registration(self):
         service = self.render("docker-compose.yml")["services"]["ontology-backend"]
         self.assertEqual("falkordb:6379", service["environment"]["INFRA_FALKORDB_ADDRESS"])
@@ -205,38 +215,74 @@ class InfraContractTest(unittest.TestCase):
         phase = start.index("# Phase 3: ")
         begin = start.index('  if [ "$START_ONTOLOGY_BACKEND" = true ]; then', phase)
         registration = start[begin:start.index("\n  fi", begin) + len("\n  fi")]
+        cases = [
+            {"name": "one-second-ready", "calls": [(0, 1)]},
+            {"name": "one-second-failure", "status": 22, "calls": [(0, 1)], "sleeps": [(0, 1)], "exit": 1},
+            {"name": "not-selected", "selected": "false", "calls": []},
+            {"name": "five-second-request-cap", "budget": 7, "calls": [(0, 5)]},
+            {"name": "response-and-retry-share-deadline", "budget": 7, "elapsed": 2, "status": 22,
+             "calls": [(0, 5), (3, 4), (6, 1)], "sleeps": [(2, 1), (5, 1)], "exit": 1},
+            {"name": "transient-failure-recovers", "budget": 7, "status": 22, "transient": "true",
+             "calls": [(0, 5), (1, 5)], "sleeps": [(0, 1)]},
+            {"name": "success-at-deadline-rejected", "budget": 5, "elapsed": 5, "calls": [(0, 5)], "exit": 1},
+        ]
         with tempfile.TemporaryDirectory(prefix="addp-ontology-ready-contract-") as directory:
-            root = Path(directory)
-            for selected, curl_status in (("true", 0), ("true", 22), ("false", 0)):
-                with self.subTest(selected=selected, curl_status=curl_status):
-                    trace, failure = root / "curl", root / "failure"
-                    trace.unlink(missing_ok=True)
-                    failure.unlink(missing_ok=True)
-                    shell = '''
+            for case in cases:
+                with self.subTest(case=case["name"]):
+                    root = Path(directory) / case["name"]
+                    root.mkdir()
+                    trace, failure, sleeps = root / "curl", root / "failure", root / "sleep"
+                    shell = r'''
 set -e
-MAX_WAIT=1
+# Unsetting Bash's special SECONDS creates an ordinary variable for a fully
+# deterministic clock. Only the request and sleep stubs advance it.
+unset SECONDS
+SECONDS=0
+MAX_WAIT="$TEST_WAIT_BUDGET"
 HEALTH_CHECK_PIDS=()
-curl() { printf '%s\\n' "$*" >> "$TRACE"; return "$CURL_STATUS"; }
-sleep() { :; }
-report_backend_readiness_failure() { printf '%s|%s|%s\\n' "$1" "$2" "$3" >> "$FAILURE"; }
+CURL_CALLS=0
+curl() {
+  local previous= argument limit=missing elapsed="$CURL_ELAPSED"
+  for argument in "$@"; do
+    [ "$previous" != --max-time ] || limit="$argument"
+    previous="$argument"
+  done
+  printf '%s|%s\n' "$SECONDS" "$*" >> "$TRACE"
+  # A request cannot consume more than its declared total timeout.
+  [ "$elapsed" -le "$limit" ] || elapsed="$limit"
+  SECONDS=$((SECONDS + elapsed))
+  CURL_CALLS=$((CURL_CALLS + 1))
+  if [ "$CURL_TRANSIENT" = true ] && [ "$CURL_CALLS" -gt 1 ]; then return 0; fi
+  return "$CURL_STATUS"
+}
+sleep() {
+  printf '%s|%s\n' "$SECONDS" "$1" >> "$SLEEPS"
+  SECONDS=$((SECONDS + $1))
+}
+report_backend_readiness_failure() { printf '%s|%s|%s\n' "$1" "$2" "$3" >> "$FAILURE"; }
 ''' + ready + "\n" + registration + '''
 status=0
 for pid in "${HEALTH_CHECK_PIDS[@]}"; do wait "$pid" || status=1; done
+printf 'final-status=%s\n' "$status"
 exit "$status"
 '''
                     result = subprocess.run(["bash", "-c", shell], env=dict(
-                        os.environ, TRACE=str(trace), FAILURE=str(failure), CURL_STATUS=str(curl_status),
-                        START_ONTOLOGY_BACKEND=selected, ONTOLOGY_BACKEND_PORT="32195", ONTOLOGY_PID="12345",
+                        os.environ, TRACE=str(trace), FAILURE=str(failure), SLEEPS=str(sleeps),
+                        TEST_WAIT_BUDGET=str(case.get("budget", 1)), CURL_ELAPSED=str(case.get("elapsed", 0)),
+                        CURL_STATUS=str(case.get("status", 0)), CURL_TRANSIENT=case.get("transient", "false"),
+                        START_ONTOLOGY_BACKEND=case.get("selected", "true"),
+                        ONTOLOGY_BACKEND_PORT="32195", ONTOLOGY_PID="12345",
                     ), capture_output=True, text=True, timeout=5)
-                    self.assertEqual(result.returncode, 1 if selected == "true" and curl_status else 0,
-                                     result.stdout + result.stderr)
-                    if selected == "true":
-                        self.assertEqual(trace.read_text().splitlines(), [
-                            "-f --max-time 5 http://localhost:32195/health/ready"])
-                    else:
-                        self.assertFalse(trace.exists())
-                    if selected == "true" and curl_status:
-                        self.assertEqual(failure.read_text().strip(), "ontology|12345|Ontology Backend")
+                    wanted_status = case.get("exit", 0)
+                    self.assertEqual(result.returncode, wanted_status, result.stdout + result.stderr)
+                    self.assertIn("final-status=" + str(wanted_status), result.stdout)
+                    self.assertEqual(trace.read_text().splitlines() if trace.exists() else [], [
+                        str(at) + "|-f --connect-timeout " + str(limit) + " --max-time " + str(limit)
+                        + " http://localhost:32195/health/ready" for at, limit in case["calls"]])
+                    self.assertEqual(sleeps.read_text().splitlines() if sleeps.exists() else [], [
+                        str(at) + "|" + str(seconds) for at, seconds in case.get("sleeps", [])])
+                    if wanted_status:
+                        self.assertEqual(failure.read_text().splitlines(), ["ontology|12345|Ontology Backend"])
                     else:
                         self.assertFalse(failure.exists())
 

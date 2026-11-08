@@ -522,3 +522,18 @@ CI 登记沿现有 `test-node-metrics-online-runner`／`test-online-runner`、Co
 - `bash -n scripts/dev/start.sh`、本批 `git diff --check` 通过。Platform consistency 既有 `make test-platform` 已包含开发生命周期及 Business 配置／发现门禁，新方法由原测试文件自动发现；无需新增 CI 路线或调度。
 
 本批仅本地实现与验证，未触发或跟踪 CI／Hosted，未设置定时任务，也未重启个人服务。Standard 的真实超时与重试恢复继续由专门会话运行 `platform-node-metrics / standard-startup`；当前修复不能作为该 Hosted 已执行或已通过的证据。
+
+
+## 共享 Backend 等待变更的 Ontology runner 适配（2026-11-08）
+
+CI 专门会话回传 `c1adee620787b0c205e60f6f6fe7d6000e78f417` 的两个确切失败：[Platform consistency Job 128655471384](https://github.com/pampa0629/addp/actions/runs/42456145614/job/128655471384)、[Release 的 Ontology FalkorDB Job 128657117699](https://github.com/pampa0629/addp/actions/runs/42456145585/job/128657117699)。两者均首先失败于 `InfraContractTest.test_ontology_readiness_uses_configured_port_and_propagates_failure`，不能据此认定 FalkorDB 产品链路通过。原始回传日志在 `/tmp/addp-ci-20261108-160021/log-128655471384.txt`、`log-128657117699.txt`；本地原标准入口复现的两子例失败记录 `/tmp/addp-ontology-readiness-adaptation-red.log`。
+
+根因是上轮共享等待改动遗漏了此确定性夹具的适配。夹具仍以 `MAX_WAIT=1` 配合 `sleep(){ :; }`，但新的总预算会把请求限制为 `min(剩余 1 秒, 原上限 5 秒)=1 秒`；休眠替身不推进时钟，造成失败分支在同一秒内空转数千次，旧的“单条 5 秒 curl”断言随之失败。这不是放宽请求上限或另建等待路线的理由。
+
+仅修改原 runner 夹具：在子 shell 中解除 `SECONDS` 的 Bash 特殊计时语义，建立由请求和休眠替身显式推进的普通逻辑时钟，避免真实调度时间影响确定性断言。七组闭合用例分别核对短预算成功／失败、未选择模块零请求、5 秒原上限、慢响应与休眠共同扣减（请求上限依次 5／4／1 秒）、瞬时失败后恢复，以及截止时到达的成功拒绝。逐次比对请求开始时刻、连接和总时限、原配置端口、休眠次数、父级退出码和失败发布的次数／模块／PID／标签；不只替换预期字符串。
+
+`make test-ontology-infra-config`：11 项 runner／配置／退出清理 T1 通过，日志 `/tmp/addp-ontology-readiness-adaptation-final.log`。`make test-deployment-discovery`：53 项部署／启动和 6 项容器证明回归通过，日志 `/tmp/addp-ontology-readiness-deployment.log`。原生命周期标准脚本 `bash scripts/test/dev-lifecycle-and-build.sh` 通过，见本轮日志 `/tmp/addp-ontology-readiness-lifecycle.log`。中间测试曾因新增 `set -u` 与 macOS Bash 空数组展开冲突而失败；恢复夹具原有 `set -e` 后通过，不改变生产执行选项或业务断言。
+
+`make test-gate-selection-unit` 的 33 项选择回归，以及 `make test-t2-ci-registration` 的 85＋9 项回归与实际登记校验均通过；日志 `/tmp/addp-ontology-readiness-selection.log`、`/tmp/addp-ontology-readiness-registration.log`。
+
+生产等待实现、总预算、Ontology 原单请求上限、ready 判定及接口均未修改。实测原变更矩阵对该 runner 文件给出零受影响模块，未选中 Ontology；仅在既有 `ADDP_T2_INPUT_FILES` 中补共享启动脚本、runner 测试及原门禁入口，并增加三条路径各自必须选中 Ontology 的回归。登记缺口的修复前失败保留于 `/tmp/addp-ontology-readiness-selection-red.log`。Platform 的 `make test-platform` 和 Release 的 `make test-ontology-falkor` 都已包含该根标准入口，沿现有矩阵命中，不新增 CI 路线。本批未重跑 Hosted 或 FalkorDB 产品链路，未启停个人服务；新提交的两个相关 CI 实际步骤继续等专门会话回传，不以本地通过认定其已通过，也不设置定时任务。
