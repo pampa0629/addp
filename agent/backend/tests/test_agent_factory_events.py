@@ -449,7 +449,7 @@ class AgentFactoryEventTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(calls, [])
 
     async def test_search_zero_results_and_input_errors_do_not_stop_runtime(self):
-        for result in [{"total": 0, "results": []}, {"error": {"code": "invalid_arguments", "message": "参数错误"}}]:
+        for result in [{"exhausted": True, "page_size": 10, "results": []}, {"error": {"code": "invalid_arguments", "message": "参数错误"}}]:
             with self.subTest(result=result):
                 class SearchTool(_DocumentSearchTool):
                     async def ainvoke(self, _args):

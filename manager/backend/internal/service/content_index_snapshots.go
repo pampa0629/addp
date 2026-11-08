@@ -46,15 +46,16 @@ func (s *HybridSearchService) readContentTechnicalSnapshot(ctx context.Context, 
 	if op == nil || op.TenantID <= 0 || op.DocumentID == "" {
 		return nil, repository.ErrContentIndexIsolated
 	}
-	fields := make([]string, 0)
+	fields := []string{"search_ordinal"}
 	for key := range contentSnapshotPayload(uint(op.TenantID), commonClient.ManagerContentDocument{PayloadKind: commonClient.ManagerContentPayloadTechnicalMetadata}) {
 		fields = append(fields, key)
 	}
 	sort.Strings(fields)
 	var indexed struct {
 		commonClient.ManagerContentDocument
-		ID       string `json:"id"`
-		TenantID int64  `json:"tenant_id"`
+		SearchOrdinal int64  `json:"search_ordinal"`
+		ID            string `json:"id"`
+		TenantID      int64  `json:"tenant_id"`
 	}
 	err := s.client.Index(s.contentIndex).GetDocumentWithContext(ctx, op.DocumentID, &meilisearch.DocumentQuery{Fields: fields}, &indexed)
 	if err != nil {
@@ -69,11 +70,19 @@ func (s *HybridSearchService) readContentTechnicalSnapshot(ctx context.Context, 
 	}
 	if indexed.ProjectionTime.IsZero() {
 		// A content-only document has no technical snapshot to preserve.
-		return []map[string]interface{}{{"id": indexed.ID, "document_id": indexed.DocumentID, "tenant_id": indexed.TenantID, "engine_id": indexed.EngineID}}, nil
+		p := map[string]interface{}{"id": indexed.ID, "document_id": indexed.DocumentID, "tenant_id": indexed.TenantID, "engine_id": indexed.EngineID}
+		if indexed.SearchOrdinal > 0 {
+			p["search_ordinal"] = indexed.SearchOrdinal
+		}
+		return []map[string]interface{}{p}, nil
 	}
 	indexed.PayloadKind = commonClient.ManagerContentPayloadTechnicalMetadata
 	if indexed.Validate() != nil {
 		return nil, repository.ErrContentIndexIsolated
 	}
-	return []map[string]interface{}{contentSnapshotPayload(uint(op.TenantID), indexed.ManagerContentDocument)}, nil
+	p := contentSnapshotPayload(uint(op.TenantID), indexed.ManagerContentDocument)
+	if indexed.SearchOrdinal > 0 {
+		p["search_ordinal"] = indexed.SearchOrdinal
+	}
+	return []map[string]interface{}{p}, nil
 }

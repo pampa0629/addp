@@ -16,18 +16,22 @@ type searchVisibilityFixture struct {
 	classify func(plugin.EngineCatalogPath) (visible, readable bool)
 }
 
-func (f searchVisibilityFixture) CheckManagerSearchRead(_ context.Context, credential string, paths []plugin.EngineCatalogPath) (*authorization.SourceSearchCheck, error) {
+func (f searchVisibilityFixture) CheckManagerSearchRead(_ context.Context, credential string, request authorization.SourceSearchCheckRequest) (*authorization.SourceSearchCheck, error) {
 	if credential != "addp_at_test" {
 		return nil, fmt.Errorf("unexpected search credential")
 	}
-	result := &authorization.SourceSearchCheck{ObservedAt: time.Now()}
-	for _, path := range paths {
+	result := &authorization.SourceSearchCheck{ObservedAt: time.Now(), ObservationTag: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"}
+	for _, path := range request.Targets {
 		visible, readable := true, true
 		if f.classify != nil {
 			visible, readable = f.classify(path)
 		}
+		fp := ""
+		if visible {
+			fp, _ = authorizationfacts.PrimaryCandidateFingerprint(path)
+		}
 		result.Targets = append(result.Targets, authorization.SourceSearchTargetCheck{
-			SourceMetadataTargetCheck: authorization.SourceMetadataTargetCheck{Target: path, Visible: visible}, ContentReadable: readable,
+			SourceMetadataTargetCheck: authorization.SourceMetadataTargetCheck{Target: path, Visible: visible}, ContentReadable: readable, ItemFingerprint: fp,
 		})
 	}
 	return result, nil

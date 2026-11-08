@@ -66,11 +66,11 @@ PY
 
 cd "$SOURCE_ROOT/meta/backend"
 if [ "$test_group" = all ]; then
-    go test ./internal/repository -run '^(TestWholeScopeMigrationAgainstPostgres|TestClaimedComponentsAgainstPostgres|TestDataItemChangeMigrationAgainstPostgres|TestLineageLifecycleMigrationAgainstPostgres|TestNodeStatisticsMigrationAgainstPostgres|TestNodeScanTimeMigrationAgainstPostgres)$' -count=1 -v 2>&1 | tee "$WORK_DIR/meta.log"
+    go test ./internal/repository -run '^(TestWholeScopeMigrationAgainstPostgres|TestAuthorizationBasisStartupMigrationAgainstPostgres|TestClaimedComponentsAgainstPostgres|TestDataItemChangeMigrationAgainstPostgres|TestLineageLifecycleMigrationAgainstPostgres|TestNodeStatisticsMigrationAgainstPostgres|TestNodeScanTimeMigrationAgainstPostgres)$' -count=1 -v 2>&1 | tee "$WORK_DIR/meta.log"
 fi
-service_tests='^(TestDataItemAuthorizationFactsAgainstPostgres|TestScanPlanFactsAgainstPostgres)$'
+service_tests='^(TestDataItemAuthorizationFactsAgainstPostgres|TestAuthorizationBasisRevisionAgainstPostgres|TestScanPlanFactsAgainstPostgres)$'
 if [ "$test_group" = all ]; then
-    service_tests='^(TestProductionBasicScanAgainstPostgres|TestMosaicScanWholeResultAgainstPostgres|TestDataItemAuthorizationFactsAgainstPostgres|TestScanPlanFactsAgainstPostgres|TestCleanupRuntimeAtomicityAgainstPostgres|TestUserLineageVisibilityAgainstPostgres|TestLineageGraphPerformanceAgainstPostgres|TestFieldLineage(Evidence|MultiSourceWriteFacts|WideOverview)AgainstPostgres|TestLineageCollector(RetriesUnresolvedTarget|ContinuesAfterInvalidFacts|DefersNewExecutions|PreservesClosedFieldRelations)AgainstPostgres)$'
+    service_tests='^(TestProductionBasicScanAgainstPostgres|TestMosaicScanWholeResultAgainstPostgres|TestDataItemAuthorizationFactsAgainstPostgres|TestAuthorizationBasisRevisionAgainstPostgres|TestScanPlanFactsAgainstPostgres|TestCleanupRuntimeAtomicityAgainstPostgres|TestUserLineageVisibilityAgainstPostgres|TestLineageGraphPerformanceAgainstPostgres|TestFieldLineage(Evidence|MultiSourceWriteFacts|WideOverview)AgainstPostgres|TestLineageCollector(RetriesUnresolvedTarget|ContinuesAfterInvalidFacts|DefersNewExecutions|PreservesClosedFieldRelations)AgainstPostgres)$'
 elif [ "$test_group" = lineage-graph ]; then
     service_tests='^TestLineageGraphPerformanceAgainstPostgres$'
 fi
@@ -104,7 +104,7 @@ elif [ "$test_group" = lineage-graph ]; then
         exit 1
     }
 else
-    for required_test in TestDataItemAuthorizationFactsAgainstPostgres TestScanPlanFactsAgainstPostgres; do
+    for required_test in TestDataItemAuthorizationFactsAgainstPostgres TestAuthorizationBasisRevisionAgainstPostgres TestScanPlanFactsAgainstPostgres; do
         grep -q -- "--- PASS: $required_test " "$WORK_DIR/meta.log" || {
             echo "Meta PostgreSQL gate requires the real $required_test test" >&2
             exit 1
@@ -112,7 +112,7 @@ else
     done
 fi
 if [ "$test_group" = all ]; then
-    for required_test in TestCleanupRuntimeAtomicityAgainstPostgres TestLineageGraphPerformanceAgainstPostgres; do
+    for required_test in TestAuthorizationBasisStartupMigrationAgainstPostgres TestCleanupRuntimeAtomicityAgainstPostgres TestLineageGraphPerformanceAgainstPostgres; do
         grep -Eq -- "^--- PASS: $required_test \\(" "$WORK_DIR/meta.log" || {
             echo "Meta PostgreSQL gate requires the real $required_test test" >&2
             exit 1

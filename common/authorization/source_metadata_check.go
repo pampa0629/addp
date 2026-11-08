@@ -1,6 +1,8 @@
 package authorization
 
 import (
+	"encoding/hex"
+	"strings"
 	"time"
 
 	"github.com/addp/common/engine/plugin"
@@ -55,25 +57,38 @@ func (r *SourceMetadataCheck) Matches(request SourceMetadataCheckRequest) bool {
 
 // SourceSearchCheck is a point-in-time observation for the fixed Manager search operation.
 type SourceSearchCheck struct {
-	ObservedAt time.Time                 `json:"observed_at"`
-	Targets    []SourceSearchTargetCheck `json:"targets"`
+	ObservedAt     time.Time                 `json:"observed_at"`
+	Targets        []SourceSearchTargetCheck `json:"targets"`
+	ObservationTag string                    `json:"observation_tag"`
 }
 
 type SourceSearchTargetCheck struct {
 	SourceMetadataTargetCheck
-	ContentReadable bool `json:"content_readable"`
+	ContentReadable bool   `json:"content_readable"`
+	ItemFingerprint string `json:"item_fingerprint,omitempty"`
 }
 
-func (r *SourceSearchCheck) Matches(request SourceMetadataCheckRequest) bool {
-	if r == nil || len(r.Targets) != len(request.Targets) {
+func (r *SourceSearchCheck) Matches(request SourceSearchCheckRequest) bool {
+	if r == nil || r.ObservedAt.IsZero() || !request.Valid() || !ValidSearchObservationTag(r.ObservationTag) || len(r.Targets) != len(request.Targets) || request.ExpectedObservationTag != nil && *request.ExpectedObservationTag != r.ObservationTag {
 		return false
 	}
-	metadata := SourceMetadataCheck{ObservedAt: r.ObservedAt, Targets: make([]SourceMetadataTargetCheck, len(r.Targets))}
 	for i, target := range r.Targets {
 		if target.ContentReadable && !target.Visible {
 			return false
 		}
-		metadata.Targets[i] = target.SourceMetadataTargetCheck
+		actual, err := EncodeSharingTarget(target.Target)
+		expected, expectedErr := EncodeSharingTarget(request.Targets[i])
+		if err != nil || expectedErr != nil || string(actual) != string(expected) {
+			return false
+		}
+		if target.Visible {
+			fp, err := hex.DecodeString(target.ItemFingerprint)
+			if err != nil || len(fp) != 32 || strings.ToLower(target.ItemFingerprint) != target.ItemFingerprint {
+				return false
+			}
+		} else if target.ItemFingerprint != "" {
+			return false
+		}
 	}
-	return metadata.Matches(request)
+	return true
 }

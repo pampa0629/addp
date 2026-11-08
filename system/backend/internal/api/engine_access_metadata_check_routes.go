@@ -2,7 +2,12 @@ package api
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"github.com/addp/common/jsonmap"
+	commoni18n "github.com/addp/common/middleware/i18n"
+	systemi18n "github.com/addp/system/i18n"
+	"io"
 	"net/http"
 	"time"
 
@@ -18,7 +23,7 @@ import (
 type metaMetadataCheckService interface {
 	CheckMetaLineageRead(context.Context, string, authorization.SourceMetadataCheckRequest) (*authorization.SourceMetadataCheck, error)
 	CheckMetaMetadataRead(context.Context, string, authorization.SourceMetadataCheckRequest) (*authorization.SourceMetadataCheck, error)
-	CheckManagerSearchRead(context.Context, string, authorization.SourceMetadataCheckRequest) (*authorization.SourceSearchCheck, error)
+	CheckManagerSearchRead(context.Context, string, authorization.SourceSearchCheckRequest) (*authorization.SourceSearchCheck, error)
 }
 
 type EngineAccessMetadataCheckHandler struct{ service metaMetadataCheckService }
@@ -130,21 +135,27 @@ func (h *EngineAccessMetadataCheckHandler) CheckMetaLineage(c *gin.Context) {
 // @Accept json
 // @Produce json
 // @Security BearerAuth
-// @Param request body authorization.SourceMetadataCheckRequest true "1 至 200 个不重复完整目标，不支持 query 参数 | 1 to 200 unique complete targets; no query parameters"
+// @Param request body authorization.SourceSearchCheckRequest true "0 至 200 个目标、查询随机量及显式可空的期望观察标记 | 0 to 200 targets, query nonce and explicitly nullable expected observation tag"
 // @Success 200 {object} authorization.SourceSearchCheck "当次检索授权观察 | Current search access observation"
-// @Failure 400,401,403,500,503 {object} IAMErrorResponse "核验失败 | Check failed"
+// @Failure 400,401,403,409,500,503 {object} IAMErrorResponse "核验失败 | Check failed"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["manager.search.execute"]
 // @Router /engine-access/metadata-checks/manager-search [post]
 func (h *EngineAccessMetadataCheckHandler) CheckManagerSearch(c *gin.Context) {
+	c.Header("Cache-Control", "no-store")
 	started := time.Now()
-	request, ok := bindMetadataCheck(c)
+	request, ok := bindSearchCheck(c)
 	if !ok {
 		return
 	}
 	requestBinding := time.Since(started)
 	ctx, timing := engineaccess.ObserveManagerSearchTiming(c.Request.Context())
 	result, err := h.service.CheckManagerSearchRead(ctx, sharedauth.CanonicalBearerToken(c.GetHeader("Authorization")), request)
+	if errors.Is(err, engineaccess.ErrSearchContextChanged) {
+		code := "search_context_changed"
+		c.JSON(http.StatusConflict, IAMErrorResponse{Error: commoni18n.T(c, systemi18n.MsgSearchContextChanged), ErrorCode: &code})
+		return
+	}
 	if err != nil {
 		respondIAMError(c, err)
 		return
@@ -183,6 +194,20 @@ func bindMetadataCheck(c *gin.Context) (authorization.SourceMetadataCheckRequest
 	var request authorization.SourceMetadataCheckRequest
 	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 512<<10)
 	if c.Request.URL.RawQuery != "" || commonapi.BindOptionalJSONStrict(c, &request) != nil || !request.Valid() {
+		respondIAMError(c, commonapi.ErrBadRequest)
+		return request, false
+	}
+	return request, true
+}
+
+func bindSearchCheck(c *gin.Context) (authorization.SourceSearchCheckRequest, bool) {
+	var request authorization.SourceSearchCheckRequest
+	encoded, err := io.ReadAll(io.LimitReader(c.Request.Body, 512<<10+1))
+	shape, shapeErr := jsonmap.DecodeObjectStrict(encoded, 512<<10, 24)
+	_, targets := shape["targets"]
+	_, nonce := shape["query_nonce"]
+	_, expected := shape["expected_observation_tag"]
+	if c.Request.URL.RawQuery != "" || err != nil || shapeErr != nil || len(shape) != 3 || !targets || !nonce || !expected || json.Unmarshal(encoded, &request) != nil || !request.Valid() {
 		respondIAMError(c, commonapi.ErrBadRequest)
 		return request, false
 	}

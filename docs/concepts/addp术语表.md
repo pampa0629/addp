@@ -805,6 +805,11 @@ Agent Harness 是 Agent 进程内的执行内核，负责模型与工具调度�
 
 | 英文术语 | 中文术语 | 定义 | 备注 |
 |---|---|---|---|
+| retrieval candidate | 检索候选 | 检索器按本次查询条件召回、尚待当前数据授权裁决的 DataItem 身份及内部匹配依据。 | 候选不是用户可见结果；仅在所属租户内处理，不向用户输出未授权候选的名称、路径、正文、高亮或数量。 |
+| search continuation cursor | 检索续查游标 | Manager 为一次查询保存或封装的、受保护的候选遍历位置及必要去重／未交付状态，用于继续查找有权结果。 | 不同于 Service 发布数据查询游标；不承载授权，不保存用户凭据，每次续查按当前权限重新核验。采用有期限内存会话和单遍增量RRF，具体契约见授权上下文规范8.1。 |
+| search ordinal | 检索内部序号 | Manager 为自有内容索引文档在一个索引世代内分配的唯一、不可变数值，用于形成容量有上界的检索范围及稳定同分顺序。 | 2026-11-08 联合方案已确认；不是 DataItem 身份、权限或外部定位符。投影更新复用，删除不在原世代复用；具体契约见授权上下文规范8.1。 |
+| RRF pending state | RRF 待定状态 | Manager 在同一检索观察依据下保留的候选有效名次、未知／确定缺席及交付进度，用于证明完整RRF顺序。 | 联合方案采用单遍增量与有期限内存工作集，不承载未来Allow，不用Top-K丢弃必要状态。不默认写PostgreSQL、不按全租户潜在候选上界拒绝；按实际已分配容量控制查询／进程预算，真实不足明确失败而非遗漏。 |
+| search observation tag | 检索观察标记 | System 为固定Manager检索操作生成的不透明依据摘要，绑定当前主体／Client、源规则与Meta事实版本及下一时间边界。 | 联合方案已确认；只使旧排名／游标失效，不授予访问、不延长期限，每次仍执行当前裁决。 |
 | vectorization | 向量化 | 对可支持的数据项生成向量表示的派生能力。 | 服务 Manager 数据检索；资源树触发的是一次性 execution，独立页面创建的配置才是任务定义。 |
 | embedding result | 向量化结果 | 某个 data item 当前留下的向量表示及其状态。 | 当前实现对应 `manager.embeddings`；属于 artifact state，不是 execution。 |
 | embedding task | 向量化任务 | Manager 中可重复执行、可调度、可编排的向量化任务定义。 | 当前实现对应 `manager.embedding_tasks`，TaskProvider `task_type=embedding`。 |

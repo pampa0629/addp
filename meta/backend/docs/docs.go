@@ -2392,6 +2392,63 @@ const docTemplate = `{
                 ]
             }
         },
+        "/runtime/data-items/authorization-facts/revision": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "仅 System Tenant Service 读取当前租户不透明依据版本，不返回身份或许可 | Only the System Tenant Service may read the current tenant basis revision; returns no identities or Allow",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Meta Runtime"
+                ],
+                "summary": "读取授权事实提交版本 | Read committed authorization facts revision",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/authorizationfacts.Revision"
+                        }
+                    },
+                    "400": {
+                        "description": "读取失败 | Read failed",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "401": {
+                        "description": "读取失败 | Read failed",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "403": {
+                        "description": "读取失败 | Read failed",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "读取失败 | Read failed",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "meta.authorization_facts.read"
+                ]
+            }
+        },
         "/runtime/data-items/{fingerprint}/security-facts": {
             "get": {
                 "security": [
@@ -4759,6 +4816,20 @@ const docTemplate = `{
             "properties": {
                 "target": {
                     "$ref": "#/definitions/plugin.EngineCatalogPath"
+                }
+            }
+        },
+        "authorizationfacts.Revision": {
+            "type": "object",
+            "properties": {
+                "generation": {
+                    "type": "string"
+                },
+                "schema_version": {
+                    "type": "string"
+                },
+                "version": {
+                    "type": "string"
                 }
             }
         },

@@ -12,18 +12,22 @@ import (
 	"github.com/addp/common/jsonmap"
 )
 
-// postMetaOwnerQuery is the sole bounded transport for read-only Meta owner POSTs.
+// metaOwnerQuery is the sole bounded transport for read-only Meta owner queries.
 // It neither follows redirects nor replays a command after credential expiry.
-func (c *MetaClient) postMetaOwnerQuery(ctx context.Context, tenantID uint, path string, input any, maxBytes, maxDepth int) ([]byte, error) {
+func (c *MetaClient) metaOwnerQuery(ctx context.Context, tenantID uint, method, path string, input any, maxBytes, maxDepth int) ([]byte, error) {
 	copy := *c.WithTenantID(tenantID)
 	transport := *copy.httpClient
 	transport.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
 	copy.httpClient = &transport
-	body, err := json.Marshal(input)
+	var body []byte
+	var err error
+	if input != nil {
+		body, err = json.Marshal(input)
+	}
 	if err != nil || len(body) > maxBytes {
 		return nil, errors.New("invalid Meta identity query size")
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, copy.baseURL+path, bytes.NewReader(body))
+	req, err := http.NewRequestWithContext(ctx, method, copy.baseURL+path, bytes.NewReader(body))
 	if err != nil {
 		return nil, err
 	}
@@ -40,7 +44,7 @@ func (c *MetaClient) postMetaOwnerQuery(ctx context.Context, tenantID uint, path
 		timing.HTTP = time.Since(started)
 	}
 	if err != nil {
-		return nil, &TenantTransportError{Method: http.MethodPost, Path: path, Cause: err}
+		return nil, &TenantTransportError{Method: method, Path: path, Cause: err}
 	}
 	defer response.Body.Close()
 	if response.StatusCode != http.StatusOK {
@@ -48,7 +52,7 @@ func (c *MetaClient) postMetaOwnerQuery(ctx context.Context, tenantID uint, path
 			ErrorCode string `json:"error_code"`
 		}
 		_ = json.NewDecoder(io.LimitReader(response.Body, 8192)).Decode(&failure)
-		return nil, &TenantAPIError{Method: http.MethodPost, Path: path, StatusCode: response.StatusCode, ErrorCode: failure.ErrorCode}
+		return nil, &TenantAPIError{Method: method, Path: path, StatusCode: response.StatusCode, ErrorCode: failure.ErrorCode}
 	}
 	if timing != nil {
 		started = time.Now()

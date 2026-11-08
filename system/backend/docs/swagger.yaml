@@ -420,6 +420,8 @@ definitions:
     type: object
   authorization.SourceSearchCheck:
     properties:
+      observation_tag:
+        type: string
       observed_at:
         type: string
       targets:
@@ -427,10 +429,23 @@ definitions:
           $ref: '#/definitions/authorization.SourceSearchTargetCheck'
         type: array
     type: object
+  authorization.SourceSearchCheckRequest:
+    properties:
+      expected_observation_tag:
+        type: string
+      query_nonce:
+        type: string
+      targets:
+        items:
+          $ref: '#/definitions/plugin.EngineCatalogPath'
+        type: array
+    type: object
   authorization.SourceSearchTargetCheck:
     properties:
       content_readable:
         type: boolean
+      item_fingerprint:
+        type: string
       target:
         $ref: '#/definitions/plugin.EngineCatalogPath'
       visible:
@@ -7498,13 +7513,13 @@ paths:
         manager.search.execute and returns per-target metadata and content decisions
         for the current search only
       parameters:
-      - description: 1 至 200 个不重复完整目标，不支持 query 参数 | 1 to 200 unique complete targets;
-          no query parameters
+      - description: 0 至 200 个目标、查询随机量及显式可空的期望观察标记 | 0 to 200 targets, query nonce
+          and explicitly nullable expected observation tag
         in: body
         name: request
         required: true
         schema:
-          $ref: '#/definitions/authorization.SourceMetadataCheckRequest'
+          $ref: '#/definitions/authorization.SourceSearchCheckRequest'
       produces:
       - application/json
       responses:
@@ -7521,6 +7536,10 @@ paths:
           schema:
             $ref: '#/definitions/internal_api.IAMErrorResponse'
         "403":
+          description: 核验失败 | Check failed
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "409":
           description: 核验失败 | Check failed
           schema:
             $ref: '#/definitions/internal_api.IAMErrorResponse'
@@ -8182,6 +8201,7 @@ paths:
               page_size:
                 type: integer
               total:
+                format: int64
                 type: integer
               total_pages:
                 type: integer
@@ -8443,6 +8463,7 @@ paths:
               page_size:
                 type: integer
               total:
+                format: int64
                 type: integer
               total_pages:
                 type: integer
@@ -8672,6 +8693,7 @@ paths:
               page_size:
                 type: integer
               total:
+                format: int64
                 type: integer
               total_pages:
                 type: integer
@@ -10811,6 +10833,7 @@ paths:
               page_size:
                 type: integer
               total:
+                format: int64
                 type: integer
               total_pages:
                 type: integer
@@ -10995,6 +11018,7 @@ paths:
               page_size:
                 type: integer
               total:
+                format: int64
                 type: integer
               total_pages:
                 type: integer
@@ -11046,6 +11070,7 @@ paths:
               page_size:
                 type: integer
               total:
+                format: int64
                 type: integer
               total_pages:
                 type: integer
@@ -11275,6 +11300,7 @@ paths:
               page_size:
                 type: integer
               total:
+                format: int64
                 type: integer
               total_pages:
                 type: integer
@@ -12255,6 +12281,7 @@ paths:
               page_size:
                 type: integer
               total:
+                format: int64
                 type: integer
               total_pages:
                 type: integer
@@ -12805,6 +12832,7 @@ paths:
               page_size:
                 type: integer
               total:
+                format: int64
                 type: integer
               total_pages:
                 type: integer
@@ -13077,6 +13105,7 @@ paths:
               page_size:
                 type: integer
               total:
+                format: int64
                 type: integer
               total_pages:
                 type: integer
@@ -13430,6 +13459,7 @@ paths:
               page_size:
                 type: integer
               total:
+                format: int64
                 type: integer
               total_pages:
                 type: integer
@@ -14944,6 +14974,7 @@ paths:
               page_size:
                 type: integer
               total:
+                format: int64
                 type: integer
               total_pages:
                 type: integer
@@ -15216,6 +15247,7 @@ paths:
               page_size:
                 type: integer
               total:
+                format: int64
                 type: integer
               total_pages:
                 type: integer
@@ -15459,6 +15491,7 @@ paths:
               page_size:
                 type: integer
               total:
+                format: int64
                 type: integer
               total_pages:
                 type: integer
@@ -15624,6 +15657,7 @@ paths:
               page_size:
                 type: integer
               total:
+                format: int64
                 type: integer
               total_pages:
                 type: integer
@@ -15813,6 +15847,7 @@ paths:
               page_size:
                 type: integer
               total:
+                format: int64
                 type: integer
               total_pages:
                 type: integer
@@ -16234,6 +16269,7 @@ paths:
               page_size:
                 type: integer
               total:
+                format: int64
                 type: integer
               total_pages:
                 type: integer
@@ -16400,6 +16436,7 @@ paths:
               page_size:
                 type: integer
               total:
+                format: int64
                 type: integer
               total_pages:
                 type: integer
@@ -16595,6 +16632,7 @@ paths:
               page_size:
                 type: integer
               total:
+                format: int64
                 type: integer
               total_pages:
                 type: integer
@@ -16805,6 +16843,7 @@ paths:
               page_size:
                 type: integer
               total:
+                format: int64
                 type: integer
               total_pages:
                 type: integer
@@ -16970,6 +17009,7 @@ paths:
               page_size:
                 type: integer
               total:
+                format: int64
                 type: integer
               total_pages:
                 type: integer
@@ -17137,6 +17177,7 @@ paths:
               page_size:
                 type: integer
               total:
+                format: int64
                 type: integer
               total_pages:
                 type: integer
@@ -17424,6 +17465,7 @@ paths:
               page_size:
                 type: integer
               total:
+                format: int64
                 type: integer
               total_pages:
                 type: integer

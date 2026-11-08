@@ -82,6 +82,7 @@ func TestNewIAMRuntimeRejectsInvalidProductionComposition(t *testing.T) {
 
 func testIAMRuntimeConfig() *config.Config {
 	return &config.Config{
+		EncryptionKey:       []byte("0123456789abcdef0123456789abcdef"),
 		Env:                 "development",
 		OAuthUserCodePepper: []byte("0123456789abcdef0123456789abcdef"),
 		IAMMFAEncryptionKey: []byte("abcdef0123456789abcdef0123456789"),

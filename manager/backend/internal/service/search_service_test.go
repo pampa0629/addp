@@ -58,7 +58,10 @@ func TestMetadataOnlyKeywordSearchReturnsOnlyActualFieldNames(t *testing.T) {
 			}))
 			defer server.Close()
 			svc := &HybridSearchService{client: meilisearch.New(server.URL, meilisearch.DisableRetries()), contentIndex: "content"}
-			result, err := svc.searchVisibleKeywords(context.Background(), "tenant_id = 7", "phone", searchVisibility{metadata: map[string]indexedSearchIdentity{identity.ID: identity}})
+			id, _ := decodeSearchIdentity(identity.ID)
+			session := &searchSession{service: svc, tenant: 7, query: "phone"}
+			projected, err := session.keywordProjection(context.Background(), []searchIdentity{id}, searchKeywordMetadata)
+			result := []SearchDocument{projected[id]}
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -101,99 +104,14 @@ func TestMapMeilisearchHitPreservesActualFieldMatches(t *testing.T) {
 	if !reflect.DeepEqual(doc.FieldMatches, want) {
 		t.Fatalf("field matches=%+v, want %+v", doc.FieldMatches, want)
 	}
-	// Fusion retains keyword evidence; a vector-only result cannot fabricate it.
-	fused := fuseSearchDocuments([]SearchDocument{doc}, []VectorDocument{{DocumentID: "collection"}, {DocumentID: "semantic-only"}}, 1, 10)
-	if !reflect.DeepEqual(fused.Hits[0].FieldMatches, want) || len(fused.Hits[1].FieldMatches) != 0 {
-		t.Fatalf("fusion changed field evidence: %+v", fused.Hits)
+	merged := doc
+	mergeVectorSearchFacts(&merged, vectorDocumentToSearchDocument(VectorDocument{DocumentID: "collection", Distance: 0.1}))
+	if !reflect.DeepEqual(merged.FieldMatches, want) || len(vectorDocumentToSearchDocument(VectorDocument{DocumentID: "semantic-only"}).FieldMatches) != 0 {
+		t.Fatal("vector projection fabricated or removed keyword field evidence")
 	}
 	delete(hit, "_formatted")
 	if len(mapMeilisearchHit(hit).FieldMatches) != 0 {
 		t.Fatal("unformatted definitions reported as matches")
-	}
-}
-
-func TestFuseSearchDocumentsRewardsHybridMatchesAndDeduplicates(t *testing.T) {
-	t.Parallel()
-
-	result := fuseSearchDocuments(
-		[]SearchDocument{
-			{DocumentID: "keyword-first", FileName: "first.docx"},
-			{DocumentID: "hybrid", FileName: "hybrid.docx", Locator: "keyword-locator"},
-		},
-		[]VectorDocument{
-			{DocumentID: "hybrid", Distance: 0.1, Locator: "vector-locator"},
-			{DocumentID: "vector-only", Distance: 0.2, FileName: "semantic.jpg"},
-		},
-		1,
-		10,
-	)
-
-	if result.Total != 3 {
-		t.Fatalf("Total = %d, want 3", result.Total)
-	}
-	if got := searchDocumentIDs(result.Hits); !reflect.DeepEqual(got, []string{"hybrid", "keyword-first", "vector-only"}) {
-		t.Fatalf("document order = %v", got)
-	}
-	if got := result.Hits[0].MatchMethods; !reflect.DeepEqual(got, []string{"keyword", "vector"}) {
-		t.Fatalf("hybrid match methods = %v", got)
-	}
-	if result.Hits[0].VectorDistance != 0.1 {
-		t.Fatalf("hybrid vector distance = %v", result.Hits[0].VectorDistance)
-	}
-	if result.Hits[0].Locator != "keyword-locator" {
-		t.Fatalf("hybrid locator = %q, want keyword locator", result.Hits[0].Locator)
-	}
-	if result.Hits[0].Score <= result.Hits[1].Score || result.Hits[1].Score <= result.Hits[2].Score {
-		t.Fatalf("scores are not strictly descending: %v", []float64{result.Hits[0].Score, result.Hits[1].Score, result.Hits[2].Score})
-	}
-}
-
-func TestFuseSearchDocumentsInterleavesPureVectorHitsBeforePagination(t *testing.T) {
-	t.Parallel()
-
-	keywords := []SearchDocument{
-		{DocumentID: "keyword-1"},
-		{DocumentID: "keyword-2"},
-		{DocumentID: "keyword-3"},
-	}
-	vectors := []VectorDocument{{DocumentID: "vector-1", Distance: 0.15}}
-
-	firstPage := fuseSearchDocuments(keywords, vectors, 1, 2)
-	if got := searchDocumentIDs(firstPage.Hits); !reflect.DeepEqual(got, []string{"keyword-1", "vector-1"}) {
-		t.Fatalf("first page order = %v", got)
-	}
-	secondPage := fuseSearchDocuments(keywords, vectors, 2, 2)
-	if got := searchDocumentIDs(secondPage.Hits); !reflect.DeepEqual(got, []string{"keyword-2", "keyword-3"}) {
-		t.Fatalf("second page order = %v", got)
-	}
-	if firstPage.Total != 4 || secondPage.Total != 4 {
-		t.Fatalf("totals = %d, %d; want 4", firstPage.Total, secondPage.Total)
-	}
-}
-
-func TestFuseSearchDocumentsDegradesToKeywordRanking(t *testing.T) {
-	t.Parallel()
-
-	result := fuseSearchDocuments(
-		[]SearchDocument{{DocumentID: "first"}, {DocumentID: "second"}},
-		nil,
-		1,
-		10,
-	)
-
-	if got := searchDocumentIDs(result.Hits); !reflect.DeepEqual(got, []string{"first", "second"}) {
-		t.Fatalf("document order = %v", got)
-	}
-	if result.Total != 2 {
-		t.Fatalf("Total = %d, want 2", result.Total)
-	}
-	for _, doc := range result.Hits {
-		if !reflect.DeepEqual(doc.MatchMethods, []string{"keyword"}) {
-			t.Fatalf("match methods = %v", doc.MatchMethods)
-		}
-		if doc.Score <= 0 || doc.Score > 1 {
-			t.Fatalf("score = %v, want (0, 1]", doc.Score)
-		}
 	}
 }
 

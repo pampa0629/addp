@@ -875,7 +875,6 @@
       "clearAll": "清除全部",
       "loading": "加载中...",
       "results": "检索结果",
-      "resultsCount": "共 {total} 条记录",
       "emptyHint": "输入关键词后开始搜索",
       "noResults": "未找到匹配的文档或引擎",
       "researchBtn": "重新搜索",
@@ -903,7 +902,14 @@
       "vectorMatch": "🔍 向量匹配",
       "description": "简介：",
       "deleteHistoryFailed": "删除历史失败",
-      "clearHistoryFailed": "清除历史失败"
+      "clearHistoryFailed": "清除历史失败",
+      "loadedCount": "已显示 {count} 条",
+      "retrySearch": "重试",
+      "loadMore": "加载更多",
+      "continueSearching": "继续查找",
+      "noMore": "没有更多结果",
+      "invalidResponse": "检索响应无效",
+      "searchChanged": "检索依据已变化或已过期，请重新搜索"
     },
     "vectorTile": {
       "loadingConfig": "正在加载渲染信息...",

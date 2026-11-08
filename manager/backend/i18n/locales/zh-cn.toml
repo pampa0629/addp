@@ -1,3 +1,14 @@
+[manager.search.context_changed]
+other = "检索依据已变化，请重新检索"
+
+[manager.search.continuation_expired]
+other = "检索状态已失效，请重新检索"
+
+[manager.search.parameters_invalid]
+other = "检索参数无效，请重新检索"
+
+[manager.search.capacity_exceeded]
+other = "检索容量不足，本次查询已停止"
 [manager.cache.cleared_all]
 other = "已清除所有资源缓存"
 

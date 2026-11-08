@@ -139,7 +139,7 @@ def case_fixture(name):
             result['expected_source_engines'] = [engine, other]
         else:
             query = 'demo.missing_events'
-            result['responses']['data.search'] = {'results': [], 'total': 0, 'page': 1, 'page_size': 10}
+            result['responses']['data.search'] = {'results': [], 'exhausted': True, 'page_size': 10}
             result['expected']['data.search'] = {'engine_id': engine['id'], 'query': query}
             result['expected_empty_scope'] = (engine['name'], query)
     elif name in {'model-transfer-precheck', 'model-transfer-short-precheck',
@@ -168,7 +168,7 @@ def case_fixture(name):
         }
         result['body_facts'] = ['unknown']
         if name != 'model-transfer-precheck':
-            result['responses']['data.search'] = {'results':[source], 'total':1, 'page':1, 'page_size':10}
+            result['responses']['data.search'] = {'results':[source], 'exhausted':True, 'page_size':10}
             unscoped = name == 'model-transfer-source-unscoped'
             result['expected']['data.search'] = {'engine_id': None if unscoped else source['engine_id']}
             built = copy.deepcopy(arguments)
@@ -194,7 +194,7 @@ def case_fixture(name):
                         'id': engine_id, 'name': 'OTHER_SOURCE_FIXTURE', 'engine_type': 'mongodb',
                         'lifecycle_state': 'active', 'connection_status': 'online'})
                 candidates = [source, other]
-                result['responses']['data.search'] = {'results': candidates, 'total': 2, 'page': 1, 'page_size': 10}
+                result['responses']['data.search'] = {'results': candidates, 'exhausted': True, 'page_size': 10}
                 # Search candidates use the existing compact discovery projection;
                 # formal schema/type facts are deliberately not carried by choices.
                 result['expected_candidates'] = [{key: candidate[key] for key in

@@ -1,3 +1,14 @@
+[manager.search.context_changed]
+other = "Search context changed. Start a new search."
+
+[manager.search.continuation_expired]
+other = "Search continuation is no longer available. Start a new search."
+
+[manager.search.parameters_invalid]
+other = "Invalid search parameters. Start a new search."
+
+[manager.search.capacity_exceeded]
+other = "Search capacity was exceeded. This query has stopped."
 [manager.cache.cleared_all]
 other = "All resource caches cleared"
 

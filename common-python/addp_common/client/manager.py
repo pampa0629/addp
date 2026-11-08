@@ -27,22 +27,33 @@ class ManagerClient(BaseClient):
         self,
         q: str,
         engine_id: Optional[int] = None,
-        tenant_id: Optional[int] = None,
-        page: int = 1,
+        cursor: Optional[str] = None,
         page_size: int = 10,
     ) -> Dict[str, Any]:
-        """混合检索（全文检索 + 向量语义检索）"""
+        """读取一批顺序检索结果；空批不代表候选流结束。"""
         params = {
             "q": q,
-            "page": page,
             "page_size": page_size,
         }
-        if tenant_id is not None:
-            params["tenant_id"] = tenant_id
+        if cursor is not None:
+            params["cursor"] = cursor
         if engine_id is not None:
             params["engine_id"] = engine_id
         response = await self.get("/api/v1/manager/search", params=params)
         data = response.get("data") if isinstance(response, dict) else None
         if not isinstance(data, dict):
             raise ValueError("manager search response must contain data object")
+        if (not isinstance(data.get("results"), list)
+                or any(not isinstance(row, dict) for row in data["results"])
+                or type(data.get("exhausted")) is not bool
+                or type(data.get("page_size")) is not int
+                or data["page_size"] != page_size
+                or len(data["results"]) > page_size):
+            raise ValueError("invalid manager search continuation response")
+        next_cursor = data.get("next_cursor")
+        if data["exhausted"]:
+            if next_cursor:
+                raise ValueError("exhausted manager search must not continue")
+        elif not isinstance(next_cursor, str) or not next_cursor or next_cursor == cursor:
+            raise ValueError("manager search must provide a progressing cursor")
         return data

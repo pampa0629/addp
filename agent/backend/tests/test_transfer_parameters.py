@@ -220,7 +220,7 @@ class TransferSourceSelectionRuntimeTests(unittest.IsolatedAsyncioTestCase):
                 rows=[{'locator':loc,'engine_id':11,'engine_name':'Synthetic Mongo','name':name,'full_name':'demo.'+name}
                       for loc,name in zip(self.locators,('events','other'))]
                 return httpx.Response(200,request=httpx.Request(method,'http://fixture'+path),
-                                      json={'data':{'results':rows,'total':len(rows),'page':1,'page_size':10}})
+                                      json={'data':{'results':rows,'exhausted':True,'page_size':kwargs['params']['page_size']}})
             return await original(owner,method,path,**kwargs)
         self.h.transport = transport
 

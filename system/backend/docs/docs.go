@@ -1482,12 +1482,12 @@ const docTemplate = `{
                 "summary": "检查 Manager 检索候选的当前可见性 | Check current visibility for Manager search candidates",
                 "parameters": [
                     {
-                        "description": "1 至 200 个不重复完整目标，不支持 query 参数 | 1 to 200 unique complete targets; no query parameters",
+                        "description": "0 至 200 个目标、查询随机量及显式可空的期望观察标记 | 0 to 200 targets, query nonce and explicitly nullable expected observation tag",
                         "name": "request",
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/authorization.SourceMetadataCheckRequest"
+                            "$ref": "#/definitions/authorization.SourceSearchCheckRequest"
                         }
                     }
                 ],
@@ -1511,6 +1511,12 @@ const docTemplate = `{
                         }
                     },
                     "403": {
+                        "description": "核验失败 | Check failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "409": {
                         "description": "核验失败 | Check failed",
                         "schema": {
                             "$ref": "#/definitions/internal_api.IAMErrorResponse"
@@ -2480,7 +2486,8 @@ const docTemplate = `{
                                     "type": "integer"
                                 },
                                 "total": {
-                                    "type": "integer"
+                                    "type": "integer",
+                                    "format": "int64"
                                 },
                                 "total_pages": {
                                     "type": "integer"
@@ -2861,7 +2868,8 @@ const docTemplate = `{
                                     "type": "integer"
                                 },
                                 "total": {
-                                    "type": "integer"
+                                    "type": "integer",
+                                    "format": "int64"
                                 },
                                 "total_pages": {
                                     "type": "integer"
@@ -3091,7 +3099,8 @@ const docTemplate = `{
                                     "type": "integer"
                                 },
                                 "total": {
-                                    "type": "integer"
+                                    "type": "integer",
+                                    "format": "int64"
                                 },
                                 "total_pages": {
                                     "type": "integer"
@@ -6235,7 +6244,8 @@ const docTemplate = `{
                                     "type": "integer"
                                 },
                                 "total": {
-                                    "type": "integer"
+                                    "type": "integer",
+                                    "format": "int64"
                                 },
                                 "total_pages": {
                                     "type": "integer"
@@ -6343,7 +6353,8 @@ const docTemplate = `{
                                     "type": "integer"
                                 },
                                 "total": {
-                                    "type": "integer"
+                                    "type": "integer",
+                                    "format": "int64"
                                 },
                                 "total_pages": {
                                     "type": "integer"
@@ -6607,7 +6618,8 @@ const docTemplate = `{
                                     "type": "integer"
                                 },
                                 "total": {
-                                    "type": "integer"
+                                    "type": "integer",
+                                    "format": "int64"
                                 },
                                 "total_pages": {
                                     "type": "integer"
@@ -6964,7 +6976,8 @@ const docTemplate = `{
                                     "type": "integer"
                                 },
                                 "total": {
-                                    "type": "integer"
+                                    "type": "integer",
+                                    "format": "int64"
                                 },
                                 "total_pages": {
                                     "type": "integer"
@@ -8427,7 +8440,8 @@ const docTemplate = `{
                                     "type": "integer"
                                 },
                                 "total": {
-                                    "type": "integer"
+                                    "type": "integer",
+                                    "format": "int64"
                                 },
                                 "total_pages": {
                                     "type": "integer"
@@ -9247,7 +9261,8 @@ const docTemplate = `{
                                     "type": "integer"
                                 },
                                 "total": {
-                                    "type": "integer"
+                                    "type": "integer",
+                                    "format": "int64"
                                 },
                                 "total_pages": {
                                     "type": "integer"
@@ -9675,7 +9690,8 @@ const docTemplate = `{
                                     "type": "integer"
                                 },
                                 "total": {
-                                    "type": "integer"
+                                    "type": "integer",
+                                    "format": "int64"
                                 },
                                 "total_pages": {
                                     "type": "integer"
@@ -10208,7 +10224,8 @@ const docTemplate = `{
                                     "type": "integer"
                                 },
                                 "total": {
-                                    "type": "integer"
+                                    "type": "integer",
+                                    "format": "int64"
                                 },
                                 "total_pages": {
                                     "type": "integer"
@@ -12403,7 +12420,8 @@ const docTemplate = `{
                                     "type": "integer"
                                 },
                                 "total": {
-                                    "type": "integer"
+                                    "type": "integer",
+                                    "format": "int64"
                                 },
                                 "total_pages": {
                                     "type": "integer"
@@ -12830,7 +12848,8 @@ const docTemplate = `{
                                     "type": "integer"
                                 },
                                 "total": {
-                                    "type": "integer"
+                                    "type": "integer",
+                                    "format": "int64"
                                 },
                                 "total_pages": {
                                     "type": "integer"
@@ -13200,7 +13219,8 @@ const docTemplate = `{
                                     "type": "integer"
                                 },
                                 "total": {
-                                    "type": "integer"
+                                    "type": "integer",
+                                    "format": "int64"
                                 },
                                 "total_pages": {
                                     "type": "integer"
@@ -13460,7 +13480,8 @@ const docTemplate = `{
                                     "type": "integer"
                                 },
                                 "total": {
-                                    "type": "integer"
+                                    "type": "integer",
+                                    "format": "int64"
                                 },
                                 "total_pages": {
                                     "type": "integer"
@@ -13754,7 +13775,8 @@ const docTemplate = `{
                                     "type": "integer"
                                 },
                                 "total": {
-                                    "type": "integer"
+                                    "type": "integer",
+                                    "format": "int64"
                                 },
                                 "total_pages": {
                                     "type": "integer"
@@ -14406,7 +14428,8 @@ const docTemplate = `{
                                     "type": "integer"
                                 },
                                 "total": {
-                                    "type": "integer"
+                                    "type": "integer",
+                                    "format": "int64"
                                 },
                                 "total_pages": {
                                     "type": "integer"
@@ -14668,7 +14691,8 @@ const docTemplate = `{
                                     "type": "integer"
                                 },
                                 "total": {
-                                    "type": "integer"
+                                    "type": "integer",
+                                    "format": "int64"
                                 },
                                 "total_pages": {
                                     "type": "integer"
@@ -14974,7 +14998,8 @@ const docTemplate = `{
                                     "type": "integer"
                                 },
                                 "total": {
-                                    "type": "integer"
+                                    "type": "integer",
+                                    "format": "int64"
                                 },
                                 "total_pages": {
                                     "type": "integer"
@@ -15293,7 +15318,8 @@ const docTemplate = `{
                                     "type": "integer"
                                 },
                                 "total": {
-                                    "type": "integer"
+                                    "type": "integer",
+                                    "format": "int64"
                                 },
                                 "total_pages": {
                                     "type": "integer"
@@ -15553,7 +15579,8 @@ const docTemplate = `{
                                     "type": "integer"
                                 },
                                 "total": {
-                                    "type": "integer"
+                                    "type": "integer",
+                                    "format": "int64"
                                 },
                                 "total_pages": {
                                     "type": "integer"
@@ -15810,7 +15837,8 @@ const docTemplate = `{
                                     "type": "integer"
                                 },
                                 "total": {
-                                    "type": "integer"
+                                    "type": "integer",
+                                    "format": "int64"
                                 },
                                 "total_pages": {
                                     "type": "integer"
@@ -16246,7 +16274,8 @@ const docTemplate = `{
                                     "type": "integer"
                                 },
                                 "total": {
-                                    "type": "integer"
+                                    "type": "integer",
+                                    "format": "int64"
                                 },
                                 "total_pages": {
                                     "type": "integer"
@@ -17314,6 +17343,9 @@ const docTemplate = `{
         "authorization.SourceSearchCheck": {
             "type": "object",
             "properties": {
+                "observation_tag": {
+                    "type": "string"
+                },
                 "observed_at": {
                     "type": "string"
                 },
@@ -17325,11 +17357,31 @@ const docTemplate = `{
                 }
             }
         },
+        "authorization.SourceSearchCheckRequest": {
+            "type": "object",
+            "properties": {
+                "expected_observation_tag": {
+                    "type": "string"
+                },
+                "query_nonce": {
+                    "type": "string"
+                },
+                "targets": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/plugin.EngineCatalogPath"
+                    }
+                }
+            }
+        },
         "authorization.SourceSearchTargetCheck": {
             "type": "object",
             "properties": {
                 "content_readable": {
                     "type": "boolean"
+                },
+                "item_fingerprint": {
+                    "type": "string"
                 },
                 "target": {
                     "$ref": "#/definitions/plugin.EngineCatalogPath"

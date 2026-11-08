@@ -176,8 +176,10 @@ func exerciseMetadataOnlyGrants(t *testing.T, db *gorm.DB, tenantID, adminID int
 					t.Fatal("metadata Grant lost its exclusive boundary")
 				}
 				check(true)
-				search, err := service.CheckManagerSearchRead(ctx, credential, request)
-				if err != nil || !search.Matches(request) || !search.Targets[0].Visible || search.Targets[0].ContentReadable {
+				configureSearchObservationFixture(t, service)
+				searchRequest := shared.SourceSearchCheckRequest{Targets: request.Targets, QueryNonce: "0123456789abcdef0123456789abcdef"}
+				search, err := service.CheckManagerSearchRead(ctx, credential, searchRequest)
+				if err != nil || !search.Matches(searchRequest) || !search.Targets[0].Visible || search.Targets[0].ContentReadable {
 					t.Fatalf("metadata-only Grant reached content search: %+v %v", search, err)
 				}
 				mixed := shared.SourceMetadataCheckRequest{Targets: []plugin.EngineCatalogPath{missingTarget, target}}

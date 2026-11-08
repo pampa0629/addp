@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"net/http"
@@ -30,20 +31,17 @@ func NewSearchHandler(searchService *service.HybridSearchService, historyService
 	}
 }
 
-// Search 执行混合检索（全文检索 + 向量语义检索）
+// Search executes the one sequential candidate/ranking continuation contract.
 // @Summary 执行混合检索 | Execute hybrid search
-// @Description 仅返回当前用户可见的项。仅元数据可见时匹配资源名称、路径和已登记字段名，只返回身份定位及真实字段名高亮。正文和向量命中要求当前数据读取权。授权后去重、融合、计数及分页 | Returns only visible items. Metadata-only access searches resource names, paths and registered field names, returning identity, location and actual field-name highlights only. Content and vector matches require current data-read access. Deduplication, ranking, counts and pagination follow authorization
+// @Description 先召回候选并按当前权限筛选，再按完整RRF相关性顺序交付。不返回精确总数；空批带next_cursor仍可继续。依据变化使整个查询失效 | Retrieves candidates, applies current permissions, then delivers a proven prefix of complete RRF order. Returns no exact total; empty batches with next_cursor may continue. Basis changes invalidate the entire query
 // @Tags Manager
 // @Produce json
-// @Param q query string true "搜索关键词 | Search query"
-// @Param engine_id query int false "限定引擎 ID | Restrict results to an engine ID"
-// @Param page query int false "页码，默认1 | Page number, default 1"
-// @Param page_size query int false "每页数量，默认10 | Page size, default 10"
-// @Success 200 {object} service.SearchResult "搜索结果，results[].locator 为跨引擎资源定位符 | Search results; results[].locator is the cross-engine resource locator"
-// @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
-// @Failure 500 {object} map[string]interface{} "混合检索失败 | Hybrid search failed"
-// @Failure 403 {object} map[string]interface{} "检索身份未获授权 | Search credential forbidden"
-// @Failure 503 {object} map[string]interface{} "搜索未配置、索引隔离或授权核验不可用 | Search unconfigured, index isolated or authorization unavailable"
+// @Param q query string true "固定查询词 | Fixed query"
+// @Param engine_id query int false "固定引擎范围 | Fixed engine scope"
+// @Param page_size query int false "固定批次大小，1至50，默认10 | Fixed batch size, 1-50, default 10"
+// @Param cursor query string false "不透明续查游标；初次不传 | Opaque continuation cursor; omit initially"
+// @Success 200 {object} service.SearchContinuationResult "当前交付批次 | Current delivery batch"
+// @Failure 400,401,403,404,409,410,502,503,504 {object} map[string]interface{} "检索失败或状态失效 | Search failed or context invalidated"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["manager.search.execute"]
 // @Router /search [get]
@@ -51,75 +49,72 @@ func NewSearchHandler(searchService *service.HybridSearchService, historyService
 func (h *SearchHandler) Search(c *gin.Context) {
 	c.Header("Cache-Control", "no-store")
 	current, ok := auth.AuthContextFromGin(c)
-	if !ok || current.Principal.Type != "user" || current.Context.Type != "tenant" ||
-		(current.Token.Type != "first_party_access_token" && current.Token.Type != "oauth_access_token" && current.Token.Type != "delegated_access_token") {
+	if !ok || current.Principal.Type != "user" || current.Context.Type != "tenant" || (current.Token.Type != "first_party_access_token" && current.Token.Type != "oauth_access_token" && current.Token.Type != "delegated_access_token") {
 		managerError(c, http.StatusForbidden, manageri18n.MsgUnauthorized)
 		return
 	}
-	if h.searchService == nil || !h.searchService.Enabled() {
-		managerError(c, http.StatusServiceUnavailable, manageri18n.MsgHybridSearchNotConfigured)
+	for key, values := range c.Request.URL.Query() {
+		if len(values) != 1 || (key != "q" && key != "engine_id" && key != "page_size" && key != "cursor") {
+			c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, manageri18n.MsgSearchParametersInvalid), "error_code": "search_parameters_invalid"})
+			return
+		}
+	}
+	input, err := service.ParseSearchContinuation(c.Query("q"), c.Query("page_size"), c.Query("cursor"))
+	if err != nil {
+		managerError(c, http.StatusBadRequest, manageri18n.MsgSearchParametersInvalid)
 		return
 	}
-
-	query := strings.TrimSpace(c.Query("q"))
-	if query == "" {
-		managerError(c, http.StatusBadRequest, manageri18n.MsgMissingQuery)
-		return
-	}
-
-	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
-	pageSize, _ := strconv.Atoi(c.DefaultQuery("page_size", "10"))
 	var engineID *uint
-	if rawEngineID := strings.TrimSpace(c.Query("engine_id")); rawEngineID != "" {
-		parsed, err := strconv.ParseUint(rawEngineID, 10, 64)
-		if err != nil || parsed == 0 {
+	if raw := c.Query("engine_id"); raw != "" {
+		parsed, err := strconv.ParseInt(raw, 10, 64)
+		if err != nil || parsed <= 0 {
 			managerError(c, http.StatusBadRequest, manageri18n.MsgInvalidEngineIDParam)
 			return
 		}
 		value := uint(parsed)
 		engineID = &value
 	}
-
-	tenantID := tenantFilterIDFromContext(c)
-	result, err := h.searchService.SearchDocuments(c.Request.Context(), tenantID, engineID, auth.CanonicalBearerToken(c.GetHeader("Authorization")), h.visibility, query, page, pageSize)
-	if err != nil {
-		if errors.Is(err, service.ErrSearchIsolated) {
-			c.JSON(http.StatusServiceUnavailable, gin.H{"error": commoni18n.T(c, manageri18n.MsgHybridSearchIsolated), "error_code": "manager_search_isolated"})
-			return
-		}
-		if errors.Is(err, service.ErrSearchDisabled) {
-			managerError(c, http.StatusServiceUnavailable, manageri18n.MsgHybridSearchNotConfigured)
-			return
-		}
-		if errors.Is(err, commonClient.ErrMetadataQueryDenied) || errors.Is(err, commonClient.ErrMetadataCredentialRejected) {
-			managerError(c, http.StatusForbidden, manageri18n.MsgUnauthorized)
-			return
-		}
-		if errors.Is(err, commonClient.ErrMetadataQueryUnavailable) || errors.Is(err, service.ErrSearchVisibilityUnavailable) {
-			managerError(c, http.StatusServiceUnavailable, manageri18n.MsgHybridSearchFailed)
-			return
-		}
-		logger.L().Error("混合检索失败", "error_type", fmt.Sprintf("%T", err))
-		managerError(c, http.StatusInternalServerError, manageri18n.MsgHybridSearchFailed)
+	if h.searchService == nil || !h.searchService.Enabled() {
+		managerError(c, http.StatusServiceUnavailable, manageri18n.MsgHybridSearchNotConfigured)
 		return
 	}
-
-	if h.historyService != nil {
+	result, err := h.searchService.SearchDocuments(c.Request.Context(), current, engineID, auth.CanonicalBearerToken(c.GetHeader("Authorization")), h.visibility, input)
+	if err != nil {
+		status, key, code := http.StatusServiceUnavailable, manageri18n.MsgHybridSearchFailed, "manager_search_failed"
+		switch {
+		case errors.Is(err, service.ErrSearchContextChanged):
+			status, key, code = http.StatusConflict, manageri18n.MsgSearchContextChanged, "search_context_changed"
+		case errors.Is(err, service.ErrSearchContinuationExpired):
+			status, key, code = http.StatusGone, manageri18n.MsgSearchContinuationExpired, "search_continuation_expired"
+		case errors.Is(err, service.ErrSearchContinuationNotFound):
+			status, key, code = http.StatusNotFound, manageri18n.MsgSearchContinuationExpired, "search_continuation_not_found"
+		case errors.Is(err, service.ErrSearchContinuationParameters):
+			status, key, code = http.StatusBadRequest, manageri18n.MsgSearchParametersInvalid, "search_parameters_invalid"
+		case errors.Is(err, service.ErrSearchCapacityExceeded):
+			key, code = manageri18n.MsgSearchCapacityExceeded, "search_capacity_exceeded"
+		case errors.Is(err, commonClient.ErrMetadataCredentialRejected):
+			status, key, code = http.StatusUnauthorized, manageri18n.MsgUnauthorized, "unauthorized"
+		case errors.Is(err, commonClient.ErrMetadataQueryDenied):
+			status, key, code = http.StatusForbidden, manageri18n.MsgUnauthorized, "forbidden"
+		case errors.Is(err, service.ErrSearchIsolated):
+			key, code = manageri18n.MsgHybridSearchIsolated, "manager_search_isolated"
+		case errors.Is(err, service.ErrSearchDisabled):
+			key = manageri18n.MsgHybridSearchNotConfigured
+		case errors.Is(err, context.DeadlineExceeded):
+			status = http.StatusGatewayTimeout
+		}
+		logger.L().Error("混合检索失败", "error_type", fmt.Sprintf("%T", err))
+		c.JSON(status, gin.H{"error": commoni18n.T(c, key), "error_code": code})
+		return
+	}
+	if h.historyService != nil && c.Query("cursor") == "" {
 		if userID, ok := userIDFromContext(c); ok {
-			if err := h.historyService.Record(userID, tenantID, query); err != nil {
-				logger.L().Warn("记录搜索历史失败", "error", err, "user_id", userID)
+			if err := h.historyService.Record(userID, tenantFilterIDFromContext(c), c.Query("q")); err != nil {
+				logger.L().Warn("记录搜索历史失败", "user_id", userID)
 			}
 		}
 	}
-
-	logger.L().Info("混合检索返回",
-		"engine_id", engineID,
-		"total", result.Total,
-		"results_count", len(result.Hits),
-		"page", result.Page,
-		"page_size", result.PageSize,
-	)
-
+	logger.L().Info("混合检索返回", "engine_id", engineID, "results_count", len(result.Hits), "page_size", result.PageSize, "exhausted", result.Exhausted)
 	c.JSON(http.StatusOK, gin.H{"data": result})
 }
 

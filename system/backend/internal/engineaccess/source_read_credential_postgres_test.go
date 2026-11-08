@@ -187,6 +187,7 @@ func exerciseSourceReadCredentials(t *testing.T, db *gorm.DB, path engineplugin.
 		t.Run("Manager search uses current source rules and exact delegation", func(t *testing.T) {
 			other := engineplugin.TabularItemPath(path.EngineID, "schema", "public", "ungranted_search")
 			service := NewService(repo, nil).WithAuthorizationFactsReader(testMetaFacts{paths: []engineplugin.EngineCatalogPath{path, other}})
+			configureSearchObservationFixture(t, service)
 			user, _ := newUser(t, time.Hour)
 			role, err := roles.CreateRole(ctx, iam.CreateTenantRoleInput{TenantID: tenantID, RoleKey: "custom.manager_search", Name: "Manager search fixture", PermissionKeys: []string{ManagerSearchPermission, MetaCatalogReadPermission}, ActorPrincipalID: adminID})
 			if err != nil {
@@ -209,7 +210,8 @@ func exerciseSourceReadCredentials(t *testing.T, db *gorm.DB, path engineplugin.
 				t.Fatal(err)
 			}
 			request := shared.SourceMetadataCheckRequest{Targets: []engineplugin.EngineCatalogPath{path, other}}
-			if result, err := service.CheckManagerSearchRead(ctx, meta.AccessToken, request); result != nil || !errors.Is(err, commonapi.ErrForbidden) {
+			searchRequest := shared.SourceSearchCheckRequest{Targets: request.Targets, QueryNonce: "0123456789abcdef0123456789abcdef"}
+			if result, err := service.CheckManagerSearchRead(ctx, meta.AccessToken, searchRequest); result != nil || !errors.Is(err, commonapi.ErrForbidden) {
 				t.Fatalf("Meta delegation reached search: %+v %v", result, err)
 			}
 			if result, err := service.CheckMetaMetadataRead(ctx, search.AccessToken, request); result != nil || !errors.Is(err, commonapi.ErrForbidden) {
@@ -219,8 +221,8 @@ func exerciseSourceReadCredentials(t *testing.T, db *gorm.DB, path engineplugin.
 				t.Helper()
 				for _, credential := range []string{session.AccessToken, search.AccessToken} {
 					observedCtx, timing := ObserveManagerSearchTiming(ctx)
-					result, err := service.CheckManagerSearchRead(observedCtx, credential, request)
-					if err != nil || !result.Matches(request) || result.Targets[0].Visible != want || result.Targets[0].ContentReadable != want || result.Targets[1].Visible || result.Targets[1].ContentReadable {
+					result, err := service.CheckManagerSearchRead(observedCtx, credential, searchRequest)
+					if err != nil || !result.Matches(searchRequest) || result.Targets[0].Visible != want || result.Targets[0].ContentReadable != want || result.Targets[1].Visible || result.Targets[1].ContentReadable {
 						t.Fatalf("want readable=%v: %+v %v", want, result, err)
 					}
 					if timing.candidates != 2 || timing.wholeCandidates != 0 || timing.engineQueries != 1 ||
@@ -234,8 +236,60 @@ func exerciseSourceReadCredentials(t *testing.T, db *gorm.DB, path engineplugin.
 			check(false)
 			id := grant(t, "user", user.PrincipalID, nil)
 			check(true)
+			empty := shared.SourceSearchCheckRequest{QueryNonce: searchRequest.QueryNonce, Targets: []engineplugin.EngineCatalogPath{}}
+			begun, err := service.CheckManagerSearchRead(ctx, session.AccessToken, empty)
+			if err != nil || !begun.Matches(empty) {
+				t.Fatalf("empty observation failed: %v", err)
+			}
+			stable := searchRequest
+			stable.ExpectedObservationTag = &begun.ObservationTag
+			if result, err := service.CheckManagerSearchRead(ctx, session.AccessToken, stable); err != nil || !result.Matches(stable) {
+				t.Fatalf("stable continuation rejected: %v", err)
+			}
+			rollback := db.Begin()
+			if rollback.Error != nil {
+				t.Fatal(rollback.Error)
+			}
+			if err := rollback.Exec("UPDATE system.engines SET version=version+1 WHERE id=?", path.EngineID).Error; err != nil {
+				rollback.Rollback()
+				t.Fatal(err)
+			}
+			if err := rollback.Rollback().Error; err != nil {
+				t.Fatal(err)
+			}
+			if _, err := service.CheckManagerSearchRead(ctx, session.AccessToken, stable); err != nil {
+				t.Fatalf("rolled back basis change invalidated search: %v", err)
+			}
+
 			revoke(t, id)
+			if result, err := service.CheckManagerSearchRead(ctx, session.AccessToken, stable); result != nil || !errors.Is(err, ErrSearchContextChanged) {
+				t.Fatalf("withdrawal reused old ranking: %+v %v", result, err)
+			}
+
 			check(false)
+
+			var dbNow time.Time
+			if err := db.Raw("SELECT clock_timestamp()").Scan(&dbNow).Error; err != nil {
+				t.Fatal(err)
+			}
+			deadline := dbNow.Add(time.Second)
+			grant(t, "user", user.PrincipalID, &deadline)
+			begun, err = service.CheckManagerSearchRead(ctx, session.AccessToken, empty)
+			if err != nil {
+				t.Fatal(err)
+			}
+			stable.ExpectedObservationTag = &begun.ObservationTag
+			if err := db.Exec("SELECT pg_sleep(GREATEST(0,EXTRACT(EPOCH FROM (?::timestamptz-clock_timestamp()))+0.02))", deadline).Error; err != nil {
+				t.Fatal(err)
+			}
+			if result, err := service.CheckManagerSearchRead(ctx, session.AccessToken, stable); result != nil || !errors.Is(err, ErrSearchContextChanged) {
+				t.Fatalf("natural expiry reused old ranking: %+v %v", result, err)
+			}
+			service.searchRevisionReader = searchChangingRevisionFixture{calls: new(int)}
+			if result, err := service.CheckManagerSearchRead(ctx, session.AccessToken, empty); result != nil || !errors.Is(err, ErrSearchContextChanged) {
+				t.Fatalf("Meta changed between observations: %+v %v", result, err)
+			}
+			configureSearchObservationFixture(t, service)
 
 			tenant := uint(tenantID)
 			nfs := models.Engine{Name: "Manager search whole fixture", EngineType: "nfs", TenantID: &tenant,
@@ -277,7 +331,7 @@ func exerciseSourceReadCredentials(t *testing.T, db *gorm.DB, path engineplugin.
 				{targets: wholeTargets, whole: 2, engineQueries: 3, ruleQueries: 1},
 				{targets: []engineplugin.EngineCatalogPath{path}},
 			} {
-				req := shared.SourceMetadataCheckRequest{Targets: tc.targets}
+				req := shared.SourceSearchCheckRequest{Targets: tc.targets, QueryNonce: "0123456789abcdef0123456789abcdef"}
 				observedCtx, timing := ObserveManagerSearchTiming(ctx)
 				result, err := service.CheckManagerSearchRead(observedCtx, session.AccessToken, req)
 				if err != nil || !result.Matches(req) || len(result.Targets) != len(tc.targets) {

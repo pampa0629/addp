@@ -11,6 +11,7 @@ var localeFS embed.FS
 
 // 消息 key 常量
 const (
+	MsgSearchContextChanged                          = "system.search.context_changed"
 	MsgInstanceOverviewUnsupported                   = "system.engine.overview_unsupported"
 	MsgInstanceOverviewUnavailable                   = "system.engine.overview_unavailable"
 	MsgMetaCollectionUnavailable                     = "system.meta_collection.unavailable"

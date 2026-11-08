@@ -3,7 +3,6 @@ package engineaccess
 import (
 	"context"
 	"encoding/json"
-	"strings"
 	"time"
 
 	commonapi "github.com/addp/common/api"
@@ -29,10 +28,7 @@ func qualifyManagerSearchRead(current shared.AuthContext) error {
 	return nil
 }
 
-func (s *Service) CheckManagerSearchRead(ctx context.Context, credential string, request shared.SourceMetadataCheckRequest) (*shared.SourceSearchCheck, error) {
-	if !request.Valid() {
-		return nil, commonapi.ErrBadRequest
-	}
+func (s *Service) checkManagerSearchTargets(ctx context.Context, credential string, tenant int64, request shared.SourceMetadataCheckRequest) (*shared.SourceSearchCheck, error) {
 	if s == nil || s.repository == nil || s.repository.db == nil {
 		return nil, errSourceReadRules
 	}
@@ -41,18 +37,19 @@ func (s *Service) CheckManagerSearchRead(ctx context.Context, credential string,
 		timing.candidates = len(request.Targets)
 	}
 	resolve := func(auth *iam.AuthContextService) (*shared.AuthContext, error) {
-		if strings.HasPrefix(credential, "addp_dat_") {
-			return auth.ResolveDelegatedAccessToken(ctx, credential)
-		}
-		return auth.ResolveUserAccessToken(ctx, credential)
+		return resolveSearchCredential(ctx, auth, credential)
 	}
 	started := time.Now()
-	tenant, err := s.repository.resolveSourceCredentialTenant(ctx, resolve, qualifyManagerSearchRead)
-	if timing != nil {
-		timing.preMetaCredential = time.Since(started)
-	}
-	if err != nil {
-		return nil, err
+	if len(request.Targets) == 0 {
+		currentTenant, err := s.repository.resolveSourceCredentialTenant(ctx, resolve, qualifyManagerSearchRead)
+		if err != nil {
+			return nil, err
+		}
+		if currentTenant != tenant {
+			return nil, commonapi.ErrForbidden
+		}
+		now, err := s.repository.wallClock(ctx)
+		return &shared.SourceSearchCheck{ObservedAt: now, Targets: []shared.SourceSearchTargetCheck{}}, err
 	}
 	started = time.Now()
 	bindings, err := s.resolveMetadataBindings(ctx, tenant, request.Targets)
@@ -139,6 +136,9 @@ func (s *Service) CheckManagerSearchRead(ctx context.Context, credential string,
 		metadata, content := metadataPositions[i], contentPositions[i]
 		result.Targets[i].Visible = metadata >= 0 && observation.Targets[metadata].Covered
 		result.Targets[i].ContentReadable = result.Targets[i].Visible && content >= 0 && observation.Targets[content].Covered
+		if result.Targets[i].Visible {
+			result.Targets[i].ItemFingerprint = bindings[i].ItemFingerprint
+		}
 	}
 	return result, nil
 }

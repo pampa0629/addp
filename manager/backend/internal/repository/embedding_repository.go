@@ -2,7 +2,6 @@ package repository
 
 import (
 	"context"
-	"database/sql"
 	"errors"
 	"fmt"
 	"strings"
@@ -12,7 +11,6 @@ import (
 	commonExecution "github.com/addp/common/execution"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/manager/internal/models"
-	"github.com/lib/pq"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
@@ -178,93 +176,6 @@ func (r *EmbeddingRepository) UpsertEmbeddingState(ctx context.Context, embeddin
 		}
 		return write(tx)
 	})
-}
-
-func (r *EmbeddingRepository) QueryReadySimilar(ctx context.Context, tenantID uint, engineID *uint, queryVector []float32, modelProfileID string, profileVersion int64, dimension int, topK int, maxDistance float64, allowedItems []string) ([]EmbeddingSimilarityResult, error) {
-	if tenantID == 0 {
-		return nil, errors.New("tenant_id is required")
-	}
-	if len(queryVector) == 0 {
-		return nil, errors.New("query vector is required")
-	}
-	if strings.TrimSpace(modelProfileID) == "" || profileVersion <= 0 || dimension <= 0 {
-		return nil, errors.New("model profile, profile version and dimension are required")
-	}
-	if topK <= 0 {
-		topK = 10
-	}
-	if len(allowedItems) == 0 {
-		return nil, nil
-	}
-
-	vector := vectorToString(queryVector)
-	args := []any{tenantID, models.EmbeddingStatusReady, modelProfileID, profileVersion, dimension, pq.Array(allowedItems)}
-	engineClause := ""
-	if engineID != nil && *engineID > 0 {
-		engineClause = " AND engine_id = ?"
-		args = append(args, *engineID)
-	}
-	distanceClause := ""
-	if maxDistance > 0 {
-		distanceClause = " AND embedding OPERATOR(manager.<=>) ?::manager.vector <= ?"
-		args = append(args, vector, maxDistance)
-	}
-	args = append(args, vector, topK)
-
-	querySQL := fmt.Sprintf(`
-		SELECT id, tenant_id, item_fingerprint, item_id, engine_id, locator, source_version, model_profile_id, profile_version, deployment_id, dimension,
-		       status, status_reason, error_message, last_execution_id, vectorized_at, created_at, updated_at,
-		       embedding OPERATOR(manager.<=>) ?::manager.vector AS distance
-		FROM manager.embeddings
-		WHERE tenant_id = ? AND status = ? AND model_profile_id = ? AND profile_version = ? AND dimension = ? AND item_fingerprint = ANY(?::text[])%s AND embedding IS NOT NULL%s
-		ORDER BY embedding OPERATOR(manager.<=>) ?::manager.vector, item_fingerprint
-		LIMIT ?
-	`, engineClause, distanceClause)
-
-	queryArgs := append([]any{vector}, args...)
-	rows, err := r.db.WithContext(ctx).Raw(querySQL, queryArgs...).Rows()
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	results := make([]EmbeddingSimilarityResult, 0)
-	for rows.Next() {
-		var emb models.Embedding
-		var distance float64
-		var statusReason sql.NullString
-		var errorMessage sql.NullString
-		if err := rows.Scan(
-			&emb.ID,
-			&emb.TenantID,
-			&emb.ItemFingerprint,
-			&emb.ItemID,
-			&emb.EngineID,
-			&emb.Locator,
-			&emb.SourceVersion,
-			&emb.ModelProfileID,
-			&emb.ProfileVersion,
-			&emb.DeploymentID,
-			&emb.Dimension,
-			&emb.Status,
-			&statusReason,
-			&errorMessage,
-			&emb.LastExecutionID,
-			&emb.VectorizedAt,
-			&emb.CreatedAt,
-			&emb.UpdatedAt,
-			&distance,
-		); err != nil {
-			return nil, err
-		}
-		emb.StatusReason = statusReason.String
-		emb.ErrorMessage = errorMessage.String
-		results = append(results, EmbeddingSimilarityResult{Embedding: &emb, Distance: distance})
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return results, nil
 }
 
 func (r *EmbeddingRepository) ListEmbeddings(ctx context.Context, filter EmbeddingListFilter) ([]*models.Embedding, int64, error) {

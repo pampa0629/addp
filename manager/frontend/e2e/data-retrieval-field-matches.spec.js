@@ -21,7 +21,7 @@ test('retrieval explains field matches, expands definitions and escapes source m
     if (url.pathname === '/api/v1/manager/search/history') return json(route, { data: { items: [] } })
     if (url.pathname === '/api/v1/manager/search') {
       const semantic = url.searchParams.get('q') === 'semantic'
-      return json(route, { data: { total: 1, page: 1, page_size: 10, results: [{
+      return json(route, { data: { exhausted: true, page_size: 10, results: [{
         document_id: 'collection', name: 'Outdoors', file_name: 'Outdoors', engine_id: 11,
         full_name: 'Outdoor.Outdoors', schema: 'Outdoor',
         locator: 'addp://engine/11/path/Outdoor/Outdoors?type=collection&item_id=111',

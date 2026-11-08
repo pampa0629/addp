@@ -110,6 +110,9 @@ func InitDatabase(cfg *config.Config) (*gorm.DB, error) {
 	if err := MigrateContentIndexDeliverySchema(db); err != nil {
 		return nil, fmt.Errorf("failed to ensure content index delivery schema: %w", err)
 	}
+	if err := MigrateSearchSchema(db); err != nil {
+		return nil, fmt.Errorf("failed to migrate search continuation schema: %w", err)
+	}
 	if err := normalizePreviewArtifactSchemaNames(db); err != nil {
 		return nil, fmt.Errorf("failed to normalize preview artifact schema names: %w", err)
 	}

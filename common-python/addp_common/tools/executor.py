@@ -234,13 +234,21 @@ class ToolExecutor:
             return await client.list_engine_summaries(arguments.get("capability", "all"))
 
     async def _data_search(self, arguments: dict[str, Any], delegated_token: str) -> Any:
+        limit = arguments.get("limit", 10)
+        results: list[dict[str, Any]] = []
+        cursor = None
         async with self._client(ManagerClient, delegated_token) as client:
-            return await client.search(
-                q=arguments["query"],
-                engine_id=arguments.get("engine_id"),
-                page=1,
-                page_size=arguments.get("limit", 10),
-            )
+            while True:
+                batch = await client.search(
+                    q=arguments["query"], engine_id=arguments.get("engine_id"),
+                    page_size=limit, cursor=cursor,
+                )
+                results.extend(batch["results"])
+                if batch["exhausted"] or len(results) >= limit:
+                    # The continuation belongs to this delegated ToolCall only.
+                    return {"results": results[:limit], "page_size": limit,
+                            "exhausted": batch["exhausted"] and len(results) <= limit}
+                cursor = batch["next_cursor"]
 
     async def _resource_ancestors_get(self, arguments: dict[str, Any], delegated_token: str) -> Any:
         async with self._client(MetaClient, delegated_token) as client:

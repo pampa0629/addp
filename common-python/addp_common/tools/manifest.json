@@ -105,7 +105,7 @@
     },
     {
       "name": "data.search",
-      "version": "1.0.0",
+      "version": "2.0.0",
       "description": "搜索当前租户已有数据项并返回稳定 locator 候选。",
       "owner": "manager",
       "risk": "read",
@@ -115,7 +115,7 @@
       "audit": {"mode": "owner"},
       "result_ref": {"mode": "locator"},
       "limits": {"max_bytes": 131072},
-      "errors": ["invalid_arguments", "delegation_rejected", "delegation_unavailable", "invalid_delegation_response", "owner_api_error", "owner_api_unavailable", "invalid_owner_response", "result_too_large", "manager_search_isolated"],
+      "errors": ["invalid_arguments", "delegation_rejected", "delegation_unavailable", "invalid_delegation_response", "owner_api_error", "owner_api_unavailable", "invalid_owner_response", "result_too_large", "manager_search_isolated", "search_context_changed", "search_continuation_expired", "search_continuation_not_found", "search_capacity_exceeded", "search_parameters_invalid"],
       "input_schema": {
         "type": "object",
         "properties": {

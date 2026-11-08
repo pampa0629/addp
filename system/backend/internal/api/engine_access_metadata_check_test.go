@@ -12,6 +12,7 @@ import (
 	"github.com/addp/common/authorization"
 	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/logger"
+	commonmodels "github.com/addp/common/models"
 	"github.com/addp/common/modulelifecycle"
 	"github.com/addp/common/runtimelog"
 	"github.com/addp/system/internal/engineaccess"
@@ -24,13 +25,14 @@ type metadataCheckFixture struct {
 	wrongTarget bool
 }
 
-func (f *metadataCheckFixture) CheckManagerSearchRead(_ context.Context, credential string, request authorization.SourceMetadataCheckRequest) (*authorization.SourceSearchCheck, error) {
+func (f *metadataCheckFixture) CheckManagerSearchRead(_ context.Context, credential string, request authorization.SourceSearchCheckRequest) (*authorization.SourceSearchCheck, error) {
 	f.calls++
 	if credential != "addp_at_test" && credential != "addp_dat_test" {
 		panic("wrong search credential")
 	}
-	return &authorization.SourceSearchCheck{ObservedAt: time.Now(), Targets: []authorization.SourceSearchTargetCheck{{
+	return &authorization.SourceSearchCheck{ObservedAt: time.Now(), ObservationTag: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA", Targets: []authorization.SourceSearchTargetCheck{{
 		SourceMetadataTargetCheck: authorization.SourceMetadataTargetCheck{Target: request.Targets[0], Visible: true},
+		ItemFingerprint:           commonmodels.GenerateItemFingerprint(request.Targets[0].EngineID, request.Targets[0].StringPath()),
 	}}}, nil
 }
 
@@ -39,7 +41,7 @@ func TestManagerSearchMetadataCheckUsesFixedAudienceAndScope(t *testing.T) {
 	logger.Init(logger.Options{Writer: &logs})
 	t.Cleanup(func() { logger.Init(logger.Options{}) })
 	target := plugin.TabularItemPath(12, "schema", "public", "private_search_fixture")
-	input := authorization.SourceMetadataCheckRequest{Targets: []plugin.EngineCatalogPath{target}}
+	input := authorization.SourceSearchCheckRequest{Targets: []plugin.EngineCatalogPath{target}, QueryNonce: "0123456789abcdef0123456789abcdef"}
 	body, err := json.Marshal(input)
 	if err != nil {
 		t.Fatal(err)
@@ -292,6 +294,33 @@ func TestLineageMetadataCheckUsesLineagePermissionWithoutDelegation(t *testing.T
 			}
 			if fixture.calls != expected {
 				t.Fatalf("authority called %d times", fixture.calls)
+			}
+		})
+	}
+}
+
+func TestManagerSearchRequiresExplicitObservationFields(t *testing.T) {
+	for _, tc := range []struct {
+		body   string
+		status int
+	}{
+		{`{"targets":[],"query_nonce":"0123456789abcdef0123456789abcdef","expected_observation_tag":null}`, 204},
+		{`{"targets":[],"query_nonce":"0123456789abcdef0123456789abcdef"}`, 400},
+		{`{"targets":[],"query_nonce":"0123456789abcdef0123456789abcdef","expected_observation_tag":null,"tenant_id":7}`, 400},
+		{`{"targets":[],"query_nonce":"bad","expected_observation_tag":null}`, 400},
+		{`{"targets":[],"query_nonce":"0123456789abcdef0123456789abcdef","expected_observation_tag":"bad"}`, 400},
+	} {
+		t.Run(tc.body, func(t *testing.T) {
+			router := gin.New()
+			router.POST("/", func(c *gin.Context) {
+				if _, ok := bindSearchCheck(c); ok {
+					c.Status(204)
+				}
+			})
+			response := httptest.NewRecorder()
+			router.ServeHTTP(response, httptest.NewRequest("POST", "/", strings.NewReader(tc.body)))
+			if response.Code != tc.status {
+				t.Fatalf("status=%d want=%d", response.Code, tc.status)
 			}
 		})
 	}

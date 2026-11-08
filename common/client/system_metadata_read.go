@@ -36,20 +36,48 @@ func (c *SystemServiceClient) checkMetaVisibility(ctx context.Context, credentia
 	return &result, nil
 }
 
-func (c *SystemServiceClient) CheckManagerSearchRead(ctx context.Context, credential string, targets []plugin.EngineCatalogPath) (*authorization.SourceSearchCheck, error) {
+func (c *SystemServiceClient) CheckManagerSearchRead(ctx context.Context, credential string, request authorization.SourceSearchCheckRequest) (*authorization.SourceSearchCheck, error) {
+	if !validSourceCredential(credential, true) {
+		return nil, ErrMetadataCredentialRejected
+	}
+	if !request.Valid() {
+		return nil, ErrMetadataQueryDenied
+	}
+	if c == nil || c.baseURL == "" || c.httpClient == nil {
+		return nil, ErrMetadataQueryUnavailable
+	}
+	bound := *c
+	transport := *c.httpClient
+	transport.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
+	bound.httpClient = &transport
 	var result authorization.SourceSearchCheck
-	if err := c.checkSourceVisibility(ctx, credential, targets, "/api/v1/system/engine-access/metadata-checks/manager-search", true, &result); err != nil {
-		return nil, err
+	status, err := bound.doJSON(ctx, http.MethodPost, "/api/v1/system/engine-access/metadata-checks/manager-search", credential, request, &result, 512<<10)
+	switch status {
+	case http.StatusUnauthorized:
+		return nil, ErrMetadataCredentialRejected
+	case http.StatusForbidden:
+		return nil, ErrMetadataQueryDenied
+	case http.StatusConflict:
+		return nil, ErrSearchContextChanged
+	}
+	if err != nil || status != http.StatusOK || !result.Matches(request) {
+		return nil, ErrMetadataQueryUnavailable
 	}
 	return &result, nil
+}
+
+var ErrSearchContextChanged = errors.New("search context changed")
+
+func validSourceCredential(credential string, allowDelegate bool) bool {
+	ordinary := strings.HasPrefix(credential, "addp_at_") && len(credential) > len("addp_at_")
+	delegated := allowDelegate && strings.HasPrefix(credential, "addp_dat_") && len(credential) > len("addp_dat_")
+	return (ordinary || delegated) && !strings.ContainsAny(credential, " \t\r\n")
 }
 
 func (c *SystemServiceClient) checkSourceVisibility(ctx context.Context, credential string, targets []plugin.EngineCatalogPath, endpoint string, allowDelegate bool, result interface {
 	Matches(authorization.SourceMetadataCheckRequest) bool
 }) error {
-	ordinary := strings.HasPrefix(credential, "addp_at_") && len(credential) > len("addp_at_")
-	delegated := allowDelegate && strings.HasPrefix(credential, "addp_dat_") && len(credential) > len("addp_dat_")
-	if (!ordinary && !delegated) || strings.ContainsAny(credential, " \t\r\n") {
+	if !validSourceCredential(credential, allowDelegate) {
 		return ErrMetadataCredentialRejected
 	}
 	request := authorization.SourceMetadataCheckRequest{Targets: targets}

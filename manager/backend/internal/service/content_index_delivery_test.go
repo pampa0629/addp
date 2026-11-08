@@ -58,6 +58,8 @@ func contentDeliveryServiceFixture(t *testing.T, handler http.Handler) (*HybridS
 	}
 	svc := &HybridSearchService{client: meilisearch.New(server.URL, meilisearch.WithCustomClient(&http.Client{Timeout: time.Second}), meilisearch.DisableRetries()), contentIndex: "content", enabled: true, deliveries: repo, protectionStore: store, epoch: epoch, endpointID: contentIndexEndpointID(server.URL), log: slog.Default()}
 	svc.initialized.Store(true)
+	svc.ordinalReady.Store(true)
+	svc.searchSessions = newSearchSessionRegistry()
 	return svc, db
 }
 
@@ -199,7 +201,7 @@ func TestContentDeliveryLostResponseStaysUnknownAndCanAcknowledgeIsolation(t *te
 		t.Fatal("isolation not durable")
 	}
 	tenant := uint(7)
-	if _, err := svc.SearchDocuments(t.Context(), &tenant, nil, "addp_at_test", searchVisibilityFixture{}, "persons", 1, 10); !errors.Is(err, ErrSearchIsolated) {
+	if _, err := testSearchDocuments(t, svc, t.Context(), tenant, nil, searchVisibilityFixture{}, "persons", 10, ""); !errors.Is(err, ErrSearchIsolated) {
 		t.Fatal("isolated index queried")
 	}
 	if requests.Load() != 1 {
@@ -249,10 +251,10 @@ func TestContentSearchDiscardsResultsIfProtectionFencesDuringExternalRead(t *tes
 		})
 		installErrors <- err
 		w.Header().Set("Content-Type", "application/json")
-		fmt.Fprint(w, `{"hits":[{"id":"item","name":"old-content"}],"estimatedTotalHits":1}`)
+		fmt.Fprint(w, `{"uid":"content","primaryKey":"id","createdAt":"2026-11-08T00:00:00Z","updatedAt":"2026-11-08T00:00:00Z"}`)
 	}))
 	tenant := uint(7)
-	result, err := svc.SearchDocuments(t.Context(), &tenant, nil, "addp_at_test", searchVisibilityFixture{}, "persons", 1, 10)
+	result, err := testSearchDocuments(t, svc, t.Context(), tenant, nil, searchVisibilityFixture{}, "persons", 10, "")
 	if !errors.Is(err, ErrSearchIsolated) || result != nil || requests.Load() != 1 {
 		t.Fatalf("old external result escaped fence: %#v %v", result, err)
 	}

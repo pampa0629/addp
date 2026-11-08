@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"net/http"
 	"time"
 
 	"github.com/addp/common/dataitem/authorizationfacts"
@@ -40,7 +41,7 @@ func (c *MetaClient) ReadAuthorizationFacts(ctx context.Context, tenantID uint, 
 		timing = &metaFactsTiming{started: time.Now()}
 		ctx = context.WithValue(ctx, metaFactsTimingKey{}, timing)
 	}
-	encoded, err := c.postMetaOwnerQuery(ctx, tenantID, "/api/v1/meta/runtime/data-items/authorization-facts/query", query, authorizationfacts.MaxAuthorizationFactsBatchBytes, 24)
+	encoded, err := c.metaOwnerQuery(ctx, tenantID, http.MethodPost, "/api/v1/meta/runtime/data-items/authorization-facts/query", query, authorizationfacts.MaxAuthorizationFactsBatchBytes, 24)
 	if err != nil {
 		return nil, err
 	}

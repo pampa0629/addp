@@ -99,7 +99,7 @@ class DeerFlowRuntimeTests(unittest.IsolatedAsyncioTestCase):
                 return httpx.Response(200, request=request, json={**arguments, "access_token": "addp_dat_fixture"})
             self.assertEqual(path, "/api/v1/manager/search")
             self.assertEqual(owner_client._client.headers["Authorization"], "Bearer addp_dat_fixture")
-            return httpx.Response(200, request=request, json={"data": {"total": 0, "results": []}})
+            return httpx.Response(200, request=request, json={"data": {"exhausted": True, "page_size": kwargs["params"]["page_size"], "results": []}})
 
         client = _InferenceFixture([
             Message(role="assistant", tool_calls=[_call("data.search", {"query": "outdoor", "limit": 5})]),

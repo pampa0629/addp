@@ -12,6 +12,8 @@ import (
 	"github.com/google/uuid"
 )
 
+var ErrInferenceScenarioNotConfigured = errors.New("inference_scenario_not_configured")
+
 type ResolvedInferenceScenarioBinding struct {
 	ModelProfileID string
 	BindingVersion uint64
@@ -51,7 +53,7 @@ func (s *InferenceScenarioBindingService) Resolve(ctx context.Context, tenantID 
 		return ResolvedInferenceScenarioBinding{}, err
 	}
 	if value == nil {
-		return ResolvedInferenceScenarioBinding{}, errors.New("inference_scenario_not_configured")
+		return ResolvedInferenceScenarioBinding{}, ErrInferenceScenarioNotConfigured
 	}
 	return ResolvedInferenceScenarioBinding{ModelProfileID: value.ModelProfileID, BindingVersion: value.Version, SourceScope: value.ScopeType}, nil
 }

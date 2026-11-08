@@ -11,12 +11,16 @@ var localeFS embed.FS
 
 // Manager 模块消息 key 常量（目前 manager 后端错误消息均通过 commonAPI 返回英文，此处预留扩展）
 const (
-	MsgGridSliceInvalid        = "manager.error.grid_slice_invalid"
-	MsgDownloadBundleInvalid   = "manager.error.download_bundle_invalid"
-	MsgDownloadSourceChanged   = "manager.error.download_source_changed"
-	MsgImportSourceInvalid     = "manager.import.source_invalid"
-	MsgImportSourceNotFound    = "manager.import.source_not_found"
-	MsgImportSourceUnavailable = "manager.import.source_unavailable"
+	MsgSearchContextChanged      = "manager.search.context_changed"
+	MsgSearchContinuationExpired = "manager.search.continuation_expired"
+	MsgSearchParametersInvalid   = "manager.search.parameters_invalid"
+	MsgSearchCapacityExceeded    = "manager.search.capacity_exceeded"
+	MsgGridSliceInvalid          = "manager.error.grid_slice_invalid"
+	MsgDownloadBundleInvalid     = "manager.error.download_bundle_invalid"
+	MsgDownloadSourceChanged     = "manager.error.download_source_changed"
+	MsgImportSourceInvalid       = "manager.import.source_invalid"
+	MsgImportSourceNotFound      = "manager.import.source_not_found"
+	MsgImportSourceUnavailable   = "manager.import.source_unavailable"
 
 	MsgTrajectorySelectionInvalid            = "manager.error.trajectory_selection_invalid"
 	MsgTrajectoryPointLimit                  = "manager.error.trajectory_point_limit"

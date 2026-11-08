@@ -309,6 +309,10 @@ case "$TEST_FILTER" in
         [ "$PACKAGE_FILTER" = engineaccess ] || { echo "file-composition requires --package engineaccess" >&2; exit 2; }
         test_pattern='^TestFulfillmentArbitrationAgainstPostgres$/^production_first_acceptance_and_historical_retry$/^file_composition_source_grants$'
         ;;
+    manager-search)
+        [ "$PACKAGE_FILTER" = engineaccess ] || { echo "manager-search requires --package engineaccess" >&2; exit 2; }
+        test_pattern='^TestFulfillmentArbitrationAgainstPostgres$/^production_first_acceptance_and_historical_retry$/^current_complete_source_read_rules$/^trusted_current_User_credential_and_precise_rules$/^Manager_search_uses_current_source_rules_and_exact_delegation$'
+        ;;
     manager-source)
         [ "$PACKAGE_FILTER" = engineaccess ] || { echo "manager-source requires --package engineaccess" >&2; exit 2; }
         test_pattern='^TestFulfillmentArbitrationAgainstPostgres$/^production_first_acceptance_and_historical_retry$/^(current_complete_source_read_rules|file_composition_source_grants)$/^(Manager_complete_source_execution_authorization|ftp|nfs)$'
@@ -668,6 +672,12 @@ case "$TEST_FILTER" in
 esac
 for package in "${packages[@]}"; do
     run_without_skips "$package" "$test_pattern"
+    if [ "$TEST_FILTER" = manager-search ]; then
+        grep -Eq -- '--- PASS: .*/Manager_search_uses_current_source_rules_and_exact_delegation ' "$WORK_DIR/$(printf '%s' "$package" | tr '/.' '__').log" || {
+            echo "Manager search PostgreSQL gate did not execute the actual search fixture" >&2
+            exit 1
+        }
+    fi
 done
 
 if [ -z "$PACKAGE_FILTER" ] && [ -z "$TEST_FILTER" ]; then

@@ -283,6 +283,15 @@ definitions:
       target:
         $ref: '#/definitions/plugin.EngineCatalogPath'
     type: object
+  authorizationfacts.Revision:
+    properties:
+      generation:
+        type: string
+      schema_version:
+        type: string
+      version:
+        type: string
+    type: object
   authorizationfacts.ScopeBoundary:
     properties:
       format:
@@ -3412,6 +3421,46 @@ paths:
       security:
       - BearerAuth: []
       summary: 查询数据项授权资源事实 | Query DataItem authorization resource facts
+      tags:
+      - Meta Runtime
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - meta.authorization_facts.read
+  /runtime/data-items/authorization-facts/revision:
+    get:
+      description: 仅 System Tenant Service 读取当前租户不透明依据版本，不返回身份或许可 | Only the System
+        Tenant Service may read the current tenant basis revision; returns no identities
+        or Allow
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/authorizationfacts.Revision'
+        "400":
+          description: 读取失败 | Read failed
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: 读取失败 | Read failed
+          schema:
+            additionalProperties: true
+            type: object
+        "403":
+          description: 读取失败 | Read failed
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: 读取失败 | Read failed
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 读取授权事实提交版本 | Read committed authorization facts revision
       tags:
       - Meta Runtime
       x-addp-auth-mode: permission

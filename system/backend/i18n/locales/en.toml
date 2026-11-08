@@ -510,3 +510,6 @@ other = "Create, read and delete tenant Engines and read Cleanup results; no def
 other = "Native instance overview is not supported by this engine"
 [system.engine.overview_unavailable]
 other = "Instance overview is unavailable; check the connection and account permissions"
+
+[system.search.context_changed]
+other = "Search context changed. Start a new search."

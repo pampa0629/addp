@@ -77,7 +77,7 @@
         <div class="results-header">
           <span>{{ t('manager.retrieval.results') }}</span>
           <span v-if="hasSearched" class="results-count">
-            {{ t('manager.retrieval.resultsCount', { total }) }}
+            {{ t('manager.retrieval.loadedCount', { count: results.length }) }}
           </span>
         </div>
       </template>
@@ -86,7 +86,11 @@
         <el-empty :description="t('manager.retrieval.emptyHint')" />
       </template>
 
-      <template v-else-if="results.length === 0">
+      <template v-else-if="searchFailed">
+        <el-empty :description="failureMessage" />
+      </template>
+
+      <template v-else-if="results.length === 0 && exhausted">
         <el-empty :description="t('manager.retrieval.noResults')">
           <el-button type="primary" @click="resetSearch">{{ t('manager.retrieval.researchBtn') }}</el-button>
         </el-empty>
@@ -158,17 +162,15 @@
           </div>
         </div>
 
-        <el-pagination
-          v-if="total > pageSize"
-          background
-          layout="total, prev, pager, next, sizes"
-          :total="total"
-          :current-page="page"
-          :page-size="pageSize"
-          :page-sizes="[10, 20, 30, 50]"
-          @current-change="handlePageChange"
-          @size-change="handlePageSizeChange"
-        />
+      </div>
+      <div v-if="hasSearched" class="continuation-actions">
+        <el-button v-if="searchFailed && activeQuery" :loading="loading" @click="fetchResults">
+          {{ t('manager.retrieval.retrySearch') }}
+        </el-button>
+        <el-button v-else-if="!exhausted && activeQuery" :loading="loading" @click="fetchResults">
+          {{ t(results.length ? 'manager.retrieval.loadMore' : 'manager.retrieval.continueSearching') }}
+        </el-button>
+        <span v-else-if="exhausted && results.length">{{ t('manager.retrieval.noMore') }}</span>
       </div>
     </el-card>
   </div>
@@ -192,9 +194,14 @@ const router = useRouter()
 
 const keyword = ref('')
 const results = ref([])
-const total = ref(0)
-const page = ref(1)
-const pageSize = ref(10)
+const pageSize = 10
+const nextCursor = ref('')
+const exhausted = ref(false)
+const activeQuery = ref('')
+const searchFailed = ref(false)
+const failureMessage = ref('')
+let generation = 0
+let retainedResults = []
 const loading = ref(false)
 const hasSearched = ref(false)
 const historyVisible = ref(false)
@@ -306,61 +313,72 @@ const handleSearch = async () => {
     ElMessage.warning(t('manager.retrieval.searchWarning'))
     return
   }
-  page.value = 1
+  generation++
+  activeQuery.value = trimmed
+  nextCursor.value = ''
+  exhausted.value = false
+  retainedResults = []
+  results.value = []
+  expandedFields.value = {}
   await fetchResults()
   await loadHistory()
 }
 
 const fetchResults = async () => {
-  const trimmed = keyword.value.trim()
-  if (!trimmed) {
-    return
-  }
-
+  if (!activeQuery.value) return
+  const requestGeneration = generation
   loading.value = true
+  searchFailed.value = false
   try {
-    const params = {
-      q: trimmed,
-      page: page.value,
-      page_size: pageSize.value
-    }
+    const params = { q: activeQuery.value, page_size: pageSize }
+    if (nextCursor.value) params.cursor = nextCursor.value
     const response = await searchAPI.search(params)
-    // API client 已经自动提取了第一层 data，所以这里直接用 response.data
-    const payload = response.data || {}
-    results.value = Array.isArray(payload.results) ? payload.results : []
-    expandedFields.value = {}
-    total.value = Number(payload.total || 0)
-    page.value = Number(payload.page || page.value || 1)
-    pageSize.value = Number(payload.page_size || pageSize.value || 10)
+    if (requestGeneration !== generation) return
+    const payload = response.data
+    if (!payload || !Array.isArray(payload.results) || typeof payload.exhausted !== 'boolean' ||
+        payload.page_size !== pageSize || (!payload.exhausted &&
+        (typeof payload.next_cursor !== 'string' || !payload.next_cursor || payload.next_cursor === nextCursor.value))) {
+      throw new Error(t('manager.retrieval.invalidResponse'))
+    }
+    retainedResults = retainedResults.concat(payload.results)
+    results.value = retainedResults
+    nextCursor.value = payload.next_cursor || ''
+    exhausted.value = payload.exhausted
     hasSearched.value = true
   } catch (error) {
+    if (requestGeneration !== generation) return
+    results.value = []
     hasSearched.value = true
-    console.error('[DataRetrieval] 搜索失败', error)
-    const message = error.response?.data?.error || error.message
-    ElMessage.error(t('manager.retrieval.searchFailed', { msg: message }))
+    searchFailed.value = true
+    const status = error.response?.status
+    const code = error.response?.data?.error_code || error.response?.data?.error?.code
+    if ([400, 401, 403, 404, 409, 410].includes(status) || code === 'search_capacity_exceeded') {
+      retainedResults = []
+      nextCursor.value = ''
+      activeQuery.value = ''
+      expandedFields.value = {}
+    }
+    const message = status === 409 || status === 410
+      ? t('manager.retrieval.searchChanged')
+      : t('manager.retrieval.searchFailed', { msg: error.response?.data?.error || error.message })
+    failureMessage.value = message
+    ElMessage.error(message)
   } finally {
-    loading.value = false
+    if (requestGeneration === generation) loading.value = false
   }
-}
-
-const handlePageChange = async (nextPage) => {
-  page.value = nextPage
-  await fetchResults()
-}
-
-const handlePageSizeChange = async (size) => {
-  pageSize.value = size
-  page.value = 1
-  await fetchResults()
 }
 
 const resetSearch = () => {
+  generation++
   keyword.value = ''
+  activeQuery.value = ''
   results.value = []
+  retainedResults = []
   expandedFields.value = {}
-  total.value = 0
-  page.value = 1
-  pageSize.value = 10
+  nextCursor.value = ''
+  exhausted.value = false
+  searchFailed.value = false
+  loading.value = false
   hasSearched.value = false
 }
 

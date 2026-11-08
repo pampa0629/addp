@@ -128,6 +128,9 @@ func (r *Repository) observePreparedSourceRules(ctx context.Context, action stri
 		if !current.Token.ExpiresAt.After(now) {
 			return commonapi.ErrUnauthorized
 		}
+		if err := tx.captureSearchObservation(ctx, current, observation.ObservedAt); err != nil {
+			return err
+		}
 		result = observation
 		return nil
 	})
@@ -155,6 +158,15 @@ func (r *Repository) resolveSourceCredentialTenant(ctx context.Context, resolve 
 		}
 		if err := qualify(*current); err != nil {
 			return err
+		}
+		if capture, _ := ctx.Value(searchObservationCaptureKey{}).(*searchObservationCapture); capture != nil {
+			now, clockErr := tx.wallClock(ctx)
+			if clockErr != nil {
+				return clockErr
+			}
+			if err := tx.captureSearchObservation(ctx, current, now); err != nil {
+				return err
+			}
 		}
 		tenantID, err = strconv.ParseInt(*current.Context.TenantID, 10, 64)
 		if err != nil || tenantID <= 0 || strconv.FormatInt(tenantID, 10) != *current.Context.TenantID {

@@ -118,7 +118,12 @@ func TestWholeScopeMigrationAgainstPostgres(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	fs := fstest.MapFS{name: &fstest.MapFile{Data: sql}}
+	revisionSQL, err := metamigrations.FS.ReadFile("028_authorization_basis_revision.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Upgrade the deployed revision 4 through both pending owner migrations.
+	fs := fstest.MapFS{name: &fstest.MapFile{Data: sql}, "028_authorization_basis_revision.sql": &fstest.MapFile{Data: revisionSQL}}
 	// Production startup skips the entire callback at an unchanged revision.
 	// Seed the previous deployed revision so this test also covers publication.
 	if err := tx.Exec(`CREATE TABLE meta.startup_schema_revision

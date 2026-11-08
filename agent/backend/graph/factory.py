@@ -784,7 +784,7 @@ class _PlatformBoundary(AgentMiddleware):
                     raise ValueError("invalid_transfer_source_candidates")
                 candidates = list(dict.fromkeys(x["locator"] for x in rows))
                 scoped_source_empty = (self.transfer_source_engine_id is not None and not candidates
-                                       and type(result.get("total")) is int and result["total"] == 0)
+                                       and result.get("exhausted") is True)
                 if scoped_source_empty:
                     for locator in self.checkpoint["observed"]["transfer_source_candidates"]:
                         self.checkpoint["confirmed"]["resources"].pop(locator, None)

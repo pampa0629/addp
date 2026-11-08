@@ -352,6 +352,8 @@ mosaic 归属复用 HTTP T1 与 `TestMetaScanExecutionReadAgainstPostgres`，保
 
 本模块 schema 迁移仅由 Backend 执行，Worker 只读校验成功提交的 schema 版本。Backend 多实例通过模块级数据库锁协调；开发脚本及 Compose 在所属 Backend 就绪后启动 Worker。结构或初始化迁移变化须递增模块 `SchemaVersion`，共享规则见[模块迁移与 Worker 启动顺序](../docs/spec/addp开发服务生命周期与构建身份规范.md#模块迁移与-worker-启动顺序)。
 
+检索授权事实版本迁移028对应 Meta schema revision 6，由 Backend 同事务升级，Worker只读核验；`TestAuthorizationBasisStartupMigrationAgainstPostgres` 经正式启动版本入口验证从5升级和再次启动不重放。版本只覆盖实际授权事实和父链，不因源统计变化单独失效，不变更权限规则。
+
 whole 归属迁移 027 对应 Meta schema revision 5；已有 revision 4 的数据库由 Backend 在同一启动事务内执行并发布新版本，Worker 随后只读验证。标准 `make test-meta-postgres` 中的 `TestWholeScopeMigrationAgainstPostgres` 从已部署 revision 4 经正式 `schema.Migrate` 入口升级，并检查新 Worker 准入、旧 Worker 拒绝及再次启动不重放；仅直接执行 SQL 的测试不能证明启动时会应用迁移。
 
 ## 相关文档

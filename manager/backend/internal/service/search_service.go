@@ -7,13 +7,11 @@ import (
 	"fmt"
 	commonClient "github.com/addp/common/client"
 	"net/http"
-	"sort"
 	"strings"
 	"sync/atomic"
 	"time"
 
 	"github.com/addp/common/dataprotection/projectionstore"
-	commonInference "github.com/addp/common/inference"
 	commonJSON "github.com/addp/common/jsonmap"
 	"github.com/addp/common/logger"
 	"github.com/addp/common/resourcetree"
@@ -41,7 +39,6 @@ type HybridSearchService struct {
 	enabled               bool
 	log                   *slog.Logger
 	vectorRepo            *repository.EmbeddingRepository
-	vectorTopK            int
 	configurationProvider *EmbeddingConfigurationProvider
 	bindingService        *InferenceScenarioBindingService
 	inferenceClient       InferenceEmbeddingClient
@@ -50,6 +47,8 @@ type HybridSearchService struct {
 	epoch                 string
 	endpointID            string
 	initialized           atomic.Bool
+	ordinalReady          atomic.Bool
+	searchSessions        *searchSessionRegistry
 }
 
 // SearchDocument 表示检索结果中的单个文档（混合检索的统一格式）
@@ -113,14 +112,6 @@ type VectorDocument struct {
 	Metadata       map[string]interface{} `json:"metadata,omitempty"`
 }
 
-// SearchResult 混合检索总体响应结构
-type SearchResult struct {
-	Total    int              `json:"total"`
-	Page     int              `json:"page"`
-	PageSize int              `json:"page_size"`
-	Hits     []SearchDocument `json:"results"`
-}
-
 // NewHybridSearchService 构建混合检索服务（全文检索 + 向量检索）
 func NewHybridSearchService(cfg *config.Config, vectorRepo *repository.EmbeddingRepository, configurationProvider *EmbeddingConfigurationProvider, bindingService *InferenceScenarioBindingService, inferenceClient InferenceEmbeddingClient, deliveries *repository.ContentIndexDeliveryRepository, protectionStore *projectionstore.Store) (*HybridSearchService, error) {
 	if cfg == nil || deliveries == nil || protectionStore == nil {
@@ -128,10 +119,10 @@ func NewHybridSearchService(cfg *config.Config, vectorRepo *repository.Embedding
 	}
 	svc := &HybridSearchService{
 		contentIndex:          strings.TrimSpace(cfg.MeilisearchManagerContentIndex),
+		searchSessions:        newSearchSessionRegistry(),
 		enabled:               strings.TrimSpace(cfg.MeilisearchURL) != "",
 		log:                   logger.With("component", "manager_hybrid_search"),
 		vectorRepo:            vectorRepo,
-		vectorTopK:            10,
 		configurationProvider: configurationProvider,
 		bindingService:        bindingService,
 		inferenceClient:       inferenceClient,
@@ -168,6 +159,10 @@ func NewHybridSearchService(cfg *config.Config, vectorRepo *repository.Embedding
 	svc.initialized.Store(true)
 	if err := deliveries.ActivateIfSettled(context.Background(), epoch); err != nil && !errors.Is(err, repository.ErrContentIndexIsolated) {
 		return nil, err
+	}
+
+	if err := svc.prepareSearchOrdinals(initCtx); err != nil {
+		svc.log.Warn("检索序号准备尚未完成，搜索保持隔离")
 	}
 
 	svc.log.Info("混合检索配置已载入",
@@ -231,6 +226,7 @@ func (s *HybridSearchService) initIndexes(ctx context.Context) error {
 
 	// 设置可过滤字段
 	task, err = contentIdx.UpdateFilterableAttributesWithContext(ctx, &[]interface{}{
+		"search_ordinal",
 		"tenant_id",
 		"document_id",
 		"engine_id",
@@ -296,232 +292,6 @@ func (s *HybridSearchService) Enabled() bool {
 	return s != nil && s.enabled && s.client != nil && s.contentIndex != ""
 }
 
-// SearchDocuments 执行混合检索（全文检索 + 向量检索）
-func (s *HybridSearchService) SearchDocuments(
-	ctx context.Context,
-	tenantID *uint,
-	engineID *uint,
-	credential string,
-	checker SearchVisibilityChecker,
-	query string,
-	page int,
-	pageSize int,
-) (*SearchResult, error) {
-	if !s.Enabled() {
-		return nil, ErrSearchDisabled
-	}
-	if err := s.deliveries.RequireActive(ctx, s.epoch); err != nil {
-		return nil, ErrSearchIsolated
-	}
-
-	query = strings.TrimSpace(query)
-	if query == "" {
-		return nil, fmt.Errorf("query cannot be empty")
-	}
-	query = truncateQueryRunes(query, queryEmbeddingRuneLimit)
-
-	if page < 1 {
-		page = 1
-	}
-	if pageSize < 1 {
-		pageSize = 10
-	} else if pageSize > 50 {
-		pageSize = 50
-	}
-
-	if tenantID == nil || *tenantID == 0 || credential == "" || checker == nil {
-		return nil, ErrSearchVisibilityUnavailable
-	}
-	visibility, err := s.observeSearchVisibility(ctx, *tenantID, engineID, credential, checker)
-	if fenceErr := s.deliveries.RequireActive(ctx, s.epoch); fenceErr != nil {
-		return nil, ErrSearchIsolated
-	}
-	if err != nil {
-		return nil, err
-	}
-	keywordHits, err := s.searchVisibleKeywords(ctx, buildSearchFilter(tenantID, engineID), query, visibility)
-	if err != nil {
-		return nil, err
-	}
-
-	var vectorHits []VectorDocument
-	if len(visibility.content) > 0 && s.vectorRepo != nil && s.configurationProvider != nil && s.bindingService != nil && s.inferenceClient != nil {
-		vectorHits, err = s.vectorSearch(ctx, tenantID, engineID, query, visibility.content)
-		if err != nil {
-			if errors.Is(err, ErrSearchVisibilityUnavailable) {
-				return nil, err
-			}
-			s.log.Warn("向量检索失败，已忽略", "error", err)
-			vectorHits = nil
-		}
-	}
-
-	// Recheck after external I/O; a protection installation may have fenced this outlet.
-	if err := s.deliveries.RequireActive(ctx, s.epoch); err != nil {
-		return nil, ErrSearchIsolated
-	}
-	return fuseSearchDocuments(keywordHits, vectorHits, page, pageSize), nil
-}
-
-type keywordSearchHit struct {
-	document     SearchDocument
-	rankingScore float64
-}
-
-func (s *HybridSearchService) searchVisibleKeywords(ctx context.Context, filter, query string, visibility searchVisibility) ([]SearchDocument, error) {
-	if len(visibility.content)+len(visibility.metadata) == 0 {
-		return nil, nil
-	}
-	index := s.client.Index(s.contentIndex)
-	window, err := index.GetPaginationWithContext(ctx)
-	if err != nil || window == nil || window.MaxTotalHits <= 0 {
-		return nil, ErrSearchVisibilityUnavailable
-	}
-	var hits []keywordSearchHit
-	for _, group := range []struct {
-		identities   map[string]indexedSearchIdentity
-		metadataOnly bool
-	}{
-		{identities: visibility.content},
-		{identities: visibility.metadata, metadataOnly: true},
-	} {
-		if len(group.identities) == 0 {
-			continue
-		}
-		request := &meilisearch.SearchRequest{
-			Query: query, Filter: searchIdentityFilter(filter, group.identities), Limit: window.MaxTotalHits,
-			ShowRankingScore: true, HighlightPreTag: "<mark>", HighlightPostTag: "</mark>",
-			AttributesToHighlight: []string{"name", "title", "full_name", "content_preview", "description", "tags", "keywords", "author", "fields.name", "fields.data_type", "fields.comment"},
-		}
-		if group.metadataOnly {
-			request.AttributesToSearchOn = []string{"name", "full_name", "fields.name"}
-			request.AttributesToHighlight = request.AttributesToSearchOn
-			request.AttributesToRetrieve = []string{"document_id", "locator", "engine_id", "engine_name", "engine_type", "data_item_type", "name", "full_name", "schema", "bucket", "path", "fields.name"}
-		}
-		response, err := index.SearchWithContext(ctx, query, request)
-		if err != nil {
-			return nil, err
-		}
-		var decoded []map[string]interface{}
-		if err := response.Hits.DecodeInto(&decoded); err != nil {
-			return nil, err
-		}
-		for _, hit := range decoded {
-			id, _ := hit["document_id"].(string)
-			identity, visible := group.identities[id]
-			doc := mapMeilisearchHit(hit)
-			if !visible || identity.Locator != doc.Locator || identity.EngineID != doc.EngineID {
-				return nil, ErrSearchVisibilityUnavailable
-			}
-			if group.metadataOnly {
-				var fields []SearchFieldMatch
-				for _, match := range doc.FieldMatches {
-					if highlight, ok := match.Highlights["name"]; ok {
-						fields = append(fields, SearchFieldMatch{Name: match.Name, Highlights: map[string]string{"name": highlight}})
-					}
-				}
-				doc = SearchDocument{
-					DocumentID: doc.DocumentID, Locator: doc.Locator, EngineID: doc.EngineID, EngineName: doc.EngineName,
-					EngineType: doc.EngineType, DataItemType: doc.DataItemType, Name: doc.Name, FileName: doc.FileName,
-					FullName: doc.FullName, Schema: doc.Schema, Bucket: doc.Bucket, Path: doc.Path,
-					FieldMatches: fields,
-				}
-			}
-			score, _ := hit["_rankingScore"].(float64)
-			hits = append(hits, keywordSearchHit{document: doc, rankingScore: score})
-		}
-	}
-	sort.SliceStable(hits, func(i, j int) bool { return hits[i].rankingScore > hits[j].rankingScore })
-	result := make([]SearchDocument, 0, len(hits))
-	for _, hit := range hits {
-		result = append(result, hit.document)
-	}
-	return result, nil
-}
-
-type fusedSearchCandidate struct {
-	document    SearchDocument
-	keywordRank int
-	vectorRank  int
-}
-
-// fuseSearchDocuments 使用对称 RRF 融合两个检索器的内部排名，再对唯一结果集分页。
-func fuseSearchDocuments(keywordHits []SearchDocument, vectorHits []VectorDocument, page, pageSize int) *SearchResult {
-	if page < 1 {
-		page = 1
-	}
-	if pageSize < 1 {
-		pageSize = 10
-	}
-
-	candidates := make([]*fusedSearchCandidate, 0, len(keywordHits)+len(vectorHits))
-	byDocumentID := make(map[string]*fusedSearchCandidate, len(keywordHits)+len(vectorHits))
-	for idx, document := range keywordHits {
-		document.MatchMethods = []string{"keyword"}
-		candidate := &fusedSearchCandidate{document: document, keywordRank: idx + 1}
-		candidates = append(candidates, candidate)
-		if document.DocumentID != "" {
-			byDocumentID[document.DocumentID] = candidate
-		}
-	}
-
-	for idx, vectorHit := range vectorHits {
-		if vectorHit.DocumentID == "" {
-			continue
-		}
-		if candidate, ok := byDocumentID[vectorHit.DocumentID]; ok {
-			candidate.vectorRank = idx + 1
-			candidate.document.MatchMethods = []string{"keyword", "vector"}
-			mergeVectorSearchFacts(&candidate.document, vectorDocumentToSearchDocument(vectorHit))
-			continue
-		}
-
-		document := vectorDocumentToSearchDocument(vectorHit)
-		candidate := &fusedSearchCandidate{document: document, vectorRank: idx + 1}
-		candidates = append(candidates, candidate)
-		byDocumentID[vectorHit.DocumentID] = candidate
-	}
-
-	maxRRFScore := 2.0 / (rrfRankConstant + 1.0)
-	for _, candidate := range candidates {
-		score := 0.0
-		if candidate.keywordRank > 0 {
-			score += 1.0 / (rrfRankConstant + float64(candidate.keywordRank))
-		}
-		if candidate.vectorRank > 0 {
-			score += 1.0 / (rrfRankConstant + float64(candidate.vectorRank))
-		}
-		candidate.document.Score = score / maxRRFScore
-	}
-
-	sort.SliceStable(candidates, func(i, j int) bool {
-		left, right := candidates[i], candidates[j]
-		if left.document.Score != right.document.Score {
-			return left.document.Score > right.document.Score
-		}
-		if (left.keywordRank > 0) != (right.keywordRank > 0) {
-			return left.keywordRank > 0
-		}
-		return left.document.DocumentID < right.document.DocumentID
-	})
-
-	start := len(candidates)
-	if page-1 <= len(candidates)/pageSize {
-		start = (page - 1) * pageSize
-	}
-	end := min(start+pageSize, len(candidates))
-	hits := make([]SearchDocument, 0, end-start)
-	for _, candidate := range candidates[start:end] {
-		hits = append(hits, candidate.document)
-	}
-	return &SearchResult{
-		Total:    len(candidates),
-		Page:     page,
-		PageSize: pageSize,
-		Hits:     hits,
-	}
-}
-
 func mergeVectorSearchFacts(target *SearchDocument, vector SearchDocument) {
 	target.VectorDistance = vector.VectorDistance
 	if target.Locator == "" {
@@ -550,118 +320,11 @@ func mergeVectorSearchFacts(target *SearchDocument, vector SearchDocument) {
 	}
 }
 
-func (s *HybridSearchService) vectorSearch(ctx context.Context, tenantID, engineID *uint, query string, visible map[string]indexedSearchIdentity) ([]VectorDocument, error) {
-	if s.vectorRepo == nil || s.configurationProvider == nil || s.bindingService == nil || s.inferenceClient == nil {
-		return nil, nil
+func (s *HybridSearchService) Close() {
+	if s.searchSessions != nil {
+		s.searchSessions.closeAll()
 	}
-	if tenantID == nil || *tenantID == 0 {
-		s.log.Debug("向量检索缺少明确租户，已跳过")
-		return nil, nil
-	}
-
-	runtime := s.configurationProvider.Current()
-	binding, err := s.bindingService.Resolve(ctx, *tenantID)
-	if err != nil {
-		return nil, err
-	}
-	profile, err := s.inferenceClient.ResolveProfile(ctx, commonInference.ResolveProfileRequest{
-		SchemaVersion: commonInference.SchemaVersion, TenantID: *tenantID,
-		ModelProfileID: binding.ModelProfileID, Operation: commonInference.OperationEmbedding, Modality: commonInference.ModalityText,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("resolve query embedding profile: %w", err)
-	}
-	if profile.Dimension != runtime.Dimension {
-		return nil, fmt.Errorf("model profile dimension %d does not match manager vector dimension %d", profile.Dimension, runtime.Dimension)
-	}
-	embedResult, err := s.inferenceClient.Embed(ctx, commonInference.EmbeddingRequest{
-		SchemaVersion: commonInference.SchemaVersion, TenantID: *tenantID,
-		ModelProfileID: binding.ModelProfileID,
-		Inputs:         []commonInference.EmbeddingInput{{Modality: commonInference.ModalityText, Text: query}},
-	})
-	if err != nil {
-		return nil, fmt.Errorf("embed query text: %w", err)
-	}
-	if embedResult == nil || len(embedResult.Vectors) != 1 || len(embedResult.Vectors[0]) == 0 {
-		return nil, nil
-	}
-	queryVector := embedResult.Vectors[0]
-	dimension := len(queryVector)
-	if dimension == 0 {
-		dimension = runtime.Dimension
-	}
-	if dimension <= 0 {
-		return nil, nil
-	}
-
-	tenantVal := *tenantID
-	s.log.Debug("触发向量检索",
-		"tenant_id", tenantVal,
-		"top_k", s.vectorTopK,
-		"max_distance", runtime.MaxDistance,
-	)
-
-	results, err := s.vectorRepo.QueryReadySimilar(ctx, *tenantID, engineID, queryVector, binding.ModelProfileID, embedResult.ProfileVersion, dimension, s.vectorTopK, runtime.MaxDistance, visibleSearchIDs(visible))
-	if err != nil {
-		return nil, fmt.Errorf("query embedding results: %w", err)
-	}
-
-	vectorDocs := make([]VectorDocument, 0, len(results))
-	for _, item := range results {
-		if item.Embedding == nil {
-			continue
-		}
-		emb := item.Embedding
-		identity, ok := visible[emb.ItemFingerprint]
-		if !ok || identity.EngineID != emb.EngineID || identity.Locator != emb.Locator {
-			return nil, ErrSearchVisibilityUnavailable
-		}
-		doc := VectorDocument{
-			DocumentID:     emb.ItemFingerprint,
-			Locator:        emb.Locator,
-			TenantID:       emb.TenantID,
-			EngineID:       emb.EngineID,
-			ModelProfileID: emb.ModelProfileID,
-			Distance:       item.Distance,
-			FileName:       locatorLastSegment(emb.Locator),
-			Name:           locatorLastSegment(emb.Locator),
-		}
-		vectorDocs = append(vectorDocs, doc)
-	}
-
-	sort.Slice(vectorDocs, func(i, j int) bool {
-		if vectorDocs[i].Distance == vectorDocs[j].Distance {
-			return vectorDocs[i].DocumentID < vectorDocs[j].DocumentID
-		}
-		return vectorDocs[i].Distance < vectorDocs[j].Distance
-	})
-
-	if len(vectorDocs) > s.vectorTopK && s.vectorTopK > 0 {
-		vectorDocs = vectorDocs[:s.vectorTopK]
-	}
-
-	preview := make([]map[string]any, 0, min(len(vectorDocs), 3))
-	for idx := 0; idx < len(vectorDocs) && idx < 3; idx++ {
-		doc := vectorDocs[idx]
-		preview = append(preview, map[string]any{
-			"document_id":      doc.DocumentID,
-			"model_profile_id": doc.ModelProfileID,
-			"distance":         doc.Distance,
-			"file_name":        doc.FileName,
-		})
-	}
-
-	s.log.Info("向量检索完成",
-		"tenant_id", tenantVal,
-		"hit_count", len(vectorDocs),
-		"preview", preview,
-	)
-
-	return vectorDocs, nil
 }
-
-// Close 释放底层资源
-func (s *HybridSearchService) Close() {}
 
 type ContentDocumentDeleteScope = commonClient.ManagerContentDeleteScope
 

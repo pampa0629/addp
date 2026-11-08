@@ -41,6 +41,8 @@ type RevokeInput struct {
 	Audit                 iam.AuditMetadata
 }
 type Service struct {
+	searchObservationKey    []byte
+	searchRevisionReader    AuthorizationBasisRevisionReader
 	repository              *Repository
 	catalogEligible         func(*models.Engine) bool
 	fulfillmentBasis        FulfillmentBasisReader

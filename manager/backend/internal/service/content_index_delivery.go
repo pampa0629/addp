@@ -65,6 +65,13 @@ func (s *HybridSearchService) UpsertContentDocuments(ctx context.Context, tenant
 			op.EngineIDs = append(op.EngineIDs, document.EngineID)
 		}
 		sort.Strings(op.DocumentIDs)
+		ordinals, err := s.deliveries.ReserveSearchOrdinals(ctx, tx, s.epoch, op.DocumentIDs)
+		if err != nil {
+			return err
+		}
+		for _, doc := range payload {
+			doc["search_ordinal"] = ordinals[doc["document_id"].(string)]
+		}
 		return s.deliveries.Register(ctx, tx, s.epoch, op)
 	})
 	if err != nil {
@@ -214,6 +221,9 @@ func (s *HybridSearchService) StartContentRecovery(ctx context.Context) {
 		ticker := time.NewTicker(10 * time.Second)
 		defer ticker.Stop()
 		for {
+			if s.searchSessions != nil {
+				s.searchSessions.pruneExpired()
+			}
 			cycleCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
 			err := s.reconcileContentDeliveries(cycleCtx)
 			cancel()
@@ -262,7 +272,10 @@ func (s *HybridSearchService) reconcileContentDeliveries(ctx context.Context) er
 			}
 		}
 	}
-	return s.deliveries.ActivateIfSettled(ctx, s.epoch)
+	if err := s.deliveries.ActivateIfSettled(ctx, s.epoch); err != nil {
+		return err
+	}
+	return s.prepareSearchOrdinals(ctx)
 }
 
 func supportsContentTaskCorrelation(version string) bool {

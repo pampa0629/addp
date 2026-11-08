@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"net/http"
 
 	"github.com/addp/common/dataitem/authorizationfacts"
 )
@@ -16,7 +17,7 @@ func (c *MetaClient) QueryDataItemIdentities(ctx context.Context, tenantID uint,
 		return nil, errors.New("invalid Meta identity query")
 	}
 	const path = "/api/v1/meta/runtime/data-item-identities/query"
-	encoded, err := c.postMetaOwnerQuery(ctx, tenantID, path, query, authorizationfacts.MaxIdentityQueryBytes, 8)
+	encoded, err := c.metaOwnerQuery(ctx, tenantID, http.MethodPost, path, query, authorizationfacts.MaxIdentityQueryBytes, 8)
 	if err != nil {
 		return nil, err
 	}

@@ -4480,7 +4480,7 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "仅返回当前用户可见的项。仅元数据可见时匹配资源名称、路径和已登记字段名，只返回身份定位及真实字段名高亮。正文和向量命中要求当前数据读取权。授权后去重、融合、计数及分页 | Returns only visible items. Metadata-only access searches resource names, paths and registered field names, returning identity, location and actual field-name highlights only. Content and vector matches require current data-read access. Deduplication, ranking, counts and pagination follow authorization",
+                "description": "先召回候选并按当前权限筛选，再按完整RRF相关性顺序交付。不返回精确总数；空批带next_cursor仍可继续。依据变化使整个查询失效 | Retrieves candidates, applies current permissions, then delivers a proven prefix of complete RRF order. Returns no exact total; empty batches with next_cursor may continue. Basis changes invalidate the entire query",
                 "produces": [
                     "application/json"
                 ],
@@ -4491,60 +4491,95 @@
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "搜索关键词 | Search query",
+                        "description": "固定查询词 | Fixed query",
                         "name": "q",
                         "in": "query",
                         "required": true
                     },
                     {
                         "type": "integer",
-                        "description": "限定引擎 ID | Restrict results to an engine ID",
+                        "description": "固定引擎范围 | Fixed engine scope",
                         "name": "engine_id",
                         "in": "query"
                     },
                     {
                         "type": "integer",
-                        "description": "页码，默认1 | Page number, default 1",
-                        "name": "page",
+                        "description": "固定批次大小，1至50，默认10 | Fixed batch size, 1-50, default 10",
+                        "name": "page_size",
                         "in": "query"
                     },
                     {
-                        "type": "integer",
-                        "description": "每页数量，默认10 | Page size, default 10",
-                        "name": "page_size",
+                        "type": "string",
+                        "description": "不透明续查游标；初次不传 | Opaque continuation cursor; omit initially",
+                        "name": "cursor",
                         "in": "query"
                     }
                 ],
                 "responses": {
                     "200": {
-                        "description": "搜索结果，results[].locator 为跨引擎资源定位符 | Search results; results[].locator is the cross-engine resource locator",
+                        "description": "当前交付批次 | Current delivery batch",
                         "schema": {
-                            "$ref": "#/definitions/github_com_addp_manager_internal_service.SearchResult"
+                            "$ref": "#/definitions/github_com_addp_manager_internal_service.SearchContinuationResult"
                         }
                     },
                     "400": {
-                        "description": "请求参数错误 | Bad request",
+                        "description": "检索失败或状态失效 | Search failed or context invalidated",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "401": {
+                        "description": "检索失败或状态失效 | Search failed or context invalidated",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
                         }
                     },
                     "403": {
-                        "description": "检索身份未获授权 | Search credential forbidden",
+                        "description": "检索失败或状态失效 | Search failed or context invalidated",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
                         }
                     },
-                    "500": {
-                        "description": "混合检索失败 | Hybrid search failed",
+                    "404": {
+                        "description": "检索失败或状态失效 | Search failed or context invalidated",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "409": {
+                        "description": "检索失败或状态失效 | Search failed or context invalidated",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "410": {
+                        "description": "检索失败或状态失效 | Search failed or context invalidated",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "502": {
+                        "description": "检索失败或状态失效 | Search failed or context invalidated",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
                         }
                     },
                     "503": {
-                        "description": "搜索未配置、索引隔离或授权核验不可用 | Search unconfigured, index isolated or authorization unavailable",
+                        "description": "检索失败或状态失效 | Search failed or context invalidated",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "504": {
+                        "description": "检索失败或状态失效 | Search failed or context invalidated",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -8975,6 +9010,26 @@
                 }
             }
         },
+        "github_com_addp_manager_internal_service.SearchContinuationResult": {
+            "type": "object",
+            "properties": {
+                "exhausted": {
+                    "type": "boolean"
+                },
+                "next_cursor": {
+                    "type": "string"
+                },
+                "page_size": {
+                    "type": "integer"
+                },
+                "results": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_manager_internal_service.SearchDocument"
+                    }
+                }
+            }
+        },
         "github_com_addp_manager_internal_service.SearchDocument": {
             "type": "object",
             "properties": {
@@ -9110,26 +9165,6 @@
                 },
                 "name": {
                     "type": "string"
-                }
-            }
-        },
-        "github_com_addp_manager_internal_service.SearchResult": {
-            "type": "object",
-            "properties": {
-                "page": {
-                    "type": "integer"
-                },
-                "page_size": {
-                    "type": "integer"
-                },
-                "results": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/github_com_addp_manager_internal_service.SearchDocument"
-                    }
-                },
-                "total": {
-                    "type": "integer"
                 }
             }
         },

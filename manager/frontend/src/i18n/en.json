@@ -875,7 +875,6 @@
       "clearAll": "Clear All",
       "loading": "Loading...",
       "results": "Search Results",
-      "resultsCount": "{total} records found",
       "emptyHint": "Enter keywords to start searching",
       "noResults": "No matching documents or engines found",
       "researchBtn": "Search Again",
@@ -903,7 +902,14 @@
       "vectorMatch": "🔍 Vector Match",
       "description": "Description: ",
       "deleteHistoryFailed": "Failed to delete history",
-      "clearHistoryFailed": "Failed to clear history"
+      "clearHistoryFailed": "Failed to clear history",
+      "loadedCount": "{count} results loaded",
+      "retrySearch": "Retry",
+      "loadMore": "Load more",
+      "continueSearching": "Continue searching",
+      "noMore": "No more results",
+      "invalidResponse": "Invalid search response",
+      "searchChanged": "Search context changed or expired. Please search again."
     },
     "vectorTile": {
       "loadingConfig": "Loading render info...",

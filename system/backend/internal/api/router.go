@@ -132,6 +132,7 @@ func SetupRouter(db *gorm.DB, cfg *config.Config) *gin.Engine {
 	}
 	authorizationFactsService := engineaccess.NewService(engineaccess.NewRepository(db), nil)
 	var metaFacts engineaccess.AuthorizationFactsReader
+	var metaBasis engineaccess.AuthorizationBasisRevisionReader
 	var metaIdentities engineaccess.DataItemIdentityReader
 	var metaNodes engineaccess.NodeIdentityReader
 	var metaScanFacts engineaccess.MetaScanFactsReader
@@ -168,10 +169,14 @@ func SetupRouter(db *gorm.DB, cfg *config.Config) *gin.Engine {
 		fulfillmentService.WithFulfillmentBasisReader(commonClient.NewCatalogFulfillmentClient(cfg.CatalogServiceURL, tokens, nil))
 		metaClient := commonClient.NewMetaClient(cfg.MetaServiceURL, tokens)
 		metaFacts, metaScanFacts, metaIdentities, metaNodes = metaClient, metaClient, metaClient, metaClient
+		metaBasis = metaClient
 		authorizationFactsService.WithAuthorizationFactsReader(metaFacts).WithDataItemIdentityReader(metaIdentities).WithNodeIdentityPageReader(metaClient)
 		fulfillmentService.WithAuthorizationFactsReader(metaFacts).WithNodeIdentityReader(metaNodes)
 		fulfillmentService.WithTransferProductionReceiptReader(commonClient.NewTransferClient(cfg.TransferServiceURL, tokens))
 		fulfillmentService.WithUploadReaders(commonClient.NewManagerUploadClient(cfg.ManagerServiceURL, tokens, nil), metaClient)
+	}
+	if err := fulfillmentService.ConfigureSearchObservation(cfg.EncryptionKey, metaBasis); err != nil {
+		panic(err)
 	}
 	if err := RegisterEngineAccessNodeIdentityRoutes(api, runtime, &EngineAccessNodeIdentityHandler{service: authorizationFactsService}); err != nil {
 		panic(err)

@@ -17,7 +17,14 @@ for (const embedded of [false, true]) {
       if (path.endsWith('/system/auth/context')) return json(route, { context: { type: 'tenant', tenant_id: '1' }, authorization: { role_assignments: [{ scope: { type: 'tenant', tenant_id: '1' }, permissions: ['manager.search.execute', 'manager.data_item.read'] }] } })
       if (path.endsWith('/manager/engines')) return json(route, { data: [] })
       if (path.endsWith('/manager/search/history')) return json(route, { data: { items: [] } })
-      if (path.endsWith('/manager/search')) return json(route, { data: { total: 20, page: 1, page_size: 20, results: Array.from({ length: 20 }, (_, index) => ({ document_id: `item-${index}`, name: `Result ${index}`, file_name: `Result ${index}`, full_name: `fixture.Result${index}`, engine_id: 2, locator: `addp://engine/2/path/fixture/Result${index}?type=table&item_id=${index + 1}`, match_methods: ['keyword'] })) } })
+      if (path.endsWith('/manager/search')) {
+        const continued = new URL(route.request().url()).searchParams.has('cursor')
+        return json(route, { data: { exhausted: continued, next_cursor: continued ? undefined : 'next-scroll', page_size: 10,
+          results: Array.from({ length: 10 }, (_, offset) => {
+            const index = offset + (continued ? 10 : 0)
+            return { document_id: `item-${index}`, name: `Result ${index}`, file_name: `Result ${index}`, full_name: `fixture.Result${index}`, engine_id: 2, locator: `addp://engine/2/path/fixture/Result${index}?type=table&item_id=${index + 1}`, match_methods: ['keyword'] }
+          }) } })
+      }
       return json(route, {})
     })
     let frame = page
@@ -41,6 +48,8 @@ for (const embedded of [false, true]) {
     await frame.locator('.search-input input').fill('fixture')
     await frame.getByRole('button', { name: '搜索', exact: true }).click()
     const rows = frame.locator('.result-item')
+    await expect(rows).toHaveCount(10)
+    await frame.getByRole('button', { name: '加载更多', exact: true }).click()
     await expect(rows).toHaveCount(20)
     const container = frame.locator(embedded ? '.content-only' : '.main-content')
     const box = await container.boundingBox()

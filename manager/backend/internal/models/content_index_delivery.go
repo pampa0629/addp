@@ -4,13 +4,15 @@ import "time"
 
 // ContentIndexOutlet is a durable fence, not evidence of external deletion.
 type ContentIndexOutlet struct {
-	CleanupHoldID string `gorm:"not null;default:'';size:64"`
-	IndexName     string `gorm:"primaryKey;size:128"`
-	Epoch         string `gorm:"not null;size:36"`
-	EndpointID    string `gorm:"not null;size:64"`
-	Configured    bool   `gorm:"not null"`
-	Isolated      bool   `gorm:"not null"`
-	UpdatedAt     time.Time
+	SearchRevision    int64  `gorm:"not null;default:0"`
+	NextSearchOrdinal int64  `gorm:"not null;default:0"`
+	CleanupHoldID     string `gorm:"not null;default:'';size:64"`
+	IndexName         string `gorm:"primaryKey;size:128"`
+	Epoch             string `gorm:"not null;size:36"`
+	EndpointID        string `gorm:"not null;size:64"`
+	Configured        bool   `gorm:"not null"`
+	Isolated          bool   `gorm:"not null"`
+	UpdatedAt         time.Time
 }
 
 func (ContentIndexOutlet) TableName() string { return "manager.content_index_outlets" }

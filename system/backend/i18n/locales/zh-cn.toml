@@ -510,3 +510,6 @@ other = "仅办理当前租户的引擎创建、读取、删除及清理结果�
 other = "该引擎尚未支持原生实例概况"
 [system.engine.overview_unavailable]
 other = "暂时无法读取实例概况；请检查连接和账号权限"
+
+[system.search.context_changed]
+other = "检索依据已变化，请重新检索"
