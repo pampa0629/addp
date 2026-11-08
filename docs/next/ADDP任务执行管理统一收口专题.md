@@ -139,13 +139,13 @@ Manager 源准备保持其正式授权链；本批 Transfer CDC 仅验证既有 
 
 ### 对账口径与已落地项
 
-2026-11-08按已提交源码 `31a653f7639821ae83ad88ba06397a08b2984b4f` 对账；共享工作区其它会话未提交改动不计交付。逐项要求G1—G9、C1—C6、V1、C2a—C2j及C5a—C5m共39项的代码／用例定位见[Owner矩阵](../spec/testing/Owner补充门禁.md#graphcleanup-执行管理最小验证矩阵)。定位列只证明源码和入口存在，部分用例不等于全行覆盖；以下实际结果仅归属于列明的固定源码，不升格为当前HEAD或全模块最新验收。原对账轮只读核证、未新运行T1／T2；后续父子PG补测见下方“本轮PG增补验证”。均未新增Hosted或环境切换。
+2026-11-08原对账基线为 `31a653f7639821ae83ad88ba06397a08b2984b4f`；本轮父子PG增补及Linux结果归属 `839a4d6c0178fbb02d7c2620ff06ec815b337a0c`。共享工作区其它会话未提交改动不计交付。逐项要求G1—G9、C1—C6、V1、C2a—C2j及C5a—C5m共39项的代码／用例定位见[Owner矩阵](../spec/testing/Owner补充门禁.md#graphcleanup-执行管理最小验证矩阵)。定位列只证明源码和入口存在，部分用例不等于全行覆盖；以下实际结果仅归属于列明的固定源码，不升格为当前HEAD或全模块最新验收。原对账轮只读核证、未新运行T1／T2；后续父子PG补测见下方“本轮PG增补验证”。均未新增Hosted或环境切换。
 
 | 项目 | 已定位代码／标准门禁 | 实际证据与剩余边界 |
 | --- | --- | --- |
-| Common公共执行、P→C、回执与结果原子提交 | `common/execution/cleanup.go`、`common/cleanup/runtime.go`；`make test-common-postgres COMMON_POSTGRES_TEST_ARGS="--test execution-lifecycle"`，包含cleanup_protocol／cleanup_lock_order及professional-result原子提交 | `8ceefc5b0` [Common PG](https://github.com/pampa0629/addp/actions/runs/41427877912/job/125224108033) 原日志包含生命周期、两项Cleanup锁交错及结果原子提交，0SKIP；C2细矩阵仍为部分覆盖 |
+| Common公共执行、P→C、回执与结果原子提交 | `common/execution/cleanup.go`、`common/cleanup/runtime.go`；`make test-common-postgres COMMON_POSTGRES_TEST_ARGS="--test execution-lifecycle"`，包含cleanup_protocol／cleanup_lock_order及professional-result原子提交 | `839a4d6c0` [Common PG](https://github.com/pampa0629/addp/actions/runs/42446889335/job/128628596647) 实际success，原日志包含全部七个新增竞争／拒绝／回滚子项、原生命周期及结果原子提交，0SKIP；C2细矩阵仍非全覆盖 |
 | Graph持久构建／取消／准入、Cleanup三阶段 | `execution_control.go`、`build_runtime.go`、`cleanup_runtime.go`；Graph PG分组已包含repository与service runtime | 同一Common PG日志包含ExactClaimAndCancellation、WaitForAdmissionPastLease、UncertainEffects及GraphCleanupRuntime；不代表全部锁排列、真实原生回包丢失或positive reopen |
-| System请求／幂等／父协调／只读结果 | `cleanup_acceptance.go`、`cleanup_durable.go`、`cleanup_read.go`；已有 `make test-system-cleanup`，不借IAM代验 | `8ceefc5b0` [System Cleanup PG](https://github.com/pampa0629/addp/actions/runs/41427877912/job/125224107007) 实际通过6个顶层用例，含PublicScopeSerialization，0SKIP |
+| System请求／幂等／父协调／只读结果 | `cleanup_acceptance.go`、`cleanup_durable.go`、`cleanup_read.go`；已有 `make test-system-cleanup`，不借IAM代验 | `839a4d6c0` [System Cleanup PG](https://github.com/pampa0629/addp/actions/runs/42446889335/job/128628596160) 实际通过8个主用例，新增ParentRecoveryAdmission／ClosureRollback及原PublicScopeSerialization均通过，0SKIP |
 | System／Monitor安全展示与专业结果 | 公共ProjectCleanupAdmission、System读取、Monitor查询及共享CleanupAdmission／CleanupModuleResults已接；Common前端、System／Monitor前端与Monitor PG标准入口已登记 | `66d0321de` [Monitor PG](https://github.com/pampa0629/addp/actions/runs/40880761833/job/123475011425) 含CleanupObservationSnapshot，0SKIP；共享parser／唯一所有权T1及页面代码存在，C5消费者T3／服务T4尚非全矩阵 |
 | System永久登记身份 | EngineService.Create／Restore与 `TestDeletedEngineCanRestoreItsIDAndDoesNotReserveAddress` 已定位；复原旧登记保留ID，新登记取得新ID | 代码／用例存在，不据此声明迁移、恢复、跨Owner重绑完整T4通过，更不当作严格原物理代际证明 |
 | Manager原生成功／对象未知／索引未知 | `cleanup-native-effects`三个显式case，原权限及9／11／11项 | 三个固定源码Hosted已通过，见§8.43；本次复核各Job的success／源码，与原官方报告记录对照，不重跑 |
@@ -177,7 +177,7 @@ Manager 源准备保持其正式授权链；本批 Transfer CDC 仅验证既有 
 
 标准验证沿既有入口：`make test-common-postgres COMMON_POSTGRES_TEST_ARGS="--test execution-lifecycle"`、`make test-system-cleanup`、`make test-t2-ci-registration`；没有新Job或服务依赖，两个新增System主测试已加入必需PASS及其缺项／跳过拒绝反例。本地只使用Infra实际映射的addp_test，两个PG入口串行。
 
-首轮Common的多等待者屏障只认直接阻塞者而超时，后改为核验PG实际阻塞链；System首轮新断言误比较每次读取变化的observed_at，后改核全部持久事实。首轮日志保留，未据此改产品逻辑。本地最终：Common lifecycle及专业结果原子提交两个主测试通过，包含全部七个新增子项；System Cleanup八个主测试通过；两者均0SKIP。`make test-t2-ci-registration`的85项runner／选择反例、9项Manager入口反例及登记检查通过。仅修改测试和门禁断言，未运行包含其他会话变更的全工作区test-changed；这些结果不计全量模块／Hosted验收，固定源码Linux CI另核。Graph高级恢复保持暂缓。
+首轮Common的多等待者屏障只认直接阻塞者而超时，后改为核验PG实际阻塞链；System首轮新断言误比较每次读取变化的observed_at，后改核全部持久事实。首轮日志保留，未据此改产品逻辑。本地最终：Common lifecycle及专业结果原子提交两个主测试通过，包含全部七个新增子项；System Cleanup八个主测试通过；两者均0SKIP。`make test-t2-ci-registration`的85项runner／选择反例、9项Manager入口反例及登记检查通过。仅修改测试和门禁断言，未运行包含其他会话变更的全工作区test-changed；同一 `839a4d6c0` 的上述两个Linux PG Job均已success并复核原日志，新增用例实际执行、0SKIP；平台登记及System Go T1的Linux Job仍排队，不记通过。这些结果不计全量模块／Hosted验收。Graph高级恢复保持暂缓。
 
 ## 七、确认范围与协作分工
 
