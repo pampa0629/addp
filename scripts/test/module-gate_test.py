@@ -494,8 +494,8 @@ with Path(os.environ['ADDP_META_TEST_CALLS']).open('a') as output:
 package = args[1]
 pattern = args[args.index('-run')+1]
 catalog = {
-    './internal/repository':['TestClaimedComponentsAgainstPostgres'],
-    './internal/service':['TestDataItemAuthorizationFactsAgainstPostgres','TestScanPlanFactsAgainstPostgres','TestProductionBasicScanAgainstPostgres','TestCleanupRuntimeAtomicityAgainstPostgres','TestLineageGraphPerformanceAgainstPostgres'],
+    './internal/repository':['TestClaimedComponentsAgainstPostgres','TestAuthorizationBasisStartupMigrationAgainstPostgres'],
+    './internal/service':['TestDataItemAuthorizationFactsAgainstPostgres','TestAuthorizationBasisRevisionAgainstPostgres','TestScanPlanFactsAgainstPostgres','TestProductionBasicScanAgainstPostgres','TestCleanupRuntimeAtomicityAgainstPostgres','TestLineageGraphPerformanceAgainstPostgres'],
     './internal/scanadapter':['TestPreciseCatalogScanAgainstPostgres'],
     './internal/scanprocessor':['TestDelimitedEncodingRefreshAgainstPostgres'],
     './internal/scanruntime':['TestObjectModelRelatedRefsAgainstPostgres','TestFTPBasicCompositionAgainstPostgres'],
@@ -539,6 +539,8 @@ else:
                 self.assertEqual([f'./internal/{name}' for name in packages],[call['args'][1] for call in calls])
                 self.assertEqual('postgres://fixture/addp_test',owner)
                 if packages == all_packages:
+                    self.assertIn('--- PASS: TestAuthorizationBasisStartupMigrationAgainstPostgres ',result.stdout)
+                    self.assertIn('--- PASS: TestAuthorizationBasisRevisionAgainstPostgres ',result.stdout)
                     self.assertIn('--- PASS: TestCleanupRuntimeAtomicityAgainstPostgres ',result.stdout)
                     self.assertIn('--- PASS: TestLineageGraphPerformanceAgainstPostgres ',result.stdout)
                 if args == ['--test','lineage-graph']:
@@ -548,6 +550,7 @@ else:
                     self.assertNotIn('TestProductionBasicScanAgainstPostgres',result.stdout)
                     self.assertNotIn('TestCleanupRuntimeAtomicityAgainstPostgres',result.stdout)
                     self.assertIn('--- PASS: TestDataItemAuthorizationFactsAgainstPostgres ',result.stdout)
+                    self.assertIn('--- PASS: TestAuthorizationBasisRevisionAgainstPostgres ',result.stdout)
                     self.assertIn('--- PASS: TestScanPlanFactsAgainstPostgres ',result.stdout)
                 if packages == ['scanruntime']:
                     self.assertNotIn('TestDataItemAuthorizationFactsAgainstPostgres',result.stdout)
@@ -556,9 +559,9 @@ else:
 
     def test_meta_postgres_each_group_rejects_missing_required_proofs_skips_zero_matches_and_go_failure(self) -> None:
         for group in ('all','authorization-facts','file-composition','lineage-graph'):
-            required = ('TestObjectModelRelatedRefsAgainstPostgres','TestFTPBasicCompositionAgainstPostgres') if group == 'file-composition' else ('TestLineageGraphPerformanceAgainstPostgres',) if group == 'lineage-graph' else ('TestDataItemAuthorizationFactsAgainstPostgres','TestScanPlanFactsAgainstPostgres')
+            required = ('TestObjectModelRelatedRefsAgainstPostgres','TestFTPBasicCompositionAgainstPostgres') if group == 'file-composition' else ('TestLineageGraphPerformanceAgainstPostgres',) if group == 'lineage-graph' else ('TestDataItemAuthorizationFactsAgainstPostgres','TestAuthorizationBasisRevisionAgainstPostgres','TestScanPlanFactsAgainstPostgres')
             if group == 'all':
-                required += ('TestCleanupRuntimeAtomicityAgainstPostgres','TestLineageGraphPerformanceAgainstPostgres')
+                required += ('TestAuthorizationBasisStartupMigrationAgainstPostgres','TestCleanupRuntimeAtomicityAgainstPostgres','TestLineageGraphPerformanceAgainstPostgres')
             for mode in ('skip','empty','failure',*('omit:'+name for name in required)):
                 with self.subTest(group=group,mode=mode):
                     result, calls, owner = self._run_meta_postgres_group(['--test',group],mode)
@@ -612,6 +615,7 @@ with open({str(lock)!r}, "a") as held:
         sys.exit("gate failed to retain lock in test child")
 Path({str(marker)!r}).touch()
 print("--- PASS: TestDataItemAuthorizationFactsAgainstPostgres (0.01s)")
+print("--- PASS: TestAuthorizationBasisRevisionAgainstPostgres (0.01s)")
 print("--- PASS: TestScanPlanFactsAgainstPostgres (0.01s)")
 ''')
         go.chmod(0o755)
