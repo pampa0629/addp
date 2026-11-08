@@ -1354,6 +1354,47 @@
         "script": "Script",
         "none": "None"
       },
+      "instanceOverview": {
+        "title": "Instance overview",
+        "queriedAt": "Queried at",
+        "metric": "Metric",
+        "value": "Value",
+        "scope": "Scope",
+        "semantics": "Meaning",
+        "notice": "Native statistics use the registered account and do not represent platform data read grants. Cumulative values are not throughput. Query time does not guarantee fresh source statistics.",
+        "failed": "Could not read the instance overview. Check the connection and account permissions before trying again.",
+        "versionChanged": "Engine configuration changed. Reopen the details before reading the overview.",
+        "metrics": {
+          "database_size_bytes": "Current database disk usage",
+          "database_connections": "Current database connections",
+          "transactions_committed": "Committed transactions",
+          "transactions_rolled_back": "Rolled-back transactions",
+          "database_keys": "Selected logical DB keys",
+          "server_memory_bytes": "Server allocated memory",
+          "server_connections": "Server connections",
+          "server_operations_per_second": "Server instantaneous operation rate",
+          "account_buckets": "Buckets listed for the account"
+        },
+        "units": {
+          "bytes": "bytes",
+          "count": "count",
+          "operations_per_second": "ops/s"
+        },
+        "scopes": {
+          "database": "Whole database",
+          "server": "Whole server",
+          "account": "Registered account bucket list"
+        },
+        "states": {
+          "permission_denied": "Source account permission denied",
+          "unavailable": "No valid source statistic"
+        },
+        "semanticsValues": {
+          "gauge": "Current value",
+          "counter": "Cumulative value",
+          "rate": "Native instantaneous rate"
+        }
+      },
       "configurationNote": {
         "action": "Export configuration note",
         "title": "Engine configuration note",

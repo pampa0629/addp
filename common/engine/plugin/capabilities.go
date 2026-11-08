@@ -28,13 +28,14 @@ const (
 )
 
 type EngineCapabilities struct {
-	SchemaVersion string                 `json:"schema_version"`
-	EngineType    string                 `json:"engine_type"`
-	EngineFamily  string                 `json:"engine_family"`
-	Storage       *StorageCapabilities   `json:"storage,omitempty"`
-	Compute       *ComputeCapabilities   `json:"compute,omitempty"`
-	Limits        *EngineLimits          `json:"limits,omitempty"`
-	Extensions    map[string]interface{} `json:"extensions,omitempty"`
+	SchemaVersion    string                 `json:"schema_version"`
+	EngineType       string                 `json:"engine_type"`
+	EngineFamily     string                 `json:"engine_family"`
+	InstanceOverview bool                   `json:"instance_overview,omitempty"`
+	Storage          *StorageCapabilities   `json:"storage,omitempty"`
+	Compute          *ComputeCapabilities   `json:"compute,omitempty"`
+	Limits           *EngineLimits          `json:"limits,omitempty"`
+	Extensions       map[string]interface{} `json:"extensions,omitempty"`
 }
 
 type EngineLimits struct {

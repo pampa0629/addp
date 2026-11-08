@@ -171,7 +171,7 @@ func (p *PostgreSQLPlugin) ConnectionIdentityFields() []string {
 
 func (p *PostgreSQLPlugin) Capabilities() plugin.EngineCapabilities {
 	relational := p.relationalFactsCapability()
-	return plugin.NewTabularCapabilities(p.Type(), "schema", plugin.TabularCapabilityOptions{
+	caps := plugin.NewTabularCapabilities(p.Type(), "schema", plugin.TabularCapabilityOptions{
 		Write:                     true,
 		BulkWrite:                 true,
 		TableReadSession:          true,
@@ -206,6 +206,8 @@ func (p *PostgreSQLPlugin) Capabilities() plugin.EngineCapabilities {
 		IdentifierQuote: `"`,
 		WriterConnector: "postgres_copy",
 	})
+	caps.InstanceOverview = p.identity == nil
+	return caps
 }
 
 func (p *PostgreSQLPlugin) EngineCatalogModel() plugin.EngineCatalogModelSpec {

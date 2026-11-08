@@ -1354,6 +1354,47 @@
         "script": "脚本",
         "none": "无"
       },
+      "instanceOverview": {
+        "title": "实例概况",
+        "queriedAt": "查询时间",
+        "metric": "指标",
+        "value": "数值",
+        "scope": "统计范围",
+        "semantics": "统计口径",
+        "notice": "这里显示当前连接账号取得的原生统计，不等于平台数据读取授权范围；累计值不是每秒吞吐，查询时间不保证源统计即时更新。",
+        "failed": "读取实例概况失败；请检查连接与账号权限后重试。",
+        "versionChanged": "引擎配置已变化，请重新打开详情后读取概况。",
+        "metrics": {
+          "database_size_bytes": "当前数据库占用空间",
+          "database_connections": "当前数据库连接数",
+          "transactions_committed": "累计提交事务数",
+          "transactions_rolled_back": "累计回滚事务数",
+          "database_keys": "当前逻辑 DB 键数",
+          "server_memory_bytes": "服务已分配内存",
+          "server_connections": "服务连接数",
+          "server_operations_per_second": "服务即时处理速率",
+          "account_buckets": "账号可列出的桶数"
+        },
+        "units": {
+          "bytes": "字节",
+          "count": "个",
+          "operations_per_second": "次/秒"
+        },
+        "scopes": {
+          "database": "整个数据库",
+          "server": "整个服务",
+          "account": "当前连接账号的桶列表"
+        },
+        "states": {
+          "permission_denied": "源账号权限不足",
+          "unavailable": "源端未提供有效统计"
+        },
+        "semanticsValues": {
+          "gauge": "当前值",
+          "counter": "累计值",
+          "rate": "源端即时速率"
+        }
+      },
       "configurationNote": {
         "action": "导出配置说明",
         "title": "引擎配置说明",

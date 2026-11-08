@@ -11,6 +11,8 @@ var localeFS embed.FS
 
 // 消息 key 常量
 const (
+	MsgInstanceOverviewUnsupported                   = "system.engine.overview_unsupported"
+	MsgInstanceOverviewUnavailable                   = "system.engine.overview_unavailable"
 	MsgMetaCollectionUnavailable                     = "system.meta_collection.unavailable"
 	MsgInitialProductionPending                      = "system.engine_access_initial_grant.pending"
 	MsgAdministratorChangeConflict                   = "system.iam.administrator_change_conflict"

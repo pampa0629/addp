@@ -60,7 +60,9 @@ func (p *MinIOPlugin) ConnectionIdentityFields() []string {
 }
 
 func (p *MinIOPlugin) Capabilities() plugin.EngineCapabilities {
-	return plugin.NewObjectCapabilities(p.Type())
+	caps := plugin.NewObjectCapabilities(p.Type())
+	caps.InstanceOverview = true
+	return caps
 }
 
 func (p *MinIOPlugin) StoreSemantics() plugin.StoreSemantics {

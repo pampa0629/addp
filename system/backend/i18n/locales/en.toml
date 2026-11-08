@@ -505,3 +505,8 @@ other = "Meta cleanup requires a new assessment explicitly including both Meta a
 other = "Engine lifecycle operator"
 [roles.tenant.engine_lifecycle_operator.description]
 other = "Create, read and delete tenant Engines and read Cleanup results; no default assignments or data access"
+
+[system.engine.overview_unsupported]
+other = "Native instance overview is not supported by this engine"
+[system.engine.overview_unavailable]
+other = "Instance overview is unavailable; check the connection and account permissions"

@@ -25,6 +25,11 @@ func ValidatePluginCapabilities(p EnginePlugin) error {
 	if caps.EngineFamily == "" {
 		return fmt.Errorf("%s capabilities engine_family is empty", p.Type())
 	}
+	if caps.InstanceOverview {
+		if _, ok := p.(InstanceOverviewProvider); !ok {
+			return fmt.Errorf("%s declares instance_overview without InstanceOverviewProvider", p.Type())
+		}
+	}
 	if err := validateEngineLimits(p, caps.Limits); err != nil {
 		return err
 	}

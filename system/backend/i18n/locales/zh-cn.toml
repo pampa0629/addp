@@ -505,3 +505,8 @@ other = "执行 Meta 清理前，请显式选择 Meta 和 Manager 重新评估�
 other = "引擎生命周期操作员"
 [roles.tenant.engine_lifecycle_operator.description]
 other = "仅办理当前租户的引擎创建、读取、删除及清理结果读取，不默认分配或授予数据访问"
+
+[system.engine.overview_unsupported]
+other = "该引擎尚未支持原生实例概况"
+[system.engine.overview_unavailable]
+other = "暂时无法读取实例概况；请检查连接和账号权限"

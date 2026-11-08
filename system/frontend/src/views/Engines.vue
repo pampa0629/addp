@@ -519,6 +519,10 @@
             </el-descriptions>
           </el-tab-pane>
 
+          <el-tab-pane v-if="supportsEngineInstanceOverview(selectedEngine)" name="overview" :label="t('system.engine.instanceOverview.title')">
+            <EngineInstanceOverview v-if="detailTab === 'overview'" :key="String(selectedEngine.id)" :engine="selectedEngine" />
+          </el-tab-pane>
+
           <el-tab-pane v-if="canViewTableStructure" name="structure" :label="t('system.engine.tableStructure.title')">
             <EngineTableStructure v-if="detailTab === 'structure'" :key="String(selectedEngine.id)" :engine="selectedEngine" />
           </el-tab-pane>
@@ -793,6 +797,8 @@ import EngineTableStructure from '../components/engines/EngineTableStructure.vue
 import { supportsEngineTableStructure } from '../utils/engineTableStructure'
 import { useEngineAuthorizationSession } from '../utils/engineAuthorizationSession'
 import { buildEngineConfigurationNote } from '../utils/engineConfigurationNote'
+import { supportsEngineInstanceOverview } from '../utils/engineInstanceOverview'
+import EngineInstanceOverview from '../components/engines/EngineInstanceOverview.vue'
 
 const { t, te } = useI18n()
 const authStore = useAuthStore()
@@ -2051,6 +2057,7 @@ const renderedAuthorizationTabs = computed(() => {
 const canViewTableStructure = computed(() => authStore.hasPermission('system.engine_catalog.read') && supportsEngineTableStructure(selectedEngine.value))
 const availableDetailTabs = computed(() => {
   const tabs = ['basic']
+  if (supportsEngineInstanceOverview(selectedEngine.value)) tabs.push('overview')
   if (canViewTableStructure.value) tabs.push('structure')
   if (selectedEngine.value?.connection_info && Object.keys(selectedEngine.value.connection_info).length > 0) {
     tabs.push('connection')

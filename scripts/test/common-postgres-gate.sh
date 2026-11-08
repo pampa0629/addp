@@ -13,15 +13,15 @@ while [ "$#" -gt 0 ]; do
     case "$1" in
         --test)
             case "${2:-}" in
-                all|shared-sql-pool|query-read-set|typed-write|highgo-write|graph|projection-store|execution-retention|execution-lifecycle|execution-events|kml-export|online-capacity-snapshots) test_group="$2"; shift 2 ;;
-                *) echo "usage: $0 [--test all|shared-sql-pool|query-read-set|typed-write|highgo-write|graph|projection-store|execution-retention|execution-lifecycle|execution-events|kml-export|online-capacity-snapshots] [--highgo-native] [--source-root checkout]" >&2; exit 2 ;;
+                all|shared-sql-pool|query-read-set|instance-overview|typed-write|highgo-write|graph|projection-store|execution-retention|execution-lifecycle|execution-events|kml-export|online-capacity-snapshots) test_group="$2"; shift 2 ;;
+                *) echo "usage: $0 [--test all|shared-sql-pool|query-read-set|instance-overview|typed-write|highgo-write|graph|projection-store|execution-retention|execution-lifecycle|execution-events|kml-export|online-capacity-snapshots] [--highgo-native] [--source-root checkout]" >&2; exit 2 ;;
             esac
             ;;
         --highgo-native) highgo_native=true; shift ;;
         --source-root)
             [ -n "${2:-}" ] || { echo '--source-root requires a checkout path' >&2; exit 2; }
             source_root="$2"; shift 2 ;;
-        *) echo "usage: $0 [--test all|shared-sql-pool|query-read-set|typed-write|highgo-write|graph|projection-store|execution-retention|execution-lifecycle|execution-events|kml-export|online-capacity-snapshots] [--highgo-native] [--source-root checkout]" >&2; exit 2 ;;
+        *) echo "usage: $0 [--test all|shared-sql-pool|query-read-set|instance-overview|typed-write|highgo-write|graph|projection-store|execution-retention|execution-lifecycle|execution-events|kml-export|online-capacity-snapshots] [--highgo-native] [--source-root checkout]" >&2; exit 2 ;;
     esac
 done
 
@@ -228,11 +228,14 @@ if [ "$test_group" = graph ]; then
 fi
 
 cd "$SOURCE_ROOT/common"
-test_pattern='^(TestIntegrationPostgresCatalogPreciseReadOnly|TestIntegrationPostgresPrepareTableWrite|TestIntegrationPostgresTableResult|TestIntegrationPostgresSharedSQLPool|TestIntegrationPostgresAnalyticalInstance|TestIntegrationPostgresAnalyticalText|TestIntegrationPostgresAnalyticalDateBuckets|TestIntegrationPostgresAnalyticalScan|TestIntegrationPostgresAnalyticalRelations|TestIntegrationPostgresAnalyticalCalendar|TestIntegrationPostgresAnalyticalExpressions|TestIntegrationPostgresAnalyticalArithmetic|TestIntegrationPostgresLosslessAnalyticalInteger|TestIntegrationPostgresAnalyticalResultAssertions|TestIntegrationPostgresBoundedWatermarkResumeAndIdempotentUpsert|TestIntegrationPostgresReadBatchHonorsSpatialEncoding|TestIntegrationPostgresQueryReadSession|TestIntegrationResolvePostgresQuery(ReadSet|OutputLineage|OutputRewrite))'
+test_pattern='^(TestIntegrationPostgresInstanceOverview|TestIntegrationPostgresCatalogPreciseReadOnly|TestIntegrationPostgresPrepareTableWrite|TestIntegrationPostgresTableResult|TestIntegrationPostgresSharedSQLPool|TestIntegrationPostgresAnalyticalInstance|TestIntegrationPostgresAnalyticalText|TestIntegrationPostgresAnalyticalDateBuckets|TestIntegrationPostgresAnalyticalScan|TestIntegrationPostgresAnalyticalRelations|TestIntegrationPostgresAnalyticalCalendar|TestIntegrationPostgresAnalyticalExpressions|TestIntegrationPostgresAnalyticalArithmetic|TestIntegrationPostgresLosslessAnalyticalInteger|TestIntegrationPostgresAnalyticalResultAssertions|TestIntegrationPostgresBoundedWatermarkResumeAndIdempotentUpsert|TestIntegrationPostgresReadBatchHonorsSpatialEncoding|TestIntegrationPostgresQueryReadSession|TestIntegrationResolvePostgresQuery(ReadSet|OutputLineage|OutputRewrite))'
 if [ "$test_group" = query-read-set ]; then
     test_pattern='^(TestIntegrationResolvePostgresQuery(ReadSet|OutputLineage|OutputRewrite)|TestIntegrationPostgresQueryReadSession)'
 else
     test_pattern="$test_pattern|^TestIntegrationPostgresTyped(JSON|Array)Writes$"
+fi
+if [ "$test_group" = instance-overview ]; then
+    test_pattern='^TestIntegrationPostgresInstanceOverview$'
 fi
 if [ "$test_group" = shared-sql-pool ]; then
     test_pattern='^TestIntegrationPostgresSharedSQLPool$'

@@ -3898,6 +3898,86 @@
                 ]
             }
         },
+        "/engines/{id}/overview": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "使用已保存连接和现有账号按需读取有范围的原生统计，不调用Monitor、不改变连接状态，不接受query或正文；整数值为精确十进制字符串，缺值不返回value | Read scoped native statistics using saved connection credentials without Monitor or health mutations; no query or body; integer values are exact decimal strings and unavailable values are omitted",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "引擎管理 | Engine Management"
+                ],
+                "summary": "获取原生实例概况 | Read native instance overview",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "引擎ID | Engine ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.EngineInstanceOverviewResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "system.engine.read"
+                ]
+            }
+        },
         "/engines/{id}/restore": {
             "post": {
                 "security": [
@@ -20794,6 +20874,27 @@
                 }
             }
         },
+        "github_com_addp_system_internal_models.EngineInstanceOverviewResponse": {
+            "type": "object",
+            "properties": {
+                "engine_id": {
+                    "type": "string",
+                    "example": ""
+                },
+                "metrics": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/plugin.InstanceOverviewMetric"
+                    }
+                },
+                "queried_at": {
+                    "type": "string"
+                },
+                "version": {
+                    "type": "integer"
+                }
+            }
+        },
         "github_com_addp_system_internal_models.EngineRasterPolicy": {
             "type": "object",
             "properties": {
@@ -25477,6 +25578,9 @@
                     "type": "object",
                     "additionalProperties": true
                 },
+                "instance_overview": {
+                    "type": "boolean"
+                },
                 "limits": {
                     "$ref": "#/definitions/plugin.EngineLimits"
                 },
@@ -25765,6 +25869,33 @@
                 },
                 "supported": {
                     "type": "boolean"
+                }
+            }
+        },
+        "plugin.InstanceOverviewMetric": {
+            "type": "object",
+            "properties": {
+                "key": {
+                    "type": "string"
+                },
+                "scope": {
+                    "type": "string"
+                },
+                "scope_name": {
+                    "type": "string"
+                },
+                "semantics": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "unit": {
+                    "type": "string"
+                },
+                "value": {
+                    "type": "string",
+                    "example": ""
                 }
             }
         },

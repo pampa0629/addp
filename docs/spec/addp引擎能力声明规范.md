@@ -4,6 +4,12 @@
 
 能力声明用于回答“一个引擎实例自身具备哪些可由 ADDP 统一消费的能力”。上层模块不得只根据 `engine_type` 或 `engine_family` 猜能力。
 
+### 原生实例概况
+
+顶层可选布尔值 `instance_overview` 表达 `InstanceOverviewProvider` 的原生按需统计能力；缺失或 false 不开放入口，不能复用表级 `facts.statistics` 或按引擎类型推断。Provider 返回固定字段的整数指标，声明 key、单位、`database/server/account` 范围及范围名称、`gauge/counter/rate` 语义和 `available/permission_denied/unavailable` 状态。只有 available 含 value；HTTP 中整数始终为十进制字符串，零与缺值不同。System 绑定查询时的 Engine ID、配置 version 与查询完成时间，不保存历史，不修改连接状态，不调用 Monitor、源端写入或 DataItem 内容读取。
+
+首批为原生 PostgreSQL 的当前数据库大小、连接数与累计提交/回滚，Redis 所选逻辑 DB 键数和可选 INFO 的服务级内存/连接/即时命令率，以及 MinIO 当前连接账号可列出的桶数。PostgreSQL 协议兼容插件不因代码复用继承此声明。MinIO 默认 bucket 不是账号统计范围；桶数不表示桶内容读取已获准。MinIO 容量与对象数仍处技术准入，不能遍历对象、将缺统计当零或调用外部采集器补值。账号拒绝某组统计时只将该组标为 permission_denied，不升级账号、不用备用凭据，不把它判成连接离线。
+
 当前版本固定为：
 
 ```text

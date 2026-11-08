@@ -28,6 +28,8 @@ export const enginesAPI = {
     return client.get(`/system/engines/${id}`)
   },
 
+  getInstanceOverview: (id, options = {}) => client.get(`/system/engines/${encodeURIComponent(id)}/overview`, options),
+
   update: (id, data) => {
     return client.put(`/system/engines/${id}`, data)
   },

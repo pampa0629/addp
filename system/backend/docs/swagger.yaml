@@ -2831,6 +2831,20 @@ definitions:
     - enabled
     - version
     type: object
+  github_com_addp_system_internal_models.EngineInstanceOverviewResponse:
+    properties:
+      engine_id:
+        example: ""
+        type: string
+      metrics:
+        items:
+          $ref: '#/definitions/plugin.InstanceOverviewMetric'
+        type: array
+      queried_at:
+        type: string
+      version:
+        type: integer
+    type: object
   github_com_addp_system_internal_models.EngineRasterPolicy:
     properties:
       cache_mib:
@@ -5923,6 +5937,8 @@ definitions:
       extensions:
         additionalProperties: true
         type: object
+      instance_overview:
+        type: boolean
       limits:
         $ref: '#/definitions/plugin.EngineLimits'
       schema_version:
@@ -6112,6 +6128,24 @@ definitions:
         type: boolean
       supported:
         type: boolean
+    type: object
+  plugin.InstanceOverviewMetric:
+    properties:
+      key:
+        type: string
+      scope:
+        type: string
+      scope_name:
+        type: string
+      semantics:
+        type: string
+      status:
+        type: string
+      unit:
+        type: string
+      value:
+        example: ""
+        type: string
     type: object
   plugin.KeyspaceFacts:
     properties:
@@ -9141,6 +9175,61 @@ paths:
       x-addp-auth-mode: permission
       x-addp-required-permissions:
       - system.engine.delete
+  /engines/{id}/overview:
+    get:
+      description: 使用已保存连接和现有账号按需读取有范围的原生统计，不调用Monitor、不改变连接状态，不接受query或正文；整数值为精确十进制字符串，缺值不返回value
+        | Read scoped native statistics using saved connection credentials without
+        Monitor or health mutations; no query or body; integer values are exact decimal
+        strings and unavailable values are omitted
+      parameters:
+      - description: 引擎ID | Engine ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.EngineInstanceOverviewResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+        "422":
+          description: Unprocessable Entity
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 获取原生实例概况 | Read native instance overview
+      tags:
+      - 引擎管理 | Engine Management
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - system.engine.read
   /engines/{id}/restore:
     post:
       consumes:

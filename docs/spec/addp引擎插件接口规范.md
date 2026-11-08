@@ -2,6 +2,10 @@
 
 本文只规范 engine plugin 的接口边界和 provider 组合。能力声明结构见 [addp引擎能力声明规范.md](addp引擎能力声明规范.md)，存储路径语义见 [addp存储引擎路径体系规范.md](addp存储引擎路径体系规范.md)。
 
+原生实例概况沿可选 `InstanceOverviewProvider.ReadInstanceOverview(ctx, connInfo)` 单一路径提供，由顶层 `capabilities.instance_overview` 声明。它与 `ConnectionProbeProvider` 分离，不扩大连接测试或定时健康检查的命令权限。Provider 只返回固定统计字段；System 的 `GET /api/v1/system/engines/:id/overview` 使用既有详情凭据、Tenant 与 `system.engine.read` 边界，读取已保存配置，最多执行五秒原生读取，不接受 query 或正文。响应包含 engine_id、version、queried_at 与 metrics；不返回账号凭据、原始错误、会话 SQL、账号策略、桶名列表或通用诊断对象。删除中/墓碑继续拒绝读取；能力不支持返回 422，整体源读取失败返回安全的 503，各项权限不足可在成功响应中独立说明。此入口不授予表/文件内容权限。前端显示查询范围、查询时间和累计语义；刷新开始及失败立即清除旧值，离开详情后丢弃旧请求，不自动轮询或重试。MinIO 容量仍不在正式能力中。
+
+MinIO 容量的静态准入发现：仓库固定版本 `RELEASE.2025-10-15T17-29-55Z` 的原生 AccountInfo 可携带桶占用与对象数，但其 [GetBucketUsageInfo](https://github.com/minio/minio/blob/RELEASE.2025-10-15T17-29-55Z/cmd/bucket-quota.go#L59-L77) 读取缓存，缺少桶统计也返回零值结构，AccountInfo 未提供足以区分真零与缺样的证明。该接口还返回账号策略等非统计字段，不能透传；桶级统计不等于前缀或平台 DataItem 授权范围。当前只完成此源码契约核查，普通/前缀受限账号、统计新鲜度和缺样的实库准入未完成，不声明容量支持，也不以遍历对象兜底。
+
 ---
 
 ## 一、定位

@@ -488,6 +488,10 @@ frontend/src/
 
 `GET /engines` 对 User 和 Service Principal 都返回脱敏列表。`GET /engines/:id` 对 User 返回脱敏连接信息；具有 `system.engine.read` 的 Tenant Service Principal 返回同 Tenant 的解密连接信息，跨 Tenant 返回 403。
 
+原生实例概况：详情按 `capabilities.instance_overview` 展示独立 Tab，打开或显式刷新时调用唯一 `GET /engines/:id/overview`。继承现有详情凭据、Tenant 与 `system.engine.read`，只使用已保存连接，不访问 Monitor、Meta/DataItem 内容或新账号；源端操作上限五秒，概况权限不足不改变连接在线状态。响应绑定 engine_id、配置 version 和查询完成时间，整数为精确字符串，逐项展示单位、范围、累计/当前/即时速率语义及权限不足/无统计；刷新失败清除旧值，身份、配置或组件离开后不接收旧响应，无轮询或自动重试。只读操作不持久化指标。范围、Provider 与 MinIO 容量准入边界以[能力声明规范](../docs/spec/addp引擎能力声明规范.md#原生实例概况)为准；连接检测与启动能力刷新沿既有主路径，不增加 INFO 或统计命令。初版 PG 当前数据库占用空间/连接/累计事务、Redis 逻辑 DB 键数及可选服务级 INFO、MinIO 账号桶数均不代表平台 DataItem 授权范围。
+
+实例概况验证沿现有标准入口：`make test-module MODULE=common GO_ONLY=1`、`make test-module MODULE=system GO_ONLY=1`、`make test-common-postgres COMMON_POSTGRES_TEST_ARGS='--test instance-overview'`、`make test-common-redis`、`make test-system-frontend SYSTEM_FRONTEND_BROWSER_ARGS='engine-instance-overview.e2e.js engine-configuration-note.e2e.js'` 和 System Swagger 生成/覆盖检查。PostgreSQL T2 使用已核实端口及允许的测试库；Redis 复用独占一次性服务和 ACL 身份，结束随标准入口清理；MinIO 使用真实 SDK 与带签名的 HTTP 协议夹具验证桶数，不把它称为真实 MinIO 服务 T2。既有模块、集成和前端 CI 自动发现本批测试，PG all 分组包含新增实库用例；以上不是个人账号或 Hosted T4 验收。Common 变更的本机运行验收仍须用户全量重启。
+
 通用引擎详情提供“导出配置说明”，生成当前界面语言的 Markdown 文件。点击时沿既有详情接口重新读取已保存配置，继续由 `system.engine.read` 和当前 Tenant 边界裁决；不调用连接测试、源端目录或业务读取，不增加 API、权限、后台任务或持久化副本。连接字段严格依照同类型 `ConnectionSpec` 的声明顺序，只导出已保存的非敏感标量值；敏感字段、未声明字段、默认值推测及自由配置对象不进入文档。基本信息、配置版本、最近版本探测时刻与能力展示分别注明来源，能力声明不等于实际连通或产品认证；原始错误、扫描配置及授权记录不导出。未提供字段描述的类型不能导出，扩展 Runtime 不在首版入口范围。下载复用共享 `saveBlobDownload`。单元、真实浏览器文件保存及中英文回归由已有 `make test-system-frontend` 自动发现，CI 沿 System 前端 owner 路径运行；这些 T1/T3 证据不能替代真实后端或 Hosted T4 验收。
 
 扩展引擎提供独立“停用”入口（含内置扩展引擎），只消费既有 `system.engine.update` 权限并提交观察到的 `version` 与 `lifecycle_state=disabled`；不开放名称、连接配置等登记字段编辑，不停止 Runtime 进程。版本冲突或请求结果不确定时保留确认框，禁止自动重试或补版本；操作者须显式重新读取并核对，再次确认。成功提示以列表及详情的只读读回均为停用为准，旧轮询先完成再读回，保留当前筛选。实际管理范围仍由后端校验。
