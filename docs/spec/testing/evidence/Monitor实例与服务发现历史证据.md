@@ -53,6 +53,14 @@ Go Backend 就绪检查原本正确记录 `process_exited` 或 `readiness_timeou
 
 控制面尚未就绪，未执行 Bootstrap、真实页面登录或 Standard 故障注入，所需实源场景不计通过。已只读确认临时故障文件不存在。专属 VM 及其存储已删除，宿主可用空间恢复至约 13 GiB。后续先增加宿主磁盘余量，再核对临时 VM 存储状态；既有受控回归和旧固定源码的实源证据保持各自范围。
 
+## Standard 就绪实源复验的环境中止（2026-11-08）
+
+仍固定源码 `201a8fcec71fb7ae3632f7beca08d2870de763b6`。在新的一次性 Lima Linux ARM64 VM、独立 Docker 默认 containerd snapshotter 中准备同一 Standard 超时与重试场景。正式 Bootstrap CLI 构建、三个前端依赖及 Chromium Headless Shell 安装完成。标准 `bash scripts/infra/up.sh` 的前两次准备分别在 MinIO 服务端与客户端构建遇到 Go 依赖下载 EOF／TLS 超时；确切失败地址恢复 HTTP 200 后继续标准入口，MinIO 镜像构建成功，七项核心容器均健康，入口随后进入 pgvector 扩展安装。上述准备失败保留，不作为产品断言失败或验收通过。
+
+准备期间宿主可用空间从约 22 GiB 快速降至 4.5 GiB，取证时 guest 根分区仍有约 12 GiB。为避免上轮写入失败再次发生，主动停止并删除本次专属 VM，标准入口及等待中的验收编排因 VM 停止退出 255。`limactl delete standard-ready` 成功，专属实例清单为空、实例目录不存在，宿主可用空间恢复至约 18 GiB，宿主 Docker 上下文仍为 `desktop-linux`。未完成 Infra 全入口，未启动控制面、执行 Bootstrap、登录页面或注入 Standard 故障；检出干净，临时故障文件和浏览器凭据均不存在。不能将七个容器健康计为本轮就绪屏障通过，也未证明上轮 EROFS 或本轮宿主空间变化的根因。
+
+本轮宿主日志位于 `/tmp/adpvm-standard-recheck.CqMvJw/`，包含 `infra.log`、`infra-retry.log`、`infra-retry2.log`、`browser-install.log`、`bootstrap-build.log`、`accept-retry.log` 和 `final-preparation-diagnostic.log`。CI／Hosted 未查询或触发，个人服务、Docker Desktop 配置及数据库未修改，未设置定时任务。后续须先确认宿主磁盘余量能稳定支撑独立环境，再沿同一固定源码补实源场景；既有受控回归及旧版本真实页面证据保持原范围。
+
 ## 清单接入与实例绑定
 
 主机组合筛选、详情返回及重置已有个人 Safari 验证。System 清单接入 → Monitor 采集保存已通过 [Hosted 专项](https://github.com/pampa0629/addp/actions/runs/39127927703)（受验源码 `fb13955d8f3cc48b254f2c840e55b8f8f638d2cc`，包含 `70c62a09a`、`9263ab6ee`）：单台 Linux VM 创建一次主机，正式 400 拒绝后只重试同一主机采集，刷新、两 Owner 独立读取及准确数量均通过。场景约 63.535 秒，浏览器约 39.370 秒；配置退役通过 API 删除采集并核验 404、停用主机且核验版本递增，随后独占部署销毁与外层零残留通过，不表示产品已提供主机 DELETE。
