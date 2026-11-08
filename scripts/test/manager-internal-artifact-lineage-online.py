@@ -2415,7 +2415,7 @@ def required_environment() -> dict[str, str]:
 
 def manager_case(environment):
     case = environment.get("ADDP_ONLINE_MANAGER_CASE", "full")
-    if case not in ("full", "native-raster-media", "native-table-orc", "native-table-avro", "native-netcdf", "native-grib", "native-envi", "kml-export", "filegdb-export", "filegdb-mysql-export", "filegdb-authorization"):
+    if case not in ("full", "native-raster-media", "native-table-orc", "native-table-avro", "native-netcdf", "native-grib", "native-envi", "kml-export", "filegdb-export", "filegdb-mysql-export", "filegdb-authorization", "nfs-upload-initial"):
         raise SuiteError("ADDP_ONLINE_MANAGER_CASE must be full, native-raster-media, native-table-orc, native-table-avro, native-netcdf, native-grib, native-envi, kml-export, filegdb-export, filegdb-mysql-export or filegdb-authorization")
     return case
 
@@ -2483,6 +2483,12 @@ def run_full_case(repository, environment, client):
 def main() -> int:
     try:
         case = manager_case(os.environ)
+        if case == 'nfs-upload-initial':
+            import importlib
+            report = importlib.import_module('scripts.test.manager-upload-initial-online').run(
+                Path(__file__).resolve().parents[2], dict(os.environ), sys.modules[__name__])
+            print(json.dumps(report, ensure_ascii=False, sort_keys=True))
+            return 0
         if case == 'filegdb-authorization':
             import importlib
             report = importlib.import_module('scripts.test.manager-filegdb-online').run(

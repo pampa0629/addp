@@ -159,7 +159,7 @@ class HostedManagerGateTest(unittest.TestCase):
               [ "$ADDP_ONLINE_MANAGER_PG_ENGINE_ID" = 17 ]
             elif [ "$ADDP_ONLINE_MANAGER_CASE" = filegdb-export ] || [ "$ADDP_ONLINE_MANAGER_CASE" = filegdb-mysql-export ]; then
               [ "$ADDP_ONLINE_MANAGER_EXPORT_ENGINE_ID" = 17 ]
-            elif [ "$ADDP_ONLINE_MANAGER_CASE" = filegdb-authorization ]; then
+            elif [ "$ADDP_ONLINE_MANAGER_CASE" = filegdb-authorization ] || [ "$ADDP_ONLINE_MANAGER_CASE" = nfs-upload-initial ]; then
               [ "$ADDP_ONLINE_MANAGER_NFS_ENGINE_ID" = 18 ]
               [ -z "${ADDP_ONLINE_MANAGER_MINIO_ENGINE_ID:-}" ]
             else
@@ -199,6 +199,26 @@ class HostedManagerGateTest(unittest.TestCase):
 
     def test_filegdb_case_cleans_after_scenario_failure(self):
         self.check_filegdb_case(True)
+
+    def test_upload_case_uses_nfs_without_converter_or_browser_and_cleans_on_exit(self):
+        result = self.run_gate(ADDP_ONLINE_MANAGER_CASE='nfs-upload-initial')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        trace = self.host.trace.read_text()
+        self.assertIn('nfs-fixture:start', trace)
+        self.assertIn('nfs-fixture:stop', trace)
+        self.assertIn('infra-down', trace)
+        self.assertNotIn('filegdb-physical:mount', trace)
+        self.assertNotIn('source-fixture:start', trace)
+        self.assertNotIn('playwright install', trace)
+        self.assertFalse(self.host.secrets.exists())
+
+    def test_upload_case_failure_still_cleans_nfs_and_infra(self):
+        result = self.run_gate(ADDP_ONLINE_MANAGER_CASE='nfs-upload-initial', ADDP_TEST_SUITE_FAIL='1')
+        self.assertNotEqual(result.returncode, 0)
+        trace = self.host.trace.read_text()
+        self.assertIn('nfs-fixture:stop', trace)
+        self.assertIn('infra-down', trace)
+        self.assertFalse(self.host.secrets.exists())
 
     def test_unknown_or_empty_case_is_rejected_before_lifecycle(self):
         for case in ('', 'other'):

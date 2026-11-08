@@ -3909,6 +3909,12 @@ class OnlineCIRegistrationTest(unittest.TestCase):
             target.write_text((SCRIPT.parents[2] / relative).read_text())
         owner.write_text(owner.read_text() + "\nif case == 'native-table-avro':\nmanager-avro-online\n")
         make.write_text(make.read_text() + '\t@python3 -m unittest scripts/test/manager-avro-online_test.py\n\t@node --check --input-type=module < console/frontend/e2e/online/manager-avro.spec.js\n')
+        for relative in ('scripts/test/manager-upload-initial-online.py', 'scripts/test/manager-upload-initial-online_test.py'):
+            target = self.repository / relative
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text((SCRIPT.parents[2] / relative).read_text())
+        owner.write_text(owner.read_text() + "\nif case == 'nfs-upload-initial':\nmanager-upload-initial-online\n")
+        make.write_text(make.read_text() + '\t@python3 -m unittest scripts/test/manager-upload-initial-online_test.py\n')
         make.write_text(make.read_text() + '\ntest-geopython-workflow:\n\t@echo test_online_avro_fixture.py\n')
         CHECK.check_registration(self.repository)
         for file, fragment, reason in (
@@ -3931,7 +3937,7 @@ class OnlineCIRegistrationTest(unittest.TestCase):
             (self.repository/'scripts/test/manager-envi-online.py','source_scans','ENVI'),
             (img_browser,'enviContentMetadata','ENVI'),
             (hosted, 'manager-case.json', 'acceptance case'),
-            (hosted, 'full|native-raster-media|native-table-orc|native-table-avro|native-netcdf|native-grib|native-envi|kml-export|filegdb-export|filegdb-mysql-export|filegdb-authorization)', 'acceptance case'),
+            (hosted, 'full|native-raster-media|native-table-orc|native-table-avro|native-netcdf|native-grib|native-envi|kml-export|filegdb-export|filegdb-mysql-export|filegdb-authorization|nfs-upload-initial)', 'acceptance case'),
             (kml_owner, 'source_unchanged=True', 'KML export'),
             (kml_browser, 'actual_button_download: true', 'KML export'),
             (self.workflow, 'ADDP_ONLINE_MANAGER_CASE: ${{ inputs.manager_case }}', 'acceptance case'),

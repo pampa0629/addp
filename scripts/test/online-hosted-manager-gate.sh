@@ -8,7 +8,7 @@ ROOT_DIR=$(cd "$SCRIPT_DIR/../.." && pwd -P)
 ONLINE_SUITE=manager-internal-artifact-lineage
 export ADDP_ONLINE_MANAGER_CASE=${ADDP_ONLINE_MANAGER_CASE-full}
 case "$ADDP_ONLINE_MANAGER_CASE" in
-  full|native-raster-media|native-table-orc|native-table-avro|native-netcdf|native-grib|native-envi|kml-export|filegdb-export|filegdb-mysql-export|filegdb-authorization) ;;
+  full|native-raster-media|native-table-orc|native-table-avro|native-netcdf|native-grib|native-envi|kml-export|filegdb-export|filegdb-mysql-export|filegdb-authorization|nfs-upload-initial) ;;
   *) echo 'ADDP_ONLINE_MANAGER_CASE must be full, native-raster-media, native-table-orc, native-table-avro, native-netcdf, native-grib, native-envi, kml-export, filegdb-export, filegdb-mysql-export or filegdb-authorization' >&2; exit 1 ;;
 esac
 HOSTED_FIXTURE_CONTAINERS=(addp-manager-model3d-runtime business-minio addp-manager-online-registry addp-manager-raster-runtime addp-manager-raster-verifier)
@@ -21,6 +21,9 @@ elif [ "$ADDP_ONLINE_MANAGER_CASE" = filegdb-export ]; then
 elif [ "$ADDP_ONLINE_MANAGER_CASE" = filegdb-authorization ]; then
   HOSTED_FIXTURE_CONTAINERS=(addp-manager-online-registry addp-manager-raster-runtime)
 fi
+if [ "$ADDP_ONLINE_MANAGER_CASE" = nfs-upload-initial ]; then
+  HOSTED_FIXTURE_CONTAINERS=()
+fi
 HOSTED_FIXTURE_COMPOSE_PROJECTS=(business)
 RUNTIME_CONTAINER=addp-manager-raster-runtime
 RUNTIME_TAG=manager-raster-online
@@ -30,8 +33,15 @@ HOSTED_FIXTURE_IMAGES=("$RUNTIME_IMAGE" localhost:5001/python:3.11-slim 127.0.0.
 if [[ "$ADDP_ONLINE_MANAGER_CASE" = filegdb-* ]]; then
   HOSTED_FIXTURE_IMAGES=("$RUNTIME_IMAGE")
 fi
+if [ "$ADDP_ONLINE_MANAGER_CASE" = nfs-upload-initial ]; then
+  HOSTED_FIXTURE_IMAGES=()
+fi
 stop_online_fixture() {
   local cleanup_status=0 image
+  if [ "$ADDP_ONLINE_MANAGER_CASE" = nfs-upload-initial ]; then
+    run_logged bash business/scripts/online-manager-nfs-fixture.sh stop || cleanup_status=1
+    return "$cleanup_status"
+  fi
   if [ "$ADDP_ONLINE_MANAGER_CASE" = native-envi ]; then
     # Capture bounded, redacted evidence before the standard Infra teardown.
     python3 business/scripts/online-envi-fixture.py --infra-diagnostic || true
@@ -136,6 +146,29 @@ if [ "$ADDP_ONLINE_MANAGER_CASE" = kml-export ] || [ "$ADDP_ONLINE_MANAGER_CASE"
   else
     export ADDP_ONLINE_MANAGER_EXPORT_ENGINE_ID="$ADDP_ONLINE_CONSUMER_ENGINE_ID"
   fi
+  unset ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN
+  run_logged make test-online "ONLINE_SUITE=$ONLINE_SUITE"
+  exit 0
+fi
+if [ "$ADDP_ONLINE_MANAGER_CASE" = nfs-upload-initial ]; then
+  # Only this upload case exposes an owned writable directory; old cases stay read-only.
+  export ADDP_ONLINE_FIXTURE_ENGINE_DESCRIPTOR_FILE="$ADDP_ONLINE_SECRET_DIR/manager-nfs-engine.json"
+  for credential in MANAGER_SERVICE_CLIENT_SECRET META_SERVICE_CLIENT_SECRET; do
+    export "$credential=$(python3 -c 'import secrets; print(secrets.token_hex(32))')"
+  done
+  infra_owned=1
+  run_logged bash scripts/infra/up.sh
+  fixture_owned=1
+  run_logged bash business/scripts/online-manager-nfs-fixture.sh start
+  application_owned=1
+  for start_target in -security -meta -manager -monitor; do
+    run_daemon_launcher_logged env SKIP_MODTIDY=1 bash scripts/dev/start.sh "$start_target"
+  done
+  run_logged bash -c 'cd system/backend && go run ./cmd/online-test-fixture --suite manager-internal-artifact-lineage --wait-protection-owners manager --output "$1"' _ "$IDENTITY_ENV"
+  source "$IDENTITY_ENV"
+  run_logged python3 scripts/test/online-engine-registration.py --descriptor "$ADDP_ONLINE_FIXTURE_ENGINE_DESCRIPTOR_FILE" --output "$ENGINE_RESULT_ENV"
+  source "$ENGINE_RESULT_ENV"
+  export ADDP_ONLINE_MANAGER_NFS_ENGINE_ID="$ADDP_ONLINE_CONSUMER_ENGINE_ID"
   unset ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN
   run_logged make test-online "ONLINE_SUITE=$ONLINE_SUITE"
   exit 0

@@ -1910,3 +1910,18 @@ func TestAvroCaseReusesExistingTableFixturePermissions(t *testing.T) {
 		t.Fatal("Avro initializer is missing existing bounded scan functions")
 	}
 }
+
+func TestNFSUploadInitialCaseHasNoScanningOrGrantHandlingPermission(t *testing.T) {
+	t.Setenv("ADDP_ONLINE_MANAGER_CASE", "nfs-upload-initial")
+	want := []string{"manager.data_item.create", "manager.data_item.read", "manager.content.read", "meta.catalog.read"}
+	got, err := suitePermissions("manager-internal-artifact-lineage")
+	if err != nil || !slices.Equal(got, want) {
+		t.Fatalf("upload consumer permissions: %v %v", got, err)
+	}
+	if !slices.Equal(managerFileGDBOutsiderPermissions("manager-internal-artifact-lineage"), want) {
+		t.Fatal("outsider must have the same function permissions, never a data Grant")
+	}
+	if !slices.Equal(suiteSourceInitializerPermissions("manager-internal-artifact-lineage"), sourceInitializerPermissions) {
+		t.Fatal("upload does not need extra human scan or issuance permissions")
+	}
+}

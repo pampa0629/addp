@@ -23,7 +23,7 @@ class SuiteError(RuntimeError):
 @dataclass
 class Response:
     status: int
-    payload: dict[str, object] | list[object]
+    payload: dict[str, object] | list[object] | bytes
 
 
 class GatewayClient:
@@ -43,18 +43,25 @@ class GatewayClient:
         body: dict[str, object] | None = None,
         *,
         response_type: type[dict] | type[list] = dict,
+        encoded_body: bytes | None = None,
+        content_type: str = "application/json",
+        authorization_header: str | None = None,
+        raw_response: bool = False,
     ) -> Response:
+        expected = set(expected)
         if response_type not in {dict, list}:
             raise SuiteError("unsupported JSON response type")
-        data = None if body is None else json.dumps(body).encode()
+        if encoded_body is not None and body is not None:
+            raise SuiteError("JSON and encoded request bodies are mutually exclusive")
+        data = encoded_body if encoded_body is not None else None if body is None else json.dumps(body).encode()
         request = urllib.request.Request(
             self.base_url + path,
             data=data,
             method=method,
             headers={
                 "Accept": "application/json",
-                "Content-Type": "application/json",
-                "Authorization": f"Bearer {self.token}",
+                "Content-Type": content_type,
+                "Authorization": authorization_header if authorization_header is not None else f"Bearer {self.token}",
             },
         )
         try:
@@ -67,6 +74,8 @@ class GatewayClient:
                 raw = error.read()
         except (urllib.error.URLError, TimeoutError) as error:
             raise SuiteError(f"{method} {path} transport failed: {error}") from error
+        if raw_response and status in set(expected) and status < 400:
+            return Response(status=status, payload=raw)
         try:
             payload = json.loads(raw) if raw else {}
         except json.JSONDecodeError as error:

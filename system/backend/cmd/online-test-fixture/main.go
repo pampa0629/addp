@@ -164,6 +164,8 @@ func lineageReaderUsername(suite string) string {
 func managerFileGDBOutsiderPermissions(suite string) []string {
 	if suite == "manager-internal-artifact-lineage" {
 		switch os.Getenv("ADDP_ONLINE_MANAGER_CASE") {
+		case "nfs-upload-initial":
+			return []string{"manager.data_item.create", "manager.data_item.read", "manager.content.read", "meta.catalog.read"}
 		case "filegdb-authorization":
 			return []string{"manager.content.read", "manager.data_item.read"}
 		case "filegdb-export", "filegdb-mysql-export":
@@ -423,6 +425,8 @@ func suitePermissions(suite string) ([]string, error) {
 		return orchestratorPermissions, nil
 	case "manager-internal-artifact-lineage":
 		switch os.Getenv("ADDP_ONLINE_MANAGER_CASE") {
+		case "nfs-upload-initial":
+			return []string{"manager.data_item.create", "manager.data_item.read", "manager.content.read", "meta.catalog.read"}, nil
 		case "filegdb-authorization":
 			return managerFileGDBPermissions, nil
 		case "kml-export":

@@ -580,7 +580,7 @@ def validate_manager_internal_artifact_lineage_profile(repository: Path, registe
                 'name: Online T4 (manager-internal-artifact-lineage, ${{ inputs.manager_case }}, Linux x86_64)',
                 'name: online-t4-manager-internal-artifact-lineage-${{ inputs.manager_case }}-${{ github.run_id }}'))
             or any(not source_contract_contains(hosted, fragment, repository) for fragment in (
-                'ADDP_ONLINE_MANAGER_CASE=${ADDP_ONLINE_MANAGER_CASE-full}', 'full|native-raster-media|native-table-orc|native-table-avro|native-netcdf|native-grib|native-envi|kml-export|filegdb-export|filegdb-mysql-export|filegdb-authorization)',
+                'ADDP_ONLINE_MANAGER_CASE=${ADDP_ONLINE_MANAGER_CASE-full}', 'full|native-raster-media|native-table-orc|native-table-avro|native-netcdf|native-grib|native-envi|kml-export|filegdb-export|filegdb-mysql-export|filegdb-authorization|nfs-upload-initial)',
                 'manager-case.json', 'addp.manager-acceptance-case/v1'))):
         raise RegistrationError('Manager acceptance case requires explicit full/media selection and case-specific evidence')
     netcdf_paths = ('scripts/test/manager-netcdf-online.py', 'scripts/test/manager-netcdf-online_test.py',
@@ -616,7 +616,7 @@ def validate_manager_internal_artifact_lineage_profile(repository: Path, registe
     envi_browser=(repository/'console/frontend/e2e/online/manager-img.spec.js').read_text()
     if any(value not in envi_browser for value in ('enviContentMetadata','metadata_projection_verified','content_metadata_verified')):
         raise RegistrationError('ENVI requires separate public structure and protected browser content metadata')
-    if hosted.index('full|native-raster-media|native-table-orc|native-table-avro|native-netcdf|native-grib|native-envi|kml-export|filegdb-export|filegdb-mysql-export|filegdb-authorization)') > hosted.index('source "$ROOT_DIR/scripts/utils/hosted-online.sh"'):
+    if hosted.index('full|native-raster-media|native-table-orc|native-table-avro|native-netcdf|native-grib|native-envi|kml-export|filegdb-export|filegdb-mysql-export|filegdb-authorization|nfs-upload-initial)') > hosted.index('source "$ROOT_DIR/scripts/utils/hosted-online.sh"'):
         raise RegistrationError('Manager acceptance case must reject invalid input before Hosted lifecycle')
     if "nfs-kernel-server" not in job.group("body"):
         raise RegistrationError("Manager content boundary acceptance requires its Hosted NFS package")
@@ -649,6 +649,12 @@ def validate_manager_internal_artifact_lineage_profile(repository: Path, registe
             raise RegistrationError('Manager acceptance case owner must preserve full and separate media routing: ' + fragment)
     make = (repository / 'Makefile').read_text(encoding='utf-8')
     img_runner = re.search(r'(?ms)^test-manager-online-runner:[^\n]*\n(?P<body>(?:\t[^\n]*\n)+)', make)
+    if ('nfs-upload-initial' not in manager_input.group('body')
+            or "if case == 'nfs-upload-initial':" not in manager_owner
+            or 'scripts/test/manager-upload-initial-online_test.py' not in make_target_commands(make, 'test-manager-online-runner')
+            or not (repository / 'scripts/test/manager-upload-initial-online.py').is_file()
+            or '127.0.0.1(rw,sync' not in (repository / 'business/scripts/online-manager-nfs-fixture.sh').read_text()):
+        raise RegistrationError('NFS upload initial authorization requires explicit case, isolated writable fixture and runner tests')
     filegdb = repository / 'scripts/test/manager-filegdb-online.py'
     filegdb_browser = repository / 'console/frontend/e2e/online/manager-filegdb.spec.js'
     if (not filegdb.is_file() or not (repository / 'scripts/test/manager-filegdb-physical.py').is_file()

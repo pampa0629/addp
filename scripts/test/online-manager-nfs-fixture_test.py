@@ -114,6 +114,18 @@ if os.environ.get('TEST_DISCOVERY_FAIL') != '1': print(Path(os.environ['TEST_EXP
         self.assertEqual(self.invoke('stop').returncode, 0)
         self.assertNotIn('systemctl', self.trace.read_text())
 
+    def test_upload_case_is_writable_only_in_its_owned_directory_and_cleanup_is_complete(self):
+        result = self.invoke('start', ADDP_ONLINE_MANAGER_CASE='nfs-upload-initial')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        root = Path((self.secret / 'nfs-root').read_text().strip())
+        self.assertIn('(rw,sync,', self.exports.read_text())
+        self.assertEqual((root / 'upload-initial').stat().st_mode & 0o777, 0o777)
+        self.assertEqual((root / 'upload-initial/existing.obj').read_bytes(), b'v 0 0 0\nv 1 0 0\nv 0 1 0\nf 1 2 3\n')
+        self.assertTrue((root / 'upload-initial/blocked.obj').is_dir())
+        self.assertEqual(self.invoke('stop').returncode, 0)
+        self.assertFalse(root.exists())
+        self.assertFalse(self.exports.exists())
+
     def test_partial_start_and_discovery_failure_can_be_cleaned(self):
         for env in ({'TEST_START_FAIL': '1'}, {'TEST_DISCOVERY_FAIL': '1'}):
             with self.subTest(env=env):

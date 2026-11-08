@@ -25,7 +25,15 @@ case "$1" in
     python3 "$SCRIPT_DIR/online-content-boundary-fixture.py" "$root"
     chmod -R a+rX "$root"
     sudo mkdir -p /etc/exports.d
-    printf '%s 127.0.0.1(ro,sync,no_subtree_check,insecure,root_squash)\n' "$root" | sudo tee "$EXPORT" >/dev/null
+    if [ "${ADDP_ONLINE_MANAGER_CASE:-}" = nfs-upload-initial ]; then
+      mkdir "$root/upload-initial" "$root/upload-initial/blocked.obj"
+      chmod 777 "$root/upload-initial"
+      printf 'v 0 0 0\nv 1 0 0\nv 0 1 0\nf 1 2 3\n' > "$root/upload-initial/existing.obj"
+      chmod 644 "$root/upload-initial/existing.obj"
+      printf '%s 127.0.0.1(rw,sync,no_subtree_check,insecure,root_squash)\n' "$root" | sudo tee "$EXPORT" >/dev/null
+    else
+      printf '%s 127.0.0.1(ro,sync,no_subtree_check,insecure,root_squash)\n' "$root" | sudo tee "$EXPORT" >/dev/null
+    fi
     sudo systemctl start rpcbind.service nfs-kernel-server.service
     sudo exportfs -ra
     showmount -e 127.0.0.1 | awk '{print $1}' | grep -Fx "$root" >/dev/null || fail 'export is not discoverable'

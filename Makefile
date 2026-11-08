@@ -1688,7 +1688,7 @@ test-manager-online-syntax:
 
 test-manager-online-runner: test-manager-online-syntax test-online-registration-unit test-manager-sgm-local-runner ## 验证 Manager 私有成果 Online 场景、物理夹具与 Hosted 生命周期
 	@python3 -m unittest scripts/test/manager-netcdf-online_test.py scripts/test/manager-grib-online_test.py scripts/test/manager-envi-online_test.py scripts/test/online-engine-registration_test.py scripts/test/metadata-refresh-scope-online_test.py
-	@python3 -m unittest scripts/test/manager-filegdb-online_test.py scripts/test/manager-filegdb-export-online_test.py
+	@python3 -m unittest scripts/test/manager-filegdb-online_test.py scripts/test/manager-filegdb-export-online_test.py scripts/test/manager-upload-initial-online_test.py
 	@python3 -m unittest scripts/test/manager-orc-online_test.py scripts/test/manager-avro-online_test.py
 	@python3 -m unittest scripts/test/manager-kml-export-online_test.py
 	@bash -n business/scripts/online-metric-postgres-fixture.sh
