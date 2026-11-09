@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"os"
 	"reflect"
 	"testing"
 	"time"
@@ -173,5 +174,20 @@ func TestNFSCancelledContentOpenReturnsNoSession(t *testing.T) {
 	reader, err := (&NFSPlugin{}).OpenContent(ctx, info, plugin.FileItemPath(14, "sources/ 原始.gpkg "), plugin.ReadOptions{})
 	if reader != nil || !errors.Is(err, context.Canceled) || target.lookups != 0 {
 		t.Fatal("cancelled open returned a session or performed I/O", reader, err, target.lookups)
+	}
+}
+
+func TestNFSAbsentCatalogFileKeepsMountForNextExactLookup(t *testing.T) {
+	conn, target := nfsReadEvidenceFixture(t)
+	nfs := &NFSPlugin{}
+	path := plugin.FileItemPath(14, "sources/ 原始.gpkg ")
+	target.lookupErr = os.ErrNotExist
+	if facts, err := nfs.DescribeEngineCatalogFacts(t.Context(), conn, plugin.FileItemPath(14, path.StringPath()+"-wal"), plugin.EngineCatalogFactsOptions{}); facts != nil || !errors.Is(err, os.ErrNotExist) {
+		t.Fatal("missing exact target did not retain its absence", facts, err)
+	}
+	target.lookupErr = nil
+	facts, err := nfs.DescribeEngineCatalogFacts(t.Context(), conn, path, plugin.EngineCatalogFactsOptions{})
+	if err != nil || facts == nil || !reflect.DeepEqual(facts.Path, path) {
+		t.Fatal("existing mount did not serve next lookup", facts, err)
 	}
 }

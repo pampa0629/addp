@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
+	"database/sql"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -78,7 +79,13 @@ func fileInputsAuthority(base client.DevelopFileSourceAccessObservation) fileSou
 	}
 }
 func fileInputsProvider(data map[string][]byte) *sourceWindowProvider {
-	return &sourceWindowProvider{open: func(_ context.Context, _ plugin.ConnectionInfo, p plugin.EngineCatalogPath, _ plugin.ReadOptions) (io.ReadCloser, error) {
+	return &sourceWindowProvider{facts: func(_ context.Context, _ plugin.ConnectionInfo, p plugin.EngineCatalogPath) (*plugin.EngineCatalogFacts, error) {
+		content, ok := data[p.StringPath()]
+		if !ok {
+			return nil, os.ErrNotExist
+		}
+		return sourceWindowFacts(p, int64(len(content))), nil
+	}, open: func(_ context.Context, _ plugin.ConnectionInfo, p plugin.EngineCatalogPath, _ plugin.ReadOptions) (io.ReadCloser, error) {
 		content, ok := data[p.StringPath()]
 		if !ok {
 			return nil, errors.New("unbound source")
@@ -102,15 +109,48 @@ func cleanupFileInputs(t *testing.T, b *fileWorkflowInputs) {
 		t.Error(result, err)
 	}
 }
-func fileInputsData() map[string][]byte {
-	return map[string][]byte{"sources/A.gpkg": bytes.Repeat([]byte("raw source A; wide ID 9007199254740993\x00"), 4000), "sources/B.gpkg": []byte("complete B source")}
+func fileInputsData(t *testing.T) map[string][]byte {
+	t.Helper()
+	name := filepath.Join(t.TempDir(), "fixture.gpkg")
+	db, err := sql.Open("sqlite3", name)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	_, err = db.Exec(`
+PRAGMA application_id=1196444487;
+PRAGMA user_version=10300;
+CREATE TABLE gpkg_spatial_ref_sys(srs_name TEXT, srs_id INTEGER PRIMARY KEY, organization TEXT, organization_coordsys_id INTEGER, definition TEXT);
+INSERT INTO gpkg_spatial_ref_sys VALUES('WGS84',4326,'EPSG',4326,'fixture');
+CREATE TABLE gpkg_contents(table_name TEXT PRIMARY KEY,data_type TEXT NOT NULL,srs_id INTEGER);
+INSERT INTO gpkg_contents VALUES('features','features',4326);
+CREATE TABLE gpkg_geometry_columns(table_name TEXT PRIMARY KEY,column_name TEXT,geometry_type_name TEXT,srs_id INTEGER,z INTEGER,m INTEGER);
+INSERT INTO gpkg_geometry_columns VALUES('features','shape','GEOMETRY',4326,0,0);
+CREATE TABLE features(fid INTEGER PRIMARY KEY,shape BLOB, attribute BLOB);
+INSERT INTO features VALUES(9007199254740993,NULL,zeroblob(140000));
+`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	a, err := os.ReadFile(name)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec("UPDATE features SET attribute = x'42'"); err != nil {
+		t.Fatal(err)
+	}
+	b, err := os.ReadFile(name)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return map[string][]byte{"sources/A.gpkg": a, "sources/B.gpkg": b}
 }
 
 func TestFileWorkflowInputsSpoolExactBytesAndRawDefinition(t *testing.T) {
 	for _, save := range []bool{false, true} {
 		t.Run(strconv.FormatBool(save), func(t *testing.T) {
 			facts, issued, lease, base := fileInputsFixture(t, save)
-			data := fileInputsData()
+			data := fileInputsData(t)
 			original := bytes.Clone(facts.ConfigJSON)
 			b, err := prepareFileWorkflowInputs(t.Context(), "fixture-instance", fileInputsAuthority(base), fileInputsProvider(data), facts, issued, lease, recordFileInputsDirectory)
 			if b != nil {
@@ -192,7 +232,7 @@ func TestFileWorkflowInputsRejectOwnerMismatchBeforeOpen(t *testing.T) {
 				calls.Add(1)
 				return auth(c, i, r)
 			})
-			b, err := prepareFileWorkflowInputs(t.Context(), "fixture-instance", count, fileInputsProvider(fileInputsData()), facts, issued, lease, recordFileInputsDirectory)
+			b, err := prepareFileWorkflowInputs(t.Context(), "fixture-instance", count, fileInputsProvider(fileInputsData(t)), facts, issued, lease, recordFileInputsDirectory)
 			if b != nil {
 				cleanupFileInputs(t, b)
 			}
@@ -276,7 +316,7 @@ type fileInputsHTTP struct {
 
 func newFileInputsHTTP(t *testing.T, fault string) *fileInputsHTTP {
 	t.Helper()
-	h := &fileInputsHTTP{data: fileInputsData(), fault: fault}
+	h := &fileInputsHTTP{data: fileInputsData(t), fault: fault}
 	if fault == "upload-blocked" {
 		h.uploadStarted = make(chan struct{})
 		h.uploadRelease = make(chan struct{})
@@ -380,7 +420,7 @@ func runtimeFileInputsCredential(context.Context) (string, error) {
 
 func TestFileWorkflowInputsActualSDKUploadsAndCanonicalDispatchOnce(t *testing.T) {
 	facts, issued, lease, base := fileInputsFixture(t, true)
-	b, err := prepareFileWorkflowInputs(t.Context(), "fixture-instance", fileInputsAuthority(base), fileInputsProvider(fileInputsData()), facts, issued, lease, recordFileInputsDirectory)
+	b, err := prepareFileWorkflowInputs(t.Context(), "fixture-instance", fileInputsAuthority(base), fileInputsProvider(fileInputsData(t)), facts, issued, lease, recordFileInputsDirectory)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -421,7 +461,7 @@ func TestFileWorkflowInputsUnknownOutcomesNeverReplay(t *testing.T) {
 	for _, fault := range []string{"register-unknown", "create-unknown", "upload-unknown", "execute-unknown"} {
 		t.Run(fault, func(t *testing.T) {
 			facts, issued, lease, base := fileInputsFixture(t, false)
-			b, err := prepareFileWorkflowInputs(t.Context(), "fixture-instance", fileInputsAuthority(base), fileInputsProvider(fileInputsData()), facts, issued, lease, recordFileInputsDirectory)
+			b, err := prepareFileWorkflowInputs(t.Context(), "fixture-instance", fileInputsAuthority(base), fileInputsProvider(fileInputsData(t)), facts, issued, lease, recordFileInputsDirectory)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -464,7 +504,7 @@ func TestFileWorkflowInputsTransferIntegrityCannotDispatch(t *testing.T) {
 	for _, fault := range []string{"size", "same-size-content"} {
 		t.Run(fault, func(t *testing.T) {
 			facts, issued, lease, base := fileInputsFixture(t, false)
-			b, err := prepareFileWorkflowInputs(t.Context(), "fixture-instance", fileInputsAuthority(base), fileInputsProvider(fileInputsData()), facts, issued, lease, recordFileInputsDirectory)
+			b, err := prepareFileWorkflowInputs(t.Context(), "fixture-instance", fileInputsAuthority(base), fileInputsProvider(fileInputsData(t)), facts, issued, lease, recordFileInputsDirectory)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -473,7 +513,7 @@ func TestFileWorkflowInputsTransferIntegrityCannotDispatch(t *testing.T) {
 			case "size":
 				_ = os.WriteFile(p, []byte("short"), 0600)
 			case "same-size-content":
-				data := fileInputsData()["sources/A.gpkg"]
+				data := fileInputsData(t)["sources/A.gpkg"]
 				data[0] ^= 0xff
 				_ = os.WriteFile(p, data, 0600)
 			}
@@ -505,7 +545,7 @@ func TestFileWorkflowInputsSourceFailureRetainsPendingCleanup(t *testing.T) {
 		}
 		return authority(c, i, r)
 	})
-	provider := fileInputsProvider(fileInputsData())
+	provider := fileInputsProvider(fileInputsData(t))
 	provider.open = func(context.Context, plugin.ConnectionInfo, plugin.EngineCatalogPath, plugin.ReadOptions) (io.ReadCloser, error) {
 		close(entered)
 		<-release
@@ -544,7 +584,7 @@ func TestFileWorkflowInputsRuntimeCleanupPendingIsNotLocalSuccess(t *testing.T) 
 	for _, fault := range []string{"cleanup-pending", "cleanup-unknown"} {
 		t.Run(fault, func(t *testing.T) {
 			facts, issued, lease, base := fileInputsFixture(t, false)
-			b, err := prepareFileWorkflowInputs(t.Context(), "fixture-instance", fileInputsAuthority(base), fileInputsProvider(fileInputsData()), facts, issued, lease, recordFileInputsDirectory)
+			b, err := prepareFileWorkflowInputs(t.Context(), "fixture-instance", fileInputsAuthority(base), fileInputsProvider(fileInputsData(t)), facts, issued, lease, recordFileInputsDirectory)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -577,7 +617,7 @@ func TestFileWorkflowInputsRevocationCancelsUploadAndPreventsDispatch(t *testing
 		}
 		return original(c, i, r)
 	})
-	b, err := prepareFileWorkflowInputs(t.Context(), "fixture-instance", auth, fileInputsProvider(fileInputsData()), facts, issued, lease, recordFileInputsDirectory)
+	b, err := prepareFileWorkflowInputs(t.Context(), "fixture-instance", auth, fileInputsProvider(fileInputsData(t)), facts, issued, lease, recordFileInputsDirectory)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -620,7 +660,7 @@ func TestFileWorkflowInputsDifferentSourceDeadlinesRejectWholeBatch(t *testing.T
 		}
 		return response, err
 	})
-	b, err := prepareFileWorkflowInputs(t.Context(), "fixture-instance", auth, fileInputsProvider(fileInputsData()), facts, issued, lease, recordFileInputsDirectory)
+	b, err := prepareFileWorkflowInputs(t.Context(), "fixture-instance", auth, fileInputsProvider(fileInputsData(t)), facts, issued, lease, recordFileInputsDirectory)
 	if b != nil {
 		defer cleanupFileInputs(t, b)
 	}
@@ -635,7 +675,7 @@ func TestFileWorkflowInputsDifferentSourceDeadlinesRejectWholeBatch(t *testing.T
 
 func TestFileWorkflowInputsRecordedCleanupRequiresOriginalInstanceAndBatch(t *testing.T) {
 	facts, issued, lease, base := fileInputsFixture(t, false)
-	b, err := prepareFileWorkflowInputs(t.Context(), "fixture-instance", fileInputsAuthority(base), fileInputsProvider(fileInputsData()), facts, issued, lease, recordFileInputsDirectory)
+	b, err := prepareFileWorkflowInputs(t.Context(), "fixture-instance", fileInputsAuthority(base), fileInputsProvider(fileInputsData(t)), facts, issued, lease, recordFileInputsDirectory)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -701,7 +741,7 @@ func TestFileWorkflowInputsDirectoryFailureStopsBeforeSourceAccess(t *testing.T)
 		checks.Add(1)
 		return original(c, i, r)
 	})
-	b, err := prepareFileWorkflowInputs(t.Context(), "fixture-instance", authority, fileInputsProvider(fileInputsData()), facts, issued, lease, func(context.Context, string, string) error { return errors.New("directory registration unknown") })
+	b, err := prepareFileWorkflowInputs(t.Context(), "fixture-instance", authority, fileInputsProvider(fileInputsData(t)), facts, issued, lease, func(context.Context, string, string) error { return errors.New("directory registration unknown") })
 	if b != nil {
 		defer cleanupFileInputs(t, b)
 	}
@@ -712,7 +752,7 @@ func TestFileWorkflowInputsDirectoryFailureStopsBeforeSourceAccess(t *testing.T)
 
 func TestFileWorkflowInputsDirectoryOnlyRecoveryDoesNotInventRuntime(t *testing.T) {
 	facts, issued, lease, base := fileInputsFixture(t, false)
-	b, err := prepareFileWorkflowInputs(t.Context(), "fixture-instance", fileInputsAuthority(base), fileInputsProvider(fileInputsData()), facts, issued, lease, recordFileInputsDirectory)
+	b, err := prepareFileWorkflowInputs(t.Context(), "fixture-instance", fileInputsAuthority(base), fileInputsProvider(fileInputsData(t)), facts, issued, lease, recordFileInputsDirectory)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -724,5 +764,129 @@ func TestFileWorkflowInputsDirectoryOnlyRecoveryDoesNotInventRuntime(t *testing.
 	state, err = b.CleanupInputDirectory(t.Context(), "fixture-instance", r)
 	if err != nil || !state.LocalRemoved || !state.SourcesStopped || state.RuntimeCleanup != "not_created" {
 		t.Fatal(state, err)
+	}
+}
+
+func TestFileWorkflowInputsRejectChangedGeoPackageBeforeRuntimeRegistration(t *testing.T) {
+	for _, fault := range []string{"early sidecar", "late sidecar", "unknown sidecar", "version changed", "short read", "invalid staged bytes", "WAL header"} {
+		t.Run(fault, func(t *testing.T) {
+			facts, issued, lease, base := fileInputsFixture(t, false)
+			data := fileInputsData(t)
+			key := facts.Intent.Sources[0].Target.StringPath()
+			switch fault {
+			case "invalid staged bytes":
+				data[key][0] = 0
+			case "WAL header":
+				data[key][18], data[key][19] = 2, 2
+			}
+			provider := fileInputsProvider(data)
+			originalFacts, originalOpen := provider.facts, provider.open
+			var opens atomic.Int32
+			provider.facts = func(ctx context.Context, conn plugin.ConnectionInfo, path plugin.EngineCatalogPath) (*plugin.EngineCatalogFacts, error) {
+				if conn["server"] != "test-only" || path.EngineID != 11 {
+					t.Error("NFS facts escaped the authorized connection")
+				}
+				name := path.StringPath()
+				if name != key && name != key+"-wal" && name != key+"-shm" && name != key+"-journal" {
+					t.Error("probe escaped the first exact source", name)
+				}
+				if name == key+"-wal" && (fault == "early sidecar" || fault == "late sidecar" && opens.Load() > 0) {
+					return &plugin.EngineCatalogFacts{Path: path}, nil
+				}
+				if name == key+"-shm" && fault == "unknown sidecar" {
+					return nil, os.ErrPermission
+				}
+				f, err := originalFacts(ctx, conn, path)
+				if f != nil && fault == "version changed" && opens.Load() > 0 {
+					f.Storage.ETag = "changed after Open"
+				}
+				return f, err
+			}
+			provider.open = func(ctx context.Context, conn plugin.ConnectionInfo, path plugin.EngineCatalogPath, opts plugin.ReadOptions) (io.ReadCloser, error) {
+				opens.Add(1)
+				if path.StringPath() != key {
+					t.Error("opened an unproven next source or sidecar")
+				}
+				if fault == "short read" {
+					set, _ := plugin.NewQueryReadSet(path)
+					return &sourceWindowHandle{Reader: bytes.NewReader(data[key][:len(data[key])-1]), set: set}, nil
+				}
+				return originalOpen(ctx, conn, path, opts)
+			}
+			b, err := prepareFileWorkflowInputs(t.Context(), "fixture-instance", fileInputsAuthority(base), provider, facts, issued, lease, recordFileInputsDirectory)
+			if b != nil {
+				defer cleanupFileInputs(t, b)
+			}
+			if b == nil || err == nil || b.prepared || len(b.manifest.Inputs) != 0 {
+				t.Fatal("unproven file entered the manifest", err)
+			}
+			wantOpens := int32(1)
+			if fault == "early sidecar" || fault == "unknown sidecar" {
+				wantOpens = 0
+			}
+			if opens.Load() != wantOpens {
+				t.Fatal("incorrect source Open count", opens.Load())
+			}
+			if err := b.Upload(t.Context(), nil, fileInputRuntimeID, runtimeFileInputsCredential, func(context.Context, repository.PrivateFileRuntimeRecord) error {
+				t.Error("unproven file reached Runtime registration")
+				return nil
+			}); err == nil || b.attempted {
+				t.Fatal("unproven input accepted for upload")
+			}
+		})
+	}
+}
+
+func TestFileWorkflowInputsBlockedPostReadFactsRemainPending(t *testing.T) {
+	facts, issued, lease, base := fileInputsFixture(t, false)
+	provider := fileInputsProvider(fileInputsData(t))
+	original := provider.facts
+	path := facts.Intent.Sources[0].Target.StringPath()
+	var mainProbes atomic.Int32
+	entered := make(chan struct{})
+	release := make(chan struct{})
+	var once sync.Once
+	unblock := func() { once.Do(func() { close(release) }) }
+	defer unblock()
+	provider.facts = func(ctx context.Context, conn plugin.ConnectionInfo, target plugin.EngineCatalogPath) (*plugin.EngineCatalogFacts, error) {
+		if target.StringPath() == path && mainProbes.Add(1) == 2 {
+			close(entered)
+			<-release
+		}
+		return original(ctx, conn, target)
+	}
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	type preparation struct {
+		b   *fileWorkflowInputs
+		err error
+	}
+	done := make(chan preparation, 1)
+	go func() {
+		b, err := prepareFileWorkflowInputs(ctx, "fixture-instance", fileInputsAuthority(base), provider, facts, issued, lease, recordFileInputsDirectory)
+		done <- preparation{b, err}
+	}()
+	select {
+	case <-entered:
+	case r := <-done:
+		cleanupFileInputs(t, r.b)
+		t.Fatal("no post-read observation", r.err)
+	case <-time.After(3 * time.Second):
+		t.Fatal("post-read observation did not start")
+	}
+	cancel()
+	select {
+	case r := <-done:
+		if r.err == nil || r.b == nil || r.b.prepared {
+			t.Fatal("cancelled observation allowed preparation", r.err)
+		}
+		state, err := r.b.Cleanup(t.Context())
+		if err == nil || state.SourcesStopped || state.LocalRemoved {
+			t.Fatal("blocked NFS observation falsely cleaned", state, err)
+		}
+		unblock()
+		cleanupFileInputs(t, r.b)
+	case <-time.After(3 * time.Second):
+		t.Fatal("blocked observation delayed cancellation")
 	}
 }

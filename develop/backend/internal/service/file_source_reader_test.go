@@ -10,6 +10,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"reflect"
 	"strings"
 	"sync"
@@ -35,11 +36,30 @@ func (f fileSourceAuthorityFunc) CheckDevelopFileSourceAccess(ctx context.Contex
 
 type sourceWindowProvider struct {
 	nfs.NFSPlugin
-	open func(context.Context, plugin.ConnectionInfo, plugin.EngineCatalogPath, plugin.ReadOptions) (io.ReadCloser, error)
+	open  func(context.Context, plugin.ConnectionInfo, plugin.EngineCatalogPath, plugin.ReadOptions) (io.ReadCloser, error)
+	facts func(context.Context, plugin.ConnectionInfo, plugin.EngineCatalogPath) (*plugin.EngineCatalogFacts, error)
 }
 
 func (p *sourceWindowProvider) OpenContent(ctx context.Context, c plugin.ConnectionInfo, path plugin.EngineCatalogPath, o plugin.ReadOptions) (io.ReadCloser, error) {
 	return p.open(ctx, c, path, o)
+}
+
+func (p *sourceWindowProvider) DescribeEngineCatalogFacts(ctx context.Context, conn plugin.ConnectionInfo, path plugin.EngineCatalogPath, _ plugin.EngineCatalogFactsOptions) (*plugin.EngineCatalogFacts, error) {
+	if p.facts != nil {
+		return p.facts(ctx, conn, path)
+	}
+	for _, suffix := range []string{"-wal", "-shm", "-journal"} {
+		if strings.HasSuffix(path.StringPath(), suffix) {
+			return nil, os.ErrNotExist
+		}
+	}
+	return sourceWindowFacts(path, 0), nil
+}
+
+func sourceWindowFacts(path plugin.EngineCatalogPath, size int64) *plugin.EngineCatalogFacts {
+	return &plugin.EngineCatalogFacts{Path: path, Kind: "file", Storage: &plugin.EngineCatalogStorageFacts{
+		Path: path.StringPath(), SizeBytes: &size, ETag: "fixture-version",
+	}}
 }
 
 type sourceWindowHandle struct {
@@ -88,9 +108,17 @@ func fixedSourceAuthority(obs client.DevelopFileSourceAccessObservation) fileSou
 }
 func sourceWindowData(req client.DevelopFileSourceAccessRequest, data []byte) *sourceWindowProvider {
 	set, _ := plugin.NewQueryReadSet(req.Source)
-	return &sourceWindowProvider{open: func(context.Context, plugin.ConnectionInfo, plugin.EngineCatalogPath, plugin.ReadOptions) (io.ReadCloser, error) {
-		return &sourceWindowHandle{Reader: bytes.NewReader(data), set: set}, nil
-	}}
+	return &sourceWindowProvider{
+		facts: func(_ context.Context, _ plugin.ConnectionInfo, path plugin.EngineCatalogPath) (*plugin.EngineCatalogFacts, error) {
+			if !reflect.DeepEqual(path, req.Source) {
+				return nil, os.ErrNotExist
+			}
+			return sourceWindowFacts(path, int64(len(data))), nil
+		},
+		open: func(context.Context, plugin.ConnectionInfo, plugin.EngineCatalogPath, plugin.ReadOptions) (io.ReadCloser, error) {
+			return &sourceWindowHandle{Reader: bytes.NewReader(data), set: set}, nil
+		},
+	}
 }
 func waitSourceStopped(t *testing.T, s *fileSourceReader) {
 	t.Helper()
@@ -224,7 +252,7 @@ func TestFileSourceWindowRenewalRetainsFixedDeadlineAndOriginalBinding(t *testin
 	})
 	started := make(chan struct{})
 	release := make(chan struct{})
-	provider := sourceWindowData(req, nil)
+	provider := sourceWindowData(req, []byte("late but authorized"))
 	set, _ := plugin.NewQueryReadSet(req.Source)
 	provider.open = func(context.Context, plugin.ConnectionInfo, plugin.EngineCatalogPath, plugin.ReadOptions) (io.ReadCloser, error) {
 		return &sourceWindowHandle{set: set, Reader: sourceWindowReaderFunc(func(p []byte) (int, error) {

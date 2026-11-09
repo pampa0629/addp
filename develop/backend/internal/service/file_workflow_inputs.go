@@ -13,6 +13,7 @@ import (
 	"github.com/addp/common/client"
 	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/execution"
+	"github.com/addp/common/format/plugins/sqlite"
 	"github.com/addp/develop/backend/internal/repository"
 	"github.com/google/uuid"
 )
@@ -54,7 +55,7 @@ type fileWorkflowInputs struct {
 // Preparation is a component of the file-purpose Owner executor, not a public
 // submission route or a replacement for System admission. On error a non-nil
 // batch retains its original sessions so callers can observe pending cleanup.
-func prepareFileWorkflowInputs(ctx context.Context, instanceID string, authority fileSourceAuthority, provider plugin.ContentReadableProvider,
+func prepareFileWorkflowInputs(ctx context.Context, instanceID string, authority fileSourceAuthority, provider fileSourceProvider,
 	facts *client.DevelopFileExecutionFacts, issued client.IssuedDevelopFileAuthorization, lease execution.Lease, registerDirectory func(context.Context, string, string) error) (*fileWorkflowInputs, error) {
 	if ctx == nil || instanceID == "" || registerDirectory == nil || authority == nil || provider == nil || facts.Validate() != nil || issued.Validate() != nil || facts.AdmissionState != "ready" ||
 		facts.ExecutionID != issued.Authorization.ExecutionID || facts.AuthorizationID != issued.Authorization.ID || facts.ScopeDigest != issued.ScopeDigest ||
@@ -117,6 +118,14 @@ func prepareFileWorkflowInputs(ctx context.Context, instanceID string, authority
 		if err != nil || receipt.Size != info.Size() {
 			b.cancel(errFileWorkflowInputs)
 			return b, errFileWorkflowInputs
+		}
+		if err := sqlite.ValidateStandaloneGeoPackage(reader.ctx, b.inputPath(index)); err != nil {
+			b.cancel(errFileSourceComposition)
+			return b, errFileSourceComposition
+		}
+		if err := reader.active(); err != nil {
+			b.cancel(err)
+			return b, err
 		}
 		if index == 0 {
 			b.manifest.Deadline = receipt.BusinessDeadline

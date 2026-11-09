@@ -42,7 +42,7 @@ func TestPrivateFileWorkerDispatchRecoveryAndCapacity(t *testing.T) {
 				base.ExpiresAt = time.Now().Add(300 * time.Millisecond)
 			}
 			f.authority = func(uint) fileSourceAuthority { return fileInputsAuthority(base) }
-			f.provider = fileInputsProvider(fileInputsData())
+			f.provider = fileInputsProvider(fileInputsData(t))
 			f.credential = func(context.Context, uint) (string, error) { return "addp_at_runtime_current", nil }
 			var creates, uploads, dispatches, deletes atomic.Int32
 			var cleanupMode atomic.Int32

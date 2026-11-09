@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -448,7 +449,10 @@ func (p *NFSPlugin) getStorageObjectFacts(ctx context.Context, connInfo plugin.C
 	info, _, err := resolveNFSRead(ctx, entry.reader, filePath, gonfs.NF3Reg)
 	entry.mu.Unlock()
 	if err != nil {
-		invalidatePool(server, exportPath)
+		// An exact lookup can prove a sibling absent without a transport failure.
+		if !errors.Is(err, os.ErrNotExist) {
+			invalidatePool(server, exportPath)
+		}
 		return nil, fmt.Errorf("failed to stat NFS file %s: %w", filePath, err)
 	}
 

@@ -26,7 +26,7 @@ func TestFileWorkflowInputsDurableOwnerRecordBeforeRuntimeCreate(t *testing.T) {
 	registerDirectory := func(ctx context.Context, instanceID, directory string) error {
 		return repo.RecordPrivateInputDirectory(ctx, *lease, instanceID, directory)
 	}
-	provider := fileInputsProvider(fileInputsData())
+	provider := fileInputsProvider(fileInputsData(t))
 	open := provider.open
 	provider.open = func(ctx context.Context, connection plugin.ConnectionInfo, path plugin.EngineCatalogPath, options plugin.ReadOptions) (io.ReadCloser, error) {
 		registered, err := repo.ReadPrivateInputDirectory(ctx, 3, item.ExecutionID)

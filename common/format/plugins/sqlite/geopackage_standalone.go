@@ -17,7 +17,7 @@ import (
 
 // describeGeoPackageFormat observes the same complete bytes as the existing
 // deep reader. It never opens the original business path or replays a journal.
-// Source stability and absence of sidecars must separately be proved by Meta.
+// Source stability and absence of sidecars are verified by the I/O owner.
 func (p *Plugin) describeGeoPackageFormat(ctx context.Context, input io.Reader, options *format.ParseOptions) (map[string]interface{}, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
@@ -27,33 +27,11 @@ func (p *Plugin) describeGeoPackageFormat(ctx context.Context, input io.Reader, 
 		return nil, err
 	}
 	defer cleanup()
-	f, err := os.Open(name)
-	if err != nil {
-		return nil, err
-	}
-	var header [100]byte
-	_, readErr := io.ReadFull(f, header[:])
-	stat, statErr := f.Stat()
-	closeErr := f.Close()
-	if readErr != nil || statErr != nil || closeErr != nil {
-		return nil, fmt.Errorf("read GeoPackage container header: %w", errors.Join(readErr, statErr, closeErr))
-	}
-	if !bytes.Equal(header[:16], []byte("SQLite format 3\x00")) {
-		return nil, fmt.Errorf("invalid GeoPackage SQLite header")
-	}
-	uri := (&url.URL{Scheme: "file", Path: name}).String() + "?mode=ro&immutable=1&_query_only=1"
-	db, err := sql.Open("sqlite3", uri)
+	db, complete, err := inspectGeoPackageFile(ctx, name)
 	if err != nil {
 		return nil, err
 	}
 	defer db.Close()
-	if _, err := db.ExecContext(ctx, "PRAGMA trusted_schema=OFF"); err != nil {
-		return nil, err
-	}
-	complete, err := geoPackageStandalone(ctx, db, header[:], stat.Size())
-	if err != nil {
-		return nil, err
-	}
 	// Existing metadata discovery is preserved for unsupported profiles. This
 	// flag alone is deliberately not the DataItem composition_complete fact.
 	result, err := Analyze(ctx, db, p.analysisOptions(options))
@@ -66,6 +44,55 @@ func (p *Plugin) describeGeoPackageFormat(ctx context.Context, input io.Reader, 
 		"view_count": result.Metadata.ViewCount, "index_count": result.Metadata.IndexCount,
 		"standalone_vector": complete,
 	}, nil
+}
+
+// ValidateStandaloneGeoPackage verifies an owner-private staged file in place.
+// The caller owns the file and must exclude concurrent writes during inspection.
+func ValidateStandaloneGeoPackage(ctx context.Context, name string) error {
+	db, complete, err := inspectGeoPackageFile(ctx, name)
+	if err != nil {
+		return err
+	}
+	closeErr := db.Close()
+	if !complete {
+		return errors.Join(errors.New("unsupported standalone vector GeoPackage"), closeErr)
+	}
+	return closeErr
+}
+
+func inspectGeoPackageFile(ctx context.Context, name string) (*sql.DB, bool, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, false, err
+	}
+	f, err := os.Open(name)
+	if err != nil {
+		return nil, false, err
+	}
+	var header [100]byte
+	_, readErr := io.ReadFull(f, header[:])
+	stat, statErr := f.Stat()
+	closeErr := f.Close()
+	if readErr != nil || statErr != nil || closeErr != nil {
+		return nil, false, fmt.Errorf("read GeoPackage container header: %w", errors.Join(readErr, statErr, closeErr))
+	}
+	if !bytes.Equal(header[:16], []byte("SQLite format 3\x00")) {
+		return nil, false, fmt.Errorf("invalid GeoPackage SQLite header")
+	}
+	uri := (&url.URL{Scheme: "file", Path: name}).String() + "?mode=ro&immutable=1&_query_only=1"
+	db, err := sql.Open("sqlite3", uri)
+	if err != nil {
+		return nil, false, err
+	}
+	if _, err := db.ExecContext(ctx, "PRAGMA trusted_schema=OFF"); err != nil {
+		db.Close()
+		return nil, false, err
+	}
+	complete, err := geoPackageStandalone(ctx, db, header[:], stat.Size())
+	if err != nil {
+		db.Close()
+		return nil, false, err
+	}
+	return db, complete, nil
 }
 
 var standardGeoPackageRTree = regexp.MustCompile(`(?i)\bUSING\s+rtree\s*\(\s*id\s*,\s*minx\s*,\s*maxx\s*,\s*miny\s*,\s*maxy\s*\)\s*$`)

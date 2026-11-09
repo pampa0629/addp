@@ -14,10 +14,12 @@ import (
 
 	"github.com/addp/common/client"
 	"github.com/addp/common/engine/plugin"
+	"github.com/addp/common/format"
 	commonModels "github.com/addp/common/models"
 )
 
 var errFileSourceWindow = errors.New("Develop file source observation expired or changed")
+var errFileSourceComposition = errors.New("Develop GeoPackage source composition could not be verified")
 var errFileSourceCleanupPending = errors.New("Develop file source I/O has not stopped")
 
 // Only the System client supplies fresh eligibility; neither a scope digest nor
@@ -25,6 +27,11 @@ var errFileSourceCleanupPending = errors.New("Develop file source I/O has not st
 // protocol doubles in deterministic tests, not a second authorization route.
 type fileSourceAuthority interface {
 	CheckDevelopFileSourceAccess(context.Context, client.IssuedDevelopFileAuthorization, client.DevelopFileSourceAccessRequest) (*client.DevelopFileSourceAccessObservation, error)
+}
+
+type fileSourceProvider interface {
+	plugin.ContentReadableProvider
+	plugin.EngineCatalogFactsProvider
 }
 
 type fileSourceChunk struct {
@@ -58,13 +65,14 @@ type fileSourceReader struct {
 	authority  fileSourceAuthority
 	issued     client.IssuedDevelopFileAuthorization
 	request    client.DevelopFileSourceAccessRequest
-	provider   plugin.ContentReadableProvider
+	provider   fileSourceProvider
 	requests   chan fileSourceReadRequest
 	stopped    chan struct{}
 
 	mu          sync.Mutex
 	observation client.DevelopFileSourceAccessObservation
 	readSet     *plugin.QueryReadSet
+	sourceSize  int64
 	closeErr    error
 
 	readMu sync.Mutex
@@ -73,7 +81,7 @@ type fileSourceReader struct {
 	eof    bool
 }
 
-func newFileSourceReader(ctx context.Context, authority fileSourceAuthority, provider plugin.ContentReadableProvider,
+func newFileSourceReader(ctx context.Context, authority fileSourceAuthority, provider fileSourceProvider,
 	issued client.IssuedDevelopFileAuthorization, request client.DevelopFileSourceAccessRequest) (*fileSourceReader, error) {
 	if ctx == nil || authority == nil || provider == nil || issued.Validate() != nil || request.ExecutionID != issued.Authorization.ExecutionID ||
 		request.Attempt != issued.Scope.ExpectedAttempt || request.ScopeDigest != issued.ScopeDigest || request.LeaseToken == "" {
@@ -196,10 +204,19 @@ func (s *fileSourceReader) observe() {
 
 func (s *fileSourceReader) run() {
 	var reader io.ReadCloser
+	var before *format.GeoPackageSourceObservation
+	var eof bool
+	var conn plugin.ConnectionInfo
 	defer func() {
 		var err error
 		if reader != nil {
 			err = reader.Close()
+		}
+		if eof && err == nil && s.active() == nil {
+			after, factsErr := format.ObserveGeoPackageSource(s.ctx, s.provider, conn, s.request.Source)
+			if factsErr != nil || after == nil || !before.Matches(*after) {
+				s.cancel(errFileSourceComposition)
+			}
 		}
 		s.mu.Lock()
 		s.closeErr = err
@@ -210,10 +227,18 @@ func (s *fileSourceReader) run() {
 		return
 	}
 	s.mu.Lock()
-	observation := s.observation
+	conn = plugin.ConnectionInfo(s.observation.Engine.ConnectionInfo)
 	s.mu.Unlock()
 	var err error
-	reader, err = s.provider.OpenContent(s.ctx, plugin.ConnectionInfo(observation.Engine.ConnectionInfo), s.request.Source, plugin.ReadOptions{})
+	before, err = format.ObserveGeoPackageSource(s.ctx, s.provider, conn, s.request.Source)
+	if err != nil || before == nil {
+		s.cancel(errFileSourceComposition)
+		return
+	}
+	if s.active() != nil {
+		return
+	}
+	reader, err = s.provider.OpenContent(s.ctx, conn, s.request.Source, plugin.ReadOptions{})
 	if err != nil || reader == nil {
 		s.cancel(errFileSourceWindow)
 		return
@@ -233,6 +258,7 @@ func (s *fileSourceReader) run() {
 	}
 	s.mu.Lock()
 	s.readSet = set.Clone()
+	s.sourceSize = before.SizeBytes
 	s.mu.Unlock()
 	for {
 		select {
@@ -250,6 +276,7 @@ func (s *fileSourceReader) run() {
 			if s.active() != nil {
 				return
 			}
+			eof = err == io.EOF
 			request.result <- fileSourceChunk{data: request.data[:n], err: err}
 			if err != nil {
 				return
@@ -326,6 +353,9 @@ func (s *fileSourceReader) Receipt(ctx context.Context) (*fileSourceReceipt, err
 	}
 	if s.closeErr != nil {
 		return nil, s.closeErr
+	}
+	if s.size != s.sourceSize {
+		return nil, errFileSourceComposition
 	}
 	return &fileSourceReceipt{Size: s.size, SHA256: hex.EncodeToString(s.digest.Sum(nil)), BusinessDeadline: s.observation.BusinessDeadline, ReadSet: s.readSet.Clone()}, nil
 }

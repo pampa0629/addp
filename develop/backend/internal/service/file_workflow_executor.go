@@ -31,7 +31,7 @@ type privateFileWorkflowExecutor struct {
 	instanceID string
 	authority  func(uint) fileSourceAuthority
 	admission  func(uint) fileAdmissionAuthority
-	provider   plugin.ContentReadableProvider
+	provider   fileSourceProvider
 	endpoint   func(context.Context, uint, uint) (plugin.ConnectionInfo, error)
 	credential func(context.Context, uint) (string, error)
 	mu         sync.Mutex
@@ -47,7 +47,7 @@ func newPrivateFileWorkflowExecutor(repo *repository.FileExecutionRepository, wo
 	f.admission = func(tenant uint) fileAdmissionAuthority { return workflow.systemService.WithTenantID(tenant) }
 	f.credential = workflow.systemService.TenantServiceAccessToken
 	if p, err := plugin.Get("nfs"); err == nil {
-		f.provider, _ = p.(plugin.ContentReadableProvider)
+		f.provider, _ = p.(fileSourceProvider)
 	}
 	f.endpoint = func(ctx context.Context, tenant, id uint) (plugin.ConnectionInfo, error) {
 		descriptor, err := workflow.systemService.WithTenantID(tenant).GetEngineRuntimeDescriptor(ctx, id)
