@@ -183,6 +183,8 @@ Manager 源准备保持其正式授权链；本批 Transfer CDC 仅验证既有 
 
 本地 Common lifecycle 分组通过上述 36 个末级用例及原专业结果原子提交。System Cleanup 通过 9 个主用例，含新增的 3 个绑定反例。两组 PostgreSQL 门禁均 0 SKIP。T2 登记 85＋9 项及登记检查通过。此次只补测试与门禁，未观察到需修改产品实现的失败。
 
+固定提交 `21555a8ad` 的 [Common Linux PG](https://github.com/pampa0629/addp/actions/runs/42550397199/job/128944704717) 和 [System Cleanup Linux PG](https://github.com/pampa0629/addp/actions/runs/42550397199/job/128944704053) 均通过。原日志分别确认 36 个矩阵末级用例及专业结果原子提交、9 个 System 主用例及 3 个新增绑定反例，两组均 0 SKIP。同源 [System Go](https://github.com/pampa0629/addp/actions/runs/42550397212/job/128944443300) 通过。同源 [Platform consistency](https://github.com/pampa0629/addp/actions/runs/42550397212/job/128944443256) 在 Transfer 配置文档来源漂移检查 `TestTransferReviewSourceDrift` 失败，未运行 T2 登记。此提交的登记证据仍为本地 85＋9 项。
+
 ## 七、确认范围与协作分工
 
 用户已确认由本会话统一牵头，正式契约先提交，按 Common → Graph → Cleanup 实施；已确认细节直接推进。已批准的补充边界包括 Graph 窄 reconcile／原目标 reopen、Cleanup 安全展示、目的限定执行授权、专业结果窄读取、Meta／Manager 独立治理和显式配对、原生三身份／双入口、Engine 授权用途分离、Manager 专属 CI 基线以及 Transfer capture_cleanup 连接用途。
