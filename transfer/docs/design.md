@@ -103,7 +103,7 @@ replace / append / upsert / upsert_delete 是 Transfer apply policy；upsert 和
 
 ## 八、Checkpoint 和重试
 
-execution checkpoint、进度字段和 Provider marker 用于观测执行过程，恢复提交点由增量同步状态单独维护。raw copy 成功后的行数与字节数字段见[执行记录表的指标字段](tables/task_executions表.md#二指标字段)，`checkpoint_offset` 的口径见[Checkpoint、进度和重试](transfer-基本概念及配置说明.md#十checkpoint进度和重试)。
+execution checkpoint、进度字段和 Provider marker 用于观测执行过程，恢复提交点由增量同步状态单独维护。raw copy 成功后的读写计数与字节数见[执行记录表的指标字段](tables/task_executions表.md#二指标字段)，`checkpoint_offset` 的口径见[Checkpoint、进度和重试](transfer-基本概念及配置说明.md#十checkpoint进度和重试)。
 
 失败 snapshot retry 创建新 execution 并从头执行，append 拒绝 retry；snapshot checkpoint resumable 尚未开放。watermark 与 continuous 的 resume 读取 `transfer.sync_states` committed position，不消费 execution marker，准入条件与独立动作边界见[恢复分级](transfer-基本概念及配置说明.md#恢复分级)及[状态、Checkpoint 与 Replay](transfer-任务语义与同步模式.md#五状态checkpoint-与-replay)。
 
