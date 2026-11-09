@@ -32,6 +32,14 @@ func storageFileSourceRequiresUser(target *StorageDataItem) bool {
 	return target.Descriptor.DataType == datatype.Model3D || target.Descriptor.Format == "envi"
 }
 
+// NFS raw access is limited to formats with a source authorization path.
+func storageRawReadSupported(target *StorageDataItem) bool {
+	return target.EngineType != "nfs" ||
+		target.Descriptor.Format == "filegdb" || target.Descriptor.Format == "envi" ||
+		(target.Descriptor.DataType == datatype.Model3D &&
+			commonExecution.ManagerModel3DSourceFormat(target.EngineType, target.Descriptor.Format))
+}
+
 func (s *MetadataService) SetFileSourceReadChecker(checker fileStorageReadChecker) {
 	s.fileSourceChecker = checker
 }
@@ -51,6 +59,9 @@ type storageRead struct {
 func (s *MetadataService) prepareStorageRead(target *StorageDataItem, tenantID *uint, credential string, human bool, plan *models.DownloadPlan) (*storageRead, error) {
 	if target == nil || tenantID == nil || *tenantID == 0 || target.EngineID == 0 {
 		return nil, ErrEngineAccessDenied
+	}
+	if !storageRawReadSupported(target) {
+		return nil, commonClient.ErrManagerPreviewReadDenied
 	}
 	read := &storageRead{service: s, target: target, tenantID: tenantID}
 	if target.Descriptor.Format == "filegdb" {

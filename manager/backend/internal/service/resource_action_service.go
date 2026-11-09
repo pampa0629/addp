@@ -108,6 +108,8 @@ func (s *ResourceActionService) GetResourceActions(ctx context.Context, locatorU
 				return nil, err
 			} else if target == nil || plan == nil {
 				return nil, fmt.Errorf("download planner returned no data item or plan")
+			} else if !storageRawReadSupported(target) {
+				resp.Actions["download"] = unsupported(ErrDownloadNotSupported.Error())
 			} else {
 				resp.Actions["download"] = ResourceActionStatus{Supported: true, RequiresCurrentUser: storageFileSourceRequiresUser(target) || plan.DirectoryRoot != nil}
 			}

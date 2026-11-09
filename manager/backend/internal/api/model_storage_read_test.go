@@ -33,6 +33,60 @@ func (p *modelReadAPIProvider) OpenContent(ctx context.Context, info plugin.Conn
 	return p.apiDownloadTestFilePlugin.OpenContent(ctx, info, path, options)
 }
 
+func TestNFSUnadmittedRawFormatCannotReachSource(t *testing.T) {
+	const primary = "data/metadata.csv"
+	const locator = "addp://engine/9/path/data/metadata.csv?type=file&item_id=1"
+	const content = "id,name\n1,source-value\n"
+	previous, previousErr := plugin.Get("nfs")
+	source := &modelReadAPIProvider{apiDownloadTestFilePlugin: newAPIDownloadTestFilePlugin("nfs", map[string]string{primary: content})}
+	plugin.Register(source)
+	t.Cleanup(func() {
+		if previousErr == nil {
+			plugin.Register(previous)
+		} else {
+			plugin.Unregister("nfs")
+		}
+	})
+	system := apiDownloadTestSystemClient(t, 9, "nfs")
+	raw := `{"id":1,"tenant_id":1,"engine_id":9,"item_type":"file","name":"metadata.csv","full_name":"data/metadata.csv","attributes":{"item":{"layout":"single","data_type":"table","format":"csv"},"storage":{"physical_path":"data/metadata.csv"}}}`
+	metadata := service.NewMetadataService(nil, system, apiDownloadTestMetaItemClient(t, raw), nil, nil)
+	router := gin.New()
+	router.Use(commoni18n.I18nMiddleware())
+	router.Use(func(c *gin.Context) { setTenantAuthContextForTest(c, 1, 1); c.Next() })
+	explorer := NewExplorerHandler(nil, nil, metadata, apiDownloadProtectionGate{}, nil)
+	router.GET("/downloads/file", NewDownloadHandler(metadata, apiDownloadProtectionGate{}).DownloadFile)
+	router.GET("/storage-stream", explorer.StorageStream)
+	router.GET("/storage-assets/:engine_id/items/:item_id/*storage_ref", explorer.StorageAsset)
+	router.GET("/resource-actions", NewResourceActionHandler(service.NewResourceActionService(system, metadata)).GetResourceActions)
+
+	query := "?locator=" + url.QueryEscape(locator)
+	for _, endpoint := range []string{"/downloads/file" + query, "/storage-stream" + query + "&storage_ref=" + url.QueryEscape(primary), "/storage-assets/9/items/1/" + primary} {
+		t.Run(endpoint, func(t *testing.T) {
+			request := httptest.NewRequest(http.MethodGet, endpoint, nil)
+			request.Header.Set("Authorization", "Bearer addp_at_current_user")
+			if !strings.HasPrefix(endpoint, "/downloads/") {
+				request.Header.Set("Range", "bytes=0-1")
+			}
+			response := httptest.NewRecorder()
+			router.ServeHTTP(response, request)
+			var body map[string]any
+			if response.Code != http.StatusForbidden || json.Unmarshal(response.Body.Bytes(), &body) != nil || body["error"] == nil ||
+				strings.Contains(response.Body.String(), "source-value") || source.stats != 0 || source.opens != 0 {
+				t.Errorf("response = %d %s, source stats/opens = %d/%d; want JSON 403 before source I/O", response.Code, response.Body.String(), source.stats, source.opens)
+			}
+		})
+	}
+	response := httptest.NewRecorder()
+	router.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/resource-actions"+query, nil))
+	var actions service.ResourceActionsResponse
+	if response.Code != http.StatusOK || json.Unmarshal(response.Body.Bytes(), &actions) != nil {
+		t.Fatalf("resource actions = %d %s", response.Code, response.Body.String())
+	}
+	if download, ok := actions.Actions["download"]; !ok || download.Supported {
+		t.Errorf("download action = %#v, want unsupported", download)
+	}
+}
+
 func TestAllModelRawHTTPExitsRequireCurrentSourcePermission(t *testing.T) {
 	const primary = "models/test.ifc"
 	const locator = "addp://engine/9/path/models/test.ifc?type=file&item_id=1"
