@@ -9,6 +9,7 @@ import (
 	"sort"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/addp/common/contentio"
 	"github.com/addp/common/datatype"
@@ -1543,3 +1544,53 @@ func (r parquetMemoryContentReader) List(_ context.Context, scope contentio.Ref)
 var _ contentio.Reader = parquetMemoryContentReader{}
 var _ contentio.Lister = parquetMemoryContentReader{}
 var _ contentio.RangeReader = parquetMemoryContentReader{}
+
+func TestParquetDateWriterEncodesCalendarDays(t *testing.T) {
+	ctx := context.Background()
+	var buf bytes.Buffer
+	writer, err := NewPlugin().OpenTableWriter(ctx, &buf, &datatype.TableInfo{
+		Fields: []datatype.FieldInfo{{Name: "day", Type: datatype.FieldTypeDate, Nullable: true}},
+	}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rows := []map[string]interface{}{
+		{"day": "1969-12-31"},
+		{"day": "1970-01-01"},
+		{"day": time.Date(2000, 2, 29, 22, 0, 0, 0, time.FixedZone("UTC-5", -5*3600))},
+		{"day": int32(11017)},
+		{"day": nil},
+	}
+	if err := writer.WriteRows(ctx, rows); err != nil {
+		t.Fatal(err)
+	}
+	if err := writer.WriteRows(ctx, []map[string]interface{}{{"day": "1900-02-29"}}); err == nil {
+		t.Fatal("invalid calendar date was written")
+	}
+	if err := writer.Close(ctx); err != nil {
+		t.Fatal(err)
+	}
+	file, err := parquetgo.OpenFile(bytes.NewReader(buf.Bytes()), int64(buf.Len()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	leaf, ok := file.Schema().Lookup("day")
+	if !ok || leaf.Node.Type().LogicalType().Date == nil || leaf.Node.Type().Kind() != parquetgo.Int32 {
+		t.Fatalf("invalid DATE schema: %s", file.Schema())
+	}
+	reader := parquetgo.NewReader(file)
+	defer reader.Close()
+	raw := make([]parquetgo.Row, len(rows)+1)
+	n, err := reader.ReadRows(raw)
+	if n != len(rows) || err != nil && err != io.EOF {
+		t.Fatalf("got %d rows, %v", n, err)
+	}
+	for i, days := range []int32{-1, 0, 11016, 11017} {
+		if raw[i][0].IsNull() || raw[i][0].Int32() != days {
+			t.Fatalf("row %d: got %v, want %d", i, raw[i], days)
+		}
+	}
+	if !raw[4][0].IsNull() {
+		t.Fatalf("null became %v", raw[4])
+	}
+}

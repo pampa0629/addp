@@ -1514,3 +1514,5 @@ uniform／quartic各12条成功COG链，共24条：省略权重、显式全1、�
 2026-11-08批准`native-table-feather`复用既有NFS／MinIO、GeoPython产品Runtime、Transfer及隔离生命周期；消费普通User精确11项，来源初始化User精确13项，与已批准ORC消费及有界来源准备范围一致，不增加服务或个人账号权限。各存储三种codec（无压缩、LZ4、ZSTD），每源2503行、多个Arrow record batch，覆盖四种有符号整数、bool、float32／64、Unicode文本、binary、nullable及空值差异。先由来源准备者有界deep扫描，再建立既有精确单文件元数据Grant；公共Meta只核结构，受保护Manager预览核编码profile、真实总数、源版本。API页1／2／126及真实页面下一页、原件按钮均留原始响应／下载／截图。普通User创建实际Transfer源→精确Parquet成果，独立物理reader完整核对15018行、字段类型／nullable／数值，归档六份成果；不由页样本替代连续读取。
 
 六份源字节前后不变，Grant撤销后不可见、六临时任务删除且读取404、六物理源和六产物及目标目录标记删除，部署和Infra单独报告清理。初轮失败保留，源变化／未支持类型／原生预算由确定性及原生层拒绝，不把这些单测冒充跨模块权限或容量认证。无派生缓存断言、不新增完整内容授权准入；Feather V1、IPC stream、unsigned／嵌套／dictionary／时间／decimal／写出均不在首期范围，SKP精确组成授权继续关闭。实现和登记不等于正式Hosted通过。
+
+Feather 日期与定点小数扩展复用同一 Hosted 场景和六份来源。Meta 与 Manager 须核对原生日期类型、Decimal128/256 的精度、小数位数及可空性。API 与实际翻页须逐值比较日期及定点文本，含纪元前日期、闰日、空值和尾零。Transfer 产物须由独立 Parquet reader 逐行检查 DATE/DECIMAL 逻辑类型、精度、小数位数及值。

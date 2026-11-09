@@ -6,7 +6,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
+	"regexp"
 	"strconv"
+	"strings"
+	"time"
 
 	"github.com/addp/common/datatype"
 	engineplugin "github.com/addp/common/engine/plugin"
@@ -97,9 +100,16 @@ func (p *provider) DescribeTable(ctx context.Context, options *format.ParseOptio
 		return nil, fmt.Errorf("Feather runtime omitted bounded table facts")
 	}
 	seen := map[string]bool{}
-	nativeTypes := map[string]datatype.FieldType{"bool": datatype.FieldTypeBool, "int8": datatype.FieldTypeInt, "int16": datatype.FieldTypeInt, "int32": datatype.FieldTypeInt, "int64": datatype.FieldTypeBigInt, "float": datatype.FieldTypeFloat, "double": datatype.FieldTypeDouble, "string": datatype.FieldTypeString, "binary": datatype.FieldTypeBytes}
+	nativeTypes := map[string]datatype.FieldType{"bool": datatype.FieldTypeBool, "int8": datatype.FieldTypeInt, "int16": datatype.FieldTypeInt, "int32": datatype.FieldTypeInt, "int64": datatype.FieldTypeBigInt, "float": datatype.FieldTypeFloat, "double": datatype.FieldTypeDouble, "string": datatype.FieldTypeString, "binary": datatype.FieldTypeBytes, "date32[day]": datatype.FieldTypeDate, "date64[ms]": datatype.FieldTypeDate}
 	for _, field := range result.Table.Fields {
 		kind, ok := nativeTypes[field.NativeType]
+		if field.Type == datatype.FieldTypeDecimal {
+			precision, scale := field.Precision, field.Scale
+			ok = precision >= 1 && precision <= 76 && scale >= 0 && scale <= precision &&
+				((precision <= 38 && field.NativeType == fmt.Sprintf("decimal128(%d, %d)", precision, scale)) ||
+					field.NativeType == fmt.Sprintf("decimal256(%d, %d)", precision, scale))
+			kind = datatype.FieldTypeDecimal
+		}
 		if !ok || kind != field.Type || field.Name == "" || seen[field.Name] || len(field.Fields) > 0 || field.Element != nil {
 			return nil, fmt.Errorf("Feather runtime schema is outside the scalar profile")
 		}
@@ -207,6 +217,9 @@ func (r *reader) ReadRows(ctx context.Context, limit int) ([]map[string]interfac
 	r.offset += int64(len(rows))
 	return rows, nil
 }
+
+var fixedDecimalText = regexp.MustCompile(`^-?(0|[1-9][0-9]*)(\.[0-9]+)?$`)
+
 func decodeValue(value interface{}, field datatype.FieldInfo) (interface{}, error) {
 	if value == nil {
 		if !field.Nullable {
@@ -241,6 +254,24 @@ func decodeValue(value interface{}, field datatype.FieldInfo) (interface{}, erro
 			return nil, fmt.Errorf("Feather binary is invalid")
 		}
 		return raw, nil
+	case datatype.FieldTypeDate:
+		text, ok := value.(string)
+		if !ok {
+			return nil, fmt.Errorf("Feather date requires ISO text")
+		}
+		parsed, err := time.Parse(time.DateOnly, text)
+		if err != nil || parsed.Year() < 1 || parsed.Format(time.DateOnly) != text {
+			return nil, fmt.Errorf("Feather date is invalid")
+		}
+	case datatype.FieldTypeDecimal:
+		text, ok := value.(string)
+		if !ok || !fixedDecimalText.MatchString(text) {
+			return nil, fmt.Errorf("Feather decimal requires exact fixed-point text")
+		}
+		integer, fraction, _ := strings.Cut(strings.TrimPrefix(text, "-"), ".")
+		if len(fraction) != field.Scale || len(strings.TrimLeft(integer, "0")) > field.Precision-field.Scale {
+			return nil, fmt.Errorf("Feather decimal contradicts declared precision or scale")
+		}
 	case datatype.FieldTypeBool:
 		if _, ok := value.(bool); !ok {
 			return nil, fmt.Errorf("Feather bool is invalid")

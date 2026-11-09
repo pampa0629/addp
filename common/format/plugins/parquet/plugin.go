@@ -950,7 +950,7 @@ func parquetWriterValue(value interface{}, field datatype.FieldInfo, geometryCol
 		}
 		return wkb, nil
 	case datatype.FieldTypeDate:
-		return dateValue(value), nil
+		return dateValue(value)
 	case datatype.FieldTypeTimestamp, datatype.FieldTypeTime:
 		return temporalString(value), nil
 	case datatype.FieldTypeJSON, datatype.FieldTypeArray:
@@ -1080,19 +1080,42 @@ func float64Value(value interface{}) float64 {
 	}
 }
 
-func dateValue(value interface{}) any {
+func dateValue(value interface{}) (int32, error) {
+	var date time.Time
 	switch typed := value.(type) {
 	case time.Time:
-		return typed
+		date = typed
 	case string:
-		parsed, err := time.Parse("2006-01-02", strings.TrimSpace(typed))
-		if err == nil {
-			return parsed
+		parsed, err := time.Parse(time.DateOnly, strings.TrimSpace(typed))
+		if err != nil {
+			return 0, fmt.Errorf("invalid Parquet date")
 		}
-		return typed
+		date = parsed
+	case int8:
+		return int32(typed), nil
+	case int16:
+		return int32(typed), nil
+	case int32:
+		return typed, nil
+	case uint8:
+		return int32(typed), nil
+	case uint16:
+		return int32(typed), nil
+	case uint32:
+		if typed <= math.MaxInt32 {
+			return int32(typed), nil
+		}
+		return 0, fmt.Errorf("Parquet date exceeds the signed day range")
 	default:
-		return value
+		return 0, fmt.Errorf("Parquet date requires a date string, time.Time or an integer day count, got %T", value)
 	}
+	// A DATE is a calendar day. Construct UTC midnight from its calendar fields.
+	year, month, day := date.Date()
+	days := time.Date(year, month, day, 0, 0, 0, 0, time.UTC).Unix() / 86400
+	if days < math.MinInt32 || days > math.MaxInt32 {
+		return 0, fmt.Errorf("Parquet date exceeds the signed day range")
+	}
+	return int32(days), nil
 }
 
 func temporalString(value interface{}) string {

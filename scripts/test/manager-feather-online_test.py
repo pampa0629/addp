@@ -25,7 +25,7 @@ class Client:
     def item(self, engine, full_name, *_):
         codec = Path(full_name).stem
         item_id = engine * 10 + FIXTURE.CODECS.index(codec)
-        fields = [{'name': n, 'type': t, 'nullable': n in FIXTURE.NULLABLE} for n,t in zip(FIXTURE.FIELD_NAMES,FIXTURE.FIELD_TYPES)]
+        fields = FIXTURE.field_definitions()
         result = {'id': item_id, 'engine_id': engine, 'full_name': full_name, 'fingerprint': str(item_id),
                   'attributes': {'schema_version':1,'item': {'format': 'feather', 'data_type': 'table', 'layout': 'single'},
                                  'type_info': {'table': {'fields': fields}}}}
@@ -44,9 +44,7 @@ class Client:
             item=next(v for v in self.items.values() if v['full_name'] in q['locator'][0])
             codec=Path(item['full_name']).stem
             attrs={'schema_version':1,'item':{'format':'feather','data_type':'table','layout':'single'},
-                   'type_info':{'table':{'row_count':FIXTURE.COUNT,'fields':[
-                       {'name':n,'type':t,'native_type':native,'nullable':n in FIXTURE.NULLABLE}
-                       for n,t,native in zip(FIXTURE.FIELD_NAMES,FIXTURE.FIELD_TYPES,FIXTURE.NATIVE_TYPES)]}},
+                   'type_info': {'table': {'row_count': FIXTURE.COUNT, 'fields': FIXTURE.field_definitions()}},
                    'format_info':{'feather':{'version':2,'record_batches':3,'source_version':'fixed','validation':'batch_structure'}},
                    'storage':{'content_hash':hashlib.sha256(FIXTURE.source_bytes(codec)).hexdigest()}}
             result['data']['item_meta']={'fingerprint':item['fingerprint'],'row_count':FIXTURE.COUNT,

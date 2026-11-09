@@ -1,5 +1,7 @@
 """Feather V2 real PyArrow interoperability and bounded Runtime protocol."""
 import base64
+from datetime import date
+from decimal import Decimal
 import io
 import json
 from pathlib import Path
@@ -64,8 +66,8 @@ def test_scalar_types_nullability_and_zero_rows(tmp_path):
     assert d['table']['row_count']==0 and read(p,d)['rows']==[]
 
 
-@pytest.mark.parametrize('typ,values',[(pa.uint64(),[1]), (pa.float16(),[1.0]), (pa.date32(),[1]),
-    (pa.timestamp('ns'),[1]), (pa.decimal128(10,2),[None]), (pa.list_(pa.int32()),[[1]]),
+@pytest.mark.parametrize('typ,values',[(pa.uint64(),[1]), (pa.float16(),[1.0]), (pa.time64('ns'),[1]),
+    (pa.timestamp('ns'),[1]), (pa.decimal128(10,-2),[None]), (pa.decimal256(10,11),[None]), (pa.list_(pa.int32()),[[1]]),
     (pa.struct([('x',pa.int32())]),[{'x':1}]),(pa.dictionary(pa.int8(),pa.string()),['a']),
     (pa.large_string(),['a']), (pa.binary(2),[b'ab']), (pa.null(),[None])])
 def test_unsupported_schema_rejected_before_column_projection(tmp_path,typ,values):
@@ -74,6 +76,34 @@ def test_unsupported_schema_rejected_before_column_projection(tmp_path,typ,value
     with feather._open(p, '') as source: version=source.version
     with pytest.raises(ValueError,match='scalar profile'):
         feather.read_batch(feather.PROTOCOL,p,version,0,1,['safe'])
+
+
+def test_date_and_fixed_decimal_cross_batch(tmp_path):
+    wide = '9' * 38 + '.' + '7' * 38
+    table = pa.table({
+        'day': pa.array([date(1969, 12, 31), date(2000, 2, 29), None], pa.date32()),
+        'legacy': pa.array([date(1, 1, 1), None, date(9999, 12, 31)], pa.date64()),
+        'amount': pa.array([Decimal('-1.230'), None, Decimal('0.000')], pa.decimal128(38, 3)),
+        'wide': pa.array([None, Decimal(wide), Decimal('-1.000' + '0' * 35)], pa.decimal256(76, 38)),
+        'integer_decimal': pa.array([Decimal('12'), None, Decimal('-3')], pa.decimal128(2, 0)),
+    })
+    p = write(tmp_path/'dates.feather', table, chunksize=2)
+    d = describe(p)
+    assert [(f['native_type'], f['type'], f.get('precision'), f.get('scale')) for f in d['table']['fields']] == [
+        ('date32[day]', 'date', None, None), ('date64[ms]', 'date', None, None),
+        ('decimal128(38, 3)', 'decimal', 38, 3), ('decimal256(76, 38)', 'decimal', 76, 38),
+        ('decimal128(2, 0)', 'decimal', 2, 0),
+    ]
+    assert read(p, d, 1, 2)['rows'] == [
+        {'day': '2000-02-29', 'legacy': None, 'amount': None, 'wide': wide, 'integer_decimal': None},
+        {'day': None, 'legacy': '9999-12-31', 'amount': '0.000', 'wide': '-1.' + '0' * 38,
+         'integer_decimal': '-3'},
+    ]
+    assert read(p, d, 0, 1)['rows'][0]['legacy'] == '0001-01-01'
+    bad = pa.array([2147483647], pa.int32()).cast(pa.date32())
+    q = write(tmp_path/'outside.feather', pa.table({'day': bad}))
+    with pytest.raises(ValueError, match='supported calendar'):
+        read(q, describe(q))
 
 
 def test_v1_stream_truncation_duplicate_names_and_extension_metadata(tmp_path):

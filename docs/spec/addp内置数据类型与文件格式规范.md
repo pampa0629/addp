@@ -61,7 +61,7 @@
 | Shapefile | `multi` | `table` | `shapefile` | 同目录或同 prefix 的同 basename refs |
 | 单个 Parquet / GeoParquet | `single` | `table` | `parquet` | 单文件表；GeoParquet 仍使用 `format=parquet`，空间语义进入 `capabilities.spatial` |
 | sibling Parquet 文件组 | `multi` | `table` | `parquet` | 仅在有明确 ref 或 manifest 规则时成立 |
-| Feather V2 / Arrow IPC file | `single` | `table` | `feather` | 同一静态格式；基础标量只读、分页与连续读取，拒绝V1及IPC stream |
+| Feather V2 / Arrow IPC file | `single` | `table` | `feather` | 同一静态格式；基础标量、日期与定点小数只读，支持分页与连续读取，拒绝V1及IPC stream |
 | ORC / Avro 单文件 | `single` | `table` | `orc` / `avro` | 单文件表 |
 | Iceberg 表目录 | `whole` | `table` | `iceberg` | 整体表目录，需 whole scope 规则 |
 | SQLite | `single` | `container` | `sqlite` | 内部表先写入 `type_info.container.children` |

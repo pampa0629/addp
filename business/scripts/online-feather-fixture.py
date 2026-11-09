@@ -1,6 +1,8 @@
 """Owned Feather source producer and independent full Parquet readback oracle."""
 from __future__ import annotations
 import base64
+from datetime import date
+from decimal import Decimal
 import hashlib
 import io
 import json
@@ -9,10 +11,35 @@ import sys
 
 COUNT = 2503
 CODECS = ('uncompressed', 'lz4', 'zstd')
-FIELD_NAMES = ['id','tiny','small','number','flag','label','ratio','value','payload']
-NULLABLE = {'small','flag','label','payload'}
-FIELD_TYPES = ['bigint','int','int','int','bool','string','float','double','bytes']
-NATIVE_TYPES = ['int64','int8','int16','int32','bool','string','float','double','binary']
+FIELD_NAMES = ['id','tiny','small','number','flag','label','ratio','value','payload','day','legacy_day','amount','wide_amount']
+NULLABLE = {'small','flag','label','payload','legacy_day','amount'}
+FIELD_TYPES = ['bigint','int','int','int','bool','string','float','double','bytes','date','date','decimal','decimal']
+NATIVE_TYPES = ['int64','int8','int16','int32','bool','string','float','double','binary','date32[day]','date64[ms]','decimal128(38, 18)','decimal256(76, 38)']
+
+DECIMAL_SHAPES = {'amount': (38, 18), 'wide_amount': (76, 38)}
+DAYS = ('1969-12-31', '1970-01-01', '2000-02-29')
+AMOUNTS = ('-99999999999999999999.123456789012345678', '1.230000000000000000', None)
+WIDE_AMOUNTS = ('9' * 38 + '.' + '7' * 38, '-0.' + '0' * 37 + '1', '0.' + '0' * 38)
+
+
+def field_definitions():
+    return [
+        dict(name=name, type=kind, native_type=native, nullable=name in NULLABLE,
+             precision=DECIMAL_SHAPES.get(name, (0, 0))[0], scale=DECIMAL_SHAPES.get(name, (0, 0))[1])
+        for name, kind, native in zip(FIELD_NAMES, FIELD_TYPES, NATIVE_TYPES, strict=True)
+    ]
+
+
+def arrow_schema(*, parquet=False):
+    import pyarrow as pa
+    types = [pa.int64(), pa.int8(), pa.int16(), pa.int32(), pa.bool_(), pa.string(),
+             pa.float32(), pa.float64(), pa.binary(), pa.date32(), pa.date64(),
+             pa.decimal128(38, 18), pa.decimal256(76, 38)]
+    if parquet:
+        types[1:3] = [pa.int32(), pa.int32()]
+        types[10] = pa.date32()
+    fields = [pa.field(n, t, nullable=n in NULLABLE) for n, t in zip(FIELD_NAMES, types, strict=True)]
+    return pa.schema(sorted(fields, key=lambda f: f.name) if parquet else fields)
 
 
 def row(i):
@@ -21,21 +48,29 @@ def row(i):
             'flag':None if i%7==0 else i%2==0,
             'label':None if i%11==0 else '' if i%5==0 else f'设备𠀀😀-{i:04d}',
             'ratio':i/4,'value':-i/2,
-            'payload':None if i%13==0 else b'' if i%3==0 else bytes([0,i%256,255])}
+             'payload': None if i%13==0 else b'' if i%3==0 else bytes([0,i%256,255]),
+            'day': date.fromisoformat(DAYS[i % 3]),
+            'legacy_day': None if i % 3 == 0 else date.fromisoformat(DAYS[(i + 1) % 3]),
+            'amount': None if AMOUNTS[i % 3] is None else Decimal(AMOUNTS[i % 3]),
+            'wide_amount': Decimal(WIDE_AMOUNTS[i % 3])}
 
 
 def public_row(i):
     result=row(i);result['id']=str(result['id'])
     if result['payload'] is not None:result['payload']=base64.b64encode(result['payload']).decode()
+    for key in ('day', 'legacy_day'):
+        if result[key] is not None:
+            result[key] = result[key].isoformat()
+    for key in DECIMAL_SHAPES:
+        if result[key] is not None:
+            result[key] = format(result[key], 'f')
     return result
 
 
 def source_bytes(codec):
     import pyarrow as pa
     import pyarrow.feather as feather
-    schema=pa.schema([pa.field(n,t,nullable=n in NULLABLE) for n,t in zip(FIELD_NAMES,
-        [pa.int64(),pa.int8(),pa.int16(),pa.int32(),pa.bool_(),pa.string(),pa.float32(),pa.float64(),pa.binary()])])
-    table=pa.Table.from_pylist([row(i) for i in range(COUNT)],schema=schema)
+    table = pa.Table.from_pylist([row(i) for i in range(COUNT)], schema=arrow_schema())
     out=io.BytesIO();feather.write_feather(table,out,compression=codec,chunksize=1024)
     return out.getvalue()
 
@@ -71,17 +106,15 @@ def worker(request):
     assert not marker.is_symlink() and marker.read_text()=='addp.feather-fixture/v1','fixture_ownership'
     assert all(not (directory/(c+'.feather')).is_symlink() for c in CODECS),'source_symlink'
     if action=='verify':
-        import pyarrow as pa
         import pyarrow.parquet as pq
         for codec in CODECS:
             assert (directory/(codec+'.feather')).read_bytes()==remote('feather/'+codec+'.feather')==source_bytes(codec),'source_changed'
-        expected_types={'id':pa.int64(),'tiny':pa.int32(),'small':pa.int32(),'number':pa.int32(),
-                        'flag':pa.bool_(),'label':pa.string(),'ratio':pa.float32(),'value':pa.float64(),'payload':pa.binary()}
+        expected_schema = arrow_schema(parquet=True)
         facts=[]
         for name in outputs:
             raw=remote(name);table=pq.read_table(io.BytesIO(raw))
             assert table.column_names==sorted(FIELD_NAMES) and table.num_rows==COUNT,'output_fields'
-            assert all(table.schema.field(n).type==t and table.schema.field(n).nullable==(n in NULLABLE) for n,t in expected_types.items()),'output_types'
+            assert table.schema.equals(expected_schema, check_metadata=False), 'output_types'
             assert table.to_pylist()==[row(i) for i in range(COUNT)],'output_values'
             facts.append({'object':name,'size_bytes':len(raw),'sha256':hashlib.sha256(raw).hexdigest(),
                           'all_values_and_nulls_verified':True,'content_base64':base64.b64encode(raw).decode()})

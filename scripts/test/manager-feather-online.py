@@ -30,6 +30,18 @@ def validate_page(preview, page, size):
     return table
 
 
+def validate_fields(fields):
+    expected = FIXTURE.field_definitions()
+    observed = [
+        {**dict(precision=0, scale=0, nullable=False), **f}
+        for f in fields
+    ]
+    require(len(observed) == len(expected) and all(
+        all(actual.get(key) == value for key, value in field.items())
+        for actual, field in zip(observed, expected, strict=True)
+    ), 'Feather field names, native types, nullability or decimal shape differ')
+
+
 def validate_content(preview, spec, fingerprint):
     meta=preview.get('data',{}).get('item_meta',{})
     entries=meta.get('attributes',[])
@@ -38,7 +50,8 @@ def validate_content(preview, spec, fingerprint):
     require(len(attrs)==len(entries) and meta.get('fingerprint')==fingerprint and meta.get('row_count')==FIXTURE.COUNT,'Feather guarded identity/count differs')
     require(attrs.get('item')=={'format':'feather','layout':'single','data_type':'table'},'Feather content identity differs')
     table=attrs.get('type_info',{}).get('table',{});binding=attrs.get('format_info',{}).get('feather',{})
-    require(table.get('row_count')==FIXTURE.COUNT and [(f['name'],f['type'],f['native_type'],f.get('nullable',False)) for f in table.get('fields',[])]==list(zip(FIXTURE.FIELD_NAMES,FIXTURE.FIELD_TYPES,FIXTURE.NATIVE_TYPES,[n in FIXTURE.NULLABLE for n in FIXTURE.FIELD_NAMES])), 'Feather complete field facts differ')
+    require(table.get('row_count') == FIXTURE.COUNT, 'Feather table count differs')
+    validate_fields(table.get('fields', []))
     require(binding.get('version')==2 and binding.get('record_batches')==3 and binding.get('validation')=='batch_structure' and binding.get('source_version') and attrs.get('storage',{}).get('content_hash')==spec['sha256'] and not attrs.get('access_index',{}).get('table'), 'Feather version/hash/index differs')
 
 
@@ -91,8 +104,7 @@ def run(repository, environment, owner, *, physical_runner=None, browser_runner=
                 attrs = detail.get('attributes', {})
                 require(attrs.get('item') == {'format': 'feather', 'layout': 'single', 'data_type': 'table'}, 'Feather canonical identity differs')
                 fields = attrs.get('type_info', {}).get('table', {}).get('fields', [])
-                require([(f['name'], f['type']) for f in fields] == list(zip(FIXTURE.FIELD_NAMES,FIXTURE.FIELD_TYPES)), 'Feather declared fields differ')
-                require([f.get('nullable', False) for f in fields] == [n in FIXTURE.NULLABLE for n in FIXTURE.FIELD_NAMES], 'Feather schema nullability differs')
+                validate_fields(fields)
                 require('row_count' not in detail and attrs.get('schema_version') == 1 and not set(attrs) - {'schema_version','item','type_info'}, 'Feather public projection leaked content facts')
                 locator = owner.build_item_locator(engine, item)
                 case = {'fingerprint':item['fingerprint'], 'storage': storage, 'codec': spec['codec'], 'locator': locator,

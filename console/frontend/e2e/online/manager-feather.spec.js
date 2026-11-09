@@ -5,12 +5,17 @@ import { resolve } from 'node:path'
 import { browserAPIFromNavigation, json, login } from './transfer-browser-support.js'
 
 function expectedRow(i) {
+  const days = ['1969-12-31', '1970-01-01', '2000-02-29']
+  const amounts = ['-99999999999999999999.123456789012345678', '1.230000000000000000', null]
+  const wideAmounts = ['9'.repeat(38) + '.' + '7'.repeat(38), '-0.' + '0'.repeat(37) + '1', '0.' + '0'.repeat(38)]
   return { id: ((9007199254740993n + BigInt(i)) * (i % 2 ? -1n : 1n)).toString(),
     tiny: i % 256 - 128, small: i % 17 === 0 ? null : i - 1251, number: i * 100000 - 125100000,
     flag: i % 7 === 0 ? null : i % 2 === 0,
     label: i % 11 === 0 ? null : i % 5 === 0 ? '' : `设备𠀀😀-${String(i).padStart(4, '0')}`,
     ratio: i / 4, value: (0 - i) / 2,
-    payload: i % 13 === 0 ? null : i % 3 === 0 ? '' : Buffer.from([0, i % 256, 255]).toString('base64') }
+    payload: i % 13 === 0 ? null : i % 3 === 0 ? '' : Buffer.from([0, i % 256, 255]).toString('base64'),
+    day: days[i % 3], legacy_day: i % 3 === 0 ? null : days[(i + 1) % 3],
+    amount: amounts[i % 3], wide_amount: wideAmounts[i % 3] }
 }
 
 test('ordinary user pages and downloads six Feather V2 sources', async ({ page }) => {

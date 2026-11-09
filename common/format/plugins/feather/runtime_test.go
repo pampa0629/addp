@@ -6,6 +6,8 @@ import (
 	"reflect"
 	"testing"
 
+	"github.com/addp/common/datatype"
+
 	engineplugin "github.com/addp/common/engine/plugin"
 	"github.com/addp/common/engine/workflowaccess"
 	"github.com/addp/common/format"
@@ -128,5 +130,32 @@ func TestVersionSchemaLossAndCancellationRefused(t *testing.T) {
 	}
 	if _, err := bound(t, &fakeRuntime{}).SampleTable(ctx, -1, 1, nil); err == nil {
 		t.Fatal("negative offset")
+	}
+}
+
+func TestDateAndDecimalWireContract(t *testing.T) {
+	date := datatype.FieldInfo{Type: datatype.FieldTypeDate, Nullable: true}
+	decimal := datatype.FieldInfo{Type: datatype.FieldTypeDecimal, Precision: 6, Scale: 3, Nullable: true}
+	for _, tc := range []struct {
+		field datatype.FieldInfo
+		value any
+		valid bool
+	}{
+		{date, "1969-12-31", true},
+		{date, "2000-02-29", true},
+		{date, nil, true},
+		{date, "1900-02-29", false},
+		{date, "0000-01-01", false},
+		{decimal, "-123.450", true},
+		{decimal, "0.001", true},
+		{decimal, "1.23", false},
+		{decimal, "1000.000", false},
+		{decimal, "1e-3", false},
+		{decimal, 1.23, false},
+	} {
+		got, err := decodeValue(tc.value, tc.field)
+		if tc.valid && (err != nil || got != tc.value) || !tc.valid && err == nil {
+			t.Fatalf("%s %v: got %v, %v", tc.field.Type, tc.value, got, err)
+		}
 	}
 }

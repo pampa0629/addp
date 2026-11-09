@@ -34,8 +34,7 @@ def test_three_codecs_all_scalar_values_and_nulls():
 
 def test_owned_physical_roundtrip_and_tampering(tmp_path):
     client=Client();request={'nfs_root':str(tmp_path),'storage':{'endpoint':'fixture','access_key':'fixture','secret_key':'fixture','bucket':'bucket'}}
-    types=[pa.int64(),pa.int32(),pa.int32(),pa.int32(),pa.bool_(),pa.string(),pa.float32(),pa.float64(),pa.binary()]
-    schema=pa.schema(sorted([pa.field(n,t,nullable=n in fixture.NULLABLE) for n,t in zip(fixture.FIELD_NAMES,types)],key=lambda f:f.name))
+    schema = fixture.arrow_schema(parquet=True)
     with patch.dict('sys.modules',{'minio':SimpleNamespace(Minio=lambda *a,**k:client)}):
         seed=fixture.worker(dict(request,action='seed'));assert len(seed['sources'])==3
         for store in ['minio','nfs']:

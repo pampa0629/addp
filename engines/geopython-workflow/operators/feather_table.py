@@ -1,6 +1,7 @@
 """Feather V2 / Arrow IPC file: scalar read-only tables in the existing Runtime."""
 from __future__ import annotations
 import base64
+from datetime import date, timedelta
 import json
 import math
 import struct
@@ -51,13 +52,19 @@ def _field(field, ordinal):
     typ = field.type
     kinds = {pa.bool_(): 'bool', pa.int8(): 'int', pa.int16(): 'int', pa.int32(): 'int',
              pa.int64(): 'bigint', pa.float32(): 'float', pa.float64(): 'double',
-             pa.string(): 'string', pa.binary(): 'bytes'}
+             pa.string(): 'string', pa.binary(): 'bytes', pa.date32(): 'date', pa.date64(): 'date'}
     kind = kinds.get(typ)
+    shape = {}
+    if pa.types.is_decimal128(typ) or pa.types.is_decimal256(typ):
+        if not 0 <= typ.scale <= typ.precision:
+            raise ValueError('Feather decimal is outside the scalar profile')
+        kind = 'decimal'
+        shape = {'precision': typ.precision, 'scale': typ.scale}
     if (kind is None or not field.name or len(field.name.encode()) > 1024
             or any(key.startswith(b'ARROW:extension:') for key in (field.metadata or {}))):
         raise ValueError('Feather field is outside the scalar profile')
     return {'name': field.name, 'type': kind, 'native_type': str(typ),
-            'nullable': field.nullable, 'ordinal_position': ordinal}
+            'nullable': field.nullable, 'ordinal_position': ordinal, **shape}
 
 
 def _reader(source):
@@ -108,10 +115,20 @@ def inspect(protocol, access_plan, source_version=''):
 
 
 def _value(scalar, field):
-    value = scalar.as_py()
-    if value is None:
+    if not scalar.is_valid:
         return None
     kind = field['type']
+    if kind == 'date':
+        days = scalar.value
+        if field['native_type'] == 'date64[ms]':
+            days //= 86_400_000  # Arrow full batch validation checks whole-day alignment.
+        try:
+            return (date(1970, 1, 1) + timedelta(days=days)).isoformat()
+        except OverflowError as error:
+            raise ValueError('Feather date is outside the supported calendar') from error
+    value = scalar.as_py()
+    if kind == 'decimal':
+        return format(value, 'f')
     if kind == 'bigint':
         return str(value)
     if kind == 'bytes':
