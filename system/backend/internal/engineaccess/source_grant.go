@@ -108,8 +108,13 @@ func (r *Repository) insertSourceGrant(ctx context.Context, grant *sourceGrant) 
 	}
 	err := r.db.WithContext(ctx).Clauses(clause.Returning{}).Create(grant).Error
 	var pgErr *pgconn.PgError
-	if errors.As(err, &pgErr) && pgErr.ConstraintName == "engine_access_grant_relation_exists" {
-		return ErrGrantRelationExists
+	if errors.As(err, &pgErr) {
+		switch pgErr.ConstraintName {
+		case "engine_access_grant_relation_exists":
+			return ErrGrantRelationExists
+		case "source_grant_geopackage_nfs":
+			return commonapi.ErrBadRequest
+		}
 	}
 	return err
 }

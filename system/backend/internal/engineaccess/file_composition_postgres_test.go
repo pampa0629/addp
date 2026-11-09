@@ -12,6 +12,7 @@ import (
 	"github.com/addp/common/client"
 	"github.com/addp/common/dataitem/authorizationfacts"
 	"github.com/addp/common/engine/plugin"
+	"github.com/addp/common/execution"
 	commonmodels "github.com/addp/common/models"
 	systemauthorization "github.com/addp/system/internal/authorization"
 	"github.com/addp/system/internal/iam"
@@ -28,7 +29,7 @@ func exerciseFileCompositionGrants(t *testing.T, db *gorm.DB, tenantID, adminID 
 		exerciseMetadataOnlyGrants(t, db, tenantID, adminID, roles, newUser)
 		t.Run("STL single-primary SQL contract", func(t *testing.T) { exerciseSTLCompositionSQL(t, db) })
 		t.Run("glTF multi SQL contract", func(t *testing.T) { exerciseGLTFCompositionSQL(t, db) })
-		for _, fixture := range []struct{ kind, format string }{{"ftp", "3ds"}, {"nfs", "3ds"}, {"ftp", "dae"}, {"nfs", "dae"}, {"minio", "3ds"}, {"minio", "dae"}, {"ftp", "obj"}, {"nfs", "obj"}, {"minio", "obj"}, {"ftp", "stl"}, {"nfs", "stl"}, {"minio", "stl"}, {"ftp", "glb"}, {"nfs", "glb"}, {"minio", "glb"}, {"ftp", "gltf"}, {"nfs", "gltf"}, {"minio", "gltf"}, {"ftp", "fbx"}, {"nfs", "fbx"}, {"minio", "fbx"}, {"nfs", "filegdb"}, {"nfs", "envi"}, {"minio", "envi"}} {
+		for _, fixture := range []struct{ kind, format string }{{"ftp", "3ds"}, {"nfs", "3ds"}, {"ftp", "dae"}, {"nfs", "dae"}, {"minio", "3ds"}, {"minio", "dae"}, {"ftp", "obj"}, {"nfs", "obj"}, {"minio", "obj"}, {"ftp", "stl"}, {"nfs", "stl"}, {"minio", "stl"}, {"ftp", "glb"}, {"nfs", "glb"}, {"minio", "glb"}, {"ftp", "gltf"}, {"nfs", "gltf"}, {"minio", "gltf"}, {"ftp", "fbx"}, {"nfs", "fbx"}, {"minio", "fbx"}, {"nfs", "filegdb"}, {"nfs", "envi"}, {"minio", "envi"}, {"nfs", "geopackage"}, {"ftp", "geopackage"}} {
 			kind, format := fixture.kind, fixture.format
 			t.Run(kind+"/"+format, func(t *testing.T) {
 				ctx, cancel := context.WithTimeout(t.Context(), 45*time.Second)
@@ -50,6 +51,9 @@ func exerciseFileCompositionGrants(t *testing.T, db *gorm.DB, tenantID, adminID 
 					itemType = "object"
 				}
 				primary := targetFor("scene." + format)
+				if format == "geopackage" {
+					primary = targetFor("scene.gpkg")
+				}
 				if format == "envi" {
 					primary = targetFor("scene.img")
 				}
@@ -57,6 +61,9 @@ func exerciseFileCompositionGrants(t *testing.T, db *gorm.DB, tenantID, adminID 
 					primary = plugin.FileDirectoryPath(engine.ID, "models/scene.gdb")
 				}
 				factsFor := func(texture string) authorizationfacts.AuthorizationFacts {
+					if format == "geopackage" {
+						return *developGeoPackageFacts(t, primary)
+					}
 					refs := []authorizationfacts.FileCompositionRef{
 						{Target: primary, Role: "model", Required: true, Primary: true},
 						{Target: targetFor(texture), Role: "texture", Required: true},
@@ -173,6 +180,10 @@ func exerciseFileCompositionGrants(t *testing.T, db *gorm.DB, tenantID, adminID 
 				}
 				if err != nil || session == nil {
 					t.Fatal("real User session missing", err)
+				}
+				if format == "geopackage" {
+					exerciseGeoPackageGrant(t, db, service, ctx, actor, reader, kind, primary, &current)
+					return
 				}
 				request := SourceReadCheckRequest{Targets: []plugin.EngineCatalogPath{primary}}
 				if current.Boundary.FileComposition != nil {
@@ -321,4 +332,89 @@ func exerciseFileCompositionGrants(t *testing.T, db *gorm.DB, tenantID, adminID 
 			})
 		}
 	})
+}
+
+func exerciseGeoPackageGrant(t *testing.T, db *gorm.DB, service *Service, ctx context.Context, actor Actor, reader userProvenance,
+	kind string, target plugin.EngineCatalogPath, current *authorizationfacts.AuthorizationFacts) {
+	t.Helper()
+	input := CreateIndependentGrantInput{Actor: actor, EngineID: int64(target.EngineID), RequestID: uuid.New(), CatalogPath: target,
+		ItemFingerprint: current.ItemFingerprint, ExpectedBoundaryHash: *current.BoundaryHash,
+		RecipientType: "user", RecipientID: reader.PrincipalID, Action: "read", ExpiryMode: shared.SharingExpiryUntilRevoked, Reason: "Approve complete GeoPackage"}
+	if kind != "nfs" {
+		if result, err := service.CreateIndependentGrant(ctx, input); result != nil || !errors.Is(err, commonapi.ErrBadRequest) {
+			t.Fatalf("non-NFS GeoPackage Grant accepted or misclassified: %v %v", result, err)
+		}
+		return
+	}
+
+	principal, err := iam.NewRepository(db).GetPrincipal(ctx, reader.PrincipalID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	auth := &iam.ExecutionAuthorization{Audience: execution.AudienceDevelop, SourceType: "user", TenantID: actor.TenantID,
+		ActorPrincipalID: reader.PrincipalID, TenantMembershipID: reader.MembershipID, IssuedAuthorizationVersion: principal.AuthorizationVersion}
+	intent, err := execution.NewDevelopFileIntent([]byte(`{"fixture":true}`), 1, 45, []execution.DevelopFileSourceIntent{{NodeID: "load", Target: target}}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	check := func(want error) {
+		t.Helper()
+		prepared, err := service.PrepareDevelopFileRead(ctx, auth, *intent)
+		if err == nil {
+			if len(prepared.Scope.Sources) != 1 || prepared.Scope.Sources[0].BoundaryHash != input.ExpectedBoundaryHash {
+				t.Fatal("unexpected sealed source")
+			}
+			sealed := *auth
+			sealed.DevelopFileScope = prepared.Scope.Clone()
+			err = db.Transaction(func(tx *gorm.DB) error {
+				_, err := prepared.Verify(ctx, tx, &sealed, nil)
+				return err
+			})
+		}
+		if !errors.Is(err, want) {
+			t.Fatalf("Develop read qualification: got %v, want %v", err, want)
+		}
+	}
+	check(commonapi.ErrForbidden)
+	grant, err := service.CreateIndependentGrant(ctx, input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var stored authorizationfacts.FileCompositionBoundary
+	if err := json.Unmarshal(grant.FileComposition, &stored); err != nil || stored.Validate(target.EngineID) != nil || stored.Format != "geopackage" {
+		t.Fatal("GeoPackage composition was not persisted", err)
+	}
+	check(nil)
+	original := *current
+	current.BasisState, current.Boundary, current.BoundaryHash = authorizationfacts.AuthorizationBasisIncomplete, nil, nil
+	check(ErrAuthorizationBoundaryChanged)
+	*current = original
+	if _, err := service.RevokeGrant(ctx, RevokeGrantInput{Actor: actor, EngineID: int64(target.EngineID), RequestID: grant.RequestID, Reason: "Withdraw GeoPackage"}); err != nil {
+		t.Fatal(err)
+	}
+	check(commonapi.ErrForbidden)
+
+	ref := stored.Refs[0]
+	for _, invalid := range []struct {
+		name string
+		path plugin.EngineCatalogPath
+		refs []authorizationfacts.FileCompositionRef
+	}{
+		{"object", plugin.ObjectItemPath(target.EngineID, "files", "scene.gpkg"), []authorizationfacts.FileCompositionRef{{Target: plugin.ObjectItemPath(target.EngineID, "files", "scene.gpkg"), Role: "container", Required: true, Primary: true}}},
+		{"wrong role", target, []authorizationfacts.FileCompositionRef{{Target: target, Role: "model", Required: true, Primary: true}}},
+		{"optional", target, []authorizationfacts.FileCompositionRef{{Target: target, Role: "container", Primary: true}}},
+		{"not primary", target, []authorizationfacts.FileCompositionRef{{Target: target, Role: "container", Required: true}}},
+		{"different target", target, []authorizationfacts.FileCompositionRef{{Target: plugin.FileItemPath(target.EngineID, "models/other.gpkg"), Role: "container", Required: true, Primary: true}}},
+		{"sidecar", target, []authorizationfacts.FileCompositionRef{ref, {Target: plugin.FileItemPath(target.EngineID, "models/scene.gpkg-wal"), Role: "journal", Required: true}}},
+	} {
+		t.Run(invalid.name, func(t *testing.T) {
+			stored.Refs = invalid.refs
+			raw, _ := json.Marshal(stored)
+			pathJSON, _ := json.Marshal(invalid.path)
+			var valid bool
+			if err := db.Raw("SELECT system.valid_source_file_composition(?::jsonb, ?::jsonb, ?) IS TRUE", string(raw), string(pathJSON), target.EngineID).Scan(&valid).Error; err != nil || valid {
+				t.Fatalf("malformed GeoPackage boundary accepted: valid=%v err=%v", valid, err)
+			}
+		})
+	}
 }

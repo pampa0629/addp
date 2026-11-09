@@ -19,7 +19,6 @@ import (
 
 // PrepareDevelopFileRead never promotes metadata_target to content access.
 // Meta must independently prove the complete single-file GeoPackage boundary.
-// Until the Meta owner admits that projection, this path remains closed.
 func (s *Service) PrepareDevelopFileRead(ctx context.Context, auth *iam.ExecutionAuthorization, intent execution.DevelopFileIntent) (*iam.DevelopFileReadPreparation, error) {
 	if s == nil || s.repository == nil || auth == nil || auth.Audience != execution.AudienceDevelop || auth.SourceType != "user" || auth.TenantID <= 0 || intent.Validate() != nil {
 		return nil, commonapi.ErrForbidden
