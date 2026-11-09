@@ -139,14 +139,16 @@ def validate_disk(samples, size, running):
 
 
 def validate_scan(scanned, scan_id, parent_id, tenant_id, principal_id, engine_id):
-    if (scanned.get('execution_id') != scan_id or scanned.get('parent_execution_id') != parent_id
+    observed_parent = scanned.get('parent_execution_id')
+    if (scanned.get('execution_id') != scan_id or observed_parent != parent_id
         or (scanned.get('module'), scanned.get('task_type'), scanned.get('status')) != ('meta', 'scan', 'success')
         or type(scanned.get('tenant_id')) is not int or scanned['tenant_id'] != tenant_id
         or type(scanned.get('triggered_by')) is not int or scanned['triggered_by'] != principal_id
         or type(scanned.get('scan_context', {}).get('engine_id')) is not int
         or scanned['scan_context']['engine_id'] != engine_id):
         raise raster.SuiteError('capacity automatic scan identity/parent/engine differs')
-    return {**{key: scanned[key] for key in ('execution_id', 'parent_execution_id', 'tenant_id', 'triggered_by', 'module', 'task_type', 'status')},
+    return {**{key: scanned[key] for key in ('execution_id', 'tenant_id', 'triggered_by', 'module', 'task_type', 'status')},
+            'parent_execution_id': observed_parent,
             'scan_context': {'engine_id': engine_id}}
 
 

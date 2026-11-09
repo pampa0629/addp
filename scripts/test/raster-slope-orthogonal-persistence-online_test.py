@@ -157,10 +157,12 @@ class SourceClient:
             self.business.scans['source-scan']=None
             data={'execution_id':'source-scan'}
         elif path.endswith('/meta/executions/source-scan'):
-            data={'execution_id':'source-scan','parent_execution_id':'wrong'if fault=='source-parent'else None,
+            data={'execution_id':'source-scan',
                 'module':'meta','task_type':'scan','status':'success','tenant_id':2,
                 'triggered_by':33 if fault=='source-actor'else 44,
                 'scan_context':{'engine_id':4 if fault=='source-engine'else 3}}
+            if fault == 'source-parent':
+                data['parent_execution_id'] = 'wrong'
         elif '/meta/scan/runs?'in path:
             ids=[n for n,parent in self.business.scans.items()if parent is None]
             if fault=='source-extra-scan':ids.append('unexpected')
@@ -227,6 +229,8 @@ class SlopeOrthogonalWorkflowTest(unittest.TestCase):
             self.assertEqual(data,raw_cog(name))
             self.assertEqual({'size_bytes':len(data),'sha256':hashlib.sha256(data).hexdigest()}, {key: value[key] for key in ('size_bytes', 'sha256')})
         self.assertEqual(result['source_scan_identity']['triggered_by'],44)
+        self.assertIn('parent_execution_id', result['source_scan_identity'])
+        self.assertIsNone(result['source_scan_identity']['parent_execution_id'])
         source_identity=json.loads((self.evidence/'source-preparation-identity.json').read_bytes())
         self.assertEqual((source_identity['principal_id'],len(source_identity['permissions_verified'])),('44',13))
         self.assertNotIn('separate-source-token',json.dumps(result))

@@ -127,3 +127,15 @@ class NibbleCapacityTest(unittest.TestCase):
                            ('scan_context', {'engine_id': 8}), ('tenant_id', '2'), ('triggered_by', '33')):
             with self.subTest(key=key), self.assertRaises(m.raster.SuiteError):
                 m.validate_scan({**scan, key: value}, 'scan', 'parent', 2, 33, 7)
+
+    def test_root_scan_can_omit_parent_but_child_scan_cannot(self):
+        scan = {'execution_id': 'scan', 'module': 'meta', 'task_type': 'scan',
+                'status': 'success', 'tenant_id': 2, 'triggered_by': 33, 'scan_context': {'engine_id': 7}}
+        root_report = {**scan, 'parent_execution_id': None}
+        self.assertEqual(m.validate_scan(scan, 'scan', None, 2, 33, 7), root_report)
+        self.assertEqual(m.validate_scan(root_report, 'scan', None, 2, 33, 7), root_report)
+        for payload in (scan, root_report):
+            with self.subTest(payload=payload), self.assertRaises(m.raster.SuiteError):
+                m.validate_scan(payload, 'scan', 'parent', 2, 33, 7)
+        with self.assertRaises(m.raster.SuiteError):
+            m.validate_scan({**scan, 'parent_execution_id': 'parent'}, 'scan', None, 2, 33, 7)
