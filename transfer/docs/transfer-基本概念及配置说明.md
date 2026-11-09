@@ -53,8 +53,7 @@ Transfer 执行记录使用统一表 `common.task_executions`。Transfer API 会
 
 | 字段或事实 | 口径与正文归属 |
 |---|---|
-| `records_read` / `records_written` | table Transfer 的行数指标；raw copy 第一版固定为 `1/1`。 |
-| `bytes_read` / `bytes_written` | 字节指标；table Transfer 当前通常不作为主指标，raw copy 第一版会写入。 |
+| `records_read` / `records_written`、`bytes_read` / `bytes_written` | 由本次 execution 记录的运行计数。table Transfer 与 raw copy 各自的口径见[执行记录表的指标字段](tables/task_executions表.md#二指标字段)。 |
 | `checkpoint_offset` / `checkpoint_state` | execution metadata 中的观测与 marker 持久事实；字段口径、生成与解释职责统一见[Checkpoint、进度和重试](#十checkpoint进度和重试)，不据此扩大 HTTP DTO。 |
 | `error_details` / 安全 `metadata` | 专业响应仅保留已声明的安全错误与诊断投影，边界沿上述专业读取契约。 |
 
