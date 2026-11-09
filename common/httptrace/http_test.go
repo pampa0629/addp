@@ -207,13 +207,41 @@ func TestRedirectDoesNotLeakTraceHeaders(t *testing.T) {
 	flush(t, r)
 }
 
+func TestRuntimeDoesNotExportThirdPartyChildSpans(t *testing.T) {
+	r, exporter := runtimeForTest(t, "backend")
+	ctx, parent := tracer().Start(context.Background(), "GET /items", trace.WithSpanKind(trace.SpanKindServer))
+	// Fosite starts its own Span through the current Span's TracerProvider.
+	_, foreign := trace.SpanFromContext(ctx).TracerProvider().Tracer("github.com/ory/fosite").Start(ctx, "Fosite.IntrospectToken")
+	if !foreign.SpanContext().IsValid() || foreign.SpanContext().TraceID() != parent.SpanContext().TraceID() {
+		t.Fatal("fixture did not create a child in the same trace")
+	}
+	foreign.End()
+	_, stage := StartExecutionStage(ctx, PhaseEnqueue, 0, nil, nil)
+	stage.End(OutcomeSuccess)
+	parent.End()
+	flush(t, r)
+
+	exporter.mu.Lock()
+	defer exporter.mu.Unlock()
+	scopes := make(map[string]int)
+	for _, span := range exporter.spans {
+		scopes[span.InstrumentationScope().Name]++
+	}
+	if len(exporter.spans) != 2 || scopes["addp.http"] != 1 || scopes["addp.execution"] != 1 {
+		t.Fatalf("want one HTTP and one execution span, got %v", scopes)
+	}
+	if got := Snapshot(); got.Exported != 2 || got.Dropped != 0 || got.ExportFailed != 0 {
+		t.Fatalf("unexpected queue counters: %+v", got)
+	}
+}
+
 func TestQueueOverflowAndShutdownStayBounded(t *testing.T) {
 	blocked := make(chan struct{})
 	e := &memoryExporter{block: blocked}
 	r := newRuntime("monitor", "backend", "test", e)
 	started := time.Now()
 	for i := 0; i < 5000; i++ {
-		_, s := r.provider.Tracer("test").Start(context.Background(), "bounded")
+		_, s := r.provider.Tracer("addp.http").Start(context.Background(), "GET /bounded", trace.WithSpanKind(trace.SpanKindServer))
 		s.End()
 	}
 	if time.Since(started) > time.Second || r.queue.dropped.Load() == 0 {

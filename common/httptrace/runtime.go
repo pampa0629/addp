@@ -334,6 +334,13 @@ func newProcessor(e sdk.SpanExporter) *processor {
 }
 func (p *processor) OnStart(context.Context, sdk.ReadWriteSpan) {}
 func (p *processor) OnEnd(s sdk.ReadOnlySpan) {
+	// Libraries can create their own spans through the parent span's provider.
+	// Only ADDP-owned instrumentation is part of the platform trace contract.
+	switch s.InstrumentationScope().Name {
+	case "addp.http", "addp.execution":
+	default:
+		return
+	}
 	p.mu.RLock()
 	defer p.mu.RUnlock()
 	if p.closed {

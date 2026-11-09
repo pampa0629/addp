@@ -429,3 +429,36 @@ System／Gateway 产物分别为 `sha256:aaf46c29ca32cfad6782cdc55197f2671300b08
 核验摘要：`/var/folders/r1/l7b49c757dz02zftf_l9vl9r0000gn/T/addp-p19-trace-env-verified-xzx_c_4u/report.json`。根.env受Git忽略，个人秘密与实际部署材料不入仓库；本轮仅追加此证据且未提交。没有执行Infra启用、服务重启、构建、真实请求／页面、Hosted、容量或定时。配置已选择Trace，但既有运行进程尚未应用，不能宣称Trace实际可查询。
 
 交给用户从仓库根执行 `bash scripts/infra/up.sh`，仅成功后执行 `./scripts/dev/restart.sh -all`。前者走原整套Infra生命周期并更新共享Alloy；后者由用户在自己的终端重启以加载采集／查询配置，AI不执行keepalive或接管进程。收到执行结果后再只读核验实际端口与状态、正式身份下Trace／日志和页面；如任一步失败，先保留输出定位，不自动重试。原Hosted、容量和定时禁令保持。
+
+
+<a id="trace-personal-safari-fosite-scope-20261109"></a>
+
+## 2026-11-09 Safari 正式管理员页面通过准入，System 调用链明细批次失败
+
+Safari 复用本机“系统管理员”会话，从 Console 打开调用链、按 `system` 后端筛选成功。选中实例记录 15917 后，页面保留实例列表，显示“调用链服务不可用，请检查服务状态与部署配置”。Monitor 正式搜索 API 于 02:21:10.407572Z 返回503，耗时56毫秒；同一链上的 System AuthContext 与实例读取均返回200。只读确认运行中的 Monitor 已加载正确的 Trace 开关、查询 URL 与证书目录。未刷新重试该页面，详情、日志跳转及 System 正式日志读取尚未验收。
+
+Tempo 同一批次先返回搜索200和五份明细200，随后两条并发请求在 Monitor 返回后以 `context canceled` 结束。对原有五个200候选使用相同窗口与查询mTLS有界读取 Protobuf，仅记录结构分类。四份未发现 scope 等结构异常，第五份 `65d04c7b8c42550b7ebf27473f3490c7` 含两条 `github.com/ory/fosite` Span。Monitor 解码器仅允许 `addp.http`／`addp.execution`，该响应必然被拒绝。固定 Fosite 依赖从父 Span 取 TracerProvider 创建其自有 scope，共享 Go 处理器未在入队前约束 scope，现有 exporter 只约束资源身份。这解释了采集／查询端口正常但产品查询失败的情况。后续取消不当作独立首因。
+
+建议讨论在共享生产端限制正式 scope，并单独确定已保留混合 Trace 的安全处置，再用原门禁和 Safari 复核。此次仅核验及追加证据，未修改采集／查询实现、访问权限或现存数据，未重启，不运行 Hosted、容量或定时。
+
+
+<a id="trace-go-owned-scope-filter-20261109"></a>
+
+## 2026-11-09 共享 Go 追踪入口阻止第三方 Span 混入
+
+在 `common/httptrace` 处理器入队前按已发布 scope 筛选，只允许 `addp.http` 与 `addp.execution`。第三方从父 Span 的 TracerProvider 创建的同链子 Span 不发送给 Alloy、不占队列，也不计入队列溢出或导出失败。Monitor 对 scope、参与者权限与有界明细的严格校验继续生效。
+
+回归用例模拟 Fosite 的父 provider 取用方式。旧实现实际导出 HTTP、执行和 Fosite 各1条，断言失败；修复后仅导出两条正式 Span，溢出和失败计数为0。队列溢出测试改用正式 HTTP Span。沿根 `make test-module MODULE=<owner> GO_ONLY=1` 验证 Common、System、Monitor，三项退出0。首次汇总脚本因 zsh 的只读 `status` 变量提前退出，改用 Bash 后取得三项完整退出状态。通过日志位于 `/var/folders/r1/l7b49c757dz02zftf_l9vl9r0000gn/T/addp-trace-scope-verified.l0RS6KXLP3/`。全仓 Go 与隔离 Trace T2 未执行，既有 Platform Go 与 Release/T2 Trace 登记覆盖该路径。
+
+修复保留在当前工作区。已存混合 Trace 沿既有保留策略自然过期，原失败证据保留。由用户在本机执行 `./scripts/dev/restart.sh -all` 使共享修复生效，再选新登记的 System 实例复核 Safari 批量查询、详情和关联日志。此次为本地 Go T1 验证，真实运行及页面复验待进行。
+
+
+<a id="trace-personal-safari-postfix-20261109"></a>
+
+## 2026-11-09 重启后 Safari 调用链列表、详情及关联日志通过
+
+用户完成开发服务重启后，用 Safari 的“系统管理员”会话打开调用链。选择新登记的 System 后端实例记录 `15944`，启动实例 `38cd71cd-c3f3-4527-b373-71ded2873ba9`，本地日志接收于北京时间 10:53:35 开始。页面对 10:43:56 至 10:58:56 的窗口返回非空调用链列表，无此前的 503 提示。
+
+打开 `663d9fce54ba4a8a1874f06e485833ca`，详情显示 7 个 Span 和 3 条实际匹配的调用边，涉及 Gateway、Monitor、System。点击 System 的 `/api/v1/system/runtime/observability-identities` Span `fff16d4157fecdd5` 的“关联日志”，Console 跳到该 System 实例的运行日志，并自动带入相同 Trace ID 和 Span 附近的时间窗。页面返回两条同一 Trace 的 System 日志，其中一条的 Span ID、接口和 HTTP 200 均与点击的 Span 一致。
+
+这是重启后新实例的正式页面与关联日志单样本验收。前次旧实例 503 保留为历史证据，运行日志窗格的其他投递失败记录不计入本样本结果。
