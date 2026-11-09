@@ -23,10 +23,8 @@ Transfer 执行记录统一存储在 `common.task_executions`。本文说明关�
 
 | 字段 | 说明 |
 |---|---|
-| `records_read` | 读取行数。table Transfer 主指标；raw copy 第一版固定为 `1`。 |
-| `records_written` | 写入行数。table Transfer 主指标；raw copy 第一版固定为 `1`。 |
-| `bytes_read` | 读取字节数。当前 table Transfer 通常不作为主指标；raw copy 第一版会写入该指标。 |
-| `bytes_written` | 写入字节数。raw copy 第一版会写入该指标。 |
+| `records_read` / `records_written` | table Transfer 分别记录读取、写入的行数。raw copy 成功复制单个 content 时，两项均记为 `1`。 |
+| `bytes_read` / `bytes_written` | 分别记录源读取、目标写入的字节数，raw copy 写入两项。table Transfer 通常以行数作为主要读取指标。 |
 | `created_at` | 本 execution 的创建时间，不等于 Worker 开始时间。 |
 | `started_at` | 当前 attempt 的真实开始时间，等待领取的 `pending` 为空。 |
 | `completed_at` / `execution_time_ms` | 当前 attempt 的完成时间与耗时，不是所有 attempt 的累计耗时；缺少开始事实时不生成耗时。 |
