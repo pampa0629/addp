@@ -18,8 +18,8 @@
 | 编号 | 最小场景及判定 | 层级／主责 | 标准入口与边界 | 源码定位／待补项（2026-11-08，不等于运行通过） |
 | --- | --- | --- | --- | --- |
 | G1 | 用户／TaskProvider创建仅落唯一pending；提交后进程退出仍可发现，未claim不创建运行体／外部操作 | T1、PG T2；Graph＋Common | `make test-module MODULE=graph`；`make test-common-postgres COMMON_POSTGRES_TEST_ARGS="--test graph"` 扩既有Graph PG用例；现有入队竞争不等于监督器故障通过 | StartSupervisor与PendingInputAndAdmission已定位；进程退出／重启的T4证据待取得。 |
-| G2 | 双Backend竞争只一方claim；attempt／token／started_at与任务摘要同事务；任一步注入失败整体回滚 | PG T2；Common原语、Graph组合 | 上述Graph PG入口及`make test-common-postgres`；Common共享变化按真实消费者扩散，不只跑Graph分组 | ExactClaimAndCancellation有真实双claim；摘要写失败的独立PG反例待补。 |
-| G3 | cancel与claim两种先后：未启动attempt0取消不造开始／耗时；claim先提交则持久受理并等待真实停止；success先提交不得追改 | T1、PG T2；Graph | 同一模块／Graph PG入口；历史缺证、曾启动记录不能套pending例外，HTTP返回明确受理与终态区别 | 持久取消及attempt0终结已接；PG已有claim后取消／未claim取消，success先提交的竞争待补。 |
+| G2 | 双Backend竞争只一方claim；attempt／token／started_at与任务摘要同事务；任一步注入失败整体回滚 | PG T2；Common原语、Graph组合 | 上述Graph PG入口及`make test-common-postgres`；Common共享变化按真实消费者扩散，不只跑Graph分组 | ExactClaimAndCancellation 验证双领取。ClaimSummaryRollback 以 PostgreSQL 触发器在公共领取已写入后使任务摘要失败，核对三张表回滚、失败不返回租约及原执行仍可首次领取。 |
+| G3 | cancel与claim两种先后：未启动attempt0取消不造开始／耗时；claim先提交则持久受理并等待真实停止；success先提交不得追改 | T1、PG T2；Graph | 同一模块／Graph PG入口；历史缺证、曾启动记录不能套pending例外，HTTP返回明确受理与终态区别 | PG 覆盖 claim 后取消、未 claim 取消及 SuccessCommitsBeforeCancellation。后者用 PostgreSQL 阻塞关系确认取消等待成功事务，提交后返回已有 success，保留结果、摘要和控制记录。 |
 | G4 | 另一Backend受理取消、重复请求、execution已换代、跨Tenant与缺权限均严格绑定；旧task取消不能伤及新执行 | T1、PG T2；Graph／System授权边界 | Graph标准模块与PG门禁；API改变时同次覆盖双语Swagger和授权校验，不借Service身份扩权 | CancelExecution按execution／attempt校验；跨Backend、身份变化由受控runner覆盖，T4未取证。 |
 | G5 | 等待G或业务行锁期间lease到期；旧heartbeat、材料Save、待审项、计数、事件、终态全部拒绝，私有写入不先提交 | PG T2；Common＋Graph | Common／Graph PG入口，真实行锁门闩验证；SQLite或只核execution更新不能代替 | WaitForAdmissionPastLease覆盖材料／审核／进度／终态四类锁后失权；不等于全部锁排列通过。 |
 | G6 | 外部写成功而PG回执丢失、取消超时或旧进程失联：执行失败但效果待核清；禁止自动重放／人工重跑／Cleanup；伪造、错attempt和不完整停止证据拒绝 | T1、PG与原生引擎T2；Graph／Common Provider | 受控Provider/HTTP夹具验证不确定窗口，并复用`make test-common-falkordb`／`make test-common-neo4j`补原生副作用交界；当前断言不充分须同次扩展。真实跨进程在途语义另需T4，不从mock或PG推断远端已停止 | UncertainEffects及持久操作已接；原生丢回包故障runner／证据仍缺，恢复能力暂缓。 |

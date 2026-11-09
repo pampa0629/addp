@@ -263,7 +263,10 @@ func (r *BuildRepository) ClaimBuild(ctx context.Context, candidate execution.Ta
 		task.Status, task.StartedAt = models.BuildStatusRunning, e.StartedAt
 		return execution.UpdateWithLease(ctx, tx, *lease, map[string]interface{}{"progress": 0})
 	})
-	return e, lease, task, control, err
+	if err != nil {
+		return nil, nil, nil, models.BuildExecutionControl{}, err
+	}
+	return e, lease, task, control, nil
 }
 
 // FailExpiredBuilds only fails old attempts. External calls never replay.

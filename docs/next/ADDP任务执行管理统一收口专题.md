@@ -161,7 +161,7 @@ Manager 源准备保持其正式授权链；本批 Transfer CDC 仅验证既有 
 | 顺序 | 事项／性质 | 具体交付与完成条件 |
 | --- | --- | --- |
 | P1a | Common／System 父子准入 PG | C2b/c/e/h 的竞争、拒绝与回滚见首轮记录。C2d/f/g 的公共锁等待、非法绑定及子执行残留事实见后续补测。Graph 专属锁交错归 P1b，各 Owner 的外部效果核清沿对应专项。 |
-| P1b | Graph清理与输入冻结，测试及按证据修复 | 补G2摘要回滚、G3成功先提交、G8输入／登记目标漂移、G9在途审核，以及C3/C4/C2j真实PG交错。C4当前代码核execute首尾候选一致，尚未定位原scan后候选漂移的完整反例；先验证上游生命周期围栏及原scan确认是否已足够，再决定修复，不将风险观察写成已复现漏洞 |
+| P1b | Graph清理与输入冻结，测试及按证据修复 | G2 摘要回滚与 G3 成功先提交的 PG 用例见下方记录。剩余 G8 输入／登记目标漂移、G9 在途审核，以及 C3/C4/C2j 真实 PG 交错。C4当前代码核execute首尾候选一致，尚未定位原scan后候选漂移的完整反例；先验证上游生命周期围栏及原scan确认是否已足够，再决定修复，不将风险观察写成已复现漏洞 |
 | P2 | System／Monitor消费者状态矩阵，T3工程 | C5g/k/l补撤去父读取权、404／503、User／Tenant／execution切换、closed pending替换及矛盾／迟到响应；C5c/h补隐藏计数与完整页面语义。复用共享组件／请求失效能力，补C5e/j相应PG交错，不复制组件 |
 | 并行待授权 | Manager迟到writer真实验收 | runner与CI已就绪，按§8.44单独确认一次Hosted；同一原请求、原身份及原预算，核11项、控制恢复与零残留；不能先记完成 |
 | P3 | Graph／Cleanup完整故障与Meta扫描闭环，runner／集成验收 | 已有profile先按场景核对并补缺：Cleanup规范§13的平台上下文、审计、Monitor父子树；Graph原生写图回包丢失及两引擎故障。受控runner与真实原生效果分开；若需新的Provider入口或身份／权限边界先讨论，不能借此重启高级恢复。新增Hosted均单独确认 |
@@ -184,6 +184,12 @@ Manager 源准备保持其正式授权链；本批 Transfer CDC 仅验证既有 
 本地 Common lifecycle 分组通过上述 36 个末级用例及原专业结果原子提交。System Cleanup 通过 9 个主用例，含新增的 3 个绑定反例。两组 PostgreSQL 门禁均 0 SKIP。T2 登记 85＋9 项及登记检查通过。此次只补测试与门禁，未观察到需修改产品实现的失败。
 
 固定提交 `21555a8ad` 的 [Common Linux PG](https://github.com/pampa0629/addp/actions/runs/42550397199/job/128944704717) 和 [System Cleanup Linux PG](https://github.com/pampa0629/addp/actions/runs/42550397199/job/128944704053) 均通过。原日志分别确认 36 个矩阵末级用例及专业结果原子提交、9 个 System 主用例及 3 个新增绑定反例，两组均 0 SKIP。同源 [System Go](https://github.com/pampa0629/addp/actions/runs/42550397212/job/128944443300) 通过。同源 [Platform consistency](https://github.com/pampa0629/addp/actions/runs/42550397212/job/128944443256) 在 Transfer 配置文档来源漂移检查 `TestTransferReviewSourceDrift` 失败，未运行 T2 登记。此提交的登记证据仍为本地 85＋9 项。
+
+### Graph 基础 PG 增补验证
+
+2026-11-09 补齐 G2 和 G3 的两个 Graph 仓储用例。摘要反例只对本轮任务安装 PG 触发器，在事务内确认公共 attempt、开始时间及租约已写入后报错。首轮确认执行、任务摘要和控制记录全部回滚，同时复现 `ClaimBuild` 仍返回已回滚的租约及任务对象。修正错误分支后不再返回未提交的运行事实。移除触发器后，同一 pending 执行以 attempt=1 领取并提交匹配的开始时间。成功先提交场景通过两个连接的 PG 阻塞关系核对取消等待，成功提交后返回原终态，保留进度、写入计数、任务统计和取消控制。
+
+本地 `make test-common-postgres COMMON_POSTGRES_TEST_ARGS="--test graph"` 通过 9 个主用例，包含两个新增用例及 Graph Cleanup Runtime，0 SKIP。 `make test-module MODULE=graph GO_ONLY=1` 通过。Graph 后端路径由既有规则选择 Common PostgreSQL Job。
 
 ## 七、确认范围与协作分工
 

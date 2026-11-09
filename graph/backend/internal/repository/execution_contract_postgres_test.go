@@ -8,12 +8,14 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
 
 	commonapi "github.com/addp/common/api"
 	"github.com/addp/common/execution"
+	commonmodels "github.com/addp/common/models"
 	"github.com/addp/graph/internal/models"
 	"github.com/google/uuid"
 	"gorm.io/driver/postgres"
@@ -128,6 +130,178 @@ func TestIntegrationPostgresGraphExactClaimAndCancellation(t *testing.T) {
 	}
 	if _, _, _, _, err := repo.ClaimBuild(ctx, *unclaimed, "too-late", time.Minute); !errors.Is(err, commonapi.ErrConflict) {
 		t.Fatalf("cancelled candidate claimed: %v", err)
+	}
+}
+
+type graphBuildPGState struct {
+	execution execution.TaskExecution
+	task      models.BuildTask
+	control   models.BuildExecutionControl
+}
+
+func readGraphBuildPGState(t *testing.T, db *gorm.DB, task models.BuildTask, executionID string) graphBuildPGState {
+	t.Helper()
+	var state graphBuildPGState
+	if err := db.Where("execution_id = ? AND tenant_id = ?", executionID, task.TenantID).First(&state.execution).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Where("id = ? AND tenant_id = ?", task.ID, task.TenantID).First(&state.task).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Where("execution_id = ? AND tenant_id = ?", executionID, task.TenantID).First(&state.control).Error; err != nil {
+		t.Fatal(err)
+	}
+	return state
+}
+
+func TestIntegrationPostgresGraphClaimSummaryRollback(t *testing.T) {
+	db := graphExecutionPG(t)
+	task, _, e := graphExecutionPGFixture(t, db)
+	repo := NewBuildRepository(db)
+	ctx := graphRepositoryUserContext(task.TenantID)
+	before := readGraphBuildPGState(t, db, task, e.ExecutionID)
+	if before.execution.Status != execution.ExecutionStatusPending || before.execution.Attempt != 0 || before.task.Status != models.BuildStatusPending {
+		t.Fatal("fixture must be pending before claim")
+	}
+
+	t.Run("summary_write_fails_after_lease_write", func(t *testing.T) {
+		name := "claim_summary_" + strings.ReplaceAll(uuid.NewString(), "-", "")
+		function := "graph." + name
+		if err := db.Transaction(func(tx *gorm.DB) error {
+			// Distinguish a failed summary write after a real claim from an
+			// earlier error that never reached the atomic write boundary.
+			if err := tx.Exec(fmt.Sprintf(`CREATE FUNCTION %s() RETURNS trigger LANGUAGE plpgsql AS $$
+				BEGIN
+					IF EXISTS (SELECT 1 FROM common.task_executions
+						WHERE execution_id = NEW.execution_id AND tenant_id = NEW.tenant_id
+						  AND status = 'running' AND attempt = 1 AND started_at = NEW.started_at
+						  AND lease_owner = 'failed-claim' AND lease_token IS NOT NULL AND lease_expires_at IS NOT NULL)
+					THEN
+						RAISE EXCEPTION 'graph claim summary fault' USING ERRCODE = '23514';
+					END IF;
+					RAISE EXCEPTION 'graph claim facts missing before summary write';
+				END; $$`, function)).Error; err != nil {
+				return err
+			}
+			return tx.Exec(fmt.Sprintf(`CREATE TRIGGER %s AFTER UPDATE ON graph.build_tasks FOR EACH ROW
+				WHEN (NEW.id = %d AND NEW.tenant_id = %d AND NEW.status = 'running') EXECUTE FUNCTION %s()`,
+				name, task.ID, task.TenantID, function)).Error
+		}); err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() {
+			if err := db.Exec("DROP TRIGGER " + name + " ON graph.build_tasks").Error; err != nil {
+				t.Error(err)
+			}
+			if err := db.Exec("DROP FUNCTION " + function + "()").Error; err != nil {
+				t.Error(err)
+			}
+		})
+		item, lease, runtime, _, err := repo.ClaimBuild(ctx, *e, "failed-claim", time.Minute)
+		var sqlError interface{ SQLState() string }
+		if !errors.As(err, &sqlError) || sqlError.SQLState() != "23514" || !strings.Contains(err.Error(), "graph claim summary fault") {
+			t.Fatalf("claim did not reach the injected PostgreSQL summary failure: %v", err)
+		}
+		if after := readGraphBuildPGState(t, db, task, e.ExecutionID); !reflect.DeepEqual(before, after) {
+			t.Error("summary write failure changed persistent execution, task or control")
+		}
+		if item != nil || lease != nil || runtime != nil {
+			t.Error("failed transaction returned an execution, lease or runtime task")
+		}
+	})
+
+	item, lease, _, _, err := repo.ClaimBuild(ctx, *e, "successful-claim", time.Minute)
+	if err != nil || item == nil || lease == nil {
+		t.Fatalf("same pending execution could not be claimed after fault removal: %v", err)
+	}
+	stored := readGraphBuildPGState(t, db, task, e.ExecutionID)
+	if item.ExecutionID != e.ExecutionID || stored.execution.Status != execution.ExecutionStatusRunning ||
+		stored.execution.Attempt != 1 || lease.Attempt != 1 || stored.execution.LeaseToken == nil || *stored.execution.LeaseToken != lease.Token ||
+		stored.task.Status != models.BuildStatusRunning || stored.task.ExecutionID != e.ExecutionID ||
+		stored.execution.StartedAt == nil || stored.task.StartedAt == nil || !stored.task.StartedAt.Equal(*stored.execution.StartedAt) {
+		t.Fatal("successful claim did not commit attempt, lease and matching task start together")
+	}
+}
+
+func TestIntegrationPostgresGraphSuccessCommitsBeforeCancellation(t *testing.T) {
+	db := graphExecutionPG(t)
+	task, _, e := graphExecutionPGFixture(t, db)
+	ctx, cancel := context.WithTimeout(graphRepositoryUserContext(task.TenantID), 8*time.Second)
+	defer cancel()
+	_, lease, runtime, _, err := NewBuildRepository(db).ClaimBuild(ctx, *e, "completing-backend", time.Minute)
+	if err != nil || lease == nil || runtime == nil {
+		t.Fatalf("claim: %v", err)
+	}
+	running := readGraphBuildPGState(t, db, task, e.ExecutionID)
+	holder := db.WithContext(ctx).Begin()
+	if holder.Error != nil {
+		t.Fatal(holder.Error)
+	}
+	defer holder.Rollback()
+	var blocker int
+	if err := holder.Raw("SELECT pg_backend_pid()").Scan(&blocker).Error; err != nil {
+		t.Fatal(err)
+	}
+	written := int64(3)
+	runtime.Stats = []byte(`{"auto_written":3}`)
+	owned := execution.ContextWithLease(ctx, *lease)
+	if err := NewBuildRepository(holder).CompleteBuild(owned, runtime, execution.ExecutionStatusSuccess, "", commonmodels.JSONMap{"build_result": "complete"}, &written); err != nil {
+		t.Fatal(err)
+	}
+	success := readGraphBuildPGState(t, holder, task, e.ExecutionID)
+	var stats models.BuildTaskStats
+	if err := json.Unmarshal(success.task.Stats, &stats); err != nil {
+		t.Fatal(err)
+	}
+	if success.execution.Status != execution.ExecutionStatusSuccess || success.execution.CompletedAt == nil ||
+		success.execution.ExecutionTimeMs == nil || success.execution.LeaseToken != nil ||
+		success.execution.RecordsWritten == nil || *success.execution.RecordsWritten != written || success.execution.Progress != 100 ||
+		success.execution.Metadata["build_result"] != "complete" || success.task.Status != models.BuildStatusSuccess ||
+		success.task.CompletedAt == nil || stats.AutoWritten != int(written) ||
+		!reflect.DeepEqual(running.control, success.control) {
+		t.Fatal("completion transaction did not write the expected success facts")
+	}
+	if visible := readGraphBuildPGState(t, db, task, e.ExecutionID); !reflect.DeepEqual(running, visible) {
+		t.Fatal("success became visible before its transaction committed")
+	}
+
+	pids := make(chan int, 1)
+	done := make(chan error, 1)
+	var result *execution.TaskExecution
+	go func() {
+		done <- db.WithContext(ctx).Connection(func(conn *gorm.DB) error {
+			var pid int
+			if err := conn.Raw("SELECT pg_backend_pid()").Scan(&pid).Error; err != nil {
+				return err
+			}
+			pids <- pid
+			var err error
+			result, err = NewBuildRepository(conn).CancelExecution(ctx, task.ID, task.GraphID, task.TenantID, 7, e.ExecutionID, lease.Attempt)
+			return err
+		})
+	}()
+	var waiter int
+	select {
+	case waiter = <-pids:
+	case err := <-done:
+		t.Fatalf("cancel ended before reaching the lock: %v", err)
+	case <-ctx.Done():
+		t.Fatal(ctx.Err())
+	}
+	graphWaitPG(t, ctx, db, "SELECT ? = ANY(pg_blocking_pids(?))", blocker, waiter)
+	if err := holder.Commit().Error; err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case err := <-done:
+		if err != nil || result == nil || !reflect.DeepEqual(success.execution, *result) {
+			t.Fatalf("cancel did not return the already committed execution: %v", err)
+		}
+	case <-ctx.Done():
+		t.Fatal(ctx.Err())
+	}
+	if after := readGraphBuildPGState(t, db, task, e.ExecutionID); !reflect.DeepEqual(success, after) {
+		t.Fatal("late cancel rewrote success, task summary or cancellation control")
 	}
 }
 
