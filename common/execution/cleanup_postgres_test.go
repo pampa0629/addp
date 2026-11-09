@@ -2,6 +2,7 @@ package execution
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"reflect"
 	"strings"
@@ -15,6 +16,145 @@ import (
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 )
+
+func testCleanupPostgresAdmissionEvidence(t *testing.T, db *gorm.DB) {
+	t.Run("invalid_binding", func(t *testing.T) {
+		for _, tc := range []struct {
+			name    string
+			columns map[string]any
+			request func(*events.CleanupRequest)
+		}{
+			{name: "tenant", request: func(r *events.CleanupRequest) { r.TenantID++ }},
+			{name: "module", columns: map[string]any{"module": ModuleMeta}},
+			{name: "type", columns: map[string]any{"task_type": TaskTypeScan}},
+			{name: "source", columns: map[string]any{"source": ModuleMeta}},
+			{name: "absent_parent", columns: map[string]any{"parent_execution_id": nil}},
+			{name: "missing_parent_row", columns: map[string]any{"parent_execution_id": uuid.NewString()}},
+			{name: "different_parent_digest", request: func(r *events.CleanupRequest) { r.RequestID = uuid.NewString() }},
+			{name: "different_actor_membership", columns: map[string]any{"actor_tenant_membership_id": 18}},
+			{name: "different_authorization_version", columns: map[string]any{"issued_authorization_version": 2}},
+			{name: "deadline_not_after_request", request: func(r *events.CleanupRequest) { r.Deadline = r.RequestedAt }},
+			{name: "deadline_exceeds_contract", request: func(r *events.CleanupRequest) { r.Deadline = r.RequestedAt.Add(25 * time.Hour) }},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				p, c, input := cleanupProtocolFixture(t, db)
+				_, pl, err := ClaimPending(t.Context(), db, cleanupIdentity(p), cleanupOptions(p), nil)
+				if err != nil {
+					t.Fatal(err)
+				}
+				fields := tc.columns
+				if tc.request != nil {
+					tc.request(&input)
+					// Recompute the digest even for invalid deadlines, so those
+					// cases test time validation rather than a stale digest.
+					err := input.Seal()
+					if (err != nil) != strings.HasPrefix(tc.name, "deadline_") {
+						t.Fatalf("unexpected fixture validation: %v", err)
+					}
+					raw, err := json.Marshal(input)
+					if err != nil {
+						t.Fatal(err)
+					}
+					fields = map[string]any{"execution_config": models.JSONMap{cleanupInputKey: string(raw), DisplayLanguageKey: "en"}}
+				}
+				if err := db.Model(&c).Updates(fields).Error; err != nil {
+					t.Fatal(err)
+				}
+				stored := readCleanupExecution(t, db, c)
+				// Use a recognized Owner for the wrong-module case, but keep
+				// the original executor identity for wrong type and source.
+				c.Module = stored.Module
+				for _, phase := range []string{"active", "closed"} {
+					t.Run(phase, func(t *testing.T) {
+						if phase == "closed" {
+							if err := CompleteWithLease(t.Context(), db, *pl, ExecutionStatusTimeout, nil); err != nil {
+								t.Fatal(err)
+							}
+						}
+						parent := readCleanupExecution(t, db, p)
+						prepared := false
+						item, lease, err := ClaimCleanupChild(t.Context(), db, cleanupIdentity(c), cleanupOptions(c), func(*gorm.DB, TaskExecution, events.CleanupRequest) error {
+							prepared = true
+							return nil
+						})
+						if err == nil || item != nil || lease != nil || prepared {
+							t.Fatalf("invalid binding reached claim or rejection: item=%t lease=%t prepare=%t err=%v", item != nil, lease != nil, prepared, err)
+						}
+						if !reflect.DeepEqual(stored, readCleanupExecution(t, db, c)) || !reflect.DeepEqual(parent, readCleanupExecution(t, db, p)) {
+							t.Fatal("invalid binding changed persistent parent or child facts")
+						}
+					})
+				}
+			})
+		}
+	})
+	t.Run("pending_with_prior_operation_facts", func(t *testing.T) {
+		for _, tc := range []struct {
+			name   string
+			fields func(time.Time) map[string]any
+		}{
+			{"recovered_attempt", nil},
+			{"started_at", func(now time.Time) map[string]any { return map[string]any{"started_at": now} }},
+			{"elapsed", func(time.Time) map[string]any { return map[string]any{"execution_time_ms": 0} }},
+			{"lease_owner", func(time.Time) map[string]any { return map[string]any{"lease_owner": "old-owner"} }},
+			{"lease_token", func(time.Time) map[string]any { return map[string]any{"lease_token": uuid.NewString()} }},
+			{"lease_expiry", func(now time.Time) map[string]any { return map[string]any{"lease_expires_at": now} }},
+			{"progress", func(time.Time) map[string]any { return map[string]any{"progress": 1} }},
+			{"incomplete_receipt", func(time.Time) map[string]any {
+				return map[string]any{"metadata": models.JSONMap{"cleanup_receipt": map[string]any{}}}
+			}},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				p, c, _ := cleanupProtocolFixture(t, db)
+				_, pl, err := ClaimPending(t.Context(), db, cleanupIdentity(p), cleanupOptions(p), nil)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if tc.fields == nil {
+					options := cleanupOptions(c)
+					options.LeaseDuration = 100 * time.Millisecond
+					claimed, lease, err := ClaimCleanupChild(t.Context(), db, cleanupIdentity(c), options, nil)
+					if err != nil || claimed == nil || lease == nil {
+						t.Fatalf("initial claim failed: %v", err)
+					}
+					waitCleanupPostgres(t, db, "SELECT clock_timestamp() >= ?", *claimed.LeaseExpiresAt)
+					if err := RetryExpired(t.Context(), db, *lease, "recovered"); err != nil {
+						t.Fatal(err)
+					}
+				} else {
+					now, err := DatabaseNow(db)
+					if err != nil {
+						t.Fatal(err)
+					}
+					if err := db.Model(&c).Updates(tc.fields(now)).Error; err != nil {
+						t.Fatal(err)
+					}
+				}
+				if err := CompleteWithLease(t.Context(), db, *pl, ExecutionStatusTimeout, nil); err != nil {
+					t.Fatal(err)
+				}
+				stored := readCleanupExecution(t, db, c)
+				parent := readCleanupExecution(t, db, p)
+				if stored.Status != ExecutionStatusPending {
+					t.Fatal("fixture is not pending")
+				}
+				item, lease, err := ClaimCleanupChild(t.Context(), db, cleanupIdentity(c), cleanupOptions(c), nil)
+				if !errors.Is(err, commonapi.ErrConflict) || item != nil || lease != nil {
+					t.Fatalf("prior operation facts treated as unstarted: %v", err)
+				}
+				if err := RejectUnstarted(t.Context(), db, cleanupIdentity(c), nil); !errors.Is(err, commonapi.ErrConflict) {
+					t.Fatalf("unstarted primitive discarded prior operation facts: %v", err)
+				}
+				if ProjectCleanupAdmission(stored, &parent, *parent.CompletedAt) != nil {
+					t.Fatal("prior operation facts projected as never started")
+				}
+				if !reflect.DeepEqual(stored, readCleanupExecution(t, db, c)) || !reflect.DeepEqual(parent, readCleanupExecution(t, db, p)) {
+					t.Fatal("unstarted rejection changed persistent parent or child facts")
+				}
+			})
+		}
+	})
+}
 
 func waitCleanupPostgres(t *testing.T, db *gorm.DB, query string, args ...interface{}) {
 	t.Helper()
@@ -124,68 +264,102 @@ func testCleanupPostgresLockOrder(t *testing.T, db *gorm.DB) {
 			t.Fatalf("closure race admitted child: %+v %+v %v", child, lease, err)
 		}
 	})
-	t.Run("deadline_rechecked_after_owner_lock", func(t *testing.T) {
-		p, c, input := cleanupProtocolFixture(t, db, 2*time.Second)
-		if _, _, err := ClaimPending(t.Context(), db, cleanupIdentity(p), cleanupOptions(p), nil); err != nil {
-			t.Fatal(err)
-		}
-		probe := "common.cleanup_probe_" + strings.ReplaceAll(uuid.NewString(), "-", "")
-		if err := db.Exec("CREATE TABLE " + probe + " (id integer PRIMARY KEY)").Error; err != nil {
-			t.Fatal(err)
-		}
-		t.Cleanup(func() {
-			if err := db.Exec("DROP TABLE " + probe).Error; err != nil {
-				t.Error(err)
+	t.Run("clock_rechecked_after_lock", func(t *testing.T) {
+		for _, lock := range []string{"parent", "child", "owner"} {
+			for _, boundary := range []string{"deadline", "lease"} {
+				t.Run(lock+"/"+boundary, func(t *testing.T) {
+					budget := time.Minute
+					if boundary == "deadline" {
+						budget = 2 * time.Second
+					}
+					p, c, input := cleanupProtocolFixture(t, db, budget)
+					probe := "common.cleanup_probe_" + strings.ReplaceAll(uuid.NewString(), "-", "")
+					if lock == "owner" {
+						if err := db.Exec("CREATE TABLE " + probe + " (id integer PRIMARY KEY)").Error; err != nil {
+							t.Fatal(err)
+						}
+						t.Cleanup(func() {
+							if err := db.Exec("DROP TABLE " + probe).Error; err != nil {
+								t.Error(err)
+							}
+						})
+						if err := db.Exec("INSERT INTO " + probe + " VALUES (1)").Error; err != nil {
+							t.Fatal(err)
+						}
+					}
+					options := cleanupOptions(p)
+					if boundary == "lease" {
+						options.LeaseDuration = 2 * time.Second
+					}
+					if _, _, err := ClaimPending(t.Context(), db, cleanupIdentity(p), options, nil); err != nil {
+						t.Fatal(err)
+					}
+					parent, child := readCleanupExecution(t, db, p), readCleanupExecution(t, db, c)
+					crossAt := input.Deadline
+					if boundary == "lease" {
+						crossAt = *parent.LeaseExpiresAt
+					}
+					holder := db.Begin()
+					defer holder.Rollback()
+					var blocker int
+					if err := holder.Raw("SELECT pg_backend_pid()").Scan(&blocker).Error; err != nil {
+						t.Fatal(err)
+					}
+					var prepare func(*gorm.DB, TaskExecution, events.CleanupRequest) error
+					switch lock {
+					case "parent", "child":
+						id := p.ExecutionID
+						if lock == "child" {
+							id = c.ExecutionID
+						}
+						if err := holder.Exec("SELECT id FROM common.task_executions WHERE execution_id=? FOR UPDATE", id).Error; err != nil {
+							t.Fatal(err)
+						}
+						prepare = func(*gorm.DB, TaskExecution, events.CleanupRequest) error {
+							return errors.New("prepare called after admission boundary")
+						}
+					case "owner":
+						lockRow := "SELECT id FROM " + probe + " WHERE id=1 FOR UPDATE"
+						if err := holder.Exec(lockRow).Error; err != nil {
+							t.Fatal(err)
+						}
+						prepare = func(tx *gorm.DB, _ TaskExecution, _ events.CleanupRequest) error {
+							return tx.Exec(lockRow).Error
+						}
+					}
+					pid, done := startCleanupPostgresClaim(t, db, c, prepare)
+					waitCleanupPostgres(t, db, "SELECT ? = ANY(pg_blocking_pids(?))", blocker, pid)
+					now, err := DatabaseNow(db)
+					if err != nil || !now.Before(crossAt) {
+						t.Fatalf("claim did not reach the lock before %s: %v", boundary, err)
+					}
+					waitCleanupPostgres(t, db, "SELECT clock_timestamp() >= ?", crossAt)
+					if err := holder.Commit().Error; err != nil {
+						t.Fatal(err)
+					}
+					result := <-done
+					if result.err != nil || result.lease != nil {
+						t.Fatalf("lock wait granted ownership or errored: lease=%t err=%v", result.lease != nil, result.err)
+					}
+					if !reflect.DeepEqual(parent, readCleanupExecution(t, db, p)) {
+						t.Fatal("child admission changed the parent")
+					}
+					stored := readCleanupExecution(t, db, c)
+					if boundary == "lease" {
+						if result.item != nil || !reflect.DeepEqual(child, stored) {
+							t.Fatal("temporary parent lease loss changed the child")
+						}
+						return
+					}
+					if result.item == nil || stored.Status != ExecutionStatusFailed || stored.CompletedAt == nil || !cleanupUnstarted(stored) {
+						t.Fatal("deadline crossing did not commit an unstarted rejection")
+					}
+					view := ProjectCleanupAdmission(stored, &parent, *stored.CompletedAt)
+					if view == nil || view.Basis != "deadline_reached" || view.State != "closed_rejected" {
+						t.Fatalf("committed deadline refusal not projected: %+v", view)
+					}
+				})
 			}
-		})
-		if err := db.Exec("INSERT INTO " + probe + " VALUES (1)").Error; err != nil {
-			t.Fatal(err)
-		}
-		holder := db.Begin()
-		defer holder.Rollback()
-		if err := holder.Exec("SELECT id FROM " + probe + " WHERE id=1 FOR UPDATE").Error; err != nil {
-			t.Fatal(err)
-		}
-		ctx, cancel := context.WithTimeout(t.Context(), 6*time.Second)
-		defer cancel()
-		pids := make(chan int, 1)
-		done := make(chan error, 1)
-		var child *TaskExecution
-		var lease *Lease
-		go func() {
-			var err error
-			child, lease, err = ClaimCleanupChild(ctx, db, cleanupIdentity(c), cleanupOptions(c), func(tx *gorm.DB, _ TaskExecution, _ events.CleanupRequest) error {
-				var pid int
-				if err := tx.Raw("SELECT pg_backend_pid()").Scan(&pid).Error; err != nil {
-					return err
-				}
-				pids <- pid
-				return tx.Exec("SELECT id FROM " + probe + " WHERE id=1 FOR UPDATE").Error
-			})
-			done <- err
-		}()
-
-		var pid int
-		select {
-		case pid = <-pids:
-		case err := <-done:
-			t.Fatalf("claim ended before reaching lock: %v", err)
-		case <-ctx.Done():
-			t.Fatal(ctx.Err())
-		}
-		waitCleanupPostgres(t, db, "SELECT EXISTS (SELECT 1 FROM pg_stat_activity WHERE pid=? AND wait_event_type='Lock')", pid)
-		waitCleanupPostgres(t, db, "SELECT clock_timestamp() >= ?", input.Deadline)
-		if err := holder.Commit().Error; err != nil {
-			t.Fatal(err)
-		}
-		if err := <-done; err != nil || child == nil || child.Status != ExecutionStatusFailed || child.Attempt != 0 || lease != nil {
-			t.Fatalf("deadline wait admitted runtime: %+v %+v %v", child, lease, err)
-		}
-		parent := readCleanupExecution(t, db, p)
-		now, _ := DatabaseNow(db)
-		view := ProjectCleanupAdmission(*child, &parent, now)
-		if view == nil || view.Basis != "deadline_reached" || view.State != "closed_rejected" {
-			t.Fatalf("committed deadline refusal not projected: %+v", view)
 		}
 	})
 	t.Run("two_parents_same_owner_exact_single_claim", func(t *testing.T) {

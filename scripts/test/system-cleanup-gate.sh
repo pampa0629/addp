@@ -77,6 +77,7 @@ for test_name in \
     TestIntegrationPostgresCleanupIdempotence \
     TestIntegrationPostgresCleanupCoordinatorRecovery \
     TestIntegrationPostgresCleanupParentRecoveryAdmission \
+    TestIntegrationPostgresCleanupInvalidBinding \
     TestIntegrationPostgresCleanupClosureRollback \
     TestIntegrationPostgresCleanupAdmissionRace \
     TestIntegrationPostgresCleanupReadOnlySnapshot; do

@@ -38,6 +38,7 @@ func TestExecutionLifecycleAgainstPostgres(t *testing.T) {
 	}
 	t.Run("cleanup_protocol", func(t *testing.T) { testCleanupProtocolLifecycle(t, db) })
 	t.Run("cleanup_lock_order", func(t *testing.T) { testCleanupPostgresLockOrder(t, db) })
+	t.Run("cleanup_admission_evidence", func(t *testing.T) { testCleanupPostgresAdmissionEvidence(t, db) })
 	fixture := func(t *testing.T) TaskExecution {
 		t.Helper()
 		item := TaskExecution{TenantID: 7, ExecutionID: uuid.NewString(), Module: ModuleMeta, TaskType: TaskTypeScan, Source: uuid.NewString(), Status: ExecutionStatusPending, ExecutionBoundary: ExecutionBoundaryBounded, TriggerType: TriggerTypeManual}

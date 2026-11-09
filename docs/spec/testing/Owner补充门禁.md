@@ -45,10 +45,10 @@
 | C2a | 候选发现后父关闭先提交：后续P→C不得claim；Owner拒绝C，attempt0、无started_at／耗时／lease、failed且原因明确未开始，无外部调用 | System＋Common＋Owner；T1与PG T2 | cleanup_lock_order/parent_closure_commits_before_waiting_child已有PG。 |
 | C2b | 子claim先提交后父关闭：仅一次有效claim；合法子可按自身lease收尾，父不取消／改写子；父关闭不得被宣称为实际停止 | System＋Owner；PG T2，外部效果用既有原生T2补证 | child_claim_commits_before_parent_closure以真实PG阻塞链确认子claim先提交，随后父timeout，子仍可提交回执且父不变。 |
 | C2c | 父pending或lease过期但deadline未到：C不claim也不拒绝；System恢复只更换父attempt而不刷新deadline／子集合；窗口恢复后可重新核验准入 | System＋Common；PG T2 | ParentRecoveryAdmission以数据库时间等父失租，核子等待、父换attempt且输入不变、旧父失权及同一C重新准入。 |
-| C2d | 等待P／C／领域锁期间跨过deadline或lease到期：锁后时钟拒绝；无部分摘要、token或业务写入；父锁繁忙被跳过不计关闭／失败 | Common＋Owner；真实行锁PG T2 | deadline_rechecked_after_owner_lock及Graph等G失权已定位；完整P/C/G/T锁组合待补。 |
+| C2d | 等待P／C／领域锁期间跨过deadline或lease到期：锁后时钟拒绝；无部分摘要、token或业务写入；父锁繁忙被跳过不计关闭／失败 | Common＋Owner；真实行锁PG T2 | clock_rechecked_after_lock 覆盖 P／C／通用 Owner 行锁分别跨过截止或父租约失效的六种组合。截止提交未启动拒绝，父失租而未到截止则等待。Graph 专属领域锁交错仍待补。 |
 | C2e | 候选C已改变、两个父交错或同Owner两实例：仍锁原P与同一C，不让ClaimNext另选其他父子；单次claim或单次拒绝，无C→P死锁 | Common＋System＋Owner；PG T2 | two_parents_same_owner_exact_single_claim覆盖同Tenant两父、同Owner四领取者；PG阻塞链释放后每个准确C仅一方领取，另两方冲突。 |
-| C2f | 错Tenant／module／type／source／父子摘要、缺父、非法deadline：失败关闭且零执行／零拒绝更新；不补造绑定，不借模块字符串授予权限 | System创建约束＋Owner入口＋Common；T1与PG T2 | 严格binding、唯一Owner及schema校验已接；非法身份／摘要／deadline的端到端拒绝组合待补。 |
-| C2g | attempt>0的恢复pending、残留lease／started_at、操作证据不完整：拒绝走未领取原语；已运行失联仍按自身围栏失败／核清，不重放 | Common＋Owner；T1与PG T2 | lifecycle/exact_pending_and_unstarted_termination拒绝恢复pending；Cleanup残留字段组合待补。 |
+| C2f | 错Tenant／module／type／source／父子摘要、缺父、非法deadline：失败关闭且零执行／零拒绝更新；不补造绑定，不借模块字符串授予权限 | System创建约束＋Owner入口＋Common；T1与PG T2 | Common invalid_binding 覆盖 11 种身份、父关联、摘要、来源及截止异常，父活跃／已关闭均失败且不改父子。System InvalidBinding 覆盖父摘要漂移、子摘要漂移、缺预期子，读取失败且协调事务无部分提交。 |
+| C2g | attempt>0的恢复pending、残留lease／started_at、操作证据不完整：拒绝走未领取原语；已运行失联仍按自身围栏失败／核清，不重放 | Common＋Owner；T1与PG T2 | pending_with_prior_operation_facts 用真实失租恢复验证 attempt>0 的 pending，并覆盖 started_at、耗时、三个租约字段、进度与不完整回执。领取与未启动拒绝均冲突，不生成未启动展示。各 Owner 的外部效果核清沿对应专项。 |
 | C2h | 未领取拒绝并发／重复／写失败：只有一次pending→failed，completed_at／安全原因原子；失败回滚，重复不改时间；无cleanup_receipt／假零统计／attempt1事件，观测namespace保留 | Common＋Owner；T1与PG T2 | concurrent_and_duplicate_unstarted_rejection及rejection_outer_rollback／rejection_sql_failure覆盖唯一拒绝、completed_at不变、观测保留、无回执／attempt事件和真实PG写失败回滚。 |
 | C2i | 父冻结缺项后Owner离线恢复／合法子迟到：Owner只拒本模块未领取项；已运行合法完成保留子事实，父结论／观察快照不变；GET零状态写入，父可读不授予子专业详情权 | System＋Owner；PG T2与安全读取T1 | AdmissionRace／ReadOnlySnapshot覆盖迟到不改父与只读；ClosureRollback核截止结论／父终态／审计原子回滚与重复关闭不变；跨Owner离线恢复T4待证。 |
 | C2j | Graph组合P→C→G→T/B；未领取拒绝不改G或业务表；已领取结果只C→G且不回P，父关闭不撤领域证据，最终清理不反锁构建E | Graph＋Common；扩既有Graph PG包／筛选，验证真实外键锁与回滚 | Graph runtime的parent_closed／unknown_effect／result_rollback复用于PG；P/C/G外键争用未齐。 |

@@ -160,7 +160,7 @@ Manager 源准备保持其正式授权链；本批 Transfer CDC 仅验证既有 
 
 | 顺序 | 事项／性质 | 具体交付与完成条件 |
 | --- | --- | --- |
-| P1a剩余 | Common／System父子细矩阵，测试工程 | C2b/c/e/h核心竞争／拒绝／回滚已补真实PG，System 50ms推测屏障已替换；见下方本轮记录。剩C2f非法绑定完整组合、C2g恢复pending／残留字段组合，以及C2d其余锁后截止／失租组合；Graph领域锁交错归P1b，不将已补核心用例计为全部细矩阵通过 |
+| P1a | Common／System 父子准入 PG | C2b/c/e/h 的竞争、拒绝与回滚见首轮记录。C2d/f/g 的公共锁等待、非法绑定及子执行残留事实见后续补测。Graph 专属锁交错归 P1b，各 Owner 的外部效果核清沿对应专项。 |
 | P1b | Graph清理与输入冻结，测试及按证据修复 | 补G2摘要回滚、G3成功先提交、G8输入／登记目标漂移、G9在途审核，以及C3/C4/C2j真实PG交错。C4当前代码核execute首尾候选一致，尚未定位原scan后候选漂移的完整反例；先验证上游生命周期围栏及原scan确认是否已足够，再决定修复，不将风险观察写成已复现漏洞 |
 | P2 | System／Monitor消费者状态矩阵，T3工程 | C5g/k/l补撤去父读取权、404／503、User／Tenant／execution切换、closed pending替换及矛盾／迟到响应；C5c/h补隐藏计数与完整页面语义。复用共享组件／请求失效能力，补C5e/j相应PG交错，不复制组件 |
 | 并行待授权 | Manager迟到writer真实验收 | runner与CI已就绪，按§8.44单独确认一次Hosted；同一原请求、原身份及原预算，核11项、控制恢复与零残留；不能先记完成 |
@@ -177,7 +177,11 @@ Manager 源准备保持其正式授权链；本批 Transfer CDC 仅验证既有 
 
 标准验证沿既有入口：`make test-common-postgres COMMON_POSTGRES_TEST_ARGS="--test execution-lifecycle"`、`make test-system-cleanup`、`make test-t2-ci-registration`；没有新Job或服务依赖，两个新增System主测试已加入必需PASS及其缺项／跳过拒绝反例。本地只使用Infra实际映射的addp_test，两个PG入口串行。
 
-首轮Common的多等待者屏障只认直接阻塞者而超时，后改为核验PG实际阻塞链；System首轮新断言误比较每次读取变化的observed_at，后改核全部持久事实。首轮日志保留，未据此改产品逻辑。本地最终：Common lifecycle及专业结果原子提交两个主测试通过，包含全部七个新增子项；System Cleanup八个主测试通过；两者均0SKIP。`make test-t2-ci-registration`的85项runner／选择反例、9项Manager入口反例及登记检查通过。仅修改测试和门禁断言，未运行包含其他会话变更的全工作区test-changed；同一 `839a4d6c0` 的上述两个Linux PG Job均已success并复核原日志，新增用例实际执行、0SKIP；平台登记及System Go T1的Linux Job仍排队，不记通过。这些结果不计全量模块／Hosted验收。Graph高级恢复保持暂缓。
+首轮Common的多等待者屏障只认直接阻塞者而超时，后改为核验PG实际阻塞链；System首轮新断言误比较每次读取变化的observed_at，后改核全部持久事实。首轮日志保留，未据此改产品逻辑。本地最终：Common lifecycle及专业结果原子提交两个主测试通过，包含全部七个新增子项；System Cleanup八个主测试通过；两者均0SKIP。`make test-t2-ci-registration`的85项runner／选择反例、9项Manager入口反例及登记检查通过。仅修改测试和门禁断言，未运行包含其他会话变更的全工作区test-changed；同一 `839a4d6c0` 的上述两个Linux PG Job均已success并复核原日志，新增用例实际执行、0SKIP；同源 [System Go T1](https://github.com/pampa0629/addp/actions/runs/42446889319/job/128627595778) 随后通过。同源 [Platform consistency](https://github.com/pampa0629/addp/actions/runs/42446889319/job/128627595947) 在 SQL 连接池 runner 的 Node 预检失败，未执行 T2 登记。独立提交 `76ed462fa` 修复该预检。含该修复的 `7c92e7c84` [Platform consistency](https://github.com/pampa0629/addp/actions/runs/42508155900/job/128815197630) 通过，原日志确认 T2 登记 85＋9 项实际执行。这些结果不计全量模块／Hosted验收。Graph高级恢复保持暂缓。
+
+2026-11-09 后续补测沿上述三个标准入口。Common 用真实 PostgreSQL 阻塞关系核验 P／C／通用 Owner 行锁，分别跨越请求截止或父租约过期，共六种交错。截止后提交未启动拒绝，临时失租时子记录保持原样。另有 11 种非法绑定各在父活跃和父关闭时取证，以及真实失租恢复与七种残留字段反例。System 使用已受理请求验证父摘要漂移、子摘要漂移和缺预期子均使只读快照及协调失败。持久父子记录、请求和终态审计保持原样，子异常触发的父领取随事务回滚。新增 System 主测试由标准入口强制核验 PASS。
+
+本地 Common lifecycle 分组通过上述 36 个末级用例及原专业结果原子提交。System Cleanup 通过 9 个主用例，含新增的 3 个绑定反例。两组 PostgreSQL 门禁均 0 SKIP。T2 登记 85＋9 项及登记检查通过。此次只补测试与门禁，未观察到需修改产品实现的失败。
 
 ## 七、确认范围与协作分工
 

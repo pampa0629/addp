@@ -1192,6 +1192,7 @@ class SystemCleanupPostgresRunnerTest(unittest.TestCase):
         "TestIntegrationPostgresCleanupIdempotence",
         "TestIntegrationPostgresCleanupCoordinatorRecovery",
         "TestIntegrationPostgresCleanupParentRecoveryAdmission",
+        "TestIntegrationPostgresCleanupInvalidBinding",
         "TestIntegrationPostgresCleanupClosureRollback",
         "TestIntegrationPostgresCleanupAdmissionRace",
         "TestIntegrationPostgresCleanupReadOnlySnapshot",

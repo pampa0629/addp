@@ -407,6 +407,84 @@ func TestIntegrationPostgresCleanupParentRecoveryAdmission(t *testing.T) {
 	}
 }
 
+func TestIntegrationPostgresCleanupInvalidBinding(t *testing.T) {
+	for _, tc := range []struct {
+		name, snapshotError, advanceError string
+	}{
+		{"parent_digest", "invalid cleanup parent binding", "cleanup request/parent mismatch"},
+		{"child_digest", "invalid cleanup child binding", "invalid cleanup child binding"},
+		{"missing_child", "accepted cleanup child is missing", "accepted cleanup child is missing"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := newCleanupPGFixture(t, time.Minute)
+			f.accept(t)
+			before := f.snapshot(t)
+			child := before.Children[0]
+			switch tc.name {
+			case "parent_digest", "child_digest":
+				row := before.Parent
+				if tc.name == "child_digest" {
+					row = child
+				}
+				// Each individual protocol is valid. Only the frozen binding
+				// between it and the accepted System request is incorrect.
+				input := before.Input
+				input.Deadline = input.Deadline.Add(time.Second)
+				if err := input.Seal(); err != nil {
+					t.Fatal(err)
+				}
+				raw, err := json.Marshal(input)
+				if err != nil {
+					t.Fatal(err)
+				}
+				row.ExecutionConfig["cleanup_request"] = string(raw)
+				if err := f.db.Model(&row).Update("execution_config", row.ExecutionConfig).Error; err != nil {
+					t.Fatal(err)
+				}
+			case "missing_child":
+				if err := f.db.Delete(&child).Error; err != nil {
+					t.Fatal(err)
+				}
+			}
+			var parent execution.TaskExecution
+			if err := f.db.Where("execution_id = ?", before.Parent.ExecutionID).First(&parent).Error; err != nil {
+				t.Fatal(err)
+			}
+			var children []execution.TaskExecution
+			readChildren := func(rows *[]execution.TaskExecution) {
+				t.Helper()
+				if err := f.db.Where("parent_execution_id = ?", parent.ExecutionID).Order("module").Find(rows).Error; err != nil {
+					t.Fatal(err)
+				}
+			}
+			readChildren(&children)
+			if _, err := f.coordinator.snapshot(f.ctx, f.input.RequestID, f.input.TenantID); err == nil || err.Error() != tc.snapshotError {
+				t.Fatalf("snapshot did not reject the expected binding: %v", err)
+			}
+			if err := f.coordinator.advance(f.ctx, parent.ExecutionID, "invalid-binding"); err == nil || err.Error() != tc.advanceError {
+				t.Fatalf("coordinator did not reach the expected binding check: %v", err)
+			}
+			var afterParent execution.TaskExecution
+			var afterRecord models.CleanupRequestRecord
+			var afterChildren []execution.TaskExecution
+			if err := f.db.Where("execution_id = ?", parent.ExecutionID).First(&afterParent).Error; err != nil {
+				t.Fatal(err)
+			}
+			if err := f.db.Where("request_id = ?", f.input.RequestID).First(&afterRecord).Error; err != nil {
+				t.Fatal(err)
+			}
+			readChildren(&afterChildren)
+			var terminalAudits int64
+			if err := f.db.Table(f.probe+".facts").Where("kind IN ?", []string{"cleanup.completed", "cleanup.failed"}).Count(&terminalAudits).Error; err != nil {
+				t.Fatal(err)
+			}
+			if !reflect.DeepEqual(parent, afterParent) || !reflect.DeepEqual(children, afterChildren) || !reflect.DeepEqual(before.Record, afterRecord) || terminalAudits != 0 {
+				t.Fatal("invalid binding left a parent attempt, child update, cutoff or terminal audit")
+			}
+		})
+	}
+}
+
 func TestIntegrationPostgresCleanupClosureRollback(t *testing.T) {
 	f := newCleanupPGFixture(t, 500*time.Millisecond)
 	f.accept(t)
