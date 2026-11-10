@@ -187,7 +187,7 @@ def test_load_spatial_nullable_route_is_independent_of_default_engine_and_enviro
 def test_load_broken_typed_file_fails_without_silent_reclassification(tmp_path, fmt):
     path = tmp_path / f'broken.{fmt}'
     path.write_bytes(b'not a dataset')
-    with pytest.raises((DataSourceError, pa.ArrowInvalid)):
+    with pytest.raises(RuntimeError if fmt == "gpkg" else pa.ArrowInvalid):
         _load_local(path)
     assert path.read_bytes() == b'not a dataset'
 
@@ -509,7 +509,7 @@ def test_load_spatial_geometry_identity_preserves_plain_nonspatial_table(tmp_pat
 @pytest.mark.parametrize("physical",[False,True])
 @pytest.mark.parametrize("problem",["duplicate","missing_marker","multiple_geometry","physical_mismatch","business_binary","wrong_request","empty_request"])
 def test_load_spatial_geometry_identity_rejects_ambiguous_or_conflicting_schema(monkeypatch,physical,problem):
-    import pyogrio,shapely
+    import shapely
     data={"geometry":pa.array(["business"],type=pa.string()),"payload":pa.array([b"not a geometry"],type=pa.binary())}
     shape=pa.field("shape",pa.binary(),metadata={b"ARROW:extension:name":b"geoarrow.wkb"})
     fields=[pa.field(n,a.type) for n,a in data.items()]+[shape]
@@ -524,16 +524,16 @@ def test_load_spatial_geometry_identity_rejects_ambiguous_or_conflicting_schema(
     elif problem=="wrong_request":request="payload"
     else:request=""
     table=pa.Table.from_arrays(values,schema=pa.schema(fields))
-    monkeypatch.setattr(pyogrio,"read_arrow",lambda *a,**kw:(meta,table))
+    monkeypatch.setattr(io_operators,"_read_spatial_arrow",lambda *a,**kw:(meta,table))
     with pytest.raises(ValueError):io_operators._read_file("file.fgb","fgb",request)
 
 
 @pytest.mark.parametrize("extension",[b"geoarrow.wkb",b"ogc.wkb"])
 def test_load_spatial_geometry_identity_geometry_marker_is_not_a_column_name_guess(monkeypatch,extension):
-    import pyogrio,shapely
+    import shapely
     table=pa.Table.from_arrays([pa.array([b"ordinary blob"]),pa.array(["business"]),pa.array([shapely.Point(1,2).wkb])],schema=pa.schema([
         pa.field("wkb_geometry",pa.binary()),pa.field("geometry",pa.string()),pa.field("real_shape",pa.binary(),metadata={b"ARROW:extension:name":extension})]))
-    monkeypatch.setattr(pyogrio,"read_arrow",lambda *a,**kw:({"crs":None,"geometry_name":"real_shape","geometry_type":"Point"},table))
+    monkeypatch.setattr(io_operators,"_read_spatial_arrow",lambda *a,**kw:({"crs":None,"geometry_name":"real_shape","geometry_type":"Point"},table))
     loaded=io_operators._read_file("file.fgb","fgb")
     assert loaded.geometry.name=="real_shape" and loaded["geometry"].tolist()==["business"] and loaded["wkb_geometry"].tolist()==[b"ordinary blob"]
     assert loaded.geometry.iloc[0].wkt=="POINT (1 2)" and loaded.crs is None
@@ -638,9 +638,9 @@ def test_wkt_batch_native_parser_exception_is_execution_failure(monkeypatch):
 
 
 def test_load_spatial_geometry_identity_invalid_wkb_fails_without_ignoring(monkeypatch):
-    import pyogrio,shapely
+    import shapely
     table=pa.Table.from_arrays([pa.array([b"invalid WKB"])],schema=pa.schema([pa.field("shape",pa.binary(),metadata={b"ARROW:extension:name":b"geoarrow.wkb"})]))
-    monkeypatch.setattr(pyogrio,"read_arrow",lambda *a,**kw:({"geometry_name":"shape","geometry_type":"Point","crs":None},table))
+    monkeypatch.setattr(io_operators,"_read_spatial_arrow",lambda *a,**kw:({"geometry_name":"shape","geometry_type":"Point","crs":None},table))
     with pytest.raises(shapely.errors.GEOSException):io_operators._read_file("file.fgb","fgb")
     assert table.column("shape").to_pylist()==[b"invalid WKB"]
 
@@ -736,12 +736,57 @@ def test_load_spatial_geometry_identity_sql_text_save_encodes_only_active_geomet
 
 
 
+@pytest.mark.parametrize(("suffix", "drivers"), [
+    ("geojson", ["GeoJSON"]),
+    ("shp", ["ESRI Shapefile"]),
+    ("kml", ["KML", "LIBKML"]),
+    ("gml", ["GML"]),
+    ("fgb", ["FlatGeobuf"]),
+])
+def test_load_rejects_geopackage_under_another_vector_format(tmp_path, monkeypatch, suffix, drivers):
+    path = tmp_path / "source.gpkg"
+    _native_geometry_identity_source(path, "gpkg")
+    disguised = path.with_suffix(f".{suffix}")
+    path.rename(disguised)
+    before = disguised.read_bytes()
+    original_open = io_operators.gdal.OpenEx
+    opens = []
+
+    def open_dataset(filename, flags, *, allowed_drivers):
+        opens.append((filename, allowed_drivers))
+        return original_open(filename, flags, allowed_drivers=allowed_drivers)
+
+    monkeypatch.setattr(io_operators.gdal, "OpenEx", open_dataset)
+    with pytest.raises(RuntimeError):
+        _load_local(disguised)
+    assert opens == [(str(disguised), drivers)]
+    assert disguised.read_bytes() == before
+    assert list(tmp_path.iterdir()) == [disguised]
+
+
+def test_load_uses_one_driver_constrained_dataset_for_geopackage(tmp_path, monkeypatch):
+    path = tmp_path / "source.gpkg"
+    _native_geometry_identity_source(path, "gpkg")
+    original_open = io_operators.gdal.OpenEx
+    opens = []
+
+    def open_dataset(filename, flags, *, allowed_drivers):
+        opens.append((filename, flags, allowed_drivers))
+        return original_open(filename, flags, allowed_drivers=allowed_drivers)
+
+    monkeypatch.setattr(io_operators.gdal, "OpenEx", open_dataset)
+    frame = _load_local(path)
+    assert opens == [(str(path), io_operators.gdal.OF_VECTOR | io_operators.gdal.OF_READONLY, ["GPKG"])]
+    assert frame.geometry.name == "parcel_shape"
+    assert frame.crs.to_epsg() == 4326
+
+
 def test_load_spatial_geometry_identity_read_failure_has_no_alternate_reader(monkeypatch):
     import pyogrio
     calls=[]
     def read(*a,**kw):calls.append(1);raise RuntimeError("original Arrow read failure")
     def forbidden(*a,**kw):raise AssertionError("alternate spatial reader is forbidden")
-    monkeypatch.setattr(pyogrio,"read_arrow",read)
+    monkeypatch.setattr(io_operators,"_read_spatial_arrow",read)
     monkeypatch.setattr(pyogrio,"read_dataframe",forbidden)
     monkeypatch.setattr(gpd,"read_file",forbidden)
     with pytest.raises(RuntimeError,match="original Arrow read failure"):io_operators._read_file("file.fgb","fgb")

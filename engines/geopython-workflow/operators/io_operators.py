@@ -7,9 +7,7 @@ I/O 算子模块
 
 import logging
 import os
-import sqlite3
 import tempfile
-from contextlib import closing
 from pathlib import Path
 import pandas as pd
 import geopandas as gpd
@@ -20,6 +18,7 @@ import pyarrow.parquet as parquet
 from typing import Dict, Any
 from bson import Binary, Decimal128, ObjectId
 from pymongo import MongoClient
+from osgeo import gdal, ogr
 from sqlalchemy import create_engine, text
 from .base import (
     OperatorType,
@@ -36,7 +35,15 @@ logger = logging.getLogger(__name__)
 
 # ==================== 文件读写辅助函数 ====================
 
-_SPATIAL_FORMATS = {'shp', 'geojson', 'gpkg', 'kml', 'gml', 'fgb'}
+_SPATIAL_DRIVERS = {
+    'shp': ['ESRI Shapefile'],
+    'geojson': ['GeoJSON'],
+    'gpkg': ['GPKG'],
+    'kml': ['KML', 'LIBKML'],
+    'gml': ['GML'],
+    'fgb': ['FlatGeobuf'],
+}
+_SPATIAL_FORMATS = _SPATIAL_DRIVERS.keys()
 
 _NULLABLE_ARROW_TYPES = {
     pa.int8(): pd.Int8Dtype(), pa.int16(): pd.Int16Dtype(),
@@ -53,29 +60,56 @@ def _map_loopback_host(host: str) -> str:
         return shared_host
     return host
 
-def _geopackage_crs(path: str, layer: str, geometry: str, reader_crs):
-    """Use the registered geometry's SRS identity, not synthetic driver WKT."""
-    uri = Path(path).resolve().as_uri() + "?mode=ro"
-    with closing(sqlite3.connect(uri, uri=True)) as db:
-        registered = db.execute(
-            "SELECT srs_id FROM gpkg_geometry_columns WHERE table_name=? AND column_name=?",
-            (layer, geometry),
-        ).fetchone()
-    if registered is None:
+def _geopackage_crs(dataset, layer, geometry, reader_crs):
+    """Read the SRS registration from the same GDAL dataset as the geometry."""
+    layer_name = "'" + layer.replace("'", "''") + "'"
+    column_name = "'" + geometry.replace("'", "''") + "'"
+    result = dataset.ExecuteSQL(
+        "SELECT srs_id FROM gpkg_geometry_columns "
+        f"WHERE table_name={layer_name} AND column_name={column_name}",
+        dialect="SQLITE",
+    )
+    if result is None:
         raise ValueError("GeoPackage geometry column is not registered for the selected layer")
-    return None if registered[0] in (0, -1) else reader_crs
+    try:
+        row = result.GetNextFeature()
+        if row is None:
+            raise ValueError("GeoPackage geometry column is not registered for the selected layer")
+        return None if row.GetField("srs_id") in (0, -1) else reader_crs
+    finally:
+        dataset.ReleaseResultSet(result)
+
+
+def _read_spatial_arrow(full_path, fmt):
+    dataset = gdal.OpenEx(
+        full_path, gdal.OF_VECTOR | gdal.OF_READONLY,
+        allowed_drivers=_SPATIAL_DRIVERS[fmt],
+    )
+    if dataset is None:
+        raise RuntimeError("Spatial file is not recognized by the expected format driver")
+    try:
+        layer = dataset.GetLayer(0)
+        if layer is None:
+            raise ValueError("Spatial file has no readable layer")
+        physical_name = layer.GetGeometryColumn()
+        srs = layer.GetSpatialRef()
+        crs = srs.ExportToWkt() if srs is not None else None
+        with layer.GetArrowStreamAsPyArrow(["INCLUDE_FID=NO"]) as stream:
+            schema = pa.schema(list(stream.schema))
+            table = pa.Table.from_batches(
+                [pa.RecordBatch.from_struct_array(batch) for batch in stream], schema=schema,
+            )
+        if fmt == 'gpkg' and physical_name:
+            crs = _geopackage_crs(dataset, layer.GetName(), physical_name, crs)
+        return {"crs": crs, "geometry_name": physical_name, "geometry_type": layer.GetGeomType()}, table
+    finally:
+        dataset = None
 
 
 def _read_file(full_path: str, fmt: str, geom_column: str = None):
     """根据格式读取文件，返回 DataFrame 或 GeoDataFrame"""
     if fmt in _SPATIAL_FORMATS:
-        layer = None
-        if fmt == 'gpkg':
-            layers = pyogrio.list_layers(full_path)
-            if not len(layers):
-                raise ValueError("GeoPackage has no readable layer")
-            layer = layers[0, 0]
-        metadata, table = pyogrio.read_arrow(full_path, layer=layer)
+        metadata, table = _read_spatial_arrow(full_path, fmt)
         if len(set(table.column_names)) != len(table.column_names):
             raise ValueError("spatial file requires unique field names")
         if geom_column is not None and (not isinstance(geom_column, str) or not geom_column.strip()):
@@ -84,7 +118,7 @@ def _read_file(full_path: str, fmt: str, geom_column: str = None):
                            if (field.metadata or {}).get(b'ARROW:extension:name') in (b'geoarrow.wkb', b'ogc.wkb')]
         physical_name = metadata.get('geometry_name')
         if not geometry_fields:
-            if physical_name or metadata.get('geometry_type') is not None or geom_column is not None:
+            if physical_name or metadata.get('geometry_type') not in (None, ogr.wkbNone) or geom_column is not None:
                 raise ValueError("spatial file geometry declaration is missing from Arrow schema")
             return table.to_pandas(types_mapper=_NULLABLE_ARROW_TYPES.get)
         if len(geometry_fields) != 1:
@@ -99,9 +133,6 @@ def _read_file(full_path: str, fmt: str, geom_column: str = None):
             raise ValueError("geometry field name conflicts with a source business field")
 
         crs = metadata.get('crs')
-        if fmt == 'gpkg':
-            crs = _geopackage_crs(full_path, layer, geometry_field, crs)
-
         # Bypass read_dataframe's forced df['geometry'] assignment. Decode only
         # the tagged geometry field, preserving every scalar attribute and name.
         frame = table.to_pandas(types_mapper=_NULLABLE_ARROW_TYPES.get)
