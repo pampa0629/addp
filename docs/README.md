@@ -73,8 +73,8 @@
 - [Online 专用 Runner 首次验收待办](next/ADDP统一测试与Online验收体系方案.md)跟踪专用 self-hosted Runner 的部署准备和[尚缺实机报告的场景](next/ADDP统一测试与Online验收体系方案.md#三待取得专用环境报告的范围)。已迁入 GitHub Hosted 的场景按各自的隔离 profile 运行，入口见[Online 场景索引](spec/addp测试与验收规范.md#online-场景索引)。
 - [GitHub 外部治理待办](next/ADDP持续集成体系改进专题.md)跟踪 Actions 权限、main 规则集、Runner 分组和 Environment 保护等外部设置核查。专用 Runner 的部署和验收缺口由 [Online 待办](next/ADDP统一测试与Online验收体系方案.md#三待取得专用环境报告的范围)统一跟踪。
 - 模块启动、就绪与注册的现行规则见[新模块开发指南](spec/addp新模块开发指南.md)。[模块与引擎注册治理后续验收](next/ADDP模块与引擎注册治理专题.md#剩余证据)只跟踪两项尚缺专用 Runner 实机报告的场景：[模块注册恢复](spec/testing/scenarios/部署与执行恢复.md#module-registry-recovery)和[消费方与引擎恢复](spec/testing/scenarios/部署与执行恢复.md#consumer-engine-recovery)。
-- [模块服务运行日志规范](spec/addp模块服务运行日志规范.md)
-- [模块服务运行日志验收与后续事项](next/ADDP模块服务运行日志设计.md)
+- [模块服务运行日志规范](spec/addp模块服务运行日志规范.md)维护实例身份、日志输出与保留、可信来源、正文查询与授权，以及链路告警和通知规则。
+- [模块服务运行日志验收与后续事项](next/ADDP模块服务运行日志设计.md)记录首版实现的[历史验收证据](next/ADDP模块服务运行日志设计.md#三已留存的验收证据)，并列出异常退出完整链路、自然保留周期、多节点恢复和生产容量等[待验收范围](next/ADDP模块服务运行日志设计.md#四剩余验收与范围准入)。
 - [平台运行观测规范](spec/addp平台运行观测规范.md)
 - [平台运行监控后续事项](next/ADDP平台运行监控与可观测性设计.md)
 - [Manager 前端浏览器回归测试专题](next/Manager前端浏览器回归测试专题.md)
