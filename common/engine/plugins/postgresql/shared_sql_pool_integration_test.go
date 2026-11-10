@@ -3,6 +3,7 @@ package postgresql
 import (
 	"context"
 	"errors"
+	"fmt"
 	"testing"
 	"time"
 
@@ -10,7 +11,7 @@ import (
 )
 
 func TestIntegrationPostgresSharedSQLPool(t *testing.T) {
-	db, provider, info := openPostgresPrepareIntegration(t, false)
+	db, provider, info := openPostgresPrepareIntegration(t, true)
 	t.Cleanup(func() { _ = db.Close() })
 	const engineID = 8410
 	t.Cleanup(func() { _ = plugin.ClosePool(engineID) })
@@ -82,6 +83,25 @@ func TestIntegrationPostgresSharedSQLPool(t *testing.T) {
 		if _, err := prepared.Execute(blocked); !errors.Is(err, context.DeadlineExceeded) ||
 			plugin.QueryErrorCodeOf(err) != plugin.QueryErrorCodeSQLExecutionTimeout {
 			t.Fatalf("native query deadline lost its phase: %v (code %q)", err, plugin.QueryErrorCodeOf(err))
+		}
+	})
+	t.Run("catalog spatial facts after pool replacement", func(t *testing.T) {
+		schema := fmt.Sprintf("pool_spatial_%d", time.Now().UnixNano())
+		createPostgresPrepareBaseTable(t, ctx, db, schema, "pool_sample", "id integer PRIMARY KEY, geom geometry(Point, 4326)")
+		t.Cleanup(func() {
+			if _, err := db.ExecContext(context.Background(), "DROP SCHEMA "+schema+" CASCADE"); err != nil {
+				t.Errorf("drop catalog fixture: %v", err)
+			}
+		})
+		ctx := plugin.WithPoolEngineVersion(ctx, engineID, 2)
+		path := plugin.TabularItemPath(engineID, "schema", schema, "pool_sample")
+		facts, err := provider.DescribeEngineCatalogFacts(ctx, next, path, plugin.EngineCatalogFactsOptions{IncludeSpatialFacts: true})
+		if err != nil {
+			t.Fatal(err)
+		}
+		spatial := plugin.EngineCatalogFactsSpatialInfo(facts)
+		if spatial == nil || spatial.PrimaryGeometryColumn != "geom" || spatial.PrimarySRIDValue() != 4326 || spatial.PrimaryCRSRef() != "EPSG:4326" {
+			t.Fatalf("PostgreSQL catalog lost spatial facts: %+v", spatial)
 		}
 	})
 	if err := native.PingContext(ctx); err == nil {

@@ -31,11 +31,8 @@ type mysqlCRSRow struct {
 }
 
 func (p *MySQLPlugin) describeSpatialFacts(ctx context.Context, db *gorm.DB, database, table string, _ []datatype.FieldInfo) (*datatype.SpatialInfo, error) {
-	sqlDB, err := db.DB()
-	if err != nil {
-		return nil, fmt.Errorf("get mysql spatial facts connection: %w", err)
-	}
-	columnRows, err := sqlDB.QueryContext(ctx, `
+	connection := db.Statement.ConnPool
+	columnRows, err := connection.QueryContext(ctx, `
 		SELECT column_name AS name, data_type, srs_id, (is_nullable = 'YES') AS nullable
 		FROM information_schema.columns
 		WHERE table_schema = ? AND table_name = ?
@@ -61,7 +58,7 @@ func (p *MySQLPlugin) describeSpatialFacts(ctx context.Context, db *gorm.DB, dat
 		return nil, nil
 	}
 
-	indexRows, err := sqlDB.QueryContext(ctx, `
+	indexRows, err := connection.QueryContext(ctx, `
 		SELECT index_name AS name, column_name
 		FROM information_schema.statistics
 		WHERE table_schema = ? AND table_name = ? AND index_type = 'SPATIAL'
@@ -92,7 +89,7 @@ func (p *MySQLPlugin) describeSpatialFacts(ctx context.Context, db *gorm.DB, dat
 		if _, exists := definitions[srid]; exists {
 			continue
 		}
-		definition, err := queryMySQLCRSDefinition(ctx, sqlDB, srid)
+		definition, err := queryMySQLCRSDefinition(ctx, connection, srid)
 		if err != nil {
 			return nil, err
 		}
@@ -103,7 +100,7 @@ func (p *MySQLPlugin) describeSpatialFacts(ctx context.Context, db *gorm.DB, dat
 	return buildMySQLSpatialInfo(columns, indexes, definitions), nil
 }
 
-func queryMySQLCRSDefinition(ctx context.Context, db *sql.DB, srid int) (*datatype.CRSDefinition, error) {
+func queryMySQLCRSDefinition(ctx context.Context, db gorm.ConnPool, srid int) (*datatype.CRSDefinition, error) {
 	var row mysqlCRSRow
 	err := db.QueryRowContext(ctx, `
 		SELECT srs_id, organization, organization_coordsys_id AS organization_coordinate_id, definition

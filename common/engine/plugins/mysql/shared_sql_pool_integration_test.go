@@ -97,6 +97,26 @@ func TestIntegrationMySQLSharedSQLPool(t *testing.T) {
 	if err != nil || result == nil || len(result.Rows) != 1 || result.Rows[0]["id"] != int64(42) {
 		t.Fatalf("query did not use the replacement pool: %+v, %v", result, err)
 	}
+	t.Run("catalog facts after pool replacement", func(t *testing.T) {
+		ctx := plugin.WithPoolEngineVersion(ctx, engineID, 2)
+		facts, err := provider.DescribeEngineCatalogFacts(ctx, next, path, plugin.EngineCatalogFactsOptions{IncludeSpatialFacts: true})
+		if err != nil || facts == nil || facts.Table == nil || len(facts.Table.Fields) != 1 ||
+			facts.Table.Fields[0].Name != "id" || plugin.EngineCatalogFactsSpatialInfo(facts) != nil {
+			t.Fatalf("ordinary MySQL catalog facts failed: %+v, %v", facts, err)
+		}
+		if _, err := db.ExecContext(ctx, "CREATE TABLE "+mysqlDialect().QualifiedTable(database, "pool_spatial")+" (geom POINT SRID 4326 NOT NULL, SPATIAL INDEX idx_geom (geom)) ENGINE=InnoDB"); err != nil {
+			t.Fatal(err)
+		}
+		path := plugin.TabularItemPath(engineID, "database", database, "pool_spatial")
+		facts, err = provider.DescribeEngineCatalogFacts(ctx, next, path, plugin.EngineCatalogFactsOptions{IncludeSpatialFacts: true})
+		if err != nil {
+			t.Fatal(err)
+		}
+		spatial := plugin.EngineCatalogFactsSpatialInfo(facts)
+		if spatial == nil || spatial.PrimaryCRSRef() != "EPSG:4326" || spatial.IndexName != "idx_geom" {
+			t.Fatalf("MySQL catalog lost spatial facts: %+v", spatial)
+		}
+	})
 	t.Run("bounded native SQL", func(t *testing.T) {
 		blocked, cancel := context.WithTimeout(ctx, 250*time.Millisecond)
 		defer cancel()

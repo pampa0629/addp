@@ -177,6 +177,9 @@ func DescribeTabularCatalogFacts(ctx context.Context, callbacks TabularCatalogCa
 		err := db.WithContext(ctx).Connection(func(conn *gorm.DB) error {
 			var err error
 			facts, err = describeTabularCatalogFacts(ctx, conn, callbacks, path, segments, opts)
+			if err == nil {
+				err = ctx.Err()
+			}
 			return SQLExecutionError(err)
 		})
 		return facts, sqlTimeoutError(err, QueryErrorCodeConnectionAcquisitionTimeout)

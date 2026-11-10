@@ -17,35 +17,32 @@ func (p *PostgreSQLPlugin) describeSpatialFacts(ctx context.Context, db *gorm.DB
 	if spatialInfo == nil || spatialInfo.PrimaryGeometryColumn == "" {
 		return nil, nil
 	}
-	sqlDB, err := db.DB()
-	if err != nil {
-		return nil, err
-	}
+	connection := db.Statement.ConnPool
 
 	primary := spatialInfo.PrimaryGeometry()
 	if primary == nil || primary.Name == "" {
 		return spatialInfo, nil
 	}
 	if primary.SRID == nil {
-		if srid, err := queryPostgresSpatialSRID(ctx, sqlDB, schema, table, primary.Name); err == nil && srid > 0 {
+		if srid, err := queryPostgresSpatialSRID(ctx, connection, schema, table, primary.Name); err == nil && srid > 0 {
 			primary.SRID = &srid
 		}
 	}
 	if primary.SRID != nil {
-		if definition, err := queryPostgresCRSDefinition(ctx, sqlDB, *primary.SRID); err == nil && definition != nil {
+		if definition, err := queryPostgresCRSDefinition(ctx, connection, *primary.SRID); err == nil && definition != nil {
 			primary.CRSRef = definition.ID
 			spatialInfo.CRSDefinitions = []datatype.CRSDefinition{*definition}
 		}
 	}
 	if primary.GeometryType == "" {
-		if geometryType, err := queryPostgresGeometryType(ctx, sqlDB, schema, table, primary.Name); err == nil {
+		if geometryType, err := queryPostgresGeometryType(ctx, connection, schema, table, primary.Name); err == nil {
 			primary.GeometryType = geometryType
 		}
 	}
-	if extent, err := queryPostgresSpatialExtent(ctx, sqlDB, schema, table, primary.Name); err == nil {
+	if extent, err := queryPostgresSpatialExtent(ctx, connection, schema, table, primary.Name); err == nil {
 		spatialInfo.Extent = extent
 	}
-	hasIndex, indexName, err := queryPostgresSpatialIndex(ctx, sqlDB, schema, table, primary.Name)
+	hasIndex, indexName, err := queryPostgresSpatialIndex(ctx, connection, schema, table, primary.Name)
 	if err == nil {
 		spatialInfo.HasSpatialIndex = &hasIndex
 		spatialInfo.IndexName = indexName
@@ -53,7 +50,7 @@ func (p *PostgreSQLPlugin) describeSpatialFacts(ctx context.Context, db *gorm.DB
 	return spatialInfo, nil
 }
 
-func queryPostgresSpatialSRID(ctx context.Context, db *sql.DB, schema, table, column string) (int, error) {
+func queryPostgresSpatialSRID(ctx context.Context, db postgresCatalogQuerier, schema, table, column string) (int, error) {
 	var srid int
 	err := db.QueryRowContext(ctx, `SELECT Find_SRID($1, $2, $3)`, schema, table, column).Scan(&srid)
 	if err != nil {
@@ -62,7 +59,7 @@ func queryPostgresSpatialSRID(ctx context.Context, db *sql.DB, schema, table, co
 	return srid, nil
 }
 
-func queryPostgresCRSDefinition(ctx context.Context, db *sql.DB, srid int) (*datatype.CRSDefinition, error) {
+func queryPostgresCRSDefinition(ctx context.Context, db postgresCatalogQuerier, srid int) (*datatype.CRSDefinition, error) {
 	if srid <= 0 {
 		return nil, nil
 	}
@@ -106,7 +103,7 @@ func queryPostgresCRSDefinition(ctx context.Context, db *sql.DB, srid int) (*dat
 	}, nil
 }
 
-func queryPostgresGeometryType(ctx context.Context, db *sql.DB, schema, table, column string) (string, error) {
+func queryPostgresGeometryType(ctx context.Context, db postgresCatalogQuerier, schema, table, column string) (string, error) {
 	dialect := commonquery.ForDialect("postgresql")
 	query := fmt.Sprintf(`
 		SELECT DISTINCT ST_GeometryType(%s) AS geometry_type
@@ -122,7 +119,7 @@ func queryPostgresGeometryType(ctx context.Context, db *sql.DB, schema, table, c
 	return strings.TrimPrefix(strings.TrimSpace(geometryType), "ST_"), nil
 }
 
-func queryPostgresSpatialExtent(ctx context.Context, db *sql.DB, schema, table, column string) (*datatype.BoundingBox, error) {
+func queryPostgresSpatialExtent(ctx context.Context, db postgresCatalogQuerier, schema, table, column string) (*datatype.BoundingBox, error) {
 	query := postgresSpatialExtentQuery(schema, table, column)
 
 	queryCtx, cancel := context.WithTimeout(ctx, 5*time.Minute)
@@ -156,7 +153,7 @@ func postgresSpatialExtentQuery(schema, table, column string) string {
 	`, quotedColumn, dialect.QualifiedTable(schema, table), quotedColumn)
 }
 
-func queryPostgresSpatialIndex(ctx context.Context, db *sql.DB, schema, table, column string) (bool, string, error) {
+func queryPostgresSpatialIndex(ctx context.Context, db postgresCatalogQuerier, schema, table, column string) (bool, string, error) {
 	var indexName string
 	err := db.QueryRowContext(ctx, `
 		SELECT indexname
