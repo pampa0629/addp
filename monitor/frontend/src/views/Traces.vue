@@ -236,10 +236,10 @@ onUnmounted(() => { traceInput.dispose(); requests.invalidate(); moduleRequests.
 }
 
 header, .filters, .trace-window { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
-.filters > .el-input, .filters > .el-select { width: 230px; max-width: 100%; }
+.filters > .el-input, .filters > .el-select { width: 195px; max-width: 100%; }
 .trace-window { min-width: 0; max-width: 100%; }
-.trace-window > .el-select { width: 145px; max-width: 100%; }
-.trace-window > .el-date-editor { width: 255px; max-width: 100%; }
+.trace-window > .el-select { width: 138px; max-width: 100%; }
+.trace-window > .el-date-editor { width: 212px; max-width: 100%; }
 .window-hint { color: var(--addp-text-secondary); font-size: 13px; }
 
 @media (max-width: 700px) {
