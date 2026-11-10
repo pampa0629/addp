@@ -21,6 +21,7 @@ type privatePublicationRecord struct {
 	PreparationObserved bool                               `json:"preparation_observed"`
 	ProviderState       []byte                             `json:"provider_state,omitempty"`
 	DispatchReleasedAt  *time.Time                         `json:"dispatch_released_at,omitempty"`
+	Outcome             *plugin.NewFilePublicationOutcome  `json:"outcome,omitempty"`
 }
 
 func privateFilePublication(row *models.FileExecution) (*privatePublicationRecord, error) {
@@ -39,7 +40,15 @@ func privateFilePublication(row *models.FileExecution) (*privatePublicationRecor
 		(digest != "" && (len(record.ProviderState) == 0 || digest != providerPreparationDigest(record.ProviderState))) {
 		return nil, commonapi.ErrConflict
 	}
+	if record.Outcome != nil && (record.DispatchReleasedAt == nil ||
+		record.Outcome.State == plugin.NewFileUnknown || record.Outcome.Validate(record.prepared()) != nil) {
+		return nil, commonapi.ErrConflict
+	}
 	return &record, nil
+}
+
+func (r *privatePublicationRecord) prepared() plugin.PreparedNewFile {
+	return plugin.PreparedNewFile{NewFilePublicationRequest: r.Facts.Request, ProviderState: r.ProviderState}
 }
 
 func providerPreparationDigest(state []byte) string {
@@ -155,7 +164,8 @@ func (r *FileExecutionRepository) ClaimPrivatePublicationDispatch(ctx context.Co
 		if changed.RowsAffected != 1 {
 			return commonapi.ErrConflict
 		}
-		prepared = &plugin.PreparedNewFile{NewFilePublicationRequest: record.Facts.Request, ProviderState: record.ProviderState}
+		value := record.prepared()
+		prepared = &value
 		return nil
 	})
 	if err != nil {
@@ -172,6 +182,7 @@ type PrivateFilePublicationRecovery struct {
 	Prepared          plugin.PreparedNewFile
 	PreparationDigest string
 	DispatchState     plugin.NewFilePublicationState
+	Outcome           *plugin.NewFilePublicationOutcome
 }
 
 func (r *FileExecutionRepository) ReadPrivatePublication(ctx context.Context, tenant uint, executionID string) (*PrivateFilePublicationRecovery, error) {
@@ -194,9 +205,53 @@ func (r *FileExecutionRepository) ReadPrivatePublication(ctx context.Context, te
 	if record.DispatchReleasedAt != nil {
 		state = plugin.NewFileUnknown
 	}
+	if record.Outcome != nil {
+		state = record.Outcome.State
+	}
 	return &PrivateFilePublicationRecovery{
 		Issued: issued, ApprovalID: record.Facts.ApprovalID, PreparationDigest: record.Facts.PreparationDigest,
-		Prepared:      plugin.PreparedNewFile{NewFilePublicationRequest: record.Facts.Request, ProviderState: record.ProviderState},
-		DispatchState: state,
+		Prepared: record.prepared(), DispatchState: state, Outcome: record.Outcome,
 	}, nil
+}
+
+// RecordPrivatePublicationOutcome keeps the exact original Provider evidence.
+// Unknown is already durable in the dispatch claim and cannot authorize cleanup.
+func (r *FileExecutionRepository) RecordPrivatePublicationOutcome(ctx context.Context, lease execution.Lease, prepared plugin.PreparedNewFile, outcome plugin.NewFilePublicationOutcome) error {
+	return r.updatePrivatePublicationOutcome(ctx, lease, prepared, func(record *privatePublicationRecord) error {
+		if record.Outcome != nil || outcome.State == plugin.NewFileUnknown || outcome.Validate(prepared) != nil {
+			return commonapi.ErrConflict
+		}
+		record.Outcome = &outcome
+		return nil
+	})
+}
+
+func (r *FileExecutionRepository) MarkPrivatePublicationCleaned(ctx context.Context, lease execution.Lease, prepared plugin.PreparedNewFile) error {
+	return r.updatePrivatePublicationOutcome(ctx, lease, prepared, func(record *privatePublicationRecord) error {
+		if record.Outcome == nil || !record.Outcome.CleanupPending {
+			return commonapi.ErrConflict
+		}
+		record.Outcome.CleanupPending = false
+		return nil
+	})
+}
+
+func (r *FileExecutionRepository) updatePrivatePublicationOutcome(ctx context.Context, lease execution.Lease, prepared plugin.PreparedNewFile, change func(*privatePublicationRecord) error) error {
+	return r.withPrivateFileLease(ctx, lease, func(tx *gorm.DB, row *models.FileExecution, _ client.IssuedDevelopFileAuthorization) error {
+		record, err := privateFilePublication(row)
+		if err != nil {
+			return err
+		}
+		if record.DispatchReleasedAt == nil || !reflect.DeepEqual(record.prepared(), prepared) {
+			return commonapi.ErrConflict
+		}
+		if err := change(record); err != nil {
+			return err
+		}
+		raw, err := json.Marshal(record)
+		if err != nil {
+			return err
+		}
+		return tx.Model(row).Updates(map[string]any{"publication_json": raw, "version": row.Version + 1}).Error
+	})
 }

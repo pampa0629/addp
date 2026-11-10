@@ -199,4 +199,39 @@ func runPrivatePublicationCase(t *testing.T, db *gorm.DB, repo *FileExecutionRep
 		t.Fatal("dispatch changed the trusted Owner projection", err)
 	}
 
+	if err := repo.MarkPrivatePublicationCleaned(ctx, *lease, *prepared); err == nil {
+		t.Fatal("unknown publication was marked clean")
+	}
+	outcome := plugin.NewFilePublicationOutcome{State: plugin.NewFilePublished, CleanupPending: true,
+		Evidence: &plugin.ContentWriteEvidence{Target: expected.Target, Disposition: "created", SizeBytes: expected.SizeBytes, Committed: true}}
+	wrongEvidence := outcome
+	wrongEvidence.Evidence = &plugin.ContentWriteEvidence{Target: wrong.Target, Disposition: "created", SizeBytes: expected.SizeBytes, Committed: true}
+	if err := repo.RecordPrivatePublicationOutcome(ctx, *lease, *prepared, wrongEvidence); err == nil {
+		t.Fatal("outcome for another target was accepted")
+	}
+	if err := repo.RecordPrivatePublicationOutcome(ctx, otherLease, *prepared, outcome); err == nil {
+		t.Fatal("wrong lease recorded outcome")
+	}
+	if err := repo.RecordPrivatePublicationOutcome(ctx, *lease, *prepared, outcome); err != nil {
+		t.Fatal(err)
+	}
+	if err := repo.RecordPrivatePublicationOutcome(ctx, *lease, *prepared, outcome); err == nil {
+		t.Fatal("original outcome was replaced")
+	}
+	if err := repo.MarkPrivatePublicationCleaned(ctx, *lease, wrong); err == nil {
+		t.Fatal("foreign preparation marked clean")
+	}
+	if err := repo.MarkPrivatePublicationCleaned(ctx, *lease, *prepared); err != nil {
+		t.Fatal(err)
+	}
+	final, err := repo.ReadPrivatePublication(ctx, 7, item.ExecutionID)
+	outcome.CleanupPending = false
+	if err != nil || final.DispatchState != plugin.NewFilePublished || !reflect.DeepEqual(final.Outcome, &outcome) {
+		t.Fatal("outcome and cleanup state did not survive the original record", err)
+	}
+	after, err = repo.Read(ctx, 7, item.ExecutionID)
+	if err != nil || !reflect.DeepEqual(after, facts) {
+		t.Fatal("private outcome changed the trusted Owner projection", err)
+	}
+
 }

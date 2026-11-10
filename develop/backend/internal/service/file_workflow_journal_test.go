@@ -76,7 +76,7 @@ func privateFileWorkerFixture(t *testing.T, save bool) (*gorm.DB, *repository.Fi
 	db, repo, item, _, issued, base := privateFilePendingFixture(t, save)
 	approval := ""
 	if save {
-		approval = "81"
+		approval = "caf37625-52f9-429f-861b-5f8c45ec8938"
 	}
 	if err := repo.ApplyAdmission(t.Context(), 3, item.ExecutionID, client.DevelopFileAdmissionObservation{ApprovalID: approval, AuthorizationID: issued.Authorization.ID, ExecutionID: item.ExecutionID, ExpectedAttempt: 1, ScopeDigest: issued.ScopeDigest, State: "ready", ObservedAt: time.Now(), ExpiresAt: time.Now().Add(time.Minute)}); err != nil {
 		t.Fatal(err)

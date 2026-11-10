@@ -31,6 +31,7 @@ type privateFileWorkflowExecutor struct {
 	instanceID    string
 	authority     func(uint) fileSourceAuthority
 	admission     func(uint) fileAdmissionAuthority
+	publication   func(uint) filePublicationAuthority
 	provider      fileSourceProvider
 	endpoint      func(context.Context, uint, uint) (plugin.ConnectionInfo, error)
 	credential    func(context.Context, uint) (string, error)
@@ -46,6 +47,7 @@ func newPrivateFileWorkflowExecutor(repo *repository.FileExecutionRepository, wo
 	}
 	f.authority = func(tenant uint) fileSourceAuthority { return workflow.systemService.WithTenantID(tenant) }
 	f.admission = func(tenant uint) fileAdmissionAuthority { return workflow.systemService.WithTenantID(tenant) }
+	f.publication = func(tenant uint) filePublicationAuthority { return workflow.systemService.WithTenantID(tenant) }
 	f.credential = workflow.systemService.TenantServiceAccessToken
 	if workflow.protectionGate != nil {
 		f.protectSource = workflow.protectionGate.BeginCatalogPath
