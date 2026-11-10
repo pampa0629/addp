@@ -1,9 +1,10 @@
 import { withModuleFrontend } from '../../common-frontend/basic/src/utils/moduleFrontend.mjs'
+import { withFrontendTestIsolation } from '../../common-frontend/basic/src/utils/viteTestIsolation.mjs'
 import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
 import { resolve } from 'path'
 
-export default defineConfig(withModuleFrontend('inference', {
+export default defineConfig(withModuleFrontend('inference', withFrontendTestIsolation('inference', {
   plugins: [vue()],
   resolve: {
     alias: {
@@ -19,9 +20,9 @@ export default defineConfig(withModuleFrontend('inference', {
     port: Number(process.env.INFERENCE_FE_PORT || 5188),
     strictPort: true,
     host: '0.0.0.0',
-    proxy: {
+    proxy: process.env.ADDP_E2E === '1' ? {} : {
       '/api': { target: `http://localhost:${process.env.GATEWAY_PORT || 8000}`, changeOrigin: true }
     },
     fs: { allow: ['..'] }
   },
-}))
+})))

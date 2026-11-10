@@ -142,6 +142,8 @@ Provider Template
 
 OpenAI-compatible 模型发现统一由 Inference 服务端使用 Provider Connection 的 Endpoint 和加密凭据调用标准 `/models` 接口。浏览器不得直接访问厂商 Endpoint 或接触已保存凭据。
 
+快速接入和添加模型共用自动发现入口。模板支持自动发现，且当前会话同时具有 `inference.provider.read` 和 `inference.deployment.execute` 时，页面才请求模型列表。有创建权限的用户仍可选择建议模型或手工输入上游模型标识。
+
 发现结果只表示上游当前列出的模型标识，不能仅根据模型名称推断 Chat、Embedding、Rerank、Tool Calling、输入模态或向量维度；这些能力必须来自模板声明、管理员确认或实际能力探测。
 
 #### Runtime 网络可达性
@@ -324,6 +326,8 @@ Provider、Deployment 和 Profile 是强类型资源，使用独立 API、表、
 ## 九、验证要求
 
 本节列出最低验证要求，不代表已有通过证据。实际执行按[测试与验收规范](addp测试与验收规范.md)分层记录；未运行、失败和未覆盖项分别说明，不计为通过。
+
+`make test-inference-frontend` 及 Platform CI 运行添加模型的两项隔离浏览器回归。缺少 `inference.deployment.execute` 的租户会话手动创建关联的 Deployment 和 Profile，浏览器发出零条发现请求。补齐执行权限后，同一模板触发一次自动发现并展示返回的模型。浏览器使用受控 API 响应，创建结果保存在测试夹具中。
 
 实现或修改本规范必须至少验证：
 

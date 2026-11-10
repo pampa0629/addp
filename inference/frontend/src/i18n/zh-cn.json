@@ -61,7 +61,7 @@
       "connectionRequired": "请填写服务名称和 Endpoint",
       "connect": "连接并发现模型",
       "discoverySuccess": "连接成功，发现 {count} 个模型",
-      "discoveryManual": "该服务未返回模型列表，请从建议模型中选择或手工输入模型标识",
+      "discoveryManual": "可选择建议模型，也可手工输入上游模型标识",
       "discoveryFailed": "模型发现失败：{error}。可以继续手工填写模型标识。",
       "purpose": "模型用途",
       "addModel": "加入启用列表",

@@ -61,7 +61,7 @@
       "connectionRequired": "Enter a service name and endpoint",
       "connect": "Connect and discover models",
       "discoverySuccess": "Connected and discovered {count} models",
-      "discoveryManual": "The service did not return a model list. Select a suggested model or enter an upstream model identifier.",
+      "discoveryManual": "Select a suggested model or enter an upstream model identifier.",
       "discoveryFailed": "Model discovery failed: {error}. You can continue with a manual model identifier.",
       "purpose": "Model purpose",
       "addModel": "Add to enabled models",

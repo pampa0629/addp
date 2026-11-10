@@ -1424,8 +1424,9 @@ test-graph-frontend: check-node-runtime ## 运行 Graph 前端确定性测试与
 	@cd graph/frontend && npm test
 	@cd graph/frontend && npm run build
 
-test-inference-frontend: check-node-runtime ## 运行 Inference 前端确定性测试与构建
+test-inference-frontend: check-node-runtime ## 运行 Inference 前端确定性测试、浏览器回归与构建
 	@cd inference/frontend && npm test
+	@cd inference/frontend && npm run test:e2e
 	@cd inference/frontend && npm run build
 
 test-manager-frontend: check-node-runtime ## 运行 Manager 前端确定性测试与构建

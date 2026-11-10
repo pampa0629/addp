@@ -251,7 +251,7 @@
 
       <section v-else-if="onboarding.step === 2" class="onboarding-panel">
         <el-alert
-          :type="onboarding.discoverySucceeded ? 'success' : 'warning'"
+          :type="onboarding.discoverySucceeded ? 'success' : 'info'"
           :closable="false"
           show-icon
           :title="onboarding.discoverySucceeded
@@ -421,6 +421,7 @@ import {
   capabilityPreset,
   createModelDraft,
   deploymentPayload,
+  discoverModelIdentifiers,
   hasMatchingChatSettings,
   isValidProfileCode,
   modelOptions,
@@ -624,14 +625,12 @@ async function connectProvider() {
 async function discoverProviderModels(providerId, template) {
   onboarding.discoverySucceeded = false
   let discovered = []
-  if (template?.model_discovery === 'openai_models') {
-    try {
-      const response = await providerAPI.discoverModels(providerId)
-      discovered = response.models || []
-      onboarding.discoverySucceeded = true
-    } catch (error) {
-      ElMessage.warning(t('inference.onboarding.discoveryFailed', { error: errorMessage(error) }))
-    }
+  try {
+    const models = await discoverModelIdentifiers(template, can, () => providerAPI.discoverModels(providerId))
+    discovered = models ?? []
+    onboarding.discoverySucceeded = models !== null
+  } catch (error) {
+    ElMessage.warning(t('inference.onboarding.discoveryFailed', { error: errorMessage(error) }))
   }
   const suggested = template?.suggested_models || []
   onboarding.availableModels = modelOptions(discovered, suggested)

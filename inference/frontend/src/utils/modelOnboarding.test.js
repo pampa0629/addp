@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import {
   CHAT_MAX_OUTPUT_TOKENS_PARAMETERS,
   CHAT_TEMPERATURE_MODES,
@@ -6,6 +6,7 @@ import {
   applyPreset,
   createModelDraft,
   deploymentPayload,
+  discoverModelIdentifiers,
   hasMatchingChatSettings,
   isValidProfileCode,
   modelOptions,
@@ -61,6 +62,32 @@ describe('model onboarding helpers', () => {
   it('merges discovered and suggested model identifiers', () => {
     expect(modelOptions([{ id: 'model-b' }, { id: 'model-a' }], [{ upstream_model: 'model-b' }, { upstream_model: 'model-c' }]))
       .toEqual(['model-a', 'model-b', 'model-c'])
+  })
+
+  const discoveryTemplate = { model_discovery: 'openai_models' }
+  const discoveryPermissions = ['inference.provider.read', 'inference.deployment.execute']
+
+  it.each(discoveryPermissions)('skips discovery if %s is absent even when models can be created', async missingPermission => {
+    const granted = new Set([
+      'inference.deployment.create', 'inference.profile.create',
+      ...discoveryPermissions.filter(permission => permission !== missingPermission)
+    ])
+    const discover = vi.fn()
+    await expect(discoverModelIdentifiers(discoveryTemplate, permission => granted.has(permission), discover)).resolves.toBeNull()
+    expect(discover).not.toHaveBeenCalled()
+  })
+
+  it('loads identifiers from a discoverable template with both permissions', async () => {
+    const models = [{ id: 'discovered-model' }]
+    const discover = vi.fn().mockResolvedValue({ models })
+    await expect(discoverModelIdentifiers(discoveryTemplate, permission => discoveryPermissions.includes(permission), discover)).resolves.toEqual(models)
+    expect(discover).toHaveBeenCalledOnce()
+  })
+
+  it('skips discovery for a manual template even when discovery permissions are granted', async () => {
+    const discover = vi.fn()
+    await expect(discoverModelIdentifiers({ model_discovery: 'none' }, () => true, discover)).resolves.toBeNull()
+    expect(discover).not.toHaveBeenCalled()
   })
 
   it('validates stable profile codes', () => {

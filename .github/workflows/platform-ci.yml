@@ -1060,6 +1060,7 @@ jobs:
           - module: inference
             name: Inference
             target: test-inference-frontend
+            playwright: true
           - module: manager
             name: Manager
             target: test-manager-frontend

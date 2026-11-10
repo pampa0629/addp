@@ -90,6 +90,14 @@ export function parseTenantIDs(value) {
     .filter(item => Number.isInteger(item) && item > 0))]
 }
 
+export async function discoverModelIdentifiers(template, hasPermission, discover) {
+  if (template?.model_discovery !== 'openai_models'
+    || !hasPermission('inference.provider.read')
+    || !hasPermission('inference.deployment.execute')) return null
+  const response = await discover()
+  return response.models || []
+}
+
 export function modelOptions(discovered = [], suggested = []) {
   const values = new Set()
   for (const item of discovered) {
