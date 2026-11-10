@@ -1227,7 +1227,7 @@ class MetricsDeploymentConfigTest(unittest.TestCase):
         workflow = (ROOT / '.github/workflows/release-and-t2-gates.yml').read_text()
         cases = re.search(r'^  monitor-metrics-cases:\n(.*?)(?=^  \S|\Z)', workflow, re.M | re.S).group(1)
         self.assertIn('fail-fast: false', cases)
-        self.assertIn('case: [postgres-source, directory-publication, http-quality, process-alerts, host-resources, filesystem-alerts, cgroup-source, target-budget, block-capacity, node-recovery]', cases)
+        self.assertIn('case: [postgres-source, directory-publication, http-quality, process-alerts, host-resources, filesystem-alerts, cgroup-source, target-budget, block-capacity, node-recovery, cdc-native]', cases)
         self.assertIn('timeout-minutes: 20', cases)
         self.assertIn('MONITOR_METRICS_TEST_ARGS: --case=${{ matrix.case }}', cases)
         self.assertEqual(cases.count('run: make test-monitor-metrics\n'), 1)

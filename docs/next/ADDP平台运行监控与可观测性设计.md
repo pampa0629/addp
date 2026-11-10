@@ -56,6 +56,8 @@ Trace 中 request_id、trace_id、execution 身份分别表达请求、调用链
 
 本机只读核对确认当前 Redpanda 的私有 `/public_metrics` 单次返回 1,224 个样本，磁盘总量、空闲空间及不可用分区各有一条时序。此次没有观察到消费组 offset 或 lag 样本，当前 Kafka Connect 的 Connector 清单为空。下一批先在独占环境验证两个固定来源，经现有私有 mTLS 和统一发现进入同一个 Prometheus。源端出站路径固定，指标及标签有界，不采集 Connector 配置、连接串、事件正文或异常原文。保留现有 34 个来源，若各加一个目标则至少验证 36 个，覆盖成功、缺样、故障、超额与恢复后再应用。指标能取到后再接入统一 CDC 页面及按持续时间评估的告警。[Redpanda 24.3 指标](https://docs.redpanda.com/streaming/24.3/reference/public-metrics-reference/) · [Kafka Connect 指标](https://kafka.apache.org/38/operations/monitoring/#connect_monitoring)
 
+原生信号验证使用 `make test-monitor-metrics MONITOR_METRICS_TEST_ARGS=--case=cdc-native`，独占 PostgreSQL 15 `addp_test`、Redpanda 24.3.18、Debezium Connect 3.6.0.Final 和 Compose 私网。探针仅在 Connect 容器内读取限定 JMX 属性与 Task 状态，并用两次真实变更通过 `rpk group describe` 核对 broker 消费积压的产生与消除。磁盘和不可用分区通过 `/public_metrics` 验证。另用隔离 Connector 的故障验证 Task 失败事实。探针不输出业务事件、状态正文或凭据，退出必须核验容器、网络、卷及私有材料清零。消费积压的连续采样、mTLS、Prometheus 和 36 目标预算由后续接入门禁验证。[Debezium PostgreSQL 指标](https://debezium.io/documentation/reference/connectors/postgresql.html#postgresql-monitoring)
+
 ## 三、验收状态与剩余缺口
 
 固定源码、运行链接、采样数量、预算、失败／修复和清理结论由下列历史证据专题维护；本页只保留能力状态、设计约束和剩余缺口。后续限定复验通过不倒改早期失败，也不证明当前 HEAD 或父 workflow 整体通过。

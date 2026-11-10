@@ -28,6 +28,120 @@ def compose(*args, timeout=None, stderr=None):
                                     *flags, *args], text=True, timeout=timeout, stderr=stderr).strip()
 
 
+def check_native_cdc():
+    """Read actual broker and Connect signals in the owned Compose project."""
+    if not re.fullmatch(r'addp-metrics-t2-[0-9a-f]{32}', PROJECT):
+        raise RuntimeError('CDC probe requires the owned metrics gate')
+
+    def run(*args, data=None, timeout=8):
+        result = subprocess.run(['docker', 'compose', '--env-file', '/dev/null', '-p', PROJECT,
+                                 '-f', FILE, 'exec', '-T', *args], input=data, capture_output=True,
+                                text=True, timeout=timeout)
+        if result.returncode:
+            raise RuntimeError(f'CDC fixture command failed for {args[0]} ({result.returncode})')
+        return result.stdout.strip()
+
+    def pg(sql):
+        return run('postgres', 'psql', '-XAt', '-v', 'ON_ERROR_STOP=1', '-U', 'addp', '-d', 'addp_test', data=sql)
+
+    def kafka(*args, timeout=8):
+        return run('cdc-broker', 'rpk', *args, '-X', 'brokers=127.0.0.1:9092', timeout=timeout)
+
+    def connect(path, body=None, *, endpoint=8083):
+        args = ['cdc-connect', 'curl', '-fsS', '--max-time', '5']
+        if body is not None:
+            args += ['-H', 'Content-Type: application/json', '--data-binary', '@-']
+        data = run(*args, f'http://127.0.0.1:{endpoint}{path}',
+                   data=json.dumps(body) if body is not None else None)
+        return json.loads(data)
+
+    def mbean(name, fields):
+        data = connect('/jolokia/', dict(type='read', mbean=name, attribute=fields), endpoint=8778)
+        return data.get('value') if data.get('status') == 200 else None
+
+    def wait(check, description, seconds=60):
+        until = time.monotonic() + seconds
+        while time.monotonic() < until:
+            try:
+                value = check()
+                if value:
+                    return value
+            except (RuntimeError, subprocess.TimeoutExpired):
+                pass
+            time.sleep(1)
+        raise AssertionError(f'CDC fixture timed out: {description}')
+
+    assert pg('SELECT current_database();') == 'addp_test'
+    assert connect('/connectors') == [], 'owned fixture must start empty'
+    pg('CREATE TABLE cdc_fixture (id integer PRIMARY KEY);')
+    topic = 'cdc_source.public.cdc_fixture'
+    kafka('topic', 'create', topic, '-p', '1', '-r', '1')
+
+    def register(name, prefix, fail=False):
+        config = {'connector.class': 'io.debezium.connector.postgresql.PostgresConnector',
+                  'tasks.max': '1', 'database.hostname': 'postgres', 'database.port': '5432',
+                  'database.user': 'addp', 'database.password': os.environ['METRICS_T2_POSTGRES_PASSWORD'],
+                  'database.dbname': 'addp_test', 'topic.prefix': prefix, 'plugin.name': 'pgoutput',
+                  'slot.name': name.replace('-', '_'), 'publication.name': prefix,
+                  'publication.autocreate.mode': 'filtered', 'table.include.list': 'public.cdc_fixture',
+                  'snapshot.mode': 'initial', 'key.converter': 'org.apache.kafka.connect.json.JsonConverter',
+                  'value.converter': 'org.apache.kafka.connect.json.JsonConverter',
+                  'key.converter.schemas.enable': 'false', 'value.converter.schemas.enable': 'false'}
+        if fail:
+            config.update({'transforms': 'bad', 'transforms.bad.type': 'org.apache.kafka.connect.transforms.ValueToKey',
+                           'transforms.bad.fields': 'missing_fixture_field'})
+        assert connect('/connectors', {'name': name, 'config': config})['name'] == name
+
+    def task(name, state):
+        status = connect(f'/connectors/{name}/status')
+        tasks = status.get('tasks', [])
+        return len(tasks) == 1 and tasks[0].get('state') == state
+
+    register('cdc-fixture', 'cdc_source')
+    wait(lambda: task('cdc-fixture', 'RUNNING'), 'running connector task')
+    stream = 'debezium.postgres:type=connector-metrics,context=streaming,server=cdc_source'
+    fields = ['Connected', 'MilliSecondsBehindSource', 'TotalNumberOfCreateEventsSeen']
+    wait(lambda: (mbean(stream, fields) or {}).get('Connected') is True, 'streaming MBean and database connection')
+    pg('INSERT INTO cdc_fixture VALUES (1);')
+    sample = wait(lambda: (value if (value := mbean(stream, fields)) and value.get('TotalNumberOfCreateEventsSeen', 0) >= 1 else None),
+                  'streaming metrics after a real WAL event')
+    assert type(sample.get('MilliSecondsBehindSource')) is int and sample['MilliSecondsBehindSource'] >= 0
+    task_metrics = mbean('kafka.connect:type=connector-task-metrics,connector=cdc-fixture,task=0',
+                         ['status', 'offset-commit-failure-percentage'])
+    assert task_metrics and task_metrics['status'] == 'running'
+    assert 0 <= task_metrics['offset-commit-failure-percentage'] <= 100
+
+    group = 'cdc-metrics-observer'
+
+    def consume():
+        return kafka('topic', 'consume', topic, '-g', group, '-o', 'start', '-n', '1', '-f', '%o', timeout=30)
+
+    def lag_is(expected):
+        value = kafka('group', 'describe', group, '-t')
+        return any(row.split() == [topic, str(expected)] for row in value.splitlines())
+
+    assert consume() == '0', 'first CDC record offset differs'
+    wait(lambda: lag_is(0), 'first consumer offset commit')
+    pg('INSERT INTO cdc_fixture VALUES (2);')
+    wait(lambda: lag_is(1), 'second WAL event creates one pending broker record')
+    assert consume() == '1', 'second CDC record offset differs'
+    wait(lambda: lag_is(0), 'consumption clears broker lag')
+    metrics = run('cdc-broker', 'curl', '-fsS', '--max-time', '5', 'http://127.0.0.1:9644/public_metrics')
+    assert len(metrics.encode()) < 1024**2
+    for name in ('redpanda_storage_disk_total_bytes', 'redpanda_storage_disk_free_bytes', 'redpanda_cluster_unavailable_partitions'):
+        assert re.search(rf'^{name}(?:\{{[^\n]*\}})? [0-9.eE+\-]+$', metrics, re.M), name
+
+    register('cdc-failure', 'cdc_failure', fail=True)
+    wait(lambda: task('cdc-failure', 'FAILED'), 'connector task failure on invalid event transform')
+    assert task('cdc-fixture', 'RUNNING'), 'other fixture task changed state'
+    print('CDC native T2: Debezium connected/event/lag attributes, Connect offset and failed task, Redpanda disk/partitions and lag 0→1→0 passed', flush=True)
+
+
+if os.environ.get('ADDP_METRICS_T2_CASE') == 'cdc-native':
+    check_native_cdc()
+    raise SystemExit(0)
+
+
 def verify_limited_node_mounts(node, volume, work, root, project):
     """Closed T2 mount proof; never return raw inspect data or host paths."""
     expected_volume = project + '_block-capacity'

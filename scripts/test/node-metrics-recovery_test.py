@@ -411,7 +411,7 @@ class NodeRecoveryTest(unittest.TestCase):
             self.assertIn(name,inputs)
         workflow=(ROOT/'.github/workflows/release-and-t2-gates.yml').read_text()
         matrix=workflow.split('  monitor-metrics-cases:',1)[1].split('  monitor-metrics:',1)[0]
-        self.assertIn('block-capacity, node-recovery]',matrix)
+        self.assertRegex(matrix, r'(?m)^\s*case: \[[^\n]*\bnode-recovery(?=,|\])')
 
 
 if __name__=='__main__':unittest.main()

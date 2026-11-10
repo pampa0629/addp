@@ -19,6 +19,44 @@ x-python-http: &python-http
     - ${METRICS_T2_WORK}/source/python-common:/app/common-python:ro
 
 services:
+  cdc-broker:
+    profiles: [cdc-native]
+    image: docker.redpanda.com/redpandadata/redpanda:v24.3.18@sha256:5c6bdbaf30c97de1ebc2ad417b7d02e0bdb5bf88e243bd3079d74bfde9c7754f
+    command: [redpanda, start, --mode, dev-container, --smp, "1", --memory, 512M, --reserve-memory, 0M, --check=false, --kafka-addr, "0.0.0.0:9092", --advertise-kafka-addr, "cdc-broker:9092"]
+    cpus: 1
+    mem_limit: 1g
+    volumes:
+      - cdc_broker_data:/var/lib/redpanda/data
+    healthcheck:
+      test: [CMD, rpk, cluster, info, -X, "brokers=127.0.0.1:9092"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+  cdc-connect:
+    profiles: [cdc-native]
+    image: quay.io/debezium/connect:3.6.0.Final@sha256:698f0559e667a242f962221079e75917b2b7a3ad4de62661e977628da0e33b45
+    environment:
+      BOOTSTRAP_SERVERS: cdc-broker:9092
+      GROUP_ID: addp-cdc-metrics-fixture
+      CONFIG_STORAGE_TOPIC: addp_cdc_config
+      OFFSET_STORAGE_TOPIC: addp_cdc_offset
+      STATUS_STORAGE_TOPIC: addp_cdc_status
+      CONFIG_STORAGE_REPLICATION_FACTOR: 1
+      OFFSET_STORAGE_REPLICATION_FACTOR: 1
+      STATUS_STORAGE_REPLICATION_FACTOR: 1
+      HEAP_OPTS: -Xms256m -Xmx512m
+      CONNECT_OFFSET_FLUSH_INTERVAL_MS: 1000
+      ENABLE_APICURIO_CONVERTERS: "false"
+      ENABLE_OTEL: "false"
+      ENABLE_JOLOKIA: "false"
+      KAFKA_OPTS: -javaagent:/kafka/libs/jolokia-jvm-1.7.2.jar=port=8778,host=127.0.0.1
+    cpus: 1
+    mem_limit: 1g
+    healthcheck:
+      test: [CMD, curl, -fsS, "http://127.0.0.1:8083/connectors"]
+      interval: 2s
+      timeout: 3s
+      retries: 45
   postgres-metrics:
     extends:
       file: ../infra/postgres-metrics.yml
@@ -139,6 +177,7 @@ networks:
       io.addp.node-metrics.owner: ${ADDP_NODE_METRICS_OWNER:-t2}
 
 volumes:
+  cdc_broker_data:
   block-capacity:
     driver: local
     driver_opts:
