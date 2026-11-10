@@ -46,7 +46,7 @@
 - [IAM 外部 IdP 与账号供应设计](next/addp-IAM外部IdP与账号供应设计.md)
 - [元数据体系图](concepts/addp元数据体系图.md)
 - [企业资源目录体系图](concepts/addp企业资源目录体系图.md)
-- [企业资源目录实现规范](spec/addp企业资源目录实现规范.md)
+- [企业资源目录实现规范](spec/addp企业资源目录实现规范.md)维护 Catalog 的身份与来源变化、生命周期、权限、API 和搜索契约。
 - [数据项体系图](concepts/addp数据项体系图.md)
 - [数据类型和格式体系图](concepts/addp数据类型和格式体系图.md)
 - [元数据扫描机制规范](spec/addp元数据扫描机制规范.md)
@@ -78,7 +78,7 @@
 - [平台运行观测规范](spec/addp平台运行观测规范.md)维护现行的[主机接入与采集发现](spec/addp平台运行观测规范.md#四主机接入与采集发现)、[指标查询与展示](spec/addp平台运行观测规范.md#六指标查询与展示口径)和[平台告警与通知](spec/addp平台运行观测规范.md#七平台告警与通知)规则。
 - [平台运行监控后续事项](next/ADDP平台运行监控与可观测性设计.md)记录[能力状态和剩余工作](next/ADDP平台运行监控与可观测性设计.md#一当前实现与剩余工作)，并汇总[验收缺口与历史证据入口](next/ADDP平台运行监控与可观测性设计.md#三验收状态与剩余缺口)。
 - Manager 预览的现行浏览器门禁见 [Owner 补充门禁](spec/testing/Owner补充门禁.md#manager-预览浏览器门禁)，使用隔离夹具验证页面行为。[Manager 浏览器回归后续验收](next/Manager前端浏览器回归测试专题.md#尚需核对的场景覆盖)列出仍需逐项核对的页面证据和真实数据 T4 范围。
-- [ADDP 企业资源目录与 Catalog 模块专题](next/ADDP企业资源目录能力专题.md)
+- [企业资源目录与 Catalog 后续专题](next/ADDP企业资源目录能力专题.md)汇总[当前能力边界](next/ADDP企业资源目录能力专题.md#二当前能力边界)、[未决设计与剩余工作](next/ADDP企业资源目录能力专题.md#三剩余工作)以及[验收与维护方式](next/ADDP企业资源目录能力专题.md#四验收与维护方式)。
 - [Engine Catalog 概念与读取边界](concepts/addp引擎体系图.md#实时-engine-catalog元数据快照和数据预览的边界)
 - [本体定义与发布规范](spec/addp本体定义与发布规范.md)
 - [Ontology 后续设计与验收](next/ADDP%20Ontology最小设计契约.md)
@@ -155,7 +155,7 @@ AI 模型接入、在线厂商账号、内网模型服务、模型档案、场�
 2. [企业资源目录体系图](concepts/addp企业资源目录体系图.md)：确认 Meta、Standard、Catalog、Manager、Asset、Portal 的事实所有权和端到端主线。
 3. [企业资源目录实现规范](spec/addp企业资源目录实现规范.md)：确认身份、来源变化、状态机、权限、API、搜索和迁移约束。
 4. [账号与权限体系](concepts/addp账号与权限体系图.md)：确认 Department、Project Group、User 和 AuthContext。
-5. [企业资源目录与 Catalog 模块专题](next/ADDP企业资源目录能力专题.md)：查看尚未完成的设计、验收和后续工作；稳定契约以正式文档为准。
+5. 按场景查阅尚待完成的设计、工作和验收要求。[剩余工作](next/ADDP企业资源目录能力专题.md#三剩余工作) · [验收与维护方式](next/ADDP企业资源目录能力专题.md#四验收与维护方式)
 
 ## 数据安全与隐私保护主题
 
