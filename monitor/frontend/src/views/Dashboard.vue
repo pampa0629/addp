@@ -422,8 +422,11 @@ function renderTrendChart() {
     },
     tooltip: {
       trigger: 'axis',
+      renderMode: 'html',
+      backgroundColor: 'var(--addp-bg-primary)',
+      borderColor: 'var(--addp-border-color)',
       textStyle: {
-        color: textColor
+        color: 'var(--addp-text-primary)'
       }
     },
     legend: {
