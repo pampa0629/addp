@@ -624,4 +624,6 @@ Transfer continuous 弹窗手动刷新前后的窗口结束时刻为 `23:00:24` 
 
 内存为同一隔离容器的高水位。七天按 2 字节/样本估算时序样本体积，实际磁盘另受索引、WAL、压缩和时序变化影响。第 35 个触发抓取作业超限；恢复为 34 个后重新取得连续样本，容器、网络、卷和临时目录清零。第一轮因 P95 窗口早于流量增长失败，第二轮因写入速率读数未合并多条序列失败；修正预热和速率聚合后第三轮退出 0。原日志依次为 `/tmp/addp-metrics-34.YiHcfy`、`/tmp/addp-metrics-34.seA0Uw`、`/tmp/addp-metrics-34.wXH9VB`。Monitor Go T1、指标配置、T2 CI 登记及 HTTP／总览 20 个受控浏览器用例分别通过，浏览器用例独立于压力窗口。
 
-本机 `.env` 已保留原 17 个进程配置及所有引擎和主机来源，增加 Agent、Copilot、Develop、Graph、Inference、Model、Ontology、Orchestrator、Portal、Workbench 的独立回环端点、准入及 Docker Desktop 转发，预算设为 34。现有 CA 不变，新端点使用独立叶证书。Agent/Copilot 沿既有 Python HTTP 及进程启动时间范围。指标中心与相应进程的配置生效及 34 个真实目标的新鲜样本待本机标准重启后核验。
+本机 `.env` 已保留原 17 个进程配置及所有引擎和主机来源，增加 Agent、Copilot、Develop、Graph、Inference、Model、Ontology、Orchestrator、Portal、Workbench 的独立回环端点、准入及 Docker Desktop 转发，预算设为 34。现有 CA 不变，新端点使用独立叶证书。Agent/Copilot 沿既有 Python HTTP 及进程启动时间范围。
+
+北京时间 19:21，用户重启后以本机 Prometheus 只读 mTLS 查询核验：34 个外部目标全部 `up`，包括 27 个进程、6 个引擎和 1 个主机，Security Backend 与 Worker 均正常。新增十个后端各有一个健康目标；按该目标的当前实例身份核对，进程启动时间和 HTTP 采集启动指标均在 45 秒内采样，HTTP 请求计数在最近一分钟各有至少四个样本，八个 Go 后端另有新鲜 CPU 和 RSS 样本。这是本机真实采集复验，页面回归仍以此前的受控浏览器结果计。
