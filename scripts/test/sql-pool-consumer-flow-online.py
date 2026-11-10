@@ -313,12 +313,21 @@ def concurrency_barrier(engine, private, artifacts, run_id, operation, purpose="
                  "WHEN strpos(query,'pool saturation_native')>0 THEN 'native' ELSE 'manager' END")
         predicate = ("AND (strpos(query,'pool concurrent_old')>0 OR strpos(query,'pool concurrent_new')>0)"
                      if purpose == "concurrency" else "")
+        table_read = f"""query ~* 'FROM[[:space:]]+(["[:alnum:]_]+[.])?[" ]*{TABLE}'"""
+        if purpose == "queue":
+            # Manager borrows its only pooled connection for table facts before
+            # preview SQL. pg_total_relation_size can wait on the same table lock.
+            catalog_read = f"""strpos(query,'pg_total_relation_size(')>0
+                AND strpos(query,'FROM information_schema.tables t')>0
+                AND EXISTS (SELECT 1 FROM pg_locks l WHERE l.pid=pg_stat_activity.pid
+                    AND l.locktype='relation' AND l.relation='public.{TABLE}'::regclass AND NOT l.granted)"""
+            table_read = f"({table_read} OR ({catalog_read}))"
         holder = f"(SELECT pid FROM pg_stat_activity WHERE application_name='{marker}' AND datname='{DATABASE}' AND wait_event='PgSleep')"
         inspection = f"""SELECT json_build_object('holder_id', {holder}, 'waiters', COALESCE(json_agg(
             json_build_object('id',pid,'phase',{phase})
             ORDER BY pid),'[]'::json)) FROM pg_stat_activity
             WHERE usename='{READERS[1]}' AND datname='{DATABASE}' AND state='active' AND wait_event_type='Lock'
-              AND {holder}=ANY(pg_blocking_pids(pid)) AND query ~* 'FROM[[:space:]]+(["[:alnum:]_]+[.])?[" ]*{TABLE}'
+              AND {holder}=ANY(pg_blocking_pids(pid)) AND {table_read}
               {predicate};"""
     else:
         phase = ("IF(INSTR(INFO,'pool concurrent_old')>0,'old','new')" if purpose == "concurrency" else

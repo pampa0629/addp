@@ -391,3 +391,22 @@ pid=44 user=pool_reader_next LOG:  statement: SELECT id FROM public.pool_source_
                         with self.assertRaises(POOL.SUPPORT.SuiteError):
                             POOL.concurrency_barrier(engine, directory, directory, "run-pool", "release")
                         self.assertFalse(any("terminate" in call.args[1] or "KILL" in call.args[1] for call in query.call_args_list))
+
+    def test_postgres_queue_observes_manager_table_facts_on_the_exact_blocked_relation(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            directory = Path(tmp)
+            source = {"container_id": "owned", "database": POOL.DATABASE, "native_id": "same"}
+            for purpose in ("queue", "native"):
+                (directory / f"postgresql-{purpose}-barrier.json").write_text(
+                    json.dumps({"holder_id": 11, "source_identity": source}))
+                result = POOL.subprocess.CompletedProcess([], 0, stdout='{"holder_id":11,"waiters":[]}')
+                with patch.object(POOL, "fixture_identity", return_value=source), \
+                     patch.object(POOL, "sql", return_value=result) as query, redirect_stdout(StringIO()):
+                    POOL.concurrency_barrier("postgresql", directory, directory, "run-pool", "observe", purpose)
+                statement = query.call_args.args[1]
+                self.assertIn("pg_blocking_pids", statement)
+                if purpose == "queue":
+                    self.assertIn("pg_total_relation_size", statement)
+                    self.assertIn("l.relation='public.pool_source'::regclass AND NOT l.granted", statement)
+                else:
+                    self.assertNotIn("pg_total_relation_size", statement)
