@@ -96,7 +96,7 @@ case 路由、默认完整场景保留、未知值只读拒绝、子场景失败
 
 `native-raster-media` 保留原IMG/JPEG2000/四种GRD的全部断言，再添加一份自建240×120、Float64/NaN、512瓦片、DEFLATE、无CRS/网格定位及无overview的Classic TIFF COG。沿原十项普通User权限、原部署/预算/四份受管COG生成及缓存/删除/全部清理，不上传个人成果，不触发该小图的生成任务。隔离夹具的GDAL完整COG验证必须0错误/0警告，独立公式核全部28,800数值、35个NaN及完整有效掩膜、块尺寸/空CRS/空网格/零overview、原字节大小及SHA；源被修改后即使重写哈希收据也须拒绝。
 
-同一普通身份通过 Gateway 发起 Manager 精确 item 刷新，再从 Meta 核对结构和扫描时间，从 Manager 授权预览核对`tiff/cog/true/heuristic`、240×120、tiled=true、overview=false，无spatial事实；归档刷新前后的 Meta 结构和 Manager 内容事实、单项同步刷新请求范围/实际响应、前后扫描时间和独占源扫描execution；已知item刷新仅允许补回与目录身份完全一致的`item.full_name`，其余attributes严格不变，不能把同步刷新伪装为另一个异步scan-run。真实Console的属性弹窗核同一元数据，预览核240×120单页、Range 206 和全部 Float64 灰阶像素及透明 NoData，页面无地图。TIFF仍允许既有非定位可选转换动作，测试仅要求不提交生成，不把“不可地图定位”等同“按钮不存在”。原下载以 single TIFF 原字节核对大小和 SHA-256，API 和真实按钮下载一致，分别归档。页面重开后复核同一源，浏览器零生成/零业务失败/零警告，源/Meta保持（除本次显式单项刷新外），原四份COG缓存和领域/物理删除/模式恢复/部署/Infra清理仍必须全部通过。
+同一普通身份通过 Gateway 发起 Manager 精确 item 刷新，再从 Meta 核对结构和扫描时间，从 Manager 授权预览核对`tiff/cog/true/heuristic`、240×120、tiled=true、overview=false，无spatial事实；归档刷新前后的 Meta 结构和 Manager 内容事实、单项同步刷新请求范围/实际响应、前后扫描时间和独占源扫描execution；单项刷新后，顶层 `full_name`、指纹和数据项 ID 必须保持一致。`storage.last_modified_at` 按带时区的时间戳比较同一时刻，其他 attributes 和源文件字节严格不变。真实Console的属性弹窗核同一元数据，预览核240×120单页、Range 206 和全部 Float64 灰阶像素及透明 NoData，页面无地图。TIFF仍允许既有非定位可选转换动作，测试仅要求不提交生成，不把“不可地图定位”等同“按钮不存在”。原下载以 single TIFF 原字节核对大小和 SHA-256，API 和真实按钮下载一致，分别归档。页面重开后复核同一源，浏览器零生成/零业务失败/零警告，源/Meta保持（除本次显式单项刷新外），原四份COG缓存和领域/物理删除/模式恢复/部署/Infra清理仍必须全部通过。
 
 当前子报告为`addp.manager-raster-media/v2`、页面报告`addp.manager-raster-media-browser/v4`。`native-raster-media` 还必须提交 `nfs_tiff_authorization` 证据。只把已核对 SHA-256 的同一 TIFF 复制到本轮只读 NFS 导出，由一次性源初始化用户用 `meta.scan_task.execute` 和 `meta.scan_task.read` 完成单目录深扫。仅该 case 为一次性初始化用户增加这两个扫描权限，普通消费用户仍是原十项。
 

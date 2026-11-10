@@ -23,6 +23,8 @@ def detail(spec, index=1):
         attrs['format_info']['tiff']={'profile':'cog','is_cloud_optimized':True,'cog_check_level':'heuristic',
             'is_tiled':True,'has_overviews':False,'big_tiff':False,'page_count':1,'page_summary_status':'parsed',
             'pages':[{'ifd_index':0,'width':240,'height':120}]}
+        attrs['storage'] = {'last_modified_at': '2026-10-29T23:59:00.691Z',
+                            'content_hash': hashlib.sha256(b'test').hexdigest()}
     if spec['source_srid']:
         attrs['capabilities'] = {'spatial': {'srid': spec['source_srid'], 'extent': list(spec['extent'])}}
     if spec['source_format']=='grd':
@@ -276,7 +278,7 @@ for(const extension of ['img','jp2','j2k']) {
             elif parsed.path=='/api/v1/manager/engines/2/items/refresh':
                 self.assertEqual(method,'POST');self.assertIn('item_id=1',parse_qs(parsed.query)['locator'][0])
                 items[0]['scanned_at']='2026-10-30T00:00:01Z'
-                items[0]['attributes']['item']['full_name']=items[0]['full_name']
+                items[0]['attributes']['storage']['last_modified_at'] = '2026-10-30T07:59:00.691+08:00'
                 payload={'status':'success','items_scanned':1,'started_at':'2026-10-30T00:00:00.5Z'}
             elif parsed.path.startswith('/api/v1/meta/items/'):
                 payload = structural_detail(items[int(parsed.path.split('/')[-1]) - 1])
@@ -399,14 +401,16 @@ for(const extension of ['img','jp2','j2k']) {
         spec=IMG.TIFF_SOURCES[0];good=detail(spec)
         response={'status':'success','items_scanned':1,'started_at':'2026-10-30T00:00:00.5Z'}
         after=copy.deepcopy(good);after['scanned_at']='2026-10-30T00:00:01Z'
-        after['attributes']['item']['full_name']=after['full_name']
+        after['attributes']['storage']['last_modified_at'] = '2026-10-30T07:59:00.691+08:00'
         model=OWNER.ArtifactFixture('tiff',good,'item:1')
         for mutate in (lambda r,a:r.update(status='failed'),lambda r,a:r.update(items_scanned=2),
                        lambda r,a:r.update(items_scanned=True),lambda r,a:r.pop('started_at'),
                        lambda r,a:a.update(scanned_at=good['scanned_at']),lambda r,a:a.update(id=2),
                        lambda r,a:a.update(full_name='other.tif'),
                        lambda r,a:a['attributes']['item'].update(full_name='other.tif'),
-                       lambda r,a:a['attributes']['item'].pop('full_name'),
+                       lambda r,a:a['attributes']['storage'].update(last_modified_at='2026-10-30T07:59:00.692+08:00'),
+                       lambda r,a:a['attributes']['storage'].update(last_modified_at='2026-10-29T23:59:00.691'),
+                       lambda r,a:a['attributes']['storage'].update(content_hash='a' * 64),
                        lambda r,a:a['attributes']['format_info']['tiff'].update(profile='plain_tiff')):
             r,a=copy.deepcopy(response),copy.deepcopy(after);mutate(r,a)
             def request(method, path, expected):
@@ -414,8 +418,8 @@ for(const extension of ['img','jp2','j2k']) {
                     if path.startswith('/api/v1/manager/preview?') else structural_detail(a))
             client=SimpleNamespace(request=request)
             content = {key: good[key] for key in ('attributes', 'size_bytes')}
-            with self.assertRaises(OWNER.SuiteError):
-                IMG.refresh_tiff(OWNER,client,2,model,structural_detail(good),content)
+            with tempfile.TemporaryDirectory() as root, self.assertRaises(OWNER.SuiteError):
+                IMG.refresh_tiff(OWNER, client, 2, model, structural_detail(good), content, Path(root))
         with tempfile.TemporaryDirectory()as root:
             run,_,_=self.scenario(root,source_format='tiff');facts=run()['physical_sources'][0]
             for key in ('cog_valid','cog_errors','cog_warnings','pixels_verified','complete_mask_verified','overview_count','source_srid'):

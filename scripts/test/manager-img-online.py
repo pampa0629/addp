@@ -212,7 +212,10 @@ def validate_structural_meta(owner, detail, spec):
         raise owner.SuiteError('Meta raster projection must only disclose structure and declared CRS')
 
 
-def refresh_tiff(owner,client,engine,fixture,detail,content):
+def refresh_tiff(owner, client, engine, fixture, detail, content, archive):
+    snapshot_name = 'raster-meta-tiff-unlocated-small-cog'
+    (archive / f'{snapshot_name}-before-refresh.json').write_text(
+        json.dumps({'meta': detail, 'manager': content}, ensure_ascii=False, sort_keys=True) + '\n')
     path=f'/api/v1/manager/engines/{engine}/items/refresh'
     response=client.request('POST',path+'?'+urlencode({'locator':fixture.locator}),(200,)).payload
     if response.get('status')!='success' or type(response.get('items_scanned')) is not int or response['items_scanned']!=1:
@@ -226,13 +229,24 @@ def refresh_tiff(owner,client,engine,fixture,detail,content):
             raise ValueError('refresh did not advance the exact item scan time')
     except (KeyError,TypeError,ValueError)as error:
         raise owner.SuiteError('small TIFF refresh timestamps are missing or inconsistent')from error
-    expected_attrs=json.loads(json.dumps(content['attributes']))
-    full_name=detail.get('full_name')
-    if not isinstance(full_name,str) or not full_name or expected_attrs['item'].get('full_name',full_name)!=full_name:
+    full_name = fixture.item['full_name']
+    if detail.get('full_name') != full_name:
         raise owner.SuiteError('small TIFF original catalog identity is inconsistent')
-    # Known-item refresh restores this exact catalog fact; all format/storage facts remain strict.
-    expected_attrs['item']['full_name']=full_name
     after_content = read_content_metadata(owner, client, fixture)
+    (archive / f'{snapshot_name}.json').write_text(
+        json.dumps({'meta': after, 'manager': after_content, 'refresh_response': response},
+                   ensure_ascii=False, sort_keys=True) + '\n')
+    before_attrs, after_attrs = content['attributes'], after_content['attributes']
+    try:
+        previous_modified = datetime.fromisoformat(before_attrs['storage']['last_modified_at'])
+        current_modified = datetime.fromisoformat(after_attrs['storage']['last_modified_at'])
+    except (KeyError, TypeError, ValueError) as error:
+        raise owner.SuiteError('small TIFF source modification timestamps are invalid') from error
+    if previous_modified.utcoffset() is None or current_modified.utcoffset() is None or previous_modified != current_modified:
+        raise owner.SuiteError('small TIFF refresh changed the source modification time')
+    expected_attrs = {**before_attrs, 'storage': {
+        **before_attrs['storage'], 'last_modified_at': after_attrs['storage']['last_modified_at'],
+    }}
     if (after != {**detail, 'scanned_at': after['scanned_at']}
             or after_content != {**content, 'attributes': expected_attrs}):
         raise owner.SuiteError('small TIFF refresh changed source identity or format facts')
@@ -338,6 +352,7 @@ def run(repository, environment, owner, *, browser_runner=None, physical_runner=
     if seed.get('source_unchanged') is not True or [x.get('case') for x in seed.get(source_format+'_sources', [])] != [x['case'] for x in sources]:
         raise owner.SuiteError('IMG physical source evidence is incomplete')
     fixtures, cases, snapshots = [], [], {}
+    archive = Path(environment['ADDP_ONLINE_ARTIFACT_DIR'])
     report = {'schema_version': 'addp.manager-raster-media/v2', 'source_format': source_format, 'run_id': environment['ADDP_ONLINE_TEST_RUN_ID'],
               'identity': identity, 'result': 'incomplete', 'cases': cases, 'physical_sources': seed[source_format+'_sources'], 'cleanup': {}}
     error = None
@@ -357,18 +372,16 @@ def run(repository, environment, owner, *, browser_runner=None, physical_runner=
             validate_meta(owner, content, spec)
             refresh=None
             if source_format=='tiff':
-                (Path(environment['ADDP_ONLINE_ARTIFACT_DIR'])/'raster-meta-tiff-unlocated-small-cog-before-refresh.json').write_text(
-                    json.dumps({'meta': detail, 'manager': content}, ensure_ascii=False, sort_keys=True)+'\n')
-                detail,content,refresh=refresh_tiff(owner,client,engine,fixture,detail,content)
+                detail, content, refresh = refresh_tiff(owner, client, engine, fixture, detail, content, archive)
             snapshots[item['id']] = (detail, content)
             downloaded = client.request('GET', '/api/v1/manager/downloads/file?' + urlencode({'locator': fixture.locator}), (200,))
             source_raw=downloaded.raw
             if len(source_raw) != seeded['size_bytes'] or hashlib.sha256(source_raw).hexdigest() != seeded['sha256']:
                 raise owner.SuiteError('IMG original download differs from physical source')
-            archive = Path(environment['ADDP_ONLINE_ARTIFACT_DIR'])
             (archive / ('raster-source-'+source_format+'-'+spec['case']+Path(spec['object']).suffix)).write_bytes(source_raw)
-            (archive / ('raster-meta-'+source_format+'-'+spec['case']+'.json')).write_text(
-                json.dumps({'meta': detail, 'manager': content}, ensure_ascii=False, sort_keys=True)+'\n')
+            if source_format != 'tiff':
+                (archive / ('raster-meta-'+source_format+'-'+spec['case']+'.json')).write_text(
+                    json.dumps({'meta': detail, 'manager': content}, ensure_ascii=False, sort_keys=True)+'\n')
             case = {**spec, 'item_id': item['id'], 'locator': fixture.locator,
                     'sha256': seeded['sha256'], 'size_bytes': seeded['size_bytes'], 'metadata_verified': True}
             cases.append(case)
