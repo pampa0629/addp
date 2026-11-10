@@ -32,22 +32,57 @@ class Client:
 
 
 class ContinuousRunnerTest(unittest.TestCase):
-    def test_empty_visible_catalog_cannot_supply_a_physical_scan_baseline(self):
-        evidence = {}
-        self.assertIsNone(M.catalog_item(Client([[]]), 10, 2, 'continuous_scan_sibling', evidence=evidence))
-        self.assertEqual(evidence, {'state': 'listed', 'visible_items': 0, 'matching_items': 0})
-        diagnostic = M.failure_diagnostic('source_catalog', M.SuiteError('physical scan sibling is missing'))
-        self.assertEqual(diagnostic, {'phase': 'source_catalog', 'reason': 'source_catalog_sibling_unavailable'})
+    def mock_scan_observer(self, snapshot):
+        self.enterContext(patch.dict(os.environ, {
+            'ONLINE_SUITE': M.SUITE, 'ADDP_ONLINE_TEST_TENANT_ID': '2',
+            'ADDP_ONLINE_CONTINUOUS_PG_ENGINE_ID': '10', 'ADDP_ONLINE_SCAN_POSTGRES_ID': 'a' * 64,
+        }))
+        postgres = import_module('scripts.test.execution-retention-readonly-online')
+        return self.enterContext(patch.object(postgres, 'sql', side_effect=lambda *args, **kwargs: json.dumps(snapshot)))
 
-    def test_catalog_baseline_diagnostics_exclude_items_and_distinguish_invalid_identity(self):
+    def test_scan_observer_reads_only_the_bound_fixture(self):
+        _, sibling, _, observer = self.scan_fixture()
+        items, boundary = M.read_scan_catalog(10, 2)
+        self.assertEqual(items[M.SCAN_SIBLING], sibling)
+        self.assertEqual([node['id'] for node in boundary['ancestors']], [9, 1])
+        observer.assert_called_once()
+        query, = observer.call_args.args
+        self.assertEqual(observer.call_args.kwargs, {
+            'expected_suite': M.SUITE, 'postgres_id': 'a' * 64, 'variables': {'tenant': 2, 'engine': 10},
+        })
+        self.assertTrue(query.startswith('BEGIN READ ONLY;'))
+        self.assertIn("tenant_id = :'tenant'::bigint AND engine_id = :'engine'::bigint", query)
+        self.assertIn("full_name IN ('public.continuous_cdc_target', 'public.continuous_kafka_target', "
+                      "'public.continuous_scan_sibling', 'public.continuous_scheduled_target')", query)
+        self.assertIn("jsonb_agg(field->>'name')", query)
+        observer.reset_mock()
+        for key, invalid in [('ONLINE_SUITE', 'other'), ('ADDP_ONLINE_TEST_TENANT_ID', '3'),
+                             ('ADDP_ONLINE_CONTINUOUS_PG_ENGINE_ID', '11'), ('ADDP_ONLINE_SCAN_POSTGRES_ID', 'local')]:
+            with self.subTest(key=key), patch.dict(os.environ, {key: invalid}), self.assertRaises(M.SuiteError):
+                M.read_scan_catalog(10, 2)
+        observer.assert_not_called()
+
+    def test_scan_baseline_diagnostics_exclude_private_values(self):
         private = 'business-value-sentinel password=private'
-        item = {'full_name': 'public.continuous_scan_sibling', 'tenant_id': 3, 'metadata': private}
-        evidence = {}
+        for items, reason in [
+            ([], 'source_catalog_sibling_unavailable'),
+            ([{'full_name': 'public.continuous_scan_sibling', 'tenant_id': 3, 'metadata': private}],
+             'source_catalog_identity_invalid'),
+        ]:
+            evidence = {}
+            self.mock_scan_observer({'items': items, 'ancestors': []})
+            with self.assertRaises(M.SuiteError) as caught:
+                M.read_scan_catalog(10, 2, evidence=evidence)
+            self.assertEqual(evidence, {'source': 'hosted_postgres_readonly', 'state': 'identity_check',
+                                        'matching_items': len(items)})
+            self.assertEqual(M.failure_diagnostic('source_catalog', caught.exception)['reason'], reason)
+        observer = self.mock_scan_observer({})
+        observer.side_effect = OSError(private)
         with self.assertRaises(M.SuiteError) as caught:
-            M.catalog_item(Client([[item]]), 10, 2, 'continuous_scan_sibling', evidence=evidence)
-        self.assertEqual(evidence, {'state': 'identity_check', 'visible_items': 1, 'matching_items': 1})
-        self.assertEqual(M.failure_diagnostic('source_catalog', caught.exception)['reason'], 'source_catalog_identity_invalid')
-        self.assertNotIn(private, json.dumps(evidence))
+            M.read_scan_catalog(10, 2)
+        diagnostic = M.failure_diagnostic('source_catalog', caught.exception)
+        self.assertEqual(diagnostic['reason'], 'source_catalog_observer_unavailable')
+        self.assertNotIn(private, json.dumps(diagnostic))
 
     def test_professional_initial_authorization_is_closed_status_only(self):
         for initial in [{'status': 'pending'}, {'status': 'pending', 'code': 'scan_pending'},
@@ -135,8 +170,7 @@ class ContinuousRunnerTest(unittest.TestCase):
                     return SimpleNamespace(payload={'status': 'success', 'triggered_by': 34})
                 return super().request(method, path, expected, body)
         with patch.object(M.REGISTRATION, 'source_grant_participants', return_value=('34', '31')), \
-                patch.object(M, 'catalog_item', side_effect=[{'id': 9}, None, None]), \
-                patch.object(M.API, 'read_meta_scan_boundary', return_value={'sibling': {}, 'ancestors': [{}, {}]}), \
+                patch.object(M, 'read_scan_catalog', return_value=({}, {'sibling': {'id': 9}, 'ancestors': [{}, {}]})), \
                 patch.object(M.API, 'wait_meta_scan_tick'), \
                 patch.object(M, 'wait_status', side_effect=M.SuiteError('execution reached an unexpected terminal status')), \
                 self.assertRaisesRegex(M.SuiteError, 'unexpected terminal status'):
@@ -276,65 +310,64 @@ class ContinuousRunnerTest(unittest.TestCase):
                   'scan_status': 'completed', 'scanned_depth': 'deep', 'scanned_at': sibling['scanned_at']}
         root = {**schema, 'id': 1, 'parent_node_id': None}
         target = {**sibling, 'id': 6, 'full_name': 'public.continuous_cdc_target', 'fingerprint': 'target',
-                  'scanned_at': '2026-10-16T09:00:02Z', 'attributes': {'type_info': {'table': {
-                      'fields': [{'name': 'id'}, {'name': 'label'}]}}}}
-        facts = {'/api/v1/meta/items/5': sibling, '/api/v1/meta/nodes/9': schema,
-                 '/api/v1/meta/nodes/1': root, '/api/v1/meta/engines/10/items': [sibling, target]}
-        self.enterContext(patch.object(M.API, '_read_hosted_meta_scan_facts', side_effect=lambda *_: {
-            'sibling': facts['/api/v1/meta/items/5'],
-            'ancestors': [facts['/api/v1/meta/nodes/9'], facts['/api/v1/meta/nodes/1']],
-        }))
-        class CatalogClient:
-            def request(self, method, path, expected, **kwargs):
-                assert method == 'GET' and expected == (200,)
-                payload = deepcopy(facts[path])
-                if path.startswith('/api/v1/meta/nodes/'):
-                    for field in ('scan_status', 'scanned_at', 'scanned_depth'):
-                        payload.pop(field)
-                return SimpleNamespace(payload=payload)
-        return CatalogClient(), facts, sibling, target
+                  'scanned_at': '2026-10-16T09:00:02Z', 'fields': ['id', 'label']}
+        snapshot = {'items': [sibling, target], 'ancestors': [schema, root]}
+        return snapshot, sibling, target, self.mock_scan_observer(snapshot)
 
     def test_target_scan_requires_fresh_deep_schema_and_preserves_outside_facts(self):
-        client, facts, sibling, target = self.scan_fixture()
-        boundary = M.API.read_meta_scan_boundary(client, 10, sibling)
-        proof = M.wait_target_scan(client, 10, 2, 'continuous_cdc_target', {'id', 'label'}, sibling, boundary)
+        snapshot, sibling, target, _ = self.scan_fixture()
+        _, boundary = M.read_scan_catalog(10, 2)
+        def wait(fields):
+            return M.wait_target_scan(10, 2, 'continuous_cdc_target', fields, boundary)
+
+        proof = wait({'id', 'label'})
         self.assertEqual(proof['target_locator'], 'addp://engine/10/path/public/continuous_cdc_target?type=table')
         self.assertEqual(proof['item_id'], 6)
-        # A completed task or old item alone is not evidence of the new schema scan.
-        with patch.object(M, 'until', side_effect=lambda check: self.assertFalse(check())):
-            M.wait_target_scan(client, 10, 2, 'continuous_cdc_target', {'id', 'label', 'scan_extra'}, sibling, boundary)
-        target['attributes']['type_info']['table']['fields'].append({'name': 'scan_extra'})
-        migrated = M.wait_target_scan(client, 10, 2, 'continuous_cdc_target', {'id', 'label', 'scan_extra'}, sibling, boundary)
-        self.assertEqual(migrated['fields'], ['id', 'label', 'scan_extra'])
-        for path, field, value in [('/api/v1/meta/items/5', 'scanned_at', '2026-10-16T09:00:03Z'),
-                                   ('/api/v1/meta/nodes/9', 'scan_status', 'running'),
-                                   ('/api/v1/meta/nodes/1', 'scanned_depth', 'basic')]:
-            old = facts[path][field]; facts[path][field] = value
+        with patch.object(M, 'until', side_effect=lambda check: self.assertIsNone(check())):
+            wait({'id', 'label', 'scan_extra'})
+        target['fields'].append('scan_extra')
+        target['scanned_at'] = '2026-10-16T09:00:04Z'
+        self.assertEqual(wait({'id', 'label', 'scan_extra'})['fields'], ['id', 'label', 'scan_extra'])
+        for item, field, value in [(sibling, 'scanned_at', '2026-10-16T09:00:03Z'),
+                                   (snapshot['ancestors'][0], 'scan_status', 'running'),
+                                   (snapshot['ancestors'][1], 'scanned_depth', 'basic')]:
+            old = item[field]
+            item[field] = value
             with self.subTest(field=field), self.assertRaisesRegex(M.SuiteError, 'sibling facts or ancestor'):
-                M.wait_target_scan(client, 10, 2, 'continuous_cdc_target', {'id', 'label', 'scan_extra'}, sibling, boundary)
-            facts[path][field] = old
+                wait({'id', 'label', 'scan_extra'})
+            item[field] = old
 
     def test_target_scan_rejects_wrong_identity_duplicates_and_incomplete_scan(self):
-        for key, value in [('tenant_id', 3), ('engine_id', 11), ('node_id', 99), ('item_type', 'file'), ('fingerprint', '')]:
-            client, facts, sibling, target = self.scan_fixture()
-            boundary = M.API.read_meta_scan_boundary(client, 10, sibling)
-            target[key] = value
-            with self.subTest(key=key), self.assertRaises(M.SuiteError):
-                M.wait_target_scan(client, 10, 2, 'continuous_cdc_target', {'id', 'label'}, sibling, boundary)
-        for key, value in [('scanned_at', None), ('scanned_depth', 'basic')]:
-            client, facts, sibling, target = self.scan_fixture()
-            boundary = M.API.read_meta_scan_boundary(client, 10, sibling)
-            target[key] = value
-            with self.subTest(key=key), patch.object(M, 'until', side_effect=lambda check: self.assertFalse(check())):
-                M.wait_target_scan(client, 10, 2, 'continuous_cdc_target', {'id', 'label'}, sibling, boundary)
-        client, facts, sibling, target = self.scan_fixture()
-        facts['/api/v1/meta/engines/10/items'].append(target)
-        with self.assertRaises(M.SuiteError):
-            M.catalog_item(client, 10, 2, 'continuous_cdc_target')
+        snapshot, sibling, target, _ = self.scan_fixture()
+        _, boundary = M.read_scan_catalog(10, 2)
+        def wait():
+            return M.wait_target_scan(10, 2, 'continuous_cdc_target', {'id', 'label'}, boundary)
+
+        for key, value in [('tenant_id', 3), ('engine_id', 11), ('node_id', 99), ('item_type', 'file'),
+                           ('fingerprint', ''), ('full_name', 'public.foreign_table'), ('id', sibling['id'])]:
+            with self.subTest(key=key), patch.dict(target, {key: value}), self.assertRaises(M.SuiteError):
+                wait()
+        for key, value in [('scanned_at', None), ('scanned_at', sibling['scanned_at']),
+                           ('scanned_depth', 'basic'), ('fields', ['id', 'id'])]:
+            with self.subTest(key=key), patch.dict(target, {key: value}), \
+                    patch.object(M, 'until', side_effect=lambda check: self.assertIsNone(check())):
+                wait()
+        snapshot['items'].append(target)
+        with self.assertRaisesRegex(M.SuiteError, 'identity is duplicated'):
+            wait()
+
+    def test_scan_baseline_requires_the_exact_connected_ancestor_chain(self):
+        snapshot, _, _, _ = self.scan_fixture()
+        schema, root = snapshot['ancestors']
+        for ancestors in [[schema], [root, schema], [schema, {**root, 'parent_node_id': schema['id']}],
+                          [schema, {**root, 'tenant_id': 3}]]:
+            with self.subTest(ancestors=ancestors), patch.dict(snapshot, {'ancestors': ancestors}), \
+                    self.assertRaises(M.SuiteError):
+                M.read_scan_catalog(10, 2)
 
     def test_suite_enables_auto_scan_only_after_complete_absent_target_baseline(self):
-        catalog, facts, sibling, target = self.scan_fixture()
-        facts['/api/v1/meta/engines/10/items'] = [sibling]
+        snapshot, sibling, _, observer = self.scan_fixture()
+        snapshot['items'] = [sibling]
         calls = []
         class FixtureClient:
             def request(self, method, path, expected, body=None, **kwargs):
@@ -349,7 +382,7 @@ class ContinuousRunnerTest(unittest.TestCase):
                     if not self_payload.get('auto_scan_metadata'):
                         raise AssertionError('continuous fixture disabled automatic scanning')
                     raise M.SuiteError('stop after verified creation request')
-                return catalog.request(method, path, expected, **kwargs)
+                raise AssertionError(f'unexpected fixture operation: {method} {path}')
         report = {}
         class Preparer(FixtureClient):
             def request(self, method, path, expected, body=None, **kwargs):
@@ -372,7 +405,11 @@ class ContinuousRunnerTest(unittest.TestCase):
             'consumer_read_denied': True, 'peer_read_denied': True})
         before = calls[:-1]
         self.assertTrue(all(method == 'GET' or path.endswith('/manual') for method, path, _ in before))
-        self.assertEqual(sum(path.endswith('/items') for _, path, _ in before), 3)
+        self.assertEqual(sum(path == '/api/v1/meta/executions/' + UUID for _, path, _ in before), 2)
+        observer.assert_called_once()
+        self.assertEqual(report['source_catalog_baseline'], {
+            'source': 'hosted_postgres_readonly', 'state': 'identity_verified', 'matching_items': 1,
+        })
 
     def test_schema_approval_preserves_distinct_users_and_rejects_cross_reads(self):
         initial_id = '00000000-0000-4000-8000-000000000002'

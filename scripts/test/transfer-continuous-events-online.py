@@ -231,55 +231,143 @@ def until(operation, timeout=120):
     raise SuiteError('continuous execution did not converge before the deadline')
 
 
-def catalog_item(client, engine_id, tenant, name, *, evidence=None):
+SCAN_TABLES = frozenset({
+    'continuous_scan_sibling', 'continuous_kafka_target', 'continuous_cdc_target', 'continuous_scheduled_target',
+})
+SCAN_SIBLING = 'continuous_scan_sibling'
+
+
+def read_scan_catalog(engine_id, tenant, *, evidence=None):
+    """Read only the owned physical scan facts, independently of tenant visibility."""
+    postgres_id = os.environ.get('ADDP_ONLINE_SCAN_POSTGRES_ID', '')
+    require(type(tenant) is int and tenant > 1 and type(engine_id) is int and engine_id > 0
+            and os.environ.get('ONLINE_SUITE') == SUITE
+            and os.environ.get('ADDP_ONLINE_TEST_TENANT_ID') == str(tenant)
+            and os.environ.get('ADDP_ONLINE_CONTINUOUS_PG_ENGINE_ID') == str(engine_id)
+            and re.fullmatch(r'[0-9a-f]{64}', postgres_id), 'scan state requires the exact Hosted fixture identities')
     if evidence is not None:
-        evidence.update(state='request_started')
-    items = client.request('GET', f'/api/v1/meta/engines/{engine_id}/items', (200,), response_type=list).payload
-    require(isinstance(items, list), 'Meta engine items must be an array')
-    matches = [item for item in items if isinstance(item, dict) and item.get('full_name') == 'public.' + name]
+        evidence.update(source='hosted_postgres_readonly', state='read_started')
+    postgres = import_module('scripts.test.execution-retention-readonly-online')
+    names = ', '.join(f"'public.{name}'" for name in sorted(SCAN_TABLES))
+    query = f"""BEGIN READ ONLY;
+SET LOCAL statement_timeout='3s'; SET LOCAL lock_timeout='1s';
+WITH RECURSIVE fixture_items AS (
+  SELECT id, tenant_id, engine_id, node_id, item_type, full_name, fingerprint,
+         row_count, size_bytes, data_updated_at, scanned_at, scanned_depth,
+         (SELECT jsonb_agg(field->>'name')
+          FROM jsonb_array_elements(CASE
+            WHEN jsonb_typeof(attributes #> '{{type_info,table,fields}}') = 'array'
+            THEN attributes #> '{{type_info,table,fields}}' ELSE '[]'::jsonb END) AS field) AS fields
+  FROM meta.meta_item
+  WHERE tenant_id = :'tenant'::bigint AND engine_id = :'engine'::bigint
+    AND full_name IN ({names}) AND deleted_at IS NULL
+  ORDER BY id LIMIT {len(SCAN_TABLES) + 1}
+), ancestors AS (
+  SELECT n.id, n.tenant_id, n.engine_id, n.parent_node_id, n.scan_status,
+         n.scanned_at, n.scanned_depth, 1 AS level
+  FROM meta.meta_node n JOIN fixture_items s ON n.id = s.node_id
+    AND n.tenant_id = s.tenant_id AND n.engine_id = s.engine_id
+  WHERE n.deleted_at IS NULL AND s.full_name = 'public.{SCAN_SIBLING}'
+  UNION ALL
+  SELECT n.id, n.tenant_id, n.engine_id, n.parent_node_id, n.scan_status,
+         n.scanned_at, n.scanned_depth, a.level + 1
+  FROM meta.meta_node n JOIN ancestors a ON n.id = a.parent_node_id
+    AND n.tenant_id = a.tenant_id AND n.engine_id = a.engine_id
+  WHERE n.deleted_at IS NULL AND a.level < 128
+)
+SELECT jsonb_build_object(
+  'items', COALESCE((SELECT jsonb_agg(to_jsonb(i)) FROM fixture_items i), '[]'::jsonb),
+  'ancestors', COALESCE((SELECT jsonb_agg(to_jsonb(a) - 'level' ORDER BY a.level) FROM ancestors a), '[]'::jsonb));
+COMMIT;
+"""
+    try:
+        raw = postgres.sql(query, expected_suite=SUITE, postgres_id=postgres_id,
+                           variables={'tenant': tenant, 'engine': engine_id})
+        require(0 < len(raw.encode()) <= 65536, 'bounded Hosted scan state read unavailable')
+        snapshot = json.loads(raw)
+    except (KeyError, OSError, ValueError, RuntimeError, subprocess.SubprocessError):
+        raise SuiteError('bounded Hosted scan state read unavailable') from None
+    require(isinstance(snapshot, dict) and isinstance(snapshot.get('items'), list)
+            and isinstance(snapshot.get('ancestors'), list), 'Hosted scan state response is invalid')
     if evidence is not None:
-        evidence.update(state='listed', visible_items=len(items), matching_items=len(matches))
-    require(len(matches) <= 1, 'Meta target identity is duplicated')
-    if not matches:
-        return None
-    item = matches[0]
-    if evidence is not None:
-        evidence.update(state='identity_check')
-    require(item.get('engine_id') == engine_id and item.get('tenant_id') == tenant
-            and item.get('item_type') == 'table' and bool(item.get('fingerprint')), 'Meta target identity changed')
-    API.require_positive_int(item, 'id')
-    API.require_positive_int(item, 'node_id')
+        evidence.update(state='identity_check', matching_items=len(snapshot['items']))
+
+    items = {}
+    ids = set()
+    for item in snapshot['items']:
+        full_name = item.get('full_name') if isinstance(item, dict) else None
+        name = full_name[7:] if isinstance(full_name, str) and full_name.startswith('public.') else None
+        require(name in SCAN_TABLES and item.get('tenant_id') == tenant and item.get('engine_id') == engine_id
+                and item.get('item_type') == 'table' and bool(item.get('fingerprint')), 'Meta target identity changed')
+        item_id = API.require_positive_int(item, 'id')
+        API.require_positive_int(item, 'node_id')
+        require(name not in items and item_id not in ids, 'Meta target identity is duplicated')
+        ids.add(item_id)
+        items[name] = item
+    require(SCAN_SIBLING in items, 'physical scan sibling is missing')
+    boundary = scan_boundary(items[SCAN_SIBLING], snapshot['ancestors'], engine_id, tenant)
     if evidence is not None:
         evidence.update(state='identity_verified')
-    return item
+    return items, boundary
 
 
-def assert_scan_boundary(client, engine_id, sibling, boundary):
-    require(API.read_meta_scan_boundary(client, engine_id, sibling) == boundary,
-            'automatic target scan changed sibling facts or ancestor scan state')
+def scan_timestamp(item):
+    try:
+        stamp = datetime.fromisoformat(item['scanned_at'].replace('Z', '+00:00'))
+        if stamp.tzinfo is not None:
+            return stamp
+    except (KeyError, ValueError, TypeError, AttributeError):
+        pass
+    raise SuiteError('scan timestamp is invalid')
 
 
-def wait_target_scan(client, engine_id, tenant, name, expected_fields, sibling, boundary):
+def scan_boundary(sibling, ancestors, engine_id, tenant):
+    def scan_state(item, fields):
+        scan_timestamp(item)
+        require(item.get('scanned_depth') in ('basic', 'deep'), 'scan boundary requires a completed baseline scan depth')
+        return {key: item.get(key) for key in fields.split()}
+
+    require(2 <= len(ancestors) <= 128, 'scan baseline must include schema and root')
+    parent_id = sibling['node_id']
+    seen = set()
+    nodes = []
+    for node in ancestors:
+        require(isinstance(node, dict) and type(parent_id) is int and parent_id > 0
+                and parent_id not in seen and node.get('id') == parent_id
+                and node.get('tenant_id') == tenant and node.get('engine_id') == engine_id,
+                'scan boundary ancestor identity changed')
+        require(node.get('scan_status') in ('pending', 'running', 'completed', 'failed'),
+                'Hosted scan ancestor has an invalid scan status')
+        nodes.append(scan_state(node, 'id tenant_id engine_id parent_node_id scan_status scanned_at scanned_depth'))
+        seen.add(parent_id)
+        parent_id = node.get('parent_node_id')
+    require(parent_id is None, 'Hosted scan ancestor chain is incomplete')
+    return {'sibling': scan_state(sibling, 'id tenant_id engine_id node_id item_type full_name fingerprint row_count size_bytes data_updated_at scanned_at scanned_depth'),
+            'ancestors': nodes}
+
+
+def read_unchanged_scan_catalog(engine_id, tenant, boundary):
+    items, observed = read_scan_catalog(engine_id, tenant)
+    require(observed == boundary, 'automatic target scan changed sibling facts or ancestor scan state')
+    return items
+
+
+def wait_target_scan(engine_id, tenant, name, expected_fields, boundary):
+    sibling = boundary['sibling']
+    after = max(scan_timestamp(item) for item in [sibling, *boundary['ancestors']])
     def scanned():
-        # Check every observation so a broadened scan's running ancestor state also fails.
-        assert_scan_boundary(client, engine_id, sibling, boundary)
-        item = catalog_item(client, engine_id, tenant, name)
+        # The target and outside facts come from the same PostgreSQL snapshot.
+        item = read_unchanged_scan_catalog(engine_id, tenant, boundary).get(name)
         if item is None:
             return None
         require(item['node_id'] == sibling['node_id'] and item['id'] != sibling['id'], 'Meta target parent or identity changed')
-        table = (item.get('attributes') or {}).get('type_info', {}).get('table', {})
-        fields = table.get('fields', [])
-        names = [field.get('name') for field in fields if isinstance(field, dict)]
-        if (item.get('scanned_depth') != 'deep' or not item.get('scanned_at')
-                or len(names) != len(fields) or len(names) != len(expected_fields) or set(names) != expected_fields):
+        fields = item.get('fields')
+        if (item.get('scanned_depth') != 'deep' or not item.get('scanned_at') or not isinstance(fields, list)
+                or len(fields) != len(expected_fields) or not all(isinstance(field, str) for field in fields)
+                or set(fields) != expected_fields or scan_timestamp(item) <= after):
             return None
-        try:
-            stamp = datetime.fromisoformat(item['scanned_at'].replace('Z', '+00:00'))
-            require(stamp.tzinfo is not None, 'target scan timestamp needs a timezone')
-        except (ValueError, TypeError, AttributeError):
-            raise SuiteError('target scan timestamp is invalid') from None
         return {'target_locator': f'addp://engine/{engine_id}/path/public/{name}?type=table',
-                'item_id': item['id'], 'scanned_at': item['scanned_at'], 'fields': sorted(names)}
+                'item_id': item['id'], 'scanned_at': item['scanned_at'], 'fields': sorted(fields)}
     return until(scanned)
 
 
@@ -569,6 +657,10 @@ def failure_diagnostic(phase, error):
                'Owner exposed invalid initial authorization status facts': 'owner_authorization_status_contract_mismatch',
                'execution reached an unexpected terminal status': 'unexpected_terminal_status',
                'continuous execution did not converge before the deadline': 'convergence_timeout',
+               'scan state requires the exact Hosted fixture identities': 'source_catalog_fixture_mismatch',
+               'bounded Hosted scan state read unavailable': 'source_catalog_observer_unavailable',
+               'Hosted scan state response is invalid': 'source_catalog_observer_response_invalid',
+               'automatic target scan changed sibling facts or ancestor scan state': 'source_catalog_scan_scope_changed',
                'physical scan sibling is missing': 'source_catalog_sibling_unavailable',
                'Meta target identity is duplicated': 'source_catalog_identity_duplicated',
                'Meta target identity changed': 'source_catalog_identity_invalid',
@@ -682,18 +774,14 @@ def run_suite(client, denied, foreign, peer, reader, admin, login, tenant, run_i
         report['checks'].append('formal_source_catalog_scan')
         phase('source_catalog')
         report['source_catalog_baseline'] = {}
-        sibling = catalog_item(client, pg, tenant, 'continuous_scan_sibling', evidence=report['source_catalog_baseline'])
-        require(sibling is not None, 'physical scan sibling is missing')
-        boundary = API.read_meta_scan_boundary(client, pg, sibling)
-        require(len(boundary['ancestors']) >= 2, 'scan baseline must include schema and root')
+        catalog, boundary = read_scan_catalog(pg, tenant, evidence=report['source_catalog_baseline'])
         API.wait_meta_scan_tick([boundary['sibling'], *boundary['ancestors']])
-        for kind in ('kafka', 'cdc'):
-            require(catalog_item(client, pg, tenant, f'continuous_{kind}_target') is None,
-                    'automatic scan requires a target absent from the baseline catalog')
-        report['precise_scan_scope'] = {'sibling_item_id': sibling['id'],
+        require(all(f'continuous_{kind}_target' not in catalog for kind in ('kafka', 'cdc')),
+                'automatic scan requires a target absent from the baseline catalog')
+        report['precise_scan_scope'] = {'sibling_item_id': boundary['sibling']['id'],
             'ancestor_nodes_verified': len(boundary['ancestors']), 'scans': [], 'target_only_verified': False}
         def target_scan(kind, fields={'id', 'label'}):
-            return wait_target_scan(client, pg, tenant, f'continuous_{kind}_target', fields, sibling, boundary)
+            return wait_target_scan(pg, tenant, f'continuous_{kind}_target', fields, boundary)
         phase('kafka_initial')
         kafka_task = create('kafka')
         initial = launch(kafka_task)
@@ -827,7 +915,7 @@ def run_suite(client, denied, foreign, peer, reader, admin, login, tenant, run_i
         blocked = wait_status(client, cdc, 'failed')
         require(blocked.get('error_details', {}).get('code') == 'schema_change_blocked', 'CDC schema drift did not block')
         compare(cdc, 'failed')
-        assert_scan_boundary(client, pg, sibling, boundary)
+        read_unchanged_scan_catalog(pg, tenant, boundary)
         API.wait_meta_scan_tick([cdc_scan])
         initiating_user = report['consumer_identity']['principal_id']
         approving_user = report['peer_identity']['principal_id']
@@ -873,7 +961,7 @@ def run_suite(client, denied, foreign, peer, reader, admin, login, tenant, run_i
         report['checks'].append('cdc_snapshot_update_delete_insert_safe_events_and_confirmed_cleanup')
         # The existing Transfer deployment also runs its bounded worker. Exercise
         # a real owner timer, then pause before the next tick while this run drains.
-        require(catalog_item(client, pg, tenant, 'continuous_scheduled_target') is None,
+        require('continuous_scheduled_target' not in read_unchanged_scan_catalog(pg, tenant, boundary),
                 'scheduled target must be absent from the baseline catalog')
         phase('scheduled_create')
         name = f'online-{run_id}-scheduled'
@@ -902,11 +990,11 @@ def run_suite(client, denied, foreign, peer, reader, admin, login, tenant, run_i
         phase('scheduled_scan')
         until(lambda: assert_scheduled_scan_origin(client, peer, execution, scheduled_scan_id, initiating_user))
         phase('scheduled_result')
-        precise = wait_target_scan(client, pg, tenant, 'continuous_scheduled_target', {'id', 'label'}, sibling, boundary)
+        precise = wait_target_scan(pg, tenant, 'continuous_scheduled_target', {'id', 'label'}, boundary)
         require(physical('verify-scheduled'), 'scheduled transfer did not commit the expected physical rowset')
         paused = client.request('GET', f'{OWNER}/task-definitions/{task_id}', (200,)).payload
         require(paused.get('enabled') is False and not paused.get('next_run_at'), 'pause left the schedule armed')
-        assert_scan_boundary(client, pg, sibling, boundary)
+        read_unchanged_scan_catalog(pg, tenant, boundary)
         require(target_scan('cdc', {'id', 'label', 'scan_extra'}) == migrated
                 and target_scan('kafka') == kafka_scan, 'scheduled scan changed existing continuous targets')
         report['precise_scan_scope']['scans'].append({'phase': 'bounded_scheduled',

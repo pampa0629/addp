@@ -200,13 +200,9 @@ def wait_manager_read_boundary(client: GatewayClient, engine_id: int, deadline: 
 
 def _read_hosted_meta_scan_facts(tenant_id, engine_id, source_id):
     suite = os.environ.get("ONLINE_SUITE")
-    engine_env = {
-        "transfer-relational-sql-etl": "ADDP_ONLINE_TEST_ENGINE_ID",
-        "transfer-continuous-events": "ADDP_ONLINE_CONTINUOUS_PG_ENGINE_ID",
-    }.get(suite)
     container_id = os.environ.get("ADDP_ONLINE_SCAN_POSTGRES_ID", "")
     if (any(type(value) is not int or value <= 0 for value in (tenant_id, engine_id, source_id))
-            or engine_env is None or os.environ.get(engine_env) != str(engine_id)
+            or suite != "transfer-relational-sql-etl" or os.environ.get("ADDP_ONLINE_TEST_ENGINE_ID") != str(engine_id)
             or tenant_id <= 1 or os.environ.get("ADDP_ONLINE_TEST_TENANT_ID") != str(tenant_id)
             or not re.fullmatch(r"[0-9a-f]{64}", container_id)):
         raise SuiteError("scan state requires the exact Hosted fixture identities")
