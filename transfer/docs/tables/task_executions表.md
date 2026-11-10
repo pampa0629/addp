@@ -94,7 +94,7 @@ Backend schema 版本 2 单向删除历史 `metadata.execution_logs` 和 `error_
 
 ### 恢复类型与位置
 
-snapshot 失败重跑与 watermark 跨 execution 续读统一见[Bounded 执行语义](../transfer-任务语义与同步模式.md#四bounded-执行语义)：失败 snapshot 从头执行，不携带旧 `checkpoint_state` 续写，append 拒绝重试；watermark 使用独立 `transfer.sync_states` 的 committed position，仍须满足已支持源、稳定键及目标幂等要求。checkpoint 与同步主状态的区别见[状态所有权](../transfer-任务语义与同步模式.md#五状态checkpoint-与-replay)，写入策略沿[策略正文](../transfer-基本概念及配置说明.md#六写入策略)。
+snapshot 失败重跑时，原 execution 的 `checkpoint_state` 保留为历史观测。watermark 跨 execution 续读使用 `transfer.sync_states` 中单独保存的 committed position。准入条件、写入策略和结果核对见[恢复分级](../transfer-基本概念及配置说明.md#恢复分级)，持久状态的职责见[状态所有权](../transfer-任务语义与同步模式.md#五状态checkpoint-与-replay)。
 
 格式级 marker 恢复还须源定位、目标幂等提交和 provider 消费同时满足，条件见[格式恢复契约](../../../docs/spec/addp数据类型与格式能力规范.md#checkpoint--resume-契约)。保存 marker 不表示 snapshot 已支持断点续写。
 
