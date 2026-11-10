@@ -74,7 +74,7 @@ PG 普通单表的直接签发、接收方读取、Deny／收权和原命令恢�
 
 ### 3.4 相关消费链路
 
-- [ ] **Agent／Ontology：**搜索零召回已解除，“先建任务、不要运行”的完整 Transfer 创建仍待验收。原专题的 `platform_condition_unsatisfied:platform_context` 保留为历史失败；后续[原参数创建记录](../../agent/CLAUDE.md#原参数创建修订-21)已转入确认恢复的重复复核问题，仍未实际创建。当前 Runtime 职责及验收由该 Owner 主线维护，不扩大 Meta／Manager 修复；未来语义边界见[Ontology 后续设计](ADDP%20Ontology最小设计契约.md)。
+- [ ] **Agent／Ontology：**搜索零召回已解除，“先建任务、不要运行”的完整 Transfer 创建仍待验收。原专题的 `platform_condition_unsatisfied:platform_context` 保留为历史失败；后续[原参数创建记录](../../agent/CLAUDE.md#历史实施记录原参数创建修订-21)已转入确认恢复的重复复核问题，仍未实际创建。当前 Runtime 职责及验收由该 Owner 主线维护，不扩大 Meta／Manager 修复；未来语义边界见[Ontology 后续设计](ADDP%20Ontology最小设计契约.md)。
 - [ ] **Outdoor 主线与执行 Owner：**语义查询、计划编译和指标执行的完整用例统一见[Outdoor 剩余闭环](Outdoor业务数据治理推进方案.md#尚未闭合的工作)。Catalog 仍只承担企业身份、语义关联、治理及发现，不复制指标定义、代替语义执行或提前新增 Semantic Runtime。
 
 ## 四、验收与维护方式

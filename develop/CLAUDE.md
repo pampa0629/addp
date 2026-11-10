@@ -362,7 +362,7 @@ Develop 执行记录归 `common.task_executions`，不维护私有执行表。�
 ### 配置文件
 
 - [backend/internal/config/config.go](backend/internal/config/config.go) - 配置加载逻辑
-- [.env](../.env) - 环境变量（`DEVELOP_*` 前缀）
+- [根环境变量示例](../.env.example)提供 `DEVELOP_*` 配置示例，实际配置按[配置规范](../docs/spec/addp配置介绍.md)维护。
 
 ## 常见开发场景
 
