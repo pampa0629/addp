@@ -3,7 +3,7 @@ import { identity } from '../../../monitor/frontend/e2e/monitoring-targets.fixtu
 import { overviewBackend, overviewNodeID, overviewPermissions } from '../../../monitor/frontend/e2e/resource-overview.fixture'
 
  test('resource overview keeps one Console history through host navigation and refresh restore', async ({ page }) => {
-  await overviewBackend(page)
+  await overviewBackend(page, { identity: identity([...overviewPermissions, 'platform.engine_deployment.read', 'monitor.http_observation.read', 'monitor.trace.read']) })
   const startupFailuresPath = '/api/v1/system/platform/module_startup_failures'
   await page.route(`**${startupFailuresPath}`, route => {
     expect(route.request().method()).toBe('GET')
@@ -13,6 +13,10 @@ import { overviewBackend, overviewNodeID, overviewPermissions } from '../../../m
   const monitor = page.frameLocator('iframe[data-testid="module-iframe"]')
   await expect(monitor.getByTestId('overview-rank-0')).toContainText('完整范围主机41')
   await expect(page.locator('.sidebar .el-menu-item.is-active')).toContainText('资源总览')
+  const order = ['主机监控', '引擎监控', '服务监控', 'HTTP 监控', '调用链']
+  const menu = page.locator('.sidebar .el-menu-item')
+  expect((await menu.allTextContents()).map(text => text.trim()).filter(text => order.includes(text))).toEqual(order)
+  await expect(monitor.getByRole('region', { name: '监控入口' }).getByRole('button')).toHaveText(order)
   const frame = page.frames().find(frame => frame.parentFrame()), timeOrigin = await frame.evaluate(() => performance.timeOrigin)
   await monitor.getByTestId('overview-rank-0').getByRole('button', { name: '完整范围主机41', exact: true }).click()
   await expect(page).toHaveURL(new RegExp(`/monitor/node-resources/${overviewNodeID}$`))
@@ -42,5 +46,5 @@ import { overviewBackend, overviewNodeID, overviewPermissions } from '../../../m
   await page.goto('/monitor/resource-overview?refresh=off')
   const monitor = page.frameLocator('iframe[data-testid="module-iframe"]')
   await expect(monitor.getByTestId('overview-rank-0')).toBeVisible()
-  await expect(monitor.getByRole('button', { name: '服务监控', exact: true })).toHaveCount(0)
+  await expect(monitor.getByRole('region', { name: '监控入口' }).getByRole('button')).toHaveText(['主机监控'])
  })

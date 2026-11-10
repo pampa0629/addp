@@ -303,10 +303,10 @@ export const SIDEBAR_MENUS = {
     items: [
       { index: '/monitor/resource-overview', icon: Grid, label: 'console.menus.monitor.resourceOverview' },
       { index: '/monitor/node-resources', icon: Monitor, label: 'console.menus.monitor.nodeResources' },
-      { index: '/monitor/service-resources', icon: Box, label: 'console.menus.monitor.serviceResources' },
       { index: '/monitor/engine-resources', icon: Cpu, label: 'console.menus.monitor.engineResources', contexts: ['platform'] },
-      { index: '/monitor/traces', icon: Connection, label: 'console.menus.monitor.traces', contexts: ['platform'] },
+      { index: '/monitor/service-resources', icon: Box, label: 'console.menus.monitor.serviceResources' },
       { index: '/monitor/http-quality', icon: TrendCharts, label: 'console.menus.monitor.httpQuality', contexts: ['platform'] },
+      { index: '/monitor/traces', icon: Connection, label: 'console.menus.monitor.traces', contexts: ['platform'] },
       { index: '/monitor/dashboard',  icon: Monitor, label: 'console.menus.monitor.dashboard', recentLabel: 'console.menus.monitor.recentDashboard' },
       { index: '/monitor/executions', icon: List,    label: 'console.menus.monitor.executions', recentLabel: 'console.menus.monitor.recentExecutions' },
       { index: '/monitor/platform-alerts', icon: Bell, label: 'console.menus.monitor.platformAlerts', contexts: ['platform'] },

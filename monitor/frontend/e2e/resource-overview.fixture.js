@@ -8,6 +8,7 @@ export async function overviewBackend(page, options = {}) {
   await page.route(`**/api/v1/system/platform/host_nodes/${overviewNodeID}`, route => route.fulfill({ json: { node_id: overviewNodeID, display_name: '完整范围主机41', node_kind: 'virtual', version: 1, enabled: true, addresses: ['127.0.0.1'] } }))
   const calls = []
   let mode = 'valid', stamp = '2026-10-13T00:00:00Z', held = null, resolve
+  await page.route('**/api/v1/system/platform/modules', route => route.fulfill({ json: { modules: [{ module_name: 'monitor' }], count: 1 } }))
   await page.route('**/api/v1/system/platform/module-instances?*', route => route.fulfill({ json: { data: [], total: 0, page: 1, page_size: 20, total_pages: 0 } }))
   await page.route('**/api/v1/monitor/platform/resource_overview*', async route => {
     calls.push({ method: route.request().method(), query: new URL(route.request().url()).search, body: route.request().postData() })

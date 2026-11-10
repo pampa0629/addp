@@ -6,7 +6,13 @@ for (const locale of ['zh-cn', 'en']) {
   test(`overview full scope, coverage and valid zero in ${locale} on a narrow screen`, async ({ page }) => {
     const state = await overviewBackend(page, { locale }); await page.setViewportSize({ width: 620, height: 850 })
     await page.goto('/resource-overview?refresh=off')
-    await expect(page.getByTestId('overview-statistics')).toContainText('43')
+    await expect(page.getByTestId('overview-stat-managed').locator('.el-statistic__number')).toHaveText('43')
+    await expect(page.getByTestId('overview-stat-connected').locator('.el-statistic__number')).toHaveText('40')
+    await expect(page.getByTestId('overview-stat-collecting').locator('.el-statistic__number')).toHaveText('30')
+    await expect(page.getByTestId('overview-stat-attention').locator('.el-statistic__number')).toHaveText('10')
+    for (const [key, count] of Object.entries({ collecting: 30, failed: 2, stale: 3, no_sample: 5, unconfigured: 1, disabled: 2 })) {
+      await expect(page.getByTestId(`overview-collection-${key}`).locator('dd')).toHaveText(String(count))
+    }
     await expect(page.getByTestId('overview-rank-0')).toContainText('完整范围主机41')
     await expect(page.getByTestId('overview-rank-0')).toContainText('0.00 %')
     await expect(page.getByTestId('overview-rank-0')).toContainText(locale === 'en' ? 'Incomplete coverage' : '覆盖不完整')
@@ -25,6 +31,7 @@ test('overview failure clears old rankings, budget is explicit, and empty is dis
   }
   state.mode('empty'); await page.getByRole('button', { name: '刷新', exact: true }).click()
   await expect(page.getByTestId('overview-rank-0')).toContainText('没有纳管主机')
+  await expect(page.getByTestId('overview-collection').locator('.collection-distribution')).toHaveCount(0)
 })
 test('overview natural refresh, off reload, and denied stop consume no paging parameters', async ({ page }) => {
   const state = await overviewBackend(page); await page.clock.install(); await page.goto('/resource-overview')
@@ -49,6 +56,7 @@ test('overview slow read is cancelled on hide, resumes, and context change rejec
   await page.evaluate(() => { Object.defineProperty(document, 'hidden', { configurable: true, value: false }); document.dispatchEvent(new Event('visibilitychange')) })
   await expect.poll(() => state.calls.length).toBe(3); await expect(page.getByRole('button', { name: '刷新', exact: true })).toBeEnabled()
   state.hold(); await page.getByRole('button', { name: '刷新', exact: true }).click(); await expect.poll(() => state.calls.length).toBe(4)
+  await expect(page.getByTestId('overview-rank-0')).toContainText('完整范围主机41')
   await setIdentity(page, identity(overviewPermissions, { type: 'tenant', tenant_id: '7' })); state.release()
   await expect(page.getByTestId('overview-denied')).toBeVisible(); await expect(page.getByTestId('overview-rank-0')).toHaveCount(0)
   await page.clock.fastForward(60001); expect(state.calls).toHaveLength(4)

@@ -6,12 +6,25 @@
       "evaluated": "Evaluation time: {time}",
       "inventory": {
         "managed": "Managed hosts",
-        "enabled": "Enabled hosts",
+        "connected": "Collection configured",
         "disabled": "Disabled hosts",
-        "connected": "Collection connected",
-        "not_connected": "Not connected"
+        "unconfigured": "Enabled without collection",
+        "enabledAndDisabled": "{enabled} enabled · {disabled} disabled",
+        "ofEnabled": "Out of {count} enabled hosts",
+        "ofConnected": "Out of {count} configured hosts",
+        "attention": "Collection needs attention",
+        "attentionDetail": "Failed, stale, or awaiting an initial sample"
       },
-      "collection": "Collection coverage",
+      "collection": "Host collection status",
+      "pressure": "Host resource pressure",
+      "shortcuts": {
+        "title": "Monitoring shortcuts",
+        "nodes": "Inspect host CPU, memory, disk, and network.",
+        "engines": "Inspect engine deployments, collection, and engine-specific metrics.",
+        "services": "Inspect service instances, process resources, and collection.",
+        "http": "Inspect request rates, failures, and latency.",
+        "traces": "Find requests and inspect cross-service calls and durations."
+      },
       "collectionHint": "A successful scrape is collection evidence, not business health or proof that every metric is valid.",
       "cpuTitle": "One-minute CPU busy TOP5",
       "memoryTitle": "Memory usage TOP5",

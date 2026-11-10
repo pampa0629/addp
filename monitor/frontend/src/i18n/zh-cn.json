@@ -6,12 +6,25 @@
       "evaluated": "统一评估时间：{time}",
       "inventory": {
         "managed": "纳管主机",
-        "enabled": "启用主机",
+        "connected": "已配置采集",
         "disabled": "停用主机",
-        "connected": "已接入采集",
-        "not_connected": "未接入采集"
+        "unconfigured": "启用但未配置采集",
+        "enabledAndDisabled": "启用 {enabled} 台 · 停用 {disabled} 台",
+        "ofEnabled": "共 {count} 台启用主机",
+        "ofConnected": "共 {count} 台已配置采集",
+        "attention": "采集待关注",
+        "attentionDetail": "采集失败、样本过期或等待首次采集"
       },
-      "collection": "采集覆盖",
+      "collection": "主机采集状态",
+      "pressure": "主机资源压力",
+      "shortcuts": {
+        "title": "监控入口",
+        "nodes": "查看主机 CPU、内存、磁盘与网络。",
+        "engines": "查看引擎部署、采集状态与专业指标。",
+        "services": "查看服务实例、进程资源与采集状态。",
+        "http": "查看请求量、失败率与接口延迟。",
+        "traces": "查询请求的跨服务调用与耗时。"
+      },
       "collectionHint": "最近抓取成功只表示采集证据，不代表业务健康或所有指标有效。",
       "cpuTitle": "CPU 一分钟忙碌率 TOP5",
       "memoryTitle": "内存使用率 TOP5",
