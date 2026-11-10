@@ -72,7 +72,7 @@
 - [测试与验收规范](spec/addp测试与验收规范.md)：统一原则与标准入口；分层规范、Owner 门禁、Online 场景和证据索引见其阅读导航。
 - [Online 专用 Runner 首次验收待办](next/ADDP统一测试与Online验收体系方案.md)跟踪专用 self-hosted Runner 的部署准备和[尚缺实机报告的场景](next/ADDP统一测试与Online验收体系方案.md#三待取得专用环境报告的范围)。已迁入 GitHub Hosted 的场景按各自的隔离 profile 运行，入口见[Online 场景索引](spec/addp测试与验收规范.md#online-场景索引)。
 - [GitHub 外部治理待办](next/ADDP持续集成体系改进专题.md)跟踪 Actions 权限、main 规则集、Runner 分组和 Environment 保护等外部设置核查。专用 Runner 的部署和验收缺口由 [Online 待办](next/ADDP统一测试与Online验收体系方案.md#三待取得专用环境报告的范围)统一跟踪。
-- [模块启动、就绪与注册治理待办](next/ADDP模块与引擎注册治理专题.md)
+- 模块启动、就绪与注册的现行规则见[新模块开发指南](spec/addp新模块开发指南.md)。[模块与引擎注册治理后续验收](next/ADDP模块与引擎注册治理专题.md#剩余证据)只跟踪两项尚缺专用 Runner 实机报告的场景：[模块注册恢复](spec/testing/scenarios/部署与执行恢复.md#module-registry-recovery)和[消费方与引擎恢复](spec/testing/scenarios/部署与执行恢复.md#consumer-engine-recovery)。
 - [模块服务运行日志规范](spec/addp模块服务运行日志规范.md)
 - [模块服务运行日志验收与后续事项](next/ADDP模块服务运行日志设计.md)
 - [平台运行观测规范](spec/addp平台运行观测规范.md)
