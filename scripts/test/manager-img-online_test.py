@@ -4,8 +4,10 @@ import importlib
 import json
 import tempfile
 import unittest
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from types import SimpleNamespace
+from unittest import mock
 from urllib.parse import parse_qs, urlsplit
 
 IMG = importlib.import_module('scripts.test.manager-img-online')
@@ -51,6 +53,107 @@ def browser_report(evidence):
 
 
 class ManagerIMGTests(unittest.TestCase):
+    def test_nfs_tiff_grants_require_the_exact_single_image_and_expiry(self):
+        grants = importlib.import_module('scripts.test.ftp-consumer-flow-online')
+        fingerprint = hashlib.sha256(f'3:{IMG.NFS_TIFF_NAME}'.encode()).hexdigest()
+        target = grants.file_target(3, IMG.NFS_TIFF_NAME, 'nfs')
+        composition = {'format': 'tiff', 'source_layout': 'single',
+                       'refs': [{'target': target, 'role': 'image', 'primary': True, 'required': True}]}
+        facts = {'schema_version': 'meta.data_item_authorization_facts/v1', 'engine_id': '3',
+                 'item_fingerprint': fingerprint, 'full_name': IMG.NFS_TIFF_NAME, 'item_type': 'file',
+                 'basis_state': 'complete', 'boundary_hash': 'a' * 64, 'observed_at': '2026-11-10T09:00:00Z',
+                 'boundary': {'layout': 'single', 'file_composition': composition}}
+        model = {'format': 'tiff', 'full_name': IMG.NFS_TIFF_NAME, 'fingerprint': fingerprint,
+                 'composition': [{'path': IMG.NFS_TIFF_NAME, 'role': 'image', 'primary': True, 'required': True}]}
+        issuer = mock.Mock()
+        def request(method, path, statuses, body=None):
+            if method == 'GET':
+                return SimpleNamespace(payload=facts)
+            return SimpleNamespace(payload={**body, 'engine_id': '3', 'approval_mode': 'independent',
+                'operator_principal_id': '11', 'revocation': None, 'boundary_hash': facts['boundary_hash'],
+                'file_composition': composition})
+        issuer.request.side_effect = request
+        with mock.patch.object(grants, 'exact_user_principal', side_effect=['11', '22']):
+            auth = grants.ModelSourceAuthorization(issuer, mock.Mock(),
+                {'tenant_id': 4, 'engine_id': 3, 'principal_id': '22'}, source_type='nfs')
+        auth.grant(model, action='metadata_read')
+        expiry = datetime(2026, 11, 10, 9, 1, tzinfo=timezone.utc)
+        self.assertEqual(auth.grant(model, expires_at=expiry)['expires_at'], expiry.isoformat())
+        commands = [call.args[3] for call in issuer.request.call_args_list if call.args[0] == 'POST']
+        self.assertEqual([(row['action'], row['expiry_mode']) for row in commands],
+                         [('metadata_read', 'until_revoked'), ('read', 'at_time')])
+        self.assertEqual([row['catalog_path'] for row in commands], [target, target])
+        composition['source_layout'] = 'multi'
+        with self.assertRaises(grants.SuiteError):
+            auth.grant(model, expires_at=expiry)
+
+    def test_nfs_tiff_requires_range_denial_expiry_and_real_browser_proof(self):
+        grants = importlib.import_module('scripts.test.ftp-consumer-flow-online')
+        env = {'ADDP_ONLINE_MANAGER_NFS_ENGINE_ID': '3', 'ADDP_ONLINE_TEST_TENANT_ID': '4',
+               'GATEWAY_URL': 'http://127.0.0.1', 'ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN': 'fixture'}
+        raw = bytes(range(128))
+        now = datetime(2026, 11, 10, 9, 0, tzinfo=timezone.utc)
+        expiry = now + timedelta(seconds=90)
+        fingerprint = hashlib.sha256(f'3:{IMG.NFS_TIFF_NAME}'.encode()).hexdigest()
+        item = {'id': 5, 'item_type': 'file', 'full_name': IMG.NFS_TIFF_NAME, 'fingerprint': fingerprint}
+        receipt = {'request_id': 'read-command', 'item_fingerprint': fingerprint,
+                   'boundary_hash': 'a' * 64, 'expires_at': expiry.isoformat()}
+        for invalid in ('', 'browser', 'withdrawn'):
+            with self.subTest(invalid=invalid):
+                client, issuer, auth = mock.Mock(), mock.Mock(), mock.Mock()
+                auth.operator, auth.recipient, auth.base = '11', '22', '/api/v1/system/engines/3'
+                auth.target.return_value = grants.file_target(3, IMG.NFS_TIFF_NAME, 'nfs')
+                auth.grants, auth.confirmed = ['read-command'], {'read-command'}
+                auth.grant.side_effect = [{'request_id': 'metadata-command'}, receipt]
+                issuer.request.side_effect = [
+                    OWNER.Response(200, {'triggered_by': 11, 'metadata': {'items_scanned': 1}}, {}),
+                    OWNER.Response(200, {'total': 1, 'data': [{**receipt, 'action': 'read',
+                        'revocation': {} if invalid == 'withdrawn' else None}]}, {}),
+                    OWNER.Response(200, {'total': 0, 'data': []}, {}),
+                ] if invalid != 'browser' else [
+                    OWNER.Response(200, {'triggered_by': 11, 'metadata': {'items_scanned': 1}}, {}),
+                    OWNER.Response(200, {'total': 0, 'data': []}, {}),
+                ]
+                client.request.side_effect = [
+                    OWNER.Response(404, {}, {}),
+                    OWNER.Response(403, {'error': 'denied'}, {}),
+                    OWNER.Response(206, {}, {'Content-Range': 'bytes 0-63/128'}, raw[:64]),
+                    OWNER.Response(403, {'error': 'denied'}, {}),
+                    OWNER.Response(404, {}, {}),
+                ]
+                evidence = {'source_format': 'tiff', 'identity': {'principal_id': '22'}, 'run_id': 'run', 'cases': []}
+                report = {}
+                def browser(data):
+                    outcome = browser_report(data)
+                    nfs = data['nfs_tiff_authorization']
+                    if invalid != 'browser':
+                        outcome['nfs_tiff_authorization'] = {
+                            'locator': nfs['locator'], 'item_id': 5, 'range_status': 206, 'pixels_verified': True,
+                        }
+                    return outcome
+                with mock.patch.object(grants, 'ModelSourceAuthorization', return_value=auth), \
+                     mock.patch.object(OWNER, 'GatewayClient', return_value=issuer), \
+                     mock.patch.object(OWNER, 'wait_for_meta_scan', return_value='scan'), \
+                     mock.patch.object(OWNER, 'find_fixture_item', return_value=item), \
+                     mock.patch.object(IMG, 'seed_nfs_tiff', return_value=SimpleNamespace(read_bytes=lambda: raw)), \
+                     mock.patch.object(IMG, 'datetime') as clock, mock.patch.object(IMG.time, 'sleep'):
+                    clock.now.side_effect = [now, now if invalid == 'browser' else expiry + timedelta(seconds=1)]
+                    if invalid:
+                        with self.assertRaises(OWNER.SuiteError):
+                            IMG.verify_nfs_tiff_authorization(OWNER, env, client, evidence, raw, browser, report, 30)
+                    else:
+                        IMG.verify_nfs_tiff_authorization(OWNER, env, client, evidence, raw, browser, report, 30)
+                auth.revoke.assert_called_once_with('metadata-command')
+                auth.cleanup.assert_called_once()
+                self.assertEqual(report['result'], 'failed' if invalid else 'passed')
+                if not invalid:
+                    self.assertEqual(report['range_statuses'], {'before_grant': 403, 'granted': 206, 'expired': 403})
+                    self.assertEqual(auth.grants, [])
+                    self.assertTrue(report['natural_expiry_verified'])
+                    self.assertTrue(report['zero_current_grants'])
+                self.assertEqual([call.kwargs for call in client.request.call_args_list if 'storage-stream' in call.args[1]],
+                    [{'headers': {'Range': 'bytes=0-63'}}] * (2 if invalid == 'browser' else 3))
+
     def test_browser_locators_match_actual_chinese_and_english_labels(self):
         import re
         root=Path(__file__).resolve().parents[2]

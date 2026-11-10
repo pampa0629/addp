@@ -2150,7 +2150,7 @@ class ManagerAcceptanceCaseTest(unittest.TestCase):
                     full.assert_not_called()
 
     def test_both_formats_use_shared_scene_and_failure_preserves_partial_root(self):
-        for failure in (None, 'second', 'third', 'fourth', 'unclean'):
+        for failure in (None, 'second', 'third', 'fourth', 'unclean', 'missing_nfs'):
             with self.subTest(failure=failure), tempfile.TemporaryDirectory() as directory:
                 env = {'ADDP_ONLINE_ARTIFACT_DIR': directory, 'ADDP_ONLINE_TEST_RUN_ID': 'media-1',
                        'ADDP_ONLINE_MANAGER_MINIO_ENGINE_ID': '27'}
@@ -2159,8 +2159,15 @@ class ManagerAcceptanceCaseTest(unittest.TestCase):
                     self.assertIs(owner, SUITE)
                     if (failure == 'second' and source_format == 'jpeg2000') or (failure == 'third' and source_format == 'grd') or (failure == 'fourth' and source_format == 'tiff'):
                         raise SUITE.SuiteError('second subscene failed')
-                    return {'result': 'passed', 'source_format': source_format,
-                            'source_unchanged': failure != 'unclean', 'cleanup': {}}
+                    report = {'result': 'passed', 'source_format': source_format,
+                              'source_unchanged': failure != 'unclean', 'cleanup': {}}
+                    if source_format == 'tiff' and failure != 'missing_nfs':
+                        report['nfs_tiff_authorization'] = {
+                            'result': 'passed', 'range_statuses': {'before_grant': 403, 'granted': 206, 'expired': 403},
+                            'expired_meta_status': 404, 'natural_expiry_verified': True,
+                            'source_unchanged': True, 'zero_current_grants': True,
+                        }
+                    return report
                 scene.run.side_effect = run
                 with mock.patch.object(importlib.util, 'spec_from_file_location') as spec, \
                      mock.patch.object(importlib.util, 'module_from_spec', return_value=scene), \

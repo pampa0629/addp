@@ -2,9 +2,14 @@
 from __future__ import annotations
 
 import hashlib
+import importlib
 import json
+import os
+import re
 import subprocess
-from datetime import datetime
+import sys
+import time
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from urllib.parse import urlencode
 
@@ -42,6 +47,119 @@ GRD_SOURCES = tuple({'case':case, 'object':'raster/grd-'+case+'.grd', 'source_sr
 
 TIFF_SOURCES=({'case':'unlocated-small-cog','object':'raster/tiff-unlocated-small-cog.tif',
     'source_srid':None,'source_format':'tiff','driver':'GTiff','width':240,'height':120,'band_count':1},)
+
+NFS_TIFF_DIRECTORY = 'raster-tiff-authorization'
+NFS_TIFF_NAME = NFS_TIFF_DIRECTORY + '/tiff-unlocated-small-cog.tif'
+
+
+def seed_nfs_tiff(environment, raw):
+    if (any(environment.get(key) != value for key, value in {
+        'ADDP_ONLINE_HOST': '1', 'ADDP_ONLINE_HOSTED': '1', 'GITHUB_ACTIONS': 'true',
+        'RUNNER_OS': 'Linux', 'ADDP_ONLINE_MANAGER_CASE': 'native-raster-media',
+    }.items()) or sys.platform != 'linux' or os.uname().machine != 'x86_64'):
+        raise ValueError('NFS TIFF requires the exclusive Hosted Manager fixture')
+    secret = Path(environment['ADDP_ONLINE_SECRET_DIR'])
+    state = secret / 'nfs-root'
+    if (not secret.is_absolute() or secret.is_symlink() or secret.stat().st_mode & 0o077
+            or state.is_symlink() or not state.is_file()):
+        raise ValueError('invalid private NFS fixture state')
+    root = Path(state.read_text().strip())
+    marker = root / '.addp-online-owner'
+    if (not re.fullmatch(r'/tmp/addp-online-manager-nfs\.[A-Za-z0-9]{6}', str(root))
+            or root.is_symlink() or not root.is_dir() or marker.is_symlink()
+            or marker.read_text().strip() != environment['ADDP_ONLINE_TEST_RUN_ID']):
+        raise ValueError('NFS TIFF export is not owned by this run')
+    directory = root / NFS_TIFF_DIRECTORY
+    directory.mkdir(mode=0o755)
+    path = root / NFS_TIFF_NAME
+    with path.open('xb') as stream:
+        stream.write(raw)
+    path.chmod(0o644)
+    return path
+
+
+def verify_nfs_tiff_authorization(owner, environment, client, evidence, raw, browser, report, timeout):
+    grants = importlib.import_module('scripts.test.ftp-consumer-flow-online')
+    engine = owner.positive_int(environment['ADDP_ONLINE_MANAGER_NFS_ENGINE_ID'], 'TIFF NFS Engine')
+    tenant = owner.positive_int(environment['ADDP_ONLINE_TEST_TENANT_ID'], 'TIFF Tenant')
+    issuer = owner.GatewayClient(environment['GATEWAY_URL'], environment['ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN'], 30)
+    permissions = grants.REGISTRATION.SOURCE_INITIALIZER_PERMISSIONS | {'meta.scan_task.execute', 'meta.scan_task.read'}
+    auth = grants.ModelSourceAuthorization(issuer, client, {
+        'tenant_id': tenant, 'engine_id': engine, 'principal_id': evidence['identity']['principal_id'],
+    }, source_type='nfs', consumer_permissions=owner.REQUIRED_PERMISSIONS, issuer_permissions=permissions)
+    report.update(result='failed', engine_id=engine, issuer_principal_id=auth.operator,
+                  consumer_principal_id=auth.recipient, initializer_permissions_verified=sorted(permissions), range_statuses={})
+    grant_filter = {'recipient_type': 'user', 'recipient_id': auth.recipient,
+                    'catalog_path': json.dumps(auth.target(NFS_TIFF_NAME))}
+    receipt = None
+    source = seed_nfs_tiff(environment, raw)
+    try:
+        execution = owner.wait_for_meta_scan(issuer, engine, time.monotonic() + timeout,
+                                             scope={'catalog_paths': [NFS_TIFF_DIRECTORY]})
+        scan = issuer.request('GET', f'/api/v1/meta/executions/{execution}', (200,)).payload
+        if scan.get('triggered_by') != int(auth.operator) or scan.get('metadata', {}).get('items_scanned') != 1:
+            raise owner.SuiteError('NFS TIFF scan did not identify exactly one owned file as the initializer')
+        report['scan_execution_id'] = execution
+        fingerprint = hashlib.sha256(f'{engine}:{NFS_TIFF_NAME}'.encode()).hexdigest()
+        model = {'format': 'tiff', 'full_name': NFS_TIFF_NAME, 'fingerprint': fingerprint,
+                 'composition': [{'path': NFS_TIFF_NAME, 'role': 'image', 'required': True, 'primary': True}]}
+        metadata_grant = auth.grant(model, action='metadata_read')
+        item = owner.find_fixture_item(client, engine, NFS_TIFF_NAME, 'NFS TIFF')
+        if item['item_type'] != 'file' or item['fingerprint'] != fingerprint:
+            raise owner.SuiteError('NFS TIFF DataItem does not match the approved boundary')
+        auth.revoke(metadata_grant['request_id'])
+        locator = owner.build_item_locator(engine, item)
+        item_path = f"/api/v1/meta/items/{item['id']}"
+        range_path = '/api/v1/manager/storage-stream?' + urlencode({'locator': locator, 'storage_ref': NFS_TIFF_NAME})
+        report.update(item_id=item['id'], locator=locator, metadata_grant_withdrawn=metadata_grant['request_id'])
+
+        def check_range(phase, status):
+            response = client.request('GET', range_path, (status,), headers={'Range': 'bytes=0-63'})
+            content_range = next((value for key, value in response.headers.items() if key.lower() == 'content-range'), None)
+            if status == 206:
+                if content_range != f'bytes 0-63/{len(raw)}' or response.raw != raw[:64]:
+                    raise owner.SuiteError('NFS TIFF Range bytes or Content-Range differ from the owned source')
+            elif content_range is not None or not isinstance(response.payload, dict) or not response.payload.get('error'):
+                raise owner.SuiteError('denied NFS TIFF Range returned an invalid error or byte response')
+            report['range_statuses'][phase] = response.status
+
+        client.request('GET', item_path, (404,))
+        check_range('before_grant', 403)
+        expiry = datetime.now(timezone.utc) + timedelta(seconds=90)
+        receipt = auth.grant(model, expires_at=expiry)
+        report['grant'] = receipt
+        check_range('granted', 206)
+        evidence['nfs_tiff_authorization'] = {'locator': locator, 'storage_ref': NFS_TIFF_NAME,
+                                              'size_bytes': len(raw), 'item_id': item['id']}
+        observed = validate_browser(owner, browser(evidence), evidence)
+        time.sleep(max(0, expiry.timestamp() - time.time()) + 0.1)
+        check_range('expired', 403)
+        report['expired_meta_status'] = client.request('GET', item_path, (404,)).status
+    finally:
+        try:
+            if receipt is not None and datetime.now(timezone.utc) >= expiry:
+                history = issuer.request('GET', auth.base + '/access_grants/history?' + urlencode({
+                    **grant_filter, 'state': 'expired',
+                }), (200,)).payload
+                rows = history.get('data')
+                if (not isinstance(rows, list) or len(rows) != 1 or history.get('total') != 1
+                        or any(rows[0].get(key) != value for key, value in receipt.items())
+                        or rows[0].get('action') != 'read' or rows[0].get('revocation') is not None):
+                    raise owner.SuiteError('NFS TIFF exact Grant natural expiry history is missing')
+                auth.grants.remove(receipt['request_id'])
+                auth.confirmed.remove(receipt['request_id'])
+                report['natural_expiry_verified'] = True
+            if source.read_bytes() != raw:
+                raise owner.SuiteError('NFS TIFF source bytes changed')
+            report['source_unchanged'] = True
+        finally:
+            auth.cleanup()
+            current = issuer.request('GET', auth.base + '/access_grants?' + urlencode(grant_filter), (200,)).payload
+            if current.get('total') != 0 or current.get('data') != []:
+                raise owner.SuiteError('NFS TIFF left a current source Grant')
+            report['zero_current_grants'] = True
+    report['result'] = 'passed'
+    return observed
 
 
 def validate_tiff_meta(owner, detail):
@@ -133,6 +251,12 @@ def validate_browser(owner, report, evidence):
                        'generation_requests': 0, 'failed_business_responses': 0, 'warnings_errors': 0}.items():
         if report.get(key) != value:
             raise owner.SuiteError('IMG browser report does not match ' + key)
+    nfs_tiff = evidence.get('nfs_tiff_authorization')
+    if nfs_tiff and report.get('nfs_tiff_authorization') != {
+        'locator': nfs_tiff['locator'], 'item_id': nfs_tiff['item_id'],
+        'range_status': 206, 'pixels_verified': True,
+    }:
+        raise owner.SuiteError('NFS TIFF browser identity, Range or pixel proof is incomplete')
     cases = report.get('cases', [])
     if len(cases) != len(evidence['cases']):
         raise owner.SuiteError('IMG browser must verify all three sources')
@@ -165,7 +289,8 @@ def validate_browser(owner, report, evidence):
 def run_browser(repository, environment, evidence, owner):
     path = Path(environment['ADDP_ONLINE_ARTIFACT_DIR']) / ('manager-'+evidence['source_format']+'-browser.json')
     path.unlink(missing_ok=True)
-    env = dict(environment, ADDP_ONLINE_MANAGER_RASTER_MEDIA_JSON=json.dumps(evidence))
+    env = {key: value for key, value in environment.items() if not key.endswith('_ACCESS_TOKEN')}
+    env['ADDP_ONLINE_MANAGER_RASTER_MEDIA_JSON'] = json.dumps(evidence)
     result = subprocess.run(['npm', 'exec', '--', 'playwright', 'test', 'e2e/online/manager-img.spec.js',
                              '--config=playwright.online.config.js'], cwd=repository / 'console/frontend', env=env, check=False)
     if result.returncode or not path.is_file():
@@ -234,7 +359,11 @@ def run(repository, environment, owner, *, browser_runner=None, physical_runner=
             case.update(task_id=fixture.task_id, execution_id=fixture.execution_id, result_id=fixture.result_id,
                         preview_url=fixture.artifact['preview_url'], artifact=fixture.artifact)
         browser_evidence = {'source_format': source_format, 'run_id': report['run_id'], 'identity': identity, 'cases': cases}
-        report['browser'] = validate_browser(owner, browser(browser_evidence), browser_evidence)
+        if source_format == 'tiff' and environment.get('ADDP_ONLINE_MANAGER_CASE') == 'native-raster-media':
+            report['browser'] = verify_nfs_tiff_authorization(owner, environment, client, browser_evidence,
+                source_raw, browser, report.setdefault('nfs_tiff_authorization', {}), timeout)
+        else:
+            report['browser'] = validate_browser(owner, browser(browser_evidence), browser_evidence)
         for fixture in fixtures:
             if client.request('GET', f"/api/v1/meta/items/{fixture.item['id']}", (200,)).payload != snapshots[fixture.item['id']]:
                 raise owner.SuiteError('IMG generation or browser changed the source Meta snapshot')

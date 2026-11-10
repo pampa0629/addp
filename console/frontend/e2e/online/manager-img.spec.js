@@ -81,6 +81,32 @@ test('IMG native metadata, COG pixels and cached reopen through the real Console
     if (path.startsWith('/api/v1/') && response.status() >= 400) failures.push({ path, status: response.status() })
   })
   await login(page, env.ADDP_ONLINE_TEST_USER_USERNAME, env.ADDP_ONLINE_TEST_USER_PASSWORD, '/')
+  let nfsTiffProof
+  const nfsTiff = evidence.nfs_tiff_authorization
+  if (nfsTiff) {
+    expect(evidence.source_format).toBe('tiff')
+    diagnostics.setStage('tiff-nfs:authorized-preview')
+    const ranged = page.waitForResponse(response => {
+      const url = new URL(response.url())
+      return url.pathname === '/api/v1/manager/storage-stream'
+        && url.searchParams.get('locator') === nfsTiff.locator
+        && url.searchParams.get('storage_ref') === nfsTiff.storage_ref
+        && response.request().method() === 'GET' && Boolean(response.request().headers().range)
+    })
+    ranged.catch(() => {})
+    await page.goto(`/manager/data-explorer?locator=${encodeURIComponent(nfsTiff.locator)}`)
+    const response = await ranged
+    expect(response.status()).toBe(206)
+    expect(response.headers()['content-range']).toMatch(new RegExp(`^bytes \\d+-\\d+/${nfsTiff.size_bytes}$`))
+    const api = await browserAPIFromResponse(response, env.GATEWAY_URL, expectedIdentity)
+    await api.dispose()
+    const frame = page.frameLocator('iframe[data-testid="module-iframe"]')
+    await expect(frame.locator('.tiff-pages')).toContainText('240 × 120')
+    await expect(frame.locator('.tiff-pages')).toContainText(/第 1 页 \/ 共 1 页|Page 1 \/ 1/)
+    await expect.poll(() => tiffFixturePixelsMatch(frame)).toBe(true)
+    await frame.locator('.preview-panel').screenshot({ path: resolve(env.ADDP_ONLINE_ARTIFACT_DIR, 'tiff-nfs-authorized-preview.png') })
+    nfsTiffProof = { locator: nfsTiff.locator, item_id: nfsTiff.item_id, range_status: response.status(), pixels_verified: true }
+  }
   const cases = []
   for (const source of evidence.cases) {
     diagnostics.setStage(`img-${source.case}:preview`)
@@ -272,6 +298,7 @@ print(json.dumps(owner.validate_model_bundle(raw,json.loads(sys.argv[3]))))`
     schema_version: 'addp.manager-raster-media-browser/v4', run_id: evidence.run_id, result: 'passed',
     source_format: evidence.source_format, identity: evidence.identity, cases, generation_requests: generationRequests,
     failed_business_responses: failures.length, warnings_errors: warnings.length,
+    nfs_tiff_authorization: nfsTiffProof,
     gpu_performance_diagnostics: diagnostics.snapshot()
   }) + '\n')
 })

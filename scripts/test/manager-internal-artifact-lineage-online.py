@@ -2450,6 +2450,12 @@ def run_native_raster_media_case(repository, environment, client, identity):
             client, positive_int(environment["ADDP_ONLINE_MANAGER_MINIO_ENGINE_ID"], "MinIO engine id"),
             time.monotonic() + float(environment.get("ADDP_ONLINE_MANAGER_LINEAGE_CONVERGENCE_TIMEOUT_SECONDS", "180")))
         run_raster_media_scenes(repository, environment, report)
+        nfs_tiff = report["tiff"].get("nfs_tiff_authorization", {})
+        if (nfs_tiff.get("result") != "passed"
+                or nfs_tiff.get("range_statuses") != {"before_grant": 403, "granted": 206, "expired": 403}
+                or nfs_tiff.get("expired_meta_status") != 404
+                or any(nfs_tiff.get(key) is not True for key in ("natural_expiry_verified", "source_unchanged", "zero_current_grants"))):
+            raise SuiteError("native raster media requires complete NFS TIFF authorization evidence")
         report["result"] = "passed"
         return report
     except BaseException as failure:

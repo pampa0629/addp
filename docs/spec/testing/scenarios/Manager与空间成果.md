@@ -96,7 +96,9 @@ case 路由、默认完整场景保留、未知值只读拒绝、子场景失败
 
 同一普通身份经Gateway的Meta扫描、Manager精确item刷新及Meta读回必须得到`tiff/cog/true/heuristic`、240×120、tiled=true、overview=false，无spatial事实；归档刷新前后完整Meta、单项同步刷新请求范围/实际响应、前后扫描时间和独占源扫描execution；已知item刷新仅允许补回与目录身份完全一致的`item.full_name`，其余attributes严格不变，不能把同步刷新伪装为另一个异步scan-run。真实Console的属性弹窗核同一元数据，预览核240×120单页、Range 206 和全部 Float64 灰阶像素及透明 NoData，页面无地图。TIFF仍允许既有非定位可选转换动作，测试仅要求不提交生成，不把“不可地图定位”等同“按钮不存在”。原下载以 single TIFF 原字节核对大小和 SHA-256，API 和真实按钮下载一致，分别归档。页面重开后复核同一源，浏览器零生成/零业务失败/零警告，源/Meta保持（除本次显式单项刷新外），原四份COG缓存和领域/物理删除/模式恢复/部署/Infra清理仍必须全部通过。
 
-当前子报告为`addp.manager-raster-media/v2`、页面报告`addp.manager-raster-media-browser/v4`；当前入口只接受新报告，不用历史三格式或旧版本报告替代本轮四格式完整结果。仅验证MinIO该有界TIFF样例及原三格式回归，不认证BigTIFF、任意布局/容量、NFS或Float64地图渲染；SKP精确组成授权保持关闭。
+当前子报告为`addp.manager-raster-media/v2`、页面报告`addp.manager-raster-media-browser/v4`。`native-raster-media` 还必须提交 `nfs_tiff_authorization` 证据。只把已核对 SHA-256 的同一 TIFF 复制到本轮只读 NFS 导出，由一次性源初始化用户用 `meta.scan_task.execute` 和 `meta.scan_task.read` 完成单目录深扫。仅该 case 为一次性初始化用户增加这两个扫描权限，普通消费用户仍是原十项。
+
+短暂签发并收回精确元数据授权以取得正式 DataItem ID，再以同一个普通 User API 会话验证 Range 依次返回 403、206、403。正向请求核对 Content-Range 和实际字节；授权有效时真实 Console 还须核对同一账号、Range 206 和完整灰阶／透明像元。到期后重新请求，核对元数据 404 和未撤销的已到期历史。失败时只清理本轮命令，源文件随既有 NFS 夹具清理。此用例覆盖该有界 NFS GeoTIFF／COG 的自然到期，BigTIFF、任意布局／容量和 Float64 地图渲染另行验收。
 
 ### ENVI 双文件 COG（限定 Hosted 已验收）
 

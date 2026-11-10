@@ -586,6 +586,8 @@ class ModelSourceAuthorization:
         # JSON byte order. Primary is a semantic flag, never an ordering rule.
         expected_refs.sort(key=lambda ref: json.dumps(ref['target'], ensure_ascii=False, separators=(',', ':')))
         boundary = {'layout': 'multi' if model['format'] in ('gltf','envi') else 'single', 'file_composition': {'format': model['format'], 'refs': expected_refs}}
+        if model['format'] == 'tiff':
+            boundary['file_composition']['source_layout'] = 'single'
         require(isinstance(facts, dict) and all(facts.get(key) == value for key, value in {
             'schema_version': 'meta.data_item_authorization_facts/v1', 'engine_id': str(self.engine_id),
             'item_fingerprint': model['fingerprint'], 'full_name': model['full_name'],
@@ -595,27 +597,36 @@ class ModelSourceAuthorization:
             'FTP approval requires matching complete System facts, never a directory or caller-supplied composition')
         return facts
 
-    def grant(self, model):
+    def grant(self, model, *, action='read', expires_at=None):
         facts = self.facts(model)
-
         command = str(uuid.uuid4())
+        reason = ('Disposable exact TIFF authorization' if model['format'] == 'tiff'
+                  else 'Disposable FTP exact model composition approval')
         body = {'request_id': command, 'catalog_path': self.target(model['full_name']),
                 'item_fingerprint': model['fingerprint'], 'expected_boundary_hash': facts['boundary_hash'],
-                'recipient_type': 'user',
-                'recipient_id': self.recipient, 'action': 'read', 'expiry_mode': 'until_revoked',
-                'reason': 'Disposable FTP exact model composition approval'}
+                'recipient_type': 'user', 'recipient_id': self.recipient, 'action': action,
+                'expiry_mode': 'until_revoked', 'reason': reason}
+        if expires_at is not None:
+            body.update(expiry_mode='at_time', expires_at=expires_at.isoformat())
         # Retain our command before the write, including an unknown outcome.
         self.grants.append(command)
         receipt = self.issuer.request('POST', self.base + '/access_grants', (201,), body).payload
         expected = {key: body[key] for key in ('request_id', 'catalog_path', 'item_fingerprint',
                                              'recipient_type', 'recipient_id', 'action', 'expiry_mode')}
-        expected.update(engine_id=str(self.engine_id), approval_mode='independent', expires_at=None,
+        expected.update(engine_id=str(self.engine_id), approval_mode='independent',
                         boundary_hash=facts['boundary_hash'], file_composition=facts['boundary']['file_composition'],
                         operator_principal_id=self.operator, revocation=None)
         require(isinstance(receipt, dict) and all(receipt.get(key) == value for key, value in expected.items()),
                 'FTP Grant receipt changed its issuer, recipient or complete frozen composition')
+        actual_expiry = receipt.get('expires_at')
+        require(actual_expiry is None if expires_at is None else isinstance(actual_expiry, str)
+                and datetime.fromisoformat(actual_expiry.replace('Z', '+00:00')) == expires_at,
+                'exact source Grant expiry differs from the requested time')
         self.confirmed.add(command)
-        return {'request_id': command, 'item_fingerprint': model['fingerprint'], 'boundary_hash': facts['boundary_hash']}
+        evidence = {key: receipt[key] for key in ('request_id', 'item_fingerprint', 'boundary_hash')}
+        if expires_at is not None:
+            evidence['expires_at'] = actual_expiry
+        return evidence
 
     def revoke(self, command, *, cleanup=False):
         require(command in self.grants, 'FTP cleanup must not revoke an unowned Grant')
