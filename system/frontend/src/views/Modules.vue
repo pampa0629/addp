@@ -181,7 +181,10 @@
             </el-table-column>
             <el-table-column :label="t('system.module.columns.instances')" min-width="360">
               <template #default="{ row }">
-                <div class="instance-summary">{{ instanceSummary(row) }}</div>
+                <div class="instance-summary">
+                  {{ instanceSummary(row) }}
+                  <el-button v-if="canObserve" type="primary" link @click="openMonitoring(row.module_name)">{{ t('system.module.monitor') }}</el-button>
+                </div>
                 <div v-for="instance in previewInstances(row)" :key="instance.instance_id" class="instance-observation">
                   <el-tag size="small" :type="instanceStatusTagType(instance)">{{ instanceStatusLabel(instance) }}</el-tag>
                   <span class="instance-observation-endpoint" :title="instance.module_url || instance.health_check_url || ''">
@@ -236,7 +239,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { Refresh } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useI18n } from 'vue-i18n'
-import { StatusAnnouncer } from '@common-ui'
+import { StatusAnnouncer, openConsoleRoute } from '@common-ui'
 import ModuleLogPipeline from '../components/ModuleLogPipeline.vue'
 import { modulesAPI } from '../api/modules'
 import { useAuthStore } from '../store/auth'
@@ -255,6 +258,9 @@ const { t, te } = useI18n()
 const authStore = useAuthStore()
 const canReadLogs = computed(() => authStore.hasPermission('platform.module_log.read'))
 const canReadPipeline = computed(() => authStore.hasPermission('monitor.log_pipeline.read'))
+const canObserve = computed(() => authStore.contextType === 'platform' && authStore.authContext?.principal?.type === 'user' && !authStore.authContext?.delegation &&
+  authStore.hasPermission('platform.module.read') && authStore.hasPermission('monitor.resource_observation.read'))
+const openMonitoring = moduleName => openConsoleRoute(`/monitor/service-resources?${new URLSearchParams({ module_name: moduleName, process_metrics_declared: 'all' })}`)
 const modules = ref([])
 const modulesLoaded = ref(false)
 const catalogDeclaration = ref(null)

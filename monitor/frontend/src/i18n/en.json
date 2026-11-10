@@ -892,6 +892,16 @@
       }
     },
     "process": {
+      "coverage": {
+        "action": "View collection coverage",
+        "title": "Collection coverage (current page)",
+        "filter": "Current-page sample status",
+        "all": "All sample statuses",
+        "online": "Online instances",
+        "configured": "Collection configured",
+        "sampled": "Valid samples",
+        "empty": "No instances on this page match this sample status."
+      },
       "startupFailures": {
         "title": "Startup failures",
         "build_failed": "Build failed",

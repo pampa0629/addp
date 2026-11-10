@@ -892,6 +892,16 @@
       }
     },
     "process": {
+      "coverage": {
+        "action": "查看采集覆盖",
+        "title": "采集覆盖（当前页）",
+        "filter": "当前页采样状态",
+        "all": "全部采样状态",
+        "online": "在线实例",
+        "configured": "已配置采集",
+        "sampled": "采样有效",
+        "empty": "当前页没有符合此采样状态的实例。"
+      },
       "startupFailures": {
         "title": "启动失败",
         "build_failed": "构建失败",

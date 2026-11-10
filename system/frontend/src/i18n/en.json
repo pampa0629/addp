@@ -16,6 +16,7 @@
       "personalCenter": "Personal Center"
     },
     "module": {
+      "monitor": "View monitoring",
       "title": "Module Management",
       "description": "View module responsibilities, instance leases, and uptime, and manage business module enablement.",
       "refresh": "Refresh",

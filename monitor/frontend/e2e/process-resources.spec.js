@@ -7,6 +7,32 @@ const boundHostID = '10000000-0000-4000-8000-000000000001'
 const boundInstances = () => [{ id: 1, node_id: boundHostID, host_node_name: 'old-deployment-alias' }, { id: 2, node_id: boundHostID, host_node_name: 'old-deployment-alias' }, { id: 3, node_id: '', host_node_name: 'Current managed host' }]
 const hostPermissions = [...processPermissions, 'platform.host_node.read']
 
+test('online coverage distinguishes configured, valid and missing collection on the current page', async ({ page }) => {
+  const fixture = await backend(page, { instances: [
+    { id: 1, module_name: 'meta', role: 'worker' },
+    { id: 2, module_name: 'meta', role: 'worker' },
+    { id: 3, module_name: 'asset', role: 'backend', process_metrics_declared: false }
+  ] })
+  fixture.setMode('failed')
+  await page.goto('/service-resources?refresh=off')
+  await page.getByRole('button', { name: '查看采集覆盖' }).click()
+  const overview = page.getByTestId('process-coverage')
+  await expect(overview.getByRole('row', { name: /meta/ }).getByRole('cell')).toHaveText(['meta', '任务进程', '2', '2', '1'])
+  await expect(overview.getByRole('row', { name: /asset/ }).getByRole('cell')).toHaveText(['asset', '后端服务', '1', '0', '0'])
+  const filter = page.locator('.el-select').filter({ has: page.getByRole('combobox', { name: '当前页采样状态' }) })
+  await filter.click()
+  await page.getByRole('option', { name: '未接入采集', exact: true }).click()
+  const list = page.getByTestId('process-list')
+  await expect(list.getByRole('row', { name: /asset/ })).toBeVisible()
+  await expect(list.getByRole('row', { name: /meta/ })).toHaveCount(0)
+  await filter.click()
+  await page.getByRole('option', { name: '采集失败', exact: true }).click()
+  await expect(list.getByRole('row', { name: /mac-process-2/ })).toBeVisible()
+  await expect(list.getByRole('row', { name: /mac-process-1/ })).toHaveCount(0)
+  expect(fixture.listCalls.at(-1)).toMatchObject({ status: 'up' })
+  expect(fixture.listCalls.at(-1)).not.toHaveProperty('process_metrics_declared')
+})
+
 test('a confirmed backend startup failure is visible without a registered instance and clears on refresh', async ({ page }) => {
   const startupFailures = [{ module_name: 'transfer', failed_at: '2026-10-10T00:00:00Z', reason: 'readiness_timeout' }]
   await backend(page, { instances: [], startupFailures })

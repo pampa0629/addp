@@ -16,6 +16,7 @@
       "personalCenter": "个人中心"
     },
     "module": {
+      "monitor": "查看监控",
       "title": "模块管理",
       "description": "查看模块职责、实例租约与运行时长，管理业务模块启用状态。",
       "refresh": "刷新",

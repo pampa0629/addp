@@ -2,6 +2,24 @@ import { browserTestOrigin } from '../../../common-frontend/basic/src/utils/brow
 import { expect, test } from '@playwright/test'
 import { mockModuleQueryAPI, moduleQueryLink } from './module-query.fixture'
 
+for (const resourcePermission of [false, true]) {
+  test(`module monitoring shortcut follows existing resource permission (${resourcePermission})`, async ({ page }) => {
+    await mockModuleQueryAPI(page, { resourcePermission })
+    await page.route('**/monitor/service-resources?*', route => route.fulfill({ body: 'Monitor destination' }))
+    await page.goto('/modules')
+    const module = page.getByRole('row').filter({ hasText: 'manager' })
+    await expect(module).toBeVisible()
+    const shortcut = module.getByRole('button', { name: '查看监控' })
+    if (!resourcePermission) {
+      await expect(shortcut).toHaveCount(0)
+      return
+    }
+    await shortcut.click()
+    await expect(page).toHaveURL(url => url.pathname === '/monitor/service-resources' &&
+      url.searchParams.get('module_name') === 'manager' && url.searchParams.get('process_metrics_declared') === 'all')
+  })
+}
+
 test('instance freshness tracks successful results, preserves stale data during retries and recovers', async ({ page }) => {
   await page.clock.install({ time: new Date('2026-10-01T12:00:00Z') })
   await mockModuleQueryAPI(page)

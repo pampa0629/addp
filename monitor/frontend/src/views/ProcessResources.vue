@@ -44,11 +44,28 @@
         </div>
         <RuntimeInstanceTimeFilter v-model:time-basis="timeBasis" v-model:period="period" v-model:custom-range="customRange" @change="filter" />
         <el-button @click="resetFilters">{{ t('common.reset') }}</el-button>
+        <el-button v-if="!showCoverage" :disabled="!validTimeDraft" @click="setScope('coverage')">{{ t('monitor.process.coverage.action') }}</el-button>
         <el-button :disabled="!validTimeDraft" @click="setScope('all')">{{ t('monitor.process.allInstances') }}</el-button>
         <el-button :disabled="!validTimeDraft" v-if="state.status !== 'up' || state.declared !== 'true'" @click="setScope('current')">{{ t('monitor.process.currentInstances') }}</el-button>
       </form>
       <el-alert v-if="errorKey || summaryErrorKey" :title="t(errorKey || summaryErrorKey)" type="warning" :closable="false" data-testid="process-error" />
-      <el-table :data="instances" row-key="id" v-loading="loading && !instances.length" :empty-text="t('monitor.process.empty')" data-testid="process-list">
+      <section v-if="showCoverage && instances.length" class="process-coverage" :aria-label="t('monitor.process.coverage.title')">
+        <div class="process-toolbar">
+          <h3>{{ t('monitor.process.coverage.title') }}</h3>
+          <el-select v-model="collectionFilter" :aria-label="t('monitor.process.coverage.filter')">
+            <el-option value="all" :label="t('monitor.process.coverage.all')" />
+            <el-option v-for="item in ['not_connected', 'collecting', 'no_sample', 'stale', 'failed', 'identity_mismatch', 'unavailable']" :key="item" :value="item" :label="collectionLabel(item)" />
+          </el-select>
+        </div>
+        <el-table :data="coverage" size="small" data-testid="process-coverage">
+          <el-table-column prop="module" :label="t('monitor.process.module')" />
+          <el-table-column :label="t('monitor.process.role')"><template #default="{ row }">{{ t(`monitor.process.roles.${row.role}`) }}</template></el-table-column>
+          <el-table-column prop="online" :label="t('monitor.process.coverage.online')" />
+          <el-table-column prop="declared" :label="t('monitor.process.coverage.configured')" />
+          <el-table-column :label="t('monitor.process.coverage.sampled')"><template #default="{ row }">{{ row.unknown ? '—' : row.sampled }}</template></el-table-column>
+        </el-table>
+      </section>
+      <el-table :data="visibleInstances" row-key="id" v-loading="loading && !instances.length" :empty-text="t(showCoverage && collectionFilter !== 'all' ? 'monitor.process.coverage.empty' : 'monitor.process.empty')" data-testid="process-list">
         <el-table-column :label="t('monitor.process.module')" prop="module_name" min-width="120" />
         <el-table-column :label="t('monitor.process.instance')" min-width="170" show-overflow-tooltip>
           <template #default="{ row }">{{ row.runtime_hostname || row.registered_host || row.instance_id }}<p class="process-hint" :title="row.instance_id">{{ t(processRoleLabelKey(row)) }}</p></template>
@@ -133,6 +150,27 @@ const canReadHost = computed(() => canRead.value && auth.hasPermission('platform
 const identity = computed(() => JSON.stringify([auth.authContext?.principal, auth.authContext?.context, auth.authContext?.delegation, auth.permissions]))
 const state = computed(() => resolveProcessRoute(route.query))
 const instances = ref([]), summaries = ref(new Map()), total = ref(0), loading = ref(false), errorKey = ref(''), summaryErrorKey = ref('')
+const collectionFilter = ref('all')
+const showCoverage = computed(() => state.value.status === 'up' && state.value.declared === 'all')
+const visibleInstances = computed(() => showCoverage.value && collectionFilter.value !== 'all'
+  ? instances.value.filter(row => collectionStatus(row) === collectionFilter.value)
+  : instances.value)
+const coverage = computed(() => {
+  const groups = new Map()
+  for (const row of instances.value) {
+    const key = `${row.module_name}:${row.role}`
+    if (!groups.has(key)) groups.set(key, { module: row.module_name, role: row.role, online: 0, declared: 0, sampled: 0, unknown: false })
+    const group = groups.get(key)
+    group.online++
+    if (row.process_metrics_declared) {
+      group.declared++
+      const summary = summaries.value.get(row.id)
+      if (!summary) group.unknown = true
+      else if (summary.series.some(series => series.points[0].data_state === 'valid')) group.sampled++
+    }
+  }
+  return [...groups.values()]
+})
 const hostReferences = ref({}), startupFailures = ref([])
 const stopReason = ref('')
 const timeBasis = ref('registered'), period = ref('all'), customRange = ref(null)
@@ -183,9 +221,13 @@ function pointState(row, metric) {
   if (!data) return ''
   return t(data.data_state === 'no_data' && metric.name === 'cpu' && summaries.value.get(row.id)?.collection.state === 'collecting' ? 'monitor.process.waiting' : `monitor.process.states.${data.data_state}`)
 }
-function collectionState(row) {
-  return t(summaries.value.has(row.id) ? `monitor.process.collectionStates.${summaries.value.get(row.id).collection.state}` : !row.process_metrics_declared ? 'monitor.process.collectionStates.not_connected' : 'monitor.process.unavailable')
+function collectionStatus(row) {
+  return summaries.value.get(row.id)?.collection.state ?? (row.process_metrics_declared ? 'unavailable' : 'not_connected')
 }
+function collectionLabel(value) {
+  return t(value === 'unavailable' ? 'monitor.process.unavailable' : `monitor.process.collectionStates.${value}`)
+}
+function collectionState(row) { return collectionLabel(collectionStatus(row)) }
 function sampledAt(row) {
   const stamp = summaries.value.get(row.id)?.collection.sampled_at
   return stamp ? `${t('monitor.resources.sampledAt')}: ${formatFieldPresentationValue(stamp, { temporal_format: 'datetime' }, locale.value)}` : ''
@@ -214,7 +256,18 @@ function applyFilters() {
   const query = resolveProcessRoute({ ...timeDraft(), refresh: state.value.refresh, module_name: moduleName.value.trim(), registered_host: registeredHost.value, node_name: nodeName.value, node_ip: nodeIP.value, role: role.value, stop_reason: stopReason.value, status: status.value, process_metrics_declared: declared.value }).query
   return navigate(query)
 }
-function setScope(scope) { cancelFilter(); if (!validTimeDraft.value) return; return navigate(resolveProcessRoute({ ...timeDraft(), refresh: state.value.refresh, module_name: moduleName.value.trim(), registered_host: registeredHost.value, node_name: nodeName.value, node_ip: nodeIP.value, role: role.value, stop_reason: stopReason.value, status: scope === 'all' ? 'all' : 'up', process_metrics_declared: scope === 'all' ? 'all' : 'true' }).query) }
+function setScope(scope) {
+  cancelFilter()
+  if (!validTimeDraft.value) return
+  const coverageScope = scope === 'coverage'
+  return navigate(resolveProcessRoute({
+    ...(coverageScope && timeBasis.value === 'offline' ? {} : timeDraft()),
+    refresh: state.value.refresh, module_name: moduleName.value.trim(),
+    registered_host: registeredHost.value, node_name: nodeName.value, node_ip: nodeIP.value, role: role.value,
+    stop_reason: coverageScope ? undefined : stopReason.value,
+    status: scope === 'all' ? 'all' : 'up', process_metrics_declared: scope === 'current' ? 'true' : 'all'
+  }).query)
+}
 function stopReasonLabel(row) {
   const key = row.status === 'down' ? runtimeInstanceStopReasonLabelKey(row.stop_reason) : ''
   return key ? t(key) : '—'
@@ -224,6 +277,7 @@ function timeDraft() {
 }
 function resetFilters() {
   cancelFilter()
+  collectionFilter.value = 'all'
   stopReason.value = ''
   timeBasis.value = 'registered'; period.value = 'all'; customRange.value = null
   moduleName.value = ''; registeredHost.value = ''; nodeName.value = ''; nodeIP.value = ''; role.value = ''; status.value = 'up'; declared.value = 'true'
@@ -345,6 +399,8 @@ onBeforeUnmount(() => { disposed = true; filterInput.dispose(); refreshCycle.dis
 .process-hint { margin: 4px 0; font-size: 12px; line-height: 1.5; color: var(--addp-text-secondary); }
 @media (max-width: 600px) { .process-toolbar h2 { flex-basis: 100%; } .process-filters > .runtime-instance-time-filter { width: 100%; } }
 .el-pagination { margin-top: 16px; }
+.process-coverage { margin: 12px 0 20px; }
+.process-coverage .el-select { width: min(100%, 220px); }
 .process-trend-chart { display: flex; min-width: 0; }
 .process-trend-range, .process-metric-heading { display: flex; align-items: center; gap: 4px; min-width: 0; max-width: 100%; }
 .process-trend-range { flex: 1 1 200px; }
