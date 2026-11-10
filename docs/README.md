@@ -80,8 +80,8 @@
 - Manager 预览的现行浏览器门禁见 [Owner 补充门禁](spec/testing/Owner补充门禁.md#manager-预览浏览器门禁)，使用隔离夹具验证页面行为。[Manager 浏览器回归后续验收](next/Manager前端浏览器回归测试专题.md#尚需核对的场景覆盖)列出仍需逐项核对的页面证据和真实数据 T4 范围。
 - [企业资源目录与 Catalog 后续专题](next/ADDP企业资源目录能力专题.md)汇总[当前能力边界](next/ADDP企业资源目录能力专题.md#二当前能力边界)、[未决设计与剩余工作](next/ADDP企业资源目录能力专题.md#三剩余工作)以及[验收与维护方式](next/ADDP企业资源目录能力专题.md#四验收与维护方式)。
 - [Engine Catalog 概念与读取边界](concepts/addp引擎体系图.md#实时-engine-catalog元数据快照和数据预览的边界)
-- [本体定义与发布规范](spec/addp本体定义与发布规范.md)
-- [Ontology 后续设计与验收](next/ADDP%20Ontology最小设计契约.md)
+- [本体定义与发布规范](spec/addp本体定义与发布规范.md)维护现行 Tenant 原生定义、修订发布、图投影、试算与单记录求值，以及平台能力发布与消费契约。
+- [Ontology 后续设计与验收](next/ADDP%20Ontology最小设计契约.md)汇总[当前边界与验收缺口](next/ADDP%20Ontology最小设计契约.md#一当前边界与待办)和[待确认的 Graph 职责迁移](next/ADDP%20Ontology最小设计契约.md#五graph-职责迁移待确认)。本体修订的 Hosted T4 断言另见[正式场景](spec/testing/scenarios/平台观测与语义生命周期.md#ontology-revision-lifecycle)。
 - [Outdoor 业务语义](concepts/Outdoor业务语义.md)
 - [Outdoor 数据治理与指标实现规范](spec/Outdoor数据治理与指标实现规范.md)
 - [栅格计算与成果契约规范](spec/addp栅格计算与成果契约规范.md)
@@ -113,7 +113,7 @@
 8. [Agent 模块说明](../agent/CLAUDE.md)、[common-python 模块说明](../common-python/CLAUDE.md)与 [common-frontend 说明](../common-frontend/README.md)：查看当前实现。
 9. [ADDP 智能体能力开放体系专题](next/ADDP智能体能力开放体系专题.md)：查看未完成能力和验收缺口。
 10. [铁路占耕地面积计算 AI 自动化实验](plan/铁路占耕地面积计算-AI自动化实验.md)：查看尚未闭合的空间计算业务场景与验收问题。
-11. [本体定义与发布规范](spec/addp本体定义与发布规范.md)：查看已实现 Tenant/平台定义、PG 权威修订、FalkorDB 投影及 Agent 消费；绑定与真实求值见[后续设计](next/ADDP%20Ontology最小设计契约.md)。
+11. 查阅 Tenant／平台定义、PG 权威修订、FalkorDB 投影及 Agent 消费契约。跨来源绑定和后续验收范围见专题。[本体定义与发布规范](spec/addp本体定义与发布规范.md) · [Ontology 后续设计与验收](next/ADDP%20Ontology最小设计契约.md#一当前边界与待办)
 
 AI 模型接入、在线厂商账号、内网模型服务、模型档案、场景绑定或推理密钥管理，应先阅读 [ADDP AI 推理接口规范](spec/addp%20AI推理接口规范.md)；资源归属、授权、凭据、接口与验证的专题索引见 [Inference 模块导航](../inference/CLAUDE.md#专题导航)。Agent 与 Copilot 只消费统一推理数据面，不拥有 Provider 或 API Key。
 
