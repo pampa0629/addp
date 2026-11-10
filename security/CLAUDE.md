@@ -869,41 +869,15 @@ v44领域、v9浏览器和27阶段实际完成，耗时1961940ms。21张原始14
 
 ### Service 五类具体原因与建议的 Hosted 闭环（2026-11-08）
 
-断言提交 `a06d7433e46bd1265134251ee2f3af9ce77c0ae8` 已在精确 [Run42480965474／Job128732582625](https://github.com/pampa0629/addp/actions/runs/42480965474/job/128732582625)、attempt1实际通过：checkout和十服务preflight同SHA，Hosted门禁及Hosted产物上传success；条件式execution证据上传skipped，未计通过。业务耗时1974146ms，27阶段、v44领域和v9浏览器均完成；本次不是继承旧5a成功。
-
-已独立审阅精确源码中的强制验证器和三个调用处，并与本次成功执行、五个既有场景回执对应：未就绪、结构不匹配、操作不支持、计算输出不支持、自然到期五类Service真实HTTP，均通过完整默认中文原因和恢复建议的精确匹配，同时保留403、两成员响应及稳定错误码。原因来自已知夹具，未从响应正文推断；原始子场景HTTP正文未归档，因此这项结论依据固定源码强制实时断言与本次执行，不冒充事后独立逐字重读原始HTTP正文。
-
-21张原始1440×900截图全部逐张目视：Service英文到期原因和续期／长期有效建议持续显示，旧行清空，恢复后提示消失并显示五行安全结果；Develop三组具体原因历史／Monitor的UUID、准备阶段、建议与无结果一致，计算拒绝和Transfer准备／结果阶段边界保持。其余Service原因及中文真实页面未逐项验收；not_yet_valid仍仅既有PostgreSQL T2，lineage_unverified的Service仍为协议层证据。20runtime／8protocol_only矩阵未扩大。
-
-六份默认CSV原字节固定oracle、42条边界回执、五组同构建新实例与更晚启动、六项精确metadata_read/read许可签发及正式撤销均独立审计通过，pending/errors空。领域23建23删0残留，浏览器两组各2建2删0残留；wrapper result和cleanup为passed，Infra为zero_residuals。多数子场景仅保留报告及摘要，方式撤销部分回执未单列cache_control，不补造原件；临时read前提保留，不证明metadata-only字段搜索。
-
-artifact13618624695，99成员ZIP SHA256 `9f01ecc15147305b9d2d89d457396072b05b40c30f3b408c7b943bcfa897cd82`；CRC和解压原件逐字节核对通过。原件 `/tmp/addp-ci-20261108-220021/security-a06-archive/_temp/addp-online-42480965474/`；独立 `python3 /tmp/p145-a06-hosted-audit/audit.py` 与 `python3 /tmp/p145-a06-hosted-audit/test_audit.py` 退出0，正常样本及43个拒绝反例通过；新增源码／场景证据 `five-message-source-audit.json`，逐图哈希／观察 `visual-review.json`，限定结论 `acceptance-audit.json`。
-
-本轮仅补记录，复用a06已有12定向、272项Python及System Fixture Go／登记CLI有效结果，不重复运行数据库、产品或本地服务；四个聚合依赖未重跑仍不计完整聚合通过。既往失败和本地#7独立收尾均保留，湖南实际行155／156大项仍部分实现；不扩为所有SQL／引擎／语言／页面或静态加密完成。下一步优先复用既有真实原因场景，补齐Service中文页面的具体提示、旧结果清空和恢复展示，避免仅验证HTTP而遗漏用户可见效果。
+固定提交 `a06d7433e46bd1265134251ee2f3af9ce77c0ae8` 的 Job `128732582625` 覆盖五类默认中文 HTTP 拒绝文案、英文到期页面及零残留清理。中文真实页面在该轮未逐项验收，原始子场景 HTTP 正文未归档。完整记录见[Service 查询测试专题](../service/docs/testing/查询与要素协议.md#service-五类具体原因与建议的-hosted-闭环2026-11-08)。
 
 ### Service 中文到期页面的隔离验收接入（2026-11-08，尚待 Hosted）
 
-沿用户已确认的提示验收范围，本轮只扩展现有Service自然到期浏览器周期：同一普通用户、私有服务及90秒真实到期，通过Console正式语言菜单及iframe同步核对中英文实际Accept-Language、完整到期原因／建议、持续提示、无旧结果／无空结果替代；恢复长期有效后中英文均返回五行安全结果且错误消失。英文原图片保持，新增中文拒绝及恢复两图，总23图；浏览器唯一报告v10新增两项严格布尔事实、精确两次Service403，拒绝旧v9及遗漏事实。领域v44、20runtime／8protocol_only、40分钟预算、资源／权限／主体和清理不变，只增加三次Service读取，不增加到期等待或业务写入。
-
-验证：12项定向检查通过，覆盖独立固定文案、错语言、缺建议、私有后缀、权限码、隐藏提示、旧结果、空覆盖、正式菜单选择、请求语言头及旧版本／错误类型／缺失事实拒绝；254项领域与组合夹具检查通过。既有 `npm run test:e2e -- service-protection-reasons.spec.js` 经标准隔离入口实际2项通过，覆盖中英文七原因、清旧数据和恢复；两张合成夹具截图已目视，不能当真实Hosted或本轮Console语言切换运行证据。登记删除反例、登记CLI、JS/Python语法及本轮diff检查通过。
-
-根Make所属recipe实际执行274项，其中未改动的 `HostedSecurityGateTest.test_graph_same_color_case_reaches_only_its_isolated_owner_and_cleans` 超出既有60秒超时，整入口失败，未记通过；System Fixture Go已通过，其余记录不代替整入口。保留 `/tmp/p145-chinese-expiry-owner-gate.log`，不为此修复或派发Graph。四个聚合依赖目标未重跑。该独立Graph用例不消费本轮Security浏览器源码，受影响领域另以254项固定范围验证通过。登记CLI首次漏传必需repository参数的用法错误另存，补参数后退出0；未涉及产品故障。
-
-完整固定输入、日志与所属补丁见 `/tmp/p145-chinese-expiry/verification.json`；新版真实HTTP／Console／Hosted尚未运行，既有a06/v9成功不追认v10通过。变更只有测试、登记和已有文档，无产品／API／Swagger变化，不要求重启。现有Make、Platform CI自动发现和标准Hosted入口承接；CI仍交专门会话，不自行调度或定时。下一步先取得v10实际回传、独立核中文原图和清理，再补其他原因的真实页面，整体大项仍部分实现。
+此轮完成 v10 隔离用例接入和受控回归。当天未运行新版真实 Hosted，后续结果见本页的[中英文到期和恢复 Hosted 验收](#v44v10-中英文保护到期和恢复-hosted-验收2026-11-10)。完整记录见[Service 查询测试专题](../service/docs/testing/查询与要素协议.md#service-中文到期页面的隔离验收接入2026-11-08尚待-hosted)。
 
 ### v10 首轮准备失败与检索续查消费者修正（2026-11-09）
 
-唯一首轮 [Run42498980263／Job128787376318](https://github.com/pampa0629/addp/actions/runs/42498980263/job/128787376318)，attempt1、精确 `6efcd87d366b2e41b299ac4af14a94a84caae25d`，实际失败于PG源授权准备后的Manager搜索就绪探针：原日志5257行为 `GET /api/v1/manager/search?q=value_c&engine_id=1&page_size=100 returned HTTP 400 (unknown)`。固定源码的消费者仍传100，Manager唯一解析器只允许1..50；原HTTP正文未归档，根因由固定代码与严格消费者回归确认，不冒充重读原错误体。前次只审a93以后的55路径增量，未发现已在a93内的这一原有消费者假设；本轮补足该协议遗漏，不把中文页面本身记作失败。
-
-artifact13625431998，44成员ZIP SHA256 `567219276ab0c15b5d6ef83cd9e1c58acdddd9e8bb112ea6db13189ca8964a1d`，独立CRC、安全路径和解压原件逐字节检查通过。原件 `/tmp/addp-security-chinese-v10-6ef/`，独立记录 `/tmp/p145-security-search-continuation/original-failure-audit.json`。没有online-report或PNG，领域v44和浏览器v10未执行；wrapper result=failed、cleanup=passed、Infra=zero_residuals不等于业务通过。后续record-grant journal仅not_started／issued0；此前PG授权准备已调用，不据此宣称所有Grant均未签发或六项均已正式撤销。未自动重试该运行。
-
-修正仅限Security验收消费者：Python准备／技术字段等待改用固定q／engine／page_size50，以原deadline续查直到exhausted；空批／短批仍按next_cursor继续，重复或缺失游标、畸形分页、跨引擎、跨批重复目标及错误响应均拒绝，不发布部分命中。原JSON字段仍为data.results，未改名为Go内部成员Hits。Python意外续查错误仅遮去当前不透明游标，保留HTTP诊断，不把完整游标带入日志。浏览器恢复就绪探针同样续查，实际页面必须点击已有继续查找／加载更多按钮并核累积行数、原查询／范围／大小及游标，最后再核真实字段高亮与精确资源定位；不能用API命中替代UI。保护未就绪及索引隔离仍仅按既有稳定码等待，权限／参数／无效游标等不自动重开查询。
-
-验证：原页100代码上的新增三批（空批→短批→目标）回归实际红；修后25项定向、260项领域／组合检查通过。初轮所属门禁因两个旧算法模拟客户端没有page_size/exhausted，在正式新校验前中止了原场景，23失败／5错误日志保留；已只更新它们的响应为真实终态契约，并增加合法页大小请求断言，未放宽生产校验。最终标准 `make -o test-protection-deployment-runner -o test-graph-online-runner -o test-online-dispatcher-unit -o test-online-registration-unit test-security-online-runner` 的281项Python及System Fixture Go通过；四聚合依赖本轮未运行，不称完整聚合通过。旧Graph超时历史保持，本轮不由此改写此前失败。
-
-`make test-module MODULE=manager GO_ONLY=1`通过，只有Go T1，不计PostgreSQL T2。标准隔离 `npm run test:e2e -- data-retrieval-continuation.spec.js data-retrieval-field-matches.spec.js` 的3项受控页面回归通过，覆盖空批按钮续查、字段高亮以及409／410失效清空，不是用户本地HTTP或Hosted。登记删除反例、登记CLI、JS/Python语法及本会话diff检查通过。证据 `/tmp/p145-security-search-continuation/{red.log,focused-final-privacy.log,domain-final.log,owner-gate.log,owner-gate-final.log,manager-go.log,manager-ui.log,registration-test.log,registration-cli.log,scope-proof.json,verification.json}`。
-
-没有Manager产品、权限、保护／原值授权、数据、API或Swagger变更；Python生产diff仅三个检索消费函数，沿既有唯一端点，不留页码或旧格式兼容。Make／CI自动发现已覆盖，无新入口、依赖或部署。v44/v10、90秒、23PNG、两个Service403、20runtime／8protocol_only及原清理要求保持；无个人服务启停、数据库或时钟操作。修复不等于新T4通过；新版Hosted复验需用户重新明确授权，再交专门CI会话单次执行，不自行派发、轮询或设置定时。
+固定提交 `6efcd87d366b2e41b299ac4af14a94a84caae25d` 的 Job `128787376318` 在 Manager 搜索就绪探针因请求页大小为 100 返回 HTTP 400。领域与浏览器用例未执行，Infra 零残留。原失败、检索续查修正与受控回归分别记录。完整记录见[Service 查询测试专题](../service/docs/testing/查询与要素协议.md#v10-首轮准备失败与检索续查消费者修正2026-11-09)。
 
 ### 检索续查修复的自然 CI 证据（2026-11-09）
 
