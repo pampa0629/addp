@@ -178,6 +178,8 @@ Owner 输入准备仅消费原始持久 `config_json`、Intent 与已封存 Scop
 
 Develop 在真实读取及发布前使用同一冻结计划复核当前授权与执行租约，Runtime 不消费可用于任意业务路径的挂载或连接。本次编码使用私有暂存，最终发布保留 GeoPackage 完整文件的无覆盖语义。System 原子核验并放行是该次在途发布的准入时点；已放行的在途发布允许完成，撤权或取消阻止后续放行。Develop 在放行及实际发布前持久化原 execution、attempt、批准、目标和 operation 的归属及 Provider 准备回执；未知结果只核清原操作，不重发业务写入。Provider 不裁决 IAM。Provider 的 `ContentWriteEvidence` 可用于表达实际提交事实，仍须证明无覆盖发布与原执行、精确目标的归属，不能仅凭成功返回、目标路径或事后扫描推断新建。GeoPackage 现有格式、几何及保存模式规则见[矢量算子契约](workflow/矢量算子契约.md#save-geopackage-业务字段与发布契约)。
 
+Develop 仅凭同一操作的实时 System 放行回执，在当前 lease 的事务内一次性登记派发。回执必须绑定原 EA、Scope、execution、attempt、批准、operation 及已确认准备摘要，且仍在当次窗口和业务截止内。登记一旦提交，该操作的物理结果即按 `unknown` 对待，直到 Provider 给出证据。只有本次登记明确成功的调用可以在原窗口内进入 Provider 的唯一发布调用。登记响应未知、进程重启或已登记后再次读取时，只能读取原记录供核清，历史放行回执不得转换成新派发资格。派发登记及 Provider 私有状态不进入可信 Owner 的授权投影或公共结果。
+
 Prepare 前即须持久化并登记原 operation，恢复不只依赖已存在的 release。租约失效后的专用恢复投影只能为原已登记 operation、原 Engine 同版及原绑定提供 Resolve／私有暂存清理，不重发 Prepare／Publish，不成为新的业务 Allow，也不长期封存请求级业务连接。截止后晚到的发布观察只追加到原 operation 的私有核清事实，不改 terminal execution、不复活旧 attempt；首次晚到事实不能补造有效租约内的成功提交或自动签发 Grant。现有 NFS 阻塞 RPC 不承诺立即随 Context 中断，未核清的操作如实保留 unknown／cleanup_pending，不能宣称全部副作用或清理已在截止内结束。
 
 成功提交后，Develop 在有效 lease 下保存同一次实际读取和新建提交的私有回执，Meta 沿可信产出执行只识别该成果，System 按[任务产出数据与初始使用权](#558-任务产出数据与初始使用权)向原发起人签发唯一精确 `read` Grant 并核定期限。签发待处理、拒绝和产出成功分别表达。签发故障只核清或续办原命令，不能重发写入。现有其他算子、引擎、发布服务和目录持续写入不纳入此首期。以上为接入规范，实施及真实授权证据仍待补齐。

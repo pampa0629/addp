@@ -9,8 +9,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/addp/common/client"
 	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/execution"
+	commonmodels "github.com/addp/common/models"
 	"github.com/addp/develop/backend/internal/models"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
@@ -132,4 +134,69 @@ func runPrivatePublicationCase(t *testing.T, db *gorm.DB, repo *FileExecutionRep
 	if err != nil || bytes.Contains(encoded, []byte("provider_state")) || bytes.Contains(encoded, rawProviderState) {
 		t.Fatal("private Provider receipt entered projection", err)
 	}
+	now, err := execution.DatabaseNow(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	release := client.DevelopFilePublicationObservation{
+		AuthorizationID: issued.Authorization.ID, ExecutionID: lease.ExecutionID, Attempt: lease.Attempt,
+		ScopeDigest: issued.ScopeDigest, ApprovalID: approval.ApprovalID, OperationID: op,
+		Stage: client.DevelopFilePublicationRelease, PreparationDigest: providerPreparationDigest(rawProviderState),
+		ObservedAt: now, ExpiresAt: now.Add(10 * time.Second), BusinessDeadline: manifest.Deadline,
+	}
+	if _, err := repo.ReadPrivatePublication(ctx, 8, item.ExecutionID); err == nil {
+		t.Fatal("wrong tenant could read publication")
+	}
+	before, err := repo.ReadPrivatePublication(ctx, 7, item.ExecutionID)
+	if err != nil || before.DispatchState != plugin.NewFileNotPublished || before.PreparationDigest != digest {
+		t.Fatal("new operation has an unexpected dispatch state", err)
+	}
+	if !confirmed {
+		if prepared, err := repo.ClaimPrivatePublicationDispatch(ctx, *lease, release); prepared != nil || err == nil {
+			t.Fatal("uncertain preparation obtained a dispatch claim")
+		}
+		return
+	}
+	for _, tc := range []struct {
+		name   string
+		change func(*client.DevelopFilePublicationObservation)
+	}{
+		{"wrong authorization", func(r *client.DevelopFilePublicationObservation) { r.AuthorizationID = "1" }},
+		{"wrong execution", func(r *client.DevelopFilePublicationObservation) { r.ExecutionID = uuid.NewString() }},
+		{"wrong attempt", func(r *client.DevelopFilePublicationObservation) { r.Attempt++ }},
+		{"wrong scope", func(r *client.DevelopFilePublicationObservation) { r.ScopeDigest = strings.Repeat("b", 64) }},
+		{"wrong approval", func(r *client.DevelopFilePublicationObservation) { r.ApprovalID = uuid.NewString() }},
+		{"wrong operation", func(r *client.DevelopFilePublicationObservation) { r.OperationID = uuid.NewString() }},
+		{"wrong preparation", func(r *client.DevelopFilePublicationObservation) { r.PreparationDigest = strings.Repeat("b", 64) }},
+		{"prepare stage", func(r *client.DevelopFilePublicationObservation) { r.Stage = client.DevelopFilePublicationPrepare }},
+		{"connection present", func(r *client.DevelopFilePublicationObservation) { r.Engine = &commonmodels.Engine{} }},
+		{"expired window", func(r *client.DevelopFilePublicationObservation) { r.ExpiresAt = now }},
+		{"expired deadline", func(r *client.DevelopFilePublicationObservation) { r.BusinessDeadline = now }},
+	} {
+		invalid := release
+		tc.change(&invalid)
+		if prepared, err := repo.ClaimPrivatePublicationDispatch(ctx, *lease, invalid); prepared != nil || err == nil {
+			t.Fatal(tc.name, "obtained a dispatch claim")
+		}
+	}
+	if prepared, err := repo.ClaimPrivatePublicationDispatch(ctx, otherLease, release); prepared != nil || err == nil {
+		t.Fatal("wrong lease obtained a dispatch claim")
+	}
+	prepared, err := repo.ClaimPrivatePublicationDispatch(ctx, *lease, release)
+	if err != nil || prepared == nil || !reflect.DeepEqual(*prepared, result) {
+		t.Fatal("original live release did not yield its confirmed preparation", err)
+	}
+	if prepared, err := repo.ClaimPrivatePublicationDispatch(ctx, *lease, release); prepared != nil || err == nil {
+		t.Fatal("replay obtained a second dispatch claim")
+	}
+	recovered, err := repo.ReadPrivatePublication(ctx, 7, item.ExecutionID)
+	if err != nil || recovered.DispatchState != plugin.NewFileUnknown || recovered.Issued.Authorization.ID != issued.Authorization.ID ||
+		recovered.ApprovalID != approval.ApprovalID || recovered.PreparationDigest != digest || !reflect.DeepEqual(recovered.Prepared, result) {
+		t.Fatal("original dispatch is not recoverable as unknown", err)
+	}
+	after, err := repo.Read(ctx, 7, item.ExecutionID)
+	if err != nil || !reflect.DeepEqual(after, facts) {
+		t.Fatal("dispatch changed the trusted Owner projection", err)
+	}
+
 }
