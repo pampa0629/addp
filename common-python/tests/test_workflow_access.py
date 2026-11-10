@@ -248,3 +248,46 @@ def test_file_object_byte_budget_stops_growing_response_and_cleans_owned_partial
         stage_source_file(_object_source('file','grid.nc'), tmp_path, max_bytes=4)
     assert response.closed and released==[True]
     assert not (tmp_path/'source'/'grid.nc').exists()
+
+
+@pytest.mark.parametrize("failure", [None, "NoSuchKey", "AccessDenied"])
+def test_tiff_optional_pam_object_staging(tmp_path, monkeypatch, failure):
+    import addp_common.workflow_access as access
+    plan = _object_source("file", "images/test.tif")
+    source = plan["source"]
+    source["format"] = "tiff"
+    source["related_files"] = [{"role": "auxiliary_metadata", "access": {
+        **source["access"], "object": "images/test.tif.aux.xml"}}]
+    calls = []
+    class Client:
+        def fget_object(self, bucket, key, target):
+            calls.append(key)
+            if key.endswith(".aux.xml") and failure:
+                error = Exception(failure)
+                error.code = failure
+                raise error
+            Path(target).write_bytes(b"<PAMDataset/>" if key.endswith(".aux.xml") else b"tiff")
+    monkeypatch.setattr(access, "_object_store_client", lambda _: Client())
+    if failure == "AccessDenied":
+        with pytest.raises(WorkflowAccessError, match="download TIFF PAM failed"):
+            stage_source_file(plan, tmp_path)
+    else:
+        primary = stage_source_file(plan, tmp_path)
+        assert primary.read_bytes() == b"tiff"
+        companion = Path(str(primary) + ".aux.xml")
+        assert companion.exists() == (failure is None)
+        if companion.exists():
+            assert companion.read_bytes() == b"<PAMDataset/>"
+    assert calls == ["images/test.tif", "images/test.tif.aux.xml"]
+
+
+@pytest.mark.parametrize("field,value", [("bucket", "other"), ("object", "images/other.tif.aux.xml"), ("secret_key", "other")])
+def test_tiff_pam_requires_same_source_connection_and_name(tmp_path, field, value):
+    plan = _object_source("file", "images/test.tif")
+    source = plan["source"]
+    source["format"] = "tiff"
+    companion = {**source["access"], "object": "images/test.tif.aux.xml"}
+    companion[field] = value
+    source["related_files"] = [{"role": "auxiliary_metadata", "access": companion}]
+    with pytest.raises(WorkflowAccessError, match="same connection"):
+        stage_source_file(plan, tmp_path)

@@ -230,9 +230,9 @@ Transfer 读取 whole scope table 时，必须从已确认 scope ref 构造 `con
 
 ### Runtime 精确相关文件
 
-ENVI 首期仍通过执行期 `RuntimeMediaInfoProviderFactory` / `BoundMediaInfoProvider` 与 GeoPython 读取，不把 GDAL 加入业务 Backend。`addp.workflow.access-plan/v1` 的 `source.kind=file` 表示主入口，其 `source.related_files` 逐项表达该主入口必需的已确认文件；每项仅含 `role` 与精确 `access`，不含目录枚举范围。首期只准 `source.format=envi` 的一个 `header`，与主数据位于同一真实父目录或同桶同 prefix，沿同一连接访问。其他格式和 target 不接受这一字段，ENVI 缺少头文件也不回退成单文件或目录读取。
+ENVI 首期仍通过执行期 `RuntimeMediaInfoProviderFactory` / `BoundMediaInfoProvider` 与 GeoPython 读取，不把 GDAL 加入业务 Backend。`addp.workflow.access-plan/v1` 的 `source.kind=file` 表示主入口，其 `source.related_files` 逐项表达该主入口已确认的相关文件；每项仅含 `role` 与精确 `access`，不含目录枚举范围。`source.format=envi` 必须提供一个 `header`，与主数据位于同一真实父目录或同桶同 prefix，沿同一连接访问。TIFF 允许零或一个可选 `auxiliary_metadata`，准确路径为主文件名追加 `.aux.xml`，与主文件使用同一连接；来自 Meta 已登记 ref。该 PAM 缺失时继续加载主 TIFF，其他读取错误正常返回。其他格式和 target 不接受这一字段，ENVI 缺少头文件也不回退成单文件或目录读取。
 
-Runtime 在私有目录中按真实名称暂存精确主数据和头文件，不接触源目录中的 `.sta`、PAM、overview 或其他 sibling。暂存必须有界；首期头文件最多 1 MiB，主数据最多 512 MiB（调用方预算更小时取更小值）。失败撤回本次暂存文件，不能删除调用方其他文件。访问计划只是执行期 I/O 参数，不是 Grant、EA 或当前裁决，不能替代 Meta 组成事实和 System 授权。
+ENVI Runtime 在私有目录中按真实名称暂存精确主数据和头文件，不接触源目录中的 `.sta`、PAM、overview 或其他 sibling。暂存必须有界；首期头文件最多 1 MiB，主数据最多 512 MiB（调用方预算更小时取更小值）。失败撤回本次暂存文件，不能删除调用方其他文件。访问计划只是执行期 I/O 参数，不是 Grant、EA 或当前裁决，不能替代 Meta 组成事实和 System 授权。
 
 ### engine-native
 

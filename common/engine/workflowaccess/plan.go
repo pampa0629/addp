@@ -220,6 +220,24 @@ func validateSource(source Source) error {
 	if err := validateResource("source", source.Kind, source.Format, source.Access); err != nil {
 		return err
 	}
+	if source.Format == "tiff" {
+		if len(source.RelatedFiles) == 0 {
+			return nil
+		}
+		if source.Kind != KindFile || len(source.RelatedFiles) != 1 || source.RelatedFiles[0].Role != "auxiliary_metadata" || source.Entrypoint != "" {
+			return fmt.Errorf("TIFF accepts one optional PAM companion")
+		}
+		expected := source.Access
+		if expected.Method == MethodMountedPath {
+			expected.Path += ".aux.xml"
+		} else {
+			expected.Object += ".aux.xml"
+		}
+		if source.RelatedFiles[0].Access != expected {
+			return fmt.Errorf("TIFF PAM must be beside its primary on the same connection")
+		}
+		return nil
+	}
 	if source.Format != "envi" {
 		if source.RelatedFiles != nil {
 			return fmt.Errorf("related files are not admitted for this source format")

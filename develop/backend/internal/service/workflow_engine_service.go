@@ -917,6 +917,22 @@ func (s *WorkflowEngineService) deriveWorkflowAccessPlan(
 		if err != nil {
 			return nil, fmt.Errorf("resolve source: %w", err)
 		}
+		if sourceFormat == "tiff" {
+			if s.metaClient == nil {
+				return nil, fmt.Errorf("TIFF source metadata client is unavailable")
+			}
+			item, err := s.metaClient.WithTenantID(tenantID).GetItemByCatalogPath(ctx, locator.EngineID, locator.FullName())
+			if err != nil {
+				return nil, err
+			}
+			if item == nil || item.TenantID != tenantID {
+				return nil, fmt.Errorf("TIFF source metadata does not match its tenant")
+			}
+			source, err = dataitem.WithTIFFPAM(source, locator, item)
+			if err != nil {
+				return nil, err
+			}
+		}
 		if spec.SourceAccessMethods != nil && !slices.Contains(spec.SourceAccessMethods, source.Access.Method) {
 			return nil, fmt.Errorf("source access method %s is not supported by this operation", source.Access.Method)
 		}

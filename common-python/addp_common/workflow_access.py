@@ -83,7 +83,25 @@ def stage_source_file(plan: dict[str, Any], work_dir: Path, *, max_bytes: int | 
     _validate_resource(source, "source")
     if source.get("format") == "envi":
         return _stage_related_source(plan, work_dir, max_bytes=max_bytes)
-    return _stage_single_source_file(plan, work_dir, max_bytes=max_bytes)
+    primary = _stage_single_source_file(plan, work_dir, max_bytes=max_bytes)
+    if source.get("format") == "tiff" and source.get("related_files"):
+        access = source["related_files"][0]["access"]
+        destination = Path(str(primary) + ".aux.xml")
+        if access["method"] == "mounted_path":
+            companion = Path(access["path"])
+            if companion != destination:
+                try:
+                    shutil.copyfile(companion, destination)
+                except FileNotFoundError:
+                    pass
+        else:
+            client = _object_store_client(access)
+            try:
+                client.fget_object(access["bucket"], access["object"], str(destination))
+            except Exception as exc:
+                if getattr(exc, "code", None) != "NoSuchKey":
+                    raise WorkflowAccessError("download TIFF PAM failed") from exc
+    return primary
 
 
 def _stage_single_source_file(plan: dict[str, Any], work_dir: Path, *, max_bytes: int | None) -> Path:
@@ -368,6 +386,19 @@ def _validate_single_resource(resource: dict[str, Any], label: str) -> None:
 
 
 def _validate_related_source(source: dict[str, Any]) -> None:
+    if source.get("format") == "tiff":
+        files = source.get("related_files", [])
+        if files == []:
+            return
+        if source.get("kind") != "file" or source.get("entrypoint", "") != "" or not isinstance(files, list) or len(files) != 1:
+            raise WorkflowAccessError("TIFF accepts one optional PAM companion")
+        member = files[0]
+        expected = dict(source["access"])
+        key = "path" if expected["method"] == "mounted_path" else "object"
+        expected[key] += ".aux.xml"
+        if member != {"role": "auxiliary_metadata", "access": expected}:
+            raise WorkflowAccessError("TIFF PAM must be beside its primary on the same connection")
+        return
     if source.get("format") != "envi":
         if "related_files" in source:
             raise WorkflowAccessError("related files are not admitted for this source format")

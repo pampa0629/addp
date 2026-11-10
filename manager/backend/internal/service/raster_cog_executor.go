@@ -10,6 +10,7 @@ import (
 	"time"
 
 	commonClient "github.com/addp/common/client"
+	"github.com/addp/common/dataitem"
 	"github.com/addp/common/dbbridge"
 	"github.com/addp/common/engine/plugins/objectstore"
 	"github.com/addp/common/engine/workflowaccess"
@@ -250,6 +251,12 @@ func (e *ManagerRasterCOGExecutor) prepareAccessPlanForSource(ctx context.Contex
 		source, err = workflowaccess.ResolveSource(workflowaccess.ResourceSpec{Engine: engine, Locator: locator, Kind: workflowaccess.KindFile, Format: req.Config.Raster.SourceFormat})
 		if err != nil {
 			return workflowaccess.Plan{}, nil, err
+		}
+		if req.Config.Raster.SourceFormat == "tiff" && req.Config.sourceItem != nil {
+			source, err = dataitem.WithTIFFPAM(source, locator, req.Config.sourceItem)
+			if err != nil {
+				return workflowaccess.Plan{}, nil, err
+			}
 		}
 	}
 	bucket, objectName, err := rastercogref.ObjectLocation(req.Config.Result.StorageRef, e.defaultBucket)

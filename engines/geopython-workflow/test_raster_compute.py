@@ -23251,3 +23251,57 @@ def test_dem_slope_orthogonal_does_not_relax_other_terrain_or_d8(tmp_path, grid)
         for operation, args in [(c.raster_aspect, ('metre',)), (c.raster_hillshade, ('metre',)),
                                 (c.raster_flow_direction_d8, (1, 'metre')), (c.raster_fill_depressions, (1, 'metre'))]:
             with pytest.raises(ValueError): operation(source, *args)
+
+
+@pytest.mark.parametrize('pam', [None, '', '<PAMDataset/>',
+    '<PAMDataset><PAMRasterBand band="1"><Metadata>'
+    '<MDI key="STATISTICS_MINIMUM">-33</MDI>'
+    '<MDI key="STATISTICS_MAXIMUM">1716</MDI>'
+    '</Metadata></PAMRasterBand></PAMDataset>',
+    '<PAMDataset><SRS>EPSG:3857</SRS>'
+    '<GeoTransform>100,2,0,200,0,-2</GeoTransform></PAMDataset>'],
+    ids=['absent', 'registered-missing', 'empty', 'statistics', 'positioning'])
+def test_tiff_optional_pam_survives_snapshot_calculation_and_cog(tmp_path, pam):
+    pixels = np.arange(16, dtype=np.float64).reshape(4, 4)
+    source = create_raster(tmp_path / 'source.tif', pixels)
+    companion = Path(str(source) + '.aux.xml')
+    plan = source_plan(source)
+    if pam is not None:
+        plan['source']['related_files'] = [{
+            'role': 'auxiliary_metadata',
+            'access': {'method': 'mounted_path', 'path': str(companion)},
+        }]
+    if pam:
+        companion.write_text(pam)
+    original = {path: path.read_bytes() for path in tmp_path.iterdir()}
+    native = gdal.Open(str(source))
+    expected_grid = native.GetGeoTransform()
+    expected_crs = native.GetSpatialRef()
+    expected_metadata = native.GetRasterBand(1).GetMetadata()
+    with raster_workspace():
+        raster = raster_load(plan)
+        # Reopening the private snapshot must retain GDAL's PAM interpretation.
+        facts = raster_info(raster)
+        assert facts['transform'] == list(expected_grid)
+        assert facts['crs'] == native.GetProjection()
+        snapshot = gdal.Open(str(raster.path))
+        assert snapshot.GetRasterBand(1).GetMetadata() == expected_metadata
+        snapshot = None
+        calculation = raster_band_math(raster, 'b1+1')
+        calculated = gdal.Open(str(calculation.path))
+        np.testing.assert_array_equal(calculated.ReadAsArray(), pixels + 1)
+        assert calculated.GetGeoTransform() == expected_grid
+        assert calculated.GetSpatialRef().IsSame(expected_crs)
+        calculated = None
+    output_path = tmp_path / 'result.cog.tif'
+    raster_to_cog({**plan, 'target': target_plan(output_path)['target']})
+    output = gdal.Open(str(output_path))
+    np.testing.assert_array_equal(output.ReadAsArray(), pixels)
+    assert output.GetGeoTransform() == expected_grid
+    assert output.GetSpatialRef().IsSame(expected_crs)
+    assert output.GetRasterBand(1).GetMetadata() == expected_metadata
+    from operators.raster_compute import validate_layout
+    warnings, errors, _ = validate_layout(output, full_check=True)
+    assert not errors
+    native = output = None
+    assert all(path.read_bytes() == content for path, content in original.items())

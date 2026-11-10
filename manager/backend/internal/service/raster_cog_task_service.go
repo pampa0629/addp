@@ -52,10 +52,11 @@ type RasterCOGExecutionResult struct {
 }
 
 type RasterCOGExecutionConfig struct {
-	Target RasterCOGTargetConfig
-	Raster RasterCOGRasterConfig
-	COG    RasterCOGOptionsConfig
-	Result RasterCOGTargetResultConfig
+	sourceItem *commonModels.MetaItem
+	Target     RasterCOGTargetConfig
+	Raster     RasterCOGRasterConfig
+	COG        RasterCOGOptionsConfig
+	Result     RasterCOGTargetResultConfig
 }
 
 type RasterCOGTargetConfig struct {

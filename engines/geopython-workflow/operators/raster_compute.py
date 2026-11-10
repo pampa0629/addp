@@ -469,6 +469,10 @@ def raster_load(access_plan, source_crs=''):
     source_format = plan['source']['format']
     native_driver = {'img': 'HFA', 'jpeg2000': 'JP2OpenJPEG', 'envi': 'ENVI'}.get(source_format, '')
     related_files = ()
+    if source_format == 'tiff' and plan['source'].get('related_files'):
+        companion = Path(str(path) + '.aux.xml')
+        if companion.is_file():
+            related_files = (companion,)
     if source_format == 'envi':
         member = plan['source']['related_files'][0]['access']
         header = path.parent / Path(member['path'] if member['method'] == 'mounted_path' else member['object']).name
@@ -512,12 +516,17 @@ def raster_load(access_plan, source_crs=''):
         nodata = ['nan' if value is not None and math.isnan(value) else value for value in nodata]
         if len({band.DataType for band in bands}) != 1 or any(value != nodata[0] for value in nodata):
             raise ValueError(f'{native_driver} bands must share one data type and NoData value for lossless TIFF conversion')
-    if source_format != 'envi' and any(Path(file).resolve() != path.resolve() for file in dataset.GetFileList() or []):
+    allowed_files = {path.resolve(), *(file.resolve() for file in related_files)}
+    if source_format != 'envi' and any(Path(file).resolve() not in allowed_files for file in dataset.GetFileList() or []):
         raise ValueError('Raster input must be self-contained; external sidecars are not supported')
     # Snapshot the selected resource so later writes cannot change an upstream input.
     snapshot = path if native_driver else _path(path.suffix)
     if snapshot != path:
         shutil.copyfile(path, snapshot)
+        if related_files:
+            companion_snapshot = Path(str(snapshot) + '.aux.xml')
+            shutil.copyfile(related_files[0], companion_snapshot)
+            related_files = (companion_snapshot,)
     dataset = None
     raster = _raster(snapshot, native_driver, related_files)
     dataset = _open(raster)

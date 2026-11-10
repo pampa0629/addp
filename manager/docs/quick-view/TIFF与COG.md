@@ -22,7 +22,7 @@ TIFF / COG 的能力判断通过：
 GET /api/v1/manager/quick-view/capability?locator={resource_locator}
 ```
 
-返回快显能力。TIFF / COG 判断事实来自 Meta attributes：`layout=multi` 的 GeoTIFF item 由 Meta 使用 primary `.tif/.tiff` 读取 `type_info.media`、`format_info.tiff` 和 `capabilities.spatial`，sidecar refs 只作为 `item.refs` 保留。Manager 不重新扫描 TIFF，也不直接读取 sidecar 反推空间事实。
+返回快显能力。TIFF / COG 判断事实来自 Meta attributes：`layout=multi` 的 GeoTIFF item 由 Meta 使用 primary `.tif/.tiff` 读取 `type_info.media`、`format_info.tiff` 和 `capabilities.spatial`，sidecar refs 只作为 `item.refs` 保留。Manager 不重新扫描 TIFF，也不直接读取 sidecar 反推空间事实。生成 COG 时，将 Meta 已登记的主文件同名 `.aux.xml` 作为可选 `auxiliary_metadata` 交给 Runtime，GDAL 按默认 PAM 语义读取。文件缺失时继续使用 TIFF；Runtime 的源快照须保留实际取得的 PAM。
 
 小 TIFF 可直接由前端渲染时：
 

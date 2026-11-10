@@ -160,6 +160,7 @@ func (s *RasterCOGTaskService) prepareENVISourceClaim(ctx context.Context, execu
 		if object["config_version"] != nil || execution.ExecutionAuthorizationID != nil {
 			return cfg, nil, ErrFileSourceAuthorizationRequired
 		}
+		cfg.sourceItem = item
 		return cfg, nil, nil
 	}
 	composition, err := enviCompositionFromMeta(uint(execution.TenantID), cfg.Target.SourceEngineID, cfg.Target.ItemID, cfg.Target.ItemFingerprint, cfg.Target.Locator, item)

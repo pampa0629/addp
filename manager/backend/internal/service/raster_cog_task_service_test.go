@@ -285,6 +285,11 @@ func TestManagerRasterCOGExecutorPreparesAccessPlanAndInvokesPythonWorkflowOpera
 			source := plan["source"].(map[string]interface{})
 			target := plan["target"].(map[string]interface{})
 			sourceAccess := source["access"].(map[string]interface{})
+			companions := source["related_files"].([]interface{})
+			companion := companions[0].(map[string]interface{})
+			if len(companions) != 1 || companion["role"] != "auxiliary_metadata" || companion["access"].(map[string]interface{})["path"] != "/mnt/addp-nfs/rasters/large.tif.aux.xml" {
+				t.Fatalf("PAM missing from runtime plan: %#v", source)
+			}
 			targetAccess := target["access"].(map[string]interface{})
 			if sourceAccess["path"] != "/mnt/addp-nfs/rasters/large.tif" || targetAccess["bucket"] != "manager" || targetAccess["object"] != "tenant_7/cog/fp/large.cog.tif" {
 				t.Fatalf("access_plan = %#v", plan)
@@ -353,6 +358,7 @@ func TestManagerRasterCOGExecutorPreparesAccessPlanAndInvokesPythonWorkflowOpera
 	result, err := executor.BuildRasterCOG(context.Background(), RasterCOGExecutionRequest{
 		Task: task,
 		Config: RasterCOGExecutionConfig{
+			sourceItem: &commonModels.MetaItem{EngineID: 26, TenantID: 7, FullName: "rasters/large.tif", Attributes: commonModels.JSONMap{"item": map[string]interface{}{"refs": []interface{}{map[string]interface{}{"role": "auxiliary_metadata", "path": "rasters/large.tif.aux.xml"}}}}},
 			Target: RasterCOGTargetConfig{
 				SourceEngineID:  26,
 				ItemFingerprint: "fp",

@@ -1423,6 +1423,12 @@ func TestRasterAdaptersResolveIndependentSourceAndTarget(t *testing.T) {
 		1: {ID: 1, EngineType: "nfs", LifecycleState: "active", ConnectionInfo: commonModels.ConnectionInfo{"mount_path": "/data"}},
 		2: {ID: 2, EngineType: "minio", LifecycleState: "active", ConnectionInfo: commonModels.ConnectionInfo{"endpoint": "target:9000", "access_key": "target-key", "secret_key": "target-secret"}},
 	})
+
+	metaServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(commonModels.MetaItem{EngineID: 1, TenantID: 7, FullName: "image.tif", Attributes: commonModels.JSONMap{"item": map[string]interface{}{"refs": []interface{}{map[string]interface{}{"role": "auxiliary_metadata", "path": "image.tif.aux.xml"}}}}})
+	}))
+	defer metaServer.Close()
+	svc.service.SetMetaClient(commonClient.NewMetaClient(metaServer.URL, staticServiceTokenSource("addp_at_develop")))
 	workflow := map[string]interface{}{"tasks": []interface{}{
 		map[string]interface{}{"id": "load", "operator": "raster_load", "depends_on": []interface{}{}, "params": map[string]interface{}{"locator": "addp://engine/1/path/image.tif?type=file&item_id=8", "source_crs": "EPSG:4326"}},
 		map[string]interface{}{"id": "save", "operator": "raster_save", "depends_on": []interface{}{"load"}, "params": map[string]interface{}{"input_raster": map[string]interface{}{"$ref": "load"}, "target_parent_locator": "addp://engine/2/path/business/results?type=prefix", "target_name": "image.cog.tif", "write_mode": "create", "profile": "cog"}},
@@ -1435,6 +1441,12 @@ func TestRasterAdaptersResolveIndependentSourceAndTarget(t *testing.T) {
 	loadParams := tasks[0]["params"].(map[string]interface{})
 	saveParams := tasks[1]["params"].(map[string]interface{})
 	sourcePlan := loadParams["access_plan"].(commonModels.JSONMap)
+	source := sourcePlan["source"].(commonModels.JSONMap)
+	companions := source["related_files"].([]interface{})
+	companion := companions[0].(commonModels.JSONMap)
+	if len(companions) != 1 || companion["role"] != "auxiliary_metadata" || companion["access"].(commonModels.JSONMap)["path"] != "/data/image.tif.aux.xml" {
+		t.Fatalf("PAM missing from runtime plan: %#v", source)
+	}
 	targetPlan := saveParams["access_plan"].(commonModels.JSONMap)
 	if sourcePlan["source"] == nil || sourcePlan["target"] != nil || targetPlan["source"] != nil || targetPlan["target"] == nil {
 		t.Fatalf("invalid separate plans: %#v %#v", sourcePlan, targetPlan)
