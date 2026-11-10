@@ -9,7 +9,8 @@ for (const locale of ['zh-cn', 'en']) for (const scope of ['infra', 'business'])
   const { calls, queries } = await engineBackend(page, { locale, owner })
   const writes = []
   page.on('request', request => { if (['POST', 'PUT', 'DELETE'].includes(request.method()) && request.url().includes('/api/v1/')) writes.push({ method: request.method(), path: new URL(request.url()).pathname }) })
-  const systemPath = `/system/engine-deployments?search=${scope === 'infra' ? 'Infra' : 'Business'}`
+  const search = scope === 'infra' ? 'Infra' : 'Business'
+  const systemPath = `/system/engine-deployments?${scope === 'business' ? 'scope=business&' : ''}search=${search}`
   await page.goto(systemPath)
   const frame = page.frameLocator('iframe[data-testid="module-iframe"]')
   const row = frame.getByRole('row').filter({ hasText: owner.display_name })
@@ -21,9 +22,10 @@ for (const locale of ['zh-cn', 'en']) for (const scope of ['infra', 'business'])
   expect(calls.some(path => path.endsWith('/engine_resource_observations'))).toBe(true)
   await page.goBack()
   await expect(page).toHaveURL(`${browserTestOrigin('console')}${systemPath}`)
-  await expect(frame.getByRole('textbox', { name: locale === 'en' ? 'Search deployment names' : '搜索部署名称', exact: true })).toHaveValue(scope === 'infra' ? 'Infra' : 'Business')
+  await expect(frame.getByRole('textbox', { name: locale === 'en' ? 'Search deployment names' : '搜索部署名称', exact: true })).toHaveValue(search)
   await expect(frame.getByRole('cell', { name: owner.display_name, exact: true })).toBeVisible()
-  expect(queries.every(query => !Object.hasOwn(query, 'scope'))).toBe(true)
+  expect(queries.length).toBeGreaterThanOrEqual(2)
+  for (const query of queries) expect(query).toMatchObject({ scope, search, page: '1' })
   expect(writes).toEqual([{ method: 'POST', path: '/api/v1/system/refresh' }])
 })
 

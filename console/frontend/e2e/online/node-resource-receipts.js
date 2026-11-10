@@ -34,7 +34,7 @@ export function standardStartupReceipt(read, expected) {
 export async function readStandardStartupPage(monitor, read, expected, expect) {
   standardStartupReceipt(read, expected)
   const alert = monitor.getByTestId('process-startup-failures')
-  const rows = monitor.getByTestId('process-list').locator('.el-table__body tr')
+  const rows = monitor.getByTestId('process-list').getByTestId('process-instance')
   if (expected.phase === 'failed') {
     await expect(alert).toBeVisible()
     await expect(alert.locator('li')).toHaveCount(1)
@@ -44,8 +44,10 @@ export async function readStandardStartupPage(monitor, read, expected, expect) {
   } else {
     await expect(alert).toHaveCount(0)
     await expect(rows).toHaveCount(1)
-    await expect(rows.first()).toContainText('standard')
-    await expect(rows.first()).toContainText('UP · 在线')
+    const module = monitor.getByTestId('process-module-card').filter({ has: monitor.getByRole('heading', { name: 'standard', exact: true }) })
+    await expect(module.getByTestId('process-instance')).toHaveCount(1)
+    await expect(rows.first().getByTestId('process-role')).toHaveAttribute('title', expected.instance.instance_id)
+    await expect(rows.first().getByTestId('process-online')).toHaveText('UP · 在线')
   }
   return read
 }
