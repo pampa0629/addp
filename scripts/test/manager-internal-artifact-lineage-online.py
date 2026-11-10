@@ -2420,21 +2420,48 @@ def manager_case(environment):
     return case
 
 
-def run_raster_media_scenes(repository, environment, report):
+def run_raster_media_scenes(repository, environment, client, report):
+    from importlib import import_module
     import importlib.util
     img_spec = importlib.util.spec_from_file_location('manager_img_online', Path(__file__).with_name('manager-img-online.py'))
     img_scene = importlib.util.module_from_spec(img_spec)
     img_spec.loader.exec_module(img_scene)
-    for source_format in ('img', 'jpeg2000', 'grd', 'tiff'):
-        try:
-            child = img_scene.run(repository, environment, sys.modules[__name__], source_format=source_format)
-        except BaseException:
-            report[source_format] = {'result': 'failed', 'report_file': f'manager-{source_format}.json'}
-            raise
-        report[source_format] = child
-        if (child.get('result') != 'passed' or child.get('source_format') != source_format
-                or child.get('source_unchanged') is not True or child.get('cleanup_errors')):
-            raise SuiteError(f"{source_format} media subscene did not pass with source and cleanup intact")
+    grants = import_module('scripts.test.ftp-consumer-flow-online')
+    tenant = positive_int(environment['ADDP_ONLINE_TEST_TENANT_ID'], 'tenant')
+    engine = positive_int(environment['ADDP_ONLINE_MANAGER_MINIO_ENGINE_ID'], 'engine')
+    issuer = GatewayClient(environment['GATEWAY_URL'], environment['ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN'], 30)
+    permissions = grants.REGISTRATION.SOURCE_INITIALIZER_PERMISSIONS
+    if manager_case(environment) == 'native-raster-media':
+        permissions = permissions | {'meta.scan_task.execute', 'meta.scan_task.read'}
+    authorization = grants.ModelSourceAuthorization(issuer, client, {'tenant_id': tenant, 'engine_id': engine,
+        'principal_id': str(report['identity']['principal_id'])}, source_type='minio',
+        consumer_permissions=REQUIRED_PERMISSIONS, issuer_permissions=permissions)
+    prefix = {'version': 'catalog.path/v1', 'engine_id': engine, 'segments': [
+        {'term': 'service', 'kind': 'service', 'name': ''},
+        {'term': 'bucket', 'kind': 'bucket', 'name': environment['ADDP_ONLINE_MANAGER_MINIO_BUCKET']},
+        {'term': 'prefix', 'kind': 'prefix', 'name': 'raster'},
+    ]}
+    proof = report['minio_source_authorization'] = {'zero_current_grants': False}
+    try:
+        proof['grant'] = authorization.node_grant(prefix, action='read', recursive=False, seconds=None)
+        for source_format in ('img', 'jpeg2000', 'grd', 'tiff'):
+            try:
+                child = img_scene.run(repository, environment, sys.modules[__name__], source_format=source_format)
+            except BaseException:
+                report[source_format] = {'result': 'failed', 'report_file': f'manager-{source_format}.json'}
+                raise
+            report[source_format] = child
+            if (child.get('result') != 'passed' or child.get('source_format') != source_format
+                    or child.get('source_unchanged') is not True or child.get('cleanup_errors')):
+                raise SuiteError(f"{source_format} media subscene did not pass with source and cleanup intact")
+    finally:
+        authorization.cleanup()
+        current = issuer.request('GET', authorization.base + '/access_grants?' + urllib.parse.urlencode({
+            'recipient_type': 'user', 'recipient_id': authorization.recipient, 'catalog_path': json.dumps(prefix),
+        }), (200,)).payload
+        if current.get('total') != 0 or current.get('data') != []:
+            raise SuiteError('raster media fixture left a current MinIO Grant')
+        proof['zero_current_grants'] = True
 
 
 def run_native_raster_media_case(repository, environment, client, identity):
@@ -2449,7 +2476,7 @@ def run_native_raster_media_case(repository, environment, client, identity):
         report["meta_scan_execution_id"] = wait_for_meta_scan(
             client, positive_int(environment["ADDP_ONLINE_MANAGER_MINIO_ENGINE_ID"], "MinIO engine id"),
             time.monotonic() + float(environment.get("ADDP_ONLINE_MANAGER_LINEAGE_CONVERGENCE_TIMEOUT_SECONDS", "180")))
-        run_raster_media_scenes(repository, environment, report)
+        run_raster_media_scenes(repository, environment, client, report)
         nfs_tiff = report["tiff"].get("nfs_tiff_authorization", {})
         if (nfs_tiff.get("result") != "passed"
                 or nfs_tiff.get("range_statuses") != {"before_grant": 403, "granted": 206, "expired": 403}
@@ -2479,7 +2506,7 @@ def run_full_case(repository, environment, client):
         report = run_scenario(repository, environment, run_browser)
     finally:
         grants.cleanup()
-    run_raster_media_scenes(repository, environment, report)
+    run_raster_media_scenes(repository, environment, client, report)
     report["case"] = "full"
     report["content_boundaries"] = boundaries
     report["index_source_versions"] = versions

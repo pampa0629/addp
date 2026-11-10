@@ -32,11 +32,28 @@ def detail(spec, index=1):
             'full_name': 'bucket/' + spec['object'], 'size_bytes': 4, 'attributes': attrs}
 
 
+def structural_detail(item):
+    result = {key: value for key, value in item.items() if key not in ('size_bytes', 'attributes')}
+    attrs = item['attributes']
+    result['attributes'] = {'schema_version': 1, 'item': {
+        key: attrs['item'][key] for key in ('data_type', 'format', 'layout')}}
+    if 'capabilities' in attrs:
+        result['attributes']['capabilities'] = {'spatial': {'srid': attrs['capabilities']['spatial']['srid']}}
+    return result
+
+
+def preview_payload(item):
+    return {'data': {'item_meta': {'full_name': item['full_name'], 'fingerprint': item['fingerprint'],
+        'attributes': [{'key': key, 'value': value} for key, value in item['attributes'].items()]},
+        'object': {'size_bytes': item['size_bytes']}}}
+
+
 def browser_report(evidence):
     cases = []
     for source in evidence['cases']:
         case = {key: source[key] for key in ('case', 'item_id', 'locator', 'sha256', 'source_srid')}
-        case.update(download_sha256=source['sha256'], metadata_verified=True, source_preview_verified=True)
+        case.update(download_sha256=source['sha256'], metadata_verified=True, source_preview_verified=True,
+                    metadata_projection_verified=True, content_metadata_verified=True)
         if source['source_srid']:
             case.update(preview_url=source['preview_url'], range_loaded=True, map_loaded=True,
                         reopened=True, reused_result=True, pixels={'cyan': 128, 'magenta': 128, 'yellow': 128})
@@ -255,13 +272,17 @@ for(const extension of ['img','jp2','j2k']) {
         generated, cleaned = [], []
         def request(method, path, expected, body=None):
             parsed = urlsplit(path)
-            if parsed.path == '/api/v1/meta/engines/2/items': payload = items
+            if parsed.path == '/api/v1/meta/engines/2/items': payload = [structural_detail(item) for item in items]
             elif parsed.path=='/api/v1/manager/engines/2/items/refresh':
                 self.assertEqual(method,'POST');self.assertIn('item_id=1',parse_qs(parsed.query)['locator'][0])
                 items[0]['scanned_at']='2026-10-30T00:00:01Z'
                 items[0]['attributes']['item']['full_name']=items[0]['full_name']
                 payload={'status':'success','items_scanned':1,'started_at':'2026-10-30T00:00:00.5Z'}
-            elif parsed.path.startswith('/api/v1/meta/items/'): payload = items[int(parsed.path.split('/')[-1]) - 1]
+            elif parsed.path.startswith('/api/v1/meta/items/'):
+                payload = structural_detail(items[int(parsed.path.split('/')[-1]) - 1])
+            elif parsed.path == '/api/v1/manager/preview':
+                locator = parse_qs(parsed.query)['locator'][0]
+                payload = preview_payload(next(item for item in items if OWNER.build_item_locator(2, item) == locator))
             elif parsed.path == '/api/v1/manager/downloads/file':
                 return OWNER.Response(200, {}, {}, b'test')
             elif parsed.path == '/api/v1/manager/quick-view/capability': payload = {'available_actions': [], 'can_use_quick_view': False}
@@ -388,13 +409,30 @@ for(const extension of ['img','jp2','j2k']) {
                        lambda r,a:a['attributes']['item'].pop('full_name'),
                        lambda r,a:a['attributes']['format_info']['tiff'].update(profile='plain_tiff')):
             r,a=copy.deepcopy(response),copy.deepcopy(after);mutate(r,a)
-            client=SimpleNamespace(request=lambda method,*args:SimpleNamespace(payload=r if method=='POST'else a))
-            with self.assertRaises(OWNER.SuiteError):IMG.refresh_tiff(OWNER,client,2,model,good)
+            def request(method, path, expected):
+                return SimpleNamespace(payload=r if method=='POST' else preview_payload(a)
+                    if path.startswith('/api/v1/manager/preview?') else structural_detail(a))
+            client=SimpleNamespace(request=request)
+            content = {key: good[key] for key in ('attributes', 'size_bytes')}
+            with self.assertRaises(OWNER.SuiteError):
+                IMG.refresh_tiff(OWNER,client,2,model,structural_detail(good),content)
         with tempfile.TemporaryDirectory()as root:
             run,_,_=self.scenario(root,source_format='tiff');facts=run()['physical_sources'][0]
             for key in ('cog_valid','cog_errors','cog_warnings','pixels_verified','complete_mask_verified','overview_count','source_srid'):
                 bad=copy.deepcopy(facts);bad.pop(key)
                 with self.assertRaises(OWNER.SuiteError):IMG.validate_tiff_physical(OWNER,bad)
+
+    def test_structural_meta_rejects_native_format_details_and_spatial_extent(self):
+        spec = IMG.SOURCES[0]
+        good = structural_detail(detail(spec))
+        IMG.validate_structural_meta(OWNER, good, spec)
+        for mutate in (lambda row: row.update(size_bytes=4),
+                       lambda row: row['attributes'].update(format_info={'img': {'band_count': 3}}),
+                       lambda row: row['attributes']['capabilities']['spatial'].update(extent=spec['extent'])):
+            bad = copy.deepcopy(good)
+            mutate(bad)
+            with self.assertRaises(OWNER.SuiteError):
+                IMG.validate_structural_meta(OWNER, bad, spec)
 
 
 if __name__ == '__main__':

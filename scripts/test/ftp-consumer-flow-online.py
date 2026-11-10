@@ -639,15 +639,19 @@ class ModelSourceAuthorization:
 
     def node_grant(self, target, *, action, recursive, seconds=300):
         require(self.source_type == 'minio' and action in {'metadata_read', 'read'} and
-                type(recursive) is bool and type(seconds) is int and 0 < seconds <= 300,
+                type(recursive) is bool and (seconds is None or type(seconds) is int and 0 < seconds <= 300),
                 'bounded MinIO node fixture required')
         command = str(uuid.uuid4())
         body = dict(request_id=command, catalog_path=target, node_recursive=recursive,
                     recipient_type='user', recipient_id=self.recipient, action=action,
-                    expiry_mode='at_time', expires_at=(datetime.now(timezone.utc) + timedelta(seconds=seconds)).isoformat(),
+                    expiry_mode='until_revoked' if seconds is None else 'at_time',
                     reason='Disposable MinIO persistent node scope')
         self.grants.append(command)
-        self.node_receipts[command] = dict(body, engine_id=str(self.engine_id), operator_principal_id=self.operator)
+        expires_at = None
+        if seconds is not None:
+            expires_at = datetime.now(timezone.utc) + timedelta(seconds=seconds)
+            body['expires_at'] = expires_at.isoformat()
+            self.node_receipts[command] = dict(body, engine_id=str(self.engine_id), operator_principal_id=self.operator)
         receipt = self.issuer.request('POST', self.base + '/access_grants', (201,), body).payload
         require(isinstance(receipt, dict) and all(receipt.get(k) == body[k] for k in
                 ('request_id', 'catalog_path', 'node_recursive', 'recipient_type', 'recipient_id', 'action', 'expiry_mode')) and
@@ -655,7 +659,9 @@ class ModelSourceAuthorization:
                 receipt.get('engine_id') == str(self.engine_id) and receipt.get('approval_mode') == 'independent' and
                 receipt.get('revocation') is None and not any(receipt.get(k) for k in
                 ('item_fingerprint', 'boundary_hash', 'file_composition', 'scope', 'metadata_target')) and
-                datetime.fromisoformat(receipt['expires_at'].replace('Z', '+00:00')) == datetime.fromisoformat(body['expires_at']),
+                (receipt.get('expires_at') is None if expires_at is None else
+                 isinstance(receipt.get('expires_at'), str) and
+                 datetime.fromisoformat(receipt['expires_at'].replace('Z', '+00:00')) == expires_at),
                 'node Grant changed its scope, subject, expiry or gained a precise binding')
         self.confirmed.add(command)
         return receipt

@@ -394,6 +394,31 @@ class FakeSourceIssuer:
 
 
 class FTPConsumerTest(unittest.TestCase):
+    def test_minio_node_grant_without_clock_expiry_revokes_its_own_command(self):
+        report = {'engine_id': 17, 'tenant_id': 2, 'principal_id': '8'}
+        issuer = unittest.mock.Mock()
+        scope = M.file_target(17, 'owned/raster/scene.tif', 'minio')
+        scope['segments'].pop()
+        def request(method, path, statuses, body=None):
+            if path.endswith('/access_grants'):
+                self.assertEqual(method, 'POST')
+                self.assertEqual(body['catalog_path'], scope)
+                self.assertEqual(body['expiry_mode'], 'until_revoked')
+                self.assertNotIn('expires_at', body)
+                return SimpleNamespace(payload={**body, 'engine_id': '17', 'approval_mode': 'independent',
+                                               'operator_principal_id': '7', 'revocation': None})
+            self.assertTrue(path.endswith('/revoke'), path)
+            self.assertEqual(statuses, (200,))
+            return SimpleNamespace(status=200)
+        issuer.request.side_effect = request
+        with patch.object(M, 'exact_user_principal', side_effect=['7', '8']):
+            authorization = M.ModelSourceAuthorization(issuer, unittest.mock.Mock(), report, source_type='minio')
+        receipt = authorization.node_grant(scope, action='read', recursive=False, seconds=None)
+        authorization.cleanup()
+        self.assertEqual(authorization.grants, [])
+        self.assertEqual(issuer.request.call_count, 2)
+        self.assertTrue(issuer.request.call_args.args[1].endswith(f"/{receipt['request_id']}/revoke"))
+
     def test_obj_multi_material_oracle_preserves_both_images_and_exact_material_geometry(self):
         result=M.validate_obj_multi_material_glb(multi_material_obj_glb())
         self.assertEqual(result['vertex_count'],6)

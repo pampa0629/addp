@@ -245,7 +245,7 @@ class ENVIHostedCaseTest(unittest.TestCase):
     def test_real_browser_metadata_adapter_rejects_meta_leaks_and_content_bypass(self):
         root=Path(__file__).resolve().parents[2]
         text=(root/'console/frontend/e2e/online/manager-img.spec.js').read_text()
-        fn=text[text.index('export function enviContentMetadata'):text.index("test('IMG native")].replace('export function','function',1)
+        fn=text[text.index('function assertStructuralMetadata'):text.index('function rasterContentMetadata')].replace('export function','function',1)
         cases=[]
         for spec in FIXTURE.sources():
             detail,content,_=self.metadata_pair(spec);cases.append(dict(meta=detail,content=content,spec=spec))

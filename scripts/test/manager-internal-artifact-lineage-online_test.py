@@ -2150,13 +2150,23 @@ class ManagerAcceptanceCaseTest(unittest.TestCase):
                     full.assert_not_called()
 
     def test_both_formats_use_shared_scene_and_failure_preserves_partial_root(self):
-        for failure in (None, 'second', 'third', 'fourth', 'unclean', 'missing_nfs'):
+        grants = importlib.import_module('scripts.test.ftp-consumer-flow-online')
+        for failure in (None, 'second', 'third', 'fourth', 'unclean', 'missing_nfs', 'grant_residue'):
             with self.subTest(failure=failure), tempfile.TemporaryDirectory() as directory:
                 env = {'ADDP_ONLINE_ARTIFACT_DIR': directory, 'ADDP_ONLINE_TEST_RUN_ID': 'media-1',
-                       'ADDP_ONLINE_MANAGER_MINIO_ENGINE_ID': '27'}
+                       'ADDP_ONLINE_MANAGER_MINIO_ENGINE_ID': '27', 'ADDP_ONLINE_MANAGER_MINIO_BUCKET': 'isolated',
+                       'ADDP_ONLINE_MANAGER_CASE': 'native-raster-media', 'ADDP_ONLINE_TEST_TENANT_ID': '2',
+                       'GATEWAY_URL': 'http://example.test', 'ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN': 'fixture'}
                 scene = mock.Mock()
+                issuer = mock.Mock()
+                issuer.request.return_value.payload = {'total': 1, 'data': [{}]} if failure == 'grant_residue' else {'total': 0, 'data': []}
+                authorization = mock.Mock(base='/api/v1/system/engines/27', recipient='7')
+                authorization.node_grant.return_value = {'request_id': 'raster-grant'}
+                identity = {'principal_type': 'user', 'principal_id': 7}
                 def run(repository, environment, owner, *, source_format):
                     self.assertIs(owner, SUITE)
+                    authorization.node_grant.assert_called_once()
+                    authorization.cleanup.assert_not_called()
                     if (failure == 'second' and source_format == 'jpeg2000') or (failure == 'third' and source_format == 'grd') or (failure == 'fourth' and source_format == 'tiff'):
                         raise SUITE.SuiteError('second subscene failed')
                     report = {'result': 'passed', 'source_format': source_format,
@@ -2171,18 +2181,27 @@ class ManagerAcceptanceCaseTest(unittest.TestCase):
                 scene.run.side_effect = run
                 with mock.patch.object(importlib.util, 'spec_from_file_location') as spec, \
                      mock.patch.object(importlib.util, 'module_from_spec', return_value=scene), \
+                     mock.patch.object(SUITE, 'GatewayClient', return_value=issuer), \
+                     mock.patch.object(grants, 'ModelSourceAuthorization', return_value=authorization), \
                      mock.patch.object(SUITE, 'wait_for_meta_scan', return_value='scan-1') as scan:
                     if failure:
                         with self.assertRaises(SUITE.SuiteError):
-                            SUITE.run_native_raster_media_case(Path('/repository'), env, mock.Mock(), {'principal_type': 'user'})
+                            SUITE.run_native_raster_media_case(Path('/repository'), env, mock.Mock(), identity)
                     else:
-                        SUITE.run_native_raster_media_case(Path('/repository'), env, mock.Mock(), {'principal_type': 'user'})
+                        SUITE.run_native_raster_media_case(Path('/repository'), env, mock.Mock(), identity)
                 scan.assert_called_once()
+                authorization.node_grant.assert_called_once_with({'version': 'catalog.path/v1', 'engine_id': 27, 'segments': [
+                    {'term': 'service', 'kind': 'service', 'name': ''},
+                    {'term': 'bucket', 'kind': 'bucket', 'name': 'isolated'},
+                    {'term': 'prefix', 'kind': 'prefix', 'name': 'raster'},
+                ]}, action='read', recursive=False, seconds=None)
+                authorization.cleanup.assert_called_once()
                 report = json.loads(Path(directory, 'manager-native-raster-media.json').read_text())
                 self.assertEqual(report['schema_version'], 'addp.manager-native-raster-media/v2')
                 self.assertEqual(report['case'], 'native-raster-media')
                 self.assertEqual(report['source_formats'], ['img', 'jpeg2000', 'grd', 'tiff'])
                 self.assertEqual(report['result'], 'failed' if failure else 'passed')
+                self.assertIs(report['minio_source_authorization']['zero_current_grants'], failure != 'grant_residue')
                 calls = [call.kwargs['source_format'] for call in scene.run.call_args_list]
                 self.assertEqual(calls, ['img'] if failure == 'unclean' else ['img', 'jpeg2000'] if failure == 'second' else ['img', 'jpeg2000', 'grd'] if failure == 'third' else ['img', 'jpeg2000', 'grd', 'tiff'])
                 if failure == 'second':

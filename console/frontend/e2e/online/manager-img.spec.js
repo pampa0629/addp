@@ -13,27 +13,41 @@ export function matchesSourcePreviewResponse(response, locator) {
     && url.searchParams.get('locator') === locator
 }
 
-export function enviContentMetadata(meta, content, source) {
+function assertStructuralMetadata(meta, source, format, layout) {
   const safe = meta?.attributes
   const expected = source.source_srid === null ? ['item', 'schema_version'] : ['capabilities', 'item', 'schema_version']
   if (!safe || JSON.stringify(Object.keys(safe).sort()) !== JSON.stringify(expected)
     || safe.schema_version !== 1 || JSON.stringify(Object.keys(safe.item || {}).sort()) !== JSON.stringify(['data_type', 'format', 'layout'])
-    || safe.item.data_type !== 'media' || safe.item.format !== 'envi' || safe.item.layout !== 'multi') {
-    throw new Error('ENVI Meta must contain only structural identity and declared CRS')
+    || safe.item.data_type !== 'media' || safe.item.format !== format || safe.item.layout !== layout
+    || Object.hasOwn(meta, 'size_bytes')) {
+    throw new Error(`${format} Meta must contain only structural identity and declared CRS`)
   }
   if (source.source_srid !== null) {
     const spatial = safe.capabilities?.spatial
     if (Object.keys(safe.capabilities).join() !== 'spatial' || spatial?.srid !== source.source_srid
       || Object.keys(spatial).some(key => !['srid', 'crs_ref', 'crs_definitions', 'geometry_columns', 'primary_geometry_column'].includes(key))) {
-      throw new Error('ENVI Meta disclosed a content-derived spatial fact')
+      throw new Error(`${format} Meta disclosed a content-derived spatial fact`)
     }
   }
+}
+
+export function enviContentMetadata(meta, content, source) {
+  assertStructuralMetadata(meta, source, 'envi', 'multi')
   const attrs = content?.data?.object?.attributes
   if (!attrs || attrs.item?.data_type !== 'media' || attrs.item?.format !== 'envi' || attrs.item?.layout !== 'multi'
     || attrs.format_info?.envi?.profile !== 'envi-standard-pair/v1' || attrs.format_info.envi.composition_complete !== true) {
     throw new Error('ENVI content metadata requires the current exact pair read')
   }
   return { ...meta, attributes: attrs }
+}
+
+function rasterContentMetadata(meta, preview, source, format) {
+  assertStructuralMetadata(meta, source, format, 'single')
+  const item = preview.data?.item_meta
+  expect(item?.fingerprint).toBe(meta.fingerprint)
+  expect(item?.full_name).toBe(meta.full_name)
+  expect(preview.data?.object?.size_bytes).toBe(source.size_bytes)
+  return { ...meta, attributes: Object.fromEntries(item.attributes.map(({ key, value }) => [key, value])) }
 }
 
 async function tiffFixturePixelsMatch(frame) {
@@ -122,7 +136,8 @@ test('IMG native metadata, COG pixels and cached reopen through the real Console
     }) : null
     rangeResponse?.catch(() => {})
     await page.goto(`/manager/data-explorer?locator=${encodeURIComponent(source.locator)}`)
-    const api = await browserAPIFromResponse(await sourcePreviewResponse, env.GATEWAY_URL, expectedIdentity)
+    const previewResponse = await sourcePreviewResponse
+    const api = await browserAPIFromResponse(previewResponse, env.GATEWAY_URL, expectedIdentity)
     const frame = page.frameLocator('iframe[data-testid="module-iframe"]')
     const actual = { case: source.case, item_id: source.item_id, locator: source.locator,
       sha256: source.sha256, source_srid: source.source_srid, source_preview_verified: true }
@@ -130,11 +145,9 @@ test('IMG native metadata, COG pixels and cached reopen through the real Console
       const structuralMeta = await json(await api.get(`/api/v1/meta/items/${source.item_id}`), 'IMG source metadata')
       const meta = evidence.source_format === 'envi'
         ? enviContentMetadata(structuralMeta, await json(await api.get('/api/v1/manager/preview', { params: { locator: source.locator } }), 'ENVI guarded content metadata'), source)
-        : structuralMeta
-      if (evidence.source_format === 'envi') {
-        actual.metadata_projection_verified = true
-        actual.content_metadata_verified = true
-      }
+        : rasterContentMetadata(structuralMeta, await json(previewResponse, 'raster guarded preview metadata'), source, evidence.source_format)
+      actual.metadata_projection_verified = true
+      actual.content_metadata_verified = true
       expect(meta.attributes.item).toMatchObject({ data_type: 'media', format: evidence.source_format, layout: evidence.source_format === 'envi' ? 'multi' : 'single' })
       expect(meta.attributes.type_info.media).toMatchObject({ encoding: isTiff ? 'tiff' : source.driver, width: source.width ?? 256, height: source.height ?? 256 })
       if (isTiff) {
@@ -195,10 +208,15 @@ test('IMG native metadata, COG pixels and cached reopen through the real Console
         if (isTiff) {
           const reopened = page.waitForResponse(response => matchesSourcePreviewResponse(response, source.locator))
           await page.reload()
-          const reopenedAPI = await browserAPIFromResponse(await reopened, env.GATEWAY_URL, expectedIdentity)
-          const current = await json(await reopenedAPI.get(`/api/v1/meta/items/${source.item_id}`), 'TIFF reopened metadata')
-          await reopenedAPI.dispose()
-          expect(current).toEqual(meta)
+          const reopenedResponse = await reopened
+          const reopenedAPI = await browserAPIFromResponse(reopenedResponse, env.GATEWAY_URL, expectedIdentity)
+          try {
+            const current = await json(await reopenedAPI.get(`/api/v1/meta/items/${source.item_id}`), 'TIFF reopened Meta structure')
+            expect(current).toEqual(structuralMeta)
+            expect(rasterContentMetadata(current, await json(reopenedResponse, 'TIFF reopened Manager metadata'), source, 'tiff')).toEqual(meta)
+          } finally {
+            await reopenedAPI.dispose()
+          }
           await expect.poll(() => tiffFixturePixelsMatch(frame)).toBe(true)
           await expect(frame.locator('.raster-tiff-quick-view')).toHaveCount(0)
           actual.reopened = true

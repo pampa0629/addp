@@ -187,7 +187,32 @@ def validate_tiff_physical(owner, facts):
         raise owner.SuiteError('small TIFF complete physical proof is missing')
 
 
-def refresh_tiff(owner,client,engine,fixture,detail):
+def read_content_metadata(owner, client, fixture):
+    preview = client.request('GET', '/api/v1/manager/preview?' + urlencode({'locator': fixture.locator}), (200,)).payload
+    data = owner._object(preview.get('data'), 'raster preview data')
+    item = owner._object(data.get('item_meta'), 'raster preview metadata')
+    obj = owner._object(data.get('object'), 'raster preview object')
+    if (item.get('fingerprint') != fixture.item['fingerprint'] or item.get('full_name') != fixture.item['full_name']
+            or not isinstance(item.get('attributes'), list)):
+        raise owner.SuiteError('raster preview changed the source catalog identity')
+    return {'attributes': {entry['key']: entry['value'] for entry in item['attributes']},
+            'size_bytes': obj.get('size_bytes')}
+
+
+def validate_structural_meta(owner, detail, spec):
+    attrs = owner._object(detail.get('attributes'), 'raster structural attributes')
+    expected = {'schema_version': 1, 'item': {'data_type': 'media', 'format': spec['source_format'], 'layout': 'single'}}
+    if spec['source_srid'] is not None:
+        spatial = owner._object(attrs.get('capabilities', {}).get('spatial'), 'declared raster CRS')
+        if spatial.get('srid') != spec['source_srid'] or spatial.keys() - {
+                'srid', 'crs_ref', 'crs_definitions', 'geometry_columns', 'primary_geometry_column'}:
+            raise owner.SuiteError('Meta changed the declared CRS or disclosed content-derived spatial facts')
+        expected['capabilities'] = {'spatial': spatial}
+    if attrs != expected or 'size_bytes' in detail:
+        raise owner.SuiteError('Meta raster projection must only disclose structure and declared CRS')
+
+
+def refresh_tiff(owner,client,engine,fixture,detail,content):
     path=f'/api/v1/manager/engines/{engine}/items/refresh'
     response=client.request('POST',path+'?'+urlencode({'locator':fixture.locator}),(200,)).payload
     if response.get('status')!='success' or type(response.get('items_scanned')) is not int or response['items_scanned']!=1:
@@ -201,18 +226,18 @@ def refresh_tiff(owner,client,engine,fixture,detail):
             raise ValueError('refresh did not advance the exact item scan time')
     except (KeyError,TypeError,ValueError)as error:
         raise owner.SuiteError('small TIFF refresh timestamps are missing or inconsistent')from error
-    expected_attrs=json.loads(json.dumps(detail['attributes']))
+    expected_attrs=json.loads(json.dumps(content['attributes']))
     full_name=detail.get('full_name')
     if not isinstance(full_name,str) or not full_name or expected_attrs['item'].get('full_name',full_name)!=full_name:
         raise owner.SuiteError('small TIFF original catalog identity is inconsistent')
     # Known-item refresh restores this exact catalog fact; all format/storage facts remain strict.
     expected_attrs['item']['full_name']=full_name
-    if (after.get('id')!=detail.get('id') or after.get('fingerprint')!=detail.get('fingerprint')
-        or after.get('full_name')!=full_name or after.get('size_bytes')!=detail.get('size_bytes')
-        or after.get('attributes')!=expected_attrs):
+    after_content = read_content_metadata(owner, client, fixture)
+    if (after != {**detail, 'scanned_at': after['scanned_at']}
+            or after_content != {**content, 'attributes': expected_attrs}):
         raise owner.SuiteError('small TIFF refresh changed source identity or format facts')
-    validate_tiff_meta(owner,after)
-    return after,{'path':path,'locator':fixture.locator,'response':response,
+    validate_tiff_meta(owner,after_content)
+    return after,after_content,{'path':path,'locator':fixture.locator,'response':response,
                   'full_name':full_name,'scanned_at_before':detail['scanned_at'],'scanned_at_after':after['scanned_at']}
 
 
@@ -264,8 +289,10 @@ def validate_browser(owner, report, evidence):
         for key in ('case', 'item_id', 'locator', 'sha256', 'source_srid'):
             if actual.get(key) != expected.get(key):
                 raise owner.SuiteError('IMG browser source identity changed')
-        if (actual.get('download_sha256') != expected['sha256'] or actual.get('metadata_verified') is not True
-                or actual.get('source_preview_verified') is not True):
+        keys = ('metadata_verified', 'source_preview_verified')
+        if evidence['source_format'] != 'envi':  # ENVI validates the two projections in its own report contract.
+            keys += ('metadata_projection_verified', 'content_metadata_verified')
+        if actual.get('download_sha256') != expected['sha256'] or any(actual.get(key) is not True for key in keys):
             raise owner.SuiteError('IMG browser source bytes or metadata were not verified')
         if expected['source_srid'] is None:
             keys=('map_absent','source_image_absent')
@@ -320,24 +347,28 @@ def run(repository, environment, owner, *, browser_runner=None, physical_runner=
                 raise owner.SuiteError('IMG physical receipt has a mismatched source')
             if source_format=='tiff':validate_tiff_physical(owner,seeded)
             item = owner.find_fixture_item(client, engine, environment['ADDP_ONLINE_MANAGER_MINIO_BUCKET'] + '/' + spec['object'], spec['case'])
-            if item.get('size_bytes') != seeded['size_bytes']:
-                raise owner.SuiteError('IMG Meta source size differs from its physical receipt')
             detail = client.request('GET', f"/api/v1/meta/items/{item['id']}", (200,)).payload
-            validate_meta(owner, detail, spec)
+            validate_structural_meta(owner, detail, spec)
             fixture = owner.ArtifactFixture(source_format+'-' + spec['case'], item, owner.build_item_locator(engine, item))
             fixtures.append(fixture)
+            content = read_content_metadata(owner, client, fixture)
+            if content['size_bytes'] != seeded['size_bytes']:
+                raise owner.SuiteError('Manager raster source size differs from its physical receipt')
+            validate_meta(owner, content, spec)
             refresh=None
             if source_format=='tiff':
-                (Path(environment['ADDP_ONLINE_ARTIFACT_DIR'])/'raster-meta-tiff-unlocated-small-cog-before-refresh.json').write_text(json.dumps(detail,ensure_ascii=False,sort_keys=True)+'\n')
-                detail,refresh=refresh_tiff(owner,client,engine,fixture,detail)
-            snapshots[item['id']] = detail
+                (Path(environment['ADDP_ONLINE_ARTIFACT_DIR'])/'raster-meta-tiff-unlocated-small-cog-before-refresh.json').write_text(
+                    json.dumps({'meta': detail, 'manager': content}, ensure_ascii=False, sort_keys=True)+'\n')
+                detail,content,refresh=refresh_tiff(owner,client,engine,fixture,detail,content)
+            snapshots[item['id']] = (detail, content)
             downloaded = client.request('GET', '/api/v1/manager/downloads/file?' + urlencode({'locator': fixture.locator}), (200,))
             source_raw=downloaded.raw
             if len(source_raw) != seeded['size_bytes'] or hashlib.sha256(source_raw).hexdigest() != seeded['sha256']:
                 raise owner.SuiteError('IMG original download differs from physical source')
             archive = Path(environment['ADDP_ONLINE_ARTIFACT_DIR'])
             (archive / ('raster-source-'+source_format+'-'+spec['case']+Path(spec['object']).suffix)).write_bytes(source_raw)
-            (archive / ('raster-meta-'+source_format+'-'+spec['case']+'.json')).write_text(json.dumps(detail, ensure_ascii=False, sort_keys=True)+'\n')
+            (archive / ('raster-meta-'+source_format+'-'+spec['case']+'.json')).write_text(
+                json.dumps({'meta': detail, 'manager': content}, ensure_ascii=False, sort_keys=True)+'\n')
             case = {**spec, 'item_id': item['id'], 'locator': fixture.locator,
                     'sha256': seeded['sha256'], 'size_bytes': seeded['size_bytes'], 'metadata_verified': True}
             cases.append(case)
@@ -365,8 +396,9 @@ def run(repository, environment, owner, *, browser_runner=None, physical_runner=
         else:
             report['browser'] = validate_browser(owner, browser(browser_evidence), browser_evidence)
         for fixture in fixtures:
-            if client.request('GET', f"/api/v1/meta/items/{fixture.item['id']}", (200,)).payload != snapshots[fixture.item['id']]:
-                raise owner.SuiteError('IMG generation or browser changed the source Meta snapshot')
+            detail = client.request('GET', f"/api/v1/meta/items/{fixture.item['id']}", (200,)).payload
+            if (detail, read_content_metadata(owner, client, fixture)) != snapshots[fixture.item['id']]:
+                raise owner.SuiteError('raster generation or browser changed the source metadata')
             if fixture.result_id:
                 query = urlencode({'task_id': fixture.task_id, 'page': 1, 'page_size': 100})
                 results = client.request('GET', '/api/v1/manager/raster_cog?' + query, (200,)).payload
