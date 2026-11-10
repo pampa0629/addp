@@ -76,7 +76,7 @@ copy_common_files() {
     echo -e "${YELLOW}Copying common files...${NC}"
 
     # Create base directory structure
-    mkdir -p "$OUTPUT_DIR"
+    mkdir -p "$OUTPUT_DIR/scripts"
 
     # 1. Copy docker-compose files
     if [ -f "docker-compose.infra.yml" ]; then
@@ -137,6 +137,23 @@ copy_common_files() {
     else
         echo -e "${YELLOW}Warning: scripts/prod/ not found${NC}"
     fi
+
+    # Production and Infra entry points also run these helpers and build the
+    # node-local log and optional engine metric collectors from the package.
+    local path parent
+    for path in \
+        scripts/dev/lifecycle-lock.sh scripts/dev/process-metrics-launch.py \
+        scripts/utils/observability-env.sh scripts/utils/deployment-inventory.py \
+        scripts/utils/container-proof.py scripts/utils/deployment-docker.py \
+        scripts/utils/metrics-project.py scripts/utils/metrics-source.py scripts/utils/private-state.py \
+        common gateway/go.mod */backend/go.mod monitor/backend/go.sum \
+        monitor/backend/cmd/minio-metrics-source monitor/backend/cmd/redis-metrics-source \
+        monitor/backend/internal/miniosource monitor/backend/internal/redissource monitor/backend/internal/sourceserver; do
+        parent="$OUTPUT_DIR/$(dirname "$path")"
+        mkdir -p "$parent"
+        cp -R "$path" "$parent/"
+    done
+    echo -e "${GREEN}✓ Production lifecycle and collector build inputs copied${NC}"
 
     # 5. Copy business infrastructure (recommended)
     if [ -d "business" ]; then

@@ -311,6 +311,8 @@ IMAGE_TAG=v1.0.0 bash scripts/build/package.sh --mode registry --registry harbor
 
 `IMAGE_TAG` 默认 `latest`，决定 images 模式导出的镜像版本。两种模式都会复制 `.env.example`；根 `.env` 存在时也会复制，包及其传输目标按含凭据的部署制品管理。部署时须核对实际 `.env` 的 Registry 和版本，不能仅靠包目录名判断。
 
+两种模式均包含生产生命周期、部署发现及指标来源所需的脚本，以及目标机本地构建日志清理器和 Redis／MinIO 指标来源所需的源文件。使用 `make test-release-runner` 验证空目录生成的部署包可完成标准启动的配置准备；目标机的镜像可用性和完整运行仍需实测。
+
 ### 两种部署模式
 
 | 模式 | 前提与内容 | 服务器操作 | 产物 |

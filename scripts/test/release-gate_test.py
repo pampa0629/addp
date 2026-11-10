@@ -1,5 +1,7 @@
 import importlib.util
 import json
+import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -14,6 +16,67 @@ RELEASE_GATE = importlib.util.module_from_spec(SPEC)
 assert SPEC.loader is not None
 sys.modules[SPEC.name] = RELEASE_GATE
 SPEC.loader.exec_module(RELEASE_GATE)
+
+
+class DeploymentPackageTest(unittest.TestCase):
+    def test_clean_registry_package_reaches_infrastructure_startup(self) -> None:
+        repository = SCRIPT.parents[2]
+        inputs = subprocess.check_output(
+            ['git', 'ls-files', '-z', '--', '.env.example', 'docker-compose.yml',
+             'docker-compose.infra.yml', 'docker-compose.runtimes.yml', 'scripts/build/package.sh',
+             'scripts/infra', 'scripts/prod', 'scripts/dev', 'scripts/utils', 'common', 'nginx/nginx.conf',
+             'business/.env.example', 'business/docker-compose.yml', 'gateway/go.mod',
+             ':(glob)*/backend/go.mod', 'monitor/backend/go.sum', 'monitor/backend/cmd/minio-metrics-source',
+             'monitor/backend/cmd/redis-metrics-source', 'monitor/backend/internal/miniosource',
+             'monitor/backend/internal/redissource', 'monitor/backend/internal/sourceserver'], cwd=repository,
+        )
+        with tempfile.TemporaryDirectory(prefix='addp-package-') as directory:
+            root = Path(directory)
+            for name in os.fsdecode(inputs).split('\0'):
+                if not name:
+                    continue
+                target = root / name
+                target.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(repository / name, target)
+            env = {'PATH': os.environ['PATH']}
+            package = subprocess.run(['bash', 'scripts/build/package.sh', '--mode', 'registry'], cwd=root,
+                                     env=env, capture_output=True, text=True, timeout=60)
+            self.assertEqual(package.returncode, 0, package.stderr)
+            output, = (root / 'dist').glob('package-registry-*')
+            self.assertFalse((output / '.env').exists())
+
+            # Simulate a fresh Engine and stop at the Infra Docker boundary.
+            # No command from this package can reach the host Docker daemon.
+            stub = root / 'bin' / 'docker'
+            stub.parent.mkdir()
+            stub.write_text('''#!/bin/sh
+if [ "$1" = info ]; then exit 0; fi
+if [ "$1 $2" = 'compose version' ]; then
+    : > "$PACKAGE_TEST_BOUNDARY"
+    exit 78
+fi
+exit 1
+''')
+            stub.chmod(0o755)
+            boundary = root / 'infra-docker-boundary'
+            result = subprocess.run(['bash', 'scripts/prod/start.sh'], cwd=output,
+                                    env={'PATH': f"{stub.parent}{os.pathsep}{env['PATH']}",
+                                         'PACKAGE_TEST_BOUNDARY': str(boundary)},
+                                    capture_output=True, text=True, timeout=30)
+            self.assertTrue(boundary.is_file(), result.stdout + result.stderr)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertEqual((output / '.env').stat().st_mode & 0o777, 0o600)
+            self.assertFalse((output / '.dev-state/lifecycle.lock').exists())
+
+            for entry in ('scripts/utils/deployment-inventory.py', 'scripts/infra/node-metrics.py',
+                          'scripts/infra/redis-metrics.py', 'scripts/infra/minio-observation.py'):
+                result = subprocess.run([sys.executable, entry, '--help'], cwd=output,
+                                        env=env, capture_output=True, text=True, timeout=10)
+                self.assertEqual(result.returncode, 0, result.stderr)
+            for source in ('common/cmd/runtime-log/main.go', 'gateway/go.mod', 'system/backend/go.mod',
+                           'monitor/backend/cmd/minio-metrics-source/main.go',
+                           'monitor/backend/cmd/redis-metrics-source/main.go'):
+                self.assertTrue((output / source).is_file(), source)
 
 
 class ReleaseGateTest(unittest.TestCase):
