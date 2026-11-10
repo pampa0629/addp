@@ -4861,6 +4861,92 @@ const docTemplate = `{
                 ]
             }
         },
+        "/execution-authorizations/{id}/develop-geopackage-publications": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "仅固定 addp-develop Tenant Service。prepare 仅一次返回同版本目标暂存连接。release 只认同一操作的已确认回执，不返回连接。 | Fixed addp-develop Tenant Service only. Prepare returns the version-bound staging connection once. Release requires the same operation's confirmed receipt and returns no connection.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "执行授权 | Execution Authorization"
+                ],
+                "summary": "授权原 GeoPackage 操作的一个发布阶段 | Authorize one phase of the original GeoPackage operation",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "原执行授权 ID | Original execution authorization ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "原执行、租约、批准和操作绑定 | Original execution, lease, approval and operation binding",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/client.DevelopFilePublicationRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/client.DevelopFilePublicationObservation"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "system.execution_authorization.execute"
+                ]
+            }
+        },
         "/execution-authorizations/{id}/develop-geopackage-source-accesses": {
             "post": {
                 "security": [
@@ -17905,6 +17991,76 @@ const docTemplate = `{
                     "type": "integer"
                 },
                 "scope_digest": {
+                    "type": "string"
+                }
+            }
+        },
+        "client.DevelopFilePublicationObservation": {
+            "type": "object",
+            "properties": {
+                "approval_id": {
+                    "type": "string"
+                },
+                "attempt": {
+                    "type": "integer"
+                },
+                "authorization_id": {
+                    "type": "string"
+                },
+                "business_deadline": {
+                    "type": "string"
+                },
+                "engine": {
+                    "$ref": "#/definitions/github_com_addp_common_models.Engine"
+                },
+                "execution_id": {
+                    "type": "string"
+                },
+                "expires_at": {
+                    "type": "string"
+                },
+                "observed_at": {
+                    "type": "string"
+                },
+                "operation_id": {
+                    "type": "string"
+                },
+                "preparation_digest": {
+                    "type": "string"
+                },
+                "scope_digest": {
+                    "type": "string"
+                },
+                "stage": {
+                    "type": "string"
+                }
+            }
+        },
+        "client.DevelopFilePublicationRequest": {
+            "type": "object",
+            "properties": {
+                "approval_id": {
+                    "type": "string"
+                },
+                "attempt": {
+                    "type": "integer"
+                },
+                "execution_id": {
+                    "type": "string"
+                },
+                "lease_token": {
+                    "type": "string"
+                },
+                "operation_id": {
+                    "type": "string"
+                },
+                "preparation_digest": {
+                    "type": "string"
+                },
+                "scope_digest": {
+                    "type": "string"
+                },
+                "stage": {
                     "type": "string"
                 }
             }

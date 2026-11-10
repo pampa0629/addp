@@ -134,6 +134,7 @@ func TestDevelopFileAuthorizationAgainstPostgres(t *testing.T) {
 	path := plugin.FileItemPath(uint(engineID), "sources/A.gpkg")
 	owner := developFileOwnerFixture{}
 	allowed := true
+	targetSnapshots := 0
 	var sourceExpiresAt *time.Time // Explicit source-rule double; never a real GPKG Grant.
 	prepare := func(ctx context.Context, auth *ExecutionAuthorization, intent execution.DevelopFileIntent) (*DevelopFileReadPreparation, error) {
 		version := ""
@@ -161,6 +162,11 @@ func TestDevelopFileAuthorizationAgainstPostgres(t *testing.T) {
 				out.Engine = &commonmodels.Engine{ID: uint(engineID), TenantID: &tenantID, EngineType: "nfs", Version: 1, LifecycleState: "active", ConnectionInfo: commonmodels.ConnectionInfo{"server": "fixture-only"}}
 			}
 			return out, nil
+		}, TargetSnapshot: func(context.Context, *gorm.DB) (*commonmodels.Engine, error) {
+			targetSnapshots++
+			tenantID := uint(tenant.ID)
+			return &commonmodels.Engine{ID: uint(engineID), TenantID: &tenantID, EngineType: "nfs", Version: 1,
+				LifecycleState: "active", ConnectionInfo: commonmodels.ConnectionInfo{"server": "fixture-target-only"}}, nil
 		}}, nil
 	}
 	svc := NewDevelopFileAuthorizationService(repo, owner, prepare)
@@ -444,9 +450,83 @@ func TestDevelopFileAuthorizationAgainstPostgres(t *testing.T) {
 			t.Fatal("invalid lease used the approval")
 		}
 		check.LeaseToken = uuid.MustParse(lease.Token)
+		operation := uuid.NewString()
+		publicationCheck := check
+		publicationCheck.Source = nil
+		request := client.DevelopFilePublicationRequest{ExecutionID: facts.ExecutionID, Attempt: 1, LeaseToken: lease.Token,
+			ScopeDigest: issued.ScopeDigest, ApprovalID: winner.ApprovalID, OperationID: operation, Stage: client.DevelopFilePublicationPrepare}
+		facts.Publication = &client.DevelopFilePublicationFacts{ApprovalID: winner.ApprovalID,
+			Request: plugin.NewFilePublicationRequest{OperationID: operation, Target: issued.Scope.Target.Target,
+				SizeBytes: 8192, SHA256: strings.Repeat("a", 64)}}
+		if value, err := svc.AuthorizePublication(ctx, publicationCheck, request); err == nil || value != nil || targetSnapshots != 0 {
+			t.Fatal("target preparation created the source-read deadline")
+		}
 		if a, b, err := svc.Check(ctx, check); err != nil || a != nil || b == nil || b.Engine == nil || b.Engine.ID != uint(engineID) ||
 			!b.BusinessDeadline.Equal(managementDeadline) || b.ExpiresAt.After(managementDeadline) {
 			t.Fatal("approved running read did not return the exact source", err)
+		}
+		release := request
+		release.Stage, release.PreparationDigest = client.DevelopFilePublicationRelease, strings.Repeat("c", 64)
+		facts.Publication.PreparationDigest = release.PreparationDigest
+		if value, err := svc.AuthorizePublication(ctx, publicationCheck, release); err == nil || value != nil || targetSnapshots != 0 {
+			t.Fatal("release worked before preparation admission")
+		}
+		facts.Publication.PreparationDigest = ""
+		badRequest := request
+		badRequest.OperationID = uuid.NewString()
+		if value, err := svc.AuthorizePublication(ctx, publicationCheck, badRequest); err == nil || value != nil {
+			t.Fatal("unregistered operation obtained target connection")
+		}
+		staleCheck, staleRequest := publicationCheck, request
+		staleCheck.LeaseToken = uuid.New()
+		staleRequest.LeaseToken = staleCheck.LeaseToken.String()
+		if value, err := svc.AuthorizePublication(ctx, staleCheck, staleRequest); err == nil || value != nil || targetSnapshots != 0 {
+			t.Fatal("wrong lease obtained the target connection")
+		}
+		prepareReceipt, err := svc.AuthorizePublication(ctx, publicationCheck, request)
+		if err != nil || prepareReceipt == nil || prepareReceipt.Engine == nil || prepareReceipt.Engine.ConnectionInfo["server"] != "fixture-target-only" ||
+			targetSnapshots != 1 || !prepareReceipt.BusinessDeadline.Equal(managementDeadline) {
+			t.Fatal("exact preparation failed", err)
+		}
+		if value, err := svc.AuthorizePublication(ctx, publicationCheck, request); !errors.Is(err, ErrExecutionAuthorizationConflict) || value != nil || targetSnapshots != 1 {
+			t.Fatal("lost preparation response could be replayed", err)
+		}
+		if value, err := svc.AuthorizePublication(ctx, publicationCheck, release); err == nil || value != nil {
+			t.Fatal("release accepted without a trusted prepared receipt")
+		}
+		facts.Publication.PreparationDigest = release.PreparationDigest
+		facts.Publication.Request.SizeBytes++
+		if value, err := svc.AuthorizePublication(ctx, publicationCheck, release); !errors.Is(err, ErrExecutionAuthorizationConflict) || value != nil {
+			t.Fatal("changed output bytes released the original operation", err)
+		}
+		facts.Publication.Request.SizeBytes--
+		allowManagement = false
+		if value, err := svc.AuthorizePublication(ctx, publicationCheck, release); err == nil || value != nil {
+			t.Fatal("revoked management scope released the operation")
+		}
+		allowManagement = true
+		type publicationResult struct {
+			value *client.DevelopFilePublicationObservation
+			err   error
+		}
+		releases := make(chan publicationResult, 2)
+		for i := 0; i < 2; i++ {
+			go func() {
+				value, err := svc.AuthorizePublication(ctx, publicationCheck, release)
+				releases <- publicationResult{value, err}
+			}()
+		}
+		successes := 0
+		for i := 0; i < 2; i++ {
+			result := <-releases
+			if result.err == nil && result.value != nil && result.value.Engine == nil && result.value.PreparationDigest == release.PreparationDigest {
+				successes++
+			} else if !errors.Is(result.err, ErrExecutionAuthorizationConflict) || result.value != nil {
+				t.Fatal("invalid concurrent release result", result.err)
+			}
+		}
+		if successes != 1 || targetSnapshots != 1 {
+			t.Fatal("release was not unique or returned another connection", successes)
 		}
 		allowManagement = false
 		if a, b, err := svc.Check(ctx, check); err == nil || a != nil || b != nil {

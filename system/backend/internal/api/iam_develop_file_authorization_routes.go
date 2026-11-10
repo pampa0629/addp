@@ -24,6 +24,7 @@ import (
 type iamDevelopFileAuthorizationService interface {
 	Issue(context.Context, iam.IssueDevelopFileAuthorizationInput) (*client.IssuedDevelopFileAuthorization, error)
 	ApproveCreate(context.Context, iam.ApproveDevelopFileCreateInput) (*iam.DevelopFileCreateApprovalReceipt, error)
+	AuthorizePublication(context.Context, iam.CheckDevelopFileInput, client.DevelopFilePublicationRequest) (*client.DevelopFilePublicationObservation, error)
 	Check(context.Context, iam.CheckDevelopFileInput) (*client.DevelopFileAdmissionObservation, *client.DevelopFileSourceAccessObservation, error)
 }
 type IAMDevelopFileAuthorizationHandler struct {
@@ -71,7 +72,47 @@ func RegisterIAMDevelopFileAuthorizationRoutes(api *gin.RouterGroup, runtime *IA
 	api.POST("/execution-authorizations/:id/develop-geopackage-create-approvals", runtime.Authentication, runtime.UserAccessCredential, tenant, approve, h.ApproveCreate)
 	api.POST("/execution-authorizations/:id/develop-geopackage-admission-checks", runtime.Authentication, runtime.ServiceCredential, service, develop, consume, h.Admission)
 	api.POST("/execution-authorizations/:id/develop-geopackage-source-accesses", runtime.Authentication, runtime.ServiceCredential, service, develop, consume, h.Source)
+	api.POST("/execution-authorizations/:id/develop-geopackage-publications", runtime.Authentication, runtime.ServiceCredential, service, develop, consume, h.Publication)
 	return nil
+}
+
+// Publication godoc
+// @Summary 授权原 GeoPackage 操作的一个发布阶段 | Authorize one phase of the original GeoPackage operation
+// @Description 仅固定 addp-develop Tenant Service。prepare 仅一次返回同版本目标暂存连接。release 只认同一操作的已确认回执，不返回连接。 | Fixed addp-develop Tenant Service only. Prepare returns the version-bound staging connection once. Release requires the same operation's confirmed receipt and returns no connection.
+// @Tags 执行授权 | Execution Authorization
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param id path string true "原执行授权 ID | Original execution authorization ID"
+// @Param request body client.DevelopFilePublicationRequest true "原执行、租约、批准和操作绑定 | Original execution, lease, approval and operation binding"
+// @Success 200 {object} client.DevelopFilePublicationObservation
+// @Failure 400,401,403,409,500,503 {object} IAMErrorResponse
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["system.execution_authorization.execute"]
+// @Router /execution-authorizations/{id}/develop-geopackage-publications [post]
+func (h *IAMDevelopFileAuthorizationHandler) Publication(c *gin.Context) {
+	c.Header("Cache-Control", "no-store")
+	var request client.DevelopFilePublicationRequest
+	if bindDevelopFileRequest(c, &request) != nil || request.Validate() != nil {
+		respondExecutionAuthorizationError(c, commonapi.ErrBadRequest)
+		return
+	}
+	input, err := developFileCheckInput(c, request.ExecutionID, request.Attempt, request.ScopeDigest)
+	if err != nil {
+		respondExecutionAuthorizationError(c, err)
+		return
+	}
+	input.LeaseToken, err = parseCanonicalExecutionUUID(request.LeaseToken)
+	if err != nil {
+		respondExecutionAuthorizationError(c, err)
+		return
+	}
+	observation, err := h.service.AuthorizePublication(c.Request.Context(), input, request)
+	if err != nil {
+		respondExecutionAuthorizationError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, observation)
 }
 
 // ApproveCreate godoc

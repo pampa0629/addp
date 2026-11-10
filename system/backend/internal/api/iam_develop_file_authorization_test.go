@@ -28,6 +28,12 @@ type developFileHTTPFixture struct {
 	err      error
 }
 
+func (f *developFileHTTPFixture) AuthorizePublication(_ context.Context, input iam.CheckDevelopFileInput, req client.DevelopFilePublicationRequest) (*client.DevelopFilePublicationObservation, error) {
+	f.calls++
+	f.input = input
+	return &client.DevelopFilePublicationObservation{OperationID: req.OperationID, Stage: req.Stage}, f.err
+}
+
 func (f *developFileHTTPFixture) ApproveCreate(_ context.Context, input iam.ApproveDevelopFileCreateInput) (*iam.DevelopFileCreateApprovalReceipt, error) {
 	f.calls++
 	f.approval = input
@@ -114,6 +120,8 @@ func TestDevelopFileHTTPGuardsAndStrictInputs(t *testing.T) {
 	digest, _ := intent.Digest()
 	issue := `{"execution_id":"` + profileHTTPExecution + `","intent_digest":"` + digest + `"}`
 	admit := `{"execution_id":"` + profileHTTPExecution + `","expected_attempt":1,"scope_digest":"` + issued.ScopeDigest + `"}`
+	publication := `{"execution_id":"` + profileHTTPExecution + `","attempt":1,"scope_digest":"` + issued.ScopeDigest +
+		`","lease_token":"05b4b5f6-3343-41c4-97d3-a0aa527e42dc","approval_id":"ca5846c6-1fbb-40ae-bfda-7ed0e7be08f4","operation_id":"0b33cbf0-5c67-4c99-8ac3-5573d505630f","stage":"prepare"}`
 	for _, tc := range []struct {
 		name, path, body string
 		service          bool
@@ -123,6 +131,9 @@ func TestDevelopFileHTTPGuardsAndStrictInputs(t *testing.T) {
 	}{
 		{"issue", "/auth/execution-authorizations/develop-geopackage-workflows", issue, false, 201, 1, nil, nil},
 		{"admit", "/execution-authorizations/9/develop-geopackage-admission-checks", admit, true, 200, 1, nil, nil},
+		{"publication", "/execution-authorizations/9/develop-geopackage-publications", publication, true, 200, 1, nil, nil},
+		{"user cannot publish", "/execution-authorizations/9/develop-geopackage-publications", publication, false, 403, 0, nil, nil},
+		{"release requires confirmed digest", "/execution-authorizations/9/develop-geopackage-publications", strings.Replace(publication, `"prepare"`, `"release"`, 1), true, 400, 0, nil, nil},
 		{"unavailable", "/execution-authorizations/9/develop-geopackage-admission-checks", admit, true, 503, 1, nil, iam.ErrDevelopFileDependencyUnavailable},
 		{"unknown", "/auth/execution-authorizations/develop-geopackage-workflows", strings.TrimSuffix(issue, "}") + `,"tenant_id":"4"}`, false, 400, 0, nil, nil},
 		{"duplicate", "/auth/execution-authorizations/develop-geopackage-workflows", strings.TrimSuffix(issue, "}") + `,"execution_id":"` + profileHTTPExecution + `"}`, false, 400, 0, nil, nil},

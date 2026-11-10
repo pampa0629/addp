@@ -139,7 +139,29 @@ func (s *Service) PrepareDevelopFileRead(ctx context.Context, auth *iam.Executio
 		}
 		return observation, nil
 	}
-	return &iam.DevelopFileReadPreparation{Scope: *scope.Clone(), Verify: verify}, nil
+	prepared := &iam.DevelopFileReadPreparation{Scope: *scope.Clone(), Verify: verify}
+	if scope.Target != nil {
+		targetID := scope.Target.Target.EngineID
+		prepared.TargetSnapshot = func(ctx context.Context, db *gorm.DB) (*models.Engine, error) {
+			var engine models.Engine
+			if s.executionEngineSnapshot == nil {
+				return nil, commonapi.ErrForbidden
+			}
+			if err := db.WithContext(ctx).Table("system.engines").Where("id=? AND tenant_id=?", targetID, identity.TenantID).
+				Clauses(clause.Locking{Strength: "SHARE"}).Take(&engine).Error; err != nil {
+				return nil, err
+			}
+			if !developNFSVersion(&engine, identity.TenantID, versions[targetID]) {
+				return nil, commonapi.ErrForbidden
+			}
+			decoded, err := s.executionEngineSnapshot(&engine)
+			if err != nil || !developNFSVersion(decoded, identity.TenantID, engine.Version) || decoded.ID != engine.ID || len(decoded.ConnectionInfo) == 0 {
+				return nil, commonapi.ErrForbidden
+			}
+			return decoded, nil
+		}
+	}
+	return prepared, nil
 }
 
 func developSingleGeoPackage(binding authorizationfacts.Binding, target plugin.EngineCatalogPath) bool {

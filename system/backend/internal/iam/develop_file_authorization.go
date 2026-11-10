@@ -59,6 +59,7 @@ type CheckDevelopFileInput struct {
 	LeaseToken         uuid.UUID
 	Source             *plugin.EngineCatalogPath
 	Audit              AuditMetadata
+	publication        *developFilePublicationUse
 }
 
 func (s *DevelopFileAuthorizationService) Issue(ctx context.Context, input IssueDevelopFileAuthorizationInput) (*client.IssuedDevelopFileAuthorization, error) {
@@ -169,7 +170,8 @@ func (s *DevelopFileAuthorizationService) Issue(ctx context.Context, input Issue
 }
 
 func (s *DevelopFileAuthorizationService) Check(ctx context.Context, input CheckDevelopFileInput) (*client.DevelopFileAdmissionObservation, *client.DevelopFileSourceAccessObservation, error) {
-	if s == nil || s.repository == nil || input.AuthorizationID <= 0 || input.TenantID <= 0 || input.ExecutionID == uuid.Nil || input.ExpectedAttempt <= 0 || !validDevelopDigest(input.ScopeDigest) || (input.Source != nil && input.LeaseToken == uuid.Nil) {
+	running := input.Source != nil || input.publication != nil
+	if s == nil || s.repository == nil || input.AuthorizationID <= 0 || input.TenantID <= 0 || input.ExecutionID == uuid.Nil || input.ExpectedAttempt <= 0 || !validDevelopDigest(input.ScopeDigest) || (running && input.LeaseToken == uuid.Nil) {
 		return nil, nil, commonapi.ErrBadRequest
 	}
 	if s.owner == nil || s.prepare == nil {
@@ -207,7 +209,7 @@ func (s *DevelopFileAuthorizationService) Check(ctx context.Context, input Check
 		if err != nil {
 			return nil, nil, err
 		}
-		if input.Source != nil && approval == nil {
+		if running && approval == nil {
 			return nil, nil, ErrExecutionAuthorizationPermissionDenied
 		}
 	}
@@ -221,8 +223,11 @@ func (s *DevelopFileAuthorizationService) Check(ctx context.Context, input Check
 	if facts.Publication != nil && (approval == nil || facts.Publication.ApprovalID != approval.ID.String()) {
 		return nil, nil, ErrExecutionAuthorizationPermissionDenied
 	}
-	if input.Source != nil && facts.AdmissionState != "ready" {
+	if running && facts.AdmissionState != "ready" {
 		return nil, nil, ErrExecutionAuthorizationUnavailable
+	}
+	if input.publication != nil && (approval == nil || !input.publication.matches(facts)) {
+		return nil, nil, ErrExecutionAuthorizationPermissionDenied
 	}
 	prepared, err := s.prepare(ctx, pre, facts.Intent)
 	if err != nil {
@@ -301,7 +306,7 @@ func (s *DevelopFileAuthorizationService) Check(ctx context.Context, input Check
 			if currentService.Principal.ID != service.Principal.ID {
 				return ErrExecutionAuthorizationPermissionDenied
 			}
-			window, err := tx.developFileExecution(ctx, row, facts, input.ExpectedAttempt, input.LeaseToken, input.Source == nil)
+			window, err := tx.developFileExecution(ctx, row, facts, input.ExpectedAttempt, input.LeaseToken, !running)
 			if err != nil {
 				return err
 			}
@@ -339,7 +344,7 @@ func (s *DevelopFileAuthorizationService) Check(ctx context.Context, input Check
 					if approvalExpiry.Before(expires) {
 						expires = approvalExpiry
 					}
-				case input.Source == nil && (errors.Is(approvalErr, commonapi.ErrForbidden) || errors.Is(approvalErr, ErrExecutionAuthorizationPermissionDenied)):
+				case !running && (errors.Is(approvalErr, commonapi.ErrForbidden) || errors.Is(approvalErr, ErrExecutionAuthorizationPermissionDenied)):
 					state, approvalID = "rejected", ""
 				default:
 					return approvalErr
@@ -369,12 +374,15 @@ func (s *DevelopFileAuthorizationService) Check(ctx context.Context, input Check
 					expires = *latest
 				}
 			}
-			if input.Source != nil {
+			if running {
 				businessDeadline = window.BudgetDeadline
 				if expires.Before(businessDeadline) {
 					businessDeadline = expires
 				}
 				if row.DevelopFileBusinessDeadline == nil {
+					if input.publication != nil {
+						return ErrExecutionAuthorizationUnavailable
+					}
 					if !businessDeadline.After(observedAt) {
 						return ErrExecutionAuthorizationUnavailable
 					}
@@ -408,11 +416,18 @@ func (s *DevelopFileAuthorizationService) Check(ctx context.Context, input Check
 		if err := check(); err != nil {
 			return err
 		}
-		if err := writeDevelopFileAudit(ctx, tx, row, input.Audit, "iam.execution_authorization.consumed", input.ExpectedAttempt); err != nil {
+		if input.publication != nil {
+			if err := input.publication.audit(ctx, tx, input.Audit); err != nil {
+				return err
+			}
+		} else if err := writeDevelopFileAudit(ctx, tx, row, input.Audit, "iam.execution_authorization.consumed", input.ExpectedAttempt); err != nil {
 			return err
 		}
 		if err := check(); err != nil {
 			return err
+		}
+		if input.publication != nil {
+			return input.publication.consume(ctx, tx, row, prepared, facts.Publication.Request, observedAt, expires, businessDeadline)
 		}
 		if input.Source == nil {
 			admission = &client.DevelopFileAdmissionObservation{AuthorizationID: strconv.FormatInt(row.ID, 10), ExecutionID: row.ExecutionID.String(), ExpectedAttempt: input.ExpectedAttempt, ScopeDigest: input.ScopeDigest, State: state, ApprovalID: approvalID, ObservedAt: observedAt, ExpiresAt: expires}

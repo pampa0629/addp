@@ -68,6 +68,62 @@ func developFileClientAccessRequest(issued IssuedDevelopFileAuthorization) Devel
 		ScopeDigest: issued.ScopeDigest, Source: issued.Scope.Sources[0].Target}
 }
 
+func TestDevelopFileClientPublicationChecksPhaseAndTarget(t *testing.T) {
+	_, issued := developFileClientFixture(t, true)
+	for _, scenario := range []struct {
+		name, stage                         string
+		engine, wrongEngine, wrongOperation bool
+		wantOK                              bool
+	}{
+		{"prepare", DevelopFilePublicationPrepare, true, false, false, true},
+		{"wrong target", DevelopFilePublicationPrepare, true, true, false, false},
+		{"wrong operation", DevelopFilePublicationPrepare, true, false, true, false},
+		{"release", DevelopFilePublicationRelease, false, false, false, true},
+		{"release connection leak", DevelopFilePublicationRelease, true, false, false, false},
+	} {
+		t.Run(scenario.name, func(t *testing.T) {
+			request := DevelopFilePublicationRequest{ExecutionID: developFileClientExecution, Attempt: 1,
+				LeaseToken: developFileClientLease, ScopeDigest: issued.ScopeDigest, ApprovalID: developFileClientApproval,
+				OperationID: "0b33cbf0-5c67-4c99-8ac3-5573d505630f", Stage: scenario.stage}
+			if scenario.stage == DevelopFilePublicationRelease {
+				request.PreparationDigest = strings.Repeat("d", 64)
+			}
+			var calls atomic.Int32
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				calls.Add(1)
+				var received DevelopFilePublicationRequest
+				if r.Method != "POST" || r.URL.Path != "/api/v1/system/execution-authorizations/9/develop-geopackage-publications" ||
+					r.Header.Get("Authorization") != "Bearer addp_at_service" || json.NewDecoder(r.Body).Decode(&received) != nil || received != request {
+					t.Error("publication request lost its machine or execution binding")
+				}
+				now := time.Now()
+				result := DevelopFilePublicationObservation{AuthorizationID: "9", ExecutionID: request.ExecutionID, Attempt: request.Attempt,
+					ScopeDigest: request.ScopeDigest, ApprovalID: request.ApprovalID, OperationID: request.OperationID,
+					Stage: request.Stage, PreparationDigest: request.PreparationDigest, ObservedAt: now.Add(-time.Second),
+					ExpiresAt: now.Add(15 * time.Second), BusinessDeadline: now.Add(30 * time.Second)}
+				if scenario.engine {
+					tenant := uint(3)
+					result.Engine = &models.Engine{ID: 12, TenantID: &tenant, EngineType: "nfs", Version: 4,
+						LifecycleState: models.EngineLifecycleActive, ConnectionInfo: models.ConnectionInfo{"server": "target-only"}}
+					if scenario.wrongEngine {
+						result.Engine.ID = 11
+					}
+				}
+				if scenario.wrongOperation {
+					result.OperationID = developFileClientExecution
+				}
+				_ = json.NewEncoder(w).Encode(result)
+			}))
+			defer server.Close()
+			service := NewSystemServiceClient(server.URL, staticSystemServiceTokenSource("addp_at_service"), server.Client()).WithTenantID(3)
+			value, err := service.AuthorizeDevelopFilePublication(t.Context(), issued, request)
+			if (err == nil) != scenario.wantOK || (value != nil) != scenario.wantOK || calls.Load() != 1 {
+				t.Fatal("invalid result or command replay", err, calls.Load())
+			}
+		})
+	}
+}
+
 func TestDevelopFileClientSeparatesUserIssuanceAndFreshMachineChecks(t *testing.T) {
 	for _, write := range []bool{false, true} {
 		t.Run(map[bool]string{false: "read-only", true: "save"}[write], func(t *testing.T) {
