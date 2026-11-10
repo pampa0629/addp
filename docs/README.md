@@ -243,6 +243,8 @@ AI 模型接入、在线厂商账号、内网模型服务、模型档案、场�
 6. [Transfer 任务语义与同步模式](../transfer/docs/transfer-任务语义与同步模式.md)：处理 Transfer 全量、增量、持续同步、状态、重试、进度或日志语义时阅读。
 7. [Transfer 后续能力清单](next/transfer后续能力清单.md)：查看未完成能力、实施前置条件与验收缺口，不作为当前版本已通过的证明。
 8. [ArcGIS SDE 支持设计](next/ArcGIS%20SDE支持设计.md)：处理 Oracle Enterprise Geodatabase workspace、非版本化要素类读写、traditional versioning 逻辑变化源或后续 branch versioning 时阅读。
+9. [调度与任务编排统一改造专题](next/ADDP调度与任务编排统一改造专题.md#十五需要优先讨论确认的问题)列出统一 Trigger 控制面的讨论方案与待确认事项，当前尚未进入规范修订或实施。
+10. [任务执行管理统一收口专题](next/ADDP任务执行管理统一收口专题.md#六剩余工作与共享环境)汇总公共执行、Graph 基础持久运行和 Cleanup 的接入进展，并区分实际验收、剩余工作和暂缓设计。
 
 ## 数据质量主题
 
