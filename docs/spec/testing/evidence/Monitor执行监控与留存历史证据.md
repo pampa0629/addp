@@ -16,7 +16,7 @@
 | 30 天过程事件物理清理 | 独立 Hosted 场景验证真实 System 首轮删除 1004 条过期事件，窗口内事件、执行行与既有审计保留。精确截止点由 Common 固定时刻测试覆盖。 | [首轮删除断言与清理回执](#30-天过程事件清理真实进程验收2026-10-26) |
 | 小时周期与连续批次 | 独立 Hosted 场景验证同一 System 进程的两个自然小时区间、概览只读游标回绕，以及三轮分别删除 1004／4／4 条过期事件。持续 Worker 并发、重启恢复和容量未覆盖。 | [逐轮实测与未覆盖项](#小时周期与连续批次真实进程验收2026-10-26) |
 | 大量事件分页与截断 | 两次 Hosted 失败各自保留。第三次固定版本通过，覆盖 1000／1201 条事件的 API 分页、Console 展示上限、采集截断及 Owner 读取裁决。该范围限定为合成 Meta 执行。 | [三次运行、页面与清理证据](#大量事件分页与截断真实入口验收通过限定范围2026-10-26) |
-| 持续写入期间续页与刷新 | 本地 runner 通过。首次 Hosted 在源扫描准备阶段被拒绝，新增续页、刷新和终态断言均未运行。 | [固定源码与失败定位](#持续写入期间续页与刷新首次-hosted2026-11-07) |
+| 持续写入期间续页与刷新 | 首轮 Hosted 的整引擎扫描被拒绝。复验通过准备扫描与读取拒绝断言，随后停在目录基线读取。两轮均未执行新增续页、刷新与终态断言。 | [首轮](#首轮整引擎扫描被拒绝) · [复验目录基线读取失败](#复验目录基线读取失败) · [本地回归与未覆盖项](#本地回归与未覆盖项) |
 | 用户重试与自动恢复统计 | 本地 PostgreSQL 对照复现旧 SQL 误计，修正后分组计数通过。 | [修正源码、首败与复验](#用户重试与自动恢复统计2026-11-10) |
 
 上表的租户日志终审记录固定版本的两页四条读取与撤权后旧游标拒绝。现行场景另要求在 Kafka 任务持续写入期间沿原游标续读并核对 Monitor 与 Owner 的事件顺序，在 Console 核对自动续页、手动刷新和 Worker 失联后原执行的失败诊断及唯一终态事件。新增断言按对应源码的实际 Hosted 回执认定，确定性 runner 与真实拓扑结果分别记录。[现行 Transfer continuous 验收场景](../scenarios/同步与引擎消费.md#transfer-continuous-events)
@@ -34,25 +34,32 @@
 
 ## 持续写入期间续页与刷新首次 Hosted（2026-11-07）
 
-验收变更 `368112401733a105bf15b3085354c726772d3d53` 沿既有 `make test-transfer-continuous-online-runner` 通过 61 项 Python 测试、JavaScript／Bash 语法检查及 System 身份夹具 Go 包。本批复用一条 Transfer Kafka 连续任务，覆盖写入前保存游标、写入后续页与完整事件比对、Console 刷新及失联后同页终态。
+本节收录两次 Hosted 尝试及后续本地回归。场景与身份要求见[现行 Transfer continuous 验收场景](../scenarios/同步与引擎消费.md#transfer-continuous-events)。
 
-[Run 42246891848／Job 127991351661](https://github.com/pampa0629/addp/actions/runs/42246891848/job/127991351661) attempt 1 固定源码 `566eb1f2526a9e3877db326a8eff8e2d5bba0c13`，干净检出，预检通过。业务步骤在 `source_scan` 失败，套件的 `checks`、`resources`、`executions` 均为空，`uncertain_mutation=true` 为原报告值。按同一请求 ID `b461a5c1-998b-41ff-bcbb-a884aab659d4` 对照服务日志，System AuthContext 返回 200，System `POST /engine-access/metadata-refresh-scopes/query` 返回 403，Meta `POST /scan/run/manual` 和 Gateway 同样返回 403。现有准备阶段由普通消费 User 请求 PG 整引擎扫描，该身份具有扫描功能权限，夹具未为其建立该引擎的管理范围。当前整引擎入口同时校验管理范围。Kafka 任务、分页、Console 和后续场景均未执行。
+### 首轮：整引擎扫描被拒绝
 
-套件清理 `passed`、领域残留 0，外层 `cleanup=passed`、`infra_cleanup=zero_residuals`。归档 `13523751222` 的 ZIP SHA-256 与 GitHub 声明一致，为 `39814a3b62867e9ddd2c248e7b6976e7f34db18ec507f5fefd106ce495bf6001`。本次保留原始失败记录和清理结果，真实拓扑仍待验收。
+[Run 42246891848／Job 127991351661](https://github.com/pampa0629/addp/actions/runs/42246891848/job/127991351661) attempt 1 使用固定源码 `566eb1f2526a9e3877db326a8eff8e2d5bba0c13`，干净检出，预检通过。
 
-2026-11-07 用户确认仅修隔离验收夹具后重跑一次。准备身份复用现有 `tenant.engine_access_delegation_administrator`，仅增加扫描执行／读取两项测试功能权限，整引擎扫描及其结果由该独立身份完成。普通消费用户仍核对原十项功能权限，消费用户与审批用户读取准备扫描均须返回 404；CDC 历史发起人和审批扫描归属继续分别验证。身份生成仍走现有 System-owned helper，主场景仅接收独立准备凭据。准备身份不得与六个业务／控制身份复用 Token。
+- **首败**。普通消费 User 有扫描功能权限，夹具未为其建立该 PostgreSQL 引擎的管理范围。按请求 ID `b461a5c1-998b-41ff-bcbb-a884aab659d4` 核对，System AuthContext 返回 200，System `POST /engine-access/metadata-refresh-scopes/query` 返回 403，Meta `POST /scan/run/manual` 与 Gateway 同样返回 403。套件停在 `source_scan`，`checks`、`resources`、`executions` 均为空，原报告为 `uncertain_mutation=true`。
+- **清理与归档**。套件清理 `passed`，领域残留 0，外层 `cleanup=passed`、`infra_cleanup=zero_residuals`。归档 `13523751222` 的 ZIP SHA-256 与 GitHub 声明一致，为 `39814a3b62867e9ddd2c248e7b6976e7f34db18ec507f5fefd106ce495bf6001`。
 
-修订提交 `ee6d3032578b0e0428bfa6293986838843a3449c` 已推送。最终 `make test-transfer-continuous-online-runner` 退出 0，88 项 Python 回归、JavaScript／Bash 语法及 System 身份夹具 Go 包通过，包含已复用准备 helper 的现有回归。
+### 复验：目录基线读取失败
 
-[复验 Run 42364909753／Job 128380830423](https://github.com/pampa0629/addp/actions/runs/42364909753/job/128380830423) attempt 1 固定实际源码 `80b9369963941456b9c9a3e82e2e26d7d6d0f82c`，包含上述修订。相比修订提交仅增加 Monitor 指标验收文件，夹具和本场景代码一致。干净检出及准入通过，独立准备 User 38 提交扫描返回 201，读取扫描并等待 success，通过扫描发起人绑定断言。普通消费用户和审批用户读取该扫描分别返回 404，报告 `source_scan_preparation` 中两项拒绝证明均为真。源扫描 execution 为 `7811a757-2c06-4733-83e9-ceee8fa11f1e`，`checks` 仅含 `formal_source_catalog_scan`。
+2026-11-07 获准仅修隔离验收夹具并复验一次。修订 `ee6d3032578b0e0428bfa6293986838843a3449c` 由 System-owned helper 准备独立的 `tenant.engine_access_delegation_administrator`，仅增加扫描执行／读取两项测试功能权限，Token 与六个业务／控制身份隔离。普通消费 User 保留原十项功能权限。消费与审批身份读取准备扫描均须返回 404，CDC 历史发起人与审批扫描归属仍分别验证。
 
-本次整套仍失败于 `source_scan/request_or_contract_failed`。扫描完成及拒绝断言后，普通用户 `GET /api/v1/meta/engines/:engine_id/items` 返回 200，夹具在目录基线读取期间停止。归档未保存该响应正文及更细的异常原因，暂不能把空列表、字段契约或身份校验中的某一项认定为已观测根因。Kafka 任务尚未创建，持续写入续页、刷新、同页终态及后续业务断言均未运行。`uncertain_mutation=false`、套件 `cleanup=passed`、领域残留 0，外层 `cleanup=passed`、`infra_cleanup=zero_residuals`。
+[Run 42364909753／Job 128380830423](https://github.com/pampa0629/addp/actions/runs/42364909753/job/128380830423) attempt 1 使用固定源码 `80b9369963941456b9c9a3e82e2e26d7d6d0f82c`，干净检出，准入通过。该源码比夹具修订仅增加 Monitor 指标验收文件。
 
-官方归档 `13571857121` 的 ZIP SHA-256 已独立匹配声明，为 `fa628f6f900640098330ef81b997e6a6e15b5342fedcde29a596be89fabbfcd8`。本次授权的一次复验已使用，保留首次失败和本次分层结果。独立准备身份完成扫描的修订已获真实运行证据，租户日志新增核心场景仍待验收。
+- **已执行断言**。独立准备 User 38 提交扫描返回 201，扫描达到 success，发起人绑定通过。普通消费用户和审批用户各收到 404，`source_scan_preparation` 的两项拒绝证明均为真。扫描 execution 为 `7811a757-2c06-4733-83e9-ceee8fa11f1e`，`checks` 仅含 `formal_source_catalog_scan`。
+- **首败**。上述断言完成后，普通用户 `GET /api/v1/meta/engines/:engine_id/items` 返回 200，夹具在目录基线读取期间停止，整套为 `source_scan/request_or_contract_failed`。归档没有响应正文或更细的异常原因，无法区分空列表、字段契约和身份校验。后续源码确认 `ListEngineItems` 经 `FilterMetadataItems` 按当前 `metadata_read`／`read` 裁决。夹具没有为普通消费用户建立目标资源 Grant，却用该用户的可见列表建立物理基线。这个缺口来自源码核对，当次归档不足以确认它是唯一根因。
+- **清理与归档**。原报告为 `uncertain_mutation=false`，套件 `cleanup=passed`、领域残留 0，外层 `cleanup=passed`、`infra_cleanup=zero_residuals`。归档 `13571857121` 的 ZIP SHA-256 与 GitHub 声明一致，为 `fa628f6f900640098330ef81b997e6a6e15b5342fedcde29a596be89fabbfcd8`。已使用当次获准的一次复验。
 
-后续源码核对确认，Meta 的 `ListEngineItems` 在返回前调用 `FilterMetadataItems`，普通 User 的候选须经过当前 `metadata_read`／`read` 裁决。扫描功能权限和准备身份的引擎管理范围均不构成消费用户的元数据查看授权。该夹具没有向普通消费用户准备对应资源 Grant，却用其可见列表中的对照表建立物理扫描基线，因此存在可见性与存储事实混用的假设。原归档缺少响应正文，仍不能把这一代码缺口认定为该次运行的唯一根因。
+### 本地回归与未覆盖项
 
-夹具新增闭合 `source_catalog` 阶段及 `source_catalog_baseline` 诊断，只记录请求／列表／身份核验阶段、可见项数量和目标匹配数量。缺少对照项、重复身份和身份不符分别保留稳定原因，不归档目录正文、任意 metadata 或凭据。新增确定性回归验证空可见列表不能提供物理基线，并验证非法身份的安全诊断；`make test-transfer-continuous-online-runner` 通过 90 项 Python、语法检查及 System 身份夹具 Go 包。本批未增加新的 Hosted 运行，真实核心日志场景仍待验收。
+标准入口为 `make test-transfer-continuous-online-runner`。验收变更 `368112401733a105bf15b3085354c726772d3d53` 通过 61 项 Python 测试，准备身份修订通过 88 项，后续补齐目录基线诊断后通过 90 项。各阶段的 JavaScript／Bash 语法检查及 System 身份夹具 Go 包均通过。
+
+后续夹具单列 `source_catalog` 阶段和 `source_catalog_baseline` 诊断。报告仅记录请求／列表／身份核验阶段及可见项、目标匹配数量，区分缺失、重复和身份不符。回归验证空可见列表拒绝建立物理基线及非法身份的安全诊断，归档排除目录正文、任意 metadata 和凭据。该批没有新增 Hosted 运行。
+
+两次 Hosted 均未创建 Kafka 任务，因此同一任务写入前保存游标、写入后沿原游标续页、Monitor 与 Owner 完整事件顺序比对、Console 自动续页与手动刷新、Worker 失联后同页的失败诊断和唯一终态均未执行。准备扫描复验通过及零残留只覆盖各自的断言。[旧版两页四条事件与撤权证据](#2026-10-23-固定版本租户日志终审)
 
 ## 2026-10-24 概览保留只读评估第一期
 
