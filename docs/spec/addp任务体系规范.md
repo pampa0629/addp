@@ -7,18 +7,18 @@
 | 阅读目的 | 文档 |
 | --- | --- |
 | 持久任务、绑定、授权主体与语义身份 | [任务定义与授权](tasks/任务定义与授权.md) |
-| 执行字段、状态、触发来源与 claim / lease | [执行记录与租约](tasks/执行记录与租约.md) |
+| 执行记录、状态、触发来源与领取恢复 | [记录字段](tasks/执行记录与租约.md#执行记录规范)、[状态枚举](tasks/执行记录与租约.md#执行状态枚举)、[触发类型和来源](tasks/执行记录与租约.md#触发类型和来源)、[领取、租约与恢复](tasks/执行记录与租约.md#bounded-execution-领取租约和恢复契约) |
 | 发起主体、导入来源、自动扫描与血缘 | [生产来源与产物扫描](tasks/生产来源与产物扫描.md) |
 | owner 任务类型、Manager / Develop / Graph 与跨模块交接 | [模块任务契约](tasks/模块任务契约.md) |
 | Transfer 的同步维度、bounded / continuous 执行 | [Transfer 同步执行](tasks/Transfer同步执行.md) |
 | 数据库 CDC、捕获位点、结构审批与恢复 | [Transfer 数据库 CDC](tasks/Transfer数据库CDC.md) |
 | 业务 Kafka DLQ、重放与 Kafka 部署基线 | [DLQ 查询](tasks/Transfer-Kafka与DLQ.md#dlq-公开查询与安全投影)、[availability 治理](tasks/Transfer-Kafka与DLQ.md#dlq-payload-availability-治理)、[bounded replay](tasks/Transfer-Kafka与DLQ.md#bounded-replay-请求与来源)、[部署基线](tasks/Transfer-Kafka与DLQ.md#kafka-与-kafka-connect-部署基线) |
 | 任务发现、标准接口、参数契约与能力声明 | [TaskProvider 接口](tasks/TaskProvider接口.md) |
-| 任务编排、可靠派发、调度和执行边界 | [编排与调度](tasks/编排与调度.md) |
+| 任务编排、可靠派发与调度 | [编排规范](tasks/编排与调度.md#orchestrator-规范)、[执行可靠性](tasks/编排与调度.md#orchestrator-执行可靠性)、[编排与子任务调度](tasks/编排与调度.md#编排调度与子任务自身调度)、[调度规范](tasks/编排与调度.md#调度规范) |
 | 编排参数来源、画布连线与绑定操作示例 | [Orchestrator 执行参数专题](../../orchestrator/docs/参数化模板说明.md)（模块操作说明） |
 | 通用执行告警规则、目标范围与统一评估 | [通用告警契约](tasks/Transfer同步执行.md#通用执行告警规则与统一评估)、[continuous Owner 信号](tasks/Transfer同步执行.md#continuous-观测信号告警与过程事件分工) |
 | 租户 Webhook／邮件通知、事务 outbox 与投递边界 | [租户通知契约](tasks/Transfer同步执行.md#租户告警通知与渠道投递) |
-| 安全诊断、过程事件、健康和执行监控页面 | [执行监控](tasks/执行监控.md) |
+| 执行监控、安全诊断、过程事件和健康 | [执行列表与分页](tasks/执行监控.md#执行列表筛选与分页)、[执行详情与安全投影](tasks/执行监控.md#执行详情与安全投影)、[过程事件](tasks/执行监控.md#通用执行读取与过程事件)、[Provider 与运行实例健康](tasks/执行监控.md#provider-与后台运行实例健康) |
 
 ## 范围
 
