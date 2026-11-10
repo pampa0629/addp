@@ -27,6 +27,9 @@ for (const locale of ['zh-cn', 'en']) {
     [403, 'another_denial', '无权读取此数据项', 'No permission to read this data item'],
     [503, '', '预览服务暂时不可用', 'Preview service temporarily unavailable'],
     [503, 'security_protection_required', '预览服务暂时不可用', 'Preview service temporarily unavailable'],
+    [504, 'preview_connection_acquisition_timeout', '获取数据库连接超时', 'Timed out acquiring a database connection'],
+    [504, 'preview_sql_execution_timeout', '数据库 SQL 执行超时', 'The database SQL execution timed out'],
+    [504, 'preview_timeout', '查询超过了允许的执行时间', 'The query exceeded its execution time limit'],
     [409, 'preview_source_refresh_required', '请刷新元数据后继续预览', 'Refresh metadata to continue previewing'],
     [409, 'other_conflict', '数据预览失败', 'Data preview failed'],
     [503, 'preview_source_unavailable', '源文件版本暂时无法核验', 'Source version temporarily unverifiable'],
@@ -39,6 +42,10 @@ for (const locale of ['zh-cn', 'en']) {
       const failure = page.getByTestId('preview-failure')
       await expect(failure).toBeVisible()
       await expect(failure).toContainText(locale === 'zh-cn' ? zh : en)
+      if (status === 504) {
+        await expect(page.locator('.el-message--error')).toHaveCount(0)
+        await expect(failure).not.toContainText('Preview request failed')
+      }
       if (status === 403 && code === 'security_protection_required') {
         await expect(failure).toContainText(locale === 'zh-cn' ? '保护规则、同步状态和有效期' : 'protection rules, synchronization status, and validity period')
         await expect(failure).not.toContainText(locale === 'zh-cn' ? '联系授权管理员' : 'authorization administrator')

@@ -326,8 +326,8 @@
 
     <!-- 请求失败不是空数据；持久展示直到重新请求或改选资源。 -->
     <div v-else-if="store.previewError" class="empty-state" role="alert" data-testid="preview-failure">
-      <el-empty :description="t(`manager.explorer.previewFailure.${previewFailureKind}.title`)">
-        <p>{{ t(`manager.explorer.previewFailure.${previewFailureKind}.description`) }}</p>
+      <el-empty :description="previewFailureText.title">
+        <p>{{ previewFailureText.description }}</p>
       </el-empty>
     </div>
 
@@ -633,6 +633,17 @@ const previewFailureKind = computed(() => {
   }
   if (status === 0 || [502, 503, 504].includes(status)) return 'unavailable'
   return 'failed'
+})
+const previewFailureText = computed(() => {
+  const reason = store.previewError?.timeoutReason
+  if (reason) {
+    return {
+      title: t(`common.executionFailure.reasons.${reason}`),
+      description: t(`common.executionFailure.actions.${reason}`)
+    }
+  }
+  const key = `manager.explorer.previewFailure.${previewFailureKind.value}`
+  return { title: t(`${key}.title`), description: t(`${key}.description`) }
 })
 const activeMultiRefPath = ref('')
 const activeGraphSampleKey = ref('')

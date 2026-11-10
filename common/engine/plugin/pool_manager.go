@@ -77,7 +77,7 @@ func (pm *PoolManager) GetOrCreatePool(resource *Engine, config *PoolConfig) (in
 	settings := *config
 	connection := resource.ConnectionInfo
 	registered, _ := Get(resource.EngineType)
-	configurable := usesSharedSQLPoolPolicy(registered)
+	configurable := SupportsSharedSQLPoolPolicy(registered)
 	if configurable {
 		var err error
 		settings, err = sharedSQLPoolConfig(connection)

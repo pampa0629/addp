@@ -336,6 +336,15 @@ other = "Item refresh failed. Check scan permission and service availability bef
 [manager.error.preview_source_refresh_required]
 other = "The source changed or its index has no source version. Refresh metadata to rebuild the index before retrying."
 
+[manager.error.preview_timeout]
+other = "The preview request timed out."
+
+[manager.error.preview_connection_acquisition_timeout]
+other = "Timed out acquiring a database connection."
+
+[manager.error.preview_sql_execution_timeout]
+other = "The database SQL execution timed out."
+
 [manager.error.preview_source_unavailable]
 other = "The source version cannot be verified. Preview is paused; please retry later."
 

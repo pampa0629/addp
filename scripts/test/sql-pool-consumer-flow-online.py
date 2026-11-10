@@ -519,7 +519,7 @@ def validate_concurrency(case, run_id, executions):
 
 def validate_saturation(case, run_id, executions):
     proof = case["saturation"]
-    require(set(proof) == {"configuration", "queue", "holders", "queue_terminal", "released", "queued", "manager", "engine_status",
+    require(set(proof) == {"configuration", "queue", "holders", "queue_terminal", "released", "queued", "manager_native", "engine_status",
                            "native", "holder_execution_id", "recovered_execution_id", "recovered_manager_rows"},
             "missing pool saturation evidence")
     version = case["concurrency"]["configuration"]["after_version"]
@@ -537,7 +537,7 @@ def validate_saturation(case, run_id, executions):
             and len(set(ids)) == 3, "consumer pool holders were not distinct or engine went offline")
     for key, stage, held, readers in (
         ("queue", "acquire", True, []), ("holders", "observe", True, waiters),
-        ("queue_terminal", "observe", True, waiters), ("released", "release", False, []),
+        ("queue_terminal", "observe", True, [item for item in waiters if item["phase"] == "holder"]), ("released", "release", False, []),
     ):
         require(proof[key] == {**anchor, "stage": stage, "held": held, "holder_id": holder, "waiters": readers},
                 "native queue evidence lost its original holders")
@@ -548,16 +548,17 @@ def validate_saturation(case, run_id, executions):
             and native["holder_id"] != holder and len(native["waiters"]) == 1
             and native["waiters"][0]["phase"] == "native"
             and native["waiters"][0]["id"] != native["holder_id"], "SQL execution phase is not proven")
-    for phase in ("queued", "native"):
+    for phase, reason in (("queued", "connection_acquisition_timeout"), ("native", "sql_execution_timeout")):
         outcome = proof[phase]
         require(set(outcome) == {"execution_id", "status", "reason", "elapsed_ms", "during", "heading"}
-                and outcome["status"] in {"timeout", "failed"} and outcome["elapsed_ms"] >= 105_000
-                and re.fullmatch("[a-z_]+", outcome["reason"]) and outcome["heading"],
+                and outcome["status"] == "timeout" and outcome["elapsed_ms"] >= 105_000
+                and outcome["reason"] == reason and outcome["heading"],
                 "missing Develop timeout panel evidence")
-    manager = proof["manager"]
-    require(set(manager) == {"http_status", "elapsed_ms", "heading"} and manager["elapsed_ms"] >= 50_000
-            and manager["http_status"] in (None, 503, 504) and manager["heading"]
-            and proof["recovered_manager_rows"] == 1, "missing Manager timeout or recovery evidence")
+    manager = proof["manager_native"]
+    require(set(manager) == {"http_status", "code", "elapsed_ms", "heading"} and manager["elapsed_ms"] >= 50_000
+            and manager["http_status"] == 504 and manager["code"] == "preview_sql_execution_timeout" and manager["heading"],
+            "missing Manager native SQL timeout panel evidence")
+    require(proof["recovered_manager_rows"] == 1, "missing Manager recovery evidence")
     for execution in (proof["holder_execution_id"], proof["queued"]["execution_id"],
                       proof["native"]["execution_id"], proof["recovered_execution_id"]):
         require(isinstance(execution, str) and execution and execution not in executions,
@@ -568,7 +569,7 @@ def validate_saturation(case, run_id, executions):
 def validate_browser(evidence, expected):
     require(set(evidence) == {"schema_version", "run_id", "consumer_principal_id", "operator_principal_id", "cases"},
             "unexpected Console report fields")
-    require(evidence.get("schema_version") == "addp.sql-pool-console/v5"
+    require(evidence.get("schema_version") == "addp.sql-pool-console/v6"
             and evidence.get("run_id") == expected["run_id"], "wrong Console evidence identity")
     require(evidence.get("consumer_principal_id") == expected["principal_id"], "wrong Console consumer")
     require(evidence.get("operator_principal_id") == expected["operator_principal_id"]

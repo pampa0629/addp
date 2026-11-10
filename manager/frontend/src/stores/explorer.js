@@ -600,11 +600,21 @@ export const useExplorerStore = defineStore('explorer', {
         return this.previewData
       } catch (error) {
         if (!isCurrentRequest()) return null
+        const status = error.response?.status || 0
         const errorCode = error.response?.data?.error_code
-        this.previewError = {
-          status: error.response?.status || 0,
-          code: typeof errorCode === 'string' ? errorCode : ''
+        let timeoutReason = ''
+        if (status === 504) {
+          timeoutReason = errorCode === 'preview_connection_acquisition_timeout' ? 'connection_acquisition_timeout'
+            : errorCode === 'preview_sql_execution_timeout' ? 'sql_execution_timeout' : 'timeout'
+        } else if (!status && ['ECONNABORTED', 'ETIMEDOUT'].includes(error.code)) {
+          timeoutReason = 'timeout'
         }
+        this.previewError = {
+          status,
+          code: typeof errorCode === 'string' ? errorCode : '',
+          ...(timeoutReason ? { timeoutReason } : {})
+        }
+        if (timeoutReason) return null
         console.error('加载预览失败:', error)
         throw error
       } finally {

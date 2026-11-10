@@ -163,7 +163,8 @@ func executeSQLWithConnectionPool(ctx context.Context, poolPlugin interface {
 				return validator.ValidateAnalyticalExecution(ctx, tx, opts.analytical.sourceBindings())
 			}
 		}
-		return executeReadOnlySQL(ctx, db, poolPlugin.SQLDialect(), readOnlyBoundary, querySQL, opts.Args, preflight, mapField, decode)
+		trackTimeout := opts.EngineID != 0 && opts.EngineType != "" && SupportsSharedSQLPoolPolicy(poolPlugin)
+		return executeReadOnlySQL(ctx, db, poolPlugin.SQLDialect(), readOnlyBoundary, querySQL, opts.Args, preflight, mapField, decode, trackTimeout)
 	}
 	rows, err := db.WithContext(ctx).Raw(querySQL, opts.Args...).Rows()
 	if err != nil {
@@ -176,7 +177,7 @@ func executeSQLWithConnectionPool(ctx context.Context, poolPlugin interface {
 	return result, nil
 }
 
-func executeReadOnlySQL(ctx context.Context, db *gorm.DB, dialect string, boundary ControlledReadOnlySQLBoundary, query string, args []interface{}, preflight func(context.Context, *sql.Tx) error, mapField func(*sql.ColumnType) datatype.FieldInfo, decode func(datatype.FieldInfo, interface{}) (interface{}, error)) (*QueryResult, error) {
+func executeReadOnlySQL(ctx context.Context, db *gorm.DB, dialect string, boundary ControlledReadOnlySQLBoundary, query string, args []interface{}, preflight func(context.Context, *sql.Tx) error, mapField func(*sql.ColumnType) datatype.FieldInfo, decode func(datatype.FieldInfo, interface{}) (interface{}, error), trackTimeout bool) (_ *QueryResult, err error) {
 	sqlDB, err := db.DB()
 	if err != nil {
 		return nil, fmt.Errorf("获取数据库连接失败：%w", err)
@@ -185,7 +186,17 @@ func executeReadOnlySQL(ctx context.Context, db *gorm.DB, dialect string, bounda
 	if preflight != nil {
 		isolation = sql.LevelReadCommitted
 	}
-	tx, err := BeginControlledReadOnlySQLTransaction(ctx, sqlDB, dialect, boundary, isolation)
+	begin := sqlDB.BeginTx
+	if trackTimeout {
+		conn, acquireErr := AcquireSQLConnection(ctx, sqlDB)
+		if acquireErr != nil {
+			return nil, acquireErr
+		}
+		defer conn.Close()
+		begin = conn.BeginTx
+		defer func() { err = SQLExecutionError(err) }()
+	}
+	tx, err := beginControlledReadOnlySQLTransaction(ctx, begin, dialect, boundary, isolation)
 	if err != nil {
 		return nil, fmt.Errorf("开启只读事务失败：%w", err)
 	}
@@ -225,6 +236,10 @@ func BeginControlledReadOnlySQLTransaction(ctx context.Context, db *sql.DB, dial
 	if db == nil {
 		return nil, fmt.Errorf("SQL database cannot be nil")
 	}
+	return beginControlledReadOnlySQLTransaction(ctx, db.BeginTx, dialect, boundary, isolation)
+}
+
+func beginControlledReadOnlySQLTransaction(ctx context.Context, begin func(context.Context, *sql.TxOptions) (*sql.Tx, error), dialect string, boundary ControlledReadOnlySQLBoundary, isolation sql.IsolationLevel) (*sql.Tx, error) {
 	dialectName := strings.ToLower(strings.TrimSpace(dialect))
 	switch boundary {
 	case ControlledReadOnlySQLBoundaryDatabaseTransaction:
@@ -239,7 +254,7 @@ func BeginControlledReadOnlySQLTransaction(ctx context.Context, db *sql.DB, dial
 		} else {
 			options = &sql.TxOptions{Isolation: isolation, ReadOnly: true}
 		}
-		tx, err := db.BeginTx(ctx, options)
+		tx, err := begin(ctx, options)
 		if err != nil {
 			return nil, err
 		}
@@ -253,9 +268,9 @@ func BeginControlledReadOnlySQLTransaction(ctx context.Context, db *sql.DB, dial
 		return tx, nil
 	case ControlledReadOnlySQLBoundaryValidatedStatement:
 		if isolation == sql.LevelDefault {
-			return db.BeginTx(ctx, nil)
+			return begin(ctx, nil)
 		}
-		return db.BeginTx(ctx, &sql.TxOptions{Isolation: isolation})
+		return begin(ctx, &sql.TxOptions{Isolation: isolation})
 	default:
 		return nil, fmt.Errorf("受控只读 SQL 边界无效：%q", boundary)
 	}

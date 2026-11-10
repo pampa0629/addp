@@ -31,14 +31,19 @@ func (p *MySQLPlugin) OpenGuardedTableReadSession(ctx context.Context, connInfo 
 }
 
 func (p *MySQLPlugin) readBatch(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.EngineCatalogPath, opts plugin.BatchReadOptions) (*plugin.BatchData, error) {
+	shared := plugin.PoolEngineVersion(ctx, path.EngineID) > 0
 	session, err := p.openTableReadSession(ctx, connInfo, path, plugin.TableReadSessionOptions{
 		Query: opts.Query, Args: opts.Args, Hints: opts.Hints,
-	}, opts.Limit, opts.Offset, plugin.PoolEngineVersion(ctx, path.EngineID) > 0, nil)
+	}, opts.Limit, opts.Offset, shared, nil)
 	if err != nil {
 		return nil, err
 	}
 	defer session.Close(context.Background())
-	return session.ReadBatch(ctx, opts.Limit)
+	batch, err := session.ReadBatch(ctx, opts.Limit)
+	if shared {
+		err = plugin.SQLExecutionError(err)
+	}
+	return batch, err
 }
 
 type mysqlTableSessionConnection interface {
@@ -51,7 +56,7 @@ type mysqlTableQueryer interface {
 	QueryContext(context.Context, string, ...any) (*sql.Rows, error)
 }
 
-func (p *MySQLPlugin) openTableReadSession(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.EngineCatalogPath, opts plugin.TableReadSessionOptions, limit int, offset int64, shared bool, authorize plugin.GuardedTableReadAuthorizer) (plugin.TableReadSession, error) {
+func (p *MySQLPlugin) openTableReadSession(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.EngineCatalogPath, opts plugin.TableReadSessionOptions, limit int, offset int64, shared bool, authorize plugin.GuardedTableReadAuthorizer) (_ plugin.TableReadSession, err error) {
 	if err := resume.RejectUnsupported(opts.ResumeMarker, "mysql.table_read_session"); err != nil {
 		return nil, err
 	}
@@ -75,6 +80,9 @@ func (p *MySQLPlugin) openTableReadSession(ctx context.Context, connInfo plugin.
 	db, err := p.openTableSessionConnection(ctx, connInfo, path.EngineID, shared)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open mysql connection: %w", err)
+	}
+	if shared {
+		defer func() { err = plugin.SQLExecutionError(err) }()
 	}
 	tx, err := db.BeginTx(ctx, &sql.TxOptions{ReadOnly: true, Isolation: sql.LevelRepeatableRead})
 	if err != nil {
@@ -126,7 +134,7 @@ func (p *MySQLPlugin) openTableSessionConnection(ctx context.Context, info plugi
 		if err != nil {
 			return nil, err
 		}
-		return db.Conn(ctx)
+		return plugin.AcquireSQLConnection(ctx, db)
 	}
 	dsn, err := p.serverDSN(info)
 	if err != nil {

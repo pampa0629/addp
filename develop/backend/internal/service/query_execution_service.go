@@ -440,6 +440,7 @@ func (s *QueryExecutionService) completeQueryError(
 	status := executionStatusForError(message)
 	if errorCode == "timeout" {
 		status = commonExecution.ExecutionStatusTimeout
+		message = context.DeadlineExceeded.Error()
 	}
 	if errorCode == "cancelled" {
 		status = commonExecution.ExecutionStatusCancelled

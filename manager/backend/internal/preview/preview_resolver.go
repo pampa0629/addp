@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"sort"
 	"strings"
+	"time"
 
 	commonClient "github.com/addp/common/client"
 	"github.com/addp/common/datatype"
@@ -224,6 +225,12 @@ func (r *PreviewResolver) PreviewWithQueryExecutor(ctx context.Context, req *Pre
 		return nil, err
 	}
 	providerReq.executePrepared = execute
+	if execute != nil && plugin.SupportsSharedSQLPoolPolicy(providerReq.EnginePlugin) {
+		// Leave time to return a classified failure before the browser deadline.
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, 55*time.Second)
+		defer cancel()
+	}
 	if err := checkWholeContainerRead(ctx, req, providerReq); err != nil {
 		return nil, err
 	}

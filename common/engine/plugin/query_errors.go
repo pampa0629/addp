@@ -1,7 +1,10 @@
 package plugin
 
 import (
+	"context"
+	"database/sql"
 	"errors"
+
 	commonquery "github.com/addp/common/query"
 )
 
@@ -10,13 +13,33 @@ import (
 type QueryErrorCode string
 
 const (
-	QueryErrorCodeLocalReadUnsupported    QueryErrorCode = "local_read_unsupported"
-	QueryErrorCodeMongoDBDatabaseRequired QueryErrorCode = "mongodb_database_required"
-	QueryErrorCodeSyntaxInvalid           QueryErrorCode = "query_syntax_invalid"
-	QueryErrorCodeTableNotFound           QueryErrorCode = "table_not_found"
-	QueryErrorCodeColumnNotFound          QueryErrorCode = "column_not_found"
-	QueryErrorCodeFunctionNotFound        QueryErrorCode = "function_not_found"
+	QueryErrorCodeLocalReadUnsupported         QueryErrorCode = "local_read_unsupported"
+	QueryErrorCodeMongoDBDatabaseRequired      QueryErrorCode = "mongodb_database_required"
+	QueryErrorCodeSyntaxInvalid                QueryErrorCode = "query_syntax_invalid"
+	QueryErrorCodeTableNotFound                QueryErrorCode = "table_not_found"
+	QueryErrorCodeColumnNotFound               QueryErrorCode = "column_not_found"
+	QueryErrorCodeFunctionNotFound             QueryErrorCode = "function_not_found"
+	QueryErrorCodeConnectionAcquisitionTimeout QueryErrorCode = "connection_acquisition_timeout"
+	QueryErrorCodeSQLExecutionTimeout          QueryErrorCode = "sql_execution_timeout"
 )
+
+// AcquireSQLConnection identifies deadlines before a native connection is lent.
+func AcquireSQLConnection(ctx context.Context, db *sql.DB) (*sql.Conn, error) {
+	conn, err := db.Conn(ctx)
+	return conn, sqlTimeoutError(err, QueryErrorCodeConnectionAcquisitionTimeout)
+}
+
+// SQLExecutionError identifies deadlines after a connection has been lent.
+func SQLExecutionError(err error) error {
+	return sqlTimeoutError(err, QueryErrorCodeSQLExecutionTimeout)
+}
+
+func sqlTimeoutError(err error, code QueryErrorCode) error {
+	if errors.Is(err, context.DeadlineExceeded) && QueryErrorCodeOf(err) == "" {
+		return NewQueryError(code, err)
+	}
+	return err
+}
 
 // QueryError preserves a stable error code while retaining the provider error for diagnostics.
 type QueryError struct {

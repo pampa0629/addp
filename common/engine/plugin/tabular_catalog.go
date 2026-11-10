@@ -171,6 +171,20 @@ func DescribeTabularCatalogFacts(ctx context.Context, callbacks TabularCatalogCa
 		return nil, fmt.Errorf("获取连接池失败：%w", err)
 	}
 
+	registered, _ := Get(engine.EngineType) // Factory lookup has already succeeded.
+	if SupportsSharedSQLPoolPolicy(registered) {
+		var facts *EngineCatalogFacts
+		err := db.WithContext(ctx).Connection(func(conn *gorm.DB) error {
+			var err error
+			facts, err = describeTabularCatalogFacts(ctx, conn, callbacks, path, segments, opts)
+			return SQLExecutionError(err)
+		})
+		return facts, sqlTimeoutError(err, QueryErrorCodeConnectionAcquisitionTimeout)
+	}
+	return describeTabularCatalogFacts(ctx, db, callbacks, path, segments, opts)
+}
+
+func describeTabularCatalogFacts(ctx context.Context, db *gorm.DB, callbacks TabularCatalogCallbacks, path EngineCatalogPath, segments []EngineCatalogSegment, opts EngineCatalogFactsOptions) (*EngineCatalogFacts, error) {
 	namespace := segments[0].Name
 	table := segments[len(segments)-1].Name
 	summary, err := lookupTabularTable(ctx, callbacks, db, namespace, table)

@@ -34,6 +34,15 @@ other = "该目标尚未完成元数据扫描"
 [manager.error.preview_source_refresh_required]
 other = "源文件已变化或索引缺少源版本信息，请刷新元数据并重建索引后重试"
 
+[manager.error.preview_timeout]
+other = "预览请求超时"
+
+[manager.error.preview_connection_acquisition_timeout]
+other = "获取数据库连接超时"
+
+[manager.error.preview_sql_execution_timeout]
+other = "数据库 SQL 执行超时"
+
 [manager.error.preview_source_unavailable]
 other = "暂时无法核验源文件版本，已暂停预览，请稍后重试"
 

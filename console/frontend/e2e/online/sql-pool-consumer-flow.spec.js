@@ -382,17 +382,19 @@ async function developTimeout(page, sample, phase, consumer, observeNative) {
     expect(['timeout', 'failed']).toContain(result.status)
     const diagnostic = result.error_details?.diagnostic
     expect(diagnostic?.stage).toBe('execution')
-    expect(diagnostic.reason).toMatch(/^[a-z_]+$/)
+    expect(diagnostic.reason).toBe(phase === 'saturation_queued' ? 'connection_acquisition_timeout' : 'sql_execution_timeout')
     const panel = frame.locator('.query-result .execution-failure')
     await expect(panel).toBeVisible()
+    const heading = panel.locator('h4')
+    await expect(heading).toContainText(phase === 'saturation_queued' ? '获取数据库连接超时' : '数据库 SQL 执行超时')
     await expect(panel).toContainText(id)
     await expect(frame.locator('.query-result .result-table')).toHaveCount(0)
     return { execution_id: id, status: result.status, reason: diagnostic.reason,
-      elapsed_ms: Date.now() - started, during, heading: await panel.locator('h4').innerText() }
+      elapsed_ms: Date.now() - started, during, heading: await heading.innerText() }
   })
 }
 
-async function managerTimeout(page, sample) {
+async function managerSQLTimeout(page, sample) {
   let started
   const request = page.waitForRequest(req => {
     const url = new URL(req.url())
@@ -406,9 +408,15 @@ async function managerTimeout(page, sample) {
   const panel = frame.getByTestId('preview-failure')
   await expect(panel).toBeVisible({ timeout: 75_000 })
   await expect(frame.getByRole('cell', { name: sample.sample, exact: true })).toHaveCount(0)
-  const proof = { elapsed_ms: Date.now() - started, http_status: (await submitted.response())?.status() ?? null,
+  const response = await submitted.response()
+  expect(response?.status()).toBe(504)
+  const body = await response.json()
+  expect(body.error_code).toBe('preview_sql_execution_timeout')
+  await expect(panel).toContainText('数据库 SQL 执行超时')
+  await expect(frame.locator('.el-message--error')).toHaveCount(0)
+  const proof = { elapsed_ms: Date.now() - started, http_status: response.status(), code: body.error_code,
     heading: await panel.locator('.el-empty__description').innerText() }
-  await page.screenshot({ path: resolve(process.env.ADDP_ONLINE_ARTIFACT_DIR, `${sample.engine_type}-saturation-manager.png`) })
+  await page.screenshot({ path: resolve(process.env.ADDP_ONLINE_ARTIFACT_DIR, `${sample.engine_type}-saturation-manager-native.png`) })
   return proof
 }
 
@@ -417,7 +425,7 @@ async function saturationProbe(page, operatorPage, sample, operator, consumer, c
   const configuration = await saveChange(operatorPage, sample, operator, 'saturation', credentials)
   const managerPage = await page.context().newPage()
   const pending = []
-  let api, queue, holders, queueTerminal, queued, manager, native, released
+  let api, queue, released
   try {
     // The existing fixture API token belongs to the same ordinary user and
     // outlives the intentional waits. Page assertions use browser login.
@@ -426,46 +434,45 @@ async function saturationProbe(page, operatorPage, sample, operator, consumer, c
     expect(fixtureIdentity.principalID).toBe(consumer.principalID)
     api = await request.newContext({ baseURL: process.env.GATEWAY_URL, extraHTTPHeaders: { Authorization: `Bearer ${fixtureToken}` } })
     queue = barrierAction(engine, 'acquire', 'queue')
-    const previewHolder = api.get('/api/v1/manager/preview', {
-      params: { locator: sample.locator, page: 1, page_size: 1 }, timeout: 200_000,
-    })
-    pending.push(previewHolder)
-    previewHolder.catch(() => {})
     const queryHolder = await json(await api.post('/api/v1/develop/executions', { data: {
       dev_type: 'query', trigger_type: 'manual', timeout: 200,
       content: { query: poolQuery(sample, 'saturation_holder'), query_type: 'sql', target_locator: sample.locator },
       execution_config: { engine_id: sample.engine_id },
     } }), 'Develop saturation holder')
-    holders = await waitForNativeReaders(engine, 'queue', ['holder', 'manager'])
-    ;[manager, queued] = await Promise.all([
-      managerTimeout(managerPage, sample),
+    const managerRead = managerSQLTimeout(managerPage, sample)
+    pending.push(managerRead)
+    managerRead.catch(() => {})
+    const holders = await waitForNativeReaders(engine, 'queue', ['holder', 'manager'])
+    const [managerNative, queued] = await Promise.all([
+      managerRead,
       developTimeout(page, sample, 'saturation_queued', consumer, () => waitForNativeReaders(engine, 'queue', ['holder', 'manager'])),
     ])
     expect(queued.execution_id).not.toBe(queryHolder.execution_id)
-    queueTerminal = await waitForNativeReaders(engine, 'queue', ['holder', 'manager'])
-    expect(queueTerminal.waiters).toEqual(holders.waiters)
+    const queueTerminal = await waitForNativeReaders(engine, 'queue', ['holder'])
+    expect(queueTerminal.waiters).toEqual(holders.waiters.filter(waiter => waiter.phase === 'holder'))
     await page.screenshot({ path: resolve(process.env.ADDP_ONLINE_ARTIFACT_DIR, `${engine}-saturation-develop.png`) })
     const descriptors = await json(await api.get('/api/v1/develop/engines'), 'saturated engine status')
     const engineStatus = descriptors.find(item => item.id === sample.engine_id)?.connection_status
     expect(engineStatus).toBe('online')
     released = barrierAction(engine, 'release', 'queue')
-    const holderPreview = await json(await previewHolder, 'Manager saturation holder recovered')
-    expect(holderPreview.data.rows).toEqual([{ id: 7, label: sample.sample }])
     await expect.poll(async () => {
       const result = await json(await api.get(`/api/v1/develop/executions/${queryHolder.execution_id}/result`), 'Develop saturation holder recovered')
       return result.status
     }, { timeout: 20_000 }).toBe('success')
 
     barrierAction(engine, 'acquire', 'native')
+    let native
     try {
-      native = await developTimeout(page, sample, 'saturation_native', consumer, () => waitForNativeReaders(engine, 'native', ['native']))
+      native = await developTimeout(page, sample, 'saturation_native', consumer,
+        () => waitForNativeReaders(engine, 'native', ['native']))
       await page.screenshot({ path: resolve(process.env.ADDP_ONLINE_ARTIFACT_DIR, `${engine}-saturation-native.png`) })
     } finally {
       barrierAction(engine, 'release', 'native')
     }
     const recoveredExecution = await developQuery(page, sample, 'saturation_recovered', consumer)
     await managerPreview(managerPage, sample, () => managerPage.goto(previewRoute(sample)))
-    const proof = { configuration, queue, holders, queue_terminal: queueTerminal, released, queued, manager, native, engine_status: engineStatus,
+    const proof = { configuration, queue, holders, queue_terminal: queueTerminal, released, queued,
+      native, manager_native: managerNative, engine_status: engineStatus,
       holder_execution_id: queryHolder.execution_id, recovered_execution_id: recoveredExecution, recovered_manager_rows: 1 }
     for (const secret of Object.values(credentials)) {
       expect(JSON.stringify(proof).includes(secret), 'pool diagnostic must not expose credentials').toBe(false)
@@ -565,7 +572,7 @@ test('System pool edit replaces physical sessions in Manager and Develop for bot
       cases.push({ engine_id: sample.engine_id, engine_type: engine, source_identity: source, changes, recovery, concurrency, saturation })
     }
     writeFileSync(process.env.ADDP_ONLINE_POOL_REPORT, JSON.stringify({
-      schema_version: 'addp.sql-pool-console/v5', run_id: expected.run_id, consumer_principal_id: consumer.principalID, operator_principal_id: configIdentity.principalID, cases,
+      schema_version: 'addp.sql-pool-console/v6', run_id: expected.run_id, consumer_principal_id: consumer.principalID, operator_principal_id: configIdentity.principalID, cases,
     }))
   } finally {
     if (!operatorPage.isClosed()) await operatorContext.close()

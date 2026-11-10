@@ -25,7 +25,11 @@ func (e *querySnapshotError) Unwrap() error { return e.cause }
 var querySQLStatePattern = regexp.MustCompile(`^[0-9A-Z]{5}$`)
 
 func queryErrorCode(err error) string {
-	if code := plugin.QueryErrorCodeOf(err); code != "" {
+	switch code := plugin.QueryErrorCodeOf(err); code {
+	case plugin.QueryErrorCodeConnectionAcquisitionTimeout, plugin.QueryErrorCodeSQLExecutionTimeout:
+		return "timeout"
+	case "":
+	default:
 		return string(code)
 	}
 	var state interface{ SQLState() string }
@@ -106,7 +110,13 @@ func queryFailureDiagnostic(code, message string, cause error) *commonExecution.
 			reason = "type_mismatch"
 		case "sqlstate_42501", "permission_denied":
 			reason = "permission_denied"
-		case "timeout", "cancelled", "connection_failed":
+		case "timeout":
+			reason = "timeout"
+			switch timeout := plugin.QueryErrorCodeOf(cause); timeout {
+			case plugin.QueryErrorCodeConnectionAcquisitionTimeout, plugin.QueryErrorCodeSQLExecutionTimeout:
+				reason = string(timeout)
+			}
+		case "cancelled", "connection_failed":
 			reason = code
 		case "mongodb_database_required":
 			stage, reason = "preparation", "database_required"

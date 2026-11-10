@@ -3088,6 +3088,19 @@ const docTemplate = `{
                                 "description": "no-store；预览响应禁止缓存 | no-store; do not cache preview responses"
                             }
                         }
+                    },
+                    "504": {
+                        "description": "预览超时，错误码区分连接获取与 SQL 执行 | Preview timed out, with distinct connection acquisition and SQL execution codes",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        },
+                        "headers": {
+                            "Cache-Control": {
+                                "type": "string",
+                                "description": "no-store；预览响应禁止缓存 | no-store; do not cache preview responses"
+                            }
+                        }
                     }
                 },
                 "x-addp-auth-mode": "permission",

@@ -42,7 +42,8 @@ func WithSharedSQLPoolFields(spec ConnectionSpec) ConnectionSpec {
 	return spec
 }
 
-func usesSharedSQLPoolPolicy(engine EnginePlugin) bool {
+// SupportsSharedSQLPoolPolicy reports whether the plugin declares shared SQL pool settings.
+func SupportsSharedSQLPoolPolicy(engine EnginePlugin) bool {
 	provider, ok := engine.(ConnectionSpecProvider)
 	if !ok {
 		return false
@@ -56,7 +57,7 @@ func ValidateSharedSQLPoolSettings(engineType string, info ConnectionInfo) error
 	for _, field := range sharedSQLPoolFields {
 		if _, present := info[field.key]; present {
 			engine, err := Get(engineType)
-			if err != nil || !usesSharedSQLPoolPolicy(engine) {
+			if err != nil || !SupportsSharedSQLPoolPolicy(engine) {
 				return errors.New("engine does not support configurable shared SQL pools")
 			}
 			_, err = sharedSQLPoolConfig(info)

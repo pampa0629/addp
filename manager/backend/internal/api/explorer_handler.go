@@ -127,6 +127,7 @@ func bearerToken(c *gin.Context) string {
 // @Failure 404 {object} map[string]interface{} "资源不存在 | Resource not found"
 // @Failure 409 {object} map[string]interface{} "源版本变化或索引绑定不完整，需刷新元数据 | Source changed or index binding incomplete; refresh metadata"
 // @Failure 503 {object} map[string]interface{} "引擎或授权服务不可用 | Engine or authorization service unavailable"
+// @Failure 504 {object} map[string]interface{} "预览超时，错误码区分连接获取与 SQL 执行 | Preview timed out, with distinct connection acquisition and SQL execution codes"
 // @Header all {string} Cache-Control "no-store；预览响应禁止缓存 | no-store; do not cache preview responses"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["manager.data_item.read"]
@@ -272,6 +273,9 @@ func (h *ExplorerHandler) Preview(c *gin.Context) {
 		if writePreviewSourceError(c, err) {
 			return
 		}
+		if writePreviewTimeout(c, err) {
+			return
+		}
 		if writeCatalogPreviewError(c, err) {
 			return
 		}
@@ -308,6 +312,22 @@ func (h *ExplorerHandler) Preview(c *gin.Context) {
 		}
 	}
 	writePreviewResult(c, result, protectionRules, protectionSubject, protectionProjections)
+}
+
+func writePreviewTimeout(c *gin.Context, err error) bool {
+	code, key := "preview_timeout", manageri18n.MsgPreviewTimeout
+	switch plugin.QueryErrorCodeOf(err) {
+	case plugin.QueryErrorCodeConnectionAcquisitionTimeout:
+		code, key = "preview_connection_acquisition_timeout", manageri18n.MsgPreviewConnectionTimeout
+	case plugin.QueryErrorCodeSQLExecutionTimeout:
+		code, key = "preview_sql_execution_timeout", manageri18n.MsgPreviewSQLTimeout
+	default:
+		if !errors.Is(err, context.DeadlineExceeded) {
+			return false
+		}
+	}
+	c.JSON(http.StatusGatewayTimeout, gin.H{"error": commoni18n.T(c, key), "error_code": code})
+	return true
 }
 
 func writePreviewSourceError(c *gin.Context, err error) bool {

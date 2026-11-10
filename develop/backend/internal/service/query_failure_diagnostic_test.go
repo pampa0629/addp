@@ -62,6 +62,14 @@ func TestQueryFailuresUseTypedSQLStateWithoutRuntimeValues(t *testing.T) {
 	if queryErrorCode(fmt.Errorf("wrapped: %w", context.DeadlineExceeded)) != "timeout" {
 		t.Fatal("lost typed timeout")
 	}
+	for _, reason := range []plugin.QueryErrorCode{plugin.QueryErrorCodeConnectionAcquisitionTimeout, plugin.QueryErrorCodeSQLExecutionTimeout} {
+		err := plugin.NewQueryError(reason, context.DeadlineExceeded)
+		code := queryErrorCode(err)
+		diagnostic := queryFailureDiagnostic(code, err.Error(), err)
+		if code != "timeout" || diagnostic.Stage != "execution" || diagnostic.Reason != string(reason) {
+			t.Fatalf("SQL phase %s: %s %#v", reason, code, diagnostic)
+		}
+	}
 }
 
 func TestQuerySnapshotFailuresReportActualValidationBoundary(t *testing.T) {
