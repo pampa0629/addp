@@ -909,7 +909,9 @@
         "readiness_timeout": "Readiness check timed out"
       },
       "title": "Service monitoring",
-      "moduleFilter": "Module name (exact match)",
+      "moduleFilter": "Module name",
+      "moduleListFailed": "Could not load modules. Refresh to retry.",
+      "moreMetrics": "More metrics and details",
       "hostNameFilter": "Host or runtime name",
       "hostNameHint": "Exact match on the declared host name or process runtime hostname, ignoring case; not the display name in host management.",
       "hostIPFilter": "Host IP (exact match)",

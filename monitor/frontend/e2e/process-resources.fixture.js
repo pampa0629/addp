@@ -26,6 +26,10 @@ export async function backend(page, options = {}) {
     if (path === '/api/v1/system/refresh') body = { access_token: 'fixture-token', expires_in: 3600 }
     else if (path === '/api/v1/system/users/me') body = { id: 9, username: 'fixture-user' }
     else if (path === '/api/v1/system/auth/context') body = options.identity || identity(permissions)
+    else if (path === '/api/v1/system/platform/modules') {
+      const modules = (options.modules || [...new Set(rows.map(row => row.module_name))]).map(module_name => ({ module_name }))
+      body = { modules, count: modules.length }
+    }
     else if (path === '/api/v1/system/platform/module_startup_failures') body = { data: options.startupFailures || [] }
     else if (path === '/api/v1/system/platform/module-instances') {
       listCalls.push(Object.fromEntries(url.searchParams))

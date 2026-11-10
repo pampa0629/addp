@@ -909,7 +909,9 @@
         "readiness_timeout": "等待就绪超时"
       },
       "title": "服务监控",
-      "moduleFilter": "模块名称（精确匹配）",
+      "moduleFilter": "模块名称",
+      "moduleListFailed": "无法读取模块选项，请刷新重试。",
+      "moreMetrics": "更多指标与详情",
       "hostNameFilter": "宿主名或运行环境名",
       "hostNameHint": "按部署声明的宿主名或进程运行环境名精确匹配，忽略大小写；不是主机管理中的显示名称。",
       "hostIPFilter": "承载主机 IP（精确匹配）",
