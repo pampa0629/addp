@@ -7,7 +7,8 @@ set -euo pipefail
 ROOT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
 WORK_DIR=$(mktemp -d "${TMPDIR:-/tmp}/addp-neo4j-t2.XXXXXX")
 COMPOSE_PROJECT="addp-neo4j-t2-${PPID}-$$"
-export NEO4J_T2_PASSWORD="$(python3 -c 'import secrets;print(secrets.token_urlsafe(24))')"
+# Neo4j passes this value as a CLI argument, so it must not start with a dash.
+export NEO4J_T2_PASSWORD="$(python3 -c 'import secrets;print(secrets.token_hex(24))')"
 export NEO4J_T2_BOLT_PORT=0
 compose() {
     docker compose -p "$COMPOSE_PROJECT" -f "$ROOT_DIR/scripts/test/docker-compose.neo4j-t2.yml" \
