@@ -88,7 +88,8 @@ Backend schema 版本 2 单向删除历史 `metadata.execution_logs` 和 `error_
 | --- | --- | --- |
 | bounded 自动恢复 | 满足安全重放与 attempt 上限条件后，原未终态 execution 回到 `pending`，UUID 与 `created_at` 不变。恢复时清空开始、完成、耗时与 lease，下一次领取增加 attempt 并写入新开始时间。 | [公共领取与恢复契约](../../../docs/spec/tasks/执行记录与租约.md#bounded-execution-领取租约和恢复契约)、[公共时间写入规则](../../../docs/spec/tasks/执行记录与租约.md#公共写入入口与权威时间) |
 | 失败执行的用户／API retry | 创建新 pending execution，通过 `retry_of_execution_id` 关联原失败执行。原记录保留，新执行的创建、领取与时间独立记录，不作为原 execution 的下一次 attempt。 | [公共 retry 规则](../../../docs/spec/tasks/执行记录与租约.md#bounded-execution-领取租约和恢复契约)、[恢复类型与位置](#恢复类型与位置) |
-| continuous 显式或自动恢复 | 新建 pending execution，对应新的 runtime session。旧 execution 不重新变回 `running`，自动恢复另记 `recovered_from_execution_id` 与恢复审计。 | [运行控制与执行身份](../../../docs/spec/tasks/Transfer同步执行.md#运行控制与执行身份)、[continuous 自动恢复](../../../docs/spec/tasks/Transfer同步执行.md#continuous-自动恢复退避与-circuit) |
+| continuous 显式 Resume | 沿 Start 路径创建 pending execution，由新 runtime session 领取。公共重试关联和恢复审计的前序 UUID 均为空。 | [运行控制与执行身份](../../../docs/spec/tasks/Transfer同步执行.md#运行控制与执行身份) |
+| continuous 自动恢复 | 创建 pending execution 并保留旧终态。公共 `retry_of_execution_id` 与私有 `metadata.recovered_from_execution_id` 均指向上一 execution，后者属于恢复审计。 | [恢复触发与执行身份](../../../docs/spec/tasks/Transfer同步执行.md#恢复触发与执行身份)、[恢复审计与部署配置](../../../docs/spec/tasks/Transfer同步执行.md#恢复审计与部署配置) |
 
 上述时间与计数属于持久事实，完整字段口径由[公共执行记录](../../../docs/spec/tasks/执行记录与租约.md#执行记录规范)维护。它们不直接扩展[安全 DTO 与读取范围](#自动恢复字段与安全-dto)，也不能据此认定业务恢复成功，实际结果沿[验证边界](#验证边界)核对。
 

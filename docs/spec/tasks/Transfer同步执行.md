@@ -403,7 +403,7 @@ continuous 的 Owner 信号和 schema blocked 恢复沿[专用告警契约](#con
 
 - `start` 原子设置 `desired_state=running` 并创建 `status=pending` 的 execution。`pause` 设置 `desired_state=paused`，`resume` 设置 `desired_state=running` 并创建新的 pending execution，`stop` 设置 `desired_state=stopped`。
 - 同一 task 已有合法 active session 时不得重复创建 execution。
-- 每次启动或自动恢复都创建新的 pending execution；一个 execution 对应一个 runtime session，结束后不得重新变回 running。
+- 每次启动或自动恢复都创建新的 pending execution，一个 execution 对应一个 runtime session，结束后不得重新变回 running。显式 Resume 沿 Start 路径创建新执行，`retry_of_execution_id` 和 `metadata.recovered_from_execution_id` 均为空。
 
 #### runtime lease 与业务位点
 
@@ -448,8 +448,8 @@ continuous 的 Owner 信号和 schema blocked 恢复沿[专用告警契约](#con
 
 - 正常总运行时长不触发 timeout。
 - source poll、target apply、position commit 分别使用操作超时；heartbeat 丢失或 lease 过期以 `failed` 结束当前 execution，并在任务 desired state 仍为 running 时创建新 execution 恢复。
-- worker 正常退出时当前 execution 以 `cancelled + stop_reason=worker_shutdown` 结束；新 worker 必须自动创建 recovery execution，继承上一 execution 的 `trigger_type`，并在 metadata 记录 `recovery_reason` 与 `recovered_from_execution_id`。
-- lease 过期恢复同样创建新 execution，并记录 `recovery_reason=lease_expired`；两种情况都不得把旧 execution 重新置为 running。
+- worker 正常退出时当前 execution 以 `cancelled + stop_reason=worker_shutdown` 结束，由新 worker 自动创建 recovery execution。
+- lease 过期恢复同样创建新 execution，并记录 `recovery_reason=lease_expired`。自动恢复继承上一 execution 的 `trigger_type`，通过公共字段 `retry_of_execution_id` 关联上一 execution，Transfer 恢复审计另在 `metadata.recovered_from_execution_id` 记录同一 UUID。旧 execution 保持原终态。 [公共执行记录字段](执行记录与租约.md#执行记录规范)
 
 #### 恢复领取与排除条件
 
