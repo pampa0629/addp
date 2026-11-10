@@ -76,7 +76,7 @@
 - 有明确任务定义 owner。
 - 持久任务定义表只保存定义和最近执行摘要。
 - 每次执行写入 `common.task_executions`。
-- `trigger_type` 只写 `manual` / `scheduled`。
+- TaskProvider 执行请求（含 Orchestrator 派发子任务）的 `trigger_type` 只接受 `manual` 或 `scheduled`。公共执行记录另允许 Owner 或平台生命周期事件触发的 `event`。 [TaskProvider 执行请求体](tasks/TaskProvider接口.md#执行请求体) · [公共触发类型与来源](tasks/执行记录与租约.md#触发类型和来源)
 - `source` 写触发来源。
 - `task_type` 稳定并声明到 TaskProvider capabilities。
 - 多任务类型模块使用一个 provider，并在 `task_capabilities[]` 中声明多个任务类型能力。
