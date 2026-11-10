@@ -110,6 +110,19 @@
                 <dd>{{ coverage.services[key] ?? '—' }}</dd>
               </div>
             </dl>
+            <ul v-if="coverage.services.gaps.length" class="service-gaps" :aria-label="t('monitor.overview.serviceCoverage')">
+              <li v-for="gap in coverage.services.gaps" :key="gap.module" :data-testid="`overview-service-gap-${gap.module}`">
+                <strong>{{ gap.module }}</strong>
+                <div class="service-gap-actions">
+                  <el-button v-if="gap.undeclared" link type="primary" @click="navigate('/service-resources', { module_name: gap.module, process_metrics_declared: 'false' })">
+                    {{ t('monitor.overview.serviceGapUndeclared', { count: gap.undeclared }) }}
+                  </el-button>
+                  <el-button v-if="gap.missing" link type="primary" @click="navigate('/service-resources', { module_name: gap.module })">
+                    {{ t('monitor.overview.serviceGapMissing', { count: gap.missing }) }}
+                  </el-button>
+                </div>
+              </li>
+            </ul>
           </template>
           <el-skeleton v-else :rows="2" />
         </el-card>
@@ -241,11 +254,23 @@ async function serviceCoverage(read) {
   const declared = owners.filter(row => row.process_metrics_declared)
   const samples = declared.length ? await readCoverageSamples(async () => {
     const result = await read(config => processesAPI.summaries(declared.map(row => row.id), config))
-    return [...validateProcessSummaries(result, declared).values()]
-  }) : []
-  const sampled = samples?.filter(hasValidSample).length ?? null
+    return validateProcessSummaries(result, declared)
+  }) : new Map()
+  const byModule = new Map()
+  let missing = 0
+  for (const row of owners) {
+    const undeclared = !row.process_metrics_declared
+    const hasGap = !undeclared && samples !== null && !hasValidSample(samples.get(row.id))
+    if (!undeclared && !hasGap) continue
+    const gap = byModule.get(row.module_name) || { module: row.module_name, undeclared: 0, missing: 0 }
+    if (undeclared) gap.undeclared++
+    else { gap.missing++; missing++ }
+    byModule.set(gap.module, gap)
+  }
+  const gaps = [...byModule.values()].sort((a, b) =>
+    b.undeclared + b.missing - a.undeclared - a.missing || a.module.localeCompare(b.module))
   return { online: owners.length, undeclared: owners.length - declared.length, limited: samples === null,
-    sampled, missing: sampled === null ? null : declared.length - sampled }
+    sampled: samples === null ? null : declared.length - missing, missing: samples === null ? null : missing, gaps }
 }
 
 async function loadCoverage(ticket, key, load) {
@@ -343,6 +368,11 @@ onBeforeUnmount(() => { disposed = true; refreshCycle.dispose(); requests.invali
 .coverage-facts dt { font-size: 13px; color: var(--addp-text-secondary); }
 .coverage-facts dd { margin: 5px 0 0; }
 .coverage-facts .el-button { height: auto; white-space: normal; text-align: left; }
+.service-gaps { list-style: none; padding: 0; margin: 16px 0 0; }
+.service-gaps li { display: flex; justify-content: space-between; align-items: baseline; flex-wrap: wrap; gap: 8px 16px; padding: 8px 0; border-top: 1px solid var(--addp-border-color); }
+.service-gaps strong { overflow-wrap: anywhere; }
+.service-gap-actions { display: flex; flex-wrap: wrap; gap: 4px 12px; }
+.service-gap-actions .el-button { height: auto; margin: 0; white-space: normal; text-align: left; }
 .overview-shortcuts { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 172px), 1fr)); gap: 12px; }
 .overview-shortcuts .el-button { padding: 0; }
 .overview-shortcuts .overview-hint { margin-bottom: 0; }

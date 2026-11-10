@@ -22,6 +22,8 @@
       "engineSamples": "Valid samples {sampled} · No valid samples {missing}",
       "serviceCoverage": "Online service collection gaps",
       "serviceCoverageHint": "Counts cover online runtime instances. A valid sample means at least one process metric is valid.",
+      "serviceGapUndeclared": "{count} without a collection declaration",
+      "serviceGapMissing": "{count} with a declaration but no valid sample",
       "serviceCounts": {
         "online": "Online instances",
         "undeclared": "Collection undeclared",

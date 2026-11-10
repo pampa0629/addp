@@ -78,14 +78,20 @@ test('overview reports complete engine and online service coverage using one aut
   await expect(page.getByTestId('overview-engine-infra')).toContainText('纳管 2 · 应采集 1')
   await expect(page.getByTestId('overview-engine-infra')).toContainText('有有效样本 1 · 暂无有效样本 0')
   await expect(page.getByTestId('overview-engine-business')).toContainText('有有效样本 0 · 暂无有效样本 1')
-  for (const [key, count] of Object.entries({ online: 3, undeclared: 1, sampled: 1, missing: 1 })) {
+  for (const [key, count] of Object.entries({ online: 5, undeclared: 2, sampled: 1, missing: 2 })) {
     await expect(page.getByTestId(`overview-service-${key}`).locator('dd')).toHaveText(String(count))
   }
+  const monitorGap = page.getByTestId('overview-service-gap-monitor')
+  const metaGap = page.getByTestId('overview-service-gap-meta')
+  await expect(monitorGap.getByRole('button', { name: '2 个未声明采集' })).toBeVisible()
+  await expect(monitorGap.getByRole('button', { name: '1 个已声明但无有效样本' })).toBeVisible()
+  await expect(metaGap.getByRole('button', { name: '1 个已声明但无有效样本' })).toBeVisible()
+  await expect(page.getByTestId('overview-service-gap-manager')).toHaveCount(0)
   expect(state.coverageCalls).toEqual([
     { key: 'engines', params: { page: '1', page_size: '100' } },
     { key: 'engine-samples', params: { deployment_ids: '10000000-0000-4000-8000-000000000001,10000000-0000-4000-8000-000000000004' } },
     { key: 'services', params: { page: '1', page_size: '100', status: 'up' } },
-    { key: 'service-samples', params: { instance_ids: '1,2' } }
+    { key: 'service-samples', params: { instance_ids: '1,2,5' } }
   ])
 
   state.coverageMode('budget')
@@ -103,9 +109,20 @@ test('overview reports complete engine and online service coverage using one aut
   state.coverageMode('denied')
   await refresh.click()
   await expect(page.getByTestId('overview-engine-coverage').getByRole('alert')).toContainText('无权')
-  await expect(page.getByTestId('overview-service-undeclared').locator('dd')).toHaveText('1')
-  await page.getByTestId('overview-service-undeclared').getByRole('button').click()
-  await expect(page).toHaveURL(url => url.pathname === '/service-resources' && url.searchParams.get('process_metrics_declared') === 'false')
+  await monitorGap.getByRole('button', { name: '1 个已声明但无有效样本' }).click()
+  await expect(page).toHaveURL('/service-resources?module_name=monitor')
+  await expect.poll(() => state.coverageCalls.some(({ key, params }) => key === 'services' && params.module_name === 'monitor' && params.process_metrics_declared === 'true')).toBe(true)
+  await page.goBack()
+  await expect(page).toHaveURL('/resource-overview?refresh=off')
+  await expect(metaGap).toBeVisible()
+  state.coverageMode('service-budget')
+  await refresh.click()
+  await expect(page.getByTestId('overview-service-sampled').locator('dd')).toHaveText('—')
+  await expect(page.getByTestId('overview-service-missing').locator('dd')).toHaveText('—')
+  await expect(metaGap).toHaveCount(0)
+  await expect(monitorGap.getByRole('button', { name: '1 个已声明但无有效样本' })).toHaveCount(0)
+  await monitorGap.getByRole('button', { name: '2 个未声明采集' }).click()
+  await expect(page).toHaveURL('/service-resources?module_name=monitor&process_metrics_declared=false')
 })
 
 test('overview does not fetch either coverage section without its respective owner permission', async ({ page }) => {

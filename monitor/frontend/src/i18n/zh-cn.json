@@ -22,6 +22,8 @@
       "engineSamples": "有有效样本 {sampled} · 暂无有效样本 {missing}",
       "serviceCoverage": "在线服务采集缺口",
       "serviceCoverageHint": "按在线运行实例统计；有效表示至少一项进程指标有有效样本。",
+      "serviceGapUndeclared": "{count} 个未声明采集",
+      "serviceGapMissing": "{count} 个已声明但无有效样本",
       "serviceCounts": {
         "online": "在线实例",
         "undeclared": "未声明采集",

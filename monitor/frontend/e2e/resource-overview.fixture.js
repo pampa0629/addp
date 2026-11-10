@@ -13,20 +13,21 @@ export async function overviewBackend(page, options = {}) {
   let coverageMode = 'valid'
   let mode = 'valid', stamp = '2026-10-13T00:00:00Z', held = null, resolve
   await page.route('**/api/v1/system/platform/module_startup_failures', route => route.fulfill({ json: { data: [] } }))
-  await page.route('**/api/v1/system/platform/modules', route => route.fulfill({ json: { modules: [{ module_name: 'monitor' }], count: 1 } }))
+  await page.route('**/api/v1/system/platform/modules', route => route.fulfill({ json: { modules: ['manager', 'meta', 'monitor'].map(module_name => ({ module_name })), count: 3 } }))
   const engineOwners = options.coverage ? [
     engineOwner,
     { ...engineOwner, deployment_id: '10000000-0000-4000-8000-000000000003', enabled: false },
     { ...engineOwner, deployment_id: '10000000-0000-4000-8000-000000000004', scope: 'business', engine_type: 'redis' },
     { ...engineOwner, deployment_id: '10000000-0000-4000-8000-000000000005', scope: 'business', host_binding_state: 'rejected', node_id: '' }
   ] : []
-  const processOwners = options.coverage ? [1, 2, 3].map(id => ({
-    id, module_name: 'monitor', role: 'backend', instance_id: `monitor-${id}`, node_id: '', status: 'up', process_metrics_declared: id !== 3
+  const processOwners = options.coverage ? ['manager', 'monitor', 'monitor', 'monitor', 'meta'].map((module_name, index) => ({
+    id: index + 1, module_name, role: 'backend', instance_id: `${module_name}-${index + 1}`, node_id: '', status: 'up', process_metrics_declared: index !== 2 && index !== 3
   })) : []
   async function inventory(route, key, owners) {
     const params = Object.fromEntries(new URL(route.request().url()).searchParams)
     coverageCalls.push({ key, params })
-    const data = params.process_metrics_declared === 'false' ? owners.filter(row => !row.process_metrics_declared) : owners
+    const data = owners.filter(row => (!params.module_name || row.module_name === params.module_name) &&
+      (!params.process_metrics_declared || String(row.process_metrics_declared) === params.process_metrics_declared))
     await route.fulfill({ json: { data, page: Number(params.page), page_size: Number(params.page_size),
       total: coverageMode === 'incomplete' && key === 'engines' ? 101 : data.length } })
   }
@@ -51,6 +52,7 @@ export async function overviewBackend(page, options = {}) {
   await page.route('**/api/v1/monitor/platform/process_resource_summaries?*', async route => {
     const params = Object.fromEntries(new URL(route.request().url()).searchParams)
     coverageCalls.push({ key: 'service-samples', params })
+    if (coverageMode === 'service-budget') return route.fulfill({ status: 422, json: { error_code: 'observability_query_budget_exceeded' } })
     const ids = params.instance_ids.split(',').map(Number)
     const data = processOwners.filter(row => ids.includes(row.id)).map(row =>
       sample(row, processMetrics, { ...row, kind: 'module_instance' }, row.id === 1))
