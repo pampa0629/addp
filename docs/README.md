@@ -53,8 +53,8 @@
 - [任务体系规范](spec/addp任务体系规范.md)：统一原则、核心对象和接入清单；任务、执行、协议与 owner 专题见 `tasks/` 导航。
 - [调度与任务编排统一改造专题](next/ADDP调度与任务编排统一改造专题.md)是统一 Trigger 控制面的讨论稿，尚未进入正式规范修订或代码实施。[待确认问题](next/ADDP调度与任务编排统一改造专题.md#十五需要优先讨论确认的问题)
 - [任务执行管理统一收口专题](next/ADDP任务执行管理统一收口专题.md)汇总公共执行、Graph 基础持久运行、十个 Cleanup Owner 和安全读取的接入情况。Manager 迟到写入仍待 Hosted 验收，Graph 高级恢复暂缓。各项进展见[剩余工作与共享环境](next/ADDP任务执行管理统一收口专题.md#六剩余工作与共享环境)。
-- [数据服务消费与数据应用规范](spec/addp数据服务消费与数据应用规范.md)
-- [Workbench 后续事项与验收](next/ADDP%20Workbench数据服务消费与数据应用专题.md)
+- [数据服务消费与数据应用规范](spec/addp数据服务消费与数据应用规范.md)维护现行 Service 消费契约及 Workbench 创作、发布和运行规则。
+- [Workbench 后续事项与验收](next/ADDP%20Workbench数据服务消费与数据应用专题.md)汇总[延期能力](next/ADDP%20Workbench数据服务消费与数据应用专题.md#一延期能力)、[Power Query Connector 待实施设计](next/ADDP%20Workbench数据服务消费与数据应用专题.md#四power-query-connector-待实施设计)和[历史验收及覆盖边界](next/ADDP%20Workbench数据服务消费与数据应用专题.md#二验收与证据边界)。
 - [数据质量规范](spec/addp数据质量规范.md)
 - [数据血缘能力规范](spec/addp数据血缘能力规范.md)
 - [算子中间成果与血缘待办](next/算子中间成果与血缘待办.md)：现有资源来源追溯、内存结果边界及待讨论的算子加工过程展示；暂不实施血缘扩展。
@@ -144,7 +144,7 @@ AI 模型接入、在线厂商账号、内网模型服务、模型档案、场�
 3. [数据服务体系图](concepts/addp数据服务体系图.md)：确认查询服务、瓦片服务和外部服务注册的发布与执行职责。
 4. [API 设计规范](spec/addp-API设计规范.md)：确认结构化查询、cursor 分页、Bearer、Service Principal 和 BFF 边界。
 5. [企业资源目录实现规范](spec/addp企业资源目录实现规范.md)：确认 CatalogEntry、Asset 选源、授权来源与 owner 最终授权边界。
-6. [数据服务消费与数据应用规范](spec/addp数据服务消费与数据应用规范.md)：查看 Service 契约、应用创作/运行与共享 renderer；真实 BI 和剩余验收见[后续事项](next/ADDP%20Workbench数据服务消费与数据应用专题.md)。
+6. 阅读现行 Service 契约、应用创作与运行规则及共享 renderer，另查待实施设计和各轮实际验收范围。[正式规范](spec/addp数据服务消费与数据应用规范.md) · [后续事项与验收](next/ADDP%20Workbench数据服务消费与数据应用专题.md)
 7. [Outdoor 数据治理与指标实现规范](spec/Outdoor数据治理与指标实现规范.md)：首个业务样板的已确认口径与链路；业务规则不进入 Workbench 平台默认值。
 
 ## 企业资源目录主题
