@@ -303,7 +303,7 @@ Transfer schema 仅由 Backend 迁移；模块级数据库锁、成功提交的�
 
 真实场景使用手工 Hosted suite [transfer-continuous-events](../docs/spec/testing/scenarios/同步与引擎消费.md#transfer-continuous-events)，沿独占生命周期、System IAM 测试身份和正式 Gateway／Owner／Worker；Business 物理夹具独立核对业务 Kafka 与 PostgreSQL CDC 目标事实。连续执行浏览器验收复用该 suite 与 Console canonical 路由，在事件已提交后核对时间线、自动刷新新增计数、恢复来源与失败原因；Python 夹具沿既有 IAM 入口撤权，浏览器先确认已展示授权详情，再核对旧内容清空和重新登录后的 Monitor-only 拒绝。私有阶段控制文件与浏览器原始输出不归档，只归档闭合报告和安全截图。
 
-持续写入验收在同一 Kafka 任务追加记录并确认目标提交后沿原游标续读，将拼接结果与 Monitor 和 Owner 从头读取的完整事件顺序对照。Console 核对自动续页和手动刷新后的顺序与行数，并在 Worker 失联后于同一页面核对原执行的失败诊断与唯一终态事件。新增断言按对应版本的 Hosted 实际回执认定。旧版租户日志终审保留当次两页四条事件与撤权后旧游标拒绝的结果。[现行场景](../docs/spec/testing/scenarios/同步与引擎消费.md#transfer-continuous-events) · [固定版本租户日志终审](../docs/spec/testing/evidence/Monitor执行监控与留存历史证据.md#2026-10-23-固定版本租户日志终审)
+持续写入验收在同一 Kafka 任务追加记录并确认目标提交后沿原游标续读，将拼接结果与 Monitor 和 Owner 从头读取的完整事件顺序对照。Console 核对自动续页和手动刷新后的顺序与行数，并在 Worker 失联后于同一页面核对原执行的失败诊断与唯一终态事件。已归档的两轮 Hosted 分别停在整引擎扫描和目录基线读取，均未创建 Kafka 任务，上述断言均未执行。旧版租户日志终审保留当次两页四条事件与撤权后旧游标拒绝的结果。[现行场景](../docs/spec/testing/scenarios/同步与引擎消费.md#transfer-continuous-events) · [持续写入两轮 Hosted 结果](../docs/spec/testing/evidence/Monitor执行监控与留存历史证据.md#持续写入期间续页与刷新首次-hosted2026-11-07) · [固定版本租户日志终审](../docs/spec/testing/evidence/Monitor执行监控与留存历史证据.md#2026-10-23-固定版本租户日志终审)
 
 确定性入口 `make test-transfer-continuous-online-runner` 与 `make test-online-runner`、ES module 语法校验和真实部署的 Chromium 准备均沿既有登记；Transfer T1／T2、前端及共享消费者扩散见[标准门禁](README.md#常规模块与专项门禁)与[测试规范](../docs/spec/addp测试与验收规范.md#三标准入口)。此处事件接入未新增 API、事件字段或基础设施；门禁与 API 通过不代替真实 Hosted 或浏览器验收，下列结果仅适用于各自固定版本。
 
