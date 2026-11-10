@@ -36,6 +36,8 @@ type FieldInfo struct {
 	DefaultExpression    string      `json:"default_expression,omitempty"`
 	Generated            bool        `json:"generated,omitempty"`
 	GenerationExpression string      `json:"generation_expression,omitempty"`
+
+	Temporal *TemporalInfo `json:"temporal,omitempty"`
 }
 
 // Clone returns a deep copy of TableInfo.
@@ -79,6 +81,10 @@ func CloneFieldInfos(fields []FieldInfo) []FieldInfo {
 	for i := range result {
 		result[i].Path = append([]string(nil), fields[i].Path...)
 		result[i].Fields = CloneFieldInfos(fields[i].Fields)
+		if fields[i].Temporal != nil {
+			temporal := *fields[i].Temporal
+			result[i].Temporal = &temporal
+		}
 		if fields[i].Element != nil {
 			result[i].Element = &CloneFieldInfos([]FieldInfo{*fields[i].Element})[0]
 		}

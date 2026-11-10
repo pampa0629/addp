@@ -11,6 +11,7 @@ import (
 	"io"
 	"math"
 	"math/big"
+	"reflect"
 	"strconv"
 	"strings"
 	"time"
@@ -252,6 +253,9 @@ func (p *Plugin) OpenTableWriter(ctx context.Context, output io.Writer, tableInf
 		return nil, fmt.Errorf("parquet table writer requires table fields")
 	}
 	for _, field := range fields {
+		if field.Temporal != nil && !field.Temporal.ValidFor(field.Type) {
+			return nil, fmt.Errorf("invalid parquet temporal field %q", field.Name)
+		}
 		if field.Type == datatype.FieldTypeDecimal {
 			if err := validateParquetDecimalField(field); err != nil {
 				return nil, err
@@ -268,6 +272,10 @@ func (p *Plugin) OpenTableWriter(ctx context.Context, output io.Writer, tableInf
 		group[field.Name] = parquetNodeForField(field)
 	}
 	schema := parquetgo.NewSchema("", group)
+	arrowMetadata, err := arrowWriterSchema(schema, fields)
+	if err != nil {
+		return nil, err
+	}
 	writerOptionSet, err := parquetWriterOptions(options)
 	if err != nil {
 		return nil, err
@@ -280,6 +288,9 @@ func (p *Plugin) OpenTableWriter(ctx context.Context, output io.Writer, tableInf
 		}
 	}
 	writer := parquetgo.NewGenericWriter[any](output, writerOptions...)
+	if arrowMetadata != "" {
+		writer.SetKeyValueMetadata(arrowSchemaKey, arrowMetadata)
+	}
 	if geoMetadata != "" {
 		writer.SetKeyValueMetadata(geoParquetMetadataKey, geoMetadata)
 	}
@@ -405,7 +416,10 @@ func (p *Plugin) openTableReaderFromFile(ctx context.Context, file *parquetgo.Fi
 		return nil, err
 	}
 	rowCount := file.NumRows()
-	sourceFields := extractFields(file.Schema())
+	sourceFields, err := parquetFileFields(file)
+	if err != nil {
+		return nil, err
+	}
 	geoInfo, err := parseGeoParquetFile(file, sourceFields)
 	if err != nil {
 		return nil, err
@@ -464,7 +478,10 @@ func (p *Plugin) DescribeTable(ctx context.Context, input io.Reader, options *fo
 }
 
 func describeParquetFile(file *parquetgo.File, options *format.ParseOptions) (*format.TableDescribeResult, error) {
-	fields := extractFields(file.Schema())
+	fields, err := parquetFileFields(file)
+	if err != nil {
+		return nil, err
+	}
 	geoInfo, err := parseGeoParquetFile(file, fields)
 	if err != nil {
 		return nil, err
@@ -497,7 +514,10 @@ func (p *Plugin) SampleTable(ctx context.Context, input io.Reader, offset, limit
 }
 
 func sampleParquetFile(ctx context.Context, file *parquetgo.File, offset, limit int64, options *format.ParseOptions) ([]map[string]interface{}, error) {
-	fields := extractFields(file.Schema())
+	fields, err := parquetFileFields(file)
+	if err != nil {
+		return nil, err
+	}
 	geoInfo, err := parseGeoParquetFile(file, fields)
 	if err != nil {
 		return nil, err
@@ -548,7 +568,7 @@ func sampleParquetFile(ctx context.Context, file *parquetgo.File, offset, limit 
 			remainingOffset = 0
 		}
 
-		readErr := appendRows(ctx, rows, fieldNames, geometryFields, geometrySRIDs, geometryEncoding, limit, &result)
+		readErr := appendRows(ctx, rows, fieldNames, fields, geometryFields, geometrySRIDs, geometryEncoding, limit, &result)
 		closeErr := rows.Close()
 		if readErr != nil {
 			return result, readErr
@@ -561,7 +581,13 @@ func sampleParquetFile(ctx context.Context, file *parquetgo.File, offset, limit 
 	return format.ApplyFieldSelectionToRows(result, fieldSelection), nil
 }
 
-func appendRows(ctx context.Context, rows parquetgo.Rows, fieldNames []string, geometryFields map[string]bool, geometrySRIDs map[string]int, geometryEncoding format.GeometryEncoding, limit int64, result *[]map[string]interface{}) error {
+func appendRows(ctx context.Context, rows parquetgo.Rows, fieldNames []string, fields []datatype.FieldInfo, geometryFields map[string]bool, geometrySRIDs map[string]int, geometryEncoding format.GeometryEncoding, limit int64, result *[]map[string]interface{}) error {
+	temporalFields := make(map[string]datatype.FieldInfo)
+	for _, field := range fields {
+		if field.Temporal != nil {
+			temporalFields[field.Name] = field
+		}
+	}
 	decimalFields := make(map[string]*parquetfmt.DecimalType)
 	binaryFields := make(map[string]bool)
 	for _, field := range rows.Schema().Fields() {
@@ -595,7 +621,7 @@ func appendRows(ctx context.Context, rows parquetgo.Rows, fieldNames []string, g
 				for j, val := range parquetRow {
 					if j < len(fieldNames) {
 						name := fieldNames[j]
-						value, err := valueToInterface(val, decimalFields[name], geometryFields[name], geometrySRIDs[name], geometryEncoding, binaryFields[name])
+						value, err := valueToInterface(val, decimalFields[name], geometryFields[name], geometrySRIDs[name], geometryEncoding, binaryFields[name], temporalFields[name])
 						if err != nil {
 							return fmt.Errorf("decode parquet field %q: %w", name, err)
 						}
@@ -676,7 +702,7 @@ func (r *tableReader) ReadRows(ctx context.Context, limit int) ([]map[string]int
 			}
 		}
 		before := len(result)
-		if err := appendRows(ctx, r.rows, r.fieldNames, r.geometryFields, r.geometrySRIDs, r.geometryEncoding, int64(limit), &result); err != nil {
+		if err := appendRows(ctx, r.rows, r.fieldNames, r.tableInfo.Fields, r.geometryFields, r.geometrySRIDs, r.geometryEncoding, int64(limit), &result); err != nil {
 			return result, err
 		}
 		if len(result) >= limit {
@@ -882,7 +908,11 @@ func parquetNodeForField(field datatype.FieldInfo) parquetgo.Node {
 	case datatype.FieldTypeDate:
 		node = parquetgo.Date()
 	case datatype.FieldTypeTimestamp, datatype.FieldTypeTime:
-		node = parquetgo.String()
+		if field.Temporal != nil {
+			node = temporalNode(field)
+		} else {
+			node = parquetgo.String()
+		}
 	case datatype.FieldTypeJSON, datatype.FieldTypeArray:
 		node = parquetgo.String()
 	case datatype.FieldTypeUUID:
@@ -910,6 +940,9 @@ func parquetWriterRow(row map[string]interface{}, fields []datatype.FieldInfo, g
 }
 
 func parquetWriterValue(value interface{}, field datatype.FieldInfo, geometryColumn datatype.GeometryColumnInfo) (any, error) {
+	if field.Temporal != nil {
+		return temporalWriterValue(value, field)
+	}
 	if field.Type == datatype.FieldTypeDecimal {
 		return parquetDecimalWriterValue(value, field)
 	}
@@ -1732,6 +1765,7 @@ func sameFieldInfoList(left, right []datatype.FieldInfo) bool {
 		if left[i].Name != right[i].Name ||
 			left[i].Type != right[i].Type ||
 			left[i].Nullable != right[i].Nullable ||
+			!reflect.DeepEqual(left[i].Temporal, right[i].Temporal) ||
 			(left[i].Type == datatype.FieldTypeDecimal && (left[i].Precision != right[i].Precision || left[i].Scale != right[i].Scale)) {
 			return false
 		}
@@ -1740,7 +1774,10 @@ func sameFieldInfoList(left, right []datatype.FieldInfo) bool {
 }
 
 // valueToInterface 将 parquet.Value 转换为 Go 原生类型
-func valueToInterface(v parquetgo.Value, decimal *parquetfmt.DecimalType, geometry bool, srid int, geometryEncoding format.GeometryEncoding, binary bool) (interface{}, error) {
+func valueToInterface(v parquetgo.Value, decimal *parquetfmt.DecimalType, geometry bool, srid int, geometryEncoding format.GeometryEncoding, binary bool, temporal datatype.FieldInfo) (interface{}, error) {
+	if temporal.Temporal != nil {
+		return temporalReaderValue(v, temporal)
+	}
 	if v.IsNull() {
 		return nil, nil
 	}
@@ -1848,6 +1885,7 @@ func extractFields(schema *parquetgo.Schema) []datatype.FieldInfo {
 			Name:     f.Name(),
 			Nullable: f.Optional(),
 			Type:     mapParquetType(f),
+			Temporal: parquetTemporalInfo(f.Type().LogicalType()),
 		}
 		if fieldInfo.Type == datatype.FieldTypeDecimal {
 			decimal := f.Type().LogicalType().Decimal

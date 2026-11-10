@@ -60,6 +60,12 @@ def _field(field, ordinal):
             raise ValueError('Feather decimal is outside the scalar profile')
         kind = 'decimal'
         shape = {'precision': typ.precision, 'scale': typ.scale}
+    if pa.types.is_time(typ) or pa.types.is_timestamp(typ):
+        kind = 'time' if pa.types.is_time(typ) else 'timestamp'
+        temporal = {'unit': typ.unit}
+        if kind == 'timestamp' and typ.tz:
+            temporal['timezone'] = typ.tz
+        shape = {'temporal': temporal}
     if (kind is None or not field.name or len(field.name.encode()) > 1024
             or any(key.startswith(b'ARROW:extension:') for key in (field.metadata or {}))):
         raise ValueError('Feather field is outside the scalar profile')
@@ -126,6 +132,8 @@ def _value(scalar, field):
             return (date(1970, 1, 1) + timedelta(days=days)).isoformat()
         except OverflowError as error:
             raise ValueError('Feather date is outside the supported calendar') from error
+    if kind in {'time', 'timestamp'}:
+        return str(scalar.value)
     value = scalar.as_py()
     if kind == 'decimal':
         return format(value, 'f')

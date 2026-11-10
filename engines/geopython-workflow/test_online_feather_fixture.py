@@ -27,25 +27,24 @@ def test_three_codecs_all_scalar_values_and_nulls():
     for codec in fixture.CODECS:
         raw=fixture.source_bytes(codec);table=feather.read_table(io.BytesIO(raw))
         assert table.num_rows==2503 and table.column_names==fixture.FIELD_NAMES
-        assert table.to_pylist()==[fixture.row(i) for i in range(fixture.COUNT)]
+        fixture.assert_values(table)
         assert pa.ipc.open_file(io.BytesIO(raw)).num_record_batches==3
         assert table['id'][1].as_py()==-(2**53+2) and fixture.public_row(1)['id']==str(-(2**53+2))
 
 
 def test_owned_physical_roundtrip_and_tampering(tmp_path):
     client=Client();request={'nfs_root':str(tmp_path),'storage':{'endpoint':'fixture','access_key':'fixture','secret_key':'fixture','bucket':'bucket'}}
-    schema = fixture.arrow_schema(parquet=True)
     with patch.dict('sys.modules',{'minio':SimpleNamespace(Minio=lambda *a,**k:client)}):
         seed=fixture.worker(dict(request,action='seed'));assert len(seed['sources'])==3
         for store in ['minio','nfs']:
             for codec in fixture.CODECS:
-                out=io.BytesIO();pq.write_table(pa.Table.from_pylist([fixture.row(i) for i in range(fixture.COUNT)],schema=schema),out)
+                out=io.BytesIO();pq.write_table(fixture.arrow_table([fixture.row(i) for i in range(fixture.COUNT)], parquet=True),out)
                 client.objects[f'feather-output/from-{store}-{codec}.parquet']=out.getvalue()
         verified=fixture.worker(dict(request,action='verify'))
         assert verified['sources_unchanged'] and len(verified['outputs'])==6
         original=client.objects['feather-output/from-minio-lz4.parquet']
         rows=[fixture.row(i) for i in range(fixture.COUNT)];rows[2048]['id']=1
-        out=io.BytesIO();pq.write_table(pa.Table.from_pylist(rows,schema=schema),out)
+        out=io.BytesIO();pq.write_table(fixture.arrow_table(rows, parquet=True),out)
         client.objects['feather-output/from-minio-lz4.parquet']=out.getvalue()
         with pytest.raises(AssertionError,match='output_values'):fixture.worker(dict(request,action='verify'))
         client.objects['feather-output/from-minio-lz4.parquet']=original

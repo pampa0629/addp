@@ -66,8 +66,7 @@ def test_scalar_types_nullability_and_zero_rows(tmp_path):
     assert d['table']['row_count']==0 and read(p,d)['rows']==[]
 
 
-@pytest.mark.parametrize('typ,values',[(pa.uint64(),[1]), (pa.float16(),[1.0]), (pa.time64('ns'),[1]),
-    (pa.timestamp('ns'),[1]), (pa.decimal128(10,-2),[None]), (pa.decimal256(10,11),[None]), (pa.list_(pa.int32()),[[1]]),
+@pytest.mark.parametrize('typ,values',[(pa.uint64(),[1]), (pa.float16(),[1.0]), (pa.duration('ns'),[1]), (pa.decimal128(10,-2),[None]), (pa.decimal256(10,11),[None]), (pa.list_(pa.int32()),[[1]]),
     (pa.struct([('x',pa.int32())]),[{'x':1}]),(pa.dictionary(pa.int8(),pa.string()),['a']),
     (pa.large_string(),['a']), (pa.binary(2),[b'ab']), (pa.null(),[None])])
 def test_unsupported_schema_rejected_before_column_projection(tmp_path,typ,values):
@@ -104,6 +103,33 @@ def test_date_and_fixed_decimal_cross_batch(tmp_path):
     q = write(tmp_path/'outside.feather', pa.table({'day': bad}))
     with pytest.raises(ValueError, match='supported calendar'):
         read(q, describe(q))
+
+
+@pytest.mark.parametrize('codec', ['uncompressed', 'lz4', 'zstd'])
+def test_time_and_timestamp_keep_integer_ticks(tmp_path, codec):
+    types = [pa.time32('s'), pa.time32('ms'), pa.time64('us'), pa.time64('ns'),
+             pa.timestamp('s', '+05:30'), pa.timestamp('ms'), pa.timestamp('us'),
+             pa.timestamp('ns', 'America/New_York')]
+    values = [86399, 86399999, 86399999999, 86399999999999, 2**63-1, -1, -1, -(2**63)]
+    columns = {
+        f'c{i}': pa.array([value, None, 0], pa.int32() if i < 2 else pa.int64()).cast(typ)
+        for i, (typ, value) in enumerate(zip(types, values, strict=True))
+    }
+    p = write(tmp_path / 'temporal.feather', pa.table(columns), codec=codec, chunksize=2)
+    d = describe(p)
+    assert [field['temporal'] for field in d['table']['fields']] == [
+        {'unit': 's'}, {'unit': 'ms'}, {'unit': 'us'}, {'unit': 'ns'},
+        {'unit': 's', 'timezone': '+05:30'}, {'unit': 'ms'}, {'unit': 'us'},
+        {'unit': 'ns', 'timezone': 'America/New_York'},
+    ]
+    assert read(p, d, 0, 3)['rows'] == [
+        dict(zip(columns, map(str, values), strict=True)), dict.fromkeys(columns),
+        dict.fromkeys(columns, '0'),
+    ]
+    invalid = pa.array([86400], pa.int32()).cast(pa.time32('s'))
+    q = write(tmp_path / 'out-of-day.feather', pa.table({'clock': invalid}))
+    with pytest.raises(ValueError):
+        describe(q)
 
 
 def test_v1_stream_truncation_duplicate_names_and_extension_metadata(tmp_path):

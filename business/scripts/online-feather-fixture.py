@@ -22,10 +22,34 @@ AMOUNTS = ('-99999999999999999999.123456789012345678', '1.230000000000000000', N
 WIDE_AMOUNTS = ('9' * 38 + '.' + '7' * 38, '-0.' + '0' * 37 + '1', '0.' + '0' * 38)
 
 
+# Integer ticks and independent preview expectations. The two New York instants
+# are the repeated 01:30 across the 2021 fall DST transition.
+TEMPORAL = {
+    'clock_second': ('time', 's', '', (0, 86399, 1),
+                     ('00:00:00', '23:59:59', '00:00:01')),
+    'clock_nano': ('time', 'ns', '', (1, 86399999999999, None),
+                   ('00:00:00.000000001', '23:59:59.999999999', None)),
+    'local_stamp': ('timestamp', 'ns', '', (-1, -(2**63), 0),
+                    ('1969-12-31T23:59:59.999999999', '1677-09-21T00:12:43.145224192',
+                     '1970-01-01T00:00:00.000000000')),
+    'zone_stamp': ('timestamp', 'ns', 'America/New_York', (1636263000000000001, 1636266600000000001, None),
+                   ('2021-11-07T05:30:00.000000001Z', '2021-11-07T06:30:00.000000001Z', None)),
+    'offset_stamp': ('timestamp', 's', '+05:30', (-1, 0, 2147483648),
+                     ('1969-12-31T23:59:59Z', '1970-01-01T00:00:00Z', '2038-01-19T03:14:08Z')),
+}
+FIELD_NAMES += list(TEMPORAL)
+FIELD_TYPES += [definition[0] for definition in TEMPORAL.values()]
+NATIVE_TYPES += ['time32[s]', 'time64[ns]', 'timestamp[ns]', 'timestamp[ns, tz=America/New_York]',
+                 'timestamp[s, tz=+05:30]']
+NULLABLE |= {name for name, definition in TEMPORAL.items() if None in definition[3]}
+
+
 def field_definitions():
     return [
         dict(name=name, type=kind, native_type=native, nullable=name in NULLABLE,
-             precision=DECIMAL_SHAPES.get(name, (0, 0))[0], scale=DECIMAL_SHAPES.get(name, (0, 0))[1])
+             precision=DECIMAL_SHAPES.get(name, (0, 0))[0], scale=DECIMAL_SHAPES.get(name, (0, 0))[1],
+             **({'temporal': {'unit': TEMPORAL[name][1], **({'timezone': TEMPORAL[name][2]}
+                 if TEMPORAL[name][2] else {})}} if name in TEMPORAL else {}))
         for name, kind, native in zip(FIELD_NAMES, FIELD_TYPES, NATIVE_TYPES, strict=True)
     ]
 
@@ -38,6 +62,13 @@ def arrow_schema(*, parquet=False):
     if parquet:
         types[1:3] = [pa.int32(), pa.int32()]
         types[10] = pa.date32()
+    for kind, unit, timezone, _, _ in TEMPORAL.values():
+        if parquet and unit == 's':
+            unit = 'ms'
+        if kind == 'time':
+            types.append(pa.time32(unit) if unit in {'s', 'ms'} else pa.time64(unit))
+        else:
+            types.append(pa.timestamp(unit, timezone or None))
     fields = [pa.field(n, t, nullable=n in NULLABLE) for n, t in zip(FIELD_NAMES, types, strict=True)]
     return pa.schema(sorted(fields, key=lambda f: f.name) if parquet else fields)
 
@@ -52,7 +83,8 @@ def row(i):
             'day': date.fromisoformat(DAYS[i % 3]),
             'legacy_day': None if i % 3 == 0 else date.fromisoformat(DAYS[(i + 1) % 3]),
             'amount': None if AMOUNTS[i % 3] is None else Decimal(AMOUNTS[i % 3]),
-            'wide_amount': Decimal(WIDE_AMOUNTS[i % 3])}
+            'wide_amount': Decimal(WIDE_AMOUNTS[i % 3]),
+            **{name: definition[3][i % 3] for name, definition in TEMPORAL.items()}}
 
 
 def public_row(i):
@@ -64,13 +96,44 @@ def public_row(i):
     for key in DECIMAL_SHAPES:
         if result[key] is not None:
             result[key] = format(result[key], 'f')
+    for key, definition in TEMPORAL.items():
+        result[key] = definition[4][i % 3]
     return result
 
 
-def source_bytes(codec):
+def arrow_table(rows, *, parquet=False):
     import pyarrow as pa
+    schema = arrow_schema(parquet=parquet)
+    columns = []
+    for field in schema:
+        values = [row[field.name] for row in rows]
+        if field.name in TEMPORAL:
+            if parquet and TEMPORAL[field.name][1] == 's':
+                values = [None if value is None else value * 1000 for value in values]
+            physical = pa.int32() if pa.types.is_time32(field.type) else pa.int64()
+            columns.append(pa.array(values, physical).cast(field.type))
+        else:
+            columns.append(pa.array(values, field.type))
+    return pa.Table.from_arrays(columns, schema=schema)
+
+
+def assert_values(table, *, parquet=False):
+    import pyarrow as pa
+    values = table.drop(list(TEMPORAL)).to_pylist()
+    for name, (_, unit, _, _, _) in TEMPORAL.items():
+        column = table[name]
+        physical = pa.int32() if pa.types.is_time32(column.type) else pa.int64()
+        for entry, ticks in zip(values, column.cast(physical).to_pylist(), strict=True):
+            if parquet and unit == 's' and ticks is not None:
+                assert ticks % 1000 == 0, 'output_values'
+                ticks //= 1000
+            entry[name] = ticks
+    assert values == [row(i) for i in range(COUNT)], 'output_values'
+
+
+def source_bytes(codec):
     import pyarrow.feather as feather
-    table = pa.Table.from_pylist([row(i) for i in range(COUNT)], schema=arrow_schema())
+    table = arrow_table([row(i) for i in range(COUNT)])
     out=io.BytesIO();feather.write_feather(table,out,compression=codec,chunksize=1024)
     return out.getvalue()
 
@@ -112,10 +175,19 @@ def worker(request):
         expected_schema = arrow_schema(parquet=True)
         facts=[]
         for name in outputs:
-            raw=remote(name);table=pq.read_table(io.BytesIO(raw))
+            raw = remote(name)
+            parquet_file = pq.ParquetFile(io.BytesIO(raw))
+            table = parquet_file.read()
             assert table.column_names==sorted(FIELD_NAMES) and table.num_rows==COUNT,'output_fields'
             assert table.schema.equals(expected_schema, check_metadata=False), 'output_types'
-            assert table.to_pylist()==[row(i) for i in range(COUNT)],'output_values'
+            for field, (kind, unit, timezone, _, _) in TEMPORAL.items():
+                column = parquet_file.schema.column(parquet_file.schema.names.index(field))
+                logical = json.loads(column.logical_type.to_json())
+                assert logical['Type'] == kind.capitalize(), 'output_types'
+                assert logical['isAdjustedToUTC'] is bool(timezone), 'output_types'
+                assert logical['timeUnit'] == ('milliseconds' if unit == 's' else 'nanoseconds'), 'output_types'
+                assert column.physical_type == ('INT32' if kind == 'time' and unit == 's' else 'INT64'), 'output_types'
+            assert_values(table, parquet=True)
             facts.append({'object':name,'size_bytes':len(raw),'sha256':hashlib.sha256(raw).hexdigest(),
                           'all_values_and_nulls_verified':True,'content_base64':base64.b64encode(raw).decode()})
         return {'sources_unchanged':True,'outputs':facts}

@@ -72,6 +72,10 @@ func metadataOnlyFields(fields []datatype.FieldInfo) []datatype.FieldInfo {
 		result[i] = datatype.FieldInfo{Name: f.Name, Path: append([]string(nil), f.Path...), Type: f.Type, ElementType: f.ElementType,
 			NativeType: f.NativeType, Nullable: f.Nullable, PrimaryKey: f.PrimaryKey, Size: f.Size, Precision: f.Precision, Scale: f.Scale,
 			OrdinalPosition: f.OrdinalPosition, Generated: f.Generated, Fields: metadataOnlyFields(f.Fields)}
+		if f.Temporal != nil {
+			temporal := *f.Temporal
+			result[i].Temporal = &temporal
+		}
 		if f.Element != nil {
 			element := metadataOnlyFields([]datatype.FieldInfo{*f.Element})[0]
 			result[i].Element = &element

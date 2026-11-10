@@ -185,6 +185,15 @@ func (p *TablePipeline) Execute(ctx context.Context) (result *TablePipelineMetri
 	if tableInfo == nil {
 		tableInfo = &datatype.TableInfo{}
 	}
+	for _, field := range tableInfo.Fields {
+		if field.Temporal != nil {
+			target, ok := p.Target.(*encodedContentTableTarget)
+			if !ok || target.tableWriterProvider == nil || target.tableWriterProvider.Format() != format.FormatParquet {
+				return nil, fmt.Errorf("field %q requires a target that preserves native temporal ticks; supported target is Parquet", field.Name)
+			}
+			break
+		}
+	}
 	writer, err := p.Target.Open(ctx, tableInfo, spatialInfo)
 	if err != nil {
 		return nil, fmt.Errorf("open table target: %w", err)

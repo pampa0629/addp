@@ -39,7 +39,7 @@ def validate_fields(fields):
     require(len(observed) == len(expected) and all(
         all(actual.get(key) == value for key, value in field.items())
         for actual, field in zip(observed, expected, strict=True)
-    ), 'Feather field names, native types, nullability or decimal shape differ')
+    ), 'Feather field names, native types, nullability, decimal shape or temporal facts differ')
 
 
 def validate_content(preview, spec, fingerprint):

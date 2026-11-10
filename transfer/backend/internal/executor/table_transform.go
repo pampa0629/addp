@@ -305,6 +305,10 @@ func (t *fieldMappingTransform) TransformTableInfo(tableInfo *datatype.TableInfo
 	}
 
 	for _, mapping := range t.fields {
+		declared := findFieldInfo(source, mapping.Source)
+		if declared.Temporal != nil && mapping.TargetType != "" && datatype.ParseFieldType(mapping.TargetType) != declared.Type {
+			return nil, nil, fmt.Errorf("field %q cannot cast native temporal ticks with field mapping", mapping.Source)
+		}
 		field := fieldInfoForMapping(source, mapping)
 		upsertFieldInfo(next, field)
 		if datatype.IsSpatialFieldType(field.Type) {

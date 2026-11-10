@@ -110,6 +110,9 @@ func (p *provider) DescribeTable(ctx context.Context, options *format.ParseOptio
 					field.NativeType == fmt.Sprintf("decimal256(%d, %d)", precision, scale))
 			kind = datatype.FieldTypeDecimal
 		}
+		if field.Temporal != nil {
+			kind, ok = field.Type, validTemporalField(field)
+		}
 		if !ok || kind != field.Type || field.Name == "" || seen[field.Name] || len(field.Fields) > 0 || field.Element != nil {
 			return nil, fmt.Errorf("Feather runtime schema is outside the scalar profile")
 		}
@@ -220,6 +223,25 @@ func (r *reader) ReadRows(ctx context.Context, limit int) ([]map[string]interfac
 
 var fixedDecimalText = regexp.MustCompile(`^-?(0|[1-9][0-9]*)(\.[0-9]+)?$`)
 
+func validTemporalField(field datatype.FieldInfo) bool {
+	temporal := field.Temporal
+	if !temporal.ValidFor(field.Type) {
+		return false
+	}
+	if field.Type == datatype.FieldTypeTime {
+		width := 64
+		if temporal.Unit == "s" || temporal.Unit == "ms" {
+			width = 32
+		}
+		return field.NativeType == fmt.Sprintf("time%d[%s]", width, temporal.Unit)
+	}
+	suffix := temporal.Unit
+	if temporal.Timezone != "" {
+		suffix += ", tz=" + temporal.Timezone
+	}
+	return field.NativeType == "timestamp["+suffix+"]"
+}
+
 func decodeValue(value interface{}, field datatype.FieldInfo) (interface{}, error) {
 	if value == nil {
 		if !field.Nullable {
@@ -228,6 +250,16 @@ func decodeValue(value interface{}, field datatype.FieldInfo) (interface{}, erro
 		return nil, nil
 	}
 	switch field.Type {
+	case datatype.FieldTypeTime, datatype.FieldTypeTimestamp:
+		text, ok := value.(string)
+		if !ok || field.Temporal == nil {
+			return nil, fmt.Errorf("Feather temporal value requires declared integer ticks")
+		}
+		ticks, err := strconv.ParseInt(text, 10, 64)
+		if err != nil || !field.Temporal.ValidTicks(field.Type, ticks) {
+			return nil, fmt.Errorf("Feather temporal ticks contradict schema")
+		}
+		return ticks, nil
 	case datatype.FieldTypeBigInt:
 		text, ok := value.(string)
 		if !ok {

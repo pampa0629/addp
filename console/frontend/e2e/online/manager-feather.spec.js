@@ -15,7 +15,12 @@ function expectedRow(i) {
     ratio: i / 4, value: (0 - i) / 2,
     payload: i % 13 === 0 ? null : i % 3 === 0 ? '' : Buffer.from([0, i % 256, 255]).toString('base64'),
     day: days[i % 3], legacy_day: i % 3 === 0 ? null : days[(i + 1) % 3],
-    amount: amounts[i % 3], wide_amount: wideAmounts[i % 3] }
+    amount: amounts[i % 3], wide_amount: wideAmounts[i % 3],
+    clock_second: ['00:00:00', '23:59:59', '00:00:01'][i % 3],
+    clock_nano: ['00:00:00.000000001', '23:59:59.999999999', null][i % 3],
+    local_stamp: ['1969-12-31T23:59:59.999999999', '1677-09-21T00:12:43.145224192', '1970-01-01T00:00:00.000000000'][i % 3],
+    zone_stamp: ['2021-11-07T05:30:00.000000001Z', '2021-11-07T06:30:00.000000001Z', null][i % 3],
+    offset_stamp: ['1969-12-31T23:59:59Z', '1970-01-01T00:00:00Z', '2038-01-19T03:14:08Z'][i % 3] }
 }
 
 test('ordinary user pages and downloads six Feather V2 sources', async ({ page }) => {

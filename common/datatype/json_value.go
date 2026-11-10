@@ -86,6 +86,9 @@ func fieldValueForJSON(field FieldInfo, value interface{}, depth int, queryGeome
 	if _, protected := value.(string); protected {
 		return value, nil
 	}
+	if field.Temporal != nil {
+		return temporalJSONText(field, value)
+	}
 	switch field.Type {
 	case FieldTypeGeometry:
 		if !queryGeometry {

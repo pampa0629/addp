@@ -169,3 +169,38 @@ func mustWKBGeometry(t *testing.T, geometry geom.T) []byte {
 	}
 	return data
 }
+
+func TestFieldMappingPreservesNativeTemporalFacts(t *testing.T) {
+	info := &datatype.TableInfo{Fields: []datatype.FieldInfo{{
+		Name: "stamp", Type: datatype.FieldTypeTimestamp,
+		Temporal: &datatype.TemporalInfo{Unit: "ns", Timezone: "America/New_York"},
+	}}}
+	for _, typ := range []datatype.FieldType{datatype.FieldTypeTimestamp, datatype.FieldTypeString, datatype.FieldTypeTime} {
+		transform, err := newFieldMappingTransform(FieldMappingTransformPlan{
+			Mode:   FieldMappingModeProject,
+			Fields: []FieldMappingFieldPlan{{Source: "stamp", Target: "renamed", TargetType: string(typ)}},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		mapped, _, err := transform.TransformTableInfo(info, nil)
+		if typ != datatype.FieldTypeTimestamp {
+			if err == nil {
+				t.Fatalf("native timestamp mapped as %s", typ)
+			}
+			continue
+		}
+		if err != nil {
+			t.Fatal(err)
+		}
+		if field := mapped.GetField("renamed"); field == nil || field.Temporal == nil || *field.Temporal != *info.Fields[0].Temporal {
+			t.Fatalf("timestamp facts lost: %#v", field)
+		}
+		batch, err := transform.TransformBatch(context.Background(), &engineplugin.BatchData{
+			Fields: info.Fields, Rows: []map[string]interface{}{{"stamp": int64(-1)}},
+		})
+		if err != nil || batch.Rows[0]["renamed"] != int64(-1) {
+			t.Fatalf("timestamp ticks lost: %v, %v", batch, err)
+		}
+	}
+}
