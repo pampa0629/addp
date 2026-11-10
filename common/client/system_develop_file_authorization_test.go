@@ -384,3 +384,50 @@ func TestDevelopFileClientFreezesSourceScopeBeforeConsumptionHTTP(t *testing.T) 
 		t.Fatal("caller mutation changed the exact source response check", value, err)
 	}
 }
+
+func TestDevelopFileClientPublicationHistoryChecksOriginalRequest(t *testing.T) {
+	_, issued := developFileClientFixture(t, true)
+	issued.Authorization.ExpiresAt = time.Now().Add(-time.Minute)
+	original := plugin.NewFilePublicationRequest{
+		OperationID: "0b33cbf0-5c67-4c99-8ac3-5573d505630f", Target: issued.Scope.Target.Target,
+		SizeBytes: 891, SHA256: strings.Repeat("a", 64),
+	}
+	digest, err := DevelopFilePublicationRequestDigest(original)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"committed", "wrong request digest", "unexpected connection"} {
+		t.Run(name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.Method != "GET" || r.URL.Path != "/api/v1/system/execution-authorizations/9/develop-geopackage-publications/"+original.OperationID ||
+					r.URL.RawQuery != "" || r.ContentLength != 0 || r.Header.Get("Authorization") != "Bearer addp_at_service" {
+					t.Error("invalid history request")
+				}
+				released := issued.Authorization.ExpiresAt.Add(-time.Second)
+				result := DevelopFilePublicationHistory{
+					AuthorizationID: "9", ExecutionID: issued.Authorization.ExecutionID, Attempt: 1,
+					ScopeDigest: issued.ScopeDigest, ApprovalID: developFileClientApproval, OperationID: original.OperationID,
+					RequestDigest: digest, PrepareAdmittedAt: released.Add(-time.Second), ReleasedAt: &released, PreparationDigest: strings.Repeat("b", 64),
+				}
+				switch name {
+				case "wrong request digest":
+					result.RequestDigest = strings.Repeat("c", 64)
+				case "unexpected connection":
+					_ = json.NewEncoder(w).Encode(struct {
+						DevelopFilePublicationHistory
+						Engine map[string]string `json:"engine"`
+					}{result, map[string]string{"server": "unexpected"}})
+					return
+				}
+				_ = json.NewEncoder(w).Encode(result)
+			}))
+			defer server.Close()
+			service := NewSystemServiceClient(server.URL, staticSystemServiceTokenSource("addp_at_service"), server.Client()).WithTenantID(3)
+			history, err := service.ReadDevelopFilePublicationHistory(t.Context(), issued, developFileClientApproval, original)
+			want := name == "committed"
+			if (history != nil) != want || (err == nil) != want {
+				t.Fatal("unexpected history outcome", err)
+			}
+		})
+	}
+}

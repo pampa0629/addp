@@ -302,9 +302,15 @@ func validateIssuedExecutionAuthorization(
 	response *IssuedExecutionAuthorization,
 	request IssueExecutionAuthorizationRequest,
 ) error {
-	if response == nil || response.Audience != request.Audience || response.ExecutionID != request.ExecutionID ||
-		!response.ExpiresAt.After(time.Now().UTC()) ||
-		!sameExecutionAuthorizationBoundary(response, request) {
+	if response == nil || !response.ExpiresAt.After(time.Now().UTC()) {
+		return errors.New("System execution authorization returned an invalid response")
+	}
+	return validateIssuedExecutionAuthorizationBinding(response, request)
+}
+
+func validateIssuedExecutionAuthorizationBinding(response *IssuedExecutionAuthorization, request IssueExecutionAuthorizationRequest) error {
+	if response.Audience != request.Audience || response.ExecutionID != request.ExecutionID ||
+		response.ExpiresAt.IsZero() || !sameExecutionAuthorizationBoundary(response, request) {
 		return errors.New("System execution authorization returned an invalid response")
 	}
 	for _, value := range []string{

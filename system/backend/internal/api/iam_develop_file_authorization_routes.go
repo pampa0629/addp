@@ -19,11 +19,13 @@ import (
 	"github.com/addp/system/internal/iam"
 	"github.com/addp/system/internal/middleware"
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 )
 
 type iamDevelopFileAuthorizationService interface {
 	Issue(context.Context, iam.IssueDevelopFileAuthorizationInput) (*client.IssuedDevelopFileAuthorization, error)
 	ApproveCreate(context.Context, iam.ApproveDevelopFileCreateInput) (*iam.DevelopFileCreateApprovalReceipt, error)
+	ReadPublicationHistory(context.Context, iam.CheckDevelopFileInput, uuid.UUID) (*client.DevelopFilePublicationHistory, error)
 	AuthorizePublication(context.Context, iam.CheckDevelopFileInput, client.DevelopFilePublicationRequest) (*client.DevelopFilePublicationObservation, error)
 	Check(context.Context, iam.CheckDevelopFileInput) (*client.DevelopFileAdmissionObservation, *client.DevelopFileSourceAccessObservation, error)
 }
@@ -73,7 +75,41 @@ func RegisterIAMDevelopFileAuthorizationRoutes(api *gin.RouterGroup, runtime *IA
 	api.POST("/execution-authorizations/:id/develop-geopackage-admission-checks", runtime.Authentication, runtime.ServiceCredential, service, develop, consume, h.Admission)
 	api.POST("/execution-authorizations/:id/develop-geopackage-source-accesses", runtime.Authentication, runtime.ServiceCredential, service, develop, consume, h.Source)
 	api.POST("/execution-authorizations/:id/develop-geopackage-publications", runtime.Authentication, runtime.ServiceCredential, service, develop, consume, h.Publication)
+	api.GET("/execution-authorizations/:id/develop-geopackage-publications/:operation_id", runtime.Authentication, runtime.ServiceCredential, service, develop, consume, h.PublicationHistory)
 	return nil
+}
+
+// PublicationHistory godoc
+// @Summary 核清原 GeoPackage 操作历史 | Read original GeoPackage operation history
+// @Description 固定同租户 addp-develop Tenant Service，只返回原操作已提交的准入及放行历史，无连接、无正文、无查询参数。 | Fixed same-tenant addp-develop Tenant Service. Returns only committed admission and release history for the original operation, without a connection, request body or query parameters.
+// @Tags 执行授权 | Execution Authorization
+// @Produce json
+// @Security BearerAuth
+// @Param id path string true "原执行授权 ID | Original execution authorization ID"
+// @Param operation_id path string true "原发布操作 UUID | Original publication operation UUID"
+// @Success 200 {object} client.DevelopFilePublicationHistory
+// @Failure 400,401,403,500 {object} IAMErrorResponse
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["system.execution_authorization.execute"]
+// @Router /execution-authorizations/{id}/develop-geopackage-publications/{operation_id} [get]
+func (h *IAMDevelopFileAuthorizationHandler) PublicationHistory(c *gin.Context) {
+	c.Header("Cache-Control", "no-store")
+	operation, err := parseCanonicalExecutionUUID(c.Param("operation_id"))
+	if err != nil || c.Request.URL.RawQuery != "" || c.Request.ContentLength != 0 {
+		respondExecutionAuthorizationError(c, commonapi.ErrBadRequest)
+		return
+	}
+	input, err := developFileServiceInput(c)
+	if err != nil {
+		respondExecutionAuthorizationError(c, err)
+		return
+	}
+	history, err := h.service.ReadPublicationHistory(c.Request.Context(), input, operation)
+	if err != nil {
+		respondExecutionAuthorizationError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, history)
 }
 
 // Publication godoc
@@ -279,11 +315,20 @@ func (h *IAMDevelopFileAuthorizationHandler) Source(c *gin.Context) {
 }
 
 func developFileCheckInput(c *gin.Context, executionID string, attempt int, digest string) (iam.CheckDevelopFileInput, error) {
-	id, err := parseCanonicalIAMInt64(c.Param("id"))
+	executionIDParsed, err := parseCanonicalExecutionUUID(executionID)
 	if err != nil || attempt <= 0 || len(digest) != 64 {
 		return iam.CheckDevelopFileInput{}, commonapi.ErrBadRequest
 	}
-	executionIDParsed, err := parseCanonicalExecutionUUID(executionID)
+	input, err := developFileServiceInput(c)
+	if err != nil {
+		return iam.CheckDevelopFileInput{}, err
+	}
+	input.ExecutionID, input.ExpectedAttempt, input.ScopeDigest = executionIDParsed, attempt, digest
+	return input, nil
+}
+
+func developFileServiceInput(c *gin.Context) (iam.CheckDevelopFileInput, error) {
+	id, err := parseCanonicalIAMInt64(c.Param("id"))
 	if err != nil {
 		return iam.CheckDevelopFileInput{}, commonapi.ErrBadRequest
 	}
@@ -291,7 +336,7 @@ func developFileCheckInput(c *gin.Context, executionID string, attempt int, dige
 	if err != nil || kind != string(iam.PrincipalTypeServicePrincipal) {
 		return iam.CheckDevelopFileInput{}, commonapi.ErrForbidden
 	}
-	return iam.CheckDevelopFileInput{ServiceAccessToken: sharedauth.CanonicalBearerToken(c.GetHeader("Authorization")), AuthorizationID: id, ExecutionID: executionIDParsed, TenantID: int64(tenant), ExpectedAttempt: attempt, ScopeDigest: digest, Audit: iamAuditMetadataWithStatus(c, http.StatusOK)}, nil
+	return iam.CheckDevelopFileInput{ServiceAccessToken: sharedauth.CanonicalBearerToken(c.GetHeader("Authorization")), AuthorizationID: id, TenantID: int64(tenant), Audit: iamAuditMetadataWithStatus(c, http.StatusOK)}, nil
 }
 
 // This purpose requires a single closed object with no duplicate keys at any

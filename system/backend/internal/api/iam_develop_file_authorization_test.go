@@ -17,6 +17,7 @@ import (
 	"github.com/addp/system/internal/iam"
 	"github.com/addp/system/internal/middleware"
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 )
 
 type developFileHTTPFixture struct {
@@ -26,6 +27,12 @@ type developFileHTTPFixture struct {
 	issue    iam.IssueDevelopFileAuthorizationInput
 	approval iam.ApproveDevelopFileCreateInput
 	err      error
+}
+
+func (f *developFileHTTPFixture) ReadPublicationHistory(_ context.Context, input iam.CheckDevelopFileInput, operation uuid.UUID) (*client.DevelopFilePublicationHistory, error) {
+	f.calls++
+	f.input = input
+	return &client.DevelopFilePublicationHistory{OperationID: operation.String()}, f.err
 }
 
 func (f *developFileHTTPFixture) AuthorizePublication(_ context.Context, input iam.CheckDevelopFileInput, req client.DevelopFilePublicationRequest) (*client.DevelopFilePublicationObservation, error) {
@@ -227,3 +234,36 @@ func (developFileHTTPToken) Token(context.Context, uint) (string, error) {
 	return "addp_at_service", nil
 }
 func (developFileHTTPToken) PlatformToken(context.Context) (string, error) { return "", nil }
+
+func TestDevelopFilePublicationHistoryHTTP(t *testing.T) {
+	const operation = "0b33cbf0-5c67-4c99-8ac3-5573d505630f"
+	const path = "/api/v1/system/execution-authorizations/9/develop-geopackage-publications/"
+	for _, tc := range []struct {
+		name, suffix, body string
+		service            bool
+		status, calls      int
+	}{
+		{"original operation", operation, "", true, 200, 1},
+		{"User blocked", operation, "", false, 403, 0},
+		{"bad operation", "other", "", true, 400, 0},
+		{"query blocked", operation + "?lease_token=value", "", true, 400, 0},
+		{"body blocked", operation, "{}", true, 400, 0},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := &developFileHTTPFixture{}
+			r := developFileHTTPRouter(t, developFileHTTPAuth(tc.service), f)
+			req := httptest.NewRequest("GET", path+tc.suffix, strings.NewReader(tc.body))
+			req.Header.Set("Authorization", "Bearer addp_at_test")
+			result := httptest.NewRecorder()
+			r.ServeHTTP(result, req)
+			if result.Code != tc.status || f.calls != tc.calls {
+				t.Fatal(result.Code, f.calls, result.Body.String())
+			}
+			if tc.calls == 1 && (f.input.AuthorizationID != 9 || f.input.LeaseToken != uuid.Nil ||
+				f.input.TenantID <= 0 || result.Header().Get("Cache-Control") != "no-store" ||
+				!strings.Contains(result.Body.String(), operation)) {
+				t.Fatal("history lost original binding or introduced a lease")
+			}
+		})
+	}
+}

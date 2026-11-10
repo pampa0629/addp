@@ -4947,6 +4947,75 @@ const docTemplate = `{
                 ]
             }
         },
+        "/execution-authorizations/{id}/develop-geopackage-publications/{operation_id}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "固定同租户 addp-develop Tenant Service，只返回原操作已提交的准入及放行历史，无连接、无正文、无查询参数。 | Fixed same-tenant addp-develop Tenant Service. Returns only committed admission and release history for the original operation, without a connection, request body or query parameters.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "执行授权 | Execution Authorization"
+                ],
+                "summary": "核清原 GeoPackage 操作历史 | Read original GeoPackage operation history",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "原执行授权 ID | Original execution authorization ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "原发布操作 UUID | Original publication operation UUID",
+                        "name": "operation_id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/client.DevelopFilePublicationHistory"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "system.execution_authorization.execute"
+                ]
+            }
+        },
         "/execution-authorizations/{id}/develop-geopackage-source-accesses": {
             "post": {
                 "security": [
@@ -17989,6 +18058,41 @@ const docTemplate = `{
                 },
                 "expected_attempt": {
                     "type": "integer"
+                },
+                "scope_digest": {
+                    "type": "string"
+                }
+            }
+        },
+        "client.DevelopFilePublicationHistory": {
+            "type": "object",
+            "properties": {
+                "approval_id": {
+                    "type": "string"
+                },
+                "attempt": {
+                    "type": "integer"
+                },
+                "authorization_id": {
+                    "type": "string"
+                },
+                "execution_id": {
+                    "type": "string"
+                },
+                "operation_id": {
+                    "type": "string"
+                },
+                "preparation_digest": {
+                    "type": "string"
+                },
+                "prepare_admitted_at": {
+                    "type": "string"
+                },
+                "released_at": {
+                    "type": "string"
+                },
+                "request_digest": {
+                    "type": "string"
                 },
                 "scope_digest": {
                     "type": "string"

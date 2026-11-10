@@ -4,7 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
-	"encoding/json"
+	"errors"
 	"strconv"
 	"time"
 
@@ -12,6 +12,7 @@ import (
 	"github.com/addp/common/client"
 	"github.com/addp/common/engine/plugin"
 	"github.com/google/uuid"
+	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
 
@@ -21,6 +22,8 @@ type developFilePublication struct {
 	RequestDigest     string
 	LeaseDigest       string
 	PrepareAdmittedAt time.Time
+	ReleasedAt        *time.Time
+	PreparationDigest *string
 }
 
 func (developFilePublication) TableName() string { return "system.develop_file_publications" }
@@ -64,12 +67,10 @@ func (u *developFilePublicationUse) consume(ctx context.Context, tx *Repository,
 	approval, operation := uuid.MustParse(request.ApprovalID), uuid.MustParse(request.OperationID)
 	sum := sha256.Sum256([]byte(request.LeaseToken))
 	lease := hex.EncodeToString(sum[:])
-	raw, err := json.Marshal(frozen)
+	requestDigest, err := client.DevelopFilePublicationRequestDigest(frozen)
 	if err != nil {
 		return err
 	}
-	digest := sha256.Sum256(raw)
-	requestDigest := hex.EncodeToString(digest[:])
 	result := &client.DevelopFilePublicationObservation{AuthorizationID: strconv.FormatInt(row.ID, 10), ExecutionID: request.ExecutionID,
 		Attempt: request.Attempt, ScopeDigest: request.ScopeDigest, ApprovalID: request.ApprovalID, OperationID: request.OperationID,
 		Stage: request.Stage, PreparationDigest: request.PreparationDigest, ObservedAt: observed, ExpiresAt: expires, BusinessDeadline: deadline}
@@ -118,4 +119,53 @@ func (u *developFilePublicationUse) consume(ctx context.Context, tx *Repository,
 	}
 	u.result = result
 	return nil
+}
+
+// ReadPublicationHistory looks up the original operation without rechecking
+// the expired business authority or invoking the Owner or Engine Provider.
+func (s *DevelopFileAuthorizationService) ReadPublicationHistory(ctx context.Context, input CheckDevelopFileInput, operation uuid.UUID) (*client.DevelopFilePublicationHistory, error) {
+	if input.AuthorizationID <= 0 || input.TenantID <= 0 || operation == uuid.Nil {
+		return nil, commonapi.ErrBadRequest
+	}
+	if _, err := s.repository.developFileService(ctx, input); err != nil {
+		return nil, err
+	}
+	ea, err := s.repository.GetExecutionAuthorization(ctx, input.AuthorizationID)
+	if errors.Is(err, commonapi.ErrNotFound) {
+		return nil, ErrExecutionAuthorizationPermissionDenied
+	}
+	if err != nil {
+		return nil, err
+	}
+	if ea.TenantID != input.TenantID || ea.Audience != "develop" || ea.SourceType != "user" ||
+		ea.SealedAt == nil || ea.InternalTask != nil || ea.SourceReadScope != nil || ea.CleanupScope != nil ||
+		ea.DevelopFileScope == nil || ea.DevelopFileScope.Target == nil {
+		return nil, ErrExecutionAuthorizationPermissionDenied
+	}
+	scopeDigest, err := ea.DevelopFileScope.Digest()
+	if err != nil {
+		return nil, err
+	}
+	var record developFilePublication
+	err = s.repository.db.WithContext(ctx).Model(&developFilePublication{}).
+		Select("p.approval_id,p.operation_id,p.request_digest,p.prepare_admitted_at,p.released_at,p.preparation_digest").
+		Table("system.develop_file_publications AS p").
+		Joins("JOIN system.develop_file_create_approvals a ON a.id=p.approval_id").
+		Where("a.authorization_id=? AND a.scope_digest=? AND p.operation_id=?", ea.ID, scopeDigest, operation).Take(&record).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, ErrExecutionAuthorizationPermissionDenied
+	}
+	if err != nil {
+		return nil, err
+	}
+	history := &client.DevelopFilePublicationHistory{
+		AuthorizationID: strconv.FormatInt(ea.ID, 10), ExecutionID: ea.ExecutionID.String(),
+		Attempt: ea.DevelopFileScope.ExpectedAttempt, ScopeDigest: scopeDigest, ApprovalID: record.ApprovalID.String(),
+		OperationID: record.OperationID.String(), RequestDigest: record.RequestDigest,
+		PrepareAdmittedAt: record.PrepareAdmittedAt, ReleasedAt: record.ReleasedAt,
+	}
+	if record.PreparationDigest != nil {
+		history.PreparationDigest = *record.PreparationDigest
+	}
+	return history, nil
 }

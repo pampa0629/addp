@@ -84,6 +84,13 @@ func (c *SystemExecutionAuthorizationClient) IssueDevelopFile(ctx context.Contex
 }
 
 func (r *IssuedDevelopFileAuthorization) Validate() error {
+	if r == nil || !r.Authorization.ExpiresAt.After(time.Now().UTC()) {
+		return errors.New("invalid Develop file authorization window")
+	}
+	return r.validateBinding()
+}
+
+func (r *IssuedDevelopFileAuthorization) validateBinding() error {
 	if r == nil || !canonicalExecutionUUID(r.Authorization.ExecutionID) || r.Scope.Validate() != nil ||
 		r.Authorization.SourceType != "user" || r.Authorization.SourceDefinitionID != nil || r.Authorization.SourceDefinitionVersion != nil {
 		return errors.New("invalid Develop file authorization binding")
@@ -97,7 +104,7 @@ func (r *IssuedDevelopFileAuthorization) Validate() error {
 			accesses = append(accesses, ExecutionEngineAccessScope{EngineID: id, Effects: []string{"read"}})
 		}
 	}
-	if err := validateIssuedExecutionAuthorization(&r.Authorization, IssueExecutionAuthorizationRequest{
+	if err := validateIssuedExecutionAuthorizationBinding(&r.Authorization, IssueExecutionAuthorizationRequest{
 		ExecutionID: r.Authorization.ExecutionID, Audience: "develop", Accesses: accesses,
 	}); err != nil {
 		return err
@@ -198,8 +205,15 @@ func (c *SystemServiceClient) CheckDevelopFileSourceAccess(ctx context.Context, 
 }
 
 func (c *SystemServiceClient) developFileCredential(ctx context.Context, issued IssuedDevelopFileAuthorization) (string, error) {
-	if c == nil || c.tenantTokens == nil || c.tenantID == nil || *c.tenantID == 0 || issued.Validate() != nil ||
-		issued.Authorization.TenantID != strconv.FormatUint(uint64(*c.tenantID), 10) || ctx.Err() != nil {
+	if err := issued.Validate(); err != nil {
+		return "", err
+	}
+	return c.developFileTenantCredential(ctx, issued.Authorization.TenantID)
+}
+
+func (c *SystemServiceClient) developFileTenantCredential(ctx context.Context, tenant string) (string, error) {
+	if c == nil || c.tenantTokens == nil || c.tenantID == nil || *c.tenantID == 0 ||
+		tenant != strconv.FormatUint(uint64(*c.tenantID), 10) || ctx.Err() != nil {
 		return "", errors.New("Develop file access requires current bound Tenant Service context")
 	}
 	credential, err := c.tenantTokens.Token(ctx, *c.tenantID)

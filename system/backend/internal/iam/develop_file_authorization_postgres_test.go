@@ -488,6 +488,12 @@ func TestDevelopFileAuthorizationAgainstPostgres(t *testing.T) {
 			targetSnapshots != 1 || !prepareReceipt.BusinessDeadline.Equal(managementDeadline) {
 			t.Fatal("exact preparation failed", err)
 		}
+		staged, err := svc.ReadPublicationHistory(ctx, publicationCheck, uuid.MustParse(operation))
+		if err != nil || staged == nil || staged.ReleasedAt != nil || staged.PreparationDigest != "" ||
+			!staged.PrepareAdmittedAt.Equal(prepareReceipt.ObservedAt) || targetSnapshots != 1 {
+			t.Fatal("prepare history is missing or claims release", err)
+		}
+
 		if value, err := svc.AuthorizePublication(ctx, publicationCheck, request); !errors.Is(err, ErrExecutionAuthorizationConflict) || value != nil || targetSnapshots != 1 {
 			t.Fatal("lost preparation response could be replayed", err)
 		}
@@ -528,6 +534,13 @@ func TestDevelopFileAuthorizationAgainstPostgres(t *testing.T) {
 		if successes != 1 || targetSnapshots != 1 {
 			t.Fatal("release was not unique or returned another connection", successes)
 		}
+		operationID := uuid.MustParse(operation)
+		isolated := *svc
+		isolated.owner = nil
+		isolated.prepare = nil
+		if history, err := isolated.ReadPublicationHistory(ctx, publicationCheck, uuid.New()); history != nil || !errors.Is(err, ErrExecutionAuthorizationPermissionDenied) {
+			t.Fatal("unregistered operation disclosed history", err)
+		}
 		allowManagement = false
 		if a, b, err := svc.Check(ctx, check); err == nil || a != nil || b != nil {
 			t.Fatal("running read reused a stale approval scope")
@@ -549,6 +562,18 @@ func TestDevelopFileAuthorizationAgainstPostgres(t *testing.T) {
 		}
 		if a, b, err := svc.Check(ctx, check); err == nil || a != nil || b != nil {
 			t.Fatal("invalidated approver identity returned a source connection")
+		}
+		if err := db.Model(&ExecutionAuthorization{}).Where("id=?", publicationCheck.AuthorizationID).
+			Updates(map[string]any{"revoked_at": gorm.Expr("clock_timestamp()"), "revoked_reason": "test revocation"}).Error; err != nil {
+			t.Fatal(err)
+		}
+		history, historyErr := isolated.ReadPublicationHistory(ctx, publicationCheck, operationID)
+		digest, digestErr := client.DevelopFilePublicationRequestDigest(facts.Publication.Request)
+		if historyErr != nil || digestErr != nil || history == nil || history.ReleasedAt == nil ||
+			history.PreparationDigest != release.PreparationDigest || history.RequestDigest != digest ||
+			history.ApprovalID != winner.ApprovalID || history.OperationID != operation ||
+			history.ScopeDigest != issued.ScopeDigest || history.Attempt != 1 || targetSnapshots != 1 {
+			t.Fatal("original release history unavailable after revocation or attempted to obtain a connection", historyErr)
 		}
 	})
 	t.Run("wrong owner actor and rejected before issuance", func(t *testing.T) {
