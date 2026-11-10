@@ -95,24 +95,7 @@ func privateFileWorkerFixture(t *testing.T, save bool) (*gorm.DB, *repository.Fi
 func privateFilePendingFixture(t *testing.T, save bool) (*gorm.DB, *repository.FileExecutionRepository, *execution.TaskExecution, *client.DevelopFileExecutionFacts, client.IssuedDevelopFileAuthorization, client.DevelopFileSourceAccessObservation) {
 	t.Helper()
 	facts, issued, _, base := fileInputsFixture(t, save)
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	sqlDB, _ := db.DB()
-	sqlDB.SetMaxOpenConns(1)
-	t.Cleanup(func() { _ = sqlDB.Close() })
-	for _, schema := range []string{"common", "develop"} {
-		if err := db.Exec("ATTACH DATABASE ':memory:' AS " + schema).Error; err != nil {
-			t.Fatal(err)
-		}
-	}
-	if err := executiontest.EnsureSQLiteStore(db); err != nil {
-		t.Fatal(err)
-	}
-	if err := db.AutoMigrate(&models.FileExecution{}); err != nil {
-		t.Fatal(err)
-	}
+	db := privateFileSQLiteDB(t)
 	decoder := json.NewDecoder(bytes.NewReader(facts.ConfigJSON))
 	decoder.UseNumber()
 	var config commonModels.JSONMap
@@ -142,4 +125,27 @@ func privateFilePendingFixture(t *testing.T, save bool) (*gorm.DB, *repository.F
 		t.Fatal(err)
 	}
 	return db, repo, item, frozen, issued, base
+}
+
+func privateFileSQLiteDB(t *testing.T) *gorm.DB {
+	t.Helper()
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sqlDB, _ := db.DB()
+	sqlDB.SetMaxOpenConns(1)
+	t.Cleanup(func() { _ = sqlDB.Close() })
+	for _, schema := range []string{"common", "develop"} {
+		if err := db.Exec("ATTACH DATABASE ':memory:' AS " + schema).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := executiontest.EnsureSQLiteStore(db); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.AutoMigrate(&models.FileExecution{}); err != nil {
+		t.Fatal(err)
+	}
+	return db
 }

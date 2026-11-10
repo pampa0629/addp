@@ -148,6 +148,10 @@ GeoPackage 首版完整读取事实由现有 deep 扫描生产，basic 不读取
 
 System 将本用途封存到既有 EA 的唯一 `develop_file_scope`，与 Manager 来源范围、内部任务和清理用途互斥；通用 engine-accesses 及从父执行派生均不能将它降为引擎级授权。可信 Owner 投影固定为 `GET /api/v1/develop/runtime/file-executions/{execution_id}`，仅当前 `addp-system` Tenant Service、专用 `develop.file_execution.read`；它只携带原执行、租户、Actor、完整原始 `config_json`、Intent、可缺的原 EA／封存范围及 Owner 私有准入状态，不重复公共生命周期或传输租约秘密。System 在锁外读取该投影及 Meta 事实，再在本地 IAM 事务核 common 执行原始配置、主体、真实 pending／running 状态、固定 attempt 与 lease，并在审计后复核当前凭据、权限、源规则及全部到期边界。签发请求只含 execution UUID 与预期 Intent 摘要；准入观察不返回连接；精确读取仅返回本次指定源的同版本 NFS 连接，不返回其他源连接。保存范围在正式批准消费未实现时保持关闭；Meta 未证明单文件 GeoPackage 完整内容组成时保持关闭，不将 metadata_target 或文件扩展名替代内容授权。该接口接线与结构迁移本身不发布角色能力、不新增实际授权。
 
+Develop 原公共手工提交入口（临时内容及已保存工作流）对 GeoPython 的 file `load` 按 Tenant、Engine 和规范路径读取既有 Meta 快照。缺少快照、格式未知或快照身份不符时拒绝。快照中的 GeoPackage 只分流到私有链，且只接受全部来源均为单文件、组成完整的 GeoPackage 及无写入效果的 DAG。后缀、客户端 item ID、显示字段及失败的精确授权均不用于转入通用连接路径；通用读取额外拒绝与可信格式矛盾的 GeoPackage 候选路径，实际打开仍由 Runtime 限定驱动。普通工作流重新派发及父执行派生也检查该边界。委托、父执行和带保存节点的 GeoPackage 请求保持关闭。
+
+Develop 先在本地事务登记原 pending 及冻结 Intent，再在请求栈用当前 User 凭据签发唯一 EA；绑定成功后由现有监督器观察可领取资格。已知签发拒绝关闭原未签发记录，未开始的拒绝只记录本次执行，不覆盖任务最近实际运行摘要。超时、依赖失败或响应未知时原记录不可领取，不补签、不回退通用授权、不保留 User Bearer。公开请求及成功响应形状保持既有契约。
+
 来源清单必填且非空，保存目标可缺。无 `save` 的只读 DAG 仍逐项执行精确读取、主体、attempt、租约与预算核验，但不要求写目标或批准，禁止生成发布 operation、Prepare、放行、成果文件或初始 Grant。几何差集四条算子负例保留两次 `load` 和一次 `difference`，不能以写权限拒绝替代算子拒绝；只有真实保存链进入单次 create 批准与发布。
 
 几何差集首期范围为同一非默认 Tenant 普通 User 的五份已识别 NFS GeoPackage 源，以及一次执行新建 `outputs/difference.gpkg`。保留现有十一项用户功能权限。Meta 证明每份源的类型化 DataItem 及完整文件组成，System 按当前 User 的精确 `read` 规则裁决，Develop 冻结规范输入清单。GeoPython 只读取经核验的输入内容。`metadata_target` 继续只用于元数据查看。单文件 GeoPackage 的内容边界须证明可独立读取。依赖 SQLite 日志或其他外部文件、越界引用、链接及无法证明完整组成的输入保持拒绝。

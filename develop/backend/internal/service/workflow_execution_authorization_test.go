@@ -108,7 +108,7 @@ func TestPrepareWorkflowExecutionAuthorizationAggregatesEffectsAndEngines(t *tes
 			}},
 			ExecutionConfig: models.DevTaskContent{"engine_id": float64(50)},
 		},
-		7, "addp_at_user", executionID,
+		7, "addp_at_user", executionID, nil,
 	)
 	if err != nil {
 		t.Fatalf("prepareWorkflowExecutionAuthorization() error = %v", err)
@@ -135,7 +135,7 @@ func TestPrepareWorkflowExecutionAuthorizationAggregatesEffectsAndEngines(t *tes
 func TestPrepareWorkflowExecutionAuthorizationRequiresUserToken(t *testing.T) {
 	executor := &DevExecutor{}
 	_, err := executor.prepareWorkflowExecutionAuthorization(
-		context.Background(), &models.DevTask{DevType: "workflow"}, 7, "", uuid.New().String(),
+		context.Background(), &models.DevTask{DevType: "workflow"}, 7, "", uuid.New().String(), nil,
 	)
 	if err == nil {
 		t.Fatal("prepareWorkflowExecutionAuthorization() error = nil, want User token requirement")

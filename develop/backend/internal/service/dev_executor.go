@@ -40,6 +40,7 @@ type DevExecutor struct {
 	notebookExecutionService *NotebookExecutionService
 	notifyExecution          func()
 	executionQueue           *repository.ExecutionRepository
+	fileExecutions           *repository.FileExecutionRepository
 	queryResults             *queryResultCache
 }
 
@@ -65,9 +66,10 @@ type federatedQueryExecutor interface {
 }
 
 type preparedContentExecution struct {
-	execution *commonExecution.TaskExecution
-	devTask   *models.DevTask
-	tenantID  int
+	execution   *commonExecution.TaskExecution
+	devTask     *models.DevTask
+	tenantID    int
+	fileSources []commonExecution.DevelopFileSourceIntent
 }
 
 type preparedParameterizedDevTask struct {
@@ -149,11 +151,16 @@ func (e *DevExecutor) ExecuteContent(
 		triggerType,
 		timeout,
 		queryConfirmationToken,
+		true,
 	)
 	if err != nil {
 		return "", err
 	}
-	if err := e.persistPreparedContentExecution(ctx, e.taskExecutionRepo, prepared); err != nil {
+	if len(prepared.fileSources) != 0 {
+		if err := e.submitPrivateFileWorkflow(ctx, prepared.execution, prepared.fileSources, userAccessToken); err != nil {
+			return "", err
+		}
+	} else if err := e.persistPreparedContentExecution(ctx, e.taskExecutionRepo, prepared); err != nil {
 		return "", err
 	}
 	e.startPreparedContentExecution(prepared)
@@ -172,7 +179,7 @@ func (e *DevExecutor) prepareContentExecution(
 	triggerType string,
 	timeout int,
 ) (*preparedContentExecution, error) {
-	return e.prepareContentExecutionWithConfirmation(ctx, devType, content, executionConfig, parameters, tenantID, userID, userAccessToken, triggerType, timeout, "")
+	return e.prepareContentExecutionWithConfirmation(ctx, devType, content, executionConfig, parameters, tenantID, userID, userAccessToken, triggerType, timeout, "", false)
 }
 
 func (e *DevExecutor) prepareContentExecutionWithConfirmation(
@@ -187,6 +194,7 @@ func (e *DevExecutor) prepareContentExecutionWithConfirmation(
 	triggerType string,
 	timeout int,
 	queryConfirmationToken string,
+	allowPrivate bool,
 ) (*preparedContentExecution, error) {
 	normalizedTriggerType, err := commonExecution.NormalizeTriggerType(triggerType)
 	if err != nil {
@@ -337,8 +345,13 @@ func (e *DevExecutor) prepareContentExecutionWithConfirmation(
 	if err != nil {
 		return nil, err
 	}
+	var fileSources []commonExecution.DevelopFileSourceIntent
+	var privateSources *[]commonExecution.DevelopFileSourceIntent
+	if allowPrivate {
+		privateSources = &fileSources
+	}
 	workflowAuthorization, err := e.prepareWorkflowExecutionAuthorization(
-		ctx, tempItem, tenantID, userAccessToken, executionID,
+		ctx, tempItem, tenantID, userAccessToken, executionID, privateSources,
 	)
 	if err != nil {
 		return nil, err
@@ -354,7 +367,7 @@ func (e *DevExecutor) prepareContentExecutionWithConfirmation(
 	}
 
 	return &preparedContentExecution{
-		execution: execution, devTask: tempItem, tenantID: int(tenantID),
+		execution: execution, devTask: tempItem, tenantID: int(tenantID), fileSources: fileSources,
 	}, nil
 }
 
@@ -1371,7 +1384,12 @@ func (e *DevExecutor) ExecuteWithParamsWithContext(
 	if err != nil {
 		return "", err
 	}
-	workflowAuthorization, err := e.prepareWorkflowExecutionAuthorization(ctx, tempItem, tenantID, userAccessToken, executionID)
+	var fileSources []commonExecution.DevelopFileSourceIntent
+	var privateSources *[]commonExecution.DevelopFileSourceIntent
+	if parentExecutionID == nil && normalizedSource == commonExecution.ModuleDevelop && normalizedTriggerType == commonExecution.TriggerTypeManual {
+		privateSources = &fileSources
+	}
+	workflowAuthorization, err := e.prepareWorkflowExecutionAuthorization(ctx, tempItem, tenantID, userAccessToken, executionID, privateSources)
 	if err != nil {
 		return "", err
 	}
@@ -1419,7 +1437,11 @@ func (e *DevExecutor) ExecuteWithParamsWithContext(
 	} else if err := commonExecution.FreezeDisplayLanguage(execution, commoni18n.Language(ctx)); err != nil {
 		return "", err
 	}
-	if err := createDevelopExecution(ctx, e.taskExecutionRepo, execution); err != nil {
+	if len(fileSources) != 0 {
+		if err := e.submitPrivateFileWorkflow(ctx, execution, fileSources, userAccessToken); err != nil {
+			return "", err
+		}
+	} else if err := createDevelopExecution(ctx, e.taskExecutionRepo, execution); err != nil {
 		return "", fmt.Errorf("failed to create execution record: %w", err)
 	}
 

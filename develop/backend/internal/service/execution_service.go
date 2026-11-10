@@ -34,6 +34,7 @@ func NewExecutionService(executor *DevExecutor, queue *repository.ExecutionRepos
 		return nil, err
 	}
 	executor.executionQueue = queue
+	executor.fileExecutions = files
 	return &ExecutionService{executor: executor, queue: queue, query: query, privateFiles: newPrivateFileWorkflowExecutor(files, executor.workflowEngine, instanceID)}, nil
 }
 
@@ -150,6 +151,9 @@ func (s *ExecutionService) workflowAuthorization(ctx context.Context, item *comm
 		plan, err := s.executor.buildWorkflowExecutionAuthorizationPlan(ctx, task, uint(item.TenantID))
 		if err != nil {
 			return nil, err
+		}
+		if len(plan.fileSources) != 0 {
+			return nil, errFileWorkflowInputs
 		}
 		return &IssuedWorkflowExecutionAuthorization{AuthorizationID: *item.ExecutionAuthorizationID, EngineEffects: plan.engineEffects, Effects: workflowEffectUnion(plan.engineEffects), ActorPrincipalID: *item.ActorPrincipalID, ActorTenantMembershipID: *item.ActorTenantMembershipID, IssuedAuthorizationVersion: *item.IssuedAuthorizationVersion, ExpiresAt: item.AuthorizationExpiresAt.UTC()}, nil
 	case commonExecution.ModuleOrchestrator:

@@ -547,7 +547,7 @@ const docTemplate = `{
                 ]
             },
             "post": {
-                "description": "第一方或 OAuth 用户提交 dev_type、trigger_type、content 和 execution_config 后直接执行。委托 workflow.run 首次提交相同执行内容并返回审批；批准后恢复请求只提交 approval_id 和 request_fingerprint。| First-party or OAuth users submit dev_type, trigger_type, content, and execution_config for direct execution. A delegated workflow.run first submits the same execution content and receives an approval; after approval, the resume request contains only approval_id and request_fingerprint.",
+                "description": "第一方或 OAuth 用户提交 dev_type、trigger_type、content 和 execution_config 后直接执行。委托 workflow.run 首次提交相同执行内容并返回审批；批准后恢复请求只提交 approval_id 和 request_fingerprint。GeoPackage 文件工作流仅接收无保存、完整组成的来源。 | First-party or OAuth users submit dev_type, trigger_type, content, and execution_config for direct execution. A delegated workflow.run first submits the same execution content and receives an approval; after approval, the resume request contains only approval_id and request_fingerprint. GeoPackage file workflows require complete sources and a read-only graph.",
                 "consumes": [
                     "application/json"
                 ],
@@ -3312,6 +3312,7 @@ const docTemplate = `{
         },
         "/task-definitions/{id}/execute": {
             "post": {
+                "description": "GeoPackage 文件工作流按可信 Meta 快照进入精确只读执行，保存与混合来源拒绝。 | GeoPackage file workflows use trusted Meta snapshots and exact read-only execution. Save and mixed-source graphs are rejected.",
                 "consumes": [
                     "application/json"
                 ],

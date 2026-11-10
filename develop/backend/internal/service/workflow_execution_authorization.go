@@ -30,6 +30,7 @@ type workflowExecutionAuthorizationPlan struct {
 	engineEffects map[uint][]string
 	accesses      []commonClient.ExecutionEngineAccessScope
 	expiresIn     int64
+	fileSources   []commonExecution.DevelopFileSourceIntent
 }
 
 func (e *DevExecutor) prepareWorkflowExecutionAuthorization(
@@ -38,6 +39,7 @@ func (e *DevExecutor) prepareWorkflowExecutionAuthorization(
 	tenantID uint,
 	userAccessToken string,
 	executionID string,
+	privateSources *[]commonExecution.DevelopFileSourceIntent,
 ) (*IssuedWorkflowExecutionAuthorization, error) {
 	if devTask == nil || devTask.DevType != commonExecution.TaskTypeWorkflow {
 		return nil, nil
@@ -51,6 +53,13 @@ func (e *DevExecutor) prepareWorkflowExecutionAuthorization(
 	plan, err := e.buildWorkflowExecutionAuthorizationPlan(ctx, devTask, tenantID)
 	if err != nil {
 		return nil, err
+	}
+	if len(plan.fileSources) != 0 {
+		if privateSources == nil {
+			return nil, &ExecutionParametersError{Cause: errFileWorkflowInputs}
+		}
+		*privateSources = plan.fileSources
+		return nil, nil
 	}
 	parsedExecutionID, err := uuid.Parse(executionID)
 	if err != nil {
@@ -84,6 +93,9 @@ func (e *DevExecutor) prepareWorkflowExecutionAuthorizationFromExecution(
 	plan, err := e.buildWorkflowExecutionAuthorizationPlan(ctx, devTask, tenantID)
 	if err != nil {
 		return nil, err
+	}
+	if len(plan.fileSources) != 0 {
+		return nil, &ExecutionParametersError{Cause: errFileWorkflowInputs}
 	}
 	issued, err := e.sqlEngine.systemService.WithTenantID(tenantID).IssueExecutionAuthorizationFromExecution(
 		ctx,
@@ -129,6 +141,7 @@ func (e *DevExecutor) buildWorkflowExecutionAuthorizationPlan(
 
 	engineEffects := make(map[uint]map[string]struct{})
 	allEffects := make(map[string]struct{})
+	var fileSources []commonExecution.DevelopFileSourceIntent
 	for index, task := range tasks {
 		operatorName := strings.TrimSpace(stringParam(task, "operator"))
 		operator, exists := operatorByName[operatorName]
@@ -139,6 +152,15 @@ func (e *DevExecutor) buildWorkflowExecutionAuthorizationPlan(
 			allEffects[effect] = struct{}{}
 		}
 		params, _ := task["params"].(map[string]interface{})
+		if operator.EngineType == "geopython_workflow" && operator.ID == "load" {
+			source, err := e.privateFileSource(ctx, tenantID, stringParam(task, "id"), stringParam(params, "locator"))
+			if err != nil {
+				return nil, err
+			}
+			if source != nil {
+				fileSources = append(fileSources, *source)
+			}
+		}
 		adapter, hasAdapter := workflowOperatorAdapterSpecFor(operator.EngineType, operator.ID)
 		if !hasAdapter {
 			continue
@@ -195,6 +217,15 @@ func (e *DevExecutor) buildWorkflowExecutionAuthorizationPlan(
 	}
 	if len(allEffects) == 0 {
 		return nil, fmt.Errorf("工作流未声明任何执行效果")
+	}
+	if len(fileSources) != 0 {
+		if len(allEffects) != 1 {
+			return nil, &ExecutionParametersError{Cause: errFileWorkflowInputs}
+		}
+		if _, readOnly := allEffects["read"]; !readOnly {
+			return nil, &ExecutionParametersError{Cause: errFileWorkflowInputs}
+		}
+		return &workflowExecutionAuthorizationPlan{fileSources: fileSources}, nil
 	}
 	effects := orderedWorkflowEffects(allEffects)
 	for _, effect := range effects {

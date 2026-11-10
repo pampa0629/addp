@@ -135,9 +135,6 @@ func (r *FileExecutionRepository) RejectUnissued(ctx context.Context, tenant uin
 			map[string]interface{}{"error_details": commonmodels.JSONMap{"code": "develop.workflow.file_authorization_rejected"}}); err != nil {
 			return err
 		}
-		if err := updateDevTaskExecutionSummary(tx, &item, commonexecution.ExecutionStatusFailed, time.Now()); err != nil {
-			return err
-		}
 		return tx.Model(&row).Updates(map[string]any{"admission_state": "rejected", "version": row.Version + 1}).Error
 	})
 }
@@ -241,9 +238,6 @@ func (r *FileExecutionRepository) ApplyAdmission(ctx context.Context, tenant uin
 			if err := commonexecution.RejectUnstarted(ctx, tx, commonexecution.PendingIdentity{ExecutionID: executionID,
 				TenantID: int(tenant), Module: commonexecution.ModuleDevelop, TaskType: commonexecution.TaskTypeWorkflow, Source: commonexecution.ModuleDevelop},
 				map[string]interface{}{"error_details": commonmodels.JSONMap{"code": "develop.workflow.file_admission_rejected"}}); err != nil {
-				return err
-			}
-			if err := updateDevTaskExecutionSummary(tx, &item, commonexecution.ExecutionStatusFailed, time.Now()); err != nil {
 				return err
 			}
 		}
