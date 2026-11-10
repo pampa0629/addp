@@ -29,7 +29,8 @@
 
 - **本地首败**。旧 SQL 下，continuous 组的用户重试为 1，预期为 0，恢复数为 1。
 - **本地复验**。发布前的 Monitor PostgreSQL 门禁 47 项通过、0 跳过。受限 Transfer 读取范围内，bounded 组的自动 attempt 重试、用户重试各 1，恢复为 0。continuous 组的恢复为 1，两类重试均为 0。用例按租户和五条夹具执行 ID 清理，无删除错误。
-- **覆盖边界**。本地结果覆盖合成执行记录的 PostgreSQL 聚合。真实 System → Gateway → Owner 统计链路、页面刷新、并发和规模未在本次本地运行中验证，Hosted T4 未运行。
+- **Linux CI**。固定源码 `0a5846093a40bcf9ea8907e7b3129869668ad851` 的 attempt 1 中，`make test-monitor-postgres` 和新增对照用例均通过。[Run 42788220035／Job 129740158121](https://github.com/pampa0629/addp/actions/runs/42788220035/job/129740158121)
+- **覆盖边界**。上述结果覆盖合成执行记录的 PostgreSQL 聚合。真实 System → Gateway → Owner 统计链路、页面刷新、并发和规模均未验证，Hosted T4 未运行。
 
 ## 持续写入期间续页与刷新首次 Hosted（2026-11-07）
 
