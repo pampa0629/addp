@@ -24,6 +24,11 @@ SPEC.loader.exec_module(MODULE)
 
 POSTGRES_SHARED_POOL_PASS = "--- PASS: TestIntegrationPostgresSharedSQLPool (0.01s)\n"
 POSTGRES_OUTPUT_REWRITE_PASS = "--- PASS: TestIntegrationResolvePostgresQueryOutputRewrite (0.01s)\n"
+GRAPH_POSTGRES_SERVICE_CALL = "test ./internal/service -run ^TestIntegrationPostgresGraph(BuildInputRuntime|CleanupRuntime)$ -count=1 -v"
+GRAPH_POSTGRES_SERVICE_PASSES = (
+    "TestIntegrationPostgresGraphBuildInputRuntime",
+    "TestIntegrationPostgresGraphCleanupRuntime",
+)
 COMMON_POSTGRES_SUCCESS_OUTPUT = (
     "--- PASS: TestProjectionStoreSchemaContractAgainstPostgres (0.01s)\n"
     "--- PASS: TestIntegrationHighGoTableWrite (0.01s)\n"
@@ -34,8 +39,8 @@ COMMON_POSTGRES_SUCCESS_OUTPUT = (
     "--- PASS: TestExecutionRetentionAssessmentAgainstPostgres (0.01s)\n"
     "--- PASS: TestExecutionLifecycleAgainstPostgres (0.01s)\n"
     "--- PASS: TestPostgresCleanupProfessionalResultAtomicity (0.01s)\n"
-    "--- PASS: TestIntegrationPostgresGraphCleanupRuntime (0.01s)\n"
-    "PASS"
+    + "".join(f"--- PASS: {name} (0.01s)\n" for name in GRAPH_POSTGRES_SERVICE_PASSES)
+    + "PASS"
 )
 
 
@@ -259,6 +264,9 @@ class ModuleGateTest(unittest.TestCase):
                 'printf "%s\\n" "$*" >> "$ADDP_GATE_TEST_GO_CALLS"\n'
                 'if [[ "$2" == "./execution" && "${ADDP_GATE_TEST_EXECUTION_OUTPUT+present}" == "present" ]]; then\n'
                 '  printf "%s\\n" "$ADDP_GATE_TEST_EXECUTION_OUTPUT"\n'
+                'elif [[ "$2" == "./internal/service" && "${ADDP_GATE_TEST_GRAPH_SERVICE_OUTPUT+present}" == "present" ]]; then\n'
+                '  printf "%s\\n" "$ADDP_GATE_TEST_GRAPH_SERVICE_OUTPUT"\n'
+                '  exit "${ADDP_GATE_TEST_GRAPH_SERVICE_EXIT:-0}"\n'
                 'else\n'
                 '  printf "%s\\n" "$ADDP_GATE_TEST_GO_OUTPUT"\n'
                 'fi\n',
@@ -296,6 +304,8 @@ class ModuleGateTest(unittest.TestCase):
             })
             environment.pop("ADDP_TEST_EXECUTION_POSTGRES_DSN", None)
             environment.pop("ADDP_GATE_TEST_EXECUTION_OUTPUT", None)
+            environment.pop("ADDP_GATE_TEST_GRAPH_SERVICE_OUTPUT", None)
+            environment.pop("ADDP_GATE_TEST_GRAPH_SERVICE_EXIT", None)
             for name in tuple(environment):
                 if name.startswith("ADDP_TEST_HIGHGO_"):
                     environment.pop(name)
@@ -352,7 +362,7 @@ class ModuleGateTest(unittest.TestCase):
         self.assertIn("./dataprotection/projectionstore", calls[4])
         self.assertIn("./dbbridge", calls[5])
         self.assertIn("./internal/repository -run ^TestIntegrationPostgresGraph", calls[6])
-        self.assertEqual("test ./internal/service -run ^TestIntegrationPostgresGraphCleanupRuntime$ -count=1 -v", calls[7])
+        self.assertEqual(GRAPH_POSTGRES_SERVICE_CALL, calls[7])
 
 
         result, calls = self._run_common_postgres_group(["--test", "query-read-set"])
@@ -669,7 +679,7 @@ print("--- PASS: TestScanPlanFactsAgainstPostgres (0.01s)")
         self.assertEqual(0, result.returncode, result.stderr)
         self.assertEqual(2, len(calls))
         self.assertIn("./internal/repository -run ^TestIntegrationPostgresGraph", calls[0])
-        self.assertEqual("test ./internal/service -run ^TestIntegrationPostgresGraphCleanupRuntime$ -count=1 -v", calls[1])
+        self.assertEqual(GRAPH_POSTGRES_SERVICE_CALL, calls[1])
         self.assertNotIn("engine/plugins", calls[0])
         self.assertIn("Graph PostgreSQL target", result.stdout)
         result, _ = self._run_common_postgres_group(["--test", "graph"], "--- SKIP: fixture")
@@ -678,6 +688,28 @@ print("--- PASS: TestScanPlanFactsAgainstPostgres (0.01s)")
         result, _ = self._run_common_postgres_group(["--test", "graph"], "testing: warning: no tests to run\nPASS")
         self.assertNotEqual(0, result.returncode)
         self.assertIn("requires the real target contract", result.stderr)
+
+        for name in GRAPH_POSTGRES_SERVICE_PASSES:
+            other_pass = next(n for n in GRAPH_POSTGRES_SERVICE_PASSES if n != name)
+            for marker, error in (
+                (f"--- PASS: {name}/child (0.01s)", f"requires {name}"),
+                (f"--- SKIP: {name} (0.01s)", "Graph service PostgreSQL gate refuses skipped tests"),
+            ):
+                with self.subTest(name=name, marker=marker):
+                    result, calls = self._run_common_postgres_group(
+                        ["--test", "graph"],
+                        extra_env={"ADDP_GATE_TEST_GRAPH_SERVICE_OUTPUT": f"--- PASS: {other_pass} (0.01s)\n{marker}"},
+                    )
+                    self.assertNotEqual(0, result.returncode)
+                    self.assertIn(error, result.stderr)
+                    self.assertEqual(GRAPH_POSTGRES_SERVICE_CALL, calls[-1])
+
+        result, _ = self._run_common_postgres_group(
+            ["--test", "graph"],
+            extra_env={"ADDP_GATE_TEST_GRAPH_SERVICE_OUTPUT": "--- FAIL: Graph service fixture", "ADDP_GATE_TEST_GRAPH_SERVICE_EXIT": "37"},
+        )
+        self.assertEqual(37, result.returncode)
+        self.assertNotIn("contracts passed", result.stdout)
 
     def test_common_postgres_kml_export_requires_real_writer_and_cleanup(self) -> None:
         result, calls = self._run_common_postgres_group(["--test", "kml-export"])
