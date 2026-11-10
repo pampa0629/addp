@@ -534,16 +534,28 @@ func TestFileWorkflowInputsTransferIntegrityCannotDispatch(t *testing.T) {
 
 func TestFileWorkflowInputsSourceFailureRetainsPendingCleanup(t *testing.T) {
 	facts, issued, lease, base := fileInputsFixture(t, false)
-	base.ExpiresAt = time.Now().Add(220 * time.Millisecond)
 	entered := make(chan struct{})
+	revoked := make(chan struct{})
 	release := make(chan struct{})
+	unblock := sync.OnceFunc(func() { close(release) })
+	defer unblock()
 	var calls atomic.Int32
-	authority := fileInputsAuthority(base)
 	auth := fileSourceAuthorityFunc(func(c context.Context, i client.IssuedDevelopFileAuthorization, r client.DevelopFileSourceAccessRequest) (*client.DevelopFileSourceAccessObservation, error) {
-		if calls.Add(1) > 1 {
-			return nil, errors.New("revoked")
+		if calls.Add(1) == 1 {
+			// The window starts when the fixture returns the authorization.
+			observation := base
+			observation.ObservedAt = time.Now()
+			observation.ExpiresAt = observation.ObservedAt.Add(220 * time.Millisecond)
+			return fileInputsAuthority(observation)(c, i, r)
 		}
-		return authority(c, i, r)
+		// Revoke only after Open is in flight so this exercises pending cleanup.
+		select {
+		case <-entered:
+			close(revoked)
+			return nil, errors.New("revoked")
+		case <-c.Done():
+			return nil, c.Err()
+		}
 	})
 	provider := fileInputsProvider(fileInputsData(t))
 	provider.open = func(context.Context, plugin.ConnectionInfo, plugin.EngineCatalogPath, plugin.ReadOptions) (io.ReadCloser, error) {
@@ -561,7 +573,6 @@ func TestFileWorkflowInputsSourceFailureRetainsPendingCleanup(t *testing.T) {
 		b, e := prepareFileWorkflowInputs(t.Context(), "fixture-instance", auth, provider, facts, issued, lease, recordFileInputsDirectory)
 		done <- result{b, e}
 	}()
-	<-entered
 	var r result
 	select {
 	case r = <-done:
@@ -571,11 +582,17 @@ func TestFileWorkflowInputsSourceFailureRetainsPendingCleanup(t *testing.T) {
 	if r.b == nil || r.err == nil {
 		t.Fatal("invalid partial batch accepted")
 	}
+	t.Cleanup(func() { _ = os.RemoveAll(r.b.directory) })
+	select {
+	case <-revoked:
+	default:
+		t.Fatalf("preparation returned before revoking an in-flight Open: %v", r.err)
+	}
 	state, err := r.b.Cleanup(t.Context())
 	if err == nil || state.SourcesStopped || state.LocalRemoved {
 		t.Fatal("blocked source falsely cleaned", state, err)
 	}
-	close(release)
+	unblock()
 	waitSourceStopped(t, r.b.sources[0])
 	cleanupFileInputs(t, r.b)
 }
