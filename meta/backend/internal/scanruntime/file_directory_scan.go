@@ -59,13 +59,13 @@ func (s *FilesystemCatalogRuntime) scanPreparedDirectory(
 		failures.Add(dirPath, err)
 	}
 	if !scanresource.DirectDirectoryRefresh(ctx) {
-		if err := s.repo.HardDeleteChildNodesByFullNames(parentNode.ID, ignoredFullNames); err != nil {
+		if err := s.repo.SoftDeleteChildNodesByFullNames(ctx, parentNode, ignoredFullNames); err != nil {
 			s.log.Warn("清理系统噪声目录节点失败", "path", dirPath, "node_id", parentNode.ID, "error", err)
 			failures.Add(dirPath, err)
 		}
 	}
 	if !scanresource.DirectDirectoryRefresh(ctx) {
-		if err := s.repo.HardDeleteChildNodesByFullNames(parentNode.ID, scannedFileFullNames); err != nil {
+		if err := s.repo.SoftDeleteChildNodesByFullNames(ctx, parentNode, scannedFileFullNames); err != nil {
 			s.log.Warn("清理文件路径冲突节点失败", "path", dirPath, "node_id", parentNode.ID, "error", err)
 			failures.Add(dirPath, err)
 		}
@@ -81,7 +81,7 @@ func (s *FilesystemCatalogRuntime) scanPreparedDirectory(
 			failures.Add(dirPath, err)
 		}
 		if !scanresource.DirectDirectoryRefresh(ctx) {
-			if err := s.repo.HardDeleteChildNodesExceptFullNames(parentNode.ID, scannedSubdirFullNames); err != nil {
+			if err := s.repo.SoftDeleteChildNodesExceptFullNames(ctx, parentNode, scannedSubdirFullNames); err != nil {
 				s.log.Warn("清理已消失的子目录节点失败", "path", dirPath, "node_id", parentNode.ID, "error", err)
 				failures.Add(dirPath, err)
 			}

@@ -20,6 +20,7 @@ import (
 	metaRepo "github.com/addp/meta/internal/repository"
 	"github.com/addp/meta/internal/scanflow"
 	"github.com/addp/meta/internal/scanprocessor"
+	metaMigrations "github.com/addp/meta/migrations"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 )
@@ -155,10 +156,103 @@ func TestFTPBasicCompositionAgainstPostgres(t *testing.T) {
 					testFBXBasicComposition(t, tx, kind)
 					if kind == "nfs" {
 						t.Run("TIFF sidecar removal", func(t *testing.T) { testTIFFSidecarRemoval(t, tx) })
+						t.Run("missing directory with lineage", func(t *testing.T) { testMissingDirectoryWithLineage(t, tx) })
 					}
 				}
 			})
 		}
+	}
+}
+
+func testMissingDirectoryWithLineage(t *testing.T, db *gorm.DB) {
+	t.Helper()
+	for _, name := range []string{"018_add_lineage_relations.sql", "022_stale_lineage_for_soft_deleted_items.sql"} {
+		migration, err := metaMigrations.FS.ReadFile(name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := db.Exec(string(migration)).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	const parent, gone, nested = "history", "history/gone", "history/gone/nested"
+	const sourcePath, targetPath = "history/source.txt", "history/gone/nested/target.txt"
+	initial := []plugin.EngineCatalogEntry{progressFile(sourcePath), progressDirectory(gone)}
+	provider := &ftpStructureFixture{engineType: "nfs", filesystemScanTestProvider: filesystemScanTestProvider{
+		entriesByPath: map[string][]plugin.EngineCatalogEntry{
+			parent: initial,
+			gone:   {progressDirectory(nested)},
+			nested: {progressFile(targetPath)},
+		},
+	}}
+	previous, previousErr := plugin.Get(provider.Type())
+	plugin.Register(provider)
+	t.Cleanup(func() {
+		plugin.Unregister(provider.Type())
+		if previousErr == nil {
+			plugin.Register(previous)
+		}
+	})
+	repo := metaRepo.NewScanRepository(db)
+	runtime := NewFilesystemCatalogRuntime(db, slog.New(slog.NewTextHandler(io.Discard, nil)), repo, nil)
+	engine := &commonModels.Engine{ID: 26, EngineType: provider.Type()}
+	scan := func() {
+		t.Helper()
+		if _, err := runtime.ScanPaths(t.Context(), engine, 1, []string{parent}, "basic", true, nil); err != nil {
+			t.Fatal(err)
+		}
+	}
+	readItem := func(path string) *models.MetaItem {
+		t.Helper()
+		item, found, err := repo.FindItemByFullName(1, engine.ID, path)
+		if err != nil || !found {
+			t.Fatalf("read item %s: found=%t err=%v", path, found, err)
+		}
+		return item
+	}
+	scan()
+	source, target := readItem(sourcePath), readItem(targetPath)
+	if err := db.Exec(`INSERT INTO meta.lineage_item_relations
+		(tenant_id, source_item_id, target_item_id, relation_kind, first_observed_at, last_observed_at)
+		VALUES (1, ?, ?, 'derive', NOW(), NOW())`, source.ID, target.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Exec(`INSERT INTO meta.lineage_observations
+		(tenant_id, source_item_id, target_item_id, relation_kind, producer_module, capture_method, source_snapshot, observed_at)
+		VALUES (1, ?, ?, 'derive', 'develop', 'runtime', '{}', NOW())`, source.ID, target.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	provider.entriesByPath[parent] = initial[:1]
+	scan()
+	scan()
+	var hiddenNodes int64
+	if err := db.Unscoped().Model(&models.MetaNode{}).Where("engine_id = ? AND full_name IN ? AND deleted_at IS NOT NULL",
+		engine.ID, []string{gone, nested}).Count(&hiddenNodes).Error; err != nil || hiddenNodes != 2 {
+		t.Fatalf("soft-deleted subtree nodes = %d, want 2: %v", hiddenNodes, err)
+	}
+	var hiddenTarget models.MetaItem
+	if err := db.Unscoped().First(&hiddenTarget, target.ID).Error; err != nil || !hiddenTarget.DeletedAt.Valid {
+		t.Fatalf("target should be soft deleted: %v", err)
+	}
+	if readItem(sourcePath).ID != source.ID {
+		t.Fatal("sibling item identity changed")
+	}
+	var observations int64
+	if err := db.Table("meta.lineage_observations").Where("target_item_id = ?", target.ID).Count(&observations).Error; err != nil || observations != 1 {
+		t.Fatalf("historical observations = %d, want 1: %v", observations, err)
+	}
+	provider.entriesByPath[parent] = []plugin.EngineCatalogEntry{progressFile(sourcePath), progressFile(gone)}
+	scan()
+	readItem(gone)
+	provider.entriesByPath[parent] = initial
+	scan()
+	restored := readItem(targetPath)
+	if restored.ID != target.ID || restored.NodeID != target.NodeID {
+		t.Fatal("restored directory or item changed identity")
+	}
+	var status string
+	if err := db.Table("meta.lineage_item_relations").Where("target_item_id = ?", target.ID).Pluck("status", &status).Error; err != nil || status != "stale" {
+		t.Fatalf("lineage after rediscovery = %q, want stale: %v", status, err)
 	}
 }
 

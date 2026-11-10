@@ -1,12 +1,14 @@
 package repository
 
 import (
+	"context"
 	"fmt"
 
 	"github.com/addp/common/dataitem"
 	"github.com/addp/common/format"
 	commonjson "github.com/addp/common/jsonmap"
 	"github.com/addp/meta/internal/models"
+	"gorm.io/gorm"
 )
 
 // DeleteClaimedSingleItems removes only independent components claimed by a persisted item.
@@ -146,63 +148,44 @@ func (r *ScanRepository) HardDeleteItemsByNodeFullNames(nodeID uint, fullNames m
 		Delete(&models.MetaItem{}).Error
 }
 
-// HardDeleteChildNodesExceptFullNames 硬删除未出现在本轮扫描结果中的直接子节点及其子树。
-func (r *ScanRepository) HardDeleteChildNodesExceptFullNames(parentNodeID uint, keepFullNames map[string]bool) error {
-	var staleNodes []models.MetaNode
-	query := r.db.Unscoped().Where("parent_node_id = ?", parentNodeID)
-	if len(keepFullNames) > 0 {
-		names := make([]string, 0, len(keepFullNames))
-		for name := range keepFullNames {
-			names = append(names, name)
-		}
-		query = query.Where("full_name NOT IN ?", names)
-	}
-	if err := query.Find(&staleNodes).Error; err != nil {
-		return err
-	}
-	for i := range staleNodes {
-		if err := r.HardDeleteDescendantNodes(&staleNodes[i]); err != nil {
-			return err
-		}
-		if err := r.HardDeleteItemsByNode(staleNodes[i].ID); err != nil {
-			return err
-		}
-		if err := r.db.Unscoped().Delete(&staleNodes[i]).Error; err != nil {
-			return err
-		}
-	}
-	return nil
+// SoftDeleteChildNodesExceptFullNames marks missing direct children and their subtrees.
+func (r *ScanRepository) SoftDeleteChildNodesExceptFullNames(ctx context.Context, parent *models.MetaNode, keepFullNames map[string]bool) error {
+	return r.softDeleteChildSubtrees(ctx, parent, "full_name NOT IN ?", keepFullNames)
 }
 
-// HardDeleteChildNodesByFullNames 硬删除与文件叶子路径冲突的直接子节点及其子树。
-func (r *ScanRepository) HardDeleteChildNodesByFullNames(parentNodeID uint, fullNames map[string]bool) error {
+// SoftDeleteChildNodesByFullNames marks subtrees excluded by the current scan.
+func (r *ScanRepository) SoftDeleteChildNodesByFullNames(ctx context.Context, parent *models.MetaNode, fullNames map[string]bool) error {
 	if len(fullNames) == 0 {
 		return nil
 	}
+	return r.softDeleteChildSubtrees(ctx, parent, "full_name IN ?", fullNames)
+}
+
+func (r *ScanRepository) softDeleteChildSubtrees(ctx context.Context, parent *models.MetaNode, nameFilter string, fullNames map[string]bool) error {
 	names := make([]string, 0, len(fullNames))
 	for name := range fullNames {
 		names = append(names, name)
 	}
-
-	var staleNodes []models.MetaNode
-	if err := r.db.Unscoped().
-		Where("parent_node_id = ?", parentNodeID).
-		Where("full_name IN ?", names).
-		Find(&staleNodes).Error; err != nil {
-		return err
-	}
-	for i := range staleNodes {
-		if err := r.HardDeleteDescendantNodes(&staleNodes[i]); err != nil {
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		roots := tx.Model(&models.MetaNode{}).Select("id").
+			Where("tenant_id = ? AND engine_id = ? AND parent_node_id = ?", parent.TenantID, parent.EngineID, parent.ID)
+		if len(names) > 0 {
+			roots = roots.Where(nameFilter, names)
+		}
+		const subtree = `WITH RECURSIVE scope(id) AS (
+			?
+			UNION
+			SELECT child.id FROM meta.meta_node child JOIN scope ON child.parent_node_id = scope.id
+			WHERE child.tenant_id = ? AND child.engine_id = ?
+		) SELECT id FROM scope`
+		if err := tx.Where("tenant_id = ? AND engine_id = ?", parent.TenantID, parent.EngineID).
+			Where("node_id IN ("+subtree+")", roots, parent.TenantID, parent.EngineID).
+			Delete(&models.MetaItem{}).Error; err != nil {
 			return err
 		}
-		if err := r.HardDeleteItemsByNode(staleNodes[i].ID); err != nil {
-			return err
-		}
-		if err := r.db.Unscoped().Delete(&staleNodes[i]).Error; err != nil {
-			return err
-		}
-	}
-	return nil
+		return tx.Where("id IN ("+subtree+")", roots, parent.TenantID, parent.EngineID).
+			Delete(&models.MetaNode{}).Error
+	})
 }
 
 // HardDeleteInvalidEngineGraph 硬删除当前引擎下不满足元数据树不变量的记录。
