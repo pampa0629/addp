@@ -29,6 +29,7 @@
 <script setup>
 import { computed, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { useAuthStore } from '../../store/auth'
 import InferenceBindingsConfiguration from './InferenceBindingsConfiguration.vue'
 import PolicyConfiguration from './PolicyConfiguration.vue'
 import SMTPRelayConfiguration from './SMTPRelayConfiguration.vue'
@@ -36,12 +37,13 @@ import BaseMapConfiguration from './BaseMapConfiguration.vue'
 
 const props = defineProps({ owner: { type: String, required: true } })
 const { t } = useI18n()
+const authStore = useAuthStore()
 const tabsByOwner = {
   agent: [{ name: 'inference', kind: 'inference', label: 'console.configuration.tabs.inference' }],
   copilot: [{ name: 'inference', kind: 'inference', label: 'console.configuration.tabs.inference' }],
   develop: [{ name: 'execution-policy', kind: 'policy', label: 'console.configuration.tabs.executionPolicy' }],
   manager: [
-    { name: 'quick-view-policy', kind: 'policy', label: 'console.configuration.tabs.quickViewPolicy' },
+    { name: 'quick-view-policy', kind: 'policy', label: 'console.configuration.tabs.quickViewPolicy', platformOnly: true },
     { name: 'base-map', kind: 'map', label: 'console.configuration.tabs.baseMap' }
   ],
   transfer: [{ name: 'continuous-policy', kind: 'policy', label: 'console.configuration.tabs.continuousPolicy' }],
@@ -52,8 +54,13 @@ const tabsByOwner = {
   service: [{ name: 'runtime-policy', kind: 'policy', label: 'console.configuration.tabs.runtimePolicy' }]
 }
 const owner = computed(() => props.owner)
-const tabs = computed(() => tabsByOwner[owner.value] || [])
-const activeTab = ref(tabs.value[0]?.name || '')
+const tabs = computed(() => (tabsByOwner[owner.value] || []).filter(tab =>
+  !tab.platformOnly || authStore.contextType === 'platform'))
+const selectedTab = ref('')
+const activeTab = computed({
+  get: () => tabs.value.find(tab => tab.name === selectedTab.value)?.name || tabs.value[0]?.name || '',
+  set: name => { selectedTab.value = name }
+})
 </script>
 
 <style scoped>

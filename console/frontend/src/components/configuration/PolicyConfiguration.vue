@@ -1,12 +1,12 @@
 <template>
   <section class="policy-configuration">
-    <header class="policy-header"><div><h2>{{ t(`console.configuration.policies.${owner}.title`) }}</h2><p>{{ contextLabel }}</p></div><el-button :icon="Refresh" :aria-label="t('common.refresh')" circle :loading="loading" @click="load" /></header>
-    <el-form v-if="owner !== 'develop' || loaded" v-loading="loading" :model="form" label-position="top" class="policy-form">
+    <header class="policy-header"><div><h2>{{ t(`console.configuration.policies.${owner}.title`) }}</h2><p>{{ contextLabel }}</p></div><el-button :icon="Refresh" :aria-label="t('common.refresh')" circle :loading="loading" :disabled="saving" @click="load" /></header>
+    <el-form v-if="loaded" :model="form" :disabled="!canUpdate || saving" label-position="top" class="policy-form">
       <template v-if="owner === 'develop'">
         <h3 v-if="!isPlatform" class="policy-group-title">{{ t('console.configuration.policies.develop.tenantSettings') }}</h3>
         <el-alert :title="t(`console.configuration.policies.develop.${isPlatform ? 'applyHint' : 'tenantApplyHint'}`)" type="info" :closable="false" show-icon />
         <el-form-item :label="t('console.configuration.policies.develop.defaultQueryTimeout')">
-          <el-input-number v-model="form.default_query_timeout" :disabled="!canUpdate" :min="1" :max="3600" controls-position="right" />
+          <el-input-number v-model="form.default_query_timeout" :min="1" :max="3600" controls-position="right" />
         </el-form-item>
         <p v-if="!isPlatform" class="policy-hint">{{ t(`console.configuration.policies.develop.${form.inherited ? 'inheritedTimeout' : 'tenantTimeout'}`) }}</p>
         <template v-if="isPlatform">
@@ -30,7 +30,11 @@
           </el-form-item>
         </template>
       </template>
-      <template v-else-if="owner === 'manager'"><el-form-item :label="t('console.configuration.policies.manager.flatgeobufRows')"><el-input-number v-model="form.direct_flatgeobuf_max_rows" :min="1" :max="1000000" controls-position="right" /></el-form-item><el-form-item :label="t('console.configuration.policies.manager.mvtTimeout')"><el-input-number v-model="form.realtime_tile_timeout_ms" :min="100" :max="120000" controls-position="right" /></el-form-item><el-form-item :label="t('console.configuration.policies.manager.retryAfter')"><el-input-number v-model="form.realtime_tile_retry_after_sec" :min="1" :max="3600" controls-position="right" /></el-form-item><el-form-item :label="t('console.configuration.policies.manager.rasterMosaicTimeout')"><el-input-number v-model="form.raster_mosaic_generation_timeout_seconds" :min="60" :max="604800" controls-position="right" /></el-form-item></template>
+      <template v-else-if="owner === 'manager'">
+        <el-form-item v-for="field in MANAGER_FIELDS" :key="field.key" :label="t(`console.configuration.policies.manager.${field.label}`)">
+          <el-input-number v-model="form[field.key]" :min="field.min" :max="field.max" controls-position="right" />
+        </el-form-item>
+      </template>
       <template v-else-if="owner === 'transfer'"><el-form-item v-for="field in TRANSFER_FIELDS" :key="field.key" :label="t(`console.configuration.policies.transfer.${field.label}`)"><el-input-number v-model="form[field.key]" :min="field.min" :max="field.max" controls-position="right" /></el-form-item></template>
       <template v-else-if="owner === 'monitor'"><el-form-item v-for="field in MONITOR_FIELDS" :key="field.key" :label="t(`console.configuration.policies.monitor.${field.label}`)"><el-input-number v-model="form[field.key]" :min="field.min" :max="field.max" controls-position="right" /></el-form-item></template>
       <template v-else-if="owner === 'service'"><el-form-item :label="t('console.configuration.policies.service.healthCheckCron')"><el-input v-model="form.health_check_cron" /></el-form-item><el-form-item :label="t('console.configuration.policies.service.metadataRefreshCron')"><el-input v-model="form.metadata_refresh_cron" /></el-form-item></template>
@@ -66,7 +70,13 @@ const DEVELOP_PLATFORM_FIELDS = [
   { key: 'workflow_concurrency', label: 'workflowConcurrency' },
   { key: 'notebook_concurrency', label: 'notebookConcurrency' }
 ]
-const form = reactive({ version: 0, default_query_timeout: 30, max_query_timeout: 300, query_result_limit: 500, query_concurrency: 20, query_per_engine_concurrency: 5, workflow_concurrency: 2, notebook_concurrency: 1, direct_flatgeobuf_max_rows: 2000, realtime_tile_timeout_ms: 2500, realtime_tile_retry_after_sec: 60, raster_mosaic_generation_timeout_seconds: 7200, alert_evaluation_interval_seconds: 15, webhook_dispatch_interval_seconds: 2, webhook_http_timeout_seconds: 10, webhook_lease_duration_seconds: 30, webhook_max_attempts: 8, webhook_retry_initial_backoff_seconds: 5, webhook_retry_max_backoff_seconds: 300, email_dispatch_interval_seconds: 2, email_smtp_timeout_seconds: 15, email_lease_duration_seconds: 30, email_max_attempts: 8, email_retry_initial_backoff_seconds: 5, email_retry_max_backoff_seconds: 300, diagnostics_interval_seconds: 15, retention_degraded_horizon_seconds: 21600, retention_critical_horizon_seconds: 3600, checkpoint_stale_after_seconds: 300, recovery_initial_backoff_seconds: 1, recovery_max_backoff_seconds: 60, recovery_max_failures: 5, recovery_circuit_open_seconds: 300, recovery_stability_window_seconds: 300 })
+const form = reactive({})
+const MANAGER_FIELDS = [
+  { key: 'direct_flatgeobuf_max_rows', label: 'flatgeobufRows', min: 1, max: 1000000 },
+  { key: 'realtime_tile_timeout_ms', label: 'mvtTimeout', min: 100, max: 120000 },
+  { key: 'realtime_tile_retry_after_sec', label: 'retryAfter', min: 1, max: 3600 },
+  { key: 'raster_mosaic_generation_timeout_seconds', label: 'rasterMosaicTimeout', min: 60, max: 604800 }
+]
 const TRANSFER_FIELDS = [
   { key: 'diagnostics_interval_seconds', label: 'diagnosticsInterval', min: 1, max: 86400 },
   { key: 'retention_degraded_horizon_seconds', label: 'retentionDegraded', min: 1, max: 31536000 },
@@ -74,7 +84,7 @@ const TRANSFER_FIELDS = [
   { key: 'checkpoint_stale_after_seconds', label: 'checkpointStale', min: 1, max: 31536000 },
   { key: 'recovery_initial_backoff_seconds', label: 'recoveryInitial', min: 1, max: 86400 },
   { key: 'recovery_max_backoff_seconds', label: 'recoveryMax', min: 1, max: 31536000 },
-  { key: 'recovery_max_failures', label: 'maxFailures', min: 1, max: 1000 },
+  { key: 'recovery_max_consecutive_failures', label: 'maxFailures', min: 1, max: 1000 },
   { key: 'recovery_circuit_open_seconds', label: 'circuitOpen', min: 1, max: 31536000 },
   { key: 'recovery_stability_window_seconds', label: 'stabilityWindow', min: 1, max: 31536000 }
 ]
@@ -95,28 +105,47 @@ const MONITOR_FIELDS = [
 ]
 const isPlatform = computed(() => authStore.contextType === 'platform'); const contextLabel = computed(() => isPlatform.value ? t('console.configuration.platformContext') : t('console.configuration.tenantContext')); const canUpdate = computed(() => authStore.hasPermission(`${owner}.configuration.update`))
 async function load() {
+  loaded.value = false
   loading.value = true
   try {
     Object.assign(form, await getPolicyConfiguration(owner))
     loaded.value = true
   } catch (error) {
-    loaded.value = false
     ElMessage.error(error?.response?.data?.error || t('console.configuration.loadFailed'))
   } finally {
     loading.value = false
   }
 }
 function savePayload() {
-  if (owner !== 'develop') return { ...form }
-  const payload = { version: form.version, default_query_timeout: form.default_query_timeout }
-  if (isPlatform.value) Object.assign(payload, {
-    max_query_timeout: form.max_query_timeout, query_result_limit: form.query_result_limit,
-    query_concurrency: form.query_concurrency, query_per_engine_concurrency: form.query_per_engine_concurrency,
-    workflow_concurrency: form.workflow_concurrency, notebook_concurrency: form.notebook_concurrency
-  })
+  const payload = { version: form.version }
+  const fields = {
+    develop: isPlatform.value ? ['default_query_timeout', ...DEVELOP_PLATFORM_FIELDS.map(field => field.key)] : ['default_query_timeout'],
+    manager: MANAGER_FIELDS.map(field => field.key),
+    monitor: MONITOR_FIELDS.map(field => field.key),
+    transfer: TRANSFER_FIELDS.map(field => field.key),
+    service: ['health_check_cron', 'metadata_refresh_cron']
+  }
+  for (const key of fields[owner]) payload[key] = form[key]
   return payload
 }
-async function save() { saving.value = true; try { await updatePolicyConfiguration(owner, savePayload()); ElMessage.success(t('console.configuration.saveSuccess')); await load() } catch (error) { if (error?.response?.status === 409) { ElMessage.warning(t('console.configuration.versionConflict')) } else ElMessage.error(error?.response?.data?.error || t('console.configuration.saveFailed')) } finally { saving.value = false } }
+
+async function save() {
+  if (!loaded.value || !canUpdate.value || saving.value) return
+  saving.value = true
+  try {
+    await updatePolicyConfiguration(owner, savePayload())
+    ElMessage.success(t('console.configuration.saveSuccess'))
+    await load()
+  } catch (error) {
+    if (error?.response?.status === 409) {
+      ElMessage.warning(t('console.configuration.versionConflict'))
+    } else {
+      ElMessage.error(error?.response?.data?.error || t('console.configuration.saveFailed'))
+    }
+  } finally {
+    saving.value = false
+  }
+}
 onMounted(load)
 </script>
 <style scoped>

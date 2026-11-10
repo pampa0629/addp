@@ -107,3 +107,24 @@ test('failed initial load does not show frontend defaults as platform constraint
  await expect(page.getByRole('region', { name: '平台统一约束（只读）' })).toHaveCount(0)
  await expect(page.getByRole('spinbutton')).toHaveCount(0)
 })
+
+test('Transfer loads and saves the consecutive-failure threshold using the backend field', async ({ page }) => {
+ await page.addInitScript(() => localStorage.setItem('addp-lang', 'zh-cn'))
+ const initial = {
+  version: 4, diagnostics_interval_seconds: 15, retention_degraded_horizon_seconds: 21600,
+  retention_critical_horizon_seconds: 3600, checkpoint_stale_after_seconds: 300,
+  recovery_initial_backoff_seconds: 2, recovery_max_backoff_seconds: 60,
+  recovery_max_consecutive_failures: 8, recovery_circuit_open_seconds: 60, recovery_stability_window_seconds: 300
+ }
+ const writes = []
+ await page.route('**/transfer/settings/continuous-policy', route => {
+  if (route.request().method() === 'PUT') writes.push(route.request().postDataJSON())
+  return route.fulfill({ json: { ...initial, pending_restart: true } })
+ })
+ await page.goto('/e2e/fixtures/execution-policy.html?owner=transfer')
+ const threshold = page.getByRole('spinbutton', { name: '最大连续失败次数', exact: true })
+ await expect(threshold).toHaveValue('8')
+ await threshold.fill('9')
+ await page.getByRole('button', { name: '保存', exact: true }).click()
+ await expect.poll(() => writes).toEqual([{ ...initial, recovery_max_consecutive_failures: 9 }])
+})

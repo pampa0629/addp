@@ -55,6 +55,8 @@ MONITOR_WEBHOOK_ALLOW_PRIVATE_NETWORKS=false
 
 SMTP Relay 作为 Monitor-owned 平台强类型资源，由同一配置入口的 SMTP Relay 分组通过 `/settings/smtp-relay` 管理。地址、端口、TLS 模式、发件身份和用户名是普通资源字段；密码只能通过独立 `/settings/smtp-relay/credential` 接口写入或删除，使用平台 `ENCRYPTION_KEY` 加密保存，读取接口的 `credential` 仅返回 `configured/version`。资源版本与凭据版本分别管理，均在下次 Monitor Backend 启动时加载。
 
+Console 的 SMTP 投递页签在读取配置成功后展示表单，只有具有 `monitor.configuration.update` 的会话可以编辑普通字段、输入新密码并保存。读取失败后隐藏表单，用户可重新读取。
+
 邮件只允许 `starttls|tls`，不支持明文或机会式降级，也不根据端口猜测 TLS 模式。SMTP 未配置或 Relay 未启用时邮件 dispatcher 不启动，既有 `pending` outbox 会在补齐配置并重启后继续投递。启用时必须具有合法地址、端口和发件身份；配置用户名时必须同时具有密码凭据。SMTP 密码不进入 System Engine、任务 JSON、租户 API 或投递审计。
 
 ## 模块服务运行日志配置

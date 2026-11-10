@@ -10,14 +10,15 @@ import PolicyConfiguration from '../../src/components/configuration/PolicyConfig
 import zh from '../../src/i18n/zh-cn.json'
 import en from '../../src/i18n/en.json'
 
-const app = createApp({ render: () => h(PolicyConfiguration, { owner: 'develop' }) })
+const params = new URL(location.href).searchParams
+const owner = params.get('owner') || 'develop'
+const app = createApp({ render: () => h(PolicyConfiguration, { owner }) })
 const pinia = createPinia()
 app.use(pinia)
 const auth = useAuthStore()
-const params = new URL(location.href).searchParams
 const scope = params.get('scope') || 'platform'
-const permissions = ['develop.configuration.read']
-if (params.get('readonly') !== 'true') permissions.push('develop.configuration.update')
+const permissions = [`${owner}.configuration.read`]
+if (params.get('readonly') !== 'true') permissions.push(`${owner}.configuration.update`)
 const tenantID = '3'
 auth.authContext = {
   context: scope === 'tenant' ? { type: 'tenant', tenant_id: tenantID } : { type: 'platform' },
