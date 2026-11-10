@@ -21,7 +21,7 @@ func queryEngineScope() EngineScope {
 func TestPostgreSQLQueriesRequireSnapshotAndCompleteCounterGeneration(t *testing.T) {
 	now := time.Date(2026, 10, 20, 1, 0, 0, 0, time.UTC)
 	keys := []string{}
-	for _, d := range PostgreSQLCatalog() {
+	for _, d := range PostgreSQLCatalog()[:12] {
 		keys = append(keys, d.Key)
 	}
 	p, err := NewPostgreSQLPlan(keys, now, now, now, false, DefaultBudget())

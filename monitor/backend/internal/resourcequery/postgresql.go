@@ -17,6 +17,9 @@ var postgresqlDefinitions = []Definition{
 	{"postgresql.transactions.rolled_back_per_second", "transactions_per_second", 60},
 	{"postgresql.deadlocks.per_second", "events_per_second", 60},
 	{"postgresql.database.total_bytes", "bytes", 0},
+	{"postgresql.replication.logical_slots", "slots", 0},
+	{"postgresql.replication.inactive_logical_slots", "slots", 0},
+	{"postgresql.replication.retained_wal_bytes", "bytes", 0},
 }
 
 func PostgreSQLCatalog() []Definition { return append([]Definition(nil), postgresqlDefinitions...) }

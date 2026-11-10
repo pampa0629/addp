@@ -658,7 +658,7 @@ class EngineSourceCommandTest(unittest.TestCase):
         for relative in ("scripts/test/platform-node-metrics-fixture.py", "scripts/utils/deployment-inventory.py",
                          "scripts/utils/metrics-project.py", "scripts/utils/private-state.py", "scripts/utils/deployment-docker.py", "scripts/utils/metrics-source.py", "scripts/infra/redis-metrics.py",
                          "scripts/infra/postgres-observation/authentication.py", "scripts/infra/postgres-observation/source.py",
-                         "scripts/infra/postgres-observation/lifecycle.py", "scripts/infra/postgres-observation/000002_lifecycle.sql",
+                         "scripts/infra/postgres-observation/lifecycle.py", "scripts/infra/postgres-observation/000003_replication_slots.sql",
                          "business/postgres/pg_hba.conf"):
             shutil.copy2(FIXTURE.ROOT / relative, self.repo / relative)
         # Only OS facts and Docker transport are fixtures. Execute the actual CLI,

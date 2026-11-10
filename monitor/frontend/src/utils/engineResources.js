@@ -9,8 +9,12 @@ export const engineMetrics = [
   ['connections.io_waiting', 'ioWaiting', 'connections'], ['connections.maximum', 'maximum', 'connections'],
   ['transactions.committed_per_second', 'committed', 'transactions_per_second', 60],
   ['transactions.rolled_back_per_second', 'rolledBack', 'transactions_per_second', 60],
-  ['deadlocks.per_second', 'deadlocks', 'events_per_second', 60], ['database.total_bytes', 'capacity', 'bytes']
-].map(([key, name, unit, windowSeconds = 0]) => ({ key: `postgresql.${key}`, name, unit, windowSeconds }))
+  ['deadlocks.per_second', 'deadlocks', 'events_per_second', 60], ['database.total_bytes', 'capacity', 'bytes'],
+  ['replication.logical_slots', 'pgLogicalSlots', 'slots', 0],
+  ['replication.inactive_logical_slots', 'pgInactiveSlots', 'slots', 0],
+  ['replication.retained_wal_bytes', 'pgRetainedWAL', 'bytes', 0]
+].map(([key, name, unit, windowSeconds = 0]) => ({ key: `postgresql.${key}`, name, unit, windowSeconds,
+  group: key.startsWith('replication.') ? 'pgReplication' : 'pgActivity' }))
 export const engineSummaryMetrics = engineMetrics.filter(item => ['total', 'active', 'committed', 'capacity'].includes(item.name))
 export const redisMetrics = [
   ['uptime_seconds', 'redisUptime', 'seconds', 'resources'],

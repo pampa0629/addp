@@ -381,3 +381,25 @@ test('engine monitoring rejects tenant, machine, delegated and missing owner per
     await page.unrouteAll({ behavior: 'wait' })
   }
 })
+
+test('PostgreSQL replication has its own bounded detail and WAL trend', async ({ page }) => {
+  await engineBackend(page)
+  await page.goto('/engine-resources?refresh=off&deployment_id=' + engineID)
+  const replicationRead = page.waitForRequest(request => {
+    const url = new URL(request.url())
+    return url.pathname.endsWith('/engine_resource_observations') &&
+      url.searchParams.get('metrics')?.split(',').sort().join(',') === [
+        'postgresql.replication.inactive_logical_slots', 'postgresql.replication.logical_slots',
+        'postgresql.replication.retained_wal_bytes'
+      ].join(',')
+  })
+  await page.getByRole('tab', { name: '逻辑复制', exact: true }).click()
+  await replicationRead
+  const cards = page.getByTestId('engine-metrics')
+  await expect(cards.locator('article')).toHaveCount(3)
+  const wal = cards.getByTestId('engine-metric-pgRetainedWAL')
+  await expect(wal.getByTestId('engine-value-pgRetainedWAL')).toHaveText(/B$/)
+  await wal.getByRole('button', { name: '查看趋势', exact: true }).click()
+  await expect(page).toHaveURL(/metric=postgresql.replication.retained_wal_bytes/)
+  await expect(page.getByTestId('engine-trend').locator('canvas')).toBeVisible()
+})

@@ -21,7 +21,7 @@ import urllib.request
 import uuid
 
 ROOT = Path(__file__).resolve().parents[2]
-SQL = ROOT / 'scripts/infra/postgres-observation/000002_lifecycle.sql'
+SQL = ROOT / 'scripts/infra/postgres-observation/000003_replication_slots.sql'
 _directory_spec = importlib.util.spec_from_file_location('directory_publication_probe', Path(__file__).with_name('directory-publication-probe.py'))
 directory_publication = importlib.util.module_from_spec(_directory_spec)
 _directory_spec.loader.exec_module(directory_publication)
@@ -30,6 +30,7 @@ FIELDS = {
     'connections', 'active_connections', 'idle_connections', 'idle_in_transaction_connections',
     'active_waiting_connections', 'active_lock_waiting_connections', 'active_io_waiting_connections',
     'max_connections', 'transactions_committed', 'transactions_rolled_back', 'deadlocks', 'database_bytes',
+    'logical_slots', 'inactive_logical_slots', 'logical_slot_retained_wal_bytes',
 }
 
 
@@ -279,9 +280,9 @@ trap - EXIT
             self.write_hba(self.hba_current, self.hba_original)
             self.hba_original = self.hba_current = None
 
-    def install(self, scope, password, expected=None):
+    def install(self, scope, password, expected=None, *, revision=SQL):
         sql = ('\\set observer_scope ' + quoted(scope) + '\n\\set observer_enabled true\n\\set observer_verifier '
-               + quoted(verifier(password)) + '\n' + SQL.read_text())
+               + quoted(verifier(password)) + '\n' + revision.read_text())
         return self.sql(sql, expected=expected)
 
     def snapshot(self, user):
@@ -339,11 +340,29 @@ trap - EXIT
     def run_scope_case(self, scope):
         user = 'addp_' + scope + '_observer'
         password = secrets.token_hex(32)
+        self.install(scope, password, revision=SQL.with_name('000002_lifecycle.sql'))
         self.install(scope, password)
         self.password(user, password)
         assert self.sql('SELECT current_user;', user) == user
         assert self.sql('SHOW default_transaction_read_only;', user) == 'on'
         first = self.snapshot(user)
+        assert all(first[name] == 0 for name in ('logical_slots', 'inactive_logical_slots', 'logical_slot_retained_wal_bytes'))
+        self.sql("SELECT pg_catalog.pg_create_logical_replication_slot('observation_older', 'test_decoding');")
+        try:
+            self.sql("SELECT pg_catalog.pg_logical_emit_message(false, 'addp_observation_test', 'fixture');")
+            self.sql("SELECT pg_catalog.pg_create_logical_replication_slot('observation_newer', 'test_decoding');")
+            try:
+                retained = self.snapshot(user)
+                assert retained['logical_slots'] == retained['inactive_logical_slots'] == 2
+                assert retained['logical_slot_retained_wal_bytes'] > 0
+                assert self.sql("""SELECT s.logical_slot_retained_wal_bytes = (
+                    SELECT pg_catalog.pg_wal_lsn_diff(pg_catalog.pg_current_wal_lsn(), restart_lsn)::bigint
+                    FROM pg_catalog.pg_replication_slots WHERE slot_name = 'observation_older'
+                ) FROM addp_observation.snapshot() s;""") == 't'
+            finally:
+                self.sql("SELECT pg_catalog.pg_drop_replication_slot('observation_newer');")
+        finally:
+            self.sql("SELECT pg_catalog.pg_drop_replication_slot('observation_older');")
         # PUBLIC CONNECT permits this before admission even though the fixed
         # function was installed only in addp_test. Read no table or SQL text.
         assert self.sql('SELECT current_user;', user, database='postgres') == user
@@ -495,6 +514,7 @@ SELECT row_to_json(s) FROM addp_observation.snapshot() s; ROLLBACK;'''))
         deadline = time.monotonic() + 25
         while True:
             try:
+                requested_at = time.time()
                 body = get()
                 break
             except (urllib.error.URLError, AssertionError):
@@ -511,9 +531,11 @@ SELECT row_to_json(s) FROM addp_observation.snapshot() s; ROLLBACK;'''))
                 rows[match[1]] = (match[2], float(match[3]))
         assert set(rows) == expected
         observed = rows['addp_postgresql_sample_time_seconds'][1]
-        assert 0 <= time.time() - observed < 10
+        assert requested_at - 1 <= observed <= time.time() + 1, 'source snapshot was not produced during the scrape'
         assert rows['addp_postgresql_connections'][1] == 0
         assert rows['addp_postgresql_database_bytes'][1] > 0
+        for metric in ('logical_slots', 'inactive_logical_slots', 'logical_slot_retained_wal_bytes'):
+            assert rows['addp_postgresql_' + metric] == (None, 0)
         for name in expected:
             if name.endswith('_total'):
                 assert re.fullmatch(r'counter_epoch="[0-9a-f]{32}"', rows[name][0])
@@ -618,7 +640,7 @@ SELECT row_to_json(s) FROM addp_observation.snapshot() s; ROLLBACK;'''))
             finally:
                 self.sql(f'GRANT EXECUTE ON FUNCTION addp_observation.snapshot() TO {user};')
             check('recovered')
-            print('PostgreSQL query T2: twelve native metrics, current-container trends, summary, reset gaps and SQL failure/recovery passed', flush=True)
+            print('PostgreSQL query T2: resource and replication metrics, current-container trends, summary, reset gaps and SQL failure/recovery passed', flush=True)
         finally:
             self.publish_query_discovery(original)
             deadline = time.monotonic() + 45

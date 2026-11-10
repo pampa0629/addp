@@ -52,7 +52,7 @@ func TestIntegrationMetricsPostgreSQLSource(t *testing.T) {
 	}
 	mode := os.Getenv("ADDP_POSTGRES_QUERY_EXPECT")
 	keys := []string{}
-	for _, d := range PostgreSQLCatalog() {
+	for _, d := range PostgreSQLCatalog()[:12] {
 		keys = append(keys, d.Key)
 	}
 	budget := DefaultBudget()
@@ -130,6 +130,20 @@ func TestIntegrationMetricsPostgreSQLSource(t *testing.T) {
 		}
 		if series.MetricKey == "postgresql.database.total_bytes" && *series.Points[0].Value <= 0 {
 			t.Fatal("capacity missing")
+		}
+	}
+	slots := []string{"postgresql.replication.logical_slots", "postgresql.replication.inactive_logical_slots", "postgresql.replication.retained_wal_bytes"}
+	slotPlan, err := NewPostgreSQLPlan(slots, now, now, now, false, budget)
+	if err != nil {
+		t.Fatal(err)
+	}
+	slotSnapshot, err := queryPostgreSQLSnapshot(t, c, slotPlan, scope, budget)
+	if err != nil || len(slotSnapshot.Series) != len(slots) {
+		t.Fatalf("replication snapshot incomplete: %v", err)
+	}
+	for _, series := range slotSnapshot.Series {
+		if point := series.Points[0]; point.DataState != "valid" || point.Value == nil || *point.Value != 0 {
+			t.Fatalf("clean PostgreSQL source must report a real zero for %s: %+v", series.MetricKey, point)
 		}
 	}
 	summary, err := c.EngineSummaries(context.Background(), []EngineScope{scope}, now, budget)

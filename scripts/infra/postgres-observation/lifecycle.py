@@ -29,7 +29,7 @@ def load(name, path):
 auth = load('postgres_auth_lifecycle', Path(__file__).with_name('authentication.py'))
 source = auth.source
 inventory = load('postgres_deployment_inventory', ROOT / 'scripts/utils/deployment-inventory.py')
-SQL = Path(__file__).with_name('000002_lifecycle.sql')
+SQL = Path(__file__).with_name('000003_replication_slots.sql')
 OWNER = 'io.addp.postgres-metrics.owner'
 SCOPE = 'io.addp.postgres-metrics.scope'
 group = inventory.metrics_project
@@ -94,11 +94,12 @@ SELECT current_user='addp_{scope}_observer'
  AND pg_catalog.md5(p.prosrc)='{body_hash}'
  AND p.proconfig @> ARRAY['search_path=pg_catalog, pg_temp','stats_fetch_consistency=snapshot']
  AND cardinality(p.proconfig)=3 AND EXISTS(SELECT 1 FROM unnest(p.proconfig) c WHERE lower(c)='timezone=utc')
- AND p.proallargtypes=ARRAY[1184,1184,25,16,20,20,20,20,20,20,20,23,20,20,20,20]::oid[]
+ AND p.proallargtypes=ARRAY[1184,1184,25,16,20,20,20,20,20,20,20,23,20,20,20,20,20,20,20]::oid[]
  AND p.proargnames=ARRAY['observed_at','server_started_at','statistics_generation','track_counts_enabled',
  'connections','active_connections','idle_connections','idle_in_transaction_connections','active_waiting_connections',
  'active_lock_waiting_connections','active_io_waiting_connections','max_connections','transactions_committed',
- 'transactions_rolled_back','deadlocks','database_bytes']
+ 'transactions_rolled_back','deadlocks','database_bytes','logical_slots','inactive_logical_slots',
+ 'logical_slot_retained_wal_bytes']
  AND NOT EXISTS (SELECT 1 FROM pg_catalog.aclexplode(COALESCE(n.nspacl,pg_catalog.acldefault('n',n.nspowner))) a
  WHERE a.grantee<>o.oid AND (a.grantee<>r.oid OR a.privilege_type<>'USAGE' OR a.is_grantable))
  AND NOT EXISTS (SELECT 1 FROM pg_catalog.aclexplode(COALESCE(p.proacl,pg_catalog.acldefault('f',p.proowner))) a

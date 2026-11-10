@@ -1446,6 +1446,7 @@
       "trendScope": "Current database container only, up to seven days. Restarts, statistics resets and missing samples may leave gaps.",
       "units": {
         "connections": "connections",
+        "slots": "slots",
         "transactions_per_second": "transactions/s",
         "events_per_second": "events/s",
         "percent": "%",
@@ -1481,6 +1482,9 @@
         "committed": "Commits per second",
         "rolledBack": "Rollbacks per second",
         "deadlocks": "Deadlocks per second",
+        "pgLogicalSlots": "Logical replication slots",
+        "pgInactiveSlots": "Inactive logical slots",
+        "pgRetainedWAL": "WAL retained by logical slots",
         "capacity": "Total database size",
         "redisUptime": "Redis uptime",
         "redisAllocated": "Redis allocated memory",
@@ -1534,6 +1538,9 @@
         "committed": "Full one-minute commit rate, including observation traffic; not business throughput.",
         "rolledBack": "Full one-minute rollback rate; not directly a count of business failures.",
         "deadlocks": "Full one-minute deadlock rate; missing or reset statistics are not zero-filled.",
+        "pgLogicalSlots": "Total logical replication slots in this PostgreSQL instance.",
+        "pgInactiveSlots": "Logical slots currently not used by a replication process.",
+        "pgRetainedWAL": "WAL distance to the oldest valid logical slot restart position. Shared WAL is counted once. No value during recovery.",
         "capacity": "Total size of non-template databases, without tenant attribution.",
         "redisUptime": "Uptime of the current Redis process; resets after a process restart.",
         "redisAllocated": "Memory allocated by Redis; differs from RSS and container limits.",
@@ -1578,6 +1585,9 @@
       "engineType": "Engine type",
       "noLimit": "No Redis memory limit",
       "groups": {
+        "pgActivity": "Resources and activity",
+        "pgReplication": "Logical replication",
+
         "resources": "Resources and connections",
         "throughput": "Throughput and hits",
         "persistence": "Persistence status",

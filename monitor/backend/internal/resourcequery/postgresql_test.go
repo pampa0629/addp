@@ -18,9 +18,13 @@ func TestPostgreSQLCatalogAndBoundedPlans(t *testing.T) {
 			rates++
 		}
 	}
-	if len(keys) != 12 || rates != 3 {
+	if len(keys) != 15 || rates != 3 {
 		t.Fatal("PostgreSQL first catalog must fit the existing metric budget", keys, rates)
 	}
+	if _, err := NewPostgreSQLPlan(keys, testTime, testTime, testTime, false, DefaultBudget()); !errors.Is(err, ErrBudget) {
+		t.Fatal("combined catalog must not bypass the request budget", err)
+	}
+	keys = keys[:12]
 	copy := PostgreSQLCatalog()
 	copy[0].Key = "mutated"
 	if PostgreSQLCatalog()[0].Key == "mutated" {

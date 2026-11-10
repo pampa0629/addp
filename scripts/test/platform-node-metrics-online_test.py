@@ -2082,7 +2082,7 @@ class EngineProfessionalEvidenceTest(unittest.TestCase):
         if trend: points.insert(0, {"evaluated_at":"2026-10-21T00:04:45Z", "sampled_at":None, "data_state":"no_data", "value":None})
         return {"data":[{"subject":{"kind":"engine_deployment", "deployment_id":self.owner["deployment_id"], "display_name":self.owner["display_name"], "engine_type":"postgresql"},
                          "node_id":self.owner["node_id"], "collection":{"state":"not_connected" if absent else "collecting", "sampled_at":None if absent else self.at},
-                         "series":[{"metric_key":key, "unit":ONLINE.ENGINE_METRICS[key][0], "window_seconds":ONLINE.ENGINE_METRICS[key][1], "dimensions":{}, "points":copy.deepcopy(points)} for key in keys]}],
+                         "series":[{"metric_key":key, "unit":ONLINE.engine_catalog("postgresql")[key][0], "window_seconds":ONLINE.engine_catalog("postgresql")[key][1], "dimensions":{}, "points":copy.deepcopy(points)} for key in keys]}],
                 "queried_at":self.at, "start":"2026-10-21T00:04:45Z" if trend else self.at, "end":self.at, "step_seconds":15, "policy_version":1, "lookback_seconds":300}
 
     def test_actual_queries_include_required_closed_metric_selection(self):
@@ -2138,8 +2138,8 @@ class EngineProfessionalEvidenceTest(unittest.TestCase):
         actor["principal"]["id"] = "admin"; denied["principal"]["id"] = "security"
         wanted = {"run_id":"run", "admin_id":"admin", "security_id":"security", "engine_resources":{"owners":[self.owner]}}
         reads = [{"path":ONLINE.ENGINE_SUMMARIES, "query":{"deployment_ids":self.owner["deployment_id"]}, "value":self.response(ONLINE.ENGINE_SUMMARY_KEYS), "status":200}]
-        for _ in range(2):
-            reads.extend([{"path":ONLINE.ENGINE_OBSERVATIONS, "query":{"deployment_id":self.owner["deployment_id"], "metrics":",".join(ONLINE.ENGINE_METRICS)}, "value":self.response(), "status":200},
+        for group in ONLINE.engine_metric_groups("postgresql"):
+            reads.extend([{"path":ONLINE.ENGINE_OBSERVATIONS, "query":{"deployment_id":self.owner["deployment_id"], "metrics":",".join(group)}, "value":self.response(group), "status":200},
                           {"path":ONLINE.ENGINE_TRENDS, "query":{"deployment_id":self.owner["deployment_id"], "metrics":"postgresql.transactions.committed_per_second"}, "value":self.response({"postgresql.transactions.committed_per_second"}, trend=True), "status":200}])
         value = {"schema_version":"addp.node-resources-browser/v1", "run_id":"run", "result":"passed", "stage":"complete", "identity":actor, "negative_identity":denied,
                  "engine_resources":{"reads":reads, "reloaded":True, "zero_and_units":True, "denied":True}}

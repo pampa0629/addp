@@ -74,9 +74,9 @@ test('Redis dependency timestamps compare instants rather than textual fractions
  assert.equal(engineMetricMissingReason(row,key),'redisNoLimit')
 })
 
-test('PostgreSQL catalog has twelve metrics and three explicit one-minute rates', () => {
-  assert.equal(engineMetrics.length, 12)
-  assert.equal(new Set(engineMetrics.map(item => item.key)).size, 12)
+test('PostgreSQL catalog has fifteen metrics and three explicit one-minute rates', () => {
+  assert.equal(engineMetrics.length, 15)
+  assert.equal(new Set(engineMetrics.map(item => item.key)).size, 15)
   assert.equal(engineMetrics.filter(item => item.windowSeconds === 60).length, 3)
   assert.deepEqual(engineSummaryMetrics.map(item => item.name), ['total', 'active', 'committed', 'capacity'])
 })

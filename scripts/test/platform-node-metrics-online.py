@@ -1390,6 +1390,11 @@ ENGINE_METRICS = {"postgresql.connections."+key: ("connections", 0) for key in
                   ("total", "active", "idle", "idle_in_transaction", "waiting", "lock_waiting", "io_waiting", "maximum")}
 ENGINE_METRICS.update({"postgresql.transactions."+key+"_per_second": ("transactions_per_second", 60) for key in ("committed", "rolled_back")})
 ENGINE_METRICS.update({"postgresql.deadlocks.per_second": ("events_per_second", 60), "postgresql.database.total_bytes": ("bytes", 0)})
+POSTGRES_REPLICATION_METRICS = {
+    "postgresql.replication.logical_slots": ("slots", 0),
+    "postgresql.replication.inactive_logical_slots": ("slots", 0),
+    "postgresql.replication.retained_wal_bytes": ("bytes", 0),
+}
 ENGINE_SUMMARY_KEYS = {"postgresql.connections.total", "postgresql.connections.active", "postgresql.transactions.committed_per_second", "postgresql.database.total_bytes"}
 
 
@@ -1408,7 +1413,7 @@ REDIS_SUMMARY_KEYS = {"redis.memory.allocated_bytes", "redis.memory.used_percent
 
 def engine_catalog(kind):
     require(kind in {"postgresql", "redis"}, "unsupported professional engine type")
-    return ENGINE_METRICS if kind == "postgresql" else REDIS_METRICS
+    return {**ENGINE_METRICS, **POSTGRES_REPLICATION_METRICS} if kind == "postgresql" else REDIS_METRICS
 
 
 def engine_summary_keys(kind):
@@ -1423,7 +1428,7 @@ def engine_trend_key(kind):
 
 def engine_metric_groups(kind):
     catalog = engine_catalog(kind)
-    if kind == "postgresql": return [set(catalog)]
+    if kind == "postgresql": return [set(ENGINE_METRICS), set(POSTGRES_REPLICATION_METRICS)]
     resources = {key for key, (unit, _) in catalog.items() if unit != "status" and catalog[key][1] == 0}
     throughput = {key for key, (_, window) in catalog.items() if window == 60}
     persistence = {key for key, (unit, _) in catalog.items() if unit == "status"}
@@ -1457,7 +1462,7 @@ def assert_engine_resources(value, owners, *, keys=None, trend=False, fresh=Fals
     require(owners and len({owner["engine_type"] for owner in owners}) == 1, "engine response type scope differs")
     kind = owners[0]["engine_type"]
     catalog = engine_catalog(kind)
-    keys = set(keys or catalog)
+    keys = set(keys or engine_metric_groups(kind)[0])
     require(keys and keys <= set(catalog) and len(keys) <= 12, "engine query metric group differs")
     require(isinstance(value, dict) and isinstance(value.get("data"), list) and len(value["data"]) == len(owners), "engine response scope differs")
     start, end, queried = (utc_timestamp(value.get(key)) for key in ("start", "end", "queried_at"))

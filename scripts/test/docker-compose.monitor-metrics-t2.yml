@@ -35,7 +35,7 @@ services:
       POSTGRES_USER: addp
       POSTGRES_PASSWORD_FILE: /run/secrets/metrics-postgres-password
       POSTGRES_INITDB_ARGS: --auth-host=scram-sha-256
-    command: [postgres, -c, "hba_file=${METRICS_T2_HBA_FILE:-/var/lib/postgresql/data/pg_hba.conf}"]
+    command: [postgres, -c, "hba_file=${METRICS_T2_HBA_FILE:-/var/lib/postgresql/data/pg_hba.conf}", -c, "wal_level=logical"]
     volumes:
       - ${METRICS_T2_WORK}/postgres-auth/runtime:/etc/addp-postgres-auth:ro
       - postgres_data:/var/lib/postgresql/data

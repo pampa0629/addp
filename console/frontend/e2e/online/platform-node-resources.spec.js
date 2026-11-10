@@ -209,10 +209,14 @@ test('platform node resources through real Console password MFA and Monitor ifra
           await verifyCards(engineDetailMetrics(kind, trendKey))
           await expect(monitor.getByTestId('engine-value-redisEvictions')).toHaveText('0.00 次/秒')
         } else {
-          await verifyCards(catalog)
+          await verifyCards(engineDetailMetrics(kind, trendKey))
           await expect(monitor.getByTestId('engine-value-total')).toHaveText(/^\d[\d,]* 个$/)
           await expect(monitor.getByTestId('engine-value-capacity')).toHaveText(/^\d[\d,.]* (?:MiB|GiB|TiB)$/)
           await expect(monitor.getByTestId('engine-value-deadlocks')).toHaveText('0.00 次/秒')
+          await monitor.getByRole('tab', { name: '逻辑复制', exact: true }).click()
+          await verifyCards(engineDetailMetrics(kind, 'postgresql.replication.logical_slots'))
+          await monitor.getByRole('tab', { name: '资源与活动', exact: true }).click()
+          await monitor.getByTestId('engine-metric-committed').getByRole('button', { name: '查看趋势', exact: true }).click()
         }
         const trendMetric = catalog.find(metric => metric.key === trendKey)
         await expect(monitor.getByTestId('engine-trend').getByRole('img', { name: kind === 'redis' ? '每秒处理命令' : '每秒事务提交', exact: true })).toBeVisible()

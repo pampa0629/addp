@@ -50,6 +50,12 @@ Trace 中 request_id、trace_id、execution 身份分别表达请求、调用链
 
 受控运维中 ADDP 管理目标、计划、权限与审计，成熟执行设施实施变更。主机登记不默认保存 SSH 密码，采集身份不具备 Shell 权限；Monitor 不提供任意命令执行器，租户 Orchestrator 任务不隐含获得平台主机操作权。
 
+### Infra CDC 运行监控
+
+用户确认在现有运行监控中按 CDC 链路统一展示。页面并列展示 PostgreSQL 源端、Kafka Connect / Debezium 和 Redpanda 的状态及趋势。PostgreSQL 继续沿当前引擎部署与观测授权读取逻辑槽总数、不活跃数和保留 WAL 距离。Kafka Connect 按实际组件部署独立采集 Worker、Connector 和 Task 的状态、处理失败、offset 提交及 Debezium 源端延迟。Redpanda 按实际 broker 部署独立采集磁盘、不可用分区、错误及版本支持的积压信号。空 Connector 清单、没有消费组样本和采集故障分别呈现。只有采到各环节的事实时才展示对应趋势，不根据三个全局汇总推断单个任务的端到端延迟。
+
+本机只读核对确认当前 Redpanda 的私有 `/public_metrics` 单次返回 1,224 个样本，磁盘总量、空闲空间及不可用分区各有一条时序。此次没有观察到消费组 offset 或 lag 样本，当前 Kafka Connect 的 Connector 清单为空。下一批先在独占环境验证两个固定来源，经现有私有 mTLS 和统一发现进入同一个 Prometheus。源端出站路径固定，指标及标签有界，不采集 Connector 配置、连接串、事件正文或异常原文。保留现有 34 个来源，若各加一个目标则至少验证 36 个，覆盖成功、缺样、故障、超额与恢复后再应用。指标能取到后再接入统一 CDC 页面及按持续时间评估的告警。[Redpanda 24.3 指标](https://docs.redpanda.com/streaming/24.3/reference/public-metrics-reference/) · [Kafka Connect 指标](https://kafka.apache.org/38/operations/monitoring/#connect_monitoring)
+
 ## 三、验收状态与剩余缺口
 
 固定源码、运行链接、采样数量、预算、失败／修复和清理结论由下列历史证据专题维护；本页只保留能力状态、设计约束和剩余缺口。后续限定复验通过不倒改早期失败，也不证明当前 HEAD 或父 workflow 整体通过。

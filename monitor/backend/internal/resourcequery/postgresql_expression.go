@@ -19,6 +19,9 @@ var postgresqlPhysical = map[string]string{
 	"postgresql.transactions.rolled_back_per_second": "transactions_rolled_back_total",
 	"postgresql.deadlocks.per_second":                "deadlocks_total",
 	"postgresql.database.total_bytes":                "database_bytes",
+	"postgresql.replication.logical_slots":           "logical_slots",
+	"postgresql.replication.inactive_logical_slots":  "inactive_logical_slots",
+	"postgresql.replication.retained_wal_bytes":      "logical_slot_retained_wal_bytes",
 }
 
 // postgresqlSnapshotGuard requires all non-nullable snapshot fields from the same scrape.

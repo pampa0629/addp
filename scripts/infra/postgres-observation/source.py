@@ -105,6 +105,9 @@ METRICS = (
     ('transactions_committed', 'counter', 'Non-template database transaction commits, including observation traffic.'),
     ('transactions_rolled_back', 'counter', 'Non-template database transaction rollbacks.'),
     ('deadlocks', 'counter', 'Non-template database deadlocks.'),
+    ('logical_slots', 'gauge', 'Number of logical replication slots.'),
+    ('inactive_logical_slots', 'gauge', 'Number of inactive logical replication slots.'),
+    ('logical_slot_retained_wal_bytes', 'gauge', 'WAL distance from the oldest logical slot restart position on the primary.'),
     ('database_bytes', 'gauge', 'Total non-template database size in bytes, without tenant attribution.'),
 )
 
@@ -152,6 +155,7 @@ def configuration(scope, host, port, password, *, database='postgres'):
  s.idle_in_transaction_connections, s.active_waiting_connections,
  s.active_lock_waiting_connections, s.active_io_waiting_connections, s.max_connections,
  s.transactions_committed, s.transactions_rolled_back, s.deadlocks, s.database_bytes,
+ s.logical_slots, s.inactive_logical_slots, s.logical_slot_retained_wal_bytes,
  s.track_counts_enabled::integer AS track_counts_enabled, s.statistics_generation,
  EXTRACT(EPOCH FROM s.observed_at) AS sample_time_seconds,
  EXTRACT(EPOCH FROM s.server_started_at) AS server_start_time_seconds,

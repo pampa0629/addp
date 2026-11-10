@@ -1446,6 +1446,7 @@
       "trendScope": "只显示当前数据库容器运行段，最长七天；重启、统计重置和缺样处可能出现断点。",
       "units": {
         "connections": "个",
+        "slots": "个",
         "transactions_per_second": "次/秒",
         "events_per_second": "次/秒",
         "percent": "%",
@@ -1481,6 +1482,9 @@
         "committed": "每秒事务提交",
         "rolledBack": "每秒事务回滚",
         "deadlocks": "每秒死锁",
+        "pgLogicalSlots": "逻辑复制槽",
+        "pgInactiveSlots": "不活跃逻辑槽",
+        "pgRetainedWAL": "逻辑槽保留 WAL",
         "capacity": "数据库总容量",
         "redisUptime": "Redis 运行时长",
         "redisAllocated": "Redis 分配内存",
@@ -1534,6 +1538,9 @@
         "committed": "最近完整一分钟的提交速率；包含采集产生的事务，不等同于业务吞吐。",
         "rolledBack": "最近完整一分钟的事务回滚速率；不直接代表业务失败次数。",
         "deadlocks": "最近完整一分钟的死锁速率；统计重置或缺样时不补零。",
+        "pgLogicalSlots": "当前 PostgreSQL 实例的逻辑复制槽总数。",
+        "pgInactiveSlots": "当前没有复制进程使用的逻辑槽数量。",
+        "pgRetainedWAL": "当前 WAL 与最早有效逻辑槽保留点的字节差。多个槽共同保留的 WAL 只计一次；恢复中的实例不显示。",
         "capacity": "全部非模板数据库容量合计；不按租户归算。",
         "redisUptime": "当前 Redis 进程的运行时长；进程重启后重新计时。",
         "redisAllocated": "Redis 分配的内存，区别于进程 RSS 和容器限额。",
@@ -1578,6 +1585,9 @@
       "engineType": "引擎类型",
       "noLimit": "未设置内存上限",
       "groups": {
+        "pgActivity": "资源与活动",
+        "pgReplication": "逻辑复制",
+
         "resources": "资源与连接",
         "throughput": "吞吐与命中",
         "persistence": "持久化状态",
