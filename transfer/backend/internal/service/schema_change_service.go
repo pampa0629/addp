@@ -188,14 +188,7 @@ func (s *TaskService) ApproveSchemaChange(ctx context.Context, taskID, tenantID,
 		if err != nil {
 			return err
 		}
-		if err := tx.Model(&request).Updates(map[string]interface{}{
-			"approved_mappings": approvedMappings, "status": models.SchemaChangeRequestApplied,
-			"applied_by": userID, "applied_at": now,
-			"metadata_scan_status":      models.SchemaChangeMetadataScanPending,
-			"metadata_scan_claim_token": "", "metadata_scan_lease_until": nil,
-			"metadata_scan_attempt": 0, "metadata_scan_execution_id": "", "metadata_scan_error": "",
-			"updated_at": now,
-		}).Error; err != nil {
+		if err := repository.ApplySchemaChangeRequestTx(tx, &request, approvedMappings, userID, now); err != nil {
 			return err
 		}
 		resourceUpdate := tx.Model(&resource).Where("schema_revision = ?", request.FromRevision).
@@ -216,17 +209,6 @@ func (s *TaskService) ApproveSchemaChange(ctx context.Context, taskID, tenantID,
 		if result.RowsAffected != 1 {
 			return ErrSchemaChangeApprovalConflict
 		}
-		request.ApprovedMappings = approvedMappings
-		request.Status = models.SchemaChangeRequestApplied
-		request.AppliedBy = &userID
-		request.AppliedAt = &now
-		request.MetadataScanStatus = models.SchemaChangeMetadataScanPending
-		request.MetadataScanClaimToken = ""
-		request.MetadataScanLeaseUntil = nil
-		request.MetadataScanAttempt = 0
-		request.MetadataScanExecutionID = ""
-		request.MetadataScanError = ""
-		request.UpdatedAt = now
 		if err := repository.UpdateSchemaChangeExecutionProjectionTx(tx, &request); err != nil {
 			return err
 		}
@@ -235,7 +217,7 @@ func (s *TaskService) ApproveSchemaChange(ctx context.Context, taskID, tenantID,
 			return ErrSchemaChangeApprovalConflict
 		}
 		if err := repository.PublishAppliedSchemaChangeScanOriginTx(tx, &request, commonExecution.AppliedSchemaChangeScanOrigin{
-			RequestID: request.ID, TaskID: request.TaskID, Generation: request.Generation, FromRevision: request.FromRevision, ToRevision: request.ToRevision, TargetLocator: targets[0], AppliedAt: now,
+			RequestID: request.ID, TaskID: request.TaskID, Generation: request.Generation, FromRevision: request.FromRevision, ToRevision: request.ToRevision, TargetLocator: targets[0], AppliedAt: *request.AppliedAt,
 			TriggeredBy: *actor.TriggeredBy, ActorPrincipalID: *actor.ActorPrincipalID, ActorTenantMembershipID: *actor.ActorTenantMembershipID, IssuedAuthorizationVersion: *actor.IssuedAuthorizationVersion,
 		}); err != nil {
 			return err

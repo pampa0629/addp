@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"testing"
@@ -70,7 +71,7 @@ func TestSchemaChangeMetadataScanFailureIsTerminal(t *testing.T) {
 
 	claimed, owned, err := repo.ClaimMetadataScan(context.Background(), 2, now, time.Minute)
 	if err != nil || !owned {
-		t.Fatalf("claim=%#v owned=%v err=%v", claimed, owned, err)
+		t.Fatalf("approval scan claim owned=%v err=%v", owned, err)
 	}
 	failed, completed, err := repo.CompleteMetadataScan(
 		context.Background(), 2, claimed.MetadataScanClaimToken, models.SchemaChangeMetadataScanFailed, "", "Meta unavailable", now.Add(time.Second),
@@ -156,6 +157,8 @@ func newSchemaChangeRepositoryTestDB(t *testing.T) *gorm.DB {
 		metadata_scan_execution_id TEXT NOT NULL DEFAULT '',
 			metadata_scan_error TEXT NOT NULL DEFAULT '',
 			detected_at DATETIME NOT NULL,
+			approved_mappings JSON NOT NULL DEFAULT '{}',
+			applied_by INTEGER,
 			applied_at DATETIME,
 			updated_at DATETIME
 		)`).Error; err != nil {
@@ -211,27 +214,34 @@ func TestSchemaChangeScanOriginClaimIsAtomic(t *testing.T) {
 
 func assertAppliedScanOriginClaimRoundTrip(t *testing.T, db *gorm.DB, request models.SchemaChangeRequest) {
 	t.Helper()
-	request.Status = models.SchemaChangeRequestApplied
-	request.MetadataScanStatus = models.SchemaChangeMetadataScanPending
-	appliedAt := time.Now().UTC().Truncate(time.Microsecond)
-	request.AppliedAt = &appliedAt
-	if err := db.Model(&request).Updates(map[string]interface{}{"status": request.Status, "metadata_scan_status": request.MetadataScanStatus, "applied_at": appliedAt}).Error; err != nil {
-		t.Fatal(err)
-	}
-	origin := commonExecution.AppliedSchemaChangeScanOrigin{RequestID: request.ID, TaskID: request.TaskID, Generation: request.Generation, FromRevision: request.FromRevision, ToRevision: request.ToRevision, TargetLocator: "addp://engine/9/path/public/changed?type=table", AppliedAt: appliedAt, TriggeredBy: 83, ActorPrincipalID: 83, ActorTenantMembershipID: 84, IssuedAuthorizationVersion: 7}
+	inputTime := time.Date(2026, 11, 10, 11, 44, 35, 299069081, time.UTC)
+	origin := commonExecution.AppliedSchemaChangeScanOrigin{RequestID: request.ID, TaskID: request.TaskID, Generation: request.Generation, FromRevision: request.FromRevision, ToRevision: request.ToRevision, TargetLocator: "addp://engine/9/path/public/changed?type=table", TriggeredBy: 83, ActorPrincipalID: 83, ActorTenantMembershipID: 84, IssuedAuthorizationVersion: 7}
 	publish := func(tx *gorm.DB) error {
-		if err := UpdateSchemaChangeExecutionProjectionTx(tx, &request); err != nil {
+		applied := request
+		if err := ApplySchemaChangeRequestTx(tx, &applied, models.JSONMap{}, 83, inputTime); err != nil {
 			return err
 		}
-		return PublishAppliedSchemaChangeScanOriginTx(tx, &request, origin)
+		origin.AppliedAt = *applied.AppliedAt
+		if err := UpdateSchemaChangeExecutionProjectionTx(tx, &applied); err != nil {
+			return err
+		}
+		return PublishAppliedSchemaChangeScanOriginTx(tx, &applied, origin)
 	}
+	rollback := errors.New("rollback applied fact")
 	if err := db.Transaction(func(tx *gorm.DB) error {
 		if err := publish(tx); err != nil {
 			return err
 		}
-		return fmt.Errorf("rollback applied fact")
-	}); err == nil {
-		t.Fatal("rollback not exercised")
+		return rollback
+	}); !errors.Is(err, rollback) {
+		t.Fatalf("approval rollback returned %v", err)
+	}
+	var unchanged models.SchemaChangeRequest
+	if err := db.First(&unchanged, request.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if unchanged.Status != request.Status || unchanged.AppliedAt != nil {
+		t.Fatal("rolled back approval changed the request")
 	}
 	read := func() commonExecution.TaskExecution {
 		var record commonExecution.TaskExecution
@@ -249,7 +259,13 @@ func assertAppliedScanOriginClaimRoundTrip(t *testing.T, db *gorm.DB, request mo
 	repo := NewSchemaChangeRequestRepository(db)
 	claimed, owned, err := repo.ClaimMetadataScan(context.Background(), request.ID, time.Now(), time.Minute)
 	if err != nil || !owned {
-		t.Fatalf("claim=%#v owned=%v err=%v", claimed, owned, err)
+		t.Fatalf("approval scan claim owned=%v err=%v", owned, err)
+	}
+	if claimed.AppliedAt == nil || !claimed.AppliedAt.Equal(origin.AppliedAt) {
+		t.Fatalf("stored approval time %v differs from source time %v", claimed.AppliedAt, origin.AppliedAt)
+	}
+	if db.Dialector.Name() == "postgres" && claimed.AppliedAt.Equal(inputTime) {
+		t.Fatal("PostgreSQL fixture did not exercise nanosecond precision loss")
 	}
 	record := read()
 	data, _ := json.Marshal(record.Metadata[commonExecution.SchemaChangeScanOriginKey])

@@ -9,6 +9,7 @@ import (
 	"github.com/addp/transfer/internal/models"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 var ErrSchemaChangeRequestNotFound = errors.New("schema change request not found")
@@ -50,6 +51,19 @@ func (r *SchemaChangeRequestRepository) GetLatest(ctx context.Context, taskID, t
 		return nil, ErrSchemaChangeRequestNotFound
 	}
 	return &request, err
+}
+
+// ApplySchemaChangeRequestTx returns the stored approval facts for publishing the
+// origin in the same transaction, including the database precision of applied_at.
+func ApplySchemaChangeRequestTx(tx *gorm.DB, request *models.SchemaChangeRequest, mappings models.JSONMap, userID uint, now time.Time) error {
+	return tx.Model(request).Clauses(clause.Returning{}).Updates(map[string]interface{}{
+		"approved_mappings": mappings, "status": models.SchemaChangeRequestApplied,
+		"applied_by": userID, "applied_at": now,
+		"metadata_scan_status":      models.SchemaChangeMetadataScanPending,
+		"metadata_scan_claim_token": "", "metadata_scan_lease_until": nil,
+		"metadata_scan_attempt": 0, "metadata_scan_execution_id": "", "metadata_scan_error": "",
+		"updated_at": now,
+	}).Error
 }
 
 func (r *SchemaChangeRequestRepository) ClaimMetadataScan(
