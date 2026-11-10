@@ -204,6 +204,20 @@ vi .env  # 核对 Registry、镜像版本、公共 URL、反向代理及 Busines
 
 通过启动输出中的 `ADDP_PUBLIC_ORIGIN` 访问 Console，再以合法身份验证所需业务功能；本机探测与公开入口的分工统一见[健康检查与验收范围](#health-checksh)。
 
+#### 主机采集
+
+需要主机监控时，在每台要纳管的 Linux 主机上显式安装一份 `node_exporter`。由主机部署方管理采集器，平台服务重启与主机采集器的安装、更新分别执行。Docker Desktop 开发环境采集的是 Linux 虚拟机。
+
+在目标主机的部署目录中，按根 `.env.example` 配置 `ADDP_NODE_METRICS_ENABLED=true`、`ADDP_NODE_METRICS_LISTEN` 和 `ADDP_NODE_METRICS_TLS_DIR`。监听端点须对 Monitor 和 Prometheus 可达，证书须匹配实际采集地址。按[独立 Linux 主机指标来源](../infra/docs/指标中心与来源.md#独立-linux-主机指标来源)准备证书及准入，再执行：
+
+```bash
+python3 scripts/infra/metrics-sources.py check --scope host --kind node
+python3 scripts/infra/metrics-sources.py up --scope host --kind node
+python3 scripts/infra/metrics-sources.py status --scope host --kind node
+```
+
+按同一指南导出接入清单，在 Console 的「系统管理 → 部署与纳管 → 主机管理 → 从部署清单接入」选择已有主机或确认新建，并完成采集目标保存。最后在「主机监控」核对有效样本及趋势。容器运行状态用于确认采集器已启动，实际采样须在 Monitor 验证。
+
 ### 更新部署
 
 更新前先核对目标 Linux 平台、所需服务和版本，按 [Build 指南](../build/README.md#build-imagessh)构建或准备对应镜像。Model3D 每次只构建一个原生 Linux 平台；SuperMap 要求已准备的私有 Linux ARM64 基础镜像。多架构发布仅对已确认支持的服务使用 `--services` 配合 `--multi-arch`，其他 Runtime 按各自平台规则准备。
