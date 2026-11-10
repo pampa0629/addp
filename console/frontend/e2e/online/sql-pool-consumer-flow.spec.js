@@ -47,11 +47,19 @@ async function managerPreview(page, sample, navigate) {
   return token
 }
 
-async function developQuery(page, sample, phase, consumer) {
+function poolQuery(sample, phase) {
+  return `SELECT id, label FROM ${sample.namespace}.${sample.table} WHERE id = 7 /* pool ${phase} */`
+}
+
+async function developBrowserAPI(page, consumer) {
   const engines = page.waitForResponse(response => new URL(response.url()).pathname === '/api/v1/develop/engines',
     { timeout: responseTimeout })
   await page.goto('/develop/sql?action=create')
-  const api = await browserAPIFromResponse(await engines, process.env.GATEWAY_URL, consumer)
+  return browserAPIFromResponse(await engines, process.env.GATEWAY_URL, consumer)
+}
+
+async function developQuery(page, sample, phase, consumer, observeFailure) {
+  const api = await developBrowserAPI(page, consumer)
   await api.dispose()
   const frame = frameOf(page)
   const selector = frame.locator('.engine-select')
@@ -62,7 +70,7 @@ async function developQuery(page, sample, phase, consumer) {
   }
   await expect(selector).toContainText(sample.name)
   await selectSearchResult(frame.locator('.catalog-panel .resource-tree-picker'), sample.table, sample.table)
-  const query = `SELECT id, label FROM ${sample.namespace}.${sample.table} WHERE id = 7 /* pool ${phase} */`
+  const query = poolQuery(sample, phase)
   await page.evaluate(value => navigator.clipboard.writeText(value), query)
   await frame.locator('.monaco-editor').click({ position: { x: 70, y: 20 } })
   await page.keyboard.press('ControlOrMeta+A')
@@ -73,13 +81,17 @@ async function developQuery(page, sample, phase, consumer) {
   const finished = page.waitForResponse(async response => {
     if (!/^\/api\/v1\/develop\/executions\/[^/]+\/result$/.test(new URL(response.url()).pathname) || !response.ok()) return false
     return ['success', 'failed', 'timeout', 'cancelled'].includes((await response.json()).status)
-  }, { timeout: 120_000 })
+  }, { timeout: observeFailure ? 155_000 : 120_000 })
   await frame.locator('.toolbar-actions').getByRole('button', { name: /^(执行|Execute)$/ }).click()
   const response = await created
   const body = response.request().postDataJSON()
   expect(body.content.query).toBe(query)
   expect(body.execution_config.engine_id).toBe(sample.engine_id)
   const execution = await json(response, 'Develop pool execution submission')
+  if (observeFailure) {
+    expect(body.timeout).toBe(120)
+    return observeFailure(execution.execution_id, finished, frame)
+  }
   const terminal = await finished
   expect(new URL(terminal.url()).pathname).toBe(`/api/v1/develop/executions/${execution.execution_id}/result`)
   const result = await json(terminal, 'Develop pool execution result')
@@ -102,6 +114,7 @@ async function saveChange(page, sample, operator, phase, credentials) {
     password: { password: credentials.rotated },
     pool: { [idleKey]: 0 },
     concurrent: { [idleKey]: 1 },
+    saturation: { [openKey]: 1 },
   }[phase]
   try {
     const before = await json(await api.get(path), 'System config before edit')
@@ -110,9 +123,9 @@ async function saveChange(page, sample, operator, phase, credentials) {
     await row.getByRole('button', { name: '编辑', exact: true }).click({ timeout: responseTimeout })
     const dialog = frame.getByRole('dialog', { name: '编辑引擎', exact: true })
     for (const [key, value] of Object.entries(patch)) {
-      const label = { host: '主机地址', user: '用户名', password: '密码', [idleKey]: '最大空闲连接数' }[key]
+      const label = { host: '主机地址', user: '用户名', password: '密码', [idleKey]: '最大空闲连接数', [openKey]: '最大连接数' }[key]
       const item = dialog.locator('.el-form-item').filter({ hasText: label })
-      const input = key === idleKey ? item.getByRole('spinbutton') : item.locator('input')
+      const input = key === idleKey || key === openKey ? item.getByRole('spinbutton') : item.locator('input')
       if (key === 'password') {
         try { await input.fill(value) } catch { throw new Error('System sensitive input was unavailable') }
       } else {
@@ -144,7 +157,7 @@ async function saveChange(page, sample, operator, phase, credentials) {
     expect(after.version).toBe(receipt.version)
     expect(after.connection_info.database).toBe('pool_fixture')
     expect(after.connection_info.port).toBe(before.connection_info.port)
-    expect(after.connection_info[openKey]).toBe(2)
+    expect(after.connection_info[openKey]).toBe(phase === 'saturation' ? 1 : 2)
     for (const [key, value] of Object.entries(patch)) {
       expect(key === 'password' ? after.connection_info[key] !== value : after.connection_info[key] === value,
         `System readback ${phase} field ${key}`).toBe(true)
@@ -297,9 +310,9 @@ async function credentialRecovery(page, operatorPage, sample, operator, consumer
   }
 }
 
-function barrierAction(engine, operation) {
+function barrierAction(engine, operation, purpose = 'concurrency') {
   return JSON.parse(execFileSync('python3', ['-m', 'scripts.test.sql-pool-consumer-flow-online',
-    'barrier', '--engine', engine, '--barrier-operation', operation],
+    'barrier', '--engine', engine, '--barrier-operation', operation, '--barrier-purpose', purpose],
   { cwd: root, encoding: 'utf8', timeout: 30_000 }))
 }
 
@@ -354,8 +367,121 @@ async function concurrentUpdate(page, operatorPage, sample, operator, consumer, 
   }
 }
 
+async function waitForNativeReaders(engine, purpose, phases) {
+  let snapshot
+  await expect.poll(() => {
+    snapshot = barrierAction(engine, 'observe', purpose)
+    return snapshot.held ? snapshot.waiters.map(waiter => waiter.phase).sort() : []
+  }, { timeout: 15_000 }).toEqual(phases)
+  return snapshot
+}
+
+async function developTimeout(page, sample, phase, consumer, observeNative) {
+  return developQuery(page, sample, phase, consumer, async (id, terminal, frame) => {
+    const started = Date.now()
+    const during = await observeNative()
+    const response = await terminal
+    expect(new URL(response.url()).pathname).toBe(`/api/v1/develop/executions/${id}/result`)
+    const result = await json(response, 'Develop timeout result')
+    expect(['timeout', 'failed']).toContain(result.status)
+    const diagnostic = result.error_details?.diagnostic
+    expect(diagnostic?.stage).toBe('execution')
+    expect(diagnostic.reason).toMatch(/^[a-z_]+$/)
+    const panel = frame.locator('.query-result .execution-failure')
+    await expect(panel).toBeVisible()
+    await expect(panel).toContainText(id)
+    await expect(frame.locator('.query-result .result-table')).toHaveCount(0)
+    return { execution_id: id, status: result.status, reason: diagnostic.reason,
+      elapsed_ms: Date.now() - started, during, heading: await panel.locator('h4').innerText() }
+  })
+}
+
+async function managerTimeout(page, sample) {
+  let started
+  const request = page.waitForRequest(req => {
+    const url = new URL(req.url())
+    if (url.pathname !== '/api/v1/manager/preview' || url.searchParams.get('locator') !== sample.locator) return false
+    started = Date.now()
+    return true
+  }, { timeout: responseTimeout })
+  await page.goto(previewRoute(sample))
+  const submitted = await request
+  const frame = frameOf(page)
+  const panel = frame.getByTestId('preview-failure')
+  await expect(panel).toBeVisible({ timeout: 75_000 })
+  await expect(frame.getByRole('cell', { name: sample.sample, exact: true })).toHaveCount(0)
+  return { elapsed_ms: Date.now() - started, http_status: (await submitted.response())?.status() ?? null,
+    heading: await panel.locator('.el-empty__description').innerText() }
+}
+
+async function saturationProbe(page, operatorPage, sample, operator, consumer, credentials) {
+  const engine = sample.engine_type
+  const configuration = await saveChange(operatorPage, sample, operator, 'saturation', credentials)
+  const managerPage = await page.context().newPage()
+  const pending = []
+  let api, queue, holders, queueTerminal, queued, manager, native, released
+  try {
+    api = await developBrowserAPI(managerPage, consumer)
+    queue = barrierAction(engine, 'acquire', 'queue')
+    const previewHolder = api.get('/api/v1/manager/preview', {
+      params: { locator: sample.locator, page: 1, page_size: 1 }, timeout: 200_000,
+    })
+    pending.push(previewHolder)
+    previewHolder.catch(() => {})
+    const queryHolder = await json(await api.post('/api/v1/develop/executions', { data: {
+      dev_type: 'query', trigger_type: 'manual', timeout: 200,
+      content: { query: poolQuery(sample, 'saturation_holder'), query_type: 'sql', target_locator: sample.locator },
+      execution_config: { engine_id: sample.engine_id },
+    } }), 'Develop saturation holder')
+    holders = await waitForNativeReaders(engine, 'queue', ['holder', 'manager'])
+    ;[manager, queued] = await Promise.all([
+      managerTimeout(managerPage, sample),
+      developTimeout(page, sample, 'saturation_queued', consumer, () => waitForNativeReaders(engine, 'queue', ['holder', 'manager'])),
+    ])
+    expect(queued.execution_id).not.toBe(queryHolder.execution_id)
+    queueTerminal = await waitForNativeReaders(engine, 'queue', ['holder', 'manager'])
+    expect(queueTerminal.waiters).toEqual(holders.waiters)
+    const descriptors = await json(await api.get('/api/v1/develop/engines'), 'saturated engine status')
+    const engineStatus = descriptors.find(item => item.id === sample.engine_id)?.connection_status
+    expect(engineStatus).toBe('online')
+    await managerPage.screenshot({ path: resolve(process.env.ADDP_ONLINE_ARTIFACT_DIR, `${engine}-saturation-manager.png`) })
+    await page.screenshot({ path: resolve(process.env.ADDP_ONLINE_ARTIFACT_DIR, `${engine}-saturation-develop.png`) })
+    released = barrierAction(engine, 'release', 'queue')
+    const holderPreview = await json(await previewHolder, 'Manager saturation holder recovered')
+    expect(holderPreview.data.rows).toEqual([{ id: 7, label: sample.sample }])
+    await expect.poll(async () => {
+      const result = await json(await api.get(`/api/v1/develop/executions/${queryHolder.execution_id}/result`), 'Develop saturation holder recovered')
+      return result.status
+    }, { timeout: 20_000 }).toBe('success')
+
+    barrierAction(engine, 'acquire', 'native')
+    try {
+      native = await developTimeout(page, sample, 'saturation_native', consumer, () => waitForNativeReaders(engine, 'native', ['native']))
+      await page.screenshot({ path: resolve(process.env.ADDP_ONLINE_ARTIFACT_DIR, `${engine}-saturation-native.png`) })
+    } finally {
+      barrierAction(engine, 'release', 'native')
+    }
+    const recoveredExecution = await developQuery(page, sample, 'saturation_recovered', consumer)
+    await managerPreview(managerPage, sample, () => managerPage.goto(previewRoute(sample)))
+    const proof = { configuration, queue, holders, queue_terminal: queueTerminal, released, queued, manager, native, engine_status: engineStatus,
+      holder_execution_id: queryHolder.execution_id, recovered_execution_id: recoveredExecution, recovered_manager_rows: 1 }
+    for (const secret of Object.values(credentials)) {
+      expect(JSON.stringify(proof).includes(secret), 'pool diagnostic must not expose credentials').toBe(false)
+    }
+    return proof
+  } finally {
+    try {
+      if (queue && !released) barrierAction(engine, 'release', 'queue')
+    } finally {
+      if (api) await api.dispose()
+      await Promise.allSettled(pending)
+      await managerPage.close()
+    }
+  }
+}
+
 test('System pool edit replaces physical sessions in Manager and Develop for both engines', async ({ browser, page }) => {
-  test.setTimeout(420_000)
+  test.setTimeout(810_000)
   const expected = JSON.parse(readFileSync(process.env.ADDP_ONLINE_POOL_EXPECTATIONS, 'utf8'))
   const operatorContext = await browser.newContext()
   const operatorPage = await operatorContext.newPage()
@@ -432,10 +558,12 @@ test('System pool edit replaces physical sessions in Manager and Develop for bot
         credentialRecovery(page, operatorPage, sample, operator, consumer, credentials, changes.at(-1)))
       const concurrency = await test.step(`${engine} active query during System pool update`, () =>
         concurrentUpdate(page, operatorPage, sample, operator, consumer, credentials))
-      cases.push({ engine_id: sample.engine_id, engine_type: engine, source_identity: source, changes, recovery, concurrency })
+      const saturation = await test.step(`${engine} pool wait and native SQL timeout`, () =>
+        saturationProbe(page, operatorPage, sample, operator, consumer, credentials))
+      cases.push({ engine_id: sample.engine_id, engine_type: engine, source_identity: source, changes, recovery, concurrency, saturation })
     }
     writeFileSync(process.env.ADDP_ONLINE_POOL_REPORT, JSON.stringify({
-      schema_version: 'addp.sql-pool-console/v4', run_id: expected.run_id, consumer_principal_id: consumer.principalID, operator_principal_id: configIdentity.principalID, cases,
+      schema_version: 'addp.sql-pool-console/v5', run_id: expected.run_id, consumer_principal_id: consumer.principalID, operator_principal_id: configIdentity.principalID, cases,
     }))
   } finally {
     if (!operatorPage.isClosed()) await operatorContext.close()

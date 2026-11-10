@@ -42,7 +42,7 @@ class SQLPoolEvidenceTest(unittest.TestCase):
                 CI.validate_sql_pool_profile(root, registry)
 
     def test_verified_browser_output_is_returned_to_online_dispatcher(self):
-        evidence = {"schema_version": "addp.sql-pool-console/v4", "run_id": "run-pool", "cases": []}
+        evidence = {"schema_version": "addp.sql-pool-console/v5", "run_id": "run-pool", "cases": []}
         processes = {"system": [19, "9"]}
         with tempfile.TemporaryDirectory() as tmp:
             private = Path(tmp)
@@ -87,7 +87,7 @@ pid=44 user=pool_reader_next LOG:  statement: SELECT id FROM public.pool_source_
 
     def connection_evidence(self):
         expected = {"run_id": "run-pool", "principal_id": "4", "operator_principal_id": "6", "cases": []}
-        evidence = {"schema_version": "addp.sql-pool-console/v4", "run_id": "run-pool",
+        evidence = {"schema_version": "addp.sql-pool-console/v5", "run_id": "run-pool",
                     "consumer_principal_id": "4", "operator_principal_id": "6", "cases": []}
         for engine_id, engine in ((5, "postgresql"), (8, "mysql")):
             source = {"container_id": engine, "database": "pool_fixture", "native_id": "native-" + engine}
@@ -147,6 +147,24 @@ pid=44 user=pool_reader_next LOG:  statement: SELECT id FROM public.pool_source_
                 concurrency[stage] = {"engine": engine, "run_id": "run-pool", "source_identity": source,
                                       "stage": operation, "holder_id": 99, "held": held, "waiters": waiters}
             case["concurrency"] = concurrency
+            anchors = {"engine": engine, "run_id": "run-pool", "source_identity": source}
+            queue = {**anchors, "holder_id": 101, "stage": "acquire", "held": True, "waiters": []}
+            holders = {**queue, "stage": "observe", "waiters": [{"id": 102, "phase": "holder"}, {"id": 103, "phase": "manager"}]}
+            native = {**holders, "holder_id": 104, "waiters": [{"id": 105, "phase": "native"}]}
+            case["saturation"] = {
+                "configuration": {**concurrency["configuration"], "before_version": 6, "after_version": 7,
+                                  "phase": "saturation", "changed_fields": ["pool_max_open_conns"], "max_open": 1},
+                "queue": queue, "holders": holders, "queue_terminal": deepcopy(holders),
+                "released": {**queue, "stage": "release", "held": False},
+                "queued": {"execution_id": f"{engine}-queued", "status": "timeout", "reason": "timeout",
+                           "elapsed_ms": 120_000, "during": deepcopy(holders), "heading": "查询超过了允许的执行时间。"},
+                "native": {"execution_id": f"{engine}-native", "status": "timeout", "reason": "timeout",
+                           "elapsed_ms": 120_000, "during": native, "heading": "查询超过了允许的执行时间。"},
+                "manager": {"http_status": None, "elapsed_ms": 60_000, "heading": "预览服务暂时不可用"},
+                "engine_status": "online",
+                "holder_execution_id": f"{engine}-holder", "recovered_execution_id": f"{engine}-recovered",
+                "recovered_manager_rows": 1,
+            }
             evidence["cases"].append(case)
         return evidence, expected
 
@@ -313,6 +331,24 @@ pid=44 user=pool_reader_next LOG:  statement: SELECT id FROM public.pool_source_
                          lambda e: e["cases"][0].pop("concurrency")):
             invalid = deepcopy(evidence)
             mutation(invalid)
+            with self.assertRaises(POOL.SUPPORT.SuiteError):
+                POOL.validate_browser(invalid, expected)
+
+    def test_saturation_requires_distinct_native_waits_and_browser_timeouts(self):
+        evidence, expected = self.connection_evidence()
+        POOL.validate_browser(evidence, expected)
+        for mutation in (
+            lambda p: p["configuration"].update(max_open=2),
+            lambda p: p.update(engine_status="offline"),
+            lambda p: p["queue_terminal"]["waiters"].pop(),
+            lambda p: p["queued"]["during"]["waiters"].append({"id": 110, "phase": "queued"}),
+            lambda p: p["native"]["during"].update(waiters=[]),
+            lambda p: p["manager"].update(elapsed_ms=300),
+            lambda p: p["native"].update(execution_id=p["queued"]["execution_id"]),
+            lambda p: p["released"].update(held=True),
+        ):
+            invalid = deepcopy(evidence)
+            mutation(invalid["cases"][0]["saturation"])
             with self.assertRaises(POOL.SUPPORT.SuiteError):
                 POOL.validate_browser(invalid, expected)
 
