@@ -306,7 +306,11 @@ Common 父子准入与 System 协调的用例定位见 [Owner 矩阵](../spec/te
 
 ### 8.43 Manager 原生成功基线准备
 
-`manager-success`、`manager-object-unknown` 与 `manager-index-unknown` 已验收，后续验证旧 Runtime 迟到写入。Graph 高级恢复继续暂缓。沿原三业务 User、独立源办理员、精确权限、各 case 原有断言及独占 Hosted 部署推进。120分钟总预算、900秒业务预算、保护投影、扫描与 MinIO 就绪共用的180秒窗口不变；完整协议以 [T4 原生 Cleanup 契约](../spec/testing/T4-Online验收规范.md#原生-cleanup-的独立有限验收)为准。
+三类原生 Cleanup 已验收：[原生成功](#原生成功manager-success)、[对象效果未知](#对象效果未知manager-object-unknown)、[索引效果未知](#索引效果未知manager-index-unknown)。三类沿用原三名业务 User、独立源办理员、精确权限、各场景的原有断言与独占 Hosted 部署。总预算 120 分钟，业务预算 900 秒，保护投影、扫描与 MinIO 就绪共用 180 秒窗口。[T4 原生 Cleanup 契约](../spec/testing/T4-Online验收规范.md#原生-cleanup-的独立有限验收)
+
+对象和索引效果未知下列各轮均通过控制恢复、显式清理及零残留核对。各轮业务断言以自己的结果为准。
+
+#### 原生成功（manager-success）
 
 **成功基线通过。** 第八轮 `9f1f68d5` 于 2026-11-06 06:21:43（Asia/Shanghai）成功结束。16 个镜像、Model3D smoke 和 14 个服务准入通过。首扫后实际观察到原生对象和索引投影，Engine 删除后读回终态并确认对象与索引均已清除。九项断言全部通过，含专业回执一致、清理审计保留及源 OBJ／MTL／纹理保持不变。控制恢复、显式清理和零残留均通过。官方五件归档与作业原始日志已交叉核验。[第八轮 Hosted](https://github.com/pampa0629/addp/actions/runs/42109764720/job/127533929017)
 
@@ -319,29 +323,42 @@ Common 父子准入与 System 协调的用例定位见 [Owner 矩阵](../spec/te
 | 原生库存失败按首个未通过的探针记录闭集原因，成功报告拒绝该字段 | `8b03c91c` 本地及 Linux 专项均 401 项通过，登记一致。[同提交 Linux 专项](https://github.com/pampa0629/addp/actions/runs/42014953009/job/127203046053) |
 | 首次 Meta 扫描先等待 Manager 的 Tenant 保护投影。原 User 对本轮模型指纹执行既有 GLB 列表 GET，原 180 秒内只等待明确的保护未就绪响应 | `241ac08e` 本地及同提交 Linux 专项均 403 项通过，登记一致。首扫时序、拒绝及超时边界有反例覆盖。[Linux 专项](https://github.com/pampa0629/addp/actions/runs/42054235504/job/127338131663) |
 
-**历史范围。** [首轮](https://github.com/pampa0629/addp/actions/runs/41586728539/job/125753855807)及[第三轮](https://github.com/pampa0629/addp/actions/runs/41736284282/job/126266219326)构建超时取消；[第二轮](https://github.com/pampa0629/addp/actions/runs/41639055422/job/125927590186)遇到 ZIP 解码错误；[第四轮](https://github.com/pampa0629/addp/actions/runs/41791842460/job/126446790438)已完成 GLB 生成／授权下载，但库存引用解析失败。[第五轮](https://github.com/pampa0629/addp/actions/runs/41833476102/job/126586309842)模型准备返回 403，原调用和错误码未归档，第六轮未复现。[第六轮](https://github.com/pampa0629/addp/actions/runs/41999442501/job/127150683595)库存失败，未记录具体探针。[第七轮](https://github.com/pampa0629/addp/actions/runs/42039158037/job/127285084068)通过引用及对象探针，首个失败点为索引未出现。该轮未归档投递回执，无法确认历史失败的唯一原因。
+第八轮之前的失败和取消：
 
-**对象效果未知。** `manager-object-unknown` 在 `2515e673` 于 2026-11-06 10:16:34（Asia/Shanghai）以失败结束。GLB、原生对象和索引可见、删除受理及对象实际消失共五项通过。后续拒绝验证收到 HTTP 500，原报告未标明具体请求。控制恢复、显式清理和零残留均通过。[对象未知 Hosted](https://github.com/pampa0629/addp/actions/runs/42138271441/job/127631855385)
+| 轮次 | 首个失败点或取消原因 |
+| --- | --- |
+| [首轮](https://github.com/pampa0629/addp/actions/runs/41586728539/job/125753855807)、[第三轮](https://github.com/pampa0629/addp/actions/runs/41736284282/job/126266219326) | 构建超时取消。 |
+| [第二轮](https://github.com/pampa0629/addp/actions/runs/41639055422/job/125927590186) | ZIP 解码错误。 |
+| [第四轮](https://github.com/pampa0629/addp/actions/runs/41791842460/job/126446790438) | GLB 生成与授权下载已完成，库存引用解析失败。 |
+| [第五轮](https://github.com/pampa0629/addp/actions/runs/41833476102/job/126586309842) | 模型准备返回 403。原调用及错误码未归档，第六轮未复现。 |
+| [第六轮](https://github.com/pampa0629/addp/actions/runs/41999442501/job/127150683595) | 库存检查失败，未记录具体探针。 |
+| [第七轮](https://github.com/pampa0629/addp/actions/runs/42039158037/job/127285084068) | 引用和对象探针通过，首个失败点为索引未出现。未归档投递回执，唯一根因未知。 |
+
+#### 对象效果未知（manager-object-unknown）
+
+**首轮失败。** 固定版本 `2515e673` 于 2026-11-06 10:16:34（Asia/Shanghai）以失败结束。GLB、原生对象和索引可见、删除受理及对象实际消失共五项通过。后续拒绝验证收到 HTTP 500，原报告未标明具体请求。[对象未知 Hosted](https://github.com/pampa0629/addp/actions/runs/42138271441/job/127631855385)
 
 以真实快显入口和 System 连接读取的 409 响应复现了 Manager 将生命周期拒绝包装成 HTTP 500 并返回下游文案。修正保留原查询及权责，快显动作在创建任务前返回安全的 409。runner 将现有拒绝链分为三个阶段，11 项断言保持原契约。修正 `1f24cf9b` 的本地后端和同提交 Linux 门禁均通过，含 Swagger 97 个公开路由及 runner 403 项。[Go 工作区](https://github.com/pampa0629/addp/actions/runs/42153149805/job/127680944498) · [平台一致性](https://github.com/pampa0629/addp/actions/runs/42153149805/job/127680944701) · [Execution runner](https://github.com/pampa0629/addp/actions/runs/42153149805/job/127680944784)
 
-复验 `e52be373` 于 2026-11-06 18:07:58（Asia/Shanghai）失败，官方报告仍登记五项。阶段标记定位为 `manager_new_generation_refusal` HTTP 500；前序已观察持久隔离，Engine 读取及重复删除拒绝（409）已越过。该轮未完成拒绝链、隔离复核及源字节校验。控制恢复、清理和零残留均通过。[修正版 Hosted](https://github.com/pampa0629/addp/actions/runs/42188743649/job/127795258412)
+**第二轮失败。** `e52be373` 于 2026-11-06 18:07:58（Asia/Shanghai）失败，官方报告仍登记五项。阶段标记定位为 `manager_new_generation_refusal` HTTP 500；前序已观察持久隔离，Engine 读取及重复删除拒绝（409）已越过。该轮未完成拒绝链、隔离复核及源字节校验。[修正版 Hosted](https://github.com/pampa0629/addp/actions/runs/42188743649/job/127795258412)
 
 按生产接线加入 Meta Client 后，回归复现了 Mosaic 提前查询将已清理 Meta 项的 404 包装成 500，绕过了 Engine 生命周期检查。Manager 删除该独立查询，从既有 Engine → Meta 解析取得 Mosaic 的规范来源，Engine 拒绝时在读 Meta 前返回既有的安全 409。权限、路由、11 项断言与等待预算沿用原契约。
 
-**对象未知复验通过。** `c105b4ba` 于 2026-11-07 00:29:01（Asia/Shanghai）通过全部 11 项。实际对象变更后代理丢弃回包，持久隔离保留、Engine 保持 deleting、重复删除返回 409 且未重发、新生成被拒绝、源 OBJ／MTL／纹理不变。控制恢复、清理与零残留均通过。快显拒绝的精确 409 和错误码由回归测试验证，Hosted 按既有断言核对拒绝行为。[通过的 Hosted 作业](https://github.com/pampa0629/addp/actions/runs/42240606344/job/127969596209)
+**第三轮通过。** `c105b4ba` 于 2026-11-07 00:29:01（Asia/Shanghai）通过全部 11 项。实际对象变更后代理丢弃回包，持久隔离保留、Engine 保持 deleting、重复删除返回 409 且未重发、新生成被拒绝、源 OBJ／MTL／纹理不变。快显拒绝的精确 409 和错误码由回归测试验证，Hosted 按既有断言核对拒绝行为。[通过的 Hosted 作业](https://github.com/pampa0629/addp/actions/runs/42240606344/job/127969596209)
 
-**索引未知首轮。** `f85842e7` 于 2026-11-07 10:56:42（Asia/Shanghai）失败，正式记录 5/11；GLB、原生对象与索引可见、删除受理及对象实际消失已通过。断言失败仍标为 `engine_tombstone_read`，无法区分代理回执、隔离记录或索引探针，未归档其现场值，实际根因保留未知。控制恢复、清理和零残留均通过。[首轮 Hosted](https://github.com/pampa0629/addp/actions/runs/42320210994/job/128242675201)
+#### 索引效果未知（manager-index-unknown）
 
-**索引未知诊断轮。** `69ecb66c` 于 2026-11-07 20:05:34（Asia/Shanghai）失败，正式记录仍为 5/11。首个失败探针为 `manager_unknown_index_hold`：准确代理绑定成立、仅转发一次且已有上游响应，索引目标为一条，投递 unknown 计数为零；Manager 子项在 `manager_cleanup_index_effect` 失败，Transfer 成功，Engine 保持 deleting。控制恢复、清理和零残留均通过。[诊断轮 Hosted](https://github.com/pampa0629/addp/actions/runs/42364486834/job/128379566458)
+**首轮失败。** `f85842e7` 于 2026-11-07 10:56:42（Asia/Shanghai）失败，正式记录 5/11；GLB、原生对象与索引可见、删除受理及对象实际消失已通过。断言失败仍标为 `engine_tombstone_read`，无法区分代理回执、隔离记录或索引探针，未归档其现场值，实际根因保留未知。[首轮 Hosted](https://github.com/pampa0629/addp/actions/runs/42320210994/job/128242675201)
+
+**诊断轮失败。** `69ecb66c` 于 2026-11-07 20:05:34（Asia/Shanghai）失败，正式记录仍为 5/11。首个失败探针为 `manager_unknown_index_hold`：准确代理绑定成立、仅转发一次且已有上游响应，索引目标为一条，投递 unknown 计数为零；Manager 子项在 `manager_cleanup_index_effect` 失败，Transfer 成功，Engine 保持 deleting。[诊断轮 Hosted](https://github.com/pampa0629/addp/actions/runs/42364486834/job/128379566458)
 
 现行只读关联回执恢复允许投递离开 unknown，但不能结束原 Cleanup 或解除 hold。专项原先依赖瞬时状态，无法正确核验该合法恢复。修正只读取原快照中的精确 Tenant＋Engine／物理索引、原 execution／attempt、端点及代次一致的 prepared 操作、唯一删除投递、目标与隔离出口；拒绝前后排除瞬时 unknown 计数，其余事实仍完整比较。失败诊断仅增加该绑定 hold 的安全计数分类，不增加读取、重试、权限或等待预算，原 11 项验收目标保留。该轮未归档恢复后的具体投递状态，不能声称已证明 Hosted 中实际恢复为 succeeded。 本地标准 Manager Go T1、完整 PostgreSQL T2（含原回执恢复、不重发与 hold 保留）和 Execution runner 406 项已通过。
 
 修正 `baa0965d4` 的同提交 Linux [Execution runner](https://github.com/pampa0629/addp/actions/runs/42371923824/job/128401640079) 实际通过 406 项；[Manager PostgreSQL T2](https://github.com/pampa0629/addp/actions/runs/42371923680/job/128401773028) 通过完整门禁，包含原回执恢复用例及数据库资源零残留。[Go 工作区](https://github.com/pampa0629/addp/actions/runs/42371923824/job/128401640127) 中 Manager 的 15 个有测试包通过，9 包无测试；该作业整体因 Ontology 的 Transfer 文档来源校验失败，不能记为全仓通过。[平台一致性](https://github.com/pampa0629/addp/actions/runs/42371923824/job/128401640129) 在 SQL pool 的 Node 前置检查失败，尚未进入平台检查主体；两项范围外失败未扩展修复。
 
-**索引未知复验通过。** `ba3406a40` 于 2026-11-07 22:36:36（Asia/Shanghai）成功结束，11 项断言全部通过。原生对象和索引实际清除；删除请求仅转发一次且回包丢失，绑定原操作的持久隔离保留，Engine 保持 deleting，重复删除及新生成被拒绝，源 OBJ／MTL／纹理未变。控制恢复、清理和零残留均通过。五份官方归档与 14 个服务源码／实例绑定已交叉核验；本轮仅触发一次、attempt=1，身份权限、范围及预算保持原契约。[通过的 Hosted 作业](https://github.com/pampa0629/addp/actions/runs/42375229408/job/128411336585)
+**复验通过。** `ba3406a40` 于 2026-11-07 22:36:36（Asia/Shanghai）成功结束，11 项断言全部通过。原生对象和索引实际清除；删除请求仅转发一次且回包丢失，绑定原操作的持久隔离保留，Engine 保持 deleting，重复删除及新生成被拒绝，源 OBJ／MTL／纹理未变。五份官方归档与 14 个服务源码／实例绑定已交叉核验；本轮仅触发一次、attempt=1，身份权限、范围及预算保持原契约。[通过的 Hosted 作业](https://github.com/pampa0629/addp/actions/runs/42375229408/job/128411336585)
 
-**剩余工作。** 验证旧 Runtime 迟到写入。新的 Hosted 须单独确认。正向和对象未知通过证据分别位于 `/tmp/addp-manager-success-hosted-eighth-20261106/` 与 `/tmp/addp-manager-object-unknown-hosted-third-20261106/`。
+**后续边界。** 旧 Runtime 迟到写入另见 [§8.44](#844-manager-迟到写入验收准备)，新的 Hosted 须单独确认。Graph 高级恢复继续暂缓。原生成功和对象未知的通过证据分别位于 `/tmp/addp-manager-success-hosted-eighth-20261106/` 与 `/tmp/addp-manager-object-unknown-hosted-third-20261106/`。
 
 
 ### 8.44 Manager 迟到写入验收准备
