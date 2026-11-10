@@ -18198,6 +18198,9 @@ const docTemplate = `{
                 "size": {
                     "type": "integer"
                 },
+                "temporal": {
+                    "$ref": "#/definitions/datatype.TemporalInfo"
+                },
                 "type": {
                     "$ref": "#/definitions/datatype.FieldType"
                 }
@@ -18455,6 +18458,17 @@ const docTemplate = `{
                     "type": "integer"
                 },
                 "updated_at": {
+                    "type": "string"
+                }
+            }
+        },
+        "datatype.TemporalInfo": {
+            "type": "object",
+            "properties": {
+                "timezone": {
+                    "type": "string"
+                },
+                "unit": {
                     "type": "string"
                 }
             }

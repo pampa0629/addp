@@ -458,6 +458,8 @@ definitions:
         type: integer
       size:
         type: integer
+      temporal:
+        $ref: '#/definitions/datatype.TemporalInfo'
       type:
         $ref: '#/definitions/datatype.FieldType'
     type: object
@@ -499,6 +501,13 @@ definitions:
     - FieldTypeArray
     - FieldTypeUUID
     - FieldTypeGeometry
+  datatype.TemporalInfo:
+    properties:
+      timezone:
+        type: string
+      unit:
+        type: string
+    type: object
   events.CleanupResultSummary:
     properties:
       affected_records:

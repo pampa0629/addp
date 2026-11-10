@@ -6910,6 +6910,9 @@ const docTemplate = `{
                 "size": {
                     "type": "integer"
                 },
+                "temporal": {
+                    "$ref": "#/definitions/datatype.TemporalInfo"
+                },
                 "type": {
                     "$ref": "#/definitions/datatype.FieldType"
                 }
@@ -6955,6 +6958,17 @@ const docTemplate = `{
                 "FieldTypeUUID",
                 "FieldTypeGeometry"
             ]
+        },
+        "datatype.TemporalInfo": {
+            "type": "object",
+            "properties": {
+                "timezone": {
+                    "type": "string"
+                },
+                "unit": {
+                    "type": "string"
+                }
+            }
         },
         "events.CleanupResultSummary": {
             "type": "object",

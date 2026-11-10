@@ -214,6 +214,8 @@ definitions:
         type: integer
       size:
         type: integer
+      temporal:
+        $ref: '#/definitions/datatype.TemporalInfo'
       type:
         $ref: '#/definitions/datatype.FieldType'
     type: object
@@ -325,6 +327,13 @@ definitions:
       size_bytes:
         type: integer
       updated_at:
+        type: string
+    type: object
+  datatype.TemporalInfo:
+    properties:
+      timezone:
+        type: string
+      unit:
         type: string
     type: object
   encoding_xml.Name:

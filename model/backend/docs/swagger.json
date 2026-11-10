@@ -5701,6 +5701,9 @@
                 "size": {
                     "type": "integer"
                 },
+                "temporal": {
+                    "$ref": "#/definitions/datatype.TemporalInfo"
+                },
                 "type": {
                     "$ref": "#/definitions/datatype.FieldType"
                 }
@@ -5746,6 +5749,17 @@
                 "FieldTypeUUID",
                 "FieldTypeGeometry"
             ]
+        },
+        "datatype.TemporalInfo": {
+            "type": "object",
+            "properties": {
+                "timezone": {
+                    "type": "string"
+                },
+                "unit": {
+                    "type": "string"
+                }
+            }
         },
         "domainreference.Evidence": {
             "type": "object",
