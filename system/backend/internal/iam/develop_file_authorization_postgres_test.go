@@ -304,7 +304,7 @@ func TestDevelopFileAuthorizationAgainstPostgres(t *testing.T) {
 		_, issued, input := issue(t, true)
 		id, _ := strconv.ParseInt(issued.Authorization.ID, 10, 64)
 		a, b, err := svc.Check(ctx, CheckDevelopFileInput{ServiceAccessToken: serviceToken, AuthorizationID: id, ExecutionID: input.ExecutionID, TenantID: tenant.ID, ExpectedAttempt: 1, ScopeDigest: issued.ScopeDigest, Audit: serviceAudit})
-		if !errors.Is(err, ErrDevelopFileDependencyUnavailable) || a != nil || b != nil {
+		if err != nil || a == nil || a.State != "awaiting_approval" || a.ApprovalID != "" || b != nil {
 			t.Fatal("invented publication readiness", err)
 		}
 	})
@@ -349,12 +349,14 @@ func TestDevelopFileAuthorizationAgainstPostgres(t *testing.T) {
 		foreign := approverCredential(foreignPerson.PrincipalID)
 		facts, issued, input := issue(t, true)
 		id, _ := strconv.ParseInt(issued.Authorization.ID, 10, 64)
-		svc.SetCreateApproverPreparer(func(_ context.Context, _ *gorm.DB, gotTenant, gotMembership int64, target execution.DevelopBoundFileTarget) (func(time.Time) error, error) {
+		allowManagement := true
+		var managementExpiry *time.Time
+		svc.SetCreateApproverPreparer(func(_ context.Context, _ *gorm.DB, gotTenant, gotMembership int64, target execution.DevelopBoundFileTarget) (func(time.Time) (*time.Time, error), error) {
 			if gotTenant != tenant.ID || (gotMembership != firstMember && gotMembership != secondMember) ||
-				!reflect.DeepEqual(target, *issued.Scope.Target) {
+				!reflect.DeepEqual(target, *issued.Scope.Target) || !allowManagement {
 				return nil, commonapi.ErrForbidden
 			}
-			return func(time.Time) error { return nil }, nil
+			return func(time.Time) (*time.Time, error) { return managementExpiry, nil }, nil
 		})
 		req := ApproveDevelopFileCreateInput{AuthorizationID: id, ScopeDigest: issued.ScopeDigest,
 			ExpiresAt: issued.Authorization.ExpiresAt.Add(-time.Second), Audit: audit}
@@ -408,10 +410,65 @@ func TestDevelopFileAuthorizationAgainstPostgres(t *testing.T) {
 		if err := db.Model(&AuditLog{}).Where("event_name=? AND entity_id=?", "iam.develop_file_create_approval.created", persisted.ID.String()).Count(&count).Error; err != nil || count != 1 {
 			t.Fatal("approval audit missing", err, count)
 		}
-		a, b, err := svc.Check(ctx, CheckDevelopFileInput{ServiceAccessToken: serviceToken, AuthorizationID: id,
-			ExecutionID: input.ExecutionID, TenantID: tenant.ID, ExpectedAttempt: 1, ScopeDigest: issued.ScopeDigest, Audit: serviceAudit})
-		if !errors.Is(err, ErrDevelopFileDependencyUnavailable) || a != nil || b != nil || facts.AdmissionState != "pending" {
-			t.Fatal("approval alone activated the execution", err)
+		check := CheckDevelopFileInput{ServiceAccessToken: serviceToken, AuthorizationID: id,
+			ExecutionID: input.ExecutionID, TenantID: tenant.ID, ExpectedAttempt: 1, ScopeDigest: issued.ScopeDigest, Audit: serviceAudit}
+		allowManagement = false
+		a, b, err := svc.Check(ctx, check)
+		if err != nil || a == nil || a.State != "rejected" || a.ApprovalID != "" || b != nil {
+			t.Fatal("lost management scope reported ready", a, err)
+		}
+		allowManagement = true
+		current, err := repo.internalTaskDatabaseTime(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		managementDeadline := current.Add(20 * time.Second)
+		managementExpiry = &managementDeadline
+		a, b, err = svc.Check(ctx, check)
+		var stillPending execution.TaskExecution
+		if dbErr := db.Where("execution_id=?", facts.ExecutionID).Take(&stillPending).Error; dbErr != nil {
+			t.Fatal(dbErr)
+		}
+		if err != nil || a == nil || a.State != "ready" || a.ApprovalID != winner.ApprovalID || a.ExpiresAt.After(winner.ExpiresAt) ||
+			!a.ExpiresAt.Equal(managementDeadline) || b != nil || stillPending.Status != "pending" || stillPending.StartedAt != nil {
+			t.Fatal("approval observation changed the original execution or omitted the approval", a, err)
+		}
+		_, lease, err := execution.ClaimPending(ctx, db, execution.PendingIdentity{ExecutionID: facts.ExecutionID, TenantID: int(tenant.ID), Module: "develop", TaskType: "workflow", Source: "develop"},
+			execution.ClaimOptions{Module: "develop", TaskType: "workflow", WorkerID: "approved-file-test", LeaseDuration: time.Minute, RequireAuthorization: true}, nil)
+		if err != nil || lease == nil {
+			t.Fatal("fixture claim failed", err)
+		}
+		facts.AdmissionState = "ready"
+		check.Source, check.LeaseToken = &path, uuid.New()
+		if a, b, err := svc.Check(ctx, check); err == nil || a != nil || b != nil {
+			t.Fatal("invalid lease used the approval")
+		}
+		check.LeaseToken = uuid.MustParse(lease.Token)
+		if a, b, err := svc.Check(ctx, check); err != nil || a != nil || b == nil || b.Engine == nil || b.Engine.ID != uint(engineID) ||
+			!b.BusinessDeadline.Equal(managementDeadline) || b.ExpiresAt.After(managementDeadline) {
+			t.Fatal("approved running read did not return the exact source", err)
+		}
+		allowManagement = false
+		if a, b, err := svc.Check(ctx, check); err == nil || a != nil || b != nil {
+			t.Fatal("running read reused a stale approval scope")
+		}
+		allowManagement = true
+		if err := db.Model(&developFileCreateApproval{}).Where("id=?", persisted.ID).
+			Updates(map[string]any{"approved_at": now.Add(-time.Minute), "expires_at": now.Add(-time.Second)}).Error; err != nil {
+			t.Fatal(err)
+		}
+		if a, b, err := svc.Check(ctx, check); err == nil || a != nil || b != nil {
+			t.Fatal("expired original approval returned a source connection")
+		}
+		if err := db.Model(&developFileCreateApproval{}).Where("id=?", persisted.ID).
+			Updates(map[string]any{"approved_at": persisted.ApprovedAt, "expires_at": persisted.ExpiresAt}).Error; err != nil {
+			t.Fatal(err)
+		}
+		if _, err := repo.IncrementPrincipalAuthorizationVersion(ctx, persisted.ApproverPrincipalID); err != nil {
+			t.Fatal(err)
+		}
+		if a, b, err := svc.Check(ctx, check); err == nil || a != nil || b != nil {
+			t.Fatal("invalidated approver identity returned a source connection")
 		}
 	})
 	t.Run("wrong owner actor and rejected before issuance", func(t *testing.T) {

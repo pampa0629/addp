@@ -20,7 +20,7 @@ import (
 // DevelopFileCreateApproverPreparer locks the target engine and current
 // management scope in the approval transaction. The returned check uses the
 // final database wall clock, including time spent waiting for locks.
-type DevelopFileCreateApproverPreparer func(context.Context, *gorm.DB, int64, int64, execution.DevelopBoundFileTarget) (func(time.Time) error, error)
+type DevelopFileCreateApproverPreparer func(context.Context, *gorm.DB, int64, int64, execution.DevelopBoundFileTarget) (func(time.Time) (*time.Time, error), error)
 
 func (s *DevelopFileAuthorizationService) SetCreateApproverPreparer(prepare DevelopFileCreateApproverPreparer) {
 	s.prepareCreateApprover = prepare
@@ -52,6 +52,77 @@ type developFileCreateApproval struct {
 }
 
 func (developFileCreateApproval) TableName() string { return "system.develop_file_create_approvals" }
+
+func (r *Repository) findDevelopFileCreateApproval(ctx context.Context, authorizationID int64) (*developFileCreateApproval, error) {
+	var approval developFileCreateApproval
+	err := r.db.WithContext(ctx).Where("authorization_id = ?", authorizationID).Take(&approval).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &approval, nil
+}
+
+// The caller has already locked the original and approving Principals in
+// ascending order. Check current scope under the same transaction as the EA.
+func (s *DevelopFileAuthorizationService) prepareCurrentCreateApproval(ctx context.Context, tx *Repository, row *ExecutionAuthorization, approval *developFileCreateApproval, membership *TenantMembership) (func(time.Time) (time.Time, error), error) {
+	if approval == nil || membership == nil || row.DevelopFileScope.Target == nil || approval.ID == uuid.Nil ||
+		approval.AuthorizationID != row.ID || approval.ApproverPrincipalID == row.ActorPrincipalID {
+		return nil, ErrExecutionAuthorizationPermissionDenied
+	}
+	if s.prepareCreateApprover == nil {
+		return nil, ErrDevelopFileDependencyUnavailable
+	}
+	checkScope, err := s.prepareCreateApprover(ctx, tx.db, row.TenantID, approval.ApproverMembershipID, *row.DevelopFileScope.Target)
+	if err != nil {
+		return nil, err
+	}
+	if checkScope == nil {
+		return nil, ErrDevelopFileDependencyUnavailable
+	}
+	return func(now time.Time) (time.Time, error) {
+		expires := approval.ExpiresAt
+		if approval.ApprovedAt.After(now) || !approval.ExpiresAt.After(now) ||
+			(membership.ExpiresAt != nil && !membership.ExpiresAt.After(now)) {
+			return time.Time{}, ErrExecutionAuthorizationPermissionDenied
+		}
+		if membership.ExpiresAt != nil && membership.ExpiresAt.Before(expires) {
+			expires = *membership.ExpiresAt
+		}
+		managementExpiry, err := checkScope(now)
+		if err != nil {
+			return time.Time{}, err
+		}
+		if managementExpiry != nil && managementExpiry.Before(expires) {
+			expires = *managementExpiry
+		}
+		rows, err := tx.ListEffectiveRoleAssignmentPermissions(ctx, approval.ApproverPrincipalID, PrincipalTypeUser, ContextTypeTenant, &membership.TenantID, &membership.ID, now)
+		if err != nil {
+			return time.Time{}, err
+		}
+		var latest time.Time
+		for _, permission := range rows {
+			if permission.ScopeType == "tenant" && permission.PermissionKey == systemauth.PermissionSystemDevelopFileCreateApprovalCreate &&
+				(permission.ValidUntil == nil || permission.ValidUntil.After(now)) {
+				if permission.ValidUntil == nil {
+					return expires, nil
+				}
+				if permission.ValidUntil.After(latest) {
+					latest = *permission.ValidUntil
+				}
+			}
+		}
+		if latest.IsZero() {
+			return time.Time{}, ErrExecutionAuthorizationPermissionDenied
+		}
+		if latest.Before(expires) {
+			expires = latest
+		}
+		return expires, nil
+	}, nil
+}
 
 func (s *DevelopFileAuthorizationService) ApproveCreate(ctx context.Context, input ApproveDevelopFileCreateInput) (*DevelopFileCreateApprovalReceipt, error) {
 	if input.AuthorizationID <= 0 || !validDevelopDigest(input.ScopeDigest) || input.ExpiresAt.IsZero() {
@@ -128,7 +199,8 @@ func (s *DevelopFileAuthorizationService) ApproveCreate(ctx context.Context, inp
 			if membership.ExpiresAt != nil && !membership.ExpiresAt.After(now) {
 				return ErrExecutionAuthorizationPermissionDenied
 			}
-			return checkScope(now)
+			_, err := checkScope(now)
+			return err
 		}
 		now, err := tx.internalTaskDatabaseTime(ctx)
 		if err != nil {

@@ -4696,7 +4696,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "固定 addp-develop Tenant Service；复核原 EA、Scope、pending、主体和当前源规则；无连接、不放行发布。未实现正式目标批准时保存范围关闭 | Fixed addp-develop Tenant Service; rechecks original EA, scope, pending execution, actor and current source rules; no connection or publication release. Save scopes remain closed until formal approval consumption is implemented",
+                "description": "固定 addp-develop Tenant Service；复核原 EA、Scope、pending、主体和当前源规则。保存范围须有当前有效的原批准。本观察不返回连接或发布放行。 | Fixed addp-develop Tenant Service. Checks original EA, scope, pending execution, actor and current source rules. A save scope requires the original approval to remain valid. This observation returns no connection or publication release.",
                 "consumes": [
                     "application/json"
                 ],
@@ -4868,7 +4868,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "固定 addp-develop 当前机器凭据；核同一 Scope、当前 User、完整源规则、真实 running attempt/lease、StartedAt 固定截止及同版本 NFS；只返回指定源连接、不可续期的 business_deadline 与受当前租约／机器凭据限制的 expires_at。元数据边界不能用作内容许可 | Fixed current addp-develop machine credential; checks identical scope, current User, complete source rules, actual running attempt and lease, original StartedAt deadline and unchanged NFS version. Returns only the selected source connection, a sealed business_deadline independent of renewal, and expires_at bounded by the current lease and machine credential; metadata boundaries never grant content access",
+                "description": "固定 addp-develop 当前机器凭据；核同一 Scope、当前 User、完整源规则、真实 running attempt/lease、原截止及同版本 NFS；保存范围继续核对原批准。只返回指定源连接及时间边界。 | Fixed current addp-develop machine credential. Checks scope, current User, source rules, running attempt and lease, original deadline and NFS version. Rechecks the original approval for save scopes. Returns only the selected source connection and time bounds.",
                 "consumes": [
                     "application/json"
                 ],

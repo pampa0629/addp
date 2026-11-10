@@ -11,6 +11,7 @@ import (
 	"github.com/addp/common/dataitem/authorizationfacts"
 	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/execution"
+	"github.com/addp/system/internal/authorization"
 	"github.com/addp/system/internal/iam"
 	"github.com/addp/system/internal/models"
 	"gorm.io/gorm"
@@ -155,7 +156,7 @@ func developNFSVersion(engine *models.Engine, tenant, version int64) bool {
 
 // PrepareDevelopFileCreateApprover reuses the current engine-management check
 // under the IAM approval transaction. It does not retrieve connection data.
-func (s *Service) PrepareDevelopFileCreateApprover(ctx context.Context, db *gorm.DB, tenant, membership int64, target execution.DevelopBoundFileTarget) (func(time.Time) error, error) {
+func (s *Service) PrepareDevelopFileCreateApprover(ctx context.Context, db *gorm.DB, tenant, membership int64, target execution.DevelopBoundFileTarget) (func(time.Time) (*time.Time, error), error) {
 	version, err := strconv.ParseInt(target.EngineVersion, 10, 64)
 	if err != nil || version <= 0 || target.Mode != "fail" {
 		return nil, commonapi.ErrForbidden
@@ -167,7 +168,27 @@ func (s *Service) PrepareDevelopFileCreateApprover(ctx context.Context, db *gorm
 	if !developNFSVersion(scope.engine, tenant, version) {
 		return nil, commonapi.ErrForbidden
 	}
-	return scope.check, nil
+	return func(now time.Time) (*time.Time, error) {
+		if err := scope.check(now); err != nil {
+			return nil, err
+		}
+		if !scope.isAdministrator(now) {
+			return &scope.delegation.ExpiresAt, nil
+		}
+		var latest time.Time
+		for _, row := range scope.administratorPermissions {
+			if !hasCurrentTenantPermission([]iam.RoleAssignmentPermissionProjection{row}, tenant, authorization.PermissionSystemEngineAccessDelegationCreate, now) {
+				continue
+			}
+			if row.ValidUntil == nil {
+				return nil, nil
+			}
+			if row.ValidUntil.After(latest) {
+				latest = *row.ValidUntil
+			}
+		}
+		return &latest, nil
+	}, nil
 }
 
 func earliestDevelopReadExpiry(a, b *time.Time) *time.Time {
