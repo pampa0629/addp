@@ -10,7 +10,7 @@
 
 | 验收范围 | 已归档结论 | 直达记录 |
 | --- | --- | --- |
-| continuous 与 Owner 不可用 | Transfer Hosted 实际覆盖 Owner 503 后清除旧数据、同进程恢复与重新裁决。各轮的分项通过、整轮失败及清理残留分别认定。 | [各轮源码、首败与清理](#continuous-诊断与-owner-不可用) |
+| continuous 与 Owner 不可用 | Transfer Hosted 实际覆盖 Owner 503 后清除旧数据、同进程恢复与重新裁决。各轮的分项通过、整轮失败及清理残留分别认定。 | [刷新与撤权](#刷新恢复与撤权) · [Owner 503](#owner-503-与同进程恢复) · [多页与终审](#多页事件与租户日志终审) |
 | 租户日志终审 | 固定版本核验两页共四条事件、旧 Token 401、新 Monitor-only 会话的保存游标拒绝、定时扫描隔离和删定义后历史读取。任务清理与独占部署销毁分别记录。 | [正式身份、原 Job 与终审回执](#2026-10-23-固定版本租户日志终审) |
 | 180 天概览只读评估 | 本地 T2 验证只读快照。Hosted 首轮在夹具准备失败，修正后由真实 System 首轮识别 14 棵树、5 棵时间候选，执行行与窗口内事件不变。Platform CI 另证确定性门禁。 | [本地 T2](#2026-10-24-概览保留只读评估第一期) · [Hosted 首败与复验](#执行概览只读维护真实进程验收2026-10-25) · [Platform 终态](#固定版本-platform-ci-复核2026-10-25) |
 | 30 天过程事件物理清理 | 独立 Hosted 场景验证真实 System 首轮删除 1004 条过期事件，窗口内事件、执行行与既有审计保留。精确截止点由 Common 固定时刻测试覆盖。 | [首轮删除断言与清理回执](#30-天过程事件清理真实进程验收2026-10-26) |
@@ -73,18 +73,34 @@ Common 增加 `AssessRetention`，System 沿已有公共维护循环输出有界
 
 ## continuous 诊断与 Owner 不可用
 
-| 尝试 | 源码 | 已记录结果与边界 |
-| --- | --- | --- |
-| [38329160596](https://github.com/pampa0629/addp/actions/runs/38329160596) | `bfc305953` | 整轮 T4 失败：真实自动刷新、恢复来源和稳定码已验，但撤权只清事件、未清终态概览/步骤；Monitor-only 与后续 CDC 未运行。清理通过、残留 0。本地修正后前端 56 单元/118 浏览器及构建通过，401 用例改为会话失效导航且内容全清，没有放宽旧内容断言。 |
-| [38337857450](https://github.com/pampa0629/addp/actions/runs/38337857450) | `b0765f802` | 整轮 T4 失败：live/recovery 与旧内容清空通过，新鲜 Monitor-only 提示断言失败；清理及 Infra 零残留。StatusAnnouncer 与 el-result 同文案造成 strict-mode 双匹配，修正只定位唯一可见标题，保留播报和无详情/步骤/事件/树断言。 |
-| [38381655995](https://github.com/pampa0629/addp/actions/runs/38381655995) | `65de8a82938ba1bbdd56df6f7c000be7f67076cc`，包含 `ba2c99652` | 完整 Hosted T4 通过：live/recovery/revocation 三份报告及九组接口/Worker 检查，Worker 失联新 UUID、暂停/恢复、跨/同租户 Owner 权限、Owner 不可用、撤权与新鲜 Monitor-only 拒绝、CDC 事件、删定义后历史读取。五模块源码一致、37 归档无私有控制文件或访问令牌/JWT 模式，领域/Infra 零残留。修正的前端 59 单元/131 浏览器与构建、transfer runner 65 项通过；不含后续 Workflow/Notebook 监督器或 T5。 |
-| [39026543398](https://github.com/pampa0629/addp/actions/runs/39026543398) | 原文未单列 SHA | 整轮失败：隔离入口漏启 Security，在 Owner 故障阶段之前退出；清理及 Infra 零残留，不计 Owner 故障通过。后续场景预检 Security，并只读等待独占部署的 Transfer projection initialized，不写保护事实或连接本地共享业务库。 |
-| [39082349255](https://github.com/pampa0629/addp/actions/runs/39082349255) | `009ceea39` | Owner503 八项页面检查与同进程停止/恢复通过，三张截图、领域/Infra 清理通过；整轮仍失败，原因是把运行中 CDC 错误要求为 running 终态事件，后续 CDC/审批/调度未运行。修正要求 CDC 仍运行且无终态；终态执行仍恰有一个匹配终态事件。 |
-| [39083559464](https://github.com/pampa0629/addp/actions/runs/39083559464) | `946c4d13e` | 完整隔离 Hosted T4 通过：14 业务检查、真实 Owner503 八项页面检查、撤权/Monitor-only、Kafka 恢复、CDC 审批与双向扫描隔离、调度当前主体、删定义后历史。相同 Owner PID 停止/恢复证明 true，归档 `12121475487` 的三张截图已目视核验；业务残留 0、cleanup passed、外层 Infra zero_residuals。保留产品历史，不外推 Notebook、其他 Owner 或 T5。 |
-| [39905778336 / Job120257300658](https://github.com/pampa0629/addp/actions/runs/39905778336/job/120257300658) | `5be2c2e0e9c6fb1f49da54a076753f2568462fd4` | 整套失败：14 项检查及四份浏览器分项报告通过，新增多页／保存游标撤权及不可见总数已有分项证据；但旧验收白名单拒绝 Transfer 已声明的专业 `initial_authorization.status/code`，成功的定时执行在校验及清理历史读取时被拒绝，task 3 未完成删除。领域 cleanup failed、残留 1；外层部署销毁不能抵消该失败，不计整套通过。 |
-| [39923509570 / Job120314175151](https://github.com/pampa0629/addp/actions/runs/39923509570/job/120314175151) | `9e67500b26136ef909086d70ee9536d925ff3581` | 固定版本完整 Hosted T4 通过：六服务同提交，场景 176.851 秒，16 项唯一检查、四份真实浏览器报告一致通过。补齐保存游标撤权、不可见总数、定时扫描与父子读取隔离及删定义后历史；任务 3／2／1 均 verified_absent，领域残留 0、无不确定写入，部署清理及 Infra zero_residuals。官方归档 `12493568384`，范围及限制见下文。 |
+按[刷新、恢复与撤权](#刷新恢复与撤权)、[Owner 503 与同进程恢复](#owner-503-与同进程恢复)和[多页事件与租户日志终审](#多页事件与租户日志终审)查阅。各轮只认定实际执行的断言，验收方法沿 [transfer-continuous-events 场景](../scenarios/同步与引擎消费.md#transfer-continuous-events)，确定性入口为 `make test-transfer-continuous-online-runner`。
 
-Owner503 场景使用正式普通 User 与真实 Monitor 响应；故障夹具仅停止当次隔离部署中经 pidfd、可执行文件、UID、数据库和私有目录核验的 Transfer Backend，再恢复同一进程。浏览器分别验证终态详情、运行树、非空列表的清空与重新裁决；独立网络中断仅影响事件读取，不冒充 Owner 503。控制文件只在当次私有目录，公开回执不包含 Token、业务样本或完整接口响应。标准入口仍为既有 transfer-continuous-events Hosted suite 与 `make test-transfer-continuous-online-runner`。
+### 刷新、恢复与撤权
+
+| Hosted Run／源码 | 已执行结果与整轮结论 | 清理与归档 |
+| --- | --- | --- |
+| [38329160596](https://github.com/pampa0629/addp/actions/runs/38329160596) · `bfc305953` | **失败**。真实自动刷新、恢复来源和稳定码通过。撤权只清事件，终态概览和步骤仍保留。Monitor-only 与后续 CDC 未运行。 | 清理通过，残留 0。 |
+| [38337857450](https://github.com/pampa0629/addp/actions/runs/38337857450) · `b0765f802` | **失败**。live／recovery 与旧内容清空通过。重新登录后的 Monitor-only 拒绝提示断言失败，`StatusAnnouncer` 与 `el-result` 同文案触发 strict-mode 双匹配。 | 清理通过，Infra 零残留。 |
+| [38381655995](https://github.com/pampa0629/addp/actions/runs/38381655995) · `65de8a82938ba1bbdd56df6f7c000be7f67076cc`（含 `ba2c99652`） | **完整 Hosted T4 通过**。live／recovery／revocation 三份报告与九组接口和 Worker 检查通过，覆盖失联后新 UUID、暂停／恢复、跨租户及同租户 Owner 权限、Owner 不可用、撤权与新会话拒绝、CDC 事件、删定义后历史读取。Workflow／Notebook 监督器与生产 T5 未覆盖。 | 五模块源码一致，37 份归档无私有控制文件或访问令牌／JWT 模式，领域及 Infra 零残留。 |
+
+本地验证单列。首轮修正后前端 56 项单元、118 项浏览器及构建通过，401 断言核对会话失效导航和旧内容全清。第二轮修正只定位唯一可见标题，保留播报及详情、步骤、事件、树均不展示的断言。最终修订的前端 59 项单元、131 项浏览器及构建通过，Transfer runner 65 项通过。
+
+### Owner 503 与同进程恢复
+
+故障夹具使用正式普通 User，只停止当次隔离部署中经 pidfd、可执行文件、UID、数据库和私有目录核验的 Transfer Backend，再恢复同一 PID。浏览器核对终态详情、运行树和非空列表的清空与重新裁决。独立网络中断仅影响事件读取。控制文件留在当次私有目录，公开回执不含 Token、业务样本或完整接口响应。
+
+| Hosted Run／源码 | 已执行结果与整轮结论 | 清理与归档 |
+| --- | --- | --- |
+| [39026543398](https://github.com/pampa0629/addp/actions/runs/39026543398) · 原记录未单列 SHA | **失败**。隔离入口漏启 Security，Owner 故障阶段未运行。后续预检 Security，并只读等待独占部署的 Transfer projection initialized，不写保护事实或连接本地共享业务库。 | 清理通过，Infra 零残留。 |
+| [39082349255](https://github.com/pampa0629/addp/actions/runs/39082349255) · `009ceea39` | **失败**。Owner 503 八项页面检查和同进程停止／恢复通过。后续断言误要求运行中 CDC 存在 running 终态事件，CDC 后续、审批与调度未运行。修正要求运行中 CDC 无终态，终态执行恰有一个匹配终态事件。 | 保留三张截图，领域及 Infra 清理通过。 |
+| [39083559464](https://github.com/pampa0629/addp/actions/runs/39083559464) · `946c4d13e` | **完整 Hosted T4 通过**。14 项业务检查含 Owner 503 八项页面检查，同 PID 停止与恢复证明为真。覆盖撤权／Monitor-only、Kafka 恢复、CDC 审批与双向扫描隔离、调度当前主体及删定义后历史读取。Notebook、其他 Owner 与生产 T5 未覆盖。 | 归档 `12121475487` 的三张截图已目视核验。产品历史保留，业务残留 0，`cleanup=passed`，外层 Infra `zero_residuals`。 |
+
+### 多页事件与租户日志终审
+
+| Hosted Run／源码 | 已执行结果与整轮结论 | 清理与归档 |
+| --- | --- | --- |
+| [39905778336／Job 120257300658](https://github.com/pampa0629/addp/actions/runs/39905778336/job/120257300658) · `5be2c2e0e9c6fb1f49da54a076753f2568462fd4` | **失败**。14 项检查及四份浏览器分项报告通过，包含多页、保存游标撤权及不可见总数。旧验收白名单拒绝 Transfer 已声明的 `initial_authorization.status/code`，成功的定时执行在校验及清理时读取历史被拒绝。 | task 3 未完成删除，领域 `cleanup=failed`、残留 1。外层部署销毁后，领域清理结论仍为失败。 |
+| [39923509570／Job 120314175151](https://github.com/pampa0629/addp/actions/runs/39923509570/job/120314175151) · `9e67500b26136ef909086d70ee9536d925ff3581` | **完整 Hosted T4 通过**。六服务同提交，176.851 秒，16 项唯一检查和四份真实浏览器报告通过，补齐保存游标撤权、不可见总数、定时扫描、父子读取隔离与删定义后历史读取。身份、报告与后续未覆盖项见[固定版本租户日志终审](#2026-10-23-固定版本租户日志终审)。 | 官方归档 `12493568384`。任务 3／2／1 均 `verified_absent`，领域残留 0，无不确定写入，部署清理及 Infra 零残留。 |
 
 ## 2026-10-23 固定版本租户日志终审
 
