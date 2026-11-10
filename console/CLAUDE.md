@@ -31,6 +31,7 @@ console/frontend/
 
 - 新增前端模块入口时，优先更新 `console/frontend/src/config/portalConfig.js`，并同步健康检查或 Swagger 代理配置。
 - “数据准备”分组及首页卡片按 Transfer、Meta、Security、Manager 排列；“数据治理”分组包含 Standard、Model、Quality、Ontology。分组只表达产品导航，Security 继续独立拥有数据保护控制面，纳管仍由用户显式发起。
+- 系统管理的“部署与纳管”依次包含主机管理、模块管理和引擎纳管，沿各子项的原有路由与权限过滤。没有可见子项时隐藏分组。
 - Transfer 有任务读取权限时，Console 侧栏只显示“传输任务”，创建操作由任务列表的主按钮进入；仅有创建权限且具备 `meta.catalog.read` 时，侧栏以“创建传输任务”作为模块入口。创建页对前者保持任务列表菜单选中，对后者保持创建菜单选中；直接地址仍按各页面 Permission 校验。
 - Ontology 入口按互斥上下文分离：Tenant 的“领域本体建模”（`/ontology/ontologies`）要求 `ontology.revision.read`；Platform User 的“平台本体核实”（`/ontology/platform/definitions`）要求 `ontology.platform_definition.read`，只读已发布能力及依据，不提供建模/发布。权限过滤后没有可见子项的模块不渲染空父菜单。
 - Console 只做入口聚合，不承载业务模块的核心业务逻辑。

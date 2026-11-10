@@ -90,6 +90,7 @@ Develop TaskProvider 的 canonical 前端路由为：
 | --- | --- | --- |
 | System | 平台主机管理及详情 | 列表 `/system/host-nodes`、详情 `/system/host-nodes/:node_id`；query 为 `search/node_kind/enabled/page/page_size`，类型只允许 `physical/virtual`，纳管状态只允许 `true/false`，不限制时省略；默认第 1 页及每页 20 条省略，改变筛选回到第一页，重置保留每页条数；创建弹窗与未保存草稿不进入 URL |
 | System | 部署清单接入 | `/system/host-admission`；主机确认后唯一 query `node_id` 保存稳定身份，刷新重新读取；唯一 Console 编排入口，不将导入文件、未保存来源或部署参数写入 URL；主机保存/选择后传递当前稳定 ID 到 Monitor，来源仅经下述内存草稿交接 |
+| System | 引擎纳管 | `/system/engine-deployments` 与 `/system/engine-deployments/:deployment_id`；`scope/search/page/page_size` 恢复列表上下文，默认 Infra、第 1 页、每页 20 条省略。Business 显式使用 `scope=business`。切换来源范围重置页码，保留已提交搜索和每页条数；详情返回保留列表条件。列表 API 始终按所选来源范围筛选，不使用租户或名称推断来源 |
 | Manager | 数据资源与预览子视图 | `locator`、`tab` |
 | Manager | 数据任务工作区 | 分类使用 `/manager/tasks/quick-view`、`/manager/tasks/spatial`、`/manager/tasks/embedding` 三个 canonical path；query 只保存 `task_type`、向量化页内 `tab`、`task_id`、`create=1` 及页面定义的创建来源参数，默认页内任务视图省略 `tab` |
 | Develop | SQL、工作流、Notebook 创建或编辑 | `action`、`id` |

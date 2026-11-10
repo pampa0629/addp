@@ -2317,6 +2317,8 @@
     },
     "hostAdmission": {
       "import": "导入部署清单",
+      "downloadExample": "下载清单样例",
+      "exampleHint": "请将样例中的主机、允许关联的模块和采集地址替换为实际值。仅接入主机时，可移除 collection 字段。",
       "hostFacts": "清单中的主机信息",
       "mode": "主机接入方式",
       "existing": "选择已有主机",
@@ -2339,7 +2341,10 @@
       "collectionDenied": "当前账号没有采集配置权限，可由具备权限的管理员继续配置。"
     },
     "engineDeployments": {
-      "title": "平台引擎部署",
+      "title": "引擎纳管",
+      "purpose": "登记已部署的引擎，并维护承载主机与纳管状态。",
+      "scopes": { "infra": "Infra 基础设施", "business": "Business 业务引擎" },
+      "actions": "操作",
       "create": "接入发现的引擎",
       "details": "引擎部署详情",
       "name": "部署名称",
@@ -2375,7 +2380,7 @@
         "desktop_linux_vm": "Docker Desktop Linux 虚拟机",
         "linux_docker": "Linux Docker"
       },
-      "detailAction": "部署详情",
+      "detailAction": "详情",
       "refreshDiscovery": "重新读取来源",
       "service": "部署服务",
       "discoveryStatus": "接入状态",

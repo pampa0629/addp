@@ -102,7 +102,10 @@ function resolvePagedSearchRouteState(routeQuery = {}) {
 }
 
 export function resolveEngineDeploymentsRouteState(routeQuery = {}) {
-  return resolvePagedSearchRouteState(routeQuery)
+  const state = resolvePagedSearchRouteState(routeQuery)
+  const scope = singleQueryValue(routeQuery.scope) === 'business' ? 'business' : 'infra'
+  const query = scope === 'business' ? { scope, ...state.query } : state.query
+  return { ...state, scope, query, changed: !queriesEqual(routeQuery, query) }
 }
 
 export function resolveHostNodesRouteState(routeQuery = {}) {

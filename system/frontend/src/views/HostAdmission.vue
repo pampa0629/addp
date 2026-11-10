@@ -4,6 +4,8 @@
     <el-button @click="navigate('/host-nodes')">{{ t('system.hostNodes.title') }}</el-button>
     <input ref="fileInput" type="file" accept="application/json,.json" hidden data-testid="admission-file" @change="importFile" />
     <el-button :disabled="saving || reading || blocked || Boolean(recorded)" @click="fileInput?.click()">{{ t('system.hostAdmission.import') }}</el-button>
+    <el-button tag="a" :href="exampleDownload" download="addp-host-admission.example.json">{{ t('system.hostAdmission.downloadExample') }}</el-button>
+    <p v-if="!manifest && !recorded">{{ t('system.hostAdmission.exampleHint') }}</p>
     <el-alert v-if="error" :title="error" type="error" :closable="false" show-icon data-testid="admission-error" />
     <el-alert v-if="blocked" :title="t('system.hostAdmission.hostUnknown')" type="warning" :closable="false" show-icon />
     <template v-if="manifest && !recorded">
@@ -48,6 +50,21 @@ import { parseHostAdmission } from '../../../../common-frontend/basic/src/utils/
 import { hostNodesAPI } from '../api/hostNodes'
 import { useAuthStore } from '../store/auth'
 import { navigateSystemRoute } from '../utils/moduleNavigation'
+
+const exampleManifest = {
+  schema: 'addp.host-admission/v2',
+  host: {
+    display_name: 'linux-host-01',
+    node_kind: 'virtual',
+    addresses: ['192.0.2.10'],
+    allowed_module_bindings: [{ module_name: 'meta', client_id: 'addp-meta' }]
+  },
+  collection: {
+    monitor_kind: 'host_resources',
+    source: { type: 'node_exporter', endpoint: 'https://192.0.2.10:9100/metrics' }
+  }
+}
+const exampleDownload = `data:application/json;charset=utf-8,${encodeURIComponent(`${JSON.stringify(exampleManifest, null, 2)}\n`)}`
 
 const route = useRoute(), router = useRouter(), auth = useAuthStore(), { t } = useI18n()
 const inConsole = window.parent !== window

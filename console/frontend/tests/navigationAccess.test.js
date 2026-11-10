@@ -78,6 +78,29 @@ describe('Console navigation access filtering', () => {
     expect(en.console.menus.catalog.tasks).toBe('Responsibility Governance Queue')
   })
 
+  it('orders deployment management pages and preserves each existing platform permission', async () => {
+    vi.stubGlobal('window', { location: { protocol: 'http:', hostname: 'localhost', origin: 'http://localhost' } })
+    try {
+      const { SIDEBAR_MENUS } = await import('../src/config/portalConfig.js')
+      const pages = [
+        ['/system/host-nodes', 'platform.host_node.read'],
+        ['/system/modules', 'platform.module.read'],
+        ['/system/engine-deployments', 'platform.engine_deployment.read'],
+      ]
+      const group = (context, permissions) => filterSidebarMenus({ system: SIDEBAR_MENUS.system }, context, permissions)
+        .system.items.find(item => item.index === 'system-deployment-management')
+      const allPermissions = pages.map(([, permission]) => permission)
+      expect(group('platform', allPermissions).children.map(item => item.index)).toEqual(pages.map(([path]) => path))
+      for (const [path, permission] of pages) {
+        expect(group('platform', [permission]).children.map(item => item.index)).toEqual([path])
+      }
+      expect(group('platform', [])).toBeUndefined()
+      expect(group('tenant', allPermissions)).toBeUndefined()
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+
   it('requires every permission when an entry declares all mode', () => {
     const entry = { permissions: ['quality.plan.read', 'quality.issue.read', 'monitor.execution.read'], permissionMode: 'all' }
     for (const missing of entry.permissions) {

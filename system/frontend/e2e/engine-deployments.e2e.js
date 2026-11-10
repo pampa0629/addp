@@ -119,7 +119,7 @@ test('current source refresh shows a replacement container, preserves the manage
  const discovery=discoveryFixture(true);discovery.scopes[1].services[0].containers[0].container_id='c'.repeat(64)
  let failed=false
  await page.route('**/api/v1/system/platform/engine_deployments/discovery',route=>failed?route.fulfill({status:503,json:{error_code:'unavailable'}}):route.fulfill({json:discovery}))
- await page.goto('/engine-deployments')
+ await page.goto('/engine-deployments?scope=business')
  await page.getByTestId(`deployment-detail-${DEPLOYMENT_ID}`).click()
  const source=page.getByTestId('deployment-current-source')
  await expect(source).toContainText('容器正在运行');await expect(source).toContainText('c'.repeat(64))
@@ -158,8 +158,8 @@ test('closing details discards a delayed source response',async({page})=>{
  await expect(page.getByTestId('deployment-current-source')).toHaveCount(0)
 })
 
-test('confirms Infra and Business Redis through the same explicit host admission',async({page})=>{
- const {writes}=await mockDeployments(page,{empty:true,redisSources:true,permissions:[...deploymentPermissions,'monitor.resource_observation.read']})
+test('confirms both Redis scopes and queries each tab separately',async({page})=>{
+ const {calls,writes}=await mockDeployments(page,{empty:true,redisSources:true,permissions:[...deploymentPermissions,'monitor.resource_observation.read']})
  await page.goto('/engine-deployments');await page.getByTestId('deployment-create').click()
  await selectSources(page)
  await expect(page.getByRole('textbox',{name:'infra redis',exact:true})).toHaveValue('Infra Redis')
@@ -171,7 +171,21 @@ test('confirms Infra and Business Redis through the same explicit host admission
   {scope:'business',service:'redis',fingerprint:'a'.repeat(64),display_name:'Business Redis',enabled:true,declared_node_id:HOST_NODE_ID},
  ])
  await expect(page.getByRole('dialog')).toHaveCount(0)
- await expect(page.getByRole('button',{name:'查看监控',exact:true})).toHaveCount(4)
+ const table=page.locator('.engine-deployments > .el-table')
+ await expect(table).toContainText('Infra Redis')
+ await expect(table).not.toContainText('Business Redis')
+ await expect(page.getByRole('button',{name:'查看监控',exact:true})).toHaveCount(2)
+ expect(calls.at(-1).query.scope).toBe('infra')
+ await page.getByRole('tab',{name:'Business 业务引擎'}).click()
+ await expect(page).toHaveURL(/\/engine-deployments\?scope=business$/)
+ await expect(table).toContainText('Business Redis')
+ await expect(table).not.toContainText('Infra Redis')
+ expect(calls.at(-1).query.scope).toBe('business')
+ await page.getByTestId(`deployment-detail-${DEPLOYMENT_ID}`).click()
+ await page.getByRole('dialog').getByRole('button',{name:'关闭',exact:true}).click()
+ await page.reload()
+ await expect(page.getByRole('tab',{name:'Business 业务引擎'})).toHaveAttribute('aria-selected','true')
+ await expect(table).toContainText('Business Redis')
 })
 
 test('confirms Infra and Business MinIO through the same explicit host admission',async({page})=>{
@@ -187,5 +201,5 @@ test('confirms Infra and Business MinIO through the same explicit host admission
   {scope:'business',service:'minio',fingerprint:'a'.repeat(64),display_name:'Business MinIO',enabled:true,declared_node_id:HOST_NODE_ID},
  ])
  await expect(page.getByRole('dialog')).toHaveCount(0)
- await expect(page.getByRole('button',{name:'查看监控',exact:true})).toHaveCount(4)
+ await expect(page.getByRole('button',{name:'查看监控',exact:true})).toHaveCount(2)
 })

@@ -3,6 +3,11 @@
     <header class="toolbar"><h2>{{ t('system.engineDeployments.title') }}</h2>
       <el-button v-if="canCreate" type="primary" data-testid="deployment-create" @click="openCreate">{{ t('system.engineDeployments.create') }}</el-button>
     </header>
+    <p class="hint">{{ t('system.engineDeployments.purpose') }}</p>
+    <el-tabs :model-value="state.scope" @update:model-value="changeScope">
+      <el-tab-pane name="infra" :label="t('system.engineDeployments.scopes.infra')" />
+      <el-tab-pane name="business" :label="t('system.engineDeployments.scopes.business')" />
+    </el-tabs>
     <form class="toolbar" @submit.prevent="search">
       <el-input ref="searchInput" v-model="searchDraft" maxlength="255" clearable :aria-label="t('system.engineDeployments.search')" :placeholder="t('system.engineDeployments.search')" />
       <el-button native-type="submit">{{ t('common.search') }}</el-button>
@@ -14,8 +19,12 @@
       <el-table-column prop="engine_type" :label="t('system.engineDeployments.engine')" width="130" />
       <el-table-column :label="t('system.engineDeployments.state')" min-width="170"><template #default="{ row }">{{ t(`system.engineDeployments.states.${bindingState(row)}`) }}</template></el-table-column>
       <el-table-column :label="t('system.engineDeployments.observed')" min-width="190"><template #default="{ row }">{{ formatDateTime(row.inventory.observed_at) }}</template></el-table-column>
-      <el-table-column :label="t('system.engineDeployments.detailAction')" width="110" fixed="right"><template #default="{ row }"><el-button text type="primary" :data-testid="`deployment-detail-${row.deployment_id}`" @click="event => openDetail(row.deployment_id, event)">{{ t('system.engineDeployments.detailAction') }}</el-button></template></el-table-column>
-      <el-table-column v-if="canObserve" :label="t('system.engineDeployments.monitor')" width="110"><template #default="{ row }"><el-button text type="primary" @click="openMonitoring(row.deployment_id)">{{ t('system.engineDeployments.monitor') }}</el-button></template></el-table-column>
+      <el-table-column :label="t('system.engineDeployments.actions')" :width="canObserve ? 210 : 110" fixed="right">
+        <template #default="{ row }">
+          <el-button v-if="canObserve" link type="primary" @click="openMonitoring(row.deployment_id)">{{ t('system.engineDeployments.monitor') }}</el-button>
+          <el-button link type="primary" :data-testid="`deployment-detail-${row.deployment_id}`" @click="event => openDetail(row.deployment_id, event)">{{ t('system.engineDeployments.detailAction') }}</el-button>
+        </template>
+      </el-table-column>
       <template #empty><el-empty :description="t(listLoaded ? 'system.engineDeployments.empty' : 'system.hostNodes.notLoaded')" :image-size="72" /></template>
     </el-table>
     <el-pagination v-if="listLoaded" :current-page="state.page" :page-size="state.pageSize" :total="total" :page-sizes="[10,20,50,100]" layout="total, sizes, prev, pager, next" @current-change="page => setQuery({page:String(page)})" @size-change="size => setQuery({page:'1',page_size:String(size)})" />
@@ -152,10 +161,12 @@ async function loadList() {
   if(!canRead.value)return
   const ticket=listRequests.invalidate();rows.value=[];listLoaded.value=false;listError.value='';listLoading.value=true
   try {
-    const result=await listRequests.request(config=>engineDeploymentsAPI.list({page:state.value.page,page_size:state.value.pageSize,...(state.value.search?{search:state.value.search}:{})},config))
+    const {scope,page,pageSize,search}=state.value
+    const result=await listRequests.request(config=>engineDeploymentsAPI.list({scope,page,page_size:pageSize,...(search?{search}:{})},config))
     if(!listRequests.current(ticket))return
     if(!Array.isArray(result.data)||!Number.isSafeInteger(result.total)||result.total<0)throw new Error('invalid_page')
-    result.data.forEach(value=>validRecord(value));rows.value=result.data;total.value=result.total;listLoaded.value=true
+    if(result.data.some(value=>validRecord(value).scope!==scope))throw new Error('invalid_deployment_scope')
+    rows.value=result.data;total.value=result.total;listLoaded.value=true
   }catch{if(listRequests.current(ticket))listError.value=t('system.engineDeployments.readFailed')}
   finally{if(listRequests.current(ticket))listLoading.value=false}
 }
@@ -192,6 +203,7 @@ function close(){if(saving.value)return;clearCurrentSource();epoch++;discoveryRe
 async function focusForm(event){event?.preventDefault?.();await nextTick();if(canWrite.value && formReady.value && !creating.value)nameInput.value?.focus();else closeButton.value?.$el?.focus()}
 async function restoreFocus(){await nextTick();if(trigger?.isConnected)trigger.focus();else searchInput.value?.focus();trigger=null}
 function setQuery(patch){return navigate('/engine-deployments',{...state.value.query,...patch},'replace')}
+function changeScope(scope){return setQuery({scope:scope==='business'?'business':undefined,page:undefined})}
 function search(){return setQuery({search:searchDraft.value.trim()||undefined,page:undefined})}
 async function save(){
   if(!canWrite.value||saving.value||blocked.value||reading.value)return

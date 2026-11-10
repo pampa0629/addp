@@ -11,7 +11,7 @@ export function discoveryFixture(registered=false,redis=false,minio=false) {
 export async function mockDeployments(page,{permissions=deploymentPermissions,scope='platform',conflict=false,unknown=false,language='zh-cn',empty=false,sourceChanged=false,sourceUnavailable=false,redisSources=false,minioSources=false}={}){
  const hosts=await mockHostNodesAPI(page,{permissions,scope,language}),calls=[],writes=[]
  await page.route('**/api/v1/system/auth/context',route=>route.fulfill({json:{principal:{id:'1',type:'user'},context:{type:scope,...(scope==='tenant'?{tenant_id:'3',tenant_membership_id:'4'}:{})},authorization:{role_assignments:[{scope:{type:scope,...(scope==='tenant'?{tenant_id:'3'}:{})},permissions}]}}}))
- const record=(id=DEPLOYMENT_ID,source=inventory)=>({deployment_id:id,display_name:'Business PostgreSQL',engine_type:source.services[0].engine_type,enabled:true,inventory:source,declared_node_id:HOST_NODE_ID,node_id:HOST_NODE_ID,host_binding_state:'bound',host_binding_reason:'',version:7,created_at:'2026-10-19T00:00:00Z',updated_at:'2026-10-19T00:00:00Z'})
+ const record=(id=DEPLOYMENT_ID,source=inventory)=>({deployment_id:id,scope:source.source.project==='business'?'business':'infra',display_name:'Business PostgreSQL',engine_type:source.services[0].engine_type,enabled:true,inventory:source,declared_node_id:HOST_NODE_ID,node_id:HOST_NODE_ID,host_binding_state:'bound',host_binding_reason:'',version:7,created_at:'2026-10-19T00:00:00Z',updated_at:'2026-10-19T00:00:00Z'})
  let records=empty?[]:[record()]
  await page.route('**/api/v1/system/platform/engine_deployments**',async route=>{
   const request=route.request(),url=new URL(request.url());calls.push({method:request.method(),path:url.pathname,query:Object.fromEntries(url.searchParams)})
@@ -37,7 +37,11 @@ export async function mockDeployments(page,{permissions=deploymentPermissions,sc
    for(const item of discovery.candidates)if(item.scope==='infra'&&records.some(row=>row.deployment_id===INFRA_DEPLOYMENT_ID)&&item.service==='postgres')item.deployment_id=INFRA_DEPLOYMENT_ID
    return route.fulfill({json:discovery})
   }
-  if(url.pathname.endsWith('/engine_deployments'))return route.fulfill({json:{data:records,total:records.length,page:Number(url.searchParams.get('page')),page_size:Number(url.searchParams.get('page_size')),total_pages:records.length?1:0}})
+  if(url.pathname.endsWith('/engine_deployments')){
+   const selectedScope=url.searchParams.get('scope')
+   const filtered=records.filter(row=>row.scope===selectedScope)
+   return route.fulfill({json:{data:filtered,total:filtered.length,page:Number(url.searchParams.get('page')),page_size:Number(url.searchParams.get('page_size')),total_pages:filtered.length?1:0}})
+  }
   return route.fulfill({json:records.find(value=>url.pathname.endsWith('/'+value.deployment_id))})
  })
  return {calls,writes,hosts}

@@ -2317,6 +2317,8 @@
     },
     "hostAdmission": {
       "import": "Import deployment manifest",
+      "downloadExample": "Download example manifest",
+      "exampleHint": "Replace the example host, allowed modules and collection endpoint with actual values. Remove the collection field to admit a host without configuring collection.",
       "hostFacts": "Host proposed by the manifest",
       "mode": "Host admission mode",
       "existing": "Select an existing host",
@@ -2339,7 +2341,10 @@
       "collectionDenied": "This account cannot configure collection. An authorized administrator can continue."
     },
     "engineDeployments": {
-      "title": "Platform engine deployments",
+      "title": "Engine administration",
+      "purpose": "Register deployed engines and manage their host associations and registration status.",
+      "scopes": { "infra": "Infra", "business": "Business" },
+      "actions": "Actions",
       "create": "Connect discovered engines",
       "details": "Engine deployment details",
       "name": "Deployment name",
@@ -2375,7 +2380,7 @@
         "desktop_linux_vm": "Docker Desktop Linux VM",
         "linux_docker": "Linux Docker"
       },
-      "detailAction": "Deployment details",
+      "detailAction": "Details",
       "refreshDiscovery": "Reload sources",
       "service": "Deployed service",
       "discoveryStatus": "Admission status",

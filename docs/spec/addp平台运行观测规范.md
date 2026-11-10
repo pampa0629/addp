@@ -89,7 +89,7 @@ Prometheus 只通过 Monitor 的单一认证 HTTP SD 获取全量有界快照；
 
 引擎部署属于平台运维对象，与租户 Engine Instance 分开。System `/platform/engine_deployments` 提供集合 POST 批量确认、GET 分页/详情和 PUT 管理更新，分配稳定 `deployment_id`；支持 Infra 与 Business 的标准单容器 PostgreSQL／Redis／MinIO，显式关联一个已纳管主机。其他服务只显示发现事实与未适配原因；集群多主机、云服务及租户引擎关联尚未开放。不接受 `tenant_id/engine_id`、连接凭据或 SQL，不从 Web 请求执行 Docker 或数据库探测。
 
-管理员在“平台引擎部署”读取部署侧发现结果，选择待接入服务、核对名称和实际承载主机后批量确认，无需运行导出命令或导入文件。来源项目、容器运行身份、状态及对应数据库端口来自 4.5 的唯一发现链路；Docker Desktop 只可关联 virtual 主机，不按地址、名称或容器 ID 猜测承载关系。发现可用与纳管、专业采集成功分别表达。
+管理员在“引擎纳管”读取部署侧发现结果，选择待接入服务、核对名称和实际承载主机后批量确认，无需运行导出命令或导入文件。纳管列表按 Infra／Business 来源分别查询。来源项目、容器运行身份、状态及对应数据库端口来自 4.5 的唯一发现链路；Docker Desktop 只可关联 virtual 主机，不按地址、名称或容器 ID 猜测承载关系。发现可用与纳管、专业采集成功分别表达。
 
 POST 仅接受 `items`，每次 1—16 个显式成员；成员为 `scope/service/fingerprint/display_name/enabled/declared_node_id`。服务端重读来源，验证 120 秒时效和预览事实摘要，再按来源键排序、整批事务写入；任何来源过期、变化、重复、主机无效或写入失败均整批回滚。摘要不含每次刷新时间，不代替持久资源版本。确认后的规范快照为 `addp.engine-deployment-inventory/v1`；旧根记录由前向迁移规范化，不改稳定身份、版本或不可变历史。
 

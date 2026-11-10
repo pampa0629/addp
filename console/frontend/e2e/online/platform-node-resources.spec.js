@@ -281,9 +281,13 @@ test('platform node resources through real Console password MFA and Monitor ifra
       expect(payload.data).toHaveLength(2)
       await expect(system.getByRole('dialog')).toHaveCount(0)
       await page.screenshot({ path: resolve(artifact, 'engine-admission-saved.png'), fullPage: true })
+      async function openManagedEngine(row) {
+        await system.getByRole('tab', { name: row.scope === 'infra' ? 'Infra 基础设施' : 'Business 业务引擎', exact: true }).click()
+        await system.getByTestId(`deployment-detail-${row.deployment_id}`).click()
+      }
       const first = payload.data[0]
-      await system.getByTestId(`deployment-detail-${first.deployment_id}`).click()
-      await expect(page).toHaveURL(new RegExp('/system/engine-deployments/' + first.deployment_id + '$'))
+      await openManagedEngine(first)
+      await expect(page).toHaveURL(url => url.pathname === `/system/engine-deployments/${first.deployment_id}` && url.searchParams.get('scope') === (first.scope === 'business' ? 'business' : null))
       await expect(system.getByTestId('deployment-name')).toHaveValue(first.display_name)
       await page.reload()
       await expect(system.getByTestId('deployment-name')).toHaveValue(first.display_name)
@@ -301,7 +305,7 @@ test('platform node resources through real Console password MFA and Monitor ifra
       await page.screenshot({ path: resolve(artifact, 'engine-admission-restored.png'), fullPage: true, animations: 'disabled' })
       await system.getByRole('dialog').getByRole('button', { name: '关闭', exact: true }).click()
       for (const row of payload.data.slice(1)) {
-        await system.getByTestId(`deployment-detail-${row.deployment_id}`).click()
+        await openManagedEngine(row)
         await expect(system.getByTestId('deployment-name')).toHaveValue(row.display_name)
         await verifyCurrentSource(row)
         await system.getByRole('dialog').getByRole('button', { name: '关闭', exact: true }).click()

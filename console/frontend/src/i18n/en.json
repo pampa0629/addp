@@ -619,6 +619,7 @@
         "iamRoles": "Roles",
         "iamApplicationAccess": "Application Access",
         "iamSecurity": "Audit Management",
+        "deploymentManagement": "Deployment & Management",
         "modules": "Modules",
         "engines": "Engines",
         "applications": "Applications",
@@ -627,8 +628,8 @@
         "recentModules": "Platform Module Management",
         "recentCleanup": "System Resource Reclaim",
         "recentConfiguration": "Platform Configuration",
-        "hostNodes": "Platform host management",
-        "engineDeployments": "Platform engine deployments"
+        "hostNodes": "Host management",
+        "engineDeployments": "Engine administration"
       }
     },
     "personalCenter": "Personal Center",

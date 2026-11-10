@@ -1,14 +1,28 @@
 import { expect, test } from '@playwright/test'
+import { readFile } from 'node:fs/promises'
 import { backend, id, identity, node, permissions } from '../../../monitor/frontend/e2e/monitoring-targets.fixture'
 
 test('host management admits the exact existing host in System and hands a source to Monitor only in memory', async ({ page }) => {
-  const state = await backend(page, { empty: true, hosts: [{ node_id: node, display_name: 'Existing VM', node_kind: 'virtual', addresses: [], enabled: true, version: 1, allowed_module_bindings: [] }] })
+  const state = await backend(page, {
+    empty: true,
+    identity: identity([...permissions, 'platform.module.read', 'platform.engine_deployment.read']),
+    hosts: [{ node_id: node, display_name: 'Existing VM', node_kind: 'virtual', addresses: [], enabled: true, version: 1, allowed_module_bindings: [{ module_name: 'meta', client_id: 'addp-meta' }] }]
+  })
   await page.goto('/system/host-nodes')
+  const deploymentGroup = page.locator('.sidebar .el-sub-menu__title').filter({ hasText: /^部署与纳管$/ }).locator('..')
+  await expect(deploymentGroup.locator('.el-menu-item')).toHaveText(['主机管理', '模块管理', '引擎纳管'])
+  await expect(deploymentGroup.locator('.el-menu-item').first()).toBeVisible()
   const frame = page.frameLocator('iframe[data-testid="module-iframe"]')
   await frame.getByRole('button', { name: '从部署清单接入', exact: true }).click()
   await expect(page).toHaveURL(/\/system\/host-admission$/)
-  const manifest = { schema: 'addp.host-admission/v2', host: { display_name: 'Desktop VM', node_kind: 'virtual', addresses: [], allowed_module_bindings: [] }, collection: { monitor_kind: 'host_resources', source: { type: 'node_exporter', endpoint: 'https://127.0.0.1:19091/metrics' } } }
-  await frame.getByTestId('admission-file').setInputFiles({ name: 'host-admission.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(manifest)) })
+  const [download] = await Promise.all([
+    page.waitForEvent('download'),
+    frame.getByRole('link', { name: '下载清单样例', exact: true }).click()
+  ])
+  expect(download.suggestedFilename()).toBe('addp-host-admission.example.json')
+  const file = await download.path()
+  const manifest = JSON.parse(await readFile(file, 'utf8'))
+  await frame.getByTestId('admission-file').setInputFiles(file)
   await frame.getByTestId('target-node').click()
   await frame.getByRole('option', { name: 'Existing VM', exact: true }).click()
   await frame.getByTestId('admission-confirm').click()
@@ -16,7 +30,7 @@ test('host management admits the exact existing host in System and hands a sourc
   await frame.getByTestId('admission-collect').click()
   await expect(page).toHaveURL(new RegExp(`/monitor/monitoring-targets/new\\?node_id=${node}$`))
   await expect(frame.getByTestId('target-endpoint')).toHaveValue(manifest.collection.source.endpoint)
-  expect(page.url()).not.toContain('19091')
+  expect(page.url()).not.toContain(new URL(manifest.collection.source.endpoint).hostname)
   await frame.getByTestId('target-save').click()
   await expect(page).toHaveURL(new RegExp(`/monitor/monitoring-targets/${id}$`))
   expect(state.writes).toHaveLength(1)
