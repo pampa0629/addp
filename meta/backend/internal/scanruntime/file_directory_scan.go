@@ -76,8 +76,8 @@ func (s *FilesystemCatalogRuntime) scanPreparedDirectory(
 		if !force || failures.Err() != nil {
 			return
 		}
-		if err := s.repo.HardDeleteItemsByNodeExceptFullNames(parentNode.ID, scannedItemFullNames); err != nil {
-			s.log.Warn("清理已消失的文件数据项失败", "path", dirPath, "node_id", parentNode.ID, "error", err)
+		if err := s.repo.SoftDeleteItemsByNodeExceptFullNames(parentNode.ID, scannedItemFullNames); err != nil {
+			s.log.Warn("标记已消失的文件数据项失败", "path", dirPath, "node_id", parentNode.ID, "error", err)
 			failures.Add(dirPath, err)
 		}
 		if !scanresource.DirectDirectoryRefresh(ctx) {

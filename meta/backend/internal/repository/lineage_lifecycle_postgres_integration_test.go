@@ -86,11 +86,13 @@ func TestLineageLifecycleMigrationAgainstPostgres(t *testing.T) {
 		VALUES (7, 4, 102, 'revision-1', 'table', 'item', 'active', NOW(), NOW())`).Error; err != nil {
 		t.Fatalf("insert trigger dependency: %v", err)
 	}
-	if err := tx.Exec("UPDATE meta.meta_item SET deleted_at = NOW() WHERE id = 4").Error; err != nil {
-		t.Fatalf("soft delete trigger item: %v", err)
+	keptNames := map[string]bool{"public.source": true, "public.current_target": true}
+	if err := NewScanRepository(tx).SoftDeleteItemsByNodeExceptFullNames(1, keptNames); err != nil {
+		t.Fatalf("reconcile missing items: %v", err)
 	}
 	assertLineageRelationStatus(t, tx, 4, "stale")
 	assertLineageDependencyStatus(t, tx, 102, "stale")
+	assertLineageRelationStatus(t, tx, 3, "active")
 	if err := tx.Exec(`INSERT INTO meta.lineage_service_dependencies (tenant_id,source_item_id,service_id,published_revision,dependency_kind,granularity,status,first_observed_at,last_observed_at) VALUES (7,3,103,'r1','table','item','active',NOW(),NOW())`).Error; err != nil {
 		t.Fatal(err)
 	}

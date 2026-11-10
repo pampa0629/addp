@@ -118,9 +118,9 @@ func (r *ScanRepository) HardDeleteDescendantNodes(node *models.MetaNode) error 
 		Delete(&models.MetaNode{}).Error
 }
 
-// HardDeleteItemsByNodeExceptFullNames 硬删除节点下未出现在本轮扫描结果中的数据项。
-func (r *ScanRepository) HardDeleteItemsByNodeExceptFullNames(nodeID uint, keepFullNames map[string]bool) error {
-	query := r.db.Unscoped().Where("node_id = ?", nodeID)
+// SoftDeleteItemsByNodeExceptFullNames 标记目录扫描中缺失的数据项，保留血缘身份。
+func (r *ScanRepository) SoftDeleteItemsByNodeExceptFullNames(nodeID uint, keepFullNames map[string]bool) error {
+	query := r.db.Where("node_id = ?", nodeID)
 	if len(keepFullNames) > 0 {
 		names := make([]string, 0, len(keepFullNames))
 		for name := range keepFullNames {

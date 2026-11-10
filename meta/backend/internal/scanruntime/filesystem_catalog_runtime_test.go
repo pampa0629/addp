@@ -322,6 +322,9 @@ func TestFilesystemForceScanReconcilesStaleRootFileNodes(t *testing.T) {
 	} else if err != gorm.ErrRecordNotFound {
 		t.Fatalf("query stale root item: %v", err)
 	}
+	if err := db.Unscoped().First(&oldItem, staleItem.ID).Error; err != nil || !oldItem.DeletedAt.Valid {
+		t.Fatalf("missing root item should be soft deleted: deleted_at=%v err=%v", oldItem.DeletedAt, err)
+	}
 }
 
 func TestFilesystemScanDeletesRootFileNodesWithoutForce(t *testing.T) {

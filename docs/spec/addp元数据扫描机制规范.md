@@ -789,6 +789,8 @@ item 已入库后的 refresh 不等同于 catalog scan。它的输入必须来�
 
 node 扫描仍由 detector 从 catalog 范围重新发现 item 并落库。item refresh 只更新当前已知 item 的 attributes、字段、format info、access index 和横切能力，不负责重新裁决 item 身份。如果 item 的 layout、refs 或 full_name 本身已经错误，item refresh 不应扩大范围去“顺便修正” item 边界；应由用户从 node 层重新扫描，让 detector 重新识别 item。
 
+文件系统目录强制重扫成功完成清单识别和当前数据项写入后，按该节点的已识别完整名称软删除本轮缺失的直接数据项。血缘失效、历史证据保留及后续物理清理由[血缘生命周期规则](addp数据血缘能力规范.md#33-当前投影的写入语义)约束。同一文件路径重新出现时，沿原指纹恢复数据项身份。
+
 对 `layout=multi` 的已知 item，item refresh 必须使用已落库的 `attributes.item.refs` 还原读取计划。即使 `storage.physical_path` 指向目录或 scope 根，也不得在 item refresh 中把它当成普通文件读取，或扩大为父目录扫描。
 
 ## 默认组合
