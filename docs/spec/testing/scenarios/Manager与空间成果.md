@@ -1513,7 +1513,7 @@ uniform／quartic各12条成功COG链，共24条：省略权重、显式全1、�
 
 ### Feather V2 基础标量独立 Hosted
 
-2026-11-08批准`native-table-feather`复用既有NFS／MinIO、GeoPython产品Runtime、Transfer及隔离生命周期；消费普通User精确11项，来源初始化User精确13项，与已批准ORC消费及有界来源准备范围一致，不增加服务或个人账号权限。各存储三种codec（无压缩、LZ4、ZSTD），每源2503行、多个Arrow record batch，覆盖四种有符号整数、bool、float32／64、Unicode文本、binary、nullable及空值差异。先由来源准备者有界deep扫描，再建立既有精确单文件元数据Grant；公共Meta只核结构，受保护Manager预览核编码profile、真实总数、源版本。API页1／2／126及真实页面下一页、原件按钮均留原始响应／下载／截图。普通User创建实际Transfer源→精确Parquet成果，独立物理reader完整核对15018行、字段类型／nullable／数值，归档六份成果；不由页样本替代连续读取。
+2026-11-08批准`native-table-feather`复用既有NFS／MinIO、GeoPython产品Runtime、Transfer及隔离生命周期；消费普通User精确11项，来源初始化User精确13项，与已批准ORC消费及有界来源准备范围一致，不增加服务或个人账号权限。各存储三种codec（无压缩、LZ4、ZSTD），每源2503行、多个Arrow record batch，覆盖四种有符号整数、bool、float32／64、Unicode文本、binary、nullable及空值差异。先由来源准备者有界deep扫描，再建立既有精确单文件元数据Grant；公共Meta只核结构，受保护Manager预览核编码profile、真实总数、源版本。API页1／2／126及真实页面下一页保留响应和截图。三份 MinIO 原件仍核对 API 与真实下载按钮的字节。按现行 Manager 源读取契约，三份 NFS 原件逐一核对下载 HTTP 403、JSON 错误且无附件，以及页面下载能力关闭；仍完整执行 NFS 预览和 Transfer。Owner 和浏览器回执升级为 v2，分别记录两种存储的下载结果。普通User创建实际Transfer源→精确Parquet成果，独立物理reader完整核对15018行、字段类型／nullable／数值，归档六份成果；不由页样本替代连续读取。
 
 时间字段沿用该 case、六份来源、既有权限及清理。Meta 核对单位、源时区和可空性，Manager 分页核对完整 ISO 文本，Transfer 的六份物理 Parquet 成果独立回读逻辑类型、原始整数与 NULL。样例覆盖秒时刻、日末纳秒、本地时间戳、纪元前及最小纳秒计数、纽约夏令时回拨时的两个瞬间和固定偏移。秒转毫秒溢出在确定性门禁单独验证。
 

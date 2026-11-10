@@ -4025,6 +4025,7 @@ class OnlineCIRegistrationTest(unittest.TestCase):
         for file, fragment, reason in (
             (self.repository/'scripts/test/manager-feather-online.py', 'validate_content', 'Feather'),
             (self.repository/'console/frontend/e2e/online/manager-feather.spec.js', 'original_button_download_verified: true', 'Feather'),
+            (self.repository/'console/frontend/e2e/online/manager-feather.spec.js', 'original_download_unavailable_verified: true', 'Feather'),
             (self.repository/'scripts/test/manager-delimited-online.py', 'validate_page', 'delimited'),
             (self.repository/'console/frontend/e2e/online/manager-delimited.spec.js', 'header_mode_verified: true', 'delimited'),
             (self.repository/'scripts/test/manager-avro-online.py', 'validate_page', 'Avro'),

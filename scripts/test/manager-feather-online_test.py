@@ -53,6 +53,14 @@ class Client:
             if self.failure == 'page':
                 result['data']['rows'][0]['id'] = 9007199254740992
         elif '/manager/downloads/file?' in path:
+            locator = parse_qs(urlsplit(path).query)['locator'][0]
+            if urlsplit(locator).path.startswith('/14/path/'):
+                assert expected == (403,)
+                return SimpleNamespace(status=200 if self.failure == 'nfs_download_allowed' else 403,
+                    headers={'Content-Type': 'application/json', **(
+                        {'Content-Disposition': 'attachment'} if self.failure == 'nfs_download_attachment' else {})},
+                    payload={'error': 'Access denied'})
+            assert expected == (200,)
             codec = next(c for c in FIXTURE.CODECS if c + '.feather' in path)
             return SimpleNamespace(raw=FIXTURE.source_bytes(codec) + (b'bad' if self.failure == 'download' else b''))
         elif method == 'POST' and path.endswith('/task-definitions'):
@@ -108,10 +116,14 @@ class FeatherSceneTest(unittest.TestCase):
             rows = []
             for case in context['cases']:
                 (root / f'feather-{case["storage"]}-{case["codec"]}-page2.png').write_bytes(b'\x89PNG\r\n\x1a\nfixture')
-                rows.append({'locator': case['locator'], 'page_button_verified': failure != 'browser', 'original_button_download_verified':True,
-                             'values_verified': True, 'download_sha256': case['spec']['sha256'],
-                             'download_size': case['spec']['size_bytes']})
-            return {'schema_version': 'addp.manager-feather-browser/v1', 'result': 'passed', 'run_id': 'manager-1-1', 'cases': rows,'page_errors':[]}
+                row = {'locator': case['locator'], 'page_button_verified': failure != 'browser', 'values_verified': True}
+                if case['storage'] == 'nfs':
+                    row['original_download_unavailable_verified'] = failure != 'nfs_browser_download'
+                else:
+                    row.update(original_button_download_verified=True, download_sha256=case['spec']['sha256'],
+                               download_size=case['spec']['size_bytes'])
+                rows.append(row)
+            return {'schema_version': 'addp.manager-feather-browser/v2', 'result': 'passed', 'run_id': 'manager-1-1', 'cases': rows,'page_errors':[]}
 
         environment = {'ADDP_ONLINE_MANAGER_CASE': 'native-table-feather', 'ADDP_ONLINE_ARTIFACT_DIR': str(root),
             'GATEWAY_URL': 'http://fixture', 'ADDP_ONLINE_TEST_USER_ACCESS_TOKEN': 'consumer',
@@ -131,12 +143,20 @@ class FeatherSceneTest(unittest.TestCase):
         self.assertEqual(report['result'], 'passed')
         self.assertEqual(len(report['cases']), 6)
         self.assertEqual(len(report['physical']['outputs']), 6)
+        for case in report['cases']:
+            if case['storage'] == 'nfs':
+                self.assertEqual(case['original_download_denied'],
+                                 {'http_status': 403, 'json_error': True, 'attachment': False})
+                self.assertNotIn('original_download_verified', case)
+            else:
+                self.assertIs(case['original_download_verified'], True)
         self.assertEqual(client.deleted, list(reversed(client.tasks)))
         self.assertEqual(actions, ['seed', 'verify', 'delete'])
         self.assertEqual(client.assert_body['config']['source']['format'], 'feather')
 
     def test_failures_cannot_pass_and_always_clean_owned_sources_and_tasks(self):
-        for failure in ('seed', 'page', 'content', 'download', 'transfer', 'physical', 'browser', 'cleanup'):
+        for failure in ('seed', 'page', 'content', 'download', 'nfs_download_allowed', 'nfs_download_attachment',
+                        'transfer', 'physical', 'browser', 'nfs_browser_download', 'cleanup'):
             with self.subTest(failure=failure):
                 client, actions, report = self.run_scene(failure)
                 self.assertEqual(report['result'], 'failed')

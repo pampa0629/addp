@@ -23,7 +23,7 @@ function expectedRow(i) {
     offset_stamp: ['1969-12-31T23:59:59Z', '1970-01-01T00:00:00Z', '2038-01-19T03:14:08Z'][i % 3] }
 }
 
-test('ordinary user pages and downloads six Feather V2 sources', async ({ page }) => {
+test('ordinary user pages six Feather V2 sources and verifies original download availability', async ({ page }) => {
   test.setTimeout(420_000)
   const env = process.env
   const context = JSON.parse(env.ADDP_ONLINE_MANAGER_FEATHER_JSON || '{}')
@@ -65,8 +65,19 @@ test('ordinary user pages and downloads six Feather V2 sources', async ({ page }
         expect(second.data.rows).toEqual(Array.from({ length: second.data.rows.length }, (_, n) => expectedRow(second.data.page_size + n)))
         await expect(frame.getByText(expectedRow(second.data.page_size).id, { exact: true }).first()).toBeVisible()
         await frame.locator('.preview-panel').screenshot({ path: resolve(env.ADDP_ONLINE_ARTIFACT_DIR, `feather-${source.storage}-${source.codec}-page2.png`) })
+        const downloadButton = frame.getByRole('button', { name: /^(下载|Download)$/ })
+        if (source.storage === 'nfs') {
+          const actions = await json(await api.get('/api/v1/manager/resource-actions', {
+            params: { locator: source.locator }
+          }), 'Feather current browser download capability')
+          expect(actions.actions.download.supported).toBe(false)
+          await expect(downloadButton).toHaveCount(0)
+          cases.push({ locator: source.locator, page_button_verified: true, values_verified: true,
+            original_download_unavailable_verified: true })
+          continue
+        }
         const ready = page.waitForEvent('download')
-        await frame.getByRole('button', { name: /^(下载|Download)$/ }).click()
+        await downloadButton.click()
         const download = await ready
         try {
           expect(download.suggestedFilename()).toBe(source.spec.name)
@@ -85,7 +96,7 @@ test('ordinary user pages and downloads six Feather V2 sources', async ({ page }
     passed = true
   } finally {
     writeFileSync(resolve(env.ADDP_ONLINE_ARTIFACT_DIR, 'manager-feather-browser.json'), JSON.stringify({
-      schema_version: 'addp.manager-feather-browser/v1', result: passed ? 'passed' : 'failed',
+      schema_version: 'addp.manager-feather-browser/v2', result: passed ? 'passed' : 'failed',
       run_id: context.run_id, cases, page_errors: pageErrors,
     }, null, 2) + '\n')
   }

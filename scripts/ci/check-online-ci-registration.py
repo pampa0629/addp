@@ -758,8 +758,8 @@ def validate_manager_internal_artifact_lineage_profile(repository: Path, registe
             or 'manager-feather-online_test.py' not in make_target_commands(make,'test-manager-online-runner')
             or 'manager-feather.spec.js' not in make_target_commands(make,'test-manager-online-runner')
             or 'test_online_feather_fixture.py' not in make_target_commands(make,'test-geopython-workflow')
-            or any(part not in feather_owner for part in ("physical('verify')", "physical('delete')",'validate_content','task-definitions','manager-feather.json','ExactFileMetadataGrants'))
-            or any(part not in feather_browser for part in ('page_button_verified: true','original_button_download_verified: true','download_sha256','browserAPIFromNavigation','toBe(11)'))):
+            or any(part not in feather_owner for part in ("physical('verify')", "physical('delete')",'validate_content','task-definitions','manager-feather.json','ExactFileMetadataGrants','original_download_denied'))
+            or any(part not in feather_browser for part in ('page_button_verified: true','original_button_download_verified: true','original_download_unavailable_verified: true','download_sha256','browserAPIFromNavigation','toBe(11)'))):
         raise RegistrationError('Manager Feather requires exact sources, real pages, originals, batch and cleanup')
     browser_config = (repository / "console/frontend/playwright.online.config.js").read_text(encoding="utf-8")
     for flag in ("--use-gl=angle", "--use-angle=swiftshader-webgl", "--enable-unsafe-swiftshader"):

@@ -72,7 +72,7 @@ def run(repository, environment, owner, *, physical_runner=None, browser_runner=
     client = owner.GatewayClient(environment['GATEWAY_URL'], environment['ADDP_ONLINE_TEST_USER_ACCESS_TOKEN'], 30)
     initializer = owner.GatewayClient(environment['GATEWAY_URL'], environment['ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN'], 30)
     tenant = owner.positive_int(environment['ADDP_ONLINE_TEST_TENANT_ID'], 'Feather tenant')
-    report = {'schema_version': 'addp.manager-feather/v1', 'case': 'native-table-feather',
+    report = {'schema_version': 'addp.manager-feather/v2', 'case': 'native-table-feather',
               'run_id': environment['ADDP_ONLINE_TEST_RUN_ID'], 'result': 'failed', 'cases': []}
     report['identity'] = owner.validate_user_identity(client, tenant, PERMISSIONS)
     grants = REGISTRATION.ExactFileMetadataGrants(initializer, client, tenant, scan_preparation=True)
@@ -119,10 +119,20 @@ def run(repository, environment, owner, *, physical_runner=None, browser_runner=
                     validate_content(preview, spec, item['fingerprint'])
                     case['pages'].append({'page': page, 'rows': len(table['rows']), 'values_verified': True})
                 stage = 'original_download'
-                raw = client.request('GET', '/api/v1/manager/downloads/file?' + urlencode({'locator': locator}), (200,)).raw
-                require(len(raw) == spec['size_bytes'] and hashlib.sha256(raw).hexdigest() == spec['sha256'], 'Feather original differs')
-                (artifact / f'feather-source-{storage}-{spec["name"]}').write_bytes(raw)
-                case['original_download_verified'] = True
+                download_path = '/api/v1/manager/downloads/file?' + urlencode({'locator': locator})
+                if storage == 'nfs':
+                    denied = client.request('GET', download_path, (403,))
+                    headers = {key.lower(): value for key, value in denied.headers.items()}
+                    require(denied.status == 403 and headers.get('content-type', '').startswith('application/json')
+                            and 'content-disposition' not in headers and isinstance(denied.payload, dict)
+                            and set(denied.payload) == {'error'} and isinstance(denied.payload['error'], str)
+                            and denied.payload['error'], 'Feather NFS original download must return a JSON denial without an attachment')
+                    case['original_download_denied'] = {'http_status': denied.status, 'json_error': True, 'attachment': False}
+                else:
+                    raw = client.request('GET', download_path, (200,)).raw
+                    require(len(raw) == spec['size_bytes'] and hashlib.sha256(raw).hexdigest() == spec['sha256'], 'Feather original differs')
+                    (artifact / f'feather-source-{storage}-{spec["name"]}').write_bytes(raw)
+                    case['original_download_verified'] = True
                 stage = 'transfer_batch'
                 target = f'from-{storage}-{spec["codec"]}.parquet'
                 body = task_body(locator, f'addp://engine/{environment["ADDP_ONLINE_MANAGER_MINIO_ENGINE_ID"]}/path/{bucket}/feather-output?type=prefix', target)
@@ -165,12 +175,18 @@ def run(repository, environment, owner, *, physical_runner=None, browser_runner=
             subprocess.run(['npm', 'exec', '--', 'playwright', 'test', 'e2e/online/manager-feather.spec.js', '--config=playwright.online.config.js'],
                            cwd=Path(repository) / 'console/frontend', env=dict(browser_env, ADDP_ONLINE_MANAGER_FEATHER_JSON=json.dumps(context)), check=True)
             browser = json.loads((artifact / 'manager-feather-browser.json').read_text())
-        require(browser.get('schema_version') == 'addp.manager-feather-browser/v1' and browser.get('result') == 'passed'
+        require(browser.get('schema_version') == 'addp.manager-feather-browser/v2' and browser.get('result') == 'passed'
                 and browser.get('run_id') == report['run_id'] and len(browser.get('cases', [])) == 6 and browser.get('page_errors') == [], 'Feather browser incomplete')
         for case, observed in zip(report['cases'], browser['cases'], strict=True):
             require(observed.get('locator') == case['locator'] and observed.get('page_button_verified') is True
-                    and observed.get('values_verified') is True and observed.get('original_button_download_verified') is True and observed.get('download_sha256') == case['spec']['sha256']
-                    and observed.get('download_size') == case['spec']['size_bytes'], 'Feather browser lost values or original bytes')
+                    and observed.get('values_verified') is True, 'Feather browser lost paged values')
+            if case['storage'] == 'nfs':
+                require(observed.get('original_download_unavailable_verified') is True
+                        and 'original_button_download_verified' not in observed, 'Feather NFS browser download boundary missing')
+            else:
+                require(observed.get('original_button_download_verified') is True
+                        and observed.get('download_sha256') == case['spec']['sha256']
+                        and observed.get('download_size') == case['spec']['size_bytes'], 'Feather browser original differs')
             screenshot = artifact / f'feather-{case["storage"]}-{case["codec"]}-page2.png'
             require(screenshot.is_file() and screenshot.read_bytes().startswith(b'\x89PNG\r\n\x1a\n'), 'Feather screenshot missing')
         report.update(browser=browser, result='passed')
