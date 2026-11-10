@@ -127,6 +127,33 @@ func TestResolveItemsClaimsFileGDBDirectoryAsWholeContainer(t *testing.T) {
 	}
 }
 
+func TestResolveItemsKeepsTIFFsWithoutSidecarsSingle(t *testing.T) {
+	t.Parallel()
+
+	paths := []string{"images/solo.tif", "images/shared.tif", "images/shared.tiff"}
+	candidates := make([]Candidate, 0, len(paths))
+	for _, path := range paths {
+		candidates = append(candidates, Candidate{Path: path})
+	}
+	result, err := ResolveItems(ResolveInput{
+		ScopeKind:  ScopeKindDirectory,
+		ScopePath:  "images",
+		Candidates: candidates,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, item := range result.Items {
+		if item.Layout != format.LayoutSingle || item.Format != string(format.FormatTIFF) ||
+			item.DataType != datatype.Media || len(item.RefList) != 0 || item.PrimaryContentPath != item.FullName {
+			t.Errorf("item = %#v, want standalone TIFF without refs", item)
+		}
+	}
+	if len(result.Items) != len(paths) {
+		t.Fatalf("items = %d, want %d", len(result.Items), len(paths))
+	}
+}
+
 func TestResolveItemsGroupsGeoTIFFSidecars(t *testing.T) {
 	t.Parallel()
 

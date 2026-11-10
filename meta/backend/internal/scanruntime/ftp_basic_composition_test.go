@@ -153,9 +153,58 @@ func TestFTPBasicCompositionAgainstPostgres(t *testing.T) {
 				testFileDeepComposition(t, tx, mode, kind)
 				if mode == "directory" {
 					testFBXBasicComposition(t, tx, kind)
+					if kind == "nfs" {
+						t.Run("TIFF sidecar removal", func(t *testing.T) { testTIFFSidecarRemoval(t, tx) })
+					}
 				}
 			})
 		}
+	}
+}
+
+func testTIFFSidecarRemoval(t *testing.T, db *gorm.DB) {
+	t.Helper()
+	const path = "images/dem.tif"
+	provider := &ftpStructureFixture{engineType: "nfs", filesystemScanTestProvider: filesystemScanTestProvider{
+		entriesByPath: map[string][]plugin.EngineCatalogEntry{
+			"images": {progressFile(path), progressFile(path + ".aux.xml")},
+		},
+	}}
+	previous, previousErr := plugin.Get(provider.Type())
+	plugin.Register(provider)
+	t.Cleanup(func() {
+		plugin.Unregister(provider.Type())
+		if previousErr == nil {
+			plugin.Register(previous)
+		}
+	})
+	runtime := NewFilesystemCatalogRuntime(db, slog.New(slog.NewTextHandler(io.Discard, nil)), metaRepo.NewScanRepository(db), nil)
+	engine := &commonModels.Engine{ID: 26, EngineType: provider.Type()}
+	scan := func() models.MetaItem {
+		t.Helper()
+		if _, err := runtime.ScanPaths(t.Context(), engine, 1, []string{"images"}, "basic", true, nil); err != nil {
+			t.Fatal(err)
+		}
+		var item models.MetaItem
+		if err := db.Where("tenant_id=? AND engine_id=? AND full_name=?", 1, engine.ID, path).First(&item).Error; err != nil {
+			t.Fatal(err)
+		}
+		return item
+	}
+
+	before := scan()
+	if attrs := commonJSON.Section(before.Attributes, "item"); attrs["layout"] != "multi" ||
+		len(commonJSON.InterfaceSlice(attrs["refs"])) != 2 {
+		t.Fatalf("initial scan = %v, want TIFF with two refs", attrs)
+	}
+	provider.entriesByPath["images"] = []plugin.EngineCatalogEntry{progressFile(path)}
+	after := scan()
+	if after.ID != before.ID || after.Fingerprint != before.Fingerprint {
+		t.Fatalf("rediscovery changed TIFF identity: %d/%s -> %d/%s", before.ID, before.Fingerprint, after.ID, after.Fingerprint)
+	}
+	if attrs := commonJSON.Section(after.Attributes, "item"); attrs["layout"] != "single" ||
+		attrs["format"] != "tiff" || attrs["refs"] != nil || attrs["file_count"] != nil {
+		t.Fatalf("rediscovery = %v, want standalone TIFF without stale composition", attrs)
 	}
 }
 

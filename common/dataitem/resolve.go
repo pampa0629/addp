@@ -261,6 +261,7 @@ func matchMultiRule(candidates []Candidate, rule FormatRule, claims map[string]b
 		}
 		refList := make([]ItemRef, 0, len(group))
 		refPaths := map[string]string{}
+		hasRelatedRef := false
 		var total int64
 		exts := make([]string, 0, len(group))
 		for ext := range group {
@@ -278,13 +279,18 @@ func matchMultiRule(candidates []Candidate, rule FormatRule, claims map[string]b
 				total += *candidate.SizeBytes
 			}
 			refPaths[role] = candidate.Path
+			primary := spec.Primary || ext == primaryExt
+			hasRelatedRef = hasRelatedRef || !primary
 			refList = append(refList, ItemRef{
 				Role:      role,
 				Path:      candidate.Path,
 				Required:  spec.Required,
-				Primary:   spec.Primary || ext == primaryExt,
+				Primary:   primary,
 				Extension: ext,
 			})
+		}
+		if !hasRelatedRef {
+			continue
 		}
 		size := total
 		item := ResolvedItem{
