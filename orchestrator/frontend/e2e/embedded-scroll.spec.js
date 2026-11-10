@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test'
+import { assertDarkFirstHeading, observeFirstHeading } from '../../../common-frontend/basic/tests/fixtures/firstHeading.mjs'
 
 for (const embedded of [false, true]) {
   test(`orchestrator long page scrolls to its last entry (${embedded ? 'Console iframe' : 'standalone'})`, async ({ page }, testInfo) => {
@@ -9,6 +10,7 @@ for (const embedded of [false, true]) {
       localStorage.setItem('addp-lang', 'zh-cn')
       localStorage.setItem('theme-mode', 'dark')
     })
+    await observeFirstHeading(page, '任务编排')
     await page.route('**/plugins/manifest.json', route => json(route, { scripts: [] }))
     await page.route('**/api/v1/**', route => {
       const path = new URL(route.request().url()).pathname
@@ -39,6 +41,10 @@ for (const embedded of [false, true]) {
     } else {
       await page.goto('/orchestrations')
     }
+
+    const heading = frame.getByRole('heading', { name: '任务编排', exact: true })
+    await expect(heading).toBeInViewport({ ratio: 1 })
+    await assertDarkFirstHeading(heading)
 
     const rows = frame.locator('.el-table__body-wrapper tbody tr')
     await expect(rows).toHaveCount(20)

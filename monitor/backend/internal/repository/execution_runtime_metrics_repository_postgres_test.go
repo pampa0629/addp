@@ -11,6 +11,7 @@ import (
 
 	commonExecution "github.com/addp/common/execution"
 	"github.com/addp/common/models"
+	"github.com/google/uuid"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 )
@@ -103,6 +104,79 @@ func TestIntegrationPostgresExecutionRuntimeMetrics(t *testing.T) {
 		t.Fatalf("denied metrics=%#v err=%v", rows, err)
 	}
 
+}
+
+func TestIntegrationPostgresExecutionRuntimeMetricsRetryAndRecovery(t *testing.T) {
+	if os.Getenv("ADDP_POSTGRES_INTEGRATION") != "1" {
+		t.Skip("set ADDP_POSTGRES_INTEGRATION=1 to run PostgreSQL integration test")
+	}
+	db, err := gorm.Open(postgres.Open(runtimeMetricsIntegrationDSN()), &gorm.Config{TranslateError: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	pool, err := db.DB()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = pool.Close() })
+	if err := commonExecution.EnsureStore(db); err != nil {
+		t.Fatal(err)
+	}
+
+	now := time.Now().UTC().Truncate(time.Microsecond)
+	tenantID := int(now.UnixNano()%50000000 + 940000000)
+	taskID := "retry-metrics-task"
+	newExecution := func(boundary string, createdAt time.Time) commonExecution.TaskExecution {
+		return commonExecution.TaskExecution{
+			TenantID: tenantID, ExecutionID: uuid.NewString(), SourceTaskID: &taskID,
+			Module: commonExecution.ModuleTransfer, TaskType: commonExecution.TaskTypeSync, Source: commonExecution.ModuleTransfer,
+			ExecutionBoundary: boundary, Status: commonExecution.ExecutionStatusFailed, Attempt: 1,
+			TriggerType: commonExecution.TriggerTypeManual, CreatedAt: createdAt, UpdatedAt: now, CompletedAt: &now,
+		}
+	}
+	boundedOriginal := newExecution(commonExecution.ExecutionBoundaryBounded, now.Add(-2*time.Hour))
+	continuousOriginal := newExecution(commonExecution.ExecutionBoundaryContinuous, now.Add(-2*time.Hour))
+	userRetry := newExecution(commonExecution.ExecutionBoundaryBounded, now.Add(-30*time.Minute))
+	userRetry.RetryOfExecutionID = &boundedOriginal.ExecutionID
+	automaticRetry := newExecution(commonExecution.ExecutionBoundaryBounded, now.Add(-25*time.Minute))
+	automaticRetry.Attempt, automaticRetry.MaxAttempts = 2, 3
+	recovery := newExecution(commonExecution.ExecutionBoundaryContinuous, now.Add(-20*time.Minute))
+	recovery.RetryOfExecutionID = &continuousOriginal.ExecutionID
+	recovery.Metadata = models.JSONMap{"recovery_reason": "lease_expired"}
+
+	items := []commonExecution.TaskExecution{boundedOriginal, continuousOriginal, userRetry, automaticRetry, recovery}
+	ids := make([]string, 0, len(items))
+	for _, item := range items {
+		ids = append(ids, item.ExecutionID)
+	}
+	t.Cleanup(func() {
+		if err := db.Where("tenant_id = ? AND execution_id IN ?", tenantID, ids).Delete(&commonExecution.TaskExecution{}).Error; err != nil {
+			t.Error(err)
+		}
+	})
+	if err := db.Create(&items).Error; err != nil {
+		t.Fatal(err)
+	}
+	scope := commonExecution.ReadScope{TenantID: tenantID, PrincipalID: 9, Module: commonExecution.ModuleTransfer,
+		Grants: []commonExecution.ReadGrant{{TaskType: commonExecution.TaskTypeSync, TaskHistory: true}}}
+	ctx := commonExecution.WithReadScopes(t.Context(), []commonExecution.ReadScope{scope})
+	rows, err := NewExecutionRuntimeMetricsRepository(db).List(ctx, tenantID, commonExecution.ModuleTransfer, now.Add(-time.Hour), now)
+	if err != nil || len(rows) != 2 {
+		t.Fatalf("runtime metric groups = %#v, err = %v", rows, err)
+	}
+	type counts struct{ created, automatic, user, recovery int64 }
+	want := map[string]counts{
+		commonExecution.ExecutionBoundaryBounded:    {created: 2, automatic: 1, user: 1},
+		commonExecution.ExecutionBoundaryContinuous: {created: 1, recovery: 1},
+	}
+	for _, row := range rows {
+		expected, ok := want[row.ExecutionBoundary]
+		actual := counts{row.CreatedCount, row.AutomaticRetryCount, row.UserRetryCount, row.RecoveryCount}
+		if !ok || actual != expected {
+			t.Errorf("%s metrics: got %+v, want %+v", row.ExecutionBoundary, actual, expected)
+		}
+		delete(want, row.ExecutionBoundary)
+	}
 }
 
 // Exercise the persisted claim/recovery facts through the unchanged SQL formulas.

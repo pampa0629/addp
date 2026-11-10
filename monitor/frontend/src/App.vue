@@ -24,5 +24,8 @@ body {
 
 #app {
   background: var(--addp-bg-secondary);
+  color: var(--addp-text-primary);
+  /* Apply the initial theme before text inherits a transitional color. */
+  transition: none;
 }
 </style>

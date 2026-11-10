@@ -4,7 +4,7 @@ import {
   List, Connection, Search, Document, Share, DataBoard, Odometer, Plus,
   TrendCharts, SortDown, FolderOpened, Warning, Monitor, Notebook,
   Files, Tickets, Key, Refresh, Lock, SetUp,
-  MapLocation, Collection,
+  MapLocation, Collection, Cpu, Bell, Aim,
 } from '@element-plus/icons-vue'
 import { splitConsoleRoute } from '../utils/consoleNavigation'
 
@@ -299,21 +299,21 @@ export const SIDEBAR_MENUS = {
     ],
   },
   monitor: {
-    label: 'console.menus.monitor.label', icon: DataLine,
+    label: 'console.menus.monitor.label', icon: Odometer,
     items: [
-      { index: '/monitor/resource-overview', icon: DataBoard, label: 'console.menus.monitor.resourceOverview' },
-      { index: '/monitor/node-resources', icon: DataLine, label: 'console.menus.monitor.nodeResources' },
-      { index: '/monitor/service-resources', icon: Monitor, label: 'console.menus.monitor.serviceResources' },
-      { index: '/monitor/engine-resources', icon: Monitor, label: 'console.menus.monitor.engineResources', contexts: ['platform'] },
-      { index: '/monitor/traces', icon: DataLine, label: 'console.menus.monitor.traces', contexts: ['platform'] },
-      { index: '/monitor/http-quality', icon: DataLine, label: 'console.menus.monitor.httpQuality', contexts: ['platform'] },
+      { index: '/monitor/resource-overview', icon: Grid, label: 'console.menus.monitor.resourceOverview' },
+      { index: '/monitor/node-resources', icon: Monitor, label: 'console.menus.monitor.nodeResources' },
+      { index: '/monitor/service-resources', icon: Box, label: 'console.menus.monitor.serviceResources' },
+      { index: '/monitor/engine-resources', icon: Cpu, label: 'console.menus.monitor.engineResources', contexts: ['platform'] },
+      { index: '/monitor/traces', icon: Connection, label: 'console.menus.monitor.traces', contexts: ['platform'] },
+      { index: '/monitor/http-quality', icon: TrendCharts, label: 'console.menus.monitor.httpQuality', contexts: ['platform'] },
       { index: '/monitor/dashboard',  icon: Monitor, label: 'console.menus.monitor.dashboard', recentLabel: 'console.menus.monitor.recentDashboard' },
       { index: '/monitor/executions', icon: List,    label: 'console.menus.monitor.executions', recentLabel: 'console.menus.monitor.recentExecutions' },
-      { index: '/monitor/platform-alerts', icon: Warning, label: 'console.menus.monitor.platformAlerts', contexts: ['platform'] },
+      { index: '/monitor/platform-alerts', icon: Bell, label: 'console.menus.monitor.platformAlerts', contexts: ['platform'] },
       { index: '/monitor/alerts',     icon: Warning, label: 'console.menus.monitor.alerts', recentLabel: 'console.menus.monitor.recentAlerts' },
       { index: '/monitor/notifications', icon: Connection, label: 'console.menus.monitor.notifications', recentLabel: 'console.menus.monitor.recentNotifications' },
       { index: '/monitor/advanced', icon: Setting, label: 'console.menus.monitor.advanced', contexts: ['platform'], children: [
-        { index: '/monitor/monitoring-targets', icon: Monitor, label: 'console.menus.monitor.monitoringTargets' },
+        { index: '/monitor/monitoring-targets', icon: Aim, label: 'console.menus.monitor.monitoringTargets' },
       ] },
     ],
   },

@@ -14,16 +14,12 @@
       <span v-if="displayLatency">
         {{ t('monitor.module_status.latency', { ms: displayLatency }) }}
       </span>
-      <span v-if="backendSummary">
-        {{ backendSummary }}
-      </span>
-      <span v-if="taskDiscoverySummary">
-        {{ taskDiscoverySummary }}
-      </span>
+      <span>{{ backendSummary }}</span>
+      <span>{{ taskDiscoverySummary }}</span>
       <span v-if="capabilitiesMessage">
         {{ capabilitiesMessage }}
       </span>
-      <span class="message" v-if="module.message">
+      <span v-if="!module.backends?.length && module.message" class="message">
         {{ module.message }}
       </span>
     </div>
@@ -78,19 +74,23 @@ const displayLatency = computed(() => {
 
 const backendSummary = computed(() => {
   const backends = props.module.backends || []
-  if (backends.length === 0) {
-    return ''
+  if (!backends.some(item => item.module_health)) {
+    return t('monitor.module_status.backends_unchecked')
   }
-  const upCount = backends.filter(item => item.status === 'up').length
+  const upCount = backends.filter(item => item.module_health?.status === 'up').length
   return t('monitor.module_status.backends', { up: upCount, total: backends.length })
 })
 
 const taskDiscoverySummary = computed(() => {
   const checks = (props.module.backends || []).flatMap(item => item.task_discovery || [])
   if (checks.length === 0) {
-    return ''
+    return t('monitor.module_status.task_discovery_unchecked')
   }
   const upCount = checks.filter(item => item.status === 'up').length
+  const deniedCount = checks.filter(item => item.status_code === 403).length
+  if (deniedCount > 0) {
+    return t('monitor.module_status.task_discovery_denied', { up: upCount, total: checks.length, denied: deniedCount })
+  }
   return t('monitor.module_status.task_discovery', { up: upCount, total: checks.length })
 })
 

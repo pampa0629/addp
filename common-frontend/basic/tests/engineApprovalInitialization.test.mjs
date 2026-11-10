@@ -299,6 +299,39 @@ test('ENVI approval requires a complete same-directory raster/header pair', asyn
  }
 })
 
+test('TIFF approval preserves the scanned layout and exact image boundary', async () => {
+  const target = filePath('scene.TIF')
+  const makeFacts = (fingerprint, layout) => ({
+    schema_version: 'meta.data_item_authorization_facts/v1',
+    engine_id: target.engine_id,
+    item_type: 'file',
+    item_fingerprint: fingerprint,
+    basis_state: 'complete',
+    boundary_hash: 'a'.repeat(64),
+    boundary: {
+      layout,
+      file_composition: { format: 'tiff', source_layout: layout, refs: [{ target: structuredClone(target), role: 'image', primary: true, required: true }] }
+    }
+  })
+  for (const layout of ['single', 'multi']) {
+    const binding = await observeNativeApprovalBinding(target, async (_, fingerprint) => makeFacts(fingerprint, layout))
+    assert.equal(binding.file_composition.source_layout, layout)
+  }
+  for (const invalidate of [
+    facts => { facts.boundary.layout = 'multi' },
+    facts => { delete facts.boundary.file_composition.source_layout },
+    facts => { facts.boundary.file_composition.refs[0].role = 'model' },
+    facts => { facts.boundary.file_composition.refs.push({ target: filePath('extra.tif'), role: 'image', primary: false, required: true }) },
+    facts => { facts.boundary.file_composition.refs[0].target.segments.at(-1).name = 'other.tif' }
+  ]) {
+    await assert.rejects(observeNativeApprovalBinding(target, async (_, fingerprint) => {
+      const facts = makeFacts(fingerprint, 'single')
+      invalidate(facts)
+      return facts
+    }), /invalidDataItemBoundary/)
+  }
+})
+
 test('metadata-only file and native identities preserve exact targets and reject ambiguous facts', async () => {
  for (const target of [filePath('nodes.gpkg'), {engine_id:33,version:'catalog.path/v1',segments:[{term:'service',kind:'service',name:''},{term:'index',kind:'index',name:'a.b / 中文'}]}, {engine_id:'9007199254740993',version:'catalog.path/v1',segments:[{term:'service',kind:'service',name:''},{term:'index',kind:'index',name:'exact id'}]}, {engine_id:33,version:'catalog.path/v1',segments:[{term:'root',kind:'root',name:''},{term:'directory',kind:'directory',name:'scene'}]}, {engine_id:33,version:'catalog.path/v1',segments:[{term:'service',kind:'service',name:''},{term:'bucket',kind:'bucket',name:'bucket'},{term:'prefix',kind:'prefix',name:'scene'}]}]) {
   const scope=['directory','bucket','prefix'].includes(target.segments.at(-1).term),layout=scope?'whole':'single'

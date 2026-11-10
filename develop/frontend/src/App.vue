@@ -36,6 +36,9 @@ onMounted(async () => {
   margin: 0;
   padding: 0;
   background: var(--addp-bg-secondary) !important;
+  color: var(--addp-text-primary);
+  /* Apply the initial theme before text inherits a transitional color. */
+  transition: none;
 }
 
 body {

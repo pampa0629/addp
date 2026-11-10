@@ -2,7 +2,7 @@ import { test, expect } from '@playwright/test'
 import { identity, setIdentity } from './monitoring-targets.fixture'
 import { tracesBackend as backend, tracePermissions as keys, traceQuery as query } from './traces.fixture'
 
-test('directory module and layer choices apply immediately and clear the old trace', async ({ page }) => {
+test('directory module choices apply immediately and clear the old trace', async ({ page }) => {
   const state = await backend(page, { identity: identity([...keys, 'platform.module_log.read']) })
   await page.goto('/traces?'+query())
   const spans = page.getByTestId('trace-spans')
@@ -18,9 +18,14 @@ test('directory module and layer choices apply immediately and clear the old tra
   expect(state.calls).toHaveLength(1)
   await page.reload()
   await expect(page.getByTestId('trace-instances')).toContainText('system')
-  await page.getByRole('combobox', { name: '观测层' }).press('ArrowDown')
-  await page.getByRole('option', { name: '网关入口', exact: true }).click()
+  await expect(page.getByRole('combobox', { name: '观测层' })).toHaveCount(0)
+  await page.goto('/traces?module_name=system&role=ingress')
   await expect.poll(() => state.instanceCalls.at(-1)).toEqual({ page: '1', page_size: '10', role: 'ingress', module_name: 'system' })
+  await page.getByRole('combobox', { name: '服务模块' }).press('ArrowDown')
+  await page.getByRole('option', { name: 'monitor', exact: true }).click()
+  await expect(page.getByTestId('trace-instances')).toContainText('monitor')
+  expect(state.instanceCalls.at(-1)).toEqual({ page: '1', page_size: '10', role: 'backend', module_name: 'monitor' })
+  await expect(page).toHaveURL(url => !url.searchParams.has('role'))
 })
 
 test('exact ID search keeps the form after a miss and can retry without an instance', async ({ page }) => {

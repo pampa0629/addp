@@ -29,7 +29,7 @@ func exerciseFileCompositionGrants(t *testing.T, db *gorm.DB, tenantID, adminID 
 		exerciseMetadataOnlyGrants(t, db, tenantID, adminID, roles, newUser)
 		t.Run("STL single-primary SQL contract", func(t *testing.T) { exerciseSTLCompositionSQL(t, db) })
 		t.Run("glTF multi SQL contract", func(t *testing.T) { exerciseGLTFCompositionSQL(t, db) })
-		for _, fixture := range []struct{ kind, format string }{{"ftp", "3ds"}, {"nfs", "3ds"}, {"ftp", "dae"}, {"nfs", "dae"}, {"minio", "3ds"}, {"minio", "dae"}, {"ftp", "obj"}, {"nfs", "obj"}, {"minio", "obj"}, {"ftp", "stl"}, {"nfs", "stl"}, {"minio", "stl"}, {"ftp", "glb"}, {"nfs", "glb"}, {"minio", "glb"}, {"ftp", "gltf"}, {"nfs", "gltf"}, {"minio", "gltf"}, {"ftp", "fbx"}, {"nfs", "fbx"}, {"minio", "fbx"}, {"nfs", "filegdb"}, {"nfs", "envi"}, {"minio", "envi"}, {"nfs", "geopackage"}, {"ftp", "geopackage"}} {
+		for _, fixture := range []struct{ kind, format string }{{"ftp", "3ds"}, {"nfs", "3ds"}, {"ftp", "dae"}, {"nfs", "dae"}, {"minio", "3ds"}, {"minio", "dae"}, {"ftp", "obj"}, {"nfs", "obj"}, {"minio", "obj"}, {"ftp", "stl"}, {"nfs", "stl"}, {"minio", "stl"}, {"ftp", "glb"}, {"nfs", "glb"}, {"minio", "glb"}, {"ftp", "gltf"}, {"nfs", "gltf"}, {"minio", "gltf"}, {"ftp", "fbx"}, {"nfs", "fbx"}, {"minio", "fbx"}, {"nfs", "filegdb"}, {"nfs", "envi"}, {"minio", "envi"}, {"nfs", "geopackage"}, {"ftp", "geopackage"}, {"nfs", "tiff"}, {"minio", "tiff"}} {
 			kind, format := fixture.kind, fixture.format
 			t.Run(kind+"/"+format, func(t *testing.T) {
 				ctx, cancel := context.WithTimeout(t.Context(), 45*time.Second)
@@ -53,6 +53,9 @@ func exerciseFileCompositionGrants(t *testing.T, db *gorm.DB, tenantID, adminID 
 				primary := targetFor("scene." + format)
 				if format == "geopackage" {
 					primary = targetFor("scene.gpkg")
+				}
+				if format == "tiff" {
+					primary = targetFor("scene.tif")
 				}
 				if format == "envi" {
 					primary = targetFor("scene.img")
@@ -97,7 +100,16 @@ func exerciseFileCompositionGrants(t *testing.T, db *gorm.DB, tenantID, adminID 
 						}
 						refs[1].Target = targetFor(name)
 					}
-					composition, err := authorizationfacts.NewFileCompositionBoundary(format, refs)
+					layout := ""
+					if format == "tiff" {
+						refs = refs[:1]
+						refs[0].Role = "image"
+						layout = "single"
+						if texture == "B.PNG" {
+							layout = "multi"
+						}
+					}
+					composition, err := authorizationfacts.NewScannedFileCompositionBoundary(format, layout, refs)
 					if err != nil {
 						t.Fatal(err)
 					}
@@ -212,7 +224,7 @@ func exerciseFileCompositionGrants(t *testing.T, db *gorm.DB, tenantID, adminID 
 				if format == "gltf" {
 					expectedRefs = 3
 				}
-				if format == "stl" || format == "glb" || format == "fbx" {
+				if format == "stl" || format == "glb" || format == "fbx" || format == "tiff" {
 					expectedRefs = 1
 				}
 				if format == "obj" {
@@ -227,7 +239,7 @@ func exerciseFileCompositionGrants(t *testing.T, db *gorm.DB, tenantID, adminID 
 					t.Fatal("approved composition not persisted")
 				}
 				read(request, true)
-				if format != "glb" && format != "filegdb" {
+				if format != "glb" && format != "filegdb" && format != "tiff" {
 					exerciseManagerFileAuthorization(t, db, service, tenantID, reader, session.AccessToken, actor, engine.ID, format+".file-composition.invalid", current)
 				}
 				// A primary-only row cannot become a full composition Grant.

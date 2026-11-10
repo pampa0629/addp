@@ -10,17 +10,16 @@
       </header>
       <el-alert :title="t('monitor.traces.coverage')" type="info" :closable="false" />
       <div class="filters" data-testid="trace-search">
-        <el-input v-model="traceDraft" :placeholder="t('monitor.traces.traceID')" :aria-label="t('monitor.traces.traceID')" clearable @input="traceInput.queue" @keydown.enter="traceInput.enter" />
-        <el-date-picker v-model="pickerStart" type="datetime" :placeholder="t('monitor.traces.recentWindow')" :aria-label="t('monitor.traces.start')" :disabled-date="futureDate" :show-now="false" @change="changeStart" />
-        <span v-if="bounds.end" class="window-hint">{{ t('monitor.traces.windowEnd', { time: date(bounds.end) }) }}</span>
-      </div>
-      <el-alert v-if="inputError" :title="t(inputError)" type="warning" :closable="false" />
-      <div v-if="!directLookup" class="filters">
-        <el-select :model-value="state?.module || ''" :placeholder="t('monitor.process.module')" :aria-label="t('monitor.process.module')" :loading="modulesLoading" clearable filterable @change="module => filter(module, state?.role || 'backend')">
+        <el-select v-if="!directLookup" :model-value="state?.module || ''" :placeholder="t('monitor.process.module')" :aria-label="t('monitor.process.module')" :loading="modulesLoading" clearable filterable @change="selectModule">
           <el-option v-for="module in moduleNames" :key="module" :value="module" :label="module" />
         </el-select>
-        <el-select :model-value="state?.role || 'backend'" :aria-label="t('monitor.http.layer')" @change="role => filter(state?.module || '', role)"><el-option v-for="role in ['backend', 'ingress']" :key="role" :value="role" :label="t(`monitor.http.layers.${role}`)" /></el-select>
+        <div class="trace-window">
+          <el-date-picker v-model="pickerStart" type="datetime" :placeholder="t('monitor.traces.recentWindow')" :aria-label="t('monitor.traces.start')" :disabled-date="futureDate" :show-now="false" @change="changeStart" />
+          <span v-if="bounds.end" class="window-hint">{{ t('monitor.traces.windowEnd', { time: date(bounds.end) }) }}</span>
+        </div>
+        <el-input v-model="traceDraft" :placeholder="t('monitor.traces.traceID')" :aria-label="t('monitor.traces.traceID')" clearable @input="traceInput.queue" @keydown.enter="traceInput.enter" />
       </div>
+      <el-alert v-if="inputError" :title="t(inputError)" type="warning" :closable="false" />
       <el-alert v-if="modulesFailed" :title="t('monitor.traces.modulesFailed')" type="warning" :closable="false" />
       <el-alert v-if="error" :title="t(error)" type="warning" :closable="false" data-testid="trace-error" />
       <el-table v-if="!directLookup && !detail" :data="instances" v-loading="loading" :empty-text="t(loading ? 'common.loading' : instancesLoaded ? 'monitor.traces.noInstances' : 'monitor.traces.notLoaded')" data-testid="trace-instances">
@@ -88,9 +87,9 @@ function navigate(query, history = 'replace') {
   traceInput.cancel()
   return navigateMonitorRoute(router, { path: '/traces', query: Object.fromEntries(Object.entries(query).filter(([, value]) => value)) }, { history })
 }
-function filter(module, role) {
-  if (!directLookup.value && module === state.value?.module && role === state.value?.role) return
-  return navigate({ module_name: module, role })
+function selectModule(module) {
+  if (module === state.value?.module) return
+  return navigate({ module_name: module })
 }
 function browseInstances() { return navigate({ ...state.value.query, instance_id: undefined, trace_id: undefined }) }
 function returnToTraces() { return navigate({ ...state.value.query, trace_id: undefined }) }
@@ -205,8 +204,21 @@ onUnmounted(() => { traceInput.dispose(); requests.invalidate(); moduleRequests.
 </script>
 
 <style scoped>
-header, .filters { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin: 16px 0; }
+.traces {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
+  padding: 24px;
+}
+
+header, .filters, .trace-window { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
 .filters > .el-input, .filters > .el-select { width: 230px; max-width: 100%; }
-.filters > .el-date-editor { width: 255px; max-width: 100%; }
+.trace-window { min-width: 0; max-width: 100%; }
+.trace-window > .el-date-editor { width: 255px; max-width: 100%; }
 .window-hint { color: var(--addp-text-secondary); font-size: 13px; }
+
+@media (max-width: 700px) {
+  .traces { padding: 16px; }
+}
 </style>

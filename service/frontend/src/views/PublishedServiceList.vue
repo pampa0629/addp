@@ -322,24 +322,24 @@ h1 {
 .services-table {
   width: 100%;
   border-collapse: collapse;
-  background-color: white;
+  background-color: var(--addp-bg-primary);
 }
 
 .services-table th {
-  background-color: #f8f9fa;
+  background-color: var(--addp-bg-secondary);
   padding: 12px;
   text-align: left;
   font-weight: 500;
-  border-bottom: 2px solid #dee2e6;
+  border-bottom: 2px solid var(--addp-border-color);
 }
 
 .services-table td {
   padding: 12px;
-  border-bottom: 1px solid #dee2e6;
+  border-bottom: 1px solid var(--addp-border-color);
 }
 
 .services-table tbody tr:hover {
-  background-color: #f8f9fa;
+  background-color: var(--addp-bg-secondary);
 }
 
 .service-types {
@@ -384,7 +384,7 @@ h1 {
   gap: 15px;
   margin-top: 20px;
   padding: 15px;
-  background-color: #f8f9fa;
+  background-color: var(--addp-bg-primary);
   border-radius: 4px;
 }
 

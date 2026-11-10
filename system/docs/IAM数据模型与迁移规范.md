@@ -440,6 +440,7 @@ Console 公开路由与 System standalone 路由使用同一模块内 path 和 q
 - `000230` 在既有唯一 `source_read_scope` 列中封闭表达 Manager 剖析或 FTP 模型 GLB 两种用途，二者互斥，不新增通用引擎许可。Manager 共用签发／消费内核核验当前 User、功能权限、精确 pending 或 running claim、期限和审计；用途各自核验完整冻结 Scope。GLB 的任务标识／版本来自 Manager 创建事务已冻结的统一执行事实，System 不跨读 Manager 私有任务表；同 UUID 的有限核清只返回原授权及原期限。消费在同一当前源规则核验中锁定原版本 FTP Engine，只解密该快照，不再查询另一个连接。新增前向约束保留剖析原 wire，不改角色、Assignment 或源规则；运行接线、负例门禁和真实 FTP T4 分别验收。
 - 应急会话撤销的 `000231` 已发布，保持文件与摘要不变。`000232` 只补充其申请和批准表的外键前导索引：已有按 Tenant／申请编号开头的复合索引继续服务列表和请求查询，单列外键的父记录关联检查另有有效的 B-tree 前导索引。升级不改申请、两人批准、执行回执、审计、角色、权限、授权版本或会话事实；沿同一 Runner 向前升级并验证重复运行，保留完整外键索引门禁。新增 `AgainstPostgres$` 回归由既有 `make test-system-iam-postgres` 自动发现，不增加入口或 Workflow，也不连接本地数据库。
 - `000236` 将现有精确模型组成扩展至 MinIO IFC/3DS 的原生 `service → bucket → prefix → object` 目标；对象主项和每条依赖必须同 bucket，依赖限定在主项所在目录范围，Grant 保存完整组成，目录／bucket／prefix 不成为授权目标。复用现有 `file_composition` 和 `source_read_scope`，不增加另一套对象许可，不回填旧成果的来源事实。FTP/NFS 既有格式范围保持不变，MinIO DAE 未纳入本次迁移。
+- `000278` 让既有精确 Grant 约束接受 Meta 已确认的 GeoTIFF／COG 组成。批准快照保留 `source_layout`，仅接受唯一必需的 `image` 主项，目标必须是同一条 `.tif`／`.tiff` 文件或对象路径。迁移只更新组成校验函数，不改写或签发 Grant。T2 沿用 `make test-system-iam-postgres SYSTEM_IAM_POSTGRES_TEST_ARGS='--package engineaccess --test file-composition'`，验证签发、匹配当前组成读取与撤销。
 
 #### Meta 逐任务采集批准退役
 

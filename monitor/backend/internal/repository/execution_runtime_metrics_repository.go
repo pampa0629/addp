@@ -94,7 +94,7 @@ aggregated AS (
         COUNT(*) FILTER (WHERE status = 'timeout') AS timeout_count,
         COUNT(*) FILTER (WHERE status = 'cancelled') AS cancelled_count,
         COUNT(*) FILTER (WHERE attempt > 1) AS automatic_retry_count,
-        COUNT(*) FILTER (WHERE retry_of_execution_id IS NOT NULL) AS user_retry_count,
+        COUNT(*) FILTER (WHERE execution_boundary = 'bounded' AND retry_of_execution_id IS NOT NULL) AS user_retry_count,
         COUNT(*) FILTER (WHERE recovered) AS recovery_count,
         COALESCE(AVG(queue_duration_ms), 0)::double precision AS avg_queue_duration_ms,
         COALESCE(percentile_cont(0.95) WITHIN GROUP (ORDER BY queue_duration_ms), 0)::double precision AS p95_queue_duration_ms,

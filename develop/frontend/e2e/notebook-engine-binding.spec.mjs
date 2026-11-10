@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test'
 import { developAuthContext } from './developAuthContext.js'
+import { assertDarkFirstHeading, observeFirstHeading } from '../../../common-frontend/basic/tests/fixtures/firstHeading.mjs'
 
 const NOTEBOOK_ID = 14
 const NOTEBOOK_ENGINE = {
@@ -16,6 +17,16 @@ const ALTERNATE_NOTEBOOK_ENGINE = {
   lifecycle_state: 'active',
   connection_status: 'online'
 }
+
+test('the Notebook list heading uses the dark theme on first render', async ({ page }) => {
+  await installMockBackend(page)
+  await page.addInitScript(() => localStorage.setItem('theme-mode', 'dark'))
+  await observeFirstHeading(page, 'Notebook 列表')
+  await page.goto('/notebook')
+  const heading = page.getByRole('heading', { name: 'Notebook 列表', exact: true })
+  await expect(heading).toBeInViewport({ ratio: 1 })
+  await assertDarkFirstHeading(heading)
+})
 
 test('uses an engine-selected kernel for upload and the saved engine for execution', async ({ page }) => {
   const consoleErrors = []

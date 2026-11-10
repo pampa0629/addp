@@ -72,13 +72,18 @@ function wholeScopeRoot(scope) {
 // Only validate the owner response for display/command binding. The server
 // independently rereads Meta and computes the approved boundary on submission.
 function fileCompositionPrimary(composition) {
-  if (!composition || Object.keys(composition).sort().join(',') !== 'format,refs' ||
-      !['ifc', '3ds', 'dae', 'obj', 'stl', 'glb', 'gltf', 'fbx', 'envi'].includes(composition.format) || !Array.isArray(composition.refs) ||
+  const tiff = composition?.format === 'tiff'
+  if (!composition || Object.keys(composition).sort().join(',') !== (tiff ? 'format,refs,source_layout' : 'format,refs') ||
+      !['ifc', '3ds', 'dae', 'obj', 'stl', 'glb', 'gltf', 'fbx', 'envi', 'tiff'].includes(composition.format) || !Array.isArray(composition.refs) ||
       !composition.refs.length || composition.refs.length > 200 || new TextEncoder().encode(JSON.stringify(composition)).length > 65536) return boundaryError()
+  if (tiff && (!['single', 'multi'].includes(composition.source_layout) || composition.refs.length !== 1)) return boundaryError()
   const seen = new Set(), gltfRoles = new Set(), primary = composition.refs.filter(ref => ref.primary === true)
-  if (primary.length !== 1 || primary[0].required !== true || primary[0].role !== (composition.format === 'envi' ? 'raster' : composition.format === 'gltf' ? 'manifest' : 'model')) return boundaryError()
+  const primaryRole = { tiff: 'image', envi: 'raster', gltf: 'manifest' }[composition.format] || 'model'
+  if (primary.length !== 1 || primary[0].required !== true || primary[0].role !== primaryRole) return boundaryError()
   const target = primary[0].target
-  if (!modelPath(target) || (composition.format === 'envi' ? target.segments.at(-1).name.toLowerCase().endsWith('.hdr') : !target.segments.at(-1).name.toLowerCase().endsWith(`.${composition.format}`))) return boundaryError()
+  if (!modelPath(target)) return boundaryError()
+  const name = target.segments.at(-1).name.toLowerCase()
+  if (tiff ? !/\.tiff?$/.test(name) : composition.format === 'envi' ? name.endsWith('.hdr') : !name.endsWith(`.${composition.format}`)) return boundaryError()
   if (['ifc', 'stl', 'glb', 'fbx'].includes(composition.format) && composition.refs.length !== 1) return boundaryError()
   const parent = target.segments.slice(0, -1)
   for (const ref of composition.refs) {
@@ -129,7 +134,9 @@ export async function readNativeApprovalFacts(target, readFacts) {
     approvedBoundaryFields(target,binding)
     return Object.freeze({state:'complete',binding:freeze(binding)})
   }
-  if (file && (String(facts.engine_id) !== target.engine_id || facts.item_type !== target.segments.at(-1).term || facts.boundary?.layout !== (['gltf', 'envi'].includes(facts.boundary?.file_composition?.format) ? 'multi' : 'single') ||
+  const composition = facts.boundary?.file_composition
+  const fileLayout = composition?.format === 'tiff' ? composition.source_layout : ['gltf', 'envi'].includes(composition?.format) ? 'multi' : 'single'
+  if (file && (String(facts.engine_id) !== target.engine_id || facts.item_type !== target.segments.at(-1).term || facts.boundary?.layout !== fileLayout ||
       facts.boundary?.native_target !== undefined)) throw new Error('invalidDataItemBoundary')
   if (whole && (String(facts.engine_id) !== target.engine_id || facts.item_type !== 'file' || facts.full_name !== name || facts.boundary?.layout !== 'whole' || facts.boundary?.native_target !== undefined || facts.boundary?.file_composition !== undefined)) throw new Error('invalidDataItemBoundary')
   const binding = { item_fingerprint: facts.item_fingerprint, boundary_hash: facts.boundary_hash,
