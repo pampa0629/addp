@@ -81,6 +81,8 @@ Manager 向量化的模型提供能力统一来自 Inference Runtime。Manager �
 
 Manager 配置定义提供业务策略默认值；显式平台值和 Tenant 覆盖保存在 Manager 自己的持久化配置中，不从环境变量回退。Manager 必须先解析当前场景绑定，再调用 `addp.inference/v1`；未配置、无授权或能力不匹配时返回明确错误，不能直连其他模型服务。
 
+Manager 的平台向量化配置页同时管理向量化策略和影像分割的场景绑定。具有页面读取权限的用户可以查看已读取的配置。配置读取成功且具有 `manager.configuration.update` 时，才能修改和保存两个页签中的配置。
+
 任务定义和 execution 中的 `model_profile_id/profile_version/deployment_id/dimension/binding_version` 是实际使用配置的快照。场景绑定变化只影响后续创建或显式更新的任务及后续 execution，不能改写历史执行事实。
 
 `MANAGER_EMBEDDING_SERVICE_API_KEY` 不再存在。Provider credential 只在 Inference owner 中保存和解密。
@@ -93,6 +95,6 @@ Manager 的在线底图供应商作为 Manager-owned 强类型资源管理。平
 
 Manager 快显中的动态 MVT 是交互式预览能力，单瓦片查询必须受响应时间预算保护。以下配置同时影响能力接口返回的 `realtime_tile.timeout_budget_ms`、动态 MVT 查询的实际超时控制，以及超时响应头中的诊断信息。
 
-Manager 配置页面的“快显策略”Tab 维护 FlatGeobuf 行数上限、动态 MVT 超时预算、重试等待时间和栅格 mosaic 生成超时；这些字段不再通过环境变量注入。
+Console 配置管理的 Manager 页面（`/configuration/manager`）统一维护 FlatGeobuf 行数上限、动态 MVT 超时预算、重试等待时间和栅格 mosaic 生成超时。四项均属于 Manager 的 `platform_only` 配置。“快显策略”仅在 Platform Context 且具有 `manager.configuration.read` 时显示，读取成功且具有 `manager.configuration.update` 才可保存。Tenant Context 中具有读取权限的用户只看到“底图服务”，页面不请求快显策略。
 
 MVT 进程内 LRU 的容量和条目 TTL 是按部署机器内存预算确定的进程级实现参数，使用代码默认值（8192 条目、5 分钟），不作为平台或租户业务配置，也不从未登记的环境变量读取。

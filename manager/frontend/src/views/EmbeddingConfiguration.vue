@@ -5,15 +5,15 @@
         <h1>{{ t('manager.embeddingConfiguration.title') }}</h1>
         <div class="status-line">
           <el-tag effect="plain">{{ scopeLabel }}</el-tag>
-          <span>{{ t('manager.embeddingConfiguration.bindingVersion', { version: binding.version }) }}</span>
+          <span v-if="loaded">{{ t('manager.embeddingConfiguration.bindingVersion', { version: binding.version }) }}</span>
         </div>
       </div>
-      <el-button :icon="Refresh" circle :loading="loading" :title="t('manager.embeddingConfiguration.reload')" @click="load" />
+      <el-button :icon="Refresh" circle :loading="loading" :disabled="saving" :title="t('manager.embeddingConfiguration.reload')" @click="load" />
     </header>
 
-    <el-tabs v-model="activeTab" class="configuration-tabs">
+    <el-tabs v-model="activeTab" v-loading="loading" class="configuration-tabs">
       <el-tab-pane :label="t('manager.embeddingConfiguration.tabs.embedding')" name="embedding">
-    <el-form ref="formRef" v-loading="loading" :model="form" :rules="rules" label-position="top">
+    <el-form v-if="loaded" ref="formRef" :model="form" :rules="rules" :disabled="!canSave" label-position="top" @submit.prevent>
       <section class="form-section">
         <h2>{{ t('manager.embeddingConfiguration.profileSection') }}</h2>
         <div class="form-grid">
@@ -49,23 +49,20 @@
       </section>
 
       <footer class="form-actions">
-        <el-button type="primary" :icon="Check" :loading="saving" @click="save">
+        <el-button type="primary" :icon="Check" :loading="saving" :disabled="!canSave" @click="save">
           {{ t('manager.embeddingConfiguration.save') }}
         </el-button>
       </footer>
     </el-form>
       </el-tab-pane>
-      <el-tab-pane v-if="isPlatform" :label="t('manager.embeddingConfiguration.tabs.quickViewPolicy')" name="quick-view-policy">
-        <QuickViewPolicyConfiguration />
-      </el-tab-pane>
       <el-tab-pane :label="t('manager.segment.title')" name="segmentation" lazy>
-        <el-form label-position="top" @submit.prevent>
+        <el-form v-if="loaded" :disabled="!canSave" label-position="top" @submit.prevent>
           <el-form-item :label="t('manager.embeddingConfiguration.profileSection')">
             <el-select v-model="segmentBinding.profile">
               <el-option v-for="item in segmentProfiles" :key="item.id" :value="item.id" :label="item.name" />
             </el-select>
           </el-form-item>
-          <el-button type="primary" :disabled="!segmentBinding.profile" :loading="saving" @click="saveSegment">{{ t('manager.embeddingConfiguration.save') }}</el-button>
+          <el-button type="primary" :disabled="!canSave || !segmentBinding.profile" :loading="saving" @click="saveSegment">{{ t('manager.embeddingConfiguration.save') }}</el-button>
         </el-form>
       </el-tab-pane>
     </el-tabs>
@@ -86,13 +83,14 @@ import {
   updateEmbeddingConfiguration,
   updateInferenceBinding
 } from '../api/embeddingConfiguration'
-import QuickViewPolicyConfiguration from '../components/QuickViewPolicyConfiguration.vue'
 
 const { t } = useI18n()
 const authStore = useAuthStore()
 const formRef = ref(null)
 const loading = ref(false)
+const loaded = ref(false)
 const saving = ref(false)
+const canSave = computed(() => loaded.value && !saving.value && authStore.hasPermission('manager.configuration.update'))
 const activeTab = ref('embedding')
 const profiles = ref([])
 const deployments = ref([])
@@ -121,6 +119,7 @@ const segmentProfiles = computed(() => profiles.value.filter(p => {
   return p.status === 'active' && d?.status === 'active' && d.operations?.includes('segmentation') && d.modalities?.includes('image')
 }))
 async function saveSegment(){
+  if (!canSave.value || !segmentBinding.profile) return
   saving.value=true
   try {
     const result=await updateInferenceBinding({version:segmentBinding.version,model_profile_id:segmentBinding.profile},'image_segmentation')
@@ -134,6 +133,7 @@ const rules = {
 }
 
 async function load() {
+  loaded.value = false
   loading.value = true
   try {
     const requests = [getInferenceBinding(), listInferenceProfiles(), listInferenceDeployments(), getInferenceBinding('image_segmentation')]
@@ -150,6 +150,7 @@ async function load() {
       form.maxFileSizeMB = policy.max_file_size_mb
       form.batchConcurrency = policy.batch_concurrency
     }
+    loaded.value = true
   } catch (_error) {
     ElMessage.error(t('manager.embeddingConfiguration.loadFailed'))
   } finally {
@@ -158,8 +159,9 @@ async function load() {
 }
 
 async function save() {
+  if (!canSave.value) return
   const valid = await formRef.value?.validate().catch(() => false)
-  if (!valid) return
+  if (!valid || !canSave.value) return
   saving.value = true
   try {
     const requests = [updateInferenceBinding({ version: binding.version, model_profile_id: form.modelProfileID })]

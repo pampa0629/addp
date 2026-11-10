@@ -205,8 +205,7 @@
       "profileSection": "Inference scenario binding",
       "policySection": "Runtime policy",
       "tabs": {
-        "embedding": "Embedding",
-        "quickViewPolicy": "Quick-view policy"
+        "embedding": "Embedding"
       },
       "modelProfile": "Inference Model Profile",
       "dimension": "Vector dimension",
@@ -225,19 +224,6 @@
       "saveSuccess": "Embedding configuration saved",
       "saveFailed": "Failed to save embedding configuration",
       "versionConflict": "The configuration changed elsewhere and has been reloaded"
-    },
-    "quickViewPolicy": {
-      "title": "Quick-view policy",
-      "description": "Manage Manager quick-view runtime capacity and timeout boundaries.",
-      "flatgeobufRows": "FlatGeobuf row limit",
-      "mvtTimeout": "Dynamic MVT timeout budget (milliseconds)",
-      "retryAfter": "Retry-after delay (seconds)",
-      "reload": "Reload",
-      "save": "Save policy",
-      "loadFailed": "Failed to load quick-view policy",
-      "saveSuccess": "Quick-view policy saved",
-      "saveFailed": "Failed to save quick-view policy",
-      "versionConflict": "The quick-view policy changed elsewhere and has been reloaded"
     },
     "vectorTileSet": {
       "title": "Vector Tile Tasks",
