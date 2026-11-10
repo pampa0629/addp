@@ -86,8 +86,8 @@ export function validateEngineDeployment(row) {
   if (!['infra','business'].includes(row?.scope) || !isTargetUUID(row?.deployment_id) || typeof row.display_name !== 'string' || !row.display_name || row.display_name.length > 1024 || !['postgresql','redis','minio'].includes(row.engine_type) || typeof row.enabled !== 'boolean' || !Number.isSafeInteger(row.version) || row.version < 1 || !['bound', 'rejected'].includes(row.host_binding_state) || (row.host_binding_state === 'bound' ? !isTargetUUID(row.node_id) : row.node_id !== '')) invalid()
   return row
 }
-export function validateEnginePage(value, page) {
-  if (!Array.isArray(value?.data) || value.data.length > 20 || !Number.isSafeInteger(value.total) || value.total < 0 || value.page !== page || value.page_size !== 20 || value.total < (page - 1) * 20 + value.data.length && value.data.length) invalid()
+export function validateEnginePage(value, page, size = 20) {
+  if (!Array.isArray(value?.data) || value.data.length > size || !Number.isSafeInteger(value.total) || value.total < 0 || value.page !== page || value.page_size !== size || value.total < (page - 1) * size + value.data.length && value.data.length) invalid()
   const seen = new Set()
   for (const row of value.data) { validateEngineDeployment(row); if (seen.has(row.deployment_id)) invalid(); seen.add(row.deployment_id) }
   return value

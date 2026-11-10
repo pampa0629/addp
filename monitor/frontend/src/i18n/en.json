@@ -2,7 +2,7 @@
   "monitor": {
     "overview": {
       "title": "Resource overview",
-      "scope": "All currently authorized managed hosts, including disabled hosts; rankings compare valid observations from this evaluation only.",
+      "scope": "Host statistics cover all currently authorized managed hosts, including disabled hosts. Rankings compare valid observations from this evaluation.",
       "evaluated": "Evaluation time: {time}",
       "inventory": {
         "managed": "Managed hosts",
@@ -16,6 +16,20 @@
         "attentionDetail": "Failed, stale, or awaiting an initial sample"
       },
       "collection": "Host collection status",
+      "engineCoverage": "Engine collection coverage",
+      "engineCoverageHint": "Disabled deployments and deployments without a valid host binding are excluded from expected collection.",
+      "engineInventory": "Managed {managed} · Expected {eligible}",
+      "engineSamples": "Valid samples {sampled} · No valid samples {missing}",
+      "serviceCoverage": "Online service collection gaps",
+      "serviceCoverageHint": "Counts cover online runtime instances. A valid sample means at least one process metric is valid.",
+      "serviceCounts": {
+        "online": "Online instances",
+        "undeclared": "Collection undeclared",
+        "sampled": "Valid samples",
+        "missing": "Declared without valid samples"
+      },
+      "sampleBudget": "The metrics query exceeded its budget. Sample coverage is unknown.",
+      "inventoryLimit": "The inventory exceeds 100 entries. A single page cannot provide complete coverage.",
       "pressure": "Host resource pressure",
       "shortcuts": {
         "title": "Monitoring shortcuts",

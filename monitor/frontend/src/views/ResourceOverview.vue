@@ -13,7 +13,7 @@
     <template v-else>
       <p class="overview-hint">{{ t('monitor.overview.scope') }}</p>
       <el-alert v-if="errorKey" :title="t(errorKey)" type="warning" :closable="false" data-testid="overview-error" />
-      <div v-loading="loading && !overview" :aria-busy="loading">
+      <div v-loading="loading && !overview && !errorKey" :aria-busy="loading">
         <template v-if="overview">
           <p class="overview-hint" data-testid="overview-time">{{ t('monitor.overview.evaluated', { time: date(overview.evaluated_at) }) }} · {{ t('monitor.resources.queriedAt') }}: {{ date(overview.queried_at) }}</p>
           <div class="overview-statistics" data-testid="overview-statistics">
@@ -68,6 +68,52 @@
           </div>
         </template>
       </div>
+      <div v-if="!blocked && (canReadEngines || canReadServices)" class="coverage-grid" :aria-busy="loading">
+        <el-card v-if="canReadEngines" shadow="never" data-testid="overview-engine-coverage">
+          <template #header>
+            <div class="overview-card-header">
+              <h3>{{ t('monitor.overview.engineCoverage') }}</h3>
+              <el-button text type="primary" @click="navigate('/engine-resources')">{{ t('monitor.engines.title') }}</el-button>
+            </div>
+          </template>
+          <el-alert v-if="coverageErrors.engines" :title="t(coverageErrors.engines)" type="warning" :closable="false" />
+          <template v-else-if="coverage.engines">
+            <p class="overview-hint">{{ t('monitor.overview.engineCoverageHint') }}</p>
+            <p v-if="coverage.engines.limited" class="overview-hint">{{ t('monitor.overview.sampleBudget') }}</p>
+            <dl class="coverage-facts">
+              <div v-for="scope in coverage.engines.scopes" :key="scope.key" :data-testid="`overview-engine-${scope.key}`">
+                <dt><el-button link type="primary" @click="navigate('/engine-resources', { scope: scope.key })">{{ t(`monitor.engines.scopes.${scope.key}`) }}</el-button></dt>
+                <dd>{{ t('monitor.overview.engineInventory', scope) }}</dd>
+                <dd>{{ t('monitor.overview.engineSamples', { sampled: scope.sampled ?? '—', missing: scope.missing ?? '—' }) }}</dd>
+              </div>
+            </dl>
+          </template>
+          <el-skeleton v-else :rows="2" />
+        </el-card>
+        <el-card v-if="canReadServices" shadow="never" data-testid="overview-service-coverage">
+          <template #header>
+            <div class="overview-card-header">
+              <h3>{{ t('monitor.overview.serviceCoverage') }}</h3>
+              <el-button text type="primary" @click="navigate('/service-resources', { process_metrics_declared: 'all' })">{{ t('monitor.process.coverage.action') }}</el-button>
+            </div>
+          </template>
+          <el-alert v-if="coverageErrors.services" :title="t(coverageErrors.services)" type="warning" :closable="false" />
+          <template v-else-if="coverage.services">
+            <p class="overview-hint">{{ t('monitor.overview.serviceCoverageHint') }}</p>
+            <p v-if="coverage.services.limited" class="overview-hint">{{ t('monitor.overview.sampleBudget') }}</p>
+            <dl class="coverage-facts">
+              <div v-for="key in ['online', 'undeclared', 'sampled', 'missing']" :key="key" :data-testid="`overview-service-${key}`">
+                <dt>
+                  <el-button v-if="key === 'undeclared' && coverage.services.undeclared" link type="primary" @click="navigate('/service-resources', { process_metrics_declared: 'false' })">{{ t('monitor.overview.serviceCounts.undeclared') }}</el-button>
+                  <template v-else>{{ t(`monitor.overview.serviceCounts.${key}`) }}</template>
+                </dt>
+                <dd>{{ coverage.services[key] ?? '—' }}</dd>
+              </div>
+            </dl>
+          </template>
+          <el-skeleton v-else :rows="2" />
+        </el-card>
+      </div>
       <section class="overview-section" aria-labelledby="overview-shortcuts">
         <h3 id="overview-shortcuts" class="overview-section-title">{{ t('monitor.overview.shortcuts.title') }}</h3>
         <div class="overview-shortcuts">
@@ -92,6 +138,10 @@ import { allowsConsoleRoute } from '../../../../common-frontend/basic/src/author
 import { formatFieldPresentationValue } from '../../../../common-frontend/basic/src/utils/fieldPresentation.mjs'
 import { useAuthStore } from '../store/auth'
 import { resourceOverviewAPI as api } from '../api/resourceOverview'
+import { engineResourcesAPI as enginesAPI } from '../api/engineResources'
+import { processResourcesAPI as processesAPI } from '../api/processResources'
+import { engineSummaryFor, validateEnginePage, validateEngineResources } from '../utils/engineResources'
+import { validateProcessInstances, validateProcessSummaries } from '../utils/processResources'
 import { resolveOverviewRoute, validateResourceOverview } from '../utils/resourceOverview'
 import { resourceErrorKey } from '../utils/nodeResources'
 import { navigateMonitorRoute } from '../utils/moduleNavigation'
@@ -100,6 +150,8 @@ const { t, locale } = useI18n(), auth = useAuthStore(), route = useRoute(), rout
 const eligible = computed(() => auth.contextType === 'platform' && auth.authContext?.principal?.type === 'user' && !auth.authContext?.delegation)
 const canOpen = path => eligible.value && allowsConsoleRoute(`/monitor${path}`, auth.contextType, auth.permissions)
 const canRead = computed(() => canOpen('/resource-overview'))
+const canReadEngines = computed(() => canRead.value && canOpen('/engine-resources'))
+const canReadServices = computed(() => canRead.value && canOpen('/service-resources'))
 const shortcuts = [
   { path: '/node-resources', key: 'nodes', title: 'monitor.resources.title' },
   { path: '/engine-resources', key: 'engines', title: 'monitor.engines.title' },
@@ -130,10 +182,13 @@ const hostStatistics = computed(() => {
 })
 const refreshStatus = computed(() => state.value.refresh === 'off' ? 'manual' : blocked.value ? 'stopped' : !visible.value ? 'paused' : 'automatic')
 const requests = createLatestRequestScope()
+const coverage = ref({}), coverageErrors = ref({})
+const coverageBlocked = new Set()
+const inventoryPage = { page: 1, page_size: 100 }
 let disposed = false
 const date = value => formatFieldPresentationValue(value, { temporal_format: 'datetime' }, locale.value)
 const percent = value => formatFieldPresentationValue(value, { unit: '%', precision: 2 }, locale.value)
-const navigate = path => navigateMonitorRoute(router, { path })
+const navigate = (path, query) => navigateMonitorRoute(router, { path, query })
 function selectRefresh(refresh) { return navigateMonitorRoute(router, { path: '/resource-overview', query: resolveOverviewRoute({ refresh }).query }, { history: 'replace' }) }
 const refreshCycle = createAutoRefresh({
   interval: () => state.value.refresh,
@@ -142,12 +197,85 @@ const refreshCycle = createAutoRefresh({
   pause: () => { requests.invalidate(); loading.value = false },
   visibilityChanged: value => { visible.value = value }
 })
+function completeInventory(page) {
+  if (page.total > inventoryPage.page_size) throw new Error('overview_inventory_limit')
+  if (page.data.length !== page.total) throw new Error('invalid_resource_response')
+  return page.data
+}
+
+async function readCoverageSamples(load) {
+  try {
+    return await load()
+  } catch (error) {
+    if (error.response?.data?.error_code === 'observability_query_budget_exceeded') return null
+    throw error
+  }
+}
+const hasValidSample = row => row.series.some(series => series.points[0].data_state === 'valid')
+
+async function engineCoverage(read) {
+  const page = await read(config => enginesAPI.deployments(inventoryPage, config))
+  const owners = completeInventory(validateEnginePage(page, inventoryPage.page, inventoryPage.page_size))
+  const eligible = owners.filter(row => row.enabled && row.host_binding_state === 'bound')
+  const samples = eligible.length ? await readCoverageSamples(async () => {
+    const result = await read(config => enginesAPI.summaries(eligible.map(row => row.deployment_id), config))
+    return validateEngineResources(result, eligible, row => engineSummaryFor(row.engine_type)).data
+  }) : []
+  const sampled = new Set(samples?.filter(hasValidSample).map(row => row.subject.deployment_id))
+  return {
+    limited: samples === null,
+    scopes: ['infra', 'business'].map(key => {
+      const scoped = eligible.filter(row => row.scope === key)
+      const count = scoped.filter(row => sampled.has(row.deployment_id)).length
+      const unknown = samples === null && scoped.length > 0
+      return { key, managed: owners.filter(row => row.scope === key).length, eligible: scoped.length,
+        sampled: unknown ? null : count, missing: unknown ? null : scoped.length - count }
+    })
+  }
+}
+
+async function serviceCoverage(read) {
+  const params = { ...inventoryPage, status: 'up' }
+  const page = await read(config => processesAPI.instances(params, config))
+  const owners = completeInventory(validateProcessInstances(page, params.page, params, params.page_size))
+  const declared = owners.filter(row => row.process_metrics_declared)
+  const samples = declared.length ? await readCoverageSamples(async () => {
+    const result = await read(config => processesAPI.summaries(declared.map(row => row.id), config))
+    return [...validateProcessSummaries(result, declared).values()]
+  }) : []
+  const sampled = samples?.filter(hasValidSample).length ?? null
+  return { online: owners.length, undeclared: owners.length - declared.length, limited: samples === null,
+    sampled, missing: sampled === null ? null : declared.length - sampled }
+}
+
+async function loadCoverage(ticket, key, load) {
+  if (!requests.current(ticket) || coverageBlocked.has(key)) return
+  const read = callback => {
+    if (!requests.current(ticket)) throw new DOMException('Request cancelled', 'AbortError')
+    return requests.request(callback)
+  }
+  try {
+    const value = await load(read)
+    if (!requests.current(ticket)) return
+    coverage.value[key] = value
+    delete coverageErrors.value[key]
+  } catch (error) {
+    if (!requests.current(ticket)) return
+    delete coverage.value[key]
+    coverageErrors.value[key] = error.message === 'overview_inventory_limit' ? 'monitor.overview.inventoryLimit' : resourceErrorKey(error)
+    if ([401, 403, 404].includes(error.response?.status)) coverageBlocked.add(key)
+  }
+}
+
 async function reload({ automatic = false } = {}) {
   if (disposed || route.name !== 'ResourceOverview') return
   if (automatic && (loading.value || !canRead.value || !visible.value || blocked.value)) return
   refreshCycle.stop()
   const ticket = requests.invalidate()
-  if (!automatic) blocked.value = false
+  if (!automatic) {
+    blocked.value = false
+    coverageBlocked.clear()
+  }
   errorKey.value = ''; loading.value = false
   if (!canRead.value) { overview.value = null; return }
   if (state.value.changed) { await navigateMonitorRoute(router, { path: '/resource-overview', query: state.value.query }, { history: 'replace' }); return }
@@ -160,13 +288,26 @@ async function reload({ automatic = false } = {}) {
     if (!requests.current(ticket)) return
     overview.value = null
     errorKey.value = error.response?.data?.error_code === 'observability_query_budget_exceeded' ? 'monitor.overview.budget' : resourceErrorKey(error)
-    if ([401, 403, 404].includes(error.response?.status)) blocked.value = true
+    if ([401, 403, 404].includes(error.response?.status)) {
+      blocked.value = true
+      coverage.value = {}
+      coverageErrors.value = {}
+    }
+  }
+  try {
+    if (blocked.value || !requests.current(ticket)) return
+    if (canReadEngines.value) await loadCoverage(ticket, 'engines', engineCoverage)
+    if (requests.current(ticket) && canReadServices.value) await loadCoverage(ticket, 'services', serviceCoverage)
   } finally {
     if (requests.current(ticket)) { loading.value = false; refreshCycle.schedule() }
   }
 }
 watch([() => route.fullPath, identity], ([, currentIdentity], [, previousIdentity]) => {
-  if (currentIdentity !== previousIdentity || route.name !== 'ResourceOverview') overview.value = null
+  if (currentIdentity !== previousIdentity || route.name !== 'ResourceOverview') {
+    overview.value = null
+    coverage.value = {}
+    coverageErrors.value = {}
+  }
   if (route.name === 'ResourceOverview') void reload()
   else { refreshCycle.stop(); requests.invalidate() }
 }, { immediate: true })
@@ -196,6 +337,12 @@ onBeforeUnmount(() => { disposed = true; refreshCycle.dispose(); requests.invali
 .collection-legend dt { display: flex; align-items: center; gap: 6px; font-size: 13px; }
 .collection-legend dt .collection-swatch { flex: 0 0 10px; height: 10px; border-radius: 50%; }
 .collection-legend dd { font-weight: 600; margin: 4px 0 0 16px; }
+.coverage-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 400px), 1fr)); gap: 16px; margin-top: 20px; }
+.coverage-grid > * { min-width: 0; }
+.coverage-facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 128px), 1fr)); gap: 12px; margin: 12px 0 0; }
+.coverage-facts dt { font-size: 13px; color: var(--addp-text-secondary); }
+.coverage-facts dd { margin: 5px 0 0; }
+.coverage-facts .el-button { height: auto; white-space: normal; text-align: left; }
 .overview-shortcuts { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 172px), 1fr)); gap: 12px; }
 .overview-shortcuts .el-button { padding: 0; }
 .overview-shortcuts .overview-hint { margin-bottom: 0; }

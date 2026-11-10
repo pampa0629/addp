@@ -2,7 +2,7 @@
   "monitor": {
     "overview": {
       "title": "资源总览",
-      "scope": "覆盖当前授权的全部纳管主机，包含停用主机；榜单只比较本次有效观测。",
+      "scope": "主机统计覆盖当前授权的全部纳管主机，包含停用主机；榜单只比较本次有效观测。",
       "evaluated": "统一评估时间：{time}",
       "inventory": {
         "managed": "纳管主机",
@@ -16,6 +16,20 @@
         "attentionDetail": "采集失败、样本过期或等待首次采集"
       },
       "collection": "主机采集状态",
+      "engineCoverage": "引擎采集覆盖",
+      "engineCoverageHint": "停用或主机绑定无效的部署不计入应采集数量。",
+      "engineInventory": "纳管 {managed} · 应采集 {eligible}",
+      "engineSamples": "有有效样本 {sampled} · 暂无有效样本 {missing}",
+      "serviceCoverage": "在线服务采集缺口",
+      "serviceCoverageHint": "按在线运行实例统计；有效表示至少一项进程指标有有效样本。",
+      "serviceCounts": {
+        "online": "在线实例",
+        "undeclared": "未声明采集",
+        "sampled": "有有效样本",
+        "missing": "已声明但无有效样本"
+      },
+      "sampleBudget": "本次查询超出指标预算，样本覆盖未知。",
+      "inventoryLimit": "台账超过 100 条，无法在一页内获得完整覆盖统计。",
       "pressure": "主机资源压力",
       "shortcuts": {
         "title": "监控入口",
