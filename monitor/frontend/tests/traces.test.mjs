@@ -42,6 +42,34 @@ test('Trace summary selects the longest matched cross-module server span', () =>
   assert.equal(traceTimeline(trace).longestDownstream, undefined)
 })
 
+test('HTTP failure summary picks the deepest observed downstream server of the selected span', () => {
+  const value = fixture(), trace = value.data[0], [entry] = trace.spans
+  const makeSpan = (digit, parent, module, kind) => ({
+    ...entry, span_id: digit.repeat(16), parent_span_id: parent.span_id,
+    module_name: module, instance_id: module, kind, status: 503, failed: true
+  })
+  const entryCall = makeSpan('3', entry, 'monitor', 'client')
+  const selected = makeSpan('4', entryCall, 'system', 'server')
+  const selectedCall = makeSpan('5', selected, 'system', 'client')
+  const downstream = makeSpan('6', selectedCall, 'develop', 'server')
+  const downstreamCall = makeSpan('7', downstream, 'develop', 'client')
+  const deepest = makeSpan('8', downstreamCall, 'meta', 'server')
+  const sibling = makeSpan('9', entryCall, 'service', 'server')
+  const disconnected = makeSpan('a', selectedCall, 'agent', 'server')
+  trace.spans.push(entryCall, selected, selectedCall, downstream, downstreamCall, deepest, sibling, disconnected)
+  trace.edges = [[entryCall, selected], [selectedCall, downstream], [downstreamCall, deepest], [entryCall, sibling]].map(([client, server]) => ({
+    client_span_id: client.span_id, server_span_id: server.span_id,
+    from_module: client.module_name, from_instance: client.instance_id,
+    to_module: server.module_name, to_instance: server.instance_id
+  }))
+  validateTraces(value, owner)
+  assert.equal(traceTimeline(trace, selected).downstreamFailure, deepest)
+  trace.edges.splice(2, 1)
+  assert.equal(traceTimeline(trace, selected).downstreamFailure, downstream)
+  trace.edges.splice(1, 1)
+  assert.equal(traceTimeline(trace, selected).downstreamFailure, undefined)
+})
+
 function executionFixture() {
   const value = fixture(), span = value.data[0].spans[0]
   Object.assign(span, { scope: 'addp.execution', kind: 'internal', phase: 'terminal', attempt: 3, outcome: 'failed', failed: true, method: '', route: '', status: 0, links: [{ trace_id: 'a'.repeat(32), span_id: 'b'.repeat(16), module_name: 'system', instance_id: 'two', role: 'backend', started_at: '2026-10-19T22:00:00Z', runtime_instance_id: 2 }] })

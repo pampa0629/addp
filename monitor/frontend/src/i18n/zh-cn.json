@@ -1398,6 +1398,8 @@
       "spanCount": "{count} 个 Span",
       "observedFailures": "观测到 {count} 个失败 Span",
       "failureFocus": "优先查看的失败节点",
+      "matchedHTTPFailure": "所选接口的 5xx",
+      "observedDownstreamFailure": "已观测到的下游失败",
       "resultUnavailable": "未观测到入口结果",
       "identifiers": "技术标识",
       "kinds": {

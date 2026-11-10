@@ -21,7 +21,7 @@ test('HTTP quality keeps one Console iframe while selecting a template and resto
   expect(page.url()).toBe(url)
 })
 
-test('selected HTTP interface opens the 5xx sample for the same window and locates its logs', async ({ page }) => {
+test('selected HTTP interface opens the 5xx sample for the same window and distinguishes its downstream failure', async ({ page }) => {
   const permissions = [...httpPermissions, 'monitor.trace.read', 'platform.module_log.read']
   const state = await httpBackend(page, { identity: identity(permissions) })
   const traceID = '1'.repeat(32)
@@ -32,13 +32,16 @@ test('selected HTTP interface opens the 5xx sample for the same window and locat
     const { start, end } = params
     const stopped = new Date(Date.parse(start) + 500).toISOString()
     const selected = { module_name: 'monitor', instance_id: 'http-1', role: 'backend', scope: 'addp.http', kind: 'server',
-      attempt: 0, links: [], method: 'GET', route: '/slow/:id', status: 503, failed: true, start, end: stopped, duration_ms: 500 }
-    const spans = [
-      { ...selected, span_id: '2'.repeat(16), parent_span_id: '' },
-      { ...selected, span_id: '3'.repeat(16), parent_span_id: '2'.repeat(16), route: '/fast/:id' }
-    ]
+      span_id: '2'.repeat(16), parent_span_id: '', attempt: 0, links: [], method: 'GET', route: '/slow/:id',
+      status: 503, failed: true, start, end: stopped, duration_ms: 500 }
+    const client = { ...selected, span_id: '3'.repeat(16), parent_span_id: selected.span_id, kind: 'client', route: '' }
+    const downstream = { ...selected, span_id: '4'.repeat(16), parent_span_id: client.span_id,
+      module_name: 'system', instance_id: 'system-1', route: '/system/check', status: 500, duration_ms: 400 }
+    const edge = { client_span_id: client.span_id, server_span_id: downstream.span_id,
+      from_module: client.module_name, from_instance: client.instance_id, to_module: downstream.module_name, to_instance: downstream.instance_id }
     return route.fulfill({ json: { start, end, queried_at: end, policy_version: 2, coverage: 'sampled',
-      data: [{ trace_id: traceID, start, end: stopped, duration_ms: 500, partial: false, policy_version: 2, coverage: 'sampled', edges: [], spans }]
+      data: [{ trace_id: traceID, start, end: stopped, duration_ms: 500, partial: false, policy_version: 2, coverage: 'sampled',
+        edges: [edge], spans: [selected, client, downstream] }]
     } })
   })
   await page.goto('/monitor/http-quality?instance_id=1&range=5m&refresh=off')
@@ -51,11 +54,25 @@ test('selected HTTP interface opens the 5xx sample for the same window and locat
   await expect(page).toHaveURL(url => url.pathname === '/monitor/traces' && Object.entries(expected).every(([key, value]) => url.searchParams.get(key) === value))
   await frame.getByRole('button', { name: '查看调用链', exact: true }).click()
   const failure = frame.getByTestId('trace-failure')
+  const downstreamFailure = frame.getByTestId('trace-downstream-failure')
+  await expect(failure).toContainText('所选接口的 5xx')
   await expect(failure).toContainText('GET /slow/:id')
   await expect(failure).toContainText('HTTP 503')
+  await expect(downstreamFailure).toContainText('已观测到的下游失败')
+  await expect(downstreamFailure).toContainText('GET /system/check')
+  await expect(downstreamFailure).toContainText('HTTP 500')
+  await expect(downstreamFailure).toContainText('观测到的最长下游调用')
+  await expect(frame.getByTestId('trace-downstream')).toHaveCount(0)
   expect(calls.at(-1)).toEqual(expected)
+  await failure.getByRole('button', { name: '定位到时间线' }).click()
+  await expect(frame.locator('#span-' + '2'.repeat(16))).toBeFocused()
+  await downstreamFailure.getByRole('button', { name: '定位到时间线' }).click()
+  await expect(frame.locator('#span-' + '4'.repeat(16))).toBeFocused()
   await failure.getByRole('button', { name: '关联日志' }).click()
   await expect(page).toHaveURL(url => url.pathname === '/system/modules' && url.searchParams.get('trace_id') === traceID && url.searchParams.get('log_instance') === 'http-1')
+  await page.goBack()
+  await downstreamFailure.getByRole('button', { name: '关联日志' }).click()
+  await expect(page).toHaveURL(url => url.pathname === '/system/modules' && url.searchParams.get('trace_id') === traceID && url.searchParams.get('log_instance') === 'system-1')
 })
 
 test('Tenant HTTP permission strings cannot mount the platform quality iframe', async ({ page }) => {

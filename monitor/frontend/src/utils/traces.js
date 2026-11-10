@@ -84,7 +84,7 @@ export function traceLinkQuery(link, now = Date.now()) {
   return { instance_id: String(link.runtime_instance_id), module_name: link.module_name, role: link.role, trace_id: link.trace_id, start: new Date(start).toISOString(), end: new Date(end).toISOString() }
 }
 
-export function traceTimeline(trace) {
+export function traceTimeline(trace, matchedFailure) {
   const spans = [...trace.spans].sort((a, b) => Date.parse(a.start) - Date.parse(b.start))
   const byID = new Map(spans.map(span => [span.span_id, span]))
   const children = new Map()
@@ -123,7 +123,20 @@ export function traceTimeline(trace) {
     if (!longestDownstream || server.duration_ms > longestDownstream.duration_ms) longestDownstream = server
   }
   const failures = rows.filter(({ span }) => span.failed)
-  const firstFailure = [...failures].sort((a, b) => b.depth - a.depth)
-    .find(({ span }) => span.kind !== 'client') || failures[0]
-  return { rows, entry, operation: operation || spans[0], longestDownstream, failures, firstFailure }
+  const deepestFirst = [...failures].sort((a, b) => b.depth - a.depth)
+  const firstFailure = deepestFirst.find(({ span }) => span.kind !== 'client') || failures[0]
+  let downstreamFailure
+  if (matchedFailure) {
+    const matchedServers = new Set(trace.edges.map(edge => edge.server_span_id))
+    const reachable = new Set([matchedFailure.span_id])
+    // Follow the recorded tree, requiring a matched edge for each server hop.
+    for (const spanID of reachable) {
+      for (const child of children.get(spanID) || []) {
+        if (child.kind === 'client' || matchedServers.has(child.span_id)) reachable.add(child.span_id)
+      }
+    }
+    reachable.delete(matchedFailure.span_id)
+    downstreamFailure = deepestFirst.find(({ span }) => span.kind === 'server' && reachable.has(span.span_id))?.span
+  }
+  return { rows, entry, operation: operation || spans[0], longestDownstream, failures, firstFailure, downstreamFailure }
 }

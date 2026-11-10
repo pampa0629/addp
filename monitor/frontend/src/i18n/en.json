@@ -1398,6 +1398,8 @@
       "spanCount": "{count} spans",
       "observedFailures": "Failed spans observed: {count}",
       "failureFocus": "Failed span to inspect first",
+      "matchedHTTPFailure": "5xx from the selected endpoint",
+      "observedDownstreamFailure": "Observed downstream failure",
       "resultUnavailable": "Entry result not observed",
       "identifiers": "Technical identifiers",
       "kinds": {

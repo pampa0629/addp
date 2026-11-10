@@ -13,11 +13,11 @@
         <el-tag v-if="trace.partial" type="warning" effect="light">{{ t('monitor.traces.partial') }}</el-tag>
         <span v-if="summary.failures.length">{{ t('monitor.traces.observedFailures', { count: summary.failures.length }) }}</span>
       </div>
-      <div v-for="{ span, failure, longest } in highlights" :key="span.span_id" class="trace-highlight"
-           :data-testid="failure ? 'trace-failure' : 'trace-downstream'">
+      <div v-for="{ span, label, testId } in highlights" :key="span.span_id" class="trace-highlight"
+           :data-testid="testId">
         <div class="highlight-facts">
-          <span v-if="failure" class="highlight-label">{{ t('monitor.traces.failureFocus') }}</span>
-          <span v-if="longest" class="highlight-label">{{ t('monitor.traces.longestDownstream') }}</span>
+          <span v-if="label" class="highlight-label">{{ t(`monitor.traces.${label}`) }}</span>
+          <span v-if="span === summary.longestDownstream" class="highlight-label">{{ t('monitor.traces.longestDownstream') }}</span>
           <strong>{{ span.module_name }}</strong>
           <span>{{ number(span.duration_ms) }} ms</span>
           <el-tag v-if="span.status || span.outcome || span.failed" :type="statusType(span)" size="small" effect="light">{{ status(span) }}</el-tag>
@@ -95,13 +95,16 @@ import { traceTimeline } from '../utils/traces'
 const props = defineProps({ trace: { type: Object, required: true }, matchedFailure: Object, canReadLogs: Boolean })
 const emit = defineEmits(['logs', 'follow-link'])
 const { t, locale } = useI18n()
-const summary = computed(() => traceTimeline(props.trace))
+const summary = computed(() => traceTimeline(props.trace, props.matchedFailure))
 const highlights = computed(() => {
-  const { firstFailure, longestDownstream } = summary.value
+  const { firstFailure, downstreamFailure, longestDownstream } = summary.value
   const failedSpan = props.matchedFailure || firstFailure?.span
   const rows = []
-  if (failedSpan) rows.push({ span: failedSpan, failure: true, longest: failedSpan === longestDownstream })
-  if (longestDownstream && longestDownstream !== failedSpan) rows.push({ span: longestDownstream, failure: false, longest: true })
+  if (failedSpan) rows.push({ span: failedSpan, label: props.matchedFailure ? 'matchedHTTPFailure' : 'failureFocus', testId: 'trace-failure' })
+  if (downstreamFailure) rows.push({ span: downstreamFailure, label: 'observedDownstreamFailure', testId: 'trace-downstream-failure' })
+  if (longestDownstream && !rows.some(({ span }) => span === longestDownstream)) {
+    rows.push({ span: longestDownstream, testId: 'trace-downstream' })
+  }
   return rows
 })
 const links = computed(() => props.trace.spans.flatMap(span => span.links.map(link => ({ ...link, source_span_id: span.span_id }))))
