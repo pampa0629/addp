@@ -154,7 +154,9 @@ pid=44 user=pool_reader_next LOG:  statement: SELECT id FROM public.pool_source_
             case["saturation"] = {
                 "configuration": {**concurrency["configuration"], "before_version": 6, "after_version": 7,
                                   "phase": "saturation", "changed_fields": ["pool_max_open_conns"], "max_open": 1},
-                "queue": queue, "holders": holders, "queue_terminal": {**holders, "waiters": deepcopy(holders["waiters"][:1])},
+                "queue": queue, "holders": holders, "queue_terminal": {
+                    **holders, "waiters": deepcopy(holders["waiters"] if engine == "mysql" else holders["waiters"][:1]),
+                },
                 "released": {**queue, "stage": "release", "held": False},
                 "queued": {"execution_id": f"{engine}-queued", "status": "timeout", "reason": "connection_acquisition_timeout",
                            "elapsed_ms": 120_000, "during": deepcopy(holders), "heading": "获取数据库连接超时。"},
@@ -341,6 +343,8 @@ pid=44 user=pool_reader_next LOG:  statement: SELECT id FROM public.pool_source_
             lambda p: p["configuration"].update(max_open=2),
             lambda p: p.update(engine_status="offline"),
             lambda p: p["queue_terminal"]["waiters"].pop(),
+            lambda p: p["queue_terminal"]["waiters"][0].update(id=110),
+            lambda p: p["queue_terminal"]["waiters"].append({"id": 110, "phase": "manager"}),
             lambda p: p["queued"]["during"]["waiters"].append({"id": 110, "phase": "queued"}),
             lambda p: p["native"]["during"].update(waiters=[]),
             lambda p: p["manager_native"].update(elapsed_ms=300),

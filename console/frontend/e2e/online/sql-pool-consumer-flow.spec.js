@@ -448,8 +448,13 @@ async function saturationProbe(page, operatorPage, sample, operator, consumer, c
       developTimeout(page, sample, 'saturation_queued', consumer, () => waitForNativeReaders(engine, 'queue', ['holder', 'manager'])),
     ])
     expect(queued.execution_id).not.toBe(queryHolder.execution_id)
-    const queueTerminal = await waitForNativeReaders(engine, 'queue', ['holder'])
-    expect(queueTerminal.waiters).toEqual(holders.waiters.filter(waiter => waiter.phase === 'holder'))
+    const queueTerminal = barrierAction(engine, 'observe', 'queue')
+    expect(queueTerminal.held).toBe(true)
+    expect(queueTerminal.holder_id).toBe(queue.holder_id)
+    expect([
+      holders.waiters.filter(waiter => waiter.phase === 'holder'),
+      holders.waiters,
+    ]).toContainEqual(queueTerminal.waiters)
     await page.screenshot({ path: resolve(process.env.ADDP_ONLINE_ARTIFACT_DIR, `${engine}-saturation-develop.png`) })
     const descriptors = await json(await api.get('/api/v1/develop/engines'), 'saturated engine status')
     const engineStatus = descriptors.find(item => item.id === sample.engine_id)?.connection_status

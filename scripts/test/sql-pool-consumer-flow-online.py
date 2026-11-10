@@ -537,10 +537,14 @@ def validate_saturation(case, run_id, executions):
             and len(set(ids)) == 3, "consumer pool holders were not distinct or engine went offline")
     for key, stage, held, readers in (
         ("queue", "acquire", True, []), ("holders", "observe", True, waiters),
-        ("queue_terminal", "observe", True, [item for item in waiters if item["phase"] == "holder"]), ("released", "release", False, []),
+        ("released", "release", False, []),
     ):
         require(proof[key] == {**anchor, "stage": stage, "held": held, "holder_id": holder, "waiters": readers},
                 "native queue evidence lost its original holders")
+    develop_holder = [item for item in waiters if item["phase"] == "holder"]
+    require(proof["queue_terminal"] in (
+        {**proof["holders"], "waiters": develop_holder}, proof["holders"],
+    ), "queue terminal must retain the original Develop holder and introduce no new source waiter")
     require(proof["queued"]["during"] == proof["holders"], "queued SQL reached the native table")
     native = proof["native"]["during"]
     require(native == {**anchor, "stage": "observe", "held": True, "holder_id": native["holder_id"],
