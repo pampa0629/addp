@@ -3,12 +3,16 @@ package client
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"net/http"
 	"reflect"
 	"strconv"
+	"strings"
 
+	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/execution"
 	"github.com/addp/common/jsonmap"
 )
@@ -25,6 +29,14 @@ type DevelopFileExecutionActor struct {
 	AuthorizationVersion string `json:"authorization_version"`
 }
 
+// DevelopFilePublicationFacts describes the Owner's original operation. A
+// missing preparation digest cannot authorize final publication.
+type DevelopFilePublicationFacts struct {
+	ApprovalID        string                           `json:"approval_id"`
+	Request           plugin.NewFilePublicationRequest `json:"request"`
+	PreparationDigest string                           `json:"preparation_digest,omitempty"`
+}
+
 // DevelopFileExecutionFacts is a private immutable Owner projection. Common
 // execution lifecycle and lease facts remain authoritative in the shared store;
 // this wire value contains no lease secret, connection or permission decision.
@@ -39,6 +51,7 @@ type DevelopFileExecutionFacts struct {
 	BoundScope      *execution.DevelopBoundFileScope `json:"bound_scope,omitempty"`
 	ScopeDigest     string                           `json:"scope_digest,omitempty"`
 	AdmissionState  string                           `json:"admission_state"`
+	Publication     *DevelopFilePublicationFacts     `json:"publication,omitempty"`
 }
 
 func (f *DevelopFileExecutionFacts) Validate() error {
@@ -70,6 +83,15 @@ func (f *DevelopFileExecutionFacts) Validate() error {
 			return errors.New("invalid bound Develop file digest")
 		}
 	}
+	if p := f.Publication; p != nil {
+		digest, err := hex.DecodeString(p.PreparationDigest)
+		if f.AdmissionState != "ready" || f.BoundScope == nil || f.BoundScope.Target == nil ||
+			!canonicalExecutionUUID(p.ApprovalID) || p.Request.Validate() != nil || p.Request.SizeBytes <= 0 ||
+			!reflect.DeepEqual(p.Request.Target, f.BoundScope.Target.Target) ||
+			(p.PreparationDigest != "" && (err != nil || len(digest) != sha256.Size || strings.ToLower(p.PreparationDigest) != p.PreparationDigest)) {
+			return errors.New("invalid Develop file publication binding")
+		}
+	}
 	encoded, err := json.Marshal(f)
 	if err != nil || len(encoded) > MaxDevelopFileExecutionFactsBytes {
 		return errors.New("Develop file execution projection exceeds wire budget")
@@ -85,6 +107,11 @@ func (f *DevelopFileExecutionFacts) Clone() *DevelopFileExecutionFacts {
 	v.ConfigJSON = bytes.Clone(f.ConfigJSON)
 	v.Intent = *f.Intent.Clone()
 	v.BoundScope = f.BoundScope.Clone()
+	if f.Publication != nil {
+		publication := *f.Publication
+		publication.Request.Target.Segments = append([]plugin.EngineCatalogSegment(nil), publication.Request.Target.Segments...)
+		v.Publication = &publication
+	}
 	return &v
 }
 

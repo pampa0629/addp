@@ -33,7 +33,7 @@ func registerFileExecutionRoutes(api *gin.RouterGroup, reader fileExecutionReade
 
 // Get returns the immutable Owner projection; System reads lifecycle from the shared store.
 // @Summary 读取 Develop 冻结文件执行事实 | Read frozen Develop file execution facts
-// @Description 仅同租户 addp-system Service；返回原始配置、Intent、主体及绑定范围，不返回连接、凭据、租约或授权结论 | Same-tenant addp-system Service only; returns original config, intent, actor and bound scope without connections, credentials, leases or permission decisions
+// @Description 仅同租户 addp-system Service；返回原始配置、Intent、主体、绑定范围及已登记发布操作的最小事实。不返回连接、凭据、租约、Provider 私有回执或授权结论。 | Same-tenant addp-system Service only. Returns the original config, intent, actor, bound scope and minimal registered publication facts without connections, credentials, leases, private Provider receipts or permission decisions.
 // @Tags Execution authorization
 // @Produce json
 // @Param execution_id path string true "原执行 UUID | Original execution UUID"

@@ -102,6 +102,13 @@ func privateFileFacts(row *models.FileExecution) (*commonclient.DevelopFileExecu
 		value.AuthorizationID = issued.Authorization.ID
 		value.BoundScope, value.ScopeDigest = issued.Scope.Clone(), issued.ScopeDigest
 	}
+	if len(row.PublicationJSON) != 0 {
+		record, err := privateFilePublication(row)
+		if err != nil {
+			return nil, err
+		}
+		value.Publication = &record.Facts
+	}
 	return value, value.Validate()
 }
 

@@ -2848,7 +2848,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "仅同租户 addp-system Service；返回原始配置、Intent、主体及绑定范围，不返回连接、凭据、租约或授权结论 | Same-tenant addp-system Service only; returns original config, intent, actor and bound scope without connections, credentials, leases or permission decisions",
+                "description": "仅同租户 addp-system Service；返回原始配置、Intent、主体、绑定范围及已登记发布操作的最小事实。不返回连接、凭据、租约、Provider 私有回执或授权结论。 | Same-tenant addp-system Service only. Returns the original config, intent, actor, bound scope and minimal registered publication facts without connections, credentials, leases, private Provider receipts or permission decisions.",
                 "produces": [
                     "application/json"
                 ],
@@ -4053,6 +4053,9 @@ const docTemplate = `{
                 "intent": {
                     "$ref": "#/definitions/execution.DevelopFileIntent"
                 },
+                "publication": {
+                    "$ref": "#/definitions/client.DevelopFilePublicationFacts"
+                },
                 "schema_version": {
                     "type": "string"
                 },
@@ -4061,6 +4064,20 @@ const docTemplate = `{
                 },
                 "tenant_id": {
                     "type": "string"
+                }
+            }
+        },
+        "client.DevelopFilePublicationFacts": {
+            "type": "object",
+            "properties": {
+                "approval_id": {
+                    "type": "string"
+                },
+                "preparation_digest": {
+                    "type": "string"
+                },
+                "request": {
+                    "$ref": "#/definitions/plugin.NewFilePublicationRequest"
                 }
             }
         },
@@ -6936,6 +6953,23 @@ const docTemplate = `{
                 },
                 "type": {
                     "type": "string"
+                }
+            }
+        },
+        "plugin.NewFilePublicationRequest": {
+            "type": "object",
+            "properties": {
+                "operation_id": {
+                    "type": "string"
+                },
+                "sha256": {
+                    "type": "string"
+                },
+                "size_bytes": {
+                    "type": "integer"
+                },
+                "target": {
+                    "$ref": "#/definitions/plugin.EngineCatalogPath"
                 }
             }
         },

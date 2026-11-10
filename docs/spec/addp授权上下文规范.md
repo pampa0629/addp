@@ -156,7 +156,11 @@ Develop 先在本地事务登记原 pending 及冻结 Intent，再在请求栈�
 
 几何差集首期范围为同一非默认 Tenant 普通 User 的五份已识别 NFS GeoPackage 源，以及一次执行新建 `outputs/difference.gpkg`。保留现有十一项用户功能权限。Meta 证明每份源的类型化 DataItem 及完整文件组成，System 按当前 User 的精确 `read` 规则裁决，Develop 冻结规范输入清单。GeoPython 只读取经核验的输入内容。`metadata_target` 继续只用于元数据查看。单文件 GeoPackage 的内容边界须证明可独立读取。依赖 SQLite 日志或其他外部文件、越界引用、链接及无法证明完整组成的输入保持拒绝。
 
-单次写入批准由 System 办理。批准人必须同时具备目标引擎的管理范围和专用批准资格。批准绑定原发起人、Tenant、Engine 及版本、规范目标叶子、`create` 效果与唯一 execution。父目录 `outputs` 只参与定位，引擎级 `write` 效果、选择目录和用户自报目标均不产生独立的目录写权。首期仅接受 `mode=fail`。并发同名、已有文件、改名、相邻路径、不同执行与迟到 attempt 均不得借用这次批准。
+单次写入批准由 System 办理。批准人必须是同 Tenant 的当前 User，同时具备目标引擎的管理范围和专用批准资格，且不得是本次执行的原发起人。System 从已绑定的原 EA／Scope 取得原发起人、Tenant、Engine 及版本、规范目标叶子、`create` 效果、唯一 execution 与预期 attempt，批准绑定这些事实和绝对有效期。父目录 `outputs` 只参与定位，引擎级 `write` 效果、选择目录和用户自报目标均不产生独立的目录写权。首期仅接受 `mode=fail`。并发同名、已有文件、改名、相邻路径、不同执行与迟到 attempt 均不得借用这次批准。
+
+批准、领取观察和发布放行分别留痕。批准只使原执行具备被观察为可领取的条件，观察不消费批准。放行要求原运行 attempt 的当前有效 lease，且 System 须从可信 Develop 事实核对原登记的 operation 与 Provider 准备回执。System 在同一事务中校验当前资格并将批准唯一消费到该 operation。对同一操作已提交的历史放行记录可只读核清，不产生新的放行或派发；其他 operation 不能消费同一批准。业务文件是否实际新建及是否需要清理仍由 Provider 的实际证据决定。
+
+暂存准入与最终放行使用同一次批准、同一个 operation。Develop 在现有私有执行记录内以当前 lease 首次登记 operation、批准编号、精确目标与 Runtime 成果的大小及摘要。System 核验该登记、原批准、目标引擎同版和当前 lease 后，才向受信任的 Develop 提供本次 Provider 私有暂存所需连接；此时不消费批准，也不准许向正式叶子写入。Provider 的准备状态只由 Develop 私有保存，可信 Owner 投影仅返回原操作绑定及已确认准备回执的摘要，不返回暂存位置、原生句柄或连接。未知准备不得变为已准备；未知连接响应或 Prepare 结果只核清原操作，不重新登记或重发业务写入。Runtime 和 User 不消费目标连接。
 
 仅新文件 purpose 的未激活 pending 执行被 Owner 排除领取，不全局改变 Develop 的领取或父子执行生命周期。原 User 已表达 execute 意图后，现有监督器可在锁外向 System 查询原 EA／Scope／预期 attempt 的当前资格；只读范围不等待写批准，保存范围须满足原批准。该观察不返回业务连接、不消费发布放行，也不是缓存 Allow。Owner 只对同一 pending 及未变绑定作 CAS 激活，不新增用户手动激活动作或第二套队列。 准入续观测只列举原 EA 已绑定、仍在原期限内、尚未领取的私有记录；已到期的 ready 观察必须重核，不能直接领取。复用原监督器恢复轮次，先收尾原 I/O，再以当前同 Tenant 的 Service 凭据在锁外核验原 EA／Scope／预期 attempt；SDK 客户端必须按原记录的 Tenant 显式绑定，不以未绑定平台客户端代替；每轮最多 100 条、观察调用总预算 30 秒，该观察预算不产生 StartedAt 或业务截止。只有完整受控 ready 回执才 CAS 激活；未知或畸形 HTTP 结果不记为 ready，也不代作已知业务拒绝，不重签 EA、不保留 User Bearer。领取、取消或绑定变化使迟到观察失效，不改原执行终态；保存链仍保持关闭。实际 claim 产生的 attempt 必须匹配。业务截止与当次观察窗口分离：`business_deadline` 在首次通过真实 running 源读取核验时，由 System 在原 EA 封存为数据库原始 `StartedAt + timeout_seconds`、EA、全部必要源 Grant 和人员资格期限的最早值；后续不可清空、重算顺延或随租约／机器凭据续期延长。pending 尚无 StartedAt，准入观察不预造业务截止。精确源读取响应必须携带该固定 `business_deadline`；`expires_at` 仅表示本次观察窗口，继续受业务截止、当前全部资格、当前 lease 和机器凭据期限共同约束。后续资格缩短或撤销仍在每次读取重核并收短窗口或拒绝，固定业务截止不构成缓存 Allow；后续资格延长也不顺延原业务截止。审批等待不消耗 execution 预算，也不延长 EA 或批准。原 T4 套件整体 600 秒上限独立保留，不按 execution 重新起算。返回 pending 或再次领取不能沿用原批准。
 

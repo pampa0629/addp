@@ -58,6 +58,46 @@ func TestDevelopFileExecutionProjectionRejectsIncompleteOrInventedBindings(t *te
 	}
 }
 
+func TestDevelopFileExecutionProjectionBindsPublicationToSealedTarget(t *testing.T) {
+	base := developOwnerFacts(t)
+	target := &execution.DevelopFileTargetIntent{NodeID: "save", Target: plugin.FileItemPath(11, "outputs/result.gpkg"), Mode: "fail"}
+	intent, err := execution.NewDevelopFileIntent(base.ConfigJSON, 1, 45, base.Intent.Sources, target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	scope, err := execution.NewDevelopBoundFileScope(*intent, []execution.DevelopFileSourceReference{{
+		Target: intent.Sources[0].Target, ItemFingerprint: strings.Repeat("a", 64), BoundaryHash: strings.Repeat("b", 64), EngineVersion: "2",
+	}}, "2")
+	if err != nil {
+		t.Fatal(err)
+	}
+	base.Intent, base.BoundScope, base.AuthorizationID, base.AdmissionState = *intent, scope, "9", "ready"
+	base.ScopeDigest, _ = scope.Digest()
+	base.Publication = &DevelopFilePublicationFacts{ApprovalID: developFileClientApproval, Request: plugin.NewFilePublicationRequest{
+		OperationID: developFileClientLease, Target: target.Target, SizeBytes: 8192, SHA256: strings.Repeat("c", 64),
+	}}
+	if err := base.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	for _, mutate := range []func(*DevelopFileExecutionFacts){
+		func(f *DevelopFileExecutionFacts) { f.AdmissionState = "pending" },
+		func(f *DevelopFileExecutionFacts) { f.Publication.ApprovalID = "81" },
+		func(f *DevelopFileExecutionFacts) { f.Publication.Request.Target.Segments[1].Name = "other" },
+		func(f *DevelopFileExecutionFacts) { f.Publication.Request.SizeBytes = 0 },
+		func(f *DevelopFileExecutionFacts) { f.Publication.PreparationDigest = strings.Repeat("F", 64) },
+	} {
+		bad := base.Clone()
+		mutate(bad)
+		if bad.Validate() == nil {
+			t.Fatal("invalid publication accepted")
+		}
+	}
+	base.Publication.PreparationDigest = strings.Repeat("d", 64)
+	if err := base.Validate(); err != nil {
+		t.Fatal("valid confirmed publication rejected", err)
+	}
+}
+
 func TestDevelopFileExecutionReaderUsesOneBoundedMachineRequest(t *testing.T) {
 	for _, fault := range []string{"valid", "tenant", "execution", "unknown", "duplicate", "redirect", "unauthorized", "too-large", "large-valid"} {
 		t.Run(fault, func(t *testing.T) {

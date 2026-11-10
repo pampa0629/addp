@@ -80,4 +80,6 @@ func TestFileExecutionAgainstPostgres(t *testing.T) {
 	if err != nil || value.AdmissionState != "rejected" || value.AuthorizationID != "" {
 		t.Fatalf("PostgreSQL rejection fabricated issuance: %v", err)
 	}
+	runPrivatePublicationCase(t, tx, repo, 102, false)
+	runPrivatePublicationCase(t, tx, repo, 103, true)
 }
