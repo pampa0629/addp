@@ -62,7 +62,7 @@ System 的模块注册入口接收 TaskProvider 声明时必须校验标准 endp
 
 TaskProvider 标准 endpoint 必须使用直接响应，不得使用 `{status,data}`、`{status,message}` 或模块私有包装格式。
 
-TaskProvider 任务列表是跨模块编排专用契约，不适用通用业务分页响应 `{data,total,page,page_size,total_pages}`；Orchestrator 和 Monitor 只消费本节定义的 `items` 列表形态。
+TaskProvider 任务列表是跨模块编排专用契约，不适用通用业务分页响应 `{data,total,page,page_size,total_pages}`；Orchestrator 的任务发现只消费本节定义的 `items` 列表形态。Monitor 的 Provider 就绪检查见[执行监控](执行监控.md#provider-就绪)。
 
 `GET /tasks?task_type=` 返回任务列表对象：
 
@@ -256,7 +256,7 @@ Orchestrator 保存编排和执行前共用同一参数校验路径：用具体�
 15. `edit_url` 是 `task.capabilities/v2` 的任务定义入口字段，不承诺任务定义一定可修改。来源驱动且定义不可变的任务必须在该 URL 展示带稳定任务 ID 的只读定义；不得把结果筛选页、无任务身份的模块首页或 Data Explorer 通用入口冒充任务定义入口。
 16. 来源驱动任务的 `create_url` 可以指向 owner 的来源选择页，由用户选择源对象后通过 owner 领域动作派生任务定义。此类任务不得同时保留允许调用方直接提交私有任务配置的第二套创建或更新 API。
 
-`common/taskprovider` 是 TaskProvider 契约的公共解析和校验边界，负责校验 `task.capabilities/v2`、标准任务列表响应 `{items,total,page,page_size}`、任务级 `execution_contract` 和输入参数实例。System 模块注册入口、Monitor provider health、Orchestrator 编排保存和执行前校验必须复用该公共能力，不得在各模块重复维护一套 capabilities、任务发现响应或 schema 实例校验逻辑。owner 模块负责生成自身 capabilities、为每个任务生成精确契约并实现标准 endpoint；`common/taskprovider` 不访问 System 模块控制面，不调用 owner 模块，也不处理执行调度。
+`common/taskprovider` 是 TaskProvider 契约的公共解析和校验边界，负责校验 `task.capabilities/v2`、标准任务列表响应 `{items,total,page,page_size}`、任务级 `execution_contract` 和输入参数实例。System 模块注册入口、Monitor 的能力声明校验、Orchestrator 的任务发现、编排保存和执行前校验必须按各自职责复用该公共能力，不得在各模块重复维护一套 capabilities、任务发现响应或 schema 实例校验逻辑。owner 模块负责生成自身 capabilities、为每个任务生成精确契约并实现标准 endpoint；`common/taskprovider` 不访问 System 模块控制面，不调用 owner 模块，也不处理执行调度。
 
 当前不应默认打开任何模块的 `supports_cancel=true`。标准取消能力必须先在专题中确认 worker 中断、资源清理、状态一致落库、重复取消幂等和可观测诊断等前置条件，再单独更新对应模块能力声明。
 

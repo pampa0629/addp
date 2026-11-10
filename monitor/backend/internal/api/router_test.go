@@ -42,7 +42,7 @@ func TestTaskProviderDirectoryUsesExecutionReadAndOmitsBackends(t *testing.T) {
 	}))
 	defer systemServer.Close()
 
-	healthService := service.NewHealthCheckService(taskProviderAuditLister{}, nil)
+	healthService := service.NewHealthCheckService(taskProviderAuditLister{})
 	router := SetupRouter(nil, nil, healthService, nil, nil, nil, nil, nil, nil, systemServer.URL, nil, nil, modulelifecycle.NewStandalone("monitor"), nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 	request := httptest.NewRequest(http.MethodGet, "/api/v1/monitor/task-providers", nil)
 	request.Header.Set("Authorization", "Bearer addp_at_monitor")

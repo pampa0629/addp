@@ -4,13 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"net/http"
-	"net/url"
 	"strings"
 	"time"
 
-	commonClient "github.com/addp/common/client"
 	"github.com/addp/common/models"
 	"github.com/addp/common/taskprovider"
 )
@@ -23,16 +20,14 @@ type taskProviderLister interface {
 
 // HealthCheckService 健康检查服务
 type HealthCheckService struct {
-	systemClient       taskProviderLister
-	httpClient         *http.Client
-	serviceTokenSource commonClient.ServiceTokenProvider
+	systemClient taskProviderLister
+	httpClient   *http.Client
 }
 
 // NewHealthCheckService 创建健康检查服务
-func NewHealthCheckService(systemClient taskProviderLister, tokenSource commonClient.ServiceTokenProvider) *HealthCheckService {
+func NewHealthCheckService(systemClient taskProviderLister) *HealthCheckService {
 	return &HealthCheckService{
 		systemClient: systemClient, httpClient: &http.Client{Timeout: 5 * time.Second},
-		serviceTokenSource: tokenSource,
 	}
 }
 
@@ -44,7 +39,7 @@ type HealthStatus struct {
 	Message string `json:"message,omitempty"`
 }
 
-// ProviderHealthStatus 是 Monitor 对 TaskProvider 运行态契约的即时观测结果。
+// ProviderHealthStatus 是 Monitor 对 TaskProvider 就绪状态的即时观测结果。
 type ProviderHealthStatus struct {
 	Module       string                         `json:"module"`
 	DisplayName  string                         `json:"display_name"`
@@ -58,13 +53,12 @@ type ProviderHealthStatus struct {
 
 // ProviderBackendHealthStatus 是一个 TaskProvider Backend 实例的即时探活结果。
 type ProviderBackendHealthStatus struct {
-	InstanceID     string                        `json:"instance_id"`
-	BaseURL        string                        `json:"base_url"`
-	LeaseExpiresAt time.Time                     `json:"lease_expires_at"`
-	Status         string                        `json:"status"`
-	Message        string                        `json:"message,omitempty"`
-	ModuleHealth   *HealthStatus                 `json:"module_health"`
-	TaskDiscovery  []*ProviderTaskDiscoveryCheck `json:"task_discovery"`
+	InstanceID     string        `json:"instance_id"`
+	BaseURL        string        `json:"base_url"`
+	LeaseExpiresAt time.Time     `json:"lease_expires_at"`
+	Status         string        `json:"status"`
+	Message        string        `json:"message,omitempty"`
+	ModuleHealth   *HealthStatus `json:"module_health"`
 }
 
 type ProviderCapabilitiesStatus struct {
@@ -79,15 +73,6 @@ type ProviderTaskCapabilityStatus struct {
 	Deprecated bool   `json:"deprecated"`
 }
 
-type ProviderTaskDiscoveryCheck struct {
-	TaskType   string `json:"task_type"`
-	Status     string `json:"status"`
-	Endpoint   string `json:"endpoint"`
-	StatusCode int    `json:"status_code,omitempty"`
-	Latency    int64  `json:"latency"`
-	Message    string `json:"message,omitempty"`
-}
-
 // ListTaskProviders 获取 System 中已启用的 TaskProvider。
 func (s *HealthCheckService) ListTaskProviders(ctx context.Context) ([]*models.TaskProvider, error) {
 	providers, err := s.systemClient.ListTaskProviders()
@@ -98,21 +83,21 @@ func (s *HealthCheckService) ListTaskProviders(ctx context.Context) ([]*models.T
 }
 
 // CheckProviderHealth 检查单个 TaskProvider 的运行态健康状态。
-func (s *HealthCheckService) CheckProviderHealth(ctx context.Context, moduleName string, tenantID uint) (*ProviderHealthStatus, error) {
+func (s *HealthCheckService) CheckProviderHealth(ctx context.Context, moduleName string) (*ProviderHealthStatus, error) {
 	providers, err := s.systemClient.ListTaskProviders()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get task providers: %w", err)
 	}
 	for _, provider := range providers {
 		if provider.ModuleName == moduleName {
-			return s.checkProviderHealth(ctx, provider, tenantID), nil
+			return s.checkProviderHealth(ctx, provider), nil
 		}
 	}
 	return nil, fmt.Errorf("%w: %s", ErrTaskProviderNotFound, moduleName)
 }
 
 // CheckAllProviderHealth 检查所有启用 TaskProvider 的运行态健康状态。
-func (s *HealthCheckService) CheckAllProviderHealth(ctx context.Context, tenantID uint) ([]*ProviderHealthStatus, error) {
+func (s *HealthCheckService) CheckAllProviderHealth(ctx context.Context) ([]*ProviderHealthStatus, error) {
 	providers, err := s.systemClient.ListTaskProviders()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get task providers: %w", err)
@@ -120,12 +105,12 @@ func (s *HealthCheckService) CheckAllProviderHealth(ctx context.Context, tenantI
 
 	statuses := make([]*ProviderHealthStatus, 0, len(providers))
 	for _, provider := range providers {
-		statuses = append(statuses, s.checkProviderHealth(ctx, provider, tenantID))
+		statuses = append(statuses, s.checkProviderHealth(ctx, provider))
 	}
 	return statuses, nil
 }
 
-func (s *HealthCheckService) checkProviderHealth(ctx context.Context, provider *models.TaskProvider, tenantID uint) *ProviderHealthStatus {
+func (s *HealthCheckService) checkProviderHealth(ctx context.Context, provider *models.TaskProvider) *ProviderHealthStatus {
 	result := &ProviderHealthStatus{
 		Module:      provider.ModuleName,
 		DisplayName: provider.DisplayName,
@@ -143,7 +128,7 @@ func (s *HealthCheckService) checkProviderHealth(ctx context.Context, provider *
 
 	result.Backends = make([]*ProviderBackendHealthStatus, 0, len(provider.Backends))
 	for _, backend := range provider.Backends {
-		result.Backends = append(result.Backends, s.checkProviderBackendHealth(ctx, provider, backend, result.Capabilities, tenantID))
+		result.Backends = append(result.Backends, s.checkProviderBackendHealth(ctx, provider.ModuleName, backend, result.Capabilities))
 	}
 	result.Status, result.Message = summarizeProviderHealth(result)
 	return result
@@ -151,10 +136,9 @@ func (s *HealthCheckService) checkProviderHealth(ctx context.Context, provider *
 
 func (s *HealthCheckService) checkProviderBackendHealth(
 	ctx context.Context,
-	provider *models.TaskProvider,
+	moduleName string,
 	backend models.TaskProviderBackend,
 	capabilities *ProviderCapabilitiesStatus,
-	tenantID uint,
 ) *ProviderBackendHealthStatus {
 	result := &ProviderBackendHealthStatus{
 		InstanceID:     backend.InstanceID,
@@ -174,19 +158,7 @@ func (s *HealthCheckService) checkProviderBackendHealth(
 		return result
 	}
 
-	result.ModuleHealth, _ = s.checkModuleHealth(ctx, provider.ModuleName, backend.BaseURL)
-	if result.ModuleHealth.Status == "down" {
-		result.Status, result.Message = summarizeProviderBackendHealth(result, capabilities)
-		return result
-	}
-	if capabilities.Status == "up" {
-		for _, taskType := range capabilities.TaskCapabilities {
-			if taskType.Deprecated {
-				continue
-			}
-			result.TaskDiscovery = append(result.TaskDiscovery, s.checkTaskDiscovery(ctx, backend.BaseURL, provider.TaskListEndpoint, taskType.Type, tenantID))
-		}
-	}
+	result.ModuleHealth, _ = s.checkModuleHealth(ctx, moduleName, backend.BaseURL)
 	result.Status, result.Message = summarizeProviderBackendHealth(result, capabilities)
 	return result
 }
@@ -214,59 +186,6 @@ func parseProviderCapabilities(capabilities *models.JSONString) *ProviderCapabil
 	return status
 }
 
-func (s *HealthCheckService) checkTaskDiscovery(ctx context.Context, baseURL, taskListEndpoint, taskType string, tenantID uint) *ProviderTaskDiscoveryCheck {
-	endpoint := baseURL + taskListEndpoint
-	discoveryURL := appendTaskTypeQuery(endpoint, taskType)
-	check := &ProviderTaskDiscoveryCheck{
-		TaskType: taskType,
-		Status:   "down",
-		Endpoint: discoveryURL,
-	}
-
-	start := time.Now()
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, discoveryURL, nil)
-	if err != nil {
-		check.Message = err.Error()
-		return check
-	}
-	if s.serviceTokenSource == nil {
-		check.Message = "service token source is not configured"
-		return check
-	}
-	token, err := s.serviceTokenSource.Token(ctx, tenantID)
-	if err != nil {
-		check.Message = err.Error()
-		return check
-	}
-	req.Header.Set("Authorization", "Bearer "+token)
-
-	resp, err := s.httpClient.Do(req)
-	check.Latency = time.Since(start).Milliseconds()
-	if err != nil {
-		check.Message = err.Error()
-		return check
-	}
-	defer resp.Body.Close()
-
-	check.StatusCode = resp.StatusCode
-	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
-		if err := validateTaskDiscoveryResponse(resp.Body); err != nil {
-			check.Message = err.Error()
-			return check
-		}
-		check.Status = "up"
-		return check
-	}
-	body, _ := io.ReadAll(io.LimitReader(resp.Body, 4<<10))
-	check.Message = strings.TrimSpace(string(body))
-	return check
-}
-
-func validateTaskDiscoveryResponse(body io.Reader) error {
-	_, err := taskprovider.ParseTaskListResponse(body)
-	return err
-}
-
 func summarizeProviderHealth(status *ProviderHealthStatus) (string, string) {
 	if len(status.Backends) == 0 {
 		return "down", "TaskProvider has no Backend instance to check"
@@ -287,10 +206,10 @@ func summarizeProviderHealth(status *ProviderHealthStatus) (string, string) {
 		return "up", ""
 	}
 	if downCount == len(status.Backends) {
-		return "down", "all Backend instances are unhealthy"
+		return "down", "all Backend instances are unready"
 	}
-	if downCount > 0 || degradedCount > 0 {
-		return "degraded", "some Backend instances are unhealthy"
+	if upCount > 0 || downCount > 0 || degradedCount > 0 {
+		return "degraded", "some Provider readiness checks did not pass"
 	}
 	return "unknown", "Backend health could not be determined"
 }
@@ -308,23 +227,12 @@ func summarizeProviderBackendHealth(status *ProviderBackendHealthStatus, capabil
 		}
 		return "degraded", "capabilities was not checked"
 	}
-	if len(status.TaskDiscovery) == 0 {
-		return "unknown", "no active task_type to discover"
-	}
-
-	upCount := 0
-	for _, check := range status.TaskDiscovery {
-		if check.Status == "up" {
-			upCount++
+	for _, capability := range capabilities.TaskCapabilities {
+		if !capability.Deprecated {
+			return "up", ""
 		}
 	}
-	if upCount == len(status.TaskDiscovery) {
-		return "up", ""
-	}
-	if upCount == 0 {
-		return "down", "all task discovery checks failed"
-	}
-	return "degraded", "some task discovery checks failed"
+	return "unknown", "no active task capability"
 }
 
 func providerUnavailableMessage(reason string) string {
@@ -336,21 +244,6 @@ func providerUnavailableMessage(reason string) string {
 	default:
 		return "TaskProvider is currently unavailable"
 	}
-}
-
-func appendTaskTypeQuery(rawURL string, taskType string) string {
-	parsed, err := url.Parse(rawURL)
-	if err != nil {
-		separator := "?"
-		if strings.Contains(rawURL, "?") {
-			separator = "&"
-		}
-		return rawURL + separator + "task_type=" + url.QueryEscape(taskType)
-	}
-	query := parsed.Query()
-	query.Set("task_type", taskType)
-	parsed.RawQuery = query.Encode()
-	return parsed.String()
 }
 
 // checkModuleHealth 检查一个 Backend 实例的模块健康状态（带重试机制）。

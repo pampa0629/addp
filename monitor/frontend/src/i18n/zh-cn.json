@@ -342,7 +342,7 @@
       "success_count": "成功",
       "running": "运行中",
       "failed_count": "失败次数",
-      "module_health": "任务提供者健康",
+      "module_health": "任务提供者就绪",
       "runtime_health": {
         "title": "后台运行实例健康",
         "role": "运行时角色",
@@ -411,16 +411,13 @@
       "executions_failed": "加载执行记录失败"
     },
     "module_status": {
-      "up": "正常",
-      "degraded": "异常",
+      "up": "就绪",
+      "degraded": "部分就绪",
       "down": "不可用",
       "unknown": "未知",
       "latency": "延迟: {ms}ms",
       "backends": "后端就绪：{up}/{total}",
       "backends_unchecked": "后端就绪：未检查",
-      "task_discovery": "任务发现：{up}/{total}",
-      "task_discovery_denied": "任务发现：{up}/{total}（{denied} 项探测被拒绝）",
-      "task_discovery_unchecked": "任务发现：未检查",
       "capabilities_invalid": "能力声明异常"
     },
     "alert": {

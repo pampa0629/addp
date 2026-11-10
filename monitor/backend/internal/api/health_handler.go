@@ -4,7 +4,6 @@ import (
 	"errors"
 	"net/http"
 
-	commonAuth "github.com/addp/common/middleware/auth"
 	"github.com/addp/common/models"
 	"github.com/addp/monitor/internal/service"
 	"github.com/gin-gonic/gin"
@@ -60,9 +59,9 @@ func (h *HealthHandler) GetTaskProviders(c *gin.Context) {
 	c.JSON(http.StatusOK, result)
 }
 
-// CheckAllProvidersHealth 检查所有任务提供者运行态健康状态
-// @Summary 检查所有任务提供者运行态健康状态 | Check all task provider health
-// @Description 从 System 读取启用 TaskProvider 及其当前有效 Backend 实例池，逐实例探测模块 /health/ready 与标准 GET /tasks?task_type= endpoint，并聚合 Provider 状态。| Read enabled TaskProviders and their currently valid Backend instance pools from System, probe module /health/ready plus standard GET /tasks?task_type= endpoints per instance, and aggregate Provider status.
+// CheckAllProvidersHealth 检查所有任务提供者就绪状态
+// @Summary 检查所有任务提供者就绪状态 | Check all task provider readiness
+// @Description 从 System 读取启用 TaskProvider 及其当前有效 Backend 实例池，校验能力声明并逐实例探测模块 /health/ready。| Read enabled TaskProviders and their currently valid Backend instance pools from System, validate capability declarations, and probe module /health/ready per instance.
 // @Tags Monitor
 // @Produce json
 // @Success 200 {array} service.ProviderHealthStatus
@@ -72,7 +71,7 @@ func (h *HealthHandler) GetTaskProviders(c *gin.Context) {
 // @Router /providers/health [get]
 // @Security BearerAuth
 func (h *HealthHandler) CheckAllProvidersHealth(c *gin.Context) {
-	statuses, err := h.healthService.CheckAllProviderHealth(c.Request.Context(), currentTenantID(c))
+	statuses, err := h.healthService.CheckAllProviderHealth(c.Request.Context())
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -81,9 +80,9 @@ func (h *HealthHandler) CheckAllProvidersHealth(c *gin.Context) {
 	c.JSON(http.StatusOK, statuses)
 }
 
-// CheckProviderHealth 检查单个任务提供者运行态健康状态
-// @Summary 检查单个任务提供者运行态健康状态 | Check task provider health
-// @Description 从 System 读取指定 TaskProvider 及其当前有效 Backend 实例池，逐实例探测模块 /health/ready 与标准 GET /tasks?task_type= endpoint，并聚合 Provider 状态。| Read the TaskProvider and its currently valid Backend instance pool from System, probe module /health/ready plus standard GET /tasks?task_type= endpoints per instance, and aggregate Provider status.
+// CheckProviderHealth 检查单个任务提供者就绪状态
+// @Summary 检查单个任务提供者就绪状态 | Check task provider readiness
+// @Description 从 System 读取指定 TaskProvider 及其当前有效 Backend 实例池，校验能力声明并逐实例探测模块 /health/ready。| Read the TaskProvider and its currently valid Backend instance pool from System, validate capability declarations, and probe module /health/ready per instance.
 // @Tags Monitor
 // @Produce json
 // @Param module path string true "模块名 | Module"
@@ -95,7 +94,7 @@ func (h *HealthHandler) CheckAllProvidersHealth(c *gin.Context) {
 // @Router /providers/{module}/health [get]
 // @Security BearerAuth
 func (h *HealthHandler) CheckProviderHealth(c *gin.Context) {
-	status, err := h.healthService.CheckProviderHealth(c.Request.Context(), c.Param("module"), currentTenantID(c))
+	status, err := h.healthService.CheckProviderHealth(c.Request.Context(), c.Param("module"))
 	if err != nil {
 		if errors.Is(err, service.ErrTaskProviderNotFound) {
 			c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
@@ -106,8 +105,4 @@ func (h *HealthHandler) CheckProviderHealth(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, status)
-}
-
-func currentTenantID(c *gin.Context) uint {
-	return commonAuth.GetTenantID(c)
 }

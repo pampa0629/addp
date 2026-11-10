@@ -5874,14 +5874,14 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "从 System 读取启用 TaskProvider 及其当前有效 Backend 实例池，逐实例探测模块 /health/ready 与标准 GET /tasks?task_type= endpoint，并聚合 Provider 状态。| Read enabled TaskProviders and their currently valid Backend instance pools from System, probe module /health/ready plus standard GET /tasks?task_type= endpoints per instance, and aggregate Provider status.",
+                "description": "从 System 读取启用 TaskProvider 及其当前有效 Backend 实例池，校验能力声明并逐实例探测模块 /health/ready。| Read enabled TaskProviders and their currently valid Backend instance pools from System, validate capability declarations, and probe module /health/ready per instance.",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
                     "Monitor"
                 ],
-                "summary": "检查所有任务提供者运行态健康状态 | Check all task provider health",
+                "summary": "检查所有任务提供者就绪状态 | Check all task provider readiness",
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -5912,14 +5912,14 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "从 System 读取指定 TaskProvider 及其当前有效 Backend 实例池，逐实例探测模块 /health/ready 与标准 GET /tasks?task_type= endpoint，并聚合 Provider 状态。| Read the TaskProvider and its currently valid Backend instance pool from System, probe module /health/ready plus standard GET /tasks?task_type= endpoints per instance, and aggregate Provider status.",
+                "description": "从 System 读取指定 TaskProvider 及其当前有效 Backend 实例池，校验能力声明并逐实例探测模块 /health/ready。| Read the TaskProvider and its currently valid Backend instance pool from System, validate capability declarations, and probe module /health/ready per instance.",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
                     "Monitor"
                 ],
-                "summary": "检查单个任务提供者运行态健康状态 | Check task provider health",
+                "summary": "检查单个任务提供者就绪状态 | Check task provider readiness",
                 "parameters": [
                     {
                         "type": "string",
@@ -9171,12 +9171,6 @@ const docTemplate = `{
                 },
                 "status": {
                     "type": "string"
-                },
-                "task_discovery": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/github_com_addp_monitor_internal_service.ProviderTaskDiscoveryCheck"
-                    }
                 }
             }
         },
@@ -9239,29 +9233,6 @@ const docTemplate = `{
                     "type": "boolean"
                 },
                 "type": {
-                    "type": "string"
-                }
-            }
-        },
-        "github_com_addp_monitor_internal_service.ProviderTaskDiscoveryCheck": {
-            "type": "object",
-            "properties": {
-                "endpoint": {
-                    "type": "string"
-                },
-                "latency": {
-                    "type": "integer"
-                },
-                "message": {
-                    "type": "string"
-                },
-                "status": {
-                    "type": "string"
-                },
-                "status_code": {
-                    "type": "integer"
-                },
-                "task_type": {
                     "type": "string"
                 }
             }

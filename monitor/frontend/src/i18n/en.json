@@ -342,7 +342,7 @@
       "success_count": "Success",
       "running": "Running",
       "failed_count": "Failed",
-      "module_health": "Task Provider Health",
+      "module_health": "Task provider readiness",
       "runtime_health": {
         "title": "Background Runtime Health",
         "role": "Runtime Role",
@@ -411,16 +411,13 @@
       "executions_failed": "Failed to load execution records"
     },
     "module_status": {
-      "up": "Healthy",
-      "degraded": "Degraded",
+      "up": "Ready",
+      "degraded": "Partially ready",
       "down": "Unavailable",
       "unknown": "Unknown",
       "latency": "Latency: {ms}ms",
       "backends": "Backends ready: {up}/{total}",
       "backends_unchecked": "Backend readiness: Not checked",
-      "task_discovery": "Task discovery: {up}/{total}",
-      "task_discovery_denied": "Task discovery: {up}/{total} (probes denied: {denied})",
-      "task_discovery_unchecked": "Task discovery: Not checked",
       "capabilities_invalid": "Invalid capabilities"
     },
     "alert": {

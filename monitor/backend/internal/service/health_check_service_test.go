@@ -1,7 +1,6 @@
 package service
 
 import (
-	"context"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -11,56 +10,38 @@ import (
 	"github.com/addp/common/models"
 )
 
-func TestCheckAllProviderHealthChecksModuleAndTaskDiscovery(t *testing.T) {
-	var gotAuthorization string
+func TestCheckAllProviderHealthUsesReadinessOnly(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch r.URL.Path {
-		case "/health/ready":
-			w.WriteHeader(http.StatusOK)
-			_, _ = w.Write([]byte(`{"status":"ok"}`))
-		case "/api/v1/meta/task-provider/tasks":
-			gotAuthorization = r.Header.Get("Authorization")
-			if r.URL.Query().Get("task_type") != "scan" {
-				t.Fatalf("task_type query = %q, want scan", r.URL.Query().Get("task_type"))
-			}
-			w.WriteHeader(http.StatusOK)
-			_, _ = w.Write([]byte(`{"items":[],"total":0,"page":1,"page_size":100}`))
-		default:
-			t.Fatalf("unexpected path: %s", r.URL.Path)
+		if r.Method != http.MethodGet || r.URL.Path != "/health/ready" || r.Header.Get("Authorization") != "" {
+			t.Errorf("unexpected probe: %s %s", r.Method, r.URL.Path)
+			w.WriteHeader(http.StatusForbidden)
+			return
 		}
+		w.WriteHeader(http.StatusOK)
 	}))
 	defer server.Close()
 
-	caps := models.JSONString(monitorTaskCapabilitiesForTest(
-		monitorTaskCapabilityForTest("scan", false),
-		monitorTaskCapabilityForTest("legacy_scan", true),
-	))
-	service := NewHealthCheckService(fakeTaskProviderLister{providers: []*models.TaskProvider{
-		newHealthTaskProviderForTest("meta", "Meta", server.URL, true, true, "/api/v1/meta/task-provider/tasks", &caps),
-	}}, staticServiceTokenProvider("service-token"))
-
-	statuses, err := service.CheckAllProviderHealth(context.Background(), 7)
-	if err != nil {
-		t.Fatalf("CheckAllProviderHealth() error = %v", err)
-	}
-	if len(statuses) != 1 {
-		t.Fatalf("statuses len = %d, want 1", len(statuses))
-	}
-	status := statuses[0]
-	if status.Status != "up" {
-		t.Fatalf("provider status = %q, want up; message=%s", status.Status, status.Message)
-	}
-	if len(status.Backends) != 1 || status.Backends[0].ModuleHealth == nil || status.Backends[0].ModuleHealth.Status != "up" {
-		t.Fatalf("Backend health = %#v, want one up instance", status.Backends)
-	}
-	if len(status.Backends[0].TaskDiscovery) != 1 {
-		t.Fatalf("task discovery len = %d, want only non-deprecated task type", len(status.Backends[0].TaskDiscovery))
-	}
-	if status.Backends[0].TaskDiscovery[0].TaskType != "scan" || status.Backends[0].TaskDiscovery[0].Status != "up" {
-		t.Fatalf("task discovery = %#v, want scan/up", status.Backends[0].TaskDiscovery[0])
-	}
-	if gotAuthorization != "Bearer service-token" {
-		t.Fatalf("Authorization = %q, want Bearer service-token", gotAuthorization)
+	for _, tc := range []struct {
+		name       string
+		deprecated bool
+		want       string
+	}{
+		{"active", false, "up"},
+		{"all_deprecated", true, "unknown"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			caps := models.JSONString(monitorTaskCapabilitiesForTest(monitorTaskCapabilityForTest("scan", tc.deprecated)))
+			svc := NewHealthCheckService(fakeTaskProviderLister{providers: []*models.TaskProvider{
+				newHealthTaskProviderForTest("meta", "Meta", server.URL, true, true, "/api/v1/meta/task-provider/tasks", &caps),
+			}})
+			statuses, err := svc.CheckAllProviderHealth(t.Context())
+			if err != nil || len(statuses) != 1 || statuses[0].Status != tc.want {
+				t.Fatalf("provider statuses = %#v, err = %v, want %s", statuses, err, tc.want)
+			}
+			if len(statuses[0].Backends) != 1 || statuses[0].Backends[0].ModuleHealth.Status != "up" {
+				t.Fatalf("backend readiness = %#v, want one ready instance", statuses[0].Backends)
+			}
+		})
 	}
 }
 
@@ -69,9 +50,6 @@ func TestCheckAllProviderHealthChecksEveryBackendAndAggregatesDegraded(t *testin
 		switch r.URL.Path {
 		case "/health/ready":
 			w.WriteHeader(http.StatusOK)
-		case "/api/v1/meta/task-provider/tasks":
-			w.WriteHeader(http.StatusOK)
-			_, _ = w.Write([]byte(`{"items":[],"total":0,"page":1,"page_size":100}`))
 		default:
 			t.Fatalf("unexpected healthy Backend path: %s", r.URL.Path)
 		}
@@ -91,9 +69,9 @@ func TestCheckAllProviderHealthChecksEveryBackendAndAggregatesDegraded(t *testin
 	provider.Backends = append(provider.Backends, models.TaskProviderBackend{
 		InstanceID: "backend-2", BaseURL: unhealthy.URL, LeaseExpiresAt: time.Now().Add(time.Hour),
 	})
-	service := NewHealthCheckService(fakeTaskProviderLister{providers: []*models.TaskProvider{provider}}, staticServiceTokenProvider("service-token"))
+	service := NewHealthCheckService(fakeTaskProviderLister{providers: []*models.TaskProvider{provider}})
 
-	statuses, err := service.CheckAllProviderHealth(context.Background(), 7)
+	statuses, err := service.CheckAllProviderHealth(t.Context())
 	if err != nil {
 		t.Fatalf("CheckAllProviderHealth() error = %v", err)
 	}
@@ -112,9 +90,9 @@ func TestCheckAllProviderHealthKeepsOfflineDeclarationWithoutProbing(t *testing.
 	caps := models.JSONString(monitorTaskCapabilitiesForTest(monitorTaskCapabilityForTest("scan", false)))
 	service := NewHealthCheckService(fakeTaskProviderLister{providers: []*models.TaskProvider{
 		newHealthTaskProviderForTest("meta", "Meta", "", true, false, "/api/v1/meta/task-provider/tasks", &caps),
-	}}, nil)
+	}})
 
-	statuses, err := service.CheckAllProviderHealth(context.Background(), 7)
+	statuses, err := service.CheckAllProviderHealth(t.Context())
 	if err != nil {
 		t.Fatalf("CheckAllProviderHealth() error = %v", err)
 	}
@@ -126,79 +104,6 @@ func TestCheckAllProviderHealthKeepsOfflineDeclarationWithoutProbing(t *testing.
 	}
 	if len(statuses[0].Backends) != 0 {
 		t.Fatalf("Backends = %#v, want no probes", statuses[0].Backends)
-	}
-}
-
-func TestCheckAllProviderHealthReportsLegacyTaskDiscoveryShape(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch r.URL.Path {
-		case "/health/ready":
-			w.WriteHeader(http.StatusOK)
-		case "/api/v1/meta/task-provider/tasks":
-			w.WriteHeader(http.StatusOK)
-			_, _ = w.Write([]byte(`{"data":[]}`))
-		default:
-			t.Fatalf("unexpected path: %s", r.URL.Path)
-		}
-	}))
-	defer server.Close()
-
-	caps := models.JSONString(monitorTaskCapabilitiesForTest(monitorTaskCapabilityForTest("scan", false)))
-	service := NewHealthCheckService(fakeTaskProviderLister{providers: []*models.TaskProvider{
-		newHealthTaskProviderForTest("meta", "Meta", server.URL, true, true, "/api/v1/meta/task-provider/tasks", &caps),
-	}}, staticServiceTokenProvider("service-token"))
-
-	statuses, err := service.CheckAllProviderHealth(context.Background(), 0)
-	if err != nil {
-		t.Fatalf("CheckAllProviderHealth() error = %v", err)
-	}
-	if statuses[0].Status != "down" {
-		t.Fatalf("provider status = %q, want down", statuses[0].Status)
-	}
-	checks := statuses[0].Backends[0].TaskDiscovery
-	if len(checks) != 1 {
-		t.Fatalf("task discovery len = %d, want 1", len(checks))
-	}
-	if checks[0].Status != "down" {
-		t.Fatalf("task discovery status = %q, want down", checks[0].Status)
-	}
-	if !strings.Contains(checks[0].Message, "data") {
-		t.Fatalf("task discovery message = %q, want non-standard data field", checks[0].Message)
-	}
-}
-
-func TestCheckAllProviderHealthReportsTaskDiscoveryExtraFields(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch r.URL.Path {
-		case "/health/ready":
-			w.WriteHeader(http.StatusOK)
-		case "/api/v1/meta/task-provider/tasks":
-			w.WriteHeader(http.StatusOK)
-			_, _ = w.Write([]byte(`{"items":[],"total":0,"page":1,"page_size":100,"total_pages":0}`))
-		default:
-			t.Fatalf("unexpected path: %s", r.URL.Path)
-		}
-	}))
-	defer server.Close()
-
-	caps := models.JSONString(monitorTaskCapabilitiesForTest(monitorTaskCapabilityForTest("scan", false)))
-	service := NewHealthCheckService(fakeTaskProviderLister{providers: []*models.TaskProvider{
-		newHealthTaskProviderForTest("meta", "Meta", server.URL, true, true, "/api/v1/meta/task-provider/tasks", &caps),
-	}}, staticServiceTokenProvider("service-token"))
-
-	statuses, err := service.CheckAllProviderHealth(context.Background(), 0)
-	if err != nil {
-		t.Fatalf("CheckAllProviderHealth() error = %v", err)
-	}
-	if statuses[0].Status != "down" {
-		t.Fatalf("provider status = %q, want down", statuses[0].Status)
-	}
-	checks := statuses[0].Backends[0].TaskDiscovery
-	if len(checks) != 1 || checks[0].Status != "down" {
-		t.Fatalf("task discovery = %#v, want one down check", checks)
-	}
-	if !strings.Contains(checks[0].Message, "total_pages") {
-		t.Fatalf("task discovery message = %q, want total_pages error", checks[0].Message)
 	}
 }
 
@@ -214,9 +119,9 @@ func TestCheckAllProviderHealthReportsInvalidCapabilities(t *testing.T) {
 	caps := models.JSONString(`{"schema_version":"legacy","task_capabilities":[{"type":"scan"}]}`)
 	service := NewHealthCheckService(fakeTaskProviderLister{providers: []*models.TaskProvider{
 		newHealthTaskProviderForTest("meta", "Meta", server.URL, true, true, "/api/v1/meta/task-provider/tasks", &caps),
-	}}, staticServiceTokenProvider("service-token"))
+	}})
 
-	statuses, err := service.CheckAllProviderHealth(context.Background(), 0)
+	statuses, err := service.CheckAllProviderHealth(t.Context())
 	if err != nil {
 		t.Fatalf("CheckAllProviderHealth() error = %v", err)
 	}
@@ -225,9 +130,6 @@ func TestCheckAllProviderHealthReportsInvalidCapabilities(t *testing.T) {
 	}
 	if statuses[0].Capabilities == nil || statuses[0].Capabilities.Status != "down" {
 		t.Fatalf("capabilities = %#v, want down", statuses[0].Capabilities)
-	}
-	if len(statuses[0].Backends[0].TaskDiscovery) != 0 {
-		t.Fatalf("task discovery len = %d, want 0", len(statuses[0].Backends[0].TaskDiscovery))
 	}
 }
 
@@ -258,9 +160,9 @@ func TestCheckAllProviderHealthReportsUnknownCapabilityFields(t *testing.T) {
 	}`)
 	service := NewHealthCheckService(fakeTaskProviderLister{providers: []*models.TaskProvider{
 		newHealthTaskProviderForTest("meta", "Meta", server.URL, true, true, "/api/v1/meta/task-provider/tasks", &caps),
-	}}, staticServiceTokenProvider("service-token"))
+	}})
 
-	statuses, err := service.CheckAllProviderHealth(context.Background(), 0)
+	statuses, err := service.CheckAllProviderHealth(t.Context())
 	if err != nil {
 		t.Fatalf("CheckAllProviderHealth() error = %v", err)
 	}
@@ -269,9 +171,6 @@ func TestCheckAllProviderHealthReportsUnknownCapabilityFields(t *testing.T) {
 	}
 	if statuses[0].Capabilities == nil || !strings.Contains(statuses[0].Capabilities.Message, "owner_runtime") {
 		t.Fatalf("capabilities = %#v, want owner_runtime error", statuses[0].Capabilities)
-	}
-	if len(statuses[0].Backends[0].TaskDiscovery) != 0 {
-		t.Fatalf("task discovery len = %d, want 0", len(statuses[0].Backends[0].TaskDiscovery))
 	}
 }
 
@@ -301,9 +200,9 @@ func TestCheckAllProviderHealthReportsNonBooleanDeprecated(t *testing.T) {
 	}`)
 	service := NewHealthCheckService(fakeTaskProviderLister{providers: []*models.TaskProvider{
 		newHealthTaskProviderForTest("meta", "Meta", server.URL, true, true, "/api/v1/meta/task-provider/tasks", &caps),
-	}}, staticServiceTokenProvider("service-token"))
+	}})
 
-	statuses, err := service.CheckAllProviderHealth(context.Background(), 0)
+	statuses, err := service.CheckAllProviderHealth(t.Context())
 	if err != nil {
 		t.Fatalf("CheckAllProviderHealth() error = %v", err)
 	}
@@ -344,12 +243,6 @@ func newHealthTaskProviderForTest(
 		provider.UnavailableReason = "no_valid_backend"
 	}
 	return provider
-}
-
-type staticServiceTokenProvider string
-
-func (provider staticServiceTokenProvider) Token(context.Context, uint) (string, error) {
-	return string(provider), nil
 }
 
 func (f fakeTaskProviderLister) ListTaskProviders() ([]*models.TaskProvider, error) {

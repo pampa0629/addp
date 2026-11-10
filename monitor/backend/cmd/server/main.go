@@ -111,7 +111,7 @@ func main() {
 		taskExecutionRepo,
 		repository.NewExecutionRuntimeMetricsRepository(db),
 	)
-	healthService := service.NewHealthCheckService(systemTaskProviderLister, serviceTokenSource)
+	healthService := service.NewHealthCheckService(systemTaskProviderLister)
 	runtimeHealthService := service.NewRuntimeHealthService(commonRuntimeHealth.NewRepository(db))
 	webhookSender := service.NewHTTPWebhookSender(cfg.WebhookHTTPTimeout, cfg.WebhookAllowPrivate)
 	webhookService := service.NewWebhookService(db, cfg.EncryptionKey, cfg.WebhookAllowPrivate, cfg.ConsoleBaseURL, webhookSender)

@@ -1,22 +1,12 @@
 import { expect, test } from '@playwright/test'
 
-test('provider health separates backend readiness from task discovery', async ({ page }) => {
+test('provider readiness reports ready, partially ready and unavailable instances', async ({ page }) => {
+  const ready = { status: 'up', module_health: { status: 'up' } }
+  const unready = { status: 'down', module_health: { status: 'down' } }
   const providers = [
-    {
-      module: 'develop', status: 'down', message: 'all Backend instances are unhealthy',
-      backends: [{
-        status: 'down', module_health: { status: 'up' },
-        task_discovery: [{ status: 'down', status_code: 403 }, { status: 'down', status_code: 403 }]
-      }]
-    },
-    {
-      module: 'graph', status: 'down',
-      backends: [{ status: 'down', module_health: { status: 'down' }, task_discovery: null }]
-    },
-    {
-      module: 'manager', status: 'up',
-      backends: [{ status: 'up', module_health: { status: 'up' }, task_discovery: [{ status: 'up', status_code: 200 }] }]
-    },
+    { module: 'develop', status: 'up', backends: [ready] },
+    { module: 'graph', status: 'down', backends: [unready] },
+    { module: 'manager', status: 'degraded', backends: [ready, unready] },
     { module: 'meta', status: 'down', backends: [] }
   ]
   const responses = {
@@ -46,25 +36,21 @@ test('provider health separates backend readiness from task discovery', async ({
   await page.goto('/dashboard')
 
   const cards = page.locator('.module-status-badge')
-  await expect(page.getByText('任务提供者健康', { exact: true })).toBeVisible()
+  await expect(page.getByText('任务提供者就绪', { exact: true })).toBeVisible()
   await expect(cards).toHaveCount(providers.length)
 
   const develop = cards.filter({ hasText: 'develop' })
-  await expect(develop).toContainText('不可用')
+  await expect(develop.getByText('就绪', { exact: true })).toBeVisible()
   await expect(develop).toContainText('后端就绪：1/1')
-  await expect(develop).toContainText('任务发现：0/2（2 项探测被拒绝）')
-  await expect(develop).not.toContainText('all Backend instances are unhealthy')
 
   const graph = cards.filter({ hasText: 'graph' })
+  await expect(graph).toContainText('不可用')
   await expect(graph).toContainText('后端就绪：0/1')
-  await expect(graph).toContainText('任务发现：未检查')
-  await expect(graph).not.toContainText('探测被拒绝')
 
   const manager = cards.filter({ hasText: 'manager' })
-  await expect(manager).toContainText('正常')
-  await expect(manager).toContainText('后端就绪：1/1')
-  await expect(manager).toContainText('任务发现：1/1')
+  await expect(manager).toContainText('部分就绪')
+  await expect(manager).toContainText('后端就绪：1/2')
 
   await expect(cards.filter({ hasText: 'meta' })).toContainText('后端就绪：未检查')
-  await expect(page.getByText('离线', { exact: true })).toHaveCount(0)
+  await expect(cards.getByText(/任务发现|探测被拒绝/)).toHaveCount(0)
 })
