@@ -2,25 +2,55 @@
   <section class="http-quality" data-testid="http-quality">
     <el-alert v-if="!canRead" :title="t('monitor.http.denied')" type="warning" :closable="false" />
     <template v-else>
-      <header><h2>{{ t('monitor.http.title') }}</h2><el-button @click="reload()">{{ t('common.refresh') }}</el-button><AutoRefreshControl v-if="!state.stopped" :model-value="state.refresh" :status="refreshStatus" @update:model-value="refresh => navigate({ ...state.query, refresh })" /></header>
-      <p class="hint">{{ t('monitor.http.boundary') }}</p>
-      <form class="filters" @submit.prevent="filter">
-        <el-input v-model="moduleDraft" :placeholder="t('monitor.process.module')" :aria-label="t('monitor.process.module')" />
-        <el-select v-model="roleDraft" :aria-label="t('monitor.http.layer')"><el-option v-for="role in ['backend', 'ingress']" :key="role" :value="role" :label="t(`monitor.http.layers.${role}`)" /></el-select>
-        <el-select :model-value="state.params.status" :aria-label="t('monitor.http.instanceScope')" @update:model-value="selectScope"><el-option value="up" :label="t('monitor.http.onlineInstances')" /><el-option value="down" :label="t('monitor.http.stoppedInstances')" /></el-select>
+      <header class="toolbar">
+        <h2>{{ t('monitor.http.title') }}</h2>
+        <AutoRefreshControl v-if="!state.stopped" :model-value="state.refresh" :status="refreshStatus" @update:model-value="refresh => navigate({ ...state.query, refresh })" />
+        <el-button :loading="loading" @click="refresh">{{ t('common.refresh') }}</el-button>
+      </header>
+      <div class="filters">
+        <ModuleNameSelect :model-value="state.module" :identity="identity" :suspended="blocked" :revision="moduleRevision" @update:model-value="module_name => selectScope({ module_name })" />
+        <div class="layer-filter">
+          <el-radio-group :model-value="state.role" :aria-label="t('monitor.http.layer')" @update:model-value="role => selectScope({ role })">
+            <el-radio-button v-for="role in ['backend', 'ingress']" :key="role" :value="role">{{ t(`monitor.http.layers.${role}`) }}</el-radio-button>
+          </el-radio-group>
+          <FieldHelp :content="t('monitor.http.boundary')" />
+        </div>
+        <el-select :model-value="state.params.status" :aria-label="t('monitor.http.instanceScope')" @update:model-value="status => selectScope({ status })"><el-option value="up" :label="t('monitor.http.onlineInstances')" /><el-option value="down" :label="t('monitor.http.stoppedInstances')" /></el-select>
         <el-select :model-value="String(state.window)" :aria-label="t('monitor.http.window')" @update:model-value="window => navigate({ ...state.query, window })"><el-option v-for="window in [60, 300, 900]" :key="window" :value="String(window)" :label="t('monitor.http.minutes', { count: window / 60 })" /></el-select>
-        <el-button native-type="submit">{{ t('common.search') }}</el-button>
-      </form>
+        <el-button @click="navigate({ refresh: state.stopped ? undefined : state.refresh })">{{ t('common.reset') }}</el-button>
+      </div>
       <el-alert v-if="error" :title="t(error)" type="warning" :closable="false" data-testid="http-error" />
-      <el-table :data="instances" v-loading="loading" :empty-text="t(state.stopped ? 'monitor.http.noStoppedInstances' : 'monitor.http.empty')" data-testid="http-instances">
-        <el-table-column prop="module_name" :label="t('monitor.process.module')" min-width="140" />
-        <el-table-column prop="instance_id" :label="t('monitor.http.instance')" min-width="180" show-overflow-tooltip />
-        <el-table-column :label="t('monitor.http.collection')" min-width="145"><template #default="{ row }">{{ t(`monitor.http.states.${state.stopped ? 'not_active' : summary(row)?.collection.state || 'no_sample'}`) }}</template></el-table-column>
-        <template v-if="!state.stopped"><el-table-column v-for="metric in httpMetrics" :key="metric.key" :label="t(`monitor.http.metrics.${metric.name}`)" min-width="115"><template #default="{ row }">{{ display(summary(row)?.observations[0], metric.name) }}</template></el-table-column></template>
-        <el-table-column :label="t('common.actions')" min-width="120"><template #default="{ row }"><el-button link :disabled="state.stopped && !stoppedHTTPWindow(row, state.range)" @click="openDetail(row)">{{ t(state.stopped ? 'monitor.http.historyTrend' : 'monitor.http.details') }}</el-button></template></el-table-column>
-      </el-table>
-      <el-pagination layout="total, prev, pager, next" :total="total" :page-size="10" :current-page="state.page" @current-change="page => navigate({ ...state.query, page: String(page) })" />
-      <el-dialog :model-value="Boolean(state.instanceID)" :title="t(state.stopped ? 'monitor.http.historyTrend' : 'monitor.http.details')" width="90%" @close="closeDetail">
+      <div v-loading="loading && !instances.length" data-testid="http-instances">
+        <el-empty v-if="!loading && !instances.length && !error" :description="t(state.stopped ? 'monitor.http.noStoppedInstances' : 'monitor.http.empty')" />
+        <ModuleInstanceCards :instances="instances" test-prefix="http" v-slot="{ row }">
+          <p class="hint collection">
+            <strong>{{ t(`monitor.http.states.${state.stopped ? 'not_active' : summary(row)?.collection.state || 'no_sample'}`) }}</strong>
+            <span v-if="summary(row)?.collection.sampled_at"> · {{ t('monitor.resources.sampledAt') }} · {{ date(summary(row).collection.sampled_at) }}</span>
+          </p>
+          <template v-if="!state.stopped">
+            <dl class="instance-metrics">
+              <div v-for="metric in headlineMetrics" :key="metric.key">
+                <dt>{{ t(`monitor.http.metrics.${metric.name}`) }}</dt>
+                <dd><strong :data-http-metric="metric.key">{{ display(summary(row)?.observations[0], metric.name) }}</strong></dd>
+              </div>
+            </dl>
+            <details>
+              <summary>{{ t('monitor.process.moreMetrics') }}</summary>
+              <dl class="instance-metrics">
+                <div v-for="metric in moreMetrics" :key="metric.key">
+                  <dt>{{ t(`monitor.http.metrics.${metric.name}`) }}</dt>
+                  <dd><strong :data-http-metric="metric.key">{{ display(summary(row)?.observations[0], metric.name) }}</strong></dd>
+                </div>
+              </dl>
+              <p class="hint instance-id">{{ t('monitor.http.instance') }} · {{ row.instance_id }}</p>
+            </details>
+          </template>
+          <p v-else class="hint instance-id">{{ t('monitor.http.instance') }} · {{ row.instance_id }}</p>
+          <el-button text type="primary" :disabled="state.stopped && !stoppedHTTPWindow(row, state.range)" @click="openDetail(row)">{{ t(state.stopped ? 'monitor.http.historyTrend' : 'monitor.http.details') }}</el-button>
+        </ModuleInstanceCards>
+      </div>
+      <el-pagination v-if="!error && (instances.length || !loading)" layout="total, prev, pager, next" :total="total" :page-size="10" :current-page="state.page" @current-change="page => selectScope({ page: String(page) })" />
+      <el-dialog :model-value="Boolean(state.instanceID)" :title="t(state.stopped ? 'monitor.http.historyTrend' : 'monitor.http.details')" width="min(1120px, calc(100vw - 32px))" @close="closeDetail">
         <p v-if="selected" class="subject">{{ selected.module_name }} · {{ selected.instance_id }} <el-button v-if="!state.stopped && auth.hasPermission('monitor.trace.read')" link @click="openTraces">{{ t('monitor.traces.open') }}</el-button></p>
         <el-alert v-if="detailError" :title="t(detailError)" type="warning" :closable="false" data-testid="http-detail-error" />
         <template v-if="!state.stopped">
@@ -44,6 +74,10 @@
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
+import ModuleInstanceCards from '../components/ModuleInstanceCards.vue'
+import ModuleNameSelect from '../components/ModuleNameSelect.vue'
+import FieldHelp from '../../../../common-frontend/basic/src/components/FieldHelp.vue'
+import { formatFieldPresentationValue } from '../../../../common-frontend/basic/src/utils/fieldPresentation.mjs'
 import AutoRefreshControl from '../../../../common-frontend/basic/src/components/AutoRefreshControl.vue'
 import ChartRenderer from '../../../../common-frontend/chart/src/ChartRenderer.vue'
 import { createLatestRequestScope } from '../../../../common-frontend/basic/src/utils/latestRequestScope.mjs'
@@ -60,8 +94,12 @@ const canRead = computed(() => auth.contextType === 'platform' && auth.authConte
 const identity = computed(() => JSON.stringify([auth.authContext?.principal, auth.authContext?.context, auth.authContext?.delegation, auth.permissions]))
 const state = computed(() => resolveHTTPRoute(route.query))
 const instances = ref([]), summaries = ref([]), interfaces = ref([]), history = ref(null), total = ref(0), loading = ref(false), error = ref(''), detailError = ref('')
-const moduleDraft = ref(''), roleDraft = ref('backend'), chartMetric = ref('qps'), blocked = ref(false), visible = ref(!document.hidden), requests = createLatestRequestScope()
+const moduleRevision = ref(0), chartMetric = ref('qps'), blocked = ref(false), visible = ref(!document.hidden), requests = createLatestRequestScope()
 const historicalOwner = ref(null)
+let listContext = '', detailContext = ''
+const headlineMetrics = httpMetrics.filter(metric => ['qps', 'failure', 'p95'].includes(metric.name))
+const moreMetrics = httpMetrics.filter(metric => !headlineMetrics.includes(metric))
+const date = value => formatFieldPresentationValue(value, { temporal_format: 'datetime' }, locale.value)
 const selected = computed(() => state.value.stopped ? historicalOwner.value : instances.value.find(row => row.id === state.value.instanceID))
 const ranked = computed(() => sortHTTPInterfaces(interfaces.value, state.value.sort))
 const chartMetrics = computed(() => state.value.route === null ? httpMetrics : httpMetrics.slice(0, -1))
@@ -69,8 +107,11 @@ const refreshStatus = computed(() => state.value.refresh === 'off' ? 'manual' : 
 const summary = row => summaries.value.find(item => item.subject.id === row.id)
 function display(row, name) { const value = httpValue(row, name); return value === null ? '—' : new Intl.NumberFormat(locale.value, { maximumFractionDigits: name === 'active' ? 0 : 3 }).format(value) }
 const navigate = (query, history = 'replace') => navigateMonitorRoute(router, { path: '/http-quality', query: resolveHTTPRoute(query).query }, { history })
-function filter() { return navigate({ ...state.value.query, page: undefined, instance_id: undefined, route: undefined, method: undefined, module_name: moduleDraft.value.trim(), role: roleDraft.value }) }
-function selectScope(status) { return navigate({ ...state.value.query, status, page: undefined, instance_id: undefined, start: undefined, end: undefined, route: undefined, method: undefined }) }
+function refresh() { moduleRevision.value++; return reload() }
+function selectScope(changes) {
+  const { page, instance_id, range, start, end, route, method, ...query } = state.value.query
+  return navigate({ ...query, ...changes })
+}
 function openDetail(row) { return navigate({ ...state.value.query, instance_id: String(row.id), ...(state.value.stopped ? stoppedHTTPWindow(row, state.value.range) : {}) }, 'push') }
 function selectRange(range) {
   const bounds = state.value.stopped && selected.value ? stoppedHTTPWindow(selected.value, range) : null
@@ -93,8 +134,18 @@ const cycle = createAutoRefresh({ interval: () => state.value.refresh, enabled: 
 async function reload(automatic = false) {
   cycle.stop()
   const ticket = requests.invalidate()
-  if (!automatic) { moduleDraft.value = state.value.module; roleDraft.value = state.value.role; blocked.value = false }
-  instances.value = []; summaries.value = []; interfaces.value = []; historicalOwner.value = null; history.value = null; total.value = 0; error.value = ''; detailError.value = ''; loading.value = false
+  if (!automatic) blocked.value = false
+  const nextList = JSON.stringify([state.value.params, state.value.window, identity.value])
+  if (nextList !== listContext) {
+    listContext = nextList
+    instances.value = []; summaries.value = []; total.value = 0
+  }
+  const nextDetail = JSON.stringify([{ ...state.value.query, refresh: undefined }, identity.value])
+  if (nextDetail !== detailContext) {
+    detailContext = nextDetail
+    interfaces.value = []; historicalOwner.value = null; history.value = null
+  }
+  error.value = ''; detailError.value = ''; loading.value = false
   if (!canRead.value || route.name !== 'HTTPQuality') return
   if (state.value.changed) { await navigate(state.value.query); return }
   loading.value = true
@@ -109,14 +160,14 @@ async function reload(automatic = false) {
     instances.value = list.data; summaries.value = quality.data; total.value = list.total
     if (state.value.instanceID) {
       if (state.value.stopped) {
-        if (!state.value.history) { detailError.value = 'monitor.process.trend.reselect'; return }
+        if (!state.value.history) { historicalOwner.value = null; history.value = null; detailError.value = 'monitor.process.trend.reselect'; return }
         const filters = { ...state.value.params, ids: String(state.value.instanceID), page: 1, page_size: 1 }
         const exact = await requests.request(config => api.instances(filters, config))
         if (!requests.current(ticket)) return
         validateProcessInstances(exact, 1, filters, 1)
         const owner = exact.data[0]
         if (!owner || exact.total !== 1 || owner.id !== state.value.instanceID || owner.role !== filters.role || (filters.module_name && owner.module_name !== filters.module_name)) {
-          detailError.value = 'monitor.process.trend.reselect'; return
+          historicalOwner.value = null; history.value = null; detailError.value = 'monitor.process.trend.reselect'; return
         }
         historicalOwner.value = owner
         const filtered = state.value.route === null ? null : { route: state.value.route, method: state.value.method }
@@ -127,17 +178,23 @@ async function reload(automatic = false) {
         return
       }
       const owner = list.data.find(row => row.id === state.value.instanceID)
-      if (!owner) { detailError.value = 'monitor.process.trend.reselect'; return }
+      if (!owner) { interfaces.value = []; history.value = null; detailError.value = 'monitor.process.trend.reselect'; return }
+      let rankedObservations = []
       try {
         const detail = validateHTTPResponse(await requests.request(config => api.interfaces(owner.id, state.value.window, state.value.sort, config)), [owner], state.value.window, true)
         if (!requests.current(ticket)) return
-        interfaces.value = detail.data[0].observations
+        rankedObservations = detail.data[0].observations
         const end = new Date(detail.end), span = { '5m': 300, '1h': 3600, '24h': 86400 }[state.value.range]
         const params = { instance_ids: owner.id, window_seconds: state.value.window, start: new Date(end.getTime() - span * 1000).toISOString(), end: end.toISOString(), ...(state.value.route === null ? {} : { route: state.value.route, method: state.value.method }) }
         const trend = validateHTTPResponse(await requests.request(config => api.trend(params, config)), [owner], state.value.window, false, state.value.route === null ? null : { route: state.value.route, method: state.value.method })
         if (!requests.current(ticket)) return
-        history.value = trend
-      } catch (cause) { if (!requests.current(ticket)) return; detailError.value = cause.message === 'invalid_http_quality_response' ? 'monitor.resources.errors.invalidResponse' : resourceErrorKey(cause); if ([401, 403, 404].includes(cause.response?.status)) throw cause }
+        interfaces.value = rankedObservations; history.value = trend
+      } catch (cause) {
+        if (!requests.current(ticket)) return
+        interfaces.value = rankedObservations; history.value = null
+        detailError.value = cause.message === 'invalid_http_quality_response' ? 'monitor.resources.errors.invalidResponse' : resourceErrorKey(cause)
+        if ([401, 403, 404].includes(cause.response?.status)) throw cause
+      }
     }
   } catch (cause) {
     if (!requests.current(ticket)) return
@@ -151,11 +208,16 @@ onBeforeUnmount(() => { cycle.dispose(); requests.dispose() })
 </script>
 
 <style scoped>
-.http-quality { padding: 24px; min-width: 0; color: var(--addp-text-primary); }
-header, .filters { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; margin-bottom: 16px; }
-header h2 { margin-right: auto; }
-.filters .el-input, .filters .el-select { width: 200px; max-width: 100%; }
+.http-quality { --instance-metric-columns: 3; padding: 24px; min-width: 0; color: var(--addp-text-primary); }
+.toolbar, .filters { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; margin-bottom: 16px; }
+.toolbar h2 { flex: 1; }
+.filters .el-select { width: 200px; max-width: 100%; }
+.layer-filter { display: flex; align-items: center; gap: 4px; max-width: 100%; }
+@media (max-width: 600px) { .toolbar h2 { flex-basis: 100%; } }
 .hint { color: var(--addp-text-secondary); font-size: 13px; margin: 12px 0; }
+.http-quality details { --instance-metric-columns: 2; }
+@media (max-width: 420px) { .http-quality { --instance-metric-columns: 2; } }
+.collection, .instance-id { margin: 4px 0; font-size: 12px; }
 .subject { overflow-wrap: anywhere; }
 .el-pagination { margin-top: 16px; }
 .chart { display: flex; min-width: 0; margin-top: 16px; }

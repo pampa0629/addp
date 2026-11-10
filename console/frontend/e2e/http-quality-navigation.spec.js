@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test'
-import { httpResponses, assertHTTPPage, assertHTTPRestored, assertHTTPStoppedPage, assertHTTPValues } from './http-quality-page-support.mjs'
+import { httpResponses, assertHTTPPage, assertHTTPRestored, assertHTTPStoppedPage } from './http-quality-page-support.mjs'
 import { httpInstances, httpBackend, httpPermissions } from '../../../monitor/frontend/e2e/http-quality.fixture'
 import { identity } from '../../../monitor/frontend/e2e/monitoring-targets.fixture'
 
@@ -7,6 +7,7 @@ test('HTTP quality keeps one Console iframe while selecting a template and resto
   await httpBackend(page)
   await page.goto('/monitor/http-quality?refresh=off')
   const frame = page.frameLocator('iframe[data-testid="module-iframe"]')
+  await expect(frame.getByRole('heading', { name: 'HTTP 监控' })).toBeVisible()
   await expect(frame.getByTestId('http-instances')).toContainText('http-1')
   const origin = await frame.locator('body').evaluate(() => performance.timeOrigin)
   await frame.getByTestId('http-instances').getByRole('button', { name: '接口与趋势', exact: true }).first().click()
@@ -43,15 +44,14 @@ test('formal HTTP page oracles compare actual cells and tooltip values, restore 
   await assertHTTPRestored(expect, page, frame, query)
   await assertHTTPPage(expect, frame, owner, restored, { sort: 'qps' })
   const short = expect.configure({ timeout: 200 })
-  const cells = frame.getByTestId('http-instances').locator('tbody tr td:nth-child(n+4):nth-child(-n+10)')
-  const points = restored[0].data[0].observations[0].series.map(series => series.points[0])
-  await cells.first().evaluate(element => { element.textContent = '999' })
-  await expect(assertHTTPValues(short, cells, points)).rejects.toThrow()
+  const qps = frame.getByTestId('http-instance').locator('[data-http-metric="http.requests.per_second"]')
+  await qps.evaluate(element => { element.textContent = '999' })
+  await expect(assertHTTPPage(short, frame, owner, restored, { sort: 'qps' })).rejects.toThrow()
+  await qps.evaluate(element => { element.textContent = '10' })
   const foreign = structuredClone(restored); foreign[0].data[0].subject.instance_id = 'foreign'
   await expect(assertHTTPPage(short, frame, owner, foreign)).rejects.toThrow()
   const rankedCell = frame.getByTestId('http-interfaces').locator('tbody tr').first().locator('td').nth(1)
   const originalRanked = await rankedCell.innerText()
-  await cells.first().evaluate(element => { element.textContent = '10' })
   await rankedCell.evaluate(element => { element.textContent = '777' })
   await expect(assertHTTPPage(short, frame, owner, restored, { sort: 'qps' })).rejects.toThrow()
   await rankedCell.evaluate((element, text) => { element.textContent = text }, originalRanked)
@@ -60,8 +60,6 @@ test('formal HTTP page oracles compare actual cells and tooltip values, restore 
   await expect(assertHTTPPage(short, frame, owner, wrongTrend, { sort: 'qps' })).rejects.toThrow()
   const empty = structuredClone(restored)
   empty[2].data[0].observations[0].series[0].points.forEach(point => { point.data_state = 'no_data'; point.value = null })
-  // Restore the cell before checking the independent history rejection.
-  await cells.first().evaluate(element => { element.textContent = '10' })
   await expect(assertHTTPPage(short, frame, owner, empty, { sort: 'qps' })).rejects.toThrow()
 })
 
@@ -71,7 +69,7 @@ test('stopped HTTP source clears previously displayed values and rejects stale s
   const path = '/monitor/http-quality?' + new URLSearchParams({ ...productQuery, module_name: 'copilot', instance_id: '2' })
   const live = await httpResponses(page, () => page.goto(path), { owner })
   await assertHTTPPage(expect, frame, owner, live, { sort: 'qps' })
-  const missingCell = frame.getByTestId('http-instances').locator('tbody tr td').nth(4)
+  const missingCell = frame.getByTestId('http-instance').locator('[data-http-metric="http.failures.percent"]')
   await missingCell.evaluate(element => { element.textContent = '0' })
   await expect(assertHTTPPage(expect.configure({ timeout: 200 }), frame, owner, live, { sort: 'qps' })).rejects.toThrow()
   await missingCell.evaluate(element => { element.textContent = '—' })

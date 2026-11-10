@@ -1,9 +1,26 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
 import { resolveHTTPRoute, stoppedHTTPWindow, validateHTTPResponse, httpMetrics, httpValue, sortHTTPInterfaces } from '../src/utils/httpQuality.js'
 
 const stamp = '2026-10-20T00:00:00Z', owner = { id: 1, module_name: 'gateway', instance_id: 'ingress-one', role: 'ingress' }
 const response = () => ({ start: stamp, end: stamp, step_seconds: 15, window_seconds: 60, data: [{ subject: { ...owner, kind: 'module_instance' }, policy_version: 1, queried_at: stamp, collection: { state: 'collecting', sampled_at: stamp }, observations: [{ route: '', method: '', series: httpMetrics.map(metric => ({ metric_key: metric.key, unit: metric.unit, window_seconds: metric.name === 'active' ? 0 : 60, dimensions: {}, points: [{ evaluated_at: stamp, sampled_at: metric.name === 'qps' || metric.name === 'active' ? stamp : null, value: metric.name === 'qps' || metric.name === 'active' ? 0 : null, data_state: metric.name === 'qps' || metric.name === 'active' ? 'valid' : 'no_data' }] })) }] }] })
+test('HTTP and service monitoring share one module selector and instance card layout', () => {
+  const root = new URL('../src/', import.meta.url)
+  const read = name => readFileSync(new URL(name, root), 'utf8')
+  const cataloguePath = '/system/platform/modules'
+  assert.ok(read('components/ModuleNameSelect.vue').includes(cataloguePath))
+  for (const name of ['httpQuality', 'processResources']) {
+    assert.ok(!read(`api/${name}.js`).includes(cataloguePath))
+  }
+  for (const page of ['HTTPQuality', 'ProcessResources']) {
+    const source = read(`views/${page}.vue`)
+    assert.match(source, /<ModuleNameSelect\b/)
+    assert.match(source, /<ModuleInstanceCards\b/)
+    assert.doesNotMatch(source, /<el-card\b/)
+  }
+})
+
 test('HTTP routes separate ingress and backend, retain exact templates and drop foreign parameters', () => {
   assert.deepEqual(resolveHTTPRoute({ role: 'ingress', instance_id: '1', route: '/items/:id', method: 'GET', query: 'private', page: '01' }).query, { role: 'ingress', instance_id: '1', route: '/items/:id', method: 'GET' })
   assert.equal(resolveHTTPRoute({ role: 'worker', window: '61' }).role, 'backend')

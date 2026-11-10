@@ -43,11 +43,16 @@ export async function assertHTTPPage(expect, frame, owner, [summary, ranking, tr
   await expect(frame.getByTestId('http-error')).toHaveCount(0)
   await expect(frame.getByTestId('http-detail-error')).toHaveCount(0)
   const subject = ownRow(expect, summary, owner, stoppedAt)
-  const rows = frame.getByTestId('http-instances').locator('tbody tr')
-  await expect(rows).toHaveCount(1)
-  await expect(rows.first()).toContainText(owner.instance_id)
-  await expect(rows.first()).toContainText(owner.module_name)
-  await assertHTTPValues(expect, rows.first().locator('td:nth-child(n+4):nth-child(-n+10)'), values(subject.observations[0]))
+  const instances = frame.getByTestId('http-instance')
+  await expect(instances).toHaveCount(1)
+  await expect(instances.first()).toContainText(owner.instance_id)
+  await expect(frame.getByTestId('http-module-card').getByRole('heading', { name: owner.module_name, exact: true })).toHaveCount(1)
+  const summaryPoints = values(subject.observations[0])
+  await expect(instances.locator('[data-http-metric]')).toHaveCount(keys.length)
+  for (const [index, key] of keys.entries()) {
+    const value = instances.locator(`[data-http-metric="${key}"]`)
+    await expect.poll(async () => agrees(await value.textContent(), summaryPoints[index], index === 6)).toBe(true)
+  }
   const ranked = ownRow(expect, ranking, owner, stoppedAt).observations
   expect(ranked.length).toBeGreaterThan(0)
   const rankKey = sort === 'qps' ? keys[0] : keys[3]
@@ -91,8 +96,10 @@ export async function assertHTTPRestored(expect, page, frame, query) {
     const child = page.frames().find(candidate => candidate.parentFrame() === page.mainFrame())
     return child ? Object.fromEntries(new URL(child.url()).searchParams) : null
   }).toEqual(query)
-  await expect(frame.locator('input[aria-label="服务模块"]')).toHaveValue(query.module_name)
-  for (const [label, value] of [['观测层', '后端处理'], ['统计窗口', '1 分钟'], ['排行依据', query.sort === 'qps' ? 'QPS' : '平均耗时'], ['趋势时段', '近 5 分钟']]) {
+  const moduleFilter = frame.locator('.el-select').filter({ has: frame.getByRole('combobox', { name: '模块名称', exact: true }) })
+  await expect(moduleFilter).toContainText(query.module_name)
+  await expect(frame.getByRole('radio', { name: '后端处理', exact: true })).toBeChecked()
+  for (const [label, value] of [['统计窗口', '1 分钟'], ['排行依据', query.sort === 'qps' ? 'QPS' : '平均耗时'], ['趋势时段', '近 5 分钟']]) {
     await expect(frame.locator('.el-select').filter({ has: frame.locator('[aria-label="' + label + '"]') })).toContainText(value)
   }
 }
@@ -100,7 +107,7 @@ export async function assertHTTPRestored(expect, page, frame, query) {
 export async function assertHTTPStoppedPage(expect, frame, owner) {
   await expect(frame.getByTestId('http-error')).toHaveCount(0)
   await expect(frame.getByTestId('http-instances')).not.toContainText(owner.instance_id)
-  await expect(frame.getByTestId('http-instances').locator('tbody tr')).toHaveCount(0)
+  await expect(frame.getByTestId('http-instance')).toHaveCount(0)
   await expect(frame.getByTestId('http-interfaces').locator('tbody tr')).toHaveCount(0)
   await expect(frame.getByTestId('http-trend')).toHaveCount(0)
   await expect(frame.getByTestId('http-detail-error')).toContainText('请从列表重新选择')

@@ -6,7 +6,7 @@ export const httpPermissions = ['platform.module.read', 'monitor.http_observatio
 export const rulePermissions = ['platform.module.read', ...['read','create','update','delete'].map(action => `monitor.platform_http_rule.${action}`)]
 export const httpInstances = [1, 2].map(id => ({ id, module_name: 'monitor', instance_id: `http-${id}`, role: 'backend', status: 'up', node_id: '', process_metrics_declared: true, process_started_at: '2026-10-19T23:00:00Z' }))
 export async function httpBackend(page, options = {}) {
-  await authentication(page, { ...options, identity: options.identity || identity(httpPermissions) })
+  await authentication(page, { ...options, modules: options.modules || [...new Set((options.instances || httpInstances).map(row => row.module_name))], identity: options.identity || identity(httpPermissions) })
   const calls = [], writes = [], instances = options.instances || httpInstances, stopped = new Set()
   let mode = 'valid', release, held, rule = options.rule || null, conflict = false
   await page.route('**/api/v1/system/platform/module-instances?**', async route => {
@@ -14,7 +14,8 @@ export async function httpBackend(page, options = {}) {
     const rows = instances.filter(row => stopped.has(row.id) === (params.status === 'down') && row.role === params.role &&
       (!params.module_name || row.module_name === params.module_name) && (!params.ids || params.ids === String(row.id)))
       .map(row => stopped.has(row.id) ? { ...row, status: 'down', stopped_at: '2026-10-20T00:00:01Z' } : row)
-    await route.fulfill({ json: { data: rows, total: rows.length, page: Number(params.page), page_size: Number(params.page_size) } })
+    const pageNumber = Number(params.page), size = Number(params.page_size)
+    await route.fulfill({ json: { data: rows.slice((pageNumber - 1) * size, pageNumber * size), total: rows.length, page: pageNumber, page_size: size } })
   })
   await page.route('**/api/v1/monitor/platform/http_*', async route => {
     const url = new URL(route.request().url()), params = Object.fromEntries(url.searchParams), kind = url.pathname.split('/').at(-1)

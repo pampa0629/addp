@@ -1247,9 +1247,9 @@
       "mountRequired": "Select a currently observed filesystem mount."
     },
     "http": {
-      "title": "HTTP quality",
-      "denied": "Platform HTTP quality access denied",
-      "boundary": "Platform operations own shared HTTP quality. Ingress and backend request rates are separate and must not be added into a global QPS.",
+      "title": "HTTP monitoring",
+      "denied": "Platform HTTP monitoring access denied",
+      "boundary": "Ingress counts HTTP requests entering the platform. Backend counts requests handled by each module. Their QPS values are separate.",
       "layer": "Observation layer",
       "layers": {
         "backend": "Backend processing",
@@ -1278,7 +1278,7 @@
       "noInterfaces": "No route samples with a complete window",
       "metric": "Trend metric",
       "range": "Trend range",
-      "trend": "HTTP quality trend",
+      "trend": "HTTP metrics trend",
       "samples": "The top 10 eligible templates by the selected metric. Missing samples remain unavailable; new templates need a complete window.",
       "metrics": {
         "qps": "QPS",

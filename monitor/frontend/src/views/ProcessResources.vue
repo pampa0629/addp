@@ -15,9 +15,7 @@
         </ul>
       </el-alert>
       <form class="process-filters" @submit.prevent="filter">
-        <el-select v-model="moduleName" :placeholder="t('monitor.process.moduleFilter')" :aria-label="t('monitor.process.moduleFilter')" filterable clearable @change="filter">
-          <el-option v-for="name in moduleOptions" :key="name" :label="name" :value="name" />
-        </el-select>
+        <ModuleNameSelect :model-value="moduleName" :identity="identity" :suspended="refreshBlocked" :revision="moduleRevision" @update:model-value="selectModule" />
         <div class="endpoint-filter">
           <el-input v-model="registeredHost" :placeholder="t('monitor.process.addressFilter')" :aria-label="t('monitor.process.addressFilter')" maxlength="255" clearable @input="queueFilter" @keydown.enter="filterInput.enter" @clear="filter" />
           <FieldHelp :content="t('monitor.process.addressHint')" />
@@ -50,7 +48,6 @@
         <el-button :disabled="!validTimeDraft" @click="setScope('all')">{{ t('monitor.process.allInstances') }}</el-button>
         <el-button :disabled="!validTimeDraft" v-if="state.status !== 'up' || state.declared !== 'true'" @click="setScope('current')">{{ t('monitor.process.currentInstances') }}</el-button>
       </form>
-      <el-alert v-if="moduleListFailed" :title="t('monitor.process.moduleListFailed')" type="warning" :closable="false" />
       <el-alert v-if="errorKey || summaryErrorKey" :title="t(errorKey || summaryErrorKey)" type="warning" :closable="false" data-testid="process-error" />
       <section v-if="showCoverage && instances.length" class="process-coverage" :aria-label="t('monitor.process.coverage.title')">
         <div class="process-toolbar">
@@ -69,51 +66,39 @@
         </el-table>
       </section>
       <div v-loading="loading && !instances.length" data-testid="process-list">
-        <el-empty v-if="!loading && !moduleGroups.size" :description="t(showCoverage && collectionFilter !== 'all' ? 'monitor.process.coverage.empty' : 'monitor.process.empty')" />
-        <div class="process-grid">
-          <el-card v-for="[name, rows] in moduleGroups" :key="name" shadow="never" data-testid="process-module-card">
-            <template #header><h3 class="process-module-title">{{ name }}</h3></template>
-            <article v-for="row in rows" :key="row.id" class="process-instance" :aria-label="row.runtime_hostname || row.registered_host || row.instance_id" data-testid="process-instance">
-              <header class="process-instance-header">
-                <div>
-                  <strong :title="row.instance_id">{{ row.runtime_hostname || row.registered_host || row.instance_id }}</strong>
-                  <p class="process-hint" :title="row.instance_id" data-testid="process-role">{{ t(processRoleLabelKey(row)) }}</p>
-                </div>
-                <el-tag data-testid="process-online" size="small" :type="row.status === 'up' ? 'success' : 'danger'">{{ row.status.toUpperCase() }} · {{ t(`monitor.process.status.${row.status}`) }}</el-tag>
-              </header>
-              <p class="process-hint">
-                <span data-testid="process-endpoint">{{ getRegisteredEndpoint(row) || t('monitor.process.noEndpoint') }}</span>
-                · <MonitoredHostLink data-testid="process-host" :node-id="row.node_id" :host="hostReferences[row.node_id]" :allowed="canReadHost" />
-              </p>
-              <p class="process-hint">
-                <strong>{{ collectionState(row) }}</strong>
-                <span v-if="sampledAt(row)"> · {{ sampledAt(row) }}</span>
-              </p>
-              <p v-if="row.status === 'down'" class="process-hint" data-testid="process-stop-reason">{{ stopReasonLabel(row) }}</p>
-              <p v-if="row.status === 'down' && row.stop_reason === 'lease_expired'" class="process-hint">{{ t('common.runtimeInstanceStopReason.leaseExpiredHint') }}</p>
-              <dl class="process-metrics">
-                <div v-for="metric in headlineMetrics" :key="metric.key">
-                  <dt>{{ t(`monitor.process.metrics.${metric.name}`) }} <FieldHelp :content="t(`monitor.process.hints.${metric.name}`)" /></dt>
-                  <dd><strong>{{ value(row, metric) }}</strong><p v-if="point(row, metric)?.data_state !== 'valid'" class="process-hint">{{ pointState(row, metric) }}</p></dd>
-                </div>
-              </dl>
-              <details>
-                <summary>{{ t('monitor.process.moreMetrics') }}</summary>
-                <dl class="process-metrics">
-                  <div>
-                    <dt>{{ t('monitor.process.metrics.uptime') }} <FieldHelp :content="t('monitor.process.hints.uptime')" /></dt>
-                    <dd><strong>{{ value(row, uptimeMetric) }}</strong><p v-if="point(row, uptimeMetric)?.data_state !== 'valid'" class="process-hint">{{ pointState(row, uptimeMetric) }}</p></dd>
-                  </div>
-                  <div>
-                    <dt>{{ t(`common.runtimeInstanceTime.${state.timeBasis}Time`) }}</dt>
-                    <dd>{{ row[instanceTimeField] ? date(row[instanceTimeField]) : '—' }}</dd>
-                  </div>
-                </dl>
-              </details>
-              <el-button text type="primary" :disabled="row.status !== 'up' || !row.process_metrics_declared || loading" @click="selectTrend(row.id)">{{ t('monitor.resources.filesystem.viewTrend') }}</el-button>
-            </article>
-          </el-card>
-        </div>
+        <el-empty v-if="!loading && !visibleInstances.length" :description="t(showCoverage && collectionFilter !== 'all' ? 'monitor.process.coverage.empty' : 'monitor.process.empty')" />
+        <ModuleInstanceCards :instances="visibleInstances" test-prefix="process" v-slot="{ row }">
+          <p class="process-hint">
+            <span data-testid="process-endpoint">{{ getRegisteredEndpoint(row) || t('monitor.process.noEndpoint') }}</span>
+            · <MonitoredHostLink data-testid="process-host" :node-id="row.node_id" :host="hostReferences[row.node_id]" :allowed="canReadHost" />
+          </p>
+          <p class="process-hint">
+            <strong>{{ collectionState(row) }}</strong>
+            <span v-if="sampledAt(row)"> · {{ sampledAt(row) }}</span>
+          </p>
+          <p v-if="row.status === 'down'" class="process-hint" data-testid="process-stop-reason">{{ stopReasonLabel(row) }}</p>
+          <p v-if="row.status === 'down' && row.stop_reason === 'lease_expired'" class="process-hint">{{ t('common.runtimeInstanceStopReason.leaseExpiredHint') }}</p>
+          <dl class="instance-metrics">
+            <div v-for="metric in headlineMetrics" :key="metric.key">
+              <dt>{{ t(`monitor.process.metrics.${metric.name}`) }} <FieldHelp :content="t(`monitor.process.hints.${metric.name}`)" /></dt>
+              <dd><strong>{{ value(row, metric) }}</strong><p v-if="point(row, metric)?.data_state !== 'valid'" class="process-hint">{{ pointState(row, metric) }}</p></dd>
+            </div>
+          </dl>
+          <details>
+            <summary>{{ t('monitor.process.moreMetrics') }}</summary>
+            <dl class="instance-metrics">
+              <div>
+                <dt>{{ t('monitor.process.metrics.uptime') }} <FieldHelp :content="t('monitor.process.hints.uptime')" /></dt>
+                <dd><strong>{{ value(row, uptimeMetric) }}</strong><p v-if="point(row, uptimeMetric)?.data_state !== 'valid'" class="process-hint">{{ pointState(row, uptimeMetric) }}</p></dd>
+              </div>
+              <div>
+                <dt>{{ t(`common.runtimeInstanceTime.${state.timeBasis}Time`) }}</dt>
+                <dd>{{ row[instanceTimeField] ? date(row[instanceTimeField]) : '—' }}</dd>
+              </div>
+            </dl>
+          </details>
+          <el-button text type="primary" :disabled="row.status !== 'up' || !row.process_metrics_declared || loading" @click="selectTrend(row.id)">{{ t('monitor.resources.filesystem.viewTrend') }}</el-button>
+        </ModuleInstanceCards>
       </div>
       <el-pagination v-if="!errorKey && (instances.length || !loading)" :current-page="state.page" :page-size="20" :total="total" layout="total, prev, pager, next" @current-change="changePage" />
       <el-dialog :model-value="Boolean(state.instanceID)" :title="t('monitor.process.trend.title')" width="min(960px, calc(100vw - 32px))" destroy-on-close @close="closeTrend">
@@ -143,6 +128,8 @@
 </template>
 
 <script setup>
+import ModuleInstanceCards from '../components/ModuleInstanceCards.vue'
+import ModuleNameSelect from '../components/ModuleNameSelect.vue'
 import ContainerResources from '../components/ContainerResources.vue'
 import { validateContainerObservation } from '../utils/containerResources'
 import ResourcePeriodComparison from '../components/ResourcePeriodComparison.vue'
@@ -182,14 +169,6 @@ const showCoverage = computed(() => state.value.status === 'up' && state.value.d
 const visibleInstances = computed(() => showCoverage.value && collectionFilter.value !== 'all'
   ? instances.value.filter(row => collectionStatus(row) === collectionFilter.value)
   : instances.value)
-const moduleGroups = computed(() => {
-  const groups = new Map()
-  for (const row of visibleInstances.value) {
-    if (!groups.has(row.module_name)) groups.set(row.module_name, [])
-    groups.get(row.module_name).push(row)
-  }
-  return groups
-})
 const headlineMetrics = processMetrics.slice(0, 2)
 const uptimeMetric = processMetrics[2]
 const instanceTimeField = computed(() => state.value.timeBasis === 'offline' ? 'stopped_at' : 'registered_at')
@@ -234,8 +213,7 @@ function trendHelp(chart) {
   return [t(`monitor.process.hints.${chart.metric.name}`), chart.metric.windowSeconds ? t('monitor.process.comparison.cpuWindow') : '', t('monitor.resources.gaps'), t('monitor.process.trend.zoomHint'), chart.comparison && !chart.comparison.complete ? t('monitor.process.comparison.launch') : ''].filter(Boolean).join(' ')
 }
 const moduleName = ref(''), registeredHost = ref(''), nodeName = ref(''), nodeIP = ref(''), role = ref(''), status = ref('up'), declared = ref('true'), requests = createLatestRequestScope()
-const moduleOptions = ref(null), moduleListFailed = ref(false)
-let moduleIdentity
+const moduleRevision = ref(0)
 const point = (row, metric) => summaries.value.get(row.id)?.series.find(item => item.metric_key === metric.key)?.points[0]
 function value(row, metric) {
   const numeric = currentResourceValue(point(row, metric))
@@ -291,6 +269,7 @@ const filterInput = createAutoFilter({ apply: applyFilters, enabled: () => !disp
 const cancelFilter = () => filterInput.cancel()
 const queueFilter = () => filterInput.queue()
 const filter = () => filterInput.submit()
+function selectModule(name) { moduleName.value = name; return filter() }
 function applyFilters() {
   if (!validTimeDraft.value) { refreshCycle.schedule(); return }
   const query = resolveProcessRoute({ ...timeDraft(), refresh: state.value.refresh, module_name: moduleName.value, registered_host: registeredHost.value, node_name: nodeName.value, node_ip: nodeIP.value, role: role.value, stop_reason: stopReason.value, status: status.value, process_metrics_declared: declared.value }).query
@@ -351,16 +330,11 @@ async function reload({ automatic = false, refreshModules = false } = {}) {
   }
   if (!automatic) refreshBlocked.value = false
   errorKey.value = ''; summaryErrorKey.value = ''; trendErrorKey.value = ''; loading.value = false
-  if (moduleIdentity !== identity.value) {
-    moduleIdentity = identity.value
-    moduleOptions.value = null
-    moduleListFailed.value = false
-  }
   if (!canRead.value) return
   if (state.value.changed) { await navigate(state.value.query); return }
   if (!automatic) { stopReason.value = state.value.stopReason; timeBasis.value = state.value.timeBasis; period.value = state.value.period; customRange.value = state.value.period === 'custom' ? [new Date(state.value.from), new Date(state.value.to)] : null; moduleName.value = state.value.module; registeredHost.value = state.value.registeredHost; nodeName.value = state.value.nodeName; nodeIP.value = state.value.nodeIP; role.value = state.value.role; status.value = state.value.status; declared.value = state.value.declared }
   loading.value = true
-  if (refreshModules || moduleOptions.value === null) void loadModuleNames(ticket)
+  if (refreshModules) moduleRevision.value++
   try {
     const listParams = processInstanceParameters(state.value)
     const list = await requests.request(config => api.instances(listParams, config))
@@ -417,18 +391,11 @@ async function reload({ automatic = false, refreshModules = false } = {}) {
     errorKey.value = processErrorKey(error)
     if ([401, 403, 404].includes(error.response?.status)) {
       refreshBlocked.value = true
-      moduleOptions.value = null
     }
     trend.value = null; comparisons.value = null; trendErrorKey.value = errorKey.value
     startupFailures.value = []
     instances.value = []; summaries.value = new Map(); hostReferences.value = {}; total.value = 0
   } finally { if (requests.current(ticket)) { loading.value = false; refreshCycle.schedule() } }
-}
-async function loadModuleNames(ticket) {
-  const result = await requests.request(config => api.modules(config)).catch(() => null)
-  if (!requests.current(ticket) || refreshBlocked.value) return
-  moduleListFailed.value = !Array.isArray(result?.modules)
-  moduleOptions.value = moduleListFailed.value ? null : [...new Set(result.modules.map(module => module?.module_name).filter(name => typeof name === 'string' && name))].sort()
 }
 async function loadStartupFailures(ticket) {
   const result = await requests.request(config => api.startupFailures(config)).catch(() => null)
@@ -454,15 +421,6 @@ onBeforeUnmount(() => { disposed = true; filterInput.dispose(); refreshCycle.dis
 .process-hint { margin: 4px 0; font-size: 12px; line-height: 1.5; color: var(--addp-text-secondary); }
 @media (max-width: 600px) { .process-toolbar h2 { flex-basis: 100%; } .process-filters > .runtime-instance-time-filter { width: 100%; } }
 .el-pagination { margin-top: 16px; }
-.process-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr)); align-items: start; gap: 16px; }
-.process-module-title { margin: 0; overflow-wrap: anywhere; }
-.process-instance { min-width: 0; overflow-wrap: anywhere; }
-.process-instance + .process-instance { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--addp-border-color); }
-.process-instance-header { display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 8px; }
-.process-metrics { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin: 12px 0; }
-.process-metrics dt { font-size: 12px; color: var(--addp-text-secondary); }
-.process-metrics dd { margin: 4px 0 0; }
-.process-instance summary { cursor: pointer; color: var(--addp-text-secondary); }
 .process-coverage { margin: 12px 0 20px; }
 .process-coverage .el-select { width: min(100%, 220px); }
 .process-trend-chart { display: flex; min-width: 0; }

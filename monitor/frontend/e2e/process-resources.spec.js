@@ -110,7 +110,7 @@ for (const [locale, labels, dark] of [['zh-cn', ['UP · 在线', 'UP · 在线',
     await expect(page.getByTestId('process-list')).toContainText(locale === 'en' ? 'Collection failed' : '采集失败')
     for (const tag of await page.getByTestId('process-online').all()) {
       expect(await tag.evaluate(el => {
-        const header = el.closest('.process-instance-header')
+        const header = el.closest('.module-instance-header')
         return el.getBoundingClientRect().right <= header.getBoundingClientRect().right + 1
       })).toBe(true)
     }
@@ -430,7 +430,7 @@ test('service resources use current System instances, local explanations and cor
   await expect(details.getByText('1小时', { exact: true })).toBeVisible()
   await expect(list).toContainText('未关联主机')
   await expect(list).toContainText('采样时间')
-  await list.locator('.process-metrics .field-help').first().hover()
+  await list.locator('.instance-metrics .field-help').first().hover()
   await expect(page.getByRole('tooltip')).toContainText('1 核 ≈ 占满一个逻辑核，可超过 1 核')
   expect(state.calls).toEqual(['1,2'])
   state.setMode('warmup')
@@ -719,7 +719,7 @@ for (const locale of ['zh-cn', 'en']) test(`service stop reasons preserve System
   // reaches its fixture. A rendered stop reason is not that request's barrier.
   expect(state.calls.at(-1)).toBe('22,23,24,26')
   await expect(page.getByTestId('process-list').getByTestId('process-instance')).toContainText(['mac-process-2'])
-  await expect(page.getByTestId('process-list').locator('.process-metrics dd strong')).toHaveText(['—', '—', '—'])
+  await expect(page.getByTestId('process-list').locator('.instance-metrics dd strong')).toHaveText(['—', '—', '—'])
   releaseFilteredSummary()
   await expect.poll(() => state.calls.at(-1)).toBe('2')
   expect(state.trendCalls).toHaveLength(0)

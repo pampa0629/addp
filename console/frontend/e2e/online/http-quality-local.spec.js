@@ -83,7 +83,7 @@ test('formal Python products to real Console HTTP quality', async ({ page }) => 
     if (input.phase === 'live') {
       await page.getByTitle('中文', { exact: true }).click()
       await page.getByRole('menuitem', { name: 'English', exact: true }).click()
-      await expect(monitor.getByTestId('http-quality')).toContainText('HTTP quality')
+      await expect(monitor.getByTestId('http-quality')).toContainText('HTTP monitoring')
       await expect(monitor.getByTestId('http-quality')).toContainText('Interfaces and trends')
       report.assertions.chinese_and_english = true
     }
