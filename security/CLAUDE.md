@@ -940,3 +940,13 @@ Service预览经 `queryExecutionClient` 调用共享 `createAPIClient`，其请�
 本次 Hosted 重启确认使用规定的 Swagger v1.16.6，Manager 生成文档后实际重编译。共享类型提交 `2199bb8ba953da8671969fe5f987f1a0bdf60c95` 给 `datatype.FieldInfo` 增加 `temporal`，但实际运行的提交未同步 Manager 等七模块的 Swagger 生成文件。候选审查遗漏了生成文件这一构建输入。隔离精确快照仅应用 Manager 三个文件的 `temporal` 定义，标准构建指纹由 `71433a1d0905…` 变为 `c6e02913418d…`，撤回后恢复。此前 Run42447289580 则由旧版生成器移除整数格式所致。两轮都在重启构建身份断言处失败，原因不同。失败轮未保留完整重启后 Ready 回执。本地独立全量生成未通过，Security 遇到类型解析错误，Manager 生成在完成上述隔离验证后终止。该结果不替代 Linux Hosted 复验。
 
 六项临时许可的签发、撤销、最终不可见和不可读均已独立核对，pending 与 errors 为空。wrapper 清理通过，Infra 零残留。artifact 13740964119 的 54 成员归档通过 CRC 及路径检查，SHA256 为 `409d15d58b39372729e556b246e752089e11acb67d8d2d7525fe3de94c298769`。独立审计和指纹记录在 `/tmp/p145-d02a-hosted-audit/`。下一步先由共享类型维护方同步受影响的生成文件并验证固定候选重新生成前后指纹一致，再由专门 CI 会话按授权安排同范围复验。此轮未修改构建断言或产品规则。
+
+### v44/v10 中英文保护到期和恢复 Hosted 验收（2026-11-10）
+
+[Run42805905216／Job129794843854](https://github.com/pampa0629/addp/actions/runs/42805905216/job/129794843854)，workflow_dispatch、attempt 1，实际 SHA `421da33a7455f9b5a36df3e852cd37d5be4a2f8f`。就绪检查、正式 gate 和 Hosted 证据上传均实际成功，条件式执行证据上传跳过。十服务预检匹配 SHA，27 个阶段通过，业务耗时 1921391 ms。原日志 5269–5270 行确认 Playwright 实际执行 1 项并通过。Manager 与 Security 的空间和 MongoDB 重启回执保持原构建身份，进程实例已替换。上轮构建失败保留原结论。
+
+同一私有 Service 预览先核对英文和中文正常响应。保护规则自然到期后，`Accept-Language` 分别为 `en` 和 `zh-cn` 的两次 POST 均返回 403。响应仅有 `error` 和 `error_code`，错误码为 `data_protection_required`。实际页面持续显示对应语言的到期原因和续期建议，移除旧结果和空结果提示。规则恢复长期有效后，中文请求返回 200 和五行，字段仅有 `id` 与 `customer_code`，敏感 `email` 被移除，持续错误消失。两次 403 对应保护规则到期。既有角色资格到期场景单列。
+
+独立审计通过：核对 Run、Job、SHA、实际步骤、ZIP CRC、安全路径及解压原件逐字节一致。v44 的 31 个领域段与独立 v10 报告一致，23 张必需 PNG 通过结构检查，四张 Service 拒绝和恢复图已目视核对。英文恢复截图还留有前一步中文成功通知，与新英文通知短时同屏。验收覆盖了持续错误和恢复结果，未覆盖切换时清除既有短时通知。六份默认导出 CSV 按固定样本逐字节核验，42 条导出响应记录、五组重启回执、六项许可正式撤销及最终不可见和不可读均通过。领域 23 建／23 删，浏览器两组各 2 建／2 删，均零残留。wrapper 清理通过，Infra 零残留。
+
+[原始归档 13763838201](https://github.com/pampa0629/addp/actions/runs/42805905216/artifacts/13763838201) 含 101 个成员，SHA256 为 `b987f01f33a40cc71e9af242ab986fc7aa45e08894fc3f6cdc79fe919b619586`。独立脚本、报告和四图哈希见 `/tmp/p145-421da33-independent.WpSncZ/`。两次 403 和恢复的 HTTP 状态、请求头、响应形状及数据由实际运行的浏览器断言核对，归档保留报告和截图，未保留对应原始网络响应。覆盖仍限 20 个实际出口格及 8 个协议格，future-start 仍仅真实 PostgreSQL T2。其他保护原因的实际 Service 页面、全部 SQL 形态及静态加密仍在原边界内待补。
