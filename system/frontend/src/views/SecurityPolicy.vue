@@ -1,7 +1,7 @@
 <template>
   <section class="iam-panel security-policy">
     <header class="policy-toolbar">
-      <div class="status-line">
+      <div v-if="loaded" class="status-line">
         <el-tag :type="form.pendingRestart ? 'warning' : 'success'" effect="plain">
           {{ form.pendingRestart
             ? t('system.securityPolicy.pendingRestart')
@@ -9,11 +9,11 @@
         </el-tag>
         <span>{{ t('system.securityPolicy.versions', { version: form.version, applied: form.appliedVersion }) }}</span>
       </div>
-      <el-button :icon="Refresh" circle :loading="loading" :title="t('system.securityPolicy.reload')" @click="load" />
+      <el-button :icon="Refresh" circle :loading="loading" :disabled="saving" :title="t('system.securityPolicy.reload')" @click="load" />
     </header>
 
     <el-alert
-      v-if="form.pendingRestart"
+      v-if="loaded && form.pendingRestart"
       class="restart-alert"
       type="warning"
       :closable="false"
@@ -21,7 +21,7 @@
       :title="t('system.securityPolicy.restartNotice')"
     />
 
-    <el-form ref="formRef" v-loading="loading" :model="form" :rules="rules" label-position="top">
+    <el-form v-if="loaded" ref="formRef" :model="form" :rules="rules" :disabled="!canSave" label-position="top" @submit.prevent>
       <section class="form-section">
         <h2>{{ t('system.securityPolicy.sessionSection') }}</h2>
         <div class="form-grid">
@@ -77,7 +77,7 @@
       </section>
 
       <footer v-if="canUpdate" class="form-actions">
-        <el-button type="primary" :icon="Check" :loading="saving" @click="save">
+        <el-button type="primary" :icon="Check" :loading="saving" :disabled="!canSave" @click="save">
           {{ t('system.securityPolicy.save') }}
         </el-button>
       </footer>
@@ -97,23 +97,11 @@ const { t } = useI18n()
 const authStore = useAuthStore()
 const formRef = ref(null)
 const loading = ref(false)
+const loaded = ref(false)
 const saving = ref(false)
 const canUpdate = computed(() => authStore.hasPermission('iam.security_policy.update'))
-const form = reactive({
-  version: 0,
-  appliedVersion: 0,
-  pendingRestart: false,
-  accessTokenTTLMinutes: 15,
-  delegatedAccessTokenTTLMinutes: 2,
-  resourceAccessTicketTTLMinutes: 15,
-  refreshTokenTTLDays: 30,
-  oauthAuthorizationCodeTTLMinutes: 5,
-  oauthDeviceCodeTTLMinutes: 10,
-  oauthDevicePollIntervalSeconds: 5,
-  tenantInvitationTTLHours: 168,
-  oauthPublicRateLimitPerMinute: 60,
-  oauthUserRateLimitPerMinute: 30
-})
+const canSave = computed(() => loaded.value && canUpdate.value && !saving.value)
+const form = reactive({})
 
 const rules = {
   resourceAccessTicketTTLMinutes: [{
@@ -141,9 +129,11 @@ function applyValue(value) {
 }
 
 async function load() {
+  loaded.value = false
   loading.value = true
   try {
     applyValue(await getIAMSecurityPolicy())
+    loaded.value = true
   } catch (_error) {
     ElMessage.error(t('system.securityPolicy.loadFailed'))
   } finally {
@@ -152,8 +142,9 @@ async function load() {
 }
 
 async function save() {
+  if (!canSave.value) return
   const valid = await formRef.value?.validate().catch(() => false)
-  if (!valid) return
+  if (!valid || !canSave.value) return
   saving.value = true
   try {
     const value = await updateIAMSecurityPolicy({
@@ -206,6 +197,8 @@ load()
   color: var(--addp-text-secondary);
   font-size: 13px;
 }
+
+.policy-toolbar > .el-button { margin-inline-start: auto; }
 
 .restart-alert { margin-bottom: 24px; }
 

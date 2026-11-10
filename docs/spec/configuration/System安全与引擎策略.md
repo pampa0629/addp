@@ -6,6 +6,8 @@
 
 System IAM 安全策略是 `platform_only` 的 System-owned 平台安全配置，由 Platform Security Administrator 使用 `iam.security_policy.read/update` 维护。Platform System Administrator 不继承该职责，Tenant Context 不得读取或修改。
 
+配置页在读取成功后展示策略值及已应用版本。仅有读取权限的会话可以查看，具有 `iam.security_policy.update` 的会话才能编辑和保存。读取失败时隐藏策略值、版本和保存入口，用户可重新读取。
+
 当前策略只包含以下普通运行字段：
 
 | 字段 | 单位 | 约束 |
