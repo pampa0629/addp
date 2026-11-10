@@ -226,11 +226,26 @@ def source_scrape_failed(prom, expression):
     return bool(prom.query("up" + expression + " == 0", at=at))
 
 
-def owned_action(service, action):
-    require(service in {"control-tls"} and action in {"stop", "start"}, "invalid fault action")
+def control_action(action):
+    require(action in {"stop", "start"}, "invalid control fault action")
     directory = FIXTURE.boundary()
-    FIXTURE.assert_owned(directory)
-    FIXTURE.compose(directory, action, service)
+    key = directory / "control/server.key"
+    withheld = directory / "control/server.key.disabled"
+    source, destination = (key, withheld) if action == "stop" else (withheld, key)
+    require(source.is_file() and not source.is_symlink() and not destination.exists(),
+            "control fault requires its owned certificate state")
+    # The exact lifecycle verifies process ownership. Withholding this fixture's
+    # key exercises optional-listener failure while the HTTP API remains usable.
+    environment = dict(os.environ, SKIP_MODTIDY="1")
+    with (directory / ("gateway-control-"+action+".log")).open("a") as output:
+        subprocess.run(["bash", "scripts/dev/stop-exact-process.sh", "-gateway"], cwd=FIXTURE.ROOT,
+                       env=environment, stdout=output, stderr=subprocess.STDOUT, check=True, timeout=60)
+        source.rename(destination)
+        subprocess.run(["bash", "scripts/dev/start.sh", "--exact-process", "-gateway"], cwd=FIXTURE.ROOT,
+                       env=environment, stdout=output, stderr=subprocess.STDOUT, check=True, timeout=300)
+    service = PREFLIGHT.Service("gateway", os.environ["GATEWAY_URL"])
+    require(PREFLIGHT.load_health(service, "/health/ready", 10).get("status") == "ready",
+            "Gateway HTTP must remain ready during control fault")
 
 
 def source_action(action):
@@ -3110,14 +3125,14 @@ def run(base, directory, report):
     report["overview_source_recovered"] = assert_resource_overview(admin.request("GET", OVERVIEW, (200,)).payload, node, query_policy["version"], node_input["display_name"], after=source_resumed_at)
     report["stage"] = "control-outage-recovery"
     baseline = sum(float(row["value"][1]) for row in prom.query("prometheus_sd_http_failures_total"))
-    owned_action("control-tls", "stop")
+    control_action("stop")
     try:
         eventually(lambda: sum(float(row["value"][1]) for row in prom.query("prometheus_sd_http_failures_total")) > baseline, "real control transport failure")
         require(active(), "failed discovery unexpectedly removed the last successful target")
         require(prom.query("up"+expression+" == 1"), "existing source scrape stopped with control plane")
         report["overview_control_unavailable"] = assert_resource_overview(admin.request("GET", OVERVIEW, (200,)).payload, node, query_policy["version"], node_input["display_name"])
     finally:
-        owned_action("control-tls", "start")
+        control_action("start")
     assert_discovery(machine, target, node["version"], processes)
     report["stage"] = "node-disable-and-resume"
     node = admin.request("PUT", NODES+"/"+node["node_id"], (200,), dict(node_input, enabled=False, version=node["version"])).payload

@@ -8,11 +8,11 @@
       "kind": "normative",
       "path": "transfer/docs/transfer-基本概念及配置说明.md",
       "anchor": "## 一、核心对象",
-      "commit": "34e19346fe84fccc77c5f5c25c52b91d54520faf",
-      "sha256": "52b56acd442511534e6cf174176a89a09910018e5e1fcf261225d4c110a1e8dc",
+      "commit": "c3fc306d2ab44bec91a68a253435c0dcdbc69a65",
+      "sha256": "d40fdf5d62f4a135ef198c19dbde7fdcd900aae987eb0e59942f759b5b4c8fcd",
       "use": {
-        "zh-cn": "复核 execution/attempt 恢复职责导航；停止态 bounded 创建、snapshot replace/append、显式运行及观测不等于验收的边界保持。",
-        "en": "Reviewed execution/attempt recovery navigation; stopped bounded creation, snapshot replace/append, explicit execution and observation limits remain unchanged."
+        "zh-cn": "复核执行计数改引执行记录表，原指标口径仍可定位。配置正文继续作为停止态 bounded 创建、snapshot replace/append、显式运行和恢复边界的依据。",
+        "en": "Reviewed the execution metrics reference to the execution record table, where the original counting rules remain documented. The configuration document remains evidence for stopped bounded creation, snapshot replace/append, explicit execution, and recovery boundaries."
       }
     },
     {

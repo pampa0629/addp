@@ -37,13 +37,13 @@ func TestIntegrationPostgresMonitoringTargetsAtomicBudgetAndCAS(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	r := repository.NewMonitoringTargetRepository(db)
+	r := repository.NewMonitoringTargetRepository(db, metricsdiscovery.DefaultExternalTargetLimit)
 	ctx := context.Background()
 	existing, err := r.Snapshot(ctx)
 	if err != nil || len(existing) != 0 {
 		t.Fatalf("standard test requires clean target fixture: count=%d err=%v", len(existing), err)
 	}
-	limit := (metricsdiscovery.TotalSampleReservation - metricsdiscovery.SelfSampleReservation) / metricsdiscovery.EndpointSampleLimit
+	limit := metricsdiscovery.DefaultExternalTargetLimit
 	// Leave one slot for the two concurrent creates and keep a spare ID for a
 	// contention-free assertion that the full budget rejects another write.
 	seedCount := limit - 1
@@ -110,9 +110,10 @@ func TestIntegrationPostgresMonitoringTargetsAtomicBudgetAndCAS(t *testing.T) {
 		t.Fatal(err)
 	}
 	row.Enabled = false
-	updated, err := r.Mutate(ctx, row, false, false, nil)
+	lowered := repository.NewMonitoringTargetRepository(db, limit-2)
+	updated, err := lowered.Mutate(ctx, row, false, false, nil)
 	if err != nil || updated.Version != 2 {
-		t.Fatalf("disable CAS: %v", err)
+		t.Fatalf("disable CAS after lowering the budget below the enabled count: %v", err)
 	}
 	if _, err := r.Mutate(ctx, row, false, false, nil); !errors.Is(err, repository.ErrTargetConflict) {
 		t.Fatalf("stale update: %v", err)

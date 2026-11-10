@@ -63,22 +63,21 @@ func (t NodeTarget) Validate() error {
 	return nil
 }
 
-// CheckReservations must also run inside the future target write transaction.
-// This is reservation of endpoint sample budgets, not a TSDB head-series cap.
-func CheckReservations(targets []NodeTarget) error {
+// CountTargetReservations validates the stored target set and counts enabled endpoints.
+func CountTargetReservations(targets []NodeTarget) (int, error) {
 	if len(targets) > TargetLimit {
-		return ErrBudgetExceeded
+		return 0, ErrBudgetExceeded
 	}
 	ids := make(map[string]bool)
 	subjects := make(map[struct{ node, kind string }]bool)
 	endpoints := make(map[string]bool)
-	reservation := SelfSampleReservation
+	reserved := 0
 	for _, target := range targets {
 		if err := target.Validate(); err != nil {
-			return err
+			return 0, err
 		}
 		if ids[target.ID] {
-			return ErrInvalidTarget
+			return 0, ErrInvalidTarget
 		}
 		ids[target.ID] = true
 		if !target.Enabled {
@@ -86,13 +85,22 @@ func CheckReservations(targets []NodeTarget) error {
 		}
 		key := struct{ node, kind string }{target.Subject.NodeID, target.MonitorKind}
 		if subjects[key] || endpoints[target.Source.Endpoint] {
-			return ErrInvalidTarget
+			return 0, ErrInvalidTarget
 		}
 		subjects[key], endpoints[target.Source.Endpoint] = true, true
-		reservation += EndpointSampleLimit
-		if reservation > TotalSampleReservation {
-			return ErrBudgetExceeded
-		}
+		reserved++
+	}
+	return reserved, nil
+}
+
+// CheckReservations bounds endpoint reservations, independent of actual TSDB series.
+func CheckReservations(targets []NodeTarget, targetLimit int) error {
+	reserved, err := CountTargetReservations(targets)
+	if err != nil {
+		return err
+	}
+	if reserved > targetLimit {
+		return ErrBudgetExceeded
 	}
 	return nil
 }
@@ -119,18 +127,16 @@ func (p *NodeProjector) Project(ctx context.Context, targets []NodeTarget) ([]Ta
 	}
 	ctx, cancel := context.WithTimeout(ctx, Timeout)
 	defer cancel()
-	if err := CheckReservations(targets); err != nil {
+	reserved, err := CountTargetReservations(targets)
+	if err != nil {
 		return nil, err
+	}
+	if reserved > p.policy.targetLimit {
+		return nil, ErrBudgetExceeded
 	}
 	snapshot, nodes, err := readIdentitySnapshot(ctx, p.identities, p.now)
 	if err != nil {
 		return nil, err
-	}
-	reservation := SelfSampleReservation
-	for _, target := range targets {
-		if target.Enabled {
-			reservation += EndpointSampleLimit
-		}
 	}
 	processes := map[struct{ module, instance string }]bool{}
 	validName := func(s string, max int) bool {
@@ -153,8 +159,8 @@ func (p *NodeProjector) Project(ctx context.Context, targets []NodeTarget) ([]Ta
 		if instance.ProcessMetrics.Validate() != nil || instance.ProcessStartedAt == nil || instance.ProcessStartedAt.IsZero() || instance.ProcessStartedAt.After(snapshot.ObservedAt) {
 			return nil, ErrIdentityUnavailable
 		}
-		reservation += EndpointSampleLimit
-		if reservation > TotalSampleReservation {
+		reserved++
+		if reserved > p.policy.targetLimit {
 			return nil, ErrBudgetExceeded
 		}
 	}
@@ -171,8 +177,8 @@ func (p *NodeProjector) Project(ctx context.Context, targets []NodeTarget) ([]Ta
 		}
 		engines[engine.DeploymentID], sources[engine.SourceKey] = true, true
 		if engine.Metrics != nil && engine.Metrics.State == "available" {
-			reservation += EndpointSampleLimit
-			if reservation > TotalSampleReservation {
+			reserved++
+			if reserved > p.policy.targetLimit {
 				return nil, ErrBudgetExceeded
 			}
 		}
@@ -212,9 +218,6 @@ func (p *NodeProjector) Project(ctx context.Context, targets []NodeTarget) ([]Ta
 			return nil, ErrInvalidTarget
 		}
 		physical[resolved.Address] = true
-		if len(groups) >= TargetLimit {
-			return nil, ErrBudgetExceeded
-		}
 		groups = append(groups, TargetGroup{Targets: []string{resolved.Address}, Labels: map[string]string{
 			"__scheme__": "https", "__metrics_path__": "/metrics",
 			"addp_module_name": instance.ModuleName, "addp_instance_id": instance.InstanceID, "addp_runtime_role": instance.Role,
@@ -231,9 +234,6 @@ func (p *NodeProjector) Project(ctx context.Context, targets []NodeTarget) ([]Ta
 		}
 		if physical[resolved.Address] {
 			return nil, ErrInvalidTarget
-		}
-		if len(groups) >= TargetLimit {
-			return nil, ErrBudgetExceeded
 		}
 		physical[resolved.Address] = true
 		groups = append(groups, TargetGroup{Targets: []string{resolved.Address}, Labels: map[string]string{

@@ -2250,7 +2250,7 @@ def validate_platform_node_metrics_profile(repository: Path, registered: set[str
             raise RegistrationError(f"platform-node-metrics regression is missing {filename}")
     gate = (repository / "scripts/test/online-hosted-node-metrics-gate.sh").read_text()
     for fragment in ('source "$ROOT_DIR/scripts/utils/hosted-online.sh"', "scripts/infra/node-metrics.py up",
-                     "scripts/infra/node-metrics.py down", "--suite platform-node-metrics", 'modules=(-monitor)',
+                     "scripts/infra/node-metrics.py down", "--suite platform-node-metrics", 'modules=(-monitor -gateway)',
                      'if [ "$ADDP_ONLINE_NODE_METRICS_CASE" = host-admission ] || [ "$ADDP_ONLINE_NODE_METRICS_CASE" = engine-admission ] || [ "$ADDP_ONLINE_NODE_METRICS_CASE" = redis-engine-admission ]; then modules+=(-system); fi',
                      'scripts/dev/start.sh "${modules[@]}"',
                      'run_logged python3 scripts/test/platform-node-metrics-fixture.py standard-cleanup || status=1',

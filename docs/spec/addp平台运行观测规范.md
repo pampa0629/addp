@@ -454,10 +454,12 @@ PostgreSQL 专业查询同时核验 `monitor.resource_observation.read` 与 Syst
 | 步长 | 至少 15 秒，随范围和预计序列规划；返回后再次核验，不静默截断 |
 | 查询超时与并发 | 总期限 5 秒；单主体 2、单 Monitor 进程上游 8；超限快速拒绝，无无界等待 |
 | TSDB 保留 | 7 天与 10 GiB 体积同时限制，可能提前淘汰；另预留 WAL/压缩空间 |
-| 来源序列预留 | 每端点 20,000，中心自身 20,000，全部署 260,000；Monitor 发现与 Prometheus 抓取同步限制为最多十二个外部来源 |
+| 来源序列预留 | 每端点和中心自身各 20,000。Monitor 和 Prometheus 使用同一部署变量 `ADDP_METRICS_TARGET_LIMIT`，接受 1 至 24 的整数，缺省 12。总预留为（外部来源上限 + 1）× 20,000。开发部署可选 24，对应 500,000。 |
 | 组件预算 | Prometheus 1 CPU/2 GiB，node_exporter 0.25 CPU/256 MiB；节点入口 0.25 CPU/128 MiB |
 
 来源准入按去重端点的预留配额原子校验，不能把当前少量序列或单端点 sample_limit 当作全局限额。查询预算可收紧并热生效，在途请求保持开始时版本；物理资源、卷与保留归 Infra。默认预算不是已证明的生产规模上限。
+
+开发部署有进程采集计划时，启动、重启和指标配置渲染均在应用前校验计划单元数、选中的本机主机来源以及 Infra 和 Business 引擎来源之和。即使来源暂未运行，也预留其名额。超额报告各类数量和上限，重启入口在停止进程前退出，指标配置渲染保留现有配置。手工添加的远程来源仍由 Monitor 在真实发现时纳入总预算。
 
 标签仅保存必要身份及有限维度，不加入 TraceId、请求/执行/用户 ID、完整 URL、SQL 或 Token。服务质量后续采用规范化 route 和有界直方图；无请求不虚构错误率和延迟。
 
@@ -590,15 +592,17 @@ HTTP 功能夹具的请求预算按失败／恢复阶段预留：Go 各 90 次�
 
 2026-10-29用户确认Linux独立HTTP预算入口的最小取证：在既有至多4 KiB的C语言du诊断中，仅解析严格识别的GNU/BSD绝对路径格式；最多八个非空诊断行，超出则整组标记超预算，不截断为完整。对属于当次私有根目录且无路径穿越、歧义引号或控制字符的对象，只保存root／go_cache／go_tmp／tmp／source／postgres_auth／tls／deployment／node_tls／control／query_tls／other类别及以当次project为域的相对路径SHA256身份散列；不保存原始路径、stderr或命令。无法识别、越界、混合格式明确标记，不猜测缺失对象；类别表示位置，不表示删除者。仅在原四秒截止内对根目录作一次不跟随符号链接的存在性观察，记录directory／missing／other／unavailable，预算不足记deadline、不追加探针；诊断及序列化开销计入原完整采样，已有du失败始终保留为首失败，不重试、不忽略、不缩小扫描范围。
 
-2026-10-30确认的编译取证于2026-11-04按用户授权统一为四阶段：以唯一compile_stages记录，不保留旧三阶段旁路或process_compile字段。只允许process_source、resource_windows、http_query、http_alert四个固定阶段，按此顺序分别对应标准shell的Common来源编译、monitor-metrics-probe.py指标窗口测试二进制编译及两次HTTP测试二进制编译；它们沿现有串行调用顺序、同一原子回执内核记录，不改变Go命令、环境及原编译超时；编译／采样与清理协调由下述用户确认的稳定读取条款统一规定。每阶段最多一次开始／观察结束，单调纳秒与实际退出码分别保存；未开始为not_started，只见开始／超时或取消未观察返回为incomplete，非法／倒退／越序／前序未成功即启动后序均invalid，不补造结束或覆盖前序事实。Python直接观察的负信号退出码保留原值；shell沿其原128加信号语义，不混淆为同一种内核事件。
+编译取证由标准入口创建回执时确定唯一 `case`：`http-quality` 严格依次执行 `gateway_control → process_source → resource_windows → http_query → http_alert`；`mtls-preflight` 严格执行 `gateway_control → resource_windows`，对应其实际 Gateway 协议夹具与资源窗口准备。未知、缺失或执行中变更 case 均拒绝，不兼容旧回执，不允许用预检的短序列证明完整 HTTP 通过。两种场景均沿唯一 `compile_stages` 记录并要求本场景所有阶段完整成功，不保留 `process_compile` 或直接编译旁路。历史报告保留当时事实，不补造新增阶段成功。
 
-2026-11-04确认补齐resource_windows受管编译：check_resource_windows中原直接go test -c统一调用已有run_owned_compile，不保留直接编译旁路，Go参数、cwd、环境和原180秒准备期限不变；后续测试二进制执行仍为原60秒，编译与执行均计入原1200秒总窗口，不另开期限。新增阶段复用同一归属、采样锁、暂停／确认／完整读取／finally恢复及清理内核，不改停止策略、统计范围或du失败语义。确定性门禁须核验HTTP实际可达的四次编译均受管，不能只验证原两次HTTP专属编译而漏掉公共前置调用。正常HTTP通过要求四阶段完整且依序成功，旧报告按历史三阶段事实保留，不补造resource_windows成功记录、不按新标准追认通过。原完整四秒、4 CPU／4 GiB、私有可写<2 GiB、1200秒及首失败停止／清理保持；本批仅本地确定性验证，不推送、不手动重跑或新开窗口，不运行Hosted、容量或定时。已证编排覆盖缺口不等于已直接观测历史具体删除进程或消失时刻。
+Gateway 准备编译通过已有 `run_owned_compile`，准备期限为 180 秒并受剩余工作截止约束；其余 Common 来源、资源窗口和两次 HTTP 编译保持原 Go 参数、cwd、环境与期限。所有编译共用当次私有缓存／临时目录和原进程归属、采样互斥、暂停／确认／恢复及清理内核。HTTP 原四阶段的相对顺序不变；mTLS 预检保留资源窗口测试，业务请求仍严格为零。每阶段最多一次开始／观察结束，单调纳秒与实际退出码分别保存；未开始为 `not_started`，只见开始／超时或取消未观察返回为 `incomplete`，非法／倒退／越序／前序未成功即启动后序均 `invalid`，不补造结束或覆盖前序事实。Python 直接观察的负信号退出码保留原值；shell 沿其原 128 加信号语义，不混淆为同一种内核事件。
+
+确定性门禁须覆盖两种完整阶段序列、错 case、缺少 Gateway、乱序／重复／失败拒绝，以及 Gateway 超时、采样暂停互斥和终止回收后才删除私有目录。原总 1200 秒、工作 1080 秒、清理 120 秒、完整四秒采样、4 CPU／4 GiB、私有可写小于 2 GiB、首失败停止清理均不变；不为新编译另开窗口。无回执的其他专项仍沿既有有界编译调用，不新增预算模型。
 
 2026-11-03用户确认准备目录的最小分类扩展：在原directory_objects的category内，仅按当次私有根目录下第一层名称精确映射postgres-auth→postgres_auth、tls→tls、deployment→deployment、node-tls→node_tls、control→control、query-tls→query_tls，目录本身及其任意深度后代使用同一位置类别；其他位置继续other，不按后代名称、近似前缀或临时文件命名推定来源。字段结构、当次project与相对路径的SHA256算法保持，不增加文件名、原路径、stderr、阶段或删除者字段，不读取文件系统、追加命令或扩大输入。新增类别只表示归属位置，不能据旧other哈希回填新类别，也不证明具体删除者、原子发布操作或根因。原4 KiB／最多八个非空诊断行、不可归属／越界／歧义／混合状态和首失败语义不变；诊断仍计入原四秒，不增加重试、不忽略du失败、不缩小统计范围、不改采样或互斥。先修规范和确定性门禁，本批不推送触发构建、不重试构建或新开窗口，不运行Hosted／容量／定时；原4 CPU／4 GiB、私有可写<2 GiB、1200秒及清理标准保持。
 
-du失败保留完整采样起点、命令开始和观察退出的原始单调秒端点（与编译纳秒同属该主机时钟，不从舍入耗时反推），以及取得采样锁后读取回执所见compile_stages_at_sample_read；退出报告另保留最终compile_stages，两者不混用为失败时状态。不输出原始路径／stderr、命令、环境或新增进程删除跟踪。报告只含固定阶段名、封闭状态和数值；阶段观察不证明删除者。正常HTTP通过还要求四个编译阶段均有完整成功边界；mTLS前置未进入编译，保留not_started。取证记录异常不能覆盖已有业务／编译／du首失败，也不能把不完整取证宣称为通过。本批先修规范及确定性门禁，再沿自然Linux CI，不手动重跑、不新开本地窗口，不运行Hosted／容量／定时；原4 CPU／4 GiB、私有可写小于2 GiB、完整四秒及1200秒预算保持，go_tmp历史删除者仍未确定。
+du失败保留完整采样起点、命令开始和观察退出的原始单调秒端点（与编译纳秒同属该主机时钟，不从舍入耗时反推），以及取得采样锁后读取回执所见compile_stages_at_sample_read；退出报告另保留最终compile_stages，两者不混用为失败时状态。不输出原始路径／stderr、命令、环境或新增进程删除跟踪。报告只含固定阶段名、封闭状态和数值；阶段观察不证明删除者。正常 HTTP 和 mTLS 前置均须按各自固定 case 证明全部编译阶段完整成功。取证记录异常不能覆盖已有业务／编译／du首失败，也不能把不完整取证宣称为通过。本批先修规范及确定性门禁，再沿自然Linux CI，不手动重跑、不新开本地窗口，不运行Hosted／容量／定时；原4 CPU／4 GiB、私有可写小于2 GiB、完整四秒及1200秒预算保持，go_tmp历史删除者仍未确定。
 
-2026-10-30用户进一步确认Linux HTTP稳定读取：四个阶段统一由同一受管Go调用内核启动，Go子进程独占当次会话／进程组，启动时先自停；持原采样锁登记阶段、组长PID／平台出生身份（Linux tick、Darwin起始时刻摘要）、会话／组号及直接调用者身份后才恢复执行。组长退出须在持该锁时回收，不在采样期间释放PID身份。Linux /proc与Darwin原生ps／会话系统调用按相同契约只读取固定身份／状态元数据，最多4096个PID目录、64个当次组成员，每份stat最多4 KiB，超限拒绝，不截断成成功；组长、调用者、UID、出生身份及组／会话不符时不得向其发信号。记录发布复用当次目录的有界元数据锁，避免编译与提前清理回执互相覆盖，不引入全局锁或进程名推断。
+Linux HTTP 稳定读取：各 case 的全部编译阶段统一由同一受管 Go 调用内核启动，Go子进程独占当次会话／进程组，启动时先自停；持原采样锁登记阶段、组长PID／平台出生身份（Linux tick、Darwin起始时刻摘要）、会话／组号及直接调用者身份后才恢复执行。组长退出须在持该锁时回收，不在采样期间释放PID身份。Linux /proc与Darwin原生ps／会话系统调用按相同契约只读取固定身份／状态元数据，最多4096个PID目录、64个当次组成员，每份stat最多4 KiB，超限拒绝，不截断成成功；组长、调用者、UID、出生身份及组／会话不符时不得向其发信号。记录发布复用当次目录的有界元数据锁，避免编译与提前清理回执互相覆盖，不引入全局锁或进程名推断。
 
 完整资源检查原绝对四秒从锁等待前起计。采样取得锁后，若存在登记的编译组，仅发一次组SIGSTOP，等待两次连续成员集合一致且所有存活成员停止；成员变化／无法确认／超时即失败，不重试du或换组补读。随后沿原容器／卷／私有目录全量路径采样，finally始终尝试恢复同一自有组并确认存活成员已退出停止态；为恢复预留50毫秒，从原四秒内扣减而非追加，最终恢复和判定也必须在截止内才可通过。确认无存活写者的已退出组仍保留身份直到持锁回收；下一阶段不得越过正在采样的锁启动。根目录缺失必须失败，不得补零。原首du失败不得由恢复失败覆盖，暂停／确认／恢复耗时和固定结果另列，不输出命令／原始路径／stderr。
 
@@ -626,7 +630,7 @@ HTTP 资源采样与清理沿当次私有预算目录的同一文件锁交接：
 
 2026-10-27 用户确认首轮使用正式 Agent／Copilot 产品后端和 Console／Monitor 接口质量页；通过临时真实密码／MFA／AuthContext，验证只读2xx／4xx、真实注册及采集查询和一次当次Copilot停源。不调用模型／工具，不注入5xx、不重演告警通知，不将已有SDK Linux T2证据改写为正式产品这些场景实测。Platform系统管理员读取观测及Copilot配置，普通Tenant User仅持有agent.session.read；安全管理员和Tenant为平台观测拒绝负例。不将不可租户定制的copilot.configuration.read塞入自定义租户角色，不新增产品权限或角色。
 
-唯一人工入口为make test-monitor-http-local，确定性入口为make test-monitor-http-local-runner；真实入口拒绝GitHub Actions／Hosted／容量／定时标记。复用已有本机隔离生命周期、正式产品构建／Compose、IAM Bootstrap／密码与MFA基础流程、浏览器和清理内核，不复制第二套实现，不复用Trace业务标记或扩大旧Trace夹具权限。System-owned HTTP本地身份夹具只接受当次私有目录、回环独占PostgreSQL addp_test及随机cluster_name联合准入，不接触共享addp-postgres，不直接签发会话或篡改授权表。五后端System／Gateway／Monitor／Agent／Copilot、PostgreSQL／Redis／Prometheus及既有指标私有控制代理、Console／System／Monitor前端和Nginx均限当次隔离网络；不启动AI业务依赖或额外Runtime。隔离投影必须显式选择既有observability-metrics及observability-metrics-control两个Compose profile；配置缺少所选服务时按封闭错误失败，不能把未启用profile的缺项视作产品服务不存在。产品命名卷保留原初始化选项，不因隔离投影统一覆盖nocopy；当次TLS输入卷仍由既定受控复制准备并只读挂载。卷测量及当次TLS准备所用Nginx仅接受既定固定摘要的本地缓存镜像：先只读核验仓库摘要、不可变镜像ID及Linux ARM64，再以该ID和--pull=never运行。缺失、错配或读取失败立即停止，不隐式拉取、更换摘要或放宽TLS；该准入不代表镜像内进程或后续产品构建已验收。
+唯一人工入口为make test-monitor-http-local，确定性入口为make test-monitor-http-local-runner；真实入口拒绝GitHub Actions／Hosted／容量／定时标记。复用已有本机隔离生命周期、正式产品构建／Compose、IAM Bootstrap／密码与MFA基础流程、浏览器和清理内核，不复制第二套实现，不复用Trace业务标记或扩大旧Trace夹具权限。System-owned HTTP本地身份夹具只接受当次私有目录、回环独占PostgreSQL addp_test及随机cluster_name联合准入，不接触共享addp-postgres，不直接签发会话或篡改授权表。五后端System／Gateway／Monitor／Agent／Copilot、PostgreSQL／Redis／Prometheus及Gateway内嵌指标私有mTLS入口、Console／System／Monitor前端和Nginx均限当次隔离网络；不启动AI业务依赖或额外Runtime。隔离投影显式选择observability-metrics Profile并叠加Gateway私有mTLS部署配置；配置缺少所选服务时按封闭错误失败。产品命名卷保留原初始化选项，不因隔离投影统一覆盖nocopy；当次TLS输入卷仍由既定受控复制准备并只读挂载。卷测量及当次TLS准备所用Nginx仅接受既定固定摘要的本地缓存镜像：先只读核验仓库摘要、不可变镜像ID及Linux ARM64，再以该ID和--pull=never运行。缺失、错配或读取失败立即停止，不隐式拉取、更换摘要或放宽TLS；该准入不代表镜像内进程或后续产品构建已验收。
 
 固定 Nginx 的本机准入仅为现有一次 `docker image inspect` 保留 `sampler_image_inspect` 回执。规范化签名对 GET、去 API 版本前缀并解码一次的固定镜像检查路径、空查询参数取 SHA256。报告同时记录当次 run_id、宿主 command_id、命令结果及原五秒截止，复用已有单调计时记录进程启动、等待／观察退出、读取输出、判定及取消回收边界。命令前后用宿主单调时间包围 UTC 墙钟采样点，供日志检索和跳变检查。未到达的边界保留为空，取消回收实耗单列。签名描述预期请求，宿主命令号只关联当次报告。回执不保存命令参数、socket 路径、环境或命令输出，不增加 Docker 调用或改变 API 协商、五秒期限及首次失败即停的处理。
 

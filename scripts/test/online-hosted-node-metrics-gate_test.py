@@ -103,7 +103,7 @@ class HostedMetricsGateTest(unittest.TestCase):
         result = self.run_gate()
         self.assertEqual(result.returncode, 0, result.stdout+result.stderr)
         trace = self.host.trace.read_text()
-        for item in ("infra-up", "metrics-fixture:prepare", "node-source:up", "metrics-fixture:up", "metrics-fixture:query", "start:-monitor",
+        for item in ("infra-up", "metrics-fixture:prepare", "node-source:up", "metrics-fixture:query", "start:-monitor",
                      "browser-prepare:--prefix console/frontend exec -- playwright install --with-deps chromium", "make:test-online ONLINE_SUITE=platform-node-metrics", "application-stop", "metrics-fixture:down", "node-source:down", "infra-down"):
             self.assertIn(item, trace)
         self.assertLess(trace.index("metrics-fixture:query"), trace.index("start:-monitor"))
@@ -147,7 +147,7 @@ class HostedMetricsGateTest(unittest.TestCase):
                 result = self.run_gate(ADDP_ONLINE_NODE_METRICS_CASE='standard-startup', **({failure: '1'} if failure else {}))
                 self.assertEqual(result.returncode == 0, failure is None, result.stdout+result.stderr)
                 trace = self.host.trace.read_text()
-                self.assertIn('start:-monitor\n', trace)
+                self.assertIn('start:-monitor -gateway\n', trace)
                 self.assertNotIn('start:-standard', trace)
                 self.assertIn('suite-timeout:1800', trace)
                 self.assertLess(trace.index('application-stop'), trace.index('metrics-fixture:standard-cleanup'))
@@ -159,7 +159,7 @@ class HostedMetricsGateTest(unittest.TestCase):
         result = self.run_gate(ADDP_ONLINE_NODE_METRICS_CASE="host-admission")
         self.assertEqual(result.returncode, 0, result.stdout+result.stderr)
         self.assertIn("metrics-case:host-admission", self.host.trace.read_text())
-        self.assertIn("start:-monitor -system", self.host.trace.read_text())
+        self.assertIn("start:-monitor -gateway -system", self.host.trace.read_text())
         self.assertIn("infra_cleanup=zero_residuals", (self.host.artifacts/"summary.txt").read_text())
 
     def test_meta_workers_uses_the_same_owned_deployment_and_cleanup(self):
@@ -206,7 +206,7 @@ class HostedMetricsGateTest(unittest.TestCase):
             self.assertEqual(result.returncode==0,failure is None,result.stdout+result.stderr)
             trace=self.host.trace.read_text()
             self.assertIn("metrics-fixture:engine-up",trace);self.assertIn("metrics-fixture:engine-down",trace);self.assertIn("infra-down",trace)
-            if failure!="ADDP_TEST_ENGINE_UP_FAIL":self.assertIn("start:-monitor -system",trace)
+            if failure!="ADDP_TEST_ENGINE_UP_FAIL":self.assertIn("start:-monitor -gateway -system",trace)
             self.assertFalse(self.host.secrets.exists())
         for project in ("business", self.metrics_project()):
             with self.subTest(occupied=project):
@@ -225,7 +225,7 @@ class HostedMetricsGateTest(unittest.TestCase):
                 self.assertIn("metrics-fixture:engine-down", trace)
                 self.assertIn("infra-down", trace)
                 self.assertFalse(self.host.secrets.exists())
-                if failure != "ADDP_TEST_ENGINE_UP_FAIL": self.assertIn("start:-monitor -system", trace)
+                if failure != "ADDP_TEST_ENGINE_UP_FAIL": self.assertIn("start:-monitor -gateway -system", trace)
         for scope in ("infra", "business"):
             for variable, value in (("ADDP_TEST_OCCUPIED_PROJECT", prefix), ("ADDP_TEST_OCCUPIED_VOLUME", prefix+"-"+scope+"-redis-private")):
                 with self.subTest(variable=variable, scope=scope):

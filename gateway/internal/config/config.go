@@ -27,7 +27,10 @@ type Config struct {
 	// Authentication
 	ServiceClientSecret string
 
-	ModuleWatchTimeout time.Duration
+	ModuleWatchTimeout       time.Duration
+	MetricsControlListen     string
+	MetricsControlServerName string
+	MetricsControlTLSDir     string
 }
 
 func Load() *Config {
@@ -61,7 +64,10 @@ func Load() *Config {
 
 		ServiceClientSecret: getEnv("GATEWAY_SERVICE_CLIENT_SECRET", ""),
 
-		ModuleWatchTimeout: moduleWatchTimeout,
+		ModuleWatchTimeout:       moduleWatchTimeout,
+		MetricsControlListen:     os.Getenv("GATEWAY_METRICS_CONTROL_LISTEN"),
+		MetricsControlServerName: os.Getenv("GATEWAY_METRICS_CONTROL_SERVER_NAME"),
+		MetricsControlTLSDir:     os.Getenv("GATEWAY_METRICS_CONTROL_TLS_DIR"),
 	}
 }
 

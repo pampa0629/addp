@@ -1,6 +1,7 @@
 import axios from 'axios'
 import ModuleAccessDenied from '../components/ModuleAccessDenied.vue'
 import { allowsConsoleRoute } from '../authorization/consoleRouteAccess'
+import { getCurrentLang } from './useAddpI18n.js'
 
 import {
   createBrowserAuthSession,
@@ -671,7 +672,11 @@ export function createAPIClient(getAuthStore, options = {}) {
   if (!moduleName) throw new Error('moduleName is required for createAPIClient')
 
   const client = axios.create({ baseURL, timeout })
-  client.interceptors.request.use(createAuthInterceptor(getAuthStore, moduleName), Promise.reject)
+  const authorize = createAuthInterceptor(getAuthStore, moduleName)
+  client.interceptors.request.use((config) => {
+    config.headers.set('Accept-Language', getCurrentLang())
+    return authorize(config)
+  }, Promise.reject)
 
   if (!enableRefresh) {
     if (extractData) client.interceptors.response.use((response) => response.data, Promise.reject)

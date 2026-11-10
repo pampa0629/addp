@@ -124,7 +124,7 @@ func resourceSourcePolicyWithNetwork(t *testing.T, prefixes []netip.Prefix, port
 	if e != nil {
 		t.Fatal(e)
 	}
-	p, e := metricsdiscovery.NewSourcePolicy(prefixes, ports, x509.NewCertPool(), tls.Certificate{Certificate: [][]byte{der}, PrivateKey: key})
+	p, e := metricsdiscovery.NewSourcePolicy(prefixes, ports, x509.NewCertPool(), tls.Certificate{Certificate: [][]byte{der}, PrivateKey: key}, metricsdiscovery.DefaultExternalTargetLimit)
 	if e != nil {
 		t.Fatal(e)
 	}

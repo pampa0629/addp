@@ -72,7 +72,7 @@ def load(path):
     return module
 
 
-def environment(scope, inherited):
+def environment(scope, inherited, root=None):
     """Load only the selected deployment's trusted shell configuration, privately."""
     base = {key: inherited[key] for key in OS_KEYS if key in inherited}
     if inherited.get('ADDP_ONLINE_HOST') == '1':
@@ -83,7 +83,7 @@ def environment(scope, inherited):
         base['ADDP_ONLINE_ENV_FILE'] = filename
         config = Path(filename)
     else:
-        config = ROOT / ('business/.env' if scope == 'business' else '.env')
+        config = (ROOT if root is None else root) / ('business/.env' if scope == 'business' else '.env')
     if not config.exists():
         raise ValueError('Deployment configuration is missing')
     result = subprocess.run(['bash', '-eu', '-c', 'set -a; source "$1" >&2; env -0',

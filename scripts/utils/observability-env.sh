@@ -42,7 +42,6 @@ addp_observability_profiles() {
   if addp_traces_enabled; then profiles+=(observability-traces); fi
   if addp_metrics_enabled; then
     profiles+=(observability-metrics)
-    if [[ "${ADDP_METRICS_CONTROL_ENABLED-false}" == true ]]; then profiles+=(observability-metrics-control); fi
   fi
   if (( ${#profiles[@]} )); then
     local IFS=,
@@ -221,11 +220,11 @@ addp_startup_metrics_summary() {
     false) echo '指标中心：未启用' ;;
     true)
       addp_metrics_component_summary '指标中心' prometheus addp-prometheus || result=1
-      case "${ADDP_METRICS_CONTROL_ENABLED-false}" in
-        false) echo '采集控制入口：未启用' ;;
-        true) addp_metrics_component_summary '采集控制入口' metrics-control addp-metrics-control || result=1 ;;
-        *) echo '采集控制入口：配置无效'; result=1 ;;
-      esac
+      if [[ -n "${GATEWAY_METRICS_CONTROL_LISTEN:-}" ]]; then
+        echo '采集控制入口：已选择 Gateway 私有监听，需验证 mTLS 与 OAuth。'
+      else
+        echo '采集控制入口：未选择 Gateway 私有监听。'
+      fi
       ;;
     *) echo '指标中心：配置无效'; result=1 ;;
   esac

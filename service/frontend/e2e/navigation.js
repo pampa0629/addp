@@ -15,7 +15,8 @@ import { useAuthStore } from '../src/store/auth'
 // reloads inside this isolated fixture; authentication has its own browser gate.
 serviceRouter.options.history.destroy()
 const router = createRouter({ history: createWebHashHistory(), routes: serviceRouter.options.routes })
-const { i18n } = createAddpI18n({ moduleMessages: { 'zh-cn': zh, en }, listenToConsole: false })
+const { i18n, init } = createAddpI18n({ moduleMessages: { 'zh-cn': zh, en } })
+init()
 const pinia = createPinia()
 useAuthStore(pinia).authContext = {
   context: { type: 'tenant', tenant_id: '7' },

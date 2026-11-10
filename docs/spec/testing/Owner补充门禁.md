@@ -24,7 +24,7 @@
 | G5 | 等待G或业务行锁期间lease到期；旧heartbeat、材料Save、待审项、计数、事件、终态全部拒绝，私有写入不先提交 | PG T2；Common＋Graph | Common／Graph PG入口，真实行锁门闩验证；SQLite或只核execution更新不能代替 | WaitForAdmissionPastLease覆盖材料／审核／进度／终态四类锁后失权；不等于全部锁排列通过。 |
 | G6 | 外部写成功而PG回执丢失、取消超时或旧进程失联：执行失败但效果待核清；禁止自动重放／人工重跑／Cleanup；伪造、错attempt和不完整停止证据拒绝 | T1、PG与原生引擎T2；Graph／Common Provider | 受控Provider/HTTP夹具验证不确定窗口，并复用`make test-common-falkordb`／`make test-common-neo4j`补原生副作用交界；当前断言不充分须同次扩展。真实跨进程在途语义另需T4，不从mock或PG推断远端已停止 | UncertainEffects及持久操作已接；原生丢回包故障runner／证据仍缺，恢复能力暂缓。 |
 | G7 | 旧实例只可追加已绑定的停止证据，不能补结果／改终态；TTL、清lease、进程退出和确认布尔值不能直接解除；核清后不自动继续 | T1、PG T2；Graph | 同Graph入口；核清／重新开放按已确认的独立Permission、原目标和服务端证据契约验证，不增无条件解锁API | known操作核清与拒绝路径有T1／PG；可信绑定及positive reopen暂缓。 |
-| G8 | 材料实际字节摘要、本体执行映射、目标身份变化被拒；活动材料不可删除／覆盖，快照不含秘密；不迁Ontology版本协议 | T1、PG T2；Graph | Graph标准入口；不将输入冻结测试外推为Ontology不可变发布验收 | 输入冻结代码和局部T1已定位；完整材料／本体／登记目标漂移组合待补，物理代际不外推。 |
+| G8 | 材料实际字节摘要、本体执行映射、目标身份变化被拒；活动材料不可删除／覆盖，快照不含秘密；不迁Ontology版本协议 | T1、PG T2；Graph | Graph标准入口；不将输入冻结测试外推为Ontology不可变发布验收 | BuildInputRuntime 用真实 PG 核对材料与 CatalogPath 入队冲突、活动材料拒绝变更、同长度字节变动、冻结本体映射改写及登记版本变化。正常本体编辑后，原执行仍用冻结映射。System 登记和 Copilot 用受控响应，物理代际及原生效果另验。 |
 | G9 | 构建终态后人工审核仍可用；并发批准／拒绝／修改唯一裁决；关闭准入拒新审核、在途结果不明阻清理，原审核结果／已提交图数据不隐式清空 | T1、PG T2；Graph | Graph模块／PG；涉及页面响应时才补相关Console T3；有效原生审核历史不重复运行 | ReviewCommandSurvivesBuildAndBlocksDeletion已定位；G关闭与在途审核的PG交错待补。 |
 | C1 | System创建请求／父／全部expected子pending同事务；同父同Owner唯一，重复来源事件去重，相同ID不同内容拒绝，同参独立合法动作不误合并 | T1、PG T2；System＋Common | `make test-module MODULE=system`及Common PG；`make test-system-cleanup`已登记，运行System service真实PG用例并拒绝skip。IAM PG不替代此入口；不为旧Stream增加Redis协调门禁 | CreateCleanupExecutions及AcceptanceAtomicity／Idempotence已定位；不是待建入口。 |
 | C2 | 子创建／claim失败不执行；P→精确C锁串行化父永久关闭与领取；父临时无lease仅等待；Owner对未领取子仅拒绝为failed，不claim、不造执行回执；已领取子依自身lease收尾，失联不重放 | T1、PG T2；Common＋System＋参与Owner | 下列C2子矩阵细化已确认的[父子协议](../addp-cleanup体系规范.md#父关闭与子领取协议)，已有公共原语与部分PG用例；沿System Cleanup PG与各Owner既有标准入口补齐定位列中的缺口，不把Graph取消例外套用全体Owner | ClaimCleanupChild、公共生命周期与两项PG锁交错已定位；细见C2a—C2j。 |
@@ -77,7 +77,7 @@ C5a—C5m的公共投影、读取和共享组件已接线；现有用例仅覆�
 
 职责以角色划分，不因本表派发或授予实现权：统一主责维护Common公共原语与整体迁移，Graph维护私有监督器／准入／操作证据，System维护闭合请求及父子创建／汇总，Ontology继续独占修订发布，Monitor只核安全读取，Make／CI／选择／登记由统一CI负责人单一整合。本文与正式契约已由Graph文档会话交接并经用户确认；统一主责接管契约及实施，未取得的新接口／权限决定仍须用户确认。
 
-入口现状：Common的Graph PG分组已运行repository的 `^TestIntegrationPostgresGraph` 及service的 `^TestIntegrationPostgresGraphCleanupRuntime$`，均拒绝skip；后续新增函数或包仍须核对筛选与清理校验，不能仅凭文件位置推定覆盖。两个原生图引擎T2沿现有Common入口扩真实副作用／结果不确定断言；它们不证明Backend跨实例取消或Hosted故障恢复。System Cleanup现有入口以PG为必需依赖，不复制IAM的Redis连接探针，不为已经删除的协调路线保留第二套测试事实。
+入口现状：Common的Graph PG分组已运行repository的 `^TestIntegrationPostgresGraph` 及 service 的 `^TestIntegrationPostgresGraph(BuildInputRuntime|CleanupRuntime)$`，两个 service 主用例均须明确 PASS，所有分组拒绝 skip；后续新增函数或包仍须核对筛选与清理校验，不能仅凭文件位置推定覆盖。两个原生图引擎T2沿现有Common入口扩真实副作用／结果不确定断言；它们不证明Backend跨实例取消或Hosted故障恢复。System Cleanup现有入口以PG为必需依赖，不复制IAM的Redis连接探针，不为已经删除的协调路线保留第二套测试事实。
 
 Graph原生身份候选先沿 `make test-common-neo4j` 的既有固定摘要Community 5.26.24独占实例验证。保持同一随机回环端口、数据库名与连接身份，分别核对初始存储、同卷重启、归档后新增数据、销毁旧卷后的同名新存储、旧归档装载到新存储及恢复后重启，并补含system的整卷克隆／重启；同时观察db.info、dbms.info及该版本实际暴露的databaseID，缺失字段明确不具备该项证据。必须证明归档恢复真实发生，不能只比较名称或空图。身份观察为固定原生只读查询，样例写入与离线dump/load仅操作本轮独占夹具，不新增生产控制节点、原生账号或Provider恢复能力。若不同存储及回退的数据返回相同id／creationDate候选，记录身份候选不足的反例，正向绑定／reopen继续阻断。认证失败必须保留为失败，不当成缺失身份；Community夹具现有连接认证不等于已验证细粒度普通角色授权。新增阶段必须实际运行、无SKIP，失败与成功均销毁本轮容器／卷／网络并核对零残留；原有Common及Graph领域T2断言全部保留。
 

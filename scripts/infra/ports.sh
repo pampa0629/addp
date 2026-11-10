@@ -208,6 +208,17 @@ addp_infra_apply_endpoints() {
   export KAFKA_CONNECT_URL="http://${host}:${KAFKA_CONNECT_PORT}"
 }
 
+# Keep Trace port discovery scoped to this check so it cannot change the
+# caller's core or log endpoints.
+addp_infra_trace_ready() (
+  ADDP_INFRA_PORT_SCOPE=traces addp_infra_read_actual_ports || return 1
+  [[ -n "${TRACE_OTLP_PORT:-}" && -n "${TRACE_QUERY_PORT:-}" ]] || return 1
+  addp_infra_verify_container tempo addp-tempo || return 1
+  [[ "$(docker inspect --format '{{.State.Running}}' addp-tempo)" == true ]] || return 1
+  [[ "$(docker inspect --format '{{.State.Health.Status}}' addp-trace-query)" == healthy ]] || return 1
+  [[ "$(docker inspect --format '{{json .Config.Cmd}}' addp-alloy)" == *'"/trace-deployment/runtime.alloy"'* ]]
+)
+
 addp_infra_ready() {
   local scope="${1:-all}"
   local service variable internal preferred container state
@@ -217,4 +228,7 @@ addp_infra_ready() {
     state=$(docker inspect --format '{{.State.Running}}:{{if .State.Health}}{{.State.Health.Status}}{{end}}' "$container" 2>/dev/null) || return 1
     case "$state" in true:healthy|true:) ;; *) return 1 ;; esac
   done < <(addp_infra_port_specs)
+  if [[ "$scope" != core ]] && addp_traces_enabled; then
+    addp_infra_trace_ready >/dev/null 2>&1
+  fi
 }

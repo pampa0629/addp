@@ -24,7 +24,7 @@ scrape_configs:
     metrics_path: /metrics
     honor_labels: false
     follow_redirects: false
-    target_limit: 12
+    target_limit: @@TARGET_LIMIT@@
     sample_limit: 20000
     body_size_limit: 10MB
     label_limit: 20
@@ -41,7 +41,7 @@ scrape_configs:
         follow_redirects: false
         tls_config:
           ca_file: /etc/prometheus/deployment/control-ca.crt
-          min_version: TLS12
+@@CONTROL_MTLS@@          min_version: TLS12
         oauth2:
           client_id: addp-prometheus
           client_secret_file: /etc/prometheus/deployment/prometheus-client-secret
@@ -52,7 +52,7 @@ scrape_configs:
             audience: addp.api
           tls_config:
             ca_file: /etc/prometheus/deployment/control-ca.crt
-            min_version: TLS12
+@@OAUTH_MTLS@@            min_version: TLS12
 @@DESKTOP_LOOPBACK@@    metric_relabel_configs:
       # Remove exporter-owned temporary labels before saving controlled identities.
       - action: labeldrop

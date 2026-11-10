@@ -80,7 +80,6 @@ run_logged python3 scripts/test/platform-node-metrics-fixture.py prepare
 source "$ADDP_ONLINE_SECRET_DIR/metrics.env"
 node_owned=1
 run_logged python3 scripts/infra/node-metrics.py up
-run_logged python3 scripts/test/platform-node-metrics-fixture.py up
 # Start the sole center through Infra, then bind query origin to its actual port.
 run_logged bash scripts/infra/up.sh
 run_logged python3 scripts/test/platform-node-metrics-fixture.py query
@@ -90,7 +89,7 @@ if [ "$ADDP_ONLINE_NODE_METRICS_CASE" = engine-admission ] || [ "$ADDP_ONLINE_NO
   run_logged python3 scripts/test/platform-node-metrics-fixture.py engine-up
 fi
 application_owned=1
-modules=(-monitor)
+modules=(-monitor -gateway)
 if [ "$ADDP_ONLINE_NODE_METRICS_CASE" = host-admission ] || [ "$ADDP_ONLINE_NODE_METRICS_CASE" = engine-admission ] || [ "$ADDP_ONLINE_NODE_METRICS_CASE" = redis-engine-admission ]; then modules+=(-system); fi
 run_daemon_launcher_logged env SKIP_MODTIDY=1 bash scripts/dev/start.sh "${modules[@]}"
 run_logged npm --prefix console/frontend exec -- playwright install --with-deps chromium

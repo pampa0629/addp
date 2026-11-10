@@ -94,7 +94,7 @@ class InfraRuntimeLogLifecycleTest(unittest.TestCase):
         env.pop('ADDP_MINIO_METRICS_LISTEN', None)
         env['ADDP_MINIO_METRICS_STATE_DIR'] = str((self.root / 'minio-metrics').resolve())
         env.pop('ADDP_DEPLOYMENT_DISCOVERY_DIR', None)
-        for key in (*KEYS, "LOKI_S3_ACCESS_KEY", "ADDP_HOST_NODE_NAME", "ADDP_RUNTIME_LOG_OWNER", "ADDP_ONLINE_ENV_FILE", "ADDP_ONLINE_HOST", "ADDP_OBSERVABILITY_LOGS_ENABLED", "ADDP_OBSERVABILITY_METRICS_ENABLED", "ADDP_METRICS_TLS_DIR", "ADDP_METRICS_DEPLOYMENT_DIR", "ADDP_METRICS_CONTROL_ENABLED", "ADDP_METRICS_CONTROL_DIR", "ADDP_METRICS_CONTROL_GATEWAY_URL", "ADDP_METRICS_DESKTOP_LOOPBACK_PORTS", "PROMETHEUS_SYSTEM_URL", "PROMETHEUS_MONITOR_URL", "PROMETHEUS_SERVICE_CLIENT_SECRET", "COMPOSE_PROFILES", "ADDP_OBSERVABILITY_TRACES_ENABLED", "ADDP_TRACE_DEPLOYMENTS", "ADDP_TRACE_DEPLOYMENT_DIR", "MONITOR_TEMPO_URL", "MONITOR_TRACE_TLS_DIR", "TEMPO_S3_ACCESS_KEY", "TEMPO_S3_SECRET_KEY", "TEMPO_BUCKET", "TRACE_OTLP_PORT", "TRACE_QUERY_PORT"):
+        for key in (*KEYS, "LOKI_S3_ACCESS_KEY", "ADDP_HOST_NODE_NAME", "ADDP_RUNTIME_LOG_OWNER", "ADDP_ONLINE_ENV_FILE", "ADDP_ONLINE_HOST", "ADDP_OBSERVABILITY_LOGS_ENABLED", "ADDP_OBSERVABILITY_METRICS_ENABLED", "ADDP_METRICS_TLS_DIR", "ADDP_METRICS_DEPLOYMENT_DIR", "ADDP_METRICS_CONTROL_MTLS_ENABLED", "ADDP_METRICS_DESKTOP_LOOPBACK_PORTS", "PROMETHEUS_SYSTEM_URL", "PROMETHEUS_MONITOR_URL", "PROMETHEUS_SERVICE_CLIENT_SECRET", "COMPOSE_PROFILES", "ADDP_OBSERVABILITY_TRACES_ENABLED", "ADDP_TRACE_DEPLOYMENTS", "ADDP_TRACE_DEPLOYMENT_DIR", "MONITOR_TEMPO_URL", "MONITOR_TRACE_TLS_DIR", "TEMPO_S3_ACCESS_KEY", "TEMPO_S3_SECRET_KEY", "TEMPO_BUCKET", "TRACE_OTLP_PORT", "TRACE_QUERY_PORT"):
             env.pop(key, None)
         env['BASH_ENV'] = str(self.shell_init)
         return env
@@ -189,7 +189,6 @@ case "$1" in
         logs=false
         case "$service" in loki|alloy|runtime-log-api|runtime-log-observer|runtime-log-store-init) logs=true ;; esac
         if [[ "$logs" == true && "${MOCK_EXISTING_LOGS:-}" != 1 ]]; then exit 1; fi
-        if [[ "$service" == metrics-control && "${MOCK_EXISTING_CONTROL:-}" != 1 ]]; then exit 1; fi
         if [[ "$service" == prometheus && "${MOCK_EXISTING_METRICS:-}" != 1 && ! -f "$marker" ]]; then exit 1; fi
         if has_arg --format; then
             format="$3"
@@ -197,8 +196,7 @@ case "$1" in
                 *com.docker.compose.project*)
                     root="$PWD"
                     if [[ "$logs" == true && "${MOCK_FOREIGN_LOGS:-}" == 1 ]] ||
-                       [[ "$service" == prometheus && "${MOCK_FOREIGN_METRICS:-}" == 1 ]] ||
-                       [[ "$service" == metrics-control && "${MOCK_FOREIGN_CONTROL:-}" == 1 ]]; then root=/foreign; fi
+                       [[ "$service" == prometheus && "${MOCK_FOREIGN_METRICS:-}" == 1 ]]; then root=/foreign; fi
                     printf 'addp-infra|%s|%s\n' "$service" "$root"
                     ;;
                 *ExitCode*) printf '%s\n' exited:0 ;;
@@ -206,6 +204,13 @@ case "$1" in
                     if [[ "$format" == *Health* ]]; then printf '%s\n' true:healthy; else printf '%s\n' true; fi
                     ;;
                 *Health*) printf '%s\n' healthy ;;
+                '{{json .Config.Cmd}}')
+                    if [[ "${MOCK_TRACE_ALLOY_LOGS_ONLY:-}" == 1 ]]; then
+                        printf '%s\n' '["run","/etc/alloy/runtime.alloy"]'
+                    else
+                        printf '%s\n' '["run","/trace-deployment/runtime.alloy"]'
+                    fi
+                    ;;
                 '{{.Image}}') printf '%s\n' "${MOCK_MEILI_IMAGE_ID-$digest}" ;;
             esac
         fi
@@ -217,6 +222,10 @@ case "$1" in
             9000) port=19000 ;; 9001) port=19001 ;; 7700) port=17700 ;;
             9092) port=19092 ;; 8083) port=18083 ;; 3100) port=13100 ;;
             12345) port=12345 ;; 9090) port=19090 ;;
+            4318|8443)
+                [[ "${MOCK_EXISTING_TRACES:-}" == 1 && "${MOCK_MISSING_TRACE_PORT:-}" != "${3%/*}" ]] || exit 1
+                if [[ "$3" == 4318/tcp ]]; then port=14318; else port=14320; fi
+                ;;
             *) exit 1 ;;
         esac
         printf '127.0.0.1:%s\n' "$port"
@@ -226,7 +235,6 @@ case "$1" in
             service="${!#}"
             case "$service" in
                 prometheus) key=MOCK_EXISTING_METRICS ;;
-                metrics-control) key=MOCK_EXISTING_CONTROL ;;
                 trace-query|tempo|trace-store-init) key=MOCK_EXISTING_TRACES ;;
                 *) key=MOCK_EXISTING_LOGS ;;
             esac
@@ -376,43 +384,6 @@ exit 0
         self.assertTrue(any('up' in a and 'postgres' in a for a in self.calls()))
         self.assertFalse(any('stop' in a for a in self.calls()))
 
-    def test_disabled_metrics_stop_only_owned_control_and_preserve_core(self):
-        result = self.run_up(**self.healthy_docker(), ADDP_OBSERVABILITY_LOGS_ENABLED='false',
-                             MOCK_EXISTING_CONTROL='1')
-        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        stopped = [a[-1] for a in self.calls() if 'stop' in a]
-        self.assertEqual(stopped, ['metrics-control'])
-        self.commands.unlink()
-        result = self.run_up(**self.healthy_docker(), ADDP_OBSERVABILITY_LOGS_ENABLED='false',
-                             MOCK_EXISTING_CONTROL='1', MOCK_FOREIGN_CONTROL='1')
-        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
-        self.assertFalse(any('stop' in a for a in self.calls()))
-
-    def test_control_input_failure_keeps_core_and_does_not_start_center(self):
-        result = self.run_up(**self.healthy_docker(), **self.metrics_certificates(),
-                             ADDP_OBSERVABILITY_LOGS_ENABLED='false',
-                             ADDP_OBSERVABILITY_METRICS_ENABLED='true', ADDP_METRICS_CONTROL_ENABLED='true')
-        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
-        self.assertTrue(any('up' in a and 'postgres' in a for a in self.calls()))
-        self.assertFalse(any('up' in a and ('metrics-control' in a or 'prometheus' in a) for a in self.calls()))
-
-    def test_selected_control_refuses_foreign_owner_before_start(self):
-        deployment = self.metrics_certificates()
-        control = self.root / 'control'
-        control.mkdir()
-        for name in ('server.crt', 'server.key'):
-            (control / name).write_text(name)
-        deployment.update(PROMETHEUS_SYSTEM_URL='https://metrics-control:9444',
-                          PROMETHEUS_MONITOR_URL='https://metrics-control:9444')
-        result = self.run_up(**self.healthy_docker(), **deployment,
-                             ADDP_OBSERVABILITY_LOGS_ENABLED='false',
-                             ADDP_OBSERVABILITY_METRICS_ENABLED='true', ADDP_METRICS_CONTROL_ENABLED='true',
-                             ADDP_METRICS_CONTROL_DIR=str(control), ADDP_METRICS_CONTROL_GATEWAY_URL='http://host.internal:8000',
-                             MOCK_EXISTING_CONTROL='1', MOCK_FOREIGN_CONTROL='1')
-        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
-        self.assertFalse(any(('up' in a or 'run' in a) and 'metrics-control' in a for a in self.calls()))
-        self.assertFalse(any('stop' in a for a in self.calls()))
-
     def test_metrics_only_uses_no_core_log_build_init_or_secret_generation(self):
         result = self.run_up(**self.healthy_docker(), **self.metrics_certificates(),
                              cli=('--metrics',), ADDP_OBSERVABILITY_METRICS_ENABLED='true')
@@ -430,17 +401,31 @@ exit 0
 
     def test_metrics_fixture_ignores_parent_control_and_desktop_transport(self):
         with mock.patch.dict(os.environ, {
-                'ADDP_METRICS_CONTROL_ENABLED': 'true',
-                'ADDP_METRICS_CONTROL_DIR': str(self.root / 'ambient-control'),
-                'ADDP_METRICS_CONTROL_GATEWAY_URL': 'http://ambient.invalid:8000',
+                'ADDP_METRICS_CONTROL_MTLS_ENABLED': 'true',
                 'ADDP_METRICS_DESKTOP_LOOPBACK_PORTS': '19091'}):
             result = self.run_up(**self.healthy_docker(), **self.metrics_certificates(),
                                  cli=('--metrics',), ADDP_OBSERVABILITY_METRICS_ENABLED='true')
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         calls = self.calls()
         self.assertTrue(any('up' in a and 'prometheus' in a for a in calls))
-        self.assertFalse(any('up' in a and 'metrics-control' in a for a in calls))
         self.assertFalse(any(a[0] in ('context', 'info') for a in calls))
+
+    def test_metrics_only_rejects_over_budget_before_docker_changes(self):
+        launcher = self.repo / 'scripts/dev/process-metrics-launch.py'
+        launcher.parent.mkdir(exist_ok=True)
+        shutil.copy2(ROOT / 'scripts/dev/process-metrics-launch.py', launcher)
+        plan = {
+            f'worker-{index}': {'module_name': 'quality', 'role': 'worker',
+                                'listen': f'127.0.0.1:{19500 + index}',
+                                'endpoint': f'https://127.0.0.1:{19500 + index}/metrics',
+                                'tls_dir': f'/private/metrics/worker-{index}'}
+            for index in range(2)
+        }
+        result = self.run_up(**self.healthy_docker(), cli=('--metrics',), ADDP_OBSERVABILITY_METRICS_ENABLED='true',
+                             ADDP_METRICS_TARGET_LIMIT='1', ADDP_DEV_PROCESS_METRICS_PLAN=json.dumps(plan))
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertIn('计划 2 个', result.stderr)
+        self.assertFalse(self.commands.exists())
 
     def test_metrics_only_disabled_and_unknown_arguments_do_not_create_credentials(self):
         result = self.run_up(**self.healthy_docker(), cli=('--metrics',))
@@ -459,7 +444,7 @@ exit 0
                 ('false', 'true', 'observability-metrics'),
                 ('true', 'true', 'observability-logs,observability-metrics')):
             with self.subTest(logs=logs, metrics=metrics), mock.patch.dict(
-                    os.environ, ADDP_METRICS_CONTROL_ENABLED='true'):
+                    os.environ, ADDP_METRICS_CONTROL_MTLS_ENABLED='true'):
                 env = self.fixture_environment()
                 env.update(ADDP_OBSERVABILITY_LOGS_ENABLED=logs,
                            ADDP_OBSERVABILITY_METRICS_ENABLED=metrics, COMPOSE_PROFILES='unselected')
@@ -568,6 +553,59 @@ exit 0
         self.assertIn('BUSINESS_START_REACHED', result.stdout, result.stderr)
         self.assertIn('PostgreSQL: localhost:15432', result.stdout)
 
+    def test_restart_preflight_reads_core_ports_with_trace_mapping_missing(self):
+        env = self.fixture_environment()
+        env.update(PATH=f"{self.bin}:{env['PATH']}", **self.healthy_docker(),
+                   ROOT_DIR=str(self.repo.resolve()), ADDP_OBSERVABILITY_TRACES_ENABLED='true',
+                   MOCK_EXISTING_LOGS='1', MOCK_EXISTING_TRACES='1', MOCK_MISSING_TRACE_PORT='4318')
+        source = (ROOT / 'scripts/dev/restart.sh').read_text()
+        begin = source.index('source "${ROOT_DIR}/scripts/infra/ports.sh"')
+        phase = source[begin:source.index('source "${SCRIPT_DIR}/ports.sh"', begin)]
+        result = subprocess.run(['bash', '-ec', phase + '\nprintf "%s\\n" "$MINIO_API_PORT"'],
+                                cwd=self.repo, env=env, capture_output=True, text=True, timeout=10)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout.strip(), '19000')
+        self.assertFalse(any(a[:2] in (['port', 'addp-alloy'], ['port', 'addp-trace-query']) for a in self.calls()))
+
+    def test_trace_status_requires_both_mappings_and_shared_alloy_config(self):
+        env = self.fixture_environment()
+        env.update(PATH=f"{self.bin}:{env['PATH']}", **self.healthy_docker(),
+                   ADDP_OBSERVABILITY_TRACES_ENABLED='true', ADDP_OBSERVABILITY_LOGS_ENABLED='false',
+                   MOCK_EXISTING_LOGS='1', MOCK_EXISTING_TRACES='1')
+        for fault in ({'MOCK_MISSING_TRACE_PORT': '4318'}, {'MOCK_MISSING_TRACE_PORT': '8443'},
+                      {'MOCK_TRACE_ALLOY_LOGS_ONLY': '1'}, {}):
+            with self.subTest(fault=fault):
+                result = subprocess.run(['bash', 'scripts/infra/status.sh'], cwd=self.repo, env=env | fault,
+                                        capture_output=True, text=True, timeout=10)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                expected = 'Unavailable' if fault else 'Ready'
+                self.assertIn(f'HTTP Trace center: {expected}', result.stdout)
+
+    def test_trace_port_failure_preserves_log_start_and_trace_success_keeps_overlay(self):
+        center = self.secrets / 'trace-center'
+        center.mkdir(mode=0o700)
+        for name in ('server.crt', 'server.key', 'source-ca.crt', 'query-ca.crt'):
+            path = center / name
+            path.write_text('synthetic material')
+            path.chmod(0o600)
+        policy = Path('monitor/backend/internal/tracequery/policy.json')
+        (self.repo / policy).parent.mkdir(parents=True)
+        shutil.copy2(ROOT / policy, self.repo / policy)
+        for missing_port in ('8443', ''):
+            with self.subTest(missing_port=missing_port):
+                result = self.run_up(**self.healthy_docker(), ADDP_OBSERVABILITY_TRACES_ENABLED='true',
+                                     ADDP_TRACE_DEPLOYMENT_DIR=str(center), MOCK_EXISTING_LOGS='1',
+                                     MOCK_EXISTING_TRACES='1', MOCK_MISSING_TRACE_PORT=missing_port)
+                self.assertEqual(result.returncode, int(bool(missing_port)), result.stdout + result.stderr)
+                self.assertEqual('Trace center unavailable' in result.stderr, bool(missing_port))
+                self.assertIn('Runtime log query and collector ready', result.stdout)
+                calls = self.calls()
+                log_up = next(a for a in reversed(calls) if 'up' in a and 'runtime-log-observer' in a)
+                self.assertEqual('scripts/infra/traces-platform.yml' in log_up, not missing_port)
+                rendered = (center / 'runtime.alloy').read_text()
+                self.assertEqual(rendered.count('loki.source.file "runtime"'), 1)
+                self.assertIn('otelcol.receiver.otlp', rendered)
+
     def dev_start_phase(self, foreign, **extra):
         values = self.healthy_docker()
         values.update(ENV="production", ADDP_HOST_NODE_NAME="fixture-node", ADDP_OBSERVABILITY_LOGS_ENABLED="true", MOCK_EXISTING_LOGS="1", MOCK_FOREIGN_LOGS=str(int(foreign)))
@@ -593,6 +631,30 @@ exit 0
             self.assertIn('runtime-log-pruner',services)
             for service in ('loki','alloy','runtime-log-api','runtime-log-observer','runtime-log-store-init'):
                 self.assertEqual(service in services,selected,service)
+
+    def test_trace_compose_keeps_tempo_private_and_publishes_proxy_on_loopback(self):
+        env = self.fixture_environment()
+        env.update(REDIS_PASSWORD='redis-test', INFRA_FALKORDB_PASSWORD='graph-test',
+                   ADDP_TRACE_DEPLOYMENT_DIR=str(self.secrets), TRACE_OTLP_PORT='14318', TRACE_QUERY_PORT='14320')
+        command = ['docker', 'compose', '--env-file', '/dev/null',
+                   '-f', 'docker-compose.infra.yml', '-f', 'scripts/infra/traces-platform.yml',
+                   '--profile', 'observability-logs', '--profile', 'observability-traces',
+                   'config', '--format', 'json']
+        result = subprocess.run(command, cwd=ROOT, env=env, capture_output=True, text=True, timeout=15)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        config = json.loads(result.stdout)
+        services = config['services']
+        self.assertTrue(config['networks']['trace-backend']['internal'])
+        self.assertEqual(set(services['tempo']['networks']), {'trace-backend'})
+        self.assertFalse(services['tempo'].get('ports'))
+        self.assertEqual(set(services['trace-query']['networks']), {'addp-network', 'trace-backend'})
+        self.assertEqual([(p['host_ip'], str(p['published']), p['target']) for p in services['trace-query']['ports']],
+                         [('127.0.0.1', '14320', 8443)])
+        alloy = services['alloy']
+        self.assertEqual(set(alloy['networks']), {'addp-network', 'trace-backend'})
+        self.assertEqual(alloy['command'][-1], '/trace-deployment/runtime.alloy')
+        self.assertIn(('127.0.0.1', '14318', 4318),
+                      [(p['host_ip'], str(p['published']), p['target']) for p in alloy['ports']])
 
     def test_online_initialization_never_creates_root_env_and_preserves_existing_secrets(self):
         values = dict(ADDP_ONLINE_HOST="1", ADDP_ONLINE_ENV_FILE=str(self.envfile))

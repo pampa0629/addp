@@ -5,6 +5,7 @@ from pathlib import Path
 import importlib
 import io
 import json
+import os
 import unittest
 from unittest.mock import patch
 
@@ -1319,10 +1320,31 @@ for(const failBody of [false,true]){
             with self.assertRaises(ONLINE.SuiteError):
                 ONLINE.source_action("stop")
             self.assertEqual(command.call_count, 2)
-        with patch.object(ONLINE.FIXTURE, "compose") as compose:
+        with patch.object(ONLINE.FIXTURE, "command") as command:
             with self.assertRaises(ONLINE.SuiteError):
-                ONLINE.owned_action("prometheus", "stop")
-            compose.assert_not_called()
+                ONLINE.control_action("invalid")
+            command.assert_not_called()
+
+
+    def test_control_fault_restarts_only_gateway_and_preserves_business_readiness(self):
+        with tempfile.TemporaryDirectory() as work:
+            directory = Path(work)
+            (directory / "control").mkdir()
+            key = directory / "control/server.key"
+            key.write_text("test-only-key")
+            with patch.object(ONLINE.FIXTURE, "boundary", return_value=directory), \
+                 patch.object(ONLINE.subprocess, "run") as run, \
+                 patch.dict(os.environ, GATEWAY_URL="http://127.0.0.1:8000"), \
+                 patch.object(ONLINE.PREFLIGHT, "load_health", return_value={"status": "ready"}) as health:
+                ONLINE.control_action("stop")
+                self.assertFalse(key.exists())
+                self.assertTrue((directory / "control/server.key.disabled").exists())
+                ONLINE.control_action("start")
+                self.assertEqual(key.read_text(), "test-only-key")
+                self.assertEqual([call.args[0] for call in run.call_args_list],
+                                 [["bash", "scripts/dev/stop-exact-process.sh", "-gateway"],
+                                  ["bash", "scripts/dev/start.sh", "--exact-process", "-gateway"]] * 2)
+                self.assertEqual(health.call_count, 2)
 
 
 

@@ -157,8 +157,9 @@ source "$PROJECT_ROOT/scripts/utils/observability-env.sh"
 case "${ADDP_OBSERVABILITY_METRICS_ENABLED-false}" in
   false) echo '- Metrics center: Disabled' ;;
   true)
-    if ! addp_metrics_preflight >/dev/null 2>&1; then
-      echo '- Metrics center: Unconfigured (deployment certificates)'
+    if ! metrics_preflight=$(addp_metrics_preflight 2>&1); then
+      echo '- Metrics center: Unconfigured (deployment preflight)'
+      printf '  %s\n' "$metrics_preflight"
     elif ! ADDP_INFRA_PORT_SCOPE=metrics addp_infra_read_actual_ports || [[ -z "${PROMETHEUS_PORT:-}" ]]; then
       echo '- Metrics center: Not deployed'
     elif curl -fsS --max-time 3 --cacert "$ADDP_METRICS_TLS_DIR/ca.crt" --cert "$ADDP_METRICS_TLS_DIR/health.crt" --key "$ADDP_METRICS_TLS_DIR/health.key" "https://localhost:${PROMETHEUS_PORT}/-/ready" >/dev/null 2>&1; then
@@ -169,21 +170,10 @@ case "${ADDP_OBSERVABILITY_METRICS_ENABLED-false}" in
   *) echo '- Metrics center: Unconfigured (invalid deployment selection)' ;;
 esac
 
-if ! addp_metrics_enabled || [[ "${ADDP_METRICS_CONTROL_ENABLED-false}" == false ]]; then
-  echo '- Metrics control TLS: Disabled'
-elif [[ "${ADDP_METRICS_CONTROL_ENABLED-false}" != true ]]; then
-  echo '- Metrics control TLS: Unconfigured (invalid selection)'
+if [[ -z "${GATEWAY_METRICS_CONTROL_LISTEN:-}" ]]; then
+  echo '- Gateway metrics control: Disabled'
 else
-  control_container=$(docker compose -f docker-compose.infra.yml ps -aq metrics-control 2>/dev/null || true)
-  if [[ -z "$control_container" ]]; then
-    echo '- Metrics control TLS: Not deployed'
-  elif ! addp_infra_verify_container metrics-control "$control_container" >/dev/null 2>&1; then
-    echo '- Metrics control TLS: Unavailable (ownership)'
-  elif [[ "$(docker inspect --format '{{.State.Running}}' "$control_container")" == true ]]; then
-    echo '- Metrics control TLS: Running (API forwarding not yet verified)'
-  else
-    echo '- Metrics control TLS: Unavailable'
-  fi
+  echo '- Gateway metrics control: Selected (listener, mTLS and OAuth require runtime verification)'
 fi
 
 case "${ADDP_OBSERVABILITY_TRACES_ENABLED-false}" in
@@ -191,8 +181,7 @@ case "${ADDP_OBSERVABILITY_TRACES_ENABLED-false}" in
   true)
     trace_container=$(docker compose -f docker-compose.infra.yml ps -aq trace-query 2>/dev/null || true)
     if [[ -z "$trace_container" ]]; then echo '- HTTP Trace center: Not deployed'
-    elif ! addp_infra_verify_container trace-query "$trace_container" >/dev/null 2>&1; then echo '- HTTP Trace center: Unavailable (ownership)'
-    elif [[ "$(docker inspect --format '{{.State.Health.Status}}' "$trace_container" 2>/dev/null)" == healthy ]]; then echo '- HTTP Trace center: Ready (sampling and delivery require Monitor verification)'
+    elif addp_infra_trace_ready; then echo '- HTTP Trace center: Ready (sampling and delivery require Monitor verification)'
     else echo '- HTTP Trace center: Unavailable'; fi ;;
   *) echo '- HTTP Trace center: Unconfigured (invalid selection)' ;;
 esac

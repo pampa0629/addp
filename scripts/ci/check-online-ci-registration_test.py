@@ -2941,7 +2941,7 @@ class OnlineCIRegistrationTest(unittest.TestCase):
         CHECK.validate_platform_node_metrics_profile(self.repository, {"platform-node-metrics"})
         gate = self.repository / "scripts/test/online-hosted-node-metrics-gate.sh"
         original_gate = gate.read_text()
-        for fragment in ('modules=(-monitor)', 'modules+=(-system)', 'scripts/dev/start.sh "${modules[@]}"',
+        for fragment in ('modules=(-monitor -gateway)', 'modules+=(-system)', 'scripts/dev/start.sh "${modules[@]}"',
                          'run_logged python3 scripts/test/platform-node-metrics-fixture.py standard-cleanup || status=1'):
             gate.write_text(original_gate.replace(fragment, "removed"))
             with self.assertRaises(CHECK.RegistrationError):

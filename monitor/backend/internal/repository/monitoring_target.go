@@ -15,10 +15,13 @@ var (
 	ErrTargetBusy     = errors.New("monitoring target write busy")
 )
 
-type MonitoringTargetRepository struct{ db *gorm.DB }
+type MonitoringTargetRepository struct {
+	db          *gorm.DB
+	targetLimit int
+}
 
-func NewMonitoringTargetRepository(db *gorm.DB) *MonitoringTargetRepository {
-	return &MonitoringTargetRepository{db: db}
+func NewMonitoringTargetRepository(db *gorm.DB, targetLimit int) *MonitoringTargetRepository {
+	return &MonitoringTargetRepository{db: db, targetLimit: targetLimit}
 }
 
 func TargetProjection(row models.MonitoringTarget) metricsdiscovery.NodeTarget {
@@ -39,7 +42,7 @@ func (r *MonitoringTargetRepository) Snapshot(ctx context.Context) ([]metricsdis
 	for i, row := range rows {
 		result[i] = TargetProjection(row)
 	}
-	if err := metricsdiscovery.CheckReservations(result); err != nil {
+	if _, err := metricsdiscovery.CountTargetReservations(result); err != nil {
 		return nil, err
 	}
 	return result, nil
@@ -71,7 +74,7 @@ func (r *MonitoringTargetRepository) Mutate(ctx context.Context, target metricsd
 		if !acquired {
 			return ErrTargetBusy
 		}
-		current, err := NewMonitoringTargetRepository(tx).Snapshot(ctx)
+		current, err := NewMonitoringTargetRepository(tx, r.targetLimit).Snapshot(ctx)
 		if err != nil {
 			return err
 		}
@@ -98,13 +101,19 @@ func (r *MonitoringTargetRepository) Mutate(ctx context.Context, target metricsd
 			}
 			next = append(next, target)
 		}
-		if err := metricsdiscovery.CheckReservations(next); err != nil {
+		reserved, err := metricsdiscovery.CountTargetReservations(next)
+		if err != nil {
 			return err
 		}
-		// Removing collection intent must remain possible with offline sources.
-		if !remove && target.Enabled && validate != nil {
-			if err := validate(ctx, next); err != nil {
-				return err
+		// Keep reducing collection intent possible after lowering the limit.
+		if !remove && target.Enabled {
+			if reserved > r.targetLimit {
+				return metricsdiscovery.ErrBudgetExceeded
+			}
+			if validate != nil {
+				if err := validate(ctx, next); err != nil {
+					return err
+				}
 			}
 		}
 		if remove {

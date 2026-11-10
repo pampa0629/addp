@@ -10,6 +10,7 @@ import (
 	"time"
 
 	commonmodels "github.com/addp/common/models"
+	"github.com/addp/monitor/internal/metricsdiscovery"
 	"github.com/addp/monitor/internal/models"
 	"github.com/addp/monitor/internal/repository"
 	"github.com/addp/monitor/internal/resourcequery"
@@ -140,7 +141,7 @@ func newResourceRuleFixture(t *testing.T) *resourceRuleFixture {
 	}
 	backend := &resourceRuleBackend{value: 90}
 	identities := &resourceRuleIdentity{node: node, version: 1}
-	o := NewResourceObservationService(repository.NewResourceQueryPolicyRepository(f.db), repository.NewMonitoringTargetRepository(f.db), &resourceNodes{enabled: true}, backend, true, resourceSourcePolicy(t), ProcessObservationDependencies{})
+	o := NewResourceObservationService(repository.NewResourceQueryPolicyRepository(f.db), repository.NewMonitoringTargetRepository(f.db, metricsdiscovery.DefaultExternalTargetLimit), &resourceNodes{enabled: true}, backend, true, resourceSourcePolicy(t), ProcessObservationDependencies{})
 	s := NewResourceAlertRuleService(f.db, o, identities, f.n)
 	s.startedAt = at
 	off := false

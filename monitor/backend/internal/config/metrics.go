@@ -15,7 +15,19 @@ import (
 
 // Optional metrics configuration never becomes a business startup dependency.
 // An invalid selection remains unconfigured, rather than silently enabling it.
-func loadMetricsPolicy() (bool, *metricsdiscovery.SourcePolicy) {
+func loadMetricsTargetLimit() int {
+	value, configured := os.LookupEnv("ADDP_METRICS_TARGET_LIMIT")
+	if !configured {
+		return metricsdiscovery.DefaultExternalTargetLimit
+	}
+	limit, err := strconv.Atoi(value)
+	if err != nil || strconv.Itoa(limit) != value || limit < 1 || limit > metricsdiscovery.MaxExternalTargetLimit {
+		return 0
+	}
+	return limit
+}
+
+func loadMetricsPolicy(targetLimit int) (bool, *metricsdiscovery.SourcePolicy) {
 	flag := os.Getenv("ADDP_OBSERVABILITY_METRICS_ENABLED")
 	if flag == "" || flag == "false" {
 		return false, nil
@@ -49,7 +61,7 @@ func loadMetricsPolicy() (bool, *metricsdiscovery.SourcePolicy) {
 	if err != nil {
 		return true, nil
 	}
-	policy, err := metricsdiscovery.NewSourcePolicy(cidrs, ports, roots, cert)
+	policy, err := metricsdiscovery.NewSourcePolicy(cidrs, ports, roots, cert, targetLimit)
 	if err != nil {
 		return true, nil
 	}

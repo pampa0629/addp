@@ -19,11 +19,11 @@ export const SUPPORTED_LANGUAGES = [
  * 读取用户语言偏好（优先 localStorage，降级用浏览器语言，最后用默认值）
  */
 function readStoredLang() {
-  const stored = localStorage.getItem(STORAGE_KEY)
+  const stored = globalThis.localStorage?.getItem?.(STORAGE_KEY)
   if (SUPPORTED_LANGS.includes(stored)) return stored
 
   // 尝试读取浏览器语言
-  const browserLang = navigator.language?.toLowerCase()
+  const browserLang = globalThis.navigator?.language?.toLowerCase()
   if (browserLang?.startsWith('zh')) return 'zh-cn'
   if (browserLang?.startsWith('en')) return 'en'
 

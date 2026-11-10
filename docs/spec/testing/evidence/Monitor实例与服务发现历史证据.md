@@ -602,3 +602,13 @@ Transfer continuous 弹窗手动刷新前后的窗口结束时刻为 `23:00:24` 
 独立只读预检调用既有桌面转发渲染器（未调用会写文件的 render），确认当前 Docker Desktop 本地传输及五条新转发各恰一次，十三项计划匹配通过，未写实际 Prometheus 生成配置。收据 `/tmp/addp-next-process-sources-preflight-20261108.json`。`python3 -m unittest scripts/test/dev-process-metrics-plan_test.py` 退出 0，15 项 T1 通过；`make test-monitor-metrics-config` 完整退出 0，含共享来源前置回归及 139 项配置测试，日志分别 `/tmp/addp-next-process-plan-tests-20261108.log`、`/tmp/addp-next-process-metrics-config-20261108.log`。沿既有 Make／Platform 自动发现和生命周期输入登记，无产品或编排文件变化，不新增测试路线。配置门禁中的受控夹具诊断不计个人真实来源或 T4。
 
 尚未应用或重启。交用户在根目录依次执行 `bash scripts/infra/up.sh --metrics` 和 `./scripts/dev/restart.sh -monitor -gateway -service -quality -standard`：前者加载新增转发，并重新应用既有已选 Infra 来源；后者加载 Monitor 新准入和五个应用来源（Quality 模块含 Worker）。标准重启会短暂停止所选模块，不删除业务数据或指标历史；本会话未代执行。用户完成后核对新增五项声明、唯一 UP 目标、当前实例、严格 mTLS、新鲜读数及真实页面，再逐步接通接口质量。本批只计部署准备及本地预检，不能认定十三来源实际采样已验；CI／Hosted由专门会话安排，无定时任务。
+
+### 本机指标来源预算扩容（2026-11-09）
+
+重启后相关业务进程就绪，五个新增指标端点通过真实 mTLS。Monitor 的发现接口返回 `422 obs_budget_exceeded`，Prometheus 当时只采集自身。System 当前投影有 13 个进程声明、6 个可用引擎，加上已配置的主机来源共 20 个。逐端点读取共 2,371 个样本。12 的旧上限按每源和中心各 20,000 预留，触发的是部署预算校验。
+
+根环境统一以 `ADDP_METRICS_TARGET_LIMIT` 配置 Monitor 与 Prometheus。缺省 12，本机预检以 12 拒绝计划中的 20 项，改用 24 通过。开发启动和重启在应用前校验，指标专用应用在调用 Docker 前拒绝超额。24 项预算按既有单来源限制推导为 500,000；此预留不等同于已持续压测的实际样本量。
+
+`make test-module MODULE=monitor GO_ONLY=1`、`make test-monitor-metrics-config`、`make test-monitor-postgres` 和 Infra 生命周期回归通过。隔离 T2 `make test-monitor-metrics MONITOR_METRICS_TEST_ARGS=--case=target-budget` 核验 24 个不同 mTLS 端点各有连续样本，加入第 25 个时作业超限，返回 24 个后恢复，容器、网络、卷和临时文件清零。首轮在 24 项抓取后因测试误匹配 Prometheus 的错误文本而失败，修正断言后完整通过。隔离来源是受控夹具，结果不等于 500,000 样本压力测试。
+
+本机根环境已设 24，现有 20 项来源计划保留。等待用户通过标准入口应用指标中心并重启 Monitor，随后核验真实目标及新鲜样本。

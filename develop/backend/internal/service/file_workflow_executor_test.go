@@ -4,12 +4,14 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"os"
+	"reflect"
 	"strconv"
 	"strings"
 	"sync"
@@ -41,7 +43,21 @@ func TestPrivateFileWorkerDispatchRecoveryAndCapacity(t *testing.T) {
 				base.ObservedAt = time.Now()
 				base.ExpiresAt = time.Now().Add(300 * time.Millisecond)
 			}
-			f.authority = func(uint) fileSourceAuthority { return fileInputsAuthority(base) }
+			var protectionBegun, protectionEnded int
+			f.protectSource = func(_ context.Context, tenant uint, p plugin.EnginePlugin, path plugin.EngineCatalogPath) (func(), error) {
+				if tenant != 3 || p.Type() != "nfs" || protectionBegun >= len(issued.Scope.Sources) ||
+					!reflect.DeepEqual(path, issued.Scope.Sources[protectionBegun].Target) {
+					t.Fatal("wrong protected source", tenant, path)
+				}
+				protectionBegun++
+				return func() { protectionEnded++ }, nil
+			}
+			f.authority = func(uint) fileSourceAuthority {
+				if protectionBegun != len(issued.Scope.Sources) || protectionEnded != 0 {
+					t.Fatal("source I/O began outside the protection gate")
+				}
+				return fileInputsAuthority(base)
+			}
 			f.provider = fileInputsProvider(fileInputsData(t))
 			f.credential = func(context.Context, uint) (string, error) { return "addp_at_runtime_current", nil }
 			var creates, uploads, dispatches, deletes atomic.Int32
@@ -222,12 +238,15 @@ func TestPrivateFileWorkerDispatchRecoveryAndCapacity(t *testing.T) {
 			if creates.Load() != before || dispatches.Load() != wantDispatch {
 				t.Fatal("old execution was replayed")
 			}
+			if protectionBegun != len(issued.Scope.Sources) || protectionEnded != protectionBegun {
+				t.Fatal("source protection lifetime not released", protectionBegun, protectionEnded)
+			}
 		})
 	}
 }
 
 func TestPrivateFileWorkerClosesSaveAndUsesOriginalDeadline(t *testing.T) {
-	for _, scenario := range []string{"save", "expired", "source-rejected"} {
+	for _, scenario := range []string{"save", "expired", "source-rejected", "protection-unavailable", "protected-second-source"} {
 		t.Run(scenario, func(t *testing.T) {
 			db, repo, item, lease, _, _, base := privateFileWorkerFixture(t, scenario == "save")
 			executor := NewDevExecutor(nil, execution.NewTaskExecutionRepository(db), nil, nil, nil, NewSQLEngineService(&config.Config{}, nil, nil), nil, nil)
@@ -235,8 +254,23 @@ func TestPrivateFileWorkerClosesSaveAndUsesOriginalDeadline(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
+			var protections, released int
+			if scenario != "protection-unavailable" {
+				s.privateFiles.protectSource = func(_ context.Context, _ uint, _ plugin.EnginePlugin, _ plugin.EngineCatalogPath) (func(), error) {
+					protections++
+					if scenario == "protected-second-source" && protections == 2 {
+						return nil, errors.New("source is protected")
+					}
+					return func() { released++ }, nil
+				}
+			}
 			var ioCalls atomic.Int32
-			s.privateFiles.authority = func(uint) fileSourceAuthority { return fileInputsAuthority(base) }
+			s.privateFiles.authority = func(uint) fileSourceAuthority {
+				if scenario == "protected-second-source" || scenario == "protection-unavailable" {
+					t.Error("protection rejection reached source authorization")
+				}
+				return fileInputsAuthority(base)
+			}
 			s.privateFiles.provider = &sourceWindowProvider{open: func(context.Context, plugin.ConnectionInfo, plugin.EngineCatalogPath, plugin.ReadOptions) (io.ReadCloser, error) {
 				ioCalls.Add(1)
 				return nil, fmt.Errorf("must not open")
@@ -246,8 +280,8 @@ func TestPrivateFileWorkerClosesSaveAndUsesOriginalDeadline(t *testing.T) {
 				if scenario == "expired" && ctx.Err() == nil {
 					t.Error("Worker reset original deadline")
 				}
-				if scenario == "save" {
-					t.Error("save reached Runtime resolution")
+				if scenario == "save" || scenario == "protected-second-source" || scenario == "protection-unavailable" {
+					t.Error("rejected workflow reached Runtime resolution")
 				}
 				return plugin.ConnectionInfo{"host": "127.0.0.1", "port": 1, "protocol": "http"}, nil
 			}
@@ -267,6 +301,9 @@ func TestPrivateFileWorkerClosesSaveAndUsesOriginalDeadline(t *testing.T) {
 			}
 			if err := s.Execute(t.Context(), &claimed, *lease); err != nil {
 				t.Fatal(err)
+			}
+			if scenario == "protected-second-source" && (protections != 2 || released != 1) {
+				t.Fatal("already-open protection read was not released", protections, released)
 			}
 			if ioCalls.Load() != 0 {
 				t.Fatal("bad authorization reached source")
@@ -291,6 +328,9 @@ func TestPrivateFileWorkerBlockedSourceRetainsOriginalBatchAndCapacity(t *testin
 	base.ExpiresAt = time.Now().Add(500 * time.Millisecond)
 	f := s.privateFiles
 	f.authority = func(uint) fileSourceAuthority { return fileInputsAuthority(base) }
+	f.protectSource = func(context.Context, uint, plugin.EnginePlugin, plugin.EngineCatalogPath) (func(), error) {
+		return func() {}, nil
+	}
 	f.provider = &sourceWindowProvider{open: func(_ context.Context, _ plugin.ConnectionInfo, p plugin.EngineCatalogPath, _ plugin.ReadOptions) (io.ReadCloser, error) {
 		set, _ := plugin.NewQueryReadSet(p)
 		return &sourceWindowHandle{Reader: bytes.NewReader(nil), set: set, close: func() error { <-release; return nil }}, nil

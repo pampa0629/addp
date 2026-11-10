@@ -279,6 +279,10 @@ func (s *BuildService) executeTask(ctx context.Context, task *models.BuildTask, 
 		s.failTask(ctx, task, tenantID, executionID, "immutable build input is required")
 		return
 	}
+	if _, err := s.graphDataSvc.loadTargetEngine(ctx, uint(tenantID), input.EngineID, input.CatalogPath); err != nil {
+		s.failTask(ctx, task, tenantID, executionID, err.Error())
+		return
+	}
 	ontologySchema := buildOntologySchema(&input.Ontology)
 	ancestorChains := buildAncestorChains(&input.Ontology)
 	spatialLayerLookup := buildSpatialLayerMappingsByEntityType(input.Ontology.EntityTypes)

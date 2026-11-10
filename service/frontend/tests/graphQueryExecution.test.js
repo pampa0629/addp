@@ -11,7 +11,8 @@ function harness({ token = 'opaque-user', failureStatus } = {}) {
   // Exercise the shared client and its real Bearer interceptor with an in-memory transport.
   const sharedSource = withoutImports(read('../../../common-frontend/basic/src/composables/useAuth.js'))
     .replace(/^export /gm, '').replace(/import\.meta\.env/g, '({})')
-  const createSharedClient = new Function('axios', 'getAccessToken', `${sharedSource}\nreturn createAPIClient`)(axios, () => store.token)
+  const createSharedClient = new Function('axios', 'getAccessToken', 'getCurrentLang',
+    `${sharedSource}\nreturn createAPIClient`)(axios, () => store.token, () => 'zh-cn')
   const requests = []
   const createAPIClient = (...args) => {
     const client = createSharedClient(...args)
@@ -19,6 +20,7 @@ function harness({ token = 'opaque-user', failureStatus } = {}) {
       requests.push({
         method: config.method, url: axios.getUri(config),
         authorization: config.headers.get('Authorization'), apiKey: config.headers.get('X-API-Key'),
+        language: config.headers.get('Accept-Language'),
         body: config.data ? JSON.parse(config.data) : undefined
       })
       const response = { data: { rows_count: 0, rows: [] }, status: 200, statusText: 'OK', headers: {}, config }
@@ -59,7 +61,7 @@ test('graph execution uses the data-plane client with the exact body and current
   assert.deepEqual(result, { rows_count: 0, rows: [] })
   assert.deepEqual(requests, [{
     method: 'post', url: '/api/gquery/city_graph', authorization: 'Bearer opaque-user',
-    apiKey: undefined, body
+    apiKey: undefined, language: 'zh-cn', body
   }])
 })
 
@@ -69,6 +71,7 @@ test('graph management keeps its control-plane path and execution without a toke
   await api.executeQuery('public_graph', { parameters: {}, page: 1, page_size: 20 })
   assert.deepEqual(requests.map(request => request.url), ['/api/v1/service/graph/7', '/api/gquery/public_graph'])
   assert.ok(requests.every(request => !request.authorization && !request.apiKey))
+  assert.ok(requests.every(request => request.language === 'zh-cn'))
 })
 
 test('graph execution propagates authorization and protection failures without another route or retry', async () => {

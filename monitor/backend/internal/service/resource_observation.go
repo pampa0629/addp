@@ -151,7 +151,7 @@ func (s *ResourceObservationService) Query(ctx context.Context, principal, node,
 		if err != nil {
 			return result, err
 		}
-		if metricsdiscovery.CheckReservations(rows) != nil {
+		if metricsdiscovery.CheckReservations(rows, s.policy.ExternalTargetLimit()) != nil {
 			return result, resourcequery.ErrUnavailable
 		}
 		var target *metricsdiscovery.NodeTarget

@@ -30,10 +30,10 @@ FRONTENDS=core.FRONTENDS
 LIMITS={name:(.025,32) for name in FRONTENDS}|{
     'system-backend':(.5,768),'gateway':(.25,512),'monitor-backend':(.5,768),
     'agent-backend':(1,2048),'copilot-backend':(.75,1024),'postgres':(.5,768),
-    'redis':(.1,128),'prometheus':(1,2048),'metrics-control':(.25,128)}
+    'redis':(.1,128),'prometheus':(1,2048)}
 SAMPLER_IMAGE='nginx:1.28.0-alpine@sha256:30f1c0d78e0ad60901648be663a710bdadf19e4c10ac6782c235200619158284'
 CASE_LIMITS={'full':(3600,3300),'compile-checkpoints':(900,780)}
-OWN_INPUTS=('scripts/test/monitor-http-local-gate.py','scripts/test/monitor-http-local-gate_test.py',
+OWN_INPUTS=('scripts/prod/gateway-metrics-control.yml','scripts/test/monitor-http-local-gate.py','scripts/test/monitor-http-local-gate_test.py',
     'scripts/test/http-quality-local-browser_test.mjs',
     'scripts/test/monitor-http-local-online.py','scripts/test/monitor-http-local-online_test.py',
     'scripts/test/monitor-traces-local-gate.py','scripts/test/monitor-traces-local-online.py',
@@ -135,8 +135,8 @@ def defaults(life):
         MONITOR_PROMETHEUS_URL='https://prometheus:9090',
         MONITOR_METRICS_ALLOWED_PORTS='19444,19445',
         MONITOR_METRICS_ALLOWED_CIDRS=','.join(v+'/32' for v in life.addresses.values()),
-        ADDP_METRICS_CONTROL_ENABLED='true',PROMETHEUS_SYSTEM_URL='https://metrics-control:9444',
-        PROMETHEUS_MONITOR_URL='https://metrics-control:9444',ADDP_METRICS_CONTROL_GATEWAY_URL='http://gateway:8000')
+        ADDP_METRICS_CONTROL_MTLS_ENABLED='true',PROMETHEUS_SYSTEM_URL='https://gateway:9444',
+        PROMETHEUS_MONITOR_URL='https://gateway:9444',GATEWAY_METRICS_CONTROL_LISTEN='0.0.0.0:9444',GATEWAY_METRICS_CONTROL_SERVER_NAME='gateway')
     return env
 
 
@@ -182,20 +182,23 @@ def tls(life,env):
         server=cert('prometheus',center,'serverAuth','DNS:prometheus,DNS:localhost')
         collector=cert('collector',source,'clientAuth','DNS:collector')
         admission=cert('admission',source,'clientAuth','DNS:admission')
-        proxy=cert('metrics-control',control,'serverAuth','DNS:metrics-control')
+        proxy=cert('gateway-control',control,'serverAuth','DNS:gateway')
+        control_client_ca=ca('control-client')
+        control_client=cert('prometheus-control',control_client_ca,'clientAuth','DNS:prometheus')
         deployment=life.work/'metrics-deployment';deployment.mkdir(mode=0o700)
         center_dir=life.work/'metrics-center';center_dir.mkdir(mode=0o755)
         control_dir=life.work/'metrics-control';control_dir.mkdir(mode=0o755)
         # UID 65534 reads only these mount trees; the enclosing host directory remains 0700.
         for path,items in ((center_dir,{'ca.crt':center[1],'server.crt':server[1],'server.key':server[0],
                 'health.crt':health[1],'health.key':health[0]}),
-                (control_dir,{'server.crt':proxy[1],'server.key':proxy[0]}),
+                (control_dir,{'server.crt':proxy[1],'server.key':proxy[0],'client-ca.crt':control_client_ca[1]}),
                 (deployment,{'control-ca.crt':control[1],'source-ca.crt':source[1],
+                 'control-client.crt':control_client[1],'control-client.key':control_client[0],
                  'collector.crt':collector[1],'collector.key':collector[0]})):
             for name,item in items.items():copy(item,path/name)
         (deployment/'prometheus-client-secret').write_text(env['PROMETHEUS_SERVICE_CLIENT_SECRET'])
         env.update(ADDP_METRICS_DEPLOYMENT_DIR=str(deployment),ADDP_METRICS_TLS_DIR=str(center_dir),
-            ADDP_METRICS_CONTROL_DIR=str(control_dir),MONITOR_PROMETHEUS_CA_FILE=str(center[1]),
+            GATEWAY_METRICS_CONTROL_TLS_DIR=str(control_dir),MONITOR_PROMETHEUS_CA_FILE=str(center[1]),
             MONITOR_PROMETHEUS_CLIENT_CERT_FILE=str(query[1]),MONITOR_PROMETHEUS_CLIENT_KEY_FILE=str(query[0]),
             MONITOR_METRICS_CA_FILE=str(source[1]),MONITOR_METRICS_CLIENT_CERT_FILE=str(admission[1]),
             MONITOR_METRICS_CLIENT_KEY_FILE=str(admission[0]))
@@ -219,16 +222,16 @@ def tls(life,env):
 def project(life,env,images):
     with preparation_phase(life,'http_infra_compose_projection'):
         infra=json.loads(life.command(['docker','compose','--env-file','/dev/null','--profile','observability-metrics',
-        '--profile','observability-metrics-control','-f','docker-compose.infra.yml','config','--format','json'],env=env))
-    files=['docker-compose.yml','scripts/prod/metrics-platform.yml','scripts/prod/metrics-query.yml',
+        '-f','docker-compose.infra.yml','config','--format','json'],env=env))
+    files=['docker-compose.yml','scripts/prod/metrics-platform.yml','scripts/prod/metrics-query.yml','scripts/prod/gateway-metrics-control.yml',
            str(life.work/'metrics-deployment/platform-process-metrics.json')]
     with preparation_phase(life,'http_product_compose_projection'):
         product=json.loads(life.command(['docker','compose','--env-file','/dev/null',
         *[v for f in files for v in ('-f',f)],'config','--format','json'],env=env))
-    require({'postgres','redis','prometheus','metrics-control'}<=infra.get('services',{}).keys(),
+    require({'postgres','redis','prometheus'}<=infra.get('services',{}).keys(),
         'product_metrics_profile_services_missing')
     require(set(BACKENDS+FRONTENDS)<=product.get('services',{}).keys(),'product_http_services_missing')
-    document={name:infra['services'][name] for name in ('postgres','redis','prometheus','metrics-control')}
+    document={name:infra['services'][name] for name in ('postgres','redis','prometheus')}
     document.update({name:product['services'][name] for name in BACKENDS+FRONTENDS})
     document['postgres']['command']+=['-c','cluster_name=addp-http-quality-local-'+life.uuid]
     config=core.isolate(document,life.run_id,images,label=LABEL,limits=LIMITS)
@@ -318,7 +321,7 @@ def setup(life,env):
         data=(life.checkout/'scripts/infra/init-postgresql.sql').read_text())
     life.phase='owned_source_tls_preparation';prepare_source_tls(life)
     life.phase='formal_product_start'
-    for group in [('system-backend',),('gateway','monitor-backend'),('metrics-control','prometheus'),
+    for group in [('system-backend',),('gateway','monitor-backend'),('prometheus',),
                   ('agent-backend','copilot-backend'),FRONTENDS]:
         life.compose('up','-d','--wait','--no-build',*group)
     for name in BACKENDS+FRONTENDS:

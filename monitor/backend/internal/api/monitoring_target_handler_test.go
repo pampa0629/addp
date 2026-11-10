@@ -220,7 +220,7 @@ func apiDiscoveryPolicy(t *testing.T) *metricsdiscovery.SourcePolicy {
 	}
 	roots := x509.NewCertPool()
 	roots.AddCert(issuer)
-	policy, err := metricsdiscovery.NewSourcePolicy([]netip.Prefix{netip.MustParsePrefix("127.0.0.1/32")}, []uint16{8443}, roots, tls.Certificate{Certificate: [][]byte{der}, PrivateKey: key})
+	policy, err := metricsdiscovery.NewSourcePolicy([]netip.Prefix{netip.MustParsePrefix("127.0.0.1/32")}, []uint16{8443}, roots, tls.Certificate{Certificate: [][]byte{der}, PrivateKey: key}, metricsdiscovery.DefaultExternalTargetLimit)
 	if err != nil {
 		t.Fatal(err)
 	}

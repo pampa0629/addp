@@ -41,7 +41,7 @@ func TestIntegrationMetricsPostgreSQLAdmission(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	policy, err := NewSourcePolicy([]netip.Prefix{netip.PrefixFrom(ip, ip.BitLen())}, []uint16{uint16(port)}, roots, certificate)
+	policy, err := NewSourcePolicy([]netip.Prefix{netip.PrefixFrom(ip, ip.BitLen())}, []uint16{uint16(port)}, roots, certificate, DefaultExternalTargetLimit)
 	if err != nil {
 		t.Fatal(err)
 	}

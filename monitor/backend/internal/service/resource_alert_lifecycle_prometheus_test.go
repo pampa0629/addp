@@ -22,6 +22,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/addp/monitor/internal/metricsdiscovery"
 	"github.com/addp/monitor/internal/models"
 	"github.com/addp/monitor/internal/repository"
 	"github.com/google/uuid"
@@ -199,7 +200,7 @@ func testMetricsResourceAlertLifecycle(t *testing.T, filesystem bool) {
 		t.Fatal(err)
 	}
 	backend := metricsIntegrationBackend(t)
-	observations := NewResourceObservationService(repository.NewResourceQueryPolicyRepository(f.db), repository.NewMonitoringTargetRepository(f.db), &resourceNodes{enabled: true}, backend, true, resourceSourcePolicyWithNetwork(t, []netip.Prefix{netip.PrefixFrom(ip, ip.BitLen())}, []uint16{uint16(port)}), ProcessObservationDependencies{})
+	observations := NewResourceObservationService(repository.NewResourceQueryPolicyRepository(f.db), repository.NewMonitoringTargetRepository(f.db, metricsdiscovery.DefaultExternalTargetLimit), &resourceNodes{enabled: true}, backend, true, resourceSourcePolicyWithNetwork(t, []netip.Prefix{netip.PrefixFrom(ip, ip.BitLen())}, []uint16{uint16(port)}), ProcessObservationDependencies{})
 	rules := NewResourceAlertRuleService(f.db, observations, &resourceRuleIdentity{node: node, version: 3}, f.n)
 	policy := models.ResourcePressurePolicy{TriggerPercent: 80, RecoveryPercent: 75, TriggerSeconds: 30, RecoverySeconds: 30}
 	enabled := false

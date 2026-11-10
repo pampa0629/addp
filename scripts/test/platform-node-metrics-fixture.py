@@ -1,4 +1,4 @@
-"""Owned TLS transport and center deployment for the real Hosted metrics suite."""
+"""Owned TLS material and center deployment for the real Hosted metrics suite."""
 from __future__ import annotations
 
 import argparse
@@ -27,6 +27,7 @@ SOURCE = module_from_spec(SOURCE_SPEC)
 sys.modules[SOURCE_SPEC.name] = SOURCE
 SOURCE_SPEC.loader.exec_module(SOURCE)
 PROJECT = "addp-metrics-online"
+PRESSURE_IMAGE = "nginx:1.28.0-alpine@sha256:30f1c0d78e0ad60901648be663a710bdadf19e4c10ac6782c235200619158284"
 PROCESS_PORTS = {"system": 19101, "monitor": 19102}
 WORKER_PROFILES = {
     "quality-workers": {"module": "quality", "ports": {"quality": 19103, "quality-worker-1": 19104, "quality-worker-2": 19105},
@@ -270,11 +271,6 @@ def native_block_capacity_proof(exporter, kernel):
             "readonly_host_metadata": True, "nonprivileged_sampler": True, "owned_textfile_volume": True}
 
 
-def compose(directory, *args):
-    return command(["docker", "compose", "--env-file", "/dev/null", "-p", PROJECT,
-                    "-f", str(directory / "metrics-compose.json"), *args])
-
-
 def openssl(*args):
     # Disposable PKI supplies every subject/extension; never depend on host openssl.cnf.
     command(["openssl", *args, *(["-config", "/dev/null"] if args[0] == "req" else [])])
@@ -282,7 +278,7 @@ def openssl(*args):
 
 def prepare(directory):
     # Refuse reuse before generating certificates or touching Docker resources.
-    if (directory / "metrics.env").exists() or (directory / "metrics-compose.json").exists():
+    if (directory / "metrics.env").exists():
         raise ValueError("metrics fixture is already prepared")
     bridge = json.loads(command(["docker", "network", "inspect", "bridge"]))
     address = bridge[0]["IPAM"]["Config"][0]["Gateway"]
@@ -320,6 +316,7 @@ def prepare(directory):
 
     (directory / "query").mkdir(mode=0o700)
     center, control, source = ca("center-ca"), ca("control-ca"), ca("source-ca")
+    control_client = ca("control-client-ca")
     for folder, issuer in (("center-tls", center), ("node-tls", source), *(("process-"+unit, source) for unit in units)):
         (directory / folder / "ca.crt").write_bytes(Path(str(issuer)+".crt").read_bytes())
         certificate(issuer, directory / folder, "server", True)
@@ -335,6 +332,8 @@ def prepare(directory):
     (directory / "query/client.key").chmod(0o600)
     (directory / "query/ca.crt").write_bytes(Path(str(center)+".crt").read_bytes())
     certificate(control, directory / "control", "server", True)
+    certificate(control_client, directory / "deployment", "control-client")
+    (directory / "control/client-ca.crt").write_bytes(Path(str(control_client)+".crt").read_bytes())
     certificate(source, directory / "deployment", "collector")
     certificate(source, directory / "admission", "client")
     deployment = directory / "deployment"
@@ -349,6 +348,10 @@ def prepare(directory):
         "ADDP_OBSERVABILITY_METRICS_ENABLED": "true", "ADDP_OBSERVABILITY_LOGS_ENABLED": "false",
         "ADDP_METRICS_TLS_DIR": str(directory / "center-tls"), "ADDP_METRICS_DEPLOYMENT_DIR": str(deployment),
         "PROMETHEUS_SERVICE_CLIENT_SECRET": secret,
+        "ADDP_METRICS_CONTROL_MTLS_ENABLED": "true",
+        "GATEWAY_METRICS_CONTROL_LISTEN": address+":9444",
+        "GATEWAY_METRICS_CONTROL_SERVER_NAME": address,
+        "GATEWAY_METRICS_CONTROL_TLS_DIR": str(directory / "control"),
         "PROMETHEUS_SYSTEM_URL": "https://"+address+":9444", "PROMETHEUS_MONITOR_URL": "https://"+address+":9444",
         "ADDP_ONLINE_METRICS_NODE_IP": address,
         "ADDP_NODE_METRICS_ENABLED": "true", "ADDP_NODE_METRICS_LISTEN": address+":19100",
@@ -374,46 +377,10 @@ def prepare(directory):
         values["ADDP_" + engine["prefix"] + "_METRICS_STATE_DIR"] = str(directory / (engine["folder"] + "-sources"))
         if engine["kind"] == "postgresql":
             values["ADDP_POSTGRES_AUTH_STATE_DIR"] = str(directory / "postgres-auth")
+    if os.environ.get("ADDP_ONLINE_NODE_METRICS_CASE") == "complete-comparison":
+        command(["docker", "pull", PRESSURE_IMAGE])
     os.environ.update(values)
     command(["python3", str(ROOT / "scripts/infra/generate-metrics-config.py")])
-    # The center belongs to the standard Infra lifecycle; this fixture only
-    # supplies protected transport to the real Gateway.
-    # Read the production transport directly. A TLS-only fixture must not
-    # interpolate the whole T2 stack or require unrelated SQL source secrets.
-    transport = json.loads(command(["docker", "compose", "--env-file", "/dev/null", "-f",
-                                   str(ROOT / "scripts/infra/metrics-control.yml"),
-                                   "config", "--format", "json"]))["services"]["metrics-control"]
-    transport.pop("ports", None)
-    transport.pop("networks", None)
-    transport.pop("restart", None)
-    transport["network_mode"] = "host"
-    transport["volumes"] = [{"type": "bind", "source": str(directory / "control"), "target": "/control", "read_only": True},
-                            {"type": "bind", "source": str(directory / "nginx.conf"), "target": "/etc/nginx/nginx.conf", "read_only": True}]
-    transport["labels"] = {"com.addp.online-runtime": "platform-node-metrics"}
-    spec = {"services": {"control-tls": transport}}
-    (directory / "metrics-compose.json").write_text(json.dumps(spec))
-    (directory / "nginx.conf").write_text('''worker_processes 1;
-pid /tmp/nginx.pid;
-error_log /dev/stderr warn;
-events { worker_connections 128; }
-http {
-  access_log off;
-  client_body_temp_path /tmp/client;
-  proxy_temp_path /tmp/proxy;
-  fastcgi_temp_path /tmp/fastcgi;
-  uwsgi_temp_path /tmp/uwsgi;
-  scgi_temp_path /tmp/scgi;
-  server {
-    listen @@IP@@:9444 ssl;
-    ssl_certificate /control/server.crt;
-    ssl_certificate_key /control/server.key;
-    ssl_protocols TLSv1.2 TLSv1.3;
-    location = /api/v1/system/oauth/token { proxy_pass http://127.0.0.1:8000; }
-    location = /api/v1/monitor/platform/metrics_discovery { proxy_pass http://127.0.0.1:8000; }
-    location / { return 404; }
-  }
-}
-'''.replace("@@IP@@", address))
     text = "".join("export " + key + "=" + shlex.quote(value) + "\n" for key, value in sorted(values.items()))
     (directory / "metrics.env").write_text(text)
     (directory / "metrics.env").chmod(0o600)
@@ -496,16 +463,10 @@ def cpu_pressure(directory, plan, detail):
     docker = json.loads(command(["docker", "info", "--format", "{{json .}}"]))
     if type(docker.get("NCPU")) is not int or docker["NCPU"] != cores:
         raise ValueError("CPU pressure Docker host differs from the observed VM")
-    source = compose(directory, "ps", "-q", "control-tls").split()
-    if len(source) != 1:
-        raise ValueError("CPU pressure requires its existing transport image")
-    transport = json.loads(command(["docker", "inspect", source[0]]))
+    image = command(["docker", "image", "inspect", PRESSURE_IMAGE, "--format", "{{.Id}}"]).strip()
+    if not re.fullmatch(r"sha256:[0-9a-f]{64}", image):
+        raise ValueError("CPU pressure image identity is invalid")
     labels = {"com.docker.compose.project": PROJECT, "com.addp.online-runtime": "platform-node-metrics"}
-    if (len(transport) != 1 or not transport[0].get("State", {}).get("Running")
-            or any(transport[0].get("Config", {}).get("Labels", {}).get(k) != v for k,v in labels.items())
-            or not re.fullmatch(r"sha256:[0-9a-f]{64}", transport[0].get("Image", ""))):
-        raise ValueError("CPU pressure transport is not owned")
-    image = transport[0]["Image"]
     nonce = secrets.token_hex(16)
     name = "addp-online-cpu-"+nonce
     labels.update({"com.docker.compose.service": "cpu-pressure", "io.addp.cpu-pressure.owner": nonce})
@@ -591,7 +552,7 @@ def assert_process_listeners_closed():
     # Application shutdown precedes fixture cleanup. Inspect, never kill or
     # adopt a foreign listener that may have taken a test port.
     address = str(ipaddress.ip_address(os.environ["ADDP_ONLINE_METRICS_NODE_IP"]))
-    for port in PROCESS_PORTS.values():
+    for port in (9444, *PROCESS_PORTS.values()):
         with socket.socket() as sock:
             sock.settimeout(1)
             if sock.connect_ex((address, port)) == 0:
@@ -942,7 +903,7 @@ def standard_process_record(directory, unit):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("action", choices=("prepare", "query", "up", "down", "engine-up", "engine-restart", "engine-down", "engine-metrics-up", "engine-metrics-pause", "engine-metrics-resume", "resume-workers", "standard-cleanup"))
+    parser.add_argument("action", choices=("prepare", "query", "down", "engine-up", "engine-restart", "engine-down", "engine-metrics-up", "engine-metrics-pause", "engine-metrics-resume", "resume-workers", "standard-cleanup"))
     args = parser.parse_args()
     directory = boundary()
     if args.action == 'standard-cleanup':
@@ -955,19 +916,12 @@ def main():
         prepare(directory)
     elif args.action == "query":
         configure_query(directory)
-    elif (directory / "metrics-compose.json").exists():
+    elif args.action == "down":
         assert_owned(directory)
-        if args.action == "up":
-            compose(directory, "up", "-d", "--wait", "--wait-timeout", "60")
-        else:
-            cleanup_cpu_pressure(directory)
-            compose(directory, "down", "--volumes", "--remove-orphans")
-            for kind, cmd in (("container", ["ps", "-aq"]), ("network", ["network", "ls", "-q"]), ("volume", ["volume", "ls", "-q"])):
-                if command(["docker", *cmd, "--filter", "label=com.docker.compose.project="+PROJECT]).strip():
-                    raise ValueError("metrics fixture has residual " + kind)
+        cleanup_cpu_pressure(directory)
+        if (directory / "metrics.env").is_file():
             assert_process_listeners_closed()
-    elif args.action == "up":
-        raise ValueError("metrics fixture has not been prepared")
+
 
 
 if __name__ == "__main__":

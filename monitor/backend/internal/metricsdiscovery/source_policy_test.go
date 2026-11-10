@@ -80,7 +80,7 @@ func testSourcePKI(t *testing.T, serverIP bool) sourcePKI {
 
 func testPolicy(t *testing.T, pki sourcePKI, ports ...uint16) *SourcePolicy {
 	t.Helper()
-	p, err := NewSourcePolicy([]netip.Prefix{netip.MustParsePrefix("127.0.0.0/8"), netip.MustParsePrefix("::1/128")}, ports, pki.roots, pki.client)
+	p, err := NewSourcePolicy([]netip.Prefix{netip.MustParsePrefix("127.0.0.0/8"), netip.MustParsePrefix("::1/128")}, ports, pki.roots, pki.client, DefaultExternalTargetLimit)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -139,14 +139,14 @@ func TestSourcePolicyRequiresExplicitNetworksAndPorts(t *testing.T) {
 		{[]netip.Prefix{netip.MustParsePrefix("127.0.0.0/8")}, []uint16{0}},
 		{[]netip.Prefix{netip.MustParsePrefix("127.0.0.0/8")}, []uint16{9443, 9443}},
 	} {
-		if _, err := NewSourcePolicy(tc.prefixes, tc.ports, pki.roots, pki.client); !errors.Is(err, ErrUnconfigured) {
+		if _, err := NewSourcePolicy(tc.prefixes, tc.ports, pki.roots, pki.client, DefaultExternalTargetLimit); !errors.Is(err, ErrUnconfigured) {
 			t.Fatalf("got %v", err)
 		}
 	}
-	if _, err := NewSourcePolicy([]netip.Prefix{netip.MustParsePrefix("127.0.0.0/8")}, []uint16{9443}, pki.roots, pki.server); !errors.Is(err, ErrUnconfigured) {
+	if _, err := NewSourcePolicy([]netip.Prefix{netip.MustParsePrefix("127.0.0.0/8")}, []uint16{9443}, pki.roots, pki.server, DefaultExternalTargetLimit); !errors.Is(err, ErrUnconfigured) {
 		t.Fatal("server identity admitted as client")
 	}
-	p, err := NewSourcePolicy([]netip.Prefix{netip.MustParsePrefix("10.0.0.0/8")}, []uint16{9443}, pki.roots, pki.client)
+	p, err := NewSourcePolicy([]netip.Prefix{netip.MustParsePrefix("10.0.0.0/8")}, []uint16{9443}, pki.roots, pki.client, DefaultExternalTargetLimit)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -163,7 +163,7 @@ func TestSourcePolicyAlwaysRejectsMetadataEvenInsideAllowedRanges(t *testing.T) 
 	p, err := NewSourcePolicy([]netip.Prefix{
 		netip.MustParsePrefix("169.254.0.0/16"), netip.MustParsePrefix("100.100.100.0/24"), netip.MustParsePrefix("168.63.129.0/24"),
 		netip.MustParsePrefix("fd00::/8"), netip.MustParsePrefix("224.0.0.0/4"), netip.MustParsePrefix("ff00::/8"),
-	}, []uint16{9443}, pki.roots, pki.client)
+	}, []uint16{9443}, pki.roots, pki.client, DefaultExternalTargetLimit)
 	if err != nil {
 		t.Fatal(err)
 	}

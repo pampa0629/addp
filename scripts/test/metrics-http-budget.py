@@ -152,7 +152,11 @@ def directory_objects(stderr, ownership):
     return {'status':'partial' if unparsed and objects else 'unparsed' if unparsed else 'parsed' if objects else 'none','objects':objects}
 
 
-COMPILE_STAGES=('process_source','resource_windows','http_query','http_alert')
+COMPILE_PLANS={
+    'http-quality':('gateway_control','process_source','resource_windows','http_query','http_alert'),
+    'mtls-preflight':('gateway_control','resource_windows'),
+}
+COMPILE_STAGES=COMPILE_PLANS['http-quality']
 RESUME_RESERVE=.05
 PROCESS_STATES=('R','S','D','T','t','Z','X','I','other')
 WAIT_CATEGORIES=('process_start_wait_candidate','io_wait_candidate','completion_wait','other','zero','empty',
@@ -361,7 +365,8 @@ def update_receipt(receipt, mutate, end=None):
     with open(str(receipt)+'.meta.lock','a') as lock:
         acquire_lock(lock.fileno(),end,'receipt_publication',lambda:False)
         try:
-            value=json.loads(receipt.read_text());mutate(value)
+            value=json.loads(receipt.read_text());case=value.get('case');mutate(value)
+            if value.get('case')!=case:raise RuntimeError('http_compile_case_changed')
             pending=receipt.with_suffix('.pending');pending.write_text(json.dumps(value));pending.replace(receipt)
             return value
         finally:fcntl.flock(lock.fileno(),fcntl.LOCK_UN)
@@ -525,11 +530,13 @@ def compile_observation(value):
     return {'status':'finished',**value}
 
 
-def compile_stages_observation(value):
+def compile_stages_observation(value, case):
+    plan=COMPILE_PLANS.get(case) if isinstance(case,str) else None
+    if plan is None:return {'status':'invalid','stages':{}}
     if value is None:value={}
-    if not isinstance(value,dict) or not set(value)<=set(COMPILE_STAGES):return {'status':'invalid','stages':{}}
+    if not isinstance(value,dict) or not set(value)<=set(plan):return {'status':'invalid','stages':{}}
     stages={};previous_end=0;can_start=True
-    for stage in COMPILE_STAGES:
+    for stage in plan:
         proof=compile_observation(value.get(stage));status=proof['status']
         if status=='invalid' or (status!='not_started' and (not can_start or proof['started_monotonic_ns']<previous_end)):
             return {'status':'invalid','stages':{}}
@@ -543,8 +550,8 @@ def record_compile_boundary(receipt, stage, event, exit_code=None, *, end=None):
     def mutate(value):
         stages=value.get('compile_stages')
         if stages is None:stages={}
-        observed=compile_stages_observation(stages)
-        if stage not in COMPILE_STAGES or observed['status']!='valid' or 'process_compile' in value:
+        observed=compile_stages_observation(stages,value.get('case'))
+        if stage not in observed['stages'] or observed['status']!='valid' or 'process_compile' in value:
             raise RuntimeError('http_compile_boundary_invalid')
         previous=observed['stages'][stage];now=time.monotonic_ns()
         if event=='start' and previous['status']=='not_started' and exit_code is None:
@@ -555,7 +562,7 @@ def record_compile_boundary(receipt, stage, event, exit_code=None, *, end=None):
         else:raise RuntimeError('http_compile_boundary_invalid')
         if value.get('cleanup_started'):raise RuntimeError('http_compile_boundary_during_cleanup')
         stages={**stages,stage:proof}
-        if compile_stages_observation(stages)['status']!='valid':raise RuntimeError('http_compile_boundary_invalid')
+        if compile_stages_observation(stages,value.get('case'))['status']!='valid':raise RuntimeError('http_compile_boundary_invalid')
         value['compile_stages']=stages
     update_receipt(receipt,mutate,end)
 
@@ -646,7 +653,7 @@ def sample(ownership,end,*,reserve_seconds=0):
             missing=stage in {'inspect','volume_size'} and b'No such container' in (failure.stderr or b'')
             diagnostic=directory_failure_diagnostic(failure.stderr or b'',ownership,end) if stage=='private_directory_size' else {}
             if stage=='private_directory_size':
-                diagnostic.update(compile_stages_at_sample_read=compile_stages_observation(ownership.get('compile_stages')),
+                diagnostic.update(compile_stages_at_sample_read=compile_stages_observation(ownership.get('compile_stages'),ownership.get('case')),
                                   sample_started_monotonic_seconds=began,command_started_monotonic_seconds=started,
                                   command_observed_exit_monotonic_seconds=finished)
             failed('http_budget_sample_command_failed','container_disappeared' if missing else 'command_failed',
@@ -718,6 +725,7 @@ def main():
                 if now-started>=1080:raise RuntimeError('http_budget_work_deadline')
                 if ownership_path.exists():
                     ownership=json.loads(ownership_path.read_text())
+                    if ownership.get('case')!=report['case']:raise RuntimeError('http_compile_case_changed')
                     if ownership.get('compile_cleanup_error'):raise RuntimeError('http_compile_cleanup_failed')
                     if not ownership.get("cleanup_started") and (last_sample is None or now-last_sample>=4):
                         if last_sample is not None and now-last_sample>5:raise RuntimeError('http_budget_sample_cadence')
@@ -765,7 +773,9 @@ def main():
                 report['python_sources']=ownership.get('python_sources')
                 report['source_tls_proof']=ownership.get('source_tls_proof')
                 report['source_tls_publication']=ownership.get('source_tls_publication')
-                report['compile_stages']=compile_stages_observation(ownership.get('compile_stages'))
+                report['compile_stages']=compile_stages_observation(ownership.get('compile_stages'),ownership.get('case'))
+                if ownership.get('case')!=report['case'] and error is None:
+                    report['error_code']='http_compile_case_changed'
                 report['compile_cleanup_error']=ownership.get('compile_cleanup_error')
                 report['cleanup_verified']=ownership.get('cleanup_verified',False)
                 report['private_directory_removed']=not Path(ownership['work']).exists()
@@ -776,8 +786,8 @@ def main():
             compiles=report.get('compile_stages',{})
             compiles_proven=compiles.get('status')=='valid' and all(p['status']=='finished' and p['exit_code']==0 for p in compiles['stages'].values())
             if report.get('compile_cleanup_error') and report['error_code'] is None:report['error_code']='http_compile_cleanup_failed'
-            if result==0 and report['error_code'] is None and not preflight and not compiles_proven:report['error_code']='http_compile_stages_unproven'
-            if result==0 and error is None and (preflight or compiles_proven) and not report.get('compile_cleanup_error') and not report.get('cleanup_overdue') and tls_proven and counts_proven and report['inputs_unchanged'] and report.get('cleanup_verified') and report['elapsed_seconds']<1200 and report.get('private_directory_removed') and report['samples']:
+            if result==0 and report['error_code'] is None and not compiles_proven:report['error_code']='http_compile_stages_unproven'
+            if result==0 and report['error_code'] is None and compiles_proven and not report.get('compile_cleanup_error') and not report.get('cleanup_overdue') and tls_proven and counts_proven and report['inputs_unchanged'] and report.get('cleanup_verified') and report['elapsed_seconds']<1200 and report.get('private_directory_removed') and report['samples']:
                 report['result']='passed'
             output.write_text(json.dumps(report,indent=2))
     summary={key:report.get(key) for key in ('case','result','error_code','failure_detail','exit_code','elapsed_seconds','source_tls_proof','source_tls_publication',

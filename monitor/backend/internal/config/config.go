@@ -16,6 +16,7 @@ type Config struct {
 	MetricsQueryClient *resourcequery.Client
 	MetricsEnabled     bool
 	MetricsPolicy      *metricsdiscovery.SourcePolicy
+	MetricsTargetLimit int
 	// 服务配置
 	ServerPort      string
 	LogObserverNode string
@@ -136,7 +137,8 @@ func LoadConfig() (*Config, error) {
 		EmailFromName:           "ADDP Monitor",
 	}
 
-	cfg.MetricsEnabled, cfg.MetricsPolicy = loadMetricsPolicy()
+	cfg.MetricsTargetLimit = loadMetricsTargetLimit()
+	cfg.MetricsEnabled, cfg.MetricsPolicy = loadMetricsPolicy(cfg.MetricsTargetLimit)
 	cfg.MetricsQueryClient = loadMetricsQueryClient(cfg.MetricsEnabled)
 	return cfg, nil
 }

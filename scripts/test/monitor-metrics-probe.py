@@ -118,7 +118,7 @@ context = ssl.create_default_context(cafile=str(TLS / 'ca.crt'))
 context.load_cert_chain(str(TLS / 'health.crt'), str(TLS / 'health.key'))
 base = 'https://localhost:' + port('prometheus', 9090)
 source = 'https://localhost:' + port('metrics-source', 9443)
-control = 'https://localhost:' + port('metrics-control', 9444)
+control = 'https://localhost:' + port('gateway-control', 9444)
 deployment = Path(os.environ['ADDP_METRICS_DEPLOYMENT_DIR'])
 original_metrics = (WORK / 'source/metrics').read_text()
 source_context = ssl.create_default_context(cafile=str(deployment / 'source-ca.crt'))
@@ -267,8 +267,8 @@ def finish_public_preflight():
     raise SystemExit(0)
 
 
-# Production TLS forwarder uses the same hard resource/network boundary in T2.
-forwarder = json.loads(subprocess.check_output(['docker', 'inspect', compose('ps', '-q', 'metrics-control')], text=True))[0]
+# Gateway control listener runs in the bounded T2 fixture container.
+forwarder = json.loads(subprocess.check_output(['docker', 'inspect', compose('ps', '-q', 'gateway-control')], text=True))[0]
 assert forwarder['Config']['User'] == '65534:65534'
 assert forwarder['HostConfig']['ReadonlyRootfs'] and forwarder['HostConfig']['CapDrop'] == ['ALL']
 assert not forwarder['HostConfig']['Privileged']
@@ -276,6 +276,9 @@ assert forwarder['HostConfig']['NanoCpus'] == 250_000_000
 assert forwarder['HostConfig']['Memory'] == 128 * 1024**2
 assert all(not m['RW'] for m in forwarder['Mounts'])
 control_context = ssl.create_default_context(cafile=str(deployment / 'control-ca.crt'))
+control_anonymous = ssl.create_default_context(cafile=str(deployment / 'control-ca.crt'))
+rejected(control + '/api/v1/monitor/platform/metrics_discovery', control_anonymous)
+control_context.load_cert_chain(str(deployment / 'control-client.crt'), str(deployment / 'control-client.key'))
 for path, method, expected in (('/metrics', 'GET', 404),
                                ('/api/v1/system/oauth/token', 'GET', 405),
                                ('/api/v1/monitor/platform/metrics_discovery', 'POST', 405),
@@ -397,7 +400,7 @@ if os.environ.get('ADDP_METRICS_T2_CASE') in ('all', 'block-capacity'):
                                'error_kind': tls_failure_kind(target.get('lastError',''))} for target in nodes]}
         try:
             request = urllib.request.Request(control + '/api/v1/monitor/platform/metrics_discovery', headers={'Authorization':'Bearer addp_at_t2_native_oauth'})
-            with urllib.request.urlopen(request, context=context, timeout=5) as response:
+            with urllib.request.urlopen(request, context=control_context, timeout=5) as response:
                 report['http_sd_body_current'] = json.loads(response.read()) == block_projection
             requests = (WORK/'source/requests.log').read_text()
             report['sd_200'] = requests.count('GET /api/v1/monitor/platform/metrics_discovery 200')
@@ -442,7 +445,7 @@ assert flags['web.enable-remote-write-receiver'] == 'false', flags
 config = api('status/config')['yaml']
 for value in ('scrape_interval: 15s', 'scrape_timeout: 5s', 'sample_limit: 20000', 'body_size_limit: 10MiB',
               'label_limit: 20', 'label_name_length_limit: 128', 'label_value_length_limit: 512',
-              'refresh_interval: 30s', 'target_limit: 12', 'client_id: addp-prometheus',
+              'refresh_interval: 30s', 'target_limit: ' + os.environ.get('ADDP_METRICS_TARGET_LIMIT', '12'), 'client_id: addp-prometheus',
               'context_type: platform', 'audience: addp.api', 'follow_redirects: false'):
     assert value in config, (value, config)
 
@@ -517,6 +520,35 @@ except AssertionError:
 eventually(self_sample_ready, 'center self scrape and resident memory')
 assert job_is_up('addp_nodes', '1')
 finish_public_preflight()
+if os.environ.get('ADDP_METRICS_T2_CASE') == 'target-budget':
+    fixture = json.loads(original_discovery)[0]
+    address = fixture['targets'][0].rsplit(':', 1)[0]
+    planned = [
+        {'targets': [f'{address}:{19500 + index}'],
+         'labels': dict(fixture['labels'], addp_node_id=f'11111111-1111-4111-8111-{index:012d}')}
+        for index in range(25)
+    ]
+    discovery_text(json.dumps(planned[:24]))
+
+    def within_budget():
+        samples = query('count_over_time(addp_fixture_resource_bytes{job="addp_nodes"}[45s])')
+        return (len(samples) == 24 and all(int(row['value'][1]) >= 2 for row in samples)
+                and len({row['metric']['addp_node_id'] for row in samples}) == 24
+                and len(query('up{job="addp_nodes"} == 1')) == 24)
+
+    eventually(within_budget, '24 distinct mTLS targets each have consecutive samples', seconds=90)
+    discovery_text(json.dumps(planned))
+
+    def over_budget():
+        targets = [row for row in api('targets')['activeTargets'] if row['labels']['job'] == 'addp_nodes']
+        return (len(targets) == 25 and all(row['health'] == 'down' and 'target_limit exceeded' in row['lastError'].lower()
+                                          for row in targets))
+
+    eventually(over_budget, '25 targets exceed the Prometheus job limit')
+    discovery_text(json.dumps(planned[:24]))
+    eventually(within_budget, '24 targets recover within the deployment budget', seconds=90)
+    print('Metrics T2: 24 distinct mTLS targets sampled, 25 rejected, 24 recovered', flush=True)
+    raise SystemExit(0)
 initial_sample_time = query('addp_fixture_resource_bytes{job="addp_nodes"}')[0]['value'][0]
 # Write atomically without replacing the bind-mounted source directory.
 def source_text(text):

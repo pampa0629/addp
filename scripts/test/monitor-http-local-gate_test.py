@@ -320,7 +320,7 @@ class HTTPProductLocalTests(unittest.TestCase):
         instance=m.Lifecycle.__new__(m.Lifecycle)
         with self.assertRaisesRegex(m.core.GateError,'sampler_image_not_admitted'):_=instance.sampling_image
 
-    def test_projection_selects_the_two_product_metrics_profiles(self):
+    def test_projection_selects_metrics_profile_and_gateway_control_overlay(self):
         # Compose config omits inactive profiles. Model that actual behavior,
         # rather than handing the adapter an impossible always-complete map.
         with tempfile.TemporaryDirectory() as directory:
@@ -333,13 +333,13 @@ class HTTPProductLocalTests(unittest.TestCase):
                     profiles={args[i+1] for i,value in enumerate(args[:-1]) if value=='--profile'}
                     included={'postgres','redis'}
                     if 'observability-metrics' in profiles:included.add('prometheus')
-                    if 'observability-metrics-control' in profiles:included.add('metrics-control')
                     return json.dumps({'services':{name:services[name] for name in included}})
                 return json.dumps({'services':services})
             life.command=compose;life.private_json=lambda name,value:Path(directory)/name
             config=m.project(life,{}, {})
-            self.assertTrue({'prometheus','metrics-control'}<=config['services'].keys())
-            self.assertEqual(sum(args.count('--profile') for args in calls),2)
+            self.assertTrue({'prometheus','gateway'}<=config['services'].keys())
+            self.assertTrue(any('scripts/prod/gateway-metrics-control.yml' in args for args in calls))
+            self.assertEqual(sum(args.count('--profile') for args in calls),1)
 
     def test_projection_has_owned_static_sources_and_product_readonly_mounts(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -619,7 +619,7 @@ class HTTPPrivateTLSConfigTests(unittest.TestCase):
             self.assertEqual(config.parent.stat().st_mode&0o777,0o700)
             self.assertNotIn('.include',config.read_text());self.assertNotIn('provider',config.read_text())
             crypto=[row for row in calls if row[1][0]=='openssl']
-            self.assertEqual(len(crypto),19);self.assertTrue(all(row[2]['timeout']==10 for row in crypto))
+            self.assertEqual(len(crypto),22);self.assertTrue(all(row[2]['timeout']==10 for row in crypto))
             self.assertEqual(calls[-2][0],'http_metrics_config_render')
             self.assertEqual(calls[-1][0],'http_process_metrics_render')
             self.assertTrue(all('OPENSSL_CONF' not in row[2]['env'] for row in calls[-2:]))
@@ -659,7 +659,7 @@ class HTTPPrivateTLSConfigTests(unittest.TestCase):
             with mock.patch.object(m.shutil,'copyfile',side_effect=OSError('copy_failure')):
                 with self.assertRaisesRegex(OSError,'copy_failure'):m.tls(life,env)
             self.assertEqual(life.phase,'http_tls_materials')
-            self.assertEqual(calls[-1][0],'http_tls_sign_metrics_control')
+            self.assertEqual(calls[-1][0],'http_tls_sign_prometheus_control')
 
     def test_native_adapter_satisfies_the_real_command_kernel_before_crypto(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -751,7 +751,8 @@ class HTTPNativeTLSConfigTest(unittest.TestCase):
                     ('prometheus','center','sslserver','-verify_hostname','localhost'),
                     ('collector','source','sslclient','-verify_hostname','collector'),
                     ('admission','source','sslclient','-verify_hostname','admission'),
-                    ('metrics-control','control','sslserver','-verify_hostname','metrics-control'),
+                    ('gateway-control','control','sslserver','-verify_hostname','gateway'),
+                    ('prometheus-control','control-client','sslclient','-verify_hostname','prometheus'),
                     *[(name,'source','sslserver','-verify_ip',address) for name,address in life.addresses.items()]]
                 for name,root,purpose,flag,value in leaves:
                     openssl('verify','-purpose',purpose,flag,value,'-CAfile',str(work/'certificates'/(root+'.crt')),str(work/'certificates'/(name+'.crt')))

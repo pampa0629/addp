@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# ADDP_T2_OWNED_SERVICES=prometheus,metrics-source,node-exporter,block-capacity,metrics-control,postgres,postgres-metrics,postgres-metrics-web,python-http-agent,python-http-copilot
+# ADDP_T2_OWNED_SERVICES=prometheus,metrics-source,node-exporter,block-capacity,gateway-control,postgres,postgres-metrics,postgres-metrics-web,python-http-agent,python-http-copilot
 # ADDP_T2_COMPOSE_FILE=scripts/test/docker-compose.monitor-metrics-t2.yml
-# ADDP_T2_INPUT_FILES=scripts/utils/metrics-project.py scripts/utils/metrics-source.py scripts/test/metrics-source-fixture.py scripts/test/metrics-project_test.py scripts/infra/node-recovery.py scripts/test/node-metrics-recovery_test.py scripts/test/node-metrics-recovery-probe.py scripts/test/node-recovery-fixture.sh scripts/infra/metrics-sources.py scripts/test/metrics-sources_test.py common-python/ agent/backend/main.py agent/backend/requirements.txt copilot/backend/main.py copilot/backend/requirements.txt scripts/test/python-http-metrics-source.py scripts/test/python-http-metrics-probe.py scripts/test/metrics-http-budget.py scripts/test/postgres-metrics-lifecycle_test.py scripts/test/postgres-lifecycle-probe.py business/scripts/stop.sh business/docker-compose.yml business/scripts/start.sh business/.env.example scripts/infra/postgres-metrics.yml scripts/infra/postgres-observation/ scripts/test/postgres-observation-probe.py scripts/test/directory-publication-probe.py scripts/utils/deployment-inventory.py scripts/utils/container-proof.py scripts/infra/metrics-control.yml scripts/infra/metrics-control.conf scripts/infra/block-capacity.py scripts/infra/node-block-capacity.yml scripts/infra/node-block-capacity-linux.yml scripts/infra/node-metrics.py scripts/infra/node-metrics.yml scripts/infra/node-metrics-linux.yml scripts/infra/node-metrics-desktop.yml scripts/infra/node-metrics-web.yml scripts/infra/metrics.yml scripts/infra/prometheus.yml scripts/infra/generate-metrics-config.py scripts/infra/prometheus-web.yml scripts/infra/prometheus-http.yml scripts/infra/up.sh scripts/infra/down.sh scripts/infra/ports.sh scripts/infra/status.sh scripts/utils/observability-env.sh scripts/dev/start.sh scripts/dev/stop.sh scripts/dev/lifecycle-lock.sh scripts/dev/process-metrics-launch.py scripts/dev/worker-units.sh scripts/dev/ports.sh scripts/test/dev-process-metrics-plan_test.py scripts/prod/start.sh scripts/prod/stop.sh scripts/prod/generate-process-metrics-platform.py scripts/prod/metrics-platform.yml scripts/prod/metrics-query.yml common/processmetrics/ common/httpmetrics/ common/modulelifecycle/ common/config/process_metrics.go common/models/process_metrics.go common/models/container_observation.go common/client/system_service.go common/client/system_runtime_instances.go common/client/system_observability_identity.go common/models/observability_identity.go common/models/module_runtime_query.go common/models/observability_identity.go common/models/service_expectations.go common/models/engine_metrics.go common/client/system_engine_deployments.go monitor/backend/internal/metricsdiscovery/ monitor/backend/internal/resourcequery/ monitor/backend/internal/config/metrics.go monitor/backend/internal/config/config.go common/client/system_host_node.go common/client/system_host_node_scope.go scripts/prod/wait-infra.sh scripts/test/monitor-metrics-probe.py scripts/test/metrics-deployment-config_test.py scripts/test/infra-runtime-log-lifecycle_test.py docker-compose.infra.yml docker-compose.yml .env.example monitor/backend/internal/service/ monitor/backend/internal/models/ monitor/backend/internal/repository/ scripts/utils/private-state.py scripts/utils/deployment-docker.py
+# ADDP_T2_INPUT_FILES=scripts/utils/metrics-project.py scripts/utils/metrics-source.py scripts/test/metrics-source-fixture.py scripts/test/metrics-project_test.py scripts/infra/node-recovery.py scripts/test/node-metrics-recovery_test.py scripts/test/node-metrics-recovery-probe.py scripts/test/node-recovery-fixture.sh scripts/infra/metrics-sources.py scripts/test/metrics-sources_test.py common-python/ agent/backend/main.py agent/backend/requirements.txt copilot/backend/main.py copilot/backend/requirements.txt scripts/test/python-http-metrics-source.py scripts/test/python-http-metrics-probe.py scripts/test/metrics-http-budget.py scripts/test/postgres-metrics-lifecycle_test.py scripts/test/postgres-lifecycle-probe.py business/scripts/stop.sh business/docker-compose.yml business/scripts/start.sh business/.env.example scripts/infra/postgres-metrics.yml scripts/infra/postgres-observation/ scripts/test/postgres-observation-probe.py scripts/test/directory-publication-probe.py scripts/utils/deployment-inventory.py scripts/utils/container-proof.py gateway/ scripts/prod/gateway-metrics-control.yml scripts/infra/block-capacity.py scripts/infra/node-block-capacity.yml scripts/infra/node-block-capacity-linux.yml scripts/infra/node-metrics.py scripts/infra/node-metrics.yml scripts/infra/node-metrics-linux.yml scripts/infra/node-metrics-desktop.yml scripts/infra/node-metrics-web.yml scripts/infra/metrics.yml scripts/infra/prometheus.yml scripts/infra/generate-metrics-config.py scripts/infra/prometheus-web.yml scripts/infra/prometheus-http.yml scripts/infra/up.sh scripts/infra/down.sh scripts/infra/ports.sh scripts/infra/status.sh scripts/utils/observability-env.sh scripts/dev/start.sh scripts/dev/restart.sh scripts/dev/stop.sh scripts/dev/lifecycle-lock.sh scripts/dev/process-metrics-launch.py scripts/dev/worker-units.sh scripts/dev/ports.sh scripts/test/dev-process-metrics-plan_test.py scripts/prod/start.sh scripts/prod/stop.sh scripts/prod/generate-process-metrics-platform.py scripts/prod/metrics-platform.yml scripts/prod/metrics-query.yml common/processmetrics/ common/httpmetrics/ common/modulelifecycle/ common/config/process_metrics.go common/models/process_metrics.go common/models/container_observation.go common/client/system_service.go common/client/system_runtime_instances.go common/client/system_observability_identity.go common/models/observability_identity.go common/models/module_runtime_query.go common/models/observability_identity.go common/models/service_expectations.go common/models/engine_metrics.go common/client/system_engine_deployments.go monitor/backend/internal/metricsdiscovery/ monitor/backend/internal/resourcequery/ monitor/backend/internal/config/metrics.go monitor/backend/internal/config/config.go common/client/system_host_node.go common/client/system_host_node_scope.go scripts/prod/wait-infra.sh scripts/test/monitor-metrics-probe.py scripts/test/metrics-deployment-config_test.py scripts/test/infra-runtime-log-lifecycle_test.py docker-compose.infra.yml docker-compose.yml .env.example monitor/backend/internal/service/ monitor/backend/internal/models/ monitor/backend/internal/repository/ scripts/utils/private-state.py scripts/utils/deployment-docker.py
 # Own disposable Compose startup, certificates, source files and zero-residue cleanup.
 set -euo pipefail
 [[ $# -le 1 ]] || { echo 'Metrics T2: unexpected arguments' >&2; exit 2; }
@@ -12,6 +12,7 @@ case "${1:-}" in
   --case=postgres-source) metrics_case=postgres-source ;;
   --case=http-quality) metrics_case=http-quality ;;
   --case=mtls-preflight) metrics_case=mtls-preflight ;;
+  --case=target-budget) metrics_case=target-budget ;;
   --case=process-alerts) metrics_case=process-alerts ;;
   --case=block-capacity) metrics_case=block-capacity ;;
   --case=host-resources) metrics_case=host-resources ;;
@@ -48,10 +49,11 @@ if [[ "$metrics_case" == http-quality || "$metrics_case" == mtls-preflight ]]; t
   export GOMAXPROCS=2 GOFLAGS=-p=2
 fi
 if [[ -n "${ADDP_HTTP_BUDGET_RECEIPT:-}" ]]; then
-  python3 - "$ADDP_HTTP_BUDGET_RECEIPT" "$COMPOSE_PROJECT" "$WORK_DIR" <<'RECEIPT'
+  python3 - "$ADDP_HTTP_BUDGET_RECEIPT" "$COMPOSE_PROJECT" "$WORK_DIR" "$metrics_case" <<'RECEIPT'
 import json,sys
 from pathlib import Path
-p=Path(sys.argv[1]);tmp=p.with_suffix('.pending');tmp.write_text(json.dumps({'project':sys.argv[2],'work':sys.argv[3]}));tmp.replace(p)
+if sys.argv[4] not in ('http-quality','mtls-preflight'):raise RuntimeError('http_compile_case_invalid')
+p=Path(sys.argv[1]);tmp=p.with_suffix('.pending');tmp.write_text(json.dumps({'case':sys.argv[4],'project':sys.argv[2],'work':sys.argv[3]}));tmp.replace(p)
 RECEIPT
 fi
 export ADDP_POSTGRES_METRICS_SOURCE_DIR="$WORK_DIR/postgres-source"
@@ -66,9 +68,9 @@ export ADDP_NODE_METRICS_LISTEN=:9100 ADDP_NODE_METRICS_ROOTFS=/ ADDP_NODE_METRI
 export ADDP_NODE_METRICS_NAMESPACED_COLLECTOR_PREFIX=--collector
 export ADDP_NODE_METRICS_KERNEL=unused ADDP_NODE_CAPACITY_SYSFS=/sys ADDP_NODE_CAPACITY_PROCFS=/proc
 export ADDP_NODE_METRICS_TEXTFILE=--no-collector.textfile
-export PROMETHEUS_SYSTEM_URL=https://metrics-control:9444 PROMETHEUS_MONITOR_URL=https://metrics-control:9444
-export ADDP_METRICS_CONTROL_ENABLED=true ADDP_METRICS_CONTROL_DIR="$WORK_DIR/control"
-export ADDP_METRICS_CONTROL_GATEWAY_URL=http://metrics-source:8081
+export PROMETHEUS_SYSTEM_URL=https://gateway-control:9444 PROMETHEUS_MONITOR_URL=https://gateway-control:9444
+export ADDP_METRICS_CONTROL_MTLS_ENABLED=true
+export GATEWAY_METRICS_CONTROL_TLS_DIR="$WORK_DIR/control"
 export PROMETHEUS_SERVICE_CLIENT_SECRET="$(python3 -c 'import secrets; print(secrets.token_hex(32))')"
 export METRICS_T2_POSTGRES_PASSWORD="$(python3 -c 'import secrets; print(secrets.token_hex(32))')"
 compose(){ docker compose --env-file /dev/null -p "$COMPOSE_PROJECT" -f "$COMPOSE_FILE" "$@"; }
@@ -101,7 +103,7 @@ CLEANUP_RECEIPT
   fi
   # The new SQL source's logs are checked for secret exposure in memory by its
   # probe. Never dump those raw logs on failure before that check succeeds.
-  if [[ "$result" != 0 ]]; then compose logs --no-color --tail=60 prometheus metrics-source node-exporter metrics-control postgres >&2; fi
+  if [[ "$result" != 0 ]]; then compose logs --no-color --tail=60 prometheus metrics-source node-exporter gateway-control postgres >&2; fi
   compose --profile python-http --profile block-capacity down --volumes --remove-orphans >"$WORK_DIR/cleanup.log" 2>&1 || { result=1; cleanup_verified=false; }
   # Producers are stopped: phase/counter files can no longer be concurrently written.
   # Capture even an early Go failure, before Python is entered, then destroy files.
@@ -201,7 +203,7 @@ openssl req -x509 -newkey rsa:2048 -nodes -days 1 -subj /CN=ADDP-Metrics-T2-CA -
 for identity in server health; do
   openssl req -new -newkey rsa:2048 -nodes -subj "/CN=$identity" -keyout "$ADDP_METRICS_TLS_DIR/$identity.key" -out "$WORK_DIR/$identity.csr" >/dev/null 2>&1
   if [[ "$identity" == server ]]; then
-    printf 'subjectAltName=DNS:localhost,DNS:prometheus,DNS:metrics-source,DNS:metrics-control\nextendedKeyUsage=serverAuth\n' >"$WORK_DIR/extensions"
+    printf 'subjectAltName=DNS:localhost,DNS:prometheus,DNS:metrics-source,DNS:gateway-control\nextendedKeyUsage=serverAuth\n' >"$WORK_DIR/extensions"
   else
     printf 'extendedKeyUsage=clientAuth\n' >"$WORK_DIR/extensions"
   fi
@@ -246,11 +248,33 @@ touch "$WORK_DIR/source/requests.log"
 chmod 666 "$WORK_DIR/source/requests.log"
 # Control-plane trust is separate from center query/health and node source trust.
 openssl req -x509 -newkey rsa:2048 -nodes -days 1 -subj /CN=ADDP-Control-T2-CA -addext basicConstraints=critical,CA:TRUE -addext keyUsage=critical,keyCertSign,cRLSign -addext subjectKeyIdentifier=hash -keyout "$WORK_DIR/control-ca.key" -out "$ADDP_METRICS_DEPLOYMENT_DIR/control-ca.crt" >/dev/null 2>&1
-openssl req -new -newkey rsa:2048 -nodes -subj /CN=metrics-control -keyout "$ADDP_METRICS_CONTROL_DIR/server.key" -out "$WORK_DIR/control.csr" >/dev/null 2>&1
-printf 'subjectAltName=DNS:localhost,DNS:metrics-control\nextendedKeyUsage=serverAuth\n' >"$WORK_DIR/control-extensions"
+openssl req -new -newkey rsa:2048 -nodes -subj /CN=gateway-control -keyout "$GATEWAY_METRICS_CONTROL_TLS_DIR/server.key" -out "$WORK_DIR/control.csr" >/dev/null 2>&1
+printf 'subjectAltName=DNS:localhost,DNS:gateway-control\nextendedKeyUsage=serverAuth\n' >"$WORK_DIR/control-extensions"
 printf 'basicConstraints=critical,CA:FALSE\nauthorityKeyIdentifier=keyid:always\nsubjectKeyIdentifier=hash\nkeyUsage=critical,digitalSignature,keyEncipherment\n' >>"$WORK_DIR/control-extensions"
-openssl x509 -req -in "$WORK_DIR/control.csr" -CA "$ADDP_METRICS_DEPLOYMENT_DIR/control-ca.crt" -CAkey "$WORK_DIR/control-ca.key" -set_serial 1 -days 1 -extfile "$WORK_DIR/control-extensions" -out "$ADDP_METRICS_CONTROL_DIR/server.crt" >/dev/null 2>&1
-chmod 644 "$ADDP_METRICS_CONTROL_DIR/server.key"
+openssl x509 -req -in "$WORK_DIR/control.csr" -CA "$ADDP_METRICS_DEPLOYMENT_DIR/control-ca.crt" -CAkey "$WORK_DIR/control-ca.key" -set_serial 1 -days 1 -extfile "$WORK_DIR/control-extensions" -out "$GATEWAY_METRICS_CONTROL_TLS_DIR/server.crt" >/dev/null 2>&1
+chmod 644 "$GATEWAY_METRICS_CONTROL_TLS_DIR/server.key"
+# The control client CA is dedicated to this one-run Prometheus identity.
+openssl req -x509 -newkey rsa:2048 -nodes -days 1 -subj /CN=ADDP-Control-Client-T2-CA -addext basicConstraints=critical,CA:TRUE -addext keyUsage=critical,keyCertSign,cRLSign -keyout "$WORK_DIR/control-client-ca.key" -out "$GATEWAY_METRICS_CONTROL_TLS_DIR/client-ca.crt" >/dev/null 2>&1
+openssl req -new -newkey rsa:2048 -nodes -subj /CN=prometheus-control -keyout "$ADDP_METRICS_DEPLOYMENT_DIR/control-client.key" -out "$WORK_DIR/control-client.csr" >/dev/null 2>&1
+printf 'extendedKeyUsage=clientAuth\n' > "$WORK_DIR/control-client.ext"
+openssl x509 -req -in "$WORK_DIR/control-client.csr" -CA "$GATEWAY_METRICS_CONTROL_TLS_DIR/client-ca.crt" -CAkey "$WORK_DIR/control-client-ca.key" -set_serial 2 -days 1 -extfile "$WORK_DIR/control-client.ext" -out "$ADDP_METRICS_DEPLOYMENT_DIR/control-client.crt" >/dev/null 2>&1
+chmod 644 "$ADDP_METRICS_DEPLOYMENT_DIR/control-client.key"
+control_arch=$(docker version --format '{{.Server.Arch}}')
+# Gateway control preparation uses the same owned compilation lifecycle.
+python3 - "$ROOT_DIR/scripts/test/metrics-http-budget.py" "$ROOT_DIR" "$WORK_DIR" "$control_arch" <<'GATEWAY_COMPILE'
+import os,runpy,sys
+from pathlib import Path
+receipt=os.environ.get('ADDP_HTTP_BUDGET_RECEIPT')
+try:runpy.run_path(sys.argv[1])['run_owned_compile'](Path(receipt) if receipt else None,'gateway_control',
+    ['go','test','-c','./internal/metricscontrol','-o',str(Path(sys.argv[3])/'control.test')],
+    Path(sys.argv[2])/'gateway',dict(os.environ,CGO_ENABLED='0',GOOS='linux',GOARCH=sys.argv[4],GOWORK='off'),timeout=180)
+except __import__('subprocess').CalledProcessError as failure:raise SystemExit(failure.returncode if failure.returncode>0 else 128-failure.returncode) from None
+GATEWAY_COMPILE
+chmod 755 "$WORK_DIR/control.test"
+
+if [[ "$metrics_case" == target-budget ]]; then
+  export ADDP_METRICS_TARGET_LIMIT=24
+fi
 python3 "$ROOT_DIR/scripts/infra/generate-metrics-config.py"
 cat >"$WORK_DIR/nginx.conf" <<'CONFIG'
 worker_processes 1;
@@ -308,6 +332,9 @@ import base64, os, sys
 p=Path(sys.argv[1])
 basic=base64.b64encode(('addp-prometheus:'+os.environ['PROMETHEUS_SERVICE_CLIENT_SECRET']).encode()).decode()
 config=p.read_text().replace('@@BASIC@@','Basic '+basic)
+if os.environ.get('ADDP_METRICS_T2_CASE') == 'target-budget':
+    listeners = ''.join(f'    listen {port} ssl;\n' for port in range(19500, 19525))
+    config = config.replace('    listen 9443 ssl;\n', '    listen 9443 ssl;\n' + listeners, 1)
 # Internal-only endpoints share the owned source's mTLS identity and lifecycle.
 # These are controlled metric inputs, not six real managed hosts.
 servers=[]
@@ -380,10 +407,10 @@ CERTIFICATE
 cp "$WORK_DIR/source-server-final.crt" "$WORK_DIR/source/server.crt"
 compose exec -T metrics-source nginx -t
 compose exec -T metrics-source nginx -s reload
-compose up -d --wait --wait-timeout 90 prometheus metrics-source metrics-control
+compose up -d --wait --wait-timeout 90 prometheus metrics-source gateway-control
 compose exec -T prometheus /bin/promtool check config /etc/prometheus/addp.yml
 compose exec -T prometheus /bin/promtool check web-config /etc/prometheus/web.yml
-compose exec -T metrics-control nginx -t
+
 export METRICS_T2_PROJECT="$COMPOSE_PROJECT" METRICS_T2_COMPOSE="$COMPOSE_FILE"
 if [[ "$metrics_case" == all || "$metrics_case" == postgres-source ]]; then
   export METRICS_T2_POSTGRES_SOURCE_ENABLED=true
@@ -392,7 +419,7 @@ if [[ "$metrics_case" == all || "$metrics_case" == postgres-source ]]; then
   postgres_directory_probe
 fi
 if [[ "$metrics_case" == postgres-source ]]; then exit 0; fi
-if [[ "$metrics_case" != host-resources && "$metrics_case" != mtls-preflight && "$metrics_case" != filesystem-alerts && "$metrics_case" != block-capacity ]]; then
+if [[ "$metrics_case" != host-resources && "$metrics_case" != mtls-preflight && "$metrics_case" != filesystem-alerts && "$metrics_case" != block-capacity && "$metrics_case" != target-budget ]]; then
 # Compile the current Common test source for the owned Linux container, without
 # installing Go or mounting the workspace into it. The cleanup trap owns it.
 process_arch=$(docker info --format '{{.Architecture}}')

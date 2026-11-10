@@ -19,7 +19,7 @@ type graphTarget struct {
 	endProtection func()
 }
 
-func (s *GraphDataService) resolveTarget(ctx context.Context, tenantID, engineID uint, path plugin.EngineCatalogPath) (*graphTarget, error) {
+func (s *GraphDataService) loadTargetEngine(ctx context.Context, tenantID, engineID uint, path plugin.EngineCatalogPath) (*commonmodels.Engine, error) {
 	if engineID == 0 || path.EngineID != engineID {
 		return nil, fmt.Errorf("graph target engine identity is required")
 	}
@@ -27,11 +27,22 @@ func (s *GraphDataService) resolveTarget(ctx context.Context, tenantID, engineID
 	if err != nil {
 		return nil, err
 	}
+	if engine.ID != engineID {
+		return nil, ErrGraphTargetInvalid
+	}
 	if input, ok := buildInputFromContext(ctx); ok && (input.EngineID != engineID || input.EngineVersion != engine.Version || !sameCatalogTarget(input.CatalogPath, path)) {
 		return nil, ErrGraphTargetInvalid
 	}
 	if !engineselection.IsAvailableForComputeEntrypoint(engine, "query") {
 		return nil, fmt.Errorf("graph engine is unavailable")
+	}
+	return engine, nil
+}
+
+func (s *GraphDataService) resolveTarget(ctx context.Context, tenantID, engineID uint, path plugin.EngineCatalogPath) (*graphTarget, error) {
+	engine, err := s.loadTargetEngine(ctx, tenantID, engineID, path)
+	if err != nil {
+		return nil, err
 	}
 	target, err := bindGraphTarget(engine, path)
 	if err != nil {
@@ -57,7 +68,7 @@ func bindGraphTarget(engine *commonmodels.Engine, path plugin.EngineCatalogPath)
 	if !ok {
 		return nil, fmt.Errorf("graph catalog model is required")
 	}
-	if path.EngineID != engine.ID || propertygraph.ValidateTarget(path, model.EngineCatalogModel()) != nil {
+	if propertygraph.ValidateTarget(path, model.EngineCatalogModel()) != nil {
 		return nil, fmt.Errorf("invalid graph catalog path")
 	}
 	segments := plugin.EngineCatalogPathWithoutRoot(path).Segments

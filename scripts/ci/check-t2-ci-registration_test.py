@@ -923,7 +923,7 @@ class CommonPostgresExecutionSelectionTest(unittest.TestCase):
                 "    'TestExportExecutionSourceAgainstPostgres',\n"
                 "    'TestProjectionStoreSchemaContractAgainstPostgres',\n"
                 "    'TestTableResultAgainstPostgres', 'TestIntegrationPostgresGraphTargetContract',\n"
-                "    'TestIntegrationPostgresGraphCleanupRuntime',\n"
+                "    'TestIntegrationPostgresGraphBuildInputRuntime', 'TestIntegrationPostgresGraphCleanupRuntime',\n"
                 "]\n"
                 "mode = os.environ['FAKE_PG_OUTCOME']\n"
                 "failed = False\n"
@@ -932,7 +932,7 @@ class CommonPostgresExecutionSelectionTest(unittest.TestCase):
                 "        continue\n"
                 "    if name == 'TestIntegrationPostgresGraphTargetContract' and args[1] != './internal/repository':\n"
                 "        continue\n"
-                "    if name == 'TestIntegrationPostgresGraphCleanupRuntime' and args[1] != './internal/service':\n"
+                "    if name in ('TestIntegrationPostgresGraphBuildInputRuntime', 'TestIntegrationPostgresGraphCleanupRuntime') and args[1] != './internal/service':\n"
                 "        continue\n"
                 "    if name.startswith('TestIntegrationPostgresGraph'):\n"
                 "        assert os.environ['ADDP_POSTGRES_INTEGRATION'] == '1'\n"
@@ -1058,7 +1058,7 @@ class CommonPostgresExecutionSelectionTest(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertNotIn("group passed", result.stdout)
 
-    def test_graph_and_full_groups_preserve_repository_then_run_exact_cleanup_service(self) -> None:
+    def test_graph_and_full_groups_preserve_repository_then_run_exact_service_tests(self) -> None:
         for group in ("graph", "all"):
             with self.subTest(group=group):
                 result, calls = self.run_gate_fixture("pass", group)
@@ -1066,21 +1066,22 @@ class CommonPostgresExecutionSelectionTest(unittest.TestCase):
                 graph_calls = [c for c in calls if c[1] in ("./internal/repository", "./internal/service")]
                 self.assertEqual(graph_calls, [
                     ["test", "./internal/repository", "-run", "^TestIntegrationPostgresGraph", "-count=1", "-v"],
-                    ["test", "./internal/service", "-run", "^TestIntegrationPostgresGraphCleanupRuntime$", "-count=1", "-v"],
+                    ["test", "./internal/service", "-run", "^TestIntegrationPostgresGraph(BuildInputRuntime|CleanupRuntime)$", "-count=1", "-v"],
                 ])
 
-    def test_graph_cleanup_service_requires_exact_main_pass_and_refuses_all_skips(self) -> None:
-        for outcome in ("missing", "suffix", "child", "skip", "child-skip"):
-            with self.subTest(outcome=outcome):
-                result, _ = self.run_gate_fixture(outcome, "graph", "TestIntegrationPostgresGraphCleanupRuntime")
-                self.assertNotEqual(result.returncode, 0)
-                self.assertIn("Graph Cleanup PostgreSQL gate", result.stderr)
-                self.assertNotIn("contracts passed", result.stdout)
+    def test_graph_service_requires_exact_main_passes_and_refuses_all_skips(self) -> None:
+        for test in ("TestIntegrationPostgresGraphBuildInputRuntime", "TestIntegrationPostgresGraphCleanupRuntime"):
+            for outcome in ("missing", "suffix", "child", "skip", "child-skip"):
+                with self.subTest(test=test, outcome=outcome):
+                    result, _ = self.run_gate_fixture(outcome, "graph", test)
+                    self.assertNotEqual(result.returncode, 0)
+                    self.assertIn("Graph service PostgreSQL gate", result.stderr)
+                    self.assertNotIn("contracts passed", result.stdout)
 
     def test_full_gate_requires_graph_cleanup_service(self) -> None:
         result, _ = self.run_gate_fixture("missing", "all", "TestIntegrationPostgresGraphCleanupRuntime")
         self.assertNotEqual(result.returncode, 0)
-        self.assertIn("Graph Cleanup PostgreSQL gate", result.stderr)
+        self.assertIn("Graph service PostgreSQL gate", result.stderr)
 
     def test_graph_gate_retains_repository_failure_checks(self) -> None:
         for outcome in ("missing", "skip", "fail"):

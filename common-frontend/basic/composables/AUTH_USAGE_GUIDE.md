@@ -104,6 +104,8 @@ export const client = createAPIClient(useAuthStore, {
 })
 ```
 
+Axios 客户端在每次发送请求时读取应用语言偏好，设置 `Accept-Language` 为 `zh-cn` 或 `en`。切换语言后，已创建的客户端会在下一次请求使用新语言。
+
 SSE、流式上传等 Fetch 场景使用 `createAuthenticatedFetch()`。两者都会在请求时读取当前运行时 Token，并统一处理一次 401 刷新重试。
 
 `createAuthInterceptor(authStoreOrGetter, moduleName)` 仅在请求配置中装配当前内存 Token，无 Token 时移除 `Authorization`；它本身不负责会话初始化、等待、刷新或重试。业务请求使用上述完整客户端，低层装配范围可核对[共享认证实现](../src/composables/useAuth.js)。

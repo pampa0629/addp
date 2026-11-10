@@ -1,0 +1,13 @@
+services:
+  gateway:
+    environment:
+      GATEWAY_METRICS_CONTROL_LISTEN: ${GATEWAY_METRICS_CONTROL_LISTEN:?explicit private listener required}
+      GATEWAY_METRICS_CONTROL_SERVER_NAME: ${GATEWAY_METRICS_CONTROL_SERVER_NAME:?server name required}
+      GATEWAY_METRICS_CONTROL_TLS_DIR: /etc/addp/gateway-control
+    volumes:
+      - type: bind
+        source: ${GATEWAY_METRICS_CONTROL_TLS_DIR:?external TLS directory required}
+        target: /etc/addp/gateway-control
+        read_only: true
+        bind:
+          create_host_path: false

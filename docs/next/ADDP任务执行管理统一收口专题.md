@@ -161,7 +161,7 @@ Manager 源准备保持其正式授权链；本批 Transfer CDC 仅验证既有 
 | 顺序 | 事项／性质 | 具体交付与完成条件 |
 | --- | --- | --- |
 | P1a | Common／System 父子准入 PG | C2b/c/e/h 的竞争、拒绝与回滚见首轮记录。C2d/f/g 的公共锁等待、非法绑定及子执行残留事实见后续补测。Graph 专属锁交错归 P1b，各 Owner 的外部效果核清沿对应专项。 |
-| P1b | Graph清理与输入冻结，测试及按证据修复 | G2 摘要回滚与 G3 成功先提交的 PG 用例见下方记录。剩余 G8 输入／登记目标漂移、G9 在途审核，以及 C3/C4/C2j 真实 PG 交错。C4当前代码核execute首尾候选一致，尚未定位原scan后候选漂移的完整反例；先验证上游生命周期围栏及原scan确认是否已足够，再决定修复，不将风险观察写成已复现漏洞 |
+| P1b | Graph清理与输入冻结，测试及按证据修复 | G2 摘要回滚、G3 成功先提交与 G8 输入／登记目标漂移见下方 PG 记录。剩余 G9 在途审核，以及 C3/C4/C2j 真实 PG 交错。C4当前代码核execute首尾候选一致，尚未定位原scan后候选漂移的完整反例；先验证上游生命周期围栏及原scan确认是否已足够，再决定修复，不将风险观察写成已复现漏洞 |
 | P2 | System／Monitor消费者状态矩阵，T3工程 | C5g/k/l补撤去父读取权、404／503、User／Tenant／execution切换、closed pending替换及矛盾／迟到响应；C5c/h补隐藏计数与完整页面语义。复用共享组件／请求失效能力，补C5e/j相应PG交错，不复制组件 |
 | 并行待授权 | Manager迟到writer真实验收 | runner与CI已就绪，按§8.44单独确认一次Hosted；同一原请求、原身份及原预算，核11项、控制恢复与零残留；不能先记完成 |
 | P3 | Graph／Cleanup完整故障与Meta扫描闭环，runner／集成验收 | 已有profile先按场景核对并补缺：Cleanup规范§13的平台上下文、审计、Monitor父子树；Graph原生写图回包丢失及两引擎故障。受控runner与真实原生效果分开；若需新的Provider入口或身份／权限边界先讨论，不能借此重启高级恢复。新增Hosted均单独确认 |
@@ -190,6 +190,16 @@ Manager 源准备保持其正式授权链；本批 Transfer CDC 仅验证既有 
 2026-11-09 补齐 G2 和 G3 的两个 Graph 仓储用例。摘要反例只对本轮任务安装 PG 触发器，在事务内确认公共 attempt、开始时间及租约已写入后报错。首轮确认执行、任务摘要和控制记录全部回滚，同时复现 `ClaimBuild` 仍返回已回滚的租约及任务对象。修正错误分支后不再返回未提交的运行事实。移除触发器后，同一 pending 执行以 attempt=1 领取并提交匹配的开始时间。成功先提交场景通过两个连接的 PG 阻塞关系核对取消等待，成功提交后返回原终态，保留进度、写入计数、任务统计和取消控制。
 
 本地 `make test-common-postgres COMMON_POSTGRES_TEST_ARGS="--test graph"` 通过 9 个主用例，包含两个新增用例及 Graph Cleanup Runtime，0 SKIP。 `make test-module MODULE=graph GO_ONLY=1` 通过。Graph 后端路径由既有规则选择 Common PostgreSQL Job。
+
+固定提交 `cc0de098b` 的 [Linux Common PG](https://github.com/pampa0629/addp/actions/runs/42554724259/job/128958459086) 已到终态并通过。原始日志确认 9 个 Graph 主用例实际执行，含两项新增用例及 Cleanup Runtime，0 SKIP。同源 [Execution online CI runner](https://github.com/pampa0629/addp/actions/runs/42554724132/job/128957781489) 实际通过 414 项。
+
+### Graph G8 输入冻结验证
+
+Graph 的真实 PG 用例覆盖六个场景：材料元数据或 CatalogPath 在入队前改变，拒绝入队且不留下执行／控制记录；私有本体映射快照被改写，attempt=0 拒绝；正常编辑本体后，原执行仍以已冻结标签和唯一键产生待审项；同大小材料字节改变，在抽取前失败；Engine 登记版本变化，在读取材料前失败。活动材料同时核对上传准入和删除均被拒绝。材料读取、System 登记与 Copilot 使用受控输入，执行、任务摘要、外部操作记录和待审项使用真实 PG。
+
+首轮复现无图写入的构建跳过 Engine 版本核验，仍调用 Copilot 并成功。修复后，构建入口复用同一个登记校验，在材料与外部处理之前失败关闭。现有图操作继续核验冻结目标。此次取证限定登记版本变化，物理目标代际证明及高级恢复继续暂缓。
+
+本地 `make test-common-postgres COMMON_POSTGRES_TEST_ARGS="--test graph"` 通过 10 个主用例，新增 G8 六个子场景均通过，0 SKIP。`make test-module MODULE=graph GO_ONLY=1` 通过。Graph PG 分组及 Common 全量 PG 均要求 BuildInputRuntime 和 CleanupRuntime 的准确 PASS。 T2 登记 85＋9 项及登记检查通过。
 
 ## 七、确认范围与协作分工
 

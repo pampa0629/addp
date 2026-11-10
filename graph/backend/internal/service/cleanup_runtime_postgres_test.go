@@ -34,6 +34,22 @@ func cleanupRuntimeDomainFixture(t *testing.T, pg bool) (*gorm.DB, models.BuildT
 		}
 		return db, task, build
 	}
+	db, task, mat, kg := graphServicePGTask(t)
+	t.Cleanup(func() {
+		if e := db.Table("graph.cleanup_results").Where("tenant_id = ?", task.TenantID).Delete(map[string]interface{}{}).Error; e != nil {
+			t.Error(e)
+		}
+	})
+	build := &execution.TaskExecution{ExecutionID: uuid.NewString(), TenantID: int(task.TenantID), Module: "graph", TaskType: "kg_build", Source: "graph", Status: "pending", TriggerType: "manual"}
+	ctx := execution.WithUserOrigin(t.Context(), authtest.NewTenantUserAuthContext(strconv.FormatUint(uint64(task.TenantID), 10), "7", nil))
+	if _, _, err := repository.NewBuildRepository(db).EnqueueExecution(ctx, task.ID, kg.ID, task.TenantID, build, repository.BuildExecutionClaimRun, []models.FrozenBuildMaterial{{Material: mat, SHA256: strings.Repeat("a", 64), Size: 1}}, 1, kg); err != nil {
+		t.Fatal(err)
+	}
+	return db, task, build
+}
+
+func graphServicePGTask(t *testing.T) (*gorm.DB, models.BuildTask, models.BuildMaterial, models.KnowledgeGraph) {
+	t.Helper()
 	value := func(key, fallback string) string {
 		if v := os.Getenv(key); v != "" {
 			return v
@@ -59,9 +75,6 @@ func cleanupRuntimeDomainFixture(t *testing.T, pg bool) (*gorm.DB, models.BuildT
 	}
 	tenant := uint(760000000 + time.Now().UnixNano()%10000000)
 	t.Cleanup(func() {
-		if e := db.Table("graph.cleanup_results").Where("tenant_id = ?", tenant).Delete(map[string]interface{}{}).Error; e != nil {
-			t.Error(e)
-		}
 		for _, model := range []interface{}{&models.GraphOperation{}, &models.BuildExecutionControl{}, &models.ReviewItem{}, &models.BuildMaterial{}, &models.BuildTask{}, &models.KnowledgeGraph{}, &models.Ontology{}, &models.TenantAdmissionLock{}, &execution.Event{}, &execution.TaskExecution{}} {
 			if e := db.Where("tenant_id = ?", tenant).Delete(model).Error; e != nil {
 				t.Error(e)
@@ -88,10 +101,5 @@ func cleanupRuntimeDomainFixture(t *testing.T, pg bool) (*gorm.DB, models.BuildT
 	if err = db.Create(&mat).Error; err != nil {
 		t.Fatal(err)
 	}
-	build := &execution.TaskExecution{ExecutionID: uuid.NewString(), TenantID: int(tenant), Module: "graph", TaskType: "kg_build", Source: "graph", Status: "pending", TriggerType: "manual"}
-	ctx := execution.WithUserOrigin(t.Context(), authtest.NewTenantUserAuthContext(strconv.FormatUint(uint64(tenant), 10), "7", nil))
-	if _, _, err = repository.NewBuildRepository(db).EnqueueExecution(ctx, task.ID, kg.ID, tenant, build, repository.BuildExecutionClaimRun, []models.FrozenBuildMaterial{{Material: mat, SHA256: strings.Repeat("a", 64), Size: 1}}, 1, kg); err != nil {
-		t.Fatal(err)
-	}
-	return db, task, build
+	return db, task, mat, kg
 }

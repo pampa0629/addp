@@ -3,6 +3,8 @@ import { readFileSync } from 'node:fs'
 import zh from '../../../service/frontend/src/i18n/zh-cn.json' with { type: 'json' }
 import en from '../../../service/frontend/src/i18n/en.json' with { type: 'json' }
 
+test.use({ locale: 'en-US' })
+
 for (const language of ['zh-cn', 'en']) {
   test(`Service preview preserves precise protection refusals and clears stale rows (${language})`, async ({ page }) => {
     const words = (language === 'en' ? en : zh).service.query
@@ -23,13 +25,21 @@ for (const language of ['zh-cn', 'en']) {
       if(path === '/api/v1/service/query/41') return route.fulfill({json:definition})
       if(path === '/api/v1/system/engine-catalog/engines') return route.fulfill({json:[{id:1,name:'fixture-postgres',engine_type:'postgresql'}]})
       if(path === '/api/query/protected_reason_fixture/query') {
-        requests.push(route.request().postDataJSON())
+        requests.push({
+          body: route.request().postDataJSON(),
+          language: route.request().headers()['accept-language']
+        })
         return route.fulfill(response)
       }
       throw Error(`Unexpected request ${route.request().method()} ${path}`)
     })
-    await page.goto('/e2e/service-fixture/e2e/navigation.html#/query-services/41')
-    const card = page.locator('.el-card').filter({has:page.getByText(words.cardPreview,{exact:true})})
+    await page.route('**/e2e/service-language-shell.html', route => route.fulfill({
+      contentType: 'text/html',
+      body: '<iframe title="Service" style="width:100%;height:95vh;border:0" src="/e2e/service-fixture/e2e/navigation.html#/query-services/41"></iframe>'
+    }))
+    await page.goto('/e2e/service-language-shell.html')
+    const frame = page.frameLocator('iframe[title="Service"]')
+    const card = frame.locator('.el-card').filter({has:frame.getByText(words.cardPreview,{exact:true})})
     const alert = card.locator('.preview-error')
     await card.getByRole('button',{name:words.loadData,exact:true}).click()
     await expect(card.getByText('138****0001',{exact:true})).toBeVisible()
@@ -41,7 +51,7 @@ for (const language of ['zh-cn', 'en']) {
       await expect(card.getByText('138****0001',{exact:true})).toHaveCount(0)
       await expect(card.locator('.preview-empty')).toHaveCount(0)
       if(reason===reasons[0]) {
-        await expect(page.locator('.el-message')).toHaveCount(0,{timeout:10000})
+        await expect(frame.locator('.el-message')).toHaveCount(0,{timeout:10000})
         await expect(alert).toBeVisible() // The error outlives the transient toast.
       }
     }
@@ -54,13 +64,27 @@ for (const language of ['zh-cn', 'en']) {
     response={status:403,json:{error_code:'data_protection_required',error:message('err.protection_schema_mismatch')}}
     await card.getByRole('button',{name:words.loadData,exact:true}).click()
     await expect(alert).toContainText(response.json.error)
-    await expect(page.locator('.el-message')).toHaveCount(0,{timeout:10000})
+    await expect(frame.locator('.el-message')).toHaveCount(0,{timeout:10000})
     await card.screenshot({path:`/tmp/p145-service-reasons/preview-${language}.png`})
     response={status:200,json:{data:[{id:'1',phone:'138****0001'}],page:{limit:20,has_more:false,next_cursor:''},service_version:'fixture-v1'}}
     await card.getByRole('button',{name:words.loadData,exact:true}).click()
     await expect(alert).toHaveCount(0)
     await expect(card.getByText('138****0001',{exact:true})).toBeVisible()
     expect(requests).toHaveLength(13)
-    expect(requests.every(x=>!x.page.cursor)).toBe(true)
+    expect(requests.every(({ body }) => !body.page.cursor)).toBe(true)
+    expect(requests.map(request => request.language)).toEqual(Array(13).fill(language))
+
+    // The same mounted Service client must follow each Console language change.
+    for (const nextLanguage of [language === 'en' ? 'zh-cn' : 'en', language]) {
+      await page.locator('iframe[title="Service"]').evaluate((iframe, lang) => {
+        iframe.contentWindow.postMessage({ type: 'lang-change', source: 'addp-console', lang }, location.origin)
+      }, nextLanguage)
+      const nextWords = (nextLanguage === 'en' ? en : zh).service.query
+      const preview = frame.locator('.el-card').filter({ has: frame.getByText(nextWords.cardPreview, { exact: true }) })
+      const sent = page.waitForRequest(request => new URL(request.url()).pathname === '/api/query/protected_reason_fixture/query')
+      await preview.getByRole('button', { name: nextWords.refreshData, exact: true }).click()
+      expect((await sent).headers()['accept-language']).toBe(nextLanguage)
+      await expect(preview.getByRole('button', { name: nextWords.refreshData, exact: true })).toBeEnabled()
+    }
   })
 }

@@ -260,7 +260,7 @@ addp_startup_metrics_summary
                 calls=Path(directory)/'calls'
                 env=dict(os.environ,PROJECT_ROOT='/fixture',CALLS=str(calls),MODE=mode,
                          ADDP_OBSERVABILITY_METRICS_ENABLED='false' if mode=='disabled' else 'invalid' if mode=='invalid' else 'true',
-                         ADDP_METRICS_CONTROL_ENABLED='true')
+                         ADDP_METRICS_CONTROL_MTLS_ENABLED='true')
                 result=subprocess.run(['bash','-eu','-c',command,'test',str(library)],env=env,capture_output=True,text=True,timeout=5)
                 self.assertEqual(result.returncode,int(mode not in ('healthy','disabled')),result.stdout+result.stderr)
                 self.assertIn('fixture sources status',result.stdout)
@@ -274,7 +274,6 @@ addp_startup_metrics_summary
                     self.assertFalse(any(x.startswith('inspect:') for x in values))
                 else:
                     self.assertIn('inspect:addp-prometheus',values)
-                    self.assertIn('inspect:addp-metrics-control',values)
 
     def test_full_start_summary_is_guarded_at_end_and_does_not_mask_failure(self):
         source=(ROOT/'scripts/dev/start.sh').read_text()

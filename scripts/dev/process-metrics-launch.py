@@ -25,9 +25,9 @@ def unique_object(pairs):
     return result
 
 
-def select_deployment(raw, unit, module, role):
+def parse_plan(raw):
     if raw == "":
-        return ""
+        return {}
     if len(raw.encode("utf-8")) > 256 << 10:
         raise ValueError(INVALID)
     plan = json.loads(raw, object_pairs_hook=unique_object)
@@ -52,6 +52,11 @@ def select_deployment(raw, unit, module, role):
             if deployment[field] in values:
                 raise ValueError(INVALID)
             values.add(deployment[field])
+    return plan
+
+
+def select_deployment(raw, unit, module, role):
+    plan = parse_plan(raw)
     selected = plan.get(unit)
     if selected is None:
         return ""

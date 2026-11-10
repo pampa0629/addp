@@ -1,6 +1,7 @@
 """Render the sole Prometheus configuration from explicit deployment inputs."""
 from pathlib import Path
 import hmac
+import importlib.util
 import ipaddress
 import json
 import os
@@ -14,6 +15,36 @@ from urllib.parse import urlsplit
 ROOT = Path(__file__).resolve().parents[2]
 FILES = ('control-ca.crt', 'source-ca.crt', 'collector.crt', 'collector.key',
          'prometheus-client-secret')
+
+
+class TargetBudgetExceeded(ValueError):
+    pass
+
+
+def check_target_budget(env, root=ROOT):
+    value = env.get('ADDP_METRICS_TARGET_LIMIT', '12')
+    if not re.fullmatch(r'[1-9]|1[0-9]|2[0-4]', value):
+        raise ValueError('ADDP_METRICS_TARGET_LIMIT must be an integer from 1 to 24')
+    raw_plan = env.get('ADDP_DEV_PROCESS_METRICS_PLAN', '')
+    if not raw_plan:
+        return value
+
+    spec = importlib.util.spec_from_file_location('metrics_sources', ROOT / 'scripts/infra/metrics-sources.py')
+    sources = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(sources)
+    launcher = sources.load(ROOT / 'scripts/dev/process-metrics-launch.py')
+    processes = len(launcher.parse_plan(raw_plan))
+    hosts = int(sources.enabled('node', env))
+    engines = sum(sources.enabled(kind, env) for _, kind in sources.selection(['infra'], []))
+    if env.get('ADDP_ONLINE_HOST') != '1' and (root / 'business/.env').exists():
+        business = sources.environment('business', env, root)
+        engines += sum(sources.enabled(kind, business) for _, kind in sources.selection(['business'], []))
+    total = processes + hosts + engines
+    if total > int(value):
+        raise TargetBudgetExceeded(
+            f'指标采集预算超限：计划 {total} 个（进程 {processes}、主机 {hosts}、引擎 {engines}），上限 {value}。'
+        )
+    return value
 
 
 def origin(value, scheme="https"):
@@ -78,32 +109,6 @@ def desktop_loopback_rules(env):
                 for port in sorted(ports, key=int)))
 
 
-def control_config(env, root):
-    selected = env.get('ADDP_METRICS_CONTROL_ENABLED', 'false')
-    if selected == 'false':
-        return None
-    if selected != 'true':
-        raise ValueError('ADDP_METRICS_CONTROL_ENABLED must be true or false')
-    directory = Path(env.get('ADDP_METRICS_CONTROL_DIR', ''))
-    if (not directory.is_absolute() or not directory.is_dir()
-            or directory.resolve().is_relative_to(root.resolve())):
-        raise ValueError('Metrics control directory must exist outside repository')
-    if any(p.name not in {'server.crt', 'server.key', 'nginx.conf'} for p in directory.iterdir()):
-        raise ValueError('Metrics control directory contains unexpected files')
-    for name in ('server.crt', 'server.key'):
-        file = directory / name
-        if file.is_symlink() or not file.is_file() or not 0 < file.stat().st_size <= 1 << 20:
-            raise ValueError('Missing regular metrics control certificate file')
-        with file.open('rb') as stream:
-            stream.read(1)
-    for name in ('SYSTEM', 'MONITOR'):
-        if env.get('PROMETHEUS_' + name + '_URL') != 'https://metrics-control:9444':
-            raise ValueError('Selected private control entry requires its exact HTTPS origin')
-    upstream = origin(env.get('ADDP_METRICS_CONTROL_GATEWAY_URL', ''), scheme='http')
-    template = (root / 'scripts/infra/metrics-control.conf').read_text()
-    return directory / 'nginx.conf', template.replace('@@GATEWAY_URL@@', upstream)
-
-
 def atomic_config(path, content):
     with tempfile.NamedTemporaryFile(mode='w', dir=path.parent, prefix='.metrics-', delete=False) as output:
         pending = Path(output.name)
@@ -118,16 +123,20 @@ def atomic_config(path, content):
 
 
 def render(env, root=ROOT):
-    control = control_config(env, root)
+    target_limit = check_target_budget(env, root)
+    mtls = env.get('ADDP_METRICS_CONTROL_MTLS_ENABLED', 'false')
+    if mtls not in ('true', 'false'):
+        raise ValueError('Control mTLS setting must be boolean')
+    files = FILES + (('control-client.crt', 'control-client.key') if mtls == 'true' else ())
     directory = Path(env.get('ADDP_METRICS_DEPLOYMENT_DIR', ''))
     if (not directory.is_absolute() or not directory.is_dir()
             or directory.resolve().is_relative_to(root.resolve())):
         raise ValueError('ADDP_METRICS_DEPLOYMENT_DIR must be an existing directory outside the repository')
-    allowed = set(FILES) | {'prometheus.yml'}
+    allowed = set(files) | {'prometheus.yml'}
     if any(p.name not in allowed for p in directory.iterdir()):
         raise ValueError('Metrics deployment directory contains unexpected files')
     content = {}
-    for name in FILES:
+    for name in files:
         path = directory / name
         if path.is_symlink() or not path.is_file():
             raise ValueError('Missing regular metrics deployment file: ' + name)
@@ -146,18 +155,34 @@ def render(env, root=ROOT):
     health = Path(env.get('ADDP_METRICS_TLS_DIR', '')) / 'health.crt'
     if health.is_file() and health.read_bytes() == content['collector.crt']:
         raise ValueError('Metrics collector must not reuse the center health certificate')
-    config = (root / 'scripts/infra/prometheus.yml').read_text().replace('@@DESKTOP_LOOPBACK@@', desktop_loopback_rules(env))
+    if mtls == 'true':
+        if content['control-client.crt'] == content['collector.crt'] or (
+                health.is_file() and content['control-client.crt'] == health.read_bytes()):
+            raise ValueError('Control mTLS identity must be independent')
+    config = (root / 'scripts/infra/prometheus.yml').read_text().replace('@@TARGET_LIMIT@@', target_limit)
+    config = config.replace('@@DESKTOP_LOOPBACK@@', desktop_loopback_rules(env))
     for name, path in (('SYSTEM', '/api/v1/system/oauth/token'),
                        ('MONITOR', '/api/v1/monitor/platform/metrics_discovery')):
         config = config.replace('@@' + name + '_URL@@', json.dumps(origin(env.get('PROMETHEUS_' + name + '_URL', '')) + path))
-    if control:
-        atomic_config(*control)
+    for marker, indent in (('@@CONTROL_MTLS@@', 10), ('@@OAUTH_MTLS@@', 12)):
+        tls = ''
+        if mtls == 'true':
+            tls = ''.join(' ' * indent + key + ': /etc/prometheus/deployment/control-client.' + ext + '\n'
+                          for key, ext in (('cert_file', 'crt'), ('key_file', 'key')))
+        config = config.replace(marker, tls)
     atomic_config(directory / 'prometheus.yml', config)
 
 
 if __name__ == '__main__':
     try:
-        render(os.environ)
-    except (OSError, ValueError):
+        if sys.argv[1:] == ['--check-budget']:
+            check_target_budget(os.environ)
+        elif len(sys.argv) == 1:
+            render(os.environ)
+        else:
+            sys.exit('Usage: generate-metrics-config.py [--check-budget]')
+    except TargetBudgetExceeded as err:
+        sys.exit(str(err))
+    except (OSError, ValueError, subprocess.SubprocessError):
         # Neither raw origins nor secret/file contents belong in startup diagnostics.
         sys.exit('Metrics discovery deployment input is missing or invalid')

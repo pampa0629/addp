@@ -79,8 +79,8 @@ if [ -f ".env" ]; then
     set +a
 fi
 source "${ROOT_DIR}/scripts/infra/ports.sh"
-if addp_infra_ready; then
-    addp_infra_read_actual_ports
+if addp_infra_ready core; then
+    ADDP_INFRA_PORT_SCOPE=core addp_infra_read_actual_ports
 fi
 source "${SCRIPT_DIR}/ports.sh"
 if [ "${ADDP_ONLINE_HOST:-0}" != 1 ]; then
@@ -163,6 +163,9 @@ echo "📦 构建计划: 同步 Swagger，按完整构建指纹复用或编译�
 echo ""
 
 # 全量先停止；局部在所选 Go 模块的 Swagger 检查通过后停止。
+if [[ "${ADDP_OBSERVABILITY_METRICS_ENABLED:-false}" == true && -n "${ADDP_DEV_PROCESS_METRICS_PLAN:-}" ]]; then
+  python3 "${ROOT_DIR}/scripts/infra/generate-metrics-config.py" --check-budget || exit 1
+fi
 source "${SCRIPT_DIR}/worker-units.sh"
 for family in quality-worker meta-worker transfer-bounded-worker transfer-continuous-worker; do
   addp_worker_units "$family" >/dev/null || exit 1

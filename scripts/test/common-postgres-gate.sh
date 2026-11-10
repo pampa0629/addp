@@ -210,16 +210,19 @@ run_graph_postgres() {
         exit 1
     }
     (cd "$SOURCE_ROOT/graph/backend" && ADDP_POSTGRES_INTEGRATION=1 GOWORK=off \
-        go test ./internal/service -run '^TestIntegrationPostgresGraphCleanupRuntime$' \
-        -count=1 -v) 2>&1 | tee "$WORK_DIR/graph-cleanup-postgres.log"
-    if grep -q -- '--- SKIP:' "$WORK_DIR/graph-cleanup-postgres.log"; then
-        echo 'Graph Cleanup PostgreSQL gate refuses skipped tests' >&2
+        go test ./internal/service -run '^TestIntegrationPostgresGraph(BuildInputRuntime|CleanupRuntime)$' \
+        -count=1 -v) 2>&1 | tee "$WORK_DIR/graph-service-postgres.log"
+    if grep -q -- '--- SKIP:' "$WORK_DIR/graph-service-postgres.log"; then
+        echo 'Graph service PostgreSQL gate refuses skipped tests' >&2
         exit 1
     fi
-    grep -Eq -- '^--- PASS: TestIntegrationPostgresGraphCleanupRuntime \(' "$WORK_DIR/graph-cleanup-postgres.log" || {
-        echo 'Graph Cleanup PostgreSQL gate requires the real service runtime test' >&2
-        exit 1
-    }
+    local graph_test
+    for graph_test in TestIntegrationPostgresGraphBuildInputRuntime TestIntegrationPostgresGraphCleanupRuntime; do
+        grep -Eq -- "^--- PASS: ${graph_test} \(" "$WORK_DIR/graph-service-postgres.log" || {
+            echo "Graph service PostgreSQL gate requires $graph_test" >&2
+            exit 1
+        }
+    done
 }
 if [ "$test_group" = graph ]; then
     run_graph_postgres

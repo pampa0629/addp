@@ -50,31 +50,11 @@ require_docker() {
   fi
 }
 
-stop_metrics_control() {
-  local container
-  container=$(compose ps -aq metrics-control) || return 1
-  if [[ -n "$container" ]]; then
-    addp_infra_verify_container metrics-control "$container" || return 1
-    compose stop metrics-control || return 1
-  fi
-}
-
 start_metrics() {
   local ADDP_INFRA_PORT_SCOPE=metrics
   addp_metrics_preflight || return 1
   addp_infra_resolve_ports || return 1
   local image
-  if [[ "${ADDP_METRICS_CONTROL_ENABLED-false}" == true ]]; then
-    if docker inspect addp-metrics-control >/dev/null 2>&1; then
-      addp_infra_verify_container metrics-control addp-metrics-control || return 1
-    fi
-    image=$(compose config --images metrics-control) || return 1
-    if ! docker image inspect "$image" >/dev/null 2>&1; then docker pull "$image" || return 1; fi
-    compose run --rm --no-deps --entrypoint nginx metrics-control -t || return 1
-    compose up -d --force-recreate metrics-control || return 1
-  else
-    stop_metrics_control || return 1
-  fi
   image=$(compose config --images prometheus) || return 1
   if ! docker image inspect "$image" >/dev/null 2>&1; then docker pull "$image" || return 1; fi
   compose run --rm --no-deps --entrypoint /bin/promtool prometheus check config /etc/prometheus/addp.yml || return 1
@@ -102,7 +82,6 @@ reconcile_metrics() {
         optional_result=1
       fi
     fi
-    stop_metrics_control || optional_result=1
     echo 'Metrics center disabled; retained data volume preserved'
   else
     echo 'Metrics center unconfigured: ADDP_OBSERVABILITY_METRICS_ENABLED must be true or false' >&2
@@ -131,6 +110,9 @@ else
 fi
 
 if [[ "$METRICS_ONLY" == true ]]; then
+  if addp_metrics_enabled; then
+    python3 "$SCRIPT_DIR/generate-metrics-config.py" --check-budget || exit 1
+  fi
   require_docker
   source "${SCRIPT_DIR}/ports.sh"
   metrics_result=0
@@ -471,8 +453,8 @@ start_central_traces() {
   local ADDP_INFRA_PORT_SCOPE=traces
   compose run --rm --no-deps --entrypoint /bin/alloy alloy validate /trace-deployment/runtime.alloy || return 1
   compose up -d --wait --wait-timeout 120 trace-store-init tempo trace-query alloy || return 1
-  addp_infra_read_actual_ports || return 1
-  echo 'Trace center started with policy definition 1; retained delivery requires verification'
+  addp_infra_trace_ready || return 1
+  echo 'Trace center ready; retained delivery requires verification'
 }
 
 if addp_traces_enabled; then

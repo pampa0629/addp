@@ -157,7 +157,7 @@ func main() {
 		resourceBackend = cfg.MetricsQueryClient
 		defer cfg.MetricsQueryClient.Close()
 	}
-	resourceObservations := service.NewResourceObservationService(repository.NewResourceQueryPolicyRepository(db), repository.NewMonitoringTargetRepository(db), systemServiceClient, resourceBackend, cfg.MetricsEnabled, cfg.MetricsPolicy, service.ProcessObservationDependencies{Users: systemServiceClient, Identities: systemServiceClient, Backend: cfg.MetricsQueryClient}).WithEngines(service.EngineObservationDependencies{Users: systemServiceClient, Identities: systemServiceClient, Backend: cfg.MetricsQueryClient})
+	resourceObservations := service.NewResourceObservationService(repository.NewResourceQueryPolicyRepository(db), repository.NewMonitoringTargetRepository(db, cfg.MetricsTargetLimit), systemServiceClient, resourceBackend, cfg.MetricsEnabled, cfg.MetricsPolicy, service.ProcessObservationDependencies{Users: systemServiceClient, Identities: systemServiceClient, Backend: cfg.MetricsQueryClient}).WithEngines(service.EngineObservationDependencies{Users: systemServiceClient, Identities: systemServiceClient, Backend: cfg.MetricsQueryClient})
 	resourceRules := service.NewResourceAlertRuleService(db, resourceObservations, systemServiceClient, platformAlerts)
 	go resourceRules.Run(runtimeContext)
 	httpRules := service.NewHTTPAlertRuleService(db, resourceObservations, systemServiceClient, platformAlerts)
@@ -185,7 +185,7 @@ func main() {
 		lifecycleController,
 		logPipeline, platformAlerts,
 		runtimeHealthService,
-		service.NewMonitoringTargetService(repository.NewMonitoringTargetRepository(db), systemServiceClient, systemServiceClient, cfg.MetricsEnabled, cfg.MetricsPolicy),
+		service.NewMonitoringTargetService(repository.NewMonitoringTargetRepository(db, cfg.MetricsTargetLimit), systemServiceClient, systemServiceClient, cfg.MetricsEnabled, cfg.MetricsPolicy),
 		resourceObservations, resourceRules, httpRules,
 		traceService, processRules, availabilityRules)
 

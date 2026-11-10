@@ -211,6 +211,7 @@ class MetricsFixtureTest(unittest.TestCase):
     def test_complete_comparison_prepares_explicit_capacity_source(self):
         original = FIXTURE.command
         def command(args):
+            if args == ["docker", "pull", FIXTURE.PRESSURE_IMAGE]: return ""
             if args[:4] == ["docker", "network", "inspect", "bridge"]:
                 return '[{"IPAM":{"Config":[{"Gateway":"172.17.0.1"}]}}]'
             return original(args)
@@ -241,16 +242,11 @@ class MetricsFixtureTest(unittest.TestCase):
         with patch.dict(os.environ, self.env), patch.object(FIXTURE, "command", side_effect=command), patch.object(FIXTURE.socket, "socket"):
             FIXTURE.prepare(self.secret)
         self.assertFalse((self.secret / "postgres-password").exists())
-        spec = json.loads((self.secret / "metrics-compose.json").read_text())
-        self.assertEqual(set(spec["services"]), {"control-tls"})
-        templates = [args[args.index("-f") + 1] for args in calls if args[:2] == ["docker", "compose"] and "config" in args]
-        self.assertEqual(templates, [str(FIXTURE.ROOT / "scripts/infra/metrics-control.yml")])
-        self.assertNotIn("restart", spec["services"]["control-tls"])
-        self.assertNotIn("volumes", spec)
-        self.assertEqual(spec["services"]["control-tls"]["network_mode"], "host")
-        nginx = (self.secret / "nginx.conf").read_text()
-        for module in ("client_body", "proxy", "fastcgi", "uwsgi", "scgi"):
-            self.assertIn(module+"_temp_path /tmp/", nginx)
+        self.assertFalse((self.secret / "metrics-compose.json").exists())
+        self.assertFalse((self.secret / "nginx.conf").exists())
+        env = (self.secret / "metrics.env").read_text()
+        self.assertIn("GATEWAY_METRICS_CONTROL_LISTEN=172.17.0.1:9444", env)
+        self.assertIn("ADDP_METRICS_CONTROL_MTLS_ENABLED=true", env)
         config = (self.secret / "deployment/prometheus.yml").read_text()
         self.assertNotIn("@@", config)
         self.assertIn("https://172.17.0.1:9444/api/v1/monitor/platform/metrics_discovery", config)
@@ -260,11 +256,9 @@ class MetricsFixtureTest(unittest.TestCase):
             self.assertEqual({p.name for p in folder.iterdir()}, {"ca.crt", "server.crt", "server.key"})
             subprocess.run(["openssl", "verify", "-verify_ip", "172.17.0.1", "-purpose", "sslserver",
                             "-CAfile", str(self.secret / "source-ca.crt"), str(folder / "server.crt")], check=True, capture_output=True)
-            self.assertFalse(any(str(folder) == volume["source"] for volume in spec["services"]["control-tls"]["volumes"]))
         self.assertEqual((self.secret / "query/client.key").stat().st_mode & 0o777, 0o600)
         self.assertEqual((self.secret / "query").stat().st_mode & 0o777, 0o700)
         self.assertNotEqual((self.secret / "query/client.crt").read_bytes(), (self.secret / "center-tls/health.crt").read_bytes())
-        self.assertFalse(any("/query" in volume["source"] for volume in spec["services"]["control-tls"]["volumes"]))
         self.assertNotEqual((self.secret / "center-tls/health.crt").read_bytes(), (self.secret / "deployment/collector.crt").read_bytes())
         self.assertNotEqual((self.secret / "control-ca.crt").read_bytes(), (self.secret / "source-ca.crt").read_bytes())
         for cert, ca in (("center-tls/health.crt", "center-ca.crt"), ("node-tls/server.crt", "source-ca.crt"), ("deployment/collector.crt", "source-ca.crt")):
@@ -402,8 +396,7 @@ class CPUPressureFixtureTest(unittest.TestCase):
             if args==['docker','info','--format','{{json .}}']:
                 return json.dumps({'NCPU':4 if failure=='topology' else 2})
             if args[:2]==['docker','ps']:return identifier if state['exists'] else ''
-            if args[:3]==['docker','inspect','transport']:
-                return json.dumps([{'Image':image,'State':{'Running':True},'Config':{'Labels':{'com.docker.compose.project':FIXTURE.PROJECT,'com.addp.online-runtime':'platform-node-metrics'}}}])
+            if args[:3]==['docker','image','inspect']: return image
             if args[:2]==['docker','create']:
                 state['exists']=True;state['name']=args[args.index('--name')+1]
                 state['labels']=dict(args[i+1].split('=',1) for i,x in enumerate(args) if x=='--label')
@@ -421,7 +414,7 @@ class CPUPressureFixtureTest(unittest.TestCase):
                 state['stats']+=1;return 'usage_usec '+str(state['stats']*5000000)+'\nnr_throttled 2\n'
             if args[:3]==['docker','rm','-f']:state['exists']=False;state['running']=False;return identifier
             raise AssertionError(args)
-        with patch.object(FIXTURE,'boundary',return_value=Path('/secret')),patch.object(FIXTURE,'compose',return_value='transport'), \
+        with patch.object(FIXTURE,'boundary',return_value=Path('/secret')), \
              patch.object(FIXTURE.os,'cpu_count',return_value=2),patch.object(FIXTURE,'command',side_effect=command):
             try:
                 with FIXTURE.cpu_pressure(Path('/secret'),plan,detail):

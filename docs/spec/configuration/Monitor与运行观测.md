@@ -98,7 +98,7 @@ Infra 根 `.env` 与 `business/.env` 各自的 `ADDP_POSTGRES_METRICS_ENABLED=fa
 
 `PROMETHEUS_PORT` 首选 `19090`，宿主固定回环发布，开发实际映射由标准入口解析；`ADDP_METRICS_TLS_DIR` 是外部部署证书目录，不是用户可修改的 Monitor 普通配置。启用需要独立 CA、服务器和健康客户端证书；未启用不校验这些专用输入、不创建证书目录。具体文件、用途与容器可读要求见 [Infra 指标中心](../../../scripts/infra/docs/指标中心与来源.md#可选指标中心)。运行状态分别报告 Disabled、Unconfigured、Not deployed、Unavailable 或中心 Ready；当前自身采集与业务资源覆盖分别解释。
 
-节点发现的控制面 origin 由 `PROMETHEUS_SYSTEM_URL/PROMETHEUS_MONITOR_URL` 显式部署，固定 HTTPS 和 API 路径；`ADDP_METRICS_DEPLOYMENT_DIR` 提供独立控制面 CA、来源 CA、采集客户端证书与 Prometheus OAuth Secret 文件。Secret 值精确匹配 System 的独立服务凭据，生成配置只引用文件路径。30 秒 HTTP SD 刷新、15 秒采样及限额由同一版本化模板维护，生成产物不能成为第二份可编辑配置。未选择指标不校验这些输入；已选择但输入缺失只使该可选能力启动失败。节点 exporter 和来源防护入口独立部署，不因选择中心而自动安装或取得宿主权限。
+节点发现的控制面 origin 由 `PROMETHEUS_SYSTEM_URL/PROMETHEUS_MONITOR_URL` 显式部署，固定 HTTPS 和 API 路径；`ADDP_METRICS_DEPLOYMENT_DIR` 提供独立控制面 CA、来源 CA、采集客户端证书与 Prometheus OAuth Secret 文件。Secret 值精确匹配 System 的独立服务凭据，生成配置只引用文件路径。30 秒 HTTP SD 刷新及 15 秒采样由版本化模板维护。外部目标上限由 Monitor 和 Prometheus 共用的根环境变量 `ADDP_METRICS_TARGET_LIMIT` 指定，缺省 12，可设为 1 至 24。变更预算须重新应用指标中心并重启 Monitor。开发启动和重启在应用前核对本机采集计划。生成产物不能成为第二份可编辑配置。未选择指标不校验这些输入；已选择但输入缺失只使该可选能力启动失败。节点 exporter 和来源防护入口独立部署，不因选择中心而自动安装或取得宿主权限。
 
 
 主机来源由独立 `ADDP_NODE_METRICS_ENABLED=false` 选择；`scripts/infra/node-metrics.py` 只消费显式导出的根模板部署键，不创建 `.env` 或凭据。选择后要求 `ADDP_NODE_METRICS_LISTEN` 的规范本机 IP:端口，以及仓库外三文件 `ADDP_NODE_METRICS_TLS_DIR`；不根据中心开关或容器探测推断是否采集。同一正式入口支持本机原生 Linux Docker，以及 macOS 上的本地 Docker Desktop Linux VM；后者只发布已验证的 CPU、内存、负载和启动时间等内核全局事实，不提供磁盘/网卡全局指标。仍拒绝远程 Engine 和未知环境；详细权限和证书轮换边界见 [独立 Linux 主机指标来源](../../../scripts/infra/docs/指标中心与来源.md#独立-linux-主机指标来源)。部署成功不替代 System 身份登记、Monitor 目标准入或生产覆盖验收。
@@ -107,7 +107,6 @@ Infra 根 `.env` 与 `business/.env` 各自的 `ADDP_POSTGRES_METRICS_ENABLED=fa
 Monitor 的可选资源查询使用 `MONITOR_PROMETHEUS_URL` 与独立 `MONITOR_PROMETHEUS_CA_FILE/CLIENT_CERT_FILE/CLIENT_KEY_FILE` 部署输入；不复用采集、节点准入或中心健康证书。缺配置只使资源 API 返回能力未配置，不影响原有 Ready。端点/证书随服务生命周期生效；查询预算是 Monitor 平台普通配置 `/settings/resource-query-policy`，版本/CAS 保存后对新请求立即生效，不通过环境变量配置或回退；在途请求保留开始时的预算版本。具体保护上限和指标目录见 [平台运行观测规范](../addp平台运行观测规范.md#62-资源查询与预算)。
 
 
-本地可选指标 TLS 转发由 `ADDP_METRICS_CONTROL_ENABLED=false` 显式选择，仅在指标中心也启用时生效。`ADDP_METRICS_CONTROL_DIR` 为仓库外服务器证书目录，`ADDP_METRICS_CONTROL_GATEWAY_URL` 为明确的规范 HTTP origin（含端口、无路径）；标准预检生成 nginx.conf，不签发证书。选中此入口后两个 `PROMETHEUS_*_URL` 均须为 `https://metrics-control:9444`，中心信任该入口独立 CA。关闭入口时由部署方提供原有 HTTPS 控制面输入，不校验入口专用目录或上游；关闭中心也停止其可选转发服务。入口只转发 Token POST 与指标发现 GET，不发布宿主端口，不参与业务 Ready。HTTP 上游属于受控开发网络部署边界，生产 TLS 和密钥权限须独立验收。
 
 
 macOS 本地 Docker Desktop 的稳定指标访问由 `ADDP_METRICS_DESKTOP_LOOPBACK_PORTS` 显式列出来源回环端口，格式与限制见本文“平台观测配置边界”中的部署契约。中心唯一 HTTP SD Job 只将列出的 `127.0.0.1:端口` 传输地址映射到 `host.docker.internal:端口`，instance 仍保留 Monitor 的规范来源地址。叶子证书须包含两种访问名称，mTLS 身份与信任根不变；不放宽通配监听、自动改端口或读取任意目标。中心配置经标准 Infra 生命周期生效，不隐式重启业务进程；来源及 Monitor 的部署输入有变更时，分别由用户沿对应模块标准入口重启。
@@ -121,6 +120,8 @@ macOS 本地 Docker Desktop 的稳定指标访问由 `ADDP_METRICS_DESKTOP_LOOPB
 Tempo 使用独立 `TEMPO_BUCKET/TEMPO_S3_ACCESS_KEY/TEMPO_S3_SECRET_KEY`，不得复用日志或 MinIO 根账号；初始化只管理该 bucket 的 20 GiB 配额及其最小账号。72 小时为按容量约束的保留配置，另预留约 5 GiB WAL/工作空间，不构成文件系统硬配额。Alloy/Tempo 资源、采样及预算计算见[正式规范 6.5](../addp平台运行观测规范.md#65-分布式追踪与日志关联二期第一批)。
 
 Monitor 查询通过独立 `MONITOR_TEMPO_URL` HTTPS origin 和 `MONITOR_TRACE_TLS_DIR` 三文件客户端目录访问只读代理，不能复用来源证书。原生开发显式使用 Infra 实际回环映射；容器部署由唯一生产入口将 SDK 数组与私有目录投影为每服务独立只读挂载，查询目录仅挂 Monitor。改变部署输入由用户按标准生命周期重启相应进程；配置失败或中心故障不影响业务 Ready，接受导出不等于采样保留回执。
+
+标准 Infra 由查询代理在 `addp-network` 承接宿主回环发布，并经内部 `trace-backend` 读取 Tempo。Tempo 仅连接内部网络，不发布宿主端口。Trace 部署及状态检查须核对当前工作区的 Tempo、查询代理与共享 Alloy、查询代理健康、Alloy 的 Trace 配置和实际 OTLP／查询端口映射。端口缺失报告 Trace 不可用，显式启用失败沿原日志生命周期继续保留日志能力。开发重启预检只读取核心 Infra 的实际映射；可选设施的状态由启动入口独立检查并提示，不能因 Trace 缺映射阻断开发服务。中心 Ready 只证明设施及端口就绪，真实采样与授权查询须另验。
 
 本轮只使用 `make test-monitor-traces` 的当次隔离设施验证，不接管个人服务，不扩展或运行 Hosted。
 
@@ -148,3 +149,9 @@ python3 scripts/infra/generate-trace-config.py prepare-development \
 ## 节点设备容量扩展
 
 `ADDP_NODE_BLOCK_CAPACITY_ENABLED=false` 为默认关闭的部署选项，仅在节点来源启用时校验。选择 true 后由 `scripts/infra/node-metrics.py` 统一准备只读采集及专属 Textfile 目录、启停和清理；不要求用户执行采样脚本或导入 JSON。协议、限额及 VM 边界沿[块设备容量规范](../addp平台运行观测规范.md#磁盘与卷容量)。开关变更由部署者沿标准节点入口应用，不影响其他观测或业务 Ready；不修改根环境文件或自动重启个人来源。
+
+### Gateway 私有指标控制监听
+
+`GATEWAY_METRICS_CONTROL_LISTEN` 为空时关闭；启用时显式设置 IP:端口、`GATEWAY_METRICS_CONTROL_SERVER_NAME` 和仓库外 `GATEWAY_METRICS_CONTROL_TLS_DIR`。目录提供服务器 `server.crt/server.key` 和仅信任 Prometheus 控制面身份的 `client-ca.crt`。本机监听回环地址，访问域名由部署指定并覆盖于服务器 SAN。Kubernetes 使用内部 Service DNS、可达的 Pod 监听及 Secret 投影，并由 NetworkPolicy 限制调用方。可选入口失败独立报告，不影响业务 HTTP；证书轮换沿标准进程重启生效。
+
+Prometheus 使用显式布尔值 `ADDP_METRICS_CONTROL_MTLS_ENABLED=true`，部署目录增加 `control-client.crt/control-client.key`，同时用于 OAuth 和 HTTP SD 的 TLS 客户端认证，不复用来源或中心健康证书。控制面服务端信任根仍为 `control-ca.crt`，两个 `PROMETHEUS_*_URL` 均由部署提供并严格校验服务器名称。具体入口约束和迁移边界见 [Gateway 架构](../../../gateway/docs/gateway架构说明.md#私有指标控制入口)。

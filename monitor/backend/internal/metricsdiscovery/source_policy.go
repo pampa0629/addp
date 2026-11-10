@@ -19,12 +19,11 @@ import (
 )
 
 const (
-	Timeout                      = 5 * time.Second
-	EndpointSampleLimit          = 20000
-	SelfSampleReservation        = 20000
-	TotalSampleReservation       = 260000
-	EndpointBodyLimit      int64 = 10 << 20
-	TargetLimit                  = 1000
+	Timeout                          = 5 * time.Second
+	DefaultExternalTargetLimit       = 12
+	MaxExternalTargetLimit           = 24
+	EndpointBodyLimit          int64 = 10 << 20
+	TargetLimit                      = 1000
 )
 
 var (
@@ -47,14 +46,15 @@ type Resolver interface {
 // SourcePolicy contains deployment facts only. It cannot authorize a node or
 // attribute containers to module instances or tenants.
 type SourcePolicy struct {
-	prefixes  []netip.Prefix
-	ports     map[uint16]bool
-	resolver  Resolver
-	tlsConfig *tls.Config
+	prefixes    []netip.Prefix
+	ports       map[uint16]bool
+	resolver    Resolver
+	tlsConfig   *tls.Config
+	targetLimit int
 }
 
-func NewSourcePolicy(prefixes []netip.Prefix, ports []uint16, roots *x509.CertPool, certificate tls.Certificate) (*SourcePolicy, error) {
-	if len(prefixes) == 0 || len(prefixes) > 64 || len(ports) == 0 || len(ports) > 64 || roots == nil ||
+func NewSourcePolicy(prefixes []netip.Prefix, ports []uint16, roots *x509.CertPool, certificate tls.Certificate, targetLimit int) (*SourcePolicy, error) {
+	if targetLimit < 1 || targetLimit > MaxExternalTargetLimit || len(prefixes) == 0 || len(prefixes) > 64 || len(ports) == 0 || len(ports) > 64 || roots == nil ||
 		len(certificate.Certificate) == 0 || certificate.PrivateKey == nil {
 		return nil, ErrUnconfigured
 	}
@@ -91,10 +91,12 @@ func NewSourcePolicy(prefixes []netip.Prefix, ports []uint16, roots *x509.CertPo
 	}
 	certificate.Certificate = chain
 	return &SourcePolicy{
-		prefixes: append([]netip.Prefix(nil), prefixes...), ports: portSet, resolver: net.DefaultResolver,
+		prefixes: append([]netip.Prefix(nil), prefixes...), ports: portSet, resolver: net.DefaultResolver, targetLimit: targetLimit,
 		tlsConfig: &tls.Config{MinVersion: tls.VersionTLS12, RootCAs: roots.Clone(), Certificates: []tls.Certificate{certificate}},
 	}, nil
 }
+
+func (p *SourcePolicy) ExternalTargetLimit() int { return p.targetLimit }
 
 type ResolvedEndpoint struct {
 	Address string // Canonical IP:port, including IPv6 brackets; never an editable DNS name.

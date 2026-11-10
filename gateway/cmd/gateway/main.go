@@ -15,6 +15,7 @@ import (
 	"github.com/addp/common/logger"
 	"github.com/addp/common/modulelifecycle"
 	"github.com/addp/gateway/internal/config"
+	"github.com/addp/gateway/internal/metricscontrol"
 	"github.com/addp/gateway/internal/router"
 	"github.com/gin-gonic/gin"
 )
@@ -50,6 +51,12 @@ func main() {
 	server := &http.Server{Handler: r}
 	serverDone := make(chan error, 1)
 	go func() { serverDone <- server.Serve(listener) }()
+	control, controlErr := metricscontrol.Start(cfg, r)
+	if controlErr != nil {
+		logger.L().Error("gateway_metrics_control_unavailable")
+	} else if control != nil {
+		logger.L().Info("gateway_metrics_control_started")
+	}
 
 	serviceURL := commonConfig.BuildServiceURL(commonConfig.GetServiceHost(), cfg.Port)
 	registration := systemClient.RegisterAndHeartbeat(runtimeContext, &commonClient.ModuleRegistrationRequest{
@@ -68,6 +75,11 @@ func main() {
 	}
 	shutdownContext, stopShutdown := context.WithTimeout(context.Background(), 5*time.Second)
 	defer stopShutdown()
+	if control != nil {
+		if err := control.Shutdown(shutdownContext); err != nil {
+			logger.L().Error("gateway_metrics_control_shutdown_failed")
+		}
+	}
 	if err := server.Shutdown(shutdownContext); err != nil {
 		logger.L().Error("Gateway 服务关闭失败", "error", err)
 	}

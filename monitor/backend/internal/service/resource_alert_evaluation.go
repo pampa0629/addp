@@ -180,7 +180,7 @@ func (s *ResourceAlertRuleService) resourceRuleSources(ctx context.Context) (map
 		return nil, err
 	}
 
-	if err := metricsdiscovery.CheckReservations(targets); err != nil {
+	if err := metricsdiscovery.CheckReservations(targets, o.policy.ExternalTargetLimit()); err != nil {
 		return nil, err
 	}
 	nodes, err := metricsdiscovery.CurrentNodeVersions(ctx, s.identities)

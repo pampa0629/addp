@@ -1181,7 +1181,7 @@ class MetricsDeploymentConfigTest(unittest.TestCase):
         self.assertIn('check_controlled_host_sources(filesystem_only=True)', (ROOT / 'scripts/test/monitor-metrics-probe.py').read_text())
         self.assertIn('--case=process-alerts) metrics_case=process-alerts ;;', gate)
         self.assertIn('--case=cgroup-source) metrics_case=cgroup-source ;;', gate)
-        self.assertRegex(gate, r"(?s)if \[\[ \"\$metrics_case\" != host-resources && \"\$metrics_case\" != mtls-preflight && \"\$metrics_case\" != filesystem-alerts && \"\$metrics_case\" != block-capacity \]\]; then.*?run_owned_compile.*?'process_source'.*?'./processmetrics'.*?\nfi\npython3 \"\$ROOT_DIR/scripts/test/monitor-metrics-probe.py\"")
+        self.assertRegex(gate, r"(?s)if \[\[ \"\$metrics_case\" != host-resources && \"\$metrics_case\" != mtls-preflight && \"\$metrics_case\" != filesystem-alerts && \"\$metrics_case\" != block-capacity && \"\$metrics_case\" != target-budget \]\]; then.*?run_owned_compile.*?'process_source'.*?'./processmetrics'.*?\nfi\npython3 \"\$ROOT_DIR/scripts/test/monitor-metrics-probe.py\"")
 
     def test_controlled_host_scope_checks_exact_sources_and_restores_discovery(self):
         path = ROOT / 'scripts/test/monitor-metrics-probe.py'
@@ -1227,7 +1227,7 @@ class MetricsDeploymentConfigTest(unittest.TestCase):
         workflow = (ROOT / '.github/workflows/release-and-t2-gates.yml').read_text()
         cases = re.search(r'^  monitor-metrics-cases:\n(.*?)(?=^  \S|\Z)', workflow, re.M | re.S).group(1)
         self.assertIn('fail-fast: false', cases)
-        self.assertIn('case: [postgres-source, directory-publication, http-quality, process-alerts, host-resources, filesystem-alerts, cgroup-source, block-capacity, node-recovery]', cases)
+        self.assertIn('case: [postgres-source, directory-publication, http-quality, process-alerts, host-resources, filesystem-alerts, cgroup-source, target-budget, block-capacity, node-recovery]', cases)
         self.assertIn('timeout-minutes: 20', cases)
         self.assertIn('MONITOR_METRICS_TEST_ARGS: --case=${{ matrix.case }}', cases)
         self.assertEqual(cases.count('run: make test-monitor-metrics\n'), 1)
@@ -1555,6 +1555,40 @@ class MetricsDeploymentConfigTest(unittest.TestCase):
         self.assertEqual((self.directory / 'prometheus.yml').read_text(), data)
         self.assertEqual(sorted(p.name for p in self.directory.iterdir()), sorted((*config.FILES, 'prometheus.yml')))
 
+    def test_development_budget_counts_all_selected_local_sources_before_render(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            (root / 'business').mkdir()
+            (root / 'business/.env').write_text(
+                'ADDP_POSTGRES_METRICS_ENABLED=true\nADDP_REDIS_METRICS_ENABLED=true\nADDP_MINIO_METRICS_ENABLED=true\n'
+            )
+            env = dict(self.env, ADDP_NODE_METRICS_ENABLED='true', ADDP_POSTGRES_METRICS_ENABLED='true',
+                       ADDP_REDIS_METRICS_ENABLED='true', ADDP_MINIO_METRICS_ENABLED='true')
+            plan = {
+                f'worker-{index}': dict(module_name='quality', role='worker', listen=f'127.0.0.1:{19500 + index}',
+                                        endpoint=f'https://127.0.0.1:{19500 + index}/metrics',
+                                        tls_dir=f'/private/metrics/worker-{index}')
+                for index in range(18)
+            }
+            env['ADDP_DEV_PROCESS_METRICS_PLAN'] = json.dumps(dict(list(plan.items())[:13]))
+            with self.assertRaisesRegex(config.TargetBudgetExceeded, '计划 20 个.*上限 12'):
+                config.check_target_budget(env, root)
+            env['ADDP_METRICS_TARGET_LIMIT'] = '24'
+            self.assertEqual(config.check_target_budget(env, root), '24')
+            env['ADDP_DEV_PROCESS_METRICS_PLAN'] = json.dumps(dict(list(plan.items())[:17]))
+            self.assertEqual(config.check_target_budget(env, root), '24')
+            env['ADDP_DEV_PROCESS_METRICS_PLAN'] = json.dumps(plan)
+            with self.assertRaisesRegex(config.TargetBudgetExceeded, '计划 25 个.*上限 24'):
+                config.render(env, root)
+
+        config.render(dict(self.env, ADDP_METRICS_TARGET_LIMIT='24'))
+        path = self.directory / 'prometheus.yml'
+        content = path.read_bytes()
+        self.assertIn(b'target_limit: 24', content)
+        with self.assertRaises(ValueError):
+            config.render(dict(self.env, ADDP_METRICS_TARGET_LIMIT='25'))
+        self.assertEqual(path.read_bytes(), content)
+
     def test_desktop_loopback_rules_keep_the_original_identity_and_exact_ports(self):
         env = dict(self.env, ADDP_METRICS_DESKTOP_LOOPBACK_PORTS='19102,19091,19101')
         replies = [json.dumps([{'Endpoints': {'docker': {'Host': 'unix:///local/docker.sock'}}}]),
@@ -1619,69 +1653,28 @@ class MetricsDeploymentConfigTest(unittest.TestCase):
                 config.render(dict(self.env, PROMETHEUS_MONITOR_URL=value))
             self.assertEqual((self.directory / 'prometheus.yml').read_bytes(), before)
 
-    def control_inputs(self):
-        # Different mount directory; only centre files belong in deployment.
-        directory = Path(self.temp.name + '-control')
-        directory.mkdir()
-        self.addCleanup(lambda: __import__('shutil').rmtree(directory))
-        for name in ('server.crt', 'server.key'):
-            (directory / name).write_text(name)
-        return dict(self.env, ADDP_METRICS_CONTROL_ENABLED='true',
-                    ADDP_METRICS_CONTROL_DIR=str(directory),
-                    ADDP_METRICS_CONTROL_GATEWAY_URL='http://host.docker.internal:8000',
-                    PROMETHEUS_SYSTEM_URL='https://metrics-control:9444',
-                    PROMETHEUS_MONITOR_URL='https://metrics-control:9444')
-
-    def test_private_control_selection_generation_and_rejection_are_atomic(self):
-        env = self.control_inputs()
-        config.render(env)
-        control = Path(env['ADDP_METRICS_CONTROL_DIR']) / 'nginx.conf'
-        original = control.read_bytes()
-        prometheus = (self.directory / 'prometheus.yml').read_bytes()
-        text = original.decode()
-        self.assertNotIn(self.secret, text)
-        self.assertIn('proxy_set_header Authorization $http_authorization;', text)
-        self.assertIn('access_log off;', text)
-        self.assertEqual(text.count('proxy_pass http://host.docker.internal:8000;'), 2)
-        self.assertIn('location / { return 404; }', text)
-        for values in ({'ADDP_METRICS_CONTROL_ENABLED': 'yes'},
-                       {'ADDP_METRICS_CONTROL_DIR': str(ROOT)},
-                       {'ADDP_METRICS_CONTROL_GATEWAY_URL': 'http://host:80/path'},
-                       {'ADDP_METRICS_CONTROL_GATEWAY_URL': 'http://HOST:80'},
-                       {'ADDP_METRICS_CONTROL_GATEWAY_URL': 'http://user:pass@host:80'},
-                       {'PROMETHEUS_MONITOR_URL': 'https://other:9444'}):
-            with self.subTest(values=values), self.assertRaises(ValueError):
-                config.render(dict(env, **values))
-            self.assertEqual(control.read_bytes(), original)
-            self.assertEqual((self.directory / 'prometheus.yml').read_bytes(), prometheus)
-        (control.parent / 'ca.key').write_text('private-signing-key')
+    def test_control_mtls_identity_is_explicit_independent_and_used_for_both_calls(self):
+        env = dict(self.env, ADDP_METRICS_CONTROL_MTLS_ENABLED='true')
+        config.render(self.env)
+        before = (self.directory / 'prometheus.yml').read_bytes()
         with self.assertRaises(ValueError):
             config.render(env)
-        config.render(dict(self.env, ADDP_METRICS_CONTROL_ENABLED='false',
-                           ADDP_METRICS_CONTROL_DIR='invalid', ADDP_METRICS_CONTROL_GATEWAY_URL='invalid'))
-        self.assertEqual(control.read_bytes(), original)
-
-    def test_control_profile_is_explicit_and_has_no_host_port_or_business_dependency(self):
-        root = (ROOT / 'docker-compose.infra.yml').read_text()
-        service = root.split('  metrics-control:\n', 1)[1].split('  prometheus:', 1)[0]
-        self.assertNotIn('ports:', service)
-        self.assertIn('profiles: [observability-metrics-control]', service)
-        template = (ROOT / 'scripts/infra/metrics-control.yml').read_text()
-        self.assertNotIn('ports:', template)
-        self.assertNotIn('depends_on:', template)
-        for key in ('65534:65534', 'read_only: true', 'cap_drop: [ALL]', 'cpus: 0.25', 'mem_limit: 128m'):
-            self.assertIn(key, template)
-        for metrics, control, selected in (('false', 'true', False), ('true', 'false', False), ('true', 'true', True)):
-            env = dict(os.environ, ADDP_OBSERVABILITY_LOGS_ENABLED='false',
-                       ADDP_OBSERVABILITY_METRICS_ENABLED=metrics, ADDP_METRICS_CONTROL_ENABLED=control)
-            result = subprocess.run(['bash', '-c', 'source scripts/utils/observability-env.sh; addp_observability_profiles; printf "%s" "${COMPOSE_PROFILES-}"'],
-                                    cwd=ROOT, env=env, capture_output=True, text=True, check=True)
-            self.assertEqual('observability-metrics-control' in result.stdout, selected)
-        gate = (ROOT / 'scripts/test/monitor-metrics-gate.sh').read_text()
-        for name in ('scripts/infra/metrics-control.conf', 'scripts/infra/metrics-control.yml'):
-            self.assertIn(name, gate.splitlines()[3])
-        down = (ROOT / 'scripts/infra/down.sh').read_text()
-        self.assertIn('--profile observability-metrics-control', down)
+        self.assertEqual((self.directory / 'prometheus.yml').read_bytes(), before)
+        for name in ('control-client.crt', 'control-client.key'):
+            (self.directory / name).write_text(name)
+        config.render(env)
+        text = (self.directory / 'prometheus.yml').read_text()
+        self.assertEqual(text.count('cert_file: /etc/prometheus/deployment/control-client.crt'), 2)
+        self.assertEqual(text.count('key_file: /etc/prometheus/deployment/control-client.key'), 2)
+        self.assertNotIn('@@', text)
+        for value in ('yes', '', 'TRUE'):
+            with self.assertRaises(ValueError):
+                config.render(dict(env, ADDP_METRICS_CONTROL_MTLS_ENABLED=value))
+        (self.directory / 'control-client.crt').write_bytes((self.directory / 'collector.crt').read_bytes())
+        with self.assertRaises(ValueError):
+            config.render(env)
+        with self.assertRaises(ValueError):
+            config.render(self.env)
 
     def test_secret_missing_mismatched_or_shared_is_rejected(self):
         for values in ({'PROMETHEUS_SERVICE_CLIENT_SECRET': ''},
@@ -2890,7 +2883,7 @@ class LimitedNodeMountEvidenceTest(unittest.TestCase):
 
     def test_real_compose_layers_keep_exact_readonly_capacity_volume_and_disable_textfile(self):
         env = dict(os.environ, METRICS_T2_WORK=str(self.work), ADDP_METRICS_TLS_DIR=str(self.work / 'tls'),
-                   ADDP_METRICS_DEPLOYMENT_DIR=str(self.work / 'deployment'), ADDP_METRICS_CONTROL_DIR=str(self.work / 'control'),
+                   ADDP_METRICS_DEPLOYMENT_DIR=str(self.work / 'deployment'), GATEWAY_METRICS_CONTROL_TLS_DIR=str(self.work / 'control'),
                    ADDP_POSTGRES_METRICS_SOURCE_DIR=str(self.work / 'postgres-source'), ADDP_POSTGRES_METRICS_WEB_DIR=str(self.work / 'postgres-web'),
                    ADDP_POSTGRES_METRICS_USER='65534:65534', ADDP_NODE_METRICS_TLS_DIR=str(self.work / 'node-tls'),
                    ADDP_NODE_METRICS_OWNER='t2', ADDP_NODE_METRICS_LISTEN=':9100', ADDP_NODE_METRICS_ROOTFS='/',

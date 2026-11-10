@@ -97,7 +97,7 @@ func (s *ResourceObservationService) observeNodeSummaries(ctx context.Context, c
 			break
 		}
 	}
-	if metricsdiscovery.CheckReservations(rows) != nil {
+	if metricsdiscovery.CheckReservations(rows, s.policy.ExternalTargetLimit()) != nil {
 		return result, resourcequery.ErrUnavailable
 	}
 	targets := make(map[string]metricsdiscovery.NodeTarget)

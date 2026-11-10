@@ -59,7 +59,7 @@ func TestIntegrationMetricsResourceOverview(t *testing.T) {
 		t.Fatal("requires owned private IPv4 source")
 	}
 	ports := []uint16{19450, 19451, 19452, 19453, 19454, 19455}
-	policy, err := metricsdiscovery.NewSourcePolicy([]netip.Prefix{netip.PrefixFrom(ip, 32)}, ports, roots, admission)
+	policy, err := metricsdiscovery.NewSourcePolicy([]netip.Prefix{netip.PrefixFrom(ip, 32)}, ports, roots, admission, metricsdiscovery.DefaultExternalTargetLimit)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -431,6 +431,45 @@ System／Gateway 产物分别为 `sha256:aaf46c29ca32cfad6782cdc55197f2671300b08
 交给用户从仓库根执行 `bash scripts/infra/up.sh`，仅成功后执行 `./scripts/dev/restart.sh -all`。前者走原整套Infra生命周期并更新共享Alloy；后者由用户在自己的终端重启以加载采集／查询配置，AI不执行keepalive或接管进程。收到执行结果后再只读核验实际端口与状态、正式身份下Trace／日志和页面；如任一步失败，先保留输出定位，不自动重试。原Hosted、容量和定时禁令保持。
 
 
+<a id="trace-personal-poststart-host-ports-missing-20261108"></a>
+
+## 2026-11-08 用户标准启用／重启后，只读核验发现 Trace 宿主端口缺失
+
+用户报告标准Infra启用和全部服务重启已完成后，本会话仅执行标准status及只读Docker、宿主监听、现有日志和源码核对，未重启或重试启动。当前源码为`a4005807a565ce1d685698310256ba68b606c79a`，共享工作区包含其他会话改动，未动其暂存区。开发端口文件为Console5170、Gateway8000、System8180、Monitor8100；日志查询13100、Alloy健康12345。status报告Trace中心Ready，但实际14318／14320无宿主监听。查询代理容器内部healthy、请求的HostConfig端口为14320，NetworkSettings实际8443映射为空，仅连接internal的trace-backend。当前Alloy在14:55:10Z创建、14:55:13Z启动，仅使用根Compose的日志专用配置，无Trace目录挂载和Trace资源限制；这不能计为合并Trace采集已生效。
+
+同期Docker Desktop backend已有记录显示，14:54:24.883058Z曾为Alloy建立14318到容器4318的真实转发，14:55:12.209618Z已有移除记录，随后Alloy以日志配置重建。查询代理14320在14:54:26Z仅观察到临时端口审批／撤销，未观察到真实容器端口转发。网络inspect及固定Docker Engine28.5.1源码相互印证：原查询代理仅接internal网络，而该版本对internal网络不编排外部连接（[版本源码](https://github.com/moby/moby/blob/v28.5.1/libnetwork/endpoint.go#L661-L669)）。仓库start_central_traces在actual ports读取失败时返回非零、外层清除TRACE_CONFIG_READY，后续日志步骤沿根Compose重建Alloy；此路径与现存状态和时序一致。未取得原Infra启动stderr，不能把具体首条失败原文／完整历史控制流标记为直接观测，也不归因为证书或用户误操作。
+
+当前status的Trace Ready只依据查询代理内部health，不验证实际回环映射、Alloy合并配置或SDK送达，故本轮Ready不足以放行真实查询。最近日志观察探针投递成功（14:56:46Z、3033ms），当前五个生产模块本地日志均有Trace元数据；抽取时Gateway／System共享173个Trace ID、Gateway／Monitor共享55个，仅说明既有本地关联，未输出ID或正文。历史接收器丢弃／写失败计数非零，不宣称历史无损；本地元数据不替代Tempo保留、System授权日志接口或页面证据。
+
+只读摘要：`/var/folders/r1/l7b49c757dz02zftf_l9vl9r0000gn/T/addp-p19-trace-poststart-readonly-_ayqlqhr/report.json`。本轮未执行认证Trace查询、授权日志正文查询或产品页面验收；浏览器仅做可用能力／原生应用检查，无产品交互。保持本机Trace接入与正式Agent／Copilot full的部分验收结论，不计Hosted／容量／长期保留通过。
+
+建议下一批先确认并修规范：查询代理加入既有普通addp-network以承担原127.0.0.1回环发布，同时保留trace-backend与mTLS，Tempo保持仅内部网络；标准状态／就绪依据核对实际Trace端口及共享Alloy配置。补原生命周期／配置确定性回归：仅内部代理／缺映射不得Ready、Trace失败首因仍失败且日志保留、两能力同时启用后Alloy保留单一合并配置及原限制。先走make test-infra-runtime-log-lifecycle及HTTP／Trace runner，真实应用由用户另行执行标准生命周期。本轮只追加既有证据，不改配置／源码／权限／运行状态，不运行Hosted、容量或定时。
+
+
+<a id="trace-personal-infra-loopback-restart-fix-20261109"></a>
+
+## 2026-11-09 Trace 回环发布与开发重启预检修正
+
+11月9日交接复现旧重启预检读取 Alloy 4318 映射失败，与前一日本机故障一致。基于 `4e16bd556bc5c5b67076a56732d653cac013458b` 在共享工作区先修规范，再改标准路径。查询代理接入既有 `addp-network` 承接 `127.0.0.1` 发布，经 `trace-backend` 访问只在内部网络上的 Tempo。Trace 启用及状态复用实际端口、组件归属及健康、Alloy 配置检查。日志与 Trace 同时选中时使用同一个合并 Alloy；Trace 缺映射时原启用结果仍失败，已选日志继续启动。开发重启预检只读取核心 Infra 映射，可选设施由启动入口独立提示。
+
+四项 Trace 回归通过，覆盖旧重启缺端口退出、内部健康但无实际映射的错误 Ready、日志专用 Alloy 拒绝、Trace 失败时日志启动和成功时保留 overlay，以及真实 Compose 的离线网络／回环发布渲染。新增 Compose 用例首轮缺少独立 Redis／FalkorDB 测试密码，补齐后 `python3 -m unittest scripts/test/infra-runtime-log-lifecycle_test.py -k trace_` 四项通过。原 `make test-dev-lifecycle` 第二轮中 HTTP runner 53项Python／7项Node及Trace runner 208项通过，随后 161 项聚合仅有 HTTP 预算夹具 `test_native_owned_compiler_is_stopped_during_read_and_resumed_after_du_failure` 的模拟编译在 `resource_windows`／`fail_read=True` 子场景触及五秒期限，整套门禁退出2。该夹具及预算实现未修改。下游 `bash scripts/test/infra-port-resolution.sh` 与 `bash scripts/test/dev-lifecycle-and-build.sh` 另行执行，均退出0；原聚合中后续 Go 包验证未执行。原 Platform consistency 经 `test-platform` 覆盖该确定性入口。
+
+本机只读核对中，新的重启预检实际读取 PostgreSQL25432／Redis26379／MinIO19000；修正后的 `bash scripts/infra/status.sh` 报告 Trace `Unavailable`，日志查询与 Alloy 日志组件仍为 Ready。实际环境仍需用户沿 `bash scripts/infra/up.sh && ./scripts/dev/restart.sh -all` 应用，之后核验两个回环映射、真实 Trace、授权日志关联及页面。当前改动未提交，验证限于本地门禁及只读检查，未运行 Hosted、容量实链或定时。
+
+完整门禁日志 `/var/folders/r1/l7b49c757dz02zftf_l9vl9r0000gn/T/addp-trace-lifecycle-verified.S9oxepMWbJ`，端口和开发生命周期脚本日志 `/var/folders/r1/l7b49c757dz02zftf_l9vl9r0000gn/T/addp-trace-dev-scripts.vO2ibjAREK`。
+
+
+<a id="trace-personal-postfix-sample-20261109"></a>
+
+## 2026-11-09 本机 Trace 真实采集与集中日志关联通过，授权页面待验
+
+用户完成标准应用与开发重启后，`docker port` 读取 Alloy 4318／查询代理 8443 的实际映射分别为 `127.0.0.1:14318`／`127.0.0.1:14320`。Alloy 运行合并配置 `/trace-deployment/runtime.alloy`；`bash scripts/infra/status.sh` 报告 Trace 和日志查询 Ready，保留的最近日志探针送达耗时6032毫秒。Alloy 指标快照为接收1676个Span、向Tempo发送48个Span、接收拒绝和发送失败计数均为0。快照只覆盖当前计数范围。
+
+复用现有查询端 mTLS 证书，使用当前 Gateway 实例标识、最近15分钟及20条上限执行 Tempo 只读搜索，返回15条，15条在有界本地日志读取中有同一Trace ID。只取一条 `1e41583f0782a5b1c37987438f9ae583` 详情，验证 Gateway 2个Span、System 1个Span及1条跨模块父子关系。沿现有 Loki 只读代理按两个实例及该Trace ID精确查询，各返回1条日志，实例、Trace ID及Span ID均与本地记录及Tempo详情一致。未保留证书正文、令牌、日志正文或完整遥测响应。此项证明个人环境真实采集、查询代理和集中日志关联，限单条已保留样本。
+
+实际 Chrome 打开 `/monitor/traces`，现有“ADDP 开发管理员”会话显示“无权访问此页面”。Safari 本机控制台处于登录页。授权 Monitor 页面详情、页面跳转及 System 正式身份查询尚待具备权限的 Platform 用户登录后验证。此次无身份或权限改动，无服务重启、Hosted、容量实链或定时。
+
+
 <a id="trace-personal-safari-fosite-scope-20261109"></a>
 
 ## 2026-11-09 Safari 正式管理员页面通过准入，System 调用链明细批次失败

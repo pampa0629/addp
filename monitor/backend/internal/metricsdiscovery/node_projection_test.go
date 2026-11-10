@@ -26,6 +26,27 @@ func testNodeTarget() NodeTarget {
 		MonitorKind: "host_resources", Source: NodeSource{Type: "node_exporter", Endpoint: "https://127.0.0.1:9443/metrics"}, Enabled: true}
 }
 
+func TestProjectorAppliesDeploymentTargetLimit(t *testing.T) {
+	targets := make([]NodeTarget, MaxExternalTargetLimit+1)
+	for i := range targets {
+		targets[i] = testNodeTarget()
+		targets[i].Source.Endpoint = fmt.Sprintf("https://127.0.0.%d:9443/metrics", i+1)
+	}
+	policy := testPolicy(t, testSourcePKI(t, true), 9443)
+	policy.targetLimit = MaxExternalTargetLimit
+	snapshot := testSnapshot(targets...)
+	snapshot.EngineDeployments = []models.ObservabilityEngineIdentity{}
+	projector := NewNodeProjector(true, policy, identityReaderFunc(func(context.Context) (*models.ObservabilityIdentitySnapshot, error) {
+		return snapshot, nil
+	}))
+	if groups, err := projector.Project(context.Background(), targets[:MaxExternalTargetLimit]); err != nil || len(groups) != MaxExternalTargetLimit {
+		t.Fatalf("within deployment budget: %d groups, %v", len(groups), err)
+	}
+	if groups, err := projector.Project(context.Background(), targets); !errors.Is(err, ErrBudgetExceeded) || groups != nil {
+		t.Fatalf("over deployment budget: %d groups, %v", len(groups), err)
+	}
+}
+
 func testSnapshot(targets ...NodeTarget) *models.ObservabilityIdentitySnapshot {
 	snapshot := &models.ObservabilityIdentitySnapshot{ObservedAt: time.Now().UTC(), Nodes: []models.ObservabilityNodeIdentity{}, ModuleInstances: []models.ObservabilityModuleIdentity{}}
 	for _, target := range targets {
@@ -63,37 +84,37 @@ func TestNodeReservationsIncludeCenterAndRejectDuplicateOwnership(t *testing.T) 
 		targets[i] = testNodeTarget()
 		targets[i].Source.Endpoint = fmt.Sprintf("https://127.0.0.%d:9443/metrics", i+1)
 	}
-	if err := CheckReservations(targets[:12]); err != nil {
+	if err := CheckReservations(targets[:12], DefaultExternalTargetLimit); err != nil {
 		t.Fatalf("within reservation: %v", err)
 	}
-	if err := CheckReservations(targets); err != ErrBudgetExceeded {
+	if err := CheckReservations(targets, DefaultExternalTargetLimit); err != ErrBudgetExceeded {
 		t.Fatalf("center reservation omitted: %v", err)
 	}
 	targets[12].Enabled = false
-	if err := CheckReservations(targets); err != nil {
+	if err := CheckReservations(targets, DefaultExternalTargetLimit); err != nil {
 		t.Fatalf("disabled source consumes scrape reservation: %v", err)
 	}
 	targets[1].Subject = targets[0].Subject
-	if CheckReservations(targets[:2]) != ErrInvalidTarget {
+	if CheckReservations(targets[:2], DefaultExternalTargetLimit) != ErrInvalidTarget {
 		t.Fatal("duplicate enabled subject and kind admitted")
 	}
 	targets[1].Enabled = false
-	if err := CheckReservations(targets[:2]); err != nil {
+	if err := CheckReservations(targets[:2], DefaultExternalTargetLimit); err != nil {
 		t.Fatal(err)
 	}
 	targets[1].Enabled = true
 	targets[1].MonitorKind = "container_resources"
 	targets[1].Source.Type = "cadvisor"
-	if err := CheckReservations(targets[:2]); err != nil {
+	if err := CheckReservations(targets[:2], DefaultExternalTargetLimit); err != nil {
 		t.Fatal("distinct node categories rejected")
 	}
 	targets[1].Source.Endpoint = targets[0].Source.Endpoint
-	if CheckReservations(targets[:2]) != ErrInvalidTarget {
+	if CheckReservations(targets[:2], DefaultExternalTargetLimit) != ErrInvalidTarget {
 		t.Fatal("one physical source attributed twice")
 	}
 	targets[1].Enabled = false
 	targets[1].ID = targets[0].ID
-	if CheckReservations(targets[:2]) != ErrInvalidTarget {
+	if CheckReservations(targets[:2], DefaultExternalTargetLimit) != ErrInvalidTarget {
 		t.Fatal("duplicate configuration identity admitted")
 	}
 	disabled := make([]NodeTarget, TargetLimit+1)
@@ -101,7 +122,7 @@ func TestNodeReservationsIncludeCenterAndRejectDuplicateOwnership(t *testing.T) 
 		disabled[i] = testNodeTarget()
 		disabled[i].Enabled = false
 	}
-	if CheckReservations(disabled) != ErrBudgetExceeded {
+	if CheckReservations(disabled, DefaultExternalTargetLimit) != ErrBudgetExceeded {
 		t.Fatal("unbounded saved target input")
 	}
 }

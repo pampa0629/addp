@@ -27,15 +27,16 @@ type privateFileCleanup struct {
 // The map owns only live batches created by this instance. It is not another
 // queue, authorization cache or reconstruction of a persisted path.
 type privateFileWorkflowExecutor struct {
-	repository *repository.FileExecutionRepository
-	instanceID string
-	authority  func(uint) fileSourceAuthority
-	admission  func(uint) fileAdmissionAuthority
-	provider   fileSourceProvider
-	endpoint   func(context.Context, uint, uint) (plugin.ConnectionInfo, error)
-	credential func(context.Context, uint) (string, error)
-	mu         sync.Mutex
-	pending    map[string]privateFileCleanup
+	repository    *repository.FileExecutionRepository
+	instanceID    string
+	authority     func(uint) fileSourceAuthority
+	admission     func(uint) fileAdmissionAuthority
+	provider      fileSourceProvider
+	endpoint      func(context.Context, uint, uint) (plugin.ConnectionInfo, error)
+	credential    func(context.Context, uint) (string, error)
+	protectSource func(context.Context, uint, plugin.EnginePlugin, plugin.EngineCatalogPath) (func(), error)
+	mu            sync.Mutex
+	pending       map[string]privateFileCleanup
 }
 
 func newPrivateFileWorkflowExecutor(repo *repository.FileExecutionRepository, workflow *WorkflowEngineService, instanceID string) *privateFileWorkflowExecutor {
@@ -46,6 +47,9 @@ func newPrivateFileWorkflowExecutor(repo *repository.FileExecutionRepository, wo
 	f.authority = func(tenant uint) fileSourceAuthority { return workflow.systemService.WithTenantID(tenant) }
 	f.admission = func(tenant uint) fileAdmissionAuthority { return workflow.systemService.WithTenantID(tenant) }
 	f.credential = workflow.systemService.TenantServiceAccessToken
+	if workflow.protectionGate != nil {
+		f.protectSource = workflow.protectionGate.BeginCatalogPath
+	}
 	if p, err := plugin.Get("nfs"); err == nil {
 		f.provider, _ = p.(fileSourceProvider)
 	}
@@ -151,7 +155,7 @@ func (s *ExecutionService) executePrivateFileWorkflow(ctx context.Context, item 
 	if item.StartedAt == nil {
 		return s.fail(ctx, item, lease, time.Time{}, "snapshot_invalid", fmt.Errorf("%s", commoni18n.ForLanguage(language, "develop.workflow.private_file_unavailable")))
 	}
-	if facts.Intent.Target != nil || f.authority == nil || f.provider == nil || f.endpoint == nil || f.credential == nil {
+	if facts.Intent.Target != nil || f.authority == nil || f.provider == nil || f.endpoint == nil || f.credential == nil || f.protectSource == nil {
 		return unavailable()
 	}
 	var config map[string]json.RawMessage
@@ -165,6 +169,13 @@ func (s *ExecutionService) executePrivateFileWorkflow(ctx context.Context, item 
 	}
 	runCtx, cancel := context.WithDeadline(execution.ContextWithLease(ctx, lease), deadline)
 	defer cancel()
+	for _, source := range issued.Scope.Sources {
+		end, err := f.protectSource(runCtx, uint(item.TenantID), f.provider, source.Target)
+		if err != nil {
+			return unavailable()
+		}
+		defer end()
+	}
 	connection, err := f.endpoint(runCtx, uint(item.TenantID), engineID)
 	if err != nil {
 		return unavailable()

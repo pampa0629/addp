@@ -81,3 +81,15 @@ Gateway 使用公共 `/health/live` 与 `/health/ready`；就绪检查为 `syste
 ## 8. 验证
 
 标准入口与验证范围统一见[运维手册](gateway运维手册.md#回归验证)，不在架构正文复制一组语言命令。
+
+## 私有指标控制入口
+
+Gateway 可在同一进程内启用独立 mTLS 监听，复用既有路由和 owner 授权。部署输入 `GATEWAY_METRICS_CONTROL_LISTEN` 为空时关闭；启用时必须显式提供 IP:端口、`GATEWAY_METRICS_CONTROL_SERVER_NAME` 和仓库外绝对目录 `GATEWAY_METRICS_CONTROL_TLS_DIR`。目录提供 `server.crt/server.key/client-ca.crt`，客户端 CA 仅签发 Prometheus 控制面身份。服务器证书必须覆盖配置的名称。平台不签发部署证书。
+
+本机使用回环监听，Prometheus 使用证书覆盖的 Docker Desktop 宿主名称。Kubernetes 使用 Pod 可达监听、内部 Service DNS 和 Secret 目录挂载，并由部署配置 NetworkPolicy；目录读取支持 Secret 的符号链接投影。部署负责阻止公网访问，不根据运行环境猜测地址或自动寻找端口。
+
+入口仅接受 Token POST 和指标发现 GET 两条规范路径，拒绝查询参数、编码路径和其他路由，保留 Authorization。请求体上限 8 KiB、头部读取与请求处理预算 5 秒，TLS 最低 1.2，必须验证客户端证书。复用现有控制面 API Consumer 拒绝规则和 System/Monitor 授权，不创建新业务 API。专用监听不提供健康路由，不记录认证材料。配置或监听失败报告封闭诊断码，业务 HTTP 生命周期继续；证书变更由标准进程重启生效。
+
+专用 mTLS 限制此入口的调用方，现有 HTTP 路由继续遵循原 owner 认证。Prometheus 通过独立 `ADDP_METRICS_CONTROL_MTLS_ENABLED=true` 选择控制面客户端证书，部署目录增加 `control-client.crt/control-client.key`，原独立 metrics-control 代理部署与选择键已删除。T2 协议夹具运行同一 Gateway 监听实现，Online 与本地产品验收直接使用真实 Gateway。已有部署切换时先核验旧容器归属并停止，验收后删除残留容器。
+
+验证由 `make test-module MODULE=gateway` 自动发现 Go 测试，配置由 `make test-monitor-metrics-config` 验证；这两个既有入口及平台 CI 路径发现覆盖本次变化。真实切换由用户操作并核对来源身份、实例轮换、新鲜采样和旧容器退出。

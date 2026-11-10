@@ -245,6 +245,10 @@ if [ "$EXPLICIT_ALL" = true ] && [ "$SELECTED_MODULE_COUNT" -ne 0 ]; then
   show_usage
 fi
 
+if [[ "${ADDP_OBSERVABILITY_METRICS_ENABLED:-false}" == true && -n "${ADDP_DEV_PROCESS_METRICS_PLAN:-}" ]]; then
+  python3 "${ROOT_DIR}/scripts/infra/generate-metrics-config.py" --check-budget || exit 1
+fi
+
 if [ "$EXACT_PROCESS" = true ]; then
   [ "${ADDP_ONLINE_HOST:-}" = "1" ] || {
     echo "❌ --exact-process 只允许 addp-online 专用 Runner 使用" >&2
