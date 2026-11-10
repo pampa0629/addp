@@ -4,7 +4,7 @@
 
 原生实例概况沿可选 `InstanceOverviewProvider.ReadInstanceOverview(ctx, connInfo)` 单一路径提供，由顶层 `capabilities.instance_overview` 声明。它与 `ConnectionProbeProvider` 分离，不扩大连接测试或定时健康检查的命令权限。Provider 只返回固定统计字段；System 的 `GET /api/v1/system/engines/:id/overview` 使用既有详情凭据、Tenant 与 `system.engine.read` 边界，读取已保存配置，最多执行五秒原生读取，不接受 query 或正文。响应包含 engine_id、version、queried_at 与 metrics；不返回账号凭据、原始错误、会话 SQL、账号策略、桶名列表或通用诊断对象。删除中/墓碑继续拒绝读取；能力不支持返回 422，整体源读取失败返回安全的 503，各项权限不足可在成功响应中独立说明。此入口不授予表/文件内容权限。前端显示查询范围、查询时间和累计语义；刷新开始及失败立即清除旧值，离开详情后丢弃旧请求，不自动轮询或重试。MinIO 容量仍不在正式能力中。
 
-MinIO 容量的静态准入发现：仓库固定版本 `RELEASE.2025-10-15T17-29-55Z` 的原生 AccountInfo 可携带桶占用与对象数，但其 [GetBucketUsageInfo](https://github.com/minio/minio/blob/RELEASE.2025-10-15T17-29-55Z/cmd/bucket-quota.go#L59-L77) 读取缓存，缺少桶统计也返回零值结构，AccountInfo 未提供足以区分真零与缺样的证明。该接口还返回账号策略等非统计字段，不能透传；桶级统计不等于前缀或平台 DataItem 授权范围。当前只完成此源码契约核查，普通/前缀受限账号、统计新鲜度和缺样的实库准入未完成，不声明容量支持，也不以遍历对象兜底。
+MinIO 容量准入结论：固定版本 `RELEASE.2025-10-15T17-29-55Z` 的 `AccountInfo` 使用[桶统计缓存](https://github.com/minio/minio/blob/9e49d5e7a648f00e26f2246f4dc28e6b07f8c84a/cmd/bucket-quota.go#L59-L87)，缺样与已扫描空桶均可返回零；前缀受限账号若有桶位置查询权限，也可能收到整个桶的统计。`DataUsageInfo` 要求原生管理权限，返回整个集群的扫描汇总，`lastUpdate` 无法证明单桶统计已覆盖最新写入。两条接口均未通过以登记账号提供实例概况容量的准入，正式能力仍为账号桶数。部署级磁盘总量和剩余空间沿 Monitor 现有采集路径读取。实测见[MinIO 容量隔离准入](testing/evidence/引擎与空间计算历史证据.md#minio-容量隔离准入)。
 
 ---
 
