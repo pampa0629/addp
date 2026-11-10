@@ -37,7 +37,7 @@ Monitor 聚合任务执行事实，提供授权诊断、统计、健康观测、
 
 事件读取的 Owner 授权、游标及 Owner 故障后的重新授权有独立的 PostgreSQL T2 验证。真实入口按各场景的实际回执认定。[模块 T2 范围](../CLAUDE.md#开发与验证)
 
-- **Transfer continuous 持续写入**。现行场景要求同一 Kafka 任务追加记录后沿原游标续读，对照 Monitor 与 Owner 的完整事件顺序，并核对 Console 自动续页、手动刷新及 Worker 失联后原执行的失败诊断与唯一终态。新增断言以对应版本的实际 Hosted 回执为准。[Transfer continuous 场景](../../docs/spec/testing/scenarios/同步与引擎消费.md#transfer-continuous-events)
+- **Transfer continuous 持续写入**。现行场景要求同一 Kafka 任务追加记录后沿原游标续读，对照 Monitor 与 Owner 的完整事件顺序，并核对 Console 自动续页、手动刷新及 Worker 失联后原执行的失败诊断与唯一终态。已归档的两轮 Hosted 分别停在整引擎扫描和目录基线读取，均未创建 Kafka 任务，上述断言均未执行。[场景要求](../../docs/spec/testing/scenarios/同步与引擎消费.md#transfer-continuous-events) · [两轮 Hosted 结果与清理证据](../../docs/spec/testing/evidence/Monitor执行监控与留存历史证据.md#持续写入期间续页与刷新首次-hosted2026-11-07)
 - **合成 Meta 大量事件分页**。固定版本使用两条合成 Meta 一次性执行，核验 1000／1201 条事件的 API 分页、Owner 读取裁决、采集截断及 Console 展示上限。[三轮 Hosted 结果与清理证据](../../docs/spec/testing/evidence/Monitor执行监控与留存历史证据.md#大量事件分页与截断真实入口验收通过限定范围2026-10-26)
 
 存储维护按上表的 30 天事件物理清理、180 天概览只读评估和小时周期证据分别验收。固定源码、首次失败、修复、跳过与最终清理分别按原记录认定。
