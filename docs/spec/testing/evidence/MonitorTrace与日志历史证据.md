@@ -501,3 +501,18 @@ Tempo 同一批次先返回搜索200和五份明细200，随后两条并发请�
 打开 `663d9fce54ba4a8a1874f06e485833ca`，详情显示 7 个 Span 和 3 条实际匹配的调用边，涉及 Gateway、Monitor、System。点击 System 的 `/api/v1/system/runtime/observability-identities` Span `fff16d4157fecdd5` 的“关联日志”，Console 跳到该 System 实例的运行日志，并自动带入相同 Trace ID 和 Span 附近的时间窗。页面返回两条同一 Trace 的 System 日志，其中一条的 Span ID、接口和 HTTP 200 均与点击的 Span 一致。
 
 这是重启后新实例的正式页面与关联日志单样本验收。前次旧实例 503 保留为历史证据，运行日志窗格的其他投递失败记录不计入本样本结果。
+
+## 2026-11-10 Safari 调用链定位、摘要与关联日志
+
+在本机 Console 的 Safari 系统管理员会话中，打开已保留的 Monitor 请求。将实例查询的开始时间改为北京时间 15:40，页面自动查至 15:55。输入完整 Trace ID 后自动打开详情。从实例内的详情返回，恢复该实例和原时间窗口。
+
+| Trace ID | 详情观察 | 关联日志观察 |
+| --- | --- | --- |
+| `a00e7794aacd2dc78bbea88ec1669bd8` | `GET /api/v1/monitor/platform/metrics_discovery` 返回 HTTP 200，整链 178.135 ms、7 个 Span，Monitor 处理 177.768 ms | 摘要打开 Monitor 实例日志，返回同一 Trace ID 的一条 HTTP 200 请求完成记录 |
+| `0f0c3adb8978216dc0d18c28c266820a` | `GET /api/v1/monitor/executions` 返回 HTTP 503，整链 41.563 ms、13 个 Span。优先查看的失败节点与耗时最长的下游调用均为 Monitor 的 41.203 ms 节点，摘要合在一行 | 摘要打开 Monitor 实例日志，返回同一 Trace ID 的一条 HTTP 503 请求完成记录 |
+
+两个样本均观察到浏览器返回后恢复原调用链。503 样本复验期间 Safari 页面曾变为空白，重载本机页面后完成日志读取。页面保留日志采集完整性未确认提示。样本验证范围为已有 Trace 的正式身份定位、详情和日志跳转，不代表全部请求、独立根因诊断或 Hosted 验收。
+
+定向浏览器门禁沿 `monitor/frontend` 的 `npm run test:e2e -- traces.spec.js` 和 `console/frontend` 的 `npm run test:e2e -- trace-log-navigation.spec.js`。Monitor 18 项通过，覆盖自动查询、返回、失败定位及摘要合并；Console 8 项通过，覆盖实际 iframe 路由、关联日志返回和权限拒绝等受控夹具。Monitor 前端 141 项确定性测试及构建通过。真实样本与受控回归分别记证。
+
+提交前复核 `make test-module MODULE=monitor GO_ONLY=1` 和 `bash scripts/swagger/check-route-coverage.sh monitor`，通过 Monitor Go T1 和 96 个公开路由方法覆盖检查。`make test-system-frontend SYSTEM_FRONTEND_BROWSER_ARGS=module-runtime-logs.e2e.js` 通过 183 项确定性测试、8 项日志浏览器回归及构建。隔离 Tempo T2 沿原 `make test-monitor-traces` 入口单列，本次本地提交验证未启动该环境。

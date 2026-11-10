@@ -15,7 +15,10 @@ async function fixture(page, status = 'up') {
     if (held) await held
     const headers = { 'access-control-allow-origin': route.request().headers().origin || browserTestOrigin('system'), 'access-control-allow-credentials': 'true' }
     if (failure) return route.fulfill({ status: failureStatus, headers, json: { error: failureText } })
-    const entries = empty ? [] : [{ timestamp: '2026-10-01T11:59:00Z', entry_id: `entry-${queries.length}`, level: 'unknown', channel: 'stderr', message: '<img src=x onerror="window.logExecuted=true">'+query.keyword, stack: 'Traceback\nValueError: failure' }]
+    const message = query.trace_id
+      ? JSON.stringify({ msg: 'http.request.completed', method: 'GET', route: '/api/v1/system/engines', status: 503, duration_ms: 15, request_id: 'example-request' })
+      : '<img src=x onerror="window.logExecuted=true">'+query.keyword
+    const entries = empty ? [] : [{ timestamp: '2026-10-01T11:59:00Z', entry_id: `entry-${queries.length}`, level: 'unknown', channel: 'stderr', message, stack: 'Traceback\nValueError: failure' }]
     return route.fulfill({ headers, json: { entries, returned: entries.length, queried_at: '2026-10-01T12:00:00Z', collection_state: 'unknown', has_more: more && query.cursor !== 'older-2', next_cursor: more ? (query.cursor ? 'older-2' : 'older-1') : '', from: query.from, to: query.to, outside_retention: retention } })
   })
   await page.goto(`/modules?tab=instances&module_name=manager&status=${status}&page=2`)
@@ -30,6 +33,25 @@ test('permission hides log entry without disturbing instance reads', async ({ pa
   await page.goto('/modules?tab=instances')
   await expect(page.getByText('page-1-0', { exact: true })).toBeVisible()
   await expect(page.getByRole('button', { name: '查看日志', exact: true })).toHaveCount(0)
+})
+
+test('trace log search runs even when iframe visibility is unavailable, with polling paused', async ({ page }) => {
+  const { drawer, queries } = await fixture(page)
+  await page.evaluate(() => Object.defineProperty(document, 'hidden', { configurable: true, get: () => true }))
+  const trace = drawer.getByRole('textbox', { name: 'Trace ID' })
+  await trace.fill('1'.repeat(32))
+  await trace.press('Tab')
+  await expect.poll(() => queries.at(-1)?.trace_id).toBe('1'.repeat(32))
+  await expect(drawer.getByText('GET /api/v1/system/engines', { exact: true })).toBeVisible()
+  await expect(drawer.getByText('example-request', { exact: true })).toBeVisible()
+  const raw = drawer.getByText(/http.request.completed/)
+  await expect(raw).not.toBeVisible()
+  await drawer.getByText('查看原始日志', { exact: true }).click()
+  await expect(raw).toBeVisible()
+  const count = queries.length
+  await drawer.locator('.el-switch').click()
+  await page.clock.fastForward(10000)
+  expect(queries).toHaveLength(count)
 })
 
 test('log filters auto query, debounce input, render text and preserve list state', async ({ page }) => {

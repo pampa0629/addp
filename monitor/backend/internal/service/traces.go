@@ -45,7 +45,7 @@ type TraceResponse struct {
 func (s *TraceService) Query(ctx context.Context, principal, token string, q TraceQuery) (TraceResponse, error) {
 	now := time.Now().UTC()
 	out := TraceResponse{Data: []tracequery.Detail{}, Start: q.Start, End: q.End, QueriedAt: now, PolicyVersion: tracequery.Definition().Version, Coverage: "sampled"}
-	if q.InstanceID == 0 || principal == "" || q.Start.IsZero() || !q.Start.Before(q.End) || q.End.Sub(q.Start) > time.Hour || q.End.After(now) || q.Start.Before(now.Add(-time.Duration(tracequery.Definition().RetentionHours)*time.Hour)) || q.Limit < 1 || q.Limit > 100 || (q.ID != "" && !httptrace.ParseTraceID(q.ID)) {
+	if (q.InstanceID == 0 && q.ID == "") || principal == "" || q.Start.IsZero() || !q.Start.Before(q.End) || q.End.Sub(q.Start) > time.Hour || q.End.After(now) || q.Start.Before(now.Add(-time.Duration(tracequery.Definition().RetentionHours)*time.Hour)) || q.Limit < 1 || q.Limit > 100 || (q.ID != "" && (!httptrace.ParseTraceID(q.ID) || q.Limit != 1)) {
 		return out, tracequery.ErrInvalid
 	}
 	if s == nil || s.users == nil || s.backend == nil {
@@ -74,36 +74,40 @@ func (s *TraceService) Query(ctx context.Context, principal, token string, q Tra
 	}
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
-	var anchor []client.RuntimeInstanceReference
-	e := s.callUpstream(ctx, func() error {
-		var err error
-		anchor, err = s.users.GetRuntimeInstancesForUser(ctx, []uint{q.InstanceID}, token)
-		return err
-	})
-	if e != nil {
-		return out, e
-	}
-	if len(anchor) != 1 || anchor[0].ID != q.InstanceID {
-		return out, tracequery.ErrDenied
-	}
-	if anchor[0].Role != "backend" && anchor[0].Role != "ingress" {
-		return out, tracequery.ErrInvalid
+	var anchor client.RuntimeInstanceReference
+	if q.InstanceID != 0 {
+		var rows []client.RuntimeInstanceReference
+		err := s.callUpstream(ctx, func() error {
+			var e error
+			rows, e = s.users.GetRuntimeInstancesForUser(ctx, []uint{q.InstanceID}, token)
+			return e
+		})
+		if err != nil {
+			return out, err
+		}
+		if len(rows) != 1 || rows[0].ID != q.InstanceID {
+			return out, tracequery.ErrDenied
+		}
+		anchor = rows[0]
+		if anchor.Role != "backend" && anchor.Role != "ingress" {
+			return out, tracequery.ErrInvalid
+		}
 	}
 	ids := []string{q.ID}
 	if q.ID == "" {
-		e = s.callUpstream(ctx, func() error {
+		err := s.callUpstream(ctx, func() error {
 			var err error
-			ids, err = s.backend.Search(ctx, anchor[0], q.Start, q.End, q.Limit)
+			ids, err = s.backend.Search(ctx, anchor, q.Start, q.End, q.Limit)
 			return err
 		})
-		if e != nil {
-			return out, e
+		if err != nil {
+			return out, err
 		}
 	}
 	if len(ids) > q.Limit {
 		return out, tracequery.ErrBudget
 	}
-	details, processIDs, e := s.readDetails(ctx, anchor[0], ids, q.Start, q.End)
+	details, processIDs, e := s.readDetails(ctx, anchor, ids, q.Start, q.End)
 	if e != nil {
 		return out, e
 	}
@@ -120,7 +124,7 @@ func (s *TraceService) Query(ctx context.Context, principal, token string, q Tra
 			if err != nil {
 				return err
 			}
-			if len(rows) != 1 || rows[0].ID != q.InstanceID || rows[0].ModuleName != anchor[0].ModuleName || rows[0].InstanceID != anchor[0].InstanceID || rows[0].Role != anchor[0].Role {
+			if len(rows) != 1 || rows[0].ID != q.InstanceID || rows[0].ModuleName != anchor.ModuleName || rows[0].InstanceID != anchor.InstanceID || rows[0].Role != anchor.Role {
 				return tracequery.ErrDenied
 			}
 			return nil
@@ -253,7 +257,7 @@ func (s *TraceService) readDetails(parent context.Context, anchor client.Runtime
 			fail(tracequery.ErrUpstream)
 			continue
 		}
-		if d.Start.IsZero() || d.End.Before(d.Start) || d.End.Before(start) || !d.Start.Before(end) {
+		if len(d.Spans) == 0 || d.Start.IsZero() || d.End.Before(d.Start) || d.End.Before(start) || !d.Start.Before(end) {
 			fail(tracequery.ErrNotFound)
 			continue
 		}
@@ -262,7 +266,7 @@ func (s *TraceService) readDetails(parent context.Context, anchor client.Runtime
 			fail(tracequery.ErrBudget)
 			continue
 		}
-		matched := false
+		matched := anchor.ID == 0
 		addInstance := func(instance string) {
 			if !seen[instance] {
 				seen[instance] = true

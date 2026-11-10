@@ -223,9 +223,14 @@ func TestOwnedTracePipeline(t *testing.T) {
 	if !foundFailure || !foundSlow || ordinary == 0 || ordinary >= 50 {
 		t.Fatalf("sampling outcome failure=%v slow=%v normal=%d last=%v", foundFailure, foundSlow, ordinary, e)
 	}
+	exact := TraceQuery{ID: failure, Start: from, End: until, Limit: 1}
+	located, e := service.Query(t.Context(), "t2-user", "addp_at_t2_current_user", exact)
+	if e != nil || len(located.Data) != 1 || located.Data[0].ID != failure || len(located.Data[0].Edges) != 2 {
+		t.Fatalf("real Tempo exact ID lookup without an instance: %v, %+v", e, located)
+	}
 	assertOwnedExecutionTraceStages(t, service, users, stages)
 	users.deny = true
-	blocked, e := service.Query(context.Background(), "t2-user", "addp_at_t2_current_user", TraceQuery{InstanceID: 1, ID: failure, Start: from, End: until, Limit: 1})
+	blocked, e := service.Query(t.Context(), "t2-user", "addp_at_t2_current_user", exact)
 	if e == nil || len(blocked.Data) > 0 {
 		t.Fatal("revoked current User retained data")
 	}

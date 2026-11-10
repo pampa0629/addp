@@ -4,12 +4,13 @@ const moduleName = /^[a-z][a-z0-9_-]{0,49}$/
 const instanceName = /^[A-Za-z0-9][A-Za-z0-9_-]{0,99}$/
 const phaseKinds = { enqueue: 'producer', claim: 'consumer', dispatch: 'producer', terminal: 'internal' }
 const canonical = value => typeof value === 'string' && id.test(value) && !/^0+$/.test(value)
+export { canonical as isTraceID }
 export function traceRoute(query = {}) {
   const invalid = () => { throw new Error('invalid_trace_query') }
   const allowed = ['instance_id', 'trace_id', 'start', 'end', 'module_name', 'role', 'page']
   if (Object.entries(query).some(([key, value]) => !allowed.includes(key) || typeof value !== 'string' || !value)) invalid()
   if (query.instance_id && (!/^[1-9]\d*$/.test(query.instance_id) || !Number.isSafeInteger(Number(query.instance_id)))) invalid()
-  if (query.trace_id && (!query.instance_id || !canonical(query.trace_id))) invalid()
+  if (query.trace_id && !canonical(query.trace_id)) invalid()
   if (query.module_name && !/^[a-z][a-z0-9_-]{0,49}$/.test(query.module_name)) invalid()
   if (query.role && !['backend', 'ingress'].includes(query.role)) invalid()
   if (query.instance_id && query.page && query.page !== '1') invalid()
@@ -45,7 +46,7 @@ export function validateTraces(value, selected, requestedID = '') {
         linked.add(link.trace_id + '/' + link.span_id)
       }
       spans.set(span.span_id, span)
-      selectedFound ||= span.instance_id === selected.instance_id && span.module_name === selected.module_name
+      selectedFound ||= !selected || (span.instance_id === selected.instance_id && span.module_name === selected.module_name)
     }
     if (!selectedFound) invalid()
     for (const edge of trace.edges) {
@@ -67,4 +68,48 @@ export function traceLinkQuery(link, now = Date.now()) {
   const start = Math.max(oldest, started - 1000), end = Math.min(now, started + 1000)
   if (start >= end) throw new Error('invalid_trace_query')
   return { instance_id: String(link.runtime_instance_id), module_name: link.module_name, role: link.role, trace_id: link.trace_id, start: new Date(start).toISOString(), end: new Date(end).toISOString() }
+}
+
+export function traceTimeline(trace) {
+  const spans = [...trace.spans].sort((a, b) => Date.parse(a.start) - Date.parse(b.start))
+  const byID = new Map(spans.map(span => [span.span_id, span]))
+  const children = new Map()
+  for (const span of spans) {
+    const siblings = children.get(span.parent_span_id) || []
+    siblings.push(span)
+    children.set(span.parent_span_id, siblings)
+  }
+  const start = Date.parse(trace.start)
+  const duration = Math.max(1, trace.duration_ms, Date.parse(trace.end) - start)
+  const visited = new Set()
+  const rows = []
+  function append(span, depth) {
+    if (visited.has(span.span_id)) return
+    visited.add(span.span_id)
+    const offset = Math.min(duration, Math.max(0, Date.parse(span.start) - start))
+    rows.push({
+      span, depth,
+      offsetPercent: offset / duration * 100,
+      widthPercent: Math.min(span.duration_ms, duration - offset) / duration * 100
+    })
+    for (const child of children.get(span.span_id) || []) append(child, depth + 1)
+  }
+  for (const span of spans) {
+    if (!byID.has(span.parent_span_id)) append(span, 0)
+  }
+  for (const span of spans) append(span, 0)
+
+  const entry = spans.find(span => span.kind === 'server' && !span.parent_span_id)
+  const entryCall = trace.edges.find(edge => entry && byID.get(edge.client_span_id)?.parent_span_id === entry.span_id)
+  const operation = entry?.role === 'ingress' && entryCall ? byID.get(entryCall.server_span_id) : entry
+  let longestDownstream
+  for (const edge of trace.edges) {
+    if (edge.from_module === edge.to_module) continue
+    const server = byID.get(edge.server_span_id)
+    if (!longestDownstream || server.duration_ms > longestDownstream.duration_ms) longestDownstream = server
+  }
+  const failures = rows.filter(({ span }) => span.failed)
+  const firstFailure = [...failures].sort((a, b) => b.depth - a.depth)
+    .find(({ span }) => span.kind !== 'client') || failures[0]
+  return { rows, entry, operation: operation || spans[0], longestDownstream, failures, firstFailure }
 }

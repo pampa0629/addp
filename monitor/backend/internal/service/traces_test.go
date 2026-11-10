@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"github.com/addp/common/client"
 	"github.com/addp/monitor/internal/tracequery"
+	"slices"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -13,9 +14,10 @@ import (
 )
 
 type traceUsers struct {
-	reads int
-	deny  bool
-	token string
+	reads      int
+	deny       bool
+	token      string
+	processIDs []string
 }
 
 func (u *traceUsers) GetRuntimeInstancesForUser(_ context.Context, ids []uint, token string) ([]client.RuntimeInstanceReference, error) {
@@ -25,10 +27,36 @@ func (u *traceUsers) GetRuntimeInstancesForUser(_ context.Context, ids []uint, t
 }
 func (u *traceUsers) GetProcessInstancesForUser(_ context.Context, ids []string, token string) ([]client.RuntimeInstanceReference, error) {
 	u.reads++
+	u.processIDs = append([]string(nil), ids...)
 	if token != u.token || u.deny {
 		return nil, tracequery.ErrDenied
 	}
 	return []client.RuntimeInstanceReference{{ID: 1, ModuleName: "monitor", InstanceID: "one", Role: "backend", Status: "down"}, {ID: 2, ModuleName: "system", InstanceID: "two", Role: "backend", Status: "down"}}, nil
+}
+func TestExactTraceIDChecksAllParticipantsWithoutAnInstance(t *testing.T) {
+	users := &traceUsers{token: "addp_at_user"}
+	calls := 0
+	backend := concurrentTraceBackend{read: func(ctx context.Context, id string) (tracequery.Detail, error) {
+		calls++
+		if deadline, ok := ctx.Deadline(); !ok || time.Until(deadline) > 5*time.Second {
+			t.Error("exact lookup escaped the shared deadline")
+		}
+		d := concurrentTraceDetail(id)
+		d.Spans[0].Links = []tracequery.Link{{ModuleName: "system", InstanceID: "two", Role: "backend"}}
+		return d, nil
+	}}
+	s := NewTraceService(users, backend)
+	q := concurrentTraceQuery(1)
+	q.InstanceID, q.ID = 0, strings.Repeat("1", 32)
+	out, err := s.Query(t.Context(), "user", users.token, q)
+	if err != nil || len(out.Data) != 1 || calls != 1 || users.reads != 1 || !slices.Equal(users.processIDs, []string{"one", "two"}) || out.Data[0].Spans[0].Links[0].RuntimeInstanceID != 2 {
+		t.Fatalf("exact lookup did not bind participants and link: data=%+v err=%v reads=%d ids=%v", out.Data, err, users.reads, users.processIDs)
+	}
+	users.deny = true
+	out, err = s.Query(t.Context(), "user", users.token, q)
+	if !errors.Is(err, tracequery.ErrDenied) || len(out.Data) != 0 {
+		t.Fatalf("denied exact lookup returned data: %+v, %v", out, err)
+	}
 }
 
 type traceBackend struct {

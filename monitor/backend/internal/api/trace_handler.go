@@ -51,10 +51,13 @@ func (h TraceHandler) read(c *gin.Context, detail bool) {
 			return
 		}
 	}
-	id, e := strconv.ParseUint(q.Get("instance_id"), 10, 32)
-	if e != nil || id == 0 || strconv.FormatUint(id, 10) != q.Get("instance_id") {
-		traceError(c, tracequery.ErrInvalid)
-		return
+	var id uint64
+	if !detail || q.Has("instance_id") {
+		id, e = strconv.ParseUint(q.Get("instance_id"), 10, 32)
+		if e != nil || id == 0 || strconv.FormatUint(id, 10) != q.Get("instance_id") {
+			traceError(c, tracequery.ErrInvalid)
+			return
+		}
 	}
 	now := time.Now().UTC().Truncate(time.Second)
 	input := service.TraceQuery{InstanceID: uint(id), Start: now.Add(-15 * time.Minute), End: now, Limit: 20}
@@ -124,12 +127,12 @@ func (h TraceHandler) Search(c *gin.Context) { h.read(c, false) }
 
 // Detail godoc
 // @Summary 读取调用链详情与观测调用关系 | Read trace details and observed call relationships
-// @Description 所有跨度及Link目标重核实例读取权；独立执行阶段与因果Link不生成HTTP调用边，关联ID不授予日志正文权限 | Reauthorize spans and Link targets; execution stages and causal Links do not create HTTP edges or grant log access
+// @Description 可不选实例直接定位 Trace ID，仍逐项核验所有跨度及 Link 目标的实例读取权限；关联 ID 不授予日志正文权限 | Locate a Trace ID without selecting an instance; access to every span and Link target is still checked. IDs do not grant log access.
 // @Tags 平台运行监控 | Platform Runtime Monitoring
 // @Produce json
 // @Security BearerAuth
 // @Param trace_id path string true "规范Trace ID | Canonical trace ID"
-// @Param instance_id query int true "System实例记录ID | System instance record ID"
+// @Param instance_id query int false "可选的 System 实例记录 ID | Optional System instance record ID"
 // @Param start query string false "UTC起点，与end成对 | UTC start paired with end"
 // @Param end query string false "UTC终点 | UTC end"
 // @Success 200 {object} service.TraceResponse

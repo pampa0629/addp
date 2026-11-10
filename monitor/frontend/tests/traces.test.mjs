@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { traceRoute, validateTraces, traceLinkQuery } from '../src/utils/traces.js'
+import { traceRoute, validateTraces, traceLinkQuery, traceTimeline } from '../src/utils/traces.js'
 const owner = { module_name: 'monitor', instance_id: 'one' }
 export function fixture() {
   const start = '2026-10-20T00:00:00Z', end = '2026-10-20T00:00:01Z'
@@ -8,13 +8,36 @@ export function fixture() {
 }
 test('Trace links preserve only bounded instance, ID and window inputs', () => {
   assert.equal(traceRoute({ instance_id: '1', trace_id: '1'.repeat(32), start: '2026-10-20T00:00:00Z', end: '2026-10-20T00:01:00Z' }).instanceID, 1)
-  for (const q of [{ trace_id: '1'.repeat(32) }, { instance_id: '01' }, { instance_id: '1', query: '{}' }, { instance_id: '1', trace_id: '0'.repeat(32) }, { start: '2026-10-20T00:00:00Z', end: '2026-10-20T02:00:00Z' }]) assert.throws(() => traceRoute(q))
+  assert.equal(traceRoute({ trace_id: '1'.repeat(32) }).instanceID, 0)
+  for (const q of [{ trace_id: 'invalid' }, { instance_id: '01' }, { instance_id: '1', query: '{}' }, { instance_id: '1', trace_id: '0'.repeat(32) }, { start: '2026-10-20T00:00:00Z', end: '2026-10-20T02:00:00Z' }]) assert.throws(() => traceRoute(q))
 })
 test('Trace response binds the selected historical owner and actual call edges', () => {
   const valid = fixture(); assert.equal(validateTraces(valid, owner), valid)
+  assert.equal(validateTraces(valid, undefined, '1'.repeat(32)), valid)
   for (const mutate of [v => { v.data[0].spans[0].instance_id = 'foreign' }, v => { v.data[0].edges = [{ client_span_id: '3'.repeat(16), server_span_id: '2'.repeat(16) }] }, v => { v.data[0].spans.push({ ...v.data[0].spans[0] }) }, v => { v.coverage = 'complete' }, v => { v.data[0].spans[0].route = '/private?secret=x' }]) {
     const v = fixture(); mutate(v); assert.throws(() => validateTraces(v, owner))
   }
+})
+
+test('Trace summary selects the longest matched cross-module server span', () => {
+  const value = fixture()
+  const trace = value.data[0]
+  const [entry] = trace.spans
+  const client = { ...entry, span_id: '3'.repeat(16), parent_span_id: entry.span_id, kind: 'client', route: '', duration_ms: 900 }
+  const system = { ...entry, span_id: '4'.repeat(16), parent_span_id: client.span_id, module_name: 'system', instance_id: 'two', duration_ms: 500 }
+  const develop = { ...system, span_id: '5'.repeat(16), module_name: 'develop', instance_id: 'three', duration_ms: 600 }
+  const sameModule = { ...entry, span_id: '6'.repeat(16), parent_span_id: client.span_id, duration_ms: 800 }
+  const unmatched = { ...system, span_id: '7'.repeat(16), parent_span_id: '8'.repeat(16), duration_ms: 750 }
+  trace.spans.push(client, system, develop, sameModule, unmatched)
+  trace.edges = [system, develop, sameModule].map(server => ({
+    client_span_id: client.span_id, server_span_id: server.span_id,
+    from_module: client.module_name, from_instance: client.instance_id,
+    to_module: server.module_name, to_instance: server.instance_id
+  }))
+  validateTraces(value, owner)
+  assert.equal(traceTimeline(trace).longestDownstream, develop)
+  trace.edges = trace.edges.slice(2)
+  assert.equal(traceTimeline(trace).longestDownstream, undefined)
 })
 
 function executionFixture() {

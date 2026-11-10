@@ -162,6 +162,7 @@
         "failed": "运行日志查询失败",
         "copied": "已复制日志",
         "copyFailed": "复制失败",
+        "raw": "查看原始日志",
         "levels": {
           "debug": "DEBUG",
           "info": "INFO",

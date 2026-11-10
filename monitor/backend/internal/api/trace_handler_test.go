@@ -23,6 +23,9 @@ func TestTracePermissionIdentityAndBoundedQuery(t *testing.T) {
 	}{
 		{name: "module read does not grant traces", method: "GET", keys: []string{"platform.module.read"}, want: 403},
 		{name: "valid trace read reaches unavailable backend", method: "GET", path: "?instance_id=1", keys: []string{read}, want: 503},
+		{name: "instance listing still requires an instance", method: "GET", keys: []string{read}, want: 400},
+		{name: "exact ID reaches backend without an instance", method: "GET", path: "/11111111111111111111111111111111", keys: []string{read}, want: 503},
+		{name: "tenant cannot locate an exact ID", method: "GET", path: "/11111111111111111111111111111111", context: "tenant", keys: []string{read}, want: 403},
 		{name: "unknown query rejected", method: "GET", path: "?instance_id=1&query=private", keys: []string{read}, want: 400},
 		{name: "duplicate query rejected", method: "GET", path: "?instance_id=1&instance_id=2", keys: []string{read}, want: 400},
 		{name: "noncanonical instance rejected", method: "GET", path: "?instance_id=01", keys: []string{read}, want: 400},

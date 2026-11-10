@@ -1,5 +1,6 @@
 import client from './client'
 export const traceAPI = {
+  modules: config => client.get('/system/platform/modules', config),
   instances: (params, config) => client.get('/system/platform/module-instances', { ...config, params }),
   read: (params, config) => {
     const { trace_id, ...query } = params

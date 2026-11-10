@@ -10,7 +10,6 @@
         <el-descriptions-item :label="t(isSource ? 'system.module.sources.observedAt' : 'system.module.instances.offlineDeterminedAt')">{{ date(isSource ? instance.observed_at : instance.stopped_at) }}</el-descriptions-item>
       </el-descriptions>
       <el-alert v-if="isSource" :title="t('system.module.sources.hint')" type="info" :closable="false" />
-      <ModuleLogPipeline v-if="!isSource && modelValue && authStore.hasPermission('monitor.log_pipeline.read')" compact :instance="instance" />
       <p v-if="instance.stop_reason === 'lease_expired'" class="log-hint">{{ t('common.runtimeInstanceStopReason.leaseExpiredHint') }}</p>
       <div class="log-controls">
         <el-input v-model="traceFilter" :placeholder="t('system.module.logs.traceID')" :aria-label="t('system.module.logs.traceID')" clearable @change="changed" />
@@ -49,7 +48,7 @@
       <p v-if="result && !result.has_more" class="log-hint">{{ t('system.module.logs.end') }}</p>
       <div v-loading="loading" class="log-output" data-testid="runtime-log-output">
         <el-empty v-if="result && !result.entries.length" :description="t('system.module.logs.empty')" />
-        <article v-for="entry in result?.entries || []" :key="entry.entry_id" class="log-entry">
+        <article v-for="{ entry, access } in logEntries" :key="entry.entry_id" class="log-entry">
           <div class="log-entry-heading">
             <time>{{ date(entry.timestamp) }}</time>
             <el-tag :type="levelType(entry.level)" size="small">{{ t(`system.module.logs.levels.${entry.level}`) }}</el-tag>
@@ -58,11 +57,20 @@
             <span v-if="entry.trace_id">{{ entry.trace_id }} · {{ entry.span_id }}</span>
             <el-button text size="small" @click="copy(entry)">{{ t('system.module.logs.copy') }}</el-button>
           </div>
-          <pre>{{ entry.message }}</pre>
+          <template v-if="access">
+            <p class="access-summary"><strong>{{ access.method }} {{ access.route }}</strong> · HTTP {{ access.status }} · {{ access.duration_ms }} ms</p>
+            <p v-if="typeof access.request_id === 'string' && access.request_id" class="log-hint">Request ID <code>{{ access.request_id }}</code></p>
+            <details><summary>{{ t('system.module.logs.raw') }}</summary><pre>{{ entry.message }}</pre></details>
+          </template>
+          <pre v-else>{{ entry.message }}</pre>
           <details v-if="entry.stack"><summary>{{ t('system.module.logs.stack') }}</summary><pre>{{ entry.stack }}</pre></details>
           <span v-if="entry.truncated" class="log-hint">{{ t('system.module.logs.truncated') }}</span>
         </article>
       </div>
+      <details v-if="!isSource && modelValue && authStore.hasPermission('monitor.log_pipeline.read')" class="log-pipeline-details">
+        <summary>{{ t('system.module.pipeline.title') }}</summary>
+        <ModuleLogPipeline compact :instance="instance" />
+      </details>
     </template>
   </el-drawer>
 </template>
@@ -91,12 +99,22 @@ const isSource = computed(() => Boolean(props.instance?.capture_started_at))
 const levels = ['debug', 'info', 'warn', 'error', 'unknown']
 const period = ref('15m'), level = ref(''), keyword = ref(''), limit = ref(200), customRange = ref(null)
 const follow = ref(false), loading = ref(false), result = ref(null), error = ref('')
+const logEntries = computed(() => (result.value?.entries || []).map(entry => ({ entry, access: traceFilter.value ? accessSummary(entry.message) : null })))
 const pageIndex = ref(0)
 let positions = [''], fixedWindow = null
 let timer = null, generation = 0, controller = null
 const durations = { '15m': 900000, '30m': 1800000, '1h': 3600000, '6h': 21600000, '12h': 43200000, '24h': 86400000, '7d': 604800000 }
 function date(value) { return value ? new Date(value).toLocaleString() : '—' }
 function levelType(value) { return ({ error: 'danger', warn: 'warning', info: 'success' })[value] || 'info' }
+function accessSummary(message) {
+  try {
+    const event = JSON.parse(message)
+    return event?.msg === 'http.request.completed' && typeof event.method === 'string' &&
+      typeof event.route === 'string' && event.route && Number.isInteger(event.status) && Number.isFinite(event.duration_ms) ? event : null
+  } catch {
+    return null
+  }
+}
 function range() {
   const now = Date.now()
   if (period.value === 'custom') {
@@ -117,7 +135,7 @@ function range() {
 }
 function invalidate() { generation++; controller?.abort(); controller = null; clearTimeout(timer); timer = null; loading.value = false }
 async function loadPage(index, window, cursor = '', fresh = false) {
-  if (!canRead.value || !props.modelValue || !props.instance || document.hidden) return
+  if (!canRead.value || !props.modelValue || !props.instance) return
   if (traceFilter.value && (!/^[0-9a-f]{32}$/.test(traceFilter.value) || /^0+$/.test(traceFilter.value))) { result.value = null; error.value = t('system.module.logs.invalidTrace'); return }
   if (!window) { error.value = t('system.module.logs.invalidRange'); return }
   const id = ++generation
@@ -171,10 +189,10 @@ function openTrace(entry) {
   return openConsoleRoute('/monitor/traces?' + new URLSearchParams({ instance_id: String(props.instance.id), module_name: props.instance.module_name, role: props.instance.role, trace_id: entry.trace_id, start: new Date(from).toISOString(), end: new Date(to).toISOString() }), { history: 'push' })
 }
 watch(identity, () => { invalidate(); result.value = null; error.value = ''; follow.value = false; if (!canRead.value) emit('update:modelValue', false); else if (props.modelValue) reset() })
-watch(() => [props.modelValue, props.instance?.instance_id, props.traceId], () => { invalidate(); result.value = null; error.value = ''; follow.value = false; if (props.modelValue && props.instance) reset() }, { immediate: true })
-watch(follow, value => { if (value) latest() })
-const polling = setInterval(() => { if (follow.value && !loading.value && !timer) latest() }, 3000)
-function visibility() { if (!document.hidden && follow.value) latest(); else if (document.hidden) { invalidate(); result.value = null } }
+watch(() => [props.modelValue, props.instance?.instance_id, props.traceId, props.initialRange?.[0], props.initialRange?.[1]], () => { invalidate(); result.value = null; error.value = ''; follow.value = false; if (props.modelValue && props.instance) reset() }, { immediate: true })
+watch(follow, value => { if (value && !document.hidden) latest() })
+const polling = setInterval(() => { if (!document.hidden && follow.value && !loading.value && !timer) latest() }, 3000)
+function visibility() { if (follow.value) { if (document.hidden) invalidate(); else latest() } }
 document.addEventListener('visibilitychange', visibility)
 onUnmounted(() => { invalidate(); clearInterval(polling); document.removeEventListener('visibilitychange', visibility) })
 </script>
@@ -186,5 +204,7 @@ onUnmounted(() => { invalidate(); clearInterval(polling); document.removeEventLi
 .log-entry { border-bottom: 1px solid var(--addp-border-color); padding: 10px 0; }
 .log-entry pre { white-space: pre-wrap; overflow-wrap: anywhere; font-family: monospace; background: var(--addp-bg-secondary); padding: 12px; }
 .log-hint { color: var(--addp-text-secondary); font-size: 12px; }
+.access-summary, .log-pipeline-details { margin: 12px 0; overflow-wrap: anywhere; }
+.log-entry summary, .log-pipeline-details summary { cursor: pointer; }
 @media (max-width: 600px) { .log-controls { grid-template-columns: 1fr; } }
 </style>

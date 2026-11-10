@@ -162,6 +162,7 @@
         "failed": "Runtime log query failed",
         "copied": "Log copied",
         "copyFailed": "Copy failed",
+        "raw": "View raw log",
         "levels": {
           "debug": "DEBUG",
           "info": "INFO",

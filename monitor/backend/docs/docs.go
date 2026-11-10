@@ -5770,7 +5770,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "所有跨度及Link目标重核实例读取权；独立执行阶段与因果Link不生成HTTP调用边，关联ID不授予日志正文权限 | Reauthorize spans and Link targets; execution stages and causal Links do not create HTTP edges or grant log access",
+                "description": "可不选实例直接定位 Trace ID，仍逐项核验所有跨度及 Link 目标的实例读取权限；关联 ID 不授予日志正文权限 | Locate a Trace ID without selecting an instance; access to every span and Link target is still checked. IDs do not grant log access.",
                 "produces": [
                     "application/json"
                 ],
@@ -5788,10 +5788,9 @@ const docTemplate = `{
                     },
                     {
                         "type": "integer",
-                        "description": "System实例记录ID | System instance record ID",
+                        "description": "可选的 System 实例记录 ID | Optional System instance record ID",
                         "name": "instance_id",
-                        "in": "query",
-                        "required": true
+                        "in": "query"
                     },
                     {
                         "type": "string",
