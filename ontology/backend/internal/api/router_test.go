@@ -11,6 +11,7 @@ import (
 
 	"github.com/addp/common/authorization"
 	"github.com/addp/common/authorization/authtest"
+	"github.com/addp/common/execution"
 	"github.com/addp/common/modulelifecycle"
 	"github.com/addp/ontology/internal/models"
 	"github.com/addp/ontology/internal/platform"
@@ -141,6 +142,34 @@ func perform(r http.Handler, method, path, body, token, lang string) *httptest.R
 }
 func allPermissions() []string {
 	return []string{"ontology.revision.publish", "ontology.revision.read", "ontology.revision.update", "system.execution_authorization.create"}
+}
+
+func TestExecutionReadScopeKeepsProjectionInternal(t *testing.T) {
+	ac := authtest.NewTenantUserAuthContext("101", "9", allPermissions())
+	f := &fakeCommands{}
+	r := testRouter(t, f, ac, true)
+
+	w := perform(r, http.MethodGet, "/execution-read-scope", "", "addp_at_test", "en")
+	var scope execution.ReadScope
+	if err := json.Unmarshal(w.Body.Bytes(), &scope); w.Code != http.StatusOK || err != nil ||
+		scope.Module != models.Module || scope.TenantID != 101 || scope.PrincipalID != 9 || scope.Grants == nil || len(scope.Grants) != 0 || f.calls != 0 {
+		t.Fatalf("status=%d body=%s calls=%d", w.Code, w.Body, f.calls)
+	}
+
+	w = perform(r, http.MethodGet, "/execution-read-scope", "", "", "en")
+	if w.Code != http.StatusUnauthorized {
+		t.Fatalf("anonymous status=%d body=%s", w.Code, w.Body)
+	}
+
+	ac.Token.Type = "delegated_access_token"
+	ac.Client.ScopeMode = "restricted"
+	ac.Client.Audiences = []string{"ontology"}
+	ac.Client.Scopes = []string{"ontology.classes.list"}
+	ac.Delegation = &authorization.DelegationFacts{DelegatedByClientID: *ac.Client.ClientID, AgentRunID: "run", ToolCallID: "call"}
+	w = perform(testRouter(t, f, ac, true), http.MethodGet, "/execution-read-scope", "", "addp_at_test", "en")
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("delegated status=%d body=%s", w.Code, w.Body)
+	}
 }
 
 func TestFormalRouterIdentityAndPermissionBoundary(t *testing.T) {

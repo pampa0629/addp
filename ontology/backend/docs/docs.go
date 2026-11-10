@@ -15,6 +15,50 @@ const docTemplate = `{
     "host": "{{.Host}}",
     "basePath": "{{.BasePath}}",
     "paths": {
+        "/execution-read-scope": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "仅第一方租户用户。语义投影通过本体接口查看，通用读取范围为空。 | First-party tenant users only. Semantic projections are read through Ontology APIs, so the generic read scope is empty.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Execution diagnostics"
+                ],
+                "summary": "获取任务执行读取范围 | Get execution read scope",
+                "responses": {
+                    "200": {
+                        "description": "成功 | Success",
+                        "schema": {
+                            "$ref": "#/definitions/execution.ReadScope"
+                        }
+                    },
+                    "401": {
+                        "description": "未认证 | Unauthenticated",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "禁止访问 | Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "服务暂时不可用 | Service unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "authenticated"
+            }
+        },
         "/ontologies": {
             "get": {
                 "security": [
@@ -1951,6 +1995,40 @@ const docTemplate = `{
                     "type": "integer"
                 },
                 "total_pages": {
+                    "type": "integer"
+                }
+            }
+        },
+        "execution.ReadGrant": {
+            "type": "object",
+            "properties": {
+                "own_ad_hoc": {
+                    "type": "boolean"
+                },
+                "task_history": {
+                    "type": "boolean"
+                },
+                "task_type": {
+                    "type": "string"
+                }
+            }
+        },
+        "execution.ReadScope": {
+            "type": "object",
+            "properties": {
+                "grants": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/execution.ReadGrant"
+                    }
+                },
+                "module": {
+                    "type": "string"
+                },
+                "principal_id": {
+                    "type": "integer"
+                },
+                "tenant_id": {
                     "type": "integer"
                 }
             }

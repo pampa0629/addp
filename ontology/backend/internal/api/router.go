@@ -33,6 +33,7 @@ func SetupRouter(systemURL string, lifecycle *modulelifecycle.Controller, revisi
 	inspection.GET("", h.PlatformDefinitions)
 	inspection.GET("/:capability", h.PlatformDefinition)
 	api.Use(commonauth.MustNewContextGuard("tenant"))
+	api.GET("/execution-read-scope", GetExecutionReadScope)
 	api.GET("/platform/capabilities", semanticBoundary("platform.capabilities.list"), tenantPermissions(permissions.PermissionOntologySemanticRead), h.PlatformCapabilities)
 	api.GET("/platform/capabilities/:capability", semanticBoundary("platform.capability.context"), tenantPermissions(permissions.PermissionOntologySemanticRead), h.PlatformCapabilityContext)
 	api.GET("/ontologies/:ontology_id/semantic/classes", semanticBoundary("ontology.classes.list"), tenantPermissions(permissions.PermissionOntologySemanticRead), h.ListClasses)

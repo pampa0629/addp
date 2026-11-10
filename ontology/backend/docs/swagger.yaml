@@ -12,6 +12,28 @@ definitions:
       total_pages:
         type: integer
     type: object
+  execution.ReadGrant:
+    properties:
+      own_ad_hoc:
+        type: boolean
+      task_history:
+        type: boolean
+      task_type:
+        type: string
+    type: object
+  execution.ReadScope:
+    properties:
+      grants:
+        items:
+          $ref: '#/definitions/execution.ReadGrant'
+        type: array
+      module:
+        type: string
+      principal_id:
+        type: integer
+      tenant_id:
+        type: integer
+    type: object
   github_com_addp_ontology_internal_models.RevisionSummary:
     properties:
       created_at:
@@ -699,6 +721,36 @@ info:
   title: ADDP Ontology API
   version: "1.0"
 paths:
+  /execution-read-scope:
+    get:
+      description: 仅第一方租户用户。语义投影通过本体接口查看，通用读取范围为空。 | First-party tenant users only.
+        Semantic projections are read through Ontology APIs, so the generic read scope
+        is empty.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 成功 | Success
+          schema:
+            $ref: '#/definitions/execution.ReadScope'
+        "401":
+          description: 未认证 | Unauthenticated
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "403":
+          description: 禁止访问 | Forbidden
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "503":
+          description: 服务暂时不可用 | Service unavailable
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 获取任务执行读取范围 | Get execution read scope
+      tags:
+      - Execution diagnostics
+      x-addp-auth-mode: authenticated
   /ontologies:
     get:
       description: 固定按 ontology_id 升序，仅接受 page/page_size；重复、未知参数或 OFFSET 超过 2147483647

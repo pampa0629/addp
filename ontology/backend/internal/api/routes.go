@@ -3,9 +3,27 @@ package api
 import (
 	"net/http"
 
+	"github.com/addp/common/execution"
+	"github.com/addp/ontology/internal/models"
 	"github.com/addp/ontology/internal/repository"
 	"github.com/gin-gonic/gin"
 )
+
+// GetExecutionReadScope keeps semantic projections in Ontology's own read APIs.
+// @Summary 获取任务执行读取范围 | Get execution read scope
+// @Description 仅第一方租户用户。语义投影通过本体接口查看，通用读取范围为空。 | First-party tenant users only. Semantic projections are read through Ontology APIs, so the generic read scope is empty.
+// @Tags Execution diagnostics
+// @Produce json
+// @Security BearerAuth
+// @x-addp-auth-mode "authenticated"
+// @Success 200 {object} execution.ReadScope "成功 | Success"
+// @Failure 401 {object} ErrorResponse "未认证 | Unauthenticated"
+// @Failure 403 {object} ErrorResponse "禁止访问 | Forbidden"
+// @Failure 503 {object} ErrorResponse "服务暂时不可用 | Service unavailable"
+// @Router /execution-read-scope [get]
+func GetExecutionReadScope(c *gin.Context) {
+	execution.OwnerReadScopeHandler(models.Module, nil)(c)
+}
 
 // LatestProjection resolves the last attempt even after a lost command response.
 // @Summary 读取修订最新投影 | Get latest revision projection
