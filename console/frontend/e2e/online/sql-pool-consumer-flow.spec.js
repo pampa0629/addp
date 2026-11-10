@@ -51,15 +51,11 @@ function poolQuery(sample, phase) {
   return `SELECT id, label FROM ${sample.namespace}.${sample.table} WHERE id = 7 /* pool ${phase} */`
 }
 
-async function developBrowserAPI(page, consumer) {
+async function developQuery(page, sample, phase, consumer, observeFailure) {
   const engines = page.waitForResponse(response => new URL(response.url()).pathname === '/api/v1/develop/engines',
     { timeout: responseTimeout })
   await page.goto('/develop/sql?action=create')
-  return browserAPIFromResponse(await engines, process.env.GATEWAY_URL, consumer)
-}
-
-async function developQuery(page, sample, phase, consumer, observeFailure) {
-  const api = await developBrowserAPI(page, consumer)
+  const api = await browserAPIFromResponse(await engines, process.env.GATEWAY_URL, consumer)
   await api.dispose()
   const frame = frameOf(page)
   const selector = frame.locator('.engine-select')
@@ -410,8 +406,10 @@ async function managerTimeout(page, sample) {
   const panel = frame.getByTestId('preview-failure')
   await expect(panel).toBeVisible({ timeout: 75_000 })
   await expect(frame.getByRole('cell', { name: sample.sample, exact: true })).toHaveCount(0)
-  return { elapsed_ms: Date.now() - started, http_status: (await submitted.response())?.status() ?? null,
+  const proof = { elapsed_ms: Date.now() - started, http_status: (await submitted.response())?.status() ?? null,
     heading: await panel.locator('.el-empty__description').innerText() }
+  await page.screenshot({ path: resolve(process.env.ADDP_ONLINE_ARTIFACT_DIR, `${sample.engine_type}-saturation-manager.png`) })
+  return proof
 }
 
 async function saturationProbe(page, operatorPage, sample, operator, consumer, credentials) {
@@ -421,7 +419,12 @@ async function saturationProbe(page, operatorPage, sample, operator, consumer, c
   const pending = []
   let api, queue, holders, queueTerminal, queued, manager, native, released
   try {
-    api = await developBrowserAPI(managerPage, consumer)
+    // The existing fixture API token belongs to the same ordinary user and
+    // outlives the intentional waits. Page assertions use browser login.
+    const fixtureToken = process.env.ADDP_ONLINE_TEST_USER_ACCESS_TOKEN
+    const fixtureIdentity = await checkIdentity(fixtureToken, consumer.tenantID, [...consumer.permissions].sort())
+    expect(fixtureIdentity.principalID).toBe(consumer.principalID)
+    api = await request.newContext({ baseURL: process.env.GATEWAY_URL, extraHTTPHeaders: { Authorization: `Bearer ${fixtureToken}` } })
     queue = barrierAction(engine, 'acquire', 'queue')
     const previewHolder = api.get('/api/v1/manager/preview', {
       params: { locator: sample.locator, page: 1, page_size: 1 }, timeout: 200_000,
@@ -441,11 +444,10 @@ async function saturationProbe(page, operatorPage, sample, operator, consumer, c
     expect(queued.execution_id).not.toBe(queryHolder.execution_id)
     queueTerminal = await waitForNativeReaders(engine, 'queue', ['holder', 'manager'])
     expect(queueTerminal.waiters).toEqual(holders.waiters)
+    await page.screenshot({ path: resolve(process.env.ADDP_ONLINE_ARTIFACT_DIR, `${engine}-saturation-develop.png`) })
     const descriptors = await json(await api.get('/api/v1/develop/engines'), 'saturated engine status')
     const engineStatus = descriptors.find(item => item.id === sample.engine_id)?.connection_status
     expect(engineStatus).toBe('online')
-    await managerPage.screenshot({ path: resolve(process.env.ADDP_ONLINE_ARTIFACT_DIR, `${engine}-saturation-manager.png`) })
-    await page.screenshot({ path: resolve(process.env.ADDP_ONLINE_ARTIFACT_DIR, `${engine}-saturation-develop.png`) })
     released = barrierAction(engine, 'release', 'queue')
     const holderPreview = await json(await previewHolder, 'Manager saturation holder recovered')
     expect(holderPreview.data.rows).toEqual([{ id: 7, label: sample.sample }])
