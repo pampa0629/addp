@@ -16,6 +16,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
+	"unicode/utf8"
 
 	commonclient "github.com/addp/common/client"
 	"github.com/addp/common/execution/observability"
@@ -84,8 +86,26 @@ type Detail struct {
 	PolicyVersion int       `json:"policy_version"`
 	Coverage      string    `json:"coverage"`
 }
+
+// HTTPFailureFilter identifies a retained 5xx response from one route.
+type HTTPFailureFilter struct {
+	Method string
+	Route  string
+}
+
+func (f HTTPFailureFilter) Valid() bool {
+	return validHTTPMethod(f.Method) && strings.HasPrefix(f.Route, "/") && bounded(f.Route, 1024) &&
+		utf8.ValidString(f.Route) && strings.IndexFunc(f.Route, unicode.IsControl) < 0
+}
+
+func (f HTTPFailureFilter) Matches(span Span, subject commonclient.RuntimeInstanceReference, start, end time.Time) bool {
+	return span.Module == subject.ModuleName && span.Instance == subject.InstanceID && span.Role == subject.Role &&
+		span.Scope == "addp.http" && span.Kind == "server" && span.Method == f.Method && span.Route == f.Route &&
+		span.Status >= 500 && span.Status <= 599 && !span.End.Before(start) && span.End.Before(end)
+}
+
 type Backend interface {
-	Search(context.Context, commonclient.RuntimeInstanceReference, time.Time, time.Time, int) ([]string, error)
+	Search(context.Context, commonclient.RuntimeInstanceReference, time.Time, time.Time, int, *HTTPFailureFilter) ([]string, error)
 	Trace(context.Context, string, time.Time, time.Time) (Detail, error)
 }
 type Client struct {
@@ -146,11 +166,17 @@ func (c *Client) read(ctx context.Context, path string, q url.Values, accept str
 	}
 	return b, nil
 }
-func (c *Client) Search(ctx context.Context, subject commonclient.RuntimeInstanceReference, start, end time.Time, limit int) ([]string, error) {
+func (c *Client) Search(ctx context.Context, subject commonclient.RuntimeInstanceReference, start, end time.Time, limit int, filter *HTTPFailureFilter) ([]string, error) {
 	if limit < 1 || limit > 100 {
 		return nil, ErrInvalid
 	}
-	expression := "{ resource.service.name = " + strconv.Quote(subject.ModuleName) + " && resource.service.instance.id = " + strconv.Quote(subject.InstanceID) + " }"
+	selector := "resource.service.name = " + strconv.Quote(subject.ModuleName) + " && resource.service.instance.id = " + strconv.Quote(subject.InstanceID)
+	if filter != nil {
+		selector += " && resource.addp.role = " + strconv.Quote(subject.Role) + " && span:kind = server" +
+			" && span.http.request.method = " + strconv.Quote(filter.Method) + " && span.http.route = " + strconv.Quote(filter.Route) +
+			" && span.http.response.status_code >= 500 && span.http.response.status_code <= 599"
+	}
+	expression := "{ " + selector + " }"
 	b, e := c.read(ctx, "/api/search", url.Values{"q": {expression}, "start": {strconv.FormatInt(start.Unix(), 10)}, "end": {strconv.FormatInt(end.Unix(), 10)}, "limit": {strconv.Itoa(limit)}}, "application/json")
 	if e != nil {
 		return nil, e
@@ -328,6 +354,14 @@ func Decode(id string, raw *collector.ExportTraceServiceRequest) (Detail, error)
 // Existing HTTP attributes are projected through their established whitelist.
 // Execution instrumentation has a smaller exact contract and accepts no opaque
 // fields or events, so execution identifiers and SQL cannot reach its DTO.
+func validHTTPMethod(method string) bool {
+	switch method {
+	case "GET", "POST", "PUT", "DELETE", "PATCH", "HEAD", "OPTIONS", "CONNECT", "TRACE", "QUERY", "_OTHER":
+		return true
+	}
+	return false
+}
+
 func decodeHTTP(raw *tracepb.Span, span *Span) error {
 	if len(raw.Links) != 0 || raw.DroppedLinksCount != 0 {
 		return ErrUpstream
@@ -335,12 +369,7 @@ func decodeHTTP(raw *tracepb.Span, span *Span) error {
 	fields := attrs(raw.Attributes)
 	span.Method, span.Route = fields["http.request.method"].GetStringValue(), fields["http.route"].GetStringValue()
 	status := fields["http.response.status_code"].GetIntValue()
-	switch span.Method {
-	case "GET", "POST", "PUT", "DELETE", "PATCH", "HEAD", "OPTIONS", "CONNECT", "TRACE", "QUERY", "_OTHER":
-	default:
-		return ErrUpstream
-	}
-	if !bounded(span.Route, 1024) || status < 0 || status > 599 || (status > 0 && status < 100) {
+	if !validHTTPMethod(span.Method) || !bounded(span.Route, 1024) || status < 0 || status > 599 || (status > 0 && status < 100) {
 		return ErrUpstream
 	}
 	switch raw.Kind {

@@ -92,13 +92,13 @@ import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { traceTimeline } from '../utils/traces'
 
-const props = defineProps({ trace: { type: Object, required: true }, canReadLogs: Boolean })
+const props = defineProps({ trace: { type: Object, required: true }, matchedFailure: Object, canReadLogs: Boolean })
 const emit = defineEmits(['logs', 'follow-link'])
 const { t, locale } = useI18n()
 const summary = computed(() => traceTimeline(props.trace))
 const highlights = computed(() => {
   const { firstFailure, longestDownstream } = summary.value
-  const failedSpan = firstFailure?.span
+  const failedSpan = props.matchedFailure || firstFailure?.span
   const rows = []
   if (failedSpan) rows.push({ span: failedSpan, failure: true, longest: failedSpan === longestDownstream })
   if (longestDownstream && longestDownstream !== failedSpan) rows.push({ span: longestDownstream, failure: false, longest: true })

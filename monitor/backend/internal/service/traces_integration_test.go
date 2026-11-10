@@ -223,6 +223,13 @@ func TestOwnedTracePipeline(t *testing.T) {
 	if !foundFailure || !foundSlow || ordinary == 0 || ordinary >= 50 {
 		t.Fatalf("sampling outcome failure=%v slow=%v normal=%d last=%v", foundFailure, foundSlow, ordinary, e)
 	}
+	filtered, e := service.Query(t.Context(), "t2-user", "addp_at_t2_current_user", TraceQuery{
+		InstanceID: 1, Start: from, End: until, Limit: 20,
+		HTTPFailure: &tracequery.HTTPFailureFilter{Method: "GET", Route: "/items/:id"},
+	})
+	if e != nil || len(filtered.Data) != 1 || filtered.Data[0].ID != failure {
+		t.Fatalf("Tempo same-span HTTP 5xx search: %v, %+v", e, filtered.Data)
+	}
 	exact := TraceQuery{ID: failure, Start: from, End: until, Limit: 1}
 	located, e := service.Query(t.Context(), "t2-user", "addp_at_t2_current_user", exact)
 	if e != nil || len(located.Data) != 1 || located.Data[0].ID != failure || len(located.Data[0].Edges) != 2 {

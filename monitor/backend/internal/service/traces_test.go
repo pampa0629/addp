@@ -64,7 +64,7 @@ type traceBackend struct {
 	revoke bool
 }
 
-func (b traceBackend) Search(context.Context, client.RuntimeInstanceReference, time.Time, time.Time, int) ([]string, error) {
+func (b traceBackend) Search(context.Context, client.RuntimeInstanceReference, time.Time, time.Time, int, *tracequery.HTTPFailureFilter) ([]string, error) {
 	return []string{"11111111111111111111111111111111"}, nil
 }
 func (b traceBackend) Trace(_ context.Context, id string, _, _ time.Time) (tracequery.Detail, error) {
@@ -98,6 +98,44 @@ func TestTraceQueryRejectsUnboundedWindowBeforeReading(t *testing.T) {
 	}
 }
 
+func TestHTTPFailureTraceFilterBindsMethodRouteInstanceAndStatusToOneSpan(t *testing.T) {
+	ids := concurrentTraceIDs(6)
+	query := concurrentTraceQuery(len(ids))
+	query.HTTPFailure = &tracequery.HTTPFailureFilter{Method: "GET", Route: "/items/:id"}
+	backend := concurrentTraceBackend{ids: ids, read: func(_ context.Context, id string) (tracequery.Detail, error) {
+		detail := concurrentTraceDetail(id)
+		target := &detail.Spans[0]
+		target.Scope, target.Kind = "addp.http", "server"
+		target.Method, target.Route, target.Status, target.End = "GET", "/items/:id", 503, detail.End
+		switch id {
+		case ids[1]:
+			target.Status = 200
+			other := *target
+			other.Route, other.Status = "/other/:id", 503
+			detail.Spans = append(detail.Spans, other)
+		case ids[2]:
+			target.Method = "POST"
+		case ids[3]:
+			target.Instance = "other-instance"
+		case ids[4]:
+			target.End = query.End
+		case ids[5]:
+			target.Kind = "client"
+		}
+		return detail, nil
+	}}
+	users := &traceUsers{}
+	service := NewTraceService(users, backend)
+	got, err := service.Query(t.Context(), "user", "addp_at_user", query)
+	if err != nil || len(got.Data) != 1 || got.Data[0].ID != ids[0] || !slices.Equal(users.processIDs, []string{"one"}) {
+		t.Fatalf("matched wrong 5xx traces: %+v, %v, %v", got.Data, err, users.processIDs)
+	}
+	query.ID, query.Limit = ids[1], 1
+	if _, err := service.Query(t.Context(), "user", "addp_at_user", query); !errors.Is(err, tracequery.ErrNotFound) {
+		t.Fatalf("mismatched detail should be unreadable, got %v", err)
+	}
+}
+
 func TestTraceJSONBudgetCountsEscapedRouteBytes(t *testing.T) {
 	out := TraceResponse{Data: []tracequery.Detail{{Spans: make([]tracequery.Span, 1000)}}}
 	for i := range out.Data[0].Spans {
@@ -119,7 +157,7 @@ type concurrentTraceBackend struct {
 	read func(context.Context, string) (tracequery.Detail, error)
 }
 
-func (b concurrentTraceBackend) Search(context.Context, client.RuntimeInstanceReference, time.Time, time.Time, int) ([]string, error) {
+func (b concurrentTraceBackend) Search(context.Context, client.RuntimeInstanceReference, time.Time, time.Time, int, *tracequery.HTTPFailureFilter) ([]string, error) {
 	return b.ids, nil
 }
 func (b concurrentTraceBackend) Trace(ctx context.Context, id string, _, _ time.Time) (tracequery.Detail, error) {

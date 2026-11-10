@@ -21,6 +21,43 @@ test('HTTP quality keeps one Console iframe while selecting a template and resto
   expect(page.url()).toBe(url)
 })
 
+test('selected HTTP interface opens the 5xx sample for the same window and locates its logs', async ({ page }) => {
+  const permissions = [...httpPermissions, 'monitor.trace.read', 'platform.module_log.read']
+  const state = await httpBackend(page, { identity: identity(permissions) })
+  const traceID = '1'.repeat(32)
+  const calls = []
+  await page.route('**/api/v1/monitor/platform/traces**', route => {
+    const params = Object.fromEntries(new URL(route.request().url()).searchParams)
+    calls.push(params)
+    const { start, end } = params
+    const stopped = new Date(Date.parse(start) + 500).toISOString()
+    const selected = { module_name: 'monitor', instance_id: 'http-1', role: 'backend', scope: 'addp.http', kind: 'server',
+      attempt: 0, links: [], method: 'GET', route: '/slow/:id', status: 503, failed: true, start, end: stopped, duration_ms: 500 }
+    const spans = [
+      { ...selected, span_id: '2'.repeat(16), parent_span_id: '' },
+      { ...selected, span_id: '3'.repeat(16), parent_span_id: '2'.repeat(16), route: '/fast/:id' }
+    ]
+    return route.fulfill({ json: { start, end, queried_at: end, policy_version: 2, coverage: 'sampled',
+      data: [{ trace_id: traceID, start, end: stopped, duration_ms: 500, partial: false, policy_version: 2, coverage: 'sampled', edges: [], spans }]
+    } })
+  })
+  await page.goto('/monitor/http-quality?instance_id=1&range=5m&refresh=off')
+  const frame = page.frameLocator('iframe[data-testid="module-iframe"]')
+  await frame.getByRole('button', { name: 'GET /slow/:id', exact: true }).click()
+  await frame.getByRole('button', { name: '查看该接口的 5xx 调用链' }).click()
+  const trend = state.calls.findLast(call => call.kind === 'http_trends' && call.route === '/slow/:id')
+  const expected = { instance_id: '1', http_method: 'GET', http_route: '/slow/:id', start: trend.start, end: trend.end }
+  await expect.poll(() => calls.at(-1)).toEqual(expected)
+  await expect(page).toHaveURL(url => url.pathname === '/monitor/traces' && Object.entries(expected).every(([key, value]) => url.searchParams.get(key) === value))
+  await frame.getByRole('button', { name: '查看调用链', exact: true }).click()
+  const failure = frame.getByTestId('trace-failure')
+  await expect(failure).toContainText('GET /slow/:id')
+  await expect(failure).toContainText('HTTP 503')
+  expect(calls.at(-1)).toEqual(expected)
+  await failure.getByRole('button', { name: '关联日志' }).click()
+  await expect(page).toHaveURL(url => url.pathname === '/system/modules' && url.searchParams.get('trace_id') === traceID && url.searchParams.get('log_instance') === 'http-1')
+})
+
 test('Tenant HTTP permission strings cannot mount the platform quality iframe', async ({ page }) => {
   const state = await httpBackend(page, { identity: identity(httpPermissions, { type: 'tenant', tenant_id: 1 }) })
   await page.goto('/monitor/http-quality')

@@ -22,6 +22,9 @@
         </div>
         <el-input v-model="traceDraft" :placeholder="t('monitor.traces.traceID')" :aria-label="t('monitor.traces.traceID')" clearable @input="traceInput.queue" @keydown.enter="traceInput.enter" />
       </div>
+      <div v-if="state?.query.http_method">
+        <el-tag closable type="warning" @close="clearHTTPFilter">{{ t('monitor.traces.httpFailureFilter', { method: state.query.http_method, route: state.query.http_route }) }}</el-tag>
+      </div>
       <el-alert v-if="inputError" :title="t(inputError)" type="warning" :closable="false" />
       <el-alert v-if="modulesFailed" :title="t('monitor.traces.modulesFailed')" type="warning" :closable="false" />
       <el-alert v-if="error" :title="t(error)" type="warning" :closable="false" data-testid="trace-error" />
@@ -37,7 +40,7 @@
           <template #default="{ row }">{{ row.process_started_at ? date(row.process_started_at) : '—' }}</template>
         </el-table-column>
       </el-table>
-      <el-pagination v-if="!directLookup && !detail" layout="total, prev, pager, next" :page-size="10" :total="total" :current-page="state?.page || 1" @current-change="page => navigate({ ...state.query, page: String(page), instance_id: undefined, trace_id: undefined })" />
+      <el-pagination v-if="!directLookup && !detail" layout="total, prev, pager, next" :page-size="10" :total="total" :current-page="state?.page || 1" @current-change="page => browseInstances(page)" />
       <template v-if="selected && !detail">
         <h3>{{ selected.module_name }} · {{ selected.instance_id }}</h3>
         <el-table :data="data" :empty-text="t(loading ? 'common.loading' : error && error !== 'monitor.traces.empty' ? 'monitor.traces.notLoaded' : 'monitor.traces.empty')" data-testid="trace-results">
@@ -48,7 +51,7 @@
           <el-table-column :label="t('common.actions')" width="130"><template #default="{ row }"><el-button link @click="openTrace(row)">{{ t('monitor.traces.viewTrace') }}</el-button></template></el-table-column>
         </el-table>
       </template>
-      <trace-details v-if="detail" :trace="detail" :can-read-logs="canReadLogs" @logs="logs" @follow-link="followLink" />
+      <trace-details v-if="detail" :trace="detail" :matched-failure="matchedFailure" :can-read-logs="canReadLogs" @logs="logs" @follow-link="followLink" />
     </template>
   </section>
 </template>
@@ -64,7 +67,7 @@ import { createLatestRequestScope } from '../../../../common-frontend/basic/src/
 import { useAuthStore } from '../store/auth'
 import { traceAPI } from '../api/traces'
 import TraceDetails from '../components/TraceDetails.vue'
-import { isTraceID, traceRoute, validateTraces, traceLinkQuery, traceRecentMinutes } from '../utils/traces'
+import { findHTTPFailureSpan, isTraceID, traceRoute, validateTraces, traceLinkQuery, traceRecentMinutes } from '../utils/traces'
 import { validateProcessInstances } from '../utils/processResources'
 import { navigateMonitorRoute } from '../utils/moduleNavigation'
 const auth = useAuthStore(), route = useRoute(), router = useRouter(), { t, locale } = useI18n()
@@ -75,6 +78,7 @@ const state = computed(() => { try { return traceRoute(route.query) } catch { re
 const directLookup = computed(() => Boolean(state.value?.query.trace_id && !state.value.instanceID))
 const instances = ref([]), total = ref(0), data = ref([]), loading = ref(false), instancesLoaded = ref(false), error = ref('')
 const traceDraft = ref(''), pickerStart = ref(null), inputError = ref('')
+const matchedFailure = ref(null)
 const bounds = ref({})
 const moduleNames = ref([]), modulesLoading = ref(false), modulesFailed = ref(false)
 const requests = createLatestRequestScope()
@@ -102,7 +106,11 @@ function selectModule(module) {
   if (module === state.value?.module) return
   return navigate({ module_name: module })
 }
-function browseInstances() { return navigate({ ...state.value.query, instance_id: undefined, trace_id: undefined }) }
+function browseInstances(page) {
+  const { instance_id, trace_id, http_method, http_route, ...query } = state.value.query
+  return navigate({ ...query, ...(typeof page === 'number' ? { page: String(page) } : {}) })
+}
+function clearHTTPFilter() { return navigate({ ...state.value.query, http_method: undefined, http_route: undefined }) }
 function returnToTraces() { return navigate({ ...state.value.query, trace_id: undefined }) }
 function select(row) { return navigate({ ...state.value.query, ...bounds.value, page: undefined, instance_id: String(row.id), trace_id: undefined }, 'push') }
 function openTrace(row) { return navigate({ ...state.value.query, page: undefined, instance_id: String(selected.value.id), trace_id: row.trace_id }, 'push') }
@@ -135,7 +143,11 @@ function applyLookup() {
   const current = state.value?.query || {}
   const query = { ...current, ...bounds.value, trace_id: traceID || undefined }
   const openingDetail = traceID && !current.trace_id
-  if (traceID && traceID !== current.trace_id) query.instance_id = undefined
+  if (traceID && traceID !== current.trace_id) {
+    query.instance_id = undefined
+    query.http_method = undefined
+    query.http_route = undefined
+  }
   if (router.resolve({ path: '/traces', query }).fullPath === route.fullPath) return
   return navigate(query, openingDetail ? 'push' : 'replace')
 }
@@ -152,6 +164,7 @@ function logs(span) {
 async function reload() {
   const ticket = requests.invalidate(); instances.value = []; data.value = []; total.value = 0; loading.value = false; error.value = ''
   instancesLoaded.value = false
+  matchedFailure.value = null
   if (!canRead.value || route.name !== 'Traces') return
   if (!state.value) { error.value = 'monitor.traces.invalid'; return }
   const current = state.value
@@ -169,7 +182,7 @@ async function reload() {
     }
     const subject = selected.value
     if (!subject && !current.query.trace_id) return
-    const { trace_id, range } = current.query
+    const { trace_id, range, http_method, http_route } = current.query
     let { start, end } = current.query
     if (range) {
       const now = Date.now()
@@ -177,9 +190,14 @@ async function reload() {
       end = new Date(now).toISOString()
     }
     const instance_id = subject ? String(subject.id) : undefined
-    const query = Object.fromEntries(Object.entries({ instance_id, trace_id, start, end }).filter(([, value]) => value))
+    const query = Object.fromEntries(Object.entries({ instance_id, trace_id, start, end, http_method, http_route }).filter(([, value]) => value))
     const result = validateTraces(await requests.request(config => traceAPI.read(query, config)), subject, trace_id)
     if (!requests.current(ticket)) return
+    if (http_method) {
+      const matches = result.data.map(trace => findHTTPFailureSpan(trace, subject, query, result))
+      if (matches.some(span => !span)) throw new Error('invalid_trace_response')
+      if (trace_id) matchedFailure.value = matches[0]
+    }
     data.value = result.data
   } catch (e) {
     if (!requests.current(ticket)) return

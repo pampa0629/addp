@@ -6,9 +6,12 @@ const phaseKinds = { enqueue: 'producer', claim: 'consumer', dispatch: 'producer
 const canonical = value => typeof value === 'string' && id.test(value) && !/^0+$/.test(value)
 export { canonical as isTraceID }
 export const traceRecentMinutes = Object.freeze({ '30m': 30, '1h': 60 })
+const httpMethods = ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'HEAD', 'OPTIONS', 'CONNECT', 'TRACE', 'QUERY', '_OTHER']
+export const isTraceHTTPRoute = route => typeof route === 'string' && route.startsWith('/') &&
+  new TextEncoder().encode(route).length <= 1024 && !/[\x00-\x1f\x7f-\x9f?#]/.test(route)
 export function traceRoute(query = {}) {
   const invalid = () => { throw new Error('invalid_trace_query') }
-  const allowed = ['instance_id', 'trace_id', 'start', 'end', 'range', 'module_name', 'role', 'page']
+  const allowed = ['instance_id', 'trace_id', 'start', 'end', 'range', 'module_name', 'role', 'page', 'http_method', 'http_route']
   if (Object.entries(query).some(([key, value]) => !allowed.includes(key) || typeof value !== 'string' || !value)) invalid()
   if (query.instance_id && (!/^[1-9]\d*$/.test(query.instance_id) || !Number.isSafeInteger(Number(query.instance_id)))) invalid()
   if (query.trace_id && !canonical(query.trace_id)) invalid()
@@ -17,11 +20,20 @@ export function traceRoute(query = {}) {
   if (query.instance_id && query.page && query.page !== '1') invalid()
   if (query.page && (!/^[1-9]\d*$/.test(query.page) || !Number.isSafeInteger(Number(query.page)))) invalid()
   if (query.range && (!Object.hasOwn(traceRecentMinutes, query.range) || query.start || query.end)) invalid()
+  if ((query.http_method || query.http_route) && (!query.instance_id || !httpMethods.includes(query.http_method) || !isTraceHTTPRoute(query.http_route))) invalid()
   if (query.start || query.end) {
     const start = Date.parse(query.start), end = Date.parse(query.end)
     if (!Number.isFinite(start) || !Number.isFinite(end) || start >= end || end - start > 3600000) invalid()
   }
   return { query: { ...query }, page: Number(query.page || 1), instanceID: Number(query.instance_id || 0), role: query.role || 'backend', module: query.module_name || '' }
+}
+
+export function findHTTPFailureSpan(trace, instance, query, window) {
+  const start = Date.parse(window.start), end = Date.parse(window.end)
+  return trace.spans.find(span => span.scope === 'addp.http' && span.kind === 'server' &&
+    span.module_name === instance.module_name && span.instance_id === instance.instance_id && span.role === instance.role &&
+    span.method === query.http_method && span.route === query.http_route && span.status >= 500 && span.status <= 599 &&
+    Date.parse(span.end) >= start && Date.parse(span.end) < end)
 }
 export function validateTraces(value, selected, requestedID = '') {
   const invalid = () => { throw new Error('invalid_trace_response') }
@@ -38,7 +50,7 @@ export function validateTraces(value, selected, requestedID = '') {
       if (!spanID.test(span.span_id) || /^0+$/.test(span.span_id) || spans.has(span.span_id) || (span.parent_span_id && (!spanID.test(span.parent_span_id) || /^0+$/.test(span.parent_span_id))) || !['backend', 'ingress'].includes(span.role) || typeof span.module_name !== 'string' || !/^[a-z][a-z0-9_-]{0,49}$/.test(span.module_name) || typeof span.instance_id !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9_-]{0,99}$/.test(span.instance_id) || typeof span.route !== 'string' || span.route.length > 1024 || /[\r\n?#]/.test(span.route) || !Number.isInteger(span.status) || span.status < 0 || (span.status > 0 && span.status < 100) || span.status > 599 || typeof span.failed !== 'boolean' || !date(span.start) || !date(span.end) || Date.parse(span.start) > Date.parse(span.end) || !Number.isFinite(span.duration_ms) || span.duration_ms < 0) invalid()
       if (!Array.isArray(span.links) || span.links.length > 2 || !Number.isSafeInteger(span.attempt) || span.attempt < 0) invalid()
       if (span.scope === 'addp.http') {
-        if (!['client', 'server'].includes(span.kind) || !['GET','POST','PUT','DELETE','PATCH','HEAD','OPTIONS','CONNECT','TRACE','QUERY','_OTHER'].includes(span.method) || span.phase || span.outcome || span.attempt !== 0 || span.links.length) invalid()
+        if (!['client', 'server'].includes(span.kind) || !httpMethods.includes(span.method) || span.phase || span.outcome || span.attempt !== 0 || span.links.length) invalid()
       } else if (span.scope === 'addp.execution') {
         if (!Object.hasOwn(phaseKinds, span.phase) || phaseKinds[span.phase] !== span.kind || span.parent_span_id || span.role !== 'backend' || span.method !== '' || span.route !== '' || span.status !== 0 || (span.phase === 'enqueue' ? span.attempt !== 0 : span.attempt < 1) || !['success','failed','timeout','cancelled','rejected'].includes(span.outcome) || span.failed !== ['failed','timeout'].includes(span.outcome)) invalid()
       } else invalid()

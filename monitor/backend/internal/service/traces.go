@@ -6,6 +6,7 @@ import (
 	"github.com/addp/common/client"
 	"github.com/addp/common/httptrace"
 	"github.com/addp/monitor/internal/tracequery"
+	"slices"
 	"sync"
 	"time"
 )
@@ -28,10 +29,11 @@ func NewTraceService(users TraceUsers, backend tracequery.Backend) *TraceService
 }
 
 type TraceQuery struct {
-	InstanceID uint
-	ID         string
-	Start, End time.Time
-	Limit      int
+	InstanceID  uint
+	ID          string
+	Start, End  time.Time
+	Limit       int
+	HTTPFailure *tracequery.HTTPFailureFilter
 }
 type TraceResponse struct {
 	Data          []tracequery.Detail `json:"data"`
@@ -46,6 +48,9 @@ func (s *TraceService) Query(ctx context.Context, principal, token string, q Tra
 	now := time.Now().UTC()
 	out := TraceResponse{Data: []tracequery.Detail{}, Start: q.Start, End: q.End, QueriedAt: now, PolicyVersion: tracequery.Definition().Version, Coverage: "sampled"}
 	if (q.InstanceID == 0 && q.ID == "") || principal == "" || q.Start.IsZero() || !q.Start.Before(q.End) || q.End.Sub(q.Start) > time.Hour || q.End.After(now) || q.Start.Before(now.Add(-time.Duration(tracequery.Definition().RetentionHours)*time.Hour)) || q.Limit < 1 || q.Limit > 100 || (q.ID != "" && (!httptrace.ParseTraceID(q.ID) || q.Limit != 1)) {
+		return out, tracequery.ErrInvalid
+	}
+	if q.HTTPFailure != nil && (q.InstanceID == 0 || !q.HTTPFailure.Valid()) {
 		return out, tracequery.ErrInvalid
 	}
 	if s == nil || s.users == nil || s.backend == nil {
@@ -97,7 +102,7 @@ func (s *TraceService) Query(ctx context.Context, principal, token string, q Tra
 	if q.ID == "" {
 		err := s.callUpstream(ctx, func() error {
 			var err error
-			ids, err = s.backend.Search(ctx, anchor, q.Start, q.End, q.Limit)
+			ids, err = s.backend.Search(ctx, anchor, q.Start, q.End, q.Limit, q.HTTPFailure)
 			return err
 		})
 		if err != nil {
@@ -107,9 +112,12 @@ func (s *TraceService) Query(ctx context.Context, principal, token string, q Tra
 	if len(ids) > q.Limit {
 		return out, tracequery.ErrBudget
 	}
-	details, processIDs, e := s.readDetails(ctx, anchor, ids, q.Start, q.End)
+	details, processIDs, e := s.readDetails(ctx, anchor, ids, q)
 	if e != nil {
 		return out, e
+	}
+	if q.ID != "" && len(details) == 0 {
+		return out, tracequery.ErrNotFound
 	}
 	out.Data = details
 
@@ -200,7 +208,8 @@ func (s *TraceService) callUpstream(ctx context.Context, call func() error) erro
 
 // Retain search order while overlapping independent I/O. The result channel
 // and workers are bounded; cumulative budgets cancel outstanding reads early.
-func (s *TraceService) readDetails(parent context.Context, anchor client.RuntimeInstanceReference, ids []string, start, end time.Time) ([]tracequery.Detail, []string, error) {
+func (s *TraceService) readDetails(parent context.Context, anchor client.RuntimeInstanceReference, ids []string, q TraceQuery) ([]tracequery.Detail, []string, error) {
+	start, end := q.Start, q.End
 	ctx, cancel := context.WithCancel(parent)
 	defer cancel()
 	type result struct {
@@ -266,6 +275,12 @@ func (s *TraceService) readDetails(parent context.Context, anchor client.Runtime
 			fail(tracequery.ErrBudget)
 			continue
 		}
+		completed++
+		if q.HTTPFailure != nil && !slices.ContainsFunc(d.Spans, func(span tracequery.Span) bool {
+			return q.HTTPFailure.Matches(span, anchor, start, end)
+		}) {
+			continue
+		}
 		matched := anchor.ID == 0
 		addInstance := func(instance string) {
 			if !seen[instance] {
@@ -289,7 +304,6 @@ func (s *TraceService) readDetails(parent context.Context, anchor client.Runtime
 			continue
 		}
 		details[r.index] = d
-		completed++
 	}
 	// Closing results means every worker has stopped and released its slot.
 	if failure != nil {
@@ -301,5 +315,5 @@ func (s *TraceService) readDetails(parent context.Context, anchor client.Runtime
 	if completed != len(ids) {
 		return nil, nil, tracequery.ErrUpstream
 	}
-	return details, processIDs, nil
+	return slices.DeleteFunc(details, func(detail tracequery.Detail) bool { return detail.ID == "" }), processIDs, nil
 }

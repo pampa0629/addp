@@ -51,7 +51,7 @@
       </div>
       <el-pagination v-if="!error && (instances.length || !loading)" layout="total, prev, pager, next" :total="total" :page-size="10" :current-page="state.page" @current-change="page => selectScope({ page: String(page) })" />
       <el-dialog :model-value="Boolean(state.instanceID)" :title="t(state.stopped ? 'monitor.http.historyTrend' : 'monitor.http.details')" width="min(1120px, calc(100vw - 32px))" @close="closeDetail">
-        <p v-if="selected" class="subject">{{ selected.module_name }} · {{ selected.instance_id }} <el-button v-if="!state.stopped && auth.hasPermission('monitor.trace.read')" link @click="openTraces">{{ t('monitor.traces.open') }}</el-button></p>
+        <p v-if="selected" class="subject">{{ selected.module_name }} · {{ selected.instance_id }} <el-button v-if="!state.stopped && auth.hasPermission('monitor.trace.read')" link @click="openTraces()">{{ t('monitor.traces.open') }}</el-button></p>
         <el-alert v-if="detailError" :title="t(detailError)" type="warning" :closable="false" data-testid="http-detail-error" />
         <template v-if="!state.stopped">
         <p class="hint">{{ t('monitor.http.samples') }}</p>
@@ -64,6 +64,10 @@
         <div class="filters"><el-select v-model="chartMetric" :aria-label="t('monitor.http.metric')"><el-option v-for="metric in chartMetrics" :key="metric.key" :value="metric.name" :label="t(`monitor.http.metrics.${metric.name}`)" /></el-select><el-select :model-value="state.range" :aria-label="t('monitor.http.range')" @update:model-value="selectRange"><el-option v-for="range in ['5m', '1h', '24h']" :key="range" :value="range" :label="t(`monitor.resources.ranges.${range}`)" /></el-select></div>
         <p v-if="history?.data[0]?.history_state && history.data[0].history_state !== 'available'" class="hint" data-testid="http-history-state">{{ t(`monitor.http.historyStates.${history.data[0].history_state}`) }}</p>
         <p v-if="history" class="hint">{{ t('monitor.resources.window', { start: history.start, end: history.end, step: history.step_seconds }) }}</p>
+        <template v-if="canOpenFailureTraces">
+          <el-button v-if="failureTraceWindow" type="primary" link @click="openTraces(failureTraceWindow)">{{ t('monitor.traces.openHTTPFailures') }}</el-button>
+          <p v-else-if="history && state.range === '24h'" class="hint">{{ t('monitor.traces.shorterHTTPWindow') }}</p>
+        </template>
         <div v-if="chart" class="chart" role="img" :aria-label="t('monitor.http.trend')" data-testid="http-trend"><ChartRenderer :rows="chart.rows" :config="chart.config" @invalid="invalidChart" /></div>
       </el-dialog>
     </template>
@@ -83,6 +87,7 @@ import ChartRenderer from '../../../../common-frontend/chart/src/ChartRenderer.v
 import { createLatestRequestScope } from '../../../../common-frontend/basic/src/utils/latestRequestScope.mjs'
 import { createAutoRefresh } from '../../../../common-frontend/basic/src/utils/autoRefresh.mjs'
 import { useAuthStore } from '../store/auth'
+import { isTraceHTTPRoute } from '../utils/traces'
 import { httpQualityAPI as api } from '../api/httpQuality'
 import { httpMetrics, httpValue, resolveHTTPRoute, sortHTTPInterfaces, stoppedHTTPWindow, validateHTTPResponse } from '../utils/httpQuality'
 import { validateProcessInstances } from '../utils/processResources'
@@ -101,6 +106,14 @@ const headlineMetrics = httpMetrics.filter(metric => ['qps', 'failure', 'p95'].i
 const moreMetrics = httpMetrics.filter(metric => !headlineMetrics.includes(metric))
 const date = value => formatFieldPresentationValue(value, { temporal_format: 'datetime' }, locale.value)
 const selected = computed(() => state.value.stopped ? historicalOwner.value : instances.value.find(row => row.id === state.value.instanceID))
+const canOpenFailureTraces = computed(() => !state.value.stopped && !!selected.value && canRead.value &&
+  auth.hasPermission('monitor.trace.read') && isTraceHTTPRoute(state.value.route))
+const failureTraceWindow = computed(() => {
+  if (!canOpenFailureTraces.value || !history.value) return null
+  const { start, end } = history.value
+  const duration = Date.parse(end) - Date.parse(start)
+  return duration > 0 && duration <= 3_600_000 ? { start, end, http_method: state.value.method, http_route: state.value.route } : null
+})
 const ranked = computed(() => sortHTTPInterfaces(interfaces.value, state.value.sort))
 const chartMetrics = computed(() => state.value.route === null ? httpMetrics : httpMetrics.slice(0, -1))
 const refreshStatus = computed(() => state.value.refresh === 'off' ? 'manual' : blocked.value ? 'stopped' : !visible.value ? 'paused' : 'automatic')
@@ -117,10 +130,10 @@ function selectRange(range) {
   const bounds = state.value.stopped && selected.value ? stoppedHTTPWindow(selected.value, range) : null
   return navigate({ ...state.value.query, range, ...bounds })
 }
-function openTraces() {
+function openTraces(window) {
   if (!selected.value || !canRead.value || !auth.hasPermission('monitor.trace.read')) return
   const end = new Date(), start = new Date(end.getTime() - 900000)
-  return navigateMonitorRoute(router, { path: '/traces', query: { instance_id: String(selected.value.id), module_name: selected.value.module_name, role: selected.value.role, start: start.toISOString(), end: end.toISOString() } }, { history: 'push' })
+  return navigateMonitorRoute(router, { path: '/traces', query: { instance_id: String(selected.value.id), module_name: selected.value.module_name, role: selected.value.role, ...(window || { start: start.toISOString(), end: end.toISOString() }) } }, { history: 'push' })
 }
 function closeDetail() { const { instance_id, route, method, range, start, end, ...query } = state.value.query; return navigate(query) }
 function selectRoute(row) { const { route, method, ...query } = state.value.query; return navigate({ ...query, ...(row ? { route: row.route, method: row.method } : {}) }) }

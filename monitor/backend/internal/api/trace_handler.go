@@ -46,7 +46,7 @@ func (h TraceHandler) read(c *gin.Context, detail bool) {
 		return
 	}
 	for k, v := range q {
-		if len(v) != 1 || v[0] == "" || (k != "instance_id" && k != "start" && k != "end" && k != "limit") {
+		if len(v) != 1 || v[0] == "" || (k != "instance_id" && k != "start" && k != "end" && k != "limit" && k != "http_method" && k != "http_route") {
 			traceError(c, tracequery.ErrInvalid)
 			return
 		}
@@ -61,6 +61,9 @@ func (h TraceHandler) read(c *gin.Context, detail bool) {
 	}
 	now := time.Now().UTC().Truncate(time.Second)
 	input := service.TraceQuery{InstanceID: uint(id), Start: now.Add(-15 * time.Minute), End: now, Limit: 20}
+	if q.Has("http_method") || q.Has("http_route") {
+		input.HTTPFailure = &tracequery.HTTPFailureFilter{Method: q.Get("http_method"), Route: q.Get("http_route")}
+	}
 	if q.Has("start") || q.Has("end") {
 		input.Start, e = time.Parse(time.RFC3339, q.Get("start"))
 		if e != nil {
@@ -110,6 +113,8 @@ func (h TraceHandler) read(c *gin.Context, detail bool) {
 // @Param instance_id query int true "System实例记录ID | System instance record ID"
 // @Param start query string false "UTC起点，与end成对，最长1小时 | UTC start paired with end, at most one hour"
 // @Param end query string false "UTC终点 | UTC end"
+// @Param http_method query string false "与 http_route 成对，仅查询同一实例接口的 HTTP 5xx | Pair with http_route to find HTTP 5xx for the selected instance and operation"
+// @Param http_route query string false "精确路由模板，与 http_method 成对 | Exact route template, paired with http_method"
 // @Param limit query int false "最多100条且总1000跨度预算 | At most 100 traces and 1000 total spans" default(20)
 // @Success 200 {object} service.TraceResponse
 // @Failure 400 {object} ErrorResponse
@@ -135,6 +140,8 @@ func (h TraceHandler) Search(c *gin.Context) { h.read(c, false) }
 // @Param instance_id query int false "可选的 System 实例记录 ID | Optional System instance record ID"
 // @Param start query string false "UTC起点，与end成对 | UTC start paired with end"
 // @Param end query string false "UTC终点 | UTC end"
+// @Param http_method query string false "与 http_route 成对并指定实例，核验该接口 HTTP 5xx | Pair with http_route and instance_id to verify HTTP 5xx on the operation"
+// @Param http_route query string false "精确路由模板，与 http_method 成对 | Exact route template, paired with http_method"
 // @Success 200 {object} service.TraceResponse
 // @Failure 400 {object} ErrorResponse
 // @Failure 401 {object} ErrorResponse
