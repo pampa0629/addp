@@ -63,13 +63,11 @@
 
 ## 2026-10-24 概览保留只读评估第一期
 
-Common 增加 `AssessRetention`，System 沿已有公共维护循环输出有界批次汇总。数据库强制只读／可重复读，使用数据库时间计算 180 天时间候选，并检查完整父子树、租约、关系异常、树外重试／恢复引用及预算。首期始终保留 Owner 行内事实释放和跨模块引用覆盖未核验的原因；不调用 Owner 私表、不新增用户 API、不提供物理删除或专业结果期限。批次不是全库唯一树数，不能累加为完整盘点。
+Common 的 `AssessRetention` 由 System 既有维护循环调用，以数据库时间和只读、可重复读事务评估 180 天时间候选。首期检查完整执行树、租约、关系异常、树外引用及预算，保留 Owner 释放和消费者引用未核验原因。批次计数按当次读取范围解释，不能累加为全库唯一树数。[现行留存契约](../../tasks/执行监控.md#概览保留与清理契约)
 
-本地标准验证：`make test-module MODULE=common GO_ONLY=1`、`make test-module MODULE=system GO_ONLY=1` 通过；`make test-common-postgres COMMON_POSTGRES_TEST_ARGS="--test execution-retention"` 在实际 Infra 映射 25432／`addp_test` 通过 11 组 T2，覆盖多层树／子种子、年轻子执行、跨租户父子及反向引用、环与断链、恢复引用、非法 JSON 来源、查询／行／树预算、查询失败不发布部分报告、并发新增子执行的一致快照、取消和拒绝继承可写事务。执行行及专业配置／结果／错误和过期过程事件前后不变，夹具逐项清理后零残留。三个门禁的实时输入守卫均未发现变化；Common PostgreSQL 并发锁拒绝验证通过，拒绝发生在数据库测试启动前。默认 Common PostgreSQL CI 已登记并强制要求新增测试，不新增 workflow。
-
-首次 T2 的三个夹具断言失败已保留在会话记录：共享时间指针被后续更新改写、时间精度比较及注入钩子时机；修正后沿同一标准入口通过。一次 System Go 运行虽通过，但期间修改了 Common 测试文件，守卫标记输入变化，不作为最终证据；最终两模块 Go T1 与 PostgreSQL T2 在同一稳定输入指纹下通过。
-
-未运行：工作区整体 `make test-changed`、完整 Common PostgreSQL 聚合及真实维护 T4；共享工作区还有其他会话的业务改动，本批仅验证新增共享评估和实际消费者 System，未重跑其无关门禁。没有启动／重启个人服务，没有进行执行概览删除、Owner 释放裁决、专业结果到期或长期容量验收；此前固定版本 T4 不扩展为本功能通过。
+- **本地首败**。首次 T2 有三处夹具断言失败，分别涉及共享时间指针被后续更新改写、时间精度和注入钩子时机。另一次 System Go 测试通过时 Common 测试文件发生变化，该结果未纳入最终证据。
+- **同一稳定输入下复验**。`make test-module MODULE=common GO_ONLY=1`、`make test-module MODULE=system GO_ONLY=1` 均通过。`make test-common-postgres COMMON_POSTGRES_TEST_ARGS="--test execution-retention"` 使用当时 Infra 映射端口 25432 和 `addp_test`，11 组 T2 通过。覆盖多层树与子种子、年轻子执行、跨租户父子及反向引用、环与断链、恢复引用、非法 JSON 来源、查询／行／树预算、查询失败不发布部分报告、并发新增子执行的一致快照、取消及拒绝继承可写事务。Common PostgreSQL 并发锁在数据库测试启动前拒绝第二次运行。该专项由既有 Common PostgreSQL CI 登记。
+- **数据与清理**。执行行、专业配置／结果／错误及过期过程事件前后不变，夹具逐项清理后零残留。该批未运行工作区整体 `make test-changed`、完整 Common PostgreSQL 聚合或真实维护 T4。真实维护另见[Hosted 首败与复验](#执行概览只读维护真实进程验收2026-10-25)。
 
 ## continuous 诊断与 Owner 不可用
 
@@ -114,31 +112,39 @@ Common 增加 `AssessRetention`，System 沿已有公共维护循环输出有界
 
 ## 执行概览只读维护真实进程验收（2026-10-25）
 
-本批仅补第一期只读候选评估的真实 System 维护首轮，人工 Hosted Linux `execution-retention-readonly`，独占 System／Gateway／Infra；不启用 180 天概览物理删除，不改变任何 Owner 专业结果期限、业务实现或现有读取授权。System-owned helper 通过正式 Tenant Service 建立两个非默认 Tenant，普通测试 User 仅获既有 `monitor.execution.read`；实际 AuthContext 校验后，由受限 Common 历史 helper 准备合成旧记录，标准生命周期停止／启动的仅是本轮独占 System。维护使用产品既有首轮与周期，不直接调用评估函数代替真实进程，不增加测试 API 或产品调度参数。
+人工 Hosted Linux 场景 `execution-retention-readonly` 使用独占 System／Gateway／Infra。System-owned helper 经正式 Tenant Service 创建两个非默认 Tenant，普通测试 User 仅获既有 `monitor.execution.read`。经实际 AuthContext 核验后，受限 Common 历史 helper 准备合成记录。只有当次独占 System 按标准生命周期启停，由产品维护首轮执行评估。
 
-首轮 [Run40138788559／Job121005906648](https://github.com/pampa0629/addp/actions/runs/40138788559/job/121005906648)，固定源码 `2a3cbb1f677af23f955ff02038205d525aafc93d`，**失败**于历史准备，后续 14 棵树的维护断言未运行，不能计为通过。夹具错误地使用了现行 `chk_task_executions_status` 禁止的 `unknown_fixture`；原日志仅记录 `prepare:CalledProcessError`，没有当时的 SQLSTATE，不补写为已观测的数据库错误码。应用及凭据清理为 passed、Infra 为 zero_residuals。官方 Artifact `12577428981` 已下载并独立核对 ZIP SHA-256 `1a4fe210c3d121de2f13e977751df08dfe51f1b47121d105aa87a2527843b9b8`；原日志 `/tmp/addp-retention-t4-40138788559.log`、提取报告 `/tmp/addp-retention-t4-40138788559/`、审查回执 `/tmp/addp-retention-readonly-t4-receipt-20261025.json`。
+### Hosted 首败：历史夹具未准备成功
 
-修正提交 `86f58b3764c4c3e47af1a141d81e21f94109150c` 改用合法 pending 夹具，并补当前存储 CHECK 与所有夹具状态的交叉回归；未知状态的防御仍仅由 Common 单元层覆盖，不放宽或删除生产约束。测试驱动的 SQL 失败只记录 SQLSTATE，汇总失败只保留白名单计数，拒绝归档原始 SQL、私有字段或任意保留原因内容。标准入口 `make test-execution-retention-online-runner` 实际 **28 项 Python 回归通过**，System `cmd/online-test-fixture` Go T1 通过，本批 `TestExecutionRetentionFixtureHasOnlyMonitorReadPermission` 明确 PASS；同包三员、Catalog 授权 observation、PG 授权成员、Metrics 与 Raster Policy 的 5 个既有 PostgreSQL 专项因未设置标准 DSN 跳过，不计为本批 T2 通过；含只读汇总封闭性、计数错误、整行／事件变化拒绝、容器身份拒绝、初次日志落盘等待、准备失败、业务失败与清理残留拒绝，最终显式 PASS／SKIP 日志 `/tmp/addp-retention-t4-runner-final.log`。本轮不重复未变产品的既有 Common PostgreSQL T2；全库注册检查在共享未提交工作区曾受并行 Graph 契约修改阻断，不计为通过，也不修复该 Owner 的业务实现。本批注册验证、唯一人工 Hosted profile、Online 分发器及标准 runner 归属已由上述定向门禁覆盖。
+[Run 40138788559／Job 121005906648](https://github.com/pampa0629/addp/actions/runs/40138788559/job/121005906648) 固定源码 `2a3cbb1f677af23f955ff02038205d525aafc93d`，在历史准备阶段失败，14 棵树的维护断言未运行。源码核对发现夹具使用了 `chk_task_executions_status` 禁止的 `unknown_fixture`。当次日志仅保留 `prepare:CalledProcessError`，没有 SQLSTATE。
 
-修正版真实验收 [Run40140020076／Job121009605836](https://github.com/pampa0629/addp/actions/runs/40140020076/job/121009605836) 绑定 `86f58b3764c4c3e47af1a141d81e21f94109150c`，已完成且独立审查通过：Run／Job、真实运行步骤均 success，attempt 1；该次 Hosted 的排队观察已有成功终态，首轮失败仍保留。验收要求 16 条合成历史形成 14 棵执行树、5 棵时间候选，核对完整超期树、年轻子执行、running／pending、有效 lease、完成时间缺失、缺父／跨 Tenant／自指及树外 retry／recovery 引用；全部树始终保留 Owner 释放和消费者引用未核验原因。维护前后执行完整行与 30 天内事件的数据库摘要必须一致，报告仅保留安全批次事实，退出还须核验独占应用／Infra／卷／凭据清理。该证据不代表用户执行读取权限、Owner 释放、专业结果生命周期、30 天事件物理维护、小时周期、概览删除、容量／HA 或生产 T5 验收；清单实际第327／328／329行继续部分实现。
+应用及凭据清理为 `passed`，Infra 为 `zero_residuals`。官方归档 `12577428981` 的 ZIP SHA-256 已独立核对，为 `1a4fe210c3d121de2f13e977751df08dfe51f1b47121d105aa87a2527843b9b8`。原始日志和提取报告在 `/tmp/addp-retention-t4-40138788559.log`、`/tmp/addp-retention-t4-40138788559/`，审查回执为 `/tmp/addp-retention-readonly-t4-receipt-20261025.json`。
 
-修正版官方报告实际为 10 项唯一断言通过：16 个种子、14 棵完整树、5 棵时间候选，本批读取 24 行、20 次查询，游标16、无后页、未超预算。保留原因为 Owner 释放未核验14、消费者引用未核验14、活动执行2、完成时间缺失3、有效lease2、未超期1、关系异常4、树外执行引用2；时间候选并非允许删除。执行完整行和保留期内事件不变均为 true，汇总多余字段数为0。System／Gateway 的正式 preflight 均为同一固定源码与独立 Build ID／源码指纹，工作区干净、网络仅回环；普通 Tenant User 的唯一角色为 `online.execution_retention_readonly`，所验证 Permission 仅 `monitor.execution.read`。
+### 夹具修正与本地回归
 
-Suite 内的 `cleanup=pending_deployment_destruction` 只是场景完成时尚保留合成历史；独立核对最终 Host `summary.txt`，结果和清理均 passed、Infra为 zero_residuals，应用停止、测试卷／网络和凭据销毁均已完成。该销毁不计180天概览物理删除。官方 Artifact `12579077155` 的5个文件仅为既有安全报告及生命周期日志，不含凭据目录或原始 System 进程日志；ZIP已下载，SHA-256独立匹配上传声明 `eaa740d8a10f7a767b66f266b2dc51cb3b2c2f2d0f08457cadc2a4b2807c7c2c`。证据：`/tmp/addp-retention-t4-40140020076.zip`、同名提取目录及 `.log`、`/tmp/addp-retention-t4-40140020076-run.json`、`/tmp/addp-retention-readonly-t4-rerun-receipt-20261025.json`。已实际比较固定源码至后续证据提交：Common execution、System维护与身份夹具、测试驱动、Hosted路径及workflow均无变化；后续仅证据记录与Make中Go结果显式输出，不重复有效T4。
+`86f58b3764c4c3e47af1a141d81e21f94109150c` 改用合法 `pending` 夹具，增加存储 CHECK 与各夹具状态的交叉回归。未知状态防御仍由 Common 单元测试覆盖，生产约束保持。测试驱动仅记录 SQLSTATE 和白名单计数，归档排除原始 SQL、私有字段和任意保留原因内容。
 
-2026-10-25 07:17（北京时间），同一修正提交的 [Platform CI Run40139997741](https://github.com/pampa0629/addp/actions/runs/40139997741) 尚在排队，当时未计通过。随后 Platform consistency Job `121009537951` 实际执行 `make test-platform` 并通过，详见[固定版本终态](#固定版本-platform-ci-复核2026-10-25)。
+`make test-execution-retention-online-runner` 通过 28 项 Python 回归及 System `cmd/online-test-fixture` Go T1，`TestExecutionRetentionFixtureHasOnlyMonitorReadPermission` 明确通过。覆盖只读汇总与计数校验、整行／事件变化拒绝、容器身份拒绝、初次日志落盘等待，以及准备失败、业务失败与清理残留。五项既有 PostgreSQL 专项因缺少标准 DSN 跳过，分别涉及三员、Catalog 授权 observation、PG 授权成员、Metrics 与 Raster Policy。日志为 `/tmp/addp-retention-t4-runner-final.log`。共享工作区全库注册检查曾受并行 Graph 契约改动阻断，登记的干净输入证据见[固定版本 Platform CI](#固定版本-platform-ci-复核2026-10-25)。
 
-本地 28 项回归与 Go T1、固定版本真实 System 首轮只读维护 T4、Platform CI 分别认定。本地 5 项既有 PostgreSQL 专项跳过，首轮 Hosted 失败仍保留。清单第 327／328／329 行仍为部分实现。Owner 释放与消费者引用裁决、专业结果生命周期和 180 天概览物理删除均未由本批验收覆盖。
+### Hosted 复验：真实 System 首轮通过
+
+[Run 40140020076／Job 121009605836](https://github.com/pampa0629/addp/actions/runs/40140020076/job/121009605836) attempt 1 固定源码 `86f58b3764c4c3e47af1a141d81e21f94109150c`。Run、Job 与真实运行步骤均为 `success`，独立审查通过。System／Gateway 预检使用同一固定源码及各自 Build ID／源码指纹，工作区干净，网络仅回环。普通 Tenant User 仅持有 `online.execution_retention_readonly` 角色，验证的 Permission 为 `monitor.execution.read`。
+
+- **只读结果**。10 项唯一断言通过。16 个种子形成 14 棵完整树、5 棵时间候选，读取 24 行、查询 20 次，游标 16，无后页，未超预算。覆盖完整超期树、年轻子执行、`running`／`pending`、有效租约、完成时间缺失、缺父／跨租户／自指及树外 retry／recovery 引用。
+- **保留原因**。Owner 释放和消费者引用均有 14 棵未核验。其他原因分别为活动执行 2、完成时间缺失 3、有效租约 2、未超期 1、关系异常 4、树外引用 2。执行完整行和 30 天窗口内事件的数据库摘要均保持一致，汇总多余字段数为 0。
+- **清理与归档**。套件结束时为 `cleanup=pending_deployment_destruction`。最终 Host `summary.txt` 确认结果与清理均为 `passed`、Infra 为 `zero_residuals`，应用停止，测试卷、网络和凭据均已销毁。官方归档 `12579077155` 的五个文件仅含安全报告及生命周期日志，无凭据目录或原始 System 进程日志。ZIP SHA-256 独立匹配上传声明 `eaa740d8a10f7a767b66f266b2dc51cb3b2c2f2d0f08457cadc2a4b2807c7c2c`。本地留档为 `/tmp/addp-retention-t4-40140020076.zip`、同名提取目录和 `.log`、`/tmp/addp-retention-t4-40140020076-run.json` 及 `/tmp/addp-retention-readonly-t4-rerun-receipt-20261025.json`。
+
+固定源码与后续证据提交之间，Common execution、System 维护及身份夹具、测试驱动、Hosted 路径与 workflow 均未变化。后续只追加证据与 Make 的 Go 结果显式输出，沿用本次 T4。
+
+**覆盖边界**。时间候选只表示满足时间条件。退出销毁只计部署清理。180 天概览物理删除、Owner 释放、消费者引用裁决、用户执行读取授权、专业结果生命周期、30 天事件物理维护、小时周期、容量／HA 和生产 T5 均未由本批验收。原记录中的清单第 327／328／329 行仍为部分实现。
 
 ### 固定版本 Platform CI 复核（2026-10-25）
 
-2026-10-25 23:58（Asia/Shanghai）仅复核本批既有自动 push [Platform Run40139997741／Platform consistency Job121009537951](https://github.com/pampa0629/addp/actions/runs/40139997741/job/121009537951)，attempt 1、固定源码 `86f58b3764c4c3e47af1a141d81e21f94109150c`。Run、Job及实际 `Run platform consistency gate` 均已 completed／success；真实门禁调用 `make test-platform`，执行时间为当日07:19:06–07:41:06，Job于07:41:09完成。前述截至07:17的排队状态由本次实际结果闭合，不以摘要步骤成功代替真实门禁。
+北京时间 07:17 观察 [Platform CI Run 40139997741](https://github.com/pampa0629/addp/actions/runs/40139997741) 时仍在排队。[Platform consistency Job 121009537951](https://github.com/pampa0629/addp/actions/runs/40139997741/job/121009537951) 随后在同一固定源码 `86f58b3764c4c3e47af1a141d81e21f94109150c` 的 push attempt 1 中实际执行 `make test-platform`。门禁于 07:19:06–07:41:06 执行，Job 于 07:41:09 完成，Run、Job 与 `Run platform consistency gate` 均为 `success`。23:58 独立复核终态，沿用原运行。
 
-原始日志第2972–2997行与该源码Makefile的 `test-platform → test-online-runner → test-execution-retention-online-runner` 第一子入口对应，明确记录本批28项Python回归通过（失败0、跳过0），随后System `cmd/online-test-fixture` 包返回 `ok`；Online CI登记检查也实际输出 `Online CI registration is consistent`。这补齐了租户日志只读维护runner及唯一人工Hosted profile在干净CI中的登记／执行证据。本地显式日志中5项既有PostgreSQL专项的跳过仍保留，不据CI中Go包的成功补计T2；先前共享未提交工作区的本地全库注册阻断也作为不同输入的历史事实保留。
+原始日志第 2972–2997 行对应 `test-platform → test-online-runner → test-execution-retention-online-runner` 的第一子入口。28 项 Python 回归通过，失败和跳过均为 0，System `cmd/online-test-fixture` 返回 `ok`。登记检查实际输出 `Online CI registration is consistent`，覆盖干净 CI 中 runner 的执行及唯一人工 Hosted profile 的登记。
 
-证据为 `/tmp/addp-retention-platform-40139997741-metadata.json`、`-attempt.json`、`-audit.json`及原始 `.log`，日志SHA-256为 `0ca82b64f5dafd79eba1021c3c1962392b25cf9374f1e81f20662bff27ca1e45`。独立核对了固定head SHA、push事件、attempt、真实步骤、标准入口及28项对应日志；没有重跑CI、T4或未变产品测试，也未跟进其他模块Job。该结论仅针对上述固定版本，不外推当前HEAD、其他Owner、专业结果生命周期、小时周期／30天实际事件维护、180天物理删除或T5。
-
-本批CI核对可收口；功能清单实际327／328／329行仍保持部分实现。Owner释放／消费者引用裁决及删除仍需另行讨论确认，不进入本次开发。本轮仅追加现有证据并运行 `git diff --check`，未改产品、期限、权限或工作簿，不启动／重启服务，不新增定时或验收场景。
+证据为 `/tmp/addp-retention-platform-40139997741-metadata.json`、`-attempt.json`、`-audit.json` 及原始 `.log`，日志 SHA-256 为 `0ca82b64f5dafd79eba1021c3c1962392b25cf9374f1e81f20662bff27ca1e45`。本地五项 PostgreSQL 跳过和共享工作区注册阻断分别保留。CI 结果仅认定该固定版本的确定性门禁，真实维护与未验收项沿上面的 Hosted 记录。
 
 ## 30 天过程事件清理真实进程验收（2026-10-26）
 
