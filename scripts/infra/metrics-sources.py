@@ -189,7 +189,7 @@ def run(action, scopes=(), kinds=(), inherited=None, resolved=False):
     rows = selection(scopes, kinds)
     if not rows:
         raise ValueError('No matching source')
-    print('ADDP 采集来源 · '+{'status':'状态', 'check':'配置检查', 'up':'安装／应用', 'down':'停用', 'recover':'既有来源恢复'}[action])
+    print('ADDP 采集来源 · '+{'status':'当前运行状态', 'check':'配置检查', 'up':'安装／应用', 'down':'停用', 'recover':'既有来源恢复'}[action])
     failures = 0
     environments = {}
     for scope, kind in rows:
@@ -238,7 +238,10 @@ def run(action, scopes=(), kinds=(), inherited=None, resolved=False):
             else:
                 detail = '检查或操作未通过，请核对部署配置与来源归属'
             print(f'{label:<24} 失败：{detail}')
-    print(f'汇总：共 {len(rows)} 项，失败 {failures} 项。来源运行状态不代表实际采集成功，请在 Monitor 核对。')
+    if action == 'status':
+        print(f'当前运行状态检查：共 {len(rows)} 项，异常 {failures} 项。请在 Monitor 核对实际采样。')
+    else:
+        print(f'汇总：共 {len(rows)} 项，失败 {failures} 项。来源运行状态不代表实际采集成功，请在 Monitor 核对。')
     return int(bool(failures))
 
 

@@ -309,6 +309,7 @@ addp_startup_metrics_summary
                         self.assertEqual(result.returncode,expected,result.stdout+result.stderr)
                         self.assertEqual('SUMMARY' in result.stdout,selected)
                         self.assertEqual('业务已启动' in result.stderr,bool(selected and expected))
+                        self.assertEqual('启动命令因上述步骤返回非零退出码' in result.stderr,bool(selected and expected))
                         self.assertEqual('采集来源恢复' in result.stderr,bool(selected and previous))
                         self.assertEqual('末尾监控摘要' in result.stderr,bool(selected and failure))
 
@@ -355,6 +356,15 @@ addp_startup_metrics_summary
             objects[source]['labels']=None
             self.assertEqual(manager.status('postgresql','business',{}),('归属不符',False))
         self.assertTrue(commands)
+
+        for state, running, expected in (('运行中', True, 0), ('已停止', False, 1)):
+            with self.subTest(state=state):
+                code, output, mocks = self.invoke(
+                    'status', ['business'], ['redis'], env={'ADDP_REDIS_METRICS_ENABLED':'true'},
+                    status={'return_value':(state, running)}, apply={})
+                self.assertEqual(code, expected)
+                self.assertIn(f'当前运行状态检查：共 1 项，异常 {expected} 项', output)
+                mocks['apply'].assert_not_called()
 
 
 if __name__ == '__main__': unittest.main()

@@ -1050,7 +1050,7 @@ if [[ "$START_ALL" == true && "${ADDP_ONLINE_HOST:-0}" != 1 ]]; then
   if ! addp_recover_metrics_sources; then
     infra_optional_result=1
     infra_optional_failures+=('采集来源恢复')
-    echo 'Metrics source recovery unavailable; business startup continues' >&2
+    echo '采集来源自动恢复未通过，继续启动业务。具体原因见上方的逐项结果。' >&2
   fi
 fi
 
@@ -2585,11 +2585,11 @@ if [[ "$START_ALL" == true && "${ADDP_ONLINE_HOST:-0}" != 1 ]]; then
     infra_optional_failures+=('末尾监控摘要')
   fi
   if [[ "$infra_optional_result" != 0 ]]; then
-    echo '业务已启动；本次启动保留以下观测失败记录，具体原因见对应阶段原输出：' >&2
+    echo '业务已启动。以下观测步骤未通过，详情见对应步骤的输出。' >&2
     for observation_failure in "${infra_optional_failures[@]}"; do
       echo "  - ${observation_failure}" >&2
     done
-    echo '以上为启动阶段记录，不等同于当前采集仍失败；当前状态见只读摘要，有效指标见 Monitor。' >&2
+    echo '启动命令因上述步骤返回非零退出码。采集容器的当前状态见上方只读摘要。' >&2
   fi
 fi
 exit "$infra_optional_result"
