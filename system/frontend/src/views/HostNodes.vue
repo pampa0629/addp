@@ -262,7 +262,7 @@ onBeforeUnmount(() => { generation++ })
 <style scoped>
 .host-nodes { padding: 20px; min-width: 0; }
 .node-toolbar { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; }
-.node-toolbar h2 { flex: 1; margin: 0; }
+.node-toolbar h2 { flex: 1; margin: 0; color: var(--addp-text-primary); }
 .node-toolbar .el-input { max-width: 420px; }
 .node-table { margin-top: 16px; }
 .node-pagination { margin-top: 16px; overflow-x: auto; }

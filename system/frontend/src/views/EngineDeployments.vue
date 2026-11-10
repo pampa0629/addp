@@ -239,5 +239,6 @@ watch([()=>route.fullPath,identity],async()=>{
 onBeforeUnmount(()=>{clearCurrentSource();epoch++;listRequests.dispose();detailRequests.dispose();discoveryRequests.dispose();sourceRequests.dispose()})
 </script>
 <style scoped>
+.toolbar > h2 { color: var(--addp-text-primary); }
 .engine-deployments{padding:20px;min-width:0}.toolbar{display:flex;align-items:center;gap:12px;margin-bottom:16px;flex-wrap:wrap}.toolbar h2{flex:1;margin:0}.toolbar .el-input{max-width:420px}.el-pagination{margin-top:16px;overflow-x:auto}.el-alert{margin-bottom:12px}.current-source{margin-bottom:20px}.current-source h3{flex:1;margin:0}.candidate-name{margin-top:6px}.hint{color:var(--addp-text-secondary);margin:8px 0;width:100%}dl{display:grid;grid-template-columns:140px minmax(0,1fr);gap:10px}dd{margin:0;overflow-wrap:anywhere}dt{color:var(--addp-text-secondary)}@media(max-width:600px){.engine-deployments{padding:12px}.toolbar .el-input{max-width:none;flex-basis:100%}dl{grid-template-columns:1fr;gap:6px}dd{margin-bottom:8px}}
 </style>

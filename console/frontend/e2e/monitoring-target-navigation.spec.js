@@ -2,6 +2,18 @@ import { expect, test } from '@playwright/test'
 import { readFile } from 'node:fs/promises'
 import { backend, id, identity, node, permissions } from '../../../monitor/frontend/e2e/monitoring-targets.fixture'
 
+for (const [path, title] of [['host-nodes', '平台主机管理'], ['engine-deployments', '引擎纳管']]) {
+  test(`first dark-mode render uses the primary text color on ${path}`, async ({ page }) => {
+    await backend(page, { identity: identity([...permissions, 'platform.engine_deployment.read']) })
+    await page.addInitScript(() => localStorage.setItem('theme-mode', 'dark'))
+    await page.route('**/api/v1/system/platform/engine_deployments?**', route => route.fulfill({ json: { data: [], total: 0 } }))
+    await page.goto(`/system/${path}`)
+    const frame = page.frameLocator('iframe[data-testid="module-iframe"]')
+    await expect(frame.locator('html')).toHaveClass(/\bdark\b/)
+    await expect(frame.getByRole('heading', { name: title, exact: true })).toHaveCSS('color', 'rgb(229, 234, 243)')
+  })
+}
+
 test('host management admits the exact existing host in System and hands a source to Monitor only in memory', async ({ page }) => {
   const state = await backend(page, {
     empty: true,
