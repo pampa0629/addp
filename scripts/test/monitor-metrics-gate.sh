@@ -273,7 +273,7 @@ GATEWAY_COMPILE
 chmod 755 "$WORK_DIR/control.test"
 
 if [[ "$metrics_case" == target-budget ]]; then
-  export ADDP_METRICS_TARGET_LIMIT=24
+  export ADDP_METRICS_TARGET_LIMIT=34
 fi
 python3 "$ROOT_DIR/scripts/infra/generate-metrics-config.py"
 cat >"$WORK_DIR/nginx.conf" <<'CONFIG'
@@ -332,24 +332,25 @@ import base64, os, sys
 p=Path(sys.argv[1])
 basic=base64.b64encode(('addp-prometheus:'+os.environ['PROMETHEUS_SERVICE_CLIENT_SECRET']).encode()).decode()
 config=p.read_text().replace('@@BASIC@@','Basic '+basic)
-if os.environ.get('ADDP_METRICS_T2_CASE') == 'target-budget':
-    listeners = ''.join(f'    listen {port} ssl;\n' for port in range(19500, 19525))
-    config = config.replace('    listen 9443 ssl;\n', '    listen 9443 ssl;\n' + listeners, 1)
 # Internal-only endpoints share the owned source's mTLS identity and lifecycle.
 # These are controlled metric inputs, not six real managed hosts.
 servers=[]
-for index in range(6):
+sources = [(f'    listen {19450 + index} ssl;', f'overview-{index}') for index in range(6)]
+if os.environ.get('ADDP_METRICS_T2_CASE') == 'target-budget':
+    for kind, start, end in [('host', 0, 1), ('engine', 1, 7), ('worker', 7, 12), ('http', 12, 35)]:
+        sources.append(('\n'.join(f'    listen {19500 + index} ssl;' for index in range(start, end)), f'budget-{kind}'))
+for listeners, fixture in sources:
     servers.append('''  server {
-    listen %d ssl;
+%s
     ssl_certificate /tmp/addp-source-tls/server.crt;
     ssl_certificate_key /source/server.key;
     ssl_client_certificate /source/source-ca.crt;
     ssl_verify_client on;
     ssl_protocols TLSv1.2 TLSv1.3;
-    location = /metrics { alias /source/overview-%d.prom; default_type text/plain; }
+    location = /metrics { alias /source/%s.prom; default_type text/plain; }
     location / { return 404; }
   }
-''' % (19450+index, index))
+''' % (listeners, fixture))
 assert config.endswith('}\n')
 p.write_text(config[:-2]+''.join(servers)+'}\n')
 CONFIG

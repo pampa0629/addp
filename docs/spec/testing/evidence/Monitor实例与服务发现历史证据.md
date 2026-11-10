@@ -612,3 +612,16 @@ Transfer continuous 弹窗手动刷新前后的窗口结束时刻为 `23:00:24` 
 `make test-module MODULE=monitor GO_ONLY=1`、`make test-monitor-metrics-config`、`make test-monitor-postgres` 和 Infra 生命周期回归通过。隔离 T2 `make test-monitor-metrics MONITOR_METRICS_TEST_ARGS=--case=target-budget` 核验 24 个不同 mTLS 端点各有连续样本，加入第 25 个时作业超限，返回 24 个后恢复，容器、网络、卷和临时文件清零。首轮在 24 项抓取后因测试误匹配 Prometheus 的错误文本而失败，修正断言后完整通过。隔离来源是受控夹具，结果不等于 500,000 样本压力测试。
 
 本机根环境已设 24，现有 20 项来源计划保留。等待用户通过标准入口应用指标中心并重启 Monitor，随后核验真实目标及新鲜样本。
+
+### 34 个采集目标的隔离验证与本机配置（2026-11-10）
+
+用户确认保留已有来源，隔离通过后再为十个后端追加配置。既有 `make test-monitor-metrics MONITOR_METRICS_TEST_ARGS=--case=target-budget` 在独立卷、网络及 mTLS 凭据内执行 24→34→35→34。固定中心为 1 CPU／2 GiB，15 秒采样；一台主机、六个引擎、五个 Worker 及一个网关与受控后端一起采样。每个 HTTP 来源重放 32 个路由、两种状态及固定直方图桶。每档预热后以四个并发 PromQL 请求执行五轮，覆盖 QPS、失败比例、P95 和压力趋势。测试负载为受控计数器重放，产品身份和真实服务流量未进入此次容量测量。
+
+| 外部目标 | 活跃时序 | 样本/秒 | 容器内存峰值 | 约 80 秒卷增长 | 最慢抓取／查询 | 七天样本估算 |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| 24 | 14,856 | 990.02 | 142.1 MiB | 352 KiB | 19.7／39.4 ms | 1.12 GiB |
+| 34 | 25,816 | 1,720.55 | 142.1 MiB | 608 KiB | 14.4／52.9 ms | 1.94 GiB |
+
+内存为同一隔离容器的高水位。七天按 2 字节/样本估算时序样本体积，实际磁盘另受索引、WAL、压缩和时序变化影响。第 35 个触发抓取作业超限；恢复为 34 个后重新取得连续样本，容器、网络、卷和临时目录清零。第一轮因 P95 窗口早于流量增长失败，第二轮因写入速率读数未合并多条序列失败；修正预热和速率聚合后第三轮退出 0。原日志依次为 `/tmp/addp-metrics-34.YiHcfy`、`/tmp/addp-metrics-34.seA0Uw`、`/tmp/addp-metrics-34.wXH9VB`。Monitor Go T1、指标配置、T2 CI 登记及 HTTP／总览 20 个受控浏览器用例分别通过，浏览器用例独立于压力窗口。
+
+本机 `.env` 已保留原 17 个进程配置及所有引擎和主机来源，增加 Agent、Copilot、Develop、Graph、Inference、Model、Ontology、Orchestrator、Portal、Workbench 的独立回环端点、准入及 Docker Desktop 转发，预算设为 34。现有 CA 不变，新端点使用独立叶证书。Agent/Copilot 沿既有 Python HTTP 及进程启动时间范围。指标中心与相应进程的配置生效及 34 个真实目标的新鲜样本待本机标准重启后核验。

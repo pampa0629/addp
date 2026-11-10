@@ -23,8 +23,8 @@ class TargetBudgetExceeded(ValueError):
 
 def check_target_budget(env, root=ROOT):
     value = env.get('ADDP_METRICS_TARGET_LIMIT', '12')
-    if not re.fullmatch(r'[1-9]|1[0-9]|2[0-4]', value):
-        raise ValueError('ADDP_METRICS_TARGET_LIMIT must be an integer from 1 to 24')
+    if not re.fullmatch(r'[1-9]|[12][0-9]|3[0-4]', value):
+        raise ValueError('ADDP_METRICS_TARGET_LIMIT must be an integer from 1 to 34')
     raw_plan = env.get('ADDP_DEV_PROCESS_METRICS_PLAN', '')
     if not raw_plan:
         return value

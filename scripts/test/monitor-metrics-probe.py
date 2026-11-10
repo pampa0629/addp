@@ -521,33 +521,121 @@ eventually(self_sample_ready, 'center self scrape and resident memory')
 assert job_is_up('addp_nodes', '1')
 finish_public_preflight()
 if os.environ.get('ADDP_METRICS_T2_CASE') == 'target-budget':
-    fixture = json.loads(original_discovery)[0]
-    address = fixture['targets'][0].rsplit(':', 1)[0]
-    planned = [
-        {'targets': [f'{address}:{19500 + index}'],
-         'labels': dict(fixture['labels'], addp_node_id=f'11111111-1111-4111-8111-{index:012d}')}
-        for index in range(25)
-    ]
-    discovery_text(json.dumps(planned[:24]))
+    from concurrent.futures import ThreadPoolExecutor
 
-    def within_budget():
+    address = json.loads(original_discovery)[0]['targets'][0].rsplit(':', 1)[0]
+    sources = WORK / 'source'
+    for kind, size in [('host', 640), ('engine', 24), ('worker', 4)]:
+        (sources / f'budget-{kind}.prom').write_text('addp_fixture_resource_bytes 4096\n' + ''.join(
+            f'addp_fixture_{kind}_signal{{slot="{slot}"}} {slot}\n' for slot in range(size)))
+
+    def publish_http(tick):
+        # A bounded replay of counters and the Go SDK bucket grid. Different
+        # routes carry successful and failed traffic, and some have slow tails.
+        metric = 'http_server_request_duration_seconds'
+        buckets = ['0.005', '0.01', '0.025', '0.05', '0.075', '0.1', '0.25', '0.5', '0.75', '1', '2.5', '5', '7.5', '10', '+Inf']
+        lines = ['addp_fixture_resource_bytes 4096', f'addp_http_server_requests_total {tick * 33 * 32}',
+                 f'addp_http_server_failures_total {tick * 32}']
+        for route in range(32):
+            for status, rate, bucket in [(200, 32, 4 + route % 4), (503, 1, 9)]:
+                count = tick * rate
+                labels = f'http_route="/fixture/operation-{route}/:id",http_request_method="GET",http_response_status_code="{status}",url_scheme="http"'
+                lines.extend(f'{metric}_bucket{{{labels},le="{le}"}} {count if i >= bucket else 0}' for i, le in enumerate(buckets))
+                lines.extend([f'{metric}_count{{{labels}}} {count}', f'{metric}_sum{{{labels}}} {count * float(buckets[bucket])}'])
+        pending = sources / 'budget-http.pending'
+        pending.write_text('\n'.join(lines) + '\n')
+        pending.replace(sources / 'budget-http.prom')
+
+    planned = []
+    for index in range(35):
+        identity = f'11111111-1111-4111-8111-{index:012d}'
+        if index == 0:
+            labels = dict(addp_monitor_kind='host_resources', addp_source='node_exporter', addp_node_id=identity)
+        elif index < 7:
+            labels = dict(addp_monitor_kind='engine_resources', addp_source='postgres_exporter', addp_deployment_id=identity)
+        else:
+            labels = dict(addp_monitor_kind='process_resources', addp_source='application', addp_instance_id=identity,
+                          addp_module_name=f'fixture-{index}', addp_runtime_role='worker' if index < 12 else 'ingress' if index == 12 else 'backend')
+        planned.append({'targets': [f'{address}:{19500 + index}'], 'labels': labels})
+
+    def within_budget(count):
         samples = query('count_over_time(addp_fixture_resource_bytes{job="addp_nodes"}[45s])')
-        return (len(samples) == 24 and all(int(row['value'][1]) >= 2 for row in samples)
-                and len({row['metric']['addp_node_id'] for row in samples}) == 24
-                and len(query('up{job="addp_nodes"} == 1')) == 24)
+        return (len(samples) == count and all(int(row['value'][1]) >= 2 for row in samples)
+                and len({row['metric']['instance'] for row in samples}) == count
+                and len(query('up{job="addp_nodes"} == 1')) == count)
 
-    eventually(within_budget, '24 distinct mTLS targets each have consecutive samples', seconds=90)
+    def scalar(expression):
+        rows = query(expression)
+        assert len(rows) == 1, expression
+        value = float(rows[0]['value'][1])
+        assert math.isfinite(value), expression
+        return value
+
+    def volume_bytes():
+        return int(compose('exec', '-T', 'prometheus', 'du', '-sk', '/prometheus', timeout=5).split()[0]) * 1024
+
+    def query_latency(item):
+        expression, interval = item
+        end = math.floor(time.time())
+        params = {'query': expression}
+        if interval:
+            params.update(start=end-60, end=end, step=15)
+        started = time.monotonic()
+        rows = api(('query_range?' if interval else 'query?') + urllib.parse.urlencode(params))['result']
+        elapsed = time.monotonic() - started
+        values = [float(point[1]) for row in rows for point in (row['values'] if interval else [row['value']])]
+        assert len(values) == (5 if interval else 1) and all(math.isfinite(value) and value > 0 for value in values), expression
+        return elapsed
+
+    tick = 1
+    publish_http(tick)
+    scope = '{job="addp_nodes",addp_runtime_role="backend"}'
+    requests = f'sum(rate(addp_http_server_requests_total{scope}[1m]))'
+    failures = f'sum(rate(addp_http_server_failures_total{scope}[1m]))'
+    pressure = 'max(addp_fixture_host_signal{job="addp_nodes"})'
+    p95 = f'histogram_quantile(0.95, sum by(le)(rate(http_server_request_duration_seconds_bucket{scope}[1m])))'
+    for count in (24, 34):
+        discovery_text(json.dumps(planned[:count]))
+        eventually(lambda: within_budget(count), f'{count} distinct mTLS targets each have consecutive samples', seconds=90)
+        # Prime the complete one-minute query range with increasing counters.
+        for _ in range(4):
+            tick += 1
+            publish_http(tick)
+            time.sleep(16)
+        before = volume_bytes()
+        started = time.monotonic()
+        latencies = []
+        for _ in range(5):
+            tick += 1
+            publish_http(tick)
+            time.sleep(16)
+            with ThreadPoolExecutor(max_workers=4) as executor:
+                latencies.extend(executor.map(query_latency, [(requests, False), (f'{failures}/{requests}', False), (p95, True), (pressure, True)]))
+            assert within_budget(count), 'target coverage changed during concurrent queries'
+        elapsed = time.monotonic() - started
+        ingest = scalar('sum(rate(prometheus_tsdb_head_samples_appended_total{job="prometheus"}[1m]))')
+        memory = int(compose('exec', '-T', 'prometheus', 'cat', '/sys/fs/cgroup/memory.peak', timeout=5))
+        evidence = dict(targets=count, measurement_seconds=round(elapsed, 2),
+            active_series=int(scalar('prometheus_tsdb_head_series{job="prometheus"}')),
+            samples_per_second=round(ingest, 2), cpu_cores=round(scalar('rate(process_cpu_seconds_total{job="prometheus"}[1m])'), 4),
+            cgroup_memory_peak_bytes=memory, volume_growth_bytes=max(0, volume_bytes()-before),
+            projected_7d_samples_bytes=math.ceil(ingest * 7 * 86400 * 2),
+            max_scrape_seconds=round(scalar('max(max_over_time(scrape_duration_seconds{job="addp_nodes"}[1m]))'), 4),
+            max_query_seconds=round(max(latencies), 4))
+        print('Metrics T2: target capacity ' + json.dumps(evidence, sort_keys=True), flush=True)
+        assert evidence['cgroup_memory_peak_bytes'] < 1.5 * 1024**3
+        assert evidence['volume_growth_bytes'] < 256 * 1024**2 and evidence['projected_7d_samples_bytes'] < 8 * 1024**3
+        assert evidence['max_scrape_seconds'] < 2 and evidence['max_query_seconds'] < 2
     discovery_text(json.dumps(planned))
 
     def over_budget():
         targets = [row for row in api('targets')['activeTargets'] if row['labels']['job'] == 'addp_nodes']
-        return (len(targets) == 25 and all(row['health'] == 'down' and 'target_limit exceeded' in row['lastError'].lower()
+        return (len(targets) == 35 and all(row['health'] == 'down' and 'target_limit exceeded' in row['lastError'].lower()
                                           for row in targets))
 
-    eventually(over_budget, '25 targets exceed the Prometheus job limit')
-    discovery_text(json.dumps(planned[:24]))
-    eventually(within_budget, '24 targets recover within the deployment budget', seconds=90)
-    print('Metrics T2: 24 distinct mTLS targets sampled, 25 rejected, 24 recovered', flush=True)
+    eventually(over_budget, '35 targets exceed the Prometheus job limit')
+    discovery_text(json.dumps(planned[:34]))
+    eventually(lambda: within_budget(34), '34 targets recover within the deployment budget', seconds=90)
     raise SystemExit(0)
 initial_sample_time = query('addp_fixture_resource_bytes{job="addp_nodes"}')[0]['value'][0]
 # Write atomically without replacing the bind-mounted source directory.

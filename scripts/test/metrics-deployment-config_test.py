@@ -1594,7 +1594,7 @@ class MetricsDeploymentConfigTest(unittest.TestCase):
                 f'worker-{index}': dict(module_name='quality', role='worker', listen=f'127.0.0.1:{19500 + index}',
                                         endpoint=f'https://127.0.0.1:{19500 + index}/metrics',
                                         tls_dir=f'/private/metrics/worker-{index}')
-                for index in range(18)
+                for index in range(28)
             }
             env['ADDP_DEV_PROCESS_METRICS_PLAN'] = json.dumps(dict(list(plan.items())[:13]))
             with self.assertRaisesRegex(config.TargetBudgetExceeded, '计划 20 个.*上限 12'):
@@ -1603,16 +1603,22 @@ class MetricsDeploymentConfigTest(unittest.TestCase):
             self.assertEqual(config.check_target_budget(env, root), '24')
             env['ADDP_DEV_PROCESS_METRICS_PLAN'] = json.dumps(dict(list(plan.items())[:17]))
             self.assertEqual(config.check_target_budget(env, root), '24')
-            env['ADDP_DEV_PROCESS_METRICS_PLAN'] = json.dumps(plan)
+            env['ADDP_DEV_PROCESS_METRICS_PLAN'] = json.dumps(dict(list(plan.items())[:18]))
             with self.assertRaisesRegex(config.TargetBudgetExceeded, '计划 25 个.*上限 24'):
                 config.render(env, root)
+            env['ADDP_METRICS_TARGET_LIMIT'] = '34'
+            env['ADDP_DEV_PROCESS_METRICS_PLAN'] = json.dumps(dict(list(plan.items())[:27]))
+            self.assertEqual(config.check_target_budget(env, root), '34')
+            env['ADDP_DEV_PROCESS_METRICS_PLAN'] = json.dumps(plan)
+            with self.assertRaisesRegex(config.TargetBudgetExceeded, '计划 35 个.*上限 34'):
+                config.render(env, root)
 
-        config.render(dict(self.env, ADDP_METRICS_TARGET_LIMIT='24'))
+        config.render(dict(self.env, ADDP_METRICS_TARGET_LIMIT='34'))
         path = self.directory / 'prometheus.yml'
         content = path.read_bytes()
-        self.assertIn(b'target_limit: 24', content)
+        self.assertIn(b'target_limit: 34', content)
         with self.assertRaises(ValueError):
-            config.render(dict(self.env, ADDP_METRICS_TARGET_LIMIT='25'))
+            config.render(dict(self.env, ADDP_METRICS_TARGET_LIMIT='35'))
         self.assertEqual(path.read_bytes(), content)
 
     def test_desktop_loopback_rules_keep_the_original_identity_and_exact_ports(self):
