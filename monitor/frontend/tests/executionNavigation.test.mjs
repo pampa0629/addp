@@ -104,7 +104,7 @@ test('automatic refresh pauses while the page is hidden and catches up when visi
   assert.match(executionListSource, /const pageVisible = ref\(!document\.hidden\)/)
   assert.match(executionListSource, /const shouldRefreshExecutionList = computed/)
   assert.match(executionListSource, /const shouldRefreshOpenedExecution = computed/)
-  assert.match(executionListSource, /if \(!shouldRefreshExecutionList\.value \|\| executionListRefreshInFlight\)/)
+  assert.match(executionListSource, /if \(!shouldRefreshExecutionList\.value \|\| loading\.value \|\| filterInput\.pending \|\| executionListRefreshInFlight\)/)
   assert.match(executionListSource, /if \(!shouldRefreshOpenedExecution\.value \|\| !hasValue\(openedExecutionID\.value\)/)
   assert.match(executionListSource, /function handleVisibilityChange\(\)/)
   assert.match(executionListSource, /document\.addEventListener\('visibilitychange', handleVisibilityChange\)/)

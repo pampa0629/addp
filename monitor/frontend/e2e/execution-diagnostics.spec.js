@@ -48,6 +48,60 @@ async function installBackend(page, { empty = false, unavailable = false, events
   return { getTreeRequests: () => treeRequests }
 }
 
+test('execution filters query immediately and return to the first page', async ({ page }) => {
+  await installBackend(page)
+  const queries = []
+  await page.route('**/api/v1/monitor/executions?*', route => {
+    const query = new URL(route.request().url()).searchParams
+    queries.push({ page: query.get('page'), module: query.get('module') || '', status: query.get('status') || '' })
+    return route.fulfill({ json: { executions: [], total: 42, page: Number(query.get('page')), page_size: 20 } })
+  })
+  await page.goto('/executions')
+  await expect(page.locator('.el-pagination__total')).toContainText('42')
+  await expect(page.getByRole('button', { name: '查询', exact: true })).toHaveCount(0)
+
+  await page.locator('.el-pager').getByText('2', { exact: true }).click()
+  await expect.poll(() => queries.at(-1)).toEqual({ page: '2', module: '', status: '' })
+
+  await page.getByText('全部模块', { exact: true }).click()
+  await page.getByRole('option', { name: '系统运维', exact: true }).click()
+  await expect.poll(() => queries.at(-1)).toEqual({ page: '1', module: 'system', status: '' })
+
+  await page.getByText('全部状态', { exact: true }).click()
+  await page.getByRole('option', { name: '成功', exact: true }).click()
+  await expect.poll(() => queries.at(-1)).toEqual({ page: '1', module: 'system', status: 'success' })
+
+  await page.getByRole('button', { name: '重置', exact: true }).click()
+  await expect.poll(() => queries).toEqual([
+    { page: '1', module: '', status: '' },
+    { page: '2', module: '', status: '' },
+    { page: '1', module: 'system', status: '' },
+    { page: '1', module: 'system', status: 'success' },
+    { page: '1', module: '', status: '' }
+  ])
+})
+
+test('task definition ID applies within the restored task scope', async ({ page }) => {
+  await installBackend(page)
+  await page.goto('/executions?module=system&task_type=cleanup')
+  await expect(page.locator('.execution-list .el-table__row')).toHaveCount(1)
+  const field = page.getByRole('textbox', { name: '任务定义ID', exact: true })
+  const waitForID = id => page.waitForRequest(request => {
+    const url = new URL(request.url())
+    return url.pathname === '/api/v1/monitor/executions' &&
+      url.searchParams.get('module') === 'system' &&
+      url.searchParams.get('task_type') === 'cleanup' &&
+      (url.searchParams.get('source_task_id') || '') === id
+  })
+  const filtered = waitForID('42')
+  await field.fill('42')
+  await filtered
+
+  const cleared = waitForID('')
+  await field.clear()
+  await cleared
+})
+
 test('Cleanup admission preserves the real pending state and clears on authorization loss', async ({ page }) => {
   await installBackend(page, { cleanup: true, empty: true })
   await page.goto('/executions?execution_id=diagnostic-run')
@@ -68,11 +122,11 @@ for (const status of [403, 503]) test(`list read failure ${status} clears rows a
   await expect(rows).toHaveCount(1)
   await expect(total).toContainText('1')
   await page.route('**/api/v1/monitor/executions?*', route => route.fulfill({ status, contentType: 'application/json', body: JSON.stringify({ error_code: status === 503 ? 'execution_owner_unavailable' : 'permission_denied' }) }))
-  await page.getByRole('button', { name: '查询', exact: true }).click()
+  await page.getByRole('button', { name: '重置', exact: true }).click()
   await expect(rows).toHaveCount(0)
   await expect(total).toContainText('0')
   await page.unroute('**/api/v1/monitor/executions?*')
-  await page.getByRole('button', { name: '查询', exact: true }).click()
+  await page.getByRole('button', { name: '重置', exact: true }).click()
   await expect(rows).toHaveCount(1)
   await expect(total).toContainText('1')
 })
@@ -93,10 +147,10 @@ test('a delayed list denial cannot clear a newer authorized result', async ({ pa
     completed()
   })
   try {
-    await page.getByRole('button', { name: '查询', exact: true }).click()
+    await page.getByRole('button', { name: '重置', exact: true }).click()
     await expect.poll(() => blocked).toBe(true)
     const authorized = page.waitForResponse(response => new URL(response.url()).pathname === '/api/v1/monitor/executions' && response.status() === 200)
-    await page.getByRole('button', { name: '查询', exact: true }).click()
+    await page.getByRole('button', { name: '重置', exact: true }).click()
     await authorized
     await expect(rows).toHaveCount(1)
     release()

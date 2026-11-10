@@ -233,7 +233,7 @@ test('continuous execution timeline, recovery and revoked Owner access', async (
       stage = 'owner_outage_real_503'
       await Promise.all([
         visible.events.getByRole('button', { name: '刷新过程', exact: true }).click(),
-        list.frame.getByRole('button', { name: '查询', exact: true }).click()
+        list.frame.getByRole('button', { name: '重置', exact: true }).click()
       ])
       for (const response of await Promise.all([eventFailure, treeFailure, listFailure])) await unavailableResponse(response)
       checks.push('real_owner_503')
@@ -255,7 +255,7 @@ test('continuous execution timeline, recovery and revoked Owner access', async (
       await Promise.all([
         frame.getByRole('button', { name: '重新加载', exact: true }).click(),
         running.frame.getByRole('button', { name: '重新加载', exact: true }).click(),
-        list.frame.getByRole('button', { name: '查询', exact: true }).click()
+        list.frame.getByRole('button', { name: '重置', exact: true }).click()
       ])
       await timeline(frame, '执行失败')
       await timeline(running.frame)

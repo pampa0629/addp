@@ -8,7 +8,7 @@
       </template>
 
       <!-- 过滤器 -->
-      <el-form :inline="true" :model="filters" class="filter-form">
+      <el-form :inline="true" :model="filters" class="filter-form" @submit.prevent>
         <el-form-item :label="t('monitor.execution.filter.preset')">
           <el-select
             v-model="selectedPreset"
@@ -48,6 +48,7 @@
             clearable
             :disabled="filters.module && taskTypeOptions.length === 0"
             style="width: 180px;"
+            @change="handleTaskTypeChange"
           >
             <el-option
               v-for="option in taskTypeOptions"
@@ -61,8 +62,11 @@
           <el-input
             v-model="filters.source_task_id"
             :placeholder="t('monitor.execution.filter.source_task_id_placeholder')"
+            :disabled="!filters.module || !filters.task_type"
             clearable
             style="width: 180px;"
+            @input="handleTaskIDInput"
+            @keydown.enter="filterInput.enter"
           />
         </el-form-item>
         <el-form-item :label="t('monitor.execution.filter.source')">
@@ -74,6 +78,7 @@
             allow-create
             default-first-option
             style="width: 150px;"
+            @change="filterInput.submit"
           >
             <el-option
               v-for="option in sourceOptions"
@@ -84,7 +89,7 @@
           </el-select>
         </el-form-item>
         <el-form-item :label="t('monitor.execution.filter.status')">
-          <el-select v-model="filters.status" :placeholder="t('monitor.execution.filter.status_placeholder')" clearable style="width: 150px;">
+          <el-select v-model="filters.status" :placeholder="t('monitor.execution.filter.status_placeholder')" clearable style="width: 150px;" @change="filterInput.submit">
             <el-option :label="t('monitor.execution.status.pending')" value="pending" />
             <el-option :label="t('monitor.execution.status.running')" value="running" />
             <el-option :label="t('monitor.execution.status.success')" value="success" />
@@ -94,17 +99,13 @@
           </el-select>
         </el-form-item>
         <el-form-item :label="t('monitor.execution.filter.trigger_type')">
-          <el-select v-model="filters.trigger_type" :placeholder="t('monitor.execution.filter.trigger_placeholder')" clearable style="width: 150px;">
+          <el-select v-model="filters.trigger_type" :placeholder="t('monitor.execution.filter.trigger_placeholder')" clearable style="width: 150px;" @change="filterInput.submit">
             <el-option :label="t('monitor.execution.trigger.manual')" value="manual" />
             <el-option :label="t('monitor.execution.trigger.scheduled')" value="scheduled" />
             <el-option :label="t('monitor.execution.trigger.event')" value="event" />
           </el-select>
         </el-form-item>
         <el-form-item>
-          <el-button type="primary" @click="handleSearch">
-            <el-icon><Search /></el-icon>
-            {{ t('monitor.execution.filter.search') }}
-          </el-button>
           <el-button @click="handleReset">
             <el-icon><RefreshLeft /></el-icon>
             {{ t('monitor.execution.filter.reset') }}
@@ -123,13 +124,13 @@
       <!-- 分页 -->
       <div class="pagination">
         <el-pagination
-          v-model:current-page="pagination.page"
-          v-model:page-size="pagination.page_size"
+          :current-page="pagination.page"
+          :page-size="pagination.page_size"
           :page-sizes="[10, 20, 50, 100]"
           :total="pagination.total"
           layout="total, sizes, prev, pager, next, jumper"
-          @size-change="handleSizeChange"
-          @current-change="handlePageChange"
+          @update:page-size="handleSizeChange"
+          @update:current-page="handlePageChange"
         />
       </div>
     </el-card>
@@ -488,6 +489,7 @@ import {
   buildTaskEditUrlFromProviders,
   continuousHealthTagType,
   continuousSignalTagType,
+  createAutoFilter,
   formatContinuousDurationSeconds,
   formatContinuousRate,
   getContinuousCapture,
@@ -516,6 +518,7 @@ const filters = ref({
   status: '',
   trigger_type: ''
 })
+let appliedFilters = { ...filters.value }
 
 // 分页
 const pagination = ref({
@@ -534,6 +537,12 @@ const detailLoading = ref(false)
 const detailLoadFailed = ref(false)
 const currentExecution = ref(null)
 const pageVisible = ref(!document.hidden)
+const filterInput = createAutoFilter({
+  apply: applyFilters,
+  enabled: () => route.name === 'ExecutionList',
+  visible: () => pageVisible.value,
+  pause: () => {}
+})
 useConsolePageDescriptor(router, 'monitor', {
   title: computed(() => t('monitor.execution.recentDetailTitle')),
   subject: computed(() => currentExecution.value?.source_task_name || currentExecution.value?.execution_id || ''),
@@ -843,7 +852,7 @@ function targetKindTagType(targetKind) {
 
 // 加载执行记录
 async function loadExecutions(options = {}) {
-  if (filters.value.source_task_id && (!filters.value.module || !filters.value.task_type)) {
+  if (appliedFilters.source_task_id && (!appliedFilters.module || !appliedFilters.task_type)) {
     ElMessage.warning(t('monitor.execution.filter.source_task_id_requires_scope'))
     return
   }
@@ -855,7 +864,7 @@ async function loadExecutions(options = {}) {
   }
   try {
     const params = {
-      ...filters.value,
+      ...appliedFilters,
       page: pagination.value.page,
       page_size: pagination.value.page_size
     }
@@ -895,13 +904,22 @@ function applyQueryFilters(query) {
   filters.value.source = nextSource
   filters.value.trigger_type = nextTriggerType
   filters.value.status = nextStatus
-  pagination.value.page = 1
   return true
 }
 
 function handleModuleChange() {
   filters.value.task_type = ''
+  handleTaskTypeChange()
+}
+
+function handleTaskTypeChange() {
   filters.value.source_task_id = ''
+  filterInput.submit()
+}
+
+function handleTaskIDInput(value) {
+  if (value === '') filterInput.submit()
+  else filterInput.queue()
 }
 
 async function loadTaskProviders() {
@@ -919,10 +937,10 @@ async function ensureTaskProviders() {
   }
 }
 
-// 查询
-function handleSearch() {
+function applyFilters() {
+  appliedFilters = { ...filters.value, source_task_id: filters.value.source_task_id.trim() }
   pagination.value.page = 1
-  loadExecutions()
+  return loadExecutions()
 }
 
 // 重置
@@ -936,12 +954,12 @@ function handleReset() {
     status: '',
     trigger_type: ''
   }
-  pagination.value.page = 1
-  loadExecutions()
+  filterInput.submit()
 }
 
 function applyPreset(preset) {
   selectedPreset.value = preset || ''
+  filters.value.source_task_id = ''
   if (preset === 'cleanup_system') {
     filters.value.module = 'system'
     filters.value.task_type = 'cleanup'
@@ -953,17 +971,18 @@ function applyPreset(preset) {
     filters.value.source = ''
     filters.value.trigger_type = ''
   }
-  pagination.value.page = 1
-  loadExecutions()
+  filterInput.submit()
 }
 
 // 分页变化
 function handlePageChange(page) {
+  if (page === pagination.value.page) return
   pagination.value.page = page
   loadExecutions()
 }
 
 function handleSizeChange(size) {
+  if (size === pagination.value.page_size) return
   pagination.value.page_size = size
   pagination.value.page = 1
   loadExecutions()
@@ -1155,7 +1174,7 @@ async function loadExecutionEventPage(executionID, params) {
 }
 
 async function refreshRunningExecutionList() {
-  if (!shouldRefreshExecutionList.value || executionListRefreshInFlight) {
+  if (!shouldRefreshExecutionList.value || loading.value || filterInput.pending || executionListRefreshInFlight) {
     return
   }
   executionListRefreshInFlight = true
@@ -1192,6 +1211,7 @@ function stopExecutionDetailAutoRefresh() {
 
 function handleVisibilityChange() {
   pageVisible.value = !document.hidden
+  filterInput.visibilityChanged(pageVisible.value)
   if (!pageVisible.value) return
   if (hasRunningListExecution.value) void refreshRunningExecutionList()
   if (hasRunningOpenedExecution.value) void refreshOpenedExecution()
@@ -1259,12 +1279,13 @@ onMounted(async () => {
   pageVisible.value = !document.hidden
   applyQueryFilters(route.query)
   const taskProvidersPromise = loadTaskProviders()
-  const executionsPromise = loadExecutions()
+  const executionsPromise = applyFilters()
   const detailPromise = openExecutionByExecutionID(route.query.execution_id)
   await Promise.all([taskProvidersPromise, executionsPromise, detailPromise])
 })
 
 onBeforeUnmount(() => {
+  filterInput.dispose()
   stopExecutionListAutoRefresh()
   stopExecutionDetailAutoRefresh()
   document.removeEventListener('visibilitychange', handleVisibilityChange)
@@ -1291,7 +1312,7 @@ watch(
   () => route.query,
   query => {
     if (applyQueryFilters(query)) {
-      loadExecutions()
+      filterInput.submit()
     }
   }
 )
