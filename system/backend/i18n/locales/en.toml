@@ -306,6 +306,10 @@ other = "Fixed current Tenant Transfer/Manager Runtime continue only verified ne
 [permissions.system.engine_access_grant.revoke.name]
 other = "Revoke a specific source-data Grant"
 
+[permissions.system.develop_file_create_approval.create.name]
+other = "Approve GeoPackage creation by a workflow"
+[permissions.system.develop_file_create_approval.create.description]
+other = "With target engine management scope, approve one exact GeoPackage creation for another user's execution"
 [permissions.system.engine_access_grant.create.name]
 other = "Directly grant source-data read access"
 [permissions.system.engine_access_grant.create.description]

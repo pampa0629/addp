@@ -27,9 +27,10 @@ type DevelopFileExecutionReader interface {
 }
 
 type DevelopFileAuthorizationService struct {
-	repository *Repository
-	owner      DevelopFileExecutionReader
-	prepare    DevelopFileReadPreparer
+	repository            *Repository
+	owner                 DevelopFileExecutionReader
+	prepare               DevelopFileReadPreparer
+	prepareCreateApprover DevelopFileCreateApproverPreparer
 }
 
 func NewDevelopFileAuthorizationService(repository *Repository, owner DevelopFileExecutionReader, prepare DevelopFileReadPreparer) *DevelopFileAuthorizationService {
@@ -67,7 +68,7 @@ func (s *DevelopFileAuthorizationService) Issue(ctx context.Context, input Issue
 	if s.owner == nil || s.prepare == nil {
 		return nil, ErrDevelopFileDependencyUnavailable
 	}
-	identity, _, err := s.repository.developFileUser(ctx, input.SourceAccessToken, false)
+	identity, _, err := s.repository.developFileUser(ctx, input.SourceAccessToken, false, developExecutionPermission, executionEffectPermissions["read"])
 	if err != nil {
 		return nil, err
 	}
@@ -88,7 +89,7 @@ func (s *DevelopFileAuthorizationService) Issue(ctx context.Context, input Issue
 	}
 	var result *client.IssuedDevelopFileAuthorization
 	err = s.repository.Transaction(ctx, func(tx *Repository) error {
-		row, user, err := tx.developFileUser(ctx, input.SourceAccessToken, true)
+		row, user, err := tx.developFileUser(ctx, input.SourceAccessToken, true, developExecutionPermission, executionEffectPermissions["read"])
 		if err != nil {
 			return err
 		}
@@ -137,7 +138,7 @@ func (s *DevelopFileAuthorizationService) Issue(ctx context.Context, input Issue
 		}
 		// Audit/lock waits cannot turn a stale token, role or source rule into
 		// an issuance. Recheck the original credential and common pending row.
-		current, currentUser, err := tx.developFileUser(ctx, input.SourceAccessToken, true)
+		current, currentUser, err := tx.developFileUser(ctx, input.SourceAccessToken, true, developExecutionPermission, executionEffectPermissions["read"])
 		if err != nil {
 			return err
 		}
@@ -372,7 +373,7 @@ func (s *DevelopFileAuthorizationService) readOwner(ctx context.Context, auth *E
 	return facts.Clone(), nil
 }
 
-func (r *Repository) developFileUser(ctx context.Context, credential string, lock bool) (*ExecutionAuthorization, *authorization.AuthContext, error) {
+func (r *Repository) developFileUser(ctx context.Context, credential string, lock bool, permissions ...string) (*ExecutionAuthorization, *authorization.AuthContext, error) {
 	snapshot, err := resolveDelegationSourceAccessTokenSnapshot(ctx, r, credential)
 	if err != nil {
 		return nil, nil, err
@@ -406,14 +407,14 @@ func (r *Repository) developFileUser(ctx context.Context, credential string, loc
 	if err != nil {
 		return nil, nil, err
 	}
-	if !developFileUserCredential(current) || snapshot.TenantID == nil || snapshot.TenantMembershipID == nil {
+	if !developFileUserCredential(current, permissions...) || snapshot.TenantID == nil || snapshot.TenantMembershipID == nil {
 		return nil, nil, ErrExecutionAuthorizationPermissionDenied
 	}
 	return &ExecutionAuthorization{ActorPrincipalID: snapshot.FamilyPrincipalID, TenantID: *snapshot.TenantID, TenantMembershipID: *snapshot.TenantMembershipID, IssuedAuthorizationVersion: snapshot.FamilyAuthorizationVersion, SourceType: "user", Audience: "develop"}, current, nil
 }
 
-func developFileUserCredential(auth *authorization.AuthContext) bool {
-	if auth == nil || auth.Principal.Type != "user" || auth.Context.Type != "tenant" || auth.Delegation != nil || len(auth.Client.Audiences) != 1 || auth.Client.Audiences[0] != "addp.api" || !authorization.HasContextPermissions(*auth, developExecutionPermission, executionEffectPermissions["read"]) {
+func developFileUserCredential(auth *authorization.AuthContext, permissions ...string) bool {
+	if auth == nil || auth.Principal.Type != "user" || auth.Context.Type != "tenant" || auth.Delegation != nil || len(auth.Client.Audiences) != 1 || auth.Client.Audiences[0] != "addp.api" || !authorization.HasContextPermissions(*auth, permissions...) {
 		return false
 	}
 	if auth.Token.Type == "first_party_access_token" {

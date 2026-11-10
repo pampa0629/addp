@@ -790,6 +790,7 @@
           "engine_catalog": "Engine Catalog",
           "engine_access_fulfillment": "Source Access Fulfillment",
           "engine_access_grant": "Source Data Grant",
+          "develop_file_create_approval": "Workflow GeoPackage Creation Approval",
           "engine_access_initial_grant": "Initial New Data Access",
           "engine_access_deny": "Source Read Deny",
           "engine_access_delegation": "Engine Access Management Delegation",

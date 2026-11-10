@@ -153,6 +153,23 @@ func developNFSVersion(engine *models.Engine, tenant, version int64) bool {
 	return engine != nil && engine.ID > 0 && engine.TenantID != nil && int64(*engine.TenantID) == tenant && engine.EngineType == "nfs" && engine.LifecycleState == "active" && engine.DeletedAt == nil && engine.Version > 0 && (version == 0 || engine.Version == version)
 }
 
+// PrepareDevelopFileCreateApprover reuses the current engine-management check
+// under the IAM approval transaction. It does not retrieve connection data.
+func (s *Service) PrepareDevelopFileCreateApprover(ctx context.Context, db *gorm.DB, tenant, membership int64, target execution.DevelopBoundFileTarget) (func(time.Time) error, error) {
+	version, err := strconv.ParseInt(target.EngineVersion, 10, 64)
+	if err != nil || version <= 0 || target.Mode != "fail" {
+		return nil, commonapi.ErrForbidden
+	}
+	scope, err := NewRepository(db).lockManagementScope(ctx, tenant, int64(target.Target.EngineID), membership)
+	if err != nil {
+		return nil, err
+	}
+	if !developNFSVersion(scope.engine, tenant, version) {
+		return nil, commonapi.ErrForbidden
+	}
+	return scope.check, nil
+}
+
 func earliestDevelopReadExpiry(a, b *time.Time) *time.Time {
 	if b == nil {
 		return a

@@ -127,6 +127,7 @@ func SetupRouter(db *gorm.DB, cfg *config.Config) *gin.Engine {
 	fulfillmentService := engineaccess.NewService(engineaccess.NewRepository(db), nil).
 		WithExecutionEngineSnapshot(engineService.DecryptAuthorizedExecutionSnapshot)
 	developFileAuthorization := iam.NewDevelopFileAuthorizationService(runtime.Repository, nil, fulfillmentService.PrepareDevelopFileRead)
+	developFileAuthorization.SetCreateApproverPreparer(fulfillmentService.PrepareDevelopFileCreateApprover)
 	if err := RegisterIAMDevelopFileAuthorizationRoutes(api, runtime, &IAMDevelopFileAuthorizationHandler{service: developFileAuthorization}); err != nil {
 		panic(err)
 	}

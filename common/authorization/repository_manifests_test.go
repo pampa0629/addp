@@ -45,8 +45,8 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 		t.Fatalf("LoadRepositoryAuthorizationCatalog() error = %v", err)
 	}
 	descriptors := report.Permissions
-	if len(descriptors) != 545 {
-		t.Fatalf("descriptor count = %d, want 545", len(descriptors))
+	if len(descriptors) != 546 {
+		t.Fatalf("descriptor count = %d, want 546", len(descriptors))
 	}
 	for _, descriptor := range descriptors {
 		if (descriptor.Key == "service.ontology_fact.read" || descriptor.Key == "system.ontology_fact.execute") &&

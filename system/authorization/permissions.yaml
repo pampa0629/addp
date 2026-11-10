@@ -1090,6 +1090,14 @@ permissions:
     status: active
     name_i18n_key: permissions.system.cleanup_authorization.execute.name
     description_i18n_key: permissions.system.cleanup_authorization.execute.description
+  - key: system.develop_file_create_approval.create
+    allowed_scope_types: [tenant]
+    risk_level: high
+    tenant_customizable: true
+    delegable: false
+    status: active
+    name_i18n_key: permissions.system.develop_file_create_approval.create.name
+    description_i18n_key: permissions.system.develop_file_create_approval.create.description
   - key: system.engine.create
     allowed_scope_types: [tenant]
     risk_level: medium

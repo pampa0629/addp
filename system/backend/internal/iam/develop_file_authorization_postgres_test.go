@@ -79,6 +79,14 @@ func TestDevelopFileAuthorizationAgainstPostgres(t *testing.T) {
 		t.Fatal(err)
 	}
 	insertRoleAssignment(t, db, user.PrincipalID, "tenant.data_engineer", "tenant", &tenant.ID, nil, nil, now.Add(-time.Minute), nil, "manual")
+	approvalRole, err := NewTenantRoleService(repo, time.Now).CreateRole(ctx, CreateTenantRoleInput{
+		TenantID: tenant.ID, RoleKey: "tenant.file_create_approver_fixture", Name: "File create approver fixture",
+		PermissionKeys: []string{"system.develop_file_create_approval.create"}, ActorPrincipalID: user.PrincipalID, Audit: audit,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	insertRoleAssignment(t, db, user.PrincipalID, approvalRole.RoleKey, "tenant", &tenant.ID, nil, nil, now.Add(-time.Minute), nil, "manual")
 	var principal Principal
 	if err := db.First(&principal, user.PrincipalID).Error; err != nil {
 		t.Fatal(err)
@@ -298,6 +306,112 @@ func TestDevelopFileAuthorizationAgainstPostgres(t *testing.T) {
 		a, b, err := svc.Check(ctx, CheckDevelopFileInput{ServiceAccessToken: serviceToken, AuthorizationID: id, ExecutionID: input.ExecutionID, TenantID: tenant.ID, ExpectedAttempt: 1, ScopeDigest: issued.ScopeDigest, Audit: serviceAudit})
 		if !errors.Is(err, ErrDevelopFileDependencyUnavailable) || a != nil || b != nil {
 			t.Fatal("invented publication readiness", err)
+		}
+	})
+	t.Run("human approval binds one original pending without activating it", func(t *testing.T) {
+		approverCredential := func(principalID int64) string {
+			t.Helper()
+			current, err := repo.internalTaskDatabaseTime(ctx)
+			if err != nil {
+				t.Fatal(err)
+			}
+			selected, err := selection.BeginContextSelection(ctx, BeginContextSelectionInput{PrincipalID: principalID,
+				Authentication: SessionAuthentication{Methods: []string{"password"}, AssuranceLevel: AssuranceLevelAAL1, AuthenticatedAt: current}, Audit: audit})
+			if err != nil || selected.Session == nil {
+				t.Fatal(selected, err)
+			}
+			return selected.Session.AccessToken
+		}
+		newApprover := func(name string, permitted bool) (string, int64) {
+			t.Helper()
+			person := createContextSelectionUser(t, ctx, NewIdentityService(repo, nil), name, audit)
+			m := establishContextSelectionMembership(t, ctx, members, tenant.ID, person.PrincipalID, audit)
+			if permitted {
+				insertRoleAssignment(t, db, person.PrincipalID, approvalRole.RoleKey, "tenant", &tenant.ID, nil, nil, now.Add(-time.Minute), nil, "manual")
+			}
+			return approverCredential(person.PrincipalID), m.Membership.ID
+		}
+		first, firstMember := newApprover("file-create-approver-first", true)
+		second, secondMember := newApprover("file-create-approver-second", true)
+		noScope, _ := newApprover("file-create-approver-no-scope", true)
+		noPermission, _ := newApprover("file-create-approver-no-permission", false)
+		otherTenant := createContextSelectionTenant(t, ctx, members, "develop-file-foreign", audit)
+		foreignPerson := createContextSelectionUser(t, ctx, NewIdentityService(repo, nil), "file-create-approver-foreign", audit)
+		establishContextSelectionMembership(t, ctx, members, otherTenant.ID, foreignPerson.PrincipalID, audit)
+		foreignRole, err := NewTenantRoleService(repo, time.Now).CreateRole(ctx, CreateTenantRoleInput{
+			TenantID: otherTenant.ID, RoleKey: "tenant.foreign_file_approver", Name: "Foreign file create approver fixture",
+			PermissionKeys: []string{"system.develop_file_create_approval.create"}, ActorPrincipalID: foreignPerson.PrincipalID, Audit: audit,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		insertRoleAssignment(t, db, foreignPerson.PrincipalID, foreignRole.RoleKey, "tenant", &otherTenant.ID, nil, nil, now.Add(-time.Minute), nil, "manual")
+		foreign := approverCredential(foreignPerson.PrincipalID)
+		facts, issued, input := issue(t, true)
+		id, _ := strconv.ParseInt(issued.Authorization.ID, 10, 64)
+		svc.SetCreateApproverPreparer(func(_ context.Context, _ *gorm.DB, gotTenant, gotMembership int64, target execution.DevelopBoundFileTarget) (func(time.Time) error, error) {
+			if gotTenant != tenant.ID || (gotMembership != firstMember && gotMembership != secondMember) ||
+				!reflect.DeepEqual(target, *issued.Scope.Target) {
+				return nil, commonapi.ErrForbidden
+			}
+			return func(time.Time) error { return nil }, nil
+		})
+		req := ApproveDevelopFileCreateInput{AuthorizationID: id, ScopeDigest: issued.ScopeDigest,
+			ExpiresAt: issued.Authorization.ExpiresAt.Add(-time.Second), Audit: audit}
+		for _, token := range []string{userToken, serviceToken, noPermission, noScope, foreign} {
+			req.UserAccessToken = token
+			if value, err := svc.ApproveCreate(ctx, req); err == nil || value != nil {
+				t.Fatal("unauthorized approval was recorded")
+			}
+		}
+		req.UserAccessToken = first
+		for _, expiry := range []time.Time{now.Add(-time.Minute), issued.Authorization.ExpiresAt.Add(time.Second)} {
+			bad := req
+			bad.ExpiresAt = expiry
+			if value, err := svc.ApproveCreate(ctx, bad); err == nil || value != nil {
+				t.Fatal("invalid expiry was approved")
+			}
+		}
+		bad := req
+		bad.ScopeDigest = strings.Repeat("f", 64)
+		if value, err := svc.ApproveCreate(ctx, bad); err == nil || value != nil {
+			t.Fatal("different scope was approved")
+		}
+		type result struct {
+			value *DevelopFileCreateApprovalReceipt
+			err   error
+		}
+		results := make(chan result, 2)
+		for _, token := range []string{first, second} {
+			proposed := req
+			proposed.UserAccessToken = token
+			go func() {
+				value, err := svc.ApproveCreate(ctx, proposed)
+				results <- result{value, err}
+			}()
+		}
+		var winner *DevelopFileCreateApprovalReceipt
+		for i := 0; i < 2; i++ {
+			got := <-results
+			if got.err == nil && got.value != nil && winner == nil {
+				winner = got.value
+			} else if !errors.Is(got.err, ErrExecutionAuthorizationConflict) || got.value != nil {
+				t.Fatal("approval uniqueness failed", got.err)
+			}
+		}
+		var persisted developFileCreateApproval
+		if err := db.Where("authorization_id=?", id).Take(&persisted).Error; err != nil || winner == nil ||
+			persisted.ID.String() != winner.ApprovalID || persisted.ScopeDigest != issued.ScopeDigest || !persisted.ExpiresAt.Equal(req.ExpiresAt) {
+			t.Fatal("original approval missing", err)
+		}
+		var count int64
+		if err := db.Model(&AuditLog{}).Where("event_name=? AND entity_id=?", "iam.develop_file_create_approval.created", persisted.ID.String()).Count(&count).Error; err != nil || count != 1 {
+			t.Fatal("approval audit missing", err, count)
+		}
+		a, b, err := svc.Check(ctx, CheckDevelopFileInput{ServiceAccessToken: serviceToken, AuthorizationID: id,
+			ExecutionID: input.ExecutionID, TenantID: tenant.ID, ExpectedAttempt: 1, ScopeDigest: issued.ScopeDigest, Audit: serviceAudit})
+		if !errors.Is(err, ErrDevelopFileDependencyUnavailable) || a != nil || b != nil || facts.AdmissionState != "pending" {
+			t.Fatal("approval alone activated the execution", err)
 		}
 	})
 	t.Run("wrong owner actor and rejected before issuance", func(t *testing.T) {

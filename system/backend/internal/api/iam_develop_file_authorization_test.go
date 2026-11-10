@@ -20,11 +20,18 @@ import (
 )
 
 type developFileHTTPFixture struct {
-	issued *client.IssuedDevelopFileAuthorization
-	calls  int
-	input  iam.CheckDevelopFileInput
-	issue  iam.IssueDevelopFileAuthorizationInput
-	err    error
+	issued   *client.IssuedDevelopFileAuthorization
+	calls    int
+	input    iam.CheckDevelopFileInput
+	issue    iam.IssueDevelopFileAuthorizationInput
+	approval iam.ApproveDevelopFileCreateInput
+	err      error
+}
+
+func (f *developFileHTTPFixture) ApproveCreate(_ context.Context, input iam.ApproveDevelopFileCreateInput) (*iam.DevelopFileCreateApprovalReceipt, error) {
+	f.calls++
+	f.approval = input
+	return &iam.DevelopFileCreateApprovalReceipt{ApprovalID: "ca5846c6-1fbb-40ae-bfda-7ed0e7be08f4", ApprovedAt: time.Now().Add(-time.Second), ExpiresAt: input.ExpiresAt}, f.err
 }
 
 func (f *developFileHTTPFixture) Issue(_ context.Context, input iam.IssueDevelopFileAuthorizationInput) (*client.IssuedDevelopFileAuthorization, error) {
@@ -141,6 +148,40 @@ func TestDevelopFileHTTPGuardsAndStrictInputs(t *testing.T) {
 			}
 			if strings.Contains(w.Body.String(), "addp_at_") {
 				t.Fatal("credential leaked")
+			}
+		})
+	}
+}
+
+func TestDevelopFileHTTPCreateApprovalRequiresHumanPermission(t *testing.T) {
+	const path = "/api/v1/system/execution-authorizations/9/develop-geopackage-create-approvals"
+	body := `{"scope_digest":"` + strings.Repeat("a", 64) + `","expires_at":"2030-01-01T00:00:00Z"}`
+	for _, tc := range []struct {
+		name, body         string
+		service, permitted bool
+		status, calls      int
+	}{
+		{"human", body, false, true, 201, 1},
+		{"missing permission", body, false, false, 403, 0},
+		{"machine", body, true, true, 403, 0},
+		{"invented target", strings.TrimSuffix(body, "}") + `,"target":"other.gpkg"}`, false, true, 400, 0},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			current := developFileHTTPAuth(tc.service)
+			if tc.permitted {
+				current.Authorization.RoleAssignments[0].Permissions = []string{"system.develop_file_create_approval.create"}
+			}
+			fixture := &developFileHTTPFixture{}
+			router := developFileHTTPRouter(t, current, fixture)
+			req := httptest.NewRequest("POST", path, strings.NewReader(tc.body))
+			req.Header.Set("Authorization", "Bearer addp_at_test")
+			w := httptest.NewRecorder()
+			router.ServeHTTP(w, req)
+			if w.Code != tc.status || fixture.calls != tc.calls || strings.Contains(w.Body.String(), "addp_at_") {
+				t.Fatal(w.Code, fixture.calls, w.Body.String())
+			}
+			if tc.calls == 1 && (fixture.approval.AuthorizationID != 9 || fixture.approval.ScopeDigest != strings.Repeat("a", 64) || fixture.approval.ExpiresAt.IsZero()) {
+				t.Fatal("approval binding lost")
 			}
 		})
 	}

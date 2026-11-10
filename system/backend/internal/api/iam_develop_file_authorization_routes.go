@@ -8,12 +8,14 @@ import (
 	"io"
 	"net/http"
 	"strconv"
+	"time"
 	"unicode/utf8"
 
 	commonapi "github.com/addp/common/api"
 	"github.com/addp/common/client"
 	"github.com/addp/common/jsonmap"
 	sharedauth "github.com/addp/common/middleware/auth"
+	systemauth "github.com/addp/system/internal/authorization"
 	"github.com/addp/system/internal/iam"
 	"github.com/addp/system/internal/middleware"
 	"github.com/gin-gonic/gin"
@@ -21,6 +23,7 @@ import (
 
 type iamDevelopFileAuthorizationService interface {
 	Issue(context.Context, iam.IssueDevelopFileAuthorizationInput) (*client.IssuedDevelopFileAuthorization, error)
+	ApproveCreate(context.Context, iam.ApproveDevelopFileCreateInput) (*iam.DevelopFileCreateApprovalReceipt, error)
 	Check(context.Context, iam.CheckDevelopFileInput) (*client.DevelopFileAdmissionObservation, *client.DevelopFileSourceAccessObservation, error)
 }
 type IAMDevelopFileAuthorizationHandler struct {
@@ -29,6 +32,11 @@ type IAMDevelopFileAuthorizationHandler struct {
 type IAMIssueDevelopFileRequest struct {
 	ExecutionID  string `json:"execution_id"`
 	IntentDigest string `json:"intent_digest"`
+}
+
+type IAMApproveDevelopFileCreateRequest struct {
+	ScopeDigest string    `json:"scope_digest"`
+	ExpiresAt   time.Time `json:"expires_at"`
 }
 
 func RegisterIAMDevelopFileAuthorizationRoutes(api *gin.RouterGroup, runtime *IAMRuntime, h *IAMDevelopFileAuthorizationHandler) error {
@@ -55,10 +63,48 @@ func RegisterIAMDevelopFileAuthorizationRoutes(api *gin.RouterGroup, runtime *IA
 	if err != nil {
 		return err
 	}
+	approve, err := middleware.NewIAMPermissionGuard(systemauth.PermissionSystemDevelopFileCreateApprovalCreate)
+	if err != nil {
+		return err
+	}
 	api.POST("/auth/execution-authorizations/develop-geopackage-workflows", runtime.Authentication, runtime.UserAccessCredential, tenant, issue, h.Issue)
+	api.POST("/execution-authorizations/:id/develop-geopackage-create-approvals", runtime.Authentication, runtime.UserAccessCredential, tenant, approve, h.ApproveCreate)
 	api.POST("/execution-authorizations/:id/develop-geopackage-admission-checks", runtime.Authentication, runtime.ServiceCredential, service, develop, consume, h.Admission)
 	api.POST("/execution-authorizations/:id/develop-geopackage-source-accesses", runtime.Authentication, runtime.ServiceCredential, service, develop, consume, h.Source)
 	return nil
+}
+
+// ApproveCreate godoc
+// @Summary 批准本次执行新建 GeoPackage | Approve one GeoPackage creation for this execution
+// @Description 同租户当前 User，须有专用权限及目标引擎管理范围，不得为原发起人。只登记原执行的单次批准，不返回连接或激活执行。 | Current User in the same tenant with the approval permission and target engine management scope. The requester cannot self-approve. This records one approval without returning a connection or activating execution.
+// @Tags 执行授权 | Execution Authorization
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param id path string true "原执行授权 ID | Original execution authorization ID"
+// @Param request body IAMApproveDevelopFileCreateRequest true "预期范围摘要和绝对到期时间 | Expected scope digest and absolute expiry"
+// @Success 201 {object} iam.DevelopFileCreateApprovalReceipt
+// @Failure 400,401,403,409,500,503 {object} IAMErrorResponse
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["system.develop_file_create_approval.create"]
+// @Router /execution-authorizations/{id}/develop-geopackage-create-approvals [post]
+func (h *IAMDevelopFileAuthorizationHandler) ApproveCreate(c *gin.Context) {
+	c.Header("Cache-Control", "no-store")
+	id, err := parseIAMDecimalID(c.Param("id"))
+	var request IAMApproveDevelopFileCreateRequest
+	if err != nil || bindDevelopFileRequest(c, &request) != nil {
+		respondExecutionAuthorizationError(c, commonapi.ErrBadRequest)
+		return
+	}
+	result, err := h.service.ApproveCreate(c.Request.Context(), iam.ApproveDevelopFileCreateInput{
+		UserAccessToken: sharedauth.CanonicalBearerToken(c.GetHeader("Authorization")), AuthorizationID: id,
+		ScopeDigest: request.ScopeDigest, ExpiresAt: request.ExpiresAt, Audit: iamAuditMetadataWithStatus(c, http.StatusCreated),
+	})
+	if err != nil {
+		respondExecutionAuthorizationError(c, err)
+		return
+	}
+	c.JSON(http.StatusCreated, result)
 }
 
 // Issue godoc

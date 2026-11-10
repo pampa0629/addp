@@ -306,6 +306,10 @@ other = "暂时无法核验初始授权，请稍后核清原结果；不要重�
 [permissions.system.engine_access_initial_grant.execute.description]
 other = "仅固定 Transfer、Manager 当前租户运行身份分别续办可信 PG 新产出、NFS 新上传的初始使用权；System 独立核验，不提供通用授权管理权"
 
+[permissions.system.develop_file_create_approval.create.name]
+other = "批准工作流新建 GeoPackage"
+[permissions.system.develop_file_create_approval.create.description]
+other = "结合目标引擎管理范围，批准其他发起人的指定执行一次新建精确 GeoPackage 文件"
 [permissions.system.engine_access_grant.create.name]
 other = "直接授予源数据读取权限"
 [permissions.system.engine_access_grant.create.description]

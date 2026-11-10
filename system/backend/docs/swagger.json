@@ -4768,6 +4768,92 @@
                 ]
             }
         },
+        "/execution-authorizations/{id}/develop-geopackage-create-approvals": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "同租户当前 User，须有专用权限及目标引擎管理范围，不得为原发起人。只登记原执行的单次批准，不返回连接或激活执行。 | Current User in the same tenant with the approval permission and target engine management scope. The requester cannot self-approve. This records one approval without returning a connection or activating execution.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "执行授权 | Execution Authorization"
+                ],
+                "summary": "批准本次执行新建 GeoPackage | Approve one GeoPackage creation for this execution",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "原执行授权 ID | Original execution authorization ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "预期范围摘要和绝对到期时间 | Expected scope digest and absolute expiry",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMApproveDevelopFileCreateRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_iam.DevelopFileCreateApprovalReceipt"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "system.develop_file_create_approval.create"
+                ]
+            }
+        },
         "/execution-authorizations/{id}/develop-geopackage-source-accesses": {
             "post": {
                 "security": [
@@ -19507,6 +19593,20 @@
                 "DepartmentStatusDisabled"
             ]
         },
+        "github_com_addp_system_internal_iam.DevelopFileCreateApprovalReceipt": {
+            "type": "object",
+            "properties": {
+                "approval_id": {
+                    "type": "string"
+                },
+                "approved_at": {
+                    "type": "string"
+                },
+                "expires_at": {
+                    "type": "string"
+                }
+            }
+        },
         "github_com_addp_system_internal_iam.EmergencySessionApproval": {
             "type": "object",
             "properties": {
@@ -22371,6 +22471,17 @@
                     "type": "string"
                 },
                 "secret": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_api.IAMApproveDevelopFileCreateRequest": {
+            "type": "object",
+            "properties": {
+                "expires_at": {
+                    "type": "string"
+                },
+                "scope_digest": {
                     "type": "string"
                 }
             }

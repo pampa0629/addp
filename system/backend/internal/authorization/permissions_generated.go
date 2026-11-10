@@ -99,6 +99,7 @@ const (
 	PermissionSystemCleanupExecute                      = "system.cleanup.execute"
 	PermissionSystemCleanupRead                         = "system.cleanup.read"
 	PermissionSystemCleanupAuthorizationExecute         = "system.cleanup_authorization.execute"
+	PermissionSystemDevelopFileCreateApprovalCreate     = "system.develop_file_create_approval.create"
 	PermissionSystemEngineCreate                        = "system.engine.create"
 	PermissionSystemEngineDelete                        = "system.engine.delete"
 	PermissionSystemEngineExecute                       = "system.engine.execute"
@@ -226,6 +227,7 @@ var permissionKeys = [...]string{
 	"system.cleanup.execute",
 	"system.cleanup.read",
 	"system.cleanup_authorization.execute",
+	"system.develop_file_create_approval.create",
 	"system.engine.create",
 	"system.engine.delete",
 	"system.engine.execute",
