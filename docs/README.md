@@ -70,7 +70,7 @@
 - [前端路由与可恢复状态规范](spec/addp前端路由与可恢复状态规范.md)
 - [数据库无关分析计算契约（目标设计）](spec/addp引擎插件接口规范.md#数据库无关分析计算契约)
 - [测试与验收规范](spec/addp测试与验收规范.md)：统一原则与标准入口；分层规范、Owner 门禁、Online 场景和证据索引见其阅读导航。
-- [Online 专用 Runner 首次验收待办](next/ADDP统一测试与Online验收体系方案.md)
+- [Online 专用 Runner 首次验收待办](next/ADDP统一测试与Online验收体系方案.md)跟踪专用 self-hosted Runner 的部署准备和[尚缺实机报告的场景](next/ADDP统一测试与Online验收体系方案.md#三待取得专用环境报告的范围)。已迁入 GitHub Hosted 的场景按各自的隔离 profile 运行，入口见[Online 场景索引](spec/addp测试与验收规范.md#online-场景索引)。
 - [GitHub 外部治理与 T4 Runner 待办](next/ADDP持续集成体系改进专题.md)
 - [模块启动、就绪与注册治理待办](next/ADDP模块与引擎注册治理专题.md)
 - [模块服务运行日志规范](spec/addp模块服务运行日志规范.md)
