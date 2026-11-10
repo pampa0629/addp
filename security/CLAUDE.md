@@ -932,3 +932,11 @@ artifact13628130958的44成员ZIP SHA256 `8d7aaed0fb5e60fa452d85b4b751b16fbdbbd8
 六项源许可的签发、撤销及最终不可见／不可读观察均通过，准备与清理记录的六项完全匹配，pending与errors均为空。wrapper清理通过，Infra零残留。artifact13646317569含90个ZIP成员，SHA256 `456f8929e64a0786dd7fa74b4f66cdd754530c342b8a499959d04aceab990f50`。本会话核验CRC、路径、全部解压字节、运行身份、阶段与清理记录，并目视检查失败图。原件 `/tmp/addp-approved-hosted-20261109/security/`，独立审计 `/tmp/p145-4e16-hosted-audit/independent-failure-audit.json`。前两次失败记录继续保留。
 
 Service预览经 `queryExecutionClient` 调用共享 `createAPIClient`，其请求拦截器装配Token，缺应用语言头。隔离Chromium以 `en-US` 启动，通过实际Axios和固定提交的两个函数发出三次请求，`addp-lang` 依次为 `en`、`zh-cn`、`en`，服务器三次均收到 `en-US`。此隔离复现使用合成令牌和端点，确认请求注入边界，Hosted原件证明实际失败。复现及捕获见 `/tmp/p145-4e16-hosted-audit/{probe-language.cjs,probe-language.json}`。按[现行国际化规范](../docs/spec/addp国际化开发规范.md#http-请求)，共享前端客户端应在请求时读取当前语言并发送 `zh-cn` 或 `en`。共享客户端归属及受影响消费者回归由项目协调，Security保留严格语言头、业务拒绝及恢复断言。后续Hosted完整复验以实际修复和相应门禁通过为前置。
+
+### v10 语言头修复后的 Hosted 构建中断（2026-11-10）
+
+共享 Axios 语言头修复已随 `438f093753f3941c58083e384e4b43bfe7a81567` 发布。Service 真实 iframe 受控回归验证中英文往返切换及请求头。按已授权范围发起的单次 [Run42767590544／Job129667620475](https://github.com/pampa0629/addp/actions/runs/42767590544/job/129667620475) 实际运行 `d02a26ef51138ce698617d1cd254b9b96aff2f2d`，attempt1。十服务预检均匹配该 SHA，前四阶段通过，第五阶段 `spatial_algorithms` 在第 5251 行报 `manager changed build inputs during restart acceptance`。未生成最终领域报告或浏览器报告，PNG 为 0/23。两次资格到期 403 与中文恢复均未执行。
+
+本次 Hosted 重启确认使用规定的 Swagger v1.16.6，Manager 生成文档后实际重编译。共享类型提交 `2199bb8ba953da8671969fe5f987f1a0bdf60c95` 给 `datatype.FieldInfo` 增加 `temporal`，但实际运行的提交未同步 Manager 等七模块的 Swagger 生成文件。候选审查遗漏了生成文件这一构建输入。隔离精确快照仅应用 Manager 三个文件的 `temporal` 定义，标准构建指纹由 `71433a1d0905…` 变为 `c6e02913418d…`，撤回后恢复。此前 Run42447289580 则由旧版生成器移除整数格式所致。两轮都在重启构建身份断言处失败，原因不同。失败轮未保留完整重启后 Ready 回执。本地独立全量生成未通过，Security 遇到类型解析错误，Manager 生成在完成上述隔离验证后终止。该结果不替代 Linux Hosted 复验。
+
+六项临时许可的签发、撤销、最终不可见和不可读均已独立核对，pending 与 errors 为空。wrapper 清理通过，Infra 零残留。artifact 13740964119 的 54 成员归档通过 CRC 及路径检查，SHA256 为 `409d15d58b39372729e556b246e752089e11acb67d8d2d7525fe3de94c298769`。独立审计和指纹记录在 `/tmp/p145-d02a-hosted-audit/`。下一步先由共享类型维护方同步受影响的生成文件并验证固定候选重新生成前后指纹一致，再由专门 CI 会话按授权安排同范围复验。此轮未修改构建断言或产品规则。
