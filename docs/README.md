@@ -75,8 +75,8 @@
 - 模块启动、就绪与注册的现行规则见[新模块开发指南](spec/addp新模块开发指南.md)。[模块与引擎注册治理后续验收](next/ADDP模块与引擎注册治理专题.md#剩余证据)只跟踪两项尚缺专用 Runner 实机报告的场景：[模块注册恢复](spec/testing/scenarios/部署与执行恢复.md#module-registry-recovery)和[消费方与引擎恢复](spec/testing/scenarios/部署与执行恢复.md#consumer-engine-recovery)。
 - [模块服务运行日志规范](spec/addp模块服务运行日志规范.md)维护实例身份、日志输出与保留、可信来源、正文查询与授权，以及链路告警和通知规则。
 - [模块服务运行日志验收与后续事项](next/ADDP模块服务运行日志设计.md)记录首版实现的[历史验收证据](next/ADDP模块服务运行日志设计.md#三已留存的验收证据)，并列出异常退出完整链路、自然保留周期、多节点恢复和生产容量等[待验收范围](next/ADDP模块服务运行日志设计.md#四剩余验收与范围准入)。
-- [平台运行观测规范](spec/addp平台运行观测规范.md)
-- [平台运行监控后续事项](next/ADDP平台运行监控与可观测性设计.md)
+- [平台运行观测规范](spec/addp平台运行观测规范.md)维护现行的[主机接入与采集发现](spec/addp平台运行观测规范.md#四主机接入与采集发现)、[指标查询与展示](spec/addp平台运行观测规范.md#六指标查询与展示口径)和[平台告警与通知](spec/addp平台运行观测规范.md#七平台告警与通知)规则。
+- [平台运行监控后续事项](next/ADDP平台运行监控与可观测性设计.md)记录[能力状态和剩余工作](next/ADDP平台运行监控与可观测性设计.md#一当前实现与剩余工作)，并汇总[验收缺口与历史证据入口](next/ADDP平台运行监控与可观测性设计.md#三验收状态与剩余缺口)。
 - [Manager 前端浏览器回归测试专题](next/Manager前端浏览器回归测试专题.md)
 - [ADDP 企业资源目录与 Catalog 模块专题](next/ADDP企业资源目录能力专题.md)
 - [Engine Catalog 概念与读取边界](concepts/addp引擎体系图.md#实时-engine-catalog元数据快照和数据预览的边界)
