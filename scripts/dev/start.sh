@@ -992,7 +992,7 @@ if addp_infra_ready core; then
   if ! addp_runtime_log_preflight; then
     infra_optional_result=1
     infra_optional_failures+=('日志配置预检')
-  elif ! addp_metrics_preflight; then
+  elif ! addp_metrics_preflight --check; then
     infra_optional_result=1
     infra_optional_failures+=('指标配置预检')
   elif ! addp_infra_ready; then

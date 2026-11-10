@@ -1540,6 +1540,32 @@ class MetricsDeploymentConfigTest(unittest.TestCase):
         self.assertIn("'^TestIntegrationMetricsFilesystemAlertLifecycle$'", probe)
         self.assertIn('postgres', re.search(r'^# ADDP_T2_OWNED_SERVICES=(.+)$', script, re.M).group(1).split(','))
 
+    def test_metrics_preflight_check_preserves_the_published_configuration(self):
+        destination = self.directory / 'prometheus.yml'
+        script = ('source scripts/utils/observability-env.sh\n'
+                  'PROJECT_ROOT="$PWD"\n'
+                  'addp_metrics_preflight --check\n')
+        with tempfile.TemporaryDirectory() as tls:
+            for name in ('ca.crt', 'server.crt', 'server.key', 'health.crt', 'health.key'):
+                Path(tls, name).touch()
+            env = dict(os.environ, **self.env)
+            env.update(ADDP_OBSERVABILITY_METRICS_ENABLED='true', ADDP_METRICS_TLS_DIR=tls)
+            subprocess.run(['bash', '-eu', '-c', script], cwd=ROOT, env=env, check=True)
+            self.assertFalse(destination.exists())
+
+            config.render(self.env)
+            previous = destination.read_bytes()
+            inode = destination.stat().st_ino
+            env['PROMETHEUS_MONITOR_URL'] = 'https://new-monitor.internal:8443'
+            subprocess.run(['bash', '-eu', '-c', script], cwd=ROOT, env=env, check=True)
+            self.assertEqual(destination.read_bytes(), previous)
+            self.assertEqual(destination.stat().st_ino, inode)
+
+            env['PROMETHEUS_MONITOR_URL'] = 'http://invalid.internal:8443'
+            result = subprocess.run(['bash', '-eu', '-c', script], cwd=ROOT, env=env, capture_output=True)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertEqual(destination.stat().st_ino, inode)
+
     def test_sole_config_uses_native_platform_oauth_and_independent_tls(self):
         config.render(self.env)
         data = (self.directory / 'prometheus.yml').read_text()

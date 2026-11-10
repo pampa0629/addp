@@ -157,7 +157,7 @@ source "$PROJECT_ROOT/scripts/utils/observability-env.sh"
 case "${ADDP_OBSERVABILITY_METRICS_ENABLED-false}" in
   false) echo '- Metrics center: Disabled' ;;
   true)
-    if ! metrics_preflight=$(addp_metrics_preflight 2>&1); then
+    if ! metrics_preflight=$(addp_metrics_preflight --check 2>&1); then
       echo '- Metrics center: Unconfigured (deployment preflight)'
       printf '  %s\n' "$metrics_preflight"
     elif ! ADDP_INFRA_PORT_SCOPE=metrics addp_infra_read_actual_ports || [[ -z "${PROMETHEUS_PORT:-}" ]]; then

@@ -160,7 +160,7 @@ addp_metrics_preflight() {
       echo "Missing or unreadable metrics certificate file: $name" >&2; return 1;
     }
   done
-  python3 "$PROJECT_ROOT/scripts/infra/generate-metrics-config.py"
+  python3 "$PROJECT_ROOT/scripts/infra/generate-metrics-config.py" "$@"
 }
 
 addp_metrics_platform_preflight() {

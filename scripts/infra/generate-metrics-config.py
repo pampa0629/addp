@@ -122,7 +122,7 @@ def atomic_config(path, content):
             pending.unlink(missing_ok=True)
 
 
-def render(env, root=ROOT):
+def render(env, root=ROOT, *, check_only=False):
     target_limit = check_target_budget(env, root)
     mtls = env.get('ADDP_METRICS_CONTROL_MTLS_ENABLED', 'false')
     if mtls not in ('true', 'false'):
@@ -170,17 +170,18 @@ def render(env, root=ROOT):
             tls = ''.join(' ' * indent + key + ': /etc/prometheus/deployment/control-client.' + ext + '\n'
                           for key, ext in (('cert_file', 'crt'), ('key_file', 'key')))
         config = config.replace(marker, tls)
-    atomic_config(directory / 'prometheus.yml', config)
+    if not check_only:
+        atomic_config(directory / 'prometheus.yml', config)
 
 
 if __name__ == '__main__':
     try:
         if sys.argv[1:] == ['--check-budget']:
             check_target_budget(os.environ)
-        elif len(sys.argv) == 1:
-            render(os.environ)
+        elif sys.argv[1:] in ([], ['--check']):
+            render(os.environ, check_only=len(sys.argv) == 2)
         else:
-            sys.exit('Usage: generate-metrics-config.py [--check-budget]')
+            sys.exit('Usage: generate-metrics-config.py [--check | --check-budget]')
     except TargetBudgetExceeded as err:
         sys.exit(str(err))
     except (OSError, ValueError, subprocess.SubprocessError):
