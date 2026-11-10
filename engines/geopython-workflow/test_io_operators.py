@@ -460,17 +460,19 @@ def test_load_gpkg_resolves_crs_from_selected_layer_registration(tmp_path, first
 
 @pytest.mark.parametrize("fmt",["gpkg","shp","geojson","kml","gml","fgb"])
 def test_load_spatial_geometry_identity_keeps_real_geometry_and_every_business_field(tmp_path,fmt):
-    import pyogrio
     path=tmp_path/("source."+fmt);_native_geometry_identity_source(path,fmt)
     ds=ogr.Open(str(path));layer=ds.GetLayer(0);features=list(layer);fields=list(layer.schema)
     assert "geometry" in [f.name for f in fields]
-    meta,table=pyogrio.read_arrow(path)
-    geometry_fields=[f.name for f in table.schema if (f.metadata or {}).get(b"ARROW:extension:name") in (b"geoarrow.wkb",b"ogc.wkb")]
+    # Pyogrio may bundle a different GDAL version, with a different native schema.
+    layer.ResetReading()
+    with layer.GetArrowStreamAsPyArrow(["INCLUDE_FID=NO"]) as stream:
+        schema = pa.schema(list(stream.schema))
+    geometry_fields=[f.name for f in schema if (f.metadata or {}).get(b"ARROW:extension:name") in (b"geoarrow.wkb",b"ogc.wkb")]
     assert len(geometry_fields)==1;physical=layer.GetGeometryColumn();expected_name=physical or geometry_fields[0]
     before={p.name:hashlib.sha256(p.read_bytes()).hexdigest() for p in tmp_path.iterdir()}
     loaded=_load_local(path)
     assert loaded.geometry.name==expected_name and loaded.geometry.name!="geometry"
-    assert loaded.columns.tolist()==table.schema.names
+    assert loaded.columns.tolist()==schema.names
     for field in fields:
         values=[f.GetField(field.name) if f.IsFieldSetAndNotNull(field.name) else None for f in features]
         for actual,wanted in zip(loaded[field.name],values):assert pd.isna(actual) if wanted is None else actual==wanted
