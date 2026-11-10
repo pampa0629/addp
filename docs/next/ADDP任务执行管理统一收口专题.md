@@ -363,8 +363,20 @@ Common 父子准入与 System 协调的用例定位见 [Owner 矩阵](../spec/te
 
 ### 8.44 Manager 迟到写入验收准备
 
-下一专项为已登记的 `manager-late-writer`，沿用原三业务 User、源授权办理员和 11 项目标；仅控制本轮 Model3D 暂停及准确 Manager 容器的终止／补回，保持原镜像与容器身份。暂扣准确 pending GLB 的真实上传，观察旧 attempt=1 在真实 lease 失效后失败，再发起同一 Engine 的只读删除评估；不得执行 DELETE。随后释放同一上传，核对原生对象出现、旧终态／pending 审计不变、公开结果不发布、新生成返回409、原源字节不变。Graph 高级恢复继续暂缓。
+`manager-late-writer` 已登记，runner 已验证。真实 Hosted 尚未运行，须单独确认。Graph 高级恢复继续暂缓。
 
-准备核对发现并修正两处 runner 判断：评估响应须复用既有安全投影完整绑定请求、Engine、原用户、scan、Owner 集合及父子 execution；按现行无回执协议，Manager 计划冻结失败保留真实 failed 子项，父在原30秒协调截止后为 timeout，不能强求父failed。核验要求 Manager 子项 attempt=1、已开始、唯一 manager_cleanup_plan 失败阶段、无伪造回执且非授权失败；其它 Owner 或错误请求的失败不能代替。失败仅复用既有公开GET的安全诊断，不补读隐藏Owner、不增加请求或等待。
+#### Runner 验证结果
 
-部署120分钟、业务900秒、上传barrier180秒、旧lease收敛90秒及原就绪／评估等待上限不变；barrier过期失败关闭，不续期、不重发。标准门禁为 `make test-execution-online-ci-runner`，现有 Linux Execution runner 的 scripts 路径选择已覆盖，无新增环境、入口或权限；本地标准门禁已实际通过408项，修正前已复现父状态误判，12类新增反例均已拒绝。同提交 `9cd0b267d` 的 [Linux Execution runner](https://github.com/pampa0629/addp/actions/runs/42397885129/job/128479082973) 实际选中 scripts 路径并通过408项及登记校验；[平台门禁](https://github.com/pampa0629/addp/actions/runs/42397885129/job/128479082998) 在范围外 SQL pool Node 前置检查失败，未计整体通过。真实 Hosted 尚未运行，需单独确认。完整契约见 [T4 原生 Cleanup 规范](../spec/testing/T4-Online验收规范.md#原生-cleanup-的独立有限验收)。
+首轮复现父状态误判。修正后，runner 核对同一次公开 GET 中的请求、Engine、原用户、scan、Owner 集合及父子 execution。Manager 计划冻结失败时，子项应为 attempt=1、已开始且 `failed`，唯一失败阶段为 `manager_cleanup_plan`，没有清理回执。父在原 30 秒协调截止后为 `timeout`。授权失败、其他 Owner 或错误请求的失败不能代替。失败诊断复用同一次 GET 的安全投影。
+
+本地 `make test-execution-online-ci-runner` 与固定提交 `9cd0b267d` 的 [Linux Execution runner](https://github.com/pampa0629/addp/actions/runs/42397885129/job/128479082973) 均实际通过 408 项，包含 12 类新增反例。Linux Job 命中既有 scripts 路径并通过登记校验。同提交 [平台门禁](https://github.com/pampa0629/addp/actions/runs/42397885129/job/128479082998) 在范围外 SQL pool Node 前置检查失败，未计整体通过。
+
+#### 真实 Hosted 待核验
+
+暂扣本轮准确 pending GLB 的真实上传，观察旧 attempt=1 在真实租约失效后失败，再发起同一 Engine 的只读删除评估。释放同一上传后，独立核对原生对象实际出现、旧终态和 pending 审计保持、公开结果未发布、新生成返回 409 以及源字节不变。退出时核对控制恢复和零残留。
+
+#### 运行范围与预算
+
+沿用原三名业务 User、源授权办理员和 11 项目标。仅控制本轮 Model3D 暂停及准确 Manager 容器的终止与补回，保留原镜像和容器身份。Engine 只做只读评估，禁止 DELETE。诊断不补读隐藏 Owner，沿用原请求次数、等待上限、入口、环境和权限。
+
+部署限 120 分钟、业务限 900 秒、上传 barrier 限 180 秒、旧租约收敛限 90 秒，其他就绪和评估上限沿用原约定。barrier 过期即失败退出，不续期、不重发。退出须恢复本轮暂停的实例、释放本轮 barrier 并清理本轮资源。完整验收规则见 [T4 原生 Cleanup 规范](../spec/testing/T4-Online验收规范.md#原生-cleanup-的独立有限验收)。
