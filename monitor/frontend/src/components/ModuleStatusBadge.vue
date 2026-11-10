@@ -95,14 +95,19 @@ const capabilitiesMessage = computed(() => {
   background: var(--addp-bg-primary);
   border-radius: 8px;
   border: 1px solid var(--addp-border-color);
-  margin-bottom: 12px;
+  overflow-wrap: anywhere;
 }
 
 .module-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  gap: 8px;
   margin-bottom: 8px;
+}
+
+.module-header .el-tag {
+  flex-shrink: 0;
 }
 
 .module-name {

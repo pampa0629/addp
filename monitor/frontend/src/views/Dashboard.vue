@@ -37,47 +37,43 @@
       </el-col>
     </el-row>
 
-    <el-row :gutter="20">
-      <!-- 模块健康状态 -->
-      <el-col v-if="canReadHealth" :span="8">
-        <el-card shadow="hover">
-          <template #header>
-            <div class="card-header">
-              <span>{{ t('monitor.dashboard.module_health') }}</span>
-              <el-button text @click="refreshModulesHealth">
-                <el-icon><Refresh /></el-icon>
-                {{ t('monitor.dashboard.refresh') }}
-              </el-button>
-            </div>
-          </template>
-          <div v-loading="loadingModules">
-            <module-status-badge
-              v-for="module in modules"
-              :key="module.module"
-              :module="module"
-            />
-            <el-empty v-if="modules.length === 0" :description="t('monitor.dashboard.no_modules')" />
-          </div>
-        </el-card>
-      </el-col>
+    <!-- 执行趋势图表 -->
+    <el-card shadow="hover" class="trend-card">
+      <template #header>
+        <div class="card-header">
+          <span>{{ t('monitor.dashboard.trend_title') }}</span>
+          <el-select v-model="trendDays" @change="loadTrendData" style="width: 100px;">
+            <el-option :label="t('monitor.dashboard.trend_days.7')" :value="7" />
+            <el-option :label="t('monitor.dashboard.trend_days.14')" :value="14" />
+            <el-option :label="t('monitor.dashboard.trend_days.30')" :value="30" />
+          </el-select>
+        </div>
+      </template>
+      <div ref="trendChart" class="trend-chart" v-loading="loadingTrend"></div>
+    </el-card>
 
-      <!-- 执行趋势图表 -->
-      <el-col :span="canReadHealth ? 16 : 24">
-        <el-card shadow="hover">
-          <template #header>
-            <div class="card-header">
-              <span>{{ t('monitor.dashboard.trend_title') }}</span>
-              <el-select v-model="trendDays" @change="loadTrendData" style="width: 100px;">
-                <el-option :label="t('monitor.dashboard.trend_days.7')" :value="7" />
-                <el-option :label="t('monitor.dashboard.trend_days.14')" :value="14" />
-                <el-option :label="t('monitor.dashboard.trend_days.30')" :value="30" />
-              </el-select>
-            </div>
-          </template>
-          <div ref="trendChart" style="width: 100%; height: 300px;" v-loading="loadingTrend"></div>
-        </el-card>
-      </el-col>
-    </el-row>
+    <!-- 模块健康状态 -->
+    <el-card v-if="canReadHealth" shadow="hover" class="provider-health-card">
+      <template #header>
+        <div class="card-header">
+          <span>{{ t('monitor.dashboard.module_health') }}</span>
+          <el-button text @click="refreshModulesHealth">
+            <el-icon><Refresh /></el-icon>
+            {{ t('monitor.dashboard.refresh') }}
+          </el-button>
+        </div>
+      </template>
+      <div v-loading="loadingModules">
+        <div v-if="modules.length" class="provider-grid">
+          <module-status-badge
+            v-for="module in modules"
+            :key="module.module"
+            :module="module"
+          />
+        </div>
+        <el-empty v-else :description="t('monitor.dashboard.no_modules')" />
+      </div>
+    </el-card>
 
     <el-card v-if="canReadHealth" shadow="hover" class="runtime-health-card">
       <template #header>
@@ -242,6 +238,7 @@ const loadingRuntimeMetrics = ref(false)
 // 图表实例
 const trendChart = ref(null)
 let chartInstance = null
+let trendResizeObserver = null
 let refreshTimer = null
 let runtimeMetricsRefreshTimer = null
 
@@ -528,6 +525,8 @@ function gotoExecutionList() {
 
 // 初始化
 onMounted(async () => {
+  trendResizeObserver = new ResizeObserver(() => chartInstance?.resize())
+  trendResizeObserver.observe(trendChart.value)
   await Promise.all([
     loadStatistics(),
     canReadHealth.value ? loadModulesHealth() : Promise.resolve(),
@@ -566,6 +565,7 @@ watch(echartsTheme, () => {
 
 // 清理图表实例
 onBeforeUnmount(() => {
+  trendResizeObserver?.disconnect()
   if (refreshTimer) {
     window.clearInterval(refreshTimer)
     refreshTimer = null
@@ -599,6 +599,18 @@ onBeforeUnmount(() => {
   font-size: 16px;
 }
 
+.trend-chart {
+  width: 100%;
+  height: 300px;
+}
+
+.provider-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 190px), 1fr));
+  gap: 12px;
+}
+
+.provider-health-card,
 .runtime-health-card {
   margin-top: 20px;
 }
