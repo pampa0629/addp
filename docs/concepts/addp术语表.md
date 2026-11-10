@@ -727,6 +727,7 @@ Agent Harness 是 Agent 进程内的执行内核，负责模型与工具调度�
 | engine deployment | 引擎部署 | 运维方实际部署和维护的一套引擎服务，可承载多个租户的 Engine Instance 登记，也可跨多个主机。 | 部署运维归属与租户业务权限分别裁决；不把 engine_id、连接地址或容器运行 ID 当成部署永久身份，不重复累计共享资源。承载关联由 System 拥有；首批开放 Infra／Business PostgreSQL 单容器、单主机的管理员批量确认接入，专业观测与租户引擎关联尚未开放。 |
 | engine deployment inventory | 引擎部署来源清单 | 平台管理员确认接入时，由 Infra／Business 部署发现结果生成并保存的无凭据来源快照。 | 首期仅单容器 PostgreSQL；包含 Docker Engine、Compose 服务及确认时的容器证据，不含凭据或租户登记。持续发现的当前来源与确认快照分别展示；快照不是授权、稳定部署身份或已建立的主机关联。 |
 | deployment discovery snapshot | 部署发现快照 | 部署侧只读核验当前工作区 Infra 或 Business 实际 Compose 服务后自动发布的有界来源事实。 | 两个作用域独立原子替换；包含运行身份、状态与端口，不含凭据、租户、授权或自动建立的主机关联。失败与成功空列表分别表达；发现、管理员纳管声明、服务可用性与专业采集结果分别裁决。 |
+| CDC infrastructure component | CDC 基础设施组件 | Infra 为数据库变更捕获部署的消息代理 Redpanda 或捕获运行时 Kafka Connect。 | 按已核验的 Infra 部署事实自动纳入观测，组件运行身份、采集就绪和用户读取权限分别裁决。PostgreSQL 源端仍沿引擎部署身份观测。 |
 | deployment association | 部署关联 | 受信部署环境明确提供的节点、容器、运行实例或引擎之间的承载关系。 | 保存来源与有效时间；模块实例首次声明固定，当前 node_id 必须经节点允许集合裁定，declared_node_id 仅为历史声明。无证据时不回填历史，不参与 Ready、路由或执行所有权。 |
 | PostgreSQL observation snapshot | PostgreSQL 观测快照 | 独立数据库采集身份通过固定无参数函数读取的平台汇总统计。 | 不含业务数据、SQL 正文或租户连接；连接、等待、累计统计与容量分别表达，不将宿主总量或数据库整体消耗归算租户。函数 owner 与 Login 分离；数据库侧固定协议见平台运行观测规范 4.6；来源与产品读取尚未开放。 |
 | Redis observation snapshot | Redis 观测快照 | 部署侧独立采集身份从固定 INFO 分区提取的实例数值统计及私有进程运行身份。 | INFO 原生权限包含实例运维元数据，不授予业务键／频道访问；固定采集输出不含原文、路径或客户端地址。run_id 只用于进程重启隔离，不替代 System 部署、容器或主机身份，不归算租户用量。首批仅单机 Redis 7 的采集内核，部署与产品读取仍待接通；详见平台运行观测规范的 Redis 首期边界。 |

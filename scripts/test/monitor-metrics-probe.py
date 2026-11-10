@@ -120,13 +120,33 @@ def check_native_cdc():
         value = kafka('group', 'describe', group, '-t')
         return any(row.split() == [topic, str(expected)] for row in value.splitlines())
 
+    def broker_metrics():
+        return run('cdc-broker', 'curl', '-fsS', '--max-time', '5', 'http://127.0.0.1:9644/public_metrics')
+
+    def metric_lag_is(expected):
+        metrics = broker_metrics()
+        offsets = {}
+        for line in metrics.splitlines():
+            sample = re.fullmatch(r'(redpanda_kafka_(?:max_offset|consumer_group_committed_offset))\{([^}]+)\} ([0-9.eE+\-]+)', line)
+            if not sample or f'redpanda_topic="{topic}"' not in sample[2] or 'redpanda_partition="0"' not in sample[2]:
+                continue
+            if sample[1].endswith('committed_offset') and f'redpanda_group="{group}"' not in sample[2]:
+                continue
+            offsets[sample[1]] = float(sample[3])
+        end = offsets.get('redpanda_kafka_max_offset')
+        committed = offsets.get('redpanda_kafka_consumer_group_committed_offset')
+        return end is not None and committed is not None and end - committed == expected
+
     assert consume() == '0', 'first CDC record offset differs'
     wait(lambda: lag_is(0), 'first consumer offset commit')
+    wait(lambda: metric_lag_is(0), 'native public metrics show no pending record after first commit', seconds=25)
     pg('INSERT INTO cdc_fixture VALUES (2);')
     wait(lambda: lag_is(1), 'second WAL event creates one pending broker record')
+    wait(lambda: metric_lag_is(1), 'native public metrics show one pending record', seconds=25)
     assert consume() == '1', 'second CDC record offset differs'
     wait(lambda: lag_is(0), 'consumption clears broker lag')
-    metrics = run('cdc-broker', 'curl', '-fsS', '--max-time', '5', 'http://127.0.0.1:9644/public_metrics')
+    wait(lambda: metric_lag_is(0), 'native public metrics clear the lag after consumption', seconds=25)
+    metrics = broker_metrics()
     assert len(metrics.encode()) < 1024**2
     for name in ('redpanda_storage_disk_total_bytes', 'redpanda_storage_disk_free_bytes', 'redpanda_cluster_unavailable_partitions'):
         assert re.search(rf'^{name}(?:\{{[^\n]*\}})? [0-9.eE+\-]+$', metrics, re.M), name

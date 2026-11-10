@@ -54,9 +54,11 @@ Trace 中 request_id、trace_id、execution 身份分别表达请求、调用链
 
 用户确认在现有运行监控中按 CDC 链路统一展示。页面并列展示 PostgreSQL 源端、Kafka Connect / Debezium 和 Redpanda 的状态及趋势。PostgreSQL 继续沿当前引擎部署与观测授权读取逻辑槽总数、不活跃数和保留 WAL 距离。Kafka Connect 按实际组件部署独立采集 Worker、Connector 和 Task 的状态、处理失败、offset 提交及 Debezium 源端延迟。Redpanda 按实际 broker 部署独立采集磁盘、不可用分区、错误及版本支持的积压信号。空 Connector 清单、没有消费组样本和采集故障分别呈现。只有采到各环节的事实时才展示对应趋势，不根据三个全局汇总推断单个任务的端到端延迟。
 
+用户确认 Redpanda 与 Kafka Connect 按 Infra 部署事实自动纳入，复用现有 System 私有观测投影与 Monitor 统一发现。部署身份、来源就绪和平台读取权限分别核验，详见[CDC 基础设施组件的自动发现](../spec/addp平台运行观测规范.md#cdc-基础设施组件的自动发现)。
+
 本机只读核对确认当前 Redpanda 的私有 `/public_metrics` 单次返回 1,224 个样本，磁盘总量、空闲空间及不可用分区各有一条时序。此次没有观察到消费组 offset 或 lag 样本，当前 Kafka Connect 的 Connector 清单为空。下一批先在独占环境验证两个固定来源，经现有私有 mTLS 和统一发现进入同一个 Prometheus。源端出站路径固定，指标及标签有界，不采集 Connector 配置、连接串、事件正文或异常原文。保留现有 34 个来源，若各加一个目标则至少验证 36 个，覆盖成功、缺样、故障、超额与恢复后再应用。指标能取到后再接入统一 CDC 页面及按持续时间评估的告警。[Redpanda 24.3 指标](https://docs.redpanda.com/streaming/24.3/reference/public-metrics-reference/) · [Kafka Connect 指标](https://kafka.apache.org/38/operations/monitoring/#connect_monitoring)
 
-原生信号验证使用 `make test-monitor-metrics MONITOR_METRICS_TEST_ARGS=--case=cdc-native`，独占 PostgreSQL 15 `addp_test`、Redpanda 24.3.18、Debezium Connect 3.6.0.Final 和 Compose 私网。探针仅在 Connect 容器内读取限定 JMX 属性与 Task 状态，并用两次真实变更通过 `rpk group describe` 核对 broker 消费积压的产生与消除。磁盘和不可用分区通过 `/public_metrics` 验证。另用隔离 Connector 的故障验证 Task 失败事实。探针不输出业务事件、状态正文或凭据，退出必须核验容器、网络、卷及私有材料清零。消费积压的连续采样、mTLS、Prometheus 和 36 目标预算由后续接入门禁验证。[Debezium PostgreSQL 指标](https://debezium.io/documentation/reference/connectors/postgresql.html#postgresql-monitoring)
+原生信号验证使用 `make test-monitor-metrics MONITOR_METRICS_TEST_ARGS=--case=cdc-native`，独占 PostgreSQL 15 `addp_test`、Redpanda 24.3.18、Debezium Connect 3.6.0.Final 和 Compose 私网。探针仅在 Connect 容器内读取限定 JMX 属性与 Task 状态。两次真实变更使 Redpanda 消费积压经历 `0 → 1 → 0`，`/public_metrics` 的分区末端和消费组已提交 offset 差值与 `rpk group describe` 一致。磁盘和不可用分区同样从 `/public_metrics` 验证。另用隔离 Connector 的故障验证 Task 失败事实。探针不输出业务事件、状态正文或凭据，退出必须核验容器、网络、卷及私有材料清零。mTLS、Prometheus 和 36 目标预算由后续接入门禁验证。[Debezium PostgreSQL 指标](https://debezium.io/documentation/reference/connectors/postgresql.html#postgresql-monitoring) · [Redpanda 消费积压口径](https://docs.redpanda.com/streaming/24.3/manage/monitoring/#consumer-group-lag)
 
 ## 三、验收状态与剩余缺口
 
