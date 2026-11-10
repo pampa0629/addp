@@ -314,6 +314,11 @@ def bind_source(database, scope, *, network_key=None):
     database.image = database.docker.run(['inspect', '--format', '{{.Image}}', database.identity]).strip()
     if re.fullmatch('sha256:[0-9a-f]{64}', database.image) is None:
         raise Error('MinIO source bootstrap image rejected')
+    image = database.docker.run(['image', 'inspect', '--format', '{{.Id}}', database.image], check=False)
+    if image.returncode or image.stdout.strip() != database.image:
+        error = Error('The running MinIO container image is unavailable for source initialization')
+        error.observation_stage = 'source-bootstrap-image'
+        raise error
     database.same()
 
 

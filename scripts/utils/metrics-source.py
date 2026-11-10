@@ -30,7 +30,7 @@ TLS_VERIFY_CODES = {2:'chain', 7:'chain', 18:'chain', 19:'chain', 20:'chain', 21
     89:'chain', 90:'chain', 91:'chain', 92:'chain'}
 OBSERVATION_STAGES = frozenset({'transport-check', 'private-state', 'identity-recheck',
     'connection-check', 'deployment-check', 'account-plan', 'account-update',
-    'source-check', 'source-stop', 'source-build', 'source-start'})
+    'source-check', 'source-stop', 'source-build', 'source-start', 'source-bootstrap-image'})
 
 
 def observed(stage):

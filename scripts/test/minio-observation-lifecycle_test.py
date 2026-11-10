@@ -7,6 +7,7 @@ import importlib.util
 import json
 import os
 from pathlib import Path
+from subprocess import CompletedProcess
 import tempfile
 import unittest
 from unittest.mock import Mock, patch
@@ -261,7 +262,9 @@ class MinIOObservationTest(unittest.TestCase):
         db.facts = {'labels': {'com.docker.compose.project': 'owned'}, 'networks': {
             'owned_main': {'NetworkID': 'main', 'IPAddress': address, 'GlobalIPv6Address': ''},
             'owned_trace': {'NetworkID': 'trace', 'IPAddress': '10.2.3.4', 'GlobalIPv6Address': ''}}}
-        def command(args):
+        def command(args, **kwargs):
+            if args[:2] == ['image', 'inspect']:
+                return CompletedProcess(args, 0, 'sha256:'+'b'*64, '')
             if args[0] == 'network':
                 main = args[-1] == 'main'
                 return json.dumps([{'Name': 'owned_main' if main else 'owned_trace', 'Driver': driver,
@@ -276,7 +279,21 @@ class MinIOObservationTest(unittest.TestCase):
         M.bind_source(db, 'infra')
         self.assertEqual((db.network, db.address, db.image), ('owned_main', '10.1.2.3:9000', 'sha256:'+'b'*64))
         db.same.assert_called_once()
-        self.assertTrue(all(call.args[0][0] in {'network', 'inspect'} for call in db.docker.run.call_args_list))
+        db.docker.run.assert_called_with(['image', 'inspect', '--format', '{{.Id}}', db.image], check=False)
+
+    def test_missing_minio_image_is_reported_before_initializing_the_private_volume(self):
+        db = self.network_database()
+        read = db.docker.run.side_effect
+        def image_missing(args, **kwargs):
+            if args[:2] == ['image', 'inspect']:
+                return CompletedProcess(args, 1, '', 'private Docker diagnostic')
+            return read(args, **kwargs)
+        db.docker.run.side_effect = image_missing
+        with self.assertRaises(M.Error) as caught:
+            M.bind_source(db, 'infra')
+        self.assertEqual(caught.exception.observation_stage, 'source-bootstrap-image')
+        self.assertNotIn('private Docker diagnostic', str(caught.exception))
+        db.same.assert_not_called()
 
     def test_source_network_drift_ambiguity_or_public_address_is_rejected(self):
         for values in ({'project': 'foreign'}, {'driver': 'host'}, {'address': '8.8.8.8'}, {'duplicate': True}):

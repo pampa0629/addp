@@ -47,6 +47,7 @@ FAILURE_STAGES = {
     'source-check': '核验既有采集来源阶段失败；请核对安装记录、账号、证书及来源归属',
     'source-stop': '移除采集来源阶段失败；请核对来源容器及专属卷的归属和实际状态',
     'source-build': '构建采集来源镜像阶段失败；请核对构建输入、Docker 状态及构建依赖的可达性',
+    'source-bootstrap-image': '核对 MinIO 容器原镜像阶段失败。采集私有卷初始化需要该镜像，请核对对应作用域的 MinIO 容器与本地镜像后重新应用来源',
 }
 TLS_FAILURES = {
     'chain': '证书链或必要扩展不符合严格要求；请核对签发 CA 和证书扩展',

@@ -165,6 +165,7 @@ class MetricsSourcesTest(unittest.TestCase):
             'deployment-check':'核对引擎部署', 'account-plan':'准备采集账号配置',
             'account-update':'核对及更新采集账号', 'source-check':'核验既有采集来源',
             'source-stop':'移除采集来源', 'source-build':'构建采集来源镜像',
+            'source-bootstrap-image':'核对 MinIO 容器原镜像',
         }
         for kind in ('postgresql','redis','minio'):
             for stage,label in cases.items():
