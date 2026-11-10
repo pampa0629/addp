@@ -160,8 +160,8 @@ Manager 源准备保持其正式授权链；本批 Transfer CDC 仅验证既有 
 
 | 顺序 | 事项／性质 | 具体交付与完成条件 |
 | --- | --- | --- |
-| P1a | Common／System 父子准入 PG | C2b/c/e/h 的竞争、拒绝与回滚见首轮记录。C2d/f/g 的公共锁等待、非法绑定及子执行残留事实见后续补测。Graph 专属锁交错归 P1b，各 Owner 的外部效果核清沿对应专项。 |
-| P1b | Graph清理与输入冻结，测试及按证据修复 | G2 摘要回滚、G3 成功先提交与 G8 输入／登记目标漂移见下方 PG 记录。剩余 G9 在途审核，以及 C3/C4/C2j 真实 PG 交错。C4当前代码核execute首尾候选一致，尚未定位原scan后候选漂移的完整反例；先验证上游生命周期围栏及原scan确认是否已足够，再决定修复，不将风险观察写成已复现漏洞 |
+| P1a | Common／System 父子准入 PG | C2b/c/e/h 的竞争、拒绝与回滚，以及 C2d/f/g 的公共锁等待、非法绑定及子执行残留事实，见 [Common／System PG 两批验证](#本轮-pg-增补验证)。Graph 专属锁交错归 P1b，各 Owner 的外部效果核清沿对应专项。 |
+| P1b | Graph清理与输入冻结，测试及按证据修复 | [G2 摘要回滚与 G3 成功先提交](#graph-基础-pg-增补验证)、[G8 输入与登记目标漂移](#graph-g8-输入冻结验证)已有 PG 记录。剩余 G9 在途审核，以及 C3/C4/C2j 真实 PG 交错。C4当前代码核execute首尾候选一致，尚未定位原scan后候选漂移的完整反例；先验证上游生命周期围栏及原scan确认是否已足够，再决定修复，不将风险观察写成已复现漏洞 |
 | P2 | System／Monitor消费者状态矩阵，T3工程 | C5g/k/l补撤去父读取权、404／503、User／Tenant／execution切换、closed pending替换及矛盾／迟到响应；C5c/h补隐藏计数与完整页面语义。复用共享组件／请求失效能力，补C5e/j相应PG交错，不复制组件 |
 | 并行待授权 | Manager迟到writer真实验收 | runner与CI已就绪，按§8.44单独确认一次Hosted；同一原请求、原身份及原预算，核11项、控制恢复与零残留；不能先记完成 |
 | P3 | Graph／Cleanup完整故障与Meta扫描闭环，runner／集成验收 | 已有profile先按场景核对并补缺：Cleanup规范§13的平台上下文、审计、Monitor父子树；Graph原生写图回包丢失及两引擎故障。受控runner与真实原生效果分开；若需新的Provider入口或身份／权限边界先讨论，不能借此重启高级恢复。新增Hosted均单独确认 |
@@ -173,33 +173,30 @@ Manager 源准备保持其正式授权链；本批 Transfer CDC 仅验证既有 
 
 ### 本轮 PG 增补验证
 
-2026-11-08仅新增测试及门禁断言，不改产品状态机、权限、预算或环境。Common `cleanup_lock_order` 增加七个子项：同Tenant两父／同Owner四领取者、子领取先提交／父随后关闭、并发与重复拒绝、prepare失败、claim外层回滚、拒绝外层回滚、PG AFTER UPDATE触发原生写失败；System增加ParentRecoveryAdmission和ClosureRollback，并将AdmissionRace改用准确PG backend阻塞屏障。触发器仅匹配本轮随机execution，退出删除本轮触发器、函数、表与记录。
+Common 父子准入与 System 协调的用例定位见 [Owner 矩阵](../spec/testing/Owner补充门禁.md#graphcleanup-执行管理最小验证矩阵)。两个批次均只补测试与门禁，沿 `make test-common-postgres COMMON_POSTGRES_TEST_ARGS="--test execution-lifecycle"`、`make test-system-cleanup` 和 `make test-t2-ci-registration` 验证。本地两个 PG 入口串行使用 Infra 实际映射的 `addp_test`。
 
-标准验证沿既有入口：`make test-common-postgres COMMON_POSTGRES_TEST_ARGS="--test execution-lifecycle"`、`make test-system-cleanup`、`make test-t2-ci-registration`；没有新Job或服务依赖，两个新增System主测试已加入必需PASS及其缺项／跳过拒绝反例。本地只使用Infra实际映射的addp_test，两个PG入口串行。
+| 固定版本 | 实际覆盖与结果 |
+| --- | --- |
+| 2026-11-08 · `839a4d6c0178fbb02d7c2620ff06ec815b337a0c` | Common 覆盖多领取者、父子提交顺序、并发与重复拒绝、prepare 失败、claim／拒绝外层回滚及原生写失败七项。System 补 ParentRecoveryAdmission、ClosureRollback，AdmissionRace 改用实际 PG 阻塞屏障。本地和 [Common PG](https://github.com/pampa0629/addp/actions/runs/42446889335/job/128628596647)／[System Cleanup PG](https://github.com/pampa0629/addp/actions/runs/42446889335/job/128628596160) 均通过。Common 包含生命周期和专业结果原子提交，System 8 个主用例，两组 0 SKIP。同源 [System Go T1](https://github.com/pampa0629/addp/actions/runs/42446889319/job/128627595778) 通过。 |
+| 2026-11-09 · `21555a8ad` | Common 覆盖 P／C／Owner 行锁跨截止或失租的六种交错、11 种非法绑定在父活跃／关闭时的反例、失租恢复和七种残留字段。截止后提交未启动拒绝，临时失租保留子记录。System 覆盖父／子摘要漂移和缺预期子，只读快照及协调均失败，持久事实与审计保留，父领取随事务回滚。本地及 [Common Linux PG](https://github.com/pampa0629/addp/actions/runs/42550397199/job/128944704717)／[System Cleanup Linux PG](https://github.com/pampa0629/addp/actions/runs/42550397199/job/128944704053) 均通过。Common 36 个矩阵末级用例及原专业结果原子提交，System 9 个主用例含 3 个绑定反例，两组 0 SKIP。同源 [System Go](https://github.com/pampa0629/addp/actions/runs/42550397212/job/128944443300) 通过。 |
 
-首轮Common的多等待者屏障只认直接阻塞者而超时，后改为核验PG实际阻塞链；System首轮新断言误比较每次读取变化的observed_at，后改核全部持久事实。首轮日志保留，未据此改产品逻辑。本地最终：Common lifecycle及专业结果原子提交两个主测试通过，包含全部七个新增子项；System Cleanup八个主测试通过；两者均0SKIP。`make test-t2-ci-registration`的85项runner／选择反例、9项Manager入口反例及登记检查通过。仅修改测试和门禁断言，未运行包含其他会话变更的全工作区test-changed；同一 `839a4d6c0` 的上述两个Linux PG Job均已success并复核原日志，新增用例实际执行、0SKIP；同源 [System Go T1](https://github.com/pampa0629/addp/actions/runs/42446889319/job/128627595778) 随后通过。同源 [Platform consistency](https://github.com/pampa0629/addp/actions/runs/42446889319/job/128627595947) 在 SQL 连接池 runner 的 Node 预检失败，未执行 T2 登记。独立提交 `76ed462fa` 修复该预检。含该修复的 `7c92e7c84` [Platform consistency](https://github.com/pampa0629/addp/actions/runs/42508155900/job/128815197630) 通过，原日志确认 T2 登记 85＋9 项实际执行。这些结果不计全量模块／Hosted验收。Graph高级恢复保持暂缓。
+首批 Common 屏障只认直接阻塞者而超时，改为核验真实阻塞链。System 首轮误比较变化的 `observed_at`，改为比较持久事实。首轮日志保留，产品逻辑未改。随机 execution 专用触发器、函数、表和记录按夹具退出清理。新增 System 主用例由标准入口强制要求 PASS。
 
-2026-11-09 后续补测沿上述三个标准入口。Common 用真实 PostgreSQL 阻塞关系核验 P／C／通用 Owner 行锁，分别跨越请求截止或父租约过期，共六种交错。截止后提交未启动拒绝，临时失租时子记录保持原样。另有 11 种非法绑定各在父活跃和父关闭时取证，以及真实失租恢复与七种残留字段反例。System 使用已受理请求验证父摘要漂移、子摘要漂移和缺预期子均使只读快照及协调失败。持久父子记录、请求和终态审计保持原样，子异常触发的父领取随事务回滚。新增 System 主测试由标准入口强制核验 PASS。
-
-本地 Common lifecycle 分组通过上述 36 个末级用例及原专业结果原子提交。System Cleanup 通过 9 个主用例，含新增的 3 个绑定反例。两组 PostgreSQL 门禁均 0 SKIP。T2 登记 85＋9 项及登记检查通过。此次只补测试与门禁，未观察到需修改产品实现的失败。
-
-固定提交 `21555a8ad` 的 [Common Linux PG](https://github.com/pampa0629/addp/actions/runs/42550397199/job/128944704717) 和 [System Cleanup Linux PG](https://github.com/pampa0629/addp/actions/runs/42550397199/job/128944704053) 均通过。原日志分别确认 36 个矩阵末级用例及专业结果原子提交、9 个 System 主用例及 3 个新增绑定反例，两组均 0 SKIP。同源 [System Go](https://github.com/pampa0629/addp/actions/runs/42550397212/job/128944443300) 通过。同源 [Platform consistency](https://github.com/pampa0629/addp/actions/runs/42550397212/job/128944443256) 在 Transfer 配置文档来源漂移检查 `TestTransferReviewSourceDrift` 失败，未运行 T2 登记。此提交的登记证据仍为本地 85＋9 项。
+两批本地 T2 登记均通过 85 项 runner／选择反例、9 项 Manager 入口反例和登记检查。`839a4d6c0` 的 [Platform consistency](https://github.com/pampa0629/addp/actions/runs/42446889319/job/128627595947) 在 SQL 连接池 Node 预检失败，未执行登记。独立提交 `76ed462fa` 修正预检，包含它的 `7c92e7c84` [Platform consistency](https://github.com/pampa0629/addp/actions/runs/42508155900/job/128815197630) 通过并实际执行 85＋9 项。`21555a8ad` 的 [Platform consistency](https://github.com/pampa0629/addp/actions/runs/42550397212/job/128944443256) 在 Transfer 来源漂移检查失败，未执行登记，该版本仍只有本地登记结果。两批均未运行全工作区 `test-changed` 或新增 Hosted，Graph 高级恢复仍暂缓。
 
 ### Graph 基础 PG 增补验证
 
-2026-11-09 补齐 G2 和 G3 的两个 Graph 仓储用例。摘要反例只对本轮任务安装 PG 触发器，在事务内确认公共 attempt、开始时间及租约已写入后报错。首轮确认执行、任务摘要和控制记录全部回滚，同时复现 `ClaimBuild` 仍返回已回滚的租约及任务对象。修正错误分支后不再返回未提交的运行事实。移除触发器后，同一 pending 执行以 attempt=1 领取并提交匹配的开始时间。成功先提交场景通过两个连接的 PG 阻塞关系核对取消等待，成功提交后返回原终态，保留进度、写入计数、任务统计和取消控制。
+2026-11-09 的 G2 摘要回滚首轮确认公共执行、任务摘要和控制记录均回滚，同时复现 `ClaimBuild` 返回未提交的租约与任务对象。修正错误分支后不再返回这些对象，移除本轮任务专用触发器后，同一 pending 执行以 attempt=1 领取并写入匹配的开始时间。G3 用两个连接的实际 PG 阻塞关系验证取消等待。成功先提交后，取消返回原终态，进度、写入计数、任务统计和取消控制保持。
 
-本地 `make test-common-postgres COMMON_POSTGRES_TEST_ARGS="--test graph"` 通过 9 个主用例，包含两个新增用例及 Graph Cleanup Runtime，0 SKIP。 `make test-module MODULE=graph GO_ONLY=1` 通过。Graph 后端路径由既有规则选择 Common PostgreSQL Job。
-
-固定提交 `cc0de098b` 的 [Linux Common PG](https://github.com/pampa0629/addp/actions/runs/42554724259/job/128958459086) 已到终态并通过。原始日志确认 9 个 Graph 主用例实际执行，含两项新增用例及 Cleanup Runtime，0 SKIP。同源 [Execution online CI runner](https://github.com/pampa0629/addp/actions/runs/42554724132/job/128957781489) 实际通过 414 项。
+本地 `make test-common-postgres COMMON_POSTGRES_TEST_ARGS="--test graph"` 和固定提交 `cc0de098b` 的 [Linux Common PG](https://github.com/pampa0629/addp/actions/runs/42554724259/job/128958459086) 均通过 9 个 Graph 主用例，含两项增补及 Cleanup Runtime，0 SKIP。本地 Graph Go 门禁通过，同源 [Execution online CI runner](https://github.com/pampa0629/addp/actions/runs/42554724132/job/128957781489) 通过 414 项。上述结果覆盖 PG 回滚和终态交错。
 
 ### Graph G8 输入冻结验证
 
-Graph 的真实 PG 用例覆盖六个场景：材料元数据或 CatalogPath 在入队前改变，拒绝入队且不留下执行／控制记录；私有本体映射快照被改写，attempt=0 拒绝；正常编辑本体后，原执行仍以已冻结标签和唯一键产生待审项；同大小材料字节改变，在抽取前失败；Engine 登记版本变化，在读取材料前失败。活动材料同时核对上传准入和删除均被拒绝。材料读取、System 登记与 Copilot 使用受控输入，执行、任务摘要、外部操作记录和待审项使用真实 PG。
+真实 PG 六个子场景覆盖入队前材料元数据或 CatalogPath 冲突时拒绝且不留下执行／控制记录、私有映射快照改写时以 attempt=0 拒绝、正常编辑本体后仍按原冻结标签和唯一键产生待审项、同大小材料字节变化时在抽取前失败，以及 Engine 登记版本变化时在读取材料前失败。活动材料的上传准入和删除均拒绝。材料读取、System 登记及 Copilot 用受控输入，执行、任务摘要、外部操作记录和待审项使用真实 PG。
 
-首轮复现无图写入的构建跳过 Engine 版本核验，仍调用 Copilot 并成功。修复后，构建入口复用同一个登记校验，在材料与外部处理之前失败关闭。现有图操作继续核验冻结目标。此次取证限定登记版本变化，物理目标代际证明及高级恢复继续暂缓。
+首轮发现无图写入的构建跳过 Engine 版本核验，仍调用 Copilot 并成功。修复后统一在读取材料及外部处理前校验冻结登记，拒绝版本漂移，既有图操作仍核验冻结目标。该轮覆盖登记版本，不扩展到物理代际或高级恢复。
 
-本地 `make test-common-postgres COMMON_POSTGRES_TEST_ARGS="--test graph"` 通过 10 个主用例，新增 G8 六个子场景均通过，0 SKIP。`make test-module MODULE=graph GO_ONLY=1` 通过。Graph PG 分组及 Common 全量 PG 均要求 BuildInputRuntime 和 CleanupRuntime 的准确 PASS。 T2 登记 85＋9 项及登记检查通过。
+本地 `make test-common-postgres COMMON_POSTGRES_TEST_ARGS="--test graph"` 通过 10 个主用例，含新增六个子场景，0 SKIP。`make test-module MODULE=graph GO_ONLY=1` 及 T2 登记 85＋9 项和登记检查通过。Graph 分组与 Common 全量 PG 均要求 BuildInputRuntime 和 CleanupRuntime 的准确 PASS。本节记录本地结果。
 
 ## 七、确认范围与协作分工
 
