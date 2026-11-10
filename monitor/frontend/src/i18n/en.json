@@ -1345,7 +1345,14 @@
       "coverage": "Sampled, retained HTTP traces and execution stages are shown. Empty results may reflect sampling, unfinished stages, expiration or collection loss. Policy definition version: 2.",
       "open": "Query traces",
       "start": "Start",
-      "recentWindow": "Last 15 min (choose a start)",
+      "recentWindow": "Query period",
+      "customWindow": "Historical period",
+      "customStart": "Choose a historical start",
+      "windows": {
+        "15m": "Last 15 minutes",
+        "30m": "Last 30 minutes",
+        "1h": "Last hour"
+      },
       "windowEnd": "Until {time}",
       "futureStart": "Start time must be before the current time",
       "invalidTraceID": "Enter the full 32-character Trace ID",

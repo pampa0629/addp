@@ -9,6 +9,8 @@ export function fixture() {
 test('Trace links preserve only bounded instance, ID and window inputs', () => {
   assert.equal(traceRoute({ instance_id: '1', trace_id: '1'.repeat(32), start: '2026-10-20T00:00:00Z', end: '2026-10-20T00:01:00Z' }).instanceID, 1)
   assert.equal(traceRoute({ trace_id: '1'.repeat(32) }).instanceID, 0)
+  assert.equal(traceRoute({ range: '30m' }).query.range, '30m')
+  for (const query of [{ range: '24h' }, { range: '1h', start: '2026-10-20T00:00:00Z', end: '2026-10-20T00:15:00Z' }]) assert.throws(() => traceRoute(query))
   for (const q of [{ trace_id: 'invalid' }, { instance_id: '01' }, { instance_id: '1', query: '{}' }, { instance_id: '1', trace_id: '0'.repeat(32) }, { start: '2026-10-20T00:00:00Z', end: '2026-10-20T02:00:00Z' }]) assert.throws(() => traceRoute(q))
 })
 test('Trace response binds the selected historical owner and actual call edges', () => {

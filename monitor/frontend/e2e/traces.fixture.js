@@ -15,6 +15,7 @@ export async function tracesBackend(page, options = {}) {
     const target = params.get('ids') === '2' || params.get('module_name') === 'system'
     if (target && options.targetDenied) return route.fulfill({ status: 403, json: { error_code: 'denied' } })
     const data = params.get('role') === 'ingress' ? [] : [{ id: target ? 2 : 1, module_name: target ? 'system' : 'monitor', instance_id: target ? 'two' : 'one', role: 'backend', status: 'down', node_id: '', process_started_at: '2026-10-19T00:00:00Z', process_metrics_declared: false }]
+    if (options.multiple && data.length && !params.has('ids')) data.push({ ...data[0], id: 3, instance_id: 'three' })
     return route.fulfill({ json: { data, total: data.length, page: 1, page_size: 10 } })
   })
   await page.route('**/api/v1/monitor/platform/traces**', async route => {

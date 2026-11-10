@@ -5,9 +5,10 @@ const instanceName = /^[A-Za-z0-9][A-Za-z0-9_-]{0,99}$/
 const phaseKinds = { enqueue: 'producer', claim: 'consumer', dispatch: 'producer', terminal: 'internal' }
 const canonical = value => typeof value === 'string' && id.test(value) && !/^0+$/.test(value)
 export { canonical as isTraceID }
+export const traceRecentMinutes = Object.freeze({ '30m': 30, '1h': 60 })
 export function traceRoute(query = {}) {
   const invalid = () => { throw new Error('invalid_trace_query') }
-  const allowed = ['instance_id', 'trace_id', 'start', 'end', 'module_name', 'role', 'page']
+  const allowed = ['instance_id', 'trace_id', 'start', 'end', 'range', 'module_name', 'role', 'page']
   if (Object.entries(query).some(([key, value]) => !allowed.includes(key) || typeof value !== 'string' || !value)) invalid()
   if (query.instance_id && (!/^[1-9]\d*$/.test(query.instance_id) || !Number.isSafeInteger(Number(query.instance_id)))) invalid()
   if (query.trace_id && !canonical(query.trace_id)) invalid()
@@ -15,6 +16,7 @@ export function traceRoute(query = {}) {
   if (query.role && !['backend', 'ingress'].includes(query.role)) invalid()
   if (query.instance_id && query.page && query.page !== '1') invalid()
   if (query.page && (!/^[1-9]\d*$/.test(query.page) || !Number.isSafeInteger(Number(query.page)))) invalid()
+  if (query.range && (!Object.hasOwn(traceRecentMinutes, query.range) || query.start || query.end)) invalid()
   if (query.start || query.end) {
     const start = Date.parse(query.start), end = Date.parse(query.end)
     if (!Number.isFinite(start) || !Number.isFinite(end) || start >= end || end - start > 3600000) invalid()

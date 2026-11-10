@@ -15,7 +15,7 @@ test('directory module choices apply immediately and clear the old trace', async
   await expect(page.getByTestId('trace-search').getByRole('textbox', { name: 'Trace ID' })).toBeVisible()
   expect(state.instanceCalls).toHaveLength(2)
   expect(state.instanceCalls.at(-1)).toEqual({ page: '1', page_size: '10', role: 'backend', module_name: 'system' })
-  expect(state.calls).toHaveLength(1)
+  await expect.poll(() => state.calls.slice(1)).toEqual([{ instance_id: '2' }])
   await page.reload()
   await expect(page.getByTestId('trace-instances')).toContainText('system')
   await expect(page.getByRole('combobox', { name: '观测层' })).toHaveCount(0)
@@ -72,13 +72,13 @@ test('one start time applies a bounded window and returning from detail restores
   const now = new Date(Math.floor(Date.now() / 1000) * 1000 - 1000)
   await page.clock.setFixedTime(now)
   const state = await backend(page)
-  await page.goto('/traces')
+  await page.goto('/traces?module_name=monitor')
   const form = page.getByTestId('trace-search')
   const start = form.getByRole('combobox', { name: '开始时间' })
-  await expect(start).toHaveAttribute('placeholder', '最近 15 分钟（可选开始时间）')
-  const instances = page.getByTestId('trace-instances')
-  await instances.getByRole('button', { name: '查询调用链' }).click()
+  await expect(start).toHaveAttribute('placeholder', '选择历史开始时间')
   await expect.poll(() => state.calls.at(-1)).toEqual({ instance_id: '1' })
+  await expect(page.getByRole('button', { name: '查询调用链', exact: true })).toHaveCount(0)
+  await expect(page.getByTestId('trace-results')).toContainText('1'.repeat(32))
 
   async function chooseStart(minutesAgo) {
     const selected = new Date(now.getTime() - minutesAgo * 60_000)
@@ -110,6 +110,55 @@ test('one start time applies a bounded window and returning from detail restores
   await start.press('Enter')
   await expect.poll(() => state.calls.at(-1)).toEqual({ instance_id: '1' })
   await expect(form).not.toContainText('查至')
+})
+
+test('recent presets query immediately and restore a moving window after reload and detail navigation', async ({ page }) => {
+  const now = Math.floor(Date.now() / 1000) * 1000 - 120_000
+  await page.clock.setFixedTime(now)
+  const state = await backend(page)
+  await page.goto('/traces?module_name=monitor')
+  const preset = page.getByRole('combobox', { name: '查询时段' })
+  const results = page.getByTestId('trace-results')
+  await expect(results.getByRole('button', { name: '查看调用链' })).toBeVisible()
+  async function choose(name) {
+    await preset.press('ArrowDown')
+    await page.getByRole('option', { name, exact: true }).click()
+  }
+  async function expectWindow(end, minutes) {
+    await expect.poll(() => state.calls.at(-1)).toEqual({
+      instance_id: '1',
+      start: new Date(end - minutes * 60_000).toISOString(),
+      end: new Date(end).toISOString()
+    })
+  }
+  await choose('最近 30 分钟')
+  await expectWindow(now, 30)
+  await expect(page).toHaveURL(url => url.searchParams.get('range') === '30m' && !url.searchParams.has('start'))
+  await page.clock.setFixedTime(now + 60_000)
+  await page.reload()
+  await expectWindow(now + 60_000, 30)
+  await choose('最近 1 小时')
+  await expectWindow(now + 60_000, 60)
+  await results.getByRole('button', { name: '查看调用链' }).click()
+  await expect(page.getByTestId('trace-spans')).toBeVisible()
+  await page.getByRole('button', { name: '返回调用链列表' }).click()
+  await expect(results.getByRole('button', { name: '查看调用链' })).toBeVisible()
+  await expect(page).toHaveURL(url => url.searchParams.get('range') === '1h' && !url.searchParams.has('trace_id'))
+  await choose('最近 15 分钟')
+  await expect.poll(() => state.calls.at(-1)).toEqual({ instance_id: '1' })
+  await expect(page).toHaveURL(url => !url.searchParams.has('range') && !url.searchParams.has('start'))
+})
+
+test('a module with multiple instances queries only the explicitly selected instance', async ({ page }) => {
+  const state = await backend(page, { multiple: true })
+  await page.goto('/traces?module_name=monitor')
+  const instances = page.getByTestId('trace-instances')
+  await expect(instances.getByRole('button', { name: 'three', exact: true })).toBeVisible()
+  await expect(page.getByTestId('trace-results')).toHaveCount(0)
+  expect(state.calls).toEqual([])
+  await instances.getByRole('button', { name: 'one', exact: true }).click()
+  await expect(page.getByTestId('trace-results')).toContainText('1'.repeat(32))
+  expect(state.calls).toEqual([{ instance_id: '1' }])
 })
 
 for (const locale of ['zh-cn','en']) test(`Trace detail shows sampled partial evidence and actual edges (${locale})`, async ({ page }, info) => {

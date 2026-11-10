@@ -14,7 +14,10 @@
           <el-option v-for="module in moduleNames" :key="module" :value="module" :label="module" />
         </el-select>
         <div class="trace-window">
-          <el-date-picker v-model="pickerStart" type="datetime" :placeholder="t('monitor.traces.recentWindow')" :aria-label="t('monitor.traces.start')" :disabled-date="futureDate" :show-now="false" @change="changeStart" />
+          <el-select :model-value="state?.query.start ? '' : state?.query.range || '15m'" :placeholder="t('monitor.traces.customWindow')" :aria-label="t('monitor.traces.recentWindow')" @change="changeRecent">
+            <el-option v-for="range in recentRanges" :key="range" :value="range" :label="t(`monitor.traces.windows.${range}`)" />
+          </el-select>
+          <el-date-picker v-model="pickerStart" type="datetime" :placeholder="t('monitor.traces.customStart')" :aria-label="t('monitor.traces.start')" :disabled-date="futureDate" :show-now="false" @change="changeStart" />
           <span v-if="bounds.end" class="window-hint">{{ t('monitor.traces.windowEnd', { time: date(bounds.end) }) }}</span>
         </div>
         <el-input v-model="traceDraft" :placeholder="t('monitor.traces.traceID')" :aria-label="t('monitor.traces.traceID')" clearable @input="traceInput.queue" @keydown.enter="traceInput.enter" />
@@ -24,11 +27,15 @@
       <el-alert v-if="error" :title="t(error)" type="warning" :closable="false" data-testid="trace-error" />
       <el-table v-if="!directLookup && !detail" :data="instances" v-loading="loading" :empty-text="t(loading ? 'common.loading' : instancesLoaded ? 'monitor.traces.noInstances' : 'monitor.traces.notLoaded')" data-testid="trace-instances">
         <el-table-column prop="module_name" :label="t('monitor.process.module')" min-width="130" />
-        <el-table-column prop="instance_id" :label="t('monitor.http.instance')" min-width="220" show-overflow-tooltip />
+        <el-table-column :label="t('monitor.http.instance')" min-width="270" show-overflow-tooltip>
+          <template #default="{ row }">
+            <span v-if="selected?.id === row.id">{{ row.instance_id }}</span>
+            <el-button v-else link type="primary" @click="select(row)">{{ row.instance_id }}</el-button>
+          </template>
+        </el-table-column>
         <el-table-column :label="t('monitor.traces.instanceStarted')" min-width="155">
           <template #default="{ row }">{{ row.process_started_at ? date(row.process_started_at) : '—' }}</template>
         </el-table-column>
-        <el-table-column :label="t('monitor.traces.title')" width="130"><template #default="{ row }"><el-button link @click="select(row)">{{ t('monitor.traces.open') }}</el-button></template></el-table-column>
       </el-table>
       <el-pagination v-if="!directLookup && !detail" layout="total, prev, pager, next" :page-size="10" :total="total" :current-page="state?.page || 1" @current-change="page => navigate({ ...state.query, page: String(page), instance_id: undefined, trace_id: undefined })" />
       <template v-if="selected && !detail">
@@ -38,7 +45,7 @@
           <el-table-column :label="t('monitor.traces.start')" min-width="170"><template #default="{ row }">{{ date(row.start) }}</template></el-table-column>
           <el-table-column prop="duration_ms" :label="t('monitor.traces.duration')" min-width="140"><template #default="{ row }">{{ number(row.duration_ms) }}</template></el-table-column>
           <el-table-column :label="t('monitor.traces.spans')" width="100"><template #default="{ row }">{{ row.spans.length }}</template></el-table-column>
-          <el-table-column :label="t('common.actions')" width="130"><template #default="{ row }"><el-button link @click="navigate({ ...state.query, trace_id: row.trace_id }, 'push')">{{ t('monitor.traces.viewTrace') }}</el-button></template></el-table-column>
+          <el-table-column :label="t('common.actions')" width="130"><template #default="{ row }"><el-button link @click="openTrace(row)">{{ t('monitor.traces.viewTrace') }}</el-button></template></el-table-column>
         </el-table>
       </template>
       <trace-details v-if="detail" :trace="detail" :can-read-logs="canReadLogs" @logs="logs" @follow-link="followLink" />
@@ -57,7 +64,7 @@ import { createLatestRequestScope } from '../../../../common-frontend/basic/src/
 import { useAuthStore } from '../store/auth'
 import { traceAPI } from '../api/traces'
 import TraceDetails from '../components/TraceDetails.vue'
-import { isTraceID, traceRoute, validateTraces, traceLinkQuery } from '../utils/traces'
+import { isTraceID, traceRoute, validateTraces, traceLinkQuery, traceRecentMinutes } from '../utils/traces'
 import { validateProcessInstances } from '../utils/processResources'
 import { navigateMonitorRoute } from '../utils/moduleNavigation'
 const auth = useAuthStore(), route = useRoute(), router = useRouter(), { t, locale } = useI18n()
@@ -72,9 +79,13 @@ const bounds = ref({})
 const moduleNames = ref([]), modulesLoading = ref(false), modulesFailed = ref(false)
 const requests = createLatestRequestScope()
 const moduleRequests = createLatestRequestScope()
-const selected = computed(() => instances.value.find(v => v.id === state.value?.instanceID))
+const selected = computed(() => {
+  if (state.value?.instanceID) return instances.value.find(row => row.id === state.value.instanceID)
+  if (state.value?.module && total.value === 1) return instances.value[0]
+})
 const detail = computed(() => state.value?.query.trace_id ? data.value[0] : null)
 const date = value => new Date(value).toLocaleString(locale.value)
+const recentRanges = ['15m', ...Object.keys(traceRecentMinutes)]
 const number = value => new Intl.NumberFormat(locale.value, { maximumFractionDigits: 3 }).format(value)
 const traceInput = createAutoFilter({
   apply: applyLookup,
@@ -94,6 +105,11 @@ function selectModule(module) {
 function browseInstances() { return navigate({ ...state.value.query, instance_id: undefined, trace_id: undefined }) }
 function returnToTraces() { return navigate({ ...state.value.query, trace_id: undefined }) }
 function select(row) { return navigate({ ...state.value.query, ...bounds.value, page: undefined, instance_id: String(row.id), trace_id: undefined }, 'push') }
+function openTrace(row) { return navigate({ ...state.value.query, page: undefined, instance_id: String(selected.value.id), trace_id: row.trace_id }, 'push') }
+function changeRecent(range) {
+  bounds.value = { start: undefined, end: undefined, range: range === '15m' ? undefined : range }
+  return traceInput.submit()
+}
 function changeStart(start) {
   traceInput.cancel()
   const now = Date.now()
@@ -103,6 +119,7 @@ function changeStart(start) {
     return
   }
   bounds.value = {
+    range: undefined,
     start: start ? start.toISOString() : undefined,
     end: start ? new Date(Math.min(start.getTime() + 15 * 60_000, now)).toISOString() : undefined
   }
@@ -142,18 +159,24 @@ async function reload() {
   let listed = false
   loading.value = true
   try {
-    let subject
     if (!directLookup.value) {
       const list = await requests.request(config => traceAPI.instances(params, config))
       validateProcessInstances(list, current.instanceID ? 1 : current.page, params, 10)
       if (list.data.some(row => row.role !== current.role || (current.module && row.module_name !== current.module))) throw new Error('invalid_trace_response')
-      subject = list.data.find(row => row.id === current.instanceID)
-      if (current.instanceID && !subject) throw new Error('invalid_trace_response')
+      if (current.instanceID && !list.data.some(row => row.id === current.instanceID)) throw new Error('invalid_trace_response')
       if (!requests.current(ticket)) return
       instances.value = list.data; total.value = list.total; listed = true; instancesLoaded.value = true
     }
+    const subject = selected.value
     if (!subject && !current.query.trace_id) return
-    const { instance_id, trace_id, start, end } = current.query
+    const { trace_id, range } = current.query
+    let { start, end } = current.query
+    if (range) {
+      const now = Date.now()
+      start = new Date(now - traceRecentMinutes[range] * 60_000).toISOString()
+      end = new Date(now).toISOString()
+    }
+    const instance_id = subject ? String(subject.id) : undefined
     const query = Object.fromEntries(Object.entries({ instance_id, trace_id, start, end }).filter(([, value]) => value))
     const result = validateTraces(await requests.request(config => traceAPI.read(query, config)), subject, trace_id)
     if (!requests.current(ticket)) return
@@ -195,7 +218,7 @@ watch([() => route.fullPath, identity], () => {
   traceInput.cancel()
   inputError.value = ''
   traceDraft.value = state.value?.query.trace_id || ''
-  bounds.value = { start: state.value?.query.start, end: state.value?.query.end }
+  bounds.value = { start: state.value?.query.start, end: state.value?.query.end, range: state.value?.query.range }
   pickerStart.value = bounds.value.start ? new Date(bounds.value.start) : null
   reload()
 }, { immediate: true })
@@ -215,6 +238,7 @@ onUnmounted(() => { traceInput.dispose(); requests.invalidate(); moduleRequests.
 header, .filters, .trace-window { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
 .filters > .el-input, .filters > .el-select { width: 230px; max-width: 100%; }
 .trace-window { min-width: 0; max-width: 100%; }
+.trace-window > .el-select { width: 145px; max-width: 100%; }
 .trace-window > .el-date-editor { width: 255px; max-width: 100%; }
 .window-hint { color: var(--addp-text-secondary); font-size: 13px; }
 

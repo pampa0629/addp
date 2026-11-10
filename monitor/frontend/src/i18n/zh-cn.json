@@ -1345,7 +1345,14 @@
       "coverage": "展示采样保留的 HTTP 调用链与执行阶段。空结果可能来自未采样、未完成、过期或采集丢失，不能据此判断未执行。策略定义版本：2。",
       "open": "查询调用链",
       "start": "开始时间",
-      "recentWindow": "最近 15 分钟（可选开始时间）",
+      "recentWindow": "查询时段",
+      "customWindow": "历史时段",
+      "customStart": "选择历史开始时间",
+      "windows": {
+        "15m": "最近 15 分钟",
+        "30m": "最近 30 分钟",
+        "1h": "最近 1 小时"
+      },
       "windowEnd": "查至 {time}",
       "futureStart": "开始时间须早于当前时间",
       "invalidTraceID": "请输入完整的 32 位 Trace ID",
