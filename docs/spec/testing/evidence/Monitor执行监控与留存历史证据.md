@@ -200,32 +200,49 @@ Common 的 `AssessRetention` 由 System 既有维护循环调用，以数据库�
 
 ## 大量事件分页与截断真实入口验收通过（限定范围，2026-10-26）
 
-实现提交 `4a193091a146ef457ce838258dc9482123463c8e` 仅补人工 `execution-events-pagination`、Common测试夹具、最小正式身份、真实Console浏览器入口及标准门禁登记，不修改产品API、采集／展示上限、权限目录或业务功能。新增独立GitHub Hosted Linux Job，使用原标准Infra与应用生命周期；启动System／Gateway／Meta／Monitor／Console，再将普通用户凭据限定传入测试子进程，不注入产品进程。严格守卫独占 `addp_online`、干净已提交源码、当次PostgreSQL容器及仓库外私有目录，拒绝个人环境与混合运行；不操作本地个人服务或数据库。
+人工 `execution-events-pagination` 使用独占 Hosted Linux 的 System、Gateway、Meta、Monitor、Console 和标准 Infra。夹具校验独占 `addp_online`、固定源码、当次 PostgreSQL 容器及仓库外私有目录，普通 User 凭据仅传入测试子进程。两组均为绑定普通 User 的合成 Meta 一次性执行，由 Common 的真实 claim／lease 和有界事件写入准备，读取沿 Gateway → Monitor → Meta Owner 裁决。该范围不含真实 Meta 扫描 Worker、扫描定义或业务引擎。
 
-两组均为绑定真实普通User身份的合成Meta一次性执行，通过Common真实claim／lease及有界事件写入能力准备。第一组尝试追加1005次，预期只存1000条，唯一末条由Common生成 `truncated`，终态仍为success／progress100；第二组准备昨日600条合法历史，再由当日真实lease写入601条，预期共1201条且无采集截断。读取经Gateway／Monitor／真实Meta Owner裁决，API完整走10／13页；真实密码登录的Console／Monitor页面各加载10页到1000条，区分采集截断与展示上限，核对逐页ID／游标、全部DOM投影、刷新／重载／关闭重开回首批100条，以及第二组真实后页仍可读。另覆盖同租户非发起人／跨租户使用已知游标仍404且列表总数为0、非法分页参数400、安全字段及完整执行／事件行读取前后不变。上述全部断言已由后文固定 `fbdd03f5b` 的一次运行完整核验，前两次失败各自保留；不是Meta扫描Worker业务验收，不新增扫描定义或业务引擎。
+### 首轮 Hosted：身份准备失败
 
-标准 `make test-execution-events-pagination-runner` 已在共享工作区及排除他方WIP的隔离输入通过：24项Python、2项无外部服务的Go守卫、System身份夹具Go包、浏览器JS语法及Online CI登记成功。专用Hosted Go夹具本地因未设置运行标志跳过1项；5项既有System PostgreSQL专项因无标准DSN跳过，不计T2或真实写入通过。隔离基线 `d6fecb323a8e1e053fc0136585ac8645b2faadd3` 加本批15个文件，其内容摘要与最终提交逐一一致；仅含本批差异的索引补丁提交后，工作区原文件字节保持不变，未提交或覆盖他方WIP。影响选择dry-run仅计登记覆盖，不代表整区模块门禁通过。
+[Run 40274854201／Job 121415332273](https://github.com/pampa0629/addp/actions/runs/40274854201/job/121415332273) 固定源码 `4a193091a146ef457ce838258dc9482123463c8e`，`workflow_dispatch` attempt 1。四服务构建与 checkout 一致，普通 User／Tenant 2／两项 Permission 的预检通过。实际 Online gate 失败，外层 `online_scenario_failed`、`failure_stage=scenario`，套件 `failed_stage=identity`、`checks=[]`。日志记录 `execution_events_pagination_failed:KeyError`。分发器耗时 455 毫秒，预检 177 毫秒。Common 写入、分页、截断、Owner 隔离、Console 和截图均未执行。
 
-[首次Hosted Run40274854201／Job121415332273](https://github.com/pampa0629/addp/actions/runs/40274854201/job/121415332273) 为attempt1、workflow_dispatch，固定上述初始源码；已从早先queued转为completed／failure。实际Online gate失败，预检和上传／汇总成功不能覆盖业务失败。官方Artifact `12631636857` 为51521字节、仅5个安全报告／生命周期文件，ZIP SHA-256 `97b577e326f44265cbc3f61e0f58b5eb83705cd96bb79dfe3c9b6e1c1d4acec8` 已独立匹配GitHub声明及源码。报告为 `online_scenario_failed`、`failure_stage=scenario`，Online分发器总耗时455毫秒、预检177毫秒；四服务构建与checkout一致，原普通User／Tenant2／两项Permission核验成功，随后 `failed_stage=identity`、`checks=[]`，原始日志为 `execution_events_pagination_failed:KeyError`。Common写入、分页／截断、Owner隔离、Console及截图均未执行，不能计为T4通过。外层 `cleanup=passed`、`infra_cleanup=zero_residuals` 单列为生命周期结果，不算业务通过；保留该首次失败，不rerun或取消。
+System 测试 helper 创建同租户和跨租户身份后，遗漏了 `writeEnvironmentFile` 中的 `ADDP_ONLINE_EVENTS_PEER_ACCESS_TOKEN`、`ADDP_ONLINE_EVENTS_FOREIGN_ACCESS_TOKEN` 和 `ADDP_ONLINE_EVENTS_FOREIGN_TENANT_ID`。身份准备读取缺失的跨租户 Tenant ID 时抛出 KeyError。修订 `2350759ad8ee1b05e6394626d7be49886e846e05` 仅补三项显式导出及回归，沿用既有产品 API 和权限。
 
-已核明根因：System测试helper创建peer／foreign后，将三项 `ADDP_ONLINE_EVENTS_PEER_ACCESS_TOKEN`、`ADDP_ONLINE_EVENTS_FOREIGN_ACCESS_TOKEN`、`ADDP_ONLINE_EVENTS_FOREIGN_TENANT_ID` 放入内存values，却遗漏于 `writeEnvironmentFile` 的显式导出清单；场景构造身份列表时首先索引缺失的foreign Tenant，直接KeyError。修复提交 `2350759ad8ee1b05e6394626d7be49886e846e05` 只补这三个显式导出项及回归，不泛化导出values，不增权限或修改产品API。新增回归实际调用writer、核对0600、清空继承环境后source文件、运行实际Python场景的身份准备，并模拟HTTP身份观察，在到达fixture边界时停止；核对三主体／Tenant／两项Permission、引号原样传递、未知字段拒绝导出，不在参数／输出保存真实凭据。该确定性测试先红灯、修复后通过，不能替代真实HTTP或Hosted身份验收。
+外层 `cleanup=passed`、`infra_cleanup=zero_residuals`。官方归档 `12631636857` 为 51521 字节，含 5 个安全报告／生命周期文件。ZIP SHA-256 独立匹配 GitHub 声明及源码，为 `97b577e326f44265cbc3f61e0f58b5eb83705cd96bb79dfe3c9b6e1c1d4acec8`。本地归档为 `/tmp/addp-ci-20261026-063018/archive-40274854201.zip` 及同名目录，审查回执为 `/tmp/addp-event-pages-t4-40274854201-artifact-verified.json`。
 
-修后 `make test-execution-events-pagination-runner` 在共享工作区及排除他方WIP的隔离输入均通过：24项Python、Common两个无外部服务Go守卫、包含新增交付回归的System身份夹具包、JS语法与Online CI登记成功；专用Hosted夹具本地SKIP1、既有System PG专项无DSN SKIP5，不计T2或真实写入。隔离基线 `148bca32d853171c47f1aa364edc85775d94b5cf` 仅叠加两个自有Go文件，内容摘要与修复提交一致。既有 `test-online-runner`／Platform入口已调用本标准目标，无需新增CI路线；只提交自有路径，未改动他方已暂存或未提交文件。
+### 第二轮 Hosted：历史分页阶段失败
 
-去重后派发的[第二次Hosted Run40281399550／Job121435288938](https://github.com/pampa0629/addp/actions/runs/40281399550/job/121435288938)，attempt1、workflow_dispatch、固定 `2350759ad8ee1b05e6394626d7be49886e846e05`，最终completed／failure，不能计整场T4通过。身份交付已实际跨过原失败点；Common真实lease写入与success终态、1000／1201条事件的10／13页、ID顺序／无重复、闭合字段／保留窗口、两类上限区分、非法分页400、同租户peer／跨租户已知游标404与列表总数不泄露，七组场景断言通过。浏览器正式登录／同一主体和第一组十页1000行／唯一采集截断两组断言通过；第二组为 `failed_stage=history_pages`，该粗阶段涵盖加载、DOM和辅助后页API，不能从 `history_rows=0` 推断页面实际没有加载任何历史。刷新／重载／重开和最终完整执行／2201事件读取前后不变均未完成，不能计通过。Online分发器总耗时37875毫秒（预检503毫秒），不是完整部署构建耗时。
+[Run 40281399550／Job 121435288938](https://github.com/pampa0629/addp/actions/runs/40281399550/job/121435288938) 固定身份修订 `2350759ad8ee1b05e6394626d7be49886e846e05`，`workflow_dispatch` attempt 1，整轮失败。分发器耗时 37875 毫秒，预检 503 毫秒。
 
-该次官方Artifact `12632782532` 为179580字节、7个安全文件，ZIP SHA-256 `d42d9c2f994238e43ce66b9bd99b189202f11a4b6582196f5826e153767f452f` 已独立匹配GitHub及四服务固定源码。唯一页面图 `execution-events-quota.png` 已实际目视核对：安全合成执行为成功，末行“采集截断”且计数为空，显示过程不完整提示；第二组截图未产生，不计视觉通过。最终Host业务failed、cleanup passed／Infra zero_residuals分别记录，不以销毁或上传成功覆盖业务失败；不取消或rerun该历史运行。
+- **已执行断言**。7 组场景检查通过，覆盖真实 lease 写入和成功终态、1000／1201 条事件的 10／13 页、ID 顺序与无重复、安全字段与保留窗口、两类上限、非法分页 400，以及同租户非发起人与跨租户已知游标返回 404、列表总数为 0。浏览器通过正式登录与同一主体断言，以及 quota 组十页 1000 行和唯一采集截断断言。
+- **首败及未完成项**。第二组停在 `failed_stage=history_pages`，该阶段同时涵盖加载、DOM 和辅助后页 API，`history_rows=0` 无法判定页面实际加载了多少行。刷新、重载、重开及两条 execution 与 2201 条事件的最终读取前后比对未完成。仅生成 `execution-events-quota.png`，已目视核对成功终态、末行采集截断、空计数和过程不完整提示。
+- **源码调查与修订**。脚本跨整页导航复用登录时 API 客户端，Console 初始化刷新会话后旧 Token 已被 System 轮换撤销。修订 `fbdd03f5b8eb45385b249c89e75087f50299fe40` 复用 `browserAPIFromResponse`，用最近一页真实请求凭据创建临时客户端，复核同一 User／Tenant／Permission 后读取后页并立即销毁客户端。修订细分初始化、首批、逐页、DOM、上限、后页身份、后页读取及截图阶段，诊断排除异常正文、凭据和原始响应。已确认的是脚本失配，当次粗阶段证据不足以确认唯一根因。
+- **清理与归档**。最终 Host 业务失败，`cleanup=passed`、Infra `zero_residuals`。官方归档 `12632782532` 为 179580 字节，含 7 个安全文件，ZIP SHA-256 独立匹配 GitHub 声明及四服务固定源码，为 `d42d9c2f994238e43ce66b9bd99b189202f11a4b6582196f5826e153767f452f`。本地归档为 `/tmp/addp-event-pages-t4-40281399550.zip`、同名目录及 `-audit.json`。
 
-代码调查发现一个确定的脚本失配：脚本跨整页导航保留登录时API客户端，随后用旧Token读取历史后页；正式Console初始化会话执行refresh，System `token_family_service.go` 的既有轮换路径会撤销旧Access Token。修复 `fbdd03f5b8eb45385b249c89e75087f50299fe40` 仅复用现有 `browserAPIFromResponse`，从最近一页真实请求凭据建立客户端，重新核验同一User／Tenant／Permission再读后页，立即销毁临时客户端；初始登录客户端不跨导航使用。不修改认证或权限语义、不换账号、不补权、不放宽后页断言。新增固定细阶段区分初始化／首批／各页／DOM／上限／后页身份／后页读取／截图，不输出异常正文、凭据或原始响应。原粗阶段报告不足以唯一证明这就是第二次运行的全部失败原因；后续完整通过也不反推该历史失败的唯一根因。
+### 第三轮 Hosted：固定版本完整通过
 
-新增单一路径绑定回归先红灯，修后标准 `make test-execution-events-pagination-runner` 在实际Node24.19.0及排除他方WIP的隔离输入通过：25项Python、Common两个Go守卫、System身份夹具包、JS语法和CI登记；专用Hosted夹具SKIP1及既有PG专项SKIP5仍单列，不计真实DB/T2。既有共享浏览器客户端已有轮换／旧Token401／主体和租户改变拒绝的确定性测试，本轮复用实现，未另造认证路径或修改产品前端。只有Online脚本和其回归两文件变化，输入摘要与提交一致。
+[Run 40284854056／Job 121446007939](https://github.com/pampa0629/addp/actions/runs/40284854056/job/121446007939) 固定源码 `fbdd03f5b8eb45385b249c89e75087f50299fe40`，`workflow_dispatch` attempt 1。Run、Job、Validate、实际 Hosted gate 和 Upload 均通过。Job 为北京时间 15:37:37–15:58:19。分发器耗时 39263 毫秒，其中预检 236 毫秒、场景 39026 毫秒。四后端使用同一固定源码、各自 Build ID 和有效源码指纹，检出干净且仅回环。普通 Tenant 2 User 仅持 `meta.scan_task.read`、`monitor.execution.read`。
 
-前一运行已结束、去重确认新SHA无既有manual运行后，只派发一次[第三次Hosted Run40284854056／Job121446007939](https://github.com/pampa0629/addp/actions/runs/40284854056/job/121446007939)，attempt1、workflow_dispatch、精确绑定 `fbdd03f5b8eb45385b249c89e75087f50299fe40`；Run／Job及实际Validate／Run Hosted gate／Upload步骤均completed／success。Job实际15:37:37–15:58:19（Asia/Shanghai）；Online分发器39263毫秒，其中预检236毫秒、场景39026毫秒，不能将其与完整部署构建耗时混用。四个后端均同一固定源码、不同Build ID及有效源码指纹，checkout clean、仅回环，普通Tenant2 User仅持 `meta.scan_task.read`、`monitor.execution.read`；不拼接不同SHA或不同运行的局部结果凑通过。
+该轮完整通过 9 组场景和 7 组页面断言。两条合成执行均为 `success`、`progress=100`。
 
-本次单次完整通过9组场景及7组页面断言：Common真实lease写入／终态；实际1000／1201条的10／13页；全部ID顺序、无重复及闭合字段／30天窗口；采集截断与展示上限区分；非法分页400；同租户非发起人与跨租户已知游标仍404且列表总数0；真实密码Console／Owner授权分页；读取前后两条完整execution及全部2201条事件摘要一致。两条执行均success／progress100。页面分别实际加载十批至1000行，核对逐页ID与完整DOM投影；quota末条为唯一truncated，history无采集截断但has_more=true且真实后页仍可读，均提示记录不完整并隐藏加载更多。刷新／整页重载／关闭重开均返回首批100行，路由保持对应execution，安全投影不输出私有夹具内容；不是仅截图或HTTP状态码断言。
+| 验收维度 | quota 组 | history 组 |
+| --- | --- | --- |
+| Common 写入与采集截断 | 尝试追加 1005 次，实际保存 1000 条，唯一末条为 `truncated`。 | 昨日 600 条合法历史加当日真实 lease 写入 601 条，共 1201 条，无采集截断。 |
+| API 完整分页 | 10 页完整读回 1000 条。 | 13 页完整读回 1201 条。 |
+| Console 展示上限 | 真实密码登录后加载十批至 1000 行，末行展示采集截断。 | 同样加载十批至 1000 行，末行是正常进度。此时 API 仍为 `has_more=true`，真实后页可读。 |
 
-官方Artifact `12634584022`，304600字节，ZIP SHA-256 `7eadfb17a55ed160feca5dbcc1d89a735b1b270a287cc214e6f47696cda4571a` 独立匹配GitHub声明、准确源码及8个安全文件。两张图已实际目视核对：成功执行、quota末行“采集截断”且步骤／计数为空；history末行正常进度，无采集截断；均显示过程不完整提示。1000行总数由实际API ID与DOM逐行断言证明，不以单张截图独立证明。最终Host result／cleanup为passed、Infra zero_residuals；原始生命周期日志核验当次应用停止、容器／卷／网络销毁，私有凭据按标准退出路径销毁并核验。suite内 `pending_deployment_destruction` 是销毁前阶段，不能当作最终未清理，也不以部署销毁代替180天数据删除证据。未重跑或新增Hosted，仅读取已完成运行并独立审计。
+- **分页与授权**。核对两组的全部 API ID 顺序、无重复、闭合字段和 30 天窗口。非法分页返回 400，同租户非发起人与跨租户使用已知游标仍为 404，列表总数均为 0。读取前后两条完整 execution 和全部 2201 条事件摘要一致。
+- **页面交互**。逐页核对 ID 和完整 DOM 投影。两组均提示过程不完整并隐藏加载更多。刷新、整页重载及关闭重开均回首批 100 行，路由仍指向原 execution，安全投影无私有夹具内容。两张截图已目视核对，quota 末行的步骤／计数为空，history 无采集截断。1000 行数量由 API 与 DOM 逐行断言证明。
+- **清理与归档**。套件内 `pending_deployment_destruction` 为中间状态。最终 Host result／cleanup 为 `passed`，Infra 为 `zero_residuals`。原始日志核对应用停止、容器／卷／网络和私有凭据销毁。官方归档 `12634584022` 为 304600 字节，含 8 个安全文件，ZIP SHA-256 独立匹配 GitHub 声明及固定源码，为 `7eadfb17a55ed160feca5dbcc1d89a735b1b270a287cc214e6f47696cda4571a`。本地归档为 `/tmp/addp-event-pages-t4-40284854056.zip`、同名目录及 `-metadata.json`／`-artifacts.json`／`-audit.json`，审查记录含逐文件摘要及两图目视范围。正式脚本输入与该 SHA 一致。
 
-归档 `/tmp/addp-event-pages-t4-40284854056.zip` 及同名提取目录，官方元数据 `-metadata.json`／`-artifacts.json`，独立审查 `-audit.json`（含每文件摘要及两图目视范围）；现有正式脚本输入与该SHA逐一核对一致。本轮收口只更新已有证据，`git diff --check`通过；没有代码、API或依赖变化，复用仍有效的本地门禁，不重复T4、其他Owner CI或无关测试。
+### 本地回归与覆盖边界
 
-本地初版证据 `/tmp/addp-event-pages-runner-isolated-final.log`、`/tmp/addp-event-pages-validation-source.json`、`/tmp/addp-event-pages-owned.patch`；最初实现缺失红灯 `/tmp/addp-event-pages-runner-red.log` 保留。首次Hosted归档 `/tmp/addp-ci-20261026-063018/archive-40274854201.zip` 及同名目录、独立官方摘要 `/tmp/addp-event-pages-t4-40274854201-artifact-verified.json`。修后红／绿及隔离日志 `/tmp/addp-event-env-runner-{red,green,isolated}.log`、输入回执 `/tmp/addp-event-env-validation-source.json`。本轮不启用180天概览删除、不修改专业结果期限；更多Owner／专业节点、持续Worker并发、重启／故障、规模容量、Owner释放／消费者引用裁决及T5不在本批通过范围。后续脚本证据为 `/tmp/addp-event-browser-runner-{red,node24,isolated}.log`、`/tmp/addp-event-browser-validation-source.json`；第二次完整归档／独立审查 `/tmp/addp-event-pages-t4-40281399550.zip`、同名目录及 `-audit.json`。清单实际327／328／329行继续部分实现；“大量加载／截断”可从笼统未验改为本限定合成执行、Common真实lease写入、Owner读取与Console页面已验，仍不代表真实扫描Worker或更多Owner／专业节点全链完成。下一步若继续验收，优先讨论持续事件写入时分页／刷新的一致性，独立限定预算和范围；本轮不自动扩展或触发。
+三版均使用 `make test-execution-events-pagination-runner`。成功运行均含两个 Common 无外部服务 Go 守卫、System 身份夹具 Go 包、浏览器 JS 语法和 Online CI 登记。专用 Hosted Go 夹具因缺少运行标志跳过 1 项，既有 System PostgreSQL 专项因缺少标准 DSN 跳过 5 项，均未计入本地 T2 或真实写入证据。影响选择 dry-run 只核对登记。
+
+| 版本 | 本地结果与证据 |
+| --- | --- |
+| 初版 | 共享与隔离输入均通过 24 项 Python。隔离基线 `d6fecb323a8e1e053fc0136585ac8645b2faadd3` 加 15 个文件，摘要与最终提交一致。保留实现缺失首败 `/tmp/addp-event-pages-runner-red.log`，以及 `/tmp/addp-event-pages-runner-isolated-final.log`、`/tmp/addp-event-pages-validation-source.json`、`/tmp/addp-event-pages-owned.patch`。 |
+| 身份交付修订 | 新增红绿回归实际调用 writer，核对 0600、清空继承环境后 source、三主体／Tenant／两项 Permission、引号保真及拒绝未知导出。HTTP 身份观察为模拟，至夹具边界停止。共享与隔离输入均通过 24 项 Python。隔离基线 `148bca32d853171c47f1aa364edc85775d94b5cf` 加两个 Go 文件，摘要与修订一致。证据为 `/tmp/addp-event-env-runner-{red,green,isolated}.log`、`/tmp/addp-event-env-validation-source.json`。 |
+| 浏览器后页修订 | 单一凭据绑定回归先失败，修复后以 Node 24.19.0 在隔离输入通过 25 项 Python。复用共享客户端既有轮换、旧 Token 401、主体或租户变化拒绝回归。只变更两个 Online 脚本／回归文件，输入摘要与提交一致。证据为 `/tmp/addp-event-browser-runner-{red,node24,isolated}.log`、`/tmp/addp-event-browser-validation-source.json`。 |
+
+第三轮通过限定于合成 Meta 执行、Common 真实 lease 写入、Owner 读取及 Console 页面。未覆盖实际扫描 Worker、其他 Owner／专业节点、持续 Worker 并发、重启／故障恢复、规模容量、Owner 释放与消费者引用裁决、180 天概览删除、专业结果期限或生产 T5。原记录中的清单第 327／328／329 行仍为部分实现。持续写入期间的续页与刷新另见[后续 Hosted 尝试](#持续写入期间续页与刷新首次-hosted2026-11-07)。
