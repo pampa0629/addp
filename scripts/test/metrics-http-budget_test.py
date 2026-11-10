@@ -21,6 +21,8 @@ from unittest.mock import Mock, patch
 spec=importlib.util.spec_from_file_location('http_budget',Path(__file__).with_name('metrics-http-budget.py'))
 m=importlib.util.module_from_spec(spec);spec.loader.exec_module(m)
 
+CLEANUP_DOWN = '--profile python-http --profile block-capacity --profile cdc-native down --volumes --remove-orphans'
+
 
 def row(cpu=1,memory=512*1024**2):
     return {'HostConfig':{'NanoCpus':int(cpu*1e9),'Memory':memory,'Tmpfs':{'/tmp':'size=16m,mode=1777'}},'State':{'Status':'running','OOMKilled':False},'SizeRw':100}
@@ -965,9 +967,10 @@ read -r release
 
     def test_cleanup_collects_actual_phase_files_after_stopping_sources_before_removal(self):
         gate=Path(__file__).with_name('monitor-metrics-gate.sh').read_text()
-        body=gate.split("<<'REQUEST_TRAFFIC'\n",1)[1].split('\nREQUEST_TRAFFIC',1)[0]
-        self.assertLess(gate.index('compose --profile python-http --profile block-capacity down --volumes'),gate.index("<<'REQUEST_TRAFFIC'"))
-        self.assertLess(gate.index("<<'REQUEST_TRAFFIC'"),gate.index('rm -rf "$WORK_DIR"'))
+        cleanup=gate.split('cleanup(){',1)[1].split('\ntrap cleanup EXIT',1)[0]
+        body=cleanup.split("<<'REQUEST_TRAFFIC'\n",1)[1].split('\nREQUEST_TRAFFIC',1)[0]
+        self.assertLess(cleanup.index('compose '+CLEANUP_DOWN),cleanup.index("<<'REQUEST_TRAFFIC'"))
+        self.assertLess(cleanup.index('\nREQUEST_TRAFFIC\n'),cleanup.index('rm -rf "$WORK_DIR"'))
         with tempfile.TemporaryDirectory() as directory:
             work=Path(directory);source=work/'source';source.mkdir();receipt=work/'receipt.json'
             self.put_traffic(source,'go',90,False);receipt.write_text(json.dumps({'case':'http-quality','work':str(work)}))
@@ -987,17 +990,23 @@ read -r release
             self.assertEqual(json.loads(receipt.read_text())['python_sources']['startup']['python_1'],value)
             self.assertNotIn('never-log-this',result.stdout+result.stderr)
 
-    def test_actual_cleanup_selects_the_same_python_profile_without_starting_services(self):
+    def test_actual_cleanup_selects_all_owned_profiles_without_starting_services(self):
         gate=Path(__file__).with_name('monitor-metrics-gate.sh').read_text()
         body=gate.split('cleanup(){',1)[1].split('\ntrap cleanup EXIT',1)[0]
         with tempfile.TemporaryDirectory() as directory:
             root=Path(directory);work=root/'work';work.mkdir();calls=root/'calls'
-            script='''compose(){ echo "$*" >> "$CALLS"; }
-docker(){ :; }
+            script='''compose(){ printf 'compose %s\\n' "$*" >> "$CALLS"; }
+docker(){ printf 'docker %s\\n' "$*" >> "$CALLS"; }
 cleanup(){'''+body+'\nfalse\ncleanup\n'
             result=subprocess.run(['bash','-c',script],env=dict(os.environ,WORK_DIR=str(work),COMPOSE_PROJECT='owned',CALLS=str(calls),ADDP_HTTP_BUDGET_RECEIPT=''),capture_output=True,text=True,timeout=5)
             self.assertEqual(result.returncode,1)
-            self.assertEqual([c for c in calls.read_text().splitlines() if ' down ' in ' '+c+' '],['--profile python-http --profile block-capacity down --volumes --remove-orphans'])
+            self.assertEqual(calls.read_text().splitlines(), [
+                'compose logs --no-color --tail=60 prometheus metrics-source node-exporter gateway-control postgres',
+                'compose '+CLEANUP_DOWN,
+                'docker ps -aq --filter label=com.docker.compose.project=owned',
+                'docker network ls -q --filter label=com.docker.compose.project=owned',
+                'docker volume ls -q --filter label=com.docker.compose.project=owned',
+            ])
             self.assertFalse(work.exists())
 
     def test_cpu_memory_write_reservations_and_stop_lines(self):
