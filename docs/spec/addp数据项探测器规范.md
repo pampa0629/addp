@@ -404,7 +404,7 @@ TIFF / GeoTIFF 的主资源是 `.tif` 或 `.tiff`。当同 basename 存在空间
 | `.tif` / `.tiff` | primary | 是 | 主 TIFF / GeoTIFF 文件，`meta_item.full_name` 来源。 |
 | `.tfw` / `.tifw` / `.wld` | world_file | 否 | 外部仿射变换参数。 |
 | `.prj` | crs | 否 | 外部 CRS 定义。 |
-| `.aux.xml` | auxiliary_metadata | 否 | GDAL / ESRI 辅助元数据。 |
+| `.aux.xml` | auxiliary_metadata | 否 | GDAL / ESRI 辅助元数据。GDAL PAM 的文件名为主 TIFF 完整文件名追加 `.aux.xml`。 |
 | `.ovr` | overview | 否 | 外部 overview。 |
 | `.hdr` | header | 否 | 栅格头文件或补充说明。 |
 
@@ -415,16 +415,16 @@ TIFF / GeoTIFF 的主资源是 `.tif` 或 `.tiff`。当同 basename 存在空间
   dem.tif
   dem.tfw
   dem.prj
-  dem.aux.xml
+  dem.tif.aux.xml
   readme.txt
   thumbnail.png
 ```
 
 期望：
 
-1. `dem.tif`、`dem.tfw`、`dem.prj`、`dem.aux.xml` 生成一个 `data_type=media`、`layout=multi`、`format=tiff` item。
+1. `dem.tif`、`dem.tfw`、`dem.prj`、`dem.tif.aux.xml` 生成一个 `data_type=media`、`layout=multi`、`format=tiff` item。
 2. 该 item 的 `full_name` 来自 `dem.tif`。
-3. `item.refs` 记录 `.tfw`、`.prj`、`.aux.xml` 等 related refs，供 format provider、基础预览和内容读取使用。
+3. `item.refs` 记录 `.tfw`、`.prj`、`.aux.xml` 等 related refs。计算和 COG 生成按[栅格计算与成果契约](addp栅格计算与成果契约规范.md)消费已登记的 PAM。
 4. `readme.txt`、`thumbnail.png` 仍按自身格式独立识别。
 5. 如果只有 `dem.tif` 且没有 sidecar，则生成 `layout=single`、`data_type=media`、`format=tiff` item。
 6. COG 不是新的基础 `format`；是否是 COG 由 `format_info.tiff.profile` 或 Manager 的 `raster_cog` 生成结果表达。
