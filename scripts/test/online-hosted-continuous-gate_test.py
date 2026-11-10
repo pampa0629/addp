@@ -69,6 +69,7 @@ class HostedContinuousGateTest(unittest.TestCase):
             #!/usr/bin/env bash
             echo "make:$*" >> "$ADDP_TEST_GATE_TRACE"
             [ "$ADDP_ONLINE_CONTINUOUS_PG_ENGINE_ID" = 17 ] &&
+              [ "$ADDP_ONLINE_DLQ_REDPANDA_ID" = "$(printf '%064d' 1)" ] &&
               [ "$ADDP_ONLINE_SCAN_POSTGRES_ID" = "$(printf '%064d' 1)" ] &&
               [ "$ADDP_ONLINE_CONTINUOUS_KAFKA_ENGINE_ID" = 18 ] &&
               [ "$TRANSFER_CONTINUOUS_LEASE_DURATION" = 8s ] &&

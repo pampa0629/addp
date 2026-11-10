@@ -145,6 +145,96 @@ class ContinuousRunnerTest(unittest.TestCase):
                 self.assertIn(('GET', M.OWNER + '/task-definitions/3', (404,)), calls)
             self.assertNotIn('private-token', json.dumps(report))
 
+    def test_hard_exit_requires_exact_old_session_refusal_and_no_delete_intent(self):
+        path = M.OWNER + '/task-definitions/7'
+        before = {'task_present': True, 'sessions': 3, 'open': 1, 'selected': 1,
+                  'selected_open': 1, 'operations': 0}
+        for status in (502, 503):
+            actor = SimpleNamespace(request=unittest.mock.Mock(side_effect=[
+                SimpleNamespace(status=status, payload={'error': 'unavailable'}),
+                SimpleNamespace(payload={'id': 7, 'tenant_id': 2, 'desired_state': 'stopped'}),
+            ]))
+            with patch.object(M, 'kafka_delete_facts', side_effect=[before, before]):
+                result = M.verify_kafka_hard_delete(actor, 2, 7, UUID)
+            self.assertEqual(result, {'task_id': 7, 'execution_id': UUID, 'delete_status': status,
+                'original_invocation_unconfirmed': True, 'task_retained': True, 'no_delete_dispatch': True})
+            self.assertEqual(actor.request.call_args_list, [
+                unittest.mock.call('DELETE', path, (502, 503)), unittest.mock.call('GET', path, (200,)),
+            ])
+        actor.request.reset_mock()
+        with patch.object(M, 'kafka_delete_facts', return_value={**before, 'selected_open': 0}), self.assertRaises(M.SuiteError):
+            M.verify_kafka_hard_delete(actor, 2, 7, UUID)
+        actor.request.assert_not_called()
+        actor.request.side_effect = [SimpleNamespace(status=503, payload={}),
+                                     SimpleNamespace(payload={'id': 7, 'tenant_id': 2, 'desired_state': 'stopped'})]
+        with patch.object(M, 'kafka_delete_facts', side_effect=[before, {**before, 'operations': 1}]), \
+                self.assertRaisesRegex(M.SuiteError, 'registered an external operation'):
+            M.verify_kafka_hard_delete(actor, 2, 7, UUID)
+
+    def test_cleanup_only_deletes_graceful_task_and_requires_physical_dlq_absence(self):
+        stopped = {'task_present': True, 'sessions': 1, 'open': 0, 'selected': 1,
+                   'selected_open': 0, 'operations': 0}
+        path = M.OWNER + '/task-definitions/8'
+        tasks = [(7, 'kafka', 'hard'), (8, 'kafka-graceful', 'normal')]
+        for topic_after in (False, True):
+            report = {'kafka_hard_exit': {'task_id': 7}}
+            actor = SimpleNamespace(request=unittest.mock.Mock(return_value=SimpleNamespace(
+                payload={'desired_state': 'stopped'})))
+            with patch.object(M, 'history', return_value=[{'status': 'cancelled'}]), \
+                    patch.object(M, 'kafka_delete_facts', return_value=stopped) as facts, \
+                    patch.object(M, 'kafka_dlq_exists', side_effect=[True, topic_after]) as dlq:
+                success = M.cleanup_owned_tasks(actor, tasks, None, report, lambda: None,
+                                               hard_task=7, graceful=(2, 8, UUID))
+            self.assertEqual(success, not topic_after)
+            self.assertEqual(report['expected_deployment_residuals'], 1)
+            self.assertEqual(report['residual_resources'], 1 + int(topic_after))
+            self.assertEqual(report['cleanup_tasks'][-1]['result'], 'retained_for_deployment')
+            self.assertEqual(actor.request.call_args_list, [unittest.mock.call('GET', path, (200,)),
+                unittest.mock.call('DELETE', path, (200,)), unittest.mock.call('GET', path, (404,))])
+            facts.assert_called_once_with(2, 8, UUID)
+            self.assertEqual(dlq.call_count, 2)
+            self.assertEqual('kafka_graceful_exit' in report, not topic_after)
+        actor.request.reset_mock()
+        report = {}
+        self.assertFalse(M.cleanup_owned_tasks(actor, tasks[:1], None, report, lambda: None, hard_task=7))
+        actor.request.assert_not_called()
+        self.assertEqual(report['expected_deployment_residuals'], 0)
+
+    def test_kafka_observer_returns_only_bound_counts_and_reads_exact_topic(self):
+        facts = {'task_present': True, 'sessions': 1, 'open': 0, 'selected': 1,
+                 'selected_open': 0, 'operations': 0}
+        sql = self.mock_scan_observer(facts)
+        self.assertEqual(M.kafka_delete_facts(2, 7, UUID), facts)
+        self.assertTrue(sql.call_args.args[0].startswith('BEGIN READ ONLY;'))
+        self.assertEqual(sql.call_args.kwargs['variables'], {'tenant': 2, 'task': 7, 'execution': UUID})
+        sql.reset_mock()
+        with self.assertRaises(M.SuiteError):
+            M.kafka_delete_facts(3, 7, UUID)
+        sql.assert_not_called()
+
+        broker_id = 'b' * 64
+        broker = {'Id': broker_id, 'State': {'Running': True}, 'Config': {'Labels': {
+            'com.docker.compose.project': 'addp-infra', 'com.docker.compose.service': 'redpanda',
+            'com.docker.compose.project.working_dir': str(M.ROOT),
+        }}}
+        with patch.dict(os.environ, {'ADDP_ONLINE_DLQ_REDPANDA_ID': broker_id,
+                                    'INFRA_KAFKA_TRANSFER_PASSWORD': 'private-sentinel'}), \
+                patch.object(M.FAULTS.SUPPORT, 'deployment_secret'), \
+                patch.object(M.subprocess, 'run') as command:
+            for names, present in [(['__addp_dlq.2.7', '__addp_dlq.2.70'], True),
+                                   (['__addp_dlq.2.70', '__addp_dlq.3.7'], False)]:
+                command.side_effect = [SimpleNamespace(stdout=json.dumps([broker])),
+                    SimpleNamespace(stdout=json.dumps([{'name': name} for name in names]))]
+                self.assertIs(M.kafka_dlq_exists(2, 7), present)
+                self.assertEqual(command.call_args.args[0][1:5],
+                                 ['exec', '-e', 'INFRA_KAFKA_TRANSFER_PASSWORD', broker_id])
+                self.assertNotIn('private-sentinel', str(command.call_args))
+            command.reset_mock()
+            command.side_effect = [SimpleNamespace(stdout=json.dumps([{**broker, 'Id': 'c' * 64}]))]
+            with self.assertRaises(M.SuiteError):
+                M.kafka_dlq_exists(2, 7)
+            command.assert_called_once()
+
     def test_scenario_error_survives_a_second_history_failure_during_cleanup(self):
         calls, report = [], {}
         self_case = self
@@ -642,6 +732,11 @@ class ContinuousRunnerTest(unittest.TestCase):
     def test_source_configs_preserve_distinct_business_kafka_and_cdc_contracts(self):
         kafka = M.task_config('kafka', 10, 11)
         cdc = M.task_config('cdc', 10, 11)
+        normal = M.task_config('kafka-graceful', 10, 11)
+        self.assertEqual(normal['source'], kafka['source'])
+        self.assertEqual(normal['target']['name'], 'continuous_kafka_graceful_target')
+        self.assertEqual(normal['runtime']['record_failure']['mode'], 'dead_letter')
+        self.assertEqual(kafka['runtime']['record_failure']['mode'], 'block')
         self.assertEqual(kafka['source']['locator'], 'addp://engine/11/path/continuous_events?type=topic')
         self.assertEqual(kafka['source']['change_stream']['start'], {'mode': 'committed', 'initial': 'earliest'})
         self.assertEqual(cdc['load']['change_detection'], {'type': 'cdc', 'bootstrap': 'initial_snapshot'})

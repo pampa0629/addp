@@ -52,7 +52,8 @@ OWNER_OUTAGE_CHECKS = ['previously_readable', 'event_transport_failure_isolated'
                        'real_owner_503', 'old_details_tree_steps_events_cleared', 'old_list_and_total_cleared',
                        'recovered_authorized_reads', 'no_samples']
 PHASES = {'preflight', 'source_scan', 'source_catalog', 'kafka_initial', 'kafka_visibility', 'kafka_browser', 'worker_recovery',
-          'kafka_record_failure', 'owner_unavailable', 'reader_revocation', 'cdc_initial', 'cdc_owner_outage',
+          'kafka_record_failure', 'owner_unavailable', 'reader_revocation', 'kafka_hard_delete', 'kafka_graceful',
+          'cdc_initial', 'cdc_owner_outage',
           'cdc_mutation', 'cdc_approval', 'cdc_resume', 'cdc_stop', 'scheduled_create', 'scheduled_admission',
           'scheduled_pause', 'scheduled_completion', 'scheduled_scan', 'scheduled_result', 'cleanup', 'deleted_history'}
 
@@ -189,21 +190,23 @@ def lifecycle_events(items, terminal=None):
 
 
 def task_config(kind, pg, kafka):
-    require(kind in {'kafka', 'cdc'} and pg > 0 and kafka > 0, 'invalid physical source identity')
+    require(kind in {'kafka', 'cdc', 'kafka-graceful'} and pg > 0 and kafka > 0, 'invalid physical source identity')
+    is_kafka = kind != 'cdc'
     source = {'locator': f'addp://engine/{pg}/path/public/continuous_source?type=table',
               'data_type': 'table', 'representation': 'native'}
     detection = {'type': 'cdc', 'bootstrap': 'initial_snapshot'}
-    if kind == 'kafka':
+    if is_kafka:
         source = {'locator': f'addp://engine/{kafka}/path/continuous_events?type=topic', 'representation': 'native',
                   'change_stream': {'envelope': 'record', 'encoding': 'json',
                                     'key': {'source': 'value', 'fields': ['id']},
                                     'start': {'mode': 'committed', 'initial': 'earliest'}, 'poll_batch_size': 100}}
         detection = {'type': 'kafka'}
-    return {'runtime': {'boundary': 'continuous', 'record_failure': {'mode': 'block'}},
+    return {'runtime': {'boundary': 'continuous',
+                        'record_failure': {'mode': 'dead_letter' if kind == 'kafka-graceful' else 'block'}},
             'load': {'mode': 'incremental', 'change_detection': detection}, 'source': source,
             'target': {'parent_locator': f'addp://engine/{pg}/path/public?type=schema',
-                       'name': f'continuous_{kind}_target', 'data_type': 'table', 'representation': 'native',
-                       'policy': {'apply_mode': 'upsert' if kind == 'kafka' else 'upsert_delete', 'keys': ['id']}},
+                       'name': f"continuous_{kind.replace('-', '_')}_target", 'data_type': 'table', 'representation': 'native',
+                       'policy': {'apply_mode': 'upsert' if is_kafka else 'upsert_delete', 'keys': ['id']}},
             'transforms': [{'type': 'field_mapping', 'version': 'v1', 'mode': 'project',
                             'fields': [{'source': 'id', 'target': 'id', 'target_type': 'bigint', 'nullable': False},
                                        {'source': 'label', 'target': 'label', 'target_type': 'string', 'nullable': False}]}]}
@@ -309,6 +312,94 @@ COMMIT;
     if evidence is not None:
         evidence.update(state='identity_verified')
     return items, boundary
+
+
+def require_kafka_fixture(tenant, task_id):
+    require(type(tenant) is int and tenant > 1 and type(task_id) is int and task_id > 0
+            and os.environ.get('ONLINE_SUITE') == SUITE
+            and os.environ.get('ADDP_ONLINE_TEST_TENANT_ID') == str(tenant),
+            'Kafka cleanup observation requires the exact Hosted task scope')
+
+
+def kafka_delete_facts(tenant, task_id, execution_id):
+    require_kafka_fixture(tenant, task_id)
+    execution_id = canonical_uuid(execution_id)
+    postgres_id = os.environ.get('ADDP_ONLINE_SCAN_POSTGRES_ID', '')
+    require(re.fullmatch(r'[0-9a-f]{64}', postgres_id), 'Kafka cleanup requires the exact Hosted PostgreSQL')
+    postgres = import_module('scripts.test.execution-retention-readonly-online')
+    statement = """BEGIN READ ONLY;
+SET LOCAL statement_timeout='3s'; SET LOCAL lock_timeout='1s';
+SELECT jsonb_build_object(
+  'task_present', EXISTS(SELECT 1 FROM transfer.transfer_tasks
+    WHERE tenant_id = :'tenant'::bigint AND id = :'task'::bigint AND deleted_at IS NULL),
+  'sessions', count(*), 'open', count(*) FILTER (WHERE stopped_at IS NULL),
+  'selected', count(*) FILTER (WHERE execution_id = :'execution'),
+  'selected_open', count(*) FILTER (WHERE execution_id = :'execution' AND stopped_at IS NULL),
+  'operations', (SELECT count(*) FROM transfer.cleanup_operations
+    WHERE tenant_id = :'tenant'::bigint AND task_id = :'task'::bigint))
+FROM transfer.runtime_sessions WHERE tenant_id = :'tenant'::bigint AND task_id = :'task'::bigint;
+COMMIT;
+"""
+    try:
+        facts = json.loads(postgres.sql(statement, expected_suite=SUITE, postgres_id=postgres_id,
+                           variables={'tenant': tenant, 'task': task_id, 'execution': execution_id}))
+    except (KeyError, OSError, ValueError, RuntimeError, subprocess.SubprocessError):
+        raise SuiteError('Hosted Kafka cleanup facts unavailable') from None
+    require(isinstance(facts, dict) and type(facts.get('task_present')) is bool
+            and all(type(facts.get(key)) is int and facts[key] >= 0
+                    for key in ('sessions', 'open', 'selected', 'selected_open', 'operations')),
+            'Hosted Kafka cleanup facts are invalid')
+    return facts
+
+
+def kafka_dlq_exists(tenant, task_id):
+    require_kafka_fixture(tenant, task_id)
+    FAULTS.SUPPORT.deployment_secret()
+    broker_id = os.environ.get('ADDP_ONLINE_DLQ_REDPANDA_ID', '')
+    require(re.fullmatch(r'[0-9a-f]{64}', broker_id) and bool(os.environ.get('INFRA_KAFKA_TRANSFER_PASSWORD')),
+            'Kafka DLQ observation requires the exact Hosted broker and Transfer identity')
+    inspected = subprocess.run(['docker', 'inspect', 'addp-redpanda'], check=True,
+                               capture_output=True, text=True, timeout=10)
+    broker, = json.loads(inspected.stdout)
+    labels = broker['Config']['Labels']
+    require(broker['Id'] == broker_id and broker['State']['Running']
+            and labels.get('com.docker.compose.project') == 'addp-infra'
+            and labels.get('com.docker.compose.service') == 'redpanda'
+            and labels.get('com.docker.compose.project.working_dir') == str(ROOT),
+            'refusing Kafka outside this exclusive deployment')
+    result = subprocess.run(['docker', 'exec', '-e', 'INFRA_KAFKA_TRANSFER_PASSWORD', broker_id, 'sh', '-c',
+        'exec rpk topic list --format json -X brokers=redpanda:29092 -X user=transfer '
+        '-X "pass=$INFRA_KAFKA_TRANSFER_PASSWORD" -X sasl.mechanism=SCRAM-SHA-256'],
+        capture_output=True, text=True, check=True, timeout=20)
+    require(len(result.stdout) <= 65536, 'Hosted DLQ observation exceeds its bound')
+    topics = json.loads(result.stdout)
+    require(type(topics) is list and len(topics) < 1000
+            and all(type(item) is dict and isinstance(item.get('name'), str) for item in topics),
+            'Hosted DLQ listing is invalid')
+    return f'__addp_dlq.{tenant}.{task_id}' in {item['name'] for item in topics}
+
+
+def verify_kafka_hard_delete(client, tenant, task_id, old_execution):
+    path = f'{OWNER}/task-definitions/{task_id}'
+    def stopped_except_old():
+        facts = kafka_delete_facts(tenant, task_id, old_execution)
+        require(facts['task_present'] and facts['operations'] == 0, 'hard-exit task is missing or already has cleanup operations')
+        require(facts['selected'] == facts['selected_open'] == 1, 'original Kafka invocation must lack an exit confirmation')
+        return facts if facts['sessions'] >= 2 and facts['open'] == 1 else None
+
+    before = until(stopped_except_old)
+    # The Gateway may time out as the Owner returns 503. Durable state and a fresh
+    # read of the exact definition distinguish a fence refusal from unavailability.
+    rejection = client.request('DELETE', path, (502, 503))
+    assert_safe(rejection.payload)
+    current = client.request('GET', path, (200,)).payload
+    require(current.get('id') == task_id and current.get('desired_state') == 'stopped',
+            'hard-exit deletion did not preserve the stopped task')
+    API.assert_tenant(current, tenant, 'hard-exit Kafka task')
+    require(kafka_delete_facts(tenant, task_id, old_execution) == before,
+            'hard-exit deletion changed sessions or registered an external operation')
+    return {'task_id': task_id, 'execution_id': old_execution, 'delete_status': rejection.status,
+            'original_invocation_unconfirmed': True, 'task_retained': True, 'no_delete_dispatch': True}
 
 
 def scan_timestamp(item):
@@ -641,7 +732,7 @@ def scheduled_task_body(name, pg):
 
 
 def quiesce_task_for_cleanup(client, task_id, kind, name, current, mutate):
-    require(kind in {'scheduled', 'kafka', 'cdc'}, 'unknown cleanup task kind')
+    require(kind in {'scheduled', 'kafka', 'cdc', 'kafka-graceful'}, 'unknown cleanup task kind')
     if kind == 'scheduled':
         if current.get('enabled') is True:
             mutate(client, f'{OWNER}/task-definitions/{task_id}/pause')
@@ -674,29 +765,49 @@ def failure_diagnostic(phase, error):
     return {'phase': phase if phase in PHASES else 'preflight', 'reason': reason}
 
 
-def cleanup_owned_tasks(client, tasks, mutate, report, checkpoint):
+def cleanup_owned_tasks(client, tasks, mutate, report, checkpoint, *, hard_task=None, graceful=None):
     report['cleanup'] = 'started'
     report['cleanup_tasks'] = []
     checkpoint()
     for task_id, kind, name in reversed(tasks):
         outcome = {'task_id': task_id, 'kind': kind, 'step': 'read_definition', 'result': 'failed'}
+        if task_id == hard_task:
+            verified = report.get('kafka_hard_exit', {}).get('task_id') == task_id
+            outcome.update(step='deployment_destruction', result='retained_for_deployment' if verified else 'failed')
+            report['cleanup_tasks'].append(outcome)
+            checkpoint()
+            continue
+        verify_graceful = graceful is not None and task_id == graceful[1]
         try:
             current = client.request('GET', f'{OWNER}/task-definitions/{task_id}', (200,)).payload
             outcome['step'] = 'quiesce'
             quiesce_task_for_cleanup(client, task_id, kind, name, current, mutate)
             outcome['step'] = 'wait_terminal_history'
             until(lambda: all(item['status'] in TERMINAL for item in history(client, task_id)))
+            if verify_graceful:
+                tenant, _, execution_id = graceful
+                outcome['step'] = 'verify_graceful_exit'
+                until(lambda: kafka_delete_facts(tenant, task_id, execution_id) ==
+                      {'task_present': True, 'sessions': 1, 'open': 0, 'selected': 1, 'selected_open': 0, 'operations': 0})
+                require(kafka_dlq_exists(tenant, task_id), 'graceful Kafka DLQ missing before deletion')
             outcome['step'] = 'delete_definition'
             client.request('DELETE', f'{OWNER}/task-definitions/{task_id}', (200,))
             outcome['step'] = 'verify_deleted'
             client.request('GET', f'{OWNER}/task-definitions/{task_id}', (404,))
+            if verify_graceful:
+                outcome['step'] = 'verify_dlq_absent'
+                require(not kafka_dlq_exists(tenant, task_id), 'graceful Kafka DLQ survived deletion')
+                report['kafka_graceful_exit'] = {'task_id': task_id, 'execution_id': execution_id,
+                    'invocation_stopped': True, 'definition_deleted': True, 'dlq_absent': True}
             outcome.update(step='verified_absent', result='passed')
         except Exception as error:
             outcome['failure'] = failure_diagnostic('cleanup', error)
         report['cleanup_tasks'].append(outcome)
         checkpoint()
-    count = sum(item['result'] != 'passed' for item in report['cleanup_tasks'])
-    report.update(cleanup='failed' if count else 'passed', residual_resources=count)
+    count = sum(item['result'] == 'failed' for item in report['cleanup_tasks'])
+    retained = sum(item['result'] == 'retained_for_deployment' for item in report['cleanup_tasks'])
+    report.update(cleanup='failed' if count else 'passed', residual_resources=count + retained,
+                  expected_deployment_residuals=retained)
     checkpoint()
     return count == 0
 
@@ -707,6 +818,8 @@ def run_suite(client, denied, foreign, peer, reader, admin, login, tenant, run_i
                   history_cleanup='pending_deployment_destruction', uncertain_mutation=False)
     tasks = []
     scenario_failed = False
+    hard_task = None
+    graceful = None
 
     def phase(name):
         require(name in PHASES, 'invalid continuous acceptance phase')
@@ -724,7 +837,7 @@ def run_suite(client, denied, foreign, peer, reader, admin, login, tenant, run_i
     def create(kind):
         name = f'online-{run_id}-{kind}'
         result = mutate(client, f'{OWNER}/task-definitions',
-                        {'name': name, 'task_type': 'sync', 'enabled': False, 'auto_scan_metadata': True,
+                        {'name': name, 'task_type': 'sync', 'enabled': False, 'auto_scan_metadata': kind != 'kafka-graceful',
                          'batch_size': 100, 'config': task_config(kind, pg, kafka)}, (201,))
         task_id = API.require_positive_int(result, 'id')
         API.assert_tenant(result, tenant, 'continuous task')
@@ -824,7 +937,9 @@ def run_suite(client, denied, foreign, peer, reader, admin, login, tenant, run_i
             checkpoint()
 
         def browser_finish():
+            nonlocal hard_task
             phase('worker_recovery')
+            hard_task = kafka_task
             report['worker_fault'] = faults.kill_worker_and_replace()
             checkpoint()
 
@@ -891,6 +1006,20 @@ def run_suite(client, denied, foreign, peer, reader, admin, login, tenant, run_i
             run_id, faults.secret, revoke_reader)
         report['checks'].append('revoked_token_and_fresh_monitor_only_reader_denied')
         report['checks'].append('real_event_pages_saved_cursor_and_revoked_list_total')
+        phase('kafka_hard_delete')
+        report['kafka_hard_exit'] = verify_kafka_hard_delete(client, tenant, kafka_task, initial)
+        report['checks'].append('hard_exit_delete_refused_without_dlq_dispatch')
+
+        phase('kafka_graceful')
+        graceful_task = create('kafka-graceful')
+        graceful_execution = launch(graceful_task)
+        until(lambda: kafka_dlq_exists(tenant, graceful_task))
+        until(lambda: any(event['kind'] == 'progress' and event['counters'].get('records_written', 0) > 0
+                          for event in events(client, f'{OWNER}/executions', graceful_execution)))
+        mutate(client, f'{OWNER}/task-definitions/{graceful_task}/stop')
+        wait_status(client, graceful_execution, 'cancelled')
+        graceful = (tenant, graceful_task, graceful_execution)
+
         phase('cdc_initial')
         cdc_task = create('cdc')
         cdc = launch(cdc_task)
@@ -1014,17 +1143,21 @@ def run_suite(client, denied, foreign, peer, reader, admin, login, tenant, run_i
         phase('cleanup')
     finally:
         previously_uncertain = report['uncertain_mutation']
-        clean = cleanup_owned_tasks(client, tasks, mutate, report, checkpoint)
+        clean = cleanup_owned_tasks(client, tasks, mutate, report, checkpoint, hard_task=hard_task, graceful=graceful)
         report['uncertain_mutation'] |= previously_uncertain
         if not clean and not scenario_failed:
             report['failure'] = failure_diagnostic('cleanup', SuiteError('continuous task cleanup failed'))
             checkpoint()
             raise SuiteError('continuous task cleanup failed')
-    # Definition deletion must retain the authorized execution history and event facts.
     phase('deleted_history')
     compare(initial, 'failed')
-    assert_projection(peer.request('GET', f'{MONITOR}/{initial}', (200,)).payload, initial, monitor=True, tenant=tenant)
-    invisible(denied, initial, 403, 404)
+    graceful_execution = graceful[2]
+    compare(graceful_execution, 'cancelled')
+    for execution_id in (initial, graceful_execution):
+        assert_projection(peer.request('GET', f'{MONITOR}/{execution_id}', (200,)).payload,
+                          execution_id, monitor=True, tenant=tenant)
+        invisible(denied, execution_id, 403, 404)
+    report['kafka_graceful_exit']['authorized_history_readable'] = True
     report['checks'].append('deleted_definition_history_retained_with_owner_permissions')
     require(not report['uncertain_mutation'], 'an uncertain mutation cannot pass')
     report['result'] = 'passed'

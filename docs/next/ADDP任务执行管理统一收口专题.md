@@ -381,12 +381,12 @@ Common 父子准入与 System 协调的用例定位见 [Owner 矩阵](../spec/te
 
 部署限 120 分钟、业务限 900 秒、上传 barrier 限 180 秒、旧租约收敛限 90 秒，其他就绪和评估上限沿用原约定。barrier 过期即失败退出，不续期、不重发。退出须恢复本轮暂停的实例、释放本轮 barrier 并清理本轮资源。完整验收规则见 [T4 原生 Cleanup 规范](../spec/testing/T4-Online验收规范.md#原生-cleanup-的独立有限验收)。
 
-### 8.45 Transfer CDC 审批精度与 Kafka 旧会话（退出方案待确认）
+### 8.45 Transfer CDC 审批精度与 Kafka 旧会话（验收已确认，产品核清待讨论）
 
-[固定源码 Hosted 证据](../spec/testing/evidence/Monitor执行监控与留存历史证据.md#2026-11-10-固定源码复验)中，Kafka 持续写入、故障恢复及旧游标／浏览器核验通过，整套停在 CDC 审批补扫 claim。真实 PostgreSQL 回归使用同一纳秒样本，旧路径以 `.299069081` 生成来源，存储后读回 `.299069000`，claim 事务报冲突。审批更新现在以 `UPDATE … RETURNING` 取同一行的实际应用时间，按既有事务写来源，领取继续做精确比较。回归同时核对审批回滚、claim、完成及安全投影。标准 `make test-transfer-postgres` 本地通过 21 个主用例，零跳过，Transfer Go T1 通过。
+[固定源码 Hosted 证据](../spec/testing/evidence/Monitor执行监控与留存历史证据.md#2026-11-10-固定源码复验)中，Kafka 持续写入、故障恢复及旧游标／浏览器核验通过，整套停在 CDC 审批补扫 claim。真实 PostgreSQL 回归使用同一纳秒样本，旧路径以 `.299069081` 生成来源，存储后读回 `.299069000`，claim 事务报冲突。审批更新现在以 `UPDATE … RETURNING` 取同一行的实际应用时间，按既有事务写来源，领取继续做精确比较。回归同时核对审批回滚、claim、完成及安全投影。标准 `make test-transfer-postgres` 本地与固定 `b3d1b86c1` 的 Linux CI 均通过 21 个主用例，零跳过。Linux Transfer Go T1 已实际执行通过。 [Linux PostgreSQL](https://github.com/pampa0629/addp/actions/runs/42820637708/job/129855701128) · [Linux Go T1](https://github.com/pampa0629/addp/actions/runs/42820637751/job/129844991841)
 
 同一 Hosted 中，Kafka 旧 Worker 经 pidfd 验证已退出，替代 Worker 恢复；旧 invocation 有会话创建记录，缺少原运行体退出确认。业务删除在外部操作登记前等待所有历史会话，最终拒绝。现行 [Transfer 停止与 Cleanup 约束](../spec/addp-cleanup体系规范.md#十五已确认决策)只承认原 `Run` 返回后的停止证明。租约失效解决谁能继续推进执行，不能授权删除 DLQ。独占部署整体销毁的零残留与业务删除结果分别记账。
 
-**建议先分开验证两条路径**。正常退出用独立自有 Kafka 任务，核对 invocation 停止回执、正式删除、精确 DLQ 资源缺失及授权历史仍可读。硬终止场景继续核验恢复和唯一终态，并以当前契约核验删除失败关闭、任务仍存在、未登记或派发本轮 DLQ 删除及外层销毁零残留。两组分别出具回执，不将硬终止后的销毁计为业务删除成功。改变 Hosted 断言及新增场景输入另行确认。
+**已确认分开验证两条路径**。正常退出用独立自有 Kafka 任务，核对 invocation 停止回执、正式删除、精确 DLQ 资源缺失及授权历史仍可读。硬终止场景继续核验恢复和唯一终态，并以当前契约核验删除失败关闭、任务仍存在、未登记或派发本轮 DLQ 删除及外层销毁零残留。两组分别出具回执，不将硬终止后的销毁计为业务删除成功。两条路径已接入既有 runner。本地专项通过 98 项 Python 测试、脚本语法检查和 System 身份夹具 Go 测试。新路径的真实 Hosted 运行单独确认。
 
 **如产品需要硬终止后仍可删除**，另立核清契约。由可信部署控制面提供绑定原主机／运行单元代次与确切进程的退出证明，由 Transfer 绑定 Tenant、task、execution、owner、fencing token 核验，单独保存核清事实。还须证明准确 DLQ 上该 invocation 的在途写入已排空或被原生围栏拒绝，且未遗留未知外部效果；进程退出证据单独不够。匹配全部证据后才允许既有授权入口重新显式提交删除，沿原 task 锁、外部操作登记、未知效果隔离和目标不存在核验。错代际、失联、过期、作用域不符和证据不可用继续阻断。现有 System 实例心跳及 Hosted pidfd 私有观察均不足以直接承担此产品信任边界。生产证据来源、权限及核清操作另议。
