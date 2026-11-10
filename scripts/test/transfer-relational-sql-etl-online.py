@@ -1424,19 +1424,6 @@ def validate_mongodb_execution(execution: dict[str, object], source_locator: str
     return hashes
 
 
-def verify_mongodb_source_visibility(client, engine_id, visible, source=None):
-    namespace, _ = MONGODB_SOURCE.split(".")
-    route = f"/api/v1/meta/engines/{engine_id}/items?branch=" + urllib.parse.quote(namespace, safe="")
-    items = _array(client.request("GET", route, (200,)).payload, "MongoDB source directory")
-    matches = [item for item in items if isinstance(item, dict) and item.get("full_name") == MONGODB_SOURCE]
-    if len(matches) != int(visible):
-        raise SuiteError("MongoDB source directory differs from its exact Grant")
-    if source is not None:
-        if visible and any(matches[0].get(key) != source.get(key) for key in ("id", "engine_id", "fingerprint", "item_type")):
-            raise SuiteError("MongoDB source directory changed its persisted identity")
-        client.request("GET", f"/api/v1/meta/items/{source['id']}", (200,) if visible else (404,))
-
-
 @contextmanager
 def mongodb_source_access(initializer, client, tenant_id, engine_id, timeout):
     if os.environ.get("ONLINE_SUITE") != "transfer-relational-sql-etl":
@@ -1445,24 +1432,29 @@ def mongodb_source_access(initializer, client, tenant_id, engine_id, timeout):
     grants = REGISTRATION.ExactRecordGrants(initializer, client, tenant_id, action="read", scan_preparation=True)
     namespace, collection = MONGODB_SOURCE.split(".")
     target = grants.target(engine_id, namespace, collection, "collection")
+    route = "/api/v1/meta/items/by-catalog-path?" + urllib.parse.urlencode({
+        "engine_id": engine_id, "catalog_path": MONGODB_SOURCE})
     proof = {"schema_version": "addp.mongodb-source-access/v1", "run_id": required_environment("ADDP_ONLINE_TEST_RUN_ID"),
              "source_engine_id": engine_id, "result": "incomplete", "grant_request_ids": []}
     state = {"proof": proof}
-    source = None
     scenario_failed = False
     artifact = Path(required_environment("ADDP_ONLINE_ARTIFACT_DIR")) / "mongodb-source-access.json"
     try:
         scan = wait_for_scan(initializer, engine_id, time.monotonic() + timeout,
                              targets=[f"addp://engine/{engine_id}/path/{namespace}/{collection}?type=collection"])
         proof["scan_execution_id"] = scan
-        verify_mongodb_source_visibility(client, engine_id, False)
+        facts = REGISTRATION.read_exact_record_authorization_facts(initializer, target)
+        client.request("GET", route, (404,))
         proof["hidden_before_grant"] = True
         receipt = grants.grant(engine_id, namespace, collection, "collection")
         proof["grant_request_ids"] = [str(uuid.UUID(receipt["request_id"]))]
-        source = find_item(client, engine_id, MONGODB_SOURCE, "collection")
-        if source.get("fingerprint") != receipt["item_fingerprint"]:
+        source = _object(client.request("GET", route, (200,)).payload, "MongoDB source DataItem")
+        if (source.get("engine_id") != engine_id or source.get("full_name") != MONGODB_SOURCE
+                or source.get("item_type") != "collection"
+                or source.get("fingerprint") != facts["item_fingerprint"]
+                or source.get("fingerprint") != receipt["item_fingerprint"]):
             raise SuiteError("MongoDB source Grant and visible DataItem identity differ")
-        verify_mongodb_source_visibility(client, engine_id, True, source)
+        positive_int(source.get("id"), "MongoDB source item id")
         proof.update(source_item_id=source["id"], visible_after_grant=True)
         state.update(source=source, scan_execution_id=scan)
         artifact.write_text(json.dumps(proof, sort_keys=True) + "\n")
@@ -1475,9 +1467,12 @@ def mongodb_source_access(initializer, client, tenant_id, engine_id, timeout):
             if not proof["grant_request_ids"]:
                 proof["grant_request_ids"] = [row["request_id"] for row in grants.pending]
             grants.cleanup()
-            verify_mongodb_source_visibility(client, engine_id, False, source)
+            if proof["grant_request_ids"]:
+                proof["grants_revoked"] = True
+            client.request("GET", route, (404,))
+            proof["hidden_after_revoke"] = True
             client.request("POST", "/api/v1/system/engine-access/read-checks/manager-preview", (403,), {"targets": [target]})
-            proof.update(grants_revoked=True, hidden_after_revoke=True, source_read_denied_after_revoke=True)
+            proof["source_read_denied_after_revoke"] = True
             transfer = state.get("transfer")
             if transfer is not None:
                 identifiers = transfer.get("execution_ids")

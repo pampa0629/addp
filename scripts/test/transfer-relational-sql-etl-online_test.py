@@ -1671,9 +1671,9 @@ class TransferRelationalSQLETLOnlineTest(unittest.TestCase):
         }}}
 
     def test_mongodb_source_grant_revokes_on_success_failure_and_unknown_issuance(self):
-        source = {"id": 20, "engine_id": 4, "full_name": ONLINE.MONGODB_SOURCE,
+        source = {"id": 20, "node_id": 19, "engine_id": 4, "full_name": ONLINE.MONGODB_SOURCE,
                   "item_type": "collection", "fingerprint": "source-fingerprint"}
-        for failure in (None, "scenario", "issuance", "cleanup"):
+        for failure in (None, "scenario", "issuance", "identity", "cleanup"):
             with self.subTest(failure=failure), tempfile.TemporaryDirectory() as directory:
                 identifier = str(uuid.uuid4())
                 rejected = str(uuid.uuid4())
@@ -1697,13 +1697,15 @@ class TransferRelationalSQLETLOnlineTest(unittest.TestCase):
                     lifecycle.pending.clear()
                 lifecycle.grant.side_effect = grant
                 lifecycle.cleanup.side_effect = cleanup
+                route = "/api/v1/meta/items/by-catalog-path?engine_id=4&catalog_path=transfer_fixture.activities"
+                metadata_statuses = []
                 def request(method, path, expected, body=None):
-                    if path == "/api/v1/meta/engines/4/items?branch=transfer_fixture":
-                        self.assertEqual((method, expected), ("GET", (200,)))
-                        return SimpleNamespace(payload=[source] if visible else [])
-                    if path == "/api/v1/meta/items/20":
-                        self.assertEqual(expected, (200,) if visible else (404,))
-                        return SimpleNamespace(payload=source if visible else {"error": "hidden"})
+                    if path == route:
+                        status = 200 if visible else 404
+                        self.assertEqual((method, expected), ("GET", (status,)))
+                        metadata_statuses.append(status)
+                        item = dict(source, fingerprint="different") if failure == "identity" else source
+                        return SimpleNamespace(payload=item if visible else {"error": "hidden"})
                     self.assertEqual((method, path, expected), ("POST", "/api/v1/system/engine-access/read-checks/manager-preview", (403,)))
                     self.assertFalse(visible)
                     return SimpleNamespace(payload={"error": "denied"})
@@ -1712,7 +1714,8 @@ class TransferRelationalSQLETLOnlineTest(unittest.TestCase):
                        "ADDP_ONLINE_ARTIFACT_DIR": directory, "ADDP_ONLINE_TEST_RUN_ID": "test-run"}
                 with patch.dict(os.environ, env), patch.object(ONLINE, "import_module") as hosted, patch.object(ONLINE.REGISTRATION, "ExactRecordGrants", return_value=lifecycle) as factory, patch.object(
                         ONLINE, "wait_for_scan", return_value="scan-id") as scan, patch.object(
-                        ONLINE, "find_item", return_value=source), patch.object(
+                        ONLINE.REGISTRATION, "read_exact_record_authorization_facts",
+                        return_value={"item_fingerprint": source["fingerprint"]}) as facts, patch.object(
                         ONLINE, "verify_unreadable_source_execution", return_value=rejected) as denied, patch(
                         "sys.stderr", new_callable=io.StringIO) as stderr:
                     def run():
@@ -1729,6 +1732,7 @@ class TransferRelationalSQLETLOnlineTest(unittest.TestCase):
                         denied.assert_called_once_with(client, 7, 30)
                     else:
                         message = {"scenario": "later scenario failed", "issuance": "issuance response lost",
+                                   "identity": "MongoDB source Grant and visible DataItem identity differ",
                                    "cleanup": "primary scenario failed"}[failure]
                         with self.assertRaisesRegex(ONLINE.SuiteError, message):
                             run()
@@ -1736,14 +1740,17 @@ class TransferRelationalSQLETLOnlineTest(unittest.TestCase):
                     hosted.return_value.deployment_secret.assert_called_once()
                     self.assertEqual(scan.call_args.args[:2], (issuer, 4))
                     self.assertEqual(scan.call_args.kwargs["targets"], ["addp://engine/4/path/transfer_fixture/activities?type=collection"])
+                    facts.assert_called_once_with(issuer, lifecycle.target(4, "transfer_fixture", "activities", "collection"))
                     lifecycle.cleanup.assert_called_once()
                     proof = json.loads((Path(directory) / "mongodb-source-access.json").read_text())
                     self.assertEqual(proof["grant_request_ids"], [identifier])
                     if failure == "cleanup":
+                        self.assertEqual(metadata_statuses, [404, 200])
                         self.assertEqual(proof["result"], "failed")
                         self.assertIn("MongoDB source Grant cleanup also failed", stderr.getvalue())
                         self.assertNotIn("private cleanup failure", stderr.getvalue())
                     else:
+                        self.assertEqual(metadata_statuses, [404, 404] if failure == "issuance" else [404, 200, 404])
                         self.assertFalse(visible)
                         self.assertTrue(proof["grants_revoked"])
                         self.assertTrue(proof["source_read_denied_after_revoke"])
