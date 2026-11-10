@@ -167,7 +167,9 @@ def apply(action, kind, scope, env):
         cleanup = '；清理未确认' if '[cleanup=failed]' in result.stderr else ''
         reason = re.search(r'\[reason=([a-z-]+)\]', result.stderr)
         if reason and reason[1] in FAILURE_REASONS:
-            raise ValueError('操作失败：'+FAILURE_REASONS[reason[1]]+cleanup+'；命令：python3 scripts/infra/metrics-sources.py up --scope '+scope+' --kind '+kind)
+            command = ('./scripts/infra/host-metrics.sh up' if kind == 'node'
+                       else f'python3 scripts/infra/metrics-sources.py up --scope {scope} --kind {kind}')
+            raise ValueError('操作失败：'+FAILURE_REASONS[reason[1]]+cleanup+'；命令：'+command)
         stage = re.search(r'\[stage=([a-z-]+)\]', result.stderr)
         tls = tls_failure_detail(stage[1] if stage else None, re.findall(r'\[tls-reason=([a-z-]+)\]', result.stderr))
         detail = '：'+tls if tls else ('：'+FAILURE_STAGES[stage[1]]) if stage and stage[1] in FAILURE_STAGES else ''

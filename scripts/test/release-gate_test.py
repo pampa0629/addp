@@ -44,6 +44,11 @@ class DeploymentPackageTest(unittest.TestCase):
             self.assertEqual(package.returncode, 0, package.stderr)
             output, = (root / 'dist').glob('package-registry-*')
             self.assertFalse((output / '.env').exists())
+            host_entry = output / 'scripts/infra/host-metrics.sh'
+            result = subprocess.run([host_entry, 'check'], cwd=root, env=env,
+                                    capture_output=True, text=True, timeout=10)
+            self.assertEqual(result.returncode, 1, result.stderr)
+            self.assertIn('配置读取失败', result.stdout)
 
             # Simulate a fresh Engine and stop at the Infra Docker boundary.
             # No command from this package can reach the host Docker daemon.
@@ -67,6 +72,10 @@ exit 1
             self.assertNotEqual(result.returncode, 0)
             self.assertEqual((output / '.env').stat().st_mode & 0o777, 0o600)
             self.assertFalse((output / '.dev-state/lifecycle.lock').exists())
+            result = subprocess.run([host_entry, 'check'], cwd=root, env=env,
+                                    capture_output=True, text=True, timeout=10)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertIn('共 1 项，失败 0 项', result.stdout)
 
             for entry in ('scripts/utils/deployment-inventory.py', 'scripts/infra/node-metrics.py',
                           'scripts/infra/redis-metrics.py', 'scripts/infra/minio-observation.py'):

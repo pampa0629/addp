@@ -4,6 +4,7 @@ import importlib.util
 import io
 import os
 from pathlib import Path
+import shutil
 import subprocess
 import tempfile
 import unittest
@@ -16,6 +17,24 @@ spec.loader.exec_module(manager)
 
 
 class MetricsSourcesTest(unittest.TestCase):
+    def test_host_entry_delegates_only_host_actions_from_another_directory(self):
+        with tempfile.TemporaryDirectory(prefix='addp host metrics ') as folder:
+            root = Path(folder)
+            entry = root/'scripts/infra/host-metrics.sh'
+            entry.parent.mkdir(parents=True)
+            shutil.copy2(ROOT/'scripts/infra/host-metrics.sh', entry)
+            entry.with_name('metrics-sources.py').write_text(
+                'import sys\nprint(" ".join(sys.argv[1:]))\nsys.exit(19)\n')
+            for action in ('check', 'up', 'status', 'down', 'recover'):
+                with self.subTest(action=action):
+                    result = subprocess.run([entry, action], cwd=root, capture_output=True, text=True, timeout=5)
+                    self.assertEqual(result.returncode, 19, result.stderr)
+                    self.assertEqual(result.stdout.strip(), f'{action} --scope host --kind node')
+            result = subprocess.run([entry, 'up', '--scope', 'infra'], cwd=root,
+                                    capture_output=True, text=True, timeout=5)
+            self.assertEqual(result.returncode, 2)
+            self.assertEqual(result.stdout, '')
+
     def invoke(self, action, scopes=(), kinds=(), env=None, **patches):
         output = io.StringIO()
         with contextlib.ExitStack() as stack:
