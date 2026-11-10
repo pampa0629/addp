@@ -9,7 +9,10 @@ const profiles = {
 }
 
 async function fixture(page, { language = 'zh-cn', metrics = profiles.pg, supported = true } = {}) {
-  const state = { requests: [], reads: 0, fail: false, version: 1, pending: null, delay: false }
+  const state = {
+    requests: [], reads: 0, fail: false, version: 1, pending: null, delay: false,
+    queriedAt: '2026-11-08T12:00:00Z', metrics
+  }
   const engine = { id: '71', name: 'Native overview fixture', version: 1, engine_type: 'future_native', engine_origin: 'general',
     lifecycle_state: 'active', connection_status: 'online', connection_info: {},
     capabilities: { schema_version: 'engine.capabilities/v1', engine_family: 'tabular', storage: {}, ...(supported ? { instance_overview: true } : {}) } }
@@ -34,7 +37,7 @@ async function fixture(page, { language = 'zh-cn', metrics = profiles.pg, suppor
     if (path.endsWith('/engines/71')) return reply(engine)
     if (path.endsWith('/engines/71/overview')) {
       state.reads++
-      const response = { engine_id: '71', version: state.version, queried_at: '2026-11-08T12:00:00Z', metrics }
+      const response = { engine_id: '71', version: state.version, queried_at: state.queriedAt, metrics: state.metrics }
       if (state.delay) { state.pending = { route, headers, response }; state.delay = false; return }
       if (state.fail) return reply({ error: 'private-source-error' }, 503)
       return reply(response)
@@ -49,7 +52,7 @@ async function fixture(page, { language = 'zh-cn', metrics = profiles.pg, suppor
 const openOverview = page => page.getByRole('tab', { name: '实例概况', exact: true }).click()
 
 for (const profile of Object.keys(profiles)) {
-  test(`${profile} overview renders exact values, scope and independent permission denial without native side effects`, async ({ page }) => {
+  test(`${profile} overview reads and refreshes scoped statistics without native side effects`, async ({ page }) => {
     const state = await fixture(page, { metrics: profiles[profile] })
     expect(state.reads).toBe(0)
     await openOverview(page)
@@ -59,6 +62,35 @@ for (const profile of Object.keys(profiles)) {
     if (profile === 'redis') { await expect(panel).toContainText('0 个'); await expect(panel).toContainText('源账号权限不足'); await expect(panel).toContainText('整个服务') }
     if (profile === 'minio') { await expect(panel).toContainText('2 个'); await expect(panel).toContainText('当前连接账号的桶列表'); await expect(panel).not.toContainText('数据库占用空间') }
     expect(state.reads).toBe(1)
+
+    const timestamp = panel.getByText(/^查询时间[:：]/)
+    await expect(timestamp).toBeVisible()
+    const initialTime = await timestamp.innerText()
+    state.queriedAt = '2026-11-09T12:00:00Z'
+    state.metrics = profiles[profile].map((item, i) => {
+      if (i !== 0) return item
+      if (profile === 'minio') {
+        const { value, ...denied } = item
+        return { ...denied, status: 'permission_denied' }
+      }
+      return { ...item, value: profile === 'pg' ? '9007199254740994' : '7' }
+    })
+    await panel.getByRole('button', { name: '刷新', exact: true }).click()
+    await expect(timestamp).toBeVisible()
+    await expect(timestamp).not.toHaveText(initialTime)
+    if (profile === 'pg') await expect(panel).toContainText('9,007,199,254,740,994')
+    if (profile === 'redis') await expect(panel).toContainText('7 个')
+    if (profile === 'minio') {
+      const bucketRow = panel.getByRole('row').filter({ hasText: '账号可列出的桶数' })
+      await expect(bucketRow).toContainText('当前连接账号的桶列表')
+      await expect(bucketRow).toContainText('源账号权限不足')
+      await expect(bucketRow).not.toContainText(/[02] 个/)
+      await expect(panel.getByTestId('overview-error')).toHaveCount(0)
+    }
+    expect(state.requests.filter(request => request.endsWith('/overview'))).toEqual([
+      'GET /api/v1/system/engines/71/overview',
+      'GET /api/v1/system/engines/71/overview'
+    ])
     expect(state.requests.some(request => /\/catalog|\/test|\/access_grants|\/monitor/.test(request))).toBe(false)
     expect(state.requests.filter(request => !request.startsWith('GET ') && !request.endsWith('/refresh'))).toEqual([])
     await page.setViewportSize({ width: 1280, height: 800 })
