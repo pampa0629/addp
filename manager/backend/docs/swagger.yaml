@@ -7048,6 +7048,7 @@ paths:
         支持 Range 请求的单存储叶子内容流式传输，用于图片、PDF、视频等在线预览；用户下载请使用 downloads/file。storage_ref 在对象存储中为 bucket/path，在文件系统中为文件路径 | Storage leaf content streaming with Range request support for online previews such as images, PDF, and video; use downloads/file for user downloads. storage_ref is bucket/path for object catalogs and file path for file catalogs
         模型主文件及确认依赖须以当前普通用户 Bearer 核验完整组成和现行源许可，不接受 Resource Ticket 代替源授权。 | Model primaries and confirmed dependencies require the current User Bearer, complete composition and current source rules; resource tickets cannot replace source authorization.
         NFS FileGDB 内部成员须以当前普通用户 Bearer 在每次源读取前核验根 DataItem 的现行授权；不授予容器外路径读取权。 | NFS FileGDB members require the current User Bearer and a current root DataItem authorization check before each source read; paths outside the container are not authorized.
+        NFS 单文件 GeoTIFF 和 COG 预览须提供 Range 与当前用户 Bearer，读取源属性和打开字节流前分别核验精确文件授权。 | NFS single-file GeoTIFF and COG preview requires Range and the current User Bearer. Exact file authorization is checked before stat and before opening the stream.
         NFS 格式尚未接入源读取授权时，在访问源存储前返回 403。 | NFS formats without source read authorization support return 403 before source storage access.
       parameters:
       - description: 带 item_id 的存储数据项定位符 | Storage DataItem locator with item_id

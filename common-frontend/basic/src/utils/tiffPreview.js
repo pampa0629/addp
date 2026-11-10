@@ -27,6 +27,12 @@ export async function readTIFFRGBA(image, width, height, signal) {
   const bits = Array.from(fd.BitsPerSample || [1])
   const formats = Array.from(fd.SampleFormat || bits.map(() => 1))
   const extras = Array.from(fd.ExtraSamples || [])
+  if ((pi === 0 || pi === 1) && bits.length === 1 && [32, 64].includes(bits[0]) &&
+      formats.length === 1 && formats[0] === 3 && extras.length === 0) {
+    const samples = await image.readRasters(options)
+    const noData = image.getGDALNoData?.()
+    return floatGrayRGBA(samples, noData, pi === 0)
+  }
   const channels = pi === 2 ? 3 : 1
   let raster
   const direct = [0, 1, 2].includes(pi)
@@ -57,4 +63,32 @@ export async function readTIFFRGBA(image, width, height, signal) {
     out[dest + 3] = Math.round(alpha * 255)
   }
   return out
+}
+
+function floatGrayRGBA(samples, noData, inverted) {
+  let min = Infinity
+  let max = -Infinity
+  for (const value of samples) {
+    if (!Number.isFinite(value) || value === noData) continue
+    min = Math.min(min, value)
+    max = Math.max(max, value)
+  }
+  const rgba = new Uint8ClampedArray(samples.length * 4)
+  const span = max - min
+  // Halving only when necessary keeps the subtraction finite at Float64 extremes.
+  const scale = span === Infinity ? 0.5 : 1
+  const scaledMin = min * scale
+  const scaledSpan = max * scale - scaledMin
+  for (let index = 0; index < samples.length; index++) {
+    const value = samples[index]
+    if (!Number.isFinite(value) || value === noData) continue
+    const gray = min === max ? 0.5 : (value * scale - scaledMin) / scaledSpan
+    const level = Math.round((inverted ? 1 - gray : gray) * 255)
+    const offset = index * 4
+    rgba[offset] = level
+    rgba[offset + 1] = level
+    rgba[offset + 2] = level
+    rgba[offset + 3] = 255
+  }
+  return rgba
 }

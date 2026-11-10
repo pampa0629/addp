@@ -47,7 +47,8 @@ TIFF_SOURCES=({'case':'unlocated-small-cog','object':'raster/tiff-unlocated-smal
 def validate_tiff_meta(owner, detail):
     attrs=owner._object(detail.get('attributes'),'TIFF attributes')
     item=attrs.get('item',{});media=attrs.get('type_info',{}).get('media',{});info=attrs.get('format_info',{}).get('tiff',{})
-    if (any(item.get(k)!=v for k,v in {'data_type':'media','format':'tiff','layout':'multi','file_count':1}.items())
+    if (any(item.get(k)!=v for k,v in {'data_type':'media','format':'tiff','layout':'single'}.items())
+        or 'refs' in item or 'file_count' in item
         or any(media.get(k)!=v for k,v in {'kind':'image','encoding':'tiff','width':240,'height':120}.items())
         or info.get('profile')!='cog' or info.get('cog_check_level')!='heuristic'
         or info.get('is_cloud_optimized') is not True or info.get('is_tiled') is not True
@@ -143,13 +144,13 @@ def validate_browser(owner, report, evidence):
                 or actual.get('source_preview_verified') is not True):
             raise owner.SuiteError('IMG browser source bytes or metadata were not verified')
         if expected['source_srid'] is None:
-            keys=('map_absent','source_image_absent','unsupported_message_visible')
+            keys=('map_absent','source_image_absent')
             if evidence['source_format']=='tiff':
-                keys+=('tiff_pages_verified','cog_metadata_visible','zero_overviews_verified','refreshed_metadata_verified','reopened')
-                if (actual.get('download_bundle',{}).get('members')!=expected['download_members']
-                    or actual.get('scanned_at')!=expected['refresh']['scanned_at_after']):
-                    raise owner.SuiteError('small TIFF browser refresh or exact download bundle differs')
-            else:keys+=('generation_unavailable',)
+                keys+=('tiff_pages_verified','tiff_pixels_verified','range_loaded','cog_metadata_visible',
+                       'zero_overviews_verified','refreshed_metadata_verified','reopened')
+                if actual.get('scanned_at')!=expected['refresh']['scanned_at_after']:
+                    raise owner.SuiteError('small TIFF browser refresh differs')
+            else:keys+=('unsupported_message_visible','generation_unavailable')
             if any(actual.get(key) is not True for key in keys):
                 raise owner.SuiteError('unlocated IMG browser boundary is incomplete')
         else:
@@ -206,13 +207,7 @@ def run(repository, environment, owner, *, browser_runner=None, physical_runner=
                 detail,refresh=refresh_tiff(owner,client,engine,fixture,detail)
             snapshots[item['id']] = detail
             downloaded = client.request('GET', '/api/v1/manager/downloads/file?' + urlencode({'locator': fixture.locator}), (200,))
-            download_members=None
-            if source_format=='tiff':
-                download_members={Path(spec['object']).name:{k:seeded[k]for k in ('sha256','size_bytes')}}
-                owner.validate_model_bundle(downloaded.raw,download_members)
-                import io,zipfile
-                with zipfile.ZipFile(io.BytesIO(downloaded.raw))as bundle:source_raw=bundle.read(Path(spec['object']).name)
-            else:source_raw=downloaded.raw
+            source_raw=downloaded.raw
             if len(source_raw) != seeded['size_bytes'] or hashlib.sha256(source_raw).hexdigest() != seeded['sha256']:
                 raise owner.SuiteError('IMG original download differs from physical source')
             archive = Path(environment['ADDP_ONLINE_ARTIFACT_DIR'])
@@ -221,7 +216,7 @@ def run(repository, environment, owner, *, browser_runner=None, physical_runner=
             case = {**spec, 'item_id': item['id'], 'locator': fixture.locator,
                     'sha256': seeded['sha256'], 'size_bytes': seeded['size_bytes'], 'metadata_verified': True}
             cases.append(case)
-            if source_format=='tiff':case.update(download_members=download_members,refresh=refresh)
+            if source_format=='tiff':case.update(refresh=refresh)
             if spec['source_srid'] is None:
                 capability = client.request('GET', '/api/v1/manager/quick-view/capability?' + urlencode({'locator': fixture.locator}), (200,)).payload
                 if capability.get('can_use_quick_view') or (source_format!='tiff' and 'generate_raster_cog' in capability.get('available_actions', [])):

@@ -277,6 +277,70 @@ func TestStorageStreamDeniesManagedRawContent(t *testing.T) {
 	}
 }
 
+func TestNFSStandaloneTIFFRangeRequiresCurrentExactFileRead(t *testing.T) {
+	const source = "images/source.tif"
+	previous, previousErr := plugin.Get("nfs")
+	plugin.Register(newAPIDownloadTestFilePlugin("nfs", map[string]string{source: "TIFF bytes"}))
+	t.Cleanup(func() {
+		if previousErr == nil {
+			plugin.Register(previous)
+		} else {
+			plugin.Unregister("nfs")
+		}
+	})
+	metadata := service.NewMetadataService(nil, apiDownloadTestSystemClient(t, 9, "nfs"), apiDownloadTestMetaItemClient(t, `{
+		"id":1,"tenant_id":1,"engine_id":9,"item_type":"file","name":"source.tif","full_name":"images/source.tif",
+		"attributes":{"item":{"layout":"single","format":"tiff","data_type":"media"},"storage":{"physical_path":"images/source.tif"}}
+	}`), nil, nil)
+	checks := 0
+	revokeBeforeOpen := false
+	metadata.SetFileSourceReadChecker(apiModelReadChecker(func(_ context.Context, credential string, scope client.ManagerFileExpectedSource) error {
+		checks++
+		refs := scope.FileComposition.Refs
+		if credential != "addp_at_current_user" || scope.EngineVersion != "1" ||
+			scope.FileComposition.Format != "tiff" || scope.FileComposition.SourceLayout != "single" ||
+			len(refs) != 1 || refs[0].Target.StringPath() != source || refs[0].Role != "image" || !refs[0].Primary || !refs[0].Required {
+			t.Fatal("expected current User and exact TIFF boundary")
+		}
+		if revokeBeforeOpen && checks == 2 {
+			return client.ErrManagerPreviewReadDenied
+		}
+		return nil
+	}))
+	handler := NewExplorerHandler(nil, nil, metadata, apiDownloadProtectionGate{}, nil)
+	router := gin.New()
+	router.Use(func(c *gin.Context) { setTenantAuthContextForTest(c, 1, 1); c.Next() })
+	router.GET("/storage-stream", handler.StorageStream)
+	locator := "addp://engine/9/path/images/source.tif?type=file&item_id=1"
+	request := func(storageRef, byteRange, token string) *httptest.ResponseRecorder {
+		t.Helper()
+		checks = 0
+		req := httptest.NewRequest(http.MethodGet, "/storage-stream?locator="+urlQueryEscape(locator)+"&storage_ref="+urlQueryEscape(storageRef), nil)
+		req.Header.Set("Range", byteRange)
+		req.Header.Set("Authorization", "Bearer "+token)
+		resp := httptest.NewRecorder()
+		router.ServeHTTP(resp, req)
+		return resp
+	}
+	if resp := request(source, "bytes=0-65536", "addp_at_current_user"); resp.Code != http.StatusPartialContent ||
+		resp.Header().Get("Content-Range") != "bytes 0-9/10" || resp.Body.String() != "TIFF bytes" || checks != 2 {
+		t.Fatalf("Range status=%d body=%q checks=%d", resp.Code, resp.Body.String(), checks)
+	}
+	if resp := request(source, "", "addp_at_current_user"); resp.Code != http.StatusForbidden || checks != 0 {
+		t.Fatalf("full stream status=%d checks=%d", resp.Code, checks)
+	}
+	if resp := request(source, "bytes=0-65536", "addp_rat_ticket"); resp.Code != http.StatusUnauthorized || checks != 0 {
+		t.Fatalf("ticket status=%d checks=%d", resp.Code, checks)
+	}
+	if resp := request("images/sibling.tif", "bytes=0-65536", "addp_at_current_user"); resp.Code != http.StatusBadRequest || checks != 0 {
+		t.Fatalf("sibling status=%d checks=%d", resp.Code, checks)
+	}
+	revokeBeforeOpen = true
+	if resp := request(source, "bytes=0-65536", "addp_at_current_user"); resp.Code != http.StatusForbidden || checks != 2 {
+		t.Fatalf("revoked status=%d checks=%d", resp.Code, checks)
+	}
+}
+
 func TestStorageAssetDeniesManagedRawContent(t *testing.T) {
 	t.Parallel()
 

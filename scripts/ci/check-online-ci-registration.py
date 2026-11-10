@@ -702,8 +702,8 @@ def validate_manager_internal_artifact_lineage_profile(repository: Path, registe
         raise RegistrationError('Manager IMG Hosted subscene must include real generation, browser, cleanup and standard regressions')
     tiff_physical=(repository/'business/scripts/online-raster-minio-fixture.py').read_text()
     tiff_native=(repository/'engines/geopython-workflow/test_online_raster_fixture.py').read_text()
-    if (any(not source_contract_contains(img_owner, fragment, repository) for fragment in ('TIFF_SOURCES','validate_tiff_meta','validate_tiff_physical','refresh_tiff','download_members'))
-            or any(not source_contract_contains(img_browser, fragment, repository) for fragment in ('tiff_pages_verified','cog_metadata_visible','zero_overviews_verified','refreshed_metadata_verified','tiff-unlocated-small-cog-button.zip'))
+    if (any(not source_contract_contains(img_owner, fragment, repository) for fragment in ('TIFF_SOURCES','validate_tiff_meta','validate_tiff_physical','refresh_tiff','source_raw'))
+            or any(not source_contract_contains(img_browser, fragment, repository) for fragment in ('tiff_pages_verified','cog_metadata_visible','zero_overviews_verified','refreshed_metadata_verified','tiff_pixels_verified','tiff-unlocated-small-cog-button.tif'))
             or any(not source_contract_contains(tiff_physical, fragment, repository) for fragment in ('def manager_tiff_facts','def manager_seed_tiff','def manager_tiff_source','tiff-source','full_check=True'))
             or any(not source_contract_contains(tiff_native, fragment, repository) for fragment in ('test_manager_tiff_unlocated_small_cog_complete_pixels_and_source_bytes','test_manager_tiff_rejects_semantic_tampering_even_with_rewritten_receipt'))):
         raise RegistrationError('Manager TIFF COG requires complete physical, exact refresh, browser and regression proofs')

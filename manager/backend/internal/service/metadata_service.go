@@ -41,14 +41,15 @@ type MetadataService struct {
 // ItemFingerprint for protection decisions and never trust a client-provided
 // fingerprint.
 type StorageDataItem struct {
-	EngineID        uint
-	EngineType      string
-	StorageRef      string
-	ItemFingerprint string
-	Descriptor      dataitem.ItemDescriptor
-	engine          *models.Engine
-	item            *commonModels.MetaItem
-	locator         string
+	EngineID         uint
+	EngineType       string
+	StorageRef       string
+	ItemFingerprint  string
+	Descriptor       dataitem.ItemDescriptor
+	engine           *models.Engine
+	item             *commonModels.MetaItem
+	locator          string
+	tiffRangePreview bool
 }
 
 var ErrEngineAccessDenied = errors.New("engine not accessible for current tenant")
@@ -211,6 +212,9 @@ func convertResource(src *commonModels.Engine) *models.Engine {
 
 // StreamStorageContent 对存储叶子内容做流式传输，支持 HTTP Range 请求。
 func (s *MetadataService) StreamStorageContent(ctx context.Context, target *StorageDataItem, rangeHeader string, tenantID *uint, credential string, human bool) (io.ReadCloser, int64, string, string, error) {
+	if target != nil && target.tiffRangePreview && strings.TrimSpace(rangeHeader) == "" {
+		return nil, 0, "", "", commonClient.ErrManagerPreviewReadDenied
+	}
 	read, err := s.prepareStorageRead(target, tenantID, credential, human, nil)
 	if err != nil {
 		return nil, 0, "", "", err
@@ -364,6 +368,9 @@ func (s *MetadataService) ResolveStorageStreamTarget(ctx context.Context, locato
 		return nil, fmt.Errorf("%w: storage_ref is outside the locator DataItem", ErrDownloadNotSupported)
 	}
 	target.StorageRef = normalizedRef
+	target.tiffRangePreview = target.EngineType == "nfs" &&
+		target.Descriptor.Format == "tiff" && target.Descriptor.DataType == datatype.Media &&
+		target.Descriptor.Layout == format.LayoutSingle && len(target.Descriptor.Refs) == 0
 	return target, nil
 }
 

@@ -60,14 +60,15 @@ func (s *MetadataService) prepareStorageRead(target *StorageDataItem, tenantID *
 	if target == nil || tenantID == nil || *tenantID == 0 || target.EngineID == 0 {
 		return nil, ErrEngineAccessDenied
 	}
-	if !storageRawReadSupported(target) {
+	tiffPreview := plan == nil && target.tiffRangePreview
+	if !tiffPreview && !storageRawReadSupported(target) {
 		return nil, commonClient.ErrManagerPreviewReadDenied
 	}
 	read := &storageRead{service: s, target: target, tenantID: tenantID}
 	if target.Descriptor.Format == "filegdb" {
 		return s.prepareWholeStorageRead(read, credential, human)
 	}
-	if !storageFileSourceRequiresUser(target) {
+	if !tiffPreview && !storageFileSourceRequiresUser(target) {
 		return read, nil
 	}
 	if !human || !strings.HasPrefix(credential, "addp_at_") || strings.ContainsAny(credential, " \t\r\n") {
@@ -79,7 +80,7 @@ func (s *MetadataService) prepareStorageRead(target *StorageDataItem, tenantID *
 	engine, item := target.engine, target.item
 	if engine == nil || item == nil || engine.ID != target.EngineID || engine.EngineType != target.EngineType ||
 		engine.TenantID == nil || *engine.TenantID != *tenantID || engine.Version <= 0 ||
-		(!commonExecution.ManagerModel3DSourceFormat(engine.EngineType, target.Descriptor.Format) && target.Descriptor.Format != "envi") {
+		(!tiffPreview && !commonExecution.ManagerModel3DSourceFormat(engine.EngineType, target.Descriptor.Format) && target.Descriptor.Format != "envi") {
 		return nil, commonClient.ErrManagerPreviewReadDenied
 	}
 	if err := engineaccess.EnsureAvailable(engine); err != nil {
@@ -87,10 +88,15 @@ func (s *MetadataService) prepareStorageRead(target *StorageDataItem, tenantID *
 	}
 	var composition *authorizationfacts.FileCompositionBoundary
 	var err error
-	if target.Descriptor.Format == "envi" {
+	switch {
+	case tiffPreview:
+		composition, err = authorizationfacts.NewScannedFileCompositionBoundary("tiff", "single", []authorizationfacts.FileCompositionRef{{
+			Target: plugin.FileItemPath(engine.ID, item.FullName), Role: "image", Primary: true, Required: true,
+		}})
+	case target.Descriptor.Format == "envi":
 		composition, err = enviCompositionFromMeta(*tenantID, engine.ID, item.ID, target.ItemFingerprint, target.locator, item)
 		read.headerSHA = commonjson.String(item.Attributes, "format_info.envi", "header_sha256")
-	} else {
+	default:
 		var candidate *model3DGLBSourceCandidate
 		candidate, err = model3DGLBCandidateFromMeta(*tenantID, Model3DGLBSourceConfig{ItemID: item.ID, SourceEngineID: engine.ID, ItemFingerprint: target.ItemFingerprint, ItemLocator: target.locator, Format: target.Descriptor.Format}, item)
 		if err == nil {

@@ -6,13 +6,15 @@ const ROOT = 'addp://engine/12/path/?type=root&node_id=200'
 const LOCATOR = 'addp://engine/12/path/pages.tiff?type=file&item_id=1201'
 const PAGES = [{ ifd_index: 0, width: 2, height: 1 }, { ifd_index: 3, width: 1, height: 2 }]
 
-function fixture(farDirectory = false) {
+function fixture(farDirectory = false, floatGray = false) {
   // Four top-level IFDs: two pages, one overview and one transparency mask.
   const images = [
     { width: 2, height: 1, bits: [8, 8, 8, 8], pi: 2, kind: 0, extras: [2], pixels: [255, 0, 0, 0, 0, 0, 255, 255] },
     { width: 1, height: 1, bits: [8], pi: 1, kind: 1, pixels: [10] },
     { width: 1, height: 1, bits: [8], pi: 1, kind: 4, pixels: [20] },
-    { width: 1, height: 2, bits: [16], pi: 1, kind: 2, pixels: [65535, 0] }
+    floatGray
+      ? { width: 1, height: 2, bits: [64], pi: 1, kind: 2, sampleFormat: 3, pixels: [3, NaN] }
+      : { width: 1, height: 2, bits: [16], pi: 1, kind: 2, pixels: [65535, 0] }
   ]
   const firstIFD = 8 + (farDirectory ? 65536 : 0)
   const bytes = Buffer.alloc(firstIFD + images.length * 256 + 32)
@@ -27,6 +29,7 @@ function fixture(farDirectory = false) {
       [277, 3, [image.bits.length]], [278, 4, [image.height]], [279, 4, [countBytes]], [284, 3, [1]]
     ]
     if (image.extras) tags.push([338, 3, image.extras])
+    if (image.sampleFormat) tags.push([339, 3, [image.sampleFormat]])
     bytes.writeUInt16LE(tags.length, offset)
     tags.forEach(([tag, type, values], i) => {
       const entry = offset + 2 + i * 12
@@ -40,15 +43,18 @@ function fixture(farDirectory = false) {
         : bytes.writeUInt32LE(value, valueOffset + j * 4))
     })
     bytes.writeUInt32LE(index === images.length - 1 ? 0 : offset + 256, offset + 2 + tags.length * 12)
-    image.pixels.forEach((value, i) => image.bits[0] === 16
-      ? bytes.writeUInt16LE(value, pixelOffset + i * 2) : bytes.writeUInt8(value, pixelOffset + i))
+    image.pixels.forEach((value, i) => {
+      if (image.sampleFormat === 3) bytes.writeDoubleLE(value, pixelOffset + i * 8)
+      else if (image.bits[0] === 16) bytes.writeUInt16LE(value, pixelOffset + i * 2)
+      else bytes.writeUInt8(value, pixelOffset + i)
+    })
     pixelOffset += countBytes
   })
   return bytes.subarray(0, pixelOffset)
 }
 
-async function installBackend(page, { summary = { page_summary_status: 'parsed', page_count: 2, pages: PAGES }, fullResponse = false, external = false, locale = 'zh-cn', firstRequestGate, farDirectory = false, gateRequest = 1, descriptor = { data_type: 'media', format: 'tiff', layout: 'single' } } = {}) {
-  const binary = fixture(farDirectory)
+async function installBackend(page, { summary = { page_summary_status: 'parsed', page_count: 2, pages: PAGES }, fullResponse = false, external = false, locale = 'zh-cn', firstRequestGate, farDirectory = false, floatGray = false, gateRequest = 1, descriptor = { data_type: 'media', format: 'tiff', layout: 'single' } } = {}) {
+  const binary = fixture(farDirectory, floatGray)
   const requests = []
   const item = { id: LOCATOR, locator: LOCATOR, label: 'pages.tiff', type: 'file', path: 'pages.tiff', children: [], metadata: { item_id: 1201, data_type: 'media', format: 'tiff' } }
   const root = { id: ROOT, locator: ROOT, label: ENGINE.name, type: 'root', hasChildren: true, loaded: true, children: [item] }
@@ -113,6 +119,17 @@ test('TIFF pagination follows directory indices, preserves alpha and scales RGB/
   await expect(canvas).toBeVisible()
   expect((await pixels(canvas)).width).toBe(2)
   expect(requests.length).toBeGreaterThan(0)
+  expect(requests.every(request => /^bytes=/.test(request.range) && request.auth === 'Bearer manager-e2e-token')).toBeTruthy()
+})
+
+test('Float64 TIFF page renders through Range with transparent nonfinite pixels', async ({ page }) => {
+  const requests = await installBackend(page, { floatGray: true })
+  await open(page)
+  await page.getByRole('button', { name: '下一页', exact: true }).click()
+  const canvas = page.locator('.tiff-canvas')
+  await expect.poll(() => pixels(canvas)).toEqual({
+    width: 1, height: 2, rgba: [128, 128, 128, 255, 0, 0, 0, 0]
+  })
   expect(requests.every(request => /^bytes=/.test(request.range) && request.auth === 'Bearer manager-e2e-token')).toBeTruthy()
 })
 

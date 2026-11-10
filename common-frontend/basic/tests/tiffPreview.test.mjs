@@ -34,7 +34,23 @@ test('associated alpha is unpremultiplied and grayscale preserves white', async 
  assert.deepEqual([...await readTIFFRGBA(image({ PhotometricInterpretation: 0, BitsPerSample: [1] }, [0, 1]), 2, 1)], [255, 255, 255, 255, 0, 0, 0, 255])
 })
 
-test('unsupported floating point samples are refused before decoding', async () => {
+test('floating-point grayscale stretches finite pixels and masks NoData', async () => {
+ const source = image({ PhotometricInterpretation: 1, BitsPerSample: [64], SampleFormat: [3] },
+  new Float64Array([-10, 0, 10, -999, NaN, Infinity]))
+ source.getGDALNoData = () => -999
+ assert.deepEqual([...await readTIFFRGBA(source, 3, 2)], [
+  0, 0, 0, 255, 128, 128, 128, 255, 255, 255, 255, 255, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+ ])
+})
+
+test('floating-point MINISWHITE and constant pages have defined grayscale', async () => {
+ const fd = { PhotometricInterpretation: 0, BitsPerSample: [64], SampleFormat: [3] }
+ assert.deepEqual([...await readTIFFRGBA(image(fd, [-Number.MAX_VALUE, Number.MAX_VALUE]), 2, 1)],
+  [255, 255, 255, 255, 0, 0, 0, 255])
+ assert.deepEqual([...await readTIFFRGBA(image(fd, [3]), 1, 1)], [128, 128, 128, 255])
+})
+
+test('floating-point RGB samples are refused before decoding', async () => {
  await assert.rejects(readTIFFRGBA(image({ PhotometricInterpretation: 2, BitsPerSample: [32, 32, 32], SampleFormat: [3, 3, 3] }, []), 1, 1), /unsupportedSamples/)
 })
 

@@ -94,9 +94,9 @@ case 路由、默认完整场景保留、未知值只读拒绝、子场景失败
 
 `native-raster-media` 保留原IMG/JPEG2000/四种GRD的全部断言，再添加一份自建240×120、Float64/NaN、512瓦片、DEFLATE、无CRS/网格定位及无overview的Classic TIFF COG。沿原十项普通User权限、原部署/预算/四份受管COG生成及缓存/删除/全部清理，不上传个人成果，不触发该小图的生成任务。隔离夹具的GDAL完整COG验证必须0错误/0警告，独立公式核全部28,800数值、35个NaN及完整有效掩膜、块尺寸/空CRS/空网格/零overview、原字节大小及SHA；源被修改后即使重写哈希收据也须拒绝。
 
-同一普通身份经Gateway的Meta扫描、Manager精确item刷新及Meta读回必须得到`tiff/cog/true/heuristic`、240×120、tiled=true、overview=false，无spatial事实；归档刷新前后完整Meta、单项同步刷新请求范围/实际响应、前后扫描时间和独占源扫描execution；已知item刷新仅允许补回与目录身份完全一致的`item.full_name`，其余attributes严格不变，不能把同步刷新伪装为另一个异步scan-run。真实Console的属性弹窗核同一元数据，预览核240×120单页及Float64采样不支持提示、无地图/隐藏未渲染canvas，不以fallback冒充图像渲染。TIFF仍允许既有非定位可选转换动作，测试仅要求不提交生成，不把“不可地图定位”等同“按钮不存在”。原下载按实际multi-ref协议验证ZIP精确唯一TIF及CRC/大小/SHA，API和真实按钮下载一致；归档原TIF与按钮ZIP。页面重开后复核同一源，浏览器零生成/零业务失败/零警告，源/Meta保持（除本次显式单项刷新外），原四份COG缓存和领域/物理删除/模式恢复/部署/Infra清理仍必须全部通过。
+同一普通身份经Gateway的Meta扫描、Manager精确item刷新及Meta读回必须得到`tiff/cog/true/heuristic`、240×120、tiled=true、overview=false，无spatial事实；归档刷新前后完整Meta、单项同步刷新请求范围/实际响应、前后扫描时间和独占源扫描execution；已知item刷新仅允许补回与目录身份完全一致的`item.full_name`，其余attributes严格不变，不能把同步刷新伪装为另一个异步scan-run。真实Console的属性弹窗核同一元数据，预览核240×120单页、Range 206 和全部 Float64 灰阶像素及透明 NoData，页面无地图。TIFF仍允许既有非定位可选转换动作，测试仅要求不提交生成，不把“不可地图定位”等同“按钮不存在”。原下载以 single TIFF 原字节核对大小和 SHA-256，API 和真实按钮下载一致，分别归档。页面重开后复核同一源，浏览器零生成/零业务失败/零警告，源/Meta保持（除本次显式单项刷新外），原四份COG缓存和领域/物理删除/模式恢复/部署/Infra清理仍必须全部通过。
 
-当前子报告为`addp.manager-raster-media/v2`、页面报告`addp.manager-raster-media-browser/v4`；当前入口只接受新报告，不用历史三格式或旧版本报告替代本轮四格式完整结果。仅验证MinIO该有界TIFF样例及原三格式回归，不认证BigTIFF、任意布局/容量、NFS或Float64基础图片/地图渲染；SKP精确组成授权保持关闭。
+当前子报告为`addp.manager-raster-media/v2`、页面报告`addp.manager-raster-media-browser/v4`；当前入口只接受新报告，不用历史三格式或旧版本报告替代本轮四格式完整结果。仅验证MinIO该有界TIFF样例及原三格式回归，不认证BigTIFF、任意布局/容量、NFS或Float64地图渲染；SKP精确组成授权保持关闭。
 
 ### ENVI 双文件 COG（限定 Hosted 已验收）
 

@@ -1,6 +1,4 @@
 import copy
-import io
-import zipfile
 import hashlib
 import importlib
 import json
@@ -19,7 +17,6 @@ def detail(spec, index=1):
              'type_info': {'media': {'kind': 'image', 'encoding': spec['driver'], 'width': spec.get('width',256), 'height': spec.get('height',256)}},
              'format_info': {spec['source_format']: {'scan_complete': True, 'driver': spec['driver'], 'band_count': spec['band_count'], **spec.get('grid_facts',{})}}}
     if spec['source_format']=='tiff':
-        attrs['item'].update(layout='multi',file_count=1)
         attrs['type_info']['media']['encoding']='tiff'
         attrs['format_info']['tiff']={'profile':'cog','is_cloud_optimized':True,'cog_check_level':'heuristic',
             'is_tiled':True,'has_overviews':False,'big_tiff':False,'page_count':1,'page_summary_status':'parsed',
@@ -42,10 +39,9 @@ def browser_report(evidence):
             case.update(preview_url=source['preview_url'], range_loaded=True, map_loaded=True,
                         reopened=True, reused_result=True, pixels={'cyan': 128, 'magenta': 128, 'yellow': 128})
         elif evidence['source_format']=='tiff':
-            case.update(map_absent=True,source_image_absent=True,unsupported_message_visible=True,
+            case.update(map_absent=True,source_image_absent=True,range_loaded=True,tiff_pixels_verified=True,
                 tiff_pages_verified=True,cog_metadata_visible=True,zero_overviews_verified=True,
-                refreshed_metadata_verified=True,reopened=True,scanned_at=source['refresh']['scanned_at_after'],
-                download_bundle={'members':source['download_members'],'size_bytes':110,'sha256':'a'*64})
+                refreshed_metadata_verified=True,reopened=True,scanned_at=source['refresh']['scanned_at_after'])
         else:
             case.update(generation_unavailable=True, map_absent=True, source_image_absent=True, unsupported_message_visible=True)
         cases.append(case)
@@ -164,10 +160,6 @@ for(const extension of ['img','jp2','j2k']) {
                 payload={'status':'success','items_scanned':1,'started_at':'2026-10-30T00:00:00.5Z'}
             elif parsed.path.startswith('/api/v1/meta/items/'): payload = items[int(parsed.path.split('/')[-1]) - 1]
             elif parsed.path == '/api/v1/manager/downloads/file':
-                if source_format=='tiff':
-                    buf=io.BytesIO()
-                    with zipfile.ZipFile(buf,'w')as z:z.writestr('tiff-unlocated-small-cog.tif',b'test')
-                    return OWNER.Response(200,{}, {'Content-Type':'application/zip'},buf.getvalue())
                 return OWNER.Response(200, {}, {}, b'test')
             elif parsed.path == '/api/v1/manager/quick-view/capability': payload = {'available_actions': [], 'can_use_quick_view': False}
             elif parsed.path.startswith('/api/v1/manager/tasks/'):
@@ -246,22 +238,22 @@ for(const extension of ['img','jp2','j2k']) {
             self.assertEqual(generated, ['img-wgs84'])
             self.assertEqual(cleaned, generated)
 
-    def test_tiff_exact_refresh_bundle_download_and_browser_do_not_generate(self):
+    def test_tiff_exact_refresh_raw_download_and_browser_do_not_generate(self):
         with tempfile.TemporaryDirectory()as root:
             run,generated,cleaned=self.scenario(root,source_format='tiff');report=run()
             self.assertEqual(report['result'],'passed');self.assertEqual(generated,[]);self.assertEqual(cleaned,[])
             self.assertTrue(report['source_unchanged']);case=report['cases'][0]
             self.assertEqual(case['refresh']['response']['items_scanned'],1)
             self.assertEqual(case['refresh']['scanned_at_after'],'2026-10-30T00:00:01Z')
-            self.assertEqual(case['download_members']['tiff-unlocated-small-cog.tif']['sha256'],hashlib.sha256(b'test').hexdigest())
+            self.assertEqual(case['sha256'],hashlib.sha256(b'test').hexdigest())
             self.assertEqual(Path(root,'raster-source-tiff-unlocated-small-cog.tif').read_bytes(),b'test')
             evidence={'source_format':'tiff','run_id':'run','identity':report['identity'],'cases':report['cases']}
-            for fault in ['map_absent','source_image_absent','unsupported_message_visible','tiff_pages_verified',
+            for fault in ['map_absent','source_image_absent','range_loaded','tiff_pixels_verified','tiff_pages_verified',
                           'cog_metadata_visible','zero_overviews_verified','refreshed_metadata_verified','reopened']:
                 bad=copy.deepcopy(report['browser']);bad['cases'][0][fault]=False
                 with self.subTest(fault=fault),self.assertRaises(OWNER.SuiteError):IMG.validate_browser(OWNER,bad,evidence)
             for mutate in (lambda d:d.update(schema_version='addp.manager-raster-media-browser/v3'),
-                           lambda d:d['cases'][0].pop('download_bundle'),
+                           lambda d:d['cases'][0].pop('download_sha256'),
                            lambda d:d['cases'][0].update(scanned_at='old'),lambda d:d.update(generation_requests=1)):
                 bad=copy.deepcopy(report['browser']);mutate(bad)
                 with self.assertRaises(OWNER.SuiteError):IMG.validate_browser(OWNER,bad,evidence)

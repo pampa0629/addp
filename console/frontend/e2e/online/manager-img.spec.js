@@ -36,6 +36,21 @@ export function enviContentMetadata(meta, content, source) {
   return { ...meta, attributes: attrs }
 }
 
+async function tiffFixturePixelsMatch(frame) {
+  return frame.locator('.tiff-canvas').evaluate(canvas => {
+    if (canvas.width !== 240 || canvas.height !== 120) return false
+    const rgba = canvas.getContext('2d').getImageData(0, 0, 240, 120).data
+    for (let index = 0; index < 240 * 120; index++) {
+      const missing = Math.floor(index / 240) < 5 && index % 240 < 7
+      const gray = missing ? 0 : Math.round((index % 103) * 255 / 102)
+      const offset = index * 4
+      if (rgba[offset] !== gray || rgba[offset + 1] !== gray || rgba[offset + 2] !== gray ||
+          rgba[offset + 3] !== (missing ? 0 : 255)) return false
+    }
+    return true
+  })
+}
+
 test('IMG native metadata, COG pixels and cached reopen through the real Console', async ({ page }) => {
   test.setTimeout(240_000)
   const env = process.env
@@ -71,8 +86,14 @@ test('IMG native metadata, COG pixels and cached reopen through the real Console
     diagnostics.setStage(`img-${source.case}:preview`)
     const sourcePreviewResponse = page.waitForResponse(response => matchesSourcePreviewResponse(response, source.locator))
     sourcePreviewResponse.catch(() => {})
-    const rangeResponse = source.source_srid === null ? null : page.waitForResponse(response =>
-      new URL(response.url()).pathname === source.preview_url && response.status() === 206 && Boolean(response.request().headers().range))
+    const isTiff = evidence.source_format === 'tiff'
+    const rangeResponse = isTiff || source.source_srid !== null ? page.waitForResponse(response => {
+      const url = new URL(response.url())
+      const sourceMatches = isTiff
+        ? url.pathname === '/api/v1/manager/storage-stream' && url.searchParams.get('locator') === source.locator
+        : url.pathname === source.preview_url
+      return sourceMatches && response.status() === 206 && Boolean(response.request().headers().range)
+    }) : null
     rangeResponse?.catch(() => {})
     await page.goto(`/manager/data-explorer?locator=${encodeURIComponent(source.locator)}`)
     const api = await browserAPIFromResponse(await sourcePreviewResponse, env.GATEWAY_URL, expectedIdentity)
@@ -88,8 +109,7 @@ test('IMG native metadata, COG pixels and cached reopen through the real Console
         actual.metadata_projection_verified = true
         actual.content_metadata_verified = true
       }
-      const isTiff = evidence.source_format === 'tiff'
-      expect(meta.attributes.item).toMatchObject({ data_type: 'media', format: evidence.source_format, layout: isTiff || evidence.source_format === 'envi' ? 'multi' : 'single' })
+      expect(meta.attributes.item).toMatchObject({ data_type: 'media', format: evidence.source_format, layout: evidence.source_format === 'envi' ? 'multi' : 'single' })
       expect(meta.attributes.type_info.media).toMatchObject({ encoding: isTiff ? 'tiff' : source.driver, width: source.width ?? 256, height: source.height ?? 256 })
       if (isTiff) {
         expect(meta.attributes.format_info.tiff).toMatchObject({ profile: 'cog', is_cloud_optimized: true,
@@ -129,8 +149,11 @@ test('IMG native metadata, COG pixels and cached reopen through the real Console
         if (isTiff) {
           await expect(frame.locator('.tiff-pages')).toContainText('240 × 120')
           await expect(frame.locator('.tiff-pages')).toContainText(/第 1 页 \/ 共 1 页|Page 1 \/ 1/)
-          await expect(frame.locator('.image-preview [role="status"]')).toContainText(/当前页的颜色或采样方式暂不支持基础预览|This page uses unsupported color or sample settings/)
-          await expect(frame.locator('.tiff-canvas')).toBeHidden()
+          const response = await rangeResponse
+          expect(response.headers()['content-range']).toMatch(/^bytes \d+-\d+\/\d+$/)
+          await expect.poll(() => tiffFixturePixelsMatch(frame)).toBe(true)
+          actual.range_loaded = true
+          actual.tiff_pixels_verified = true
           actual.tiff_pages_verified = true
         } else {
           await expect(frame.getByRole('button', { name: /^(?:生成 COG|Generate COG)$/, exact: true })).toHaveCount(0)
@@ -140,7 +163,7 @@ test('IMG native metadata, COG pixels and cached reopen through the real Console
         }
         await expect(frame.locator('.preview-panel img')).toHaveCount(0)
         actual.source_image_absent = true
-        actual.unsupported_message_visible = true
+        if (!isTiff) actual.unsupported_message_visible = true
         actual.map_absent = true
         await frame.locator('.preview-panel').screenshot({ path: resolve(env.ADDP_ONLINE_ARTIFACT_DIR, `${evidence.source_format}-${source.case}.png`) })
         if (isTiff) {
@@ -150,7 +173,7 @@ test('IMG native metadata, COG pixels and cached reopen through the real Console
           const current = await json(await reopenedAPI.get(`/api/v1/meta/items/${source.item_id}`), 'TIFF reopened metadata')
           await reopenedAPI.dispose()
           expect(current).toEqual(meta)
-          await expect(frame.locator('.image-preview [role="status"]')).toContainText(/当前页的颜色或采样方式暂不支持基础预览|This page uses unsupported color or sample settings/)
+          await expect.poll(() => tiffFixturePixelsMatch(frame)).toBe(true)
           await expect(frame.locator('.raster-tiff-quick-view')).toHaveCount(0)
           actual.reopened = true
         }
@@ -216,11 +239,7 @@ test('IMG native metadata, COG pixels and cached reopen through the real Console
         actual.current_user_download_verified = true
       }
       const raw = readFileSync(await download.path())
-      if (isTiff || evidence.source_format === 'envi') {
-        if (isTiff) {
-          expect(new URL(download.url()).pathname).toBe('/api/v1/manager/downloads/file')
-          expect(new URL(download.url()).searchParams.get('locator')).toBe(source.locator)
-        }
+      if (evidence.source_format === 'envi') {
         const code = `import sys,json,importlib
 sys.path.insert(0,sys.argv[1])
 owner=importlib.import_module('scripts.test.manager-internal-artifact-lineage-online')
@@ -228,11 +247,17 @@ with open(sys.argv[2],'rb')as content:raw=content.read(65537)
 print(json.dumps(owner.validate_model_bundle(raw,json.loads(sys.argv[3]))))`
         actual.download_bundle = JSON.parse(execFileSync('python3', ['-c', code, resolve(process.cwd(), '../..'),
           await download.path(), JSON.stringify(source.download_members)], { encoding: 'utf8', timeout: 10000, maxBuffer: 65536 }))
-        actual.download_sha256 = actual.download_bundle.members[evidence.source_format === 'envi' ? source.name : 'tiff-unlocated-small-cog.tif'].sha256
-        writeFileSync(resolve(env.ADDP_ONLINE_ARTIFACT_DIR, evidence.source_format === 'envi' ? `envi-${source.case}-button.zip` : 'tiff-unlocated-small-cog-button.zip'), raw)
+        actual.download_sha256 = actual.download_bundle.members[source.name].sha256
+        writeFileSync(resolve(env.ADDP_ONLINE_ARTIFACT_DIR, `envi-${source.case}-button.zip`), raw)
       } else {
         expect(raw.length).toBe(source.size_bytes)
         actual.download_sha256 = createHash('sha256').update(raw).digest('hex')
+        if (isTiff) {
+          const url = new URL(download.url())
+          expect(url.pathname).toBe('/api/v1/manager/downloads/file')
+          expect(url.searchParams.get('locator')).toBe(source.locator)
+          writeFileSync(resolve(env.ADDP_ONLINE_ARTIFACT_DIR, 'tiff-unlocated-small-cog-button.tif'), raw)
+        }
       }
       expect(actual.download_sha256).toBe(source.sha256)
       cases.push(actual)
