@@ -410,7 +410,23 @@
       "modules_failed": "Failed to load module health status",
       "refresh_success": "Refreshed successfully",
       "trend_failed": "Failed to load trend data",
-      "executions_failed": "Failed to load execution records"
+      "executions_failed": "Failed to load execution records",
+      "overview": {
+        "title": "Task runtime overview",
+        "window": "Execution metrics window",
+        "backend": "Backend readiness",
+        "instances": "Online execution instances",
+        "slots": "Used slots / capacity",
+        "known_instances": "Known instances in 24h",
+        "components": "Execution components",
+        "tasks": "Task performance",
+        "expand": "Show details",
+        "collapse": "Hide details",
+        "unreported": "Not reported",
+        "not_registered": "Not registered",
+        "unavailable": "Read failed",
+        "unchecked": "Not checked"
+      }
     },
     "module_status": {
       "up": "Ready",

@@ -410,7 +410,23 @@
       "modules_failed": "加载模块健康状态失败",
       "refresh_success": "刷新成功",
       "trend_failed": "加载趋势数据失败",
-      "executions_failed": "加载执行记录失败"
+      "executions_failed": "加载执行记录失败",
+      "overview": {
+        "title": "任务运行概况",
+        "window": "执行指标统计窗口",
+        "backend": "后端就绪",
+        "instances": "在线执行实例",
+        "slots": "槽位占用 / 容量",
+        "known_instances": "近24小时已知实例",
+        "components": "执行组件",
+        "tasks": "任务表现",
+        "expand": "展开详情",
+        "collapse": "收起详情",
+        "unreported": "未报告",
+        "not_registered": "未注册",
+        "unavailable": "读取失败",
+        "unchecked": "未检查"
+      }
     },
     "module_status": {
       "up": "就绪",
