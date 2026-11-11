@@ -146,4 +146,102 @@ func TestIntegrationMySQLSharedSQLPool(t *testing.T) {
 	if _, err := page(ctx, 1, info); !errors.Is(err, plugin.ErrStalePoolConfiguration) {
 		t.Fatalf("stale page snapshot was accepted: %v", err)
 	}
+	t.Run("source session after client deadline", func(t *testing.T) {
+		const probeEngineID = 8412
+		defer plugin.ClosePool(probeEngineID)
+		probeInfo := make(plugin.ConnectionInfo, len(info))
+		for key, value := range info {
+			probeInfo[key] = value
+		}
+		probeInfo["pool_max_idle_conns"] = 1
+		probeCtx, stop := context.WithTimeout(t.Context(), 15*time.Second)
+		defer stop()
+		probeCtx = plugin.WithPoolEngineVersion(probeCtx, probeEngineID, 1)
+		lock, err := db.Conn(probeCtx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer lock.Close()
+		defer lock.ExecContext(context.Background(), "UNLOCK TABLES")
+		if _, err := lock.ExecContext(probeCtx, "LOCK TABLES "+table+" WRITE"); err != nil {
+			t.Fatal(err)
+		}
+		request := plugin.QueryRequest{
+			EngineID: probeEngineID, Language: "sql",
+			Query:   "SELECT id FROM " + table + " /* pool_deadline_probe */",
+			Options: plugin.QueryOptions{ReadOnly: true, Limit: 1},
+		}
+		prepared, err := provider.PrepareQuery(probeCtx, probeInfo, request)
+		if err != nil {
+			t.Fatal(err)
+		}
+		clientCtx, cancel := context.WithTimeout(probeCtx, 2*time.Second)
+		defer cancel()
+		done := make(chan error, 1)
+		start := time.Now()
+		go func() {
+			_, err := prepared.Execute(clientCtx)
+			done <- err
+		}()
+		var sourceID int64
+		for sourceID == 0 {
+			err = db.QueryRowContext(probeCtx, "SELECT COALESCE(MAX(ID), 0) FROM information_schema.PROCESSLIST WHERE DB = ? AND STATE = 'Waiting for table metadata lock' AND INFO LIKE ?",
+				database, "%pool_deadline_probe%").Scan(&sourceID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if sourceID == 0 {
+				select {
+				case err := <-done:
+					t.Fatalf("query ended before native lock observation: %v", err)
+				case <-time.After(10 * time.Millisecond):
+				}
+			}
+		}
+		err = <-done
+		returned := time.Since(start)
+		if !errors.Is(err, context.DeadlineExceeded) || plugin.QueryErrorCodeOf(err) != plugin.QueryErrorCodeSQLExecutionTimeout {
+			t.Fatalf("native deadline changed: %v (code %q)", err, plugin.QueryErrorCodeOf(err))
+		}
+		var retained int
+		if err := db.QueryRowContext(probeCtx, "SELECT COUNT(*) FROM information_schema.PROCESSLIST WHERE ID = ? AND DB = ? AND STATE = 'Waiting for table metadata lock'",
+			sourceID, database).Scan(&retained); err != nil {
+			t.Fatal(err)
+		}
+		var version string
+		if err := db.QueryRowContext(probeCtx, "SELECT VERSION()").Scan(&version); err != nil {
+			t.Fatal(err)
+		}
+		t.Logf("native deadline observation: mysql=%s source_id=%d client_return_ms=%d source_waiter_after_return=%t",
+			version, sourceID, returned.Milliseconds(), retained == 1)
+		if _, err := lock.ExecContext(probeCtx, "UNLOCK TABLES"); err != nil {
+			t.Fatal(err)
+		}
+		released := time.Now()
+		for {
+			var count int
+			if err := db.QueryRowContext(probeCtx, "SELECT COUNT(*) FROM information_schema.PROCESSLIST WHERE ID = ?", sourceID).Scan(&count); err != nil {
+				t.Fatal(err)
+			}
+			if count == 0 {
+				break
+			}
+			select {
+			case <-probeCtx.Done():
+				t.Fatal("source session survived lock release")
+			case <-time.After(10 * time.Millisecond):
+			}
+		}
+		prepared, err = provider.PrepareQuery(probeCtx, probeInfo, request)
+		if err != nil {
+			t.Fatal(err)
+		}
+		recovered, err := prepared.Execute(probeCtx)
+		if err != nil || recovered == nil || len(recovered.Rows) != 1 || recovered.Rows[0]["id"] != int64(42) {
+			t.Fatalf("query did not recover after releasing the lock: %+v, %v", recovered, err)
+		}
+		t.Logf("native deadline cleanup: source_session_gone=true release_to_exit_ms=%d recovered_rows=1",
+			time.Since(released).Milliseconds())
+	})
+
 }
