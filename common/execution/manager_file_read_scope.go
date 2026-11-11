@@ -34,7 +34,7 @@ func NewManagerFileReadScope(raw json.RawMessage, taskID, taskVersion, engineVer
 	config, digest, err := executionConfigObject(raw)
 	version := ManagerModel3DConfigVersion
 	objects := []string{"source", "result", "options"}
-	if composition.Format == "envi" {
+	if composition.Format == "envi" || composition.Format == "tiff" {
 		version = ManagerRasterCOGConfigVersion
 		objects = []string{"target", "raster", "cog", "result"}
 	}
@@ -87,7 +87,7 @@ func (s *ManagerFileReadScope) Purpose() string {
 	if s == nil {
 		return ""
 	}
-	if s.FileComposition.Format == "envi" {
+	if s.FileComposition.Format == "envi" || s.FileComposition.Format == "tiff" {
 		return TaskTypeRasterCOGGeneration
 	}
 	if ManagerModel3DConversionFormat(s.FileComposition.Format) {

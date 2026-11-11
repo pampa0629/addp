@@ -97,10 +97,12 @@ func exerciseFileAuthorizationFacts(t *testing.T, db *gorm.DB) {
 				return v
 			}
 			v := get()
-			if v.Boundary == nil || !v.Boundary.FileComposition.SingleImage() || len(v.Boundary.FileComposition.Refs) != 1 {
+			if v.Boundary == nil || !v.Boundary.FileComposition.ImageFormat() || len(v.Boundary.FileComposition.Refs) != 1 {
 				t.Fatalf("missing image content boundary: %+v", v)
 			}
 			if kind == "tiff" {
+				// Profile affects content processing, not the Meta DataItem identity.
+				item.Attributes["format_info"] = map[string]any{"tiff": map[string]any{"profile": "plain_tiff"}}
 				item.Attributes["item"] = map[string]any{"format": kind, "data_type": "media", "layout": "multi", "refs": []map[string]any{{"path": item.FullName, "role": "main", "primary": true, "required": true}}}
 				if err := db.Save(&item).Error; err != nil {
 					t.Fatal(err)
@@ -108,6 +110,19 @@ func exerciseFileAuthorizationFacts(t *testing.T, db *gorm.DB) {
 				multi := get()
 				if multi.Boundary == nil || multi.Boundary.FileComposition == nil || multi.Boundary.Layout != "multi" || multi.Boundary.FileComposition.Layout() != "multi" {
 					t.Fatal("lost scanned one-ref TIFF layout")
+				}
+				item.Attributes["item"].(map[string]any)["refs"] = []map[string]any{
+					{"path": item.FullName, "role": "main", "primary": true, "required": true},
+					{"path": item.FullName + ".aux.xml", "role": "auxiliary_metadata", "required": false},
+				}
+				if err := db.Save(&item).Error; err != nil {
+					t.Fatal(err)
+				}
+				pam := get()
+				if pam.BasisState != authorizationfacts.AuthorizationBasisComplete || pam.Boundary == nil ||
+					pam.Boundary.Layout != "multi" || len(pam.Boundary.FileComposition.Refs) != 2 ||
+					pam.Boundary.FileComposition.Refs[1].Required || pam.BoundaryHash == nil || *pam.BoundaryHash == *multi.BoundaryHash {
+					t.Fatalf("Meta PAM identity/optional membership lost: %+v", pam)
 				}
 			}
 			item.Attributes["item"].(map[string]any)["refs"] = []map[string]any{{"path": item.FullName + ".aux.xml", "role": "image", "primary": true, "required": true}}

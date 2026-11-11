@@ -72,15 +72,11 @@ func projectFileAuthorizationFacts(lookup metadataNodeLookup, item models.MetaIt
 	if format == "geopackage" {
 		extensionMatches = ext == ".gpkg"
 	}
-	if identity.SingleImage() {
+	if identity.ImageFormat() {
 		if format == "jpeg" {
 			extensionMatches = ext == ".jpeg" || ext == ".jpg"
 		} else {
 			extensionMatches = ext == ".tif" || ext == ".tiff"
-			p := commonjson.String(item.Attributes, "format_info.tiff", "profile")
-			if p != "geotiff" && p != "cog" {
-				return finish(authorizationfacts.AuthorizationBasisUnsupported)
-			}
 		}
 	}
 	if primary.StringPath() != item.FullName || path.Base(item.FullName) != item.Name ||
@@ -108,15 +104,16 @@ func projectFileAuthorizationFacts(lookup metadataNodeLookup, item models.MetaIt
 			return finish(authorizationfacts.AuthorizationBasisNeedsRefresh)
 		}
 	}
-	if !hasRefs && layout == "single" && (format == "ifc" || identity.SingleImage()) {
+	if !hasRefs && layout == "single" && (format == "ifc" || identity.ImageFormat()) {
 		required := true
 		refs = []fileAuthorizationRef{{Path: item.FullName, Role: identity.PrimaryRole(), Required: &required, Primary: true}}
 	}
-	if identity.SingleImage() && hasRefs {
-		if len(refs) != 1 || refs[0].Path != item.FullName || !refs[0].Primary || refs[0].Required == nil || !*refs[0].Required || (refs[0].Role != "main" && refs[0].Role != "image") {
-			return finish(authorizationfacts.AuthorizationBasisNeedsRefresh)
+	if identity.ImageFormat() && hasRefs {
+		for i := range refs {
+			if refs[i].Primary && refs[i].Role == "main" {
+				refs[i].Role = identity.PrimaryRole()
+			}
 		}
-		refs[0].Role = identity.PrimaryRole()
 	}
 	if len(refs) == 0 {
 		return finish(authorizationfacts.AuthorizationBasisIncomplete)
@@ -137,7 +134,7 @@ func projectFileAuthorizationFacts(lookup metadataNodeLookup, item models.MetaIt
 	primaryCount := 0
 	for _, ref := range refs {
 		target := targetFor(ref.Path)
-		if ref.Path == "" || target.StringPath() != ref.Path || ref.Required == nil || !*ref.Required {
+		if ref.Path == "" || target.StringPath() != ref.Path || ref.Required == nil || (!*ref.Required && format != "tiff") {
 			return finish(authorizationfacts.AuthorizationBasisNeedsRefresh)
 		}
 		if _, duplicate := byPath[ref.Path]; duplicate {
@@ -148,7 +145,7 @@ func projectFileAuthorizationFacts(lookup metadataNodeLookup, item models.MetaIt
 			if ref.Path != item.FullName || ref.Role != identity.PrimaryRole() {
 				return finish(authorizationfacts.AuthorizationBasisNeedsRefresh)
 			}
-		} else if ref.Role != "texture" && format != "obj" && format != "gltf" && format != "envi" {
+		} else if ref.Role != "texture" && format != "obj" && format != "gltf" && format != "envi" && format != "tiff" {
 			suffix := strings.TrimPrefix(ref.Role, "texture_")
 			n, err := strconv.Atoi(suffix)
 			if !strings.HasPrefix(ref.Role, "texture_") || err != nil || n < 2 || strconv.Itoa(n) != suffix {
@@ -156,7 +153,7 @@ func projectFileAuthorizationFacts(lookup metadataNodeLookup, item models.MetaIt
 			}
 		}
 		byPath[ref.Path] = ref
-		compositionRefs = append(compositionRefs, authorizationfacts.FileCompositionRef{Target: target, Role: ref.Role, Required: true, Primary: ref.Primary})
+		compositionRefs = append(compositionRefs, authorizationfacts.FileCompositionRef{Target: target, Role: ref.Role, Required: *ref.Required, Primary: ref.Primary})
 	}
 	if primaryCount != 1 {
 		return finish(authorizationfacts.AuthorizationBasisNeedsRefresh)

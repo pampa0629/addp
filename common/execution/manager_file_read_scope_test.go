@@ -41,3 +41,37 @@ func TestRasterFileScopeBindsPurposeOwnerAndWholeFrozenConfig(t *testing.T) {
 		t.Fatal("closed file scope lost purpose", err)
 	}
 }
+
+func TestTIFFPAMScopeBindsCompleteMetaComposition(t *testing.T) {
+	composition, err := authorizationfacts.NewScannedFileCompositionBoundary("tiff", "multi", []authorizationfacts.FileCompositionRef{
+		{Target: plugin.FileItemPath(14, "images/a.tif"), Role: "image", Required: true, Primary: true},
+		{Target: plugin.FileItemPath(14, "images/a.tif.aux.xml"), Role: "auxiliary_metadata"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	config := map[string]any{"config_version": ManagerRasterCOGConfigVersion,
+		"owner_task": map[string]string{"id": "10", "version": "7"}, "source_engine_version": "5",
+		"source_composition": composition, "target": map[string]any{}, "raster": map[string]any{"source_format": "tiff"},
+		"cog": map[string]any{}, "result": map[string]any{}}
+	raw, _ := json.Marshal(config)
+	scope, err := NewManagerFileReadScope(raw, "10", "7", "5", composition)
+	if err != nil || scope.Purpose() != TaskTypeRasterCOGGeneration || len(scope.FileComposition.Refs) != 2 {
+		t.Fatalf("TIFF/PAM scope rejected or truncated: %+v %v", scope, err)
+	}
+	encoded, _ := json.Marshal(scope)
+	var decoded ManagerFileReadScope
+	if err := json.Unmarshal(encoded, &decoded); err != nil || decoded.Purpose() != TaskTypeRasterCOGGeneration {
+		t.Fatal("TIFF/PAM scope roundtrip failed", err)
+	}
+	primaryOnly := composition.Clone()
+	primaryOnly.Refs = primaryOnly.Refs[:1]
+	if _, err := NewManagerFileReadScope(raw, "10", "7", "5", primaryOnly); err == nil {
+		t.Fatal("PAM removed from frozen scope")
+	}
+	config["config_version"] = ManagerModel3DConfigVersion
+	raw, _ = json.Marshal(config)
+	if _, err := NewManagerFileReadScope(raw, "10", "7", "5", composition); err == nil {
+		t.Fatal("TIFF admitted as model conversion")
+	}
+}

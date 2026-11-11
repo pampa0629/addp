@@ -29,6 +29,7 @@ func exerciseFileCompositionGrants(t *testing.T, db *gorm.DB, tenantID, adminID 
 		exerciseMetadataOnlyGrants(t, db, tenantID, adminID, roles, newUser)
 		t.Run("STL single-primary SQL contract", func(t *testing.T) { exerciseSTLCompositionSQL(t, db) })
 		t.Run("glTF multi SQL contract", func(t *testing.T) { exerciseGLTFCompositionSQL(t, db) })
+		t.Run("TIFF PAM SQL contract", func(t *testing.T) { exerciseTIFFCompositionSQL(t, db) })
 		for _, fixture := range []struct{ kind, format string }{{"ftp", "3ds"}, {"nfs", "3ds"}, {"ftp", "dae"}, {"nfs", "dae"}, {"minio", "3ds"}, {"minio", "dae"}, {"ftp", "obj"}, {"nfs", "obj"}, {"minio", "obj"}, {"ftp", "stl"}, {"nfs", "stl"}, {"minio", "stl"}, {"ftp", "glb"}, {"nfs", "glb"}, {"minio", "glb"}, {"ftp", "gltf"}, {"nfs", "gltf"}, {"minio", "gltf"}, {"ftp", "fbx"}, {"nfs", "fbx"}, {"minio", "fbx"}, {"nfs", "filegdb"}, {"nfs", "envi"}, {"minio", "envi"}, {"nfs", "geopackage"}, {"ftp", "geopackage"}, {"nfs", "tiff"}, {"minio", "tiff"}} {
 			kind, format := fixture.kind, fixture.format
 			t.Run(kind+"/"+format, func(t *testing.T) {
@@ -107,6 +108,7 @@ func exerciseFileCompositionGrants(t *testing.T, db *gorm.DB, tenantID, adminID 
 						layout = "single"
 						if texture == "B.PNG" {
 							layout = "multi"
+							refs = append(refs, authorizationfacts.FileCompositionRef{Target: targetFor("scene.tif.aux.xml"), Role: "auxiliary_metadata"})
 						}
 					}
 					composition, err := authorizationfacts.NewScannedFileCompositionBoundary(format, layout, refs)
@@ -308,6 +310,9 @@ func exerciseFileCompositionGrants(t *testing.T, db *gorm.DB, tenantID, adminID 
 					t.Fatal(err)
 				}
 				read(currentRequest, true)
+				if format == "tiff" {
+					exerciseManagerFileAuthorization(t, db, service, tenantID, reader, session.AccessToken, actor, engine.ID, format+".file-composition.invalid", current)
+				}
 				read(request, false) // B's active Grant must not authorize A's cached GLB.
 				delegation, err := iam.NewDelegationService(identity, systemauthorization.ToolAuthorizationCatalog{}, iam.DelegationServiceConfig{})
 				if err != nil {

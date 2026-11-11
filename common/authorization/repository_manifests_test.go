@@ -93,7 +93,7 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 			if (key == "meta.data_item_identity.read" || key == "meta.node_identity.read") && role.Key != "tenant.system_runtime" {
 				t.Fatalf("identity enumeration assigned to %s", role.Key)
 			}
-			if key == "meta.authorization_facts.read" && role.Key != "tenant.system_runtime" && role.Key != "tenant.catalog_runtime" {
+			if key == "meta.authorization_facts.read" && role.Key != "tenant.system_runtime" && role.Key != "tenant.catalog_runtime" && role.Key != "tenant.manager_runtime" {
 				t.Fatalf("unexpected authorization facts role %q", role.Key)
 			}
 			if key == "ontology.platform_definition.read" && role.Key != "platform.system_administrator" {
@@ -234,6 +234,7 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 	assertRepositoryRolePermissions(t, roles, "tenant.manager_runtime", []string{
 		"audit.tenant_event.create",
 		"inference.runtime.execute",
+		"meta.authorization_facts.read",
 		"meta.catalog.read",
 		"meta.scan_task.execute",
 		"security.protection_projection.read",

@@ -46,8 +46,8 @@ func (b *FileCompositionBoundary) Layout() string {
 	return "single"
 }
 
-// SingleImage reports a single-file image content identity. For TIFF the owner must prove an embedded geospatial profile.
-func (b *FileCompositionBoundary) SingleImage() bool {
+// ImageFormat identifies image facts independently of layout or spatial profile.
+func (b *FileCompositionBoundary) ImageFormat() bool {
 	return b != nil && (b.Format == "jpeg" || b.Format == "tiff")
 }
 
@@ -56,7 +56,7 @@ func (b *FileCompositionBoundary) PrimaryRole() string {
 	if b != nil && b.Format == "geopackage" {
 		return "container"
 	}
-	if b.SingleImage() {
+	if b.ImageFormat() {
 		return "image"
 	}
 	if b != nil && b.Format == "envi" {
@@ -133,7 +133,7 @@ func (b *FileCompositionBoundary) Validate(engineID uint) error {
 	if (b.Format == "tiff" && b.SourceLayout != "single" && b.SourceLayout != "multi") || (b.Format != "tiff" && b.SourceLayout != "") {
 		return errFileComposition
 	}
-	if b.SingleImage() && (len(b.Refs) != 1 || !b.Refs[0].Primary || !b.Refs[0].Required || b.Refs[0].Role != b.PrimaryRole()) {
+	if b.Format == "jpeg" && (len(b.Refs) != 1 || !b.Refs[0].Primary || !b.Refs[0].Required || b.Refs[0].Role != b.PrimaryRole()) {
 		return errFileComposition
 	}
 	if b.Format == "geopackage" && (len(b.Refs) != 1 || !b.Refs[0].Primary || !b.Refs[0].Required || b.Refs[0].Role != "container") {
@@ -178,6 +178,13 @@ func (b *FileCompositionBoundary) Validate(engineID uint) error {
 		if len(target.Segments) <= len(parent) || target.Segments[len(target.Segments)-1].Term != leaf.Term ||
 			!reflect.DeepEqual(target.Segments[:len(parent)], parent) {
 			return errFileComposition
+		}
+		if b.Format == "tiff" {
+			if len(b.Refs) > 2 || len(target.Segments) != len(primary.Segments) ||
+				(ref.Primary && ref.Role != "image") ||
+				(!ref.Primary && (ref.Role != "auxiliary_metadata" || target.StringPath() != primary.StringPath()+".aux.xml")) {
+				return errFileComposition
+			}
 		}
 		if b.Format == "envi" {
 			if len(b.Refs) != 2 || !ref.Required || len(target.Segments) != len(primary.Segments) ||

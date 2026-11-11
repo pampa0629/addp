@@ -50,7 +50,7 @@ func exerciseManagerFileAuthorization(t *testing.T, db *gorm.DB, source *Service
 		})
 		service := iam.NewManagerModel3DAuthorizationService(repo, source.PrepareExecutionSourceRead)
 		taskType, configVersion := execution.TaskTypeModel3DGLBGeneration, execution.ManagerModel3DConfigVersion
-		if facts.Boundary.FileComposition.Format == "envi" {
+		if facts.Boundary.FileComposition.Format == "envi" || facts.Boundary.FileComposition.Format == "tiff" {
 			service = iam.NewManagerRasterCOGAuthorizationService(repo, source.PrepareExecutionSourceRead)
 			taskType, configVersion = execution.TaskTypeRasterCOGGeneration, execution.ManagerRasterCOGConfigVersion
 		}
@@ -84,7 +84,7 @@ func exerciseManagerFileAuthorization(t *testing.T, db *gorm.DB, source *Service
 				delete(job.ExecutionConfig, "source")
 				delete(job.ExecutionConfig, "options")
 				job.ExecutionConfig["target"] = map[string]any{"source_engine_id": engineID}
-				job.ExecutionConfig["raster"] = map[string]any{"source_format": "envi"}
+				job.ExecutionConfig["raster"] = map[string]any{"source_format": facts.Boundary.FileComposition.Format}
 				job.ExecutionConfig["cog"] = map[string]any{}
 			}
 			if err := execution.NewTaskExecutionRepository(db).Create(ctx, job); err != nil {

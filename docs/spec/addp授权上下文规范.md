@@ -750,4 +750,8 @@ Manager 检索统一使用 System 固定检索裁决，核验 `manager.search.ex
 
 实现入口：[System IAM 数据模型](../../system/docs/IAM数据模型与迁移规范.md)、[System Swagger](../../system/backend/docs/swagger.yaml)、[企业资源目录实现规范](addp企业资源目录实现规范.md)、[Manager 模块说明](../../manager/CLAUDE.md)。迁移编号、接口参数、调度批量和当前验收记录留在各自 owner，不再追加到本规范。
 
-Manager 交互分割只消费当前普通 User 的读取裁决。对于单文件 JPEG 和带内嵌空间信息的 GeoTIFF，Meta 以已扫描的 media 身份、物理路径和完整祖先链投影唯一必需主 image ref。JPEG 使用 single 布局。TIFF 要求 geotiff 或 cog 格式 profile，文件组成的 source_layout 保留扫描所得的 single 或 multi。multi 只在 refs 显式列出唯一必需主文件且与物理路径一致时成立。提供 refs 时必须与这一个主项一致；其他组合、外部地理参考和独立附属对象不按该规则授予内容读取。System 使用既有精确／节点 read 规则及 expected_source 比较，metadata_read 继续不能授权传输像素。该边界不签发后台任务执行授权。
+授权对象唯一取自 Meta 已提交的 DataItem 身份、layout、主文件及完整 item.refs。System 与消费模块校验这些正式事实，不通过扩展名、同目录探测或文件数量重新拆分、拼装授权对象。格式内容处理能力单独判断；出口尚未支持完整组成时应拒绝该读取方式，不能删减组成后借用旧许可。Meta 事实本身不等于读取 Allow，源数据显式 Deny 仍按本节既有退役规则处理。
+
+Manager 交互分割只消费当前普通 User 的读取裁决。JPEG 保持已接入的单文件边界。TIFF 的 source_layout 保留 Meta 扫描所得 single 或 multi；授权身份不依赖 plain_tiff／geotiff／cog profile；本轮组成接入 TIFF 主文件及 Meta 已登记的同名 PAM（主文件完整路径加 .aux.xml），不外推其他 sidecar。主 image ref 必需且唯一；已登记 PAM 使用 auxiliary_metadata，保留 Meta 的 required 标记并完整进入组成摘要。可选表示格式允许无 PAM，不表示已登记 PAM 丢失时可忽略。缺失须报告源组成变化并要求 Meta 刷新；刷新后再核验正式边界，旧单文件精确 Grant 不升级成双文件 Grant，节点 Grant 按当前完整组成与范围核验。Meta 投影不探测源目录；没有 refs 的 single 主项沿既有单体事实表达，显式 refs 必须完整保留，未知附属组成不得缩减为主文件。System 沿既有精确／节点 read、期限、撤销与 expected_source 裁决；metadata_read 不能授权传输像素。含 PAM 的预览沿 GDAL→COG 消费完整组成；TIFF 与 ENVI 复用既有 Raster COG 执行授权目的及冻结配置契约，System 仍独立核验发起人、任务版本、引擎版本和当前完整组成读取权。空间定位、像素解码与预览支持由内容出口核验，不由授权事实投影重定义身份。组成摘要不表示内容版本，本轮不以主文件哈希代替 PAM 版本或宣称缓存失效闭环。
+
+Manager 为冻结 COG 源组成，使用现有 Meta 精确授权事实批量查询及统一 client；`meta.authorization_facts.read` 只增加到 `tenant.manager_runtime`。接口按 Service Token 的租户上下文、精确指纹与既有数量／响应上限返回已提交身份及边界，不枚举 DataItem、不返回内容、不触发扫描。Manager 不能调用 System 专属的授权事实 revision 或节点／数据项清单接口，不能将机器事实视为用户读取许可；System 签发及消费执行授权时仍独立复核当前完整边界与原用户权限。
