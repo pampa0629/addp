@@ -1002,3 +1002,13 @@ v46仅修正该消费者：先校验历史默认值，按同一UUID读取/result
 精确候选7faff9ab8b24e0678c465325491ca69b84c39f82的自然 [Run43018760077／Platform consistency Job130516352816](https://github.com/pampa0629/addp/actions/runs/43018760077/job/130516352816)，attempt1，该Job及实际Run platform consistency gate步骤均success。已独立读取原始Job元信息，核对head SHA和实际make test-platform，未把Reporter、跳过或整个Run状态替代所属门禁结果。原日志3530–3533行登记156项及CLI通过；4408／4418／4425／4431行分别部署43、Graph204、35和80项均OK，4455／4456行两个System online-test-fixture Go包实际ok，4459–4461行最终Security Runner292项OK。这是当前修复源码的Linux标准聚合实际执行证据，补齐前段仅复用旧候选未变依赖的限制；本会话未重复运行。非verbose Go包结果仍不证明逐例无跳过。
 
 原日志 /tmp/addp-ci-2200.i3zELb/logs/130516352816.log，SHA256 4e1de0a05233b0588396309b02bfe4f4c29af55df1429ceb86ae01e340c61d6e；独立元信息、脚本及结果 /tmp/p145-v46-linux-gate-independent/{job.json,audit.py,audit.json}。已先核对功能清单维护会话最新记录：M155／M156仍为部分实现，已保留v45第七阶段首失败、0/23图及v46专项修复；本次仅补Linux层级，不改写为Hosted通过。既有单次v46/v10确认请求仍待用户答复，未获得新授权、不派发、不重复确认、不定时，原v45失败和清理证据均保持。下一步仍按已有请求的答复决定是否交专门CI执行一次同范围真实复验。
+
+### v46 唯一复验的外部 DNS 准备失败（2026-11-12 审计）
+
+用户已明确同意的唯一一次 [Run43048558678／Job130619097907](https://github.com/pampa0629/addp/actions/runs/43048558678/job/130619097907)，attempt1实际failure。业务源码7faff9ab8b24e0678c465325491ca69b84c39f82，控制面940d31014ffc2dbf363ce229daf7bba9b8d09caf；源码输入、checkout、祖先和Hosted readiness实际通过。原Job日志226／229行证实实际HEAD，272行分别记录business／dispatch SHA。Hosted gate失败，证据上传成功，条件执行证据上传跳过，不把summary步骤成功算业务通过。
+
+原运行于2026-11-11 UTC 15:42后安装Playwright系统依赖，5186–5209行反复报Temporary failure resolving 'azure.archive.ubuntu.com'，apt退出100、Failed to install browsers。此时尚未调用业务preflight／scenario，没有online-report、phase-timings、领域或浏览器报告，PNG为0。六Grant清理原件恰为status=not_started／issued_count=0，不是已签发再撤销；wrapper summary为result=failed／cleanup=passed／infra_cleanup=zero_residuals，仅证明已启动的隔离环境收尾，不替代三出口输出／角色方式／页面验收，也不证明十服务业务preflight身份。
+
+独立审计原始Run／Job／artifact API身份、实际步骤、双SHA，artifact13870725957的ZIP SHA256为8f549c70f1d26070722bd4224d9d02ab0be09bd97b04f70116b84cb3787fe458，与API digest匹配；44成员CRC、安全路径及所有解压原件逐字节一致。原件 /tmp/addp-ci-0000-1112.9bGP9I/security-artifact.zip 和同名解压目录；raw Job日志SHA256 21213ba88159959ec1ee69570f8d506e2103d233004b71db849e0aa98a45d86c。独立元信息、脚本与结果 /tmp/p145-430485-independent/{job.json,run.json,artifact.json,audit.py,audit.json}，脚本实际退出0。当前精确7f候选的Linux292／登记156和既有T2／本地证据保持有效，本次不判产品回归或Hosted通过，旧v45业务首失败保持。
+
+已先核对清单维护会话最新M155／M156仍为部分实现、已记精确Linux层级但尚未记本次准备失败；本次仅补正确边界。外部CI问题由专门协调会话处理，本会话没有调查其他CI、修改镜像／软件源、启停本地服务或重复运行测试。此次单次授权已消耗，不重派、不重试、不定时、不重复请求已有授权；优先等待外部条件处理，未来确需真实复验时再提交具体候选与单次范围确认。本轮仅证据文档，验证为独立原件审计和所属git diff --check，无新产品实现或门禁输入变化。
