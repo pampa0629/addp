@@ -312,3 +312,29 @@ func (r *FileExecutionRepository) RecordPrivatePublicationRecovery(ctx context.C
 		return tx.Model(&row).Updates(map[string]any{"publication_json": raw, "version": row.Version + 1}).Error
 	})
 }
+
+// CompletePrivatePublication reads only the original leased Provider outcome.
+// Late recovery observations can never turn an expired attempt into success.
+func (r *FileExecutionRepository) CompletePrivatePublication(ctx context.Context, item *execution.TaskExecution, lease execution.Lease, fields map[string]interface{}) error {
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		current, err := execution.LockActiveLease(ctx, tx, lease)
+		if err != nil {
+			return err
+		}
+		if current.Module != execution.ModuleDevelop || current.TaskType != execution.TaskTypeWorkflow || item == nil || item.ExecutionID != lease.ExecutionID {
+			return commonapi.ErrConflict
+		}
+		var row models.FileExecution
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("execution_id=? AND tenant_id=?", lease.ExecutionID, lease.TenantID).First(&row).Error; err != nil {
+			return err
+		}
+		record, err := privateFilePublication(&row)
+		if err != nil {
+			return err
+		}
+		if record.DispatchReleasedAt == nil || record.Outcome == nil || record.Outcome.State != plugin.NewFilePublished || record.Outcome.Validate(record.prepared()) != nil {
+			return commonapi.ErrConflict
+		}
+		return NewExecutionRepository(tx).CompleteWithLease(ctx, item, lease, execution.ExecutionStatusSuccess, time.Now().UTC(), fields)
+	})
+}

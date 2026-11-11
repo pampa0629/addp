@@ -15,6 +15,7 @@ import (
 	"github.com/addp/common/execution"
 	commoni18n "github.com/addp/common/middleware/i18n"
 	commonModels "github.com/addp/common/models"
+	"github.com/addp/common/resourcetree"
 	"github.com/addp/develop/backend/internal/repository"
 	"github.com/google/uuid"
 )
@@ -156,12 +157,12 @@ func (s *ExecutionService) executePrivateFileWorkflow(ctx context.Context, item 
 	unavailable := func() error {
 		return s.fail(ctx, item, lease, *item.StartedAt, "authorization_unavailable", fmt.Errorf("%s", commoni18n.ForLanguage(language, "develop.workflow.private_file_unavailable")))
 	}
-	// Publication/initial authorization are separate and remain closed. This
-	// branch cannot let a registered save escape via generic connection expansion.
+	// Only already bound private executions enter here. Public save admission
+	// stays gated until scanning and initial authorization are connected.
 	if item.StartedAt == nil {
 		return s.fail(ctx, item, lease, time.Time{}, "snapshot_invalid", fmt.Errorf("%s", commoni18n.ForLanguage(language, "develop.workflow.private_file_unavailable")))
 	}
-	if facts.Intent.Target != nil || f.authority == nil || f.provider == nil || f.endpoint == nil || f.credential == nil || f.protectSource == nil {
+	if (facts.Intent.Target != nil && f.publication == nil) || f.authority == nil || f.provider == nil || f.endpoint == nil || f.credential == nil || f.protectSource == nil {
 		return unavailable()
 	}
 	var config map[string]json.RawMessage
@@ -228,6 +229,20 @@ func (s *ExecutionService) executePrivateFileWorkflow(ctx context.Context, item 
 	if err == nil {
 		err = b.live()
 	}
+	var published *plugin.NewFilePublicationOutcome
+	if err == nil && status != nil && status.Status == "success" && facts.Intent.Target != nil {
+		file, receipt, downloadErr := b.downloadOutput(runCtx)
+		err = downloadErr
+		if err == nil {
+			published, err = f.publishPrivateFile(runCtx, lease, b.runtimeID, receipt, file)
+			_ = file.Close()
+			// Confirmed physical publication may succeed with private cleanup
+			// pending; the terminal transaction rechecks its durable evidence.
+			if published != nil && published.State == plugin.NewFilePublished {
+				err = nil
+			}
+		}
+	}
 	result := commonModels.JSONMap{}
 	message := ""
 	if status != nil && err == nil {
@@ -239,7 +254,7 @@ func (s *ExecutionService) executePrivateFileWorkflow(ctx context.Context, item 
 			raw["diagnostic"] = diagnostic
 		}
 		result["runtime_status"] = raw
-		if status.Status == "success" && status.Result != nil {
+		if status.Status == "success" && status.Result != nil && facts.Intent.Target == nil {
 			data, marshalErr := json.Marshal(status.Result)
 			if marshalErr == nil {
 				if preview, ok := workflowFinalResultForExecution(string(data)); ok {
@@ -257,8 +272,8 @@ func (s *ExecutionService) executePrivateFileWorkflow(ctx context.Context, item 
 		decoder.UseNumber()
 		_ = decoder.Decode(&definition)
 	}
-	// No outputs, produced-target scans, lineage publication or Grant are created
-	// by this read-only branch. Existing diagnostic validation owns node binding.
+	// Existing diagnostic validation owns node binding. Saved resources below
+	// come from the original Provider outcome and the frozen business DAG.
 	metadata := queryExecutionMetadata(result)
 	for key, value := range item.Metadata {
 		metadata[key] = value
@@ -277,6 +292,30 @@ func (s *ExecutionService) executePrivateFileWorkflow(ctx context.Context, item 
 	if terminal == execution.ExecutionStatusSuccess {
 		finalCtx, stop := b.bounded(runCtx)
 		defer stop()
+		if facts.Intent.Target != nil {
+			if published == nil || published.State != plugin.NewFilePublished {
+				return errPrivatePublication
+			}
+			target := facts.Intent.Target
+			locator := resourcetree.LocatorFromFullName(target.Target.EngineID, "nfs", "file", target.Target.StringPath(), nil)
+			if locator == nil {
+				return errPrivatePublication
+			}
+			outputs := workflowExecutionOutputs([]WorkflowProducedTarget{{TaskID: target.NodeID, Locator: locator.ToURI(), Type: "file", WriteMode: "create"}})
+			var config map[string]interface{}
+			decoder := json.NewDecoder(bytes.NewReader(facts.ConfigJSON))
+			decoder.UseNumber()
+			if decoder.Decode(&config) != nil {
+				return errPrivatePublication
+			}
+			content, _ := config["content"].(map[string]interface{})
+			lineage := workflowLineageFacts(content["workflow_definition"], outputs)
+			if lineage == nil {
+				return errPrivatePublication
+			}
+			metadata["outputs"], metadata["lineage_facts"] = outputs, lineage
+			return f.repository.CompletePrivatePublication(finalCtx, item, lease, fields)
+		}
 		return s.queue.CompleteWithLease(finalCtx, item, lease, terminal, time.Now().UTC(), fields)
 	}
 	return s.queue.CompleteWithLease(ctx, item, lease, terminal, time.Now().UTC(), fields)

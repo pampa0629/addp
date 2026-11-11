@@ -202,6 +202,10 @@ func runPrivatePublicationCase(t *testing.T, db *gorm.DB, repo *FileExecutionRep
 	if err := repo.MarkPrivatePublicationCleaned(ctx, *lease, *prepared); err == nil {
 		t.Fatal("unknown publication was marked clean")
 	}
+	if err := repo.CompletePrivatePublication(ctx, running, *lease, nil); err == nil {
+		t.Fatal("unknown publication completed as success")
+	}
+
 	outcome := plugin.NewFilePublicationOutcome{State: plugin.NewFilePublished, CleanupPending: true,
 		Evidence: &plugin.ContentWriteEvidence{Target: expected.Target, Disposition: "created", SizeBytes: expected.SizeBytes, Committed: true}}
 	wrongEvidence := outcome
@@ -234,9 +238,15 @@ func runPrivatePublicationCase(t *testing.T, db *gorm.DB, repo *FileExecutionRep
 		t.Fatal("private outcome changed the trusted Owner projection", err)
 	}
 
-	// Recovery appends only private facts after terminal completion.
-	if err := NewExecutionRepository(db).CompleteWithLease(ctx, running, *lease, "failed", time.Now(), nil); err != nil {
+	// Original leased evidence can complete the execution atomically.
+	if err := repo.CompletePrivatePublication(ctx, running, otherLease, nil); err == nil {
+		t.Fatal("wrong lease completed published operation")
+	}
+	if err := repo.CompletePrivatePublication(ctx, running, *lease, nil); err != nil {
 		t.Fatal(err)
+	}
+	if err := repo.CompletePrivatePublication(ctx, running, *lease, nil); err == nil {
+		t.Fatal("terminal publication completed twice")
 	}
 	var terminal execution.TaskExecution
 	if err := db.First(&terminal, "execution_id=?", item.ExecutionID).Error; err != nil {

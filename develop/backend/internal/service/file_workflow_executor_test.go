@@ -3,6 +3,8 @@ package service
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -22,6 +24,7 @@ import (
 	"github.com/addp/common/client"
 	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/execution"
+	commonModels "github.com/addp/common/models"
 	"github.com/addp/develop/backend/internal/config"
 	"github.com/addp/develop/backend/internal/repository"
 )
@@ -29,9 +32,9 @@ import (
 // Actual claimed Owner SQL, private HTTP client and local staging. Authority,
 // NFS bytes and native computation remain explicit doubles, not business T4.
 func TestPrivateFileWorkerDispatchRecoveryAndCapacity(t *testing.T) {
-	for _, scenario := range []string{"success", "native-failure", "parameter-failure", "create-unknown", "execute-unknown", "cleanup-running", "cleanup-directory", "cleanup-unknown", "late-success"} {
+	for _, scenario := range []string{"success", "saved-success", "native-failure", "parameter-failure", "create-unknown", "execute-unknown", "cleanup-running", "cleanup-directory", "cleanup-unknown", "late-success"} {
 		t.Run(scenario, func(t *testing.T) {
-			db, repo, item, lease, _, issued, base := privateFileWorkerFixture(t, false)
+			db, repo, item, lease, _, issued, base := privateFileWorkerFixture(t, scenario == "saved-success")
 			queue := repository.NewExecutionRepository(db)
 			executor := NewDevExecutor(nil, execution.NewTaskExecutionRepository(db), nil, nil, nil, NewSQLEngineService(&config.Config{}, nil, nil), nil, nil)
 			s, err := NewExecutionService(executor, queue, repo, "fixture-instance")
@@ -59,6 +62,34 @@ func TestPrivateFileWorkerDispatchRecoveryAndCapacity(t *testing.T) {
 				return fileInputsAuthority(base)
 			}
 			f.provider = fileInputsProvider(fileInputsData(t))
+			outputBytes := fileInputsData(t)["sources/A.gpkg"]
+			outputHash := sha256.Sum256(outputBytes)
+			if scenario == "saved-success" {
+				source := f.provider.(*sourceWindowProvider)
+				p := &publicationProviderFixture{sourceWindowProvider: source}
+				p.prepare = func(_ context.Context, _ plugin.ConnectionInfo, r plugin.NewFilePublicationRequest, content io.Reader) (plugin.PreparedNewFile, error) {
+					data, err := io.ReadAll(content)
+					if err != nil || !bytes.Equal(data, outputBytes) {
+						t.Fatal("Runtime output bytes changed", err)
+					}
+					return plugin.PreparedNewFile{NewFilePublicationRequest: r, ProviderState: []byte("private prepared bytes")}, nil
+				}
+				p.publish = func(_ context.Context, _ plugin.ConnectionInfo, r plugin.PreparedNewFile, _ plugin.NewFilePublicationState) (plugin.NewFilePublicationOutcome, error) {
+					return plugin.NewFilePublicationOutcome{State: plugin.NewFilePublished, Evidence: &plugin.ContentWriteEvidence{Target: r.Target, Disposition: "created", SizeBytes: r.SizeBytes, Committed: true}}, nil
+				}
+				f.provider = p
+				business := time.Now().Add(30 * time.Second)
+				f.publication = func(uint) filePublicationAuthority {
+					return publicationAuthorityFunc(func(_ context.Context, ea client.IssuedDevelopFileAuthorization, r client.DevelopFilePublicationRequest) (*client.DevelopFilePublicationObservation, error) {
+						now := time.Now()
+						observation := &client.DevelopFilePublicationObservation{AuthorizationID: ea.Authorization.ID, ExecutionID: r.ExecutionID, Attempt: r.Attempt, ScopeDigest: r.ScopeDigest, ApprovalID: r.ApprovalID, OperationID: r.OperationID, Stage: r.Stage, PreparationDigest: r.PreparationDigest, ObservedAt: now, ExpiresAt: now.Add(15 * time.Second), BusinessDeadline: business}
+						if r.Stage == client.DevelopFilePublicationPrepare {
+							observation.Engine = &commonModels.Engine{ConnectionInfo: commonModels.ConnectionInfo{"server": "private-target"}}
+						}
+						return observation, nil
+					})
+				}
+			}
 			f.credential = func(context.Context, uint) (string, error) { return "addp_at_runtime_current", nil }
 			var creates, uploads, dispatches, deletes atomic.Int32
 			var cleanupMode atomic.Int32
@@ -119,6 +150,21 @@ func TestPrivateFileWorkerDispatchRecoveryAndCapacity(t *testing.T) {
 					}
 					w.WriteHeader(202)
 					_ = json.NewEncoder(w).Encode(map[string]any{"execution_id": id, "status": "running"})
+				case scenario == "saved-success" && r.Method == "GET" && r.URL.Path == "/api/private-files/"+id:
+					stored, err := repo.ReadPrivateRuntime(r.Context(), 3, item.ExecutionID)
+					if err != nil {
+						t.Fatal(err)
+					}
+					m := stored.Manifest
+					states := make([]string, len(m.Inputs))
+					for i := range states {
+						states[i] = "ready"
+					}
+					pending := false
+					_ = json.NewEncoder(w).Encode(plugin.WorkflowPrivateFileStatus{RuntimeExecutionID: id, ExecutionID: m.ExecutionID, Attempt: m.Attempt, ScopeDigest: m.ScopeDigest, Inputs: states, Outputs: []plugin.WorkflowPrivateFile{{NodeID: "save", Size: int64(len(outputBytes)), SHA256: hex.EncodeToString(outputHash[:])}}, CleanupPending: &pending, Execution: json.RawMessage(`{"status":"success"}`)})
+				case scenario == "saved-success" && r.Method == "GET" && r.URL.Path == "/api/private-files/"+id+"/outputs/0":
+					w.Header().Set("Content-Type", "application/geopackage+sqlite3")
+					_, _ = w.Write(outputBytes)
 				case r.Method == "GET" && r.URL.Path == "/api/executions/"+id:
 					if scenario == "late-success" {
 						<-r.Context().Done()
@@ -195,8 +241,15 @@ func TestPrivateFileWorkerDispatchRecoveryAndCapacity(t *testing.T) {
 				t.Fatal("UUID replaced")
 			}
 			serialized, _ := json.Marshal(done)
-			if strings.Contains(string(serialized), private.InputDirectory) || strings.Contains(string(serialized), private.RuntimeExecutionID) || strings.Contains(string(serialized), "private path must not leak") || done.Metadata["outputs"] != nil || done.Metadata["lineage_facts"] != nil {
-				t.Fatal("private/readonly facts escaped", string(serialized))
+			if strings.Contains(string(serialized), private.InputDirectory) || strings.Contains(string(serialized), private.RuntimeExecutionID) || strings.Contains(string(serialized), "private path must not leak") {
+				t.Fatal("private facts escaped", string(serialized))
+			}
+			if scenario == "saved-success" {
+				if done.Metadata["outputs"] == nil || done.Metadata["lineage_facts"] == nil {
+					t.Fatal("published output lacks atomic resource and lineage facts")
+				}
+			} else if done.Metadata["outputs"] != nil || done.Metadata["lineage_facts"] != nil {
+				t.Fatal("readonly output acquired business effects")
 			}
 			if scenario == "parameter-failure" && done.ErrorDetails["code"] != "develop.workflow.invalid_params" {
 				t.Fatal("lost original v3 parameter diagnostic", done.ErrorDetails)
