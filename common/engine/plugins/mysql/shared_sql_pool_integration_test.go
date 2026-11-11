@@ -152,7 +152,7 @@ func TestIntegrationMySQLSharedSQLPool(t *testing.T) {
 	if _, err := page(ctx, 1, info); !errors.Is(err, plugin.ErrStalePoolConfiguration) {
 		t.Fatalf("stale page snapshot was accepted: %v", err)
 	}
-	t.Run("source session after client deadline", func(t *testing.T) {
+	t.Run("source wait ends after deadline", func(t *testing.T) {
 		const probeEngineID = 8412
 		defer plugin.ClosePool(probeEngineID)
 		probeInfo := make(plugin.ConnectionInfo, len(info))
@@ -220,24 +220,29 @@ func TestIntegrationMySQLSharedSQLPool(t *testing.T) {
 		}
 		t.Logf("native deadline observation: mysql=%s source_id=%d client_return_ms=%d source_waiter_after_return=%t",
 			version, sourceID, returned.Milliseconds(), retained == 1)
-		if _, err := lock.ExecContext(probeCtx, "UNLOCK TABLES"); err != nil {
-			t.Fatal(err)
-		}
-		released := time.Now()
+		// The source may finish before the client deadline, leaving a healthy
+		// pooled session. Prove that the operation stopped while the lock is held.
+		sourceCtx, sourceCancel := context.WithTimeout(probeCtx, 3*time.Second)
+		defer sourceCancel()
 		for {
 			var count int
-			if err := db.QueryRowContext(probeCtx, "SELECT COUNT(*) FROM information_schema.PROCESSLIST WHERE ID = ?", sourceID).Scan(&count); err != nil {
+			if err := db.QueryRowContext(sourceCtx, "SELECT COUNT(*) FROM information_schema.PROCESSLIST WHERE ID = ? AND STATE = 'Waiting for table metadata lock'", sourceID).Scan(&count); err != nil {
 				t.Fatal(err)
 			}
 			if count == 0 {
 				break
 			}
 			select {
-			case <-probeCtx.Done():
-				t.Fatal("source session survived lock release")
+			case <-sourceCtx.Done():
+				t.Fatal("source wait survived the server budget")
 			case <-time.After(10 * time.Millisecond):
 			}
 		}
+		t.Log("source_wait_ended_before_unlock=true")
+		if _, err := lock.ExecContext(probeCtx, "UNLOCK TABLES"); err != nil {
+			t.Fatal(err)
+		}
+		released := time.Now()
 		prepared, err = provider.PrepareQuery(probeCtx, probeInfo, request)
 		if err != nil {
 			t.Fatal(err)
@@ -246,7 +251,7 @@ func TestIntegrationMySQLSharedSQLPool(t *testing.T) {
 		if err != nil || recovered == nil || len(recovered.Rows) != 1 || recovered.Rows[0]["id"] != int64(42) {
 			t.Fatalf("query did not recover after releasing the lock: %+v, %v", recovered, err)
 		}
-		t.Logf("native deadline cleanup: source_session_gone=true release_to_exit_ms=%d recovered_rows=1",
+		t.Logf("native deadline recovery: unlock_to_read_ms=%d recovered_rows=1",
 			time.Since(released).Milliseconds())
 	})
 
