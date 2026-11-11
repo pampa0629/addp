@@ -1359,19 +1359,21 @@ def postgres_snapshot_suite():
                 'workflow_runtime':{},'outputs':[]}
 
         def setup_sql(self):
-            # These relations vanish when psql disconnects, including on failure.
+            # Keep fixture DDL uncommitted on query failure; on success COMMIT
+            # drops it before psql exits, without racing backend disconnect cleanup.
             literal=lambda value:"'"+str(value).replace("'","''")+"'"
             name=self.item['name']; full=self.item['full_name']
             return """
+BEGIN;
 CREATE TEMP TABLE task_executions(execution_id text, module text, task_type text, status text,
  tenant_id integer, triggered_by integer, actor_principal_id bigint, created_at timestamptz,
- metadata jsonb, execution_config jsonb, parent_execution_id text);
+ metadata jsonb, execution_config jsonb, parent_execution_id text) ON COMMIT DROP;
 CREATE TEMP TABLE meta_node(id serial PRIMARY KEY, tenant_id integer, engine_id integer,
  parent_node_id integer, node_type text, name text, depth integer, full_name text, path text,
- scanned_depth text, deleted_at timestamptz, created_at timestamptz);
+ scanned_depth text, deleted_at timestamptz, created_at timestamptz) ON COMMIT DROP;
 CREATE TEMP TABLE meta_item(id serial PRIMARY KEY, tenant_id integer, engine_id integer,
  node_id integer, item_type text, name text, full_name text, fingerprint text, size_bytes bigint,
- scanned_depth text, attributes jsonb, deleted_at timestamptz, created_at timestamptz);
+ scanned_depth text, attributes jsonb, deleted_at timestamptz, created_at timestamptz) ON COMMIT DROP;
 """+f"""
 INSERT INTO task_executions VALUES ({literal(self.parent)},{literal(self.module)},
  {literal('workflow' if self.module=='develop' else 'raster_mosaic_generation')},'success',2,33,33,
@@ -1405,7 +1407,7 @@ INSERT INTO meta_item VALUES(88,2,9,55,'object',{literal(name)},{literal(full)},
             env={**os.environ,'PGPASSWORD':urllib.parse.unquote(uri.password or ''),
                 'PGSSLMODE':config.get('sslmode',['disable'])[0],'PGCONNECT_TIMEOUT':'5'}
             self.target,self.connection_env=target[:],env
-            result=self.raw_run(target,input=prefix+statement,env=env,**kwargs)
+            result=self.raw_run(target,input=prefix+statement+'\nCOMMIT;\n',env=env,**kwargs)
             match=re.search(r'ERROR:\s+([0-9A-Z]{5})\b',result.stderr)
             self.sqlstate=match.group(1) if match else None
             return result
