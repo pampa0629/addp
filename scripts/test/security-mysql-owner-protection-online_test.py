@@ -5008,7 +5008,7 @@ class PostgresTransferJoinTest(unittest.TestCase):
             tasks.append(8)
             return 8, {}
 
-        with (patch.object(ONLINE, "postgres_join_fixture", side_effect=observations) as fixture,
+        with (patch.object(ONLINE, "postgres_target_fixture", side_effect=observations) as fixture,
               patch.object(ONLINE, "find_item", side_effect=[{"id": 1}, {"id": 2}]),
               patch.object(ONLINE, "build_item_locator", return_value="fixture-source"),
               patch.object(ONLINE, "build_schema_locator", return_value="fixture-parent"),
@@ -5463,6 +5463,217 @@ with journal.phase(m.PROTECTION_PHASES[0]): time.sleep(30)
         self.assertEqual(set(found), set(ONLINE.PROTECTION_PHASES))
         self.assertIn('timings=timings', ast.unparse(functions['main']))
 
+
+
+class PostgresGroupedOutputTest(unittest.TestCase):
+    def rows(self, phase='default'):
+        values={'default':['138****5678',None,None,None,None],
+                'policy_default':['1*********8','张***c','a*c',None,None],
+                'selected':['***********','*****','***',None,None]}[phase]
+        return [{'bucket':str(i),'contact':v,'n':'1'} for i,v in enumerate(values,1)]
+
+    def test_independent_group_oracle_rejects_raw_values_wrong_counts_and_group_collapse(self):
+        for phase in ('default','policy_default','selected'):
+            self.assertEqual(ONLINE.assert_postgres_grouped_rows(self.rows(phase),[1,2,3,4,5],phase)['rows'],5)
+        for mutation in ('raw','count','order','collapse','extra','null','unicode'):
+            rows=self.rows('selected')
+            if mutation=='raw': rows[0]['contact']='13812345678'
+            elif mutation=='count': rows[0]['n']='2'
+            elif mutation=='order': rows.reverse()
+            elif mutation=='collapse': rows.pop()
+            elif mutation=='extra': rows[0]['value_a']='raw'
+            elif mutation=='null': rows[3]['contact']='****'
+            else: rows[1]['contact']='******'
+            with self.subTest(mutation=mutation),self.assertRaises(ONLINE.SuiteError):
+                ONLINE.assert_postgres_grouped_rows(rows,[1,2,3,4,5],'selected')
+
+    def test_grouped_payload_only_changes_final_outputs_and_projects_three_fields(self):
+        query=ONLINE.postgres_grouped_sql()
+        self.assertIn('GROUP BY p.id,p.value_a',query)
+        self.assertIn('count(*) AS n',query)
+        body=ONLINE.postgres_grouped_transfer_payload('owned','source','parent','target',[])
+        self.assertEqual(body['config']['source']['query']['statement'],query)
+        self.assertEqual(body['batch_size'],2)
+        self.assertEqual(body['config']['source']['protection_choices'],[])
+        self.assertEqual([f['source'] for f in body['config']['transforms'][0]['fields']],['bucket','contact','n'])
+        self.assertFalse(body['auto_scan_metadata'])
+
+    def test_source_field_role_option_reuses_server_identity_for_grouped_alias(self):
+        option=str(uuid.uuid4())
+        policy={'id':'policy','current_revision':2,'current':{'role_options':[{'id':option}]}}
+        source={'fingerprint':'source-fingerprint'}
+        target=ONLINE.role_choice_target(source)
+        field={'target':target,'component_key':'value_a','policy_id':'policy','policy_revision':2,
+               'assessment_revision':1,'options':[{'id':option,'name':'Online cursor full mask'}]}
+        client=Mock();client.request.return_value=ONLINE.SUPPORT.Response(200,{'fields':[field]})
+        choice=ONLINE.owner_role_choice(client,'locator',source,policy,engine_id=7,
+            service_sql=ONLINE.postgres_grouped_sql(),component='value_a')
+        self.assertEqual(choice['component_key'],'value_a')
+        self.assertEqual(choice['selection']['option_id'],option)
+        self.assertNotIn('contact',json.dumps(choice))
+
+
+class GroupedRuntimeClient:
+    """Boundary simulator; values are fixed independently of the runner oracle."""
+    def __init__(self,fault=''):
+        self.fault=fault;self.service=None;self.tasks={};self.executions={};self.policies={};self.targets={};self.source={'left':'a'*32,'right':'b'*32}
+        self.cleanup=[];self.refusals=[];self.calls=[];self.started=[]
+
+    def rows(self,phase):
+        values={'default':['138****5678',None,None,None,None],
+                'policy_default':['1*********8','张***c','a*c',None,None],
+                'selected':['***********','*****','***',None,None]}[phase]
+        return [{'bucket':str(i),'contact':v,'n':'1'} for i,v in enumerate(values,1)]
+
+    def phase(self,choices):
+        if choices:return 'selected'
+        return 'policy_default' if any(p['state']=='active' for p in self.policies.values()) else 'default'
+
+    def response(self,status,payload,expected,**kwargs):
+        if status not in expected:raise ONLINE.SuiteError('actual HTTP '+str(status)+' not expected')
+        return ONLINE.SUPPORT.Response(status,copy.deepcopy(payload),**kwargs)
+
+    def request(self,method,path,expected,body=None,**kwargs):
+        self.calls.append((method,path,copy.deepcopy(body)))
+        if path=='/api/v1/service/sql/output-contract':return self.response(200,{'table':{'fields':[]}},expected)
+        if path=='/api/v1/service/query' and method=='POST':
+            self.service=dict(body,id=19,version=1,status='active');return self.response(201,self.service,expected)
+        if path=='/api/v1/service/query/19':
+            if method=='GET':return self.response(200 if self.service else 404,self.service or {},expected)
+            if method=='DELETE':self.service=None;self.cleanup.append('service');return self.response(200,{},expected)
+            self.service['version']+=1;self.service['data_config'].update(body['data_config'])
+            return self.response(200,self.service,expected)
+        if path.startswith('/api/query/'):
+            chosen=self.service['data_config']['protection_choices']
+            revoked=chosen and self.policies['service']['state']=='revoked'
+            if revoked:
+                self.refusals.append('service')
+                code='query_protection_roles_unavailable' if self.fault=='wrong_service_reason' else 'query_protection_choice_invalid'
+                return self.response(200 if self.fault=='service_bypass' else 409,{'error':'choice unavailable','error_code':code},expected,cache_control=('no-store',))
+            phase=self.phase(chosen);rows=self.rows(phase)
+            if self.fault=='service_raw':rows[0]['contact']='13812345678'
+            page=body['page'];more=not page.get('cursor');ids=[1,2,3] if more else [4,5]
+            rows=[rows[i-1] for i in ids];version=str(self.service['version'])
+            common={'cache_control':('no-store',),'content_type':'application/json'}
+            if body['format']=='csv':
+                stream=io.StringIO();writer=csv.DictWriter(stream,fieldnames=['bucket','contact','n']);writer.writeheader();writer.writerows(rows)
+                data=stream.getvalue().encode();common.update(content_type='text/csv',pagination_versions=(version,),pagination_has_more=(str(more).lower(),))
+                if self.fault=='csv_cache':common['cache_control']=()
+                return self.response(200,data,expected,**common)
+            return self.response(200,{'data':rows,'page':{'has_more':more,'next_cursor':'opaque-cursor' if more else ''},'service_version':version},expected,**common)
+        if path.startswith('/api/v1/security/protection-policies/'):
+            owner=path.rsplit('/',1)[1];policy=self.policies[owner]
+            if method=='DELETE':policy['state']='revoked';self.cleanup.append('policy:'+owner)
+            return self.response(200,policy,expected)
+        if path.startswith('/api/v1/develop/executions/'):
+            execution=self.executions[path.rsplit('/',1)[1]]
+            return self.response(200,execution,expected)
+        if path.startswith('/api/v1/transfer/executions/'):
+            eid=path.split('/')[5];execution=self.executions[eid]
+            if path.endswith('/events'):
+                events=[{'execution_id':eid,'kind':kind,'attempt':1} for kind in ('started','completed')]
+                if self.fault=='worker_attempt':events[-1]['attempt']=2
+                return self.response(200,{'items':events,'has_more':False},expected)
+            return self.response(200,execution,expected)
+        if path.startswith('/api/v1/transfer/task-definitions/'):
+            tid=int(path.split('/')[5]);task=self.tasks[tid]
+            if path.endswith('/executions') or '/executions?' in path:
+                return self.response(200,{'data':[self.executions[e] for e in task['execution_ids']],'total':len(task['execution_ids'])},expected)
+            if path.endswith('/start'):
+                if task['config']['source']['protection_choices']:
+                    self.refusals.append('transfer')
+                    if self.fault=='transfer_write_on_refusal':self.targets[task['config']['target']['name']]['rows'][0][1]='raw'
+                    return self.response(409,{'error':'invalid choice','error_code':'transfer_protection_choice_invalid'},expected)
+                return self.response(200,{'execution_id':self.start(tid)},expected)
+            if method=='PUT':task['config']=copy.deepcopy(body['config'])
+            return self.response(200,{k:v for k,v in task.items() if k!='execution_ids'},expected)
+        raise AssertionError((method,path))
+
+    def start(self,tid):
+        task=self.tasks[tid];phase=self.phase(task['config']['source']['protection_choices']);eid=str(uuid.uuid4())
+        rows=self.rows(phase)
+        if self.fault=='physical_raw':rows[0]['contact']='13812345678'
+        if self.fault=='source_changed':self.source['left']='c'*32
+        self.targets[task['config']['target']['name']]={'oid':100+tid,'rows':[[int(r['bucket']),r['contact'],int(r['n'])] for r in rows]}
+        self.executions[eid]={'execution_id':eid,'task_id':tid,'status':'success','trigger_by':33,'trigger_type':'manual','records_read':5,'records_written':5}
+        task['execution_ids'].append(eid);self.started.append(eid);return eid
+
+    def create_task(self,_client,body,_deadline,tasks,**kwargs):
+        tid=21+len(self.tasks);self.tasks[tid]=dict(copy.deepcopy(body),id=tid,execution_ids=[]);tasks.append(tid)
+        eid=self.start(tid);return tid,copy.deepcopy(self.executions[eid])
+
+    def develop(self,_client,_engine,_locator,_deadline,_sql,_language,*,choices=None,**kwargs):
+        eid=str(uuid.uuid4());chosen=choices or []
+        if chosen and self.policies['develop']['state']=='revoked':
+            result={'execution_id':eid,'status':'failed','metadata':{},'error_details':{'code':'develop.query.protection_required','diagnostic':{'schema_version':'addp.execution-failure/v3','stage':'preparation','reason':'protection_role_choice_unavailable'}}}
+            if self.fault=='history_result':result['metadata']['result']={}
+            self.refusals.append('develop')
+        else:
+            rows=self.rows(self.phase(chosen))
+            if self.fault=='develop_raw':rows[0]['contact']='13812345678'
+            result={'execution_id':eid,'status':'success','metadata':{'result':{'columns':['bucket','contact','n'],'summary':{'preview_rows':rows}}}}
+        self.executions[eid]=copy.deepcopy(result);return result
+
+    def fixture(self,action,target,deadline):
+        if action.endswith('-prepare'):self.targets[target]={'oid':99,'rows':[]};return
+        if action.endswith('-clean'):
+            self.cleanup.append('table:'+target)
+            if self.fault=='cleanup_table':raise ONLINE.SuiteError('table cleanup failed')
+            self.targets.pop(target,None);return
+        return copy.deepcopy(self.targets.get(target,{'oid':None,'rows':None})),copy.deepcopy(self.source)
+
+    def create_policy(self,_client,_assessment,roles,owner):
+        value={'id':owner,'version':1,'state':'active'};self.policies[owner]=value.copy();return value
+
+    def cleanup_tasks(self,client,tasks):
+        self.cleanup.append('tasks');self.tasks.clear()
+        if self.fault=='cleanup_tasks':raise ONLINE.SuiteError('task cleanup failed')
+
+
+class PostgresGroupedLifecycleTest(unittest.TestCase):
+    def run_scenario(self,client):
+        with ExitStack() as stack:
+            stubs={'find_item':{'id':1},'build_item_locator':'locator','build_schema_locator':'parent',
+                   'current_enrollment':{'id':'enrollment','state':'active'},
+                   'list_pages':[{'id':'assessment','component_key':'value_a','current':{'conclusion':'sensitive'}}],
+                   'definition_array':[{'id':3,'version':1}],
+                   'service_subject_roles':{'role_keys':['reader'],'authorization_version':'1'},
+                   'role_projection':{},'wait_role_projection':{}}
+            for name,value in stubs.items():stack.enter_context(patch.object(ONLINE,name,return_value=value))
+            for name,value in {'postgres_target_fixture':client.fixture,'develop_execution':client.develop,
+                               'create_and_run_task':client.create_task,'create_role_policy':client.create_policy,
+                               'cleanup_tasks':client.cleanup_tasks}.items():stack.enter_context(patch.object(ONLINE,name,side_effect=value))
+            stack.enter_context(patch.object(ONLINE,'owner_role_choice',side_effect=lambda c,l,s,p,owner,*args,**kw:
+                {'component_key':'value_a','selection':{'policy_id':owner,'option_id':'server-owned'}}))
+            return ONLINE.exercise_postgres_grouped_outputs(client,7,'run-42',{'principal_id':'33','tenant_id':'1'},time.monotonic()+60)
+
+    def test_three_outlet_protocol_shapes_revoke_refuse_clear_and_restore(self):
+        client=GroupedRuntimeClient();report=self.run_scenario(client)
+        self.assertTrue(report['sources_unchanged']);self.assertTrue(report['default_csv_restored_exactly'])
+        self.assertEqual((report['created_resources'],report['deleted_resources']),(3,3))
+        self.assertEqual(len(client.started),3)
+        self.assertEqual(client.refusals,['develop','service','service','service','service','transfer'])
+        self.assertFalse(client.tasks);self.assertFalse(client.targets);self.assertIsNone(client.service)
+        self.assertTrue(all(p['state']=='revoked' for p in client.policies.values()))
+        self.assertNotIn('13812345678',json.dumps(report))
+        self.assertNotIn('opaque-cursor',json.dumps(report))
+
+    def test_independent_outlet_and_lifecycle_mutations_fail_and_still_clean(self):
+        for fault in ('develop_raw','service_raw','csv_cache','physical_raw','worker_attempt','source_changed',
+                      'wrong_service_reason','service_bypass','transfer_write_on_refusal','history_result'):
+            client=GroupedRuntimeClient(fault)
+            with self.subTest(fault=fault),self.assertRaises(ONLINE.SuiteError):self.run_scenario(client)
+            self.assertFalse(client.tasks);self.assertFalse(client.targets);self.assertIsNone(client.service)
+            self.assertTrue(all(p['state']=='revoked' for p in client.policies.values()))
+
+    def test_cleanup_errors_are_failures_and_do_not_prevent_other_cleanup(self):
+        for fault in ('cleanup_table','cleanup_tasks'):
+            client=GroupedRuntimeClient(fault)
+            with self.subTest(fault=fault),self.assertRaisesRegex(ONLINE.SuiteError,'grouped cleanup failed'):
+                self.run_scenario(client)
+            self.assertIsNone(client.service)
+            self.assertEqual(len([x for x in client.cleanup if x.startswith('table:')]),2)
+            self.assertTrue(all(p['state']=='revoked' for p in client.policies.values()))
 
 if __name__ == "__main__":
     unittest.main()

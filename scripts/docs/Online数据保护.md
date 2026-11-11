@@ -1,5 +1,7 @@
 # ADDP 脚本：Online数据保护
 
+当前代码领域报告为 v45，新增 PostgreSQL 分组三出口与方式撤销；浏览器为 v10、23 张必需图。最近已完成的真实 Hosted 仍是 v44/v10（421da33a），新增 v45 范围尚未运行，旧版本通过不覆盖新断言。
+
 [返回脚本导航](../README.md) · [返回测试与发布入口](测试与发布入口.md#test---测试与发布门禁)
 
 本页导航：[现行契约与证据边界](#现行契约与证据边界) · [Transfer 固定夹具](#transfer-固定夹具) · [原值访问身份与清理](#原值访问身份与清理) · [MySQL 与空间字段保护](#mysql-与空间字段保护) · [Service 角色方式撤销后的旧游标](#service-角色方式撤销后的旧游标) · [用户角色资格撤销](#用户角色资格撤销) · [角色资格自然到期](#角色资格自然到期) · [Develop 角色资格自然到期](#develop-角色资格自然到期) · [Transfer 资格自然到期与旧文件](#transfer-资格自然到期与旧文件)（[v30](#v30资格到期与旧错误投影)／[v31](#v31角色原因与执行来源)／[v32](#v32响应缓存证据)） · [四出口逐原因矩阵](#四出口逐原因矩阵) · [默认导出规则变化失效](#默认导出文件随保护规则变化失效)
@@ -335,3 +337,11 @@ Security准备、重新发现／重启恢复及浏览器中的技术字段检索
 Security隔离夹具复用 `online-engine-registration.py` 的 `ExactRecordGrants`，read许可的准备／签发后／撤销后及最终观察必须遵守[System搜索观察协议](../../docs/spec/addp授权上下文规范.md)。每次独立观察生成新的16字节小写十六进制query_nonce，首次显式expected_observation_tag=null，验证规范观察时间、精确目标、布尔裁决、可见目标指纹及合法不透明标记；同次观察再带原nonce和标记复核，依据变化或协议不符直接失败，不重开或重试。签发／撤销故意改变依据，因此下一观察另起新nonce，不把变更前标记跨写入当作预期不变事实。标记不落盘、不写日志、不成为权限或未来Allow；metadata_read仍使用原meta-query观察，不修改System接口／权限／业务保护规则。
 
 这是现行消费者契约修正，新增真实请求形状／标签时序的确定性拒绝回归，由既有Security Runner标准入口及其当前Platform CI覆盖；共享调用方Transfer沿原入口验证。没有新增运行时、数据库、配置或Hosted重派授权。旧失败、清理失败和未执行部分分别保留，修复测试不能替代真实六Grant和v44/v10验收。
+
+### v45：PostgreSQL 分组三出口与方式撤销
+
+沿现有 v44 套件增加 `postgres_grouped_outputs` 领域阶段，唯一领域报告升为 v45；浏览器仍为 v10、23 张必需图，原七表精确读取、账号、权限、90 秒资格到期及 2400 秒预算保持。复用已纳管的 `spatial_algorithm_source.value_a` 原值样本和正式 Assessment，不新增源表或读取许可。限定单表直接列 `GROUP BY id,value_a`、`id AS bucket`、`value_a AS contact` 及 `count(*) AS n`，按原 id 排序，保留五个分组与计数；不扩展 HAVING、其他聚合或产品语法。
+
+Develop 查询及重复历史、私有 SQL Service 两页 JSON／CSV、Transfer bounded/snapshot 独立任务和物理目标均与独立固定样本核对。初始默认规则保留前3／后4，三个出口分别沿现有 Policy 创建前1／后1默认及全遮盖角色选项，使用同一普通登录用户的现有角色保存选择；不借用发布人身份、不改角色资格。全遮盖后仅撤销这三项方式，等待各 Owner 确认；保留旧选择的 Develop 执行须准备阶段精确拒绝、同一历史无结果，Service 新读和旧游标的 JSON／CSV 须409/`query_protection_choice_invalid`且 no-store，Transfer 原任务启动须409/`transfer_protection_choice_invalid`且不新增执行或改写物理目标。该阶段验证方式撤销，不将它计为角色资格撤销或自然到期。
+
+显式移除选择后重新查询、服务读取和任务执行，恢复最初默认输出。期间核对普通用户本人角色、授权版本与全套 Baseline 不变；原值、SQL全文、令牌、游标及CSV正文不进入报告，仅归档保护输出摘要、真实UUID、计数和拒绝事实。复用已有受控物理夹具，目标只能为本Run的精确分组表；先确认不存在，再由fixture准备归属于原Writer的表，正式任务沿既有replace写入。成功、失败或中断都尝试删除捕获的任务／服务、撤销活动Policy并等待同步、删除及证明目标不存在、核对源摘要不变；清理失败保留原业务错误且使整体验收失败。新增一个Service和两条任务计入领域资源清理，Policy审计保留到一次性Infra销毁。现有Security Runner、Fixture及登记门禁同次覆盖，无新workflow或本地服务启停。此为新断言合同，真实v45 Hosted尚未运行，交专门CI会话安排后再认定结果。

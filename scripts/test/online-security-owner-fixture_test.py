@@ -186,5 +186,36 @@ class SecurityOwnerFixtureTest(unittest.TestCase):
                 self.assertFalse(list(self.state.iterdir()))
 
 
+    def test_group_targets_use_only_current_run_and_fixed_schema(self):
+        (self.state / 'addp-security-online-postgres').touch()
+        run_id='group-owned-run'
+        import hashlib
+        suffix=hashlib.sha256(run_id.encode()).hexdigest()[:24]
+        target='p145_group_'+suffix+'_selected'
+        env={'ADDP_ONLINE_TEST_RUN_ID':run_id,'ADDP_SECURITY_QUERY_TARGET':target}
+        for action in ('group-target-prepare','group-target-proof','group-target-clean'):
+            with self.subTest(action=action):
+                self.assertEqual(self.run_fixture(action,**env).returncode,0)
+                sql=self.sql.read_text()
+                self.assertIn('security_writer',sql)
+                self.assertNotIn('CREATE DATABASE',sql)
+                if action.endswith('prepare'):
+                    self.assertIn("CREATE TABLE addp_online_security.%I (%s)",sql)
+                elif action.endswith('proof'):
+                    self.assertIn('BEGIN READ ONLY',sql)
+                    self.assertIn('json_build_array(%s) ORDER BY %I',sql)
+                    self.assertIn('spatial_algorithm_source',sql)
+                    self.assertIn('spatial_algorithm_transfer',sql)
+                else:self.assertIn('DROP TABLE IF EXISTS addp_online_security.%I',sql)
+        for overrides in ({'ADDP_SECURITY_QUERY_TARGET':'other'}, {'ADDP_SECURITY_QUERY_TARGET':target+';DROP TABLE source'},
+                          {'GITHUB_ACTIONS':'false'}, {'ADDP_TEST_OWNER':'other'}):
+            with self.subTest(overrides=overrides):
+                self.assertNotEqual(self.run_fixture('group-target-clean',**dict(env,**overrides)).returncode,0)
+        self.assertNotEqual(self.run_fixture('join-target-prepare',**env).returncode,0)
+        env['ADDP_SECURITY_QUERY_TARGET']='p145_join_'+suffix+'_written'
+        self.assertEqual(self.run_fixture('join-target-prepare',**env).returncode,0)
+        self.assertNotEqual(self.run_fixture('group-target-clean',**env).returncode,0)
+
+
 if __name__ == '__main__':
     unittest.main()

@@ -11,38 +11,47 @@ fail() { echo "Security owner fixture failed: $*" >&2; exit 1; }
 docker info >/dev/null 2>&1 || fail "Docker daemon is unavailable"
 containers=(addp-security-online-postgres addp-security-online-mysql addp-security-online-mongodb)
 case "$1" in
-  join-target-prepare|join-target-proof|join-target-clean)
+  join-target-prepare|join-target-proof|join-target-clean|group-target-prepare|group-target-proof|group-target-clean)
     container=${containers[0]}
     [ "$(docker inspect --format '{{ index .Config.Labels "com.addp.online-fixture" }}' "$container")" = security ] || fail "container ownership mismatch"
     [ -d "${ADDP_ONLINE_SECRET_DIR:?}" ] || fail "Hosted secret directory is missing"
     run_id=${ADDP_ONLINE_TEST_RUN_ID:?}
     [[ "$run_id" =~ ^[A-Za-z0-9_-]{1,100}$ ]] || fail "invalid JOIN run id"
     suffix=$(python3 -c 'import hashlib, sys; print(hashlib.sha256(sys.argv[1].encode()).hexdigest()[:24])' "$run_id")
-    target=${ADDP_SECURITY_JOIN_TARGET:?}
-    [[ "$target" == "p145_join_${suffix}_written" || "$target" == "p145_join_${suffix}_absent" ]] || fail "JOIN target is outside this run"
-    if [ "$1" = join-target-prepare ]; then
-      [ "$target" = "p145_join_${suffix}_written" ] || fail "JOIN missing target cannot be prepared"
-      docker exec -i "$container" psql -XqAt -U postgres -d security_fixture -v ON_ERROR_STOP=1 -v target="$target" \
-        2>"$ADDP_ONLINE_SECRET_DIR/security-join-prepare-error.log" <<'SQL'
+    target=${ADDP_SECURITY_QUERY_TARGET:?}
+    case "$1" in
+      join-*)
+        [[ "$target" == "p145_join_${suffix}_written" || "$target" == "p145_join_${suffix}_absent" ]] || fail "JOIN target is outside this run"
+        columns='row_id bigint, left_secret text, right_secret text'
+        values='row_id,left_secret,right_secret'; ordering=row_id ;;
+      group-*)
+        [[ "$target" == "p145_group_${suffix}_default" || "$target" == "p145_group_${suffix}_selected" ]] || fail "group target is outside this run"
+        columns='bucket bigint, contact text, n bigint'
+        values='bucket,contact,n'; ordering=bucket ;;
+    esac
+    if [[ "$1" == *-prepare ]]; then
+      [ "$target" != "p145_join_${suffix}_absent" ] || fail "JOIN missing target cannot be prepared"
+      docker exec -i "$container" psql -XqAt -U postgres -d security_fixture -v ON_ERROR_STOP=1 -v target="$target" -v columns="$columns" \
+        2>"$ADDP_ONLINE_SECRET_DIR/security-query-prepare-error.log" <<'SQL'
 SET ROLE security_writer;
-SELECT format('CREATE TABLE addp_online_security.%I (row_id bigint, left_secret text, right_secret text)', :'target') \gexec
+SELECT format('CREATE TABLE addp_online_security.%I (%s)', :'target', :'columns') \gexec
 SQL
-    elif [ "$1" = join-target-clean ]; then
+    elif [[ "$1" == *-clean ]]; then
       docker exec -i "$container" psql -XqAt -U postgres -d security_fixture -v ON_ERROR_STOP=1 -v target="$target" \
-        2>"$ADDP_ONLINE_SECRET_DIR/security-join-clean-error.log" <<'SQL'
+        2>"$ADDP_ONLINE_SECRET_DIR/security-query-clean-error.log" <<'SQL'
 SET ROLE security_writer;
 SELECT format('DROP TABLE IF EXISTS addp_online_security.%I', :'target') \gexec
 SQL
     else
-      docker exec -i "$container" psql -XqAt -U postgres -d security_fixture -v ON_ERROR_STOP=1 -v target="$target" \
-        2>"$ADDP_ONLINE_SECRET_DIR/security-join-proof-error.log" <<'SQL'
+      docker exec -i "$container" psql -XqAt -U postgres -d security_fixture -v ON_ERROR_STOP=1 -v target="$target" -v values="$values" -v ordering="$ordering" \
+        2>"$ADDP_ONLINE_SECRET_DIR/security-query-proof-error.log" <<'SQL'
 BEGIN READ ONLY;
 SET LOCAL ROLE security_writer;
 SELECT CASE WHEN to_regclass(format('addp_online_security.%I', :'target')) IS NULL THEN
   'SELECT json_build_object(''oid'',NULL,''rows'',NULL)'
 ELSE format(
-  'SELECT json_build_object(''oid'',%s,''rows'',coalesce(json_agg(json_build_array(row_id,left_secret,right_secret) ORDER BY row_id),''[]''::json)) FROM addp_online_security.%I',
-  to_regclass(format('addp_online_security.%I', :'target'))::oid, :'target')
+  'SELECT json_build_object(''oid'',%s,''rows'',coalesce(json_agg(json_build_array(%s) ORDER BY %I),''[]''::json)) FROM addp_online_security.%I',
+  to_regclass(format('addp_online_security.%I', :'target'))::oid, :'values', :'ordering', :'target')
 END \gexec
 SELECT json_build_object(
   'left', (SELECT md5(jsonb_agg(jsonb_build_array(id,value_a) ORDER BY id)::text) FROM addp_online_security.spatial_algorithm_source),

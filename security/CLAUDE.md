@@ -968,3 +968,13 @@ Develop 导出会话 #19 经独立 Transfer 执行 94347359-7a39-4359-9b66-cf26b
 原件 /var/folders/r1/l7b49c757dz02zftf_l9vl9r0000gn/T/p145-transfer-grouping-local-qch78ix7/，报告 SHA256 929e76b4441e8f4abc6e0bb6b382b2f0e416b7a89760c452ffbd138409eb8bf6；reference.json 与 target.json 的 SHA256 同为 ad5e87676c8cf0929da219818fb87bd74f7afb94d045629fd1aa05991874027b。独立脚本 /tmp/p145-transfer-grouping-independent/audit.py 实际退出0，结果 independent-audit.json；未导入验收生成脚本，核对三条非模拟UUID、精确任务和执行关系、五行两列、顺序、掩码及清理报告。身份、执行状态、读取／写入计数、删除／404和注销是正式HTTP脚本保存的断言，未归档原始HTTP响应，不称为独立原始报文复验。
 
 本轮仅本地普通用户HTTP验收及文档补证，无新产品代码；重算此前T1／T2的三个Provider输入摘要仍一致，复用有效门禁，不重复全量执行。初次Meta404失败与其审计原件保留。源表仍为历史脱敏传输产物，本轮证明独立任务能够消费限定分组查询并保持目标结果一致；原值变换等价性另由真实PostgreSQL T2证明，角色方式失效、本地浏览器和新增分组Hosted均未验。下一步建议将Develop／Service／Transfer分组场景接入现有隔离套件，使用原值样本补实际默认保护和角色方式失效拒绝，再由专门CI会话安排运行。
+
+### v45 PostgreSQL 分组三出口隔离接入（2026-11-11，Hosted 未运行）
+
+按用户同意的下一步，先在 Online 数据保护文档确定 v45 合同，再接入现有领域 Runner。复用原七表读取范围中的 spatial_algorithm_source、既有普通 User／本人角色和 value_a 正式 Assessment，不增加源、权限、身份或产品语法。固定查询只含直接列分组及 count(*)，输出 bucket／contact／n；Develop查询及重复历史、Service私有SQL两页JSON／CSV、Transfer独立任务及物理目标都与独立合成原值样本对照，覆盖默认、三个Owner各自保存的全遮盖选择、仅撤销方式后的拒绝、主动移除后的默认恢复。新场景验证方式撤销，既有资格撤销／自然到期不替代也不删除。
+
+拒绝分别要求Develop准备阶段 protection_role_choice_unavailable、复读同一UUID无结果；Service新请求／旧游标两格式精确409/query_protection_choice_invalid及no-store；Transfer原任务精确409/transfer_protection_choice_invalid，执行列表和物理目标不变。正向Transfer三次执行核对本人、真实UUID、读写各五行及Worker同一首轮started/completed，源摘要不变。两个物理目标、两条任务和一个Service严格归本Run，任何失败／中断均继续尝试各项清理、撤销活动Policy并同步；清理失败使整体失败且保留原错误。根资源计数增加3，固定领域阶段28个，领域报告唯一v45；浏览器v10／23图、2400秒总预算、90秒资格到期及原六许可清理合同不变。JOIN与分组共用一个受控目标物理夹具，删除旧helper／环境字段，无兼容路线。
+
+新增回归先因缺实现报错，再实现；最终直接执行 python3 -m unittest scripts/test/security-mysql-owner-protection-online_test.py scripts/test/online-security-owner-fixture_test.py，241项退出0。六项新增Runner测试包含原值混入、Unicode长度、组计数／顺序／折叠、CSV缓存、错拒绝原因、旧选择放行、拒绝时写入、历史带结果、Worker换attempt、源变化和清理失败等反例；物理夹具另核对精确Run目标与动作隔离。登记反例 test_requires_mysql_four_owner_protection_fixtures_and_contract 与登记CLI均退出0，bash -n、py_compile和git diff --check通过。141个既有函数／类AST不变，原JOIN函数只变更共享物理helper名；已有Provider三个输入摘要仍与此前Go／真实PG T2一致，不重复运行。
+
+完整 make test-security-online-runner 在已提交基线加本轮差异的临时冻结副本执行，依赖部署组43项中三个未修改Metric包装测试20秒超时，退出2。随后仅执行原Make Security recipe（用-o标明四个依赖未重跑），Go Fixture通过；Python组291项中未修改的HostedSecurityGate执行图／恢复包装出现3个60秒超时错误和2个未到execution-resume的失败，亦退出2。不能把241项或Go子组通过称为完整入口通过，未继续重复运行／修复这些包装。冻结尝试早于最终历史UUID及创建计数细化，最终241项已在当前文件补跑；原失败包装输入未改。精确日志与范围见 /tmp/p145-grouped-runner-validation-root 指向目录内的 inputs.json、scope-audit.json、gate.log、owner-gate.log、verification.json，最终直接日志 /tmp/p145-grouped-final-owner.log、/tmp/p145-grouped-final-registration.log。本轮无新产品代码、服务启停、个人运行或新Hosted／浏览器结果。下一步交专门CI会话核对候选及上述门禁阻塞，再安排单次v45/v10隔离运行，回传精确Run／Job／SHA、领域报告、28阶段、23图及清理；实际产物回传前保持部分实现。

@@ -1387,19 +1387,19 @@ def exercise_spatial_algorithms(client: GatewayClient, engine_id: int, run_id: s
             "temporary_resource_residuals": 0}
 
 
-def postgres_join_fixture(action: str, target: str, deadline: float) -> tuple[dict[str, object], dict[str, object]] | None:
+def postgres_target_fixture(action: str, target: str, deadline: float) -> tuple[dict[str, object], dict[str, object]] | None:
     repository = Path(__file__).resolve().parents[2]
     SUPPORT.require_hosted_security_lifecycle(repository)
-    timeout = 30 if action == "join-target-clean" else min(30, deadline - time.monotonic())
+    timeout = 30 if action.endswith("-clean") else min(30, deadline - time.monotonic())
     if timeout <= 0:
-        raise SuiteError("PostgreSQL JOIN physical proof exceeded its budget")
+        raise SuiteError("PostgreSQL query physical proof exceeded its budget")
     try:
         result = subprocess.run(["bash", "business/scripts/online-security-owner-fixture.sh", action],
             cwd=repository, capture_output=True, text=True, timeout=timeout,
-            env=dict(os.environ, ADDP_SECURITY_JOIN_TARGET=target))
+            env=dict(os.environ, ADDP_SECURITY_QUERY_TARGET=target))
         if result.returncode:
             raise ValueError()
-        if action in {"join-target-prepare", "join-target-clean"}:
+        if action.endswith(("-prepare", "-clean")):
             return None
         target_state, source_state = [json.loads(line) for line in result.stdout.splitlines()]
         if (set(target_state) != {"oid", "rows"} or set(source_state) != {"left", "right"}
@@ -1408,7 +1408,7 @@ def postgres_join_fixture(action: str, target: str, deadline: float) -> tuple[di
             raise ValueError()
         return target_state, source_state
     except (ValueError, TypeError, subprocess.TimeoutExpired):
-        raise SuiteError("PostgreSQL JOIN fixture action failed: " + action) from None
+        raise SuiteError("PostgreSQL query fixture action failed: " + action) from None
 
 
 def postgres_join_payload(left: str, right: str, parent: str, target: str, case: str) -> dict[str, object]:
@@ -1478,8 +1478,8 @@ def exercise_postgres_transfer_join(client: GatewayClient, engine_id: int, run_i
     written, absent = (f"p145_join_{suffix}_{name}" for name in ("written", "absent"))
     tasks: list[int] = []
     cases = {}
-    initial, source = postgres_join_fixture("join-target-proof", written, deadline)
-    missing, other_source = postgres_join_fixture("join-target-proof", absent, deadline)
+    initial, source = postgres_target_fixture("join-target-proof", written, deadline)
+    missing, other_source = postgres_target_fixture("join-target-proof", absent, deadline)
     if initial != {"oid": None, "rows": None} or missing != initial or other_source != source:
         raise SuiteError("PostgreSQL JOIN needs two absent targets and stable sources")
     left, right = (find_item(client, engine_id, f"{TARGET_SCHEMA}.{name}", "table")
@@ -1517,7 +1517,7 @@ def exercise_postgres_transfer_join(client: GatewayClient, engine_id: int, run_i
             "invalid_value_effect": "suppress", "rationale": rationale,
         }).payload, "JOIN right-source Policy")
         wait_role_projection(client, enrollment_id, projection, deadline, "transfer")
-        postgres_join_fixture("join-target-prepare", written, deadline)
+        postgres_target_fixture("join-target-prepare", written, deadline)
         for case, name in (("written", written), ("existing", written), ("missing", absent)):
             payload = postgres_join_payload(build_item_locator(engine_id, left), build_item_locator(engine_id, right),
                                             build_schema_locator(engine_id, right), name, case)
@@ -1525,7 +1525,7 @@ def exercise_postgres_transfer_join(client: GatewayClient, engine_id: int, run_i
             task_id, execution = create_and_run_task(client, payload, deadline, tasks,
                 expected_status="success" if success else "failed")
             cases[case] = verify_postgres_join_execution(client, execution, task_id, principal_id, success)
-            physical, current_source = postgres_join_fixture("join-target-proof", name, deadline)
+            physical, current_source = postgres_target_fixture("join-target-proof", name, deadline)
             if current_source != source:
                 raise SuiteError("PostgreSQL JOIN changed a source value")
             if success:
@@ -1543,8 +1543,8 @@ def exercise_postgres_transfer_join(client: GatewayClient, engine_id: int, run_i
             residuals = []
             for name in (written, absent):
                 try:
-                    postgres_join_fixture("join-target-clean", name, deadline)
-                    physical, _ = postgres_join_fixture("join-target-proof", name, time.monotonic() + 30)
+                    postgres_target_fixture("join-target-clean", name, deadline)
+                    physical, _ = postgres_target_fixture("join-target-proof", name, time.monotonic() + 30)
                     if physical != {"oid": None, "rows": None}:
                         residuals.append(name)
                 except SuiteError:
@@ -1573,6 +1573,304 @@ def exercise_postgres_transfer_join(client: GatewayClient, engine_id: int, run_i
     return {"cases": cases, "original_order_and_protected_rows_verified": True,
             "existing_target_unchanged": True, "missing_target_absent": True, "sources_unchanged": True,
             "deleted_tasks": len(tasks), "active_policy_residuals": 0, "target_residuals": 0}
+
+
+def postgres_grouped_sql() -> str:
+    return (f"SELECT p.id AS bucket,p.value_a AS contact,count(*) AS n "
+            f"FROM {TARGET_SCHEMA}.{SPATIAL_SOURCE} p GROUP BY p.id,p.value_a ORDER BY p.id")
+
+
+def assert_postgres_grouped_rows(rows: list[object], ids: list[int], phase: str) -> dict[str, object]:
+    expected = {
+        "default": ["138****5678", None, None, None, None],
+        "policy_default": ["1*********8", "张***c", "a*c", None, None],
+        "selected": ["***********", "*****", "***", None, None],
+    }[phase]
+    if len(rows) != len(ids):
+        raise SuiteError("PostgreSQL grouped output lost or collapsed source groups")
+    for item, key in zip(rows, ids):
+        row = _object(item, "PostgreSQL grouped row")
+        wanted = expected[key - 1]
+        allowed = [{"bucket", "contact", "n"}] + ([{"bucket", "n"}] if wanted is None else [])
+        if (set(row) not in allowed or normalize_id(row.get("bucket")) != str(key)
+                or normalize_id(row.get("n")) != "1" or row.get("contact") != wanted):
+            raise SuiteError("PostgreSQL grouped values, order, count or output fields differ from fixture")
+    return {"rows": len(rows), "phase": phase, "source_groups_preserved": True,
+            "protected_values_verified": True, "null_and_empty_verified": True}
+
+
+def postgres_grouped_transfer_payload(name: str, locator: str, parent: str, target: str,
+                                      choices: list[dict[str, object]]) -> dict[str, object]:
+    payload = transfer_payload(name, locator, parent, target)
+    payload["batch_size"] = payload["config"]["batch_size"] = 2
+    payload["config"]["source"].update(query={"language": "sql", "statement": postgres_grouped_sql()},
+                                        protection_choices=choices)
+    payload["config"]["transforms"] = [{"type": "field_mapping", "version": "v1", "mode": "project", "fields": [
+        {"source": name, "target": name, "target_type": "string" if name == "contact" else "bigint",
+         "nullable": name == "contact"} for name in ("bucket", "contact", "n")]}]
+    return payload
+
+
+def postgres_grouped_develop(client: GatewayClient, engine_id: int, locator: str, deadline: float,
+                            phase: str, choices: list[dict[str, object]]) -> dict[str, object]:
+    execution = develop_execution(client, engine_id, locator, deadline, postgres_grouped_sql(), "sql", choices=choices)
+    identifier = execution.get("execution_id")
+    if not isinstance(identifier, str) or str(uuid.UUID(identifier)) != identifier or uuid.UUID(identifier).int == 0:
+        raise SuiteError("PostgreSQL grouped Develop requires an actual UUID")
+    if execution.get("status") != "success":
+        raise SuiteError("PostgreSQL grouped Develop positive control failed")
+    result = _object(_object(execution.get("metadata"), "grouped metadata").get("result"), "grouped result")
+    if result.get("columns") != ["bucket", "contact", "n"]:
+        raise SuiteError("PostgreSQL grouped Develop changed output columns")
+    proof = assert_postgres_grouped_rows(_array(_object(result.get("summary"), "grouped summary").get("preview_rows"),
+                                               "grouped preview"), [1, 2, 3, 4, 5], phase)
+    history = _object(client.request("GET", "/api/v1/develop/executions/" + identifier, (200,)).payload, "grouped history")
+    if (history.get("execution_id") != identifier or history.get("status") != "success"
+            or _object(history.get("metadata"), "history metadata").get("result") != result):
+        raise SuiteError("PostgreSQL grouped repeated history changed the protected result")
+    return {**proof, "execution_id": identifier, "history_matches": True}
+
+
+def postgres_grouped_service_pages(client: GatewayClient, path: str, phase: str) -> tuple[dict[str, object], str]:
+    cursor = ""
+    first_cursor = ""
+    version = None
+    pages = []
+    for ids in ([1, 2, 3], [4, 5]):
+        request = {"select": ["bucket", "contact", "n"], "order_by": [{"field": "bucket", "direction": "asc"}],
+                   "page": {"limit": 3, **({"cursor": cursor} if cursor else {})}, "format": "json"}
+        response = client.request("POST", path, (200,), request)
+        export_no_store(response)
+        if response.content_type.split(";", 1)[0] != "application/json":
+            raise SuiteError("PostgreSQL grouped JSON content type differs")
+        data = _object(response.payload, "grouped Service page")
+        rows = _array(data.get("data"), "grouped Service rows")
+        proof = assert_postgres_grouped_rows(rows, ids, phase)
+        page = _object(data.get("page"), "grouped pagination")
+        more = ids[-1] != 5
+        next_cursor = page.get("next_cursor", "")
+        current_version = data.get("service_version")
+        if (not isinstance(current_version, str) or not current_version or
+                (version is not None and current_version != version) or page.get("has_more") is not more
+                or not isinstance(next_cursor, str) or bool(next_cursor) != more or (more and next_cursor == cursor)):
+            raise SuiteError("PostgreSQL grouped pagination or version changed")
+        csv_response = client.request("POST", path, (200,), dict(request, format="csv"), raw_response=True)
+        export_no_store(csv_response)
+        if (csv_response.content_type.split(";", 1)[0] != "text/csv" or not isinstance(csv_response.payload, bytes)
+                or csv_response.pagination_versions != (current_version,) or csv_response.pagination_has_more != (str(more).lower(),)):
+            raise SuiteError("PostgreSQL grouped CSV protocol differs from JSON")
+        reader = csv.DictReader(io.StringIO(csv_response.payload.decode("utf-8-sig")))
+        expected = [{key: "" if row.get(key) is None else str(row[key]) for key in request["select"]} for row in rows]
+        if reader.fieldnames != request["select"] or list(reader) != expected:
+            raise SuiteError("PostgreSQL grouped CSV cells differ from JSON")
+        pages.append({**proof, "csv_sha256": hashlib.sha256(csv_response.payload).hexdigest(),
+                      "has_more": more, "json_csv_no_store": True, "csv_headers_match": True})
+        version = current_version
+        if more:
+            first_cursor = next_cursor
+        cursor = next_cursor
+    return {"pages": pages, "service_version": version, "rows": 5}, first_cursor
+
+
+def verify_postgres_grouped_transfer(client: GatewayClient, execution: Mapping[str, object],
+                                     task_id: int, principal_id: int) -> dict[str, object]:
+    identifier = execution.get("execution_id")
+    if (not isinstance(identifier, str) or str(uuid.UUID(identifier)) != identifier or uuid.UUID(identifier).int == 0
+            or execution.get("status") != "success" or execution.get("task_id") != task_id
+            or positive_int(execution.get("trigger_by"), "grouped initiator") != principal_id
+            or execution.get("trigger_type") != "manual"
+            or execution.get("records_read") != 5 or execution.get("records_written") != 5):
+        raise SuiteError("PostgreSQL grouped Transfer identity, status or counts differ")
+    page = _object(client.request("GET", "/api/v1/transfer/executions/" + identifier + "/events", (200,)).payload,
+                   "grouped Worker events")
+    events = [_object(event, "grouped Worker event") for event in _array(page.get("items"), "grouped events")]
+    if (page.get("has_more") is not False or len(events) < 2 or events[0].get("kind") != "started"
+            or events[-1].get("kind") != "completed"
+            or any(event.get("execution_id") != identifier or event.get("attempt") != 1 for event in events)):
+        raise SuiteError("PostgreSQL grouped Worker must start and complete the same first attempt")
+    return {"execution_id": identifier, "task_id": task_id, "records_read": 5, "records_written": 5,
+            "worker_attempt": 1}
+
+
+def exercise_postgres_grouped_outputs(client: GatewayClient, engine_id: int, run_id: str,
+                                     identity: Mapping[str, object], deadline: float) -> dict[str, object]:
+    source = find_item(client, engine_id, f"{TARGET_SCHEMA}.{SPATIAL_SOURCE}", "table")
+    locator, parent = build_item_locator(engine_id, source), build_schema_locator(engine_id, source)
+    enrollment = current_enrollment(client, engine_id, f"{TARGET_SCHEMA}.{SPATIAL_SOURCE}")
+    if enrollment is None or enrollment.get("state") != "active":
+        raise SuiteError("PostgreSQL grouped source requires its existing active Enrollment")
+    enrollment_id = str(enrollment["id"])
+    assessments = [item for item in list_pages(client, "/api/v1/security/assessments?" +
+        urllib.parse.urlencode({"enrollment_id": enrollment_id})) if item.get("component_key") == "value_a"]
+    if len(assessments) != 1 or assessments[0].get("current", {}).get("conclusion") != "sensitive":
+        raise SuiteError("PostgreSQL grouped source requires one formal value_a Assessment")
+    roles = service_subject_roles(client, identity)
+    baselines = definition_array(client, "/api/v1/security/protection-baselines")
+    suffix = hashlib.sha256(run_id.encode()).hexdigest()[:24]
+    targets = {phase: f"p145_group_{suffix}_{phase}" for phase in ("default", "selected")}
+    source_proof = None
+    for target in targets.values():
+        physical, original = postgres_target_fixture("group-target-proof", target, deadline)
+        if physical != {"oid": None, "rows": None} or (source_proof is not None and source_proof != original):
+            raise SuiteError("PostgreSQL grouped targets must be absent and sources stable")
+        source_proof = original
+    tasks: list[int] = []
+    policies: dict[str, dict[str, object]] = {}
+    service_id = None
+    failure = None
+    cleanup_errors = []
+    result = {}
+    try:
+        for target in targets.values():
+            postgres_target_fixture("group-target-prepare", target, deadline)
+        name = "online-pg-group-" + suffix
+        contract = client.request("POST", "/api/v1/service/sql/output-contract", (200,), {
+            "engine_id": engine_id, "sql": postgres_grouped_sql(), "parameters": {}}).payload
+        body = service_payload(name, engine_id, locator, ["bucket", "contact", "n"])
+        body.update(config_type="sql", sql_query=postgres_grouped_sql(), named_parameters=[], output_contract=contract)
+        body["data_config"] = {"stable_key": ["bucket"], "default_fields": ["bucket", "contact", "n"],
+                               "filterable_fields": [], "protection_choices": []}
+        body["protocols"]["rest_api"]["formats"] = ["json", "csv"]
+        created = _object(client.request("POST", "/api/v1/service/query", (201,), body).payload, "grouped SQL Service")
+        service_id = positive_int(created.get("id"), "grouped Service ID")
+        service_path = "/api/v1/service/query/" + str(service_id)
+        query_path = "/api/query/" + name + "/query"
+        initial_definition = client.request("GET", service_path, (200,)).payload
+        if (created.get("public_access") is not False or created.get("status") != "active"
+                or initial_definition.get("sql_query") != postgres_grouped_sql()):
+            raise SuiteError("PostgreSQL grouped Service changed private SQL identity")
+        default_develop = postgres_grouped_develop(client, engine_id, locator, deadline, "default", [])
+        default_service, _ = postgres_grouped_service_pages(client, query_path, "default")
+        default_body = postgres_grouped_transfer_payload(name + "-default", locator, parent, targets["default"], [])
+        default_task, default_execution = create_and_run_task(client, default_body, deadline, tasks)
+        def physical_target(target: str, phase: str) -> dict[str, object]:
+            physical, current_source = postgres_target_fixture("group-target-proof", target, deadline)
+            if current_source != source_proof:
+                raise SuiteError("PostgreSQL grouped query changed source data")
+            positive_int(physical.get("oid"), "grouped physical target")
+            values = _array(physical.get("rows"), "grouped physical rows")
+            if any(not isinstance(row, list) or len(row) != 3 for row in values):
+                raise SuiteError("PostgreSQL grouped physical column shape differs")
+            assert_postgres_grouped_rows([dict(zip(("bucket", "contact", "n"), row)) for row in values], [1, 2, 3, 4, 5], phase)
+            return physical
+        physical_target(targets["default"], "default")
+        default_transfer = verify_postgres_grouped_transfer(client, default_execution, default_task, int(identity["principal_id"]))
+        choices = {}
+        for owner in ("develop", "service", "transfer"):
+            before = role_projection(client, enrollment_id, owner)
+            policy = create_role_policy(client, str(assessments[0]["id"]), roles["role_keys"], owner)
+            policies[owner] = policy
+            wait_role_projection(client, enrollment_id, before, deadline, owner)
+            choices[owner] = owner_role_choice(client, locator, source, policy, owner, engine_id,
+                service_sql=postgres_grouped_sql() if owner == "service" else None, component="value_a")
+        policy_default = postgres_grouped_develop(client, engine_id, locator, deadline, "policy_default", [])
+        selected_develop = postgres_grouped_develop(client, engine_id, locator, deadline, "selected", [choices["develop"]])
+        client.request("PUT", service_path, (200,), {"version": initial_definition["version"],
+            "data_config": {"protection_choices": [choices["service"]]}})
+        selected_definition = client.request("GET", service_path, (200,)).payload
+        if selected_definition["data_config"].get("protection_choices") != [choices["service"]]:
+            raise SuiteError("PostgreSQL grouped Service did not save its source selection")
+        selected_service, cursor = postgres_grouped_service_pages(client, query_path, "selected")
+        selected_body = postgres_grouped_transfer_payload(name + "-selected", locator, parent, targets["selected"], [choices["transfer"]])
+        selected_task, selected_execution = create_and_run_task(client, selected_body, deadline, tasks)
+        selected_transfer = verify_postgres_grouped_transfer(client, selected_execution, selected_task, int(identity["principal_id"]))
+        selected_physical = physical_target(targets["selected"], "selected")
+        task_path = "/api/v1/transfer/task-definitions/" + str(selected_task)
+        saved_task = client.request("GET", task_path, (200,)).payload
+        if saved_task["config"]["source"].get("protection_choices") != [choices["transfer"]]:
+            raise SuiteError("PostgreSQL grouped task did not save its source selection")
+        history = transfer_role_execution_ids(client, task_path)
+        if history != [selected_execution["execution_id"]] or selected_execution.get("records_written") != 5 or selected_execution.get("records_read") != 5:
+            raise SuiteError("PostgreSQL grouped selected task history or counts differ")
+        for owner, policy in policies.items():
+            before = role_projection(client, enrollment_id, owner)
+            client.request("DELETE", "/api/v1/security/protection-policies/" + str(policy["id"]), (200,),
+                {"version": policy["version"], "rationale": "Revoke grouped role option; preserve saved selection"})
+            wait_role_projection(client, enrollment_id, before, deadline, owner)
+        denied = develop_execution(client, engine_id, locator, deadline, postgres_grouped_sql(), "sql", choices=[choices["develop"]])
+        refusal = validate_develop_protection_refusal(denied, "preparation", "protection_role_choice_unavailable")
+        again = client.request("GET", "/api/v1/develop/executions/" + denied["execution_id"], (200,)).payload
+        validate_develop_protection_refusal(again, "preparation", "protection_role_choice_unavailable")
+        if again.get("execution_id") != denied["execution_id"]:
+            raise SuiteError("PostgreSQL grouped refusal history changed execution identity")
+        service_denials = {}
+        for format_name in ("json", "csv"):
+            for label, old in (("new", ""), ("old_cursor", cursor)):
+                request = {"select": ["bucket", "contact", "n"], "order_by": [{"field": "bucket", "direction": "asc"}],
+                           "page": {"limit": 3, **({"cursor": old} if old else {})}, "format": format_name}
+                service_denials[format_name + "_" + label] = assert_service_role_refusal(client.request("POST", query_path, (409,), request))
+        task_denial = exact_role_conflict(client.request("POST", task_path + "/start", (409,)), "transfer_protection_choice_invalid")
+        if (client.request("GET", service_path, (200,)).payload != selected_definition
+                or client.request("GET", task_path, (200,)).payload != saved_task
+                or transfer_role_execution_ids(client, task_path) != history
+                or physical_target(targets["selected"], "selected") != selected_physical):
+            raise SuiteError("PostgreSQL grouped refusal mutated definitions, execution history or target")
+        recovered_develop = postgres_grouped_develop(client, engine_id, locator, deadline, "default", [])
+        client.request("PUT", service_path, (200,), {"version": selected_definition["version"], "data_config": {"protection_choices": []}})
+        recovered_service, _ = postgres_grouped_service_pages(client, query_path, "default")
+        if [page["csv_sha256"] for page in recovered_service["pages"]] != [page["csv_sha256"] for page in default_service["pages"]]:
+            raise SuiteError("PostgreSQL grouped default recovery CSV bytes changed")
+        cleared_config = copy.deepcopy(saved_task["config"])
+        cleared_config["source"]["protection_choices"] = []
+        cleared = client.request("PUT", task_path, (200,), {"config": cleared_config}).payload
+        if cleared["config"]["source"].get("protection_choices") != []:
+            raise SuiteError("PostgreSQL grouped recovery did not explicitly clear task selection")
+        recovered_transfer = transfer_role_execution(client, task_path, selected_task, str(identity["principal_id"]), deadline)
+        recovered_execution = client.request("GET", "/api/v1/transfer/executions/" + recovered_transfer["execution_id"], (200,)).payload
+        recovered_transfer = verify_postgres_grouped_transfer(client, recovered_execution, selected_task, int(identity["principal_id"]))
+        physical_target(targets["selected"], "default")
+        current_roles = service_subject_roles(client, identity)
+        if current_roles != roles or definition_array(client, "/api/v1/security/protection-baselines") != baselines:
+            raise SuiteError("PostgreSQL grouped role options changed roles, authority or default Baseline")
+        execution_ids = [default_develop["execution_id"], policy_default["execution_id"], selected_develop["execution_id"],
+            denied["execution_id"], recovered_develop["execution_id"], default_execution["execution_id"],
+            selected_execution["execution_id"], recovered_transfer["execution_id"]]
+        if len(set(execution_ids)) != 8 or any(uuid.UUID(value).int == 0 for value in execution_ids):
+            raise SuiteError("PostgreSQL grouped lifecycle reused execution UUIDs")
+        result = {"default": {"develop": default_develop, "service": default_service, "transfer": default_transfer},
+            "policy_default": policy_default, "selected": {"develop": selected_develop, "service": selected_service,
+                "transfer": selected_transfer},
+            "refusals": {"develop": {**refusal, "execution_id": denied["execution_id"], "history_result_absent": True},
+                         "service": service_denials, "transfer": task_denial},
+            "recovery": {"develop": recovered_develop, "service": recovered_service, "transfer": recovered_transfer},
+            "sources_unchanged": True, "no_execution_or_target_write_after_refusal": True,
+            "roles_and_baselines_unchanged": True, "default_csv_restored_exactly": True}
+    except BaseException as error:
+        failure = error
+    try:
+        cleanup_tasks(client, tasks)
+    except BaseException as error:
+        cleanup_errors.append(str(error))
+    try:
+        cleanup_service(client, service_id)
+    except BaseException as error:
+        cleanup_errors.append(str(error))
+    for owner, policy in policies.items():
+        try:
+            path = "/api/v1/security/protection-policies/" + str(policy["id"])
+            current = _object(client.request("GET", path, (200,)).payload, "grouped Policy cleanup")
+            if current.get("state") == "active":
+                before = role_projection(client, enrollment_id, owner)
+                client.request("DELETE", path, (200,), {"version": current["version"], "rationale": "Grouped acceptance cleanup"})
+                wait_role_projection(client, enrollment_id, before, time.monotonic() + 30, owner)
+            elif current.get("state") != "revoked":
+                raise SuiteError("PostgreSQL grouped Policy cleanup state differs")
+        except BaseException as error:
+            cleanup_errors.append(str(error))
+    for target in targets.values():
+        try:
+            postgres_target_fixture("group-target-clean", target, time.monotonic() + 30)
+            physical, current_source = postgres_target_fixture("group-target-proof", target, time.monotonic() + 30)
+            if physical != {"oid": None, "rows": None} or current_source != source_proof:
+                raise SuiteError("PostgreSQL grouped cleanup left a target or changed a source")
+        except BaseException as error:
+            cleanup_errors.append(str(error))
+    if cleanup_errors:
+        raise SuiteError((f"grouped scenario failed: {failure}; " if failure else "") + "grouped cleanup failed: " + "; ".join(cleanup_errors)) from failure
+    if failure is not None:
+        raise failure
+    return {**result, "created_resources": 1 + len(tasks), "deleted_resources": 1 + len(tasks),
+            "active_policy_residuals": 0, "target_residuals": 0, "residual_resources": 0}
 
 
 def assert_mongodb_rows(rows: list[dict[str, object]], owner: str,
@@ -2867,7 +3165,7 @@ def role_choice_from_candidate(field: Mapping[str, object], target: Mapping[str,
         "policy_revision": positive_int(field["policy_revision"], "Policy revision"), "option_id": option_id}}
 
 
-def owner_role_choice(client: GatewayClient, locator: str, source: Mapping[str, object], policy: Mapping[str, object], owner: str = "service", engine_id: int | None = None, *, service_sql: str | None = None, parameters: Mapping[str, object] | None = None) -> dict[str, object]:
+def owner_role_choice(client: GatewayClient, locator: str, source: Mapping[str, object], policy: Mapping[str, object], owner: str = "service", engine_id: int | None = None, *, service_sql: str | None = None, parameters: Mapping[str, object] | None = None, component: str = BANK_FIELD) -> dict[str, object]:
     if owner == "service":
         request = ({"config_type": "table", "target_locator": locator} if service_sql is None else
                    {"config_type": "sql", "engine_id": positive_int(engine_id, "SQL role engine"), "sql": service_sql, "parameters": dict(parameters or {})})
@@ -2880,10 +3178,10 @@ def owner_role_choice(client: GatewayClient, locator: str, source: Mapping[str, 
             urllib.parse.urlencode({("source_locator" if owner == "transfer" else "target_locator"): locator,
                                    **({"engine_id": engine_id} if owner == "develop" else {})}), (200,)).payload, "Owner role options")
     matches = [field for field in _array(options.get("fields"), "Owner role fields")
-               if isinstance(field, dict) and field.get("component_key") == BANK_FIELD]
+               if isinstance(field, dict) and field.get("component_key") == component]
     if len(matches) != 1:
-        raise SuiteError("role cursor requires exactly one eligible bank-card field")
-    return role_choice_from_candidate(matches[0], role_choice_target(source), BANK_FIELD, policy)
+        raise SuiteError("role cursor requires exactly one matching source field")
+    return role_choice_from_candidate(matches[0], role_choice_target(source), component, policy)
 
 
 def restore_service_default(client: GatewayClient, service_path: str, query_path: str, choice: Mapping[str, object], retained: Mapping[str, object], *,
@@ -4875,7 +5173,7 @@ def exercise_resource_validity(client: GatewayClient, enrollment_id: str, source
 
 PROTECTION_PHASES = (
     "metadata_preparation", "identity_governance", "initial_scans", "unready_source",
-    "spatial_algorithms", "postgres_transfer_join", "bank_card_metadata",
+    "spatial_algorithms", "postgres_transfer_join", "postgres_grouped_outputs", "bank_card_metadata",
     "service_role_cursor_revocation", "service_sql_role_cursor_revocation",
     "service_sql_parameter_role_cursor_revocation", "service_sql_default_parameter_role_cursor_revocation",
     "service_role_membership_revocation", "service_role_membership_expiry",
@@ -4998,6 +5296,8 @@ def run_scenario(
     with timings.phase('postgres_transfer_join'):
         postgres_transfer_join = exercise_postgres_transfer_join(
             client, target_engine_id, run_id, positive_int(identity["principal_id"], "ordinary principal"), deadline)
+    with timings.phase('postgres_grouped_outputs'):
+        postgres_grouped_outputs = exercise_postgres_grouped_outputs(client, target_engine_id, run_id, identity, deadline)
     with timings.phase('bank_card_metadata'):
         bank_card_metadata = exercise_bank_card_metadata(
             client, source_engine_id, target_engine_id, source_database, run_id, identity, deadline, enrolling_refusal)
@@ -5120,7 +5420,7 @@ def run_scenario(
                 source_locator, target_parent_locator, target_locator, service_name, task_name, identity, deadline, task_ids)
         result = {
             "resource_validity": resource_validity,
-            "schema_version": "addp.security-mysql-owner-protection-online/v44",
+            "schema_version": "addp.security-mysql-owner-protection-online/v45",
             "postgres_refresh_scope": {"mode": "exact_items", "initializer_depth": "basic",
                 "schema": TARGET_SCHEMA, "tables": list(POSTGRES_READ_TARGETS)},
             "result": "passed",
@@ -5129,6 +5429,7 @@ def run_scenario(
             "default_protection_transaction": default_protection_transaction,
             "spatial_algorithms": spatial_algorithms,
             "postgres_transfer_join": postgres_transfer_join,
+            "postgres_grouped_outputs": postgres_grouped_outputs,
             "bank_card_metadata": bank_card_metadata,
             "service_role_cursor_revocation": service_role_cursor_revocation,
             "service_sql_role_cursor_revocation": service_sql_role_cursor_revocation,
@@ -5164,8 +5465,8 @@ def run_scenario(
                     "records_written": transfer_execution.get("records_written"),
                 },
             },
-            "created_resources": 14 + len(task_ids) + postgres_transfer_join["deleted_tasks"],
-            "deleted_resources": 14 + len(task_ids) + postgres_transfer_join["deleted_tasks"],
+            "created_resources": 14 + len(task_ids) + postgres_transfer_join["deleted_tasks"] + postgres_grouped_outputs["created_resources"],
+            "deleted_resources": 14 + len(task_ids) + postgres_transfer_join["deleted_tasks"] + postgres_grouped_outputs["deleted_resources"],
             "residual_resources": 0,
         }
     except BaseException as error:
