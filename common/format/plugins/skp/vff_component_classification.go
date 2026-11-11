@@ -15,6 +15,7 @@ type vffComponentClassification struct {
 	name, schema, schemaType, declaredType             string
 	definitionOffset, mappingOffset, declarationOffset int
 	mappingSHA256, declarationSHA256                   [32]byte
+	nestedDictionary                                   vffClassificationRecord
 }
 type vffComponentClassificationFacts struct {
 	modelSHA256 [32]byte
@@ -201,6 +202,8 @@ func readVFFComponentClassifications(ctx context.Context, c *vffContainer, schem
 
 type vffClassificationDictionary struct {
 	entries map[string]vffClassificationRecord
+	nested  vffClassificationRecord
+	offset  int
 }
 
 func (r *vffComponentClassificationReader) componentDictionaries(parent vffClassificationRecord, schemaName string) ([]vffComponentClassification, error) {
@@ -211,43 +214,9 @@ func (r *vffComponentClassificationReader) componentDictionaries(parent vffClass
 			return nil, err
 		}
 	}
-	nodes, err := r.recordsAt(parent.data, 11, parent.offset)
+	dictionaries, order, err := r.dictionaries(parent, 11)
 	if err != nil {
 		return nil, err
-	}
-	r.keep(nodes, "B336")
-	dictionaries := map[string]vffClassificationDictionary{}
-	var order []string
-	for _, node := range nodes {
-		if node.tag != "B336" {
-			continue
-		}
-		fields, err := r.recordsAt(node.data, 12, node.offset)
-		if err != nil {
-			return nil, err
-		}
-		r.keep(fields, "B436", "B536")
-		nameNode, err := r.one(fields, "B436", true)
-		if err != nil {
-			return nil, err
-		}
-		name, err := vffClassificationText(nameNode, false)
-		if err != nil {
-			return nil, err
-		}
-		if _, exists := dictionaries[name]; exists {
-			return nil, fmt.Errorf("duplicate component dictionary")
-		}
-		entryNode, err := r.one(fields, "B536", true)
-		if err != nil {
-			return nil, err
-		}
-		entries, err := r.dictionaryEntries(entryNode)
-		if err != nil {
-			return nil, err
-		}
-		dictionaries[name] = vffClassificationDictionary{entries}
-		order = append(order, name)
 	}
 	applied, exists := dictionaries["AppliedSchemaTypes"]
 	if !exists {
@@ -279,7 +248,7 @@ func (r *vffComponentClassificationReader) componentDictionaries(parent vffClass
 	if !selected {
 		return nil, nil
 	}
-	schemaType, err := r.stringValue(mapping)
+	schemaType, err := r.stringValue(mapping, 14, false)
 	if err != nil {
 		return nil, err
 	}
@@ -291,7 +260,7 @@ func (r *vffComponentClassificationReader) componentDictionaries(parent vffClass
 	if !ok {
 		return nil, fmt.Errorf("component classification SchemaType missing")
 	}
-	declared, err := r.stringValue(declaration)
+	declared, err := r.stringValue(declaration, 14, false)
 	if err != nil {
 		return nil, err
 	}
@@ -306,7 +275,7 @@ func (r *vffComponentClassificationReader) componentDictionaries(parent vffClass
 	}
 	binding := vffComponentClassification{schema: schemaName, schemaType: schemaType, declaredType: declared,
 		mappingOffset: mapping.offset - 6, declarationOffset: declaration.offset - 6,
-		mappingSHA256: sha256.Sum256(mapping.data), declarationSHA256: sha256.Sum256(declaration.data)}
+		mappingSHA256: sha256.Sum256(mapping.data), declarationSHA256: sha256.Sum256(declaration.data), nestedDictionary: dict.nested}
 	for key, n := range dict.entries {
 		if key != "SchemaType" {
 			r.keep([]vffClassificationRecord{n})
@@ -314,8 +283,54 @@ func (r *vffComponentClassificationReader) componentDictionaries(parent vffClass
 	}
 	return []vffComponentClassification{binding}, nil
 }
-func (r *vffComponentClassificationReader) dictionaryEntries(parent vffClassificationRecord) (map[string]vffClassificationRecord, error) {
-	nodes, err := r.recordsAt(parent.data, 13, parent.offset)
+func (r *vffComponentClassificationReader) dictionaries(parent vffClassificationRecord, depth int) (map[string]vffClassificationDictionary, []string, error) {
+	nodes, err := r.recordsAt(parent.data, depth, parent.offset)
+	if err != nil {
+		return nil, nil, err
+	}
+	r.keep(nodes, "B336")
+	dictionaries := map[string]vffClassificationDictionary{}
+	var order []string
+	for _, node := range nodes {
+		if node.tag != "B336" {
+			continue
+		}
+		fields, err := r.recordsAt(node.data, depth+1, node.offset)
+		if err != nil {
+			return nil, nil, err
+		}
+		r.keep(fields, "B436", "B536")
+		nameNode, err := r.one(fields, "B436", true)
+		if err != nil {
+			return nil, nil, err
+		}
+		name, err := vffClassificationText(nameNode, false)
+		if err != nil {
+			return nil, nil, err
+		}
+		if _, exists := dictionaries[name]; exists {
+			return nil, nil, fmt.Errorf("duplicate component dictionary")
+		}
+		entryNode, err := r.one(fields, "B536", true)
+		if err != nil {
+			return nil, nil, err
+		}
+		entries, err := r.dictionaryEntries(entryNode, depth+2)
+		if err != nil {
+			return nil, nil, err
+		}
+		nested, err := r.one(fields, "B036", false)
+		if err != nil {
+			return nil, nil, err
+		}
+		dictionaries[name] = vffClassificationDictionary{entries: entries, nested: nested, offset: node.offset - 6}
+		order = append(order, name)
+	}
+	return dictionaries, order, nil
+}
+
+func (r *vffComponentClassificationReader) dictionaryEntries(parent vffClassificationRecord, depth int) (map[string]vffClassificationRecord, error) {
+	nodes, err := r.recordsAt(parent.data, depth, parent.offset)
 	if err != nil {
 		return nil, err
 	}
@@ -335,13 +350,13 @@ func (r *vffComponentClassificationReader) dictionaryEntries(parent vffClassific
 	}
 	return entries, nil
 }
-func (r *vffComponentClassificationReader) stringValue(parent vffClassificationRecord) (string, error) {
-	nodes, err := r.recordsAt(parent.data, 14, parent.offset)
+func (r *vffComponentClassificationReader) stringValue(parent vffClassificationRecord, depth int, empty bool) (string, error) {
+	nodes, err := r.recordsAt(parent.data, depth, parent.offset)
 	if err != nil {
 		return "", err
 	}
 	if len(nodes) != 1 || nodes[0].tag != "AD38" {
 		return "", fmt.Errorf("classification requires a string value")
 	}
-	return vffClassificationText(nodes[0], false)
+	return vffClassificationText(nodes[0], empty)
 }

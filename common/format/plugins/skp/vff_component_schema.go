@@ -17,6 +17,7 @@ type vffComponentSchemaFacts struct {
 	packageReferences *vffClassificationFacts
 	document          vffSKCDocumentFact
 	bindings          []vffComponentSchemaBinding
+	graph             *vffSKCBindingGraph
 }
 
 func readVFFComponentSchemaBindings(ctx context.Context, c *vffContainer, schemaName, packageMember string, componentLimits vffClassificationLimits, limits vffSKCBindingLimits) (*vffComponentSchemaFacts, error) {
@@ -53,7 +54,7 @@ func readVFFComponentSchemaBindings(ctx context.Context, c *vffContainer, schema
 		return nil, err
 	}
 	root := graph.binders[doc.rootSchema]
-	result := &vffComponentSchemaFacts{components: components, packageReferences: packages.references, document: *doc}
+	result := &vffComponentSchemaFacts{components: components, packageReferences: packages.references, document: *doc, graph: graph}
 	for i, component := range components.bindings {
 		if err := root.tick(0); err != nil {
 			return nil, err
