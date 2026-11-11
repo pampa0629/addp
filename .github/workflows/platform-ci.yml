@@ -317,6 +317,13 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 180
     steps:
+      - name: Reserve runner disk space for product images
+        run: |
+          df -h /
+          sudo du -sh /usr/local/lib/android
+          sudo rm -rf /usr/local/lib/android
+          df -h /
+
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
@@ -364,6 +371,12 @@ jobs:
           IMAGE_SERVICES: ${{ steps.image-selection.outputs.services }}
           ADDP_CI_SUMMARY_FILE: ${{ runner.temp }}/product-images-summary.md
         run: make build-images IMAGE_BUILD_ARGS="--verify --services $IMAGE_SERVICES"
+
+      - name: Report product build disk usage
+        if: always()
+        run: |
+          df -h /
+          docker system df
 
       - name: Summarize product build gate
         if: always()

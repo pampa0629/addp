@@ -75,6 +75,8 @@ make build-images IMAGE_BUILD_ARGS="--services system-backend,agent-backend,cons
 make select-image-services
 ```
 
+Platform CI 的产品构建 Job 在 GitHub 独占 Ubuntu runner 上先移除未用于 ADDP 构建的预装 Android SDK，为基线及受影响镜像预留磁盘空间，并记录准备前后及构建结束时的磁盘用量。镜像选择、实际构建和并发数沿用标准入口；本地构建不执行这项 runner 准备，也不清理 Go 缓存或 Docker 资源。
+
 ### 参数说明
 
 | 参数 | 值 | 说明 |
