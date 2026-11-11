@@ -308,7 +308,7 @@ Hosted 后续扩展 v17／浏览器 v8 补充 Transfer 结果阶段的真实拒�
 
 v17 接线已通过本范围 152 项 Security／Hosted／CI 登记回归；仅含本会话修改及 Security 登记片段的干净源码复验同样通过，登记一致性及 JavaScript 语法检查通过。新增确定性反例直接执行实际浏览器 helper，拒绝错误阶段、目标变化和非零写入，并验证更新已提交但响应丢失、恢复响应失败、单个任务删除失败时仍恢复完整基线并尝试全部任务清理；CAS 版本只前进，不回滚版本。`make test-console-frontend` 的 173 项单元、138 项浏览器及构建通过。以上不计为真实 v17 通过，亦不将其他 owner 的全仓聚合计为通过。
 
-查询保护引擎范围排除采用 Projection v4：Security 在发布前核对 Enrollment 的引擎 ID／完整名称前像与 DataItem 指纹，Owner 由投影派生范围索引。Owner 首次同步及旧协议重放须消费到 `has_more=false` 后持久确认 initialized，期间拒绝读取；重放只在最后一页 ack，保持 Security 确认游标单调。Neo4j 用标准 openCypher 9 AST、物理数据库与内置函数事实证明本地只读范围，模板和正式图查询执行同一不可变计划；同引擎纳管而精确 ReadSet 未覆盖时仍拒绝。验证使用对应 Go 模块门禁、Common／Security／Develop PostgreSQL 门禁和 `make test-common-neo4j`，新增 Compose 门禁已接入标准自动发现与 T2 CI。
+历史引擎范围排除实现记录（Projection v4 阶段）：Security 在发布前核对 Enrollment 的引擎 ID／完整名称前像与 DataItem 指纹，Owner 由投影派生范围索引。Owner 首次同步及旧协议重放须消费到 `has_more=false` 后持久确认 initialized，期间拒绝读取；重放只在最后一页 ack，保持 Security 确认游标单调。Neo4j 用标准 openCypher 9 AST、物理数据库与内置函数事实证明本地只读范围，模板和正式图查询执行同一不可变计划；同引擎纳管而精确 ReadSet 未覆盖时仍拒绝。验证使用对应 Go 模块门禁、Common／Security／Develop PostgreSQL 门禁和 `make test-common-neo4j`，新增 Compose 门禁已接入标准自动发现与 T2 CI。 现行协议已统一为 v5，完整迁移与初始化规则见[查询保护引擎范围与初始化规则](../docs/spec/addp数据安全与隐私保护实现规范.md#查询保护的引擎范围排除)。
 
 2026-10-17 原值授权扩展：规范与代码改为 scopes 集合，一次申请／审批可覆盖 Manager 预览和 Develop 查询，逐出口返回授权状态并可独立撤销；SchemaVersion 5 单向迁移旧申请为原出口单元素集合，删除旧 owner/action 列。Develop 保存默认脱敏结果及仅含执行时已授权原值的 Owner 私有有界历史；专业详情、列表与工作台轮询每次按当前可信用户及本地投影重判。到期或撤销回落默认保护，默认语义／结构变化则拒绝历史结果并要求重新查询。通用观察和导出不暴露私有载荷；Notebook 交互查询使用经控制面核验的 session 用户，完整导出仍走 Transfer 默认保护。共享申请弹窗由 common-frontend 唯一维护。Hosted 原值套件扩展为领域 v5／浏览器 v2，真实结果另行记录，不以历史 v4 验收代替。
 

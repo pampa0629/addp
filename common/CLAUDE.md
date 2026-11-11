@@ -1,5 +1,7 @@
 # Common 共享后端模块说明
 
+阅读导航：[重要包](#重要包)、[共享运行能力](#共享运行能力)、[开发规则](#开发规则)、[验证](#验证)、[相关文档](#相关文档)。
+
 ## 模块定位
 
 `common/` 是 ADDP Go 后端共享库，承载跨模块复用的 API 响应、客户端、配置、模型、统一执行记录、内容 I/O、目录视图、调度、空间处理、SQL 构建、存储和通用工具。跨模块重复逻辑应优先抽取到这里。
@@ -41,6 +43,33 @@ common/
 ```
 
 `common/opaquetoken` 是 Service 查询游标/Feature ID 与 System 日志游标的唯一通用编解码所有者；采用用途派生 AES-GCM，不持有权限、存储边界或领域过期策略。由 `make test` 的 Common `./...` 自动发现。
+
+## 共享运行能力
+
+### Schema 初始化
+
+`common/schema` 提供 schema 版本发布、模块级迁移互斥与只读校验，不登记业务模块清单。业务模块自行声明版本并由 Backend 执行迁移；Worker 初始化不执行平台 schema DDL。
+
+### 进程指标
+
+`common/processmetrics` 是 macOS/Linux Go 进程 CPU 累计时间、当前 RSS 与启动时间的唯一自身采样 SDK，不读取其他进程。仅在部署显式选择 `cgroup_v2=true` 时，Linux 另读取自身控制组的 CPU／内存用量与内核身份，读取失败不影响原进程采集；组统计不证明独立容器或配额，启动内核身份随不可变私有声明登记；部署侧完整层级证明与产品读取由 System／Monitor 独立核验。`common/config` 解析显式 `ADDP_PROCESS_METRICS_DEPLOYMENTS`；普通注册生命周期与 System Bootstrap 复用 `StartOptional`，仅成功启动的独立 mTLS 来源发布不可变声明，来源失败不阻断业务登记。`common/client` 的当前 User 实例精确读取与后台私有投影分别授权，不以机器身份补读用户请求。指标身份、容器证明与查询边界见[固定指标目录](../docs/spec/addp平台运行观测规范.md#61-固定指标目录)和[资源查询与预算](../docs/spec/addp平台运行观测规范.md#62-资源查询与预算)。
+
+### HTTP 指标
+
+`common/httpmetrics` 独占 Go/Gin HTTP 原始指标采集内核：请求及失败计数、秒级耗时直方图和独立并发数。仅消费 Gin 匹配模板、有限方法、HTTP 状态及固定传输错误类别，不读取业务响应、用户身份或完整 URL；各运行实例持有独立 collector，不注册全局指标、不启动监听、不参与业务 Ready。失败计入 5xx 及超时、取消、写失败或未恢复异常中断的请求，4xx 单独保留状态，单请求不重复计失败。Go HTTP 模块通过 `modulelifecycle.NewRouter` 唯一工厂接入，同一进程 mTLS 来源同时暴露 HTTP 指标；查询、页面与告警按接口质量后续阶段分别验证，不将原始采集接入计为产品闭环验收。T1 由 `make test-module MODULE=common GO_ONLY=1` 自动发现，不新增门禁入口。查询、页面与告警的验收分工见[HTTP 接口质量](../docs/spec/addp平台运行观测规范.md#64-http-接口质量分阶段接入)。
+
+### 运行日志
+
+`runtimelog` 接收器将不可变模块／角色／节点／实例身份、首次采集时间和最后观测时间写入受控 status 元数据（UTC 微秒精度）；`DiscoverSources` 独立发现历史来源，扫描上限和错误明确标为不完整，`addp.log-sources/v2` 仅发送封闭原因码和实际发现次数，不发送文件路径或错误原文。`runtime-log observe` 向 System 上报目录，向 Monitor 上报健康，独立发送且不上传正文；不能从 EOF 推断业务退出结果。
+
+### 查询保护
+
+查询保护消费当前 Projection v5。Common 负责投影值对象、严格校验、checksum、本地投影存储和查询保护门禁，Security 负责发布事实与 Owner 回执。引擎范围排除、完整重放后初始化和单调回执统一见[查询保护引擎范围与初始化规则](../docs/spec/addp数据安全与隐私保护实现规范.md#查询保护的引擎范围排除)。Neo4j 的模板与正式查询复用同一不可变只读计划，同引擎纳管而精确 ReadSet 未覆盖时仍拒绝；原 v4 阶段实现与门禁记录见[Security 历史记录](../security/CLAUDE.md#前端验证与失败取证)。
+
+### FalkorDB 业务插件
+
+业务 `falkordb` 插件与 Ontology Infra 分离，使用单端点、连接固定 Redis database 和 `server -> graph` 目录，完整 graph key 是 leaf 名称。共享 openCypher 9 AST 唯一位于 `common/query/cypherread`；Neo4j 保留原生物理数据库／内置函数证明，FalkorDB 在已认证 4.20.6 的原生函数与 GRAPH.RO_QUERY 边界内证明精确目标图。正式查询消费 PreparedGraphQuery 与当前 Projection v5，不由 Develop 按引擎类型跳过保护。`make test-common-falkordb-unit` 和 `make test-common-falkordb` 分别承接 T1 和独占真实 Common／Meta／Develop T2；两者均不操作已有业务图或 Ontology 投影。Graph 领域适配仍须完成全文索引管理权确认，不将基础插件验收冒充 Graph 完整支持。
+
 
 ## 开发规则
 
@@ -102,21 +131,8 @@ ADDP_TEST_MYSQL_PASSWORD=<disposable-mysql-password> make test-common-mysql-data
 
 ## 相关文档
 
-- `common/README.md`
-- `common/scheduler/README.md`
-- `common/format/README.md`
-- `common/spatial/README.md`
-- `docs/concepts/addp共享模块介绍.md`
-
-`common/schema` 提供 schema 版本发布、模块级迁移互斥与只读校验，不登记业务模块清单。业务模块自行声明版本并由 Backend 执行迁移；Worker 初始化不执行平台 schema DDL。
-
-`common/processmetrics` 是 macOS/Linux Go 进程 CPU 累计时间、当前 RSS 与启动时间的唯一自身采样 SDK，不读取其他进程。仅在部署显式选择 `cgroup_v2=true` 时，Linux 另读取自身控制组的 CPU／内存用量与内核身份，读取失败不影响原进程采集；组统计不证明独立容器或配额，启动内核身份随不可变私有声明登记；部署侧完整层级证明与产品读取由 System／Monitor 独立核验。`common/config` 解析显式 `ADDP_PROCESS_METRICS_DEPLOYMENTS`；普通注册生命周期与 System Bootstrap 复用 `StartOptional`，仅成功启动的独立 mTLS 来源发布不可变声明，来源失败不阻断业务登记。`common/client` 的当前 User 实例精确读取与后台私有投影分别授权，不以机器身份补读用户请求。设计及验收范围见平台运行监控设计第 6 节。
-
-`common/httpmetrics` 独占 Go/Gin HTTP 原始指标采集内核：请求及失败计数、秒级耗时直方图和独立并发数。仅消费 Gin 匹配模板、有限方法、HTTP 状态及固定传输错误类别，不读取业务响应、用户身份或完整 URL；各运行实例持有独立 collector，不注册全局指标、不启动监听、不参与业务 Ready。失败计入 5xx 及超时、取消、写失败或未恢复异常中断的请求，4xx 单独保留状态，单请求不重复计失败。Go HTTP 模块通过 `modulelifecycle.NewRouter` 唯一工厂接入，同一进程 mTLS 来源同时暴露 HTTP 指标；查询、页面与告警按接口质量后续阶段分别验证，不将原始采集接入计为产品闭环验收。T1 由 `make test-module MODULE=common GO_ONLY=1` 自动发现，不新增门禁入口。
-
-`runtimelog` 接收器将不可变模块／角色／节点／实例身份、首次采集时间和最后观测时间写入受控 status 元数据（UTC 微秒精度）；`DiscoverSources` 独立发现历史来源，扫描上限和错误明确标为不完整，`addp.log-sources/v2` 仅发送封闭原因码和实际发现次数，不发送文件路径或错误原文。`runtime-log observe` 向 System 上报目录，向 Monitor 上报健康，独立发送且不上传正文；不能从 EOF 推断业务退出结果。
-
-查询保护引擎范围排除采用 Projection v4：Security 在发布前核对 Enrollment 的引擎 ID／完整名称前像与 DataItem 指纹，Owner 由投影派生范围索引。Owner 首次同步及旧协议重放须消费到 `has_more=false` 后持久确认 initialized，期间拒绝读取；重放只在最后一页 ack，保持 Security 确认游标单调。Neo4j 用标准 openCypher 9 AST、物理数据库与内置函数事实证明本地只读范围，模板和正式图查询执行同一不可变计划；同引擎纳管而精确 ReadSet 未覆盖时仍拒绝。验证使用对应 Go 模块门禁、Common／Security／Develop PostgreSQL 门禁和 `make test-common-neo4j`，新增 Compose 门禁已接入标准自动发现与 T2 CI。
-
-
-业务 `falkordb` 插件与 Ontology Infra 分离，使用单端点、连接固定 Redis database 和 `server -> graph` 目录，完整 graph key 是 leaf 名称。共享 openCypher 9 AST 唯一位于 `common/query/cypherread`；Neo4j 保留原生物理数据库／内置函数证明，FalkorDB 在已认证 4.20.6 的原生函数与 GRAPH.RO_QUERY 边界内证明精确目标图。正式查询消费 PreparedGraphQuery 与 Projection v4，不由 Develop 按引擎类型跳过保护。`make test-common-falkordb-unit` 和 `make test-common-falkordb` 分别承接 T1 和独占真实 Common／Meta／Develop T2；两者均不操作已有业务图或 Ontology 投影。Graph 领域适配仍须完成全文索引管理权确认，不将基础插件验收冒充 Graph 完整支持。
+- [Common README](README.md)
+- [调度器](scheduler/README.md)
+- [文件格式](format/README.md)
+- [空间处理](spatial/README.md)
+- [共享模块介绍](../docs/concepts/addp共享模块介绍.md)
