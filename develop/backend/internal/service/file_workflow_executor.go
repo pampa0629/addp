@@ -27,17 +27,18 @@ type privateFileCleanup struct {
 // The map owns only live batches created by this instance. It is not another
 // queue, authorization cache or reconstruction of a persisted path.
 type privateFileWorkflowExecutor struct {
-	repository    *repository.FileExecutionRepository
-	instanceID    string
-	authority     func(uint) fileSourceAuthority
-	admission     func(uint) fileAdmissionAuthority
-	publication   func(uint) filePublicationAuthority
-	provider      fileSourceProvider
-	endpoint      func(context.Context, uint, uint) (plugin.ConnectionInfo, error)
-	credential    func(context.Context, uint) (string, error)
-	protectSource func(context.Context, uint, plugin.EnginePlugin, plugin.EngineCatalogPath) (func(), error)
-	mu            sync.Mutex
-	pending       map[string]privateFileCleanup
+	repository        *repository.FileExecutionRepository
+	instanceID        string
+	authority         func(uint) fileSourceAuthority
+	admission         func(uint) fileAdmissionAuthority
+	publication       func(uint) filePublicationAuthority
+	provider          fileSourceProvider
+	endpoint          func(context.Context, uint, uint) (plugin.ConnectionInfo, error)
+	credential        func(context.Context, uint) (string, error)
+	protectSource     func(context.Context, uint, plugin.EnginePlugin, plugin.EngineCatalogPath) (func(), error)
+	mu                sync.Mutex
+	pending           map[string]privateFileCleanup
+	publicationCursor string
 }
 
 func newPrivateFileWorkflowExecutor(repo *repository.FileExecutionRepository, workflow *WorkflowEngineService, instanceID string) *privateFileWorkflowExecutor {
@@ -126,6 +127,9 @@ func (s *ExecutionService) RecoverPrivateFiles(ctx context.Context) error {
 		if err != nil {
 			failures = append(failures, errFileSourceCleanupPending)
 		}
+	}
+	if err := f.recoverPrivatePublications(ctx); err != nil {
+		failures = append(failures, err)
 	}
 	if err := s.refreshPrivateFileAdmissions(ctx); err != nil {
 		failures = append(failures, err)

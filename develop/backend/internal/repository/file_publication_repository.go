@@ -14,6 +14,7 @@ import (
 	"github.com/addp/common/execution"
 	"github.com/addp/develop/backend/internal/models"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 type privatePublicationRecord struct {
@@ -22,6 +23,7 @@ type privatePublicationRecord struct {
 	ProviderState       []byte                             `json:"provider_state,omitempty"`
 	DispatchReleasedAt  *time.Time                         `json:"dispatch_released_at,omitempty"`
 	Outcome             *plugin.NewFilePublicationOutcome  `json:"outcome,omitempty"`
+	RecoveryOutcome     *plugin.NewFilePublicationOutcome  `json:"recovery_outcome,omitempty"`
 }
 
 func privateFilePublication(row *models.FileExecution) (*privatePublicationRecord, error) {
@@ -42,6 +44,11 @@ func privateFilePublication(row *models.FileExecution) (*privatePublicationRecor
 	}
 	if record.Outcome != nil && (record.DispatchReleasedAt == nil ||
 		record.Outcome.State == plugin.NewFileUnknown || record.Outcome.Validate(record.prepared()) != nil) {
+		return nil, commonapi.ErrConflict
+	}
+	if record.RecoveryOutcome != nil && (record.RecoveryOutcome.State == plugin.NewFileUnknown ||
+		record.RecoveryOutcome.Validate(record.prepared()) != nil ||
+		(record.RecoveryOutcome.State == plugin.NewFilePublished && record.DispatchReleasedAt == nil)) {
 		return nil, commonapi.ErrConflict
 	}
 	return &record, nil
@@ -183,6 +190,7 @@ type PrivateFilePublicationRecovery struct {
 	PreparationDigest string
 	DispatchState     plugin.NewFilePublicationState
 	Outcome           *plugin.NewFilePublicationOutcome
+	RecoveryOutcome   *plugin.NewFilePublicationOutcome
 }
 
 func (r *FileExecutionRepository) ReadPrivatePublication(ctx context.Context, tenant uint, executionID string) (*PrivateFilePublicationRecovery, error) {
@@ -210,7 +218,7 @@ func (r *FileExecutionRepository) ReadPrivatePublication(ctx context.Context, te
 	}
 	return &PrivateFilePublicationRecovery{
 		Issued: issued, ApprovalID: record.Facts.ApprovalID, PreparationDigest: record.Facts.PreparationDigest,
-		Prepared: record.prepared(), DispatchState: state, Outcome: record.Outcome,
+		Prepared: record.prepared(), DispatchState: state, Outcome: record.Outcome, RecoveryOutcome: record.RecoveryOutcome,
 	}, nil
 }
 
@@ -253,5 +261,54 @@ func (r *FileExecutionRepository) updatePrivatePublicationOutcome(ctx context.Co
 			return err
 		}
 		return tx.Model(row).Updates(map[string]any{"publication_json": raw, "version": row.Version + 1}).Error
+	})
+}
+
+type PrivatePublicationIdentity struct {
+	ExecutionID string
+	TenantID    uint
+}
+
+// Keyset scanning keeps the existing supervisor bounded without starving later
+// records behind already completed recovery. No new execution is enqueued.
+func (r *FileExecutionRepository) ListPrivatePublicationRecoveries(ctx context.Context, after string) ([]PrivatePublicationIdentity, error) {
+	var rows []PrivatePublicationIdentity
+	err := r.db.WithContext(ctx).Table("develop.file_executions f").
+		Select("f.execution_id,f.tenant_id").
+		Joins("JOIN common.task_executions e ON e.execution_id=f.execution_id AND e.tenant_id=f.tenant_id").
+		Where("f.publication_json IS NOT NULL AND f.execution_id > ? AND e.status NOT IN ?", after, []string{"pending", "running"}).
+		Order("f.execution_id").Limit(100).Scan(&rows).Error
+	return rows, err
+}
+
+// Recovery facts are private observations only. There is deliberately no write
+// to common.task_executions and no promotion into the original leased outcome.
+func (r *FileExecutionRepository) RecordPrivatePublicationRecovery(ctx context.Context, tenant uint, executionID string, prepared plugin.PreparedNewFile, outcome plugin.NewFilePublicationOutcome) error {
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var row models.FileExecution
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("execution_id=? AND tenant_id=?", executionID, tenant).First(&row).Error; err != nil {
+			return err
+		}
+		record, err := privateFilePublication(&row)
+		if err != nil {
+			return err
+		}
+		if !reflect.DeepEqual(record.prepared(), prepared) || record.Facts.PreparationDigest == "" ||
+			outcome.State == plugin.NewFileUnknown || outcome.Validate(prepared) != nil ||
+			(outcome.State == plugin.NewFilePublished && record.DispatchReleasedAt == nil) {
+			return commonapi.ErrConflict
+		}
+		for _, prior := range []*plugin.NewFilePublicationOutcome{record.Outcome, record.RecoveryOutcome} {
+			if prior != nil && (prior.State != outcome.State || !reflect.DeepEqual(prior.Evidence, outcome.Evidence) ||
+				(!prior.CleanupPending && outcome.CleanupPending)) {
+				return commonapi.ErrConflict
+			}
+		}
+		record.RecoveryOutcome = &outcome
+		raw, err := json.Marshal(record)
+		if err != nil {
+			return err
+		}
+		return tx.Model(&row).Updates(map[string]any{"publication_json": raw, "version": row.Version + 1}).Error
 	})
 }

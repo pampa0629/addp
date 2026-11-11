@@ -234,4 +234,35 @@ func runPrivatePublicationCase(t *testing.T, db *gorm.DB, repo *FileExecutionRep
 		t.Fatal("private outcome changed the trusted Owner projection", err)
 	}
 
+	// Recovery appends only private facts after terminal completion.
+	if err := NewExecutionRepository(db).CompleteWithLease(ctx, running, *lease, "failed", time.Now(), nil); err != nil {
+		t.Fatal(err)
+	}
+	var terminal execution.TaskExecution
+	if err := db.First(&terminal, "execution_id=?", item.ExecutionID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := repo.RecordPrivatePublicationRecovery(ctx, 8, item.ExecutionID, *prepared, outcome); err == nil {
+		t.Fatal("wrong tenant recovered operation")
+	}
+	if err := repo.RecordPrivatePublicationRecovery(ctx, 7, item.ExecutionID, wrong, outcome); err == nil {
+		t.Fatal("wrong preparation recovered operation")
+	}
+	if err := repo.RecordPrivatePublicationRecovery(ctx, 7, item.ExecutionID, *prepared, outcome); err != nil {
+		t.Fatal(err)
+	}
+	regressed := outcome
+	regressed.CleanupPending = true
+	if err := repo.RecordPrivatePublicationRecovery(ctx, 7, item.ExecutionID, *prepared, regressed); err == nil {
+		t.Fatal("recovery regressed cleanup")
+	}
+	var stillTerminal execution.TaskExecution
+	if err := db.First(&stillTerminal, "execution_id=?", item.ExecutionID).Error; err != nil || !reflect.DeepEqual(terminal, stillTerminal) {
+		t.Fatal("late recovery changed original terminal", err)
+	}
+	after, err = repo.Read(ctx, 7, item.ExecutionID)
+	if err != nil || !reflect.DeepEqual(after, facts) {
+		t.Fatal("late recovery changed authorization projection", err)
+	}
+
 }

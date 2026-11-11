@@ -15,6 +15,7 @@ import (
 
 	"github.com/addp/common/client"
 	"github.com/addp/common/engine/plugin"
+	"github.com/addp/common/execution"
 	commonmodels "github.com/addp/common/models"
 	"github.com/addp/develop/backend/internal/repository"
 )
@@ -200,6 +201,90 @@ func TestPrivateFilePublicationProviderSequence(t *testing.T) {
 			if _, err := f.publishPrivateFile(ctx, *lease, fileInputRuntimeID, output, strings.NewReader(payload)); err == nil || strings.Join(calls, " ") != tc.calls {
 				t.Fatal("second call replayed the original operation")
 			}
+			if tc.name == "link remains unknown" {
+				if err := repository.NewExecutionRepository(db).CompleteWithLease(ctx, item, *lease, "failed", time.Now(), nil); err != nil {
+					t.Fatal(err)
+				}
+				var before execution.TaskExecution
+				if err := db.First(&before, "execution_id=?", item.ExecutionID).Error; err != nil {
+					t.Fatal(err)
+				}
+				expireObservation := true
+				provider.resolve = func(observe context.Context, c plugin.ConnectionInfo, value plugin.PreparedNewFile) (plugin.NewFilePublicationOutcome, error) {
+					calls = append(calls, "recovery-resolve")
+					assertOriginal(c, value)
+					<-observe.Done()
+					return published(), nil
+				}
+				provider.cleanup = func(_ context.Context, c plugin.ConnectionInfo, value plugin.PreparedNewFile, state plugin.NewFilePublicationState) error {
+					calls = append(calls, "recovery-cleanup")
+					assertOriginal(c, value)
+					saved, err := repo.ReadPrivatePublication(ctx, 3, item.ExecutionID)
+					if err != nil || saved.RecoveryOutcome == nil || !saved.RecoveryOutcome.CleanupPending || saved.Outcome != nil {
+						t.Fatal("late evidence was not stored separately", err)
+					}
+					return nil
+				}
+				f.publication = func(uint) filePublicationAuthority {
+					return publicationRecoveryAuthorityFixture{
+						publicationAuthorityFunc: func(context.Context, client.IssuedDevelopFileAuthorization, client.DevelopFilePublicationRequest) (*client.DevelopFilePublicationObservation, error) {
+							t.Fatal("recovery tried to obtain a live release")
+							return nil, dropped
+						},
+						recover: func(_ context.Context, ea client.IssuedDevelopFileAuthorization, approval string, r plugin.NewFilePublicationRequest) (*client.DevelopFilePublicationRecoveryAccess, error) {
+							calls = append(calls, "recovery-access")
+							if ea.Authorization.ID != issued.Authorization.ID || approval != record.ApprovalID || !reflect.DeepEqual(r, original.NewFilePublicationRequest) {
+								t.Fatal("recovery replaced original binding")
+							}
+							now := time.Now()
+							expires := now.Add(time.Second)
+							if expireObservation {
+								expires = now.Add(20 * time.Millisecond)
+							}
+							released := now.Add(-time.Second)
+							return &client.DevelopFilePublicationRecoveryAccess{
+								ExpiresAt: expires, Engine: &commonmodels.Engine{ConnectionInfo: commonmodels.ConnectionInfo(connection)},
+								History: client.DevelopFilePublicationHistory{ReleasedAt: &released, PreparationDigest: record.PreparationDigest},
+							}, nil
+						},
+					}
+				}
+				// A new owner object observes the durable operation without the
+				// original live batch, business context or publication connection.
+				restarted := &privateFileWorkflowExecutor{repository: repo, provider: provider, publication: f.publication}
+				if err := restarted.recoverPrivatePublications(ctx); err == nil {
+					t.Fatal("expired recovery window allowed cleanup")
+				}
+				pending, err := repo.ReadPrivatePublication(ctx, 3, item.ExecutionID)
+				if err != nil || pending.RecoveryOutcome == nil || !pending.RecoveryOutcome.CleanupPending || pending.Outcome != nil {
+					t.Fatal("late Resolve evidence was lost or promoted", err)
+				}
+				expireObservation = false
+				if err := restarted.recoverPrivatePublications(ctx); err != nil {
+					t.Fatal(err)
+				}
+				late, err := repo.ReadPrivatePublication(ctx, 3, item.ExecutionID)
+				if err != nil || late.RecoveryOutcome == nil || late.RecoveryOutcome.State != plugin.NewFilePublished || late.RecoveryOutcome.CleanupPending || late.Outcome != nil || late.DispatchState != plugin.NewFileUnknown {
+					t.Fatal("late observation promoted into original outcome", err)
+				}
+				var after execution.TaskExecution
+				if err := db.First(&after, "execution_id=?", item.ExecutionID).Error; err != nil || !reflect.DeepEqual(before, after) {
+					t.Fatal("recovery changed terminal execution", err)
+				}
+				count := len(calls)
+				if err := restarted.recoverPrivatePublications(ctx); err != nil || len(calls) != count {
+					t.Fatal("completed recovery repeated IO", err)
+				}
+			}
 		})
 	}
+}
+
+type publicationRecoveryAuthorityFixture struct {
+	publicationAuthorityFunc
+	recover func(context.Context, client.IssuedDevelopFileAuthorization, string, plugin.NewFilePublicationRequest) (*client.DevelopFilePublicationRecoveryAccess, error)
+}
+
+func (a publicationRecoveryAuthorityFixture) RecoverDevelopFilePublication(ctx context.Context, i client.IssuedDevelopFileAuthorization, approval string, r plugin.NewFilePublicationRequest) (*client.DevelopFilePublicationRecoveryAccess, error) {
+	return a.recover(ctx, i, approval, r)
 }
