@@ -50,6 +50,7 @@ type vffSKCBinder struct {
 	ctx               context.Context
 	member, namespace string
 	raw               []byte
+	root              *vffXMLNode
 	definitions       map[string]map[string]*vffXMLNode
 	anonymousTypes    []*vffXMLNode
 	budget            *vffSKCBindingBudget
@@ -62,9 +63,16 @@ type vffSKCBinder struct {
 	values            map[*vffXMLNode]*vffSKCValueBinding
 }
 
-func readVFFClassificationBindings(ctx context.Context, c *vffContainer, limits vffSKCBindingLimits) ([]vffSKCFilterBindings, error) {
+func validateVFFSKCBindingLimits(limits vffSKCBindingLimits) error {
 	if limits.visits <= 0 || limits.depth <= 0 || limits.xml.bytes <= 0 || limits.xml.nodes <= 0 || limits.xml.attributes <= 0 || limits.xml.text <= 0 || limits.xml.depth <= 0 {
-		return nil, fmt.Errorf("SKC bindings require explicit XML and expansion budgets")
+		return fmt.Errorf("SKC bindings require explicit XML and expansion budgets")
+	}
+	return nil
+}
+
+func readVFFClassificationBindings(ctx context.Context, c *vffContainer, limits vffSKCBindingLimits) ([]vffSKCFilterBindings, error) {
+	if err := validateVFFSKCBindingLimits(limits); err != nil {
+		return nil, err
 	}
 	documents, err := readVFFClassificationDocuments(ctx, c, limits.documents)
 	if err != nil {

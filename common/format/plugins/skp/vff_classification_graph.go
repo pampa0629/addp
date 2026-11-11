@@ -48,7 +48,7 @@ func newVFFSKCBindingGraph(ctx context.Context, files map[string][]byte, doc vff
 		if root.name != (xml.Name{Space: vffXSDNS, Local: "schema"}) {
 			return nil, fmt.Errorf("binding requires exact XSD root")
 		}
-		b := &vffSKCBinder{ctx: ctx, member: fact.member, namespace: root.attrs["targetNamespace"], raw: raw, definitions: map[string]map[string]*vffXMLNode{}, budget: budget, active: map[*vffXMLNode]bool{}, witnesses: map[*vffXMLNode]vffSKCDeclarationWitness{}, nodes: map[vffSKCNodeKey]*vffXMLNode{}, values: map[*vffXMLNode]*vffSKCValueBinding{}, graph: g}
+		b := &vffSKCBinder{ctx: ctx, member: fact.member, namespace: root.attrs["targetNamespace"], raw: raw, root: root, definitions: map[string]map[string]*vffXMLNode{}, budget: budget, active: map[*vffXMLNode]bool{}, witnesses: map[*vffXMLNode]vffSKCDeclarationWitness{}, nodes: map[vffSKCNodeKey]*vffXMLNode{}, values: map[*vffXMLNode]*vffSKCValueBinding{}, graph: g}
 		if b.namespace == vffXSDNS {
 			return nil, fmt.Errorf("schema overriding the builtin XSD namespace is unsupported")
 		}

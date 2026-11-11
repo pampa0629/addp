@@ -74,6 +74,7 @@ type vffSKCDocumentFact struct {
 	vffSKCMemberFact // Outer SKC identity.
 	documents        []vffSKCXMLFact
 	rootSchema       string
+	title            string
 	thumbnail        vffImageFact
 	schemas          []vffSKCSchemaFact
 	filters          []vffSKCFilterFact
@@ -86,12 +87,19 @@ type vffClassificationDocumentFacts struct {
 	documents []vffSKCDocumentFact
 }
 
-func readVFFClassificationDocuments(ctx context.Context, c *vffContainer, limits vffClassificationDocumentLimits) (*vffClassificationDocumentFacts, error) {
+func validateVFFClassificationDocumentLimits(limits vffClassificationDocumentLimits) error {
 	if limits.xml.bytes <= 0 || limits.xml.nodes <= 0 || limits.xml.depth <= 0 || limits.xml.attributes <= 0 || limits.xml.text <= 0 || limits.dependencies <= 0 || limits.images.images <= 0 || limits.images.bytes <= 0 || limits.images.pixels == 0 {
-		return nil, fmt.Errorf("SKC documents require explicit cumulative XML, dependency and image budgets")
+		return fmt.Errorf("SKC documents require explicit cumulative XML, dependency and image budgets")
 	}
 	if limits.filters.bytes <= 0 || limits.filters.tokens <= 0 || limits.filters.rules <= 0 || limits.filters.attributes <= 0 {
-		return nil, fmt.Errorf("SKC documents require explicit cumulative filter budgets")
+		return fmt.Errorf("SKC documents require explicit cumulative filter budgets")
+	}
+	return nil
+}
+
+func readVFFClassificationDocuments(ctx context.Context, c *vffContainer, limits vffClassificationDocumentLimits) (*vffClassificationDocumentFacts, error) {
+	if err := validateVFFClassificationDocumentLimits(limits); err != nil {
+		return nil, err
 	}
 	packages, err := readVFFClassificationPackages(ctx, c, limits.packages)
 	if err != nil {
@@ -157,7 +165,7 @@ func readVFFSKCDocument(ctx context.Context, item vffClassificationPackage, budg
 	if err := vffSKCExactMember(item.files, result.rootSchema, ".xsd"); err != nil {
 		return nil, err
 	}
-	thumbnail, err := vffSKCProperties(roots[1])
+	title, thumbnail, err := vffSKCProperties(roots[1])
 	if err != nil {
 		return nil, err
 	}
@@ -170,6 +178,7 @@ func readVFFSKCDocument(ctx context.Context, item vffClassificationPackage, budg
 	if err != nil {
 		return nil, err
 	}
+	result.title = title
 	result.thumbnail = imageFacts[0]
 	images.images--
 	images.bytes -= len(item.files[thumbnail])
@@ -261,44 +270,44 @@ func vffSKCExactMember(files map[string][]byte, member, extensions string) error
 	return nil
 }
 
-func vffSKCProperties(root *vffXMLNode) (string, error) {
+func vffSKCProperties(root *vffXMLNode) (string, string, error) {
 	fields := "title description creator keywords lastModifiedBy revision created modified thumbnail generator"
 	if root.name != (xml.Name{Space: vffDocumentNS, Local: "documentProperties"}) {
-		return "", fmt.Errorf("unsupported SKC properties root")
+		return "", "", fmt.Errorf("unsupported SKC properties root")
 	}
 	if err := vffXMLShape(root, "documentProperties", vffXMLAttributeKey(vffXSINS, "schemaLocation"), fields, false); err != nil {
-		return "", err
+		return "", "", err
 	}
 	values := map[string]string{}
 	for _, child := range root.children {
 		if child.name.Local == "generator" {
 			name, version := vffXMLAttributeKey(vffDocumentNS, "name"), vffXMLAttributeKey(vffDocumentNS, "version")
 			if err := vffXMLShape(child, "generator", name+" "+version, "", false); err != nil {
-				return "", err
+				return "", "", err
 			}
 			if strings.TrimSpace(child.attrs[name]) == "" || strings.TrimSpace(child.attrs[version]) == "" {
-				return "", fmt.Errorf("incomplete SKC generator")
+				return "", "", fmt.Errorf("incomplete SKC generator")
 			}
 		} else if err := vffXMLShape(child, child.name.Local, "", "", true); err != nil {
-			return "", err
+			return "", "", err
 		}
 		values[child.name.Local] = child.text
 	}
 	for _, field := range strings.Fields(fields) {
 		if _, ok := values[field]; !ok {
-			return "", fmt.Errorf("missing SKC property")
+			return "", "", fmt.Errorf("missing SKC property")
 		}
 	}
 	if strings.TrimSpace(values["revision"]) == "" {
-		return "", fmt.Errorf("empty SKC revision")
+		return "", "", fmt.Errorf("empty SKC revision")
 	}
 	for _, field := range []string{"created", "modified"} {
 		parsed, err := time.Parse("2006-01-02T15:04:05", values[field])
 		if err != nil || parsed.Format("2006-01-02T15:04:05") != values[field] {
-			return "", fmt.Errorf("unsupported SKC timestamp")
+			return "", "", fmt.Errorf("unsupported SKC timestamp")
 		}
 	}
-	return values["thumbnail"], nil
+	return values["title"], values["thumbnail"], nil
 }
 
 func readVFFSKCSchema(ctx context.Context, member string, files map[string][]byte, budget *vffXMLBudget, dependencies *int) (*vffSKCSchemaFact, error) {

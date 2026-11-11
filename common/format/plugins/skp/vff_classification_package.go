@@ -28,6 +28,12 @@ type vffClassificationPackageFacts struct {
 }
 
 func readVFFClassificationPackages(ctx context.Context, c *vffContainer, limits vffClassificationPackageLimits) (*vffClassificationPackageFacts, error) {
+	return readVFFClassificationPackageSelection(ctx, c, limits, "")
+}
+
+// Selection limits only decompression. References and their exact current bytes
+// still come from the model; all non-selected package semantics remain unproved.
+func readVFFClassificationPackageSelection(ctx context.Context, c *vffContainer, limits vffClassificationPackageLimits, selectedMember string) (*vffClassificationPackageFacts, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -46,6 +52,9 @@ func readVFFClassificationPackages(ctx context.Context, c *vffContainer, limits 
 	for _, ref := range references.entries {
 		if err := ctx.Err(); err != nil {
 			return nil, err
+		}
+		if selectedMember != "" && ref.member != selectedMember {
+			continue
 		}
 		if seen[ref.member] {
 			continue
@@ -79,6 +88,9 @@ func readVFFClassificationPackages(ctx context.Context, c *vffContainer, limits 
 		}
 		remainingReads, remainingMembers = source.remaining, remainingMembers-len(records)
 		result.packages = append(result.packages, item)
+	}
+	if selectedMember != "" && !seen[selectedMember] {
+		return nil, fmt.Errorf("selected SKC member is not registered in the current model")
 	}
 	if err := ctx.Err(); err != nil {
 		return nil, err
