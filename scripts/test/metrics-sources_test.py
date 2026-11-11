@@ -165,7 +165,7 @@ class MetricsSourcesTest(unittest.TestCase):
             'deployment-check':'核对引擎部署', 'account-plan':'准备采集账号配置',
             'account-update':'核对及更新采集账号', 'source-check':'核验既有采集来源',
             'source-stop':'移除采集来源', 'source-build':'构建采集来源镜像',
-            'source-bootstrap-image':'核对 MinIO 容器原镜像',
+            'source-bootstrap-image':'核对初始化依赖镜像',
         }
         for kind in ('postgresql','redis','minio'):
             for stage,label in cases.items():
@@ -343,12 +343,18 @@ addp_startup_metrics_summary
         labels={'com.docker.compose.project':project,'io.addp.postgres-metrics.owner':str(ROOT),'io.addp.postgres-metrics.scope':'business','io.addp.postgres-metrics.database-id':node,'io.addp.postgres-metrics.database-started-at':database['started_at']}
         objects={node:database,source:{'running':True,'labels':dict(labels,**{'com.docker.compose.service':'business-postgres-metrics'})},web:{'running':True,'labels':dict(labels,**{'com.docker.compose.service':'business-postgres-metrics-web'})}}
         commands=[]
-        def read(args):
-            commands.append(args);self.assertEqual(args[0],'ps');return source+'\n'+web
+        image = 'sha256:'+'d'*64
+        def read(args, **kwargs):
+            commands.append(args)
+            if args[0]=='ps': return source+'\n'+web
+            if args[0]=='inspect': return image
+            self.assertEqual(args,['image','inspect','--format','{{.Id}}',image])
+            self.assertEqual(kwargs,{'check':False})
+            return subprocess.CompletedProcess(args,0,image,'')
         docker.run.side_effect=read; docker.fact.side_effect=lambda identity:copy.deepcopy(objects[identity])
         with patch.object(manager,'load',return_value=deployment):
-            self.assertEqual(manager.status('postgresql','business',{}),('运行中',True))
-            objects[web]['running']=False;self.assertEqual(manager.status('postgresql','business',{}),('已停止',False))
+            self.assertEqual(manager.status('postgresql','business',{}),('运行中；镜像可用',True))
+            objects[web]['running']=False;self.assertEqual(manager.status('postgresql','business',{}),('已停止；镜像可用',False))
             objects[web]['labels']['io.addp.postgres-metrics.owner']='/foreign';self.assertEqual(manager.status('postgresql','business',{}),('归属不符',False))
             objects[web]['labels']['io.addp.postgres-metrics.owner']=str(ROOT);objects[node]['started_at']='changed'
             self.assertEqual(manager.status('postgresql','business',{}),('数据库运行身份已变化',False))
@@ -358,14 +364,41 @@ addp_startup_metrics_summary
             self.assertEqual(manager.status('postgresql','business',{}),('归属不符',False))
         self.assertTrue(commands)
 
-        for state, running, expected in (('运行中', True, 0), ('已停止', False, 1)):
+        for state, running, expected in (('运行中；镜像可用', True, 0), ('已停止；镜像可用', False, 1), ('运行中；原采集镜像不可用',False,1)):
             with self.subTest(state=state):
                 code, output, mocks = self.invoke(
                     'status', ['business'], ['redis'], env={'ADDP_REDIS_METRICS_ENABLED':'true'},
                     status={'return_value':(state, running)}, apply={})
                 self.assertEqual(code, expected)
-                self.assertIn(f'当前运行状态检查：共 1 项，异常 {expected} 项', output)
+                self.assertIn(f'来源运行／镜像检查：共 1 项，异常 {expected} 项', output)
                 mocks['apply'].assert_not_called()
+
+    def test_running_source_with_missing_source_or_bootstrap_image_is_abnormal(self):
+        for kind in ('redis','minio'):
+            deployment = Mock(); docker = deployment.Docker.return_value
+            group=manager.load(ROOT/'scripts/utils/metrics-project.py'); deployment.inventory.metrics_project=group
+            deployment.inventory.SCOPES={'infra':('addp-infra',ROOT/'scripts/infra')}
+            source, database = 'a'*64, 'b'*64
+            namespace='io.addp.'+kind+'-metrics'
+            objects={source:{'running':True,'labels':{
+                'com.docker.compose.project':group.PROJECT,'com.docker.compose.service':'infra-'+kind+'-metrics',
+                namespace+'.owner':str(ROOT),namespace+'.scope':'infra',namespace+'.database-id':database,
+                namespace+'.database-started-at':'start'}},database:{'running':True,'started_at':'start','labels':{
+                'com.docker.compose.project':'addp-infra','com.docker.compose.service':kind,
+                'com.docker.compose.project.working_dir':str(ROOT/'scripts/infra')}}}
+            docker.fact.side_effect=lambda identity:copy.deepcopy(objects[identity])
+            for missing, role in ((source,'原采集镜像'),(database,'初始化依赖镜像')):
+                def read(args, **kwargs):
+                    if args[0]=='ps': return source
+                    if args[0]=='inspect': return 'sha256:'+args[-1]
+                    self.assertEqual(args[:2],['image','inspect'])
+                    failed=args[-1]=='sha256:'+missing
+                    return subprocess.CompletedProcess(args,int(failed),'' if failed else args[-1],'private-error' if failed else '')
+                docker.run.side_effect=read
+                with self.subTest(kind=kind,role=role), patch.object(manager,'load',return_value=deployment):
+                    state,ok=manager.status(kind,'infra',{})
+                    self.assertFalse(ok);self.assertIn('运行中；'+role+'不可用',state)
+                    self.assertNotIn('private-error',state)
 
 
 if __name__ == '__main__': unittest.main()

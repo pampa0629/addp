@@ -196,20 +196,35 @@ class MinIOObservationTest(unittest.TestCase):
         self.assertEqual(set(config), {'address', 'scope', 'access_key', 'secret_key', 'container_id', 'container_started_at'})
         self.assertNotIn(self.db.parent, json.dumps(config))
 
-    def test_source_preflight_failure_disables_old_account_without_rebuilding(self):
+    def test_source_preflight_failure_preserves_installed_account_and_source(self):
         self.manager.run(True)
+        before = (self.directory/'owner.json').read_bytes()
         manager = self.source_manager()
         with patch.object(M.sources, 'transport', side_effect=M.Error('TLS rejected')):
             with self.assertRaisesRegex(M.Error, 'TLS rejected'): manager.run(True, {})
         manager.source.build.assert_not_called(); manager.source.start.assert_not_called()
-        self.assertEqual(self.account['accountStatus'], 'off')
+        manager.source.stop.assert_not_called()
+        self.assertEqual(self.account['accountStatus'], 'on')
+        self.assertEqual((self.directory/'owner.json').read_bytes(), before)
+
+    def test_build_failure_preserves_installed_source_and_account(self):
+        self.manager.run(True)
+        before = (self.directory/'owner.json').read_bytes()
+        manager = self.source_manager()
+        manager.source.build.side_effect = M.Error('build unavailable')
+        with patch.object(M.sources, 'transport', return_value=('127.0.0.1',9443,{})), patch.object(M,'bind_source'):
+            with self.assertRaisesRegex(M.Error,'build unavailable'): manager.run(True,{})
+        manager.source.stop.assert_not_called();manager.source.start.assert_not_called()
+        self.assertEqual(self.account['accountStatus'],'on')
+        self.assertEqual((self.directory/'owner.json').read_bytes(),before)
 
     def test_source_cleanup_failure_is_explicit_and_still_attempts_native_disable(self):
         self.manager.run(True)
         manager = self.source_manager()
         manager.source.stop.side_effect = [None, M.Error('source cleanup failed')]
-        with patch.object(M.sources, 'transport', side_effect=M.Error('TLS rejected')):
-            with self.assertRaisesRegex(M.Error, 'TLS rejected') as failure: manager.run(True, {})
+        manager.source.start.side_effect = M.Error('start failed')
+        with patch.object(M.sources, 'transport', return_value=('127.0.0.1',9443,{})), patch.object(M,'bind_source'):
+            with self.assertRaisesRegex(M.Error, 'start failed') as failure: manager.run(True, {})
         self.assertTrue(failure.exception.minio_cleanup_failed)
         self.assertEqual(self.account['accountStatus'], 'off')
 

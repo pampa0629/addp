@@ -131,6 +131,15 @@ def transport(env, root, prefix, error=ValueError):
     return str(ip), port, material
 
 
+@observed('source-bootstrap-image')
+def verify_bootstrap_image(docker, image, error=ValueError):
+    if not isinstance(image, str) or re.fullmatch(r'sha256:[0-9a-f]{64}', image) is None:
+        raise error('Metrics source bootstrap image identity rejected')
+    result = docker.run(['image', 'inspect', '--format', '{{.Id}}', image], check=False)
+    if result.returncode or result.stdout.strip() != image:
+        raise error('Metrics source bootstrap image is unavailable')
+
+
 class Source:
     def __init__(self,docker,scope,state,root,kind,project,error=ValueError):
         if kind not in {'redis','minio'} or scope not in {'infra','business'}: raise error('Unknown metrics source owner')
@@ -328,6 +337,14 @@ class Source:
                 data = path.read_bytes(); digest.update(name.encode()+b'\0'+data)
                 target = context/name; target.parent.mkdir(parents=True, exist_ok=True); target.write_bytes(data)
             tag = 'addp-'+self.kind+'-metrics:'+digest.hexdigest()
+            # Re-exporting the same inputs can replace the tag with a new
+            # provenance index, orphaning an installed peer's exact image ID.
+            images = self.docker.run(['image', 'ls', '--quiet', '--no-trunc', '--filter', 'reference='+tag]).split()
+            if images:
+                if len(images) != 1:
+                    raise Error('Metrics source build identity is not unique')
+                self.installed_image(images[0])
+                return images[0]
             self.docker.run(['build', '--label', OWNER+'='+str(ROOT), '-t', tag, '-f', str(context/('scripts/infra/Dockerfile.'+self.kind+'-metrics')), str(context)], timeout=240)
         fact = decode(self.docker.run(['image', 'inspect', tag]))[0]
         if not re.fullmatch(r'sha256:[0-9a-f]{64}', fact['Id']) or (fact.get('Config', {}).get('Labels') or {}).get(OWNER) != str(ROOT):

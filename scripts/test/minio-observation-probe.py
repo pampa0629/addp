@@ -151,12 +151,16 @@ def source_read(scope, manager, environment, context):
 
 def source_contracts(managers, environments, contexts, roots):
     epochs = {}
+    # Install both scopes before recovering either: a later build must not
+    # orphan the exact image used by the previously installed source.
+    installed = {scope:source_read(scope, managers[scope], environments[scope], contexts[scope])
+                 for scope in ('infra','business')}
     for scope in ('infra', 'business'):
         manager, environment, ctx = managers[scope], environments[scope], contexts[scope]
         peer = managers['business' if scope=='infra' else 'infra'].source
         peer_ids = docker.run(['ps','-aq',*M.sources.group.filters(peer.project,{peer.service})]).split()
         peer_before = {identity:docker.fact(identity) for identity in peer_ids}
-        epoch, port = source_read(scope, manager, environment, ctx); epochs[scope] = epoch
+        epoch, port = installed[scope]; epochs[scope] = epoch
         before=(manager.directory/'owner.json').read_bytes()
         ids=docker.run(['ps','-aq',*M.sources.group.filters(manager.source.project,{manager.source.service})]).split()
         with mock.patch.object(M.Database,'enable',side_effect=AssertionError('recovery attempted account enable')), mock.patch.object(M.Database,'create',side_effect=AssertionError('recovery attempted account creation')), mock.patch.object(manager.source,'build',side_effect=AssertionError('recovery attempted source build')):
@@ -209,12 +213,15 @@ def source_contracts(managers, environments, contexts, roots):
         discover_source(scope, manager, 'not_deployed')
         assert database(scope).probe(M.jwt(manager.account.read()['access_key'], manager.account.read()['secret_key'])) == 403, 'stop left native identity enabled'
         manager.run(True, environment); ready(port, ctx)
+        before = (manager.directory/'owner.json').read_bytes()
+        current = docker.run(['ps','-aq',*M.sources.group.filters(manager.source.project,{manager.source.service})]).strip()
         try: manager.run(True, dict(environment, ADDP_MINIO_METRICS_TLS_DIR=str(state_root/'missing-tls')))
         except (ValueError, OSError) as error:
             assert not getattr(error, 'minio_cleanup_failed', False), 'failure compensation was incomplete'
         else: raise AssertionError('missing TLS material accepted')
-        assert manager.account.read()['phase'] == 'disabled', 'TLS failure left observer enabled'
-        assert not docker.run(['ps','-aq',*M.sources.group.filters(manager.source.project,{manager.source.service})]).strip(), 'TLS failure left source running'
+        assert (manager.directory/'owner.json').read_bytes() == before, 'preparation failure changed installed account'
+        assert docker.run(['ps','-aq',*M.sources.group.filters(manager.source.project,{manager.source.service})]).strip() == current, 'preparation failure replaced source'
+        ready(port,ctx)
         assert s3(database(scope), database(scope).parent, database(scope).config['aliases']['owned']['secretKey'], 'GET', '/permission-fixture/fixture') == (200, None), 'optional failure changed object service'
         manager.run(True,environment);ready(port,ctx)
         assert {identity:docker.fact(identity) for identity in peer_ids} == peer_before, 'selected-source operations changed peer source'

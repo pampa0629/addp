@@ -47,7 +47,7 @@ FAILURE_STAGES = {
     'source-check': '核验既有采集来源阶段失败；请核对安装记录、账号、证书及来源归属',
     'source-stop': '移除采集来源阶段失败；请核对来源容器及专属卷的归属和实际状态',
     'source-build': '构建采集来源镜像阶段失败；请核对构建输入、Docker 状态及构建依赖的可达性',
-    'source-bootstrap-image': '核对 MinIO 容器原镜像阶段失败。采集私有卷初始化需要该镜像，请核对对应作用域的 MinIO 容器与本地镜像后重新应用来源',
+    'source-bootstrap-image': '核对初始化依赖镜像阶段失败。采集私有卷初始化需要引擎容器原镜像，请核对对应作用域的引擎容器与本地镜像后重新应用来源',
 }
 TLS_FAILURES = {
     'chain': '证书链或必要扩展不符合严格要求；请核对签发 CA 和证书扩展',
@@ -117,7 +117,7 @@ def check(kind, scope, env):
 
 
 def status(kind, scope, env):
-    """Metadata only: container presence cannot prove successful scraping."""
+    """Container and local-image metadata; never claims recovery or scraping."""
     deployment = load(ROOT/'scripts/utils/deployment-docker.py')
     docker = deployment.Docker(env)
     group = deployment.inventory.metrics_project
@@ -133,6 +133,7 @@ def status(kind, scope, env):
     if not ids:
         return '未部署', False
     facts = [docker.fact(identity) for identity in ids]
+    bootstrap_ids = set()
     for fact in facts:
         labels = fact['labels'] or {}
         if (labels.get(namespace+'.owner') != str(ROOT) or labels.get('com.docker.compose.project') != project
@@ -143,6 +144,8 @@ def status(kind, scope, env):
             if not re.fullmatch('[0-9a-f]{64}', identity):
                 return '来源身份无效', False
             database = docker.fact(identity)
+            if kind in ('redis', 'minio'):
+                bootstrap_ids.add(identity)
             db_labels = database['labels'] or {}
             source_project, working = deployment.inventory.SCOPES[scope]
             if (not database['running'] or database['started_at'] != labels.get(namespace+'.database-started-at')
@@ -154,7 +157,16 @@ def status(kind, scope, env):
     if len(services) != len(expected) or set(services) != expected:
         return '组件不完整', False
     running = all(fact['running'] for fact in facts)
-    return ('运行中' if running else '已停止'), running
+    state = '运行中' if running else '已停止'
+    for identity in [*ids, *sorted(bootstrap_ids)]:
+        image = docker.run(['inspect', '--format', '{{.Image}}', identity]).strip()
+        if not re.fullmatch(r'sha256:[0-9a-f]{64}', image):
+            return state+'；镜像身份无效', False
+        result = docker.run(['image', 'inspect', '--format', '{{.Id}}', image], check=False)
+        if result.returncode or result.stdout.strip() != image:
+            role = '初始化依赖镜像' if identity in bootstrap_ids else '原采集镜像'
+            return state+'；'+role+'不可用，恢复依赖检查未通过', False
+    return state+'；镜像可用', running
 
 
 def apply(action, kind, scope, env):
@@ -208,8 +220,8 @@ def run(action, scopes=(), kinds=(), inherited=None, resolved=False):
             # Shutdown must remain available even if the enable flag is invalid.
             selected = enabled(kind, env) if action != 'down' else False
             if action == 'status':
-                state, running = status(kind, scope, env)
-                bad = selected != running or selected and state != '运行中' or not selected and state != '未部署'
+                state, ready = status(kind, scope, env)
+                bad = not ready if selected else state != '未部署'
                 failures += bool(bad)
                 result = ('启用 / ' if selected else '停用 / ')+state
             elif action == 'check':
@@ -240,7 +252,7 @@ def run(action, scopes=(), kinds=(), inherited=None, resolved=False):
                 detail = '检查或操作未通过，请核对部署配置与来源归属'
             print(f'{label:<24} 失败：{detail}')
     if action == 'status':
-        print(f'当前运行状态检查：共 {len(rows)} 项，异常 {failures} 项。请在 Monitor 核对实际采样。')
+        print(f'来源运行／镜像检查：共 {len(rows)} 项，异常 {failures} 项。账号、配置及完整恢复核验见 recover，实际采样请在 Monitor 核对。')
     else:
         print(f'汇总：共 {len(rows)} 项，失败 {failures} 项。来源运行状态不代表实际采集成功，请在 Monitor 核对。')
     return int(bool(failures))

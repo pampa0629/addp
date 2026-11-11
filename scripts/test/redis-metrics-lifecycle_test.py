@@ -6,6 +6,7 @@ import importlib.util
 import json
 import os
 from pathlib import Path
+import subprocess
 import tempfile
 import unittest
 from unittest import mock
@@ -29,8 +30,8 @@ class RedisLifecycleTest(unittest.TestCase):
         self.state=Path(self.tmp.name).resolve()/'state'
         self.events=[];self.account=None;self.record=''
         self.docker=mock.Mock(info={'id':'fixture-engine'})
-        self.docker.run.side_effect=lambda args,**kwargs:'' if args[0] in ('ps','volume') else self.fail('Unexpected transport command')
-        self.db=mock.Mock(identity='a'*64,volume='owned-volume')
+        self.docker.run.side_effect=lambda args,**kwargs:subprocess.CompletedProcess(args,0,self.db.image,'') if args[:2]==['image','inspect'] else '' if args[0] in ('ps','volume') else self.fail('Unexpected transport command')
+        self.db=mock.Mock(identity='a'*64,volume='owned-volume',image='sha256:'+'c'*64)
         self.db.facts={'labels':{'com.docker.compose.project':'fixture','com.docker.compose.service':'redis'},'started_at':'2026-11-01T00:00:00Z'}
         self.db.locked.side_effect=lambda:nullcontext()
         self.db.account.side_effect=lambda:copy.deepcopy(self.account)
@@ -77,6 +78,19 @@ class RedisLifecycleTest(unittest.TestCase):
         with self.assertRaises(module.Error):self.up()
         state=self.state_json();self.assertEqual(state['pending_record'],'');self.assertTrue(self.record.endswith(' reset off\n'))
         self.assertEqual(self.account['commands'],'-@all');self.assertEqual(self.account['passwords'],[])
+
+    def test_preparation_failure_preserves_source_account_and_installation(self):
+        self.up(); before = (self.state/'owner.json').read_bytes()
+        account = copy.deepcopy(self.account); record = self.record
+        for step in ('transport','build','plan'):
+            self.events.clear()
+            target = module if step=='transport' else self.manager
+            name = {'transport':'transport','build':'image','plan':'plan'}[step]
+            with self.subTest(step=step), mock.patch.object(target,name,side_effect=module.Error('preparation failed')):
+                with self.assertRaisesRegex(module.Error,'preparation failed'): self.up()
+            self.assertEqual(self.events,[])
+            self.assertEqual(self.account,account);self.assertEqual(self.record,record)
+            self.assertEqual((self.state/'owner.json').read_bytes(),before)
 
     def test_account_failure_keeps_its_stage_and_cleanup_result(self):
         failure=module.Error('account operation failed')

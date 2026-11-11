@@ -226,6 +226,49 @@ class ObservationStageTest(unittest.TestCase):
                 self.assertNotIn('private-output',text);self.assertNotIn('/private/path',text)
 
 
+class BuildReuseTest(unittest.TestCase):
+    def test_existing_input_tag_is_reused_across_scopes_without_rebuild(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            (root/'input.go').write_text('package fixture')
+            image = 'sha256:'+'a'*64
+            docker = Mock()
+            def command(args, **kwargs):
+                if args[:2] == ['image', 'ls']: return image+'\n'
+                if args[:2] == ['image', 'inspect']:
+                    return json.dumps([{'Id':image, 'Config':{'Labels':{'io.addp.redis-metrics.owner':str(root)}}}])
+                self.fail('Existing build must not be replaced: '+repr(args[:2]))
+            docker.run.side_effect = command
+            for scope in ('infra', 'business', 'infra'):
+                state = root/scope; state.mkdir(exist_ok=True)
+                source = M.Source(docker,scope,state,root,'redis','fixture')
+                self.assertEqual(source.build(['input.go']), image)
+
+    def test_unreadable_or_foreign_existing_image_is_not_overwritten(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary); (root/'input.go').write_text('package fixture')
+            image = 'sha256:'+'a'*64
+            for foreign in (False, True):
+                docker = Mock()
+                def command(args, **kwargs):
+                    if args[:2] == ['image', 'ls']: return image
+                    if args[:2] == ['image', 'inspect']:
+                        if not foreign: raise ValueError('unavailable')
+                        return json.dumps([{'Id':image, 'Config':{'Labels':{'io.addp.redis-metrics.owner':'/foreign'}}}])
+                    self.fail('Rejected image must not be overwritten')
+                docker.run.side_effect = command
+                with self.subTest(foreign=foreign), self.assertRaises(ValueError):
+                    M.Source(docker,'infra',root,root,'redis','fixture').build(['input.go'])
+
+    def test_missing_input_tag_builds_once_then_inspects_result(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary); (root/'input.go').write_text('package fixture')
+            docker = Mock(); image = 'sha256:'+'a'*64
+            docker.run.side_effect = ['', '', json.dumps([{'Id':image, 'Config':{'Labels':{'io.addp.redis-metrics.owner':str(root)}}}])]
+            self.assertEqual(M.Source(docker,'infra',root,root,'redis','fixture').build(['input.go']), image)
+            self.assertEqual([call.args[0][0] for call in docker.run.call_args_list], ['image','build','image'])
+
+
 class RecoveryTest(unittest.TestCase):
     def test_provider_cli_exports_only_closed_recovery_reason(self):
         for kind,script in (('redis','redis-metrics.py'),('minio','minio-observation.py')):

@@ -312,13 +312,7 @@ def bind_source(database, scope, *, network_key=None):
         raise Error('MinIO source network is not uniquely available')
     database.network, database.address = candidates[0]
     database.image = database.docker.run(['inspect', '--format', '{{.Image}}', database.identity]).strip()
-    if re.fullmatch('sha256:[0-9a-f]{64}', database.image) is None:
-        raise Error('MinIO source bootstrap image rejected')
-    image = database.docker.run(['image', 'inspect', '--format', '{{.Id}}', database.image], check=False)
-    if image.returncode or image.stdout.strip() != database.image:
-        error = Error('The running MinIO container image is unavailable for source initialization')
-        error.observation_stage = 'source-bootstrap-image'
-        raise error
+    sources.verify_bootstrap_image(database.docker, database.image, Error)
     database.same()
 
 
@@ -362,6 +356,11 @@ class Lifecycle:
 
     def run(self, enabled, env):
         with private.locked(self.directory/'source'):
+            if enabled:
+                # Preparation failure must not take down the installed source.
+                ip, port, material = sources.transport(env, ROOT, 'ADDP_MINIO_METRICS', Error)
+                database = self.factory(); bind_source(database, self.scope, network_key=self.network_key)
+                image = self.source.build(source_inputs())
             if enabled and self.source.project == sources.group.PROJECT:
                 sources.group.retire(self.source.docker, ROOT, 'minio', self.scope)
             self.source.stop()
@@ -369,9 +368,6 @@ class Lifecycle:
                 if not enabled:
                     self.account.run(False)
                     return
-                ip, port, material = sources.transport(env, ROOT, 'ADDP_MINIO_METRICS', Error)
-                database = self.factory(); bind_source(database, self.scope, network_key=self.network_key)
-                image = self.source.build(source_inputs())
                 self.account.run(True)
                 self.source.start(database, image, source_config(database, self.account.read()), ip, port, material, database.same)
             except Exception as error:

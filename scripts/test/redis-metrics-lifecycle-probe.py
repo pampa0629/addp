@@ -72,6 +72,11 @@ def probe(scope,docker,root,tls):
     try:
         manager.run('up',env)
         saved=module.decode(module.private.read(state/'owner.json',0o600)[0]);password=saved['password']
+        peer_scope='business' if scope=='infra' else 'infra'
+        peer_state=root/(scope+'-peer-build');peer_state.mkdir()
+        peer=module.Lifecycle(docker,peer_scope,peer_state,lambda:None,project=manager.project+'-peer')
+        assert peer.image()==saved['image'], 'peer build replaced installed image identity'
+        manager.container_source().installed_image(saved['image'])
         body=ready(port,ctx)
         if discovered()!={'state':'available','endpoint':f'https://127.0.0.1:{port}/metrics','container_id':factory().identity,'started_at':factory().facts['started_at']}:raise AssertionError('actual Redis source discovery failed')
         if password in body or os.environ['BUSINESS_REDIS_ADMIN_PASSWORD'] in body or 'run_id' in body:raise AssertionError('secret or raw identity escaped metrics')
@@ -145,13 +150,17 @@ def probe(scope,docker,root,tls):
         assert_clean(docker,manager)
         if (state/'owner.json').read_bytes()!=before or factory().record()!=record:raise AssertionError('rejected recovery changed disabled state')
         manager.run('up',env);ready(port,ctx)
+        before=(state/'owner.json').read_bytes()
+        source_ids=docker.run(['ps','-aq',*module.sources.group.filters(manager.project,{manager.container_source().service})]).split()
         broken=dict(env,ADDP_REDIS_METRICS_TLS_DIR=str(root/'missing'))
         try:manager.run('up',broken)
         except (ValueError,OSError):pass
         else:raise AssertionError('invalid TLS material accepted')
-        assert_clean(docker,manager)
-        if not module.matches(factory().account(),p['password_hash'],False):raise AssertionError('failed startup left account enabled')
+        assert (state/'owner.json').read_bytes()==before, 'preparation failure changed account'
+        assert docker.run(['ps','-aq',*module.sources.group.filters(manager.project,{manager.container_source().service})]).split()==source_ids, 'preparation failure replaced source'
+        ready(port,ctx)
         if factory().cli(['GET','addp:observation:preserve'])!='retained':raise AssertionError('optional failure changed business data')
+        manager.run('down',env);assert_clean(docker,manager)
         # A corrupt optional observer record must never prevent base Redis auth.
         database=factory();disabled=database.record()
         database.replace_record(disabled,'invalid observer record\n')

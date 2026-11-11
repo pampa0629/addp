@@ -74,8 +74,6 @@ class Database:
             raise Error('Redis deployment is not uniquely available')
         self.identity = ids[0]
         self.image = docker.run(['inspect','--format','{{.Image}}',self.identity]).strip()
-        if not re.fullmatch(r'sha256:[0-9a-f]{64}',self.image):
-            raise Error('Redis deployment image identity rejected')
         self.facts = docker.fact(self.identity)
         labels = self.facts['labels']
         if (not self.facts['running'] or labels.get('com.docker.compose.project') != project or labels.get('com.docker.compose.service') != service
@@ -251,6 +249,7 @@ class Lifecycle:
     def recover(self, env):
         with private.locked(self.state):
             database = self.database()
+            sources.verify_bootstrap_image(self.docker, database.image, Error)
             state = self.load_state(database, False)
             if not state or not state['image'] or state['pending_record']:
                 raise Error('Redis recovery installation is incomplete')
@@ -268,46 +267,52 @@ class Lifecycle:
             return source.recover(database,{'address':database.address,'scope':self.scope,'password':state['password']},
                                   ip,port,material,check,expected_image=state['image'])
 
-    def _run(self, action, env):
-        with private.locked(self.state):
-            if action == 'up' and env.get('ADDP_REDIS_METRICS_ENABLED') == 'true' and self.project == sources.group.PROJECT:
-                sources.group.retire(self.docker, ROOT, 'redis', self.scope)
-            self.stop_sources()
-            if action=='down' or env.get('ADDP_REDIS_METRICS_ENABLED','false')=='false':
-                if not os.path.lexists(self.state/'owner.json'): return
-                database=self.database()
-                with database.locked():
-                    state=self.load_state(database,False)
-                    if not state['image']:
-                        if database.account() is not None or database.record(): raise Error('Incomplete Redis account installation')
-                        return
-                    plan=self.plan(state['image'],state)
-                    self.transition(database,state,plan,False)
-                return
-            if env.get('ADDP_REDIS_METRICS_ENABLED')!='true':
-                raise Error('ADDP_REDIS_METRICS_ENABLED must be true or false')
-            ip,port,material=transport(env)
-            database=self.database()
-            with database.locked():
-                state=self.load_state(database,True); image=self.image()
-                state['image']=image; write(self.state/'owner.json',json.dumps(state,sort_keys=True))
-                plan=self.plan(image,state)
-                # Reconcile both runtime and persisted records to the disabled
-                # baseline before making a new source eligible to start.
-                self.transition(database,state,plan,False)
-                self.transition(database,state,plan,True)
-                self.start_source(database,image,state,ip,port,material)
+    def disable(self, database):
+        # Reload the durable ownership record, including after a failed write.
+        state = self.load_state(database, False)
+        if not state['image']:
+            if database.account() is not None or database.record():
+                raise Error('Incomplete Redis account installation')
+            return
+        self.transition(database, state, self.plan(state['image'], state), False)
 
     def run(self, action, env):
         if action == 'recover':
             return self.recover(env)
-        try:
-            return self._run(action,env)
-        except Exception as error:
-            if action=='up':
-                try: self._run('down',env)
-                except Exception: error.redis_cleanup_failed=True
-            raise
+        with private.locked(self.state):
+            selected = env.get('ADDP_REDIS_METRICS_ENABLED', 'false')
+            if action == 'down' or selected == 'false':
+                self.stop_sources()
+                if not os.path.lexists(self.state/'owner.json'): return
+                database = self.database()
+                with database.locked():
+                    return self.disable(database)
+            if selected != 'true':
+                raise Error('ADDP_REDIS_METRICS_ENABLED must be true or false')
+            # Prepare before changing the installed source or native account.
+            ip, port, material = transport(env)
+            database = self.database()
+            sources.verify_bootstrap_image(self.docker, database.image, Error)
+            image = self.image()
+            with database.locked():
+                state = self.load_state(database, True)
+                plan = self.plan(image, state)
+                if self.project == sources.group.PROJECT:
+                    sources.group.retire(self.docker, ROOT, 'redis', self.scope)
+                self.stop_sources()
+                try:
+                    state['image'] = image
+                    write(self.state/'owner.json', json.dumps(state, sort_keys=True))
+                    # Reconcile runtime and persisted records to a disabled
+                    # baseline before making the new source eligible to start.
+                    self.transition(database, state, plan, False)
+                    self.transition(database, state, plan, True)
+                    self.start_source(database, image, state, ip, port, material)
+                except Exception as error:
+                    for cleanup in (self.stop_sources, lambda: self.disable(database)):
+                        try: cleanup()
+                        except Exception: error.redis_cleanup_failed = True
+                    raise
 
 
 def run(action, scope, env):
