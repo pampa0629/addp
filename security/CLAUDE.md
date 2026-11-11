@@ -958,3 +958,5 @@ Develop 导出会话 #19 经独立 Transfer 执行 94347359-7a39-4359-9b66-cf26b
 用户执行 /tmp/p145-transfer-grouping-local.py，普通#33／Tenant1登录成功，在GET /api/v1/meta/items/44720返回404后停止并注销。真实失败原件为 /var/folders/r1/l7b49c757dz02zftf_l9vl9r0000gn/T/p145-transfer-grouping-local-wfgt7k4w/acceptance-report.json，独立核对 /tmp/p145-transfer-grouping-independent/initial-failure-audit.json。无task_id、参考查询或Transfer执行，尚未创建任务或写入目标；task_deleted=false不表示遗留任务。受控脚本的00000000开头UUID只属于模拟检查，不计实际验收。
 
 开发者只读核对Meta #44720仍属Tenant1／PG engine2，身份及fingerprint与此前相同，未软删除。现行Meta单项接口会将不可见与不存在均返回404，故当前账号的元数据可见性需先核实，不能把本轮当成Transfer分组或脱敏执行失败。未变更元数据／内容读取授权，未借其他账号继续运行；具体权限调整仍需用户确认。既有Develop／Service限定本地HTTP与Provider T2证据保留，独立Transfer落盘未执行。用户已授权后续同类脚本由本会话直接执行，正式登录凭据仍由用户在认证步骤输入。
+
+同轮继续只读核对，已有验收任务 #16（p145原生表默认恢复验收20261024）仍保存PG outdoor的正式target.parent_locator。源Meta单项读取只是临时脚本为取得目标schema位置加入的额外前置，并非Transfer源读取或目标写入的正式授权替代。脚本已改为唯一读取路径GET /api/v1/transfer/task-definitions/16，在当前用户权限下核对精确任务身份及其PG目标parent_locator，再走同一正式创建／执行入口。保留原Meta404，不放行任何Transfer权限拒绝，不变更授权。成功／执行失败／启动拒绝三组受控脚本检查通过；修正版尚未实际运行。电脑控制工具明确拒绝操作Terminal，无法由该通道完成交互式认证；用户已授予的脚本执行授权继续有效。
