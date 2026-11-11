@@ -1424,12 +1424,23 @@ def validate_mongodb_execution(execution: dict[str, object], source_locator: str
     return hashes
 
 
+class MongoDBSourceReadGrants(REGISTRATION.ExactRecordGrants):
+    """Reuse exact Grant lifecycle with this consumer's preview permission."""
+
+    def observe(self, target, allowed, *, phase="visibility_check"):
+        self.phase = phase
+        response = self.consumer.request("POST", "/api/v1/system/engine-access/read-checks/manager-preview",
+                                         (200,) if allowed else (403,), {"targets": [target]})
+        if allowed and (not isinstance(response.payload, dict) or not response.payload.get("observed_at")):
+            raise REGISTRATION.MetadataGrantError(phase, "read_observation_invalid")
+
+
 @contextmanager
 def mongodb_source_access(initializer, client, tenant_id, engine_id, timeout):
     if os.environ.get("ONLINE_SUITE") != "transfer-relational-sql-etl":
         raise SuiteError("MongoDB source Grant requires its dedicated Hosted suite")
     import_module("scripts.test.orchestrator-execution-faults").deployment_secret()
-    grants = REGISTRATION.ExactRecordGrants(initializer, client, tenant_id, action="read", scan_preparation=True)
+    grants = MongoDBSourceReadGrants(initializer, client, tenant_id, action="read", scan_preparation=True)
     namespace, collection = MONGODB_SOURCE.split(".")
     target = grants.target(engine_id, namespace, collection, "collection")
     route = "/api/v1/meta/items/by-catalog-path?" + urllib.parse.urlencode({

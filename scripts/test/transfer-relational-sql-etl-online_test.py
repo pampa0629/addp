@@ -1712,7 +1712,7 @@ class TransferRelationalSQLETLOnlineTest(unittest.TestCase):
                 client.request.side_effect = request
                 env = {"ONLINE_SUITE": "transfer-relational-sql-etl",
                        "ADDP_ONLINE_ARTIFACT_DIR": directory, "ADDP_ONLINE_TEST_RUN_ID": "test-run"}
-                with patch.dict(os.environ, env), patch.object(ONLINE, "import_module") as hosted, patch.object(ONLINE.REGISTRATION, "ExactRecordGrants", return_value=lifecycle) as factory, patch.object(
+                with patch.dict(os.environ, env), patch.object(ONLINE, "import_module") as hosted, patch.object(ONLINE, "MongoDBSourceReadGrants", return_value=lifecycle) as factory, patch.object(
                         ONLINE, "wait_for_scan", return_value="scan-id") as scan, patch.object(
                         ONLINE.REGISTRATION, "read_exact_record_authorization_facts",
                         return_value={"item_fingerprint": source["fingerprint"]}) as facts, patch.object(
@@ -1757,6 +1757,26 @@ class TransferRelationalSQLETLOnlineTest(unittest.TestCase):
                         self.assertEqual(proof["result"], "passed" if failure is None else "incomplete")
                 if failure == "issuance":
                     denied.assert_not_called()
+
+    def test_mongodb_read_observation_uses_preview_for_grant_and_revoke(self):
+        grants = ONLINE.MongoDBSourceReadGrants.__new__(ONLINE.MongoDBSourceReadGrants)
+        grants.consumer = Mock()
+        target = grants.target(4, "transfer_fixture", "activities", "collection")
+        grants.consumer.request.return_value = SimpleNamespace(payload={"observed_at": "2026-11-11T00:00:00Z"})
+        for allowed, phase in ((False, "visibility_before_grant"), (True, "visibility_after_grant"),
+                               (False, "visibility_after_revoke")):
+            grants.observe(target, allowed, phase=phase)
+            self.assertEqual(grants.phase, phase)
+            grants.consumer.request.assert_called_with(
+                "POST", "/api/v1/system/engine-access/read-checks/manager-preview",
+                (200,) if allowed else (403,), {"targets": [target]})
+        for payload in ({}, None):
+            grants.consumer.request.return_value = SimpleNamespace(payload=payload)
+            with self.assertRaises(ONLINE.REGISTRATION.MetadataGrantError):
+                grants.observe(target, True)
+        grants.consumer.request.side_effect = ONLINE.SuiteError("observation rejected")
+        with self.assertRaisesRegex(ONLINE.SuiteError, "observation rejected"):
+            grants.observe(target, False)
 
     def test_mongodb_source_grant_rejects_another_suite_before_any_request(self):
         client = Mock()
