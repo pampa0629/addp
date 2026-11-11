@@ -56,6 +56,7 @@ func (s *ModuleRegistryService) ObservabilityIdentities(ctx context.Context) (*c
 			}
 		}
 		s.enrichEngineMetrics(ctx, result)
+		s.enrichInfrastructureComponents(ctx, result)
 		s.enrichContainerProofs(ctx, result)
 		encoded, encodeErr := json.Marshal(result)
 		if encodeErr != nil {

@@ -130,6 +130,7 @@ type EngineDeploymentCandidate struct {
 	DeploymentID string `json:"deployment_id,omitempty"`
 }
 type DeploymentDiscoveryScope struct {
+	CDCMetrics map[string]*commonmodels.EngineMetricsSource `json:"-"`
 	// Only the private observation projection consumes this field. Neither the
 	// public discovery JSON nor an immutable deployment inventory contains it.
 	PostgreSQLMetrics *commonmodels.EngineMetricsSource `json:"-"`

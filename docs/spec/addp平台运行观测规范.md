@@ -157,6 +157,8 @@ MinIO 复用上述平台部署登记、主机绑定与私有来源链路，平�
 
 CDC 基础设施组件首期覆盖当前标准 Infra Compose 项目的 `redpanda` 和 `kafka-connect`，每个服务最多一个运行实例。部署侧沿现有只读发现核验工作区归属、Docker Engine、Compose 项目和服务，采集来源同时绑定当前容器完整 ID、启动时刻、私网及唯一显式 HTTPS 发布端口。System 沿唯一私有观测投影发布核验后的当前事实，Monitor 复用统一 HTTP SD、mTLS 准入、端点去重与容量限制。组件按部署事实自动纳入，用户读取继续由平台权限裁决。PostgreSQL 继续沿各自引擎部署及原授权读取。
 
+私有观测快照以 `infrastructure_components` 独立发布 CDC 部署事实，包含发现状态和组件集合；发现不可用时集合为空且状态明确为 unavailable，不冒充部署清单为空。每项以 Docker Engine、标准 Infra 项目及组件名形成稳定身份，容器 ID 和启动时刻表达本次运行。来源沿既有私有指标传输字段形状复用，不创建平台引擎登记、不授予主机关联。Monitor 的 `cdc_resources` 与现有主机、进程、引擎目标共享一份端点去重表与预算。
+
 两个组件的部署缺失、来源未启用或核验失败分别处理。容器重建后原来源失效，只有当前容器及来源重新匹配后才采集。空 Connector 或消费组清单是独立的运行事实，缺样不填零，组件汇总不用于推算单个任务的端到端延迟。采集仅发布固定指标与有界标签，发现和指标均不携带连接凭据、Connector 配置、事件正文或异常原文。当前个人部署已有 34 个目标，启用两个新目标前在隔离环境验证至少 36 个目标的并存采集、超额和恢复。
 
 CDC 固定来源复用 `sourceserver` 的单次完整投影和私有 mTLS `/metrics`，不提供任意地址或 JMX 查询入口。Redpanda 只读取 `/public_metrics`，聚合磁盘与不可用分区；消费组积压只在每个已提交分区都有对应末端 offset 时发布，空消费组只发布分区数为零，不伪造积压值。Kafka Connect 只读取 `/connectors?expand=status` 和两个固定 JMX 属性集合：Task 的 offset 提交失败比例，以及 Debezium PostgreSQL streaming 的连接状态、源端延迟。只输出固定状态计数和最大值，不输出 Connector、Topic、Group 或 MBean 名称。源端延迟为 Debezium 的毫秒值换算秒，offset 失败比例为原生 0～1 比例，均不能解释成整条链路延迟或失败率。

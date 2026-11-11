@@ -1641,6 +1641,13 @@ test-monitor-metrics: ## 隔离验证 Prometheus mTLS、真实采样、限额、
 test-monitor-cdc-source-unit: ## CDC 固定指标、缺样语义和有界读取 T1
 	@cd monitor/backend && GOWORK=off go test ./internal/cdcsource ./cmd/cdc-metrics-source ./internal/sourceserver -count=1
 
+.PHONY: test-monitor-cdc-discovery-unit
+test-monitor-cdc-discovery-unit: ## CDC 部署事实、私有身份、统一发现与预算 T1
+	@cd common && GOWORK=off go test ./models -count=1
+	@cd system/backend && GOWORK=off go test ./internal/service -run 'Test(CDC|EngineMetrics|DeploymentDiscovery)' -count=1
+	@cd monitor/backend && GOWORK=off go test ./internal/metricsdiscovery -count=1
+	@python3 -m unittest scripts/test/metrics-project_test.py scripts/test/business-deployments_test.py
+
 .PHONY: test-monitor-metrics-config
 test-monitor-metrics-config: test-metrics-sources ## 验证指标配置与服务部署意图 T1，不启动服务或实源
 	@python3 -m unittest scripts/test/metrics-deployment-config_test.py

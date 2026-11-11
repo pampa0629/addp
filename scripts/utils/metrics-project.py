@@ -9,6 +9,7 @@ PROJECT = 'addp-metrics-sources'
 
 def service(kind, scope):
     if kind == 'node' and scope == 'host': return 'node-exporter'
+    if kind in {'redpanda', 'kafka-connect'} and scope == 'infra': return scope+'-'+kind+'-metrics'
     if kind not in {'postgres', 'redis', 'minio'} or scope not in {'infra', 'business'}:
         raise ValueError('Unknown metrics source member')
     return scope+'-'+kind+'-metrics'

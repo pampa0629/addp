@@ -346,6 +346,7 @@ class MinIOMetricsSource(RedisMetricsSource):
 
 
 class DockerReaderTests(unittest.TestCase):
+
     def test_refresh_failure_never_echoes_raw_source_or_partial_output(self):
         with patch.object(inventory.sys, 'argv', ['deployment-inventory.py', 'refresh', '--scope', 'infra']), \
                 patch.object(inventory, 'publish', side_effect=ValueError('credential-sentinel')), \
@@ -386,6 +387,27 @@ class DockerReaderTests(unittest.TestCase):
 
 
 class DiscoveryTests(unittest.TestCase):
+    def test_cdc_sources_bind_current_infra_container_and_private_network(self):
+        def fixture(kind):
+            source = MinIOMetricsSource('infra')
+            source.container['service'] = kind
+            source.metrics['service'] = 'infra-'+kind+'-metrics'
+            source.selected_service = source.metrics['service']
+            return source
+        for kind in ('redpanda', 'kafka-connect'):
+            source = fixture(kind)
+            result = self.discover(source, 'infra')
+            self.assertEqual(result['cdc_metrics'][kind]['state'], 'available')
+            self.assertEqual(result['cdc_metrics'][kind]['container_id'], CID)
+            for field, value in [('database_id','f'*64), ('database_started_at','2020-01-01T00:00:00Z'), ('owner','foreign')]:
+                source = fixture(kind); source.metrics[field] = value
+                self.assertEqual(self.discover(source, 'infra')['cdc_metrics'][kind], {'state':'unavailable'})
+            source = fixture(kind); source.network['project'] = 'foreign'
+            self.assertEqual(self.discover(source, 'infra')['cdc_metrics'][kind], {'state':'unavailable'})
+            source = fixture(kind); source.source_ids = ''
+            self.assertEqual(self.discover(source, 'infra')['cdc_metrics'][kind], {'state':'not_deployed'})
+        self.assertEqual(self.discover(MinIOMetricsSource(), 'business')['cdc_metrics'], {})
+
     def source(self, scope='business'):
         source = Source()
         source.container['project'], root = inventory.SCOPES[scope]

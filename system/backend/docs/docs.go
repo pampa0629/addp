@@ -12274,7 +12274,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "固定 Monitor Platform Service Client 读取有界节点、有效实例及已确认平台引擎身份投影，包含私有进程采集声明和无凭据引擎来源键；不含元数据、凭据或租户数据，不供浏览器使用 | The fixed Monitor Platform Service Client reads a bounded node, instance and admitted platform engine identity projection including private process metrics declarations and credential-free engine source keys; excludes metadata, credentials and tenant data and is not a browser API",
+                "description": "固定 Monitor Platform Service Client 读取有界节点、有效实例及已确认平台引擎身份投影，包含私有进程采集声明和无凭据引擎来源键及自动核验的 CDC 基础设施组件；不含元数据、凭据或租户数据，不供浏览器使用 | The fixed Monitor Platform Service Client reads a bounded node, instance and admitted platform engine identity projection including private process metrics declarations and credential-free engine source keys and automatically verified CDC infrastructure components; excludes metadata, credentials and tenant data and is not a browser API",
                 "produces": [
                     "application/json"
                 ],
@@ -25561,6 +25561,48 @@ const docTemplate = `{
             "type": "object",
             "additionalProperties": true
         },
+        "models.ObservabilityComponentIdentity": {
+            "type": "object",
+            "properties": {
+                "container_id": {
+                    "type": "string"
+                },
+                "docker_engine_id": {
+                    "type": "string"
+                },
+                "kind": {
+                    "type": "string"
+                },
+                "metrics": {
+                    "description": "Reuse the fixed private metrics transport shape; this does not declare an engine.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/models.EngineMetricsSource"
+                        }
+                    ]
+                },
+                "project": {
+                    "type": "string"
+                },
+                "started_at": {
+                    "type": "string"
+                }
+            }
+        },
+        "models.ObservabilityComponentSnapshot": {
+            "type": "object",
+            "properties": {
+                "items": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/models.ObservabilityComponentIdentity"
+                    }
+                },
+                "state": {
+                    "type": "string"
+                }
+            }
+        },
         "models.ObservabilityEngineIdentity": {
             "type": "object",
             "properties": {
@@ -25609,6 +25651,9 @@ const docTemplate = `{
                     "items": {
                         "$ref": "#/definitions/models.ObservabilityEngineIdentity"
                     }
+                },
+                "infrastructure_components": {
+                    "$ref": "#/definitions/models.ObservabilityComponentSnapshot"
                 },
                 "module_instances": {
                     "type": "array",

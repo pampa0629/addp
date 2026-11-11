@@ -20,11 +20,12 @@ const (
 // private projection for Monitor discovery. Process endpoints are deployment
 // declarations, never browser DTOs. Credentials are never included.
 type ObservabilityIdentitySnapshot struct {
-	ServiceGroups     *ServiceGroupSnapshot         `json:"service_groups,omitempty"`
-	ObservedAt        time.Time                     `json:"observed_at"`
-	Nodes             []ObservabilityNodeIdentity   `json:"nodes"`
-	ModuleInstances   []ObservabilityModuleIdentity `json:"module_instances"`
-	EngineDeployments []ObservabilityEngineIdentity `json:"engine_deployments"`
+	InfrastructureComponents *ObservabilityComponentSnapshot `json:"infrastructure_components,omitempty"`
+	ServiceGroups            *ServiceGroupSnapshot           `json:"service_groups,omitempty"`
+	ObservedAt               time.Time                       `json:"observed_at"`
+	Nodes                    []ObservabilityNodeIdentity     `json:"nodes"`
+	ModuleInstances          []ObservabilityModuleIdentity   `json:"module_instances"`
+	EngineDeployments        []ObservabilityEngineIdentity   `json:"engine_deployments"`
 }
 
 // ObservabilityEngineSourceKey is the credential-free deployment source tuple.

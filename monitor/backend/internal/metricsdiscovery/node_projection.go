@@ -183,6 +183,25 @@ func (p *NodeProjector) Project(ctx context.Context, targets []NodeTarget) ([]Ta
 			}
 		}
 	}
+	components := snapshot.InfrastructureComponents
+	if components != nil {
+		if components.Items == nil || len(components.Items) > 2 || (components.State != "available" && components.State != "unavailable") || (components.State == "unavailable" && len(components.Items) != 0) {
+			return nil, ErrIdentityUnavailable
+		}
+		seen := map[string]bool{}
+		for _, component := range components.Items {
+			if component.Validate() != nil || component.StartedAt.After(snapshot.ObservedAt) || seen[component.Kind] {
+				return nil, ErrIdentityUnavailable
+			}
+			seen[component.Kind] = true
+			if component.Metrics.State == "available" {
+				reserved++
+			}
+		}
+		if reserved > p.policy.targetLimit {
+			return nil, ErrBudgetExceeded
+		}
+	}
 	physical := make(map[string]bool)
 	for _, target := range targets {
 		nodeVersion := nodes[target.Subject.NodeID]
@@ -242,6 +261,26 @@ func (p *NodeProjector) Project(ctx context.Context, targets []NodeTarget) ([]Ta
 			"addp_deployment_id": engine.DeploymentID, "addp_database_container_id": engine.Metrics.ContainerID,
 			"addp_database_container_started_at": engine.Metrics.StartedAt.UTC().Format(time.RFC3339Nano),
 		}})
+	}
+	if components != nil {
+		for _, component := range components.Items {
+			if component.Metrics.State != "available" {
+				continue
+			}
+			resolved, err := p.policy.Admit(ctx, component.Metrics.Endpoint)
+			if err != nil {
+				return nil, err
+			}
+			if physical[resolved.Address] {
+				return nil, ErrInvalidTarget
+			}
+			physical[resolved.Address] = true
+			groups = append(groups, TargetGroup{Targets: []string{resolved.Address}, Labels: map[string]string{
+				"__scheme__": "https", "__metrics_path__": "/metrics", "addp_monitor_kind": "cdc_resources", "addp_source": component.Kind,
+				"addp_component_id": component.ID(), "addp_component_container_id": component.ContainerID,
+				"addp_component_container_started_at": component.StartedAt.UTC().Format(time.RFC3339Nano),
+			}})
+		}
 	}
 	if ctx.Err() != nil || snapshot.ObservedAt.Before(p.now().UTC().Add(-Timeout)) {
 		return nil, ErrIdentityUnavailable

@@ -5691,6 +5691,33 @@ definitions:
   models.JSONMap:
     additionalProperties: true
     type: object
+  models.ObservabilityComponentIdentity:
+    properties:
+      container_id:
+        type: string
+      docker_engine_id:
+        type: string
+      kind:
+        type: string
+      metrics:
+        allOf:
+        - $ref: '#/definitions/models.EngineMetricsSource'
+        description: Reuse the fixed private metrics transport shape; this does not
+          declare an engine.
+      project:
+        type: string
+      started_at:
+        type: string
+    type: object
+  models.ObservabilityComponentSnapshot:
+    properties:
+      items:
+        items:
+          $ref: '#/definitions/models.ObservabilityComponentIdentity'
+        type: array
+      state:
+        type: string
+    type: object
   models.ObservabilityEngineIdentity:
     properties:
       deployment_id:
@@ -5723,6 +5750,8 @@ definitions:
         items:
           $ref: '#/definitions/models.ObservabilityEngineIdentity'
         type: array
+      infrastructure_components:
+        $ref: '#/definitions/models.ObservabilityComponentSnapshot'
       module_instances:
         items:
           $ref: '#/definitions/models.ObservabilityModuleIdentity'
@@ -14983,11 +15012,12 @@ paths:
       - system.runtime_registry.read
   /runtime/observability-identities:
     get:
-      description: 固定 Monitor Platform Service Client 读取有界节点、有效实例及已确认平台引擎身份投影，包含私有进程采集声明和无凭据引擎来源键；不含元数据、凭据或租户数据，不供浏览器使用
-        | The fixed Monitor Platform Service Client reads a bounded node, instance
-        and admitted platform engine identity projection including private process
-        metrics declarations and credential-free engine source keys; excludes metadata,
-        credentials and tenant data and is not a browser API
+      description: 固定 Monitor Platform Service Client 读取有界节点、有效实例及已确认平台引擎身份投影，包含私有进程采集声明和无凭据引擎来源键及自动核验的
+        CDC 基础设施组件；不含元数据、凭据或租户数据，不供浏览器使用 | The fixed Monitor Platform Service Client
+        reads a bounded node, instance and admitted platform engine identity projection
+        including private process metrics declarations and credential-free engine
+        source keys and automatically verified CDC infrastructure components; excludes
+        metadata, credentials and tenant data and is not a browser API
       produces:
       - application/json
       responses:
