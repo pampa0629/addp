@@ -63,7 +63,7 @@ test('execution filters query immediately and return to the first page', async (
   await page.locator('.el-pager').getByText('2', { exact: true }).click()
   await expect.poll(() => queries.at(-1)).toEqual({ page: '2', module: '', status: '' })
 
-  await page.getByText('全部模块', { exact: true }).click()
+  await page.getByText('全部执行模块', { exact: true }).click()
   await page.getByRole('option', { name: '系统运维', exact: true }).click()
   await expect.poll(() => queries.at(-1)).toEqual({ page: '1', module: 'system', status: '' })
 

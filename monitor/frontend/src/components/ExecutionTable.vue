@@ -6,14 +6,9 @@
     @row-click="handleRowClick"
   >
     <el-table-column prop="id" :label="t('monitor.table.id')" width="80" />
-    <el-table-column prop="module" :label="t('monitor.table.module')" width="120">
+    <el-table-column prop="module" :label="t('monitor.table.module')" width="140">
       <template #default="{ row }">
         <el-tag size="small">{{ row.module }}</el-tag>
-      </template>
-    </el-table-column>
-    <el-table-column prop="source" :label="t('monitor.table.source')" width="120">
-      <template #default="{ row }">
-        <el-tag size="small" type="info">{{ row.source || '-' }}</el-tag>
       </template>
     </el-table-column>
     <el-table-column prop="task_type" :label="t('monitor.table.task_type')" width="140">
