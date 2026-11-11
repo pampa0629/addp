@@ -226,8 +226,18 @@ func TestIntegrationMySQLProviderFixtureCleanup(t *testing.T) {
 	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
 	defer cancel()
 	for _, name := range names {
+		// This deterministic account belongs to the same manifest-owned fixture.
+		user := "addp_t2_" + strings.TrimPrefix(name, "addp_common_mysql_it_")
+		if _, err := db.ExecContext(ctx, "DROP USER IF EXISTS '"+user+"'@'%'"); err != nil {
+			t.Fatal(err)
+		}
 		if _, err := db.ExecContext(ctx, "DROP DATABASE IF EXISTS "+mysqlDialect().QuoteIdentifier(name)); err != nil {
 			t.Fatal(err)
+		}
+		var users int
+		if err := db.QueryRowContext(ctx, "SELECT COUNT(*) FROM mysql.user WHERE User=? AND Host='%'",
+			user).Scan(&users); err != nil || users != 0 {
+			t.Fatalf("owned MySQL account cleanup not proven: count=%d error=%v", users, err)
 		}
 		var count int
 		if err := db.QueryRowContext(ctx, "SELECT COUNT(*) FROM information_schema.schemata WHERE schema_name=?", name).Scan(&count); err != nil || count != 0 {
