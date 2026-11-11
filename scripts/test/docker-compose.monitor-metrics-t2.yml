@@ -49,7 +49,9 @@ services:
       ENABLE_APICURIO_CONVERTERS: "false"
       ENABLE_OTEL: "false"
       ENABLE_JOLOKIA: "false"
-      KAFKA_OPTS: -javaagent:/kafka/libs/jolokia-jvm-1.7.2.jar=port=8778,host=127.0.0.1
+      KAFKA_OPTS: -javaagent:/kafka/libs/jolokia-jvm-1.7.2.jar=port=8778,host=0.0.0.0,policyLocation=file:/etc/addp/jolokia-access.xml
+    volumes:
+      - ../infra/cdc-jolokia-access.xml:/etc/addp/jolokia-access.xml:ro
     cpus: 1
     mem_limit: 1g
     healthcheck:
@@ -57,6 +59,28 @@ services:
       interval: 2s
       timeout: 3s
       retries: 45
+  cdc-redpanda-source:
+    profiles: [cdc-native]
+    # The fixture uses the already pinned Linux runtime; only the current static source binary runs.
+    image: postgres:15@sha256:74e110c41804365e3915fcc09d5e7a1eff50161aaa94d5da0e58e0cd75ae509c
+    entrypoint: [/cdc-metrics-source]
+    user: "65532:65532"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    cpus: 0.25
+    mem_limit: 64m
+    volumes:
+      - ${METRICS_T2_WORK}/cdc-metrics-source:/cdc-metrics-source:ro
+      - ${METRICS_T2_WORK}/cdc-redpanda-source:/source:ro
+    ports: ["127.0.0.1::9443"]
+  cdc-connect-source:
+    profiles: [cdc-native]
+    extends:
+      file: docker-compose.monitor-metrics-t2.yml
+      service: cdc-redpanda-source
+    volumes:
+      - ${METRICS_T2_WORK}/cdc-connect-source:/source:ro
   postgres-metrics:
     extends:
       file: ../infra/postgres-metrics.yml

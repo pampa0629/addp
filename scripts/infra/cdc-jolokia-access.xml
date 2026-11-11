@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- No globally permitted command. Only these read-only attributes are exposed. -->
+<restrict>
+  <http><method>post</method></http>
+  <commands/>
+  <allow>
+    <mbean>
+      <name>kafka.connect:type=connector-task-metrics,connector=*,task=*</name>
+      <attribute mode="read">offset-commit-failure-percentage</attribute>
+    </mbean>
+    <mbean>
+      <name>debezium.postgres:type=connector-metrics,context=streaming,server=*</name>
+      <attribute mode="read">Connected</attribute>
+      <attribute mode="read">MilliSecondsBehindSource</attribute>
+    </mbean>
+  </allow>
+</restrict>

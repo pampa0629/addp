@@ -159,6 +159,10 @@ CDC 基础设施组件首期覆盖当前标准 Infra Compose 项目的 `redpanda
 
 两个组件的部署缺失、来源未启用或核验失败分别处理。容器重建后原来源失效，只有当前容器及来源重新匹配后才采集。空 Connector 或消费组清单是独立的运行事实，缺样不填零，组件汇总不用于推算单个任务的端到端延迟。采集仅发布固定指标与有界标签，发现和指标均不携带连接凭据、Connector 配置、事件正文或异常原文。当前个人部署已有 34 个目标，启用两个新目标前在隔离环境验证至少 36 个目标的并存采集、超额和恢复。
 
+CDC 固定来源复用 `sourceserver` 的单次完整投影和私有 mTLS `/metrics`，不提供任意地址或 JMX 查询入口。Redpanda 只读取 `/public_metrics`，聚合磁盘与不可用分区；消费组积压只在每个已提交分区都有对应末端 offset 时发布，空消费组只发布分区数为零，不伪造积压值。Kafka Connect 只读取 `/connectors?expand=status` 和两个固定 JMX 属性集合：Task 的 offset 提交失败比例，以及 Debezium PostgreSQL streaming 的连接状态、源端延迟。只输出固定状态计数和最大值，不输出 Connector、Topic、Group 或 MBean 名称。源端延迟为 Debezium 的毫秒值换算秒，offset 失败比例为原生 0～1 比例，均不能解释成整条链路延迟或失败率。
+
+Jolokia 必须使用属性级只读白名单，禁止 write、exec、list、search 和其他属性；不发布宿主机原生 JMX 端口。每次采集共享 4 秒截止时间，单次上游响应最多 1 MiB，Redpanda 最多 4096 个样本、Connect 最多 256 个 Connector / 1024 个 Task。超限、协议异常或必需读取失败时整个组件返回采集失败，不保留上次样本。空集合允许成功；Jolokia 对没有匹配 MBean 返回的 `404 + javax.management.InstanceNotFoundException` 表示空集合，其他 404 和权限拒绝仍为失败。尚未出现的 streaming / offset 属性不生成零值，Debezium 的延迟 `-1` 表示尚无事件或指标已重置，不生成延迟值；同时发布有延迟样本的 Connector 数，其余负值保留以反映时钟偏差。新增来源的 T1 与真实组件 T2 沿既有 Monitor 门禁执行；它们通过不等同于统一发现、36 目标并存或页面验收通过。[Jolokia 属性级权限](https://jolokia.org/reference/html/manual/security.html)
+
 ### 4.6 PostgreSQL 数据库侧汇总读取边界
 
 Infra 与平台自管 Business 的 PostgreSQL 分别由部署 owner 通过唯一来源生命周期安装版本化的 `scripts/infra/postgres-observation/000003_replication_slots.sql`，不进入 System IAM 迁移；前两版保留为不可变历史。支持 PostgreSQL 15 数据库侧读取及可选来源部署；专业来源发现、Monitor 授权查询与页面沿本文同一观测链实现。数据库侧验证只证明其读取边界，不能替代专业查询与页面的正式身份 T4。

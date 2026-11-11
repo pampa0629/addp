@@ -1637,6 +1637,10 @@ test-common-redis: ## 独占 Redis 验证 Common、System、Meta、Manager 键�
 test-monitor-metrics: ## 隔离验证 Prometheus mTLS、真实采样、限额、故障恢复和持久化
 	@python3 scripts/test/metrics-http-budget.py bash scripts/test/monitor-metrics-gate.sh $(MONITOR_METRICS_TEST_ARGS)
 
+.PHONY: test-monitor-cdc-source-unit
+test-monitor-cdc-source-unit: ## CDC 固定指标、缺样语义和有界读取 T1
+	@cd monitor/backend && GOWORK=off go test ./internal/cdcsource ./cmd/cdc-metrics-source ./internal/sourceserver -count=1
+
 .PHONY: test-monitor-metrics-config
 test-monitor-metrics-config: test-metrics-sources ## 验证指标配置与服务部署意图 T1，不启动服务或实源
 	@python3 -m unittest scripts/test/metrics-deployment-config_test.py

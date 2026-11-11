@@ -8,6 +8,7 @@ import os
 import re
 import ssl
 import socket
+import shutil
 import subprocess
 import time
 import urllib.error
@@ -73,6 +74,64 @@ def check_native_cdc():
 
     assert pg('SELECT current_database();') == 'addp_test'
     assert connect('/connectors') == [], 'owned fixture must start empty'
+    # Test the deployable fixed reader through its mTLS boundary, not a second metric implementation.
+    for service, kind, component in (('cdc-redpanda-source', 'redpanda', 'cdc-broker'),
+                                     ('cdc-connect-source', 'kafka-connect', 'cdc-connect')):
+        cid = compose('ps', '-q', component)
+        facts = json.loads(subprocess.check_output(['docker', 'inspect', '--format', '{{json .NetworkSettings.Networks}}', cid], text=True))
+        assert len(facts) == 1
+        address = next(iter(facts.values()))['IPAddress']
+        assert ipaddress.ip_address(address).is_private
+        directory = WORK / service
+        directory.mkdir(mode=0o755)
+        (directory / 'config.json').write_text(json.dumps({'kind': kind, 'address': address}))
+        for origin, target in ((WORK/'source-server.crt', 'server.crt'), (WORK/'source-server.key', 'server.key'),
+                               (WORK/'deployment/source-ca.crt', 'ca.crt')):
+            shutil.copyfile(origin, directory/target)
+            (directory/target).chmod(0o644)
+    compose('up', '-d', 'cdc-redpanda-source', 'cdc-connect-source')
+    source_context = ssl.create_default_context(cafile=str(WORK/'deployment/source-ca.crt'))
+    source_context.load_cert_chain(str(WORK/'collector.crt'), str(WORK/'collector.key'))
+    source_urls = {name: 'https://' + compose('port', name, '9443') for name in ('cdc-redpanda-source', 'cdc-connect-source')}
+
+    def source(service, *, path='/metrics'):
+        try:
+            with urllib.request.urlopen(source_urls[service]+path, context=source_context, timeout=6) as response:
+                body = response.read(256*1024+1).decode()
+                assert len(body.encode()) <= 256*1024
+                assert not any(value in body for value in ('cdc-fixture', 'cdc_source', 'database.password', 'traceback', 'jdbc:'))
+                return dict(line.rsplit(' ', 1) for line in body.splitlines())
+        except urllib.error.HTTPError as error:
+            assert error.read().decode().strip() in ('Metrics source unavailable', 'Metrics request rejected')
+            return error.code
+        except urllib.error.URLError:
+            return None
+
+    empty = wait(lambda: value if isinstance(value := source('cdc-connect-source'), dict) else None, 'empty Connect source')
+    assert empty['addp_cdc_connect_connectors'] == '0' and empty['addp_cdc_connect_tasks'] == '0'
+    assert 'addp_cdc_connect_source_delay_max_seconds' not in empty
+    assert 'addp_cdc_connect_offset_commit_failure_ratio_max' not in empty
+    empty_broker = wait(lambda: value if isinstance(value := source('cdc-redpanda-source'), dict) else None, 'empty broker source')
+    assert empty_broker['addp_cdc_redpanda_consumer_group_partitions'] == '0'
+    assert 'addp_cdc_redpanda_consumer_group_pending_records' not in empty_broker
+    assert source('cdc-connect-source', path='/metrics?target=other') == 404
+    wrong_client = ssl.create_default_context(cafile=str(WORK/'deployment/source-ca.crt'))
+    wrong_client.load_cert_chain(str(TLS/'health.crt'), str(TLS/'health.key'))
+    for ctx in (ssl.create_default_context(cafile=str(WORK/'deployment/source-ca.crt')), wrong_client):
+        try:
+            urllib.request.urlopen(source_urls['cdc-connect-source']+'/metrics', context=ctx, timeout=5)
+        except (urllib.error.URLError, ssl.SSLError):
+            pass
+        else:
+            raise AssertionError('CDC source accepted a client without mTLS identity')
+
+    for request in ({'type': 'read', 'mbean': 'java.lang:type=Runtime', 'attribute': 'SystemProperties'},
+                    {'type': 'write', 'mbean': 'java.lang:type=Memory', 'attribute': 'Verbose', 'value': True},
+                    {'type': 'exec', 'mbean': 'java.lang:type=Memory', 'operation': 'gc'},
+                    {'type': 'list'}, {'type': 'search', 'mbean': '*:*'}):
+        denied = json.loads(run('cdc-connect', 'curl', '-sS', '--max-time', '5', '-H', 'Content-Type: application/json',
+                                '--data-binary', '@-', 'http://127.0.0.1:8778/jolokia/', data=json.dumps(request)))
+        assert denied['status'] == 403 and 'value' not in denied, 'JMX whitelist did not reject request'
     pg('CREATE TABLE cdc_fixture (id integer PRIMARY KEY);')
     topic = 'cdc_source.public.cdc_fixture'
     kafka('topic', 'create', topic, '-p', '1', '-r', '1')
@@ -100,16 +159,15 @@ def check_native_cdc():
     register('cdc-fixture', 'cdc_source')
     wait(lambda: task('cdc-fixture', 'RUNNING'), 'running connector task')
     stream = 'debezium.postgres:type=connector-metrics,context=streaming,server=cdc_source'
-    fields = ['Connected', 'MilliSecondsBehindSource', 'TotalNumberOfCreateEventsSeen']
+    fields = ['Connected', 'MilliSecondsBehindSource']
     wait(lambda: (mbean(stream, fields) or {}).get('Connected') is True, 'streaming MBean and database connection')
     pg('INSERT INTO cdc_fixture VALUES (1);')
-    sample = wait(lambda: (value if (value := mbean(stream, fields)) and value.get('TotalNumberOfCreateEventsSeen', 0) >= 1 else None),
-                  'streaming metrics after a real WAL event')
-    assert type(sample.get('MilliSecondsBehindSource')) is int and sample['MilliSecondsBehindSource'] >= 0
     task_metrics = mbean('kafka.connect:type=connector-task-metrics,connector=cdc-fixture,task=0',
-                         ['status', 'offset-commit-failure-percentage'])
-    assert task_metrics and task_metrics['status'] == 'running'
-    assert 0 <= task_metrics['offset-commit-failure-percentage'] <= 100
+                         ['offset-commit-failure-percentage'])
+    assert task_metrics and 0 <= task_metrics['offset-commit-failure-percentage'] <= 1
+    active = source('cdc-connect-source')
+    assert isinstance(active, dict) and active['addp_cdc_connect_streaming_connected'] == '1'
+    assert active['addp_cdc_connect_task_states{state="RUNNING"}'] == '1'
 
     group = 'cdc-metrics-observer'
 
@@ -138,14 +196,22 @@ def check_native_cdc():
         return end is not None and committed is not None and end - committed == expected
 
     assert consume() == '0', 'first CDC record offset differs'
+    sample = mbean(stream, fields)
+    assert type(sample.get('MilliSecondsBehindSource')) is int and sample['MilliSecondsBehindSource'] >= 0
+    delayed = source('cdc-connect-source')
+    assert isinstance(delayed, dict) and delayed['addp_cdc_connect_source_delay_connectors'] == '1'
+    assert float(delayed['addp_cdc_connect_source_delay_max_seconds']) == sample['MilliSecondsBehindSource'] / 1000
     wait(lambda: lag_is(0), 'first consumer offset commit')
     wait(lambda: metric_lag_is(0), 'native public metrics show no pending record after first commit', seconds=25)
+    assert source('cdc-redpanda-source')['addp_cdc_redpanda_consumer_group_pending_records'] == '0'
     pg('INSERT INTO cdc_fixture VALUES (2);')
     wait(lambda: lag_is(1), 'second WAL event creates one pending broker record')
     wait(lambda: metric_lag_is(1), 'native public metrics show one pending record', seconds=25)
+    assert source('cdc-redpanda-source')['addp_cdc_redpanda_consumer_group_pending_records'] == '1'
     assert consume() == '1', 'second CDC record offset differs'
     wait(lambda: lag_is(0), 'consumption clears broker lag')
     wait(lambda: metric_lag_is(0), 'native public metrics clear the lag after consumption', seconds=25)
+    assert source('cdc-redpanda-source')['addp_cdc_redpanda_consumer_group_pending_records'] == '0'
     metrics = broker_metrics()
     assert len(metrics.encode()) < 1024**2
     for name in ('redpanda_storage_disk_total_bytes', 'redpanda_storage_disk_free_bytes', 'redpanda_cluster_unavailable_partitions'):
@@ -154,7 +220,15 @@ def check_native_cdc():
     register('cdc-failure', 'cdc_failure', fail=True)
     wait(lambda: task('cdc-failure', 'FAILED'), 'connector task failure on invalid event transform')
     assert task('cdc-fixture', 'RUNNING'), 'other fixture task changed state'
-    print('CDC native T2: Debezium connected/event/lag attributes, Connect offset and failed task, Redpanda disk/partitions and lag 0→1→0 passed', flush=True)
+    failed = source('cdc-connect-source')
+    assert isinstance(failed, dict) and failed['addp_cdc_connect_task_states{state="FAILED"}'] == '1'
+    assert failed['addp_cdc_connect_task_states{state="RUNNING"}'] == '1'
+    compose('stop', 'cdc-connect')
+    assert source('cdc-connect-source') == 503, 'upstream failure was masked by stale samples'
+    assert isinstance(source('cdc-redpanda-source'), dict), 'Connect outage affected broker source'
+    compose('start', 'cdc-connect')
+    wait(lambda: isinstance(source('cdc-connect-source'), dict), 'Connect source recovers after upstream returns', seconds=90)
+    print('CDC T2: fixed mTLS sources, JMX read whitelist, empty/missing distinctions, failed task, lag 0→1→0 and independent outage/recovery passed', flush=True)
 
 
 if os.environ.get('ADDP_METRICS_T2_CASE') == 'cdc-native':
