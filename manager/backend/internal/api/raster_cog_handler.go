@@ -31,6 +31,7 @@ func (h *RasterCOGHandler) SetSourceService(s *service.RasterCOGTaskService) { h
 // GetRasterCOGContent 返回 Manager 栅格快显 COG 内容。
 // @Summary 读取栅格快显 COG | Read raster COG quick view result
 // @Description 按 raster COG id 返回 Manager infra MinIO 中的 COG 内容，支持 HTTP Range。该接口只读取 Manager 拥有生命周期且状态为 ready 的 raster COG。 | Return COG content from Manager infra MinIO by raster COG id with HTTP Range support. Only ready Manager-owned raster COG results are readable.
+// @Description TIFF／ENVI 派生成果须再次核对当前人员完整源读取权、Meta 正式组成及内容版本；版本改变或授权失效时拒绝读取旧 COG。 | TIFF/ENVI derived results recheck the current Human source read rights, formal Meta composition and content versions; changed versions or expired authorization deny reads of the previous COG.
 // @Tags Manager
 // @Produce octet-stream
 // @Param id path int true "raster COG ID"

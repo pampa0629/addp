@@ -139,6 +139,14 @@ Kafka topic 第一版 basic scan 只保存 item identity，`attributes.item.data
 
 `attributes.type_info.file` 不存在，也不得新增。文件、对象和目录是 Engine Catalog / storage 形态，不是 data type 主事实；对应路径、名称、大小、MIME、etag、hash、last_modified 等事实只能写入 `attributes.storage`，或进入 `EngineCatalogEntry` / Meta item 的标准字段。无法识别内容语义时，`attributes.item.data_type` 必须为 `unknown`。
 
+### TIFF 组件内容版本
+
+TIFF 的深度扫描在 `storage.content_versions` 保存当前 DataItem 的完整组件内容版本。数组按精确 `path` 升序排列，每项为 `{path, size_bytes, sha256}`，`sha256` 是该组件原字节的 64 位小写十六进制 SHA-256。单文件 TIFF 记录主文件一项，多文件 TIFF 记录 Meta 已提交的主文件和全部 `item.refs`，路径集合必须精确相等。扫描只读取正式组件，不重新枚举目录寻找依赖。PAM 仍保留扫描所得的可选角色，但已登记的文件缺失时本次深扫失败，不提交部分版本。
+
+`item.refs` 表达组成，`storage.content_versions` 表达这些组件在本次深扫中的内容版本。内容变化不改写 DataItem 稳定指纹，也不把内容版本当成授权回执。TIFF 使用这一版本数组，删除同一 TIFF 上旧的 `storage.content_hash/content_hash_algorithm`，消费者缺少完整版本时要求深度刷新，不读取旧字段兜底。basic 扫描不计算内容哈希；组成变化时不得保留与新路径集合不一致的版本数组。其他格式的既有哈希契约保持各自规则。
+
+Manager 的 TIFF COG 执行配置冻结这组组件版本，并纳入既有配置摘要。实际读取逐组件核对原字节大小和哈希，COG 元数据记录同一版本组。读取既有 COG 时，必须核对当前 Meta 已提交的完整版本组，并取得当前源授权，版本变化后要求重新生成。源实际字节与扫描版本的核对由生成时的源读取完成。能力判断、源版本和当前授权分别核验，不能由其中一项推定其他项成立。
+
 ## 写入规则
 
 1. `meta` 在落库前通过统一 normalizer 生成 attributes，并对平台核心字段拥有最终裁决权。

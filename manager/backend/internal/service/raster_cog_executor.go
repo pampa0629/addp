@@ -10,7 +10,6 @@ import (
 	"time"
 
 	commonClient "github.com/addp/common/client"
-	"github.com/addp/common/dataitem"
 	"github.com/addp/common/dbbridge"
 	"github.com/addp/common/engine/plugins/objectstore"
 	"github.com/addp/common/engine/workflowaccess"
@@ -68,9 +67,13 @@ func NewManagerRasterCOGExecutor(
 }
 
 func (e *ManagerRasterCOGExecutor) BuildRasterCOG(ctx context.Context, req RasterCOGExecutionRequest) (*RasterCOGExecutionResult, error) {
-	if req.Config.Raster.SourceFormat == "envi" {
+	if req.Config.Raster.SourceFormat == "envi" || req.Config.Raster.SourceFormat == "tiff" {
+		withSource := e.withENVISource
+		if req.Config.Raster.SourceFormat == "tiff" {
+			withSource = e.withTIFFSource
+		}
 		var result *RasterCOGExecutionResult
-		err := e.withENVISource(ctx, req, func(ctx context.Context, source workflowaccess.Source) error {
+		err := withSource(ctx, req, func(ctx context.Context, source workflowaccess.Source) error {
 			var err error
 			result, err = e.buildRasterCOG(ctx, req, &source)
 			return err
@@ -239,7 +242,7 @@ func (e *ManagerRasterCOGExecutor) prepareAccessPlanForSource(ctx context.Contex
 		return workflowaccess.Plan{}, nil, errors.New("raster COG source_format must be tiff, img, jpeg2000 or envi")
 	}
 	var source workflowaccess.Source
-	if req.Config.Raster.SourceFormat == "envi" {
+	if req.Config.Raster.SourceFormat == "envi" || req.Config.Raster.SourceFormat == "tiff" {
 		if prepared == nil || req.SourceAuthorization == nil || req.SourceAuthorization.validateConfig(req.Config) != nil {
 			return workflowaccess.Plan{}, nil, ErrFileSourceAuthorizationRequired
 		}
@@ -251,12 +254,6 @@ func (e *ManagerRasterCOGExecutor) prepareAccessPlanForSource(ctx context.Contex
 		source, err = workflowaccess.ResolveSource(workflowaccess.ResourceSpec{Engine: engine, Locator: locator, Kind: workflowaccess.KindFile, Format: req.Config.Raster.SourceFormat})
 		if err != nil {
 			return workflowaccess.Plan{}, nil, err
-		}
-		if req.Config.Raster.SourceFormat == "tiff" && req.Config.sourceItem != nil {
-			source, err = dataitem.WithTIFFPAM(source, locator, req.Config.sourceItem)
-			if err != nil {
-				return workflowaccess.Plan{}, nil, err
-			}
 		}
 	}
 	bucket, objectName, err := rastercogref.ObjectLocation(req.Config.Result.StorageRef, e.defaultBucket)

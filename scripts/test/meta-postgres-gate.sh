@@ -79,7 +79,7 @@ if [ "$test_group" != file-composition ]; then
 fi
 if [ "$test_group" = all ]; then
     go test ./internal/scanadapter -run '^(TestPrecise(Catalog|NativePostgres)ScanAgainstPostgres|TestPreciseContentStorageFactsAgainstPostgres)$' -count=1 -v 2>&1 | tee -a "$WORK_DIR/meta.log"
-    go test ./internal/scanprocessor -run '^(TestDelimitedEncodingRefreshAgainstPostgres|TestDelimitedSourceVersionRefreshAgainstPostgres|TestBasicRediscoveryPreservesDeepJSONTableSemanticsAgainstPostgres)$' -count=1 -v 2>&1 | tee -a "$WORK_DIR/meta.log"
+    go test ./internal/scanprocessor -run '^(TestDelimitedEncodingRefreshAgainstPostgres|TestDelimitedSourceVersionRefreshAgainstPostgres|TestBasicRediscoveryPreservesDeepJSONTableSemanticsAgainstPostgres|TestTIFFContentVersionsRefreshAgainstPostgres)$' -count=1 -v 2>&1 | tee -a "$WORK_DIR/meta.log"
 fi
 if [ "$test_group" = all ] || [ "$test_group" = file-composition ]; then
     go test ./internal/scanruntime -run '^(TestObjectModelRelatedRefsAgainstPostgres|TestFTPBasicCompositionAgainstPostgres)$' -count=1 -v 2>&1 | tee -a "$WORK_DIR/meta.log"
@@ -112,7 +112,7 @@ else
     done
 fi
 if [ "$test_group" = all ]; then
-    for required_test in TestAuthorizationBasisStartupMigrationAgainstPostgres TestCleanupRuntimeAtomicityAgainstPostgres TestLineageGraphPerformanceAgainstPostgres; do
+    for required_test in TestAuthorizationBasisStartupMigrationAgainstPostgres TestCleanupRuntimeAtomicityAgainstPostgres TestLineageGraphPerformanceAgainstPostgres TestTIFFContentVersionsRefreshAgainstPostgres; do
         grep -Eq -- "^--- PASS: $required_test \\(" "$WORK_DIR/meta.log" || {
             echo "Meta PostgreSQL gate requires the real $required_test test" >&2
             exit 1

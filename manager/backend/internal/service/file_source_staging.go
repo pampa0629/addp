@@ -94,16 +94,20 @@ func (e *fileSourceStager) withSource(
 		return err
 	}
 	source := workflowaccess.Source{Kind: sourceKind, Format: sourceFormat, Entrypoint: entrypoint, Access: access}
-	if sourceFormat == "envi" {
+	if sourceFormat == "envi" || sourceFormat == "tiff" {
 		if e.taskType != commonExecution.TaskTypeRasterCOGGeneration {
-			return errors.New("ENVI input requires the raster COG purpose")
+			return errors.New("raster input requires the raster COG purpose")
 		}
 		source.Entrypoint = ""
 		for _, file := range files {
 			if file.RelativePath != entrypoint {
 				header := access
 				header.Object = prefix + "/" + file.RelativePath
-				source.RelatedFiles = []workflowaccess.RelatedFile{{Role: "header", Access: header}}
+				role := "header"
+				if sourceFormat == "tiff" {
+					role = "auxiliary_metadata"
+				}
+				source.RelatedFiles = []workflowaccess.RelatedFile{{Role: role, Access: header}}
 			}
 		}
 	} else if e.taskType != commonExecution.TaskTypeModel3DGLBGeneration {
@@ -189,8 +193,15 @@ func validateFileStagingFiles(lease commonExecution.Lease, sourceFormat, sourceK
 	if sourceKind != workflowaccess.KindFile && sourceKind != workflowaccess.KindDirectory {
 		return errors.New("model input kind must be file or directory")
 	}
-	if sourceKind == workflowaccess.KindFile && ((sourceFormat != "envi" && len(files) != 1) || (sourceFormat == "envi" && len(files) != 2) || entrypoint != path.Base(entrypoint)) {
+	if sourceKind == workflowaccess.KindFile && ((sourceFormat != "envi" && sourceFormat != "tiff" && len(files) != 1) || (sourceFormat == "tiff" && len(files) > 2) || (sourceFormat == "envi" && len(files) != 2) || entrypoint != path.Base(entrypoint)) {
 		return errors.New("single model input must contain only its entrypoint")
+	}
+	if sourceFormat == "tiff" {
+		for _, file := range files {
+			if sourceKind != workflowaccess.KindFile || (file.RelativePath != entrypoint && file.RelativePath != entrypoint+".aux.xml") {
+				return errors.New("TIFF staging requires its exact same-name PAM")
+			}
+		}
 	}
 	if sourceFormat == "envi" {
 		headers := 0

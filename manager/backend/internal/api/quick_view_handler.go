@@ -224,6 +224,7 @@ func (h *QuickViewHandler) GetQuickViewCapabilityByLocator(c *gin.Context) {
 // @Summary 执行 locator 快显动作 | Execute locator quick view action
 // @Description 前端提交 Resource Locator、后端 capability 返回的 action，以及可选的 MAX 源单位 source_unit（缺省米）和外部贴图声明 texture_files。后端基于同一份快显能力事实创建并执行对应任务，支持生成矢量瓦片缓存、栅格 COG、三维模型 GLB、3D Tiles、S3M、3DGS KSplat、点云 COPC 和 PPTX 静态 PDF 快显。 | Execute a backend-declared quick view action by Resource Locator; optional MAX source_unit defaults to metres and texture_files declares external images. The backend creates and executes the corresponding task from capability facts, including PPTX static PDF generation.
 // @Description FTP／NFS／MinIO 的 IFC／3DS／DAE／OBJ 生成还须由 System 按当前 User 核验 manager.data_item.read 和精确文件组成；失败不可领取，不借用机器或创建人来源。 | FTP/NFS/MinIO IFC/3DS/DAE/OBJ generation additionally requires System to verify current User manager.data_item.read and the exact file composition; failed authorization cannot be claimed or replaced with machine/creator identity.
+// @Description TIFF／ENVI 的 COG 生成为当前人员发起的手工执行；TIFF 须具备 Meta 深扫的完整组件版本，并按 Meta 正式组成与当前读取权签发执行授权。 | TIFF/ENVI COG generation requires a manual execution initiated by the current Human. TIFF requires complete component versions from a Meta deep scan; execution authorization binds the formal Meta composition and current source read rights.
 // @Description GLB 来源组成不完整返回409与error_code=source_composition_incomplete，提示重新扫描目录；源读取授权未通过返回403与error_code=source_authorization_required。error为按请求语言翻译的安全提示，不返回内部授权或转换错误。 | Incomplete GLB source composition returns 409 with error_code=source_composition_incomplete and requires a directory rescan; failed source read authorization returns 403 with error_code=source_authorization_required. The error text is localized and excludes internal authorization or conversion details.
 // @Tags Manager
 // @Accept json
@@ -1296,6 +1297,9 @@ func rasterCOGTaskConfigFromQuickView(capability *service.QuickViewCapability, s
 	if raster.Format == "envi" {
 		rasterMap["header_sha256"] = raster.HeaderSHA256
 		rasterMap["raster_sha256"] = raster.RasterSHA256
+	}
+	if raster.Format == "tiff" {
+		rasterMap["content_versions"] = raster.ContentVersions
 	}
 	if raster.SourceSRID > 0 {
 		rasterMap["source_srid"] = raster.SourceSRID

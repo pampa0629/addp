@@ -13,6 +13,7 @@ import (
 
 	commonapi "github.com/addp/common/api"
 	commonClient "github.com/addp/common/client"
+	"github.com/addp/common/dataitem"
 	"github.com/addp/common/datatype"
 	"github.com/addp/common/dbbridge"
 	commonExecution "github.com/addp/common/execution"
@@ -213,6 +214,8 @@ type QuickViewSource struct {
 }
 
 type RasterQuickViewSource struct {
+	ContentVersions     []dataitem.ContentVersion
+	Layout              string
 	HeaderSHA256        string
 	RasterSHA256        string
 	Format              string
@@ -1911,6 +1914,9 @@ func rasterCOGFactsMatch(result *models.RasterCOG, identity QuickViewIdentity, r
 			return false
 		}
 	}
+	if raster.Format == "tiff" && !tiffRasterCOGVersionMatches(result, raster.ContentVersions) {
+		return false
+	}
 	if raster.Width > 0 && result.Width > 0 && raster.Width != result.Width {
 		return false
 	}
@@ -2691,7 +2697,7 @@ func rasterUnavailableReason(raster *RasterQuickViewSource, maxBytes, maxPixels 
 	if raster.SourceSRID <= 0 && strings.TrimSpace(raster.SourceCRS) == "" {
 		return RasterUnavailableReasonMissingCRS
 	}
-	if raster.Format == "img" || raster.Format == "jpeg2000" || raster.Format == "envi" {
+	if raster.Format == "img" || raster.Format == "jpeg2000" || raster.Format == "envi" || (raster.Format == "tiff" && raster.Layout == "multi") {
 		return RasterUnavailableReasonRequiresCOGGeneration
 	}
 	if strings.TrimSpace(raster.PreviewURL) == "" {
@@ -3034,6 +3040,7 @@ func RasterQuickViewSourceFromAttributes(attrs map[string]interface{}, locator s
 	}
 	raster := &RasterQuickViewSource{
 		Format:              sourceFormat,
+		Layout:              commonJSON.String(attrs, "item", "layout"),
 		HeaderSHA256:        commonJSON.String(attrs, "format_info.envi", "header_sha256"),
 		RasterSHA256:        commonJSON.String(attrs, "format_info.envi", "raster_sha256"),
 		Profile:             strings.TrimSpace(commonJSON.InterfaceString(tiffInfo["profile"])),
@@ -3057,6 +3064,9 @@ func RasterQuickViewSourceFromAttributes(attrs map[string]interface{}, locator s
 		DisplayRangeMethod:  strings.TrimSpace(commonJSON.InterfaceString(tiffInfo["display_range_method"])),
 		ClientReadMode:      "full_file",
 		ClientRenderLibrary: "geotiff.js",
+	}
+	if sourceFormat == "tiff" {
+		raster.ContentVersions, _ = dataitem.TIFFContentVersionsFromAttributes(attrs)
 	}
 	if raster.ExtentSRID == 0 {
 		raster.ExtentSRID = raster.SourceSRID

@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	commonClient "github.com/addp/common/client"
+	"github.com/addp/common/dataitem"
 	commonExecution "github.com/addp/common/execution"
 	commonjson "github.com/addp/common/jsonmap"
 	"github.com/addp/manager/internal/engineaccess"
@@ -22,8 +23,17 @@ func enviRasterCOGVersionMatches(result *models.RasterCOG, raster *RasterQuickVi
 	return commonjson.String(result.Metadata, "source_version", "header_sha256") == raster.HeaderSHA256 && commonjson.String(result.Metadata, "source_version", "raster_sha256") == raster.RasterSHA256
 }
 
-// COG bytes are a derived copy, not an independent permission grant. ENVI
-// results bind the generated pair and version to the current Human decision.
+func tiffRasterCOGVersionMatches(result *models.RasterCOG, versions []dataitem.ContentVersion) bool {
+	if result == nil || len(versions) == 0 {
+		return false
+	}
+	raw, err := json.Marshal(commonjson.Section(result.Metadata, "source_version")["content_versions"])
+	var frozen []dataitem.ContentVersion
+	return err == nil && json.Unmarshal(raw, &frozen) == nil && reflect.DeepEqual(frozen, versions)
+}
+
+// Derived COG bytes retain the source's complete composition, content version
+// and current Human authorization requirements.
 func (s *RasterCOGTaskService) CheckResultRead(ctx context.Context, result *models.RasterCOG, credential string, human bool) error {
 	if s == nil || result == nil {
 		return engineaccess.ErrUnavailable
@@ -46,9 +56,12 @@ func (s *RasterCOGTaskService) CheckResultRead(ctx context.Context, result *mode
 	if item == nil {
 		return engineaccess.ErrUnavailable
 	}
+	if item.TenantID != result.TenantID || item.EngineID != result.SourceEngineID || item.FullName != locator.FullName() || item.Fingerprint != result.ItemFingerprint || (itemID != 0 && item.ID != itemID) {
+		return ErrFileSourceAuthorizationRequired
+	}
 	actual := commonjson.String(item.Attributes, "item", "format")
 	_, hasScope := result.Metadata["file_source_scope"]
-	if actual != "envi" {
+	if actual != "envi" && actual != "tiff" {
 		if hasScope {
 			return ErrFileSourceAuthorizationRequired
 		}
@@ -62,13 +75,24 @@ func (s *RasterCOGTaskService) CheckResultRead(ctx context.Context, result *mode
 	if err != nil || json.Unmarshal(raw, &scope) != nil || scope.Purpose() != commonExecution.TaskTypeRasterCOGGeneration {
 		return ErrFileSourceAuthorizationRequired
 	}
-	composition, err := enviCompositionFromMeta(result.TenantID, result.SourceEngineID, itemID, result.ItemFingerprint, result.Locator, item)
-	if err != nil || !reflect.DeepEqual(composition, &scope.FileComposition) {
+	cfg := RasterCOGExecutionConfig{Target: RasterCOGTargetConfig{SourceEngineID: result.SourceEngineID, ItemID: itemID, ItemFingerprint: result.ItemFingerprint, Locator: result.Locator}, Raster: RasterCOGRasterConfig{SourceFormat: actual}}
+	composition, err := s.rasterCompositionFromMeta(ctx, result.TenantID, cfg, item)
+	if err != nil {
+		return err
+	}
+	if !reflect.DeepEqual(composition, &scope.FileComposition) {
 		return ErrFileSourceAuthorizationRequired
 	}
-	header, raster, err := enviRasterVersion(item)
-	if err != nil || !enviRasterCOGVersionMatches(result, &RasterQuickViewSource{HeaderSHA256: header, RasterSHA256: raster}) {
-		return ErrFileSourceAuthorizationRequired
+	if actual == "tiff" {
+		versions, err := dataitem.TIFFContentVersionsFromAttributes(item.Attributes)
+		if err != nil || !tiffRasterCOGVersionMatches(result, versions) {
+			return ErrFileSourceAuthorizationRequired
+		}
+	} else {
+		header, raster, err := enviRasterVersion(item)
+		if err != nil || !enviRasterCOGVersionMatches(result, &RasterQuickViewSource{HeaderSHA256: header, RasterSHA256: raster}) {
+			return ErrFileSourceAuthorizationRequired
+		}
 	}
 	if s.sourceConsumer == nil || s.sourceEngines == nil {
 		return engineaccess.ErrUnavailable

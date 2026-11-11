@@ -5,11 +5,9 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
-	"errors"
 	"hash"
 	"io"
 	"path"
-	"reflect"
 
 	"github.com/addp/common/dataitem/authorizationfacts"
 	"github.com/addp/common/engine/plugin"
@@ -17,7 +15,6 @@ import (
 	commonExecution "github.com/addp/common/execution"
 	"github.com/addp/common/format/plugins/envi"
 	commonModels "github.com/addp/common/models"
-	"github.com/addp/manager/internal/engineaccess"
 )
 
 func (e *ManagerRasterCOGExecutor) withENVISource(ctx context.Context, req RasterCOGExecutionRequest, consume func(context.Context, workflowaccess.Source) error) error {
@@ -40,74 +37,17 @@ func (e *ManagerRasterCOGExecutor) withENVISource(ctx context.Context, req Raste
 			header = ref.Target
 		}
 	}
-	engine, err := auth.BeforeSourceRead(ctx, primary)
+	reader, err := newRasterSourceReader(ctx, auth, req.Task.TenantID, req.Config.Target.SourceEngineID)
 	if err != nil {
 		return err
 	}
-	if !commonExecution.ManagerFileSourceComposition(engine.EngineType, composition) || engine.ID != req.Config.Target.SourceEngineID {
-		return ErrFileSourceAuthorizationRequired
-	}
-	registered, err := plugin.Get(engine.EngineType)
-	if err != nil {
-		return err
-	}
-	facts, ok := registered.(plugin.EngineCatalogFactsProvider)
-	if !ok {
-		return ErrFileSourceAuthorizationUnavailable
-	}
-	readable, ok := registered.(plugin.ContentReadableProvider)
-	if !ok {
-		return ErrFileSourceAuthorizationUnavailable
-	}
-	current := func(ctx context.Context, target plugin.EngineCatalogPath) (plugin.ConnectionInfo, error) {
-		value, err := auth.BeforeSourceRead(ctx, target)
-		if err != nil {
-			return nil, err
-		}
-		if value == nil || value.ID != engine.ID || value.EngineType != engine.EngineType || value.TenantID == nil || *value.TenantID != req.Task.TenantID || engineaccess.EnsureAvailable(value) != nil {
-			return nil, ErrFileSourceAuthorizationRequired
-		}
-		return plugin.ConnectionInfo(value.ConnectionInfo), nil
-	}
-	stat := func(target plugin.EngineCatalogPath) (int64, error) {
-		info, err := current(ctx, target)
-		if err != nil {
-			return 0, err
-		}
-		observed, err := facts.DescribeEngineCatalogFacts(ctx, info, target, plugin.EngineCatalogFactsOptions{})
-		if err != nil {
-			return 0, err
-		}
-		if observed == nil || observed.Kind != target.Segments[len(target.Segments)-1].Kind || !reflect.DeepEqual(observed.Path, target) || observed.Storage == nil || observed.Storage.SizeBytes == nil || observed.Storage.Path != target.StringPath() || *observed.Storage.SizeBytes <= 0 {
-			return 0, ErrFileSourceAuthorizationRequired
-		}
-		return *observed.Storage.SizeBytes, nil
-	}
-	open := func(ctx context.Context, target plugin.EngineCatalogPath) (io.ReadCloser, error) {
-		info, err := current(ctx, target)
-		if err != nil {
-			return nil, err
-		}
-		stream, err := readable.OpenContent(ctx, info, target, plugin.ReadOptions{})
-		if err != nil {
-			if stream != nil {
-				err = errors.Join(err, stream.Close())
-			}
-			return nil, err
-		}
-		if stream == nil {
-			return nil, ErrFileSourceAuthorizationRequired
-		}
-		if err := auth.Checkpoint(ctx); err != nil {
-			return nil, errors.Join(err, stream.Close())
-		}
-		return stream, nil
-	}
+	stat := func(target plugin.EngineCatalogPath) (int64, error) { return reader.stat(ctx, target) }
+	open := reader.open
 	headerSize, err := stat(header)
 	if err != nil {
 		return err
 	}
-	if headerSize > envi.MaxHeaderBytes {
+	if headerSize <= 0 || headerSize > envi.MaxHeaderBytes {
 		return ErrFileSourceAuthorizationRequired
 	}
 	stream, err := open(ctx, header)

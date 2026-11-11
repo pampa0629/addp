@@ -107,10 +107,10 @@ func TestRasterCOGTaskExecuteRecordsFailedExecutionWhenExecutorUnavailable(t *te
 		Config: commonModels.JSONMap{
 			"target": commonModels.JSONMap{
 				"source_engine_id": 26,
-				"locator":          "addp://engine/26/path/rasters/large.tif?type=file&item_id=100",
+				"locator":          "addp://engine/26/path/rasters/large.img?type=file&item_id=100",
 			},
 			"raster": commonModels.JSONMap{
-				"source_format":     "tiff",
+				"source_format":     "img",
 				"source_profile":    "geotiff",
 				"source_size_bytes": int64(900 * 1024 * 1024),
 				"width":             int64(120000),
@@ -285,13 +285,8 @@ func TestManagerRasterCOGExecutorPreparesAccessPlanAndInvokesPythonWorkflowOpera
 			source := plan["source"].(map[string]interface{})
 			target := plan["target"].(map[string]interface{})
 			sourceAccess := source["access"].(map[string]interface{})
-			companions := source["related_files"].([]interface{})
-			companion := companions[0].(map[string]interface{})
-			if len(companions) != 1 || companion["role"] != "auxiliary_metadata" || companion["access"].(map[string]interface{})["path"] != "/mnt/addp-nfs/rasters/large.tif.aux.xml" {
-				t.Fatalf("PAM missing from runtime plan: %#v", source)
-			}
 			targetAccess := target["access"].(map[string]interface{})
-			if sourceAccess["path"] != "/mnt/addp-nfs/rasters/large.tif" || targetAccess["bucket"] != "manager" || targetAccess["object"] != "tenant_7/cog/fp/large.cog.tif" {
+			if sourceAccess["path"] != "/mnt/addp-nfs/rasters/large.img" || targetAccess["bucket"] != "manager" || targetAccess["object"] != "tenant_7/cog/fp/large.cog.tif" {
 				t.Fatalf("access_plan = %#v", plan)
 			}
 			if targetAccess["endpoint"] != "minio:9000" || targetAccess["use_ssl"] == true || target["write_mode"] != "replace" {
@@ -358,14 +353,13 @@ func TestManagerRasterCOGExecutorPreparesAccessPlanAndInvokesPythonWorkflowOpera
 	result, err := executor.BuildRasterCOG(context.Background(), RasterCOGExecutionRequest{
 		Task: task,
 		Config: RasterCOGExecutionConfig{
-			sourceItem: &commonModels.MetaItem{EngineID: 26, TenantID: 7, FullName: "rasters/large.tif", Attributes: commonModels.JSONMap{"item": map[string]interface{}{"refs": []interface{}{map[string]interface{}{"role": "auxiliary_metadata", "path": "rasters/large.tif.aux.xml"}}}}},
 			Target: RasterCOGTargetConfig{
 				SourceEngineID:  26,
 				ItemFingerprint: "fp",
-				Locator:         "addp://engine/26/path/rasters/large.tif?type=file",
-				FullName:        "rasters/large.tif",
+				Locator:         "addp://engine/26/path/rasters/large.img?type=file",
+				FullName:        "rasters/large.img",
 			},
-			Raster: RasterCOGRasterConfig{SourceFormat: "tiff",
+			Raster: RasterCOGRasterConfig{SourceFormat: "img",
 				SourceSizeBytes: 7,
 				SourceSRID:      4326,
 				SourceCRS:       "EPSG:4326",
@@ -499,12 +493,12 @@ func TestManagerRasterCOGExecutorPreservesOperatorErrorDetails(t *testing.T) {
 	_, err = executor.BuildRasterCOG(context.Background(), RasterCOGExecutionRequest{
 		Task: &models.RasterCOGTask{TenantID: 7, Name: "生成 COG"},
 		Config: RasterCOGExecutionConfig{
-			Raster: RasterCOGRasterConfig{SourceFormat: "tiff"},
+			Raster: RasterCOGRasterConfig{SourceFormat: "img"},
 			Target: RasterCOGTargetConfig{
 				SourceEngineID:  26,
 				ItemFingerprint: "fp",
-				Locator:         "addp://engine/26/path/rasters/large.tif?type=file",
-				FullName:        "rasters/large.tif",
+				Locator:         "addp://engine/26/path/rasters/large.img?type=file",
+				FullName:        "rasters/large.img",
 			},
 			COG: RasterCOGOptionsConfig{
 				Compression:        "DEFLATE",
@@ -587,12 +581,12 @@ func TestManagerRasterCOGExecutorRejectsOperatorWithoutDirectMode(t *testing.T) 
 	_, err = executor.BuildRasterCOG(context.Background(), RasterCOGExecutionRequest{
 		Task: &models.RasterCOGTask{TenantID: 7, Name: "生成 COG"},
 		Config: RasterCOGExecutionConfig{
-			Raster: RasterCOGRasterConfig{SourceFormat: "tiff"},
+			Raster: RasterCOGRasterConfig{SourceFormat: "img"},
 			Target: RasterCOGTargetConfig{
 				SourceEngineID:  26,
 				ItemFingerprint: "fp",
-				Locator:         "addp://engine/26/path/rasters/large.tif?type=file",
-				FullName:        "rasters/large.tif",
+				Locator:         "addp://engine/26/path/rasters/large.img?type=file",
+				FullName:        "rasters/large.img",
 			},
 			Result: RasterCOGTargetResultConfig{
 				StorageRef: `{"type":"object","provider":"addp_object_storage","bucket":"manager","object":"tenant_7/cog/fp/large.cog.tif"}`,
@@ -639,10 +633,10 @@ func TestRasterCOGTaskKeepsRunningStateWhenAtomicCompletionFails(t *testing.T) {
 		Config: commonModels.JSONMap{
 			"target": commonModels.JSONMap{
 				"source_engine_id": 26,
-				"locator":          "addp://engine/26/path/rasters/large.tif?type=file&item_id=100",
+				"locator":          "addp://engine/26/path/rasters/large.img?type=file&item_id=100",
 			},
 			"raster": commonModels.JSONMap{
-				"source_format":     "tiff",
+				"source_format":     "img",
 				"source_profile":    "geotiff",
 				"source_size_bytes": int64(1024),
 				"width":             int64(256),

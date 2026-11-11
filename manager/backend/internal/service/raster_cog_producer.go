@@ -28,14 +28,14 @@ func (s *RasterCOGTaskService) SetSourceAuthorizationClients(meta rasterCOGMetaC
 	s.sourceMeta, s.sourceEngines, s.sourceIssuer, s.sourceConsumer = meta, engines, issuer, consumer
 }
 
-// Classification uses persisted Meta identity. A task cannot opt out of ENVI's
-// two-file boundary by labelling its raw data TIFF, IMG or JPEG2000.
+// Classification uses persisted Meta identity. A task cannot replace the
+// registered source format to opt out of its complete file boundary.
 func (s *RasterCOGTaskService) sourceSnapshot(ctx context.Context, tenant uint, config RasterCOGExecutionConfig) (*commonModels.MetaItem, error) {
 	if s == nil || s.sourceMeta == nil {
 		return nil, engineaccess.ErrUnavailable
 	}
 	item, err := s.sourceMeta.GetItemSnapshot(ctx, tenant, config.Target.SourceEngineID, config.Target.ItemID, config.Target.FullName)
-	if errors.Is(err, commonAPI.ErrNotFound) && config.Raster.SourceFormat != "envi" {
+	if errors.Is(err, commonAPI.ErrNotFound) && config.Raster.SourceFormat != "envi" && config.Raster.SourceFormat != "tiff" {
 		return nil, nil
 	}
 	if err != nil {
@@ -63,22 +63,30 @@ func enviRasterVersion(item *commonModels.MetaItem) (string, string, error) {
 	return header, raster, nil
 }
 
-func validateENVIRasterConfig(item *commonModels.MetaItem, actual RasterCOGRasterConfig) error {
+func validateRasterSourceConfig(item *commonModels.MetaItem, actual RasterCOGRasterConfig) error {
 	if item == nil {
 		return ErrFileSourceAuthorizationRequired
 	}
 	facts := RasterQuickViewSourceFromAttributes(item.Attributes, "", item.EngineID)
-	if facts == nil || facts.Format != "envi" || len(facts.Extent) != 4 || (facts.SourceSRID <= 0 && facts.SourceCRS == "") {
+	if facts == nil || facts.Format != actual.SourceFormat || len(facts.Extent) != 4 || (facts.SourceSRID <= 0 && facts.SourceCRS == "") {
 		return ErrFileSourceAuthorizationRequired
 	}
-	expected := RasterCOGRasterConfig{SourceFormat: "envi", SourceProfile: facts.Profile, SourceSizeBytes: facts.SizeBytes, HeaderSHA256: facts.HeaderSHA256, RasterSHA256: facts.RasterSHA256, Width: facts.Width, Height: facts.Height, BandCount: facts.BandCount, SourceSRID: facts.SourceSRID, SourceCRS: facts.SourceCRS, Extent: facts.Extent, ExtentSRID: facts.ExtentSRID}
+	if facts.Format == "envi" {
+		if _, _, err := enviRasterVersion(item); err != nil {
+			return err
+		}
+	}
+	if facts.Format == "tiff" && len(facts.ContentVersions) == 0 {
+		return ErrFileSourceAuthorizationRequired
+	}
+	expected := RasterCOGRasterConfig{SourceFormat: facts.Format, ContentVersions: facts.ContentVersions, SourceProfile: facts.Profile, SourceSizeBytes: facts.SizeBytes, HeaderSHA256: facts.HeaderSHA256, RasterSHA256: facts.RasterSHA256, Width: facts.Width, Height: facts.Height, BandCount: facts.BandCount, SourceSRID: facts.SourceSRID, SourceCRS: facts.SourceCRS, Extent: facts.Extent, ExtentSRID: facts.ExtentSRID}
 	if !reflect.DeepEqual(expected, actual) {
 		return ErrFileSourceAuthorizationRequired
 	}
 	return nil
 }
 
-func (s *RasterCOGTaskService) freezeENVISourceExecution(ctx context.Context, snapshot *repository.FileTaskSnapshot, execution *commonExecution.TaskExecution, credential string) (bool, error) {
+func (s *RasterCOGTaskService) freezeRasterSourceExecution(ctx context.Context, snapshot *repository.FileTaskSnapshot, execution *commonExecution.TaskExecution, credential string) (bool, error) {
 	if snapshot == nil || execution == nil {
 		return false, ErrFileSourceAuthorizationRequired
 	}
@@ -97,7 +105,7 @@ func (s *RasterCOGTaskService) freezeENVISourceExecution(ctx context.Context, sn
 		return false, err
 	}
 	item, err := s.sourceSnapshot(ctx, snapshot.TenantID, cfg)
-	if err != nil || cfg.Raster.SourceFormat != "envi" {
+	if err != nil || cfg.Raster.SourceFormat != "envi" && cfg.Raster.SourceFormat != "tiff" {
 		return false, err
 	}
 	if execution.ParentExecutionID != nil || execution.Source != commonExecution.ModuleManager || execution.TriggerType != commonExecution.TriggerTypeManual || credential == "" {
@@ -113,17 +121,17 @@ func (s *RasterCOGTaskService) freezeENVISourceExecution(ctx context.Context, sn
 	if err != nil || engineaccess.EnsureAvailable(engine) != nil {
 		return true, engineaccess.ErrUnavailable
 	}
-	composition, err := enviCompositionFromMeta(snapshot.TenantID, cfg.Target.SourceEngineID, cfg.Target.ItemID, cfg.Target.ItemFingerprint, cfg.Target.Locator, item)
-	if err != nil || engine.ID != cfg.Target.SourceEngineID || engine.TenantID == nil || *engine.TenantID != snapshot.TenantID || engine.Version <= 0 || !commonExecution.ManagerFileSourceComposition(engine.EngineType, composition) {
-		return true, ErrFileSourceAuthorizationRequired
-	}
-	if err := validateENVIRasterConfig(item, cfg.Raster); err != nil {
+	composition, err := s.rasterCompositionFromMeta(ctx, snapshot.TenantID, cfg, item)
+	if err != nil {
 		return true, err
 	}
-	header, raster, err := enviRasterVersion(item)
-	if err != nil || header != cfg.Raster.HeaderSHA256 || raster != cfg.Raster.RasterSHA256 {
+	if engine.ID != cfg.Target.SourceEngineID || engine.TenantID == nil || *engine.TenantID != snapshot.TenantID || engine.Version <= 0 || !commonExecution.ManagerFileSourceComposition(engine.EngineType, composition) {
 		return true, ErrFileSourceAuthorizationRequired
 	}
+	if err := validateRasterSourceConfig(item, cfg.Raster); err != nil {
+		return true, err
+	}
+
 	name := safeCOGFileName(defaultRasterCOGFileName(cfg.Target.FullName))
 	config["result"] = commonModels.JSONMap{"target_kind": models.RasterCOGTargetKindMinIO, "storage_ref": rastercogref.ObjectStorageRef(s.bucket, fmt.Sprintf("tenant_%d/cog/%s/%s", snapshot.TenantID, cfg.Target.ItemFingerprint, name)), "file_name": name}
 	config["config_version"] = commonExecution.ManagerRasterCOGConfigVersion
@@ -135,7 +143,7 @@ func (s *RasterCOGTaskService) freezeENVISourceExecution(ctx context.Context, sn
 }
 
 // Read the actual persisted execution JSON, not the mutable task definition.
-func (s *RasterCOGTaskService) prepareENVISourceClaim(ctx context.Context, execution *commonExecution.TaskExecution) (RasterCOGExecutionConfig, *rasterCOGSourceAuthorization, error) {
+func (s *RasterCOGTaskService) prepareRasterSourceClaim(ctx context.Context, execution *commonExecution.TaskExecution) (RasterCOGExecutionConfig, *rasterCOGSourceAuthorization, error) {
 	var cfg RasterCOGExecutionConfig
 	if execution == nil {
 		return cfg, nil, ErrFileSourceAuthorizationRequired
@@ -156,24 +164,20 @@ func (s *RasterCOGTaskService) prepareENVISourceClaim(ctx context.Context, execu
 	if err != nil {
 		return cfg, nil, err
 	}
-	if cfg.Raster.SourceFormat != "envi" {
+	if cfg.Raster.SourceFormat != "envi" && cfg.Raster.SourceFormat != "tiff" {
 		if object["config_version"] != nil || execution.ExecutionAuthorizationID != nil {
 			return cfg, nil, ErrFileSourceAuthorizationRequired
 		}
-		cfg.sourceItem = item
 		return cfg, nil, nil
 	}
-	composition, err := enviCompositionFromMeta(uint(execution.TenantID), cfg.Target.SourceEngineID, cfg.Target.ItemID, cfg.Target.ItemFingerprint, cfg.Target.Locator, item)
+	composition, err := s.rasterCompositionFromMeta(ctx, uint(execution.TenantID), cfg, item)
 	if err != nil {
 		return cfg, nil, err
 	}
-	if err := validateENVIRasterConfig(item, cfg.Raster); err != nil {
+	if err := validateRasterSourceConfig(item, cfg.Raster); err != nil {
 		return cfg, nil, err
 	}
-	header, raster, err := enviRasterVersion(item)
-	if err != nil || header != cfg.Raster.HeaderSHA256 || raster != cfg.Raster.RasterSHA256 {
-		return cfg, nil, ErrFileSourceAuthorizationRequired
-	}
+
 	var bound struct {
 		Composition *authorizationfacts.FileCompositionBoundary `json:"source_composition"`
 	}
@@ -185,4 +189,29 @@ func (s *RasterCOGTaskService) prepareENVISourceClaim(ctx context.Context, execu
 		err = auth.Checkpoint(ctx)
 	}
 	return cfg, auth, err
+}
+
+// Consume the formal Meta projection instead of classifying TIFF refs here.
+func (s *RasterCOGTaskService) rasterCompositionFromMeta(ctx context.Context, tenant uint, cfg RasterCOGExecutionConfig, item *commonModels.MetaItem) (*authorizationfacts.FileCompositionBoundary, error) {
+	if cfg.Raster.SourceFormat == "envi" {
+		return enviCompositionFromMeta(tenant, cfg.Target.SourceEngineID, cfg.Target.ItemID, cfg.Target.ItemFingerprint, cfg.Target.Locator, item)
+	}
+	reader, ok := s.sourceMeta.(interface {
+		ReadAuthorizationFacts(context.Context, uint, []string) (*authorizationfacts.AuthorizationFactsBatch, error)
+	})
+	if !ok {
+		return nil, engineaccess.ErrUnavailable
+	}
+	batch, err := reader.ReadAuthorizationFacts(ctx, tenant, []string{cfg.Target.ItemFingerprint})
+	if err != nil {
+		return nil, engineaccess.ErrUnavailable
+	}
+	// The shared client validates the exact batch envelope at its HTTP boundary.
+	facts := batch.Data[0].Facts
+	if facts == nil || item == nil || facts.EngineID != item.EngineID || facts.FullName != item.FullName ||
+		facts.ItemType != item.ItemType || facts.BasisState != authorizationfacts.AuthorizationBasisComplete ||
+		facts.Boundary == nil || facts.Boundary.FileComposition == nil || facts.Boundary.FileComposition.Format != "tiff" {
+		return nil, ErrFileSourceAuthorizationRequired
+	}
+	return facts.Boundary.FileComposition.Clone(), nil
 }

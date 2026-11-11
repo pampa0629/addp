@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/addp/common/dataitem"
 	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/format"
 	commonJSON "github.com/addp/common/jsonmap"
@@ -160,6 +161,11 @@ func (p Processor) Process(ctx context.Context, input input) (Result, error) {
 			attrs = preserved
 		}
 		metaitem.ApplyContainerSummary(attrs, input.Detected)
+		if input.Detected.Format == "tiff" {
+			if _, err := dataitem.TIFFContentVersionsFromAttributes(attrs); err != nil {
+				delete(metaattr.Section(attrs, "storage"), "content_versions")
+			}
+		}
 	}
 
 	extraction, err := p.extractDeepContent(ctx, &input, attrs, isDeepScan)

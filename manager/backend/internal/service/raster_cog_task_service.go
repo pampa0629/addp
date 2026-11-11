@@ -11,6 +11,7 @@ import (
 
 	commonAPI "github.com/addp/common/api"
 	commonClient "github.com/addp/common/client"
+	"github.com/addp/common/dataitem"
 	commonExecution "github.com/addp/common/execution"
 	"github.com/addp/common/logger"
 	commonModels "github.com/addp/common/models"
@@ -52,11 +53,10 @@ type RasterCOGExecutionResult struct {
 }
 
 type RasterCOGExecutionConfig struct {
-	sourceItem *commonModels.MetaItem
-	Target     RasterCOGTargetConfig
-	Raster     RasterCOGRasterConfig
-	COG        RasterCOGOptionsConfig
-	Result     RasterCOGTargetResultConfig
+	Target RasterCOGTargetConfig
+	Raster RasterCOGRasterConfig
+	COG    RasterCOGOptionsConfig
+	Result RasterCOGTargetResultConfig
 }
 
 type RasterCOGTargetConfig struct {
@@ -68,6 +68,7 @@ type RasterCOGTargetConfig struct {
 }
 
 type RasterCOGRasterConfig struct {
+	ContentVersions []dataitem.ContentVersion
 	SourceFormat    string
 	SourceProfile   string
 	SourceSizeBytes int64
@@ -236,7 +237,7 @@ func (s *RasterCOGTaskService) Execute(ctx context.Context, taskID uint, tenantI
 	if err != nil {
 		return "", err
 	}
-	managed, err := s.freezeENVISourceExecution(ctx, snapshot, exec, credential)
+	managed, err := s.freezeRasterSourceExecution(ctx, snapshot, exec, credential)
 	if err != nil {
 		return "", err
 	}
@@ -277,7 +278,7 @@ func (s *RasterCOGTaskService) runRasterCOGGeneration(ctx context.Context, task 
 	var execCfg RasterCOGExecutionConfig
 	var sourceAuthorization *rasterCOGSourceAuthorization
 	if err == nil {
-		execCfg, sourceAuthorization, err = s.prepareENVISourceClaim(ctx, execution)
+		execCfg, sourceAuthorization, err = s.prepareRasterSourceClaim(ctx, execution)
 	}
 	var rasterCOG *models.RasterCOG
 	if err == nil {
@@ -313,7 +314,11 @@ func (s *RasterCOGTaskService) runRasterCOGGeneration(ctx context.Context, task 
 
 	if err == nil && sourceAuthorization != nil {
 		metadata["file_source_scope"] = sourceAuthorization.scope.Clone()
-		metadata["source_version"] = commonModels.JSONMap{"header_sha256": execCfg.Raster.HeaderSHA256, "raster_sha256": execCfg.Raster.RasterSHA256}
+		if execCfg.Raster.SourceFormat == "tiff" {
+			metadata["source_version"] = commonModels.JSONMap{"content_versions": execCfg.Raster.ContentVersions}
+		} else {
+			metadata["source_version"] = commonModels.JSONMap{"header_sha256": execCfg.Raster.HeaderSHA256, "raster_sha256": execCfg.Raster.RasterSHA256}
+		}
 	}
 	if rasterCOG != nil {
 		var mergeErr error
@@ -508,7 +513,10 @@ func normalizeRasterCOGTaskConfig(config commonModels.JSONMap, bucket string, te
 	if err != nil {
 		return RasterCOGExecutionConfig{}, err
 	}
-	raster := normalizeRasterCOGRaster(config)
+	raster, err := normalizeRasterCOGRaster(config)
+	if err != nil {
+		return RasterCOGExecutionConfig{}, err
+	}
 	if raster.SourceFormat != "tiff" && raster.SourceFormat != "img" && raster.SourceFormat != "jpeg2000" && raster.SourceFormat != "envi" {
 		return RasterCOGExecutionConfig{}, errors.New("raster COG source_format must be tiff, img, jpeg2000 or envi")
 	}
@@ -562,7 +570,7 @@ func normalizeRasterCOGTarget(config commonModels.JSONMap) (RasterCOGTargetConfi
 	return target, nil
 }
 
-func normalizeRasterCOGRaster(config commonModels.JSONMap) RasterCOGRasterConfig {
+func normalizeRasterCOGRaster(config commonModels.JSONMap) (RasterCOGRasterConfig, error) {
 	rasterMap, _ := asJSONMap(config["raster"])
 	raster := RasterCOGRasterConfig{
 		SourceFormat:    stringFromConfig(rasterMap["source_format"]),
@@ -580,6 +588,12 @@ func normalizeRasterCOGRaster(config commonModels.JSONMap) RasterCOGRasterConfig
 	if extent, ok := floatSliceFromConfig(rasterMap["extent"]); ok {
 		raster.Extent = extent
 	}
+	if raster.SourceFormat == "tiff" {
+		raw, err := json.Marshal(rasterMap["content_versions"])
+		if err != nil || json.Unmarshal(raw, &raster.ContentVersions) != nil {
+			return raster, ErrFileSourceAuthorizationRequired
+		}
+	}
 	normalized := commonModels.JSONMap{
 		"source_profile":    raster.SourceProfile,
 		"source_format":     raster.SourceFormat,
@@ -595,6 +609,9 @@ func normalizeRasterCOGRaster(config commonModels.JSONMap) RasterCOGRasterConfig
 		normalized["header_sha256"] = raster.HeaderSHA256
 		normalized["raster_sha256"] = raster.RasterSHA256
 	}
+	if raster.SourceFormat == "tiff" {
+		normalized["content_versions"] = raster.ContentVersions
+	}
 	if raster.SourceCRS != "" {
 		normalized["source_crs"] = raster.SourceCRS
 	}
@@ -605,7 +622,7 @@ func normalizeRasterCOGRaster(config commonModels.JSONMap) RasterCOGRasterConfig
 		normalized["extent_srid"] = raster.ExtentSRID
 	}
 	config["raster"] = normalized
-	return raster
+	return raster, nil
 }
 
 func normalizeRasterCOGOptions(config commonModels.JSONMap) RasterCOGOptionsConfig {

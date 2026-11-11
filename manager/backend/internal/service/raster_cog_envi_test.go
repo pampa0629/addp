@@ -40,15 +40,15 @@ func TestRasterCOGRejectsENVIIdentityDisguisedAsSingleFile(t *testing.T) {
 	for _, meta := range []rasterSnapshotFixture{{item: item}, {err: errors.New("unavailable")}} {
 		svc.sourceMeta = meta
 		execution := &commonExecution.TaskExecution{ExecutionID: uuid.NewString(), TenantID: 7, Source: "manager", TriggerType: "manual"}
-		if _, err := svc.freezeENVISourceExecution(t.Context(), &repository.FileTaskSnapshot{TaskID: 1, TenantID: 7, Version: 1, Config: raw}, execution, "addp_at_human"); err == nil {
+		if _, err := svc.freezeRasterSourceExecution(t.Context(), &repository.FileTaskSnapshot{TaskID: 1, TenantID: 7, Version: 1, Config: raw}, execution, "addp_at_human"); err == nil {
 			t.Fatal("single-file path bypassed actual identity or missing Meta")
 		}
 	}
 	svc.sourceMeta = rasterSnapshotFixture{err: commonAPI.ErrNotFound}
 	execution := &commonExecution.TaskExecution{}
-	managed, err := svc.freezeENVISourceExecution(t.Context(), &repository.FileTaskSnapshot{TaskID: 1, TenantID: 7, Version: 1, Config: raw}, execution, "")
-	if err != nil || managed {
-		t.Fatal("ordinary TIFF with explicit no snapshot changed scope", err)
+	managed, err := svc.freezeRasterSourceExecution(t.Context(), &repository.FileTaskSnapshot{TaskID: 1, TenantID: 7, Version: 1, Config: raw}, execution, "")
+	if err == nil || managed {
+		t.Fatal("TIFF without a Meta snapshot bypassed source authorization", err)
 	}
 }
 
@@ -153,7 +153,7 @@ func TestENVICOGFreezesOnlyCurrentNativeRasterFacts(t *testing.T) {
 			svc.SetSourceAuthorizationClients(rasterSnapshotFixture{item: item}, &glbSourceEngineFixture{engine: &commonModels.Engine{ID: 26, TenantID: &tenant, EngineType: "nfs", Version: 5, LifecycleState: "active", ConnectionStatus: "online"}}, &commonClient.SystemExecutionAuthorizationClient{}, &commonClient.SystemServiceClient{})
 			execution := &commonExecution.TaskExecution{ExecutionID: uuid.NewString(), TenantID: 7, Source: "manager", TriggerType: "manual"}
 			ctx := commonExecution.WithUserOrigin(t.Context(), authtest.NewTenantUserAuthContext("7", "31", nil))
-			managed, err := svc.freezeENVISourceExecution(ctx, &repository.FileTaskSnapshot{TaskID: 11, TenantID: 7, Version: 3, Config: raw}, execution, "addp_at_human")
+			managed, err := svc.freezeRasterSourceExecution(ctx, &repository.FileTaskSnapshot{TaskID: 11, TenantID: 7, Version: 3, Config: raw}, execution, "addp_at_human")
 			if change != "none" {
 				if err == nil {
 					t.Fatal("caller replaced trusted native facts", change)

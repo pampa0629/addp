@@ -834,8 +834,8 @@ func TestTaskExecuteRasterCOGReturnsPendingAndRejectsActiveExecution(t *testing.
 		Name:     "raster COG execution contract",
 		Enabled:  true,
 		Config: commonModels.JSONMap{
-			"target": commonModels.JSONMap{"source_engine_id": 26, "locator": "addp://engine/26/path/rasters/contract.tif?type=file&item_id=100"},
-			"raster": commonModels.JSONMap{"source_format": "tiff"},
+			"target": commonModels.JSONMap{"source_engine_id": 26, "locator": "addp://engine/26/path/rasters/contract.img?type=file&item_id=100"},
+			"raster": commonModels.JSONMap{"source_format": "img"},
 		},
 	}
 	if err := cogRepo.CreateTask(context.Background(), task); err != nil {

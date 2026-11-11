@@ -13,6 +13,7 @@ import (
 	"time"
 
 	commonClient "github.com/addp/common/client"
+	"github.com/addp/common/dataitem"
 	"github.com/addp/common/datatype"
 	commonExecution "github.com/addp/common/execution"
 	commonModels "github.com/addp/common/models"
@@ -599,6 +600,7 @@ func TestQuickViewCapabilityUsesReadyRasterCOGForLargeRasterItem(t *testing.T) {
 	locator := "addp://engine/26/path/rasters/large.tif?type=file&item_id=100"
 	fingerprint := commonModels.GenerateItemFingerprint(26, "rasters/large.tif")
 	extentSRID := 4326
+	versions := []dataitem.ContentVersion{{Path: "rasters/large.tif", SizeBytes: 900 * 1024 * 1024, SHA256: strings.Repeat("a", 64)}}
 	result := &models.RasterCOG{
 		TenantID:        7,
 		ItemFingerprint: fingerprint,
@@ -616,7 +618,7 @@ func TestQuickViewCapabilityUsesReadyRasterCOGForLargeRasterItem(t *testing.T) {
 		Extent:          datatypes.JSON([]byte(`[110,20,120,30]`)),
 		ExtentSRID:      &extentSRID,
 		Status:          models.RasterCOGStatusReady,
-		Metadata:        commonModels.JSONMap{},
+		Metadata:        commonModels.JSONMap{"source_version": commonModels.JSONMap{"content_versions": versions}},
 	}
 	if err := repository.NewRasterCOGRepository(db).Create(context.Background(), result); err != nil {
 		t.Fatalf("create raster COG result: %v", err)
@@ -630,15 +632,16 @@ func TestQuickViewCapabilityUsesReadyRasterCOGForLargeRasterItem(t *testing.T) {
 		},
 		EngineID: 26,
 		Raster: &RasterQuickViewSource{
-			Format:     "tiff",
-			Profile:    "geotiff",
-			SizeBytes:  900 * 1024 * 1024,
-			Width:      120000,
-			Height:     80000,
-			SourceSRID: 4326,
-			ExtentSRID: 4326,
-			Extent:     []float64{110, 20, 120, 30},
-			PreviewURL: "/api/v1/manager/storage-stream?engine_id=26&storage_ref=rasters%2Flarge.tif",
+			Format:          "tiff",
+			ContentVersions: versions,
+			Profile:         "geotiff",
+			SizeBytes:       900 * 1024 * 1024,
+			Width:           120000,
+			Height:          80000,
+			SourceSRID:      4326,
+			ExtentSRID:      4326,
+			Extent:          []float64{110, 20, 120, 30},
+			PreviewURL:      "/api/v1/manager/storage-stream?engine_id=26&storage_ref=rasters%2Flarge.tif",
 		},
 	})
 	if err != nil {
@@ -1436,6 +1439,7 @@ func TestQuickViewCapabilityUsesReadyRasterCOGWithInferredExtentSRID(t *testing.
 	})
 	locator := "addp://engine/26/path/rasters/no-crs.tif?type=file&item_id=100"
 	fingerprint := commonModels.GenerateItemFingerprint(26, "rasters/no-crs.tif")
+	versions := []dataitem.ContentVersion{{Path: "rasters/no-crs.tif", SizeBytes: 900 * 1024 * 1024, SHA256: strings.Repeat("a", 64)}}
 	result := &models.RasterCOG{
 		TenantID:        7,
 		ItemFingerprint: fingerprint,
@@ -1451,7 +1455,7 @@ func TestQuickViewCapabilityUsesReadyRasterCOGWithInferredExtentSRID(t *testing.
 		Height:          80000,
 		Extent:          datatypes.JSON([]byte(`[110,20,120,30]`)),
 		Status:          models.RasterCOGStatusReady,
-		Metadata:        commonModels.JSONMap{},
+		Metadata:        commonModels.JSONMap{"source_version": commonModels.JSONMap{"content_versions": versions}},
 	}
 	if err := repository.NewRasterCOGRepository(db).Create(context.Background(), result); err != nil {
 		t.Fatalf("create raster COG result: %v", err)
@@ -1465,13 +1469,14 @@ func TestQuickViewCapabilityUsesReadyRasterCOGWithInferredExtentSRID(t *testing.
 		},
 		EngineID: 26,
 		Raster: &RasterQuickViewSource{
-			Format:     "tiff",
-			Profile:    "geotiff",
-			SizeBytes:  900 * 1024 * 1024,
-			Width:      120000,
-			Height:     80000,
-			Extent:     []float64{110, 20, 120, 30},
-			PreviewURL: "/api/v1/manager/storage-stream?engine_id=26&storage_ref=rasters%2Fno-crs.tif",
+			Format:          "tiff",
+			ContentVersions: versions,
+			Profile:         "geotiff",
+			SizeBytes:       900 * 1024 * 1024,
+			Width:           120000,
+			Height:          80000,
+			Extent:          []float64{110, 20, 120, 30},
+			PreviewURL:      "/api/v1/manager/storage-stream?engine_id=26&storage_ref=rasters%2Fno-crs.tif",
 		},
 	})
 	if err != nil {

@@ -118,6 +118,9 @@ func (p Processor) extractDeepContent(ctx context.Context, input *input, attrs m
 	if !isDeepScan || input.ContentReader == nil {
 		return documentExtractionResult{}, nil
 	}
+	if input.Detected.Format == "tiff" {
+		return documentExtractionResult{}, collectTIFFContentVersions(ctx, input, attrs)
+	}
 	if input.Detected.Layout != format.LayoutSingle {
 		return documentExtractionResult{}, nil
 	}
