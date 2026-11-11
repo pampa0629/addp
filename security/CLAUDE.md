@@ -960,3 +960,11 @@ Develop 导出会话 #19 经独立 Transfer 执行 94347359-7a39-4359-9b66-cf26b
 开发者只读核对Meta #44720仍属Tenant1／PG engine2，身份及fingerprint与此前相同，未软删除。现行Meta单项接口会将不可见与不存在均返回404，故当前账号的元数据可见性需先核实，不能把本轮当成Transfer分组或脱敏执行失败。未变更元数据／内容读取授权，未借其他账号继续运行；具体权限调整仍需用户确认。既有Develop／Service限定本地HTTP与Provider T2证据保留，独立Transfer落盘未执行。用户已授权后续同类脚本由本会话直接执行，正式登录凭据仍由用户在认证步骤输入。
 
 同轮继续只读核对，已有验收任务 #16（p145原生表默认恢复验收20261024）仍保存PG outdoor的正式target.parent_locator。源Meta单项读取只是临时脚本为取得目标schema位置加入的额外前置，并非Transfer源读取或目标写入的正式授权替代。脚本已改为唯一读取路径GET /api/v1/transfer/task-definitions/16，在当前用户权限下核对精确任务身份及其PG目标parent_locator，再走同一正式创建／执行入口。保留原Meta404，不放行任何Transfer权限拒绝，不变更授权。成功／执行失败／启动拒绝三组受控脚本检查通过；修正版尚未实际运行。电脑控制工具明确拒绝操作Terminal，无法由该通道完成交互式认证；用户已授予的脚本执行授权继续有效。
+
+### PostgreSQL 分组 Transfer 独立任务本地验收（2026-11-11）
+
+修正额外定位前置后，用户实际运行同一临时脚本，正式登录核对 outdoor开发者 #33／Tenant1，通过既有任务 #16 的只读配置取得 PG outdoor 目标位置，未修改该任务。参考 Develop 执行 a88cb013-2823-47c0-8dd1-b49f2752cd93 返回五组。新建独立、无调度、未启用的任务 #56，再手动执行 84ac72e0-2444-40d2-b8ce-26e6f547ed7d；实际状态 success，trigger_by=33，records_read=records_written=5，批量大小2。目标回读执行 bbf4b1d4-5754-4231-8074-e889e33697c1 成功，保存的 contact／n 五行与参考逐行、逐字节一致，计数均1，掩码长度保留。任务 #56 已删除并核对 GET404，登录已注销；结果表 outdoor.p145_group_transfer_6b7afc3d0152 按约定保留供查看，未将保留结果表称作零残留。
+
+原件 /var/folders/r1/l7b49c757dz02zftf_l9vl9r0000gn/T/p145-transfer-grouping-local-qch78ix7/，报告 SHA256 929e76b4441e8f4abc6e0bb6b382b2f0e416b7a89760c452ffbd138409eb8bf6；reference.json 与 target.json 的 SHA256 同为 ad5e87676c8cf0929da219818fb87bd74f7afb94d045629fd1aa05991874027b。独立脚本 /tmp/p145-transfer-grouping-independent/audit.py 实际退出0，结果 independent-audit.json；未导入验收生成脚本，核对三条非模拟UUID、精确任务和执行关系、五行两列、顺序、掩码及清理报告。身份、执行状态、读取／写入计数、删除／404和注销是正式HTTP脚本保存的断言，未归档原始HTTP响应，不称为独立原始报文复验。
+
+本轮仅本地普通用户HTTP验收及文档补证，无新产品代码；重算此前T1／T2的三个Provider输入摘要仍一致，复用有效门禁，不重复全量执行。初次Meta404失败与其审计原件保留。源表仍为历史脱敏传输产物，本轮证明独立任务能够消费限定分组查询并保持目标结果一致；原值变换等价性另由真实PostgreSQL T2证明，角色方式失效、本地浏览器和新增分组Hosted均未验。下一步建议将Develop／Service／Transfer分组场景接入现有隔离套件，使用原值样本补实际默认保护和角色方式失效拒绝，再由专门CI会话安排运行。
