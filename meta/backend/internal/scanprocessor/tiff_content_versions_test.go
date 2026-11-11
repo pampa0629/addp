@@ -19,6 +19,8 @@ import (
 	metaRepo "github.com/addp/meta/internal/repository"
 	"github.com/addp/meta/internal/scanflow"
 	"github.com/addp/meta/internal/scanresource"
+	"gorm.io/driver/postgres"
+	"gorm.io/gorm"
 )
 
 type tiffVersionReader struct {
@@ -92,7 +94,34 @@ func TestTIFFVersionsUseOnlyScannedComponentsAndBindPAMBytes(t *testing.T) {
 }
 
 func TestTIFFContentVersionsRefreshAgainstPostgres(t *testing.T) {
-	db := openObjectCatalogProcessorTestDB(t)
+	dsn := os.Getenv("META_POSTGRES_TEST_DSN")
+	if dsn == "" {
+		t.Skip("META_POSTGRES_TEST_DSN is not set")
+	}
+	database, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	pool, err := database.DB()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = pool.Close() })
+	db := database.Begin()
+	if db.Error != nil {
+		t.Fatal(db.Error)
+	}
+	t.Cleanup(func() {
+		if err := db.Rollback().Error; err != nil {
+			t.Errorf("rollback TIFF version fixture: %v", err)
+		}
+	})
+	if err := db.Exec("CREATE SCHEMA IF NOT EXISTS meta").Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.AutoMigrate(&models.MetaNode{}, &models.MetaItem{}); err != nil {
+		t.Fatal(err)
+	}
 	repo := metaRepo.NewScanRepository(db)
 	parent, err := repo.UpsertNode(1, 7, nil, "bucket", "addp", strPtr("addp"), scanresource.ObjectBucketNodeAttributes("addp"))
 	if err != nil {

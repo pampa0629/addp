@@ -507,7 +507,7 @@ catalog = {
     './internal/repository':['TestClaimedComponentsAgainstPostgres','TestAuthorizationBasisStartupMigrationAgainstPostgres'],
     './internal/service':['TestDataItemAuthorizationFactsAgainstPostgres','TestAuthorizationBasisRevisionAgainstPostgres','TestScanPlanFactsAgainstPostgres','TestProductionBasicScanAgainstPostgres','TestCleanupRuntimeAtomicityAgainstPostgres','TestLineageGraphPerformanceAgainstPostgres'],
     './internal/scanadapter':['TestPreciseCatalogScanAgainstPostgres'],
-    './internal/scanprocessor':['TestDelimitedEncodingRefreshAgainstPostgres'],
+    './internal/scanprocessor':['TestDelimitedEncodingRefreshAgainstPostgres','TestTIFFContentVersionsRefreshAgainstPostgres'],
     './internal/scanruntime':['TestObjectModelRelatedRefsAgainstPostgres','TestFTPBasicCompositionAgainstPostgres'],
     './internal/api':['TestMetaScanExecutionReadAgainstPostgres'],
 }
@@ -553,6 +553,7 @@ else:
                     self.assertIn('--- PASS: TestAuthorizationBasisRevisionAgainstPostgres ',result.stdout)
                     self.assertIn('--- PASS: TestCleanupRuntimeAtomicityAgainstPostgres ',result.stdout)
                     self.assertIn('--- PASS: TestLineageGraphPerformanceAgainstPostgres ',result.stdout)
+                    self.assertIn('--- PASS: TestTIFFContentVersionsRefreshAgainstPostgres ',result.stdout)
                 if args == ['--test','lineage-graph']:
                     self.assertIn('--- PASS: TestLineageGraphPerformanceAgainstPostgres ',result.stdout)
                     self.assertNotIn('TestDataItemAuthorizationFactsAgainstPostgres',result.stdout)
@@ -571,7 +572,7 @@ else:
         for group in ('all','authorization-facts','file-composition','lineage-graph'):
             required = ('TestObjectModelRelatedRefsAgainstPostgres','TestFTPBasicCompositionAgainstPostgres') if group == 'file-composition' else ('TestLineageGraphPerformanceAgainstPostgres',) if group == 'lineage-graph' else ('TestDataItemAuthorizationFactsAgainstPostgres','TestAuthorizationBasisRevisionAgainstPostgres','TestScanPlanFactsAgainstPostgres')
             if group == 'all':
-                required += ('TestAuthorizationBasisStartupMigrationAgainstPostgres','TestCleanupRuntimeAtomicityAgainstPostgres','TestLineageGraphPerformanceAgainstPostgres')
+                required += ('TestAuthorizationBasisStartupMigrationAgainstPostgres','TestCleanupRuntimeAtomicityAgainstPostgres','TestLineageGraphPerformanceAgainstPostgres','TestTIFFContentVersionsRefreshAgainstPostgres')
             for mode in ('skip','empty','failure',*('omit:'+name for name in required)):
                 with self.subTest(group=group,mode=mode):
                     result, calls, owner = self._run_meta_postgres_group(['--test',group],mode)
