@@ -28,7 +28,7 @@ Model Entity 与 LogicalTable 的专业关系由概念实现映射提供，并�
 
 Model 负责已审批逻辑表的目标物理表创建、结构校验与显式删除；Develop 负责计算并写入已存在表，Quality 负责目标表数据校验，Orchestrator 负责依赖、调度和完整流程。建表不计算数据，数据刷新不依赖发布组或暂存批次。
 
-Model 声明 `logical_table_materialization` TaskProvider；已持久化的 LogicalTable 是任务定义事实源，任务 ID 等于逻辑表 ID，不新增或复制建表配置。仅已审批且配置目标的逻辑表可执行。手动入口和 Orchestrator 入口复用同一执行服务，写入 `common.task_executions`；执行冻结逻辑表版本，运行时必须匹配该版本。成功输出 `execution_id + target_locator`。
+Model 以持久化 LogicalTable 提供 `logical_table_materialization` TaskProvider，手动与 Orchestrator 入口复用同一执行服务。任务身份、审批与目标前提、版本冻结和执行结果见[目标物理表建表](docs/model概念与数据约束规范.md#目标物理表建表)。
 
 **端口与访问入口**:
 
