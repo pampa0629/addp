@@ -184,6 +184,8 @@ Develop 仅凭同一操作的实时 System 放行回执，在当前 lease 的事
 
 Prepare 前即须持久化并登记原 operation，恢复不只依赖已存在的 release。租约失效后的专用恢复投影只能为原已登记 operation、原 Engine 同版及原绑定提供 Resolve／私有暂存清理，不重发 Prepare／Publish，不成为新的业务 Allow，也不长期封存请求级业务连接。截止后晚到的发布观察只追加到原 operation 的私有核清事实，不改 terminal execution、不复活旧 attempt；首次晚到事实不能补造有效租约内的成功提交或自动签发 Grant。现有 NFS 阻塞 RPC 不承诺立即随 Context 中断，未核清的操作如实保留 unknown／cleanup_pending，不能宣称全部副作用或清理已在截止内结束。
 
+恢复连接通过 `POST /api/v1/system/execution-authorizations/{id}/develop-geopackage-publications/{operation_id}/recovery-accesses` 获取，无正文及查询参数，沿用当前同租户 `addp-develop` 与 `system.execution_authorization.execute`。System 先匹配原准入历史和可信 Owner 的原批准、操作、成果摘要，再在事务内核对当前服务资格与目标引擎同版，返回最长 15 秒且不超过当前服务凭据期限的恢复窗口。响应仅用于原操作 Resolve 和私有暂存清理，原 EA、源授权和业务租约过期不阻止该恢复观察，窗口不延长业务截止。目标引擎换版、原绑定矛盾或历史不存在时拒绝，不创建新批准、派发或初始 Grant。
+
 成功提交后，Develop 在有效 lease 下保存同一次实际读取和新建提交的私有回执，Meta 沿可信产出执行只识别该成果，System 按[任务产出数据与初始使用权](#558-任务产出数据与初始使用权)向原发起人签发唯一精确 `read` Grant 并核定期限。签发待处理、拒绝和产出成功分别表达。签发故障只核清或续办原命令，不能重发写入。现有其他算子、引擎、发布服务和目录持续写入不纳入此首期。以上为接入规范，实施及真实授权证据仍待补齐。
 
 ### 5.3 Notebook 会话授权

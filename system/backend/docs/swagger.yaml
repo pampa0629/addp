@@ -787,6 +787,17 @@ definitions:
       stage:
         type: string
     type: object
+  client.DevelopFilePublicationRecoveryAccess:
+    properties:
+      engine:
+        $ref: '#/definitions/github_com_addp_common_models.Engine'
+      expires_at:
+        type: string
+      history:
+        $ref: '#/definitions/client.DevelopFilePublicationHistory'
+      observed_at:
+        type: string
+    type: object
   client.DevelopFilePublicationRequest:
     properties:
       approval_id:
@@ -10070,6 +10081,56 @@ paths:
       security:
       - BearerAuth: []
       summary: 核清原 GeoPackage 操作历史 | Read original GeoPackage operation history
+      tags:
+      - 执行授权 | Execution Authorization
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - system.execution_authorization.execute
+  /execution-authorizations/{id}/develop-geopackage-publications/{operation_id}/recovery-accesses:
+    post:
+      description: 固定同租户 Develop Service，只核清原操作和清理其私有暂存。 | Fixed same-tenant Develop
+        Service. Resolve the original operation and clean its private staging only.
+      parameters:
+      - description: 原 EA | Original EA
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: 原操作 | Original operation
+        in: path
+        name: operation_id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/client.DevelopFilePublicationRecoveryAccess'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 获取原文件操作恢复观察 | Observe recovery of the original file operation
       tags:
       - 执行授权 | Execution Authorization
       x-addp-auth-mode: permission

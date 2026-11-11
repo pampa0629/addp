@@ -15,6 +15,7 @@ import (
 	"github.com/addp/common/client"
 	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/execution"
+	"github.com/addp/common/models"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -31,6 +32,7 @@ type DevelopFileAuthorizationService struct {
 	owner                 DevelopFileExecutionReader
 	prepare               DevelopFileReadPreparer
 	prepareCreateApprover DevelopFileCreateApproverPreparer
+	recoveryEngine        func(context.Context, *gorm.DB, int64, execution.DevelopBoundFileTarget) (*models.Engine, error)
 }
 
 func NewDevelopFileAuthorizationService(repository *Repository, owner DevelopFileExecutionReader, prepare DevelopFileReadPreparer) *DevelopFileAuthorizationService {

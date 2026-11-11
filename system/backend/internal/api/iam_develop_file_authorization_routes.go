@@ -25,6 +25,7 @@ import (
 type iamDevelopFileAuthorizationService interface {
 	Issue(context.Context, iam.IssueDevelopFileAuthorizationInput) (*client.IssuedDevelopFileAuthorization, error)
 	ApproveCreate(context.Context, iam.ApproveDevelopFileCreateInput) (*iam.DevelopFileCreateApprovalReceipt, error)
+	PublicationRecoveryAccess(context.Context, iam.CheckDevelopFileInput, uuid.UUID) (*client.DevelopFilePublicationRecoveryAccess, error)
 	ReadPublicationHistory(context.Context, iam.CheckDevelopFileInput, uuid.UUID) (*client.DevelopFilePublicationHistory, error)
 	AuthorizePublication(context.Context, iam.CheckDevelopFileInput, client.DevelopFilePublicationRequest) (*client.DevelopFilePublicationObservation, error)
 	Check(context.Context, iam.CheckDevelopFileInput) (*client.DevelopFileAdmissionObservation, *client.DevelopFileSourceAccessObservation, error)
@@ -76,6 +77,7 @@ func RegisterIAMDevelopFileAuthorizationRoutes(api *gin.RouterGroup, runtime *IA
 	api.POST("/execution-authorizations/:id/develop-geopackage-source-accesses", runtime.Authentication, runtime.ServiceCredential, service, develop, consume, h.Source)
 	api.POST("/execution-authorizations/:id/develop-geopackage-publications", runtime.Authentication, runtime.ServiceCredential, service, develop, consume, h.Publication)
 	api.GET("/execution-authorizations/:id/develop-geopackage-publications/:operation_id", runtime.Authentication, runtime.ServiceCredential, service, develop, consume, h.PublicationHistory)
+	api.POST("/execution-authorizations/:id/develop-geopackage-publications/:operation_id/recovery-accesses", runtime.Authentication, runtime.ServiceCredential, service, develop, consume, h.PublicationRecovery)
 	return nil
 }
 
@@ -358,4 +360,37 @@ func bindDevelopFileRequest(c *gin.Context, dst any) error {
 		return commonapi.ErrBadRequest
 	}
 	return nil
+}
+
+// PublicationRecovery godoc
+// @Summary 获取原文件操作恢复观察 | Observe recovery of the original file operation
+// @Description 固定同租户 Develop Service，只核清原操作和清理其私有暂存。 | Fixed same-tenant Develop Service. Resolve the original operation and clean its private staging only.
+// @Tags 执行授权 | Execution Authorization
+// @Produce json
+// @Security BearerAuth
+// @Param id path string true "原 EA | Original EA"
+// @Param operation_id path string true "原操作 | Original operation"
+// @Success 200 {object} client.DevelopFilePublicationRecoveryAccess
+// @Failure 400,401,403,500,503 {object} IAMErrorResponse
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["system.execution_authorization.execute"]
+// @Router /execution-authorizations/{id}/develop-geopackage-publications/{operation_id}/recovery-accesses [post]
+func (h *IAMDevelopFileAuthorizationHandler) PublicationRecovery(c *gin.Context) {
+	c.Header("Cache-Control", "no-store")
+	op, err := parseCanonicalExecutionUUID(c.Param("operation_id"))
+	if err != nil || c.Request.URL.RawQuery != "" || c.Request.ContentLength != 0 {
+		respondExecutionAuthorizationError(c, commonapi.ErrBadRequest)
+		return
+	}
+	input, err := developFileServiceInput(c)
+	if err != nil {
+		respondExecutionAuthorizationError(c, err)
+		return
+	}
+	result, err := h.service.PublicationRecoveryAccess(c.Request.Context(), input, op)
+	if err != nil {
+		respondExecutionAuthorizationError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, result)
 }

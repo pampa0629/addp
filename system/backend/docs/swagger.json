@@ -5009,6 +5009,81 @@
                 ]
             }
         },
+        "/execution-authorizations/{id}/develop-geopackage-publications/{operation_id}/recovery-accesses": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "固定同租户 Develop Service，只核清原操作和清理其私有暂存。 | Fixed same-tenant Develop Service. Resolve the original operation and clean its private staging only.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "执行授权 | Execution Authorization"
+                ],
+                "summary": "获取原文件操作恢复观察 | Observe recovery of the original file operation",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "原 EA | Original EA",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "原操作 | Original operation",
+                        "name": "operation_id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/client.DevelopFilePublicationRecoveryAccess"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "system.execution_authorization.execute"
+                ]
+            }
+        },
         "/execution-authorizations/{id}/develop-geopackage-source-accesses": {
             "post": {
                 "security": [
@@ -18129,6 +18204,23 @@
                     "type": "string"
                 },
                 "stage": {
+                    "type": "string"
+                }
+            }
+        },
+        "client.DevelopFilePublicationRecoveryAccess": {
+            "type": "object",
+            "properties": {
+                "engine": {
+                    "$ref": "#/definitions/github_com_addp_common_models.Engine"
+                },
+                "expires_at": {
+                    "type": "string"
+                },
+                "history": {
+                    "$ref": "#/definitions/client.DevelopFilePublicationHistory"
+                },
+                "observed_at": {
                     "type": "string"
                 }
             }

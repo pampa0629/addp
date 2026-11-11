@@ -575,6 +575,27 @@ func TestDevelopFileAuthorizationAgainstPostgres(t *testing.T) {
 			history.ScopeDigest != issued.ScopeDigest || history.Attempt != 1 || targetSnapshots != 1 {
 			t.Fatal("original release history unavailable after revocation or attempted to obtain a connection", historyErr)
 		}
+		recoveryCalls := 0
+		svc.SetRecoveryEngine(func(_ context.Context, _ *gorm.DB, tenant int64, target execution.DevelopBoundFileTarget) (*commonmodels.Engine, error) {
+			recoveryCalls++
+			if tenant != publicationCheck.TenantID || !reflect.DeepEqual(target, *issued.Scope.Target) {
+				t.Fatal("recovery changed original target")
+			}
+			tenantID := uint(tenant)
+			return &commonmodels.Engine{ID: target.Target.EngineID, TenantID: &tenantID, Version: 2, EngineType: "nfs", LifecycleState: "active", ConnectionInfo: commonmodels.ConnectionInfo{"server": "recovery-only"}}, nil
+		})
+		recovered, err := svc.PublicationRecoveryAccess(ctx, publicationCheck, operationID)
+		if err != nil || recovered == nil || recovered.History.OperationID != operation ||
+			recovered.Engine.ConnectionInfo["server"] != "recovery-only" || recovered.ExpiresAt.Sub(recovered.ObservedAt) > 15*time.Second || recoveryCalls != 1 {
+			t.Fatal("revoked original operation not recoverable", err)
+		}
+		originalSize := facts.Publication.Request.SizeBytes
+		facts.Publication.Request.SizeBytes++
+		if value, err := svc.PublicationRecoveryAccess(ctx, publicationCheck, operationID); value != nil || err == nil || recoveryCalls != 1 {
+			t.Fatal("retargeted recovery obtained connection")
+		}
+		facts.Publication.Request.SizeBytes = originalSize
+
 	})
 	t.Run("wrong owner actor and rejected before issuance", func(t *testing.T) {
 		facts, id := newPending(t, false)

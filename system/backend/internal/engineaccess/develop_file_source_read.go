@@ -141,24 +141,9 @@ func (s *Service) PrepareDevelopFileRead(ctx context.Context, auth *iam.Executio
 	}
 	prepared := &iam.DevelopFileReadPreparation{Scope: *scope.Clone(), Verify: verify}
 	if scope.Target != nil {
-		targetID := scope.Target.Target.EngineID
+		target := *scope.Target
 		prepared.TargetSnapshot = func(ctx context.Context, db *gorm.DB) (*models.Engine, error) {
-			var engine models.Engine
-			if s.executionEngineSnapshot == nil {
-				return nil, commonapi.ErrForbidden
-			}
-			if err := db.WithContext(ctx).Table("system.engines").Where("id=? AND tenant_id=?", targetID, identity.TenantID).
-				Clauses(clause.Locking{Strength: "SHARE"}).Take(&engine).Error; err != nil {
-				return nil, err
-			}
-			if !developNFSVersion(&engine, identity.TenantID, versions[targetID]) {
-				return nil, commonapi.ErrForbidden
-			}
-			decoded, err := s.executionEngineSnapshot(&engine)
-			if err != nil || !developNFSVersion(decoded, identity.TenantID, engine.Version) || decoded.ID != engine.ID || len(decoded.ConnectionInfo) == 0 {
-				return nil, commonapi.ErrForbidden
-			}
-			return decoded, nil
+			return s.DevelopFileTargetEngine(ctx, db, identity.TenantID, target)
 		}
 	}
 	return prepared, nil
@@ -222,4 +207,25 @@ func earliestDevelopReadExpiry(a, b *time.Time) *time.Time {
 	}
 	copy := b.UTC()
 	return &copy
+}
+
+// DevelopFileTargetEngine reads only the originally version-bound target.
+func (s *Service) DevelopFileTargetEngine(ctx context.Context, db *gorm.DB, tenant int64, target execution.DevelopBoundFileTarget) (*models.Engine, error) {
+	var engine models.Engine
+	version, err := strconv.ParseInt(target.EngineVersion, 10, 64)
+	if err != nil || s.executionEngineSnapshot == nil {
+		return nil, commonapi.ErrForbidden
+	}
+	if err := db.WithContext(ctx).Table("system.engines").Where("id=? AND tenant_id=?", target.Target.EngineID, tenant).
+		Clauses(clause.Locking{Strength: "SHARE"}).Take(&engine).Error; err != nil {
+		return nil, err
+	}
+	if !developNFSVersion(&engine, tenant, version) {
+		return nil, commonapi.ErrForbidden
+	}
+	decoded, err := s.executionEngineSnapshot(&engine)
+	if err != nil || !developNFSVersion(decoded, tenant, version) || decoded.ID != engine.ID || len(decoded.ConnectionInfo) == 0 {
+		return nil, commonapi.ErrForbidden
+	}
+	return decoded, nil
 }

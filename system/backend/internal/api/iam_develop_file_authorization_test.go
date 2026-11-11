@@ -267,3 +267,28 @@ func TestDevelopFilePublicationHistoryHTTP(t *testing.T) {
 		})
 	}
 }
+
+func (f *developFileHTTPFixture) PublicationRecoveryAccess(_ context.Context, input iam.CheckDevelopFileInput, op uuid.UUID) (*client.DevelopFilePublicationRecoveryAccess, error) {
+	f.calls++
+	f.input = input
+	return &client.DevelopFilePublicationRecoveryAccess{History: client.DevelopFilePublicationHistory{OperationID: op.String()}}, f.err
+}
+
+func TestDevelopFileRecoveryHTTPGuards(t *testing.T) {
+	const path = "/api/v1/system/execution-authorizations/9/develop-geopackage-publications/0b33cbf0-5c67-4c99-8ac3-5573d505630f/recovery-accesses"
+	for _, tc := range []struct {
+		service bool
+		body    string
+		status  int
+	}{{true, "", 200}, {false, "", 403}, {true, "{}", 400}} {
+		f := &developFileHTTPFixture{}
+		r := developFileHTTPRouter(t, developFileHTTPAuth(tc.service), f)
+		req := httptest.NewRequest("POST", path, strings.NewReader(tc.body))
+		req.Header.Set("Authorization", "Bearer addp_at_test")
+		result := httptest.NewRecorder()
+		r.ServeHTTP(result, req)
+		if result.Code != tc.status {
+			t.Fatal(result.Code, result.Body.String())
+		}
+	}
+}
