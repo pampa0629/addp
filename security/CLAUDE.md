@@ -944,3 +944,11 @@ Develop 导出会话 #19 经独立 Transfer 执行 94347359-7a39-4359-9b66-cf26b
 前两次本地失败保留。p5dviirx 报告停在额外 Manager 预览403，无查询或导出；此多余前置已移除，具体403原因未归档。mf68n8t8 的第一条执行成功，但临时脚本错误要求固定四个星号；开发者只读诊断核对精确Meta身份及已安装的保留前3／后4规则，第一行长度10、含三个星号，五行均符合实际规则。脚本修正为长度保留，变量长度红绿回归、原值／过量保留拒绝、正式Develop拒绝保留及注销检查通过。开发者存储诊断不代替当前用户HTTP验收。
 
 原件 /var/folders/r1/l7b49c757dz02zftf_l9vl9r0000gn/T/p145-grouping-local-cjagmlmn/，独立脚本及结果 /tmp/p145-grouping-independent/。本地表是此前脱敏Transfer的产物，因此本轮证明普通用户业务出口的分组可用及历史／导出一致性；原值分组、掩码碰撞及三算法的变换等价性仍取此前真实PostgreSQL T2。无个人浏览器或新增Hosted通过，无策略、角色或授权写入。下一步按原SQL范围核对Service查询服务的发布与实际输出，其他聚合和HAVING仍在已记录边界内。
+
+### PostgreSQL 分组 SQL 本地 Service 发布与分页验收（2026-11-11）
+
+普通 outdoor开发者 #33／Tenant #1 通过正式Gateway登录完成限定HTTP验收。沿用PG engine #2、outdoor.p145_native_default_20261024，以同一直接列分组及count(*)查询取得Develop执行 c86457e6-6bb0-4a79-be81-a2117612e190 的11行保护预览，作为两页各5行及继续分页的对照。正式Service输出契约检测后，新建私有临时SQL服务 #17、version1，稳定键为contact，无固定LIMIT、无角色专用选择。
+
+实际两页JSON与CSV均成功。保留结果中的contact为变长前3／后4掩码，n均1；两页合并10行与Develop对照的前10行逐项相等，11行中的最后一行为仍有后页提供对照。独立解析两份实际CSV的字段顺序、行序、计数、掩码和原始字节摘要，分别为96a4d551238f13f41aa50fb0f96c6fc7a8c4ebd08cff2de38dc57cf707f64471和96bf04ffc3f984d5f4e4edccb2635c4cad52c59d24b3a9993247e6c0cec1ffcc。原脚本实际断言JSON旧游标续读、JSON／CSV的no-store及分页头、消费版本一致，最终以version1删除精确服务并GET确认404，随后注销。保留报告service_deleted／logged_out均true，rejections为空。未归档原始HTTP响应，协议头、游标和清理结果按运行断言及保留报告记账。
+
+原件 /var/folders/r1/l7b49c757dz02zftf_l9vl9r0000gn/T/p145-service-grouping-local-n2bdx9x6/；独立审计 /tmp/p145-service-grouping-independent/independent-audit.json。本轮只补临时脚本和证据，无产品代码变更、策略／角色／授权变更或个人服务启停。本地源是此前已脱敏Transfer产物，原值变换等价性仍取前述真实PG T2。本轮不包含Service分组的角色选择生命周期、个人浏览器或新增Hosted。下一步优先补Transfer独立分组任务的实际目标写入，再按具体出口补其他已确认形态。
