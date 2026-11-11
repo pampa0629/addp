@@ -14,6 +14,7 @@ import (
 	commonExecution "github.com/addp/common/execution"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/manager/internal/models"
+	"github.com/jackc/pgx/v5/pgconn"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 )
@@ -792,29 +793,58 @@ func TestIntegrationPostgresManagerManagedTaskSemanticIdentityIndexes(t *testing
 		_ = db.Unscoped().Where("tenant_id = ?", tenantID).Delete(&models.RasterCOGTask{}).Error
 	})
 	fingerprint := fmt.Sprintf("manager-semantic-%d", tenantID)
-	tileConfig := commonModels.JSONMap{
-		"target":       commonModels.JSONMap{"item_fingerprint": fingerprint},
-		"profile_hash": "profile-a",
-	}
-	firstTileTask := &models.TileCacheTask{TenantID: tenantID, Name: "tile-a", Enabled: true, Config: tileConfig}
-	if err := createTaskDefinition(context.Background(), db, commonExecution.TaskTypeVectorTileCacheGeneration, firstTileTask); err != nil {
-		t.Fatalf("create first tile cache task: %v", err)
-	}
-	duplicateTileTask := &models.TileCacheTask{TenantID: tenantID, Name: "tile-b", Enabled: true, Config: tileConfig}
-	if err := createTaskDefinition(context.Background(), db, commonExecution.TaskTypeVectorTileCacheGeneration, duplicateTileTask); err == nil || !strings.Contains(err.Error(), "uq_manager_task_definition_semantic") {
-		t.Fatalf("duplicate tile cache task error = %v, want semantic identity index", err)
-	}
-
-	rasterConfig := commonModels.JSONMap{
-		"target": commonModels.JSONMap{"item_fingerprint": fingerprint},
-	}
-	firstRasterTask := &models.RasterCOGTask{TenantID: tenantID, Name: "cog-a", Enabled: true, Config: rasterConfig}
-	if err := createTaskDefinition(context.Background(), db, commonExecution.TaskTypeRasterCOGGeneration, firstRasterTask); err != nil {
-		t.Fatalf("create first raster COG task: %v", err)
-	}
-	duplicateRasterTask := &models.RasterCOGTask{TenantID: tenantID, Name: "cog-b", Enabled: true, Config: rasterConfig}
-	if err := createTaskDefinition(context.Background(), db, commonExecution.TaskTypeRasterCOGGeneration, duplicateRasterTask); err == nil || !strings.Contains(err.Error(), "uq_manager_task_definition_semantic") {
-		t.Fatalf("duplicate raster COG task error = %v, want semantic identity index", err)
+	for _, kind := range []struct {
+		taskType string
+		index    string
+		config   commonModels.JSONMap
+	}{
+		{commonExecution.TaskTypeVectorTileCacheGeneration, "idx_vector_tile_cache_tasks_source_profile_unique",
+			commonModels.JSONMap{"target": commonModels.JSONMap{"item_fingerprint": fingerprint}, "profile_hash": "profile-a"}},
+		{commonExecution.TaskTypeRasterCOGGeneration, "idx_raster_cog_tasks_source_unique",
+			commonModels.JSONMap{"target": commonModels.JSONMap{"item_fingerprint": fingerprint}}},
+	} {
+		t.Run(kind.taskType, func(t *testing.T) {
+			// Each constraint must reject independently. Transactional DDL restores
+			// both indexes and every fixture, including after a failed assertion.
+			for _, drop := range []string{kind.index, "uq_manager_task_definition_semantic"} {
+				want := "uq_manager_task_definition_semantic"
+				if drop == want {
+					want = kind.index
+				}
+				t.Run(want, func(t *testing.T) {
+					rollback := errors.New("rollback semantic index probe")
+					err := db.Transaction(func(tx *gorm.DB) error {
+						if err := tx.Exec("DROP INDEX manager." + drop).Error; err != nil {
+							return err
+						}
+						first := &models.TaskDefinition{TenantID: tenantID, Name: "first", Enabled: true, Config: kind.config}
+						if err := createTaskDefinition(t.Context(), tx, kind.taskType, first); err != nil {
+							return err
+						}
+						duplicate := &models.TaskDefinition{TenantID: tenantID, Name: "duplicate", Enabled: true, Config: kind.config}
+						err := createTaskDefinition(t.Context(), tx, kind.taskType, duplicate)
+						var violation *pgconn.PgError
+						if !errors.As(err, &violation) || violation.Code != "23505" || violation.ConstraintName != want {
+							return fmt.Errorf("duplicate task error = %v, want constraint %s", err, want)
+						}
+						if !IsTaskSemanticConflict(err, kind.taskType) {
+							return fmt.Errorf("constraint %s was not recognized as a task semantic conflict", want)
+						}
+						var count int64
+						if err := tx.Model(&models.TaskDefinition{}).Where("tenant_id = ? AND task_type = ?", tenantID, kind.taskType).Count(&count).Error; err != nil {
+							return err
+						}
+						if count != 1 {
+							return fmt.Errorf("duplicate insert left %d definitions, want 1", count)
+						}
+						return rollback
+					})
+					if !errors.Is(err, rollback) {
+						t.Fatal(err)
+					}
+				})
+			}
+		})
 	}
 }
 

@@ -142,7 +142,7 @@ func (s *RasterCOGTaskService) Create(ctx context.Context, task *models.RasterCO
 		return s.reuseExistingTask(ctx, task, existing)
 	}
 	if err := s.repo.CreateTask(ctx, task); err != nil {
-		if strings.Contains(err.Error(), "idx_raster_cog_tasks_source_unique") {
+		if repository.IsTaskSemanticConflict(err, commonExecution.TaskTypeRasterCOGGeneration) {
 			existing, lookupErr := s.repo.GetTaskByItemFingerprint(ctx, task.TenantID, cfg.Target.ItemFingerprint)
 			if lookupErr != nil {
 				return lookupErr

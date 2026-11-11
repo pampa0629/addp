@@ -58,7 +58,7 @@ raster COG 的生成任务定义写入 `manager.task_definitions`，TaskProvider
 ### 测试与实际数据库边界
 
 - PostgreSQL `TestIntegrationPostgresManagerRasterCOGConcurrentClaimAndStart` 显式执行模型 `AutoMigrate`，断言同任务两次并发领取只有一次成功，以及 pending／running 与任务摘要；该用例没有显式创建或核验结果部分唯一索引。
-- `TestIntegrationPostgresManagerManagedTaskSemanticIdentityIndexes` 调用 COG 初始化，但重复拒绝断言针对统一任务的 `uq_manager_task_definition_semantic`，不证明 COG 结果唯一性。任务专用表达式索引与通用任务唯一键统一见[任务定义索引说明](task_definitions表.md#索引声明与唯一性边界)。
+- `TestIntegrationPostgresManagerManagedTaskSemanticIdentityIndexes` 调用 COG 初始化，但重复拒绝断言针对任务定义的通用语义索引与 COG 专用表达式索引，不证明 COG 结果唯一性。任务专用表达式索引与通用任务唯一键统一见[任务定义索引说明](task_definitions表.md#索引声明与唯一性边界)。
 - SQLite `TestRasterCOGPrepareResultReturnsUpdatedExistingResult` 验证已有 stale 结果更新后返回新的存储引用、栅格事实及 building 状态；它不构成 PostgreSQL 约束或真实对象交付证据。
 
 标准回归沿 [Manager 开发与验证](../../CLAUDE.md#开发与验证)的 `make test-manager-backend`、`make test-manager-postgres`。上述断言不覆盖结果重复插入的数据库拒绝、各状态占位、软删除后复用及任务删除后结果引用保留的完整矩阵；不从用例名称或源码存在推定通过。

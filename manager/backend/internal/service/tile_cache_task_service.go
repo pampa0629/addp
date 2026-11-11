@@ -417,7 +417,7 @@ func (s *TileCacheTaskService) Create(ctx context.Context, task *models.TileCach
 		return s.reuseExistingTask(ctx, task, existing)
 	}
 	if err := s.tileCacheRepo.CreateTask(ctx, task); err != nil {
-		if strings.Contains(err.Error(), "idx_vector_tile_cache_tasks_source_profile_unique") {
+		if repository.IsTaskSemanticConflict(err, commonExecution.TaskTypeVectorTileCacheGeneration) {
 			existing, lookupErr := s.tileCacheRepo.GetTaskByTargetFingerprintAndProfile(ctx, task.TenantID, identity.ItemFingerprint, profileHash, 0)
 			if lookupErr != nil {
 				return lookupErr

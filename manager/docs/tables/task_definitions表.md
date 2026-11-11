@@ -64,13 +64,17 @@
 | `idx_gaussian_splat_ksplat_tasks_source_unique` | `gaussian_splat_ksplat_generation` | `config.source.item_fingerprint`，并要求 `COALESCE(..., '') <> ''`。 |
 | `idx_point_cloud_copc_tasks_source_unique` | `point_cloud_copc_generation` | `config.source.item_fingerprint`，并要求 `COALESCE(..., '') <> ''`。 |
 
+服务按 PostgreSQL 的 `23505`、Manager 任务定义表及准确约束名识别当前任务类型的语义冲突，回查并复用规范任务。两项索引同时冲突时，不能依赖数据库先报告哪一项。
+
 因此，空 `semantic_key` 不参与通用索引，不等于绕过全部数据库唯一约束；类型专用索引仍按配置表达式独立判断。索引保护也不替代各类型配置校验、版本校验或资源授权。
 
 #### 初始化、测试与实际约束
 
 当前 Go 初始化在检测到旧任务表时包含结果关联清理、Manager 派生执行清理与旧表删除，再维护统一表和索引；它不是只读核验入口。[历史 046 SQL](../../backend/migrations/046_add_task_binding_status.sql)仅对应绑定字段、状态归一化及绑定查询索引，不能据该文件存在认定所有语义索引已生效。
 
-[ManagedTaskSemanticIdentityIndexes 用例](../../backend/internal/repository/tile_cache_repository_postgres_integration_test.go)对瓦片缓存与 COG 任务直接断言通用唯一索引名；[UnifiedTaskDefinitionLifecycle 用例](../../backend/internal/repository/task_definition_postgres_integration_test.go)包含统一初始化、重复业务任务拒绝、绑定状态归一化与清理。它们不自动扩展为所有任务类型、通用 key 与配置表达式的一致性、空／NULL key、软删除后复用或当前运行库约束的独立验收证据。
+[ManagedTaskSemanticIdentityIndexes 用例](../../backend/internal/repository/tile_cache_repository_postgres_integration_test.go)对瓦片缓存与 COG 分别在回滚事务内暂时移除另一约束，验证通用语义索引和类型专用索引各自以准确约束名拒绝重复，同时只留下一个定义；[UnifiedTaskDefinitionLifecycle 用例](../../backend/internal/repository/task_definition_postgres_integration_test.go)包含统一初始化、重复业务任务拒绝、绑定状态归一化与清理。它们不自动扩展为所有任务类型、通用 key 与配置表达式的一致性、空／NULL key、软删除后复用或当前运行库约束的独立验收证据。
+
+2026-11-11 的 [首失败 Run 42936636174／Job 130253833699](https://github.com/pampa0629/addp/actions/runs/42936636174/job/130253833699)已由专用索引拒绝重复插入，但旧测试只接受通用索引名。未改 Manager 后端的[后继 Run 42937944396／Job 130254246607](https://github.com/pampa0629/addp/actions/runs/42937944396/job/130254246607)同名用例及完整门禁通过，两份证据各自保留。原归档未保存索引 OID，不能还原具体哪次 DDL 改变了检查顺序。修订后的回归在事务内分别隔离两个约束，精确核验 SQLSTATE、约束名和存量定义数，退出回滚 DDL 与夹具。本地使用干净隔离检出，通过 `make test-manager-backend` 和 `make test-manager-postgres MANAGER_POSTGRES_TEST_ARGS="--source-root <隔离检出>"`，含四项准确约束反例，零跳过。
 
 实际数据库须分别核对表、字段／表达式、唯一性、有效状态及各自谓词，不能只看索引名称。标准入口为 `make test-manager-postgres`，上述用例由现有命名筛选命中；门禁与分版本证据见[Manager 开发与验证](../../CLAUDE.md#开发与验证)。源码和用例存在不计为数据库或运行验收通过，不以重启初始化或重放历史 SQL 代替只读核验。
 

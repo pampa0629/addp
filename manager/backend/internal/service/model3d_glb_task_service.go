@@ -110,7 +110,7 @@ func (s *Model3DGLBTaskService) Create(ctx context.Context, task *models.Model3D
 		return s.reuseExistingTask(ctx, task, existing)
 	}
 	if err := s.repo.CreateTask(ctx, task); err != nil {
-		if strings.Contains(err.Error(), "idx_model_3d_glb_tasks_source_unique") {
+		if repository.IsTaskSemanticConflict(err, commonExecution.TaskTypeModel3DGLBGeneration) {
 			existing, lookupErr := s.repo.GetTaskByItemFingerprint(ctx, task.TenantID, cfg.Source.ItemFingerprint)
 			if lookupErr != nil {
 				return lookupErr

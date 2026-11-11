@@ -89,7 +89,7 @@ func (s *VectorTileSetTaskService) Create(ctx context.Context, task *models.Vect
 		return s.reuseExistingTask(ctx, task, existing)
 	}
 	if err := s.repo.CreateTask(ctx, task); err != nil {
-		if strings.Contains(err.Error(), "idx_vector_tile_set_tasks_semantic_unique") {
+		if repository.IsTaskSemanticConflict(err, commonExecution.TaskTypeVectorTileSetGeneration) {
 			existing, lookupErr := s.repo.GetTaskBySemanticHash(ctx, task.TenantID, semanticHash, 0)
 			if lookupErr != nil {
 				return lookupErr

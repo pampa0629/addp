@@ -114,7 +114,7 @@ func (s *PointCloudCOPCTaskService) Create(ctx context.Context, task *models.Poi
 		return s.reuseExistingTask(ctx, task, existing)
 	}
 	if err := s.repo.CreateTask(ctx, task); err != nil {
-		if strings.Contains(err.Error(), "idx_point_cloud_copc_tasks_source_unique") {
+		if repository.IsTaskSemanticConflict(err, commonExecution.TaskTypePointCloudCOPCGeneration) {
 			existing, lookupErr := s.repo.GetTaskByItemFingerprint(ctx, task.TenantID, cfg.Source.ItemFingerprint)
 			if lookupErr != nil {
 				return lookupErr

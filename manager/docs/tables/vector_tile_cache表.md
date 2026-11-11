@@ -71,7 +71,7 @@
 
 [历史 014 SQL](../../backend/migrations/014_recreate_vector_tile_cache_state.sql)使用 `tile_format` 参与唯一键；[历史 039 SQL](../../backend/migrations/039_recreate_vector_tile_cache_as_pmtiles.sql)和当前 Go 初始化使用 `profile_hash`，并包含表重建或记录清理。历史文件存在不表示目标环境已执行，不以重启初始化或重放历史 SQL 代替只读约束核验。
 
-现有 [ManagedTaskSemanticIdentityIndexes 用例](../../backend/internal/repository/tile_cache_repository_postgres_integration_test.go)会调用初始化，但直接反例断言的是任务定义的 `uq_manager_task_definition_semantic`，不能把它计为本结果表部分唯一索引的重复记录拒绝、软删除后复用或当前运行库约束已生效的独立证据。该用例由 `make test-manager-postgres` 的现有命名筛选命中；标准门禁与分版本证据统一见[Manager 开发与验证](../../CLAUDE.md#开发与验证)，源码与用例存在不计为数据库或运行验收通过。
+现有 [ManagedTaskSemanticIdentityIndexes 用例](../../backend/internal/repository/tile_cache_repository_postgres_integration_test.go)会调用初始化，但反例只分别核验任务定义的通用语义索引与类型专用表达式索引，不能把它计为本结果表部分唯一索引的重复记录拒绝、软删除后复用或当前运行库约束已生效的独立证据。该用例由 `make test-manager-postgres` 的现有命名筛选命中；标准门禁与分版本证据统一见[Manager 开发与验证](../../CLAUDE.md#开发与验证)，源码与用例存在不计为数据库或运行验收通过。
 
 ## 五、相关文档
 

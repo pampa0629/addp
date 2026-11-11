@@ -101,7 +101,7 @@ func (s *Model3DTilesTaskService) Create(ctx context.Context, task *models.Model
 		return s.reuseExistingTask(ctx, task, existing)
 	}
 	if err := s.repo.CreateTask(ctx, task); err != nil {
-		if strings.Contains(err.Error(), "idx_model3d_tiles_tasks_source_format_unique") {
+		if repository.IsTaskSemanticConflict(err, commonExecution.TaskTypeModel3DTilesGeneration) {
 			existing, lookupErr := s.repo.GetTaskByItemFingerprintAndFormat(ctx, task.TenantID, cfg.Source.ItemFingerprint, cfg.TargetFormat)
 			if lookupErr != nil {
 				return lookupErr
