@@ -162,6 +162,11 @@ on:
         required: false
         type: string
         default: ''
+      security_source_commit:
+        description: Optional full ancestor SHA for security-mysql-owner-protection only
+        required: false
+        type: string
+        default: ''
       slope_orthogonal_source_commit:
         description: Full ancestor source SHA, required for raster-slope-orthogonal-persistence
         required: false
@@ -661,11 +666,29 @@ jobs:
       ADDP_ONLINE_GRAPH_ENGINE: ${{ inputs.graph_engine }}
       ADDP_ONLINE_GRAPH_CASE: ${{ inputs.graph_case }}
     steps:
+      - name: Validate requested Security source commit
+        env:
+          SOURCE_COMMIT: ${{ inputs.security_source_commit }}
+          SUITE: ${{ inputs.suite }}
+        run: |
+          [[ -z "$SOURCE_COMMIT" || "$SOURCE_COMMIT" =~ ^[0-9a-f]{40}$ ]] || exit 1
+          [[ -z "$SOURCE_COMMIT" || "$SUITE" == security-mysql-owner-protection ]] || exit 1
+
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           fetch-depth: 0
+          ref: ${{ inputs.security_source_commit || github.sha }}
           persist-credentials: false
+
+      - name: Verify Security source ancestry
+        env:
+          SOURCE_COMMIT: ${{ inputs.security_source_commit || github.sha }}
+          DISPATCH_COMMIT: ${{ github.sha }}
+        run: |
+          [ "$(git rev-parse HEAD)" = "$SOURCE_COMMIT" ] || exit 1
+          git merge-base --is-ancestor "$SOURCE_COMMIT" "$DISPATCH_COMMIT" || exit 1
+          printf 'Security source commit=%s; dispatch commit=%s\n' "$SOURCE_COMMIT" "$DISPATCH_COMMIT"
 
       - name: Set up Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7

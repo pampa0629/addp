@@ -340,6 +340,8 @@ Security隔离夹具复用 `online-engine-registration.py` 的 `ExactRecordGrant
 
 ### v45：PostgreSQL 分组三出口与方式撤销
 
+手工派发该 suite 时，可用 `security_source_commit` 锁定已审阅的完整小写 40 位源码 SHA；只接受派发提交的祖先，且必须与实际 checkout 的 HEAD 一致。该输入只用于 `security-mysql-owner-protection`，不改变其他 suite 的源码选择。派发提交与实际源码提交分别留证，领域、浏览器和清理报告按实际源码核验；省略时沿本次派发提交执行。
+
 沿现有 v44 套件增加 `postgres_grouped_outputs` 领域阶段，唯一领域报告升为 v45；浏览器仍为 v10、23 张必需图，原七表精确读取、账号、权限、90 秒资格到期及 2400 秒预算保持。复用已纳管的 `spatial_algorithm_source.value_a` 原值样本和正式 Assessment，不新增源表或读取许可。限定单表直接列 `GROUP BY id,value_a`、`id AS bucket`、`value_a AS contact` 及 `count(*) AS n`，按原 id 排序，保留五个分组与计数；不扩展 HAVING、其他聚合或产品语法。
 
 Develop 查询及重复历史、私有 SQL Service 两页 JSON／CSV、Transfer bounded/snapshot 独立任务和物理目标均与独立固定样本核对。初始默认规则保留前3／后4，三个出口分别沿现有 Policy 创建前1／后1默认及全遮盖角色选项，使用同一普通登录用户的现有角色保存选择；不借用发布人身份、不改角色资格。全遮盖后仅撤销这三项方式，等待各 Owner 确认；保留旧选择的 Develop 执行须准备阶段精确拒绝、同一历史无结果，Service 新读和旧游标的 JSON／CSV 须409/`query_protection_choice_invalid`且 no-store，Transfer 原任务启动须409/`transfer_protection_choice_invalid`且不新增执行或改写物理目标。该阶段验证方式撤销，不将它计为角色资格撤销或自然到期。

@@ -1173,6 +1173,21 @@ def validate_security_mysql_owner_protection_profile(
         raise RegistrationError("security-mysql-owner-protection requires a manual Ubuntu Hosted job")
     if "&& inputs.suite != 'security-mysql-owner-protection'" not in workflow:
         raise RegistrationError("security-mysql-owner-protection must not also dispatch on self-hosted")
+    if '      security_source_commit:\n' not in workflow or any(
+        not source_contract_contains(job.group('body'), fragment, repository)
+        for fragment in (
+            'name: Validate requested Security source commit',
+            'SOURCE_COMMIT: ${{ inputs.security_source_commit }}',
+            '^[0-9a-f]{40}$',
+            '[[ -z "$SOURCE_COMMIT" || "$SUITE" == security-mysql-owner-protection ]]',
+            'ref: ${{ inputs.security_source_commit || github.sha }}',
+            'name: Verify Security source ancestry',
+            'DISPATCH_COMMIT: ${{ github.sha }}',
+            '[ "$(git rev-parse HEAD)" = "$SOURCE_COMMIT" ]',
+            'git merge-base --is-ancestor "$SOURCE_COMMIT" "$DISPATCH_COMMIT"',
+        )
+    ):
+        raise RegistrationError("Security fixed source must validate exact SHA, suite, checkout and dispatch ancestry")
     makefile = (repository / "Makefile").read_text(encoding="utf-8")
     aggregate = make_target_commands((repository / "Makefile").read_text(), "test-online-runner")
     for test in ("online-hosted-security-gate_test.py", "online-security-owner-fixture_test.py", "security-mysql-owner-protection-online_test.py"):

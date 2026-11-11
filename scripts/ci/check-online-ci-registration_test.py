@@ -3456,6 +3456,12 @@ class OnlineCIRegistrationTest(unittest.TestCase):
         registered = {"security-mysql-owner-protection"}
         CHECK.validate_security_mysql_owner_protection_profile(self.repository, registered)
         for relative, fragment, message in (
+            (".github/workflows/online-t4-gates.yml", "      security_source_commit:\n", "Security fixed source"),
+            (".github/workflows/online-t4-gates.yml", '[[ -z "$SOURCE_COMMIT" || "$SOURCE_COMMIT" =~ ^[0-9a-f]{40}$ ]]', "Security fixed source"),
+            (".github/workflows/online-t4-gates.yml", '[[ -z "$SOURCE_COMMIT" || "$SUITE" == security-mysql-owner-protection ]]', "Security fixed source"),
+            (".github/workflows/online-t4-gates.yml", 'ref: ${{ inputs.security_source_commit || github.sha }}', "Security fixed source"),
+            (".github/workflows/online-t4-gates.yml", '[ "$(git rev-parse HEAD)" = "$SOURCE_COMMIT" ]', "Security fixed source"),
+            (".github/workflows/online-t4-gates.yml", 'git merge-base --is-ancestor "$SOURCE_COMMIT" "$DISPATCH_COMMIT"', "Security fixed source"),
             ("scripts/test/online-hosted-security-gate.sh", "before_online_application_stop() (", "Hosted profile is missing"),
             ("scripts/test/online-hosted-security-gate.sh", "scripts/test/security-mysql-owner-protection-online.py --cleanup-record-grants", "Hosted profile is missing"),
             ("scripts/test/security-mysql-owner-protection-online.py", 'database != "security_fixture"', "metadata preparation is missing"),
