@@ -19,6 +19,20 @@ x-python-http: &python-http
     - ${METRICS_T2_WORK}/source/python-common:/app/common-python:ro
 
 services:
+  cdc-query-tool:
+    profiles: [cdc-native]
+    image: quay.io/prometheus/prometheus:v3.13.4@sha256:87861b8cf91579109319ebc300f3f1060e6da9c05d6ae8ad15a20c879e84e32e
+    entrypoint: [/bin/promtool]
+    command: [test, rules, /query-tests/cdc-rules.json]
+    tmpfs: ["/tmp:nosuid,nodev,size=128m,mode=1777"]
+    network_mode: none
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    cpus: 0.5
+    mem_limit: 256m
+    volumes:
+      - ${METRICS_T2_WORK}/query-tests:/query-tests:ro
   cdc-broker:
     profiles: [cdc-native]
     image: docker.redpanda.com/redpandadata/redpanda:v24.3.18@sha256:5c6bdbaf30c97de1ebc2ad417b7d02e0bdb5bf88e243bd3079d74bfde9c7754f

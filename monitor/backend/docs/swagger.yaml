@@ -825,6 +825,49 @@ definitions:
       task_type:
         type: string
     type: object
+  github_com_addp_monitor_internal_service.CDCResourceObservation:
+    properties:
+      collection:
+        $ref: '#/definitions/github_com_addp_monitor_internal_service.ProcessCollection'
+      series:
+        items:
+          $ref: '#/definitions/github_com_addp_monitor_internal_resourcequery.Series'
+        type: array
+      subject:
+        $ref: '#/definitions/github_com_addp_monitor_internal_service.CDCResourceSubject'
+    type: object
+  github_com_addp_monitor_internal_service.CDCResourceResponse:
+    properties:
+      data:
+        items:
+          $ref: '#/definitions/github_com_addp_monitor_internal_service.CDCResourceObservation'
+        type: array
+      discovery_state:
+        type: string
+      end:
+        type: string
+      lookback_seconds:
+        type: integer
+      policy_version:
+        type: integer
+      queried_at:
+        type: string
+      start:
+        type: string
+      step_seconds:
+        type: integer
+    type: object
+  github_com_addp_monitor_internal_service.CDCResourceSubject:
+    properties:
+      component_id:
+        type: string
+      component_type:
+        type: string
+      kind:
+        type: string
+      started_at:
+        type: string
+    type: object
   github_com_addp_monitor_internal_service.ContainerResourceResponse:
     properties:
       cpu_upper_cores:
@@ -4368,6 +4411,134 @@ paths:
       x-addp-required-permissions:
       - monitor.platform_alert.read
       - monitor.platform_alert.update
+  /platform/cdc_resource_observations:
+    get:
+      description: 当前 Infra Redpanda 与 Kafka Connect 各至多一项，固定目录、共享预算及完成时身份重核；发现不可用与空清单分开，不读取
+        Connector 配置或业务数据 | At most one current Infra Redpanda and Kafka Connect component
+        each; fixed catalogs, shared budget and completion-time identity recheck;
+        distinguish unavailable discovery from an empty inventory; no connector configuration
+        or business data
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_addp_monitor_internal_service.CDCResourceResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "422":
+          description: Unprocessable Entity
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "429":
+          description: Too Many Requests
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "504":
+          description: Gateway Timeout
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 读取 CDC 组件指标 | Read CDC component observations
+      tags:
+      - 平台运行监控 | Platform Runtime Monitoring
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - monitor.resource_observation.read
+  /platform/cdc_resource_trends:
+    get:
+      description: 仅当前组件容器运行段，固定类型指标最多十二项、最长七天；缺样不补零，不拼接旧容器，源端延迟不是链路端到端延迟 | Only the
+        current component container segment; at most twelve fixed per-type metrics
+        and seven days; no missing-sample zero fill or old-container stitching; source
+        delay is not end-to-end latency
+      parameters:
+      - description: 当前组件 UUID | Current component UUID
+        in: query
+        name: component_id
+        required: true
+        type: string
+      - description: 逗号分隔的固定指标键 | Comma-separated fixed metric keys
+        in: query
+        name: metrics
+        required: true
+        type: string
+      - description: RFC3339 开始时间 | RFC3339 start time
+        in: query
+        name: start
+        required: true
+        type: string
+      - description: RFC3339 结束时间 | RFC3339 end time
+        in: query
+        name: end
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_addp_monitor_internal_service.CDCResourceResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "422":
+          description: Unprocessable Entity
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "429":
+          description: Too Many Requests
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "504":
+          description: Gateway Timeout
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 读取当前 CDC 组件运行段趋势 | Read current CDC component trends
+      tags:
+      - 平台运行监控 | Platform Runtime Monitoring
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - monitor.resource_observation.read
   /platform/container_resource_observations:
     get:
       description: 精确授权一个当前实例；四项固定资源组目录，只有 System 部署证明匹配时提供硬上界利用率。证明缺失不推断容器或额度；进程

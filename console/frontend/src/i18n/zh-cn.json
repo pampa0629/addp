@@ -574,6 +574,7 @@
         "platformAlerts": "平台告警",
         "httpQuality": "HTTP 监控",
         "traces": "调用链",
+        "cdcResources": "CDC 监控",
         "engineResources": "引擎监控"
       },
       "catalog": {

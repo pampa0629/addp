@@ -356,7 +356,7 @@ func normalize(data envelope, p Plan, b Budget) ([]Series, error) {
 						continue
 					}
 				}
-				if !vok || !tok || math.IsNaN(v) || math.IsInf(v, 0) || math.IsNaN(ts) || math.IsInf(ts, 0) || v < 0 || ts < 0 || ts > float64(point.EvaluatedAt.Unix()) || (row.Unit == "percent" && d.Key != "redis.memory.used_percent" && v > 100) || (row.Unit == "status" && v != 0 && v != 1) || ((d.Block() || row.Unit == "inodes" || row.Unit == "connections" || row.Unit == "drives" || row.Unit == "objects" || row.Unit == "buckets" || row.Unit == "requests") && (v > 9007199254740991 || math.Trunc(v) != v)) {
+				if !vok || !tok || math.IsNaN(v) || math.IsInf(v, 0) || math.IsNaN(ts) || math.IsInf(ts, 0) || (v < 0 && d.Key != "cdc.connect.source_delay_max_seconds") || ts < 0 || ts > float64(point.EvaluatedAt.Unix()) || (row.Unit == "percent" && d.Key != "redis.memory.used_percent" && v > 100) || (row.Unit == "status" && v != 0 && v != 1) || ((d.Block() || row.Unit == "inodes" || row.Unit == "connections" || row.Unit == "drives" || row.Unit == "objects" || row.Unit == "buckets" || row.Unit == "requests" || row.Unit == "tasks" || row.Unit == "connectors" || row.Unit == "records" || row.Unit == "partitions") && (v > 9007199254740991 || math.Trunc(v) != v)) {
 					continue
 				}
 				sec, fraction := math.Modf(ts)

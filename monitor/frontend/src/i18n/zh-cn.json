@@ -1445,6 +1445,60 @@
       "callee": "被调用方",
       "parentSpan": "父 Span ID"
     },
+    "cdc": {
+      "snapshotUnavailable": "未取得有效组件快照",
+      "title": "CDC 监控",
+      "subtitle": "查看源端、变更采集与消息代理各环节的运行情况",
+      "denied": "当前身份无权读取 CDC 组件指标",
+      "pgDenied": "读取 PostgreSQL 源端还需引擎部署读取权限",
+      "discoveryUnavailable": "组件发现暂不可用，无法确认当前部署",
+      "notDeployed": "未发现运行中的组件",
+      "unknown": "状态未知",
+      "sourceScope": "源端部署范围",
+      "database": "PostgreSQL 源端",
+      "chooseDatabase": "选择 PostgreSQL 部署",
+      "emptyConnectors": "当前没有 Connector",
+      "noDelay": "暂无有效源端延迟样本",
+      "noLag": "暂无可计算的消费组积压样本",
+      "trend": "环节趋势",
+      "stage": "CDC 环节",
+      "noTrend": "选择已接入的环节及指标后查看趋势",
+      "stages": {
+        "postgresql": "PostgreSQL",
+        "kafka-connect": "Kafka Connect / Debezium",
+        "redpanda": "Redpanda"
+      },
+      "roles": {
+        "postgresql": "源端 · 逻辑槽与 WAL 保留",
+        "kafka-connect": "采集端 · Connector 与 Task",
+        "redpanda": "消息端 · 存储、分区与消费积压"
+      },
+      "metrics": {
+        "diskUsed": "磁盘使用率",
+        "unavailablePartitions": "不可用分区",
+        "pendingRecords": "待消费记录",
+        "diskTotal": "磁盘总量",
+        "diskFree": "磁盘空闲",
+        "groupPartitions": "消费组已提交分区",
+        "connectors": "Connector 总数",
+        "failedTasks": "失败 Task",
+        "sourceDelay": "最大源端延迟",
+        "tasks": "Task 总数",
+        "failedConnectors": "失败 Connector",
+        "runningTasks": "运行 Task",
+        "pausedTasks": "暂停 Task",
+        "offsetTasks": "offset 提交观测 Task",
+        "offsetFailure": "最大 offset 提交失败比例",
+        "streamingConnectors": "Streaming Connector",
+        "connected": "已连接源端",
+        "delaySamples": "有延迟样本 Connector"
+      },
+      "hints": {
+        "sourceDelay": "Debezium PostgreSQL streaming 的最大源端延迟。不是整条链路的端到端延迟；负值反映源端与采集端时钟偏差。",
+        "pendingRecords": "仅在所有已提交消费分区都有对应末端 offset 时汇总；没有消费组样本时不补零。",
+        "offsetFailure": "原生 Task offset 提交失败比例的最大值，换算为百分比；不是事件处理失败率。"
+      }
+    },
     "engines": {
       "noCurrentHost": "当前无有效主机关联",
       "title": "引擎监控",

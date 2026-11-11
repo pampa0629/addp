@@ -167,6 +167,13 @@ CDC 来源安装与恢复沿统一 `metrics-sources.py` 入口，仅允许 Infra
 
 CDC 固定来源复用 `sourceserver` 的单次完整投影和私有 mTLS `/metrics`，不提供任意地址或 JMX 查询入口。Redpanda 只读取 `/public_metrics`，聚合磁盘与不可用分区；消费组积压只在每个已提交分区都有对应末端 offset 时发布，空消费组只发布分区数为零，不伪造积压值。Kafka Connect 只读取 `/connectors?expand=status` 和两个固定 JMX 属性集合：Task 的 offset 提交失败比例，以及 Debezium PostgreSQL streaming 的连接状态、源端延迟。只输出固定状态计数和最大值，不输出 Connector、Topic、Group 或 MBean 名称。源端延迟为 Debezium 的毫秒值换算秒，offset 失败比例为原生 0～1 比例，均不能解释成整条链路延迟或失败率。
 
+CDC 页面唯一入口为 `/cdc-resources`。组件即时读取使用 `GET /platform/cdc_resource_observations`，不接受 query，按当前部署事实返回至多两项；发现 unavailable 与 available 的空集合分别表达。读取沿非委托 Platform User 的 `monitor.resource_observation.read`，不授予引擎、主机或业务数据读取权。PostgreSQL 源端选择和三项逻辑复制指标复用现有引擎部署列表、即时与趋势 API，并独立要求 `platform.engine_deployment.read`；页面不猜测 Connector 与数据库的对应关系。
+
+组件固定目录按每类最多十二项查询：Redpanda 为磁盘总量／空闲／使用率、不可用分区、消费组已提交分区数及待消费记录数；Connect 为 Connector／Task 总量、失败 Connector／Task、运行／暂停 Task、offset 提交观测 Task 数与最大失败百分比、Debezium streaming Connector／已连接数、有延迟样本 Connector 数与最大源端延迟秒数。所有指标均来自现有固定采集器；没有消费组时积压不补零，空 Connector 为有效零计数，未初始化延迟无值，原生负延迟保留表示时钟偏差，不能作为端到端延迟。页面常用指标直接展示，其余在卡片内部展开。
+
+`GET /platform/cdc_resource_trends` 只接受一个当前 `component_id`、该类型固定 `metrics`（最多十二项）及 RFC3339 `start/end`。最多七天，只读取当前容器 ID、启动时刻和受控实例地址，不拼接旧运行段。查询复用同一策略、并发和点数预算；即时集合的总时序数计入整批预算。每个值要求唯一、同次抓取的 up 与 observed_at 证据；来源故障、过期、缺样不回用旧值。返回前重读组件身份与查询策略，变化时丢弃本次结果。响应只含公开组件身份、类型、本次运行开始时刻、采集状态和固定序列，不含 Docker Engine、容器 ID、私网地址或凭据。
+
+
 Jolokia 必须使用属性级只读白名单，禁止 write、exec、list、search 和其他属性；不发布宿主机原生 JMX 端口。每次采集共享 4 秒截止时间，单次上游响应最多 1 MiB，Redpanda 最多 4096 个样本、Connect 最多 256 个 Connector / 1024 个 Task。超限、协议异常或必需读取失败时整个组件返回采集失败，不保留上次样本。空集合允许成功；Jolokia 对没有匹配 MBean 返回的 `404 + javax.management.InstanceNotFoundException` 表示空集合，其他 404 和权限拒绝仍为失败。尚未出现的 streaming / offset 属性不生成零值，Debezium 的延迟 `-1` 表示尚无事件或指标已重置，不生成延迟值；同时发布有延迟样本的 Connector 数，其余负值保留以反映时钟偏差。新增来源的 T1 与真实组件 T2 沿既有 Monitor 门禁执行；它们通过不等同于统一发现、36 目标并存或页面验收通过。[Jolokia 属性级权限](https://jolokia.org/reference/html/manual/security.html)
 
 ### 4.6 PostgreSQL 数据库侧汇总读取边界

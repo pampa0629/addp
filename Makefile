@@ -1645,6 +1645,7 @@ test-monitor-cdc-source-unit: ## CDC 固定指标、缺样语义和有界读取 
 test-monitor-cdc-admission-t2: ## 在既有隔离 CDC 门禁中验证真实来源的统一准入与失败隔离
 	@test -n "$(ADDP_CDC_ADMISSION_FILE)" || { echo 'Requires the owned CDC metrics fixture'; exit 1; }
 	@cd monitor/backend && GOWORK=off go test ./internal/metricsdiscovery -run '^TestIntegrationCDCDynamicAdmissionIsolation$$' -count=1 -v
+	@cd monitor/backend && GOWORK=off go test ./internal/resourcequery -run '^TestIntegrationCDCMetricQueries$$' -count=1 -v
 
 .PHONY: test-monitor-cdc-discovery-unit
 test-monitor-cdc-discovery-unit: ## CDC 部署事实、私有身份、统一发现与预算 T1

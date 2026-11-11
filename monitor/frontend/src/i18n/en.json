@@ -1445,6 +1445,60 @@
       "callee": "Callee",
       "parentSpan": "Parent Span ID"
     },
+    "cdc": {
+      "snapshotUnavailable": "No valid component snapshot",
+      "title": "CDC Monitoring",
+      "subtitle": "Observe the source, change capture and message broker stages",
+      "denied": "This identity cannot read CDC component metrics",
+      "pgDenied": "Reading PostgreSQL sources also requires engine deployment read permission",
+      "discoveryUnavailable": "Component discovery is unavailable; current deployments cannot be confirmed",
+      "notDeployed": "No running component discovered",
+      "unknown": "Unknown state",
+      "sourceScope": "Source deployment scope",
+      "database": "PostgreSQL source",
+      "chooseDatabase": "Select a PostgreSQL deployment",
+      "emptyConnectors": "No connectors are currently configured",
+      "noDelay": "No valid source delay samples",
+      "noLag": "No complete consumer group lag samples",
+      "trend": "Stage trends",
+      "stage": "CDC stage",
+      "noTrend": "Select a connected stage and metric to view trends",
+      "stages": {
+        "postgresql": "PostgreSQL",
+        "kafka-connect": "Kafka Connect / Debezium",
+        "redpanda": "Redpanda"
+      },
+      "roles": {
+        "postgresql": "Source · logical slots and retained WAL",
+        "kafka-connect": "Capture · connectors and tasks",
+        "redpanda": "Messaging · storage, partitions and consumer lag"
+      },
+      "metrics": {
+        "diskUsed": "Disk usage",
+        "unavailablePartitions": "Unavailable partitions",
+        "pendingRecords": "Pending records",
+        "diskTotal": "Disk capacity",
+        "diskFree": "Free disk space",
+        "groupPartitions": "Committed consumer partitions",
+        "connectors": "Connectors",
+        "failedTasks": "Failed tasks",
+        "sourceDelay": "Maximum source delay",
+        "tasks": "Tasks",
+        "failedConnectors": "Failed connectors",
+        "runningTasks": "Running tasks",
+        "pausedTasks": "Paused tasks",
+        "offsetTasks": "Tasks reporting offset commits",
+        "offsetFailure": "Maximum offset commit failure",
+        "streamingConnectors": "Streaming connectors",
+        "connected": "Connected sources",
+        "delaySamples": "Connectors with delay samples"
+      },
+      "hints": {
+        "sourceDelay": "Maximum source delay reported by Debezium PostgreSQL streaming. This is not end-to-end latency; negative values reflect source/capture clock skew.",
+        "pendingRecords": "Aggregated only when every committed consumer partition has a corresponding end offset. Missing group samples are not replaced with zero.",
+        "offsetFailure": "Maximum native task offset commit failure ratio, converted to percent. This is not the event processing failure rate."
+      }
+    },
     "engines": {
       "noCurrentHost": "No current host association",
       "title": "Engine monitoring",

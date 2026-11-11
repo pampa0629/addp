@@ -54,6 +54,7 @@ export const SEARCH_INDEX = [
   // 运行监控
   { labelKey: 'console.menus.monitor.resourceOverview', module: 'monitor', route: '/monitor/resource-overview', keywords: ['资源总览', 'TOP5', 'CPU忙碌率', '采集覆盖', 'resource overview', 'coverage'] },
   { labelKey: 'console.menus.monitor.nodeResources', module: 'monitor', route: '/monitor/node-resources', keywords: ['主机监控', '内存', '负载', 'node resources', 'memory', 'load'] },
+  { labelKey: 'console.menus.monitor.cdcResources', module: 'monitor', route: '/monitor/cdc-resources', keywords: ['CDC', 'Debezium', 'Kafka Connect', 'Redpanda', '逻辑复制', '消费积压'] },
   { labelKey: 'console.menus.monitor.engineResources', module: 'monitor', route: '/monitor/engine-resources', keywords: ['引擎监控', 'PostgreSQL', '数据库连接', '事务', 'engine monitoring'] },
   { labelKey: 'console.menus.monitor.serviceResources', module: 'monitor', route: '/monitor/service-resources', keywords: ['服务监控', '进程内存', 'CPU核占用', 'service resources', 'process RSS'] },
   { labelKey: 'console.menus.monitor.httpQuality', module: 'monitor', route: '/monitor/http-quality', keywords: ['HTTP', '请求', '失败率', 'QPS', '慢接口', 'latency'] },

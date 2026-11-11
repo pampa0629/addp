@@ -2130,6 +2130,190 @@ const docTemplate = `{
                 ]
             }
         },
+        "/platform/cdc_resource_observations": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "当前 Infra Redpanda 与 Kafka Connect 各至多一项，固定目录、共享预算及完成时身份重核；发现不可用与空清单分开，不读取 Connector 配置或业务数据 | At most one current Infra Redpanda and Kafka Connect component each; fixed catalogs, shared budget and completion-time identity recheck; distinguish unavailable discovery from an empty inventory; no connector configuration or business data",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "平台运行监控 | Platform Runtime Monitoring"
+                ],
+                "summary": "读取 CDC 组件指标 | Read CDC component observations",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_monitor_internal_service.CDCResourceResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "429": {
+                        "description": "Too Many Requests",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "504": {
+                        "description": "Gateway Timeout",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "monitor.resource_observation.read"
+                ]
+            }
+        },
+        "/platform/cdc_resource_trends": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "仅当前组件容器运行段，固定类型指标最多十二项、最长七天；缺样不补零，不拼接旧容器，源端延迟不是链路端到端延迟 | Only the current component container segment; at most twelve fixed per-type metrics and seven days; no missing-sample zero fill or old-container stitching; source delay is not end-to-end latency",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "平台运行监控 | Platform Runtime Monitoring"
+                ],
+                "summary": "读取当前 CDC 组件运行段趋势 | Read current CDC component trends",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "当前组件 UUID | Current component UUID",
+                        "name": "component_id",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "逗号分隔的固定指标键 | Comma-separated fixed metric keys",
+                        "name": "metrics",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "RFC3339 开始时间 | RFC3339 start time",
+                        "name": "start",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "RFC3339 结束时间 | RFC3339 end time",
+                        "name": "end",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_monitor_internal_service.CDCResourceResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "429": {
+                        "description": "Too Many Requests",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "504": {
+                        "description": "Gateway Timeout",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "monitor.resource_observation.read"
+                ]
+            }
+        },
         "/platform/container_resource_observations": {
             "get": {
                 "security": [
@@ -8085,6 +8269,72 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "task_type": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_addp_monitor_internal_service.CDCResourceObservation": {
+            "type": "object",
+            "properties": {
+                "collection": {
+                    "$ref": "#/definitions/github_com_addp_monitor_internal_service.ProcessCollection"
+                },
+                "series": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_monitor_internal_resourcequery.Series"
+                    }
+                },
+                "subject": {
+                    "$ref": "#/definitions/github_com_addp_monitor_internal_service.CDCResourceSubject"
+                }
+            }
+        },
+        "github_com_addp_monitor_internal_service.CDCResourceResponse": {
+            "type": "object",
+            "properties": {
+                "data": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_monitor_internal_service.CDCResourceObservation"
+                    }
+                },
+                "discovery_state": {
+                    "type": "string"
+                },
+                "end": {
+                    "type": "string"
+                },
+                "lookback_seconds": {
+                    "type": "integer"
+                },
+                "policy_version": {
+                    "type": "integer"
+                },
+                "queried_at": {
+                    "type": "string"
+                },
+                "start": {
+                    "type": "string"
+                },
+                "step_seconds": {
+                    "type": "integer"
+                }
+            }
+        },
+        "github_com_addp_monitor_internal_service.CDCResourceSubject": {
+            "type": "object",
+            "properties": {
+                "component_id": {
+                    "type": "string"
+                },
+                "component_type": {
+                    "type": "string"
+                },
+                "kind": {
+                    "type": "string"
+                },
+                "started_at": {
                     "type": "string"
                 }
             }

@@ -574,6 +574,7 @@
         "platformAlerts": "Platform alerts",
         "httpQuality": "HTTP monitoring",
         "traces": "Traces",
+        "cdcResources": "CDC Monitoring",
         "engineResources": "Engine monitoring"
       },
       "catalog": {

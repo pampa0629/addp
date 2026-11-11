@@ -42,6 +42,7 @@ type ResourceObservationResponse struct {
 	Series             []resourcequery.Series       `json:"series"`
 }
 type ResourceObservationService struct {
+	cdc      CDCObservationDependencies
 	engines  EngineObservationDependencies
 	process  ProcessObservationDependencies
 	policies ResourceQueryPolicyStore
