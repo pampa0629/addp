@@ -996,3 +996,9 @@ CI协调会话对精确候选7a91abaee4cfaefbf35b32776452240c7e3b47fe在隔离�
 v46仅修正该消费者：先校验历史默认值，按同一UUID读取/result并严格校验所选值及单一no-store，再复读同一默认历史，确认未被当次读取改变。Policy有效时历史按前1／后1默认；恢复阶段历史和当次均为最初前3／后4默认。失败提示增加出口、阶段、通道及执行UUID，不输出字段值。报告新增当次／默认历史事实，唯一领域版本升v46、登记及删除事实反例同步；原SQL、身份、角色／权限、28阶段／23图、90秒／2400秒及清理不变。原v45首失败永久保留，本次唯一Hosted授权已消耗，不自动重派。
 
 最终直接Runner与物理Fixture242项、登记整组156项通过；最后补充两项报告事实登记约束后，所属登记反例方法再次通过，登记CLI通过。新增边界反例拒绝当次返回默认、混入原值、错UUID、缺no-store及历史错用所选值；重复历史／原计数排序和其余角色拒绝反例保持。py_compile、git diff --check通过。本轮未重跑完整make聚合；未变的包装、Go及其他依赖组按此前精确7a91abaee已独立核对的完整门禁复用，不称新命令已全量执行。修正AST仅postgres_grouped_develop及run_scenario（版本），独立固定样本oracle完全不变。证据 /tmp/p145-grouped-history-{red,green}.log、/tmp/p145-v46-{final-owner,registration-tests,final-registration-slice,registration-cli}.log及/tmp/p145-430056-independent/fix-verification.json。v46真实Hosted尚未运行，下一步提交精确修复候选并请用户确认一次同范围v46/v10复验，交专门CI会话执行；不启动个人服务或要求重启。
+
+### v46 精确修复候选 Linux 标准门禁（2026-11-11，非 Hosted）
+
+精确候选7faff9ab8b24e0678c465325491ca69b84c39f82的自然 [Run43018760077／Platform consistency Job130516352816](https://github.com/pampa0629/addp/actions/runs/43018760077/job/130516352816)，attempt1，该Job及实际Run platform consistency gate步骤均success。已独立读取原始Job元信息，核对head SHA和实际make test-platform，未把Reporter、跳过或整个Run状态替代所属门禁结果。原日志3530–3533行登记156项及CLI通过；4408／4418／4425／4431行分别部署43、Graph204、35和80项均OK，4455／4456行两个System online-test-fixture Go包实际ok，4459–4461行最终Security Runner292项OK。这是当前修复源码的Linux标准聚合实际执行证据，补齐前段仅复用旧候选未变依赖的限制；本会话未重复运行。非verbose Go包结果仍不证明逐例无跳过。
+
+原日志 /tmp/addp-ci-2200.i3zELb/logs/130516352816.log，SHA256 4e1de0a05233b0588396309b02bfe4f4c29af55df1429ceb86ae01e340c61d6e；独立元信息、脚本及结果 /tmp/p145-v46-linux-gate-independent/{job.json,audit.py,audit.json}。已先核对功能清单维护会话最新记录：M155／M156仍为部分实现，已保留v45第七阶段首失败、0/23图及v46专项修复；本次仅补Linux层级，不改写为Hosted通过。既有单次v46/v10确认请求仍待用户答复，未获得新授权、不派发、不重复确认、不定时，原v45失败和清理证据均保持。下一步仍按已有请求的答复决定是否交专门CI执行一次同范围真实复验。
