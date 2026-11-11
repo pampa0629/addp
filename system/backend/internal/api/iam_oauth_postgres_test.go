@@ -172,6 +172,7 @@ func TestIAMOAuthClientCredentialsAuthContextAgainstPostgres(t *testing.T) {
 		!slices.Equal(authContext.Authorization.RoleAssignments[0].Permissions, []string{
 			"audit.tenant_event.create",
 			"inference.runtime.execute",
+			"meta.authorization_facts.read",
 			"meta.catalog.read",
 			"meta.scan_task.execute",
 			"security.protection_projection.read",
