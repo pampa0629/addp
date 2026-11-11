@@ -19,7 +19,7 @@
 | RasterRef | 只投影尺寸、波段、CRS、transform、四角 extent、NoData 和 overview 等摘要，不建立第二种公开资源身份。 |
 | RasterArtifact | 已持久化栅格的成果事实；Develop 根据授权目标构造稳定 locator，不信任 Runtime 返回的路径或 locator。 |
 
-加载支持自包含 JPEG2000（JP2/J2K，内部定位）、TIFF、PNG、JPEG 和 ERDAS Imagine HFA IMG（不含 spill、dependent file、RRD 引用列表），声明格式必须与实际 GDAL driver 一致；TIFF 的同名 PAM（主文件名追加 `.aux.xml`）为可选辅助文件，有则按 GDAL 默认语义读取，无则直接读取 TIFF。访问计划只携带 Meta 已登记的准确 PAM ref；执行快照同时保留已提供的 PAM，统计、定位及波段属性统一由 GDAL 解释。外部 mask 等其他 sidecar 仍沿现有准入规则处理，伪装成 TIFF 的 VRT 拒绝加载。缺少 CRS 时可显式补充 `source_crs`，不能覆盖冲突的已有 CRS。空间操作要求可信 CRS 和 geotransform；按尺寸重采样等像素操作允许缺失定位，并保留缺失事实。
+加载支持自包含 JPEG2000（JP2/J2K，内部定位）、TIFF、PNG、JPEG 和 ERDAS Imagine HFA IMG（不含 spill、dependent file、RRD 引用列表），声明格式必须与实际 GDAL driver 一致；TIFF 的同名 PAM（主文件名追加 `.aux.xml`）由 Meta 扫描登记为可选辅助文件。扫描时没有 PAM 的单文件 TIFF 可直接读取；已登记并进入本次访问计划的 PAM 必须实际存在，缺失时报告源组成变化并要求刷新元数据。数据授权对象的身份、layout 和完整 refs 以 Meta 已提交的 DataItem 为准，System 和读取 owner 不重新发现、拆分或拼装授权对象。访问计划消费该 DataItem 中的准确 PAM ref；执行快照同时保留已提供的 PAM，统计、定位及波段属性统一由 GDAL 解释。当前 TIFF 读取 profile 接受主 TIFF 与一份同名 PAM，其他已登记组成须明确报告读取能力不支持。外部 mask 等其他 sidecar 仍沿现有准入规则处理，伪装成 TIFF 的 VRT 拒绝加载。缺少 CRS 时可显式补充 `source_crs`，不能覆盖冲突的已有 CRS。空间操作要求可信 CRS 和 geotransform；按尺寸重采样等像素操作允许缺失定位，并保留缺失事实。
 
 单幅保存沿唯一 `raster_save` 输出 TIFF 或普通 PNG/JPEG 图片，选择 `profile=geotiff/cog/png/jpeg`；格式身份分别为 `tiff/tiff/png/jpeg`，文件名必须匹配 `.tif/.tiff`、`.png` 或 `.jpg/.jpeg`。普通图片是用户明确选择的无地理定位成果：不写 CRS、仿射网格、GCP、RPC、定位旁文件或源 EXIF/GPS，不复制源金字塔。原源与 TIFF/COG 输出保持现有语义，批量切片仍只输出 TIFF；IMG 写出暂缓。
 

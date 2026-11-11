@@ -14,8 +14,11 @@ func WithTIFFPAM(source workflowaccess.Source, locator *resourcetree.ResourceLoc
 		return workflowaccess.Source{}, fmt.Errorf("TIFF source metadata does not match its locator")
 	}
 	for _, ref := range DescriptorFromAttributes(item.Attributes).Refs {
-		if ref.Role != "auxiliary_metadata" || ref.Path != item.FullName+".aux.xml" {
+		if ref.Primary {
 			continue
+		}
+		if ref.Role != "auxiliary_metadata" || ref.Path != item.FullName+".aux.xml" {
+			return workflowaccess.Source{}, fmt.Errorf("TIFF reader does not support the registered reference %q", ref.Role)
 		}
 		access := source.Access
 		if access.Method == workflowaccess.MethodMountedPath {
@@ -24,7 +27,6 @@ func WithTIFFPAM(source workflowaccess.Source, locator *resourcetree.ResourceLoc
 			access.Object += ".aux.xml"
 		}
 		source.RelatedFiles = []workflowaccess.RelatedFile{{Role: "auxiliary_metadata", Access: access}}
-		break
 	}
 	return source, nil
 }

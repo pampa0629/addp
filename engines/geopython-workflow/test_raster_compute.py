@@ -23253,14 +23253,14 @@ def test_dem_slope_orthogonal_does_not_relax_other_terrain_or_d8(tmp_path, grid)
             with pytest.raises(ValueError): operation(source, *args)
 
 
-@pytest.mark.parametrize('pam', [None, '', '<PAMDataset/>',
+@pytest.mark.parametrize('pam', [None, '<PAMDataset/>',
     '<PAMDataset><PAMRasterBand band="1"><Metadata>'
     '<MDI key="STATISTICS_MINIMUM">-33</MDI>'
     '<MDI key="STATISTICS_MAXIMUM">1716</MDI>'
     '</Metadata></PAMRasterBand></PAMDataset>',
     '<PAMDataset><SRS>EPSG:3857</SRS>'
     '<GeoTransform>100,2,0,200,0,-2</GeoTransform></PAMDataset>'],
-    ids=['absent', 'registered-missing', 'empty', 'statistics', 'positioning'])
+    ids=['absent', 'empty', 'statistics', 'positioning'])
 def test_tiff_optional_pam_survives_snapshot_calculation_and_cog(tmp_path, pam):
     pixels = np.arange(16, dtype=np.float64).reshape(4, 4)
     source = create_raster(tmp_path / 'source.tif', pixels)
@@ -23305,3 +23305,21 @@ def test_tiff_optional_pam_survives_snapshot_calculation_and_cog(tmp_path, pam):
     assert not errors
     native = output = None
     assert all(path.read_bytes() == content for path, content in original.items())
+
+
+@pytest.mark.parametrize('language, message', [
+    ('zh-cn', '源组成已变化：已登记的 TIFF PAM 文件缺失，请刷新元数据'),
+    ('en', 'Source composition changed: the registered TIFF PAM is missing; refresh metadata'),
+])
+def test_tiff_registered_pam_missing_requires_refresh(tmp_path, language, message):
+    source = create_raster(tmp_path / 'source.tif', np.arange(16).reshape(4, 4))
+    plan = source_plan(source)
+    plan['source']['related_files'] = [{
+        'role': 'auxiliary_metadata',
+        'access': {'method': 'mounted_path', 'path': str(source) + '.aux.xml'},
+    }]
+    with raster_workspace(), raster_error_language(language):
+        with pytest.raises(ValueError) as error:
+            raster_load(plan)
+    assert str(error.value) == message
+    assert not Path(str(source) + '.aux.xml').exists()

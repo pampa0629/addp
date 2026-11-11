@@ -30,7 +30,7 @@ from osgeo import gdal, ogr, osr
 from osgeo_utils.samples.validate_cloud_optimized_geotiff import validate as validate_layout
 from addp_common.workflow_access import (
     require_access_plan, require_source_plan, require_target_plan,
-    stage_source_file, publish_target_file,
+    stage_source_file, publish_target_file, WorkflowSourceChangedError,
 )
 from addp_common.workflow_runtime import WorkflowExecutionError
 from addp_common.workflow_access import require_empty_target_directory, target_child_file_plan
@@ -465,14 +465,20 @@ def _require_single_jpeg2000(path):
 
 def raster_load(access_plan, source_crs=''):
     plan = require_source_plan({'access_plan': access_plan})
-    path = stage_source_file(plan, _path().parent / uuid.uuid4().hex)
+    try:
+        path = stage_source_file(plan, _path().parent / uuid.uuid4().hex)
+    except WorkflowSourceChangedError as error:
+        message = {
+            'zh-cn': '源组成已变化：已登记的 TIFF PAM 文件缺失，请刷新元数据',
+            'en': 'Source composition changed: the registered TIFF PAM is missing; refresh metadata',
+        }[_DISK_LANGUAGE.get()]
+        raise ValueError(message) from error
     source_format = plan['source']['format']
     native_driver = {'img': 'HFA', 'jpeg2000': 'JP2OpenJPEG', 'envi': 'ENVI'}.get(source_format, '')
     related_files = ()
     if source_format == 'tiff' and plan['source'].get('related_files'):
         companion = Path(str(path) + '.aux.xml')
-        if companion.is_file():
-            related_files = (companion,)
+        related_files = (companion,)
     if source_format == 'envi':
         member = plan['source']['related_files'][0]['access']
         header = path.parent / Path(member['path'] if member['method'] == 'mounted_path' else member['object']).name

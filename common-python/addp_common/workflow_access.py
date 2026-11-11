@@ -21,6 +21,10 @@ class WorkflowTargetExistsError(WorkflowAccessError):
     """A create publication was rejected because its target already exists."""
 
 
+class WorkflowSourceChangedError(WorkflowAccessError):
+    """A registered source component is no longer available."""
+
+
 def require_access_plan(params: dict[str, Any]) -> dict[str, Any]:
     plan = params.get("access_plan")
     if not isinstance(plan, dict):
@@ -89,18 +93,18 @@ def stage_source_file(plan: dict[str, Any], work_dir: Path, *, max_bytes: int | 
         destination = Path(str(primary) + ".aux.xml")
         if access["method"] == "mounted_path":
             companion = Path(access["path"])
+            if not companion.is_file():
+                raise WorkflowSourceChangedError("source composition changed: registered TIFF PAM missing; refresh metadata")
             if companion != destination:
-                try:
-                    shutil.copyfile(companion, destination)
-                except FileNotFoundError:
-                    pass
+                shutil.copyfile(companion, destination)
         else:
             client = _object_store_client(access)
             try:
                 client.fget_object(access["bucket"], access["object"], str(destination))
             except Exception as exc:
-                if getattr(exc, "code", None) != "NoSuchKey":
-                    raise WorkflowAccessError("download TIFF PAM failed") from exc
+                if getattr(exc, "code", None) == "NoSuchKey":
+                    raise WorkflowSourceChangedError("source composition changed: registered TIFF PAM missing; refresh metadata") from exc
+                raise WorkflowAccessError("download TIFF PAM failed") from exc
     return primary
 
 

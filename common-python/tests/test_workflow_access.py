@@ -271,6 +271,9 @@ def test_tiff_optional_pam_object_staging(tmp_path, monkeypatch, failure):
     if failure == "AccessDenied":
         with pytest.raises(WorkflowAccessError, match="download TIFF PAM failed"):
             stage_source_file(plan, tmp_path)
+    elif failure == "NoSuchKey":
+        with pytest.raises(WorkflowAccessError, match="source composition changed"):
+            stage_source_file(plan, tmp_path)
     else:
         primary = stage_source_file(plan, tmp_path)
         assert primary.read_bytes() == b"tiff"
@@ -279,6 +282,19 @@ def test_tiff_optional_pam_object_staging(tmp_path, monkeypatch, failure):
         if companion.exists():
             assert companion.read_bytes() == b"<PAMDataset/>"
     assert calls == ["images/test.tif", "images/test.tif.aux.xml"]
+
+
+@pytest.mark.parametrize("max_bytes", [None, 16])
+def test_tiff_registered_pam_missing_from_mounted_source_fails(tmp_path, max_bytes):
+    primary = tmp_path / "source.tif"
+    primary.write_bytes(b"tiff")
+    plan = {"schema_version": "addp.workflow.access-plan/v1", "source": {
+        "kind": "file", "format": "tiff", "access": {"method": "mounted_path", "path": str(primary)},
+        "related_files": [{"role": "auxiliary_metadata", "access": {
+            "method": "mounted_path", "path": str(primary) + ".aux.xml"}}],
+    }}
+    with pytest.raises(WorkflowAccessError, match="source composition changed"):
+        stage_source_file(plan, tmp_path / "private", max_bytes=max_bytes)
 
 
 @pytest.mark.parametrize("field,value", [("bucket", "other"), ("object", "images/other.tif.aux.xml"), ("secret_key", "other")])
