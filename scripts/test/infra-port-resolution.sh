@@ -211,6 +211,7 @@ mkdir -p "$TEST_DIR/bin" "$TEST_DIR/repo/scripts/infra"
 cp "${SCRIPT_DIR}/../infra/down.sh" "$TEST_DIR/repo/scripts/infra/down.sh"
 cp "${SCRIPT_DIR}/../infra/metrics-sources.py" "$TEST_DIR/repo/scripts/infra/metrics-sources.py"
 cp -R "${SCRIPT_DIR}/../infra/postgres-observation" "$TEST_DIR/repo/scripts/infra/"
+cp "${SCRIPT_DIR}/../infra/cdc-metrics.py" "$TEST_DIR/repo/scripts/infra/cdc-metrics.py"
 cp "${SCRIPT_DIR}/../infra/redis-metrics.py" "$TEST_DIR/repo/scripts/infra/redis-metrics.py"
 cp "${SCRIPT_DIR}/../infra/minio-observation.py" "$TEST_DIR/repo/scripts/infra/minio-observation.py"
 cp -R "${SCRIPT_DIR}/../infra/minio-observation" "$TEST_DIR/repo/scripts/infra/"
@@ -303,6 +304,8 @@ env GITHUB_ACTIONS=true ADDP_ONLINE_HOST=1 ADDP_ONLINE_TEST=1 \
   bash "$DOWN_SCRIPT" --volumes --force </dev/null >"$TEST_DIR/online.log" 2>&1
 [ "$(cat "$MOCK_MARKER")" = -v ]
 grep -Eq '^Infra Redis[[:space:]]+已停用$' "$TEST_DIR/online.log"
-grep -Fq '汇总：共 3 项，失败 0 项。' "$TEST_DIR/online.log"
+grep -Eq '^Infra Redpanda[[:space:]]+已停用$' "$TEST_DIR/online.log"
+grep -Eq '^Infra Kafka Connect[[:space:]]+已停用$' "$TEST_DIR/online.log"
+grep -Fq '汇总：共 5 项，失败 0 项。' "$TEST_DIR/online.log"
 
 echo 'ADDP Infra down safety OK'

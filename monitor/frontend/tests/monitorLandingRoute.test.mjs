@@ -11,6 +11,9 @@ function createMonitorRouter(permissions, contextType = 'tenant') {
   const authStore = { contextType, permissions }
   const routes = new Function('useAuthStore', 'resolveModuleLandingRoute', 'Dashboard', 'ExecutionList', 'AlertList', 'NotificationList', 'Login', 'MonitoringTargets', 'NodeResources', 'ProcessResources', `${routeTable}; return routes`)(
     () => authStore, resolveModuleLandingRoute, {}, {}, {}, {}, {}, {}, {}, {})
+  // This fixture verifies route selection, not Vue file loading. Browser gates
+  // exercise the actual lazy page components.
+  for (const route of routes) if (typeof route.component === 'function') route.component = {}
   routes.push({ path: '/forbidden', component: {} })
   return createRouter({ history: createMemoryHistory(), routes })
 }
@@ -55,10 +58,10 @@ test('Platform service entry requires resource and module reads and never requir
  const router = createMonitorRouter(keys, 'platform')
  await router.push('/')
  assert.equal(router.currentRoute.value.path, '/service-resources')
- for (const [context, permissions] of [['tenant', keys], ['platform', keys.slice(0, 1)], ['platform', keys.slice(1)]]) {
+ for (const [context, permissions, landing] of [['tenant', keys, '/forbidden'], ['platform', keys.slice(0, 1), '/forbidden'], ['platform', keys.slice(1), '/cdc-resources']]) {
   const denied = createMonitorRouter(permissions, context)
   await denied.push('/')
-  assert.equal(denied.currentRoute.value.path, '/forbidden')
+  assert.equal(denied.currentRoute.value.path, landing)
  }
 })
 
