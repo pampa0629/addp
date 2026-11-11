@@ -14,7 +14,7 @@ from .io_operators import load, save
 from .geometric_operators import (
     buffer, intersection, union, centroid, representative_point, difference,
     simplify, convex_hull, minimum_rotated_rectangle, envelope, dissolve, split_multipart, extract_vertices, polygonize, extract_polygon_rings, check_geometry, repair_geometry, snap_geometry, snap_line_endpoints, extend_line_endpoints,
-    check_polygon_overlap, check_polygon_gap, check_dangling_points, check_line_proximity, check_line_overlap
+    check_polygon_overlap, check_polygon_adjacency, check_polygon_gap, check_dangling_points, check_line_proximity, check_line_overlap
 )
 from .spatial_relations import contains, intersects, distance_to
 from .properties_operators import get_area, get_length, get_bounds
@@ -241,6 +241,7 @@ __all__ = [
     'snap_line_endpoints',
     'extend_line_endpoints',
     'check_polygon_overlap',
+    'check_polygon_adjacency',
     'check_polygon_gap',
     'check_dangling_points',
     'check_line_overlap',

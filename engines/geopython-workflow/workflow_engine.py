@@ -16,7 +16,7 @@ from operators.spatial_transform_operators import VectorReprojectInputError
 from operators.filter_operators import GeometrySelectionInputError
 from operators.format_operators import WKTInputError
 from operators.data_operations import MultiBufferInputError, ClipInputError, VoronoiInputError
-from operators.geometric_operators import LineCheckInputError, LineSplitInputError, PolygonCheckInputError, PolygonizeInputError, ReferenceSnapInputError, GeometryValidityInputError, VertexInputError, MultipartInputError, InteriorPointInputError, UnaryConstructionInputError, SimplifyInputError, BufferInputError, NearLineInputError, EndpointSnapError, LineExtensionError, LineTrimError, PolygonRingInputError, LineNodeInputError, IntersectionInputError, DissolveInputError, UnionInputError, DifferenceInputError
+from operators.geometric_operators import LineCheckInputError, LineSplitInputError, PolygonCheckInputError, PolygonAdjacencyInputError, PolygonizeInputError, ReferenceSnapInputError, GeometryValidityInputError, VertexInputError, MultipartInputError, InteriorPointInputError, UnaryConstructionInputError, SimplifyInputError, BufferInputError, NearLineInputError, EndpointSnapError, LineExtensionError, LineTrimError, PolygonRingInputError, LineNodeInputError, IntersectionInputError, DissolveInputError, UnionInputError, DifferenceInputError
 from operators.raster_compute import RasterDataset, RasterTiles, raster_info, raster_tiles_info, raster_workspace, raster_error_language
 
 logger = logging.getLogger(__name__)
@@ -32,7 +32,9 @@ def _execute_operator(operator, params):
             continue
         input_error = None
         if name == 'input_gdf':
-            if operator == 'vector_reproject':
+            if operator == 'check_polygon_adjacency':
+                input_error = lambda message: PolygonAdjacencyInputError('source', message)
+            elif operator == 'vector_reproject':
                 input_error = VectorReprojectInputError.input_layer
             elif operator in _GEOMETRY_SELECTION_OPERATORS:
                 input_error = GeometrySelectionInputError.input_layer
@@ -102,6 +104,8 @@ def _execute_workflow_operator(operator, params):
         raise PolygonRingInputError.source('input_gdf and id_field are required')
     if operator == 'check_polygon_overlap' and not {'input_gdf', 'id_field'} <= params.keys():
         raise PolygonCheckInputError('overlap_source', 'input_gdf and id_field are required')
+    if operator == 'check_polygon_adjacency' and not {'input_gdf', 'id_field'} <= params.keys():
+        raise PolygonAdjacencyInputError('source')
     if operator == 'check_polygon_gap':
         if 'input_gdf' not in params:
             raise PolygonCheckInputError('gap_source', 'input_gdf is required')
@@ -166,6 +170,9 @@ class GeoPythonWorkflowRunner(WorkflowRunner):
             raise OperatorInputError(exc.reason, exc.message(self.language), field=exc.field) from exc
         except LineSplitInputError as exc:
             raise OperatorInputError(exc.reason, exc.message(self.language), field=exc.field) from exc
+        except PolygonAdjacencyInputError as exc:
+            reason = {'source': 'operator_input_invalid', 'crs': 'operator_crs_invalid', 'overlap': 'operator_input_overlap'}[exc.code]
+            raise OperatorInputError(reason, exc.message(self.language)) from exc
         except PolygonCheckInputError as exc:
             reason = {
                 'overlap_source': 'operator_input_invalid',

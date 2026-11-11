@@ -484,6 +484,7 @@
         "check_line_self_overlap": "Check line self-overlaps",
         "check_line_intersection": "Check line intersections",
         "check_line_self_intersection": "Check line self-intersections",
+        "check_polygon_adjacency": "Check polygon adjacency",
         "check_polygon_overlap": "Check polygon overlaps",
         "check_polygon_gap": "Check polygon gaps",
         "polygonize": "Polygonize linework",
@@ -586,6 +587,18 @@
           "operator_endpoint_network_invalid": "Explicitly split intersections and resolve self-intersections or overlaps, then run the operator again.",
           "operator_input_invalid": "Provide valid non-empty finite XY lines in the active geometry column and set id_field to a non-geometry column with unique non-empty scalar values. A layer with no rows is allowed.",
           "operator_crs_invalid": "Check the source CRS and explicitly reproject to a suitable projected CRS."
+        }
+      },
+      "polygonAdjacency": {
+        "reasons": {
+          "operator_input_invalid": "The polygon layer or source identifier configuration is invalid.",
+          "operator_crs_invalid": "Polygon adjacency requires a known projected CRS with matching finite positive horizontal units.",
+          "operator_input_overlap": "Source polygons overlap in area, including containment or duplicates."
+        },
+        "actions": {
+          "operator_input_invalid": "Provide one active geometry column and valid non-empty finite XY polygons; id_field must name unique non-null scalar identifiers. Empty batches are allowed.",
+          "operator_crs_invalid": "Explicitly use a suitable projected CRS; lengths use the original coordinate units without conversion to metres.",
+          "operator_input_overlap": "Run polygon overlap checking and explicitly resolve overlaps, containment or duplicates first; no automatic union or repair is performed."
         }
       },
       "polygonOverlap": {

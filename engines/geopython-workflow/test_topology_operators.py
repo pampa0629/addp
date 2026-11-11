@@ -11003,3 +11003,163 @@ def test_reference_snap_projected_crs_native_property_error_is_not_typed():
         def is_projected(self):raise ValueError('PRIVATE_PROJECTED_CRS')
     with pytest.raises(ValueError)as caught:_require_projected_xy_crs(NativeCRS(),input_error=ReferenceSnapInputError.crs)
     assert type(caught.value)is ValueError
+
+
+def adjacency(frame):
+    return get_operator('check_polygon_adjacency')(input_gdf=frame, id_field='parcel_id')
+
+
+def test_polygon_adjacency_exact_edges_holes_pair_order_types_and_source_unchanged():
+    hole = Polygon(box(0, 0, 6, 6).exterior.coords, [box(1, 1, 3, 3).exterior.coords])
+    frame = overlap_frame([hole, box(1, 1, 3, 3), box(6, 0, 7, 6), box(7, 6, 8, 7), box(20, 0, 21, 1)])
+    frame['parcel_id'] = pd.Series([2**60+9, 2**60+3, 2**60+7, 2**60+1, 2**60+5], dtype='Int64')
+    frame['geometry'] = pd.Series(['business', None, 'c', 'd', 'e'], dtype='string')
+    frame.index = [7, 7, 1, 9, 3]
+    before = frame.copy(deep=True)
+    result = adjacency(frame)
+    assert result.columns.tolist() == ['source_id_a', 'source_id_b', 'shared_length', 'geometry']
+    assert list(zip(result.source_id_a, result.source_id_b, result.shared_length)) == [
+        (2**60+9, 2**60+3, 8.), (2**60+9, 2**60+7, 6.)]
+    assert result.source_id_a.dtype == result.source_id_b.dtype == frame.parcel_id.dtype
+    assert result.geom_type.tolist() == ['MultiLineString']*2
+    assert result.geometry.iloc[0].equals(LineString(box(1, 1, 3, 3).exterior.coords))
+    assert result.geometry.iloc[1].equals(LineString([(6, 0), (6, 6)]))
+    assert result.crs == frame.crs and result.index.equals(pd.RangeIndex(2))
+    assert_geodataframe_equal(frame, before)
+
+
+def test_polygon_adjacency_collects_all_parts_and_removes_point_contacts():
+    a = shapely.MultiPolygon([box(0,0,1,1), box(3,0,4,2), box(8,0,9,1)])
+    b = shapely.MultiPolygon([box(1,0,2,1), box(4,0,5,2), box(9,1,10,2)])
+    result = adjacency(overlap_frame([a,b], ['乙','甲']))
+    assert len(result)==1 and result.shared_length.tolist()==[3.]
+    assert len(result.geometry.iloc[0].geoms)==2
+    assert result.geometry.iloc[0].equals(MultiLineString([[(1,0),(1,1)],[(4,0),(4,2)]]))
+    assert result.source_id_a.tolist()==['乙'] and result.source_id_b.tolist()==['甲']
+
+
+@pytest.mark.parametrize('shapes', [[], [box(0,0,1,1)], [box(0,0,1,1),box(1,1,2,2)], [box(0,0,1,1),box(2,0,3,1)]])
+def test_polygon_adjacency_empty_result_preserves_schema(shapes):
+    frame=overlap_frame(shapes); frame['parcel_id']=pd.Series(range(len(frame)),dtype='string')
+    result=adjacency(frame)
+    assert result.empty and result.crs==frame.crs
+    assert result.shared_length.dtype==np.dtype('float64')
+    assert result.source_id_a.dtype==result.source_id_b.dtype==frame.parcel_id.dtype
+
+
+@pytest.mark.parametrize('other',[box(1,0,3,2),box(.5,.5,1,1),box(0,0,2,2),box(2-2**-40,0,3,1)])
+def test_polygon_adjacency_rejects_every_positive_area_overlap(other):
+    from operators.geometric_operators import PolygonAdjacencyInputError
+    with pytest.raises(PolygonAdjacencyInputError) as error:
+        adjacency(overlap_frame([box(0,0,2,2),other]))
+    assert error.value.code=='overlap'
+
+
+def test_polygon_adjacency_feet_unit_and_tiny_exact_shared_line():
+    edge=2**-40
+    result=adjacency(overlap_frame([box(0,0,1,edge),box(1,0,2,edge)],crs='EPSG:2263'))
+    assert result.shared_length.tolist()==[edge] and result.crs.to_epsg()==2263
+
+
+@pytest.mark.parametrize('problem',['null','empty','point','invalid','z','infinite','duplicate_id','null_id','blank_id','id_geometry','no_id','duplicate_columns','extra_geometry','no_crs','geographic','geocentric','no_active'])
+def test_polygon_adjacency_admission_is_typed(problem):
+    from operators.geometric_operators import PolygonAdjacencyInputError
+    frame=overlap_frame([box(0,0,1,1),box(1,0,2,1)])
+    shapes={'null':None,'empty':Polygon(),'point':Point(0,0),'invalid':Polygon([(0,0),(1,1),(0,1),(1,0)]),'z':Polygon([(0,0,1),(1,0,1),(0,1,1)]),'infinite':Polygon([(0,0),(float('inf'),0),(0,1)])}
+    if problem in shapes:frame.loc[0,'footprint']=shapes[problem]
+    elif problem=='duplicate_id':frame['parcel_id']=[1,1]
+    elif problem=='null_id':frame['parcel_id']=[1,None]
+    elif problem=='blank_id':frame['parcel_id']=[' ', 'b']
+    elif problem=='id_geometry':frame['parcel_id']=frame.geometry
+    elif problem=='no_id':frame=frame.drop(columns=['parcel_id'])
+    elif problem=='duplicate_columns':frame.columns=['parcel_id','parcel_id','footprint']
+    elif problem=='extra_geometry':frame['other']=frame.geometry
+    elif problem in ('no_crs','geographic','geocentric'):frame=frame.set_crs({'no_crs':None,'geographic':'EPSG:4326','geocentric':'EPSG:4978'}[problem],allow_override=True)
+    elif problem=='no_active':frame=frame.drop(columns=['footprint'])
+    with pytest.raises(PolygonAdjacencyInputError) as error:adjacency(frame)
+    assert error.value.code==('crs' if problem in ('no_crs','geographic','geocentric') else 'source')
+
+
+@pytest.mark.parametrize('problem',['missing_source','missing_id','source','bad_type','bad_json','bad_geojson','crs','overlap','native_check','native_index','native_intersection','length','bad_result'])
+def test_polygon_adjacency_diagnostic_and_native_failure_block_save(monkeypatch,problem):
+    import workflow_engine
+    from addp_common.workflow_runtime import WorkflowExecutionError
+    source=overlap_frame([box(0,0,1,1),box(1,0,2,1)])
+    params={'input_gdf':source,'id_field':'parcel_id'}
+    if problem=='missing_source':del params['input_gdf']
+    elif problem=='missing_id':del params['id_field']
+    elif problem=='source':source.loc[0,'footprint']=None
+    elif problem=='bad_type':params['input_gdf']=[]
+    elif problem=='bad_json':params['input_gdf']='not-json'
+    elif problem=='bad_geojson':params['input_gdf']={'type':'Point','coordinates':[0,0]}
+    elif problem=='crs':params['input_gdf']=source.set_crs(None,allow_override=True)
+    elif problem=='overlap':source.loc[1,'footprint']=box(.5,0,2,1)
+    original=workflow_engine.get_operator;saves=[]
+    def fail(*args,**kwargs):raise ValueError('PRIVATE_ID 123.45')
+    def resolve(name):
+        if name=='save':return lambda **kwargs:saves.append(kwargs)
+        function=original(name)
+        if name!='check_polygon_adjacency':return function
+        def invoke(**kwargs):
+            with monkeypatch.context() as scope:
+                if problem=='native_check':scope.setattr(shapely,'is_valid',fail)
+                elif problem=='native_index':scope.setattr(shapely,'STRtree',fail)
+                elif problem=='native_intersection':scope.setattr(shapely,'intersection',fail)
+                elif problem=='length':scope.setattr(shapely,'length',lambda *args:np.inf)
+                elif problem=='bad_result':scope.setattr(shapely,'intersection',lambda *args:None)
+                return function(**kwargs)
+        return invoke
+    monkeypatch.setattr(workflow_engine,'get_operator',resolve)
+    tasks=[{'id':'check','operator':'check_polygon_adjacency','params':params,'depends_on':[]},
+           {'id':'save','operator':'save','params':{'input_df':{'$ref':'check','port':'result'}},'depends_on':['check']}]
+    with pytest.raises(WorkflowExecutionError) as error:workflow_engine.GeoPythonWorkflowRunner(language='en').execute({'tasks':tasks})
+    assert not saves
+    if problem in ('missing_source','missing_id','source','bad_type','bad_json','bad_geojson','crs','overlap'):
+        reason={'crs':'operator_crs_invalid','overlap':'operator_input_overlap'}.get(problem,'operator_input_invalid')
+        context={'node_index':1,'operator_id':'check_polygon_adjacency'}
+        if problem!='crs':context['parameter']='input_gdf'
+        assert error.value.error_code=='INVALID_PARAMS'
+        assert error.value.diagnostic=={'schema_version':'addp.execution-failure/v3','stage':'execution','reason':reason,'operator':context}
+        assert 'PRIVATE_ID' not in str(error.value)
+    else:
+        assert error.value.error_code=='EXECUTION_FAILED' and error.value.diagnostic is None
+
+
+@pytest.mark.parametrize('no_neighbors',[False,True])
+def test_polygon_adjacency_native_gpkg_save_reload_and_source_bytes(tmp_path,no_neighbors):
+    from osgeo import ogr
+    source=overlap_frame([box(0,0,1,2),box(3 if no_neighbors else 1,0,4 if no_neighbors else 2,2)], [2**60+1,2**60+3])
+    source.to_file(tmp_path/'source.gpkg',layer='source',driver='GPKG')
+    before=(tmp_path/'source.gpkg').read_bytes();connection={'engine_type':'nfs','mount_path':str(tmp_path)}
+    result=execute_workflow({'tasks':[
+        {'id':'load','operator':'load','params':{'connection_info':connection,'path':'source.gpkg'},'depends_on':[]},
+        {'id':'check','operator':'check_polygon_adjacency','params':{'input_gdf':{'$ref':'load'},'id_field':'parcel_id'},'depends_on':['load']},
+        {'id':'save','operator':'save','params':{'input_df':{'$ref':'check','port':'result'},'connection_info':connection,'path':'neighbors.gpkg','mode':'fail'},'depends_on':['check']} ]})
+    assert result['status']=='success',result.get('error')
+    dataset=ogr.Open(str(tmp_path/'neighbors.gpkg'));layer=dataset.GetLayer(0)
+    assert layer.GetFeatureCount()==int(not no_neighbors) and layer.GetSpatialRef().GetAuthorityCode(None)=='3857'
+    if not no_neighbors:
+        feature=layer.GetNextFeature();geometry=feature.GetGeometryRef()
+        assert feature.GetField('source_id_a')==2**60+1 and feature.GetField('source_id_b')==2**60+3
+        assert feature.GetField('shared_length')==geometry.Length()==2.
+        assert geometry.GetGeometryName()=='MULTILINESTRING'
+        assert set(geometry.GetGeometryRef(0).GetPoints())=={(1,0),(1,2)}
+    dataset=None
+    reloaded=get_operator('load')(connection_info=connection,path='neighbors.gpkg')
+    assert len(reloaded)==int(not no_neighbors) and reloaded.crs.to_epsg()==3857
+    assert (tmp_path/'source.gpkg').read_bytes()==before
+
+
+def test_polygon_adjacency_underflow_area_cannot_hide_overlap():
+    from operators.geometric_operators import PolygonAdjacencyInputError
+    tiny=2.**-600
+    shape=box(0,0,tiny,tiny)
+    assert shape.is_valid and not shape.is_empty and shape.area==0
+    with pytest.raises(PolygonAdjacencyInputError) as error:adjacency(overlap_frame([shape,shape]))
+    assert error.value.code=='overlap'
+
+
+def test_polygon_adjacency_no_tolerance_and_all_adjacent_pairs():
+    source=overlap_frame([box(0,0,1,1),box(1,0,2,1),box(0,1,1,2),box(2+2**-40,0,3,1)])
+    result=adjacency(source)
+    assert list(zip(result.source_id_a,result.source_id_b,result.shared_length))==[(0,1,1.),(0,2,1.)]

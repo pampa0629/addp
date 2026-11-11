@@ -66,7 +66,7 @@ D8汇流累积`raster_flow_accumulation_d8`仅有一个`measure=count/area`选�
 | 通用处理 | 数值统计 | 4 | `normalize_field`、`encode_categorical`、`bin_field`、`aggregate` |
 | 矢量处理 | 几何构造 | 8 | `buffer`、`centroid`、`representative_point`、`convex_hull`、`minimum_rotated_rectangle`、`envelope`、`voronoi`、`batch_buffer` |
 | 矢量处理 | 几何整理 | 10 | `simplify`、`dissolve`、`check_geometry`、`repair_geometry`、`snap_geometry`、`snap_line_endpoints`、`extend_line_endpoints`、`trim_line_endpoints`、`split_multipart`、`extract_vertices` |
-| 矢量处理 | 拓扑检查 | 8 | `check_polygon_overlap`、`check_polygon_gap`、`check_dangling_points`、`check_line_proximity`、`check_line_overlap`、`check_line_self_overlap`、`check_line_intersection`、`check_line_self_intersection` |
+| 矢量处理 | 拓扑检查 | 9 | `check_polygon_overlap`、`check_polygon_adjacency`、`check_polygon_gap`、`check_dangling_points`、`check_line_proximity`、`check_line_overlap`、`check_line_self_overlap`、`check_line_intersection`、`check_line_self_intersection` |
 | 矢量处理 | 线网处理 | 7 | `polygonize`、`extract_polygon_rings`、`split_line_intersections`、`group_line_components`、`merge_line_chains`、`normalize_line_network`、`extract_line_nodes` |
 | 矢量处理 | 叠加分析 | 4 | `intersection`、`union`、`difference`、`clip` |
 | 矢量处理 | 空间关系 | 3 | `contains`、`intersects`、`distance_to` |
@@ -169,6 +169,10 @@ D8流长只保留`raster_flow_length_d8`一个入口，必填`method=downstream`
 ## 面叠检查
 
 `check_polygon_overlap` 检查单个面图层内要素对的正面积交集。来源标识、稳定去重、面积单位、接触与空结果、容量及保存边界统一见[面叠检查契约](../../../docs/spec/workflow/矢量算子契约.md#面叠检查契约)。
+
+## 面邻检查
+
+`check_polygon_adjacency`逐对提取有效非空面的精确公共线，保双方来源和原单位长度，点接触不报告、正面积重叠整批拒绝。多部件及孔洞边界共同参与，所有公共线段保留在一行MultiLineString；不吸附、补缝或修复，详见[面邻检查契约](../../../docs/spec/workflow/矢量算子契约.md#面邻检查契约)。
 
 ## 面缝检查
 

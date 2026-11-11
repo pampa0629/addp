@@ -74,10 +74,12 @@ func (o *WorkflowOperatorFailure) Valid(reason string) bool {
 			}
 		}
 
-	case "check_line_overlap", "check_line_self_overlap", "check_line_intersection", "check_line_self_intersection", "check_dangling_points", "check_polygon_overlap", "check_polygon_gap":
+	case "check_line_overlap", "check_line_self_overlap", "check_line_intersection", "check_line_self_intersection", "check_dangling_points", "check_polygon_overlap", "check_polygon_gap", "check_polygon_adjacency":
 		switch reason {
 		case "operator_input_invalid":
 			parameter, ok = "input_gdf", true
+		case "operator_input_overlap":
+			parameter, ok = "input_gdf", o.OperatorID == "check_polygon_adjacency"
 		case "operator_mask_invalid":
 			parameter, ok = "coverage_gdf", o.OperatorID == "check_polygon_gap"
 		case "operator_crs_invalid":

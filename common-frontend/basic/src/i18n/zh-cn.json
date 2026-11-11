@@ -484,6 +484,7 @@
         "check_line_self_overlap": "线内自叠",
         "check_line_intersection": "线交检查",
         "check_line_self_intersection": "线内自交",
+        "check_polygon_adjacency": "面邻检查",
         "check_polygon_overlap": "面叠检查",
         "check_polygon_gap": "面缝检查",
         "polygonize": "拓扑构面",
@@ -586,6 +587,18 @@
           "operator_endpoint_network_invalid": "先显式打断交会并处理自交或重合，再重新运行。",
           "operator_input_invalid": "请提供具有活动几何列的有效非空有限二维线，并将 id_field 指向值非空、唯一的非几何标量列。允许空表。",
           "operator_crs_invalid": "请确认源坐标系，并显式重投影到符合要求的投影坐标系。"
+        }
+      },
+      "polygonAdjacency": {
+        "reasons": {
+          "operator_input_invalid": "待检查的面图层或来源标识配置不符合要求。",
+          "operator_crs_invalid": "面邻检查要求已知投影坐标系及匹配、有限且为正的水平单位。",
+          "operator_input_overlap": "源面存在正面积重叠，包含或重复面也不能参与面邻检查。"
+        },
+        "actions": {
+          "operator_input_invalid": "请提供唯一活动几何列、有效非空有限二维面，并将id_field指向非空唯一的非几何标量列；允许空表。",
+          "operator_crs_invalid": "请显式统一为符合要求的投影坐标系，长度沿原单位，不自动换算米。",
+          "operator_input_overlap": "请先执行面叠检查并显式处理重叠、包含或重复面，再执行面邻检查；不会自动融合或修复。"
         }
       },
       "polygonOverlap": {

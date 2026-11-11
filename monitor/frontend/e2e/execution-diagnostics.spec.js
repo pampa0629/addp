@@ -468,6 +468,7 @@ for (const locale of ['zh-cn', 'en']) test(`shows actionable create conflict in 
 
 
 for (const locale of ['zh-cn','en']) for (const [operator_id,reason,field,parameter='input_gdf'] of [
+  ...[['operator_input_invalid','input_gdf'],['operator_crs_invalid',''],['operator_input_overlap','input_gdf']].map(([reason,parameter])=>['check_polygon_adjacency',reason,'',parameter]),
   ...['envelope','representative_point','centroid','convex_hull','minimum_rotated_rectangle'].flatMap(operator_id=>[['operator_input_invalid','input_gdf'],['operator_crs_invalid','']].map(([reason,parameter])=>[operator_id,reason,'',parameter])),
   ...[['operator_input_invalid','input_gdf'],['operator_crs_invalid',''],['operator_nonnegative_number_required','tolerance'],['operator_boolean_required','preserve_topology']].map(([reason,parameter])=>['simplify',reason,'',parameter]),
   ...[['operator_input_invalid','input_gdf'],['operator_crs_invalid',''],['operator_number_invalid','distance'],['operator_positive_integer_required','resolution']].map(([reason,parameter])=>['buffer',reason,'',parameter]),
@@ -486,10 +487,11 @@ for (const locale of ['zh-cn','en']) for (const [operator_id,reason,field,parame
   const construction=['envelope','representative_point','centroid','convex_hull','minimum_rotated_rectangle'].includes(operator_id)
   const constructionMarker=reason==='operator_input_invalid'?(locale==='zh-cn'?'几何':'geometry'):(locale==='zh-cn'?'投影坐标系':'projected CRS')
   const simplifyMarker={operator_input_invalid:locale==='zh-cn'?'几何':'geometry',operator_crs_invalid:locale==='zh-cn'?'投影坐标系':'projected CRS',operator_nonnegative_number_required:locale==='zh-cn'?'非负':'non-negative',operator_boolean_required:locale==='zh-cn'?'布尔值':'boolean'}[reason]
-  const name=operator_id==='envelope'?(locale==='zh-cn'?'外包矩形':'Axis-aligned envelope'):operator_id==='representative_point'?(locale==='zh-cn'?'面内点':'Interior point'):operator_id==='centroid'?(locale==='zh-cn'?'计算质心':'Calculate centroid'):operator_id==='convex_hull'?(locale==='zh-cn'?'凸包':'Convex hull'):operator_id==='minimum_rotated_rectangle'?(locale==='zh-cn'?'最小外接矩形':'Minimum-area bounding rectangle'):operator_id==='simplify'?(locale==='zh-cn'?'简化几何':'Simplify geometry'):operator_id==='buffer'?(locale==='zh-cn'?'缓冲区分析':'Buffer analysis'):operator_id==='voronoi'?(locale==='zh-cn'?'泰森多边形':'Voronoi polygons'):operator_id==='batch_buffer'?(locale==='zh-cn'?'多距缓冲':'Multi-distance buffer'):(locale==='zh-cn'?'面界提取':'Extract polygon rings')
+  const name=operator_id==='check_polygon_adjacency'?(locale==='zh-cn'?'面邻检查':'Check polygon adjacency'):operator_id==='envelope'?(locale==='zh-cn'?'外包矩形':'Axis-aligned envelope'):operator_id==='representative_point'?(locale==='zh-cn'?'面内点':'Interior point'):operator_id==='centroid'?(locale==='zh-cn'?'计算质心':'Calculate centroid'):operator_id==='convex_hull'?(locale==='zh-cn'?'凸包':'Convex hull'):operator_id==='minimum_rotated_rectangle'?(locale==='zh-cn'?'最小外接矩形':'Minimum-area bounding rectangle'):operator_id==='simplify'?(locale==='zh-cn'?'简化几何':'Simplify geometry'):operator_id==='buffer'?(locale==='zh-cn'?'缓冲区分析':'Buffer analysis'):operator_id==='voronoi'?(locale==='zh-cn'?'泰森多边形':'Voronoi polygons'):operator_id==='batch_buffer'?(locale==='zh-cn'?'多距缓冲':'Multi-distance buffer'):(locale==='zh-cn'?'面界提取':'Extract polygon rings')
   await expect(panel).toContainText(name)
   if(field) await expect(panel).toContainText(field)
   else if(construction) await expect(panel).toContainText(constructionMarker)
+  else if(operator_id==='check_polygon_adjacency') await expect(panel).toContainText(reason==='operator_input_invalid'?(locale==='zh-cn'?'有效非空':'valid non-empty'):reason==='operator_crs_invalid'?(locale==='zh-cn'?'投影坐标系':'projected CRS'):locale==='zh-cn'?'面叠检查':'polygon overlap')
   else if(operator_id==='simplify') await expect(panel).toContainText(simplifyMarker)
   else if(operator_id==='voronoi') await expect(panel).toContainText(reason==='operator_input_invalid'?(locale==='zh-cn'?'重复 XY':'duplicate XY'):reason==='operator_mask_invalid'?'Polygon':locale==='zh-cn'?'投影坐标系':'projected CRS')
   else if(operator_id==='buffer'||operator_id==='batch_buffer'&&reason==='operator_crs_invalid') await expect(panel).toContainText(reason==='operator_number_invalid'?(locale==='zh-cn'?'正数、零或负数':'positive, zero or negative'):reason==='operator_positive_integer_required'?(locale==='zh-cn'?'大于零的整数':'positive integer'):reason==='operator_crs_invalid'?(locale==='zh-cn'?'投影坐标系':'projected CRS'):locale==='zh-cn'?'几何':'geometry')
@@ -504,6 +506,13 @@ for (const locale of ['zh-cn','en']) for (const [operator_id,reason,field,parame
   const copied=await page.evaluate(()=>window.copiedDiagnostic)
   expect(copied).toContain(name)
   expect(copied).toContain('diagnostic-run')
+  if(operator_id==='check_polygon_adjacency') {
+    expect(copied).toContain(reason==='operator_input_invalid'?(locale==='zh-cn'?'有效非空':'valid non-empty'):reason==='operator_crs_invalid'?(locale==='zh-cn'?'投影坐标系':'projected CRS'):locale==='zh-cn'?'面叠检查':'polygon overlap')
+    if(parameter) expect(copied).toContain(parameter)
+    expect(copied).not.toContain('/private/input.gpkg')
+    await page.setViewportSize({width:390,height:844})
+    expect(await panel.evaluate(el=>el.scrollWidth<=el.clientWidth+1)).toBeTruthy()
+  }
   if(field) expect(copied).toContain(field)
   if(construction) {
     expect(copied).toContain(constructionMarker)

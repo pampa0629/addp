@@ -712,3 +712,17 @@ def test_reference_snap_closed_diagnostics_never_contain_user_field_names(operat
     for change in [{'field':'geometry_valid'},{'field':'PRIVATE_FIELD'},{'parameter':'valid_field'},{'parameter_value':'PRIVATE'},{'node_index':True},{'operator_id':'foreign'}]:
         value=copy.deepcopy(expected);value['operator'].update(change);assert validated_operator_diagnostic(value)is None
     wrong=copy.deepcopy(expected);wrong['operator']['operator_id']='repair_geometry';wrong['reason']='operator_output_fields_invalid';assert validated_operator_diagnostic(wrong)is None
+
+
+def test_polygon_adjacency_rules_are_three_closed_combinations_without_private_context():
+    from addp_common.workflow_runtime.errors import OPERATOR_INPUT_RULES, OperatorInputError, validated_operator_diagnostic
+    expected={'operator_input_invalid':'input_gdf','operator_crs_invalid':'','operator_input_overlap':'input_gdf'}
+    assert {k:v for k,v in OPERATOR_INPUT_RULES.items() if k[0]=='check_polygon_adjacency'}=={
+        ('check_polygon_adjacency',reason,''):parameter for reason,parameter in expected.items()}
+    for reason,parameter in expected.items():
+        value=OperatorInputError(reason,'PRIVATE_FIELD 123.45').diagnostic('check_polygon_adjacency',3)
+        assert value=={'schema_version':'addp.execution-failure/v3','stage':'execution','reason':reason,
+                      'operator':{'node_index':3,'operator_id':'check_polygon_adjacency',**({'parameter':parameter}if parameter else{})}}
+        assert validated_operator_diagnostic(value)==value
+        for extra in ({'field':'source_id_a'},{'source_id':'private'},{'parameter':'id_field'}):
+            assert validated_operator_diagnostic({**value,'operator':{**value['operator'],**extra}}) is None

@@ -135,7 +135,7 @@ test('protection refusals remain distinct from data permissions without exposing
 test('operator input contract matches the canonical runtime tuples and rejects unproven fields', () => {
   const source = read('../../../common-python/addp_common/workflow_runtime/errors.py')
   const canonical = [...source.matchAll(/\('([^']+)', '([^']+)', '([^']*)'\): '([^']*)'/g)].map(match => [match[1],match[2],match[4],match[3]])
-  assert.equal(canonical.length, 182)
+  assert.equal(canonical.length, 185)
   const actual = operatorInputRules.map(rule => [...rule])
   assert.deepEqual(actual.sort(), canonical.sort())
   for (const [operator_id, reason, parameter, field] of canonical) {
@@ -155,7 +155,7 @@ test('operator input contract matches the canonical runtime tuples and rejects u
       'split_line_intersections:operator_source_topology_invalid':'lineSplit',
       check_line_overlap:'lineCheck', check_line_self_overlap:'lineCheck',
       check_dangling_points:'lineCheck', check_line_intersection:'lineCheck', check_line_self_intersection:'lineCheck',
-      check_polygon_overlap:'polygonOverlap', check_polygon_gap:'polygonGap',
+      check_polygon_adjacency:'polygonAdjacency', check_polygon_overlap:'polygonOverlap', check_polygon_gap:'polygonGap',
       envelope:'construction', centroid:'construction', convex_hull:'construction', minimum_rotated_rectangle:'construction',
       representative_point:'interiorPoint',
       'buffer:operator_input_invalid':'buffer', 'buffer:operator_crs_invalid':'buffer', 'batch_buffer:operator_crs_invalid':'buffer',
@@ -813,6 +813,9 @@ test('topology check diagnostics identify the source and coverage in both langua
     ['check_line_intersection', 'lineCheck', 'operator_crs_invalid', '', /投影|projected/],
     ['check_line_self_intersection', 'lineCheck', 'operator_input_invalid', 'input_gdf', /id_field/],
     ['check_line_self_intersection', 'lineCheck', 'operator_crs_invalid', '', /投影|projected/],
+    ['check_polygon_adjacency', 'polygonAdjacency', 'operator_input_invalid', 'input_gdf', /id_field/],
+    ['check_polygon_adjacency', 'polygonAdjacency', 'operator_crs_invalid', '', /投影|projected/],
+    ['check_polygon_adjacency', 'polygonAdjacency', 'operator_input_overlap', 'input_gdf', /面叠检查|polygon overlap/],
     ['check_polygon_overlap', 'polygonOverlap', 'operator_input_invalid', 'input_gdf', /id_field/],
     ['check_polygon_overlap', 'polygonOverlap', 'operator_crs_invalid', '', /投影|projected/],
     ['check_polygon_gap', 'polygonGap', 'operator_input_invalid', 'input_gdf', /空表|no rows/],

@@ -2408,6 +2408,83 @@ def check_polygon_overlap(input_gdf: gpd.GeoDataFrame, id_field: str) -> gpd.Geo
     )
 
 
+class PolygonAdjacencyInputError(ValueError):
+    """Proven polygon adjacency admissions; native faults remain execution failures."""
+    _messages = {
+        'source': (
+            '面邻检查要求唯一列名和唯一活动几何列，几何须为有效非空有限二维面；id_field须指向值唯一非空的非几何标量列。',
+            'Polygon adjacency requires unique columns, one active geometry column and valid non-empty finite XY polygons; id_field must name unique non-null scalar identifiers.',
+        ),
+        'crs': (
+            '面邻检查要求已知投影坐标系及匹配、有限且为正的水平单位换算因子。',
+            'Polygon adjacency requires a known projected CRS with matching finite positive horizontal unit factors.',
+        ),
+        'overlap': (
+            '面邻检查的源图层存在正面积重叠，包含和重复面也须先处理。请先执行面叠检查并显式处理。',
+            'Polygon adjacency rejects positive-area overlaps, including containment and duplicates. Run polygon overlap checking and resolve them explicitly first.',
+        ),
+    }
+
+    def __init__(self, code, detail=''):
+        super().__init__(detail)
+        self.code = code
+
+    def message(self, language):
+        return self._messages[self.code][language == 'en']
+
+
+def check_polygon_adjacency(input_gdf: gpd.GeoDataFrame, id_field: str) -> gpd.GeoDataFrame:
+    """Report each exact shared boundary once, rejecting any areal intersection."""
+    source_error = partial(PolygonAdjacencyInputError, 'source')
+    _unary_frame_geometry(input_gdf, PolygonAdjacencyInputError)
+    geometry = _finite_xy_geometry(input_gdf, input_error=source_error)
+    ids = _source_identifiers(input_gdf, id_field, input_error=source_error)
+    _check_polygon_input(geometry, 'input_gdf', source_error, 'adjacency')
+    if geometry.is_empty.any() or any(part.is_empty for shape in geometry.array for part in shapely.get_parts(shape)):
+        raise source_error('polygon adjacency requires non-empty polygons and parts')
+    _require_projected_xy_crs(geometry.crs, input_error=partial(PolygonAdjacencyInputError, 'crs'))
+
+    left, right, lengths, boundaries = [], [], [], []
+    tree = shapely.STRtree(geometry.array)
+    for a, shape in enumerate(geometry.array):
+        candidates = tree.query(shape)
+        for b in np.sort(candidates[candidates > a]):
+            intersection = shapely.intersection(shape, geometry.array[b])
+            if (not isinstance(intersection, shapely.Geometry) or not shapely.is_valid(intersection)
+                    or shapely.has_z(intersection) or shapely.has_m(intersection)
+                    or not np.isfinite(shapely.get_coordinates(intersection)).all()):
+                raise RuntimeError('polygon adjacency produced an invalid intersection')
+            lines, pending = [], [intersection]
+            while pending:
+                part = pending.pop()
+                if part.is_empty:
+                    continue
+                if part.geom_type == 'Polygon':
+                    # A non-empty valid polygon proves areal overlap even if its
+                    # Float64 area underflows. Never use a tolerance/area cutoff.
+                    raise PolygonAdjacencyInputError('overlap')
+                if part.geom_type == 'LineString':
+                    lines.append(part)
+                elif part.geom_type in ('MultiPolygon', 'MultiLineString', 'GeometryCollection', 'MultiPoint'):
+                    pending.extend(reversed(part.geoms))
+            if not lines:
+                continue
+            boundary = shapely.multilinestrings(lines)
+            length = shapely.length(boundary)
+            if not shapely.is_valid(boundary) or not np.isfinite(length) or length <= 0:
+                raise RuntimeError('polygon adjacency requires a finite positive shared length')
+            left.append(a)
+            right.append(b)
+            lengths.append(length)
+            boundaries.append(boundary)
+    return gpd.GeoDataFrame(
+        {'source_id_a': ids.iloc[left].reset_index(drop=True),
+         'source_id_b': ids.iloc[right].reset_index(drop=True),
+         'shared_length': pd.Series(lengths, dtype='float64')},
+        geometry=gpd.GeoSeries(boundaries, crs=geometry.crs),
+    )
+
+
 def check_polygon_gap(input_gdf: gpd.GeoDataFrame, coverage_gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
     """Report uncovered polygon components inside an explicit coverage boundary."""
     source_error = partial(PolygonCheckInputError, 'gap_source')
@@ -2874,6 +2951,21 @@ CHECK_POLYGON_OVERLAP_METADATA = OperatorMetadata(
     workflow_example={"id": "check_overlaps", "operator": "check_polygon_overlap", "params": {"input_gdf": {"$ref": "load"}, "id_field": "parcel_id"}, "depends_on": ["load"]},
 )
 
+CHECK_POLYGON_ADJACENCY_METADATA = OperatorMetadata(
+    name="check_polygon_adjacency", type=OperatorType.SPATIAL, category=OperatorCategory.VECTOR_TOPOLOGY_CHECK,
+    description="面邻检查", brief_description="逐对提取面的精确公共边界，保留双方来源与共边长度",
+    execution_modes=["workflow"], effects=["read"],
+    overview="逐对检查有效非空二维面，提取全部部件及孔洞的公共线边界。仅点接触不报告，正面积重叠整批拒绝；只检查不修复。",
+    params=[
+        OperatorParam(name="input_gdf", type="input", data_type="GeoDataFrame", required=True, description="待检查的单个面图层", notes="有效非空有限二维Polygon/MultiPolygon，唯一活动几何列和已知投影CRS；允许空批"),
+        OperatorParam(name="id_field", type="param", data_type="str", required=True, description="来源要素标识字段", notes="显式现有非几何标量列，值非空且唯一，不使用行索引"),
+    ],
+    output_ports=[OutputPort(name="result", type="geodataframe", description="source_id_a/source_id_b/shared_length/MultiLineString，源CRS", is_default=True)],
+    use_cases=["提取地块邻接关系与公共边界", "检查贴合孔洞边界的相邻面"],
+    notes=["按原始行位置每对一行，多处公共边保留在完整MultiLineString中，不合并链路", "长度沿投影坐标原单位，英尺不换米，无距离容差或精度网格", "正面积重叠、包含和重复面须先显式处理；不吸附、补缝或自动修复", "只保双方来源标识，不复制其他业务属性；保存另接save，不承诺固定容量"],
+    workflow_example={"id":"adjacency", "operator":"check_polygon_adjacency", "params":{"input_gdf":{"$ref":"load"},"id_field":"parcel_id"}, "depends_on":["load"]},
+)
+
 CHECK_POLYGON_GAP_METADATA = OperatorMetadata(
     name="check_polygon_gap", type=OperatorType.SPATIAL, category=OperatorCategory.VECTOR_TOPOLOGY_CHECK,
     description="面缝检查", brief_description="检查显式覆盖范围内未被面图层覆盖的区域，只报告不填补",
@@ -3279,6 +3371,7 @@ OPERATORS = dict([
     register_operator(EXTEND_LINE_ENDPOINTS_METADATA, extend_line_endpoints),
     register_operator(TRIM_LINE_ENDPOINTS_METADATA, trim_line_endpoints),
     register_operator(CHECK_POLYGON_OVERLAP_METADATA, check_polygon_overlap),
+    register_operator(CHECK_POLYGON_ADJACENCY_METADATA, check_polygon_adjacency),
     register_operator(CHECK_POLYGON_GAP_METADATA, check_polygon_gap),
     register_operator(CHECK_DANGLING_POINTS_METADATA, check_dangling_points),
     register_operator(CHECK_LINE_PROXIMITY_METADATA, check_line_proximity),
