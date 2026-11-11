@@ -164,7 +164,7 @@ func executeSQLWithConnectionPool(ctx context.Context, poolPlugin interface {
 			}
 		}
 		trackTimeout := opts.EngineID != 0 && opts.EngineType != "" && SupportsSharedSQLPoolPolicy(poolPlugin)
-		return executeReadOnlySQL(ctx, db, poolPlugin.SQLDialect(), readOnlyBoundary, querySQL, opts.Args, preflight, mapField, decode, trackTimeout)
+		return executeReadOnlySQL(ctx, db, poolPlugin.SQLDialect(), readOnlyBoundary, querySQL, opts.Args, preflight, mapField, decode, trackTimeout, poolPlugin)
 	}
 	rows, err := db.WithContext(ctx).Raw(querySQL, opts.Args...).Rows()
 	if err != nil {
@@ -177,7 +177,7 @@ func executeSQLWithConnectionPool(ctx context.Context, poolPlugin interface {
 	return result, nil
 }
 
-func executeReadOnlySQL(ctx context.Context, db *gorm.DB, dialect string, boundary ControlledReadOnlySQLBoundary, query string, args []interface{}, preflight func(context.Context, *sql.Tx) error, mapField func(*sql.ColumnType) datatype.FieldInfo, decode func(datatype.FieldInfo, interface{}) (interface{}, error), trackTimeout bool) (_ *QueryResult, err error) {
+func executeReadOnlySQL(ctx context.Context, db *gorm.DB, dialect string, boundary ControlledReadOnlySQLBoundary, query string, args []interface{}, preflight func(context.Context, *sql.Tx) error, mapField func(*sql.ColumnType) datatype.FieldInfo, decode func(datatype.FieldInfo, interface{}) (interface{}, error), trackTimeout bool, provider EnginePlugin) (_ *QueryResult, err error) {
 	sqlDB, err := db.DB()
 	if err != nil {
 		return nil, fmt.Errorf("获取数据库连接失败：%w", err)
@@ -187,12 +187,14 @@ func executeReadOnlySQL(ctx context.Context, db *gorm.DB, dialect string, bounda
 		isolation = sql.LevelReadCommitted
 	}
 	begin := sqlDB.BeginTx
+	var readConn *SQLReadConnection
 	if trackTimeout {
-		conn, acquireErr := AcquireSQLConnection(ctx, sqlDB)
+		conn, acquireErr := AcquireSQLReadConnection(ctx, sqlDB, provider)
 		if acquireErr != nil {
 			return nil, acquireErr
 		}
-		defer conn.Close()
+		defer func() { err = errors.Join(err, conn.Close()) }()
+		readConn = conn
 		begin = conn.BeginTx
 		defer func() { err = SQLExecutionError(err) }()
 	}
@@ -211,6 +213,11 @@ func executeReadOnlySQL(ctx context.Context, db *gorm.DB, dialect string, bounda
 			if ctx.Err() != nil {
 				return nil, ctx.Err()
 			}
+			return nil, err
+		}
+	}
+	if readConn != nil {
+		if err := readConn.BeforeQuery(ctx, tx, query); err != nil {
 			return nil, err
 		}
 	}

@@ -4,7 +4,7 @@ export const failureReasons = Object.freeze([
   'query_template_invalid', 'relation_binding_invalid', 'authorization_invalid',
   'engine_unavailable', 'engine_mismatch', 'query_syntax_invalid', 'column_not_found',
   'table_not_found', 'ambiguous_column', 'function_or_operator_not_found', 'division_by_zero',
-  'type_mismatch', 'permission_denied', 'connection_failed', 'connection_acquisition_timeout', 'sql_execution_timeout',
+  'type_mismatch', 'permission_denied', 'connection_failed', 'connection_acquisition_timeout', 'sql_execution_timeout', 'execution_budget_invalid',
   'json_invalid', 'array_invalid', 'bytes_invalid', 'table_write_failed', 'execution_failed',
   'target_exists',
   'operator_match_fields_invalid', 'operator_output_fields_invalid', 'operator_group_fields_invalid', 'operator_dissolve_fields_conflict', 'operator_wkt_properties_invalid',

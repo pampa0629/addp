@@ -42,7 +42,7 @@ class SQLPoolEvidenceTest(unittest.TestCase):
                 CI.validate_sql_pool_profile(root, registry)
 
     def test_verified_browser_output_is_returned_to_online_dispatcher(self):
-        evidence = {"schema_version": "addp.sql-pool-console/v6", "run_id": "run-pool", "cases": []}
+        evidence = {"schema_version": "addp.sql-pool-console/v7", "run_id": "run-pool", "cases": []}
         processes = {"system": [19, "9"]}
         with tempfile.TemporaryDirectory() as tmp:
             private = Path(tmp)
@@ -87,7 +87,7 @@ pid=44 user=pool_reader_next LOG:  statement: SELECT id FROM public.pool_source_
 
     def connection_evidence(self):
         expected = {"run_id": "run-pool", "principal_id": "4", "operator_principal_id": "6", "cases": []}
-        evidence = {"schema_version": "addp.sql-pool-console/v6", "run_id": "run-pool",
+        evidence = {"schema_version": "addp.sql-pool-console/v7", "run_id": "run-pool",
                     "consumer_principal_id": "4", "operator_principal_id": "6", "cases": []}
         for engine_id, engine in ((5, "postgresql"), (8, "mysql")):
             source = {"container_id": engine, "database": "pool_fixture", "native_id": "native-" + engine}
@@ -155,7 +155,7 @@ pid=44 user=pool_reader_next LOG:  statement: SELECT id FROM public.pool_source_
                 "configuration": {**concurrency["configuration"], "before_version": 6, "after_version": 7,
                                   "phase": "saturation", "changed_fields": ["pool_max_open_conns"], "max_open": 1},
                 "queue": queue, "holders": holders, "queue_terminal": {
-                    **holders, "waiters": deepcopy(holders["waiters"] if engine == "mysql" else holders["waiters"][:1]),
+                    **holders, "waiters": deepcopy(holders["waiters"][:1]),
                 },
                 "released": {**queue, "stage": "release", "held": False},
                 "queued": {"execution_id": f"{engine}-queued", "status": "timeout", "reason": "connection_acquisition_timeout",
@@ -343,6 +343,7 @@ pid=44 user=pool_reader_next LOG:  statement: SELECT id FROM public.pool_source_
             lambda p: p["configuration"].update(max_open=2),
             lambda p: p.update(engine_status="offline"),
             lambda p: p["queue_terminal"]["waiters"].pop(),
+            lambda p: p["queue_terminal"].update(waiters=deepcopy(p["holders"]["waiters"])),
             lambda p: p["queue_terminal"]["waiters"][0].update(id=110),
             lambda p: p["queue_terminal"]["waiters"].append({"id": 110, "phase": "manager"}),
             lambda p: p["queued"]["during"]["waiters"].append({"id": 110, "phase": "queued"}),

@@ -125,6 +125,10 @@ PostgreSQL、MySQL 的 Engine Instance 通过驱动声明的连接表单保存 `
 
 接入已登记引擎的共享调用从可信 Engine Instance 传入 `version`。配置刷新复用 System 既有版本和引擎变更通知。同一进程观察到新版本后拒绝用旧版本创建或更换池，已有同配置的无版本借用只可复用相同的池。版本前进且有效配置相同则复用，配置变化按下述规则关闭和重建。已从旧池借出物理连接的操作按原事务完成，参数用于后续获取的池。连接池字段不参加引擎地址身份、数据项指纹和 DSN 构造。
 
+MySQL 的有 deadline 共享只读连接在借出后读取原 max_execution_time，并按当前请求剩余毫秒设置不宽于原非零值的会话预算。事务内核验及 Catalog Facts 使用借出时预算，正式内容 SELECT 前刷新到当时剩余时间。它限定源端 SELECT 的单语句时间，不承诺整个多语句请求在源端同一时刻结束。客户端 context 继续约束整次请求。该机制由 MySQL Provider 声明，SQL Runtime、Catalog Facts 和有界表读取复用同一连接生命周期，其他插件不由 SQL 方言推断采用。
+
+用户 SQL 的 MAX_EXECUTION_TIME 优化器提示不得放大有效预算，不能证明安全的预算相关 SET_VAR 提示拒绝执行；普通字符串和普通注释不作为提示。原生 3024 沿既有 sql_execution_timeout 诊断返回。事务和结果流结束后才恢复原会话值，恢复使用独立有界清理 context。恢复失败将该物理连接标为不可复用，并将错误返回调用方，不让污染的连接回池。无 deadline 的独占流式会话沿既有生命周期，本轮不增配置字段或源账号权限。
+
 真实连接池回归纳入既有 Common PostgreSQL 和 MySQL T2 门禁。单独验证可使用 `make test-common-postgres COMMON_POSTGRES_TEST_ARGS='--test shared-sql-pool'` 和 `make test-common-mysql-data-protection COMMON_MYSQL_TEST_ARGS='--local-disposable --test shared-sql-pool'`，覆盖池饱和、配置切换、旧连接完成与释放、迟到版本拒绝。
 
 `common/engine/plugin` 唯一管理按 Engine Instance 复用的 GORM 连接池。仅当引擎 ID、类型、完整连接配置及 `PoolConfig` 都一致时复用；连接配置包含账号、密码与 TLS 参数，变化后不得回退到旧池。比较使用不对外暴露的确定性摘要，不保存或输出 DSN／凭据副本；调用方不得并发修改传入配置。`ConnMaxLifetime` 只由 `database/sql` 管理物理连接寿命，不作为整个池的空闲淘汰时间。

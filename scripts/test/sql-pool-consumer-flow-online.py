@@ -542,9 +542,8 @@ def validate_saturation(case, run_id, executions):
         require(proof[key] == {**anchor, "stage": stage, "held": held, "holder_id": holder, "waiters": readers},
                 "native queue evidence lost its original holders")
     develop_holder = [item for item in waiters if item["phase"] == "holder"]
-    require(proof["queue_terminal"] in (
-        {**proof["holders"], "waiters": develop_holder}, proof["holders"],
-    ), "queue terminal must retain the original Develop holder and introduce no new source waiter")
+    require(proof["queue_terminal"] == {**proof["holders"], "waiters": develop_holder},
+            "queue terminal must retain only the original Develop holder; Manager source wait must have ended")
     require(proof["queued"]["during"] == proof["holders"], "queued SQL reached the native table")
     native = proof["native"]["during"]
     require(native == {**anchor, "stage": "observe", "held": True, "holder_id": native["holder_id"],
@@ -573,7 +572,7 @@ def validate_saturation(case, run_id, executions):
 def validate_browser(evidence, expected):
     require(set(evidence) == {"schema_version", "run_id", "consumer_principal_id", "operator_principal_id", "cases"},
             "unexpected Console report fields")
-    require(evidence.get("schema_version") == "addp.sql-pool-console/v6"
+    require(evidence.get("schema_version") == "addp.sql-pool-console/v7"
             and evidence.get("run_id") == expected["run_id"], "wrong Console evidence identity")
     require(evidence.get("consumer_principal_id") == expected["principal_id"], "wrong Console consumer")
     require(evidence.get("operator_principal_id") == expected["operator_principal_id"]

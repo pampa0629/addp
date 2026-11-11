@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -36,14 +37,15 @@ func (p *MySQLPlugin) readBatch(ctx context.Context, connInfo plugin.ConnectionI
 		Query: opts.Query, Args: opts.Args, Hints: opts.Hints,
 	}, opts.Limit, opts.Offset, shared, nil)
 	if err != nil {
-		return nil, err
+		return nil, mysqlReadError(err)
 	}
 	defer session.Close(context.Background())
 	batch, err := session.ReadBatch(ctx, opts.Limit)
+	err = errors.Join(err, session.Close(context.Background()))
 	if shared {
 		err = plugin.SQLExecutionError(err)
 	}
-	return batch, err
+	return batch, mysqlReadError(err)
 }
 
 type mysqlTableSessionConnection interface {
@@ -86,13 +88,12 @@ func (p *MySQLPlugin) openTableReadSession(ctx context.Context, connInfo plugin.
 	}
 	tx, err := db.BeginTx(ctx, &sql.TxOptions{ReadOnly: true, Isolation: sql.LevelRepeatableRead})
 	if err != nil {
-		db.Close()
-		return nil, fmt.Errorf("begin mysql table read session: %w", err)
+		return nil, errors.Join(fmt.Errorf("begin mysql table read session: %w", err), db.Close())
 	}
 	session := &mysqlTableReadSession{db: db, tx: tx}
 	defer func() {
 		if session.rows == nil {
-			_ = session.Close(ctx)
+			err = errors.Join(err, session.Close(ctx))
 		}
 	}()
 	if readSet != nil {
@@ -115,6 +116,11 @@ func (p *MySQLPlugin) openTableReadSession(ctx context.Context, connInfo plugin.
 		}
 		session.readSet = readSet
 	}
+	if conn, ok := db.(*plugin.SQLReadConnection); ok {
+		if err := conn.BeforeQuery(ctx, tx, query); err != nil {
+			return nil, err
+		}
+	}
 	rows, err := tx.QueryContext(ctx, query, opts.Args...)
 	if err != nil {
 		return nil, fmt.Errorf("query mysql table read session: %w", err)
@@ -134,7 +140,7 @@ func (p *MySQLPlugin) openTableSessionConnection(ctx context.Context, info plugi
 		if err != nil {
 			return nil, err
 		}
-		return plugin.AcquireSQLConnection(ctx, db)
+		return plugin.AcquireSQLReadConnection(ctx, db, p)
 	}
 	dsn, err := p.serverDSN(info)
 	if err != nil {

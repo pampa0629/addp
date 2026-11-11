@@ -15,6 +15,15 @@ import (
 	"github.com/lib/pq"
 )
 
+func TestQueryBudgetFailureHasControlledDiagnostic(t *testing.T) {
+	cause := plugin.NewQueryError(plugin.QueryErrorCodeExecutionBudgetInvalid, errors.New("private SQL"))
+	code := queryErrorCode(cause)
+	diagnostic := queryFailureDiagnostic(code, cause.Error(), cause)
+	if code != "query_execution_budget_invalid" || diagnostic == nil || diagnostic.Reason != "execution_budget_invalid" {
+		t.Fatalf("budget rejection lost its safe reason: %s %+v", code, diagnostic)
+	}
+}
+
 func TestQueryLocationRequiresTheFrozenSourceIdentity(t *testing.T) {
 	source := "SELECT missing_field FROM public.a"
 	cause := plugin.WithQueryErrorContext(&pq.Error{Code: "42703", Message: "private"}, commonquery.NewErrorContext(source, "column", "missing_field", 7))

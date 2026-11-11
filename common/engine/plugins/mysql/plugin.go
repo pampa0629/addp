@@ -150,7 +150,8 @@ func (p *MySQLPlugin) ResolvePath(ctx context.Context, connInfo plugin.Connectio
 }
 
 func (p *MySQLPlugin) DescribeEngineCatalogFacts(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.EngineCatalogPath, opts plugin.EngineCatalogFactsOptions) (*plugin.EngineCatalogFacts, error) {
-	return plugin.DescribeTabularCatalogFacts(ctx, p.tabularCatalogCallbacks(), &plugin.Engine{ID: path.EngineID, EngineType: p.Type(), ConnectionInfo: connInfo}, path, opts)
+	facts, err := plugin.DescribeTabularCatalogFacts(ctx, p.tabularCatalogCallbacks(), &plugin.Engine{ID: path.EngineID, EngineType: p.Type(), ConnectionInfo: connInfo}, path, opts)
+	return facts, mysqlReadError(err)
 }
 
 func (p *MySQLPlugin) QueryLanguages() []string {
@@ -191,7 +192,8 @@ func (p *MySQLPlugin) ControlledReadOnlySQLBoundary() plugin.ControlledReadOnlyS
 }
 
 func (p *MySQLPlugin) ExecuteSQL(ctx context.Context, connInfo plugin.ConnectionInfo, sql string, opts plugin.QueryOptions) (*plugin.QueryResult, error) {
-	return plugin.ExecuteSQLWithConnectionPool(ctx, p, connInfo, sql, opts, plugin.SQLResultFieldMapper(mysqlCatalogFieldType))
+	result, err := plugin.ExecuteSQLWithConnectionPool(ctx, p, connInfo, sql, opts, plugin.SQLResultFieldMapper(mysqlCatalogFieldType))
+	return result, mysqlReadError(err)
 }
 
 func (p *MySQLPlugin) ReadBatch(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.EngineCatalogPath, opts plugin.BatchReadOptions) (*plugin.BatchData, error) {

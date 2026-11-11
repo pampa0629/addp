@@ -451,10 +451,7 @@ async function saturationProbe(page, operatorPage, sample, operator, consumer, c
     const queueTerminal = barrierAction(engine, 'observe', 'queue')
     expect(queueTerminal.held).toBe(true)
     expect(queueTerminal.holder_id).toBe(queue.holder_id)
-    expect([
-      holders.waiters.filter(waiter => waiter.phase === 'holder'),
-      holders.waiters,
-    ]).toContainEqual(queueTerminal.waiters)
+    expect(queueTerminal.waiters).toEqual(holders.waiters.filter(waiter => waiter.phase === 'holder'))
     await page.screenshot({ path: resolve(process.env.ADDP_ONLINE_ARTIFACT_DIR, `${engine}-saturation-develop.png`) })
     const descriptors = await json(await api.get('/api/v1/develop/engines'), 'saturated engine status')
     const engineStatus = descriptors.find(item => item.id === sample.engine_id)?.connection_status
@@ -577,7 +574,7 @@ test('System pool edit replaces physical sessions in Manager and Develop for bot
       cases.push({ engine_id: sample.engine_id, engine_type: engine, source_identity: source, changes, recovery, concurrency, saturation })
     }
     writeFileSync(process.env.ADDP_ONLINE_POOL_REPORT, JSON.stringify({
-      schema_version: 'addp.sql-pool-console/v6', run_id: expected.run_id, consumer_principal_id: consumer.principalID, operator_principal_id: configIdentity.principalID, cases,
+      schema_version: 'addp.sql-pool-console/v7', run_id: expected.run_id, consumer_principal_id: consumer.principalID, operator_principal_id: configIdentity.principalID, cases,
     }))
   } finally {
     if (!operatorPage.isClosed()) await operatorContext.close()

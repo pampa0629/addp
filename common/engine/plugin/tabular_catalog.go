@@ -2,6 +2,7 @@ package plugin
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -173,16 +174,21 @@ func DescribeTabularCatalogFacts(ctx context.Context, callbacks TabularCatalogCa
 
 	registered, _ := Get(engine.EngineType) // Factory lookup has already succeeded.
 	if SupportsSharedSQLPoolPolicy(registered) {
-		var facts *EngineCatalogFacts
-		err := db.WithContext(ctx).Connection(func(conn *gorm.DB) error {
-			var err error
-			facts, err = describeTabularCatalogFacts(ctx, conn, callbacks, path, segments, opts)
-			if err == nil {
-				err = ctx.Err()
-			}
-			return SQLExecutionError(err)
-		})
-		return facts, sqlTimeoutError(err, QueryErrorCodeConnectionAcquisitionTimeout)
+		native, err := db.DB()
+		if err != nil {
+			return nil, err
+		}
+		conn, err := AcquireSQLReadConnection(ctx, native, registered)
+		if err != nil {
+			return nil, err
+		}
+		pinned := db.WithContext(ctx).Session(&gorm.Session{NewDB: true})
+		pinned.Statement.ConnPool = conn
+		facts, err := describeTabularCatalogFacts(ctx, pinned, callbacks, path, segments, opts)
+		if err == nil {
+			err = ctx.Err()
+		}
+		return facts, errors.Join(SQLExecutionError(err), conn.Close())
 	}
 	return describeTabularCatalogFacts(ctx, db, callbacks, path, segments, opts)
 }

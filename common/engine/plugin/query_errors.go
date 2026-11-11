@@ -21,6 +21,7 @@ const (
 	QueryErrorCodeFunctionNotFound             QueryErrorCode = "function_not_found"
 	QueryErrorCodeConnectionAcquisitionTimeout QueryErrorCode = "connection_acquisition_timeout"
 	QueryErrorCodeSQLExecutionTimeout          QueryErrorCode = "sql_execution_timeout"
+	QueryErrorCodeExecutionBudgetInvalid       QueryErrorCode = "query_execution_budget_invalid"
 )
 
 // AcquireSQLConnection identifies deadlines before a native connection is lent.

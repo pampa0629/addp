@@ -377,6 +377,71 @@ func TestIntegrationMySQLSharedSQLPool(t *testing.T) {
 		if err := conn.QueryRowContext(ctx, "SELECT id FROM "+table).Scan(&id); err != nil || id != 42 {
 			t.Fatalf("reused read-only session failed: id=%d error=%v", id, err)
 		}
+		t.Run("production shared read budget", func(t *testing.T) {
+			const engineID = 8413
+			defer plugin.ClosePool(engineID)
+			readerInfo["pool_max_open_conns"], readerInfo["pool_max_idle_conns"] = 1, 1
+			pool, err := plugin.GetOrCreatePoolFromFactory(&plugin.Engine{ID: engineID, Version: 1, EngineType: provider.Type(), ConnectionInfo: readerInfo}, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			native, err := pool.DB()
+			if err != nil {
+				t.Fatal(err)
+			}
+			// Keep a stricter source value to prove that the product never widens it.
+			if _, err := native.ExecContext(ctx, "SET SESSION max_execution_time=100"); err != nil {
+				t.Fatal(err)
+			}
+			var originalID int
+			if err := native.QueryRowContext(ctx, "SELECT CONNECTION_ID()").Scan(&originalID); err != nil {
+				t.Fatal(err)
+			}
+			bounded, stop := context.WithTimeout(plugin.WithPoolEngineVersion(ctx, engineID, 1), 3*time.Second)
+			defer stop()
+			req := plugin.QueryRequest{EngineID: engineID, Language: "sql",
+				Query:   "WITH RECURSIVE seq AS (SELECT 1 n UNION ALL SELECT n+1 FROM seq WHERE n<1000) SELECT SUM(a.n*b.n*c.n) FROM seq a CROSS JOIN seq b CROSS JOIN seq c",
+				Options: plugin.QueryOptions{ReadOnly: true}}
+			prepared, err := provider.PrepareQuery(bounded, readerInfo, req)
+			if err != nil {
+				t.Fatal(err)
+			}
+			_, err = prepared.Execute(bounded)
+			var sourceError *mysqldriver.MySQLError
+			if plugin.QueryErrorCodeOf(err) != plugin.QueryErrorCodeSQLExecutionTimeout || !errors.As(err, &sourceError) || sourceError.Number != 3024 || bounded.Err() != nil {
+				t.Fatalf("server budget did not precede client deadline: %v", err)
+			}
+			req.Query = "SELECT /*+ MAX_EXECUTION_TIME(10000) */ id FROM " + table
+			prepared, err = provider.PrepareQuery(bounded, readerInfo, req)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := prepared.Execute(bounded); plugin.QueryErrorCodeOf(err) != plugin.QueryErrorCodeExecutionBudgetInvalid {
+				t.Fatalf("production allowed a larger SQL budget: %v", err)
+			}
+			if _, err := lock.ExecContext(ctx, "LOCK TABLES "+table+" WRITE"); err != nil {
+				t.Fatal(err)
+			}
+			batch, err := provider.ReadBatch(bounded, readerInfo, plugin.TabularItemPath(engineID, "database", database, "pool_sample"), plugin.BatchReadOptions{Limit: 1})
+			if plugin.QueryErrorCodeOf(err) != plugin.QueryErrorCodeSQLExecutionTimeout || batch != nil {
+				t.Fatalf("bounded table read lost the server timeout: %+v %v", batch, err)
+			}
+			if _, err := lock.ExecContext(ctx, "UNLOCK TABLES"); err != nil {
+				t.Fatal(err)
+			}
+			facts, err := provider.DescribeEngineCatalogFacts(bounded, readerInfo, plugin.TabularItemPath(engineID, "database", database, "pool_sample"), plugin.EngineCatalogFactsOptions{IncludeSpatialFacts: true})
+			if err != nil || facts == nil {
+				t.Fatalf("bounded catalog facts failed: %+v %v", facts, err)
+			}
+			var restoredID, restoredBudget int
+			if err := native.QueryRowContext(ctx, "SELECT CONNECTION_ID(), @@session.max_execution_time").Scan(&restoredID, &restoredBudget); err != nil {
+				t.Fatal(err)
+			}
+			if restoredID != originalID || restoredBudget != 100 {
+				t.Fatalf("production did not restore the original session: id=%d/%d budget=%d", restoredID, originalID, restoredBudget)
+			}
+			t.Log("production budget: SELECT-only query, table page, catalog facts, hint rejection, same-session restoration passed")
+		})
 		_, err = conn.ExecContext(ctx, "INSERT INTO "+table+" VALUES (99)")
 		if !errors.As(err, &nativeError) || nativeError.Number != 1142 {
 			t.Fatalf("SELECT-only account write was not denied: %v", err)

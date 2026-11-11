@@ -110,6 +110,8 @@ func queryFailureDiagnostic(code, message string, cause error) *commonExecution.
 			reason = "type_mismatch"
 		case "sqlstate_42501", "permission_denied":
 			reason = "permission_denied"
+		case "query_execution_budget_invalid":
+			reason = "execution_budget_invalid"
 		case "timeout":
 			reason = "timeout"
 			switch timeout := plugin.QueryErrorCodeOf(cause); timeout {

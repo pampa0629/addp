@@ -40,7 +40,7 @@ var failureReasons = map[string]bool{
 	"type_mismatch": true, "permission_denied": true, "connection_failed": true,
 	"ambiguous_column": true, "function_or_operator_not_found": true, "division_by_zero": true,
 	"timeout": true, "cancelled": true, "resource_exhausted": true,
-	"connection_acquisition_timeout": true, "sql_execution_timeout": true,
+	"connection_acquisition_timeout": true, "sql_execution_timeout": true, "execution_budget_invalid": true,
 	"query_failed": true, "result_invalid": true,
 	"local_read_unsupported": true, "database_required": true, "data_protection_required": true,
 	"protection_computed_output_unsupported": true, "protection_lineage_unverified": true,
