@@ -5517,7 +5517,7 @@ class GroupedRuntimeClient:
     """Boundary simulator; values are fixed independently of the runner oracle."""
     def __init__(self,fault=''):
         self.fault=fault;self.service=None;self.tasks={};self.executions={};self.policies={};self.targets={};self.source={'left':'a'*32,'right':'b'*32}
-        self.cleanup=[];self.refusals=[];self.calls=[];self.started=[]
+        self.cleanup=[];self.refusals=[];self.calls=[];self.started=[];self.live_results={}
 
     def rows(self,phase):
         values={'default':['138****5678',None,None,None,None],
@@ -5566,6 +5566,14 @@ class GroupedRuntimeClient:
             if method=='DELETE':policy['state']='revoked';self.cleanup.append('policy:'+owner)
             return self.response(200,policy,expected)
         if path.startswith('/api/v1/develop/executions/'):
+            if path.endswith('/result'):
+                eid=path.split('/')[-2];execution=copy.deepcopy(self.live_results[eid])
+                if self.fault=='live_uuid':execution['execution_id']=str(uuid.uuid4())
+                if self.fault=='live_raw':execution['metadata']['result']['summary']['preview_rows'][0]['contact']='13812345678'
+                if self.fault=='live_default' and self.phase(self.executions[eid].get('_choices',[]))=='selected':
+                    execution['metadata']['result']['summary']['preview_rows']=self.rows('policy_default')
+                cache=() if self.fault=='live_cache' else ('no-store',)
+                return self.response(200,execution,expected,cache_control=cache)
             execution=self.executions[path.rsplit('/',1)[1]]
             return self.response(200,execution,expected)
         if path.startswith('/api/v1/transfer/executions/'):
@@ -5612,6 +5620,10 @@ class GroupedRuntimeClient:
             rows=self.rows(self.phase(chosen))
             if self.fault=='develop_raw':rows[0]['contact']='13812345678'
             result={'execution_id':eid,'status':'success','metadata':{'result':{'columns':['bucket','contact','n'],'summary':{'preview_rows':rows}}}}
+        self.live_results[eid]=copy.deepcopy(result)
+        if result['status']=='success' and chosen:
+            result['metadata']['result']['summary']['preview_rows']=self.rows('selected' if self.fault=='history_selected' else 'policy_default')
+        result['_choices']=copy.deepcopy(chosen)
         self.executions[eid]=copy.deepcopy(result);return result
 
     def fixture(self,action,target,deadline):
@@ -5647,6 +5659,19 @@ class PostgresGroupedLifecycleTest(unittest.TestCase):
                 {'component_key':'value_a','selection':{'policy_id':owner,'option_id':'server-owned'}}))
             return ONLINE.exercise_postgres_grouped_outputs(client,7,'run-42',{'principal_id':'33','tenant_id':'1'},time.monotonic()+60)
 
+    def test_selected_grouped_develop_keeps_live_and_history_contracts_separate(self):
+        client=GroupedRuntimeClient();client.policies['develop']={'state':'active'}
+        choice={'component_key':'value_a','selection':{'policy_id':'develop'}}
+        with patch.object(ONLINE,'develop_execution',side_effect=client.develop):
+            result=ONLINE.postgres_grouped_develop(client,7,'locator',time.monotonic()+30,'selected',[choice])
+        eid=result['execution_id']
+        self.assertEqual(result['history_phase'],'policy_default')
+        self.assertTrue(result['history_default_verified']);self.assertTrue(result['live_result_verified'])
+        self.assertEqual([(method,path) for method,path,_ in client.calls],[
+            ('GET','/api/v1/develop/executions/'+eid+'/result'),('GET','/api/v1/develop/executions/'+eid)])
+        self.assertEqual(client.executions[eid]['metadata']['result']['summary']['preview_rows'][0]['contact'],'1*********8')
+        self.assertEqual(client.live_results[eid]['metadata']['result']['summary']['preview_rows'][0]['contact'],'***********')
+
     def test_three_outlet_protocol_shapes_revoke_refuse_clear_and_restore(self):
         client=GroupedRuntimeClient();report=self.run_scenario(client)
         self.assertTrue(report['sources_unchanged']);self.assertTrue(report['default_csv_restored_exactly'])
@@ -5660,7 +5685,8 @@ class PostgresGroupedLifecycleTest(unittest.TestCase):
 
     def test_independent_outlet_and_lifecycle_mutations_fail_and_still_clean(self):
         for fault in ('develop_raw','service_raw','csv_cache','physical_raw','worker_attempt','source_changed',
-                      'wrong_service_reason','service_bypass','transfer_write_on_refusal','history_result'):
+                      'wrong_service_reason','service_bypass','transfer_write_on_refusal','history_result',
+                      'live_default','live_raw','live_uuid','live_cache','history_selected'):
             client=GroupedRuntimeClient(fault)
             with self.subTest(fault=fault),self.assertRaises(ONLINE.SuiteError):self.run_scenario(client)
             self.assertFalse(client.tasks);self.assertFalse(client.targets);self.assertIsNone(client.service)

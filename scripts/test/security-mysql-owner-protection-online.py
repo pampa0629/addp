@@ -1617,18 +1617,38 @@ def postgres_grouped_develop(client: GatewayClient, engine_id: int, locator: str
     identifier = execution.get("execution_id")
     if not isinstance(identifier, str) or str(uuid.UUID(identifier)) != identifier or uuid.UUID(identifier).int == 0:
         raise SuiteError("PostgreSQL grouped Develop requires an actual UUID")
-    if execution.get("status") != "success":
-        raise SuiteError("PostgreSQL grouped Develop positive control failed")
-    result = _object(_object(execution.get("metadata"), "grouped metadata").get("result"), "grouped result")
-    if result.get("columns") != ["bucket", "contact", "n"]:
-        raise SuiteError("PostgreSQL grouped Develop changed output columns")
-    proof = assert_postgres_grouped_rows(_array(_object(result.get("summary"), "grouped summary").get("preview_rows"),
-                                               "grouped preview"), [1, 2, 3, 4, 5], phase)
-    history = _object(client.request("GET", "/api/v1/develop/executions/" + identifier, (200,)).payload, "grouped history")
+    path = "/api/v1/develop/executions/" + identifier
+    # Execution observations persist default protection; the workbench result is a separate delivery.
+    history_phase = "policy_default" if choices else phase
+    try:
+        if execution.get("status") != "success":
+            raise SuiteError("positive control did not succeed")
+        result = _object(_object(execution.get("metadata"), "grouped metadata").get("result"), "grouped history result")
+        if result.get("columns") != ["bucket", "contact", "n"]:
+            raise SuiteError("history changed output columns")
+        assert_postgres_grouped_rows(_array(_object(result.get("summary"), "grouped summary").get("preview_rows"),
+                                          "grouped history preview"), [1, 2, 3, 4, 5], history_phase)
+    except SuiteError as error:
+        raise SuiteError(f"PostgreSQL grouped Develop {phase} default history {identifier}: {error}") from error
+    try:
+        response = client.request("GET", path + "/result", (200,))
+        export_no_store(response)
+        current = _object(response.payload, "grouped live result")
+        if current.get("execution_id") != identifier or current.get("status") != "success":
+            raise SuiteError("live execution identity or status differs")
+        live = _object(_object(current.get("metadata"), "grouped live metadata").get("result"), "grouped live result")
+        if live.get("columns") != ["bucket", "contact", "n"]:
+            raise SuiteError("live result changed output columns")
+        proof = assert_postgres_grouped_rows(_array(_object(live.get("summary"), "live summary").get("preview_rows"),
+                                                   "grouped live rows"), [1, 2, 3, 4, 5], phase)
+    except SuiteError as error:
+        raise SuiteError(f"PostgreSQL grouped Develop {phase} live delivery {identifier}: {error}") from error
+    history = _object(client.request("GET", path, (200,)).payload, "grouped repeated history")
     if (history.get("execution_id") != identifier or history.get("status") != "success"
             or _object(history.get("metadata"), "history metadata").get("result") != result):
-        raise SuiteError("PostgreSQL grouped repeated history changed the protected result")
-    return {**proof, "execution_id": identifier, "history_matches": True}
+        raise SuiteError(f"PostgreSQL grouped Develop {phase} repeated default history {identifier} changed")
+    return {**proof, "execution_id": identifier, "history_matches": True, "history_phase": history_phase,
+            "history_default_verified": True, "live_result_verified": True, "live_no_store": True}
 
 
 def postgres_grouped_service_pages(client: GatewayClient, path: str, phase: str) -> tuple[dict[str, object], str]:
@@ -5420,7 +5440,7 @@ def run_scenario(
                 source_locator, target_parent_locator, target_locator, service_name, task_name, identity, deadline, task_ids)
         result = {
             "resource_validity": resource_validity,
-            "schema_version": "addp.security-mysql-owner-protection-online/v45",
+            "schema_version": "addp.security-mysql-owner-protection-online/v46",
             "postgres_refresh_scope": {"mode": "exact_items", "initializer_depth": "basic",
                 "schema": TARGET_SCHEMA, "tables": list(POSTGRES_READ_TARGETS)},
             "result": "passed",
