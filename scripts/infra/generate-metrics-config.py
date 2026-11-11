@@ -23,8 +23,8 @@ class TargetBudgetExceeded(ValueError):
 
 def check_target_budget(env, root=ROOT):
     value = env.get('ADDP_METRICS_TARGET_LIMIT', '12')
-    if not re.fullmatch(r'[1-9]|[12][0-9]|3[0-4]', value):
-        raise ValueError('ADDP_METRICS_TARGET_LIMIT must be an integer from 1 to 34')
+    if not re.fullmatch(r'[1-9]|[12][0-9]|3[0-6]', value):
+        raise ValueError('ADDP_METRICS_TARGET_LIMIT must be an integer from 1 to 36')
     raw_plan = env.get('ADDP_DEV_PROCESS_METRICS_PLAN', '')
     if not raw_plan:
         return value
@@ -35,14 +35,14 @@ def check_target_budget(env, root=ROOT):
     launcher = sources.load(ROOT / 'scripts/dev/process-metrics-launch.py')
     processes = len(launcher.parse_plan(raw_plan))
     hosts = int(sources.enabled('node', env))
-    engines = sum(sources.enabled(kind, env) for _, kind in sources.selection(['infra'], []))
+    deployments = sum(sources.enabled(kind, env) for _, kind in sources.selection(['infra'], []))
     if env.get('ADDP_ONLINE_HOST') != '1' and (root / 'business/.env').exists():
         business = sources.environment('business', env, root)
-        engines += sum(sources.enabled(kind, business) for _, kind in sources.selection(['business'], []))
-    total = processes + hosts + engines
+        deployments += sum(sources.enabled(kind, business) for _, kind in sources.selection(['business'], []))
+    total = processes + hosts + deployments
     if total > int(value):
         raise TargetBudgetExceeded(
-            f'指标采集预算超限：计划 {total} 个（进程 {processes}、主机 {hosts}、引擎 {engines}），上限 {value}。'
+            f'指标采集预算超限：计划 {total} 个（进程 {processes}、主机 {hosts}、部署来源 {deployments}），上限 {value}。'
         )
     return value
 

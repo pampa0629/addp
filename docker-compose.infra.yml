@@ -263,11 +263,14 @@ services:
       ADVERTISED_PORT: 8083
       ENABLE_APICURIO_CONVERTERS: "false"
       ENABLE_JOLOKIA: "false"
+      KAFKA_OPTS: -javaagent:/kafka/libs/jolokia-jvm-1.7.2.jar=port=8778,host=0.0.0.0,policyLocation=file:/etc/addp/jolokia-access.xml
       ENABLE_OTEL: "false"
     extra_hosts:
       - "host.docker.internal:host-gateway"
     ports:
       - "${INFRA_BIND_HOST:-0.0.0.0}:${KAFKA_CONNECT_PORT:-18083}:8083"
+    volumes:
+      - ./scripts/infra/cdc-jolokia-access.xml:/etc/addp/jolokia-access.xml:ro
     networks:
       - addp-network
     restart: unless-stopped

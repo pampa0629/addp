@@ -21,7 +21,7 @@ import (
 const (
 	Timeout                          = 5 * time.Second
 	DefaultExternalTargetLimit       = 12
-	MaxExternalTargetLimit           = 34
+	MaxExternalTargetLimit           = 36
 	EndpointBodyLimit          int64 = 10 << 20
 	TargetLimit                      = 1000
 )

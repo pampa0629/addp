@@ -10,7 +10,7 @@ func TestMetricsTargetLimitRejectsInvalidValues(t *testing.T) {
 	for _, test := range []struct {
 		value string
 		limit int
-	}{{"1", 1}, {"12", 12}, {"24", 24}, {"34", 34}, {"35", 0}, {"0", 0}, {"034", 0}, {"", 0}} {
+	}{{"1", 1}, {"12", 12}, {"24", 24}, {"34", 34}, {"35", 35}, {"36", 36}, {"37", 0}, {"0", 0}, {"034", 0}, {"", 0}} {
 		t.Run(test.value, func(t *testing.T) {
 			t.Setenv("ADDP_METRICS_TARGET_LIMIT", test.value)
 			if got := loadMetricsTargetLimit(); got != test.limit {

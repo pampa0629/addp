@@ -161,6 +161,8 @@ CDC 基础设施组件首期覆盖当前标准 Infra Compose 项目的 `redpanda
 
 两个组件的部署缺失、来源未启用或核验失败分别处理。容器重建后原来源失效，只有当前容器及来源重新匹配后才采集。空 Connector 或消费组清单是独立的运行事实，缺样不填零，组件汇总不用于推算单个任务的端到端延迟。采集仅发布固定指标与有界标签，发现和指标均不携带连接凭据、Connector 配置、事件正文或异常原文。当前个人部署已有 34 个目标，启用两个新目标前在隔离环境验证至少 36 个目标的并存采集、超额和恢复。
 
+CDC 来源安装与恢复沿统一 `metrics-sources.py` 入口，仅允许 Infra 的 `redpanda`、`kafka-connect` 两种来源。启用、监听地址和 TLS 材料由各自部署配置声明，未安装的来源不因重启而自动创建。安装只构建／应用当前来源，恢复只使用已安装的精确镜像及私有材料；身份、TLS、来源配置或来源镜像失配时拒绝恢复。来源私有卷由其自身的固定镜像初始化，不使用 Redpanda 或 Connect 镜像作为初始化工具；运行进程仍以非 root、只读文件系统及受限资源启动。CDC 生命周期不管理组件数据卷、连接凭据和 Connector 配置，也不重启组件。Connect 的只读 JMX 白名单由标准 Infra Compose 挂载，JMX 端口仅在私网可达。
+
 CDC 固定来源复用 `sourceserver` 的单次完整投影和私有 mTLS `/metrics`，不提供任意地址或 JMX 查询入口。Redpanda 只读取 `/public_metrics`，聚合磁盘与不可用分区；消费组积压只在每个已提交分区都有对应末端 offset 时发布，空消费组只发布分区数为零，不伪造积压值。Kafka Connect 只读取 `/connectors?expand=status` 和两个固定 JMX 属性集合：Task 的 offset 提交失败比例，以及 Debezium PostgreSQL streaming 的连接状态、源端延迟。只输出固定状态计数和最大值，不输出 Connector、Topic、Group 或 MBean 名称。源端延迟为 Debezium 的毫秒值换算秒，offset 失败比例为原生 0～1 比例，均不能解释成整条链路延迟或失败率。
 
 Jolokia 必须使用属性级只读白名单，禁止 write、exec、list、search 和其他属性；不发布宿主机原生 JMX 端口。每次采集共享 4 秒截止时间，单次上游响应最多 1 MiB，Redpanda 最多 4096 个样本、Connect 最多 256 个 Connector / 1024 个 Task。超限、协议异常或必需读取失败时整个组件返回采集失败，不保留上次样本。空集合允许成功；Jolokia 对没有匹配 MBean 返回的 `404 + javax.management.InstanceNotFoundException` 表示空集合，其他 404 和权限拒绝仍为失败。尚未出现的 streaming / offset 属性不生成零值，Debezium 的延迟 `-1` 表示尚无事件或指标已重置，不生成延迟值；同时发布有延迟样本的 Connector 数，其余负值保留以反映时钟偏差。新增来源的 T1 与真实组件 T2 沿既有 Monitor 门禁执行；它们通过不等同于统一发现、36 目标并存或页面验收通过。[Jolokia 属性级权限](https://jolokia.org/reference/html/manual/security.html)
@@ -472,12 +474,12 @@ PostgreSQL 专业查询同时核验 `monitor.resource_observation.read` 与 Syst
 | 步长 | 至少 15 秒，随范围和预计序列规划；返回后再次核验，不静默截断 |
 | 查询超时与并发 | 总期限 5 秒；单主体 2、单 Monitor 进程上游 8；超限快速拒绝，无无界等待 |
 | TSDB 保留 | 7 天与 10 GiB 体积同时限制，可能提前淘汰；另预留 WAL/压缩空间 |
-| 来源序列预留 | 每端点和中心自身各 20,000。Monitor 和 Prometheus 使用同一部署变量 `ADDP_METRICS_TARGET_LIMIT`，接受 1 至 34 的整数，缺省 12。总预留为（外部来源上限 + 1）× 20,000。开发部署可选 34，对应 700,000。 |
+| 来源序列预留 | 每端点和中心自身各 20,000。Monitor 和 Prometheus 使用同一部署变量 `ADDP_METRICS_TARGET_LIMIT`，接受 1 至 36 的整数，缺省 12。总预留为（外部来源上限 + 1）× 20,000。开发部署可选 36，对应 740,000。 |
 | 组件预算 | Prometheus 1 CPU/2 GiB，node_exporter 0.25 CPU/256 MiB；节点入口 0.25 CPU/128 MiB |
 
 来源准入按去重端点的预留配额原子校验，不能把当前少量序列或单端点 sample_limit 当作全局限额。查询预算可收紧并热生效，在途请求保持开始时版本；物理资源、卷与保留归 Infra。默认预算不是已证明的生产规模上限。
 
-开发部署扩至 34 个端点前，沿 `make test-monitor-metrics MONITOR_METRICS_TEST_ARGS=--case=target-budget` 在独立网络、卷及 mTLS 凭据内，从 24 个目标基线增加到 34 个，再验证第 35 个拒绝及回到 34 个恢复。受控拓扑保留一台主机、六个引擎、五个 Worker 和一个网关，其余为后端。用代表性的 HTTP 路由直方图和失败计数运行即时与区间 PromQL，记录抓取成功与耗时、时序与写入量、查询延迟、容器内存及磁盘增长。短时估算不证明生产满载、正式页面或七天留存。
+开发部署扩至 36 个端点前，沿 `make test-monitor-metrics MONITOR_METRICS_TEST_ARGS=--case=target-budget` 在独立网络、卷及 mTLS 凭据内，从 24、34 个目标基线增加两个真实 CDC 来源到 36 个，再验证第 37 个拒绝及回到 36 个恢复。34 个受控容量目标保留一台主机、六个引擎、五个 Worker 和一个网关，其余为后端；新增 Redpanda 与 Connect 来源沿正式生命周期安装、恢复及停用。受控 HTTP SD 夹具验证 Prometheus 传输和容量，System 当前事实及 Monitor 准入另由身份投影门禁核对，不能将夹具算作正式页面验收。用代表性的 HTTP 路由直方图和失败计数运行即时与区间 PromQL，记录抓取成功与耗时、时序与写入量、查询延迟、容器内存及磁盘增长。短时估算不证明生产满载、正式页面或七天留存。
 
 开发部署有进程采集计划时，启动、重启和指标配置渲染均在应用前校验计划单元数、选中的本机主机来源以及 Infra 和 Business 引擎来源之和。即使来源暂未运行，也预留其名额。超额报告各类数量和上限，重启入口在停止进程前退出，指标配置渲染保留现有配置。手工添加的远程来源仍由 Monitor 在真实发现时纳入总预算。
 

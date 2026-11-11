@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# ADDP_T2_OWNED_SERVICES=prometheus,metrics-source,node-exporter,block-capacity,gateway-control,postgres,postgres-metrics,postgres-metrics-web,python-http-agent,python-http-copilot,cdc-broker,cdc-connect,cdc-redpanda-source,cdc-connect-source
+# ADDP_T2_OWNED_SERVICES=prometheus,metrics-source,node-exporter,block-capacity,gateway-control,postgres,postgres-metrics,postgres-metrics-web,python-http-agent,python-http-copilot,cdc-broker,cdc-connect
 # ADDP_T2_COMPOSE_FILE=scripts/test/docker-compose.monitor-metrics-t2.yml
-# ADDP_T2_INPUT_FILES=common/models/observability_component.go system/backend/internal/service/cdc_metrics_identity.go system/backend/internal/service/engine_deployment_discovery.go system/backend/internal/models/engine_deployment.go monitor/backend/internal/cdcsource/ monitor/backend/cmd/cdc-metrics-source/ monitor/backend/internal/sourceserver/ scripts/infra/cdc-jolokia-access.xml scripts/utils/metrics-project.py scripts/utils/metrics-source.py scripts/test/metrics-source-fixture.py scripts/test/metrics-project_test.py scripts/infra/node-recovery.py scripts/test/node-metrics-recovery_test.py scripts/test/node-metrics-recovery-probe.py scripts/test/node-recovery-fixture.sh scripts/infra/metrics-sources.py scripts/test/metrics-sources_test.py common-python/ agent/backend/main.py agent/backend/requirements.txt copilot/backend/main.py copilot/backend/requirements.txt scripts/test/python-http-metrics-source.py scripts/test/python-http-metrics-probe.py scripts/test/metrics-http-budget.py scripts/test/postgres-metrics-lifecycle_test.py scripts/test/postgres-lifecycle-probe.py business/scripts/stop.sh business/docker-compose.yml business/scripts/start.sh business/.env.example scripts/infra/postgres-metrics.yml scripts/infra/postgres-observation/ scripts/test/postgres-observation-probe.py scripts/test/directory-publication-probe.py scripts/utils/deployment-inventory.py scripts/utils/container-proof.py gateway/ scripts/prod/gateway-metrics-control.yml scripts/infra/block-capacity.py scripts/infra/node-block-capacity.yml scripts/infra/node-block-capacity-linux.yml scripts/infra/node-metrics.py scripts/infra/node-metrics.yml scripts/infra/node-metrics-linux.yml scripts/infra/node-metrics-desktop.yml scripts/infra/node-metrics-web.yml scripts/infra/metrics.yml scripts/infra/prometheus.yml scripts/infra/generate-metrics-config.py scripts/infra/prometheus-web.yml scripts/infra/prometheus-http.yml scripts/infra/up.sh scripts/infra/down.sh scripts/infra/ports.sh scripts/infra/status.sh scripts/utils/observability-env.sh scripts/dev/start.sh scripts/dev/restart.sh scripts/dev/stop.sh scripts/dev/lifecycle-lock.sh scripts/dev/process-metrics-launch.py scripts/dev/worker-units.sh scripts/dev/ports.sh scripts/test/dev-process-metrics-plan_test.py scripts/prod/start.sh scripts/prod/stop.sh scripts/prod/generate-process-metrics-platform.py scripts/prod/metrics-platform.yml scripts/prod/metrics-query.yml common/processmetrics/ common/httpmetrics/ common/modulelifecycle/ common/config/process_metrics.go common/models/process_metrics.go common/models/container_observation.go common/client/system_service.go common/client/system_runtime_instances.go common/client/system_observability_identity.go common/models/observability_identity.go common/models/module_runtime_query.go common/models/observability_identity.go common/models/service_expectations.go common/models/engine_metrics.go common/client/system_engine_deployments.go monitor/backend/internal/metricsdiscovery/ monitor/backend/internal/resourcequery/ monitor/backend/internal/config/metrics.go monitor/backend/internal/config/config.go common/client/system_host_node.go common/client/system_host_node_scope.go scripts/prod/wait-infra.sh scripts/test/monitor-metrics-probe.py scripts/test/metrics-deployment-config_test.py scripts/test/infra-runtime-log-lifecycle_test.py docker-compose.infra.yml docker-compose.yml .env.example monitor/backend/internal/service/ monitor/backend/internal/models/ monitor/backend/internal/repository/ scripts/utils/private-state.py scripts/utils/deployment-docker.py
+# ADDP_T2_INPUT_FILES=common/go.mod common/go.sum monitor/backend/go.mod monitor/backend/go.sum scripts/infra/cdc-metrics.py scripts/infra/Dockerfile.cdc-metrics common/models/observability_component.go system/backend/internal/service/cdc_metrics_identity.go system/backend/internal/service/engine_deployment_discovery.go system/backend/internal/models/engine_deployment.go monitor/backend/internal/cdcsource/ monitor/backend/cmd/cdc-metrics-source/ monitor/backend/internal/sourceserver/ scripts/infra/cdc-jolokia-access.xml scripts/utils/metrics-project.py scripts/utils/metrics-source.py scripts/test/metrics-source-fixture.py scripts/test/metrics-project_test.py scripts/infra/node-recovery.py scripts/test/node-metrics-recovery_test.py scripts/test/node-metrics-recovery-probe.py scripts/test/node-recovery-fixture.sh scripts/infra/metrics-sources.py scripts/test/metrics-sources_test.py common-python/ agent/backend/main.py agent/backend/requirements.txt copilot/backend/main.py copilot/backend/requirements.txt scripts/test/python-http-metrics-source.py scripts/test/python-http-metrics-probe.py scripts/test/metrics-http-budget.py scripts/test/postgres-metrics-lifecycle_test.py scripts/test/postgres-lifecycle-probe.py business/scripts/stop.sh business/docker-compose.yml business/scripts/start.sh business/.env.example scripts/infra/postgres-metrics.yml scripts/infra/postgres-observation/ scripts/test/postgres-observation-probe.py scripts/test/directory-publication-probe.py scripts/utils/deployment-inventory.py scripts/utils/container-proof.py gateway/ scripts/prod/gateway-metrics-control.yml scripts/infra/block-capacity.py scripts/infra/node-block-capacity.yml scripts/infra/node-block-capacity-linux.yml scripts/infra/node-metrics.py scripts/infra/node-metrics.yml scripts/infra/node-metrics-linux.yml scripts/infra/node-metrics-desktop.yml scripts/infra/node-metrics-web.yml scripts/infra/metrics.yml scripts/infra/prometheus.yml scripts/infra/generate-metrics-config.py scripts/infra/prometheus-web.yml scripts/infra/prometheus-http.yml scripts/infra/up.sh scripts/infra/down.sh scripts/infra/ports.sh scripts/infra/status.sh scripts/utils/observability-env.sh scripts/dev/start.sh scripts/dev/restart.sh scripts/dev/stop.sh scripts/dev/lifecycle-lock.sh scripts/dev/process-metrics-launch.py scripts/dev/worker-units.sh scripts/dev/ports.sh scripts/test/dev-process-metrics-plan_test.py scripts/prod/start.sh scripts/prod/stop.sh scripts/prod/generate-process-metrics-platform.py scripts/prod/metrics-platform.yml scripts/prod/metrics-query.yml common/processmetrics/ common/httpmetrics/ common/modulelifecycle/ common/config/process_metrics.go common/models/process_metrics.go common/models/container_observation.go common/client/system_service.go common/client/system_runtime_instances.go common/client/system_observability_identity.go common/models/observability_identity.go common/models/module_runtime_query.go common/models/observability_identity.go common/models/service_expectations.go common/models/engine_metrics.go common/client/system_engine_deployments.go monitor/backend/internal/metricsdiscovery/ monitor/backend/internal/resourcequery/ monitor/backend/internal/config/metrics.go monitor/backend/internal/config/config.go common/client/system_host_node.go common/client/system_host_node_scope.go scripts/prod/wait-infra.sh scripts/test/monitor-metrics-probe.py scripts/test/metrics-deployment-config_test.py scripts/test/infra-runtime-log-lifecycle_test.py docker-compose.infra.yml docker-compose.yml .env.example monitor/backend/internal/service/ monitor/backend/internal/models/ monitor/backend/internal/repository/ scripts/utils/private-state.py scripts/utils/deployment-docker.py
 # Own disposable Compose startup, certificates, source files and zero-residue cleanup.
 set -euo pipefail
 [[ $# -le 1 ]] || { echo 'Metrics T2: unexpected arguments' >&2; exit 2; }
@@ -30,7 +30,7 @@ fi
 if [[ "$metrics_case" == all ]]; then
   bash "$ROOT_DIR/scripts/test/node-recovery-fixture.sh"
 fi
-if [[ "$metrics_case" == directory-publication || "$metrics_case" == cdc-native ]]; then
+if [[ "$metrics_case" == directory-publication || "$metrics_case" == cdc-native || "$metrics_case" == target-budget ]]; then
   (cd "$ROOT_DIR" && python3 -m unittest scripts.test.metrics-deployment-config_test.MetricsDeploymentConfigTest)
 else
   python3 -m unittest "$ROOT_DIR/scripts/test/metrics-deployment-config_test.py"
@@ -108,6 +108,9 @@ CLEANUP_RECEIPT
   # The new SQL source's logs are checked for secret exposure in memory by its
   # probe. Never dump those raw logs on failure before that check succeeds.
   if [[ "$result" != 0 ]]; then compose logs --no-color --tail=60 prometheus metrics-source node-exporter gateway-control postgres >&2; fi
+  if [[ "$metrics_case" == cdc-native || "$metrics_case" == target-budget ]]; then
+    python3 "$ROOT_DIR/scripts/test/monitor-metrics-probe.py" --cleanup-cdc || { result=1; cleanup_verified=false; }
+  fi
   compose --profile python-http --profile block-capacity --profile cdc-native down --volumes --remove-orphans >"$WORK_DIR/cleanup.log" 2>&1 || { result=1; cleanup_verified=false; }
   # Producers are stopped: phase/counter files can no longer be concurrently written.
   # Capture even an early Go failure, before Python is entered, then destroy files.
@@ -249,12 +252,13 @@ printf '%s' "$PROMETHEUS_SERVICE_CLIENT_SECRET" >"$ADDP_METRICS_DEPLOYMENT_DIR/p
 # Only one-run fixture secrets; Docker can read them without production permission changes.
 chmod 644 "$ADDP_METRICS_DEPLOYMENT_DIR/prometheus-client-secret"
 if [[ "$metrics_case" == cdc-native ]]; then
-  cdc_arch=$(docker info --format '{{.Architecture}}')
-  case "$cdc_arch" in aarch64|arm64) cdc_arch=arm64 ;; x86_64|amd64) cdc_arch=amd64 ;; *) echo 'Unsupported CDC T2 architecture' >&2; exit 1 ;; esac
-  (cd "$ROOT_DIR/monitor/backend" && GOWORK=off CGO_ENABLED=0 GOOS=linux GOARCH="$cdc_arch" go build -trimpath -o "$WORK_DIR/cdc-metrics-source" ./cmd/cdc-metrics-source)
   compose up -d --wait --wait-timeout 90 postgres cdc-broker cdc-connect
   python3 "$ROOT_DIR/scripts/test/monitor-metrics-probe.py"
   exit 0
+fi
+if [[ "$metrics_case" == target-budget ]]; then
+  compose up -d --wait --wait-timeout 90 postgres cdc-broker cdc-connect
+  python3 "$ROOT_DIR/scripts/test/monitor-metrics-probe.py" --prepare-cdc
 fi
 touch "$WORK_DIR/source/requests.log"
 chmod 666 "$WORK_DIR/source/requests.log"
@@ -285,7 +289,7 @@ GATEWAY_COMPILE
 chmod 755 "$WORK_DIR/control.test"
 
 if [[ "$metrics_case" == target-budget ]]; then
-  export ADDP_METRICS_TARGET_LIMIT=34
+  export ADDP_METRICS_TARGET_LIMIT=36
 fi
 python3 "$ROOT_DIR/scripts/infra/generate-metrics-config.py"
 cat >"$WORK_DIR/nginx.conf" <<'CONFIG'

@@ -1613,12 +1613,19 @@ class MetricsDeploymentConfigTest(unittest.TestCase):
             with self.assertRaisesRegex(config.TargetBudgetExceeded, '计划 35 个.*上限 34'):
                 config.render(env, root)
 
+            env.update(ADDP_METRICS_TARGET_LIMIT='36', ADDP_REDPANDA_METRICS_ENABLED='true', ADDP_KAFKA_CONNECT_METRICS_ENABLED='true')
+            env['ADDP_DEV_PROCESS_METRICS_PLAN'] = json.dumps(dict(list(plan.items())[:27]))
+            self.assertEqual(config.check_target_budget(env, root), '36')
+            env['ADDP_DEV_PROCESS_METRICS_PLAN'] = json.dumps(plan)
+            with self.assertRaisesRegex(config.TargetBudgetExceeded, '计划 37 个.*上限 36'):
+                config.check_target_budget(env, root)
+
         config.render(dict(self.env, ADDP_METRICS_TARGET_LIMIT='34'))
         path = self.directory / 'prometheus.yml'
         content = path.read_bytes()
         self.assertIn(b'target_limit: 34', content)
         with self.assertRaises(ValueError):
-            config.render(dict(self.env, ADDP_METRICS_TARGET_LIMIT='35'))
+            config.render(dict(self.env, ADDP_METRICS_TARGET_LIMIT='37'))
         self.assertEqual(path.read_bytes(), content)
 
     def test_desktop_loopback_rules_keep_the_original_identity_and_exact_ports(self):

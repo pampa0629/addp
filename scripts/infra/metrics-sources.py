@@ -2,6 +2,7 @@
 """One deployment-owned entry for optional metrics sources; never manages engines."""
 import argparse
 import importlib.util
+import json
 import os
 from pathlib import Path
 import re
@@ -14,6 +15,8 @@ PROVIDERS = {
     'postgresql': ('postgres-observation/lifecycle.py', 'ADDP_POSTGRES_METRICS', 'PostgreSQL'),
     'redis': ('redis-metrics.py', 'ADDP_REDIS_METRICS', 'Redis'),
     'minio': ('minio-observation.py', 'ADDP_MINIO_METRICS', 'MinIO'),
+    'redpanda': ('cdc-metrics.py', 'ADDP_REDPANDA_METRICS', 'Redpanda'),
+    'kafka-connect': ('cdc-metrics.py', 'ADDP_KAFKA_CONNECT_METRICS', 'Kafka Connect'),
 }
 SCOPES = ('host', 'infra', 'business')
 OS_KEYS = ('PATH', 'HOME', 'LANG', 'LC_ALL', 'TMPDIR', 'DOCKER_CONFIG', 'DOCKER_CONTEXT', 'DOCKER_HOST')
@@ -96,7 +99,7 @@ def environment(scope, inherited, root=None):
 
 def selection(scopes, kinds):
     return [(scope, kind) for scope in SCOPES if not scopes or scope in scopes
-            for kind in PROVIDERS if (scope == 'host') == (kind == 'node') and (not kinds or kind in kinds)]
+            for kind in PROVIDERS if (scope == 'host') == (kind == 'node') and (not kinds or kind in kinds) and (kind not in ('redpanda','kafka-connect') or scope == 'infra')]
 
 
 def enabled(kind, env):
@@ -111,6 +114,9 @@ def check(kind, scope, env):
     if kind == 'node':
         provider.deployment(env)
         provider.capacity_enabled(env)
+    elif kind in ('redpanda','kafka-connect'):
+        provider.state_directory(env, scope, kind)
+        provider.sources.transport(env, ROOT, PROVIDERS[kind][1], provider.Error)
     else:
         provider.state_directory(env, scope)
         provider.transport(env) if kind != 'minio' else provider.sources.transport(env, ROOT, PROVIDERS[kind][1], provider.Error)
@@ -152,7 +158,7 @@ def status(kind, scope, env):
                     or db_labels.get('com.docker.compose.project') != source_project
                     or db_labels.get('com.docker.compose.project.working_dir') != str(working)
                     or db_labels.get('com.docker.compose.service') != ('postgres' if kind == 'postgresql' else kind)):
-                return '数据库运行身份已变化', False
+                return ('组件运行身份已变化' if kind in ('redpanda','kafka-connect') else '数据库运行身份已变化'), False
     services = [fact['labels'].get('com.docker.compose.service') for fact in facts]
     if len(services) != len(expected) or set(services) != expected:
         return '组件不完整', False
@@ -174,6 +180,8 @@ def apply(action, kind, scope, env):
     args = [sys.executable, str(script), action]
     if kind != 'node':
         args += ['--scope', scope]
+    if kind in ('redpanda','kafka-connect'):
+        args += ['--kind', kind]
     result = subprocess.run(args, env=env, capture_output=True, text=True, timeout=600)
     # Provider logs may contain deployment information. Publish closed stages only.
     if result.returncode:
@@ -186,26 +194,37 @@ def apply(action, kind, scope, env):
         stage = re.search(r'\[stage=([a-z-]+)\]', result.stderr)
         tls = tls_failure_detail(stage[1] if stage else None, re.findall(r'\[tls-reason=([a-z-]+)\]', result.stderr))
         detail = '：'+tls if tls else ('：'+FAILURE_STAGES[stage[1]]) if stage and stage[1] in FAILURE_STAGES else ''
+        if kind in ('redpanda','kafka-connect'):
+            detail = detail.replace('引擎','组件').replace('数据库','组件').replace('账号、','')
         raise ValueError('操作失败'+detail+cleanup)
     if action == 'recover':
         if 'healthy; source unchanged' in result.stdout:
-            return '来源运行正常，未重建（采集待验证）'
+            return {'outcome':'unchanged', 'detail':'保持原状'}
         if 'not installed' in result.stdout:
-            return '未安装，未执行恢复'
-        return '已检查／恢复（采集待验证）'
+            return {'outcome':'skipped', 'detail':'未安装，未执行恢复'}
+        if 'recovery not selected' in result.stdout:
+            return {'outcome':'skipped', 'detail':'未选择恢复'}
+        if 'source recovered;' in result.stdout:
+            return {'outcome':'restored', 'detail':'已恢复'}
+        raise ValueError('操作失败：恢复结果未能确认，请核对来源状态')
     return '已停用' if action == 'down' else '已应用（采集待验证）'
 
 
-def run(action, scopes=(), kinds=(), inherited=None, resolved=False):
+def run(action, scopes=(), kinds=(), inherited=None, resolved=False, recovery_results=None):
     if resolved and (not scopes or len(set(scopes)) != 1):
         raise ValueError('Resolved deployment environment requires one explicit scope')
     rows = selection(scopes, kinds)
     if not rows:
         raise ValueError('No matching source')
-    print('ADDP 采集来源 · '+{'status':'当前运行状态', 'check':'配置检查', 'up':'安装／应用', 'down':'停用', 'recover':'既有来源恢复'}[action])
+    if action != 'recover':
+        print('ADDP 采集来源 · '+{'status':'当前运行状态', 'check':'配置检查', 'up':'安装／应用', 'down':'停用'}[action])
+    if action == 'status' and recovery_results is not None:
+        print('来源                     本次恢复结果 | 当前运行／镜像状态')
     failures = 0
+    outcomes = {}
     environments = {}
     for scope, kind in rows:
+        key = scope+'/'+kind
         label = PROVIDERS[kind][2] if scope == 'host' else scope.capitalize()+' '+PROVIDERS[kind][2]
         try:
             if scope not in environments:
@@ -229,16 +248,22 @@ def run(action, scopes=(), kinds=(), inherited=None, resolved=False):
                     check(kind, scope, env)
                 result = '部署输入检查通过（采集待验证）' if selected else '未启用'
             elif action == 'recover' and not selected:
-                result = '未选择恢复'
+                outcomes[key] = {'outcome':'skipped', 'detail':'未选择恢复'}
             elif action == 'recover' and kind == 'node' and 'host' not in scopes:
-                result = '未选择恢复（主机须显式指定 --scope host）'
+                outcomes[key] = {'outcome':'skipped', 'detail':'未选择恢复（主机须显式指定 --scope host）'}
             elif action == 'up' and kind == 'node' and not selected:
                 result = '未启用（未改变现有来源）'
             else:
                 result = apply(action, kind, scope, env)
+                if action == 'recover':
+                    outcomes[key] = result
                 if action == 'up' and not selected:
                     result = '未启用（已核对停用）'
-            print(f'{label:<24} {result}')
+            if action != 'recover':
+                if action == 'status' and recovery_results is not None:
+                    previous = recovery_results.get(key, {'detail':'未记录'})
+                    result = previous['detail']+' | '+result
+                print(f'{label:<24} {result}')
         except (OSError, ValueError, KeyError, TypeError, subprocess.SubprocessError) as error:
             failures += 1
             tls = tls_failure_detail(getattr(error,'observation_stage',None), [getattr(error,'source_tls_reason',None)]) if action == 'check' else None
@@ -250,9 +275,23 @@ def run(action, scopes=(), kinds=(), inherited=None, resolved=False):
                 detail = str(error)
             else:
                 detail = '检查或操作未通过，请核对部署配置与来源归属'
-            print(f'{label:<24} 失败：{detail}')
-    if action == 'status':
-        print(f'来源运行／镜像检查：共 {len(rows)} 项，异常 {failures} 项。账号、配置及完整恢复核验见 recover，实际采样请在 Monitor 核对。')
+            if action == 'recover':
+                outcomes[key] = {'outcome':'failed', 'detail':'失败：'+detail}
+            else:
+                previous = recovery_results.get(key, {'detail':'未记录'})['detail']+' | ' if action == 'status' and recovery_results is not None else ''
+                print(f'{label:<24} {previous}失败：{detail}')
+    if action == 'recover':
+        counts = {outcome:sum(row['outcome']==outcome for row in outcomes.values()) for outcome in ('unchanged','restored','skipped','failed')}
+        print(f'采集来源恢复{"未通过" if failures else "完成"}：{counts["unchanged"]} 项保持原状，{counts["restored"]} 项已恢复，{counts["skipped"]} 项跳过，{counts["failed"]} 项失败。')
+        for scope, kind in rows:
+            row = outcomes[scope+'/'+kind]
+            if row['outcome'] == 'failed':
+                label = PROVIDERS[kind][2] if scope == 'host' else scope.capitalize()+' '+PROVIDERS[kind][2]
+                print(f'{label:<24} {row["detail"]}')
+        if recovery_results is not None:
+            recovery_results.update(outcomes)
+    elif action == 'status':
+        print(f'来源运行／镜像检查：共 {len(rows)} 项，异常 {failures} 项。实际采样请在 Monitor 核对。')
     else:
         print(f'汇总：共 {len(rows)} 项，失败 {failures} 项。来源运行状态不代表实际采集成功，请在 Monitor 核对。')
     return int(bool(failures))
@@ -264,12 +303,45 @@ def main():
     parser.add_argument('--scope', action='append', choices=SCOPES)
     parser.add_argument('--kind', action='append', choices=tuple(PROVIDERS))
     parser.add_argument('--resolved-env', action='store_true', help='Use the standard deployment caller environment; requires exactly one explicit scope')
+    parser.add_argument('--receipt-fd', type=int, help='Startup-only receipt descriptor: recover writes JSON; status reads JSON')
     args = parser.parse_args()
     if not selection(args.scope, args.kind):
         parser.error('No matching source for scope/kind')
     if args.resolved_env and (not args.scope or len(set(args.scope)) != 1):
         parser.error('Resolved environment requires one explicit deployment scope')
-    return run(args.action, args.scope, args.kind, resolved=args.resolved_env)
+    if args.receipt_fd is not None and (args.receipt_fd < 3 or args.action not in ('recover','status')):
+        parser.error('Receipt descriptor requires recover/status and FD >= 3')
+    receipt = {} if args.receipt_fd is not None else None
+    receipt_failed = False
+    if receipt is not None and args.action == 'status':
+        try:
+            with os.fdopen(args.receipt_fd, 'r', closefd=False) as stream:
+                raw = stream.read(16385)
+            if len(raw) > 16384:
+                raise ValueError('Receipt exceeds budget')
+            value = json.loads(raw)
+            expected = {scope+'/'+kind for scope, kind in selection(args.scope,args.kind)}
+            if not isinstance(value,dict) or set(value) != expected:
+                raise ValueError('Incomplete recovery receipt')
+            for row in value.values():
+                if (not isinstance(row,dict) or set(row) != {'outcome','detail'}
+                        or row['outcome'] not in ('unchanged','restored','skipped','failed')
+                        or not isinstance(row['detail'],str) or not 0 < len(row['detail']) <= 2048
+                        or any(ord(char)<32 for char in row['detail'])):
+                    raise ValueError('Invalid recovery receipt')
+            receipt = value
+        except (OSError, ValueError):
+            print('本次恢复回执不可用；恢复结果标记为未记录，继续检查当前状态。')
+            receipt_failed = True
+    result = run(args.action, args.scope, args.kind, resolved=args.resolved_env, recovery_results=receipt)
+    if receipt is not None and args.action == 'recover':
+        try:
+            with os.fdopen(args.receipt_fd, 'w', closefd=False) as stream:
+                json.dump(receipt, stream, ensure_ascii=False)
+        except OSError:
+            print('本次恢复回执写入失败；末尾摘要将标记为未记录。')
+            receipt_failed = True
+    return int(bool(result or receipt_failed))
 
 
 if __name__ == '__main__':

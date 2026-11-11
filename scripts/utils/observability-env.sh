@@ -192,8 +192,12 @@ addp_metrics_query_preflight() {
 # Full local development startup only. Each deployment owns its configuration;
 # neither scope inherits the other scope's selection or secret-file locations.
 addp_recover_metrics_sources() {
-  python3 "$PROJECT_ROOT/scripts/infra/metrics-sources.py" recover --scope host --scope infra --scope business --kind node --kind postgresql --kind redis --kind minio
-}
+  local result=0
+  # Keep the closed per-source receipt in this startup only. FD 4 preserves
+  # terminal stdout while FD 3 returns JSON through command substitution.
+  ADDP_STARTUP_METRICS_RECEIPT=$(python3 "$PROJECT_ROOT/scripts/infra/metrics-sources.py" recover --scope host --scope infra --scope business --kind node --kind postgresql --kind redis --kind minio --kind redpanda --kind kafka-connect --receipt-fd 3 3>&1 1>&4) || result=$?
+  return "$result"
+} 4>&1
 
 # Reuse Infra ownership checks; a running container is not proof of valid samples.
 addp_metrics_component_summary() {
@@ -228,7 +232,11 @@ addp_startup_metrics_summary() {
       ;;
     *) echo '指标中心：配置无效'; result=1 ;;
   esac
-  python3 "$PROJECT_ROOT/scripts/infra/metrics-sources.py" status || result=1
+  if [[ "${ADDP_STARTUP_METRICS_RECEIPT+set}" == set ]]; then
+    python3 "$PROJECT_ROOT/scripts/infra/metrics-sources.py" status --receipt-fd 3 3<<< "$ADDP_STARTUP_METRICS_RECEIPT" || result=1
+  else
+    python3 "$PROJECT_ROOT/scripts/infra/metrics-sources.py" status || result=1
+  fi
   echo '服务进程：运行状态由启动入口检查；运行就绪不代表指标采样成功。'
   echo '实际采样、主机关联及有效指标请在 Monitor 的主机／引擎／服务监控中核对。'
   return "$result"

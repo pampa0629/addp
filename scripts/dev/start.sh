@@ -1050,7 +1050,7 @@ if [[ "$START_ALL" == true && "${ADDP_ONLINE_HOST:-0}" != 1 ]]; then
   if ! addp_recover_metrics_sources; then
     infra_optional_result=1
     infra_optional_failures+=('采集来源恢复')
-    echo '采集来源自动恢复未通过，继续启动业务。具体原因见上方的逐项结果。' >&2
+    echo '采集来源自动恢复未通过，继续启动业务。原因见上方失败项，末尾统一汇总。' >&2
   fi
 fi
 

@@ -142,7 +142,7 @@ def verify_bootstrap_image(docker, image, error=ValueError):
 
 class Source:
     def __init__(self,docker,scope,state,root,kind,project,error=ValueError):
-        if kind not in {'redis','minio'} or scope not in {'infra','business'}: raise error('Unknown metrics source owner')
+        if kind not in {'redis','minio','redpanda','kafka-connect'} or scope not in {'infra','business'} or (kind in {'redpanda','kafka-connect'} and scope != 'infra'): raise error('Unknown metrics source owner')
         self.docker,self.scope,self.state,self.root,self.kind,self.project,self.error=docker,scope,Path(state),Path(root),kind,project,error
         self.namespace='io.addp.'+kind+'-metrics'
         self.owner,self.scope_label=self.namespace+'.owner',self.namespace+'.scope'
@@ -209,10 +209,10 @@ class Source:
                 raise
 
 
-    def installed_files(self, database):
+    def installed_files(self, database, *, image=None):
         """Inspect only the owned source volume; never mount engine data."""
         volume = self.volume()
-        value = self.helper(database.image,
+        value = self.helper(image if self.kind in {'redpanda','kafka-connect'} else database.image,
             ['-c','set -eu; cd /private; for f in ca.crt server.crt server.key config.json; do test ! -L "$f"; test -f "$f"; test "$(stat -c %s "$f")" -le 65536; done; tar -c ca.crt server.crt server.key config.json | base64'],
             mount='type=volume,src='+self.config_volume+',dst=/private,readonly',entrypoint='/bin/sh')
         data = base64.b64decode(''.join(value.split()), validate=True)
@@ -274,14 +274,19 @@ class Source:
                     or mounts[0].get('Destination') != '/source' or mounts[0].get('RW') is not False):
                 raise self.error('Metrics recovery source ownership or mount changed')
         check()
-        files = self.installed_files(database)
+        files = self.installed_files(database, image=image)
         installed = json.loads(files.pop('config.json'), object_pairs_hook=unique)
         address = installed['address']
-        endpoint = urlsplit('tcp://'+address)
-        host = ipaddress.ip_address(endpoint.hostname)
-        expected_port = 6379 if self.kind == 'redis' else 9000
-        if (endpoint.port != expected_port or address != (f'[{host}]:{expected_port}' if host.version == 6 else f'{host}:{expected_port}')
-                or not host.is_private or host.is_unspecified or host.is_link_local or host.is_multicast
+        if self.kind in {'redpanda','kafka-connect'}:
+            host = ipaddress.ip_address(address)
+            canonical = str(host)
+        else:
+            endpoint = urlsplit('tcp://'+address)
+            host = ipaddress.ip_address(endpoint.hostname)
+            expected_port = 6379 if self.kind == 'redis' else 9000
+            canonical = f'[{host}]:{expected_port}' if host.version == 6 else f'{host}:{expected_port}'
+            if endpoint.port != expected_port: raise self.error('Metrics recovery prior address rejected')
+        if (address != canonical or not host.is_private or host.is_unspecified or host.is_link_local or host.is_multicast
                 or host.version == 6 and host.ipv4_mapped):
             raise self.error('Metrics recovery prior address rejected')
         expected = dict(config, address=address)
@@ -345,7 +350,7 @@ class Source:
                     raise Error('Metrics source build identity is not unique')
                 self.installed_image(images[0])
                 return images[0]
-            self.docker.run(['build', '--label', OWNER+'='+str(ROOT), '-t', tag, '-f', str(context/('scripts/infra/Dockerfile.'+self.kind+'-metrics')), str(context)], timeout=240)
+            self.docker.run(['build', '--label', OWNER+'='+str(ROOT), '-t', tag, '-f', str(context/('scripts/infra/Dockerfile.cdc-metrics' if self.kind in {'redpanda','kafka-connect'} else 'scripts/infra/Dockerfile.'+self.kind+'-metrics')), str(context)], timeout=240)
         fact = decode(self.docker.run(['image', 'inspect', tag]))[0]
         if not re.fullmatch(r'sha256:[0-9a-f]{64}', fact['Id']) or (fact.get('Config', {}).get('Labels') or {}).get(OWNER) != str(ROOT):
             raise Error('Metrics source build identity rejected')
@@ -364,9 +369,11 @@ class Source:
         volume=decode(self.docker.run(['volume','inspect',self.config_volume]))[0]
         if volume.get('Name')!=self.config_volume or volume.get('Driver')!='local' or (volume.get('Labels') or {}).get(OWNER)!=str(ROOT) or (volume.get('Labels') or {}).get(SCOPE)!=self.scope:
             raise Error('Metrics source private volume ownership changed')
-        self.docker.run(['run','--rm','--pull=never','-i','--network','none','--read-only','--cap-drop','ALL','--cap-add','CHOWN','--security-opt','no-new-privileges:true','--memory','64m','--cpus','.25','--pids-limit','32',
+        bootstrap = image if self.kind in {'redpanda','kafka-connect'} else database.image
+        user = ['--user','0:0'] if self.kind in {'redpanda','kafka-connect'} else []
+        self.docker.run(['run',*user,'--rm','--pull=never','-i','--network','none','--read-only','--cap-drop','ALL','--cap-add','CHOWN','--security-opt','no-new-privileges:true','--memory','64m','--cpus','.25','--pids-limit','32',
             '--label','com.docker.compose.project='+self.project,'--label','com.docker.compose.service='+self.service+'-init','--label',OWNER+'='+str(ROOT),'--label',SCOPE+'='+self.scope,
-            '--mount','type=volume,src='+self.config_volume+',dst=/private','--entrypoint','/bin/sh',database.image,'-c','set -eu; base64 -d | tar -xo -C /private; chmod 700 /private; chown -R 65532:65532 /private'],
+            '--mount','type=volume,src='+self.config_volume+',dst=/private','--entrypoint','/bin/sh',bootstrap,'-c','set -eu; base64 -d | tar -xo -C /private; chmod 700 /private; chown -R 65532:65532 /private'],
             input=base64.b64encode(archive.getvalue()).decode())
         document = self.document(database,image,ip,port)
         write(self.state/'compose.json',json.dumps(document,sort_keys=True))

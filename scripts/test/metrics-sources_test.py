@@ -6,6 +6,7 @@ import os
 from pathlib import Path
 import shutil
 import subprocess
+import sys
 import tempfile
 import unittest
 from unittest.mock import Mock, patch
@@ -23,30 +24,33 @@ class MetricsSourcesTest(unittest.TestCase):
             entry = root/'scripts/infra/host-metrics.sh'
             entry.parent.mkdir(parents=True)
             shutil.copy2(ROOT/'scripts/infra/host-metrics.sh', entry)
+            self.assertTrue(os.access(entry, os.X_OK))
+            self.assertEqual(entry.read_text().splitlines()[0], '#!/usr/bin/env bash')
             entry.with_name('metrics-sources.py').write_text(
                 'import sys\nprint(" ".join(sys.argv[1:]))\nsys.exit(19)\n')
             for action in ('check', 'up', 'status', 'down', 'recover'):
                 with self.subTest(action=action):
-                    result = subprocess.run([entry, action], cwd=root, capture_output=True, text=True, timeout=5)
+                    result = subprocess.run(['bash', entry, action], cwd=root, capture_output=True, text=True, timeout=5)
                     self.assertEqual(result.returncode, 19, result.stderr)
                     self.assertEqual(result.stdout.strip(), f'{action} --scope host --kind node')
-            result = subprocess.run([entry, 'up', '--scope', 'infra'], cwd=root,
+            result = subprocess.run([ROOT/'scripts/infra/host-metrics.sh', 'up', '--scope', 'infra'], cwd=root,
                                     capture_output=True, text=True, timeout=5)
             self.assertEqual(result.returncode, 2)
             self.assertEqual(result.stdout, '')
 
-    def invoke(self, action, scopes=(), kinds=(), env=None, **patches):
+    def invoke(self, action, scopes=(), kinds=(), env=None, receipt=None, **patches):
         output = io.StringIO()
         with contextlib.ExitStack() as stack:
             stack.enter_context(contextlib.redirect_stdout(output))
             stack.enter_context(patch.object(manager, 'environment', return_value=env or {}))
             mocks = {name: stack.enter_context(patch.object(manager, name, **config)) for name, config in patches.items()}
-            code = manager.run(action, scopes, kinds, inherited={})
+            code = manager.run(action, scopes, kinds, inherited={}, recovery_results=receipt)
         return code, output.getvalue(), mocks
 
     def test_exact_selection_deduplicates_and_never_expands_scope(self):
-        self.assertEqual(len(manager.selection((), ())), 7)
+        self.assertEqual(len(manager.selection((), ())), 9)
         self.assertEqual(manager.selection(['business', 'business'], ['postgresql', 'postgresql']), [('business', 'postgresql')])
+        self.assertEqual(manager.selection(['business'], ['redpanda','kafka-connect']), [])
         self.assertEqual(manager.selection(['host'], ['postgresql']), [])
         self.assertEqual(manager.selection(['infra'], ['node']), [])
         for scopes in (['host'], ['infra'], ['business']):
@@ -92,9 +96,9 @@ class MetricsSourcesTest(unittest.TestCase):
     def test_all_sources_are_attempted_after_failure_without_secret_logs(self):
         env = {value[1]+'_ENABLED':'true' for value in manager.PROVIDERS.values()}
         failure = subprocess.CalledProcessError(1, ['secret-command'], stderr='secret-password')
-        code, output, mocks = self.invoke('up', env=env, apply={'side_effect':[failure]+['已应用']*6})
+        code, output, mocks = self.invoke('up', env=env, apply={'side_effect':[failure]+['已应用']*8})
         self.assertEqual(code, 1)
-        self.assertEqual(mocks['apply'].call_count, 7)
+        self.assertEqual(mocks['apply'].call_count, 9)
         self.assertNotIn('secret-password', output)
         self.assertNotIn('secret-command', output)
 
@@ -108,16 +112,19 @@ class MetricsSourcesTest(unittest.TestCase):
 
     def test_recovery_requires_explicit_host_selection(self):
         env = {value[1]+'_ENABLED':'true' for value in manager.PROVIDERS.values()}
-        code, output, mocks = self.invoke('recover', env=env, apply={'return_value':'已恢复'})
+        receipt = {}
+        code, output, mocks = self.invoke('recover', env=env, receipt=receipt, apply={'return_value':{'outcome':'restored','detail':'已恢复'}})
         self.assertEqual(code, 0)
         self.assertEqual([(call.args[0],call.args[1],call.args[2]) for call in mocks['apply'].call_args_list], [('recover',kind,scope) for scope,kind in manager.selection((),()) if scope!='host'])
-        self.assertIn('主机须显式指定 --scope host',output)
+        self.assertIn('主机须显式指定 --scope host',receipt['host/node']['detail'])
+        self.assertEqual(len(output.splitlines()),1)
+        self.assertIn('8 项已恢复，1 项跳过，0 项失败',output)
 
     def test_invalid_selection_never_blocks_shutdown_or_other_sources(self):
         env = {'ADDP_POSTGRES_METRICS_ENABLED':'invalid'}
         code, _, mocks = self.invoke('down', ['infra'], env=env, apply={'return_value':'已停用'})
         self.assertEqual(code, 0)
-        self.assertEqual(mocks['apply'].call_count, 3)
+        self.assertEqual(mocks['apply'].call_count, 5)
         code, output, mocks = self.invoke('check', ['infra'], env=env, check={})
         self.assertEqual(code, 1)
         self.assertIn('失败 1 项', output)
@@ -138,7 +145,7 @@ class MetricsSourcesTest(unittest.TestCase):
             provider = Mock()
             with patch.object(manager, 'load', return_value=provider): manager.check(kind, 'host' if kind=='node' else 'business', {})
             if kind=='node': provider.deployment.assert_called_once(); provider.capacity_enabled.assert_called_once()
-            elif kind=='minio': provider.sources.transport.assert_called_once()
+            elif kind in ('minio','redpanda','kafka-connect'): provider.sources.transport.assert_called_once()
             else: provider.transport.assert_called_once()
             provider.run.assert_not_called()
 
@@ -224,7 +231,7 @@ class MetricsSourcesTest(unittest.TestCase):
         self.assertEqual(str(error.exception),'操作失败')
 
     def test_host_recovery_uses_provider_and_closed_proof_diagnosis(self):
-        code, output, calls = self.invoke('recover',['host'],['node'],env={'ADDP_NODE_METRICS_ENABLED':'true'},apply={'return_value':'已检查／恢复'})
+        code, output, calls = self.invoke('recover',['host'],['node'],env={'ADDP_NODE_METRICS_ENABLED':'true'},apply={'return_value':{'outcome':'restored','detail':'已恢复'}})
         self.assertEqual(code,0)
         calls['apply'].assert_called_once_with('recover','node','host',{'ADDP_NODE_METRICS_ENABLED':'true'})
         reasons = {
@@ -257,6 +264,68 @@ class MetricsSourcesTest(unittest.TestCase):
         self.assertNotIn('source "$config"', recovery)
         for path in ('scripts/infra/up.sh','scripts/infra/down.sh','business/scripts/start.sh','business/scripts/stop.sh','scripts/utils/observability-env.sh'):
             subprocess.run(['bash','-n',str(ROOT/path)],check=True,capture_output=True)
+
+    def test_startup_receipt_combines_recovery_and_status_without_repeating_success_rows(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory);entry=root/'scripts/infra/metrics-sources.py';entry.parent.mkdir(parents=True)
+            entry.write_text('''import importlib.util, os, sys
+spec=importlib.util.spec_from_file_location('fixture',sys.argv.pop(1))
+m=importlib.util.module_from_spec(spec);spec.loader.exec_module(m)
+m.environment=lambda *args:{value[1]+'_ENABLED':'true' for value in m.PROVIDERS.values()}
+def apply(action,kind,scope,env):
+    if os.environ['MODE']=='failure' and scope=='infra' and kind=='redis':
+        raise ValueError('操作失败：原采集镜像不可用')
+    return {'outcome':'restored','detail':'已恢复'} if os.environ['MODE']=='restored' and kind=='node' else {'outcome':'unchanged','detail':'保持原状'}
+m.apply=apply
+m.status=lambda *args:('运行中；镜像可用',True)
+sys.exit(m.main())
+''')
+            # Insert the real module argument without changing the shell caller.
+            source=entry.read_text().replace("sys.argv.pop(1)",repr(str(ROOT/'scripts/infra/metrics-sources.py')))
+            entry.write_text(source)
+            command='''source "$1"
+result=0
+addp_recover_metrics_sources || result=$?
+echo SUMMARY_BOUNDARY
+if [[ "$MODE" == invalid ]]; then ADDP_STARTUP_METRICS_RECEIPT='invalid receipt'; fi
+addp_startup_metrics_summary || result=1
+exit "$result"
+'''
+            for mode in ('normal','restored','failure','invalid'):
+                with self.subTest(mode=mode):
+                    result=subprocess.run(['bash','-eu','-c',command,'test',str(ROOT/'scripts/utils/observability-env.sh')],
+                        env=dict(os.environ,PROJECT_ROOT=str(root),MODE=mode,ADDP_OBSERVABILITY_METRICS_ENABLED='false'),capture_output=True,text=True,timeout=10)
+                    self.assertEqual(result.returncode,int(mode in ('failure','invalid')),result.stdout+result.stderr)
+                    first,last=result.stdout.split('SUMMARY_BOUNDARY\n')
+                    self.assertEqual(len(first.splitlines()),2 if mode=='failure' else 1)
+                    self.assertNotIn('Business',first)
+                    self.assertIn('本次恢复结果 | 当前运行／镜像状态',last)
+                    self.assertEqual(last.count('启用 / 运行中；镜像可用'),9)
+                    self.assertNotIn('"outcome"',result.stdout+result.stderr)
+                    self.assertFalse(result.stderr)
+                    if mode=='failure':
+                        self.assertIn('1 项失败',first)
+                        self.assertIn('Infra Redis',first)
+                        self.assertIn('失败：操作失败：原采集镜像不可用 | 启用 / 运行中；镜像可用',last)
+                    elif mode=='invalid':
+                        self.assertIn('本次恢复回执不可用',last)
+                        self.assertEqual(last.count('未记录 | '),9)
+                    elif mode=='restored':
+                        self.assertIn('8 项保持原状，1 项已恢复',first)
+                    else:
+                        self.assertIn('9 项保持原状',first)
+                        self.assertEqual(last.count('保持原状 | '),9)
+            result=subprocess.run([sys.executable,str(entry),'recover','--scope','host','--kind','node','--receipt-fd','3'],
+                env=dict(os.environ,MODE='normal'),capture_output=True,text=True,timeout=10)
+            self.assertEqual(result.returncode,1)
+            self.assertIn('恢复回执写入失败',result.stdout)
+            self.assertFalse(result.stderr)
+
+    def test_unrecognized_provider_success_is_not_counted_as_recovered(self):
+        result=subprocess.CompletedProcess([],0,'private unexpected provider output','')
+        with patch.object(manager.subprocess,'run',return_value=result),self.assertRaisesRegex(ValueError,'恢复结果未能确认') as error:
+            manager.apply('recover','redis','infra',{})
+        self.assertNotIn('private',str(error.exception))
 
     def test_startup_summary_is_read_only_and_preserves_independent_failures(self):
         library = ROOT/'scripts/utils/observability-env.sh'

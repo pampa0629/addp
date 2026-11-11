@@ -1,0 +1,14 @@
+FROM golang:1.24-alpine@sha256:8bee1901f1e530bfb4a7850aa7a479d17ae3a18beb6e09064ed54cfd245b7191 AS build
+ENV GOWORK=off CGO_ENABLED=0
+WORKDIR /src
+COPY common/go.mod common/go.sum /src/common/
+COPY monitor/backend/go.mod monitor/backend/go.sum /src/monitor/backend/
+COPY monitor/backend/internal/cdcsource /src/monitor/backend/internal/cdcsource
+COPY monitor/backend/internal/sourceserver /src/monitor/backend/internal/sourceserver
+COPY monitor/backend/cmd/cdc-metrics-source /src/monitor/backend/cmd/cdc-metrics-source
+WORKDIR /src/monitor/backend
+RUN go build -trimpath -o /out/cdc-metrics-source ./cmd/cdc-metrics-source
+FROM alpine:3.20@sha256:d9e853e87e55526f6b2917df91a2115c36dd7c696a35be12163d44e6e2a4b6bc
+COPY --from=build /out/cdc-metrics-source /cdc-metrics-source
+USER 65532:65532
+ENTRYPOINT ["/cdc-metrics-source"]

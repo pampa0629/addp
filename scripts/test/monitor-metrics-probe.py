@@ -74,25 +74,22 @@ def check_native_cdc():
 
     assert pg('SELECT current_database();') == 'addp_test'
     assert connect('/connectors') == [], 'owned fixture must start empty'
-    # Test the deployable fixed reader through its mTLS boundary, not a second metric implementation.
-    for service, kind, component in (('cdc-redpanda-source', 'redpanda', 'cdc-broker'),
-                                     ('cdc-connect-source', 'kafka-connect', 'cdc-connect')):
-        cid = compose('ps', '-q', component)
-        facts = json.loads(subprocess.check_output(['docker', 'inspect', '--format', '{{json .NetworkSettings.Networks}}', cid], text=True))
-        assert len(facts) == 1
-        address = next(iter(facts.values()))['IPAddress']
-        assert ipaddress.ip_address(address).is_private
-        directory = WORK / service
-        directory.mkdir(mode=0o755)
-        (directory / 'config.json').write_text(json.dumps({'kind': kind, 'address': address}))
-        for origin, target in ((WORK/'source-server.crt', 'server.crt'), (WORK/'source-server.key', 'server.key'),
-                               (WORK/'deployment/source-ca.crt', 'ca.crt')):
-            shutil.copyfile(origin, directory/target)
-            (directory/target).chmod(0o644)
-    compose('up', '-d', 'cdc-redpanda-source', 'cdc-connect-source')
+    # Only fixture project/service/network selectors differ from the standard lifecycle.
+    module = cdc_lifecycle()
+    docker = module.deployment.Docker(os.environ)
+    before = {}
+    for kind, component in (('redpanda','cdc-broker'),('kafka-connect','cdc-connect')):
+        env = cdc_environment(module, kind)
+        port = int(env[module.PREFIXES[kind]+'_LISTEN'].rsplit(':',1)[1])
+        module.run('up','infra',kind,env)
+        service = module.sources.group.service(kind,'infra')
+        before[kind] = docker.run(['ps','-aq',*module.sources.group.filters(PROJECT,{service})]).strip()
+        assert before[kind]
+        assert 'source unchanged' in module.run('recover','infra',kind,env)
+        assert docker.run(['ps','-aq',*module.sources.group.filters(PROJECT,{service})]).strip() == before[kind]
     source_context = ssl.create_default_context(cafile=str(WORK/'deployment/source-ca.crt'))
     source_context.load_cert_chain(str(WORK/'collector.crt'), str(WORK/'collector.key'))
-    source_urls = {name: 'https://' + compose('port', name, '9443') for name in ('cdc-redpanda-source', 'cdc-connect-source')}
+    source_urls = {name: 'https://' + cdc_environment(module,kind)[module.PREFIXES[kind]+'_LISTEN'] for name,kind in (('cdc-redpanda-source','redpanda'),('cdc-connect-source','kafka-connect'))}
 
     def source(service, *, path='/metrics'):
         try:
@@ -228,10 +225,67 @@ def check_native_cdc():
     assert isinstance(source('cdc-redpanda-source'), dict), 'Connect outage affected broker source'
     compose('start', 'cdc-connect')
     wait(lambda: isinstance(source('cdc-connect-source'), dict), 'Connect source recovers after upstream returns', seconds=90)
+    # Rebind the source to the component's new start time; preserve its peer.
+    assert 'source recovered' in module.run('recover','infra','kafka-connect',cdc_environment(module,'kafka-connect'))
+    broker_service = module.sources.group.service('redpanda','infra')
+    assert docker.run(['ps','-aq',*module.sources.group.filters(PROJECT,{broker_service})]).strip() == before['redpanda']
+    targets = []
+    for kind in module.PREFIXES:
+        component = module.Component(docker,kind)
+        targets.append({'targets':['infra-'+kind+'-metrics:9443'],'labels':{
+            'addp_monitor_kind':'cdc_resources','addp_source':kind,
+            'addp_component_id':str(__import__('uuid').uuid5(__import__('uuid').NAMESPACE_OID,docker.info['id']+'\x00'+PROJECT+'\x00'+kind)),
+            'addp_component_container_id':component.identity,
+            'addp_component_container_started_at':component.facts['started_at']}})
+    (WORK/'cdc-targets.json').write_text(json.dumps(targets))
     print('CDC T2: fixed mTLS sources, JMX read whitelist, empty/missing distinctions, failed task, lag 0→1→0 and independent outage/recovery passed', flush=True)
 
 
-if os.environ.get('ADDP_METRICS_T2_CASE') == 'cdc-native':
+def cdc_lifecycle():
+    if not re.fullmatch(r'addp-metrics-t2-[0-9a-f]{32}', PROJECT): raise RuntimeError('CDC lifecycle requires the owned metrics gate')
+    import importlib.util
+    spec = importlib.util.spec_from_file_location('cdc_lifecycle_t2', Path(__file__).resolve().parents[1]/'infra/cdc-metrics.py')
+    module = importlib.util.module_from_spec(spec); spec.loader.exec_module(module)
+    module.deployment.inventory.SCOPES['infra'] = (PROJECT, Path(FILE).parent)
+    module.deployment.inventory.metrics_project.PROJECT = PROJECT
+    module.NETWORK = 'default'
+    component = module.Component
+    module.Component = lambda docker,kind: component(docker,kind,service={'redpanda':'cdc-broker','kafka-connect':'cdc-connect'}[kind])
+    return module
+
+
+def cdc_environment(module, kind):
+    state = WORK.resolve()/'cdc-state'/kind
+    tls = WORK.resolve()/('cdc-tls-'+kind)
+    prefix = module.PREFIXES[kind]
+    if not tls.exists():
+        tls.mkdir(mode=0o700)
+        for origin, name in ((WORK/'source-server.crt','server.crt'),(WORK/'source-server.key','server.key'),(WORK/'deployment/source-ca.crt','ca.crt')):
+            shutil.copyfile(origin,tls/name); (tls/name).chmod(0o600)
+        extension = tls/'extensions'
+        extension.write_text('subjectAltName=DNS:infra-'+kind+'-metrics,IP:127.0.0.1\nextendedKeyUsage=serverAuth\nbasicConstraints=critical,CA:FALSE\nkeyUsage=critical,digitalSignature,keyEncipherment\nauthorityKeyIdentifier=keyid:always\nsubjectKeyIdentifier=hash\n')
+        subprocess.run(['openssl','x509','-req','-in',str(WORK/'source-server.csr'),'-CA',str(WORK/'deployment/source-ca.crt'),'-CAkey',str(WORK/'source-ca.key'),'-CAserial',str(WORK/'source-ca.srl'),'-days','1','-extfile',str(extension),'-out',str(tls/'server.crt')],capture_output=True,check=True,timeout=10)
+        with socket.socket() as lease:
+            lease.bind(('127.0.0.1',0)); port = lease.getsockname()[1]
+        (tls/'port').write_text(str(port))
+    return dict(os.environ, **{prefix+'_ENABLED':'true', prefix+'_LISTEN':'127.0.0.1:'+(tls/'port').read_text(),
+                              prefix+'_STATE_DIR':str(state),prefix+'_TLS_DIR':str(tls)})
+
+
+if __import__('sys').argv[1:] == ['--cleanup-cdc']:
+    module = cdc_lifecycle()
+    docker = module.deployment.Docker(os.environ)
+    for kind in module.PREFIXES:
+        state = WORK.resolve()/'cdc-state'/kind
+        if state.exists():
+            module.run('down','infra',kind,cdc_environment(module,kind))
+        source = module.sources.Source(docker,'infra',state,module.ROOT,kind,PROJECT,module.Error)
+        assert not docker.run(['ps','-aq',*module.sources.group.filters(PROJECT,{source.service,})]).strip()
+        assert not docker.run(['volume','ls','-q','--filter','name=^'+source.config_volume+'$']).strip()
+    raise SystemExit(0)
+
+
+if os.environ.get('ADDP_METRICS_T2_CASE') == 'cdc-native' or __import__('sys').argv[1:] == ['--prepare-cdc']:
     check_native_cdc()
     raise SystemExit(0)
 
@@ -734,7 +788,7 @@ if os.environ.get('ADDP_METRICS_T2_CASE') == 'target-budget':
     address = json.loads(original_discovery)[0]['targets'][0].rsplit(':', 1)[0]
     sources = WORK / 'source'
     for kind, size in [('host', 640), ('engine', 24), ('worker', 4)]:
-        (sources / f'budget-{kind}.prom').write_text('addp_fixture_resource_bytes 4096\n' + ''.join(
+        (sources / f'budget-{kind}.prom').write_text('addp_fixture_resource_bytes{addp_component_id="spoof",addp_component_container_id="spoof"} 4096\n' + ''.join(
             f'addp_fixture_{kind}_signal{{slot="{slot}"}} {slot}\n' for slot in range(size)))
 
     def publish_http(tick):
@@ -766,8 +820,13 @@ if os.environ.get('ADDP_METRICS_T2_CASE') == 'target-budget':
                           addp_module_name=f'fixture-{index}', addp_runtime_role='worker' if index < 12 else 'ingress' if index == 12 else 'backend')
         planned.append({'targets': [f'{address}:{19500 + index}'], 'labels': labels})
 
+    overflow = planned.pop()
+    planned.extend(json.loads((WORK/'cdc-targets.json').read_text()))
+    planned.append(overflow)
+
     def within_budget(count):
-        samples = query('count_over_time(addp_fixture_resource_bytes{job="addp_nodes"}[45s])')
+        samples = query('count_over_time({__name__=~"addp_fixture_resource_bytes|addp_cdc_(connect|redpanda)_observed_at_seconds",job="addp_nodes"}[45s])')
+        assert all(not row['metric'].get('addp_component_id') for row in samples if row['metric'].get('addp_monitor_kind') != 'cdc_resources'), 'exporter forged CDC identity'
         return (len(samples) == count and all(int(row['value'][1]) >= 2 for row in samples)
                 and len({row['metric']['instance'] for row in samples}) == count
                 and len(query('up{job="addp_nodes"} == 1')) == count)
@@ -802,9 +861,15 @@ if os.environ.get('ADDP_METRICS_T2_CASE') == 'target-budget':
     failures = f'sum(rate(addp_http_server_failures_total{scope}[1m]))'
     pressure = 'max(addp_fixture_host_signal{job="addp_nodes"})'
     p95 = f'histogram_quantile(0.95, sum by(le)(rate(http_server_request_duration_seconds_bucket{scope}[1m])))'
-    for count in (24, 34):
+    for count in (24, 34, 36):
         discovery_text(json.dumps(planned[:count]))
         eventually(lambda: within_budget(count), f'{count} distinct mTLS targets each have consecutive samples', seconds=90)
+        if count == 36:
+            for target in planned[34:36]:
+                identity = target['labels']
+                rows = query('addp_cdc_'+('redpanda' if identity['addp_source']=='redpanda' else 'connect')+'_observed_at_seconds{job="addp_nodes"}')
+                assert len(rows) == 1
+                assert all(rows[0]['metric'].get(key) == value for key,value in identity.items()), 'CDC identity labels were lost or changed'
         # Prime the complete one-minute query range with increasing counters.
         for _ in range(4):
             tick += 1
@@ -834,16 +899,24 @@ if os.environ.get('ADDP_METRICS_T2_CASE') == 'target-budget':
         assert evidence['cgroup_memory_peak_bytes'] < 1.5 * 1024**3
         assert evidence['volume_growth_bytes'] < 256 * 1024**2 and evidence['projected_7d_samples_bytes'] < 8 * 1024**3
         assert evidence['max_scrape_seconds'] < 2 and evidence['max_query_seconds'] < 2
+    lifecycle = cdc_lifecycle()
+    docker = lifecycle.deployment.Docker(os.environ)
+    service = lifecycle.sources.group.service('kafka-connect','infra')
+    source_id = docker.run(['ps','-aq',*lifecycle.sources.group.filters(PROJECT,{service})]).strip()
+    docker.run(['stop','-t','5',source_id])
+    eventually(lambda: len(query('up{job="addp_nodes"} == 1')) == 35, 'one CDC source fails independently')
+    assert 'source recovered' in lifecycle.run('recover','infra','kafka-connect',cdc_environment(lifecycle,'kafka-connect'))
+    eventually(lambda: within_budget(36), 'CDC source recovers alongside unchanged 34 fixture targets', seconds=90)
     discovery_text(json.dumps(planned))
 
     def over_budget():
         targets = [row for row in api('targets')['activeTargets'] if row['labels']['job'] == 'addp_nodes']
-        return (len(targets) == 35 and all(row['health'] == 'down' and 'target_limit exceeded' in row['lastError'].lower()
+        return (len(targets) == 37 and all(row['health'] == 'down' and 'target_limit exceeded' in row['lastError'].lower()
                                           for row in targets))
 
-    eventually(over_budget, '35 targets exceed the Prometheus job limit')
-    discovery_text(json.dumps(planned[:34]))
-    eventually(lambda: within_budget(34), '34 targets recover within the deployment budget', seconds=90)
+    eventually(over_budget, '37 targets exceed the Prometheus job limit')
+    discovery_text(json.dumps(planned[:36]))
+    eventually(lambda: within_budget(36), '36 targets recover within the deployment budget', seconds=90)
     raise SystemExit(0)
 initial_sample_time = query('addp_fixture_resource_bytes{job="addp_nodes"}')[0]['value'][0]
 # Write atomically without replacing the bind-mounted source directory.

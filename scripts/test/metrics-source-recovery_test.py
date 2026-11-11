@@ -20,6 +20,56 @@ spec = importlib.util.spec_from_file_location('metrics_source_recovery', ROOT/'s
 M = importlib.util.module_from_spec(spec); spec.loader.exec_module(M)
 
 
+class CDCLifecycleTest(unittest.TestCase):
+    def setUp(self):
+        spec = importlib.util.spec_from_file_location('cdc_lifecycle_unit', ROOT/'scripts/infra/cdc-metrics.py')
+        self.module = importlib.util.module_from_spec(spec); spec.loader.exec_module(self.module)
+        self.temp = tempfile.TemporaryDirectory(); self.addCleanup(self.temp.cleanup)
+        self.state = Path(self.temp.name).resolve()/'state'
+        self.env = {'ADDP_REDPANDA_METRICS_ENABLED':'true','ADDP_REDPANDA_METRICS_STATE_DIR':str(self.state)}
+
+    def test_uninstalled_recovery_is_read_only_and_shutdown_ignores_bad_flag(self):
+        m = self.module
+        with patch.object(m.deployment,'Docker') as docker:
+            self.assertIn('not installed',m.run('recover','infra','redpanda',self.env))
+            self.assertFalse(self.state.exists());docker.assert_not_called()
+        with m.private.locked(self.state): pass
+        with patch.object(m.deployment,'Docker') as docker, patch.object(m.sources,'Source') as source:
+            self.assertIn('not installed',m.run('recover','infra','redpanda',self.env));docker.assert_not_called()
+            env = dict(self.env,ADDP_REDPANDA_METRICS_ENABLED='invalid')
+            self.assertIn('disabled',m.run('down','infra','redpanda',env))
+            source.return_value.stop.assert_called_once()
+
+    def test_preparation_and_owner_failures_preserve_installed_source(self):
+        m = self.module
+        with patch.object(m.deployment,'Docker') as docker, patch.object(m.sources,'Source') as source, patch.object(m,'Component') as component, patch.object(m.sources,'transport',return_value=('127.0.0.1',9443,{})) as transport:
+            docker.return_value.info={'id':'current-engine'}
+            component.return_value.address='172.20.0.2'
+            source.return_value.build.side_effect=m.Error('build failed')
+            with self.assertRaises(m.Error):m.run('up','infra','redpanda',self.env)
+            source.return_value.stop.assert_not_called();source.return_value.start.assert_not_called()
+            self.assertFalse((self.state/'owner.json').exists())
+            source.return_value.build.side_effect=None
+            m.sources.write(self.state/'compose.json','{}')
+            m.sources.write(self.state/'owner.json',json.dumps({'docker_engine_id':'foreign'}))
+            with self.assertRaises(m.Error):m.run('recover','infra','redpanda',self.env)
+            source.return_value.recover.assert_not_called();source.return_value.stop.assert_not_called()
+
+    def test_component_requires_the_current_workspace_and_standard_private_network(self):
+        m = self.module
+        docker=Mock(); cid='a'*64; nid='b'*64
+        fact={'running':True,'labels':{'com.docker.compose.project':'addp-infra','com.docker.compose.service':'redpanda','com.docker.compose.project.working_dir':str(ROOT),'com.docker.compose.oneoff':'False'},'networks':{'private':{'NetworkID':nid,'IPAddress':'172.20.0.2'}}}
+        network={'Id':nid,'Name':'private','Driver':'bridge','Labels':{'com.docker.compose.project':'addp-infra','com.docker.compose.network':'addp-network'}}
+        docker.run.side_effect=lambda args: cid if args[0]=='ps' else json.dumps([network])
+        docker.fact.return_value=fact
+        self.assertEqual(m.Component(docker,'redpanda').address,'172.20.0.2')
+        network['Labels']['com.docker.compose.project']='foreign'
+        with self.assertRaises(m.Error):m.Component(docker,'redpanda')
+        network['Labels']['com.docker.compose.project']='addp-infra'
+        fact['labels']['com.docker.compose.project.working_dir']='/foreign'
+        with self.assertRaises(m.Error):m.Component(docker,'redpanda')
+
+
 class TransportCertificateTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -313,6 +363,9 @@ class RecoveryTest(unittest.TestCase):
             config = {'address':db.address,'scope':'infra'}
             if kind == 'redis': config['password'] = 'private-password'
             else: config.update(access_key='private-key',secret_key='private-secret',container_id=db.identity,container_started_at=db.facts['started_at'])
+            if kind in ('redpanda','kafka-connect'):
+                db.address = '10.1.2.3'
+                config = {'kind':kind,'address':db.address}
             document = source.document(db,image,'127.0.0.1',9443)
             M.write(state/'compose.json',json.dumps(document))
             fact = {'running':True,'labels':dict(document['services'][source.service]['labels'],**{
@@ -341,6 +394,21 @@ class RecoveryTest(unittest.TestCase):
             check = Mock()
             def recover(): return source.recover(db,config,'127.0.0.1',9443,material,check)
             yield source,db,config,fact,commands,check,recover
+
+    def test_cdc_recovery_is_bound_to_component_and_reuses_exact_material(self):
+        for kind in ('redpanda','kafka-connect'):
+            with self.subTest(kind=kind),self.fixture(kind) as (source,db,config,fact,commands,check,recover):
+                self.assertEqual(recover(),'healthy; source unchanged')
+                source.stop.assert_not_called();source.start.assert_not_called();source.build.assert_not_called()
+                self.assertEqual(source.installed_files.call_args.kwargs['image'],fact['_runtime']['image'])
+                fact['running'] = False
+                source.installed_files.return_value['config.json'] = json.dumps(config).encode()
+                self.assertIn('source recovered',recover())
+                source.start.assert_called_once()
+            with self.fixture(kind) as (source,db,config,fact,commands,check,recover):
+                config['kind'] = 'foreign'
+                with self.assertRaises(ValueError): recover()
+                source.stop.assert_not_called();source.start.assert_not_called()
 
     def test_healthy_sources_keep_containers_and_never_build_or_write(self):
         for kind in ('redis','minio'):

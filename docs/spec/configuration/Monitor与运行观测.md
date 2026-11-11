@@ -100,8 +100,10 @@ Infra 根 `.env` 与 `business/.env` 各自的 `ADDP_POSTGRES_METRICS_ENABLED=fa
 
 `PROMETHEUS_PORT` 首选 `19090`，宿主固定回环发布，开发实际映射由标准入口解析；`ADDP_METRICS_TLS_DIR` 是外部部署证书目录，不是用户可修改的 Monitor 普通配置。启用需要独立 CA、服务器和健康客户端证书；未启用不校验这些专用输入、不创建证书目录。具体文件、用途与容器可读要求见 [Infra 指标中心](../../../scripts/infra/docs/指标中心与来源.md#可选指标中心)。运行状态分别报告 Disabled、Unconfigured、Not deployed、Unavailable 或中心 Ready；当前自身采集与业务资源覆盖分别解释。
 
-节点发现的控制面 origin 由 `PROMETHEUS_SYSTEM_URL/PROMETHEUS_MONITOR_URL` 显式部署，固定 HTTPS 和 API 路径；`ADDP_METRICS_DEPLOYMENT_DIR` 提供独立控制面 CA、来源 CA、采集客户端证书与 Prometheus OAuth Secret 文件。Secret 值精确匹配 System 的独立服务凭据，生成配置只引用文件路径。30 秒 HTTP SD 刷新及 15 秒采样由版本化模板维护。外部目标上限由 Monitor 和 Prometheus 共用的根环境变量 `ADDP_METRICS_TARGET_LIMIT` 指定，缺省 12，可设为 1 至 34。变更预算须重新应用指标中心并重启 Monitor。开发启动和重启在应用前核对本机采集计划。生成产物不能成为第二份可编辑配置。未选择指标不校验这些输入；已选择但输入缺失只使该可选能力启动失败。节点 exporter 和来源防护入口独立部署，不因选择中心而自动安装或取得宿主权限。
+节点发现的控制面 origin 由 `PROMETHEUS_SYSTEM_URL/PROMETHEUS_MONITOR_URL` 显式部署，固定 HTTPS 和 API 路径；`ADDP_METRICS_DEPLOYMENT_DIR` 提供独立控制面 CA、来源 CA、采集客户端证书与 Prometheus OAuth Secret 文件。Secret 值精确匹配 System 的独立服务凭据，生成配置只引用文件路径。30 秒 HTTP SD 刷新及 15 秒采样由版本化模板维护。外部目标上限由 Monitor 和 Prometheus 共用的根环境变量 `ADDP_METRICS_TARGET_LIMIT` 指定，缺省 12，可设为 1 至 36。变更预算须重新应用指标中心并重启 Monitor。开发启动和重启在应用前核对本机采集计划。生成产物不能成为第二份可编辑配置。未选择指标不校验这些输入；已选择但输入缺失只使该可选能力启动失败。节点 exporter 和来源防护入口独立部署，不因选择中心而自动安装或取得宿主权限。
 
+
+Infra CDC 来源分别由 `ADDP_REDPANDA_METRICS_*` 和 `ADDP_KAFKA_CONNECT_METRICS_*` 声明，`ENABLED` 缺省 false；选择后必须提供规范私有 `LISTEN` 和仓库外 `TLS_DIR`，可选 `STATE_DIR` 也须在仓库外。它们仅属于 Infra，使用统一采集管理入口，不创建数据引擎登记；恢复只复用既有安装，不根据组件已运行而自动安装。Connect 原生只读 JMX 由标准 Infra Compose 的策略挂载提供，来源入口不重启组件。详见 [CDC 来源操作与边界](../../../scripts/infra/docs/指标中心与来源.md#infra-cdc-来源)。
 
 主机来源由独立 `ADDP_NODE_METRICS_ENABLED=false` 选择；`scripts/infra/node-metrics.py` 只消费显式导出的根模板部署键，不创建 `.env` 或凭据。选择后要求 `ADDP_NODE_METRICS_LISTEN` 的规范本机 IP:端口，以及仓库外三文件 `ADDP_NODE_METRICS_TLS_DIR`；不根据中心开关或容器探测推断是否采集。同一正式入口支持本机原生 Linux Docker，以及 macOS 上的本地 Docker Desktop Linux VM；后者只发布已验证的 CPU、内存、负载和启动时间等内核全局事实，不提供磁盘/网卡全局指标。仍拒绝远程 Engine 和未知环境；详细权限和证书轮换边界见 [独立 Linux 主机指标来源](../../../scripts/infra/docs/指标中心与来源.md#独立-linux-主机指标来源)。部署成功不替代 System 身份登记、Monitor 目标准入或生产覆盖验收。
 
