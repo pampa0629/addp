@@ -934,3 +934,13 @@ Service预览经 `queryExecutionClient` 调用共享 `createAPIClient`，其请�
 验证已实际通过：make test-module MODULE=common GO_ONLY=1；make test-common-postgres 完整标准门禁。通过前两个完整尝试在 KML 连接校验失败，首轮缺 host，第二轮还缺明确 database／sslmode。最终显式使用经 infra/status.sh 核实的 localhost:25432、addp_test 及 disable 后全门禁退出0，无跳过。未修改 KML 或基础设施。最初测试准备将 Args 写成 Parameters 的编译错误及修正记录保留。无本地服务重启、实际出口HTTP／浏览器或新增 Hosted 证据。
 
 证据 /tmp/p145-grouping-{red,unit,common,module,pg-full,pg-final,pg-complete}.log，输入摘要 /tmp/p145-grouping-tested-inputs.json。其中pg-complete为最终全门禁，pg-full和pg-final为原失败。下一步加载Common新构建后，核对Develop实际分组查询、默认历史预览和导出，继而按具体出口补覆盖。静态加密与透明解密仍待前置讨论。
+
+### PostgreSQL 分组查询本地 Develop／导出验收（2026-11-11）
+
+用户重启后，通过 Gateway 的正式登录核对普通 outdoor开发者 #33／Tenant #1，使用已有 PostgreSQL engine #2、Meta #44720、outdoor.p145_native_default_20261024。三种 GROUP BY 写法 p.phone、phone、1 分别产生成功执行 6df22569-48c4-43e3-889d-1489cba5dc81、f0c3e098-ddcf-446d-90f6-c4a62cd0d494、f21eb225-70a1-47ad-aa1d-e3d2e59e3bb1。每条返回五组 contact／n，按源字段排序后取五组。实时结果与历史相同，重复读取历史不变，三种写法的行序及计数相同。
+
+Develop 导出会话 #19 经独立 Transfer 执行 94347359-7a39-4359-9b66-cf26b6bed48a 成功生成 CSV。保留的实际文件逐字节 SHA256 为 96a4d551238f13f41aa50fb0f96c6fc7a8c4ebd08cff2de38dc57cf707f64471。独立解析五行、两列，手机号保留前3／后4，中间按长度遮盖，长度依次10、11、11、11、11，计数均1；根据实际CSV重算的行摘要与三条执行报告全部一致。脚本实际断言创建／下载 no-store 和注销成功，保留报告的 logged_out=true、rejections=[]。原始HTTP响应未留存，不能把报告内的实时／历史及响应头断言称为独立原始报文审计。
+
+前两次本地失败保留。p5dviirx 报告停在额外 Manager 预览403，无查询或导出；此多余前置已移除，具体403原因未归档。mf68n8t8 的第一条执行成功，但临时脚本错误要求固定四个星号；开发者只读诊断核对精确Meta身份及已安装的保留前3／后4规则，第一行长度10、含三个星号，五行均符合实际规则。脚本修正为长度保留，变量长度红绿回归、原值／过量保留拒绝、正式Develop拒绝保留及注销检查通过。开发者存储诊断不代替当前用户HTTP验收。
+
+原件 /var/folders/r1/l7b49c757dz02zftf_l9vl9r0000gn/T/p145-grouping-local-cjagmlmn/，独立脚本及结果 /tmp/p145-grouping-independent/。本地表是此前脱敏Transfer的产物，因此本轮证明普通用户业务出口的分组可用及历史／导出一致性；原值分组、掩码碰撞及三算法的变换等价性仍取此前真实PostgreSQL T2。无个人浏览器或新增Hosted通过，无策略、角色或授权写入。下一步按原SQL范围核对Service查询服务的发布与实际输出，其他聚合和HAVING仍在已记录边界内。
