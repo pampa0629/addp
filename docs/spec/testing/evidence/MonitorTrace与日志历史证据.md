@@ -516,3 +516,17 @@ Tempo 同一批次先返回搜索200和五份明细200，随后两条并发请�
 定向浏览器门禁沿 `monitor/frontend` 的 `npm run test:e2e -- traces.spec.js` 和 `console/frontend` 的 `npm run test:e2e -- trace-log-navigation.spec.js`。Monitor 18 项通过，覆盖自动查询、返回、失败定位及摘要合并；Console 8 项通过，覆盖实际 iframe 路由、关联日志返回和权限拒绝等受控夹具。Monitor 前端 141 项确定性测试及构建通过。真实样本与受控回归分别记证。
 
 提交前复核 `make test-module MODULE=monitor GO_ONLY=1` 和 `bash scripts/swagger/check-route-coverage.sh monitor`，通过 Monitor Go T1 和 96 个公开路由方法覆盖检查。`make test-system-frontend SYSTEM_FRONTEND_BROWSER_ARGS=module-runtime-logs.e2e.js` 通过 183 项确定性测试、8 项日志浏览器回归及构建。隔离 Tempo T2 沿原 `make test-monitor-traces` 入口单列，本次本地提交验证未启动该环境。
+
+## 2026-11-11 双摘要专项 Console 后续自然 CI 补证
+
+双摘要实现提交为 `29cee1eb548905e63e0137ba9ad00a6ae7709fed`。详情分别展示所选接口的 5xx 和沿已匹配调用边可达的下游失败，各自提供时间线定位与关联日志。此前本机 Safari 已在 Trace `332bdbad847ae3614c53a80b4e105ae0` 上分别打开 Gateway 和 Monitor 的 HTTP 503 日志，匹配各自 Span ID `66d2627cba609ce7` 与 `881a5411755d7684`。本节补充自然 CI 结果，历史样本仍只证明已观测的失败位置和日志关联。
+
+| 固定提交及 Job | 实际步骤与原始日志 | 验收结论 |
+| --- | --- | --- |
+| `29cee1eb5`，[Console Job 129904827278](https://github.com/pampa0629/addp/actions/runs/42837874963/job/129904827278) | 原始日志第 942 行执行双摘要用例，后续同文件用例继续运行；第 1153 行推进至第 316/340 项，第 1154 行记录 `The operation was canceled.`。Job 为 `cancelled`，构建未执行 | 保留原取消记录，不能计为 Console 全量通过 |
+| `29cee1eb5`，[Monitor Job 129904827147](https://github.com/pampa0629/addp/actions/runs/42837874963/job/129904827147) | 原始日志第 668 行执行最深已观测下游失败判定回归，第 675–678 行记录 143 项单测通过，第 1741 行记录 776 项浏览器测试通过，第 1772 行构建完成 | Monitor 全量前端门禁通过 |
+| `3833ce6f854069d90c71ccf620b8ed239cbcf2e2`，[后续 Console Job 129911770284](https://github.com/pampa0629/addp/actions/runs/42839828422/job/129911770284) | `Run Console frontend gate` 实际成功。原始日志第 934 行执行 `selected HTTP interface opens the 5xx sample for the same window and distinguishes its downstream failure`，第 1164 行记录 340 项浏览器测试全部通过，第 1200 行构建完成 | 补齐双摘要专项 Console 全量验收证据 |
+
+已用 `git diff --exit-code 29cee1eb5 3833ce6f --` 核对双摘要的七项输入：Console 的 `e2e/http-quality-navigation.spec.js`、Monitor 的 `TraceDetails.vue`、`utils/traces.js`、两份模块翻译、`tests/traces.test.mjs`，以及平台运行观测规范，均无变化。其间 Console／Monitor 前端仅新增独立的 SQL pool Online 规格；共享前端另有执行失败分类和译文变更，后续通过结果对应包含这些变更的完整后继提交，不表述为全部前端输入逐字节相同。
+
+本次只读核对已有日志、固定源码和 GitHub Job 状态并更新证据，没有重跑任何 Job、改动 CI、启动本地环境或运行 Hosted、容量、定时。原 Console 取消结论与后续 Console 通过结论分别保留。原始日志本机副本分别为 `/tmp/addp-console-129904827278.05Y3uc`、`/tmp/addp-monitor-129904827147.lEmFMt` 和 `/tmp/addp-ci-0000.vle3kf/logs/129911770284.log`；长期定位使用表中固定提交及 Job 链接。
