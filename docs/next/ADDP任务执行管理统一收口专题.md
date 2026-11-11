@@ -389,4 +389,6 @@ Common 父子准入与 System 协调的用例定位见 [Owner 矩阵](../spec/te
 
 **已确认分开验证两条路径**。正常退出用独立自有 Kafka 任务，核对 invocation 停止回执、正式删除、精确 DLQ 资源缺失及授权历史仍可读。硬终止场景继续核验恢复和唯一终态，并以当前契约核验删除失败关闭、任务仍存在、未登记或派发本轮 DLQ 删除及外层销毁零残留。两组分别出具回执，不将硬终止后的销毁计为业务删除成功。两条路径已接入既有 runner。本地专项通过 98 项 Python 测试、脚本语法检查和 System 身份夹具 Go 测试。新路径的真实 Hosted 运行单独确认。
 
+固定 `e613a7381` 的 Linux Online 登记检查及 Execution online CI runner 通过。Platform consistency 随后在运行日志／指标生命周期测试失败，未运行到完整 Online 聚合，新增 Kafka 98 项仍只有本地专项结果。Transfer Go 与 PostgreSQL 按路径跳过，CDC 生产代码与前述 `b3d1b86c1` 相同，沿用其实际通过证据。 [Execution online runner](https://github.com/pampa0629/addp/actions/runs/42829768747/job/129876456020) · [Platform 登记与后续失败](https://github.com/pampa0629/addp/actions/runs/42829768747/job/129876456038)
+
 **如产品需要硬终止后仍可删除**，另立核清契约。由可信部署控制面提供绑定原主机／运行单元代次与确切进程的退出证明，由 Transfer 绑定 Tenant、task、execution、owner、fencing token 核验，单独保存核清事实。还须证明准确 DLQ 上该 invocation 的在途写入已排空或被原生围栏拒绝，且未遗留未知外部效果；进程退出证据单独不够。匹配全部证据后才允许既有授权入口重新显式提交删除，沿原 task 锁、外部操作登记、未知效果隔离和目标不存在核验。错代际、失联、过期、作用域不符和证据不可用继续阻断。现有 System 实例心跳及 Hosted pidfd 私有观察均不足以直接承担此产品信任边界。生产证据来源、权限及核清操作另议。
