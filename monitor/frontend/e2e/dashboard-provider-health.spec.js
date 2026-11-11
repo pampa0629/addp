@@ -76,10 +76,6 @@ test('provider readiness reports ready, partially ready and unavailable instance
   expect(providerBox.width).toBe(trendBox.width)
   expect(providerBox.y).toBeGreaterThanOrEqual(trendBox.y + trendBox.height)
 
-  for (const card of await cards.all()) {
-    const button = card.getByRole('button')
-    if (await button.getAttribute('aria-expanded') === 'true') await button.click()
-  }
   const cardColumns = () => cards.evaluateAll(elements => elements.map(card => Math.round(card.getBoundingClientRect().left)))
   expect(new Set(await cardColumns()).size).toBe(2)
 
@@ -125,6 +121,40 @@ test('trend tooltip text stays readable when the theme changes', async ({ page }
   await expect.poll(contrast).toBeGreaterThanOrEqual(4.5)
 })
 
+for (const width of [1000, 390]) test(`opening module details keeps all summary cards in place (${width})`, async ({ page }, testInfo) => {
+  await openDashboard(page, { metrics: [metric()] })
+  await page.setViewportSize({ width, height: 900 })
+  const cards = page.locator('.module-runtime-card')
+  await expect(cards).toHaveCount(8)
+  const button = page.locator('[data-module="manager"]').getByRole('button')
+  await button.scrollIntoViewIfNeeded()
+  const positions = () => cards.evaluateAll(elements => elements.map(element => {
+    const box = element.getBoundingClientRect()
+    return { module: element.dataset.module, x: Math.round(box.x + window.scrollX),
+      y: Math.round(box.y + window.scrollY), width: Math.round(box.width), height: Math.round(box.height) }
+  }))
+  const before = await positions()
+  const scrollBefore = await page.evaluate(() => window.scrollY)
+  await button.click()
+  const dialog = page.getByRole('dialog', { name: 'manager', exact: true })
+  await expect(dialog).toBeVisible()
+  await expect(dialog).toContainText('embedding')
+  await expect.poll(positions).toEqual(before)
+  await expect.poll(async () => {
+    const box = await dialog.boundingBox()
+    return Math.round(box.x + box.width)
+  }).toBe(width)
+  const box = await dialog.boundingBox()
+  expect(box.x).toBeGreaterThanOrEqual(0)
+  expect(box.x + box.width).toBeLessThanOrEqual(width)
+  await dialog.screenshot({ path: testInfo.outputPath(`module-details-${width}.png`) })
+  await page.keyboard.press('Escape')
+  await expect(dialog).toBeHidden()
+  await expect(button).toBeFocused()
+  await expect.poll(positions).toEqual(before)
+  expect(await page.evaluate(() => window.scrollY)).toBe(scrollBefore)
+})
+
 function metric(overrides = {}) {
   return { module: 'manager', task_type: 'embedding', execution_boundary: 'bounded',
     pending_count: 0, running_count: 2, completed_count: 1, failed_count: 1, timeout_count: 0,
@@ -147,13 +177,15 @@ for (const locale of ['zh-cn', 'en']) test(`module cards combine independent hea
   await expect(summary).toContainText('10.00%')
   await expect(summary).toContainText('0 / 4')
   await expect(summary).toContainText('2 / 20')
-  await expect(manager.locator('.runtime-detail')).toHaveCount(3)
-  await expect(manager.locator('.runtime-detail').first()).toContainText('9')
   await expect(page.locator('[data-module="monitor"]')).toHaveCount(1)
   const before = calls.length
   await manager.getByRole('button').click()
-  await expect(manager.locator('.module-details')).toHaveCount(0)
+  const dialog = page.getByRole('dialog', { name: 'manager', exact: true })
+  await expect(dialog.locator('.runtime-detail')).toHaveCount(3)
+  await expect(dialog.locator('.runtime-detail').first()).toContainText('9')
   expect(calls.length).toBe(before)
+  await page.keyboard.press('Escape')
+  await expect(dialog).toBeHidden()
 
   const healthCalls = calls.filter(path => path.includes('/health')).length
   const windowSelect = page.getByRole('combobox', { name: locale === 'en' ? 'Execution metrics window' : '执行指标统计窗口' })
@@ -162,7 +194,7 @@ for (const locale of ['zh-cn', 'en']) test(`module cards combine independent hea
   await page.getByRole('option', { name: locale === 'en' ? 'Last 7 Days' : '最近 7 天' }).click()
   await expect.poll(() => calls.some(path => path.endsWith('runtime-metrics?duration=7d'))).toBe(true)
   expect(calls.filter(path => path.includes('/health')).length).toBe(healthCalls)
-  await expect(manager.getByRole('button')).toHaveAttribute('aria-expanded', 'false')
+  await expect(dialog).toBeHidden()
   await page.getByRole('combobox', { name: locale === 'en' ? 'Execution metrics window' : '执行指标统计窗口' }).blur()
   await page.mouse.move(0, 0)
   await expect(page.getByRole('option', { name: locale === 'en' ? 'Last 7 Days' : '最近 7 天' })).toBeHidden()

@@ -76,13 +76,12 @@
       </div>
       <div class="module-grid" :aria-busy="loadingModules || loadingRuntimeHealth || loadingRuntimeMetrics">
         <article v-for="card in moduleCards" :key="card.module" class="module-runtime-card"
-          :class="{ expanded: isExpanded(card) }" :data-module="card.module">
+          :data-module="card.module">
           <div class="module-card-heading">
             <h3>{{ card.module }}</h3>
-            <el-button text :aria-expanded="isExpanded(card)" :aria-controls="'module-details-' + card.module"
-              @click="expandedModules[card.module] = !isExpanded(card)">
-              {{ t(isExpanded(card) ? 'monitor.dashboard.overview.collapse' : 'monitor.dashboard.overview.expand') }}
-              <el-icon><ArrowUp v-if="isExpanded(card)" /><ArrowDown v-else /></el-icon>
+            <el-button text aria-haspopup="dialog" @click="detailModule = card.module">
+              {{ t('monitor.dashboard.overview.view_details') }}
+              <el-icon><ArrowRight /></el-icon>
             </el-button>
           </div>
           <dl class="module-summary">
@@ -122,94 +121,99 @@
               <dd>{{ card.completed ? formatPercentage(card.failureRate) : '—' }}</dd>
             </div>
           </dl>
-          <div v-if="isExpanded(card)" :id="'module-details-' + card.module" class="module-details">
-            <template v-if="canReadHealth">
-              <h4>{{ t('monitor.dashboard.overview.components') }}</h4>
-              <p v-if="card.latency" class="card-description">{{ t('monitor.module_status.latency', { ms: card.latency }) }}</p>
-              <p v-if="card.provider?.capabilities?.status && card.provider.capabilities.status !== 'up'" class="card-description">
-                {{ card.provider.capabilities.message || t('monitor.module_status.capabilities_invalid') }}
-              </p>
-              <p v-if="!card.provider?.backends?.length && card.provider?.message" class="card-description">{{ card.provider.message }}</p>
-              <p v-if="!card.runtimes.length" class="card-description">{{ t(runtimeHealthError ? 'monitor.dashboard.runtime_health.load_failed' : 'monitor.dashboard.runtime_health.empty') }}</p>
-              <div class="runtime-detail-grid">
-                <section v-for="row in card.runtimes" :key="row.role + '/' + row.runtime_name" class="runtime-detail">
-                  <div class="runtime-detail-heading">
-                    <strong>{{ row.runtime_name }}</strong>
-                    <el-tag :type="runtimeStatusTagType(row.status)" size="small">{{ runtimeStatusText(row.status) }}</el-tag>
-                  </div>
-                  <div class="card-description">{{ runtimeRoleText(row.role) }}</div>
-                  <dl class="detail-values">
-                    <div>
-                      <dt>{{ t('monitor.dashboard.overview.instances') }}</dt>
-                      <dd>{{ row.healthy_instances }}</dd>
-                    </div>
-                    <div>
-                      <dt>{{ t('monitor.dashboard.overview.known_instances') }}</dt>
-                      <dd>{{ row.known_instances }}</dd>
-                    </div>
-                    <div>
-                      <dt>{{ t('monitor.dashboard.overview.slots') }}</dt>
-                      <dd>{{ row.active_count }} / {{ row.capacity }}</dd>
-                    </div>
-                    <div>
-                      <dt>{{ t('monitor.dashboard.runtime_health.last_heartbeat') }}</dt>
-                      <dd>{{ formatDate(row.last_heartbeat_at) }}</dd>
-                    </div>
-                    <div>
-                      <dt>{{ t('monitor.dashboard.runtime_health.expires_at') }}</dt>
-                      <dd>{{ formatDate(row.expires_at) }}</dd>
-                    </div>
-                  </dl>
-                </section>
-              </div>
-            </template>
-            <h4>{{ t('monitor.dashboard.overview.tasks') }}</h4>
-            <p v-if="!card.metrics.length" class="card-description">{{ t(runtimeMetricsError ? 'monitor.dashboard.runtime_metrics.load_failed' : 'monitor.dashboard.runtime_metrics.empty') }}</p>
-            <div class="runtime-detail-grid">
-              <section v-for="row in card.metrics" :key="row.task_type + '/' + row.execution_boundary" class="runtime-detail">
-                <div class="runtime-detail-heading"><strong>{{ row.task_type }}</strong><el-tag type="info" size="small">{{ executionBoundaryText(row.execution_boundary) }}</el-tag></div>
-                <dl class="detail-values">
-                  <div>
-                    <dt>{{ t('monitor.dashboard.runtime_metrics.backlog') }}</dt>
-                    <dd>{{ row.pending_count }} / {{ row.running_count }}</dd>
-                  </div>
-                  <div>
-                    <dt>{{ t('monitor.dashboard.runtime_metrics.throughput') }}</dt>
-                    <dd>{{ formatDecimal(row.throughput_per_hour) }}</dd>
-                  </div>
-                  <div>
-                    <dt>{{ t('monitor.dashboard.runtime_metrics.failure_rate') }}</dt>
-                    <dd>{{ formatPercentage(row.failure_rate) }}</dd>
-                  </div>
-                  <div>
-                    <dt>{{ t('monitor.dashboard.runtime_metrics.queue_duration') }}</dt>
-                    <dd>{{ formatDuration(row.avg_queue_duration_ms) }} / {{ formatDuration(row.p95_queue_duration_ms) }}</dd>
-                  </div>
-                  <div>
-                    <dt>{{ t('monitor.dashboard.runtime_metrics.execution_duration') }}</dt>
-                    <dd>{{ formatDuration(row.avg_execution_duration_ms) }} / {{ formatDuration(row.p95_execution_duration_ms) }}</dd>
-                  </div>
-                  <div>
-                    <dt>{{ t('monitor.dashboard.runtime_metrics.automatic_retry') }}</dt>
-                    <dd>{{ formatCountRate(row.automatic_retry_count, row.automatic_retry_rate) }}</dd>
-                  </div>
-                  <div>
-                    <dt>{{ t('monitor.dashboard.runtime_metrics.user_retry') }}</dt>
-                    <dd>{{ formatCountRate(row.user_retry_count, row.user_retry_rate) }}</dd>
-                  </div>
-                  <div>
-                    <dt>{{ t('monitor.dashboard.runtime_metrics.recovery') }}</dt>
-                    <dd>{{ formatCountRate(row.recovery_count, row.recovery_rate) }}</dd>
-                  </div>
-                </dl>
-              </section>
-            </div>
-          </div>
+
         </article>
       </div>
       <el-empty v-if="!moduleCards.length && !loadingModules && !loadingRuntimeHealth && !loadingRuntimeMetrics"
         :description="t('monitor.dashboard.no_modules')" />
     </el-card>
+
+    <el-drawer :model-value="Boolean(detailCard)" :title="detailCard?.module"
+      size="min(640px, 100vw)" destroy-on-close @close="detailModule = null">
+      <div v-if="detailCard" class="module-details">
+        <template v-if="canReadHealth">
+          <h4>{{ t('monitor.dashboard.overview.components') }}</h4>
+          <p v-if="detailCard.latency" class="card-description">{{ t('monitor.module_status.latency', { ms: detailCard.latency }) }}</p>
+          <p v-if="detailCard.provider?.capabilities?.status && detailCard.provider.capabilities.status !== 'up'" class="card-description">
+            {{ detailCard.provider.capabilities.message || t('monitor.module_status.capabilities_invalid') }}
+          </p>
+          <p v-if="!detailCard.provider?.backends?.length && detailCard.provider?.message" class="card-description">{{ detailCard.provider.message }}</p>
+          <p v-if="!detailCard.runtimes.length" class="card-description">{{ t(runtimeHealthError ? 'monitor.dashboard.runtime_health.load_failed' : 'monitor.dashboard.runtime_health.empty') }}</p>
+          <div class="runtime-detail-grid">
+            <section v-for="row in detailCard.runtimes" :key="row.role + '/' + row.runtime_name" class="runtime-detail">
+              <div class="runtime-detail-heading">
+                <strong>{{ row.runtime_name }}</strong>
+                <el-tag :type="runtimeStatusTagType(row.status)" size="small">{{ runtimeStatusText(row.status) }}</el-tag>
+              </div>
+              <div class="card-description">{{ runtimeRoleText(row.role) }}</div>
+              <dl class="detail-values">
+                <div>
+                  <dt>{{ t('monitor.dashboard.overview.instances') }}</dt>
+                  <dd>{{ row.healthy_instances }}</dd>
+                </div>
+                <div>
+                  <dt>{{ t('monitor.dashboard.overview.known_instances') }}</dt>
+                  <dd>{{ row.known_instances }}</dd>
+                </div>
+                <div>
+                  <dt>{{ t('monitor.dashboard.overview.slots') }}</dt>
+                  <dd>{{ row.active_count }} / {{ row.capacity }}</dd>
+                </div>
+                <div>
+                  <dt>{{ t('monitor.dashboard.runtime_health.last_heartbeat') }}</dt>
+                  <dd>{{ formatDate(row.last_heartbeat_at) }}</dd>
+                </div>
+                <div>
+                  <dt>{{ t('monitor.dashboard.runtime_health.expires_at') }}</dt>
+                  <dd>{{ formatDate(row.expires_at) }}</dd>
+                </div>
+              </dl>
+            </section>
+          </div>
+        </template>
+        <h4>{{ t('monitor.dashboard.overview.tasks') }}</h4>
+        <p v-if="!detailCard.metrics.length" class="card-description">{{ t(runtimeMetricsError ? 'monitor.dashboard.runtime_metrics.load_failed' : 'monitor.dashboard.runtime_metrics.empty') }}</p>
+        <div class="runtime-detail-grid">
+          <section v-for="row in detailCard.metrics" :key="row.task_type + '/' + row.execution_boundary" class="runtime-detail">
+            <div class="runtime-detail-heading"><strong>{{ row.task_type }}</strong><el-tag type="info" size="small">{{ executionBoundaryText(row.execution_boundary) }}</el-tag></div>
+            <dl class="detail-values">
+              <div>
+                <dt>{{ t('monitor.dashboard.runtime_metrics.backlog') }}</dt>
+                <dd>{{ row.pending_count }} / {{ row.running_count }}</dd>
+              </div>
+              <div>
+                <dt>{{ t('monitor.dashboard.runtime_metrics.throughput') }}</dt>
+                <dd>{{ formatDecimal(row.throughput_per_hour) }}</dd>
+              </div>
+              <div>
+                <dt>{{ t('monitor.dashboard.runtime_metrics.failure_rate') }}</dt>
+                <dd>{{ formatPercentage(row.failure_rate) }}</dd>
+              </div>
+              <div>
+                <dt>{{ t('monitor.dashboard.runtime_metrics.queue_duration') }}</dt>
+                <dd>{{ formatDuration(row.avg_queue_duration_ms) }} / {{ formatDuration(row.p95_queue_duration_ms) }}</dd>
+              </div>
+              <div>
+                <dt>{{ t('monitor.dashboard.runtime_metrics.execution_duration') }}</dt>
+                <dd>{{ formatDuration(row.avg_execution_duration_ms) }} / {{ formatDuration(row.p95_execution_duration_ms) }}</dd>
+              </div>
+              <div>
+                <dt>{{ t('monitor.dashboard.runtime_metrics.automatic_retry') }}</dt>
+                <dd>{{ formatCountRate(row.automatic_retry_count, row.automatic_retry_rate) }}</dd>
+              </div>
+              <div>
+                <dt>{{ t('monitor.dashboard.runtime_metrics.user_retry') }}</dt>
+                <dd>{{ formatCountRate(row.user_retry_count, row.user_retry_rate) }}</dd>
+              </div>
+              <div>
+                <dt>{{ t('monitor.dashboard.runtime_metrics.recovery') }}</dt>
+                <dd>{{ formatCountRate(row.recovery_count, row.recovery_rate) }}</dd>
+              </div>
+            </dl>
+          </section>
+        </div>
+      </div>
+    </el-drawer>
 
     <!-- 最近执行记录 -->
     <el-card v-if="canReadExecutions" shadow="hover" style="margin-top: 20px;">
@@ -268,7 +272,7 @@ const runtimeHealth = ref([])
 const runtimeMetrics = ref([])
 const trendDays = ref(7)
 const runtimeMetricsDuration = ref('24h')
-const expandedModules = ref({})
+const detailModule = ref(null)
 const modulesError = ref(false)
 const runtimeHealthError = ref(false)
 const runtimeMetricsError = ref(false)
@@ -295,15 +299,12 @@ const moduleCards = computed(() => {
       running: sum(card.metrics, 'running_count'), throughput: sum(card.metrics, 'throughput_per_hour'),
       online: sum(card.runtimes, 'healthy_instances'), active: sum(card.runtimes, 'active_count'),
       capacity: sum(card.runtimes, 'capacity'),
-      failureRate: completed ? 100 * (sum(card.metrics, 'failed_count') + sum(card.metrics, 'timeout_count')) / completed : 0,
-      attention: pending > 0 || (card.provider && card.provider.status !== 'up') || card.runtimes.some(row => row.status !== 'up')
+      failureRate: completed ? 100 * (sum(card.metrics, 'failed_count') + sum(card.metrics, 'timeout_count')) / completed : 0
     }
   })
 })
 
-function isExpanded(card) {
-  return expandedModules.value[card.module] ?? Boolean(card.attention)
-}
+const detailCard = computed(() => moduleCards.value.find(card => card.module === detailModule.value))
 
 function providerTagType(status) {
   return { up: 'success', degraded: 'warning', down: 'danger' }[status] || 'info'
@@ -721,13 +722,12 @@ onBeforeUnmount(() => {
 }
 
 .module-grid {
-  columns: 300px;
-  column-gap: 16px;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr));
+  gap: 16px;
 }
 
 .module-runtime-card {
-  break-inside: avoid;
-  margin-bottom: 16px;
   min-width: 0;
   padding: 16px;
   border: 1px solid var(--addp-border-color);
@@ -775,11 +775,6 @@ onBeforeUnmount(() => {
 .backend-count {
   font-size: 14px;
   white-space: nowrap;
-}
-
-.module-details {
-  margin-top: 16px;
-  border-top: 1px solid var(--addp-border-color-light);
 }
 
 .module-details h4 {
