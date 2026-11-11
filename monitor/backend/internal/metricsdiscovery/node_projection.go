@@ -2,6 +2,7 @@ package metricsdiscovery
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -203,19 +204,42 @@ func (p *NodeProjector) Project(ctx context.Context, targets []NodeTarget) ([]Ta
 		}
 	}
 	physical := make(map[string]bool)
+	declared := make(map[string]bool)
+	dynamic := make(map[string]bool)
+	resolve := func(endpoint string) (ResolvedEndpoint, bool, error) {
+		if declared[endpoint] {
+			return ResolvedEndpoint{}, false, ErrInvalidTarget
+		}
+		declared[endpoint] = true
+		resolved, err := p.policy.Resolve(ctx, endpoint)
+		if ctx.Err() != nil {
+			return ResolvedEndpoint{}, false, ctx.Err()
+		}
+		if err != nil {
+			if sourceAdmissionFailure(err) {
+				return ResolvedEndpoint{}, false, nil
+			}
+			return ResolvedEndpoint{}, false, err
+		}
+		if physical[resolved.Address] {
+			return ResolvedEndpoint{}, false, ErrInvalidTarget
+		}
+		physical[resolved.Address] = true
+		return resolved, true, nil
+	}
+
 	for _, target := range targets {
 		nodeVersion := nodes[target.Subject.NodeID]
 		if !target.Enabled || nodeVersion == 0 {
 			continue
 		}
-		resolved, err := p.policy.Resolve(ctx, target.Source.Endpoint)
+		resolved, accepted, err := resolve(target.Source.Endpoint)
 		if err != nil {
 			return nil, err
 		}
-		if physical[resolved.Address] {
-			return nil, ErrInvalidTarget
+		if !accepted {
+			continue
 		}
-		physical[resolved.Address] = true
 		groups = append(groups, TargetGroup{
 			Targets: []string{resolved.Address}, Labels: map[string]string{
 				"__scheme__": "https", "__metrics_path__": "/metrics",
@@ -229,14 +253,14 @@ func (p *NodeProjector) Project(ctx context.Context, targets []NodeTarget) ([]Ta
 		if instance.ProcessMetrics == nil {
 			continue
 		}
-		resolved, err := p.policy.Admit(ctx, instance.ProcessMetrics.Endpoint)
+		resolved, accepted, err := resolve(instance.ProcessMetrics.Endpoint)
 		if err != nil {
 			return nil, err
 		}
-		if physical[resolved.Address] {
-			return nil, ErrInvalidTarget
+		if !accepted {
+			continue
 		}
-		physical[resolved.Address] = true
+		dynamic[resolved.Address] = true
 		groups = append(groups, TargetGroup{Targets: []string{resolved.Address}, Labels: map[string]string{
 			"__scheme__": "https", "__metrics_path__": "/metrics",
 			"addp_module_name": instance.ModuleName, "addp_instance_id": instance.InstanceID, "addp_runtime_role": instance.Role,
@@ -247,14 +271,14 @@ func (p *NodeProjector) Project(ctx context.Context, targets []NodeTarget) ([]Ta
 		if engine.Metrics == nil || engine.Metrics.State != "available" {
 			continue
 		}
-		resolved, err := p.policy.Admit(ctx, engine.Metrics.Endpoint)
+		resolved, accepted, err := resolve(engine.Metrics.Endpoint)
 		if err != nil {
 			return nil, err
 		}
-		if physical[resolved.Address] {
-			return nil, ErrInvalidTarget
+		if !accepted {
+			continue
 		}
-		physical[resolved.Address] = true
+		dynamic[resolved.Address] = true
 		groups = append(groups, TargetGroup{Targets: []string{resolved.Address}, Labels: map[string]string{
 			"__scheme__": "https", "__metrics_path__": "/metrics",
 			"addp_monitor_kind": "engine_resources", "addp_source": engine.EngineType,
@@ -267,14 +291,14 @@ func (p *NodeProjector) Project(ctx context.Context, targets []NodeTarget) ([]Ta
 			if component.Metrics.State != "available" {
 				continue
 			}
-			resolved, err := p.policy.Admit(ctx, component.Metrics.Endpoint)
+			resolved, accepted, err := resolve(component.Metrics.Endpoint)
 			if err != nil {
 				return nil, err
 			}
-			if physical[resolved.Address] {
-				return nil, ErrInvalidTarget
+			if !accepted {
+				continue
 			}
-			physical[resolved.Address] = true
+			dynamic[resolved.Address] = true
 			groups = append(groups, TargetGroup{Targets: []string{resolved.Address}, Labels: map[string]string{
 				"__scheme__": "https", "__metrics_path__": "/metrics", "addp_monitor_kind": "cdc_resources", "addp_source": component.Kind,
 				"addp_component_id": component.ID(), "addp_component_container_id": component.ContainerID,
@@ -282,10 +306,26 @@ func (p *NodeProjector) Project(ctx context.Context, targets []NodeTarget) ([]Ta
 			}})
 		}
 	}
+	admitted := make([]TargetGroup, 0, len(groups))
+	for _, group := range groups {
+		if dynamic[group.Targets[0]] {
+			_, err := p.policy.admitResolved(ctx, ResolvedEndpoint{Address: group.Targets[0]})
+			if ctx.Err() != nil {
+				return nil, ctx.Err()
+			}
+			if err != nil {
+				if sourceAdmissionFailure(err) {
+					continue
+				}
+				return nil, err
+			}
+		}
+		admitted = append(admitted, group)
+	}
 	if ctx.Err() != nil || snapshot.ObservedAt.Before(p.now().UTC().Add(-Timeout)) {
 		return nil, ErrIdentityUnavailable
 	}
-	return groups, nil
+	return admitted, nil
 }
 
 // String is safe to log; it intentionally excludes addresses and credentials.
@@ -318,4 +358,9 @@ func readIdentitySnapshot(ctx context.Context, reader IdentityReader, now func()
 		nodes[node.NodeID] = node.Version
 	}
 	return snapshot, nodes, nil
+}
+
+// Only endpoint-specific admission failures are isolated. Shared control-plane errors remain fatal.
+func sourceAdmissionFailure(err error) bool {
+	return errors.Is(err, ErrAdmissionFailed) || errors.Is(err, ErrUnprotected) || errors.Is(err, ErrResolutionFailed) || errors.Is(err, ErrEndpointForbidden)
 }

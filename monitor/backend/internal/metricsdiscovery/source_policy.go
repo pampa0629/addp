@@ -221,6 +221,11 @@ func (p *SourcePolicy) Admit(ctx context.Context, endpoint string) (ResolvedEndp
 	if err != nil {
 		return ResolvedEndpoint{}, err
 	}
+	return p.admitResolved(ctx, resolved)
+}
+
+// admitResolved uses the already policy-checked, pinned address. It never resolves again.
+func (p *SourcePolicy) admitResolved(ctx context.Context, resolved ResolvedEndpoint) (ResolvedEndpoint, error) {
 	if _, err := p.fetch(ctx, resolved, true); err != nil {
 		return ResolvedEndpoint{}, ErrAdmissionFailed
 	}

@@ -244,8 +244,8 @@ func TestNodeProjectionRechecksDNSAndRejectsPhysicalAliases(t *testing.T) {
 	}
 	address = netip.MustParseAddr("169.254.169.254")
 	groups, err = projector.Project(context.Background(), []NodeTarget{target})
-	if err != ErrEndpointForbidden || groups != nil {
-		t.Fatalf("DNS change was cached or converted into empty success: %v %v", groups, err)
+	if err != nil || len(groups) != 0 {
+		t.Fatalf("forbidden DNS answer was retained: %v %v", groups, err)
 	}
 }
 

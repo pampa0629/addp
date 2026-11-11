@@ -73,12 +73,12 @@ func TestProcessProjectionRejectsUnprotectedTransportAndDuplicatePhysicalSource(
 		projector := NewNodeProjector(true, testPolicy(t, pki, port), identityReaderFunc(func(context.Context) (*models.ObservabilityIdentitySnapshot, error) { return snapshot, nil }))
 		groups, err := projector.Project(context.Background(), nil)
 		server.Close()
-		want := ErrUnprotected
-		if auth != tls.NoClientCert {
-			want = ErrInvalidTarget
-		}
-		if err != want || groups != nil {
-			t.Fatalf("unsafe transport or duplicate: %+v %v", groups, err)
+		if auth == tls.NoClientCert {
+			if err != nil || len(groups) != 0 {
+				t.Fatalf("unprotected source published: %+v %v", groups, err)
+			}
+		} else if err != ErrInvalidTarget || groups != nil {
+			t.Fatalf("duplicate source was not rejected: %+v %v", groups, err)
 		}
 	}
 }

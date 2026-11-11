@@ -220,13 +220,34 @@ def check_native_cdc():
     failed = source('cdc-connect-source')
     assert isinstance(failed, dict) and failed['addp_cdc_connect_task_states{state="FAILED"}'] == '1'
     assert failed['addp_cdc_connect_task_states{state="RUNNING"}'] == '1'
+    admission_items = []
+    for kind in module.PREFIXES:
+        component = module.Component(docker,kind)
+        admission_items.append({'docker_engine_id':docker.info['id'],'project':'addp-infra','kind':kind,
+            'container_id':component.identity,'started_at':component.facts['started_at'],
+            'metrics':{'state':'available','endpoint':'https://'+cdc_environment(module,kind)[module.PREFIXES[kind]+'_LISTEN']+'/metrics',
+                       'container_id':component.identity,'started_at':component.facts['started_at']}})
+    def verify_admission(expected):
+        receipt = WORK/'cdc-admission.json'
+        receipt.write_text(json.dumps({'snapshot':{'nodes':[],'module_instances':[], 'infrastructure_components':{'state':'available','items':admission_items}},
+            'expected':expected,'ca':str(WORK/'deployment/source-ca.crt'),'certificate':str(WORK/'collector.crt'),'key':str(WORK/'collector.key')}))
+        subprocess.run(['make','test-monitor-cdc-admission-t2'],cwd=Path(__file__).resolve().parents[2],
+                       env=dict(os.environ,ADDP_CDC_ADMISSION_FILE=str(receipt)),check=True,timeout=180)
+    verify_admission(['redpanda','kafka-connect'])
     compose('stop', 'cdc-connect')
     assert source('cdc-connect-source') == 503, 'upstream failure was masked by stale samples'
     assert isinstance(source('cdc-redpanda-source'), dict), 'Connect outage affected broker source'
+    verify_admission(['redpanda'])
     compose('start', 'cdc-connect')
     wait(lambda: isinstance(source('cdc-connect-source'), dict), 'Connect source recovers after upstream returns', seconds=90)
     # Rebind the source to the component's new start time; preserve its peer.
     assert 'source recovered' in module.run('recover','infra','kafka-connect',cdc_environment(module,'kafka-connect'))
+    # The identity fixture advances to the new runtime after source recovery.
+    component = module.Component(docker,'kafka-connect')
+    for item in admission_items:
+        if item['kind']=='kafka-connect':
+            item['started_at']=component.facts['started_at'];item['metrics']['started_at']=component.facts['started_at']
+    verify_admission(['redpanda','kafka-connect'])
     broker_service = module.sources.group.service('redpanda','infra')
     assert docker.run(['ps','-aq',*module.sources.group.filters(PROJECT,{broker_service})]).strip() == before['redpanda']
     targets = []

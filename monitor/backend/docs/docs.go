@@ -3415,6 +3415,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
+                "description": "单个来源解析或动态准入失败时仅剔除该来源；身份、重复端点、总预算和整批期限错误拒绝整批，不返回旧地址。空数组表示本轮无已通过的目标，不表示来源健康。 | Source resolution or dynamic admission failures exclude only that source. Identity, duplicate endpoint, total reservation and batch deadline failures reject the batch without cached addresses. An empty array means no target passed this round, not healthy sources.",
                 "produces": [
                     "application/json"
                 ],
