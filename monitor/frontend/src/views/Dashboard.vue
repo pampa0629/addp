@@ -1,7 +1,7 @@
 <template>
   <div class="dashboard">
     <!-- 统计卡片行 -->
-    <el-row :gutter="20" style="margin-bottom: 20px;">
+    <el-row class="statistics-row" :gutter="20" style="margin-bottom: 20px;">
       <el-col :span="6">
         <statistics-card
           :title="t('monitor.dashboard.total_executions')"
@@ -684,6 +684,15 @@ onBeforeUnmount(() => {
 .dashboard {
   padding: 20px;
   background: var(--addp-bg-secondary);
+}
+
+.statistics-row > .el-col {
+  display: flex;
+}
+
+.statistics-row .statistics-card {
+  flex: 1;
+  min-width: 0;
 }
 
 .card-header {
