@@ -33,6 +33,13 @@ class BuildRegistrationTest(unittest.TestCase):
         self.assertTrue(any(path + ": auxiliary Dockerfile is missing" in error
                             for error in MODULE.validate_registration(self.repository)))
 
+    def test_cdc_observer_image_has_an_owned_auxiliary_classification(self):
+        path = "scripts/infra/Dockerfile.cdc-metrics"
+        self.assertIn(path, MODULE.AUXILIARY_DOCKERFILES)
+        (self.repository / path).unlink()
+        self.assertTrue(any(path + ": auxiliary Dockerfile is missing" in error
+                            for error in MODULE.validate_registration(self.repository)))
+
     def test_gaussdb_business_image_has_an_owned_auxiliary_classification(self):
         path = "business/gaussdb/Dockerfile"
         self.assertIn(path, MODULE.AUXILIARY_DOCKERFILES)

@@ -70,11 +70,13 @@ Trace 中 request_id、trace_id、execution 身份分别表达请求、调用链
 
 `cdc-native` 扩展既有 `test-monitor-cdc-admission-t2`：真实固定版本 Prometheus 的离线求值通过 126 个 CDC 固定表达式场景，覆盖正常／有效零值、缺字段、重复 up、停采、观测时刻过旧／错次与运行身份不匹配，包含最大 offset 比例到百分比的换算和负源端延迟。Promtool 复用相同 Prometheus 镜像，在专属 Compose 测试服务内使用有界临时存储；初次只读根文件系统缺少临时写入挂载的失败保留，增加私有 tmpfs 后通过。该批同时复验真实 WAL 积压 `0 → 1 → 0`、单 Task 失败、两来源准入 `2 → 1 → 2` 与零残留。固定样本求值、受控浏览器和真实来源证据各自认定，不能合并成个人正式链路通过。Swagger 生成与 98 个公开路由方法覆盖一致；测试仍由现有 Monitor／Console 前端与 Metrics CI 自动发现，无新增长期旁路。
 
-用户重启后的只读核对中，System／Monitor 均 Ready，Monitor 构建提交为 `bbf3e453c`；真实 System 私有投影已发布两个有效组件身份，来源均为 `not_deployed`。Prometheus 原 34 个目标全部 UP 且有新采样，已保留按端点的基线回执。已在个人部署配置中准备 36 目标预算、两个回环来源端口和各自的 mTLS 证书，来源输入／严格证书校验与拟应用中心配置的真实 promtool 检查通过；当前进程和中心尚未应用此部署变更，也未创建 CDC 来源。Kafka Connect 当前镜像已经包含所需 Jolokia jar，但尚未挂载只读策略；需由用户先使 Monitor 的新预算／端口生效，再沿 Infra 标准入口应用组件配置、中心及来源。此状态不计个人采样与页面通过。
+用户完成 Monitor 重启和 Infra 标准入口后，个人运行环境的 System／Monitor 均 Ready，两个 CDC 来源均启用、运行且镜像可用，Connect 已挂载只读 JMX 策略。真实 System 当前组件 ID／容器完整 ID／启动时刻与 Prometheus 保存的受控身份标签一致；与已保存基线按端点比对，原 34 个全部保留，只新增 `127.0.0.1:19134/19135`。两轮间隔 20 秒的实际采样中，36 个目标全部 UP、每一个抓取时间都向前推进；CDC 观测时间亦为新鲜样本。来源直接 mTLS 读取成功，匿名握手被拒绝。当前 Connect 的 Connector／Task 为零，Redpanda 消费组分区为零，未发布没有样本的源端延迟／消费积压，未补零。部署后 2026-11-11 18:36:28 +08:00 的真实 CDC 即时与趋势 API 请求均返回 200（请求 ID 分别为 `b318f164-593d-4292-ba5b-5b45cf71e97a`、`3bd3b31c-c67b-495e-909c-b04f9322db0d`）。这些证据证明本机来源、真实身份／发现和采样；控制台连接工具超时，尚未完成个人页面视觉实操，不外推正式身份 Hosted T4 或七天留存。
 
 `bbf3e453c` 的 Linux Monitor Metrics T2（含 `cdc-native`、`target-budget`）已通过。Platform CI 的两个本批相关失败已定位：新增 CDC 根入口使“仅资源读取权限”有了合法页面，旧入口测试仍期待 forbidden，且 Node 路由夹具尝试加载 Vue 懒组件；Infra 停服夹具则未复制 CDC provider，仍断言三项。补齐路由夹具的组件占位与合法 CDC 落点、两个 provider 的停服断言后，Monitor T1 与 Infra 端口／停服安全专项通过，完整前端复验继续沿原入口。本机较广配置回归另有一次临时 ps 夹具首次执行超时，未计为通过；实际进程表读取、两个来源的部署输入及拟应用中心配置检查独立通过，未修改主机安全设置。
 
 System 私有投影的 `TestObservabilityIdentityProjectionAgainstPostgres` 精确 JSON 预期已补齐 `infrastructure_components: {state: unavailable, items: []}`。无部署读取器时显式 unavailable 沿既有正式契约，不将未知改为空部署，不改变生产投影、浏览器字段、权限或兼容路径；完整嵌套字段集合比较继续保留。通过标准 `make test-system-iam-postgres SYSTEM_IAM_POSTGRES_TEST_ARGS="--package repository --test observability-identity"` 在本地 `addp_iam_test` 先复现原差异，修正后同名用例及其子用例通过；System Go T1 通过。前述 Monitor 完整前端复验也已结束：当次共享工作区的 145 项 T1、793 项浏览器及构建通过。此回归修正仅修改测试预期，无需重启应用；唯一新提交的自然 CI 结果另行跟进。
+
+`2e1d54946` 的自然 CI 已通过 System Go 与 System IAM PostgreSQL，CI 原始日志确认同名 `TestObservabilityIdentityProjectionAgainstPostgres` 及两个子用例通过。`5660f9df2` 的自然 CI 已通过 Monitor 前端。Platform 后续暴露 CDC Dockerfile 未列入部署辅助镜像分类；现沿 Redis／MinIO 同一分类表补齐所有权，增加缺失 Dockerfile 拒绝回归，`make test-build-registration` 的 61 项／9 项回归及真实仓库 26 个 Go 单元、59 镜像登记检查通过。该修改只补构建登记，无生产容器或运行代码变化；新提交自然 Platform CI 结果另行核验，不把前序失败倒改为通过。
 
 ## 三、验收状态与剩余缺口
 

@@ -101,6 +101,7 @@ AUXILIARY_DOCKERFILES = {
     "scripts/infra/Dockerfile.postgres": "infra PostgreSQL image build",
     "scripts/infra/Dockerfile.minio": "infra MinIO image build",
     "scripts/infra/Dockerfile.redis-metrics": "deployment-owned fixed Redis INFO metrics source",
+    "scripts/infra/Dockerfile.cdc-metrics": "deployment-owned fixed Redpanda and Kafka Connect metrics source",
     "scripts/infra/Dockerfile.minio-metrics": "deployment-owned fixed MinIO v3 metrics source",
     "scripts/infra/Dockerfile.runtime-log": "shared runtime log capture and source housekeeping",
 }
