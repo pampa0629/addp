@@ -74,6 +74,8 @@ Trace 中 request_id、trace_id、execution 身份分别表达请求、调用链
 
 `bbf3e453c` 的 Linux Monitor Metrics T2（含 `cdc-native`、`target-budget`）已通过。Platform CI 的两个本批相关失败已定位：新增 CDC 根入口使“仅资源读取权限”有了合法页面，旧入口测试仍期待 forbidden，且 Node 路由夹具尝试加载 Vue 懒组件；Infra 停服夹具则未复制 CDC provider，仍断言三项。补齐路由夹具的组件占位与合法 CDC 落点、两个 provider 的停服断言后，Monitor T1 与 Infra 端口／停服安全专项通过，完整前端复验继续沿原入口。本机较广配置回归另有一次临时 ps 夹具首次执行超时，未计为通过；实际进程表读取、两个来源的部署输入及拟应用中心配置检查独立通过，未修改主机安全设置。
 
+System 私有投影的 `TestObservabilityIdentityProjectionAgainstPostgres` 精确 JSON 预期已补齐 `infrastructure_components: {state: unavailable, items: []}`。无部署读取器时显式 unavailable 沿既有正式契约，不将未知改为空部署，不改变生产投影、浏览器字段、权限或兼容路径；完整嵌套字段集合比较继续保留。通过标准 `make test-system-iam-postgres SYSTEM_IAM_POSTGRES_TEST_ARGS="--package repository --test observability-identity"` 在本地 `addp_iam_test` 先复现原差异，修正后同名用例及其子用例通过；System Go T1 通过。前述 Monitor 完整前端复验也已结束：当次共享工作区的 145 项 T1、793 项浏览器及构建通过。此回归修正仅修改测试预期，无需重启应用；唯一新提交的自然 CI 结果另行跟进。
+
 ## 三、验收状态与剩余缺口
 
 固定源码、运行链接、采样数量、预算、失败／修复和清理结论由下列历史证据专题维护；本页只保留能力状态、设计约束和剩余缺口。后续限定复验通过不倒改早期失败，也不证明当前 HEAD 或父 workflow 整体通过。

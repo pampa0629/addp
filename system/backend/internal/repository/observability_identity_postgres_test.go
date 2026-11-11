@@ -162,10 +162,13 @@ func TestObservabilityIdentityProjectionAgainstPostgres(t *testing.T) {
 			"source_key": map[string]any{"docker_engine_id": "projection-daemon", "project": project, "service": "postgres"},
 		})
 	}
+	// Without a deployment reader, component discovery is explicitly unavailable;
+	// an empty items list must not claim a known-empty deployment inventory.
 	wantJSON, err := json.Marshal(map[string]any{
-		"service_groups": map[string]any{"state": "unconfigured", "reason": "unconfigured", "deployment_id": "", "revision": 0, "observed_at": snapshot.ObservedAt, "groups": []any{}},
-		"observed_at":    snapshot.ObservedAt,
-		"nodes":          []map[string]any{{"node_id": node.NodeID, "version": 1}},
+		"infrastructure_components": map[string]any{"state": "unavailable", "items": []any{}},
+		"service_groups":            map[string]any{"state": "unconfigured", "reason": "unconfigured", "deployment_id": "", "revision": 0, "observed_at": snapshot.ObservedAt, "groups": []any{}},
+		"observed_at":               snapshot.ObservedAt,
+		"nodes":                     []map[string]any{{"node_id": node.NodeID, "version": 1}},
 		"module_instances": []map[string]any{{
 			"module_name": "manager", "instance_id": "worker-one", "role": "worker", "node_id": node.NodeID,
 			"process_started_at": before.ProcessStartedAt, "lease_expires_at": before.LeaseExpiresAt.UTC(),
