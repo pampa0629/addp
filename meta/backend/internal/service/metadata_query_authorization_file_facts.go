@@ -104,11 +104,11 @@ func projectFileAuthorizationFacts(lookup metadataNodeLookup, item models.MetaIt
 			return finish(authorizationfacts.AuthorizationBasisNeedsRefresh)
 		}
 	}
-	if !hasRefs && layout == "single" && (format == "ifc" || identity.ImageFormat()) {
+	if !hasRefs && layout == "single" && (format == "ifc" || format == "geojson" || identity.ImageFormat()) {
 		required := true
 		refs = []fileAuthorizationRef{{Path: item.FullName, Role: identity.PrimaryRole(), Required: &required, Primary: true}}
 	}
-	if identity.ImageFormat() && hasRefs {
+	if (identity.ImageFormat() || format == "geojson") && hasRefs {
 		for i := range refs {
 			if refs[i].Primary && refs[i].Role == "main" {
 				refs[i].Role = identity.PrimaryRole()

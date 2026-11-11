@@ -272,7 +272,7 @@ func fileSubmissionDiscovery(t *testing.T) *OperatorDiscoveryService {
 		listWorkflowOperators: func(context.Context, *commonModels.Engine) ([]commonModels.OperatorDescriptor, error) {
 			return []commonModels.OperatorDescriptor{
 				{ID: "load", Name: "load", EngineType: "geopython_workflow", ExecutionModes: []string{"workflow"}, Effects: []string{"read"},
-					Parameters: []commonModels.ParameterDescriptor{{Name: "connection_info"}, {Name: "schema"}, {Name: "table"}, {Name: "path"}}},
+					Parameters: []commonModels.ParameterDescriptor{{Name: "connection_info"}, {Name: "schema"}, {Name: "table"}, {Name: "path"}, {Name: "geojson"}}},
 				{ID: "save", Name: "save", EngineType: "geopython_workflow", ExecutionModes: []string{"workflow"}, Effects: []string{"write"},
 					Parameters: []commonModels.ParameterDescriptor{{Name: "connection_info"}, {Name: "schema"}, {Name: "table"}, {Name: "path"}, {Name: "mode"}}},
 			}, nil

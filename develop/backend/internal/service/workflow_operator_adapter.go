@@ -439,7 +439,7 @@ func workflowPythonLoadAdapterSpec() workflowOperatorAdapterSpec {
 		},
 		ResourceInputs: []workflowResourceInputSpec{{
 			PublicParam:   "locator",
-			RuntimeParams: []string{"engine_id", "connection_info", "schema", "table", "path"},
+			RuntimeParams: []string{"engine_id", "connection_info", "schema", "table", "path", "geojson"},
 		}},
 	}
 }

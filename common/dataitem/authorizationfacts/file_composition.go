@@ -53,6 +53,9 @@ func (b *FileCompositionBoundary) ImageFormat() bool {
 
 // PrimaryRole accompanies the same fixed model identity in owner projections.
 func (b *FileCompositionBoundary) PrimaryRole() string {
+	if b != nil && b.Format == "geojson" {
+		return "data"
+	}
 	if b != nil && b.Format == "geopackage" {
 		return "container"
 	}
@@ -75,6 +78,8 @@ func (b *FileCompositionBoundary) DataType() string {
 		return ""
 	}
 	switch b.Format {
+	case "geojson":
+		return "table"
 	case "geopackage":
 		return "container"
 	case "envi", "jpeg", "tiff":
@@ -133,7 +138,7 @@ func (b *FileCompositionBoundary) Validate(engineID uint) error {
 	if (b.Format == "tiff" && b.SourceLayout != "single" && b.SourceLayout != "multi") || (b.Format != "tiff" && b.SourceLayout != "") {
 		return errFileComposition
 	}
-	if b.Format == "jpeg" && (len(b.Refs) != 1 || !b.Refs[0].Primary || !b.Refs[0].Required || b.Refs[0].Role != b.PrimaryRole()) {
+	if (b.Format == "jpeg" || b.Format == "geojson") && (len(b.Refs) != 1 || !b.Refs[0].Primary || !b.Refs[0].Required || b.Refs[0].Role != b.PrimaryRole()) {
 		return errFileComposition
 	}
 	if b.Format == "geopackage" && (len(b.Refs) != 1 || !b.Refs[0].Primary || !b.Refs[0].Required || b.Refs[0].Role != "container") {

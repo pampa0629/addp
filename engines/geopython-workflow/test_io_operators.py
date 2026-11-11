@@ -1024,3 +1024,26 @@ def test_gpkg_save_rechecks_target_state_after_writing_without_touching_external
     assert {p.name for p in tmp_path.iterdir()}=={other.name,target.name if state=='symlink'else target.name+state}
     if state=='symlink':assert target.is_symlink()and target.readlink()==other
     else:assert Path(str(target)+state).read_bytes()==b'concurrent external state'and not target.exists()
+
+
+def test_load_develop_geojson_content_keeps_properties_and_crs():
+    from operators.io_operators import load
+    source = {'type': 'FeatureCollection', 'features': [
+        {'type': 'Feature', 'properties': {'instance_id': 7, 'score': 0.9},
+         'geometry': {'type': 'Polygon', 'coordinates': [[[0, 0], [1, 0], [1, 1], [0, 0]]]}}
+    ]}
+    frame = load(geojson=source)
+    assert len(frame) == 1 and frame.crs.to_epsg() == 4326
+    assert frame.iloc[0]['instance_id'] == 7
+    assert frame.geometry.iloc[0].is_valid
+    import pytest
+    with pytest.raises(ValueError):
+        load(geojson=source, path='other.geojson')
+    with pytest.raises(ValueError):
+        load(geojson={**source, 'crs': {'type': 'name', 'properties': {'name': 'EPSG:3857'}}})
+
+
+def test_load_develop_geojson_content_empty_collection():
+    frame = io_operators.load(geojson={'type': 'FeatureCollection', 'features': []})
+    assert frame.empty and frame.crs.to_epsg() == 4326
+    assert frame.active_geometry_name == 'geometry'

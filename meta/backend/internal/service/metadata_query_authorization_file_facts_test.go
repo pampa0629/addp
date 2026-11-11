@@ -385,3 +385,16 @@ func TestDAEFileAuthorizationFactsDecodeURIsExactlyOnce(t *testing.T) {
 		}
 	}
 }
+
+func TestGeoJSONSingleFileAuthorizationFacts(t *testing.T) {
+	db := metatest.OpenMetadataDB(t)
+	item := seedFileAuthorizationFacts(t, db, 55, "geojson")
+	item.Attributes["item"] = map[string]any{"layout": "single", "data_type": "table", "format": "geojson"}
+	if err := db.Save(&item).Error; err != nil {
+		t.Fatal(err)
+	}
+	facts, err := NewMetadataQueryService(db).GetDataItemAuthorizationFacts(context.Background(), 7, item.Fingerprint)
+	if err != nil || facts.BasisState != authorizationfacts.AuthorizationBasisComplete || facts.Boundary.FileComposition == nil || facts.Boundary.FileComposition.Format != "geojson" {
+		t.Fatalf("GeoJSON content boundary %+v: %v", facts, err)
+	}
+}

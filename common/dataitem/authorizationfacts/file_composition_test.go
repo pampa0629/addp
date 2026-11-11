@@ -281,3 +281,15 @@ func TestNativeFactsCanonicalHashUnaffectedByFileUnion(t *testing.T) {
 		t.Fatal("adding file boundaries changed existing native Grant hashes")
 	}
 }
+
+func TestGeoJSONCompositionHasOneDataFile(t *testing.T) {
+	target := plugin.ObjectItemPath(12, "addp", "image/segmentation/buildings.geojson")
+	boundary, err := NewFileCompositionBoundary("geojson", []FileCompositionRef{{Target: target, Role: "data", Primary: true, Required: true}})
+	if err != nil || boundary.DataType() != "table" || boundary.Layout() != "single" {
+		t.Fatalf("GeoJSON boundary %v: %v", boundary, err)
+	}
+	boundary.Refs = append(boundary.Refs, FileCompositionRef{Target: plugin.ObjectItemPath(12, "addp", "image/segmentation/other.geojson"), Role: "data", Required: true})
+	if boundary.Validate(12) == nil {
+		t.Fatal("GeoJSON boundary admitted a second file")
+	}
+}

@@ -133,7 +133,7 @@ def test_register_to_system_uses_canonical_runtime_identity(monkeypatch):
                         "private_files_api": "addp.workflow.private-files/v1",
                         "dynamic_operators": True,
                         "storage_access": {
-                            "read_engine_types": ["postgresql", "mysql", "doris", "mongodb", "nfs"],
+                            "read_engine_types": ["postgresql", "mysql", "doris", "mongodb", "nfs", "minio"],
                             "write_engine_types": ["postgresql", "mysql", "doris", "nfs"],
                         },
                     }

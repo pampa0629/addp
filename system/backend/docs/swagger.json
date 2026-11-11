@@ -4528,6 +4528,61 @@
                 ]
             }
         },
+        "/execution-authorizations/develop-geojson/access": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "仅 Develop 租户服务可按当前租约核验冻结 load 节点的源 | Only the Develop tenant service may verify the frozen load source using the current lease",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Runtime 执行授权 | Runtime Execution Authorization"
+                ],
+                "summary": "复核GeoJSON 读取执行的数据权限 | Verify GeoJSON reading execution access",
+                "parameters": [
+                    {
+                        "description": "当前执行租约 | Current execution lease",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/client.WorkflowGeoJSONAccessRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/client.ManagerFileAccessObservation"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "system.execution_authorization.execute"
+                ]
+            }
+        },
         "/execution-authorizations/{id}/cleanup-accesses": {
             "post": {
                 "security": [
@@ -18495,6 +18550,23 @@
                 },
                 "file_composition": {
                     "$ref": "#/definitions/authorizationfacts.FileCompositionBoundary"
+                }
+            }
+        },
+        "client.WorkflowGeoJSONAccessRequest": {
+            "type": "object",
+            "properties": {
+                "attempt": {
+                    "type": "integer"
+                },
+                "execution_id": {
+                    "type": "string"
+                },
+                "lease_token": {
+                    "type": "string"
+                },
+                "node_id": {
+                    "type": "string"
                 }
             }
         },

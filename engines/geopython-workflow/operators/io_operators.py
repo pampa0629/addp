@@ -26,7 +26,7 @@ from .base import (
 )
 
 STORAGE_ACCESS = {
-    "read_engine_types": ['postgresql', 'mysql', 'doris', 'mongodb', 'nfs'],
+    "read_engine_types": ['postgresql', 'mysql', 'doris', 'mongodb', 'nfs', 'minio'],
     "write_engine_types": ['postgresql', 'mysql', 'doris', 'nfs'],
 }
 
@@ -329,6 +329,7 @@ def load(
     path: str = None,
     geom_column: str = None,
     pipeline=None,
+    geojson=None,
 ):
     """
     通用数据加载算子
@@ -342,6 +343,19 @@ def load(
 
     注意：此算子不再依赖 System API，所有连接信息由 Develop Backend 预处理后传入
     """
+    if geojson is not None:
+        if connection_info is not None or path is not None or schema is not None or table is not None or pipeline is not None:
+            raise ValueError("GeoJSON bytes cannot be combined with connection parameters")
+        if not isinstance(geojson, dict) or geojson.get('type') != 'FeatureCollection' or not isinstance(geojson.get('features'), list) or 'crs' in geojson:
+            raise ValueError("Expected a WGS84 GeoJSON FeatureCollection")
+        result = (gpd.GeoDataFrame.from_features(geojson['features'], crs='EPSG:4326')
+                  if geojson['features'] else gpd.GeoDataFrame(geometry=[], crs='EPSG:4326'))
+        if geom_column and geom_column != result.active_geometry_name:
+            if geom_column in result.columns:
+                raise ValueError("Geometry name conflicts with a property")
+            result = result.rename_geometry(geom_column)
+        return result
+
     if table:
         if not connection_info:
             raise ValueError("加载数据库表时必须提供 connection_info")
@@ -566,6 +580,10 @@ LOAD_METADATA = OperatorMetadata(
     overview="通用数据加载算子，按 Develop Adapter 派生的 schema/table 或 path 自动选择关系表、MongoDB collection 或文件读取方式。MongoDB 可提交确定性 aggregation pipeline，文件格式从路径扩展名推断。",
 
     params=[
+        OperatorParam(
+            name="geojson", type="param", data_type="object", required=False,
+            description="Develop 授权读取后提供的单文件 GeoJSON 内容"
+        ),
         OperatorParam(
             name="connection_info",
             type="param",

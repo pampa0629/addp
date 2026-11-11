@@ -30,7 +30,7 @@ func exerciseFileCompositionGrants(t *testing.T, db *gorm.DB, tenantID, adminID 
 		t.Run("STL single-primary SQL contract", func(t *testing.T) { exerciseSTLCompositionSQL(t, db) })
 		t.Run("glTF multi SQL contract", func(t *testing.T) { exerciseGLTFCompositionSQL(t, db) })
 		t.Run("TIFF PAM SQL contract", func(t *testing.T) { exerciseTIFFCompositionSQL(t, db) })
-		for _, fixture := range []struct{ kind, format string }{{"ftp", "3ds"}, {"nfs", "3ds"}, {"ftp", "dae"}, {"nfs", "dae"}, {"minio", "3ds"}, {"minio", "dae"}, {"ftp", "obj"}, {"nfs", "obj"}, {"minio", "obj"}, {"ftp", "stl"}, {"nfs", "stl"}, {"minio", "stl"}, {"ftp", "glb"}, {"nfs", "glb"}, {"minio", "glb"}, {"ftp", "gltf"}, {"nfs", "gltf"}, {"minio", "gltf"}, {"ftp", "fbx"}, {"nfs", "fbx"}, {"minio", "fbx"}, {"nfs", "filegdb"}, {"nfs", "envi"}, {"minio", "envi"}, {"nfs", "geopackage"}, {"ftp", "geopackage"}, {"nfs", "tiff"}, {"minio", "tiff"}} {
+		for _, fixture := range []struct{ kind, format string }{{"ftp", "3ds"}, {"nfs", "3ds"}, {"ftp", "dae"}, {"nfs", "dae"}, {"minio", "3ds"}, {"minio", "dae"}, {"ftp", "obj"}, {"nfs", "obj"}, {"minio", "obj"}, {"ftp", "stl"}, {"nfs", "stl"}, {"minio", "stl"}, {"ftp", "glb"}, {"nfs", "glb"}, {"minio", "glb"}, {"ftp", "gltf"}, {"nfs", "gltf"}, {"minio", "gltf"}, {"ftp", "fbx"}, {"nfs", "fbx"}, {"minio", "fbx"}, {"nfs", "filegdb"}, {"nfs", "envi"}, {"minio", "envi"}, {"nfs", "geopackage"}, {"ftp", "geopackage"}, {"nfs", "tiff"}, {"minio", "tiff"}, {"minio", "geojson"}} {
 			kind, format := fixture.kind, fixture.format
 			t.Run(kind+"/"+format, func(t *testing.T) {
 				ctx, cancel := context.WithTimeout(t.Context(), 45*time.Second)
@@ -102,6 +102,10 @@ func exerciseFileCompositionGrants(t *testing.T, db *gorm.DB, tenantID, adminID 
 						refs[1].Target = targetFor(name)
 					}
 					layout := ""
+					if format == "geojson" {
+						refs = refs[:1]
+						refs[0].Role = "data"
+					}
 					if format == "tiff" {
 						refs = refs[:1]
 						refs[0].Role = "image"
@@ -163,7 +167,11 @@ func exerciseFileCompositionGrants(t *testing.T, db *gorm.DB, tenantID, adminID 
 				}
 				actor := Actor{TenantID: tenantID, PrincipalID: operator.PrincipalID, MembershipID: operator.MembershipID, AuthorizationVersion: principal.AuthorizationVersion, TokenExpiresAt: time.Now().Add(time.Hour)}
 				reader, _ := newUser(t, time.Hour)
-				readRole, err := roles.CreateRole(ctx, iam.CreateTenantRoleInput{TenantID: tenantID, RoleKey: "custom.file_grant_reader_" + kind + "_" + format, Name: "File reader", PermissionKeys: []string{ManagerPreviewReadPermission, "manager.derived_artifact.create"}, ActorPrincipalID: adminID})
+				readerPermissions := []string{ManagerPreviewReadPermission, "manager.derived_artifact.create"}
+				if format == "geojson" {
+					readerPermissions = append(readerPermissions, "develop.task.execute", "develop.data_read.execute")
+				}
+				readRole, err := roles.CreateRole(ctx, iam.CreateTenantRoleInput{TenantID: tenantID, RoleKey: "custom.file_grant_reader_" + kind + "_" + format, Name: "File reader", PermissionKeys: readerPermissions, ActorPrincipalID: adminID})
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -226,7 +234,7 @@ func exerciseFileCompositionGrants(t *testing.T, db *gorm.DB, tenantID, adminID 
 				if format == "gltf" {
 					expectedRefs = 3
 				}
-				if format == "stl" || format == "glb" || format == "fbx" || format == "tiff" {
+				if format == "stl" || format == "glb" || format == "fbx" || format == "tiff" || format == "geojson" {
 					expectedRefs = 1
 				}
 				if format == "obj" {
@@ -241,6 +249,10 @@ func exerciseFileCompositionGrants(t *testing.T, db *gorm.DB, tenantID, adminID 
 					t.Fatal("approved composition not persisted")
 				}
 				read(request, true)
+				if format == "geojson" {
+					exerciseWorkflowGeoJSONAccess(t, db, service, tenantID, reader, current)
+					return
+				}
 				if format != "glb" && format != "filegdb" && format != "tiff" {
 					exerciseManagerFileAuthorization(t, db, service, tenantID, reader, session.AccessToken, actor, engine.ID, format+".file-composition.invalid", current)
 				}

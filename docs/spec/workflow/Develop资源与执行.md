@@ -180,6 +180,14 @@ Python 实现的 Workflow Runtime 应共享 `common-python` 中的协议执行�
 
 ## 工作流任务执行输入与输出
 
+### MinIO 单文件 GeoJSON 读取
+
+GeoPython 的公开 `load` 可读取已扫描的 MinIO 单文件 GeoJSON。Develop 使用当前 execution 的冻结 DAG 和实际触发用户，复用现有执行授权；Orchestrator 子执行须证明同租户运行中父执行、相同 Actor 与授权版本，并限制手动触发。System 从权威 execution 的 load 节点独立解析对象，核验有效租约、原执行授权、当前用户功能权限及 Meta 完整文件边界和当前 read Grant，返回仅供同次受控读取使用的引擎观察。
+
+Develop 在源保护边界内读取，最长 8 MiB，读取前后复核源 ETag／长度／修改时间、Meta 边界及当前授权，失败即终止。内容只在本次执行内存及到受信 GeoPython 的请求中传递；Runtime 的 load 消费已读取的 GeoJSON，不接收对象存储凭据或业务地址。公开任务只保存 locator，拒绝直接提交内部 geojson 参数。NFS GeoPackage 的执行私有文件协议继续按下一节处理。
+
+Meta 将已扫描、layout=single 的 GeoJSON 表文件声明为精确单主文件边界，角色为 data。该事实不新增 Grant，现有桶或前缀 read Grant 仍由 System 逐次裁决。
+
 ### GeoPackage 执行私有意图
 
 首期 NFS GeoPackage 精确文件执行沿[授权上下文 5.2.4](../addp授权上下文规范.md#524-develop-geopackage-工作流的精确读写)及[Runtime 私有文件协议](HTTP协议.md#工作流执行私有文件)。Develop 在同一 Owner 事务保存原 `common.task_executions` pending 及 `develop.file_executions` 私有记录，再在事务外用本次同步栈的原 User Bearer 签发。私有记录保存发起人、原始配置、Intent、System 原封存范围及准入状态，不进入公共 Metadata、任务定义、结果或日志，不存令牌与明文连接。

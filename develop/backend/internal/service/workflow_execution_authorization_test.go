@@ -66,7 +66,7 @@ func TestPrepareWorkflowExecutionAuthorizationAggregatesEffectsAndEngines(t *tes
 					ID: "load", Name: "load", EngineType: "geopython_workflow",
 					ExecutionModes: []string{"workflow"}, Effects: []string{"read"},
 					Parameters: []commonModels.ParameterDescriptor{
-						{Name: "connection_info"}, {Name: "schema"}, {Name: "table"}, {Name: "path"},
+						{Name: "connection_info"}, {Name: "schema"}, {Name: "table"}, {Name: "path"}, {Name: "geojson"},
 					},
 				},
 				{
