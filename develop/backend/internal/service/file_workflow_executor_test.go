@@ -32,7 +32,7 @@ import (
 // Actual claimed Owner SQL, private HTTP client and local staging. Authority,
 // NFS bytes and native computation remain explicit doubles, not business T4.
 func TestPrivateFileWorkerDispatchRecoveryAndCapacity(t *testing.T) {
-	for _, scenario := range []string{"success", "saved-success", "native-failure", "parameter-failure", "create-unknown", "execute-unknown", "cleanup-running", "cleanup-directory", "cleanup-unknown", "late-success"} {
+	for _, scenario := range []string{"success", "saved-success", "native-failure", "parameter-failure", "create-unknown", "execute-unknown", "cleanup-running", "cleanup-directory", "cleanup-unknown", "expired-source-window", "late-success"} {
 		t.Run(scenario, func(t *testing.T) {
 			db, repo, item, lease, _, issued, base := privateFileWorkerFixture(t, scenario == "saved-success")
 			queue := repository.NewExecutionRepository(db)
@@ -42,10 +42,13 @@ func TestPrivateFileWorkerDispatchRecoveryAndCapacity(t *testing.T) {
 				t.Fatal(err)
 			}
 			f := s.privateFiles
-			if scenario == "late-success" {
-				base.ObservedAt = time.Now()
-				base.ExpiresAt = time.Now().Add(300 * time.Millisecond)
+			// A stale setup observation must not stand in for the later System check.
+			if scenario == "expired-source-window" || scenario == "late-success" {
+				base.ObservedAt = time.Now().Add(-time.Second)
+				base.ExpiresAt = time.Now().Add(-time.Millisecond)
 			}
+			var statusPolls, stalledRenewals atomic.Int32
+			lateReplyDone := make(chan struct{})
 			var protectionBegun, protectionEnded int
 			f.protectSource = func(_ context.Context, tenant uint, p plugin.EnginePlugin, path plugin.EngineCatalogPath) (func(), error) {
 				if tenant != 3 || p.Type() != "nfs" || protectionBegun >= len(issued.Scope.Sources) ||
@@ -59,7 +62,22 @@ func TestPrivateFileWorkerDispatchRecoveryAndCapacity(t *testing.T) {
 				if protectionBegun != len(issued.Scope.Sources) || protectionEnded != 0 {
 					t.Fatal("source I/O began outside the protection gate")
 				}
-				return fileInputsAuthority(base)
+				if scenario != "late-success" {
+					return fileInputsAuthority(base)
+				}
+				return fileSourceAuthorityFunc(func(ctx context.Context, ea client.IssuedDevelopFileAuthorization, request client.DevelopFileSourceAccessRequest) (*client.DevelopFileSourceAccessObservation, error) {
+					// Setup/spooling are not an expiry trigger. As System would,
+					// return fresh observations while keeping the fixed business deadline.
+					if statusPolls.Load() != 0 {
+						stalledRenewals.Add(1)
+						<-ctx.Done()
+						return nil, ctx.Err()
+					}
+					fresh := base
+					fresh.ObservedAt = time.Now()
+					fresh.ExpiresAt = fresh.ObservedAt.Add(300 * time.Millisecond)
+					return fileInputsAuthority(fresh)(ctx, ea, request)
+				})
 			}
 			f.provider = fileInputsProvider(fileInputsData(t))
 			outputBytes := fileInputsData(t)["sources/A.gpkg"]
@@ -167,7 +185,12 @@ func TestPrivateFileWorkerDispatchRecoveryAndCapacity(t *testing.T) {
 					_, _ = w.Write(outputBytes)
 				case r.Method == "GET" && r.URL.Path == "/api/executions/"+id:
 					if scenario == "late-success" {
+						statusPolls.Add(1)
 						<-r.Context().Done()
+						// The client has lost its input observation. A late success
+						// attempt cannot become a business preview or another Runtime.
+						_ = json.NewEncoder(w).Encode(map[string]any{"execution_id": id, "status": "success", "result": map[string]any{"value": 7}})
+						close(lateReplyDone)
 						return
 					}
 					out := map[string]any{"execution_id": id, "status": "success", "result": map[string]any{"value": 7}}
@@ -212,29 +235,52 @@ func TestPrivateFileWorkerDispatchRecoveryAndCapacity(t *testing.T) {
 			if err := s.Execute(t.Context(), &claimed, *lease); err != nil {
 				t.Fatal(err)
 			}
+			if scenario == "late-success" {
+				if statusPolls.Load() != 1 || stalledRenewals.Load() == 0 || uploads.Load() != int32(len(issued.Scope.Sources)) {
+					t.Fatal("late-success did not reach uploaded/dispatched/blocked-renewal phase", statusPolls.Load(), stalledRenewals.Load(), uploads.Load())
+				}
+				select {
+				case <-lateReplyDone:
+				case <-time.After(3 * time.Second):
+					t.Fatal("controlled Runtime did not attempt its late success response")
+				}
+			}
 			var done execution.TaskExecution
 			if err := db.First(&done, "execution_id = ?", item.ExecutionID).Error; err != nil {
 				t.Fatal(err)
 			}
 			wantStatus := "success"
-			if scenario == "late-success" || strings.Contains(scenario, "failure") || strings.HasSuffix(scenario, "unknown") && scenario != "cleanup-unknown" {
+			if scenario == "late-success" || scenario == "expired-source-window" || strings.Contains(scenario, "failure") || strings.HasSuffix(scenario, "unknown") && scenario != "cleanup-unknown" {
 				wantStatus = "failed"
 			}
-			if scenario == "late-success" {
+			if scenario == "late-success" || scenario == "expired-source-window" {
 				payload, _ := json.Marshal(done.Metadata)
 				if strings.Contains(string(payload), "final_result") {
 					t.Fatal("expired input produced a business preview")
 				}
 			}
-			if done.Status != wantStatus || creates.Load() != 1 || deletes.Load() != 1 {
-				t.Fatal(done.Status, wantStatus, creates.Load(), deletes.Load())
+			wantRemote := int32(1)
+			if scenario == "expired-source-window" {
+				wantRemote = 0
+			}
+			if done.Status != wantStatus || creates.Load() != wantRemote || deletes.Load() != wantRemote {
+				t.Fatal(done.Status, wantStatus, creates.Load(), deletes.Load(), "expected remote operations", wantRemote)
 			}
 			wantDispatch := int32(1)
-			if scenario == "create-unknown" {
+			if scenario == "create-unknown" || scenario == "expired-source-window" {
 				wantDispatch = 0
 			}
 			if dispatches.Load() != wantDispatch {
 				t.Fatal("remote replay/missing dispatch", dispatches.Load())
+			}
+			if scenario == "expired-source-window" {
+				if _, err := repo.ReadPrivateRuntime(t.Context(), 3, item.ExecutionID); err == nil {
+					t.Fatal("expired source observation registered a Runtime")
+				}
+				if uploads.Load() != 0 || s.PrivateFilesUnstopped(nil) != 0 || protectionEnded != len(issued.Scope.Sources) || done.Metadata["outputs"] != nil || done.Metadata["lineage_facts"] != nil {
+					t.Fatal("pre-Runtime expiry left effects, a reservation or a protection gate", uploads.Load(), protectionEnded)
+				}
+				return
 			}
 			private, _ := repo.ReadPrivateRuntime(t.Context(), 3, item.ExecutionID)
 			if private.RuntimeExecutionID != runtimeID.Load() {
