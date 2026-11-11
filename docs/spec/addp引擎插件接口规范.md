@@ -634,7 +634,7 @@ type QueryOutputBinding struct {
 
 普通 `Execute()` 必须在交付前消费同一编译结果的私有校验列；连续读取通过 `ConsumeSQLPreparedReadSession()` 消费同一计划，并在每批交付前调用该计划的 `FinalizeBatch()`，保留原生字段类型、精度、偏移及实际会话读取证据。内部标志与移除字段必须同步从 Rows／Columns／Fields 清除；校验失败不得返回部分批次。PostgreSQL 实际会话证据仅额外接受输出编译器所需、显式限定 pg_catalog 的字符串内置函数、参数 text 转换与内置操作符，并在同一事务内核对原生函数身份；用户函数、源字段转换及自定义类型仍不在证明范围。原有 `ConsumeSQLPreparedQuery()` 不消费已绑定输出转换的计划，防止原子写表等尚未接入校验协议的路径忽略内部输出。只有实现并验证了对应方言编译器的 Provider 才可成功绑定；协议兼容引擎不得自动继承未认证的重写能力。当前 PostgreSQL 首批接入受保护直接字段／别名的字符串前后掩码、字符串固定值及移除；未受保护且有显式结果名的原显示表达式保留不变，只有发生值转换的列才把别名／序号排序绑定回原输入表达式。只读非递归 SELECT CTE 可保留其原分页与筛选结构，不重写 CTE 内部；递归或写入 CTE 继续拒绝。保留显示表达式的认证先覆盖普通 Execute；游标仍按现有封闭原生函数语法证明实际会话读取集合，不能用准备阶段的读取集合补造会话证据。MySQL 方言沿用同一中立绑定和结果校验协议，首批只编译直接字段，单一普通表允许补全无歧义来源限定名，JOIN 输出须有显式来源限定。Service 使用的普通派生表包装可在每层 SELECT 均满足同一只读语法约束、且原输出血缘已证明直接字段时保留；只改最外层投影，不改内层筛选、排序或分页。MySQL 别名／序号排序绑定回原限定源字段；原问号参数与算法新增参数按最终物理语句重新排列，不能改变原绑定值的归属。尚未证明会话 SQL mode 下等价的文本字面量和复杂表达式拒绝，推荐使用已绑定参数；不以反斜杠转义假设改变查询语义。共享保护计划把可证明的值操作绑定到同一 PreparedQuery；SM3 与其他已验证、尚未下推的标量算法继续由共享 Go 结果保护执行，不向 Provider 传递策略或授权。不能安全编译已请求的原生操作时拒绝执行，禁止再次提交原 SQL。业务出口的真实运行覆盖须以各自门禁与 Online 证据为准。
 
-查询保护使用 Projection v4 的可信归属与 Provider 范围事实进行排除，具体规则以《ADDP 数据安全与隐私保护实现规范》“查询保护的引擎范围排除”为准。`PreparedQuery.EngineReadScope()` 返回 Provider 对同一不可变执行计划证明的完整引擎访问上界；未建立证明时返回 `ErrQueryEngineReadScopeUnresolved`，不是 nil 成功或空集合。共享计划缓存并深拷贝该事实，后续解析出的 ReadSet 不得超出已证明范围，执行后不能首次补造范围。该范围不是能力开关或调用方自报的 engine_id；没有可信范围保证时继续消费现有 ReadSet，不强迫每个引擎先实现完整资源解析才能表达已受约束的实例内执行。普通查询与 GraphQueryProvider 保持各自结果契约，范围事实与真实执行必须绑定；不为图查询重新引入一套 Owner 查询文本解析。
+查询保护使用 当前 Projection v5 的可信归属与 Provider 范围事实进行排除，具体规则以[查询保护的引擎范围排除](addp数据安全与隐私保护实现规范.md#查询保护的引擎范围排除)为准。`PreparedQuery.EngineReadScope()` 返回 Provider 对同一不可变执行计划证明的完整引擎访问上界；未建立证明时返回 `ErrQueryEngineReadScopeUnresolved`，不是 nil 成功或空集合。共享计划缓存并深拷贝该事实，后续解析出的 ReadSet 不得超出已证明范围，执行后不能首次补造范围。该范围不是能力开关或调用方自报的 engine_id；没有可信范围保证时继续消费现有 ReadSet，不强迫每个引擎先实现完整资源解析才能表达已受约束的实例内执行。普通查询与 GraphQueryProvider 保持各自结果契约，范围事实与真实执行必须绑定；不为图查询重新引入一套 Owner 查询文本解析。
 
 `QueryAnalysis` 是普通查询诊断的唯一事实源。Provider 必须按自身原生语言语法和已经绑定的参数生成稳定诊断；Owner 与浏览器不得再次用正则、关键字、通用 SQL 分词或样本字段集合实现 SQL、MQL、Cypher 语义诊断。诊断码和参数是 API 契约，用户可见文案由消费方国际化。
 
@@ -1150,7 +1150,7 @@ FalkorDB 插件声明 `engine_family=graph`、原生 `server -> graph` Catalog�
 
 openCypher 9 的语法分析在 Common 共用实现，Neo4j 继续用本引擎的物理数据库及内置函数事实验证。FalkorDB 通过单端点 standalone、固定 Redis database、显式 graph key、已审查的本地内置函数集合和 GRAPH.RO_QUERY 建立实例内只读范围。过程、UDF、外部数据导入、额外语句及未覆盖语法拒绝，不能仅凭只读命令声明范围完整。参数使用协议的 CYPHER 参数头编码，保持类型并严格校验名称和值，不替换查询里的参数引用。
 
-首期查询只声明读取。共享 Projection v4 门禁依同一 PreparedGraphQuery 的 EngineReadScope/ReadSet 判断保护；同步未完成、证明未知或命中不具备图字段保护的纳管目标时拒绝，不恢复租户级一刀切或按引擎类型跳过保护。
+首期查询只声明读取。共享 当前 Projection v5 门禁依同一 PreparedGraphQuery 的 EngineReadScope/ReadSet 判断保护；同步未完成、证明未知或命中不具备图字段保护的纳管目标时拒绝，不恢复租户级一刀切或按引擎类型跳过保护。
 
 
 ### 知识图谱目标与原生操作
