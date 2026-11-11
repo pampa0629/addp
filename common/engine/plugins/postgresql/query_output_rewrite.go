@@ -55,7 +55,7 @@ type postgresOutputRewrite struct {
 }
 
 // rewritePostgresQueryOutput changes only direct final projections. It rejects
-// DISTINCT/grouping/set operations until equivalence can be proved. In
+// DISTINCT/set operations and grouping outside the certified single-table slice. In
 // particular, output aliases and positional ORDER BY retain their original
 // source expressions instead of sorting the transformed values.
 func rewritePostgresQueryOutput(query string, args []any, operations []plugin.QueryOutputTransform) (*postgresOutputRewrite, error) {
@@ -70,7 +70,7 @@ func rewritePostgresQueryOutput(query string, args []any, operations []plugin.Qu
 	}
 	stmt := parsed.GetStmts()[0].GetStmt().GetSelectStmt()
 	if stmt == nil || stmt.GetOp() != pgquery.SetOperation_SETOP_NONE || len(stmt.GetDistinctClause()) != 0 ||
-		len(stmt.GetGroupClause()) != 0 || stmt.GetHavingClause() != nil || len(stmt.GetWindowClause()) != 0 ||
+		stmt.GetHavingClause() != nil || len(stmt.GetWindowClause()) != 0 ||
 		stmt.GetIntoClause() != nil || len(stmt.GetLockingClause()) != 0 {
 		return fail()
 	}
@@ -116,6 +116,9 @@ func rewritePostgresQueryOutput(query string, args []any, operations []plugin.Qu
 		originals[name] = proto.Clone(target.GetVal()).(*pgquery.Node)
 		expressions[name] = strings.Join(parts, ".")
 		plan.columns = append(plan.columns, name)
+	}
+	if len(stmt.GetGroupClause()) > 0 && !preparePostgresOutputGrouping(stmt, targets) {
+		return fail()
 	}
 	for _, node := range stmt.GetSortClause() {
 		sort := node.GetSortBy()
@@ -195,6 +198,56 @@ func rewritePostgresQueryOutput(query string, args []any, operations []plugin.Qu
 		return fail()
 	}
 	return plan, nil
+}
+
+// Freeze ordinal grouping before output targets change. Bare input names keep
+// PostgreSQL's input-column precedence; ambiguous output aliases are refused.
+func preparePostgresOutputGrouping(stmt *pgquery.SelectStmt, targets map[string]*pgquery.ResTarget) bool {
+	if len(stmt.FromClause) != 1 || stmt.FromClause[0].GetRangeVar() == nil || stmt.WithClause != nil || stmt.GroupDistinct {
+		return false
+	}
+	for _, target := range targets {
+		if target.Val.GetColumnRef() != nil {
+			continue
+		}
+		call := target.Val.GetFuncCall()
+		if call == nil || !call.AggStar || len(call.Args) != 0 || call.AggDistinct || call.AggWithinGroup || len(call.AggOrder) != 0 || call.AggFilter != nil || call.Over != nil || call.FuncVariadic {
+			return false
+		}
+		names := call.Funcname
+		if len(names) < 1 || len(names) > 2 || names[len(names)-1].GetString_().GetSval() != "count" || (len(names) == 2 && names[0].GetString_().GetSval() != "pg_catalog") {
+			return false
+		}
+	}
+	for index, node := range stmt.GroupClause {
+		if number := node.GetAConst().GetIval(); number != nil {
+			position := int(number.Ival) - 1
+			if position < 0 || position >= len(stmt.TargetList) {
+				return false
+			}
+			node = proto.Clone(stmt.TargetList[position].GetResTarget().Val).(*pgquery.Node)
+		}
+		fields := node.GetColumnRef().GetFields()
+		if len(fields) == 0 {
+			return false
+		}
+		for _, field := range fields {
+			if field.GetString_() == nil {
+				return false
+			}
+		}
+		if len(fields) == 1 {
+			name := fields[0].GetString_().GetSval()
+			if target := targets[name]; target != nil {
+				source := target.Val.GetColumnRef().GetFields()
+				if len(source) == 0 || source[len(source)-1].GetString_().GetSval() != name {
+					return false
+				}
+			}
+		}
+		stmt.GroupClause[index] = node
+	}
+	return true
 }
 
 func validatePostgresRewriteInput(message protoreflect.Message, count int, parameters map[int]bool) bool {

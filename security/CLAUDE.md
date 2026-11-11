@@ -924,3 +924,13 @@ Service预览经 `queryExecutionClient` 调用共享 `createAPIClient`，其请�
 独立审计通过：核对 Run、Job、SHA、实际步骤、ZIP CRC、安全路径及解压原件逐字节一致。v44 的 31 个领域段与独立 v10 报告一致，23 张必需 PNG 通过结构检查，四张 Service 拒绝和恢复图已目视核对。英文恢复截图还留有前一步中文成功通知，与新英文通知短时同屏。验收覆盖了持续错误和恢复结果，未覆盖切换时清除既有短时通知。六份默认导出 CSV 按固定样本逐字节核验，42 条导出响应记录、五组重启回执、六项许可正式撤销及最终不可见和不可读均通过。领域 23 建／23 删，浏览器两组各 2 建／2 删，均零残留。wrapper 清理通过，Infra 零残留。
 
 [原始归档 13763838201](https://github.com/pampa0629/addp/actions/runs/42805905216/artifacts/13763838201) 含 101 个成员，SHA256 为 `b987f01f33a40cc71e9af242ab986fc7aa45e08894fc3f6cdc79fe919b619586`。独立脚本、报告和四图哈希见 `/tmp/p145-421da33-independent.WpSncZ/`。两次 403 和恢复的 HTTP 状态、请求头、响应形状及数据由实际运行的浏览器断言核对，归档保留报告和截图，未保留对应原始网络响应。覆盖仍限 20 个实际出口格及 8 个协议格，future-start 仍仅真实 PostgreSQL T2。其他保护原因的实际 Service 页面、全部 SQL 形态及静态加密仍在原边界内待补。
+
+### PostgreSQL 单表分组输出重写（2026-11-11）
+
+按已确认的下一步扩展原生 PostgreSQL 同一 PreparedQuery 的输出重写。支持单表、直接列分组或分组序号、直接列／显式别名输出及显式别名 count(*)。改写前将分组序号固定为原字段，继续原有排序别名和序号解析，避免输出替换后重新分组或排序。两个源值脱敏后相同仍保留独立分组及各自计数。普通掩码、固定值替换和移除复用现有变换器和交付处理，ReadSet、函数可信性和输出血缘继续走既有路径。与源字段不同名的输出别名分组、HAVING、分组集合、JOIN、DISTINCT、窗口及其他聚合仍在原拒绝边界内。
+
+先补实现规范和红色回归，再修改现有重写器。新增 T1 覆盖三种分组引用与拒绝路径。真实 PostgreSQL T2 覆盖三种分组引用×三算法×三种排序×Execute／分批读取，共54次读取对照原查询再按共享规则保护的结果，核对计数、行序、分页、重复组、Unicode、短值及NULL。新用例名 TestIntegrationResolvePostgresQueryOutputRewriteGrouped 命中既有 Common PostgreSQL 门禁，无新标准入口或 workflow。
+
+验证已实际通过：make test-module MODULE=common GO_ONLY=1；make test-common-postgres 完整标准门禁。通过前两个完整尝试在 KML 连接校验失败，首轮缺 host，第二轮还缺明确 database／sslmode。最终显式使用经 infra/status.sh 核实的 localhost:25432、addp_test 及 disable 后全门禁退出0，无跳过。未修改 KML 或基础设施。最初测试准备将 Args 写成 Parameters 的编译错误及修正记录保留。无本地服务重启、实际出口HTTP／浏览器或新增 Hosted 证据。
+
+证据 /tmp/p145-grouping-{red,unit,common,module,pg-full,pg-final,pg-complete}.log，输入摘要 /tmp/p145-grouping-tested-inputs.json。其中pg-complete为最终全门禁，pg-full和pg-final为原失败。下一步加载Common新构建后，核对Develop实际分组查询、默认历史预览和导出，继而按具体出口补覆盖。静态加密与透明解密仍待前置讨论。

@@ -441,3 +441,95 @@ func TestIntegrationResolvePostgresQueryOutputRewrite(t *testing.T) {
 		t.Fatal("rewrite changed source values")
 	}
 }
+
+func TestIntegrationResolvePostgresQueryOutputRewriteGrouped(t *testing.T) {
+	db, pg, conn := openPostgresPrepareIntegration(t, false)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	defer cancel()
+	table := fmt.Sprintf("grouped_output_%d", time.Now().UnixNano())
+	qualified := `"common_pg_it"."` + table + `"`
+	t.Cleanup(func() {
+		defer db.Close()
+		if _, err := db.ExecContext(context.Background(), "DROP TABLE IF EXISTS "+qualified); err != nil {
+			t.Error(err)
+		}
+	})
+	createPostgresPrepareBaseTable(t, ctx, db, "common_pg_it", table, "id bigint, phone text")
+	for i, phone := range []any{"123456", "123456", "123956", "甲乙丙丁", "", "x", nil} {
+		if _, err := db.ExecContext(ctx, "INSERT INTO "+qualified+" VALUES ($1,$2)", i+1, phone); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, group := range []string{"p.phone", "phone", "1"} {
+		for _, kind := range []string{"keep_prefix_suffix", "constant_text", "omit"} {
+			for _, order := range []string{"contact", "1", "n DESC, contact"} {
+				t.Run(group+"/"+kind+"/"+order, func(t *testing.T) {
+					query := "SELECT p.phone AS contact, count(*) AS n FROM " + qualified + " p WHERE id>$1 GROUP BY " + group + " ORDER BY " + order + " NULLS FIRST LIMIT 5 OFFSET 1"
+					expected, err := pg.ExecuteSQL(ctx, conn, query, plugin.QueryOptions{ReadOnly: true, Args: []any{0}})
+					if err != nil {
+						t.Fatal(err)
+					}
+					decision := dataprotection.Decision{Effect: dataprotection.EffectMask, Algorithm: dataprotection.AlgorithmConstantV1, Parameters: map[string]any{"value": "hidden"}}
+					op := plugin.QueryOutputTransform{Column: "contact", Kind: kind, Replacement: "hidden", Prefix: 1, Suffix: 1, MaskRune: "*", InvalidValue: "omit"}
+					switch kind {
+					case "keep_prefix_suffix":
+						decision.Algorithm = dataprotection.AlgorithmKeepPrefixSuffixV2
+						decision.Parameters = map[string]any{"prefix_runes": 1, "suffix_runes": 1, "mask_rune": "*"}
+						decision.InvalidValueEffect = dataprotection.EffectSuppress
+					case "omit":
+						decision = dataprotection.Decision{Effect: dataprotection.EffectSuppress}
+					}
+					rule := dataprotection.Rule{Action: "query", Component: dataprotection.Component{Key: "contact", ValueType: "string", Path: []dataprotection.PathSegment{{Name: "contact", Container: "scalar"}}}, Decision: decision}
+					if err := dataprotection.ProtectQueryResultSource(expected, plugin.QueryOutputSource{IdentityOutput: true, Fields: expected.Fields}, "query", []dataprotection.Rule{rule}, dataprotection.SubjectReference{}); err != nil {
+						t.Fatal(err)
+					}
+					for _, mode := range []string{"execute", "stream"} {
+						prepared, err := pg.PrepareQuery(ctx, conn, plugin.QueryRequest{EngineID: 91, Language: "sql", Query: query, Options: plugin.QueryOptions{ReadOnly: true, Args: []any{0}}})
+						if err != nil {
+							t.Fatal(err)
+						}
+						if err := prepared.(plugin.OutputTransformPreparedQuery).BindOutputTransforms(ctx, []plugin.QueryOutputTransform{op}); err != nil {
+							t.Fatal(err)
+						}
+						var actual *plugin.QueryResult
+						if mode == "execute" {
+							actual, err = prepared.Execute(ctx)
+							if err != nil {
+								t.Fatal(err)
+							}
+						} else {
+							session, err := pg.OpenQueryReadSession(ctx, prepared)
+							if err != nil {
+								t.Fatal(err)
+							}
+							actual = &plugin.QueryResult{}
+							for {
+								batch, err := session.ReadBatch(ctx, 2)
+								if err != nil {
+									session.Close(ctx)
+									t.Fatal(err)
+								}
+								if actual.Fields == nil {
+									actual.Fields = batch.Fields
+									for _, f := range batch.Fields {
+										actual.Columns = append(actual.Columns, f.Name)
+									}
+								}
+								actual.Rows = append(actual.Rows, batch.Rows...)
+								if len(batch.Rows) < 2 {
+									break
+								}
+							}
+							if err := session.Close(ctx); err != nil {
+								t.Fatal(err)
+							}
+						}
+						if !reflect.DeepEqual(actual.Columns, expected.Columns) || !reflect.DeepEqual(actual.Rows, expected.Rows) {
+							t.Fatalf("%s grouping, page or protection changed: got %v want %v", mode, actual.Rows, expected.Rows)
+						}
+					}
+				})
+			}
+		}
+	}
+}

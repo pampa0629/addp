@@ -81,7 +81,7 @@ func TestPostgresOutputRewriteNeverCapturesAnUnboundOriginalParameter(t *testing
 
 func TestPostgresOutputRewriteRejectsUnprovedSemantics(t *testing.T) {
 	for _, query := range []string{
-		`SELECT DISTINCT phone FROM people`, `SELECT phone FROM people GROUP BY phone`,
+		`SELECT DISTINCT phone FROM people`,
 		`SELECT phone FROM people UNION ALL SELECT phone FROM others`, `SELECT * FROM people`,
 		`SELECT phone, phone FROM people`, `SELECT upper(phone) AS phone FROM people`,
 		`SELECT phone INTO copy FROM people`, `SELECT phone FROM people FOR UPDATE`,
@@ -282,6 +282,40 @@ func TestPostgreSQLOutputRewriteSinglePageWildcard(t *testing.T) {
 	} {
 		if _, err := (&PostgreSQLPlugin{}).CompileQueryOutput(query, nil, []plugin.QueryOutputTransform{{Column: "phone", Kind: "omit"}}, lineage); !errors.Is(err, plugin.ErrQueryOutputTransformUnsupported) {
 			t.Fatalf("unproven page shape accepted: %s (%v)", query, err)
+		}
+	}
+}
+
+func TestPostgresOutputRewriteGrouping(t *testing.T) {
+	for _, group := range []string{"p.phone", "phone", "1"} {
+		query := "SELECT p.phone AS contact, count(*) AS n FROM people p WHERE id>$1 GROUP BY " + group + " ORDER BY 1 NULLS FIRST LIMIT 3 OFFSET 1"
+		plan, err := rewritePostgresQueryOutput(query, []any{0}, []plugin.QueryOutputTransform{{Column: "contact", Kind: "constant_text", Replacement: "hidden"}})
+		if err != nil {
+			t.Fatal(group, err)
+		}
+		parsed, err := pgquery.Parse(plan.query)
+		if err != nil {
+			t.Fatal(err)
+		}
+		stmt := parsed.Stmts[0].Stmt.GetSelectStmt()
+		if stmt.GroupClause[0].GetColumnRef() == nil || stmt.TargetList[1].GetResTarget().GetVal().GetFuncCall() == nil || !reflect.DeepEqual(plan.args, []any{0, "hidden"}) {
+			t.Fatal("group or count changed", plan.query)
+		}
+	}
+	for _, query := range []string{
+		"SELECT phone AS contact, count(*) AS n FROM people GROUP BY contact",
+		"SELECT phone, count(*) AS n FROM people GROUP BY 2",
+		"SELECT phone, sum(id) AS n FROM people GROUP BY phone",
+		"SELECT phone, count(*) AS n FROM people GROUP BY ROLLUP(phone)",
+		"SELECT phone, count(*) AS n FROM people GROUP BY phone HAVING count(*)>1",
+		"SELECT p.phone, count(*) AS n FROM people p JOIN others q ON p.id=q.id GROUP BY p.phone",
+	} {
+		column := "phone"
+		if strings.Contains(query, "AS contact") {
+			column = "contact"
+		}
+		if _, err := rewritePostgresQueryOutput(query, nil, []plugin.QueryOutputTransform{{Column: column, Kind: "omit"}}); !errors.Is(err, plugin.ErrQueryOutputTransformUnsupported) {
+			t.Fatal("unsupported grouping accepted", query, err)
 		}
 	}
 }
