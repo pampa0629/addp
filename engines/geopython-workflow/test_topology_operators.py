@@ -8346,11 +8346,12 @@ def test_dissolve_t4_two_success_eight_refusals_four_saves_and_ogr(tmp_path,prob
     with pytest.raises(f.FixtureError):f.worker('verify',tmp_path,f.DISSOLVE_CASE)
 
 
-@pytest.mark.parametrize('problem',[None,'coordinate','identity','order','null','boolean_type','extra_output','source_changed','collection_member'])
+@pytest.mark.parametrize('problem',[None,'coordinate','identity','order','null','boolean_type','extra_output','source_changed','collection_member','stage_permissions','stage_residual'])
 def test_difference_t4_mixed_mask_and_four_refusals_independent_ogr(tmp_path,problem):
     import importlib
     from osgeo import ogr
     f=importlib.import_module('business.scripts.online-vector-topology-fixture');a=importlib.import_module('scripts.test.vector-topology-persistence-online')
+    (tmp_path/'.addp-publication').mkdir(mode=0o700)
     (tmp_path/'outputs').mkdir();(tmp_path/'.addp-online-owner').touch();seed=f.worker('seed',tmp_path,f.DIFFERENCE_CASE)
     def definition(failure=None):
         value=a.difference_definition(list(f.DIFFERENCE_SOURCES),'unused',failure)
@@ -8377,6 +8378,8 @@ def test_difference_t4_mixed_mask_and_four_refusals_independent_ogr(tmp_path,pro
             assert f.worker('verify',tmp_path,f.DIFFERENCE_CASE)==native
         return
     if problem=='extra_output':(tmp_path/'outputs'/'unexpected.gpkg').write_bytes(b'x')
+    elif problem=='stage_permissions':(tmp_path/'.addp-publication').chmod(0o755)
+    elif problem=='stage_residual':(tmp_path/'.addp-publication'/'unpublished.tmp').write_bytes(b'residual')
     else:
         path=tmp_path/'outputs'/f.DIFFERENCE_TARGET
         if problem=='source_changed':path=tmp_path/f.DIFFERENCE_SOURCES[0]
