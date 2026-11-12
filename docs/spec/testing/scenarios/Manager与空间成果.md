@@ -25,11 +25,42 @@
 
 ## GRIB2 单文件只读
 
-已批准的首期范围见[GRIB2 格式规范](../../builtin-formats/媒体与地图数据集.md#grib2-单文件只读限定范围已验收)。独立 `native-grib` case 复用既有 Manager Linux x86-64 Hosted 部署、GeoPython、NFS、MinIO 和 NetCDF 的六项普通读取权限，不新增服务、执行权限或精确组成内容 Grant，不运行 Model3D 或 Transfer 业务。按现行跨引擎元数据规则，复用套件已有、与消费者分离的源初始化 User，为扫描后四个精确文件／对象办理 `metadata_read` Grant；核准前不可见、核准后仅返回结构投影，退出撤销并确认重新不可见。仅元数据边界不得作为内容完整性或内容读取授权。完整格式参数、版本和数值通过消费者既有 `manager.content.read` 与 Security 约束下的 Manager 预览／切片核对，不从 Meta 结构接口索取内容属性；GRIB 内容源授权迁移仍不在本轮范围。
+阅读导航：[授权与来源](#grib2-授权与来源) · [逐消息数值](#grib2-逐消息数值) · [页面切片与原件](#grib2-页面切片与原件) · [清理与未覆盖项](#grib2-清理与未覆盖项) · [验证与历史证据](#grib2-验证与历史证据)。
 
-NFS／MinIO 各两份独立字节编码源文件，每份三条单场消息，覆盖简单打包、IEEE32／64、不同尺寸、相同要素不同预报时刻、两种行扫描方向、合法值 9999 与显式 bitmap 缺失、大于 180° 的原生经度。逐消息核对全部数值、掩膜、单位、时间、独立网格、有界子窗口、错误选择和源变化拒绝；真实页面在标准1280px及Hosted视口使用完整属性切换消息并清除旧结果，核对读取按钮可点击、切片DOM及首尾单元格滚动后实际可见；每条消息保存一张数值表截图，四份原件另核API／按钮完整字节及页面截图。页面切片不写回元数据，不生成地图、任务、缓存成果；确认 Native 临时快照清空、精确源文件／对象删除、部署及 Infra 零残留。失败后仍须完成清理并报告，清理通过不等于业务通过。
+### GRIB2 授权与来源
 
-标准门禁复用 `make test-geopython-workflow`（含独立字节夹具经真实 Native Worker）、`make test-common-frontend`、`make test-module MODULE=common GO_ONLY=1`、受影响 Meta／Manager／Transfer Go 门禁、`make test-manager-frontend`、`make test-manager-online-runner` 和 `make test-online-runner`。正式验收沿现有 workflow 选择 `suite=manager-internal-artifact-lineage`、`manager_case=native-grib`，业务入口为 `ADDP_ONLINE_MANAGER_CASE=native-grib make test-online ONLINE_SUITE=manager-internal-artifact-lineage`。首轮数值通过后发现长属性遮挡，第一次视口复验又因缺少元数据授权失败，均保留历史边界；最终 `6e7ae8755` 的同case正式运行 `41572302717` 已核12张可见切片、四份原件、精确元数据Grant撤销及全部清理通过，见[分层证据](../evidence/资源读取与预览历史证据.md#grib2-单文件读取与切片--数值通过及页面收口)。
+已批准的首期范围见[GRIB2 格式规范](../../builtin-formats/媒体与地图数据集.md#grib2-单文件只读限定范围已验收)。独立 `native-grib` case 复用既有 Manager Linux x86-64 Hosted 部署、GeoPython、NFS、MinIO 和 NetCDF 的六项普通读取权限，不新增服务、执行权限或精确组成内容 Grant，不运行 Model3D 或 Transfer 业务。
+
+按现行跨引擎元数据规则，复用套件已有、与消费者分离的源初始化 User，为扫描后四个精确文件／对象办理 `metadata_read` Grant；核准前不可见、核准后仅返回结构投影，退出撤销并确认重新不可见。仅元数据边界不得作为内容完整性或内容读取授权。
+
+NFS／MinIO 各两份独立字节编码源文件，每份三条单场消息，覆盖简单打包、IEEE32／64、不同尺寸、相同要素不同预报时刻、两种行扫描方向、合法值 9999 与显式 bitmap 缺失、大于 180° 的原生经度。
+
+### GRIB2 逐消息数值
+
+完整格式参数、版本和数值通过消费者既有 `manager.content.read` 与 Security 约束下的 Manager 预览／切片核对，不从 Meta 结构接口索取内容属性；GRIB 内容源授权迁移仍不在本轮范围。
+
+逐消息核对全部数值、掩膜、单位、时间、独立网格、有界子窗口、错误选择和源变化拒绝。
+
+### GRIB2 页面切片与原件
+
+真实页面在标准1280px及Hosted视口使用完整属性切换消息并清除旧结果，核对读取按钮可点击、切片DOM及首尾单元格滚动后实际可见；每条消息保存一张数值表截图，四份原件另核API／按钮完整字节及页面截图。
+
+### GRIB2 清理与未覆盖项
+
+页面切片不写回元数据，不生成地图、任务、缓存成果；确认 Native 临时快照清空、精确源文件／对象删除、部署及 Infra 零残留。失败后仍须完成清理并报告，清理通过不等于业务通过。
+
+受验消息、网格、压缩和模板范围以格式规范及分层证据为准；产品模板 8 只有 Native 证明，不由 Hosted 模板 0 的结果推定通过。GRIB1、单消息多场、其他网格／压缩／本地扩展、地图／COG、科学计算与导出不在该验收范围；不读外部 idx、不自动转单位或重排经度，SKP 精确组成准入仍保持关闭。
+
+### GRIB2 验证与历史证据
+
+标准门禁复用 `make test-geopython-workflow`（含独立字节夹具经真实 Native Worker）、`make test-common-frontend`、`make test-module MODULE=common GO_ONLY=1`、受影响 Meta／Manager／Transfer Go 门禁、`make test-manager-frontend`、`make test-manager-online-runner` 和 `make test-online-runner`。正式验收沿现有 workflow 选择 `suite=manager-internal-artifact-lineage`、`manager_case=native-grib`，业务入口为 `ADDP_ONLINE_MANAGER_CASE=native-grib make test-online ONLINE_SUITE=manager-internal-artifact-lineage`。
+
+固定源码 `6e7ae87559552bd7d5bad122f4f0259f963d7b46` 的正式运行 `41572302717`／Job `125707787735` 已核对十二张可见切片、四份原件、精确元数据 Grant 撤销及全部清理，Owner／Browser 均为 v2。各轮源码、实际 Job、原始产物和结果统一见[分层证据](../evidence/资源读取与预览历史证据.md#grib2-单文件读取与切片--数值通过及页面收口)，保留下列历史边界：
+
+- 首轮数值、DOM、原件和清理有效，但长属性遮挡了标准视口中的控件；元数据截图不能证明切片表格可见，不将旧 v1 回执升级解释为具备 v2 的视口证明。
+- 可见性修复后的首次复验因缺少元数据授权失败，记录为 `stage=scan / cases=[]`，未进入数值或浏览器阶段；清理通过不改变业务失败。
+
+本地页面回归、Linux 产品 smoke 与真实 Hosted 按各自实际覆盖使用；保留完整 GeoPython CI 取消、本机 Online runner 节点 TLS 夹具错误等门禁边界，不以专项 T4 或清理通过推定整轮 CI 通过。
 
 ## NetCDF 单文件只读
 
