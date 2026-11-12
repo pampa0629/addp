@@ -915,6 +915,7 @@ class CommonPostgresExecutionSelectionTest(unittest.TestCase):
                 "names = [\n"
                 "    'TestIntegrationResolvePostgresQueryOutputRewrite',\n"
                 "    'TestIntegrationPostgresSharedSQLPool',\n"
+                "    'TestIntegrationHighGoSharedSQLPoolTimeout',\n"
                 "    'TestIntegrationHighGoTableWrite', 'TestIntegrationPostgresKMLWriter',\n"
                 "    'TestExecutionAuthorizationFactsMigrationAgainstPostgres',\n"
                 "    'TestExecutionEventsAgainstPostgres', 'TestExecutionEventRetentionAgainstPostgres',\n"
@@ -980,16 +981,31 @@ class CommonPostgresExecutionSelectionTest(unittest.TestCase):
             self.assertTrue(trace.is_file(), result.stdout + result.stderr)
             return result, [json.loads(line) for line in trace.read_text().splitlines()]
 
-    def test_shared_sql_pool_group_runs_only_the_native_pool_test(self):
+    def test_shared_sql_pool_group_runs_both_protocol_pool_tests(self):
         name = "TestIntegrationPostgresSharedSQLPool"
         result, calls = self.run_gate_fixture("pass", "shared-sql-pool", name)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertEqual(len(calls), 1)
         self.assertIn("./engine/plugins/postgresql", calls[0])
-        self.assertEqual(calls[0][calls[0].index("-run") + 1], f"^{name}$")
+        self.assertIn("./engine/plugins/highgo", calls[0])
+        self.assertEqual(calls[0][calls[0].index("-run") + 1],
+                         f"^{name}$|^TestIntegrationHighGoSharedSQLPoolTimeout$")
         result, _ = self.run_gate_fixture("missing", "shared-sql-pool", name)
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("requires the native shared SQL pool test", result.stderr)
+
+    def test_highgo_pool_contract_cannot_be_missing_or_skipped(self):
+        name = "TestIntegrationHighGoSharedSQLPoolTimeout"
+        for group in ("all", "shared-sql-pool"):
+            for outcome in ("missing", "suffix", "child", "skip", "child-skip", "fail"):
+                with self.subTest(group=group, outcome=outcome):
+                    result, _ = self.run_gate_fixture(outcome, group, name)
+                    self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+                    self.assertNotIn("group passed", result.stdout)
+                    if outcome in ("missing", "suffix", "child"):
+                        self.assertIn("requires the HighGo shared SQL pool protocol test", result.stderr)
+                    elif outcome in ("skip", "child-skip"):
+                        self.assertIn("refuses skipped tests", result.stderr)
 
     def test_capacity_snapshots_run_in_full_and_focused_groups_and_fail_closed(self):
         for group in ('all','online-capacity-snapshots'):
