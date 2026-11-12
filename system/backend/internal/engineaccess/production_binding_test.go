@@ -12,11 +12,11 @@ import (
 	"time"
 
 	commonapi "github.com/addp/common/api"
-	"github.com/addp/common/production"
 	"github.com/addp/common/client"
 	"github.com/addp/common/dataitem/authorizationfacts"
 	"github.com/addp/common/dataitem/authorizationfacts/factstest"
 	"github.com/addp/common/engine/plugin"
+	"github.com/addp/common/production"
 	"github.com/google/uuid"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
@@ -73,9 +73,9 @@ func TestTransferProductionBindingUsesCompleteExactMetaProof(t *testing.T) {
 			wantReceiptCalls, wantFactsCalls := 1, 1
 			switch scenario {
 			case "stale_write_version":
- receipt.TargetEngineVersion=2
- want,wantFactsCalls=errProductionTargetChanged,0
- case "newer_logical_snapshot":
+				receipt.TargetEngineVersion = 2
+				want, wantFactsCalls = errProductionTargetChanged, 0
+			case "newer_logical_snapshot":
 				// A later observation of the same logical boundary must not
 				// rewrite the producer's successful commit time or demand a
 				// physical-instance identity absent from the DataItem contract.
@@ -312,6 +312,7 @@ func (s *Service) withTestProductionReader(reader interface {
 	if reader == nil {
 		return s.WithProductionRegistry(nil)
 	}
+	var last production.Receipt
 	registry, err := production.NewRegistry(production.Owner{Module: "transfer", ClientID: "addp-transfer", ReceiptPermission: "transfer.production_receipt.read", ExecutionPermission: "transfer.task.execute",
 		ReadReceipt: func(ctx context.Context, tenant uint, ref production.Reference) (*production.Receipt, error) {
 			if ref.ResultID != ref.ExecutionID {
@@ -325,10 +326,77 @@ func (s *Service) withTestProductionReader(reader interface {
 				return nil, production.ErrEvidence
 			}
 			receipt := native.ProductionEvidence()
+			last = receipt
 			return &receipt, nil
 		}})
 	if err != nil {
 		panic(err)
 	}
+	s.WithProductionIdentificationReader(productionIdentificationFunc(func(_ context.Context, tenant uint, ref production.Reference) (*client.MetaProductionIdentification, error) {
+		binding := factstest.Binding(last.Primary)
+		return &client.MetaProductionIdentification{Reference: ref, TenantID: int64(tenant), EngineVersion: last.TargetEngineVersion, ScanExecutionID: uuid.NewString(), Status: "success", Binding: &binding, LogicalItemState: "new"}, nil
+	}))
 	return s.WithProductionRegistry(registry)
+}
+
+type productionIdentificationFunc func(context.Context, uint, production.Reference) (*client.MetaProductionIdentification, error)
+
+func (f productionIdentificationFunc) ReadProductionIdentification(ctx context.Context, tenant uint, ref production.Reference) (*client.MetaProductionIdentification, error) {
+	return f(ctx, tenant, ref)
+}
+
+func TestProductionRequiresMetaNewLogicalItemAndCurrentBoundary(t *testing.T) {
+	for _, scenario := range []string{"new", "existing", "pending", "missing_newness", "foreign_result", "foreign_tenant", "engine_changed", "different_boundary"} {
+		t.Run(scenario, func(t *testing.T) {
+			db := productionBindingDB(t)
+			native := productionBindingReceipt(7, 2)
+			facts := factstest.Single(native.Target)
+			binding := factstest.Binding(native.Target)
+			svc := NewService(NewRepository(db), nil).withTestProductionReader(productionReceiptReaderFunc(func(context.Context, uint, string) (*client.TransferProductionReceipt, error) { return &native, nil })).WithAuthorizationFactsReader(bindingFactsReaderFunc(func(context.Context, uint, string) (*authorizationfacts.AuthorizationFacts, error) {
+				return &facts, nil
+			}))
+			svc.WithProductionIdentificationReader(productionIdentificationFunc(func(_ context.Context, tenant uint, ref production.Reference) (*client.MetaProductionIdentification, error) {
+				result := &client.MetaProductionIdentification{Reference: ref, TenantID: int64(tenant), ScanExecutionID: uuid.NewString(), Status: "success", EngineVersion: 1, Binding: &binding, LogicalItemState: "new"}
+				switch scenario {
+				case "existing":
+					result.LogicalItemState = "existing"
+				case "pending":
+					result.Status = "running"
+					result.Binding = nil
+					result.LogicalItemState = ""
+				case "missing_newness":
+					result.LogicalItemState = ""
+				case "foreign_result":
+					result.Reference.ResultID = uuid.NewString()
+				case "foreign_tenant":
+					result.TenantID++
+				case "engine_changed":
+					result.EngineVersion++
+				case "different_boundary":
+					b := factstest.Binding(plugin.TabularItemPath(2, "schema", "public", "other"))
+					result.Binding = &b
+				}
+				return result, nil
+			}))
+			got, err := svc.prepareProduction(t.Context(), 7, transferProductionRef(native.ExecutionID))
+			if scenario == "new" {
+				if err != nil || got == nil {
+					t.Fatal(got, err)
+				}
+				return
+			}
+			want := errProductionReceiptUnavailable
+			switch scenario {
+			case "existing":
+				want = errInitialProductionEvidence
+			case "engine_changed":
+				want = errProductionTargetChanged
+			case "different_boundary":
+				want = ErrAuthorizationBoundaryChanged
+			}
+			if got != nil || !errors.Is(err, want) {
+				t.Fatalf("%s result=%+v err=%v want=%v", scenario, got, err, want)
+			}
+		})
+	}
 }

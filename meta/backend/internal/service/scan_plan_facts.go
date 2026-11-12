@@ -34,6 +34,7 @@ func freezeScanEngineSnapshot(run *execution.TaskExecution, engine *commonmodels
 
 // Read the original row together; provenance is never taken from request data.
 type scanPlanExecutionRow struct {
+	TenantID                   int
 	ExecutionID                string
 	SourceTaskID               *string
 	ExecutionConfig            string
@@ -59,7 +60,7 @@ func (s *ScanExecutionService) GetScanPlanFacts(ctx context.Context, tenantID ui
 		// Scan the raw column directly: models.JSONMap would round JSON numbers.
 		var row scanPlanExecutionRow
 		if err := tx.Table((execution.TaskExecution{}).TableName()).
-			Select("execution_id, source_task_id, execution_config, trigger_type, source, triggered_by, actor_principal_id, actor_tenant_membership_id, issued_authorization_version, parent_execution_id, metadata").
+			Select("tenant_id, execution_id, source_task_id, execution_config, trigger_type, source, triggered_by, actor_principal_id, actor_tenant_membership_id, issued_authorization_version, parent_execution_id, metadata").
 			Where("tenant_id = ? AND module = ? AND task_type = ? AND execution_id = ?", tenantID, execution.ModuleMeta, execution.TaskTypeScan, executionID).Take(&row).Error; err != nil {
 			return err
 		}
@@ -222,13 +223,13 @@ func freezeScanTaskDefinition(tx *gorm.DB, run *execution.TaskExecution) error {
 }
 
 func projectScanSourceScope(ctx context.Context, tx *gorm.DB, tenantID uint, row scanPlanExecutionRow, config map[string]any, facts *execution.MetaScanPlanFacts) error {
-	allowed := map[string]bool{"engine_id": true, "engine_version": true, "engine_type": true, "task_definition_digest": true, "storage_type": true, "targets": true, "catalog_paths": true, "ref_groups": true, "item_id": true, "scan_depth": true, "force": true, "source": true, "planned_run_at": true, "encoding": true, "has_header": true, "initial_production_target": true}
+	allowed := map[string]bool{"engine_id": true, "engine_version": true, "engine_type": true, "task_definition_digest": true, "storage_type": true, "targets": true, "catalog_paths": true, "ref_groups": true, "item_id": true, "scan_depth": true, "force": true, "source": true, "planned_run_at": true, "encoding": true, "has_header": true, "initial_production_receipt": true, "initial_production_new_candidate": true}
 	for key := range config {
 		if !allowed[key] {
 			return nil
 		}
 	}
-	if _, exists := config["initial_production_target"]; exists {
+	if _, exists := config["initial_production_receipt"]; exists {
 		projectInitialProductionScanScope(row, config, facts)
 		return nil
 	}

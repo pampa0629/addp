@@ -55,7 +55,7 @@ func scanExecutionMatchesTask(definition json.RawMessage, config map[string]any,
 	}
 	// Task producers do not emit these ad-hoc/private selectors. Even a zero
 	// or empty injection is contradictory provenance, not a fallback to whole.
-	for _, key := range []string{"item_id", "targets", "initial_production_target"} {
+	for _, key := range []string{"item_id", "targets", "initial_production_receipt", "initial_production_new_candidate"} {
 		if _, exists := config[key]; exists {
 			return false
 		}

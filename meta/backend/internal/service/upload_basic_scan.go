@@ -78,15 +78,11 @@ func (s *ScanExecutionService) EnsureUploadBasicScan(ctx context.Context, tenant
 			if write.Disposition != "created" {
 				continue
 			}
-			path := write.Target.StringPath()
-			fp := commonmodels.GenerateItemFingerprint(receipt.EngineID, path)
-			var known int64
-			// Known whole ownership or an existing logical item's explicit member
-			// blocks automatic ownership of an uploaded component.
-			if err := tx.Model(&models.MetaItem{}).Where("tenant_id=? AND engine_id=?", tenant, receipt.EngineID).Where(`fingerprint=? OR (attributes->'item'->>'layout'='whole' AND left(?,length(full_name)+1)=full_name||'/') OR EXISTS(SELECT 1 FROM jsonb_array_elements(COALESCE(attributes->'item'->'refs','[]'::jsonb)) ref WHERE ref->>'path'=?)`, fp, path, path).Count(&known).Error; err != nil {
+			fp, known, err := logicalItemAlreadyKnown(tx, tenant, write.Target)
+			if err != nil {
 				return nil, err
 			}
-			if known == 0 {
+			if !known {
 				candidates = append(candidates, fp)
 			}
 		}
@@ -239,6 +235,6 @@ func (s *ScanExecutionService) bindUploadedContent(ctx context.Context, run *exe
 	for _, write := range receipt.Writes {
 		targets = append(targets, write.Target)
 	}
-	return scanresource.WithUploadedContentTargets(scanresource.WithCollectionReadCheck(ctx, check), targets), nil
+	return scanresource.WithCommittedContentTargets(scanresource.WithCollectionReadCheck(ctx, check), targets), nil
 }
 func mustScanJSON(value any) json.RawMessage { raw, _ := json.Marshal(value); return raw }

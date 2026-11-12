@@ -2933,6 +2933,178 @@
                 ]
             }
         },
+        "/runtime/productions/{producer_owner}/{execution_id}/{result_id}/basic-scan": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "仅 System Tenant Service；只读既有扫描及 Meta 身份，不回源、不创建扫描或 Grant | System Tenant Service only; reads existing scan and Meta identity without source IO, scan creation or Grants",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Meta Scan"
+                ],
+                "summary": "读取原成果的新逻辑项识别事实 | Read logical new-item identification for a result",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "生产模块 | Producer module",
+                        "name": "producer_owner",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "原执行 UUID | Original execution UUID",
+                        "name": "execution_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "原独立成果 UUID | Original result UUID",
+                        "name": "result_id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/client.MetaProductionIdentification"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "meta.task_provider.read"
+                ]
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "仅对应已注册生产者 Tenant Service；无正文和 query。反查原成果回执，仅识别完整精确目标。重复请求恢复原扫描，不复活失败执行，不授予用户权限 | Registered producer Tenant Service only; no body or query. Resolves original receipt and identifies exact committed objects. Replay recovers the original scan without reviving failed executions or granting user access",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Meta Scan"
+                ],
+                "summary": "识别原已提交独立成果 | Identify an original committed result",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "生产模块 | Producer module",
+                        "name": "producer_owner",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "原执行 UUID | Original execution UUID",
+                        "name": "execution_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "原独立成果 UUID | Original result UUID",
+                        "name": "result_id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/client.MetaProductionIdentification"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "meta.scan_task.execute"
+                ]
+            }
+        },
         "/runtime/scan-executions/{execution_id}/authorization-facts": {
             "get": {
                 "security": [
@@ -3017,79 +3189,6 @@
                 "x-addp-auth-mode": "permission",
                 "x-addp-required-permissions": [
                     "meta.task_provider.read"
-                ]
-            }
-        },
-        "/runtime/transfer-productions/{execution_id}/basic-scan": {
-            "post": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "description": "仅 addp-transfer；无正文和 query。Meta 自行反查同租户 Transfer v3 成功回执，仅识别精确首次新建表；复用统一扫描创建和执行链。重复请求恢复原扫描，不复活失败执行，不授予数据权限 | Fixed addp-transfer only; no body or query. Meta resolves same-Tenant successful Transfer v3 evidence and identifies only the exact newly created table through the shared scan pipeline. Replay recovers the original scan, never revives failed executions or grants access",
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Meta Scan"
-                ],
-                "summary": "确保 PG 成功新成果的基础识别 | Ensure basic identification of a newly committed PG production",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "原 Transfer 执行 UUID | Original Transfer execution UUID",
-                        "name": "execution_id",
-                        "in": "path",
-                        "required": true
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/client.MetaProductionBasicScan"
-                        }
-                    },
-                    "400": {
-                        "description": "Bad Request",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    },
-                    "401": {
-                        "description": "Unauthorized",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    },
-                    "403": {
-                        "description": "Forbidden",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    },
-                    "409": {
-                        "description": "Conflict",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    },
-                    "503": {
-                        "description": "Service Unavailable",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    }
-                },
-                "x-addp-auth-mode": "permission",
-                "x-addp-required-permissions": [
-                    "meta.scan_task.execute"
                 ]
             }
         },
@@ -4917,17 +5016,31 @@
                 }
             }
         },
-        "client.MetaProductionBasicScan": {
+        "client.MetaProductionIdentification": {
             "type": "object",
             "properties": {
-                "production_execution_id": {
+                "binding": {
+                    "$ref": "#/definitions/authorizationfacts.Binding"
+                },
+                "engine_version": {
+                    "type": "string",
+                    "example": ""
+                },
+                "logical_item_state": {
                     "type": "string"
+                },
+                "reference": {
+                    "$ref": "#/definitions/production.Reference"
                 },
                 "scan_execution_id": {
                     "type": "string"
                 },
                 "status": {
                     "type": "string"
+                },
+                "tenant_id": {
+                    "type": "string",
+                    "example": ""
                 }
             }
         },
@@ -6686,6 +6799,20 @@
                     "type": "string"
                 },
                 "term": {
+                    "type": "string"
+                }
+            }
+        },
+        "production.Reference": {
+            "type": "object",
+            "properties": {
+                "execution_id": {
+                    "type": "string"
+                },
+                "owner": {
+                    "type": "string"
+                },
+                "result_id": {
                     "type": "string"
                 }
             }

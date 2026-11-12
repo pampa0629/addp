@@ -15,6 +15,7 @@ import (
 	"github.com/addp/common/engine/plugins/postgresql"
 	"github.com/addp/common/execution"
 	commonmodels "github.com/addp/common/models"
+	"github.com/addp/common/production"
 	"github.com/addp/transfer/internal/models"
 	"github.com/addp/transfer/internal/testpg"
 	"github.com/google/uuid"
@@ -34,10 +35,10 @@ func (f productionRuntimeFixture) issue(ctx context.Context, tenant uint, id str
 	return f.write(ctx, tenant, id)
 }
 
-type basicScannerFixture func(context.Context, uint, string) (*client.MetaProductionBasicScan, error)
+type basicScannerFixture func(context.Context, uint, production.Reference) (*client.MetaProductionIdentification, error)
 
-func (f basicScannerFixture) EnsureTransferProductionBasicScan(ctx context.Context, tenant uint, id string) (*client.MetaProductionBasicScan, error) {
-	return f(ctx, tenant, id)
+func (f basicScannerFixture) EnsureProductionBasicScan(ctx context.Context, tenant uint, ref production.Reference) (*client.MetaProductionIdentification, error) {
+	return f(ctx, tenant, ref)
 }
 
 func initialAuthorizationFixture(t *testing.T, db *gorm.DB) (*ExecutionService, execution.TaskExecution) {
@@ -131,12 +132,12 @@ func TestInitialProductionAuthorizationContinuation(t *testing.T) {
 					}
 					return result, nil
 				},
-			}, meta: basicScannerFixture(func(_ context.Context, tenant uint, id string) (*client.MetaProductionBasicScan, error) {
+			}, meta: basicScannerFixture(func(_ context.Context, tenant uint, ref production.Reference) (*client.MetaProductionIdentification, error) {
 				scans++
-				if tenant != uint(item.TenantID) || id != item.ExecutionID {
+				if tenant != uint(item.TenantID) || ref.ExecutionID != item.ExecutionID || ref.Owner != "transfer" || ref.ResultID != item.ExecutionID {
 					t.Fatal("scan scope changed")
 				}
-				return &client.MetaProductionBasicScan{ProductionExecutionID: id, ScanExecutionID: uuid.NewString(), Status: "pending"}, nil
+				return &client.MetaProductionIdentification{Reference: ref, TenantID: int64(tenant), EngineVersion: 1, ScanExecutionID: uuid.NewString(), Status: "pending"}, nil
 			})}
 			now := time.Now().UTC()
 			if err := continuation.runOne(t.Context(), now); err != nil {
@@ -194,7 +195,7 @@ func TestInitialAuthorizationDoesNotBackfillHistoricalSuccess(t *testing.T) {
 		t.Fatal("historical success was backfilled")
 		return nil, nil
 	}
-	c := &ProductionAuthorizationContinuation{executions: svc, runtime: productionRuntimeFixture{lookup: rpc}, meta: basicScannerFixture(func(context.Context, uint, string) (*client.MetaProductionBasicScan, error) {
+	c := &ProductionAuthorizationContinuation{executions: svc, runtime: productionRuntimeFixture{lookup: rpc}, meta: basicScannerFixture(func(context.Context, uint, production.Reference) (*client.MetaProductionIdentification, error) {
 		t.Fatal("historical scan was created")
 		return nil, nil
 	})}
@@ -228,7 +229,7 @@ func TestIntegrationPostgresInitialAuthorizationContinuation(t *testing.T) {
 	c := &ProductionAuthorizationContinuation{executions: svc, runtime: productionRuntimeFixture{lookup: func(context.Context, uint, string) (*authorization.InitialProductionLookup, error) {
 		reads.Add(1)
 		return nil, errors.New("temporary outage")
-	}}, meta: basicScannerFixture(func(context.Context, uint, string) (*client.MetaProductionBasicScan, error) {
+	}}, meta: basicScannerFixture(func(context.Context, uint, production.Reference) (*client.MetaProductionIdentification, error) {
 		t.Error("outage unexpectedly submitted scan")
 		return nil, nil
 	})}

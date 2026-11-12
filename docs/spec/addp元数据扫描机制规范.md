@@ -122,7 +122,7 @@ PG basic 指定执行的取消入口为 `POST /api/v1/meta/executions/{execution
 旧逐任务审批专用的 `ReadScanTaskFacts`、任务授权事实接口及其 DTO／客户端，以及 Runtime 响应中的 `qualification_id` 与旧资格记录查询均已退役，不保留兼容读取或另一条审批路线。Worker 继续消费 `ReadScanPlanFacts`；以下执行事实契约用于实际计划和运行条件核验，不能因审批退出删除，也不作为持久批准。
 
 - 访问与响应：[身份与读取](#计划事实的访问身份与读取)、[响应与范围](#计划事实响应与范围)。
-- 冻结与执行：[版本与摘要](#计划冻结版本与摘要)、[任务一致性](#计划执行与任务一致性)、[首次 PG 产出补扫](#首次-pg-产出补扫的冻结与投影)。
+- 冻结与执行：[版本与摘要](#计划冻结版本与摘要)、[任务一致性](#计划执行与任务一致性)、[已提交成果识别](#已提交成果的冻结与新项证明)。
 - 裁决与验证：[事实与授权](#计划事实与授权裁决)、[标准入口与验收范围](#计划事实验证与验收边界)。
 
 #### 计划事实的访问身份与读取
@@ -159,17 +159,18 @@ System 通过唯一的 `MetaClient.ReadScanPlanFacts` 读取 `GET /api/v1/meta/r
 - 现有定时调度可以从任务显式路径集合中减去独立调度的成员，但结果必须非空且全部为原集合的精确成员；不得以路径前缀推断包含关系，或将空集合降为整个引擎。
 - 此项只证明冻结执行与当前任务一致，原始路径／ref group 仍须经过可信类型化范围投影，不能因一致性校验通过而获得采集许可。
 
-#### 首次 PG 产出补扫的冻结与投影
+#### 已提交成果的冻结与新项证明
 
 成功回执的访问身份、首次新建资格与限定补扫准入统一见[初始使用权契约](addp授权上下文规范.md#558-任务产出数据与初始使用权)，与普通运行中产物扫描的来源分工见[生产来源专题](tasks/生产来源与产物扫描.md#首次-pg-成功产出补扫)；本节只维护 Meta 私有冻结和事实投影。
 
-- 首次 PG 产出 basic 补扫由唯一私有 `EnsureTransferProductionBasicScan` 适配器冻结 `execution_config.initial_production_target`，值为严格 v3 成功首次创建并提交回执的原始 typed Target。
-- 冻结发生于同一 provenance 创建事务，不增加公开 ScanRequest 字段，不保存完整回执、连接或 Grant，也不从 locator 反推。
-- 原直接父 UUID 与 metadata.initial_production_execution_id 一致，创建时 Child Actor 三元组逐项复制并核对真实 UserOrigin。
-- 事实投影在同一原执行快照中核验 ad-hoc、manual/basic/force、Transfer 来源、同一 PG 普通表叶、唯一 locator 与原 typed Target 经共享转换严格相等及其余 selector 互斥；缺失或矛盾返回 incomplete/null，不降为 whole。
-- 原始 typed 目标自然纳入 execution_plan_digest，名字不规范化。
-- 已有冻结版本、任务摘要或读取选项不可用的 409 规则保持。
-- 该投影仍不是 Allow，System 按上述初始使用权契约独立核对统一执行与 Transfer 的当前可信生产事实，不由投影替代首次新建与成功提交资格裁决；Meta GET 不回源或补查生产服务。
+- 统一 `POST /runtime/productions/{producer_owner}/{execution_id}/{result_id}/basic-scan` 由已注册 owner 对应 Tenant Service 提交，无正文和 query；只接真实已提交成果，不要求父任务成功。旧固定 Transfer 入口删除。
+- Meta 经自身服务凭据和注册读取器取得共享最小回执，在同一 provenance 创建事务冻结 `execution_config.initial_production_receipt`、完整精确目标及 `initial_production_new_candidate`。不保存连接、Token、运行配置或 Grant。回执与来源均不是权限。
+- 创建前核对实际目标引擎的冻结版本；同租户、owner、原执行和原成果只创建一次扫描。直接父 UUID 使用原执行，有可信人员才复制 Actor 与 triggered_by；无人员保留空来源，不能伪造用户。
+- 创建事务查询 Meta 既有主项、whole 范围归属和显式成员；已有任一逻辑归属不作为新项候选。扫描成功后仅将本次创建时冻结为新候选、创建时间不早于原扫描、且当前完整边界与原已提交对象逐项一致的结果标为新逻辑项。缺失或不完整的事实不解释为新项。
+- `GET` 同路径仅允许固定 System Tenant Service 和既有 `meta.task_provider.read`，在只读快照中返回原 Reference、扫描 UUID、状态、冻结引擎版本、成功时的完整 Binding 及新逻辑项事实。不回源、不补扫、不授予权限。System 仍独立重核当前 Meta 边界、原生产回执和全部 Grant 条件。
+- Worker 在每次实际读取前核验原扫描 lease、计划摘要、冻结引擎版本及生产回执不变；仅允许原已提交对象的精确基础识别，不列父目录、兄弟项或额外内容。该限定技术读取不建立任何用户 ACL，无人员成果也不能获得个人 Grant。
+- 事实投影核验同一快照中的 manual/basic/force、owner、直接父与可选 Actor、唯一原生叶子或精确文件引用组及冻结回执相等。原回执和全部目标纳入计划摘要，缺失或矛盾返回 incomplete/null，不降为 whole。
+- 生产者已有的普通自动扫描不得抢先登记同一新建成果；具备提交回执的成果复用此统一入口。覆盖、追加和其他未进入成果办理的原扫描继续沿各自原范围规则。旧扫描及缺少证据的历史记录不补造新项资格。
 
 #### 计划事实与授权裁决
 

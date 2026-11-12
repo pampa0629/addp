@@ -353,13 +353,23 @@ definitions:
       status:
         type: string
     type: object
-  client.MetaProductionBasicScan:
+  client.MetaProductionIdentification:
     properties:
-      production_execution_id:
+      binding:
+        $ref: '#/definitions/authorizationfacts.Binding'
+      engine_version:
+        example: ""
         type: string
+      logical_item_state:
+        type: string
+      reference:
+        $ref: '#/definitions/production.Reference'
       scan_execution_id:
         type: string
       status:
+        type: string
+      tenant_id:
+        example: ""
         type: string
     type: object
   client.MetaUploadIdentification:
@@ -1547,6 +1557,15 @@ definitions:
       name:
         type: string
       term:
+        type: string
+    type: object
+  production.Reference:
+    properties:
+      execution_id:
+        type: string
+      owner:
+        type: string
+      result_id:
         type: string
     type: object
   resourcetree.TreeNode:
@@ -3751,6 +3770,128 @@ paths:
       x-addp-auth-mode: permission
       x-addp-required-permissions:
       - meta.node_identity.read
+  /runtime/productions/{producer_owner}/{execution_id}/{result_id}/basic-scan:
+    get:
+      description: 仅 System Tenant Service；只读既有扫描及 Meta 身份，不回源、不创建扫描或 Grant | System
+        Tenant Service only; reads existing scan and Meta identity without source
+        IO, scan creation or Grants
+      parameters:
+      - description: 生产模块 | Producer module
+        in: path
+        name: producer_owner
+        required: true
+        type: string
+      - description: 原执行 UUID | Original execution UUID
+        in: path
+        name: execution_id
+        required: true
+        type: string
+      - description: 原独立成果 UUID | Original result UUID
+        in: path
+        name: result_id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/client.MetaProductionIdentification'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties: true
+            type: object
+        "403":
+          description: Forbidden
+          schema:
+            additionalProperties: true
+            type: object
+        "409":
+          description: Conflict
+          schema:
+            additionalProperties: true
+            type: object
+        "503":
+          description: Service Unavailable
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 读取原成果的新逻辑项识别事实 | Read logical new-item identification for a result
+      tags:
+      - Meta Scan
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - meta.task_provider.read
+    post:
+      description: 仅对应已注册生产者 Tenant Service；无正文和 query。反查原成果回执，仅识别完整精确目标。重复请求恢复原扫描，不复活失败执行，不授予用户权限
+        | Registered producer Tenant Service only; no body or query. Resolves original
+        receipt and identifies exact committed objects. Replay recovers the original
+        scan without reviving failed executions or granting user access
+      parameters:
+      - description: 生产模块 | Producer module
+        in: path
+        name: producer_owner
+        required: true
+        type: string
+      - description: 原执行 UUID | Original execution UUID
+        in: path
+        name: execution_id
+        required: true
+        type: string
+      - description: 原独立成果 UUID | Original result UUID
+        in: path
+        name: result_id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/client.MetaProductionIdentification'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties: true
+            type: object
+        "403":
+          description: Forbidden
+          schema:
+            additionalProperties: true
+            type: object
+        "409":
+          description: Conflict
+          schema:
+            additionalProperties: true
+            type: object
+        "503":
+          description: Service Unavailable
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 识别原已提交独立成果 | Identify an original committed result
+      tags:
+      - Meta Scan
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - meta.scan_task.execute
   /runtime/scan-executions/{execution_id}/authorization-facts:
     get:
       description: |-
@@ -3812,60 +3953,6 @@ paths:
       x-addp-auth-mode: permission
       x-addp-required-permissions:
       - meta.task_provider.read
-  /runtime/transfer-productions/{execution_id}/basic-scan:
-    post:
-      description: 仅 addp-transfer；无正文和 query。Meta 自行反查同租户 Transfer v3 成功回执，仅识别精确首次新建表；复用统一扫描创建和执行链。重复请求恢复原扫描，不复活失败执行，不授予数据权限
-        | Fixed addp-transfer only; no body or query. Meta resolves same-Tenant successful
-        Transfer v3 evidence and identifies only the exact newly created table through
-        the shared scan pipeline. Replay recovers the original scan, never revives
-        failed executions or grants access
-      parameters:
-      - description: 原 Transfer 执行 UUID | Original Transfer execution UUID
-        in: path
-        name: execution_id
-        required: true
-        type: string
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/client.MetaProductionBasicScan'
-        "400":
-          description: Bad Request
-          schema:
-            additionalProperties: true
-            type: object
-        "401":
-          description: Unauthorized
-          schema:
-            additionalProperties: true
-            type: object
-        "403":
-          description: Forbidden
-          schema:
-            additionalProperties: true
-            type: object
-        "409":
-          description: Conflict
-          schema:
-            additionalProperties: true
-            type: object
-        "503":
-          description: Service Unavailable
-          schema:
-            additionalProperties: true
-            type: object
-      security:
-      - BearerAuth: []
-      summary: 确保 PG 成功新成果的基础识别 | Ensure basic identification of a newly committed
-        PG production
-      tags:
-      - Meta Scan
-      x-addp-auth-mode: permission
-      x-addp-required-permissions:
-      - meta.scan_task.execute
   /scan/run/manual:
     post:
       consumes:

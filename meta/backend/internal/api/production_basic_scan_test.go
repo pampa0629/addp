@@ -17,6 +17,7 @@ func TestProductionBasicScanRouteIsFixedTenantTransferAndBodyless(t *testing.T) 
 	identity := authtest.NewTenantServiceAuthContextServer(t, "7", map[string]authtest.TenantServiceIdentity{
 		"Bearer transfer":     {ClientID: "addp-transfer", Permissions: []string{"meta.scan_task.execute"}},
 		"Bearer system":       {ClientID: "addp-system", Permissions: []string{"meta.scan_task.execute"}},
+		"Bearer system-read":  {ClientID: "addp-system", Permissions: []string{"meta.task_provider.read"}},
 		"Bearer unprivileged": {ClientID: "addp-transfer", Permissions: []string{"meta.catalog.read"}},
 	})
 	defer identity.Close()
@@ -25,7 +26,7 @@ func TestProductionBasicScanRouteIsFixedTenantTransferAndBodyless(t *testing.T) 
 	engines := service.NewEngineService(nil, nil)
 	router := SetupRouter(cfg, nil, engines, service.NewScanService(nil, engines), nil, nil, nil, nil, modulelifecycle.NewStandalone("meta"))
 	id := uuid.NewString()
-	base := "/api/v1/meta/runtime/transfer-productions/" + id + "/basic-scan"
+	base := "/api/v1/meta/runtime/productions/transfer/" + id + "/" + id + "/basic-scan"
 	for _, tc := range []struct {
 		token, path, body string
 		status            int
@@ -45,6 +46,28 @@ func TestProductionBasicScanRouteIsFixedTenantTransferAndBodyless(t *testing.T) 
 		router.ServeHTTP(response, req)
 		if response.Code != tc.status {
 			t.Fatalf("%s status=%d want=%d body=%s", tc.token, response.Code, tc.status, response.Body.String())
+		}
+	}
+
+	for _, tc := range []struct {
+		token  string
+		status int
+	}{{"transfer", 403}, {"system", 403}, {"system-read", 503}} {
+		request := httptest.NewRequest(http.MethodGet, base, nil)
+		request.Header.Set("Authorization", "Bearer "+tc.token)
+		response := httptest.NewRecorder()
+		router.ServeHTTP(response, request)
+		if response.Code != tc.status {
+			t.Fatalf("production GET %s status=%d want=%d", tc.token, response.Code, tc.status)
+		}
+	}
+	for _, path := range []string{strings.Replace(base, "/productions/transfer/", "/productions/develop/", 1), "/api/v1/meta/runtime/transfer-productions/" + id + "/basic-scan"} {
+		request := httptest.NewRequest(http.MethodPost, path, nil)
+		request.Header.Set("Authorization", "Bearer transfer")
+		response := httptest.NewRecorder()
+		router.ServeHTTP(response, request)
+		if response.Code != 403 && response.Code != 404 {
+			t.Fatal("cross-owner or removed route reached production", path, response.Code)
 		}
 	}
 	user := authtest.NewTenantUserAuthContextServer(t, "7", map[string][]string{"Bearer user": {"meta.scan_task.execute"}})

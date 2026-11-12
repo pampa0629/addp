@@ -4,12 +4,13 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"reflect"
 
 	commonapi "github.com/addp/common/api"
-	"github.com/addp/common/production"
 	"github.com/addp/common/client"
 	"github.com/addp/common/dataitem/authorizationfacts"
 	"github.com/addp/common/engine/plugin"
+	"github.com/addp/common/production"
 	"github.com/addp/system/internal/models"
 	"gorm.io/gorm"
 )
@@ -19,6 +20,15 @@ var errProductionTargetChanged = errors.Join(commonapi.ErrConflict, errors.New("
 
 func (s *Service) WithProductionRegistry(registry *production.Registry) *Service {
 	s.productionRegistry = registry
+	return s
+}
+
+type ProductionIdentificationReader interface {
+	ReadProductionIdentification(context.Context, uint, production.Reference) (*client.MetaProductionIdentification, error)
+}
+
+func (s *Service) WithProductionIdentificationReader(reader ProductionIdentificationReader) *Service {
+	s.productionIdentification = reader
 	return s
 }
 
@@ -37,7 +47,7 @@ func (s *Service) prepareProduction(ctx context.Context, tenantID int64, ref pro
 	if tenantID <= 0 || ref.Validate() != nil {
 		return nil, commonapi.ErrBadRequest
 	}
-	if s == nil || s.repository == nil || s.repository.db == nil || s.productionRegistry == nil {
+	if s == nil || s.repository == nil || s.repository.db == nil || s.productionRegistry == nil || s.productionIdentification == nil {
 		return nil, errProductionReceiptUnavailable
 	}
 	// No caller-owned transaction may remain open during cross-owner IO or
@@ -60,6 +70,16 @@ func (s *Service) prepareProduction(ctx context.Context, tenantID int64, ref pro
 	if engine.Version != copy.TargetEngineVersion {
 		return nil, errProductionTargetChanged
 	}
+	identified, err := s.productionIdentification.ReadProductionIdentification(ctx, uint(tenantID), ref)
+	if err != nil || identified == nil || identified.Validate() != nil || identified.Reference != ref || identified.TenantID != tenantID || identified.Status != "success" {
+		return nil, errProductionReceiptUnavailable
+	}
+	if identified.EngineVersion != copy.TargetEngineVersion {
+		return nil, errProductionTargetChanged
+	}
+	if identified.LogicalItemState != "new" {
+		return nil, errInitialProductionEvidence
+	}
 	bindings, readErr := s.resolveReadBindings(ctx, tenantID, []plugin.EngineCatalogPath{copy.Primary})
 	current, err := s.repository.productionEngine(ctx, tenantID, int64(copy.Primary.EngineID))
 	if err != nil {
@@ -71,7 +91,7 @@ func (s *Service) prepareProduction(ctx context.Context, tenantID int64, ref pro
 	if readErr != nil {
 		return nil, readErr
 	}
-	if len(bindings) != 1 {
+	if len(bindings) != 1 || !reflect.DeepEqual(bindings[0], *identified.Binding) {
 		return nil, ErrAuthorizationBoundaryChanged
 	}
 	return &preparedProduction{receipt: copy, binding: bindings[0], engineVersion: engine.Version}, nil

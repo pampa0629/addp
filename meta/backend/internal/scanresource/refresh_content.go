@@ -11,7 +11,7 @@ import (
 // BoundRefreshReader preserves optional range-read capability while constraining
 // source IO to the frozen maximum. It does not invent an Allow or a new Provider.
 func BoundRefreshReader(ctx context.Context, resource *commonmodels.Engine, base plugin.ContentReadableProvider) plugin.ContentReadableProvider {
-	if base == nil || (MetadataRefreshScope(ctx) == nil && !hasUploadedContentTargets(ctx)) {
+	if base == nil || (MetadataRefreshScope(ctx) == nil && !hasCommittedContentTargets(ctx)) {
 		return base
 	}
 	reader := &refreshContentReader{ContentReadableProvider: base, scope: ctx, resource: resource}

@@ -26,6 +26,7 @@ import (
 	"github.com/addp/common/format"
 	"github.com/addp/common/logger"
 	commonModels "github.com/addp/common/models"
+	"github.com/addp/common/production"
 	"github.com/addp/common/resourcetree"
 	"github.com/addp/transfer/internal/config"
 	"github.com/addp/transfer/internal/executor"
@@ -485,7 +486,13 @@ func (s *ExecutionEngineService) executeCommonTableTransferTask(ctx context.Cont
 		return err
 	}
 	if task.AutoScanMetadata {
-		s.triggerMetadataScan(ctx, task, executionID, spec, buildResult.Plan.Target, metrics.TargetRefs)
+		if buildResult.Plan.Target.Kind == executor.TableEndpointNative && !buildResult.Plan.Target.ManagedExisting && metrics.TargetCreatedAndCommitted && execution.Attempt == 1 && execution.RetryOfExecutionID == nil {
+			if _, err := s.metaClient.EnsureProductionBasicScan(ctx, task.TenantID, production.Reference{Owner: "transfer", ExecutionID: execution.ExecutionID, ResultID: execution.ExecutionID}); err != nil {
+				s.updateMetadataScanFeedback(ctx, executionID, map[string]interface{}{"status": "pending", "error_code": "production_scan_pending"})
+			}
+		} else {
+			s.triggerMetadataScan(ctx, task, executionID, spec, buildResult.Plan.Target, metrics.TargetRefs)
+		}
 	}
 	lineageMetadata := s.transferLineageMetadata(ctx, task, executionID, spec.Source, spec.Target.Locator, spec.Target.ParentLocator, spec.Target.Name, spec.Target.Policy, metrics.FieldLineage)
 

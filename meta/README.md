@@ -92,7 +92,7 @@ Meta 通过共享 detector／parser 识别和增强内容，格式范围与扩�
 - **[CLAUDE.md](./CLAUDE.md)** - 完整技术文档（架构、开发指南、常见场景）
 - [专业扫描读取契约](../docs/spec/tasks/执行监控.md#meta-专业执行读取与响应) - 任务历史、本人一次性执行、机器身份与安全投影
 - [计划事实访问身份](../docs/spec/addp元数据扫描机制规范.md#计划事实的访问身份与读取)、[响应与范围](../docs/spec/addp元数据扫描机制规范.md#计划事实响应与范围) - 固定服务身份、Permission 与严格事实读取
-- [冻结版本与摘要](../docs/spec/addp元数据扫描机制规范.md#计划冻结版本与摘要)、[任务一致性](../docs/spec/addp元数据扫描机制规范.md#计划执行与任务一致性)、[首次 PG 产出投影](../docs/spec/addp元数据扫描机制规范.md#首次-pg-产出补扫的冻结与投影) - 冻结、失败与原目标约束
+- [冻结版本与摘要](../docs/spec/addp元数据扫描机制规范.md#计划冻结版本与摘要)、[任务一致性](../docs/spec/addp元数据扫描机制规范.md#计划执行与任务一致性)、[已提交成果新项证明](../docs/spec/addp元数据扫描机制规范.md#已提交成果的冻结与新项证明) - 冻结、失败与原目标约束
 - [事实与授权裁决](../docs/spec/addp元数据扫描机制规范.md#计划事实与授权裁决)、[计划事实验收边界](../docs/spec/addp元数据扫描机制规范.md#计划事实验证与验收边界) - 投影不等于 Allow，门禁与真实运行分别认定
 - [扫描读取门禁](../docs/spec/testing/Owner补充门禁.md#meta-扫描与结果归属门禁)、[历史验收证据](../docs/spec/testing/evidence/资源读取与预览历史证据.md#meta-专业扫描读取--t4) - 区分当前标准入口、固定版本结果及未覆盖范围
 - **[../docs/spec/addp元数据扫描机制规范.md](../docs/spec/addp元数据扫描机制规范.md)** - 扫描入口、ScanTask、Execution 和调度边界

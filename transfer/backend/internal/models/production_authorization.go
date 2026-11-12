@@ -7,7 +7,6 @@ import (
 
 	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/execution"
-
 	"github.com/google/uuid"
 )
 
@@ -65,7 +64,7 @@ func InitialProductionAuthorization(item *execution.TaskExecution, now time.Time
 		return nil
 	}
 	copy := execution.TaskExecution{TenantID: item.TenantID}
-	if execution.CopyActorOrigin(&copy, item) != nil {
+	if (item.TriggeredBy != nil || item.ActorPrincipalID != nil || item.ActorTenantMembershipID != nil || item.IssuedAuthorizationVersion != nil) && execution.CopyActorOrigin(&copy, item) != nil {
 		return nil
 	}
 	receipt, err := DecodeTargetProduction(item.Metadata[TargetProductionMetadataKey])

@@ -10,8 +10,8 @@ import (
 	"unicode/utf8"
 
 	commonapi "github.com/addp/common/api"
-	authorization "github.com/addp/system/internal/authorization"
 	"github.com/addp/common/production"
+	authorization "github.com/addp/system/internal/authorization"
 	"github.com/addp/system/internal/iam"
 	"github.com/addp/system/internal/models"
 )
@@ -42,21 +42,22 @@ type RevokeInput struct {
 	Audit                 iam.AuditMetadata
 }
 type Service struct {
-	searchObservationKey    []byte
-	searchRevisionReader    AuthorizationBasisRevisionReader
-	repository              *Repository
-	catalogEligible         func(*models.Engine) bool
-	fulfillmentBasis        FulfillmentBasisReader
-	independentTarget       IndependentTargetVerifier
-	authorizationFacts      AuthorizationFactsReader
-	dataItemIdentities      DataItemIdentityReader
-	nodeIdentities          NodeIdentityReader
-	nodeIdentityPages       NodeIdentityPageReader
-	uploadReceipts          UploadReceiptReader
-	uploadIdentification    UploadIdentificationReader
-	productionRegistry      *production.Registry
-	metaScanFacts           MetaScanFactsReader
-	executionEngineSnapshot func(*models.Engine) (*models.Engine, error)
+	searchObservationKey     []byte
+	searchRevisionReader     AuthorizationBasisRevisionReader
+	repository               *Repository
+	catalogEligible          func(*models.Engine) bool
+	fulfillmentBasis         FulfillmentBasisReader
+	independentTarget        IndependentTargetVerifier
+	authorizationFacts       AuthorizationFactsReader
+	dataItemIdentities       DataItemIdentityReader
+	nodeIdentities           NodeIdentityReader
+	nodeIdentityPages        NodeIdentityPageReader
+	uploadReceipts           UploadReceiptReader
+	uploadIdentification     UploadIdentificationReader
+	productionRegistry       *production.Registry
+	productionIdentification ProductionIdentificationReader
+	metaScanFacts            MetaScanFactsReader
+	executionEngineSnapshot  func(*models.Engine) (*models.Engine, error)
 }
 
 // WithExecutionEngineSnapshot decodes only the Engine already read and held by

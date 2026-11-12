@@ -185,6 +185,7 @@ func exerciseInitialProductionGrants(t *testing.T, db *gorm.DB, acceptor *Servic
 		// histories. The fixture uses a registered neutral reader, so result IDs
 		// are supplied by persisted owner facts rather than allocated by System.
 		nativeRegistry := service.productionRegistry
+		nativeIdentification := service.productionIdentification
 		secondRef := production.Reference{Owner: "transfer", ExecutionID: executionID, ResultID: uuid.NewString()}
 		secondReceipt := receipt.ProductionEvidence()
 		secondReceipt.Reference = secondRef
@@ -199,7 +200,11 @@ func exerciseInitialProductionGrants(t *testing.T, db *gorm.DB, acceptor *Servic
 		if e != nil {
 			t.Fatal(e)
 		}
-		service.WithProductionRegistry(registry).WithAuthorizationFactsReader(testMetaFacts{paths: []plugin.EngineCatalogPath{base.Path, secondReceipt.Primary}})
+		logicalItemState := "new"
+		service.WithProductionRegistry(registry).WithProductionIdentificationReader(productionIdentificationFunc(func(_ context.Context, tenant uint, ref production.Reference) (*client.MetaProductionIdentification, error) {
+			binding := factstest.Binding(secondReceipt.Primary)
+			return &client.MetaProductionIdentification{Reference: ref, TenantID: int64(tenant), EngineVersion: secondReceipt.TargetEngineVersion, ScanExecutionID: uuid.NewString(), Status: "success", Binding: &binding, LogicalItemState: logicalItemState}, nil
+		})).WithAuthorizationFactsReader(testMetaFacts{paths: []plugin.EngineCatalogPath{base.Path, secondReceipt.Primary}})
 		second, e := service.IssueInitialProductionGrant(ctx, actor, secondRef)
 		if e != nil || second == nil || second.Outcome != "issued" || second.ResultID != uuid.MustParse(secondRef.ResultID) || second.Grant.RequestID == issued.Grant.RequestID {
 			t.Fatal("independent result collapsed into first grant", second, e)
@@ -215,6 +220,23 @@ func exerciseInitialProductionGrants(t *testing.T, db *gorm.DB, acceptor *Servic
 		sourceFree, e := service.IssueInitialProductionGrant(ctx, actor, sourceFreeRef)
 		if e != nil || sourceFree == nil || sourceFree.Outcome != "issued" || sourceFree.Grant.ExpiryMode != shared.SharingExpiryUntilRevoked || sourceFree.Grant.ExpiresAt != nil {
 			t.Fatal("proven source-free generation did not receive revocable read grant", sourceFree, e)
+		}
+
+		existingRef := sourceFreeRef
+		existingRef.ResultID = uuid.NewString()
+		secondReceipt.Reference = existingRef
+		secondReceipt.Primary = plugin.TabularItemPath(base.Path.EngineID, "schema", "production", "logical_existing_"+uuid.NewString())
+		secondReceipt.Objects = []production.CommittedObject{{Target: secondReceipt.Primary, Created: true}}
+		service.WithAuthorizationFactsReader(testMetaFacts{paths: []plugin.EngineCatalogPath{secondReceipt.Primary}})
+		logicalItemState = "existing"
+		deniedExisting, e := service.IssueInitialProductionGrant(ctx, actor, existingRef)
+		if e != nil || deniedExisting == nil || deniedExisting.Outcome != "denied" || deniedExisting.DenialCode != "production_ineligible" {
+			t.Fatal("physical creation replaced missing logical newness", deniedExisting, e)
+		}
+		logicalItemState = "new"
+		replayExisting, e := service.IssueInitialProductionGrant(ctx, actor, existingRef)
+		if e != nil || replayExisting == nil || replayExisting.Outcome != "denied" || !replayExisting.RecordedAt.Equal(deniedExisting.RecordedAt) {
+			t.Fatal("logical newness refresh reopened refusal", replayExisting, e)
 		}
 		noHuman := sourceFreeRef
 		noHuman.ResultID = uuid.NewString()
@@ -239,7 +261,7 @@ func exerciseInitialProductionGrants(t *testing.T, db *gorm.DB, acceptor *Servic
 		if _, e = service.ResolveInitialProductionGrant(ctx, actor, wrong); e == nil {
 			t.Fatal("unregistered owner read history")
 		}
-		service.WithProductionRegistry(nativeRegistry).WithAuthorizationFactsReader(testMetaFacts{paths: []plugin.EngineCatalogPath{base.Path, receipt.Target}})
+		service.WithProductionRegistry(nativeRegistry).WithProductionIdentificationReader(nativeIdentification).WithAuthorizationFactsReader(testMetaFacts{paths: []plugin.EngineCatalogPath{base.Path, receipt.Target}})
 		var grant sourceGrant
 		if err := db.Where("request_id=?", issued.Grant.RequestID).Take(&grant).Error; err != nil {
 			t.Fatal(err)

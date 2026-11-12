@@ -182,7 +182,7 @@ func SetupRouter(db *gorm.DB, cfg *config.Config) *gin.Engine {
 		if err != nil {
 			panic(err)
 		}
-		fulfillmentService.WithProductionRegistry(producers)
+		fulfillmentService.WithProductionRegistry(producers).WithProductionIdentificationReader(metaClient)
 		fulfillmentService.WithUploadReaders(commonClient.NewManagerUploadClient(cfg.ManagerServiceURL, tokens, nil), metaClient)
 	}
 	if err := fulfillmentService.ConfigureSearchObservation(cfg.EncryptionKey, metaBasis); err != nil {

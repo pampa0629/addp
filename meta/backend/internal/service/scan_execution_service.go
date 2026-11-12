@@ -9,6 +9,7 @@ import (
 	commonExecution "github.com/addp/common/execution"
 	"github.com/addp/common/logger"
 	commonModels "github.com/addp/common/models"
+	"github.com/addp/common/production"
 	"github.com/redis/go-redis/v9"
 	"gorm.io/gorm"
 )
@@ -22,7 +23,7 @@ type ScanExecutionService struct {
 	taskExecutionRepo       *commonExecution.TaskExecutionRepository
 	log                     *slog.Logger
 	activeLeases            sync.Map
-	productionReceipts      transferProductionReceiptReader
+	productionRegistry      *production.Registry
 	uploadReceipts          uploadReceiptReader
 	collectionAuthorization collectionAuthorizationClient
 	refreshScopes           metadataRefreshScopeClient

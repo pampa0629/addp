@@ -5,11 +5,11 @@ import (
 	"errors"
 	"time"
 
-	"github.com/addp/common/production"
 	"github.com/addp/common/authorization"
 	"github.com/addp/common/client"
 	"github.com/addp/common/execution"
 	"github.com/addp/common/logger"
+	"github.com/addp/common/production"
 	"github.com/addp/transfer/internal/models"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -29,7 +29,7 @@ func (c systemInitialGrantRuntime) issue(ctx context.Context, tenant uint, id st
 }
 
 type productionBasicScanner interface {
-	EnsureTransferProductionBasicScan(context.Context, uint, string) (*client.MetaProductionBasicScan, error)
+	EnsureProductionBasicScan(context.Context, uint, production.Reference) (*client.MetaProductionIdentification, error)
 }
 
 type ProductionAuthorizationContinuation struct {
@@ -120,8 +120,8 @@ func (c *ProductionAuthorizationContinuation) runOne(ctx context.Context, now ti
 				// transport failures/403 never authorize scanning arbitrary targets.
 				pendingCode, _ := client.TenantAPIErrorCode(err)
 				if status, ok := client.TenantAPIStatusCode(err); ok && status == 503 && pendingCode == "initial_production_pending" {
-					scan, scanErr := c.meta.EnsureTransferProductionBasicScan(ctx, uint(item.TenantID), item.ExecutionID)
-					if scanErr == nil && scan != nil && scan.Validate() == nil && scan.ProductionExecutionID == item.ExecutionID {
+					scan, scanErr := c.meta.EnsureProductionBasicScan(ctx, uint(item.TenantID), production.Reference{Owner: "transfer", ExecutionID: item.ExecutionID, ResultID: item.ExecutionID})
+					if scanErr == nil && scan != nil && scan.Validate() == nil && scan.Reference == (production.Reference{Owner: "transfer", ExecutionID: item.ExecutionID, ResultID: item.ExecutionID}) {
 						code = "scan_pending"
 						if scan.Status == execution.ExecutionStatusFailed || scan.Status == execution.ExecutionStatusTimeout || scan.Status == execution.ExecutionStatusCancelled {
 							code = "scan_failed"

@@ -11,14 +11,14 @@ while [ "$#" -gt 0 ]; do
     case "$1" in
         --test)
             case "${2:-}" in
-                all|authorization-facts|file-composition|lineage-graph) test_group="$2"; shift 2 ;;
-                *) echo 'usage: meta-postgres-gate.sh [--test all|authorization-facts|file-composition|lineage-graph] [--source-root checkout]' >&2; exit 2 ;;
+                all|authorization-facts|file-composition|lineage-graph|production) test_group="$2"; shift 2 ;;
+                *) echo 'usage: meta-postgres-gate.sh [--test all|authorization-facts|file-composition|lineage-graph|production] [--source-root checkout]' >&2; exit 2 ;;
             esac
             ;;
         --source-root)
             [ -n "${2:-}" ] || { echo '--source-root requires a checkout path' >&2; exit 2; }
             source_root="$2"; shift 2 ;;
-        *) echo 'usage: meta-postgres-gate.sh [--test all|authorization-facts|file-composition|lineage-graph] [--source-root checkout]' >&2; exit 2 ;;
+        *) echo 'usage: meta-postgres-gate.sh [--test all|authorization-facts|file-composition|lineage-graph|production] [--source-root checkout]' >&2; exit 2 ;;
     esac
 done
 
@@ -71,6 +71,8 @@ fi
 service_tests='^(TestDataItemAuthorizationFactsAgainstPostgres|TestAuthorizationBasisRevisionAgainstPostgres|TestScanPlanFactsAgainstPostgres)$'
 if [ "$test_group" = all ]; then
     service_tests='^(TestProductionBasicScanAgainstPostgres|TestMosaicScanWholeResultAgainstPostgres|TestDataItemAuthorizationFactsAgainstPostgres|TestAuthorizationBasisRevisionAgainstPostgres|TestScanPlanFactsAgainstPostgres|TestCleanupRuntimeAtomicityAgainstPostgres|TestUserLineageVisibilityAgainstPostgres|TestLineageGraphPerformanceAgainstPostgres|TestFieldLineage(Evidence|MultiSourceWriteFacts|WideOverview)AgainstPostgres|TestLineageCollector(RetriesUnresolvedTarget|ContinuesAfterInvalidFacts|DefersNewExecutions|PreservesClosedFieldRelations)AgainstPostgres)$'
+elif [ "$test_group" = production ]; then
+    service_tests='^(TestProductionBasicScanAgainstPostgres|TestScanPlanFactsAgainstPostgres)$'
 elif [ "$test_group" = lineage-graph ]; then
     service_tests='^TestLineageGraphPerformanceAgainstPostgres$'
 fi
@@ -93,6 +95,13 @@ if grep -q -- '--- SKIP:' "$WORK_DIR/meta.log"; then
 fi
 if [ "$test_group" = file-composition ]; then
     for required_test in TestObjectModelRelatedRefsAgainstPostgres TestFTPBasicCompositionAgainstPostgres; do
+        grep -q -- "--- PASS: $required_test " "$WORK_DIR/meta.log" || {
+            echo "Meta PostgreSQL gate requires the real $required_test test" >&2
+            exit 1
+        }
+    done
+elif [ "$test_group" = production ]; then
+    for required_test in TestProductionBasicScanAgainstPostgres TestScanPlanFactsAgainstPostgres; do
         grep -q -- "--- PASS: $required_test " "$WORK_DIR/meta.log" || {
             echo "Meta PostgreSQL gate requires the real $required_test test" >&2
             exit 1

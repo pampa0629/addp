@@ -13,22 +13,40 @@ import (
 	"github.com/addp/common/client"
 	"github.com/addp/common/dataitem/authorizationfacts"
 	"github.com/addp/common/engine/plugin"
+	"github.com/addp/common/engine/plugins/nfs"
 	"github.com/addp/common/engine/plugins/postgresql"
 	"github.com/addp/common/execution"
 	"github.com/addp/common/execution/executiontest"
 	commonmodels "github.com/addp/common/models"
+	"github.com/addp/common/production"
 	"github.com/addp/meta/internal/metatest"
+	"github.com/addp/meta/internal/models"
+	"github.com/addp/meta/internal/scanresource"
 	"github.com/google/uuid"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 )
 
-type productionScanReceiptReader func(context.Context, uint, string) (*client.TransferProductionReceipt, error)
-
-func (f productionScanReceiptReader) ReadProductionReceipt(ctx context.Context, tenant uint, id string) (*client.TransferProductionReceipt, error) {
-	return f(ctx, tenant, id)
+func metaProductionRef(id string) production.Reference {
+	return production.Reference{Owner: "transfer", ExecutionID: id, ResultID: id}
 }
-
+func (s *ScanExecutionService) withTestProductionReader(reader func(context.Context, uint, string) (*client.TransferProductionReceipt, error)) *ScanExecutionService {
+	registry, err := production.NewRegistry(production.Owner{Module: "transfer", ClientID: "addp-transfer", ReceiptPermission: "transfer.production_receipt.read", ExecutionPermission: "transfer.task.execute", ReadReceipt: func(ctx context.Context, tenant uint, ref production.Reference) (*production.Receipt, error) {
+		native, err := reader(ctx, tenant, ref.ExecutionID)
+		if err != nil {
+			return nil, err
+		}
+		if native == nil || native.Validate() != nil {
+			return nil, production.ErrEvidence
+		}
+		r := native.ProductionEvidence()
+		return &r, nil
+	}})
+	if err != nil {
+		panic(err)
+	}
+	return s.WithProductionRegistry(registry)
+}
 func TestProductionBasicScan(t *testing.T) {
 	db := metatest.OpenMetadataDB(t)
 	if err := executiontest.EnsureSQLiteStore(db); err != nil {
@@ -54,7 +72,22 @@ func TestProductionBasicScanAgainstPostgres(t *testing.T) {
 	if err := execution.EnsureStore(db); err != nil {
 		t.Fatal(err)
 	}
+	if err := db.Exec("DROP SCHEMA IF EXISTS meta CASCADE;CREATE SCHEMA meta").Error; err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := db.Exec("DROP SCHEMA IF EXISTS meta CASCADE").Error; err != nil {
+			t.Error(err)
+		}
+	})
+	if err := db.AutoMigrate(&models.MetaNode{}, &models.MetaItem{}); err != nil {
+		t.Fatal(err)
+	}
 	testProductionBasicScan(t, db, true)
+	tx := db.Begin()
+	defer tx.Rollback()
+	exerciseProductionIdentification(t, tx)
+
 }
 
 func testProductionBasicScan(t *testing.T, db *gorm.DB, concurrent bool) {
@@ -67,16 +100,16 @@ func testProductionBasicScan(t *testing.T, db *gorm.DB, concurrent bool) {
 	capJSON := commonmodels.JSONString(capabilities)
 	engines := NewEngineService(db, nil)
 	engines.cacheEngine(tenant, &commonmodels.Engine{ID: 9, TenantID: &tenant, EngineType: "postgresql", Version: 3, LifecycleState: "active", Capabilities: &capJSON})
-	r := client.TransferProductionReceipt{TargetEngineVersion:1, SchemaVersion: client.TransferProductionReceiptSchema, TenantID: int64(tenant), ExecutionID: id, Attempt: 1, CommittedAt: time.Now().UTC(), Preparation: plugin.TableTargetCreated, CreatedAndCommitted: true,
+	r := client.TransferProductionReceipt{TargetEngineVersion: 3, SchemaVersion: client.TransferProductionReceiptSchema, TenantID: int64(tenant), ExecutionID: id, Attempt: 1, CommittedAt: time.Now().UTC(), Preparation: plugin.TableTargetCreated, CreatedAndCommitted: true,
 		Target: plugin.TabularItemPath(9, "schema", "public", "result.with.dot"), UserOrigin: &client.TransferProductionUserOrigin{PrincipalID: 31, TenantMembershipID: 51, AuthorizationVersion: 6}}
 	svc := NewScanExecutionService(db, nil, engines, nil)
-	svc.WithTransferProductionReceiptReader(productionScanReceiptReader(func(_ context.Context, tid uint, eid string) (*client.TransferProductionReceipt, error) {
+	svc.withTestProductionReader(func(_ context.Context, tid uint, eid string) (*client.TransferProductionReceipt, error) {
 		if tid != tenant || eid != id {
 			t.Error("untrusted receipt identity")
 		}
 		copy := r
 		return &copy, nil
-	}))
+	})
 	t.Cleanup(func() {
 		if err := db.Where("tenant_id=? AND module='meta' AND parent_execution_id=?", tenant, id).Delete(&execution.TaskExecution{}).Error; err != nil {
 			t.Error(err)
@@ -93,25 +126,27 @@ func testProductionBasicScan(t *testing.T, db *gorm.DB, concurrent bool) {
 			r.CreatedAndCommitted = false
 		},
 		func(r *client.TransferProductionReceipt) { r.Attempt = 2 },
-		func(r *client.TransferProductionReceipt) { r.UserOrigin = nil },
 		func(r *client.TransferProductionReceipt) { r.TenantID++ },
 	} {
 		copy := r
 		change(&copy)
-		if validProductionBasicScanReceipt(&copy, tenant, id) {
+		if func() bool {
+			p := copy.ProductionEvidence()
+			return p.Validate() == nil && p.TenantID == int64(tenant) && p.Reference == metaProductionRef(id) && p.Attempt == 1 && p.RetryOfExecutionID == nil && p.Objects[0].Created
+		}() {
 			t.Fatal("unproven or wrong-Tenant production qualified")
 		}
 	}
-	var first *client.MetaProductionBasicScan
+	var first *client.MetaProductionIdentification
 	if concurrent {
 		var wg sync.WaitGroup
-		results := make(chan *client.MetaProductionBasicScan, 2)
+		results := make(chan *client.MetaProductionIdentification, 2)
 		failures := make(chan error, 2)
 		for i := 0; i < 2; i++ {
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
-				result, err := svc.EnsureTransferProductionBasicScan(t.Context(), tenant, id)
+				result, err := svc.EnsureProductionBasicScan(t.Context(), tenant, metaProductionRef(id))
 				results <- result
 				failures <- err
 			}()
@@ -131,7 +166,7 @@ func testProductionBasicScan(t *testing.T, db *gorm.DB, concurrent bool) {
 			first = result
 		}
 	} else {
-		first, err = svc.EnsureTransferProductionBasicScan(t.Context(), tenant, id)
+		first, err = svc.EnsureProductionBasicScan(t.Context(), tenant, metaProductionRef(id))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -150,25 +185,25 @@ func testProductionBasicScan(t *testing.T, db *gorm.DB, concurrent bool) {
 	if len(targets) != 1 || targets[0] != "addp://engine/9/path/public/result.with.dot?type=table" {
 		t.Fatalf("not exact target: %+v", targets)
 	}
-	encodedTarget, err := json.Marshal(stored.ExecutionConfig["initial_production_target"])
+	encodedTarget, err := json.Marshal(stored.ExecutionConfig["initial_production_receipt"])
 	if err != nil {
 		t.Fatal(err)
 	}
-	var frozenTarget plugin.EngineCatalogPath
-	if err := json.Unmarshal(encodedTarget, &frozenTarget); err != nil || !reflect.DeepEqual(frozenTarget, r.Target) {
+	var frozenTarget production.Receipt
+	if err := json.Unmarshal(encodedTarget, &frozenTarget); err != nil || !reflect.DeepEqual(frozenTarget.Primary, r.Target) {
 		t.Fatalf("trusted typed target changed: %+v err=%v", frozenTarget, err)
 	}
 	facts, err := svc.GetScanPlanFacts(t.Context(), tenant, stored.ExecutionID)
 	if err != nil || facts.BasisState != authorizationfacts.AuthorizationBasisComplete || facts.SourceScope == nil || facts.SourceScope.Mode != "exact" || !reflect.DeepEqual(facts.SourceScope.Anchors, []plugin.EngineCatalogPath{r.Target}) || facts.TaskID != nil {
 		t.Fatalf("trusted new output facts=%+v err=%v", facts, err)
 	}
-	svc.WithTransferProductionReceiptReader(productionScanReceiptReader(func(context.Context, uint, string) (*client.TransferProductionReceipt, error) {
+	svc.withTestProductionReader(func(context.Context, uint, string) (*client.TransferProductionReceipt, error) {
 		return nil, errors.New("offline")
-	}))
+	})
 	if err := db.Model(&execution.TaskExecution{}).Where("execution_id=?", stored.ExecutionID).Update("status", "failed").Error; err != nil {
 		t.Fatal(err)
 	}
-	replay, err := svc.EnsureTransferProductionBasicScan(t.Context(), tenant, id)
+	replay, err := svc.EnsureProductionBasicScan(t.Context(), tenant, metaProductionRef(id))
 	if err != nil || replay.ScanExecutionID != first.ScanExecutionID || replay.Status != "failed" {
 		t.Fatal("replay revived a failed scan or needed live owner", replay, err)
 	}
@@ -176,4 +211,72 @@ func testProductionBasicScan(t *testing.T, db *gorm.DB, concurrent bool) {
 	if err := db.Model(&execution.TaskExecution{}).Where("tenant_id=? AND parent_execution_id=?", tenant, id).Count(&count).Error; err != nil || count != 1 {
 		t.Fatalf("scans=%d error=%v", count, err)
 	}
+	// A registered file producer follows the same path, with no invented human
+	// origin. The exact file scope also drives the actual Worker read guard.
+	caps, err := plugin.MarshalEngineCapabilities((&nfs.NFSPlugin{}).Capabilities())
+	if err != nil {
+		t.Fatal(err)
+	}
+	nfsCaps := commonmodels.JSONString(caps)
+	nfsEngine := &commonmodels.Engine{ID: 19, TenantID: &tenant, EngineType: "nfs", Version: 3, LifecycleState: "active", Capabilities: &nfsCaps}
+	engines.cacheEngine(tenant, nfsEngine)
+	fileRef := production.Reference{Owner: "develop", ExecutionID: id, ResultID: uuid.NewString()}
+	fileTarget := plugin.FileItemPath(19, "out/new.gpkg")
+	fileReceipt := production.Receipt{Reference: fileRef, TenantID: int64(tenant), Attempt: 1, TargetEngineVersion: 3, OperationID: uuid.NewString(), CommittedAt: time.Now(), Primary: fileTarget, Objects: []production.CommittedObject{{Target: fileTarget, Created: true}}, Sources: production.SourceEvidence{Kind: production.SourcesNone}}
+	registry, err := production.NewRegistry(production.Owner{Module: "develop", ClientID: "addp-develop", ReceiptPermission: "develop.production_receipt.read", ExecutionPermission: "develop.task.execute", ReadReceipt: func(context.Context, uint, production.Reference) (*production.Receipt, error) {
+		return &fileReceipt, nil
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	svc.WithProductionRegistry(registry)
+	fileScan, err := svc.EnsureProductionBasicScan(t.Context(), tenant, fileRef)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var fileRun execution.TaskExecution
+	if err := db.Where("execution_id=?", fileScan.ScanExecutionID).Take(&fileRun).Error; err != nil {
+		t.Fatal(err)
+	}
+	if fileRun.ActorPrincipalID != nil || fileRun.ActorTenantMembershipID != nil || fileRun.IssuedAuthorizationVersion != nil || fileRun.TriggeredBy != nil {
+		t.Fatal("service-only scan acquired a human origin")
+	}
+	if fileRun.ExecutionConfig["initial_production_new_candidate"] != true {
+		t.Fatal("fresh file result lost logical candidate")
+	}
+	fileFacts, err := svc.GetScanPlanFacts(t.Context(), tenant, fileRun.ExecutionID)
+	if err != nil || fileFacts.SourceScope == nil || !reflect.DeepEqual(fileFacts.SourceScope.Anchors, []plugin.EngineCatalogPath{fileTarget}) {
+		t.Fatal("file scope broadened", fileFacts, err)
+	}
+	if concurrent {
+		token, owner := uuid.NewString(), "production-scan-fixture"
+		until := time.Now().Add(time.Minute)
+		if err := db.Model(&fileRun).Updates(map[string]any{"status": "running", "attempt": 1, "lease_token": token, "lease_owner": owner, "lease_expires_at": until}).Error; err != nil {
+			t.Fatal(err)
+		}
+		if err := db.Where("id=?", fileRun.ID).Take(&fileRun).Error; err != nil {
+			t.Fatal(err)
+		}
+		lease := execution.Lease{TenantID: fileRun.TenantID, ExecutionID: fileRun.ExecutionID, Attempt: 1, Token: token, Owner: owner}
+		bounded, err := svc.productionReadContext(t.Context(), &fileRun, lease)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := scanresource.CheckRefreshContent(bounded, fileTarget); err != nil {
+			t.Fatal(err)
+		}
+		if scanresource.CheckRefreshContent(bounded, plugin.FileItemPath(19, "out/sibling.gpkg")) == nil || scanresource.CheckRefreshEnumeration(bounded, plugin.FileDirectoryPath(19, "out"), false) == nil {
+			t.Fatal("produced file scope expanded")
+		}
+		if err := scanresource.CheckCollectionRead(bounded, nfsEngine); err != nil {
+			t.Fatal(err)
+		}
+		if err := db.Model(&fileRun).Update("lease_token", uuid.NewString()).Error; err != nil {
+			t.Fatal(err)
+		}
+		if scanresource.CheckCollectionRead(bounded, nfsEngine) == nil {
+			t.Fatal("superseded scan lease retained source access")
+		}
+	}
+
 }

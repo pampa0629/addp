@@ -141,7 +141,7 @@ func refreshMetadataBinding(t *testing.T, target plugin.EngineCatalogPath, layou
 
 func TestUploadIdentificationCanReadExactCommittedMembersButNeverEnumerateParent(t *testing.T) {
 	target := plugin.FileItemPath(9, "dir/a.ifc")
-	ctx := WithUploadedContentTargets(t.Context(), []plugin.EngineCatalogPath{target})
+	ctx := WithCommittedContentTargets(t.Context(), []plugin.EngineCatalogPath{target})
 	if err := CheckRefreshContent(ctx, target); err != nil {
 		t.Fatal(err)
 	}

@@ -52,7 +52,7 @@ func (s *ScanExecutionService) createManualRun(ctx context.Context, tenantID, us
 		if req.Source != commonExecution.ModuleDevelop && req.Source != commonExecution.ModuleManager && req.Source != commonExecution.ModuleTransfer {
 			return nil, commonAPI.ErrBadRequest
 		}
-	} else if userID == 0 && req.SchemaChangeSource == nil {
+	} else if userID == 0 && req.SchemaChangeSource == nil && provenance == nil {
 		return nil, commonAPI.ErrForbidden
 	}
 	var userOrigin *commonExecution.TaskExecution

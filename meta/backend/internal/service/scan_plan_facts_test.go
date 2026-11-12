@@ -162,7 +162,7 @@ func exerciseScanPlanTaskBinding(t *testing.T, db *gorm.DB) {
 		{"targets injected", func(c commonmodels.JSONMap) { c["targets"] = []string{"other"} }},
 		{"paths injected", func(c commonmodels.JSONMap) { c["catalog_paths"] = []string{"other"} }},
 		{"refs injected", func(c commonmodels.JSONMap) { c["ref_groups"] = []any{map[string]any{"refs": []string{"other"}}} }},
-		{"production injected", func(c commonmodels.JSONMap) { c["initial_production_target"] = map[string]any{} }},
+		{"production injected", func(c commonmodels.JSONMap) { c["initial_production_receipt"] = map[string]any{} }},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			config := make(commonmodels.JSONMap, len(originalConfig))

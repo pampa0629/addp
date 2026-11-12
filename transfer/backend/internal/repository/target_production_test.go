@@ -300,3 +300,30 @@ func TestTargetProductionFreezesPrivateImportProofForItsActorAndTask(t *testing.
 		t.Fatal("changed proof was accepted on commit replay")
 	}
 }
+
+func TestCommittedServiceProductionKeepsTechnicalContinuationWithoutHuman(t *testing.T) {
+	db := newTaskRepositoryTestDB(t)
+	item, lease := productionExecutionFixture(t, db)
+	repo := NewTaskRepository(db)
+	if err := repo.BeginTargetProduction(t.Context(), lease, productionTestLocator, 1); err != nil {
+		t.Fatal(err)
+	}
+	if err := repo.RecordTargetPreparation(t.Context(), lease, productionTestLocator, plugin.TableTargetPreparation{Disposition: plugin.TableTargetCreated}); err != nil {
+		t.Fatal(err)
+	}
+	if err := repo.RecordTargetCommit(t.Context(), lease, productionTestLocator, nil, true, nil); err != nil {
+		t.Fatal(err)
+	}
+	var saved execution.TaskExecution
+	if err := db.First(&saved, item.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if saved.Metadata[models.ProductionAuthorizationMetadataKey] == nil || saved.ActorPrincipalID != nil || saved.TriggeredBy != nil {
+		t.Fatal("service result lost its technical continuation or acquired a human")
+	}
+	bad := int64(31)
+	saved.ActorPrincipalID = &bad
+	if models.InitialProductionAuthorization(&saved, time.Now()) != nil {
+		t.Fatal("partial human facts treated as service-only origin")
+	}
+}

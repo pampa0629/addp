@@ -25,6 +25,9 @@ func (s *ScanExecutionService) SetCollectionAuthorizationClient(client collectio
 }
 
 func (s *ScanExecutionService) bindCollectionRead(ctx context.Context, run *execution.TaskExecution, lease execution.Lease) (context.Context, error) {
+	if _, produced := run.ExecutionConfig["initial_production_receipt"]; produced {
+		return s.productionReadContext(ctx, run, lease)
+	}
 	if _, uploaded := run.ExecutionConfig["upload_receipt"]; uploaded {
 		return s.uploadReadContext(ctx, run, lease)
 	}

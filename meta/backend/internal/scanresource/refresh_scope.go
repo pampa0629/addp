@@ -12,15 +12,15 @@ import (
 type metadataRefreshScopeKey struct{}
 type directDirectoryRefreshKey struct{}
 type verifiedRefreshItemRefsKey struct{}
-type uploadedContentTargetsKey struct{}
+type committedContentTargetsKey struct{}
 
 // The upload owner has proved successful writes of exactly these paths. This
 // is a transient scan bound, never a DataItem Grant or a directory capability.
-func WithUploadedContentTargets(ctx context.Context, targets []plugin.EngineCatalogPath) context.Context {
-	return context.WithValue(ctx, uploadedContentTargetsKey{}, targets)
+func WithCommittedContentTargets(ctx context.Context, targets []plugin.EngineCatalogPath) context.Context {
+	return context.WithValue(ctx, committedContentTargetsKey{}, targets)
 }
-func hasUploadedContentTargets(ctx context.Context) bool {
-	_, present := ctx.Value(uploadedContentTargetsKey{}).([]plugin.EngineCatalogPath)
+func hasCommittedContentTargets(ctx context.Context) bool {
+	_, present := ctx.Value(committedContentTargetsKey{}).([]plugin.EngineCatalogPath)
 	return present
 }
 
@@ -52,7 +52,7 @@ func MetadataRefreshScope(ctx context.Context) *authorization.MetadataRefreshSco
 // CheckRefreshEnumeration is a local maximum-range check; the current source
 // authorization callback must also pass before every actual Catalog call.
 func CheckRefreshEnumeration(ctx context.Context, target plugin.EngineCatalogPath, recursive bool) error {
-	if hasUploadedContentTargets(ctx) {
+	if hasCommittedContentTargets(ctx) {
 		return commonapi.ErrForbidden
 	}
 	scope := MetadataRefreshScope(ctx)
@@ -76,7 +76,7 @@ func CheckRefreshEnumeration(ctx context.Context, target plugin.EngineCatalogPat
 }
 
 func CheckRefreshContent(ctx context.Context, target plugin.EngineCatalogPath) error {
-	if targets, present := ctx.Value(uploadedContentTargetsKey{}).([]plugin.EngineCatalogPath); present {
+	if targets, present := ctx.Value(committedContentTargetsKey{}).([]plugin.EngineCatalogPath); present {
 		for _, allowed := range targets {
 			if reflect.DeepEqual(allowed, target) {
 				return nil
