@@ -8,11 +8,11 @@
       "kind": "normative",
       "path": "transfer/docs/transfer-基本概念及配置说明.md",
       "anchor": "## 一、核心对象",
-      "commit": "c3fc306d2ab44bec91a68a253435c0dcdbc69a65",
-      "sha256": "d40fdf5d62f4a135ef198c19dbde7fdcd900aae987eb0e59942f759b5b4c8fcd",
+      "commit": "d12e8279b3dacb87f9fc196aa3f2ddb79598e0dd",
+      "sha256": "9d8a18ea33c30eb2d065aa924f09950ebc6a009f37b73c887defb73addd990b2",
       "use": {
-        "zh-cn": "复核执行计数改引执行记录表，原指标口径仍可定位。配置正文继续作为停止态 bounded 创建、snapshot replace/append、显式运行和恢复边界的依据。",
-        "en": "Reviewed the execution metrics reference to the execution record table, where the original counting rules remain documented. The configuration document remains evidence for stopped bounded creation, snapshot replace/append, explicit execution, and recovery boundaries."
+        "zh-cn": "复核写后 basic 确认 DataItem 身份与边界、System 独立办理初始授权、deep 补充增强事实的职责；授权不依赖 deep 成功。串接回执 metadata_scan.execution_id 指 deep，basic_execution_id 指基础识别，submitted 仅表示受理。当前创建仍限定 auto_scan_metadata=false 的停止态 bounded/snapshot 原生表任务，不启动扫描、执行或授权；创建能力、条件与效果保持。",
+        "en": "Reviewed post-write basic DataItem identification, independent System initial grants and deep enrichment; authorization does not depend on deep success. Chained metadata_scan.execution_id identifies deep, basic_execution_id identifies basic, and submitted means acceptance only. Creation remains a stopped bounded/snapshot native-table task with auto_scan_metadata=false, starting no scan, execution or grant and preserving its semantics, conditions and effects."
       }
     },
     {

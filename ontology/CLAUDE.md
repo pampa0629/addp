@@ -303,3 +303,10 @@ Outdoor 合成示例用于测试夹具及用户显式创建的本地演示本体
 
 
 2026-10-28 修订35的来源漂移修复已有实际CI恢复证据：`79fa05e7b9907b0ad978ce8716ac050b56314a80` 的 Go workspace run40521342460/job122248960679 的 `Run all tracked Go module tests` 实际成功，平台来源包0.676s通过；包含修复的后继 `7ebf98370ebc965e09cb5744983dbf8ee7fbbbce` 的完整 Platform consistency run40523616999/job122257071998 的 `Run platform consistency gate` 实际成功，同包0.176s通过。专门CI会话确认终态，本会话只核对保存的原始日志摘要、Job元数据/来源/attempt及实际非跳过步骤，没有查询或重跑CI。审计 `/tmp/addp-ci-20261027-160029/Transfer_79fa_review_source_actual_CI_recovery_audit.json`，独立复核 `/tmp/p145-export-source-ci-return-independent-audit.json`，链接与范围详见 security/CLAUDE.md 本日记录。旧失败保留，仅收口该来源漂移；不等于修订35已激活或真实CSV验收通过，后者仍未收到已有脚本的运行证据。仅归档证据，无产品/规范/发布内核变化，复用既有门禁不重复执行。
+
+
+### Transfer 创建来源复核（2026-11-13）
+
+复核 `f585f46a0` 的 basic 身份／初始授权与 deep 增强职责说明，以及已提交 `d12e8279b3dacb87f9fc196aa3f2ddb79598e0dd` 的写后 basic→deep 串接：`metadata_scan.execution_id` 指 deep，`basic_execution_id` 指基础识别，submitted 仅表示受理。该变化发生在后续成功写入，创建入口仍要求 auto_scan_metadata=false、bounded/snapshot/native table 且未启动，不增加扫描、执行或授权效果。
+
+创建来源仅 `config` 文档变化；前向修订 74 只更新该已提交文件的来源身份、摘要和中英文用途，保持全部 59 项来源、72 项绑定、6 项覆盖以及定义中除 revision 外的字段。运行／执行读取切片不变。现有 `make test-platform-review`、Ontology Go T1 和自然 Go／Platform 门禁覆盖本次元数据修复；源码冻结不表示运行时已激活或真实 Hosted 通过。
