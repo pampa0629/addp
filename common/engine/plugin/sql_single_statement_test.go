@@ -7,6 +7,7 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/addp/common/datatype"
 	"gorm.io/gorm"
@@ -35,7 +36,13 @@ type singleStatementConn struct {
 
 func (c *singleStatementConn) Begin() (driver.Tx, error) {
 	c.record.begins++
+	if c.record.failure != nil {
+		return nil, c.record.failure
+	}
 	return nil, errors.New("explicit transactions are unavailable")
+}
+func (c *singleStatementConn) BeginTx(context.Context, driver.TxOptions) (driver.Tx, error) {
+	return c.Begin()
 }
 func (c *singleStatementConn) QueryContext(_ context.Context, query string, args []driver.NamedValue) (driver.Rows, error) {
 	c.record.queries++
@@ -142,5 +149,55 @@ func TestSingleStatementReadReturnsQueryFailureWithoutRetry(t *testing.T) {
 	}
 	if statement, ok := ExecutedSQLForError(err); !ok || statement != record.query {
 		t.Fatal("statement error source lost")
+	}
+}
+
+func TestSharedTransactionalTimeoutStagesDoNotDependOnPoolForm(t *testing.T) {
+	for _, acquiring := range []bool{true, false} {
+		t.Run(map[bool]string{true: "acquiring", false: "after-acquisition"}[acquiring], func(t *testing.T) {
+			record := &singleStatementRecord{}
+			p := &singleStatementProvider{record: record, boundary: ControlledReadOnlySQLBoundaryDatabaseTransaction}
+			p.engineType = "transactional-timeout-fixture"
+			if SupportsSharedSQLPoolPolicy(p) {
+				t.Fatal("fixture must not declare configurable pool fields")
+			}
+			Register(p)
+			t.Cleanup(func() { Unregister(p.Type()) })
+			const engineID = 8418
+			t.Cleanup(func() { _ = ClosePool(engineID) })
+			pool, err := GetOrCreatePoolFromFactory(&Engine{ID: engineID, EngineType: p.Type(), Version: 1}, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			native, err := pool.DB()
+			if err != nil {
+				t.Fatal(err)
+			}
+			native.SetMaxOpenConns(1)
+			ctx := WithPoolEngineVersion(t.Context(), engineID, 1)
+			want := QueryErrorCodeSQLExecutionTimeout
+			if acquiring {
+				borrowed, err := native.Conn(ctx)
+				if err != nil {
+					t.Fatal(err)
+				}
+				defer borrowed.Close()
+				var cancel context.CancelFunc
+				ctx, cancel = context.WithTimeout(ctx, 50*time.Millisecond)
+				defer cancel()
+				want = QueryErrorCodeConnectionAcquisitionTimeout
+			} else {
+				record.failure = context.DeadlineExceeded
+			}
+			_, err = ExecuteSQLWithConnectionPool(ctx, p, nil, "SELECT id FROM source", QueryOptions{
+				EngineID: engineID, EngineType: p.Type(), ReadOnly: true,
+			}, SQLResultFieldMapper(singleStatementMapper))
+			if !errors.Is(err, context.DeadlineExceeded) || QueryErrorCodeOf(err) != want {
+				t.Fatalf("timeout lost its execution stage: code=%q, err=%v", QueryErrorCodeOf(err), err)
+			}
+			if record.queries != 0 || record.pools != 1 || acquiring && record.begins != 0 || !acquiring && record.begins != 1 {
+				t.Fatalf("timed-out execution retried or bypassed its pool: %+v", record)
+			}
+		})
 	}
 }

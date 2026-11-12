@@ -163,7 +163,7 @@ func executeSQLWithConnectionPool(ctx context.Context, poolPlugin interface {
 				return validator.ValidateAnalyticalExecution(ctx, tx, opts.analytical.sourceBindings())
 			}
 		}
-		trackTimeout := opts.EngineID != 0 && opts.EngineType != "" && SupportsSharedSQLPoolPolicy(poolPlugin)
+		trackTimeout := opts.EngineID != 0 && opts.EngineType != ""
 		return executeReadOnlySQL(ctx, db, poolPlugin.SQLDialect(), readOnlyBoundary, querySQL, opts.Args, preflight, mapField, decode, trackTimeout, poolPlugin)
 	}
 	rows, err := db.WithContext(ctx).Raw(querySQL, opts.Args...).Rows()

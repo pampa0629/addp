@@ -2,6 +2,7 @@ package highgo
 
 import (
 	"bytes"
+	"context"
 	"encoding/binary"
 	"errors"
 	"fmt"
@@ -48,6 +49,33 @@ func TestHighGoSM3ConnectionAndGORMPool(t *testing.T) {
 				t.Fatalf("unexpected version: %s", version)
 			}
 		})
+	}
+}
+
+func TestHighGoDelegatedQueryPreservesPoolTimeoutStage(t *testing.T) {
+	info := newSM3Server(t, "瀚高数据库管理系统V4.5")
+	info["pool_max_open_conns"], info["pool_max_idle_conns"] = 1, 0
+	p := &Plugin{}
+	const engineID = 8417
+	t.Cleanup(func() { _ = plugin.ClosePool(engineID) })
+	pool, err := plugin.GetOrCreatePoolFromFactory(&plugin.Engine{ID: engineID, EngineType: p.Type(), Version: 1, ConnectionInfo: info}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	native, err := pool.DB()
+	if err != nil {
+		t.Fatal(err)
+	}
+	borrowed, err := native.Conn(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer borrowed.Close()
+	ctx, cancel := context.WithTimeout(plugin.WithPoolEngineVersion(t.Context(), engineID, 1), 50*time.Millisecond)
+	defer cancel()
+	_, err = p.ExecuteSQL(ctx, info, "SELECT version()", plugin.QueryOptions{EngineID: engineID, EngineType: p.Type(), ReadOnly: true})
+	if !errors.Is(err, context.DeadlineExceeded) || plugin.QueryErrorCodeOf(err) != plugin.QueryErrorCodeConnectionAcquisitionTimeout {
+		t.Fatalf("delegated HighGo query lost its pool timeout stage: %v (code=%q)", err, plugin.QueryErrorCodeOf(err))
 	}
 }
 

@@ -3,6 +3,7 @@ package gaussdb
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math/big"
 	"os"
@@ -197,6 +198,49 @@ func TestIntegrationGaussDBPreparedReadAndCancellation(t *testing.T) {
 	if _, err := p.ExecuteSQL(ctx, info, "SELECT 1", plugin.QueryOptions{ReadOnly: true}); err != nil {
 		t.Fatalf("pool recovery: %v", err)
 	}
+	t.Run("shared delegated query timeout stages", func(t *testing.T) {
+		const engineID = 8416
+		current := plugin.WithPoolEngineVersion(t.Context(), engineID, 1)
+		connection := make(plugin.ConnectionInfo, len(info)+2)
+		for key, value := range info {
+			connection[key] = value
+		}
+		connection["pool_max_open_conns"], connection["pool_max_idle_conns"] = 1, 0
+		t.Cleanup(func() { _ = plugin.ClosePool(engineID) })
+		pool, err := plugin.GetOrCreatePoolFromFactory(&plugin.Engine{ID: engineID, EngineType: p.Type(), Version: 1, ConnectionInfo: connection}, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		native, err := pool.DB()
+		if err != nil {
+			t.Fatal(err)
+		}
+		borrowed, err := native.Conn(current)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer borrowed.Close()
+		opts := plugin.QueryOptions{EngineID: engineID, EngineType: p.Type(), ReadOnly: true}
+		blocked, stop := context.WithTimeout(current, 150*time.Millisecond)
+		_, err = p.ExecuteSQL(blocked, connection, "SELECT 1", opts)
+		stop()
+		if !errors.Is(err, context.DeadlineExceeded) || plugin.QueryErrorCodeOf(err) != plugin.QueryErrorCodeConnectionAcquisitionTimeout {
+			t.Fatalf("GaussDB pool wait lost its stage: %v (code=%q)", err, plugin.QueryErrorCodeOf(err))
+		}
+		if err := borrowed.Close(); err != nil {
+			t.Fatal(err)
+		}
+		blocked, stop = context.WithTimeout(current, 150*time.Millisecond)
+		_, err = p.ExecuteSQL(blocked, connection, "SELECT pg_sleep(10)", opts)
+		stop()
+		if !errors.Is(err, context.DeadlineExceeded) || plugin.QueryErrorCodeOf(err) != plugin.QueryErrorCodeSQLExecutionTimeout {
+			t.Fatalf("GaussDB SQL execution lost its stage: %v (code=%q)", err, plugin.QueryErrorCodeOf(err))
+		}
+		result, err := p.ExecuteSQL(current, connection, "SELECT current_setting('transaction_read_only') AS mode", opts)
+		if err != nil || len(result.Rows) != 1 || result.Rows[0]["mode"] != "on" {
+			t.Fatalf("GaussDB shared query did not recover its read-only transaction: %+v, %v", result, err)
+		}
+	})
 }
 
 func sameDecimal(got, want string) bool {
