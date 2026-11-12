@@ -72,6 +72,15 @@
 - **清理**。CDC 定义删除后读回 404。Kafka 定义删除持续轮询运行会话，约 10 秒后 Transfer 返回 503、Gateway 返回 502（请求 `367da1bb-d758-4a8e-ac73-2c83e16c2458`）。业务清理失败，隔离部署销毁前剩余一项。外层销毁通过，Infra 报告零残留。归档中旧 Kafka 执行有会话插入记录，未见退出确认。替代执行和其余两条执行均有退出确认 SQL。删除期间针对该 Kafka 任务轮询了 40 次未确认退出的会话，与当前要求所有历史会话确认退出的裁决一致。
 - **归档**。证据归档 `13761547686`，独立核对 ZIP SHA-256 与 GitHub 声明一致，为 `4a0479d5c4c6c6a176d3260d808a408e16f4f473bf9c1da9bab51b6b321eab59`。
 
+## 2026-11-12 任务级 CDC 指标 Hosted 首轮
+
+用户明确授权运行新增断言后的既有 `transfer-continuous-events` Hosted T4。[Run 43202861644／Job 131130484246](https://github.com/pampa0629/addp/actions/runs/43202861644/job/131130484246) 为 attempt 1，固定源码 `079dd4b9eb6688f8a8e28a852f1117417ad4b632`；该版本包含 `c4077dd0a` 的任务槽／WAL／定向捕获延迟与暂停恢复断言，之后两次提交未改写相关场景文件。六个服务的正式预检构建身份均绑定该 SHA，隔离 Linux x86_64 准入通过；Job 北京时间 18:45:08 开始、19:02:17 结束，结果为 failure。
+
+- **已通过范围**。报告的 10 项 checks 已完成：正式源扫描、业务 Kafka 初始提交及事件、不可读执行列表隔离、Owner／跨租户／同租户历史权限、持续写入游标、真实 Worker SIGKILL 后租约恢复、Kafka 暂停恢复及坏记录、Owner 不可用时失败关闭、撤权和重新登录后的拒绝、真实多页游标及撤权后列表／总数。`continuous-browser-live/recovery/revocation.json` 三份实际浏览器回执均为 passed。
+- **首败与证据边界**。套件停在 `kafka_hard_delete/request_or_contract_failed`，`uncertain_mutation=false`；只创建了 Kafka task 1，尚未进入 CDC task 创建或 `cdc_task_monitoring`，因此新增槽／WAL／延迟／暂停恢复断言全部为未执行，不能记为新增 T4 通过或 CDC 产品失败。同一 DELETE 请求 `2d08d3f0-3556-4b11-a406-374c228c1cdb` 在约 10.009 秒时由 Gateway 记录 `context canceled`、HTTP 502，Transfer 记录 HTTP 503。场景客户端默认 HTTP timeout 为 10 秒，Transfer 原有 runtime stop 等待默认上限为 45 秒，等待预算冲突已确认；但当次安全报告没有区分 DELETE 传输、响应处理、定义读回及数据库后置核验，不能仅凭通用失败码断定具体退出的子步骤。该时限冲突是直接排查方向，未通过调大时限、放宽拒删断言或再次派发来改写本轮结果。
+- **清理**。领域报告为 `cleanup=failed`，Kafka task 1 的 `deployment_destruction` 步骤未取得完整拒删证明，`residual_resources=1`、`expected_deployment_residuals=0`。外层标准退出清理为 `cleanup=passed`、`infra_cleanup=zero_residuals`：停止应用、销毁本轮 Business PG／Kafka 夹具、移除 Infra 容器／网络／卷及私有凭据目录的检查完成。部署销毁成功不替代领域任务清理通过；个人开发服务、数据卷及原有逻辑槽未被本轮操作。
+- **归档**。Artifact `13937371862` 的 ZIP SHA-256 经独立下载核对，与 GitHub 声明一致：`dac509517e9474ad537cc74b385ef631ed737d53fe69544952b54e0fd752a089`。下载后的 JSON／JSONL／日志／文本未检出所检查的 JWT 模式或 `business-value-sentinel`。原始报告、浏览器回执、日志、ZIP 与独立评估在 `/tmp/addp-cdc-hosted-43202861644/`；没有新增 Hosted 重跑。本轮下一步是先定位并收敛 Kafka 拒删验证的 HTTP 等待边界，再复验原场景，拒删条件与运行会话退出确认要求保持原契约。
+
 ## 2026-10-24 概览保留只读评估第一期
 
 Common 的 `AssessRetention` 由 System 既有维护循环调用，以数据库时间和只读、可重复读事务评估 180 天时间候选。首期检查完整执行树、租约、关系异常、树外引用及预算，保留 Owner 释放和消费者引用未核验原因。批次计数按当次读取范围解释，不能累加为全库唯一树数。[现行留存契约](../../tasks/执行监控.md#概览保留与清理契约)

@@ -318,7 +318,7 @@ CDC 捕获资源名沿全局 `apply_identity`／generation 生成，源端同名
 
 真实场景使用手工 Hosted suite [transfer-continuous-events](../docs/spec/testing/scenarios/同步与引擎消费.md#transfer-continuous-events)，沿独占生命周期、System IAM 测试身份和正式 Gateway／Owner／Worker；Business 物理夹具独立核对业务 Kafka 与 PostgreSQL CDC 目标事实。连续执行浏览器验收复用该 suite 与 Console canonical 路由，在事件已提交后核对时间线、自动刷新新增计数、恢复来源与失败原因；Python 夹具沿既有 IAM 入口撤权，浏览器先确认已展示授权详情，再核对旧内容清空和重新登录后的 Monitor-only 拒绝。私有阶段控制文件与浏览器原始输出不归档，只归档闭合报告和安全截图。
 
-同一隔离场景的任务级槽／WAL／定向 Jolokia 与暂停恢复检查沿[场景定义](../docs/spec/testing/scenarios/同步与引擎消费.md#transfer-continuous-events)。新增源端与 Connect 原生读取只在既有 Hosted 边界内执行，公开回执不包含私有资源名；普通 runner 与新增断言的真实 T4 结果分别认定，不以个人环境任务 60 的联验替代新版 Hosted。
+同一隔离场景的任务级槽／WAL／定向 Jolokia 与暂停恢复检查沿[场景定义](../docs/spec/testing/scenarios/同步与引擎消费.md#transfer-continuous-events)。新增源端与 Connect 原生读取只在既有 Hosted 边界内执行，公开回执不包含私有资源名；普通 runner 与新增断言的真实 T4 结果分别认定，不以个人环境任务 60 的联验替代新版 Hosted。 2026-11-12 [首轮 Hosted 回执](../docs/spec/testing/evidence/Monitor执行监控与留存历史证据.md#2026-11-12-任务级-cdc-指标-hosted-首轮)停在 Kafka 强退拒删验证，新增 CDC 指标断言未执行；领域任务清理失败，外层部署销毁及 Infra 零残留通过，三者分别认定。
 
 持续写入验收在同一 Kafka 任务追加记录并确认目标提交后沿原游标续读，将拼接结果与 Monitor 和 Owner 从头读取的完整事件顺序对照。Console 核对自动续页和手动刷新后的顺序与行数，并在 Worker 失联后于同一页面核对原执行的失败诊断与唯一终态事件。已归档的两轮 Hosted 分别停在整引擎扫描和目录基线读取，均未创建 Kafka 任务，上述断言均未执行。旧版租户日志终审保留当次两页四条事件与撤权后旧游标拒绝的结果。[现行场景](../docs/spec/testing/scenarios/同步与引擎消费.md#transfer-continuous-events) · [持续写入两轮 Hosted 结果](../docs/spec/testing/evidence/Monitor执行监控与留存历史证据.md#持续写入期间续页与刷新首次-hosted2026-11-07) · [固定版本租户日志终审](../docs/spec/testing/evidence/Monitor执行监控与留存历史证据.md#2026-10-23-固定版本租户日志终审)
 
