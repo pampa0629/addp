@@ -221,20 +221,23 @@ func validateSource(source Source) error {
 		return err
 	}
 	if source.Format == "tiff" {
-		if len(source.RelatedFiles) == 0 {
-			return nil
+		if source.Kind != KindFile || source.Entrypoint != "" {
+			return fmt.Errorf("TIFF requires a file source without an entrypoint override")
 		}
-		if source.Kind != KindFile || len(source.RelatedFiles) != 1 || source.RelatedFiles[0].Role != "auxiliary_metadata" || source.Entrypoint != "" {
-			return fmt.Errorf("TIFF accepts one optional PAM companion")
-		}
-		expected := source.Access
-		if expected.Method == MethodMountedPath {
-			expected.Path += ".aux.xml"
-		} else {
-			expected.Object += ".aux.xml"
-		}
-		if source.RelatedFiles[0].Access != expected {
-			return fmt.Errorf("TIFF PAM must be beside its primary on the same connection")
+		seen := map[Access]bool{source.Access: true}
+		for _, member := range source.RelatedFiles {
+			switch member.Role {
+			case "world_file", "crs", "header", "auxiliary_metadata", "overview", "mask":
+			default:
+				return fmt.Errorf("unsupported TIFF component role %q", member.Role)
+			}
+			if _, _, err := validateSiblingAccess(source.Access, member.Access); err != nil {
+				return err
+			}
+			if seen[member.Access] {
+				return fmt.Errorf("TIFF components must have distinct exact paths")
+			}
+			seen[member.Access] = true
 		}
 		return nil
 	}
@@ -247,34 +250,43 @@ func validateSource(source Source) error {
 	if source.Kind != KindFile || len(source.RelatedFiles) != 1 || source.RelatedFiles[0].Role != "header" || source.Entrypoint != "" {
 		return fmt.Errorf("ENVI requires a file source and one exact header")
 	}
-	companion := source.RelatedFiles[0].Access
-	if err := validateResource("related header", KindFile, "envi", companion); err != nil {
+	mainName, headerName, err := validateSiblingAccess(source.Access, source.RelatedFiles[0].Access)
+	if err != nil {
 		return err
 	}
-	main := source.Access
-	var mainName, headerName string
+	if strings.EqualFold(path.Ext(mainName), ".hdr") || !strings.EqualFold(path.Ext(headerName), ".hdr") {
+		return fmt.Errorf("ENVI companion must be an exact header beside the primary on the same connection")
+	}
+	return nil
+}
+
+// TIFF and ENVI carry exact sibling files on a single storage connection.
+func validateSiblingAccess(main, companion Access) (string, string, error) {
+	if err := validateResource("related file", KindFile, "tiff", companion); err != nil {
+		return "", "", err
+	}
+	var mainName, relatedName string
 	switch main.Method {
 	case MethodMountedPath:
-		mainName, headerName = main.Path, companion.Path
-		if !path.IsAbs(mainName) || !path.IsAbs(headerName) {
-			return fmt.Errorf("ENVI mounted paths must be absolute")
+		mainName, relatedName = main.Path, companion.Path
+		if !path.IsAbs(mainName) || !path.IsAbs(relatedName) {
+			return "", "", fmt.Errorf("related mounted paths must be absolute")
 		}
 		main.Path, companion.Path = "", ""
 	case MethodObjectStore:
-		mainName, headerName = main.Object, companion.Object
-		if strings.HasPrefix(mainName, "/") || strings.HasPrefix(headerName, "/") {
-			return fmt.Errorf("ENVI object names must be exact relative names")
+		mainName, relatedName = main.Object, companion.Object
+		if strings.HasPrefix(mainName, "/") || strings.HasPrefix(relatedName, "/") {
+			return "", "", fmt.Errorf("related object names must be exact relative names")
 		}
 		main.Object, companion.Object = "", ""
 	}
 	validName := func(name string) bool {
 		return name != "" && utf8.ValidString(name) && len(name) <= 4096 && name != ".." && !strings.HasPrefix(name, "../") && path.Clean(name) == name && !strings.ContainsAny(name, "\\:") && !strings.ContainsFunc(name, unicode.IsControl)
 	}
-	if !reflect.DeepEqual(main, companion) || main.Prefix != "" || !validName(mainName) || !validName(headerName) || path.Dir(mainName) != path.Dir(headerName) ||
-		strings.EqualFold(path.Base(mainName), path.Base(headerName)) || strings.EqualFold(path.Ext(mainName), ".hdr") || !strings.EqualFold(path.Ext(headerName), ".hdr") {
-		return fmt.Errorf("ENVI companion must be an exact header beside the primary on the same connection")
+	if !reflect.DeepEqual(main, companion) || main.Prefix != "" || !validName(mainName) || !validName(relatedName) || path.Dir(mainName) != path.Dir(relatedName) || strings.EqualFold(path.Base(mainName), path.Base(relatedName)) {
+		return "", "", fmt.Errorf("related file must be beside its primary on the same connection")
 	}
-	return nil
+	return mainName, relatedName, nil
 }
 
 func sourceJSONMap(source Source, audit bool) commonModels.JSONMap {

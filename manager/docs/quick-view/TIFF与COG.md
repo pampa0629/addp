@@ -22,9 +22,11 @@ TIFF / COG 的能力判断通过：
 GET /api/v1/manager/quick-view/capability?locator={resource_locator}
 ```
 
-返回快显能力。TIFF / COG 判断事实来自 Meta attributes：`layout=multi` 的 GeoTIFF item 由 Meta 使用 primary `.tif/.tiff` 读取 `type_info.media`、`format_info.tiff` 和 `capabilities.spatial`，sidecar refs 只作为 `item.refs` 保留。Manager 不重新扫描 TIFF，也不直接读取 sidecar 反推空间事实。生成 COG 时，从 Meta 正式授权事实查询取得完整组成，保留主文件同名 `.aux.xml` 的 `auxiliary_metadata` 角色及可选标志，不自行重判授权对象。TIFF 与 ENVI 复用现有 Raster COG 执行授权，绑定任务、引擎及完整组成；Manager 将逐组件 `storage.content_versions` 冻结到 `config.raster.content_versions`，纳入配置摘要。生成前按当前执行授权逐一读取并核对大小、SHA-256，暂存到执行归属的 Infra MinIO 私有目录，维持原主文件名和同名 PAM 关系后交给 GDAL；成功、失败均沿既有所有权记录清理。已登记 PAM 缺失或字节改变时明确失败，不丢弃 PAM 继续。未登记的旁文件不得被枚举或加入读取计划。
+返回快显能力。TIFF / COG 判断事实来自 Meta attributes：`layout=multi` 的 GeoTIFF item 由 Meta 使用 primary `.tif/.tiff` 读取 `type_info.media`、`format_info.tiff` 和 `capabilities.spatial`，sidecar refs 只作为 `item.refs` 保留。Manager 不重新扫描 TIFF，也不直接读取 sidecar 反推空间事实。生成 COG 时，从 Meta 正式授权事实查询取得完整组成，保留 Meta 已登记的全部辅助成员角色、精确路径及必需性标记；主 TIFF 必需且唯一，无辅助为 single，有辅助为 multi，不限制为两项或四项，不自行重判授权对象。TIFF 与 ENVI 复用现有 Raster COG 执行授权，绑定任务、引擎及完整组成；Manager 将逐组件 `storage.content_versions` 冻结到 `config.raster.content_versions`，纳入配置摘要。生成前按当前执行授权逐一读取并核对大小、SHA-256，暂存到执行归属的 Infra MinIO 私有目录，维持主文件和全部登记辅助成员的原文件名及同父目录关系后交给 GDAL；成功、失败均沿既有所有权记录清理。任一已登记成员缺失或字节改变时明确失败并要求 Meta 刷新，不丢弃成员继续。未登记的旁文件不得被枚举或加入读取计划。
 
-`layout=multi` TIFF 即使很小，也需要通过完整组成生成受管 COG；前端 geotiff.js 不直接解释 PAM。单文件 TIFF 继续按大小与像素预算选择基础预览。读取已有 COG 时核对当前 Meta 完整组件版本，并以原用户当前完整 DataItem 读取权重新裁决；PAM 单独变化、组成变化或撤权不能复用旧 COG。这里的缓存版本判断以最新已提交的深扫为准，不在每个 Range 请求重新全量计算源哈希；生成时会核对实际原字节。缺少完整版本的旧 TIFF 须先深度刷新再生成，不能回退主文件旧哈希。
+`layout=multi` TIFF 即使很小，也需要通过完整组成生成受管 COG；前端 geotiff.js 不负责解释完整 sidecar 组成。单文件 TIFF 继续按大小与像素预算选择基础预览。读取已有 COG 时核对当前 Meta 完整组件版本，并以原用户当前完整 DataItem 读取权重新裁决；任一组件变化、组成变化或撤权不能复用旧 COG。这里的缓存版本判断以最新已提交的深扫为准，不在每个 Range 请求重新全量计算源哈希；生成时会核对实际原字节。缺少完整版本的旧 TIFF 须先深度刷新再生成，不能回退主文件旧哈希。
+
+TIFF 外置 `.msk` 是 Meta 登记的可选 `mask` 辅助成员：扫描未发现时不登记，发现时与主文件及其他辅助成员组成完整 DataItem。读取保留有效像元掩膜，生成 COG 后逐像元核对；已登记掩膜缺失不得降为单文件继续。
 
 小 TIFF 可直接由前端渲染时：
 

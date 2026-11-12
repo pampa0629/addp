@@ -113,6 +113,7 @@ func TIFFRelatedRefSpecs() []format.RelatedRefSpec {
 		{Extension: ".prj", Role: "crs", Required: false},
 		{Extension: ".aux.xml", Role: "auxiliary_metadata", Required: false},
 		{Extension: ".ovr", Role: "overview", Required: false},
+		{Extension: ".msk", Role: "mask", Required: false},
 		{Extension: ".hdr", Role: "header", Required: false},
 	}
 }
@@ -176,6 +177,8 @@ func tiffLabelForRole(role, ext string, ref contentio.Ref) string {
 		return "辅助元数据"
 	case "overview":
 		return "金字塔概览"
+	case "mask":
+		return "有效像元掩膜"
 	case "header":
 		return "头信息"
 	default:

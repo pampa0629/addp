@@ -945,7 +945,7 @@ func (s *WorkflowEngineService) deriveWorkflowAccessPlan(
 			if item == nil || item.TenantID != tenantID {
 				return nil, fmt.Errorf("TIFF source metadata does not match its tenant")
 			}
-			source, err = dataitem.WithTIFFPAM(source, locator, item)
+			source, err = dataitem.WithTIFFComponents(source, locator, item)
 			if err != nil {
 				return nil, err
 			}

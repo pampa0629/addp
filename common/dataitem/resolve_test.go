@@ -194,6 +194,55 @@ func TestResolveItemsGroupsGeoTIFFSidecars(t *testing.T) {
 	}
 }
 
+func TestResolveTIFFUsesEveryPresentAuxiliaryAndRequiresPrimary(t *testing.T) {
+	aux := []Candidate{
+		{Path: "images/a.tfw", Name: "a.tfw"}, {Path: "images/a.hdr", Name: "a.hdr"},
+		{Path: "images/a.tif.aux.xml", Name: "a.tif.aux.xml"}, {Path: "images/a.prj", Name: "a.prj"},
+		{Path: "images/a.tif.ovr", Name: "a.tif.ovr"}, {Path: "images/a.tif.msk", Name: "a.tif.msk"},
+	}
+	for mask := 0; mask < 1<<len(aux); mask++ {
+		candidates := []Candidate{{Path: "images/a.tif", Name: "a.tif"}}
+		for i, candidate := range aux {
+			if mask&(1<<i) != 0 {
+				candidates = append(candidates, candidate)
+			}
+		}
+		for _, primary := range []bool{false, true} {
+			selected := candidates
+			if !primary {
+				selected = candidates[1:]
+			}
+			result, err := ResolveItems(ResolveInput{ScopeKind: ScopeKindDirectory, ScopePath: "images", Candidates: selected})
+			if err != nil {
+				t.Fatal(err)
+			}
+			found := false
+			for _, item := range result.Items {
+				if item.Format != "tiff" {
+					continue
+				}
+				found = true
+				if !primary {
+					t.Fatal("TIFF DataItem created without its primary", mask)
+				}
+				if len(candidates) == 1 {
+					if item.Layout != format.LayoutSingle || len(item.RefList) != 0 {
+						t.Fatal("standalone TIFF is not single", item)
+					}
+				} else if item.Layout != format.LayoutMulti || len(item.RefList) != len(candidates) {
+					t.Fatalf("mask=%d lost scanned composition: %#v", mask, item)
+				}
+				if item.PrimaryContentPath != "images/a.tif" {
+					t.Fatal("lost TIFF primary")
+				}
+			}
+			if primary && !found {
+				t.Fatal("missing TIFF item", mask)
+			}
+		}
+	}
+}
+
 func TestResolveItemsGroupsTIFFExtensionSidecars(t *testing.T) {
 	t.Parallel()
 

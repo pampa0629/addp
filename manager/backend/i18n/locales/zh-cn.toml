@@ -394,3 +394,6 @@ other = "检索参数无效，请重新检索"
 
 [manager.search.capacity_exceeded]
 other = "检索容量不足，本次查询已停止"
+
+[manager.error.tiff_source_composition_changed]
+other = "TIFF 源组成已变化：已登记的组成文件缺失或内容改变，请刷新元数据后重新核验。"

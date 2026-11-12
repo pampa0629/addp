@@ -269,7 +269,7 @@ def test_tiff_optional_pam_object_staging(tmp_path, monkeypatch, failure):
             Path(target).write_bytes(b"<PAMDataset/>" if key.endswith(".aux.xml") else b"tiff")
     monkeypatch.setattr(access, "_object_store_client", lambda _: Client())
     if failure == "AccessDenied":
-        with pytest.raises(WorkflowAccessError, match="download TIFF PAM failed"):
+        with pytest.raises(WorkflowAccessError, match="download source object failed"):
             stage_source_file(plan, tmp_path)
     elif failure == "NoSuchKey":
         with pytest.raises(WorkflowAccessError, match="source composition changed"):
@@ -285,19 +285,23 @@ def test_tiff_optional_pam_object_staging(tmp_path, monkeypatch, failure):
 
 
 @pytest.mark.parametrize("max_bytes", [None, 16])
-def test_tiff_registered_pam_missing_from_mounted_source_fails(tmp_path, max_bytes):
+@pytest.mark.parametrize("name,role", [("source.tif.aux.xml", "auxiliary_metadata"), ("source.tfw", "world_file"),
+                                      ("source.hdr", "header"), ("source.prj", "crs"), ("source.tif.ovr", "overview"), ("source.tif.msk", "mask")])
+def test_tiff_registered_component_missing_from_mounted_source_fails(tmp_path, max_bytes, name, role):
     primary = tmp_path / "source.tif"
     primary.write_bytes(b"tiff")
     plan = {"schema_version": "addp.workflow.access-plan/v1", "source": {
         "kind": "file", "format": "tiff", "access": {"method": "mounted_path", "path": str(primary)},
-        "related_files": [{"role": "auxiliary_metadata", "access": {
-            "method": "mounted_path", "path": str(primary) + ".aux.xml"}}],
+        "related_files": [{"role": role, "access": {
+            "method": "mounted_path", "path": str(tmp_path / name)}}],
     }}
     with pytest.raises(WorkflowAccessError, match="source composition changed"):
         stage_source_file(plan, tmp_path / "private", max_bytes=max_bytes)
+    assert not (tmp_path / "private" / "source").exists()
+    assert primary.read_bytes() == b"tiff"
 
 
-@pytest.mark.parametrize("field,value", [("bucket", "other"), ("object", "images/other.tif.aux.xml"), ("secret_key", "other")])
+@pytest.mark.parametrize("field,value", [("bucket", "other"), ("object", "other/test.tif.aux.xml"), ("secret_key", "other")])
 def test_tiff_pam_requires_same_source_connection_and_name(tmp_path, field, value):
     plan = _object_source("file", "images/test.tif")
     source = plan["source"]
@@ -307,3 +311,43 @@ def test_tiff_pam_requires_same_source_connection_and_name(tmp_path, field, valu
     source["related_files"] = [{"role": "auxiliary_metadata", "access": companion}]
     with pytest.raises(WorkflowAccessError, match="same connection"):
         stage_source_file(plan, tmp_path)
+
+
+@pytest.mark.parametrize("count", range(7))
+@pytest.mark.parametrize("object_store", [False, True])
+def test_tiff_stages_all_registered_members_in_private_directory(tmp_path, monkeypatch, count, object_store):
+    import addp_common.workflow_access as access
+    members = [("main.tfw", "world_file"), ("main.hdr", "header"), ("main.tif.aux.xml", "auxiliary_metadata"),
+               ("main.prj", "crs"), ("main.tif.ovr", "overview"), ("main.tif.msk", "mask")][:count]
+    root = tmp_path / "original"
+    root.mkdir()
+    original = root / "main.tif"
+    original.write_bytes(b"main")
+    (root / "unregistered.tif.aux.xml").write_bytes(b"must not read")
+    source = {"kind": "file", "format": "tiff", "access": {"method": "mounted_path", "path": str(original)}}
+    key = "path"
+    if object_store:
+        source["access"] = _object_source("file", "images/main.tif")["source"]["access"]
+        key = "object"
+    source["related_files"] = []
+    payloads = {"main.tif": b"main"}
+    for name, role in members:
+        payloads[name] = name.encode()
+        (root / name).write_bytes(payloads[name])
+        source["related_files"].append({"role": role, "access": {**source["access"], key: str(root / name) if not object_store else "images/" + name}})
+    calls = []
+    class Client:
+        def fget_object(self, bucket, name, target):
+            calls.append(name)
+            Path(target).write_bytes(payloads[Path(name).name])
+    monkeypatch.setattr(access, "_object_store_client", lambda _: Client())
+    primary = stage_source_file({"source": source}, tmp_path / "private")
+    assert primary != original
+    assert {p.name: p.read_bytes() for p in primary.parent.iterdir()} == payloads
+    if object_store:
+        assert calls == ["images/" + name for name in payloads]
+    (root / "main.tif").write_bytes(b"changed")
+    assert primary.read_bytes() == b"main"
+    with pytest.raises(FileExistsError):
+        stage_source_file({"source": source}, tmp_path / "private")
+    assert primary.read_bytes() == b"main"

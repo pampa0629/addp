@@ -4122,7 +4122,7 @@ def test_raster_tiles_exact_windows_dtype_masks_colors_and_source_immutable(tmp_
         original_ds = None
         assert np.all(coverage == 1)
         # Materialized intermediates are reclaimed per tile; only source snapshots remain.
-        assert len(list(loaded.workspace.glob('*.tif'))) == 5  # source plus four verification reloads
+        assert len(list(loaded.workspace.rglob('*.tif'))) == 5  # private source plus four verification reloads
     assert source.read_bytes() == original
     with raster_workspace():
         with pytest.raises(ValueError): raster_tiles_info(tiles)
@@ -8358,7 +8358,7 @@ def test_d8_weighted_exact_coverage_no_missing_weight_as_zero(tmp_path,invalid,l
 
 
 @pytest.mark.parametrize('mask_storage',['YES','NO'],ids=['internal','external'])
-def test_d8_weighted_mask_storage_respects_single_file_admission(tmp_path,mask_storage):
+def test_d8_weighted_mask_storage_preserves_registered_composition(tmp_path,mask_storage):
     import operators.raster_compute as compute
     paths=_weighted_files(tmp_path,np.array([[1.,0.]]),np.ones((1,2)))
     ds=gdal.Open(str(paths[1]),gdal.GA_Update)
@@ -8371,13 +8371,17 @@ def test_d8_weighted_mask_storage_respects_single_file_admission(tmp_path,mask_s
     original={name:Path(name).read_bytes() for name in files}
     with raster_workspace():
         source=raster_load(source_plan(paths[0]));prior=set(source.workspace.iterdir())
-        if mask_storage=='NO':
-            with pytest.raises(ValueError,match='self-contained; external sidecars'):
-                raster_load(source_plan(paths[1]))
-        else:
-            weights=raster_load(source_plan(paths[1]));prior=set(source.workspace.iterdir())
-            with raster_error_language('en'),pytest.raises(ValueError,match='effective coverage'):
-                compute.raster_flow_accumulation_weighted_d8(source,weights,1,1)
+        plan = source_plan(paths[1])
+        if mask_storage == 'NO':
+            plan['source']['related_files'] = [{'role': 'mask', 'access': {
+                'method': 'mounted_path', 'path': str(paths[1])+'.msk'}}]
+        weights = raster_load(plan)
+        prior = set(source.workspace.iterdir())
+        snapshot = gdal.Open(str(weights.path))
+        np.testing.assert_array_equal(snapshot.GetRasterBand(1).GetMaskBand().ReadAsArray(), [[0,255]])
+        snapshot = None
+        with raster_error_language('en'),pytest.raises(ValueError,match='effective coverage'):
+            compute.raster_flow_accumulation_weighted_d8(source,weights,1,1)
         assert set(source.workspace.iterdir())==prior
     assert {name:Path(name).read_bytes() for name in files}==original
 
@@ -23308,8 +23312,8 @@ def test_tiff_optional_pam_survives_snapshot_calculation_and_cog(tmp_path, pam):
 
 
 @pytest.mark.parametrize('language, message', [
-    ('zh-cn', '源组成已变化：已登记的 TIFF PAM 文件缺失，请刷新元数据'),
-    ('en', 'Source composition changed: the registered TIFF PAM is missing; refresh metadata'),
+    ('zh-cn', '源组成已变化：已登记的 TIFF 组成文件缺失，请刷新元数据'),
+    ('en', 'Source composition changed: a registered TIFF component is missing; refresh metadata'),
 ])
 def test_tiff_registered_pam_missing_requires_refresh(tmp_path, language, message):
     source = create_raster(tmp_path / 'source.tif', np.arange(16).reshape(4, 4))
@@ -23323,3 +23327,101 @@ def test_tiff_registered_pam_missing_requires_refresh(tmp_path, language, messag
             raster_load(plan)
     assert str(error.value) == message
     assert not Path(str(source) + '.aux.xml').exists()
+
+
+@pytest.mark.parametrize('count', range(6))
+def test_tiff_dynamic_composition_retains_all_registered_files_and_native_facts(tmp_path, count):
+    source = tmp_path / 'original.tif'
+    pixels = np.arange(64, dtype=np.float64).reshape(8, 8)
+    dataset = gdal.GetDriverByName('GTiff').Create(str(source), 8, 8, 1, gdal.GDT_Float64)
+    crs = osr.SpatialReference(); crs.ImportFromEPSG(3857)
+    dataset.SetProjection(crs.ExportToWkt())
+    dataset.GetRasterBand(1).WriteArray(pixels)
+    dataset = None
+    members = [(source.with_suffix('.tfw'), 'world_file', '2\n0\n0\n-2\n101\n199\n'),
+               (source.with_suffix('.hdr'), 'header', 'ENVI\nsamples = 8\nlines = 8\nbands = 1\n'),
+               (Path(str(source)+'.aux.xml'), 'auxiliary_metadata', '<PAMDataset><Metadata><MDI key="SOURCE">registered PAM</MDI></Metadata></PAMDataset>'),
+               (source.with_suffix('.prj'), 'crs', crs.ExportToWkt()),
+               (Path(str(source)+'.ovr'), 'overview', None)][:count]
+    for path, role, content in members:
+        if content is not None:
+            path.write_text(content)
+        else:
+            dataset = gdal.Open(str(source), gdal.GA_ReadOnly)
+            dataset.BuildOverviews('NEAREST', [2])
+            dataset = None
+            assert path.is_file()
+    plan = source_plan(source)
+    plan['source']['related_files'] = [{'role': role, 'access': {'method': 'mounted_path', 'path': str(path)}}
+                                      for path, role, _ in members]
+    native = gdal.Open(str(source))
+    transform = native.GetGeoTransform(can_return_null=True)
+    projection = native.GetProjection()
+    metadata = native.GetMetadata()
+    overview_count = native.GetRasterBand(1).GetOverviewCount()
+    native = None
+    original = {path: path.read_bytes() for path in tmp_path.iterdir()}
+    with raster_workspace():
+        loaded = raster_load(plan)
+        expected = {source.name, *(path.name for path, _, _ in members)}
+        assert {path.name for path in loaded.path.parent.iterdir()} == expected
+        assert {path.name for path in loaded.related_files} == expected - {source.name}
+        snapshot = gdal.Open(str(loaded.path))
+        np.testing.assert_array_equal(snapshot.ReadAsArray(), pixels)
+        assert snapshot.GetGeoTransform(can_return_null=True) == transform
+        assert snapshot.GetProjection() == projection
+        assert snapshot.GetMetadata() == metadata
+        assert snapshot.GetRasterBand(1).GetOverviewCount() == overview_count
+        if count:
+            assert transform == (100., 2., 0., 200., 0., -2.)
+        assert {Path(path).resolve() for path in snapshot.GetFileList()} <= {loaded.path.resolve(), *(p.resolve() for p in loaded.related_files)}
+        snapshot = None
+        if count:
+            calculated = raster_band_math(loaded, 'b1+1')
+            result = gdal.Open(str(calculated.path))
+            np.testing.assert_array_equal(result.ReadAsArray(), pixels+1)
+            assert result.GetGeoTransform() == transform
+            result = None
+    assert {path: path.read_bytes() for path in tmp_path.iterdir()} == original
+
+
+def test_tiff_unregistered_sidecar_is_not_probed(tmp_path):
+    source = create_raster(tmp_path/'source.tif', np.ones((2, 2)))
+    Path(str(source)+'.aux.xml').write_text('<PAMDataset><Metadata><MDI key="PRIVATE">must not read</MDI></Metadata></PAMDataset>')
+    with raster_workspace():
+        loaded = raster_load(source_plan(source))
+        snapshot = gdal.Open(str(loaded.path))
+        assert snapshot.GetMetadataItem('PRIVATE') is None
+        assert snapshot.GetFileList() == [str(loaded.path)]
+        snapshot = None
+
+
+@pytest.mark.parametrize('suffix', ['.tif', '.tiff'])
+def test_registered_tiff_external_mask_survives_cog_and_missing_requires_refresh(tmp_path, suffix):
+    source = create_raster(tmp_path/('source'+suffix), np.arange(16).reshape(4,4))
+    dataset = gdal.Open(str(source), gdal.GA_Update)
+    with gdal.config_option('GDAL_TIFF_INTERNAL_MASK', 'NO'):
+        dataset.CreateMaskBand(gdal.GMF_PER_DATASET)
+    mask = np.full((4,4),255,dtype=np.uint8); mask[0,0] = 0; mask[3,2] = 0
+    dataset.GetRasterBand(1).GetMaskBand().WriteArray(mask)
+    dataset = None
+    companion = Path(str(source)+'.msk')
+    plan = source_plan(source)
+    plan['source']['related_files'] = [{'role':'mask', 'access':{'method':'mounted_path','path':str(companion)}}]
+    original = {p:p.read_bytes() for p in (source,companion)}
+    with raster_workspace():
+        loaded = raster_load(plan)
+        dataset = gdal.Open(str(loaded.path))
+        np.testing.assert_array_equal(dataset.GetRasterBand(1).GetMaskBand().ReadAsArray(), mask)
+        dataset = None
+    output = tmp_path/'output.tif'
+    raster_to_cog({**plan, 'target':target_plan(output)['target']})
+    dataset = gdal.Open(str(output))
+    np.testing.assert_array_equal(dataset.ReadAsArray(), np.arange(16).reshape(4,4))
+    np.testing.assert_array_equal(dataset.GetRasterBand(1).GetMaskBand().ReadAsArray(), mask)
+    assert len(dataset.GetFileList()) == 1
+    dataset = None
+    assert {p:p.read_bytes() for p in original} == original
+    companion.unlink()
+    with raster_workspace(), raster_error_language('en'), pytest.raises(ValueError,match='composition changed'):
+        raster_load(plan)

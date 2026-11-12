@@ -87,25 +87,37 @@ def stage_source_file(plan: dict[str, Any], work_dir: Path, *, max_bytes: int | 
     _validate_resource(source, "source")
     if source.get("format") == "envi":
         return _stage_related_source(plan, work_dir, max_bytes=max_bytes)
-    primary = _stage_single_source_file(plan, work_dir, max_bytes=max_bytes)
-    if source.get("format") == "tiff" and source.get("related_files"):
-        access = source["related_files"][0]["access"]
-        destination = Path(str(primary) + ".aux.xml")
-        if access["method"] == "mounted_path":
-            companion = Path(access["path"])
-            if not companion.is_file():
-                raise WorkflowSourceChangedError("source composition changed: registered TIFF PAM missing; refresh metadata")
-            if companion != destination:
-                shutil.copyfile(companion, destination)
-        else:
-            client = _object_store_client(access)
+    if source.get("format") == "tiff":
+        return _stage_tiff_source(source, work_dir, max_bytes=max_bytes)
+    return _stage_single_source_file(plan, work_dir, max_bytes=max_bytes)
+
+
+def _stage_tiff_source(source: dict[str, Any], work_dir: Path, *, max_bytes: int | None) -> Path:
+    # GDAL may probe siblings. Only registered files enter this owned directory.
+    destination = work_dir / "source"
+    destination.mkdir(mode=0o700, parents=True, exist_ok=False)
+    primary = None
+    try:
+        for item in [source["access"], *(member["access"] for member in source.get("related_files", []))]:
+            single = {"source": {"kind": "file", "format": "tiff", "access": item}}
+            key = "path" if item["method"] == "mounted_path" else "object"
+            target = destination / Path(item[key]).name
+            if item["method"] == "mounted_path" and not Path(item[key]).is_file():
+                raise WorkflowSourceChangedError("source composition changed: registered TIFF component missing; refresh metadata")
             try:
-                client.fget_object(access["bucket"], access["object"], str(destination))
-            except Exception as exc:
-                if getattr(exc, "code", None) == "NoSuchKey":
-                    raise WorkflowSourceChangedError("source composition changed: registered TIFF PAM missing; refresh metadata") from exc
-                raise WorkflowAccessError("download TIFF PAM failed") from exc
-    return primary
+                staged = _stage_single_source_file(single, work_dir, max_bytes=max_bytes)
+                if staged != target:
+                    shutil.copyfile(staged, target)
+            except (WorkflowAccessError, FileNotFoundError) as exc:
+                if isinstance(exc, FileNotFoundError) or getattr(exc.__context__, "code", None) == "NoSuchKey":
+                    raise WorkflowSourceChangedError("source composition changed: registered TIFF component missing; refresh metadata") from exc
+                raise
+            if primary is None:
+                primary = target
+        return primary
+    except BaseException:
+        shutil.rmtree(destination)
+        raise
 
 
 def _stage_single_source_file(plan: dict[str, Any], work_dir: Path, *, max_bytes: int | None) -> Path:
@@ -392,16 +404,20 @@ def _validate_single_resource(resource: dict[str, Any], label: str) -> None:
 def _validate_related_source(source: dict[str, Any]) -> None:
     if source.get("format") == "tiff":
         files = source.get("related_files", [])
-        if files == []:
-            return
-        if source.get("kind") != "file" or source.get("entrypoint", "") != "" or not isinstance(files, list) or len(files) != 1:
-            raise WorkflowAccessError("TIFF accepts one optional PAM companion")
-        member = files[0]
-        expected = dict(source["access"])
-        key = "path" if expected["method"] == "mounted_path" else "object"
-        expected[key] += ".aux.xml"
-        if member != {"role": "auxiliary_metadata", "access": expected}:
-            raise WorkflowAccessError("TIFF PAM must be beside its primary on the same connection")
+        if source.get("kind") != "file" or source.get("entrypoint", "") != "" or not isinstance(files, list):
+            raise WorkflowAccessError("TIFF requires a file source without an entrypoint override")
+        key = "path" if source["access"]["method"] == "mounted_path" else "object"
+        seen = {source["access"][key]}
+        for member in files:
+            if (not isinstance(member, dict) or set(member) != {"role", "access"}
+                    or member.get("role") not in {"world_file", "crs", "header", "auxiliary_metadata", "overview", "mask"}):
+                raise WorkflowAccessError("unsupported TIFF component role")
+            related = _required_object(member, "access")
+            _validate_sibling_access(source["access"], related)
+            name = related[key]
+            if name in seen:
+                raise WorkflowAccessError("TIFF components must have distinct exact paths")
+            seen.add(name)
         return
     if source.get("format") != "envi":
         if "related_files" in source:
@@ -414,26 +430,31 @@ def _validate_related_source(source: dict[str, Any]) -> None:
     if not isinstance(member, dict) or set(member) != {"role", "access"} or member.get("role") != "header":
         raise WorkflowAccessError("ENVI requires one exact header")
     header = _required_object(member, "access")
-    _validate_single_resource({"kind": "file", "format": "envi", "access": header}, "header")
-    main = source["access"]
+    names = _validate_sibling_access(source["access"], header)
+    if posixpath.splitext(names[0])[1].casefold() == ".hdr" or posixpath.splitext(names[1])[1].casefold() != ".hdr":
+        raise WorkflowAccessError("ENVI companion must be an exact header beside the primary on the same connection")
+
+
+def _validate_sibling_access(main: dict[str, Any], related: dict[str, Any]) -> list[str]:
+    _validate_single_resource({"kind": "file", "format": "tiff", "access": related}, "related file")
     method = main.get("method")
     key = "path" if method == "mounted_path" else "object"
-    names = [_source_storage_name(item, key) for item in (main, header)]
+    names = [_source_storage_name(item, key) for item in (main, related)]
     for name in names:
         if (len(name) > 4096 or "\\" in name or ":" in name or any(ord(c) < 32 or 127 <= ord(c) <= 159 for c in name)
                 or name == ".." or name.startswith("../") or posixpath.normpath(name) != name
                 or (method == "mounted_path") != posixpath.isabs(name)):
-            raise WorkflowAccessError("ENVI paths must be exact storage names")
+            raise WorkflowAccessError("related paths must be exact storage names")
         try:
             name.encode("utf-8", errors="strict")
         except UnicodeError as exc:
-            raise WorkflowAccessError("ENVI paths must be valid UTF-8") from exc
+            raise WorkflowAccessError("related paths must be valid UTF-8") from exc
     main_connection = {k: v for k, v in main.items() if k != key}
-    header_connection = {k: v for k, v in header.items() if k != key}
-    if (main_connection != header_connection or main.get("prefix") or posixpath.dirname(names[0]) != posixpath.dirname(names[1])
-            or posixpath.basename(names[0]).casefold() == posixpath.basename(names[1]).casefold()
-            or posixpath.splitext(names[0])[1].casefold() == ".hdr" or posixpath.splitext(names[1])[1].casefold() != ".hdr"):
-        raise WorkflowAccessError("ENVI companion must be an exact header beside the primary on the same connection")
+    related_connection = {k: v for k, v in related.items() if k != key}
+    if (main_connection != related_connection or main.get("prefix") or posixpath.dirname(names[0]) != posixpath.dirname(names[1])
+            or posixpath.basename(names[0]).casefold() == posixpath.basename(names[1]).casefold()):
+        raise WorkflowAccessError("related file must be beside its primary on the same connection")
+    return names
 
 
 def _publish_local_file(source: Path, destination: Path, write_mode: str) -> None:

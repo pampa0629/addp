@@ -35,6 +35,7 @@ type fileSourceStager struct {
 // must supply the current execution's authorized, exact source composition.
 type fileStagingFile struct {
 	RelativePath string
+	Role         string
 	SizeBytes    int64
 	Open         func(context.Context) (io.ReadCloser, error)
 }
@@ -105,9 +106,9 @@ func (e *fileSourceStager) withSource(
 				header.Object = prefix + "/" + file.RelativePath
 				role := "header"
 				if sourceFormat == "tiff" {
-					role = "auxiliary_metadata"
+					role = file.Role
 				}
-				source.RelatedFiles = []workflowaccess.RelatedFile{{Role: role, Access: header}}
+				source.RelatedFiles = append(source.RelatedFiles, workflowaccess.RelatedFile{Role: role, Access: header})
 			}
 		}
 	} else if e.taskType != commonExecution.TaskTypeModel3DGLBGeneration {
@@ -193,13 +194,13 @@ func validateFileStagingFiles(lease commonExecution.Lease, sourceFormat, sourceK
 	if sourceKind != workflowaccess.KindFile && sourceKind != workflowaccess.KindDirectory {
 		return errors.New("model input kind must be file or directory")
 	}
-	if sourceKind == workflowaccess.KindFile && ((sourceFormat != "envi" && sourceFormat != "tiff" && len(files) != 1) || (sourceFormat == "tiff" && len(files) > 2) || (sourceFormat == "envi" && len(files) != 2) || entrypoint != path.Base(entrypoint)) {
+	if sourceKind == workflowaccess.KindFile && ((sourceFormat != "envi" && sourceFormat != "tiff" && len(files) != 1) || (sourceFormat == "envi" && len(files) != 2) || entrypoint != path.Base(entrypoint)) {
 		return errors.New("single model input must contain only its entrypoint")
 	}
 	if sourceFormat == "tiff" {
 		for _, file := range files {
-			if sourceKind != workflowaccess.KindFile || (file.RelativePath != entrypoint && file.RelativePath != entrypoint+".aux.xml") {
-				return errors.New("TIFF staging requires its exact same-name PAM")
+			if sourceKind != workflowaccess.KindFile || file.RelativePath != path.Base(file.RelativePath) {
+				return errors.New("TIFF staging requires its exact same-directory composition")
 			}
 		}
 	}

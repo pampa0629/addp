@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"reflect"
+	"sort"
 	"strings"
 	"testing"
 
@@ -27,6 +28,49 @@ type tiffVersionReader struct {
 	staticObjectContentReader
 	files map[string]string
 	reads []string
+}
+
+func TestTIFFVersionsCoverEveryScannedComponent(t *testing.T) {
+	aux := []dataitem.ItemRef{{Path: "images/a.tfw", Role: "world_file"}, {Path: "images/a.hdr", Role: "header"}, {Path: "images/a.tif.aux.xml", Role: "auxiliary_metadata"}, {Path: "images/a.prj", Role: "crs"}, {Path: "images/a.tif.ovr", Role: "overview"}, {Path: "images/a.tif.msk", Role: "mask"}}
+	for mask := 0; mask < 1<<len(aux); mask++ {
+		refs := []dataitem.ItemRef{{Path: "images/a.tif", Role: "main", Primary: true, Required: true}}
+		reader := &tiffVersionReader{files: map[string]string{"images/a.tif": "TIFF", "images/unregistered.xml": "private"}}
+		for i, ref := range aux {
+			if mask&(1<<i) != 0 {
+				refs = append(refs, ref)
+				reader.files[ref.Path] = ref.Role
+			}
+		}
+		layout := format.LayoutSingle
+		if len(refs) > 1 {
+			layout = format.LayoutMulti
+		}
+		in := &input{PhysicalPath: "images/a.tif", ContentReader: reader, EngineCatalogPathFor: func(name string) plugin.EngineCatalogPath { return plugin.FileItemPath(7, name) },
+			Detected: &metaitem.DetectedItem{ResolvedItem: dataitem.ResolvedItem{Format: "tiff", Layout: layout, RefList: refs}}}
+		attrs := models.JSONMap{"storage": map[string]interface{}{}}
+		if _, err := (Processor{}).extractDeepContent(t.Context(), in, attrs, true); err != nil {
+			t.Fatal(err)
+		}
+		versions := attrs["storage"].(map[string]interface{})["content_versions"].([]dataitem.ContentVersion)
+		names := make([]string, 0, len(refs))
+		for _, ref := range refs {
+			names = append(names, ref.Path)
+		}
+		sort.Strings(names)
+		if !reflect.DeepEqual(names, reader.reads) || len(versions) != len(refs) {
+			t.Fatal("incomplete composition read", mask, reader.reads, versions)
+		}
+		for i, version := range versions {
+			content := reader.files[names[i]]
+			if version.Path != names[i] || version.SizeBytes != int64(len(content)) || version.SHA256 != fmt.Sprintf("%x", sha256.Sum256([]byte(content))) {
+				t.Fatal("wrong component version", version)
+			}
+		}
+		delete(reader.files, names[len(names)-1])
+		if _, err := (Processor{}).extractDeepContent(t.Context(), in, attrs, true); err == nil || !reflect.DeepEqual(attrs["storage"].(map[string]interface{})["content_versions"], versions) {
+			t.Fatal("missing component committed partial versions", mask)
+		}
+	}
 }
 
 func (r *tiffVersionReader) OpenContent(_ context.Context, _ plugin.ConnectionInfo, target plugin.EngineCatalogPath, _ plugin.ReadOptions) (io.ReadCloser, error) {
@@ -129,16 +173,21 @@ func TestTIFFContentVersionsRefreshAgainstPostgres(t *testing.T) {
 	}
 	main := "addp/scene.tif"
 	pam := main + ".aux.xml"
+	header, world := "addp/scene.hdr", "addp/scene.tfw"
+	mask := main + ".msk"
 	raw, err := os.ReadFile("../../../../common/format/plugins/image/testdata/unlocated-cog.tif")
 	if err != nil {
 		t.Fatal(err)
 	}
-	reader := &tiffVersionReader{files: map[string]string{main: string(raw), pam: "<PAMDataset/>"}}
-	size := int64(len(raw) + len(reader.files[pam]))
+	reader := &tiffVersionReader{files: map[string]string{main: string(raw), pam: "<PAMDataset/>", header: "header", world: "world", mask: "mask"}}
+	size := int64(len(raw) + len(reader.files[pam]) + len(reader.files[header]) + len(reader.files[world]) + len(reader.files[mask]))
 	item, err := repo.UpsertItemWithDepth(1, 7, parent, "object", "scene.tif", main, models.JSONMap{
 		"item": map[string]interface{}{"format": "tiff", "data_type": "media", "layout": "multi", "refs": []map[string]interface{}{
 			{"path": main, "role": "main", "primary": true, "required": true},
 			{"path": pam, "role": "auxiliary_metadata", "primary": false, "required": false},
+			{"path": header, "role": "header", "primary": false, "required": false},
+			{"path": world, "role": "world_file", "primary": false, "required": false},
+			{"path": mask, "role": "mask", "primary": false, "required": false},
 		}},
 		"storage": map[string]interface{}{"physical_path": main, "content_hash": "obsolete", "content_hash_algorithm": "sha256"},
 	}, nil, &size, nil, models.ScannedDepthDeep)
@@ -164,7 +213,7 @@ func TestTIFFContentVersionsRefreshAgainstPostgres(t *testing.T) {
 		t.Fatal(err)
 	}
 	versions, err := dataitem.TIFFContentVersionsFromAttributes(stored.Attributes)
-	if err != nil || len(versions) != 2 || versions[1].SHA256 != fmt.Sprintf("%x", sha256.Sum256([]byte(reader.files[pam]))) {
+	if err != nil || len(versions) != 5 || versions[3].SHA256 != fmt.Sprintf("%x", sha256.Sum256([]byte(reader.files[pam]))) || versions[4].SHA256 != fmt.Sprintf("%x", sha256.Sum256([]byte(reader.files[mask]))) {
 		t.Fatalf("persisted versions=%#v, err=%v", versions, err)
 	}
 	if stored.FullName != main || stored.Fingerprint != item.Fingerprint {
@@ -179,12 +228,12 @@ func TestTIFFContentVersionsRefreshAgainstPostgres(t *testing.T) {
 		t.Fatal(err)
 	}
 	current, err := dataitem.TIFFContentVersionsFromAttributes(changed.Attributes)
-	if err != nil || current[0] != versions[0] || current[1].SHA256 == versions[1].SHA256 {
+	if err != nil || !reflect.DeepEqual(current[:3], versions[:3]) || current[3].SHA256 == versions[3].SHA256 {
 		t.Fatal("PAM-only edit did not change the persisted version")
 	}
-	delete(reader.files, pam)
+	delete(reader.files, mask)
 	if err := refresh(); err == nil {
-		t.Fatal("missing registered PAM did not fail the refresh")
+		t.Fatal("missing registered mask did not fail the refresh")
 	}
 	var afterFailure models.MetaItem
 	if err := db.First(&afterFailure, item.ID).Error; err != nil {
@@ -194,7 +243,7 @@ func TestTIFFContentVersionsRefreshAgainstPostgres(t *testing.T) {
 		t.Fatal("failed refresh overwrote the committed snapshot")
 	}
 	// A basic rediscovery can change the registered composition, but cannot
-	// reuse the former pair's content versions or read fresh source bytes.
+	// reuse the former composition's content versions or read fresh source bytes.
 	basic := changed.Attributes.Clone()
 	itemAttrs := basic["item"].(map[string]interface{})
 	itemAttrs["layout"] = "single"
@@ -216,6 +265,6 @@ func TestTIFFContentVersionsRefreshAgainstPostgres(t *testing.T) {
 		t.Fatal(err)
 	}
 	if len(reader.reads) != 0 || rediscovered.Attributes["storage"].(map[string]interface{})["content_versions"] != nil {
-		t.Fatal("basic composition change retained pair versions or read source bytes")
+		t.Fatal("basic composition change retained old versions or read source bytes")
 	}
 }

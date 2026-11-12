@@ -2,31 +2,33 @@ package dataitem
 
 import (
 	"fmt"
+	"path"
 
 	"github.com/addp/common/engine/workflowaccess"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/common/resourcetree"
 )
 
-// WithTIFFPAM carries only the optional companion registered on this source item.
-func WithTIFFPAM(source workflowaccess.Source, locator *resourcetree.ResourceLocator, item *commonModels.MetaItem) (workflowaccess.Source, error) {
+// WithTIFFComponents carries every companion registered on this source item.
+func WithTIFFComponents(source workflowaccess.Source, locator *resourcetree.ResourceLocator, item *commonModels.MetaItem) (workflowaccess.Source, error) {
 	if item == nil || item.EngineID != locator.EngineID || item.FullName != locator.FullName() {
 		return workflowaccess.Source{}, fmt.Errorf("TIFF source metadata does not match its locator")
 	}
+	source.RelatedFiles = nil
 	for _, ref := range DescriptorFromAttributes(item.Attributes).Refs {
 		if ref.Primary {
 			continue
 		}
-		if ref.Role != "auxiliary_metadata" || ref.Path != item.FullName+".aux.xml" {
-			return workflowaccess.Source{}, fmt.Errorf("TIFF reader does not support the registered reference %q", ref.Role)
+		if path.Dir(ref.Path) != path.Dir(item.FullName) {
+			return workflowaccess.Source{}, fmt.Errorf("TIFF component must share its primary directory")
 		}
 		access := source.Access
 		if access.Method == workflowaccess.MethodMountedPath {
-			access.Path += ".aux.xml"
+			access.Path = path.Join(path.Dir(access.Path), path.Base(ref.Path))
 		} else {
-			access.Object += ".aux.xml"
+			access.Object = path.Join(path.Dir(access.Object), path.Base(ref.Path))
 		}
-		source.RelatedFiles = []workflowaccess.RelatedFile{{Role: "auxiliary_metadata", Access: access}}
+		source.RelatedFiles = append(source.RelatedFiles, workflowaccess.RelatedFile{Role: ref.Role, Access: access})
 	}
 	return source, nil
 }

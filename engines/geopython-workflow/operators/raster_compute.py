@@ -469,16 +469,16 @@ def raster_load(access_plan, source_crs=''):
         path = stage_source_file(plan, _path().parent / uuid.uuid4().hex)
     except WorkflowSourceChangedError as error:
         message = {
-            'zh-cn': '源组成已变化：已登记的 TIFF PAM 文件缺失，请刷新元数据',
-            'en': 'Source composition changed: the registered TIFF PAM is missing; refresh metadata',
+            'zh-cn': '源组成已变化：已登记的 TIFF 组成文件缺失，请刷新元数据',
+            'en': 'Source composition changed: a registered TIFF component is missing; refresh metadata',
         }[_DISK_LANGUAGE.get()]
         raise ValueError(message) from error
     source_format = plan['source']['format']
     native_driver = {'img': 'HFA', 'jpeg2000': 'JP2OpenJPEG', 'envi': 'ENVI'}.get(source_format, '')
     related_files = ()
     if source_format == 'tiff' and plan['source'].get('related_files'):
-        companion = Path(str(path) + '.aux.xml')
-        related_files = (companion,)
+        related_files = tuple(path.parent / Path(member['access'].get('path') or member['access']['object']).name
+                              for member in plan['source']['related_files'])
     if source_format == 'envi':
         member = plan['source']['related_files'][0]['access']
         header = path.parent / Path(member['path'] if member['method'] == 'mounted_path' else member['object']).name
@@ -526,13 +526,9 @@ def raster_load(access_plan, source_crs=''):
     if source_format != 'envi' and any(Path(file).resolve() not in allowed_files for file in dataset.GetFileList() or []):
         raise ValueError('Raster input must be self-contained; external sidecars are not supported')
     # Snapshot the selected resource so later writes cannot change an upstream input.
-    snapshot = path if native_driver else _path(path.suffix)
+    snapshot = path if native_driver or source_format == 'tiff' else _path(path.suffix)
     if snapshot != path:
         shutil.copyfile(path, snapshot)
-        if related_files:
-            companion_snapshot = Path(str(snapshot) + '.aux.xml')
-            shutil.copyfile(related_files[0], companion_snapshot)
-            related_files = (companion_snapshot,)
     dataset = None
     raster = _raster(snapshot, native_driver, related_files)
     dataset = _open(raster)

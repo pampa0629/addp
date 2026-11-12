@@ -9,6 +9,8 @@ import (
 //go:embed locales/*.toml
 var localeFS embed.FS
 
+const MsgTIFFSourceCompositionChanged = "manager.error.tiff_source_composition_changed"
+
 // Manager 模块消息 key 常量（目前 manager 后端错误消息均通过 commonAPI 返回英文，此处预留扩展）
 const (
 	MsgSearchContextChanged      = "manager.search.context_changed"

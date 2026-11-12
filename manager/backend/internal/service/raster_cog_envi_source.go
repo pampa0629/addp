@@ -78,7 +78,7 @@ func (e *ManagerRasterCOGExecutor) withENVISource(ctx context.Context, req Raste
 			if err != nil {
 				return nil, err
 			}
-			return &fileVersionReader{ReadCloser: reader, digest: sha256.New(), expected: req.Config.Raster.RasterSHA256}, nil
+			return &fileVersionReader{ReadCloser: reader, digest: sha256.New(), expected: req.Config.Raster.RasterSHA256, mismatch: ErrFileSourceAuthorizationRequired}, nil
 		}},
 		{RelativePath: path.Base(header.StringPath()), SizeBytes: headerSize, Open: func(ctx context.Context) (io.ReadCloser, error) {
 			if err := auth.Checkpoint(ctx); err != nil {
@@ -100,6 +100,7 @@ type fileVersionReader struct {
 	io.ReadCloser
 	digest   hash.Hash
 	expected string
+	mismatch error
 }
 
 func (r *fileVersionReader) Read(buffer []byte) (int, error) {
@@ -108,7 +109,7 @@ func (r *fileVersionReader) Read(buffer []byte) (int, error) {
 		_, _ = r.digest.Write(buffer[:n])
 	}
 	if err == io.EOF && hex.EncodeToString(r.digest.Sum(nil)) != r.expected {
-		return n, ErrFileSourceAuthorizationRequired
+		return n, r.mismatch
 	}
 	return n, err
 }
