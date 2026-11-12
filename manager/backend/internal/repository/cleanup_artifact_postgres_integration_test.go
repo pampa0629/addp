@@ -41,14 +41,21 @@ func TestIntegrationPostgresManagerArtifactTargetTransactions(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Run("unstarted_source_authorization_failure", func(t *testing.T) {
-		if err := db.AutoMigrate(&models.RasterCOGTask{}, &models.RasterCOG{}); err != nil {
+		if err := ensureTaskDefinitionSchema(db); err != nil {
+			t.Fatal(err)
+		}
+		if err := db.AutoMigrate(&models.RasterCOG{}); err != nil {
 			t.Fatal(err)
 		}
 		tenant := uint(time.Now().UnixNano()%100000000 + 970000000)
 		t.Cleanup(func() {
-			for _, model := range []interface{}{&models.CleanupTarget{}, &execution.TaskExecution{}, &models.RasterCOGTask{}} {
+			for _, model := range []interface{}{&models.CleanupTarget{}, &execution.TaskExecution{}, &models.TaskResourceBinding{}, &models.RasterCOGTask{}} {
 				if err := db.Unscoped().Where("tenant_id = ?", tenant).Delete(model).Error; err != nil {
 					t.Error(err)
+				}
+				var remaining int64
+				if err := db.Unscoped().Model(model).Where("tenant_id = ?", tenant).Count(&remaining).Error; err != nil || remaining != 0 {
+					t.Errorf("fixture cleanup %T remaining=%d err=%v", model, remaining, err)
 				}
 			}
 		})
