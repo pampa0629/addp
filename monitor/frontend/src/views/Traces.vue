@@ -4,8 +4,7 @@
     <template v-else>
       <header>
         <h2>{{ t('monitor.traces.title') }}</h2>
-        <el-button v-if="state?.query.trace_id && state.instanceID" :icon="ArrowLeft" @click="returnToTraces">{{ t('monitor.traces.browseTraces') }}</el-button>
-        <el-button v-else-if="state?.instanceID || directLookup" :icon="ArrowLeft" @click="browseInstances">{{ t('monitor.traces.browseInstances') }}</el-button>
+        <el-button v-if="selected || state?.instanceID || directLookup" :icon="ArrowLeft" @click="browseInstances">{{ t('monitor.traces.browseInstances') }}</el-button>
         <el-button @click="refresh">{{ t('common.refresh') }}</el-button>
       </header>
       <el-alert :title="t('monitor.traces.coverage')" type="info" :closable="false" />
@@ -28,7 +27,7 @@
       <el-alert v-if="inputError" :title="t(inputError)" type="warning" :closable="false" />
       <el-alert v-if="modulesFailed" :title="t('monitor.traces.modulesFailed')" type="warning" :closable="false" />
       <el-alert v-if="error" :title="t(error)" type="warning" :closable="false" data-testid="trace-error" />
-      <el-table v-if="!directLookup && !detail" :data="instances" v-loading="loading" :empty-text="t(loading ? 'common.loading' : instancesLoaded ? 'monitor.traces.noInstances' : 'monitor.traces.notLoaded')" data-testid="trace-instances">
+      <el-table v-if="!directLookup" :data="instances" v-loading="loading && !instancesLoaded" :empty-text="t(loading ? 'common.loading' : instancesLoaded ? 'monitor.traces.noInstances' : 'monitor.traces.notLoaded')" data-testid="trace-instances">
         <el-table-column prop="module_name" :label="t('monitor.process.module')" min-width="130" />
         <el-table-column :label="t('monitor.http.instance')" min-width="270" show-overflow-tooltip>
           <template #default="{ row }">
@@ -42,12 +41,15 @@
         <el-table-column :label="t('monitor.traces.samplesInWindow')" min-width="150">
           <template #default="{ row }">
             <el-tag :type="sampleStates[row.id] === 'has_samples' ? 'success' : sampleStates[row.id] === 'not_found' ? 'info' : 'warning'" data-testid="trace-sample-state">
-              {{ t('monitor.traces.sampleStates.' + (samplesLoading || (selected?.id === row.id && loading) ? 'checking' : sampleStates[row.id] || 'unavailable')) }}
+              {{ t('monitor.traces.sampleStates.' + (samplesLoading || (selected?.id === row.id && loading && !sampleStates[row.id]) ? 'checking' : sampleStates[row.id] || 'unavailable')) }}
             </el-tag>
           </template>
         </el-table-column>
       </el-table>
-      <el-pagination v-if="!directLookup && !detail && instancesLoaded" layout="total, prev, pager, next" :page-size="10" :total="total" :current-page="state?.page || 1" @current-change="page => browseInstances(page)" />
+      <el-pagination v-if="!directLookup && instancesLoaded" layout="total, prev, pager, next" :page-size="10" :total="total" :current-page="state?.page || 1" @current-change="page => browseInstances(page)" />
+      <div v-if="state?.query.trace_id && state.instanceID" data-testid="trace-detail-navigation">
+        <el-button :icon="ArrowLeft" @click="returnToTraces">{{ t('monitor.traces.browseTraces') }}</el-button>
+      </div>
       <template v-if="selected && !detail">
         <h3>{{ selected.module_name }} · {{ selected.instance_id }}</h3>
         <el-table :data="data" :empty-text="t(loading ? 'common.loading' : error && error !== 'monitor.traces.empty' ? 'monitor.traces.notLoaded' : 'monitor.traces.empty')" data-testid="trace-results">
@@ -117,6 +119,7 @@ function selectModule(module) {
 }
 function browseInstances(page) {
   const { instance_id, trace_id, http_method, http_route, ...query } = state.value.query
+  if (typeof page !== 'number' && !state.value.instanceID && selected.value) delete query.module_name
   return navigate({ ...query, ...(typeof page === 'number' ? { page: String(page) } : {}) })
 }
 function clearHTTPFilter() { return navigate({ ...state.value.query, http_method: undefined, http_route: undefined }) }
@@ -170,10 +173,12 @@ function logs(span) {
   const from = Math.min(to - 1, Math.max(to - 3600000, Date.parse(span.start) - 1000))
   return openConsoleRoute('/system/modules?' + new URLSearchParams({ tab: 'instances', module_name: span.module_name, status: 'all', log_instance: span.instance_id, trace_id: detail.value.trace_id, log_from: new Date(from).toISOString(), log_to: new Date(to).toISOString() }), { history: 'push' })
 }
-async function reload() {
-  const ticket = requests.invalidate(); instances.value = []; data.value = []; total.value = 0; loading.value = false; error.value = ''
-  sampleRequests.invalidate(); sampleStates.value = {}; samplesLoading.value = false; sampleWindow.value = null
-  instancesLoaded.value = false
+async function reload(preserveInstance = false) {
+  const ticket = requests.invalidate(); data.value = []; loading.value = false; error.value = ''
+  if (!preserveInstance) {
+    instances.value = []; total.value = 0; instancesLoaded.value = false
+    sampleRequests.invalidate(); sampleStates.value = {}; samplesLoading.value = false; sampleWindow.value = null
+  }
   matchedFailure.value = null
   if (!canRead.value || route.name !== 'Traces') return
   if (!state.value) { error.value = 'monitor.traces.invalid'; return }
@@ -182,7 +187,7 @@ async function reload() {
   let listed = false
   loading.value = true
   try {
-    if (!directLookup.value) {
+    if (!directLookup.value && !preserveInstance) {
       const list = await requests.request(config => traceAPI.instances(params, config))
       validateProcessInstances(list, current.instanceID ? 1 : current.page, params, 10)
       if (list.data.some(row => row.role !== current.role || (current.module && row.module_name !== current.module))) throw new Error('invalid_trace_response')
@@ -269,13 +274,17 @@ function refresh() {
   loadModules()
   reload()
 }
-watch([() => route.fullPath, identity], () => {
+watch([() => route.fullPath, identity], ([, currentIdentity], [previousPath, previousIdentity] = []) => {
+  const previousQuery = previousPath ? router.resolve(previousPath).query : {}
+  const preserveInstance = currentIdentity === previousIdentity && !directLookup.value && Boolean(selected.value) && instancesLoaded.value && total.value === 1 &&
+    previousQuery.trace_id !== route.query.trace_id &&
+    Object.keys({ ...previousQuery, ...route.query }).filter(key => !['trace_id', 'instance_id'].includes(key)).every(key => previousQuery[key] === route.query[key])
   traceInput.cancel()
   inputError.value = ''
-  traceDraft.value = state.value?.query.trace_id || ''
+  traceDraft.value = directLookup.value ? state.value.query.trace_id : ''
   bounds.value = { start: state.value?.query.start, end: state.value?.query.end, range: state.value?.query.range }
   pickerStart.value = bounds.value.start ? new Date(bounds.value.start) : null
-  reload()
+  reload(preserveInstance)
 }, { immediate: true })
 watch(identity, loadModules, { immediate: true })
 onUnmounted(() => { traceInput.dispose(); requests.invalidate(); moduleRequests.invalidate(); sampleRequests.invalidate() })

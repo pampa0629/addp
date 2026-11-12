@@ -581,3 +581,16 @@ Tempo 同一批次先返回搜索200和五份明细200，随后两条并发请�
 两次使用Safari浏览器返回，都恢复第二页和原固定窗口；观察到“检查中”更新为Monitor“有样本”、其余“本时段未发现”，原Trace结果没有残留在实例列表。最终页面保留在该历史窗口的第二页。
 
 本次授权的实际页面样本标识、翻页及同窗结果一致性通过。未打开上述Trace明细或关联日志，不将本次列表示例扩大为新的详情／日志闭环结论；未注入超时、撤权或上游失败，“暂无法确认”和撤权清空仍由本批确定性及自然CI门禁支持。没有新建环境、重启服务、重跑CI、Hosted、容量或定时，也没有用空结果推断请求未执行或采集完整。
+
+
+## 2026-11-12 行内查看调用链保留上方上下文
+
+按用户要求先修订平台运行观测规范，再调整Monitor唯一Trace页面。行内打开或返回详情时，同身份、同实例、同筛选范围内保留已加载的标题／顶部返回实例列表按钮、筛选表单、实例表、样本状态及分页；仅下方结果区切换。实例内详情不把选中的Trace ID写入顶部精确查询输入，ID仍由详情摘要展示。详情区提供返回调用链列表；直接定位、刷新、筛选变化和身份变化继续沿原读取路径，详情被拒绝时清除旧实例信息，不以保留布局为由保留失效授权数据。未改API、权限、采样或查询预算。
+
+最终标准门禁均退出0：`make test-monitor-frontend MONITOR_FRONTEND_BROWSER_ARGS=e2e/traces.spec.js`通过151项单测、27项Trace浏览器夹具及构建；`make test-console-frontend 'CONSOLE_FRONTEND_BROWSER_ARGS=e2e/trace-log-navigation.spec.js e2e/http-quality-navigation.spec.js'`通过258项单测、16项Console导航夹具及构建。新增用例在中英文、1280／900像素下，对详情加载中、完成和返回的顶部文字、输入值、坐标／尺寸作一致性断言，并核对实例DOM不重建、同范围切换不额外读取实例列表、精确ID定位仍独立授权及详情拒绝清空。Console验证实际单iframe、URL窗口、返回／前进／后退及刷新恢复，原日志和5xx导航继续通过。CI路径选择函数确认Monitor前端变更命中Monitor与Console，复用原标准目标，无新增入口或workflow。
+
+首轮新增用例存在两处测试断言错误：把详情路径中的Trace ID当作query参数，以及把“返回列表”的replace误当成可后退到详情的push；修正断言后取得上述最终通过，不将首轮失败记为通过。原日志保留为`/tmp/addp-trace-stable-upper-monitor.log`、`/tmp/addp-trace-stable-upper-console.log`；最终日志为`/tmp/addp-trace-stable-upper-monitor-verified.log`及`/tmp/addp-trace-stable-upper-console-verified.log`。
+
+Safari复用实际Console的系统管理员会话，打开记录ID`17035`、实例`780ff304-74ce-4ca9-b16f-1521a97487f5`及原13:10—13:25历史窗口。列表有14条，点击首条`c10fb5c03727bf7480791f80a12786e4`的“查看调用链”，URL仅增加trace_id，保留instance_id与原start／end；顶部返回实例列表、服务模块控件、历史开始／结束时间、空Trace ID输入、实例及“有样本”、共1条及分页均保持，详情在下方显示2个Span、7.404ms，且明确为不完整调用链。点击下方返回调用链列表后恢复原14条，顶部上下文仍在。本次Safari验证为正式个人环境的该单样本UI效果；未采集Safari像素几何或网络计数，精确位置／尺寸及不重复请求由确定性门禁验证，不混同证据层级。
+
+此次纯前端调整未重启服务。未点击日志或重新验收其他Trace明细，不扩大到业务根因诊断、采集完整性或全量样本保证；未运行Hosted、容量、定时或手工CI重跑。

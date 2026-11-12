@@ -41,7 +41,7 @@ test('exact ID search keeps the form after a miss and can retry without an insta
   await refresh.click()
   await expect(page.getByTestId('trace-error')).toContainText('当前条件下没有可读的已保留调用链')
   await expect(page.getByTestId('trace-instances')).toContainText('monitor')
-  await expect(input).toHaveValue(id)
+  await expect(input).toHaveValue('')
   await expect(spans).toHaveCount(0)
 
   await page.getByRole('button', { name: '返回调用链列表' }).click()
@@ -102,7 +102,7 @@ test('one start time applies a bounded window and returning from detail restores
   await expect(results.getByRole('button', { name: '查看调用链' })).toBeVisible()
   await results.getByRole('button', { name: '查看调用链' }).click()
   await expect(page.getByTestId('trace-spans')).toBeVisible()
-  await page.locator('header').getByRole('button', { name: '返回调用链列表' }).click()
+  await page.getByTestId('trace-detail-navigation').getByRole('button', { name: '返回调用链列表' }).click()
   await expect(results.getByRole('button', { name: '查看调用链' })).toBeVisible()
   await expect.poll(() => state.calls.at(-1)).toEqual(windowQuery)
   await expect(page).toHaveURL(url => !url.searchParams.has('trace_id') && url.searchParams.get('start') === windowQuery.start)
@@ -160,6 +160,67 @@ test('a module with multiple instances queries only the explicitly selected inst
   await expect(page.getByTestId('trace-results')).toContainText('1'.repeat(32))
   const { start, end } = state.sampleCalls[0]
   expect(state.calls).toEqual([{ instance_id: '1', start, end }])
+})
+
+for (const [locale, scope, width] of [['zh-cn', 'instance_id=1', 1280], ['en', 'module_name=monitor', 900]]) {
+  test(`opening a row keeps the upper instance context while detail loads and returns (${locale})`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 1000 })
+    const state = await backend(page, { locale })
+    const end = new Date(Date.now() - 60_000).toISOString()
+    const start = new Date(Date.parse(end) - 15 * 60_000).toISOString()
+    await page.goto('/traces?' + new URLSearchParams({ ...Object.fromEntries(new URLSearchParams(scope)), start, end }))
+    const instances = page.getByTestId('trace-instances')
+    const form = page.getByTestId('trace-search')
+    const results = page.getByTestId('trace-results')
+    await expect(results).toContainText('1'.repeat(32))
+    await expect(page.getByTestId('trace-sample-state')).toHaveText(locale === 'en' ? 'Sample found' : '有样本')
+    const instanceTable = await instances.elementHandle()
+    const upper = () => page.getByTestId('traces').evaluate(root => {
+      const elements = [root.querySelector('header'), root.querySelector('[data-testid="trace-search"]'), root.querySelector('[data-testid="trace-instances"]'), root.querySelector('.el-pagination')]
+      return elements.map(element => {
+        const { x, y, width, height } = element.getBoundingClientRect()
+        return { text: element.innerText, values: [...element.querySelectorAll('input')].map(input => input.value), x, y, width, height }
+      })
+    })
+    const before = await upper()
+    const reads = state.instanceCalls.length
+    state.hold()
+    const detailRequest = page.waitForRequest(request => new URL(request.url()).pathname.endsWith('/traces/' + '1'.repeat(32)))
+    await results.getByRole('button', { name: locale === 'en' ? 'View trace' : '查看调用链' }).click()
+    await detailRequest
+    await expect.poll(() => state.calls.length).toBe(2)
+    expect(await instanceTable.evaluate(node => node.isConnected)).toBe(true)
+    expect(await upper()).toEqual(before)
+    expect(state.instanceCalls).toHaveLength(reads)
+    state.release()
+    await expect(page.getByTestId('trace-spans')).toBeVisible()
+    expect(await upper()).toEqual(before)
+    await expect(form.getByRole('textbox', { name: 'Trace ID', exact: true })).toHaveValue('')
+    expect(state.calls.at(-1)).toEqual({ instance_id: '1', start, end })
+    await page.getByTestId('trace-detail-navigation').getByRole('button').click()
+    await expect(results).toContainText('1'.repeat(32))
+    expect(await upper()).toEqual(before)
+    expect(state.instanceCalls).toHaveLength(reads)
+    if (scope.startsWith('module_name=')) {
+      await form.getByRole('textbox', { name: 'Trace ID', exact: true }).fill('1'.repeat(32))
+      await expect(page).toHaveURL(url => url.searchParams.has('trace_id') && !url.searchParams.has('instance_id'))
+      await expect(page.getByTestId('trace-spans')).toBeVisible()
+      expect(state.calls.at(-1)).toEqual({ start, end })
+      await expect(instances).toHaveCount(0)
+    }
+  })
+}
+
+test('detail denial clears the preserved instance context', async ({ page }) => {
+  const state = await backend(page)
+  await page.goto('/traces?instance_id=1')
+  const results = page.getByTestId('trace-results')
+  await expect(results).toContainText('1'.repeat(32))
+  state.mode('denied')
+  await results.getByRole('button', { name: '查看调用链' }).click()
+  await expect(page.getByTestId('trace-error')).toContainText('没有调用链读取权限')
+  await expect(page.getByTestId('trace-instances')).not.toContainText('one')
+  await expect(page.getByTestId('trace-spans')).toHaveCount(0)
 })
 
 for (const locale of ['zh-cn', 'en']) test(`sample states describe only the current window and opening a row freezes it (${locale})`, async ({ page }) => {
@@ -248,7 +309,7 @@ test('a failed call is reachable from the summary with its logs at narrow width'
   await backend(page, { identity: identity([...keys, 'platform.module_log.read']), failure: true })
   await page.goto('/traces?' + query())
   await expect(page.getByRole('heading', { name: 'GET /items/:id' })).toBeVisible()
-  await expect(page.getByTestId('trace-instances')).toHaveCount(0)
+  await expect(page.getByTestId('trace-instances').locator('tbody tr')).toHaveCount(1)
   const failed = page.getByTestId('trace-spans').locator('li').filter({ hasText: '/system/check' })
   const summary = page.getByTestId('trace-failure')
   await expect(summary).toContainText('system')
