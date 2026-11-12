@@ -1199,6 +1199,8 @@ GeoPackage沿普通矢量容器保存契约，不虚构RasterArtifact／COG或�
 
 验收初始化与阶段观察复用原 Hosted 入口：独立源初始化员仅在隔离夹具中取得原源授权管理角色、Meta 采集权限和精确保存批准资格，业务执行者仍保持原11权限。初始化员先 basic 识别五个源并签发精确 read Grant；业务用户在无 deep 时核对身份和读取准入。保存提交后，初始化员通过 System 正式审批上下文 GET 审阅原 EA／Scope／目标，再 POST 原单次批准；不得读取私有事实或 SQL 代替正式接口。NFS 夹具显式创建同文件系统0700私有暂存区，配置 `publication_staging_path`，普通目录和文件接口不得暴露它。先观察发布、basic 成果识别和用户 read 生效，再按独立请求执行 deep 以验证内部预览；手动 deep 与自动成果扫描分开计数。先归档证据，再撤本轮源／成果 Grant 并核对物化成果的独立性，最后沿原所有权生命周期清理。以上只接通标准 runner；真实 T4 仍须单独确认账号、输入、输出和清理范围。
 
+真实差集派发必须显式提供 `topology_source_commit`，为已单独确认、已具备适用验证证据的40位小写源码 SHA。Workflow 在任何部署步骤前校验输入，检出该 SHA 后核对实际 HEAD，并证明它是本次 dispatch SHA 的祖先（含自身）；格式不符、缺失、检出不符或非祖先立即停止。报告分别保留 dispatch SHA 与实际产品源码 SHA，不能用前移的 main 覆盖已确认源码。该输入的校验和检出复用既有 Hosted 源码冻结方式；其他 Topology case 未提供时仍使用本次 dispatch 的确定快照。差集冻结版本的选择不创建账号、批准、Grant 或运行体，不表示真实 T4 已获批准。
+
 `vector-topology-persistence` 的 `geometry-difference` 独立 case 仅一次成功与四次失败，沿同一非默认Tenant普通User、精确11功能权限、既有Hosted隔离生命周期及600秒总业务预算。不执行full、旧业务T4或容量。正式源/成果资源授权仍由共享专项负责；metadata_read不替代内容read，正式部署及授权证据具备前不派发真实T4，不增加管理员、NFS例外或绕过不可见血缘。
 
 首期成功链只批准一次执行新建 `outputs/difference.gpkg`，见[精确读写规范](../../addp授权上下文规范.md#524-develop-geopackage-工作流的精确读写)。授权专项先证明五份源真实可读、无内容授权或撤权后拒绝、目标无覆盖新建与范围外拒绝，以及同一发起者取得唯一成果初始 Grant 和可见双源血缘。四条算子负例是只读工作流，均保留两次 `load` 和 `difference`。范围外写入拒绝由授权专项独立验证，不能当作四项算子拒绝。

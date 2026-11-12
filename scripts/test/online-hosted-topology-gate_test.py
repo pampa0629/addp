@@ -222,3 +222,58 @@ class HostedTopologyGateTest(unittest.TestCase):
         self.assertNotEqual(result.returncode,0)
         self.assertFalse(self.host.secrets.exists())
         self.assertFalse(self.host.trace.exists())
+
+
+class TopologySourceCommitTest(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        import textwrap
+        workflow=(Path(__file__).resolve().parents[2]/'.github/workflows/online-t4-gates.yml').read_text()
+        cls.workflow=workflow
+        cls.job=workflow.split('  topology-hosted-t4:\n',1)[1].split('\n  raster-contour-hosted-t4:',1)[0]
+        def script(name):
+            block=cls.job.split('      - name: '+name+'\n',1)[1].split('\n      - name:',1)[0]
+            return textwrap.dedent(block.split('        run: |\n',1)[1]).strip()
+        cls.validate=script('Validate requested topology source commit')
+        cls.verify=script('Verify topology source ancestry')
+
+    def test_difference_requires_explicit_complete_lowercase_sha_before_checkout(self):
+        valid='1'*40
+        for value,accepted in [('',False),('main',False),('a'*39,False),('A'*40,False),('a'*41,False),('$(touch forbidden)',False),(valid,True)]:
+            with self.subTest(value=value):
+                result=subprocess.run(['bash','-euo','pipefail','-c',self.validate],env={**os.environ,'SOURCE_COMMIT':value,'TOPOLOGY_CASE':'geometry-difference'},capture_output=True,text=True,timeout=5)
+                self.assertEqual(result.returncode==0,accepted,result.stdout+result.stderr)
+        validation_step=self.job.split('      - name: Check out repository',1)[0]
+        self.assertIn('SOURCE_COMMIT: ${{ inputs.topology_source_commit }}',validation_step)
+        self.assertIn('TOPOLOGY_CASE: ${{ inputs.topology_case }}',validation_step)
+        self.assertLess(self.job.index('Validate requested topology source commit'),self.job.index('Check out repository'))
+        self.assertLess(self.job.index('Verify topology source ancestry'),self.job.index('Set up Go'))
+        self.assertLess(self.job.index('Verify topology source ancestry'),self.job.index('Run Hosted Vector Topology Online gate'))
+
+    def test_other_cases_choose_one_dispatch_snapshot_or_explicit_valid_sha(self):
+        for value,accepted in [('',True),('b'*40,True),('branch-name',False)]:
+            result=subprocess.run(['bash','-euo','pipefail','-c',self.validate],env={**os.environ,'SOURCE_COMMIT':value,'TOPOLOGY_CASE':'polygon-adjacency'},capture_output=True,text=True,timeout=5)
+            self.assertEqual(result.returncode==0,accepted,result.stdout+result.stderr)
+        self.assertIn('ref: ${{ inputs.topology_source_commit || github.sha }}',self.job)
+        self.assertIn('SOURCE_COMMIT: ${{ inputs.topology_source_commit || github.sha }}',self.job)
+        self.assertIn('DISPATCH_COMMIT: ${{ github.sha }}',self.job)
+        self.assertIn("      topology_source_commit:\n        description: Full ancestor source SHA, required for geometry-difference\n        required: false\n        type: string\n        default: ''",self.workflow)
+        self.assertEqual(self.workflow.count('inputs.topology_source_commit'),3)
+
+    def test_actual_git_ancestor_and_same_commit_pass_but_mismatch_or_unrelated_fail(self):
+        import tempfile
+        with tempfile.TemporaryDirectory(prefix='addp-topology-source-') as directory:
+            root=Path(directory)
+            def git(*args):
+                return subprocess.check_output(['git',*args],cwd=root,text=True,stderr=subprocess.DEVNULL).strip()
+            git('init','-q','-b','main');git('config','user.name','Source selection fixture');git('config','user.email','fixture@example.invalid')
+            (root/'source').write_text('first');git('add','source');git('commit','-qm','first');ancestor=git('rev-parse','HEAD')
+            (root/'source').write_text('second');git('commit','-qam','second');dispatch=git('rev-parse','HEAD')
+            unrelated=git('commit-tree',git('rev-parse','HEAD^{tree}'),'-m','unrelated source fixture')
+            for checked,selected,accepted in [(ancestor,ancestor,True),(dispatch,dispatch,True),(ancestor,dispatch,False),(unrelated,unrelated,False)]:
+                with self.subTest(checked=checked,selected=selected):
+                    git('checkout','-q','--detach',checked)
+                    result=subprocess.run(['bash','-euo','pipefail','-c',self.verify],cwd=root,env={**os.environ,'SOURCE_COMMIT':selected,'DISPATCH_COMMIT':dispatch},capture_output=True,text=True,timeout=5)
+                    self.assertEqual(result.returncode==0,accepted,result.stdout+result.stderr)
+                    if accepted:
+                        self.assertIn('Topology source commit='+selected+'; dispatch commit='+dispatch,result.stdout)

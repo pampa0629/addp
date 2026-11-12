@@ -190,6 +190,11 @@ on:
         options:
           - full
           - bounded-recovery
+      topology_source_commit:
+        description: Full ancestor source SHA, required for geometry-difference
+        required: false
+        type: string
+        default: ''
       topology_case:
         description: Topology acceptance case (independent cases run only their selected branch)
         required: true
@@ -2234,11 +2239,32 @@ jobs:
       ONLINE_SUITE_INPUT: vector-topology-persistence
       ADDP_ONLINE_TOPOLOGY_CASE: ${{ inputs.topology_case }}
     steps:
+      - name: Validate requested topology source commit
+        env:
+          SOURCE_COMMIT: ${{ inputs.topology_source_commit }}
+          TOPOLOGY_CASE: ${{ inputs.topology_case }}
+        run: |
+          if [[ "$TOPOLOGY_CASE" == geometry-difference ]]; then
+            [[ "$SOURCE_COMMIT" =~ ^[0-9a-f]{40}$ ]] || { echo 'Geometry difference requires a full lowercase source SHA' >&2; exit 1; }
+          else
+            [[ -z "$SOURCE_COMMIT" || "$SOURCE_COMMIT" =~ ^[0-9a-f]{40}$ ]] || { echo 'Topology source must be a full lowercase SHA' >&2; exit 1; }
+          fi
+
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           fetch-depth: 0
           persist-credentials: false
+          ref: ${{ inputs.topology_source_commit || github.sha }}
+
+      - name: Verify topology source ancestry
+        env:
+          SOURCE_COMMIT: ${{ inputs.topology_source_commit || github.sha }}
+          DISPATCH_COMMIT: ${{ github.sha }}
+        run: |
+          [ "$(git rev-parse HEAD)" = "$SOURCE_COMMIT" ] || { echo 'Topology source checkout mismatch' >&2; exit 1; }
+          git merge-base --is-ancestor "$SOURCE_COMMIT" "$DISPATCH_COMMIT"
+          printf 'Topology source commit=%s; dispatch commit=%s\n' "$SOURCE_COMMIT" "$DISPATCH_COMMIT"
 
       - name: Set up Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
