@@ -25,6 +25,7 @@ import (
 type iamDevelopFileAuthorizationService interface {
 	Issue(context.Context, iam.IssueDevelopFileAuthorizationInput) (*client.IssuedDevelopFileAuthorization, error)
 	ApproveCreate(context.Context, iam.ApproveDevelopFileCreateInput) (*iam.DevelopFileCreateApprovalReceipt, error)
+	ReadCreateApprovalContext(context.Context, iam.ReadDevelopFileCreateApprovalContextInput) (*iam.DevelopFileCreateApprovalContext, error)
 	PublicationRecoveryAccess(context.Context, iam.CheckDevelopFileInput, uuid.UUID) (*client.DevelopFilePublicationRecoveryAccess, error)
 	ReadPublicationHistory(context.Context, iam.CheckDevelopFileInput, uuid.UUID) (*client.DevelopFilePublicationHistory, error)
 	AuthorizePublication(context.Context, iam.CheckDevelopFileInput, client.DevelopFilePublicationRequest) (*client.DevelopFilePublicationObservation, error)
@@ -73,12 +74,44 @@ func RegisterIAMDevelopFileAuthorizationRoutes(api *gin.RouterGroup, runtime *IA
 	}
 	api.POST("/auth/execution-authorizations/develop-geopackage-workflows", runtime.Authentication, runtime.UserAccessCredential, tenant, issue, h.Issue)
 	api.POST("/execution-authorizations/:id/develop-geopackage-create-approvals", runtime.Authentication, runtime.UserAccessCredential, tenant, approve, h.ApproveCreate)
+	api.GET("/execution-authorizations/develop-geopackage-workflows/:execution_id/create-approval-context", runtime.Authentication, runtime.UserAccessCredential, tenant, approve, h.ReadCreateApprovalContext)
 	api.POST("/execution-authorizations/:id/develop-geopackage-admission-checks", runtime.Authentication, runtime.ServiceCredential, service, develop, consume, h.Admission)
 	api.POST("/execution-authorizations/:id/develop-geopackage-source-accesses", runtime.Authentication, runtime.ServiceCredential, service, develop, consume, h.Source)
 	api.POST("/execution-authorizations/:id/develop-geopackage-publications", runtime.Authentication, runtime.ServiceCredential, service, develop, consume, h.Publication)
 	api.GET("/execution-authorizations/:id/develop-geopackage-publications/:operation_id", runtime.Authentication, runtime.ServiceCredential, service, develop, consume, h.PublicationHistory)
 	api.POST("/execution-authorizations/:id/develop-geopackage-publications/:operation_id/recovery-accesses", runtime.Authentication, runtime.ServiceCredential, service, develop, consume, h.PublicationRecovery)
 	return nil
+}
+
+// ReadCreateApprovalContext godoc
+// @Summary 读取 GeoPackage 单次保存审批上下文 | Read GeoPackage creation approval context
+// @Description 同租户独立批准人，复核专用批准资格与目标管理范围。仅返回原执行和精确目标的最小审批信息，不返回配置、来源清单、连接、凭据或租约；不创建批准、Grant或运行体，不激活执行。 | Independent approver in the same tenant with the approval permission and target management scope. Returns only original execution and exact target context, excluding configuration, source lists, connections, credentials and leases. Creates no approval, Grant or runtime and does not activate execution.
+// @Tags 执行授权 | Execution Authorization
+// @Produce json
+// @Security BearerAuth
+// @Param execution_id path string true "原执行 UUID | Original execution UUID"
+// @Success 200 {object} iam.DevelopFileCreateApprovalContext
+// @Failure 400,401,403,409,500,503 {object} IAMErrorResponse
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["system.develop_file_create_approval.create"]
+// @Router /execution-authorizations/develop-geopackage-workflows/{execution_id}/create-approval-context [get]
+func (h *IAMDevelopFileAuthorizationHandler) ReadCreateApprovalContext(c *gin.Context) {
+	c.Header("Cache-Control", "no-store")
+	if c.Request.URL.RawQuery != "" || c.Request.ContentLength != 0 {
+		respondExecutionAuthorizationError(c, commonapi.ErrBadRequest)
+		return
+	}
+	id, err := parseCanonicalExecutionUUID(c.Param("execution_id"))
+	if err != nil {
+		respondExecutionAuthorizationError(c, err)
+		return
+	}
+	result, err := h.service.ReadCreateApprovalContext(c.Request.Context(), iam.ReadDevelopFileCreateApprovalContextInput{UserAccessToken: sharedauth.CanonicalBearerToken(c.GetHeader("Authorization")), ExecutionID: id})
+	if err != nil {
+		respondExecutionAuthorizationError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, result)
 }
 
 // PublicationHistory godoc

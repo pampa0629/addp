@@ -21,12 +21,19 @@ import (
 )
 
 type developFileHTTPFixture struct {
-	issued   *client.IssuedDevelopFileAuthorization
-	calls    int
-	input    iam.CheckDevelopFileInput
-	issue    iam.IssueDevelopFileAuthorizationInput
-	approval iam.ApproveDevelopFileCreateInput
-	err      error
+	issued       *client.IssuedDevelopFileAuthorization
+	calls        int
+	input        iam.CheckDevelopFileInput
+	issue        iam.IssueDevelopFileAuthorizationInput
+	approval     iam.ApproveDevelopFileCreateInput
+	approvalRead iam.ReadDevelopFileCreateApprovalContextInput
+	err          error
+}
+
+func (f *developFileHTTPFixture) ReadCreateApprovalContext(_ context.Context, input iam.ReadDevelopFileCreateApprovalContextInput) (*iam.DevelopFileCreateApprovalContext, error) {
+	f.calls++
+	f.approvalRead = input
+	return &iam.DevelopFileCreateApprovalContext{ExecutionID: input.ExecutionID.String(), State: "awaiting_approval"}, f.err
 }
 
 func (f *developFileHTTPFixture) ReadPublicationHistory(_ context.Context, input iam.CheckDevelopFileInput, operation uuid.UUID) (*client.DevelopFilePublicationHistory, error) {
@@ -200,6 +207,40 @@ func TestDevelopFileHTTPCreateApprovalRequiresHumanPermission(t *testing.T) {
 			}
 			if tc.calls == 1 && (fixture.approval.AuthorizationID != 9 || fixture.approval.ScopeDigest != strings.Repeat("a", 64) || fixture.approval.ExpiresAt.IsZero()) {
 				t.Fatal("approval binding lost")
+			}
+		})
+	}
+}
+
+func TestDevelopFileHTTPApprovalContextIsHumanOnlyAndReadOnly(t *testing.T) {
+	const base = "/api/v1/system/execution-authorizations/develop-geopackage-workflows/" + profileHTTPExecution + "/create-approval-context"
+	for _, tc := range []struct {
+		name, path, body    string
+		machine, permission bool
+		status, calls       int
+	}{
+		{"human", base, "", false, true, 200, 1},
+		{"no permission", base, "", false, false, 403, 0},
+		{"service", base, "", true, true, 403, 0},
+		{"query", base + "?target=other.gpkg", "", false, true, 400, 0},
+		{"body", base, `{}`, false, true, 400, 0},
+		{"invalid UUID", strings.Replace(base, profileHTTPExecution, "invalid", 1), "", false, true, 400, 0},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			current := developFileHTTPAuth(tc.machine)
+			if tc.permission {
+				current.Authorization.RoleAssignments[0].Permissions = []string{"system.develop_file_create_approval.create"}
+			}
+			fixture := &developFileHTTPFixture{}
+			request := httptest.NewRequest("GET", tc.path, strings.NewReader(tc.body))
+			request.Header.Set("Authorization", "Bearer addp_at_test")
+			response := httptest.NewRecorder()
+			developFileHTTPRouter(t, current, fixture).ServeHTTP(response, request)
+			if response.Code != tc.status || fixture.calls != tc.calls || strings.Contains(response.Body.String(), "addp_at_") {
+				t.Fatal(response.Code, fixture.calls, response.Body.String())
+			}
+			if tc.calls == 1 && (fixture.approvalRead.ExecutionID.String() != profileHTTPExecution || fixture.approvalRead.UserAccessToken != "addp_at_test" || response.Header().Get("Cache-Control") != "no-store") {
+				t.Fatal("original binding or cache policy lost")
 			}
 		})
 	}

@@ -162,6 +162,8 @@ Develop 先在本地事务登记原 pending 及冻结 Intent，再在请求栈�
 
 暂存准入与最终放行使用同一次批准、同一个 operation。Develop 在现有私有执行记录内以当前 lease 首次登记 operation、批准编号、精确目标与 Runtime 成果的大小及摘要。System 核验该登记、原批准、目标引擎同版和当前 lease 后，才向受信任的 Develop 提供本次 Provider 私有暂存所需连接；此时不消费批准，也不准许向正式叶子写入。Provider 的准备状态只由 Develop 私有保存，可信 Owner 投影仅返回原操作绑定及已确认准备回执的摘要，不返回暂存位置、原生句柄或连接。未知准备不得变为已准备；未知连接响应或 Prepare 结果只核清原操作，不重新登记或重发业务写入。Runtime 和 User 不消费目标连接。
 
+批准人先用同一专用批准资格调用 `GET /api/v1/system/execution-authorizations/develop-geopackage-workflows/{execution_id}/create-approval-context`，按原执行 UUID 获取正式审批上下文。System 限当前同 Tenant、非原发起人的 User，复核专用批准权限、目标引擎同版管理范围、原 EA 和仍未领取的 Owner 绑定；无 query 或正文，未知及跨租户目标不披露存在性。只投影原 EA 编号、执行／租户／发起人编号、预期 attempt、Scope 摘要、精确目标及版本／模式、EA 期限、观察时间和可缺的原批准回执；不返回原配置、源清单、连接、凭据、lease 或 Provider 状态。GET 不创建批准、审计业务事件、Grant 或运行体，不激活领取、不续期，`approved` 仅表示存在未到期的原批准记录，不是当前读写 Allow；过期记录不可重开。POST 仍独立复核全部当前条件，不信任读取时的资格。
+
 人工批准沿 System 的 `POST /api/v1/system/execution-authorizations/{id}/develop-geopackage-create-approvals` 办理，要求独立且不可委托的 Tenant Permission `system.develop_file_create_approval.create`。请求只接受预期 Scope 摘要及明确的绝对到期时间，批准期限不得超过原 EA。System 从原 EA 与可信 Develop 投影重建目标及尝试绑定，检查原任务仍为已绑定的未领取执行，并在同一事务保存唯一批准记录与审批审计。此权限定义不自动加入角色或授权既有人员。重复提交不替换、延长或创建第二份批准；该命令不发放连接、不激活领取。
 
 System 的原领取观察对保存执行返回 `awaiting_approval`、带原批准编号的 `ready`，或原批准失效后的 `rejected`。真实源读取继续复核原批准；发起人当前权限、源规则、批准人原 Membership／授权版本、专用批准权限及目标管理范围均须仍有效。原 EA 撤销或执行取消后不再返回读写许可。纯只读执行不读取批准记录。Develop 普通手工保存提交接入这一领取观察与既有私有发布器；领取观察本身不读取内容、不生成发布 operation，也不执行目标 I/O。

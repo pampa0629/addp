@@ -401,6 +401,29 @@ func TestDevelopFileAuthorizationAgainstPostgres(t *testing.T) {
 			}
 			return func(time.Time) (*time.Time, error) { return managementExpiry, nil }, nil
 		})
+		for _, token := range []string{userToken, serviceToken, noPermission, noScope, foreign} {
+			if value, err := svc.ReadCreateApprovalContext(ctx, ReadDevelopFileCreateApprovalContextInput{UserAccessToken: token, ExecutionID: uuid.MustParse(facts.ExecutionID)}); err == nil || value != nil {
+				t.Fatal("unauthorized context disclosed")
+			}
+		}
+		var approvalCountBefore, auditCountBefore int64
+		db.Model(&developFileCreateApproval{}).Count(&approvalCountBefore)
+		db.Model(&AuditLog{}).Count(&auditCountBefore)
+		for range 2 {
+			value, err := svc.ReadCreateApprovalContext(ctx, ReadDevelopFileCreateApprovalContextInput{UserAccessToken: first, ExecutionID: uuid.MustParse(facts.ExecutionID)})
+			if err != nil || value == nil {
+				t.Fatal(value, err)
+			}
+			if value.AuthorizationID != issued.Authorization.ID || value.ExecutionID != facts.ExecutionID || value.TenantID != issued.Authorization.TenantID || value.ActorPrincipalID != issued.Authorization.ActorPrincipalID || value.ScopeDigest != issued.ScopeDigest || value.ExpectedAttempt != 1 || value.State != "awaiting_approval" || value.Approval != nil || !reflect.DeepEqual(value.Target, *issued.Scope.Target) || !value.AuthorizationExpiresAt.Equal(issued.Authorization.ExpiresAt) || value.ObservedAt.IsZero() {
+				t.Fatal("approval view changed original binding", value)
+			}
+		}
+		var approvalCountAfter, auditCountAfter int64
+		db.Model(&developFileCreateApproval{}).Count(&approvalCountAfter)
+		db.Model(&AuditLog{}).Count(&auditCountAfter)
+		if approvalCountBefore != approvalCountAfter || auditCountBefore != auditCountAfter {
+			t.Fatal("read created approval or audit")
+		}
 		req := ApproveDevelopFileCreateInput{AuthorizationID: id, ScopeDigest: issued.ScopeDigest,
 			ExpiresAt: issued.Authorization.ExpiresAt.Add(-time.Second), Audit: audit}
 		for _, token := range []string{userToken, serviceToken, noPermission, noScope, foreign} {
@@ -448,6 +471,10 @@ func TestDevelopFileAuthorizationAgainstPostgres(t *testing.T) {
 		if err := db.Where("authorization_id=?", id).Take(&persisted).Error; err != nil || winner == nil ||
 			persisted.ID.String() != winner.ApprovalID || persisted.ScopeDigest != issued.ScopeDigest || !persisted.ExpiresAt.Equal(req.ExpiresAt) {
 			t.Fatal("original approval missing", err)
+		}
+		view, readErr := svc.ReadCreateApprovalContext(ctx, ReadDevelopFileCreateApprovalContextInput{UserAccessToken: first, ExecutionID: uuid.MustParse(facts.ExecutionID)})
+		if readErr != nil || view == nil || view.State != "approved" || view.Approval == nil || view.Approval.ApprovalID != winner.ApprovalID || !view.Approval.ApprovedAt.Equal(winner.ApprovedAt) || !view.Approval.ExpiresAt.Equal(winner.ExpiresAt) {
+			t.Fatal("committed approval view differs", view, readErr)
 		}
 		var count int64
 		if err := db.Model(&AuditLog{}).Where("event_name=? AND entity_id=?", "iam.develop_file_create_approval.created", persisted.ID.String()).Count(&count).Error; err != nil || count != 1 {

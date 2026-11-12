@@ -4593,6 +4593,80 @@ const docTemplate = `{
                 ]
             }
         },
+        "/execution-authorizations/develop-geopackage-workflows/{execution_id}/create-approval-context": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "同租户独立批准人，复核专用批准资格与目标管理范围。仅返回原执行和精确目标的最小审批信息，不返回配置、来源清单、连接、凭据或租约；不创建批准、Grant或运行体，不激活执行。 | Independent approver in the same tenant with the approval permission and target management scope. Returns only original execution and exact target context, excluding configuration, source lists, connections, credentials and leases. Creates no approval, Grant or runtime and does not activate execution.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "执行授权 | Execution Authorization"
+                ],
+                "summary": "读取 GeoPackage 单次保存审批上下文 | Read GeoPackage creation approval context",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "原执行 UUID | Original execution UUID",
+                        "name": "execution_id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_iam.DevelopFileCreateApprovalContext"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "system.develop_file_create_approval.create"
+                ]
+            }
+        },
         "/execution-authorizations/{id}/cleanup-accesses": {
             "post": {
                 "security": [
@@ -20060,6 +20134,44 @@ const docTemplate = `{
                 "DepartmentStatusActive",
                 "DepartmentStatusDisabled"
             ]
+        },
+        "github_com_addp_system_internal_iam.DevelopFileCreateApprovalContext": {
+            "type": "object",
+            "properties": {
+                "actor_principal_id": {
+                    "type": "string"
+                },
+                "approval": {
+                    "$ref": "#/definitions/github_com_addp_system_internal_iam.DevelopFileCreateApprovalReceipt"
+                },
+                "authorization_expires_at": {
+                    "type": "string"
+                },
+                "authorization_id": {
+                    "type": "string"
+                },
+                "execution_id": {
+                    "type": "string"
+                },
+                "expected_attempt": {
+                    "type": "integer"
+                },
+                "observed_at": {
+                    "type": "string"
+                },
+                "scope_digest": {
+                    "type": "string"
+                },
+                "state": {
+                    "type": "string"
+                },
+                "target": {
+                    "$ref": "#/definitions/execution.DevelopBoundFileTarget"
+                },
+                "tenant_id": {
+                    "type": "string"
+                }
+            }
         },
         "github_com_addp_system_internal_iam.DevelopFileCreateApprovalReceipt": {
             "type": "object",

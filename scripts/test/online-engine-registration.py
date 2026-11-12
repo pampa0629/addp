@@ -122,7 +122,7 @@ def read_exact_record_authorization_facts(authorizer, path):
     return facts
 
 
-def source_grant_participants(authorizer, consumer, tenant_id, *, scan_preparation=False):
+def source_grant_participants(authorizer, consumer, tenant_id, *, scan_preparation=False, approval_preparation=False):
     """Verify separate tenant Users; preparation confers no consumer authority."""
     if type(tenant_id) is not int or tenant_id <= 1:
         raise RegistrationError('source Grant preparation requires a disposable nondefault Tenant')
@@ -144,7 +144,9 @@ def source_grant_participants(authorizer, consumer, tenant_id, *, scan_preparati
     expected_permissions = SOURCE_INITIALIZER_PERMISSIONS
     if scan_preparation:
         expected_permissions = expected_permissions | {'meta.scan_task.execute', 'meta.scan_task.read'}
-    if (type(scan_preparation) is not bool or initializer_id == recipient_id or permissions != expected_permissions
+    if approval_preparation:
+        expected_permissions = expected_permissions | {'system.develop_file_create_approval.create'}
+    if (type(scan_preparation) is not bool or type(approval_preparation) is not bool or initializer_id == recipient_id or permissions != expected_permissions
         or not any(role.get('role_key') == SOURCE_INITIALIZER_ROLE for role in roles)):
         raise RegistrationError('source initializer must be separate and have the exact formal engine authorization administrator permissions')
     return initializer_id, recipient_id
@@ -152,9 +154,9 @@ def source_grant_participants(authorizer, consumer, tenant_id, *, scan_preparati
 
 class _ExactGrantLifecycle:
     """Shared formal identity, visibility observations and precise revocation."""
-    def __init__(self, authorizer, consumer, tenant_id, *, on_change=None, on_evidence=None, scan_preparation=False):
+    def __init__(self, authorizer, consumer, tenant_id, *, on_change=None, on_evidence=None, scan_preparation=False, approval_preparation=False):
         self.phase = 'participants'
-        self.operator, self.recipient = source_grant_participants(authorizer, consumer, tenant_id, scan_preparation=scan_preparation)
+        self.operator, self.recipient = source_grant_participants(authorizer, consumer, tenant_id, scan_preparation=scan_preparation, approval_preparation=approval_preparation)
         self.authorizer, self.consumer = authorizer, consumer
         self.pending = []
         self.on_change = on_change
@@ -172,9 +174,9 @@ class _ExactGrantLifecycle:
             or result.get('targets') != [dict(target=target, visible=visible)]):
             raise MetadataGrantError(phase,'visibility_mismatch')
 
-    def cleanup(self):
+    def cleanup(self, *, rows=None):
         errors = []
-        for row in list(self.pending):
+        for row in list(self.pending if rows is None else rows):
             try:
                 self.phase='grant_revoke'
                 self.authorizer.request('POST', f"/api/v1/system/engines/{row['engine']}/access_grants/{row['request_id']}/revoke",
@@ -308,6 +310,133 @@ class ExactFileMetadataGrants(_ExactGrantLifecycle):
         self.observe(target,True,phase='visibility_after_grant')
         return receipt
 
+
+
+class ExactFileReadGrants(_ExactGrantLifecycle):
+    """Complete single-file GPKG Grants, independent of deep inspection."""
+    target = staticmethod(ExactFileMetadataGrants.target)
+
+    def observe(self, target, allowed, *, phase='read_check'):
+        self.phase = phase
+        response = self.consumer.request('POST', '/api/v1/system/engine-access/read-checks/manager-preview',
+                                         (200,) if allowed else (403,), {'targets': [target]})
+        if allowed and (not isinstance(response.payload, dict) or not response.payload.get('observed_at')):
+            raise MetadataGrantError(phase, 'read_observation_invalid')
+
+    def grant(self, engine, full_name):
+        target = self.target(engine, full_name, 'nfs')
+        fingerprint = hashlib.sha256(f'{engine}:{full_name}'.encode()).hexdigest()
+        self.phase = 'file_facts'
+        facts = self.authorizer.request('GET', f'/api/v1/system/engines/{engine}/data-items/{fingerprint}/authorization-facts', (200,)).payload
+        composition = dict(format='geopackage', refs=[dict(target=target, role='container', required=True, primary=True)])
+        expected = dict(schema_version='meta.data_item_authorization_facts/v1', engine_id=str(engine),
+                        item_fingerprint=fingerprint, item_type='file', full_name=full_name, basis_state='complete',
+                        boundary=dict(layout='single', file_composition=composition))
+        if (not isinstance(facts, dict) or any(facts.get(k) != v for k, v in expected.items())
+            or not re.fullmatch('[0-9a-f]{64}', str(facts.get('boundary_hash', ''))) or not facts.get('observed_at')):
+            raise MetadataGrantError(self.phase, 'complete_file_boundary_required')
+        self.observe(target, False, phase='read_before_grant')
+        command = str(uuid.uuid4())
+        body = dict(request_id=command, catalog_path=target, item_fingerprint=fingerprint,
+                    expected_boundary_hash=facts['boundary_hash'], recipient_type='user', recipient_id=self.recipient,
+                    action='read', expiry_mode='until_revoked', reason='Disposable Online exact GeoPackage source read')
+        pending = dict(engine=engine, request_id=command, target=target, confirmed=False)
+        self.pending.append(pending)
+        self.checkpoint()
+        self.phase = 'file_grant_create'
+        receipt = self.authorizer.request('POST', f'/api/v1/system/engines/{engine}/access_grants', (201,), body).payload
+        expected = {k:body[k] for k in ('request_id', 'catalog_path', 'item_fingerprint', 'recipient_type', 'recipient_id', 'action', 'expiry_mode')}
+        expected.update(engine_id=str(engine), boundary_hash=facts['boundary_hash'], file_composition=composition,
+                        approval_mode='independent', operator_principal_id=self.operator, revocation=None, expires_at=None)
+        if (not isinstance(receipt, dict) or any(receipt.get(k) != v for k,v in expected.items())
+            or receipt.get('node_recursive') is not None or receipt.get('metadata_target') or receipt.get('scope')):
+            raise MetadataGrantError('receipt_validate', 'file_boundary_mismatch')
+        pending['confirmed'] = True
+        self.checkpoint()
+        self.observe(target, True, phase='read_after_grant')
+        return receipt
+
+    def cleanup(self, *, rows=None):
+        super().cleanup(rows=rows)
+        return {'grants_revoked': True, 'content_reads_denied': True}
+
+    def production_grant(self, engine, full_name, execution_id):
+        """Observe the producer's existing initial Grant; never issue a substitute."""
+        target = self.target(engine, full_name, 'nfs')
+        query = urllib.parse.urlencode(dict(catalog_path=json.dumps(target, separators=(',', ':')),
+                        recipient_type='user', recipient_id=self.recipient, page=1, page_size=100))
+        self.phase = 'initial_grant_history'
+        listing = self.authorizer.request('GET', f'/api/v1/system/engines/{engine}/access_grants/history?{query}', (200,)).payload
+        if (not isinstance(listing, dict) or not isinstance(listing.get('data'), list)
+            or type(listing.get('total')) is not int or listing['total'] != len(listing['data'])):
+            raise MetadataGrantError(self.phase, 'history_incomplete')
+        rows = [row for row in listing['data'] if row.get('catalog_path') == target and row.get('action') == 'read'
+                and row.get('recipient_type') == 'user' and row.get('recipient_id') == self.recipient
+                and row.get('approval_mode') == 'task_production' and row.get('production_execution_id') == execution_id
+                and row.get('producer_owner') == 'develop' and row.get('revocation') is None]
+        if not rows:
+            return None
+        if len(rows) != 1:
+            raise MetadataGrantError(self.phase, 'initial_grant_not_unique')
+        row = rows[0]
+        # Track the original revocation anchor before validating its projection.
+        try:
+            valid_id = str(uuid.UUID(row['request_id'])) == row['request_id']
+        except (ValueError, TypeError, KeyError):
+            valid_id = False
+        if not valid_id:
+            raise MetadataGrantError(self.phase, 'initial_grant_identity_invalid')
+        self.pending.append(dict(engine=engine, request_id=row['request_id'], target=target, confirmed=True))
+        self.checkpoint()
+        composition = dict(format='geopackage', refs=[dict(target=target, role='container', required=True, primary=True)])
+        if (row.get('engine_id') != str(engine) or row.get('item_fingerprint') != hashlib.sha256(f'{engine}:{full_name}'.encode()).hexdigest()
+            or not re.fullmatch('[0-9a-f]{64}', str(row.get('boundary_hash', '')))
+            or row.get('file_composition') != composition or row.get('node_recursive') is not None
+            or row.get('operator_principal_id') != self.recipient or not row.get('production_result_id')
+            or row.get('expiry_mode') != 'until_revoked' or row.get('expires_at') is not None):
+            raise MetadataGrantError(self.phase, 'initial_grant_boundary_mismatch')
+        self.observe(target, True, phase='initial_grant_readable')
+        return row
+
+
+def approve_geopackage_save(authorizer, execution_id, tenant_id, actor_id, target, *, on_evidence):
+    """One command against the formal original context; unknown outcomes never resubmit."""
+    path = f'/api/v1/system/execution-authorizations/develop-geopackage-workflows/{execution_id}/create-approval-context'
+    context = authorizer.request('GET', path, (200,)).payload
+    if (not isinstance(context, dict) or context.get('execution_id') != execution_id
+        or context.get('tenant_id') != str(tenant_id) or context.get('actor_principal_id') != str(actor_id)
+        or type(context.get('expected_attempt')) is not int or context['expected_attempt'] != 1
+        or not re.fullmatch('[1-9][0-9]*', str(context.get('authorization_id', '')))
+        or not re.fullmatch('[0-9a-f]{64}', str(context.get('scope_digest', '')))
+        or not isinstance(context.get('target'), dict) or context['target'].get('target') != target
+        or context['target'].get('mode') != 'fail' or not context['target'].get('engine_version')
+        or context.get('state') != 'awaiting_approval' or context.get('approval') is not None):
+        raise MetadataGrantError('approval_context', 'original_binding_mismatch')
+    try:
+        expires = datetime.fromisoformat(context['authorization_expires_at'].replace('Z', '+00:00'))
+        observed = datetime.fromisoformat(context['observed_at'].replace('Z', '+00:00'))
+        if expires.tzinfo is None or observed.tzinfo is None or not expires > max(observed, datetime.now(timezone.utc)):
+            raise ValueError()
+    except (ValueError, TypeError, KeyError):
+        raise MetadataGrantError('approval_context', 'expiry_invalid') from None
+    # Archive the original binding and intent before the only possible write.
+    on_evidence(dict(stage='approval_intent', context=context))
+    body = dict(scope_digest=context['scope_digest'], expires_at=context['authorization_expires_at'])
+    try:
+        receipt = authorizer.request('POST', f"/api/v1/system/execution-authorizations/{context['authorization_id']}/develop-geopackage-create-approvals", (201,), body).payload
+    except Exception:
+        on_evidence(dict(stage='approval_outcome_unknown', authorization_id=context['authorization_id']))
+        raise MetadataGrantError('approval_command', 'outcome_unknown_no_resubmit') from None
+    try:
+        valid = (isinstance(receipt, dict) and str(uuid.UUID(receipt['approval_id'])) == receipt['approval_id']
+                 and datetime.fromisoformat(receipt['expires_at'].replace('Z', '+00:00')) == expires
+                 and observed <= datetime.fromisoformat(receipt['approved_at'].replace('Z', '+00:00')) < expires)
+    except (ValueError, KeyError, TypeError):
+        valid = False
+    if not valid:
+        raise MetadataGrantError('approval_receipt', 'receipt_mismatch_no_resubmit')
+    on_evidence(dict(stage='approval_confirmed', receipt=receipt))
+    return receipt
 
 
 class ExactRecordGrants(_ExactGrantLifecycle):

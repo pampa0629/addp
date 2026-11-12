@@ -191,6 +191,36 @@ class TopologyFixtureTest(unittest.TestCase):
             with self.assertRaises(m.FixtureError): m.NFSExport('topology', command).guard({})
             command.assert_not_called()
 
+    def test_difference_nfs_descriptor_has_owned_private_staging_and_cleanup(self):
+        import shutil
+        nfs=importlib.import_module('scripts.utils.online_nfs_fixture')
+        with tempfile.TemporaryDirectory() as directory, tempfile.TemporaryDirectory(prefix='addp-topology-',dir='/tmp') as source:
+            secret=Path(directory).resolve();root=Path(source).resolve();exports=[];calls=[]
+            def command(args,**kwargs):
+                calls.append(args)
+                if args==['sudo','exportfs','-s']:return ''.join(exports)
+                if args[:2]==['sudo','tee']:exports[:]=[kwargs['input']];return ''
+                if args[:2]==['showmount','-e']:return 'Export list:\n'+''.join(exports)
+                if args[:3]==['sudo','rm','-f']:exports.clear()
+                if args[:4]==['sudo','rm','-rf','--']:shutil.rmtree(args[4])
+                return ''
+            export=nfs.NFSExport('topology',command,publication_staging=True)
+            with patch.object(nfs.tempfile,'mkdtemp',return_value=str(root)):
+                export.lifecycle('start',secret,'topology-42-1')
+            descriptor=json.loads((secret/'topology-nfs-engine.json').read_text())
+            self.assertEqual(descriptor['connection_info'],dict(server='127.0.0.1',export_path=str(root),publication_staging_path='.addp-publication'))
+            stage=root/'.addp-publication'
+            self.assertEqual(stage.stat().st_mode & 0o777,0o700);self.assertEqual(stage.stat().st_uid,os.getuid())
+            self.assertEqual(list(stage.iterdir()),[])
+            export.lifecycle('stop',secret,'topology-42-1')
+            self.assertFalse(root.exists());self.assertFalse(exports)
+            self.assertFalse((secret/'topology-nfs-engine.json').exists())
+
+
+    def test_private_staging_rejects_readonly_export(self):
+        with self.assertRaises(m.FixtureError):m.NFSExport('topology',None,access_mode='ro',publication_staging=True)
+
+
     def test_topology_scope_cannot_clean_a_contour_or_foreign_root(self):
         with tempfile.TemporaryDirectory() as directory:
             secret = Path(directory); (secret/'topology-root').write_text('/tmp/addp-contour-abcdefgh')

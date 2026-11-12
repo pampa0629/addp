@@ -40,6 +40,124 @@ type DevelopFileCreateApprovalReceipt struct {
 	ExpiresAt  time.Time `json:"expires_at"`
 }
 
+type ReadDevelopFileCreateApprovalContextInput struct {
+	UserAccessToken string
+	ExecutionID     uuid.UUID
+}
+
+// Descriptive original binding only; the approval command checks current
+// eligibility again and this view never activates or extends an execution.
+type DevelopFileCreateApprovalContext struct {
+	AuthorizationID        string                            `json:"authorization_id"`
+	ExecutionID            string                            `json:"execution_id"`
+	TenantID               string                            `json:"tenant_id"`
+	ActorPrincipalID       string                            `json:"actor_principal_id"`
+	ExpectedAttempt        int                               `json:"expected_attempt"`
+	ScopeDigest            string                            `json:"scope_digest"`
+	Target                 execution.DevelopBoundFileTarget  `json:"target"`
+	AuthorizationExpiresAt time.Time                         `json:"authorization_expires_at"`
+	ObservedAt             time.Time                         `json:"observed_at"`
+	State                  string                            `json:"state"`
+	Approval               *DevelopFileCreateApprovalReceipt `json:"approval,omitempty"`
+}
+
+func (s *DevelopFileAuthorizationService) ReadCreateApprovalContext(ctx context.Context, input ReadDevelopFileCreateApprovalContextInput) (*DevelopFileCreateApprovalContext, error) {
+	if input.ExecutionID == uuid.Nil {
+		return nil, commonapi.ErrBadRequest
+	}
+	if s == nil || s.repository == nil || s.owner == nil || s.prepareCreateApprover == nil {
+		return nil, ErrDevelopFileDependencyUnavailable
+	}
+	const permission = systemauth.PermissionSystemDevelopFileCreateApprovalCreate
+	approver, _, err := s.repository.developFileUser(ctx, input.UserAccessToken, false, permission)
+	if err != nil {
+		return nil, err
+	}
+	sealed, err := s.repository.FindExecutionAuthorization(ctx, "develop", input.ExecutionID)
+	if errors.Is(err, commonapi.ErrNotFound) {
+		return nil, ErrExecutionAuthorizationPermissionDenied
+	}
+	if err != nil {
+		return nil, err
+	}
+	if sealed.TenantID != approver.TenantID || sealed.ActorPrincipalID == approver.ActorPrincipalID || sealed.DevelopFileScope == nil || sealed.DevelopFileScope.Target == nil || !strings.EqualFold(path.Ext(sealed.DevelopFileScope.Target.Target.StringPath()), ".gpkg") {
+		return nil, ErrExecutionAuthorizationPermissionDenied
+	}
+	digest, err := sealed.DevelopFileScope.Digest()
+	if err != nil {
+		return nil, ErrExecutionAuthorizationConflict
+	}
+	binding := CheckDevelopFileInput{AuthorizationID: sealed.ID, ExecutionID: sealed.ExecutionID, TenantID: approver.TenantID, ExpectedAttempt: sealed.DevelopFileScope.ExpectedAttempt, ScopeDigest: digest}
+	if err := matchDevelopFileAuthorization(sealed, binding); err != nil {
+		return nil, err
+	}
+	facts, err := s.readOwner(ctx, sealed, sealed.ExecutionID)
+	if err != nil {
+		return nil, err
+	}
+	if facts.AuthorizationID != strconv.FormatInt(sealed.ID, 10) || facts.ScopeDigest != digest || (facts.AdmissionState != "pending" && facts.AdmissionState != "ready") || !reflect.DeepEqual(facts.BoundScope, sealed.DevelopFileScope) {
+		return nil, ErrExecutionAuthorizationConflict
+	}
+	var result *DevelopFileCreateApprovalContext
+	err = s.repository.Transaction(ctx, func(tx *Repository) error {
+		current, _, err := tx.developFileUser(ctx, input.UserAccessToken, true, permission)
+		if err != nil {
+			return err
+		}
+		if !sameDevelopActor(approver, current) {
+			return ErrExecutionAuthorizationPermissionDenied
+		}
+		var row ExecutionAuthorization
+		if err := tx.db.WithContext(ctx).Clauses(clause.Locking{Strength: "SHARE"}).First(&row, sealed.ID).Error; err != nil {
+			return err
+		}
+		if err := matchDevelopFileAuthorization(&row, binding); err != nil {
+			return err
+		}
+		if !reflect.DeepEqual(row.DevelopFileScope, sealed.DevelopFileScope) {
+			return ErrExecutionAuthorizationConflict
+		}
+		if _, err := tx.developFileExecution(ctx, &row, facts, binding.ExpectedAttempt, uuid.Nil, true); err != nil {
+			return err
+		}
+		checkScope, err := s.prepareCreateApprover(ctx, tx.db, approver.TenantID, approver.TenantMembershipID, *row.DevelopFileScope.Target)
+		if err != nil {
+			return err
+		}
+		if checkScope == nil {
+			return ErrDevelopFileDependencyUnavailable
+		}
+		approval, err := tx.findDevelopFileCreateApproval(ctx, row.ID)
+		if err != nil {
+			return err
+		}
+		final, credential, err := tx.developFileUser(ctx, input.UserAccessToken, true, permission)
+		if err != nil {
+			return err
+		}
+		now, err := tx.internalTaskDatabaseTime(ctx)
+		if err != nil {
+			return err
+		}
+		if !sameDevelopActor(approver, final) || !credential.Token.ExpiresAt.After(now) || !row.ExpiresAt.After(now) {
+			return ErrExecutionAuthorizationPermissionDenied
+		}
+		if _, err := checkScope(now); err != nil {
+			return err
+		}
+		result = &DevelopFileCreateApprovalContext{AuthorizationID: strconv.FormatInt(row.ID, 10), ExecutionID: row.ExecutionID.String(), TenantID: strconv.FormatInt(row.TenantID, 10), ActorPrincipalID: strconv.FormatInt(row.ActorPrincipalID, 10), ExpectedAttempt: binding.ExpectedAttempt, ScopeDigest: digest, Target: *row.DevelopFileScope.Target, AuthorizationExpiresAt: row.ExpiresAt, ObservedAt: now, State: "awaiting_approval"}
+		if approval != nil {
+			result.State = "approved"
+			if !approval.ExpiresAt.After(now) {
+				result.State = "approval_expired"
+			}
+			result.Approval = &DevelopFileCreateApprovalReceipt{ApprovalID: approval.ID.String(), ApprovedAt: approval.ApprovedAt, ExpiresAt: approval.ExpiresAt}
+		}
+		return nil
+	})
+	return result, err
+}
+
 type developFileCreateApproval struct {
 	ID                           uuid.UUID `gorm:"type:uuid;primaryKey"`
 	AuthorizationID              int64

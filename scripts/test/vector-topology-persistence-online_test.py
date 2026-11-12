@@ -2694,19 +2694,82 @@ const source=readFileSync(root+'/console/frontend/e2e/online/vector-topology-per
         result=subprocess.run(['node','--input-type=module','-e',script,str(repo)],capture_output=True,text=True,timeout=30);self.assertEqual(result.returncode,0,result.stderr)
 
 
+class DifferenceInitializer:
+    def __init__(self, consumer):
+        self.consumer=consumer;self.calls=[];self.scans=[];self.mutate_context=None;self.mutate_facts=None;self.unknown_approval=False
+    def request(self, method, path, expected, body=None):
+        from datetime import datetime, timezone, timedelta
+        import hashlib,uuid
+        registration=importlib.import_module('scripts.test.online-engine-registration')
+        self.calls.append((method,path,copy.deepcopy(body)))
+        c=self.consumer
+        if path.endswith('/auth/context'):
+            data={'principal':{'type':'user','id':'8'},'context':{'type':'tenant','tenant_id':'2'},'authorization':{'role_assignments':[{'role_key':registration.SOURCE_INITIALIZER_ROLE,'permissions':sorted(registration.SOURCE_INITIALIZER_PERMISSIONS|{'meta.scan_task.execute','meta.scan_task.read','system.develop_file_create_approval.create'})}]}}
+        elif path.endswith('/scan/run/manual'):
+            name=body['targets'][0].split('/path/')[1].split('?')[0];identifier=body['scan_depth']+'-'+name;self.scans.append(identifier);data={'execution_id':identifier}
+        elif '/meta/scan/runs?' in path:data={'total':len(self.scans),'items':[{'execution_id':identifier} for identifier in self.scans]}
+        elif '/meta/executions/' in path:data={'status':'success'}
+        elif path.endswith('/authorization-facts'):
+            name=next(n for n in m.fixture.DIFFERENCE_SOURCES if hashlib.sha256(('3:'+n).encode()).hexdigest()==path.split('/')[-2])
+            target=registration.ExactFileReadGrants.target(3,name,'nfs');composition={'format':'geopackage','refs':[dict(target=target,role='container',required=True,primary=True)]}
+            data=dict(schema_version='meta.data_item_authorization_facts/v1',engine_id='3',item_fingerprint=path.split('/')[-2],item_type='file',full_name=name,basis_state='complete',boundary_hash='a'*64,observed_at='2026-11-12T00:00:00Z',boundary=dict(layout='single',file_composition=composition))
+            if self.mutate_facts:self.mutate_facts(data)
+        elif path.endswith('/access_grants'):
+            data={**body,'engine_id':'3','approval_mode':'independent','operator_principal_id':'8','boundary_hash':body['expected_boundary_hash'],'revocation':None,'expires_at':None,
+                  'file_composition':dict(format='geopackage',refs=[dict(target=body['catalog_path'],role='container',required=True,primary=True)])}
+            c.grants[body['request_id']]=data
+        elif '/access_grants/history?' in path:
+            rows=[row for row in c.grants.values() if row.get('production_execution_id')==c.run_id];data={'data':rows,'total':len(rows)}
+        elif path.endswith('/revoke'):
+            c.grants[path.split('/')[-2]]['revocation']={'revoked':True};data={}
+        elif path.endswith('/create-approval-context'):
+            now=datetime.now(timezone.utc);c.approval_expires=(now+timedelta(minutes=20)).isoformat()
+            data=dict(authorization_id='9',execution_id=c.run_id,tenant_id='2',actor_principal_id='33',expected_attempt=1,scope_digest='b'*64,
+                target=dict(target=registration.ExactFileReadGrants.target(3,'outputs/difference.gpkg','nfs'),mode='fail',engine_version='238'),
+                authorization_expires_at=c.approval_expires,observed_at=(now-timedelta(seconds=1)).isoformat(),state='awaiting_approval')
+            if self.mutate_context:self.mutate_context(data)
+        elif path.endswith('/develop-geopackage-create-approvals'):
+            if self.unknown_approval:raise RuntimeError('PRIVATE_TOKEN_OR_REMOTE_BODY')
+            target=registration.ExactFileReadGrants.target(3,'outputs/difference.gpkg','nfs');identifier=str(uuid.uuid4())
+            c.grants[identifier]=dict(request_id=identifier,catalog_path=target,action='read',recipient_type='user',recipient_id='33',approval_mode='task_production',producer_owner='develop',production_execution_id=c.run_id,production_result_id=str(uuid.uuid4()),revocation=None,
+                engine_id='3',item_fingerprint=hashlib.sha256(b'3:outputs/difference.gpkg').hexdigest(),boundary_hash='a'*64,operator_principal_id='33',expiry_mode='until_revoked',expires_at=None,
+                file_composition=dict(format='geopackage',refs=[dict(target=target,role='container',required=True,primary=True)]))
+            data=dict(approval_id=str(uuid.uuid4()),approved_at=datetime.now(timezone.utc).isoformat(),expires_at=body['expires_at'])
+        else:raise AssertionError((method,path,body))
+        return SimpleNamespace(payload=copy.deepcopy(data))
+
+
+
 class DifferenceClient(OverlayClient):
-    def __init__(self):super().__init__(m.fixture.DIFFERENCE_CASE)
+    def __init__(self):
+        super().__init__(m.fixture.DIFFERENCE_CASE);self.scans=[];self.grants={};self.issuer=DifferenceInitializer(self)
+        self.success['metadata'].pop('result')  # The product contract no longer supplies meta_scan_runs.
+    def request(self,method,path,expected,body=None):
+        if path.endswith('/auth/context'):
+            response=super().request(method,path,expected,body);response.payload['principal']['id']='33';return response
+        if path.endswith('/scan/run/manual'):
+            self.calls.append((method,path,body));name=body['targets'][0].split('/path/')[1].split('?')[0]
+            identifier='deep-'+name;self.scans.append(identifier);return SimpleNamespace(payload={'execution_id':identifier})
+        if path.endswith('/read-checks/manager-preview'):
+            self.calls.append((method,path,body));allowed=any(row['catalog_path']==body['targets'][0] and row['revocation'] is None for row in self.grants.values())
+            if expected!=((200,) if allowed else (403,)):raise m.SuiteError('read-check mismatch')
+            return SimpleNamespace(payload={'observed_at':'2026-11-12T00:00:00Z'} if allowed else {})
+        if path.endswith('/meta/executions/overlay-output-scan'):
+            return SimpleNamespace(payload=dict(execution_id='overlay-output-scan',status='success',tenant_id=self.scan_tenant,triggered_by=self.scan_actor,source='develop',parent_execution_id=self.run_id,
+                scan_context=dict(scan_depth='basic',engine_id=3)))
+        return super().request(method,path,expected,body)
 
 
 class DifferenceOnlineTest(unittest.TestCase):
     def setUp(self):
-        self.directory=tempfile.TemporaryDirectory();self.addCleanup(self.directory.cleanup);self.env={**ENV,'ADDP_ONLINE_TOPOLOGY_CASE':m.fixture.DIFFERENCE_CASE,'ADDP_ONLINE_ARTIFACT_DIR':self.directory.name}
+        self.directory=tempfile.TemporaryDirectory();self.addCleanup(self.directory.cleanup);self.env={**ENV,'ADDP_ONLINE_TOPOLOGY_CASE':m.fixture.DIFFERENCE_CASE,'ADDP_ONLINE_ARTIFACT_DIR':self.directory.name,'ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN':'initializer-test-token','GATEWAY_URL':'http://deterministic.invalid'}
     def run_case(self,client=None,physical=difference_physical,browser=lambda *a:a[2]):
-        with patch.object(m.raster,'wait_lineage',return_value={}):
-            return m.run_scenario(Path('.'),self.env,client or DifferenceClient(),physical,browser)
+        client=client or DifferenceClient()
+        with patch.object(m.raster,'wait_lineage',return_value={}),patch.object(m.raster,'GatewayClient',return_value=client.issuer):
+            return m.run_scenario(Path('.'),self.env,client,physical,browser)
     def test_difference_one_success_four_failures_single_scan_and_two_source_edges(self):
         client=DifferenceClient();report=self.run_case(client);self.assertEqual((report['result'],report['schema_version']),('passed','addp.geometry-difference/v1'))
-        self.assertEqual([len(report[k])for k in('sources','outputs','failures','initial_scan_inventory','final_scan_inventory','meta_after')],[5,1,4,5,6,6])
+        self.assertEqual([len(report[k])for k in('sources','outputs','failures','initial_scan_inventory','final_scan_inventory','meta_after')],[5,1,4,0,1,6])
         self.assertEqual(len(report['browser']['expected']['result']),9);self.assertEqual(len(report['raw_lineage']['edges']),2)
         self.assertEqual(sum(method=='POST'and path.endswith('/develop/executions')for method,path,_ in client.calls),5)
         for failure in report['failures']:
@@ -2714,6 +2777,45 @@ class DifferenceOnlineTest(unittest.TestCase):
             self.assertEqual([task['operator'] for task in tasks], ['difference', 'load', 'load'])
             self.assertEqual(tasks[0]['depends_on'], ['load_a', 'load_b'])
             self.assertTrue(all('target_parent_locator' not in task['params'] and 'target_name' not in task['params'] for task in tasks))
+    def test_difference_stages_keep_basic_grants_approval_and_deep_separate(self):
+        client=DifferenceClient();report=self.run_case(client)
+        stages=[row['stage'] for row in report['publication']['stages']]
+        self.assertEqual(stages[:3],['source_basic_identified','source_read_granted','source_deep_inspected'])
+        self.assertEqual(stages[15:20],['approval_intent','approval_confirmed','result_basic_identified','result_initial_read_granted','result_deep_inspected'])
+        self.assertEqual(stages[-3:],['source_grants_revoked','materialized_result_still_readable','all_grants_revoked'])
+        self.assertEqual(report['publication']['pending_grants'],[])
+        self.assertEqual(len(report['publication']['preparation_scan_inventory']),11)
+        self.assertEqual(len([1 for method,path,_ in client.issuer.calls if method=='POST' and path.endswith('/develop-geopackage-create-approvals')]),1)
+        self.assertEqual(len([1 for method,path,_ in client.issuer.calls if method=='POST' and path.endswith('/access_grants')]),5)
+        self.assertTrue(all(row['revocation'] is not None for row in client.grants.values()))
+        self.assertNotIn('meta_scan_runs',report['execution']['metadata'])
+
+    def test_difference_context_mismatch_never_approves_or_leaks_and_revokes_sources(self):
+        registration=importlib.import_module('scripts.test.online-engine-registration')
+        for mutate in [lambda c:c.update(tenant_id='1'),lambda c:c.update(actor_principal_id='8'),lambda c:c.update(scope_digest='bad'),lambda c:c['target'].update(mode='replace'),lambda c:c.update(state='approved'),lambda c:c['target']['target']['segments'][-1].update(name='other.gpkg')]:
+            client=DifferenceClient();client.issuer.mutate_context=mutate
+            with self.subTest(mutate=mutate),self.assertRaises(registration.MetadataGrantError):self.run_case(client)
+            self.assertFalse(any(path.endswith('/develop-geopackage-create-approvals') for _,path,_ in client.issuer.calls))
+            self.assertTrue(all(row['revocation'] is not None for row in client.grants.values()))
+
+    def test_difference_unknown_approval_posts_once_and_keeps_original_intent(self):
+        registration=importlib.import_module('scripts.test.online-engine-registration')
+        client=DifferenceClient();client.issuer.unknown_approval=True
+        with self.assertRaisesRegex(registration.MetadataGrantError,'outcome_unknown_no_resubmit'):self.run_case(client)
+        evidence=json.loads((Path(self.directory.name)/'topology-difference-publication.json').read_text())
+        self.assertEqual(evidence['result'],'incomplete')
+        self.assertIn('approval_outcome_unknown',[row['stage'] for row in evidence['stages']])
+        self.assertNotIn('PRIVATE_TOKEN',json.dumps(evidence))
+        self.assertEqual(len([1 for method,path,_ in client.issuer.calls if method=='POST' and path.endswith('/develop-geopackage-create-approvals')]),1)
+
+    def test_difference_incomplete_or_expanded_file_boundary_never_grants(self):
+        registration=importlib.import_module('scripts.test.online-engine-registration')
+        for mutate in [lambda f:f.update(basis_state='incomplete'),lambda f:f['boundary']['file_composition']['refs'].append(copy.deepcopy(f['boundary']['file_composition']['refs'][0])),lambda f:f['boundary'].update(layout='multi')]:
+            client=DifferenceClient();client.issuer.mutate_facts=mutate
+            with self.subTest(mutate=mutate),self.assertRaises(registration.MetadataGrantError):self.run_case(client)
+            self.assertFalse(client.grants)
+            self.assertFalse(client.executions)
+
     def test_difference_requires_resource_visibility_before_any_execution(self):
         client=DifferenceClient();client.preflight_denied=True
         with self.assertRaisesRegex(m.SuiteError,'resource authorization'):self.run_case(client)

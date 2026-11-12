@@ -655,7 +655,18 @@ def mixed_overlay_profile(case):
 
 
 def run_difference_scenario(repository,env,client,physical_runner,browser_runner):
-    return run_mixed_overlay_scenario(repository,env,client,physical_runner,browser_runner,fixture.DIFFERENCE_CASE)
+    publication=_DifferencePublication(env,client)
+    try:
+        result=run_mixed_overlay_scenario(repository,env,client,physical_runner,browser_runner,fixture.DIFFERENCE_CASE,publication)
+    except Exception as error:
+        publication.record(dict(stage='business_failed',error=publication.registration.metadata_error_evidence(error)))
+        raise
+    finally:
+        publication.cleanup()
+    publication.evidence['result']='passed'
+    publication.write()
+    result['publication']=publication.evidence
+    return result
 
 
 def overlay_definition(sources,parent,failure=None):
@@ -774,7 +785,116 @@ def run_overlay_scenario(repository,env,client,physical_runner,browser_runner):
     return run_mixed_overlay_scenario(repository,env,client,physical_runner,browser_runner,fixture.OVERLAY_CASE)
 
 
-def run_mixed_overlay_scenario(repository,env,client,physical_runner,browser_runner,case):
+class _DifferencePublication:
+    """Formal preparation and phased observations for the bounded difference case."""
+    def __init__(self, env, consumer):
+        registration = importlib.import_module('scripts.test.online-engine-registration')
+        token = env.get('ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN')
+        if not token:
+            raise SuiteError('difference requires its separate source initializer and approver')
+        self.path = Path(env['ADDP_ONLINE_ARTIFACT_DIR']) / 'topology-difference-publication.json'
+        self.evidence = {'schema_version':'addp.difference-publication/v1', 'result':'incomplete',
+                         'run_id':env['ADDP_ONLINE_TEST_RUN_ID'], 'stages':[], 'pending_grants':[]}
+        self.consumer = consumer
+        self.issuer = raster.GatewayClient(env['GATEWAY_URL'], token, 30)
+        self.tenant = positive(env['ADDP_ONLINE_TEST_TENANT_ID'], 'difference Tenant')
+        self.registration = registration
+        self.grants = registration.ExactFileReadGrants(self.issuer, consumer, self.tenant,
+                        scan_preparation=True, approval_preparation=True, on_change=self.pending)
+        self.target = None
+
+    def record(self, value):
+        self.evidence['stages'].append(value)
+        self.write()
+
+    def write(self):
+        self.path.write_text(json.dumps(self.evidence, ensure_ascii=False, indent=2)+'\n')
+
+    def pending(self, rows):
+        self.evidence['pending_grants'] = list(rows)
+        self.write()
+
+    def source(self, engine, name, scope, remaining):
+        basic = support.wait_for_meta_scan(self.issuer, engine, time.monotonic()+remaining(), depth='basic', scope={'targets':[scope]})
+        self.record(dict(stage='source_basic_identified', target=scope, execution_id=basic))
+        receipt = self.grants.grant(engine, name)
+        self.record(dict(stage='source_read_granted', target=scope, grant=receipt))
+        # Deep inspection provides the separate physical/schema oracle only.
+        deep = support.wait_for_meta_scan(self.issuer, engine, time.monotonic()+remaining(), depth='deep', scope={'targets':[scope]})
+        self.record(dict(stage='source_deep_inspected', target=scope, execution_id=deep))
+        return deep
+
+    def approve(self, identifier, principal, engine, name):
+        self.evidence['execution_id'] = identifier
+        self.write()
+        target = self.grants.target(engine, name, 'nfs')
+        return self.registration.approve_geopackage_save(self.issuer, identifier, self.tenant, principal,
+                                                        target, on_evidence=self.record)
+
+    def produced(self, engine, name, identifier, principal, initial, remaining):
+        target = f'addp://engine/{engine}/path/{name}?type=file'
+        while True:
+            remaining()
+            added = sorted(set(scan_ids(self.consumer))-set(initial))
+            if len(added)>1:
+                raise SuiteError('difference requires exactly one automatic production scan')
+            if added:
+                break
+            time.sleep(min(0.2, remaining()))
+        scan = raster.wait_execution(self.consumer, 'meta', added[0], remaining())
+        config = obj(scan.get('scan_context'), 'production scan context')
+        if (scan.get('source')!='develop' or scan.get('parent_execution_id')!=identifier
+            or type(scan.get('tenant_id')) is not int or scan['tenant_id']!=self.tenant
+            or type(scan.get('triggered_by')) is not int or scan['triggered_by']!=principal
+            or config.get('scan_depth')!='basic' or type(config.get('engine_id')) is not int or config['engine_id']!=engine):
+            raise SuiteError('difference automatic basic scan binding differs')
+        self.record(dict(stage='result_basic_identified', execution=scan))
+        while True:
+            remaining()
+            receipt = self.grants.production_grant(engine, name, identifier)
+            if receipt is not None:
+                break
+            time.sleep(min(0.2, remaining()))
+        self.target = self.grants.target(engine, name, 'nfs')
+        self.record(dict(stage='result_initial_read_granted', grant=receipt))
+        deep = support.wait_for_meta_scan(self.issuer, engine, time.monotonic()+remaining(), depth='deep', scope={'targets':[target]})
+        self.record(dict(stage='result_deep_inspected', execution_id=deep))
+        return [dict(execution_id=added[0], target_locator=target, status='submitted')], [scan], deep
+
+    def check_preparation_scans(self):
+        expected=sorted(row['execution_id'] for row in self.evidence['stages']
+                        if row['stage'] in {'source_basic_identified','source_deep_inspected','result_deep_inspected'})
+        if scan_ids(self.issuer)!=expected:
+            raise SuiteError('difference initializer scan inventory differs')
+        self.evidence['preparation_scan_inventory']=expected
+        self.write()
+
+    def cleanup(self):
+        # Persist observations before revocation, including when business validation failed.
+        self.write()
+        sources = [row for row in self.grants.pending if row['target']!=self.target]
+        errors = []
+        try:
+            self.grants.cleanup(rows=sources)
+            self.record(dict(stage='source_grants_revoked'))
+            if self.target:
+                self.grants.observe(self.target, True, phase='result_independent_of_source_revocation')
+                self.record(dict(stage='materialized_result_still_readable'))
+        except Exception as error:
+            errors.append(self.registration.metadata_error_evidence(error, 'source_cleanup'))
+        try:
+            self.grants.cleanup()
+            self.record(dict(stage='all_grants_revoked'))
+        except Exception as error:
+            errors.append(self.registration.metadata_error_evidence(error, 'result_cleanup'))
+        self.evidence['cleanup'] = {'result':'failed' if errors else 'passed', 'errors':errors}
+        self.write()
+        if errors:
+            raise SuiteError('difference Grant cleanup incomplete; original evidence retained')
+
+
+
+def run_mixed_overlay_scenario(repository,env,client,physical_runner,browser_runner,case,publication=None):
     profile=mixed_overlay_profile(case);input_nodes=profile.get('input_nodes',('load_a','load_b'));schema=profile['schema'];names=profile['sources'];target_name=profile['target'];count=profile['result_count']
     definition=profile['definition'];validate_failure=profile['failure_validator'];diagnostic=profile['diagnostic'];features=profile['features']
     tenant=positive(env['ADDP_ONLINE_TEST_TENANT_ID'],'mixed overlay tenant')
@@ -788,7 +908,7 @@ def run_mixed_overlay_scenario(repository,env,client,physical_runner,browser_run
     engine=positive(env['ADDP_ONLINE_TOPOLOGY_NFS_ENGINE_ID'],'NFS engine');sources=[];preflight=[]
     for name in names:
         scope=f'addp://engine/{engine}/path/{name}?type=file'
-        scan=support.wait_for_meta_scan(client,engine,time.monotonic()+remaining(),scope={'targets':[scope]})
+        scan=(publication.source(engine,name,scope,remaining) if publication else support.wait_for_meta_scan(client,engine,time.monotonic()+remaining(),scope={'targets':[scope]}))
         item=support.find_fixture_item(client,engine,name,'mixed overlay source')
         before=client.request('GET',f'/api/v1/meta/items/{item["id"]}',(200,)).payload
         graph=obj(client.request('GET',f'/api/v1/meta/lineage/graph?subject_kind=data_item&item_id={item["id"]}&direction=downstream',(200,)).payload,'mixed overlay resource preflight')
@@ -796,18 +916,28 @@ def run_mixed_overlay_scenario(repository,env,client,physical_runner,browser_run
         preflight.append({'source_item_id':item['id'],'graph':graph})
         sources.append({'id':item['id'],'name':name,'locator':scope+f'&item_id={item["id"]}','scan_execution_id':scan,'before':before})
     initial=scan_ids(client)
-    if initial!=sorted(s['scan_execution_id'] for s in sources):raise SuiteError('mixed overlay initial scan inventory differs')
+    expected_initial=sorted(s['scan_execution_id'] for s in sources) if publication is None else []
+    if publication:publication.check_preparation_scans()
+    if initial!=expected_initial:raise SuiteError('mixed overlay initial scan inventory differs')
     runtimes=[r for r in array(client.request('GET','/api/v1/develop/workflow-engines',(200,)).payload,'runtimes') if r.get('engine_type')=='geopython_workflow' and r.get('connection_status')=='online']
     if len(runtimes)!=1:raise SuiteError('mixed overlay requires one product Runtime')
     runtime=positive(runtimes[0]['id'],'Runtime');parent=f'addp://engine/{engine}/path/outputs?type=directory'
     target=f'addp://engine/{engine}/path/outputs/{target_name}?type=file';locators=[s['locator'] for s in sources]
     workflow=definition(locators,parent);identifier=raster.submit(client,runtime,workflow)
+    if publication:publication.approve(identifier,principal,engine,'outputs/'+target_name)
     execution=raster.wait_execution(client,'develop',identifier,remaining())
     if execution.get('execution_id')!=identifier or type(execution.get('triggered_by')) is not int or execution['triggered_by']!=principal:raise SuiteError('mixed overlay execution actor differs')
     if obj(obj(execution.get('execution_config'),'mixed overlay frozen config').get('content'),'mixed overlay content').get('workflow_definition')!=workflow:raise SuiteError('mixed overlay frozen DAG differs')
-    facts,scans=validate_saved_success(execution,[(f'input.{node}',locator)for node,locator in zip(input_nodes,locators)],{'result':target},1)
-    observed=[]
-    for scan in scans:
+    bindings=[(f'input.{node}',locator)for node,locator in zip(input_nodes,locators)]
+    inspection_scans=[]
+    if publication:
+        facts=validate_saved_facts(execution,bindings,{'result':target},1)
+        scans,observed,deep=publication.produced(engine,'outputs/'+target_name,identifier,principal,initial,remaining)
+        publication.check_preparation_scans()
+    else:
+        facts,scans=validate_saved_success(execution,bindings,{'result':target},1)
+        observed=[]
+    for scan in ([] if publication else scans):
         value=raster.wait_execution(client,'meta',scan['execution_id'],remaining())
         if type(value.get('tenant_id')) is not int or value['tenant_id']!=tenant or type(value.get('triggered_by')) is not int or value['triggered_by']!=principal:raise SuiteError('mixed overlay automatic scan public User/Tenant differs')
         observed.append(value)
@@ -840,7 +970,7 @@ def run_mixed_overlay_scenario(repository,env,client,physical_runner,browser_run
     for source in sources[:len(input_nodes)]:raster.wait_lineage(client,source['id'],output['item_id'],identifier,remaining())
     graph=obj(client.request('GET',f'/api/v1/meta/lineage/graph?subject_kind=data_item&item_id={output["item_id"]}&direction=upstream',(200,)).payload,'mixed overlay original dual-source graph')
     validate_proximity_graph(graph,sources[:len(input_nodes)],output['item_id'],identifier);checkpoint['raw_lineage']=graph
-    expected_scans=sorted([*initial,*[s['execution_id'] for s in scans]])
+    expected_scans=sorted([*initial,*[s['execution_id'] for s in scans],*inspection_scans])
     if scan_ids(client)!=expected_scans:raise SuiteError('mixed overlay scan inventory differs before failures')
     for spec in profile['failures']:
         key=spec[0];failed_workflow=definition(locators,parent,key)
@@ -866,6 +996,7 @@ def run_mixed_overlay_scenario(repository,env,client,physical_runner,browser_run
     remaining();browser_report=browser_runner(repository,env,evidence);remaining()
     final=physical_runner(repository,env)
     if final!=native or scan_ids(client)!=expected_scans:raise SuiteError('mixed overlay browser changed physical files or scans')
+    if publication:publication.check_preparation_scans()
     meta_after=unchanged_meta()
     remaining()
     return {**checkpoint,'schema_version':schema+'/v1','result':'passed','stage':'complete','browser':browser_report,'meta_after':meta_after,'post_browser_physical':final,
@@ -1253,7 +1384,7 @@ def normalize_definition(source,parent,failed=False,case=fixture.NORMALIZE_CASE)
     return {'tasks':tasks}
 
 
-def validate_saved_success(execution,bindings,targets,count):
+def validate_saved_facts(execution,bindings,targets,count):
     outputs=obj(execution.get('outputs'),'normalize stable outputs')
     expected={'save_'+port:{'resource':{'locator':locator,'type':'file','write_mode':'create'}} for port,locator in targets.items()}
     if execution.get('status')!='success' or outputs!=expected:raise SuiteError('normalization must publish exactly the selected named ports')
@@ -1264,7 +1395,13 @@ def validate_saved_success(execution,bindings,targets,count):
         len(produced)!=count or {x.get('locator') for x in produced}!=set(targets.values()) or
         any(x.get('write_mode')!='create' for x in produced)):
         raise SuiteError('normalization source port or selected create facts differ')
-    scans=array(obj(metadata.get('result'),'normalize result').get('meta_scan_runs'),'normalize scans')
+    return facts
+
+
+
+def validate_saved_success(execution,bindings,targets,count):
+    facts=validate_saved_facts(execution,bindings,targets,count)
+    scans=array(obj(obj(execution.get('metadata'),'normalize metadata').get('result'),'normalize result').get('meta_scan_runs'),'normalize scans')
     if (len(scans)!=count or {s.get('target_locator') for s in scans}!=set(targets.values()) or
         any(s.get('status')!='submitted' or not isinstance(s.get('execution_id'),str) or not s['execution_id'] for s in scans) or
         len({s['execution_id'] for s in scans})!=count):raise SuiteError('normalization requires exactly the selected distinct automatic scans')

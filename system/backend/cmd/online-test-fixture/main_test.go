@@ -2028,3 +2028,20 @@ func TestFeatherCaseRetainsApprovedConsumerAndInitializerPermissions(t *testing.
 		t.Fatal("Feather initializer functions differ")
 	}
 }
+
+func TestDifferenceSourceInitializerHasOnlyPreparationAndApprovalPermissions(t *testing.T) {
+	t.Setenv("ADDP_ONLINE_TOPOLOGY_CASE", "geometry-difference")
+	want := append(slices.Clone(sourceInitializerPermissions), "meta.scan_task.execute", "meta.scan_task.read", "system.develop_file_create_approval.create")
+	got := suiteSourceInitializerPermissions("vector-topology-persistence")
+	if !slices.Equal(got, want) {
+		t.Fatal(got)
+	}
+	consumer, err := suitePermissions("vector-topology-persistence")
+	if err != nil || len(consumer) != 11 || slices.Contains(consumer, "system.develop_file_create_approval.create") || slices.Contains(consumer, "system.engine_access_grant.create") {
+		t.Fatal(consumer, err)
+	}
+	t.Setenv("ADDP_ONLINE_TOPOLOGY_CASE", "intersection-overlay")
+	if slices.Contains(suiteSourceInitializerPermissions("vector-topology-persistence"), "system.develop_file_create_approval.create") {
+		t.Fatal("unrelated case expanded")
+	}
+}

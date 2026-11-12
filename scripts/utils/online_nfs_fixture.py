@@ -11,7 +11,7 @@ class FixtureError(RuntimeError):
 
 
 class NFSExport:
-    def __init__(self, prefix, command, source_subdirectory="", access_mode="rw"):
+    def __init__(self, prefix, command, source_subdirectory="", access_mode="rw", *, publication_staging=False):
         if access_mode not in {"ro", "rw"}:
             raise FixtureError("invalid NFS fixture access mode")
         if source_subdirectory and not re.fullmatch(r"[a-z][a-z0-9_-]*", source_subdirectory):
@@ -19,6 +19,9 @@ class NFSExport:
         self.prefix, self.command = prefix, command
         self.source_subdirectory = source_subdirectory
         self.access_mode = access_mode
+        if type(publication_staging) is not bool or (publication_staging and access_mode != 'rw'):
+            raise FixtureError('private publication staging requires a writable export')
+        self.publication_staging = publication_staging
 
     def guard(self, env):
         if any(env.get(k) != v for k, v in {'GITHUB_ACTIONS': 'true', 'RUNNER_OS': 'Linux',
@@ -60,6 +63,12 @@ class NFSExport:
             root.chmod(0o755); (root / 'outputs').mkdir(mode=0o755)
             source = root / self.source_subdirectory if self.source_subdirectory else root
             if source != root: source.mkdir(mode=0o755)
+            connection = {'server': '127.0.0.1', 'export_path': str(source)}
+            if self.publication_staging:
+                stage = source / '.addp-publication'
+                stage.mkdir(mode=0o700)
+                stage.chmod(0o700)
+                connection['publication_staging_path'] = stage.name
             self.command(['sudo', 'mkdir', '-p', str(export.parent)])
             self.command(['sudo', 'tee', str(export)], input=f'{source} 127.0.0.1({self.access_mode},sync,no_subtree_check,insecure,root_squash)\n')
             self.command(['sudo', 'systemctl', 'start', 'rpcbind.service', 'nfs-kernel-server.service'])
@@ -70,7 +79,7 @@ class NFSExport:
                 descriptor.chmod(0o600)
                 json.dump({'name': f'Hosted {self.prefix} NFS', 'description': 'Disposable spatial persistence T4 fixture',
                     'engine_type': 'nfs', 'engine_origin': 'general',
-                    'connection_info': {'server': '127.0.0.1', 'export_path': str(source)}}, stream)
+                    'connection_info': connection}, stream)
             return {'started': True}
         if action != 'stop':
             raise FixtureError('unknown NFS lifecycle action')

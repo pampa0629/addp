@@ -123,6 +123,9 @@ func suiteSourceInitializerPermissions(suite string) []string {
 	case "raster-slope-orthogonal-persistence", "raster-sight-orthogonal-persistence", "sql-pool-consumer-flow", "transfer-continuous-events":
 		return append(slices.Clone(sourceInitializerPermissions), "meta.scan_task.execute", "meta.scan_task.read")
 	case "vector-topology-persistence":
+		if os.Getenv("ADDP_ONLINE_TOPOLOGY_CASE") == "geometry-difference" {
+			return append(slices.Clone(sourceInitializerPermissions), "meta.scan_task.execute", "meta.scan_task.read", "system.develop_file_create_approval.create")
+		}
 		if topologyLineagePermissions(suite) {
 			return append(slices.Clone(sourceInitializerPermissions), "meta.scan_task.execute", "meta.scan_task.read")
 		}
