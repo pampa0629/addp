@@ -13,7 +13,6 @@ import (
 	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/execution"
 	"github.com/addp/common/format"
-	commonjson "github.com/addp/common/jsonmap"
 	"github.com/addp/common/resourcetree"
 )
 
@@ -42,8 +41,7 @@ func (e *DevExecutor) privateFileSource(ctx context.Context, tenant uint, node, 
 	case "", string(format.FormatUnknown):
 		return nil, &ExecutionParametersError{Cause: errFileWorkflowInputs}
 	case string(format.FormatGeoPackage):
-		if descriptor.Layout != format.LayoutSingle || descriptor.DataType != datatype.Container ||
-			commonjson.Section(item.Attributes, "format_info.geopackage")["composition_complete"] != true {
+		if descriptor.Layout != format.LayoutSingle || descriptor.DataType != datatype.Container {
 			return nil, &ExecutionParametersError{Cause: errFileWorkflowInputs}
 		}
 		return &execution.DevelopFileSourceIntent{NodeID: node, Target: target}, nil
@@ -70,18 +68,36 @@ func (e *DevExecutor) submitPrivateFileWorkflow(ctx context.Context, item *execu
 	item.ActorPrincipalID, item.ActorTenantMembershipID, item.IssuedAuthorizationVersion = &principal, &membership, &version
 	delete(item.ExecutionConfig, execution.ObservabilityKey)
 
-	// Reuse the private projection before persistence to reject mixed sources,
-	// save nodes and caller-supplied connection parameters.
+	content, _ := mapValue(item.ExecutionConfig["content"])
+	definition, _ := mapValue(content["workflow_definition"])
+	tasks, _ := workflowTasksFromInterface(definition["tasks"])
+	var target *execution.DevelopFileTargetIntent
+	for _, task := range tasks {
+		if stringParam(task, "operator") != "save" {
+			continue
+		}
+		if target != nil {
+			return &ExecutionParametersError{Cause: errFileWorkflowInputs}
+		}
+		params, _ := task["params"].(map[string]interface{})
+		var err error
+		target, err = fileWorkflowSaveTarget(stringParam(task, "id"), params)
+		if err != nil {
+			return &ExecutionParametersError{Cause: err}
+		}
+	}
+	// The same projection proves full source/target coverage before persistence;
+	// mixed sources and caller-supplied connections never enter a pending row.
 	raw, err := json.Marshal(item.ExecutionConfig)
 	if err != nil {
 		return &ExecutionParametersError{Cause: errFileWorkflowInputs}
 	}
 	if _, err := fileWorkflowRuntimeDefinition(&client.DevelopFileExecutionFacts{
-		ConfigJSON: raw, Intent: execution.DevelopFileIntent{Sources: sources},
+		ConfigJSON: raw, Intent: execution.DevelopFileIntent{Sources: sources, Target: target},
 	}); err != nil {
 		return &ExecutionParametersError{Cause: errFileWorkflowInputs}
 	}
-	pending, err := e.fileExecutions.CreatePending(ctx, item, sources, nil)
+	pending, err := e.fileExecutions.CreatePending(ctx, item, sources, target)
 	if err != nil {
 		return err
 	}

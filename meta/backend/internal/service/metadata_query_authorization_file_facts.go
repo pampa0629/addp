@@ -122,9 +122,6 @@ func projectFileAuthorizationFacts(lookup metadataNodeLookup, item models.MetaIt
 		return finish(authorizationfacts.AuthorizationBasisNeedsRefresh)
 	}
 	if format == "geopackage" {
-		if commonjson.Section(item.Attributes, "format_info.geopackage")["composition_complete"] != true {
-			return finish(authorizationfacts.AuthorizationBasisIncomplete)
-		}
 		if len(refs) != 1 {
 			return finish(authorizationfacts.AuthorizationBasisNeedsRefresh)
 		}

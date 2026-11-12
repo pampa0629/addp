@@ -7,17 +7,15 @@ import (
 	"io"
 	"reflect"
 
-	"github.com/addp/common/dataitem"
 	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/format"
 	commonJSON "github.com/addp/common/jsonmap"
 	"github.com/addp/meta/internal/metaattr"
-	"github.com/addp/meta/internal/metaitem"
 	"github.com/addp/meta/internal/models"
 )
 
 func enrichGeoPackageSource(ctx context.Context, attrs models.JSONMap, input ResourceAttributesInput) error {
-	metaattr.ReplaceAttributeNamespace(attrs, "format_info", "geopackage", map[string]interface{}{"composition_complete": false})
+	metaattr.ReplaceAttributeNamespace(attrs, "format_info", "geopackage", map[string]interface{}{"integrity_verified": false})
 	provider, _ := input.ContentReader.(plugin.EngineCatalogFactsProvider)
 	target := input.EngineCatalogPathFor(input.PhysicalPath)
 	if !reflect.DeepEqual(target, plugin.FileItemPath(input.EngineID, input.PhysicalPath)) {
@@ -56,9 +54,7 @@ func enrichGeoPackageSource(ctx context.Context, attrs models.JSONMap, input Res
 	if len(input.Item.RefList) > 1 {
 		return fmt.Errorf("GeoPackage standalone source has additional content references")
 	}
-	input.Item.RefList = []dataitem.ItemRef{{Path: input.PhysicalPath, Role: "container", Required: true, Primary: true, Extension: ".gpkg"}}
-	metaattr.MergeDataItemAttributes(attrs, metaitem.AttributeInput(input.Item))
-	native["composition_complete"] = true
+	native["integrity_verified"] = true
 	metaattr.ReplaceAttributeNamespace(attrs, "format_info", "geopackage", native)
 	return nil
 }

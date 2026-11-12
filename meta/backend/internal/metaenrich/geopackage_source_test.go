@@ -17,6 +17,7 @@ import (
 	"github.com/addp/common/datatype"
 	"github.com/addp/common/engine/plugin"
 	commonJSON "github.com/addp/common/jsonmap"
+	"github.com/addp/meta/internal/metaattr"
 	"github.com/addp/meta/internal/metaitem"
 	"github.com/addp/meta/internal/models"
 )
@@ -108,12 +109,13 @@ func TestGeoPackageDeepObservationBindsExactStableSource(t *testing.T) {
 			}
 			data := geoPackageDeepBytes(t, extra...)
 			p := &geoPackageSourceFixture{bytesContentReader: bytesContentReader{content: data}, fault: fault}
-			item := &metaitem.DetectedItem{ResolvedItem: dataitem.ResolvedItem{Layout: "single", DataType: datatype.Container, Format: "geopackage", PrimaryContentPath: observedGeoPackagePath}}
-			attrs := models.JSONMap{"format_info": map[string]interface{}{"geopackage": map[string]interface{}{"composition_complete": true, "old_claim": "must disappear"}}}
+			item := metaitem.InferSingleResource(metaitem.SingleResourceInput{Name: " 原名 %.GPKG", Path: observedGeoPackagePath, Size: int64(len(data))})
+			attrs := models.JSONMap(metaattr.BuildAttributesFromInput(metaitem.AttributeInput(item)))
+			attrs["format_info"] = map[string]interface{}{"geopackage": map[string]interface{}{"integrity_verified": true, "old_claim": "must disappear"}}
 			_, _, err := EnrichResourceAttributes(t.Context(), attrs, ResourceAttributesInput{ContentReader: p, EngineID: 14, Item: item, PhysicalPath: observedGeoPackagePath, EngineCatalogPathFor: plugin.FileItemPathForEngine(14)})
 			native := commonJSON.Section(attrs, "format_info.geopackage")
 			if fault == "none" {
-				if err != nil || native["standalone_vector"] != true || native["composition_complete"] != true {
+				if err != nil || native["standalone_vector"] != true || native["integrity_verified"] != true {
 					t.Fatal("stable NFS standalone observation lost", native, err)
 				}
 				want := []dataitem.ItemRef{{Path: observedGeoPackagePath, Role: "container", Primary: true, Required: true, Extension: ".gpkg"}}
@@ -127,7 +129,7 @@ func TestGeoPackageDeepObservationBindsExactStableSource(t *testing.T) {
 				if commonJSON.Section(attrs, "type_info.container")["child_count"] != 1 {
 					t.Fatal("existing container metadata was lost", attrs)
 				}
-			} else if native["composition_complete"] == true {
+			} else if native["integrity_verified"] == true {
 				t.Fatal("stale complete state survived unsuccessful observation", native, err)
 			}
 			if native["old_claim"] != nil {
@@ -145,7 +147,7 @@ func TestGeoPackageDeepObservationBindsExactStableSource(t *testing.T) {
 	}
 }
 
-func TestGeoPackageByteOnlyEnrichmentCannotProduceCompleteSource(t *testing.T) {
+func TestGeoPackageByteOnlyEnrichmentCannotVerifySourceConsistency(t *testing.T) {
 	item := detectedItemForTest(dataitem.ResolvedItem{Layout: "single", DataType: datatype.Container, Format: "geopackage"})
 	attrs := models.JSONMap{}
 	data := geoPackageDeepBytes(t)
@@ -153,8 +155,8 @@ func TestGeoPackageByteOnlyEnrichmentCannotProduceCompleteSource(t *testing.T) {
 		t.Fatal(err)
 	}
 	native := commonJSON.Section(attrs, "format_info.geopackage")
-	if native["standalone_vector"] != true || native["composition_complete"] != false {
-		t.Fatal("byte-only metadata became source authorization facts", native)
+	if native["standalone_vector"] != true || native["integrity_verified"] != false {
+		t.Fatal("byte-only metadata claimed a source consistency observation", native)
 	}
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()

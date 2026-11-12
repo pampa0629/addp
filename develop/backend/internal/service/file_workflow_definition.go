@@ -3,7 +3,9 @@ package service
 import (
 	"bytes"
 	"encoding/json"
+	"path"
 	"reflect"
+	"strings"
 
 	"github.com/addp/common/client"
 	"github.com/addp/common/engine/plugin"
@@ -61,24 +63,13 @@ func fileWorkflowRuntimeDefinition(facts *client.DevelopFileExecutionFacts) (str
 			if facts.Intent.Target == nil || saved || id != facts.Intent.Target.NodeID || !fileWorkflowOnlyKeys(params, "input_df", "mode", "target_parent_locator", "target_name", "target_resource") {
 				return "", errFileWorkflowInputs
 			}
-			parent, parentOK := params["target_parent_locator"].(string)
-			name, nameOK := params["target_name"].(string)
-			mode, modeOK := params["mode"].(string)
 			_, hasInput := params["input_df"]
-			if !parentOK || !nameOK || !modeOK || mode != "fail" || !hasInput {
-				return "", errFileWorkflowInputs
-			}
-			loc, err := resourcetree.ParseURI(parent)
-			if err != nil || (loc.Type != resourcetree.TypeRoot && loc.Type != resourcetree.TypeDirectory && loc.Type != resourcetree.TypeDir) {
-				return "", errFileWorkflowInputs
-			}
-			child := &resourcetree.ResourceLocator{EngineID: loc.EngineID, Type: resourcetree.TypeFile, Path: append(append([]string(nil), loc.Path...), name)}
-			target, err := resourcetree.EngineCatalogPathFromLocator(plugin.FileCatalogModel(), child)
-			if err != nil || !reflect.DeepEqual(target, facts.Intent.Target.Target) {
+			target, err := fileWorkflowSaveTarget(id, params)
+			if err != nil || !hasInput || !reflect.DeepEqual(target, facts.Intent.Target) {
 				return "", errFileWorkflowInputs
 			}
 			saved = true
-			projected = map[string]interface{}{"input_df": params["input_df"], "mode": mode}
+			projected = map[string]interface{}{"input_df": params["input_df"], "mode": target.Mode}
 		default:
 			if _, boundSource := sources[id]; boundSource || (facts.Intent.Target != nil && facts.Intent.Target.NodeID == id) {
 				return "", errFileWorkflowInputs
@@ -100,6 +91,27 @@ func fileWorkflowRuntimeDefinition(facts *client.DevelopFileExecutionFacts) (str
 		return "", errFileWorkflowInputs
 	}
 	return string(raw), nil
+}
+
+// Submission and frozen Runtime projection use one exact file-target parser.
+// It declares a target; System alone seals its Engine version and approves I/O.
+func fileWorkflowSaveTarget(id string, params map[string]interface{}) (*execution.DevelopFileTargetIntent, error) {
+	parent, parentOK := params["target_parent_locator"].(string)
+	name, nameOK := params["target_name"].(string)
+	mode, modeOK := params["mode"].(string)
+	if !parentOK || !nameOK || !modeOK || mode != "fail" || !strings.EqualFold(path.Ext(name), ".gpkg") || strings.ContainsAny(name, "/\\\x00") {
+		return nil, errFileWorkflowInputs
+	}
+	loc, err := resourcetree.ParseURI(parent)
+	if err != nil || (loc.Type != resourcetree.TypeRoot && loc.Type != resourcetree.TypeDirectory && loc.Type != resourcetree.TypeDir) {
+		return nil, errFileWorkflowInputs
+	}
+	child := &resourcetree.ResourceLocator{EngineID: loc.EngineID, Type: resourcetree.TypeFile, Path: append(append([]string(nil), loc.Path...), name)}
+	target, err := resourcetree.EngineCatalogPathFromLocator(plugin.FileCatalogModel(), child)
+	if err != nil {
+		return nil, errFileWorkflowInputs
+	}
+	return &execution.DevelopFileTargetIntent{NodeID: id, Target: target, Mode: mode}, nil
 }
 
 func fileWorkflowOnlyKeys(params map[string]interface{}, keys ...string) bool {

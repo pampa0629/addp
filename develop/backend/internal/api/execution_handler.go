@@ -224,7 +224,7 @@ func queryExportError(c *gin.Context, err error) {
 
 // ExecuteDevTask 执行开发任务（支持参数化）
 // @Summary 执行开发任务 | Execute development task
-// @Description GeoPackage 文件工作流按可信 Meta 快照进入精确只读执行，保存与混合来源拒绝。 | GeoPackage file workflows use trusted Meta snapshots and exact read-only execution. Save and mixed-source graphs are rejected.
+// @Description GeoPackage 文件工作流按可信 Meta 完整来源进入精确执行，可含唯一 mode=fail 的文件保存目标；保存等待原单次批准，混合来源与其他写入拒绝。 | GeoPackage workflows require complete trusted Meta sources and may include one exact mode=fail file save. Saves await the original single-use approval; mixed sources and other writes are rejected.
 // @Tags Execution
 // @Param Accept-Language header string false "提交时冻结的执行显示语言 | Execution language frozen at submission"
 // @Accept json
@@ -300,7 +300,7 @@ func (h *ExecutionHandler) ExecuteDevTask(c *gin.Context) {
 
 // ExecuteContent 执行临时内容（不创建开发任务）
 // @Summary 执行临时内容 | Execute temporary content
-// @Description 第一方或 OAuth 用户提交 dev_type、trigger_type、content 和 execution_config 后直接执行。委托 workflow.run 首次提交相同执行内容并返回审批；批准后恢复请求只提交 approval_id 和 request_fingerprint。GeoPackage 文件工作流仅接收无保存、完整组成的来源。 | First-party or OAuth users submit dev_type, trigger_type, content, and execution_config for direct execution. A delegated workflow.run first submits the same execution content and receives an approval; after approval, the resume request contains only approval_id and request_fingerprint. GeoPackage file workflows require complete sources and a read-only graph.
+// @Description 第一方或 OAuth 用户提交 dev_type、trigger_type、content 和 execution_config 后直接执行。委托 workflow.run 首次提交相同执行内容并返回审批；批准后恢复请求只提交 approval_id 和 request_fingerprint。GeoPackage 文件工作流仅接收完整组成的来源，可含唯一 mode=fail 精确保存目标，并等待原单次批准；不支持委托执行。 | First-party or OAuth users submit dev_type, trigger_type, content, and execution_config for direct execution. A delegated workflow.run first submits the same execution content and receives an approval; after approval, the resume request contains only approval_id and request_fingerprint. GeoPackage workflows require complete sources, optionally one exact mode=fail save awaiting the original single-use approval, and do not support delegation.
 // @Tags Execution
 // @Param Accept-Language header string false "首次提交时冻结；审批消费沿用最初语言 | Frozen at initial submission, retained through approval"
 // @Accept json

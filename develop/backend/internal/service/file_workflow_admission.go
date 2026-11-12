@@ -34,9 +34,6 @@ func (s *ExecutionService) refreshPrivateFileAdmissions(ctx context.Context) err
 		if round.Err() != nil {
 			return round.Err()
 		}
-		if candidate.Issued.Scope.Target != nil {
-			continue
-		} // Saved publication is closed.
 		facts := candidate.Facts
 		tenant, _ := strconv.ParseUint(facts.TenantID, 10, 64)
 		observation, err := f.admission(uint(tenant)).CheckDevelopFileAdmission(round, candidate.Issued, client.DevelopFileAdmissionRequest{ExecutionID: facts.ExecutionID, ExpectedAttempt: facts.Intent.ExpectedAttempt, ScopeDigest: facts.ScopeDigest})

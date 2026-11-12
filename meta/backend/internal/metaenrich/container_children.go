@@ -86,7 +86,7 @@ func enrichContainerChildrenData(ctx context.Context, attrs models.JSONMap, dete
 		}
 		if formatType == format.FormatGeoPackage {
 			// Byte inspection cannot prove that a business source has no journals.
-			formatInfo["composition_complete"] = false
+			formatInfo["integrity_verified"] = false
 			metaattr.ReplaceAttributeNamespace(attrs, "format_info", string(formatType), formatInfo)
 		} else {
 			metaattr.MergeStandardAttributes(attrs, metaattr.FormatInfoAttributes(string(formatType), formatInfo))

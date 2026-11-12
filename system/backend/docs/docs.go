@@ -646,7 +646,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "当前普通 API User；独立读取 Owner 冻结 Intent 和 Meta 完整内容边界，核当前人员、精确源规则和原 pending，封存同一 EA；不新增源 Grant 或目标写权 | Ordinary API User only; independently reads frozen Owner intent and complete Meta content facts, checks current actor, exact source rules and original pending execution, and seals one EA without source Grants or target write access",
+                "description": "当前普通 API User；独立读取 Owner 冻结 Intent 和 Meta basic 身份与逻辑边界，保存用途另核当前写执行权限，核当前人员、精确源规则和原 pending，封存同一 EA；不新增源 Grant 或目标写权 | Ordinary API User only; independently reads frozen Owner intent and basic Meta identity and logical boundaries, requires current write-execution permission for saves, checks current actor, exact source rules and original pending execution, and seals one EA without source Grants or target write access",
                 "consumes": [
                     "application/json"
                 ],
@@ -713,6 +713,9 @@ const docTemplate = `{
                     }
                 },
                 "x-addp-auth-mode": "permission",
+                "x-addp-conditional-permissions": [
+                    "develop.data_write.execute"
+                ],
                 "x-addp-required-permissions": [
                     "develop.task.execute",
                     "develop.data_read.execute"

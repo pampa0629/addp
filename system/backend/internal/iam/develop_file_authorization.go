@@ -71,7 +71,7 @@ func (s *DevelopFileAuthorizationService) Issue(ctx context.Context, input Issue
 	if s.owner == nil || s.prepare == nil {
 		return nil, ErrDevelopFileDependencyUnavailable
 	}
-	identity, _, err := s.repository.developFileUser(ctx, input.SourceAccessToken, false, developExecutionPermission, executionEffectPermissions["read"])
+	identity, sourceUser, err := s.repository.developFileUser(ctx, input.SourceAccessToken, false, developExecutionPermission, executionEffectPermissions["read"])
 	if err != nil {
 		return nil, err
 	}
@@ -83,6 +83,13 @@ func (s *DevelopFileAuthorizationService) Issue(ctx context.Context, input Issue
 	if digest != input.IntentDigest || facts.AdmissionState == "rejected" {
 		return nil, ErrExecutionAuthorizationConflict
 	}
+	requiredPermissions := []string{developExecutionPermission, executionEffectPermissions["read"]}
+	if facts.Intent.Target != nil {
+		requiredPermissions = append(requiredPermissions, executionEffectPermissions["write"])
+		if !authorization.HasContextPermissions(*sourceUser, executionEffectPermissions["write"]) {
+			return nil, ErrExecutionAuthorizationPermissionDenied
+		}
+	}
 	prepared, err := s.prepare(ctx, identity, facts.Intent)
 	if err != nil {
 		return nil, err
@@ -92,7 +99,7 @@ func (s *DevelopFileAuthorizationService) Issue(ctx context.Context, input Issue
 	}
 	var result *client.IssuedDevelopFileAuthorization
 	err = s.repository.Transaction(ctx, func(tx *Repository) error {
-		row, user, err := tx.developFileUser(ctx, input.SourceAccessToken, true, developExecutionPermission, executionEffectPermissions["read"])
+		row, user, err := tx.developFileUser(ctx, input.SourceAccessToken, true, requiredPermissions...)
 		if err != nil {
 			return err
 		}
@@ -141,7 +148,7 @@ func (s *DevelopFileAuthorizationService) Issue(ctx context.Context, input Issue
 		}
 		// Audit/lock waits cannot turn a stale token, role or source rule into
 		// an issuance. Recheck the original credential and common pending row.
-		current, currentUser, err := tx.developFileUser(ctx, input.SourceAccessToken, true, developExecutionPermission, executionEffectPermissions["read"])
+		current, currentUser, err := tx.developFileUser(ctx, input.SourceAccessToken, true, requiredPermissions...)
 		if err != nil {
 			return err
 		}
@@ -331,7 +338,7 @@ func (s *DevelopFileAuthorizationService) Check(ctx context.Context, input Check
 			if err != nil {
 				return err
 			}
-			if !developFilePermissions(permissions) {
+			if !developFilePermissions(permissions, row.DevelopFileScope.Target != nil) {
 				return ErrExecutionAuthorizationPermissionDenied
 			}
 			expires = row.ExpiresAt
@@ -357,7 +364,11 @@ func (s *DevelopFileAuthorizationService) Check(ctx context.Context, input Check
 					expires = *bound
 				}
 			}
-			for _, key := range []string{developExecutionPermission, executionEffectPermissions["read"]} {
+			requiredPermissions := []string{developExecutionPermission, executionEffectPermissions["read"]}
+			if row.DevelopFileScope.Target != nil {
+				requiredPermissions = append(requiredPermissions, executionEffectPermissions["write"])
+			}
+			for _, key := range requiredPermissions {
 				var latest *time.Time
 				unlimited := false
 				for _, p := range permissions {
@@ -594,14 +605,18 @@ func validDevelopDigest(value string) bool {
 	}
 	return true
 }
-func developFilePermissions(rows []RoleAssignmentPermissionProjection) bool {
+func developFilePermissions(rows []RoleAssignmentPermissionProjection, saved bool) bool {
 	var tenant []RoleAssignmentPermissionProjection
 	for _, row := range rows {
 		if row.ScopeType == "tenant" {
 			tenant = append(tenant, row)
 		}
 	}
-	return containsAllExecutionPermissions(tenant, "develop", []string{"read"})
+	effects := []string{"read"}
+	if saved {
+		effects = append(effects, "write")
+	}
+	return containsAllExecutionPermissions(tenant, "develop", effects)
 }
 func matchDevelopFileAuthorization(row *ExecutionAuthorization, input CheckDevelopFileInput) error {
 	if row == nil || row.Audience != "develop" || row.SourceType != "user" || row.DevelopFileScope.Validate() != nil || row.TenantID != input.TenantID || row.ExecutionID != input.ExecutionID || row.InternalTask != nil || row.SourceReadScope != nil || row.CleanupScope != nil || row.SealedAt == nil || row.RevokedAt != nil || row.DevelopFileScope.ExpectedAttempt != input.ExpectedAttempt {

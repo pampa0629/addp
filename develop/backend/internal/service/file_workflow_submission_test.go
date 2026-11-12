@@ -25,22 +25,39 @@ func TestPublicGeoPackageWorkflowSubmission(t *testing.T) {
 	for _, scenario := range []struct {
 		name      string
 		saved     bool
+		saving    bool
 		status    int
 		wantState string
 		wantCalls int32
 	}{
-		{"temporary", false, 201, "pending", 1},
-		{"saved", true, 201, "pending", 1},
-		{"saved admission rejected", true, 201, "pending", 1},
-		{"denied", true, 403, "rejected", 1},
-		{"unknown", false, 503, "pending", 1},
-		{"incomplete", false, 0, "", 0},
-		{"unknown format", false, 0, "", 0},
-		{"metadata mismatch", false, 0, "", 0},
-		{"wrong snapshot identity", false, 0, "", 0},
-		{"mixed table", false, 0, "", 0},
-		{"save", false, 0, "", 0},
-		{"other format", false, 201, "", 1},
+		{"temporary", false, false, 201, "pending", 1},
+		{"saved", true, false, 201, "pending", 1},
+		{"saved admission rejected", true, false, 201, "pending", 1},
+		{"denied", true, false, 403, "rejected", 1},
+		{"unknown", false, false, 503, "pending", 1},
+		{"wrong layout", false, false, 0, "", 0},
+		{"integrity unverified", false, false, 201, "pending", 1},
+		{"unknown format", false, false, 0, "", 0},
+		{"metadata mismatch", false, false, 0, "", 0},
+		{"wrong snapshot identity", false, false, 0, "", 0},
+		{"mixed table", false, false, 0, "", 0},
+		{"save", false, false, 0, "", 0},
+		{"save temporary", false, true, 201, "pending", 1},
+		{"save task", true, true, 201, "pending", 1},
+		{"save denied", false, true, 403, "rejected", 1},
+		{"save unknown", true, true, 503, "pending", 1},
+		{"save overwrite", false, true, 0, "", 0},
+		{"save append", false, true, 0, "", 0},
+		{"save multiple", false, true, 0, "", 0},
+		{"save traversal", false, true, 0, "", 0},
+		{"save nested name", false, true, 0, "", 0},
+		{"save wrong format", false, true, 0, "", 0},
+		{"save wrong parent", false, true, 0, "", 0},
+		{"save missing input", false, true, 0, "", 0},
+		{"save connection override", false, true, 0, "", 0},
+		{"save mixed source", false, true, 0, "", 0},
+		{"save external effect", false, true, 0, "", 0},
+		{"other format", false, false, 201, "", 1},
 	} {
 		t.Run(scenario.name, func(t *testing.T) {
 			db := privateFileSQLiteDB(t)
@@ -56,7 +73,7 @@ func TestPublicGeoPackageWorkflowSubmission(t *testing.T) {
 				}
 			}
 			fileRepo := repository.NewFileExecutionRepository(db)
-			auth := authtest.NewTenantUserAuthContext("3", "31", []string{"develop.task.execute", "develop.data_read.execute"})
+			auth := authtest.NewTenantUserAuthContext("3", "31", []string{"develop.task.execute", "develop.data_read.execute", "develop.data_write.execute"})
 			ctx := WithExecutionAuthContext(t.Context(), auth)
 			path := "sources/ordinary.bin"
 			if scenario.name == "metadata mismatch" {
@@ -65,7 +82,8 @@ func TestPublicGeoPackageWorkflowSubmission(t *testing.T) {
 				path = "sources/snapshot.geojson"
 			}
 
-			var eaCalls, genericCalls, notifications atomic.Int32
+			var eaCalls, genericCalls, notifications, admissionCalls atomic.Int32
+			approvalID := uuid.NewString()
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				switch r.URL.Path {
 				case "/api/v1/meta/items/by-catalog-path":
@@ -73,8 +91,10 @@ func TestPublicGeoPackageWorkflowSubmission(t *testing.T) {
 						t.Error("Meta request did not use exact path and tenant service")
 					}
 					name := path
-					format, kind := "geopackage", "container"
+					format, kind, layout := "geopackage", "container", "single"
 					switch scenario.name {
+					case "wrong layout":
+						layout = "multi"
 					case "unknown format":
 						format = "unknown"
 					case "metadata mismatch", "other format":
@@ -82,11 +102,12 @@ func TestPublicGeoPackageWorkflowSubmission(t *testing.T) {
 					case "wrong snapshot identity":
 						name = "sources/other"
 					}
+					attributes := map[string]interface{}{"item": map[string]interface{}{"format": format, "layout": layout, "data_type": kind}}
+					if scenario.name == "integrity unverified" {
+						attributes["format_info"] = map[string]interface{}{"geopackage": map[string]interface{}{"integrity_verified": false}}
+					}
 					_ = json.NewEncoder(w).Encode(commonModels.MetaItem{ID: 19, TenantID: 3, EngineID: 11, FullName: name, ItemType: "file",
-						Attributes: map[string]interface{}{
-							"item":        map[string]interface{}{"format": format, "layout": "single", "data_type": kind},
-							"format_info": map[string]interface{}{"geopackage": map[string]interface{}{"composition_complete": scenario.name != "incomplete"}},
-						}})
+						Attributes: attributes})
 				case "/api/v1/system/auth/execution-authorizations/develop-geopackage-workflows":
 					eaCalls.Add(1)
 					var request struct {
@@ -106,16 +127,23 @@ func TestPublicGeoPackageWorkflowSubmission(t *testing.T) {
 					}
 					digest, _ := pending.Intent.Digest()
 					if pending.AdmissionState != "pending" || pending.AuthorizationID != "" || digest != request.IntentDigest ||
-						pending.Intent.Target != nil || len(pending.Intent.Sources) != 1 || pending.Intent.Sources[0].Target.StringPath() != path {
+						(pending.Intent.Target != nil) != scenario.saving || len(pending.Intent.Sources) != 1 || pending.Intent.Sources[0].Target.StringPath() != path {
 						t.Error("wrong pending intent")
 					}
 					if scenario.status != 201 {
 						w.WriteHeader(scenario.status)
 						return
 					}
+					targetVersion := ""
+					if scenario.saving {
+						if pending.Intent.Target.NodeID != "save_result" || pending.Intent.Target.Target.EngineID != 12 || pending.Intent.Target.Target.StringPath() != "outputs/result.gpkg" || pending.Intent.Target.Mode != "fail" {
+							t.Error("target was not frozen exactly")
+						}
+						targetVersion = "4"
+					}
 					scope, err := execution.NewDevelopBoundFileScope(pending.Intent, []execution.DevelopFileSourceReference{{
 						Target: pending.Intent.Sources[0].Target, ItemFingerprint: strings.Repeat("a", 64), BoundaryHash: strings.Repeat("b", 64), EngineVersion: "2",
-					}}, "")
+					}}, targetVersion)
 					if err != nil {
 						t.Error(err)
 						w.WriteHeader(500)
@@ -129,6 +157,20 @@ func TestPublicGeoPackageWorkflowSubmission(t *testing.T) {
 							SourceType: "user", Accesses: []client.ExecutionEngineAccessScope{{EngineID: "11", Effects: []string{"read"}}}, ExpiresAt: time.Now().Add(time.Hour)},
 						Scope: *scope, ScopeDigest: scopeDigest,
 					})
+				case "/api/v1/system/execution-authorizations/9/develop-geopackage-admission-checks":
+					if r.Header.Get("Authorization") != "Bearer addp_at_current_machine" {
+						t.Error("admission used a retained user credential")
+					}
+					var request client.DevelopFileAdmissionRequest
+					if json.NewDecoder(r.Body).Decode(&request) != nil {
+						t.Error("invalid observation request")
+					}
+					state, approval := "awaiting_approval", ""
+					if admissionCalls.Add(1) > 1 {
+						state, approval = "ready", approvalID
+					}
+					now := time.Now()
+					_ = json.NewEncoder(w).Encode(client.DevelopFileAdmissionObservation{AuthorizationID: "9", ExecutionID: request.ExecutionID, ExpectedAttempt: request.ExpectedAttempt, ScopeDigest: request.ScopeDigest, State: state, ApprovalID: approval, ObservedAt: now, ExpiresAt: now.Add(time.Minute)})
 				case "/api/v1/system/auth/execution-authorizations":
 					genericCalls.Add(1)
 					var req client.IssueExecutionAuthorizationRequest
@@ -164,6 +206,35 @@ func TestPublicGeoPackageWorkflowSubmission(t *testing.T) {
 				nodes = append(nodes, map[string]interface{}{"id": "b", "operator": "save", "params": map[string]interface{}{
 					"target_parent_locator": "addp://engine/11/path/outputs?type=directory", "target_name": "result.gpkg",
 				}, "depends_on": []interface{}{"a"}})
+			}
+			if scenario.saving {
+				params := map[string]interface{}{"input_df": map[string]interface{}{"$ref": "a"}, "mode": "fail", "target_parent_locator": "addp://engine/12/path/outputs?type=directory", "target_name": "result.gpkg"}
+				switch scenario.name {
+				case "save overwrite":
+					params["mode"] = "replace"
+				case "save append":
+					params["mode"] = "append"
+				case "save traversal":
+					params["target_name"] = "../result.gpkg"
+				case "save nested name":
+					params["target_name"] = "nested/result.gpkg"
+				case "save wrong format":
+					params["target_name"] = "result.geojson"
+				case "save wrong parent":
+					params["target_parent_locator"] = "addp://engine/12/path/outputs?type=bucket"
+				case "save missing input":
+					delete(params, "input_df")
+				case "save connection override":
+					params["connection_info"] = map[string]interface{}{"host": "forbidden"}
+				case "save mixed source":
+					nodes = append(nodes, map[string]interface{}{"id": "other", "operator": "load", "params": map[string]interface{}{"locator": "addp://engine/11/path/public/table?type=table"}, "depends_on": []interface{}{}})
+				case "save external effect":
+					nodes = append(nodes, map[string]interface{}{"id": "external", "operator": "external", "params": map[string]interface{}{}, "depends_on": []interface{}{}})
+				}
+				nodes = append(nodes, map[string]interface{}{"id": "save_result", "operator": "save", "params": params, "depends_on": []interface{}{"a"}})
+				if scenario.name == "save multiple" {
+					nodes = append(nodes, map[string]interface{}{"id": "second_save", "operator": "save", "params": params, "depends_on": []interface{}{"a"}})
+				}
 			}
 			content := map[string]interface{}{"workflow_definition": map[string]interface{}{"tasks": nodes}}
 			cfg := map[string]interface{}{"engine_id": float64(50)}
@@ -204,6 +275,12 @@ func TestPublicGeoPackageWorkflowSubmission(t *testing.T) {
 				if len(rows) != 0 {
 					t.Fatal("unexpected private execution")
 				}
+				if scenario.name != "other format" {
+					var count int64
+					if countErr := db.Model(&execution.TaskExecution{}).Count(&count).Error; countErr != nil || count != 0 {
+						t.Fatal("rejected input left an execution behind", count, countErr)
+					}
+				}
 				return
 			}
 			if len(rows) != 1 || rows[0].AdmissionState != scenario.wantState || (len(rows[0].IssuedAuthorizationJSON) != 0) != success {
@@ -211,6 +288,37 @@ func TestPublicGeoPackageWorkflowSubmission(t *testing.T) {
 			}
 			if _, lease, err := repository.NewExecutionRepository(db).ClaimNext("workflow", t.Context(), "fixture", time.Now(), time.Minute, nil); err != nil || lease != nil {
 				t.Fatal("private execution was claimable before ready", lease, err)
+			}
+			if scenario.saving && success {
+				sdk := client.NewSystemServiceClient(server.URL, staticServiceTokenSource("addp_at_current_machine"), server.Client())
+				e.workflowEngine = NewWorkflowEngineService(sdk)
+				service, createErr := NewExecutionService(e, repository.NewExecutionRepository(db), fileRepo, "submission-fixture")
+				if createErr != nil {
+					t.Fatal(createErr)
+				}
+				if recoverErr := service.RecoverPrivateFiles(ctx); recoverErr != nil {
+					t.Fatal(recoverErr)
+				}
+				pending, readErr := fileRepo.Read(ctx, 3, id)
+				if readErr != nil || pending.AdmissionState != "pending" {
+					t.Fatal("approval wait activated execution", readErr)
+				}
+				if _, lease, claimErr := repository.NewExecutionRepository(db).ClaimNext("workflow", ctx, "fixture", time.Now(), time.Minute, nil); claimErr != nil || lease != nil {
+					t.Fatal("unapproved save was claimable", claimErr)
+				}
+				if recoverErr := service.RecoverPrivateFiles(ctx); recoverErr != nil {
+					t.Fatal(recoverErr)
+				}
+				ready, readErr := fileRepo.Read(ctx, 3, id)
+				if readErr != nil || ready.AdmissionState != "ready" || ready.AuthorizationID != "9" || ready.BoundScope.Target.EngineVersion != "4" {
+					t.Fatal("original save scope did not activate", readErr)
+				}
+				if _, lease, claimErr := repository.NewExecutionRepository(db).ClaimNext("workflow", ctx, "fixture", time.Now(), time.Minute, nil); claimErr != nil || lease == nil || lease.ExecutionID != id || lease.Attempt != 1 {
+					t.Fatal("approved original save was not claimable", claimErr)
+				}
+				if eaCalls.Load() != 1 || genericCalls.Load() != 0 || admissionCalls.Load() != 2 {
+					t.Fatal("save reissued or used generic authorization")
+				}
 			}
 			if scenario.name == "saved admission rejected" {
 				facts, readErr := fileRepo.Read(ctx, 3, id)
@@ -271,10 +379,11 @@ func fileSubmissionDiscovery(t *testing.T) *OperatorDiscoveryService {
 		},
 		listWorkflowOperators: func(context.Context, *commonModels.Engine) ([]commonModels.OperatorDescriptor, error) {
 			return []commonModels.OperatorDescriptor{
+				{ID: "external", Name: "external", EngineType: "geopython_workflow", ExecutionModes: []string{"workflow"}, Effects: []string{"external_effect"}},
 				{ID: "load", Name: "load", EngineType: "geopython_workflow", ExecutionModes: []string{"workflow"}, Effects: []string{"read"},
 					Parameters: []commonModels.ParameterDescriptor{{Name: "connection_info"}, {Name: "schema"}, {Name: "table"}, {Name: "path"}, {Name: "geojson"}}},
 				{ID: "save", Name: "save", EngineType: "geopython_workflow", ExecutionModes: []string{"workflow"}, Effects: []string{"write"},
-					Parameters: []commonModels.ParameterDescriptor{{Name: "connection_info"}, {Name: "schema"}, {Name: "table"}, {Name: "path"}, {Name: "mode"}}},
+					Parameters: []commonModels.ParameterDescriptor{{Name: "input_df"}, {Name: "connection_info"}, {Name: "schema"}, {Name: "table"}, {Name: "path"}, {Name: "mode"}}},
 			}, nil
 		},
 	}

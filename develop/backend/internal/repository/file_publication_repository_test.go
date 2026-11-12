@@ -49,6 +49,21 @@ func runPrivatePublicationCase(t *testing.T, db *gorm.DB, repo *FileExecutionRep
 	if err != nil {
 		t.Fatal(err)
 	}
+	waiting := fileAdmissionFixture(facts)
+	waiting.AuthorizationID, waiting.State = issued.Authorization.ID, "awaiting_approval"
+	if err := repo.ApplyAdmission(ctx, 7, item.ExecutionID, waiting); err != nil {
+		t.Fatal(err)
+	}
+	if _, lease, err := NewExecutionRepository(db).ClaimNext("workflow", ctx, "publication-fixture", time.Now(), time.Minute, nil); err != nil || lease != nil {
+		t.Fatal("unapproved save was claimable", err)
+	}
+	// A ready receipt without the original single-use approval cannot activate
+	// the queue. This case also runs through the standard PostgreSQL T2 gate.
+	missingApproval := fileAdmissionFixture(facts)
+	missingApproval.AuthorizationID = issued.Authorization.ID
+	if err := repo.ApplyAdmission(ctx, 7, item.ExecutionID, missingApproval); err == nil {
+		t.Fatal("missing save approval accepted")
+	}
 	approval := fileAdmissionFixture(facts)
 	approval.AuthorizationID = issued.Authorization.ID
 	approval.ApprovalID = uuid.NewString()

@@ -306,6 +306,43 @@ func TestDevelopFileAuthorizationAgainstPostgres(t *testing.T) {
 			t.Fatal("scope downgraded to generic engine access")
 		}
 	})
+	t.Run("saved purpose requires write permission while readonly stays available", func(t *testing.T) {
+		reader := createContextSelectionUser(t, ctx, NewIdentityService(repo, nil), "develop-file-readonly", audit)
+		readerMember := establishContextSelectionMembership(t, ctx, members, tenant.ID, reader.PrincipalID, audit)
+		role, err := NewTenantRoleService(repo, time.Now).CreateRole(ctx, CreateTenantRoleInput{TenantID: tenant.ID, RoleKey: "tenant.file_readonly_fixture", Name: "File readonly fixture", PermissionKeys: []string{"develop.task.execute", "develop.data_read.execute"}, ActorPrincipalID: user.PrincipalID, Audit: audit})
+		if err != nil {
+			t.Fatal(err)
+		}
+		insertRoleAssignment(t, db, reader.PrincipalID, role.RoleKey, "tenant", &tenant.ID, nil, nil, now.Add(-time.Minute), nil, "manual")
+		var current Principal
+		if err := db.First(&current, reader.PrincipalID).Error; err != nil {
+			t.Fatal(err)
+		}
+		session, err := selection.BeginContextSelection(ctx, BeginContextSelectionInput{PrincipalID: reader.PrincipalID, Authentication: SessionAuthentication{Methods: []string{"password"}, AssuranceLevel: AssuranceLevelAAL1, AuthenticatedAt: now}, Audit: audit})
+		if err != nil || session.Session == nil {
+			t.Fatal("readonly credential", err)
+		}
+		for _, save := range []bool{true, false} {
+			facts, id := newPending(t, save)
+			facts.Actor = client.DevelopFileExecutionActor{PrincipalID: strconv.FormatInt(reader.PrincipalID, 10), TenantMembershipID: strconv.FormatInt(readerMember.Membership.ID, 10), AuthorizationVersion: strconv.FormatInt(current.AuthorizationVersion, 10)}
+			if err := db.Table("common.task_executions").Where("execution_id=?", id).Updates(map[string]any{"actor_principal_id": reader.PrincipalID, "actor_tenant_membership_id": readerMember.Membership.ID, "issued_authorization_version": current.AuthorizationVersion, "triggered_by": reader.PrincipalID}).Error; err != nil {
+				t.Fatal(err)
+			}
+			digest, _ := facts.Intent.Digest()
+			issued, err := svc.Issue(ctx, IssueDevelopFileAuthorizationInput{SourceAccessToken: session.Session.AccessToken, ExecutionID: id, IntentDigest: digest, Audit: audit})
+			if save {
+				if !errors.Is(err, ErrExecutionAuthorizationPermissionDenied) || issued != nil {
+					t.Fatal("save without write permission was issued", issued, err)
+				}
+				var count int64
+				if err := db.Model(&ExecutionAuthorization{}).Where("execution_id=?", id).Count(&count).Error; err != nil || count != 0 {
+					t.Fatal("refused save persisted an EA", count, err)
+				}
+			} else if err != nil || issued == nil {
+				t.Fatal("read-only use required write permission", err)
+			}
+		}
+	})
 	t.Run("save cannot fake publication approval", func(t *testing.T) {
 		_, issued, input := issue(t, true)
 		id, _ := strconv.ParseInt(issued.Authorization.ID, 10, 64)

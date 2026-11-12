@@ -188,7 +188,7 @@ func (h *IAMDevelopFileAuthorizationHandler) ApproveCreate(c *gin.Context) {
 
 // Issue godoc
 // @Summary 签发 Develop 精确文件执行授权 | Issue Develop exact file execution authorization
-// @Description 当前普通 API User；独立读取 Owner 冻结 Intent 和 Meta 完整内容边界，核当前人员、精确源规则和原 pending，封存同一 EA；不新增源 Grant 或目标写权 | Ordinary API User only; independently reads frozen Owner intent and complete Meta content facts, checks current actor, exact source rules and original pending execution, and seals one EA without source Grants or target write access
+// @Description 当前普通 API User；独立读取 Owner 冻结 Intent 和 Meta basic 身份与逻辑边界，保存用途另核当前写执行权限，核当前人员、精确源规则和原 pending，封存同一 EA；不新增源 Grant 或目标写权 | Ordinary API User only; independently reads frozen Owner intent and basic Meta identity and logical boundaries, requires current write-execution permission for saves, checks current actor, exact source rules and original pending execution, and seals one EA without source Grants or target write access
 // @Tags 执行授权 | Execution Authorization
 // @Accept json
 // @Produce json
@@ -198,6 +198,7 @@ func (h *IAMDevelopFileAuthorizationHandler) ApproveCreate(c *gin.Context) {
 // @Failure 400,401,403,409,500,503 {object} IAMErrorResponse "拒绝或依赖不可用 | Rejected or dependency unavailable"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["develop.task.execute","develop.data_read.execute"]
+// @x-addp-conditional-permissions ["develop.data_write.execute"]
 // @Router /auth/execution-authorizations/develop-geopackage-workflows [post]
 func (h *IAMDevelopFileAuthorizationHandler) Issue(c *gin.Context) {
 	c.Header("Cache-Control", "no-store")

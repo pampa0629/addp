@@ -232,7 +232,7 @@ Copilot ResourceFact 必须保留 Owner 提供的 `source_engine_type`、`full_n
 
 ### 执行授权与效果
 
-已提交私有文件成果的最小机器回执、真实必要来源和证据缺失规则见[生产来源规范](../docs/spec/tasks/生产来源与产物扫描.md#develop-产物自动扫描的执行归属)。读取入口只允许 System／Meta Tenant Service；首次发布或原操作核清确认提交时原子保存待办，现有 Supervisor 恢复周期沿统一协议办理 Meta 精确识别及 System 初始 Grant，不重算、不重发发布。实际读取 Engine 版本随 ReadSet 冻结，缺失历史不补造；公共文件保存和真实跨模块验收继续保持独立确认边界。验证复用 Develop Go、Develop PostgreSQL、System `production-receipt-runtime` 迁移和授权清单标准门禁。
+已提交私有文件成果的最小机器回执、真实必要来源和证据缺失规则见[生产来源规范](../docs/spec/tasks/生产来源与产物扫描.md#develop-产物自动扫描的执行归属)。读取入口只允许 System／Meta Tenant Service；首次发布或原操作核清确认提交时原子保存待办，现有 Supervisor 恢复周期沿统一协议办理 Meta 精确识别及 System 初始 Grant，不重算、不重发发布。实际读取 Engine 版本随 ReadSet 冻结，缺失历史不补造；授权不依赖 deep 或完整性标记，读取端和发布端仍执行各自必要的一致性检查；普通手工工作流入口仅接收 basic 已识别的单文件 GeoPackage 来源和可选唯一 `mode=fail` 的精确 GeoPackage 保存目标，临时内容与已保存任务复用原 Intent／EA／Scope；保存执行等待原单次批准，后台仅将当前 `ready` 激活领取，不开放混合来源、覆盖、追加、多目标或委托／父执行派生。真实跨模块验收继续保持独立确认边界。验证复用 Develop Go、Develop PostgreSQL、System `production-receipt-runtime` 迁移和授权清单标准门禁。
 
 - SQL、Workflow、Notebook 执行效果固定为 `read | write | ddl | external_effect`。
 - `develop.task.execute` / `develop.notebook.execute` 只允许使用执行功能，不自动授予任意数据效果。

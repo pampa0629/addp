@@ -48,7 +48,7 @@ func exerciseProductionIdentification(t *testing.T, db *gorm.DB) {
 					item.FullName = "models/panel.gpkg"
 					item.Fingerprint = commonmodels.GenerateItemFingerprint(item.EngineID, item.FullName)
 
-					item.Attributes = models.JSONMap{"item": map[string]any{"layout": "single", "data_type": "container", "format": "geopackage", "refs": []map[string]any{{"path": item.FullName, "role": "container", "required": true, "primary": true}}}, "storage": map[string]any{"physical_path": item.FullName}, "format_info": map[string]any{"geopackage": map[string]any{"composition_complete": true}}}
+					item.Attributes = models.JSONMap{"item": map[string]any{"layout": "single", "data_type": "container", "format": "geopackage", "refs": []map[string]any{{"path": item.FullName, "role": "container", "required": true, "primary": true}}}, "storage": map[string]any{"physical_path": item.FullName}}
 					if err := db.Save(&item).Error; err != nil {
 						t.Fatal(err)
 					}

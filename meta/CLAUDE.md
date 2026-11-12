@@ -129,6 +129,8 @@ MinIO IFC/3DS/DAE 的模型组成在 basic 扫描建立，3DS/DAE 使用各自�
 
 ### 主要扫描链路
 
+GeoPackage 的 basic 单主文件身份和逻辑组成即可用于 DataItem 授权与初始 Grant；deep 的 `integrity_verified`、内部图层及数据库结构检查独立于授权，不改变文件身份。回归沿 Meta Go T1、`make test-meta-postgres META_POSTGRES_TEST_ARGS="--test authorization-facts"` 和 `--test production`，覆盖 basic 零内容读取、deep 失败或事务文件存在时授权边界不变。真实跨模块验收另行确认。
+
 对象存储 catalog scan：
 
 目录归属只取决于 bucket 内规范路径和已识别布局，不取决于扫描起点。single／multi 归父 bucket／prefix，whole 归自身范围根 prefix，名称与范围根一致。single、composite 和 `ref_groups` 必须共用 repository 的完整 prefix 链构造；扫描范围只控制枚举与扫描状态，不能参与父节点路径拼接。目录归属统一见[对象目录归属不变量](../docs/spec/addp元数据扫描机制规范.md#对象目录归属不变量)，节点统计、Node／DataItem 身份与展开规则见[资源查询与树投影](../docs/spec/addp元数据扫描机制规范.md#资源查询与树投影)。

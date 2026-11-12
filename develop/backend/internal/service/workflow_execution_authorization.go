@@ -142,6 +142,7 @@ func (e *DevExecutor) buildWorkflowExecutionAuthorizationPlan(
 	engineEffects := make(map[uint]map[string]struct{})
 	allEffects := make(map[string]struct{})
 	var fileSources []commonExecution.DevelopFileSourceIntent
+	fileEffectsAllowed := true
 	for index, task := range tasks {
 		operatorName := strings.TrimSpace(stringParam(task, "operator"))
 		operator, exists := operatorByName[operatorName]
@@ -150,6 +151,9 @@ func (e *DevExecutor) buildWorkflowExecutionAuthorizationPlan(
 		}
 		for _, effect := range operator.Effects {
 			allEffects[effect] = struct{}{}
+			if effect != "read" && !(operator.EngineType == "geopython_workflow" && operator.ID == "save" && effect == "write") {
+				fileEffectsAllowed = false
+			}
 		}
 		params, _ := task["params"].(map[string]interface{})
 		if operator.EngineType == "geopython_workflow" && operator.ID == "load" {
@@ -219,7 +223,7 @@ func (e *DevExecutor) buildWorkflowExecutionAuthorizationPlan(
 		return nil, fmt.Errorf("工作流未声明任何执行效果")
 	}
 	if len(fileSources) != 0 {
-		if len(allEffects) != 1 {
+		if !fileEffectsAllowed {
 			return nil, &ExecutionParametersError{Cause: errFileWorkflowInputs}
 		}
 		if _, readOnly := allEffects["read"]; !readOnly {

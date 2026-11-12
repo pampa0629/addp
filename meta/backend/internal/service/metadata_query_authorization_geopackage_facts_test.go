@@ -13,9 +13,9 @@ import (
 	"gorm.io/gorm"
 )
 
-// Persist and reload normal JSON attributes. A synthetic complete observation
-// exercises the projection only; it is not a source scan or an access grant.
-func TestGeoPackageAuthorizationFactsConsumeCommittedObservation(t *testing.T) {
+// Persist and reload basic identity and logical composition without deep facts.
+// Projection tests are not a source scan or an access grant.
+func TestGeoPackageAuthorizationFactsUseBasicIdentity(t *testing.T) {
 	exerciseGeoPackageAuthorizationFacts(t, metatest.OpenMetadataDB(t))
 }
 
@@ -25,9 +25,8 @@ func exerciseGeoPackageAuthorizationFacts(t *testing.T, db *gorm.DB) {
 	item.Name, item.FullName = "sources.GPKG", "models/sources.GPKG"
 	item.Fingerprint = commonModels.GenerateItemFingerprint(item.EngineID, item.FullName)
 	item.Attributes = models.JSONMap{
-		"item":        map[string]any{"layout": "single", "data_type": "container", "format": "geopackage", "refs": []map[string]any{{"path": item.FullName, "role": "container", "required": true, "primary": true}}},
-		"storage":     map[string]any{"physical_path": item.FullName},
-		"format_info": map[string]any{"geopackage": map[string]any{"composition_complete": true}},
+		"item":    map[string]any{"layout": "single", "data_type": "container", "format": "geopackage", "refs": []map[string]any{{"path": item.FullName, "role": "container", "required": true, "primary": true}}},
+		"storage": map[string]any{"physical_path": item.FullName},
 	}
 	if err := db.Save(&item).Error; err != nil {
 		t.Fatal(err)
@@ -73,7 +72,18 @@ func exerciseGeoPackageAuthorizationFacts(t *testing.T, db *gorm.DB) {
 	if !reflect.DeepEqual(complete.Boundary, children.Boundary) || children.BoundaryHash == nil || *complete.BoundaryHash != *children.BoundaryHash {
 		t.Fatal("internal children created or changed an authorization target")
 	}
-	for _, variant := range []string{"missing observation", "false observation", "string observation", "no refs", "extra ref", "wrong role", "optional main", "no primary", "different primary", "wrong layout", "wrong data type", "wrong physical path"} {
+	for _, verified := range []any{false, true, "invalid diagnostic value"} {
+		var attrs models.JSONMap
+		if err := json.Unmarshal(withChildren, &attrs); err != nil {
+			t.Fatal(err)
+		}
+		attrs["format_info"] = map[string]any{"geopackage": map[string]any{"integrity_verified": verified}}
+		observed := observe(attrs)
+		if !reflect.DeepEqual(complete.Boundary, observed.Boundary) || observed.BoundaryHash == nil || *complete.BoundaryHash != *observed.BoundaryHash {
+			t.Fatal("deep integrity changed authorization", verified)
+		}
+	}
+	for _, variant := range []string{"no refs", "extra ref", "wrong role", "optional main", "no primary", "different primary", "wrong layout", "wrong data type", "wrong physical path"} {
 		t.Run(variant, func(t *testing.T) {
 			raw, err := json.Marshal(baseline)
 			if err != nil {
@@ -85,12 +95,6 @@ func exerciseGeoPackageAuthorizationFacts(t *testing.T, db *gorm.DB) {
 			}
 			itemFacts := attrs["item"].(map[string]interface{})
 			switch variant {
-			case "missing observation":
-				delete(attrs, "format_info")
-			case "false observation":
-				attrs["format_info"] = map[string]any{"geopackage": map[string]any{"composition_complete": false}}
-			case "string observation":
-				attrs["format_info"] = map[string]any{"geopackage": map[string]any{"composition_complete": "true"}}
 			case "no refs":
 				delete(itemFacts, "refs")
 			case "extra ref":

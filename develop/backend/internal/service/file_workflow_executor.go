@@ -166,8 +166,8 @@ func (s *ExecutionService) executePrivateFileWorkflow(ctx context.Context, item 
 	unavailable := func() error {
 		return s.fail(ctx, item, lease, *item.StartedAt, "authorization_unavailable", fmt.Errorf("%s", commoni18n.ForLanguage(language, "develop.workflow.private_file_unavailable")))
 	}
-	// Only already bound private executions enter here. Public save admission
-	// stays gated until scanning and initial authorization are connected.
+	// Only original bound executions enter here after current System admission.
+	// Saved outputs use the same private publication and production continuation.
 	if item.StartedAt == nil {
 		return s.fail(ctx, item, lease, time.Time{}, "snapshot_invalid", fmt.Errorf("%s", commoni18n.ForLanguage(language, "develop.workflow.private_file_unavailable")))
 	}
