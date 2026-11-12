@@ -53,6 +53,55 @@ func TestCaptureIdentitySecretsAndBoundedInput(t *testing.T) {
 		t.Fatalf("entries=%d truncated=%v stack=%v", count, truncated, stack)
 	}
 }
+
+func TestNormalizeRedactsNestedValuesAndReadsCurrentEnvironmentPerEvent(t *testing.T) {
+	o := options(t)
+	t.Setenv("RUNTIME_CLIENT_SECRET", "first-live-value")
+	t.Setenv("RUNTIME_PASSWORD", "another-private-value")
+	t.Setenv("RUNTIME_TOKEN", "short")
+	input := map[string]any{
+		"level": "info",
+		"msg":   "first-live-value next-live-value short",
+		"nested": map[string]any{
+			"values":   []any{"another-private-value", map[string]any{"text": "first-live-value"}},
+			"password": "hidden-field",
+		},
+		"body": "hidden-body",
+		"url":  "https://user:pass@example.test/path?query=private",
+	}
+	line, err := json.Marshal(input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	first := Normalize(o, "stdout", line, 1, false)
+	var got map[string]any
+	if err := json.Unmarshal([]byte(first.Message), &got); err != nil {
+		t.Fatal(err)
+	}
+	if got["msg"] != "[REDACTED] next-live-value short" || got["body"] != "[REDACTED]" ||
+		got["url"] != "https://[REDACTED]@example.test/path?[REDACTED]" {
+		t.Fatal("event redaction changed visible values or retained protected fields")
+	}
+	nested := got["nested"].(map[string]any)
+	values := nested["values"].([]any)
+	if nested["password"] != "[REDACTED]" || values[0] != "[REDACTED]" ||
+		values[1].(map[string]any)["text"] != "[REDACTED]" {
+		t.Fatal("nested map or array retained an environment secret")
+	}
+	if input["msg"] != "first-live-value next-live-value short" {
+		t.Fatal("normalization modified the caller's source")
+	}
+	t.Setenv("RUNTIME_CLIENT_SECRET", "next-live-value")
+	second := Normalize(o, "stdout", line, 2, false)
+	if err := json.Unmarshal([]byte(second.Message), &got); err != nil {
+		t.Fatal(err)
+	}
+	if got["msg"] != "first-live-value [REDACTED] short" ||
+		Redact("first-live-value next-live-value short") != "first-live-value [REDACTED] short" {
+		t.Fatal("a later event or text call reused stale environment secrets")
+	}
+}
+
 func TestIndependentRetentionProtectsActiveSegments(t *testing.T) {
 	o := options(t)
 	dir := filepath.Join(o.Root, o.Module, o.InstanceID)

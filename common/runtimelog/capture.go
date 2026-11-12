@@ -96,36 +96,48 @@ type Entry struct {
 // Redact runs before any source file write. Structured application logging must
 // additionally avoid producing business payloads; pattern matching is not a DLP.
 func Redact(value string) string {
-	value = secretText.ReplaceAllString(value, "[REDACTED]")
-	value = urlCredentials.ReplaceAllString(value, "$1://[REDACTED]@")
-	value = urlQuery.ReplaceAllString(value, "$1?[REDACTED]")
+	return redact(value, environmentSecrets())
+}
+
+func environmentSecrets() []string {
+	var secrets []string
 	for _, env := range os.Environ() {
 		key, secret, ok := strings.Cut(env, "=")
 		if ok && secretKey.MatchString(key) && len(secret) >= 6 {
-			value = strings.ReplaceAll(value, secret, "[REDACTED]")
+			secrets = append(secrets, secret)
 		}
+	}
+	return secrets
+}
+
+func redact(value string, secrets []string) string {
+	value = secretText.ReplaceAllString(value, "[REDACTED]")
+	value = urlCredentials.ReplaceAllString(value, "$1://[REDACTED]@")
+	value = urlQuery.ReplaceAllString(value, "$1?[REDACTED]")
+	for _, secret := range secrets {
+		value = strings.ReplaceAll(value, secret, "[REDACTED]")
 	}
 	return value
 }
 
-func sanitize(v any) any {
+func sanitize(v any, secrets []string) any {
 	switch x := v.(type) {
 	case map[string]any:
 		for k, v := range x {
 			if secretKey.MatchString(k) || k == "body" || k == "payload" || k == "response_body" || k == "request_body" {
 				x[k] = "[REDACTED]"
 			} else {
-				x[k] = sanitize(v)
+				x[k] = sanitize(v, secrets)
 			}
 		}
 		return x
 	case []any:
 		for i, v := range x {
-			x[i] = sanitize(v)
+			x[i] = sanitize(v, secrets)
 		}
 		return x
 	case string:
-		return Redact(x)
+		return redact(x, secrets)
 	default:
 		return v
 	}
@@ -135,7 +147,9 @@ func Normalize(o Options, channel string, line []byte, seq uint64, truncated boo
 	e := Entry{Timestamp: time.Now().UTC().Format(time.RFC3339Nano), Module: o.Module, Role: o.Role, InstanceID: o.InstanceID, Node: o.Node, ID: fmt.Sprintf("%s:%d", o.InstanceID, seq), Level: "unknown", Channel: channel, Truncated: truncated}
 	var data map[string]any
 	if json.Unmarshal(line, &data) == nil && data != nil {
-		data = sanitize(data).(map[string]any)
+		// Resolve environment secrets once per event, not once per nested string.
+		// Do not cache across events: later environment changes must still apply.
+		data = sanitize(data, environmentSecrets()).(map[string]any)
 		if v, ok := data["level"].(string); ok {
 			switch strings.ToLower(v) {
 			case "debug", "info", "warn", "error":
