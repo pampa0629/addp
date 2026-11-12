@@ -74,13 +74,14 @@ func TestVFFComponentMetadataDirectChoiceKeepsExactOptionsAndFilterFacts(t *test
 
 func TestVFFComponentMetadataRejectsMissingWrongAndDuplicateOptions(t *testing.T) {
 	for name, field := range map[string][]byte{
-		"missing option":   componentChoiceField("urn:root:A"),
-		"extra option":     componentChoiceField("urn:root:A", "urn:root:B", "urn:root:C"),
-		"duplicate":        componentChoiceField("urn:root:A", "urn:root:A"),
-		"wrong namespace":  componentChoiceField("urn:other:A", "urn:root:B"),
-		"URI decoding":     componentChoiceField("urn:root:%41", "urn:root:B"),
-		"not array":        componentFieldDictionary("Link", componentMetadataEntries("", nil), componentFieldDictionary("Link", componentMetadataEntries("choice", componentClassString("options", "urn:root:A")))),
-		"missing metadata": componentFieldDictionary("Link", nil, componentFieldDictionary("Link", componentOptionsEntry("urn:root:A", "urn:root:B"))),
+		"empty choice option": componentChoiceField("", "urn:root:B"),
+		"missing option":      componentChoiceField("urn:root:A"),
+		"extra option":        componentChoiceField("urn:root:A", "urn:root:B", "urn:root:C"),
+		"duplicate":           componentChoiceField("urn:root:A", "urn:root:A"),
+		"wrong namespace":     componentChoiceField("urn:other:A", "urn:root:B"),
+		"URI decoding":        componentChoiceField("urn:root:%41", "urn:root:B"),
+		"not array":           componentFieldDictionary("Link", componentMetadataEntries("", nil), componentFieldDictionary("Link", componentMetadataEntries("choice", componentClassString("options", "urn:root:A")))),
+		"missing metadata":    componentFieldDictionary("Link", nil, componentFieldDictionary("Link", componentOptionsEntry("urn:root:A", "urn:root:B"))),
 	} {
 		t.Run(name, func(t *testing.T) {
 			c := componentFieldsContainer(t, componentChoiceFiles(t), componentFieldsDefinition(1, componentChoiceField("urn:root:A", "urn:root:B")), componentFieldsDefinition(2, field))

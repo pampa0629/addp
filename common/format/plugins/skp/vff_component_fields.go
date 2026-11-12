@@ -101,6 +101,58 @@ func (s *vffComponentFieldScope) element(name string) (*vffSKCFieldCandidate, er
 	return found, nil
 }
 
+type vffComponentStringField struct {
+	path        vffComponentFieldPath
+	field       vffSKCFieldCandidate
+	declaration vffSKCDeclarationWitness
+	node        *vffXMLNode
+	checker     *vffSKCRestrictionChecker
+	profile     *vffSKCRestrictionProfile
+}
+
+func (s *vffComponentFieldScope) stringField(path vffComponentFieldPath) (vffComponentStringField, error) {
+	b := s.b
+	found, err := s.element(path.field)
+	if err != nil {
+		return vffComponentStringField{}, err
+	}
+	node := b.nodes[vffSKCNodeKey{found.declaration.member, found.declaration.begin}]
+	name, err := b.qname(node, node.attrs["type"])
+	if err != nil {
+		return vffComponentStringField{}, err
+	}
+	if name.Space != b.namespace || name.Local != path.valueType {
+		return vffComponentStringField{}, fmt.Errorf("dictionary value type differs from the exact field type")
+	}
+	target, err := b.resolveDeclaration(node, name, "type")
+	if err != nil {
+		return vffComponentStringField{}, err
+	}
+	if target == nil || target.node.name.Local != "simpleType" {
+		return vffComponentStringField{}, fmt.Errorf("classification string field requires a unique named simple type")
+	}
+	found.value, err = b.readValueType(node)
+	if err != nil {
+		return vffComponentStringField{}, err
+	}
+	if len(found.value.issues) != 0 {
+		return vffComponentStringField{}, fmt.Errorf("selected classification field value type is unproved")
+	}
+	refs, err := b.restrictionTypeReferences(found.value)
+	if err != nil {
+		return vffComponentStringField{}, err
+	}
+	checker := &vffSKCRestrictionChecker{b: b, refs: refs, cache: map[*vffXMLNode]*vffSKCRestrictionProfile{}, active: map[*vffXMLNode]bool{}}
+	profile, err := checker.profile(target.node, 1)
+	if err != nil {
+		return vffComponentStringField{}, err
+	}
+	if !profile.known || profile.item != nil || profile.primitive.Space != vffXSDNS || profile.primitive.Local != "string" && profile.primitive.Local != "normalizedString" && profile.primitive.Local != "token" {
+		return vffComponentStringField{}, fmt.Errorf("classification field is not a proved scalar string type")
+	}
+	return vffComponentStringField{path, *found, b.witness(target.node), node, checker, profile}, nil
+}
+
 // Verify only explicit string-valued dictionary paths against their exact
 // declarations. Template metadata and a complete XML instance remain unproved.
 func readVFFComponentFieldValues(ctx context.Context, c *vffContainer, schemaName, packageMember, componentType string, paths []vffComponentFieldPath, componentLimits vffClassificationLimits, limits vffSKCBindingLimits) (*vffComponentFieldFacts, error) {
@@ -119,58 +171,16 @@ func readVFFComponentFieldValues(ctx context.Context, c *vffContainer, schemaNam
 		return nil, err
 	}
 	schema, b, selected := scope.schema, scope.b, scope.selected
-	type plan struct {
-		path        vffComponentFieldPath
-		field       vffSKCFieldCandidate
-		declaration vffSKCDeclarationWitness
-		node        *vffXMLNode
-		checker     *vffSKCRestrictionChecker
-		profile     *vffSKCRestrictionProfile
-	}
-	var plans []plan
+	var plans []vffComponentStringField
 	for _, path := range paths {
-		found, err := scope.element(path.field)
+		p, err := scope.stringField(path)
 		if err != nil {
 			return nil, err
 		}
-		node := b.nodes[vffSKCNodeKey{found.declaration.member, found.declaration.begin}]
-		name, err := b.qname(node, node.attrs["type"])
-		if err != nil {
-			return nil, err
-		}
-		if name.Space != b.namespace || name.Local != path.valueType {
-			return nil, fmt.Errorf("dictionary value type differs from the exact field type")
-		}
-		target, err := b.resolveDeclaration(node, name, "type")
-		if err != nil {
-			return nil, err
-		}
-		if target == nil || target.node.name.Local != "simpleType" {
-			return nil, fmt.Errorf("classification string field requires a unique named simple type")
-		}
-		found.value, err = b.readValueType(node)
-		if err != nil {
-			return nil, err
-		}
-		if len(found.value.issues) != 0 {
-			return nil, fmt.Errorf("selected classification field value type is unproved")
-		}
-		refs, err := b.restrictionTypeReferences(found.value)
-		if err != nil {
-			return nil, err
-		}
-		checker := &vffSKCRestrictionChecker{b: b, refs: refs, cache: map[*vffXMLNode]*vffSKCRestrictionProfile{}, active: map[*vffXMLNode]bool{}}
-		profile, err := checker.profile(target.node, 1)
-		if err != nil {
-			return nil, err
-		}
-		if !profile.known || profile.item != nil || profile.primitive.Space != vffXSDNS || profile.primitive.Local != "string" && profile.primitive.Local != "normalizedString" && profile.primitive.Local != "token" {
-			return nil, fmt.Errorf("classification field is not a proved scalar string type")
-		}
-		if len(profile.levels) != 0 {
+		if len(p.profile.levels) != 0 {
 			return nil, fmt.Errorf("enumeration field metadata remains unproved")
 		}
-		plans = append(plans, plan{path, *found, b.witness(target.node), node, checker, profile})
+		plans = append(plans, p)
 	}
 	r := &vffComponentClassificationReader{vffRecords: &vffRecords{ctx: ctx, maxRecords: componentLimits.records, maxDepth: componentLimits.depth}, result: &vffComponentClassificationFacts{}}
 	result := &vffComponentFieldFacts{schema: schema}

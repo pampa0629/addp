@@ -103,6 +103,42 @@ func (r *vffComponentClassificationReader) fieldMetadata(schema *vffComponentSch
 	return result, nil
 }
 
+type vffComponentOptionString struct {
+	raw    string
+	offset int
+	sha256 [32]byte
+}
+
+func (r *vffComponentClassificationReader) optionStrings(leaf vffClassificationDictionary) ([]vffComponentOptionString, error) {
+	entry, exists := leaf.entries["options"]
+	if !exists {
+		return nil, fmt.Errorf("classification options are missing")
+	}
+	wrapped, err := r.recordsAt(entry.data, 26, entry.offset)
+	if err != nil {
+		return nil, err
+	}
+	if len(wrapped) != 1 || wrapped[0].tag != "AE38" {
+		return nil, fmt.Errorf("classification options require an exact array")
+	}
+	items, err := r.recordsAt(wrapped[0].data, 27, wrapped[0].offset)
+	if err != nil {
+		return nil, err
+	}
+	var result []vffComponentOptionString
+	for _, item := range items {
+		if item.tag != "A438" {
+			return nil, fmt.Errorf("classification option item is not a wrapped value")
+		}
+		raw, err := r.stringValue(item, 28, true)
+		if err != nil {
+			return nil, err
+		}
+		result = append(result, vffComponentOptionString{raw, item.offset - 6, sha256.Sum256(item.data)})
+	}
+	return result, nil
+}
+
 // Direct choice declaration identities only. Substitutions, selected values,
 // effective UI visibility and a complete instance are deliberately not inferred.
 func (b *vffSKCBinder) componentChoiceOptions(field *vffXMLNode) ([]vffComponentChoiceOption, error) {
@@ -240,18 +276,7 @@ func readVFFComponentChoiceMetadata(ctx context.Context, c *vffContainer, schema
 			if err != nil {
 				return nil, err
 			}
-			entry, exists := leaf.entries["options"]
-			if !exists {
-				return nil, fmt.Errorf("choice options are missing")
-			}
-			wrapped, err := r.recordsAt(entry.data, 26, entry.offset)
-			if err != nil {
-				return nil, err
-			}
-			if len(wrapped) != 1 || wrapped[0].tag != "AE38" {
-				return nil, fmt.Errorf("choice options require an exact array")
-			}
-			items, err := r.recordsAt(wrapped[0].data, 27, wrapped[0].offset)
+			items, err := r.optionStrings(leaf)
 			if err != nil {
 				return nil, err
 			}
@@ -264,19 +289,12 @@ func readVFFComponentChoiceMetadata(ctx context.Context, c *vffContainer, schema
 			}
 			fact := vffComponentChoiceFact{component: component, path: path, field: plans[i].field, metadata: metadata}
 			for _, item := range items {
-				if item.tag != "A438" {
-					return nil, fmt.Errorf("choice option item is not a wrapped value")
-				}
-				name, err := r.stringValue(item, 28, false)
-				if err != nil {
-					return nil, err
-				}
-				option, exists := candidates[name]
+				option, exists := candidates[item.raw]
 				if !exists {
 					return nil, fmt.Errorf("choice option is missing, duplicate or not an exact reference")
 				}
-				delete(candidates, name)
-				option.offset, option.sha256 = item.offset-6, sha256.Sum256(item.data)
+				delete(candidates, item.raw)
+				option.offset, option.sha256 = item.offset, item.sha256
 				fact.options = append(fact.options, option)
 			}
 			for _, n := range field.entries {
