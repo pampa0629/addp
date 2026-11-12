@@ -2497,6 +2497,10 @@ def validate_vector_topology_profile(repository: Path, registered: set[str]) -> 
     for relative,fragments in nodes_required.items():
         if any(not source_contract_contains((repository/relative).read_text(), fragment, repository) for fragment in fragments):
             raise RegistrationError('topology nodes case contract incomplete: '+relative)
+    adjacency_required = {'.github/workflows/online-t4-gates.yml': ('          - polygon-adjacency',), 'scripts/test/online-hosted-topology-gate.sh': ('|polygon-adjacency)',), 'business/scripts/online-vector-topology-fixture.py': ('ADJACENCY_FAILURES', 'def adjacency_features(', 'def adjacency_worker(', "'source_geometry_name':'source_shape'"), 'scripts/test/vector-topology-persistence-online.py': ('def adjacency_definition(', 'def validate_adjacency_failure(', "'input_nodes':('load_source',)", "profile.get('line_only')", 'for index in dict.fromkeys(spec[1:3]):'), 'console/frontend/e2e/online/vector-topology-persistence.spec.js': ('面邻检查独立普通User单源线成果及四失败保护', 'topology-adjacency-browser-raw.json', 'shared_edge_pixels', 'assertExtensionLineMap(renderer,expected,[2,1])'), 'engines/geopython-workflow/test_topology_operators.py': ('test_adjacency_t4_one_save_four_readonly_refusals_independent_ogr',), 'scripts/test/vector-topology-persistence-online_test.py': ('class AdjacencyOnlineTest', 'class AdjacencyBrowserRawTest'), 'scripts/test/online-hosted-topology-gate_test.py': ('test_adjacency_case_is_bound_without_old_business_or_capacity',), 'scripts/test/online-vector-topology-fixture_test.py': ('class AdjacencyFixtureTest',)}
+    for relative,fragments in adjacency_required.items():
+        if any(not source_contract_contains((repository/relative).read_text(), fragment, repository) for fragment in fragments):
+            raise RegistrationError('topology adjacency independent case contract incomplete: '+relative)
     difference_required = {
         '.github/workflows/online-t4-gates.yml': ('          - geometry-difference',),
         'scripts/test/online-hosted-topology-gate.sh': ('geometry-difference|polygon-dissolve',),

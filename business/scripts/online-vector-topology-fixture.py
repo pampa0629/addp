@@ -464,7 +464,7 @@ def seed_vertices(path,kind):
         crs.SetLocalCS('Undefined Cartesian SRS');crs.SetLinearUnits('Meter',1)
     else:crs.ImportFromEPSG(3857)
     crs.SetAxisMappingStrategy(osr.OAMS_TRADITIONAL_GIS_ORDER)
-    ds=ogr.GetDriverByName('GPKG').CreateDataSource(str(path));layer=ds.CreateLayer(path.stem,crs,ogr.wkbUnknown,options=['GEOMETRY_NAME=source_shape'])
+    ds=ogr.GetDriverByName('GPKG').CreateDataSource(str(path));layer=ds.CreateLayer(path.stem,crs,ogr.wkbMultiLineString if profile.get('line_only') and kind=='result' else ogr.wkbUnknown,options=['GEOMETRY_NAME=source_shape'])
     for name,(native,subtype) in vertices_field_types(kind).items():
         field=ogr.FieldDefn(name,native);field.SetSubType(subtype)
         if layer.CreateField(field)!=0:raise FixtureError('cannot seed vertex field')
@@ -739,9 +739,9 @@ def seed_overlay(path,kind):return seed_mixed_overlay(path,kind,OVERLAY_CASE)
 def seed_mixed_overlay(path,kind,case):
     profile=mixed_fixture_profile(case)
     from osgeo import ogr,osr
-    crs=osr.SpatialReference();crs.ImportFromEPSG(3395 if kind=='crs' else 3857);crs.SetAxisMappingStrategy(osr.OAMS_TRADITIONAL_GIS_ORDER)
+    crs=osr.SpatialReference();crs.ImportFromEPSG(profile.get('crs_epsg',3395) if kind=='crs' else 3857);crs.SetAxisMappingStrategy(osr.OAMS_TRADITIONAL_GIS_ORDER)
     ds=ogr.GetDriverByName('GPKG').CreateDataSource(str(path))
-    layer=ds.CreateLayer(path.stem,crs,ogr.wkbUnknown,options=['GEOMETRY_NAME='+('a_shape' if kind in ('a','invalid') else 'b_shape')])
+    layer=ds.CreateLayer(path.stem,crs,ogr.wkbMultiLineString if profile.get('line_only') and kind=='result' else ogr.wkbUnknown,options=['GEOMETRY_NAME='+profile.get('source_geometry_name',('a_shape' if kind in ('a','invalid') else 'b_shape'))])
     for name,(native,subtype) in profile['types'](kind).items():
         field=ogr.FieldDefn(name,native);field.SetSubType(subtype)
         if layer.CreateField(field)!=0:raise FixtureError('intersection fixture field creation failed')
@@ -776,19 +776,19 @@ def verify_mixed_overlay(path,kind,case):
     ds=ogr.Open(str(path),0)
     if not ds or ds.GetLayerCount()!=1:raise FixtureError('intersection requires one mixed physical layer')
     layer=ds.GetLayer(0);schema=layer.GetLayerDefn();types=profile['types'](kind);expected=profile['features'](kind)
-    crs=osr.SpatialReference();crs.ImportFromEPSG(3395 if kind=='crs' else 3857);crs.SetAxisMappingStrategy(osr.OAMS_TRADITIONAL_GIS_ORDER)
+    crs=osr.SpatialReference();crs.ImportFromEPSG(profile.get('crs_epsg',3395) if kind=='crs' else 3857);crs.SetAxisMappingStrategy(osr.OAMS_TRADITIONAL_GIS_ORDER)
     if not layer.GetSpatialRef() or not layer.GetSpatialRef().IsSame(crs):raise FixtureError('intersection physical CRS differs')
     if [f.name for f in layer.schema]!=list(types):raise FixtureError('intersection field names or order differ')
     for name,(native,subtype) in types.items():
         field=schema.GetFieldDefn(schema.GetFieldIndex(name))
         if field.GetType()!=native or field.GetSubType()!=subtype:raise FixtureError('intersection physical field type differs')
     geom=schema.GetGeomFieldDefn(0)
-    if geom.GetType()!=ogr.wkbUnknown or not geom.GetName() or geom.GetName() in types:raise FixtureError('intersection mixed geometry declaration differs')
-    if kind!='result' and geom.GetName()!=('a_shape' if kind in ('a','invalid') else 'b_shape'):raise FixtureError('intersection source geometry name differs')
+    if geom.GetType()!=(ogr.wkbMultiLineString if profile.get('line_only') and kind=='result' else ogr.wkbUnknown) or not geom.GetName() or geom.GetName() in types:raise FixtureError('intersection mixed geometry declaration differs')
+    if kind!='result' and geom.GetName()!=profile.get('source_geometry_name',('a_shape' if kind in ('a','invalid') else 'b_shape')):raise FixtureError('intersection source geometry name differs')
     rows=[]
     for index,feature in enumerate(layer):
         shape=feature.GetGeometryRef()
-        if index>=len(expected) or feature.GetFID()!=index+1 or not shape or shape.IsEmpty() or shape.GetCoordinateDimension()!=2 or shape.IsMeasured() or(kind!=profile['invalid_kind']and not shape.IsValid()):raise FixtureError('intersection rows/FID/geometry/XY differ')
+        if index>=len(expected) or feature.GetFID()!=index+1 or shape is None or (shape.IsEmpty() and expected[index]['geometry'].get('coordinates')!=[]) or shape.GetCoordinateDimension()!=2 or shape.IsMeasured() or(kind!=profile['invalid_kind']and not shape.IsValid()):raise FixtureError('intersection rows/FID/geometry/XY differ')
         reference=ogr.CreateGeometryFromJson(json.dumps(expected[index]['geometry']))
         if kind=='result':actual,reference=shape.Normalize(),reference.Normalize()
         else:actual=shape
@@ -802,7 +802,7 @@ def verify_mixed_overlay(path,kind,case):
         rows.append({'properties':props,'geometry':overlay_geometry(shape)})
     if len(rows)!=len(expected):raise FixtureError('intersection feature count differs')
     return {**digest(path),'feature_count':len(rows),'layer_name':layer.GetName(),'geometry_column':geom.GetName(),'fid_column':layer.GetFIDColumn(),'features':rows,
-            'source_crs':'EPSG:3395' if kind=='crs' else 'EPSG:3857'}
+            'source_crs':'EPSG:'+str(profile.get('crs_epsg',3395) if kind=='crs' else 3857)}
 
 
 def overlay_worker(action,root):return mixed_overlay_worker(action,root,OVERLAY_CASE)
@@ -815,7 +815,13 @@ def mixed_overlay_worker(action,root,case):
         for name,kind in zip(names,profile['kinds']):seed_mixed_overlay(root/name,kind,case)
         return {'sources':{name:digest(root/name)for name in names}}
     if action!='verify':raise FixtureError('unknown mixed fixture action')
-    if sorted(p.name for p in root.iterdir())!=sorted(['.addp-online-owner','outputs',*names])or sorted(p.name for p in(root/'outputs').iterdir())!=[target]:raise FixtureError('mixed exact inventory differs')
+    inventory=['.addp-online-owner','outputs',*names]
+    if case==DIFFERENCE_CASE:
+        stage=root/'.addp-publication'
+        if stage.is_symlink() or not stage.is_dir() or stage.stat().st_mode & 0o777 != 0o700 or stage.stat().st_uid!=os.getuid() or list(stage.iterdir()):
+            raise FixtureError('difference private staging must be owned, 0700 and empty after publication')
+        inventory.append(stage.name)
+    if sorted(p.name for p in root.iterdir())!=sorted(inventory)or sorted(p.name for p in(root/'outputs').iterdir())!=[target]:raise FixtureError('mixed exact inventory differs')
     return {'sources':{name:digest(root/name)for name in names},'source_tables':{name:verify_mixed_overlay(root/name,kind,case)for name,kind in zip(names,profile['kinds'])},
         'targets':{target:verify_mixed_overlay(root/'outputs'/target,'result',case)},'exact_inventory_verified':True}
 
@@ -869,7 +875,47 @@ def difference_field_types(kind):
         ogr.OFSTBoolean if name=='enabled'else ogr.OFSTNone)for name in difference_features(kind)[0]['properties']}
 
 
+ADJACENCY_CASE='polygon-adjacency'
+ADJACENCY_SCHEMA='addp.polygon-adjacency'
+ADJACENCY_TITLE='面邻检查独立普通User单源线成果及四失败保护'
+ADJACENCY_KINDS=('source','duplicate-id','empty','crs','overlap')
+ADJACENCY_SOURCES=tuple('adjacency-'+k+'.gpkg'for k in ADJACENCY_KINDS)
+ADJACENCY_TARGET='adjacency-lines.gpkg'
+ADJACENCY_FAILURES=(('adjacency-id',1,1,'operator_input_invalid','input_gdf'),('adjacency-empty',2,2,'operator_input_invalid','input_gdf'),('adjacency-crs',3,3,'operator_crs_invalid',''),('adjacency-overlap',4,4,'operator_input_overlap','input_gdf'))
+
+
+def adjacency_features(kind):
+    tiny=2**-40
+    def ring(x,y,X,Y):return [[x,y],[X,y],[X,Y],[x,Y],[x,y]]
+    def polygon(x,y,X,Y):return {'type':'Polygon','coordinates':[ring(x,y,X,Y)]}
+    if kind=='result':
+        return [{'properties':{'source_id_a':a,'source_id_b':b,'shared_length':length},'geometry':{'type':'MultiLineString','coordinates':lines}}for a,b,length,lines in (
+          (90,10,2.,[[[2,0],[2,2]]]),(10,70,2.,[[[2,2],[4,2]]]),
+          (40,30,8.,[[[11,1],[13,1]],[[13,1],[13,3]],[[13,3],[11,3]],[[11,3],[11,1]]]),
+          (60,20,3.,[[[21,0],[21,1]],[[24,0],[24,2]]]),(80,50,float(tiny),[[[41,0],[41,tiny]]]))]
+    if kind not in ADJACENCY_KINDS:raise FixtureError('unknown adjacency fixture kind')
+    geometries=[polygon(0,0,2,2),polygon(2,0,4,2),polygon(2,2,4,4),
+      {'type':'Polygon','coordinates':[ring(10,0,16,6),ring(11,1,13,3)]},polygon(11,1,13,3),
+      {'type':'MultiPolygon','coordinates':[[ring(20,0,21,1)],[ring(23,0,24,2)]]},
+      {'type':'MultiPolygon','coordinates':[[ring(21,0,22,1)],[ring(24,0,25,2)]]},
+      polygon(30,0,31,1),polygon(31,1,32,2),polygon(32+tiny,1,33,2),polygon(40,0,41,tiny),polygon(41,0,42,tiny)]
+    identifiers=[90,10,70,40,30,60,20,120,100,110,80,50]
+    if kind=='duplicate-id':identifiers[1]=identifiers[0]
+    if kind=='empty':geometries[1]={'type':'Polygon','coordinates':[]}
+    if kind=='overlap':geometries=[polygon(0,0,1,1),polygon(1,0,2,1),polygon(2-tiny,0,3,1)];identifiers=identifiers[:3]
+    return [{'properties':{'parcel_key':identifier,'geometry':'business-'+str(i),'note':None if i%2 else 'parcel-'+str(i)},'geometry':g}for i,(identifier,g)in enumerate(zip(identifiers,geometries))]
+
+
+def adjacency_field_types(kind):
+    from osgeo import ogr
+    return {'source_id_a':(ogr.OFTInteger64,ogr.OFSTNone),'source_id_b':(ogr.OFTInteger64,ogr.OFSTNone),'shared_length':(ogr.OFTReal,ogr.OFSTNone)}if kind=='result'else{'parcel_key':(ogr.OFTInteger64,ogr.OFSTNone),'geometry':(ogr.OFTString,ogr.OFSTNone),'note':(ogr.OFTString,ogr.OFSTNone)}
+
+
+def adjacency_worker(action,root):return mixed_overlay_worker(action,root,ADJACENCY_CASE)
+
+
 def mixed_fixture_profile(case):
+    if case==ADJACENCY_CASE:return {'features':adjacency_features,'types':adjacency_field_types,'kinds':ADJACENCY_KINDS,'sources':ADJACENCY_SOURCES,'target':ADJACENCY_TARGET,'source_count':5,'result_count':5,'invalid_kind':None,'source_geometry_name':'source_shape','crs_epsg':4326,'line_only':True}
     if case==OVERLAY_CASE:return {'features':overlay_features,'types':overlay_field_types,'kinds':OVERLAY_KINDS,'sources':OVERLAY_SOURCES,'target':OVERLAY_TARGET,'source_count':4,'result_count':16,'invalid_kind':None}
     if case==DIFFERENCE_CASE:return {'features':difference_features,'types':difference_field_types,'kinds':DIFFERENCE_KINDS,'sources':DIFFERENCE_SOURCES,'target':DIFFERENCE_TARGET,'source_count':5,'result_count':9,'invalid_kind':'invalid'}
     raise FixtureError('unknown mixed overlay fixture case')
@@ -935,7 +981,7 @@ def dissolve_field_types(kind):
 def seed_dissolve(path,kind):
     from osgeo import ogr,osr
     crs=osr.SpatialReference();crs.ImportFromEPSG(4326 if kind=='crs' else 3857);crs.SetAxisMappingStrategy(osr.OAMS_TRADITIONAL_GIS_ORDER)
-    ds=ogr.GetDriverByName('GPKG').CreateDataSource(str(path));layer=ds.CreateLayer(path.stem,crs,ogr.wkbUnknown,options=['GEOMETRY_NAME=parcel_shape'])
+    ds=ogr.GetDriverByName('GPKG').CreateDataSource(str(path));layer=ds.CreateLayer(path.stem,crs,ogr.wkbMultiLineString if profile.get('line_only') and kind=='result' else ogr.wkbUnknown,options=['GEOMETRY_NAME=parcel_shape'])
     for name,(native,subtype)in dissolve_field_types(kind).items():
         field=ogr.FieldDefn(name,native);field.SetSubType(subtype)
         if layer.CreateField(field)!=0:raise FixtureError('dissolve seed field failed')
@@ -993,7 +1039,7 @@ def dissolve_worker(action,root):
         'targets':{n:verify_dissolve(root/'outputs'/n,n.removesuffix('.gpkg'))for n in targets},'exact_inventory_verified':True}
 
 
-INDEPENDENT_CASES = (VERTICES_CASE, DIFFERENCE_CASE, DISSOLVE_CASE, OVERLAY_CASE, NODES_CASE, TRIM_CASE, RINGS_DIAGNOSTIC_CASE, RINGS_CASE, ENDPOINT_CASE, EXTENSION_CASE, PROXIMITY_CASE, DIAGNOSTIC_CASE, BUFFER_CASE, 'line-network-normalize', 'line-network-normalize-chains')
+INDEPENDENT_CASES = (ADJACENCY_CASE, VERTICES_CASE, DIFFERENCE_CASE, DISSOLVE_CASE, OVERLAY_CASE, NODES_CASE, TRIM_CASE, RINGS_DIAGNOSTIC_CASE, RINGS_CASE, ENDPOINT_CASE, EXTENSION_CASE, PROXIMITY_CASE, DIAGNOSTIC_CASE, BUFFER_CASE, 'line-network-normalize', 'line-network-normalize-chains')
 
 NORMALIZE_CASE = 'line-network-normalize'
 NORMALIZE_SOURCE = 'normalize-input.gpkg'
@@ -1007,6 +1053,7 @@ COMPOSITION_TARGETS = ('chains.gpkg','chain-edges.gpkg','edge-sources.gpkg')
 
 
 def network_profile(case):
+    if case==ADJACENCY_CASE:return {"ports":("result",),"targets":(ADJACENCY_TARGET,),"sources":ADJACENCY_SOURCES,"schema":ADJACENCY_SCHEMA,"title":ADJACENCY_TITLE}
     if case==VERTICES_CASE:return {"ports":VERTICES_FAMILIES,"targets":VERTICES_TARGETS,"sources":VERTICES_SOURCES,"schema":VERTICES_SCHEMA,"title":VERTICES_TITLE}
     if case==DIFFERENCE_CASE:return {"ports":("result",),"targets":(DIFFERENCE_TARGET,),"sources":DIFFERENCE_SOURCES,"schema":DIFFERENCE_SCHEMA,"title":DIFFERENCE_TITLE}
     if case==DISSOLVE_CASE:return {"ports":DISSOLVE_PORTS,"targets":DISSOLVE_TARGETS,"sources":DISSOLVE_SOURCES,"schema":DISSOLVE_SCHEMA,"title":DISSOLVE_TITLE}
@@ -1070,7 +1117,7 @@ def seed_proximity(path,kind):
     from osgeo import ogr,osr
     crs=osr.SpatialReference();crs.ImportFromEPSG(3857)
     ds=ogr.GetDriverByName('GPKG').CreateDataSource(str(path))
-    layer=ds.CreateLayer(path.stem,crs,ogr.wkbUnknown,options=['GEOMETRY_NAME='+('source_shape' if kind=='source' else 'reference_shape')])
+    layer=ds.CreateLayer(path.stem,crs,ogr.wkbMultiLineString if profile.get('line_only') and kind=='result' else ogr.wkbUnknown,options=['GEOMETRY_NAME='+('source_shape' if kind=='source' else 'reference_shape')])
     for name,native in proximity_field_types(kind).items():
         if layer.CreateField(ogr.FieldDefn(name,native))!=0:raise FixtureError('cannot seed proximity field')
     for row in proximity_features(kind):
@@ -1387,7 +1434,7 @@ def seed_normalize(path,case=NORMALIZE_CASE):
     from osgeo import ogr,osr
     crs=osr.SpatialReference();crs.ImportFromEPSG(3857)
     ds=ogr.GetDriverByName('GPKG').CreateDataSource(str(path))
-    layer=ds.CreateLayer(path.stem,crs,ogr.wkbUnknown,options=['GEOMETRY_NAME=network_shape'])
+    layer=ds.CreateLayer(path.stem,crs,ogr.wkbMultiLineString if profile.get('line_only') and kind=='result' else ogr.wkbUnknown,options=['GEOMETRY_NAME=network_shape'])
     fields=[('route_key',ogr.OFTInteger64 if case==COMPOSITION_CASE else ogr.OFTString),('note',ogr.OFTString),('grade',ogr.OFTInteger64),('enabled',ogr.OFTInteger)]
     if case==COMPOSITION_CASE:fields += [('chain_id',ogr.OFTInteger64),('member_no',ogr.OFTInteger64)]
     for name,kind in fields:
@@ -2358,6 +2405,7 @@ def validate_features(name, features):
 
 def worker(action, root, case=None):
     case=topology_case() if case is None else topology_case({"ADDP_ONLINE_TOPOLOGY_CASE":case})
+    if case==ADJACENCY_CASE:return adjacency_worker(action,root)
     if case==VERTICES_CASE:return vertices_worker(action,root)
     if case==DIFFERENCE_CASE:return difference_worker(action,root)
     if case==DISSOLVE_CASE:return dissolve_worker(action,root)
@@ -2476,7 +2524,7 @@ def runtime_worker(action, root):
 def archive_physical_evidence(root, directory, result, case=None):
     """Retain only this synthetic fixture's verified bytes for offline audit."""
     case=topology_case() if case is None else topology_case({'ADDP_ONLINE_TOPOLOGY_CASE':case})
-    sources,targets=(VERTICES_SOURCES,VERTICES_TARGETS) if case==VERTICES_CASE else (DIFFERENCE_SOURCES,(DIFFERENCE_TARGET,)) if case==DIFFERENCE_CASE else (DISSOLVE_SOURCES,tuple(result["targets"])) if case==DISSOLVE_CASE else (OVERLAY_SOURCES,(OVERLAY_TARGET,)) if case==OVERLAY_CASE else (NODES_SOURCES,NODES_TARGETS) if case==NODES_CASE else (TRIM_SOURCES,TRIM_TARGETS) if case==TRIM_CASE else (RINGS_DIAGNOSTIC_SOURCES,()) if case==RINGS_DIAGNOSTIC_CASE else (RINGS_SOURCES,(RINGS_TARGET,)) if case==RINGS_CASE else (ENDPOINT_SOURCES,ENDPOINT_TARGETS) if case==ENDPOINT_CASE else (EXTENSION_SOURCES,EXTENSION_TARGETS) if case==EXTENSION_CASE else (PROXIMITY_SOURCES,(PROXIMITY_TARGET,)) if case==PROXIMITY_CASE else (DIAGNOSTIC_SOURCES,()) if case==DIAGNOSTIC_CASE else (BUFFER_SOURCES,BUFFER_TARGETS) if case==BUFFER_CASE else ((network_profile(case)['source'],),network_profile(case)['targets']) if case in (NORMALIZE_CASE,COMPOSITION_CASE) else (SOURCES,TARGETS)
+    sources,targets=(ADJACENCY_SOURCES,(ADJACENCY_TARGET,)) if case==ADJACENCY_CASE else (VERTICES_SOURCES,VERTICES_TARGETS) if case==VERTICES_CASE else (DIFFERENCE_SOURCES,(DIFFERENCE_TARGET,)) if case==DIFFERENCE_CASE else (DISSOLVE_SOURCES,tuple(result["targets"])) if case==DISSOLVE_CASE else (OVERLAY_SOURCES,(OVERLAY_TARGET,)) if case==OVERLAY_CASE else (NODES_SOURCES,NODES_TARGETS) if case==NODES_CASE else (TRIM_SOURCES,TRIM_TARGETS) if case==TRIM_CASE else (RINGS_DIAGNOSTIC_SOURCES,()) if case==RINGS_DIAGNOSTIC_CASE else (RINGS_SOURCES,(RINGS_TARGET,)) if case==RINGS_CASE else (ENDPOINT_SOURCES,ENDPOINT_TARGETS) if case==ENDPOINT_CASE else (EXTENSION_SOURCES,EXTENSION_TARGETS) if case==EXTENSION_CASE else (PROXIMITY_SOURCES,(PROXIMITY_TARGET,)) if case==PROXIMITY_CASE else (DIAGNOSTIC_SOURCES,()) if case==DIAGNOSTIC_CASE else (BUFFER_SOURCES,BUFFER_TARGETS) if case==BUFFER_CASE else ((network_profile(case)['source'],),network_profile(case)['targets']) if case in (NORMALIZE_CASE,COMPOSITION_CASE) else (SOURCES,TARGETS)
     archive = directory / 'topology-physical'
     if archive.is_symlink() or (archive/'outputs').is_symlink():
         raise FixtureError('physical archive must not follow symlinks')
@@ -2496,7 +2544,7 @@ def archive_physical_evidence(root, directory, result, case=None):
 
 def main(action):
     case=topology_case()
-    export = NFSExport('topology', command)
+    export = NFSExport('topology', command, publication_staging=case==DIFFERENCE_CASE)
     secret = export.guard(os.environ)
     run_id = os.environ['ADDP_ONLINE_TEST_RUN_ID']
     if action in {'start','stop'}:

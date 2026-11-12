@@ -205,6 +205,7 @@ on:
           - line-extension
           - endpoint-snapping
           - vertex-extraction
+          - polygon-adjacency
           - polygon-rings
           - polygon-rings-input-diagnostics
           - line-trimming

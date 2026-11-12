@@ -600,3 +600,16 @@ class VerticesFixtureTest(unittest.TestCase):
         self.assertEqual(m.topology_case({'ADDP_ONLINE_TOPOLOGY_CASE':m.VERTICES_CASE}),m.VERTICES_CASE)
         with patch.object(m,'vertices_worker',return_value={'owned':True}) as worker,patch.object(m,'seed_snap',side_effect=AssertionError('old scenario')):
             self.assertEqual(m.worker('seed',Path('/unused'),m.VERTICES_CASE),{'owned':True});worker.assert_called_once_with('seed',Path('/unused'))
+
+
+class AdjacencyFixtureTest(unittest.TestCase):
+    def test_adjacency_handwritten_five_pairs_tiny_edge_and_exact_source_inventory(self):
+        self.assertEqual(m.network_profile(m.ADJACENCY_CASE)['sources'],m.ADJACENCY_SOURCES)
+        self.assertEqual([len(m.adjacency_features(k))for k in m.ADJACENCY_KINDS],[12,12,12,12,3])
+        result=m.adjacency_features('result')
+        self.assertEqual([(r['properties']['source_id_a'],r['properties']['source_id_b'],r['properties']['shared_length'])for r in result],[(90,10,2.),(10,70,2.),(40,30,8.),(60,20,3.),(80,50,2**-40)])
+        self.assertEqual(len(result[3]['geometry']['coordinates']),2)
+        self.assertEqual(result[4]['geometry']['coordinates'],[[[41,0],[41,2**-40]]])
+        self.assertEqual(m.adjacency_features('empty')[1]['geometry']['coordinates'],[])
+        self.assertEqual(m.adjacency_features('source')[9]['geometry']['coordinates'][0][0],[32+2**-40,1])
+        self.assertEqual(m.topology_case({'ADDP_ONLINE_TOPOLOGY_CASE':m.ADJACENCY_CASE}),m.ADJACENCY_CASE)

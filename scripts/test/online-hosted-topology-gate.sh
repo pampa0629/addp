@@ -11,8 +11,8 @@ export ADDP_ONLINE_TOPOLOGY_LINEAGE_PERMISSIONS=0
 case "$ADDP_ONLINE_TOPOLOGY_CASE" in
   line-nodes-lineage-permissions)
     export ADDP_ONLINE_TOPOLOGY_CASE=line-nodes ADDP_ONLINE_TOPOLOGY_LINEAGE_PERMISSIONS=1 ;;
-  vertex-extraction|geometry-difference|polygon-dissolve|intersection-overlay|line-nodes|line-trimming|full|line-network-normalize|line-network-normalize-chains|multi-distance-buffer|operator-input-diagnostics|line-proximity|line-extension|endpoint-snapping|polygon-rings|polygon-rings-input-diagnostics) ;;
-  *) echo 'ADDP_ONLINE_TOPOLOGY_CASE must be vertex-extraction, geometry-difference, polygon-dissolve, intersection-overlay, line-nodes, line-nodes-lineage-permissions, line-trimming, full, line-network-normalize, line-network-normalize-chains, multi-distance-buffer operator-input-diagnostics line-proximity, line-extension, endpoint-snapping or polygon-rings, polygon-rings-input-diagnostics' >&2; exit 1 ;;
+  vertex-extraction|geometry-difference|polygon-dissolve|intersection-overlay|line-nodes|line-trimming|full|line-network-normalize|line-network-normalize-chains|multi-distance-buffer|operator-input-diagnostics|line-proximity|line-extension|endpoint-snapping|polygon-rings|polygon-rings-input-diagnostics|polygon-adjacency) ;;
+  *) echo 'ADDP_ONLINE_TOPOLOGY_CASE must be vertex-extraction, geometry-difference, polygon-dissolve, intersection-overlay, line-nodes, line-nodes-lineage-permissions, line-trimming, full, line-network-normalize, line-network-normalize-chains, multi-distance-buffer operator-input-diagnostics line-proximity, line-extension, endpoint-snapping or polygon-rings, polygon-rings-input-diagnostics, polygon-adjacency' >&2; exit 1 ;;
 esac
 RUNTIME_CONTAINER=addp-topology-runtime
 RUNTIME_TAG=topology

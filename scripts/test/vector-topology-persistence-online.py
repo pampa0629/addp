@@ -624,8 +624,31 @@ def validate_difference_failure(execution,identifier,principal,spec):
     return details
 
 
+def adjacency_definition(sources,parent,failure=None):
+    spec=next((s for s in fixture.ADJACENCY_FAILURES if s[0]==failure),None)
+    if failure is not None and spec is None:raise SuiteError('unknown adjacency failure')
+    tasks=[{'id':'PRIVATE_ADJACENCY_NODE','operator':'check_polygon_adjacency','depends_on':['load_source'],
+            'params':{'input_gdf':{'$ref':'load_source'},'id_field':'parcel_key'}},
+           {'id':'load_source','operator':'load','depends_on':[],'params':{'locator':sources[spec[1] if spec else 0]}}]
+    if failure is None:tasks.append({'id':'save_result','operator':'save','depends_on':['PRIVATE_ADJACENCY_NODE'],'params':{'input_df':{'$ref':'PRIVATE_ADJACENCY_NODE'},'target_parent_locator':parent,'target_name':fixture.ADJACENCY_TARGET,'mode':'fail'}})
+    return {'tasks':tasks}
+
+
+def adjacency_diagnostic(spec):
+    return {'schema_version':'addp.execution-failure/v3','stage':'execution','reason':spec[3],
+        'operator':{'node_index':1,'operator_id':'check_polygon_adjacency',**({'parameter':spec[4]}if spec[4]else{})}}
+
+
+def validate_adjacency_failure(execution,identifier,principal,spec):
+    if type(execution.get('triggered_by')) is not int or execution['triggered_by']!=principal:raise SuiteError('adjacency failure User differs')
+    details=validate_input_failure(execution,(spec[0],'check_polygon_adjacency',spec[3],spec[4],''),identifier)
+    if any(t in json.dumps(details,ensure_ascii=False)for t in ('PRIVATE_ADJACENCY','parcel_key','source_shape',*fixture.ADJACENCY_SOURCES)):raise SuiteError('adjacency public diagnosis leaked private input')
+    return details
+
+
 def mixed_overlay_profile(case):
     physical=fixture.mixed_fixture_profile(case)
+    if case==fixture.ADJACENCY_CASE:return {**physical,'schema':fixture.ADJACENCY_SCHEMA,'definition':adjacency_definition,'diagnostic':adjacency_diagnostic,'failure_validator':validate_adjacency_failure,'failures':fixture.ADJACENCY_FAILURES,'prefix':'adjacency','checkpoint':'topology-adjacency-checkpoint.json','input_nodes':('load_source',)}
     if case==fixture.OVERLAY_CASE:return {**physical,'schema':fixture.OVERLAY_SCHEMA,'definition':overlay_definition,'diagnostic':overlay_diagnostic,'failure_validator':validate_overlay_failure,'failures':fixture.OVERLAY_FAILURES,'prefix':'overlay','checkpoint':'topology-overlay-checkpoint.json'}
     if case==fixture.DIFFERENCE_CASE:return {**physical,'schema':fixture.DIFFERENCE_SCHEMA,'definition':difference_definition,'diagnostic':difference_diagnostic,'failure_validator':validate_difference_failure,'failures':fixture.DIFFERENCE_FAILURES,'prefix':'difference','checkpoint':'topology-difference-checkpoint.json'}
     raise SuiteError('unknown mixed overlay owner case')
@@ -752,7 +775,7 @@ def run_overlay_scenario(repository,env,client,physical_runner,browser_runner):
 
 
 def run_mixed_overlay_scenario(repository,env,client,physical_runner,browser_runner,case):
-    profile=mixed_overlay_profile(case);schema=profile['schema'];names=profile['sources'];target_name=profile['target'];count=profile['result_count']
+    profile=mixed_overlay_profile(case);input_nodes=profile.get('input_nodes',('load_a','load_b'));schema=profile['schema'];names=profile['sources'];target_name=profile['target'];count=profile['result_count']
     definition=profile['definition'];validate_failure=profile['failure_validator'];diagnostic=profile['diagnostic'];features=profile['features']
     tenant=positive(env['ADDP_ONLINE_TEST_TENANT_ID'],'mixed overlay tenant')
     if tenant<=1:raise SuiteError('mixed overlay forbids default Tenant')
@@ -782,7 +805,7 @@ def run_mixed_overlay_scenario(repository,env,client,physical_runner,browser_run
     execution=raster.wait_execution(client,'develop',identifier,remaining())
     if execution.get('execution_id')!=identifier or type(execution.get('triggered_by')) is not int or execution['triggered_by']!=principal:raise SuiteError('mixed overlay execution actor differs')
     if obj(obj(execution.get('execution_config'),'mixed overlay frozen config').get('content'),'mixed overlay content').get('workflow_definition')!=workflow:raise SuiteError('mixed overlay frozen DAG differs')
-    facts,scans=validate_saved_success(execution,[('input.load_a',locators[0]),('input.load_b',locators[1])],{'result':target},1)
+    facts,scans=validate_saved_success(execution,[(f'input.{node}',locator)for node,locator in zip(input_nodes,locators)],{'result':target},1)
     observed=[]
     for scan in scans:
         value=raster.wait_execution(client,'meta',scan['execution_id'],remaining())
@@ -814,9 +837,9 @@ def run_mixed_overlay_scenario(repository,env,client,physical_runner,browser_run
     def persist(stage):
         checkpoint['stage']=stage;path.write_text(json.dumps(checkpoint,ensure_ascii=False,indent=2)+'\n')
     persist('before_lineage')
-    for source in sources[:2]:raster.wait_lineage(client,source['id'],output['item_id'],identifier,remaining())
+    for source in sources[:len(input_nodes)]:raster.wait_lineage(client,source['id'],output['item_id'],identifier,remaining())
     graph=obj(client.request('GET',f'/api/v1/meta/lineage/graph?subject_kind=data_item&item_id={output["item_id"]}&direction=upstream',(200,)).payload,'mixed overlay original dual-source graph')
-    validate_proximity_graph(graph,sources[:2],output['item_id'],identifier);checkpoint['raw_lineage']=graph
+    validate_proximity_graph(graph,sources[:len(input_nodes)],output['item_id'],identifier);checkpoint['raw_lineage']=graph
     expected_scans=sorted([*initial,*[s['execution_id'] for s in scans]])
     if scan_ids(client)!=expected_scans:raise SuiteError('mixed overlay scan inventory differs before failures')
     for spec in profile['failures']:
@@ -828,7 +851,7 @@ def run_mixed_overlay_scenario(repository,env,client,physical_runner,browser_run
         validate_failure(failed_monitor,failed_id,principal,spec)
         if failed_monitor.get('module')!='develop' or failed_monitor.get('error_details')!=failed.get('error_details'):raise SuiteError('mixed overlay failure Monitor differs')
         failure={'key':key,'execution_id':failed_id,'definition':failed_workflow,'execution':failed,'monitor':failed_monitor,'expected_diagnostic':diagnostic(spec),'source_lineage':[]}
-        for index in spec[1:3]:
+        for index in dict.fromkeys(spec[1:3]):
             source=sources[index]
             failed_graph=obj(client.request('GET',f'/api/v1/meta/lineage/graph?subject_kind=data_item&item_id={source["id"]}&direction=downstream',(200,)).payload,'mixed overlay failed source lineage')
             if failed_graph.get('truncated') is not False or any(e.get('relation_kind')=='derive' and e.get('evidence',{}).get('execution_id')==failed_id for e in array(failed_graph.get('edges'),'mixed overlay failed edges')):raise SuiteError('mixed overlay failure published derive or incomplete graph')
@@ -1134,8 +1157,8 @@ def validate_proximity_success(execution,sources,target):
 def validate_proximity_graph(graph,sources,target,identifier):
     if graph.get('truncated') is not False:raise SuiteError('proximity lineage graph is truncated or incomplete')
     edges=[edge for edge in array(graph.get('edges'),'proximity graph edges') if edge.get('relation_kind')=='derive' and edge.get('status')=='active' and edge.get('evidence',{}).get('execution_id')==identifier]
-    if len(edges)!=2 or any(type(e.get(side,{}).get('item_id')) is not int for e in edges for side in ('source','target')) or {(e.get('source',{}).get('item_id'),e.get('target',{}).get('item_id')) for e in edges}!={(s['id'],target) for s in sources}:
-        raise SuiteError('proximity requires exactly two current-execution active source edges')
+    if len(edges)!=len(sources) or any(type(e.get(side,{}).get('item_id')) is not int for e in edges for side in ('source','target')) or {(e.get('source',{}).get('item_id'),e.get('target',{}).get('item_id')) for e in edges}!={(s['id'],target) for s in sources}:
+        raise SuiteError('lineage requires exactly the declared current-execution active source edges')
     return edges
 
 
@@ -1658,7 +1681,7 @@ def validate_difference_browser_raw(raw,evidence):return validate_mixed_overlay_
 
 
 def validate_mixed_overlay_browser_raw(raw,evidence,case):
-    profile=mixed_overlay_profile(case);count=profile['result_count'];validate_failure=profile['failure_validator']
+    profile=mixed_overlay_profile(case);input_count=len(profile.get('input_nodes',('load_a','load_b')));count=profile['result_count'];validate_failure=profile['failure_validator']
     import base64,struct
     if (raw.get('schema_version')!=profile['schema']+'-browser-raw/v1' or raw.get('result')!='passed' or raw.get('stage')!='complete'
         or any(raw.get(k)!=evidence.get(k) for k in ('case','run_id','execution_id')) or raw.get('publication_requests')!=[]):raise SuiteError('intersection browser raw incomplete or foreign')
@@ -1682,17 +1705,20 @@ def validate_mixed_overlay_browser_raw(raw,evidence,case):
         except (ValueError,TypeError,IndexError,struct.error) as e:raise SuiteError('intersection canonical XY EPSG3857 EWKB missing') from e
     decoded=array(observation.get('decoded_rows'),'intersection decoded original geometry')
     if decoded!=expected or any(type(a['properties'][k]) is not type(b['properties'][k]) for a,b in zip(decoded,expected) for k in fields):raise SuiteError('intersection decoded native coordinates/attributes differ')
-    validate_proximity_graph(observation['graph'],evidence['sources'][:2],output['item_id'],evidence['execution_id'])
-    validate_proximity_graph(observation['lineage_page'],evidence['sources'][:2],output['item_id'],evidence['execution_id'])
-    validate_proximity_graph({**observation['lineage_page'],'edges':observation['lineage_rendered']['edges']},evidence['sources'][:2],output['item_id'],evidence['execution_id'])
+    validate_proximity_graph(observation['graph'],evidence['sources'][:input_count],output['item_id'],evidence['execution_id'])
+    validate_proximity_graph(observation['lineage_page'],evidence['sources'][:input_count],output['item_id'],evidence['execution_id'])
+    validate_proximity_graph({**observation['lineage_page'],'edges':observation['lineage_rendered']['edges']},evidence['sources'][:input_count],output['item_id'],evidence['execution_id'])
     labels=array(obj(observation.get('lineage_canvas'),'intersection painted graph').get('rows'),'intersection painted labels')
-    if not all(any(s['name'] in row.get('text','') for row in labels) for s in [*evidence['sources'][:2],output]) or len(array(observation['lineage_canvas'].get('paths'),'intersection painted paths'))<2:raise SuiteError('intersection source graph not painted')
+    if not all(any(s['name'] in row.get('text','') for row in labels) for s in [*evidence['sources'][:input_count],output]) or len(array(observation['lineage_canvas'].get('paths'),'intersection painted paths'))<input_count:raise SuiteError('intersection source graph not painted')
     rendered=obj(observation.get('rendered'),'intersection OL data');features=array(rendered.get('features'),'intersection OL features')
-    if rendered.get('projection')!='EPSG:3857' or len(features)!=count or sum(v.get('geometry',{}).get('type')=='GeometryCollection' for v in features)!=1 or any(type(rendered.get('collection_pixels',{}).get(k)) is not int or rendered['collection_pixels'][k]<=10 for k in ('point','line','polygon')):raise SuiteError('intersection mixed/collection rendering incomplete')
-    collection=next(row['geometry']for row in expected if row['geometry']['type']=='GeometryCollection')
-    members=array(rendered['collection_pixels'].get('members'),'mixed collection member pixels')
-    kinds={'Point':'point','LineString':'line','Polygon':'polygon'}
-    if [v.get('kind')for v in members]!=[kinds[v['type']]for v in collection['geometries']]or any(type(v.get('pixels'))is not int or v['pixels']<=10 for v in members):raise SuiteError('mixed collection individual members not painted')
+    if profile.get('line_only'):
+        if rendered.get('projection')!='EPSG:3857' or len(features)!=count or any(v.get('geometry',{}).get('type')!='MultiLineString'for v in features) or type(rendered.get('painted_pixels'))is not int or rendered['painted_pixels']<=30 or type(rendered.get('shared_edge_pixels'))is not int or rendered['shared_edge_pixels']<=0:raise SuiteError('adjacency line rendering incomplete')
+    else:
+        if rendered.get('projection')!='EPSG:3857' or len(features)!=count or sum(v.get('geometry',{}).get('type')=='GeometryCollection' for v in features)!=1 or any(type(rendered.get('collection_pixels',{}).get(k)) is not int or rendered['collection_pixels'][k]<=10 for k in ('point','line','polygon')):raise SuiteError('intersection mixed/collection rendering incomplete')
+        collection=next(row['geometry']for row in expected if row['geometry']['type']=='GeometryCollection')
+        members=array(rendered['collection_pixels'].get('members'),'mixed collection member pixels')
+        kinds={'Point':'point','LineString':'line','Polygon':'polygon'}
+        if [v.get('kind')for v in members]!=[kinds[v['type']]for v in collection['geometries']]or any(type(v.get('pixels'))is not int or v['pixels']<=10 for v in members):raise SuiteError('mixed collection individual members not painted')
     script="""import assert from 'node:assert/strict';import{pathToFileURL}from'node:url';
 const{webMercatorPreviewGeometry}=await import(pathToFileURL(process.argv[1]));const{decodePreviewEWKB}=await import(pathToFileURL(process.argv[2]));let text='';for await(const part of process.stdin)text+=part;
 const{actual,expected,preview,geometry_column}=JSON.parse(text),keys=rows=>rows.map(row=>JSON.stringify(row)).sort();
@@ -1744,6 +1770,8 @@ def browser(repository, env, evidence):
     else:binding=report
     if binding != {**evidence, 'schema_version': schema, 'result': 'passed'}:
         raise SuiteError('browser report does not bind the exact run, User and outputs')
+    if case==fixture.ADJACENCY_CASE:
+        raw=obj(json.loads((path.parent/'topology-adjacency-browser-raw.json').read_text()),'adjacency browser raw');validate_mixed_overlay_browser_raw(raw,evidence,case)
     if case==fixture.DIFFERENCE_CASE:
         validate_difference_browser_raw(obj(json.loads((path.parent/'topology-difference-browser-raw.json').read_text()),'difference browser raw'),evidence)
     if case==fixture.DISSOLVE_CASE:
@@ -1771,6 +1799,7 @@ def run_scenario(repository, env, client, physical_runner=physical, browser_runn
         return run_nodes_lineage_permissions(repository, env, client, physical_runner)
     if fixture.topology_case(env)==fixture.VERTICES_CASE:
         return run_vertices_scenario(repository,env,client,physical_runner,browser_runner)
+    if fixture.topology_case(env)==fixture.ADJACENCY_CASE:return run_mixed_overlay_scenario(repository,env,client,physical_runner,browser_runner,fixture.ADJACENCY_CASE)
     if fixture.topology_case(env)==fixture.DIFFERENCE_CASE:
         return run_difference_scenario(repository,env,client,physical_runner,browser_runner)
     if fixture.topology_case(env)==fixture.DISSOLVE_CASE:

@@ -1522,3 +1522,16 @@ uniform／quartic各12条成功COG链，共24条：省略权重、显式全1、�
 六份源字节前后不变，Grant撤销后不可见、六临时任务删除且读取404、六物理源和六产物及目标目录标记删除，部署和Infra单独报告清理。初轮失败保留，源变化／未支持类型／原生预算由确定性及原生层拒绝，不把这些单测冒充跨模块权限或容量认证。无派生缓存断言、不新增完整内容授权准入；Feather V1、IPC stream、unsigned／嵌套／dictionary／duration／写出仍不在支持范围，SKP精确组成授权继续关闭。实现和登记不等于正式Hosted通过。
 
 Feather 日期与定点小数扩展复用同一 Hosted 场景和六份来源。Meta 与 Manager 须核对原生日期类型、Decimal128/256 的精度、小数位数及可空性。API 与实际翻页须逐值比较日期及定点文本，含纪元前日期、闰日、空值和尾零。Transfer 产物须由独立 Parquet reader 逐行检查 DATE/DECIMAL 逻辑类型、精度、小数位数及值。
+
+
+### 面邻检查独立普通用户场景（polygon-adjacency）
+
+复用 `vector-topology-persistence` 唯一 Hosted 入口，`topology_case=polygon-adjacency` 仅运行一次成功、四次只读失败及一份线成果，不运行旧整包业务或容量场景。先完成脚本和确定性验证；输入五份 DataItem 可读、唯一 outputs 成果创建批准、源及成果元数据/血缘可见的正式授权与部署证据具备后，才允许单次真实派发。权限最小单元仍为 DataItem，不对内部文件组成另授权限；本场景不增人员权限、不代替专项授权，也不为派发绕过关闭的公共保存准入。
+
+成功源含12条 EPSG:3857 有效面，使用非默认活动几何列 source_shape、未排序整型来源 parcel_key，以及同名业务 geometry 和 nullable note 字段。只输出5对 MultiLineString：普通邻边两对、孔洞共边一对、两部件合并成一条来源对一对、长度严格为 2^-40 的微小共边一对；点接触和微小缝隙不报告。物理 oracle 用手写坐标及 OGR 原生点重载，严格检查 ID 类型、原行顺序、完整部件、长度、CRS，不调用生产算法生成期望，不使用 epsilon 或十进制舍入。成果 adjacency-lines.gpkg 仅含 source_id_a、source_id_b、shared_length 和真实几何；FID 与业务 ID 分开核对。源属性不复制到成果，五源字节及 Meta 前后保持不变。
+
+四份独立坏源分别验证重复 ID、EMPTY 面、地理 CRS、微小正面积重叠，诊断依次为 operator_input_invalid/input_gdf、operator_input_invalid/input_gdf、operator_crs_invalid/无参数、operator_input_overlap/input_gdf，均无 field。失败 DAG 仅 load 与检查，不申请失败保存目标；断言无成果、扫描、产出事实或本次 derive、扫描库存和物理目录不变，并在 Develop/Monitor 中英文实页核对固定原因与复制内容，不泄漏字段、坐标或路径。不把本场景只读失败称作实际执行了下游保存阻断，后者保留既有 Native/DAG 证据。
+
+成功保存采用原协议自动基础扫描及成果初始只读授权；预览所需深扫如适用必须单独保留证据，不手工补扫或发 Grant 冒充自动阶段。严格核对正整数 physical==Meta 大小、公开 tenant_id/triggered_by 同一普通 User/非默认 Tenant、create 事实及 Monitor。面邻双方 ID 来自同一源，持久血缘只应有源 DataItem→线成果一条当前 execution active derive；不是双源血缘。浏览器核5条实际 EWKB/OL线坐标与属性、可见共边像素及截图；微小共边仅保证物理/API/OL数据精度，不要求亚像素边独立可见。读取导航当次实际请求绑定身份，禁写监听，完整失败页与原始 Meta/图/预览归档。最终再核字节、扫描库存及 owned NFS/Runtime/部署/Infra 零残留；阶段 incomplete 不能代替最终通过，清理不认证业务 DELETE。
+
+标准验证沿 `make test-vector-topology-online-runner`、定向 `make test-geopython-workflow GEOPYTHON_WORKFLOW_TEST_ARGS='-n 0 -k adjacency_t4'` 及现有 Console 浏览器发现/映射核验。既有 Platform 登记、Console 与 GeoPython CI 同次登记覆盖；不新增 suite、Job、服务或权限。本段是待验收约定，不代表真实 T4 已通过。

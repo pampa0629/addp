@@ -494,6 +494,72 @@ test('多距缓冲独立普通User单成果与重名拒绝', async ({page}) => {
 
 // Literal acceptance expectations: do not derive these from the production formatter.
 const inputDiagnosticText = {
+
+  "adjacency-id": {
+    "zh-cn": [
+      "待检查的面图层或来源标识配置不符合要求。",
+      "面邻检查",
+      "源图层（input_gdf）",
+      "",
+      "请提供唯一活动几何列、有效非空有限二维面，并将id_field指向非空唯一的非几何标量列；允许空表。"
+    ],
+    "en": [
+      "The polygon layer or source identifier configuration is invalid.",
+      "Check polygon adjacency",
+      "Source layer (input_gdf)",
+      "",
+      "Provide one active geometry column and valid non-empty finite XY polygons; id_field must name unique non-null scalar identifiers. Empty batches are allowed."
+    ]
+  },
+  "adjacency-empty": {
+    "zh-cn": [
+      "待检查的面图层或来源标识配置不符合要求。",
+      "面邻检查",
+      "源图层（input_gdf）",
+      "",
+      "请提供唯一活动几何列、有效非空有限二维面，并将id_field指向非空唯一的非几何标量列；允许空表。"
+    ],
+    "en": [
+      "The polygon layer or source identifier configuration is invalid.",
+      "Check polygon adjacency",
+      "Source layer (input_gdf)",
+      "",
+      "Provide one active geometry column and valid non-empty finite XY polygons; id_field must name unique non-null scalar identifiers. Empty batches are allowed."
+    ]
+  },
+  "adjacency-crs": {
+    "zh-cn": [
+      "面邻检查要求已知投影坐标系及匹配、有限且为正的水平单位。",
+      "面邻检查",
+      "",
+      "",
+      "请显式统一为符合要求的投影坐标系，长度沿原单位，不自动换算米。"
+    ],
+    "en": [
+      "Polygon adjacency requires a known projected CRS with matching finite positive horizontal units.",
+      "Check polygon adjacency",
+      "",
+      "",
+      "Explicitly use a suitable projected CRS; lengths use the original coordinate units without conversion to metres."
+    ]
+  },
+  "adjacency-overlap": {
+    "zh-cn": [
+      "源面存在正面积重叠，包含或重复面也不能参与面邻检查。",
+      "面邻检查",
+      "源图层（input_gdf）",
+      "",
+      "请先执行面叠检查并显式处理重叠、包含或重复面，再执行面邻检查；不会自动融合或修复。"
+    ],
+    "en": [
+      "Source polygons overlap in area, including containment or duplicates.",
+      "Check polygon adjacency",
+      "Source layer (input_gdf)",
+      "",
+      "Run polygon overlap checking and explicitly resolve overlaps, containment or duplicates first; no automatic union or repair is performed."
+    ]
+  }
+,
 "a-id": {
     "zh-cn": [
       "输入图层不符合算子的类型、字段、几何或标识要求。",
@@ -806,14 +872,14 @@ async function assertInputDiagnosticPanel(panel,key,locale,executionID) {
 async function verifyInputDiagnosticCase(page,caseName,supplied=null) {
   const evidence=supplied||JSON.parse(process.env.ADDP_ONLINE_TOPOLOGY_EVIDENCE||'{}')
   expect(evidence.case).toBe(caseName)
-  const rings=caseName==='polygon-rings-input-diagnostics',overlay=caseName==='intersection-overlay',dissolve=caseName==='polygon-dissolve',difference=caseName==='geometry-difference'
-  const keys=difference?['difference-id','difference-geometry','difference-mask','difference-crs']:dissolve?["dissolve-id-missing", "dissolve-id-duplicate", "dissolve-invalid", "dissolve-crs", "dissolve-groups-type", "dissolve-groups-duplicate", "dissolve-groups-missing", "dissolve-fields"]:overlay?['a-id','b-id','crs','fields']:rings?['ring-field-conflict','ring-geometry-invalid']:['field-conflict','number-array','crs-mismatch','positive-number']
+  const rings=caseName==='polygon-rings-input-diagnostics',overlay=caseName==='intersection-overlay',dissolve=caseName==='polygon-dissolve',difference=caseName==='geometry-difference',adjacency=caseName==='polygon-adjacency'
+  const keys=adjacency?['adjacency-id','adjacency-empty','adjacency-crs','adjacency-overlap']:difference?['difference-id','difference-geometry','difference-mask','difference-crs']:dissolve?["dissolve-id-missing", "dissolve-id-duplicate", "dissolve-invalid", "dissolve-crs", "dissolve-groups-type", "dissolve-groups-duplicate", "dissolve-groups-missing", "dissolve-fields"]:overlay?['a-id','b-id','crs','fields']:rings?['ring-field-conflict','ring-geometry-invalid']:['field-conflict','number-array','crs-mismatch','positive-number']
   expect(evidence.executions.map(run=>run.key)).toEqual(keys)
   expect(new Set(evidence.executions.map(run=>run.execution_id)).size).toBe(keys.length)
   const expectedIdentity={principalID:evidence.principal_id,tenantID:evidence.tenant_id,permissions:evidence.permissions_verified}
   await page.context().grantPermissions(['clipboard-read','clipboard-write'],{origin:process.env.CONSOLE_URL})
   // The combined overlay scene is already logged in; standalone diagnostics still log in here.
-  let loggedIn=(overlay||dissolve||difference)&&supplied!==null
+  let loggedIn=(overlay||dissolve||difference||adjacency)&&supplied!==null
   const observations=[],publicationRequests=[]
   page.on('request',request=>{
     const path=new URL(request.url()).pathname
@@ -865,6 +931,7 @@ async function verifyInputDiagnosticCase(page,caseName,supplied=null) {
   else if(rings) expect(observations).toHaveLength(8)
   else expect(observations).toHaveLength(16)
   expect(publicationRequests).toEqual([])
+  if(adjacency)return observations
   if(overlay||dissolve||difference)return observations
   writeFileSync(resolve(process.env.ADDP_ONLINE_ARTIFACT_DIR,'topology-browser.json'),JSON.stringify({
     ...evidence,schema_version:(rings?'addp.polygon-rings-input-diagnostics':'addp.operator-input-diagnostics')+'-browser/v1',result:'passed',observations},null,2)+'\n')
@@ -922,7 +989,7 @@ async function assertProximityPointMap(renderer,expected) {
 function assertProximityLineage(graph,evidence) {
   expect(graph.truncated).toBe(false)
   const edges=graph.edges.filter(edge=>edge.relation_kind==='derive'&&edge.status==='active'&&edge.evidence?.execution_id===evidence.execution_id)
-  expect(edges).toHaveLength(2)
+  expect(edges).toHaveLength(evidence.sources.length)
   expect(edges.map(edge=>[edge.source.item_id,edge.target.item_id]).sort((a,b)=>a[0]-b[0]))
     .toEqual(evidence.sources.map(source=>[source.id,evidence.output.item_id]).sort((a,b)=>a[0]-b[0]))
 }
@@ -1746,6 +1813,7 @@ async function assertOverlayCollectionPixels(renderer) {
 }
 
 const mixedOverlayCases={
+  'polygon-adjacency':{schema:'addp.polygon-adjacency',sourceCount:5,resultCount:5,prefix:'adjacency',raw:'topology-adjacency-browser-raw.json',inputCount:1,lineOnly:true},
   'intersection-overlay':{schema:'addp.intersection-overlay',sourceCount:4,resultCount:16,prefix:'intersection',raw:'topology-overlay-browser-raw.json'},
   'geometry-difference':{schema:'addp.geometry-difference',sourceCount:5,resultCount:9,prefix:'difference',raw:'topology-difference-browser-raw.json'},
 }
@@ -1754,7 +1822,7 @@ async function verifyOverlayCase(page){return verifyMixedOverlayCase(page,'inter
 async function verifyDifferenceCase(page){return verifyMixedOverlayCase(page,'geometry-difference')}
 
 async function verifyMixedOverlayCase(page,caseName) {
-  const config=mixedOverlayCases[caseName]
+  const config=mixedOverlayCases[caseName],inputCount=config.inputCount||2
   const evidence = JSON.parse(process.env.ADDP_ONLINE_TOPOLOGY_EVIDENCE || '{}'), directory = process.env.ADDP_ONLINE_ARTIFACT_DIR
   await observeLineageCanvas(page)
   expect(evidence.case).toBe(caseName); expect(evidence.sources).toHaveLength(config.sourceCount); expect(evidence.outputs).toHaveLength(1)
@@ -1785,7 +1853,7 @@ async function verifyMixedOverlayCase(page,caseName) {
     for (const source of evidence.sources) { const item = await json(await api.get(`/api/v1/meta/items/${source.id}`), 'unchanged intersection source'); expect(item).toEqual(source.before); observation.sources.push({ item_id: source.id, item }) }
     observation.output = await json(await api.get(`/api/v1/meta/items/${output.item_id}`), 'intersection output Meta'); expect(observation.output).toEqual(output.before)
     observation.graph = await json(await api.get(`/api/v1/meta/lineage/graph?subject_kind=data_item&item_id=${output.item_id}&direction=upstream`), 'intersection original graph')
-    assertProximityLineage(observation.graph, { ...evidence, sources: evidence.sources.slice(0, 2), output })
+    assertProximityLineage(observation.graph, { ...evidence, sources: evidence.sources.slice(0, inputCount), output })
   } finally { await api.dispose() }
   persist('preview_observed')
   const preview = observation.preview, data = preview.data
@@ -1798,15 +1866,20 @@ async function verifyMixedOverlayCase(page,caseName) {
   expect(observation.decoded_rows).toEqual(expected)
   const table = frame.locator('.table-preview'), renderer = table.locator('.openlayers-map-renderer')
   await expect(table).toBeVisible(); await expect(table.locator('.map-placeholder')).toHaveCount(0)
-  observation.rendered = await assertOverlayMap(renderer, expected)
+  if(config.lineOnly){
+    const rendered=await assertExtensionLineMap(renderer,expected,[2,1])
+    observation.rendered={projection:rendered.projection,features:rendered.features.map(({properties,type,coordinates})=>({properties,geometry:{type,coordinates}})),painted_pixels:rendered.painted_pixels,shared_edge_pixels:rendered.new_segment_pixels}
+  }else observation.rendered = await assertOverlayMap(renderer, expected)
   await page.screenshot({ path: resolve(directory, config.prefix+'-map.png') }); persist('map_verified')
-  observation.rendered.collection_pixels = await assertOverlayCollectionPixels(renderer)
-  await page.screenshot({ path: resolve(directory, config.prefix+'-collection-map.png') }); persist('collection_map_verified')
+  if(!config.lineOnly){
+    observation.rendered.collection_pixels = await assertOverlayCollectionPixels(renderer)
+    await page.screenshot({ path: resolve(directory, config.prefix+'-collection-map.png') }); persist('collection_map_verified')
+  }
   await frame.getByRole('tab', { name: '属性', exact: true }).click(); await expect(frame.locator('.attributes-tab-pane')).toContainText(output.layer_name)
   const graphRead = page.waitForResponse(r => { const u = new URL(r.url()); return r.request().method() === 'GET' && u.pathname === '/api/v1/meta/lineage/graph' && u.searchParams.get('item_id') === String(output.item_id) && u.searchParams.get('direction') === 'both' })
   await frame.getByRole('tab', { name: '血缘', exact: true }).click()
   const graphResponse = await graphRead, graphAPI = await browserAPIFromResponse(graphResponse, process.env.GATEWAY_URL, identity)
-  try { observation.lineage_page = await json(graphResponse, 'intersection lineage page'); assertProximityLineage(observation.lineage_page, { ...evidence, sources: evidence.sources.slice(0, 2), output }) } finally { await graphAPI.dispose() }
+  try { observation.lineage_page = await json(graphResponse, 'intersection lineage page'); assertProximityLineage(observation.lineage_page, { ...evidence, sources: evidence.sources.slice(0, inputCount), output }) } finally { await graphAPI.dispose() }
   const viewer = frame.locator('.lineage-viewer'), canvas = viewer.locator('.lineage-canvas canvas').first()
   await expect(canvas).toBeVisible()
   await expect.poll(async () => {
@@ -1815,13 +1888,13 @@ async function verifyMixedOverlayCase(page,caseName) {
       return graph ? { nodes: graph.getNodes().map(item => item.getModel()._node), edges: graph.getEdges().map(item => item.getModel()._edge) } : null
     })
     return observation.lineage_rendered?.edges?.length || 0
-  }).toBe(2)
+  }).toBe(inputCount)
   await expect.poll(async () => {
     observation.lineage_canvas = await lineageCanvasSnapshot(canvas)
-    return [...evidence.sources.slice(0, 2).map(source => source.name), output.name].every(name => observation.lineage_canvas.rows.some(row => row.text.includes(name)))
+    return [...evidence.sources.slice(0, inputCount).map(source => source.name), output.name].every(name => observation.lineage_canvas.rows.some(row => row.text.includes(name)))
   }).toBe(true)
-  expect(observation.lineage_canvas.paths.length).toBeGreaterThanOrEqual(2)
-  assertProximityLineage({ ...observation.lineage_page, edges: observation.lineage_rendered.edges }, { ...evidence, sources: evidence.sources.slice(0, 2), output })
+  expect(observation.lineage_canvas.paths.length).toBeGreaterThanOrEqual(inputCount)
+  assertProximityLineage({ ...observation.lineage_page, edges: observation.lineage_rendered.edges }, { ...evidence, sources: evidence.sources.slice(0, inputCount), output })
   await page.screenshot({ path: resolve(directory, config.prefix+'-lineage.png') }); persist('lineage_verified')
   const observations = await verifyInputDiagnosticCase(page, caseName, { ...evidence, executions: evidence.failures.map(f => ({ ...f, execution: { error_details: f.error_details } })) })
   raw.failures = evidence.failures.map(f => ({ key: f.key, execution_id: f.execution_id, observations: observations.filter(v => v.key === f.key) }))
@@ -1955,3 +2028,5 @@ test('顶点提取独立普通User三Point成果及七失败保护',async({page}
   const evidence=JSON.parse(process.env.ADDP_ONLINE_TOPOLOGY_EVIDENCE||'{}');await observeLineageCanvas(page)
   await verifyVerticesCase(page,evidence,process.env.ADDP_ONLINE_ARTIFACT_DIR)
 })
+
+test('面邻检查独立普通User单源线成果及四失败保护',async({page})=>verifyMixedOverlayCase(page,'polygon-adjacency'))

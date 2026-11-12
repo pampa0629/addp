@@ -11163,3 +11163,51 @@ def test_polygon_adjacency_no_tolerance_and_all_adjacent_pairs():
     source=overlap_frame([box(0,0,1,1),box(1,0,2,1),box(0,1,1,2),box(2+2**-40,0,3,1)])
     result=adjacency(source)
     assert list(zip(result.source_id_a,result.source_id_b,result.shared_length))==[(0,1,1.),(0,2,1.)]
+
+
+@pytest.mark.parametrize('problem',[None,'coordinate','identity','length','order','field_type','extra_output','source_changed','missing_part','tiny_edge'])
+def test_adjacency_t4_one_save_four_readonly_refusals_independent_ogr(tmp_path,problem):
+    import importlib
+    from osgeo import ogr
+    f=importlib.import_module('business.scripts.online-vector-topology-fixture');a=importlib.import_module('scripts.test.vector-topology-persistence-online')
+    (tmp_path/'outputs').mkdir();(tmp_path/'.addp-online-owner').touch();seed=f.worker('seed',tmp_path,f.ADJACENCY_CASE)
+    def definition(failure=None):
+        value=a.adjacency_definition(list(f.ADJACENCY_SOURCES),'unused',failure)
+        for task in value['tasks']:
+            if task['operator']=='load':task['params']={'connection_info':{'engine_type':'nfs','mount_path':str(tmp_path)},'path':task['params']['locator']}
+            elif task['operator']=='save':
+                name=task['params'].pop('target_name');task['params'].pop('target_parent_locator');task['params'].update(connection_info={'engine_type':'nfs','mount_path':str(tmp_path)},path='outputs/'+name)
+        return value
+    result=execute_workflow(definition());assert result['status']=='success',result
+    native=f.worker('verify',tmp_path,f.ADJACENCY_CASE);assert native['sources']==seed['sources']
+    table=native['targets'][f.ADJACENCY_TARGET];assert table['feature_count']==5
+    assert [row['properties']['shared_length']for row in table['features']]==[2.,2.,8.,3.,2**-40]
+    source=get_operator('load')(connection_info={'engine_type':'nfs','mount_path':str(tmp_path)},path=f.ADJACENCY_SOURCES[0])
+    assert source.geometry.name=='source_shape' and source['geometry'].iloc[0]=='business-0'
+    assert source.parcel_key.dtype=='Int64' and pd.isna(source.note.iloc[1])
+    if problem is None:
+        for spec in f.ADJACENCY_FAILURES:
+            negative=definition(spec[0]);assert [t['operator']for t in negative['tasks']]==['check_polygon_adjacency','load']
+            failed=execute_workflow(negative);assert failed['status']=='failed'and failed['error_code']=='INVALID_PARAMS',failed
+            assert failed['diagnostic']==a.adjacency_diagnostic(spec),failed
+            assert f.worker('verify',tmp_path,f.ADJACENCY_CASE)==native
+        f.archive_physical_evidence(tmp_path,tmp_path.parent/'adjacency-archive',native,f.ADJACENCY_CASE)
+        assert len(list((tmp_path.parent/'adjacency-archive'/'topology-physical').rglob('*.gpkg')))==6
+        return
+    if problem=='extra_output':(tmp_path/'outputs'/'unexpected.gpkg').write_bytes(b'x')
+    else:
+        path=tmp_path/f.ADJACENCY_SOURCES[0]if problem=='source_changed'else tmp_path/'outputs'/f.ADJACENCY_TARGET
+        ds=ogr.Open(str(path),1);layer=ds.GetLayer(0);row=layer.GetFeature(4 if problem=='missing_part'else 5 if problem=='tiny_edge'else 1)
+        if problem in('coordinate','source_changed'):row.SetGeometry(ogr.CreateGeometryFromWkt('MULTILINESTRING ((99 99,100 100))'))
+        elif problem=='identity':row.SetField('source_id_a',10)
+        elif problem=='length':row.SetField('shared_length',2.0000000000000004)
+        elif problem=='order':
+            row.SetField('source_id_a',10);row.SetField('source_id_b',70);row.SetGeometry(ogr.CreateGeometryFromWkt('MULTILINESTRING ((2 2,4 2))'))
+        elif problem=='missing_part':row.GetGeometryRef().RemoveGeometry(0)
+        elif problem=='tiny_edge':row.SetGeometry(ogr.CreateGeometryFromWkt('MULTILINESTRING ((41 0,41 0))'))
+        elif problem=='field_type':
+            row=None  # Release the feature before changing its native field definition.
+            field=ogr.FieldDefn('source_id_a',ogr.OFTString);assert layer.AlterFieldDefn(layer.GetLayerDefn().GetFieldIndex('source_id_a'),field,ogr.ALTER_TYPE_FLAG)==0
+        if problem!='field_type':assert layer.SetFeature(row)==0
+        row=layer=ds=None
+    with pytest.raises(f.FixtureError):f.worker('verify',tmp_path,f.ADJACENCY_CASE)

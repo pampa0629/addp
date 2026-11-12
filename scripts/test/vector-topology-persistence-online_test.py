@@ -2323,7 +2323,7 @@ class OverlayClient(InputDiagnosticClient):
         self.success={'execution_id':self.run_id,'status':'success','triggered_by':33,
             'outputs':{'save_result':{'resource':{'locator':target,'type':'file','write_mode':'create'}}},
             'execution_config':{'content':{'workflow_definition':self.profile['definition'](self.locators,self.parent)}},
-            'metadata':{'lineage_facts':{'schema_version':'addp.lineage-facts/v1','inputs':[{'port':'input.load_b','locator':self.locators[1]},{'port':'input.load_a','locator':self.locators[0]}],
+            'metadata':{'lineage_facts':{'schema_version':'addp.lineage-facts/v1','inputs':[{'port':'input.'+node,'locator':self.locators[i]}for i,node in reversed(list(enumerate(self.profile.get('input_nodes',('load_a','load_b')))))],
               'outputs':[{'locator':target,'write_mode':'create'}]},'result':{'meta_scan_runs':[{'execution_id':'overlay-output-scan','target_locator':target,'status':'submitted'}]}}}
     def request(self,method,path,expected,body=None):
         if method=='POST' and path.endswith('/develop/executions'):
@@ -2346,7 +2346,7 @@ class OverlayClient(InputDiagnosticClient):
                 data={'truncated':False,'nodes':[],'edges':[]}
                 if self.failed_graph:self.failed_graph(data)
             else:
-                data={'truncated':False,'nodes':[],'edges':[{'source':{'item_id':i},'target':{'item_id':30},'relation_kind':'derive','status':'active','evidence':{'execution_id':self.run_id}} for i in (10,11)]}
+                data={'truncated':False,'nodes':[],'edges':[{'source':{'item_id':i},'target':{'item_id':30},'relation_kind':'derive','status':'active','evidence':{'execution_id':self.run_id}} for i in range(10,10+len(self.profile.get('input_nodes',('load_a','load_b'))))]}
                 if self.mutate_graph:self.mutate_graph(data)
         else:return super().request(method,path,expected,body)
         return SimpleNamespace(payload=copy.deepcopy(data))
@@ -2970,4 +2970,138 @@ assert.ok(body.includes('vertices&&expected.length>10'));assert.ok(body.includes
 """
         result=subprocess.run(['node','--input-type=module','-e',script,str(repository/'console/frontend/e2e/online/vector-topology-persistence.spec.js'),
             json.dumps([m.fixture.vertices_features(p+'-result') for p in m.fixture.VERTICES_FAMILIES]),json.dumps(m.fixture.VERTICES_FAILURES),(repository/'manager/frontend/e2e/geometry-preview-coordinate.js').as_uri()],text=True,capture_output=True)
+        self.assertEqual(result.returncode,0,result.stdout+result.stderr)
+
+
+class AdjacencyClient(OverlayClient):
+    def __init__(self):super().__init__(m.fixture.ADJACENCY_CASE)
+
+
+class AdjacencyOnlineTest(unittest.TestCase):
+    def setUp(self):
+        self.directory=tempfile.TemporaryDirectory();self.addCleanup(self.directory.cleanup)
+        self.env={**ENV,'ADDP_ONLINE_TOPOLOGY_CASE':m.fixture.ADJACENCY_CASE,'ADDP_ONLINE_ARTIFACT_DIR':self.directory.name}
+    def run_case(self,client=None,physical=None,browser=lambda *a:a[2]):
+        return m.run_scenario(Path('.'),self.env,client or AdjacencyClient(),physical or(lambda *a:mixed_physical(m.fixture.ADJACENCY_CASE)),browser)
+    def test_adjacency_single_source_one_save_four_readonly_failures_scans_and_identity(self):
+        client=AdjacencyClient();report=self.run_case(client)
+        self.assertEqual((report['result'],report['schema_version']),('passed','addp.polygon-adjacency/v1'))
+        self.assertEqual([len(report[k])for k in('initial_scan_inventory','final_scan_inventory','meta_after')],[5,6,6])
+        self.assertEqual(len(report['raw_lineage']['edges']),1)
+        self.assertEqual(report['raw_lineage']['edges'][0]['source']['item_id'],10)
+        self.assertEqual(len(report['browser']['expected']['result']),5)
+        self.assertEqual([f['key']for f in report['failures']],[s[0]for s in m.fixture.ADJACENCY_FAILURES])
+        for failure in report['failures']:
+            self.assertEqual([t['operator']for t in failure['definition']['tasks']],['check_polygon_adjacency','load'])
+            self.assertEqual(len(failure['source_lineage']),1)
+        self.assertEqual(sum(method=='POST'and path.endswith('/develop/executions')for method,path,_ in client.calls),5)
+    def test_adjacency_formal_visibility_required_and_strict_single_input_binding(self):
+        client=AdjacencyClient();client.preflight_denied=True
+        with self.assertRaisesRegex(m.SuiteError,'resource authorization'):self.run_case(client)
+        self.assertFalse(client.executions)
+        changes=[lambda c:c.success['metadata']['lineage_facts']['inputs'][0].update(port='input.load_a'),lambda c:c.success['metadata']['lineage_facts']['inputs'].append({'port':'input.load_source','locator':c.locators[0]}),lambda c:c.success['metadata']['lineage_facts']['inputs'][0].update(locator=c.locators[1]),lambda c:setattr(c,'scan_actor',True),lambda c:setattr(c,'scan_tenant','2'),lambda c:c.outputs[0].update(size_bytes=True),lambda c:setattr(c,'mutate_graph',lambda g:g['edges'].append(copy.deepcopy(g['edges'][0])))]
+        for change in changes:
+            client=AdjacencyClient();change(client)
+            with self.subTest(change=change),self.assertRaises(m.SuiteError):self.run_case(client)
+    def test_adjacency_failed_facts_scans_private_values_and_changed_physical_refuse(self):
+        changes=[lambda v:v.update(outputs={'save_result':{}}),lambda v:v['metadata'].update(lineage_facts={'outputs':[{}]}),lambda v:v['metadata'].update(result={'meta_scan_runs':[{}]}),lambda v:v['error_details']['diagnostic']['operator'].update(parameter='id_field'),lambda v:v['error_details']['diagnostic']['operator'].update(field='parcel_key'),lambda v:v['error_details'].update(message='PRIVATE_ADJACENCY_NODE')]
+        for change in changes:
+            client=AdjacencyClient();client.mutate_failed=change
+            with self.subTest(change=change),self.assertRaises(m.SuiteError):self.run_case(client)
+        calls=[]
+        def physical(*a):
+            value=mixed_physical(m.fixture.ADJACENCY_CASE);calls.append(1)
+            if len(calls)>1:value['sources'][m.fixture.ADJACENCY_SOURCES[0]]['sha256']='changed'
+            return value
+        with self.assertRaises(m.SuiteError):self.run_case(physical=physical)
+    def test_adjacency_browser_failure_preserves_incomplete_checkpoint(self):
+        with self.assertRaisesRegex(m.SuiteError,'browser broke'):self.run_case(browser=lambda *a:(_ for _ in()).throw(m.SuiteError('browser broke')))
+        checkpoint=json.loads((Path(self.directory.name)/'topology-adjacency-checkpoint.json').read_text())
+        self.assertEqual((checkpoint['result'],checkpoint['stage'],len(checkpoint['failures'])),('incomplete','before_browser',4))
+
+
+class AdjacencyBrowserRawTest(unittest.TestCase):
+    def setUp(self):
+        owner=AdjacencyOnlineTest();owner.setUp();self.addCleanup(owner.doCleanups);report=owner.run_case();self.evidence=e=report['browser'];output=e['outputs'][0];expected=e['expected']['result'];encoded=overlay_wire_and_projected(expected);fields=list(expected[0]['properties'])
+        observation={'port':'result','output_item_id':30,'sources':[{'item_id':v['id'],'item':v['before']}for v in e['sources']],'output':output['before'],'graph':report['raw_lineage'],'lineage_page':report['raw_lineage'],'lineage_rendered':report['raw_lineage'],
+          'lineage_canvas':{'rows':[{'text':n}for n in[e['sources'][0]['name'],output['name']]],'paths':[[[0,0],[1,1]]]},
+          'preview':{'preview_type':'table','data':{'page':1,'total':5,'source_srid':3857,'source_crs':'EPSG:3857','transform_status':'not_transformed','preview_hint':'frontend_transform_required','geometry_columns':['geom'],'columns':['fid','geom',*fields],'rows':[{**row['properties'],'fid':i+1,'geom':wire}for i,(row,wire)in enumerate(zip(expected,encoded['wire']))]}},
+          'decoded_rows':expected,'rendered':{'projection':'EPSG:3857','features':encoded['projected'],'painted_pixels':31,'shared_edge_pixels':1}}
+        self.raw={'schema_version':'addp.polygon-adjacency-browser-raw/v1','case':e['case'],'run_id':e['run_id'],'execution_id':e['execution_id'],'result':'passed','stage':'complete','execution':AdjacencyClient().success,'observations':[observation],'publication_requests':[],'failures':[]}
+        for failed in report['failures']:
+            self.raw['failures'].append({'key':failed['key'],'execution_id':failed['execution_id'],'observations':[{'owner':o,'locale':l,'raw':failed['execution']if o=='develop'else{'execution':failed['monitor']}}for o in('develop','monitor')for l in('zh-cn','en')]})
+        self.raw['failures']=frozen_literal_clipboards(self.raw['failures'])
+    def test_adjacency_original_ewkb_native_geometry_one_edge_and_exact_bilingual_copies(self):m.validate_mixed_overlay_browser_raw(self.raw,self.evidence,m.fixture.ADJACENCY_CASE)
+    def test_adjacency_browser_entry_requires_bound_original_raw_and_selects_only_this_case(self):
+        import subprocess
+        raw=self.raw;evidence=self.evidence
+        with tempfile.TemporaryDirectory()as temp:
+            env={**ENV,'ADDP_ONLINE_TOPOLOGY_CASE':m.fixture.ADJACENCY_CASE,'ADDP_ONLINE_ARTIFACT_DIR':temp}
+            original=subprocess.run
+            def invoke(args,**kwargs):
+                if args[0]!='npm':return original(args,**kwargs)
+                self.assertEqual(args[args.index('--grep')+1],m.fixture.ADJACENCY_TITLE+'$')
+                Path(temp,'topology-browser.json').write_text(json.dumps({**evidence,'schema_version':'addp.polygon-adjacency-browser/v1','result':'passed'}))
+                Path(temp,'topology-adjacency-browser-raw.json').write_text(json.dumps(raw))
+                return SimpleNamespace(returncode=0)
+            with patch.object(m.subprocess,'run',side_effect=invoke):
+                self.assertEqual(m.browser(Path('.'),env,evidence)['result'],'passed')
+                raw['result']='incomplete'
+                with self.assertRaises(m.SuiteError):m.browser(Path('.'),env,evidence)
+
+    def test_adjacency_raw_rejects_missing_lines_tiny_precision_types_pixels_and_wrong_sources(self):
+        changes=[lambda r:r.update(result='incomplete'),lambda r:r['observations'][0]['decoded_rows'][4]['geometry']['coordinates'][0][1].__setitem__(1,0),lambda r:r['observations'][0]['preview']['data']['rows'][0].update(source_id_a=90.),lambda r:r['observations'][0]['rendered']['features'].pop(),lambda r:r['observations'][0]['rendered'].update(shared_edge_pixels=0),lambda r:r['observations'][0]['graph']['edges'].pop(),lambda r:r['observations'][0]['graph']['edges'][0]['source'].update(item_id=11),lambda r:r['failures'][0]['observations'].pop(),lambda r:r['failures'][0]['observations'][0].update(clipboard='wrong')]
+        for change in changes:
+            raw=copy.deepcopy(self.raw);change(raw)
+            with self.subTest(change=change),self.assertRaises(m.SuiteError):m.validate_mixed_overlay_browser_raw(raw,self.evidence,m.fixture.ADJACENCY_CASE)
+
+
+class AdjacencyBrowserContractTest(unittest.TestCase):
+    def test_adjacency_real_discovery_selects_one_case_and_fixed_messages_match_both_locales(self):
+        import subprocess,os
+        repo=Path(__file__).resolve().parents[2]
+        script="""import assert from 'node:assert/strict';import{readFileSync}from'node:fs';const root=process.argv[1],source=readFileSync(root+'/console/frontend/e2e/online/vector-topology-persistence.spec.js','utf8');
+const start=source.indexOf('const inputDiagnosticText'),end=source.indexOf('async function assertInputDiagnosticPanel(',start),values=new Function(source.slice(start,end)+';return inputDiagnosticText')();
+for(const locale of ['zh-cn','en']){const d=JSON.parse(readFileSync(root+'/common-frontend/basic/src/i18n/'+locale+'.json','utf8')).common.executionFailure,v=d.polygonAdjacency;
+for(const[key,reason,param]of[['adjacency-id','operator_input_invalid','input_gdf'],['adjacency-empty','operator_input_invalid','input_gdf'],['adjacency-crs','operator_crs_invalid',''],['adjacency-overlap','operator_input_overlap','input_gdf']])assert.deepEqual(values[key][locale],[v.reasons[reason],d.operatorNames.check_polygon_adjacency,param?d.operatorParameters[param]:'','',v.actions[reason]]);}
+assert.ok(source.includes('assertExtensionLineMap(renderer,expected,[2,1])'));assert.ok(source.includes('topology-adjacency-browser-raw.json'));"""
+        result=subprocess.run(['node','--input-type=module','-e',script,str(repo)],capture_output=True,text=True);self.assertEqual(result.returncode,0,result.stderr)
+        result=subprocess.run(['npm','exec','--','playwright','test','e2e/online/vector-topology-persistence.spec.js','--config=playwright.online.config.js','--grep',m.fixture.ADJACENCY_TITLE+'$','--list','--reporter=json'],cwd=repo/'console/frontend',env={**os.environ,**ENV,'ADDP_ONLINE_TOPOLOGY_CASE':m.fixture.ADJACENCY_CASE},capture_output=True,text=True,timeout=30)
+        self.assertEqual(result.returncode,0,result.stdout+result.stderr)
+        def specs(suites):return[v for suite in suites for v in[*suite.get('specs',[]),*specs(suite.get('suites',[]))]]
+        self.assertEqual([v['title']for v in specs(json.loads(result.stdout)['suites'])],[m.fixture.ADJACENCY_TITLE])
+
+    def test_adjacency_actual_line_map_and_source_graph_helpers_reject_forged_coordinates_and_pixels(self):
+        import subprocess
+        repo=Path(__file__).resolve().parents[2]
+        script=r'''
+import assert from 'node:assert/strict';import{readFileSync}from'node:fs';
+const source=readFileSync(process.argv[1],'utf8'),expected=JSON.parse(process.argv[2]);
+const {webMercatorPreviewCoordinate}=await import(process.argv[3]);
+const a=source.indexOf('function normalizedMapExpectation('),b=source.indexOf('async function verifyNetworkCase(',a);
+const expectation=new Function('webMercatorPreviewCoordinate',source.slice(a,b)+';return normalizedMapExpectation')(webMercatorPreviewCoordinate);
+const start=source.indexOf('async function assertExtensionLineMap('),end=source.indexOf('function persistExtensionEvidence(',start);
+const expect=value=>({toBe:x=>assert.equal(value,x),toHaveLength:x=>assert.equal(value.length,x),toEqual:x=>assert.deepEqual(value,x)});
+expect.poll=fn=>({async toEqual(x){assert.deepEqual(await fn(),x)},async toBe(x){assert.equal(await fn(),x)}});
+const check=new Function('expect','normalizedMapExpectation','webMercatorPreviewCoordinate',source.slice(start,end)+';return assertExtensionLineMap')(expect,expectation,webMercatorPreviewCoordinate);
+const project=c=>typeof c[0]==='number'?webMercatorPreviewCoordinate(c):c.map(project);
+async function run(rows,mode='normal'){
+ const pixels=new Uint8ClampedArray(40*40*4);for(let x=0;x<36;x++)pixels.set([0,200,0,255],(10*40+x)*4);
+ if(mode==='blank')pixels.fill(0);
+ const features=rows.map(r=>({get:k=>r.properties[k],getGeometry:()=>({getType:()=>r.geometry.type,getCoordinates:()=>project(r.geometry.coordinates)})}));
+ const context={canvas:{width:40,height:40,getBoundingClientRect:()=>({left:0,top:0,width:40,height:40})},getImageData:()=>({data:pixels})};
+ const layer={getVisible:()=>mode!=='hidden',getOpacity:()=>1,getSource:()=>({getFeatures:()=>features}),getRenderer:()=>({context})};
+ const map={getView:()=>({getAnimating:()=>false,getProjection:()=>({getCode:()=> 'EPSG:3857'})}),getLayers:()=>({getArray:()=>[layer]}),getPixelFromCoordinate:()=>[10,10],getViewport:()=>({getBoundingClientRect:()=>({left:0,top:0})})};
+ await check({evaluate:async(fn,arg)=>fn({__vueParentComponent:{setupState:{mapInstance:map}}},arg)},expected,[2,1]);
+}
+await run(expected);await run([...expected].reverse());
+for(const mode of['blank','hidden'])await assert.rejects(()=>run(expected,mode));
+for(const mutate of[r=>r.pop(),r=>r[0].properties.source_id_a=10,r=>r[3].geometry.coordinates.pop(),r=>r[4].geometry.coordinates[0][1][0]=42]){const rows=structuredClone(expected);mutate(rows);await assert.rejects(()=>run(rows));}
+const gs=source.indexOf('function assertProximityLineage('),ge=source.indexOf('function persistProximityEvidence(',gs);
+const graphCheck=new Function('expect',source.slice(gs,ge)+';return assertProximityLineage')(expect);
+const evidence={sources:[{id:10}],output:{item_id:30},execution_id:'current'},edge={relation_kind:'derive',status:'active',evidence:{execution_id:'current'},source:{item_id:10},target:{item_id:30}};
+graphCheck({truncated:false,edges:[edge]},evidence);
+for(const edges of[[],[edge,edge],[{...edge,source:{item_id:11}}]])assert.throws(()=>graphCheck({truncated:false,edges},evidence));
+'''
+        result=subprocess.run(['node','--input-type=module','-e',script,str(repo/'console/frontend/e2e/online/vector-topology-persistence.spec.js'),json.dumps(m.fixture.adjacency_features('result')),(repo/'manager/frontend/e2e/geometry-preview-coordinate.js').as_uri()],capture_output=True,text=True,timeout=30)
         self.assertEqual(result.returncode,0,result.stdout+result.stderr)
