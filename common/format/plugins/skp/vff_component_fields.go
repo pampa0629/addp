@@ -20,6 +20,7 @@ type vffComponentFieldValue struct {
 	value                                      vffSKCValue
 	fieldOffset, dictionaryOffset, valueOffset int
 	valueSHA256                                [32]byte
+	metadata                                   vffComponentFieldMetadata
 }
 type vffComponentFieldFacts struct {
 	schema *vffComponentSchemaFacts
@@ -42,18 +43,16 @@ func (r *vffComponentClassificationReader) nestedDictionaries(parent vffClassifi
 	return dictionaries, err
 }
 
-// Verify only explicit string-valued dictionary paths against their exact
-// declarations. Template metadata and a complete XML instance remain unproved.
-func readVFFComponentFieldValues(ctx context.Context, c *vffContainer, schemaName, packageMember, componentType string, paths []vffComponentFieldPath, componentLimits vffClassificationLimits, limits vffSKCBindingLimits) (*vffComponentFieldFacts, error) {
-	if !vffSKCBindingName(componentType) || len(paths) == 0 {
-		return nil, fmt.Errorf("component field values require an explicit type and paths")
-	}
-	seen := map[string]bool{}
-	for _, path := range paths {
-		if !vffSKCBindingName(path.field) || !vffSKCBindingName(path.valueType) || seen[path.field] {
-			return nil, fmt.Errorf("component field paths must be unique explicit names")
-		}
-		seen[path.field] = true
+type vffComponentFieldScope struct {
+	schema   *vffComponentSchemaFacts
+	b        *vffSKCBinder
+	selected []int
+	fields   []vffSKCFieldCandidate
+}
+
+func readVFFComponentFieldScope(ctx context.Context, c *vffContainer, schemaName, packageMember, componentType string, componentLimits vffClassificationLimits, limits vffSKCBindingLimits) (*vffComponentFieldScope, error) {
+	if !vffSKCBindingName(componentType) {
+		return nil, fmt.Errorf("component field scope requires an explicit type")
 	}
 	schema, err := readVFFComponentSchemaBindings(ctx, c, schemaName, packageMember, componentLimits, limits)
 	if err != nil {
@@ -80,6 +79,46 @@ func readVFFComponentFieldValues(ctx context.Context, c *vffContainer, schemaNam
 	if len(b.issues) != 0 {
 		return nil, fmt.Errorf("component inherited field scope is not fully resolved")
 	}
+	return &vffComponentFieldScope{schema, b, selected, fields}, nil
+}
+
+func (s *vffComponentFieldScope) element(name string) (*vffSKCFieldCandidate, error) {
+	var found *vffSKCFieldCandidate
+	for i := range s.fields {
+		if err := s.b.tick(0); err != nil {
+			return nil, err
+		}
+		if s.fields[i].declaration.name == name {
+			if found != nil || s.fields[i].declaration.kind != "element" {
+				return nil, fmt.Errorf("selected classification field is not a unique element")
+			}
+			found = &s.fields[i]
+		}
+	}
+	if found == nil {
+		return nil, fmt.Errorf("selected classification field declaration is missing")
+	}
+	return found, nil
+}
+
+// Verify only explicit string-valued dictionary paths against their exact
+// declarations. Template metadata and a complete XML instance remain unproved.
+func readVFFComponentFieldValues(ctx context.Context, c *vffContainer, schemaName, packageMember, componentType string, paths []vffComponentFieldPath, componentLimits vffClassificationLimits, limits vffSKCBindingLimits) (*vffComponentFieldFacts, error) {
+	if len(paths) == 0 {
+		return nil, fmt.Errorf("component field values require an explicit type and paths")
+	}
+	seen := map[string]bool{}
+	for _, path := range paths {
+		if !vffSKCBindingName(path.field) || !vffSKCBindingName(path.valueType) || seen[path.field] {
+			return nil, fmt.Errorf("component field paths must be unique explicit names")
+		}
+		seen[path.field] = true
+	}
+	scope, err := readVFFComponentFieldScope(ctx, c, schemaName, packageMember, componentType, componentLimits, limits)
+	if err != nil {
+		return nil, err
+	}
+	schema, b, selected := scope.schema, scope.b, scope.selected
 	type plan struct {
 		path        vffComponentFieldPath
 		field       vffSKCFieldCandidate
@@ -90,20 +129,9 @@ func readVFFComponentFieldValues(ctx context.Context, c *vffContainer, schemaNam
 	}
 	var plans []plan
 	for _, path := range paths {
-		var found *vffSKCFieldCandidate
-		for i := range fields {
-			if err := b.tick(0); err != nil {
-				return nil, err
-			}
-			if fields[i].declaration.name == path.field {
-				if found != nil || fields[i].declaration.kind != "element" {
-					return nil, fmt.Errorf("selected classification field is not a unique element")
-				}
-				found = &fields[i]
-			}
-		}
-		if found == nil {
-			return nil, fmt.Errorf("selected classification field declaration is missing")
+		found, err := scope.element(path.field)
+		if err != nil {
+			return nil, err
 		}
 		node := b.nodes[vffSKCNodeKey{found.declaration.member, found.declaration.begin}]
 		name, err := b.qname(node, node.attrs["type"])
@@ -139,6 +167,9 @@ func readVFFComponentFieldValues(ctx context.Context, c *vffContainer, schemaNam
 		if !profile.known || profile.item != nil || profile.primitive.Space != vffXSDNS || profile.primitive.Local != "string" && profile.primitive.Local != "normalizedString" && profile.primitive.Local != "token" {
 			return nil, fmt.Errorf("classification field is not a proved scalar string type")
 		}
+		if len(profile.levels) != 0 {
+			return nil, fmt.Errorf("enumeration field metadata remains unproved")
+		}
 		plans = append(plans, plan{path, *found, b.witness(target.node), node, checker, profile})
 	}
 	r := &vffComponentClassificationReader{vffRecords: &vffRecords{ctx: ctx, maxRecords: componentLimits.records, maxDepth: componentLimits.depth}, result: &vffComponentClassificationFacts{}}
@@ -173,6 +204,13 @@ func readVFFComponentFieldValues(ctx context.Context, c *vffContainer, schemaNam
 					r.keep([]vffClassificationRecord{other})
 				}
 			}
+			metadata, err := r.fieldMetadata(schema, componentType, p.path.field, field, leaf, "string")
+			if err != nil {
+				return nil, err
+			}
+			if _, exists := leaf.entries["options"]; exists {
+				return nil, fmt.Errorf("string field options remain unproved")
+			}
 			raw, err := r.stringValue(entry, 26, true)
 			if err != nil {
 				return nil, err
@@ -204,7 +242,7 @@ func readVFFComponentFieldValues(ctx context.Context, c *vffContainer, schemaNam
 			if err != nil {
 				return nil, err
 			}
-			result.values = append(result.values, vffComponentFieldValue{component: component, path: p.path, field: p.field, typeDeclaration: p.declaration, primitive: p.profile.primitive, facets: facets, raw: raw, value: value, fieldOffset: field.offset, dictionaryOffset: leaf.offset, valueOffset: entry.offset - 6, valueSHA256: sha256.Sum256(entry.data)})
+			result.values = append(result.values, vffComponentFieldValue{component: component, path: p.path, field: p.field, typeDeclaration: p.declaration, primitive: p.profile.primitive, facets: facets, raw: raw, value: value, fieldOffset: field.offset, dictionaryOffset: leaf.offset, valueOffset: entry.offset - 6, valueSHA256: sha256.Sum256(entry.data), metadata: metadata})
 		}
 	}
 	if err := ctx.Err(); err != nil {

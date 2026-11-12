@@ -19,8 +19,8 @@ func componentFieldDictionary(name string, entries []byte, children ...[]byte) [
 	return vffRecord("B336", vffRecord("B036", nested), vffRecord("B436", []byte(name)), vffRecord("B536", entries), vffRecord("B736", []byte{0, 0, 0, 0}))
 }
 func componentFieldString(field, typ, raw string) []byte {
-	return componentFieldDictionary(field, componentClassString("value", "separate outer value"),
-		componentFieldDictionary(typ, componentClassString("value", raw)))
+	return componentFieldDictionary(field, componentMetadataEntries("", componentClassString("value", "separate outer value")),
+		componentFieldDictionary(typ, componentMetadataEntries("string", componentClassString("value", raw))))
 }
 func componentFieldsDefinition(id byte, fields ...[]byte) []byte {
 	return componentClassDefinition(id,
@@ -81,9 +81,9 @@ func TestVFFComponentFieldValuesRejectBrokenPathsAndValuesAtomically(t *testing.
 		"missing field":       {componentFieldString("Other", "Label", "value")},
 		"wrong type leaf":     {componentFieldString("Name", "Other", "value")},
 		"duplicate field":     {componentFieldString("Name", "Label", "one"), componentFieldString("Name", "Label", "two")},
-		"duplicate type leaf": {componentFieldDictionary("Name", nil, componentFieldDictionary("Label", componentClassString("value", "one")), componentFieldDictionary("Label", componentClassString("value", "two")))},
-		"missing value":       {componentFieldDictionary("Name", nil, componentFieldDictionary("Label", nil))},
-		"non string":          {componentFieldDictionary("Name", nil, componentFieldDictionary("Label", append(vffRecord("B636", []byte("value")), vffRecord("A438", vffRecord("AA38", []byte{1}))...)))},
+		"duplicate type leaf": {componentFieldDictionary("Name", componentMetadataEntries("", nil), componentFieldDictionary("Label", componentMetadataEntries("string", componentClassString("value", "one"))), componentFieldDictionary("Label", componentMetadataEntries("string", componentClassString("value", "two"))))},
+		"missing value":       {componentFieldDictionary("Name", componentMetadataEntries("", nil), componentFieldDictionary("Label", componentMetadataEntries("string", nil)))},
+		"non string":          {componentFieldDictionary("Name", componentMetadataEntries("", nil), componentFieldDictionary("Label", componentMetadataEntries("string", append(vffRecord("B636", []byte("value")), vffRecord("A438", vffRecord("AA38", []byte{1}))...))))},
 		"invalid UTF8":        {componentFieldString("Name", "Label", string([]byte{0xff}))},
 		"length facet":        {componentFieldString("Name", "Label", strings.Repeat("a", 21))},
 	} {
