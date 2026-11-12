@@ -10,6 +10,7 @@ import (
 	shared "github.com/addp/common/authorization"
 	"github.com/addp/common/dataitem/authorizationfacts"
 	"github.com/addp/common/engine/plugin"
+	"github.com/addp/common/production"
 	"github.com/addp/system/internal/authorization"
 	"github.com/addp/system/internal/iam"
 	"github.com/google/uuid"
@@ -22,8 +23,19 @@ type ProductionRuntimeActor struct {
 	ClientID string
 }
 
+// Producer bindings are server-owned. Additional owners provide their native
+// evidence adapter here; runtime names never imply automatic registration.
+var productionOwners = func() *production.Registry {
+	registry, err := production.NewRegistry(production.Owner{Module: productionOwner, ClientID: "addp-transfer",
+		ReceiptPermission: "transfer.production_receipt.read", ExecutionPermission: "transfer.task.execute"})
+	if err != nil {
+		panic(err)
+	}
+	return registry
+}()
+
 func (s *Service) withProductionRuntime(ctx context.Context, actor ProductionRuntimeActor, operation func(*Repository, func() error) error, humans ...int64) error {
-	if actor.ClientID != "addp-transfer" {
+	if _, ok := productionOwners.Resolve(productionOwner, actor.ClientID); !ok {
 		return commonapi.ErrForbidden
 	}
 	return s.withSourceRuntime(ctx, actor.Actor, actor.ClientID, authorization.PermissionSystemEngineAccessInitialGrantExecute, operation, humans...)

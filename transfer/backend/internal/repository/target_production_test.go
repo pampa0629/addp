@@ -143,6 +143,59 @@ func TestTargetProductionFreezesActualReadSetWithCommit(t *testing.T) {
 	}
 }
 
+func TestCommittedProductionAtomicallyQueuesAuthorizationBeforeParentCompletion(t *testing.T) {
+	db := newTaskRepositoryTestDB(t)
+	item, lease := productionExecutionFixture(t, db)
+	assertCommittedProductionQueues(t, db, item, lease)
+}
+
+func assertCommittedProductionQueues(t *testing.T, db *gorm.DB, item execution.TaskExecution, lease execution.Lease) {
+	t.Helper()
+	by := 31
+	principal, member, version := int64(31), int64(41), int64(5)
+	if err := db.Model(&item).Updates(map[string]interface{}{"triggered_by": by, "actor_principal_id": principal, "actor_tenant_membership_id": member, "issued_authorization_version": version}).Error; err != nil {
+		t.Fatal(err)
+	}
+	repo := NewTaskRepository(db)
+	if err := repo.BeginTargetProduction(t.Context(), lease, productionTestLocator); err != nil {
+		t.Fatal(err)
+	}
+	if err := repo.RecordTargetPreparation(t.Context(), lease, productionTestLocator, plugin.TableTargetPreparation{Disposition: plugin.TableTargetCreated}); err != nil {
+		t.Fatal(err)
+	}
+	var stored execution.TaskExecution
+	if err := db.First(&stored, item.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if _, exists := stored.Metadata[models.ProductionAuthorizationMetadataKey]; exists {
+		t.Fatal("preparation queued an uncommitted result")
+	}
+	sources, _ := plugin.NewQueryReadSet(plugin.TabularItemPath(2, "schema", "public", "source"))
+	if err := repo.RecordTargetCommit(t.Context(), lease, productionTestLocator, sources, true, nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.First(&stored, item.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	state, err := models.DecodeProductionAuthorization(stored.Metadata[models.ProductionAuthorizationMetadataKey])
+	if err != nil || state.Status != "pending" || stored.Status != "running" {
+		t.Fatal("commit did not atomically queue its delivery", state, err)
+	}
+	// A later parent failure preserves the exact committed fact and queue.
+	if err := execution.CompleteWithLease(t.Context(), db, lease, "failed", nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.First(&stored, item.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if models.InitialProductionAuthorization(&stored, time.Now()) == nil || stored.Status != "failed" {
+		t.Fatal("parent failure lost committed production")
+	}
+	if err := repo.RecordTargetCommit(t.Context(), lease, productionTestLocator, sources, true, nil); err == nil {
+		t.Fatal("expired/terminal lease republished its receipt")
+	}
+}
+
 func TestTargetProductionCommitEvidenceCannotBeBackfilled(t *testing.T) {
 	for _, disposition := range []plugin.TableTargetDisposition{plugin.TableTargetCreated, plugin.TableTargetRecreated, plugin.TableTargetReused} {
 		t.Run(string(disposition), func(t *testing.T) {

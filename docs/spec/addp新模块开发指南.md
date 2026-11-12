@@ -338,6 +338,7 @@ export default createAPIClient(() => useAuthStore(), {
 - [ ] 更新根目录 `CLAUDE.md` 的模块列表
 
 **测试验证**:
+- [ ] 实际持久写出业务 DataItem 时，按[统一产出办理规则](addp授权上下文规范.md#558-任务产出数据与初始使用权)登记生产 owner，接入成果回执、Meta 限定识别、System 唯一初始签发及后台续办；同 owner 新算子复用协议，不另建作者 ACL 或逐算子机器权限。覆盖部分成功、父任务失败后的已提交成果、来源／边界、幂等与撤权重放，并同步标准 Make／CI 门禁；尚未接通或验收必须明确记录
 - [ ] System 不可达时模块 `/health/live` 通过、`/health/ready` 返回 503，业务路由返回 `module_not_ready`
 - [ ] System 恢复后同一 `instance_id` 自动注册，`/health/ready` 恢复 200
 - [ ] 数据库表创建在正确的 schema

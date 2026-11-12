@@ -7,34 +7,12 @@ import (
 
 	"github.com/addp/common/authorization"
 	"github.com/addp/common/client"
-	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/execution"
 	"github.com/addp/common/logger"
-	commonmodels "github.com/addp/common/models"
 	"github.com/addp/transfer/internal/models"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
-
-// Written only as part of the successful physical execution commit. Existing
-// successful executions without this marker are never backfilled or granted.
-func initialProductionAuthorization(item *execution.TaskExecution, now time.Time) *models.ProductionAuthorization {
-	if item == nil {
-		return nil
-	}
-	if item.Module != execution.ModuleTransfer || item.TaskType != execution.TaskTypeSync || item.ExecutionBoundary != execution.ExecutionBoundaryBounded || item.Attempt != 1 || item.RetryOfExecutionID != nil {
-		return nil
-	}
-	copy := execution.TaskExecution{TenantID: item.TenantID}
-	if execution.CopyActorOrigin(&copy, item) != nil {
-		return nil
-	}
-	receipt, err := models.DecodeTargetProduction(item.Metadata[models.TargetProductionMetadataKey])
-	if err != nil || receipt.TenantID != item.TenantID || receipt.ExecutionID != item.ExecutionID || receipt.Attempt != item.Attempt || receipt.RetryOfExecutionID != nil || receipt.Phase != models.TargetProductionCommitted || !receipt.CreatedAndCommitted || receipt.Preparation != plugin.TableTargetCreated {
-		return nil
-	}
-	return &models.ProductionAuthorization{SchemaVersion: "transfer.initial-authorization/v1", Status: "pending", NextAttemptUnix: now.Unix()}
-}
 
 type initialGrantRuntime interface {
 	resolve(context.Context, uint, string) (*authorization.InitialProductionLookup, error)
@@ -95,7 +73,7 @@ func (c *ProductionAuthorizationContinuation) runOne(ctx context.Context, now ti
 	var item execution.TaskExecution
 	var state models.ProductionAuthorization
 	err := c.executions.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		err := tx.Model(&execution.TaskExecution{}).Where("module=? AND task_type=? AND execution_boundary=? AND status=?", execution.ModuleTransfer, execution.TaskTypeSync, execution.ExecutionBoundaryBounded, execution.ExecutionStatusSuccess).
+		err := tx.Model(&execution.TaskExecution{}).Where("module=? AND task_type=? AND execution_boundary=?", execution.ModuleTransfer, execution.TaskTypeSync, execution.ExecutionBoundaryBounded).
 			Where("metadata->'initial_authorization'->>'status'='pending' AND CAST(metadata->'initial_authorization'->>'next_attempt_unix' AS BIGINT)<=?", now.Unix()).
 			Order("CAST(metadata->'initial_authorization'->>'next_attempt_unix' AS BIGINT),id").Clauses(clause.Locking{Strength: "UPDATE", Options: "SKIP LOCKED"}).Take(&item).Error
 		if err != nil {
@@ -105,7 +83,7 @@ func (c *ProductionAuthorizationContinuation) runOne(ctx context.Context, now ti
 		if err != nil {
 			return err
 		}
-		if initialProductionAuthorization(&item, now) == nil {
+		if models.InitialProductionAuthorization(&item, now) == nil {
 			return errors.New("initial authorization owner evidence unavailable")
 		}
 		state.Attempts++
@@ -167,26 +145,10 @@ func (c *ProductionAuthorizationContinuation) runOne(ctx context.Context, now ti
 			return err
 		}
 		// A delayed duplicate cannot overwrite a newer claim or a terminal result.
-		if current.TenantID != item.TenantID || current.ExecutionID != item.ExecutionID || current.Status != execution.ExecutionStatusSuccess || prior.Status != "pending" || prior.Attempts != state.Attempts {
+		if current.TenantID != item.TenantID || current.ExecutionID != item.ExecutionID || prior.Status != "pending" || prior.Attempts != state.Attempts {
 			return nil
 		}
 		current.Metadata[models.ProductionAuthorizationMetadataKey] = state
 		return tx.Model(current).Update("metadata", current.Metadata).Error
 	})
-}
-
-func setInitialProductionAuthorization(item *execution.TaskExecution, updates map[string]interface{}, now time.Time) {
-	state := initialProductionAuthorization(item, now)
-	if state == nil {
-		return
-	}
-	metadata := item.Metadata
-	if metadata == nil {
-		metadata = commonmodels.JSONMap{}
-	}
-	if _, exists := metadata[models.ProductionAuthorizationMetadataKey]; exists {
-		return
-	}
-	metadata[models.ProductionAuthorizationMetadataKey] = state
-	updates["metadata"] = metadata
 }

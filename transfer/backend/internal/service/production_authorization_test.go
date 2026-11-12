@@ -72,6 +72,10 @@ func initialAuthorizationFixture(t *testing.T, db *gorm.DB) (*ExecutionService, 
 	})
 	svc := NewExecutionService(db, execution.NewTaskExecutionRepository(db))
 	bindExecutionServiceTestLease(t, db, svc, &item)
+	item.Metadata[models.ProductionAuthorizationMetadataKey] = models.InitialProductionAuthorization(&item, now)
+	if err := db.Model(&item).Update("metadata", item.Metadata).Error; err != nil {
+		t.Fatal(err)
+	}
 	if err := svc.FinishExecution(t.Context(), uint(item.ID), models.ExecutionStatusSuccess, nil, nil); err != nil {
 		t.Fatal(err)
 	}
@@ -79,10 +83,23 @@ func initialAuthorizationFixture(t *testing.T, db *gorm.DB) (*ExecutionService, 
 }
 
 func TestInitialProductionAuthorizationContinuation(t *testing.T) {
-	for _, scenario := range []string{"transient", "scan", "unclassified503", "denied", "issued_history"} {
+	for _, scenario := range []string{"transient", "scan", "unclassified503", "denied", "issued_history", "failed_parent", "cancelled_parent", "running_parent"} {
 		t.Run(scenario, func(t *testing.T) {
 			db := newExecutionServiceTestDB(t)
 			svc, item := initialAuthorizationFixture(t, db)
+			parentStatus := "success"
+			if scenario == "failed_parent" {
+				parentStatus = "failed"
+			}
+			if scenario == "cancelled_parent" {
+				parentStatus = "cancelled"
+			}
+			if scenario == "running_parent" {
+				parentStatus = "running"
+			}
+			if err := db.Model(&item).Update("status", parentStatus).Error; err != nil {
+				t.Fatal(err)
+			}
 			var resolves, writes, scans int
 			result := &authorization.InitialProductionResult{SchemaVersion: authorization.InitialProductionResultSchema, TenantID: int64(item.TenantID), ProducerOwner: "transfer", ExecutionID: uuid.MustParse(item.ExecutionID), Outcome: "denied", DenialCode: "source_access_denied", RecordedAt: time.Now().UTC()}
 			if scenario == "issued_history" {
@@ -134,13 +151,13 @@ func TestInitialProductionAuthorizationContinuation(t *testing.T) {
 				t.Fatal(err)
 			}
 			want := "pending"
-			if scenario == "denied" {
+			if scenario == "denied" || scenario == "failed_parent" || scenario == "cancelled_parent" || scenario == "running_parent" {
 				want = "denied"
 			}
 			if scenario == "issued_history" {
 				want = "issued"
 			}
-			if state.Status != want || state.Attempts != 1 || stored.Status != "success" || stored.Metadata[models.TargetProductionMetadataKey] != item.Metadata[models.TargetProductionMetadataKey] {
+			if state.Status != want || state.Attempts != 1 || stored.Status != parentStatus || stored.Metadata[models.TargetProductionMetadataKey] != item.Metadata[models.TargetProductionMetadataKey] {
 				t.Fatalf("state=%+v physical status=%s", state, stored.Status)
 			}
 			if (scans == 1) != (scenario == "scan") || scenario == "issued_history" && writes != 0 || scenario == "transient" && writes != 0 {
@@ -204,6 +221,9 @@ func TestIntegrationPostgresInitialAuthorizationContinuation(t *testing.T) {
 		t.Fatal(err)
 	}
 	svc, item := initialAuthorizationFixture(t, db)
+	if err := db.Model(&item).Update("status", "failed").Error; err != nil {
+		t.Fatal(err)
+	}
 	var reads atomic.Int32
 	c := &ProductionAuthorizationContinuation{executions: svc, runtime: productionRuntimeFixture{lookup: func(context.Context, uint, string) (*authorization.InitialProductionLookup, error) {
 		reads.Add(1)
@@ -233,7 +253,7 @@ func TestIntegrationPostgresInitialAuthorizationContinuation(t *testing.T) {
 		t.Fatal(err)
 	}
 	state, err := models.DecodeProductionAuthorization(stored.Metadata[models.ProductionAuthorizationMetadataKey])
-	if err != nil || state.Attempts != 1 || state.Status != "pending" || stored.Status != "success" {
+	if err != nil || state.Attempts != 1 || state.Status != "pending" || stored.Status != "failed" {
 		t.Fatal("outage changed physical execution", state, err)
 	}
 }

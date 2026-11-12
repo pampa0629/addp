@@ -9,6 +9,7 @@ import (
 	"github.com/addp/common/authorization"
 	plugin "github.com/addp/common/engine/plugin"
 	"github.com/addp/common/execution"
+	"github.com/addp/common/production"
 )
 
 // TransferProductionReceipt is owner evidence, never an Allow or an assertion
@@ -36,6 +37,25 @@ type TransferProductionUserOrigin struct {
 
 const TransferProductionReceiptSchema = "transfer.production-receipt/v3"
 
+// ProductionEvidence adapts Transfer's native persisted facts to the shared
+// production contract. The singleton table operation uses its original execution
+// as stable operation/result identity; it never allocates an ID during recovery.
+func (r TransferProductionReceipt) ProductionEvidence() production.Receipt {
+	sources := production.SourceEvidence{Kind: production.SourcesUnknown}
+	if r.SourceReadSet != nil {
+		sources = production.SourceEvidence{Kind: production.SourcesDataItems, ReadSet: r.SourceReadSet.Clone()}
+	} else if r.ManagerImport != nil {
+		sources.Kind = production.SourcesPrivateInput
+	}
+	result := production.Receipt{Reference: production.Reference{Owner: "transfer", ExecutionID: r.ExecutionID, ResultID: r.ExecutionID},
+		TenantID: r.TenantID, Attempt: r.Attempt, OperationID: r.ExecutionID, CommittedAt: r.CommittedAt,
+		Primary: r.Target, Objects: []production.CommittedObject{{Target: r.Target, Created: r.CreatedAndCommitted}}, Sources: sources}
+	if r.UserOrigin != nil {
+		result.Origin = &production.UserOrigin{PrincipalID: r.UserOrigin.PrincipalID, MembershipID: r.UserOrigin.TenantMembershipID, AuthorizationVersion: r.UserOrigin.AuthorizationVersion}
+	}
+	return result
+}
+
 func (r TransferProductionReceipt) Validate() error {
 	if r.SchemaVersion != TransferProductionReceiptSchema || r.TenantID <= 0 || !nonzeroExecutionUUID(r.ExecutionID) || r.Attempt <= 0 || r.CommittedAt.IsZero() {
 		return errors.New("invalid Transfer production receipt identity")
@@ -61,7 +81,7 @@ func (r TransferProductionReceipt) Validate() error {
 	if err := execution.ValidateProductionReadSet(r.SourceReadSet); err != nil {
 		return err
 	}
-	return nil
+	return r.ProductionEvidence().Validate()
 }
 
 // ReadProductionReceipt uses only this client's tenant Service credential and

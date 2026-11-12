@@ -639,7 +639,7 @@ test-ontology-falkor: test-ontology-infra-config ## 验证独占 FalkorDB 适配
 	@bash scripts/test/ontology-falkor-gate.sh
 
 test-transfer-postgres: ## 使用普通 PostgreSQL 测试库运行 Transfer schema、受保护导出与非空间目标覆盖门禁（无需 PostGIS）
-	@bash scripts/test/transfer-postgres-gate.sh
+	@bash scripts/test/transfer-postgres-gate.sh $(TRANSFER_POSTGRES_TEST_ARGS)
 
 test-workbench-postgres: ## 使用一次性 PostgreSQL 数据库运行 Workbench Data Application 集成门禁
 	@bash scripts/test/workbench-postgres-gate.sh

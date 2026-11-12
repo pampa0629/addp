@@ -13,7 +13,7 @@ import (
 	"github.com/google/uuid"
 )
 
-func TestProductionReceiptRequiresOriginalSuccessfulCommittedExecution(t *testing.T) {
+func TestProductionReceiptRequiresOriginalCommittedExecution(t *testing.T) {
 	db := newExecutionServiceTestDB(t)
 	now := time.Now().UTC()
 	id, retry := uuid.NewString(), uuid.NewString()
@@ -40,7 +40,15 @@ func TestProductionReceiptRequiresOriginalSuccessfulCommittedExecution(t *testin
 	if _, err := svc.ReadProductionReceipt(t.Context(), 8, id); err == nil {
 		t.Fatal("cross tenant receipt returned")
 	}
-	for _, change := range []map[string]interface{}{{"status": "running"}, {"status": "failed"}, {"attempt": 3}, {"actor_tenant_membership_id": nil}} {
+	for _, status := range []string{"running", "failed", "cancelled", "timeout", "success"} {
+		if err := db.Model(&item).Update("status", status).Error; err != nil {
+			t.Fatal(err)
+		}
+		if _, err := svc.ReadProductionReceipt(t.Context(), 7, id); err != nil {
+			t.Fatalf("committed result lost after %s: %v", status, err)
+		}
+	}
+	for _, change := range []map[string]interface{}{{"attempt": 3}, {"actor_tenant_membership_id": nil}} {
 		if err := db.Model(&item).Updates(change).Error; err != nil {
 			t.Fatal(err)
 		}

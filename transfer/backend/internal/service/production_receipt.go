@@ -32,7 +32,7 @@ func (s *ExecutionService) ReadProductionReceipt(ctx context.Context, tenantID u
 		}
 	}
 	record, err := models.DecodeTargetProduction(item.Metadata[models.TargetProductionMetadataKey])
-	if err != nil || item.Status != execution.ExecutionStatusSuccess || record.Phase != models.TargetProductionCommitted || record.TenantID != item.TenantID || record.ExecutionID != item.ExecutionID || record.Attempt != item.Attempt || !sameReceiptRetry(record.RetryOfExecutionID, item.RetryOfExecutionID) {
+	if err != nil || record.Phase != models.TargetProductionCommitted || record.TenantID != item.TenantID || record.ExecutionID != item.ExecutionID || record.Attempt != item.Attempt || !sameReceiptRetry(record.RetryOfExecutionID, item.RetryOfExecutionID) {
 		return nil, commonapi.ErrConflict
 	}
 	locator, err := resourcetree.ParseURI(record.TargetLocator)

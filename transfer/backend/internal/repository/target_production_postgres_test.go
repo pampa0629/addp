@@ -57,6 +57,10 @@ func TestIntegrationPostgresTargetProductionReceipts(t *testing.T) {
 		})
 		return item, lease
 	}
+	t.Run("committed result queues before failed parent completion", func(t *testing.T) {
+		item, lease := fixture(t)
+		assertCommittedProductionQueues(t, db, item, lease)
+	})
 	t.Run("one durable intent under concurrent admission", func(t *testing.T) {
 		item, lease := fixture(t)
 		start := make(chan struct{})

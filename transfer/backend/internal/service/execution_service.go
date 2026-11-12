@@ -497,10 +497,6 @@ func (s *ExecutionService) FinishExecution(ctx context.Context, id uint, status 
 }
 
 func (s *ExecutionService) finishLockedExecution(ctx context.Context, db *gorm.DB, execution *commonExecution.TaskExecution, status models.ExecutionStatus, execErr error, resultMetadata commonModels.JSONMap) error {
-	now, err := commonExecution.DatabaseNow(db)
-	if err != nil {
-		return err
-	}
 	updates := map[string]interface{}{"progress": 100}
 
 	if len(resultMetadata) > 0 {
@@ -515,9 +511,6 @@ func (s *ExecutionService) finishLockedExecution(ctx context.Context, db *gorm.D
 	}
 	if errorDetails, changed := finishErrorDetails(execution.ErrorDetails, status, execErr); changed {
 		updates["error_details"] = errorDetails
-	}
-	if status == models.ExecutionStatusSuccess {
-		setInitialProductionAuthorization(execution, updates, now)
 	}
 
 	if lease, ok := s.leaseForExecution(ctx, uint(execution.ID), execution.ExecutionID); ok {

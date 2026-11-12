@@ -3,6 +3,10 @@ package models
 import (
 	"encoding/json"
 	"errors"
+	"time"
+
+	"github.com/addp/common/engine/plugin"
+	"github.com/addp/common/execution"
 
 	"github.com/google/uuid"
 )
@@ -49,4 +53,24 @@ func DecodeProductionAuthorization(raw any) (ProductionAuthorization, error) {
 		return result, errors.New("invalid initial authorization status")
 	}
 	return result, nil
+}
+
+// InitialProductionAuthorization is initialized atomically with the real
+// committed target fact. Parent task status is deliberately not an input.
+func InitialProductionAuthorization(item *execution.TaskExecution, now time.Time) *ProductionAuthorization {
+	if item == nil {
+		return nil
+	}
+	if item.Module != execution.ModuleTransfer || item.TaskType != execution.TaskTypeSync || item.ExecutionBoundary != execution.ExecutionBoundaryBounded || item.Attempt != 1 || item.RetryOfExecutionID != nil {
+		return nil
+	}
+	copy := execution.TaskExecution{TenantID: item.TenantID}
+	if execution.CopyActorOrigin(&copy, item) != nil {
+		return nil
+	}
+	receipt, err := DecodeTargetProduction(item.Metadata[TargetProductionMetadataKey])
+	if err != nil || receipt.TenantID != item.TenantID || receipt.ExecutionID != item.ExecutionID || receipt.Attempt != item.Attempt || receipt.RetryOfExecutionID != nil || receipt.Phase != TargetProductionCommitted || !receipt.CreatedAndCommitted || receipt.Preparation != plugin.TableTargetCreated {
+		return nil
+	}
+	return &ProductionAuthorization{SchemaVersion: "transfer.initial-authorization/v1", Status: "pending", NextAttemptUnix: now.Unix()}
 }
