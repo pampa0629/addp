@@ -437,6 +437,7 @@ func exercisePersistentNodeGrants(t *testing.T, db *gorm.DB, service *Service, a
 				} else if strings.HasSuffix(name, ".tif") {
 					format, layout = "tiff", "multi"
 					refs[0].Role = "image"
+					refs = append(refs, authorizationfacts.FileCompositionRef{Target: plugin.ObjectItemPath(base.EngineID, "models", " exact.dir /"+name+".aux.xml"), Role: "auxiliary_metadata"})
 				}
 				if dependency != "" {
 					format = "3ds"
