@@ -33,12 +33,55 @@ NFS／MinIO 各两份独立字节编码源文件，每份三条单场消息，�
 
 ## NetCDF 单文件只读
 
-`manager-internal-artifact-lineage` 的独立case `native-netcdf`验证CDF-1/2/5及NetCDF-4根组数值profile，保留其他case及其断言，不把独立case计为full模型场景通过。仅复用原有Manager隔离Linux x86-64部署、GeoPython、NFS和MinIO夹具，不额外启动Model3D/PointCloud/Document，不执行Transfer业务或任务；标准生命周期自动加载的既有平台依赖仍随部署清理，不计为其业务验收。一次性普通消费用户严格六项已有权限：manager.content.read、manager.data_item.read、meta.catalog.read、meta.scan_task.execute、meta.scan_task.read、monitor.execution.read；不增加权限，源初始化身份复用现有标准初始化范围，普通原文件读取仍沿现行内容权限，不宣称精确组成内容源Grant已接入。按现行跨引擎元数据契约，扫描后由分离的初始化User为十四个精确文件／对象签发metadata_read Grant，沿既有共享ExactFileMetadataGrants核准前不可见、核准后可见、退出撤销后不可见及详情404；不授予目录／前缀或内容读取Grant。公开Meta只核容器结构投影，原始类型、维度、日历、组成profile和源版本由消费者经既有Manager内容入口核对并归档。浏览器进程移除初始化凭据；成功／失败均尝试本轮Grant与物理源清理，保留首个业务失败及清理错误。当前owner报告升级addp.manager-netcdf/v2，明确拒绝缺少现行元数据授权证明的旧owner回执；页面报告仍为addp.manager-netcdf-browser/v1，并严格核其schema、逐源数值／掩膜／时间切换、下载及现有截图。历史固定源码的通过结论不升级为本轮迁移通过。
+阅读导航：[来源与权限](#netcdf-来源与权限) · [变量与切片](#netcdf-变量与切片) · [页面与原件](#netcdf-页面与原件) · [清理与未覆盖项](#netcdf-清理与未覆盖项) · [验证与历史证据](#netcdf-验证与历史证据)。
 
-保留三个独立编码的经典样例：CDF-1未知坐标、CDF-2显式UTM50N规则网格、CDF-5超2^53的Int64。增加四个独立netCDF-C/HDF5生成的固定NC4原件：Int32压缩、Int64、UInt64近上限、显式UTM50N规则网格；生成器不调用产品读取器，原件随夹具保存，数值/mask/网格由独立明确oracle核对。七样例均含两时间层、缺失值、比例/偏移和360_day时间维。两引擎共十四份源上逐文件核规范身份、变量与维序、NC4完整组成profile、原始数值类型、字节大小/SHA、二维完整数值/掩膜、指定小窗口、重复无持久缓存读取、越界/伪子数据集拒绝、经典与NC4源变化409及原件精确恢复、原文件API及真实按钮下载。父容器不得取得统一空间范围，无CRS切片不得定位；显式规则网格只在已证空间profile下显示范围，不据数据名称推4326。实际页面逐格核原值和valid状态，另核数值表可视高度及最后数据格能滚动进入视口，防止地图把表格压缩到零高度；有定位样例分别保留数值网格与地图截图。切时间层清掉旧图、下载哈希/截图，归档manager-netcdf.json与manager-netcdf-browser.json。源未改写、NFS文件/对象精确删除及外层identity/engine/deployment/Infra清理全部通过方可登记正式验收；无任务/业务产物不伪造缓存复用或任务删除记录。NC4外部/复杂组成拒绝由GeoPython原生T1及Linux产品构建验证分别取证，不以正常源页面通过代替；NC4嵌套分组、复杂类型、跨文件聚合、输出和任意CF特性不在本轮。
+### NetCDF 来源与权限
+
+`manager-internal-artifact-lineage` 的独立case `native-netcdf`验证CDF-1/2/5及NetCDF-4根组数值profile，保留其他case及其断言，不把独立case计为full模型场景通过。仅复用原有Manager隔离Linux x86-64部署、GeoPython、NFS和MinIO夹具，不额外启动Model3D/PointCloud/Document，不执行Transfer业务或任务；标准生命周期自动加载的既有平台依赖仍随部署清理，不计为其业务验收。
+
+一次性普通消费用户严格六项已有权限：manager.content.read、manager.data_item.read、meta.catalog.read、meta.scan_task.execute、meta.scan_task.read、monitor.execution.read；不增加权限，源初始化身份复用现有标准初始化范围，普通原文件读取仍沿现行内容权限，不宣称精确组成内容源Grant已接入。浏览器进程移除初始化凭据。
+
+按现行跨引擎元数据契约，扫描后由分离的初始化User为十四个精确文件／对象签发metadata_read Grant，沿既有共享ExactFileMetadataGrants核准前不可见、核准后可见、退出撤销后不可见及详情404；不授予目录／前缀或内容读取Grant。
+
+保留三个独立编码的经典样例：CDF-1未知坐标、CDF-2显式UTM50N规则网格、CDF-5超2^53的Int64。增加四个独立netCDF-C/HDF5生成的固定NC4原件：Int32压缩、Int64、UInt64近上限、显式UTM50N规则网格；生成器不调用产品读取器，原件随夹具保存，数值/mask/网格由独立明确oracle核对。七样例均含两时间层、缺失值、比例/偏移和360_day时间维。
+
+### NetCDF 变量与切片
+
+公开Meta只核容器结构投影，原始类型、维度、日历、组成profile和源版本由消费者经既有Manager内容入口核对并归档。
+
+两引擎共十四份源上逐文件核规范身份、变量与维序、NC4完整组成profile、原始数值类型、字节大小/SHA、二维完整数值/掩膜、指定小窗口、重复无持久缓存读取、越界/伪子数据集拒绝、经典与NC4源变化409及原件精确恢复。
+
+父容器不得取得统一空间范围，无CRS切片不得定位；显式规则网格只在已证空间profile下显示范围，不据数据名称推4326。
+
+### NetCDF 页面与原件
+
+实际页面逐格核原值和valid状态，另核数值表可视高度及最后数据格能滚动进入视口，防止地图把表格压缩到零高度；有定位样例分别保留数值网格与地图截图。切时间层清掉旧图、下载哈希/截图，归档manager-netcdf.json与manager-netcdf-browser.json。
+
+核对原文件 API 与真实按钮下载的完整字节、大小及 SHA。
+
+Owner 报告使用 `addp.manager-netcdf/v2`，必须包含现行元数据授权证明，拒绝缺少该证明的旧回执；页面报告沿用 `addp.manager-netcdf-browser/v1`，严格核对 schema、逐源数值／掩膜／时间切换、下载及现有截图。
+
+### NetCDF 清理与未覆盖项
+
+成功／失败均尝试本轮Grant与物理源清理，保留首个业务失败及清理错误。
+
+源未改写、NFS文件/对象精确删除及外层identity/engine/deployment/Infra清理全部通过方可登记正式验收；无任务/业务产物不伪造缓存复用或任务删除记录。
+
+NC4外部/复杂组成拒绝由GeoPython原生T1及Linux产品构建验证分别取证，不以正常源页面通过代替；NC4嵌套分组、复杂类型、跨文件聚合、输出和任意CF特性不在本轮。
+
+### NetCDF 验证与历史证据
 
 标准入口仍为`make test-geopython-workflow`、`make test-module MODULE=common GO_ONLY=1`、`make test-module MODULE=manager GO_ONLY=1`、`make test-manager-frontend`、`make test-manager-online-runner`及`make test-online ONLINE_SUITE=manager-internal-artifact-lineage`（显式ADDP_ONLINE_MANAGER_CASE=native-netcdf）。Hosted入口由既有workflow的manager_case选择，不新增并行服务或重复套件。
 
+早期固定源码及旧版回执的通过结论不替代现行授权契约验收。
+
+以下记录按阶段与固定源码使用，实际 Job、失败、原始产物、清理及未覆盖项由证据专题保存：
+
+- [经典 CDF 单文件只读证据](../evidence/资源读取与预览历史证据.md#netcdf-经典-cdf-单文件只读--限定-hosted-通过)：保留 CDF-1／2／5 的分层记录、首轮页面未通过和后续修复；首轮 API 数值及清理通过不替代真实按钮下载或浏览器后快照清理证明。
+- [NC4 根组数值 profile 证据](../evidence/资源读取与预览历史证据.md#netcdf-4-根组数值-profile--本地门禁与正式复验)：保留早期组成拒绝的假阳性、ARM64 构建在下载阶段失败、Linux 十项原生失败及维度引用有／无符号修复；修后 Hosted、Linux 命名回归和完整 GeoPython 超时取消分别判定，不以局部通过覆盖失败或取消。
+- [现行元数据授权适配证据](../evidence/资源读取与预览历史证据.md#netcdf-当前元数据授权契约适配--限定正式-hosted-通过)：固定受验源码 `5e5d436f8eb433890daa8b04d9c751fe5e7044bc`、Job `125763328404`，核对十四份来源、精确 Grant、结构／内容分工及完整清理。保留 UInt64 静态截图裁切、首层缺失由 DOM／JSON 证明、范围框不认证外部底图或影像渲染，以及相关本地门禁失败与 CI 取消的边界。
+
+各阶段的本地、Linux、受控页面和真实 Hosted 证据分别按实际覆盖使用；固定版本通过不扩大为当前源码、任意 NC4／CF 或所有环境已验收，清理通过也不抵消业务失败。
 
 ## manager-internal-artifact-lineage
 
