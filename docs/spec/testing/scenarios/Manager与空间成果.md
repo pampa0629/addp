@@ -44,7 +44,26 @@ NFS／MinIO 各两份独立字节编码源文件，每份三条单场消息，�
 
 栅格媒体子场景由独立夹具初始化用户向普通消费用户签发一次本轮 MinIO 的 `raster` 前缀非递归读取授权，只覆盖该前缀直接子项，场景结束即撤回；不修改角色或扩大到整个存储引擎。Meta 只核对目录身份、格式、内容布局和已声明 CRS；尺寸、波段、范围等内容事实由同一普通账号经 Manager 授权预览取回，并与物理夹具交叉核对。
 
-唯一选择项为 `ADDP_ONLINE_MANAGER_CASE=full|native-raster-media|native-table-orc|native-table-avro|native-netcdf|native-grib|native-envi|kml-export|filegdb-export|filegdb-mysql-export|filegdb-authorization`，未提供时明确选择 `full`，未知或空值在任何 Hosted 生命周期动作前拒绝。标准业务入口仍为 `ADDP_ONLINE_MANAGER_CASE=native-raster-media make test-online ONLINE_SUITE=manager-internal-artifact-lineage`；人工 Hosted 使用既有 workflow 的 `suite=manager-internal-artifact-lineage` 和明确 `manager_case`。Job 名称、Artifact 名称和 `manager-case.json` 必须显式包含所选 case，不能把任一独立 case 的通过标为完整 Manager 场景通过。KML case 的独立数据、身份、导出与清理边界见下节。
+唯一选择参数为 `ADDP_ONLINE_MANAGER_CASE`，可选值见下表，与 Hosted gate、workflow 的 `manager_case` 及业务分发器登记对应。未提供时明确选择 `full`，未知或空值在任何 Hosted 生命周期动作前拒绝。标准业务入口仍为 `ADDP_ONLINE_MANAGER_CASE=native-raster-media make test-online ONLINE_SUITE=manager-internal-artifact-lineage`；人工 Hosted 使用既有 workflow 的 `suite=manager-internal-artifact-lineage` 和明确 `manager_case`。Job 名称、Artifact 名称和 `manager-case.json` 必须显式包含所选 case，不能把任一独立 case 的通过标为完整 Manager 场景通过。
+
+| case | 业务覆盖与正文入口 |
+| --- | --- |
+| `full` | 原完整模型、授权、点云、文档及其他既有断言；[部署、模型转换与通用清理](#部署模型转换与通用清理)。 |
+| `native-raster-media` | 本节下述 IMG／JPEG2000、[Surfer GRD](#surfer-grd-读取)及 [TIFF 无定位小图](#tiff-无定位小图的-cog-布局回归)；不执行模型、点云、文档或结构化数据业务。 |
+| `native-table-orc` | [ORC 单文件表格](#orc-单文件表格-hosted)：NFS／MinIO 预览、页面与原件、Transfer→Parquet；嵌套只读范围与批量传输范围分别判定。 |
+| `native-table-avro` | [Avro 单文件表格](#avro-单文件表格读取)：三种 codec、分页／原件及跨批 Transfer→Parquet，保留平坦标量限制。 |
+| `native-table-feather` | [Feather V2](#feather-v2-基础标量独立-hosted)：六份源的分页与 Transfer→Parquet，MinIO 原件下载与 NFS 下载拒绝分别核对；Grant、六任务及物理源／成果分别清理。 |
+| `delimited-read-settings` | [CSV／TSV GB18030 读取设置](#csvtsv-gb18030-独立读取设置-case)：NFS／MinIO 编码、表头切换、分页、重开及原件；撤销 Grant 并清理精确源，不创建派生产物，不替代 Transfer T4。 |
+| `native-netcdf` | [NetCDF 单文件只读](#netcdf-单文件只读)：变量／切片、页面与原件；无任务或业务产物，不伪造缓存及任务删除证明。 |
+| `native-grib` | [GRIB2 单文件只读](#grib2-单文件只读)：逐消息数值、切片、页面与原件；不生成地图、任务或缓存成果。 |
+| `native-envi` | [ENVI 双文件 COG](#envi-双文件-cog限定-hosted-已验收)：完整组成与节点授权、COG／原件、撤权恢复、页面及领域／物理清理。 |
+| `kml-export` | [KML 页面导出](#kml-实际页面导出)：隔离 PostGIS 源、真实按钮下载与独立 XML 核对；会话生命周期与部署清理分别判定。 |
+| `filegdb-export` | [PostGIS→FileGDB 页面导出](#filegdb-实际页面导出)：完整 ZIP 回读、跨账号拒绝及排队撤权；不代替 NFS FileGDB 读授权。 |
+| `filegdb-mysql-export` | [MySQL→FileGDB 页面导出](#mysql-filegdb-实际页面导出)：独占 MySQL 夹具、页面／回读与排队撤权，来源及清理独立于 PostGIS。 |
+| `filegdb-authorization` | [NFS FileGDB 整容器授权](授权与共享.md#nfs-filegdb-整容器授权2026-10-29-接入范围)：整项 Grant、子表与 ZIP、跨账号／撤权／到期及故障恢复，保留 NFS 挂载和临时包清理要求。 |
+| `nfs-upload-initial` | [NFS 上传新项初始授权](授权与共享.md#nfs-上传新项初始授权)：仅该 case 使用自有可写目录；验证新项授权、覆盖不增权、回执重放与部分失败，失败也收权并清理文件，不扩展追加能力。 |
+
+各 case 的精确身份、权限、源／成果、失败处理和清理证明以所链专题为准，不统一套用 `full` 的十项权限或模型清理条款。选择清单仅说明当前接线，不表示这些 case 已通过 Hosted；固定版本证据、首败、未覆盖项及业务与部署清理结果继续分别核对。
 
 `native-raster-media` 执行既有 IMG/JPEG2000、Surfer GRD 只读及 TIFF 无定位小图 COG 布局子场景。前两者沿同一入口验证真实 Meta、原文件、COG、页面、缓存和领域／物理清理；GRD 验证完整数值源、元数据、页面原文件下载及无定位边界。四个子场景任一个失败即失败，不因另一个通过继续宣称整项通过。独立根报告为 `manager-native-raster-media.json`、`schema_version=addp.manager-native-raster-media/v2`，包含 `case=native-raster-media`、完整 `source_formats=[img,jpeg2000,grd,tiff]`、普通身份、四个子报告及真实失败状态；总 `online-report.json` 仍由统一分发器生成。未执行的模型、点云、文档、结构化数据及其他格式既不计通过，也不伪装成跳过后完整通过；完整 case 在新模型源授权迁移完成前仍可能受其原有正向断言阻断，须单独验收。成功／失败后的应用、夹具、凭据与 Infra 清理继续使用同一 Hosted 生命周期，不修改开发服务。
 
