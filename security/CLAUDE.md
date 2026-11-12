@@ -1048,3 +1048,19 @@ DNS恢复后，用户另行确认的唯一[Run43140011471／Job130924454141](htt
 精确候选2664dd82881a553f6634afbbb4a2c3389803d9f0的push [Run43156617594／Platform Job130977934296](https://github.com/pampa0629/addp/actions/runs/43156617594/job/130977934296)，attempt1实际success。独立读取原始Job API，核对head SHA、completed/success及Run platform consistency gate实际步骤success；原始日志200行为完整checkout SHA，3529行登记156项并以OK结束，4458／4459行两组System Fixture Go选择实际ok，4462行Security292项以OK结束，无错误注解。非verbose Go包结果不证明逐例无跳过；本轮不推断整个Run其他Job结果。
 
 原件/tmp/addp-ci-1400-1112.ux0igerj/security-platform-h1.log，SHA256为879c3b545a14ae9afec4fd5c21724eee7145291df2c7f4f3b2eb4cce75a1015a；独立元信息、脚本和结果/tmp/p145-2664-platform-independent/{job.json,audit.py,audit.json}，脚本实际退出0。Common完整PG仍复用前节已核7d自然门禁的相同输入证据，不重复执行。此前三次Hosted首失败、已批准suite专属写入功能前提与严格oracle均保持；当前仅确定性自然门禁已补齐，新v46/v10真实Hosted尚待专门CI会话统一确认，未获新授权或派发。已核清单维护会话最近M155／M156均部分实现；本次只补精确候选Linux层级，不能把它记为新的T4通过。无产品或门禁输入变更，只更新证据文档并作所属diff检查。
+
+
+### v46 分组 Transfer 主动恢复的 PUT 前提缺口（2026-11-12）
+
+本次唯一[Run43180455765／Job131054875358](https://github.com/pampa0629/addp/actions/runs/43180455765/job/131054875358)，attempt1实际failure；控制面4b114983b335969f440b94c3182e8023a794cb8c、业务2664dd82881a553f6634afbbb4a2c3389803d9f0。独立读取Run／Job／Artifact API，核实际源码选择／checkout／祖先／readiness步骤success、业务步骤failure、证据上传success。Artifact13927312379原始ZIP的API摘要与本地SHA256均为f8b43dc5ebfe04e7c7fb4a4852a150f3dc91d974f06f0ca13964f034ace5d072，54个唯一安全路径成员、CRC与解包全部字节逐项一致。十服务preflight均精确业务源码且repository_clean。
+
+前六阶段passed，第七postgres_grouped_outputs在65000ms后failed（包含finally，不是单请求超时）。原online-gate.log第4721行与Job第5298行均为PUT /api/v1/transfer/task-definitions/9 returned HTTP 403 (permission_denied)。关联请求19d3a3e9-76f7-491a-acf0-bf1b1d7f8e55的System auth/context为200，Transfer任务PUT及Gateway为403，未进入该请求的执行授权签发。沿精确候选控制流，该PUT是撤销方式后主动清空旧选择、恢复默认的操作；此时已越过所选任务执行及撤销后的拒绝检查，但归档没有原始结果正文或最终分组报告，不能补造单元格／执行UUID或记完整三出口生命周期通过。无最终领域／浏览器报告、0/23PNG。六Grant的目标／action／请求UUID逐项对应，最终pending/errors空、撤销／不可读／隐藏均true；wrapper cleanup=passed、Infra零残留分别成立，不覆盖业务失败。独立审计脚本及原件元信息 /tmp/p145-431804-independent/{audit.py,job.json,run.json,artifact.json,failure-audit.json}，脚本实际退出0；原归档和日志 /tmp/addp-ci-1802-1112.4m3n2bzm/{security-artifact.zip,security-job.log}。
+
+UpdateTask正式接口要求transfer.task.update，而原套件消费User没有该功能。用户已明确批准只补该套件disposable消费账号，规范先记录后实现：只追加suitePermissions的security-mysql-owner-protection case，global consumerPermissions、两个准备账号、独立资格账号、其他套件、源Grant、原值授权和产品规则不变。回归扩展既有分组生命周期夹具检查，旧夹具实际因missing transfer.task.update报红；同时检查写入／更新功能不得扩散到共享consumer、准备账号和三个既有只读套件，原无DDL／external_effect／源Grant管理功能反例保持。领域v46／浏览器v10、28阶段／23图、90秒／2400秒和严格oracle保持。现有make test-security-online-runner与System夹具自动发现已覆盖，不新增workflow。本会话不启停个人服务、不派发Hosted；修后精确候选交专门CI会话安排本次用户同意的同范围复验，原三轮首失败分别保留。
+
+
+本轮回归实际结果：新增同一生命周期例在旧夹具报missing transfer.task.update（退出1），修后定向verbose例实际PASS（退出0）；完整System online-test-fixture Go包以GOWORK=off go test ./cmd/online-test-fixture -count=1退出0。所属未改领域组271项实际通过（不包含包装器组，不能冒充完整292）。完整make test-security-online-runner实际退出2：前置43／205／19／156项及登记CLI通过；随后35项execution包装组450.785秒、3个errors，均为HostedSecurityGateTest的test_graph_build_failure_never_starts_app_or_browser_and_still_cleans、test_graph_endpoint_case_reaches_only_the_existing_isolated_owner_dispatcher、test_graph_profile_uses_only_its_synthetic_fixture_and_always_cleans内部bash子进程60秒TimeoutExpired。不得把聚合入口记通过，后继Graph／Security recipe未执行；不改包装器、Graph、超时或断言，也不猜测这些超时根因。本次夹具变更沿已存在System Go及Platform登记覆盖，所属最小T1和领域检查已足够验证这一权限追加；完整聚合缺口须由专门CI会话先核精确候选相关自然门禁，再安排同范围Hosted，不能据专项通过直接放行。无新增T2、个人HTTP／浏览器或Hosted通过，不需个人服务重启。
+
+日志 /tmp/p145-grouped-task-update-{red,green,fixture-full,domain,standard-gate}.log，验证摘要及文件哈希 /tmp/p145-grouped-task-update-verification.json。功能清单已只读解密核对实际155行/B空为动态脱敏与静态加密执行总述，156行/B155为动态脱敏实时生效，两项M列仍部分实现；工作簿未写入，后续由维护会话更新。
+
+提交前发现System夹具同文件存在另一会话的topology工作区改动。已用HEAD加仅本次Security hunk构造临时Go overlay，排除该差异后完整online-test-fixture包再次通过；发布只暂存本次Security权限／测试hunk及三份所属文档，不包含topology改动。覆盖文件、补丁与输入摘要 /tmp/p145-grouped-task-update-candidate/，日志 /tmp/p145-grouped-task-update-pure-fixture.log。

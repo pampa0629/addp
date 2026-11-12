@@ -361,3 +361,10 @@ v45实际运行在选中方式后的历史检查失败：该检查将默认历�
 精确业务源码7faff9ab8的Run43140011471／Job130924454141已实际进入第七阶段；所选方式的Transfer任务#9启动403。关联请求78ebe164-1ea5-4071-ac58-df13aaf01ef4在System的本人角色自查200、执行授权签发403，尚未创建该任务的Worker执行。现有角色选择链路会为原PG引擎签发read/write执行范围；System现行签发契约要求transfer.task.execute、develop.data_read.execute和develop.data_write.execute。该套件普通消费用户已有前两项及system.execution_authorization.create，但consumerPermissions与套件附加集合均未包含develop.data_write.execute；独立Transfer资格用户的专用权限集合已有此项，不能借该账号冒充原三出口同一用户验收。
 
 用户已确认并实施的最小方案：只在security-mysql-owner-protection的套件专属附加功能权限中加入既有develop.data_write.execute；不修改全局consumerPermissions、不增加源Grant、引擎、角色、用户、原值授权或产品签发规则。新增夹具正反回归核对该套件唯一增加此项、其他套件不受影响；沿现有System夹具Go与make test-security-online-runner登记验证。范围仍为本Job disposable账号及原目标，需新的精确候选和单次Hosted确认后才运行。本次只修改隔离夹具定义，当前个人账号没有增权、Hosted没有重派；原403与缺失领域／浏览器报告、0/23图保留，六Grant清理成功不替代业务通过。
+
+
+### v46 分组 Transfer 主动恢复的任务更新前提（2026-11-12）
+
+精确业务2664dd82881a553f6634afbbb4a2c3389803d9f0的Run43180455765／Job131054875358已实际失败：前六阶段通过，第七阶段在主动移除已失效选择、恢复默认时，PUT /api/v1/transfer/task-definitions/9返回403 permission_denied。该操作沿既有接口要求transfer.task.update，与前轮启动时需要的develop.data_write.execute不同。原始请求19d3a3e9-76f7-491a-acf0-bf1b1d7f8e55中System auth/context为200，Transfer PUT为403；无最终领域／浏览器报告、0/23图。六Grant、wrapper及Infra清理分别核验，不替代业务通过。
+
+用户已确认本轮最小修正范围：仅向security-mysql-owner-protection的disposable消费账号套件附加集合增加既有transfer.task.update；global consumerPermissions、准备账号、独立资格账号、其他套件、源Grant、原值授权和产品权限规则均不变。沿已有System夹具Go回归验证必需权限及不扩散边界，并运行make test-security-online-runner；现有入口及CI自动发现已覆盖，无需新增workflow。领域v46／浏览器v10、28阶段／23图、90秒资格／2400秒预算、固定值oracle及清理均保持。修正后由专门CI会话安排本次获准的同范围复验，本会话不自行派发或重试。

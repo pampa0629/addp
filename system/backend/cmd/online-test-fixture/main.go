@@ -387,7 +387,7 @@ func suitePermissions(suite string) ([]string, error) {
 		return append(append([]string{}, rasterWorkflowPermissions...), "manager.derived_artifact.create", "manager.derived_artifact.read"), nil
 	case "security-mysql-owner-protection":
 		permissions := append(append([]string{}, consumerPermissions...), securityPermissions...)
-		return append(permissions, "manager.content.read", "manager.search.execute", "manager.derived_artifact.create", "manager.derived_artifact.read", "monitor.execution.read", "service.definition.update", "develop.data_write.execute"), nil
+		return append(permissions, "manager.content.read", "manager.search.execute", "manager.derived_artifact.create", "manager.derived_artifact.read", "monitor.execution.read", "service.definition.update", "develop.data_write.execute", "transfer.task.update"), nil
 	case "security-plaintext-access":
 		return plaintextApplicantPermissions, nil
 	case "opengauss-consumer-flow", "kingbase-consumer-flow":
