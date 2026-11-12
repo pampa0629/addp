@@ -550,3 +550,34 @@ Tempo 同一批次先返回搜索200和五份明细200，随后两条并发请�
 使用现有 `scripts/test/changed-gate.py` 的实际选择函数核验：新增后端实现／测试选中Monitor；Monitor前端实现／测试选中Monitor与Console；Console导航测试选中Console。现有工作流复用同一选择器及标准目标，无须增加入口或修改CI。此结论只证明路径登记命中，不代表自然CI已执行。本地日志为 `/tmp/addp-trace-samples-go-final.log`、`/tmp/addp-trace-samples-monitor-gate.log`、`/tmp/addp-trace-samples-console-gate.log` 和 `/tmp/addp-trace-samples-route.log`。
 
 本轮没有真实Tempo采集或Safari产品页面验收，没有重启服务、开验收窗口、Hosted、容量或定时。上述浏览器结果均为隔离前端和受控API夹具，不提升为正式环境验收。真实验收另行确认。
+
+
+## 2026-11-12 当前页样本状态与实例翻页：固定提交自然 CI 通过
+
+手动核对固定提交 `39f89cafebe8ea3897e92d629cf9bf5033aacd8b` 的自然 [Platform CI 43155635597](https://github.com/pampa0629/addp/actions/runs/43155635597)，Run及以下专项Job均为completed／success；执行门禁步骤为success，跳过报告步骤为skipped，未把未执行步骤计为通过。三个Job的原始日志均核对checkout固定SHA。
+
+| Job | 原始日志定位与实际结果 |
+| --- | --- |
+| [Go workspace tests 130974797653](https://github.com/pampa0629/addp/actions/runs/43155635597/job/130974797653) | 第315—316行实际运行`make test-go`；第670及680行分别为Monitor API和service包通过。标准Go入口对固定提交包内测试执行成功，日志未逐条列出测试函数，不额外声称有逐例输出。 |
+| [Console frontend 130974797699](https://github.com/pampa0629/addp/actions/runs/43155635597/job/130974797699) | 第723—724行运行`make test-console-frontend`；第771行258项单测通过；第1142行实际执行实例翻页回归，第1144行实际执行当前页及冻结窗口回归；第1160行348项浏览器测试全部通过，第1196行构建完成。 |
+| [Monitor frontend 130974797715](https://github.com/pampa0629/addp/actions/runs/43155635597/job/130974797715) | 第528—529行运行`make test-monitor-frontend`；第676行执行完整页与窗口绑定单测，第687行起149项单测通过；第1752—1755行执行中英文样本状态、失败／撤权和翻页取消用例；第1781行804项浏览器测试全部通过，第1814行构建完成。 |
+
+本次仅补核已完成的自然CI及原始日志，没有重跑Job、修改CI、重启服务或进行真实采集／Safari验收，也未运行Hosted、容量或定时。正式页面验证仍待另行确认；既有历史失败和验收缺口不由本次确定性通过覆盖。本机原始日志副本为`/tmp/addp-trace-samples-ci-go-130974797653.log`、`/tmp/addp-trace-samples-ci-console-130974797699.log`及`/tmp/addp-trace-samples-ci-monitor-130974797715.log`；长期定位使用上表Job链接与固定提交。
+
+
+## 2026-11-12 Safari 当前页样本标识、翻页与同窗实例查询通过
+
+用户完成Monitor重启后，复用Safari实际Console `http://localhost:5170/monitor/traces` 的“系统管理员”会话验收。未新建身份或改变权限。此前就绪读取确认运行构建为`00846a26dfd2c7a96477dd315e4740baaaadd18f`，包含样本状态实现`39f89cafebe8ea3897e92d629cf9bf5033aacd8b`；本次结论来自实际页面、地址栏及无障碍树观察，不以夹具替代。
+
+默认最近15分钟的第一页显示10个实例，从Agent `ff87cdd9-fb95-4ddf-87af-7e61cdfd9e38` 到Security `a66a98a1-91c4-4e16-b4dd-a6b8dccc0801`，均显示“本时段未发现”。点击第二页后，地址栏为`/monitor/traces?page=2`，列表实际换成Quality、Model、Standard、Monitor、Service、Develop、Orchestrator、Transfer、Manager、Meta，显示10行，实例总数6459；Monitor显示“有样本”，其余显示“本时段未发现”。没有出现页码变化但仍保留第一页内容的情况。
+
+在第二页通过历史开始时间控件选择北京时间2026-11-12 13:10:00，结束时间自动为13:25:00；页面显示“历史时段”和“查至2026/11/12 13:25:00”，地址栏起止为`start=2026-11-12T05:10:00.000Z&end=2026-11-12T05:25:00.000Z`。该固定窗口下分别验证：
+
+| 实例与列表标识 | 进入实例后的实际结果 |
+| --- | --- |
+| Monitor，记录ID `17035`，启动实例`780ff304-74ce-4ca9-b16f-1521a97487f5`，“有样本” | 点击实例后地址栏保留完全相同的start／end，仅增加`instance_id=17035`并移除列表page；返回14条调用链。可见首条`c10fb5c03727bf7480791f80a12786e4`开始于13:23:22，2个Span、7.404ms；另一条`b79ecd01d7cf70eea047ae5d46dc79c1`开始于13:22:38，7个Span、194.602ms。 |
+| Quality，记录ID `17038`，启动实例`cb4382c9-0967-49cf-855e-467228d18d3b`，“本时段未发现” | 点击实例后地址栏仍保留相同start／end，仅增加`instance_id=17038`；页面显示“当前条件下没有可读的已保留调用链”，与列表标识一致。 |
+
+两次使用Safari浏览器返回，都恢复第二页和原固定窗口；观察到“检查中”更新为Monitor“有样本”、其余“本时段未发现”，原Trace结果没有残留在实例列表。最终页面保留在该历史窗口的第二页。
+
+本次授权的实际页面样本标识、翻页及同窗结果一致性通过。未打开上述Trace明细或关联日志，不将本次列表示例扩大为新的详情／日志闭环结论；未注入超时、撤权或上游失败，“暂无法确认”和撤权清空仍由本批确定性及自然CI门禁支持。没有新建环境、重启服务、重跑CI、Hosted、容量或定时，也没有用空结果推断请求未执行或采集完整。
