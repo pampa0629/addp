@@ -473,7 +473,7 @@ func (f *fakeCaptureStore) ClaimPostgreSQLResources(_ context.Context, resource 
 }
 
 func TestCaptureRejectsForeignReservationBeforeTopicOrConnectorEffects(t *testing.T) {
-	store := &fakeCaptureStore{resource: &models.CaptureResource{ID: 1, TaskID: 3, TenantID: 2, SourceType: models.CaptureSourcePostgreSQL, ResourceVersion: 1, Status: models.CaptureStatusProvisioning, PostgreSQL: &models.PostgreSQLCaptureResource{SlotName: "reserved", PublicationName: "reserved_pub"}}}
+	store := &fakeCaptureStore{resource: &models.CaptureResource{ID: 1, TaskID: 3, TenantID: 2, SourceType: models.CaptureSourcePostgreSQL, ResourceVersion: 1, Status: models.CaptureStatusRunning, PostgreSQL: &models.PostgreSQLCaptureResource{SlotName: "reserved", PublicationName: "reserved_pub"}}}
 	topics := &fakeTopicControl{}
 	connect := &fakeConnectControl{state: "RUNNING"}
 	s, err := NewSupervisor(store, fakePlanResolver{plan: &CapturePlan{}}, connect, topics, &fakeSourceResources{ensureErr: errors.New("foreign publication")}, SupervisorConfig{TopicRetention: time.Hour, TopicReplication: 1, ProvisioningTimeout: time.Second, StatusPollInterval: time.Millisecond, MonitorInterval: time.Second}, nil)

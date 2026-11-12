@@ -97,11 +97,6 @@ func (s *Supervisor) Start(ctx context.Context, task *models.TransferTask) (*mod
 	if err != nil {
 		return nil, err
 	}
-	if resource.Status == models.CaptureStatusRunning {
-		if _, err := s.Refresh(ctx, resource); err == nil {
-			return resource, nil
-		}
-	}
 	if err := s.source.EnsureOwnedResources(ctx, plan, resource); err != nil {
 		s.fail(ctx, resource, err)
 		return nil, err
@@ -112,6 +107,11 @@ func (s *Supervisor) Start(ctx context.Context, task *models.TransferTask) (*mod
 		}
 		resource.ResourceVersion++
 		resource.PostgreSQL.SlotOwned, resource.PostgreSQL.PublicationOwned = true, true
+	}
+	if resource.Status == models.CaptureStatusRunning {
+		if _, err := s.Refresh(ctx, resource); err == nil {
+			return resource, nil
+		}
 	}
 	if err := s.topics.EnsureTopic(ctx, TopicSpec{
 		Name: resource.TopicName, Partitions: 1, ReplicationFactor: s.config.TopicReplication,
