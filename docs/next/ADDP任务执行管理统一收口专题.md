@@ -214,7 +214,7 @@ Common 父子准入与 System 协调的用例定位见 [Owner 矩阵](../spec/te
 
 核验唯一 command／actor 所有权，失败方不得改变审核行任何字段或时间戳、不得进入外部图访问入口；批准／修改赢家各保留一条准确已知操作，拒绝赢家为零操作。错误 command／actor 的回执、完成后的重复 Service 请求和过期命令新增操作均拒绝；原始内容、赢家修改内容、审核人及原构建终态／摘要、其他待审项保持准确。复用上一批真实 PG 夹具的公共部分，未增加产品抽象、权限、接口或生产分支。
 
-本地 `make test-module MODULE=graph GO_ONLY=1` 与 `make test-common-postgres COMMON_POSTGRES_TEST_ARGS="--test graph"` 通过；10 个 Graph 主用例、原六个交错及新增九个竞争子场景准确 PASS，零 SKIP，夹具事实退出清理通过。标准入口、目录选择和 CI 登记输入未变，沿用已覆盖 Graph 源码路径及既有必需主测试。尚未复现需要修改生产逻辑的新缺陷；固定源码 Linux 结果在取得终态后补记。原生图效果由持久操作协议夹具代表，不能替代原生故障或 Hosted 验收；高级恢复继续暂缓。
+本地 `make test-module MODULE=graph GO_ONLY=1` 与 `make test-common-postgres COMMON_POSTGRES_TEST_ARGS="--test graph"` 通过；10 个 Graph 主用例、原六个交错及新增九个竞争子场景准确 PASS，零 SKIP，夹具事实退出清理通过。标准入口、目录选择和 CI 登记输入未变，沿用已覆盖 Graph 源码路径及既有必需主测试。尚未复现需要修改生产逻辑的新缺陷。固定源码 `b66672161a8204eed1bf5e01235733008bb21c7d` 的 [Linux Go workspace](https://github.com/pampa0629/addp/actions/runs/43182072933/job/131060229760) 与 [Common PostgreSQL 15](https://github.com/pampa0629/addp/actions/runs/43182072938/job/131060542355) 均已终态 success；原始 Go 日志确认 Graph server／API／repository／service 包实际通过，PG 日志确认 Graph 10 个主用例、原六个交错及新增九个竞争子场景准确 PASS、零 SKIP／FAIL。原生图效果由持久操作协议夹具代表，不能替代原生故障或 Hosted 验收；高级恢复继续暂缓。
 
 ## 七、确认范围与协作分工
 
