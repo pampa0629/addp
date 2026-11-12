@@ -1563,9 +1563,15 @@ for (const locale of ['zh-cn','en']) {
  test(`geometry query summary and WKT details preserve masking (${locale})`, async ({page,context}) => {
   await context.grantPermissions(['clipboard-read','clipboard-write'])
   await installMockBackend(page,{resultKind:'table',locale})
-  const geometry={wkt:'POLYGON EMPTY',srid:32650}
+  const ring=Array.from({length:300},(_,index)=>{
+   const angle=index*2*Math.PI/300
+   return `${(100+Math.cos(angle)).toFixed(12)} ${(30+Math.sin(angle)).toFixed(12)}`
+  })
+  ring.push(ring[0])
+  const geometry={wkt:`POLYGON ((${ring.join(', ')}))`,srid:32650}
+  const empty={wkt:'POLYGON EMPTY',srid:4326}
   await page.route(`**/api/v1/develop/executions/${EXECUTION_ID}`,route=> {
-   const value=executionResult('table',[{shape:geometry},{shape:'***'},{shape:null}])
+   const value=executionResult('table',[{shape:geometry},{shape:empty},{shape:'***'},{shape:null}])
    value.metadata.result.columns=['shape']
    value.metadata.result.fields=[{name:'shape',type:'geometry'}]
    return fulfillJSON(route,{...value,module:'develop',task_type:'query'})
@@ -1576,8 +1582,14 @@ for (const locale of ['zh-cn','en']) {
   await expect(page.locator('.scalar-cell').filter({hasText:'***'})).toBeVisible()
   await cell.click()
   const dialog=page.getByRole('dialog')
-  await expect(dialog.locator('pre')).toHaveText('POLYGON EMPTY')
+  await expect(dialog.locator('pre')).toHaveText(geometry.wkt)
   await dialog.getByRole('button',{name:locale==='zh-cn'?'复制':'Copy',exact:true}).click()
-  await expect.poll(()=>page.evaluate(()=>navigator.clipboard.readText())).toBe('POLYGON EMPTY')
+  await expect.poll(()=>page.evaluate(()=>navigator.clipboard.readText())).toBe(geometry.wkt)
+  await page.keyboard.press('Escape')
+  await expect(dialog).not.toBeVisible()
+  await page.getByRole('button').filter({hasText:locale==='zh-cn'?'面 Polygon':'Polygon'}).filter({hasText:'SRID 4326'}).click()
+  await expect(dialog.locator('pre')).toHaveText(empty.wkt)
+  await dialog.getByRole('button',{name:locale==='zh-cn'?'复制':'Copy',exact:true}).click()
+  await expect.poll(()=>page.evaluate(()=>navigator.clipboard.readText())).toBe(empty.wkt)
  })
 }
