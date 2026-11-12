@@ -60,7 +60,7 @@ func TestENVIRawPairRequiresCurrentCompleteGrantAndHeaderProof(t *testing.T) {
 				if scenario == "partial download" {
 					plan.Refs = plan.Refs[:1]
 				}
-				read, err := svc.prepareStorageRead(target, tenant, "addp_at_current_user", true, plan)
+				read, err := svc.prepareStorageRead(t.Context(), target, tenant, "addp_at_current_user", true, plan)
 				if scenario == "partial download" || scenario == "incomplete proof" {
 					if err == nil {
 						t.Fatal("partial file license became complete ENVI read")

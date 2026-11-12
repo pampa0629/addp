@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/addp/common/client"
+	"github.com/addp/common/dataitem/authorizationfacts"
 	"github.com/addp/common/dataprotection"
 	"github.com/addp/common/dataprotection/projectionstore"
 	"github.com/addp/common/engine/plugin"
@@ -288,10 +289,10 @@ func TestNFSStandaloneTIFFRangeRequiresCurrentExactFileRead(t *testing.T) {
 			plugin.Unregister("nfs")
 		}
 	})
-	metadata := service.NewMetadataService(nil, apiDownloadTestSystemClient(t, 9, "nfs"), apiDownloadTestMetaItemClient(t, `{
+	metadata := service.NewMetadataService(nil, apiDownloadTestSystemClient(t, 9, "nfs"), apiTIFFRangeMetaClient(t, `{
 		"id":1,"tenant_id":1,"engine_id":9,"item_type":"file","name":"source.tif","full_name":"images/source.tif",
 		"attributes":{"item":{"layout":"single","format":"tiff","data_type":"media"},"storage":{"physical_path":"images/source.tif"}}
-	}`), nil, nil)
+	}`, apiTIFFRangeFacts(t, "single", []authorizationfacts.FileCompositionRef{{Target: plugin.FileItemPath(9, source), Role: "image", Required: true, Primary: true}})), nil, nil)
 	checks := 0
 	revokeBeforeOpen := false
 	metadata.SetFileSourceReadChecker(apiModelReadChecker(func(_ context.Context, credential string, scope client.ManagerFileExpectedSource) error {

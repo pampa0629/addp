@@ -3,6 +3,7 @@ package service
 import (
 	"bytes"
 	"context"
+	"errors"
 	"io"
 	"reflect"
 	"strconv"
@@ -56,7 +57,7 @@ type storageRead struct {
 	headerSHA  string
 }
 
-func (s *MetadataService) prepareStorageRead(target *StorageDataItem, tenantID *uint, credential string, human bool, plan *models.DownloadPlan) (*storageRead, error) {
+func (s *MetadataService) prepareStorageRead(ctx context.Context, target *StorageDataItem, tenantID *uint, credential string, human bool, plan *models.DownloadPlan) (*storageRead, error) {
 	if target == nil || tenantID == nil || *tenantID == 0 || target.EngineID == 0 {
 		return nil, ErrEngineAccessDenied
 	}
@@ -90,9 +91,10 @@ func (s *MetadataService) prepareStorageRead(target *StorageDataItem, tenantID *
 	var err error
 	switch {
 	case tiffPreview:
-		composition, err = authorizationfacts.NewScannedFileCompositionBoundary("tiff", "single", []authorizationfacts.FileCompositionRef{{
-			Target: plugin.FileItemPath(engine.ID, item.FullName), Role: "image", Primary: true, Required: true,
-		}})
+		composition, err = readTIFFCompositionFromMeta(ctx, s.metaClient, *tenantID, target.ItemFingerprint, item)
+		if errors.Is(err, engineaccess.ErrUnavailable) {
+			return nil, commonClient.ErrManagerPreviewReadUnavailable
+		}
 	case target.Descriptor.Format == "envi":
 		composition, err = enviCompositionFromMeta(*tenantID, engine.ID, item.ID, target.ItemFingerprint, target.locator, item)
 		read.headerSHA = commonjson.String(item.Attributes, "format_info.envi", "header_sha256")

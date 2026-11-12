@@ -196,22 +196,9 @@ func (s *RasterCOGTaskService) rasterCompositionFromMeta(ctx context.Context, te
 	if cfg.Raster.SourceFormat == "envi" {
 		return enviCompositionFromMeta(tenant, cfg.Target.SourceEngineID, cfg.Target.ItemID, cfg.Target.ItemFingerprint, cfg.Target.Locator, item)
 	}
-	reader, ok := s.sourceMeta.(interface {
-		ReadAuthorizationFacts(context.Context, uint, []string) (*authorizationfacts.AuthorizationFactsBatch, error)
-	})
+	reader, ok := s.sourceMeta.(fileCompositionFactsReader)
 	if !ok {
 		return nil, engineaccess.ErrUnavailable
 	}
-	batch, err := reader.ReadAuthorizationFacts(ctx, tenant, []string{cfg.Target.ItemFingerprint})
-	if err != nil {
-		return nil, engineaccess.ErrUnavailable
-	}
-	// The shared client validates the exact batch envelope at its HTTP boundary.
-	facts := batch.Data[0].Facts
-	if facts == nil || item == nil || facts.EngineID != item.EngineID || facts.FullName != item.FullName ||
-		facts.ItemType != item.ItemType || facts.BasisState != authorizationfacts.AuthorizationBasisComplete ||
-		facts.Boundary == nil || facts.Boundary.FileComposition == nil || facts.Boundary.FileComposition.Format != "tiff" {
-		return nil, ErrFileSourceAuthorizationRequired
-	}
-	return facts.Boundary.FileComposition.Clone(), nil
+	return readTIFFCompositionFromMeta(ctx, reader, tenant, cfg.Target.ItemFingerprint, item)
 }

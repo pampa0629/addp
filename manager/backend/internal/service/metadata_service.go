@@ -215,7 +215,7 @@ func (s *MetadataService) StreamStorageContent(ctx context.Context, target *Stor
 	if target != nil && target.tiffRangePreview && strings.TrimSpace(rangeHeader) == "" {
 		return nil, 0, "", "", commonClient.ErrManagerPreviewReadDenied
 	}
-	read, err := s.prepareStorageRead(target, tenantID, credential, human, nil)
+	read, err := s.prepareStorageRead(ctx, target, tenantID, credential, human, nil)
 	if err != nil {
 		return nil, 0, "", "", err
 	}
@@ -369,8 +369,7 @@ func (s *MetadataService) ResolveStorageStreamTarget(ctx context.Context, locato
 	}
 	target.StorageRef = normalizedRef
 	target.tiffRangePreview = target.EngineType == "nfs" &&
-		target.Descriptor.Format == "tiff" && target.Descriptor.DataType == datatype.Media &&
-		target.Descriptor.Layout == format.LayoutSingle && len(target.Descriptor.Refs) == 0
+		target.Descriptor.Format == "tiff" && target.Descriptor.DataType == datatype.Media
 	return target, nil
 }
 
@@ -553,7 +552,7 @@ func (s *MetadataService) OpenStorageDownloadPlan(ctx context.Context, target *S
 			return nil, err
 		}
 	}
-	read, err := s.prepareStorageRead(target, tenantID, credential, human, plan)
+	read, err := s.prepareStorageRead(ctx, target, tenantID, credential, human, plan)
 	if err != nil {
 		return nil, err
 	}
