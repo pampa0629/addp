@@ -1825,8 +1825,9 @@ class MetaCollectionScenario:
         evidence.update(source_counter_baseline=barrier.baseline,source_counter_observed=counts)
         delta={key:counts['calls'].get(key,0)-barrier.baseline['calls'].get(key,0) for key in ('namespaces','tables','workspace_detection','other')}
         evidence['source_call_delta']=delta
-        require(counts['reset_at']==barrier.baseline['reset_at'] and delta=={'namespaces':1,'tables':1,'workspace_detection':2,'other':0},'source read beyond admitted enumeration')
+        # Retain connection attribution even when the original strict counter check fails.
         evidence['connection_observation']=barrier.connection_observation(barrier.baseline,counts,evidence['blocked'])
+        require(counts['reset_at']==barrier.baseline['reset_at'] and delta=={'namespaces':1,'tables':1,'workspace_detection':2,'other':0},'source read beyond admitted enumeration')
         require(evidence['connection_observation']['verified'] is True,'source attribution incomplete')
         report['checks'].append('meta_central_cancel_stops_next_catalog')
         barrier.close()

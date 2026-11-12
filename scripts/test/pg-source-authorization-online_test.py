@@ -2615,6 +2615,48 @@ class CentralScanControllerTest(unittest.TestCase):
             server.runs[identity]['metadata'][key]=old
         scenario.cleanup()
 
+    def test_inflight_extra_source_call_retains_connection_evidence_and_still_fails(self):
+        server, scenario = self.scenario()
+        original = scenario.life.operator.request
+
+        def running_request(method, path, expected=(200,), body=None, **kwargs):
+            response = original(method, path, expected, body, **kwargs)
+            if path.endswith('/trigger'):
+                run = server.runs[response.payload['execution_id']]
+                run['status'] = 'running'
+                run.pop('completed_at')
+            elif path.endswith('/cancel'):
+                server.tasks[int(response.payload['source_task_id'])]['last_execution_status'] = 'cancelled'
+                response.payload['status'] = 'running'  # The admitted read finishes after release.
+            return response
+
+        scenario.life.operator.request = running_request
+        barrier = Mock()
+        barrier.baseline = {'reset_at': 'same', 'calls': dict.fromkeys(ONLINE.SOURCE_CATEGORIES, 0)}
+        delta = {'namespaces': 1, 'tables': 1, 'workspace_detection': 2, 'other': 1}
+        counts = {'reset_at': 'same', 'calls': delta}
+        barrier.counts.return_value = counts
+        blocked = {'pid': 185}
+        barrier.wait_blocked.return_value = blocked
+        row = PGSourceConnectionEvidenceTest().row
+        events = [row(category='namespaces'), row(), row(category='workspace_detection'),
+                  row(category='workspace_detection'), row('system', 'other', 299, 'version_probe', '-123')]
+        observation = ONLINE.source_connection_summary(events, delta, blocked)
+        barrier.connection_observation.return_value = observation
+        report = {'checks': [], 'meta_collection': {'scheduled': {'executions': {'repeat': {'items_scanned': 2}}}}}
+        with patch.object(ONLINE, 'PGCollectionReadBarrier', return_value=barrier):
+            with self.assertRaisesRegex(ONLINE.SuiteError, 'source read beyond admitted enumeration'):
+                scenario.run_inflight(report)
+        evidence = report['meta_collection']['inflight']
+        self.assertEqual(evidence.get('connection_observation'), observation)
+        self.assertEqual(evidence['source_call_delta'], delta)
+        self.assertFalse(report['checks'])
+        barrier.connection_observation.assert_called_once_with(barrier.baseline, counts, blocked)
+        self.assertIn(barrier, scenario.source_barriers)
+        scenario.cleanup()
+        self.assertFalse(server.tasks)
+        barrier.close.assert_called_once_with()
+
 class PGSourceConnectionEvidenceTest(unittest.TestCase):
     def row(self, module='meta', category='tables', pid=185, kind='unclassified', query_id='12'):
         return {'module': module, 'category': category, 'kind': kind, 'pid': pid,
