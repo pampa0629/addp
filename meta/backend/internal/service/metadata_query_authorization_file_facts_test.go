@@ -8,9 +8,11 @@ import (
 	"time"
 
 	"github.com/addp/common/dataitem/authorizationfacts"
+	"github.com/addp/common/datatype"
 	"github.com/addp/common/format/plugins/envi"
 	"github.com/addp/common/format/plugins/fbx"
 	commonModels "github.com/addp/common/models"
+	"github.com/addp/meta/internal/metaattr"
 	"github.com/addp/meta/internal/metatest"
 	"github.com/addp/meta/internal/models"
 	"gorm.io/gorm"
@@ -111,15 +113,18 @@ func exerciseFileAuthorizationFacts(t *testing.T, db *gorm.DB) {
 				if multi.Boundary != nil && multi.Boundary.FileComposition != nil {
 					t.Fatal("one-ref multi TIFF admitted as content composition")
 				}
-				item.Attributes["item"].(map[string]any)["refs"] = []map[string]any{
-					{"path": item.FullName, "role": "main", "primary": true, "required": true},
-					{"path": item.FullName + ".aux.xml", "role": "auxiliary_metadata", "required": false},
-				}
+				item.Attributes = models.JSONMap(metaattr.BuildAttributes(metaattr.DataItemAttributesInput{
+					Attributes: item.Attributes, Layout: "multi", DataType: datatype.Media, Format: "tiff", PhysicalPath: item.FullName,
+					RefList: []metaattr.ItemRefAttributesInput{
+						{Path: item.FullName, Role: "main", Primary: true, Required: true},
+						{Path: item.FullName + ".aux.xml", Role: "auxiliary_metadata"},
+					},
+				}))
 				if err := db.Save(&item).Error; err != nil {
 					t.Fatal(err)
 				}
 				pam := get()
-				if pam.BasisState != authorizationfacts.AuthorizationBasisComplete || pam.Boundary == nil ||
+				if pam.BasisState != authorizationfacts.AuthorizationBasisComplete || pam.Boundary == nil || pam.Boundary.FileComposition == nil ||
 					pam.Boundary.Layout != "multi" || len(pam.Boundary.FileComposition.Refs) != 2 ||
 					pam.Boundary.FileComposition.Refs[1].Required || pam.BoundaryHash == nil || *pam.BoundaryHash == *v.BoundaryHash {
 					t.Fatalf("Meta PAM identity/optional membership lost: %+v", pam)

@@ -69,15 +69,12 @@ func refAttributes(refs []ItemRefAttributesInput) []map[string]interface{} {
 		if ref.Path == "" {
 			continue
 		}
-		item := map[string]interface{}{"path": ref.Path}
+		item := map[string]interface{}{"path": ref.Path, "required": ref.Required}
 		if ref.Role != "" {
 			item["role"] = ref.Role
 		}
 		if ref.Extension != "" {
 			item["extension"] = ref.Extension
-		}
-		if ref.Required {
-			item["required"] = true
 		}
 		if ref.Primary {
 			item["primary"] = true

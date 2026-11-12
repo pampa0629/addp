@@ -1,11 +1,43 @@
 package metaattr
 
 import (
+	"encoding/json"
 	"testing"
 
 	"github.com/addp/common/datatype"
 	"github.com/addp/meta/internal/models"
 )
+
+func TestBuildAttributesPersistsOptionalRefRequirement(t *testing.T) {
+	attrs := BuildAttributes(DataItemAttributesInput{
+		Layout: "multi", DataType: datatype.Media, Format: "tiff", PhysicalPath: "images/a.tif",
+		RefList: []ItemRefAttributesInput{
+			{Path: "images/a.tif", Role: "main", Required: true, Primary: true},
+			{Path: "images/a.tif.aux.xml", Role: "auxiliary_metadata"},
+			{Path: "images/a.tif.msk", Role: "mask"},
+		},
+	})
+	raw, err := json.Marshal(Normalize(models.JSONMap(attrs)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var stored struct {
+		Item struct {
+			Refs []struct {
+				Path     string `json:"path"`
+				Required *bool  `json:"required"`
+			} `json:"refs"`
+		} `json:"item"`
+	}
+	if err := json.Unmarshal(raw, &stored); err != nil || len(stored.Item.Refs) != 3 {
+		t.Fatal("complete scanned composition was not persisted", err)
+	}
+	for i, ref := range stored.Item.Refs {
+		if ref.Required == nil || *ref.Required != (i == 0) {
+			t.Fatalf("ref %s lost its explicit required fact", ref.Path)
+		}
+	}
+}
 
 func TestNormalizeMetaItemAttributesKeepsOnlyStandardSections(t *testing.T) {
 	t.Parallel()
