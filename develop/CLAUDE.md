@@ -565,3 +565,12 @@ curl -H "Authorization: Bearer <token>" \
 - **共享数据库桥接** - `common/dbbridge`
 - [启动脚本指南](../scripts/docs/启动脚本使用指南.md) - 启停边界、进程归属与实例日志排查
 - [模块服务运行日志规范](../docs/spec/addp模块服务运行日志规范.md) - 正文来源、独立读取授权与验证范围
+
+
+### 原值复核跨截止时间的前端修正（2026-11-12）
+
+createQueryPlaintextRefresh原来复用一个计时器：5秒复核开始后等待HTTP，截止时间在等待期间经过时没有独立清空；迟到响应携带已过期plaintext_expires_at也会先显示。两个定向单元在旧实现实际失败，第一例截止时仍无clear，第二例过期raw进入onResult。仅修正现有前端控制器：保留5秒复核节奏，独立截止计时在网络挂起时仍清空；响应自身的原值截止已经过则停止并丢弃，不重试或放宽授权；stop/dispose使两类计时及在途读取失效。脱敏回落仍可显示，不改当次接口、历史、后台暂存、角色或原值授权。
+
+定向7项单元通过，涵盖原清空／替换／退出、截止清除后脱敏恢复、挂起跨截止、迟到过期原值及初始已经到期。标准隔离Develop浏览器中英文2例通过：正式工作台先显示合成原值，5秒复核请求保持挂起，合成8秒期限经过后确认清空，迟到的过期200不恢复；再次执行显示合成保护结果。没有修改系统或浏览器时钟。以上是T1和受控T3，不是真实账户或真实授权自然到期T4。
+
+证据 /tmp/p145-develop-plaintext-deadline-{red,green,browser,frontend}.log；Manager本轮仅验证其既有父／子请求失效，共414项单元通过，无Manager产品变更。完整make test-develop-frontend实际退出0：test:workflow链通过、290项浏览器实际通过（含本轮中英文截止两项）、构建成功；不是Go／PostgreSQL或Hosted门禁。最终同一7项断言隔离导入旧控制器时3过4失败，原控制器与修后实现输入哈希及红例见/tmp/p145-plaintext-deadline-independent/，未回滚共享工作区源码。

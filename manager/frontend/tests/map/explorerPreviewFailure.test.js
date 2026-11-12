@@ -165,4 +165,47 @@ describe('explorer preview failure state', () => {
     expect(mocks.get.mock.calls.every(([, { params }]) => !params.child_name)).toBe(true)
   })
 
+  it.each(['', 'child'])('ignores a late successful %s preview after the current protection refusal', async child => {
+    const store = useExplorerStore()
+    let resolveOld
+    mocks.get.mockImplementationOnce(() => new Promise(resolve => { resolveOld = resolve }))
+    const old = store.loadPreview(locator, 1, child)
+    mocks.get.mockRejectedValueOnce({ response: { status: 403, data: { error_code: 'security_protection_required' } } })
+    await expect(store.loadPreview(locator, 1, child)).rejects.toBeDefined()
+    resolveOld(preview)
+    await expect(old).resolves.toBeNull()
+    expect(store.previewError).toEqual({ status: 403, code: 'security_protection_required' })
+    expect(store.previewData).toBeNull()
+    expect(store.activeChildPreviewData).toBeNull()
+    expect(store.previewLoading).toBe(false)
+    expect(store.childPreviewLoading).toBe(false)
+  })
+
+  it.each(['', 'child'])('does not revive a cleared in-flight %s preview', async child => {
+    const store = useExplorerStore()
+    let resolveOld
+    mocks.get.mockImplementationOnce(() => new Promise(resolve => { resolveOld = resolve }))
+    const old = store.loadPreview(locator, 1, child)
+    store.clearPreview()
+    resolveOld(preview)
+    await expect(old).resolves.toBeNull()
+    expect(store.previewError).toBeNull()
+    expect(store.previewData).toBeNull()
+    expect(store.activeChildPreviewData).toBeNull()
+    expect(store.previewLoading).toBe(false)
+    expect(store.childPreviewLoading).toBe(false)
+  })
+
+  it('keeps the current protection reason when an older same-resource request fails', async () => {
+    const store = useExplorerStore()
+    let rejectOld
+    mocks.get.mockImplementationOnce(() => new Promise((resolve, reject) => { rejectOld = reject }))
+    const old = store.loadPreview(locator)
+    mocks.get.mockRejectedValueOnce({ response: { status: 403, data: { error_code: 'security_protection_required' } } })
+    await expect(store.loadPreview(locator)).rejects.toBeDefined()
+    rejectOld(failure(500))
+    await expect(old).resolves.toBeNull()
+    expect(store.previewError).toEqual({ status: 403, code: 'security_protection_required' })
+  })
+
 })

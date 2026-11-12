@@ -1593,3 +1593,55 @@ for (const locale of ['zh-cn','en']) {
   await expect.poll(()=>page.evaluate(()=>navigator.clipboard.readText())).toBe(empty.wkt)
  })
 }
+
+
+for (const locale of ['zh-cn', 'en']) {
+  test(`clears plaintext at its deadline while the current-result recheck is pending (${locale})`, async ({ page }) => {
+    const words = JSON.parse(readFileSync(new URL(`../src/i18n/${locale}.json`, import.meta.url), 'utf8')).develop.query
+    await installMockBackend(page, { resultKind: 'table', locale })
+    const rawMarker = 'p145-raw-before-deadline'
+    const maskedMarker = 'p145-protected-recovery'
+    let reads = 0
+    let deadline = 0
+    let rawResponse
+    let releaseLate
+    const latePending = new Promise(resolve => { releaseLate = resolve })
+    await page.route(`**/api/v1/develop/executions/${EXECUTION_ID}/result`, async route => {
+      reads++
+      if (reads === 1) {
+        deadline = Date.now() + 8000
+        rawResponse = { ...executionResult('table', [{ id: 1, name: rawMarker }]), module: 'develop', task_type: 'query' }
+        rawResponse.metadata.result.plaintext_expires_at = new Date(deadline).toISOString()
+        return fulfillJSON(route, rawResponse)
+      }
+      if (reads === 2) {
+        await latePending
+        return fulfillJSON(route, rawResponse)
+      }
+      return fulfillJSON(route, { ...executionResult('table', [{ id: 1, name: maskedMarker }]), module: 'develop', task_type: 'query' })
+    })
+    await page.goto('/sql')
+    const catalog = page.locator('.catalog-panel')
+    await catalog.getByRole('treeitem', { name: ENGINE.name, exact: true }).click()
+    await catalog.getByRole('treeitem', { name: 'public', exact: true }).locator('.el-tree-node__expand-icon').click()
+    await catalog.getByRole('treeitem', { name: 'customers', exact: true }).click()
+    await catalog.getByRole('button', { name: words.generateQueryTemplate, exact: true }).click()
+    const execute = page.getByRole('button', { name: words.execute, exact: true })
+    await execute.click()
+    await expect(page.getByText(rawMarker, { exact: true })).toBeVisible()
+    await expect.poll(() => reads).toBe(2)
+    expect(Date.now()).toBeLessThan(deadline)
+    await expect(page.getByText(rawMarker, { exact: true })).toBeVisible()
+    await expect(page.getByText(rawMarker, { exact: true })).toHaveCount(0)
+    expect(Date.now()).toBeGreaterThanOrEqual(deadline)
+    const late = page.waitForResponse(response => new URL(response.url()).pathname.endsWith(`/${EXECUTION_ID}/result`))
+    releaseLate()
+    await (await late).finished()
+    await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))))
+    await expect(page.getByText(rawMarker, { exact: true })).toHaveCount(0)
+    expect(reads).toBe(2)
+    await execute.click()
+    await expect(page.getByText(maskedMarker, { exact: true })).toBeVisible()
+    expect(reads).toBe(3)
+  })
+}

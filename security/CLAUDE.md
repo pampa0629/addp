@@ -1069,3 +1069,10 @@ UpdateTask正式接口要求transfer.task.update，而原套件消费User没有�
 ### Service 保护拒绝后旧响应回流修正（2026-11-12，独立T1/T3）
 
 不等待本次v46 Hosted，按已有“保护拒绝清旧行且持续显示原因”契约，核查Service页面在途响应归属。标准隔离浏览器的中英文正式Vue页均重现：第二请求403到期后，第一个旧200重新显示phone行及游标；原始失败保留。仅前端loadPreviewData增加当前请求／定义归属，旧成功、失败、finally不覆盖新展示，定义改变或停用后不接受旧结果。三个单元红例转绿；make test-service-frontend的123项／构建及Console标准隔离浏览器4项实际通过，make test-frontend-ci-registration通过；未改后端／权限／接口／Hosted套件，不操作个人服务或Chrome，也不把受控403当真实自然到期T4。细节与证据统一见Service [迟到响应专题](../service/docs/testing/查询与要素协议.md#保护拒绝后的旧预览响应回流2026-11-12)。
+
+
+### Manager 预览归属核对与 Develop 原值截止修正（2026-11-12）
+
+按用户继续核查迟到响应的授权，不查询或调度CI。Manager主预览已有请求序号与资源／子项身份判断，clearPreview失效两条请求；新增5项反例核对同资源新保护403后的旧成功／失败、父／子清空后的在途结果，82文件／414项单元通过，Manager产品代码未改。不能从该局部核对推断所有Manager出口或浏览器T4通过。
+
+Develop现有原值复核在等待HTTP期间缺独立截止清空，且会展示携带已过截止的迟到原值；两个旧实现单元真实报红。仅修正queryPlaintextRefresh为截止与复核分别计时、拒绝已过期原值响应，并保持取消／退出失效与脱敏恢复。定向7项通过；正式Vue工作台的中英文2项隔离浏览器实际等待8秒截止，挂起5秒复核并核对清空、迟到200不回流及再次执行保护结果，通过。不修改系统或浏览器时钟，不改后端、权限、授权期限／历史规则；这是T1/T3，不是实际授权自然到期HTTP或T4。完整make test-develop-frontend实际退出0：test:workflow链、290项浏览器及构建通过，含两项截止测试；前端CI登记27项通过。用最终同一7项断言隔离回放旧控制器时3过4失败，未修改工作区源码，证据/tmp/p145-plaintext-deadline-independent/。细节与日志见Develop CLAUDE.md末节及/tmp/p145-develop-plaintext-deadline-{red,green,browser,frontend}.log。
