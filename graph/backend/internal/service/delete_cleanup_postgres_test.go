@@ -247,6 +247,7 @@ func holdDeleteCleanupClosurePG(t *testing.T, ctx context.Context, f *reviewClea
 type deleteCleanupBarrier struct {
 	pid                int
 	materials, reviews int64
+	tasks              int64
 	err                error
 }
 
@@ -268,6 +269,9 @@ func holdDeleteCleanupMutationPG(t *testing.T, ctx context.Context, f *reviewCle
 			}
 			if state.err == nil {
 				state.err = fresh.Model(&models.ReviewItem{}).Where("task_id = ? AND tenant_id = ?", f.task.ID, f.task.TenantID).Count(&state.reviews).Error
+			}
+			if state.err == nil {
+				state.err = fresh.Model(&models.BuildTask{}).Where("id = ? AND tenant_id = ?", f.task.ID, f.task.TenantID).Count(&state.tasks).Error
 			}
 			barrier <- state
 			select {
