@@ -1557,14 +1557,39 @@ uniform／quartic各12条成功COG链，共24条：省略权重、显式全1、�
 
 ### Feather V2 基础标量独立 Hosted
 
-2026-11-08批准`native-table-feather`复用既有NFS／MinIO、GeoPython产品Runtime、Transfer及隔离生命周期；消费普通User精确11项，来源初始化User精确13项，与已批准ORC消费及有界来源准备范围一致，不增加服务或个人账号权限。各存储三种codec（无压缩、LZ4、ZSTD），每源2503行、多个Arrow record batch，覆盖四种有符号整数、bool、float32／64、Unicode文本、binary、nullable及空值差异。先由来源准备者有界deep扫描，再建立既有精确单文件元数据Grant；公共Meta只核结构，受保护Manager预览核编码profile、真实总数、源版本。API页1／2／126及真实页面下一页保留响应和截图。三份 MinIO 原件仍核对 API 与真实下载按钮的字节。按现行 Manager 源读取契约，三份 NFS 原件逐一核对下载 HTTP 403、JSON 错误且无附件，以及页面下载能力关闭；仍完整执行 NFS 预览和 Transfer。Owner 和浏览器回执升级为 v2，分别记录两种存储的下载结果。普通User创建实际Transfer源→精确Parquet成果，独立物理reader完整核对15018行、字段类型／nullable／数值，归档六份成果；不由页样本替代连续读取。
+阅读导航：[身份与基础标量](#feather-身份与基础标量) · [时间字段](#feather-时间字段) · [日期与定点小数](#feather-日期与定点小数) · [清理与未覆盖项](#feather-清理与未覆盖项) · [分版本证据](#feather-分版本证据)。各扩展共用 `native-table-feather`，实际通过范围按对应固定版本记录判定。
+
+#### Feather 身份与基础标量
+
+2026-11-08批准`native-table-feather`复用既有NFS／MinIO、GeoPython产品Runtime、Transfer及隔离生命周期；消费普通User精确11项，来源初始化User精确13项，与已批准ORC消费及有界来源准备范围一致，不增加服务或个人账号权限。
+
+各存储三种codec（无压缩、LZ4、ZSTD），每源2503行、多个Arrow record batch，覆盖四种有符号整数、bool、float32／64、Unicode文本、binary、nullable及空值差异。先由来源准备者有界deep扫描，再建立既有精确单文件元数据Grant；公共Meta只核结构，受保护Manager预览核编码profile、真实总数、源版本。API页1／2／126及真实页面下一页保留响应和截图。
+
+三份 MinIO 原件仍核对 API 与真实下载按钮的字节。按现行 Manager 源读取契约，三份 NFS 原件逐一核对下载 HTTP 403、JSON 错误且无附件，以及页面下载能力关闭；仍完整执行 NFS 预览和 Transfer。Owner 和浏览器回执升级为 v2，分别记录两种存储的下载结果。
+
+普通User创建实际Transfer源→精确Parquet成果，独立物理reader完整核对15018行、字段类型／nullable／数值，归档六份成果；不由页样本替代连续读取。
+
+#### Feather 时间字段
 
 时间字段沿用该 case、六份来源、既有权限及清理。Meta 核对单位、源时区和可空性，Manager 分页核对完整 ISO 文本，Transfer 的六份物理 Parquet 成果独立回读逻辑类型、原始整数与 NULL。样例覆盖秒时刻、日末纳秒、本地时间戳、纪元前及最小纳秒计数、纽约夏令时回拨时的两个瞬间和固定偏移。秒转毫秒溢出在确定性门禁单独验证。
 
-六份源字节前后不变，Grant撤销后不可见、六临时任务删除且读取404、六物理源和六产物及目标目录标记删除，部署和Infra单独报告清理。初轮失败保留，源变化／未支持类型／原生预算由确定性及原生层拒绝，不把这些单测冒充跨模块权限或容量认证。无派生缓存断言、不新增完整内容授权准入；Feather V1、IPC stream、unsigned／嵌套／dictionary／duration／写出仍不在支持范围，SKP精确组成授权继续关闭。实现和登记不等于正式Hosted通过。
+#### Feather 日期与定点小数
 
 Feather 日期与定点小数扩展复用同一 Hosted 场景和六份来源。Meta 与 Manager 须核对原生日期类型、Decimal128/256 的精度、小数位数及可空性。API 与实际翻页须逐值比较日期及定点文本，含纪元前日期、闰日、空值和尾零。Transfer 产物须由独立 Parquet reader 逐行检查 DATE/DECIMAL 逻辑类型、精度、小数位数及值。
 
+#### Feather 清理与未覆盖项
+
+六份源字节前后不变，Grant撤销后不可见、六临时任务删除且读取404、六物理源和六产物及目标目录标记删除，部署和Infra单独报告清理。初轮失败保留，源变化／未支持类型／原生预算由确定性及原生层拒绝，不把这些单测冒充跨模块权限或容量认证。无派生缓存断言、不新增完整内容授权准入；Feather V1、IPC stream、unsigned／嵌套／dictionary／duration／写出仍不在支持范围，SKP精确组成授权继续关闭。实现和登记不等于正式Hosted通过。
+
+#### Feather 分版本证据
+
+现行断言见以上各主题；固定源码、实际 Job、失败与修复、清理结果及未覆盖项保留在以下证据正文，不在本节重复维护：
+
+- [基础标量 Hosted 证据](../evidence/资源读取与预览历史证据.md#feather-v2-基础标量只读--独立-hosted-t4)：保留首轮正负零 oracle 失败、Transfer preflight 缺口及修复后结果；当时两种来源均下载的记录不替代现行 NFS 下载拒绝断言。
+- [日期与定点小数 Hosted 证据](../evidence/资源读取与预览历史证据.md#feather-v2-日期和定点小数)：仅按该轮 DATE／DECIMAL 范围判定，保留相关 CI 失败，不追认时间戳转存。
+- [时刻与时间戳 Hosted 证据](../evidence/资源读取与预览历史证据.md#feather-v2-时刻与时间戳--正式-hosted)：区分首轮 NFS 下载 403 后退出与修订下载断言后的正式复验，保留首轮缺少页面和物理 Parquet 回读的边界。
+
+本地确定性、Linux 原生门禁和真实 Hosted 结果分别按证据中的实际覆盖范围使用；清理通过不抵消业务失败，历史基础版本通过不代表后续类型扩展已通过。
 
 ### 面邻检查独立普通用户场景（polygon-adjacency）
 
