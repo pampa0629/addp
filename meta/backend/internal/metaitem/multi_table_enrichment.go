@@ -417,6 +417,11 @@ func fileEntriesToCandidates(files []StorageFileRef) []dataitem.Candidate {
 }
 
 func detectedItemFromResolvedItem(physicalPath string, item dataitem.ResolvedItem) *DetectedItem {
+	if item.Format == string(format.FormatGeoPackage) && item.Layout == format.LayoutSingle {
+		// Exact leaves and ref-group/directory detection share the same basic
+		// logical boundary. Deep inspection never supplies this composition.
+		item.RefList = []dataitem.ItemRef{{Path: item.PrimaryContentPath, Role: "container", Required: true, Primary: true, Extension: ".gpkg"}}
+	}
 	sort.Slice(item.RefList, func(i, j int) bool {
 		return item.RefList[i].Path < item.RefList[j].Path
 	})

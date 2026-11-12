@@ -54,21 +54,7 @@ func InferSingleResource(input SingleResourceInput) *DetectedItem {
 	if resolved != nil && len(resolved.Items) > 0 {
 		item = resolved.Items[0]
 	}
-	if item.Format == string(format.FormatGeoPackage) && item.Layout == format.LayoutSingle {
-		// A GeoPackage is one container file. Its basic logical composition is
-		// independent of opening the database or inspecting transaction state.
-		item.RefList = []dataitem.ItemRef{{Path: input.Path, Role: "container", Required: true, Primary: true, Extension: ".gpkg"}}
-	}
-	detected := &DetectedItem{
-		ResolvedItem: item,
-		PhysicalPath: input.Path,
-		Attributes: map[string]interface{}{
-			"storage": map[string]interface{}{
-				"path":         input.Path,
-				"total_size":   input.Size,
-				"content_type": input.ContentType,
-			},
-		},
-	}
+	detected := detectedItemFromResolvedItem(input.Path, item)
+	detected.Attributes = map[string]interface{}{"storage": map[string]interface{}{"path": input.Path, "total_size": input.Size, "content_type": input.ContentType}}
 	return detected
 }

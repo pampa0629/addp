@@ -20,6 +20,7 @@ import (
 	"github.com/addp/meta/internal/metatest"
 	"github.com/addp/meta/internal/models"
 	metaRepo "github.com/addp/meta/internal/repository"
+	"github.com/addp/meta/internal/scanflow"
 	"github.com/addp/meta/internal/scanprocessor"
 	"github.com/addp/meta/internal/scantask"
 	"github.com/google/uuid"
@@ -108,7 +109,21 @@ func exerciseGeoPackageBasicScanAuthorizationFacts(t *testing.T, db *gorm.DB) {
 			depth = "basic"
 		}
 		p.sidecar = stage == "sidecar"
-		result, err := processor.Process(t.Context(), scanprocessor.FileSingleInput(&commonModels.Engine{ID: 856, EngineType: "nfs"}, 7, &parent, file, metaitem.InferSingleResourceItem(file), "file", file.Name, file.Path, p, nil, depth))
+		detected := metaitem.InferSingleResourceItem(file)
+		if stage == "basic" {
+			// Unified producer scans enter through exact ref groups, whereas
+			// leaf refreshes enter through InferSingleResourceItem. Both must
+			// construct one identical logical container without source reads.
+			group := models.ScanRefGroup{Primary: file.Path, Refs: []models.ScanRef{{Path: file.Path, Primary: true, Required: true}}}
+			candidates := scanflow.FileRefGroupCandidateSet(856, file.Path, group)
+			candidates.Files = []metaitem.StorageFileRef{file}
+			found, err := scanflow.ResolveContentCandidates(t.Context(), nil, nil, 856, candidates)
+			if err != nil || found == nil || len(found.Items) != 1 {
+				t.Fatal("basic production ref group did not identify one file", found, err)
+			}
+			detected = found.Items[0]
+		}
+		result, err := processor.Process(t.Context(), scanprocessor.FileSingleInput(&commonModels.Engine{ID: 856, EngineType: "nfs"}, 7, &parent, file, detected, "file", file.Name, file.Path, p, nil, depth))
 		if err != nil {
 			t.Fatal(stage, err)
 		}
