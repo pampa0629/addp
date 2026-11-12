@@ -256,7 +256,7 @@ Common 父子准入与 System 协调的用例定位见 [Owner 矩阵](../spec/te
 
 断言归档、专业结果与公共回执整体回滚，子按原 attempt 独立收敛 failed 并保留安全原因、原开始时间及冻结输入；已提交领域关闭、父整条记录与原构建／任务／材料／审核／控制／操作事实不变。沿既有 Graph PG 主测试、Make 与 CI 选择，无新增权限、预算、依赖或生产路径。四秒协调截止只复用上一批夹具配置，12秒场景上限不变；受控授权与 Common 父关闭不代验 System 私有截止快照／审计、真实权限或跨进程拓扑。
 
-本地 `make test-module MODULE=graph GO_ONLY=1` 与 `make test-common-postgres COMMON_POSTGRES_TEST_ARGS="--test graph"` 通过：Graph 10 个主用例、原6／9／4／8／8／4项及新增两项准确 PASS，零 SKIP／FAIL，夹具自有事实及专用触发器／函数退出清理通过。父截止初测仅差异 `LeaseExpiresAt`：复用 GORM 结构体回读 SQL NULL 保留旧时间指针，改从空结构体读取已提交快照后通过；未发现生产缺陷。额外 `make test-t2-ci-registration` 的首阶段85项中8项失败，均因既有 HighGo SharedSQLPool 新必需项与旧登记夹具不一致，后续检查未执行；本批未修改对应入口或夹具，不计为通过。固定源码 Linux 结果待终态后补记。Graph 高级恢复继续暂缓，未重启服务或触发 Hosted。
+本地 `make test-module MODULE=graph GO_ONLY=1` 与 `make test-common-postgres COMMON_POSTGRES_TEST_ARGS="--test graph"` 通过：Graph 10 个主用例、原6／9／4／8／8／4项及新增两项准确 PASS，零 SKIP／FAIL，夹具自有事实及专用触发器／函数退出清理通过。父截止初测仅差异 `LeaseExpiresAt`：复用 GORM 结构体回读 SQL NULL 保留旧时间指针，改从空结构体读取已提交快照后通过；未发现生产缺陷。额外 `make test-t2-ci-registration` 的首阶段85项中8项失败，均因既有 HighGo SharedSQLPool 新必需项与旧登记夹具不一致，后续检查未执行；本批未修改对应入口或夹具，不计为通过。固定源码 `c0f1f785281cff5c58fd719e09a4fee586e9a8fa` 的 [Linux Go workspace](https://github.com/pampa0629/addp/actions/runs/43229751083/job/131221609597) 与 [Common PostgreSQL 15](https://github.com/pampa0629/addp/actions/runs/43229751019/job/131259464039) 均已终态 success；PG Job 于2026-11-13 00:03:06（Asia/Shanghai）结束。原始 Go 日志确认 Graph server／API／repository／service 包通过，PG 日志确认 Graph 10 个主用例、原6／9／4／8／8／4项及新增两项准确 PASS、零 SKIP／FAIL；`running`／`timeout` 分别耗时0.43／4.35秒。Graph 高级恢复继续暂缓，未重启服务或触发 Hosted。
 
 ## 七、确认范围与协作分工
 
