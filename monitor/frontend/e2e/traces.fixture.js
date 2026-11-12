@@ -4,7 +4,7 @@ export const tracePermissions = ['monitor.trace.read','platform.module.read']
 export async function tracesBackend(page, options = {}) {
   await authenticate(page, { identity: options.identity || identity(tracePermissions), locale: options.locale })
   const targetStart = new Date(Date.now() - 2 * 3600000).toISOString()
-  const calls = [], instanceCalls = []; let mode = 'valid', release, held
+  const calls = [], instanceCalls = [], sampleCalls = []; let mode = 'valid', release, held
   await page.route('**/api/v1/system/platform/modules', route => route.fulfill({
     json: { modules: [{ module_name: 'monitor' }, { module_name: 'system' }], count: 2 }
   }))
@@ -47,6 +47,12 @@ export async function tracesBackend(page, options = {}) {
     if (own === 'missing') return route.fulfill({ status: 404, json: { error_code: 'trace_not_found' } })
     await route.fulfill({ status: own === 'failed' ? 503 : own === 'denied' ? 403 : 200, json: own === 'failed' ? { error_code: 'trace_backend_unavailable' } : own === 'denied' ? { error_code: 'permission_denied' } : { start: queryStart, end, queried_at: new Date().toISOString(), coverage: 'sampled', policy_version: 2, data } })
   })
-  return { calls, instanceCalls, targetStart, mode(v) { mode = v }, hold() { held = new Promise(resolve => { release = resolve }) }, release() { held = null; release?.() } }
+  await page.route('**/api/v1/monitor/platform/traces/samples?**', async route => {
+    const params = Object.fromEntries(new URL(route.request().url()).searchParams)
+    sampleCalls.push(params)
+    const data = params.instance_ids.split(',').map(id => ({ instance_id: Number(id), state: 'has_samples' }))
+    return route.fulfill({ json: { start: params.start, end: params.end, queried_at: new Date().toISOString(), policy_version: 2, coverage: 'sampled', data } })
+  })
+  return { calls, instanceCalls, sampleCalls, targetStart, mode(v) { mode = v }, hold() { held = new Promise(resolve => { release = resolve }) }, release() { held = null; release?.() } }
 }
 export const traceQuery = () => { const end = new Date(Date.now()-1000); return `instance_id=1&trace_id=${'1'.repeat(32)}&start=${new Date(end.getTime()-60000).toISOString()}&end=${end.toISOString()}` }

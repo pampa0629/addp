@@ -530,3 +530,23 @@ Tempo 同一批次先返回搜索200和五份明细200，随后两条并发请�
 已用 `git diff --exit-code 29cee1eb5 3833ce6f --` 核对双摘要的七项输入：Console 的 `e2e/http-quality-navigation.spec.js`、Monitor 的 `TraceDetails.vue`、`utils/traces.js`、两份模块翻译、`tests/traces.test.mjs`，以及平台运行观测规范，均无变化。其间 Console／Monitor 前端仅新增独立的 SQL pool Online 规格；共享前端另有执行失败分类和译文变更，后续通过结果对应包含这些变更的完整后继提交，不表述为全部前端输入逐字节相同。
 
 本次只读核对已有日志、固定源码和 GitHub Job 状态并更新证据，没有重跑任何 Job、改动 CI、启动本地环境或运行 Hosted、容量、定时。原 Console 取消结论与后续 Console 通过结论分别保留。原始日志本机副本分别为 `/tmp/addp-console-129904827278.05Y3uc`、`/tmp/addp-monitor-129904827147.lEmFMt` 和 `/tmp/addp-ci-0000.vle3kf/logs/129911770284.log`；长期定位使用表中固定提交及 Job 链接。
+
+
+## 2026-11-12 当前页调用链样本状态：本地确定性验证通过，真实验收待确认
+
+按用户确认的“有无样本”方案，先修订平台运行观测规范，再增加当前页最多10个实例的唯一批量接口 `/platform/traces/samples` 和列表“本时段调用链”列。异步显示检查中、有样本、本时段未发现或暂无法确认，不提供数量。列表检查冻结起止时间，进入实例沿用相同窗口；切页取消旧请求，迟到结果不能覆盖新页。单实例自动查询和精确 Trace 定位继续复用原读取，不额外批量检查。
+
+整批共享原5秒、100个参与实例／1000 Span／2 MiB投影预算、单主体2／单Monitor8查询及8个活动上游名额，批内最多2个实例并发，每实例只搜索一个候选并按原明细路径核验实际参与者及Link权限。搜索成功且无候选才表示本时段未发现；明细丢失、结构错误、超预算或上游失败保持不可确认，不补扫。身份或权限撤销拒绝整批并清空页面数据。没有新增存储、采样配置、权限或后台轮询。
+
+以下标准入口在本机退出0：
+
+| 入口 | 实际覆盖 |
+| --- | --- |
+| `make test-module MODULE=monitor GO_ONLY=1` | Monitor Go T1；新增混合状态、10项上限、共享预算与并发、取消回收、不可读候选、权限撤销和API身份／参数边界 |
+| `make test-monitor-frontend MONITOR_FRONTEND_BROWSER_ARGS=e2e/traces.spec.js` | 149项确定性测试、24项Trace浏览器夹具测试及构建 |
+| `make test-console-frontend 'CONSOLE_FRONTEND_BROWSER_ARGS=e2e/trace-log-navigation.spec.js e2e/http-quality-navigation.spec.js'` | 258项确定性测试、15项Console导航浏览器夹具测试及构建；验证当前页10项、翻页、固定时间窗进入、原日志与5xx导航 |
+| `bash scripts/swagger/gen-swagger.sh monitor`；`bash scripts/swagger/check-route-coverage.sh monitor` | 文档生成成功，99个公开路由方法覆盖一致 |
+
+使用现有 `scripts/test/changed-gate.py` 的实际选择函数核验：新增后端实现／测试选中Monitor；Monitor前端实现／测试选中Monitor与Console；Console导航测试选中Console。现有工作流复用同一选择器及标准目标，无须增加入口或修改CI。此结论只证明路径登记命中，不代表自然CI已执行。本地日志为 `/tmp/addp-trace-samples-go-final.log`、`/tmp/addp-trace-samples-monitor-gate.log`、`/tmp/addp-trace-samples-console-gate.log` 和 `/tmp/addp-trace-samples-route.log`。
+
+本轮没有真实Tempo采集或Safari产品页面验收，没有重启服务、开验收窗口、Hosted、容量或定时。上述浏览器结果均为隔离前端和受控API夹具，不提升为正式环境验收。真实验收另行确认。

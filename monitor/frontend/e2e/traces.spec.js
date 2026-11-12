@@ -158,7 +158,78 @@ test('a module with multiple instances queries only the explicitly selected inst
   expect(state.calls).toEqual([])
   await instances.getByRole('button', { name: 'one', exact: true }).click()
   await expect(page.getByTestId('trace-results')).toContainText('1'.repeat(32))
-  expect(state.calls).toEqual([{ instance_id: '1' }])
+  const { start, end } = state.sampleCalls[0]
+  expect(state.calls).toEqual([{ instance_id: '1', start, end }])
+})
+
+for (const locale of ['zh-cn', 'en']) test(`sample states describe only the current window and opening a row freezes it (${locale})`, async ({ page }) => {
+  const now = Math.floor(Date.now() / 1000) * 1000 - 120_000
+  await page.clock.setFixedTime(now)
+  const state = await backend(page, { multiple: true, locale })
+  await page.route('**/api/v1/monitor/platform/traces/samples?**', route => {
+    const params = Object.fromEntries(new URL(route.request().url()).searchParams)
+    state.sampleCalls.push(params)
+    return route.fulfill({ json: { ...params, queried_at: new Date(now).toISOString(), policy_version: 2, coverage: 'sampled',
+      data: [{ instance_id: 1, state: 'has_samples' }, { instance_id: 3, state: 'not_found' }] } })
+  })
+  await page.goto('/traces?range=1h')
+  const cells = page.getByTestId('trace-sample-state')
+  await expect(cells.nth(0)).toHaveText(locale === 'en' ? 'Sample found' : '有样本')
+  await expect(cells.nth(1)).toHaveText(locale === 'en' ? 'None found in this window' : '本时段未发现')
+  expect(state.calls).toHaveLength(0)
+  expect(state.sampleCalls).toEqual([{ instance_ids: '1,3', start: new Date(now - 3600000).toISOString(), end: new Date(now).toISOString() }])
+  await page.clock.setFixedTime(now + 120_000)
+  await page.getByTestId('trace-instances').getByRole('button', { name: 'one', exact: true }).click()
+  await expect(page.getByTestId('trace-results')).toContainText('1'.repeat(32))
+  const { start, end } = state.sampleCalls[0]
+  expect(state.calls.at(-1)).toEqual({ instance_id: '1', start, end })
+  await expect(page).toHaveURL(url => url.searchParams.get('end') === end && !url.searchParams.has('range'))
+})
+
+test('failed sample checks remain unknown and current permission denial clears the list', async ({ page }) => {
+  await backend(page, { multiple: true })
+  let denied = false
+  await page.route('**/api/v1/monitor/platform/traces/samples?**', route =>
+    route.fulfill({ status: denied ? 403 : 503, json: { error_code: denied ? 'permission_denied' : 'trace_backend_unavailable' } }))
+  await page.goto('/traces')
+  const cells = page.getByTestId('trace-sample-state')
+  await expect(cells).toHaveText(['暂无法确认', '暂无法确认'])
+  await expect(page.getByTestId('trace-instances')).toContainText('one')
+  denied = true
+  await page.getByRole('button', { name: '刷新', exact: true }).click()
+  await expect(page.getByTestId('trace-error')).toContainText('没有调用链读取权限')
+  await expect(page.getByTestId('trace-instances')).not.toContainText('one')
+  await expect(cells).toHaveCount(0)
+})
+
+test('paging cancels sample checks and late results cannot overwrite the new page', async ({ page }) => {
+  await backend(page)
+  await page.route('**/api/v1/system/platform/module-instances?**', route => {
+    const current = Number(new URL(route.request().url()).searchParams.get('page'))
+    return route.fulfill({ json: { page: current, page_size: 10, total: 20, data: [{
+      id: current, module_name: 'monitor', instance_id: current === 1 ? 'one' : 'two',
+      role: 'backend', status: 'up', node_id: '', process_metrics_declared: false
+    }] } })
+  })
+  let release
+  const held = new Promise(resolve => { release = resolve })
+  let oldStarted = false
+  await page.route('**/api/v1/monitor/platform/traces/samples?**', async route => {
+    const params = Object.fromEntries(new URL(route.request().url()).searchParams)
+    if (params.instance_ids === '1') { oldStarted = true; await held }
+    await route.fulfill({ json: { start: params.start, end: params.end, queried_at: new Date().toISOString(),
+      policy_version: 2, coverage: 'sampled', data: [{
+        instance_id: Number(params.instance_ids), state: params.instance_ids === '1' ? 'has_samples' : 'not_found'
+      }] } }).catch(() => {})
+  })
+  await page.goto('/traces')
+  await expect.poll(() => oldStarted).toBe(true)
+  await expect(page.getByTestId('trace-sample-state')).toHaveText('检查中')
+  await page.getByLabel('第 2 页', { exact: true }).click()
+  await expect(page.getByTestId('trace-instances')).toContainText('two')
+  await expect(page.getByTestId('trace-sample-state')).toHaveText('本时段未发现')
+  release()
+  await expect(page.getByTestId('trace-sample-state')).toHaveText('本时段未发现')
 })
 
 for (const locale of ['zh-cn','en']) test(`Trace detail shows sampled partial evidence and actual edges (${locale})`, async ({ page }, info) => {

@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"sort"
 	"testing"
+	"time"
 
 	"github.com/addp/common/authorization"
 	"github.com/addp/common/modulelifecycle"
@@ -15,6 +16,7 @@ import (
 
 func TestTracePermissionIdentityAndBoundedQuery(t *testing.T) {
 	read := "monitor.trace.read"
+	window := "&start=" + time.Now().UTC().Add(-time.Minute).Format(time.RFC3339) + "&end=" + time.Now().UTC().Add(-time.Second).Format(time.RFC3339)
 	for _, tc := range []struct {
 		name, method, path, body, context, principal string
 		keys                                         []string
@@ -31,6 +33,18 @@ func TestTracePermissionIdentityAndBoundedQuery(t *testing.T) {
 		{name: "5xx filter requires the route", method: "GET", path: "?instance_id=1&http_method=GET", keys: []string{read}, want: 400},
 		{name: "5xx filter rejects a concrete query string", method: "GET", path: "?instance_id=1&http_method=GET&http_route=%2Fitems%3Fx%3D1", keys: []string{read}, want: 400},
 		{name: "5xx detail requires the selected instance", method: "GET", path: "/11111111111111111111111111111111?http_method=GET&http_route=%2Fitems", keys: []string{read}, want: 400},
+		{name: "sample page reaches backend", method: "GET", path: "/samples?instance_ids=1,2" + window, keys: []string{read}, want: 503},
+		{name: "samples require explicit window", method: "GET", path: "/samples?instance_ids=1", keys: []string{read}, want: 400},
+		{name: "samples reject duplicate instances", method: "GET", path: "/samples?instance_ids=1,1" + window, keys: []string{read}, want: 400},
+		{name: "samples reject more than a page", method: "GET", path: "/samples?instance_ids=1,2,3,4,5,6,7,8,9,10,11" + window, keys: []string{read}, want: 400},
+		{name: "samples reject unknown queries", method: "GET", path: "/samples?instance_ids=1&query=private" + window, keys: []string{read}, want: 400},
+		{name: "samples reject duplicate query", method: "GET", path: "/samples?instance_ids=1&instance_ids=2" + window, keys: []string{read}, want: 400},
+		{name: "samples reject noncanonical instance", method: "GET", path: "/samples?instance_ids=01" + window, keys: []string{read}, want: 400},
+		{name: "samples reject body", method: "GET", path: "/samples?instance_ids=1" + window, body: "{}", keys: []string{read}, want: 400},
+		{name: "service cannot check samples", method: "GET", path: "/samples?instance_ids=1" + window, principal: "service_principal", keys: []string{read}, want: 403},
+		{name: "tenant cannot check samples", method: "GET", path: "/samples?instance_ids=1", context: "tenant", keys: []string{read}, want: 403},
+		{name: "delegated cannot check samples", method: "GET", path: "/samples?instance_ids=1", delegated: true, keys: []string{read}, want: 403},
+		{name: "samples need trace permission", method: "GET", path: "/samples?instance_ids=1", keys: []string{"platform.module.read"}, want: 403},
 		{name: "duplicate query rejected", method: "GET", path: "?instance_id=1&instance_id=2", keys: []string{read}, want: 400},
 		{name: "noncanonical instance rejected", method: "GET", path: "?instance_id=01", keys: []string{read}, want: 400},
 		{name: "detail ID rejected", method: "GET", path: "/private?instance_id=1", keys: []string{read}, want: 400},

@@ -56,27 +56,11 @@ func (s *TraceService) Query(ctx context.Context, principal, token string, q Tra
 	if s == nil || s.users == nil || s.backend == nil {
 		return out, tracequery.ErrUpstream
 	}
-	s.mu.Lock()
-	if s.subjects[principal] >= 2 {
-		s.mu.Unlock()
-		return out, tracequery.ErrBusy
+	release, err := s.acquire(principal)
+	if err != nil {
+		return out, err
 	}
-	s.subjects[principal]++
-	s.mu.Unlock()
-	defer func() {
-		s.mu.Lock()
-		s.subjects[principal]--
-		if s.subjects[principal] == 0 {
-			delete(s.subjects, principal)
-		}
-		s.mu.Unlock()
-	}()
-	select {
-	case s.slots <- struct{}{}:
-		defer func() { <-s.slots }()
-	default:
-		return out, tracequery.ErrBusy
-	}
+	defer release()
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 	var anchor client.RuntimeInstanceReference
@@ -98,6 +82,11 @@ func (s *TraceService) Query(ctx context.Context, principal, token string, q Tra
 			return out, tracequery.ErrInvalid
 		}
 	}
+	return s.query(ctx, token, q, anchor, now, nil)
+}
+
+func (s *TraceService) query(ctx context.Context, token string, q TraceQuery, anchor client.RuntimeInstanceReference, now time.Time, budget *traceSampleBudget) (TraceResponse, error) {
+	out := TraceResponse{Data: []tracequery.Detail{}, Start: q.Start, End: q.End, QueriedAt: now, PolicyVersion: tracequery.Definition().Version, Coverage: "sampled"}
 	ids := []string{q.ID}
 	if q.ID == "" {
 		err := s.callUpstream(ctx, func() error {
@@ -112,7 +101,7 @@ func (s *TraceService) Query(ctx context.Context, principal, token string, q Tra
 	if len(ids) > q.Limit {
 		return out, tracequery.ErrBudget
 	}
-	details, processIDs, e := s.readDetails(ctx, anchor, ids, q)
+	details, processIDs, e := s.readDetails(ctx, anchor, ids, q, budget)
 	if e != nil {
 		return out, e
 	}
@@ -208,7 +197,7 @@ func (s *TraceService) callUpstream(ctx context.Context, call func() error) erro
 
 // Retain search order while overlapping independent I/O. The result channel
 // and workers are bounded; cumulative budgets cancel outstanding reads early.
-func (s *TraceService) readDetails(parent context.Context, anchor client.RuntimeInstanceReference, ids []string, q TraceQuery) ([]tracequery.Detail, []string, error) {
+func (s *TraceService) readDetails(parent context.Context, anchor client.RuntimeInstanceReference, ids []string, q TraceQuery, budget *traceSampleBudget) ([]tracequery.Detail, []string, error) {
 	start, end := q.Start, q.End
 	ctx, cancel := context.WithCancel(parent)
 	defer cancel()
@@ -270,6 +259,12 @@ func (s *TraceService) readDetails(parent context.Context, anchor client.Runtime
 			fail(tracequery.ErrNotFound)
 			continue
 		}
+		if budget != nil {
+			if err := budget.consume(d); err != nil {
+				fail(err)
+				continue
+			}
+		}
 		spans += len(d.Spans)
 		if spans > 1000 {
 			fail(tracequery.ErrBudget)
@@ -316,4 +311,30 @@ func (s *TraceService) readDetails(parent context.Context, anchor client.Runtime
 		return nil, nil, tracequery.ErrUpstream
 	}
 	return slices.DeleteFunc(details, func(detail tracequery.Detail) bool { return detail.ID == "" }), processIDs, nil
+}
+
+// acquire counts a batch as one query under the existing shared admission limits.
+func (s *TraceService) acquire(principal string) (func(), error) {
+	s.mu.Lock()
+	if s.subjects[principal] >= 2 {
+		s.mu.Unlock()
+		return nil, tracequery.ErrBusy
+	}
+	s.subjects[principal]++
+	s.mu.Unlock()
+	releaseSubject := func() {
+		s.mu.Lock()
+		s.subjects[principal]--
+		if s.subjects[principal] == 0 {
+			delete(s.subjects, principal)
+		}
+		s.mu.Unlock()
+	}
+	select {
+	case s.slots <- struct{}{}:
+		return func() { <-s.slots; releaseSubject() }, nil
+	default:
+		releaseSubject()
+		return nil, tracequery.ErrBusy
+	}
 }

@@ -1403,6 +1403,13 @@
       "browseInstances": "返回实例列表",
       "browseTraces": "返回调用链列表",
       "viewTrace": "查看调用链",
+      "samplesInWindow": "本时段调用链",
+      "sampleStates": {
+        "checking": "检查中",
+        "has_samples": "有样本",
+        "not_found": "本时段未发现",
+        "unavailable": "暂无法确认"
+      },
       "instanceStarted": "实例启动时间",
       "noInstances": "没有匹配的实例",
       "timeline": "调用时间线",

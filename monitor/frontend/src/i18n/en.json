@@ -1403,6 +1403,13 @@
       "browseInstances": "Back to instances",
       "browseTraces": "Back to traces",
       "viewTrace": "View trace",
+      "samplesInWindow": "Traces in this window",
+      "sampleStates": {
+        "checking": "Checking",
+        "has_samples": "Sample found",
+        "not_found": "None found in this window",
+        "unavailable": "Unable to confirm"
+      },
       "instanceStarted": "Instance start time",
       "noInstances": "No matching instances",
       "timeline": "Call timeline",

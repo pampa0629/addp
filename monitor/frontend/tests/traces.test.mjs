@@ -1,7 +1,24 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { traceRoute, validateTraces, traceLinkQuery, traceTimeline } from '../src/utils/traces.js'
+import { traceRoute, validateTraces, validateTraceSamples, traceLinkQuery, traceTimeline } from '../src/utils/traces.js'
 const owner = { module_name: 'monitor', instance_id: 'one' }
+test('sample states bind the complete current page and the exact inspection window', () => {
+  const window = { start: '2026-11-12T00:00:00Z', end: '2026-11-12T00:15:00Z' }
+  const value = { ...window, queried_at: window.end, policy_version: 2, coverage: 'sampled', data: [
+    { instance_id: 1, state: 'has_samples' }, { instance_id: 2, state: 'not_found' }, { instance_id: 3, state: 'unavailable' }
+  ] }
+  assert.deepEqual(validateTraceSamples(value, [1, 2, 3], window), { 1: 'has_samples', 2: 'not_found', 3: 'unavailable' })
+  for (const mutate of [
+    v => { v.data[0].state = 'zero' }, v => { v.data[0].instance_id = 4 },
+    v => { v.data[0].instance_id = 2 }, v => { v.data.pop() },
+    v => { v.start = '2026-11-12T00:01:00Z' }, v => { v.coverage = 'complete' },
+    v => { v.queried_at = v.start }
+  ]) {
+    const bad = structuredClone(value)
+    mutate(bad)
+    assert.throws(() => validateTraceSamples(bad, [1, 2, 3], window))
+  }
+})
 export function fixture() {
   const start = '2026-10-20T00:00:00Z', end = '2026-10-20T00:00:01Z'
   return { start, end, queried_at: end, policy_version: 2, coverage: 'sampled', data: [{ trace_id: '1'.repeat(32), start, end, duration_ms: 1000, partial: false, policy_version: 2, coverage: 'sampled', edges: [], spans: [{ span_id: '2'.repeat(16), parent_span_id: '', module_name: 'monitor', instance_id: 'one', role: 'backend', kind: 'server', scope: 'addp.http', attempt: 0, links: [], method: 'GET', route: '/items/:id', status: 200, failed: false, start, end, duration_ms: 1000 }] }] }

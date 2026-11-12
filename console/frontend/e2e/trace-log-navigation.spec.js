@@ -30,9 +30,71 @@ test('Console restores a Trace, opens exact System logs, and returns through one
   await expect(page.locator('iframe[data-testid="module-iframe"]')).toHaveCount(1)
   await page.screenshot({path:info.outputPath('trace-system-log-return.png'),fullPage:true})
 })
+test('Trace instance pagination changes rows and restores the requested page in Console', async ({ page }) => {
+  await fixture(page)
+  const calls = []
+  await page.route('**/api/v1/system/platform/module-instances?**', route => {
+    const params = new URL(route.request().url()).searchParams
+    const current = Number(params.get('page'))
+    calls.push(current)
+    const start = (current - 1) * 10
+    const data = Array.from({ length: Math.min(10, 25 - start) }, (_, index) => ({
+      id: start + index + 1, module_name: 'monitor', instance_id: 'instance-' + (start + index + 1),
+      role: 'backend', status: 'down', node_id: '', process_metrics_declared: false, process_started_at: '2026-11-10T00:00:00Z'
+    }))
+    return route.fulfill({ json: { data, total: 25, page: current, page_size: 10 } })
+  })
+  await page.goto('/monitor/traces')
+  const frame = page.frameLocator('iframe[data-testid="module-iframe"]')
+  const instances = frame.getByTestId('trace-instances')
+  await expect(instances.getByRole('button', { name: 'instance-1', exact: true })).toBeVisible()
+  await frame.getByLabel('第 3 页', { exact: true }).click()
+  await expect(page).toHaveURL(url => url.searchParams.get('page') === '3')
+  await expect(instances.getByRole('button', { name: 'instance-21', exact: true })).toBeVisible()
+  await expect(instances.getByRole('button', { name: 'instance-1', exact: true })).toHaveCount(0)
+  await frame.getByRole('button', { name: '上一页', exact: true }).click()
+  await expect(page).toHaveURL(url => url.searchParams.get('page') === '2')
+  await expect(instances.getByRole('button', { name: 'instance-11', exact: true })).toBeVisible()
+  await page.reload()
+  await expect(page).toHaveURL(url => url.searchParams.get('page') === '2')
+  await expect(instances.getByRole('button', { name: 'instance-11', exact: true })).toBeVisible()
+  expect(calls).toEqual([1, 3, 2, 2])
+})
+
 test('Tenant permission strings cannot mount a platform Trace iframe', async ({ page }) => {
   const state = await tracesBackend(page,{identity:identity(tracePermissions,{type:'tenant',tenant_id:1})})
   await page.goto('/monitor/traces?'+traceQuery());await expect(page.locator('iframe[data-testid="module-iframe"]')).toHaveCount(0);expect(state.calls).toEqual([])
+})
+
+test('Console checks only the visible Trace page and opens its frozen sample window', async ({ page }) => {
+  const state = await fixture(page)
+  await page.route('**/api/v1/system/platform/module-instances?**', route => {
+    const params = new URL(route.request().url()).searchParams
+    const requested = params.get('ids')
+    const current = Number(params.get('page') || 1)
+    const ids = requested ? [Number(requested)] : Array.from({ length: 10 }, (_, i) => (current - 1) * 10 + i + 1)
+    return route.fulfill({ json: { data: ids.map(id => ({
+      id, module_name: 'monitor', instance_id: id === 1 ? 'one' : 'instance-' + id,
+      role: 'backend', status: 'down', node_id: '', process_metrics_declared: false,
+      process_started_at: '2026-11-10T00:00:00Z'
+    })), total: requested ? 1 : 20, page: current, page_size: 10 } })
+  })
+  await page.goto('/monitor/traces')
+  const frame = page.frameLocator('iframe[data-testid="module-iframe"]')
+  await expect(frame.getByTestId('trace-sample-state').filter({ hasText: '有样本' })).toHaveCount(10)
+  expect(state.sampleCalls.map(call => call.instance_ids)).toEqual(['1,2,3,4,5,6,7,8,9,10'])
+  await frame.getByLabel('第 2 页', { exact: true }).click()
+  await expect(frame.getByTestId('trace-instances')).toContainText('instance-11')
+  await expect.poll(() => state.sampleCalls.length).toBe(2)
+  expect(state.sampleCalls[1].instance_ids).toBe('11,12,13,14,15,16,17,18,19,20')
+  await frame.getByLabel('第 1 页', { exact: true }).click()
+  await expect.poll(() => state.sampleCalls.length).toBe(3)
+  const window = state.sampleCalls[2]
+  await frame.getByRole('button', { name: 'one', exact: true }).click()
+  await expect(frame.getByTestId('trace-results')).toContainText('1'.repeat(32))
+  expect(state.calls.at(-1).start).toBe(window.start)
+  expect(state.calls.at(-1).end).toBe(window.end)
+  await expect(page).toHaveURL(url => url.searchParams.get('start') === window.start && url.searchParams.get('end') === window.end && !url.searchParams.has('range'))
 })
 
 for (const width of [1280, 900]) {

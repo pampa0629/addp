@@ -173,6 +173,7 @@ func SetupRouter(
 	platform.GET("/platform/engine_resource_trends", commonAuth.MustNewPermissionGuard(monitorauthorization.PermissionMonitorResourceObservationRead), platformObservationIdentity(false), resourceHandler.EngineTrend)
 	platform.GET("/platform/resource_trends", commonAuth.MustNewPermissionGuard(monitorauthorization.PermissionMonitorResourceObservationRead), platformObservationIdentity(false), resourceHandler.Trend)
 	traceHandler := TraceHandler{service: traceService}
+	platform.GET("/platform/traces/samples", commonAuth.MustNewPermissionGuard(monitorauthorization.PermissionMonitorTraceRead), platformObservationIdentity(false), traceHandler.Samples)
 	platform.GET("/platform/traces", commonAuth.MustNewPermissionGuard(monitorauthorization.PermissionMonitorTraceRead), platformObservationIdentity(false), traceHandler.Search)
 	platform.GET("/platform/traces/:trace_id", commonAuth.MustNewPermissionGuard(monitorauthorization.PermissionMonitorTraceRead), platformObservationIdentity(false), traceHandler.Detail)
 	platform.GET("/settings/resource-query-policy", commonAuth.MustNewPermissionGuard(monitorauthorization.PermissionMonitorConfigurationRead), platformObservationIdentity(false), resourceHandler.Policy)

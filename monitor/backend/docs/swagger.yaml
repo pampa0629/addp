@@ -2062,6 +2062,30 @@ definitions:
       start:
         type: string
     type: object
+  github_com_addp_monitor_internal_service.TraceSampleState:
+    properties:
+      instance_id:
+        type: integer
+      state:
+        type: string
+    type: object
+  github_com_addp_monitor_internal_service.TraceSamplesResponse:
+    properties:
+      coverage:
+        type: string
+      data:
+        items:
+          $ref: '#/definitions/github_com_addp_monitor_internal_service.TraceSampleState'
+        type: array
+      end:
+        type: string
+      policy_version:
+        type: integer
+      queried_at:
+        type: string
+      start:
+        type: string
+    type: object
   github_com_addp_monitor_internal_service.UpdateRuntimePolicyInput:
     properties:
       alert_evaluation_interval_seconds:
@@ -7103,6 +7127,73 @@ paths:
       security:
       - BearerAuth: []
       summary: 读取调用链详情与观测调用关系 | Read trace details and observed call relationships
+      tags:
+      - 平台运行监控 | Platform Runtime Monitoring
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - monitor.trace.read
+  /platform/traces/samples:
+    get:
+      description: 非委托Platform User；最多10实例、整批5秒及原查询预算；有样本须核验所有参与实例，未发现只表示当前时段，失败明确不可确认
+        | Non-delegated Platform User; at most ten instances share five seconds and
+        existing query budgets. All candidate participants are authorized; empty means
+        no sample found in this window, errors remain unknown.
+      parameters:
+      - description: 1至10个不重复的System实例记录ID，逗号分隔 | One to ten unique System instance
+          record IDs, comma separated
+        in: query
+        name: instance_ids
+        required: true
+        type: string
+      - description: UTC起点，最长1小时 | UTC start, at most one hour
+        in: query
+        name: start
+        required: true
+        type: string
+      - description: UTC终点 | UTC end
+        in: query
+        name: end
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_addp_monitor_internal_service.TraceSamplesResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "429":
+          description: Too Many Requests
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "504":
+          description: Gateway Timeout
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 检查当前页实例的调用链样本 | Check retained trace samples for the current instance
+        page
       tags:
       - 平台运行监控 | Platform Runtime Monitoring
       x-addp-auth-mode: permission

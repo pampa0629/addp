@@ -5960,6 +5960,100 @@ const docTemplate = `{
                 ]
             }
         },
+        "/platform/traces/samples": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "非委托Platform User；最多10实例、整批5秒及原查询预算；有样本须核验所有参与实例，未发现只表示当前时段，失败明确不可确认 | Non-delegated Platform User; at most ten instances share five seconds and existing query budgets. All candidate participants are authorized; empty means no sample found in this window, errors remain unknown.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "平台运行监控 | Platform Runtime Monitoring"
+                ],
+                "summary": "检查当前页实例的调用链样本 | Check retained trace samples for the current instance page",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "1至10个不重复的System实例记录ID，逗号分隔 | One to ten unique System instance record IDs, comma separated",
+                        "name": "instance_ids",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "UTC起点，最长1小时 | UTC start, at most one hour",
+                        "name": "start",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "UTC终点 | UTC end",
+                        "name": "end",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_monitor_internal_service.TraceSamplesResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "429": {
+                        "description": "Too Many Requests",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "504": {
+                        "description": "Gateway Timeout",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "monitor.trace.read"
+                ]
+            }
+        },
         "/platform/traces/{trace_id}": {
             "get": {
                 "security": [
@@ -10120,6 +10214,43 @@ const docTemplate = `{
                     "type": "array",
                     "items": {
                         "$ref": "#/definitions/github_com_addp_monitor_internal_tracequery.Detail"
+                    }
+                },
+                "end": {
+                    "type": "string"
+                },
+                "policy_version": {
+                    "type": "integer"
+                },
+                "queried_at": {
+                    "type": "string"
+                },
+                "start": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_addp_monitor_internal_service.TraceSampleState": {
+            "type": "object",
+            "properties": {
+                "instance_id": {
+                    "type": "integer"
+                },
+                "state": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_addp_monitor_internal_service.TraceSamplesResponse": {
+            "type": "object",
+            "properties": {
+                "coverage": {
+                    "type": "string"
+                },
+                "data": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_monitor_internal_service.TraceSampleState"
                     }
                 },
                 "end": {

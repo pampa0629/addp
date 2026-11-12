@@ -6,6 +6,7 @@ import (
 	"github.com/addp/common/client"
 	auth "github.com/addp/common/middleware/auth"
 	i18n "github.com/addp/common/middleware/i18n"
+	commonmodels "github.com/addp/common/models"
 	monitori18n "github.com/addp/monitor/i18n"
 	"github.com/addp/monitor/internal/service"
 	"github.com/addp/monitor/internal/tracequery"
@@ -155,3 +156,64 @@ func (h TraceHandler) Search(c *gin.Context) { h.read(c, false) }
 // @x-addp-required-permissions ["monitor.trace.read"]
 // @Router /platform/traces/{trace_id} [get]
 func (h TraceHandler) Detail(c *gin.Context) { h.read(c, true) }
+
+// Samples godoc
+// @Summary 检查当前页实例的调用链样本 | Check retained trace samples for the current instance page
+// @Description 非委托Platform User；最多10实例、整批5秒及原查询预算；有样本须核验所有参与实例，未发现只表示当前时段，失败明确不可确认 | Non-delegated Platform User; at most ten instances share five seconds and existing query budgets. All candidate participants are authorized; empty means no sample found in this window, errors remain unknown.
+// @Tags 平台运行监控 | Platform Runtime Monitoring
+// @Produce json
+// @Security BearerAuth
+// @Param instance_ids query string true "1至10个不重复的System实例记录ID，逗号分隔 | One to ten unique System instance record IDs, comma separated"
+// @Param start query string true "UTC起点，最长1小时 | UTC start, at most one hour"
+// @Param end query string true "UTC终点 | UTC end"
+// @Success 200 {object} service.TraceSamplesResponse
+// @Failure 400 {object} ErrorResponse
+// @Failure 401 {object} ErrorResponse
+// @Failure 403 {object} ErrorResponse
+// @Failure 404 {object} ErrorResponse
+// @Failure 429 {object} ErrorResponse
+// @Failure 503 {object} ErrorResponse
+// @Failure 504 {object} ErrorResponse
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["monitor.trace.read"]
+// @Router /platform/traces/samples [get]
+func (h TraceHandler) Samples(c *gin.Context) {
+	c.Header("Cache-Control", "no-store")
+	q, err := url.ParseQuery(c.Request.URL.RawQuery)
+	if err != nil || len(c.Request.URL.RawQuery) > 4096 || c.Request.ContentLength != 0 || len(c.Request.TransferEncoding) != 0 {
+		traceError(c, tracequery.ErrInvalid)
+		return
+	}
+	for key, values := range q {
+		if len(values) != 1 || values[0] == "" || (key != "instance_ids" && key != "start" && key != "end") {
+			traceError(c, tracequery.ErrInvalid)
+			return
+		}
+	}
+	ids, err := commonmodels.ParseRuntimeInstanceIDs(q.Get("instance_ids"))
+	if err != nil || len(ids) > 10 {
+		traceError(c, tracequery.ErrInvalid)
+		return
+	}
+	start, err := time.Parse(time.RFC3339, q.Get("start"))
+	if err != nil {
+		traceError(c, tracequery.ErrInvalid)
+		return
+	}
+	end, err := time.Parse(time.RFC3339, q.Get("end"))
+	if err != nil {
+		traceError(c, tracequery.ErrInvalid)
+		return
+	}
+	principal, ok := auth.PrincipalIDFromGin(c)
+	if !ok {
+		c.Status(401)
+		return
+	}
+	value, err := h.service.Samples(c.Request.Context(), strconv.FormatUint(uint64(principal), 10), targetToken(c), ids, start, end)
+	if err != nil {
+		traceError(c, err)
+		return
+	}
+	c.JSON(200, value)
+}

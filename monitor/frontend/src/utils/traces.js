@@ -35,6 +35,21 @@ export function findHTTPFailureSpan(trace, instance, query, window) {
     span.method === query.http_method && span.route === query.http_route && span.status >= 500 && span.status <= 599 &&
     Date.parse(span.end) >= start && Date.parse(span.end) < end)
 }
+
+export function validateTraceSamples(value, ids, window) {
+  const invalid = () => { throw new Error('invalid_trace_response') }
+  if (!value || value.coverage !== 'sampled' || value.policy_version !== 2 ||
+      !Array.isArray(value.data) || value.data.length !== ids.length ||
+      Date.parse(value.start) !== Date.parse(window.start) || Date.parse(value.end) !== Date.parse(window.end) ||
+      !Number.isFinite(Date.parse(value.queried_at)) || Date.parse(value.queried_at) < Date.parse(value.end)) invalid()
+  const states = {}
+  for (const row of value.data) {
+    if (!ids.includes(row.instance_id) || Object.hasOwn(states, row.instance_id) ||
+        !['has_samples', 'not_found', 'unavailable'].includes(row.state)) invalid()
+    states[row.instance_id] = row.state
+  }
+  return states
+}
 export function validateTraces(value, selected, requestedID = '') {
   const invalid = () => { throw new Error('invalid_trace_response') }
   const date = v => typeof v === 'string' && Number.isFinite(Date.parse(v))

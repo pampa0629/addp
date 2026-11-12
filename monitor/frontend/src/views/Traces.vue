@@ -39,8 +39,15 @@
         <el-table-column :label="t('monitor.traces.instanceStarted')" min-width="155">
           <template #default="{ row }">{{ row.process_started_at ? date(row.process_started_at) : '—' }}</template>
         </el-table-column>
+        <el-table-column :label="t('monitor.traces.samplesInWindow')" min-width="150">
+          <template #default="{ row }">
+            <el-tag :type="sampleStates[row.id] === 'has_samples' ? 'success' : sampleStates[row.id] === 'not_found' ? 'info' : 'warning'" data-testid="trace-sample-state">
+              {{ t('monitor.traces.sampleStates.' + (samplesLoading || (selected?.id === row.id && loading) ? 'checking' : sampleStates[row.id] || 'unavailable')) }}
+            </el-tag>
+          </template>
+        </el-table-column>
       </el-table>
-      <el-pagination v-if="!directLookup && !detail" layout="total, prev, pager, next" :page-size="10" :total="total" :current-page="state?.page || 1" @current-change="page => browseInstances(page)" />
+      <el-pagination v-if="!directLookup && !detail && instancesLoaded" layout="total, prev, pager, next" :page-size="10" :total="total" :current-page="state?.page || 1" @current-change="page => browseInstances(page)" />
       <template v-if="selected && !detail">
         <h3>{{ selected.module_name }} · {{ selected.instance_id }}</h3>
         <el-table :data="data" :empty-text="t(loading ? 'common.loading' : error && error !== 'monitor.traces.empty' ? 'monitor.traces.notLoaded' : 'monitor.traces.empty')" data-testid="trace-results">
@@ -67,7 +74,7 @@ import { createLatestRequestScope } from '../../../../common-frontend/basic/src/
 import { useAuthStore } from '../store/auth'
 import { traceAPI } from '../api/traces'
 import TraceDetails from '../components/TraceDetails.vue'
-import { findHTTPFailureSpan, isTraceID, traceRoute, validateTraces, traceLinkQuery, traceRecentMinutes } from '../utils/traces'
+import { findHTTPFailureSpan, isTraceID, traceRoute, validateTraces, validateTraceSamples, traceLinkQuery, traceRecentMinutes } from '../utils/traces'
 import { validateProcessInstances } from '../utils/processResources'
 import { navigateMonitorRoute } from '../utils/moduleNavigation'
 const auth = useAuthStore(), route = useRoute(), router = useRouter(), { t, locale } = useI18n()
@@ -83,6 +90,8 @@ const bounds = ref({})
 const moduleNames = ref([]), modulesLoading = ref(false), modulesFailed = ref(false)
 const requests = createLatestRequestScope()
 const moduleRequests = createLatestRequestScope()
+const sampleRequests = createLatestRequestScope()
+const sampleStates = ref({}), samplesLoading = ref(false), sampleWindow = ref(null)
 const selected = computed(() => {
   if (state.value?.instanceID) return instances.value.find(row => row.id === state.value.instanceID)
   if (state.value?.module && total.value === 1) return instances.value[0]
@@ -112,7 +121,7 @@ function browseInstances(page) {
 }
 function clearHTTPFilter() { return navigate({ ...state.value.query, http_method: undefined, http_route: undefined }) }
 function returnToTraces() { return navigate({ ...state.value.query, trace_id: undefined }) }
-function select(row) { return navigate({ ...state.value.query, ...bounds.value, page: undefined, instance_id: String(row.id), trace_id: undefined }, 'push') }
+function select(row) { return navigate({ ...state.value.query, ...bounds.value, ...sampleWindow.value, range: undefined, page: undefined, instance_id: String(row.id), trace_id: undefined }, 'push') }
 function openTrace(row) { return navigate({ ...state.value.query, page: undefined, instance_id: String(selected.value.id), trace_id: row.trace_id }, 'push') }
 function changeRecent(range) {
   bounds.value = { start: undefined, end: undefined, range: range === '15m' ? undefined : range }
@@ -163,6 +172,7 @@ function logs(span) {
 }
 async function reload() {
   const ticket = requests.invalidate(); instances.value = []; data.value = []; total.value = 0; loading.value = false; error.value = ''
+  sampleRequests.invalidate(); sampleStates.value = {}; samplesLoading.value = false; sampleWindow.value = null
   instancesLoaded.value = false
   matchedFailure.value = null
   if (!canRead.value || route.name !== 'Traces') return
@@ -181,7 +191,17 @@ async function reload() {
       instances.value = list.data; total.value = list.total; listed = true; instancesLoaded.value = true
     }
     const subject = selected.value
-    if (!subject && !current.query.trace_id) return
+    if (!subject && !current.query.trace_id) {
+      if (instances.value.length) {
+        const now = Math.floor(Date.now() / 1000) * 1000
+        const window = current.query.start ? { start: current.query.start, end: current.query.end } : {
+          start: new Date(now - (traceRecentMinutes[current.query.range] || 15) * 60_000).toISOString(), end: new Date(now).toISOString()
+        }
+        sampleWindow.value = window
+        checkSamples(instances.value.map(row => row.id), window)
+      }
+      return
+    }
     const { trace_id, range, http_method, http_route } = current.query
     let { start, end } = current.query
     if (range) {
@@ -199,6 +219,7 @@ async function reload() {
       if (trace_id) matchedFailure.value = matches[0]
     }
     data.value = result.data
+    if (subject) sampleStates.value = { [subject.id]: result.data.length ? 'has_samples' : 'not_found' }
   } catch (e) {
     if (!requests.current(ticket)) return
     data.value = []
@@ -207,6 +228,22 @@ async function reload() {
     if (!unavailable && !missing) { instances.value = []; total.value = 0; instancesLoaded.value = false }
     error.value = unavailable || e.response?.data?.error_code === 'trace_backend_unavailable' ? 'monitor.traces.unavailable' : missing ? 'monitor.traces.empty' : e.response?.status === 403 || e.response?.status === 401 ? 'monitor.traces.denied' : e.message === 'invalid_trace_response' ? 'monitor.traces.invalidResponse' : 'monitor.traces.failed'
   } finally { if (requests.current(ticket)) loading.value = false }
+}
+async function checkSamples(ids, window) {
+  const ticket = sampleRequests.invalidate()
+  samplesLoading.value = true
+  try {
+    const value = await sampleRequests.request(config => traceAPI.samples({ instance_ids: ids.join(','), ...window }, config))
+    if (!sampleRequests.current(ticket)) return
+    sampleStates.value = validateTraceSamples(value, ids, window)
+  } catch (e) {
+    if (!sampleRequests.current(ticket)) return
+    sampleStates.value = {}
+    if ([401, 403, 404].includes(e.response?.status)) {
+      instances.value = []; total.value = 0; instancesLoaded.value = false
+      error.value = 'monitor.traces.denied'
+    }
+  } finally { if (sampleRequests.current(ticket)) samplesLoading.value = false }
 }
 async function loadModules() {
   const ticket = moduleRequests.invalidate()
@@ -241,7 +278,7 @@ watch([() => route.fullPath, identity], () => {
   reload()
 }, { immediate: true })
 watch(identity, loadModules, { immediate: true })
-onUnmounted(() => { traceInput.dispose(); requests.invalidate(); moduleRequests.invalidate() })
+onUnmounted(() => { traceInput.dispose(); requests.invalidate(); moduleRequests.invalidate(); sampleRequests.invalidate() })
 </script>
 
 <style scoped>
