@@ -1032,3 +1032,12 @@ DNS恢复后，用户另行确认的唯一[Run43140011471／Job130924454141](htt
 关联请求78ebe164-1ea5-4071-ac58-df13aaf01ef4：System本人角色读取200，随后POST auth/execution-authorizations为403；Transfer同一请求记录task9启动失败，无该任务Worker执行UUID。按候选控制流，此时已越过所选Develop当次／默认历史和所选Service两页检查，但没有归档原始响应体或分组最终报告，不能补造单元格、UUID或完整出口通过。正式签发契约对Transfer read/write要求transfer.task.execute、develop.data_read.execute及develop.data_write.execute；原套件普通消费User缺最后一项，专用Transfer资格User虽已有，但不能换身份冒充同一用户矩阵。
 
 用户已明确批准仅对security-mysql-owner-protection的disposable消费账号补该既有写入功能权限。规范方案先记录后实现：只追加到suitePermissions该case，global consumerPermissions、其他套件、Source Initializer、六Grant、原七PG表、原值授权及产品签发规则不变。新Go反例在旧夹具实际因missing develop.data_write.execute失败，修正后完整TestSecurity(Fixture|Masking)选择退出0；同例同时拒绝该功能泄漏到共享consumer及其他三个只读套件，拒绝DDL、external_effect和源授权管理功能。领域v46／浏览器v10、28阶段／23图、90秒资格／2400秒预算和严格业务oracle保持，不新增报告字段。完整make test-security-online-runner实际退出0，Python七组43／204／19／156／35／80／292项均OK、两个System Fixture Go选择实际ok，登记CLI通过。该次只执行确定性门禁，不是Hosted。原始日志/tmp/p145-grouped-write-standard-gate.log，反例及专项日志/tmp/p145-grouped-write-fixture-{red,green}.log，当前输入和日志摘要/tmp/p145-grouped-write-fixture-verification.json；git diff --check通过，现有入口及CI登记已覆盖，不增加workflow。本次授权只允许修正夹具，未重派Hosted，未来精确候选仍需新的单次运行确认，由专门CI会话统一协调。
+
+
+### Owner 投影存储修正的 Linux 完整 PostgreSQL 自然门禁（2026-11-12）
+
+精确修复7d51762d5054ea14d774cc68040d71adacf8f947的push [Run43155459026／Common PostgreSQL Job130974521958](https://github.com/pampa0629/addp/actions/runs/43155459026/job/130974521958)，attempt1已实际success。独立读取原始Job API，确认head SHA、completed及Run Common PostgreSQL gate步骤success；原日志339行完整checkout SHA一致，491–492行实际执行make test-common-postgres，无子组选项，不以summary或容器清理替代。原并发初始化测试4988行实际PASS；投影存储八项顶层全部PASS，原始日志无SKIP及error annotation。这是修复后新的完整Common PostgreSQL T2门禁成功，原5df并发首失败及本地红绿证据保留。
+
+原件/tmp/addp-ci-security-2664-l_naer3d/common-130974521958.log，SHA256为3fe428ef81b21dbf240ebe08b927f6d6bdaf5c3fa879fc1e433fd65b27bf55df。独立脚本、Job元信息和结果/tmp/p145-common-natural-independent/{audit.py,job.json,audit.json}，脚本实际退出0。已核7d为2664dd82881a553f6634afbbb4a2c3389803d9f0祖先，common全目录、根Makefile、release工作流、Common PG入口、其容量脚本、Graph backend、go.work/sum及Infra端口核验输入均无差异，故该T2结果可适用于2664候选；只比较既有入口依赖，不调查栅格或其他suite。
+
+本轮只补证据，未重复运行测试或Hosted、未启停个人服务。精确2664的Platform自然门禁仍由专门CI会话跟进，本轮未认定其通过；v46/v10新的完整T4尚未获单次授权或派发，原403与0/23图保持。下一步由专门CI会话核对该Platform结果后统一提出具体单次方案，不重复确认或自动重试。
