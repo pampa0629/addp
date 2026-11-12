@@ -727,6 +727,8 @@ HTTP 资源采样与清理沿当次私有预算目录的同一文件锁交接：
 
 唯一路径为 Go Common Trace SDK → Alloy OTLP → Tempo；Trace 读取归 Monitor，日志仍由 System 沿原 Loki 路径授权。Common Router 工厂独占服务端追踪及请求关联，Common Client 与 Gateway 代理复用唯一传输实现，保留 Context、超时、TLS 和响应流语义。不安装第二套 HTTP 指标，不从采样追踪推算全量 QPS。
 
+2026-11-12 Manager本机接入首批仅补既有部署的单来源证书追加准备与确定性传播门禁，契约见[本机开发准备](configuration/Monitor与运行观测.md#本机开发的-trace-部署准备)。正式只读路径选 `/api/v1/manager/preview`，沿现有SDK和请求完成日志，不新增采集内核、权限、SQL／参数／结果或业务阶段日志。每次预览的生产端成本为实际已结束的Server及出站Client Span总数，普通成功5%由Alloy尾采样执行，不能据此缩减入站流量估算。例如整链20 Span、0.2 QPS约为4 Span/秒进入采样，普通成功保留均值约0.2 Span/秒，仅为负载估算，不保证样本或容量。既有队列、120秒等待、100 Span/秒目标、资源及72小时／20 GiB预算保持；首批不启动个人来源、不运行Hosted、容量或定时，真实请求数量、运行期限及Safari验收另行确认。
+
 Gateway 外部入口重新生成 W3C Trace Context；内部同步 HTTP 传播 traceparent，不传播 baggage 或外部 tracestate，不向平台之外泄漏平台上下文。request_id 在入口生成并约束格式、内部继承；trace/span ID 只做关联，不证明调用者身份。仅可信遥测来源、实际匹配的 Client/Server Span 可证明调用边，来报 parent-id、目标名称或注册关系不能补造边。
 
 属性白名单只含正式模块/角色/启动实例、模板、有限方法、状态与固定错误类别；不收集完整 URL、Host、转发头、SQL、正文、原始错误文本、Token 或用户/租户身份。日志处理器从 Context 提取 trace_id/span_id，接收器校验长度、十六进制及非零，作为 Loki 结构化元数据而非索引标签。精确 Trace 日志过滤仍绑定模块/实例、正文权限和游标指纹。

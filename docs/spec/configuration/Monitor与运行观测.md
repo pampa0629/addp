@@ -150,6 +150,12 @@ python3 scripts/infra/generate-trace-config.py prepare-development \
 
 最小确定性门禁沿原 `make test-infra-runtime-log-lifecycle` 自动发现，覆盖命令参数／目录边界、现有材料不覆盖、失败清理、私有 OpenSSL 配置、证书用途／有效期、来源与查询信任隔离、SDK 四字段接线及未修改个人环境；不新增 Make 或 workflow 入口。
 
+2026-11-12 确认首批为既有本机开发部署追加 `manager:backend`。同一生成器提供 `prepare-development-producer --directory <原准备根目录> --producer manager:backend`，只消费本工具已有的 `deployment.env` 和私有签发材料；当前追加范围仅为 Manager Backend，不推断个人 `.env`、运行实例或其他来源。先核验原七项部署变量、来源唯一性、中心与来源目录归属、source CA 与中心信任根一致及有效期；来源目录、声明已存在或材料不可核验时拒绝，不覆盖／轮换。复用原 source CA 签发独立 clientAuth 叶证书，有效期不超过30天且不超过原 CA 到期时间；不改 CA、既有来源和查询证书、端点、Alloy／Tempo 渲染结果或策略。
+
+新增来源仍只有 `ca.crt/client.crt/client.key`，目录0700、文件0600；签发用临时材料在当次私有目录，OpenSSL逐条执行、局部私有配置、单条最多十秒、整次六十秒。使用显式随机序列号，不修改原CA序列文件。新证书核验成功后仅原子更新 `deployment.env` 中的 `ADDP_TRACE_DEPLOYMENTS` 一项，其余行保持原样。失败删除本次新增来源和临时材料，原部署文件不变；不输出私钥或原始OpenSSL错误。准备不修改个人根 `.env`，不执行网络／Docker请求、不启停服务，真实材料生成、配置合并和启用另行确认。
+
+首批只读业务验收路径为 `GET /api/v1/manager/preview`：Common Router → PreviewResolver → 带请求Context的System／Meta共享客户端。确定性门禁沿 `make test-module MODULE=manager GO_ONLY=1` 验证预览解析的真实HTTP出站传播、父子Span和完成日志关联，不替代真实租户授权或数据预览验收。`GET /manager/engines` 的既有Background Context断点单列，不计为本批已修复。首批不增加Meta来源或SQL Span，不改变权限；Meta未启用时只可陈述已观测到的Manager Client Span。真实启用与Safari业务验收另行确认，未采样或未找到慢请求如实记未完成，不注入延迟、不自动重试或调高采样。
+
 ## 节点设备容量扩展
 
 `ADDP_NODE_BLOCK_CAPACITY_ENABLED=false` 为默认关闭的部署选项，仅在节点来源启用时校验。选择 true 后由 `scripts/infra/node-metrics.py` 统一准备只读采集及专属 Textfile 目录、启停和清理；不要求用户执行采样脚本或导入 JSON。协议、限额及 VM 边界沿[块设备容量规范](../addp平台运行观测规范.md#磁盘与卷容量)。开关变更由部署者沿标准节点入口应用，不影响其他观测或业务 Ready；不修改根环境文件或自动重启个人来源。

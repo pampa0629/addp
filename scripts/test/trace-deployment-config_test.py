@@ -6,6 +6,9 @@ import os
 import subprocess
 import tempfile
 import unittest
+import shlex
+import shutil
+from datetime import datetime, timezone
 from unittest.mock import patch
 ROOT=Path(__file__).resolve().parents[2]
 def module(path):
@@ -169,4 +172,120 @@ class TraceConfigTests(unittest.TestCase):
    rendered=p/'center/runtime.alloy';before=rendered.read_bytes()
    result=subprocess.run([os.sys.executable,script],env=env|{'ADDP_TRACE_DEPLOYMENT_DIR':str(p/'center')},capture_output=True,timeout=10)
    self.assertEqual(result.returncode,0,result.stderr.decode());self.assertEqual(rendered.read_bytes(),before)
+class ManagerTraceProducerTests(unittest.TestCase):
+ @classmethod
+ def setUpClass(cls):
+  cls.renderer=module('scripts/infra/generate-trace-config.py')
+  cls.workspace=tempfile.TemporaryDirectory(prefix='addp-manager-trace-tests-')
+  cls.base=Path(cls.workspace.name)/'original'
+  with patch.dict(os.environ,{'ENV':'development'}):
+   cls.renderer.prepare_development(cls.base,['gateway:ingress','system:backend','monitor:backend','agent:backend','copilot:backend'],14318,14320)
+ @classmethod
+ def tearDownClass(cls): cls.workspace.cleanup()
+ def setUp(self):
+  self.temp=tempfile.TemporaryDirectory(prefix='addp-manager-trace-append-');self.addCleanup(self.temp.cleanup)
+  self.root=Path(self.temp.name)/'traces';shutil.copytree(self.base,self.root)
+  # Relocate only this test's prepared deployment paths.
+  f=self.root/'deployment.env';f.write_text(f.read_text().replace(str(self.base),str(self.root)))
+  self.original=f.read_bytes();self.target=self.root/'sources/manager-backend'
+ def append(self):
+  with patch.dict(os.environ,{'ENV':'development','OPENSSL_CONF':'/nonexistent/global-openssl-config'}):
+   self.renderer.prepare_development_producer(self.root,'manager:backend')
+ def unchanged(self, expected=None):
+  self.assertEqual((self.root/'deployment.env').read_bytes(),self.original if expected is None else expected)
+  self.assertFalse(self.target.exists());self.assertEqual(list(self.root.glob('.producer-*')),[])
+ def test_append_keeps_existing_material_and_only_updates_source_array(self):
+  snapshot={p.relative_to(self.root):(p.read_bytes(),p.stat().st_mode&0o777) for p in self.root.rglob('*') if p.is_file()}
+  before=dict(os.environ);calls=[];run=subprocess.run
+  def observe(args,**kwargs):
+   self.assertEqual(args[0],'openssl');self.assertLessEqual(kwargs['timeout'],10)
+   config=Path(kwargs['env']['OPENSSL_CONF']);self.assertTrue(config.is_relative_to(self.root));self.assertEqual(config.stat().st_mode&0o777,0o600)
+   self.assertNotIn('-CAcreateserial',args);calls.append(args)
+   return run(args,**kwargs)
+  with patch.object(self.renderer.subprocess,'run',side_effect=observe):self.append()
+  self.assertEqual(before,os.environ);self.assertEqual(len(calls),4)
+  for rel,(body,mode) in snapshot.items():
+   if str(rel)!='deployment.env':self.assertEqual((self.root/rel).read_bytes(),body)
+   self.assertEqual((self.root/rel).stat().st_mode&0o777,mode)
+  old=self.original.decode().splitlines();new=(self.root/'deployment.env').read_text().splitlines()
+  self.assertEqual([v for v in old if not v.startswith('ADDP_TRACE_DEPLOYMENTS=')],[v for v in new if not v.startswith('ADDP_TRACE_DEPLOYMENTS=')])
+  declaration=json.loads(shlex.split(next(v for v in new if v.startswith('ADDP_TRACE_DEPLOYMENTS=')))[0].split('=',1)[1])
+  self.assertEqual(declaration[-1],{'module_name':'manager','role':'backend','endpoint':'https://127.0.0.1:14318/v1/traces','tls_dir':str(self.target)})
+  self.assertEqual(len(declaration),6);self.assertEqual(self.target.stat().st_mode&0o777,0o700)
+  self.assertEqual({p.name for p in self.target.iterdir()},{'ca.crt','client.crt','client.key'})
+  for p in self.target.iterdir():self.assertEqual(p.stat().st_mode&0o777,0o600)
+  env=os.environ|{'OPENSSL_CONF':str(self.root/'authorities/openssl.cnf')}
+  for ca,purpose,ok in [('source','sslclient',True),('query','sslclient',False),('source','sslserver',False)]:
+   r=run(['openssl','verify','-CAfile',str(self.root/f'center/{ca}-ca.crt'),'-purpose',purpose,str(self.target/'client.crt')],env=env,capture_output=True,timeout=5)
+   self.assertEqual(r.returncode==0,ok)
+  def expiry(path):
+   out=run(['openssl','x509','-in',str(path),'-noout','-enddate'],env=env,capture_output=True,check=True,timeout=5).stdout.decode().strip()
+   return datetime.strptime(out,'notAfter=%b %d %H:%M:%S %Y GMT').replace(tzinfo=timezone.utc)
+  self.assertLessEqual(expiry(self.target/'client.crt'),expiry(self.root/'authorities/source.crt'))
+  self.assertEqual(list(self.root.glob('.producer-*')),[])
+  with self.assertRaises(ValueError):self.append()
+ def test_rejects_unapproved_producer_and_production(self):
+  for env,producer in [('development','meta:backend'),('development','manager:worker'),('production','manager:backend')]:
+   with patch.dict(os.environ,{'ENV':env}),patch.object(self.renderer.subprocess,'run') as run,self.assertRaises(ValueError):
+    self.renderer.prepare_development_producer(self.root,producer)
+   run.assert_not_called();self.unchanged()
+ def test_rejects_existing_destination_without_removing_it(self):
+  self.target.mkdir();marker=self.target/'preserve';marker.write_text('existing')
+  with self.assertRaises(ValueError):self.append()
+  self.assertEqual(marker.read_text(),'existing');self.assertEqual((self.root/'deployment.env').read_bytes(),self.original)
+ def test_rejects_invalid_or_escaped_preparation_before_signing(self):
+  for rel in ['authorities/source.key','deployment.env','sources/system-backend']:
+   p=self.root/rel;mode=p.stat().st_mode&0o777;p.chmod(0o777)
+   with patch.object(self.renderer.subprocess,'run') as run,self.assertRaises(ValueError):self.append()
+   run.assert_not_called();p.chmod(mode);self.unchanged()
+  p=self.root/'authorities/source.key';saved=p.read_bytes();p.unlink();p.symlink_to(self.base/'authorities/source.key')
+  with self.assertRaises(ValueError):self.append()
+  p.unlink();p.write_bytes(saved);p.chmod(0o600);self.unchanged()
+  ca=self.root/'center/source-ca.crt';ca.write_bytes((self.root/'center/query-ca.crt').read_bytes())
+  with self.assertRaises(ValueError):self.append()
+  self.unchanged()
+ def test_rejects_duplicate_declaration_and_manifest_fields(self):
+  values=dict(shlex.split(line)[0].split('=',1) for line in self.original.decode().splitlines())
+  declarations=json.loads(values['ADDP_TRACE_DEPLOYMENTS'])
+  invalid=[declarations+[declarations[0]],declarations+[{'module_name':'manager','role':'backend','endpoint':'https://127.0.0.1:14318/v1/traces','tls_dir':str(self.target)}],declarations+[declarations[0]|{'module_name':'../escape'}]]
+  for rows in invalid:
+   f=self.root/'deployment.env';text=self.original.decode().replace(shlex.quote(values['ADDP_TRACE_DEPLOYMENTS']),shlex.quote(json.dumps(rows)))
+   f.write_text(text)
+   with self.assertRaises(ValueError):self.append()
+   self.unchanged(text.encode())
+  text=self.original+b'TRACE_OTLP_PORT=14318\n';(self.root/'deployment.env').write_bytes(text)
+  with self.assertRaises(ValueError):self.append()
+  self.unchanged(text)
+ def test_sign_verify_timeout_and_publish_failures_leave_original_inputs(self):
+  run=subprocess.run
+  for fail_at in range(1,5):
+   count=0
+   def fail(args,**kwargs):
+    nonlocal count
+    count+=1
+    if count==fail_at:raise subprocess.TimeoutExpired(['openssl'],10)
+    return run(args,**kwargs)
+   with patch.object(self.renderer.subprocess,'run',side_effect=fail),self.assertRaises(subprocess.TimeoutExpired):self.append()
+   self.unchanged()
+  with patch.object(self.renderer.os,'replace',side_effect=OSError('publish unavailable')),self.assertRaises(OSError):self.append()
+  self.unchanged()
+ def test_expired_ca_and_total_deadline_do_not_publish(self):
+  expired=subprocess.CompletedProcess(['openssl'],0,b'notAfter=Nov  1 00:00:00 2026 GMT\n')
+  with patch.object(self.renderer.subprocess,'run',return_value=expired),self.assertRaises(ValueError):self.append()
+  self.unchanged()
+  with patch.object(self.renderer.time,'monotonic',side_effect=[0,61]),self.assertRaises(TimeoutError):self.append()
+  self.unchanged()
+ def test_mismatched_signing_key_is_rejected_and_rolled_back(self):
+  (self.root/'authorities/source.key').write_bytes((self.root/'authorities/query.key').read_bytes())
+  with self.assertRaises(subprocess.CalledProcessError):self.append()
+  self.unchanged()
+ def test_cli_errors_are_closed_and_success_does_not_activate(self):
+  args=[os.sys.executable,str(ROOT/'scripts/infra/generate-trace-config.py'),'prepare-development-producer','--directory',str(self.root),'--producer','manager:backend']
+  env=os.environ|{'ENV':'development','OPENSSL_CONF':'/nonexistent/global-config'}
+  r=subprocess.run(args,env=env,capture_output=True,timeout=60)
+  self.assertEqual(r.returncode,0,r.stderr.decode());self.assertIn(b'no environment or service was activated',r.stdout)
+  r=subprocess.run(args,env=env,capture_output=True,timeout=10)
+  self.assertNotEqual(r.returncode,0);self.assertEqual(r.stderr.strip(),b'trace_deployment_invalid')
+  self.assertEqual(r.stdout,b'')
+
 if __name__=='__main__':unittest.main()

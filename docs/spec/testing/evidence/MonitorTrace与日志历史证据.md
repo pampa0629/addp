@@ -605,3 +605,15 @@ Safari复用实际Console的系统管理员会话，打开记录ID`17035`、实�
 | [Monitor frontend 131060624260](https://github.com/pampa0629/addp/actions/runs/43182193008/job/131060624260) | 第535—536行实际执行`make test-monitor-frontend`；第696—702行151项单测通过，失败／取消／跳过均0；第1764—1766行实际执行中英文详情加载与返回时保留上方上下文，以及详情拒绝清空的新增回归；第1797行810项浏览器测试全部通过，第1828行构建完成。 |
 
 原始日志保留为`/tmp/addp-trace-stable-upper-ci-console-131060624194.log`及`/tmp/addp-trace-stable-upper-ci-monitor-131060624260.log`；固定SHA分别见Console第111／215行、Monitor第111／212行。本轮只读取自然CI结果并补证，没有手动重跑或更改CI、重启服务、新开本地窗口或运行Hosted／容量／定时。上述CI为受控浏览器夹具及构建证据，与上一节实际Safari单样本验证分别记账，未新增真实采集、日志或全量业务验收结论。
+
+## 2026-11-12 Manager Trace 追加准备：分项确定性验证完成，整入口重跑有前置失败
+
+按用户确认先修订规范，再在原配置生成器增加`prepare-development-producer`，首批仅允许向本工具已有本机开发准备目录追加`manager:backend`。复用原source CA，独立生成clientAuth证书并限制有效期不超原CA；随机序列号不改CA序列文件。原来源、CA、查询证书及Alloy／Tempo渲染结果保持；新来源验证成功后仅原子更新准备文件来源数组。未修改个人`.env`、生成个人环境新证书或启停服务。临时证书与回环接收器均归测试夹具管理。
+
+`make test-module MODULE=manager GO_ONLY=1`最终退出0，Manager API等Go T1包通过，日志为`/tmp/addp-manager-trace-go-verified.log`。新增`TestPreviewTraceContextAndCompletionLog`使用真实Common Router、实际ExplorerHandler.Preview及PreviewResolver，分别以回环System／Meta依赖503夹具验证请求Context：继承传入Trace及父Span，实际出站traceparent匹配已导出的Client Span，Client父Span为Manager Server；无baggage／tracestate转发，HTTP完成日志精确匹配Trace／Span且无locator、SQL、正文或凭据字段。该组件测试不执行真实登录／权限解析、源数据查询或Tempo尾采样，不计为正式预览／慢请求诊断验收。既有引擎列表Background Context断点未修复，Meta来源未新增。
+
+证书追加新增9项测试，覆盖既有五来源和非来源配置字节不变、用途与source／query信任隔离、有效期和权限、重复／越界声明、签发私钥不匹配、签发／验证超时、发布失败回滚、整组期限及CLI封闭错误。最初`make test-infra-runtime-log-lifecycle`退出0（最后组件168项），日志为`/tmp/addp-manager-trace-infra-gate.log`，但其后补了整次期限边界及私钥不匹配负例，因此不以该旧输入结果代替最终输入验证。
+
+最终输入的完整入口两次重跑均在前置`test-metrics-sources`中的既有`test_recovery_uses_unified_entry_for_both_scopes_and_preserves_failure`因五秒`TimeoutExpired`停止，尚未运行到追加证书测试；原因未确定，未修改或放宽该测试，失败日志保留为`/tmp/addp-manager-trace-infra-verified.log`及`/tmp/addp-manager-trace-infra-final.log`。随后显式沿原入口执行`make -o test-metrics-sources test-infra-runtime-log-lifecycle`，不重复前置，后续HTTP／Trace runner、CI登记及最后169项组件测试全部通过、退出0，日志为`/tmp/addp-manager-trace-infra-components.log`。此命令跳过的前置不计通过，完整入口仍保留失败结论；后续169项中也包含原PostgreSQL生命周期组件，但不能据此抹去前置失败或推断其根因。
+
+CI登记核对确认原Platform consistency的`make test-platform`沿开发生命周期调用原Infra入口；原Go workspace的`make test-go`自动发现新增Manager API用例，现有Trace T2输入清单已包含生成器及配置测试。无新增Make／workflow入口。本轮仅本地确定性验证，未推送触发CI或运行真实设施、Safari、Hosted、容量、定时；真实来源材料生成、单项配置合并、用户重启及业务验收仍待另行确认。
