@@ -1,39 +1,31 @@
 import { autoRefreshOptions } from '../../../../common-frontend/basic/src/utils/autoRefresh.mjs'
 import { isTargetUUID } from './monitoringTargets.js'
 import { resourceRanges } from './nodeResources.js'
-import { engineMetrics } from './engineResources.js'
 
 export const cdcMetrics = {
   redpanda: [
     ['disk_used_percent', 'diskUsed', 'percent'], ['unavailable_partitions', 'unavailablePartitions', 'partitions'],
-    ['consumer_group_pending_records', 'pendingRecords', 'records'], ['disk_total_bytes', 'diskTotal', 'bytes'],
-    ['disk_free_bytes', 'diskFree', 'bytes'], ['consumer_group_partitions', 'groupPartitions', 'partitions']
+    ['disk_free_bytes', 'diskFree', 'bytes'], ['disk_total_bytes', 'diskTotal', 'bytes'],
+    ['consumer_group_pending_records', 'pendingRecords', 'records'], ['consumer_group_partitions', 'groupPartitions', 'partitions']
   ].map(([field, name, unit]) => ({ key: `cdc.redpanda.${field}`, name, unit })),
   'kafka-connect': [
     ['connectors', 'connectors', 'connectors'], ['failed_tasks', 'failedTasks', 'tasks'], ['source_delay_max_seconds', 'sourceDelay', 'seconds'],
     ['tasks', 'tasks', 'tasks'], ['failed_connectors', 'failedConnectors', 'connectors'], ['running_tasks', 'runningTasks', 'tasks'],
     ['paused_tasks', 'pausedTasks', 'tasks'], ['offset_commit_tasks', 'offsetTasks', 'tasks'], ['offset_commit_failure_percent', 'offsetFailure', 'percent'],
     ['streaming_connectors', 'streamingConnectors', 'connectors'], ['streaming_connected', 'connected', 'connectors'], ['source_delay_connectors', 'delaySamples', 'connectors']
-  ].map(([field, name, unit]) => ({ key: `cdc.connect.${field}`, name, unit })),
-  postgresql: engineMetrics.filter(item => item.group === 'pgReplication')
+  ].map(([field, name, unit]) => ({ key: `cdc.connect.${field}`, name, unit }))
 }
 export function resolveCDCRoute(input = {}) {
   const query = { view: 'resources' }
-  const stage = ['postgresql', 'kafka-connect', 'redpanda'].includes(input.stage) ? input.stage : 'kafka-connect'
+  const stage = ['kafka-connect', 'redpanda'].includes(input.stage) ? input.stage : 'kafka-connect'
   const metric = cdcMetrics[stage].find(item => item.key === input.metric) || cdcMetrics[stage][0]
   const range = Object.hasOwn(resourceRanges, input.range) ? input.range : '5m'
   const refresh = autoRefreshOptions.includes(input.refresh) ? input.refresh : '15'
-  const scope = input.scope === 'business' ? 'business' : 'infra'
-  const page = typeof input.page === 'string' && /^[1-9]\d{0,5}$/.test(input.page) ? Number(input.page) : 1
-  const deploymentID = isTargetUUID(input.deployment_id) ? input.deployment_id : ''
   if (stage !== 'kafka-connect') query.stage = stage
   if (metric !== cdcMetrics[stage][0]) query.metric = metric.key
   if (range !== '5m') query.range = range
   if (refresh !== '15') query.refresh = refresh
-  if (scope !== 'infra') query.scope = scope
-  if (page !== 1) query.page = String(page)
-  if (deploymentID) query.deployment_id = deploymentID
-  return { stage, metric, range, refresh, scope, page, deploymentID, query, changed: JSON.stringify(Object.entries(input).sort()) !== JSON.stringify(Object.entries(query).sort()) }
+  return { stage, metric, range, refresh, query, changed: JSON.stringify(Object.entries(input).sort()) !== JSON.stringify(Object.entries(query).sort()) }
 }
 const invalid = () => { throw new Error('invalid_resource_response') }
 export function validateCDCResources(value, params = null, expected = null) {

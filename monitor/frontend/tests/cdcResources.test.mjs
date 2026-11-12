@@ -16,3 +16,10 @@ test('CDC validates identity, missing values and native negative delay without c
   }
   for (const state of ['available', 'unavailable']) assert.equal(validateCDCResources({ ...response(), discovery_state: state, data: [] }).discovery_state, state)
 })
+
+test('CDC resources drop unrelated database selection and prioritize broker capacity', () => {
+  const route = resolveCDCRoute({ stage: 'postgresql', scope: 'infra', deployment_id: '10000000-0000-4000-8000-000000000001', page: '2' })
+  assert.deepEqual(route.query, { view: 'resources' })
+  assert.deepEqual(Object.keys(cdcMetrics).sort(), ['kafka-connect', 'redpanda'])
+  assert.deepEqual(cdcMetrics.redpanda.slice(0, 3).map(metric => metric.name), ['diskUsed', 'unavailablePartitions', 'diskFree'])
+})

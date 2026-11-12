@@ -1456,13 +1456,9 @@
       "title": "CDC Monitoring",
       "subtitle": "Observe the source, change capture and message broker stages",
       "denied": "This identity cannot read CDC component metrics",
-      "pgDenied": "Reading PostgreSQL deployment metrics also requires engine deployment read permission",
       "discoveryUnavailable": "Component discovery is unavailable; current deployments cannot be confirmed",
       "notDeployed": "No running component discovered",
       "unknown": "Unknown state",
-      "sourceScope": "Deployment scope",
-      "database": "PostgreSQL deployment",
-      "chooseDatabase": "Select a PostgreSQL deployment",
       "emptyConnectors": "No connectors are currently configured",
       "noDelay": "No valid source delay samples",
       "noLag": "No complete consumer group lag samples",
@@ -1470,19 +1466,17 @@
       "stage": "CDC stage",
       "noTrend": "Select a connected stage and metric to view trends",
       "stages": {
-        "postgresql": "PostgreSQL",
         "kafka-connect": "Kafka Connect / Debezium",
         "redpanda": "Redpanda"
       },
       "roles": {
-        "postgresql": "Database deployment · logical slots and retained WAL",
         "kafka-connect": "Capture · connectors and tasks",
         "redpanda": "Messaging · storage, partitions and consumer lag"
       },
       "metrics": {
         "diskUsed": "Disk usage",
         "unavailablePartitions": "Unavailable partitions",
-        "pendingRecords": "Pending records",
+        "pendingRecords": "Consumer group lag (broker)",
         "diskTotal": "Disk capacity",
         "diskFree": "Free disk space",
         "groupPartitions": "Committed consumer partitions",
@@ -1501,11 +1495,13 @@
       },
       "hints": {
         "sourceDelay": "Maximum source delay reported by Debezium PostgreSQL streaming. This is not end-to-end latency; negative values reflect source/capture clock skew.",
-        "pendingRecords": "Aggregated only when every committed consumer partition has a corresponding end offset. Missing group samples are not replaced with zero.",
+        "pendingRecords": "Lag based on broker consumer group commits, not Transfer target apply progress. View task lag in the task chain; incomplete group samples are not replaced with zero.",
         "offsetFailure": "Maximum native task offset commit failure ratio, converted to percent. This is not the event processing failure rate."
       },
+      "openWorkers": "Transfer services and workers",
+      "openEngines": "Database runtime metrics",
       "resourcesTitle": "Runtime resources",
-      "resourcesSubtitle": "Independent deployment metrics for databases, capture components and brokers; not a task-specific chain",
+      "resourcesSubtitle": "Shared CDC capture and broker resources; view sources and sync progress in the task chain",
       "taskView": "Task chain",
       "resourceView": "Runtime resources",
       "tenantContext": "Task chains belong to a tenant. Switch to the target tenant context to view them",

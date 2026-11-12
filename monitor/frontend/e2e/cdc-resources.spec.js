@@ -1,13 +1,13 @@
 import { expect, test } from '@playwright/test'
 import { cdcBackend } from './cdc-resources.fixture'
-import { engineID } from './engine-resources.fixture'
 
 for (const locale of ['zh-cn', 'en']) test(`CDC cards distinguish empty data, faults and recovery (${locale})`, async ({ page }) => {
   const en = locale === 'en', state = await cdcBackend(page, { locale, mode: 'empty' })
   await page.goto('/cdc-resources?refresh=off')
   await expect(page.getByTestId('cdc-card-redpanda')).toBeVisible()
   await expect(page.getByTestId('cdc-empty-connectors')).toBeVisible()
-  await expect(page.getByTestId('cdc-value-pendingRecords')).toHaveText('—')
+  await page.getByTestId('cdc-card-redpanda').locator('summary').click()
+  await expect(page.getByTestId('cdc-value-pendingRecords')).toHaveCount(0)
   await expect(page.getByTestId('cdc-value-connectors')).toHaveText('0')
   await expect(page.getByTestId('cdc-no-lag')).toBeVisible()
   await page.getByTestId('cdc-card-kafka-connect').locator('summary').click()
@@ -17,7 +17,6 @@ for (const locale of ['zh-cn', 'en']) test(`CDC cards distinguish empty data, fa
   await expect(page.getByTestId('cdc-state-kafka-connect')).toContainText(en ? 'Scrape failed' : '抓取失败')
   await expect(page.getByTestId('cdc-value-connectors')).toHaveText('—')
   await expect(page.getByTestId('cdc-value-diskTotal')).toHaveCount(0) // expanded metrics stay inside the card
-  await page.getByTestId('cdc-card-redpanda').locator('summary').click()
   await expect(page.getByTestId('cdc-card-redpanda')).toContainText('1.00 GiB')
   state.setMode('snapshot'); await refresh()
   await expect(page.getByTestId('cdc-state-kafka-connect')).toContainText(en ? 'No valid component snapshot' : '未取得有效组件快照')
@@ -30,22 +29,24 @@ for (const locale of ['zh-cn', 'en']) test(`CDC cards distinguish empty data, fa
   state.setMode('absent'); await refresh()
   await expect(page.getByTestId('cdc-state-redpanda')).toHaveText(en ? 'No running component discovered' : '未发现运行中的组件')
 })
-for (const locale of ['zh-cn', 'en']) test(`CDC restores PostgreSQL selection and trend on direct entry (${locale})`, async ({ page }) => {
+for (const locale of ['zh-cn', 'en']) test(`CDC shared resources exclude unrelated databases (${locale})`, async ({ page }) => {
   const state = await cdcBackend(page, { locale })
-  await page.goto(`/cdc-resources?stage=postgresql&deployment_id=${engineID}&refresh=off`)
-  await expect(page.getByTestId('cdc-value-pgRetainedWAL')).toHaveText('1.00 GiB')
+  await page.goto('/cdc-resources?stage=postgresql&scope=infra&deployment_id=10000000-0000-4000-8000-000000000001&refresh=off')
+  await expect(page.getByTestId('cdc-card-kafka-connect')).toBeVisible()
+  await expect(page.getByTestId('cdc-card-postgresql')).toHaveCount(0)
+  await expect(page.getByTestId('cdc-value-diskFree')).toHaveText('1.00 GiB')
   await expect(page.getByTestId('cdc-trend').locator('canvas')).toBeVisible()
-  expect(state.queries.some(query => query.metrics === 'postgresql.replication.logical_slots,postgresql.replication.inactive_logical_slots,postgresql.replication.retained_wal_bytes')).toBe(true)
-  expect(state.queries.some(query => query.engine_type === 'postgresql' && query.scope === 'infra')).toBe(true)
+  expect(state.calls.some(path => path.includes('engine_'))).toBe(false)
+  await expect(page).toHaveURL(/view=resources&refresh=off$/)
   await page.setViewportSize({ width: 390, height: 844 })
   await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
-  if (locale === 'zh-cn') await page.screenshot({ path: '/tmp/addp-cdc-page-mobile.png', fullPage: true })
 })
 test('CDC has independent component permission and clears stale values after denial', async ({ page }) => {
   const state = await cdcBackend(page, { permissions: ['monitor.resource_observation.read'] })
   await page.clock.install(); await page.goto('/cdc-resources')
   await expect(page.getByTestId('cdc-value-connectors')).toHaveText('2')
-  await expect(page.getByText('读取 PostgreSQL 部署指标还需引擎部署读取权限')).toBeVisible()
+  await expect(page.getByTestId('cdc-card-postgresql')).toHaveCount(0)
+  await expect(page.getByTestId('cdc-open-workers')).toHaveCount(0)
   expect(state.calls.some(path => path.includes('engine_'))).toBe(false)
   const visibility = hidden => page.evaluate(hidden => { Object.defineProperty(document, 'hidden', { configurable: true, value: hidden }); document.dispatchEvent(new Event('visibilitychange')) }, hidden)
   await expect(page.locator('.cdc-resources')).toHaveAttribute('aria-busy', 'false')
@@ -83,4 +84,13 @@ test('Platform task tab requests no Tenant facts and returns to runtime resource
   await page.getByRole('tab', { name: '运行资源', exact: true }).click()
   await expect(page.getByTestId('cdc-card-kafka-connect')).toBeVisible()
   expect(state.calls.some(path => path.includes('/transfer/'))).toBe(false)
+})
+
+test('CDC links to the existing Transfer service monitor', async ({ page }) => {
+  const state = await cdcBackend(page, { permissions: ['monitor.resource_observation.read', 'platform.module.read'] })
+  await page.goto('/cdc-resources?view=resources&refresh=off')
+  await expect(page.getByTestId('cdc-card-kafka-connect')).toBeVisible()
+  await page.getByTestId('cdc-open-workers').click()
+  await expect(page).toHaveURL(/service-resources\?module_name=transfer/)
+  await expect.poll(() => state.queries.some(query => query.module_name === 'transfer' && query.page_size === '20')).toBe(true)
 })
