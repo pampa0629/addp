@@ -248,7 +248,7 @@ Common 父子准入与 System 协调的用例定位见 [Owner 矩阵](../spec/te
 
 随后继续持有已关闭 P 的行更新锁，释放 G；原已领取的子执行按自身合法 lease 完成成功或失败终态，attempt、started_at、父绑定和冻结输入不替换，P 全部字段／时间戳不变，原构建及领域事实保留。结果写入失败时归档及公共／专业回执同事务回滚，已提交 Graph 关闭不被父关闭或子失败撤销。四秒协调预算仅用于本轮夹具，原夹具默认一分钟、产品预算及12秒场景等待上限不变；夹具时间改由数据库墙钟生成。未复现生产逻辑缺陷，无权限、接口或生产配置变化。
 
-本地 `make test-module MODULE=graph GO_ONLY=1` 与 `make test-common-postgres COMMON_POSTGRES_TEST_ARGS="--test graph"` 通过：Graph 10 个主用例、原6／9／4／8／8项及新增四项准确 PASS，零 SKIP／FAIL，自有 Tenant 事实及专用触发器退出清理通过。沿既有 Graph 源码目录、必需主测试及 Common PG 编排，登记输入相对上批未变，未重复运行登记测试。固定源码 Linux 结果待终态后补记。本批只验证 Common 父围栏与 Graph Runtime 的 PG 组合；System 私有截止快照／审计、真实当前授权及跨进程拓扑不由受控授权夹具代验。Graph 高级恢复继续暂缓，未重启服务或触发 Hosted。
+本地 `make test-module MODULE=graph GO_ONLY=1` 与 `make test-common-postgres COMMON_POSTGRES_TEST_ARGS="--test graph"` 通过：Graph 10 个主用例、原6／9／4／8／8项及新增四项准确 PASS，零 SKIP／FAIL，自有 Tenant 事实及专用触发器退出清理通过。沿既有 Graph 源码目录、必需主测试及 Common PG 编排，登记输入相对上批未变，未重复运行登记测试。固定源码 `a46d5adf297175268f730b5919984d98aee9e098` 的 [Linux Go workspace](https://github.com/pampa0629/addp/actions/runs/43204588316/job/131136411182) 与 [Common PostgreSQL 15](https://github.com/pampa0629/addp/actions/runs/43204588232/job/131152181228) 均已终态 success；原始 Go 日志确认 Graph server／API／repository／service 包通过，PG 日志确认 Graph 10 个主用例、原6／9／4／8／8项及新增四项准确 PASS、零 SKIP／FAIL。新增四项为 `admission/complete`、`admission/result_rollback`、`after_closure/complete`、`after_closure/result_rollback`，分别耗时4.50／4.51／4.49／4.49秒。本批只验证 Common 父围栏与 Graph Runtime 的 PG 组合；System 私有截止快照／审计、真实当前授权及跨进程拓扑不由受控授权夹具代验。Graph 高级恢复继续暂缓，未重启服务或触发 Hosted。
 
 ## 七、确认范围与协作分工
 
