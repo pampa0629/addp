@@ -292,6 +292,7 @@ CDC 捕获资源名沿全局 `apply_identity`／generation 生成，源端同名
 
 | 历史证据专题 | 现行正文入口 | 需要分别认定的范围 |
 | --- | --- | --- |
+| [CDC 任务源端指标实测](#cdc-任务源端指标个人环境联验2026-11-12) | [任务源端指标](../docs/spec/tasks/Transfer数据库CDC.md#postgresql-任务源端指标)、[消息缓冲](../docs/spec/tasks/Transfer数据库CDC.md#任务消息缓冲持续观测) | 正式租户 API、源槽／WAL／Jolokia 独立对照、暂停恢复与自有资源清理；不代表隔离 T4 或真实浏览器。 |
 | [continuous 过程事件与浏览器](#continuous-过程事件与浏览器验收) | [运行、提交与观测](#continuous-运行提交与观测)、[过程事件契约](../docs/spec/tasks/执行监控.md#通用执行读取与过程事件) | 事件数据面、真实浏览器、留存清理。 |
 | [专业执行读取与响应](#专业执行读取与响应收敛) | [专业响应规范](../docs/spec/tasks/执行监控.md#transfer-专业执行读取与响应) | HTTP／PostgreSQL 隔离、Hosted 专业字段及双用户浏览器范围。 |
 | [SQL ETL 与 bounded 写后扫描](#sql-etl-与-bounded-写后扫描) | [查询源](#查询源与构建器)、[写后扫描](#写后扫描触发与范围) | 三轮执行／结构演进、bounded 精确扫描。 |
@@ -300,6 +301,16 @@ CDC 捕获资源名沿全局 `apply_identity`／generation 生成，源端同名
 | [continuous 精确扫描与审批归属](#continuous-精确扫描与审批归属) | [生产来源](#生产来源与写后扫描)、[写后扫描](#写后扫描触发与范围) | 首次扫描、单用户审批、双用户归属及各自清理证据。 |
 | [bounded 定时授权](#bounded-定时授权验收) | [定时任务授权规范](../docs/spec/tasks/任务定义与授权.md#transfer-定时任务授权) | 真实 Cron、子扫描隔离与模块聚合失败。 |
 | [创建落点与历史栈](#创建落点与历史栈验证) | [Canonical URL](../docs/spec/addp前端路由与可恢复状态规范.md#五canonical-url)、[历史栈规范](../docs/spec/addp前端路由与可恢复状态规范.md#六浏览器历史语义) | 本地 T1／T2／受控 T3、模块聚合失败、两类账号日常 Console 路由复验、[提示文案修正与证据](#创建提示文案修正与证据2026-11-02)及隔离 T4／T5 未验。 |
+
+#### CDC 任务源端指标个人环境联验（2026-11-12）
+
+实现提交 `c65f9e304`；用户在个人开发环境应用标准 Infra 配置并重启后，经已授权 Tenant User 31／Tenant 1 的正式 Transfer API 创建专用任务 60 `cdc_monitor_acceptance_20261111`，源／目标均为 Business PostgreSQL 引擎 2 下的专用表。Jolokia 实际映射 `127.0.0.1:18778`，Transfer 进程已加载该 URL，未修改用户环境或自行启停服务。首次快照后、尚无流式事件时，原生 `MilliSecondsBehindSource=-1`，公开延迟为 null；追加一条值不变的专用行更新产生首个 streaming 事件后，公开值 `0.414 s` 与该任务精确 Connector 的原生 `414 ms` 一致。
+
+北京时间 `18:14:58`，任务缓冲 committed／latest 为 `7/7`、积压为 0；正式 Pause 后写入 5 条新增、1 条修改、1 条删除，`18:15:28` committed 保持 7、latest 增至 14、积压为 7，目标行未变化，Connect／Task 仍 RUNNING。正式 Resume 后创建新 execution，`18:15:43` committed／latest 为 `14/14`、积压为 0，后续独立新采样继续为 0，目标精确增删改结果一致。两次执行分别为 `98f7c990-1487-4fa6-b13b-22c986b30eba`、`4f23f165-3aa8-4ca6-9e2f-21e09fafd7f8`。
+
+各阶段源端观测均新鲜且槽活跃，`wal_status/risk_state=reserved`；WAL 保留距离依次为 `43400/44480/46136 B`，安全余量依次为 `10750289752/10750288672/10750287016 B`，与任务自有槽的独立系统目录读取对应；暂停／恢复阶段捕获延迟均为 `0.399 s`，与定向 Jolokia 原生 `399 ms` 一致。WAL 距离不等于目标积压，未要求随 Resume 同步下降；未在个人库制造 WAL 丢失、填满磁盘或更改保留阈值。公开捕获摘要未暴露私有槽、publication、Connector、Topic 或 Group 名称。
+
+正式 Stop／Delete 后，自有槽、publication、Connector、专用源／目标表和目标 ledger 均已删除；task 60 的 capture／sync state／runtime lease 为零，任务软删除，执行审计按现行规则保留。原有两个逻辑槽 `addp_cdc_t1_task58_g1`、`addp_cdc_t1_task46_g1` 的 plugin／database／active／restart／confirmed 事实与联验基线相同。原件为 `/tmp/addp-cdc-source-live-20261112T101339Z/{report.json,timeline.jsonl,assessment.json}`；本记录只证明个人环境正式任务 API 与独立数据库／Jolokia 对照，不计为隔离 T4、Hosted 或真实浏览器验收。固定实现的 [Platform CI](https://github.com/pampa0629/addp/actions/runs/43189192391) 通过；[Release/T2](https://github.com/pampa0629/addp/actions/runs/43189192514) 的 Transfer PostgreSQL Job 通过，整轮因另一 Redis 固定来源 Job 失败，不能记整轮通过，未扩展调查该独立失败。
 
 #### continuous 过程事件与浏览器验收
 
