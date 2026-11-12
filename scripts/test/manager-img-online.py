@@ -1,6 +1,7 @@
 """Native raster media subscenes of the existing disposable Manager Hosted suite."""
 from __future__ import annotations
 
+import base64
 import hashlib
 import importlib
 import json
@@ -52,7 +53,7 @@ NFS_TIFF_DIRECTORY = 'raster-tiff-authorization'
 NFS_TIFF_NAME = NFS_TIFF_DIRECTORY + '/tiff-unlocated-small-cog.tif'
 
 
-def seed_nfs_tiff(environment, raw):
+def nfs_tiff_root(environment):
     if (any(environment.get(key) != value for key, value in {
         'ADDP_ONLINE_HOST': '1', 'ADDP_ONLINE_HOSTED': '1', 'GITHUB_ACTIONS': 'true',
         'RUNNER_OS': 'Linux', 'ADDP_ONLINE_MANAGER_CASE': 'native-raster-media',
@@ -69,6 +70,11 @@ def seed_nfs_tiff(environment, raw):
             or root.is_symlink() or not root.is_dir() or marker.is_symlink()
             or marker.read_text().strip() != environment['ADDP_ONLINE_TEST_RUN_ID']):
         raise ValueError('NFS TIFF export is not owned by this run')
+    return root
+
+
+def seed_nfs_tiff(environment, raw):
+    root = nfs_tiff_root(environment)
     directory = root / NFS_TIFF_DIRECTORY
     directory.mkdir(mode=0o755)
     path = root / NFS_TIFF_NAME
@@ -101,7 +107,7 @@ def verify_nfs_tiff_authorization(owner, environment, client, evidence, raw, bro
             raise owner.SuiteError('NFS TIFF scan did not identify exactly one owned file as the initializer')
         report['scan_execution_id'] = execution
         fingerprint = hashlib.sha256(f'{engine}:{NFS_TIFF_NAME}'.encode()).hexdigest()
-        model = {'format': 'tiff', 'full_name': NFS_TIFF_NAME, 'fingerprint': fingerprint,
+        model = {'format': 'tiff', 'layout': 'single', 'full_name': NFS_TIFF_NAME, 'fingerprint': fingerprint,
                  'composition': [{'path': NFS_TIFF_NAME, 'role': 'image', 'required': True, 'primary': True}]}
         metadata_grant = auth.grant(model, action='metadata_read')
         item = owner.find_fixture_item(client, engine, NFS_TIFF_NAME, 'NFS TIFF')
@@ -160,6 +166,142 @@ def verify_nfs_tiff_authorization(owner, environment, client, evidence, raw, bro
             report['zero_current_grants'] = True
     report['result'] = 'passed'
     return observed
+
+
+def verify_nfs_tiff_msk(owner, environment, client, identity, physical, report, timeout):
+    grants = importlib.import_module('scripts.test.ftp-consumer-flow-online')
+    directory = 'raster-tiff-msk'
+    root = nfs_tiff_root(environment)
+    source = physical('msk-source', {})
+    names = {'without-mask.tif', 'with-mask.tif', 'with-mask.tif.msk'}
+    if (source.get('primary_bytes_equal') is not True or set(source.get('files', {})) != names
+            or any(source.get('proofs', {}).get(layout, {}).get('invalid_mask_pixels') != count
+                   for layout, count in (('single', 1), ('multi', 257)))):
+        raise owner.SuiteError('MSK physical source proof is incomplete')
+    raw = {name: base64.b64decode(entry['base64'], validate=True) for name, entry in source['files'].items()}
+    for name, data in raw.items():
+        entry = source['files'][name]
+        if len(data) != entry['size_bytes'] or hashlib.sha256(data).hexdigest() != entry['sha256']:
+            raise owner.SuiteError('MSK fixture bytes differ from the physical receipt')
+    if raw['without-mask.tif'] != raw['with-mask.tif']:
+        raise owner.SuiteError('MSK paired TIFF primary bytes differ')
+    (root / directory).mkdir(mode=0o755)
+    archive = Path(environment['ADDP_ONLINE_ARTIFACT_DIR'])
+    for name, data in raw.items():
+        path = root / directory / name
+        with path.open('xb') as stream: stream.write(data)
+        path.chmod(0o644)
+        (archive / ('nfs-msk-source-' + name)).write_bytes(data)
+    engine = owner.positive_int(environment['ADDP_ONLINE_MANAGER_NFS_ENGINE_ID'], 'MSK NFS Engine')
+    tenant = owner.positive_int(environment['ADDP_ONLINE_TEST_TENANT_ID'], 'MSK Tenant')
+    issuer = owner.GatewayClient(environment['GATEWAY_URL'], environment['ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN'], 30)
+    auth = grants.ModelSourceAuthorization(issuer, client, {
+        'tenant_id': tenant, 'engine_id': engine, 'principal_id': identity['principal_id'],
+    }, source_type='nfs', consumer_permissions=owner.REQUIRED_PERMISSIONS,
+        issuer_permissions=grants.REGISTRATION.SOURCE_INITIALIZER_PERMISSIONS | {'meta.scan_task.execute', 'meta.scan_task.read'})
+    report.update(result='failed', physical_sources=source['proofs'], items=[], cleanup_errors=[])
+    fixture = None
+    failure = None
+
+    def read_member(item, member, status):
+        data = raw[Path(member).name]
+        response = client.request('GET', '/api/v1/manager/storage-stream?' + urlencode({
+            'locator': item['locator'], 'storage_ref': member}), (status,), headers={'Range': f'bytes=0-{len(data)-1}'})
+        content_range = next((v for k, v in response.headers.items() if k.lower() == 'content-range'), None)
+        if status == 206:
+            if response.raw != data or content_range != f'bytes 0-{len(data)-1}/{len(data)}':
+                raise owner.SuiteError('MSK member Range bytes or Content-Range differ')
+        elif content_range is not None or response.raw == data or not isinstance(response.payload, dict) or not response.payload.get('error'):
+            raise owner.SuiteError('denied MSK member returned bytes or an invalid error')
+        return {'path': member, 'status': response.status, 'size_bytes': len(response.raw),
+                'sha256': hashlib.sha256(response.raw).hexdigest() if status == 206 else None}
+
+    try:
+        execution = owner.wait_for_meta_scan(issuer, engine, time.monotonic() + timeout,
+                                             scope={'catalog_paths': [directory]})
+        report['scan_execution_id'] = execution
+        scan = issuer.request('GET', f'/api/v1/meta/executions/{execution}', (200,)).payload
+        if scan.get('triggered_by') != int(auth.operator) or scan.get('metadata', {}).get('items_scanned') != 3:
+            raise owner.SuiteError('MSK scan did not process exactly the three owned source files')
+        identities = issuer.request('GET', auth.base + '/data-items?' + urlencode({
+            'search': directory, 'page': 1, 'page_size': 100}), (200,)).payload
+        rows = identities.get('data', [])
+        if identities.get('total') != 2 or {row.get('full_name') for row in rows} != {
+                directory + '/without-mask.tif', directory + '/with-mask.tif'} or len(rows) != 2:
+            raise owner.SuiteError('Meta must register exactly the single and multi TIFF DataItems')
+        for name, layout in (('without-mask.tif', 'single'), ('with-mask.tif', 'multi')):
+            full_name = directory + '/' + name
+            row, = [row for row in rows if row['full_name'] == full_name]
+            model = {'format': 'tiff', 'layout': layout, 'full_name': full_name,
+                     'fingerprint': row['item_fingerprint'], 'composition': [
+                         {'path': full_name, 'role': 'image', 'required': True, 'primary': True}]}
+            if layout == 'multi':
+                model['composition'].append({'path': full_name + '.msk', 'role': 'mask', 'required': False, 'primary': False})
+            facts = auth.facts(model)
+            metadata_grant = auth.grant(model, action='metadata_read')
+            item = owner.find_fixture_item(client, engine, full_name, 'MSK TIFF')
+            if item['fingerprint'] != row['item_fingerprint'] or item['item_type'] != 'file':
+                raise owner.SuiteError('MSK TIFF identity differs from formal Meta facts')
+            auth.revoke(metadata_grant['request_id'])
+            entry = {'layout': layout, 'item_id': item['id'], 'locator': owner.build_item_locator(engine, item),
+                     'authorization_facts': facts, 'members': [ref['path'] for ref in model['composition']]}
+            report['items'].append(entry)
+            entry['before_grant'] = [read_member(entry, member, 403) for member in entry['members']]
+            entry['grant'] = auth.grant(model)
+            detail = client.request('GET', f"/api/v1/meta/items/{item['id']}", (200,)).payload
+            if detail.get('attributes', {}).get('item', {}).get('layout') != layout:
+                raise owner.SuiteError('Meta TIFF layout differs from its formal authorization boundary')
+            entry['granted'] = [read_member(entry, member, 206) for member in entry['members']]
+            if layout == 'multi':
+                fixture = owner.ArtifactFixture('tiff-msk', item, entry['locator'])
+        single, multi = report['items']
+        report['cross_item_status'] = read_member(single, multi['members'][1], 400)['status']
+        owner.generate_raster_cog(client, fixture, tenant, timeout, physical, source_facts={
+            'case': 'msk', 'source_format': 'tiff', 'band_count': 1, 'source_srid': 4326,
+            'extent': [113., 27.9744, 113.0256, 28.]})
+        proof = fixture.artifact['physical']
+        if proof.get('mask_verified') is not True or proof.get('invalid_mask_pixels') != 257 or proof.get('grid_verified') is not True:
+            raise owner.SuiteError('generated MSK COG complete mask proof is missing')
+        report['cog'] = {'execution_id': fixture.execution_id, 'result_id': fixture.result_id,
+                         'artifact': fixture.artifact}
+        cog_raw = client.request('GET', fixture.artifact['preview_url'], (200,)).raw
+        if len(cog_raw) != fixture.artifact['size_bytes'] or hashlib.sha256(cog_raw).hexdigest() != fixture.artifact['sha256']:
+            raise owner.SuiteError('archived MSK COG differs from the verified artifact')
+        (archive / 'nfs-msk-result.cog.tif').write_bytes(cog_raw)
+    except BaseException as error:
+        failure = error
+        raise
+    finally:
+        try:
+            if fixture is not None and fixture.task_id:
+                request = fixture.artifact.get('physical_request') if fixture.artifact else None
+                owner.cleanup_managed_artifact(client, fixture, timeout, 'raster_cog', owner.RASTER_TASK_TYPE)
+                if request is None:
+                    raise owner.SuiteError('MSK generation has no physical cleanup identity')
+                deleted = physical('deleted', request)
+                if deleted != {'object_deleted': True, 'source_unchanged': True, 'residual_objects': 0}:
+                    raise owner.SuiteError('MSK COG object cleanup is incomplete')
+                report['object_deleted'] = True
+        except BaseException as error:
+            report['cleanup_errors'].append(str(error))
+        try:
+            auth.cleanup()
+            for entry in report['items']:
+                entry['revoked'] = [read_member(entry, member, 403) for member in entry['members']]
+                current = issuer.request('GET', auth.base + '/access_grants?' + urlencode({
+                    'recipient_type': 'user', 'recipient_id': auth.recipient,
+                    'catalog_path': json.dumps(auth.target(entry['authorization_facts']['full_name']))}), (200,)).payload
+                if current.get('total') != 0 or current.get('data') != []:
+                    raise owner.SuiteError('MSK fixture left a current exact Grant')
+            report['zero_current_grants'] = True
+            if any((root / directory / name).read_bytes() != data for name, data in raw.items()):
+                raise owner.SuiteError('MSK TIFF source bytes changed')
+            report['source_unchanged'] = True
+        except BaseException as error:
+            report['cleanup_errors'].append(str(error))
+        if report['cleanup_errors'] and failure is None:
+            raise owner.SuiteError('MSK fixture cleanup failed: ' + '; '.join(report['cleanup_errors']))
+    report['result'] = 'passed'
 
 
 def validate_tiff_meta(owner, detail):
@@ -406,6 +548,7 @@ def run(repository, environment, owner, *, browser_runner=None, physical_runner=
         if source_format == 'tiff' and environment.get('ADDP_ONLINE_MANAGER_CASE') == 'native-raster-media':
             report['browser'] = verify_nfs_tiff_authorization(owner, environment, client, browser_evidence,
                 source_raw, browser, report.setdefault('nfs_tiff_authorization', {}), timeout)
+            verify_nfs_tiff_msk(owner, environment, client, identity, physical, report.setdefault('nfs_tiff_msk', {}), timeout)
         else:
             report['browser'] = validate_browser(owner, browser(browser_evidence), browser_evidence)
         for fixture in fixtures:

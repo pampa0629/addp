@@ -2,6 +2,7 @@
 """Own disposable physical raster fixtures; never call platform APIs."""
 from __future__ import annotations
 
+import base64
 import hashlib
 import http.client
 import http.server
@@ -1509,7 +1510,7 @@ def manager_physical(action, request=None):
     if (os.environ.get('ADDP_ONLINE_HOSTED') != '1'
             or os.environ.get('ONLINE_SUITE') != 'manager-internal-artifact-lineage'):
         raise FixtureError('Manager raster physical verification requires its Hosted owner')
-    if action not in ('seed', 'verify', 'deleted', 'pdf-verify', 'pdf-deleted', 'img-source', 'jpeg2000-source', 'grd-source', 'tiff-source'):
+    if action not in ('seed', 'verify', 'deleted', 'pdf-verify', 'pdf-deleted', 'img-source', 'jpeg2000-source', 'grd-source', 'tiff-source', 'msk-source'):
         raise FixtureError('unknown Manager physical action')
     root = environment()
     image = os.environ.get('ADDP_ONLINE_RASTER_RUNTIME_IMAGE', '')
@@ -1779,6 +1780,64 @@ def manager_grd_source(client,bucket,root):
     return {'source_unchanged':True,'grd_sources':actual}
 
 
+def manager_msk_facts(path, *, masked, cog=False):
+    """Independent fixed-grid oracle, including every mask and numeric sample."""
+    from osgeo import gdal, osr
+    from osgeo_utils.samples.validate_cloud_optimized_geotiff import validate
+    dataset = gdal.Open(str(path))
+    crs = osr.SpatialReference(); crs.ImportFromEPSG(4326)
+    crs.SetAxisMappingStrategy(osr.OAMS_TRADITIONAL_GIS_ORDER)
+    if (dataset is None or (dataset.RasterXSize, dataset.RasterYSize, dataset.RasterCount) != (256, 256, 1)
+            or dataset.GetSpatialRef() is None or not dataset.GetSpatialRef().IsSame(crs)
+            or tuple(dataset.GetGeoTransform()) != (113., .0001, 0., 28., 0., -.0001)):
+        raise FixtureError('MSK TIFF dimensions, CRS or grid changed')
+    band = dataset.GetRasterBand(1)
+    expected = tuple(-32768 if i == 0 else i + 10 for i in range(65536))
+    mask = bytes(0 if i == 0 or masked and 16 <= i // 256 < 32 and 16 <= i % 256 < 32 else 255
+                 for i in range(65536))
+    if (band.DataType != gdal.GDT_Int32 or band.GetNoDataValue() != -32768
+            or struct.unpack('<65536i', band.ReadRaster(buf_type=gdal.GDT_Int32)) != expected
+            or band.GetMaskBand().ReadRaster() != mask
+            or band.GetMaskFlags() != (gdal.GMF_PER_DATASET if masked else gdal.GMF_NODATA)):
+        raise FixtureError('MSK TIFF pixels, dtype, NoData or complete mask changed')
+    if cog:
+        _, errors, _ = validate(dataset, full_check=True)
+        if errors or dataset.GetMetadataItem('LAYOUT', 'IMAGE_STRUCTURE') != 'COG':
+            raise FixtureError('MSK artifact is not a valid COG')
+    return {'pixels_verified': 65536, 'mask_verified': True, 'invalid_mask_pixels': mask.count(0),
+            'source_srid': 4326, 'grid_verified': True, 'nodata': -32768, 'cog_valid': cog}
+
+
+def manager_msk_source():
+    from osgeo import gdal, osr
+    with tempfile.TemporaryDirectory(prefix='manager-msk-source-') as directory:
+        root = Path(directory)
+        path = root / 'with-mask.tif'
+        dataset = gdal.GetDriverByName('GTiff').Create(str(path), 256, 256, 1, gdal.GDT_Int32,
+                                                      options=['TILED=YES', 'COMPRESS=DEFLATE'])
+        dataset.SetGeoTransform((113., .0001, 0., 28., 0., -.0001))
+        crs = osr.SpatialReference(); crs.ImportFromEPSG(4326)
+        dataset.SetProjection(crs.ExportToWkt())
+        band = dataset.GetRasterBand(1); band.SetNoDataValue(-32768)
+        band.WriteRaster(0, 0, 256, 256, struct.pack('<65536i', *(-32768 if i == 0 else i + 10 for i in range(65536))))
+        previous = gdal.GetConfigOption('GDAL_TIFF_INTERNAL_MASK')
+        try:
+            gdal.SetConfigOption('GDAL_TIFF_INTERNAL_MASK', 'NO')
+            band.CreateMaskBand(gdal.GMF_PER_DATASET)
+            band.GetMaskBand().WriteRaster(0, 0, 256, 256, bytes(
+                0 if i == 0 or 16 <= i // 256 < 32 and 16 <= i % 256 < 32 else 255 for i in range(65536)))
+        finally:
+            gdal.SetConfigOption('GDAL_TIFF_INTERNAL_MASK', previous)
+        band = None; dataset = None
+        single = root / 'without-mask.tif'; single.write_bytes(path.read_bytes())
+        proofs = {'single': manager_msk_facts(single, masked=False), 'multi': manager_msk_facts(path, masked=True)}
+        if {p.name for p in root.iterdir()} != {'with-mask.tif', 'with-mask.tif.msk', 'without-mask.tif'}:
+            raise FixtureError('MSK fixture contains unexpected auxiliary files')
+        files = {p.name: {'base64': base64.b64encode(p.read_bytes()).decode(), 'size_bytes': p.stat().st_size,
+                         'sha256': hashlib.sha256(p.read_bytes()).hexdigest()} for p in root.iterdir()}
+        return {'files': files, 'proofs': proofs, 'primary_bytes_equal': single.read_bytes() == path.read_bytes()}
+
+
 def manager_img_worker(action, path):
     from minio import Minio
     from minio.error import S3Error
@@ -1792,13 +1851,15 @@ def manager_img_worker(action, path):
                for role, entry in config.items()}
     request = {} if action in ('img-source','jpeg2000-source','grd-source','tiff-source') else json.loads((root / 'manager-raster-request.json').read_text())
     source_format = action.removesuffix('-source') if action in ('img-source','jpeg2000-source','grd-source','tiff-source') else request.get('source_format', 'img')
-    if source_format=='tiff':
+    if source_format=='tiff' and request.get('source_case') != 'msk':
         if action!='tiff-source':raise FixtureError('small TIFF acceptance cannot verify generated outputs')
         return manager_tiff_source(clients['source'],source['bucket'],root)
     if source_format == 'grd':
         if action != 'grd-source':
             raise FixtureError('GRD read-only acceptance cannot verify generated outputs')
         return manager_grd_source(clients['source'], source['bucket'], root)
+    if source_format == 'tiff':
+        return manager_msk_output(action, request, clients['infra'])
     if source_format not in ('img','jpeg2000'): raise FixtureError('unknown raster source format')
     cases = MANAGER_IMG_CASES if source_format == 'img' else MANAGER_JPEG2000_CASES
     seeded = json.loads((root / 'manager-raster-source.json').read_text())[source_format+'_sources']
@@ -1873,7 +1934,42 @@ def manager_img_worker(action, path):
                 'size_bytes': len(raw), 'sha256': request['sha256'], 'source_case': case}
 
 
+def manager_msk_output(action, request, client):
+    from minio.error import S3Error
+    from urllib.parse import urlsplit, parse_qs, unquote
+    parsed = urlsplit(request['locator'])
+    prefix = f"/manager/tenant_{request['tenant_id']}/cog/{request['fingerprint']}/"
+    if (parsed.scheme != 'addp-infra' or parsed.netloc != 'minio' or not parsed.path.startswith(prefix)
+            or parse_qs(parsed.query) != {'type': ['object']} or not parsed.path.endswith('.cog.tif')):
+        raise FixtureError('MSK COG output is not owned by this run')
+    key = unquote(parsed.path.removeprefix('/manager/'))
+    if any(part in ('', '.', '..') for part in key.split('/')):
+        raise FixtureError('MSK COG output contains unsafe segments')
+    if action == 'deleted':
+        try:
+            client.stat_object('manager', key)
+        except S3Error as error:
+            if error.code != 'NoSuchKey': raise
+        else:
+            raise FixtureError('deleted MSK COG still exists physically')
+        if list(client.list_objects('manager', prefix=key, recursive=True)):
+            raise FixtureError('MSK COG cleanup left residual objects')
+        return {'object_deleted': True, 'source_unchanged': True, 'residual_objects': 0}
+    if action != 'verify':
+        raise FixtureError('unknown MSK output action')
+    with tempfile.TemporaryDirectory(prefix='manager-msk-cog-') as directory:
+        target = Path(directory) / 'result.tif'
+        client.fget_object('manager', key, str(target)); raw = target.read_bytes()
+        if (len(raw) != request['size_bytes'] or client.stat_object('manager', key).size != len(raw)
+                or hashlib.sha256(raw).hexdigest() != request['sha256']):
+            raise FixtureError('MSK COG physical size or HTTP hash mismatch')
+        proof = manager_msk_facts(target, masked=True, cog=True)
+    return {**proof, 'size_bytes': len(raw), 'sha256': request['sha256'], 'source_unchanged': True}
+
+
 def manager_worker(action, path):
+    if action == 'msk-source':
+        return manager_msk_source()
     if action.startswith('pdf-'):
         return manager_pdf_worker(action, path)
     request_file = Path(path).parent / 'manager-raster-request.json'

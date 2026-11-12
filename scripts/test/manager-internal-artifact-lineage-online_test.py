@@ -2151,7 +2151,7 @@ class ManagerAcceptanceCaseTest(unittest.TestCase):
 
     def test_both_formats_use_shared_scene_and_failure_preserves_partial_root(self):
         grants = importlib.import_module('scripts.test.ftp-consumer-flow-online')
-        for failure in (None, 'second', 'third', 'fourth', 'unclean', 'missing_nfs', 'grant_residue'):
+        for failure in (None, 'second', 'third', 'fourth', 'unclean', 'missing_nfs', 'missing_msk', 'missing_revocation', 'grant_residue'):
             with self.subTest(failure=failure), tempfile.TemporaryDirectory() as directory:
                 env = {'ADDP_ONLINE_ARTIFACT_DIR': directory, 'ADDP_ONLINE_TEST_RUN_ID': 'media-1',
                        'ADDP_ONLINE_MANAGER_MINIO_ENGINE_ID': '27', 'ADDP_ONLINE_MANAGER_MINIO_BUCKET': 'isolated',
@@ -2176,6 +2176,18 @@ class ManagerAcceptanceCaseTest(unittest.TestCase):
                             'result': 'passed', 'range_statuses': {'before_grant': 403, 'granted': 206, 'expired': 403},
                             'expired_meta_status': 404, 'natural_expiry_verified': True,
                             'source_unchanged': True, 'zero_current_grants': True,
+                        }
+                    if source_format == 'tiff' and failure != 'missing_msk':
+                        report['nfs_tiff_msk'] = {
+                            'result': 'passed', 'source_unchanged': True, 'zero_current_grants': True,
+                            'object_deleted': True, 'cleanup_errors': [], 'cross_item_status': 400,
+                            'cog': {'artifact': {'physical': {'invalid_mask_pixels': 257, 'pixels_verified': 65536,
+                                'cog_valid': True, 'mask_verified': True, 'grid_verified': True}}},
+                            'items': [{'layout': layout, 'members': ['member'] * count,
+                                       **{phase: [{'status': status}] * count
+                                          for phase, status in (('before_grant', 403), ('granted', 206),
+                                              ('revoked', 206 if failure == 'missing_revocation' else 403))}}
+                                      for layout, count in (('single', 1), ('multi', 2))],
                         }
                     return report
                 scene.run.side_effect = run

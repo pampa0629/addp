@@ -1,4 +1,5 @@
 """Exercise the T4 independent byte verifier with real GDAL and local S3 transport."""
+import base64
 import importlib.util
 import hashlib
 import math
@@ -2604,3 +2605,50 @@ def test_manager_tiff_rejects_semantic_tampering_even_with_rewritten_receipt(man
     receipt=json.loads(receipt_path.read_text());receipt['tiff_sources'][0].update(sha256=hashlib.sha256(raw).hexdigest(),size_bytes=len(raw))
     receipt_path.write_text(json.dumps(receipt))
     with pytest.raises(fixture.FixtureError):fixture.manager_worker('tiff-source',manager_physical)
+
+
+@pytest.mark.parametrize('fault', [None, 'pixels', 'mask', 'grid', 'nodata'])
+def test_manager_msk_complete_source_and_cog_oracle(manager_physical, tmp_path, fault):
+    source = fixture.manager_worker('msk-source', manager_physical)
+    assert source['primary_bytes_equal'] is True
+    assert source['proofs']['single']['invalid_mask_pixels'] == 1
+    assert source['proofs']['multi']['invalid_mask_pixels'] == 257
+    sources = tmp_path / 'msk-input'; sources.mkdir()
+    for name, entry in source['files'].items():
+        raw = base64.b64decode(entry['base64'], validate=True)
+        assert len(raw) == entry['size_bytes'] and hashlib.sha256(raw).hexdigest() == entry['sha256']
+        (sources / name).write_bytes(raw)
+    assert (sources / 'with-mask.tif').read_bytes() == (sources / 'without-mask.tif').read_bytes()
+    assert fixture.manager_msk_facts(sources / 'without-mask.tif', masked=False)['mask_verified']
+    input_path = sources / 'with-mask.tif'
+    dataset = gdal.Open(str(input_path), gdal.GA_Update)
+    if fault == 'pixels':
+        dataset.GetRasterBand(1).WriteRaster(100, 100, 1, 1, struct.pack('<i', 1), buf_type=gdal.GDT_Int32)
+    elif fault == 'mask':
+        dataset.GetRasterBand(1).GetMaskBand().WriteRaster(16, 16, 1, 1, bytes([255]))
+    elif fault == 'grid':
+        dataset.SetGeoTransform((114., .0001, 0., 28., 0., -.0001))
+    elif fault == 'nodata':
+        dataset.GetRasterBand(1).SetNoDataValue(-1)
+    dataset = None
+    output = tmp_path / 'msk-result.tif'
+    generated = gdal.Translate(str(output), str(input_path), format='COG', creationOptions=['COMPRESS=DEFLATE'])
+    generated = None
+    raw = output.read_bytes(); fp = 'e' * 64
+    key = f'tenant_42/cog/{fp}/msk.cog.tif'
+    LocalMinio.objects['infra', 'manager', key] = raw
+    request = {'tenant_id': 42, 'fingerprint': fp, 'source_format': 'tiff', 'source_case': 'msk',
+               'locator': f'addp-infra://minio/manager/{key}?type=object',
+               'size_bytes': len(raw), 'sha256': hashlib.sha256(raw).hexdigest()}
+    fixture.private_json(manager_physical.parent / 'manager-raster-request.json', request)
+    if fault:
+        with pytest.raises(fixture.FixtureError):
+            fixture.manager_worker('verify', manager_physical)
+    else:
+        proof = fixture.manager_worker('verify', manager_physical)
+        assert proof['cog_valid'] and proof['mask_verified'] and proof['grid_verified']
+        assert proof['pixels_verified'] == 65536 and proof['invalid_mask_pixels'] == 257
+        with pytest.raises(fixture.FixtureError, match='still exists'):
+            fixture.manager_worker('deleted', manager_physical)
+        del LocalMinio.objects['infra', 'manager', key]
+        assert fixture.manager_worker('deleted', manager_physical)['object_deleted']
