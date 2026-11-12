@@ -224,7 +224,7 @@ Common 父子准入与 System 协调的用例定位见 [Owner 矩阵](../spec/te
 
 修复后四项通过：关闭先提交拒绝且不留下新 execution／控制记录，不重置材料已完成检查点或删除原待审项；入队先提交则 Cleanup 取消准确的新 execution，保留冻结快照、摘要及重跑前驱绑定，attempt 仍为0、started_at 为空、无租约或原生操作。Cleanup 成功回执、准确取消计数及归档关闭范围一致，原执行和原冻结输入不变，测试自有 Tenant 事实退出清理通过。材料读取／原生处理不在本批范围，未启动构建监督器、图引擎或开发服务。
 
-本地 `make test-module MODULE=graph GO_ONLY=1` 与 `make test-common-postgres COMMON_POSTGRES_TEST_ARGS="--test graph"` 通过：Graph 10 个主用例、原六个审核／Cleanup 场景、九个同项审核组合及新增四项准确 PASS、零 SKIP。既有 Graph 源码目录、必需主测试和 Common PG 标准入口已覆盖，无需新增 Make／CI 路径。`make test-t2-ci-registration` 的85＋9项及登记检查通过。固定源码 Linux 结果待终态后补记。Graph 高级恢复继续暂缓，未触发 Hosted 或环境切换。
+本地 `make test-module MODULE=graph GO_ONLY=1` 与 `make test-common-postgres COMMON_POSTGRES_TEST_ARGS="--test graph"` 通过：Graph 10 个主用例、原六个审核／Cleanup 场景、九个同项审核组合及新增四项准确 PASS、零 SKIP。既有 Graph 源码目录、必需主测试和 Common PG 标准入口已覆盖，无需新增 Make／CI 路径。`make test-t2-ci-registration` 的85＋9项及登记检查通过。固定源码 `01cdea4fc4d649bcaa70fb18d11f4ce0fbb6fbe9` 的 [Linux Go workspace](https://github.com/pampa0629/addp/actions/runs/43187972475/job/131079841459) 与 [Common PostgreSQL 15](https://github.com/pampa0629/addp/actions/runs/43187972310/job/131080229635) 均已终态 success；原始 Go 日志确认 Graph server／API／repository／service 包通过，PG 日志确认 Graph 10 个主用例、原六项审核／Cleanup、九项审核竞争及新增四项入队竞争准确 PASS、零 SKIP／FAIL。Graph 高级恢复继续暂缓，未触发 Hosted 或环境切换。
 
 ## 七、确认范围与协作分工
 
