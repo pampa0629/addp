@@ -14,6 +14,7 @@ import sys
 import tempfile
 import time
 import uuid
+import urllib.error
 
 API = import_module('scripts.utils.online-api')
 FAULTS = import_module('scripts.test.continuous-execution-faults')
@@ -57,6 +58,28 @@ PHASES = {'preflight', 'source_scan', 'source_catalog', 'kafka_initial', 'kafka_
           'cdc_mutation', 'cdc_monitor_initial', 'cdc_pause', 'cdc_buffer_growth', 'cdc_monitor_resume',
           'cdc_approval', 'cdc_resume', 'cdc_stop', 'scheduled_create', 'scheduled_admission',
           'scheduled_pause', 'scheduled_completion', 'scheduled_scan', 'scheduled_result', 'cleanup', 'deleted_history'}
+
+
+class KafkaHardDeleteFailure(SuiteError):
+    """Only closed failure facts are published; the original exception stays private."""
+    def __init__(self, step, error, delete_status):
+        super().__init__('Kafka hard-delete verification failed')
+        cause = error.__cause__
+        if isinstance(cause, TimeoutError) or isinstance(cause, urllib.error.URLError) and isinstance(cause.reason, TimeoutError):
+            reason = 'transport_timeout'
+        elif isinstance(cause, urllib.error.URLError):
+            reason = 'transport_unavailable'
+        elif isinstance(cause, json.JSONDecodeError):
+            reason = 'invalid_response'
+        elif isinstance(error, subprocess.SubprocessError):
+            reason = 'observer_failed'
+        elif isinstance(error, SuiteError) and str(error) == 'continuous Hosted acceptance interrupted':
+            reason = 'interrupted'
+        else:
+            reason = 'contract_failed'
+        self.diagnostic = {'step': step, 'reason': reason, 'delete_request_timeout_seconds': 60}
+        if delete_status is not None:
+            self.diagnostic['delete_http_status'] = delete_status
 
 
 def require(condition, message):
@@ -601,25 +624,36 @@ def kafka_dlq_exists(tenant, task_id):
 
 def verify_kafka_hard_delete(client, tenant, task_id, old_execution):
     path = f'{OWNER}/task-definitions/{task_id}'
-    def stopped_except_old():
-        facts = kafka_delete_facts(tenant, task_id, old_execution)
-        require(facts['task_present'] and facts['operations'] == 0, 'hard-exit task is missing or already has cleanup operations')
-        require(facts['selected'] == facts['selected_open'] == 1, 'original Kafka invocation must lack an exit confirmation')
-        return facts if facts['sessions'] >= 2 and facts['open'] == 1 else None
+    step, delete_status = 'pre_delete_facts', None
+    try:
+        def stopped_except_old():
+            facts = kafka_delete_facts(tenant, task_id, old_execution)
+            require(facts['task_present'] and facts['operations'] == 0, 'hard-exit task is missing or already has cleanup operations')
+            require(facts['selected'] == facts['selected_open'] == 1, 'original Kafka invocation must lack an exit confirmation')
+            return facts if facts['sessions'] >= 2 and facts['open'] == 1 else None
 
-    before = until(stopped_except_old)
-    # The Gateway may time out as the Owner returns 503. Durable state and a fresh
-    # read of the exact definition distinguish a fence refusal from unavailability.
-    rejection = client.request('DELETE', path, (502, 503))
-    assert_safe(rejection.payload)
-    current = client.request('GET', path, (200,)).payload
-    require(current.get('id') == task_id and current.get('desired_state') == 'stopped',
-            'hard-exit deletion did not preserve the stopped task')
-    API.assert_tenant(current, tenant, 'hard-exit Kafka task')
-    require(kafka_delete_facts(tenant, task_id, old_execution) == before,
-            'hard-exit deletion changed sessions or registered an external operation')
-    return {'task_id': task_id, 'execution_id': old_execution, 'delete_status': rejection.status,
-            'original_invocation_unconfirmed': True, 'task_retained': True, 'no_delete_dispatch': True}
+        before = until(stopped_except_old)
+        # Only this DELETE must cover the Owner's existing 45-second stop window.
+        deletion_client = API.GatewayClient(client.base_url, client.token, 60)
+        step = 'delete_request'
+        rejection = deletion_client.request('DELETE', path, (502, 503))
+        delete_status = rejection.status
+        step = 'delete_response'
+        assert_safe(rejection.payload)
+        step = 'definition_read'
+        current = client.request('GET', path, (200,)).payload
+        step = 'definition_verify'
+        require(current.get('id') == task_id and current.get('desired_state') == 'stopped',
+                'hard-exit deletion did not preserve the stopped task')
+        API.assert_tenant(current, tenant, 'hard-exit Kafka task')
+        step = 'post_delete_facts'
+        after = kafka_delete_facts(tenant, task_id, old_execution)
+        step = 'post_delete_verify'
+        require(after == before, 'hard-exit deletion changed sessions or registered an external operation')
+        return {'task_id': task_id, 'execution_id': old_execution, 'delete_status': rejection.status,
+                'original_invocation_unconfirmed': True, 'task_retained': True, 'no_delete_dispatch': True}
+    except Exception as error:
+        raise KafkaHardDeleteFailure(step, error, delete_status) from error
 
 
 def scan_timestamp(item):
@@ -962,6 +996,8 @@ def quiesce_task_for_cleanup(client, task_id, kind, name, current, mutate):
 
 
 def failure_diagnostic(phase, error):
+    if isinstance(error, KafkaHardDeleteFailure):
+        return {'phase': 'kafka_hard_delete', 'reason': 'kafka_hard_delete_' + error.diagnostic['reason']}
     # Only fixed classifications enter the public receipt, never exception text,
     # response bodies, subprocess output, source values or credentials.
     reasons = {'CDC task generation mismatch': 'cdc_generation_mismatch',
@@ -1372,6 +1408,8 @@ def run_suite(client, denied, foreign, peer, reader, admin, login, tenant, run_i
 
     except Exception as error:
         scenario_failed = True
+        if isinstance(error, KafkaHardDeleteFailure):
+            report['kafka_hard_exit_diagnostic'] = error.diagnostic
         report['failure'] = {**failure_diagnostic(report['phase'], error),
                              'uncertain_mutation': report['uncertain_mutation']}
         checkpoint()

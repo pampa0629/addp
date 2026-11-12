@@ -146,17 +146,42 @@ class ContinuousRunnerTest(unittest.TestCase):
                 self.assertIn(('GET', M.OWNER + '/task-definitions/3', (404,)), calls)
             self.assertNotIn('private-token', json.dumps(report))
 
+    def test_hard_delete_wait_covers_runtime_stop_but_definition_read_keeps_original_timeout(self):
+        import io
+        import urllib.error
+        actor=M.API.GatewayClient('http://127.0.0.1:8000','private-token',10)
+        before={'task_present':True,'sessions':3,'open':1,'selected':1,'selected_open':1,'operations':0}
+        calls=[]
+        def urlopen(request,timeout):
+            method=request.get_method();calls.append((method,timeout,request.get_header('Authorization')))
+            if method=='DELETE':
+                if timeout<=45:raise TimeoutError('simulated server stop response needs the 45 second window')
+                raise urllib.error.HTTPError(request.full_url,503,'unavailable',{},io.BytesIO(b'{"error":"unavailable"}'))
+            response=io.BytesIO(b'{"id":7,"tenant_id":2,"desired_state":"stopped"}')
+            response.status=200
+            return response
+        with patch.object(M.API.urllib.request,'urlopen',side_effect=urlopen), \
+                patch.object(M,'kafka_delete_facts',side_effect=[before,before]):
+            result=M.verify_kafka_hard_delete(actor,2,7,UUID)
+        self.assertEqual([(method,timeout)for method,timeout,_ in calls],[('DELETE',60),('GET',10)])
+        self.assertTrue(all(auth=='Bearer private-token' for _,_,auth in calls))
+        self.assertEqual(actor.timeout,10)
+        self.assertEqual(result['delete_status'],503)
+        self.assertTrue(result['task_retained']and result['no_delete_dispatch'])
+
     def test_hard_exit_requires_exact_old_session_refusal_and_no_delete_intent(self):
         path = M.OWNER + '/task-definitions/7'
         before = {'task_present': True, 'sessions': 3, 'open': 1, 'selected': 1,
                   'selected_open': 1, 'operations': 0}
         for status in (502, 503):
-            actor = SimpleNamespace(request=unittest.mock.Mock(side_effect=[
+            actor = SimpleNamespace(base_url='http://127.0.0.1:8000', token='private-token', request=unittest.mock.Mock(side_effect=[
                 SimpleNamespace(status=status, payload={'error': 'unavailable'}),
                 SimpleNamespace(payload={'id': 7, 'tenant_id': 2, 'desired_state': 'stopped'}),
             ]))
-            with patch.object(M, 'kafka_delete_facts', side_effect=[before, before]):
+            with patch.object(M.API, 'GatewayClient', return_value=actor) as factory, \
+                    patch.object(M, 'kafka_delete_facts', side_effect=[before, before]):
                 result = M.verify_kafka_hard_delete(actor, 2, 7, UUID)
+            factory.assert_called_once_with(actor.base_url, actor.token, 60)
             self.assertEqual(result, {'task_id': 7, 'execution_id': UUID, 'delete_status': status,
                 'original_invocation_unconfirmed': True, 'task_retained': True, 'no_delete_dispatch': True})
             self.assertEqual(actor.request.call_args_list, [
@@ -168,9 +193,50 @@ class ContinuousRunnerTest(unittest.TestCase):
         actor.request.assert_not_called()
         actor.request.side_effect = [SimpleNamespace(status=503, payload={}),
                                      SimpleNamespace(payload={'id': 7, 'tenant_id': 2, 'desired_state': 'stopped'})]
-        with patch.object(M, 'kafka_delete_facts', side_effect=[before, {**before, 'operations': 1}]), \
-                self.assertRaisesRegex(M.SuiteError, 'registered an external operation'):
+        with patch.object(M.API, 'GatewayClient', return_value=actor), \
+                patch.object(M, 'kafka_delete_facts', side_effect=[before, {**before, 'operations': 1}]), \
+                self.assertRaises(M.KafkaHardDeleteFailure) as caught:
             M.verify_kafka_hard_delete(actor, 2, 7, UUID)
+        self.assertEqual(caught.exception.diagnostic['step'], 'post_delete_verify')
+
+    def test_hard_delete_failure_locates_each_boundary_without_private_error_text(self):
+        private='Bearer private-token business-value-sentinel raw_response'
+        before={'task_present':True,'sessions':3,'open':1,'selected':1,'selected_open':1,'operations':0}
+        for step in ['pre_delete_facts','delete_request','delete_response','definition_read',
+                     'definition_verify','post_delete_facts','post_delete_verify']:
+            actor=SimpleNamespace(base_url='http://127.0.0.1:8000',token='private-token',
+                request=unittest.mock.Mock(return_value=SimpleNamespace(payload={
+                    'id':8 if step=='definition_verify' else 7,'tenant_id':2,'desired_state':'stopped'})))
+            response=SimpleNamespace(status=503,payload={'raw_response':private}if step=='delete_response'else{})
+            deletion=SimpleNamespace(request=unittest.mock.Mock(return_value=response))
+            facts=[M.SuiteError(private)if step=='pre_delete_facts'else before,
+                   M.SuiteError(private)if step=='post_delete_facts'else {**before,'operations':1}if step=='post_delete_verify'else before]
+            if step=='delete_request':deletion.request.side_effect=M.SuiteError(private)
+            if step=='definition_read':actor.request.side_effect=M.SuiteError(private)
+            with self.subTest(step=step), patch.object(M.API,'GatewayClient',return_value=deletion), \
+                    patch.object(M,'kafka_delete_facts',side_effect=facts), \
+                    self.assertRaises(M.KafkaHardDeleteFailure)as caught:
+                M.verify_kafka_hard_delete(actor,2,7,UUID)
+            value=caught.exception.diagnostic
+            self.assertEqual(value['step'],step)
+            self.assertEqual(value['reason'],'contract_failed')
+            self.assertEqual(value['delete_request_timeout_seconds'],60)
+            self.assertNotIn('private',json.dumps(value))
+            self.assertNotIn('business-value-sentinel',json.dumps(value))
+            self.assertLessEqual(deletion.request.call_count,1)
+            if step not in ['pre_delete_facts','delete_request']:self.assertEqual(value['delete_http_status'],503)
+
+    def test_hard_delete_transport_and_response_causes_have_closed_safe_categories(self):
+        import urllib.error
+        for cause,reason in [(TimeoutError('private'),'transport_timeout'),
+                (urllib.error.URLError(TimeoutError('private')),'transport_timeout'),
+                (urllib.error.URLError('private'),'transport_unavailable'),
+                (json.JSONDecodeError('private','private',0),'invalid_response')]:
+            error=M.SuiteError('private raw response');error.__cause__=cause
+            value=M.KafkaHardDeleteFailure('delete_request',error,None)
+            self.assertEqual(value.diagnostic,{'step':'delete_request','reason':reason,'delete_request_timeout_seconds':60})
+            self.assertEqual(M.failure_diagnostic('kafka_hard_delete',value),
+                             {'phase':'kafka_hard_delete','reason':'kafka_hard_delete_'+reason})
 
     def test_cleanup_only_deletes_graceful_task_and_requires_physical_dlq_absence(self):
         stopped = {'task_present': True, 'sessions': 1, 'open': 0, 'selected': 1,
