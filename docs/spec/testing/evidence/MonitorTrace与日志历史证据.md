@@ -594,3 +594,14 @@ Tempo 同一批次先返回搜索200和五份明细200，随后两条并发请�
 Safari复用实际Console的系统管理员会话，打开记录ID`17035`、实例`780ff304-74ce-4ca9-b16f-1521a97487f5`及原13:10—13:25历史窗口。列表有14条，点击首条`c10fb5c03727bf7480791f80a12786e4`的“查看调用链”，URL仅增加trace_id，保留instance_id与原start／end；顶部返回实例列表、服务模块控件、历史开始／结束时间、空Trace ID输入、实例及“有样本”、共1条及分页均保持，详情在下方显示2个Span、7.404ms，且明确为不完整调用链。点击下方返回调用链列表后恢复原14条，顶部上下文仍在。本次Safari验证为正式个人环境的该单样本UI效果；未采集Safari像素几何或网络计数，精确位置／尺寸及不重复请求由确定性门禁验证，不混同证据层级。
 
 此次纯前端调整未重启服务。未点击日志或重新验收其他Trace明细，不扩大到业务根因诊断、采集完整性或全量样本保证；未运行Hosted、容量、定时或手工CI重跑。
+
+## 2026-11-12 详情保留上方内容：固定提交自然 CI 补证
+
+手动核对实现提交`2bdda8bfcb3cf2511c6445388c3c6cd003ef54c8`的自然[Platform CI 43182193008](https://github.com/pampa0629/addp/actions/runs/43182193008)。Run及下列两项Job最终均为completed／success；原始日志分别确认checkout为该固定SHA，两项实际运行门禁均成功，未把路径选择或跳过报告当作测试执行证据。
+
+| 专项Job | 原始日志核验 |
+| --- | --- |
+| [Console frontend 131060624194](https://github.com/pampa0629/addp/actions/runs/43182193008/job/131060624194) | 第750—751行实际执行`make test-console-frontend`；第799行258项单测通过；第1163行执行新增`Console row detail preserves the upper filters and instance context`，第1169—1173行执行既有实例翻页、权限拒绝及冻结窗口回归；第1181行349项浏览器测试全部通过，第1217行构建完成。 |
+| [Monitor frontend 131060624260](https://github.com/pampa0629/addp/actions/runs/43182193008/job/131060624260) | 第535—536行实际执行`make test-monitor-frontend`；第696—702行151项单测通过，失败／取消／跳过均0；第1764—1766行实际执行中英文详情加载与返回时保留上方上下文，以及详情拒绝清空的新增回归；第1797行810项浏览器测试全部通过，第1828行构建完成。 |
+
+原始日志保留为`/tmp/addp-trace-stable-upper-ci-console-131060624194.log`及`/tmp/addp-trace-stable-upper-ci-monitor-131060624260.log`；固定SHA分别见Console第111／215行、Monitor第111／212行。本轮只读取自然CI结果并补证，没有手动重跑或更改CI、重启服务、新开本地窗口或运行Hosted／容量／定时。上述CI为受控浏览器夹具及构建证据，与上一节实际Safari单样本验证分别记账，未新增真实采集、日志或全量业务验收结论。
