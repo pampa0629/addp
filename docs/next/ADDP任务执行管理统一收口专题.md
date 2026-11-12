@@ -161,7 +161,7 @@ Manager 源准备保持其正式授权链；本批 Transfer CDC 仅验证既有 
 | 顺序 | 事项／性质 | 具体交付与完成条件 |
 | --- | --- | --- |
 | P1a | Common／System 父子准入 PG | C2b/c/e/h 的竞争、拒绝与回滚，以及 C2d/f/g 的公共锁等待、非法绑定及子执行残留事实，见 [Common／System PG 两批验证](#本轮-pg-增补验证)。Graph 专属锁交错归 P1b，各 Owner 的外部效果核清沿对应专项。 |
-| P1b | Graph清理与输入冻结，测试及按证据修复 | [G2 摘要回滚与 G3 成功先提交](#graph-基础-pg-增补验证)、[G8 输入与登记目标漂移](#graph-g8-输入冻结验证)已有 PG 记录。剩余 G9 在途审核，以及 C3/C4/C2j 真实 PG 交错。C4当前代码核execute首尾候选一致，尚未定位原scan后候选漂移的完整反例；先验证上游生命周期围栏及原scan确认是否已足够，再决定修复，不将风险观察写成已复现漏洞 |
+| P1b | Graph清理与输入冻结，测试及按证据修复 | [G2 摘要回滚与 G3 成功先提交](#graph-基础-pg-增补验证)、[G8 输入与登记目标漂移](#graph-g8-输入冻结验证)已有 PG 记录。[G9 在途审核与关闭准入](#graph-审核与-cleanup-竞争-pg-增补验证)已补六项真实 PG。剩余同一审核项多请求竞争，以及 C3/C4/C2j 的其他真实 PG 交错。C4当前代码核execute首尾候选一致，尚未定位原scan后候选漂移的完整反例；先验证上游生命周期围栏及原scan确认是否已足够，再决定修复，不将风险观察写成已复现漏洞 |
 | P2 | System／Monitor消费者状态矩阵，T3工程 | C5g/k/l补撤去父读取权、404／503、User／Tenant／execution切换、closed pending替换及矛盾／迟到响应；C5c/h补隐藏计数与完整页面语义。复用共享组件／请求失效能力，补C5e/j相应PG交错，不复制组件 |
 | 并行待授权 | Manager迟到writer真实验收 | runner与CI已就绪，按§8.44单独确认一次Hosted；同一原请求、原身份及原预算，核11项、控制恢复与零残留；不能先记完成 |
 | P3 | Graph／Cleanup完整故障与Meta扫描闭环，runner／集成验收 | 已有profile先按场景核对并补缺：Cleanup规范§13的平台上下文、审计、Monitor父子树；Graph原生写图回包丢失及两引擎故障。受控runner与真实原生效果分开；若需新的Provider入口或身份／权限边界先讨论，不能借此重启高级恢复。新增Hosted均单独确认 |
@@ -197,6 +197,16 @@ Common 父子准入与 System 协调的用例定位见 [Owner 矩阵](../spec/te
 首轮发现无图写入的构建跳过 Engine 版本核验，仍调用 Copilot 并成功。修复后统一在读取材料及外部处理前校验冻结登记，拒绝版本漂移，既有图操作仍核验冻结目标。该轮覆盖登记版本，不扩展到物理代际或高级恢复。
 
 本地 `make test-common-postgres COMMON_POSTGRES_TEST_ARGS="--test graph"` 通过 10 个主用例，含新增六个子场景，0 SKIP。`make test-module MODULE=graph GO_ONLY=1` 及 T2 登记 85＋9 项和登记检查通过。Graph 分组与 Common 全量 PG 均要求 BuildInputRuntime 和 CleanupRuntime 的准确 PASS。本节记录本地结果。
+
+### Graph 审核与 Cleanup 竞争 PG 增补验证
+
+2026-11-12 增补六项，复用 `TestIntegrationPostgresGraphCleanupRuntime/review_cleanup_interleavings`，由既有 Graph 分组与 Common 全量 PostgreSQL 门禁的必需 PASS 入口执行，Graph 源码路径自动命中 Linux Common PostgreSQL Job，无新增服务、Job、权限或生产入口。
+
+- 关闭先提交：在实际 Cleanup 关闭事务持 G 排他锁时启动审核，以 `pg_blocking_pids` 确认审核等待；提交后拒绝审核。关闭事务失败则关闭标记、归属和版本一起回滚，等待审核可正常受理。最终专业结果写入失败时，归档和公共／专业回执一起回滚，已提交关闭仍保留。
+- 审核先受理：审核命令及准确目标操作在 G 共享事务中登记，确认 Cleanup 实际等待后提交。关闭随后可提交，但在途／未知操作及未完成审核回执仍阻清理，新审核被拒绝。原命令可以在关闭后保存已知结果，随后 Cleanup 正常完成；未知效果令 Cleanup 失败关闭并保留操作和审核；审核回执更新失败保留原命令与未提交结果，仍阻清理。
+- 各场景均保留原构建终态及摘要、其他待审项和 Engine 清理应保留的审核历史；随机 Tenant 事实与专用触发器／函数在退出清理。PG 为真实事务与锁交错，原生图写入由持久操作协议夹具代表，不计为 Neo4j／FalkorDB 原生效果或 Hosted 证明。
+
+本地 `make test-module MODULE=graph GO_ONLY=1`、`make test-common-postgres COMMON_POSTGRES_TEST_ARGS="--test graph"` 已通过；Graph PG 仍为 10 个主用例，新增六个子场景均准确 PASS、零 SKIP，退出事实清理检查通过。首轮关闭屏障错误来自测试回调复用 GORM 更新语句的参数，改用同一事务的新查询 Session 后通过；尚未复现需要修改生产逻辑的新缺陷。T2 登记 85＋9 项及注册检查通过；固定源码 Linux 结果在取得终态后补记。Graph 高级恢复继续暂缓，未运行 Hosted 或环境切换。
 
 ## 七、确认范围与协作分工
 

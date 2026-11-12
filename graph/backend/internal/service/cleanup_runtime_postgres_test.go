@@ -24,6 +24,7 @@ func TestIntegrationPostgresGraphCleanupRuntime(t *testing.T) {
 		t.Skip("standard Graph PostgreSQL gate required")
 	}
 	testGraphCleanupRuntime(t, true)
+	t.Run("review_cleanup_interleavings", testGraphReviewCleanupConcurrency)
 }
 func cleanupRuntimeDomainFixture(t *testing.T, pg bool) (*gorm.DB, models.BuildTask, *execution.TaskExecution) {
 	t.Helper()
