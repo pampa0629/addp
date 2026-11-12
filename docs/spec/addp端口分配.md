@@ -25,7 +25,9 @@ Infra 宿主机绑定地址由 `INFRA_BIND_HOST` 指定，默认 `0.0.0.0`；Hos
 
 开发生命周期判定 Runtime 端口归属时必须核对 Compose 标签和工作区。bridge 模式核对 Docker 发布端口；Hosted 宿主网络模式核对实际网络模式、回环监听配置、容器声明端口，以及监听进程是否为容器主进程或其子进程。Hosted Runner 通过 `sudo -n lsof` 读取不同容器 UID 的监听进程；查询失败不能认定归属。不得因容器存在或端口已监听就认定归属，后续模块启动也不得把本轮宿主网络 Runtime 误判为外部服务。
 
-容器部署按生命周期划分四个 Compose project：`addp-infra` 管理平台基础设施，`business` 管理独立业务数据引擎，`addp-platform` 管理 System、其他业务模块、Gateway、Console、模块 Frontend 和 Nginx，`addp-runtimes` 管理 ADDP 内置计算与 Notebook Runtime。业务模块不再按单个模块拆 Compose project；Runtime 可独立启停，不作为业务模块的启动依赖。`addp-platform` 使用根 `docker-compose.yml`，`addp-runtimes` 使用根 `docker-compose.runtimes.yml`；两者和 Infra 通过外部 `addp-network` 使用稳定服务名与固定容器端口通信。Compose project 仅决定容器生命周期与 Docker Desktop 分组，不改变 System 的模块注册或 Engine Instance 身份。
+核心容器按生命周期分别组织：`addp-infra` 管理平台基础设施，`business` 管理独立业务数据引擎，`addp-platform` 管理 System、其他业务模块、Gateway、Console、模块 Frontend 和 Nginx，`addp-runtimes` 管理 ADDP 内置计算与 Notebook Runtime。业务模块不按单个模块拆 Compose project；Runtime 可独立启停，不作为业务模块的启动依赖。`addp-platform` 使用根 `docker-compose.yml`，`addp-runtimes` 使用根 `docker-compose.runtimes.yml`；两者通过外部引用 Infra 声明的 `addp-network`，使用稳定服务名与固定容器端口通信。Compose project 用于容器生命周期与 Docker Desktop 分组，不改变 System 的模块注册或 Engine Instance 身份。项目归属及网络边界见[Infra 部署与项目隔离](../../scripts/infra/docs/部署与项目隔离.md#docker-compose-项目)。
+
+主机、Infra 和 Business 的采集来源另由共享 `addp-metrics-sources` 项目组织，统一入口按作用域与类型选择来源；来源与被监控数据库的生命周期分别核验。分组不改变账号、证书、私有卷和网络归属，精确操作及清理边界统一见[采集项目与来源隔离](addp平台运行观测规范.md#采集项目与来源隔离)。项目或容器状态不代表实际采样和业务访问已验收。
 
 `addp-platform` 只向宿主机发布 Nginx 统一入口 `${NGINX_BIND_HOST:-0.0.0.0}:${NGINX_PORT:-80}:80`；Console、模块 Frontend、Gateway、Backend 和内置 Runtime 不单独发布宿主机端口。Nginx 按路径转发前端与 `/api/`，Gateway 从 System 的 Backend 实例注册事实发现业务路由；Frontend 端口不注册到 System。宿主机入口端口由部署配置明确指定，冲突时启动失败，不在生产环境自动漂移。容器部署的对外 origin 由 `ADDP_PUBLIC_ORIGIN` 指定；未设置时按 `http://localhost:${NGINX_PORT:-80}` 构造，System 的 `PUBLIC_API_URL`、`CONSOLE_URL` 和 Monitor 的告警链接均使用此 origin。经域名、TLS 或上级反向代理发布时必须显式指定用户实际访问的 origin。模块 standalone 模式仍可单独部署，但不通过根 Compose 再发布一组固定的宿主机端口。
 
