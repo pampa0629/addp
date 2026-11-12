@@ -3,6 +3,7 @@ package repository
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"testing"
 	"time"
@@ -10,6 +11,7 @@ import (
 	commonapi "github.com/addp/common/api"
 	"github.com/addp/common/execution"
 	commonmodels "github.com/addp/common/models"
+	"github.com/addp/manager/internal/cog"
 	"github.com/addp/manager/internal/models"
 	"github.com/google/uuid"
 	"gorm.io/driver/postgres"
@@ -38,6 +40,82 @@ func TestIntegrationPostgresManagerArtifactTargetTransactions(t *testing.T) {
 	if err := execution.EnsureStore(db); err != nil {
 		t.Fatal(err)
 	}
+	t.Run("unstarted_source_authorization_failure", func(t *testing.T) {
+		if err := db.AutoMigrate(&models.RasterCOGTask{}, &models.RasterCOG{}); err != nil {
+			t.Fatal(err)
+		}
+		tenant := uint(time.Now().UnixNano()%100000000 + 970000000)
+		t.Cleanup(func() {
+			for _, model := range []interface{}{&models.CleanupTarget{}, &execution.TaskExecution{}, &models.RasterCOGTask{}} {
+				if err := db.Unscoped().Where("tenant_id = ?", tenant).Delete(model).Error; err != nil {
+					t.Error(err)
+				}
+			}
+		})
+		fp := uuid.NewString()
+		task := models.RasterCOGTask{TenantID: tenant, Name: "authorization-preparation-release", Enabled: true, Config: commonmodels.JSONMap{
+			"target": commonmodels.JSONMap{"item_fingerprint": fp},
+			"result": commonmodels.JSONMap{"storage_ref": cog.ObjectStorageRef("manager", "tenant_"+fmt.Sprint(tenant)+"/"+fp+".tif")},
+		}}
+		if err := createTaskDefinition(t.Context(), db, execution.TaskTypeRasterCOGGeneration, &task); err != nil {
+			t.Fatal(err)
+		}
+		repo := NewRasterCOGRepository(db)
+		claim := func() *execution.TaskExecution {
+			t.Helper()
+			item := newManagerRepositoryTestExecution(uuid.NewString(), int(tenant), execution.TaskTypeRasterCOGGeneration, time.Now().UTC())
+			actor, principal, membership, version := 31, int64(31), int64(41), int64(1)
+			item.TriggeredBy, item.ActorPrincipalID, item.ActorTenantMembershipID, item.IssuedAuthorizationVersion = &actor, &principal, &membership, &version
+			snapshot, err := repo.TaskConfigSnapshot(t.Context(), task.ID, tenant)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := repo.ClaimExecution(t.Context(), task.ID, tenant, item, false, snapshot); err != nil {
+				t.Fatal(err)
+			}
+			return item
+		}
+		assertHolds := func(item *execution.TaskExecution, want int64) {
+			t.Helper()
+			var count int64
+			if err := db.Model(&models.CleanupTarget{}).Where("tenant_id = ? AND operation_id = ?", tenant, item.ExecutionID).Count(&count).Error; err != nil || count != want {
+				t.Fatalf("generation holds=%d want=%d err=%v", count, want, err)
+			}
+		}
+		old := claim()
+		assertHolds(old, 3)
+		// Persist the old finalizer's failure state, leaving its exact holds.
+		if err := db.Model(old).Updates(map[string]interface{}{"status": "failed", "completed_at": time.Now(), "error_details": commonmodels.JSONMap{"code": "source_authorization_required"}}).Error; err != nil {
+			t.Fatal(err)
+		}
+		next := claim()
+		assertHolds(old, 0)
+		assertHolds(next, 3)
+		injected := errors.New("preparation failure rollback")
+		if err := db.Transaction(func(tx *gorm.DB) error {
+			if err := failPendingFileExecution(tx, next, time.Now()); err != nil {
+				return err
+			}
+			return injected
+		}); !errors.Is(err, injected) {
+			t.Fatal(err)
+		}
+		stored, err := repo.GetExecution(t.Context(), int(tenant), next.ExecutionID)
+		if err != nil || stored.Status != execution.ExecutionStatusPending {
+			t.Fatalf("failure rollback changed execution: %+v %v", stored, err)
+		}
+		assertHolds(next, 3)
+		if err := repo.FailUnboundExecution(t.Context(), next); err != nil {
+			t.Fatal(err)
+		}
+		assertHolds(next, 0)
+		for _, item := range []*execution.TaskExecution{old, next} {
+			stored, err := repo.GetExecution(t.Context(), int(tenant), item.ExecutionID)
+			if err != nil || stored.Status != execution.ExecutionStatusFailed || stored.Attempt != 0 || stored.ErrorDetails["code"] != "source_authorization_required" {
+				t.Fatalf("failure evidence lost: %+v %v", stored, err)
+			}
+		}
+	})
 	for _, outcome := range []string{"unknown", "succeeded"} {
 		t.Run(outcome, func(t *testing.T) {
 			id := uuid.NewString()

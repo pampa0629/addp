@@ -100,7 +100,7 @@ func (r *RasterCOGRepository) ClaimExecution(
 		CurrentResultModel:      &models.RasterCOG{},
 		OverwriteExistingResult: overwriteExistingResult,
 		BeforeCreate: func(tx *gorm.DB) error {
-			return verifyFileTaskSnapshot(ctx, tx, snapshot, commonExecution.TaskTypeRasterCOGGeneration)
+			return prepareFileTaskClaim(ctx, tx, snapshot, commonExecution.TaskTypeRasterCOGGeneration)
 		},
 	})
 	if err != nil {

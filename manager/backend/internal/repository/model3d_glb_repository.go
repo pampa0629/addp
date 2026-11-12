@@ -119,7 +119,7 @@ func (r *Model3DGLBRepository) ClaimExecution(
 		CurrentResultModel:      &models.Model3DGLB{},
 		OverwriteExistingResult: overwriteExistingResult,
 		BeforeCreate: func(tx *gorm.DB) error {
-			if err := verifyFileTaskSnapshot(ctx, tx, snapshot, commonExecution.TaskTypeModel3DGLBGeneration); err != nil {
+			if err := prepareFileTaskClaim(ctx, tx, snapshot, commonExecution.TaskTypeModel3DGLBGeneration); err != nil {
 				return err
 			}
 			if execution.ExecutionConfig["config_version"] == models.Model3DGLBFileConfigVersion {

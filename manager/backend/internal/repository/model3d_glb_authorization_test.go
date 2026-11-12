@@ -51,8 +51,64 @@ func TestGLBUnboundPreparationPreservesRawConfigAndClosesOwnerAtomically(t *test
 		t.Fatalf("stored=%#v err=%v", stored, err)
 	}
 	assertGLBPreparationOwnerStatus(t, db, item, commonExecution.ExecutionStatusFailed)
+	var held int64
+	if err := db.Model(&models.CleanupTarget{}).Where("operation_id = ?", item.ExecutionID).Count(&held).Error; err != nil || held != 0 {
+		t.Fatalf("rejected preparation retained generation holds: %d %v", held, err)
+	}
 	if err := repo.FailUnboundExecution(t.Context(), item); !errors.Is(err, commonAPI.ErrConflict) {
 		t.Fatalf("terminal execution rewritten: %v", err)
+	}
+}
+
+func TestFileClaimSettlesOnlyUnstartedAuthorizationFailure(t *testing.T) {
+	for _, state := range []string{"unstarted", "started", "bound", "writer"} {
+		t.Run(state, func(t *testing.T) {
+			db := newTileCacheExecutionRepositoryTestDB(t)
+			repo, old := pendingGLBAuthorizationFixture(t, db, time.Now())
+			// Reproduce the persisted state left by the former failure finalizer.
+			changes := map[string]interface{}{"status": "failed", "error_details": commonModels.JSONMap{"code": "source_authorization_required"}, "completed_at": time.Now()}
+			if state == "started" {
+				changes["attempt"] = 1
+			}
+			if state == "bound" {
+				changes["execution_authorization_id"] = 77
+			}
+			if err := db.Model(old).Updates(changes).Error; err != nil {
+				t.Fatal(err)
+			}
+			if state == "writer" {
+				if err := db.Create(&models.CleanupArtifactOperation{ID: uuid.NewString(), TenantID: 7, ExecutionID: old.ExecutionID}).Error; err != nil {
+					t.Fatal(err)
+				}
+			}
+			taskID, err := commonExecution.ParseSourceTaskIDUint(old.SourceTaskID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			snapshot, err := repo.TaskConfigSnapshot(t.Context(), taskID, 7)
+			if err != nil {
+				t.Fatal(err)
+			}
+			next := newManagerRepositoryTestExecution(uuid.NewString(), 7, commonExecution.TaskTypeModel3DGLBGeneration, time.Now())
+			if err := commonExecution.CopyActorOrigin(next, old); err != nil {
+				t.Fatal(err)
+			}
+			_, err = repo.ClaimExecution(t.Context(), taskID, 7, next, false, snapshot)
+			if (err == nil) != (state == "unstarted") {
+				t.Fatalf("state=%s claim=%v", state, err)
+			}
+			var held int64
+			if err := db.Model(&models.CleanupTarget{}).Where("operation_id = ?", old.ExecutionID).Count(&held).Error; err != nil {
+				t.Fatal(err)
+			}
+			if (held == 0) != (state == "unstarted") {
+				t.Fatalf("state=%s old holds=%d", state, held)
+			}
+			stored, err := repo.GetExecution(t.Context(), 7, old.ExecutionID)
+			if err != nil || stored.Status != "failed" || stored.ErrorDetails["code"] != "source_authorization_required" {
+				t.Fatal("old failure evidence changed", err)
+			}
+		})
 	}
 }
 

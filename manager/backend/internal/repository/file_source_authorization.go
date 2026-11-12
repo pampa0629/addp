@@ -6,6 +6,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"reflect"
 	"strconv"
@@ -123,6 +124,45 @@ func verifyFileTaskSnapshot(ctx context.Context, tx *gorm.DB, expected *FileTask
 	return nil
 }
 
+// The task row is locked by Claim. Retire only authorization preparations
+// that failed before any worker or artifact writer could start.
+func prepareFileTaskClaim(ctx context.Context, tx *gorm.DB, expected *FileTaskSnapshot, taskType string) error {
+	if err := verifyFileTaskSnapshot(ctx, tx, expected, taskType); err != nil {
+		return err
+	}
+	var failed []commonExecution.TaskExecution
+	if err := tx.Table(commonExecution.TaskExecution{}.TableName()+" AS failed_source").Clauses(clause.Locking{Strength: "UPDATE"}).Where(
+		"tenant_id = ? AND module = ? AND task_type = ? AND source_task_id = ? AND status = ? AND error_details->>'code' = ?",
+		int(expected.TenantID), commonExecution.ModuleManager, taskType, fmt.Sprint(expected.TaskID), commonExecution.ExecutionStatusFailed, "source_authorization_required").
+		Where("EXISTS (SELECT 1 FROM manager.cleanup_targets held WHERE held.tenant_id = failed_source.tenant_id AND held.operation_id = failed_source.execution_id)").Find(&failed).Error; err != nil {
+		return err
+	}
+	for _, item := range failed {
+		if !isUnstartedFilePreparation(&item) {
+			continue
+		}
+		if err := finishUnstartedFileGeneration(ctx, tx, item); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func isUnstartedFilePreparation(item *commonExecution.TaskExecution) bool {
+	return item.Module == commonExecution.ModuleManager && item.Source == commonExecution.ModuleManager && item.TriggerType == commonExecution.TriggerTypeManual && item.ParentExecutionID == nil && item.ExecutionBoundary == commonExecution.ExecutionBoundaryBounded && item.Attempt == 0 && item.StartedAt == nil && item.ExecutionAuthorizationID == nil && item.AuthorizationExpiresAt == nil && item.LeaseToken == nil && item.LeaseOwner == nil && item.LeaseExpiresAt == nil && commonExecution.CopyActorOrigin(&commonExecution.TaskExecution{TenantID: item.TenantID}, item) == nil
+}
+
+func finishUnstartedFileGeneration(ctx context.Context, tx *gorm.DB, item commonExecution.TaskExecution) error {
+	var writers int64
+	if err := tx.Model(&models.CleanupArtifactOperation{}).Where("tenant_id = ? AND execution_id = ?", item.TenantID, item.ExecutionID).Count(&writers).Error; err != nil {
+		return err
+	}
+	if writers != 0 {
+		return commonAPI.ErrConflict
+	}
+	return finishArtifactGeneration(ctx, tx, item, commonExecution.ExecutionStatusFailed)
+}
+
 func canonicalFileTaskConfig(raw json.RawMessage) ([]byte, error) {
 	decoder := json.NewDecoder(bytes.NewReader(raw))
 	decoder.UseNumber()
@@ -189,6 +229,11 @@ func failPendingFileExecution(tx *gorm.DB, item *commonExecution.TaskExecution, 
 	}
 	if err := commonExecution.FailPending(tx.Statement.Context, tx.Where("attempt = 0"), commonExecution.PendingIdentity{ExecutionID: item.ExecutionID, TenantID: item.TenantID, Module: item.Module, TaskType: item.TaskType, Source: item.Source}, map[string]interface{}{"error_details": commonModels.JSONMap{"code": "source_authorization_required", "message": "exact file source authorization preparation unavailable"}}); err != nil {
 		return err
+	}
+	if isUnstartedFilePreparation(item) {
+		if err := finishUnstartedFileGeneration(tx.Statement.Context, tx, *item); err != nil {
+			return err
+		}
 	}
 	if item.SourceTaskID == nil {
 		return nil
