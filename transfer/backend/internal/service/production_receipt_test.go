@@ -2,6 +2,8 @@ package service
 
 import (
 	"errors"
+	"github.com/addp/common/production"
+	"sort"
 	"testing"
 	"time"
 
@@ -21,6 +23,7 @@ func TestProductionReceiptRequiresOriginalCommittedExecution(t *testing.T) {
 	principal, member, version := int64(31), int64(33), int64(5)
 	record := models.TargetProduction{TargetEngineVersion: 1, SchemaVersion: models.TargetProductionSchema, TenantID: 7, ExecutionID: id, Attempt: 2, RetryOfExecutionID: &retry, TargetLocator: "addp://engine/2/path/outdoor/persons?type=table", Phase: models.TargetProductionCommitted, Preparation: plugin.TableTargetRecreated, StartedAt: now, PreparedAt: &now, CommittedAt: &now}
 	record.SourceReadSet, _ = plugin.NewQueryReadSet(plugin.TabularItemPath(3, "schema", "outdoor", "source"))
+	record.SourceEngineVersions = testSourceVersions(record.SourceReadSet)
 	encoded, err := models.EncodeTargetProduction(record)
 	if err != nil {
 		t.Fatal(err)
@@ -77,4 +80,22 @@ func TestProductionReceiptRequiresOriginalCommittedExecution(t *testing.T) {
 	if err != nil || result.UserOrigin != nil {
 		t.Fatalf("triggered_by fabricated user authority: %+v %v", result, err)
 	}
+}
+
+func testSourceVersions(set *plugin.QueryReadSet) []production.EngineVersion {
+	if set == nil {
+		return nil
+	}
+	ids := map[int64]bool{}
+	var versions []production.EngineVersion
+	for _, path := range set.Paths {
+		id := int64(path.EngineID)
+		if !ids[id] {
+			ids[id] = true
+			version := int64(1)
+			versions = append(versions, production.EngineVersion{EngineID: id, Version: version})
+		}
+	}
+	sort.Slice(versions, func(i, j int) bool { return versions[i].EngineID < versions[j].EngineID })
+	return versions
 }

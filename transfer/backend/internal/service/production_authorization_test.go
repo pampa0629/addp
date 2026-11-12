@@ -51,6 +51,7 @@ func initialAuthorizationFixture(t *testing.T, db *gorm.DB) (*ExecutionService, 
 	r := models.TargetProduction{TargetEngineVersion: 1, SchemaVersion: models.TargetProductionSchema, TenantID: item.TenantID, ExecutionID: item.ExecutionID, Attempt: 1, TargetLocator: "addp://engine/9/path/public/new_result?type=table", Phase: models.TargetProductionCommitted,
 		Preparation: plugin.TableTargetCreated, CreatedAndCommitted: true, StartedAt: now, PreparedAt: &now, CommittedAt: &now}
 	r.SourceReadSet, _ = plugin.NewQueryReadSet(plugin.TabularItemPath(9, "schema", "public", "source"))
+	r.SourceEngineVersions = testSourceVersions(r.SourceReadSet)
 	encoded, err := models.EncodeTargetProduction(r)
 	if err != nil {
 		t.Fatal(err)

@@ -73,7 +73,7 @@ func runPrivatePublicationCase(t *testing.T, db *gorm.DB, repo *FileExecutionRep
 	var reads []PrivateFileSourceRead
 	for _, source := range facts.Intent.Sources {
 		set, _ := plugin.NewQueryReadSet(source.Target)
-		reads = append(reads, PrivateFileSourceRead{NodeID: source.NodeID, ReadSet: set})
+		reads = append(reads, PrivateFileSourceRead{EngineVersion: 2, NodeID: source.NodeID, ReadSet: set})
 		manifest.Inputs = append(manifest.Inputs, plugin.WorkflowPrivateFile{NodeID: source.NodeID, Size: 123, SHA256: strings.Repeat("a", 64)})
 	}
 	if err := repo.RecordPrivateRuntime(ctx, *lease, PrivateFileRuntimeRecord{RuntimeExecutionID: id,
@@ -231,6 +231,30 @@ func runPrivatePublicationCase(t *testing.T, db *gorm.DB, repo *FileExecutionRep
 		t.Fatal("first outcome lost its persisted observation time", observed, err)
 	}
 	firstObserved := *observed.OutcomeObservedAt
+	claim, err := repo.ClaimProductionAuthorization(ctx, time.Now().Add(time.Second))
+	if err != nil || claim == nil || claim.Reference.ResultID != op || claim.State.Attempts != 1 {
+		t.Fatal("published result did not atomically create delivery", claim, err)
+	}
+	newer, err := repo.ClaimProductionAuthorization(ctx, time.Unix(claim.State.NextAttemptUnix, 0))
+	if err != nil || newer == nil || newer.State.Attempts != 2 {
+		t.Fatal("continuation did not use bounded retry", newer, err)
+	}
+	lateState := claim.State
+	lateState.Status, lateState.GrantRequestID = "issued", uuid.NewString()
+	if err := repo.RecordProductionAuthorization(ctx, *claim, lateState); err != nil {
+		t.Fatal(err)
+	}
+	terminalDelivery := newer.State
+	terminalDelivery.Status, terminalDelivery.Code = "denied", "source_access_denied"
+	if err := repo.RecordProductionAuthorization(ctx, *newer, terminalDelivery); err != nil {
+		t.Fatal(err)
+	}
+	if err := repo.RecordProductionAuthorization(ctx, *claim, lateState); err != nil {
+		t.Fatal(err)
+	}
+	if next, err := repo.ClaimProductionAuthorization(ctx, time.Now().Add(time.Hour)); err != nil || next != nil {
+		t.Fatal("stale delivery revived a terminal result", next, err)
+	}
 	production, err := repo.ReadPrivateProduction(ctx, 7, item.ExecutionID, op)
 	if err != nil || production.OperationID != op || production.Attempt != 1 || !production.CommittedAt.Equal(firstObserved) || len(production.SourceReads) != len(facts.Intent.Sources) {
 		t.Fatal("committed production lost original operation/read evidence", production, err)
@@ -345,6 +369,7 @@ func runPrivatePublicationCase(t *testing.T, db *gorm.DB, repo *FileExecutionRep
 		t.Fatal("resolve-only committed result was lost", late, err)
 	}
 	legacy.RecoveryObservedAt = nil
+	legacy.InitialAuthorization = nil
 	rawLegacy, err := json.Marshal(legacy)
 	if err != nil {
 		t.Fatal(err)

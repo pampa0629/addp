@@ -178,7 +178,7 @@ func SetupRouter(db *gorm.DB, cfg *config.Config) *gin.Engine {
 		metaBasis = metaClient
 		authorizationFactsService.WithAuthorizationFactsReader(metaFacts).WithDataItemIdentityReader(metaIdentities).WithNodeIdentityPageReader(metaClient)
 		fulfillmentService.WithAuthorizationFactsReader(metaFacts).WithNodeIdentityReader(metaNodes)
-		producers, err := production.NewRegistry(production.Owner{Module: "transfer", ClientID: "addp-transfer", ReceiptPermission: "transfer.production_receipt.read", ExecutionPermission: "transfer.task.execute", ReadReceipt: commonClient.NewTransferClient(cfg.TransferServiceURL, tokens).ReadCommittedProduction})
+		producers, err := production.NewRegistry(production.Owner{Module: "transfer", ClientID: "addp-transfer", ReceiptPermission: "transfer.production_receipt.read", ExecutionPermission: "transfer.task.execute", ReadReceipt: commonClient.NewTransferClient(cfg.TransferServiceURL, tokens).ReadCommittedProduction}, production.Owner{Module: "develop", ClientID: "addp-develop", ReceiptPermission: "develop.production_receipt.read", ExecutionPermission: "develop.task.execute", ReadReceipt: commonClient.NewDevelopClient(cfg.DevelopServiceURL, tokens, nil).ReadCommittedProduction})
 		if err != nil {
 			panic(err)
 		}

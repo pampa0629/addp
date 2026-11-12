@@ -66,6 +66,7 @@ func exerciseInitialProductionGrants(t *testing.T, db *gorm.DB, acceptor *Servic
 		user.AuthorizationVersion = principal.AuthorizationVersion
 		receipt := productionBindingReceipt(actor.TenantID, base.Path.EngineID)
 		receipt.SourceReadSet, _ = plugin.NewQueryReadSet(base.Path)
+		receipt.SourceEngineVersions = testReceiptVersions(receipt.SourceReadSet)
 		receipt.UserOrigin = &client.TransferProductionUserOrigin{PrincipalID: user.PrincipalID, TenantMembershipID: user.MembershipID, AuthorizationVersion: user.AuthorizationVersion}
 		fresh := func() {
 			receipt.ExecutionID = uuid.NewString()
@@ -312,6 +313,7 @@ func exerciseInitialProductionGrants(t *testing.T, db *gorm.DB, acceptor *Servic
 		fresh()
 		service.WithAuthorizationFactsReader(testMetaFacts{paths: []plugin.EngineCatalogPath{receipt.Target}})
 		receipt.SourceReadSet = nil
+		receipt.SourceEngineVersions = nil
 		receipt.ManagerImport = &production.PrivateUploadProof{
 			UploadID: uuid.NewString(), UploaderID: user.PrincipalID, TaskID: 23, ManifestSHA256: strings.Repeat("a", 64),
 		}

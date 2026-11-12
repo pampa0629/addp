@@ -87,9 +87,21 @@ func TestSourceFreeEvidenceCannotBeInferredFromAnEmptyReadSet(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if (SourceEvidence{Kind: SourcesDataItems, ReadSet: set}).Validate() != nil {
+		if (SourceEvidence{Kind: SourcesDataItems, ReadSet: set, EngineVersions: []EngineVersion{{EngineID: int64(path.EngineID), Version: 2}}}).Validate() != nil {
 			t.Fatal("non-PG source rejected")
 		}
+	}
+}
+
+func TestSourceVersionsRequireExactCanonicalSessionCoverage(t *testing.T) {
+	set, _ := plugin.NewQueryReadSet(plugin.FileItemPath(2, "a.gpkg"), plugin.FileItemPath(3, "b.gpkg"))
+	for _, versions := range [][]EngineVersion{nil, {{2, 1}}, {{2, 1}, {3, 0}}, {{2, 1}, {2, 1}}, {{3, 1}, {2, 1}}, {{2, 1}, {4, 1}}} {
+		if ValidateEngineVersions(set, versions) == nil {
+			t.Fatal("incomplete or inconsistent source versions accepted", versions)
+		}
+	}
+	if ValidateEngineVersions(set, []EngineVersion{{2, 1}, {3, 2}}) != nil {
+		t.Fatal("complete actual session versions rejected")
 	}
 }
 

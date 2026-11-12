@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"reflect"
+	"sort"
 	"strconv"
 
 	"github.com/addp/common/engine/plugin"
@@ -58,26 +59,50 @@ func (s *ProductionReceiptService) ReadCommittedProduction(ctx context.Context, 
 		if len(original.SourceReads) != len(facts.Intent.Sources) {
 			return nil, production.ErrEvidence
 		}
-		reads := make(map[string]*plugin.QueryReadSet, len(original.SourceReads))
+		reads := make(map[string]repository.PrivateFileSourceRead, len(original.SourceReads))
+		allVersionsKnown := true
 		for i, source := range facts.Intent.Sources {
 			read := original.SourceReads[i]
 			if read.NodeID != source.NodeID || read.ReadSet == nil || len(read.ReadSet.Paths) != 1 || !reflect.DeepEqual(read.ReadSet.Paths[0], source.Target) {
 				return nil, production.ErrEvidence
 			}
-			reads[source.NodeID] = read.ReadSet
+			if read.EngineVersion <= 0 {
+				allVersionsKnown = false
+			}
+			reads[source.NodeID] = read
 		}
 		var paths []plugin.EngineCatalogPath
+		versions := map[int64]int64{}
+		completeVersions := true
 		for _, node := range dependencies[facts.Intent.Target.NodeID] {
-			paths = append(paths, reads[node].Paths...)
+			read := reads[node]
+			paths = append(paths, read.ReadSet.Paths...)
+			id := int64(read.ReadSet.Paths[0].EngineID)
+			if read.EngineVersion <= 0 {
+				completeVersions = false
+			}
+			if prior, exists := versions[id]; exists && prior != read.EngineVersion {
+				return nil, production.ErrEvidence
+			}
+			versions[id] = read.EngineVersion
 		}
 		if len(paths) == 0 {
-			sources.Kind = production.SourcesNone
+			if allVersionsKnown {
+				sources.Kind = production.SourcesNone
+			}
 		} else {
 			set, err := plugin.NewQueryReadSet(paths...)
 			if err != nil {
 				return nil, err
 			}
-			sources = production.SourceEvidence{Kind: production.SourcesDataItems, ReadSet: set}
+			if completeVersions {
+				frozen := make([]production.EngineVersion, 0, len(versions))
+				for id, version := range versions {
+					frozen = append(frozen, production.EngineVersion{EngineID: id, Version: version})
+				}
+				sort.Slice(frozen, func(i, j int) bool { return frozen[i].EngineID < frozen[j].EngineID })
+				sources = production.SourceEvidence{Kind: production.SourcesDataItems, ReadSet: set, EngineVersions: frozen}
+			}
 		}
 	}
 	version, _ := strconv.ParseInt(facts.BoundScope.Target.EngineVersion, 10, 64)

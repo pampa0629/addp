@@ -15,6 +15,7 @@ type Config struct {
 	ServiceClientSecret string
 	ManagerServiceURL   string
 	TransferServiceURL  string
+	DevelopServiceURL   string
 
 	// Redis 配置（用于资源变更事件同步和扫描范围锁）
 	RedisHost     string
@@ -44,6 +45,7 @@ func LoadConfig() *Config {
 		ServiceClientSecret: commonConfig.GetEnv("META_SERVICE_CLIENT_SECRET", ""),
 		ManagerServiceURL:   commonConfig.GetEnv("MANAGER_URL", "http://localhost:8081"),
 		TransferServiceURL:  commonConfig.GetEnv("TRANSFER_URL", "http://localhost:8083"),
+		DevelopServiceURL:   commonConfig.GetEnv("DEVELOP_URL", "http://localhost:8185"),
 	}
 
 	// Meta 不再调用使用 Internal API Key 的共享配置接口。部署配置来自

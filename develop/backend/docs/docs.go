@@ -7111,6 +7111,19 @@ const docTemplate = `{
                 }
             }
         },
+        "production.EngineVersion": {
+            "type": "object",
+            "properties": {
+                "engine_id": {
+                    "type": "string",
+                    "example": ""
+                },
+                "version": {
+                    "type": "string",
+                    "example": ""
+                }
+            }
+        },
         "production.PrivateUploadProof": {
             "type": "object",
             "properties": {
@@ -7190,6 +7203,12 @@ const docTemplate = `{
         "production.SourceEvidence": {
             "type": "object",
             "properties": {
+                "engine_versions": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/production.EngineVersion"
+                    }
+                },
                 "kind": {
                     "type": "string"
                 },

@@ -12,20 +12,24 @@ import (
 	"github.com/addp/common/client"
 	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/execution"
+	"github.com/addp/common/production"
 	"github.com/addp/develop/backend/internal/models"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
 
+const publicationAuthorizationSchema = "develop.initial-authorization/v1"
+
 type privatePublicationRecord struct {
-	Facts               client.DevelopFilePublicationFacts `json:"facts"`
-	PreparationObserved bool                               `json:"preparation_observed"`
-	ProviderState       []byte                             `json:"provider_state,omitempty"`
-	DispatchReleasedAt  *time.Time                         `json:"dispatch_released_at,omitempty"`
-	OutcomeObservedAt   *time.Time                         `json:"outcome_observed_at,omitempty"`
-	RecoveryObservedAt  *time.Time                         `json:"recovery_observed_at,omitempty"`
-	Outcome             *plugin.NewFilePublicationOutcome  `json:"outcome,omitempty"`
-	RecoveryOutcome     *plugin.NewFilePublicationOutcome  `json:"recovery_outcome,omitempty"`
+	InitialAuthorization *production.DeliveryState          `json:"initial_authorization,omitempty"`
+	Facts                client.DevelopFilePublicationFacts `json:"facts"`
+	PreparationObserved  bool                               `json:"preparation_observed"`
+	ProviderState        []byte                             `json:"provider_state,omitempty"`
+	DispatchReleasedAt   *time.Time                         `json:"dispatch_released_at,omitempty"`
+	OutcomeObservedAt    *time.Time                         `json:"outcome_observed_at,omitempty"`
+	RecoveryObservedAt   *time.Time                         `json:"recovery_observed_at,omitempty"`
+	Outcome              *plugin.NewFilePublicationOutcome  `json:"outcome,omitempty"`
+	RecoveryOutcome      *plugin.NewFilePublicationOutcome  `json:"recovery_outcome,omitempty"`
 }
 
 func privateFilePublication(row *models.FileExecution) (*privatePublicationRecord, error) {
@@ -38,6 +42,12 @@ func privateFilePublication(row *models.FileExecution) (*privatePublicationRecor
 		return nil, err
 	}
 	if (record.OutcomeObservedAt != nil && (record.Outcome == nil || record.OutcomeObservedAt.IsZero())) || (record.RecoveryObservedAt != nil && (record.RecoveryOutcome == nil || record.RecoveryObservedAt.IsZero())) {
+		return nil, commonapi.ErrConflict
+	}
+	if record.InitialAuthorization != nil && record.InitialAuthorization.Validate(publicationAuthorizationSchema) != nil {
+		return nil, commonapi.ErrConflict
+	}
+	if record.InitialAuthorization != nil && !((record.Outcome != nil && record.Outcome.State == plugin.NewFilePublished && record.OutcomeObservedAt != nil) || (record.Outcome == nil && record.RecoveryOutcome != nil && record.RecoveryOutcome.State == plugin.NewFilePublished && record.RecoveryObservedAt != nil)) {
 		return nil, commonapi.ErrConflict
 	}
 	digest := record.Facts.PreparationDigest
@@ -270,6 +280,9 @@ func (r *FileExecutionRepository) updatePrivatePublicationOutcome(ctx context.Co
 				return err
 			}
 			record.OutcomeObservedAt = &now
+			if record.Outcome.State == plugin.NewFilePublished {
+				record.InitialAuthorization = &production.DeliveryState{SchemaVersion: publicationAuthorizationSchema, Status: "pending", NextAttemptUnix: now.Unix()}
+			}
 		}
 		raw, err := json.Marshal(record)
 		if err != nil {
@@ -325,6 +338,9 @@ func (r *FileExecutionRepository) RecordPrivatePublicationRecovery(ctx context.C
 				return err
 			}
 			record.RecoveryObservedAt = &now
+			if record.Outcome == nil && outcome.State == plugin.NewFilePublished {
+				record.InitialAuthorization = &production.DeliveryState{SchemaVersion: publicationAuthorizationSchema, Status: "pending", NextAttemptUnix: now.Unix()}
+			}
 		}
 		record.RecoveryOutcome = &outcome
 		raw, err := json.Marshal(record)

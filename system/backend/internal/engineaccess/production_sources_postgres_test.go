@@ -81,6 +81,7 @@ func exerciseInitialProductionSources(t *testing.T, db *gorm.DB, acceptor *Servi
 		receipt := productionBindingReceipt(runtime.TenantID, base.Path.EngineID)
 		receipt.Target = target
 		receipt.SourceReadSet, _ = engineplugin.NewQueryReadSet(base.Path)
+		receipt.SourceEngineVersions = testReceiptVersions(receipt.SourceReadSet)
 		setOrigin := func() {
 			user = refresh(t, user)
 			receipt.UserOrigin = &client.TransferProductionUserOrigin{PrincipalID: user.PrincipalID, TenantMembershipID: user.MembershipID, AuthorizationVersion: user.AuthorizationVersion}

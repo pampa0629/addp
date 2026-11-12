@@ -119,7 +119,7 @@ func main() {
 	taskService := service.NewScanTaskService(db)
 	executionService := service.NewScanExecutionService(db, scanService, engineService, redisClient)
 	executionService.SetMetadataRefreshScopeClient(systemClient)
-	producers, err := production.NewRegistry(production.Owner{Module: "transfer", ClientID: "addp-transfer", ReceiptPermission: "transfer.production_receipt.read", ExecutionPermission: "transfer.task.execute", ReadReceipt: commonClient.NewTransferClient(cfg.TransferServiceURL, tokenSource).ReadCommittedProduction})
+	producers, err := production.NewRegistry(production.Owner{Module: "transfer", ClientID: "addp-transfer", ReceiptPermission: "transfer.production_receipt.read", ExecutionPermission: "transfer.task.execute", ReadReceipt: commonClient.NewTransferClient(cfg.TransferServiceURL, tokenSource).ReadCommittedProduction}, production.Owner{Module: "develop", ClientID: "addp-develop", ReceiptPermission: "develop.production_receipt.read", ExecutionPermission: "develop.task.execute", ReadReceipt: commonClient.NewDevelopClient(cfg.DevelopServiceURL, tokenSource, nil).ReadCommittedProduction})
 	if err != nil {
 		panic(err)
 	}

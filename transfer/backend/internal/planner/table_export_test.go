@@ -56,11 +56,14 @@ func TestBuildTableTransferPlanForMongoQuerySource(t *testing.T) {
 	}
 
 	result, err := BuildTableTransferPlan(spec, StaticEngineResolver{
-		11: {Type: "mongodb", EngineID: 11},
+		11: {Type: "mongodb", EngineID: 11, EngineVersion: 53},
 		12: {Type: "postgresql", EngineID: 12, EngineVersion: 64},
 	})
 	if err != nil {
 		t.Fatalf("BuildTableTransferPlan() error = %v", err)
+	}
+	if result.Plan.Source.EngineVersion != 53 {
+		t.Fatalf("source lost actual resolved engine version: %+v", result.Plan.Source)
 	}
 	if result.Plan.Target.EngineVersion != 64 {
 		t.Fatalf("target lost resolved engine version: %+v", result.Plan.Target)

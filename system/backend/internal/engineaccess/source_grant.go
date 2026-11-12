@@ -98,7 +98,7 @@ func (r *Repository) insertSourceGrant(ctx context.Context, grant *sourceGrant) 
 		}
 	} else if file || len(grant.FileComposition) != 0 {
 		var composition authorizationfacts.FileCompositionBoundary
-		if !file || (grant.ApprovalMode != approvalModeIndependent && grant.ApprovalMode != shared.UploadInitialSource) || json.Unmarshal(grant.FileComposition, &composition) != nil {
+		if !file || (grant.ApprovalMode != approvalModeIndependent && grant.ApprovalMode != shared.UploadInitialSource && grant.ApprovalMode != productionApprovalMode) || json.Unmarshal(grant.FileComposition, &composition) != nil {
 			return commonapi.ErrBadRequest
 		}
 		binding := authorizationfacts.Binding{ItemFingerprint: grant.ItemFingerprint, BoundaryHash: grant.BoundaryHash, FileComposition: &composition}

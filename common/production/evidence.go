@@ -40,12 +40,19 @@ type UserOrigin struct {
 	AuthorizationVersion int64 `json:"authorization_version,string" swaggertype:"string"`
 }
 
+// EngineVersion identifies the actual source connection used by a read session.
+type EngineVersion struct {
+	EngineID int64 `json:"engine_id,string" swaggertype:"string"`
+	Version  int64 `json:"version,string" swaggertype:"string"`
+}
+
 // SourceEvidence distinguishes a proven empty business read set from absent
 // evidence. Private input proof remains the responsibility of its native owner.
 type SourceEvidence struct {
-	Kind          string               `json:"kind"`
-	PrivateUpload *PrivateUploadProof  `json:"private_upload,omitempty"`
-	ReadSet       *plugin.QueryReadSet `json:"read_set,omitempty"`
+	EngineVersions []EngineVersion      `json:"engine_versions,omitempty"`
+	Kind           string               `json:"kind"`
+	PrivateUpload  *PrivateUploadProof  `json:"private_upload,omitempty"`
+	ReadSet        *plugin.QueryReadSet `json:"read_set,omitempty"`
 }
 
 const (
@@ -57,7 +64,7 @@ const (
 
 func (s SourceEvidence) Validate() error {
 	if s.Kind == SourcesPrivateInput {
-		if s.ReadSet != nil || s.PrivateUpload == nil || s.PrivateUpload.Validate() != nil {
+		if len(s.EngineVersions) != 0 || s.ReadSet != nil || s.PrivateUpload == nil || s.PrivateUpload.Validate() != nil {
 			return ErrEvidence
 		}
 		return nil
@@ -66,7 +73,7 @@ func (s SourceEvidence) Validate() error {
 		return ErrEvidence
 	}
 	if s.Kind != SourcesDataItems {
-		if s.ReadSet != nil || (s.Kind != SourcesUnknown && s.Kind != SourcesNone && s.Kind != SourcesPrivateInput) {
+		if len(s.EngineVersions) != 0 || s.ReadSet != nil || (s.Kind != SourcesUnknown && s.Kind != SourcesNone && s.Kind != SourcesPrivateInput) {
 			return ErrEvidence
 		}
 		return nil
@@ -77,6 +84,25 @@ func (s SourceEvidence) Validate() error {
 	normalized, err := plugin.NewQueryReadSet(s.ReadSet.Paths...)
 	if err != nil || !reflect.DeepEqual(normalized, s.ReadSet) {
 		return ErrEvidence
+	}
+	return ValidateEngineVersions(s.ReadSet, s.EngineVersions)
+}
+
+// Versions describe actual source sessions, not current directory lookups.
+func ValidateEngineVersions(reads *plugin.QueryReadSet, versions []EngineVersion) error {
+	expected := map[int64]bool{}
+	if reads != nil {
+		for _, path := range reads.Paths {
+			expected[int64(path.EngineID)] = true
+		}
+	}
+	if len(expected) != len(versions) {
+		return ErrEvidence
+	}
+	for i, version := range versions {
+		if version.EngineID <= 0 || version.Version <= 0 || !expected[version.EngineID] || (i > 0 && versions[i-1].EngineID >= version.EngineID) {
+			return ErrEvidence
+		}
 	}
 	return nil
 }

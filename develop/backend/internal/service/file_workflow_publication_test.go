@@ -83,7 +83,7 @@ func TestPrivateFilePublicationProviderSequence(t *testing.T) {
 			var reads []repository.PrivateFileSourceRead
 			for _, source := range facts.Intent.Sources {
 				set, _ := plugin.NewQueryReadSet(source.Target)
-				reads = append(reads, repository.PrivateFileSourceRead{NodeID: source.NodeID, ReadSet: set})
+				reads = append(reads, repository.PrivateFileSourceRead{EngineVersion: 2, NodeID: source.NodeID, ReadSet: set})
 				manifest.Inputs = append(manifest.Inputs, plugin.WorkflowPrivateFile{NodeID: source.NodeID, Size: 123, SHA256: strings.Repeat("a", 64)})
 			}
 			if err := repo.RecordPrivateRuntime(ctx, *lease, repository.PrivateFileRuntimeRecord{
@@ -200,6 +200,23 @@ func TestPrivateFilePublicationProviderSequence(t *testing.T) {
 			record, err := repository.NewFileExecutionRepository(db).ReadPrivatePublication(ctx, 3, item.ExecutionID)
 			if err != nil || record.DispatchState != tc.state || (record.Outcome != nil && record.Outcome.CleanupPending != tc.cleanupPending) {
 				t.Fatal("unexpected durable outcome", err)
+			}
+			if tc.name == "published" {
+				if err := repository.NewExecutionRepository(db).CompleteWithLease(ctx, item, *lease, "failed", time.Now(), nil); err != nil {
+					t.Fatal(err)
+				}
+				runtime := &fileProductionRuntime{t: t}
+				f.productionRuntime = func(uint) client.ProductionGrantRuntime { return runtime }
+				f.productionScanner = runtime
+				if err := f.continueProductionAuthorization(ctx); err != nil {
+					t.Fatal(err)
+				}
+				if err := f.continueProductionAuthorization(ctx); err != nil {
+					t.Fatal(err)
+				}
+				if runtime.calls != 1 || strings.Join(calls, " ") != tc.calls {
+					t.Fatal("delivery replayed publication or terminal history", runtime.calls, calls)
+				}
 			}
 			if tc.name == "unknown prepare" && (record.PreparationDigest != "" || !reflect.DeepEqual(record.Prepared, original)) {
 				t.Fatal("uncertain preparation was lost or promoted")

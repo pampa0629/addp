@@ -44,6 +44,7 @@ type fileSourceReadRequest struct {
 }
 
 type fileSourceReceipt struct {
+	EngineVersion    int64
 	Size             int64
 	SHA256           string
 	BusinessDeadline time.Time
@@ -357,7 +358,7 @@ func (s *fileSourceReader) Receipt(ctx context.Context) (*fileSourceReceipt, err
 	if s.size != s.sourceSize {
 		return nil, errFileSourceComposition
 	}
-	return &fileSourceReceipt{Size: s.size, SHA256: hex.EncodeToString(s.digest.Sum(nil)), BusinessDeadline: s.observation.BusinessDeadline, ReadSet: s.readSet.Clone()}, nil
+	return &fileSourceReceipt{EngineVersion: s.observation.Engine.Version, Size: s.size, SHA256: hex.EncodeToString(s.digest.Sum(nil)), BusinessDeadline: s.observation.BusinessDeadline, ReadSet: s.readSet.Clone()}, nil
 }
 
 func (s *fileSourceReader) State() fileSourceReadState {

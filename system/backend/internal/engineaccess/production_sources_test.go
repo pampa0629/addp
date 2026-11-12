@@ -6,11 +6,11 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/addp/common/production"
 	"github.com/addp/common/client"
 	"github.com/addp/common/dataitem/authorizationfacts"
 	"github.com/addp/common/dataitem/authorizationfacts/factstest"
 	"github.com/addp/common/engine/plugin"
+	"github.com/addp/common/production"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 )
@@ -20,6 +20,7 @@ func TestInitialProductionSourcesRejectUnknownAndPriorOperations(t *testing.T) {
 		t.Run(scenario, func(t *testing.T) {
 			r := productionBindingReceipt(7, 2)
 			r.SourceReadSet, _ = plugin.NewQueryReadSet(plugin.TabularItemPath(2, "schema", "public", "source"))
+			r.SourceEngineVersions = testReceiptVersions(r.SourceReadSet)
 			prepared := &preparedProduction{receipt: r.ProductionEvidence(), binding: factstest.Binding(r.Target), engineVersion: 1}
 			switch scenario {
 			case "source_free":
@@ -95,6 +96,12 @@ func TestInitialProductionPreparesEveryPGSourceOutsideTransactions(t *testing.T)
 			a := plugin.TabularItemPath(2, "schema", "a.b", "source")
 			b := plugin.TabularItemPath(3, "schema", "public", "source")
 			r.SourceReadSet, _ = plugin.NewQueryReadSet(a, b)
+			r.SourceEngineVersions = testReceiptVersions(r.SourceReadSet)
+			for i := range r.SourceEngineVersions {
+				if r.SourceEngineVersions[i].EngineID == 3 {
+					r.SourceEngineVersions[i].Version = 8
+				}
+			}
 			factsCalls := 0
 			service := NewService(NewRepository(db), nil).
 				withTestProductionReader(productionReceiptReaderFunc(func(context.Context, uint, string) (*client.TransferProductionReceipt, error) { return &r, nil })).

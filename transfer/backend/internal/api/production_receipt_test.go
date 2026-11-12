@@ -3,9 +3,11 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"github.com/addp/common/production"
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -115,6 +117,7 @@ func testProductionReceiptRead(t *testing.T, db *gorm.DB) {
 		tenant := 7 + index
 		record := models.TargetProduction{TargetEngineVersion: 1, SchemaVersion: models.TargetProductionSchema, TenantID: tenant, ExecutionID: id, Attempt: 1, TargetLocator: "addp://engine/2/path/outdoor/persons?type=table", Phase: models.TargetProductionCommitted, Preparation: plugin.TableTargetCreated, StartedAt: now, PreparedAt: &now, CommittedAt: &now}
 		record.SourceReadSet, _ = plugin.NewQueryReadSet(plugin.TabularItemPath(uint(9007199254740993), "schema", "outdoor", "source"))
+		record.SourceEngineVersions = testSourceVersions(record.SourceReadSet)
 		record.CreatedAndCommitted = true
 		encoded, err := models.EncodeTargetProduction(record)
 		if err != nil {
@@ -159,4 +162,22 @@ func testProductionReceiptRead(t *testing.T, db *gorm.DB) {
 	if response.Code != 200 || response.Header().Get("Cache-Control") != "no-store" || strings.Contains(response.Body.String(), "private-sentinel") || json.Unmarshal(response.Body.Bytes(), &wire) != nil || wire["metadata"] != nil || wire["outputs"] != nil || wire["user_origin"] != nil || wire["created_and_committed"] != true {
 		t.Fatalf("unsafe receipt response: %d %s", response.Code, response.Body.String())
 	}
+}
+
+func testSourceVersions(set *plugin.QueryReadSet) []production.EngineVersion {
+	if set == nil {
+		return nil
+	}
+	ids := map[int64]bool{}
+	var versions []production.EngineVersion
+	for _, path := range set.Paths {
+		id := int64(path.EngineID)
+		if !ids[id] {
+			ids[id] = true
+			version := int64(1)
+			versions = append(versions, production.EngineVersion{EngineID: id, Version: version})
+		}
+	}
+	sort.Slice(versions, func(i, j int) bool { return versions[i].EngineID < versions[j].EngineID })
+	return versions
 }

@@ -31,7 +31,7 @@ func runPrivateRuntimeRecordCase(t *testing.T, db *gorm.DB, repo *FileExecutionR
 			if err != nil {
 				t.Fatal(err)
 			}
-			reads = append(reads, PrivateFileSourceRead{NodeID: source.NodeID, ReadSet: set})
+			reads = append(reads, PrivateFileSourceRead{EngineVersion: 2, NodeID: source.NodeID, ReadSet: set})
 		}
 		return PrivateFileRuntimeRecord{RuntimeExecutionID: runtimeID, Manifest: manifest, OwnerInstanceID: "fixture-instance", InputDirectory: directory, SourceReads: reads}
 	}
@@ -77,13 +77,17 @@ func runPrivateRuntimeRecordCase(t *testing.T, db *gorm.DB, repo *FileExecutionR
 			t.Fatal("rejected registration left private record", fault, record, err)
 		}
 	}
-	for _, fault := range []string{"missing", "wrong_node", "wrong_target"} {
+	for _, fault := range []string{"missing", "wrong_node", "wrong_target", "missing_version", "changed_version"} {
 		bad := registration(id, manifest)
 		switch fault {
 		case "missing":
 			bad.SourceReads = nil
 		case "wrong_node":
 			bad.SourceReads[0].NodeID = "other"
+		case "missing_version":
+			bad.SourceReads[0].EngineVersion = 0
+		case "changed_version":
+			bad.SourceReads[0].EngineVersion = 3
 		case "wrong_target":
 			bad.SourceReads[0].ReadSet, _ = plugin.NewQueryReadSet(plugin.FileItemPath(999, "other/source.gpkg"))
 		}

@@ -2,15 +2,16 @@ package engineaccess
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"sort"
 
 	commonapi "github.com/addp/common/api"
 	shared "github.com/addp/common/authorization"
-	"github.com/addp/common/production"
 	"github.com/addp/common/dataitem/authorizationfacts"
 	"github.com/addp/common/engine/plugin"
+	"github.com/addp/common/production"
 	"github.com/addp/system/internal/authorization"
 	"github.com/addp/system/internal/iam"
 	"github.com/google/uuid"
@@ -183,6 +184,12 @@ func (s *Service) IssueInitialProductionGrant(ctx context.Context, actor Product
 			Action: "read", ExpiryMode: mode, ExpiresAt: observation.sourceRules.ExpiresAt,
 			OperatorPrincipalID: prepared.sources.Source.PrincipalID, OperatorMembershipID: prepared.sources.Source.MembershipID, OperatorAuthorizationVersion: prepared.sources.Source.AuthorizationVersion,
 			ProducerOwner: &owner, ProductionExecutionID: &executionID, ProductionResultID: &resultID, IssuerPrincipalID: &actor.PrincipalID, IssuerMembershipID: &actor.MembershipID}
+		if binding.FileComposition != nil {
+			grant.FileComposition, err = json.Marshal(binding.FileComposition)
+			if err != nil {
+				return err
+			}
+		}
 		outcome, err := tx.insertInitialProductionOutcome(ctx, actor.Actor, ref, &requestID, "")
 		if err != nil {
 			return err
@@ -228,7 +235,7 @@ func (r *Repository) lockProductionTargets(ctx context.Context, prepared *prepar
 	}
 	var entries []entry
 	for _, path := range append(prepared.sources.Targets[:len(prepared.sources.Targets):len(prepared.sources.Targets)], prepared.production.receipt.Primary) {
-		fingerprint, err := authorizationfacts.NativeCandidateFingerprint(path)
+		fingerprint, err := authorizationfacts.PrimaryCandidateFingerprint(path)
 		if err != nil {
 			return err
 		}

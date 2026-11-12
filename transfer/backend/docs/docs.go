@@ -6196,6 +6196,12 @@ const docTemplate = `{
                 "schema_version": {
                     "type": "string"
                 },
+                "source_engine_versions": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/production.EngineVersion"
+                    }
+                },
                 "source_read_set": {
                     "$ref": "#/definitions/plugin.QueryReadSet"
                 },
@@ -6512,6 +6518,19 @@ const docTemplate = `{
                 "TableTargetRecreated",
                 "TableTargetReused"
             ]
+        },
+        "production.EngineVersion": {
+            "type": "object",
+            "properties": {
+                "engine_id": {
+                    "type": "string",
+                    "example": ""
+                },
+                "version": {
+                    "type": "string",
+                    "example": ""
+                }
+            }
         },
         "production.PrivateUploadProof": {
             "type": "object",

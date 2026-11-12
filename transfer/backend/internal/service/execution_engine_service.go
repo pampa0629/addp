@@ -586,7 +586,7 @@ func (s *ExecutionEngineService) runCommonTableTransferData(
 		return buildResult, metrics, wrapped
 	}
 	if productionLocator != "" {
-		if err := s.executionService.taskRepo.RecordTargetCommit(ctx, productionLease, productionLocator, metrics.SourceReadSet, metrics.TargetCreatedAndCommitted, metrics.PrivateImport); err != nil {
+		if err := s.executionService.taskRepo.RecordTargetCommit(ctx, productionLease, productionLocator, metrics.SourceReadSet, metrics.TargetCreatedAndCommitted, metrics.PrivateImport, metrics.SourceEngineVersions); err != nil {
 			return buildResult, metrics, fmt.Errorf("persist target commit: %w", err)
 		}
 	}

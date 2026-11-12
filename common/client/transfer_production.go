@@ -15,19 +15,20 @@ import (
 // TransferProductionReceipt is owner evidence, never an Allow or an assertion
 // of initial-Grant eligibility. System must independently resolve Meta and IAM.
 type TransferProductionReceipt struct {
-	TargetEngineVersion int64                          `json:"target_engine_version,string" swaggertype:"string"`
-	SchemaVersion       string                         `json:"schema_version"`
-	TenantID            int64                          `json:"tenant_id,string" swaggertype:"string"`
-	ExecutionID         string                         `json:"execution_id"`
-	Attempt             int                            `json:"attempt"`
-	RetryOfExecutionID  *string                        `json:"retry_of_execution_id,omitempty"`
-	Target              plugin.EngineCatalogPath       `json:"target"`
-	Preparation         plugin.TableTargetDisposition  `json:"preparation"`
-	CommittedAt         time.Time                      `json:"committed_at"`
-	UserOrigin          *TransferProductionUserOrigin  `json:"user_origin"`
-	SourceReadSet       *plugin.QueryReadSet           `json:"source_read_set"`
-	ManagerImport       *production.PrivateUploadProof `json:"manager_import,omitempty"`
-	CreatedAndCommitted bool                           `json:"created_and_committed"`
+	TargetEngineVersion  int64                          `json:"target_engine_version,string" swaggertype:"string"`
+	SchemaVersion        string                         `json:"schema_version"`
+	TenantID             int64                          `json:"tenant_id,string" swaggertype:"string"`
+	ExecutionID          string                         `json:"execution_id"`
+	Attempt              int                            `json:"attempt"`
+	RetryOfExecutionID   *string                        `json:"retry_of_execution_id,omitempty"`
+	Target               plugin.EngineCatalogPath       `json:"target"`
+	Preparation          plugin.TableTargetDisposition  `json:"preparation"`
+	CommittedAt          time.Time                      `json:"committed_at"`
+	UserOrigin           *TransferProductionUserOrigin  `json:"user_origin"`
+	SourceEngineVersions []production.EngineVersion     `json:"source_engine_versions,omitempty"`
+	SourceReadSet        *plugin.QueryReadSet           `json:"source_read_set"`
+	ManagerImport        *production.PrivateUploadProof `json:"manager_import,omitempty"`
+	CreatedAndCommitted  bool                           `json:"created_and_committed"`
 }
 
 type TransferProductionUserOrigin struct {
@@ -36,7 +37,7 @@ type TransferProductionUserOrigin struct {
 	AuthorizationVersion int64 `json:"authorization_version,string" swaggertype:"string"`
 }
 
-const TransferProductionReceiptSchema = "transfer.production-receipt/v4"
+const TransferProductionReceiptSchema = "transfer.production-receipt/v5"
 
 // ProductionEvidence adapts Transfer's native persisted facts to the shared
 // production contract. The singleton table operation uses its original execution
@@ -44,7 +45,7 @@ const TransferProductionReceiptSchema = "transfer.production-receipt/v4"
 func (r TransferProductionReceipt) ProductionEvidence() production.Receipt {
 	sources := production.SourceEvidence{Kind: production.SourcesUnknown}
 	if r.SourceReadSet != nil {
-		sources = production.SourceEvidence{Kind: production.SourcesDataItems, ReadSet: r.SourceReadSet.Clone()}
+		sources = production.SourceEvidence{Kind: production.SourcesDataItems, ReadSet: r.SourceReadSet.Clone(), EngineVersions: append([]production.EngineVersion(nil), r.SourceEngineVersions...)}
 	} else if r.ManagerImport != nil {
 		sources.Kind = production.SourcesPrivateInput
 		proof := *r.ManagerImport
@@ -80,6 +81,9 @@ func (r TransferProductionReceipt) Validate() error {
 	}
 	if r.ManagerImport != nil && (r.SourceReadSet != nil || r.ManagerImport.Validate() != nil || r.UserOrigin == nil || r.ManagerImport.UploaderID != r.UserOrigin.PrincipalID) {
 		return errors.New("invalid private import production evidence")
+	}
+	if production.ValidateEngineVersions(r.SourceReadSet, r.SourceEngineVersions) != nil {
+		return production.ErrEvidence
 	}
 	if err := execution.ValidateProductionReadSet(r.SourceReadSet); err != nil {
 		return err

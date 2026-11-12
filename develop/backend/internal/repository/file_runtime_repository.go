@@ -26,8 +26,9 @@ type PrivateFileRuntimeRecord struct {
 // Actual read-session facts keyed by the frozen DAG input node. This remains
 // Owner-private; neither the declaration nor lineage can replace these reads.
 type PrivateFileSourceRead struct {
-	NodeID  string               `json:"node_id"`
-	ReadSet *plugin.QueryReadSet `json:"read_set"`
+	EngineVersion int64                `json:"engine_version,string"`
+	NodeID        string               `json:"node_id"`
+	ReadSet       *plugin.QueryReadSet `json:"read_set"`
 }
 
 // Both stages lock E before O and finish with the same canonical lease fence.
@@ -94,6 +95,17 @@ func (r *FileExecutionRepository) RecordPrivateRuntime(ctx context.Context, leas
 		}
 		for i, source := range intent.Sources {
 			proof := record.SourceReads[i]
+			version := int64(0)
+			for _, bound := range issued.Scope.Sources {
+				if reflect.DeepEqual(bound.Target, source.Target) {
+					version, _ = strconv.ParseInt(bound.EngineVersion, 10, 64)
+					break
+				}
+			}
+			if proof.EngineVersion <= 0 || proof.EngineVersion != version {
+				return commonapi.ErrConflict
+			}
+
 			if proof.NodeID != source.NodeID || m.Inputs[i].NodeID != source.NodeID || proof.ReadSet == nil ||
 				len(proof.ReadSet.Paths) != 1 || !reflect.DeepEqual(proof.ReadSet.Paths[0], source.Target) {
 				return commonapi.ErrConflict

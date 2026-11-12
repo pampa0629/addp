@@ -22,9 +22,10 @@ import (
 )
 
 type TablePipelineMetrics struct {
-	SourceReadSet     *engineplugin.QueryReadSet
-	PrivateImport     *production.PrivateUploadProof
-	TargetPreparation engineplugin.TableTargetPreparation
+	SourceEngineVersions []production.EngineVersion `json:"-"`
+	SourceReadSet        *engineplugin.QueryReadSet
+	PrivateImport        *production.PrivateUploadProof
+	TargetPreparation    engineplugin.TableTargetPreparation
 	// Internal Provider fact, not a public result or persisted Grant receipt.
 	TargetCreatedAndCommitted bool `json:"-"`
 	FieldLineage              *TableFieldLineage
@@ -106,6 +107,8 @@ func (d *multiTargetResourceDeleter) DeleteTarget(ctx context.Context) error {
 }
 
 type TablePipeline struct {
+	sourceEngineID           uint
+	sourceEngineVersion      int64
 	ObserveFieldLineage      func(context.Context, *datatype.TableInfo, *datatype.TableInfo, []string) *TableFieldLineage
 	Source                   TableBatchSource
 	Target                   TableBatchTarget
@@ -155,6 +158,13 @@ func (p *TablePipeline) Execute(ctx context.Context) (result *TablePipelineMetri
 	}
 	defer reader.Close(ctx)
 	actualSources := productionSourcesFromReader(ctx, reader)
+	var sourceVersions []production.EngineVersion
+	if actualSources != nil && p.sourceEngineVersion > 0 {
+		sourceVersions = []production.EngineVersion{{EngineID: int64(p.sourceEngineID), Version: p.sourceEngineVersion}}
+		if err := production.ValidateEngineVersions(actualSources, sourceVersions); err != nil {
+			return nil, err
+		}
+	}
 
 	tableInfo := reader.TableInfo()
 	spatialInfo := reader.SpatialInfo()
@@ -206,7 +216,7 @@ func (p *TablePipeline) Execute(ctx context.Context) (result *TablePipelineMetri
 		}
 	}()
 
-	metrics := &TablePipelineMetrics{SourceReadSet: actualSources}
+	metrics := &TablePipelineMetrics{SourceReadSet: actualSources, SourceEngineVersions: sourceVersions}
 	if source, ok := reader.(*multiTableBatchReader); ok {
 		metrics.PrivateImport = source.privateImport
 	}

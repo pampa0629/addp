@@ -2061,6 +2061,10 @@ definitions:
         type: string
       schema_version:
         type: string
+      source_engine_versions:
+        items:
+          $ref: '#/definitions/production.EngineVersion'
+        type: array
       source_read_set:
         $ref: '#/definitions/plugin.QueryReadSet'
       target:
@@ -2273,6 +2277,15 @@ definitions:
     - TableTargetCreated
     - TableTargetRecreated
     - TableTargetReused
+  production.EngineVersion:
+    properties:
+      engine_id:
+        example: ""
+        type: string
+      version:
+        example: ""
+        type: string
+    type: object
   production.PrivateUploadProof:
     properties:
       manifest_sha256:

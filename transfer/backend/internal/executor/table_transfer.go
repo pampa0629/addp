@@ -11,6 +11,7 @@ import (
 	"github.com/addp/common/engine/contentadapter"
 	engineplugin "github.com/addp/common/engine/plugin"
 	"github.com/addp/common/format"
+	"github.com/addp/common/production"
 	"github.com/addp/common/resume"
 )
 
@@ -23,6 +24,7 @@ const (
 )
 
 type TableSourcePlan struct {
+	EngineVersion        int64
 	Kind                 TableEndpointKind
 	ConnInfo             engineplugin.ConnectionInfo
 	Path                 engineplugin.EngineCatalogPath
@@ -227,6 +229,9 @@ func (e *TableTransferExecutor) Execute(ctx context.Context, plan TableTransferP
 	if e == nil {
 		return nil, fmt.Errorf("table transfer executor cannot be nil")
 	}
+	if plan.TargetPreparedCallback != nil && plan.Source.Path.EngineID > 0 && plan.Source.EngineVersion <= 0 {
+		return nil, production.ErrEvidence
+	}
 	if e.AuthorizeNativeSource != nil && (plan.Source.Kind != TableEndpointNative || !plan.Target.IsFileGDBArchive()) {
 		return nil, fmt.Errorf("%w: exact native authorization requires a FileGDB export", ErrProtectionPreparation)
 	}
@@ -242,7 +247,8 @@ func (e *TableTransferExecutor) Execute(ctx context.Context, plan TableTransferP
 		ObserveFieldLineage: func(ctx context.Context, read, written *datatype.TableInfo, derived []string) *TableFieldLineage {
 			return e.observeFieldLineage(ctx, plan, source, read, written, derived)
 		},
-		Source:                   source,
+		Source:         source,
+		sourceEngineID: plan.Source.Path.EngineID, sourceEngineVersion: plan.Source.EngineVersion,
 		Target:                   target,
 		Transforms:               plan.Transforms,
 		BatchSize:                plan.BatchSize,

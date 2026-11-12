@@ -84,7 +84,7 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 			if strings.HasPrefix(key, "system.meta_collection.") && (key != "system.meta_collection.execute" || role.Key != "tenant.meta_runtime") {
 				t.Fatalf("unexpected collection authority %s in %s", key, role.Key)
 			}
-			if key == "system.engine_access_initial_grant.execute" && role.Key != "tenant.transfer_runtime" && role.Key != "tenant.manager_runtime" {
+			if key == "system.engine_access_initial_grant.execute" && role.Key != "tenant.transfer_runtime" && role.Key != "tenant.manager_runtime" && role.Key != "tenant.develop_runtime" {
 				t.Fatalf("unexpected initial production runtime role %q", role.Key)
 			}
 			if key == "develop.production_receipt.read" && role.Key != "tenant.meta_runtime" && role.Key != "tenant.system_runtime" {
@@ -498,6 +498,7 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 		"security.protection_projection.read",
 		"security.protection_projection.update",
 		"system.cleanup_authorization.execute",
+		"system.engine_access_initial_grant.execute",
 		"system.engine_descriptor.read",
 		"system.execution_authorization.execute",
 		"system.notebook_session_authorization.execute",

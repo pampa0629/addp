@@ -136,7 +136,7 @@ func prepareFileWorkflowInputs(ctx context.Context, instanceID string, authority
 			return b, errFileWorkflowInputs
 		}
 		b.manifest.Inputs = append(b.manifest.Inputs, plugin.WorkflowPrivateFile{NodeID: source.NodeID, Size: receipt.Size, SHA256: receipt.SHA256})
-		b.sourceReads = append(b.sourceReads, repository.PrivateFileSourceRead{NodeID: source.NodeID, ReadSet: receipt.ReadSet.Clone()})
+		b.sourceReads = append(b.sourceReads, repository.PrivateFileSourceRead{NodeID: source.NodeID, ReadSet: receipt.ReadSet.Clone(), EngineVersion: receipt.EngineVersion})
 	}
 	b.prepared = true
 	if err := b.live(); err != nil {

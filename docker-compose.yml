@@ -221,6 +221,7 @@ services:
       - META_MINIO_USE_SSL=false
       - MANAGER_URL=http://manager-backend:8081
       - SYSTEM_URL=http://system-backend:8180
+      - DEVELOP_URL=http://develop-backend:8185
       - META_SERVICE_CLIENT_SECRET=${META_SERVICE_CLIENT_SECRET}
       - GIN_MODE=release
     volumes:
@@ -266,6 +267,7 @@ services:
       - REDIS_PORT=6379
       - REDIS_PASSWORD=${REDIS_PASSWORD:-addp_redis}
       - SYSTEM_URL=http://system-backend:8180
+      - DEVELOP_URL=http://develop-backend:8185
       - META_URL=http://meta-backend:8082
       - MANAGER_URL=http://manager-backend:8081
       - META_SERVICE_CLIENT_SECRET=${META_SERVICE_CLIENT_SECRET}
@@ -330,6 +332,7 @@ services:
       - REDIS_PORT=6379
       - REDIS_PASSWORD=${REDIS_PASSWORD:-addp_redis}
       - SYSTEM_URL=http://system-backend:8180
+      - DEVELOP_URL=http://develop-backend:8185
       - META_URL=http://meta-backend:8082
       - SECURITY_URL=http://security-backend:8194
       - TRANSFER_SERVICE_CLIENT_SECRET=${TRANSFER_SERVICE_CLIENT_SECRET}
@@ -413,6 +416,7 @@ services:
       - REDIS_PORT=6379
       - REDIS_PASSWORD=${REDIS_PASSWORD:-addp_redis}
       - SYSTEM_URL=http://system-backend:8180
+      - DEVELOP_URL=http://develop-backend:8185
       - META_URL=http://meta-backend:8082
       - SECURITY_URL=http://security-backend:8194
       - TRANSFER_SERVICE_CLIENT_SECRET=${TRANSFER_SERVICE_CLIENT_SECRET}

@@ -16,7 +16,7 @@ import (
 )
 
 var errProductionReceiptUnavailable = errors.New("production evidence unavailable")
-var errProductionTargetChanged = errors.Join(commonapi.ErrConflict, errors.New("PG production engine changed or unavailable"))
+var errProductionTargetChanged = errors.Join(commonapi.ErrConflict, errors.New("production engine changed or unavailable"))
 
 func (s *Service) WithProductionRegistry(registry *production.Registry) *Service {
 	s.productionRegistry = registry
@@ -105,7 +105,7 @@ func (r *Repository) productionEngine(ctx context.Context, tenantID, engineID in
 		Where("tenant_id = ? AND id = ?", tenantID, engineID).Take(&engine).Error; err != nil {
 		return nil, mapError(err)
 	}
-	if engine.EngineType != "postgresql" || engine.LifecycleState != models.EngineLifecycleActive || engine.Version <= 0 {
+	if (engine.EngineType != "postgresql" && engine.EngineType != "nfs") || engine.LifecycleState != models.EngineLifecycleActive || engine.Version <= 0 {
 		return nil, errProductionTargetChanged
 	}
 	return &engine, nil

@@ -992,6 +992,7 @@ func buildTableSourcePlan(endpoint EndpointSpec, engine EngineBinding, transform
 			},
 		}
 		return executor.TableSourcePlan{
+			EngineVersion:        engine.EngineVersion,
 			Kind:                 executor.TableEndpointQuery,
 			ConnInfo:             engine.ConnInfo,
 			Path:                 path,
@@ -1011,13 +1012,14 @@ func buildTableSourcePlan(endpoint EndpointSpec, engine EngineBinding, transform
 		}
 		readOptions := nativeReadOptionsFromTransforms(transforms)
 		return executor.TableSourcePlan{
-			Kind:        executor.TableEndpointNative,
-			ConnInfo:    engine.ConnInfo,
-			Path:        sourcePath,
-			ReadOptions: readOptions,
-			Layout:      itemDescriptor.Layout,
-			TableInfo:   sourceTableInfo,
-			SpatialInfo: sourceSpatialInfo,
+			EngineVersion: engine.EngineVersion,
+			Kind:          executor.TableEndpointNative,
+			ConnInfo:      engine.ConnInfo,
+			Path:          sourcePath,
+			ReadOptions:   readOptions,
+			Layout:        itemDescriptor.Layout,
+			TableInfo:     sourceTableInfo,
+			SpatialInfo:   sourceSpatialInfo,
 		}, nil
 	case representationEncoded:
 		sourcePath, err := sourceEndpointContentCatalogPath(endpoint, itemDescriptor)
@@ -1089,15 +1091,16 @@ func buildTableSourcePlan(endpoint EndpointSpec, engine EngineBinding, transform
 			relatedRefs = itemDescriptor.RelatedRefs()
 		}
 		return executor.TableSourcePlan{
-			Kind:         executor.TableEndpointEncoded,
-			ConnInfo:     engine.ConnInfo,
-			Path:         sourcePath,
-			Format:       sourceFormat,
-			Layout:       itemDescriptor.Layout,
-			ParseOptions: parseOptions,
-			TableInfo:    sourceTableInfo,
-			SpatialInfo:  sourceSpatialInfo,
-			RelatedRefs:  relatedRefs,
+			EngineVersion: engine.EngineVersion,
+			Kind:          executor.TableEndpointEncoded,
+			ConnInfo:      engine.ConnInfo,
+			Path:          sourcePath,
+			Format:        sourceFormat,
+			Layout:        itemDescriptor.Layout,
+			ParseOptions:  parseOptions,
+			TableInfo:     sourceTableInfo,
+			SpatialInfo:   sourceSpatialInfo,
+			RelatedRefs:   relatedRefs,
 		}, nil
 	default:
 		return executor.TableSourcePlan{}, fmt.Errorf("unsupported source representation %q", endpoint.Representation)

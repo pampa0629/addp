@@ -2079,6 +2079,15 @@ definitions:
       target:
         $ref: '#/definitions/plugin.EngineCatalogPath'
     type: object
+  production.EngineVersion:
+    properties:
+      engine_id:
+        example: ""
+        type: string
+      version:
+        example: ""
+        type: string
+    type: object
   production.PrivateUploadProof:
     properties:
       manifest_sha256:
@@ -2132,6 +2141,10 @@ definitions:
     type: object
   production.SourceEvidence:
     properties:
+      engine_versions:
+        items:
+          $ref: '#/definitions/production.EngineVersion'
+        type: array
       kind:
         type: string
       private_upload:

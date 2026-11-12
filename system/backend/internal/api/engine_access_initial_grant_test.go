@@ -38,65 +38,69 @@ func (f *initialGrantHandlerFixture) ResolveInitialProductionGrant(_ context.Con
 }
 
 func TestInitialProductionGrantRoutesRequireFixedRuntimeAndNoCallerEvidence(t *testing.T) {
-	ac := testIAMServiceActorContext("tenant", "addp-transfer")
-	clientID := "addp-transfer"
-	ac.Client.ClientID = &clientID
-	ac.Authorization.RoleAssignments = []shared.RoleAssignment{{AssignmentID: "1", RoleKey: "tenant.transfer_runtime", SourceType: "bootstrap", ValidFrom: time.Now().Add(-time.Minute),
-		Scope: shared.AssignmentScope{Type: "tenant", TenantID: ac.Context.TenantID}, Permissions: []string{authorization.PermissionSystemEngineAccessInitialGrantExecute}}}
-	authentication, err := middleware.NewIAMAuthenticationMiddleware(iamActorResolver{authContext: &ac})
-	if err != nil {
-		t.Fatal(err)
-	}
-	credential, err := middleware.NewIAMCredentialGuard(middleware.IAMTokenTypeServiceAccess)
-	if err != nil {
-		t.Fatal(err)
-	}
-	fixture := &initialGrantHandlerFixture{}
-	router := gin.New()
-	if err := RegisterEngineAccessInitialGrantRoutes(router.Group("/api/v1/system"), &IAMRuntime{Authentication: authentication, ServiceCredential: credential}, &EngineAccessInitialGrantHandler{service: fixture}); err != nil {
-		t.Fatal(err)
-	}
-	id := uuid.NewString()
-	path := "/api/v1/system/runtime/initial_production_grants/transfer/" + uuid.NewString() + "/" + id
-	request := func(method, url, body string, status int) *httptest.ResponseRecorder {
-		t.Helper()
-		r := httptest.NewRequest(method, url, nil)
-		if body != "" {
-			r = httptest.NewRequest(method, url, strings.NewReader(body))
-		}
-		r.Header.Set("Authorization", "Bearer fixture")
-		w := httptest.NewRecorder()
-		router.ServeHTTP(w, r)
-		if w.Code != status {
-			t.Fatalf("%s %s status=%d want=%d body=%s", method, url, w.Code, status, w.Body.String())
-		}
-		return w
-	}
-	request("GET", path, "", 200)
-	request("POST", path, "", 200)
-	if fixture.calls != 2 || fixture.id != id || fixture.actor.ClientID != "addp-transfer" || fixture.actor.TenantID != 3 || fixture.actor.PrincipalID != 41 || fixture.actor.MembershipID != 4 || fixture.actor.AuthorizationVersion != 1 || !fixture.actor.TokenExpiresAt.Equal(ac.Token.ExpiresAt) {
-		t.Fatalf("untrusted runtime input: %+v", fixture)
-	}
-	for _, method := range []string{"GET", "POST"} {
-		request(method, path+"?tenant_id=9", "", 400)
-		request(method, path, `{"created_and_committed":true,"recipient_id":"9"}`, 400)
-		request(method, strings.TrimSuffix(path, id)+"not-a-uuid", "", 400)
-		request(method, strings.TrimSuffix(path, id)+uuid.Nil.String(), "", 400)
-	}
-	request("POST", strings.Replace(path, "/transfer/", "/develop/", 1), "", 403)
-	request("GET", strings.Replace(path, "/transfer/", "/invalid.owner/", 1), "", 400)
-	request("GET", strings.TrimSuffix(path, "/"+id), "", 404)
-	if fixture.calls != 2 {
-		t.Fatal("caller-supplied evidence reached service")
-	}
-	clientID = "addp-catalog"
-	request("POST", path, "", 403)
-	clientID = "addp-transfer"
-	ac.Authorization.RoleAssignments = []shared.RoleAssignment{}
-	request("GET", path, "", 403)
-	request("POST", path, "", 403)
-	if fixture.calls != 2 {
-		t.Fatal("unqualified runtime reached service")
+	for _, owner := range []string{"transfer", "develop"} {
+		t.Run(owner, func(t *testing.T) {
+			ac := testIAMServiceActorContext("tenant", "addp-"+owner)
+			clientID := "addp-" + owner
+			ac.Client.ClientID = &clientID
+			ac.Authorization.RoleAssignments = []shared.RoleAssignment{{AssignmentID: "1", RoleKey: "tenant." + owner + "_runtime", SourceType: "bootstrap", ValidFrom: time.Now().Add(-time.Minute),
+				Scope: shared.AssignmentScope{Type: "tenant", TenantID: ac.Context.TenantID}, Permissions: []string{authorization.PermissionSystemEngineAccessInitialGrantExecute}}}
+			authentication, err := middleware.NewIAMAuthenticationMiddleware(iamActorResolver{authContext: &ac})
+			if err != nil {
+				t.Fatal(err)
+			}
+			credential, err := middleware.NewIAMCredentialGuard(middleware.IAMTokenTypeServiceAccess)
+			if err != nil {
+				t.Fatal(err)
+			}
+			fixture := &initialGrantHandlerFixture{}
+			router := gin.New()
+			if err := RegisterEngineAccessInitialGrantRoutes(router.Group("/api/v1/system"), &IAMRuntime{Authentication: authentication, ServiceCredential: credential}, &EngineAccessInitialGrantHandler{service: fixture}); err != nil {
+				t.Fatal(err)
+			}
+			id := uuid.NewString()
+			path := "/api/v1/system/runtime/initial_production_grants/" + owner + "/" + uuid.NewString() + "/" + id
+			request := func(method, url, body string, status int) *httptest.ResponseRecorder {
+				t.Helper()
+				r := httptest.NewRequest(method, url, nil)
+				if body != "" {
+					r = httptest.NewRequest(method, url, strings.NewReader(body))
+				}
+				r.Header.Set("Authorization", "Bearer fixture")
+				w := httptest.NewRecorder()
+				router.ServeHTTP(w, r)
+				if w.Code != status {
+					t.Fatalf("%s %s status=%d want=%d body=%s", method, url, w.Code, status, w.Body.String())
+				}
+				return w
+			}
+			request("GET", path, "", 200)
+			request("POST", path, "", 200)
+			if fixture.calls != 2 || fixture.id != id || fixture.actor.ClientID != "addp-"+owner || fixture.actor.TenantID != 3 || fixture.actor.PrincipalID != 41 || fixture.actor.MembershipID != 4 || fixture.actor.AuthorizationVersion != 1 || !fixture.actor.TokenExpiresAt.Equal(ac.Token.ExpiresAt) {
+				t.Fatalf("untrusted runtime input: %+v", fixture)
+			}
+			for _, method := range []string{"GET", "POST"} {
+				request(method, path+"?tenant_id=9", "", 400)
+				request(method, path, `{"created_and_committed":true,"recipient_id":"9"}`, 400)
+				request(method, strings.TrimSuffix(path, id)+"not-a-uuid", "", 400)
+				request(method, strings.TrimSuffix(path, id)+uuid.Nil.String(), "", 400)
+			}
+			request("POST", strings.Replace(path, "/"+owner+"/", "/other_owner/", 1), "", 403)
+			request("GET", strings.Replace(path, "/"+owner+"/", "/invalid.owner/", 1), "", 400)
+			request("GET", strings.TrimSuffix(path, "/"+id), "", 404)
+			if fixture.calls != 2 {
+				t.Fatal("caller-supplied evidence reached service")
+			}
+			clientID = "addp-catalog"
+			request("POST", path, "", 403)
+			clientID = "addp-" + owner
+			ac.Authorization.RoleAssignments = []shared.RoleAssignment{}
+			request("GET", path, "", 403)
+			request("POST", path, "", 403)
+			if fixture.calls != 2 {
+				t.Fatal("unqualified runtime reached service")
+			}
+		})
 	}
 }
 

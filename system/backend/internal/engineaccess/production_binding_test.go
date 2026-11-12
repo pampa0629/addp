@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"sort"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -68,6 +69,7 @@ func TestTransferProductionBindingUsesCompleteExactMetaProof(t *testing.T) {
 			db := productionBindingDB(t)
 			receipt := productionBindingReceipt(7, 2)
 			receipt.SourceReadSet, _ = plugin.NewQueryReadSet(plugin.TabularItemPath(3, "schema", "outdoor", "source"))
+			receipt.SourceEngineVersions = testReceiptVersions(receipt.SourceReadSet)
 			facts := factstest.Single(receipt.Target)
 			var receiptErr, factsErr, want error
 			wantReceiptCalls, wantFactsCalls := 1, 1
@@ -399,4 +401,23 @@ func TestProductionRequiresMetaNewLogicalItemAndCurrentBoundary(t *testing.T) {
 			}
 		})
 	}
+}
+
+func testReceiptVersions(set *plugin.QueryReadSet) []production.EngineVersion {
+	if set == nil {
+		return nil
+	}
+	ids := map[int64]bool{}
+	var versions []production.EngineVersion
+	for _, path := range set.Paths {
+		id := int64(path.EngineID)
+		if !ids[id] {
+			ids[id] = true
+			version := int64(1)
+
+			versions = append(versions, production.EngineVersion{EngineID: id, Version: version})
+		}
+	}
+	sort.Slice(versions, func(i, j int) bool { return versions[i].EngineID < versions[j].EngineID })
+	return versions
 }

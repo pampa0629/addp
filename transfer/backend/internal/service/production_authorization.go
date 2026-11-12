@@ -68,7 +68,7 @@ func (c *ProductionAuthorizationContinuation) Run(ctx context.Context, ready fun
 }
 
 func (c *ProductionAuthorizationContinuation) runOne(ctx context.Context, now time.Time) error {
-	if c == nil || c.executions == nil || c.executions.db == nil || c.runtime == nil || c.meta == nil {
+	if c == nil || c.executions == nil || c.executions.db == nil || c.runtime == nil {
 		return errors.New("initial authorization continuation unavailable")
 	}
 	var item execution.TaskExecution
@@ -84,18 +84,7 @@ func (c *ProductionAuthorizationContinuation) runOne(ctx context.Context, now ti
 		if err != nil {
 			return err
 		}
-		if models.InitialProductionAuthorization(&item, now) == nil {
-			return errors.New("initial authorization owner evidence unavailable")
-		}
-		state.Attempts++
-		delay := 30 * time.Second
-		for i := 1; i < state.Attempts && delay < 5*time.Minute; i++ {
-			delay *= 2
-		}
-		if delay > 5*time.Minute {
-			delay = 5 * time.Minute
-		}
-		state.NextAttemptUnix = now.Add(delay).Unix()
+		state.Claim(now)
 		item.Metadata[models.ProductionAuthorizationMetadataKey] = state
 		return tx.Model(&item).Update("metadata", item.Metadata).Error
 	})
@@ -105,41 +94,17 @@ func (c *ProductionAuthorizationContinuation) runOne(ctx context.Context, now ti
 	if err != nil {
 		return err
 	}
-	// An unknown previous response must be resolved before another issuance.
-	lookup, err := c.runtime.resolve(ctx, uint(item.TenantID), item.ExecutionID)
-	code := "system_unavailable"
-	var result *authorization.InitialProductionResult
-	if err == nil && lookup != nil && lookup.Validate() == nil {
-		if lookup.Found {
-			result = lookup.Result
-		} else {
-			result, err = c.runtime.issue(ctx, uint(item.TenantID), item.ExecutionID)
-			code = "authorization_pending"
-			if err != nil {
-				// Only System's pending response asks for technical preparation;
-				// transport failures/403 never authorize scanning arbitrary targets.
-				pendingCode, _ := client.TenantAPIErrorCode(err)
-				if status, ok := client.TenantAPIStatusCode(err); ok && status == 503 && pendingCode == "initial_production_pending" {
-					scan, scanErr := c.meta.EnsureProductionBasicScan(ctx, uint(item.TenantID), production.Reference{Owner: "transfer", ExecutionID: item.ExecutionID, ResultID: item.ExecutionID})
-					if scanErr == nil && scan != nil && scan.Validate() == nil && scan.Reference == (production.Reference{Owner: "transfer", ExecutionID: item.ExecutionID, ResultID: item.ExecutionID}) {
-						code = "scan_pending"
-						if scan.Status == execution.ExecutionStatusFailed || scan.Status == execution.ExecutionStatusTimeout || scan.Status == execution.ExecutionStatusCancelled {
-							code = "scan_failed"
-						}
-					}
-				}
-			}
-		}
-	}
-	if err == nil && result != nil && result.Validate() == nil && result.TenantID == int64(item.TenantID) && result.ExecutionID.String() == item.ExecutionID {
-		state.Status = result.Outcome
-		state.Code = result.DenialCode
+	ref := production.Reference{Owner: "transfer", ExecutionID: item.ExecutionID, ResultID: item.ExecutionID}
+	result, code, err := client.ContinueInitialProduction(ctx, uint(item.TenantID), ref, transferGrantDelivery{c.runtime, uint(item.TenantID)}, c.meta)
+	if err == nil && result != nil {
+		state.Status, state.Code = result.Outcome, result.DenialCode
 		if result.Grant != nil {
 			state.GrantRequestID = result.Grant.RequestID.String()
 		}
 	} else {
 		state.Code = code
 	}
+
 	return c.executions.withLockedExecution(ctx, uint(item.ID), func(tx *gorm.DB, current *execution.TaskExecution) error {
 		prior, err := models.DecodeProductionAuthorization(current.Metadata[models.ProductionAuthorizationMetadataKey])
 		if err != nil {
@@ -152,4 +117,17 @@ func (c *ProductionAuthorizationContinuation) runOne(ctx context.Context, now ti
 		current.Metadata[models.ProductionAuthorizationMetadataKey] = state
 		return tx.Model(current).Update("metadata", current.Metadata).Error
 	})
+}
+
+// Adapt the native Transfer execution identity to the shared result delivery.
+type transferGrantDelivery struct {
+	runtime initialGrantRuntime
+	tenant  uint
+}
+
+func (d transferGrantDelivery) ResolveInitialProductionGrant(ctx context.Context, ref production.Reference) (*authorization.InitialProductionLookup, error) {
+	return d.runtime.resolve(ctx, d.tenant, ref.ExecutionID)
+}
+func (d transferGrantDelivery) IssueInitialProductionGrant(ctx context.Context, ref production.Reference) (*authorization.InitialProductionResult, error) {
+	return d.runtime.issue(ctx, d.tenant, ref.ExecutionID)
 }

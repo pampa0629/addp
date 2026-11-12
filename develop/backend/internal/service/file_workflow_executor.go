@@ -28,6 +28,8 @@ type privateFileCleanup struct {
 // The map owns only live batches created by this instance. It is not another
 // queue, authorization cache or reconstruction of a persisted path.
 type privateFileWorkflowExecutor struct {
+	productionRuntime func(uint) client.ProductionGrantRuntime
+	productionScanner client.ProductionScanner
 	repository        *repository.FileExecutionRepository
 	instanceID        string
 	authority         func(uint) fileSourceAuthority
@@ -46,6 +48,10 @@ func newPrivateFileWorkflowExecutor(repo *repository.FileExecutionRepository, wo
 	f := &privateFileWorkflowExecutor{repository: repo, instanceID: instanceID, pending: map[string]privateFileCleanup{}}
 	if workflow == nil || workflow.systemService == nil {
 		return f
+	}
+	f.productionRuntime = func(tenant uint) client.ProductionGrantRuntime { return workflow.systemService.WithTenantID(tenant) }
+	if workflow.metaClient != nil {
+		f.productionScanner = workflow.metaClient
 	}
 	f.authority = func(tenant uint) fileSourceAuthority { return workflow.systemService.WithTenantID(tenant) }
 	f.admission = func(tenant uint) fileAdmissionAuthority { return workflow.systemService.WithTenantID(tenant) }
@@ -130,6 +136,9 @@ func (s *ExecutionService) RecoverPrivateFiles(ctx context.Context) error {
 		}
 	}
 	if err := f.recoverPrivatePublications(ctx); err != nil {
+		failures = append(failures, err)
+	}
+	if err := f.continueProductionAuthorization(ctx); err != nil {
 		failures = append(failures, err)
 	}
 	if err := s.refreshPrivateFileAdmissions(ctx); err != nil {

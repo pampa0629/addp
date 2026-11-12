@@ -306,7 +306,7 @@ case "$TEST_FILTER" in
         ;;
     production-sources)
         [ "$PACKAGE_FILTER" = engineaccess ] || { echo "production-sources requires --package engineaccess" >&2; exit 2; }
-        test_pattern='^TestFulfillmentArbitrationAgainstPostgres$/^production_first_acceptance_and_historical_retry$/^(initial_production_observes_actual_sources_and_persistent_target_history_without_issuing|initial_production_grant_terminal_lifecycle)$'
+        test_pattern='^TestFulfillmentArbitrationAgainstPostgres$/^production_first_acceptance_and_historical_retry$/^(initial_production_observes_actual_sources_and_persistent_target_history_without_issuing|initial_production_grant_terminal_lifecycle|file_production_grant_lifecycle)$'
         ;;
     meta-collection)
         case "$PACKAGE_FILTER" in
@@ -653,7 +653,7 @@ case "$TEST_FILTER" in
         if [ "$PACKAGE_FILTER" != "migration" ]; then
             echo "production-receipt-runtime requires --package migration" >&2; exit 2
         fi
-        test_pattern='^Test(ProductionReceipt|DevelopProductionReceipt)ForwardMigrationAgainstPostgres$'
+        test_pattern='^Test((ProductionReceipt|DevelopProductionReceipt)ForwardMigration|FileProductionRuntimeForwardMigration)AgainstPostgres$'
         ;;
     graph-protection-runtime)
         if [ "$PACKAGE_FILTER" != "migration" ]; then

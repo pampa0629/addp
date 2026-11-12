@@ -8,6 +8,7 @@ import (
 	"github.com/addp/common/client"
 	plugin "github.com/addp/common/engine/plugin"
 	"github.com/addp/common/execution"
+	"github.com/addp/common/production"
 	"github.com/addp/common/resourcetree"
 	"github.com/addp/transfer/internal/models"
 	"github.com/google/uuid"
@@ -45,6 +46,7 @@ func (s *ExecutionService) ReadProductionReceipt(ctx context.Context, tenantID u
 	}
 	result := &client.TransferProductionReceipt{SchemaVersion: client.TransferProductionReceiptSchema, TargetEngineVersion: record.TargetEngineVersion, TenantID: int64(item.TenantID), ExecutionID: item.ExecutionID, Attempt: item.Attempt, RetryOfExecutionID: record.RetryOfExecutionID, Target: path, Preparation: record.Preparation, CommittedAt: *record.CommittedAt}
 	result.SourceReadSet = record.SourceReadSet.Clone()
+	result.SourceEngineVersions = append([]production.EngineVersion(nil), record.SourceEngineVersions...)
 	result.ManagerImport = record.ManagerImport
 	result.CreatedAndCommitted = record.CreatedAndCommitted
 	if item.ActorPrincipalID != nil || item.ActorTenantMembershipID != nil || item.IssuedAuthorizationVersion != nil {

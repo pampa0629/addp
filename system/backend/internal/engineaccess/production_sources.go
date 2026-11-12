@@ -70,16 +70,19 @@ func (s *Service) prepareInitialProduction(ctx context.Context, tenantID int64, 
 		return nil, err
 	}
 	versions := map[int64]int64{int64(production.receipt.Primary.EngineID): production.engineVersion}
-	for _, path := range sources.Targets {
-		id := int64(path.EngineID)
-		if _, exists := versions[id]; exists {
-			continue
+	for _, frozen := range production.receipt.Sources.EngineVersions {
+		id := frozen.EngineID
+		if prior, exists := versions[id]; exists && prior != frozen.Version {
+			return nil, errProductionTargetChanged
 		}
 		engine, err := s.repository.productionEngine(ctx, tenantID, id)
 		if err != nil {
 			return nil, err
 		}
-		versions[id] = engine.Version
+		if engine.Version != frozen.Version {
+			return nil, errProductionTargetChanged
+		}
+		versions[id] = frozen.Version
 	}
 	owner, _ := s.productionRegistry.Resolve(ref.Owner, "addp-"+ref.Owner)
 	prepared := &preparedInitialProduction{production: production, sources: sources, engineVersions: versions, owner: owner}
