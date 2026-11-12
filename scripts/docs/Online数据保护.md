@@ -368,3 +368,8 @@ v45实际运行在选中方式后的历史检查失败：该检查将默认历�
 精确业务2664dd82881a553f6634afbbb4a2c3389803d9f0的Run43180455765／Job131054875358已实际失败：前六阶段通过，第七阶段在主动移除已失效选择、恢复默认时，PUT /api/v1/transfer/task-definitions/9返回403 permission_denied。该操作沿既有接口要求transfer.task.update，与前轮启动时需要的develop.data_write.execute不同。原始请求19d3a3e9-76f7-491a-acf0-bf1b1d7f8e55中System auth/context为200，Transfer PUT为403；无最终领域／浏览器报告、0/23图。六Grant、wrapper及Infra清理分别核验，不替代业务通过。
 
 用户已确认本轮最小修正范围：仅向security-mysql-owner-protection的disposable消费账号套件附加集合增加既有transfer.task.update；global consumerPermissions、准备账号、独立资格账号、其他套件、源Grant、原值授权和产品权限规则均不变。沿已有System夹具Go回归验证必需权限及不扩散边界，并运行make test-security-online-runner；现有入口及CI自动发现已覆盖，无需新增workflow。领域v46／浏览器v10、28阶段／23图、90秒资格／2400秒预算、固定值oracle及清理均保持。修正后由专门CI会话安排本次获准的同范围复验，本会话不自行派发或重试。
+
+
+### v46/v10 固定范围实际验收（2026-11-13复核）
+
+固定业务45fe76a6f830d0968d73476e66812436659a4fd2、control6d30e0f4fdc54a5035d7b3f88e397e6c3244eb68的Run43217668163／Job131180952821已实际成功。领域v46／浏览器v10，28阶段、23图、原值样本分组默认／所选／撤销拒绝／主动恢复、6份CSV字节与42条导出边界、三组资格自然到期及六Grant最终清理已独立核；总耗时2028525ms，领域26/26/0、两组浏览器各2/2/0，wrapper及Infra清理通过。原v45、DNS、POST403、2664 PUT403及Graph聚合超时保持失败，不改写为通过。20 runtime／8 protocol_only及future-start仅T2边界不变；不将本次业务源码替换成后继前端修复SHA。详见[原件、审计命令与未验范围](../../docs/spec/testing/evidence/数据保护与执行血缘历史证据.md#v46v10-分组角色脱敏-hosted-验收2026-11-13-独立复核)，本节仅补实际证据，不改变合同或批准新的运行。
