@@ -1714,3 +1714,73 @@ for (const locale of ['zh-cn', 'en']) for (const stage of ['preflight', 'create'
     expect(preflights).toBe(2)
   })
 }
+
+for (const locale of ['zh-cn', 'en']) for (const [boundary, leave] of [['create', false], ['status', false], ['download', false], ['create', true]]) {
+  test(`query navigation stops the obsolete full export (${boundary}, ${leave ? 'leave' : 'switch'}, ${locale})`, async ({ page }) => {
+    const words = JSON.parse(readFileSync(new URL(`../src/i18n/${locale}.json`, import.meta.url), 'utf8')).develop.query
+    const chinese = locale === 'zh-cn'
+    const engine = { ...ENGINE, capabilities: { compute: { query: { ...ENGINE.capabilities.compute.query, read_session: true } } } }
+    await installMockBackend(page, { resultKind: 'table', engines: [engine], locale })
+    await page.route('**/api/v1/develop/task-definitions/*', route => {
+      const id = Number(new URL(route.request().url()).pathname.split('/').at(-1))
+      return fulfillJSON(route, { id, version: 1, name: id === 901 ? 'query-before-export' : 'next-query-after-export', dev_type: 'query',
+        content: { query: 'SELECT id, name FROM public.customers', query_type: 'sql' }, execution_config: { engine_id: ENGINE.id } })
+    })
+    const calls = [], downloads = [], errors = []
+    let blocked = false, release, settled = false
+    const pending = new Promise(resolve => { release = resolve })
+    page.on('download', item => downloads.push(item.suggestedFilename()))
+    page.on('pageerror', error => errors.push(error.message))
+    const ready = { id: 91, status: 'success', file_name: 'obsolete-export.csv', download_url: '/api/v1/develop/exports/91/file' }
+    const handle = async (route, stage) => {
+      calls.push(stage)
+      if (boundary === stage) {
+        blocked = true
+        await pending
+      }
+      try {
+        if (stage === 'download') await route.fulfill({ status: 200, contentType: 'text/csv', body: 'id,phone\n1,***\n' })
+        else await fulfillJSON(route, stage === 'create' ? { id: 91, status: 'pending' } : ready)
+      } catch (error) {
+        // An explicitly cancelled transport may already have been released.
+        if (!route.request().failure()) throw error
+      } finally { if (boundary === stage) settled = true }
+    }
+    await page.route(`**/api/v1/develop/executions/${EXECUTION_ID}/exports`, route => handle(route, 'create'))
+    await page.route('**/api/v1/develop/exports/91', route => handle(route, 'status'))
+    await page.route('**/api/v1/develop/exports/91/file', route => handle(route, 'download'))
+    await page.goto('/sql?action=edit&id=901')
+    await expect(page.getByRole('heading', { name: 'query-before-export', exact: true })).toBeVisible()
+    await page.getByRole('button', { name: words.execute, exact: true }).click()
+    await expect(page.getByText('Ada', { exact: true })).toBeVisible()
+    const exportLabel = chinese ? '导出全部结果' : 'Export All Results'
+    await page.getByRole('button', { name: exportLabel, exact: true }).click()
+    const dialog = page.getByRole('dialog', { name: exportLabel, exact: true })
+    await dialog.getByRole('button', { name: chinese ? '开始导出' : 'Start Export', exact: true }).click()
+    await expect.poll(() => blocked).toBe(true)
+    await page.locator('.query-workbench').evaluate((el, leave) => { void el.__vueParentComponent.proxy.$router.push(leave ? '/tasks' : '/sql?action=edit&id=902') }, leave)
+    if (leave) await expect(page.locator('.query-workbench')).toHaveCount(0)
+    else await expect(page.getByRole('heading', { name: 'next-query-after-export', exact: true })).toBeVisible()
+    await expect(dialog).not.toBeVisible()
+    release()
+    await expect.poll(() => settled).toBe(true)
+    await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))))
+    if (leave) await expect(page.locator('.el-message--success, .el-message--error')).toHaveCount(0)
+    else await expect(page.locator('.query-workbench [role=status]')).not.toContainText(chinese ? '下载' : 'download')
+    expect(downloads).toEqual([])
+    expect(calls).toEqual(boundary === 'create' ? ['create'] : boundary === 'status' ? ['create', 'status'] : ['create', 'status', 'download'])
+    expect(errors).toEqual([])
+    if (!leave) {
+      await page.getByRole('button', { name: words.execute, exact: true }).click()
+      await expect(page.getByText('Ada', { exact: true })).toBeVisible()
+      await page.getByRole('button', { name: exportLabel, exact: true }).click()
+      const start = dialog.getByRole('button', { name: chinese ? '开始导出' : 'Start Export', exact: true })
+      await expect(start).toBeEnabled()
+      const downloaded = page.waitForEvent('download')
+      await start.click()
+      expect((await downloaded).suggestedFilename()).toBe('obsolete-export.csv')
+      expect(downloads).toHaveLength(1)
+      expect(errors).toEqual([])
+    }
+  })
+}

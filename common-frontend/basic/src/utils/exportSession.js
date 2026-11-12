@@ -23,6 +23,7 @@ export async function waitForExportSession(getSession, sessionId, options = {}) 
   for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
     if (options.signal?.aborted) throw new DOMException('Export polling was cancelled', 'AbortError')
     const session = sessionPayload(await getSession(sessionId))
+    if (options.signal?.aborted) throw new DOMException('Export polling was cancelled', 'AbortError')
     if (session?.status === 'success' && session?.download_url) return session
     if (session?.status === 'failed') {
       throw new Error(session?.error_message || options.failedMessage || 'Export failed')
@@ -46,6 +47,7 @@ export function downloadFromUrl(url, fileName = 'download') {
 // client so a delivery-time protection conflict is shown instead of saved as
 // a file. Never put credentials in the URL.
 export async function downloadAuthenticatedExport(client, session, options = {}) {
+  if (options.signal?.aborted) throw new DOMException('Export download was cancelled', 'AbortError')
   const url = new URL(session.download_url, window.location.origin)
   if (url.origin !== window.location.origin || url.search || url.hash || !/^\/api\/v1\/[a-z][a-z0-9_-]*\/exports\/[1-9][0-9]*\/file$/.test(url.pathname)) {
     throw new Error(options.failedMessage || 'Invalid export download URL')
@@ -59,6 +61,7 @@ export async function downloadAuthenticatedExport(client, session, options = {})
     }
     throw error
   }
+  if (options.signal?.aborted) throw new DOMException('Export download was cancelled', 'AbortError')
   if (!(blob instanceof Blob)) throw new Error(options.failedMessage || 'Invalid export download response')
   saveBlobDownload(blob, session.file_name || 'download')
 }

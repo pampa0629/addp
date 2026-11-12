@@ -92,3 +92,30 @@ test('Blob downloads use one saver and release the temporary URL without renamin
     assert.deepEqual(revoked, ['blob:controlled-download'])
   } finally { globalThis.document = saved; URL.createObjectURL = oldCreate; URL.revokeObjectURL = oldRevoke; globalThis.setTimeout = oldTimer }
 })
+
+
+test('cancelled polling rejects a success that arrives after cancellation', async () => {
+  const controller = new AbortController()
+  let resolve
+  const pending = waitForExportSession(() => new Promise(yes => { resolve = yes }), 1, { signal: controller.signal })
+  controller.abort()
+  resolve({ status: 'success', download_url: '/api/v1/develop/exports/1/file' })
+  await assert.rejects(pending, error => error?.name === 'AbortError')
+})
+
+test('cancelled download cannot save a Blob delivered by a transport that ignores cancellation', async () => {
+  const { downloadAuthenticatedExport } = await import('../src/utils/exportSession.js')
+  const savedWindow = globalThis.window, savedDocument = globalThis.document
+  const clicked = []
+  globalThis.window = { location: { origin: 'https://addp.example' } }
+  globalThis.document = { createElement() { return { click() { clicked.push(this.href) } } }, body: { appendChild() {}, removeChild() {} } }
+  const controller = new AbortController()
+  let resolve
+  try {
+    const pending = downloadAuthenticatedExport({ get: () => new Promise(yes => { resolve = yes }) }, { download_url: '/api/v1/develop/exports/7/file' }, { signal: controller.signal })
+    controller.abort()
+    resolve(new Blob(['protected synthetic csv'], { type: 'text/csv' }))
+    await assert.rejects(pending, error => error?.name === 'AbortError')
+    assert.deepEqual(clicked, [])
+  } finally { globalThis.window = savedWindow; globalThis.document = savedDocument }
+})

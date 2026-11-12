@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import vm from 'node:vm'
 import { readFile } from 'node:fs/promises'
+import { createLatestRequestScope } from '../../../common-frontend/basic/src/utils/latestRequestScope.mjs'
 import { createLatestRequestCoordinator } from '../../../common-frontend/basic/src/utils/latestRequest.js'
 
 const queryEditor = await readFile(new URL('../src/views/QueryEditor.vue', import.meta.url), 'utf8')
@@ -187,4 +188,71 @@ test('an abandoned high-risk confirmation cannot submit an execution after conte
   confirm()
   await old
   assert.deepEqual(h.calls, [])
+})
+
+
+function exportHarness(api = {}) {
+  const calls = [], notices = []
+  const ref = value => ({ value })
+  const state = {
+    executionResult: ref({ execution_id: 'old-query' }), resultViewMode: ref('table'),
+    plaintextRefresh: { stop() {} }, fullExportDialogVisible: ref(true), fullExportFileName: ref('protected.csv'),
+    fullExportSubmitting: ref(false), fullExportAbortController: null, fullExportRequests: createLatestRequestScope(),
+    AbortController, announcement: ref(''), t: key => key, client: {},
+    createQueryExport: async () => ({ id: 1 }),
+    getQueryExport: async () => ({}),
+    waitForExportSession: async () => { calls.push('poll'); return { id: 1 } },
+    downloadAuthenticatedExport: async () => { calls.push('download') },
+    ElMessage: { success: value => notices.push(value), error: value => notices.push(value) }, ...api
+  }
+  const method = queryEditor.slice(queryEditor.indexOf('const clearResult ='), queryEditor.indexOf('const queryWarningMessage ='))
+  const actions = vm.runInContext(`${method}\n({submitFullExport, clearResult})`, vm.createContext(state))
+  return { state, calls, notices, ...actions }
+}
+
+for (const outcome of ['success', 'failure']) test(`clearing a query discards a late export creation ${outcome}`, async () => {
+  let resolve, reject
+  const h = exportHarness({ createQueryExport: () => new Promise((yes, no) => { resolve = yes; reject = no }) })
+  const old = h.submitFullExport({ format: 'csv', fileName: 'old.csv' })
+  h.clearResult()
+  assert.equal(h.state.fullExportSubmitting.value, false)
+  assert.equal(h.state.fullExportDialogVisible.value, false)
+  h.state.announcement.value = 'current protection refusal'
+  if (outcome === 'success') resolve({ id: 1 })
+  else reject(new Error('obsolete protection refusal'))
+  await old
+  assert.deepEqual(h.calls, [])
+  assert.deepEqual(h.notices, [])
+  assert.equal(h.state.announcement.value, 'current protection refusal')
+})
+
+test('old export finally cannot clear the replacement export loading state', async () => {
+  const resolvers = []
+  const h = exportHarness({ createQueryExport: () => new Promise(resolve => resolvers.push(resolve)) })
+  const old = h.submitFullExport({ format: 'csv', fileName: 'old.csv' })
+  h.clearResult()
+  h.state.executionResult.value = { execution_id: 'new-query' }
+  const current = h.submitFullExport({ format: 'csv', fileName: 'new.csv' })
+  assert.equal(resolvers.length, 2)
+  resolvers[0]({ id: 1 })
+  await old
+  assert.equal(h.state.fullExportSubmitting.value, true)
+  assert.deepEqual(h.calls, [])
+  resolvers[1]({ id: 2 })
+  await current
+  assert.equal(h.state.fullExportSubmitting.value, false)
+  assert.deepEqual(h.calls, ['poll', 'download'])
+})
+
+test('disposed export observation ignores an in-flight creation receipt', async () => {
+  let resolve
+  const h = exportHarness({ createQueryExport: () => new Promise(yes => { resolve = yes }) })
+  const old = h.submitFullExport({ format: 'csv', fileName: 'old.csv' })
+  h.state.fullExportRequests.dispose()
+  h.state.fullExportAbortController?.abort()
+  h.state.fullExportAbortController = null
+  resolve({ id: 1 })
+  await old
+  assert.deepEqual(h.calls, [])
+  assert.deepEqual(h.notices, [])
 })

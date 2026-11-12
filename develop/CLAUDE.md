@@ -581,3 +581,10 @@ createQueryPlaintextRefresh原来复用一个计时器：5秒复核开始后等�
 正式 Vue 同组件任务切换重现旧执行仍锁住新任务；隔离最终同一 4 项单元断言回放旧提交函数全部失败，分别为旧预检拒绝、旧结果读取拒绝、旧创建回执和过时高风险确认。修正沿用 executionRequestSequence：任务路由切换清除旧结果、原值复核与加载状态，确认结束、创建回执及外层失败分别验证归属。不取消已提交后台执行、不放开执行中的引擎下拉切换、不修改后端或授权；产品行为见[SQL 任务说明](frontend/docs/SQL任务功能说明.md#3-查看结果与导出)。
 
 定向 4 项单元、中英文三边界共 6 项受控浏览器通过；首次浏览器夹具混算自动语法诊断与手动执行预检，3 过 3 失败，修正为显式等待两次任务诊断后再点击执行，原失败保留。完整 make test-develop-frontend 实际退出 0：test:workflow 链、296 项浏览器及构建通过；make test-frontend-ci-registration 的 27 项及 21 个前端登记通过。以上是 T1／受控 T3，不是真实身份、真实授权或 Hosted T4。证据 /tmp/p145-query-submit-stale-{green,browser-green-v2,frontend,registration}.log；最终旧实现红例 /tmp/p145-query-submit-stale-independent/。
+
+
+### 全量导出在途观测失效（2026-11-12）
+
+沿现有页面归属契约，清空／替换结果、任务切换时关闭旧导出弹窗和加载状态，卸载时结束导出观测。复用共享 createLatestRequestScope，创建／轮询／下载传递同一轮 signal，成功、失败及 finally 写回前校验 ticket；旧创建回执不继续轮询，旧 finally 不清除新导出的加载状态。共享导出工具在轮询返回及 Blob 保存前复核取消信号，传输忽略取消也不能交付迟到成功。不取消或删除后台会话，不改服务端保护与授权。
+
+最终同一 16 项断言隔离回放旧代码 10 过 6 失败，修后 16 通过；中英文 8 项受控浏览器通过：三阶段任务切换、创建期间退出，以及新任务成功下载恢复。首次浏览器夹具未处理草稿离开确认、退出后仍查已卸载状态节点，原失败分别保留，均不计产品红例或通过。完整 make test-develop-frontend 实际退出 0：test:workflow 链、304 项浏览器及构建通过；共享 make test-common-frontend 378 项通过；Manager 消费方标准门禁 414 项单元、358 项浏览器及构建通过；前端 CI 登记 27 项／21 个前端通过。证据 /tmp/p145-export-observation-{red,green,browser-green-v3,common,develop,manager,registration}.log；隔离旧实现 /tmp/p145-export-observation-independent/。本轮是 T0／T1／受控 T3，没有真实身份 HTTP 或新增 Hosted T4。

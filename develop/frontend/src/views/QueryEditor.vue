@@ -791,6 +791,7 @@ import {
   engineSelectionState,
   isEngineSelectable,
   listResourceTreeEngines,
+  createLatestRequestScope,
   downloadAuthenticatedExport,
   parseLocator,
   useResizable,
@@ -955,7 +956,7 @@ const fullExportDialogVisible = ref(false)
 const fullExportFileName = ref('')
 const fullExportSubmitting = ref(false)
 const fullExportFormats = Object.freeze(['csv'])
-let fullExportAbortController = null
+const fullExportRequests = createLatestRequestScope()
 const isCompact = ref(false)
 const announcement = ref('')
 const queryAiOpen = ref(false)
@@ -1804,6 +1805,9 @@ const formatQuery = () => {
 }
 
 const clearResult = () => {
+  fullExportRequests.invalidate()
+  fullExportSubmitting.value = false
+  fullExportDialogVisible.value = false
   plaintextRefresh.stop()
   executionResult.value = null
   resultViewMode.value = 'table'
@@ -1828,34 +1832,37 @@ const submitFullExport = async ({ format: exportFormat, fileName }) => {
   const executionID = executionResult.value?.execution_id
   const normalizedFileName = String(fileName || '').trim()
   if (!executionID || !normalizedFileName || fullExportSubmitting.value) return
+  const ticket = fullExportRequests.invalidate()
   fullExportSubmitting.value = true
-  fullExportAbortController?.abort()
-  fullExportAbortController = new AbortController()
   try {
-    const created = await createQueryExport(executionID, {
-      format: exportFormat,
-      file_name: normalizedFileName
+    await fullExportRequests.request(async ({ signal }) => {
+      const created = await createQueryExport(executionID, {
+        format: exportFormat,
+        file_name: normalizedFileName
+      }, { signal })
+      if (!fullExportRequests.current(ticket)) return
+      if (!created?.id) throw new Error(t('develop.queryResult.exportSessionIdMissing'))
+      fullExportDialogVisible.value = false
+      ElMessage.success(t('develop.queryResult.exportFullSubmitted'))
+      announcement.value = t('develop.queryResult.exportFullSubmitted')
+      const ready = await waitForExportSession(id => getQueryExport(id, { signal }), created.id, {
+        signal,
+        failedMessage: t('develop.queryResult.exportFullFailed'),
+        timeoutMessage: t('develop.queryResult.exportTimeout')
+      })
+      if (!fullExportRequests.current(ticket)) return
+      await downloadAuthenticatedExport(client, ready, { signal, failedMessage: t('develop.queryResult.exportFullFailed') })
+      if (!fullExportRequests.current(ticket)) return
+      ElMessage.success(t('develop.queryResult.exportDownloaded'))
+      announcement.value = t('develop.queryResult.exportDownloaded')
     })
-    if (!created?.id) throw new Error(t('develop.queryResult.exportSessionIdMissing'))
-    fullExportDialogVisible.value = false
-    ElMessage.success(t('develop.queryResult.exportFullSubmitted'))
-    announcement.value = t('develop.queryResult.exportFullSubmitted')
-    const ready = await waitForExportSession(getQueryExport, created.id, {
-      signal: fullExportAbortController.signal,
-      failedMessage: t('develop.queryResult.exportFullFailed'),
-      timeoutMessage: t('develop.queryResult.exportTimeout')
-    })
-    await downloadAuthenticatedExport(client, ready, { signal: fullExportAbortController.signal, failedMessage: t('develop.queryResult.exportFullFailed') })
-    ElMessage.success(t('develop.queryResult.exportDownloaded'))
-    announcement.value = t('develop.queryResult.exportDownloaded')
   } catch (error) {
-    if (error?.name === 'AbortError') return
+    if (!fullExportRequests.current(ticket) || error?.name === 'AbortError') return
     const detail = error?.response?.data?.error || error?.response?.data?.details || error?.message || ''
     ElMessage.error(detail || t('develop.queryResult.exportFullFailed'))
     announcement.value = detail || t('develop.queryResult.exportFullFailed')
   } finally {
-    fullExportSubmitting.value = false
-    fullExportAbortController = null
+    if (fullExportRequests.current(ticket)) fullExportSubmitting.value = false
   }
 }
 
@@ -2528,8 +2535,7 @@ watch(queryParameterPanelWidth, width => {
 onBeforeUnmount(() => {
   catalogFactsSequence += 1
   queryReferenceFacts.clear()
-  fullExportAbortController?.abort()
-  fullExportAbortController = null
+  fullExportRequests.dispose()
   executionRequestSequence += 1
   sampleRequests.invalidate()
   catalogEngineRequestSequence += 1

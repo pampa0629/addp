@@ -4,10 +4,10 @@ import client from './client'
 export const createExecution = (payload) => client.post('/develop/executions', payload)
 
 // 基于已完成查询的冻结执行快照创建一次性完整结果导出
-export const createQueryExport = (id, payload) => client.post(`/develop/executions/${id}/exports`, payload)
+export const createQueryExport = (id, payload, config) => client.post(`/develop/executions/${id}/exports`, payload, config)
 
 // 获取一次性查询导出会话状态
-export const getQueryExport = (id) => client.get(`/develop/exports/${id}`)
+export const getQueryExport = (id, config) => client.get(`/develop/exports/${id}`, config)
 
 // 获取执行详情
 export const getExecution = (id) => client.get(`/develop/executions/${id}`)
