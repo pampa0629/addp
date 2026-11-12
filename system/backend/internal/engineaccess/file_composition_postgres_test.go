@@ -112,7 +112,12 @@ func exerciseFileCompositionGrants(t *testing.T, db *gorm.DB, tenantID, adminID 
 						layout = "single"
 						if texture == "B.PNG" {
 							layout = "multi"
-							refs = append(refs, authorizationfacts.FileCompositionRef{Target: targetFor("scene.tif.aux.xml"), Role: "auxiliary_metadata"})
+							refs = append(refs,
+								authorizationfacts.FileCompositionRef{Target: targetFor("scene.tif.aux.xml"), Role: "auxiliary_metadata"},
+								authorizationfacts.FileCompositionRef{Target: targetFor("scene.hdr"), Role: "header"},
+								authorizationfacts.FileCompositionRef{Target: targetFor("scene.tfw"), Role: "world_file"},
+								authorizationfacts.FileCompositionRef{Target: targetFor("scene.tif.msk"), Role: "mask"},
+							)
 						}
 					}
 					composition, err := authorizationfacts.NewScannedFileCompositionBoundary(format, layout, refs)
@@ -324,6 +329,29 @@ func exerciseFileCompositionGrants(t *testing.T, db *gorm.DB, tenantID, adminID 
 				read(currentRequest, true)
 				if format == "tiff" {
 					exerciseManagerFileAuthorization(t, db, service, tenantID, reader, session.AccessToken, actor, engine.ID, format+".file-composition.invalid", current)
+					// A registered optional mask remains part of B's immutable Grant.
+					// A later committed Meta refresh without it is a new composition.
+					withMask := current
+					var refs []authorizationfacts.FileCompositionRef
+					for _, ref := range current.Boundary.FileComposition.Refs {
+						if ref.Role != "mask" {
+							refs = append(refs, ref)
+						}
+					}
+					composition, err := authorizationfacts.NewScannedFileCompositionBoundary("tiff", "multi", refs)
+					if err != nil {
+						t.Fatal(err)
+					}
+					current.Boundary = &authorizationfacts.AuthorizationBoundary{Layout: "multi", FileComposition: composition}
+					hash, err := current.ComputeBoundaryHash()
+					if err != nil {
+						t.Fatal(err)
+					}
+					current.BoundaryHash = &hash
+					read(currentRequest, false)
+					read(SourceReadCheckRequest{Targets: []plugin.EngineCatalogPath{primary}, ExpectedSource: &client.ManagerFileExpectedSource{EngineVersion: "1", FileComposition: *composition}}, false)
+					current = withMask
+					read(currentRequest, true)
 				}
 				read(request, false) // B's active Grant must not authorize A's cached GLB.
 				delegation, err := iam.NewDelegationService(identity, systemauthorization.ToolAuthorizationCatalog{}, iam.DelegationServiceConfig{})

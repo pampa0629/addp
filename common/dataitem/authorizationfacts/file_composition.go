@@ -34,7 +34,7 @@ type FileCompositionBoundary struct {
 	Refs         []FileCompositionRef `json:"refs"`
 }
 
-// Layout is fixed by the admitted format identity, never by reference count.
+// Layout returns TIFF's committed Meta layout; Validate checks its component set.
 // glTF and ENVI keep their multi identities; existing file models stay single.
 func (b *FileCompositionBoundary) Layout() string {
 	if b != nil && b.Format == "tiff" {
@@ -138,6 +138,9 @@ func (b *FileCompositionBoundary) Validate(engineID uint) error {
 	if (b.Format == "tiff" && b.SourceLayout != "single" && b.SourceLayout != "multi") || (b.Format != "tiff" && b.SourceLayout != "") {
 		return errFileComposition
 	}
+	if b.Format == "tiff" && (b.SourceLayout == "single") != (len(b.Refs) == 1) {
+		return errFileComposition
+	}
 	if (b.Format == "jpeg" || b.Format == "geojson") && (len(b.Refs) != 1 || !b.Refs[0].Primary || !b.Refs[0].Required || b.Refs[0].Role != b.PrimaryRole()) {
 		return errFileComposition
 	}
@@ -185,10 +188,15 @@ func (b *FileCompositionBoundary) Validate(engineID uint) error {
 			return errFileComposition
 		}
 		if b.Format == "tiff" {
-			if len(b.Refs) > 2 || len(target.Segments) != len(primary.Segments) ||
-				(ref.Primary && ref.Role != "image") ||
-				(!ref.Primary && (ref.Role != "auxiliary_metadata" || target.StringPath() != primary.StringPath()+".aux.xml")) {
+			if len(target.Segments) != len(primary.Segments) || (ref.Primary && ref.Role != "image") {
 				return errFileComposition
+			}
+			if !ref.Primary {
+				switch ref.Role {
+				case "world_file", "crs", "header", "auxiliary_metadata", "overview", "mask":
+				default:
+					return errFileComposition
+				}
 			}
 		}
 		if b.Format == "envi" {

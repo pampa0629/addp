@@ -75,7 +75,7 @@ func seedFileAuthorizationFacts(t *testing.T, db *gorm.DB, engineID uint, format
 
 func exerciseFileAuthorizationFacts(t *testing.T, db *gorm.DB) {
 	t.Helper()
-	t.Run("single JPEG and embedded GeoTIFF only", func(t *testing.T) {
+	t.Run("JPEG and scanned TIFF composition", func(t *testing.T) {
 		for i, kind := range []string{"jpeg", "tiff"} {
 			item := seedFileAuthorizationFacts(t, db, uint(790+i), kind)
 			name := []string{"photo.jpg", "ortho.tif"}[i]
@@ -108,8 +108,8 @@ func exerciseFileAuthorizationFacts(t *testing.T, db *gorm.DB) {
 					t.Fatal(err)
 				}
 				multi := get()
-				if multi.Boundary == nil || multi.Boundary.FileComposition == nil || multi.Boundary.Layout != "multi" || multi.Boundary.FileComposition.Layout() != "multi" {
-					t.Fatal("lost scanned one-ref TIFF layout")
+				if multi.Boundary != nil && multi.Boundary.FileComposition != nil {
+					t.Fatal("one-ref multi TIFF admitted as content composition")
 				}
 				item.Attributes["item"].(map[string]any)["refs"] = []map[string]any{
 					{"path": item.FullName, "role": "main", "primary": true, "required": true},
@@ -121,8 +121,43 @@ func exerciseFileAuthorizationFacts(t *testing.T, db *gorm.DB) {
 				pam := get()
 				if pam.BasisState != authorizationfacts.AuthorizationBasisComplete || pam.Boundary == nil ||
 					pam.Boundary.Layout != "multi" || len(pam.Boundary.FileComposition.Refs) != 2 ||
-					pam.Boundary.FileComposition.Refs[1].Required || pam.BoundaryHash == nil || *pam.BoundaryHash == *multi.BoundaryHash {
+					pam.Boundary.FileComposition.Refs[1].Required || pam.BoundaryHash == nil || *pam.BoundaryHash == *v.BoundaryHash {
 					t.Fatalf("Meta PAM identity/optional membership lost: %+v", pam)
+				}
+				refs := item.Attributes["item"].(map[string]any)["refs"].([]map[string]any)
+				for _, auxiliary := range []struct{ path, role string }{
+					{"models/ortho.hdr", "header"}, {"models/ortho.tfw", "world_file"},
+					{"models/ortho.prj", "crs"}, {item.FullName + ".ovr", "overview"},
+					{item.FullName + ".msk", "mask"},
+				} {
+					previous := get()
+					refs = append(refs, map[string]any{"path": auxiliary.path, "role": auxiliary.role, "required": false})
+					item.Attributes["item"].(map[string]any)["refs"] = refs
+					if err := db.Save(&item).Error; err != nil {
+						t.Fatal(err)
+					}
+					current := get()
+					if current.BasisState != authorizationfacts.AuthorizationBasisComplete || current.Boundary == nil ||
+						current.Boundary.FileComposition == nil || len(current.Boundary.FileComposition.Refs) != len(refs) ||
+						current.BoundaryHash == nil || *current.BoundaryHash == *previous.BoundaryHash {
+						t.Fatalf("dynamic TIFF member lost: %+v", current)
+					}
+					for _, ref := range current.Boundary.FileComposition.Refs {
+						if !ref.Primary && ref.Required {
+							t.Fatal("optional TIFF member rewritten as required")
+						}
+					}
+				}
+				withMask := get()
+				item.Attributes["item"].(map[string]any)["refs"] = refs[:len(refs)-1]
+				if err := db.Save(&item).Error; err != nil {
+					t.Fatal(err)
+				}
+				withoutMask := get()
+				if withoutMask.Boundary == nil || withoutMask.Boundary.FileComposition == nil ||
+					len(withoutMask.Boundary.FileComposition.Refs) != len(refs)-1 ||
+					withoutMask.BoundaryHash == nil || *withoutMask.BoundaryHash == *withMask.BoundaryHash {
+					t.Fatal("Meta-refreshed mask removal did not change the complete boundary")
 				}
 			}
 			item.Attributes["item"].(map[string]any)["refs"] = []map[string]any{{"path": item.FullName + ".aux.xml", "role": "image", "primary": true, "required": true}}

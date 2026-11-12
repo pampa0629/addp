@@ -48,6 +48,28 @@ func exerciseTIFFCompositionSQL(t *testing.T, db *gorm.DB) {
 			}
 		}
 		check(composition, true)
+		single, err := authorizationfacts.NewScannedFileCompositionBoundary("tiff", "single", []authorizationfacts.FileCompositionRef{
+			{Target: primary, Role: "image", Required: true, Primary: true},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		check(single, true)
+		single.SourceLayout = "multi"
+		check(single, false)
+		for _, ref := range []authorizationfacts.FileCompositionRef{
+			{Target: target("a.hdr"), Role: "header"},
+			{Target: target("a.tfw"), Role: "world_file"},
+			{Target: target("a.prj"), Role: "crs"},
+			{Target: target("a.tif.ovr"), Role: "overview"},
+			{Target: target("a.tif.msk"), Role: "mask"},
+		} {
+			composition, err = authorizationfacts.NewScannedFileCompositionBoundary("tiff", "multi", append(composition.Refs, ref))
+			if err != nil {
+				t.Fatal(err)
+			}
+			check(composition, true)
+		}
 		scope, _ := json.Marshal(execution.ManagerFileReadScope{ConfigDigest: strings.Repeat("a", 64), OwnerTaskID: "1", OwnerTaskVersion: "1", EngineVersion: "1", FileComposition: *composition})
 		var valid bool
 		if err := db.Raw("SELECT system.valid_manager_file_scope(?::jsonb)", string(scope)).Scan(&valid).Error; err != nil || !valid {
@@ -55,9 +77,15 @@ func exerciseTIFFCompositionSQL(t *testing.T, db *gorm.DB) {
 		}
 		for _, mutate := range []func(*authorizationfacts.FileCompositionBoundary){
 			func(b *authorizationfacts.FileCompositionBoundary) { b.Refs[1].Role = "texture" },
-			func(b *authorizationfacts.FileCompositionBoundary) { b.Refs[1].Target = target("b.tif.aux.xml") },
+			func(b *authorizationfacts.FileCompositionBoundary) { b.SourceLayout = "single" },
 			func(b *authorizationfacts.FileCompositionBoundary) { b.Refs[1].Target = target("sub/a.tif.aux.xml") },
-			func(b *authorizationfacts.FileCompositionBoundary) { b.Refs[0].Required = false },
+			func(b *authorizationfacts.FileCompositionBoundary) {
+				for i := range b.Refs {
+					if b.Refs[i].Primary {
+						b.Refs[i].Required = false
+					}
+				}
+			},
 			func(b *authorizationfacts.FileCompositionBoundary) { b.Refs = append(b.Refs, b.Refs[1]) },
 		} {
 			bad := composition.Clone()
