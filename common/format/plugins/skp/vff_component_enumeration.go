@@ -2,6 +2,7 @@ package skp
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/xml"
 	"fmt"
 	"sort"
@@ -12,6 +13,13 @@ type vffComponentEnumerationOption struct {
 	value        vffSKCValue
 	declarations []vffSKCDeclarationWitness
 }
+type vffComponentEnumerationValue struct {
+	raw                                        string
+	value                                      vffSKCValue
+	option                                     int
+	fieldOffset, dictionaryOffset, valueOffset int
+	sha256                                     [32]byte
+}
 type vffComponentEnumerationFact struct {
 	component       int
 	path            vffComponentFieldPath
@@ -21,6 +29,7 @@ type vffComponentEnumerationFact struct {
 	facets          []vffSKCDeclarationWitness
 	metadata        vffComponentFieldMetadata
 	options         []vffComponentEnumerationOption
+	selected        *vffComponentEnumerationValue
 }
 type vffComponentEnumerationFacts struct {
 	schema       *vffComponentSchemaFacts
@@ -63,6 +72,14 @@ func (p *vffComponentStringField) enumerationSet() (map[vffSKCValue][]vffSKCDecl
 // Metadata option sets only. The selected value, complete XML instance and
 // actual SketchUp UI behavior are outside this private declaration proof.
 func readVFFComponentEnumerationMetadata(ctx context.Context, c *vffContainer, schemaName, packageMember, componentType string, paths []vffComponentFieldPath, componentLimits vffClassificationLimits, limits vffSKCBindingLimits) (*vffComponentEnumerationFacts, error) {
+	return readVFFComponentEnumerations(ctx, c, schemaName, packageMember, componentType, paths, componentLimits, limits, false)
+}
+
+func readVFFComponentEnumerationValues(ctx context.Context, c *vffContainer, schemaName, packageMember, componentType string, paths []vffComponentFieldPath, componentLimits vffClassificationLimits, limits vffSKCBindingLimits) (*vffComponentEnumerationFacts, error) {
+	return readVFFComponentEnumerations(ctx, c, schemaName, packageMember, componentType, paths, componentLimits, limits, true)
+}
+
+func readVFFComponentEnumerations(ctx context.Context, c *vffContainer, schemaName, packageMember, componentType string, paths []vffComponentFieldPath, componentLimits vffClassificationLimits, limits vffSKCBindingLimits, readValue bool) (*vffComponentEnumerationFacts, error) {
 	if len(paths) == 0 {
 		return nil, fmt.Errorf("enumeration metadata requires explicit paths")
 	}
@@ -129,7 +146,7 @@ func readVFFComponentEnumerationMetadata(ctx context.Context, c *vffContainer, s
 				return nil, err
 			}
 			fact := vffComponentEnumerationFact{component: component, path: p.field.path, field: p.field.field, typeDeclaration: p.field.declaration, primitive: p.field.profile.primitive, facets: facets, metadata: metadata}
-			used := map[vffSKCValue]bool{}
+			used := map[vffSKCValue]int{}
 			for _, item := range items {
 				value, known, err := p.field.checker.evaluate(p.field.profile, p.field.node, item.raw)
 				if err != nil {
@@ -139,17 +156,37 @@ func readVFFComponentEnumerationMetadata(ctx context.Context, c *vffContainer, s
 					return nil, fmt.Errorf("enumeration option typed value remains unproved")
 				}
 				declarations, exists := p.expected[value]
-				if !exists || used[value] {
+				if !exists || used[value] != 0 {
 					return nil, fmt.Errorf("enumeration option is duplicate or outside the proved set")
 				}
-				used[value] = true
+				used[value] = len(fact.options) + 1
 				fact.options = append(fact.options, vffComponentEnumerationOption{item, value, declarations})
+			}
+
+			if readValue {
+				entry, exists := leaf.entries["value"]
+				if !exists {
+					return nil, fmt.Errorf("enumeration selected value is missing")
+				}
+				raw, err := r.stringValue(entry, 26, false)
+				if err != nil {
+					return nil, err
+				}
+				value, err := p.field.checkedValue(raw)
+				if err != nil {
+					return nil, err
+				}
+				option := used[value]
+				if value.text == "" || option == 0 {
+					return nil, fmt.Errorf("enumeration selected value is empty or outside the proved options")
+				}
+				fact.selected = &vffComponentEnumerationValue{raw, value, option - 1, field.offset, leaf.offset, entry.offset - 6, sha256.Sum256(entry.data)}
 			}
 			for _, entry := range field.entries {
 				r.keep([]vffClassificationRecord{entry})
 			}
 			for key, entry := range leaf.entries {
-				if key != "attribute_type" && key != "is_hidden" && key != "options" {
+				if key != "attribute_type" && key != "is_hidden" && key != "options" && !(readValue && key == "value") {
 					r.keep([]vffClassificationRecord{entry})
 				}
 			}

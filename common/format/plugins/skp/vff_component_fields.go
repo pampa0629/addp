@@ -164,6 +164,34 @@ func (s *vffComponentFieldScope) stringField(path vffComponentFieldPath) (vffCom
 	return vffComponentStringField{field, profile}, nil
 }
 
+// One typed/fixed value evaluation shared by plain and enumeration leaves.
+func (p *vffComponentStringField) checkedValue(raw string) (vffSKCValue, error) {
+	value, known, err := p.checker.evaluate(p.profile, p.node, raw)
+	if err != nil {
+		return vffSKCValue{}, err
+	}
+	if !known {
+		return vffSKCValue{}, fmt.Errorf("component field string value remains unproved")
+	}
+	if fixed, declared := p.node.attrs["fixed"]; declared {
+		constraint, known, err := p.checker.evaluate(p.profile, p.node, fixed)
+		if err != nil {
+			return vffSKCValue{}, err
+		}
+		if !known {
+			return vffSKCValue{}, fmt.Errorf("component field fixed value remains unproved")
+		}
+		equal, err := p.checker.b.equalValue(value, constraint)
+		if err != nil {
+			return vffSKCValue{}, err
+		}
+		if !equal {
+			return vffSKCValue{}, fmt.Errorf("component field value differs from its fixed declaration")
+		}
+	}
+	return value, nil
+}
+
 // Verify only explicit string-valued dictionary paths against their exact
 // declarations. Template metadata and a complete XML instance remain unproved.
 func readVFFComponentFieldValues(ctx context.Context, c *vffContainer, schemaName, packageMember, componentType string, paths []vffComponentFieldPath, componentLimits vffClassificationLimits, limits vffSKCBindingLimits) (*vffComponentFieldFacts, error) {
@@ -236,28 +264,9 @@ func readVFFComponentFieldValues(ctx context.Context, c *vffContainer, schemaNam
 			if err != nil {
 				return nil, err
 			}
-			value, known, err := p.checker.evaluate(p.profile, p.node, raw)
+			value, err := p.checkedValue(raw)
 			if err != nil {
 				return nil, err
-			}
-			if !known {
-				return nil, fmt.Errorf("component field string value remains unproved")
-			}
-			if fixed, declared := p.node.attrs["fixed"]; declared {
-				constraint, known, err := p.checker.evaluate(p.profile, p.node, fixed)
-				if err != nil {
-					return nil, err
-				}
-				if !known {
-					return nil, fmt.Errorf("component field fixed value remains unproved")
-				}
-				equal, err := b.equalValue(value, constraint)
-				if err != nil {
-					return nil, err
-				}
-				if !equal {
-					return nil, fmt.Errorf("component field value differs from its fixed declaration")
-				}
 			}
 			facets, _, err := b.profileFacets(p.profile)
 			if err != nil {
