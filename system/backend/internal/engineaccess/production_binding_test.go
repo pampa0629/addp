@@ -12,6 +12,7 @@ import (
 	"time"
 
 	commonapi "github.com/addp/common/api"
+	"github.com/addp/common/production"
 	"github.com/addp/common/client"
 	"github.com/addp/common/dataitem/authorizationfacts"
 	"github.com/addp/common/dataitem/authorizationfacts/factstest"
@@ -53,7 +54,7 @@ func productionBindingDB(t *testing.T) *gorm.DB {
 }
 
 func productionBindingReceipt(tenant int64, engine uint) client.TransferProductionReceipt {
-	return client.TransferProductionReceipt{SchemaVersion: client.TransferProductionReceiptSchema,
+	return client.TransferProductionReceipt{TargetEngineVersion: 1, SchemaVersion: client.TransferProductionReceiptSchema,
 		TenantID: tenant, ExecutionID: uuid.NewString(), Attempt: 1,
 		Target:      plugin.TabularItemPath(engine, "schema", "a.b", "c"),
 		Preparation: plugin.TableTargetCreated, CommittedAt: time.Now().UTC(),
@@ -62,7 +63,7 @@ func productionBindingReceipt(tenant int64, engine uint) client.TransferProducti
 }
 
 func TestTransferProductionBindingUsesCompleteExactMetaProof(t *testing.T) {
-	for _, scenario := range []string{"complete", "newer_logical_snapshot", "recreated", "reused", "retry", "no_human", "incomplete", "needs_refresh", "unsupported", "dotted_collision", "wrong_fingerprint", "nil_facts", "missing_facts", "offline_facts", "wrong_tenant", "wrong_execution", "invalid_receipt", "nil_receipt", "missing_receipt", "offline_receipt", "other_engine_type", "disabled_engine", "missing_engine", "engine_changed_during_meta", "engine_disabled_during_meta"} {
+	for _, scenario := range []string{"complete", "newer_logical_snapshot", "recreated", "reused", "retry", "no_human", "incomplete", "needs_refresh", "unsupported", "dotted_collision", "wrong_fingerprint", "nil_facts", "missing_facts", "offline_facts", "wrong_tenant", "wrong_execution", "invalid_receipt", "nil_receipt", "missing_receipt", "offline_receipt", "other_engine_type", "disabled_engine", "stale_write_version", "missing_engine", "engine_changed_during_meta", "engine_disabled_during_meta"} {
 		t.Run(scenario, func(t *testing.T) {
 			db := productionBindingDB(t)
 			receipt := productionBindingReceipt(7, 2)
@@ -71,7 +72,10 @@ func TestTransferProductionBindingUsesCompleteExactMetaProof(t *testing.T) {
 			var receiptErr, factsErr, want error
 			wantReceiptCalls, wantFactsCalls := 1, 1
 			switch scenario {
-			case "newer_logical_snapshot":
+			case "stale_write_version":
+ receipt.TargetEngineVersion=2
+ want,wantFactsCalls=errProductionTargetChanged,0
+ case "newer_logical_snapshot":
 				// A later observation of the same logical boundary must not
 				// rewrite the producer's successful commit time or demand a
 				// physical-instance identity absent from the DataItem contract.
@@ -129,7 +133,7 @@ func TestTransferProductionBindingUsesCompleteExactMetaProof(t *testing.T) {
 			executionID := receipt.ExecutionID
 			receiptCalls, factsCalls := 0, 0
 			service := NewService(NewRepository(db), nil).
-				WithTransferProductionReceiptReader(productionReceiptReaderFunc(func(_ context.Context, tenant uint, id string) (*client.TransferProductionReceipt, error) {
+				withTestProductionReader(productionReceiptReaderFunc(func(_ context.Context, tenant uint, id string) (*client.TransferProductionReceipt, error) {
 					receiptCalls++
 					if tenant != 7 || id != executionID {
 						t.Fatal("wrong producer scope")
@@ -167,7 +171,7 @@ func TestTransferProductionBindingUsesCompleteExactMetaProof(t *testing.T) {
 			}))
 			ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 			defer cancel()
-			result, err := service.prepareTransferProduction(ctx, 7, executionID)
+			result, err := service.prepareProduction(ctx, 7, transferProductionRef(executionID))
 			if !errors.Is(err, want) || receiptCalls != wantReceiptCalls || factsCalls != wantFactsCalls {
 				t.Fatalf("error=%v want=%v receipt/facts calls=%d/%d", err, want, receiptCalls, factsCalls)
 			}
@@ -177,19 +181,19 @@ func TestTransferProductionBindingUsesCompleteExactMetaProof(t *testing.T) {
 				}
 				return
 			}
-			if result == nil || result.binding.Validate() != nil || result.binding.ItemFingerprint != facts.ItemFingerprint || result.engineVersion != 1 || result.receipt.Preparation != receipt.Preparation || !result.receipt.CommittedAt.Equal(receipt.CommittedAt) || result.receipt.Attempt != receipt.Attempt || (result.receipt.UserOrigin == nil) != (receipt.UserOrigin == nil) {
+			if result == nil || result.binding.Validate() != nil || result.binding.ItemFingerprint != facts.ItemFingerprint || result.engineVersion != 1 || result.receipt.Objects[0].Created != receipt.CreatedAndCommitted || !result.receipt.CommittedAt.Equal(receipt.CommittedAt) || result.receipt.Attempt != receipt.Attempt || (result.receipt.Origin == nil) != (receipt.UserOrigin == nil) {
 				t.Fatalf("wrong transient evidence: %+v", result)
 			}
 			// Neither reader-owned references nor later fixture mutations may
 			// enlarge the already resolved evidence. This is not cached permission.
 			receipt.Target.Segments[2].Name = "other"
 			receipt.SourceReadSet.Paths[0].Segments[2].Name = "changed"
-			if result.receipt.SourceReadSet.Paths[0].Segments[2].Name != "source" {
+			if result.receipt.Sources.ReadSet.Paths[0].Segments[2].Name != "source" {
 				t.Fatal("actual source evidence aliases the producer response")
 			}
 			if receipt.UserOrigin != nil {
 				receipt.UserOrigin.PrincipalID++
-				if result.receipt.UserOrigin.PrincipalID != 31 {
+				if result.receipt.Origin.PrincipalID != 31 {
 					t.Fatal("human origin aliases the owner response")
 				}
 			}
@@ -199,7 +203,7 @@ func TestTransferProductionBindingUsesCompleteExactMetaProof(t *testing.T) {
 					t.Fatal("retry origin aliases the owner response")
 				}
 			}
-			if result.receipt.Target.Segments[2].Name != "c" || result.binding.NativeTarget.Segments[2].Name != "c" {
+			if result.receipt.Primary.Segments[2].Name != "c" || result.binding.NativeTarget.Segments[2].Name != "c" {
 				t.Fatal("target aliases the owner response")
 			}
 		})
@@ -213,17 +217,17 @@ func TestTransferProductionBindingRefusesInvalidInputsAndAmbientTransaction(t *t
 		calls++
 		return nil, errors.New("must not read remote owner")
 	})
-	service := NewService(NewRepository(db), nil).WithTransferProductionReceiptReader(reader)
+	service := NewService(NewRepository(db), nil).withTestProductionReader(reader)
 	for _, id := range []string{"", uuid.Nil.String(), strings.ToUpper(uuid.NewString()), "../execution", "not-a-uuid"} {
-		if _, err := service.prepareTransferProduction(t.Context(), 7, id); !errors.Is(err, commonapi.ErrBadRequest) {
+		if _, err := service.prepareProduction(t.Context(), 7, transferProductionRef(id)); !errors.Is(err, commonapi.ErrBadRequest) {
 			t.Fatalf("invalid execution accepted: %q %v", id, err)
 		}
 	}
-	if _, err := service.prepareTransferProduction(t.Context(), 0, uuid.NewString()); !errors.Is(err, commonapi.ErrBadRequest) {
+	if _, err := service.prepareProduction(t.Context(), 0, transferProductionRef(uuid.NewString())); !errors.Is(err, commonapi.ErrBadRequest) {
 		t.Fatal(err)
 	}
 	if err := db.Transaction(func(tx *gorm.DB) error {
-		_, err := NewService(NewRepository(tx), nil).WithTransferProductionReceiptReader(reader).prepareTransferProduction(t.Context(), 7, uuid.NewString())
+		_, err := NewService(NewRepository(tx), nil).withTestProductionReader(reader).prepareProduction(t.Context(), 7, transferProductionRef(uuid.NewString()))
 		if !errors.Is(err, errProductionReceiptUnavailable) {
 			t.Fatal("ambient transaction accepted", err)
 		}
@@ -235,7 +239,7 @@ func TestTransferProductionBindingRefusesInvalidInputsAndAmbientTransaction(t *t
 		t.Fatal("invalid invocation contacted producer")
 	}
 	for _, service := range []*Service{nil, NewService(nil, nil), NewService(NewRepository(db), nil)} {
-		if _, err := service.prepareTransferProduction(t.Context(), 7, uuid.NewString()); !errors.Is(err, errProductionReceiptUnavailable) {
+		if _, err := service.prepareProduction(t.Context(), 7, transferProductionRef(uuid.NewString())); !errors.Is(err, errProductionReceiptUnavailable) {
 			t.Fatal("missing dependency accepted", err)
 		}
 	}
@@ -283,17 +287,48 @@ func exerciseTransferProductionClients(t *testing.T, db *gorm.DB, tenant int64, 
 	}))
 	defer meta.Close()
 	service := NewService(NewRepository(db), nil).
-		WithTransferProductionReceiptReader(client.NewTransferClient(producer.URL, tokens)).
+		withTestProductionReader(client.NewTransferClient(producer.URL, tokens)).
 		WithAuthorizationFactsReader(client.NewMetaClient(meta.URL, tokens))
-	if result, err := service.prepareTransferProduction(t.Context(), tenant, receipt.ExecutionID); result != nil || !errors.Is(err, errProductionTargetChanged) || producerCalls.Load() != 1 || metaCalls.Load() != 1 {
+	if result, err := service.prepareProduction(t.Context(), tenant, transferProductionRef(receipt.ExecutionID)); result != nil || !errors.Is(err, errProductionTargetChanged) || producerCalls.Load() != 1 || metaCalls.Load() != 1 {
 		t.Fatalf("changed Engine accepted: result=%+v error=%v calls=%d/%d", result, err, producerCalls.Load(), metaCalls.Load())
 	}
 	changeEngine.Store(false)
-	if result, err := service.prepareTransferProduction(t.Context(), tenant, receipt.ExecutionID); err != nil || result == nil || result.binding.Validate() != nil || result.engineVersion != 2 || producerCalls.Load() != 2 || metaCalls.Load() != 2 {
+	receipt.TargetEngineVersion = 2
+	if result, err := service.prepareProduction(t.Context(), tenant, transferProductionRef(receipt.ExecutionID)); err != nil || result == nil || result.binding.Validate() != nil || result.engineVersion != 2 || producerCalls.Load() != 2 || metaCalls.Load() != 2 {
 		t.Fatalf("complete owner evidence not resolved: %+v %v calls=%d/%d", result, err, producerCalls.Load(), metaCalls.Load())
 	}
 }
 
 func TestTransferProductionBindingThroughSharedClients(t *testing.T) {
 	exerciseTransferProductionClients(t, productionBindingDB(t), 7, 2)
+}
+
+func transferProductionRef(id string) production.Reference {
+	return production.Reference{Owner: "transfer", ExecutionID: id, ResultID: id}
+}
+func (s *Service) withTestProductionReader(reader interface {
+	ReadProductionReceipt(context.Context, uint, string) (*client.TransferProductionReceipt, error)
+}) *Service {
+	if reader == nil {
+		return s.WithProductionRegistry(nil)
+	}
+	registry, err := production.NewRegistry(production.Owner{Module: "transfer", ClientID: "addp-transfer", ReceiptPermission: "transfer.production_receipt.read", ExecutionPermission: "transfer.task.execute",
+		ReadReceipt: func(ctx context.Context, tenant uint, ref production.Reference) (*production.Receipt, error) {
+			if ref.ResultID != ref.ExecutionID {
+				return nil, production.ErrEvidence
+			}
+			native, err := reader.ReadProductionReceipt(ctx, tenant, ref.ExecutionID)
+			if err != nil {
+				return nil, err
+			}
+			if native == nil || native.Validate() != nil {
+				return nil, production.ErrEvidence
+			}
+			receipt := native.ProductionEvidence()
+			return &receipt, nil
+		}})
+	if err != nil {
+		panic(err)
+	}
+	return s.WithProductionRegistry(registry)
 }

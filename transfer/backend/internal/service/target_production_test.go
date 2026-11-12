@@ -18,7 +18,7 @@ func TestBeginTargetProductionUsesActualCatalogBusinessPath(t *testing.T) {
 	svc := NewExecutionService(db, execution.NewTaskExecutionRepository(db))
 	engine := &ExecutionEngineService{executionService: svc}
 	pipeline := &executor.TableTransferExecutor{TargetNativePreparer: &postgresql.PostgreSQLPlugin{}}
-	target := executor.TableTargetPlan{Kind: executor.TableEndpointNative, Path: plugin.TabularItemPath(27, plugin.EngineCatalogTermSchema, "outdoor", "persons")}
+	target := executor.TableTargetPlan{EngineVersion: 1, Kind: executor.TableEndpointNative, Path: plugin.TabularItemPath(27, plugin.EngineCatalogTermSchema, "outdoor", "persons")}
 	if _, _, err := engine.beginTableTargetProduction(t.Context(), &task, &item, uint(item.ID), target, pipeline); err == nil {
 		t.Fatal("production intent admitted without owner lease")
 	}
@@ -64,7 +64,7 @@ func TestProductionEvidenceSurvivesUpdatesAndRetry(t *testing.T) {
 		t.Fatal(err)
 	}
 	locator := "addp://engine/2/path/outdoor/persons?type=table"
-	if err := svc.taskRepo.BeginTargetProduction(t.Context(), lease, locator); err != nil {
+	if err := svc.taskRepo.BeginTargetProduction(t.Context(), lease, locator, 1); err != nil {
 		t.Fatal(err)
 	}
 	if err := svc.taskRepo.RecordTargetPreparation(t.Context(), lease, locator, plugin.TableTargetPreparation{Disposition: plugin.TableTargetRecreated}); err != nil {
@@ -107,7 +107,7 @@ func TestProductionEvidenceSurvivesUpdatesAndRetry(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := svc.taskRepo.BeginTargetProduction(t.Context(), retryLease, locator); err != nil {
+	if err := svc.taskRepo.BeginTargetProduction(t.Context(), retryLease, locator, 1); err != nil {
 		t.Fatal(err)
 	}
 	if err := db.First(&retried, retry.ID).Error; err != nil {

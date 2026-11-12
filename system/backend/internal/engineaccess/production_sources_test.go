@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/addp/common/production"
 	"github.com/addp/common/client"
 	"github.com/addp/common/dataitem/authorizationfacts"
 	"github.com/addp/common/dataitem/authorizationfacts/factstest"
@@ -15,45 +16,44 @@ import (
 )
 
 func TestInitialProductionSourcesRejectUnknownAndPriorOperations(t *testing.T) {
-	for _, scenario := range []string{"complete", "missing", "unproven_commit", "recreated", "reused", "retry", "later_attempt", "no_human", "unknown_sources", "empty_sources", "noncanonical_sources", "self_source", "wrong_target", "database_target", "missing_engine_version"} {
+	for _, scenario := range []string{"complete", "source_free", "missing", "unproven_commit", "recreated", "reused", "retry", "later_attempt", "no_human", "unknown_sources", "empty_sources", "noncanonical_sources", "self_source", "wrong_target", "missing_engine_version"} {
 		t.Run(scenario, func(t *testing.T) {
 			r := productionBindingReceipt(7, 2)
 			r.SourceReadSet, _ = plugin.NewQueryReadSet(plugin.TabularItemPath(2, "schema", "public", "source"))
-			prepared := &preparedTransferProduction{receipt: r, binding: factstest.Binding(r.Target), engineVersion: 1}
+			prepared := &preparedProduction{receipt: r.ProductionEvidence(), binding: factstest.Binding(r.Target), engineVersion: 1}
 			switch scenario {
+			case "source_free":
+				prepared.receipt.Sources = production.SourceEvidence{Kind: production.SourcesNone}
 			case "missing":
 				prepared = nil
 			case "unproven_commit":
-				prepared.receipt.CreatedAndCommitted = false
+				prepared.receipt.Objects[0].Created = false
 			case "recreated":
-				prepared.receipt.Preparation = plugin.TableTargetRecreated
+				prepared.receipt.Objects[0].Created = false
 			case "reused":
-				prepared.receipt.Preparation = plugin.TableTargetReused
+				prepared.receipt.Objects[0].Created = false
 			case "retry":
 				id := uuid.NewString()
 				prepared.receipt.RetryOfExecutionID = &id
 			case "later_attempt":
 				prepared.receipt.Attempt = 2
 			case "no_human":
-				prepared.receipt.UserOrigin = nil
+				prepared.receipt.Origin = nil
 			case "unknown_sources":
-				prepared.receipt.SourceReadSet = nil
+				prepared.receipt.Sources = production.SourceEvidence{Kind: production.SourcesUnknown}
 			case "empty_sources":
-				prepared.receipt.SourceReadSet = &plugin.QueryReadSet{}
+				prepared.receipt.Sources.ReadSet = &plugin.QueryReadSet{}
 			case "noncanonical_sources":
-				prepared.receipt.SourceReadSet.Paths = append(prepared.receipt.SourceReadSet.Paths, prepared.receipt.SourceReadSet.Paths[0])
+				prepared.receipt.Sources.ReadSet.Paths = append(prepared.receipt.Sources.ReadSet.Paths, prepared.receipt.Sources.ReadSet.Paths[0])
 			case "self_source":
-				prepared.receipt.SourceReadSet, _ = plugin.NewQueryReadSet(r.Target)
+				prepared.receipt.Sources.ReadSet, _ = plugin.NewQueryReadSet(r.Target)
 			case "wrong_target":
 				prepared.binding = factstest.Binding(plugin.TabularItemPath(2, "schema", "public", "other"))
-			case "database_target":
-				prepared.receipt.Target = plugin.TabularItemPath(2, "database", "public", "other")
-				prepared.binding = factstest.Binding(prepared.receipt.Target)
 			case "missing_engine_version":
 				prepared.engineVersion = 0
 			}
 			request, err := initialProductionSources(prepared)
-			if scenario != "complete" {
+			if scenario != "complete" && scenario != "source_free" {
 				if !errors.Is(err, errInitialProductionEvidence) || len(request.Targets) != 0 {
 					t.Fatal("ineligible producer facts yielded a source request", request, err)
 				}
@@ -61,6 +61,12 @@ func TestInitialProductionSourcesRejectUnknownAndPriorOperations(t *testing.T) {
 			}
 			if err != nil || request.Source.PrincipalID != 31 || request.Source.MembershipID != 41 || request.Source.AuthorizationVersion != 5 || request.TenantID != 7 {
 				t.Fatal("trusted source identity lost", request, err)
+			}
+			if scenario == "source_free" {
+				if len(request.Targets) != 0 {
+					t.Fatal("source-free evidence fabricated data reads")
+				}
+				return
 			}
 			request.Targets[0].Segments[2].Name = "changed"
 			if r.SourceReadSet.Paths[0].Segments[2].Name != "source" {
@@ -91,7 +97,7 @@ func TestInitialProductionPreparesEveryPGSourceOutsideTransactions(t *testing.T)
 			r.SourceReadSet, _ = plugin.NewQueryReadSet(a, b)
 			factsCalls := 0
 			service := NewService(NewRepository(db), nil).
-				WithTransferProductionReceiptReader(productionReceiptReaderFunc(func(context.Context, uint, string) (*client.TransferProductionReceipt, error) { return &r, nil })).
+				withTestProductionReader(productionReceiptReaderFunc(func(context.Context, uint, string) (*client.TransferProductionReceipt, error) { return &r, nil })).
 				WithAuthorizationFactsReader(bindingFactsReaderFunc(func(_ context.Context, tenant uint, fingerprint string) (*authorizationfacts.AuthorizationFacts, error) {
 					factsCalls++
 					if tenant != 7 {
@@ -131,7 +137,7 @@ func TestInitialProductionPreparesEveryPGSourceOutsideTransactions(t *testing.T)
 			if scenario == "ambient_transaction" {
 				if err := db.Transaction(func(tx *gorm.DB) error {
 					service.repository = NewRepository(tx)
-					if got, err := service.prepareInitialTransferProduction(t.Context(), 7, r.ExecutionID); got != nil || !errors.Is(err, errProductionReceiptUnavailable) {
+					if got, err := service.prepareInitialProduction(t.Context(), 7, transferProductionRef(r.ExecutionID)); got != nil || !errors.Is(err, errProductionReceiptUnavailable) {
 						t.Fatal("cross-owner preparation ran inside transaction", got, err)
 					}
 					return nil
@@ -140,7 +146,7 @@ func TestInitialProductionPreparesEveryPGSourceOutsideTransactions(t *testing.T)
 				}
 				return
 			}
-			got, err := service.prepareInitialTransferProduction(t.Context(), 7, r.ExecutionID)
+			got, err := service.prepareInitialProduction(t.Context(), 7, transferProductionRef(r.ExecutionID))
 			if scenario != "complete" {
 				want := ErrAuthorizationBoundaryChanged
 				if scenario == "unsupported_source" || strings.HasSuffix(scenario, "changed") {

@@ -87,11 +87,11 @@ func exerciseInitialProductionSources(t *testing.T, db *gorm.DB, acceptor *Servi
 		}
 		setOrigin()
 		productionService := NewService(repo, nil).
-			WithTransferProductionReceiptReader(productionReceiptReaderFunc(func(context.Context, uint, string) (*client.TransferProductionReceipt, error) { return &receipt, nil })).
+			withTestProductionReader(productionReceiptReaderFunc(func(context.Context, uint, string) (*client.TransferProductionReceipt, error) { return &receipt, nil })).
 			WithAuthorizationFactsReader(testMetaFacts{paths: []engineplugin.EngineCatalogPath{base.Path, target}})
 		prepare := func() *preparedInitialProduction {
 			t.Helper()
-			prepared, err := productionService.prepareInitialTransferProduction(ctx, runtime.TenantID, receipt.ExecutionID)
+			prepared, err := productionService.prepareInitialProduction(ctx, runtime.TenantID, transferProductionRef(receipt.ExecutionID))
 			if err != nil {
 				t.Fatal(err)
 			}

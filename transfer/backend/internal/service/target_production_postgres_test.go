@@ -74,7 +74,7 @@ func TestIntegrationPostgresProductionMetadataSerialization(t *testing.T) {
 	ctx, cancel := context.WithTimeout(execution.ContextWithLease(t.Context(), lease), 10*time.Second)
 	defer cancel()
 	locator := "addp://engine/2/path/outdoor/persons?type=table"
-	if err := repository.NewTaskRepository(db).BeginTargetProduction(ctx, lease, locator); err != nil {
+	if err := repository.NewTaskRepository(db).BeginTargetProduction(ctx, lease, locator, 1); err != nil {
 		t.Fatal(err)
 	}
 	svc := NewExecutionService(waitingDB, execution.NewTaskExecutionRepository(waitingDB))

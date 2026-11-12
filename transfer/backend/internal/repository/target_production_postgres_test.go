@@ -71,7 +71,7 @@ func TestIntegrationPostgresTargetProductionReceipts(t *testing.T) {
 			go func() {
 				ready.Done()
 				<-start
-				results <- NewTaskRepository(db).BeginTargetProduction(t.Context(), lease, productionTestLocator)
+				results <- NewTaskRepository(db).BeginTargetProduction(t.Context(), lease, productionTestLocator, 1)
 			}()
 		}
 		ready.Wait()
@@ -104,7 +104,7 @@ func TestIntegrationPostgresTargetProductionReceipts(t *testing.T) {
 	t.Run("committed actual sources remain immutable across repository recovery", func(t *testing.T) {
 		item, lease := fixture(t)
 		repo := NewTaskRepository(db)
-		if err := repo.BeginTargetProduction(t.Context(), lease, productionTestLocator); err != nil {
+		if err := repo.BeginTargetProduction(t.Context(), lease, productionTestLocator, 1); err != nil {
 			t.Fatal(err)
 		}
 		if err := repo.RecordTargetPreparation(t.Context(), lease, productionTestLocator, plugin.TableTargetPreparation{Disposition: plugin.TableTargetCreated}); err != nil {
@@ -131,7 +131,7 @@ func TestIntegrationPostgresTargetProductionReceipts(t *testing.T) {
 	t.Run("new attempt cannot reset a crashed original", func(t *testing.T) {
 		item, lease := fixture(t)
 		repo := NewTaskRepository(db)
-		if err := repo.BeginTargetProduction(t.Context(), lease, productionTestLocator); err != nil {
+		if err := repo.BeginTargetProduction(t.Context(), lease, productionTestLocator, 1); err != nil {
 			t.Fatal(err)
 		}
 		newLease := lease
@@ -141,7 +141,7 @@ func TestIntegrationPostgresTargetProductionReceipts(t *testing.T) {
 		if err := db.Model(&item).Updates(map[string]interface{}{"attempt": newLease.Attempt, "lease_token": newLease.Token, "lease_owner": newLease.Owner}).Error; err != nil {
 			t.Fatal(err)
 		}
-		if err := repo.BeginTargetProduction(t.Context(), newLease, productionTestLocator); err == nil {
+		if err := repo.BeginTargetProduction(t.Context(), newLease, productionTestLocator, 1); err == nil {
 			t.Fatal("new attempt erased original intent")
 		}
 		if err := repo.RecordTargetPreparation(t.Context(), newLease, productionTestLocator, plugin.TableTargetPreparation{Disposition: plugin.TableTargetCreated}); err == nil {
@@ -157,7 +157,7 @@ func TestIntegrationPostgresTargetProductionReceipts(t *testing.T) {
 	})
 	t.Run("lease expires while waiting for row lock", func(t *testing.T) {
 		item, lease := fixture(t)
-		if err := NewTaskRepository(db).BeginTargetProduction(t.Context(), lease, productionTestLocator); err != nil {
+		if err := NewTaskRepository(db).BeginTargetProduction(t.Context(), lease, productionTestLocator, 1); err != nil {
 			t.Fatal(err)
 		}
 		waitingDB := open()

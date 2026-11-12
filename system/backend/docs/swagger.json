@@ -11620,22 +11620,36 @@
                 ]
             }
         },
-        "/runtime/initial_production_grants/transfer/{execution_id}": {
+        "/runtime/initial_production_grants/{producer_owner}/{execution_id}/{result_id}": {
             "get": {
                 "security": [
                     {
                         "BearerAuth": []
                     }
                 ],
-                "description": "仅固定 addp-transfer 当前租户机器；只读、不依赖 Meta 或原人类当前资格，不签发或撤销。found=false 仅表示尚无终态，不等于拒绝或允许 | Fixed current Tenant addp-transfer only; read-only, independent of Meta and historical human qualification; no issuance or withdrawal. found=false means no terminal result, never denial or Allow",
+                "description": "仅已注册生产模块对应的当前租户机器；只读、不依赖 Meta 或原人类当前资格，不签发或撤销。found=false 仅表示尚无终态，不等于拒绝或允许 | Registered producer Tenant Service only; read-only, independent of Meta and historical human qualification; no issuance or withdrawal. found=false means no terminal result, never denial or Allow",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
                     "源授权办理 | Source Access Fulfillment"
                 ],
-                "summary": "核清 PG 原产出的初始授权终态 | Resolve initial authorization history for original PG production",
+                "summary": "核清原独立成果的初始授权终态 | Resolve initial authorization history for original committed production",
                 "parameters": [
+                    {
+                        "type": "string",
+                        "description": "已注册生产模块 | Registered production owner",
+                        "name": "producer_owner",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "原独立成果 UUID | Original result UUID",
+                        "name": "result_id",
+                        "in": "path",
+                        "required": true
+                    },
                     {
                         "type": "string",
                         "description": "原执行 UUID | Original execution UUID",
@@ -11687,15 +11701,29 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "仅固定 addp-transfer 当前租户机器；无请求体，按原执行反查证据。返回不可变签发或拒绝终态；暂时故障不生成终态。同执行重试不续期或恢复撤权 | Fixed current Tenant addp-transfer only; no request body, evidence is resolved by original execution. Returns immutable issued or denied history; temporary failures create no terminal outcome. Replay never renews expiry or revives a revoked Grant",
+                "description": "仅已注册生产模块对应的当前租户机器；无请求体，按原执行反查证据。返回不可变签发或拒绝终态；暂时故障不生成终态。同执行重试不续期或恢复撤权 | Registered producer Tenant Service only; no request body, evidence is resolved by original execution. Returns immutable issued or denied history; temporary failures create no terminal outcome. Replay never renews expiry or revives a revoked Grant",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
                     "源授权办理 | Source Access Fulfillment"
                 ],
-                "summary": "续办 PG 产出初始只读授权 | Continue initial read authorization for PG production",
+                "summary": "续办独立成果初始只读授权 | Continue initial read authorization for committed production",
                 "parameters": [
+                    {
+                        "type": "string",
+                        "description": "已注册生产模块 | Registered production owner",
+                        "name": "producer_owner",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "原独立成果 UUID | Original result UUID",
+                        "name": "result_id",
+                        "in": "path",
+                        "required": true
+                    },
                     {
                         "type": "string",
                         "description": "原执行 UUID | Original execution UUID",
@@ -17328,6 +17356,9 @@
                 "recorded_at": {
                     "type": "string"
                 },
+                "result_id": {
+                    "type": "string"
+                },
                 "schema_version": {
                     "type": "string"
                 },
@@ -19872,6 +19903,9 @@
                     "type": "string"
                 },
                 "production_execution_id": {
+                    "type": "string"
+                },
+                "production_result_id": {
                     "type": "string"
                 },
                 "reason": {

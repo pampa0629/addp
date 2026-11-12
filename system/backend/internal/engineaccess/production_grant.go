@@ -8,9 +8,9 @@ import (
 
 	commonapi "github.com/addp/common/api"
 	shared "github.com/addp/common/authorization"
+	"github.com/addp/common/production"
 	"github.com/addp/common/dataitem/authorizationfacts"
 	"github.com/addp/common/engine/plugin"
-	"github.com/addp/common/production"
 	"github.com/addp/system/internal/authorization"
 	"github.com/addp/system/internal/iam"
 	"github.com/google/uuid"
@@ -23,35 +23,16 @@ type ProductionRuntimeActor struct {
 	ClientID string
 }
 
-// Producer bindings are server-owned. Additional owners provide their native
-// evidence adapter here; runtime names never imply automatic registration.
-var productionOwners = func() *production.Registry {
-	registry, err := production.NewRegistry(production.Owner{Module: productionOwner, ClientID: "addp-transfer",
-		ReceiptPermission: "transfer.production_receipt.read", ExecutionPermission: "transfer.task.execute"})
-	if err != nil {
-		panic(err)
-	}
-	return registry
-}()
-
-func (s *Service) withProductionRuntime(ctx context.Context, actor ProductionRuntimeActor, operation func(*Repository, func() error) error, humans ...int64) error {
-	if _, ok := productionOwners.Resolve(productionOwner, actor.ClientID); !ok {
+func (s *Service) withProductionRuntime(ctx context.Context, actor ProductionRuntimeActor, ref production.Reference, operation func(*Repository, func() error) error, humans ...int64) error {
+	if _, ok := s.productionRegistry.Resolve(ref.Owner, actor.ClientID); !ok {
 		return commonapi.ErrForbidden
 	}
 	return s.withSourceRuntime(ctx, actor.Actor, actor.ClientID, authorization.PermissionSystemEngineAccessInitialGrantExecute, operation, humans...)
 }
 
-func productionExecutionID(id string) (uuid.UUID, error) {
-	parsed, err := uuid.Parse(id)
-	if err != nil || parsed == uuid.Nil || parsed.String() != id {
-		return uuid.Nil, commonapi.ErrBadRequest
-	}
-	return parsed, nil
-}
-
 func (r *Repository) productionResult(ctx context.Context, row *initialProductionOutcome) (*shared.InitialProductionResult, error) {
 	result := &shared.InitialProductionResult{SchemaVersion: shared.InitialProductionResultSchema, TenantID: row.TenantID,
-		ProducerOwner: row.ProducerOwner, ExecutionID: row.ExecutionID, Outcome: row.Outcome, RecordedAt: row.RecordedAt}
+		ProducerOwner: row.ProducerOwner, ExecutionID: row.ExecutionID, ResultID: row.ResultID, Outcome: row.Outcome, RecordedAt: row.RecordedAt}
 	if row.Outcome == "issued" {
 		g, err := r.initialProductionGrantHistory(ctx, row)
 		if err != nil {
@@ -69,14 +50,13 @@ func (r *Repository) productionResult(ctx context.Context, row *initialProductio
 
 // History recovery only requalifies the current producer runtime; it must not
 // call Meta, recalculate expiry or require the historical human to remain active.
-func (s *Service) ResolveInitialTransferGrant(ctx context.Context, actor ProductionRuntimeActor, id string) (*shared.InitialProductionLookup, error) {
-	executionID, err := productionExecutionID(id)
-	if err != nil {
-		return nil, err
+func (s *Service) ResolveInitialProductionGrant(ctx context.Context, actor ProductionRuntimeActor, ref production.Reference) (*shared.InitialProductionLookup, error) {
+	if ref.Validate() != nil {
+		return nil, commonapi.ErrBadRequest
 	}
 	result := &shared.InitialProductionLookup{}
-	err = s.withProductionRuntime(ctx, actor, func(tx *Repository, check func() error) error {
-		row, err := tx.findInitialProductionOutcome(ctx, actor.TenantID, executionID)
+	err := s.withProductionRuntime(ctx, actor, ref, func(tx *Repository, check func() error) error {
+		row, err := tx.findInitialProductionOutcome(ctx, actor.TenantID, ref)
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return check()
 		}
@@ -96,19 +76,18 @@ func (s *Service) ResolveInitialTransferGrant(ctx context.Context, actor Product
 	return result, nil
 }
 
-func (s *Service) IssueInitialTransferGrant(ctx context.Context, actor ProductionRuntimeActor, id string) (*shared.InitialProductionResult, error) {
-	executionID, err := productionExecutionID(id)
-	if err != nil {
-		return nil, err
+func (s *Service) IssueInitialProductionGrant(ctx context.Context, actor ProductionRuntimeActor, ref production.Reference) (*shared.InitialProductionResult, error) {
+	if ref.Validate() != nil {
+		return nil, commonapi.ErrBadRequest
 	}
-	prior, err := s.ResolveInitialTransferGrant(ctx, actor, id)
+	prior, err := s.ResolveInitialProductionGrant(ctx, actor, ref)
 	if err != nil {
 		return nil, err
 	}
 	if prior.Found {
 		return prior.Result, nil
 	}
-	prepared, err := s.prepareInitialTransferProduction(ctx, actor.TenantID, id)
+	prepared, err := s.prepareInitialProduction(ctx, actor.TenantID, ref)
 	if err != nil {
 		// Only explicit owner evidence is a permanent refusal. Unknown replies,
 		// dependency failures and missing Meta facts remain pending, never Allow.
@@ -122,10 +101,10 @@ func (s *Service) IssueInitialTransferGrant(ctx context.Context, actor Productio
 		if code == "" {
 			return nil, err
 		}
-		return s.recordInitialProductionDenial(ctx, actor, executionID, code)
+		return s.recordInitialProductionDenial(ctx, actor, ref, code)
 	}
 	var result *shared.InitialProductionResult
-	err = s.withProductionRuntime(ctx, actor, func(tx *Repository, runtimeCheck func() error) error {
+	err = s.withProductionRuntime(ctx, actor, ref, func(tx *Repository, runtimeCheck func() error) error {
 		// The wrapper locked the union of runtime/human principals first, so
 		// role, membership and organization mutations cannot cross issuance.
 		if _, err := tx.lockUserProvenance(ctx, actor.TenantID, prepared.sources.Source); err != nil {
@@ -143,10 +122,10 @@ func (s *Service) IssueInitialTransferGrant(ctx context.Context, actor Productio
 				return err
 			}
 		}
-		if err := tx.lockInitialProduction(ctx, actor.TenantID, executionID); err != nil {
+		if err := tx.lockInitialProduction(ctx, actor.TenantID, ref); err != nil {
 			return err
 		}
-		if row, err := tx.findInitialProductionOutcome(ctx, actor.TenantID, executionID); err == nil {
+		if row, err := tx.findInitialProductionOutcome(ctx, actor.TenantID, ref); err == nil {
 			result, err = tx.productionResult(ctx, row)
 			if err != nil {
 				return err
@@ -161,7 +140,7 @@ func (s *Service) IssueInitialTransferGrant(ctx context.Context, actor Productio
 		observation, err := tx.queryInitialProduction(ctx, prepared)
 		if err != nil {
 			if errors.Is(err, errProductionTargetChanged) {
-				result, err = tx.denyInitialProduction(ctx, actor, executionID, "engine_changed")
+				result, err = tx.denyInitialProduction(ctx, actor, ref, "engine_changed")
 				if err != nil {
 					return err
 				}
@@ -180,7 +159,7 @@ func (s *Service) IssueInitialTransferGrant(ctx context.Context, actor Productio
 			code = "target_history_exists"
 		}
 		if code != "" {
-			result, err = tx.denyInitialProduction(ctx, actor, executionID, code)
+			result, err = tx.denyInitialProduction(ctx, actor, ref, code)
 			if err != nil {
 				return err
 			}
@@ -188,29 +167,30 @@ func (s *Service) IssueInitialTransferGrant(ctx context.Context, actor Productio
 		}
 		r := prepared.production.receipt
 		binding := prepared.production.binding
-		path, err := shared.EncodeSharingTarget(r.Target)
+		path, err := shared.EncodeSharingTarget(r.Primary)
 		if err != nil {
 			return err
 		}
-		requestID := productionGrantCommand(actor.TenantID, executionID)
+		requestID := productionGrantCommand(actor.TenantID, ref)
 		mode := shared.SharingExpiryUntilRevoked
 		if observation.sourceRules.ExpiresAt != nil {
 			mode = shared.SharingExpiryAtTime
 		}
-		owner := productionOwner
-		grant := &sourceGrant{RequestID: requestID, ApprovalMode: productionApprovalMode, TenantID: actor.TenantID, EngineID: int64(r.Target.EngineID),
+		owner := ref.Owner
+		executionID, resultID := uuid.MustParse(ref.ExecutionID), uuid.MustParse(ref.ResultID)
+		grant := &sourceGrant{RequestID: requestID, ApprovalMode: productionApprovalMode, TenantID: actor.TenantID, EngineID: int64(r.Primary.EngineID),
 			CatalogPath: path, ItemFingerprint: binding.ItemFingerprint, BoundaryHash: binding.BoundaryHash, RecipientType: "user", RecipientID: prepared.sources.Source.PrincipalID,
 			Action: "read", ExpiryMode: mode, ExpiresAt: observation.sourceRules.ExpiresAt,
 			OperatorPrincipalID: prepared.sources.Source.PrincipalID, OperatorMembershipID: prepared.sources.Source.MembershipID, OperatorAuthorizationVersion: prepared.sources.Source.AuthorizationVersion,
-			ProducerOwner: &owner, ProductionExecutionID: &executionID, IssuerPrincipalID: &actor.PrincipalID, IssuerMembershipID: &actor.MembershipID}
-		outcome, err := tx.insertInitialProductionOutcome(ctx, actor.Actor, executionID, &requestID, "")
+			ProducerOwner: &owner, ProductionExecutionID: &executionID, ProductionResultID: &resultID, IssuerPrincipalID: &actor.PrincipalID, IssuerMembershipID: &actor.MembershipID}
+		outcome, err := tx.insertInitialProductionOutcome(ctx, actor.Actor, ref, &requestID, "")
 		if err != nil {
 			return err
 		}
 		if err := tx.insertSourceGrant(ctx, grant); err != nil {
 			return err
 		}
-		if err := tx.auditInitialProduction(ctx, actor, executionID, "issued", ""); err != nil {
+		if err := tx.auditInitialProduction(ctx, actor, ref, "issued", ""); err != nil {
 			return err
 		}
 		// Audit and pool/lock waits cannot carry naturally expired sources or
@@ -237,8 +217,8 @@ func (s *Service) IssueInitialTransferGrant(ctx context.Context, actor Productio
 	return result, nil
 }
 
-func (r *Repository) lockInitialProduction(ctx context.Context, tenantID int64, id uuid.UUID) error {
-	return r.db.WithContext(ctx).Exec("SELECT pg_advisory_xact_lock(hashtextextended(?,0))", fmt.Sprintf("initial_production|%d|transfer|%s", tenantID, id)).Error
+func (r *Repository) lockInitialProduction(ctx context.Context, tenantID int64, ref production.Reference) error {
+	return r.db.WithContext(ctx).Exec("SELECT pg_advisory_xact_lock(hashtextextended(?,0))", fmt.Sprintf("initial_production|%d|%s|%s|%s", tenantID, ref.Owner, ref.ExecutionID, ref.ResultID)).Error
 }
 
 func (r *Repository) lockProductionTargets(ctx context.Context, prepared *preparedInitialProduction) error {
@@ -247,7 +227,7 @@ func (r *Repository) lockProductionTargets(ctx context.Context, prepared *prepar
 		key  string
 	}
 	var entries []entry
-	for _, path := range append(prepared.sources.Targets[:len(prepared.sources.Targets):len(prepared.sources.Targets)], prepared.production.receipt.Target) {
+	for _, path := range append(prepared.sources.Targets[:len(prepared.sources.Targets):len(prepared.sources.Targets)], prepared.production.receipt.Primary) {
 		fingerprint, err := authorizationfacts.NativeCandidateFingerprint(path)
 		if err != nil {
 			return err
@@ -267,17 +247,17 @@ func (r *Repository) lockProductionTargets(ctx context.Context, prepared *prepar
 	return nil
 }
 
-func (s *Service) recordInitialProductionDenial(ctx context.Context, actor ProductionRuntimeActor, id uuid.UUID, code string) (*shared.InitialProductionResult, error) {
+func (s *Service) recordInitialProductionDenial(ctx context.Context, actor ProductionRuntimeActor, ref production.Reference, code string) (*shared.InitialProductionResult, error) {
 	var result *shared.InitialProductionResult
-	err := s.withProductionRuntime(ctx, actor, func(tx *Repository, check func() error) error {
-		if err := tx.lockInitialProduction(ctx, actor.TenantID, id); err != nil {
+	err := s.withProductionRuntime(ctx, actor, ref, func(tx *Repository, check func() error) error {
+		if err := tx.lockInitialProduction(ctx, actor.TenantID, ref); err != nil {
 			return err
 		}
-		row, err := tx.findInitialProductionOutcome(ctx, actor.TenantID, id)
+		row, err := tx.findInitialProductionOutcome(ctx, actor.TenantID, ref)
 		if err == nil {
 			result, err = tx.productionResult(ctx, row)
 		} else if errors.Is(err, gorm.ErrRecordNotFound) {
-			result, err = tx.denyInitialProduction(ctx, actor, id, code)
+			result, err = tx.denyInitialProduction(ctx, actor, ref, code)
 		}
 		if err != nil {
 			return err
@@ -287,24 +267,24 @@ func (s *Service) recordInitialProductionDenial(ctx context.Context, actor Produ
 	return result, err
 }
 
-func (r *Repository) denyInitialProduction(ctx context.Context, actor ProductionRuntimeActor, id uuid.UUID, code string) (*shared.InitialProductionResult, error) {
+func (r *Repository) denyInitialProduction(ctx context.Context, actor ProductionRuntimeActor, ref production.Reference, code string) (*shared.InitialProductionResult, error) {
 	if !shared.ValidInitialProductionDenial(code) {
 		return nil, errInitialProductionEvidence
 	}
-	row, err := r.insertInitialProductionOutcome(ctx, actor.Actor, id, nil, code)
+	row, err := r.insertInitialProductionOutcome(ctx, actor.Actor, ref, nil, code)
 	if err != nil {
 		return nil, err
 	}
-	if err := r.auditInitialProduction(ctx, actor, id, "denied", code); err != nil {
+	if err := r.auditInitialProduction(ctx, actor, ref, "denied", code); err != nil {
 		return nil, err
 	}
 	return r.productionResult(ctx, row)
 }
 
-func (r *Repository) auditInitialProduction(ctx context.Context, actor ProductionRuntimeActor, id uuid.UUID, outcome, code string) error {
+func (r *Repository) auditInitialProduction(ctx context.Context, actor ProductionRuntimeActor, ref production.Reference, outcome, code string) error {
 	p, c := iam.PrincipalTypeServicePrincipal, iam.ContextTypeTenant
 	return iam.NewAuditWriter(r.identity()).Write(ctx, iam.AuditEvent{
 		Metadata:  iam.AuditMetadata{PrincipalID: &actor.PrincipalID, PrincipalType: &p, TenantID: &actor.TenantID, ContextType: &c},
 		EventName: "system.engine_access_initial_grant." + outcome, Result: iam.AuditResultSucceeded, RiskLevel: iam.AuditRiskHigh, ModuleName: "system",
-		EntityType: "engine_access_initial_grant", EntityID: id.String(), Details: map[string]any{"producer_owner": productionOwner, "execution_id": id, "outcome": outcome, "denial_code": code}})
+		EntityType: "engine_access_initial_grant", EntityID: ref.ResultID, Details: map[string]any{"producer_owner": ref.Owner, "execution_id": ref.ExecutionID, "result_id": ref.ResultID, "outcome": outcome, "denial_code": code}})
 }

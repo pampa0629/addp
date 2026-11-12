@@ -13,6 +13,7 @@ func TestSystemEngineResolverResolveEngine(t *testing.T) {
 		engines: map[uint]*commonmodels.Engine{
 			7: {
 				ID:               7,
+				Version:          41,
 				EngineType:       "postgresql",
 				ConnectionInfo:   commonmodels.ConnectionInfo{"host": "localhost", "database": "gis"},
 				LifecycleState:   "active",
@@ -25,7 +26,7 @@ func TestSystemEngineResolverResolveEngine(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ResolveEngine failed: %v", err)
 	}
-	if binding.Type != "postgresql" || binding.EngineID != 7 {
+	if binding.Type != "postgresql" || binding.EngineID != 7 || binding.EngineVersion != 41 {
 		t.Fatalf("binding = %#v, want postgresql engine 7", binding)
 	}
 	if binding.ConnInfo["database"] != "gis" {
@@ -84,4 +85,11 @@ type fakeSystemEngineClient struct {
 
 func (c fakeSystemEngineClient) GetEngineForTenant(_ context.Context, _ uint, engineID uint) (*commonmodels.Engine, error) {
 	return c.engines[engineID], nil
+}
+
+func TestAuthorizedEngineBindingPreservesWriteVersion(t *testing.T) {
+	binding, err := EngineBindingFromEngine(&commonmodels.Engine{ID: 7, Version: 53, EngineType: "postgresql"})
+	if err != nil || binding.EngineVersion != 53 {
+		t.Fatalf("engine version lost: %+v %v", binding, err)
+	}
 }

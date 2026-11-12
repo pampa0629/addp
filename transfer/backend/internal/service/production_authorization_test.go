@@ -47,7 +47,7 @@ func initialAuthorizationFixture(t *testing.T, db *gorm.DB) (*ExecutionService, 
 	principal, member, version := int64(31), int64(51), int64(6)
 	item := execution.TaskExecution{TenantID: 710000097, ExecutionID: uuid.NewString(), Module: "transfer", TaskType: "sync", Source: "transfer", TriggerType: "manual", Status: "running", TriggeredBy: &by,
 		ActorPrincipalID: &principal, ActorTenantMembershipID: &member, IssuedAuthorizationVersion: &version, Metadata: commonmodels.JSONMap{}}
-	r := models.TargetProduction{SchemaVersion: models.TargetProductionSchema, TenantID: item.TenantID, ExecutionID: item.ExecutionID, Attempt: 1, TargetLocator: "addp://engine/9/path/public/new_result?type=table", Phase: models.TargetProductionCommitted,
+	r := models.TargetProduction{TargetEngineVersion: 1, SchemaVersion: models.TargetProductionSchema, TenantID: item.TenantID, ExecutionID: item.ExecutionID, Attempt: 1, TargetLocator: "addp://engine/9/path/public/new_result?type=table", Phase: models.TargetProductionCommitted,
 		Preparation: plugin.TableTargetCreated, CreatedAndCommitted: true, StartedAt: now, PreparedAt: &now, CommittedAt: &now}
 	r.SourceReadSet, _ = plugin.NewQueryReadSet(plugin.TabularItemPath(9, "schema", "public", "source"))
 	encoded, err := models.EncodeTargetProduction(r)
@@ -101,7 +101,7 @@ func TestInitialProductionAuthorizationContinuation(t *testing.T) {
 				t.Fatal(err)
 			}
 			var resolves, writes, scans int
-			result := &authorization.InitialProductionResult{SchemaVersion: authorization.InitialProductionResultSchema, TenantID: int64(item.TenantID), ProducerOwner: "transfer", ExecutionID: uuid.MustParse(item.ExecutionID), Outcome: "denied", DenialCode: "source_access_denied", RecordedAt: time.Now().UTC()}
+			result := &authorization.InitialProductionResult{SchemaVersion: authorization.InitialProductionResultSchema, TenantID: int64(item.TenantID), ProducerOwner: "transfer", ExecutionID: uuid.MustParse(item.ExecutionID), ResultID: uuid.MustParse(item.ExecutionID), Outcome: "denied", DenialCode: "source_access_denied", RecordedAt: time.Now().UTC()}
 			if scenario == "issued_history" {
 				result.Outcome = "issued"
 				result.DenialCode = ""

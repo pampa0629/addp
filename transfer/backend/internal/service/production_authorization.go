@@ -5,6 +5,7 @@ import (
 	"errors"
 	"time"
 
+	"github.com/addp/common/production"
 	"github.com/addp/common/authorization"
 	"github.com/addp/common/client"
 	"github.com/addp/common/execution"
@@ -21,10 +22,10 @@ type initialGrantRuntime interface {
 type systemInitialGrantRuntime struct{ client *client.SystemServiceClient }
 
 func (c systemInitialGrantRuntime) resolve(ctx context.Context, tenant uint, id string) (*authorization.InitialProductionLookup, error) {
-	return c.client.WithTenantID(tenant).ResolveInitialTransferGrant(ctx, id)
+	return c.client.WithTenantID(tenant).ResolveInitialProductionGrant(ctx, production.Reference{Owner: "transfer", ExecutionID: id, ResultID: id})
 }
 func (c systemInitialGrantRuntime) issue(ctx context.Context, tenant uint, id string) (*authorization.InitialProductionResult, error) {
-	return c.client.WithTenantID(tenant).IssueInitialTransferGrant(ctx, id)
+	return c.client.WithTenantID(tenant).IssueInitialProductionGrant(ctx, production.Reference{Owner: "transfer", ExecutionID: id, ResultID: id})
 }
 
 type productionBasicScanner interface {

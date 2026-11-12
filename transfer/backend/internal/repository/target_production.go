@@ -11,18 +11,22 @@ import (
 	plugin "github.com/addp/common/engine/plugin"
 	execution "github.com/addp/common/execution"
 	commonmodels "github.com/addp/common/models"
+	"github.com/addp/common/production"
 	"github.com/addp/common/resourcetree"
 	"github.com/addp/transfer/internal/models"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
 
-func (r *TaskRepository) BeginTargetProduction(ctx context.Context, lease execution.Lease, locator string) error {
+func (r *TaskRepository) BeginTargetProduction(ctx context.Context, lease execution.Lease, locator string, engineVersion int64) error {
+	if engineVersion <= 0 {
+		return commonapi.ErrBadRequest
+	}
 	return r.changeTargetProduction(ctx, lease, locator, func(item execution.TaskExecution, now time.Time) (models.TargetProduction, error) {
 		if _, exists := item.Metadata[models.TargetProductionMetadataKey]; exists {
 			return models.TargetProduction{}, fmt.Errorf("%w: target production already started; do not replay target operations", commonapi.ErrConflict)
 		}
-		return models.TargetProduction{SchemaVersion: models.TargetProductionSchema, TenantID: item.TenantID, ExecutionID: item.ExecutionID, Attempt: item.Attempt, RetryOfExecutionID: item.RetryOfExecutionID, TargetLocator: locator, Phase: models.TargetProductionPending, StartedAt: now}, nil
+		return models.TargetProduction{SchemaVersion: models.TargetProductionSchema, TenantID: item.TenantID, ExecutionID: item.ExecutionID, Attempt: item.Attempt, RetryOfExecutionID: item.RetryOfExecutionID, TargetLocator: locator, TargetEngineVersion: engineVersion, Phase: models.TargetProductionPending, StartedAt: now}, nil
 	})
 }
 
@@ -48,7 +52,7 @@ func (r *TaskRepository) RecordTargetPreparation(ctx context.Context, lease exec
 	})
 }
 
-func (r *TaskRepository) RecordTargetCommit(ctx context.Context, lease execution.Lease, locator string, sources *plugin.QueryReadSet, createdAndCommitted bool, imported *execution.ManagerImportReadProof) error {
+func (r *TaskRepository) RecordTargetCommit(ctx context.Context, lease execution.Lease, locator string, sources *plugin.QueryReadSet, createdAndCommitted bool, imported *production.PrivateUploadProof) error {
 	if err := execution.ValidateProductionReadSet(sources); err != nil {
 		return err
 	}

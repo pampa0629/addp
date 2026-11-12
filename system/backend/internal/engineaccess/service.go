@@ -11,6 +11,7 @@ import (
 
 	commonapi "github.com/addp/common/api"
 	authorization "github.com/addp/system/internal/authorization"
+	"github.com/addp/common/production"
 	"github.com/addp/system/internal/iam"
 	"github.com/addp/system/internal/models"
 )
@@ -53,7 +54,7 @@ type Service struct {
 	nodeIdentityPages       NodeIdentityPageReader
 	uploadReceipts          UploadReceiptReader
 	uploadIdentification    UploadIdentificationReader
-	productionReceipts      TransferProductionReceiptReader
+	productionRegistry      *production.Registry
 	metaScanFacts           MetaScanFactsReader
 	executionEngineSnapshot func(*models.Engine) (*models.Engine, error)
 }

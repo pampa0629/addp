@@ -19,7 +19,7 @@ func TestProductionReceiptRequiresOriginalCommittedExecution(t *testing.T) {
 	id, retry := uuid.NewString(), uuid.NewString()
 	by := 31
 	principal, member, version := int64(31), int64(33), int64(5)
-	record := models.TargetProduction{SchemaVersion: models.TargetProductionSchema, TenantID: 7, ExecutionID: id, Attempt: 2, RetryOfExecutionID: &retry, TargetLocator: "addp://engine/2/path/outdoor/persons?type=table", Phase: models.TargetProductionCommitted, Preparation: plugin.TableTargetRecreated, StartedAt: now, PreparedAt: &now, CommittedAt: &now}
+	record := models.TargetProduction{TargetEngineVersion: 1, SchemaVersion: models.TargetProductionSchema, TenantID: 7, ExecutionID: id, Attempt: 2, RetryOfExecutionID: &retry, TargetLocator: "addp://engine/2/path/outdoor/persons?type=table", Phase: models.TargetProductionCommitted, Preparation: plugin.TableTargetRecreated, StartedAt: now, PreparedAt: &now, CommittedAt: &now}
 	record.SourceReadSet, _ = plugin.NewQueryReadSet(plugin.TabularItemPath(3, "schema", "outdoor", "source"))
 	encoded, err := models.EncodeTargetProduction(record)
 	if err != nil {

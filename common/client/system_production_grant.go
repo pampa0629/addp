@@ -5,8 +5,8 @@ import (
 	"errors"
 	"net/http"
 
+	"github.com/addp/common/production"
 	"github.com/addp/common/authorization"
-	"github.com/google/uuid"
 )
 
 func (c *SystemServiceClient) productionGrantHTTP() (tenantHTTPClient, error) {
@@ -16,20 +16,19 @@ func (c *SystemServiceClient) productionGrantHTTP() (tenantHTTPClient, error) {
 	return newTenantHTTPClient(c.baseURL, c.tenantTokens, c.httpClient).withTenantID(*c.tenantID), nil
 }
 
-func productionGrantPath(id string) (string, error) {
-	value, err := uuid.Parse(id)
-	if err != nil || value == uuid.Nil || value.String() != id {
+func productionGrantPath(ref production.Reference) (string, error) {
+	if ref.Validate() != nil {
 		return "", errors.New("canonical production execution UUID required")
 	}
-	return "/api/v1/system/runtime/initial_production_grants/transfer/" + id, nil
+	return "/api/v1/system/runtime/initial_production_grants/" + ref.Owner + "/" + ref.ExecutionID + "/" + ref.ResultID, nil
 }
 
-func (c *SystemServiceClient) ResolveInitialTransferGrant(ctx context.Context, id string) (*authorization.InitialProductionLookup, error) {
+func (c *SystemServiceClient) ResolveInitialProductionGrant(ctx context.Context, ref production.Reference) (*authorization.InitialProductionLookup, error) {
 	httpClient, err := c.productionGrantHTTP()
 	if err != nil {
 		return nil, err
 	}
-	path, err := productionGrantPath(id)
+	path, err := productionGrantPath(ref)
 	if err != nil {
 		return nil, err
 	}
@@ -47,18 +46,18 @@ func (c *SystemServiceClient) ResolveInitialTransferGrant(ctx context.Context, i
 	if err := result.Validate(); err != nil {
 		return nil, err
 	}
-	if result.Found && (result.Result.ExecutionID.String() != id || result.Result.TenantID != int64(*c.tenantID)) {
+	if result.Found && (result.Result.ProducerOwner != ref.Owner || result.Result.ResultID.String() != ref.ResultID || result.Result.ExecutionID.String() != ref.ExecutionID || result.Result.TenantID != int64(*c.tenantID)) {
 		return nil, errors.New("initial production history identity mismatch")
 	}
 	return result, nil
 }
 
-func (c *SystemServiceClient) IssueInitialTransferGrant(ctx context.Context, id string) (*authorization.InitialProductionResult, error) {
+func (c *SystemServiceClient) IssueInitialProductionGrant(ctx context.Context, ref production.Reference) (*authorization.InitialProductionResult, error) {
 	httpClient, err := c.productionGrantHTTP()
 	if err != nil {
 		return nil, err
 	}
-	path, err := productionGrantPath(id)
+	path, err := productionGrantPath(ref)
 	if err != nil {
 		return nil, err
 	}
@@ -69,7 +68,7 @@ func (c *SystemServiceClient) IssueInitialTransferGrant(ctx context.Context, id 
 	if err := result.Validate(); err != nil {
 		return nil, err
 	}
-	if result.ExecutionID.String() != id || result.TenantID != int64(*c.tenantID) {
+	if result.ProducerOwner != ref.Owner || result.ResultID.String() != ref.ResultID || result.ExecutionID.String() != ref.ExecutionID || result.TenantID != int64(*c.tenantID) {
 		return nil, errors.New("initial production issuance identity mismatch")
 	}
 	return &result, nil

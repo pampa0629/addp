@@ -10,12 +10,13 @@ import (
 
 	plugin "github.com/addp/common/engine/plugin"
 	"github.com/addp/common/execution"
+	"github.com/addp/common/production"
 )
 
 const TargetProductionMetadataKey = "target_production"
 
 const (
-	TargetProductionSchema    = "transfer.target-production/v3"
+	TargetProductionSchema    = "transfer.target-production/v4"
 	TargetProductionPending   = "pending"
 	TargetProductionPrepared  = "prepared"
 	TargetProductionCommitted = "committed"
@@ -25,20 +26,21 @@ const (
 // a public execution output. A created preparation alone does not prove an
 // initial business DataItem or a successful execution.
 type TargetProduction struct {
-	SchemaVersion       string                            `json:"schema_version"`
-	TenantID            int                               `json:"tenant_id"`
-	ExecutionID         string                            `json:"execution_id"`
-	Attempt             int                               `json:"attempt"`
-	RetryOfExecutionID  *string                           `json:"retry_of_execution_id,omitempty"`
-	TargetLocator       string                            `json:"target_locator"`
-	Phase               string                            `json:"phase"`
-	Preparation         plugin.TableTargetDisposition     `json:"preparation,omitempty"`
-	StartedAt           time.Time                         `json:"started_at"`
-	PreparedAt          *time.Time                        `json:"prepared_at,omitempty"`
-	CommittedAt         *time.Time                        `json:"committed_at,omitempty"`
-	SourceReadSet       *plugin.QueryReadSet              `json:"source_read_set"`
-	ManagerImport       *execution.ManagerImportReadProof `json:"manager_import,omitempty"`
-	CreatedAndCommitted bool                              `json:"created_and_committed"`
+	TargetEngineVersion int64                          `json:"target_engine_version,string"`
+	SchemaVersion       string                         `json:"schema_version"`
+	TenantID            int                            `json:"tenant_id"`
+	ExecutionID         string                         `json:"execution_id"`
+	Attempt             int                            `json:"attempt"`
+	RetryOfExecutionID  *string                        `json:"retry_of_execution_id,omitempty"`
+	TargetLocator       string                         `json:"target_locator"`
+	Phase               string                         `json:"phase"`
+	Preparation         plugin.TableTargetDisposition  `json:"preparation,omitempty"`
+	StartedAt           time.Time                      `json:"started_at"`
+	PreparedAt          *time.Time                     `json:"prepared_at,omitempty"`
+	CommittedAt         *time.Time                     `json:"committed_at,omitempty"`
+	SourceReadSet       *plugin.QueryReadSet           `json:"source_read_set"`
+	ManagerImport       *production.PrivateUploadProof `json:"manager_import,omitempty"`
+	CreatedAndCommitted bool                           `json:"created_and_committed"`
 }
 
 func DecodeTargetProduction(value interface{}) (TargetProduction, error) {
@@ -55,7 +57,7 @@ func DecodeTargetProduction(value interface{}) (TargetProduction, error) {
 	if decoder.Decode(new(any)) != io.EOF {
 		return result, fmt.Errorf("trailing target production record")
 	}
-	if result.SchemaVersion != TargetProductionSchema || result.TenantID <= 0 || result.ExecutionID == "" || result.Attempt <= 0 || result.TargetLocator == "" || result.StartedAt.IsZero() ||
+	if result.SchemaVersion != TargetProductionSchema || result.TargetEngineVersion <= 0 || result.TenantID <= 0 || result.ExecutionID == "" || result.Attempt <= 0 || result.TargetLocator == "" || result.StartedAt.IsZero() ||
 		(result.RetryOfExecutionID != nil && (*result.RetryOfExecutionID == "" || *result.RetryOfExecutionID == result.ExecutionID)) {
 		return result, fmt.Errorf("incomplete target production identity")
 	}

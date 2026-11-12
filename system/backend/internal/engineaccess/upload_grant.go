@@ -87,8 +87,8 @@ func (s *Service) withUploadRuntime(ctx context.Context, actor UploadRuntimeActo
 // Only the producer's real committed writes and Meta's independently observed
 // first logical boundary can seed the canonical Grant. No caller supplies ACLs.
 func (s *Service) IssueInitialUploadGrant(ctx context.Context, actor UploadRuntimeActor, id, fp string) (*shared.UploadInitialResult, error) {
-	uploadID, err := productionExecutionID(id)
-	if err != nil || !authorizationfacts.ValidItemFingerprint(fp) {
+	uploadID, err := uuid.Parse(id)
+	if err != nil || uploadID==uuid.Nil || uploadID.String()!=id || !authorizationfacts.ValidItemFingerprint(fp) {
 		return nil, commonapi.ErrBadRequest
 	}
 	var result *shared.UploadInitialResult

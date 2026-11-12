@@ -43,7 +43,7 @@ func (s *ExecutionService) ReadProductionReceipt(ctx context.Context, tenantID u
 	if err != nil {
 		return nil, commonapi.ErrConflict
 	}
-	result := &client.TransferProductionReceipt{SchemaVersion: client.TransferProductionReceiptSchema, TenantID: int64(item.TenantID), ExecutionID: item.ExecutionID, Attempt: item.Attempt, RetryOfExecutionID: record.RetryOfExecutionID, Target: path, Preparation: record.Preparation, CommittedAt: *record.CommittedAt}
+	result := &client.TransferProductionReceipt{SchemaVersion: client.TransferProductionReceiptSchema, TargetEngineVersion: record.TargetEngineVersion, TenantID: int64(item.TenantID), ExecutionID: item.ExecutionID, Attempt: item.Attempt, RetryOfExecutionID: record.RetryOfExecutionID, Target: path, Preparation: record.Preparation, CommittedAt: *record.CommittedAt}
 	result.SourceReadSet = record.SourceReadSet.Clone()
 	result.ManagerImport = record.ManagerImport
 	result.CreatedAndCommitted = record.CreatedAndCommitted

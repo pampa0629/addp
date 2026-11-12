@@ -9,6 +9,7 @@ import (
 	"time"
 
 	shared "github.com/addp/common/authorization"
+	"github.com/addp/common/production"
 	"github.com/addp/system/internal/authorization"
 	"github.com/addp/system/internal/engineaccess"
 	"github.com/addp/system/internal/middleware"
@@ -23,16 +24,16 @@ type initialGrantHandlerFixture struct {
 	err   error
 }
 
-func (f *initialGrantHandlerFixture) IssueInitialTransferGrant(_ context.Context, actor engineaccess.ProductionRuntimeActor, id string) (*shared.InitialProductionResult, error) {
+func (f *initialGrantHandlerFixture) IssueInitialProductionGrant(_ context.Context, actor engineaccess.ProductionRuntimeActor, ref production.Reference) (*shared.InitialProductionResult, error) {
 	f.calls++
-	f.actor, f.id = actor, id
+	f.actor, f.id = actor, ref.ResultID
 	return &shared.InitialProductionResult{SchemaVersion: shared.InitialProductionResultSchema, TenantID: actor.TenantID,
-		ProducerOwner: "transfer", ExecutionID: uuid.MustParse(id), Outcome: "denied", RecordedAt: time.Now(), DenialCode: "source_access_denied"}, f.err
+		ProducerOwner: ref.Owner, ExecutionID: uuid.MustParse(ref.ExecutionID), ResultID: uuid.MustParse(ref.ResultID), Outcome: "denied", RecordedAt: time.Now(), DenialCode: "source_access_denied"}, f.err
 }
 
-func (f *initialGrantHandlerFixture) ResolveInitialTransferGrant(_ context.Context, actor engineaccess.ProductionRuntimeActor, id string) (*shared.InitialProductionLookup, error) {
+func (f *initialGrantHandlerFixture) ResolveInitialProductionGrant(_ context.Context, actor engineaccess.ProductionRuntimeActor, ref production.Reference) (*shared.InitialProductionLookup, error) {
 	f.calls++
-	f.actor, f.id = actor, id
+	f.actor, f.id = actor, ref.ResultID
 	return &shared.InitialProductionLookup{}, f.err
 }
 
@@ -56,7 +57,7 @@ func TestInitialProductionGrantRoutesRequireFixedRuntimeAndNoCallerEvidence(t *t
 		t.Fatal(err)
 	}
 	id := uuid.NewString()
-	path := "/api/v1/system/runtime/initial_production_grants/transfer/" + id
+	path := "/api/v1/system/runtime/initial_production_grants/transfer/" + uuid.NewString() + "/" + id
 	request := func(method, url, body string, status int) *httptest.ResponseRecorder {
 		t.Helper()
 		r := httptest.NewRequest(method, url, nil)
@@ -82,6 +83,9 @@ func TestInitialProductionGrantRoutesRequireFixedRuntimeAndNoCallerEvidence(t *t
 		request(method, strings.TrimSuffix(path, id)+"not-a-uuid", "", 400)
 		request(method, strings.TrimSuffix(path, id)+uuid.Nil.String(), "", 400)
 	}
+	request("POST", strings.Replace(path, "/transfer/", "/develop/", 1), "", 403)
+	request("GET", strings.Replace(path, "/transfer/", "/invalid.owner/", 1), "", 400)
+	request("GET", strings.TrimSuffix(path, "/"+id), "", 404)
 	if fixture.calls != 2 {
 		t.Fatal("caller-supplied evidence reached service")
 	}
@@ -100,7 +104,7 @@ func TestInitialProductionGrantDependencyFailureIsSafePendingNotDenial(t *testin
 	fixture := &initialGrantHandlerFixture{err: errors.New("database password=secret dependency unavailable")}
 	h := &EngineAccessInitialGrantHandler{service: fixture}
 	router := gin.New()
-	router.POST("/:execution_id", func(c *gin.Context) {
+	router.POST("/:producer_owner/:execution_id/:result_id", func(c *gin.Context) {
 		ac := testIAMServiceActorContext("tenant", "addp-transfer")
 		// Use the same context adapter as the real authentication middleware.
 		authentication, err := middleware.NewIAMAuthenticationMiddleware(iamActorResolver{authContext: &ac})
@@ -112,7 +116,7 @@ func TestInitialProductionGrantDependencyFailureIsSafePendingNotDenial(t *testin
 			h.Issue(c)
 		}
 	})
-	r := httptest.NewRequest("POST", "/"+uuid.NewString(), nil)
+	r := httptest.NewRequest("POST", "/transfer/"+uuid.NewString()+"/"+uuid.NewString(), nil)
 	r.Header.Set("Authorization", "Bearer fixture")
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, r)

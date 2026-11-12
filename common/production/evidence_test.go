@@ -1,6 +1,7 @@
 package production
 
 import (
+	"context"
 	"testing"
 	"time"
 
@@ -14,7 +15,7 @@ import (
 func committedReceipt(target plugin.EngineCatalogPath) Receipt {
 	id := uuid.NewString()
 	return Receipt{Reference: Reference{Owner: "develop", ExecutionID: id, ResultID: uuid.NewString()},
-		TenantID: 7, Attempt: 1, OperationID: uuid.NewString(), CommittedAt: time.Now().UTC(),
+		TenantID: 7, TargetEngineVersion: 1, Attempt: 1, OperationID: uuid.NewString(), CommittedAt: time.Now().UTC(),
 		Origin:  &UserOrigin{PrincipalID: 31, MembershipID: 41, AuthorizationVersion: 5},
 		Primary: target, Objects: []CommittedObject{{Target: target, Created: true}},
 		Sources: SourceEvidence{Kind: SourcesUnknown}}
@@ -68,7 +69,7 @@ func TestProductionBoundaryRejectsIncompleteAndExistingMembers(t *testing.T) {
 }
 
 func TestSourceFreeEvidenceCannotBeInferredFromAnEmptyReadSet(t *testing.T) {
-	for _, kind := range []string{SourcesUnknown, SourcesNone, SourcesPrivateInput} {
+	for _, kind := range []string{SourcesUnknown, SourcesNone} {
 		if (SourceEvidence{Kind: kind}).Validate() != nil {
 			t.Fatal(kind)
 		}
@@ -122,8 +123,8 @@ func TestFileBoundaryRequiresTheWholeMetaComposition(t *testing.T) {
 }
 
 func TestRegistryIsExplicitAndIndependentOfTaskType(t *testing.T) {
-	owners := []Owner{{Module: "transfer", ClientID: "addp-transfer", ReceiptPermission: "transfer.production_receipt.read", ExecutionPermission: "transfer.task.execute"},
-		{Module: "develop", ClientID: "addp-develop", ReceiptPermission: "develop.production_receipt.read", ExecutionPermission: "develop.task.execute"}}
+	owners := []Owner{{Module: "transfer", ClientID: "addp-transfer", ReceiptPermission: "transfer.production_receipt.read", ReadReceipt: func(context.Context, uint, Reference) (*Receipt, error) { return nil, nil }, ExecutionPermission: "transfer.task.execute"},
+		{Module: "develop", ClientID: "addp-develop", ReceiptPermission: "develop.production_receipt.read", ReadReceipt: func(context.Context, uint, Reference) (*Receipt, error) { return nil, nil }, ExecutionPermission: "develop.task.execute"}}
 	r, err := NewRegistry(owners...)
 	if err != nil {
 		t.Fatal(err)

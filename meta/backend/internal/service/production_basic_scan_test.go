@@ -67,7 +67,7 @@ func testProductionBasicScan(t *testing.T, db *gorm.DB, concurrent bool) {
 	capJSON := commonmodels.JSONString(capabilities)
 	engines := NewEngineService(db, nil)
 	engines.cacheEngine(tenant, &commonmodels.Engine{ID: 9, TenantID: &tenant, EngineType: "postgresql", Version: 3, LifecycleState: "active", Capabilities: &capJSON})
-	r := client.TransferProductionReceipt{SchemaVersion: client.TransferProductionReceiptSchema, TenantID: int64(tenant), ExecutionID: id, Attempt: 1, CommittedAt: time.Now().UTC(), Preparation: plugin.TableTargetCreated, CreatedAndCommitted: true,
+	r := client.TransferProductionReceipt{TargetEngineVersion:1, SchemaVersion: client.TransferProductionReceiptSchema, TenantID: int64(tenant), ExecutionID: id, Attempt: 1, CommittedAt: time.Now().UTC(), Preparation: plugin.TableTargetCreated, CreatedAndCommitted: true,
 		Target: plugin.TabularItemPath(9, "schema", "public", "result.with.dot"), UserOrigin: &client.TransferProductionUserOrigin{PrincipalID: 31, TenantMembershipID: 51, AuthorizationVersion: 6}}
 	svc := NewScanExecutionService(db, nil, engines, nil)
 	svc.WithTransferProductionReceiptReader(productionScanReceiptReader(func(_ context.Context, tid uint, eid string) (*client.TransferProductionReceipt, error) {

@@ -471,19 +471,6 @@ definitions:
       task_type:
         type: string
     type: object
-  execution.ManagerImportReadProof:
-    properties:
-      manifest_sha256:
-        type: string
-      task_id:
-        example: ""
-        type: string
-      upload_id:
-        type: string
-      uploader_id:
-        example: ""
-        type: string
-    type: object
   execution.ReadGrant:
     properties:
       own_ad_hoc:
@@ -2046,7 +2033,7 @@ definitions:
       execution_id:
         type: string
       manager_import:
-        $ref: '#/definitions/execution.ManagerImportReadProof'
+        $ref: '#/definitions/production.PrivateUploadProof'
       preparation:
         $ref: '#/definitions/plugin.TableTargetDisposition'
       retry_of_execution_id:
@@ -2057,6 +2044,9 @@ definitions:
         $ref: '#/definitions/plugin.QueryReadSet'
       target:
         $ref: '#/definitions/plugin.EngineCatalogPath'
+      target_engine_version:
+        example: ""
+        type: string
       tenant_id:
         example: ""
         type: string
@@ -2262,6 +2252,19 @@ definitions:
     - TableTargetCreated
     - TableTargetRecreated
     - TableTargetReused
+  production.PrivateUploadProof:
+    properties:
+      manifest_sha256:
+        type: string
+      task_id:
+        example: ""
+        type: string
+      upload_id:
+        type: string
+      uploader_id:
+        example: ""
+        type: string
+    type: object
   taskprovider.ExecutionContract:
     properties:
       input_defaults:

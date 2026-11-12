@@ -13,7 +13,7 @@ import (
 )
 
 func TestTransferProductionReceiptBoundedServiceClient(t *testing.T) {
-	receipt := TransferProductionReceipt{SchemaVersion: TransferProductionReceiptSchema, TenantID: 7, ExecutionID: uuid.NewString(), Attempt: 1, Target: plugin.TabularItemPath(2, "schema", "outdoor", "persons"), Preparation: plugin.TableTargetCreated, CommittedAt: time.Now().UTC()}
+	receipt := TransferProductionReceipt{TargetEngineVersion: 1, SchemaVersion: TransferProductionReceiptSchema, TenantID: 7, ExecutionID: uuid.NewString(), Attempt: 1, Target: plugin.TabularItemPath(2, "schema", "outdoor", "persons"), Preparation: plugin.TableTargetCreated, CommittedAt: time.Now().UTC()}
 	encoded, _ := json.Marshal(receipt)
 	sources, _ := plugin.NewQueryReadSet(plugin.TabularItemPath(3, "schema", "outdoor", "source"))
 	sourceJSON, _ := json.Marshal(sources)

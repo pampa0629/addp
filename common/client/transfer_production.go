@@ -15,18 +15,19 @@ import (
 // TransferProductionReceipt is owner evidence, never an Allow or an assertion
 // of initial-Grant eligibility. System must independently resolve Meta and IAM.
 type TransferProductionReceipt struct {
-	SchemaVersion       string                            `json:"schema_version"`
-	TenantID            int64                             `json:"tenant_id,string" swaggertype:"string"`
-	ExecutionID         string                            `json:"execution_id"`
-	Attempt             int                               `json:"attempt"`
-	RetryOfExecutionID  *string                           `json:"retry_of_execution_id,omitempty"`
-	Target              plugin.EngineCatalogPath          `json:"target"`
-	Preparation         plugin.TableTargetDisposition     `json:"preparation"`
-	CommittedAt         time.Time                         `json:"committed_at"`
-	UserOrigin          *TransferProductionUserOrigin     `json:"user_origin"`
-	SourceReadSet       *plugin.QueryReadSet              `json:"source_read_set"`
-	ManagerImport       *execution.ManagerImportReadProof `json:"manager_import,omitempty"`
-	CreatedAndCommitted bool                              `json:"created_and_committed"`
+	TargetEngineVersion int64                          `json:"target_engine_version,string" swaggertype:"string"`
+	SchemaVersion       string                         `json:"schema_version"`
+	TenantID            int64                          `json:"tenant_id,string" swaggertype:"string"`
+	ExecutionID         string                         `json:"execution_id"`
+	Attempt             int                            `json:"attempt"`
+	RetryOfExecutionID  *string                        `json:"retry_of_execution_id,omitempty"`
+	Target              plugin.EngineCatalogPath       `json:"target"`
+	Preparation         plugin.TableTargetDisposition  `json:"preparation"`
+	CommittedAt         time.Time                      `json:"committed_at"`
+	UserOrigin          *TransferProductionUserOrigin  `json:"user_origin"`
+	SourceReadSet       *plugin.QueryReadSet           `json:"source_read_set"`
+	ManagerImport       *production.PrivateUploadProof `json:"manager_import,omitempty"`
+	CreatedAndCommitted bool                           `json:"created_and_committed"`
 }
 
 type TransferProductionUserOrigin struct {
@@ -35,7 +36,7 @@ type TransferProductionUserOrigin struct {
 	AuthorizationVersion int64 `json:"authorization_version,string" swaggertype:"string"`
 }
 
-const TransferProductionReceiptSchema = "transfer.production-receipt/v3"
+const TransferProductionReceiptSchema = "transfer.production-receipt/v4"
 
 // ProductionEvidence adapts Transfer's native persisted facts to the shared
 // production contract. The singleton table operation uses its original execution
@@ -46,9 +47,11 @@ func (r TransferProductionReceipt) ProductionEvidence() production.Receipt {
 		sources = production.SourceEvidence{Kind: production.SourcesDataItems, ReadSet: r.SourceReadSet.Clone()}
 	} else if r.ManagerImport != nil {
 		sources.Kind = production.SourcesPrivateInput
+		proof := *r.ManagerImport
+		sources.PrivateUpload = &proof
 	}
 	result := production.Receipt{Reference: production.Reference{Owner: "transfer", ExecutionID: r.ExecutionID, ResultID: r.ExecutionID},
-		TenantID: r.TenantID, Attempt: r.Attempt, OperationID: r.ExecutionID, CommittedAt: r.CommittedAt,
+		TargetEngineVersion: r.TargetEngineVersion, RetryOfExecutionID: r.RetryOfExecutionID, TenantID: r.TenantID, Attempt: r.Attempt, OperationID: r.ExecutionID, CommittedAt: r.CommittedAt,
 		Primary: r.Target, Objects: []production.CommittedObject{{Target: r.Target, Created: r.CreatedAndCommitted}}, Sources: sources}
 	if r.UserOrigin != nil {
 		result.Origin = &production.UserOrigin{PrincipalID: r.UserOrigin.PrincipalID, MembershipID: r.UserOrigin.TenantMembershipID, AuthorizationVersion: r.UserOrigin.AuthorizationVersion}
@@ -57,7 +60,7 @@ func (r TransferProductionReceipt) ProductionEvidence() production.Receipt {
 }
 
 func (r TransferProductionReceipt) Validate() error {
-	if r.SchemaVersion != TransferProductionReceiptSchema || r.TenantID <= 0 || !nonzeroExecutionUUID(r.ExecutionID) || r.Attempt <= 0 || r.CommittedAt.IsZero() {
+	if r.SchemaVersion != TransferProductionReceiptSchema || r.TargetEngineVersion <= 0 || r.TenantID <= 0 || !nonzeroExecutionUUID(r.ExecutionID) || r.Attempt <= 0 || r.CommittedAt.IsZero() {
 		return errors.New("invalid Transfer production receipt identity")
 	}
 	if r.RetryOfExecutionID != nil && (!nonzeroExecutionUUID(*r.RetryOfExecutionID) || *r.RetryOfExecutionID == r.ExecutionID) {
@@ -100,4 +103,18 @@ func (c *TransferClient) ReadProductionReceipt(ctx context.Context, tenantID uin
 		return nil, errors.New("invalid Transfer production receipt response")
 	}
 	return &result, nil
+}
+
+// ReadCommittedProduction adapts the one native Transfer receipt. A table
+// execution has one persisted result, whose identity is its execution UUID.
+func (c *TransferClient) ReadCommittedProduction(ctx context.Context, tenant uint, ref production.Reference) (*production.Receipt, error) {
+	if ref.Validate() != nil || ref.Owner != "transfer" || ref.ResultID != ref.ExecutionID {
+		return nil, production.ErrEvidence
+	}
+	r, err := c.ReadProductionReceipt(ctx, tenant, ref.ExecutionID)
+	if err != nil {
+		return nil, err
+	}
+	receipt := r.ProductionEvidence()
+	return &receipt, nil
 }

@@ -17,12 +17,13 @@ import (
 	engineplugin "github.com/addp/common/engine/plugin"
 	"github.com/addp/common/execution"
 	"github.com/addp/common/format"
+	"github.com/addp/common/production"
 	"github.com/addp/common/resume"
 )
 
 type TablePipelineMetrics struct {
 	SourceReadSet     *engineplugin.QueryReadSet
-	PrivateImport     *execution.ManagerImportReadProof
+	PrivateImport     *production.PrivateUploadProof
 	TargetPreparation engineplugin.TableTargetPreparation
 	// Internal Provider fact, not a public result or persisted Grant receipt.
 	TargetCreatedAndCommitted bool `json:"-"`
@@ -802,7 +803,7 @@ func (s *encodedContentTableSource) Open(ctx context.Context) (TableBatchReader,
 		if err != nil {
 			return nil, fmt.Errorf("open encoded source multi table reader: %w", err)
 		}
-		var proof *execution.ManagerImportReadProof
+		var proof *production.PrivateUploadProof
 		if verified != nil {
 			proof, err = verified.proof()
 			if err != nil {
@@ -932,7 +933,7 @@ func cloneResumeMarker(marker *resume.Marker) *resume.Marker {
 }
 
 type multiTableBatchReader struct {
-	privateImport *execution.ManagerImportReadProof
+	privateImport *production.PrivateUploadProof
 	tableReader   format.TableReader
 	tableInfo     *datatype.TableInfo
 	spatialInfo   *datatype.SpatialInfo

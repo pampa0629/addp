@@ -3839,25 +3839,6 @@
                 }
             }
         },
-        "execution.ManagerImportReadProof": {
-            "type": "object",
-            "properties": {
-                "manifest_sha256": {
-                    "type": "string"
-                },
-                "task_id": {
-                    "type": "string",
-                    "example": ""
-                },
-                "upload_id": {
-                    "type": "string"
-                },
-                "uploader_id": {
-                    "type": "string",
-                    "example": ""
-                }
-            }
-        },
         "execution.ReadGrant": {
             "type": "object",
             "properties": {
@@ -6165,7 +6146,7 @@
                     "type": "string"
                 },
                 "manager_import": {
-                    "$ref": "#/definitions/execution.ManagerImportReadProof"
+                    "$ref": "#/definitions/production.PrivateUploadProof"
                 },
                 "preparation": {
                     "$ref": "#/definitions/plugin.TableTargetDisposition"
@@ -6181,6 +6162,10 @@
                 },
                 "target": {
                     "$ref": "#/definitions/plugin.EngineCatalogPath"
+                },
+                "target_engine_version": {
+                    "type": "string",
+                    "example": ""
                 },
                 "tenant_id": {
                     "type": "string",
@@ -6488,6 +6473,25 @@
                 "TableTargetRecreated",
                 "TableTargetReused"
             ]
+        },
+        "production.PrivateUploadProof": {
+            "type": "object",
+            "properties": {
+                "manifest_sha256": {
+                    "type": "string"
+                },
+                "task_id": {
+                    "type": "string",
+                    "example": ""
+                },
+                "upload_id": {
+                    "type": "string"
+                },
+                "uploader_id": {
+                    "type": "string",
+                    "example": ""
+                }
+            }
         },
         "taskprovider.ExecutionContract": {
             "type": "object",

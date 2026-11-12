@@ -9,6 +9,7 @@ import (
 	plugin "github.com/addp/common/engine/plugin"
 	execution "github.com/addp/common/execution"
 	commonmodels "github.com/addp/common/models"
+	"github.com/addp/common/production"
 	"github.com/addp/transfer/internal/models"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
@@ -56,14 +57,14 @@ func TestTargetProductionDurableLifecycle(t *testing.T) {
 	if err := repo.RecordTargetCommit(ctx, lease, productionTestLocator, nil, false, nil); err == nil {
 		t.Fatal("commit without intent accepted")
 	}
-	if err := repo.BeginTargetProduction(ctx, lease, productionTestLocator); err != nil {
+	if err := repo.BeginTargetProduction(ctx, lease, productionTestLocator, 1); err != nil {
 		t.Fatal(err)
 	}
 	first := readProductionRecord(t, db, item.ID)
 	if first.Phase != models.TargetProductionPending || first.Preparation != "" {
 		t.Fatal("pending inferred creation")
 	}
-	if err := repo.BeginTargetProduction(ctx, lease, productionTestLocator); err == nil {
+	if err := repo.BeginTargetProduction(ctx, lease, productionTestLocator, 1); err == nil {
 		t.Fatal("pending receipt reset to allow replay")
 	}
 	if err := repo.RecordTargetCommit(ctx, lease, productionTestLocator, nil, false, nil); err == nil {
@@ -111,7 +112,7 @@ func TestTargetProductionFreezesActualReadSetWithCommit(t *testing.T) {
 	item, lease := productionExecutionFixture(t, db)
 	repo := NewTaskRepository(db)
 	ctx := t.Context()
-	if err := repo.BeginTargetProduction(ctx, lease, productionTestLocator); err != nil {
+	if err := repo.BeginTargetProduction(ctx, lease, productionTestLocator, 1); err != nil {
 		t.Fatal(err)
 	}
 	if err := repo.RecordTargetPreparation(ctx, lease, productionTestLocator, plugin.TableTargetPreparation{Disposition: plugin.TableTargetCreated}); err != nil {
@@ -157,7 +158,7 @@ func assertCommittedProductionQueues(t *testing.T, db *gorm.DB, item execution.T
 		t.Fatal(err)
 	}
 	repo := NewTaskRepository(db)
-	if err := repo.BeginTargetProduction(t.Context(), lease, productionTestLocator); err != nil {
+	if err := repo.BeginTargetProduction(t.Context(), lease, productionTestLocator, 1); err != nil {
 		t.Fatal(err)
 	}
 	if err := repo.RecordTargetPreparation(t.Context(), lease, productionTestLocator, plugin.TableTargetPreparation{Disposition: plugin.TableTargetCreated}); err != nil {
@@ -202,7 +203,7 @@ func TestTargetProductionCommitEvidenceCannotBeBackfilled(t *testing.T) {
 			db := newTaskRepositoryTestDB(t)
 			item, lease := productionExecutionFixture(t, db)
 			repo := NewTaskRepository(db)
-			if err := repo.BeginTargetProduction(t.Context(), lease, productionTestLocator); err != nil {
+			if err := repo.BeginTargetProduction(t.Context(), lease, productionTestLocator, 1); err != nil {
 				t.Fatal(err)
 			}
 			if err := repo.RecordTargetPreparation(t.Context(), lease, productionTestLocator, plugin.TableTargetPreparation{Disposition: disposition}); err != nil {
@@ -233,7 +234,7 @@ func TestTargetProductionRejectsStaleIdentity(t *testing.T) {
 			db := newTaskRepositoryTestDB(t)
 			item, lease := productionExecutionFixture(t, db)
 			repo := NewTaskRepository(db)
-			if err := repo.BeginTargetProduction(t.Context(), lease, productionTestLocator); err != nil {
+			if err := repo.BeginTargetProduction(t.Context(), lease, productionTestLocator, 1); err != nil {
 				t.Fatal(err)
 			}
 			switch change {
@@ -276,13 +277,13 @@ func TestTargetProductionFreezesPrivateImportProofForItsActorAndTask(t *testing.
 	}
 	repo := NewTaskRepository(db)
 	ctx := t.Context()
-	if err := repo.BeginTargetProduction(ctx, lease, productionTestLocator); err != nil {
+	if err := repo.BeginTargetProduction(ctx, lease, productionTestLocator, 1); err != nil {
 		t.Fatal(err)
 	}
 	if err := repo.RecordTargetPreparation(ctx, lease, productionTestLocator, plugin.TableTargetPreparation{Disposition: plugin.TableTargetCreated}); err != nil {
 		t.Fatal(err)
 	}
-	proof := execution.ManagerImportReadProof{UploadID: uuid.NewString(), UploaderID: 31, TaskID: 43, ManifestSHA256: strings.Repeat("a", 64)}
+	proof := production.PrivateUploadProof{UploadID: uuid.NewString(), UploaderID: 31, TaskID: 43, ManifestSHA256: strings.Repeat("a", 64)}
 	if err := repo.RecordTargetCommit(ctx, lease, productionTestLocator, nil, true, &proof); err == nil {
 		t.Fatal("accepted a proof for another task")
 	}

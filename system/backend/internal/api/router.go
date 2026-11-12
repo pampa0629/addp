@@ -8,6 +8,7 @@ import (
 
 	"github.com/addp/common/logger"
 	i18nmiddleware "github.com/addp/common/middleware/i18n"
+	"github.com/addp/common/production"
 
 	"github.com/addp/common/modulelifecycle"
 	"github.com/addp/system/internal/config"
@@ -177,7 +178,11 @@ func SetupRouter(db *gorm.DB, cfg *config.Config) *gin.Engine {
 		metaBasis = metaClient
 		authorizationFactsService.WithAuthorizationFactsReader(metaFacts).WithDataItemIdentityReader(metaIdentities).WithNodeIdentityPageReader(metaClient)
 		fulfillmentService.WithAuthorizationFactsReader(metaFacts).WithNodeIdentityReader(metaNodes)
-		fulfillmentService.WithTransferProductionReceiptReader(commonClient.NewTransferClient(cfg.TransferServiceURL, tokens))
+		producers, err := production.NewRegistry(production.Owner{Module: "transfer", ClientID: "addp-transfer", ReceiptPermission: "transfer.production_receipt.read", ExecutionPermission: "transfer.task.execute", ReadReceipt: commonClient.NewTransferClient(cfg.TransferServiceURL, tokens).ReadCommittedProduction})
+		if err != nil {
+			panic(err)
+		}
+		fulfillmentService.WithProductionRegistry(producers)
 		fulfillmentService.WithUploadReaders(commonClient.NewManagerUploadClient(cfg.ManagerServiceURL, tokens, nil), metaClient)
 	}
 	if err := fulfillmentService.ConfigureSearchObservation(cfg.EncryptionKey, metaBasis); err != nil {

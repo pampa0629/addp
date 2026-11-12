@@ -9,7 +9,7 @@ import (
 
 func TestDecodeTargetProductionRejectsUnprovenFacts(t *testing.T) {
 	now := time.Now().UTC()
-	valid := TargetProduction{SchemaVersion: TargetProductionSchema, TenantID: 1, ExecutionID: "execution", Attempt: 1, TargetLocator: "addp://engine/2/path/outdoor/persons?type=table", Phase: TargetProductionPending, StartedAt: now}
+	valid := TargetProduction{TargetEngineVersion: 1, SchemaVersion: TargetProductionSchema, TenantID: 1, ExecutionID: "execution", Attempt: 1, TargetLocator: "addp://engine/2/path/outdoor/persons?type=table", Phase: TargetProductionPending, StartedAt: now}
 	for name, change := range map[string]func(*TargetProduction){
 		"unknown schema":            func(r *TargetProduction) { r.SchemaVersion = "other" },
 		"missing tenant":            func(r *TargetProduction) { r.TenantID = 0 },
@@ -69,5 +69,12 @@ func TestDecodeTargetProductionRejectsUnprovenFacts(t *testing.T) {
 	retired.SchemaVersion = "transfer.target-production/v2"
 	if _, err := EncodeTargetProduction(retired); err == nil {
 		t.Fatal("retired production evidence upgraded implicitly")
+	}
+}
+
+func TestTargetProductionRejectsMissingFrozenEngineVersion(t *testing.T) {
+	record := TargetProduction{SchemaVersion: TargetProductionSchema, TenantID: 7, ExecutionID: "original", Attempt: 1, TargetLocator: "addp://engine/2/path/public/result?type=table", Phase: TargetProductionPending, StartedAt: time.Now()}
+	if _, err := DecodeTargetProduction(record); err == nil {
+		t.Fatal("v4 record without actual target engine version accepted")
 	}
 }

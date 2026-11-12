@@ -32,7 +32,7 @@ func (s *ExecutionEngineService) beginTableTargetProduction(ctx context.Context,
 		parts[i] = segment.Name
 	}
 	locator := (&resourcetree.ResourceLocator{EngineID: target.Path.EngineID, Path: parts, Type: resourcetree.TypeTable}).ToURI()
-	if err := s.executionService.taskRepo.BeginTargetProduction(ctx, lease, locator); err != nil {
+	if err := s.executionService.taskRepo.BeginTargetProduction(ctx, lease, locator, target.EngineVersion); err != nil {
 		return "", empty, fmt.Errorf("persist target production intent: %w", err)
 	}
 	return locator, lease, nil

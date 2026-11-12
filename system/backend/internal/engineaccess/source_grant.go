@@ -51,6 +51,7 @@ type sourceGrant struct {
 	Reason                       *string
 	ProducerOwner                *string
 	UploadID                     *uuid.UUID `gorm:"type:uuid"`
+	ProductionResultID           *uuid.UUID `gorm:"type:uuid"`
 	ProductionExecutionID        *uuid.UUID `gorm:"type:uuid"`
 	IssuerPrincipalID            *int64
 	IssuerMembershipID           *int64

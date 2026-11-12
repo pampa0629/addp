@@ -113,7 +113,7 @@ func testProductionReceiptRead(t *testing.T, db *gorm.DB) {
 	now := time.Now().UTC()
 	for index, id := range ids {
 		tenant := 7 + index
-		record := models.TargetProduction{SchemaVersion: models.TargetProductionSchema, TenantID: tenant, ExecutionID: id, Attempt: 1, TargetLocator: "addp://engine/2/path/outdoor/persons?type=table", Phase: models.TargetProductionCommitted, Preparation: plugin.TableTargetCreated, StartedAt: now, PreparedAt: &now, CommittedAt: &now}
+		record := models.TargetProduction{TargetEngineVersion: 1, SchemaVersion: models.TargetProductionSchema, TenantID: tenant, ExecutionID: id, Attempt: 1, TargetLocator: "addp://engine/2/path/outdoor/persons?type=table", Phase: models.TargetProductionCommitted, Preparation: plugin.TableTargetCreated, StartedAt: now, PreparedAt: &now, CommittedAt: &now}
 		record.SourceReadSet, _ = plugin.NewQueryReadSet(plugin.TabularItemPath(uint(9007199254740993), "schema", "outdoor", "source"))
 		record.CreatedAndCommitted = true
 		encoded, err := models.EncodeTargetProduction(record)

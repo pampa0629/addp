@@ -124,11 +124,12 @@ type FieldMappingSpec struct {
 }
 
 type EngineBinding struct {
-	Type         string
-	ConnInfo     engineplugin.ConnectionInfo
-	EngineID     uint
-	PluginType   string
-	Capabilities *engineplugin.EngineCapabilities
+	EngineVersion int64
+	Type          string
+	ConnInfo      engineplugin.ConnectionInfo
+	EngineID      uint
+	PluginType    string
+	Capabilities  *engineplugin.EngineCapabilities
 }
 
 type EngineResolver interface {
@@ -1327,6 +1328,7 @@ func buildTableTargetPlan(endpoint EndpointSpec, engine EngineBinding) (executor
 		return executor.TableTargetPlan{
 			Kind:              executor.TableEndpointNative,
 			ConnInfo:          engine.ConnInfo,
+			EngineVersion:     engine.EngineVersion,
 			Path:              targetPath,
 			DeleteBeforeWrite: applyMode(endpoint.Policy) == applyModeReplace && !endpoint.ManagedExisting,
 			ManagedExisting:   endpoint.ManagedExisting,
@@ -1351,6 +1353,7 @@ func buildTableTargetPlan(endpoint EndpointSpec, engine EngineBinding) (executor
 		return executor.TableTargetPlan{
 			Kind:              executor.TableEndpointEncoded,
 			ConnInfo:          engine.ConnInfo,
+			EngineVersion:     engine.EngineVersion,
 			Path:              targetPath,
 			DeleteBeforeWrite: applyMode(endpoint.Policy) == applyModeReplace,
 			ContentWrite:      engineplugin.WriteOptions{Overwrite: false},

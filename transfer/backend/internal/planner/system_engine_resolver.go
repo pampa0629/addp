@@ -74,10 +74,11 @@ func (r *SystemEngineResolver) ResolveEngine(ref EngineRef) (EngineBinding, erro
 		return EngineBinding{}, fmt.Errorf("parse engine %d capabilities: %w", engine.ID, err)
 	}
 	return EngineBinding{
-		Type:         engineType,
-		ConnInfo:     toEnginePluginConnInfo(engine.ConnectionInfo),
-		EngineID:     engine.ID,
-		Capabilities: capabilities,
+		Type:          engineType,
+		ConnInfo:      toEnginePluginConnInfo(engine.ConnectionInfo),
+		EngineID:      engine.ID,
+		EngineVersion: engine.Version,
+		Capabilities:  capabilities,
 	}, nil
 }
 
@@ -110,6 +111,6 @@ func EngineBindingFromEngine(engine *commonmodels.Engine) (EngineBinding, error)
 	}
 	return EngineBinding{
 		Type: strings.TrimSpace(engine.EngineType), ConnInfo: toEnginePluginConnInfo(engine.ConnectionInfo),
-		EngineID: engine.ID, Capabilities: capabilities,
+		EngineID: engine.ID, EngineVersion: engine.Version, Capabilities: capabilities,
 	}, nil
 }

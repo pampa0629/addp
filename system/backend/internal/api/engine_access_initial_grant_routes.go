@@ -10,6 +10,7 @@ import (
 	sharedauth "github.com/addp/common/middleware/auth"
 	commoni18n "github.com/addp/common/middleware/i18n"
 	modulei18n "github.com/addp/system/i18n"
+	"github.com/addp/common/production"
 	"github.com/addp/system/internal/authorization"
 	"github.com/addp/system/internal/engineaccess"
 	"github.com/addp/system/internal/middleware"
@@ -18,8 +19,8 @@ import (
 )
 
 type initialProductionGrantService interface {
-	IssueInitialTransferGrant(context.Context, engineaccess.ProductionRuntimeActor, string) (*shared.InitialProductionResult, error)
-	ResolveInitialTransferGrant(context.Context, engineaccess.ProductionRuntimeActor, string) (*shared.InitialProductionLookup, error)
+	IssueInitialProductionGrant(context.Context, engineaccess.ProductionRuntimeActor, production.Reference) (*shared.InitialProductionResult, error)
+	ResolveInitialProductionGrant(context.Context, engineaccess.ProductionRuntimeActor, production.Reference) (*shared.InitialProductionLookup, error)
 }
 type EngineAccessInitialGrantHandler struct{ service initialProductionGrantService }
 
@@ -35,26 +36,38 @@ func RegisterEngineAccessInitialGrantRoutes(api *gin.RouterGroup, runtime *IAMRu
 	if err != nil {
 		return err
 	}
-	routes := api.Group("/runtime/initial_production_grants/transfer/:execution_id")
-	routes.Use(runtime.Authentication, runtime.ServiceCredential, tenant, sharedauth.MustNewServiceClientGuard("addp-transfer"), permission)
+	routes := api.Group("/runtime/initial_production_grants/:producer_owner/:execution_id/:result_id")
+	routes.Use(runtime.Authentication, runtime.ServiceCredential, tenant, permission)
 	routes.GET("", h.Resolve)
 	routes.POST("", h.Issue)
 	return nil
 }
 
 func initialGrantRuntimeInput(c *gin.Context) (engineaccess.ProductionRuntimeActor, bool) {
-	return initialSourceRuntimeInput(c, "addp-transfer", "execution_id")
+	c.Header("Cache-Control", "no-store")
+	ref := initialProductionReference(c)
+	if ref.Validate() != nil {
+		respondIAMError(c, commonapi.ErrBadRequest)
+		return engineaccess.ProductionRuntimeActor{}, false
+	}
+	return initialRuntimeActor(c, "addp-"+ref.Owner)
 }
 
 func initialSourceRuntimeInput(c *gin.Context, clientID, idParam string) (engineaccess.ProductionRuntimeActor, bool) {
 	var actor engineaccess.ProductionRuntimeActor
 	c.Header("Cache-Control", "no-store")
-	if c.Request.URL.RawQuery != "" || c.Request.ContentLength != 0 {
+	id, err := uuid.Parse(c.Param(idParam))
+	if err != nil || id == uuid.Nil || id.String() != c.Param(idParam) {
 		respondIAMError(c, commonapi.ErrBadRequest)
 		return actor, false
 	}
-	id, err := uuid.Parse(c.Param(idParam))
-	if err != nil || id == uuid.Nil || id.String() != c.Param(idParam) {
+	return initialRuntimeActor(c, clientID)
+}
+
+func initialRuntimeActor(c *gin.Context, clientID string) (engineaccess.ProductionRuntimeActor, bool) {
+	var actor engineaccess.ProductionRuntimeActor
+	c.Header("Cache-Control", "no-store")
+	if c.Request.URL.RawQuery != "" || c.Request.ContentLength != 0 {
 		respondIAMError(c, commonapi.ErrBadRequest)
 		return actor, false
 	}
@@ -77,23 +90,25 @@ func initialSourceRuntimeInput(c *gin.Context, clientID, idParam string) (engine
 }
 
 // Issue godoc
-// @Summary 续办 PG 产出初始只读授权 | Continue initial read authorization for PG production
-// @Description 仅固定 addp-transfer 当前租户机器；无请求体，按原执行反查证据。返回不可变签发或拒绝终态；暂时故障不生成终态。同执行重试不续期或恢复撤权 | Fixed current Tenant addp-transfer only; no request body, evidence is resolved by original execution. Returns immutable issued or denied history; temporary failures create no terminal outcome. Replay never renews expiry or revives a revoked Grant
+// @Summary 续办独立成果初始只读授权 | Continue initial read authorization for committed production
+// @Description 仅已注册生产模块对应的当前租户机器；无请求体，按原执行反查证据。返回不可变签发或拒绝终态；暂时故障不生成终态。同执行重试不续期或恢复撤权 | Registered producer Tenant Service only; no request body, evidence is resolved by original execution. Returns immutable issued or denied history; temporary failures create no terminal outcome. Replay never renews expiry or revives a revoked Grant
 // @Tags 源授权办理 | Source Access Fulfillment
 // @Produce json
 // @Security BearerAuth
+// @Param producer_owner path string true "已注册生产模块 | Registered production owner"
+// @Param result_id path string true "原独立成果 UUID | Original result UUID"
 // @Param execution_id path string true "原执行 UUID | Original execution UUID"
 // @Success 200 {object} shared.InitialProductionResult
 // @Failure 400,401,403,503 {object} IAMErrorResponse
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["system.engine_access_initial_grant.execute"]
-// @Router /runtime/initial_production_grants/transfer/{execution_id} [post]
+// @Router /runtime/initial_production_grants/{producer_owner}/{execution_id}/{result_id} [post]
 func (h *EngineAccessInitialGrantHandler) Issue(c *gin.Context) {
 	actor, ok := initialGrantRuntimeInput(c)
 	if !ok {
 		return
 	}
-	result, err := h.service.IssueInitialTransferGrant(c.Request.Context(), actor, c.Param("execution_id"))
+	result, err := h.service.IssueInitialProductionGrant(c.Request.Context(), actor, initialProductionReference(c))
 	if err != nil {
 		respondInitialGrantError(c, err)
 		return
@@ -102,23 +117,25 @@ func (h *EngineAccessInitialGrantHandler) Issue(c *gin.Context) {
 }
 
 // Resolve godoc
-// @Summary 核清 PG 原产出的初始授权终态 | Resolve initial authorization history for original PG production
-// @Description 仅固定 addp-transfer 当前租户机器；只读、不依赖 Meta 或原人类当前资格，不签发或撤销。found=false 仅表示尚无终态，不等于拒绝或允许 | Fixed current Tenant addp-transfer only; read-only, independent of Meta and historical human qualification; no issuance or withdrawal. found=false means no terminal result, never denial or Allow
+// @Summary 核清原独立成果的初始授权终态 | Resolve initial authorization history for original committed production
+// @Description 仅已注册生产模块对应的当前租户机器；只读、不依赖 Meta 或原人类当前资格，不签发或撤销。found=false 仅表示尚无终态，不等于拒绝或允许 | Registered producer Tenant Service only; read-only, independent of Meta and historical human qualification; no issuance or withdrawal. found=false means no terminal result, never denial or Allow
 // @Tags 源授权办理 | Source Access Fulfillment
 // @Produce json
 // @Security BearerAuth
+// @Param producer_owner path string true "已注册生产模块 | Registered production owner"
+// @Param result_id path string true "原独立成果 UUID | Original result UUID"
 // @Param execution_id path string true "原执行 UUID | Original execution UUID"
 // @Success 200 {object} shared.InitialProductionLookup
 // @Failure 400,401,403,503 {object} IAMErrorResponse
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["system.engine_access_initial_grant.execute"]
-// @Router /runtime/initial_production_grants/transfer/{execution_id} [get]
+// @Router /runtime/initial_production_grants/{producer_owner}/{execution_id}/{result_id} [get]
 func (h *EngineAccessInitialGrantHandler) Resolve(c *gin.Context) {
 	actor, ok := initialGrantRuntimeInput(c)
 	if !ok {
 		return
 	}
-	result, err := h.service.ResolveInitialTransferGrant(c.Request.Context(), actor, c.Param("execution_id"))
+	result, err := h.service.ResolveInitialProductionGrant(c.Request.Context(), actor, initialProductionReference(c))
 	if err != nil {
 		respondInitialGrantError(c, err)
 		return
@@ -132,4 +149,8 @@ func respondInitialGrantError(c *gin.Context, err error) {
 		return
 	}
 	c.JSON(http.StatusServiceUnavailable, gin.H{"error": commoni18n.T(c, modulei18n.MsgInitialProductionPending), "error_code": "initial_production_pending"})
+}
+
+func initialProductionReference(c *gin.Context) production.Reference {
+	return production.Reference{Owner: c.Param("producer_owner"), ExecutionID: c.Param("execution_id"), ResultID: c.Param("result_id")}
 }

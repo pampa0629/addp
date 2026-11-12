@@ -61,6 +61,7 @@ type SourceGrantView struct {
 	Revocation            *GrantRevocation `json:"revocation"`
 	ProducerOwner         *string          `json:"producer_owner,omitempty"`
 	UploadID              *uuid.UUID       `json:"upload_id,omitempty"`
+	ProductionResultID    *uuid.UUID       `json:"production_result_id,omitempty"`
 	ProductionExecutionID *uuid.UUID       `json:"production_execution_id,omitempty"`
 	IssuerPrincipalID     *int64           `json:"issuer_principal_id,omitempty,string" swaggertype:"string"`
 	IssuerMembershipID    *int64           `json:"issuer_membership_id,omitempty,string" swaggertype:"string"`
@@ -73,7 +74,7 @@ func sourceGrantView(row *sourceGrant) SourceGrantView {
 		RecipientType: row.RecipientType, RecipientID: row.RecipientID, Action: row.Action,
 		ExpiryMode: row.ExpiryMode, ExpiresAt: row.ExpiresAt,
 		OperatorPrincipalID: row.OperatorPrincipalID, OperatorMembershipID: row.OperatorMembershipID, Reason: row.Reason,
-		ProducerOwner: row.ProducerOwner, UploadID: row.UploadID, ProductionExecutionID: row.ProductionExecutionID,
+		ProducerOwner: row.ProducerOwner, UploadID: row.UploadID, ProductionExecutionID: row.ProductionExecutionID, ProductionResultID: row.ProductionResultID,
 		IssuerPrincipalID: row.IssuerPrincipalID, IssuerMembershipID: row.IssuerMembershipID}
 }
 

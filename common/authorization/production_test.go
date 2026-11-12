@@ -9,7 +9,7 @@ import (
 
 func TestInitialProductionTerminalContract(t *testing.T) {
 	now := time.Now().UTC()
-	valid := InitialProductionResult{SchemaVersion: InitialProductionResultSchema, TenantID: 7, ProducerOwner: "transfer", ExecutionID: uuid.New(), Outcome: "issued", RecordedAt: now,
+	valid := InitialProductionResult{SchemaVersion: InitialProductionResultSchema, TenantID: 7, ProducerOwner: "transfer", ExecutionID: uuid.New(), ResultID: uuid.New(), Outcome: "issued", RecordedAt: now,
 		Grant: &InitialProductionGrant{RequestID: uuid.New(), GrantedAt: now, ExpiryMode: SharingExpiryUntilRevoked}}
 	for _, name := range []string{"valid", "pending", "wrong_owner", "missing_grant", "contradictory_denial", "bad_expiry", "denied", "unknown_denial"} {
 		t.Run(name, func(t *testing.T) {
@@ -20,7 +20,7 @@ func TestInitialProductionTerminalContract(t *testing.T) {
 			case "pending":
 				r.Outcome = "pending"
 			case "wrong_owner":
-				r.ProducerOwner = "other"
+				r.ProducerOwner = "untrusted/owner"
 			case "missing_grant":
 				r.Grant = nil
 			case "contradictory_denial":

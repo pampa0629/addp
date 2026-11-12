@@ -12,8 +12,8 @@ import (
 
 	"github.com/addp/common/client"
 	"github.com/addp/common/contentio"
-	"github.com/addp/common/execution"
 	"github.com/addp/common/format"
+	"github.com/addp/common/production"
 )
 
 var errPrivateImportManifest = errors.New("private import bytes do not match the upload manifest")
@@ -87,7 +87,7 @@ func (s *importReadStream) Close() error {
 	return err
 }
 
-func (r *verifiedImportReader) proof() (*execution.ManagerImportReadProof, error) {
+func (r *verifiedImportReader) proof() (*production.PrivateUploadProof, error) {
 	if r.failed {
 		return nil, errPrivateImportManifest
 	}
@@ -102,7 +102,7 @@ func (r *verifiedImportReader) proof() (*execution.ManagerImportReadProof, error
 		return nil, err
 	}
 	digest := sha256.Sum256(manifest)
-	proof := &execution.ManagerImportReadProof{
+	proof := &production.PrivateUploadProof{
 		UploadID: r.source.UploadID, TaskID: r.source.TaskID, UploaderID: r.source.UploaderID,
 		ManifestSHA256: hex.EncodeToString(digest[:]),
 	}

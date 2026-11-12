@@ -43,8 +43,9 @@ type UserOrigin struct {
 // SourceEvidence distinguishes a proven empty business read set from absent
 // evidence. Private input proof remains the responsibility of its native owner.
 type SourceEvidence struct {
-	Kind    string               `json:"kind"`
-	ReadSet *plugin.QueryReadSet `json:"read_set,omitempty"`
+	Kind          string               `json:"kind"`
+	PrivateUpload *PrivateUploadProof  `json:"private_upload,omitempty"`
+	ReadSet       *plugin.QueryReadSet `json:"read_set,omitempty"`
 }
 
 const (
@@ -55,6 +56,15 @@ const (
 )
 
 func (s SourceEvidence) Validate() error {
+	if s.Kind == SourcesPrivateInput {
+		if s.ReadSet != nil || s.PrivateUpload == nil || s.PrivateUpload.Validate() != nil {
+			return ErrEvidence
+		}
+		return nil
+	}
+	if s.PrivateUpload != nil {
+		return ErrEvidence
+	}
 	if s.Kind != SourcesDataItems {
 		if s.ReadSet != nil || (s.Kind != SourcesUnknown && s.Kind != SourcesNone && s.Kind != SourcesPrivateInput) {
 			return ErrEvidence
@@ -80,20 +90,25 @@ type CommittedObject struct {
 // failure/cancellation. Operation, attempt and committed objects come from the
 // producer's persisted write path, never from a scan or a caller's target list.
 type Receipt struct {
-	Reference   Reference                `json:"reference"`
-	TenantID    int64                    `json:"tenant_id,string"`
-	Attempt     int                      `json:"attempt"`
-	OperationID string                   `json:"operation_id"`
-	CommittedAt time.Time                `json:"committed_at"`
-	Origin      *UserOrigin              `json:"origin"`
-	Primary     plugin.EngineCatalogPath `json:"primary"`
-	Objects     []CommittedObject        `json:"objects"`
-	Sources     SourceEvidence           `json:"sources"`
+	Reference           Reference                `json:"reference"`
+	TenantID            int64                    `json:"tenant_id,string"`
+	TargetEngineVersion int64                    `json:"target_engine_version,string"`
+	RetryOfExecutionID  *string                  `json:"retry_of_execution_id,omitempty"`
+	Attempt             int                      `json:"attempt"`
+	OperationID         string                   `json:"operation_id"`
+	CommittedAt         time.Time                `json:"committed_at"`
+	Origin              *UserOrigin              `json:"origin"`
+	Primary             plugin.EngineCatalogPath `json:"primary"`
+	Objects             []CommittedObject        `json:"objects"`
+	Sources             SourceEvidence           `json:"sources"`
 }
 
 func (r Receipt) Validate() error {
-	if r.Reference.Validate() != nil || r.TenantID <= 0 || r.Attempt <= 0 || !canonicalUUID(r.OperationID) ||
+	if r.Reference.Validate() != nil || r.TenantID <= 0 || r.TargetEngineVersion <= 0 || r.Attempt <= 0 || !canonicalUUID(r.OperationID) ||
 		r.CommittedAt.IsZero() || len(r.Objects) == 0 || len(r.Objects) > 200 || r.Sources.Validate() != nil {
+		return ErrEvidence
+	}
+	if r.RetryOfExecutionID != nil && (!canonicalUUID(*r.RetryOfExecutionID) || *r.RetryOfExecutionID == r.Reference.ExecutionID) {
 		return ErrEvidence
 	}
 	if r.Origin != nil && (r.Origin.PrincipalID <= 0 || r.Origin.MembershipID <= 0 || r.Origin.AuthorizationVersion <= 0) {
@@ -119,7 +134,7 @@ func (r Receipt) Validate() error {
 // binding. Members are completeness evidence, not additional ACL objects.
 // Existing logical identity/history is checked independently by Meta/System.
 func (r Receipt) ProveNewBoundary(binding authorizationfacts.Binding) error {
-	if r.Validate() != nil {
+	if r.Validate() != nil || r.Attempt != 1 || r.RetryOfExecutionID != nil {
 		return ErrEvidence
 	}
 	primary, err := binding.PrimaryTarget()

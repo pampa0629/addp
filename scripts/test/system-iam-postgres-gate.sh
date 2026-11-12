@@ -31,6 +31,7 @@ while [ "$#" -gt 0 ]; do
             echo "Engine credential/JSONB address regression: --package repository --test engine-address" >&2
             echo "Standard platform units: --package migration --test standard-platform-units" >&2
             echo "Platform alert publication: --package migration --test platform-alert-management" >&2
+            echo "Production result identity migration: --package migration --test production-results" >&2
             echo "Focused authorization-relation migration: --package migration --test source-grant-relations" >&2
             echo "Authorization facts: --package migration|api --test authorization-facts" >&2
             echo "Graph protection runtime: --package migration --test graph-protection-runtime" >&2
@@ -293,6 +294,10 @@ case "$TEST_FILTER" in
             iam) test_pattern='^Test(TenantAdministrationClosure|AuthContextService)AgainstPostgres$' ;;
             *) echo "tenant-functional-roles requires --package iam or migration" >&2; exit 2 ;;
         esac
+        ;;
+    production-results)
+        [ "$PACKAGE_FILTER" = migration ] || { echo "production-results requires --package migration" >&2; exit 2; }
+        test_pattern='^TestProductionResultIdentityForwardMigrationAgainstPostgres$'
         ;;
     production-sources)
         [ "$PACKAGE_FILTER" = engineaccess ] || { echo "production-sources requires --package engineaccess" >&2; exit 2; }

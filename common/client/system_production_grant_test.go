@@ -10,13 +10,14 @@ import (
 	"testing"
 	"time"
 
+	"github.com/addp/common/production"
 	"github.com/addp/common/authorization"
 	"github.com/google/uuid"
 )
 
 func TestSystemInitialProductionStrictTransport(t *testing.T) {
 	id := uuid.New()
-	result := authorization.InitialProductionResult{SchemaVersion: authorization.InitialProductionResultSchema, TenantID: 7, ProducerOwner: "transfer", ExecutionID: id, Outcome: "denied", RecordedAt: time.Now().UTC(), DenialCode: "target_history_exists"}
+	result := authorization.InitialProductionResult{SchemaVersion: authorization.InitialProductionResultSchema, TenantID: 7, ProducerOwner: "transfer", ExecutionID: id, ResultID: id, Outcome: "denied", RecordedAt: time.Now().UTC(), DenialCode: "target_history_exists"}
 	encoded, _ := json.Marshal(result)
 	for _, tc := range []struct {
 		name, body string
@@ -26,6 +27,7 @@ func TestSystemInitialProductionStrictTransport(t *testing.T) {
 		{"terminal denial", string(encoded), 200, true},
 		{"cross tenant", strings.Replace(string(encoded), `"tenant_id":"7"`, `"tenant_id":"8"`, 1), 200, false},
 		{"wrong execution", strings.Replace(string(encoded), id.String(), uuid.NewString(), 1), 200, false},
+		{"wrong result", strings.Replace(string(encoded), `"result_id":"`+id.String()+`"`, `"result_id":"`+uuid.NewString()+`"`, 1), 200, false},
 		{"wrong owner", strings.Replace(string(encoded), `"transfer"`, `"develop"`, 1), 200, false},
 		{"unknown field", strings.TrimSuffix(string(encoded), "}") + `,"token":"secret"}`, 200, false},
 		{"no result", `null`, 200, false},
@@ -40,7 +42,7 @@ func TestSystemInitialProductionStrictTransport(t *testing.T) {
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				calls++
 				body, _ := io.ReadAll(r.Body)
-				if r.Method != "POST" || r.URL.Path != "/api/v1/system/runtime/initial_production_grants/transfer/"+id.String() || r.URL.RawQuery != "" || len(body) != 0 || r.Header.Get("Authorization") != "Bearer tenant-transfer" || r.Header.Get("X-Tenant-ID") != "" {
+				if r.Method != "POST" || r.URL.Path != "/api/v1/system/runtime/initial_production_grants/transfer/"+id.String()+"/"+id.String() || r.URL.RawQuery != "" || len(body) != 0 || r.Header.Get("Authorization") != "Bearer tenant-transfer" || r.Header.Get("X-Tenant-ID") != "" {
 					t.Error("producer supplied identity or evidence in transport")
 				}
 				w.WriteHeader(tc.status)
@@ -48,10 +50,10 @@ func TestSystemInitialProductionStrictTransport(t *testing.T) {
 			}))
 			defer server.Close()
 			client := NewSystemServiceClient(server.URL, staticSystemServiceTokenSource("tenant-transfer"), server.Client())
-			if _, err := client.IssueInitialTransferGrant(t.Context(), id.String()); err == nil || calls != 0 {
+			if _, err := client.IssueInitialProductionGrant(t.Context(), production.Reference{Owner: "transfer", ExecutionID: id.String(), ResultID: id.String()}); err == nil || calls != 0 {
 				t.Fatal("missing Tenant reached network")
 			}
-			value, err := client.WithTenantID(7).IssueInitialTransferGrant(t.Context(), id.String())
+			value, err := client.WithTenantID(7).IssueInitialProductionGrant(t.Context(), production.Reference{Owner: "transfer", ExecutionID: id.String(), ResultID: id.String()})
 			if (err == nil) != tc.ok || err != nil && strings.Contains(err.Error(), "secret") || calls != 1 {
 				t.Fatalf("value=%+v error=%v calls=%d", value, err, calls)
 			}
@@ -77,7 +79,7 @@ func TestSystemInitialProductionLookupNeverTreatsErrorsAsMiss(t *testing.T) {
 				_, _ = w.Write([]byte(tc.body))
 			}))
 			defer server.Close()
-			lookup, err := NewSystemServiceClient(server.URL, staticSystemServiceTokenSource("tenant-transfer"), server.Client()).WithTenantID(7).ResolveInitialTransferGrant(t.Context(), uuid.NewString())
+			lookup, err := NewSystemServiceClient(server.URL, staticSystemServiceTokenSource("tenant-transfer"), server.Client()).WithTenantID(7).ResolveInitialProductionGrant(t.Context(), production.Reference{Owner: "transfer", ExecutionID: uuid.NewString(), ResultID: uuid.NewString()})
 			if (err == nil) != tc.ok {
 				t.Fatalf("lookup=%+v error=%v", lookup, err)
 			}
@@ -106,7 +108,7 @@ func TestSystemInitialProductionDoesNotRedirectOrRetryMutation(t *testing.T) {
 			w.Header().Set("Location", "/leak")
 			w.WriteHeader(status)
 		}))
-		_, err := NewSystemServiceClient(server.URL, tokens, server.Client()).WithTenantID(7).IssueInitialTransferGrant(t.Context(), uuid.NewString())
+		_, err := NewSystemServiceClient(server.URL, tokens, server.Client()).WithTenantID(7).IssueInitialProductionGrant(t.Context(), production.Reference{Owner: "transfer", ExecutionID: uuid.NewString(), ResultID: uuid.NewString()})
 		server.Close()
 		if err == nil || calls != 1 || tokens.invalidated != (status == 401) {
 			t.Fatalf("status=%d calls=%d invalidated=%v error=%v", status, calls, tokens.invalidated, err)

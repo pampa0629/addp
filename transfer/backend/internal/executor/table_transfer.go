@@ -48,6 +48,7 @@ type TableQueryInput struct {
 }
 
 type TableTargetPlan struct {
+	EngineVersion     int64
 	Kind              TableEndpointKind
 	ConnInfo          engineplugin.ConnectionInfo
 	Path              engineplugin.EngineCatalogPath

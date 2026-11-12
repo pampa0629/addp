@@ -13,7 +13,7 @@ import (
 	"github.com/addp/common/dataitem/authorizationfacts"
 	"github.com/addp/common/dataitem/authorizationfacts/factstest"
 	"github.com/addp/common/engine/plugin"
-	"github.com/addp/common/execution"
+	"github.com/addp/common/production"
 	"github.com/addp/system/internal/iam"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
@@ -73,7 +73,7 @@ func exerciseInitialProductionGrants(t *testing.T, db *gorm.DB, acceptor *Servic
 		}
 		fresh()
 		var remoteErr error
-		service := NewService(NewRepository(db), nil).WithTransferProductionReceiptReader(productionReceiptReaderFunc(func(context.Context, uint, string) (*client.TransferProductionReceipt, error) {
+		service := NewService(NewRepository(db), nil).withTestProductionReader(productionReceiptReaderFunc(func(context.Context, uint, string) (*client.TransferProductionReceipt, error) {
 			return &receipt, remoteErr
 		})).
 			WithAuthorizationFactsReader(bindingFactsReaderFunc(func(_ context.Context, _ uint, fp string) (*authorizationfacts.AuthorizationFacts, error) {
@@ -85,7 +85,7 @@ func exerciseInitialProductionGrants(t *testing.T, db *gorm.DB, acceptor *Servic
 				}
 				return nil, errors.New("unexpected target")
 			}))
-		denied, err := service.IssueInitialTransferGrant(ctx, actor, receipt.ExecutionID)
+		denied, err := service.IssueInitialProductionGrant(ctx, actor, transferProductionRef(receipt.ExecutionID))
 		if err != nil || denied.Outcome != "denied" || denied.DenialCode != "source_access_denied" {
 			t.Fatalf("denied=%+v error=%v", denied, err)
 		}
@@ -104,17 +104,17 @@ func exerciseInitialProductionGrants(t *testing.T, db *gorm.DB, acceptor *Servic
 		if _, err := service.IssueFulfillmentGrant(ctx, catalog, sourceID, binding); err != nil {
 			t.Fatal(err)
 		}
-		replay, err := service.IssueInitialTransferGrant(ctx, actor, receipt.ExecutionID)
+		replay, err := service.IssueInitialProductionGrant(ctx, actor, transferProductionRef(receipt.ExecutionID))
 		if err != nil || replay.Outcome != "denied" || !replay.RecordedAt.Equal(denied.RecordedAt) {
 			t.Fatal("refusal revived", replay, err)
 		}
 		fresh()
 		executionID := receipt.ExecutionID
 		remoteErr = errors.New("temporary dependency failure")
-		if _, err := service.IssueInitialTransferGrant(ctx, actor, executionID); err == nil {
+		if _, err := service.IssueInitialProductionGrant(ctx, actor, transferProductionRef(executionID)); err == nil {
 			t.Fatal("dependency failure issued a result")
 		}
-		lookup, err := service.ResolveInitialTransferGrant(ctx, actor, executionID)
+		lookup, err := service.ResolveInitialProductionGrant(ctx, actor, transferProductionRef(executionID))
 		if err != nil || lookup.Found {
 			t.Fatal("temporary failure became terminal", lookup, err)
 		}
@@ -131,18 +131,18 @@ func exerciseInitialProductionGrants(t *testing.T, db *gorm.DB, acceptor *Servic
 			t.Fatal(err)
 		}
 		t.Cleanup(func() { db.Callback().Create().Remove(callback) })
-		if result, err := service.IssueInitialTransferGrant(ctx, actor, executionID); result != nil || !errors.Is(err, failure) {
+		if result, err := service.IssueInitialProductionGrant(ctx, actor, transferProductionRef(executionID)); result != nil || !errors.Is(err, failure) {
 			t.Fatalf("audit failed result=%+v error=%v", result, err)
 		}
 		if err := db.Callback().Create().Remove(callback); err != nil {
 			t.Fatal(err)
 		}
-		lookup, err = service.ResolveInitialTransferGrant(ctx, actor, executionID)
+		lookup, err = service.ResolveInitialProductionGrant(ctx, actor, transferProductionRef(executionID))
 		if err != nil || lookup.Found {
 			t.Fatal("rolled-back audit left a terminal outcome", lookup, err)
 		}
 		var rolledBack int64
-		if err := db.Model(&sourceGrant{}).Where("request_id=?", productionGrantCommand(actor.TenantID, uuid.MustParse(executionID))).Count(&rolledBack).Error; err != nil || rolledBack != 0 {
+		if err := db.Model(&sourceGrant{}).Where("request_id=?", productionGrantCommand(actor.TenantID, transferProductionRef(executionID))).Count(&rolledBack).Error; err != nil || rolledBack != 0 {
 			t.Fatalf("rolled-back audit left grants=%d error=%v", rolledBack, err)
 		}
 		// Concurrent continuations must produce one Grant and one terminal row.
@@ -153,7 +153,7 @@ func exerciseInitialProductionGrants(t *testing.T, db *gorm.DB, acceptor *Servic
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
-				r, e := service.IssueInitialTransferGrant(ctx, actor, executionID)
+				r, e := service.IssueInitialProductionGrant(ctx, actor, transferProductionRef(executionID))
 				results <- r
 				failures <- e
 			}()
@@ -180,6 +180,66 @@ func exerciseInitialProductionGrants(t *testing.T, db *gorm.DB, acceptor *Servic
 		if err := db.Model(&sourceGrant{}).Where("tenant_id=? AND producer_owner='transfer' AND production_execution_id=?", actor.TenantID, executionID).Count(&count).Error; err != nil || count != 1 {
 			t.Fatalf("grants=%d err=%v", count, err)
 		}
+
+		// Two results of one execution have independent commands and terminal
+		// histories. The fixture uses a registered neutral reader, so result IDs
+		// are supplied by persisted owner facts rather than allocated by System.
+		nativeRegistry := service.productionRegistry
+		secondRef := production.Reference{Owner: "transfer", ExecutionID: executionID, ResultID: uuid.NewString()}
+		secondReceipt := receipt.ProductionEvidence()
+		secondReceipt.Reference = secondRef
+		secondReceipt.Primary = plugin.TabularItemPath(base.Path.EngineID, "schema", "production", "second_"+uuid.NewString())
+		secondReceipt.Objects = []production.CommittedObject{{Target: secondReceipt.Primary, Created: true}}
+		registry, e := production.NewRegistry(production.Owner{Module: "transfer", ClientID: "addp-transfer", ReceiptPermission: "transfer.production_receipt.read", ExecutionPermission: "transfer.task.execute", ReadReceipt: func(_ context.Context, _ uint, ref production.Reference) (*production.Receipt, error) {
+			if ref != secondReceipt.Reference {
+				return nil, production.ErrEvidence
+			}
+			return &secondReceipt, nil
+		}})
+		if e != nil {
+			t.Fatal(e)
+		}
+		service.WithProductionRegistry(registry).WithAuthorizationFactsReader(testMetaFacts{paths: []plugin.EngineCatalogPath{base.Path, secondReceipt.Primary}})
+		second, e := service.IssueInitialProductionGrant(ctx, actor, secondRef)
+		if e != nil || second == nil || second.Outcome != "issued" || second.ResultID != uuid.MustParse(secondRef.ResultID) || second.Grant.RequestID == issued.Grant.RequestID {
+			t.Fatal("independent result collapsed into first grant", second, e)
+		}
+
+		sourceFreeRef := secondRef
+		sourceFreeRef.ResultID = uuid.NewString()
+		secondReceipt.Reference = sourceFreeRef
+		secondReceipt.Primary = plugin.TabularItemPath(base.Path.EngineID, "schema", "production", "source_free_"+uuid.NewString())
+		secondReceipt.Objects = []production.CommittedObject{{Target: secondReceipt.Primary, Created: true}}
+		secondReceipt.Sources = production.SourceEvidence{Kind: production.SourcesNone}
+		service.WithAuthorizationFactsReader(testMetaFacts{paths: []plugin.EngineCatalogPath{secondReceipt.Primary}})
+		sourceFree, e := service.IssueInitialProductionGrant(ctx, actor, sourceFreeRef)
+		if e != nil || sourceFree == nil || sourceFree.Outcome != "issued" || sourceFree.Grant.ExpiryMode != shared.SharingExpiryUntilRevoked || sourceFree.Grant.ExpiresAt != nil {
+			t.Fatal("proven source-free generation did not receive revocable read grant", sourceFree, e)
+		}
+		noHuman := sourceFreeRef
+		noHuman.ResultID = uuid.NewString()
+		secondReceipt.Reference = noHuman
+		secondReceipt.Origin = nil
+		absent, e := service.IssueInitialProductionGrant(ctx, actor, noHuman)
+		if e != nil || absent == nil || absent.Outcome != "denied" || absent.Grant != nil {
+			t.Fatal("service-only task manufactured a human grant", absent, e)
+		}
+		thirdRef := secondRef
+		thirdRef.ResultID = uuid.NewString()
+		refusal, e := service.recordInitialProductionDenial(ctx, actor, thirdRef, "production_ineligible")
+		if e != nil || refusal.Outcome != "denied" {
+			t.Fatal("independent refusal collapsed", refusal, e)
+		}
+		original, e := service.ResolveInitialProductionGrant(ctx, actor, transferProductionRef(executionID))
+		if e != nil || original.Result.Grant.RequestID != issued.Grant.RequestID {
+			t.Fatal("other result changed original terminal history", original, e)
+		}
+		wrong := secondRef
+		wrong.Owner = "unregistered"
+		if _, e = service.ResolveInitialProductionGrant(ctx, actor, wrong); e == nil {
+			t.Fatal("unregistered owner read history")
+		}
+		service.WithProductionRegistry(nativeRegistry).WithAuthorizationFactsReader(testMetaFacts{paths: []plugin.EngineCatalogPath{base.Path, receipt.Target}})
 		var grant sourceGrant
 		if err := db.Where("request_id=?", issued.Grant.RequestID).Take(&grant).Error; err != nil {
 			t.Fatal(err)
@@ -212,7 +272,7 @@ func exerciseInitialProductionGrants(t *testing.T, db *gorm.DB, acceptor *Servic
 		revoke(issued.Grant.RequestID)
 		checkCoverage(receipt.Target, false)
 		receipt.ExecutionID = uuid.NewString()
-		historyDenied, err := service.IssueInitialTransferGrant(ctx, actor, receipt.ExecutionID)
+		historyDenied, err := service.IssueInitialProductionGrant(ctx, actor, transferProductionRef(receipt.ExecutionID))
 		if err != nil || historyDenied.Outcome != "denied" || historyDenied.DenialCode != "target_history_exists" {
 			t.Fatal("historical target qualified as a new result", historyDenied, err)
 		}
@@ -221,7 +281,7 @@ func exerciseInitialProductionGrants(t *testing.T, db *gorm.DB, acceptor *Servic
 		}
 		remoteErr = errors.New("offline during historical recovery")
 		service.WithAuthorizationFactsReader(nil)
-		recovered, err := service.IssueInitialTransferGrant(ctx, actor, executionID)
+		recovered, err := service.IssueInitialProductionGrant(ctx, actor, transferProductionRef(executionID))
 		if err != nil || recovered.Grant.RequestID != issued.Grant.RequestID || !recovered.Grant.ExpiresAt.Equal(expiry) {
 			t.Fatal("recovery required live dependencies or renewed expiry", recovered, err)
 		}
@@ -230,10 +290,10 @@ func exerciseInitialProductionGrants(t *testing.T, db *gorm.DB, acceptor *Servic
 		fresh()
 		service.WithAuthorizationFactsReader(testMetaFacts{paths: []plugin.EngineCatalogPath{receipt.Target}})
 		receipt.SourceReadSet = nil
-		receipt.ManagerImport = &execution.ManagerImportReadProof{
+		receipt.ManagerImport = &production.PrivateUploadProof{
 			UploadID: uuid.NewString(), UploaderID: user.PrincipalID, TaskID: 23, ManifestSHA256: strings.Repeat("a", 64),
 		}
-		imported, err := service.IssueInitialTransferGrant(ctx, actor, receipt.ExecutionID)
+		imported, err := service.IssueInitialProductionGrant(ctx, actor, transferProductionRef(receipt.ExecutionID))
 		if err != nil || imported == nil || imported.Outcome != "issued" || imported.Grant == nil ||
 			imported.Grant.ExpiryMode != shared.SharingExpiryUntilRevoked || imported.Grant.ExpiresAt != nil {
 			t.Fatal("proven private upload did not receive an independently revocable output Grant", imported, err)
@@ -244,18 +304,18 @@ func exerciseInitialProductionGrants(t *testing.T, db *gorm.DB, acceptor *Servic
 		fresh()
 		service.WithAuthorizationFactsReader(testMetaFacts{paths: []plugin.EngineCatalogPath{receipt.Target}})
 		receipt.UserOrigin.AuthorizationVersion--
-		stale, err := service.IssueInitialTransferGrant(ctx, actor, receipt.ExecutionID)
+		stale, err := service.IssueInitialProductionGrant(ctx, actor, transferProductionRef(receipt.ExecutionID))
 		if err != nil || stale == nil || stale.Outcome != "denied" || stale.DenialCode != "source_access_denied" {
 			t.Fatal("stale private uploader retained initial Grant eligibility", stale, err)
 		}
 		bad := actor
 		bad.ClientID = "addp-catalog"
-		if _, err := service.ResolveInitialTransferGrant(ctx, bad, executionID); err == nil {
+		if _, err := service.ResolveInitialProductionGrant(ctx, bad, transferProductionRef(executionID)); err == nil {
 			t.Fatal("wrong runtime read continuation history")
 		}
 		bad = actor
 		bad.TenantID++
-		if _, err := service.ResolveInitialTransferGrant(ctx, bad, executionID); err == nil {
+		if _, err := service.ResolveInitialProductionGrant(ctx, bad, transferProductionRef(executionID)); err == nil {
 			t.Fatal("cross-tenant history returned")
 		}
 	})

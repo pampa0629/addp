@@ -9,8 +9,7 @@ import (
 
 	commonapi "github.com/addp/common/api"
 	"github.com/addp/common/authorization"
-	"github.com/addp/common/engine/plugin"
-	"github.com/addp/common/execution"
+	productionfacts "github.com/addp/common/production"
 	"github.com/addp/system/internal/iam"
 )
 
@@ -21,33 +20,36 @@ var errInitialProductionEvidence = errors.Join(commonapi.ErrConflict, errors.New
 // the same production. The committed logical-result fact, not survival of the
 // original physical table until issuance, is the eligibility basis.
 type preparedInitialProduction struct {
-	production     *preparedTransferProduction
+	production     *preparedProduction
 	sources        sourceReadRequest
 	engineVersions map[int64]int64
+	owner          productionfacts.Owner
 }
 
-func initialProductionSources(production *preparedTransferProduction) (sourceReadRequest, error) {
-	if production == nil || production.receipt.Validate() != nil || production.binding.Validate() != nil || production.engineVersion <= 0 {
+func initialProductionSources(prepared *preparedProduction) (sourceReadRequest, error) {
+	if prepared == nil || prepared.receipt.Validate() != nil || prepared.binding.Validate() != nil || prepared.engineVersion <= 0 {
 		return sourceReadRequest{}, errInitialProductionEvidence
 	}
-	r := production.receipt
-	if !r.CreatedAndCommitted || r.Preparation != plugin.TableTargetCreated || r.Attempt != 1 || r.RetryOfExecutionID != nil || r.UserOrigin == nil ||
-		r.ProductionEvidence().ProveNewBoundary(production.binding) != nil ||
-		len(r.Target.Segments) != 3 || !reflect.DeepEqual(r.Target, plugin.TabularItemPath(r.Target.EngineID, plugin.EngineCatalogTermSchema, r.Target.Segments[1].Name, r.Target.Segments[2].Name)) {
+	r := prepared.receipt
+	if r.Origin == nil || r.ProveNewBoundary(prepared.binding) != nil {
 		return sourceReadRequest{}, errInitialProductionEvidence
 	}
-	request := sourceReadRequest{Action: "read", TenantID: r.TenantID, Source: userProvenance{
-		r.UserOrigin.PrincipalID, r.UserOrigin.TenantMembershipID, r.UserOrigin.AuthorizationVersion,
-	}}
-	if r.ManagerImport != nil {
+	request := sourceReadRequest{Action: "read", TenantID: r.TenantID, Source: userProvenance{r.Origin.PrincipalID, r.Origin.MembershipID, r.Origin.AuthorizationVersion}}
+	switch r.Sources.Kind {
+	case productionfacts.SourcesNone:
 		return request, nil
-	}
-	if r.SourceReadSet == nil || execution.ValidateProductionReadSet(r.SourceReadSet) != nil {
+	case productionfacts.SourcesPrivateInput:
+		if r.Sources.PrivateUpload.UploaderID != r.Origin.PrincipalID {
+			return sourceReadRequest{}, errInitialProductionEvidence
+		}
+		return request, nil
+	case productionfacts.SourcesDataItems:
+	default:
 		return sourceReadRequest{}, errInitialProductionEvidence
 	}
-	paths := r.SourceReadSet.Clone().Paths
+	paths := r.Sources.ReadSet.Clone().Paths
 	for _, path := range paths {
-		if reflect.DeepEqual(path, r.Target) {
+		if reflect.DeepEqual(path, r.Primary) {
 			return sourceReadRequest{}, errInitialProductionEvidence
 		}
 	}
@@ -58,8 +60,8 @@ func initialProductionSources(production *preparedTransferProduction) (sourceRea
 // Source facts use the same System-owned clients as target preparation. Cross-
 // owner IO happens without any IAM or target transaction. Unsupported engines
 // are not silently interpreted as unrestricted sources.
-func (s *Service) prepareInitialTransferProduction(ctx context.Context, tenantID int64, executionID string) (*preparedInitialProduction, error) {
-	production, err := s.prepareTransferProduction(ctx, tenantID, executionID)
+func (s *Service) prepareInitialProduction(ctx context.Context, tenantID int64, ref productionfacts.Reference) (*preparedInitialProduction, error) {
+	production, err := s.prepareProduction(ctx, tenantID, ref)
 	if err != nil {
 		return nil, err
 	}
@@ -67,7 +69,7 @@ func (s *Service) prepareInitialTransferProduction(ctx context.Context, tenantID
 	if err != nil {
 		return nil, err
 	}
-	versions := map[int64]int64{int64(production.receipt.Target.EngineID): production.engineVersion}
+	versions := map[int64]int64{int64(production.receipt.Primary.EngineID): production.engineVersion}
 	for _, path := range sources.Targets {
 		id := int64(path.EngineID)
 		if _, exists := versions[id]; exists {
@@ -79,8 +81,9 @@ func (s *Service) prepareInitialTransferProduction(ctx context.Context, tenantID
 		}
 		versions[id] = engine.Version
 	}
-	prepared := &preparedInitialProduction{production: production, sources: sources, engineVersions: versions}
-	if production.receipt.ManagerImport != nil {
+	owner, _ := s.productionRegistry.Resolve(ref.Owner, "addp-"+ref.Owner)
+	prepared := &preparedInitialProduction{production: production, sources: sources, engineVersions: versions, owner: owner}
+	if production.receipt.Sources.Kind != productionfacts.SourcesDataItems {
 		return prepared, nil
 	}
 	bindings, readErr := s.resolveReadBindings(ctx, tenantID, sources.Targets)
@@ -149,7 +152,7 @@ func (r *Repository) queryInitialProduction(ctx context.Context, prepared *prepa
 		return nil, errInitialProductionEvidence
 	}
 
-	expectedEngines := map[int64]bool{int64(prepared.production.receipt.Target.EngineID): true}
+	expectedEngines := map[int64]bool{int64(prepared.production.receipt.Primary.EngineID): true}
 	for _, path := range request.Targets {
 		expectedEngines[int64(path.EngineID)] = true
 	}
@@ -175,7 +178,7 @@ func (r *Repository) queryInitialProduction(ctx context.Context, prepared *prepa
 		if err != nil {
 			return err
 		}
-		path, err := authorization.EncodeSharingTarget(prepared.production.receipt.Target)
+		path, err := authorization.EncodeSharingTarget(prepared.production.receipt.Primary)
 		if err != nil {
 			return err
 		}
@@ -183,12 +186,12 @@ func (r *Repository) queryInitialProduction(ctx context.Context, prepared *prepa
 		// Any historical rule/approval blocks inferring a fresh logical target.
 		// Revocations and releases never erase their parent facts.
 		if err := tx.db.WithContext(ctx).Raw(productionTargetHistorySQL,
-			request.TenantID, int64(prepared.production.receipt.Target.EngineID), prepared.production.binding.ItemFingerprint, string(path)).Scan(&history).Error; err != nil {
+			request.TenantID, int64(prepared.production.receipt.Primary.EngineID), prepared.production.binding.ItemFingerprint, string(path)).Scan(&history).Error; err != nil {
 			return err
 		}
 		result = &initialProductionObservation{sourceRules: rules, targetHasHistory: history,
 			executionIAM: hasCurrentTenantPermission(permissions, request.TenantID, "system.execution_authorization.create", rules.ObservedAt) &&
-				hasCurrentTenantPermission(permissions, request.TenantID, iam.TaskAuthorizationExecutePermission("transfer", "sync"), rules.ObservedAt)}
+				hasCurrentTenantPermission(permissions, request.TenantID, prepared.owner.ExecutionPermission, rules.ObservedAt)}
 		return nil
 	}(r)
 	if err != nil {
@@ -210,7 +213,7 @@ const productionTargetHistorySQL = `WITH target AS (
 // It still requires the same live human identity at issuance and commit.
 func (r *Repository) queryProductionSourceRules(ctx context.Context, prepared *preparedInitialProduction) (*sourceReadRules, error) {
 	request := prepared.sources
-	if prepared.production.receipt.ManagerImport == nil {
+	if prepared.production.receipt.Sources.Kind == productionfacts.SourcesDataItems {
 		paths, batch, err := request.encode()
 		if err != nil {
 			return nil, errInitialProductionEvidence
