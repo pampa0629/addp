@@ -160,14 +160,23 @@ printf '%s\n' "$ADDP_TEST_NODE_VERSION"
 
     def test_make_rejects_before_frontend_test_or_build(self):
         self.copy('Makefile')
-        (self.root / 'monitor/frontend').mkdir(parents=True)
-        result = self.run_command(['make', 'test-monitor-frontend'], ADDP_TEST_NODE_VERSION='v25.2.1')
-        self.assertNotEqual(0, result.returncode)
-        self.assertIn('Node.js 24 is required, found v25.2.1', result.stderr)
-        self.assertFalse(self.log.exists())
-        result = self.run_command(['make', 'test-monitor-frontend'])
-        self.assertEqual(0, result.returncode, result.stderr)
-        self.assertEqual(['npm test', 'npm run test:e2e', 'npm run build'], self.log.read_text().splitlines())
+        for module in ('monitor', 'console'):
+            (self.root / module / 'frontend').mkdir(parents=True)
+            for browser_args in ('', '--grep CDC --workers=1'):
+                with self.subTest(module=module, browser_args=browser_args):
+                    self.log.unlink(missing_ok=True)
+                    command = ['make', f'test-{module}-frontend']
+                    if browser_args:
+                        command.append(f'{module.upper()}_FRONTEND_BROWSER_ARGS={browser_args}')
+                    result = self.run_command(command, ADDP_TEST_NODE_VERSION='v25.2.1')
+                    self.assertNotEqual(0, result.returncode)
+                    self.assertIn('Node.js 24 is required, found v25.2.1', result.stderr)
+                    self.assertFalse(self.log.exists())
+                    result = self.run_command(command)
+                    self.assertEqual(0, result.returncode, result.stderr)
+                    suffix = f' {browser_args}' if browser_args else ''
+                    self.assertEqual(['npm test', f'npm run test:e2e --{suffix}', 'npm run build'],
+                                     self.log.read_text().splitlines())
 
     def test_aggregate_make_gates_reject_before_dispatch(self):
         self.copy('Makefile')

@@ -47,11 +47,11 @@
       "kind": "implementation",
       "path": "transfer/backend/internal/repository/task_repository.go",
       "anchor": "func (r *TaskRepository) ClaimExecutionWithReview(",
-      "commit": "dee60ec6b170ea58858266922751eb13d8bd091b",
-      "sha256": "5240270707a1d173df9a675dad4004a3b8a7c5faf59f45955c70f3db6f4189cb",
+      "commit": "879ba19cb545ec99c04fd51d7212815a2fdfe397",
+      "sha256": "93c29c63477145bcbae02881138561cbed0a9e3f9d4b15fee24f8ef9434e2f94",
       "use": {
-        "zh-cn": "任务锁下复核，审批消费与执行原子提交",
-        "en": "Task-locked review with atomic approval consumption and execution"
+        "zh-cn": "复核仅在 List 中增加计数／分页前 CDC 查询过滤；ClaimExecutionWithReview 逐字不变，仍在任务锁下复核并原子提交审批消费与执行。",
+        "en": "Reviewed CDC query filtering before count/pagination only in List. ClaimExecutionWithReview is byte-identical and retains task-locked review with atomic approval consumption and execution."
       }
     },
     {

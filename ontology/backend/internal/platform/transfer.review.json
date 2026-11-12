@@ -21,11 +21,11 @@
       "kind": "implementation",
       "path": "transfer/backend/internal/api/task_handler.go",
       "anchor": "func validDelegatedTaskCreation(",
-      "commit": "dee60ec6b170ea58858266922751eb13d8bd091b",
-      "sha256": "9506ecc0f6bb6bddbe8207831dccf636a1fd9a30837021e0887a4f41713ffa55",
+      "commit": "879ba19cb545ec99c04fd51d7212815a2fdfe397",
+      "sha256": "5c5ce1f760df50ea2aaa968cfcce823299e4c663135134760b6de48c755c3fc5",
       "use": {
-        "zh-cn": "本次新增独立的委托启动分支：首次仅申请 Owner 审批，批准后按原引用消费；不改变创建为执行。",
-        "en": "This change adds a separate delegated start branch: request owner approval first, then consume its approved reference; creation still does not execute."
+        "zh-cn": "复核同文件的 CDC 列表参数和 TaskProvider 非法筛选拒绝；原委托创建及独立启动审批分支逐字不变，创建仍只保存停止态任务，不执行。",
+        "en": "Reviewed CDC list parameters and rejection of that filter for TaskProvider reads in the same file. Delegated creation and the separate start-approval branch are byte-identical; creation still persists a stopped task without execution."
       }
     },
     {
@@ -34,11 +34,11 @@
       "kind": "implementation",
       "path": "transfer/backend/internal/service/task_service.go",
       "anchor": "Status:       models.TaskStatusIdle,",
-      "commit": "b4e1dc1cc058e8a69aafdce04aebfd0e156ff435",
-      "sha256": "a08568e832b54b4c8d4a763e74af51f8859ddf8794e155fa0b018450b2a4ac66",
+      "commit": "879ba19cb545ec99c04fd51d7212815a2fdfe397",
+      "sha256": "25a51be8f86586796a1a36b4a7d1bd167de85cfd6ce0c146617625a6b2c1ac2d",
       "use": {
-        "zh-cn": "复核只读草稿构建接入后的同文件变化。原创建、运行审批及执行读取边界保留，完整参数仍走正式预检和确认。 复核 FileGDB 单表导出的专属来源及授权约束。此改动属于 Manager 发起的导出，不扩大 Agent 的原生表任务创建范围。",
-        "en": "Reviewed this file after read-only draft construction integration. Creation, owner run approval and execution read boundaries remain, with complete arguments still checked and reviewed. Reviewed FileGDB single-table export source and authorization constraints. This applies to Manager-initiated export and does not expand the Agent native-table task creation scope."
+        "zh-cn": "复核仅在 ListTasks 校验并加入 CDC 查询过滤的同文件变化；原 idle/stopped 创建、运行审批、执行读取及 FileGDB 专属来源／授权边界逐字不变，不扩大 Agent 原生表创建范围。",
+        "en": "Reviewed the same-file change that validates and adds CDC filtering only in ListTasks. Idle/stopped creation, run approval, execution reads and FileGDB-specific source/authorization boundaries are byte-identical; the Agent native-table creation scope is unchanged."
       }
     },
     {
