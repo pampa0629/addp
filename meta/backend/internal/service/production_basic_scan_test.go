@@ -93,6 +93,7 @@ func TestProductionBasicScan(t *testing.T) {
 	if err := executiontest.EnsureSQLiteStore(db); err != nil {
 		t.Fatal(err)
 	}
+	exerciseProductionDeepScan(t, db, false)
 	testProductionBasicScan(t, db, false)
 }
 
@@ -124,6 +125,7 @@ func TestProductionBasicScanAgainstPostgres(t *testing.T) {
 	if err := db.AutoMigrate(&models.MetaNode{}, &models.MetaItem{}); err != nil {
 		t.Fatal(err)
 	}
+	exerciseProductionDeepScan(t, db, true)
 	testProductionBasicScan(t, db, true)
 	tx := db.Begin()
 	defer tx.Rollback()

@@ -18,7 +18,7 @@ func (s *ScanExecutionService) ClaimNextBoundedExecution(ctx context.Context, wo
 	var lease *commonExecution.Lease
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var err error
-		execution, lease, err = commonExecution.ClaimNext(ctx, tx, commonExecution.ClaimOptions{
+		execution, lease, err = claimEligibleMetaScan(ctx, tx, commonExecution.ClaimOptions{
 			Module: commonExecution.ModuleMeta, TaskType: commonExecution.TaskTypeScan,
 			WorkerID: workerID, LeaseDuration: leaseDuration,
 		})

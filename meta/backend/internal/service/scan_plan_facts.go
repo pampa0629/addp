@@ -223,7 +223,7 @@ func freezeScanTaskDefinition(tx *gorm.DB, run *execution.TaskExecution) error {
 }
 
 func projectScanSourceScope(ctx context.Context, tx *gorm.DB, tenantID uint, row scanPlanExecutionRow, config map[string]any, facts *execution.MetaScanPlanFacts) error {
-	allowed := map[string]bool{"engine_id": true, "engine_version": true, "engine_type": true, "task_definition_digest": true, "storage_type": true, "targets": true, "catalog_paths": true, "ref_groups": true, "item_id": true, "scan_depth": true, "force": true, "source": true, "planned_run_at": true, "encoding": true, "has_header": true, "initial_production_receipt": true, "initial_production_new_candidate": true}
+	allowed := map[string]bool{"engine_id": true, "engine_version": true, "engine_type": true, "task_definition_digest": true, "storage_type": true, "targets": true, "catalog_paths": true, "ref_groups": true, "item_id": true, "scan_depth": true, "force": true, "source": true, "planned_run_at": true, "encoding": true, "has_header": true, "initial_production_receipt": true, "initial_production_new_candidate": true, "production_basic_execution_id": true}
 	for key := range config {
 		if !allowed[key] {
 			return nil

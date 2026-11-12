@@ -92,6 +92,7 @@ func SetupRouter(cfg *config.Config, db *gorm.DB, engineService *service.EngineS
 		api.POST("/runtime/manager-uploads/:upload_id/basic-scan", auth.MustNewServiceClientGuard("addp-manager"), permission(metaauthorization.PermissionMetaScanTaskExecute), handler.EnsureUploadBasicScan)
 		api.GET("/runtime/manager-uploads/:upload_id/basic-scan", auth.MustNewServiceClientGuard("addp-system"), permission(metaauthorization.PermissionMetaTaskProviderRead), handler.ReadUploadIdentification)
 		api.POST("/runtime/productions/:producer_owner/:execution_id/:result_id/basic-scan", permission(metaauthorization.PermissionMetaScanTaskExecute), handler.EnsureProductionBasicScan)
+		api.POST("/runtime/productions/:producer_owner/:execution_id/:result_id/deep-scan", permission(metaauthorization.PermissionMetaScanTaskExecute), handler.EnsureProductionDeepScan)
 		api.GET("/runtime/productions/:producer_owner/:execution_id/:result_id/basic-scan", auth.MustNewServiceClientGuard("addp-system"), permission(metaauthorization.PermissionMetaTaskProviderRead), handler.ReadProductionIdentification)
 		api.GET("/scan/tasks", permission(metaauthorization.PermissionMetaScanTaskRead), handler.ListScanTasks)
 		api.POST("/scan/tasks", permission(metaauthorization.PermissionMetaScanTaskCreate), handler.CreateScanTask)

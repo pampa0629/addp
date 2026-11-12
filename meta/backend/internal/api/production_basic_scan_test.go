@@ -14,6 +14,14 @@ import (
 )
 
 func TestProductionBasicScanRouteIsFixedTenantTransferAndBodyless(t *testing.T) {
+	testProductionScanRoute(t, "basic")
+}
+
+func TestProductionDeepScanRouteIsFixedTenantTransferAndBodyless(t *testing.T) {
+	testProductionScanRoute(t, "deep")
+}
+
+func testProductionScanRoute(t *testing.T, depth string) {
 	identity := authtest.NewTenantServiceAuthContextServer(t, "7", map[string]authtest.TenantServiceIdentity{
 		"Bearer transfer":     {ClientID: "addp-transfer", Permissions: []string{"meta.scan_task.execute"}},
 		"Bearer system":       {ClientID: "addp-system", Permissions: []string{"meta.scan_task.execute"}},
@@ -26,7 +34,7 @@ func TestProductionBasicScanRouteIsFixedTenantTransferAndBodyless(t *testing.T) 
 	engines := service.NewEngineService(nil, nil)
 	router := SetupRouter(cfg, nil, engines, service.NewScanService(nil, engines), nil, nil, nil, nil, modulelifecycle.NewStandalone("meta"))
 	id := uuid.NewString()
-	base := "/api/v1/meta/runtime/productions/transfer/" + id + "/" + id + "/basic-scan"
+	base := "/api/v1/meta/runtime/productions/transfer/" + id + "/" + id + "/" + depth + "-scan"
 	for _, tc := range []struct {
 		token, path, body string
 		status            int
@@ -49,16 +57,18 @@ func TestProductionBasicScanRouteIsFixedTenantTransferAndBodyless(t *testing.T) 
 		}
 	}
 
-	for _, tc := range []struct {
-		token  string
-		status int
-	}{{"transfer", 403}, {"system", 403}, {"system-read", 503}} {
-		request := httptest.NewRequest(http.MethodGet, base, nil)
-		request.Header.Set("Authorization", "Bearer "+tc.token)
-		response := httptest.NewRecorder()
-		router.ServeHTTP(response, request)
-		if response.Code != tc.status {
-			t.Fatalf("production GET %s status=%d want=%d", tc.token, response.Code, tc.status)
+	if depth == "basic" {
+		for _, tc := range []struct {
+			token  string
+			status int
+		}{{"transfer", 403}, {"system", 403}, {"system-read", 503}} {
+			request := httptest.NewRequest(http.MethodGet, base, nil)
+			request.Header.Set("Authorization", "Bearer "+tc.token)
+			response := httptest.NewRecorder()
+			router.ServeHTTP(response, request)
+			if response.Code != tc.status {
+				t.Fatalf("production GET %s status=%d want=%d", tc.token, response.Code, tc.status)
+			}
 		}
 	}
 	for _, path := range []string{strings.Replace(base, "/productions/transfer/", "/productions/develop/", 1), "/api/v1/meta/runtime/transfer-productions/" + id + "/basic-scan"} {

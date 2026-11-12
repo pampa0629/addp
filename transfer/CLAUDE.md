@@ -236,7 +236,7 @@ Manager 导入的创建/启动只在同步请求内转发 User 凭据。Manager 
 
 精确范围、双用户审批归属与清理的实际证据见[扫描与审批验收](#continuous-精确扫描与审批归属)；T1/T2、单用户与双用户 Hosted 的覆盖范围分别认定。
 
-限定 basic 识别受理后沿既有 `metadata_scan` 安全反馈保存实际子扫描 UUID、精确目标与 `submitted`；该状态只表示受理，不表示子扫描成功或初始授权签发。依赖失败保留 `pending/production_scan_pending`，不保存原始响应，不改写物理执行结果。basic 与写后 deep 的衔接仍按各自正式契约处理，不以受理反馈替代扫描深度验收。
+首次新建 PG 成果启用自动扫描时沿[自动 deep 串接契约](../docs/spec/tasks/生产来源与产物扫描.md#首次-pg-成功产出补扫)提交原成果引用。`metadata_scan.execution_id` 保存 deep UUID，`basic_execution_id` 保存其 basic UUID；`submitted` 只表示持久受理，不表示扫描成功或初始授权签发。依赖提交失败保留 `pending/production_scan_pending`，不保存原始响应，不改写物理执行结果。关闭自动扫描不取消原有独立 basic／授权续办。现有 Common／Meta／Transfer Go T1、Meta production PostgreSQL 专项与 continuous runner 覆盖契约及队列断言；真实 deep／CDC Hosted 结果独立认定。
 
 ### Cleanup 执行边界
 

@@ -20,6 +20,7 @@ import (
 	"github.com/addp/meta/internal/models"
 	"github.com/addp/meta/internal/scanflow"
 	"github.com/addp/meta/internal/scantask"
+	"github.com/google/uuid"
 	"gorm.io/gorm"
 )
 
@@ -146,7 +147,7 @@ func productionScanRequest(r production.Receipt) (*models.ScanRequest, error) {
 	return req, nil
 }
 func findProductionBasicScan(db *gorm.DB, tenant uint, ref production.Reference) (*execution.TaskExecution, error) {
-	return productionScanRecord(db.Where("tenant_id=? AND module=? AND task_type=? AND parent_execution_id=? AND execution_config->'initial_production_receipt'->'reference'->>'owner'=? AND execution_config->'initial_production_receipt'->'reference'->>'result_id'=?", tenant, execution.ModuleMeta, execution.TaskTypeScan, ref.ExecutionID, ref.Owner, ref.ResultID).Order("id"))
+	return productionScanRecord(db.Where("tenant_id=? AND module=? AND task_type=? AND parent_execution_id=? AND execution_config->>'scan_depth'='basic' AND execution_config->'initial_production_receipt'->'reference'->>'owner'=? AND execution_config->'initial_production_receipt'->'reference'->>'result_id'=?", tenant, execution.ModuleMeta, execution.TaskTypeScan, ref.ExecutionID, ref.Owner, ref.ResultID).Order("id"))
 }
 func frozenProductionReceipt(run *execution.TaskExecution) (*production.Receipt, error) {
 	raw, err := json.Marshal(run.ExecutionConfig["initial_production_receipt"])
@@ -156,7 +157,22 @@ func frozenProductionReceipt(run *execution.TaskExecution) (*production.Receipt,
 	decoder := json.NewDecoder(bytes.NewReader(raw))
 	decoder.DisallowUnknownFields()
 	var receipt production.Receipt
-	if decoder.Decode(&receipt) != nil || receipt.Validate() != nil || receipt.Attempt != 1 || receipt.RetryOfExecutionID != nil || receipt.TenantID != int64(run.TenantID) || run.Source != receipt.Reference.Owner || run.SourceTaskID != nil || run.ParentExecutionID == nil || *run.ParentExecutionID != receipt.Reference.ExecutionID || run.TriggerType != "manual" || run.ExecutionConfig["scan_depth"] != "basic" || run.ExecutionConfig["force"] != true {
+	if decoder.Decode(&receipt) != nil || receipt.Validate() != nil || receipt.Attempt != 1 || receipt.RetryOfExecutionID != nil || receipt.TenantID != int64(run.TenantID) || run.Source != receipt.Reference.Owner || run.SourceTaskID != nil || run.ParentExecutionID == nil || *run.ParentExecutionID != receipt.Reference.ExecutionID || run.TriggerType != "manual" || run.ExecutionConfig["force"] != true {
+		return nil, commonapi.ErrConflict
+	}
+	dependency, exists := run.ExecutionConfig["production_basic_execution_id"]
+	switch run.ExecutionConfig["scan_depth"] {
+	case "basic":
+		if exists {
+			return nil, commonapi.ErrConflict
+		}
+	case "deep":
+		id, ok := dependency.(string)
+		parsed, err := uuid.Parse(id)
+		if !ok || err != nil || parsed == uuid.Nil || parsed.String() != id || id == run.ExecutionID || id == receipt.Reference.ExecutionID {
+			return nil, commonapi.ErrConflict
+		}
+	default:
 		return nil, commonapi.ErrConflict
 	}
 	if fmt.Sprint(run.ExecutionConfig["engine_id"]) != strconv.FormatUint(uint64(receipt.Primary.EngineID), 10) || run.ExecutionConfig["engine_version"] != strconv.FormatInt(receipt.TargetEngineVersion, 10) {

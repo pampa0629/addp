@@ -170,6 +170,26 @@ func TestProducedScanFeedbackExposesOnlyStableFailure(t *testing.T) {
 	}
 }
 
+func TestProductionDeepFeedbackKeepsBothScanIdentitiesAndSafePending(t *testing.T) {
+	c, _ := gin.CreateTestContext(httptest.NewRecorder())
+	for _, status := range []string{"submitted", "pending"} {
+		item := transferResponseFixture()
+		item.Metadata["metadata_scan"] = map[string]interface{}{"status": status, "execution_id": "deep-id", "basic_execution_id": "basic-id", "error_code": "production_scan_pending", "receipt": "private-secret", "engine_version": "private-secret"}
+		got, err := projectExecution(c, item)
+		if err != nil || got.Metadata.MetadataScan == nil {
+			t.Fatal("missing deep feedback", err)
+		}
+		scan := got.Metadata.MetadataScan
+		if scan.Status != status || scan.ExecutionID != "deep-id" || scan.BasicExecutionID != "basic-id" || scan.ErrorCode != "production_scan_pending" {
+			t.Fatalf("lost safe scan facts: %+v", scan)
+		}
+		encoded, _ := json.Marshal(scan)
+		if strings.Contains(string(encoded), "private-secret") {
+			t.Fatal("private production receipt leaked")
+		}
+	}
+}
+
 func TestInitialAuthorizationFeedbackExposesNoPrivateDeliveryOrGrantFacts(t *testing.T) {
 	c, _ := gin.CreateTestContext(httptest.NewRecorder())
 	for _, status := range []string{"pending", "denied", "issued"} {

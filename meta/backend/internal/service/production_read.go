@@ -23,6 +23,9 @@ func (s *ScanExecutionService) productionReadContext(ctx context.Context, run *e
 	if err != nil {
 		return nil, err
 	}
+	if err := s.checkProductionBasicDependency(ctx, s.db, run, receipt); err != nil {
+		return nil, err
+	}
 	if s.productionRegistry == nil {
 		return nil, ErrScanPlanFactsUnavailable
 	}
@@ -56,7 +59,7 @@ func (s *ScanExecutionService) productionReadContext(ctx context.Context, run *e
 		if err != nil || nowDigest != digest {
 			return commonapi.ErrForbidden
 		}
-		return nil
+		return s.checkProductionBasicDependency(call, s.db, active, frozen)
 	})
 	if err := check(ctx, nil); err != nil {
 		return nil, err

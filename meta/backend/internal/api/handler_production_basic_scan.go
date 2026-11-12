@@ -27,7 +27,23 @@ import (
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["meta.scan_task.execute"]
 // @Router /runtime/productions/{producer_owner}/{execution_id}/{result_id}/basic-scan [post]
-func (h *Handler) EnsureProductionBasicScan(c *gin.Context) { h.productionBasicScan(c, true) }
+func (h *Handler) EnsureProductionBasicScan(c *gin.Context) { h.productionScan(c, "basic") }
+
+// EnsureProductionDeepScan godoc
+// @Summary 串接原已提交成果的自动深度扫描 | Chain automatic deep scanning of an original committed result
+// @Description 仅原已注册生产者 Tenant Service，无正文和 query。复用唯一 basic 身份识别并持久登记依赖它的唯一 deep 执行；basic 成功后才读取精确成果。重复请求不复活失败扫描，不等待或签发授权 | Registered producer Tenant Service only; no body or query. Reuses the unique basic identification and durably queues one dependent deep execution. Reads only the exact result after basic succeeds. Replay never revives failed scans or waits for or issues Grants
+// @Tags Meta Scan
+// @Produce json
+// @Security BearerAuth
+// @Param producer_owner path string true "生产模块 | Producer module"
+// @Param execution_id path string true "原执行 UUID | Original execution UUID"
+// @Param result_id path string true "原独立成果 UUID | Original result UUID"
+// @Success 200 {object} commonclient.MetaProductionDeepScan
+// @Failure 400,401,403,409,503 {object} map[string]interface{}
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["meta.scan_task.execute"]
+// @Router /runtime/productions/{producer_owner}/{execution_id}/{result_id}/deep-scan [post]
+func (h *Handler) EnsureProductionDeepScan(c *gin.Context) { h.productionScan(c, "deep") }
 
 // ReadProductionIdentification godoc
 // @Summary 读取原成果的新逻辑项识别事实 | Read logical new-item identification for a result
@@ -43,28 +59,33 @@ func (h *Handler) EnsureProductionBasicScan(c *gin.Context) { h.productionBasicS
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["meta.task_provider.read"]
 // @Router /runtime/productions/{producer_owner}/{execution_id}/{result_id}/basic-scan [get]
-func (h *Handler) ReadProductionIdentification(c *gin.Context) { h.productionBasicScan(c, false) }
+func (h *Handler) ReadProductionIdentification(c *gin.Context) { h.productionScan(c, "read") }
 
-func (h *Handler) productionBasicScan(c *gin.Context, ensure bool) {
+func (h *Handler) productionScan(c *gin.Context, action string) {
 	c.Header("Cache-Control", "no-store")
 	ref := production.Reference{Owner: c.Param("producer_owner"), ExecutionID: c.Param("execution_id"), ResultID: c.Param("result_id")}
 	if ref.Validate() != nil || c.Request.URL.RawQuery != "" || c.Request.ContentLength != 0 {
 		c.JSON(400, gin.H{"error_code": "scan_request_invalid", "error": commoni18n.T(c, metai18n.MsgScanRequestInvalid)})
 		return
 	}
-	if ensure {
+	if action != "read" {
 		principal, exists := commonauth.PrincipalFromGin(c)
 		if !exists || principal.Type != "service_principal" || commonauth.GetClientID(c) != "addp-"+ref.Owner {
 			c.JSON(403, gin.H{"error_code": "scan_provenance_unavailable", "error": commoni18n.T(c, metai18n.MsgScanProvenanceUnavailable)})
 			return
 		}
 	}
-	var result *commonclient.MetaProductionIdentification
+	var result interface{}
 	var err error
 	if h.executionService != nil {
-		if ensure {
-			result, err = h.executionService.EnsureProductionBasicScan(c.Request.Context(), commonauth.GetTenantID(c), ref)
-		} else {
+		switch action {
+		case "basic":
+			var run *commonclient.MetaProductionIdentification
+			run, err = h.executionService.EnsureProductionBasicScan(c.Request.Context(), commonauth.GetTenantID(c), ref)
+			result = run
+		case "deep":
+			result, err = h.executionService.EnsureProductionDeepScan(c.Request.Context(), commonauth.GetTenantID(c), ref)
+		case "read":
 			result, err = h.executionService.ReadProductionIdentification(c.Request.Context(), commonauth.GetTenantID(c), ref)
 		}
 		if err == nil {

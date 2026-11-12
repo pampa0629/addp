@@ -500,15 +500,15 @@ func TestUpdateMetadataScanExecutionPersistsScanExecutionID(t *testing.T) {
 	}
 }
 
-func TestProductionBasicScanPersistsAcceptedChildWithoutClaimingCompletion(t *testing.T) {
+func TestProductionDeepScanPersistsAcceptedChildWithoutClaimingCompletion(t *testing.T) {
 	for _, status := range []string{"pending", "running", "failed"} {
 		t.Run(status, func(t *testing.T) {
-			scanID := uuid.NewString()
+			scanID, basicID := uuid.NewString(), uuid.NewString()
 			var parentID string
 			calls := 0
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				calls++
-				if r.Method != http.MethodPost || r.URL.Path != "/api/v1/meta/runtime/productions/transfer/"+parentID+"/"+parentID+"/basic-scan" || r.Header.Get("Authorization") != "Bearer test-token" {
+				if r.Method != http.MethodPost || r.URL.Path != "/api/v1/meta/runtime/productions/transfer/"+parentID+"/"+parentID+"/deep-scan" || r.Header.Get("Authorization") != "Bearer test-token" {
 					t.Errorf("unexpected production scan request: %s %s", r.Method, r.URL.Path)
 				}
 				body, _ := io.ReadAll(r.Body)
@@ -517,7 +517,7 @@ func TestProductionBasicScanPersistsAcceptedChildWithoutClaimingCompletion(t *te
 				}
 				_ = json.NewEncoder(w).Encode(map[string]interface{}{
 					"reference": map[string]string{"owner": "transfer", "execution_id": parentID, "result_id": parentID},
-					"tenant_id": "7", "scan_execution_id": scanID, "status": status, "engine_version": "1",
+					"tenant_id": "7", "scan_execution_id": scanID, "basic_scan_execution_id": basicID, "status": status, "engine_version": "1",
 				})
 			}))
 			defer server.Close()
@@ -530,13 +530,13 @@ func TestProductionBasicScanPersistsAcceptedChildWithoutClaimingCompletion(t *te
 			parent.ExecutionID = uuid.NewString()
 			bindExecutionServiceTestLease(t, svc.executionService.db, svc.executionService, parent)
 			parentID = parent.ExecutionID
-			svc.submitProductionBasicScan(t.Context(), &models.TransferTask{TenantID: 7}, parent, target)
+			svc.submitProductionDeepScan(t.Context(), &models.TransferTask{TenantID: 7}, parent, target)
 			run, err := svc.executionService.GetExecutionByExecutionID(t.Context(), parentID, 7)
 			if err != nil {
 				t.Fatal(err)
 			}
 			feedback, _ := run.Metadata["metadata_scan"].(map[string]interface{})
-			want := map[string]interface{}{"execution_id": scanID, "engine_id": float64(9), "status": "submitted", "targets": []interface{}{"addp://engine/9/path/public/roads?type=table"}}
+			want := map[string]interface{}{"execution_id": scanID, "basic_execution_id": basicID, "engine_id": float64(9), "status": "submitted", "targets": []interface{}{"addp://engine/9/path/public/roads?type=table"}}
 			if calls != 1 || !reflect.DeepEqual(feedback, want) || run.Status != commonExecution.ExecutionStatusRunning {
 				t.Fatalf("accepted scan feedback=%#v, calls=%d, parent=%s", feedback, calls, run.Status)
 			}
@@ -544,7 +544,7 @@ func TestProductionBasicScanPersistsAcceptedChildWithoutClaimingCompletion(t *te
 	}
 }
 
-func TestProductionBasicScanFailureRetainsSafePendingFeedback(t *testing.T) {
+func TestProductionDeepScanFailureRetainsSafePendingFeedback(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusServiceUnavailable)
 		_, _ = w.Write([]byte(`{"error":"private-secret"}`))
@@ -557,7 +557,7 @@ func TestProductionBasicScanFailureRetainsSafePendingFeedback(t *testing.T) {
 	}
 	parent.ExecutionID = uuid.NewString()
 	bindExecutionServiceTestLease(t, svc.executionService.db, svc.executionService, parent)
-	svc.submitProductionBasicScan(t.Context(), &models.TransferTask{TenantID: 7}, parent, planner.EndpointSpec{})
+	svc.submitProductionDeepScan(t.Context(), &models.TransferTask{TenantID: 7}, parent, planner.EndpointSpec{})
 	run, err := svc.executionService.GetExecutionByExecutionID(t.Context(), parent.ExecutionID, 7)
 	if err != nil {
 		t.Fatal(err)

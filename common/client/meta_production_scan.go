@@ -61,3 +61,40 @@ func (c *MetaClient) EnsureProductionBasicScan(ctx context.Context, tenant uint,
 func (c *MetaClient) ReadProductionIdentification(ctx context.Context, tenant uint, ref production.Reference) (*MetaProductionIdentification, error) {
 	return c.productionIdentification(ctx, tenant, ref, http.MethodGet)
 }
+
+// MetaProductionDeepScan describes the queued enhancement, not an access grant.
+type MetaProductionDeepScan struct {
+	Reference            production.Reference `json:"reference"`
+	TenantID             int64                `json:"tenant_id,string" swaggertype:"string"`
+	BasicScanExecutionID string               `json:"basic_scan_execution_id"`
+	ScanExecutionID      string               `json:"scan_execution_id"`
+	Status               string               `json:"status"`
+	EngineVersion        int64                `json:"engine_version,string" swaggertype:"string"`
+}
+
+func (r MetaProductionDeepScan) Validate() error {
+	if r.Reference.Validate() != nil || r.TenantID <= 0 || r.EngineVersion <= 0 || !nonzeroExecutionUUID(r.BasicScanExecutionID) || !nonzeroExecutionUUID(r.ScanExecutionID) || r.ScanExecutionID == r.BasicScanExecutionID || r.ScanExecutionID == r.Reference.ExecutionID || r.BasicScanExecutionID == r.Reference.ExecutionID {
+		return errors.New("invalid production deep scan identity")
+	}
+	switch r.Status {
+	case execution.ExecutionStatusPending, execution.ExecutionStatusRunning, execution.ExecutionStatusSuccess, execution.ExecutionStatusFailed, execution.ExecutionStatusTimeout, execution.ExecutionStatusCancelled:
+		return nil
+	default:
+		return errors.New("invalid production deep scan status")
+	}
+}
+
+func (c *MetaClient) EnsureProductionDeepScan(ctx context.Context, tenant uint, ref production.Reference) (*MetaProductionDeepScan, error) {
+	if c == nil || tenant == 0 || ref.Validate() != nil {
+		return nil, errors.New("invalid production deep scan request")
+	}
+	var result MetaProductionDeepScan
+	path := "/api/v1/meta/runtime/productions/" + ref.Owner + "/" + ref.ExecutionID + "/" + ref.ResultID + "/deep-scan"
+	if err := newTenantHTTPClient(c.baseURL, c.serviceTokenSource, c.httpClient).withTenantID(tenant).doStrictJSON(ctx, http.MethodPost, path, &result, 256<<10); err != nil {
+		return nil, err
+	}
+	if result.Validate() != nil || result.Reference != ref || result.TenantID != int64(tenant) {
+		return nil, errors.New("production deep scan identity mismatch")
+	}
+	return &result, nil
+}

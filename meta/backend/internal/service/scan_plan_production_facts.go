@@ -9,7 +9,7 @@ import (
 
 // Project only the exact persisted plan, without live owner IO or credentials.
 func projectInitialProductionScanScope(row scanPlanExecutionRow, config map[string]any, facts *execution.MetaScanPlanFacts) {
-	if facts.ScanDepth != "basic" {
+	if facts.ScanDepth != "basic" && facts.ScanDepth != "deep" {
 		return
 	}
 	run := &execution.TaskExecution{TenantID: row.TenantID, ExecutionID: row.ExecutionID, Source: row.Source, SourceTaskID: row.SourceTaskID, TriggerType: row.TriggerType, TriggeredBy: row.TriggeredBy, ActorPrincipalID: row.ActorPrincipalID, ActorTenantMembershipID: row.ActorTenantMembershipID, IssuedAuthorizationVersion: row.IssuedAuthorizationVersion, ParentExecutionID: row.ParentExecutionID, ExecutionConfig: commonmodels.JSONMap(config)}

@@ -353,6 +353,23 @@ definitions:
       status:
         type: string
     type: object
+  client.MetaProductionDeepScan:
+    properties:
+      basic_scan_execution_id:
+        type: string
+      engine_version:
+        example: ""
+        type: string
+      reference:
+        $ref: '#/definitions/production.Reference'
+      scan_execution_id:
+        type: string
+      status:
+        type: string
+      tenant_id:
+        example: ""
+        type: string
+    type: object
   client.MetaProductionIdentification:
     properties:
       binding:
@@ -3887,6 +3904,70 @@ paths:
       security:
       - BearerAuth: []
       summary: 识别原已提交独立成果 | Identify an original committed result
+      tags:
+      - Meta Scan
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - meta.scan_task.execute
+  /runtime/productions/{producer_owner}/{execution_id}/{result_id}/deep-scan:
+    post:
+      description: 仅原已注册生产者 Tenant Service，无正文和 query。复用唯一 basic 身份识别并持久登记依赖它的唯一 deep
+        执行；basic 成功后才读取精确成果。重复请求不复活失败扫描，不等待或签发授权 | Registered producer Tenant Service
+        only; no body or query. Reuses the unique basic identification and durably
+        queues one dependent deep execution. Reads only the exact result after basic
+        succeeds. Replay never revives failed scans or waits for or issues Grants
+      parameters:
+      - description: 生产模块 | Producer module
+        in: path
+        name: producer_owner
+        required: true
+        type: string
+      - description: 原执行 UUID | Original execution UUID
+        in: path
+        name: execution_id
+        required: true
+        type: string
+      - description: 原独立成果 UUID | Original result UUID
+        in: path
+        name: result_id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/client.MetaProductionDeepScan'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties: true
+            type: object
+        "403":
+          description: Forbidden
+          schema:
+            additionalProperties: true
+            type: object
+        "409":
+          description: Conflict
+          schema:
+            additionalProperties: true
+            type: object
+        "503":
+          description: Service Unavailable
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 串接原已提交成果的自动深度扫描 | Chain automatic deep scanning of an original committed
+        result
       tags:
       - Meta Scan
       x-addp-auth-mode: permission

@@ -280,6 +280,8 @@ Transfer 已应用结构审批补扫的入口、审批人、claim、精确目标
 
 Backend 与独立 Worker 必须复用同一产出 owner 注册函数，绑定各自已认证的 Transfer／Develop 回执 client；Worker 在创建 bounded runner 前完成绑定。API 受理入队不代表 Worker 已具备原成果核验能力，也不代表识别成功。该装配不增加新的启动就绪依赖。
 
+生产者请求自动 deep 时复用[串接契约](../docs/spec/tasks/生产来源与产物扫描.md#首次-pg-成功产出补扫)，在原 basic 行锁下登记唯一 deep 及其私有依赖；沿 Common `ClaimPending` 取得实际 lease。basic 仍在排队／运行时，deep 不领取；basic 终态失败时 deep 以明确失败收尾且不读源。Worker 复核原回执、basic 成功、当前 DataItem 边界、引擎版本与本次 lease 后才读取精确成果。两次执行保持直接关联原生产执行和原人类来源，不因生产执行已结束而丢失。System 只消费 basic 的识别事实，deep 失败不改写它。production PostgreSQL 组在既有 `TestProductionBasicScanAgainstPostgres` 内覆盖并发请求、领取顺序、失败不复活、陈旧 lease 与越界拒绝，无新增数据库或队列。
+
 #### Manager mosaic 来源与完成回执
 
 Manager mosaic 的实际产物来源、精确目标、发起主体与子扫描读取统一沿[产物归属规范](../docs/spec/tasks/生产来源与产物扫描.md#manager-栅格-mosaic-产物自动扫描的执行归属)。Meta 在创建事务中锁定父执行，并使用锁定后的数据库时钟验证当前有效 lease；产物 attempt 与唯一 dataset 范围须匹配。来源继承不复制执行授权或租约，也不改变 Meta Permission 与本人一次性执行读取边界。

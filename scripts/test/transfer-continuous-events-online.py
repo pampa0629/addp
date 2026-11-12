@@ -142,7 +142,7 @@ def assert_projection(item, execution_id, *, monitor=False, tenant=None):
                     'Owner exposed invalid initial authorization status facts')
         scan = item['metadata'].get('metadata_scan')
         if scan is not None:
-            require(isinstance(scan, dict) and set(scan) <= {'status', 'attempt', 'execution_id', 'error_code'},
+            require(isinstance(scan, dict) and set(scan) <= {'status', 'attempt', 'execution_id', 'basic_execution_id', 'error_code'},
                     'Owner exposed private metadata scan facts')
     error = item.get('error_details') or {}
     require(isinstance(error, dict) and set(error) <= {'category', 'code', 'error_code', 'message', 'failed_targets_count'},
@@ -1389,8 +1389,12 @@ def run_suite(client, denied, foreign, peer, reader, admin, login, tenant, run_i
         scan_feedback = execution.get('metadata', {}).get('metadata_scan', {})
         require(scan_feedback.get('status') == 'submitted', 'scheduled write did not submit its target scan')
         scheduled_scan_id = canonical_uuid(scan_feedback.get('execution_id'))
+        scheduled_basic_id = canonical_uuid(scan_feedback.get('basic_execution_id'))
+        require(scheduled_basic_id not in {scheduled_id, scheduled_scan_id}, 'scheduled scan stages reused an execution identity')
         phase('scheduled_scan')
         until(lambda: assert_scheduled_scan_origin(client, peer, execution, scheduled_scan_id, initiating_user))
+        require(assert_scheduled_scan_origin(client, peer, execution, scheduled_basic_id, initiating_user),
+                'scheduled deep completed without its basic identification')
         phase('scheduled_result')
         precise = wait_target_scan(pg, tenant, 'continuous_scheduled_target', {'id', 'label'}, boundary)
         require(physical('verify-scheduled'), 'scheduled transfer did not commit the expected physical rowset')
@@ -1402,6 +1406,7 @@ def run_suite(client, denied, foreign, peer, reader, admin, login, tenant, run_i
         report['precise_scan_scope']['scans'].append({'phase': 'bounded_scheduled',
             'metadata_scan_execution_id': scheduled_scan_id, **precise})
         report['scheduled_scan_ownership'] = {'execution_id': scheduled_id, 'scan_execution_id': scheduled_scan_id,
+            'basic_scan_execution_id': scheduled_basic_id, 'basic_and_deep_distinct_and_completed': True,
             'principal_id': initiating_user, 'trigger_type': 'scheduled', 'parent_and_user_verified': True,
             'parent_read_verified': True, 'peer_read_denied': True, 'physical_rowset_verified': True, 'schedule_paused': True}
         report['checks'].append('bounded_owner_schedule_current_subject_precise_scan_and_read_isolation')

@@ -632,7 +632,7 @@ bounded 调度暂停／恢复另行验收。先核对调度状态与当前授权
 
 该选项用于自动补齐后续使用所需的元数据，使用户无需再次手动扫描。首次新建成果所需的 basic 身份识别与初始授权独立办理，不受该选项关闭而取消，也不能在选项启用时用 basic 替代 deep。basic 快速确认 DataItem 身份和边界，deep 在同一成果上补充字段等增强事实；写入成功、basic 完成、授权结果和 deep 结果分别认定。授权不以 deep 成功为前提。
 
-当前 bounded 首次新建 PG 成果的实现只提交统一 basic 识别，尚未完成上述自动 deep 衔接；这是待修复的能力缺口，不是该选项语义已改为 basic，也不据此放宽现有 deep 验收。
+bounded 首次新建 PG 成果沿[自动 deep 串接契约](../../docs/spec/tasks/生产来源与产物扫描.md#首次-pg-成功产出补扫)提交原成果引用，由 Meta 队列先 basic、后 deep；不占住 Transfer 写入执行等待扫描。`metadata_scan.execution_id` 指向 deep，`basic_execution_id` 指向基础识别，`submitted` 只表示已受理。实际终态和元数据完整度仍须读取对应 Meta 执行与目标事实；确定性门禁不代替真实 Hosted 验收。
 
 - bounded execution 在成功写入后扫描一次。
 - 普通业务 Kafka continuous execution 不等待任务结束；目标 Provider 首次成功建立目标结构后，按 task `apply_identity` 提交一次目标表的精确扫描。

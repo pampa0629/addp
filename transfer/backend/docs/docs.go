@@ -5904,6 +5904,9 @@ const docTemplate = `{
                 "attempt": {
                     "type": "integer"
                 },
+                "basic_execution_id": {
+                    "type": "string"
+                },
                 "error_code": {
                     "type": "string"
                 },

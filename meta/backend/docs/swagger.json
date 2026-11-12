@@ -3105,6 +3105,93 @@
                 ]
             }
         },
+        "/runtime/productions/{producer_owner}/{execution_id}/{result_id}/deep-scan": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "仅原已注册生产者 Tenant Service，无正文和 query。复用唯一 basic 身份识别并持久登记依赖它的唯一 deep 执行；basic 成功后才读取精确成果。重复请求不复活失败扫描，不等待或签发授权 | Registered producer Tenant Service only; no body or query. Reuses the unique basic identification and durably queues one dependent deep execution. Reads only the exact result after basic succeeds. Replay never revives failed scans or waits for or issues Grants",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Meta Scan"
+                ],
+                "summary": "串接原已提交成果的自动深度扫描 | Chain automatic deep scanning of an original committed result",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "生产模块 | Producer module",
+                        "name": "producer_owner",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "原执行 UUID | Original execution UUID",
+                        "name": "execution_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "原独立成果 UUID | Original result UUID",
+                        "name": "result_id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/client.MetaProductionDeepScan"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "meta.scan_task.execute"
+                ]
+            }
+        },
         "/runtime/scan-executions/{execution_id}/authorization-facts": {
             "get": {
                 "security": [
@@ -5013,6 +5100,31 @@
                 },
                 "status": {
                     "type": "string"
+                }
+            }
+        },
+        "client.MetaProductionDeepScan": {
+            "type": "object",
+            "properties": {
+                "basic_scan_execution_id": {
+                    "type": "string"
+                },
+                "engine_version": {
+                    "type": "string",
+                    "example": ""
+                },
+                "reference": {
+                    "$ref": "#/definitions/production.Reference"
+                },
+                "scan_execution_id": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "tenant_id": {
+                    "type": "string",
+                    "example": ""
                 }
             }
         },
