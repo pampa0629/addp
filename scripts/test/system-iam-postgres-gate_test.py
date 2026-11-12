@@ -78,6 +78,10 @@ if "^TestResetDisposablePostgresForGate$" in sys.argv:
 if "./internal/migration" in sys.argv and "^Test(DevelopFileReadPermissionDefinition|Runner)AgainstPostgres$" in sys.argv:
     print("--- PASS: TestDevelopFileReadPermissionDefinitionAgainstPostgres (0.01s)")
     print("--- PASS: TestRunnerAgainstPostgres (0.01s)")
+if "./internal/migration" in sys.argv and "^TestDevelopControlledFileInputsForwardMigrationAgainstPostgres$" in sys.argv:
+    result = os.environ.get("TEST_GO_FILE_INPUTS_RESULT", "pass")
+    if result == "pass": print("--- PASS: TestDevelopControlledFileInputsForwardMigrationAgainstPostgres (0.01s)")
+    elif result == "skip": print("--- SKIP: TestDevelopControlledFileInputsForwardMigrationAgainstPostgres (0.01s)")
 if "./internal/iam" in sys.argv:
     import re
     pattern = sys.argv[sys.argv.index("-run") + 1]
@@ -447,6 +451,15 @@ elif args[:2] != ["volume", "ls"]:
         for value in ("missing", "skip", "wrong"):
             result = self.run_gate(arguments=("--package", "iam", "--test", "develop-file-authorization"), TEST_GO_DEVELOP_FILE_RESULT=value)
             self.assertNotEqual(result.returncode, 0)
+
+    def test_develop_controlled_file_inputs_uses_forward_migration(self):
+        result = self.run_gate(arguments=("--package", "migration", "--test", "develop-file-inputs"))
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("./internal/migration -run ^TestDevelopControlledFileInputsForwardMigrationAgainstPostgres$", (self.root / "trace-1").read_text())
+        for value in ("missing", "skip"):
+            result = self.run_gate(arguments=("--package", "migration", "--test", "develop-file-inputs"), TEST_GO_FILE_INPUTS_RESULT=value)
+            self.assertNotEqual(result.returncode, 0)
+
 
     def test_host_nodes_filter_keeps_default_discovery_and_rejects_other_packages(self):
         result = self.run_gate(arguments=("--package", "repository", "--test", "host-nodes"))

@@ -163,11 +163,11 @@ GET /api/executions/uuid-1234-5678
 
 ## 工作流执行私有文件
 
-首期用于已确认的 Develop / GeoPython 单文件 GeoPackage 精确读写。Develop 是业务 I/O owner：经正式授权读取源并保存实际来源会话、完整长度和 SHA-256；主动向 Runtime 传输本次私有输入，取回完整编码成果后消费 System 精确新建放行及完整文件发布 Provider。Runtime 不接收业务 NFS 挂载、业务存储连接或调用方指定的回调地址。上述存储授权与成果初始 Grant 沿[精确读写契约](../addp授权上下文规范.md#524-develop-geopackage-工作流的精确读写)，私有传输不授予任何业务数据权限。
+用于已确认的 Develop / GeoPython 受控单文件输入（NFS GeoPackage、MinIO GeoJSON）及原 GeoPackage 精确保存。Develop 是业务 I/O owner：经正式授权读取源并保存实际来源会话、完整长度和 SHA-256；主动向 Runtime 传输本次私有输入，取回完整编码成果后消费 System 精确新建放行及完整文件发布 Provider。Runtime 不接收业务 NFS 挂载、业务存储连接或调用方指定的回调地址。上述存储授权与成果初始 Grant 沿[精确读写契约](../addp授权上下文规范.md#524-develop-geopackage-工作流的精确读写)，私有传输不授予任何业务数据权限。
 
-私有文件绑定同一 Tenant、原 owner execution、attempt、Execution Authorization、绝对截止、冻结 DAG 摘要以及明确的输入/输出节点。每个输入声明完整长度与 SHA-256；节点标识只用于绑定，不作为文件系统路径。输入结构在 HTTP 边界校验并转换为不可变内部类型；每次实际操作仍须核验当前机器身份、所属执行、状态和截止时间。机器调用沿 System 当前 Tenant Service AuthContext，限定原 Develop Service Principal；不得用用户 Token、服务凭据写进 JSON、租户请求头或自报授权摘要替代。文件、摘要、恢复私有状态不进入公共 `result/all_results`。
+Owner 声明、System 封存和私有事实投影分别使用 `develop.file-intent/v1`、`develop.file-bound-scope/v1` 与 `develop.file-execution/v1`，仅保留当前协议主路径；旧记录不转译、不重放。私有文件绑定同一 Tenant、原 owner execution、attempt、Execution Authorization、绝对截止、冻结 DAG 摘要以及明确的输入/输出节点。每个输入声明完整长度与 SHA-256；节点标识只用于绑定，不作为文件系统路径。输入结构在 HTTP 边界校验并转换为不可变内部类型；每次实际操作仍须核验当前机器身份、所属执行、状态和截止时间。机器调用沿 System 当前 Tenant Service AuthContext，限定原 Develop Service Principal；不得用用户 Token、服务凭据写进 JSON、租户请求头或自报授权摘要替代。文件、摘要、恢复私有状态不进入公共 `result/all_results`。
 
-Runtime 只在全部输入完整核验后启动本次执行专用的可终止工作进程，内部复用原 DAG Runner 与算子，不复制计算实现。运行中输入与成果仅位于本次私有目录。退出、取消、超时及取回后的资源清理返回实际结果；失败不假报已清理。长度/摘要不符、未完成输入、错 execution/attempt 或迟到结果均不能进入正式发布。对本首期受控 GeoPackage 输入输出，原业务挂载读写路径不作为兼容路线。
+Runtime 只在全部输入完整核验后启动本次执行专用的可终止工作进程，内部复用原 DAG Runner 与算子，不复制计算实现。运行中输入与成果仅位于本次私有目录。退出、取消、超时及取回后的资源清理返回实际结果；失败不假报已清理。长度/摘要不符、未完成输入、错 execution/attempt 或迟到结果均不能进入正式发布。对上述受控文件输入与 GeoPackage 输出，原业务挂载读写路径不作为兼容路线。
 
 600 秒业务预算不增加。截止后不得发起新的业务读取或取得新的发布放行；Runtime 工作进程可被终止，不代表 Develop 已在途的阻塞 NFS RPC 同时终止。按既定准入规则，已经放行的在途发布可完成，未知结果只核清原 operation；未确认结果或清理如实保留 `unknown/cleanup_pending`，不计成功、零残留或 T4 通过。晚到事实不能复活失效 lease、旧 attempt 或重新触发业务写入。NFS 阻塞传输硬中断不属于本首期扩展。
 
@@ -185,7 +185,7 @@ Runtime 只在全部输入完整核验后启动本次执行专用的可终止工
 | `GET /api/private-files/{runtime_execution_id}/outputs/{index}` | 仅完整成功且未过期的声明成果，返回完整 GeoPackage 字节，不用预览 GeoJSON 还原 |
 | `DELETE /api/private-files/{runtime_execution_id}` | 停止工作进程并清理私有资源；实际完成 `200 cleanup=passed`，仍有进程/传输或删除失败为 `202 cleanup=pending` |
 
-Manifest 固定 `schema_version=addp.workflow.private-files/v1`，包含十进制字符串 `tenant_id`、`authorization_id`，原 Owner `execution_id` UUID、正整数 `attempt`、System 封存的 `scope_digest`、带时区的绝对 `deadline`，以及 `workflow_json`、`inputs` 和 `outputs`。`workflow_json` 为已冻结的私有 DAG 原始 JSON 文本；Develop 只移除并替换其实际业务 I/O 技术参数，不以此重新计算 System 的原配置/授权摘要。每个输入固定 `{node_id,size_bytes,sha256}`，长度用十进制字符串、摘要用小写 SHA-256。输出为零或一个保存节点 ID；零输出场景不声明虚拟目标、批准或成果。节点名不参与文件路径。DAG 的 load/save 不得含业务连接、路径、access plan，保存固定 `mode=fail`；其余节点只接受不具有外部存储参数的已登记只读内存算子，未声明的 I/O 拒绝。
+Manifest 固定 `schema_version=addp.workflow.private-files/v2`，包含十进制字符串 `tenant_id`、`authorization_id`，原 Owner `execution_id` UUID、正整数 `attempt`、System 封存的 `scope_digest`、带时区的绝对 `deadline`，以及 `workflow_json`、`inputs` 和 `outputs`。`workflow_json` 为已冻结的私有 DAG 原始 JSON 文本；Develop 只移除并替换其实际业务 I/O 技术参数，不以此重新计算 System 的原配置/授权摘要。每个输入固定 `{node_id,format,size_bytes,sha256}`，`format` 为 System 封存的 `geopackage | geojson`，不从原文件名猜测；Runtime 只按序号和格式生成 `.gpkg`／`.geojson` 私有路径，长度用十进制字符串、摘要用小写 SHA-256。输出为零或一个保存节点 ID；零输出场景不声明虚拟目标、批准或成果。节点名不参与文件路径。DAG 的 load/save 不得含业务连接、路径、access plan，保存固定 `mode=fail`；其余节点只接受不具有外部存储参数的已登记只读内存算子，未声明的 I/O 拒绝。
 
 完成输入后仍通过唯一的 `POST /api/workflow` 派发，私有模式请求只包含 `runtime`：既有的 Tenant / EA 身份，加 `private_files: {execution_id: <runtime_execution_id>}`。此模式消费的源 EA 效果严格为 `read`。只有 manifest 已逐一绑定的 load/save 节点可解码输入和编码私有成果，二者不因此取得业务 `write`；其余节点必须为已登记只读内存计算，不允许把任意写入算子改称私有编码。原公开 save 元数据及业务效果不变，真实 create 继续只有 Develop 消费 System 单次发布批准后执行。该私有分界是前述通用 DAG 效果覆盖规则的明确前置条件，不可用于其他执行模式。
 

@@ -12,6 +12,7 @@ import (
 	"github.com/addp/common/execution"
 	commonmodels "github.com/addp/common/models"
 	"github.com/addp/system/internal/iam"
+	"gorm.io/gorm"
 )
 
 func developGeoPackageFacts(t *testing.T, path plugin.EngineCatalogPath) *authorizationfacts.AuthorizationFacts {
@@ -39,7 +40,7 @@ func TestDevelopFileReadRequiresCompleteExactGeoPackageComposition(t *testing.T)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !developSingleGeoPackage(binding, p) {
+	if !developSingleFile(binding, p) {
 		t.Fatal("complete contract rejected")
 	}
 	for _, mutate := range []func(*authorizationfacts.Binding){
@@ -55,11 +56,11 @@ func TestDevelopFileReadRequiresCompleteExactGeoPackageComposition(t *testing.T)
 		copy := binding
 		copy.FileComposition = binding.FileComposition.Clone()
 		mutate(&copy)
-		if developSingleGeoPackage(copy, p) {
+		if developSingleFile(copy, p) {
 			t.Fatal("incomplete or unrelated content accepted")
 		}
 	}
-	if developSingleGeoPackage(binding, plugin.FileItemPath(11, "sources/neighbor.gpkg")) {
+	if developSingleFile(binding, plugin.FileItemPath(11, "sources/neighbor.gpkg")) {
 		t.Fatal("neighboring path accepted")
 	}
 }
@@ -86,12 +87,49 @@ func TestDevelopFileReadNeverPromotesMetadataBoundaryToContent(t *testing.T) {
 	facts.BoundaryHash = &hash
 	reader := &developMetadataOnlyReader{facts: facts}
 	service := NewService(NewRepository(nil), nil).WithAuthorizationFactsReader(reader)
-	intent, err := execution.NewDevelopFileIntent([]byte(`{"purpose":"test-only"}`), 1, 45, []execution.DevelopFileSourceIntent{{NodeID: "load", Target: p}}, nil)
+	intent, err := execution.NewDevelopFileIntent([]byte(`{"purpose":"test-only"}`), 1, 45, []execution.DevelopFileSourceIntent{{NodeID: "load", Target: p}}, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	value, err := service.PrepareDevelopFileRead(t.Context(), &iam.ExecutionAuthorization{TenantID: 3, ActorPrincipalID: 31, TenantMembershipID: 41, IssuedAuthorizationVersion: 5, SourceType: "user", Audience: "develop"}, *intent)
 	if value != nil || !errors.Is(err, ErrAuthorizationBoundaryChanged) || reader.calls != 1 {
 		t.Fatal("metadata became a content connection", value, err, reader.calls)
+	}
+}
+
+// Real Meta composition + Grant fixtures exercise the same preparation used by
+// both root and child file execution, rather than a GeoJSON-only access API.
+func exerciseDevelopGeoJSONFileSource(t *testing.T, db *gorm.DB, service *Service, tenant int64, user userProvenance, facts authorizationfacts.AuthorizationFacts) {
+	t.Helper()
+	p := facts.Boundary.FileComposition.Refs[0].Target
+	intent, err := execution.NewDevelopFileIntent([]byte(`{"fixture":true}`), 1, 45, []execution.DevelopFileSourceIntent{{NodeID: "load", Target: p}}, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	principal, err := iam.NewRepository(db).GetPrincipal(t.Context(), user.PrincipalID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	auth := &iam.ExecutionAuthorization{Audience: "develop", SourceType: "user", TenantID: tenant, ActorPrincipalID: user.PrincipalID, TenantMembershipID: user.MembershipID, IssuedAuthorizationVersion: principal.AuthorizationVersion}
+	prepared, err := service.PrepareDevelopFileRead(t.Context(), auth, *intent)
+	if err != nil || prepared == nil || prepared.Scope.Sources[0].Format != "geojson" {
+		t.Fatal("unified GeoJSON source", err)
+	}
+	auth.DevelopFileScope = prepared.Scope.Clone()
+	verify := func() error {
+		return db.Transaction(func(tx *gorm.DB) error { _, err := prepared.Verify(t.Context(), tx, auth, nil); return err })
+	}
+	if err := verify(); err != nil {
+		t.Fatal(err)
+	}
+	// The sealed version cannot follow a subsequently reconfigured source engine.
+	if err := db.Exec("UPDATE system.engines SET version=version+1 WHERE id=?", p.EngineID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := verify(); err == nil {
+		t.Fatal("changed source engine accepted")
+	}
+	if err := db.Exec("UPDATE system.engines SET version=version-1 WHERE id=?", p.EngineID).Error; err != nil {
+		t.Fatal(err)
 	}
 }

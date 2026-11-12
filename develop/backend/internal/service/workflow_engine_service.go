@@ -739,23 +739,6 @@ func (s *WorkflowEngineService) preprocessWorkflowParamsWithTargets(
 			return nil, nil, fmt.Errorf("任务 %d 资源路径规范化失败: %w", i, err)
 		}
 
-		if workflowEngineType == "geopython_workflow" && engine.EngineType == "minio" && operatorID == "load" {
-			target, err := plugin.ObjectItemPathFromRefPath(engineID, stringParam(params, "path"))
-			if err != nil {
-				return nil, nil, err
-			}
-			content, err := s.readWorkflowGeoJSON(ctx, tenantID, taskID, target, resolver)
-			if err != nil {
-				return nil, nil, err
-			}
-			loaded := map[string]interface{}{"geojson": content}
-			if geometry, ok := params["geom_column"]; ok {
-				loaded["geom_column"] = geometry
-			}
-			task["params"] = loaded
-			continue
-		}
-
 		// 构建完整的 connection_info（包含 engine_type）
 		// 注意：将 Engine.EngineType 添加到 connection_info 中，方便算子使用
 		enrichedConnInfo := make(map[string]interface{})

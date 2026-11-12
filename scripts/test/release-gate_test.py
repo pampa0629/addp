@@ -33,7 +33,9 @@ class DeploymentPackageTest(unittest.TestCase):
         with tempfile.TemporaryDirectory(prefix='addp-package-') as directory:
             root = Path(directory)
             for name in os.fsdecode(inputs).split('\0'):
-                if not name:
+                # The working tree may delete tracked sources before publication.
+                # Preserve dangling-link errors while excluding actual deletions.
+                if not name or not os.path.lexists(repository / name):
                     continue
                 target = root / name
                 target.parent.mkdir(parents=True, exist_ok=True)

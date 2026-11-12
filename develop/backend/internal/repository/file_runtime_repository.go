@@ -38,7 +38,7 @@ func (r *FileExecutionRepository) withPrivateFileLease(ctx context.Context, leas
 		if err != nil {
 			return err
 		}
-		if item.Module != commonexecution.ModuleDevelop || item.TaskType != commonexecution.TaskTypeWorkflow || item.Source != commonexecution.ModuleDevelop {
+		if item.Module != commonexecution.ModuleDevelop || item.TaskType != commonexecution.TaskTypeWorkflow || (item.Source != commonexecution.ModuleDevelop && item.Source != commonexecution.ModuleOrchestrator) {
 			return commonapi.ErrConflict
 		}
 		var row models.FileExecution
@@ -96,13 +96,15 @@ func (r *FileExecutionRepository) RecordPrivateRuntime(ctx context.Context, leas
 		for i, source := range intent.Sources {
 			proof := record.SourceReads[i]
 			version := int64(0)
+			format := ""
 			for _, bound := range issued.Scope.Sources {
 				if reflect.DeepEqual(bound.Target, source.Target) {
 					version, _ = strconv.ParseInt(bound.EngineVersion, 10, 64)
+					format = bound.Format
 					break
 				}
 			}
-			if proof.EngineVersion <= 0 || proof.EngineVersion != version {
+			if proof.EngineVersion <= 0 || proof.EngineVersion != version || m.Inputs[i].Format != format {
 				return commonapi.ErrConflict
 			}
 

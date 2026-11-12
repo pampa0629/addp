@@ -41,13 +41,13 @@ func fileInputsFixture(t *testing.T, save bool) (*client.DevelopFileExecutionFac
 		tail = `,{"id":"save","operator":"save","params":{"input_df":{"$ref":"buffer"},"mode":"fail","target_parent_locator":"addp://engine/11/path/outputs?type=directory","target_name":"result.gpkg"},"depends_on":["buffer"]}`
 	}
 	raw := json.RawMessage(`{"timeout":600,"number":9007199254740993,"content":{"workflow_definition":{"tasks":[{"id":"a","operator":"load","params":{"locator":"addp://engine/11/path/sources/A.gpkg?type=file","geom_column":"shape","source_resource":{"item_id":"not-authority"}},"depends_on":[]},{"id":"b","operator":"load","params":{"locator":"addp://engine/11/path/sources/B.gpkg?type=file"},"depends_on":[]},{"id":"buffer","operator":"buffer","params":{"input_gdf":{"$ref":"a"},"distance":9007199254740993},"depends_on":["a"]}` + tail + `]}}}`)
-	intent, err := execution.NewDevelopFileIntent(raw, 1, 600, []execution.DevelopFileSourceIntent{{NodeID: "a", Target: plugin.FileItemPath(11, "sources/A.gpkg")}, {NodeID: "b", Target: plugin.FileItemPath(11, "sources/B.gpkg")}}, target)
+	intent, err := execution.NewDevelopFileIntent(raw, 1, 600, []execution.DevelopFileSourceIntent{{NodeID: "a", Target: plugin.FileItemPath(11, "sources/A.gpkg")}, {NodeID: "b", Target: plugin.FileItemPath(11, "sources/B.gpkg")}}, target, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	refs := []execution.DevelopFileSourceReference{}
 	for i, source := range intent.Sources {
-		refs = append(refs, execution.DevelopFileSourceReference{Target: source.Target, ItemFingerprint: strings.Repeat(string(rune('a'+i)), 64), BoundaryHash: strings.Repeat(string(rune('c'+i)), 64), EngineVersion: "2"})
+		refs = append(refs, execution.DevelopFileSourceReference{Target: source.Target, ItemFingerprint: strings.Repeat(string(rune('a'+i)), 64), Format: "geopackage", BoundaryHash: strings.Repeat(string(rune('c'+i)), 64), EngineVersion: "2"})
 	}
 	version := ""
 	if save {
@@ -275,7 +275,7 @@ func TestFileWorkflowInputsRejectRawDAGMismatchBeforeOpen(t *testing.T) {
 			case "replace-mode":
 				raw = strings.Replace(raw, `"mode":"fail"`, `"mode":"replace"`, 1)
 			}
-			intent, err := execution.NewDevelopFileIntent(json.RawMessage(raw), 1, 600, facts.Intent.Sources, facts.Intent.Target)
+			intent, err := execution.NewDevelopFileIntent(json.RawMessage(raw), 1, 600, facts.Intent.Sources, facts.Intent.Target, nil)
 			if err != nil {
 				t.Fatal(err)
 			}

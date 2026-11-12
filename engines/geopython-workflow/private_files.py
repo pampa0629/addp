@@ -28,6 +28,11 @@ class InputFile:
     node_id: str
     size: int
     sha256: str
+    format: str
+
+    @property
+    def suffix(self):
+        return {"geopackage": "gpkg", "geojson": "geojson"}[self.format]
 
 
 @dataclass(frozen=True)
@@ -47,7 +52,7 @@ class FileManifest:
         """The HTTP boundary converts the external manifest exactly once."""
         fields = {"schema_version", "tenant_id", "execution_id", "attempt", "authorization_id",
                   "scope_digest", "deadline", "workflow_json", "inputs", "outputs"}
-        if not isinstance(value, dict) or set(value) != fields or value["schema_version"] != "addp.workflow.private-files/v1":
+        if not isinstance(value, dict) or set(value) != fields or value["schema_version"] != "addp.workflow.private-files/v2":
             raise PrivateFileError("PRIVATE_FILES_INVALID", 400)
         if any(not isinstance(value[k], str) or re.fullmatch(r"[1-9][0-9]*", value[k]) is None
                for k in ["tenant_id", "authorization_id"]):
@@ -76,13 +81,13 @@ class FileManifest:
             raise PrivateFileError("PRIVATE_FILES_INVALID", 400)
         inputs = []
         for item in value["inputs"]:
-            if not isinstance(item, dict) or set(item) != {"node_id", "size_bytes", "sha256"}:
+            if not isinstance(item, dict) or set(item) != {"node_id", "format", "size_bytes", "sha256"}:
                 raise PrivateFileError("PRIVATE_FILES_INVALID", 400)
-            if (not isinstance(item["node_id"], str) or not item["node_id"] or
+            if (item["format"] not in ("geopackage", "geojson") or not isinstance(item["node_id"], str) or not item["node_id"] or
                     not isinstance(item["size_bytes"], str) or re.fullmatch(r"0|[1-9][0-9]*", item["size_bytes"]) is None or
                     not isinstance(item["sha256"], str) or re.fullmatch(r"[0-9a-f]{64}", item["sha256"]) is None):
                 raise PrivateFileError("PRIVATE_FILES_INVALID", 400)
-            inputs.append(InputFile(item["node_id"], int(item["size_bytes"]), item["sha256"]))
+            inputs.append(InputFile(item["node_id"], int(item["size_bytes"]), item["sha256"], item["format"]))
         outputs = value["outputs"]
         if (not isinstance(outputs, list) or len(outputs) > 1 or
                 any(not isinstance(node, str) or not node for node in outputs)):
@@ -179,7 +184,7 @@ class PrivateFiles:
                     raise PrivateFileError("PRIVATE_FILES_INPUT_MISMATCH", 400)
             with self._lock:
                 self._admit(creator)
-                pending.rename(self.directory / f"input-{index}.gpkg")
+                pending.rename(self.directory / f"input-{index}.{self.manifest.inputs[index].suffix}")
                 self._inputs[index] = "ready"
         except Exception:
             with self._lock:
@@ -202,7 +207,7 @@ class PrivateFiles:
             for task in workflow["tasks"]:
                 node, operator, params = task["id"], task["operator"], task.get("params", {})
                 if operator == "load":
-                    params = {**params, "path": f"input-{inputs[node]}.gpkg"}
+                    params = {**params, "path": f"input-{inputs[node]}.{self.manifest.inputs[inputs[node]].suffix}"}
                 elif operator == "save":
                     params = {**params, "path": f"output-{outputs[node]}.gpkg"}
                 else:

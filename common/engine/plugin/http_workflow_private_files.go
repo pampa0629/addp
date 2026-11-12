@@ -18,7 +18,7 @@ import (
 	"github.com/google/uuid"
 )
 
-const WorkflowPrivateFilesAPIV1 = "addp.workflow.private-files/v1"
+const WorkflowPrivateFilesAPIV2 = "addp.workflow.private-files/v2"
 
 // Runtime file transport is not a content grant or a publication provider.
 // The callback supplies the current tenant Develop service token per request;
@@ -27,6 +27,7 @@ type WorkflowRuntimeCredential func(context.Context) (string, error)
 
 type WorkflowPrivateFile struct {
 	NodeID string `json:"node_id"`
+	Format string `json:"format,omitempty"`
 	Size   int64  `json:"size_bytes,string"`
 	SHA256 string `json:"sha256"`
 }
@@ -92,7 +93,7 @@ func workflowPrivateDigest(value string) bool {
 
 func NewWorkflowPrivateFilesClient(conn ConnectionInfo, runtimeID string, manifest WorkflowPrivateFileManifest, credential WorkflowRuntimeCredential) (*WorkflowPrivateFilesClient, error) {
 	base, err := RuntimeBaseURL(conn)
-	if err != nil || credential == nil || !workflowPrivateUUID(runtimeID) || manifest.SchemaVersion != WorkflowPrivateFilesAPIV1 ||
+	if err != nil || credential == nil || !workflowPrivateUUID(runtimeID) || manifest.SchemaVersion != WorkflowPrivateFilesAPIV2 ||
 		manifest.TenantID == 0 || !workflowPrivateUUID(manifest.ExecutionID) || manifest.Attempt < 1 || manifest.AuthorizationID <= 0 ||
 		!workflowPrivateDigest(manifest.ScopeDigest) || manifest.Deadline.IsZero() || !json.Valid([]byte(manifest.WorkflowJSON)) ||
 		len(manifest.Inputs) == 0 || len(manifest.Outputs) > 1 {
@@ -100,7 +101,7 @@ func NewWorkflowPrivateFilesClient(conn ConnectionInfo, runtimeID string, manife
 	}
 	seen := map[string]bool{}
 	for _, input := range manifest.Inputs {
-		if strings.TrimSpace(input.NodeID) == "" || seen[input.NodeID] || input.Size < 0 || !workflowPrivateDigest(input.SHA256) {
+		if (input.Format != "geopackage" && input.Format != "geojson") || strings.TrimSpace(input.NodeID) == "" || seen[input.NodeID] || input.Size < 0 || !workflowPrivateDigest(input.SHA256) {
 			return nil, errors.New("invalid workflow private-file input")
 		}
 		seen[input.NodeID] = true

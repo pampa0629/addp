@@ -17,7 +17,7 @@ import (
 	"github.com/addp/common/jsonmap"
 )
 
-const DevelopFileExecutionSchema = "develop.geopackage-file-execution/v1"
+const DevelopFileExecutionSchema = "develop.file-execution/v1"
 
 // The projection carries three separately bounded values (raw config, Intent,
 // optional sealed Scope), plus a fixed envelope of canonical IDs and digests.
@@ -63,7 +63,7 @@ func (f *DevelopFileExecutionFacts) Validate() error {
 			return errors.New("invalid Develop file execution actor")
 		}
 	}
-	intent, err := execution.NewDevelopFileIntent(f.ConfigJSON, f.Intent.ExpectedAttempt, f.Intent.TimeoutSeconds, f.Intent.Sources, f.Intent.Target)
+	intent, err := execution.NewDevelopFileIntent(f.ConfigJSON, f.Intent.ExpectedAttempt, f.Intent.TimeoutSeconds, f.Intent.Sources, f.Intent.Target, f.Intent.Parent)
 	if err != nil || !reflect.DeepEqual(intent, &f.Intent) {
 		return errors.New("invalid frozen Develop file intent")
 	}

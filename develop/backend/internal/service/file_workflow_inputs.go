@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -85,7 +86,7 @@ func prepareFileWorkflowInputs(ctx context.Context, instanceID string, authority
 	}
 	batchCtx, cancel := context.WithCancelCause(ctx)
 	b := &fileWorkflowInputs{ctx: batchCtx, cancel: cancel, directory: root, instanceID: instanceID, manifest: plugin.WorkflowPrivateFileManifest{
-		SchemaVersion: plugin.WorkflowPrivateFilesAPIV1, TenantID: uint(tenant), ExecutionID: facts.ExecutionID, Attempt: lease.Attempt,
+		SchemaVersion: plugin.WorkflowPrivateFilesAPIV2, TenantID: uint(tenant), ExecutionID: facts.ExecutionID, Attempt: lease.Attempt,
 		AuthorizationID: authorization, ScopeDigest: facts.ScopeDigest, WorkflowJSON: workflow, Inputs: []plugin.WorkflowPrivateFile{}, Outputs: []string{}}}
 	if facts.Intent.Target != nil {
 		b.manifest.Outputs = append(b.manifest.Outputs, facts.Intent.Target.NodeID)
@@ -96,7 +97,19 @@ func prepareFileWorkflowInputs(ctx context.Context, instanceID string, authority
 	}
 	for index, source := range facts.Intent.Sources {
 		req := client.DevelopFileSourceAccessRequest{ExecutionID: facts.ExecutionID, Attempt: lease.Attempt, LeaseToken: lease.Token, ScopeDigest: facts.ScopeDigest, Source: source.Target}
-		reader, err := newFileSourceReader(b.ctx, authority, provider, issued, req)
+		sourceFormat := ""
+		for _, ref := range issued.Scope.Sources {
+			if reflect.DeepEqual(ref.Target, source.Target) {
+				sourceFormat = ref.Format
+				break
+			}
+		}
+		sourceProvider, err := privateFileSourceProvider(sourceFormat, provider)
+		if err != nil {
+			b.cancel(err)
+			return b, err
+		}
+		reader, err := newFileSourceReader(b.ctx, authority, sourceProvider, issued, req)
 		if err != nil {
 			b.cancel(err)
 			return b, err
@@ -121,7 +134,7 @@ func prepareFileWorkflowInputs(ctx context.Context, instanceID string, authority
 			b.cancel(errFileWorkflowInputs)
 			return b, errFileWorkflowInputs
 		}
-		if err := sqlite.ValidateStandaloneGeoPackage(reader.ctx, b.inputPath(index)); err != nil {
+		if err := validatePrivateFileContent(reader.ctx, reader.format, b.inputPath(index)); err != nil {
 			b.cancel(errFileSourceComposition)
 			return b, errFileSourceComposition
 		}
@@ -135,7 +148,7 @@ func prepareFileWorkflowInputs(ctx context.Context, instanceID string, authority
 			b.cancel(errFileWorkflowInputs)
 			return b, errFileWorkflowInputs
 		}
-		b.manifest.Inputs = append(b.manifest.Inputs, plugin.WorkflowPrivateFile{NodeID: source.NodeID, Size: receipt.Size, SHA256: receipt.SHA256})
+		b.manifest.Inputs = append(b.manifest.Inputs, plugin.WorkflowPrivateFile{NodeID: source.NodeID, Format: reader.format, Size: receipt.Size, SHA256: receipt.SHA256})
 		b.sourceReads = append(b.sourceReads, repository.PrivateFileSourceRead{NodeID: source.NodeID, ReadSet: receipt.ReadSet.Clone(), EngineVersion: receipt.EngineVersion})
 	}
 	b.prepared = true
@@ -145,8 +158,49 @@ func prepareFileWorkflowInputs(ctx context.Context, instanceID string, authority
 	return b, nil
 }
 
+func privateFileSourceProvider(format string, nfs fileSourceProvider) (fileSourceProvider, error) {
+	if format == "geopackage" {
+		return nfs, nil
+	}
+	if format != "geojson" {
+		return nil, errFileWorkflowInputs
+	}
+	registered, err := plugin.Get("minio")
+	if err != nil {
+		return nil, err
+	}
+	provider, ok := registered.(fileSourceProvider)
+	if !ok {
+		return nil, errFileWorkflowInputs
+	}
+	return provider, nil
+}
+
+func validatePrivateFileContent(ctx context.Context, format, path string) error {
+	if format == "geopackage" {
+		return sqlite.ValidateStandaloneGeoPackage(ctx, path)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return err
+	}
+	var value struct {
+		Type     string            `json:"type"`
+		Features []json.RawMessage `json:"features"`
+		CRS      json.RawMessage   `json:"crs"`
+	}
+	if len(data) > maxWorkflowGeoJSONBytes || json.Unmarshal(data, &value) != nil || value.Type != "FeatureCollection" || value.Features == nil || len(value.CRS) != 0 {
+		return errFileSourceComposition
+	}
+	return nil
+}
+
 func (b *fileWorkflowInputs) inputPath(index int) string {
-	return filepath.Join(b.directory, fmt.Sprintf("input-%d.gpkg", index))
+	suffix := "gpkg"
+	if b.sources[index].format == "geojson" {
+		suffix = "geojson"
+	}
+	return filepath.Join(b.directory, fmt.Sprintf("input-%d.%s", index, suffix))
 }
 
 func (b *fileWorkflowInputs) live() error {

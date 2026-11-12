@@ -180,21 +180,21 @@ Python 实现的 Workflow Runtime 应共享 `common-python` 中的协议执行�
 
 ## 工作流任务执行输入与输出
 
-### MinIO 单文件 GeoJSON 读取
+### 受控文件输入与执行私有意图
 
-GeoPython 的公开 `load` 可读取已扫描的 MinIO 单文件 GeoJSON。Develop 使用当前 execution 的冻结 DAG 和实际触发用户，复用现有执行授权；Orchestrator 子执行须证明同租户运行中父执行、相同 Actor 与授权版本，并限制手动触发。System 从权威 execution 的 load 节点独立解析对象，核验有效租约、原执行授权、当前用户功能权限及 Meta 完整文件边界和当前 read Grant，返回仅供同次受控读取使用的引擎观察。
+受控文件签发的身份入口分别为 User 的 `POST /auth/execution-authorizations/develop-file-workflows` 与固定 Develop Service 的 `POST /runtime/execution-authorizations/develop-file-workflows`，各自使用现有身份与功能权限 Guard，进入同一 Intent／Scope 封存机制。不得把 User 功能权限与机器权限声明为 any-of，不保留 GeoJSON 专线。
 
-Develop 在源保护边界内读取，最长 8 MiB，读取前后复核源 ETag／长度／修改时间、Meta 边界及当前授权，失败即终止。内容只在本次执行内存及到受信 GeoPython 的请求中传递；Runtime 的 load 消费已读取的 GeoJSON，不接收对象存储凭据或业务地址。公开任务只保存 locator，拒绝直接提交内部 geojson 参数。NFS GeoPackage 的执行私有文件协议继续按下一节处理。
+GeoPython 的 NFS 单文件 GeoPackage 与 MinIO 单文件 GeoJSON 共用执行私有文件链：公开 `load` 只保存 locator，Develop 根据 Meta 可信格式与完整单文件边界冻结来源，System 独立核验当前 read Grant 并封存格式、边界与实际来源引擎版本。数据授权不依赖 deep scan 或文件内容完整性。Develop 在源保护内取得完整字节并保存实际读取会话证据，随后经同一私有传输交给 Runtime；Runtime 仅按序号及受支持格式生成本次执行目录中的私有文件路径。删除 `load.geojson`、专用 GeoJSON 访问 API 和内存内容注入，不保留旁路或兼容入口。
 
-Meta 将已扫描、layout=single 的 GeoJSON 表文件声明为精确单主文件边界，角色为 data。该事实不新增 Grant，现有桶或前缀 read Grant 仍由 System 逐次裁决。
+GeoJSON 保留原 8 MiB 上限、WGS84 FeatureCollection 内容约束及读取前后 ETag／长度／修改时间一致性检查；GeoPackage 保留独立文件、事务关联文件与原生结构检查。两者都按实际读取时的当前授权、租约和来源版本校验，不将读取一致性结论作为 Grant 条件。新增 MinIO GeoJSON 输入本阶段只读；保存仍只允许原 NFS GeoPackage 来源的精确新建链，不扩展输出范围。
 
-### GeoPackage 执行私有意图
+沿[授权上下文 5.2.4](../addp授权上下文规范.md#524-develop-geopackage-工作流的精确读写)及[Runtime 私有文件协议](HTTP协议.md#工作流执行私有文件)，Develop 在同一 Owner 事务保存原 `common.task_executions` pending 及 `develop.file_executions` 私有记录。根手动执行使用当前 User 凭据签发；手动 Orchestrator 子执行使用同 Tenant 固定 Develop Service 调用同一签发机制的父执行入口，System 依据 common 权威父子行解析真实触发用户，核验相同 Actor／成员关系／授权版本及当前权限。子执行冻结父执行 UUID、attempt 与 lease 摘要；签发、准入与每次实际读取都核验同一父执行仍手动运行、租约有效且未换代，不以 Service 身份替代用户数据权限。本阶段子执行只读，不新增业务输出或定时任务准入。
 
-首期 NFS GeoPackage 精确文件执行沿[授权上下文 5.2.4](../addp授权上下文规范.md#524-develop-geopackage-工作流的精确读写)及[Runtime 私有文件协议](HTTP协议.md#工作流执行私有文件)。Develop 在同一 Owner 事务保存原 `common.task_executions` pending 及 `develop.file_executions` 私有记录，再在事务外用本次同步栈的原 User Bearer 签发。私有记录保存发起人、原始配置、Intent、System 原封存范围及准入状态，不进入公共 Metadata、任务定义、结果或日志，不存令牌与明文连接。
+私有记录保存发起人、原始配置、Intent、System 原封存范围及准入状态，不进入公共 Metadata、任务定义、结果或日志，不存令牌与明文连接。未知签发不补签、不回退通用授权。已应用迁移 284 和原业务资产／失败记录保留；旧私有协议不作为新执行的兼容路线，部署前须核对并处理在途私有执行，历史事实不改写、不自动重放。
 
 `config_json` 是数据库实际存下的完整 `common.task_executions.execution_config` JSON 原值，不从 JSONMap 浮点往返还原、不只截取 DAG、不添加 Runtime 私有路径。Intent 与配置由同一共享工厂冻结；签发回包必须与原 Actor、Tenant、execution、预期 attempt 精确一致。目标缺失仍是同一只读路径，不生成虚拟批准或发布操作。
 
-Owner 唯一事实接口为 `GET /api/v1/develop/runtime/file-executions/{execution_id}`，只供持 `develop.file_execution.read` 的同 Tenant `addp-system` Service。返回 Common `DevelopFileExecutionFacts`，含原配置和 Intent 及可缺的原 EA／Scope；不复制公共 execution 生命周期或 lease secret。System 自行读取 common 权威行核状态、真实 claim 和期限。未签发即明确拒绝允许 `admission_state=rejected` 且无 Scope，未知签发不能伪造明确拒绝。私有记录只对本 purpose 关联原 pending 做领取过滤；普通工作流、查询及父子执行不走此新协议。 pending 准入观察到期后只能用新的 System 观察刷新资格，不能据旧回包领取，刷新也不改变原 EA、预期 attempt 或开始运行后的固定业务预算。已知签发拒绝可原子关闭未开始的原执行；丢失回包、超时或依赖不可用不能被写成明确拒绝。
+Owner 唯一事实接口为 `GET /api/v1/develop/runtime/file-executions/{execution_id}`，只供持 `develop.file_execution.read` 的同 Tenant `addp-system` Service。返回 Common `DevelopFileExecutionFacts`，含原配置和 Intent 及可缺的原 EA／Scope；不复制公共 execution 生命周期或 lease secret。System 自行读取 common 权威行核状态、真实 claim 和期限。未签发即明确拒绝允许 `admission_state=rejected` 且无 Scope，未知签发不能伪造明确拒绝。私有记录只对本 purpose 关联原 pending 做领取过滤；普通非受控工作流及查询不走此协议；上述手动 Orchestrator 受控文件子执行使用同一协议。 pending 准入观察到期后只能用新的 System 观察刷新资格，不能据旧回包领取，刷新也不改变原 EA、预期 attempt 或开始运行后的固定业务预算。已知签发拒绝可原子关闭未开始的原执行；丢失回包、超时或依赖不可用不能被写成明确拒绝。
 
 保存成功的 Develop 工作流必须包含完整、可直接执行的公开参数；执行输入只允许对本次 execution 覆盖保存值，不能用于补齐不完整任务。工作流任务的执行输入契约由 Develop 根据当前 `workflow_definition`、目标 Workflow Runtime 的 Public Operator Spec 和 Develop Adapter Spec 动态生成，不在任务内容中复制保存第二份 Schema 或默认值。
 

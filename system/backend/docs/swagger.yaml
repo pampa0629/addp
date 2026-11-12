@@ -980,17 +980,6 @@ definitions:
       file_composition:
         $ref: '#/definitions/authorizationfacts.FileCompositionBoundary'
     type: object
-  client.WorkflowGeoJSONAccessRequest:
-    properties:
-      attempt:
-        type: integer
-      execution_id:
-        type: string
-      lease_token:
-        type: string
-      node_id:
-        type: string
-    type: object
   configuration.ManagementDeclaration:
     properties:
       entries:
@@ -1401,6 +1390,8 @@ definitions:
       boundary_hash:
         type: string
       engine_version:
+        type: string
+      format:
         type: string
       item_fingerprint:
         type: string
@@ -6457,58 +6448,6 @@ definitions:
           $ref: '#/definitions/plugin.EngineCatalogPath'
         type: array
     type: object
-  /execution-authorizations/develop-geopackage-workflows/{execution_id}/create-approval-context:
-    get:
-      description: 同租户独立批准人，复核专用批准资格与目标管理范围。仅返回原执行和精确目标的最小审批信息，不返回配置、来源清单、连接、凭据或租约；不创建批准、Grant或运行体，不激活执行。
-        | Independent approver in the same tenant with the approval permission and
-        target management scope. Returns only original execution and exact target
-        context, excluding configuration, source lists, connections, credentials and
-        leases. Creates no approval, Grant or runtime and does not activate execution.
-      parameters:
-      - description: 原执行 UUID | Original execution UUID
-        in: path
-        name: execution_id
-        required: true
-        type: string
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/github_com_addp_system_internal_iam.DevelopFileCreateApprovalContext'
-        "400":
-          description: Bad Request
-          schema:
-            $ref: '#/definitions/internal_api.IAMErrorResponse'
-        "401":
-          description: Unauthorized
-          schema:
-            $ref: '#/definitions/internal_api.IAMErrorResponse'
-        "403":
-          description: Forbidden
-          schema:
-            $ref: '#/definitions/internal_api.IAMErrorResponse'
-        "409":
-          description: Conflict
-          schema:
-            $ref: '#/definitions/internal_api.IAMErrorResponse'
-        "500":
-          description: Internal Server Error
-          schema:
-            $ref: '#/definitions/internal_api.IAMErrorResponse'
-        "503":
-          description: Service Unavailable
-          schema:
-            $ref: '#/definitions/internal_api.IAMErrorResponse'
-      security:
-      - BearerAuth: []
-      summary: 读取 GeoPackage 单次保存审批上下文 | Read GeoPackage creation approval context
-      tags:
-      - 执行授权 | Execution Authorization
-      x-addp-auth-mode: permission
-      x-addp-required-permissions:
-      - system.develop_file_create_approval.create
   plugin.ScriptCapability:
     properties:
       interactive:
@@ -7172,12 +7111,12 @@ paths:
       - ontology.revision.publish
       x-addp-required-permissions:
       - system.execution_authorization.create
-  /auth/execution-authorizations/develop-geopackage-workflows:
+  /auth/execution-authorizations/develop-file-workflows:
     post:
       consumes:
       - application/json
       description: 当前普通 API User；独立读取 Owner 冻结 Intent 和 Meta basic 身份与逻辑边界，保存用途另核当前写执行权限，核当前人员、精确源规则和原
-        pending，封存同一 EA；不新增源 Grant 或目标写权 | Ordinary API User only; independently reads
+        pending，封存同一 EA；不新增源 Grant 或目标写权 | Ordinary API User; independently reads
         frozen Owner intent and basic Meta identity and logical boundaries, requires
         current write-execution permission for saves, checks current actor, exact
         source rules and original pending execution, and seals one EA without source
@@ -9981,7 +9920,7 @@ paths:
       x-addp-auth-mode: permission
       x-addp-required-permissions:
       - system.cleanup_authorization.execute
-  /execution-authorizations/{id}/develop-geopackage-admission-checks:
+  /execution-authorizations/{id}/develop-file-admission-checks:
     post:
       consumes:
       - application/json
@@ -10037,6 +9976,69 @@ paths:
       security:
       - BearerAuth: []
       summary: 观察 Develop 文件执行当前准入资格 | Observe current Develop file execution eligibility
+      tags:
+      - 执行授权 | Execution Authorization
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - system.execution_authorization.execute
+  /execution-authorizations/{id}/develop-file-source-accesses:
+    post:
+      consumes:
+      - application/json
+      description: 固定 addp-develop 当前机器凭据；核同一 Scope、当前 User、完整源规则、真实 running attempt/lease、原截止及同版本
+        NFS；保存范围继续核对原批准。只返回指定源连接及时间边界。 | Fixed current addp-develop machine credential.
+        Checks scope, current User, source rules, running attempt and lease, original
+        deadline and NFS version. Rechecks the original approval for save scopes.
+        Returns only the selected source connection and time bounds.
+      parameters:
+      - description: 规范正整数 EA ID | Canonical positive EA ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: 同一执行租约、范围摘要与精确源；512 KiB，无 query | Identical execution lease,
+          scope digest and exact source; 512 KiB, no query
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/client.DevelopFileSourceAccessRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 当次精确读取观察，非引擎级授权 | Current exact read observation, not engine-wide
+            authorization
+          schema:
+            $ref: '#/definitions/client.DevelopFileSourceAccessObservation'
+        "400":
+          description: 拒绝或依赖不可用 | Rejected or dependency unavailable
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "401":
+          description: 拒绝或依赖不可用 | Rejected or dependency unavailable
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "403":
+          description: 拒绝或依赖不可用 | Rejected or dependency unavailable
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "409":
+          description: 拒绝或依赖不可用 | Rejected or dependency unavailable
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "500":
+          description: 拒绝或依赖不可用 | Rejected or dependency unavailable
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "503":
+          description: 拒绝或依赖不可用 | Rejected or dependency unavailable
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 复核 Develop 原执行的精确文件读取 | Recheck exact file read for original Develop
+        execution
       tags:
       - 执行授权 | Execution Authorization
       x-addp-auth-mode: permission
@@ -10255,69 +10257,6 @@ paths:
       security:
       - BearerAuth: []
       summary: 获取原文件操作恢复观察 | Observe recovery of the original file operation
-      tags:
-      - 执行授权 | Execution Authorization
-      x-addp-auth-mode: permission
-      x-addp-required-permissions:
-      - system.execution_authorization.execute
-  /execution-authorizations/{id}/develop-geopackage-source-accesses:
-    post:
-      consumes:
-      - application/json
-      description: 固定 addp-develop 当前机器凭据；核同一 Scope、当前 User、完整源规则、真实 running attempt/lease、原截止及同版本
-        NFS；保存范围继续核对原批准。只返回指定源连接及时间边界。 | Fixed current addp-develop machine credential.
-        Checks scope, current User, source rules, running attempt and lease, original
-        deadline and NFS version. Rechecks the original approval for save scopes.
-        Returns only the selected source connection and time bounds.
-      parameters:
-      - description: 规范正整数 EA ID | Canonical positive EA ID
-        in: path
-        name: id
-        required: true
-        type: string
-      - description: 同一执行租约、范围摘要与精确源；512 KiB，无 query | Identical execution lease,
-          scope digest and exact source; 512 KiB, no query
-        in: body
-        name: request
-        required: true
-        schema:
-          $ref: '#/definitions/client.DevelopFileSourceAccessRequest'
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: 当次精确读取观察，非引擎级授权 | Current exact read observation, not engine-wide
-            authorization
-          schema:
-            $ref: '#/definitions/client.DevelopFileSourceAccessObservation'
-        "400":
-          description: 拒绝或依赖不可用 | Rejected or dependency unavailable
-          schema:
-            $ref: '#/definitions/internal_api.IAMErrorResponse'
-        "401":
-          description: 拒绝或依赖不可用 | Rejected or dependency unavailable
-          schema:
-            $ref: '#/definitions/internal_api.IAMErrorResponse'
-        "403":
-          description: 拒绝或依赖不可用 | Rejected or dependency unavailable
-          schema:
-            $ref: '#/definitions/internal_api.IAMErrorResponse'
-        "409":
-          description: 拒绝或依赖不可用 | Rejected or dependency unavailable
-          schema:
-            $ref: '#/definitions/internal_api.IAMErrorResponse'
-        "500":
-          description: 拒绝或依赖不可用 | Rejected or dependency unavailable
-          schema:
-            $ref: '#/definitions/internal_api.IAMErrorResponse'
-        "503":
-          description: 拒绝或依赖不可用 | Rejected or dependency unavailable
-          schema:
-            $ref: '#/definitions/internal_api.IAMErrorResponse'
-      security:
-      - BearerAuth: []
-      summary: 复核 Develop 原执行的精确文件读取 | Recheck exact file read for original Develop
-        execution
       tags:
       - 执行授权 | Execution Authorization
       x-addp-auth-mode: permission
@@ -10716,42 +10655,58 @@ paths:
       x-addp-auth-mode: permission
       x-addp-required-permissions:
       - system.execution_authorization.execute
-  /execution-authorizations/develop-geojson/access:
-    post:
-      consumes:
-      - application/json
-      description: 仅 Develop 租户服务可按当前租约核验冻结 load 节点的源 | Only the Develop tenant service
-        may verify the frozen load source using the current lease
+  /execution-authorizations/develop-file-workflows/{execution_id}/create-approval-context:
+    get:
+      description: 同租户独立批准人，复核专用批准资格与目标管理范围。仅返回原执行和精确目标的最小审批信息，不返回配置、来源清单、连接、凭据或租约；不创建批准、Grant或运行体，不激活执行。
+        | Independent approver in the same tenant with the approval permission and
+        target management scope. Returns only original execution and exact target
+        context, excluding configuration, source lists, connections, credentials and
+        leases. Creates no approval, Grant or runtime and does not activate execution.
       parameters:
-      - description: 当前执行租约 | Current execution lease
-        in: body
-        name: request
+      - description: 原执行 UUID | Original execution UUID
+        in: path
+        name: execution_id
         required: true
-        schema:
-          $ref: '#/definitions/client.WorkflowGeoJSONAccessRequest'
+        type: string
       produces:
       - application/json
       responses:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/client.ManagerFileAccessObservation'
+            $ref: '#/definitions/github_com_addp_system_internal_iam.DevelopFileCreateApprovalContext'
         "400":
           description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "401":
+          description: Unauthorized
           schema:
             $ref: '#/definitions/internal_api.IAMErrorResponse'
         "403":
           description: Forbidden
           schema:
             $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
       security:
       - BearerAuth: []
-      summary: 复核GeoJSON 读取执行的数据权限 | Verify GeoJSON reading execution access
+      summary: 读取 GeoPackage 单次保存审批上下文 | Read GeoPackage creation approval context
       tags:
-      - Runtime 执行授权 | Runtime Execution Authorization
+      - 执行授权 | Execution Authorization
       x-addp-auth-mode: permission
       x-addp-required-permissions:
-      - system.execution_authorization.execute
+      - system.develop_file_create_approval.create
   /execution-read-scope:
     get:
       produces:
@@ -14570,6 +14525,62 @@ paths:
       - transfer.task.execute
       - develop.data_read.execute
       - develop.data_write.execute
+      x-addp-required-permissions:
+      - system.execution_authorization.execute
+  /runtime/execution-authorizations/develop-file-workflows:
+    post:
+      consumes:
+      - application/json
+      description: 固定同租户 addp-develop Service；System 独立核 common 父子行、真实用户、当前权限、父租约与原冻结
+        Intent，仅允许只读。不以服务权限替代用户 read Grant。 | Fixed same-tenant addp-develop Service.
+        System verifies authoritative parent-child executions, actual user, current
+        permissions, parent lease and original frozen intent. Read only; service permission
+        does not replace the user read Grant.
+      parameters:
+      - description: 原子执行与 Intent 摘要 | Original child execution and intent digest
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_api.IAMIssueDevelopFileRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/client.IssuedDevelopFileAuthorization'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 从手动父执行签发 Develop 私有文件授权 | Issue Develop private file authorization
+        from a manual parent
+      tags:
+      - 执行授权 | Execution Authorization
+      x-addp-auth-mode: permission
       x-addp-required-permissions:
       - system.execution_authorization.execute
   /runtime/execution-authorizations/service-definitions:

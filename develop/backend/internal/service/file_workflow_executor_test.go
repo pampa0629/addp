@@ -32,7 +32,7 @@ import (
 // Actual claimed Owner SQL, private HTTP client and local staging. Authority,
 // NFS bytes and native computation remain explicit doubles, not business T4.
 func TestPrivateFileWorkerDispatchRecoveryAndCapacity(t *testing.T) {
-	for _, scenario := range []string{"success", "saved-success", "native-failure", "parameter-failure", "create-unknown", "execute-unknown", "cleanup-running", "cleanup-directory", "cleanup-unknown", "expired-source-window", "late-success"} {
+	for _, scenario := range []string{"success", "child-success", "saved-success", "native-failure", "parameter-failure", "create-unknown", "execute-unknown", "cleanup-running", "cleanup-directory", "cleanup-unknown", "expired-source-window", "late-success"} {
 		t.Run(scenario, func(t *testing.T) {
 			db, repo, item, lease, _, issued, base := privateFileWorkerFixture(t, scenario == "saved-success")
 			queue := repository.NewExecutionRepository(db)
@@ -232,6 +232,13 @@ func TestPrivateFileWorkerDispatchRecoveryAndCapacity(t *testing.T) {
 			}
 			var claimed execution.TaskExecution
 			_ = db.First(&claimed, "execution_id = ?", item.ExecutionID).Error
+			if scenario == "child-success" {
+				// Only the dispatch adapter is doubled here; real parent provenance is exercised in the IAM PostgreSQL gate.
+				claimed.Source = execution.ModuleOrchestrator
+				if err := db.Model(&claimed).UpdateColumn("source", claimed.Source).Error; err != nil {
+					t.Fatal(err)
+				}
+			}
 			if err := s.Execute(t.Context(), &claimed, *lease); err != nil {
 				t.Fatal(err)
 			}
@@ -474,5 +481,35 @@ func TestPrivateFileWorkerBlockedSourceRetainsOriginalBatchAndCapacity(t *testin
 	_ = db.First(&terminal, "execution_id = ?", item.ExecutionID).Error
 	if terminal.Status != "failed" {
 		t.Fatal("late close revived old execution", terminal.Status)
+	}
+}
+
+func TestPrivateFileRuntimeRequiresCurrentDeclaredProtocol(t *testing.T) {
+	for _, version := range []string{"", "addp.workflow.private-files/v1", plugin.WorkflowPrivateFilesAPIV2} {
+		t.Run(version, func(t *testing.T) {
+			caps := plugin.EngineCapabilities{SchemaVersion: plugin.CapabilitiesSchemaVersion, Compute: &plugin.ComputeCapabilities{Workflow: &plugin.WorkflowCapability{Supported: true, RuntimeAPI: plugin.WorkflowRuntimeAPIAddpV1, PrivateFilesAPI: version}}}
+			raw, err := json.Marshal(caps)
+			if err != nil {
+				t.Fatal(err)
+			}
+			encoded := commonModels.JSONString(raw)
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Path != "/api/v1/system/runtime/engine-descriptors/90" {
+					t.Error(r.URL.Path)
+				}
+				_ = json.NewEncoder(w).Encode(commonModels.EngineRuntimeDescriptor{ID: 90, EngineType: "geopython_workflow", LifecycleState: commonModels.EngineLifecycleActive, ConnectionStatus: commonModels.EngineConnectionOnline, Capabilities: &encoded, RuntimeEndpoint: &commonModels.EngineRuntimeEndpoint{Protocol: "http", Host: "runtime", Port: 8090}})
+			}))
+			defer server.Close()
+			sdk := client.NewSystemServiceClient(server.URL, &sourceWindowTokens{}, server.Client())
+			owner := newPrivateFileWorkflowExecutor(nil, &WorkflowEngineService{systemService: sdk}, "instance")
+			connection, err := owner.endpoint(t.Context(), 3, 90)
+			if version == plugin.WorkflowPrivateFilesAPIV2 {
+				if err != nil || connection == nil {
+					t.Fatal("declared current protocol rejected", err)
+				}
+			} else if err == nil || connection != nil {
+				t.Fatal("undeclared/retired protocol used")
+			}
+		})
 	}
 }

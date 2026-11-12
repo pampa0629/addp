@@ -60,7 +60,7 @@ func (s *ExecutionService) Execute(ctx context.Context, item *commonExecution.Ta
 	if item.TaskType != commonExecution.TaskTypeWorkflow && item.TaskType != commonExecution.TaskTypeScript {
 		return fmt.Errorf("unsupported Develop execution type")
 	}
-	if item.TaskType == commonExecution.TaskTypeWorkflow && item.Source == commonExecution.ModuleDevelop {
+	if item.TaskType == commonExecution.TaskTypeWorkflow && (item.Source == commonExecution.ModuleDevelop || item.Source == commonExecution.ModuleOrchestrator) {
 		facts, issued, readErr := s.privateFiles.repository.ReadForDispatch(ctx, uint(item.TenantID), item.ExecutionID)
 		if readErr == nil {
 			return s.executePrivateFileWorkflow(ctx, item, lease, facts, *issued, lang)

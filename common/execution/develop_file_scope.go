@@ -15,11 +15,12 @@ import (
 
 	"github.com/addp/common/dataitem/authorizationfacts"
 	"github.com/addp/common/engine/plugin"
+	"github.com/google/uuid"
 )
 
 const (
-	DevelopFileIntentSchema     = "develop.geopackage-file-intent/v1"
-	DevelopBoundFileScopeSchema = "develop.geopackage-bound-scope/v1"
+	DevelopFileIntentSchema     = "develop.file-intent/v1"
+	DevelopBoundFileScopeSchema = "develop.file-bound-scope/v1"
 )
 
 var errDevelopFileScope = errors.New("invalid Develop file execution boundary")
@@ -36,6 +37,23 @@ type DevelopFileTargetIntent struct {
 	Mode   string                   `json:"mode"`
 }
 
+// DevelopFileParent binds one real parent claim without retaining its secret.
+type DevelopFileParent struct {
+	ExecutionID string `json:"execution_id"`
+	Attempt     int    `json:"attempt"`
+	LeaseDigest string `json:"lease_digest"`
+}
+
+func NewDevelopFileParent(id string, attempt int, lease string) (*DevelopFileParent, error) {
+	parsed, err := uuid.Parse(id)
+	token, tokenErr := uuid.Parse(lease)
+	if err != nil || tokenErr != nil || parsed == uuid.Nil || parsed.String() != id || token == uuid.Nil || token.String() != lease || attempt <= 0 {
+		return nil, errDevelopFileScope
+	}
+	digest := sha256.Sum256([]byte(lease))
+	return &DevelopFileParent{ExecutionID: id, Attempt: attempt, LeaseDigest: hex.EncodeToString(digest[:])}, nil
+}
+
 // DevelopFileIntent freezes the owner's declaration. It contains no guessed
 // Meta fingerprint/hash and grants no access. The owner proves DAG coverage.
 type DevelopFileIntent struct {
@@ -45,9 +63,10 @@ type DevelopFileIntent struct {
 	TimeoutSeconds  int                       `json:"timeout_seconds"`
 	Sources         []DevelopFileSourceIntent `json:"sources"`
 	Target          *DevelopFileTargetIntent  `json:"target,omitempty"`
+	Parent          *DevelopFileParent        `json:"parent,omitempty"`
 }
 
-func NewDevelopFileIntent(raw json.RawMessage, expectedAttempt, timeoutSeconds int, sources []DevelopFileSourceIntent, target *DevelopFileTargetIntent) (*DevelopFileIntent, error) {
+func NewDevelopFileIntent(raw json.RawMessage, expectedAttempt, timeoutSeconds int, sources []DevelopFileSourceIntent, target *DevelopFileTargetIntent, parent *DevelopFileParent) (*DevelopFileIntent, error) {
 	if len(sources) == 0 {
 		return nil, errDevelopFileScope
 	}
@@ -56,7 +75,7 @@ func NewDevelopFileIntent(raw json.RawMessage, expectedAttempt, timeoutSeconds i
 		return nil, errDevelopFileScope
 	}
 	value := (&DevelopFileIntent{SchemaVersion: DevelopFileIntentSchema, ConfigDigest: digest,
-		ExpectedAttempt: expectedAttempt, TimeoutSeconds: timeoutSeconds, Sources: sources, Target: target}).Clone()
+		ExpectedAttempt: expectedAttempt, TimeoutSeconds: timeoutSeconds, Sources: sources, Target: target, Parent: parent}).Clone()
 	sort.Slice(value.Sources, func(i, j int) bool { return value.Sources[i].NodeID < value.Sources[j].NodeID })
 	if err := value.Validate(); err != nil {
 		return nil, err
@@ -69,6 +88,12 @@ func (s *DevelopFileIntent) Validate() error {
 		!validDevelopFileBudget(s.ExpectedAttempt, s.TimeoutSeconds) || len(s.Sources) == 0 {
 		return errDevelopFileScope
 	}
+	if s.Parent != nil {
+		id, err := uuid.Parse(s.Parent.ExecutionID)
+		if err != nil || id == uuid.Nil || id.String() != s.Parent.ExecutionID || s.Parent.Attempt <= 0 || !developFileDigest(s.Parent.LeaseDigest) || s.Target != nil {
+			return errDevelopFileScope
+		}
+	}
 	for i, source := range s.Sources {
 		if !developFileNodeID(source.NodeID) || !developFileLeaf(source.Target) || (i > 0 && s.Sources[i-1].NodeID >= source.NodeID) {
 			return errDevelopFileScope
@@ -77,7 +102,7 @@ func (s *DevelopFileIntent) Validate() error {
 			return errDevelopFileScope
 		}
 	}
-	if s.Target != nil && (!developFileNodeID(s.Target.NodeID) || s.Target.Mode != "fail" || !developFileLeaf(s.Target.Target)) {
+	if s.Target != nil && (!developFileNodeID(s.Target.NodeID) || s.Target.Mode != "fail" || (!developFileLeaf(s.Target.Target) || developObjectLeaf(s.Target.Target))) {
 		return errDevelopFileScope
 	}
 	return boundedDevelopFileValue(s)
@@ -95,6 +120,10 @@ func (s *DevelopFileIntent) Clone() *DevelopFileIntent {
 		return nil
 	}
 	result := *s
+	if s.Parent != nil {
+		p := *s.Parent
+		result.Parent = &p
+	}
 	result.Sources = append([]DevelopFileSourceIntent(nil), s.Sources...)
 	for i := range result.Sources {
 		result.Sources[i].Target = cloneDevelopFilePath(result.Sources[i].Target)
@@ -114,6 +143,7 @@ type DevelopFileSourceReference struct {
 	ItemFingerprint string                   `json:"item_fingerprint"`
 	BoundaryHash    string                   `json:"boundary_hash"`
 	EngineVersion   string                   `json:"engine_version"`
+	Format          string                   `json:"format"`
 }
 
 type DevelopBoundFileTarget struct {
@@ -183,7 +213,7 @@ func (s *DevelopBoundFileScope) Validate() error {
 	paths := make([]plugin.EngineCatalogPath, 0, len(s.Sources))
 	seen := make(map[string]bool, len(s.Sources))
 	for _, source := range s.Sources {
-		if !validDevelopFileSourceReference(source) || seen[source.ItemFingerprint] {
+		if !validDevelopFileSourceReference(source) || seen[source.ItemFingerprint] || (s.Target != nil && source.Format != "geopackage") {
 			return errDevelopFileScope
 		}
 		seen[source.ItemFingerprint] = true
@@ -260,7 +290,7 @@ func (s *DevelopBoundFileScope) Clone() *DevelopBoundFileScope {
 }
 
 func validDevelopFileSourceReference(source DevelopFileSourceReference) bool {
-	return developFileLeaf(source.Target) && authorizationfacts.ValidItemFingerprint(source.ItemFingerprint) &&
+	return ((source.Format == "geopackage" && !developObjectLeaf(source.Target)) || (source.Format == "geojson" && developObjectLeaf(source.Target))) && developFileLeaf(source.Target) && authorizationfacts.ValidItemFingerprint(source.ItemFingerprint) &&
 		authorizationfacts.ValidItemFingerprint(source.BoundaryHash) && developFileVersion(source.EngineVersion)
 }
 
@@ -282,7 +312,7 @@ func developFileDigest(value string) bool {
 
 func developFileLeaf(path plugin.EngineCatalogPath) bool {
 	if path.EngineID == 0 || uint64(path.EngineID) > math.MaxInt64 || path.Version != plugin.EngineCatalogPathVersion || len(path.Segments) < 2 ||
-		!reflect.DeepEqual(path, plugin.FileItemPath(path.EngineID, path.StringPath())) {
+		!reflect.DeepEqual(path, plugin.FileItemPath(path.EngineID, path.StringPath())) && !developObjectLeaf(path) {
 		return false
 	}
 	for _, part := range path.Segments[1:] {
@@ -291,6 +321,11 @@ func developFileLeaf(path plugin.EngineCatalogPath) bool {
 		}
 	}
 	return true
+}
+
+func developObjectLeaf(path plugin.EngineCatalogPath) bool {
+	canonical, err := plugin.ObjectItemPathFromRefPath(path.EngineID, path.StringPath())
+	return err == nil && reflect.DeepEqual(path, canonical)
 }
 
 func cloneDevelopFilePath(path plugin.EngineCatalogPath) plugin.EngineCatalogPath {

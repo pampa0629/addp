@@ -84,11 +84,11 @@ func (f sourceWindowReaderFunc) Read(p []byte) (int, error) { return f(p) }
 
 func fileSourceFixture(t *testing.T, window time.Duration) (client.IssuedDevelopFileAuthorization, client.DevelopFileSourceAccessRequest, client.DevelopFileSourceAccessObservation) {
 	t.Helper()
-	intent, err := execution.NewDevelopFileIntent(json.RawMessage(`{"task":"load","number":9007199254740993}`), 1, 600, []execution.DevelopFileSourceIntent{{NodeID: "load", Target: plugin.FileItemPath(11, "sources/ 原始.gpkg ")}}, nil)
+	intent, err := execution.NewDevelopFileIntent(json.RawMessage(`{"task":"load","number":9007199254740993}`), 1, 600, []execution.DevelopFileSourceIntent{{NodeID: "load", Target: plugin.FileItemPath(11, "sources/ 原始.gpkg ")}}, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	scope, err := execution.NewDevelopBoundFileScope(*intent, []execution.DevelopFileSourceReference{{Target: intent.Sources[0].Target, ItemFingerprint: strings.Repeat("a", 64), BoundaryHash: strings.Repeat("b", 64), EngineVersion: "2"}}, "")
+	scope, err := execution.NewDevelopBoundFileScope(*intent, []execution.DevelopFileSourceReference{{Target: intent.Sources[0].Target, ItemFingerprint: strings.Repeat("a", 64), Format: "geopackage", BoundaryHash: strings.Repeat("b", 64), EngineVersion: "2"}}, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -243,10 +243,13 @@ func TestFileSourceWindowRenewalRetainsFixedDeadlineAndOriginalBinding(t *testin
 			t.Error("renewal changed original binding")
 		}
 		copy := obs
-		if calls.Add(1) > 1 {
+		call := calls.Add(1)
+		if call > 1 {
 			copy.ObservedAt = time.Now()
 			copy.ExpiresAt = time.Now().Add(time.Minute)
-			close(renewed)
+			if call == 2 {
+				close(renewed)
+			}
 		}
 		return &copy, nil
 	})
@@ -282,7 +285,7 @@ func TestFileSourceWindowRenewalRetainsFixedDeadlineAndOriginalBinding(t *testin
 		t.Fatal("valid renewal did not preserve read", err)
 	}
 	receipt, err := s.Receipt(t.Context())
-	if err != nil || !receipt.BusinessDeadline.Equal(obs.BusinessDeadline) || calls.Load() != 2 {
+	if err != nil || !receipt.BusinessDeadline.Equal(obs.BusinessDeadline) || calls.Load() != 3 {
 		t.Fatal(receipt, err, calls.Load())
 	}
 }
@@ -470,7 +473,7 @@ func TestFileSourceWindowUsesCurrentSDKCredentialForEachObservation(t *testing.T
 	var credentials []string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var actual client.DevelopFileSourceAccessRequest
-		if r.URL.Path != "/api/v1/system/execution-authorizations/9/develop-geopackage-source-accesses" || r.Method != "POST" || json.NewDecoder(r.Body).Decode(&actual) != nil || !reflect.DeepEqual(actual, req) {
+		if r.URL.Path != "/api/v1/system/execution-authorizations/9/develop-file-source-accesses" || r.Method != "POST" || json.NewDecoder(r.Body).Decode(&actual) != nil || !reflect.DeepEqual(actual, req) {
 			t.Error("wire binding changed")
 		}
 		lock.Lock()
@@ -504,7 +507,7 @@ func TestFileSourceWindowUsesCurrentSDKCredentialForEachObservation(t *testing.T
 	}
 	lock.Lock()
 	defer lock.Unlock()
-	if len(credentials) != 2 || credentials[0] != "Bearer addp_at_first" || credentials[1] != "Bearer addp_at_current" {
+	if len(credentials) != 3 || credentials[0] != "Bearer addp_at_first" || credentials[1] != "Bearer addp_at_current" || credentials[2] != "Bearer addp_at_current" {
 		t.Fatal("old machine credential cached", credentials)
 	}
 }
@@ -581,7 +584,7 @@ func TestFileSourceWindowCompletedBytesLoseEligibilityAfterRevocation(t *testing
 	issued, req, obs := fileSourceFixture(t, 200*time.Millisecond)
 	var calls atomic.Int32
 	auth := fileSourceAuthorityFunc(func(context.Context, client.IssuedDevelopFileAuthorization, client.DevelopFileSourceAccessRequest) (*client.DevelopFileSourceAccessObservation, error) {
-		if calls.Add(1) > 1 {
+		if calls.Add(1) > 2 {
 			return nil, errors.New("revoked")
 		}
 		return &obs, nil
@@ -641,4 +644,75 @@ func TestFileSourceWindowBusinessDeadlineStopsBlockedRead(t *testing.T) {
 	}
 	close(release)
 	waitSourceStopped(t, s)
+}
+
+type geoJSONWindowProvider struct{ *sourceWindowProvider }
+
+func (p *geoJSONWindowProvider) Type() string { return "minio" }
+
+func TestFileSourceGeoJSONObjectUsesSameWindowAndExactReadEvidence(t *testing.T) {
+	for _, scenario := range []string{"stable", "changed", "oversized", "wrong evidence", "engine version", "revoked after read"} {
+		t.Run(scenario, func(t *testing.T) {
+			issued, req, obs := fileSourceFixture(t, time.Minute)
+			target, err := plugin.ObjectItemPathFromRefPath(11, "bucket/source.geojson")
+			if err != nil {
+				t.Fatal(err)
+			}
+			req.Source, obs.Source = target, target
+			issued.Scope.Sources[0].Target, issued.Scope.Sources[0].Format = target, "geojson"
+			issued.ScopeDigest, _ = issued.Scope.Digest()
+			req.ScopeDigest, obs.ScopeDigest = issued.ScopeDigest, issued.ScopeDigest
+			obs.Engine.EngineType = "minio"
+			if scenario == "engine version" {
+				obs.Engine.Version++
+			}
+			data := []byte(`{"type":"FeatureCollection","features":[]}`)
+			base := sourceWindowData(req, data)
+			var observations atomic.Int32
+			base.facts = func(_ context.Context, _ plugin.ConnectionInfo, p plugin.EngineCatalogPath) (*plugin.EngineCatalogFacts, error) {
+				f := sourceWindowFacts(p, int64(len(data)))
+				f.Kind = "object"
+				modified := time.Unix(1, 0)
+				f.UpdatedAt = &modified
+				if scenario == "changed" && observations.Add(1) > 1 {
+					f.Storage.ETag = "changed"
+				}
+				if scenario == "oversized" {
+					size := int64(maxWorkflowGeoJSONBytes + 1)
+					f.Storage.SizeBytes = &size
+				}
+				return f, nil
+			}
+			if scenario == "wrong evidence" {
+				base.open = func(context.Context, plugin.ConnectionInfo, plugin.EngineCatalogPath, plugin.ReadOptions) (io.ReadCloser, error) {
+					return &sourceWindowHandle{Reader: bytes.NewReader(data)}, nil
+				}
+			}
+			var checks atomic.Int32
+			authority := fileSourceAuthorityFunc(func(context.Context, client.IssuedDevelopFileAuthorization, client.DevelopFileSourceAccessRequest) (*client.DevelopFileSourceAccessObservation, error) {
+				if checks.Add(1) > 1 && scenario == "revoked after read" {
+					return nil, errors.New("source revoked")
+				}
+				copy := obs
+				return &copy, nil
+			})
+			reader, err := newFileSourceReader(t.Context(), authority, &geoJSONWindowProvider{base}, issued, req)
+			if err != nil {
+				if scenario != "engine version" {
+					t.Fatal(err)
+				}
+				return
+			}
+			defer reader.Close()
+			contents, readErr := io.ReadAll(reader)
+			receipt, receiptErr := reader.Receipt(t.Context())
+			if scenario == "stable" {
+				if readErr != nil || receiptErr != nil || !bytes.Equal(contents, data) || receipt == nil || len(receipt.ReadSet.Paths) != 1 || !reflect.DeepEqual(receipt.ReadSet.Paths[0], target) {
+					t.Fatal("complete object receipt", readErr, receiptErr)
+				}
+			} else if readErr == nil && receiptErr == nil {
+				t.Fatal("unsafe object admitted")
+			}
+		})
+	}
 }

@@ -531,7 +531,7 @@ def register_to_system():
                 "workflow": {
                     "supported": True,
                     "runtime_api": "addp.workflow/v1",
-                    "private_files_api": "addp.workflow.private-files/v1",
+                    "private_files_api": "addp.workflow.private-files/v2",
                     "dynamic_operators": True,
                     "storage_access": STORAGE_ACCESS
                 }

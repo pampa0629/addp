@@ -39,19 +39,21 @@ func (s *Service) PrepareDevelopFileRead(ctx context.Context, auth *iam.Executio
 	}
 	refs := make([]execution.DevelopFileSourceReference, len(bindings))
 	versions := make(map[uint]int64)
+	formats := make(map[uint]string)
 	for i, binding := range bindings {
-		if !developSingleGeoPackage(binding, set.Paths[i]) {
+		if !developSingleFile(binding, set.Paths[i]) {
 			return nil, ErrAuthorizationBoundaryChanged
 		}
 		engine, err := s.repository.engine(ctx, auth.TenantID, int64(set.Paths[i].EngineID), false)
-		if err != nil || !developNFSVersion(engine, auth.TenantID, 0) {
+		if err != nil || !developSourceVersion(engine, auth.TenantID, 0, binding.FileComposition.Format) {
 			return nil, commonapi.ErrForbidden
 		}
 		if previous, ok := versions[engine.ID]; ok && previous != engine.Version {
 			return nil, ErrAuthorizationBoundaryChanged
 		}
 		versions[engine.ID] = engine.Version
-		refs[i] = execution.DevelopFileSourceReference{Target: set.Paths[i], ItemFingerprint: binding.ItemFingerprint, BoundaryHash: binding.BoundaryHash, EngineVersion: strconv.FormatInt(engine.Version, 10)}
+		formats[engine.ID] = binding.FileComposition.Format
+		refs[i] = execution.DevelopFileSourceReference{Target: set.Paths[i], ItemFingerprint: binding.ItemFingerprint, BoundaryHash: binding.BoundaryHash, Format: binding.FileComposition.Format, EngineVersion: strconv.FormatInt(engine.Version, 10)}
 	}
 	targetVersion := ""
 	if intent.Target != nil {
@@ -63,6 +65,7 @@ func (s *Service) PrepareDevelopFileRead(ctx context.Context, auth *iam.Executio
 			return nil, ErrAuthorizationBoundaryChanged
 		}
 		versions[engine.ID] = engine.Version
+		formats[engine.ID] = "geopackage"
 		targetVersion = strconv.FormatInt(engine.Version, 10)
 	}
 	scope, err := execution.NewDevelopBoundFileScope(intent, refs, targetVersion)
@@ -96,7 +99,7 @@ func (s *Service) PrepareDevelopFileRead(ctx context.Context, auth *iam.Executio
 		slices.Sort(ids)
 		for _, id := range ids {
 			var engine models.Engine
-			if err := db.WithContext(ctx).Table("system.engines").Clauses(clause.Locking{Strength: "SHARE"}).Where("id=? AND tenant_id=?", id, identity.TenantID).Take(&engine).Error; err != nil || !developNFSVersion(&engine, identity.TenantID, versions[id]) {
+			if err := db.WithContext(ctx).Table("system.engines").Clauses(clause.Locking{Strength: "SHARE"}).Where("id=? AND tenant_id=?", id, identity.TenantID).Take(&engine).Error; err != nil || !developSourceVersion(&engine, identity.TenantID, versions[id], formats[id]) {
 				return nil, commonapi.ErrForbidden
 			}
 			if selected != nil && id == selected.EngineID {
@@ -132,7 +135,7 @@ func (s *Service) PrepareDevelopFileRead(ctx context.Context, auth *iam.Executio
 		}
 		if selectedEngine != nil {
 			decoded, err := s.executionEngineSnapshot(selectedEngine)
-			if err != nil || !developNFSVersion(decoded, identity.TenantID, selectedEngine.Version) || decoded.ID != selectedEngine.ID || len(decoded.ConnectionInfo) == 0 {
+			if err != nil || !developSourceVersion(decoded, identity.TenantID, selectedEngine.Version, formats[selectedEngine.ID]) || decoded.ID != selectedEngine.ID || len(decoded.ConnectionInfo) == 0 {
 				return nil, commonapi.ErrForbidden
 			}
 			observation.Engine = decoded
@@ -149,12 +152,28 @@ func (s *Service) PrepareDevelopFileRead(ctx context.Context, auth *iam.Executio
 	return prepared, nil
 }
 
-func developSingleGeoPackage(binding authorizationfacts.Binding, target plugin.EngineCatalogPath) bool {
+func developSingleFile(binding authorizationfacts.Binding, target plugin.EngineCatalogPath) bool {
 	if binding.Validate() != nil || binding.MetadataTarget != nil || binding.Scope != nil || binding.FileComposition == nil {
 		return false
 	}
 	c := binding.FileComposition
-	return c.Format == "geopackage" && c.Layout() == "single" && len(c.Refs) == 1 && c.Refs[0].Role == "container" && c.Refs[0].Required && c.Refs[0].Primary && reflect.DeepEqual(c.Refs[0].Target, target)
+	role := "container"
+	if c.Format == "geojson" {
+		role = "data"
+	} else if c.Format != "geopackage" {
+		return false
+	}
+	return c.Layout() == "single" && len(c.Refs) == 1 && c.Refs[0].Role == role && c.Refs[0].Required && c.Refs[0].Primary && reflect.DeepEqual(c.Refs[0].Target, target)
+}
+
+func developSourceVersion(engine *models.Engine, tenant, version int64, format string) bool {
+	kind := "nfs"
+	if format == "geojson" {
+		kind = "minio"
+	} else if format != "geopackage" {
+		return false
+	}
+	return engine != nil && engine.EngineType == kind && engine.ID > 0 && engine.TenantID != nil && int64(*engine.TenantID) == tenant && engine.LifecycleState == "active" && engine.DeletedAt == nil && engine.Version > 0 && (version == 0 || engine.Version == version)
 }
 
 func developNFSVersion(engine *models.Engine, tenant, version int64) bool {

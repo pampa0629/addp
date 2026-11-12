@@ -4619,6 +4619,9 @@ const docTemplate = `{
                 "expected_attempt": {
                     "type": "integer"
                 },
+                "parent": {
+                    "$ref": "#/definitions/execution.DevelopFileParent"
+                },
                 "schema_version": {
                     "type": "string"
                 },
@@ -4633,6 +4636,20 @@ const docTemplate = `{
                 },
                 "timeout_seconds": {
                     "type": "integer"
+                }
+            }
+        },
+        "execution.DevelopFileParent": {
+            "type": "object",
+            "properties": {
+                "attempt": {
+                    "type": "integer"
+                },
+                "execution_id": {
+                    "type": "string"
+                },
+                "lease_digest": {
+                    "type": "string"
                 }
             }
         },
@@ -4654,6 +4671,9 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "engine_version": {
+                    "type": "string"
+                },
+                "format": {
                     "type": "string"
                 },
                 "item_fingerprint": {

@@ -401,7 +401,7 @@ class ExactFileReadGrants(_ExactGrantLifecycle):
 
 def approve_geopackage_save(authorizer, execution_id, tenant_id, actor_id, target, *, on_evidence):
     """One command against the formal original context; unknown outcomes never resubmit."""
-    path = f'/api/v1/system/execution-authorizations/develop-geopackage-workflows/{execution_id}/create-approval-context'
+    path = f'/api/v1/system/execution-authorizations/develop-file-workflows/{execution_id}/create-approval-context'
     context = authorizer.request('GET', path, (200,)).payload
     if (not isinstance(context, dict) or context.get('execution_id') != execution_id
         or context.get('tenant_id') != str(tenant_id) or context.get('actor_principal_id') != str(actor_id)

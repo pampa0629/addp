@@ -108,7 +108,7 @@ func TestPublicGeoPackageWorkflowSubmission(t *testing.T) {
 					}
 					_ = json.NewEncoder(w).Encode(commonModels.MetaItem{ID: 19, TenantID: 3, EngineID: 11, FullName: name, ItemType: "file",
 						Attributes: attributes})
-				case "/api/v1/system/auth/execution-authorizations/develop-geopackage-workflows":
+				case "/api/v1/system/auth/execution-authorizations/develop-file-workflows":
 					eaCalls.Add(1)
 					var request struct {
 						ExecutionID  string `json:"execution_id"`
@@ -142,7 +142,7 @@ func TestPublicGeoPackageWorkflowSubmission(t *testing.T) {
 						targetVersion = "4"
 					}
 					scope, err := execution.NewDevelopBoundFileScope(pending.Intent, []execution.DevelopFileSourceReference{{
-						Target: pending.Intent.Sources[0].Target, ItemFingerprint: strings.Repeat("a", 64), BoundaryHash: strings.Repeat("b", 64), EngineVersion: "2",
+						Target: pending.Intent.Sources[0].Target, ItemFingerprint: strings.Repeat("a", 64), Format: "geopackage", BoundaryHash: strings.Repeat("b", 64), EngineVersion: "2",
 					}}, targetVersion)
 					if err != nil {
 						t.Error(err)
@@ -157,7 +157,7 @@ func TestPublicGeoPackageWorkflowSubmission(t *testing.T) {
 							SourceType: "user", Accesses: []client.ExecutionEngineAccessScope{{EngineID: "11", Effects: []string{"read"}}}, ExpiresAt: time.Now().Add(time.Hour)},
 						Scope: *scope, ScopeDigest: scopeDigest,
 					})
-				case "/api/v1/system/execution-authorizations/9/develop-geopackage-admission-checks":
+				case "/api/v1/system/execution-authorizations/9/develop-file-admission-checks":
 					if r.Header.Get("Authorization") != "Bearer addp_at_current_machine" {
 						t.Error("admission used a retained user credential")
 					}

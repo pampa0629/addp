@@ -4,8 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -59,5 +61,53 @@ func TestMinIOInstanceOverviewCancellation(t *testing.T) {
 	_, err := (&MinIOPlugin{}).ReadInstanceOverview(ctx, plugin.ConnectionInfo{"endpoint": "127.0.0.1:1", "access_key": "fixture-access", "secret_key": "fixture-secret"})
 	if err == nil {
 		t.Fatal("canceled read succeeded")
+	}
+}
+
+func TestMinIOContentReadSessionBindsActualObjectAndKeepsEvidenceAfterClose(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Query().Has("location") {
+			w.Header().Set("Content-Type", "application/xml")
+			fmt.Fprint(w, `<LocationConstraint>us-east-1</LocationConstraint>`)
+			return
+		}
+		if r.Method != "GET" || r.URL.Path != "/bucket/input.geojson" {
+			t.Errorf("unexpected content read %s %s", r.Method, r.URL)
+			w.WriteHeader(400)
+			return
+		}
+		w.Header().Set("Content-Length", "2")
+		w.Header().Set("Last-Modified", "Wed, 21 Oct 2015 07:28:00 GMT")
+		w.Header().Set("ETag", `"v1"`)
+		fmt.Fprint(w, "{}")
+	}))
+	defer server.Close()
+	target, err := plugin.ObjectItemPathFromRefPath(11, "bucket/input.geojson")
+	if err != nil {
+		t.Fatal(err)
+	}
+	reader, err := (&MinIOPlugin{}).OpenContent(t.Context(), plugin.ConnectionInfo{"endpoint": server.URL, "access_key": "fixture-access", "secret_key": "fixture-secret"}, target, plugin.ReadOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, err := io.ReadAll(reader)
+	if err != nil || string(data) != "{}" {
+		t.Fatal("actual object", string(data), err)
+	}
+	if err := reader.Close(); err != nil {
+		t.Fatal(err)
+	}
+	evidence, ok := reader.(plugin.ReadSessionEvidence)
+	if !ok {
+		t.Fatal("read session evidence missing")
+	}
+	set, err := evidence.ReadSet(t.Context())
+	if err != nil || set == nil || len(set.Paths) != 1 || !reflect.DeepEqual(set.Paths[0], target) {
+		t.Fatal("wrong object read closure", err)
+	}
+	set.Paths[0].EngineID = 999
+	again, err := evidence.ReadSet(t.Context())
+	if err != nil || !reflect.DeepEqual(again.Paths[0], target) {
+		t.Fatal("mutable evidence")
 	}
 }

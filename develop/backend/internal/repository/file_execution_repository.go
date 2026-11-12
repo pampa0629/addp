@@ -28,9 +28,9 @@ func NewFileExecutionRepository(db *gorm.DB) *FileExecutionRepository {
 // The caller has already resolved DAG source coverage and verified User origin.
 // No System/Meta/network operation takes place while this transaction is open.
 func (r *FileExecutionRepository) CreatePending(ctx context.Context, item *commonexecution.TaskExecution, sources []commonexecution.DevelopFileSourceIntent, target *commonexecution.DevelopFileTargetIntent) (*commonclient.DevelopFileExecutionFacts, error) {
-	if item == nil || item.Module != commonexecution.ModuleDevelop || item.Source != commonexecution.ModuleDevelop ||
+	if item == nil || item.Module != commonexecution.ModuleDevelop || (item.Source != commonexecution.ModuleDevelop && item.Source != commonexecution.ModuleOrchestrator) ||
 		item.TaskType != commonexecution.TaskTypeWorkflow || item.TriggerType != commonexecution.TriggerTypeManual || item.MaxAttempts != 1 ||
-		item.ExecutionBoundary != commonexecution.ExecutionBoundaryBounded || item.ParentExecutionID != nil || item.RetryOfExecutionID != nil ||
+		item.ExecutionBoundary != commonexecution.ExecutionBoundaryBounded || item.RetryOfExecutionID != nil ||
 		item.ExecutionAuthorizationID != nil || item.AuthorizationExpiresAt != nil || item.ActorPrincipalID == nil || item.ActorTenantMembershipID == nil || item.IssuedAuthorizationVersion == nil ||
 		item.TriggeredBy == nil || int64(*item.TriggeredBy) != *item.ActorPrincipalID {
 		return nil, errors.New("invalid private file pending origin")
@@ -49,7 +49,26 @@ func (r *FileExecutionRepository) CreatePending(ctx context.Context, item *commo
 		if json.Unmarshal(raw, &fields) != nil || json.Unmarshal(fields["timeout"], &timeout) != nil {
 			return errors.New("file execution requires frozen integer timeout")
 		}
-		intent, err := commonexecution.NewDevelopFileIntent(raw, item.Attempt+1, timeout, sources, target)
+		var parent *commonexecution.DevelopFileParent
+		if item.Source == commonexecution.ModuleOrchestrator {
+			if item.ParentExecutionID == nil || target != nil {
+				return errors.New("invalid private file parent")
+			}
+			var authoritative commonexecution.TaskExecution
+			if err := tx.Clauses(clause.Locking{Strength: "SHARE"}).Where("execution_id=? AND tenant_id=? AND module='orchestrator' AND status='running' AND trigger_type='manual' AND lease_expires_at > clock_timestamp() AND actor_principal_id=? AND actor_tenant_membership_id=? AND issued_authorization_version=? AND triggered_by=actor_principal_id", *item.ParentExecutionID, item.TenantID, *item.ActorPrincipalID, *item.ActorTenantMembershipID, *item.IssuedAuthorizationVersion).Take(&authoritative).Error; err != nil {
+				return err
+			}
+			if authoritative.LeaseToken == nil {
+				return errors.New("parent lease unavailable")
+			}
+			parent, err = commonexecution.NewDevelopFileParent(authoritative.ExecutionID, authoritative.Attempt, *authoritative.LeaseToken)
+			if err != nil {
+				return err
+			}
+		} else if item.ParentExecutionID != nil {
+			return errors.New("unexpected private file parent")
+		}
+		intent, err := commonexecution.NewDevelopFileIntent(raw, item.Attempt+1, timeout, sources, target, parent)
 		if err != nil {
 			return err
 		}
@@ -79,8 +98,8 @@ func (r *FileExecutionRepository) CreatePending(ctx context.Context, item *commo
 func fileExecutionRawConfig(ctx context.Context, db *gorm.DB, executionID string, tenant uint) (json.RawMessage, error) {
 	var raw []byte
 	err := db.WithContext(ctx).Model(&commonexecution.TaskExecution{}).Select("execution_config").
-		Where("execution_id = ? AND tenant_id = ? AND module = ? AND task_type = ? AND source = ?",
-			executionID, tenant, commonexecution.ModuleDevelop, commonexecution.TaskTypeWorkflow, commonexecution.ModuleDevelop).
+		Where("execution_id = ? AND tenant_id = ? AND module = ? AND task_type = ? AND source IN ?",
+			executionID, tenant, commonexecution.ModuleDevelop, commonexecution.TaskTypeWorkflow, []string{commonexecution.ModuleDevelop, commonexecution.ModuleOrchestrator}).
 		Row().Scan(&raw)
 	return json.RawMessage(raw), err
 }
@@ -140,12 +159,12 @@ func (r *FileExecutionRepository) RejectUnissued(ctx context.Context, tenant uin
 		}
 		var item commonexecution.TaskExecution
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where(
-			"execution_id = ? AND tenant_id = ? AND module = ? AND source = ? AND task_type = ? AND status = ? AND attempt = 0 AND execution_authorization_id IS NULL AND authorization_expires_at IS NULL AND lease_token IS NULL AND started_at IS NULL",
-			executionID, tenant, commonexecution.ModuleDevelop, commonexecution.ModuleDevelop, commonexecution.TaskTypeWorkflow, commonexecution.ExecutionStatusPending).First(&item).Error; err != nil {
+			"execution_id = ? AND tenant_id = ? AND module = ? AND source IN ? AND task_type = ? AND status = ? AND attempt = 0 AND execution_authorization_id IS NULL AND authorization_expires_at IS NULL AND lease_token IS NULL AND started_at IS NULL",
+			executionID, tenant, commonexecution.ModuleDevelop, []string{commonexecution.ModuleDevelop, commonexecution.ModuleOrchestrator}, commonexecution.TaskTypeWorkflow, commonexecution.ExecutionStatusPending).First(&item).Error; err != nil {
 			return err
 		}
 		if err := commonexecution.RejectUnstarted(ctx, tx, commonexecution.PendingIdentity{ExecutionID: executionID,
-			TenantID: int(tenant), Module: commonexecution.ModuleDevelop, TaskType: commonexecution.TaskTypeWorkflow, Source: commonexecution.ModuleDevelop},
+			TenantID: int(tenant), Module: commonexecution.ModuleDevelop, TaskType: commonexecution.TaskTypeWorkflow, Source: item.Source},
 			map[string]interface{}{"error_details": commonmodels.JSONMap{"code": "develop.workflow.file_authorization_rejected"}}); err != nil {
 			return err
 		}
@@ -179,8 +198,8 @@ func (r *FileExecutionRepository) BindAuthorization(ctx context.Context, tenant 
 		authorizationID, _ := strconv.ParseInt(issued.Authorization.ID, 10, 64)
 		// Normalize only SQL clock columns; original receipt JSON is unchanged.
 		changed := tx.Model(&commonexecution.TaskExecution{}).Where(
-			"execution_id = ? AND tenant_id = ? AND module = ? AND source = ? AND task_type = ? AND status = ? AND attempt = 0 AND execution_authorization_id IS NULL AND lease_token IS NULL AND started_at IS NULL",
-			executionID, tenant, commonexecution.ModuleDevelop, commonexecution.ModuleDevelop, commonexecution.TaskTypeWorkflow, commonexecution.ExecutionStatusPending).
+			"execution_id = ? AND tenant_id = ? AND module = ? AND source IN ? AND task_type = ? AND status = ? AND attempt = 0 AND execution_authorization_id IS NULL AND lease_token IS NULL AND started_at IS NULL",
+			executionID, tenant, commonexecution.ModuleDevelop, []string{commonexecution.ModuleDevelop, commonexecution.ModuleOrchestrator}, commonexecution.TaskTypeWorkflow, commonexecution.ExecutionStatusPending).
 			Where("actor_principal_id = ? AND actor_tenant_membership_id = ? AND issued_authorization_version = ?", row.ActorPrincipalID, row.ActorMembershipID, row.AuthorizationVersion).
 			Updates(map[string]any{"execution_authorization_id": authorizationID, "authorization_expires_at": issued.Authorization.ExpiresAt.UTC()})
 		if changed.Error != nil {
@@ -193,7 +212,7 @@ func (r *FileExecutionRepository) BindAuthorization(ctx context.Context, tenant 
 		if err != nil {
 			return err
 		}
-		current, err := commonexecution.NewDevelopFileIntent(raw, facts.Intent.ExpectedAttempt, facts.Intent.TimeoutSeconds, facts.Intent.Sources, facts.Intent.Target)
+		current, err := commonexecution.NewDevelopFileIntent(raw, facts.Intent.ExpectedAttempt, facts.Intent.TimeoutSeconds, facts.Intent.Sources, facts.Intent.Target, facts.Intent.Parent)
 		if err != nil || !reflect.DeepEqual(current, &facts.Intent) {
 			return commonapi.ErrConflict
 		}
@@ -218,8 +237,8 @@ func (r *FileExecutionRepository) ApplyAdmission(ctx context.Context, tenant uin
 		}
 		var item commonexecution.TaskExecution
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where(
-			"execution_id = ? AND tenant_id = ? AND module = ? AND source = ? AND task_type = ? AND status = ? AND attempt = 0 AND lease_token IS NULL AND started_at IS NULL",
-			executionID, tenant, commonexecution.ModuleDevelop, commonexecution.ModuleDevelop, commonexecution.TaskTypeWorkflow, commonexecution.ExecutionStatusPending).First(&item).Error; err != nil {
+			"execution_id = ? AND tenant_id = ? AND module = ? AND source IN ? AND task_type = ? AND status = ? AND attempt = 0 AND lease_token IS NULL AND started_at IS NULL",
+			executionID, tenant, commonexecution.ModuleDevelop, []string{commonexecution.ModuleDevelop, commonexecution.ModuleOrchestrator}, commonexecution.TaskTypeWorkflow, commonexecution.ExecutionStatusPending).First(&item).Error; err != nil {
 			return err
 		}
 		if item.ExecutionAuthorizationID == nil || strconv.FormatInt(*item.ExecutionAuthorizationID, 10) != facts.AuthorizationID ||
@@ -230,7 +249,7 @@ func (r *FileExecutionRepository) ApplyAdmission(ctx context.Context, tenant uin
 		if err != nil {
 			return err
 		}
-		current, err := commonexecution.NewDevelopFileIntent(raw, facts.Intent.ExpectedAttempt, facts.Intent.TimeoutSeconds, facts.Intent.Sources, facts.Intent.Target)
+		current, err := commonexecution.NewDevelopFileIntent(raw, facts.Intent.ExpectedAttempt, facts.Intent.TimeoutSeconds, facts.Intent.Sources, facts.Intent.Target, facts.Intent.Parent)
 		if err != nil || !reflect.DeepEqual(current, &facts.Intent) {
 			return commonapi.ErrConflict
 		}
@@ -250,7 +269,7 @@ func (r *FileExecutionRepository) ApplyAdmission(ctx context.Context, tenant uin
 		}
 		if state == "rejected" {
 			if err := commonexecution.RejectUnstarted(ctx, tx, commonexecution.PendingIdentity{ExecutionID: executionID,
-				TenantID: int(tenant), Module: commonexecution.ModuleDevelop, TaskType: commonexecution.TaskTypeWorkflow, Source: commonexecution.ModuleDevelop},
+				TenantID: int(tenant), Module: commonexecution.ModuleDevelop, TaskType: commonexecution.TaskTypeWorkflow, Source: item.Source},
 				map[string]interface{}{"error_details": commonmodels.JSONMap{"code": "develop.workflow.file_admission_rejected"}}); err != nil {
 				return err
 			}
@@ -271,7 +290,7 @@ func (r *FileExecutionRepository) PendingAdmissions(ctx context.Context, limit i
 	var rows []models.FileExecution
 	err := r.db.WithContext(ctx).Model(&models.FileExecution{}).
 		Joins("JOIN common.task_executions AS original ON original.execution_id = file_executions.execution_id AND original.tenant_id = file_executions.tenant_id").
-		Where("original.module = ? AND original.source = ? AND original.task_type = ? AND original.status = ? AND original.attempt = 0 AND original.lease_token IS NULL AND original.started_at IS NULL", commonexecution.ModuleDevelop, commonexecution.ModuleDevelop, commonexecution.TaskTypeWorkflow, commonexecution.ExecutionStatusPending).
+		Where("original.module = ? AND original.source IN ? AND original.task_type = ? AND original.status = ? AND original.attempt = 0 AND original.lease_token IS NULL AND original.started_at IS NULL", commonexecution.ModuleDevelop, []string{commonexecution.ModuleDevelop, commonexecution.ModuleOrchestrator}, commonexecution.TaskTypeWorkflow, commonexecution.ExecutionStatusPending).
 		Where("original.execution_authorization_id IS NOT NULL AND original.authorization_expires_at > CURRENT_TIMESTAMP AND file_executions.issued_authorization_json IS NOT NULL").
 		Where("file_executions.admission_state = ? OR (file_executions.admission_state = ? AND file_executions.admission_expires_at <= CURRENT_TIMESTAMP)", "pending", "ready").
 		Order("file_executions.updated_at ASC, file_executions.execution_id ASC").Limit(limit).Find(&rows).Error

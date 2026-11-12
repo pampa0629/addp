@@ -255,7 +255,7 @@ func exerciseFileCompositionGrants(t *testing.T, db *gorm.DB, tenantID, adminID 
 				}
 				read(request, true)
 				if format == "geojson" {
-					exerciseWorkflowGeoJSONAccess(t, db, service, tenantID, reader, current)
+					exerciseDevelopGeoJSONFileSource(t, db, service, tenantID, reader, current)
 					return
 				}
 				if format != "glb" && format != "filegdb" && format != "tiff" {
@@ -410,7 +410,7 @@ func exerciseGeoPackageGrant(t *testing.T, db *gorm.DB, service *Service, ctx co
 	}
 	auth := &iam.ExecutionAuthorization{Audience: execution.AudienceDevelop, SourceType: "user", TenantID: actor.TenantID,
 		ActorPrincipalID: reader.PrincipalID, TenantMembershipID: reader.MembershipID, IssuedAuthorizationVersion: principal.AuthorizationVersion}
-	intent, err := execution.NewDevelopFileIntent([]byte(`{"fixture":true}`), 1, 45, []execution.DevelopFileSourceIntent{{NodeID: "load", Target: target}}, nil)
+	intent, err := execution.NewDevelopFileIntent([]byte(`{"fixture":true}`), 1, 45, []execution.DevelopFileSourceIntent{{NodeID: "load", Target: target}}, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

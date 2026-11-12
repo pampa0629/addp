@@ -97,12 +97,33 @@ func (p *MinIOPlugin) DescribeEngineCatalogFacts(ctx context.Context, connInfo p
 	return plugin.DescribeObjectCatalogFacts(ctx, p.objectCatalogCallbacks(), connInfo, path.EngineID, path)
 }
 
+// OpenContent binds evidence only to the complete object opened by this session.
 func (p *MinIOPlugin) OpenContent(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.EngineCatalogPath, opts plugin.ReadOptions) (io.ReadCloser, error) {
 	objectPath, err := plugin.RequireObjectLeafPath(path)
 	if err != nil {
 		return nil, err
 	}
-	return p.readFile(ctx, connInfo, objectPath, opts)
+	set, err := plugin.NewQueryReadSet(path)
+	if err != nil {
+		return nil, err
+	}
+	reader, err := p.readFile(ctx, connInfo, objectPath, opts)
+	if err != nil {
+		return nil, err
+	}
+	if opts.Offset != 0 || opts.Length != 0 {
+		return reader, nil
+	}
+	return &objectReadSession{ReadCloser: reader, readSet: set}, nil
+}
+
+type objectReadSession struct {
+	io.ReadCloser
+	readSet *plugin.QueryReadSet
+}
+
+func (s *objectReadSession) ReadSet(context.Context) (*plugin.QueryReadSet, error) {
+	return s.readSet.Clone(), nil
 }
 
 func (p *MinIOPlugin) OpenRange(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.EngineCatalogPath, opts plugin.ReadOptions) (io.ReadCloser, error) {

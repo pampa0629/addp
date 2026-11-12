@@ -128,8 +128,12 @@ func fileWorkflowOnlyKeys(params map[string]interface{}, keys ...string) bool {
 }
 func fileWorkflowLocatorPath(raw string) (plugin.EngineCatalogPath, error) {
 	loc, err := resourcetree.ParseURI(raw)
-	if err != nil || loc.Type != resourcetree.TypeFile {
+	if err != nil || (loc.Type != resourcetree.TypeFile && loc.Type != resourcetree.TypeObject) {
 		return plugin.EngineCatalogPath{}, errFileWorkflowInputs
 	}
-	return resourcetree.EngineCatalogPathFromLocator(plugin.FileCatalogModel(), loc)
+	model := plugin.FileCatalogModel()
+	if loc.Type == resourcetree.TypeObject {
+		model = plugin.ObjectCatalogModel()
+	}
+	return resourcetree.EngineCatalogPathFromLocator(model, loc)
 }

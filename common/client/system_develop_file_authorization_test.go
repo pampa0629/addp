@@ -27,7 +27,7 @@ func developFileClientFixture(t *testing.T, write bool) (execution.DevelopFileIn
 		target = &execution.DevelopFileTargetIntent{NodeID: "save", Target: plugin.FileItemPath(12, "outputs/result.gpkg"), Mode: "fail"}
 	}
 	intent, err := execution.NewDevelopFileIntent(json.RawMessage(`{"task":"load-difference","number":9007199254740993}`), 1, 45,
-		[]execution.DevelopFileSourceIntent{{NodeID: "load", Target: plugin.FileItemPath(11, "sources/A.gpkg")}}, target)
+		[]execution.DevelopFileSourceIntent{{NodeID: "load", Target: plugin.FileItemPath(11, "sources/A.gpkg")}}, target, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -36,7 +36,7 @@ func developFileClientFixture(t *testing.T, write bool) (execution.DevelopFileIn
 		version = "4"
 	}
 	scope, err := execution.NewDevelopBoundFileScope(*intent, []execution.DevelopFileSourceReference{{Target: intent.Sources[0].Target,
-		ItemFingerprint: strings.Repeat("a", 64), BoundaryHash: strings.Repeat("b", 64), EngineVersion: "2"}}, version)
+		ItemFingerprint: strings.Repeat("a", 64), Format: "geopackage", BoundaryHash: strings.Repeat("b", 64), EngineVersion: "2"}}, version)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -134,20 +134,20 @@ func TestDevelopFileClientSeparatesUserIssuanceAndFreshMachineChecks(t *testing.
 					t.Error("expanded fixed-purpose request")
 				}
 				switch r.URL.Path {
-				case "/api/v1/system/auth/execution-authorizations/develop-geopackage-workflows":
+				case "/api/v1/system/auth/execution-authorizations/develop-file-workflows":
 					var fields map[string]json.RawMessage
 					if r.Header.Get("Authorization") != "Bearer addp_at_user" || json.NewDecoder(r.Body).Decode(&fields) != nil || len(fields) != 2 || fields["execution_id"] == nil || fields["intent_digest"] == nil {
 						t.Error("issuance supplied identity/hash facts or wrong credential")
 					}
 					w.WriteHeader(201)
 					_ = json.NewEncoder(w).Encode(expected)
-				case "/api/v1/system/execution-authorizations/9/develop-geopackage-admission-checks":
+				case "/api/v1/system/execution-authorizations/9/develop-file-admission-checks":
 					checks.Add(1)
 					if r.Header.Get("Authorization") != "Bearer addp_at_service" {
 						t.Error("machine used a saved User credential")
 					}
 					_ = json.NewEncoder(w).Encode(developFileClientAdmission(expected))
-				case "/api/v1/system/execution-authorizations/9/develop-geopackage-source-accesses":
+				case "/api/v1/system/execution-authorizations/9/develop-file-source-accesses":
 					if r.Header.Get("Authorization") != "Bearer addp_at_service" {
 						t.Error("wrong source credential")
 					}

@@ -19,7 +19,7 @@ import (
 )
 
 var errFileSourceWindow = errors.New("Develop file source observation expired or changed")
-var errFileSourceComposition = errors.New("Develop GeoPackage source composition could not be verified")
+var errFileSourceComposition = errors.New("Develop file source consistency could not be verified")
 var errFileSourceCleanupPending = errors.New("Develop file source I/O has not stopped")
 
 // Only the System client supplies fresh eligibility; neither a scope digest nor
@@ -67,6 +67,7 @@ type fileSourceReader struct {
 	issued     client.IssuedDevelopFileAuthorization
 	request    client.DevelopFileSourceAccessRequest
 	provider   fileSourceProvider
+	format     string
 	requests   chan fileSourceReadRequest
 	stopped    chan struct{}
 
@@ -76,10 +77,11 @@ type fileSourceReader struct {
 	sourceSize  int64
 	closeErr    error
 
-	readMu sync.Mutex
-	digest hash.Hash
-	size   int64
-	eof    bool
+	refreshMu sync.Mutex
+	readMu    sync.Mutex
+	digest    hash.Hash
+	size      int64
+	eof       bool
 }
 
 func newFileSourceReader(ctx context.Context, authority fileSourceAuthority, provider fileSourceProvider,
@@ -90,9 +92,11 @@ func newFileSourceReader(ctx context.Context, authority fileSourceAuthority, pro
 	}
 	frozen := *issued.Clone()
 	found := false
+	sourceFormat := ""
 	for _, source := range frozen.Scope.Sources {
 		if reflect.DeepEqual(source.Target, request.Source) {
 			request.Source = source.Target
+			sourceFormat = source.Format
 			found = true
 			break
 		}
@@ -107,13 +111,13 @@ func newFileSourceReader(ctx context.Context, authority fileSourceAuthority, pro
 	if err != nil {
 		return nil, err
 	}
-	if !validFileSourceObservation(frozen, request, observation) || provider.Type() != "nfs" {
+	if !validFileSourceObservation(frozen, request, observation) || provider.Type() != observation.Engine.EngineType {
 		return nil, errFileSourceWindow
 	}
 	budgetCtx, stopBudget := context.WithDeadline(ctx, observation.BusinessDeadline)
 	readCtx, cancel := context.WithCancelCause(budgetCtx)
 	s := &fileSourceReader{ctx: readCtx, cancel: cancel, stopBudget: stopBudget, authority: authority,
-		issued: frozen, request: request, provider: provider, requests: make(chan fileSourceReadRequest), stopped: make(chan struct{}),
+		issued: frozen, request: request, provider: provider, format: sourceFormat, requests: make(chan fileSourceReadRequest), stopped: make(chan struct{}),
 		observation: *observation, digest: sha256.New()}
 	go s.observe()
 	go s.run()
@@ -129,14 +133,14 @@ func validFileSourceObservation(issued client.IssuedDevelopFileAuthorization, re
 		return false
 	}
 	engine := observation.Engine
-	if engine.ID == 0 || engine.ID != request.Source.EngineID || engine.EngineType != "nfs" ||
+	if engine.ID == 0 || engine.ID != request.Source.EngineID || (engine.EngineType != "nfs" && engine.EngineType != "minio") ||
 		engine.TenantID == nil || strconv.FormatUint(uint64(*engine.TenantID), 10) != issued.Authorization.TenantID || engine.LifecycleState != commonModels.EngineLifecycleActive ||
 		engine.DeletedAt != nil || len(engine.ConnectionInfo) == 0 {
 		return false
 	}
 	for _, source := range issued.Scope.Sources {
 		if reflect.DeepEqual(source.Target, request.Source) {
-			return strconv.FormatInt(engine.Version, 10) == source.EngineVersion
+			return strconv.FormatInt(engine.Version, 10) == source.EngineVersion && ((source.Format == "geopackage" && engine.EngineType == "nfs") || (source.Format == "geojson" && engine.EngineType == "minio"))
 		}
 	}
 	return false
@@ -184,28 +188,60 @@ func (s *fileSourceReader) observe() {
 		if s.active() != nil {
 			return
 		}
-		checkCtx, stop := context.WithDeadline(s.ctx, previous.ExpiresAt)
-		expiry := time.AfterFunc(time.Until(previous.ExpiresAt), func() { s.cancel(errFileSourceWindow) })
-		observation, err := s.authority.CheckDevelopFileSourceAccess(checkCtx, *s.issued.Clone(), s.request)
-		expiry.Stop()
-		stop()
-		s.mu.Lock()
-		if err == nil && s.activeLocked() == nil && validFileSourceObservation(s.issued, s.request, observation) &&
-			observation.BusinessDeadline.Equal(previous.BusinessDeadline) && !observation.ObservedAt.Before(previous.ObservedAt) &&
-			reflect.DeepEqual(observation.Engine.ConnectionInfo, previous.Engine.ConnectionInfo) {
-			s.observation = *observation
-			s.mu.Unlock()
-			continue
+		if s.refreshObservation() != nil {
+			return
 		}
-		s.cancel(errFileSourceWindow)
-		s.mu.Unlock()
-		return
 	}
+}
+
+// Periodic renewal and the final post-read check share one current observation
+// sequence. Neither can overwrite a newer response or reopen an expired window.
+func (s *fileSourceReader) refreshObservation() error {
+	s.refreshMu.Lock()
+	defer s.refreshMu.Unlock()
+	s.mu.Lock()
+	previous := s.observation
+	err := s.activeLocked()
+	s.mu.Unlock()
+	if err != nil {
+		return err
+	}
+	checkCtx, stop := context.WithDeadline(s.ctx, previous.ExpiresAt)
+	expiry := time.AfterFunc(time.Until(previous.ExpiresAt), func() { s.cancel(errFileSourceWindow) })
+	observation, err := s.authority.CheckDevelopFileSourceAccess(checkCtx, *s.issued.Clone(), s.request)
+	expiry.Stop()
+	stop()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if err == nil && s.activeLocked() == nil && validFileSourceObservation(s.issued, s.request, observation) && observation.BusinessDeadline.Equal(previous.BusinessDeadline) && !observation.ObservedAt.Before(previous.ObservedAt) && reflect.DeepEqual(observation.Engine.ConnectionInfo, previous.Engine.ConnectionInfo) {
+		s.observation = *observation
+		return nil
+	}
+	s.cancel(errFileSourceWindow)
+	return errFileSourceWindow
+}
+
+const maxWorkflowGeoJSONBytes = 8 << 20
+
+func (s *fileSourceReader) observeContent(conn plugin.ConnectionInfo) (any, int64, error) {
+	if s.format == "geopackage" {
+		facts, err := format.ObserveGeoPackageSource(s.ctx, s.provider, conn, s.request.Source)
+		if err != nil || facts == nil {
+			return nil, 0, errFileSourceComposition
+		}
+		return facts, facts.SizeBytes, nil
+	}
+	facts, err := s.provider.DescribeEngineCatalogFacts(s.ctx, conn, s.request.Source, plugin.EngineCatalogFactsOptions{})
+	if err != nil || facts == nil || facts.Storage == nil || facts.Storage.SizeBytes == nil || *facts.Storage.SizeBytes <= 0 || *facts.Storage.SizeBytes > maxWorkflowGeoJSONBytes || facts.Storage.ETag == "" || facts.UpdatedAt == nil {
+		return nil, 0, errFileSourceComposition
+	}
+	return facts, *facts.Storage.SizeBytes, nil
 }
 
 func (s *fileSourceReader) run() {
 	var reader io.ReadCloser
-	var before *format.GeoPackageSourceObservation
+	var before any
+	var sourceSize int64
 	var eof bool
 	var conn plugin.ConnectionInfo
 	defer func() {
@@ -214,9 +250,11 @@ func (s *fileSourceReader) run() {
 			err = reader.Close()
 		}
 		if eof && err == nil && s.active() == nil {
-			after, factsErr := format.ObserveGeoPackageSource(s.ctx, s.provider, conn, s.request.Source)
-			if factsErr != nil || after == nil || !before.Matches(*after) {
-				s.cancel(errFileSourceComposition)
+			if s.refreshObservation() == nil {
+				after, _, factsErr := s.observeContent(conn)
+				if factsErr != nil || after == nil || !reflect.DeepEqual(before, after) {
+					s.cancel(errFileSourceComposition)
+				}
 			}
 		}
 		s.mu.Lock()
@@ -231,7 +269,7 @@ func (s *fileSourceReader) run() {
 	conn = plugin.ConnectionInfo(s.observation.Engine.ConnectionInfo)
 	s.mu.Unlock()
 	var err error
-	before, err = format.ObserveGeoPackageSource(s.ctx, s.provider, conn, s.request.Source)
+	before, sourceSize, err = s.observeContent(conn)
 	if err != nil || before == nil {
 		s.cancel(errFileSourceComposition)
 		return
@@ -259,7 +297,7 @@ func (s *fileSourceReader) run() {
 	}
 	s.mu.Lock()
 	s.readSet = set.Clone()
-	s.sourceSize = before.SizeBytes
+	s.sourceSize = sourceSize
 	s.mu.Unlock()
 	for {
 		select {
@@ -326,6 +364,10 @@ func (s *fileSourceReader) Read(p []byte) (int, error) {
 		n := copy(p, chunk.data)
 		_, _ = s.digest.Write(chunk.data)
 		s.size += int64(n)
+		if s.format == "geojson" && s.size > maxWorkflowGeoJSONBytes {
+			s.cancel(errFileSourceComposition)
+			return 0, errFileSourceComposition
+		}
 		s.eof = chunk.err == io.EOF
 		return n, chunk.err
 	}

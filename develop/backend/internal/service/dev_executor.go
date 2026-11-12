@@ -1634,7 +1634,21 @@ func (e *DevExecutor) ExecuteWithParamsFromParentExecution(
 	if err := commonExecution.InheritDisplayLanguage(execution, parent); err != nil {
 		return "", err
 	}
-	if err := createDevelopExecution(ctx, e.taskExecutionRepo, execution); err != nil {
+	var privateSources []commonExecution.DevelopFileSourceIntent
+	if preparedTask.task.DevType == commonExecution.TaskTypeWorkflow {
+		plan, err := e.buildWorkflowExecutionAuthorizationPlan(ctx, preparedTask.task, tenantID)
+		if err != nil {
+			return "", err
+		}
+		privateSources = plan.fileSources
+	}
+	create := func() error {
+		if len(privateSources) != 0 {
+			return e.submitPrivateFileWorkflow(ctx, execution, privateSources, "")
+		}
+		return createDevelopExecution(ctx, e.taskExecutionRepo, execution)
+	}
+	if err := create(); err != nil {
 		return "", fmt.Errorf("failed to create child execution record: %w", err)
 	}
 	e.notifyPendingExecution()

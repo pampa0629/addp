@@ -33,7 +33,7 @@ func TestPrivateFileAdmissionUsesOriginalScopeAndNeverReadsSources(t *testing.T)
 				var calls atomic.Int32
 				endpoint := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 					calls.Add(1)
-					if r.URL.Path != "/api/v1/system/execution-authorizations/9/develop-geopackage-admission-checks" || r.Method != "POST" || r.Header.Get("Authorization") != "Bearer addp_at_current_machine" {
+					if r.URL.Path != "/api/v1/system/execution-authorizations/9/develop-file-admission-checks" || r.Method != "POST" || r.Header.Get("Authorization") != "Bearer addp_at_current_machine" {
 						t.Error("observation used issuance, another route or stored user token", r.Method, r.URL.Path)
 						w.WriteHeader(403)
 						return
@@ -204,7 +204,7 @@ func TestPrivateFileAuthorityFactoriesBindOriginalTenant(t *testing.T) {
 			t.Error("not current tenant machine")
 		}
 		switch r.URL.Path {
-		case "/api/v1/system/execution-authorizations/9/develop-geopackage-source-accesses":
+		case "/api/v1/system/execution-authorizations/9/develop-file-source-accesses":
 			var request client.DevelopFileSourceAccessRequest
 			_ = json.NewDecoder(r.Body).Decode(&request)
 			response, err := fileInputsAuthority(base).CheckDevelopFileSourceAccess(r.Context(), issued, request)
@@ -212,7 +212,7 @@ func TestPrivateFileAuthorityFactoriesBindOriginalTenant(t *testing.T) {
 				t.Error(err)
 			}
 			_ = json.NewEncoder(w).Encode(response)
-		case "/api/v1/system/execution-authorizations/9/develop-geopackage-admission-checks":
+		case "/api/v1/system/execution-authorizations/9/develop-file-admission-checks":
 			_ = json.NewEncoder(w).Encode(client.DevelopFileAdmissionObservation{AuthorizationID: issued.Authorization.ID, ExecutionID: issued.Authorization.ExecutionID, ScopeDigest: issued.ScopeDigest, ExpectedAttempt: 1, State: "ready", ObservedAt: time.Now(), ExpiresAt: time.Now().Add(time.Minute)})
 		default:
 			t.Error("unexpected authority route", r.URL.Path)

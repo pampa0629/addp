@@ -49,7 +49,7 @@ func TestFileExecutionOwnerRoutesOnlyCurrentSystemTenantService(t *testing.T) {
 	})
 	defer auth.Close()
 	config := json.RawMessage(`{"content":{"workflow_definition":{"tasks":[]}},"timeout":60}`)
-	intent, err := execution.NewDevelopFileIntent(config, 1, 60, []execution.DevelopFileSourceIntent{{NodeID: "load", Target: plugin.FileItemPath(11, "source.gpkg")}}, nil)
+	intent, err := execution.NewDevelopFileIntent(config, 1, 60, []execution.DevelopFileSourceIntent{{NodeID: "load", Target: plugin.FileItemPath(11, "source.gpkg")}}, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

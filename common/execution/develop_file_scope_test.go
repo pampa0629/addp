@@ -18,7 +18,7 @@ func developIntentFixture(t *testing.T, write bool) *DevelopFileIntent {
 		target = &DevelopFileTargetIntent{NodeID: "save", Target: plugin.FileItemPath(12, "outputs/result.gpkg"), Mode: "fail"}
 	}
 	intent, err := NewDevelopFileIntent(json.RawMessage(`{"large":9007199254740993,"options":{"mode":"test"}}`), 1, 45,
-		[]DevelopFileSourceIntent{{NodeID: "load_b", Target: plugin.FileItemPath(11, "sources/B.gpkg")}, {NodeID: "load_a", Target: plugin.FileItemPath(11, "sources/ A.gpkg ")}}, target)
+		[]DevelopFileSourceIntent{{NodeID: "load_b", Target: plugin.FileItemPath(11, "sources/B.gpkg")}, {NodeID: "load_a", Target: plugin.FileItemPath(11, "sources/ A.gpkg ")}}, target, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -27,8 +27,8 @@ func developIntentFixture(t *testing.T, write bool) *DevelopFileIntent {
 
 func developReferences() []DevelopFileSourceReference {
 	return []DevelopFileSourceReference{
-		{Target: plugin.FileItemPath(11, "sources/B.gpkg"), ItemFingerprint: strings.Repeat("b", 64), BoundaryHash: strings.Repeat("c", 64), EngineVersion: "2"},
-		{Target: plugin.FileItemPath(11, "sources/ A.gpkg "), ItemFingerprint: strings.Repeat("a", 64), BoundaryHash: strings.Repeat("d", 64), EngineVersion: "2"},
+		{Target: plugin.FileItemPath(11, "sources/B.gpkg"), ItemFingerprint: strings.Repeat("b", 64), Format: "geopackage", BoundaryHash: strings.Repeat("c", 64), EngineVersion: "2"},
+		{Target: plugin.FileItemPath(11, "sources/ A.gpkg "), ItemFingerprint: strings.Repeat("a", 64), Format: "geopackage", BoundaryHash: strings.Repeat("d", 64), EngineVersion: "2"},
 	}
 }
 
@@ -37,7 +37,7 @@ func TestDevelopFileIntentFreezesCompleteConfigurationAndNodeBindings(t *testing
 	config := json.RawMessage(`{ "options":{"mode":"test"}, "large":9007199254740993 }`)
 	sources := intent.Clone().Sources
 	target := *intent.Clone().Target
-	reordered, err := NewDevelopFileIntent(config, 1, 45, sources, &target)
+	reordered, err := NewDevelopFileIntent(config, 1, 45, sources, &target, nil)
 	if err != nil || intent.ConfigDigest != reordered.ConfigDigest {
 		t.Fatal("raw complete configuration was not canonicalized", err)
 	}
@@ -50,7 +50,7 @@ func TestDevelopFileIntentFreezesCompleteConfigurationAndNodeBindings(t *testing
 	if got, _ := reordered.Digest(); got != want {
 		t.Fatal("intent aliases caller-owned source or target segments")
 	}
-	changed, err := NewDevelopFileIntent(json.RawMessage(`{"large":9007199254740992,"options":{"mode":"test"}}`), 1, 45, intent.Clone().Sources, intent.Clone().Target)
+	changed, err := NewDevelopFileIntent(json.RawMessage(`{"large":9007199254740992,"options":{"mode":"test"}}`), 1, 45, intent.Clone().Sources, intent.Clone().Target, nil)
 	if err != nil || changed.ConfigDigest == intent.ConfigDigest {
 		t.Fatal("large JSON number lost precision", err)
 	}
@@ -71,7 +71,7 @@ func TestDevelopFileIntentFreezesCompleteConfigurationAndNodeBindings(t *testing
 func TestDevelopFileIntentRejectsAmbiguousAndNoncanonicalDeclarations(t *testing.T) {
 	intent := developIntentFixture(t, true)
 	for _, raw := range []string{"", "null", "[]", `{"x":1,"x":2}`, `{"a":{"x":1,"x":2}}`, strings.Repeat(" ", MaxExecutionConfigBytes) + "{}"} {
-		if got, err := NewDevelopFileIntent(json.RawMessage(raw), 1, 45, intent.Sources, intent.Target); got != nil || err == nil {
+		if got, err := NewDevelopFileIntent(json.RawMessage(raw), 1, 45, intent.Sources, intent.Target, nil); got != nil || err == nil {
 			t.Fatal("accepted ambiguous raw config")
 		}
 	}
@@ -191,9 +191,9 @@ func TestDevelopFileIntentUsesSharedByteBudgetWithoutNewCountPolicy(t *testing.T
 	refs := make([]DevelopFileSourceReference, len(sources))
 	for i := range sources {
 		sources[i] = DevelopFileSourceIntent{NodeID: fmt.Sprintf("load_%03d", i), Target: plugin.FileItemPath(11, fmt.Sprintf("sources/%03d.gpkg", i))}
-		refs[i] = DevelopFileSourceReference{Target: sources[i].Target, ItemFingerprint: fmt.Sprintf("%064x", i+1), BoundaryHash: strings.Repeat("a", 64), EngineVersion: "2"}
+		refs[i] = DevelopFileSourceReference{Target: sources[i].Target, ItemFingerprint: fmt.Sprintf("%064x", i+1), Format: "geopackage", BoundaryHash: strings.Repeat("a", 64), EngineVersion: "2"}
 	}
-	intent, err := NewDevelopFileIntent(json.RawMessage(`{"nodes":201}`), 1, 45, sources, nil)
+	intent, err := NewDevelopFileIntent(json.RawMessage(`{"nodes":201}`), 1, 45, sources, nil, nil)
 	if err != nil {
 		t.Fatal("unrelated source-count policy rejected valid intent", err)
 	}

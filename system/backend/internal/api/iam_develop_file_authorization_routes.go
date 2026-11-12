@@ -7,7 +7,6 @@ import (
 	"errors"
 	"io"
 	"net/http"
-	"strconv"
 	"time"
 	"unicode/utf8"
 
@@ -72,11 +71,12 @@ func RegisterIAMDevelopFileAuthorizationRoutes(api *gin.RouterGroup, runtime *IA
 	if err != nil {
 		return err
 	}
-	api.POST("/auth/execution-authorizations/develop-geopackage-workflows", runtime.Authentication, runtime.UserAccessCredential, tenant, issue, h.Issue)
+	api.POST("/auth/execution-authorizations/develop-file-workflows", runtime.Authentication, runtime.UserAccessCredential, tenant, issue, h.Issue)
+	api.POST("/runtime/execution-authorizations/develop-file-workflows", runtime.Authentication, runtime.ServiceCredential, service, develop, consume, h.IssueFromParent)
 	api.POST("/execution-authorizations/:id/develop-geopackage-create-approvals", runtime.Authentication, runtime.UserAccessCredential, tenant, approve, h.ApproveCreate)
-	api.GET("/execution-authorizations/develop-geopackage-workflows/:execution_id/create-approval-context", runtime.Authentication, runtime.UserAccessCredential, tenant, approve, h.ReadCreateApprovalContext)
-	api.POST("/execution-authorizations/:id/develop-geopackage-admission-checks", runtime.Authentication, runtime.ServiceCredential, service, develop, consume, h.Admission)
-	api.POST("/execution-authorizations/:id/develop-geopackage-source-accesses", runtime.Authentication, runtime.ServiceCredential, service, develop, consume, h.Source)
+	api.GET("/execution-authorizations/develop-file-workflows/:execution_id/create-approval-context", runtime.Authentication, runtime.UserAccessCredential, tenant, approve, h.ReadCreateApprovalContext)
+	api.POST("/execution-authorizations/:id/develop-file-admission-checks", runtime.Authentication, runtime.ServiceCredential, service, develop, consume, h.Admission)
+	api.POST("/execution-authorizations/:id/develop-file-source-accesses", runtime.Authentication, runtime.ServiceCredential, service, develop, consume, h.Source)
 	api.POST("/execution-authorizations/:id/develop-geopackage-publications", runtime.Authentication, runtime.ServiceCredential, service, develop, consume, h.Publication)
 	api.GET("/execution-authorizations/:id/develop-geopackage-publications/:operation_id", runtime.Authentication, runtime.ServiceCredential, service, develop, consume, h.PublicationHistory)
 	api.POST("/execution-authorizations/:id/develop-geopackage-publications/:operation_id/recovery-accesses", runtime.Authentication, runtime.ServiceCredential, service, develop, consume, h.PublicationRecovery)
@@ -94,7 +94,7 @@ func RegisterIAMDevelopFileAuthorizationRoutes(api *gin.RouterGroup, runtime *IA
 // @Failure 400,401,403,409,500,503 {object} IAMErrorResponse
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["system.develop_file_create_approval.create"]
-// @Router /execution-authorizations/develop-geopackage-workflows/{execution_id}/create-approval-context [get]
+// @Router /execution-authorizations/develop-file-workflows/{execution_id}/create-approval-context [get]
 func (h *IAMDevelopFileAuthorizationHandler) ReadCreateApprovalContext(c *gin.Context) {
 	c.Header("Cache-Control", "no-store")
 	if c.Request.URL.RawQuery != "" || c.Request.ContentLength != 0 {
@@ -221,7 +221,7 @@ func (h *IAMDevelopFileAuthorizationHandler) ApproveCreate(c *gin.Context) {
 
 // Issue godoc
 // @Summary 签发 Develop 精确文件执行授权 | Issue Develop exact file execution authorization
-// @Description 当前普通 API User；独立读取 Owner 冻结 Intent 和 Meta basic 身份与逻辑边界，保存用途另核当前写执行权限，核当前人员、精确源规则和原 pending，封存同一 EA；不新增源 Grant 或目标写权 | Ordinary API User only; independently reads frozen Owner intent and basic Meta identity and logical boundaries, requires current write-execution permission for saves, checks current actor, exact source rules and original pending execution, and seals one EA without source Grants or target write access
+// @Description 当前普通 API User；独立读取 Owner 冻结 Intent 和 Meta basic 身份与逻辑边界，保存用途另核当前写执行权限，核当前人员、精确源规则和原 pending，封存同一 EA；不新增源 Grant 或目标写权 | Ordinary API User; independently reads frozen Owner intent and basic Meta identity and logical boundaries, requires current write-execution permission for saves, checks current actor, exact source rules and original pending execution, and seals one EA without source Grants or target write access
 // @Tags 执行授权 | Execution Authorization
 // @Accept json
 // @Produce json
@@ -232,8 +232,25 @@ func (h *IAMDevelopFileAuthorizationHandler) ApproveCreate(c *gin.Context) {
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["develop.task.execute","develop.data_read.execute"]
 // @x-addp-conditional-permissions ["develop.data_write.execute"]
-// @Router /auth/execution-authorizations/develop-geopackage-workflows [post]
-func (h *IAMDevelopFileAuthorizationHandler) Issue(c *gin.Context) {
+// @Router /auth/execution-authorizations/develop-file-workflows [post]
+func (h *IAMDevelopFileAuthorizationHandler) Issue(c *gin.Context) { h.issue(c) }
+
+// IssueFromParent godoc
+// @Summary 从手动父执行签发 Develop 私有文件授权 | Issue Develop private file authorization from a manual parent
+// @Description 固定同租户 addp-develop Service；System 独立核 common 父子行、真实用户、当前权限、父租约与原冻结 Intent，仅允许只读。不以服务权限替代用户 read Grant。 | Fixed same-tenant addp-develop Service. System verifies authoritative parent-child executions, actual user, current permissions, parent lease and original frozen intent. Read only; service permission does not replace the user read Grant.
+// @Tags 执行授权 | Execution Authorization
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param request body IAMIssueDevelopFileRequest true "原子执行与 Intent 摘要 | Original child execution and intent digest"
+// @Success 201 {object} client.IssuedDevelopFileAuthorization
+// @Failure 400,401,403,409,500,503 {object} IAMErrorResponse
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["system.execution_authorization.execute"]
+// @Router /runtime/execution-authorizations/develop-file-workflows [post]
+func (h *IAMDevelopFileAuthorizationHandler) IssueFromParent(c *gin.Context) { h.issue(c) }
+
+func (h *IAMDevelopFileAuthorizationHandler) issue(c *gin.Context) {
 	c.Header("Cache-Control", "no-store")
 	var request IAMIssueDevelopFileRequest
 	if bindDevelopFileRequest(c, &request) != nil || len(request.IntentDigest) != 64 {
@@ -245,23 +262,18 @@ func (h *IAMDevelopFileAuthorizationHandler) Issue(c *gin.Context) {
 		respondExecutionAuthorizationError(c, commonapi.ErrBadRequest)
 		return
 	}
-	actor, tenant, err := iamTenantUserActor(c)
-	if err != nil {
-		respondExecutionAuthorizationError(c, err)
-		return
-	}
 	result, err := h.service.Issue(c.Request.Context(), iam.IssueDevelopFileAuthorizationInput{SourceAccessToken: sharedauth.CanonicalBearerToken(c.GetHeader("Authorization")), ExecutionID: id, IntentDigest: request.IntentDigest, Audit: iamAuditMetadataWithStatus(c, http.StatusCreated)})
 	if err != nil {
 		respondExecutionAuthorizationError(c, err)
 		return
 	}
 	current, ok := middleware.IAMAuthContextFromGin(c)
-	if !ok || current.Context.TenantMembershipID == nil {
-		respondExecutionAuthorizationError(c, commonapi.ErrUnauthorized)
+	if !ok || current.Context.TenantID == nil || result.Validate() != nil || result.Authorization.ExecutionID != request.ExecutionID || result.Authorization.TenantID != *current.Context.TenantID {
+		respondExecutionAuthorizationError(c, errors.New("invalid Develop file authorization response"))
 		return
 	}
-	if result.Validate() != nil || result.Authorization.ExecutionID != request.ExecutionID || result.Authorization.TenantID != strconv.FormatUint(uint64(tenant), 10) || result.Authorization.ActorPrincipalID != strconv.FormatUint(uint64(actor), 10) || result.Authorization.TenantMembershipID != *current.Context.TenantMembershipID || result.Authorization.IssuedAuthorizationVersion != current.Authorization.AuthorizationVersion {
-		respondExecutionAuthorizationError(c, errors.New("invalid Develop file authorization response"))
+	if current.Principal.Type == "user" && (current.Context.TenantMembershipID == nil || result.Authorization.ActorPrincipalID != current.Principal.ID || result.Authorization.TenantMembershipID != *current.Context.TenantMembershipID || result.Authorization.IssuedAuthorizationVersion != current.Authorization.AuthorizationVersion) {
+		respondExecutionAuthorizationError(c, errors.New("invalid Develop file authorization actor"))
 		return
 	}
 	c.JSON(http.StatusCreated, result)
@@ -280,7 +292,7 @@ func (h *IAMDevelopFileAuthorizationHandler) Issue(c *gin.Context) {
 // @Failure 400,401,403,409,500,503 {object} IAMErrorResponse "拒绝或依赖不可用 | Rejected or dependency unavailable"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["system.execution_authorization.execute"]
-// @Router /execution-authorizations/{id}/develop-geopackage-admission-checks [post]
+// @Router /execution-authorizations/{id}/develop-file-admission-checks [post]
 func (h *IAMDevelopFileAuthorizationHandler) Admission(c *gin.Context) {
 	c.Header("Cache-Control", "no-store")
 	var request client.DevelopFileAdmissionRequest
@@ -318,7 +330,7 @@ func (h *IAMDevelopFileAuthorizationHandler) Admission(c *gin.Context) {
 // @Failure 400,401,403,409,500,503 {object} IAMErrorResponse "拒绝或依赖不可用 | Rejected or dependency unavailable"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["system.execution_authorization.execute"]
-// @Router /execution-authorizations/{id}/develop-geopackage-source-accesses [post]
+// @Router /execution-authorizations/{id}/develop-file-source-accesses [post]
 func (h *IAMDevelopFileAuthorizationHandler) Source(c *gin.Context) {
 	c.Header("Cache-Control", "no-store")
 	var request client.DevelopFileSourceAccessRequest

@@ -26,10 +26,10 @@ func privateTestDigest(data []byte) string {
 }
 
 func privateTestManifest() WorkflowPrivateFileManifest {
-	return WorkflowPrivateFileManifest{SchemaVersion: WorkflowPrivateFilesAPIV1, TenantID: 2, ExecutionID: privateOwnerID,
+	return WorkflowPrivateFileManifest{SchemaVersion: WorkflowPrivateFilesAPIV2, TenantID: 2, ExecutionID: privateOwnerID,
 		Attempt: 1, AuthorizationID: 101, ScopeDigest: strings.Repeat("a", 64), Deadline: time.Now().Add(time.Minute),
 		WorkflowJSON: `{"tasks":[{"id":"load","operator":"load","params":{},"depends_on":[]},{"id":"save","operator":"save","params":{"input_df":{"$ref":"load"},"mode":"fail"},"depends_on":["load"]}]}`,
-		Inputs:       []WorkflowPrivateFile{{NodeID: "load", Size: 5, SHA256: privateTestDigest([]byte("input"))}}, Outputs: []string{"save"}}
+		Inputs:       []WorkflowPrivateFile{{NodeID: "load", Format: "geopackage", Size: 5, SHA256: privateTestDigest([]byte("input"))}}, Outputs: []string{"save"}}
 }
 
 func privateTestStatus(manifest WorkflowPrivateFileManifest, output []byte) WorkflowPrivateFileStatus {
@@ -37,7 +37,7 @@ func privateTestStatus(manifest WorkflowPrivateFileManifest, output []byte) Work
 	return WorkflowPrivateFileStatus{RuntimeExecutionID: privateRuntimeID, ExecutionID: manifest.ExecutionID,
 		Attempt: manifest.Attempt, ScopeDigest: manifest.ScopeDigest, Inputs: []string{"ready"},
 		Execution: json.RawMessage(`{"status":"success"}`), CleanupPending: &pending,
-		Outputs: []WorkflowPrivateFile{{NodeID: "save", Size: int64(len(output)), SHA256: privateTestDigest(output)}}}
+		Outputs: []WorkflowPrivateFile{{NodeID: "save", Format: "geopackage", Size: int64(len(output)), SHA256: privateTestDigest(output)}}}
 }
 
 func privateTestClient(t *testing.T, server *httptest.Server, manifest WorkflowPrivateFileManifest, credential WorkflowRuntimeCredential) *WorkflowPrivateFilesClient {
@@ -178,7 +178,7 @@ func TestWorkflowPrivateFilesOutputRequiresExactBytesEOFAndDigest(t *testing.T) 
 			}))
 			defer server.Close()
 			client := privateTestClient(t, server, privateTestManifest(), func(context.Context) (string, error) { return "service", nil })
-			receipt := WorkflowPrivateFile{NodeID: "save", Size: int64(len(expected)), SHA256: privateTestDigest(expected)}
+			receipt := WorkflowPrivateFile{NodeID: "save", Format: "geopackage", Size: int64(len(expected)), SHA256: privateTestDigest(expected)}
 			if err := client.CopyOutput(t.Context(), 0, receipt, io.Discard); err == nil || calls.Load() != 1 {
 				t.Fatal("invalid output accepted or retried")
 			}
@@ -258,7 +258,7 @@ func TestWorkflowPrivateFilesExpiredExecutionAllowsOnlyOriginalRecovery(t *testi
 	if _, err := client.Execute(t.Context(), "en"); err == nil {
 		t.Fatal("expired compute")
 	}
-	if err := client.CopyOutput(t.Context(), 0, WorkflowPrivateFile{NodeID: "save", Size: 6, SHA256: privateTestDigest([]byte("output"))}, io.Discard); err == nil {
+	if err := client.CopyOutput(t.Context(), 0, WorkflowPrivateFile{NodeID: "save", Format: "geopackage", Size: 6, SHA256: privateTestDigest([]byte("output"))}, io.Discard); err == nil {
 		t.Fatal("expired output retrieval")
 	}
 	if calls.Load() != 0 {
@@ -276,7 +276,7 @@ func TestWorkflowPrivateFilesCapabilitiesRejectUnknownOrUnsupportedProtocol(t *t
 	for _, kind := range []string{"valid", "unknown", "unsupported", "runtime"} {
 		t.Run(kind, func(t *testing.T) {
 			caps := NewWorkflowCapabilities("extension", WorkflowRuntimeAPIAddpV1)
-			caps.Compute.Workflow.PrivateFilesAPI = WorkflowPrivateFilesAPIV1
+			caps.Compute.Workflow.PrivateFilesAPI = WorkflowPrivateFilesAPIV2
 			switch kind {
 			case "unknown":
 				caps.Compute.Workflow.PrivateFilesAPI = "other/v1"
@@ -291,7 +291,7 @@ func TestWorkflowPrivateFilesCapabilitiesRejectUnknownOrUnsupportedProtocol(t *t
 					t.Fatal(err)
 				}
 				parsed, err := ParseEngineCapabilities(encoded)
-				if err != nil || parsed.Compute.Workflow.PrivateFilesAPI != WorkflowPrivateFilesAPIV1 {
+				if err != nil || parsed.Compute.Workflow.PrivateFilesAPI != WorkflowPrivateFilesAPIV2 {
 					t.Fatalf("lost declared private protocol: %v", err)
 				}
 			} else if err == nil {
@@ -314,7 +314,7 @@ func TestWorkflowPrivateFilesCapabilityRequiresActualProvider(t *testing.T) {
 	if err := ValidatePluginCapabilities(provider); err != nil {
 		t.Fatal(err)
 	}
-	provider.caps.Compute.Workflow.PrivateFilesAPI = WorkflowPrivateFilesAPIV1
+	provider.caps.Compute.Workflow.PrivateFilesAPI = WorkflowPrivateFilesAPIV2
 	if err := ValidatePluginCapabilities(provider); err == nil || !strings.Contains(err.Error(), "private-file transport") {
 		t.Fatalf("declaration without implementation accepted: %v", err)
 	}

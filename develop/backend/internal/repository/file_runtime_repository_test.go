@@ -3,6 +3,7 @@ package repository
 import (
 	"bytes"
 	"encoding/json"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -35,10 +36,11 @@ func runPrivateRuntimeRecordCase(t *testing.T, db *gorm.DB, repo *FileExecutionR
 		}
 		return PrivateFileRuntimeRecord{RuntimeExecutionID: runtimeID, Manifest: manifest, OwnerInstanceID: "fixture-instance", InputDirectory: directory, SourceReads: reads}
 	}
-	manifest := plugin.WorkflowPrivateFileManifest{SchemaVersion: plugin.WorkflowPrivateFilesAPIV1, TenantID: 7, ExecutionID: item.ExecutionID, Attempt: 1, AuthorizationID: 101, ScopeDigest: facts.ScopeDigest, Deadline: item.StartedAt.Add(time.Minute), WorkflowJSON: `{"tasks":[],"wide":9007199254740993}`, Inputs: []plugin.WorkflowPrivateFile{{NodeID: "source", Size: 123, SHA256: strings.Repeat("a", 64)}}, Outputs: []string{}}
+	authorizationID, _ := strconv.ParseInt(facts.AuthorizationID, 10, 64)
+	manifest := plugin.WorkflowPrivateFileManifest{SchemaVersion: plugin.WorkflowPrivateFilesAPIV2, TenantID: 7, ExecutionID: item.ExecutionID, Attempt: 1, AuthorizationID: authorizationID, ScopeDigest: facts.ScopeDigest, Deadline: item.StartedAt.Add(time.Minute), WorkflowJSON: `{"tasks":[],"wide":9007199254740993}`, Inputs: []plugin.WorkflowPrivateFile{{NodeID: "source", Format: "geopackage", Size: 123, SHA256: strings.Repeat("a", 64)}}, Outputs: []string{}}
 	manifest.Inputs = nil
 	for _, source := range facts.Intent.Sources {
-		manifest.Inputs = append(manifest.Inputs, plugin.WorkflowPrivateFile{NodeID: source.NodeID, Size: 123, SHA256: strings.Repeat("a", 64)})
+		manifest.Inputs = append(manifest.Inputs, plugin.WorkflowPrivateFile{NodeID: source.NodeID, Format: "geopackage", Size: 123, SHA256: strings.Repeat("a", 64)})
 	}
 	if err := repo.RecordPrivateInputDirectory(t.Context(), lease, "fixture-instance", directory); err != nil {
 		t.Fatal(err)

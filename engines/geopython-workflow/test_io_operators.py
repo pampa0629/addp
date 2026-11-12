@@ -1026,24 +1026,25 @@ def test_gpkg_save_rechecks_target_state_after_writing_without_touching_external
     else:assert Path(str(target)+state).read_bytes()==b'concurrent external state'and not target.exists()
 
 
-def test_load_develop_geojson_content_keeps_properties_and_crs():
+def test_load_private_geojson_file_keeps_properties_and_crs(tmp_path):
     from operators.io_operators import load
     source = {'type': 'FeatureCollection', 'features': [
         {'type': 'Feature', 'properties': {'instance_id': 7, 'score': 0.9},
          'geometry': {'type': 'Polygon', 'coordinates': [[[0, 0], [1, 0], [1, 1], [0, 0]]]}}
     ]}
-    frame = load(geojson=source)
+    import json
+    file = tmp_path / "input-0.geojson"
+    file.write_text(json.dumps(source))
+    frame = load(connection_info={"mount_path":str(tmp_path)}, path=file.name)
     assert len(frame) == 1 and frame.crs.to_epsg() == 4326
     assert frame.iloc[0]['instance_id'] == 7
     assert frame.geometry.iloc[0].is_valid
-    import pytest
-    with pytest.raises(ValueError):
-        load(geojson=source, path='other.geojson')
-    with pytest.raises(ValueError):
-        load(geojson={**source, 'crs': {'type': 'name', 'properties': {'name': 'EPSG:3857'}}})
+    with pytest.raises(TypeError):
+        load(geojson=source)
 
 
-def test_load_develop_geojson_content_empty_collection():
-    frame = io_operators.load(geojson={'type': 'FeatureCollection', 'features': []})
+def test_load_private_geojson_file_empty_collection(tmp_path):
+    file = tmp_path / "input-0.geojson"
+    file.write_text('{"type":"FeatureCollection","features":[]}')
+    frame = io_operators.load(connection_info={"mount_path":str(tmp_path)}, path=file.name)
     assert frame.empty and frame.crs.to_epsg() == 4326
-    assert frame.active_geometry_name == 'geometry'

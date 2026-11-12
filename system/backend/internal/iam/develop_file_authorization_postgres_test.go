@@ -141,7 +141,7 @@ func TestDevelopFileAuthorizationAgainstPostgres(t *testing.T) {
 		if intent.Target != nil {
 			version = "1"
 		}
-		scope, err := execution.NewDevelopBoundFileScope(intent, []execution.DevelopFileSourceReference{{Target: path, ItemFingerprint: commonmodels.GenerateItemFingerprint(uint(engineID), path.StringPath()), BoundaryHash: strings.Repeat("a", 64), EngineVersion: "1"}}, version)
+		scope, err := execution.NewDevelopBoundFileScope(intent, []execution.DevelopFileSourceReference{{Target: path, ItemFingerprint: commonmodels.GenerateItemFingerprint(uint(engineID), path.StringPath()), Format: "geopackage", BoundaryHash: strings.Repeat("a", 64), EngineVersion: "1"}}, version)
 		if err != nil {
 			return nil, err
 		}
@@ -187,7 +187,7 @@ func TestDevelopFileAuthorizationAgainstPostgres(t *testing.T) {
 		if save {
 			target = &execution.DevelopFileTargetIntent{NodeID: "save", Target: plugin.FileItemPath(uint(engineID), "outputs/result.gpkg"), Mode: "fail"}
 		}
-		intent, err := execution.NewDevelopFileIntent(raw, 1, 45, []execution.DevelopFileSourceIntent{{NodeID: "load", Target: path}}, target)
+		intent, err := execution.NewDevelopFileIntent(raw, 1, 45, []execution.DevelopFileSourceIntent{{NodeID: "load", Target: path}}, target, nil)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -213,6 +213,98 @@ func TestDevelopFileAuthorizationAgainstPostgres(t *testing.T) {
 		}
 		return facts, issued, input
 	}
+
+	t.Run("manual child uses current actor private scope and exact parent claim", func(t *testing.T) {
+		facts, id := newPending(t, false)
+		stamp := time.Now().UTC()
+		parentExpiry := stamp.Add(time.Minute)
+		ownerName, token, triggered := "orchestrator-fixture", uuid.NewString(), int(user.PrincipalID)
+		parent := execution.TaskExecution{ExecutionID: uuid.NewString(), TenantID: int(tenant.ID), Module: "orchestrator", Source: "orchestrator", TaskType: "orchestration", ExecutionBoundary: "bounded", Status: "running", TriggerType: "manual", Attempt: 1, MaxAttempts: 1, StartedAt: &stamp, LeaseOwner: &ownerName, LeaseToken: &token, LeaseExpiresAt: &parentExpiry, TriggeredBy: &triggered, ActorPrincipalID: &user.PrincipalID, ActorTenantMembershipID: &member.Membership.ID, IssuedAuthorizationVersion: &principal.AuthorizationVersion, ExecutionConfig: commonmodels.JSONMap{}}
+		if err := db.Create(&parent).Error; err != nil {
+			t.Fatal(err)
+		}
+		if err := db.Table("common.task_executions").Where("execution_id=?", id.String()).Updates(map[string]any{"source": "orchestrator", "parent_execution_id": parent.ExecutionID}).Error; err != nil {
+			t.Fatal(err)
+		}
+		frozen, err := execution.NewDevelopFileParent(parent.ExecutionID, parent.Attempt, token)
+		if err != nil {
+			t.Fatal(err)
+		}
+		facts.Intent.Parent = frozen
+		digest, err := facts.Intent.Digest()
+		if err != nil || facts.Validate() != nil {
+			t.Fatal("parent intent", err)
+		}
+		input := IssueDevelopFileAuthorizationInput{SourceAccessToken: serviceToken, ExecutionID: id, IntentDigest: digest, Audit: serviceAudit}
+		// A user's root token cannot be substituted for the trusted service origin.
+		userInput := input
+		userInput.SourceAccessToken = userToken
+		userInput.Audit = audit
+		if got, err := svc.Issue(ctx, userInput); err == nil || got != nil {
+			t.Fatal("root user issued child scope")
+		}
+		issued, err := svc.Issue(ctx, input)
+		if err != nil || issued == nil {
+			t.Fatal("manual child issue", err)
+		}
+		authID, _ := strconv.ParseInt(issued.Authorization.ID, 10, 64)
+		facts.AuthorizationID, facts.ScopeDigest, facts.BoundScope = issued.Authorization.ID, issued.ScopeDigest, issued.Scope.Clone()
+		if err := db.Table("common.task_executions").Where("execution_id=?", id.String()).Updates(map[string]any{"execution_authorization_id": authID, "authorization_expires_at": issued.Authorization.ExpiresAt}).Error; err != nil {
+			t.Fatal(err)
+		}
+		check := CheckDevelopFileInput{ServiceAccessToken: serviceToken, AuthorizationID: authID, ExecutionID: id, TenantID: tenant.ID, ExpectedAttempt: 1, ScopeDigest: issued.ScopeDigest, Audit: serviceAudit}
+		admission, _, err := svc.Check(ctx, check)
+		if err != nil || admission == nil || admission.State != "ready" || admission.ExpiresAt.After(parentExpiry) {
+			t.Fatal("child admission", err)
+		}
+		_, lease, err := execution.ClaimPending(ctx, db, execution.PendingIdentity{ExecutionID: facts.ExecutionID, TenantID: int(tenant.ID), Module: "develop", TaskType: "workflow", Source: "orchestrator"}, execution.ClaimOptions{Module: "develop", TaskType: "workflow", WorkerID: "private-child-fixture", LeaseDuration: 10 * time.Second, RequireAuthorization: true}, nil)
+		if err != nil || lease == nil {
+			t.Fatal("child claim", err)
+		}
+		facts.AdmissionState = "ready"
+		check.LeaseToken, check.Source = uuid.MustParse(lease.Token), &path
+		_, access, err := svc.Check(ctx, check)
+		if err != nil || access == nil {
+			t.Fatal("child private read", err)
+		}
+		wrong := check
+		wrong.LeaseToken = uuid.New()
+		if _, got, err := svc.Check(ctx, wrong); err == nil || got != nil {
+			t.Fatal("wrong child lease accepted")
+		}
+		other := plugin.FileItemPath(uint(engineID), "sources/not-bound.gpkg")
+		wrong = check
+		wrong.Source = &other
+		if _, got, err := svc.Check(ctx, wrong); err == nil || got != nil {
+			t.Fatal("unbound source accepted")
+		}
+		for _, change := range []struct {
+			column  string
+			value   any
+			restore any
+		}{
+			{"lease_token", uuid.NewString(), token}, {"attempt", 2, 1}, {"trigger_type", "scheduled", "manual"},
+			{"status", "failed", "running"}, {"lease_expires_at", stamp.Add(-time.Second), parentExpiry},
+		} {
+			t.Run(change.column, func(t *testing.T) {
+				if err := db.Table("common.task_executions").Where("execution_id=?", parent.ExecutionID).UpdateColumn(change.column, change.value).Error; err != nil {
+					t.Fatal(err)
+				}
+				if _, got, err := svc.Check(ctx, check); err == nil || got != nil {
+					t.Fatal("invalid parent accepted")
+				}
+				if err := db.Table("common.task_executions").Where("execution_id=?", parent.ExecutionID).UpdateColumn(change.column, change.restore).Error; err != nil {
+					t.Fatal(err)
+				}
+			})
+		}
+		if err := db.Model(&ExecutionAuthorization{}).Where("id=?", authID).Updates(map[string]any{"revoked_at": time.Now().UTC(), "revoked_reason": "user_requested"}).Error; err != nil {
+			t.Fatal(err)
+		}
+		if _, got, err := svc.Check(ctx, check); err == nil || got != nil {
+			t.Fatal("revoked child accepted")
+		}
+	})
 	t.Run("readonly original issuance admission claim and deadline", func(t *testing.T) {
 		facts, issued, input := issue(t, false)
 		recovered, err := svc.Issue(ctx, input)

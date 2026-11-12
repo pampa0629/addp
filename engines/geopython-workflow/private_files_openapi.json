@@ -842,10 +842,18 @@
           "sha256": {
             "type": "string",
             "pattern": "^[0-9a-f]{64}$"
+          },
+          "format": {
+            "type": "string",
+            "enum": [
+              "geopackage",
+              "geojson"
+            ]
           }
         },
         "required": [
           "node_id",
+          "format",
           "size_bytes",
           "sha256"
         ]
@@ -857,7 +865,7 @@
           "schema_version": {
             "type": "string",
             "enum": [
-              "addp.workflow.private-files/v1"
+              "addp.workflow.private-files/v2"
             ]
           },
           "tenant_id": {
@@ -1097,7 +1105,7 @@
             "type": "array",
             "maxItems": 1,
             "items": {
-              "$ref": "#/components/schemas/InputFile"
+              "$ref": "#/components/schemas/OutputFile"
             }
           },
           "cleanup_pending": {
@@ -1113,6 +1121,29 @@
           "execution",
           "outputs",
           "cleanup_pending"
+        ]
+      },
+      "OutputFile": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "node_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "size_bytes": {
+            "type": "string",
+            "pattern": "^(0|[1-9][0-9]*)$"
+          },
+          "sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          }
+        },
+        "required": [
+          "node_id",
+          "size_bytes",
+          "sha256"
         ]
       }
     }

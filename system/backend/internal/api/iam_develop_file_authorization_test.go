@@ -115,11 +115,11 @@ func developFileHTTPRouter(t *testing.T, current authorization.AuthContext, f *d
 }
 func developFileHTTPIssued(t *testing.T) (execution.DevelopFileIntent, *client.IssuedDevelopFileAuthorization) {
 	t.Helper()
-	intent, err := execution.NewDevelopFileIntent(json.RawMessage(`{"value":9007199254740993}`), 1, 45, []execution.DevelopFileSourceIntent{{NodeID: "load", Target: plugin.FileItemPath(11, "sources/A.gpkg")}}, nil)
+	intent, err := execution.NewDevelopFileIntent(json.RawMessage(`{"value":9007199254740993}`), 1, 45, []execution.DevelopFileSourceIntent{{NodeID: "load", Target: plugin.FileItemPath(11, "sources/A.gpkg")}}, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	scope, err := execution.NewDevelopBoundFileScope(*intent, []execution.DevelopFileSourceReference{{Target: intent.Sources[0].Target, ItemFingerprint: strings.Repeat("a", 64), BoundaryHash: strings.Repeat("b", 64), EngineVersion: "2"}}, "")
+	scope, err := execution.NewDevelopBoundFileScope(*intent, []execution.DevelopFileSourceReference{{Target: intent.Sources[0].Target, ItemFingerprint: strings.Repeat("a", 64), Format: "geopackage", BoundaryHash: strings.Repeat("b", 64), EngineVersion: "2"}}, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -143,19 +143,23 @@ func TestDevelopFileHTTPGuardsAndStrictInputs(t *testing.T) {
 		mutate           func(*authorization.AuthContext)
 		err              error
 	}{
-		{"issue", "/auth/execution-authorizations/develop-geopackage-workflows", issue, false, 201, 1, nil, nil},
-		{"admit", "/execution-authorizations/9/develop-geopackage-admission-checks", admit, true, 200, 1, nil, nil},
+		{"issue", "/auth/execution-authorizations/develop-file-workflows", issue, false, 201, 1, nil, nil},
+		{"admit", "/execution-authorizations/9/develop-file-admission-checks", admit, true, 200, 1, nil, nil},
 		{"publication", "/execution-authorizations/9/develop-geopackage-publications", publication, true, 200, 1, nil, nil},
 		{"user cannot publish", "/execution-authorizations/9/develop-geopackage-publications", publication, false, 403, 0, nil, nil},
 		{"release requires confirmed digest", "/execution-authorizations/9/develop-geopackage-publications", strings.Replace(publication, `"prepare"`, `"release"`, 1), true, 400, 0, nil, nil},
-		{"unavailable", "/execution-authorizations/9/develop-geopackage-admission-checks", admit, true, 503, 1, nil, iam.ErrDevelopFileDependencyUnavailable},
-		{"unknown", "/auth/execution-authorizations/develop-geopackage-workflows", strings.TrimSuffix(issue, "}") + `,"tenant_id":"4"}`, false, 400, 0, nil, nil},
-		{"duplicate", "/auth/execution-authorizations/develop-geopackage-workflows", strings.TrimSuffix(issue, "}") + `,"execution_id":"` + profileHTTPExecution + `"}`, false, 400, 0, nil, nil},
-		{"query", "/auth/execution-authorizations/develop-geopackage-workflows?source=x", issue, false, 400, 0, nil, nil},
-		{"user-cannot-consume", "/execution-authorizations/9/develop-geopackage-admission-checks", admit, false, 403, 0, nil, nil},
-		{"service-cannot-issue", "/auth/execution-authorizations/develop-geopackage-workflows", issue, true, 403, 0, nil, nil},
-		{"wrong-client", "/execution-authorizations/9/develop-geopackage-admission-checks", admit, true, 403, 0, func(a *authorization.AuthContext) { id := "addp-manager"; a.Client.ClientID = &id }, nil},
-		{"missing-function", "/execution-authorizations/9/develop-geopackage-admission-checks", admit, true, 403, 0, func(a *authorization.AuthContext) { a.Authorization.RoleAssignments = []authorization.RoleAssignment{} }, nil},
+		{"unavailable", "/execution-authorizations/9/develop-file-admission-checks", admit, true, 503, 1, nil, iam.ErrDevelopFileDependencyUnavailable},
+		{"unknown", "/auth/execution-authorizations/develop-file-workflows", strings.TrimSuffix(issue, "}") + `,"tenant_id":"4"}`, false, 400, 0, nil, nil},
+		{"duplicate", "/auth/execution-authorizations/develop-file-workflows", strings.TrimSuffix(issue, "}") + `,"execution_id":"` + profileHTTPExecution + `"}`, false, 400, 0, nil, nil},
+		{"query", "/auth/execution-authorizations/develop-file-workflows?source=x", issue, false, 400, 0, nil, nil},
+		{"user-cannot-consume", "/execution-authorizations/9/develop-file-admission-checks", admit, false, 403, 0, nil, nil},
+		{"service-derives-private-child", "/runtime/execution-authorizations/develop-file-workflows", issue, true, 201, 1, nil, nil},
+		{"service-cannot-issue-root", "/auth/execution-authorizations/develop-file-workflows", issue, true, 403, 0, nil, nil},
+		{"user-cannot-issue-child", "/runtime/execution-authorizations/develop-file-workflows", issue, false, 403, 0, nil, nil},
+		{"retired-geopackage-issue-route", "/auth/execution-authorizations/develop-geopackage-workflows", issue, false, 404, 0, nil, nil},
+		{"retired-geojson-route", "/execution-authorizations/develop-geojson/access", issue, true, 404, 0, nil, nil},
+		{"wrong-client", "/execution-authorizations/9/develop-file-admission-checks", admit, true, 403, 0, func(a *authorization.AuthContext) { id := "addp-manager"; a.Client.ClientID = &id }, nil},
+		{"missing-function", "/execution-authorizations/9/develop-file-admission-checks", admit, true, 403, 0, func(a *authorization.AuthContext) { a.Authorization.RoleAssignments = []authorization.RoleAssignment{} }, nil},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			f := &developFileHTTPFixture{issued: issued, err: tc.err}
@@ -213,7 +217,7 @@ func TestDevelopFileHTTPCreateApprovalRequiresHumanPermission(t *testing.T) {
 }
 
 func TestDevelopFileHTTPApprovalContextIsHumanOnlyAndReadOnly(t *testing.T) {
-	const base = "/api/v1/system/execution-authorizations/develop-geopackage-workflows/" + profileHTTPExecution + "/create-approval-context"
+	const base = "/api/v1/system/execution-authorizations/develop-file-workflows/" + profileHTTPExecution + "/create-approval-context"
 	for _, tc := range []struct {
 		name, path, body    string
 		machine, permission bool

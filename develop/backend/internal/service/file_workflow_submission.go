@@ -24,24 +24,39 @@ func (e *DevExecutor) privateFileSource(ctx context.Context, tenant uint, node, 
 	if err != nil {
 		return nil, &ExecutionParametersError{Cause: errFileWorkflowInputs}
 	}
-	if loc.Type != resourcetree.TypeFile {
+	if loc.Type != resourcetree.TypeFile && loc.Type != resourcetree.TypeObject {
 		return nil, nil
 	}
-	target, err := resourcetree.EngineCatalogPathFromLocator(plugin.FileCatalogModel(), loc)
+	model := plugin.FileCatalogModel()
+	if loc.Type == resourcetree.TypeObject {
+		model = plugin.ObjectCatalogModel()
+	}
+	target, err := resourcetree.EngineCatalogPathFromLocator(model, loc)
 	if err != nil || e.metaClient == nil {
 		return nil, &ExecutionParametersError{Cause: errFileWorkflowInputs}
 	}
 	// The locator item ID is display data. Meta must answer for the exact leaf.
 	item, err := e.metaClient.GetItemSnapshot(ctx, tenant, target.EngineID, 0, target.StringPath())
-	if err != nil || item.ItemType != "file" {
+	if err != nil || item.ItemType != string(loc.Type) {
 		return nil, &ExecutionParametersError{Cause: errFileWorkflowInputs}
 	}
 	descriptor := dataitem.DescriptorFromAttributes(item.Attributes)
 	switch descriptor.Format {
 	case "", string(format.FormatUnknown):
 		return nil, &ExecutionParametersError{Cause: errFileWorkflowInputs}
+	case string(format.FormatGeoJSON):
+		if loc.Type != resourcetree.TypeObject {
+			if strings.EqualFold(path.Ext(target.StringPath()), ".gpkg") {
+				return nil, &ExecutionParametersError{Cause: errFileWorkflowInputs}
+			}
+			return nil, nil
+		}
+		if descriptor.Layout != format.LayoutSingle || descriptor.DataType != datatype.Table {
+			return nil, &ExecutionParametersError{Cause: errFileWorkflowInputs}
+		}
+		return &execution.DevelopFileSourceIntent{NodeID: node, Target: target}, nil
 	case string(format.FormatGeoPackage):
-		if descriptor.Layout != format.LayoutSingle || descriptor.DataType != datatype.Container {
+		if loc.Type != resourcetree.TypeFile || descriptor.Layout != format.LayoutSingle || descriptor.DataType != datatype.Container {
 			return nil, &ExecutionParametersError{Cause: errFileWorkflowInputs}
 		}
 		return &execution.DevelopFileSourceIntent{NodeID: node, Target: target}, nil
@@ -56,16 +71,24 @@ func (e *DevExecutor) privateFileSource(ctx context.Context, tenant uint, node, 
 }
 
 func (e *DevExecutor) submitPrivateFileWorkflow(ctx context.Context, item *execution.TaskExecution, sources []execution.DevelopFileSourceIntent, credential string) error {
-	facts, ok := executionUserFacts(ctx)
-	tenant, principal, membership, version := executionActorIDs(facts)
-	if !ok || (facts.Token.Type != "first_party_access_token" && facts.Token.Type != "oauth_access_token") ||
-		tenant != item.TenantID || principal <= 0 || membership <= 0 || version <= 0 ||
-		item.TriggeredBy == nil || int64(*item.TriggeredBy) != principal ||
-		item.Source != execution.ModuleDevelop || item.TriggerType != execution.TriggerTypeManual || item.ParentExecutionID != nil ||
-		e.fileExecutions == nil {
-		return &ExecutionParametersError{Cause: errFileWorkflowInputs}
+	tenant := item.TenantID
+	if item.ParentExecutionID == nil {
+		facts, ok := executionUserFacts(ctx)
+		userTenant, principal, membership, version := executionActorIDs(facts)
+		if !ok || (facts.Token.Type != "first_party_access_token" && facts.Token.Type != "oauth_access_token") || userTenant != tenant || principal <= 0 || membership <= 0 || version <= 0 || item.TriggeredBy == nil || int64(*item.TriggeredBy) != principal || item.Source != execution.ModuleDevelop || item.TriggerType != execution.TriggerTypeManual || e.fileExecutions == nil {
+			return &ExecutionParametersError{Cause: errFileWorkflowInputs}
+		}
+		item.ActorPrincipalID, item.ActorTenantMembershipID, item.IssuedAuthorizationVersion = &principal, &membership, &version
+	} else {
+		if item.Source != execution.ModuleOrchestrator || item.TriggerType != execution.TriggerTypeManual || e.fileExecutions == nil || e.sqlEngine == nil || e.sqlEngine.systemService == nil {
+			return &ExecutionParametersError{Cause: errFileWorkflowInputs}
+		}
+		var err error
+		credential, err = e.sqlEngine.systemService.TenantServiceAccessToken(ctx, uint(tenant))
+		if err != nil {
+			return err
+		}
 	}
-	item.ActorPrincipalID, item.ActorTenantMembershipID, item.IssuedAuthorizationVersion = &principal, &membership, &version
 	delete(item.ExecutionConfig, execution.ObservabilityKey)
 
 	content, _ := mapValue(item.ExecutionConfig["content"])
@@ -85,6 +108,16 @@ func (e *DevExecutor) submitPrivateFileWorkflow(ctx context.Context, item *execu
 		if err != nil {
 			return &ExecutionParametersError{Cause: err}
 		}
+	}
+	if target != nil {
+		for _, source := range sources {
+			if _, err := plugin.RequireObjectLeafPath(source.Target); err == nil {
+				return &ExecutionParametersError{Cause: errFileWorkflowInputs}
+			}
+		}
+	}
+	if item.ParentExecutionID != nil && target != nil {
+		return &ExecutionParametersError{Cause: errFileWorkflowInputs}
 	}
 	// The same projection proves full source/target coverage before persistence;
 	// mixed sources and caller-supplied connections never enter a pending row.

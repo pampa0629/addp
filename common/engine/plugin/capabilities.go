@@ -320,8 +320,8 @@ func validateWorkflowAccessCapabilities(compute *ComputeCapabilities) error {
 		return nil
 	}
 	workflow := compute.Workflow
-	if workflow.PrivateFilesAPI != "" && (workflow.PrivateFilesAPI != WorkflowPrivateFilesAPIV1 || !workflow.Supported || workflow.RuntimeAPI != WorkflowRuntimeAPIAddpV1) {
-		return fmt.Errorf("private_files_api requires supported addp.workflow/v1 and addp.workflow.private-files/v1")
+	if workflow.PrivateFilesAPI != "" && (workflow.PrivateFilesAPI != WorkflowPrivateFilesAPIV2 || !workflow.Supported || workflow.RuntimeAPI != WorkflowRuntimeAPIAddpV1) {
+		return fmt.Errorf("private_files_api requires supported addp.workflow/v1 and addp.workflow.private-files/v2")
 	}
 	if workflow.StorageAccess == nil {
 		return nil

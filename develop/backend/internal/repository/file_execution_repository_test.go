@@ -41,7 +41,7 @@ func fileIssuedFixture(t *testing.T, facts *commonclient.DevelopFileExecutionFac
 		targetVersion = "2"
 	}
 	scope, err := commonexecution.NewDevelopBoundFileScope(facts.Intent, []commonexecution.DevelopFileSourceReference{{
-		Target: facts.Intent.Sources[0].Target, ItemFingerprint: strings.Repeat("a", 64), BoundaryHash: strings.Repeat("b", 64), EngineVersion: "2"}}, targetVersion)
+		Target: facts.Intent.Sources[0].Target, ItemFingerprint: strings.Repeat("a", 64), Format: "geopackage", BoundaryHash: strings.Repeat("b", 64), EngineVersion: "2"}}, targetVersion)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -231,10 +231,10 @@ func TestFileExecutionPendingRequiresOriginalHumanWorkflow(t *testing.T) {
 
 func TestFileExecutionQueueExcludesOnlyUnadmittedPurpose(t *testing.T) {
 	db, repo, item, sources := filePendingFixture(t)
-	runFileQueueCase(t, db, repo, item, sources)
+	runFileQueueCase(t, db, repo, item, sources, "101")
 }
 
-func runFileQueueCase(t *testing.T, db *gorm.DB, repo *FileExecutionRepository, item *commonexecution.TaskExecution, sources []commonexecution.DevelopFileSourceIntent) {
+func runFileQueueCase(t *testing.T, db *gorm.DB, repo *FileExecutionRepository, item *commonexecution.TaskExecution, sources []commonexecution.DevelopFileSourceIntent, authorizationID string) {
 	t.Helper()
 	facts, err := repo.CreatePending(t.Context(), item, sources, nil)
 	if err != nil {
@@ -257,7 +257,9 @@ func runFileQueueCase(t *testing.T, db *gorm.DB, repo *FileExecutionRepository, 
 	if candidate, _, err := queue.ClaimNext("workflow", t.Context(), "file-worker", time.Now(), time.Minute, nil); err != nil || candidate != nil {
 		t.Fatalf("unissued purpose claimed: %#v %v", candidate, err)
 	}
-	if err := repo.BindAuthorization(t.Context(), 7, item.ExecutionID, fileIssuedFixture(t, facts)); err != nil {
+	issued := fileIssuedFixture(t, facts)
+	issued.Authorization.ID = authorizationID
+	if err := repo.BindAuthorization(t.Context(), 7, item.ExecutionID, issued); err != nil {
 		t.Fatal(err)
 	}
 	if rows, err := repo.PendingAdmissions(t.Context(), 100); err != nil || len(rows) != 1 || rows[0].Facts.ExecutionID != item.ExecutionID {
@@ -267,7 +269,12 @@ func runFileQueueCase(t *testing.T, db *gorm.DB, repo *FileExecutionRepository, 
 		t.Fatalf("bound but unadmitted purpose claimed: %#v %v", candidate, err)
 	}
 	bound, _ := repo.Read(t.Context(), 7, item.ExecutionID)
-	if err := repo.ApplyAdmission(t.Context(), 7, item.ExecutionID, fileAdmissionFixture(bound)); err != nil {
+	observe := func() commonclient.DevelopFileAdmissionObservation {
+		observation := fileAdmissionFixture(bound)
+		observation.AuthorizationID = authorizationID
+		return observation
+	}
+	if err := repo.ApplyAdmission(t.Context(), 7, item.ExecutionID, observe()); err != nil {
 		t.Fatal(err)
 	}
 	if rows, err := repo.PendingAdmissions(t.Context(), 100); err != nil || len(rows) != 0 {
@@ -285,7 +292,7 @@ func runFileQueueCase(t *testing.T, db *gorm.DB, repo *FileExecutionRepository, 
 	}
 	// An expired observation is not an Allow. A fresh System observation may
 	// refresh pending eligibility; the original attempt and EA do not change.
-	if err := repo.ApplyAdmission(t.Context(), 7, item.ExecutionID, fileAdmissionFixture(bound)); err != nil {
+	if err := repo.ApplyAdmission(t.Context(), 7, item.ExecutionID, observe()); err != nil {
 		t.Fatal(err)
 	}
 	claimed, lease, err := queue.ClaimNext("workflow", t.Context(), "file-worker", time.Now(), time.Minute, nil)

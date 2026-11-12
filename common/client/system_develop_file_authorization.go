@@ -74,7 +74,11 @@ func (c *SystemExecutionAuthorizationClient) IssueDevelopFile(ctx context.Contex
 		IntentDigest string `json:"intent_digest"`
 	}{executionID, digest}
 	var result IssuedDevelopFileAuthorization
-	if err := c.system.executionAuthorizationJSON(ctx, "/api/v1/system/auth/execution-authorizations/develop-geopackage-workflows", credential, request, &result, http.StatusCreated); err != nil {
+	endpoint := "/api/v1/system/auth/execution-authorizations/develop-file-workflows"
+	if frozen.Parent != nil {
+		endpoint = "/api/v1/system/runtime/execution-authorizations/develop-file-workflows"
+	}
+	if err := c.system.executionAuthorizationJSON(ctx, endpoint, credential, request, &result, http.StatusCreated); err != nil {
 		return nil, err
 	}
 	if result.Validate() != nil || result.Authorization.ExecutionID != executionID || result.Scope.ValidateAgainstIntent(*frozen) != nil {
@@ -141,7 +145,7 @@ func (c *SystemServiceClient) CheckDevelopFileAdmission(ctx context.Context, iss
 		return nil, err
 	}
 	var result DevelopFileAdmissionObservation
-	path := "/api/v1/system/execution-authorizations/" + issued.Authorization.ID + "/develop-geopackage-admission-checks"
+	path := "/api/v1/system/execution-authorizations/" + issued.Authorization.ID + "/develop-file-admission-checks"
 	if err := c.executionAuthorizationJSON(ctx, path, credential, request, &result, http.StatusOK); err != nil {
 		return nil, err
 	}
@@ -188,7 +192,7 @@ func (c *SystemServiceClient) CheckDevelopFileSourceAccess(ctx context.Context, 
 		return nil, err
 	}
 	var result DevelopFileSourceAccessObservation
-	path := "/api/v1/system/execution-authorizations/" + issued.Authorization.ID + "/develop-geopackage-source-accesses"
+	path := "/api/v1/system/execution-authorizations/" + issued.Authorization.ID + "/develop-file-source-accesses"
 	if err := c.executionAuthorizationJSON(ctx, path, credential, request, &result, http.StatusOK); err != nil {
 		return nil, err
 	}

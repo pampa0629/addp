@@ -377,6 +377,8 @@ definitions:
         type: string
       expected_attempt:
         type: integer
+      parent:
+        $ref: '#/definitions/execution.DevelopFileParent'
       schema_version:
         type: string
       sources:
@@ -387,6 +389,15 @@ definitions:
         $ref: '#/definitions/execution.DevelopFileTargetIntent'
       timeout_seconds:
         type: integer
+    type: object
+  execution.DevelopFileParent:
+    properties:
+      attempt:
+        type: integer
+      execution_id:
+        type: string
+      lease_digest:
+        type: string
     type: object
   execution.DevelopFileSourceIntent:
     properties:
@@ -400,6 +411,8 @@ definitions:
       boundary_hash:
         type: string
       engine_version:
+        type: string
+      format:
         type: string
       item_fingerprint:
         type: string

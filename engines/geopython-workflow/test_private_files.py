@@ -27,12 +27,12 @@ def _manifest(tmp_path, *, save=True):
     if not save:
         workflow["tasks"].pop()
     return {
-        "schema_version": "addp.workflow.private-files/v1", "tenant_id": "2",
+        "schema_version": "addp.workflow.private-files/v2", "tenant_id": "2",
         "execution_id": str(uuid4()), "attempt": 1, "authorization_id": "101",
         "scope_digest": "a" * 64,
         "deadline": datetime.fromtimestamp(time.time() + 45, timezone.utc).isoformat(),
         "workflow_json": json.dumps(workflow),
-        "inputs": [{"node_id": node, "size_bytes": str(len(data)),
+        "inputs": [{"node_id": node, "format": "geopackage", "size_bytes": str(len(data)),
                     "sha256": hashlib.sha256(data).hexdigest()}
                    for node, data in zip(["source", "mask"], contents)],
         "outputs": ["save"] if save else [],
@@ -265,3 +265,39 @@ def test_private_files_cleanup_failure_remains_pending(tmp_path, monkeypatch):
         assert files.cleanup(CREATOR) == {"cleanup": "pending", "error_code": "PRIVATE_FILES_CLEANUP_FAILED"}
         assert files.status(CREATOR)["cleanup_pending"] and files.directory.exists()
     assert files.cleanup(CREATOR) == {"cleanup": "passed"}
+
+
+def test_private_files_geojson_uses_same_transport_and_original_runner(tmp_path):
+    data = json.dumps({'type': 'FeatureCollection', 'features': [
+        {'type': 'Feature', 'properties': {'instance_id': 7},
+         'geometry': {'type': 'Point', 'coordinates': [-122.27, 37.87]}}
+    ]}).encode()
+    workflow = {'tasks': [
+        {'id': 'source', 'operator': 'load', 'params': {}, 'depends_on': []},
+        {'id': 'project', 'operator': 'vector_reproject',
+         'params': {'input_gdf': {'$ref': 'source'}, 'target_crs': 'EPSG:32610'},
+         'depends_on': ['source']}
+    ]}
+    raw = {'schema_version': 'addp.workflow.private-files/v2', 'tenant_id': '2',
+           'execution_id': str(uuid4()), 'attempt': 1, 'authorization_id': '101',
+           'scope_digest': 'a' * 64,
+           'deadline': datetime.fromtimestamp(time.time() + 45, timezone.utc).isoformat(),
+           'workflow_json': json.dumps(workflow),
+           'inputs': [{'node_id': 'source', 'format': 'geojson', 'size_bytes': str(len(data)),
+                       'sha256': hashlib.sha256(data).hexdigest()}], 'outputs': []}
+    for invalid in [None, 'gpkg', '../../private', 'GeoJSON']:
+        changed = {**raw, 'inputs': [{**raw['inputs'][0], 'format': invalid}]}
+        with pytest.raises(PrivateFileError):
+            FileManifest.parse(changed)
+    files = PrivateFiles(FileManifest.parse(raw), CREATOR, parent=tmp_path)
+    try:
+        files.put_input(CREATOR, 0, io.BytesIO(data))
+        assert (files.directory / 'input-0.geojson').read_bytes() == data
+        assert not (files.directory / 'input-0.gpkg').exists()
+        files.start(CREATOR, 'en')
+        assert files.worker.wait(50) and files.worker.stopped()
+        status = files.status(CREATOR)
+        assert status['execution']['status'] == 'success', status
+        assert status['outputs'] == []
+    finally:
+        assert files.cleanup(CREATOR)['cleanup'] == 'passed'

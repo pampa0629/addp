@@ -84,7 +84,7 @@ func TestPrivateFilePublicationProviderSequence(t *testing.T) {
 			for _, source := range facts.Intent.Sources {
 				set, _ := plugin.NewQueryReadSet(source.Target)
 				reads = append(reads, repository.PrivateFileSourceRead{EngineVersion: 2, NodeID: source.NodeID, ReadSet: set})
-				manifest.Inputs = append(manifest.Inputs, plugin.WorkflowPrivateFile{NodeID: source.NodeID, Size: 123, SHA256: strings.Repeat("a", 64)})
+				manifest.Inputs = append(manifest.Inputs, plugin.WorkflowPrivateFile{NodeID: source.NodeID, Format: "geopackage", Size: 123, SHA256: strings.Repeat("a", 64)})
 			}
 			if err := repo.RecordPrivateRuntime(ctx, *lease, repository.PrivateFileRuntimeRecord{
 				RuntimeExecutionID: fileInputRuntimeID, Manifest: manifest, OwnerInstanceID: "fixture-instance", InputDirectory: directory, SourceReads: reads,
@@ -93,7 +93,7 @@ func TestPrivateFilePublicationProviderSequence(t *testing.T) {
 			}
 			const payload = "private Runtime output bytes"
 			sum := sha256.Sum256([]byte(payload))
-			output := plugin.WorkflowPrivateFile{NodeID: target.NodeID, Size: int64(len(payload)), SHA256: hex.EncodeToString(sum[:])}
+			output := plugin.WorkflowPrivateFile{NodeID: target.NodeID, Format: "geopackage", Size: int64(len(payload)), SHA256: hex.EncodeToString(sum[:])}
 			dropped := errors.New("test lost response")
 			var calls []string
 			var original plugin.PreparedNewFile

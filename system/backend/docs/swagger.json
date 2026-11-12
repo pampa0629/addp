@@ -632,14 +632,14 @@
                 ]
             }
         },
-        "/auth/execution-authorizations/develop-geopackage-workflows": {
+        "/auth/execution-authorizations/develop-file-workflows": {
             "post": {
                 "security": [
                     {
                         "BearerAuth": []
                     }
                 ],
-                "description": "当前普通 API User；独立读取 Owner 冻结 Intent 和 Meta basic 身份与逻辑边界，保存用途另核当前写执行权限，核当前人员、精确源规则和原 pending，封存同一 EA；不新增源 Grant 或目标写权 | Ordinary API User only; independently reads frozen Owner intent and basic Meta identity and logical boundaries, requires current write-execution permission for saves, checks current actor, exact source rules and original pending execution, and seals one EA without source Grants or target write access",
+                "description": "当前普通 API User；独立读取 Owner 冻结 Intent 和 Meta basic 身份与逻辑边界，保存用途另核当前写执行权限，核当前人员、精确源规则和原 pending，封存同一 EA；不新增源 Grant 或目标写权 | Ordinary API User; independently reads frozen Owner intent and basic Meta identity and logical boundaries, requires current write-execution permission for saves, checks current actor, exact source rules and original pending execution, and seals one EA without source Grants or target write access",
                 "consumes": [
                     "application/json"
                 ],
@@ -4531,62 +4531,7 @@
                 ]
             }
         },
-        "/execution-authorizations/develop-geojson/access": {
-            "post": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "description": "仅 Develop 租户服务可按当前租约核验冻结 load 节点的源 | Only the Develop tenant service may verify the frozen load source using the current lease",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Runtime 执行授权 | Runtime Execution Authorization"
-                ],
-                "summary": "复核GeoJSON 读取执行的数据权限 | Verify GeoJSON reading execution access",
-                "parameters": [
-                    {
-                        "description": "当前执行租约 | Current execution lease",
-                        "name": "request",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/client.WorkflowGeoJSONAccessRequest"
-                        }
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/client.ManagerFileAccessObservation"
-                        }
-                    },
-                    "400": {
-                        "description": "Bad Request",
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
-                        }
-                    },
-                    "403": {
-                        "description": "Forbidden",
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
-                        }
-                    }
-                },
-                "x-addp-auth-mode": "permission",
-                "x-addp-required-permissions": [
-                    "system.execution_authorization.execute"
-                ]
-            }
-        },
-        "/execution-authorizations/develop-geopackage-workflows/{execution_id}/create-approval-context": {
+        "/execution-authorizations/develop-file-workflows/{execution_id}/create-approval-context": {
             "get": {
                 "security": [
                     {
@@ -4814,7 +4759,7 @@
                 ]
             }
         },
-        "/execution-authorizations/{id}/develop-geopackage-admission-checks": {
+        "/execution-authorizations/{id}/develop-file-admission-checks": {
             "post": {
                 "security": [
                     {
@@ -4855,6 +4800,92 @@
                         "description": "当次资格观察，非缓存许可 | Current eligibility observation, not cached permission",
                         "schema": {
                             "$ref": "#/definitions/client.DevelopFileAdmissionObservation"
+                        }
+                    },
+                    "400": {
+                        "description": "拒绝或依赖不可用 | Rejected or dependency unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "拒绝或依赖不可用 | Rejected or dependency unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "拒绝或依赖不可用 | Rejected or dependency unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "拒绝或依赖不可用 | Rejected or dependency unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "拒绝或依赖不可用 | Rejected or dependency unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "拒绝或依赖不可用 | Rejected or dependency unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "system.execution_authorization.execute"
+                ]
+            }
+        },
+        "/execution-authorizations/{id}/develop-file-source-accesses": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "固定 addp-develop 当前机器凭据；核同一 Scope、当前 User、完整源规则、真实 running attempt/lease、原截止及同版本 NFS；保存范围继续核对原批准。只返回指定源连接及时间边界。 | Fixed current addp-develop machine credential. Checks scope, current User, source rules, running attempt and lease, original deadline and NFS version. Rechecks the original approval for save scopes. Returns only the selected source connection and time bounds.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "执行授权 | Execution Authorization"
+                ],
+                "summary": "复核 Develop 原执行的精确文件读取 | Recheck exact file read for original Develop execution",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "规范正整数 EA ID | Canonical positive EA ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "同一执行租约、范围摘要与精确源；512 KiB，无 query | Identical execution lease, scope digest and exact source; 512 KiB, no query",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/client.DevelopFileSourceAccessRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "当次精确读取观察，非引擎级授权 | Current exact read observation, not engine-wide authorization",
+                        "schema": {
+                            "$ref": "#/definitions/client.DevelopFileSourceAccessObservation"
                         }
                     },
                     "400": {
@@ -5205,92 +5236,6 @@
                     },
                     "503": {
                         "description": "Service Unavailable",
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
-                        }
-                    }
-                },
-                "x-addp-auth-mode": "permission",
-                "x-addp-required-permissions": [
-                    "system.execution_authorization.execute"
-                ]
-            }
-        },
-        "/execution-authorizations/{id}/develop-geopackage-source-accesses": {
-            "post": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "description": "固定 addp-develop 当前机器凭据；核同一 Scope、当前 User、完整源规则、真实 running attempt/lease、原截止及同版本 NFS；保存范围继续核对原批准。只返回指定源连接及时间边界。 | Fixed current addp-develop machine credential. Checks scope, current User, source rules, running attempt and lease, original deadline and NFS version. Rechecks the original approval for save scopes. Returns only the selected source connection and time bounds.",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "执行授权 | Execution Authorization"
-                ],
-                "summary": "复核 Develop 原执行的精确文件读取 | Recheck exact file read for original Develop execution",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "规范正整数 EA ID | Canonical positive EA ID",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    },
-                    {
-                        "description": "同一执行租约、范围摘要与精确源；512 KiB，无 query | Identical execution lease, scope digest and exact source; 512 KiB, no query",
-                        "name": "request",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/client.DevelopFileSourceAccessRequest"
-                        }
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "当次精确读取观察，非引擎级授权 | Current exact read observation, not engine-wide authorization",
-                        "schema": {
-                            "$ref": "#/definitions/client.DevelopFileSourceAccessObservation"
-                        }
-                    },
-                    "400": {
-                        "description": "拒绝或依赖不可用 | Rejected or dependency unavailable",
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
-                        }
-                    },
-                    "401": {
-                        "description": "拒绝或依赖不可用 | Rejected or dependency unavailable",
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
-                        }
-                    },
-                    "403": {
-                        "description": "拒绝或依赖不可用 | Rejected or dependency unavailable",
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
-                        }
-                    },
-                    "409": {
-                        "description": "拒绝或依赖不可用 | Rejected or dependency unavailable",
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
-                        }
-                    },
-                    "500": {
-                        "description": "拒绝或依赖不可用 | Rejected or dependency unavailable",
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
-                        }
-                    },
-                    "503": {
-                        "description": "拒绝或依赖不可用 | Rejected or dependency unavailable",
                         "schema": {
                             "$ref": "#/definitions/internal_api.IAMErrorResponse"
                         }
@@ -11556,6 +11501,85 @@
                     "develop.data_read.execute",
                     "develop.data_write.execute"
                 ],
+                "x-addp-required-permissions": [
+                    "system.execution_authorization.execute"
+                ]
+            }
+        },
+        "/runtime/execution-authorizations/develop-file-workflows": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "固定同租户 addp-develop Service；System 独立核 common 父子行、真实用户、当前权限、父租约与原冻结 Intent，仅允许只读。不以服务权限替代用户 read Grant。 | Fixed same-tenant addp-develop Service. System verifies authoritative parent-child executions, actual user, current permissions, parent lease and original frozen intent. Read only; service permission does not replace the user read Grant.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "执行授权 | Execution Authorization"
+                ],
+                "summary": "从手动父执行签发 Develop 私有文件授权 | Issue Develop private file authorization from a manual parent",
+                "parameters": [
+                    {
+                        "description": "原子执行与 Intent 摘要 | Original child execution and intent digest",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMIssueDevelopFileRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/client.IssuedDevelopFileAuthorization"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
                 "x-addp-required-permissions": [
                     "system.execution_authorization.execute"
                 ]
@@ -18661,23 +18685,6 @@
                 }
             }
         },
-        "client.WorkflowGeoJSONAccessRequest": {
-            "type": "object",
-            "properties": {
-                "attempt": {
-                    "type": "integer"
-                },
-                "execution_id": {
-                    "type": "string"
-                },
-                "lease_token": {
-                    "type": "string"
-                },
-                "node_id": {
-                    "type": "string"
-                }
-            }
-        },
         "configuration.ManagementDeclaration": {
             "type": "object",
             "properties": {
@@ -19287,6 +19294,9 @@
                     "type": "string"
                 },
                 "engine_version": {
+                    "type": "string"
+                },
+                "format": {
                     "type": "string"
                 },
                 "item_fingerprint": {

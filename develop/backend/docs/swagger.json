@@ -4612,6 +4612,9 @@
                 "expected_attempt": {
                     "type": "integer"
                 },
+                "parent": {
+                    "$ref": "#/definitions/execution.DevelopFileParent"
+                },
                 "schema_version": {
                     "type": "string"
                 },
@@ -4626,6 +4629,20 @@
                 },
                 "timeout_seconds": {
                     "type": "integer"
+                }
+            }
+        },
+        "execution.DevelopFileParent": {
+            "type": "object",
+            "properties": {
+                "attempt": {
+                    "type": "integer"
+                },
+                "execution_id": {
+                    "type": "string"
+                },
+                "lease_digest": {
+                    "type": "string"
                 }
             }
         },
@@ -4647,6 +4664,9 @@
                     "type": "string"
                 },
                 "engine_version": {
+                    "type": "string"
+                },
+                "format": {
                     "type": "string"
                 },
                 "item_fingerprint": {

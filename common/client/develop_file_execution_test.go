@@ -15,7 +15,7 @@ import (
 func developOwnerFacts(t *testing.T) *DevelopFileExecutionFacts {
 	t.Helper()
 	raw := json.RawMessage(`{"value":9007199254740993}`)
-	intent, err := execution.NewDevelopFileIntent(raw, 1, 45, []execution.DevelopFileSourceIntent{{NodeID: "load", Target: plugin.FileItemPath(11, "sources/A.gpkg")}}, nil)
+	intent, err := execution.NewDevelopFileIntent(raw, 1, 45, []execution.DevelopFileSourceIntent{{NodeID: "load", Target: plugin.FileItemPath(11, "sources/A.gpkg")}}, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -61,12 +61,12 @@ func TestDevelopFileExecutionProjectionRejectsIncompleteOrInventedBindings(t *te
 func TestDevelopFileExecutionProjectionBindsPublicationToSealedTarget(t *testing.T) {
 	base := developOwnerFacts(t)
 	target := &execution.DevelopFileTargetIntent{NodeID: "save", Target: plugin.FileItemPath(11, "outputs/result.gpkg"), Mode: "fail"}
-	intent, err := execution.NewDevelopFileIntent(base.ConfigJSON, 1, 45, base.Intent.Sources, target)
+	intent, err := execution.NewDevelopFileIntent(base.ConfigJSON, 1, 45, base.Intent.Sources, target, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	scope, err := execution.NewDevelopBoundFileScope(*intent, []execution.DevelopFileSourceReference{{
-		Target: intent.Sources[0].Target, ItemFingerprint: strings.Repeat("a", 64), BoundaryHash: strings.Repeat("b", 64), EngineVersion: "2",
+		Target: intent.Sources[0].Target, ItemFingerprint: strings.Repeat("a", 64), Format: "geopackage", BoundaryHash: strings.Repeat("b", 64), EngineVersion: "2",
 	}}, "2")
 	if err != nil {
 		t.Fatal(err)
@@ -104,7 +104,7 @@ func TestDevelopFileExecutionReaderUsesOneBoundedMachineRequest(t *testing.T) {
 			facts := developOwnerFacts(t)
 			if fault == "large-valid" {
 				facts.ConfigJSON = json.RawMessage(`{"large":"` + strings.Repeat("c", 350<<10) + `"}`)
-				intent, err := execution.NewDevelopFileIntent(facts.ConfigJSON, 1, 45, []execution.DevelopFileSourceIntent{{NodeID: strings.Repeat("n", 200<<10), Target: plugin.FileItemPath(11, "sources/A.gpkg")}}, nil)
+				intent, err := execution.NewDevelopFileIntent(facts.ConfigJSON, 1, 45, []execution.DevelopFileSourceIntent{{NodeID: strings.Repeat("n", 200<<10), Target: plugin.FileItemPath(11, "sources/A.gpkg")}}, nil, nil)
 				if err != nil {
 					t.Fatal(err)
 				}

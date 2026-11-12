@@ -69,7 +69,11 @@ func newPrivateFileWorkflowExecutor(repo *repository.FileExecutionRepository, wo
 			return nil, err
 		}
 		engine := descriptor.AsEngine()
-		if engine == nil || engine.ID != id || engine.EngineType != "geopython_workflow" || !engineselection.IsAvailableForComputeEntrypoint(engine, "workflow") {
+		if engine == nil || engine.ID != id || engine.EngineType != "geopython_workflow" || !engineselection.IsAvailable(engine) {
+			return nil, errFileWorkflowInputs
+		}
+		capabilities, err := engineselection.ParseCapabilities(engine.Capabilities)
+		if err != nil || capabilities == nil || capabilities.Compute == nil || capabilities.Compute.Workflow == nil || !capabilities.Compute.Workflow.Supported || capabilities.Compute.Workflow.PrivateFilesAPI != plugin.WorkflowPrivateFilesAPIV2 {
 			return nil, errFileWorkflowInputs
 		}
 		return plugin.ConnectionInfo(engine.ConnectionInfo), nil
@@ -186,7 +190,11 @@ func (s *ExecutionService) executePrivateFileWorkflow(ctx context.Context, item 
 	runCtx, cancel := context.WithDeadline(execution.ContextWithLease(ctx, lease), deadline)
 	defer cancel()
 	for _, source := range issued.Scope.Sources {
-		end, err := f.protectSource(runCtx, uint(item.TenantID), f.provider, source.Target)
+		provider, err := privateFileSourceProvider(source.Format, f.provider)
+		if err != nil {
+			return unavailable()
+		}
+		end, err := f.protectSource(runCtx, uint(item.TenantID), provider, source.Target)
 		if err != nil {
 			return unavailable()
 		}
