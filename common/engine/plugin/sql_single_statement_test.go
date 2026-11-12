@@ -20,6 +20,8 @@ type singleStatementRecord struct {
 	args                   []driver.NamedValue
 	queries, begins, pools int
 	failure                error
+	transaction            bool
+	runQuery               func(context.Context) (driver.Rows, error)
 }
 
 type singleStatementConnector struct{ record *singleStatementRecord }
@@ -39,14 +41,26 @@ func (c *singleStatementConn) Begin() (driver.Tx, error) {
 	if c.record.failure != nil {
 		return nil, c.record.failure
 	}
+	if c.record.transaction {
+		return singleStatementTx{}, nil
+	}
 	return nil, errors.New("explicit transactions are unavailable")
 }
+
+type singleStatementTx struct{}
+
+func (singleStatementTx) Commit() error   { return nil }
+func (singleStatementTx) Rollback() error { return nil }
+
 func (c *singleStatementConn) BeginTx(context.Context, driver.TxOptions) (driver.Tx, error) {
 	return c.Begin()
 }
-func (c *singleStatementConn) QueryContext(_ context.Context, query string, args []driver.NamedValue) (driver.Rows, error) {
+func (c *singleStatementConn) QueryContext(ctx context.Context, query string, args []driver.NamedValue) (driver.Rows, error) {
 	c.record.queries++
 	c.record.query, c.record.args = query, append([]driver.NamedValue(nil), args...)
+	if c.record.runQuery != nil {
+		return c.record.runQuery(ctx)
+	}
 	if c.record.failure != nil {
 		return nil, c.record.failure
 	}
@@ -197,6 +211,61 @@ func TestSharedTransactionalTimeoutStagesDoNotDependOnPoolForm(t *testing.T) {
 			}
 			if record.queries != 0 || record.pools != 1 || acquiring && record.begins != 0 || !acquiring && record.begins != 1 {
 				t.Fatalf("timed-out execution retried or bypassed its pool: %+v", record)
+			}
+		})
+	}
+}
+
+type canceledStatementRows struct {
+	resultSchemaRows
+	ctx   context.Context
+	cause error
+}
+
+func (r *canceledStatementRows) Next([]driver.Value) error {
+	<-r.ctx.Done()
+	return r.cause
+}
+
+func TestSharedTransactionalNativeCancellationKeepsContextAndDriverCause(t *testing.T) {
+	for _, stage := range []string{"query", "rows", "ordinary-error"} {
+		t.Run(stage, func(t *testing.T) {
+			cause := errors.New("native statement canceled")
+			record := &singleStatementRecord{transaction: true}
+			record.runQuery = func(ctx context.Context) (driver.Rows, error) {
+				if stage == "rows" {
+					return &canceledStatementRows{ctx: ctx, cause: cause}, nil
+				}
+				if stage == "query" {
+					<-ctx.Done()
+				}
+				return nil, cause
+			}
+			p := &singleStatementProvider{record: record, boundary: ControlledReadOnlySQLBoundaryDatabaseTransaction}
+			p.engineType = "native-cancellation-fixture"
+			Register(p)
+			t.Cleanup(func() { Unregister(p.Type()) })
+			const engineID = 8419
+			t.Cleanup(func() { _ = ClosePool(engineID) })
+			ctx := WithPoolEngineVersion(t.Context(), engineID, 1)
+			if stage != "ordinary-error" {
+				var cancel context.CancelFunc
+				ctx, cancel = context.WithTimeout(ctx, 30*time.Millisecond)
+				defer cancel()
+			}
+			const statement = "SELECT id FROM source"
+			_, err := ExecuteSQLWithConnectionPool(ctx, p, nil, statement, QueryOptions{
+				EngineID: engineID, EngineType: p.Type(), ReadOnly: true,
+			}, SQLResultFieldMapper(singleStatementMapper))
+			want := QueryErrorCodeSQLExecutionTimeout
+			if stage == "ordinary-error" {
+				want = ""
+			}
+			if !errors.Is(err, cause) || QueryErrorCodeOf(err) != want || errors.Is(err, context.DeadlineExceeded) != (stage != "ordinary-error") {
+				t.Fatalf("native cancellation cause/classification changed: %v (code=%q)", err, QueryErrorCodeOf(err))
+			}
+			if executed, ok := ExecutedSQLForError(err); !ok || executed != statement || record.queries != 1 || record.begins != 1 {
+				t.Fatalf("statement evidence lost or retried: %q, %+v", executed, record)
 			}
 		})
 	}

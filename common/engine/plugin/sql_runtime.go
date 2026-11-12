@@ -223,10 +223,16 @@ func executeReadOnlySQL(ctx context.Context, db *gorm.DB, dialect string, bounda
 	}
 	rows, err := tx.QueryContext(ctx, query, args...)
 	if err != nil {
+		if ctx.Err() != nil {
+			err = errors.Join(ctx.Err(), err)
+		}
 		return nil, &sqlStatementFailure{statement: query, cause: err}
 	}
 	result, err := ScanSQLRows(rows, mapField, decode)
 	if err != nil {
+		if ctx.Err() != nil {
+			err = errors.Join(ctx.Err(), err)
+		}
 		return nil, &sqlStatementFailure{statement: query, cause: err}
 	}
 	if err := tx.Commit(); err != nil {

@@ -127,13 +127,13 @@ PostgreSQL、MySQL 的 Engine Instance 通过驱动声明的连接表单保存 `
 
 通用有界 SQL 批读取从已经解析的 `EngineCatalogPath.EngineID` 和实际 Provider 类型传递查询的引擎身份，并保留调用上下文中绑定的配置版本，使已登记引擎复用对应共享池。未绑定 Engine Instance 的独立调用继续由执行层负责临时池的创建和关闭；这一规则不改变查询授权、SQL 事务方式或独占流式会话的生命周期。
 
-已登记引擎的共享只读事务查询在借出连接前将 deadline 标记为获取连接超时，借出后标记为 SQL 执行超时；该分类依实际执行阶段，不依赖表单是否声明池参数或是否通过协议 Provider 委托执行。源端会话预算仍由实际 Provider 的独立接口声明，不按方言推断。StarRocks 的单语句执行路线和独占会话保持原有契约。
+已登记引擎的共享只读事务查询在借出连接前将 deadline 标记为获取连接超时，借出后标记为 SQL 执行超时；该分类依实际执行阶段，不依赖表单是否声明池参数或是否通过协议 Provider 委托执行。内容 SELECT 或结果读取失败时，若请求 context 已结束，错误链同时保留 context 原因与原生驱动错误，不依赖驱动将取消错误包装为 context deadline。该归一化不作用于查询前授权和保护拒绝。源端会话预算仍由实际 Provider 的独立接口声明，不按方言推断。StarRocks 的单语句执行路线和独占会话保持原有契约。
 
 MySQL 的有 deadline 共享只读连接在借出后读取原 max_execution_time，并按当前请求剩余毫秒设置不宽于原非零值的会话预算。事务内核验及 Catalog Facts 使用借出时预算，正式内容 SELECT 前刷新到当时剩余时间。它限定源端 SELECT 的单语句时间，不承诺整个多语句请求在源端同一时刻结束。客户端 context 继续约束整次请求。该机制由 MySQL Provider 声明，SQL Runtime、Catalog Facts 和有界表读取复用同一连接生命周期，其他插件不由 SQL 方言推断采用。
 
 用户 SQL 的 MAX_EXECUTION_TIME 优化器提示不得放大有效预算，不能证明安全的预算相关 SET_VAR 提示拒绝执行；普通字符串和普通注释不作为提示。原生 3024 沿既有 sql_execution_timeout 诊断返回。事务和结果流结束后才恢复原会话值，恢复使用独立有界清理 context。恢复失败将该物理连接标为不可复用，并将错误返回调用方，不让污染的连接回池。无 deadline 的独占流式会话沿既有生命周期，本轮不增配置字段或源账号权限。
 
-真实连接池回归纳入既有 Common PostgreSQL 和 MySQL T2 门禁。单独验证可使用 `make test-common-postgres COMMON_POSTGRES_TEST_ARGS='--test shared-sql-pool'` 和 `make test-common-mysql-data-protection COMMON_MYSQL_TEST_ARGS='--local-disposable --test shared-sql-pool'`，覆盖池饱和、配置切换、旧连接完成与释放、迟到版本拒绝。
+真实连接池回归纳入既有 Common PostgreSQL 和 MySQL T2 门禁。单独验证可使用 `make test-common-postgres COMMON_POSTGRES_TEST_ARGS='--test shared-sql-pool'` 和 `make test-common-mysql-data-protection COMMON_MYSQL_TEST_ARGS='--local-disposable --test shared-sql-pool'`，覆盖池饱和、配置切换、旧连接完成与释放、迟到版本拒绝。前者同时执行 HighGo 协议路径的两阶段超时与只读恢复；明确配置 `ADDP_TEST_HIGHGO_*` 后追加 `--highgo-native`，只对已启动的 HighGo V4.5／SM3／TLS 实例执行同组只读测试，不运行 PostgreSQL 或写入分组，不创建表或变更权限。
 
 `common/engine/plugin` 唯一管理按 Engine Instance 复用的 GORM 连接池。仅当引擎 ID、类型、完整连接配置及 `PoolConfig` 都一致时复用；连接配置包含账号、密码与 TLS 参数，变化后不得回退到旧池。比较使用不对外暴露的确定性摘要，不保存或输出 DSN／凭据副本；调用方不得并发修改传入配置。`ConnMaxLifetime` 只由 `database/sql` 管理物理连接寿命，不作为整个池的空闲淘汰时间。
 

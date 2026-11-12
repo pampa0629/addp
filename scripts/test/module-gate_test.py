@@ -32,6 +32,7 @@ GRAPH_POSTGRES_SERVICE_PASSES = (
 COMMON_POSTGRES_SUCCESS_OUTPUT = (
     "--- PASS: TestProjectionStoreSchemaContractAgainstPostgres (0.01s)\n"
     "--- PASS: TestIntegrationHighGoTableWrite (0.01s)\n"
+    "--- PASS: TestIntegrationHighGoSharedSQLPoolTimeout (0.01s)\n"
     "--- PASS: TestIntegrationPostgresKMLWriter (0.01s)\n"
     "--- PASS: TestIntegrationPostgresGraphTargetContract (0.01s)\n"
     f"{POSTGRES_SHARED_POOL_PASS}"
@@ -747,13 +748,25 @@ print("--- PASS: TestScanPlanFactsAgainstPostgres (0.01s)")
         self.assertEqual(0, result.returncode, result.stderr)
         self.assertEqual(1, len(calls))
         self.assertNotIn("./engine/plugins/postgresql", calls[0])
-        self.assertIn("Native HighGo isolated write group passed", result.stdout)
+        self.assertIn("Native HighGo highgo-write group passed", result.stdout)
         result, _ = self._run_common_postgres_group(native_args, "--- SKIP: fixture", native_env)
         self.assertNotEqual(0, result.returncode)
         self.assertIn("refuses skipped tests", result.stderr)
         result, _ = self._run_common_postgres_group(native_args, "testing: warning: no tests to run\nPASS", native_env)
         self.assertNotEqual(0, result.returncode)
-        self.assertIn("requires the real write contract test", result.stderr)
+        self.assertIn("requires TestIntegrationHighGoTableWrite", result.stderr)
+
+        native_args = ["--test", "shared-sql-pool", "--highgo-native"]
+        result, calls = self._run_common_postgres_group(native_args, extra_env=native_env)
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertEqual(1, len(calls))
+        self.assertIn("./engine/plugins/highgo -run ^TestIntegrationHighGoSharedSQLPoolTimeout$", calls[0])
+        self.assertNotIn("./engine/plugins/postgresql", calls[0])
+        self.assertIn("Native HighGo shared-sql-pool group passed", result.stdout)
+        for output in ("--- SKIP: fixture", "testing: warning: no tests to run\nPASS",
+                       "--- PASS: TestIntegrationHighGoTableWrite (0.01s)"):
+            result, _ = self._run_common_postgres_group(native_args, output, native_env)
+            self.assertNotEqual(0, result.returncode)
 
     def test_common_postgres_group_rejects_skips_and_unknown_groups(self) -> None:
         result, calls = self._run_common_postgres_group(["--test", "query-read-set"], "--- SKIP: fixture")

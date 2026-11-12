@@ -349,6 +349,69 @@ func TestIntegrationHighGoTableWrite(t *testing.T) {
 	t.Log("prepare, COPY commit, INSERT/COPY batches, exact types, Abort, failed-batch rollback, transactional replace commit/empty/Abort/failure, restricted delete, quoted identifiers and sibling preservation verified")
 }
 
+// Native mode uses only the existing business login and SELECTs. The same
+// shared runtime contract also runs in the disposable PostgreSQL gate.
+func TestIntegrationHighGoSharedSQLPoolTimeout(t *testing.T) {
+	native := os.Getenv("ADDP_HIGHGO_INTEGRATION") == "1"
+	if !native && os.Getenv("ADDP_POSTGRES_INTEGRATION") != "1" {
+		t.Skip("run scripts/test/common-postgres-gate.sh --test shared-sql-pool [--highgo-native]")
+	}
+	info := highgoWriteTestConnection(t, native)
+	p := &Plugin{}
+	ctx, cancel := context.WithTimeout(t.Context(), 20*time.Second)
+	defer cancel()
+	if native {
+		identity, err := p.ProbeConnection(ctx, info)
+		if err != nil {
+			t.Fatalf("native V4.5 identity/SM3/TLS: %v", err)
+		}
+		t.Logf("native=true server=%s", identity.ServerVersion)
+	}
+	const engineID = 987657
+	ctx = plugin.WithPoolEngineVersion(ctx, engineID, 1)
+	info["pool_max_open_conns"], info["pool_max_idle_conns"] = 1, 0
+	t.Cleanup(func() {
+		if err := plugin.ClosePool(engineID); err != nil {
+			t.Errorf("close owned pool: %v", err)
+		}
+	})
+	pool, err := plugin.GetOrCreatePoolFromFactory(&plugin.Engine{ID: engineID, EngineType: p.Type(), Version: 1, ConnectionInfo: info}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	db, err := pool.DB()
+	if err != nil {
+		t.Fatal(err)
+	}
+	borrowed, err := db.Conn(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer borrowed.Close()
+	opts := plugin.QueryOptions{EngineID: engineID, EngineType: p.Type(), ReadOnly: true}
+	wait, stop := context.WithTimeout(ctx, 150*time.Millisecond)
+	_, err = p.ExecuteSQL(wait, info, "SELECT 1", opts)
+	stop()
+	if !errors.Is(err, context.DeadlineExceeded) || plugin.QueryErrorCodeOf(err) != plugin.QueryErrorCodeConnectionAcquisitionTimeout {
+		t.Fatalf("HighGo pool wait lost its stage: %v (code=%q)", err, plugin.QueryErrorCodeOf(err))
+	}
+	if err := borrowed.Close(); err != nil {
+		t.Fatal(err)
+	}
+	query, stop := context.WithTimeout(ctx, 150*time.Millisecond)
+	started := time.Now()
+	_, err = p.ExecuteSQL(query, info, "SELECT pg_sleep(10)", opts)
+	stop()
+	if !errors.Is(err, context.DeadlineExceeded) || plugin.QueryErrorCodeOf(err) != plugin.QueryErrorCodeSQLExecutionTimeout || time.Since(started) > 3*time.Second {
+		t.Fatalf("HighGo SQL timeout lost its stage or exceeded cancellation bound: %v (code=%q)", err, plugin.QueryErrorCodeOf(err))
+	}
+	result, err := p.ExecuteSQL(ctx, info, "SELECT current_setting('transaction_read_only') AS mode", opts)
+	if err != nil || len(result.Rows) != 1 || result.Rows[0]["mode"] != "on" {
+		t.Fatalf("HighGo shared query did not recover its read-only transaction: %+v, %v", result, err)
+	}
+	t.Logf("native=%t shared pool acquisition timeout, SQL timeout and read-only recovery verified", native)
+}
+
 func highgoWriteTestConnection(t *testing.T, native bool) plugin.ConnectionInfo {
 	t.Helper()
 	prefix := "ADDP_TEST_POSTGRES_"

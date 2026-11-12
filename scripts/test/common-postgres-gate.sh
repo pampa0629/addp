@@ -26,7 +26,11 @@ while [ "$#" -gt 0 ]; do
 done
 
 if [ "$highgo_native" = true ]; then
-    [ "$test_group" = highgo-write ] || { echo "--highgo-native requires --test highgo-write" >&2; exit 2; }
+    case "$test_group" in
+        highgo-write) highgo_test=TestIntegrationHighGoTableWrite ;;
+        shared-sql-pool) highgo_test=TestIntegrationHighGoSharedSQLPoolTimeout ;;
+        *) echo "--highgo-native requires --test highgo-write or shared-sql-pool" >&2; exit 2 ;;
+    esac
     for required in ADDP_TEST_HIGHGO_HOST ADDP_TEST_HIGHGO_PORT ADDP_TEST_HIGHGO_DATABASE ADDP_TEST_HIGHGO_USER ADDP_TEST_HIGHGO_PASSWORD; do
         [ -n "${!required:-}" ] || { echo "$required is required for native HighGo verification" >&2; exit 2; }
     done
@@ -55,17 +59,17 @@ trap 'rm -rf "$WORK_DIR"' EXIT
 if [ "$highgo_native" = true ]; then
     cd "$SOURCE_ROOT/common"
     ADDP_HIGHGO_INTEGRATION=1 ADDP_POSTGRES_INTEGRATION=0 \
-        go test ./engine/plugins/highgo -run '^TestIntegrationHighGoTableWrite$' \
+        go test ./engine/plugins/highgo -run "^${highgo_test}$" \
         -count=1 -v 2>&1 | tee "$WORK_DIR/highgo-native.log"
     if grep -q -- '--- SKIP:' "$WORK_DIR/highgo-native.log"; then
         echo "Native HighGo verification refuses skipped tests" >&2
         exit 1
     fi
-    grep -q -- '--- PASS: TestIntegrationHighGoTableWrite ' "$WORK_DIR/highgo-native.log" || {
-        echo "Native HighGo verification requires the real write contract test" >&2
+    grep -q -- "--- PASS: ${highgo_test} " "$WORK_DIR/highgo-native.log" || {
+        echo "Native HighGo verification requires ${highgo_test}" >&2
         exit 1
     }
-    echo "Native HighGo isolated write group passed (not the full PostgreSQL gate)"
+    echo "Native HighGo $test_group group passed (not the full PostgreSQL gate)"
     exit 0
 fi
 
@@ -255,6 +259,12 @@ if [ "$test_group" = highgo-write ]; then
     test_packages=(./engine/plugins/highgo)
     test_pattern='^TestIntegrationHighGoTableWrite$'
 fi
+if [ "$test_group" = all ] || [ "$test_group" = shared-sql-pool ]; then
+    if [ "$test_group" = shared-sql-pool ]; then
+        test_packages+=(./engine/plugins/highgo)
+    fi
+    test_pattern="$test_pattern|^TestIntegrationHighGoSharedSQLPoolTimeout$"
+fi
 if [ "$test_group" = all ] || [ "$test_group" = kml-export ]; then
     test_packages+=(./format/plugins/kml)
     test_pattern="$test_pattern|^TestIntegrationPostgresKMLWriter$"
@@ -277,6 +287,10 @@ fi
 if [ "$test_group" = all ] || [ "$test_group" = shared-sql-pool ]; then
     grep -q -- '--- PASS: TestIntegrationPostgresSharedSQLPool ' "$WORK_DIR/common-postgres.log" || {
         echo 'Common PostgreSQL gate requires the native shared SQL pool test' >&2
+        exit 1
+    }
+    grep -q -- '--- PASS: TestIntegrationHighGoSharedSQLPoolTimeout ' "$WORK_DIR/common-postgres.log" || {
+        echo 'Common PostgreSQL gate requires the HighGo shared SQL pool protocol test' >&2
         exit 1
     }
 fi
