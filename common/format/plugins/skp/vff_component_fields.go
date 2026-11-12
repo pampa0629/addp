@@ -101,56 +101,67 @@ func (s *vffComponentFieldScope) element(name string) (*vffSKCFieldCandidate, er
 	return found, nil
 }
 
+type vffComponentSimpleField struct {
+	path           vffComponentFieldPath
+	field          vffSKCFieldCandidate
+	declaration    vffSKCDeclarationWitness
+	node, typeNode *vffXMLNode
+	checker        *vffSKCRestrictionChecker
+}
 type vffComponentStringField struct {
-	path        vffComponentFieldPath
-	field       vffSKCFieldCandidate
-	declaration vffSKCDeclarationWitness
-	node        *vffXMLNode
-	checker     *vffSKCRestrictionChecker
-	profile     *vffSKCRestrictionProfile
+	vffComponentSimpleField
+	profile *vffSKCRestrictionProfile
 }
 
-func (s *vffComponentFieldScope) stringField(path vffComponentFieldPath) (vffComponentStringField, error) {
+func (s *vffComponentFieldScope) simpleField(path vffComponentFieldPath) (vffComponentSimpleField, error) {
 	b := s.b
 	found, err := s.element(path.field)
 	if err != nil {
-		return vffComponentStringField{}, err
+		return vffComponentSimpleField{}, err
 	}
 	node := b.nodes[vffSKCNodeKey{found.declaration.member, found.declaration.begin}]
 	name, err := b.qname(node, node.attrs["type"])
 	if err != nil {
-		return vffComponentStringField{}, err
+		return vffComponentSimpleField{}, err
 	}
 	if name.Space != b.namespace || name.Local != path.valueType {
-		return vffComponentStringField{}, fmt.Errorf("dictionary value type differs from the exact field type")
+		return vffComponentSimpleField{}, fmt.Errorf("dictionary value type differs from the exact field type")
 	}
 	target, err := b.resolveDeclaration(node, name, "type")
 	if err != nil {
-		return vffComponentStringField{}, err
+		return vffComponentSimpleField{}, err
 	}
 	if target == nil || target.node.name.Local != "simpleType" {
-		return vffComponentStringField{}, fmt.Errorf("classification string field requires a unique named simple type")
+		return vffComponentSimpleField{}, fmt.Errorf("classification field requires a unique named simple type")
 	}
 	found.value, err = b.readValueType(node)
 	if err != nil {
-		return vffComponentStringField{}, err
+		return vffComponentSimpleField{}, err
 	}
 	if len(found.value.issues) != 0 {
-		return vffComponentStringField{}, fmt.Errorf("selected classification field value type is unproved")
+		return vffComponentSimpleField{}, fmt.Errorf("selected classification field value type is unproved")
 	}
 	refs, err := b.restrictionTypeReferences(found.value)
 	if err != nil {
-		return vffComponentStringField{}, err
+		return vffComponentSimpleField{}, err
 	}
 	checker := &vffSKCRestrictionChecker{b: b, refs: refs, cache: map[*vffXMLNode]*vffSKCRestrictionProfile{}, active: map[*vffXMLNode]bool{}}
-	profile, err := checker.profile(target.node, 1)
+	return vffComponentSimpleField{path, *found, b.witness(target.node), node, target.node, checker}, nil
+}
+
+func (s *vffComponentFieldScope) stringField(path vffComponentFieldPath) (vffComponentStringField, error) {
+	field, err := s.simpleField(path)
+	if err != nil {
+		return vffComponentStringField{}, err
+	}
+	profile, err := field.checker.profile(field.typeNode, 1)
 	if err != nil {
 		return vffComponentStringField{}, err
 	}
 	if !profile.known || profile.item != nil || profile.primitive.Space != vffXSDNS || profile.primitive.Local != "string" && profile.primitive.Local != "normalizedString" && profile.primitive.Local != "token" {
 		return vffComponentStringField{}, fmt.Errorf("classification field is not a proved scalar string type")
 	}
-	return vffComponentStringField{path, *found, b.witness(target.node), node, checker, profile}, nil
+	return vffComponentStringField{field, profile}, nil
 }
 
 // Verify only explicit string-valued dictionary paths against their exact
@@ -214,7 +225,7 @@ func readVFFComponentFieldValues(ctx context.Context, c *vffContainer, schemaNam
 					r.keep([]vffClassificationRecord{other})
 				}
 			}
-			metadata, err := r.fieldMetadata(schema, componentType, p.path.field, field, leaf, "string")
+			metadata, err := r.fieldMetadata(schema, componentType, p.path.field, field, leaf, "string", 20, 26)
 			if err != nil {
 				return nil, err
 			}

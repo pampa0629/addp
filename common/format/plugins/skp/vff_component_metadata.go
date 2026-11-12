@@ -61,23 +61,23 @@ func (r *vffComponentClassificationReader) hidden(dictionary vffClassificationDi
 	return vffComponentBoolean{nodes[0].data[0] == 1, entry.offset - 6, sha256.Sum256(entry.data)}, nil
 }
 
-func (r *vffComponentClassificationReader) fieldMetadata(schema *vffComponentSchemaFacts, componentType, fieldName string, field, leaf vffClassificationDictionary, expected string) (vffComponentFieldMetadata, error) {
+func (r *vffComponentClassificationReader) fieldMetadata(schema *vffComponentSchemaFacts, componentType, fieldName string, field, leaf vffClassificationDictionary, expected string, fieldDepth, leafDepth int) (vffComponentFieldMetadata, error) {
 	entry, exists := leaf.entries["attribute_type"]
 	if !exists {
 		return vffComponentFieldMetadata{}, fmt.Errorf("classification attribute type marker is missing")
 	}
-	role, err := r.stringValue(entry, 26, false)
+	role, err := r.stringValue(entry, leafDepth, false)
 	if err != nil {
 		return vffComponentFieldMetadata{}, err
 	}
 	if role != expected {
 		return vffComponentFieldMetadata{}, fmt.Errorf("classification attribute type marker differs from the proved schema role")
 	}
-	parent, err := r.hidden(field, 20)
+	parent, err := r.hidden(field, fieldDepth)
 	if err != nil {
 		return vffComponentFieldMetadata{}, err
 	}
-	child, err := r.hidden(leaf, 26)
+	child, err := r.hidden(leaf, leafDepth)
 	if err != nil {
 		return vffComponentFieldMetadata{}, err
 	}
@@ -272,7 +272,7 @@ func readVFFComponentChoiceMetadata(ctx context.Context, c *vffContainer, schema
 			if !exists {
 				return nil, fmt.Errorf("choice metadata leaf is missing")
 			}
-			metadata, err := r.fieldMetadata(scope.schema, componentType, path.field, field, leaf, "choice")
+			metadata, err := r.fieldMetadata(scope.schema, componentType, path.field, field, leaf, "choice", 20, 26)
 			if err != nil {
 				return nil, err
 			}

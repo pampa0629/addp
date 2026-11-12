@@ -113,7 +113,7 @@ func readVFFComponentEnumerationMetadata(ctx context.Context, c *vffContainer, s
 			if !exists {
 				return nil, fmt.Errorf("enumeration value type dictionary is missing")
 			}
-			metadata, err := r.fieldMetadata(scope.schema, componentType, p.field.path.field, field, leaf, "enumeration")
+			metadata, err := r.fieldMetadata(scope.schema, componentType, p.field.path.field, field, leaf, "enumeration", 20, 26)
 			if err != nil {
 				return nil, err
 			}
