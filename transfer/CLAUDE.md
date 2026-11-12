@@ -236,6 +236,8 @@ Manager 导入的创建/启动只在同步请求内转发 User 凭据。Manager 
 
 精确范围、双用户审批归属与清理的实际证据见[扫描与审批验收](#continuous-精确扫描与审批归属)；T1/T2、单用户与双用户 Hosted 的覆盖范围分别认定。
 
+限定 basic 识别受理后沿既有 `metadata_scan` 安全反馈保存实际子扫描 UUID、精确目标与 `submitted`；该状态只表示受理，不表示子扫描成功或初始授权签发。依赖失败保留 `pending/production_scan_pending`，不保存原始响应，不改写物理执行结果。basic 与写后 deep 的衔接仍按各自正式契约处理，不以受理反馈替代扫描深度验收。
+
 ### Cleanup 执行边界
 
 Cleanup 使用 Common 持久 Runner，System 预建子执行，Transfer 不消费旧 Redis Cleanup 请求。外部效果先持久登记准确目标并复核原用户授权，未知效果不重发；原运行体迟到停止证明只更新私有控制事实。专业结果、公共回执及最终任务变更同事务提交。`runtime_sessions`／`cleanup_operations` 不随普通任务私有状态删除而抹除，不自动开放曾发生外部清理的任务。首期 closed Tenant 与无可信 User 来源的清理继续阻断。标准验证为 `make test-module MODULE=transfer GO_ONLY=1`、`make test-transfer-postgres`，后者按包串行执行并包含 Cleanup Owner 原子性与 runtime fencing 场景；不据此声称真实 Kafka/CDC 或 Hosted 清理通过。

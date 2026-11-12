@@ -28,6 +28,14 @@ func (s *ScanExecutionService) WithProductionRegistry(registry *production.Regis
 	return s
 }
 
+// Backend admission and Worker requalification must use the same owner catalog.
+func NewProductionRegistry(transfer *client.TransferClient, develop *client.DevelopClient) (*production.Registry, error) {
+	return production.NewRegistry(
+		production.Owner{Module: "transfer", ClientID: "addp-transfer", ReceiptPermission: "transfer.production_receipt.read", ExecutionPermission: "transfer.task.execute", ReadReceipt: transfer.ReadCommittedProduction},
+		production.Owner{Module: "develop", ClientID: "addp-develop", ReceiptPermission: "develop.production_receipt.read", ExecutionPermission: "develop.task.execute", ReadReceipt: develop.ReadCommittedProduction},
+	)
+}
+
 // The registry is trusted composition; callers supply only an original result
 // reference. Source IO is outside Meta transactions, and recovery is read-only.
 func (s *ScanExecutionService) EnsureProductionBasicScan(ctx context.Context, tenant uint, ref production.Reference) (*client.MetaProductionIdentification, error) {

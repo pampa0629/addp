@@ -500,6 +500,73 @@ func TestUpdateMetadataScanExecutionPersistsScanExecutionID(t *testing.T) {
 	}
 }
 
+func TestProductionBasicScanPersistsAcceptedChildWithoutClaimingCompletion(t *testing.T) {
+	for _, status := range []string{"pending", "running", "failed"} {
+		t.Run(status, func(t *testing.T) {
+			scanID := uuid.NewString()
+			var parentID string
+			calls := 0
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				calls++
+				if r.Method != http.MethodPost || r.URL.Path != "/api/v1/meta/runtime/productions/transfer/"+parentID+"/"+parentID+"/basic-scan" || r.Header.Get("Authorization") != "Bearer test-token" {
+					t.Errorf("unexpected production scan request: %s %s", r.Method, r.URL.Path)
+				}
+				body, _ := io.ReadAll(r.Body)
+				if len(body) != 0 || r.URL.RawQuery != "" {
+					t.Error("production request must carry only the original result reference")
+				}
+				_ = json.NewEncoder(w).Encode(map[string]interface{}{
+					"reference": map[string]string{"owner": "transfer", "execution_id": parentID, "result_id": parentID},
+					"tenant_id": "7", "scan_execution_id": scanID, "status": status, "engine_version": "1",
+				})
+			}))
+			defer server.Close()
+			target := planner.EndpointSpec{ParentLocator: "addp://engine/9/path/public?type=schema", Name: "roads"}
+			svc, id := newProducedScanTestService(t, server.URL, "addp://engine/9/path/public/roads?type=table")
+			parent, err := svc.executionService.taskExecutionRepo.GetByID(t.Context(), int64(id), 7)
+			if err != nil {
+				t.Fatal(err)
+			}
+			parent.ExecutionID = uuid.NewString()
+			bindExecutionServiceTestLease(t, svc.executionService.db, svc.executionService, parent)
+			parentID = parent.ExecutionID
+			svc.submitProductionBasicScan(t.Context(), &models.TransferTask{TenantID: 7}, parent, target)
+			run, err := svc.executionService.GetExecutionByExecutionID(t.Context(), parentID, 7)
+			if err != nil {
+				t.Fatal(err)
+			}
+			feedback, _ := run.Metadata["metadata_scan"].(map[string]interface{})
+			want := map[string]interface{}{"execution_id": scanID, "engine_id": float64(9), "status": "submitted", "targets": []interface{}{"addp://engine/9/path/public/roads?type=table"}}
+			if calls != 1 || !reflect.DeepEqual(feedback, want) || run.Status != commonExecution.ExecutionStatusRunning {
+				t.Fatalf("accepted scan feedback=%#v, calls=%d, parent=%s", feedback, calls, run.Status)
+			}
+		})
+	}
+}
+
+func TestProductionBasicScanFailureRetainsSafePendingFeedback(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusServiceUnavailable)
+		_, _ = w.Write([]byte(`{"error":"private-secret"}`))
+	}))
+	defer server.Close()
+	svc, id := newProducedScanTestService(t, server.URL, "addp://engine/9/path/public/roads?type=table")
+	parent, err := svc.executionService.taskExecutionRepo.GetByID(t.Context(), int64(id), 7)
+	if err != nil {
+		t.Fatal(err)
+	}
+	parent.ExecutionID = uuid.NewString()
+	bindExecutionServiceTestLease(t, svc.executionService.db, svc.executionService, parent)
+	svc.submitProductionBasicScan(t.Context(), &models.TransferTask{TenantID: 7}, parent, planner.EndpointSpec{})
+	run, err := svc.executionService.GetExecutionByExecutionID(t.Context(), parent.ExecutionID, 7)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(run.Metadata["metadata_scan"], map[string]interface{}{"status": "pending", "error_code": "production_scan_pending"}) || run.Status != commonExecution.ExecutionStatusRunning {
+		t.Fatalf("unsafe or missing pending feedback: %#v", run.Metadata["metadata_scan"])
+	}
+}
+
 func assertTransferScanPayloadUsesRefGroups(t *testing.T, payload map[string]interface{}, primary string) {
 	t.Helper()
 	if payload == nil {

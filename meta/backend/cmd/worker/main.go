@@ -62,6 +62,11 @@ func main() {
 	}
 	executionService := service.NewScanExecutionService(db, scanService, engineService, redisClient)
 	executionService.SetCollectionAuthorizationClient(systemClient)
+	producers, err := service.NewProductionRegistry(commonClient.NewTransferClient(cfg.TransferServiceURL, tokenSource), commonClient.NewDevelopClient(cfg.DevelopServiceURL, tokenSource, nil))
+	if err != nil {
+		panic(err)
+	}
+	executionService.WithProductionRegistry(producers)
 	executionService.WithUploadReceiptReader(commonClient.NewManagerUploadClient(cfg.ManagerServiceURL, tokenSource, nil))
 
 	hostname, _ := os.Hostname()

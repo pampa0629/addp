@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"fmt"
-	"github.com/addp/common/production"
 	"net"
 	"os"
 	"os/signal"
@@ -119,7 +118,7 @@ func main() {
 	taskService := service.NewScanTaskService(db)
 	executionService := service.NewScanExecutionService(db, scanService, engineService, redisClient)
 	executionService.SetMetadataRefreshScopeClient(systemClient)
-	producers, err := production.NewRegistry(production.Owner{Module: "transfer", ClientID: "addp-transfer", ReceiptPermission: "transfer.production_receipt.read", ExecutionPermission: "transfer.task.execute", ReadReceipt: commonClient.NewTransferClient(cfg.TransferServiceURL, tokenSource).ReadCommittedProduction}, production.Owner{Module: "develop", ClientID: "addp-develop", ReceiptPermission: "develop.production_receipt.read", ExecutionPermission: "develop.task.execute", ReadReceipt: commonClient.NewDevelopClient(cfg.DevelopServiceURL, tokenSource, nil).ReadCommittedProduction})
+	producers, err := service.NewProductionRegistry(commonClient.NewTransferClient(cfg.TransferServiceURL, tokenSource), commonClient.NewDevelopClient(cfg.DevelopServiceURL, tokenSource, nil))
 	if err != nil {
 		panic(err)
 	}

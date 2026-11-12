@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"reflect"
 	"sync"
@@ -29,6 +31,45 @@ import (
 
 func metaProductionRef(id string) production.Reference {
 	return production.Reference{Owner: "transfer", ExecutionID: id, ResultID: id}
+}
+
+func TestRuntimeProductionRegistryUsesAuthenticatedOwnerClients(t *testing.T) {
+	id := uuid.NewString()
+	calls := map[string]int{}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet || r.Header.Get("Authorization") != "Bearer meta-test-token" {
+			t.Error("production receipt read must use the authenticated Meta Service client")
+		}
+		calls[r.URL.Path]++
+		w.WriteHeader(http.StatusServiceUnavailable)
+	}))
+	defer server.Close()
+	tokens := client.ServiceTokenProviderFunc(func(_ context.Context, tenant uint) (string, error) {
+		if tenant != 7 {
+			t.Errorf("receipt requested outside the exact Tenant: %d", tenant)
+		}
+		return "meta-test-token", nil
+	})
+	registry, err := NewProductionRegistry(client.NewTransferClient(server.URL, tokens), client.NewDevelopClient(server.URL, tokens, server.Client()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, owner := range []struct{ module, permission, path string }{
+		{"transfer", "transfer.task.execute", "/api/v1/transfer/runtime/executions/" + id + "/production-receipt"},
+		{"develop", "develop.task.execute", "/api/v1/develop/runtime/productions/" + id + "/" + id + "/receipt"},
+	} {
+		registered, ok := registry.Resolve(owner.module, "addp-"+owner.module)
+		if !ok || registered.ExecutionPermission != owner.permission || registered.ReceiptPermission != owner.module+".production_receipt.read" {
+			t.Fatalf("missing runtime producer %s", owner.module)
+		}
+		if _, ok := registry.Resolve(owner.module, "addp-unknown"); ok {
+			t.Fatal("unregistered Service acquired producer identity")
+		}
+		_, err := registry.Read(t.Context(), 7, production.Reference{Owner: owner.module, ExecutionID: id, ResultID: id})
+		if err == nil || calls[owner.path] != 1 {
+			t.Fatalf("producer %s must use only its exact receipt route once, calls=%v err=%v", owner.module, calls, err)
+		}
+	}
 }
 func (s *ScanExecutionService) withTestProductionReader(reader func(context.Context, uint, string) (*client.TransferProductionReceipt, error)) *ScanExecutionService {
 	registry, err := production.NewRegistry(production.Owner{Module: "transfer", ClientID: "addp-transfer", ReceiptPermission: "transfer.production_receipt.read", ExecutionPermission: "transfer.task.execute", ReadReceipt: func(ctx context.Context, tenant uint, ref production.Reference) (*production.Receipt, error) {

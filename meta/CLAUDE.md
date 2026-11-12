@@ -278,6 +278,8 @@ Go T1 和 `make test-meta-postgres` 覆盖精确范围、归属、并发去重�
 
 Transfer 已应用结构审批补扫的入口、审批人、claim、精确目标及与父 execution 互斥的规则统一见[结构审批补扫来源](../docs/spec/tasks/生产来源与产物扫描.md#transfer-结构审批补扫来源)。Meta 只核验 Common 中已保存的审批来源，不跨读 Transfer 私表；审批关联在进度与收尾写入时保留，私有来源不进入专业诊断。
 
+Backend 与独立 Worker 必须复用同一产出 owner 注册函数，绑定各自已认证的 Transfer／Develop 回执 client；Worker 在创建 bounded runner 前完成绑定。API 受理入队不代表 Worker 已具备原成果核验能力，也不代表识别成功。该装配不增加新的启动就绪依赖。
+
 #### Manager mosaic 来源与完成回执
 
 Manager mosaic 的实际产物来源、精确目标、发起主体与子扫描读取统一沿[产物归属规范](../docs/spec/tasks/生产来源与产物扫描.md#manager-栅格-mosaic-产物自动扫描的执行归属)。Meta 在创建事务中锁定父执行，并使用锁定后的数据库时钟验证当前有效 lease；产物 attempt 与唯一 dataset 范围须匹配。来源继承不复制执行授权或租约，也不改变 Meta Permission 与本人一次性执行读取边界。

@@ -487,9 +487,7 @@ func (s *ExecutionEngineService) executeCommonTableTransferTask(ctx context.Cont
 	}
 	if task.AutoScanMetadata {
 		if buildResult.Plan.Target.Kind == executor.TableEndpointNative && !buildResult.Plan.Target.ManagedExisting && metrics.TargetCreatedAndCommitted && execution.Attempt == 1 && execution.RetryOfExecutionID == nil {
-			if _, err := s.metaClient.EnsureProductionBasicScan(ctx, task.TenantID, production.Reference{Owner: "transfer", ExecutionID: execution.ExecutionID, ResultID: execution.ExecutionID}); err != nil {
-				s.updateMetadataScanFeedback(ctx, executionID, map[string]interface{}{"status": "pending", "error_code": "production_scan_pending"})
-			}
+			s.submitProductionBasicScan(ctx, task, execution, spec.Target)
 		} else {
 			s.triggerMetadataScan(ctx, task, executionID, spec, buildResult.Plan.Target, metrics.TargetRefs)
 		}
@@ -1556,6 +1554,15 @@ func (s *ExecutionEngineService) triggerMetadataScan(ctx context.Context, task *
 		targets = nativeTargetScanTargets(spec.Target)
 	}
 	s.submitProducedMetadataScan(ctx, task, executionID, commonClient.MetaScanOptions{EngineID: spec.Target.LocatorEngineID(), Targets: targets, RefGroups: refs})
+}
+
+func (s *ExecutionEngineService) submitProductionBasicScan(ctx context.Context, task *models.TransferTask, execution *commonExecution.TaskExecution, target planner.EndpointSpec) {
+	run, err := s.metaClient.EnsureProductionBasicScan(ctx, task.TenantID, production.Reference{Owner: "transfer", ExecutionID: execution.ExecutionID, ResultID: execution.ExecutionID})
+	if err != nil {
+		s.updateMetadataScanFeedback(ctx, uint(execution.ID), map[string]interface{}{"status": "pending", "error_code": "production_scan_pending"})
+		return
+	}
+	s.updateMetadataScanExecution(ctx, uint(execution.ID), run.ScanExecutionID, target.LocatorEngineID(), nativeTargetScanTargets(target), 0)
 }
 
 func (s *ExecutionEngineService) triggerRawCopyMetadataScan(ctx context.Context, task *models.TransferTask, executionID uint, spec planner.RawCopyTaskSpec, targetPlan executor.RawCopyEndpointPlan) {
