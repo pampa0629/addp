@@ -220,7 +220,7 @@ case "$1" in
             5432) port=15432 ;;
             6379) if [[ "$2" == addp-falkordb ]]; then port=16479; else port=16379; fi ;;
             9000) port=19000 ;; 9001) port=19001 ;; 7700) port=17700 ;;
-            9092) port=19092 ;; 8083) port=18083 ;; 3100) port=13100 ;;
+            9092) port=19092 ;; 8083) port=18083 ;; 8778) port=18778 ;; 3100) port=13100 ;;
             12345) port=12345 ;; 9090) port=19090 ;;
             4318|8443)
                 [[ "${MOCK_EXISTING_TRACES:-}" == 1 && "${MOCK_MISSING_TRACE_PORT:-}" != "${3%/*}" ]] || exit 1

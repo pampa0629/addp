@@ -82,3 +82,34 @@ for (const locale of ['zh-cn','en']) test(`CDC paused task buffer grows, loses r
  await expect(page.getByTestId('cdc-task-buffer')).toContainText(en?'Observation expired':'观测已过期')
  await expect(page.getByTestId('cdc-buffer-lag_offsets')).toHaveCount(0)
 })
+
+for(const locale of ['zh-cn','en'])test(`CDC task source metrics retain identity, risk and freshness (${locale})`,async({page})=>{
+ const state=await cdcTaskBackend(page,{locale}),en=locale==='en'
+ await page.clock.install();state.setMode('source-reserved')
+ await page.goto('/cdc-resources?view=tasks&task_id=7&refresh=off')
+ await expect(page.getByTestId('cdc-source-retained_wal_bytes')).toHaveText('1.00 GiB')
+ await expect(page.getByTestId('cdc-task-source-delay')).toHaveText('0.125 s')
+ const refresh=async()=>{await page.getByRole('button',{name:en?'Refresh':'刷新',exact:true}).click();await expect(page.getByTestId('cdc-task-chain')).toHaveAttribute('aria-busy','false')}
+ for(const risk of ['extended','unreserved','lost']){
+  state.setMode('source-'+risk);await refresh()
+  await expect(page.getByTestId('cdc-source-risk')).toContainText(({extended:en?'extended':'扩展',unreserved:en?'no longer guaranteed':'不再保证',lost:en?'lost':'已丢失'})[risk])
+ }
+ for(const mode of ['missing','identity','failed']){
+  state.setMode('source-'+mode);await refresh()
+  await expect(page.getByTestId('cdc-source-retained_wal_bytes')).toHaveCount(0)
+  await expect(page.getByTestId('cdc-task-source-delay')).toHaveText('0.125 s')
+ }
+ state.setMode('source-delay-failed');await refresh()
+ await expect(page.getByTestId('cdc-task-source-delay')).toHaveCount(0)
+ await expect(page.getByTestId('cdc-source-retained_wal_bytes')).toHaveText('1.00 GiB')
+ state.setMode('source-negative');await refresh()
+ await expect(page.getByTestId('cdc-task-source-delay')).toHaveText('-0.002 s')
+ await page.goto('/cdc-resources?view=tasks&task_id=8&refresh=off')
+ await expect(page.getByTestId('cdc-source-retained_wal_bytes')).toHaveText('2.00 GiB')
+ await page.clock.fastForward(30001)
+ await expect(page.getByTestId('cdc-source-state')).toContainText(en?'expired':'已过期')
+ await expect(page.getByTestId('cdc-source-retained_wal_bytes')).toHaveCount(0)
+ await expect(page.getByTestId('cdc-task-source-delay')).toHaveCount(0)
+ await page.setViewportSize({width:390,height:844})
+ await expect.poll(()=>page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true)
+})

@@ -1555,6 +1555,43 @@
         "committed_offset": "Target committed position",
         "earliest_offset": "Earliest retained position",
         "latest_offset": "Message end position"
+      },
+      "sourceStates": {
+        "available": "Current task source observation",
+        "missing": "The task logical slot is missing",
+        "identity_mismatch": "Source capture identity mismatch",
+        "unavailable": "Source observation unavailable",
+        "no_sample": "No source observation yet",
+        "stale": "Source observation expired"
+      },
+      "delayStates": {
+        "available": "Current task capture delay",
+        "unavailable": "Capture delay observation unavailable",
+        "no_sample": "No capture delay sample yet",
+        "stale": "Capture delay observation expired"
+      },
+      "walRisks": {
+        "reserved": "WAL within normal retention",
+        "extended": "WAL retention extended",
+        "unreserved": "Required WAL retention is no longer guaranteed",
+        "lost": "Required WAL lost; slot unusable",
+        "unknown": "WAL retention unknown"
+      },
+      "sourceMetrics": {
+        "slotActive": "Task logical slot",
+        "active": "Active",
+        "inactive": "Inactive",
+        "risk": "WAL retention",
+        "retained_wal_bytes": "Slot retained WAL distance",
+        "unacknowledged_wal_bytes": "Unacknowledged WAL distance",
+        "safe_wal_size_bytes": "WAL write headroom before slot loss",
+        "unlimited": "Slot WAL retention has no limit; no finite safe headroom",
+        "walHint": "Only this task slot is associated. WAL address distance is neither table change volume nor actual disk usage. Inactive does not mean WAL lost.",
+        "captureConnected": "Capture connection",
+        "connected": "Connected",
+        "disconnected": "Disconnected",
+        "delay": "Event capture delay",
+        "delayHint": "Time from the latest source event to Connector processing, not idle age or target end-to-end latency. Missing samples stay empty; negative values reflect clock skew."
       }
     },
     "engines": {

@@ -499,6 +499,9 @@ func (s *Supervisor) refreshAll(ctx context.Context) error {
 		return err
 	}
 	for i := range resources {
+		if err := s.observePostgreSQLTask(ctx, &resources[i]); err != nil {
+			s.logger.Warn("capture task source observation publication failed", "task_id", resources[i].TaskID, "error", err)
+		}
 		if err := s.observeBuffer(ctx, &resources[i]); err != nil {
 			s.logger.Warn("capture buffer observation failed", "task_id", resources[i].TaskID, "error", err)
 		}

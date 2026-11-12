@@ -32,7 +32,14 @@ type ConnectorOffsets struct {
 	Offsets []ConnectorOffset `json:"offsets"`
 }
 
+type CaptureDelay struct {
+	Status    string
+	Connected *bool
+	Seconds   *float64
+}
+
 type ConnectControl interface {
+	Delay(context.Context, string) (*CaptureDelay, error)
 	PutConfig(ctx context.Context, name string, config map[string]string) error
 	Status(ctx context.Context, name string) (*ConnectorStatus, error)
 	Offsets(ctx context.Context, name string) (*ConnectorOffsets, error)
@@ -50,13 +57,14 @@ func (c *ConnectClient) Offsets(ctx context.Context, name string) (*ConnectorOff
 }
 
 type ConnectClient struct {
-	baseURL  string
-	username string
-	password string
-	client   *http.Client
+	baseURL    string
+	metricsURL string
+	username   string
+	password   string
+	client     *http.Client
 }
 
-func NewConnectClient(baseURL, username, password string, timeout time.Duration) (*ConnectClient, error) {
+func NewConnectClient(baseURL, metricsURL, username, password string, timeout time.Duration) (*ConnectClient, error) {
 	baseURL = strings.TrimRight(strings.TrimSpace(baseURL), "/")
 	parsed, err := url.Parse(baseURL)
 	if err != nil || parsed.Scheme == "" || parsed.Host == "" {
@@ -65,7 +73,13 @@ func NewConnectClient(baseURL, username, password string, timeout time.Duration)
 	if timeout <= 0 {
 		timeout = 15 * time.Second
 	}
-	return &ConnectClient{baseURL: baseURL, username: username, password: password, client: &http.Client{Timeout: timeout}}, nil
+	if metricsURL != "" {
+		u, e := url.Parse(metricsURL)
+		if e != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" || u.User != nil || u.RawQuery != "" || u.Fragment != "" || (u.Path != "" && u.Path != "/") {
+			return nil, fmt.Errorf("invalid Connect metrics URL")
+		}
+	}
+	return &ConnectClient{baseURL: baseURL, metricsURL: strings.TrimRight(metricsURL, "/"), username: username, password: password, client: &http.Client{Timeout: timeout}}, nil
 }
 
 func (c *ConnectClient) PutConfig(ctx context.Context, name string, config map[string]string) error {

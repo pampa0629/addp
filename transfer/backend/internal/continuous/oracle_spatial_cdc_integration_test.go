@@ -161,7 +161,7 @@ func TestIntegrationOracleSpatialCDCSchemaDriftBlocksAndStops(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer topicAdmin.Close()
-	connectClient, err := capture.NewConnectClient(cdcDataEnv("ADDP_TEST_KAFKA_CONNECT_URL", "http://localhost:18083"), "", "", 10*time.Second)
+	connectClient, err := capture.NewConnectClient(cdcDataEnv("ADDP_TEST_KAFKA_CONNECT_URL", "http://localhost:18083"), "", "", "", 10*time.Second)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -372,7 +372,7 @@ func runIntegrationOracleCDCNativeTypeMatrix(t *testing.T, targetType string) {
 		t.Fatal(err)
 	}
 	defer topicAdmin.Close()
-	connectClient, err := capture.NewConnectClient(cdcDataEnv("ADDP_TEST_KAFKA_CONNECT_URL", "http://localhost:18083"), "", "", 10*time.Second)
+	connectClient, err := capture.NewConnectClient(cdcDataEnv("ADDP_TEST_KAFKA_CONNECT_URL", "http://localhost:18083"), "", "", "", 10*time.Second)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -577,7 +577,7 @@ func runIntegrationOracleSpatialCDCGeometryCase(t *testing.T, geometryCase oracl
 		t.Fatal(err)
 	}
 	defer topicAdmin.Close()
-	connectClient, err := capture.NewConnectClient(cdcDataEnv("ADDP_TEST_KAFKA_CONNECT_URL", "http://localhost:18083"), "", "", 10*time.Second)
+	connectClient, err := capture.NewConnectClient(cdcDataEnv("ADDP_TEST_KAFKA_CONNECT_URL", "http://localhost:18083"), "", "", "", 10*time.Second)
 	if err != nil {
 		t.Fatal(err)
 	}

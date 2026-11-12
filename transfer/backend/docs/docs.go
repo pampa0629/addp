@@ -3928,6 +3928,61 @@ const docTemplate = `{
                 }
             }
         },
+        "github_com_addp_transfer_internal_models.CaptureDelayObservation": {
+            "type": "object",
+            "properties": {
+                "connected": {
+                    "type": "boolean"
+                },
+                "delay_seconds": {
+                    "type": "number"
+                },
+                "expires_at": {
+                    "type": "string"
+                },
+                "sampled_at": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_addp_transfer_internal_models.CapturePostgreSQLObservation": {
+            "type": "object",
+            "properties": {
+                "expires_at": {
+                    "type": "string"
+                },
+                "retained_wal_bytes": {
+                    "type": "string"
+                },
+                "risk_state": {
+                    "type": "string"
+                },
+                "safe_wal_size_bytes": {
+                    "type": "string"
+                },
+                "sampled_at": {
+                    "type": "string"
+                },
+                "slot_active": {
+                    "type": "boolean"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "unacknowledged_wal_bytes": {
+                    "type": "string"
+                },
+                "wal_keep_unlimited": {
+                    "type": "boolean"
+                },
+                "wal_status": {
+                    "type": "string"
+                }
+            }
+        },
         "github_com_addp_transfer_internal_models.CaptureSourceRecovery": {
             "type": "object",
             "properties": {
@@ -4001,6 +4056,19 @@ const docTemplate = `{
                 }
             }
         },
+        "github_com_addp_transfer_internal_models.CaptureSourceType": {
+            "type": "string",
+            "enum": [
+                "postgresql",
+                "mysql",
+                "oracle"
+            ],
+            "x-enum-varnames": [
+                "CaptureSourcePostgreSQL",
+                "CaptureSourceMySQL",
+                "CaptureSourceOracle"
+            ]
+        },
         "github_com_addp_transfer_internal_models.CaptureStatus": {
             "type": "string",
             "enum": [
@@ -4029,11 +4097,17 @@ const docTemplate = `{
                 "connector_status": {
                     "type": "string"
                 },
+                "delay_observation": {
+                    "$ref": "#/definitions/github_com_addp_transfer_internal_models.CaptureDelayObservation"
+                },
                 "generation": {
                     "type": "integer"
                 },
                 "last_observed_at": {
                     "type": "string"
+                },
+                "postgresql_observation": {
+                    "$ref": "#/definitions/github_com_addp_transfer_internal_models.CapturePostgreSQLObservation"
                 },
                 "source_recovery": {
                     "$ref": "#/definitions/github_com_addp_transfer_internal_models.CaptureSourceRecovery"
@@ -4043,6 +4117,9 @@ const docTemplate = `{
                 },
                 "source_transactions": {
                     "$ref": "#/definitions/github_com_addp_transfer_internal_models.CaptureSourceTransactions"
+                },
+                "source_type": {
+                    "$ref": "#/definitions/github_com_addp_transfer_internal_models.CaptureSourceType"
                 },
                 "status": {
                     "$ref": "#/definitions/github_com_addp_transfer_internal_models.CaptureStatus"

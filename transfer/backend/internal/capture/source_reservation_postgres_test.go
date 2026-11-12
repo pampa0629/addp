@@ -9,6 +9,7 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestIntegrationPostgresCaptureReservation(t *testing.T) {
@@ -45,6 +46,28 @@ func TestIntegrationPostgresCaptureReservation(t *testing.T) {
 	exec("CREATE TABLE " + foreign + " (id integer PRIMARY KEY)")
 	resource := &models.CaptureResource{SourceType: models.CaptureSourcePostgreSQL, SourceDatabase: info["database"].(string), SourceSchema: schema, SourceTable: "source", SourceConnectionFingerprint: "fixture", PostgreSQL: &models.PostgreSQLCaptureResource{SlotName: slot, PublicationName: pub}}
 	plan := &CapturePlan{SourceType: models.CaptureSourcePostgreSQL, SourceConnInfo: info, SourceConnectionFingerprint: "fixture"}
+	resource.PostgreSQL.SlotOwned, resource.PostgreSQL.PublicationOwned = true, true
+	value := readPostgreSQLObservation(ctx, db, resource, time.Now(), time.Minute)
+	if value.Status != "missing" || value.RetainedWALBytes != nil {
+		t.Fatalf("missing task slot observation %+v", value)
+	}
+	// A real, inactive physical fixture slot must never be associated as a task logical slot.
+	if _, err = db.ExecContext(ctx, "SELECT pg_create_physical_replication_slot($1)", slot); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if _, e := db.ExecContext(ctx, "SELECT pg_drop_replication_slot(slot_name) FROM pg_replication_slots WHERE slot_name=$1", slot); e != nil {
+			t.Error(e)
+		}
+	})
+	if value = readPostgreSQLObservation(ctx, db, resource, time.Now(), time.Minute); value.Status != "identity_mismatch" {
+		t.Fatalf("foreign slot matched %+v", value)
+	}
+	if _, err = db.ExecContext(ctx, "SELECT pg_drop_replication_slot($1)", slot); err != nil {
+		t.Fatal(err)
+	}
+	// Cleanup below checks absence; don't drop an already-removed slot twice.
+	resource.PostgreSQL.SlotOwned, resource.PostgreSQL.PublicationOwned = false, false
 	if err = verifyPostgreSQLResourceReservation(ctx, plan, resource); err != nil {
 		t.Fatalf("empty namespace refused: %v", err)
 	}

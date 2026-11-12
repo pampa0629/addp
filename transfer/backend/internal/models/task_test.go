@@ -123,3 +123,31 @@ func TestCaptureBufferProjectionExcludesPrivateFactsAndTerminalSamples(t *testin
 		}
 	}
 }
+
+func TestCaptureSourceProjectionIsSafeAndCurrentGenerationOnly(t *testing.T) {
+	resource := &CaptureResource{SourceType: CaptureSourcePostgreSQL, Status: CaptureStatusRunning,
+		PostgreSQLObservation: JSONMap{"status": "available", "sampled_at": "2026-11-12T00:00:00Z", "expires_at": "2026-11-12T00:01:00Z", "retained_wal_bytes": "9007199254740993", "risk_state": "extended", "slot_name": "private-slot", "connection": "private-secret"},
+		DelayObservation:      JSONMap{"status": "available", "sampled_at": "2026-11-12T00:00:00Z", "expires_at": "2026-11-12T00:01:00Z", "connected": true, "delay_seconds": 0.125, "connector": "private-connector", "error": "private-secret"}}
+	data, err := json.Marshal(NewCaptureSummary(resource))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(data), "private-") || !strings.Contains(string(data), `"retained_wal_bytes":"9007199254740993"`) || !strings.Contains(string(data), `"delay_seconds":0.125`) {
+		t.Fatalf("unsafe or imprecise projection: %s", data)
+	}
+	for _, status := range []CaptureStatus{CaptureStatusStopped, CaptureStatusCleaning, CaptureStatusCleanupFailed} {
+		resource.Status = status
+		value := NewCaptureSummary(resource)
+		if value.PostgreSQLObservation != nil || value.DelayObservation != nil {
+			t.Fatalf("terminal %s sample exposed", status)
+		}
+	}
+	resource.Status = CaptureStatusRunning
+	for _, source := range []CaptureSourceType{CaptureSourceMySQL, CaptureSourceOracle} {
+		resource.SourceType = source
+		value := NewCaptureSummary(resource)
+		if value.PostgreSQLObservation != nil || value.DelayObservation != nil {
+			t.Fatalf("PostgreSQL sample exposed for %s", source)
+		}
+	}
+}

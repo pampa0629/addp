@@ -26,7 +26,13 @@ export function validateCDCTask(task, expectedID = null) {
   if (!positive(task?.id) || expectedID && String(task.id) !== expectedID || typeof task.name !== 'string' || !task.name || task.task_type !== 'sync' || task.config?.runtime?.boundary !== 'continuous' || task.config?.load?.change_detection?.type !== 'cdc' || typeof task.status !== 'string' || !['running', 'paused', 'stopped'].includes(task.desired_state) || typeof task.config?.target?.name !== 'string' || !task.config.target.name) invalid()
   if (task.last_execution_id != null && !isTargetUUID(task.last_execution_id)) invalid()
   if (task.capture && (!positive(task.capture.generation) || typeof task.capture.status !== 'string')) invalid()
-  if (task.capture) validateCDCBuffer(task.capture.buffer_observation)
+  if (task.capture) {
+    if (!['postgresql','mysql','oracle'].includes(task.capture.source_type)) invalid()
+    validateCDCBuffer(task.capture.buffer_observation)
+    if (task.capture.source_type !== 'postgresql' && (task.capture.postgresql_observation !== null || task.capture.delay_observation !== null)) invalid()
+    validateCDCPostgreSQL(task.capture.postgresql_observation)
+    validateCDCDelay(task.capture.delay_observation)
+  }
   try { cdcEndpoints(task) } catch { invalid() }
   return task
 }
@@ -58,4 +64,32 @@ export function validateCDCBuffer(value) {
     } else if (value.lag_offsets === null || BigInt(value.latest_offset) - BigInt(value.committed_offset) !== BigInt(value.lag_offsets) || value.recovery_state !== (BigInt(value.committed_offset) < BigInt(value.earliest_offset) ? 'lost' : 'available')) invalid()
   }
   return value
+}
+
+function validObservationTime(value) {
+ const sample=Date.parse(value?.sampled_at),expires=Date.parse(value?.expires_at)
+ if (!Number.isFinite(sample)||!Number.isFinite(expires)||expires<=sample) invalid()
+}
+export function validateCDCPostgreSQL(value) {
+ if(value===null)return value
+ validObservationTime(value)
+ if(!['available','missing','identity_mismatch','unavailable'].includes(value.status)||!['reserved','extended','unreserved','lost','unknown'].includes(value.risk_state))invalid()
+ const bytes=['retained_wal_bytes','unacknowledged_wal_bytes','safe_wal_size_bytes']
+ for(const key of bytes)if(value[key]!==null&&(typeof value[key]!=='string'||!/^(0|[1-9]\d*)$/.test(value[key])||BigInt(value[key])>18446744073709551615n))invalid()
+ if(value.status==='available'){
+  if(typeof value.slot_active!=='boolean'||typeof value.wal_keep_unlimited!=='boolean'||value.wal_status!==null&&!['reserved','extended','unreserved','lost'].includes(value.wal_status)||value.risk_state!==(value.wal_status||'unknown'))invalid()
+ }else if(value.risk_state!=='unknown'||[...bytes,'slot_active','wal_status','wal_keep_unlimited'].some(key=>value[key]!==null))invalid()
+ return value
+}
+export function validateCDCDelay(value){
+ if(value===null)return value
+ validObservationTime(value)
+ if(!['available','no_sample','unavailable'].includes(value.status))invalid()
+ if(value.status==='available'){
+  if(typeof value.connected!=='boolean'||value.delay_seconds!==null&&(typeof value.delay_seconds!=='number'||!Number.isFinite(value.delay_seconds)||!value.connected))invalid()
+ }else if(value.connected!==null||value.delay_seconds!==null)invalid()
+ return value
+}
+export function cdcObservationState(value,now=Date.now()){
+ return !value?'no_sample':Date.parse(value.expires_at)<=now?'stale':value.status
 }

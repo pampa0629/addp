@@ -9,6 +9,7 @@ MOCK_PRESENT=0
 MOCK_FOREIGN=0
 MOCK_EXTRA_BUSY=''
 MOCK_LOGS_DOWN=0
+unset KAFKA_CONNECT_JOLOKIA_PORT KAFKA_CONNECT_METRICS_URL
 unset ADDP_ONLINE_HOST
 unset GITHUB_ACTIONS ADDP_LOCAL_CI_POSTGRES
 unset ADDP_OBSERVABILITY_LOGS_ENABLED ADDP_OBSERVABILITY_METRICS_ENABLED ADDP_OBSERVABILITY_TRACES_ENABLED ADDP_INFRA_PORT_SCOPE
@@ -67,6 +68,7 @@ docker() {
         addp-meilisearch:7700/tcp) echo '0.0.0.0:17700' ;;
         addp-redpanda:9092/tcp) echo '0.0.0.0:19092' ;;
         addp-kafka-connect:8083/tcp) echo '0.0.0.0:18083' ;;
+        addp-kafka-connect:8778/tcp) echo '127.0.0.1:28778' ;;
         *) return 1 ;;
       esac
       ;;
@@ -92,6 +94,7 @@ addp_infra_resolve_ports >/dev/null
 [ "$REDIS_PORT" = 26379 ]
 [ "$MEILISEARCH_PORT" = 17700 ]
 [ "$INFRA_KAFKA_BOOTSTRAP_SERVERS" = localhost:19092 ]
+[ "$KAFKA_CONNECT_METRICS_URL" = http://127.0.0.1:18778 ]
 if addp_infra_ready; then
   echo 'missing containers were incorrectly considered ready' >&2
   exit 1
@@ -127,6 +130,7 @@ addp_infra_resolve_ports >/dev/null
 [ "$POSTGRES_PORT" = 25432 ]
 [ "$REDIS_PORT" = 26379 ]
 addp_infra_read_actual_ports
+[ "$KAFKA_CONNECT_METRICS_URL" = http://127.0.0.1:28778 ]
 [ "$POSTGRES_PORT" = 25432 ]
 [ "$REDIS_PORT" = 26379 ]
 addp_infra_ready

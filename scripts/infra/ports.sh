@@ -29,6 +29,7 @@ minio MINIO_CONSOLE_PORT 9001 19001 addp-minio
 meilisearch MEILISEARCH_PORT 7700 17700 addp-meilisearch
 redpanda INFRA_KAFKA_PORT 9092 19092 addp-redpanda
 kafka-connect KAFKA_CONNECT_PORT 8083 18083 addp-kafka-connect
+kafka-connect KAFKA_CONNECT_JOLOKIA_PORT 8778 18778 addp-kafka-connect
 EOF
 }
 
@@ -206,6 +207,7 @@ addp_infra_apply_endpoints() {
   export MEILISEARCH_URL_LOCAL="$MEILISEARCH_URL"
   export INFRA_KAFKA_BOOTSTRAP_SERVERS="${host}:${INFRA_KAFKA_PORT}"
   export KAFKA_CONNECT_URL="http://${host}:${KAFKA_CONNECT_PORT}"
+  export KAFKA_CONNECT_METRICS_URL="http://127.0.0.1:${KAFKA_CONNECT_JOLOKIA_PORT}"
 }
 
 # Keep Trace port discovery scoped to this check so it cannot change the

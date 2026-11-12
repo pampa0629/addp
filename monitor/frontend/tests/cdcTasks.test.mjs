@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { cdcView, cdcEndpoints, resolveCDCTaskRoute, validateCDCTask, validateCDCTaskPage, validateCDCTaskExecution, validateCDCBuffer } from '../src/utils/cdcTasks.js'
-export const task = () => ({ id: 7, name: 'Orders CDC', task_type: 'sync', status: 'running', desired_state: 'running', config: { runtime: { boundary: 'continuous' }, load: { change_detection: { type: 'cdc' } }, source: { locator: 'addp://engine/2/path/public/orders?type=table' }, target: { parent_locator: 'addp://engine/3/path/sales?type=schema', name: 'orders_copy' } }, capture: { generation: 1, status: 'running', buffer_observation: null }, last_execution_id: '10000000-0000-4000-8000-000000000001' })
+import { cdcView, cdcEndpoints, resolveCDCTaskRoute, validateCDCTask, validateCDCTaskPage, validateCDCTaskExecution, validateCDCBuffer, validateCDCPostgreSQL, validateCDCDelay, cdcObservationState } from '../src/utils/cdcTasks.js'
+export const task = () => ({ id: 7, name: 'Orders CDC', task_type: 'sync', status: 'running', desired_state: 'running', config: { runtime: { boundary: 'continuous' }, load: { change_detection: { type: 'cdc' } }, source: { locator: 'addp://engine/2/path/public/orders?type=table' }, target: { parent_locator: 'addp://engine/3/path/sales?type=schema', name: 'orders_copy' } }, capture: { generation: 1, status: 'running', buffer_observation: null, source_type:'postgresql', postgresql_observation:null, delay_observation:null }, last_execution_id: '10000000-0000-4000-8000-000000000001' })
 test('CDC task view uses context defaults and canonical bounded URL state', () => {
  assert.equal(cdcView({},'tenant'),'tasks'); assert.equal(cdcView({},'platform'),'resources')
  assert.equal(cdcView({view:'tasks'},'platform'),'tasks')
@@ -30,4 +30,14 @@ test('Task buffer preserves exact positions and rejects inconsistent or reused f
  assert.equal(validateCDCBuffer(value).committed_offset,'9007199254740993')
  for (const changed of [{lag_offsets:'0'},{committed_offset:9},{status:'unavailable'},{recovery_state:'lost'},{expires_at:value.sampled_at}]) assert.throws(()=>validateCDCBuffer({...value,...changed}),/invalid_resource_response/)
  assert.equal(validateCDCBuffer(null),null)
+})
+
+test('Task source rejects partial/foreign data and preserves large WAL strings and native delay',()=>{
+ const value={status:'available',sampled_at:'2026-11-12T00:00:00Z',expires_at:'2026-11-12T00:01:00Z',slot_active:true,wal_status:'reserved',retained_wal_bytes:'9007199254740993',unacknowledged_wal_bytes:null,safe_wal_size_bytes:null,wal_keep_unlimited:true,risk_state:'reserved'}
+ assert.equal(validateCDCPostgreSQL(value).retained_wal_bytes,'9007199254740993')
+ for(const change of [{status:'unavailable'},{risk_state:'lost'},{retained_wal_bytes:9007199254740993},{retained_wal_bytes:'-1'},{wal_status:'wrong'}])assert.throws(()=>validateCDCPostgreSQL({...value,...change}))
+ assert.equal(cdcObservationState(value,Date.parse(value.expires_at)),'stale')
+ const delay={status:'available',sampled_at:value.sampled_at,expires_at:value.expires_at,connected:true,delay_seconds:-.002}
+ assert.equal(validateCDCDelay(delay).delay_seconds,-.002)
+ for(const change of [{status:'no_sample'},{connected:false},{delay_seconds:Infinity}])assert.throws(()=>validateCDCDelay({...delay,...change}))
 })

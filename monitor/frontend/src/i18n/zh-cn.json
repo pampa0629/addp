@@ -1555,6 +1555,43 @@
         "committed_offset": "目标已提交位置",
         "earliest_offset": "最早保留位置",
         "latest_offset": "消息末端位置"
+      },
+      "sourceStates": {
+        "available": "当前任务源端观测",
+        "missing": "当前任务的逻辑槽缺失",
+        "identity_mismatch": "源端捕获资源身份不符",
+        "unavailable": "源端观测不可用",
+        "no_sample": "尚无源端观测样本",
+        "stale": "源端观测已过期"
+      },
+      "delayStates": {
+        "available": "当前任务捕获延迟",
+        "unavailable": "捕获延迟观测不可用",
+        "no_sample": "尚无捕获延迟样本",
+        "stale": "捕获延迟观测已过期"
+      },
+      "walRisks": {
+        "reserved": "WAL 仍在常规保留范围",
+        "extended": "WAL 已扩展保留",
+        "unreserved": "所需 WAL 不再保证保留",
+        "lost": "所需 WAL 已丢失，槽不可用",
+        "unknown": "WAL 保留状态未知"
+      },
+      "sourceMetrics": {
+        "slotActive": "任务逻辑槽",
+        "active": "活跃",
+        "inactive": "未活跃",
+        "risk": "WAL 保留状态",
+        "retained_wal_bytes": "逻辑槽保留 WAL 距离",
+        "unacknowledged_wal_bytes": "待确认 WAL 距离",
+        "safe_wal_size_bytes": "距槽失效的 WAL 写入余量",
+        "unlimited": "未设置槽 WAL 保留上限；安全余量无有限值",
+        "walHint": "仅关联本任务的槽。WAL 地址距离不是业务表变更量或磁盘实际占用；未活跃不等于日志丢失。",
+        "captureConnected": "捕获连接",
+        "connected": "已连接",
+        "disconnected": "未连接",
+        "delay": "事件捕获延迟",
+        "delayHint": "最近事件从源端发生到 Connector 处理的时间差，不是空闲时长或目标端到端延迟。无样本不补零；负值反映时钟偏差。"
       }
     },
     "engines": {

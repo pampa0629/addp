@@ -217,6 +217,8 @@ type CaptureResource struct {
 	SourceRecoveryError         string                     `gorm:"type:text" json:"-"`
 	SourceTransactions          JSONMap                    `gorm:"type:jsonb;not null;default:'{}'" json:"source_transactions,omitempty"`
 	SourceTransactionsError     string                     `gorm:"type:text" json:"-"`
+	PostgreSQLObservation       JSONMap                    `gorm:"column:postgresql_observation;type:jsonb;not null;default:'{}'" json:"-"`
+	DelayObservation            JSONMap                    `gorm:"type:jsonb;not null;default:'{}'" json:"-"`
 	BufferObservation           JSONMap                    `gorm:"type:jsonb;not null;default:'{}'" json:"-"`
 	TopicCreated                bool                       `gorm:"not null;default:false" json:"topic_created"`
 	ConnectorCreated            bool                       `gorm:"not null;default:false" json:"connector_created"`
@@ -356,15 +358,18 @@ type SchemaChangeRequestView struct {
 
 // CaptureSummary 是任务 API 可展示的捕获状态；内部资源名称和连接身份不对外暴露。
 type CaptureSummary struct {
-	BufferObservation  *CaptureBufferObservation  `json:"buffer_observation"`
-	Generation         uint64                     `json:"generation"`
-	Status             CaptureStatus              `json:"status"`
-	ConnectorStatus    string                     `json:"connector_status,omitempty"`
-	SourceStatus       string                     `json:"source_status,omitempty"`
-	SourceRecovery     *CaptureSourceRecovery     `json:"source_recovery,omitempty"`
-	SourceTransactions *CaptureSourceTransactions `json:"source_transactions,omitempty"`
-	LastObservedAt     *time.Time                 `json:"last_observed_at,omitempty"`
-	StoppedAt          *time.Time                 `json:"stopped_at,omitempty"`
+	SourceType            CaptureSourceType             `json:"source_type"`
+	PostgreSQLObservation *CapturePostgreSQLObservation `json:"postgresql_observation"`
+	DelayObservation      *CaptureDelayObservation      `json:"delay_observation"`
+	BufferObservation     *CaptureBufferObservation     `json:"buffer_observation"`
+	Generation            uint64                        `json:"generation"`
+	Status                CaptureStatus                 `json:"status"`
+	ConnectorStatus       string                        `json:"connector_status,omitempty"`
+	SourceStatus          string                        `json:"source_status,omitempty"`
+	SourceRecovery        *CaptureSourceRecovery        `json:"source_recovery,omitempty"`
+	SourceTransactions    *CaptureSourceTransactions    `json:"source_transactions,omitempty"`
+	LastObservedAt        *time.Time                    `json:"last_observed_at,omitempty"`
+	StoppedAt             *time.Time                    `json:"stopped_at,omitempty"`
 }
 
 // CaptureBufferObservation is a task-level metadata-only sample, never an execution result.
@@ -379,22 +384,39 @@ type CaptureBufferObservation struct {
 	RecoveryState   string    `json:"recovery_state"`
 }
 
-func captureBufferSummary(resource *CaptureResource) *CaptureBufferObservation {
-	if resource.Status != CaptureStatusRunning && resource.Status != CaptureStatusFailed {
+type CapturePostgreSQLObservation struct {
+	Status                 string    `json:"status"`
+	SampledAt              time.Time `json:"sampled_at"`
+	ExpiresAt              time.Time `json:"expires_at"`
+	SlotActive             *bool     `json:"slot_active"`
+	WALStatus              *string   `json:"wal_status"`
+	RetainedWALBytes       *string   `json:"retained_wal_bytes"`
+	UnacknowledgedWALBytes *string   `json:"unacknowledged_wal_bytes"`
+	SafeWALSizeBytes       *string   `json:"safe_wal_size_bytes"`
+	WALKeepUnlimited       *bool     `json:"wal_keep_unlimited"`
+	RiskState              string    `json:"risk_state"`
+}
+type CaptureDelayObservation struct {
+	Status       string    `json:"status"`
+	Connected    *bool     `json:"connected"`
+	DelaySeconds *float64  `json:"delay_seconds"`
+	SampledAt    time.Time `json:"sampled_at"`
+	ExpiresAt    time.Time `json:"expires_at"`
+}
+
+func captureObservationSummary[T any](resource *CaptureResource, value JSONMap) *T {
+	if resource.Status != CaptureStatusRunning && resource.Status != CaptureStatusFailed || len(value) == 0 {
 		return nil
 	}
-	if len(resource.BufferObservation) == 0 {
-		return nil
-	}
-	data, err := json.Marshal(resource.BufferObservation)
+	data, err := json.Marshal(value)
 	if err != nil {
 		return nil
 	}
-	var value CaptureBufferObservation
-	if json.Unmarshal(data, &value) != nil {
+	var result T
+	if json.Unmarshal(data, &result) != nil {
 		return nil
 	}
-	return &value
+	return &result
 }
 
 type CaptureSourceRecovery struct {
@@ -428,14 +450,20 @@ func NewCaptureSummary(resource *CaptureResource) *CaptureSummary {
 	if resource == nil {
 		return nil
 	}
-	return &CaptureSummary{
-		Generation: resource.Generation, Status: resource.Status, BufferObservation: captureBufferSummary(resource),
+	summary := &CaptureSummary{
+		Generation: resource.Generation, Status: resource.Status, BufferObservation: captureObservationSummary[CaptureBufferObservation](resource, resource.BufferObservation),
+		SourceType:         resource.SourceType,
 		ConnectorStatus:    resource.ConnectorStatus,
 		SourceStatus:       resource.SourceStatus,
 		SourceRecovery:     captureSourceRecoverySummary(resource.SourceRecovery),
 		SourceTransactions: captureSourceTransactionsSummary(resource.SourceTransactions),
 		LastObservedAt:     resource.LastObservedAt, StoppedAt: resource.StoppedAt,
 	}
+	if resource.SourceType == CaptureSourcePostgreSQL {
+		summary.PostgreSQLObservation = captureObservationSummary[CapturePostgreSQLObservation](resource, resource.PostgreSQLObservation)
+		summary.DelayObservation = captureObservationSummary[CaptureDelayObservation](resource, resource.DelayObservation)
+	}
+	return summary
 }
 
 func captureSourceTransactionsSummary(value JSONMap) *CaptureSourceTransactions {

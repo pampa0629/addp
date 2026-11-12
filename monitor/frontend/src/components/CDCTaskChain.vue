@@ -24,6 +24,19 @@
           <el-card shadow="never" data-testid="cdc-task-source"><template #header>{{ t('monitor.cdc.chainSource') }}</template>
             <h3 class="resource-path">{{ endpoints.source.path }}</h3><p>{{ t('monitor.cdc.engineReference', { id: endpoints.source.engineID }) }}</p>
             <p class="hint">{{ t('monitor.cdc.configuredSource') }}</p>
+            <template v-if="task.capture?.source_type === 'postgresql'">
+              <p data-testid="cdc-source-state">{{ t(`monitor.cdc.sourceStates.${sourceState}`) }}</p>
+              <p v-if="sourceObservation" class="hint">{{ t('monitor.cdc.lastSample') }}: {{ date(sourceObservation.sampled_at) }}</p>
+              <template v-if="sourceState === 'available'">
+                <dl>
+                  <div><dt>{{ t('monitor.cdc.sourceMetrics.slotActive') }}</dt><dd data-testid="cdc-source-active">{{ t(sourceObservation.slot_active ? 'monitor.cdc.sourceMetrics.active' : 'monitor.cdc.sourceMetrics.inactive') }}</dd></div>
+                  <div><dt>{{ t('monitor.cdc.sourceMetrics.risk') }}</dt><dd data-testid="cdc-source-risk">{{ t(`monitor.cdc.walRisks.${sourceObservation.risk_state}`) }}</dd></div>
+                </dl>
+                <dl><div v-for="field in ['retained_wal_bytes','unacknowledged_wal_bytes','safe_wal_size_bytes']" :key="field"><dt>{{ t(`monitor.cdc.sourceMetrics.${field}`) }}</dt><dd :title="sourceObservation[field] === null ? '' : sourceObservation[field] + ' B'" :data-testid="`cdc-source-${field}`">{{ sourceObservation[field] === null ? '—' : formatBytes(sourceObservation[field], null, locale) }}</dd></div></dl>
+                <p v-if="sourceObservation.wal_keep_unlimited" class="hint">{{ t('monitor.cdc.sourceMetrics.unlimited') }}</p>
+                <p class="hint">{{ t('monitor.cdc.sourceMetrics.walHint') }}</p>
+              </template>
+            </template>
           </el-card>
           <el-card shadow="never" data-testid="cdc-task-capture"><template #header>{{ t('monitor.cdc.chainCapture') }}</template>
             <template v-if="task.capture"><dl>
@@ -33,6 +46,15 @@
               <div><dt>{{ t('monitor.cdc.sourceStatus') }}</dt><dd>{{ task.capture.source_status || '—' }}</dd></div>
             </dl><p class="hint">{{ date(task.capture.last_observed_at) }}</p></template>
             <el-empty v-else :description="t('monitor.cdc.noCapture')" :image-size="48" />
+            <template v-if="task.capture?.source_type === 'postgresql'">
+              <p data-testid="cdc-delay-state">{{ t(`monitor.cdc.delayStates.${delayState}`) }}</p>
+              <p v-if="delayObservation" class="hint">{{ t('monitor.cdc.lastSample') }}: {{ date(delayObservation.sampled_at) }}</p>
+              <dl v-if="delayState === 'available'">
+                <div><dt>{{ t('monitor.cdc.sourceMetrics.captureConnected') }}</dt><dd>{{ t(delayObservation.connected ? 'monitor.cdc.sourceMetrics.connected' : 'monitor.cdc.sourceMetrics.disconnected') }}</dd></div>
+                <div><dt>{{ t('monitor.cdc.sourceMetrics.delay') }}</dt><dd data-testid="cdc-task-source-delay">{{ delayObservation.delay_seconds === null ? '—' : delayObservation.delay_seconds.toLocaleString(locale, { maximumFractionDigits: 3 }) + ' s' }}</dd></div>
+              </dl>
+              <p class="hint">{{ t('monitor.cdc.sourceMetrics.delayHint') }}</p>
+            </template>
           </el-card>
           <el-card shadow="never" data-testid="cdc-task-target"><template #header>{{ t('monitor.cdc.chainTarget') }}</template>
             <h3 class="resource-path">{{ endpoints.target.path }}</h3><p>{{ t('monitor.cdc.engineReference', { id: endpoints.target.engineID }) }}</p>
@@ -80,9 +102,10 @@ import { createAutoRefresh } from '../../../../common-frontend/basic/src/utils/a
 import { useAuthStore } from '../store/auth'
 import { cdcTasksAPI } from '../api/cdcTasks'
 import { getExecutionByExecutionID } from '../api/monitor'
-import { cdcEndpoints, resolveCDCTaskRoute, validateCDCTask, validateCDCTaskPage, validateCDCTaskExecution } from '../utils/cdcTasks'
+import { cdcEndpoints, resolveCDCTaskRoute, validateCDCTask, validateCDCTaskPage, validateCDCTaskExecution, cdcObservationState } from '../utils/cdcTasks'
 import { resourceErrorKey } from '../utils/nodeResources'
 import { navigateMonitorRoute } from '../utils/moduleNavigation'
+import { formatBytes } from '../../../../common-frontend/basic/src/utils/formatters.js'
 import { executionDetailLocation } from '../utils/executionNavigation'
 const auth = useAuthStore(), route = useRoute(), router = useRouter(), { t, te, locale } = useI18n()
 const state = computed(() => resolveCDCTaskRoute(route.query))
@@ -92,15 +115,23 @@ const endpoints = computed(() => task.value ? cdcEndpoints(task.value) : null)
 const diagnostics = computed(() => getContinuousDiagnostics(execution.value?.metadata))
 const partitions = computed(() => buildContinuousPartitionRows(execution.value?.metadata))
 const buffer = computed(() => task.value?.capture?.buffer_observation)
-const bufferExpired = ref(false)
-let bufferExpiryTimer
-watch(buffer, value => {
-  clearTimeout(bufferExpiryTimer)
-  const remaining = value ? Date.parse(value.expires_at) - Date.now() : 0
-  bufferExpired.value = remaining <= 0
-  if (remaining > 0) bufferExpiryTimer = setTimeout(() => { bufferExpired.value = true }, remaining)
-}, { immediate: true })
-const bufferState = computed(() => !buffer.value ? 'no_sample' : bufferExpired.value ? 'stale' : buffer.value.status === 'unavailable' ? 'unknown' : buffer.value.recovery_state)
+const sourceObservation = computed(() => task.value?.capture?.postgresql_observation)
+const delayObservation = computed(() => task.value?.capture?.delay_observation)
+const observationNow = ref(Date.now())
+let observationExpiryTimer
+function scheduleObservationExpiry() {
+ clearTimeout(observationExpiryTimer)
+ observationNow.value=Date.now()
+ const pending=[buffer.value,sourceObservation.value,delayObservation.value].filter(Boolean).map(value=>Date.parse(value.expires_at)-observationNow.value).filter(value=>value>0)
+ if(pending.length)observationExpiryTimer=setTimeout(scheduleObservationExpiry,Math.min(...pending))
+}
+watch([buffer,sourceObservation,delayObservation],scheduleObservationExpiry,{immediate:true})
+const sourceState=computed(()=>cdcObservationState(sourceObservation.value,observationNow.value))
+const delayState=computed(()=>cdcObservationState(delayObservation.value,observationNow.value))
+const bufferState=computed(()=>{
+ const value=cdcObservationState(buffer.value,observationNow.value)
+ return value==='available'?buffer.value.recovery_state:value==='unavailable'?'unknown':value
+})
 const requests = createLatestRequestScope()
 let context = ''
 const cycle = createAutoRefresh({ interval: () => state.value.refresh, enabled: () => canRead.value && !blocked.value && !loading.value, refresh: () => reload(true), pause: () => { requests.invalidate(); loading.value = false }, visibilityChanged: value => { visible.value = value } })
@@ -152,7 +183,7 @@ watch(() => JSON.stringify([route.query, auth.authContext]), () => {
   if (state.value.changed) navigate(state.value.query)
   else reload()
 }, { immediate: true })
-onBeforeUnmount(() => { clearTimeout(bufferExpiryTimer); cycle.dispose(); requests.dispose() })
+onBeforeUnmount(() => { clearTimeout(observationExpiryTimer); cycle.dispose(); requests.dispose() })
 </script>
 <style scoped>
 .cdc-task-chain { min-width: 0; }

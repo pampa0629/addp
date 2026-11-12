@@ -194,7 +194,7 @@ func main() {
 			log.Fatalf("初始化 Infra Kafka capture admin 失败: %v", err)
 		}
 		defer topicAdmin.Close()
-		connectClient, err := capture.NewConnectClient(cfg.KafkaConnectURL, cfg.KafkaConnectUsername, cfg.KafkaConnectPassword, cfg.KafkaConnectTimeout)
+		connectClient, err := capture.NewConnectClient(cfg.KafkaConnectURL, cfg.KafkaConnectMetricsURL, cfg.KafkaConnectUsername, cfg.KafkaConnectPassword, cfg.KafkaConnectTimeout)
 		if err != nil {
 			log.Fatalf("初始化 Kafka Connect client 失败: %v", err)
 		}

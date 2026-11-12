@@ -218,6 +218,7 @@ System 连接测试只验证发起方在当时配置下的连接结果；其他 
 | Meilisearch           | 17700    | 7700 | 全文检索引擎               |
 | Infra Kafka           | 19092    | 9092        | 内部 CDC 总线；不注册为 System Engine |
 | Kafka Connect REST    | 18083    | 8083        | Transfer capture supervisor 内部控制面，不经 Gateway 暴露 |
+| Kafka Connect Jolokia | 18778 | 8778 | 任务级只读捕获指标，仅绑定回环；实际映射沿标准 Infra 查询，不经 Gateway |
 | Business Kafka        | 29092    | 9092        | 业务 Topic；以 `engine_type=kafka` 注册为 System Engine |
 | Business Oracle       | 15210    | 1521        | Oracle Free 普通表与 Oracle Spatial 测试源；以 `engine_type=oracle` 注册为 System Engine |
 | Business OceanBase    | 2881     | 2881        | OceanBase CE MySQL 模式测试源；以 `engine_type=oceanbase` 注册为 System Engine |

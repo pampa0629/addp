@@ -144,6 +144,25 @@ def run_business_postgres_compose(environment, case):
 
 
 class MetricsDeploymentConfigTest(unittest.TestCase):
+    def test_task_capture_jolokia_publishes_only_loopback_with_readonly_policy(self):
+        env = dict(os.environ, INFRA_BIND_HOST='0.0.0.0', KAFKA_CONNECT_JOLOKIA_PORT='28778',
+                   REDIS_PASSWORD='fixture-redis-password', INFRA_FALKORDB_PASSWORD='fixture-falkor-password',
+                   POSTGRES_USER='fixture', POSTGRES_DB='fixture', POSTGRES_PASSWORD='fixture-pg-password',
+                   MINIO_ROOT_USER='fixture-minio',
+                   MINIO_ROOT_PASSWORD='fixture-minio-password', MEILISEARCH_MASTER_KEY='fixture-meili-key')
+        value = subprocess.run(['docker', 'compose', '--env-file', '/dev/null',
+                                '-f', str(ROOT / 'docker-compose.infra.yml'),
+                                'config', '--format', 'json', 'kafka-connect'],
+                               env=env, capture_output=True, text=True, check=True, timeout=15)
+        source = json.loads(value.stdout)['services']['kafka-connect']
+        ports = [port for port in source['ports'] if port['target'] == 8778]
+        self.assertEqual(len(ports), 1)
+        self.assertEqual(ports[0]['host_ip'], '127.0.0.1')
+        self.assertEqual(ports[0]['published'], '28778')
+        policy = next(mount for mount in source['volumes'] if mount['target'] == '/etc/addp/jolokia-access.xml')
+        self.assertTrue(policy['read_only'])
+        self.assertIn('policyLocation=file:/etc/addp/jolokia-access.xml', source['environment']['KAFKA_OPTS'])
+
     def test_minimal_reproducer_has_no_database_and_reclaims_owned_resources(self):
         module=postgres_probe.directory_publication
         phases=['baseline','published','control_before_enum','enumerate_first','control_before_second_enum','enumerate_second']

@@ -63,6 +63,7 @@ type Config struct {
 	DeadLetterReconcileTimeout         time.Duration
 	DeadLetterReconcileFetchMaxBytes   int
 	KafkaConnectURL                    string
+	KafkaConnectMetricsURL             string
 	KafkaConnectUsername               string
 	KafkaConnectPassword               string
 	KafkaConnectTimeout                time.Duration
@@ -172,6 +173,7 @@ func Load() *Config {
 		DeadLetterReconcileTimeout:         commonConfig.GetEnvDuration("TRANSFER_DLQ_RECONCILE_TIMEOUT", "10s"),
 		DeadLetterReconcileFetchMaxBytes:   commonConfig.GetEnvInt("TRANSFER_DLQ_RECONCILE_FETCH_MAX_BYTES", 10485760),
 		KafkaConnectURL:                    commonConfig.GetEnv("KAFKA_CONNECT_URL", "http://localhost:18083"),
+		KafkaConnectMetricsURL:             commonConfig.GetEnv("KAFKA_CONNECT_METRICS_URL", ""),
 		KafkaConnectUsername:               commonConfig.GetEnv("KAFKA_CONNECT_USERNAME", ""),
 		KafkaConnectPassword:               commonConfig.GetEnv("KAFKA_CONNECT_PASSWORD", ""),
 		KafkaConnectTimeout:                commonConfig.GetEnvDuration("KAFKA_CONNECT_TIMEOUT", "15s"),

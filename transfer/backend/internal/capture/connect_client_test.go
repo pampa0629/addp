@@ -34,7 +34,7 @@ func TestConnectClientLifecycle(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client, err := NewConnectClient(server.URL, "control", "secret", time.Second)
+	client, err := NewConnectClient(server.URL, "", "control", "secret", time.Second)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -67,7 +67,7 @@ func TestConnectClientLifecycle(t *testing.T) {
 func TestConnectClientDeleteIsIdempotent(t *testing.T) {
 	server := httptest.NewServer(http.NotFoundHandler())
 	defer server.Close()
-	client, _ := NewConnectClient(server.URL, "", "", time.Second)
+	client, _ := NewConnectClient(server.URL, "", "", "", time.Second)
 	if err := client.Delete(context.Background(), "missing"); err != nil {
 		t.Fatalf("Delete() error = %v", err)
 	}

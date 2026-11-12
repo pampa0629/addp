@@ -104,7 +104,7 @@ func TestIntegrationPostgreSQLCaptureControlLifecycle(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer topicAdmin.Close()
-	connectClient, err := NewConnectClient(integrationEnv("ADDP_TEST_KAFKA_CONNECT_URL", "http://localhost:18083"), "", "", 10*time.Second)
+	connectClient, err := NewConnectClient(integrationEnv("ADDP_TEST_KAFKA_CONNECT_URL", "http://localhost:18083"), "", "", "", 10*time.Second)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -268,6 +268,18 @@ capture supervisor 先在同一事务登记 generation 与对应 provider 子事
 - `pause` 只停止目标应用 runtime，Debezium connector 继续捕获并把变化写入 Infra Kafka；正常 pause 的主要代价是 Kafka backlog、磁盘和 retention 窗口。connector、Kafka 或网络故障时，还必须按 provider 独立观测 PostgreSQL slot/WAL、MySQL binlog 保留或 Oracle redo/archive log 容量风险。
 - pause 的无损恢复只在 connector 健康且 committed position 未被 Kafka retention 清除时成立，不是无限期保证。暂停期间必须继续观测 connector 状态、slot/WAL lag、topic 容量和 committed position 的 retention horizon。
 
+#### PostgreSQL 任务源端指标
+
+Capture 后台按当前 generation 保存的 source identity、连接 fingerprint、PostgreSQL provider 槽／publication 及 ownership 关联读取，暂停期间继续采样。只读取任务实际源库的系统目录，不从 Infra／Business 部署选择推断来源，不扫描其他槽或业务行。公开 `capture.source_type` 与 `capture.postgresql_observation`，后者包含 status、sampled_at、expires_at、slot_active、wal_status、retained_wal_bytes、unacknowledged_wal_bytes、safe_wal_size_bytes、wal_keep_unlimited、risk_state。字节数使用精确十进制字符串，不公开槽名、LSN、数据库连接或原始错误。
+
+查询同时核对槽的 logical／pgoutput／database 身份与本 generation 已声明的 publication 精确单表范围；槽缺失为 missing，归属／表范围不符为 identity_mismatch，读取失败为 unavailable，各自隐藏数值而不补零。retained WAL 为当前 WAL 到该槽 restart LSN 的距离；待确认 WAL 为当前 WAL 到 confirmed flush LSN 的距离，均为实例 WAL 地址距离，不是业务表变更字节、磁盘实际占用或事件延迟。safe_wal_size 为空不补零；max_slot_wal_keep_size=-1 时明确标记未设槽保留上限。
+
+风险只按 PostgreSQL 15 原生 wal_status 表达 reserved／extended／unreserved／lost；缺失为 unknown。不新增统一容量阈值，不将 inactive 推断为日志丢失；unreserved 表示所需 WAL 不再保证保留，lost 表示槽已不可用。这与 Kafka 消息恢复窗口分开，不推断整条链路可恢复。事实口径见 [PostgreSQL replication slots](https://www.postgresql.org/docs/15/view-pg-replication-slots.html)。
+
+`capture.delay_observation` 独立发布 PostgreSQL Debezium 当前 Connector 的 status、connected、delay_seconds、sampled_at、expires_at。Transfer 通过显式私有 Jolokia URL，精确读取当前持久 Connector（同其 topic.prefix）的 streaming MBean 两个白名单属性 Connected／MilliSecondsBehindSource，不使用组件最大值，不读消息正文。-1 为尚无延迟样本，其他负值原样保留表示时钟偏差；此值为最近事件在源端发生到 Connector 处理的时间差，不是持续增长的空闲时长、复制确认时间或目标端到端延迟。未发现 MBean 为 no_sample，失败为 unavailable；不回用旧数值，不自动重试。来源见 [Debezium PostgreSQL monitoring](https://debezium.io/documentation/reference/stable/connectors/postgresql.html#postgresql-monitoring)。
+
+两份快照沿既有 generation CAS 持久化并通过原任务读取权限发布；在两次 Capture 采样间隔后过期。源 SQL 和 JMX 独立失败，单项缺样不隐藏另一项有效结果；终止／清理状态不再发布当前指标。MySQL／Oracle 返回空的 PostgreSQL 专属指标，不伪造同类能力。前后端、Swagger、Transfer Go／PostgreSQL T2、JMX 白名单及生命周期、Monitor CDC 浏览器门禁同次覆盖；真实部署与事件采样需应用配置后另核。
+
 #### 任务消息缓冲持续观测
 
 Transfer Capture 后台按现有 MonitorInterval 对当前可观测 generation 持续只读采样其单分区 data topic 的最早保留位置及末端位置，并读取本任务／source identity／partition 0 的同步主状态；不读取消息正文、不加入消费组、不提交 offset、不启动 execution。此观测独立于 Connector／源连接健康，即使捕获故障也继续核对已经缓冲的消息。暂停停止目标应用而不停止该观测。

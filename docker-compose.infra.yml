@@ -269,6 +269,7 @@ services:
       - "host.docker.internal:host-gateway"
     ports:
       - "${INFRA_BIND_HOST:-0.0.0.0}:${KAFKA_CONNECT_PORT:-18083}:8083"
+      - "127.0.0.1:${KAFKA_CONNECT_JOLOKIA_PORT:-18778}:8778"
     volumes:
       - ./scripts/infra/cdc-jolokia-access.xml:/etc/addp/jolokia-access.xml:ro
     networks:

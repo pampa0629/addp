@@ -45,6 +45,8 @@ REDPANDA_HA_KAFKA_2_PORT=19093
 REDPANDA_HA_KAFKA_3_PORT=19094
 
 KAFKA_CONNECT_URL=http://localhost:18083
+KAFKA_CONNECT_JOLOKIA_PORT=18778
+KAFKA_CONNECT_METRICS_URL=http://127.0.0.1:18778
 KAFKA_CONNECT_USERNAME=
 KAFKA_CONNECT_PASSWORD=
 KAFKA_CONNECT_TIMEOUT=15s
@@ -85,3 +87,7 @@ TRANSFER_META_SCAN_CLAIM_TTL=2m
 ### Meta 补扫 claim 租期
 
 `TRANSFER_META_SCAN_CLAIM_TTL` 统一用于 continuous 首次目标扫描和 additive migration 后扫描的持久化 claim 租期；只用于进程崩溃后的过期接管，不是扫描结果超时，也不进入任务配置。该值必须大于 Meta client 固定的 60 秒 HTTP 超时，默认 2 分钟，为调用完成和 token fencing 留出余量。
+
+### 任务级只读捕获延迟
+
+标准 Infra 为现有 Connect Jolokia 白名单增加仅 `127.0.0.1` 绑定的宿主机发布端口 `KAFKA_CONNECT_JOLOKIA_PORT`（首选 18778，容器 8778）。沿统一端口解析／实际映射读取注入 `KAFKA_CONNECT_METRICS_URL`；容器 Transfer 固定使用同一私网服务 `http://kafka-connect:8778`。不继承 INFRA_BIND_HOST，不经 Gateway，不新增浏览器直连、任意 MBean 或写权限。未配置 URL 时任务延迟明确不可用，不借其他来源补值；URL 仅来自部署者配置，不来自任务 JSON。更新由标准 Infra 入口应用后重启 Transfer，保留原数据卷及既有来源。

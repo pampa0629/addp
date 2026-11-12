@@ -290,6 +290,12 @@ func (f *fakeCaptureStore) ForceUpdate(_ context.Context, _ uint, fields map[str
 }
 
 func (f *fakeCaptureStore) apply(fields map[string]interface{}) {
+	if v, ok := fields["postgresql_observation"].(models.JSONMap); ok {
+		f.resource.PostgreSQLObservation = v
+	}
+	if v, ok := fields["delay_observation"].(models.JSONMap); ok {
+		f.resource.DelayObservation = v
+	}
 	if value, ok := fields["buffer_observation"].(models.JSONMap); ok {
 		f.resource.BufferObservation = value
 	}
@@ -336,6 +342,7 @@ func (f fakePlanResolver) ResolveForObservation(context.Context, *models.Capture
 }
 
 type fakeConnectControl struct {
+	delay       *CaptureDelay
 	state       string
 	putConfig   map[string]string
 	pauseCalls  int
@@ -502,4 +509,11 @@ func TestCaptureReservationPersistenceFailurePreventsExternalCreation(t *testing
 	if topics.created || connect.putConfig != nil || store.reservationCalls != 1 || store.resource.PostgreSQL.SlotOwned || store.resource.PostgreSQL.PublicationOwned {
 		t.Fatal("external creation preceded durable ownership")
 	}
+}
+
+func (f *fakeConnectControl) Delay(context.Context, string) (*CaptureDelay, error) {
+	if f.delay != nil {
+		return f.delay, nil
+	}
+	return &CaptureDelay{Status: "no_sample"}, nil
 }
