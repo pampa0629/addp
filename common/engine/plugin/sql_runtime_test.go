@@ -11,6 +11,7 @@ type fakeSQLRuntimeProvider struct {
 	engineType  string
 	lastSQL     string
 	lastOptions QueryOptions
+	lastVersion int64
 }
 
 func (p *fakeSQLRuntimeProvider) Type() string {
@@ -56,9 +57,10 @@ func (p *fakeSQLRuntimeProvider) SQLDialect() string {
 
 func (p *fakeSQLRuntimeProvider) SupportsParameterizedQueries() bool { return true }
 
-func (p *fakeSQLRuntimeProvider) ExecuteSQL(_ context.Context, _ ConnectionInfo, sql string, opts QueryOptions) (*QueryResult, error) {
+func (p *fakeSQLRuntimeProvider) ExecuteSQL(ctx context.Context, _ ConnectionInfo, sql string, opts QueryOptions) (*QueryResult, error) {
 	p.lastSQL = sql
 	p.lastOptions = opts
+	p.lastVersion = PoolEngineVersion(ctx, opts.EngineID)
 	return &QueryResult{
 		Columns: []string{"id"},
 		Rows: []map[string]interface{}{
@@ -78,6 +80,32 @@ func TestReadSQLBatchPassesBoundParameters(t *testing.T) {
 	}
 	if len(provider.lastOptions.Args) != 1 || provider.lastOptions.Args[0] != "active" {
 		t.Fatalf("query args = %#v", provider.lastOptions.Args)
+	}
+}
+
+func TestReadSQLBatchPreservesEngineIdentityAndVersion(t *testing.T) {
+	for _, engineType := range []string{"tidb", "oceanbase", "doris", "clickhouse"} {
+		for _, query := range []string{"", "SELECT id FROM business.items WHERE id = ?"} {
+			t.Run(engineType+"/"+query, func(t *testing.T) {
+				provider := &fakeSQLRuntimeProvider{engineType: engineType}
+				ctx := WithPoolEngineVersion(t.Context(), 914, 7)
+				path := TabularItemPath(914, EngineCatalogTermDatabase, "business", "items")
+				opts := BatchReadOptions{Query: query, Limit: 2, Offset: 3}
+				if query != "" {
+					opts.Args = []interface{}{42}
+				}
+				batch, err := ReadSQLBatch(ctx, provider, ConnectionInfo{"host": "fixture"}, path, opts)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if provider.lastOptions.EngineID != 914 || provider.lastOptions.EngineType != engineType || provider.lastVersion != 7 {
+					t.Fatalf("batch lost Engine Instance identity: %+v, version=%d", provider.lastOptions, provider.lastVersion)
+				}
+				if batch.Offset != 3 || len(batch.Rows) != 1 || provider.lastOptions.Limit != 2 || len(provider.lastOptions.Args) != len(opts.Args) {
+					t.Fatalf("batch pagination or arguments changed: %+v / %+v", batch, provider.lastOptions)
+				}
+			})
+		}
 	}
 }
 

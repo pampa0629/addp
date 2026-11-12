@@ -106,23 +106,21 @@ func (pm *PoolManager) GetOrCreatePool(resource *Engine, config *PoolConfig) (in
 
 	pm.mu.Lock()
 	pool := pm.pools[resource.ID]
-	if configurable {
-		latest := pm.versions[resource.ID]
-		version := resource.Version
-		if latest.version > 0 {
-			reusesCurrent := version == 0 && pool != nil && pool.signature == signature
-			if (version < latest.version && !reusesCurrent) ||
-				(version == latest.version && signature != latest.signature) {
-				pm.mu.Unlock()
-				return nil, ErrStalePoolConfiguration
-			}
+	latest := pm.versions[resource.ID]
+	version := resource.Version
+	if latest.version > 0 {
+		reusesCurrent := version == 0 && pool != nil && pool.signature == signature
+		if (version < latest.version && !reusesCurrent) ||
+			(version == latest.version && signature != latest.signature) {
+			pm.mu.Unlock()
+			return nil, ErrStalePoolConfiguration
 		}
-		if version > latest.version {
-			if pm.versions == nil {
-				pm.versions = make(map[uint]poolSnapshot)
-			}
-			pm.versions[resource.ID] = poolSnapshot{version: version, signature: signature}
+	}
+	if version > latest.version {
+		if pm.versions == nil {
+			pm.versions = make(map[uint]poolSnapshot)
 		}
+		pm.versions[resource.ID] = poolSnapshot{version: version, signature: signature}
 	}
 	if pool != nil && pool.signature == signature {
 		pool.LastAccess = time.Now()

@@ -149,6 +149,62 @@ func TestPoolManagerFencesStaleSharedSQLConfiguration(t *testing.T) {
 	}
 }
 
+func TestPoolManagerFencesVersionsWithoutConfigurablePolicy(t *testing.T) {
+	fixtureErr := errors.New("replacement failed")
+	var natives []*sql.DB
+	pm, engine := poolFixture(t, func(info ConnectionInfo, config *PoolConfig) (*gorm.DB, error) {
+		if *config != *DefaultPoolConfig() {
+			t.Fatalf("unconfigured plugin pool settings changed: %+v", config)
+		}
+		if info["password"] == "broken" {
+			return nil, fixtureErr
+		}
+		db, native := poolTestDB()
+		natives = append(natives, native)
+		return db, nil
+	})
+	resource := func(version int64, password string) *Engine {
+		return &Engine{ID: engine.ID, EngineType: engine.EngineType, Version: version,
+			ConnectionInfo: ConnectionInfo{"host": "same-instance", "password": password}}
+	}
+	first, err := pm.GetOrCreatePool(resource(1, "first"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if same, err := pm.GetOrCreatePool(resource(2, "first"), nil); err != nil || same != first {
+		t.Fatalf("version-only update did not reuse pool: %v", err)
+	}
+	if same, err := pm.GetOrCreatePool(resource(0, "first"), nil); err != nil || same != first {
+		t.Fatalf("matching unversioned read did not reuse current pool: %v", err)
+	}
+	for _, stale := range []*Engine{resource(1, "first"), resource(0, "other"), resource(2, "other")} {
+		if _, err := pm.GetOrCreatePool(stale, nil); !errors.Is(err, ErrStalePoolConfiguration) {
+			t.Fatalf("unconfigured plugin accepted stale or conflicting configuration: %v", err)
+		}
+	}
+	if _, err := pm.GetOrCreatePool(resource(3, "broken"), nil); !errors.Is(err, fixtureErr) {
+		t.Fatalf("replacement failure changed: %v", err)
+	}
+	if err := natives[0].Ping(); err == nil {
+		t.Fatal("failed replacement retained old pool")
+	}
+	if _, err := pm.GetOrCreatePool(resource(2, "first"), nil); !errors.Is(err, ErrStalePoolConfiguration) {
+		t.Fatalf("failed replacement allowed old configuration to return: %v", err)
+	}
+	if _, err := pm.GetOrCreatePool(resource(4, "restored"), nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := pm.ClosePool(engine.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pm.GetOrCreatePool(resource(2, "first"), nil); !errors.Is(err, ErrStalePoolConfiguration) {
+		t.Fatalf("closing pool removed version protection: %v", err)
+	}
+	if len(natives) != 2 {
+		t.Fatalf("unexpected pool creations: %d", len(natives))
+	}
+}
+
 func TestPoolManagerCloseReleasesSQLDB(t *testing.T) {
 	for _, all := range []bool{false, true} {
 		t.Run(map[bool]string{false: "one", true: "all"}[all], func(t *testing.T) {

@@ -89,6 +89,15 @@ func TestIntegrationMySQLSharedSQLPool(t *testing.T) {
 			t.Fatalf("catalog facts did not wait on the configured pool: %v, stats=%+v", err, native.Stats())
 		}
 	})
+	t.Run("generic batch waits on the Engine Instance pool", func(t *testing.T) {
+		before := native.Stats().WaitCount
+		blocked, cancel := context.WithTimeout(plugin.WithPoolEngineVersion(ctx, engineID, 1), 150*time.Millisecond)
+		defer cancel()
+		_, err := plugin.ReadSQLBatch(blocked, provider, info, path, plugin.BatchReadOptions{Limit: 1})
+		if !errors.Is(err, context.DeadlineExceeded) || native.Stats().WaitCount != before+1 {
+			t.Fatalf("generic batch bypassed the shared pool: %v, stats=%+v", err, native.Stats())
+		}
+	})
 	next := make(plugin.ConnectionInfo, len(info))
 	for key, value := range info {
 		next[key] = value
@@ -103,6 +112,17 @@ func TestIntegrationMySQLSharedSQLPool(t *testing.T) {
 	if err != nil || result == nil || len(result.Rows) != 1 || result.Rows[0]["id"] != int64(42) {
 		t.Fatalf("query did not use the replacement pool: %+v, %v", result, err)
 	}
+	t.Run("generic batch follows pool replacement and rejects the old version", func(t *testing.T) {
+		current := plugin.WithPoolEngineVersion(ctx, engineID, 2)
+		batch, err := plugin.ReadSQLBatch(current, provider, next, path, plugin.BatchReadOptions{Limit: 1})
+		if err != nil || batch == nil || len(batch.Rows) != 1 || batch.Rows[0]["id"] != int64(42) {
+			t.Fatalf("generic batch did not read through the replacement pool: %+v, %v", batch, err)
+		}
+		stale := plugin.WithPoolEngineVersion(ctx, engineID, 1)
+		if _, err := plugin.ReadSQLBatch(stale, provider, info, path, plugin.BatchReadOptions{Limit: 1}); !errors.Is(err, plugin.ErrStalePoolConfiguration) {
+			t.Fatalf("generic batch lost its version fence: %v", err)
+		}
+	})
 	t.Run("catalog facts after pool replacement", func(t *testing.T) {
 		ctx := plugin.WithPoolEngineVersion(ctx, engineID, 2)
 		facts, err := provider.DescribeEngineCatalogFacts(ctx, next, path, plugin.EngineCatalogFactsOptions{IncludeSpatialFacts: true})

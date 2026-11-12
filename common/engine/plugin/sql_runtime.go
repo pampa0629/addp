@@ -624,7 +624,9 @@ func ReadSQLBatch(ctx context.Context, provider SQLQueryRuntimeProvider, connInf
 	} else if opts.Limit > 0 {
 		query = commonquery.ForDialect(provider.SQLDialect()).PaginateQuerySQL(query, opts.Limit, int(opts.Offset))
 	}
-	result, err := provider.ExecuteSQL(ctx, connInfo, query, QueryOptions{Limit: opts.Limit, Args: opts.Args})
+	result, err := provider.ExecuteSQL(ctx, connInfo, query, QueryOptions{
+		EngineID: path.EngineID, EngineType: provider.Type(), Limit: opts.Limit, Args: opts.Args,
+	})
 	if err != nil {
 		return nil, err
 	}
