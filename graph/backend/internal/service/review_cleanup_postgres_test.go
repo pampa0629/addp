@@ -257,7 +257,7 @@ type reviewCleanupPGFixture struct {
 	svc   *CleanupService
 }
 
-func newReviewCleanupPGFixture(t *testing.T) *reviewCleanupPGFixture {
+func newReviewPGFixture(t *testing.T) *reviewCleanupPGFixture {
 	t.Helper()
 	db, task, build := cleanupRuntimeDomainFixture(t, true)
 	ctx := execution.WithUserOrigin(t.Context(), authtest.NewTenantUserAuthContext(strconv.Itoa(int(task.TenantID)), "7", []string{"system.cleanup.execute"}))
@@ -288,6 +288,14 @@ func newReviewCleanupPGFixture(t *testing.T) *reviewCleanupPGFixture {
 	if err := cleanup.MigrateResults(db, "graph"); err != nil {
 		t.Fatal(err)
 	}
+	return f
+}
+
+func newReviewCleanupPGFixture(t *testing.T) *reviewCleanupPGFixture {
+	t.Helper()
+	f := newReviewPGFixture(t)
+	db, task := f.db, f.task
+	ctx := execution.WithUserOrigin(t.Context(), authtest.NewTenantUserAuthContext(strconv.Itoa(int(task.TenantID)), "7", []string{"system.cleanup.execute"}))
 	parent := execution.TaskExecution{ExecutionID: uuid.NewString(), TenantID: int(task.TenantID), Module: "system", TaskType: "cleanup", Source: "system", Status: "pending", ExecutionBoundary: "bounded", TriggerType: "manual", ExecutionConfig: commonmodels.JSONMap{execution.DisplayLanguageKey: "en"}}
 	if err := execution.ApplyUserOrigin(ctx, &parent); err != nil {
 		t.Fatal(err)

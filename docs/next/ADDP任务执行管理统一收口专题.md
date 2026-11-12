@@ -161,7 +161,7 @@ Manager 源准备保持其正式授权链；本批 Transfer CDC 仅验证既有 
 | 顺序 | 事项／性质 | 具体交付与完成条件 |
 | --- | --- | --- |
 | P1a | Common／System 父子准入 PG | C2b/c/e/h 的竞争、拒绝与回滚，以及 C2d/f/g 的公共锁等待、非法绑定及子执行残留事实，见 [Common／System PG 两批验证](#本轮-pg-增补验证)。Graph 专属锁交错归 P1b，各 Owner 的外部效果核清沿对应专项。 |
-| P1b | Graph清理与输入冻结，测试及按证据修复 | [G2 摘要回滚与 G3 成功先提交](#graph-基础-pg-增补验证)、[G8 输入与登记目标漂移](#graph-g8-输入冻结验证)已有 PG 记录。[G9 在途审核与关闭准入](#graph-审核与-cleanup-竞争-pg-增补验证)已补六项真实 PG。剩余同一审核项多请求竞争，以及 C3/C4/C2j 的其他真实 PG 交错。C4当前代码核execute首尾候选一致，尚未定位原scan后候选漂移的完整反例；先验证上游生命周期围栏及原scan确认是否已足够，再决定修复，不将风险观察写成已复现漏洞 |
+| P1b | Graph清理与输入冻结，测试及按证据修复 | [G2 摘要回滚与 G3 成功先提交](#graph-基础-pg-增补验证)、[G8 输入与登记目标漂移](#graph-g8-输入冻结验证)已有 PG 记录。[G9 在途审核与关闭准入](#graph-审核与-cleanup-竞争-pg-增补验证)已补六项真实 PG。[同一审核项九种动作竞争](#graph-同项审核竞争-pg-增补验证)也已补齐；剩余 C3/C4/C2j 的其他真实 PG 交错。C4当前代码核execute首尾候选一致，尚未定位原scan后候选漂移的完整反例；先验证上游生命周期围栏及原scan确认是否已足够，再决定修复，不将风险观察写成已复现漏洞 |
 | P2 | System／Monitor消费者状态矩阵，T3工程 | C5g/k/l补撤去父读取权、404／503、User／Tenant／execution切换、closed pending替换及矛盾／迟到响应；C5c/h补隐藏计数与完整页面语义。复用共享组件／请求失效能力，补C5e/j相应PG交错，不复制组件 |
 | 并行待授权 | Manager迟到writer真实验收 | runner与CI已就绪，按§8.44单独确认一次Hosted；同一原请求、原身份及原预算，核11项、控制恢复与零残留；不能先记完成 |
 | P3 | Graph／Cleanup完整故障与Meta扫描闭环，runner／集成验收 | 已有profile先按场景核对并补缺：Cleanup规范§13的平台上下文、审计、Monitor父子树；Graph原生写图回包丢失及两引擎故障。受控runner与真实原生效果分开；若需新的Provider入口或身份／权限边界先讨论，不能借此重启高级恢复。新增Hosted均单独确认 |
@@ -207,6 +207,14 @@ Common 父子准入与 System 协调的用例定位见 [Owner 矩阵](../spec/te
 - 各场景均保留原构建终态及摘要、其他待审项和 Engine 清理应保留的审核历史；随机 Tenant 事实与专用触发器／函数在退出清理。PG 为真实事务与锁交错，原生图写入由持久操作协议夹具代表，不计为 Neo4j／FalkorDB 原生效果或 Hosted 证明。
 
 本地 `make test-module MODULE=graph GO_ONLY=1`、`make test-common-postgres COMMON_POSTGRES_TEST_ARGS="--test graph"` 已通过；Graph PG 仍为 10 个主用例，新增六个子场景均准确 PASS、零 SKIP，退出事实清理检查通过。首轮关闭屏障错误来自测试回调复用 GORM 更新语句的参数，改用同一事务的新查询 Session 后通过；尚未复现需要修改生产逻辑的新缺陷。T2 登记 85＋9 项及注册检查通过。固定源码 `1ff28df73c8985b104a2b2888f34153bdf9323c3` 的 [Linux Go workspace](https://github.com/pampa0629/addp/actions/runs/43162604533/job/130997042017) 与 [Common PostgreSQL 15](https://github.com/pampa0629/addp/actions/runs/43162604574/job/131000500767) 均已终态 success；原始 Go 日志确认 Graph server／API／repository／service 包实际通过，PG 日志确认 Graph 10 个主用例与新增六个子场景准确 PASS、零 SKIP。Graph 高级恢复继续暂缓，未运行 Hosted 或环境切换。
+
+### Graph 同项审核竞争 PG 增补验证
+
+2026-11-12 在既有必需入口 `TestIntegrationPostgresGraphCleanupRuntime` 增加 `review_command_competition`，覆盖批准／拒绝／修改的全部九种有序组合（含相同动作）。赢家通过生产仓储的命令领取、操作登记和回执事务；失败方调用真实 Service 的三种审核入口。以赢家未提交的事务和 `pg_blocking_pids` 固定交错，确保失败方读取旧 pending 后确实等待，再核验赢家提交后重新裁决并返回冲突，不用 sleep 推测顺序。
+
+核验唯一 command／actor 所有权，失败方不得改变审核行任何字段或时间戳、不得进入外部图访问入口；批准／修改赢家各保留一条准确已知操作，拒绝赢家为零操作。错误 command／actor 的回执、完成后的重复 Service 请求和过期命令新增操作均拒绝；原始内容、赢家修改内容、审核人及原构建终态／摘要、其他待审项保持准确。复用上一批真实 PG 夹具的公共部分，未增加产品抽象、权限、接口或生产分支。
+
+本地 `make test-module MODULE=graph GO_ONLY=1` 与 `make test-common-postgres COMMON_POSTGRES_TEST_ARGS="--test graph"` 通过；10 个 Graph 主用例、原六个交错及新增九个竞争子场景准确 PASS，零 SKIP，夹具事实退出清理通过。标准入口、目录选择和 CI 登记输入未变，沿用已覆盖 Graph 源码路径及既有必需主测试。尚未复现需要修改生产逻辑的新缺陷；固定源码 Linux 结果在取得终态后补记。原生图效果由持久操作协议夹具代表，不能替代原生故障或 Hosted 验收；高级恢复继续暂缓。
 
 ## 七、确认范围与协作分工
 
