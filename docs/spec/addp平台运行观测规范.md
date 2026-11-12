@@ -212,7 +212,7 @@ Business PostgreSQL 的运行认证文件由部署 owner 在仓库外维护，�
 
 SQL Exporter 只监听其网络命名空间的回环 HTTP `127.0.0.1:9399`，同命名空间 Nginx 在 `9443` 提供独立 mTLS。TLS 进程仅挂载自己的服务端证书／CA，不挂载含数据库密码的来源配置；两进程均使用显式非特权 UID/GID、只读文件系统、移除全部 capabilities 及资源限制。外部只允许无 query 的 GET `/metrics`，配置、重载、exporter 自身诊断、其他路径及方法均拒绝；凭据不因持有采集证书而可读取。保持 `ssl_verify_client on`；Nginx 的客户端证书缺失／校验失败（内部 496／495）统一返回 403，不转发上游。来源准入仍只认可明确的 TLS 证书拒绝或 HTTP 401／403，不把通用 400 当作保护证据。没有默认宿主机端口；标准 Infra／Business 入口仅按各自显式开关部署，不自动修改个人环境选择。
 
-当前固定输出 `addp_postgresql_` 前缀的 16 项指标，对应 4.6 的有类型汇总；时间输出 Unix 秒，容量为字节，连接为数量，累计量后缀 `_total`。累计量带固定计算的 `counter_epoch`，同时覆盖统计代际与服务启动时间；代际信息独立表达，不以数据库名、SQL 或租户作为标签。统计关闭时不输出三项累计值，不填有效零。
+当前固定输出 `addp_postgresql_` 前缀的指标，对应 4.6 的有类型汇总；指标目录与来源配置的唯一生成实现为 `scripts/infra/postgres-observation/source.py`。时间输出 Unix 秒，容量为字节，连接为数量，累计量后缀 `_total`。累计量带固定计算的 `counter_epoch`，同时覆盖统计代际与服务启动时间；代际信息独立表达，不以数据库名、SQL 或租户作为标签。统计关闭时不输出三项累计值，不填有效零。
 
 所选版本在 SQL 失败时可能仍返回 HTTP 200 和累计 `scrape_errors_total`，此时不得输出旧数据库样本。HTTP `up` 只证明传输可达，累计错误计数也不是当前失败状态；专业读取必须验证固定样本及新鲜采样时间。T2 覆盖权限撤销后的两次真实失败、错误计数递增与无旧样本、恢复新样本、统计关闭／恢复，以及错误客户端证书、明文 HTTP、路径和方法拒绝。精确入口为 `make test-monitor-metrics MONITOR_METRICS_TEST_ARGS=--case=postgres-source`，默认完整门禁同样包含；业务／Infra 全退出核验由同一门禁负责。
 
@@ -473,7 +473,7 @@ PostgreSQL 专业查询同时核验 `monitor.resource_observation.read` 与 Syst
 | `/platform/process_resource_summaries` | 当前授权实例批量 CPU/RSS/时长，固定目录；普通实例 DTO 仅公开采集声明布尔值 |
 | `/platform/process_resource_trends` | 仅 instance_id/start/end，固定 CPU/RSS 两条序列；不读取已退出实例历史 |
 | `/platform/container_resource_observations` | `instance_ids` 恰好一个当前实例；固定资源组 CPU 核消耗、memory.current 及两项硬上界利用率，不改变批量摘要目录；无有效证明时只读当前声明内核边界的绝对用量 |
-| `/platform/engine_resource_observations` | 单部署即时观测，固定十二项专业目录，最多十二指标 |
+| `/platform/engine_resource_observations` | 单部署即时观测，固定专业目录，每次最多十二指标 |
 | `/platform/engine_resource_summaries` | 当前授权页部署的四项摘要，沿同一查询预算 |
 | `/platform/engine_resource_trends` | 单部署固定专业目录，仅读当前数据库容器运行段 |
 | `/platform/resource_overview` | 不接受 query/body，完整授权主机范围及 CPU/内存 TOP5 |
