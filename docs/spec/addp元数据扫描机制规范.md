@@ -115,7 +115,7 @@ PG basic 指定执行的取消入口为 `POST /api/v1/meta/executions/{execution
 - Meta 须将任务创建、更新、删除、手动触发，以及 Console 的 engine 绑定策略维护／删除全部接入上述 System 人员核验入口，不能只保护 Meta 页面；修改目标同时核对原任务和新目标。指定执行取消使用上述独立接口，不由机器凭据或浏览器自报主体代替当前 User。
 - `ScanTask` 只保存 `engine_id`，没有权威引擎类型。迁移不能依据任务名称或旧批准是否存在识别 PG，也不能读取 System 私有引擎表；必须经统一 client 核对租户和引擎事实后，由 Meta Owner 关闭目标旧调度并停止其旧执行。引擎事实查询失败不视为非 PG 或迁移完成。迁移完成之前，不允许这些旧任务进入新的免批准读取路径。
 - 存在额外的编排入口 `POST /task-provider/tasks/scan/{id}/execute`：它使用 Orchestrator 服务身份和父执行来源，旧版依赖逐任务批准。**本期 PG 集中扫描明确拒绝编排触发**；只支持 Meta 人员手动触发和 Meta 自身定时触发，编排身份不能继承租户定时资格。后续另行设计编排主体的引擎管理范围。
-- 标准验证复用 Common／Meta／System 模块门禁、授权及 Swagger 门禁、Meta 与 System IAM PostgreSQL 门禁、PG Online runner，以及 System／Meta 前端门禁。新规则的功能与范围拒绝、配置变化、租户定时、取消及失败清理按[PG basic 集中扫描场景](testing/scenarios/授权与共享.md#pg-basic-集中扫描本轮真实验收待运行)验收；迁移专项沿上述 System 迁移说明。不另建审批测试路线，旧版本通过不计为新规则通过。
+- 标准验证复用 Common／Meta／System 模块门禁、授权及 Swagger 门禁、Meta 与 System IAM PostgreSQL 门禁、PG Online runner，以及 System／Meta 前端门禁。新规则的功能与范围拒绝、配置变化、租户定时、取消及失败清理按[PG basic 集中扫描场景](testing/scenarios/授权与共享.md#pg-basic-集中扫描)验收；迁移专项沿上述 System 迁移说明。不另建审批测试路线，旧版本通过不计为新规则通过。
 
 ### 冻结扫描计划事实契约
 
@@ -180,7 +180,7 @@ System 通过唯一的 `MetaClient.ReadScanPlanFacts` 读取 `GET /api/v1/meta/r
 
 #### 计划事实验证与验收边界
 
-事实投影及 PostgreSQL 专项的标准入口、隔离要求与覆盖范围统一见[Meta 专项验证入口](../../meta/CLAUDE.md#专项验证入口)；真实身份、源枚举、取消及失败清理沿[PG basic 集中扫描场景](testing/scenarios/授权与共享.md#pg-basic-集中扫描本轮真实验收待运行)。首次产出事实的来源与补扫职责见[生产来源规范](tasks/生产来源与产物扫描.md#首次-pg-成功产出补扫)。接口、字段投影或确定性门禁通过不代表授权签发、Worker 实际读取、目标部署迁移或跨服务 T4 已通过；当前完成范围见[实施范围与验证](addp授权上下文规范.md#九实施范围与验证)，旧批准的固定版本、失败、清理与未覆盖项保留在[历史采集资格导读](testing/evidence/数据保护与执行血缘历史证据.md#meta-采集资格验收导读)，不用于追认新规则通过。
+事实投影及 PostgreSQL 专项的标准入口、隔离要求与覆盖范围统一见[Meta 专项验证入口](../../meta/CLAUDE.md#专项验证入口)；真实身份、源枚举、取消及失败清理沿[PG basic 集中扫描场景](testing/scenarios/授权与共享.md#pg-basic-集中扫描)。首次产出事实的来源与补扫职责见[生产来源规范](tasks/生产来源与产物扫描.md#首次-pg-成功产出补扫)。接口、字段投影或确定性门禁通过不代表授权签发、Worker 实际读取、目标部署迁移或跨服务 T4 已通过；当前完成范围见[实施范围与验证](addp授权上下文规范.md#九实施范围与验证)，旧批准的固定版本、失败、清理与未覆盖项保留在[历史采集资格导读](testing/evidence/数据保护与执行血缘历史证据.md#meta-采集资格验收导读)，不用于追认新规则通过。
 
 ### 对象目录归属不变量
 

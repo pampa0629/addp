@@ -334,7 +334,7 @@ Backend／Worker 服务正文使用[模块实例运行日志](../scripts/infra/d
 
 现行权限、租户定时、枚举取消与存量迁移统一见[集中采集规范](../docs/spec/addp元数据扫描机制规范.md#集中采集权限与两种范围语义)，不在模块入口重复维护规则清单。Meta schema revision 4 关闭存量 PG 调度并经 Owner 取消旧执行，不自动运行任务；这不替代实际部署迁移与跨服务验收。
 
-确定性入口与 authorization-facts PostgreSQL 专项见[专项验证入口](#专项验证入口)，新规则真实运行要求见[PG basic 集中扫描场景](../docs/spec/testing/scenarios/授权与共享.md#pg-basic-集中扫描本轮真实验收待运行)，Hosted T4 尚未验证。旧 API／Worker、审批页、自然到期、定时及在途门禁的固定源码、失败、清理和未覆盖项统一见[历史采集资格验收导读](../docs/spec/testing/evidence/数据保护与执行血缘历史证据.md#meta-采集资格验收导读)；旧版通过不计为新规则通过，后续成功也不改记早轮失败。
+确定性入口与 authorization-facts PostgreSQL 专项见[专项验证入口](#专项验证入口)，新规则真实运行要求见[PG basic 集中扫描场景](../docs/spec/testing/scenarios/授权与共享.md#pg-basic-集中扫描)。固定 `152392de2` 的 PG basic 功能 Hosted T4 已验证手动／定时、在途取消及失败清理，完整负载及后续源码范围分别见[归档复核](../docs/spec/testing/evidence/数据保护与执行血缘历史证据.md#pg-后续功能闭环与完整负载缺口2026-11-12-归档复核)。旧 API／Worker、审批页、自然到期、定时及在途门禁的固定源码、失败、清理和未覆盖项统一见[历史采集资格验收导读](../docs/spec/testing/evidence/数据保护与执行血缘历史证据.md#meta-采集资格验收导读)；旧版通过不计为新规则通过，后续成功也不改记早轮失败。
 
 ### 专项验证入口
 

@@ -383,7 +383,7 @@ System 启动顺序固定为：
 
 旧审批退出及 Meta 启动迁移的持久约束统一见[Meta 逐任务采集批准退役](#meta-逐任务采集批准退役)，不在管理端章节重复维护迁移规则。
 
-标准定向验证为 `make test-system-iam-postgres SYSTEM_IAM_POSTGRES_TEST_ARGS="--package engineaccess --test meta-collection"` 与 `--package migration --test meta-collection`；默认门禁同样发现。新规则 Hosted T4 尚未验证，旧审批验收不可替代。
+标准定向验证为 `make test-system-iam-postgres SYSTEM_IAM_POSTGRES_TEST_ARGS="--package engineaccess --test meta-collection"` 与 `--package migration --test meta-collection`；默认门禁同样发现。固定 `152392de2` 的 PG basic 功能 Hosted T4 已验证手动重复、配置更新、自身定时、连接探测、在途取消及失败清理，见[后续功能证据](../../docs/spec/testing/evidence/数据保护与执行血缘历史证据.md#pg-后续功能闭环与完整负载缺口2026-11-12-归档复核)。它仍拒绝 deep；不外推创建人失权后的调度生命周期、其他引擎或当前源码完整 T4，旧审批验收不可替代。
 
 System IAM 管理端只按稳定业务大类提供五个左侧页面，不能把每个管理对象平铺为一个左侧入口，也不能继续把全部对象放入单个工作台：
 
