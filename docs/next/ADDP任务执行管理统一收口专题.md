@@ -240,7 +240,7 @@ Common 父子准入与 System 协调的用例定位见 [Owner 矩阵](../spec/te
 
 关闭先提交时旧版本请求由 version CAS 拒绝，再用当前正确版本核验仍被关闭准入拒绝。删除先提交时 Cleanup 重新读取零／剩余准确图及其定义，仅归档剩余范围；图删除的 `AFTER DELETE` PG 错误使原图和所有子记录完整回滚。删除已提交而 Cleanup 回执写入失败时，只回滚该轮剩余图归档及公共／专业回执，保留持久关闭、不恢复已删除配置。原 execution、冻结输入及通过生产命令／回执事务生成的已知操作记录逐字段不变；该操作是 PG 持久协议夹具，不是原生图写入证明。未复现需要修改生产逻辑的新缺陷，未改变删除语义、权限或作用范围。
 
-本地 `make test-module MODULE=graph GO_ONLY=1` 与 `make test-common-postgres COMMON_POSTGRES_TEST_ARGS="--test graph"` 通过：Graph 10 个主用例、原6／9／4／8项及新增八项准确 PASS，零 SKIP／FAIL，自有 Tenant 事实及专用触发器／函数退出清理通过。`graph/backend/` 及既有必需主测试继续命中标准 Common PG 门禁；登记／编排输入相对上批未变，未重复运行登记测试，无需新增 Make／workflow。固定源码 Linux 结果待终态后补记。Graph 高级恢复继续暂缓，未重启服务、触发 Hosted 或操作业务图／MinIO。
+本地 `make test-module MODULE=graph GO_ONLY=1` 与 `make test-common-postgres COMMON_POSTGRES_TEST_ARGS="--test graph"` 通过：Graph 10 个主用例、原6／9／4／8项及新增八项准确 PASS，零 SKIP／FAIL，自有 Tenant 事实及专用触发器／函数退出清理通过。`graph/backend/` 及既有必需主测试继续命中标准 Common PG 门禁；登记／编排输入相对上批未变，未重复运行登记测试，无需新增 Make／workflow。固定源码 `54e93321ad424604c0132cf97da1bedc6c342cd0` 的 [Linux Go workspace](https://github.com/pampa0629/addp/actions/runs/43201655069/job/131126328636) 与 [Common PostgreSQL 15](https://github.com/pampa0629/addp/actions/runs/43201654477/job/131126972608) 均已终态 success；原始 Go 日志确认 Graph server／API／repository／service 包通过，PG 日志确认 Graph 10 个主用例、原6／9／4／8项及新增八项准确 PASS、零 SKIP／FAIL。Graph 高级恢复继续暂缓，未重启服务、触发 Hosted 或操作业务图／MinIO。
 
 ## 七、确认范围与协作分工
 
