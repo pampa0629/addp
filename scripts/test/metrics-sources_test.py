@@ -172,7 +172,6 @@ class MetricsSourcesTest(unittest.TestCase):
             'deployment-check':'核对引擎部署', 'account-plan':'准备采集账号配置',
             'account-update':'核对及更新采集账号', 'source-check':'核验既有采集来源',
             'source-stop':'移除采集来源', 'source-build':'构建采集来源镜像',
-            'source-bootstrap-image':'核对初始化依赖镜像',
         }
         for kind in ('postgresql','redis','minio'):
             for stage,label in cases.items():
@@ -442,7 +441,7 @@ addp_startup_metrics_summary
                 self.assertIn(f'来源运行／镜像检查：共 1 项，异常 {expected} 项', output)
                 mocks['apply'].assert_not_called()
 
-    def test_running_source_with_missing_source_or_bootstrap_image_is_abnormal(self):
+    def test_status_checks_only_source_image_and_rejects_old_private_tools_installation(self):
         for kind in ('redis','minio'):
             deployment = Mock(); docker = deployment.Docker.return_value
             group=manager.load(ROOT/'scripts/utils/metrics-project.py'); deployment.inventory.metrics_project=group
@@ -452,22 +451,27 @@ addp_startup_metrics_summary
             objects={source:{'running':True,'labels':{
                 'com.docker.compose.project':group.PROJECT,'com.docker.compose.service':'infra-'+kind+'-metrics',
                 namespace+'.owner':str(ROOT),namespace+'.scope':'infra',namespace+'.database-id':database,
-                namespace+'.database-started-at':'start'}},database:{'running':True,'started_at':'start','labels':{
+                namespace+'.database-started-at':'start',namespace+'.private-volume-tools':'source'}},database:{'running':True,'started_at':'start','labels':{
                 'com.docker.compose.project':'addp-infra','com.docker.compose.service':kind,
                 'com.docker.compose.project.working_dir':str(ROOT/'scripts/infra')}}}
             docker.fact.side_effect=lambda identity:copy.deepcopy(objects[identity])
-            for missing, role in ((source,'原采集镜像'),(database,'初始化依赖镜像')):
+            for missing in (source,database,None):
                 def read(args, **kwargs):
                     if args[0]=='ps': return source
                     if args[0]=='inspect': return 'sha256:'+args[-1]
                     self.assertEqual(args[:2],['image','inspect'])
-                    failed=args[-1]=='sha256:'+missing
+                    failed=missing is not None and args[-1]=='sha256:'+missing
                     return subprocess.CompletedProcess(args,int(failed),'' if failed else args[-1],'private-error' if failed else '')
                 docker.run.side_effect=read
-                with self.subTest(kind=kind,role=role), patch.object(manager,'load',return_value=deployment):
+                with self.subTest(kind=kind,missing=missing), patch.object(manager,'load',return_value=deployment):
                     state,ok=manager.status(kind,'infra',{})
-                    self.assertFalse(ok);self.assertIn('运行中；'+role+'不可用',state)
+                    self.assertEqual(ok,missing!=source)
+                    self.assertIn('原采集镜像不可用' if missing==source else '运行中；镜像可用',state)
                     self.assertNotIn('private-error',state)
+            objects[source]['labels'].pop(namespace+'.private-volume-tools')
+            with patch.object(manager,'load',return_value=deployment):
+                state,ok=manager.status(kind,'infra',{})
+                self.assertFalse(ok);self.assertIn('显式执行 up',state)
 
 
 if __name__ == '__main__': unittest.main()

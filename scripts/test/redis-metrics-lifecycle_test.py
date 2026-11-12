@@ -6,7 +6,6 @@ import importlib.util
 import json
 import os
 from pathlib import Path
-import subprocess
 import tempfile
 import unittest
 from unittest import mock
@@ -30,8 +29,8 @@ class RedisLifecycleTest(unittest.TestCase):
         self.state=Path(self.tmp.name).resolve()/'state'
         self.events=[];self.account=None;self.record=''
         self.docker=mock.Mock(info={'id':'fixture-engine'})
-        self.docker.run.side_effect=lambda args,**kwargs:subprocess.CompletedProcess(args,0,self.db.image,'') if args[:2]==['image','inspect'] else '' if args[0] in ('ps','volume') else self.fail('Unexpected transport command')
-        self.db=mock.Mock(identity='a'*64,volume='owned-volume',image='sha256:'+'c'*64)
+        self.docker.run.side_effect=lambda args,**kwargs:'' if args[0] in ('ps','volume') else self.fail('Unexpected transport command')
+        self.db=mock.Mock(identity='a'*64,volume='owned-volume')
         self.db.facts={'labels':{'com.docker.compose.project':'fixture','com.docker.compose.service':'redis'},'started_at':'2026-11-01T00:00:00Z'}
         self.db.locked.side_effect=lambda:nullcontext()
         self.db.account.side_effect=lambda:copy.deepcopy(self.account)

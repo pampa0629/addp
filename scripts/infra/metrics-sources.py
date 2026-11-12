@@ -21,7 +21,7 @@ PROVIDERS = {
 SCOPES = ('host', 'infra', 'business')
 OS_KEYS = ('PATH', 'HOME', 'LANG', 'LC_ALL', 'TMPDIR', 'DOCKER_CONFIG', 'DOCKER_CONTEXT', 'DOCKER_HOST')
 FAILURE_REASONS = {
-    'source-layout-changed': '采集来源部署分组已变更；请显式执行 up 应用当前来源',
+    'source-layout-changed': '采集来源安装声明已变更；请显式执行 up 应用当前来源',
     'source-image-unavailable': '原采集镜像不可用；请通过标准指标启动入口重新构建并应用来源',
     'node-proof-missing': '主机安装证明缺失；请核对后显式执行 up 重新应用',
     'node-proof-disabled': '主机安装已停用；如需重新启用，请显式执行 up',
@@ -50,7 +50,6 @@ FAILURE_STAGES = {
     'source-check': '核验既有采集来源阶段失败；请核对安装记录、账号、证书及来源归属',
     'source-stop': '移除采集来源阶段失败；请核对来源容器及专属卷的归属和实际状态',
     'source-build': '构建采集来源镜像阶段失败；请核对构建输入、Docker 状态及构建依赖的可达性',
-    'source-bootstrap-image': '核对初始化依赖镜像阶段失败。采集私有卷初始化需要引擎容器原镜像，请核对对应作用域的引擎容器与本地镜像后重新应用来源',
 }
 TLS_FAILURES = {
     'chain': '证书链或必要扩展不符合严格要求；请核对签发 CA 和证书扩展',
@@ -139,19 +138,18 @@ def status(kind, scope, env):
     if not ids:
         return '未部署', False
     facts = [docker.fact(identity) for identity in ids]
-    bootstrap_ids = set()
     for fact in facts:
         labels = fact['labels'] or {}
         if (labels.get(namespace+'.owner') != str(ROOT) or labels.get('com.docker.compose.project') != project
                 or kind != 'node' and labels.get(namespace+'.scope') != scope):
             return '归属不符', False
         if kind != 'node':
+            if kind in ('redis','minio') and labels.get(namespace+'.private-volume-tools') != 'source':
+                return '采集来源安装声明已变化；请显式执行 up 重新应用', False
             identity = labels.get(namespace+'.database-id', '')
             if not re.fullmatch('[0-9a-f]{64}', identity):
                 return '来源身份无效', False
             database = docker.fact(identity)
-            if kind in ('redis', 'minio'):
-                bootstrap_ids.add(identity)
             db_labels = database['labels'] or {}
             source_project, working = deployment.inventory.SCOPES[scope]
             if (not database['running'] or database['started_at'] != labels.get(namespace+'.database-started-at')
@@ -164,14 +162,13 @@ def status(kind, scope, env):
         return '组件不完整', False
     running = all(fact['running'] for fact in facts)
     state = '运行中' if running else '已停止'
-    for identity in [*ids, *sorted(bootstrap_ids)]:
+    for identity in ids:
         image = docker.run(['inspect', '--format', '{{.Image}}', identity]).strip()
         if not re.fullmatch(r'sha256:[0-9a-f]{64}', image):
             return state+'；镜像身份无效', False
         result = docker.run(['image', 'inspect', '--format', '{{.Id}}', image], check=False)
         if result.returncode or result.stdout.strip() != image:
-            role = '初始化依赖镜像' if identity in bootstrap_ids else '原采集镜像'
-            return state+'；'+role+'不可用，恢复依赖检查未通过', False
+            return state+'；原采集镜像不可用，恢复依赖检查未通过', False
     return state+'；镜像可用', running
 
 

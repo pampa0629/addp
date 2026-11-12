@@ -285,7 +285,17 @@ def main():
     M.AccountLifecycle('infra', state_root/'infra', lambda: database('infra')).run(False)
     assert database('business').probe(M.jwt(business['access_key'], business['secret_key'])) == 200
     M.AccountLifecycle('infra', state_root/'infra', lambda: database('infra')).run(True)
-    epochs = source_contracts(managers, environments, contexts, roots)
+    # Simulate missing engine-image metadata without deleting a shared local
+    # image. Every source install/read/recovery below still uses real Docker.
+    engine_images={docker.run(['inspect','--format','{{.Image}}',database(scope).identity]).strip()
+                   for scope in ('infra','business')}
+    run=docker.run
+    def without_engine_image(args,**kwargs):
+        assert not any(image in args for image in engine_images), 'source depends on engine image'
+        return run(args,**kwargs)
+    with mock.patch.object(docker,'run',side_effect=without_engine_image):
+        epochs = source_contracts(managers, environments, contexts, roots)
+    print('MinIO: real source installation and recovery do not use engine images PASS')
     compose = ['docker', 'compose', '--project-name', project, '--project-directory', str(working), '-f', str(working/'docker-compose.minio-observation-t2.yml')]
     # Replace only these two disposable containers; preserve their owned data volumes.
     subprocess.run([*compose, 'up', '-d', '--force-recreate', '--wait', '--wait-timeout', '90'], check=True, stdout=subprocess.DEVNULL)

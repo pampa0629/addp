@@ -351,6 +351,18 @@ class RecoveryTest(unittest.TestCase):
                     self.assertEqual(failure.exception.source_recovery_reason,'source-layout-changed')
                     source.stop.assert_not_called();source.start.assert_not_called();source.build.assert_not_called()
 
+    def test_engine_image_installation_requires_explicit_up_before_any_helper(self):
+        for kind in ('redis','minio'):
+            with self.subTest(kind=kind),self.fixture(kind) as (source,db,config,fact,commands,check,recover):
+                path=source.state/'compose.json'
+                document=json.loads(path.read_text())
+                document['services'][source.service]['labels'].pop(source.namespace+'.private-volume-tools',None)
+                M.write(path,json.dumps(document))
+                with self.assertRaises(ValueError) as failure:recover()
+                self.assertEqual(failure.exception.source_recovery_reason,'source-layout-changed')
+                self.assertFalse(commands)
+                source.stop.assert_not_called();source.start.assert_not_called()
+
     @contextmanager
     def fixture(self, kind='redis'):
         with tempfile.TemporaryDirectory() as temporary:
@@ -400,7 +412,7 @@ class RecoveryTest(unittest.TestCase):
             with self.subTest(kind=kind),self.fixture(kind) as (source,db,config,fact,commands,check,recover):
                 self.assertEqual(recover(),'healthy; source unchanged')
                 source.stop.assert_not_called();source.start.assert_not_called();source.build.assert_not_called()
-                self.assertEqual(source.installed_files.call_args.kwargs['image'],fact['_runtime']['image'])
+                self.assertEqual(source.installed_files.call_args.args,(fact['_runtime']['image'],))
                 fact['running'] = False
                 source.installed_files.return_value['config.json'] = json.dumps(config).encode()
                 self.assertIn('source recovered',recover())
@@ -476,10 +488,27 @@ class RecoveryTest(unittest.TestCase):
                 self.assertEqual(source.stop.call_count,2)
                 self.assertEqual(bool(getattr(result.exception,'source_recovery_cleanup_failed',False)),issue=='cleanup')
 
+    def test_private_volume_initialization_uses_source_image_for_every_kind(self):
+        for kind in ('redis','minio','redpanda','kafka-connect'):
+            with self.subTest(kind=kind),tempfile.TemporaryDirectory() as temporary:
+                docker=Mock();source=M.Source(docker,'infra',Path(temporary),ROOT,kind,'owned-source')
+                db=Mock(identity='a'*64,image='sha256:'+'b'*64,network='private')
+                db.facts={'started_at':'2026-11-03T00:00:00Z'}
+                image='sha256:'+'c'*64
+                volume={'Name':source.config_volume,'Driver':'local','Labels':{source.owner:str(ROOT),source.scope_label:'infra'}}
+                def command(args,**kwargs):
+                    self.assertNotIn(db.image,args)
+                    if args[:2]==['volume','inspect']:return json.dumps([volume])
+                    return 'd'*64 if args[0]=='ps' else ''
+                docker.run.side_effect=command;docker.fact.return_value={'running':True}
+                source.start(db,image,{},'127.0.0.1',9443,{},Mock())
+                init=next(call.args[0] for call in docker.run.call_args_list if call.args[0][0]=='run')
+                for value in (image,'--user','0:0','none','--read-only','ALL','CHOWN','no-new-privileges:true'):self.assertIn(value,init)
+
     def test_volume_reader_is_bounded_readonly_and_cleans_its_exact_helper(self):
         with tempfile.TemporaryDirectory() as temporary:
             docker = Mock(); source = M.Source(docker,'infra',Path(temporary),ROOT,'minio','owned-source')
-            db = Mock(image='sha256:'+'b'*64)
+            image = 'sha256:'+'c'*64
             volume = {'Name':source.config_volume,'Driver':'local','Labels':{source.owner:str(ROOT),source.scope_label:'infra'}}
             stream = io.BytesIO()
             with tarfile.open(fileobj=stream,mode='w') as archive:
@@ -500,9 +529,9 @@ class RecoveryTest(unittest.TestCase):
                 raise AssertionError('unexpected operation')
             docker.run.side_effect = command; docker.fact.return_value = helper
             with patch.object(M.secrets,'token_hex',return_value=token):
-                self.assertEqual(set(source.installed_files(db)),{'ca.crt','server.crt','server.key','config.json'})
+                self.assertEqual(set(source.installed_files(image)),{'ca.crt','server.crt','server.key','config.json'})
             run = next(args for args in calls if args[0]=='run')
-            for value in ('none','--read-only','65532:65532','ALL','no-new-privileges:true','64m','.25','32',db.image): self.assertIn(value,run)
+            for value in ('none','--read-only','65532:65532','ALL','no-new-privileges:true','64m','.25','32',image): self.assertIn(value,run)
             self.assertIn('type=volume,src='+source.config_volume+',dst=/private,readonly',run)
             self.assertEqual([args for args in calls if args[0]=='rm'],[['rm','-f','reader-id']])
             for bad in ('not-an-archive','timeout','foreign-helper','foreign-volume'):
@@ -514,7 +543,7 @@ class RecoveryTest(unittest.TestCase):
                         if args[0]=='run' and bad=='not-an-archive': return base64.b64encode(b'private-invalid-body').decode()
                         return command(args,**kwargs)
                     docker.run.side_effect = failed
-                    with self.assertRaises((ValueError,subprocess.TimeoutExpired)) as result: source.installed_files(db)
+                    with self.assertRaises((ValueError,subprocess.TimeoutExpired)) as result: source.installed_files(image)
                     self.assertNotIn('private-invalid-body',str(result.exception))
                     if bad=='foreign-helper': self.assertTrue(result.exception.source_recovery_cleanup_failed)
 

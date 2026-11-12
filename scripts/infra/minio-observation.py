@@ -311,8 +311,6 @@ def bind_source(database, scope, *, network_key=None):
     if len(candidates) != 1:
         raise Error('MinIO source network is not uniquely available')
     database.network, database.address = candidates[0]
-    database.image = database.docker.run(['inspect', '--format', '{{.Image}}', database.identity]).strip()
-    sources.verify_bootstrap_image(database.docker, database.image, Error)
     database.same()
 
 

@@ -7,7 +7,6 @@ import importlib.util
 import json
 import os
 from pathlib import Path
-from subprocess import CompletedProcess
 import tempfile
 import unittest
 from unittest.mock import Mock, patch
@@ -278,37 +277,31 @@ class MinIOObservationTest(unittest.TestCase):
             'owned_main': {'NetworkID': 'main', 'IPAddress': address, 'GlobalIPv6Address': ''},
             'owned_trace': {'NetworkID': 'trace', 'IPAddress': '10.2.3.4', 'GlobalIPv6Address': ''}}}
         def command(args, **kwargs):
-            if args[:2] == ['image', 'inspect']:
-                return CompletedProcess(args, 0, 'sha256:'+'b'*64, '')
             if args[0] == 'network':
                 main = args[-1] == 'main'
                 return json.dumps([{'Name': 'owned_main' if main else 'owned_trace', 'Driver': driver,
                                     'Labels': {'com.docker.compose.project': project,
                                                'com.docker.compose.network': 'addp-network' if main or duplicate else 'trace-backend'}}])
-            return 'sha256:'+'b'*64
+            self.fail('Unexpected deployment command')
         db.docker.run.side_effect = command
         return db
 
     def test_source_uses_only_the_exact_standard_network_on_a_multi_network_database(self):
         db = self.network_database()
         M.bind_source(db, 'infra')
-        self.assertEqual((db.network, db.address, db.image), ('owned_main', '10.1.2.3:9000', 'sha256:'+'b'*64))
+        self.assertEqual((db.network, db.address), ('owned_main', '10.1.2.3:9000'))
         db.same.assert_called_once()
-        db.docker.run.assert_called_with(['image', 'inspect', '--format', '{{.Id}}', db.image], check=False)
 
-    def test_missing_minio_image_is_reported_before_initializing_the_private_volume(self):
+    def test_network_binding_does_not_depend_on_engine_image_availability(self):
         db = self.network_database()
         read = db.docker.run.side_effect
         def image_missing(args, **kwargs):
-            if args[:2] == ['image', 'inspect']:
-                return CompletedProcess(args, 1, '', 'private Docker diagnostic')
+            if args[0] in ('image','inspect'):
+                self.fail('Engine image must not be used for source private tools')
             return read(args, **kwargs)
         db.docker.run.side_effect = image_missing
-        with self.assertRaises(M.Error) as caught:
-            M.bind_source(db, 'infra')
-        self.assertEqual(caught.exception.observation_stage, 'source-bootstrap-image')
-        self.assertNotIn('private Docker diagnostic', str(caught.exception))
-        db.same.assert_not_called()
+        M.bind_source(db, 'infra')
+        db.same.assert_called_once()
 
     def test_source_network_drift_ambiguity_or_public_address_is_rejected(self):
         for values in ({'project': 'foreign'}, {'driver': 'host'}, {'address': '8.8.8.8'}, {'duplicate': True}):

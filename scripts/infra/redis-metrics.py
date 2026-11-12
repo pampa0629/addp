@@ -73,7 +73,6 @@ class Database:
         if len(ids) != 1 or not inventory.identifier(ids[0]):
             raise Error('Redis deployment is not uniquely available')
         self.identity = ids[0]
-        self.image = docker.run(['inspect','--format','{{.Image}}',self.identity]).strip()
         self.facts = docker.fact(self.identity)
         labels = self.facts['labels']
         if (not self.facts['running'] or labels.get('com.docker.compose.project') != project or labels.get('com.docker.compose.service') != service
@@ -249,7 +248,6 @@ class Lifecycle:
     def recover(self, env):
         with private.locked(self.state):
             database = self.database()
-            sources.verify_bootstrap_image(self.docker, database.image, Error)
             state = self.load_state(database, False)
             if not state or not state['image'] or state['pending_record']:
                 raise Error('Redis recovery installation is incomplete')
@@ -292,7 +290,6 @@ class Lifecycle:
             # Prepare before changing the installed source or native account.
             ip, port, material = transport(env)
             database = self.database()
-            sources.verify_bootstrap_image(self.docker, database.image, Error)
             image = self.image()
             with database.locked():
                 state = self.load_state(database, True)

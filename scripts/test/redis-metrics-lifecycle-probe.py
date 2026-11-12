@@ -197,7 +197,15 @@ def main():
     docker=module.deployment.Docker(os.environ)
     with tempfile.TemporaryDirectory(prefix='addp-redis-lifecycle-t2-') as temporary:
         root=Path(temporary).resolve();tls=certificates(root)
-        for scope in ('infra','business'):probe(scope,docker,root,tls)
+        ids=docker.run(['ps','-q','--filter','label=com.docker.compose.project='+PROJECT]).split()
+        engine_images={docker.run(['inspect','--format','{{.Image}}',identity]).strip() for identity in ids}
+        run=docker.run
+        def without_engine_image(args,**kwargs):
+            assert not any(image in args for image in engine_images), 'source depends on engine image'
+            return run(args,**kwargs)
+        with mock.patch.object(docker,'run',side_effect=without_engine_image):
+            for scope in ('infra','business'):probe(scope,docker,root,tls)
+    print('Redis: real source installation and recovery do not use engine images PASS')
     print('Redis lifecycle T2: zero owned sources and configuration volumes; private temporary files removed')
 
 
