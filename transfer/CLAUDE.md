@@ -322,6 +322,8 @@ CDC 捕获资源名沿全局 `apply_identity`／generation 生成，源端同名
 
 同一隔离场景的任务级槽／WAL／定向 Jolokia 与暂停恢复检查沿[场景定义](../docs/spec/testing/scenarios/同步与引擎消费.md#transfer-continuous-events)。新增源端与 Connect 原生读取只在既有 Hosted 边界内执行，公开回执不包含私有资源名；普通 runner 与新增断言的真实 T4 结果分别认定，不以个人环境任务 60 的联验替代新版 Hosted。 2026-11-12 [首轮 Hosted 回执](../docs/spec/testing/evidence/Monitor执行监控与留存历史证据.md#2026-11-12-任务级-cdc-指标-hosted-首轮)停在 Kafka 强退拒删验证，新增 CDC 指标断言未执行；领域任务清理失败，外层部署销毁及 Infra 零残留通过，三者分别认定。 [第二轮固定版本复验](../docs/spec/testing/evidence/Monitor执行监控与留存历史证据.md#2026-11-12-任务级-cdc-指标-hosted-复验)已通过任务级源端槽／WAL／定向延迟、暂停恢复及停止清空，领域清理与外层零残留通过；整套后续停在独立 bounded 定时任务的写后扫描反馈核对，不能记为整套 T4 通过。
 
+2026-11-13 [第三轮固定版本闭环](../docs/spec/testing/evidence/Monitor执行监控与留存历史证据.md#2026-11-13-basic-与-deep-串接及-cdc-hosted-闭环)在 `d12e8279b` 完成整套 19 项 Hosted 检查：basic 成功后领取独立 deep、原字段与精确扫描／读取隔离要求、任务级槽／WAL／定向延迟及暂停恢复、删除后授权历史和退出零残留均通过。该 suite 的指标证据来自任务 API 与原生对照，四份真实浏览器回执仍只覆盖既有执行页面；不外推初始 Grant 签发或新 CDC 卡片浏览器验收。
+
 持续写入验收在同一 Kafka 任务追加记录并确认目标提交后沿原游标续读，将拼接结果与 Monitor 和 Owner 从头读取的完整事件顺序对照。Console 核对自动续页和手动刷新后的顺序与行数，并在 Worker 失联后于同一页面核对原执行的失败诊断与唯一终态事件。已归档的两轮 Hosted 分别停在整引擎扫描和目录基线读取，均未创建 Kafka 任务，上述断言均未执行。旧版租户日志终审保留当次两页四条事件与撤权后旧游标拒绝的结果。[现行场景](../docs/spec/testing/scenarios/同步与引擎消费.md#transfer-continuous-events) · [持续写入两轮 Hosted 结果](../docs/spec/testing/evidence/Monitor执行监控与留存历史证据.md#持续写入期间续页与刷新首次-hosted2026-11-07) · [固定版本租户日志终审](../docs/spec/testing/evidence/Monitor执行监控与留存历史证据.md#2026-10-23-固定版本租户日志终审)
 
 确定性入口 `make test-transfer-continuous-online-runner` 与 `make test-online-runner`、ES module 语法校验和真实部署的 Chromium 准备均沿既有登记；Transfer T1／T2、前端及共享消费者扩散见[标准门禁](README.md#常规模块与专项门禁)与[测试规范](../docs/spec/addp测试与验收规范.md#三标准入口)。此处事件接入未新增 API、事件字段或基础设施；门禁与 API 通过不代替真实 Hosted 或浏览器验收，下列结果仅适用于各自固定版本。

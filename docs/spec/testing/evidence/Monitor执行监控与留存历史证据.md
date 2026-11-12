@@ -113,6 +113,42 @@ Kafka 强退 task 1 的 DELETE 由 Gateway 在 45.008 秒返回 503、Transfer �
 
 Artifact `13946758225` 独立下载 ZIP 的 SHA-256 与 GitHub 声明一致：`cdb7f24a9b5248c5e33844f48b22c98caf3a6ff79c4f457eba601d8b5a5aed41`。下载的 JSON／JSONL／日志／文本未检出所检查 JWT 模式或 `business-value-sentinel`。原始报告、四份浏览器回执、日志、ZIP、摘要核验与独立评估保留在 `/tmp/addp-cdc-hosted-43213142409/`。首轮失败及其证据保持原记录，本轮未改个人开发服务、数据卷或原有逻辑槽。
 
+## 2026-11-13 basic 与 deep 串接及 CDC Hosted 闭环
+
+用户确认 basic 快速建立授权所需身份、deep 自动补齐后续使用所需元数据，并批准复用 Meta 队列持久串接两次扫描。固定实现 `d12e8279b3dacb87f9fc196aa3f2ddb79598e0dd` 为原已提交成果登记唯一 basic／deep 执行，Meta 沿 Common ClaimPending 控制依赖，Worker 重核原回执、精确目标、引擎版本与本次 lease；Transfer 自动扫描反馈指向 deep，并保存独立 basic UUID。System 仍只消费 basic 识别，未增加等待 deep 的授权前提，未把原 deep 字段断言降为 basic。
+
+实现提交前，`make test-module MODULE=common GO_ONLY=1`、Meta／Transfer 各自同入口的 Go T1 通过；`make test-meta-postgres META_POSTGRES_TEST_ARGS='--test production'` 在已核实的本地 `addp_test` 通过既有 production／plan-facts 专项，覆盖父生产执行已结束、并发请求去重、重建 service 后恢复同一关联、basic 运行中不领取 deep、失败／取消／超时的无源读取失败、原回执变化／兄弟目标／旧 lease 拒绝、deep 失败后 basic 事实仍可读取，以及本轮执行／事件清理核对。首次队列回归先复现提前领取 deep 的失败，修复后通过。continuous runner 115 项及 System 身份夹具 Go 检查、Online 登记 158 项通过；Meta／Transfer Swagger 已生成并通过 57／43 个路由方法覆盖检查。这些是确定性与专项 T2 结果，不记为完整模块或全仓 CI 通过。
+
+[Run 43253234380／Job 131304474365](https://github.com/pampa0629/addp/actions/runs/43253234380/job/131304474365) 为第三次独立 Hosted 运行、attempt 1。运行绑定上述 SHA，六个正式服务构建身份完全一致、repository_clean=true；等待 Runner 后，Job 于北京时间 2026-11-13 01:18:00 开始，01:36:51 成功结束。整套 19 项 checks 全部完成，`result=passed`、`uncertain_mutation=false`；前两轮失败仍按各自固定版本保留。
+
+### 定时任务的两阶段扫描
+
+Tenant 2、User 33 的 bounded 定时 task 4，原 execution 为 `9f500b12-96bf-4f4d-91c6-6459ad69e885`。专业反馈给出的 basic `c1fb9768-0aa3-488a-9b0e-c7adedca34b0` 与 deep `0407aaba-2896-4752-b143-8eb9e0ceb6c3` 是不同 UUID，均成功、均保留原人类来源和直接父执行，另一 User 读取两次扫描均为 404。独立复核归档运行日志中的实际持久时间：basic 于 01:36:32.150 领取、01:36:32.222 成功；deep 于 01:36:32.226 领取、01:36:32.271 成功。该时间只描述本轮夹具，不构成性能保证。
+
+原 deep 要求全部保留：目标字段为 `id/label`，目标物理行集由 Business oracle 独立验证为预期两行；目标扫描仅覆盖指定表，兄弟项和两级祖先的扫描状态、时间与深度保持基线。任务已暂停后续调度。本 suite 没有验证 System 初始 Grant 的真实签发／读取／撤销全链路；不能从 basic／deep 成功推导授权已经签发。
+
+### CDC 当前观测与暂停恢复
+
+任务 3／generation 1 的三类当前快照均新鲜，正式任务 API 与原生 PostgreSQL／本 Connector Jolokia 定向读取对应。初始 execution `39e72e37-999c-4384-95f3-685123a81670`，恢复为 `66a31d60-6ef2-47e5-b9c8-43e5940629a0`，generation 不变。
+
+| 阶段 | 北京时间缓冲采样 | committed / latest | 积压位点差 | 捕获延迟 | 保留 WAL 字节距离 |
+| --- | --- | --- | --- | --- | --- |
+| 初始追平 | 01:35:13.756 | 6 / 6 | 0 | null，尚无流式事件样本 | 23000 |
+| 暂停后、写入前 | 01:35:28.668 | 6 / 6 | 0 | null | 23056 |
+| 暂停后写入三条增删改 | 01:35:43.691 | 6 / 9 | 3 | 0.357 s | 23952 |
+| 恢复追平 | 01:35:58.670 | 9 / 9 | 0 | 0.357 s | 27168 |
+| 后续独立新采样 | 01:36:13.671 | 9 / 9 | 0 | 0.357 s | 4168 |
+
+全部源槽活跃、wal_status／risk_state 为 reserved；保留上限未设置，safe_wal_size_bytes 保持 null。WAL 字节保持精确字符串，是地址距离，不代表业务变更量或精确磁盘占用；不要求异步原生字节值相等，也不要求它随消费积压立即归零。暂停期间目标行未变化，恢复后精确增删改及连续两次新采样零积压通过。不同 User 的 additive 审批补扫归属、双向读取隔离、重复审批和显式恢复通过；正式 Stop 清空三类当前快照，自有源槽与 publication 的物理清理通过。
+
+四份实际 Console 浏览器回执 live／recovery／revocation／owner_unavailable 均 passed，范围为既有执行页面的进度／续页／恢复／撤权／Owner 故障行为。任务级 CDC 指标由正式 API 加原生只读对照验证，本轮不外推为新增 CDC 指标卡片的真实浏览器 T4。
+
+### 清理与原件
+
+Kafka 强退拒删收到 503，原 invocation 未确认、任务保留及零外部删除派发均核实；正常退出组的 invocation、正式定义删除、准确 DLQ 缺失及删除后授权历史可读全部通过。领域清理为 passed：scheduled／CDC／正常 Kafka 三个任务正式删除读回 404；强退 task 1 按原用例设计留待部署销毁，`residual_resources=expected_deployment_residuals=1`。外层标准退出完成应用、Business 夹具、Infra 容器／网络／数据卷及私有材料销毁，`cleanup=passed`、`infra_cleanup=zero_residuals`。本轮只操作独占 Hosted 部署，个人开发服务、数据卷及原有两个逻辑槽未被操作。
+
+Artifact `13968601880` 的 ZIP 已独立下载核对，SHA-256 与 GitHub 声明一致：`89e59a8b832d3368956ae95e51568d3b977bb634f0537b724bfff2c505b70765`。39 个 JSON／JSONL／日志／文本中未检出所检查 JWT 模式或 business-value-sentinel；这不是完整敏感信息审计。原始报告、浏览器回执、日志、ZIP、阶段时间及独立断言评估位于 `/tmp/addp-cdc-hosted-43253234380/`。本记录只认定该固定版本的本套件闭环，不覆盖其他生产 owner、引擎或全平台授权验收。
+
 ## 2026-10-24 概览保留只读评估第一期
 
 Common 的 `AssessRetention` 由 System 既有维护循环调用，以数据库时间和只读、可重复读事务评估 180 天时间候选。首期检查完整执行树、租约、关系异常、树外引用及预算，保留 Owner 释放和消费者引用未核验原因。批次计数按当次读取范围解释，不能累加为全库唯一树数。[现行留存契约](../../tasks/执行监控.md#概览保留与清理契约)
