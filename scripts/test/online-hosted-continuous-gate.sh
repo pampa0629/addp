@@ -23,6 +23,9 @@ ADDP_ONLINE_SCAN_POSTGRES_ID=$(docker inspect --format '{{.Id}}' addp-postgres)
 ADDP_ONLINE_DLQ_REDPANDA_ID=$(docker inspect --format '{{.Id}}' addp-redpanda)
 [[ "$ADDP_ONLINE_DLQ_REDPANDA_ID" =~ ^[0-9a-f]{64}$ ]] || fail 'Hosted DLQ requires the exact Infra Kafka container ID'
 export ADDP_ONLINE_SCAN_POSTGRES_ID ADDP_ONLINE_DLQ_REDPANDA_ID
+ADDP_ONLINE_CDC_CONNECT_ID=$(docker inspect --format '{{.Id}}' addp-kafka-connect)
+[[ "$ADDP_ONLINE_CDC_CONNECT_ID" =~ ^[0-9a-f]{64}$ ]] || fail 'CDC metrics require the exact Hosted Connect container ID'
+export ADDP_ONLINE_CDC_CONNECT_ID
 fixture_owned=1
 run_logged bash business/scripts/online-continuous-fixture.sh start
 # Reject invalid private descriptors before spending time on application builds.

@@ -59,6 +59,9 @@ elif args[0]=='exec' and 'psql' in args:
         if os.environ.get('REQUIRE_FINAL_PG') and not (root / 'pg-final-ready').exists():
             raise SystemExit('database system is shutting down')
         if 'CREATE TABLE' in sql: (root / 'sources-created').touch()
+        if 'json_build_object' in sql and 'pg_replication_slots' in sql:
+            (root / 'source-observation.sql').write_text(sql)
+            print(os.environ.get('SOURCE_OBSERVATION','{}'))
 elif args[0]=='exec' and 'produce' in args:
     sys.stdin.read()
 ''')
@@ -76,8 +79,8 @@ elif args[0]=='exec' and 'produce' in args:
     def tearDown(self):
         self.temporary.cleanup()
 
-    def run_fixture(self, action, **env):
-        return subprocess.run(['bash', str(SCRIPT), action], env={**self.environment, **env},
+    def run_fixture(self, action, *arguments, **env):
+        return subprocess.run(['bash', str(SCRIPT), action, *arguments], env={**self.environment, **env},
                               capture_output=True, text=True, timeout=45)
 
     def test_scheduled_rowset_verification_rejects_missing_or_wrong_rows(self):
@@ -173,6 +176,24 @@ elif args[0]=='exec' and 'produce' in args:
         self.assertEqual(result.stdout, '')
         self.assertNotEqual(self.run_fixture('verify-cdc-altered', PHYSICAL_ROWS=rows.replace('sentinel-added', 'sentinel-wrong')).returncode, 0)
         self.assertNotEqual(self.run_fixture('verify-cdc-altered', PHYSICAL_ROWS=rows + '\n4|extra|').returncode, 0)
+
+    def test_source_observer_is_readonly_exact_named_and_refuses_foreign_or_wildcard(self):
+        native = json.dumps({'identity_matches':True, 'slot_active':True, 'wal_status':'reserved',
+                             'retained_wal_bytes':'42', 'unacknowledged_wal_bytes':'2',
+                             'safe_wal_size_bytes':None, 'wal_keep_unlimited':True})
+        result = self.run_fixture('observe-cdc-source','owned_slot','owned_pub',SOURCE_OBSERVATION=native)
+        self.assertEqual(result.returncode,0,result.stderr)
+        self.assertEqual(json.loads(result.stdout),json.loads(native))
+        query = (self.root / 'source-observation.sql').read_text()
+        for text in ['BEGIN READ ONLY', "s.slot_name=:'slot'", "p.pubname=:'publication'", "tablename='continuous_source'", "s.slot_type='logical'", "s.plugin='pgoutput'"]:
+            self.assertIn(text,query)
+        calls = [json.loads(line) for line in self.trace.read_text().splitlines()]
+        self.assertTrue(any('slot=owned_slot' in call and 'publication=owned_pub' in call for call in calls))
+        self.assertNotEqual(self.run_fixture('observe-cdc-source','owned_slot','owned_pub',BAD_OWNER='1').returncode,0)
+        for name in ['*', "slot'; DROP TABLE x", 'a'*64]:
+            before = self.trace.read_text()
+            self.assertNotEqual(self.run_fixture('observe-cdc-source',name,'owned_pub').returncode,0)
+            self.assertEqual(self.trace.read_text(),before)
 
     def test_nonzero_capture_residual_fails(self):
         self.assertEqual(self.run_fixture('verify-clean').returncode, 0)

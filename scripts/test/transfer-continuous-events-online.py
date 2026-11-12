@@ -1,7 +1,7 @@
 """Continuous Worker and safe tenant execution events on disposable Hosted T4."""
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 from importlib import import_module
 import json
 import math
@@ -54,7 +54,8 @@ OWNER_OUTAGE_CHECKS = ['previously_readable', 'event_transport_failure_isolated'
 PHASES = {'preflight', 'source_scan', 'source_catalog', 'kafka_initial', 'kafka_visibility', 'kafka_browser', 'worker_recovery',
           'kafka_record_failure', 'owner_unavailable', 'reader_revocation', 'kafka_hard_delete', 'kafka_graceful',
           'cdc_initial', 'cdc_owner_outage',
-          'cdc_mutation', 'cdc_approval', 'cdc_resume', 'cdc_stop', 'scheduled_create', 'scheduled_admission',
+          'cdc_mutation', 'cdc_monitor_initial', 'cdc_pause', 'cdc_buffer_growth', 'cdc_monitor_resume',
+          'cdc_approval', 'cdc_resume', 'cdc_stop', 'scheduled_create', 'scheduled_admission',
           'scheduled_pause', 'scheduled_completion', 'scheduled_scan', 'scheduled_result', 'cleanup', 'deleted_history'}
 
 
@@ -234,6 +235,225 @@ def until(operation, timeout=120):
     raise SuiteError('continuous execution did not converge before the deadline')
 
 
+def cdc_capture_binding(tenant, task_id, engine_id, generation):
+    require_transfer_fixture(tenant, task_id)
+    postgres_id = os.environ.get('ADDP_ONLINE_SCAN_POSTGRES_ID', '')
+    require(type(generation) is int and generation > 0 and type(engine_id) is int and engine_id > 0
+            and os.environ.get('ADDP_ONLINE_CONTINUOUS_PG_ENGINE_ID') == str(engine_id)
+            and re.fullmatch(r'[0-9a-f]{64}', postgres_id), 'CDC observation fixture identity mismatch')
+    postgres = import_module('scripts.test.execution-retention-readonly-online')
+    query = """BEGIN READ ONLY;
+SET LOCAL statement_timeout='3s'; SET LOCAL lock_timeout='1s';
+SELECT jsonb_build_object('slot', p.slot_name, 'publication', p.publication_name, 'connector', r.connector_name)
+FROM transfer.capture_resources r JOIN transfer.postgresql_capture_resources p ON p.capture_resource_id=r.id
+JOIN transfer.transfer_tasks t ON t.id=r.task_id AND t.tenant_id=r.tenant_id
+WHERE r.tenant_id=:'tenant'::bigint AND r.task_id=:'task'::bigint
+ AND r.generation=:'generation'::bigint AND r.source_engine_id=:'engine'::bigint
+ AND r.source_type='postgresql' AND r.source_database='continuous_fixture'
+ AND r.source_schema='public' AND r.source_table='continuous_source' AND r.status='running'
+ AND t.deleted_at IS NULL AND p.slot_owned AND p.publication_owned;
+COMMIT;
+"""
+    try:
+        binding = json.loads(postgres.sql(query, expected_suite=SUITE, postgres_id=postgres_id,
+            variables={'tenant': tenant, 'task': task_id, 'engine': engine_id, 'generation': generation}))
+    except (OSError, ValueError, RuntimeError, subprocess.SubprocessError):
+        raise SuiteError('CDC observation binding unavailable') from None
+    require(isinstance(binding, dict) and set(binding) == {'slot', 'publication', 'connector'}
+            and all(isinstance(binding[k], str) and re.fullmatch(r'[a-z0-9_]{1,63}', binding[k])
+                    for k in ('slot', 'publication'))
+            and isinstance(binding['connector'], str) and re.fullmatch(r'[a-zA-Z0-9_.-]{1,255}', binding['connector']),
+            'CDC observation binding invalid')
+    return binding
+
+
+def cdc_native_observation(binding):
+    """Exact, read-only physical probes; raw names and responses never enter the report."""
+    container_id = os.environ.get('ADDP_ONLINE_CDC_CONNECT_ID', '')
+    require(re.fullmatch(r'[0-9a-f]{64}', container_id), 'CDC observation Connect identity mismatch')
+    try:
+        inspected = subprocess.run(['docker', 'inspect', container_id], check=True,
+                                   capture_output=True, text=True, timeout=10)
+        container, = json.loads(inspected.stdout)
+        labels = container['Config']['Labels']
+        require(container['Id'] == container_id and container['State']['Running'] is True
+                and labels.get('com.docker.compose.project') == 'addp-infra'
+                and labels.get('com.docker.compose.service') == 'kafka-connect'
+                and labels.get('com.docker.compose.project.working_dir') == str(ROOT),
+                'CDC observation Connect identity mismatch')
+        source = subprocess.run(['bash', 'business/scripts/online-continuous-fixture.sh', 'observe-cdc-source',
+                                 binding['slot'], binding['publication']], cwd=ROOT,
+                                check=True, capture_output=True, text=True, timeout=20)
+        pg = json.loads(source.stdout)
+        bean = 'debezium.postgres:context=streaming,server=' + binding['connector'] + ',type=connector-metrics'
+        request = {'type': 'read', 'mbean': bean, 'attribute': ['Connected', 'MilliSecondsBehindSource']}
+        response = subprocess.run(['docker', 'exec', '-i', container_id, 'curl', '-fsS', '--max-time', '5',
+                                   '-H', 'Content-Type: application/json', '--data-binary', '@-',
+                                   'http://127.0.0.1:8778/jolokia/'], input=json.dumps(request),
+                                  check=True, capture_output=True, text=True, timeout=10)
+        delay = json.loads(response.stdout)
+    except (KeyError, OSError, ValueError, RuntimeError, subprocess.SubprocessError):
+        raise SuiteError('CDC native observation unavailable') from None
+    require(isinstance(pg, dict) and pg.get('identity_matches') is True,
+            'CDC native source identity mismatch')
+    require(isinstance(delay, dict) and delay.get('status') == 200
+            and delay.get('request', {}).get('mbean') == bean
+            and isinstance(delay.get('value'), dict), 'CDC native delay identity mismatch')
+    return pg, delay['value']
+
+
+def cdc_sample_time(value, now):
+    try:
+        sample = datetime.fromisoformat(value['sampled_at'].replace('Z', '+00:00'))
+        expires = datetime.fromisoformat(value['expires_at'].replace('Z', '+00:00'))
+        require(sample.tzinfo is not None and expires.tzinfo is not None and sample < expires,
+                'CDC observation time invalid')
+    except (KeyError, TypeError, ValueError, AttributeError):
+        raise SuiteError('CDC observation time invalid') from None
+    return sample if sample <= now < expires else None
+
+
+def cdc_task_sample(client, task_id, engine_id, generation=None, *, after=None):
+    task = client.request('GET', f'{OWNER}/task-definitions/{task_id}', (200,)).payload
+    require(task.get('id') == task_id and task.get('config', {}).get('source', {}).get('locator') ==
+            f'addp://engine/{engine_id}/path/public/continuous_source?type=table', 'CDC task source identity mismatch')
+    capture = task.get('capture') or {}
+    require(capture.get('source_type') == 'postgresql' and type(capture.get('generation')) is int
+            and capture['generation'] > 0 and (generation is None or capture['generation'] == generation),
+            'CDC task generation mismatch')
+    require(set(capture) <= {'source_type', 'generation', 'status', 'connector_status', 'source_status',
+            'last_observed_at', 'stopped_at', 'source_recovery', 'source_transactions',
+            'postgresql_observation', 'delay_observation', 'buffer_observation'}, 'CDC capture exposed private fields')
+    require(capture.get('status') == 'running', 'CDC capture generation is not running')
+    assert_safe(capture)
+    allowed = {
+        'postgresql_observation': {'status', 'sampled_at', 'expires_at', 'slot_active', 'wal_status',
+            'retained_wal_bytes', 'unacknowledged_wal_bytes', 'safe_wal_size_bytes', 'wal_keep_unlimited', 'risk_state'},
+        'delay_observation': {'status', 'sampled_at', 'expires_at', 'connected', 'delay_seconds'},
+        'buffer_observation': {'status', 'sampled_at', 'expires_at', 'earliest_offset', 'latest_offset',
+            'committed_offset', 'lag_offsets', 'recovery_state'},
+    }
+    now = datetime.now(timezone.utc)
+    for field, keys in allowed.items():
+        value = capture.get(field)
+        if value is None:
+            return None
+        require(isinstance(value, dict) and set(value) == keys, 'CDC observation fields invalid')
+        sample = cdc_sample_time(value, now)
+        if sample is None or value['status'] != 'available' or after is not None and sample <= after:
+            return None
+    pg, delay, buffer = (capture[field] for field in allowed)
+    if buffer['recovery_state'] == 'not_started' and buffer['committed_offset'] is None:
+        return None
+    require(type(pg['slot_active']) is bool and type(pg['wal_keep_unlimited']) is bool
+            and pg['wal_status'] in {'reserved', 'extended', 'unreserved', 'lost'}
+            and pg['risk_state'] == pg['wal_status'], 'CDC source observation invalid')
+    for field in ('retained_wal_bytes', 'unacknowledged_wal_bytes', 'safe_wal_size_bytes'):
+        value = pg[field]
+        require(value is None or isinstance(value, str) and re.fullmatch(r'0|[1-9][0-9]*', value)
+                and int(value) <= 18446744073709551615, 'CDC WAL byte distance invalid')
+    require(pg['retained_wal_bytes'] is not None and pg['unacknowledged_wal_bytes'] is not None,
+            'CDC WAL byte distance missing')
+    require(type(delay['connected']) is bool and (delay['delay_seconds'] is None or
+            type(delay['delay_seconds']) in (int, float) and math.isfinite(delay['delay_seconds'])),
+            'CDC capture delay invalid')
+    for field in ('earliest_offset', 'latest_offset', 'committed_offset', 'lag_offsets'):
+        require(isinstance(buffer[field], str) and re.fullmatch(r'0|[1-9][0-9]*', buffer[field])
+                and int(buffer[field]) <= 9223372036854775807, 'CDC buffer position invalid')
+    require(buffer['recovery_state'] == 'available'
+            and int(buffer['earliest_offset']) <= int(buffer['committed_offset']) <= int(buffer['latest_offset'])
+            and int(buffer['latest_offset']) - int(buffer['committed_offset']) == int(buffer['lag_offsets']),
+            'CDC buffer positions inconsistent')
+    if not pg['slot_active'] or not delay['connected']:
+        return None
+    return {'task_id': task_id, 'generation': capture['generation'], 'desired_state': task['desired_state'],
+            'execution_id': canonical_uuid(task['last_execution_id']), 'source': dict(pg),
+            'delay': dict(delay), 'buffer': dict(buffer)}
+
+
+def cdc_observation(client, task_id, tenant, engine_id, generation=None, *, after=None, event_delay=False):
+    sample = cdc_task_sample(client, task_id, engine_id, generation, after=after)
+    if sample is None:
+        return None
+    binding = cdc_capture_binding(tenant, task_id, engine_id, sample['generation'])
+    pg, delay = cdc_native_observation(binding)
+    require(pg.get('slot_active') is True and pg.get('wal_status') == sample['source']['wal_status']
+            and pg.get('wal_keep_unlimited') is sample['source']['wal_keep_unlimited'],
+            'CDC native WAL state mismatch')
+    for key in ('retained_wal_bytes', 'unacknowledged_wal_bytes', 'safe_wal_size_bytes'):
+        require(pg.get(key) is None or isinstance(pg[key], str) and re.fullmatch(r'0|[1-9][0-9]*', pg[key]),
+                'CDC native WAL distance invalid')
+    require((pg['safe_wal_size_bytes'] is None) == (sample['source']['safe_wal_size_bytes'] is None),
+            'CDC native WAL headroom mismatch')
+    ms = delay.get('MilliSecondsBehindSource')
+    require(delay.get('Connected') is True and type(ms) in (int, float) and math.isfinite(ms) and int(ms) == ms,
+            'CDC native delay invalid')
+    expected = None if ms == -1 else ms / 1000
+    if sample['delay']['delay_seconds'] != expected or event_delay and expected is None:
+        return None  # Only read again while the existing sampling window remains open.
+    observed_at = datetime.now(timezone.utc)
+    if any(cdc_sample_time(sample[field], observed_at) is None for field in ('source', 'delay', 'buffer')):
+        return None
+    require(all(name not in json.dumps(sample) for name in binding.values()), 'CDC task exposed private resource names')
+    sample['native_source_identity_verified'] = True
+    sample['native_wal_state_verified'] = True
+    sample['exact_connector_delay_verified'] = True
+    return sample
+
+
+def verify_cdc_task_monitoring(client, task_id, tenant, engine_id, execution_id, launch, mutate, phase):
+    phase('cdc_monitor_initial')
+    def initial_ready():
+        value = cdc_observation(client, task_id, tenant, engine_id)
+        return value if value is not None and value['buffer']['lag_offsets'] == '0' else None
+    initial = until(initial_ready)
+    require(initial['desired_state'] == 'running' and initial['execution_id'] == execution_id
+            and initial['buffer']['lag_offsets'] == '0',
+            'CDC initial task progress mismatch')
+    generation = initial['generation']
+    phase('cdc_pause')
+    mutate(client, f'{OWNER}/task-definitions/{task_id}/pause')
+    wait_status(client, execution_id, 'cancelled')
+    paused_at = datetime.now(timezone.utc)
+    paused = until(lambda: cdc_observation(client, task_id, tenant, engine_id, generation, after=paused_at))
+    require(paused['desired_state'] == 'paused' and paused['execution_id'] == execution_id
+            and paused['buffer']['lag_offsets'] == '0', 'CDC pause did not preserve the task position')
+    phase('cdc_mutation')
+    require(physical('mutate-cdc'), 'CDC mutation fixture failed')
+    written_at = datetime.now(timezone.utc)
+    phase('cdc_buffer_growth')
+    def grown():
+        value = cdc_observation(client, task_id, tenant, engine_id, generation, after=written_at, event_delay=True)
+        if value is None or int(value['buffer']['lag_offsets']) < 3:
+            return None
+        require(value['desired_state'] == 'paused' and value['execution_id'] == execution_id
+                and value['buffer']['committed_offset'] == paused['buffer']['committed_offset']
+                and int(value['buffer']['latest_offset']) - int(paused['buffer']['latest_offset']) == 3
+                and value['buffer']['lag_offsets'] == '3', 'CDC paused backlog did not match the event batch')
+        require(physical('verify-cdc-initial'), 'CDC paused target changed')
+        return value
+    growth = until(grown)
+    phase('cdc_monitor_resume')
+    resumed_id = launch(task_id, 'resume')
+    require(resumed_id != execution_id, 'CDC resume reused execution identity')
+    resumed_at = datetime.now(timezone.utc)
+    def caught_up(after):
+        value = cdc_observation(client, task_id, tenant, engine_id, generation, after=after, event_delay=True)
+        if value is None or value['buffer']['lag_offsets'] != '0':
+            return None
+        require(value['desired_state'] == 'running' and value['execution_id'] == resumed_id
+                and value['buffer']['committed_offset'] == growth['buffer']['latest_offset'],
+                'CDC resume task progress mismatch')
+        require(physical('verify-cdc-mutated'), 'CDC resumed target rowset mismatch')
+        return value
+    resumed = until(lambda: caught_up(resumed_at))
+    sustained = until(lambda: caught_up(datetime.fromisoformat(resumed['buffer']['sampled_at'].replace('Z', '+00:00'))))
+    return resumed_id, {'initial_execution_id': execution_id, 'resumed_execution_id': resumed_id,
+                        'generation': generation, 'event_count': 3,
+                        'samples': {'initial': initial, 'paused': paused, 'growth': growth,
+                                    'resumed': resumed, 'sustained': sustained}}
+
+
 SCAN_TABLES = frozenset({
     'continuous_scan_sibling', 'continuous_kafka_target', 'continuous_cdc_target', 'continuous_scheduled_target',
 })
@@ -314,15 +534,15 @@ COMMIT;
     return items, boundary
 
 
-def require_kafka_fixture(tenant, task_id):
+def require_transfer_fixture(tenant, task_id):
     require(type(tenant) is int and tenant > 1 and type(task_id) is int and task_id > 0
             and os.environ.get('ONLINE_SUITE') == SUITE
             and os.environ.get('ADDP_ONLINE_TEST_TENANT_ID') == str(tenant),
-            'Kafka cleanup observation requires the exact Hosted task scope')
+            'Transfer observation requires the exact Hosted task scope')
 
 
 def kafka_delete_facts(tenant, task_id, execution_id):
-    require_kafka_fixture(tenant, task_id)
+    require_transfer_fixture(tenant, task_id)
     execution_id = canonical_uuid(execution_id)
     postgres_id = os.environ.get('ADDP_ONLINE_SCAN_POSTGRES_ID', '')
     require(re.fullmatch(r'[0-9a-f]{64}', postgres_id), 'Kafka cleanup requires the exact Hosted PostgreSQL')
@@ -353,7 +573,7 @@ COMMIT;
 
 
 def kafka_dlq_exists(tenant, task_id):
-    require_kafka_fixture(tenant, task_id)
+    require_transfer_fixture(tenant, task_id)
     FAULTS.SUPPORT.deployment_secret()
     broker_id = os.environ.get('ADDP_ONLINE_DLQ_REDPANDA_ID', '')
     require(re.fullmatch(r'[0-9a-f]{64}', broker_id) and bool(os.environ.get('INFRA_KAFKA_TRANSFER_PASSWORD')),
@@ -744,7 +964,17 @@ def quiesce_task_for_cleanup(client, task_id, kind, name, current, mutate):
 def failure_diagnostic(phase, error):
     # Only fixed classifications enter the public receipt, never exception text,
     # response bodies, subprocess output, source values or credentials.
-    reasons = {'Owner exposed arbitrary metadata': 'owner_metadata_contract_mismatch',
+    reasons = {'CDC task generation mismatch': 'cdc_generation_mismatch',
+               'CDC task source identity mismatch': 'cdc_source_identity_mismatch',
+               'CDC native source identity mismatch': 'cdc_native_source_identity_mismatch',
+               'CDC observation Connect identity mismatch': 'cdc_connect_identity_mismatch',
+               'CDC native delay identity mismatch': 'cdc_delay_identity_mismatch',
+               'CDC native WAL state mismatch': 'cdc_wal_state_mismatch',
+               'CDC paused backlog did not match the event batch': 'cdc_paused_backlog_mismatch',
+               'CDC paused target changed': 'cdc_paused_target_changed',
+               'CDC resume task progress mismatch': 'cdc_resume_progress_mismatch',
+               'CDC stopped generation retained current observations': 'cdc_stopped_samples_retained',
+               'Owner exposed arbitrary metadata': 'owner_metadata_contract_mismatch',
                'Owner exposed invalid initial authorization status facts': 'owner_authorization_status_contract_mismatch',
                'execution reached an unexpected terminal status': 'unexpected_terminal_status',
                'continuous execution did not converge before the deadline': 'convergence_timeout',
@@ -1033,11 +1263,13 @@ def run_suite(client, denied, foreign, peer, reader, admin, login, tenant, run_i
         require(detail(client, cdc).get('status') == 'running', 'Owner outage stopped the continuous execution')
         compare(cdc)
         report['checks'].append('real_owner_outage_browser_clears_and_recovers_without_grant_cache')
-        phase('cdc_mutation')
-        require(physical('mutate-cdc'), 'CDC mutation fixture failed')
-        until(lambda: physical('verify-cdc-mutated'))
-        until(lambda: any(e['kind'] == 'progress' and e['counters'].get('records_written', 0) >= 5
+        original_cdc = cdc
+        cdc, report['cdc_task_monitoring'] = verify_cdc_task_monitoring(
+            client, cdc_task, tenant, pg, original_cdc, launch, mutate, phase)
+        compare(original_cdc, 'cancelled')
+        until(lambda: any(e['kind'] == 'progress' and e['counters'].get('records_written', 0) >= 3
                           for e in events(client, f'{OWNER}/executions', cdc)))
+        report['checks'].append('cdc_task_slot_wal_delay_and_paused_backlog_resume')
         require(target_scan('cdc') == cdc_scan, 'ordinary CDC events repeated the initial target scan')
         require(target_scan('kafka') == kafka_scan, 'CDC scans changed the Kafka sibling target')
         require(physical('alter-cdc'), 'CDC additive schema fixture failed')
@@ -1087,6 +1319,11 @@ def run_suite(client, denied, foreign, peer, reader, admin, login, tenant, run_i
         wait_status(client, cdc_resumed, 'cancelled')
         compare(cdc_resumed, 'cancelled')
         require(physical('verify-clean'), 'CDC capture resources survived confirmed stop')
+        stopped_capture = client.request('GET', f'{OWNER}/task-definitions/{cdc_task}', (200,)).payload.get('capture') or {}
+        require(stopped_capture.get('status') == 'stopped' and all(field in stopped_capture and stopped_capture[field] is None
+                for field in ('postgresql_observation', 'delay_observation', 'buffer_observation')),
+                'CDC stopped generation retained current observations')
+        report['cdc_task_monitoring']['stopped_current_samples_cleared'] = True
         report['checks'].append('cdc_snapshot_update_delete_insert_safe_events_and_confirmed_cleanup')
         # The existing Transfer deployment also runs its bounded worker. Exercise
         # a real owner timer, then pause before the next tick while this run drains.

@@ -1,3 +1,4 @@
+from datetime import timedelta
 from copy import deepcopy
 from importlib import import_module
 import unittest
@@ -847,6 +848,210 @@ class ContinuousRunnerTest(unittest.TestCase):
         self.assertIn('transfer-browser-support.js', browser)
         self.assertIn("localStorage.setItem('addp-lang', 'zh-cn')", browser)
         self.assertIn("locale: 'zh-CN'", browser)
+
+
+class CDCTaskObservationTest(unittest.TestCase):
+    def task(self):
+        now = M.datetime.now(M.timezone.utc)
+        times = {'sampled_at': (now - timedelta(seconds=1)).isoformat(),
+                 'expires_at': (now + timedelta(seconds=29)).isoformat()}
+        pg = {'status': 'available', **times, 'slot_active': True, 'wal_status': 'reserved',
+              'retained_wal_bytes': '9007199254740993', 'unacknowledged_wal_bytes': '42',
+              'safe_wal_size_bytes': None, 'wal_keep_unlimited': True, 'risk_state': 'reserved'}
+        delay = {'status': 'available', **times, 'connected': True, 'delay_seconds': None}
+        buffer = {'status': 'available', **times, 'earliest_offset': '0', 'latest_offset': '4',
+                  'committed_offset': '4', 'lag_offsets': '0', 'recovery_state': 'available'}
+        return {'id': 7, 'last_execution_id': UUID, 'desired_state': 'running',
+                'config': {'source': {'locator': 'addp://engine/10/path/public/continuous_source?type=table'}},
+                'capture': {'source_type': 'postgresql', 'generation': 1, 'status': 'running',
+                    'postgresql_observation': pg, 'delay_observation': delay, 'buffer_observation': buffer}}
+
+    def native(self, task, ms=-1):
+        pg = deepcopy(task['capture']['postgresql_observation'])
+        return ({'identity_matches': True, **{key: pg[key] for key in ['slot_active', 'wal_status',
+                 'retained_wal_bytes', 'unacknowledged_wal_bytes', 'safe_wal_size_bytes', 'wal_keep_unlimited']}},
+                {'Connected': True, 'MilliSecondsBehindSource': ms})
+
+    def test_current_task_sample_preserves_exact_bytes_and_no_event_delay(self):
+        task = self.task()
+        sample = M.cdc_task_sample(Client([task]), 7, 10, 1)
+        self.assertEqual(sample['source']['retained_wal_bytes'], '9007199254740993')
+        self.assertIsNone(sample['delay']['delay_seconds'])
+        self.assertEqual(sample['buffer']['lag_offsets'], '0')
+
+    def test_old_generation_foreign_task_source_and_private_fields_are_rejected(self):
+        for mutation in ['generation', 'task', 'source', 'private', 'nested_private']:
+            task = self.task()
+            if mutation == 'generation': task['capture']['generation'] = 2
+            elif mutation == 'task': task['id'] = 8
+            elif mutation == 'source': task['config']['source']['locator'] = 'addp://engine/11/path/public/continuous_source?type=table'
+            elif mutation == 'private': task['capture']['connector_name'] = 'private-connector'
+            else: task['capture']['delay_observation']['error'] = 'private-error'
+            with self.subTest(mutation=mutation), self.assertRaises(M.SuiteError):
+                M.cdc_task_sample(Client([task]), 7, 10, 1)
+
+    def test_each_observation_must_be_fresh_and_post_phase(self):
+        for field in ['postgresql_observation', 'delay_observation', 'buffer_observation']:
+            task = self.task()
+            task['capture'][field]['expires_at'] = task['capture'][field]['sampled_at']
+            with self.subTest(field=field), self.assertRaises(M.SuiteError):
+                M.cdc_task_sample(Client([task]), 7, 10, 1)
+            task = self.task()
+            value = task['capture'][field]
+            value['sampled_at'] = '2020-01-01T00:00:00Z'; value['expires_at'] = '2020-01-01T00:00:30Z'
+            self.assertIsNone(M.cdc_task_sample(Client([task]), 7, 10, 1))
+        self.assertIsNone(M.cdc_task_sample(Client([self.task()]), 7, 10, 1, after=M.datetime.now(M.timezone.utc)))
+
+    def test_byte_and_buffer_precision_and_arithmetic_fail_closed(self):
+        for field, value in [('retained_wal_bytes', 42), ('retained_wal_bytes', '-1'),
+                             ('safe_wal_size_bytes', '18446744073709551616')]:
+            task = self.task(); task['capture']['postgresql_observation'][field] = value
+            with self.subTest(field=field, value=value), self.assertRaises(M.SuiteError):
+                M.cdc_task_sample(Client([task]), 7, 10, 1)
+        task = self.task(); task['capture']['buffer_observation']['lag_offsets'] = '1'
+        with self.assertRaises(M.SuiteError): M.cdc_task_sample(Client([task]), 7, 10, 1)
+
+    def test_exact_native_delay_sentinel_negative_and_changed_event_sample(self):
+        for ms in [-1, -2, 125]:
+            task = self.task(); task['capture']['delay_observation']['delay_seconds'] = None if ms == -1 else ms / 1000
+            binding = {'slot': 'owned_slot', 'publication': 'owned_pub', 'connector': 'owned-connector'}
+            with patch.object(M, 'cdc_capture_binding', return_value=binding), \
+                    patch.object(M, 'cdc_native_observation', return_value=self.native(task, ms)):
+                sample = M.cdc_observation(Client([task]), 7, 2, 10, 1)
+                self.assertTrue(sample['exact_connector_delay_verified'])
+                self.assertNotIn('owned', json.dumps(sample))
+                value = M.cdc_observation(Client([task]), 7, 2, 10, 1, event_delay=True)
+                self.assertEqual(value is None, ms == -1)
+        task = self.task()
+        with patch.object(M, 'cdc_capture_binding', return_value=binding), \
+                patch.object(M, 'cdc_native_observation', return_value=self.native(task, 125)):
+            self.assertIsNone(M.cdc_observation(Client([task]), 7, 2, 10, 1))
+
+    def test_sample_expiring_during_independent_native_reads_cannot_pass(self):
+        task=self.task();native=self.native(task);start=M.datetime.now(M.timezone.utc)
+        class Clock(M.datetime):
+            calls=0
+            @classmethod
+            def now(cls,tz=None):
+                cls.calls+=1
+                return start if cls.calls==1 else start+timedelta(seconds=31)
+        with patch.object(M,'datetime',Clock), patch.object(M,'cdc_capture_binding',return_value={
+                'slot':'owned_slot','publication':'owned_pub','connector':'owned-connector'}), \
+                patch.object(M,'cdc_native_observation',return_value=native):
+            self.assertIsNone(M.cdc_observation(Client([task]),7,2,10,1))
+
+    def test_native_wal_state_and_headroom_must_agree_without_equating_lag_to_bytes(self):
+        task = self.task(); native = self.native(task)
+        native[0]['retained_wal_bytes'] = '9007199254741000'  # WAL can advance after the task sample.
+        with patch.object(M, 'cdc_capture_binding', return_value={'slot':'owned_slot', 'publication':'owned_pub', 'connector':'owned-connector'}), \
+                patch.object(M, 'cdc_native_observation', return_value=native):
+            self.assertIsNotNone(M.cdc_observation(Client([task]), 7, 2, 10, 1))
+            native[0]['wal_status'] = 'lost'
+            with self.assertRaises(M.SuiteError): M.cdc_observation(Client([task]), 7, 2, 10, 1)
+            native[0]['wal_status'] = 'reserved'; native[0]['safe_wal_size_bytes'] = '0'
+            with self.assertRaises(M.SuiteError): M.cdc_observation(Client([task]), 7, 2, 10, 1)
+
+    def test_all_native_wal_risk_states_preserve_their_exact_meaning(self):
+        for risk in ['reserved','extended','unreserved','lost']:
+            task = self.task()
+            task['capture']['postgresql_observation'].update(wal_status=risk,risk_state=risk)
+            with self.subTest(risk=risk), patch.object(M,'cdc_capture_binding',return_value={
+                    'slot':'owned_slot','publication':'owned_pub','connector':'owned-connector'}), \
+                    patch.object(M,'cdc_native_observation',return_value=self.native(task)):
+                self.assertEqual(M.cdc_observation(Client([task]),7,2,10,1)['source']['risk_state'],risk)
+        task = self.task();task['capture']['postgresql_observation']['risk_state']='lost'
+        with self.assertRaises(M.SuiteError):M.cdc_task_sample(Client([task]),7,10,1)
+
+    def test_binding_reads_only_exact_owned_generation_in_pinned_hosted_database(self):
+        env = {'ONLINE_SUITE': M.SUITE, 'ADDP_ONLINE_TEST_TENANT_ID':'2',
+               'ADDP_ONLINE_SCAN_POSTGRES_ID':'a'*64, 'ADDP_ONLINE_CONTINUOUS_PG_ENGINE_ID':'10'}
+        postgres = import_module('scripts.test.execution-retention-readonly-online')
+        binding = {'slot':'owned_slot', 'publication':'owned_pub', 'connector':'owned-connector'}
+        with patch.dict(os.environ, env), patch.object(postgres, 'sql', return_value=json.dumps(binding)) as sql:
+            self.assertEqual(M.cdc_capture_binding(2, 7, 10, 1), binding)
+            self.assertEqual(sql.call_args.kwargs, {'expected_suite':M.SUITE, 'postgres_id':'a'*64,
+                'variables':{'tenant':2,'task':7,'engine':10,'generation':1}})
+            query = sql.call_args.args[0]
+            for text in ['BEGIN READ ONLY', 'p.slot_owned AND p.publication_owned', "r.generation=:'generation'", "r.source_engine_id=:'engine'", "r.source_table='continuous_source'"]:
+                self.assertIn(text, query)
+            for args in [(1,7,10,1),(2,7,11,1),(2,7,10,0)]:
+                with self.assertRaises(M.SuiteError): M.cdc_capture_binding(*args)
+            sql.assert_called_once()
+
+    def test_native_probe_pins_connect_and_reads_only_exact_two_attributes(self):
+        binding = {'slot':'owned_slot', 'publication':'owned_pub', 'connector':'owned-connector'}
+        container = {'Id':'c'*64,'State':{'Running':True},'Config':{'Labels':{
+            'com.docker.compose.project':'addp-infra','com.docker.compose.service':'kafka-connect',
+            'com.docker.compose.project.working_dir':str(M.ROOT)}}}
+        task = self.task(); pg, value = self.native(task, 125)
+        bean = 'debezium.postgres:context=streaming,server=owned-connector,type=connector-metrics'
+        replies = [json.dumps([container]),json.dumps(pg),json.dumps({'status':200,'request':{'mbean':bean},'value':value})]
+        with patch.dict(os.environ, {'ADDP_ONLINE_CDC_CONNECT_ID':'c'*64}), \
+                patch.object(M.subprocess,'run',side_effect=[SimpleNamespace(stdout=v) for v in replies]) as run:
+            self.assertEqual(M.cdc_native_observation(binding),(pg,value))
+            self.assertEqual(run.call_args_list[1].args[0][-3:],['observe-cdc-source','owned_slot','owned_pub'])
+            command = run.call_args.args[0]
+            self.assertEqual(command[:4],['docker','exec','-i','c'*64])
+            request = json.loads(run.call_args.kwargs['input'])
+            self.assertEqual(request,{'type':'read','mbean':bean,'attribute':['Connected','MilliSecondsBehindSource']})
+            self.assertNotIn('Authorization',json.dumps(command))
+        container['Config']['Labels']['com.docker.compose.project'] = 'foreign'
+        with patch.dict(os.environ, {'ADDP_ONLINE_CDC_CONNECT_ID':'c'*64}), \
+                patch.object(M.subprocess,'run',return_value=SimpleNamespace(stdout=json.dumps([container]))) as run, \
+                self.assertRaises(M.SuiteError):
+            M.cdc_native_observation(binding)
+        run.assert_called_once()
+
+    def test_native_source_or_connector_response_from_another_identity_is_rejected(self):
+        binding = {'slot':'owned_slot','publication':'owned_pub','connector':'owned-connector'}
+        container = {'Id':'c'*64,'State':{'Running':True},'Config':{'Labels':{
+            'com.docker.compose.project':'addp-infra','com.docker.compose.service':'kafka-connect',
+            'com.docker.compose.project.working_dir':str(M.ROOT)}}}
+        for wrong in ['source','connector']:
+            pg, value = self.native(self.task(),125)
+            if wrong=='source':pg['identity_matches']=False
+            bean='debezium.postgres:context=streaming,server='+('other' if wrong=='connector' else 'owned-connector')+',type=connector-metrics'
+            replies=[json.dumps([container]),json.dumps(pg),json.dumps({'status':200,'request':{'mbean':bean},'value':value})]
+            with self.subTest(wrong=wrong), patch.dict(os.environ,{'ADDP_ONLINE_CDC_CONNECT_ID':'c'*64}), \
+                    patch.object(M.subprocess,'run',side_effect=[SimpleNamespace(stdout=v)for v in replies]), \
+                    self.assertRaises(M.SuiteError):
+                M.cdc_native_observation(binding)
+
+    def test_pause_resume_orchestration_requires_unchanged_target_and_two_new_zero_samples(self):
+        task = self.task(); initial = M.cdc_task_sample(Client([task]),7,10,1)
+        paused = deepcopy(initial); paused['desired_state']='paused'
+        growth = deepcopy(paused); growth['buffer'].update(latest_offset='7',lag_offsets='3')
+        resumed = deepcopy(initial); resumed['execution_id']='bbbbbbbb-2222-4222-8222-222222222222'
+        resumed['buffer'].update(latest_offset='7',committed_offset='7')
+        sustained = deepcopy(resumed)
+        calls=[]; phases=[]
+        def mutate(actor,path): calls.append(path)
+        def launch(task_id,action): calls.append(action); return resumed['execution_id']
+        with patch.object(M,'cdc_observation',side_effect=[initial,paused,growth,resumed,sustained]) as observe, \
+                patch.object(M,'wait_status') as wait, patch.object(M,'physical',return_value=True) as physical:
+            execution, proof = M.verify_cdc_task_monitoring(None,7,2,10,UUID,launch,mutate,phases.append)
+        self.assertEqual(calls,[M.OWNER+'/task-definitions/7/pause','resume'])
+        wait.assert_called_once_with(None,UUID,'cancelled')
+        self.assertEqual([c.args[0] for c in physical.call_args_list],
+                         ['mutate-cdc','verify-cdc-initial','verify-cdc-mutated','verify-cdc-mutated'])
+        self.assertEqual(execution,resumed['execution_id']);self.assertEqual(proof['event_count'],3)
+        self.assertEqual(list(proof['samples']),['initial','paused','growth','resumed','sustained'])
+        self.assertEqual(observe.call_count,5)
+        self.assertTrue(all(c.kwargs.get('after') is not None for c in observe.call_args_list[1:]))
+        self.assertEqual(phases,['cdc_monitor_initial','cdc_pause','cdc_mutation','cdc_buffer_growth','cdc_monitor_resume'])
+
+    def test_pause_changed_commit_target_or_reused_execution_cannot_pass(self):
+        initial = M.cdc_task_sample(Client([self.task()]),7,10,1)
+        paused = deepcopy(initial);paused['desired_state']='paused'
+        growth = deepcopy(paused);growth['buffer'].update(latest_offset='7',lag_offsets='3')
+        for case in ['commit','target','execution']:
+            bad = deepcopy(growth)
+            if case=='commit':bad['buffer']['committed_offset']='5'
+            if case=='execution':bad['execution_id']='bbbbbbbb-2222-4222-8222-222222222222'
+            with self.subTest(case=case), patch.object(M,'cdc_observation',side_effect=[initial,paused,bad]), \
+                    patch.object(M,'wait_status'), patch.object(M,'physical',side_effect=[True,case!='target']), \
+                    self.assertRaises(M.SuiteError):
+                M.verify_cdc_task_monitoring(None,7,2,10,UUID,lambda *args:self.fail('must not resume'),lambda *args:None,lambda *args:None)
 
 
 if __name__ == '__main__':

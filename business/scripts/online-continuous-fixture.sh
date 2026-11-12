@@ -103,6 +103,29 @@ PY
     printf '%s\n' "$records" | docker exec -i "$kafka" rpk topic produce continuous_events -X brokers=127.0.0.1:29094 >/dev/null
     ;;
   mutate-cdc) psql_owned -c "UPDATE public.continuous_source SET label='business-value-sentinel-updated' WHERE id=1; DELETE FROM public.continuous_source WHERE id=2; INSERT INTO public.continuous_source VALUES (3,'business-value-sentinel-inserted');" >/dev/null ;;
+  observe-cdc-source)
+    # Private names originate in the exact Hosted task generation, never in a user query.
+    [[ "${2:-}" =~ ^[a-z0-9_]{1,63}$ && "${3:-}" =~ ^[a-z0-9_]{1,63}$ ]] || fail 'exact CDC resources required'
+    psql_owned -q -v slot="$2" -v publication="$3" <<'SQL'
+BEGIN READ ONLY;
+SET LOCAL statement_timeout='3s'; SET LOCAL lock_timeout='1s';
+WITH wal AS MATERIALIZED (SELECT pg_current_wal_lsn() AS current_lsn)
+SELECT json_build_object(
+ 'identity_matches', s.slot_type='logical' AND s.plugin='pgoutput' AND s.database=current_database()
+   AND NOT p.puballtables
+   AND (SELECT count(*) FROM pg_publication_tables WHERE pubname=:'publication')=1
+   AND EXISTS(SELECT 1 FROM pg_publication_tables WHERE pubname=:'publication'
+              AND schemaname='public' AND tablename='continuous_source'),
+ 'slot_active', s.active, 'wal_status', s.wal_status,
+ 'retained_wal_bytes', pg_wal_lsn_diff(w.current_lsn,s.restart_lsn)::text,
+ 'unacknowledged_wal_bytes', pg_wal_lsn_diff(w.current_lsn,s.confirmed_flush_lsn)::text,
+ 'safe_wal_size_bytes', s.safe_wal_size::text,
+ 'wal_keep_unlimited', current_setting('max_slot_wal_keep_size')='-1')
+FROM pg_replication_slots s CROSS JOIN wal w
+JOIN pg_publication p ON p.pubname=:'publication' WHERE s.slot_name=:'slot';
+COMMIT;
+SQL
+    ;;
   alter-cdc) psql_owned -c "ALTER TABLE public.continuous_source ADD COLUMN scan_extra text; UPDATE public.continuous_source SET scan_extra='business-value-sentinel-added' WHERE id=1;" >/dev/null ;;
   verify-cdc-altered)
     actual=$(psql_owned -c "SELECT id,label,scan_extra FROM public.continuous_cdc_target ORDER BY id" 2>/dev/null) || exit 1

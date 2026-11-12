@@ -110,6 +110,8 @@ class HostedContinuousGateTest(unittest.TestCase):
         self.assertIn('cleanup=passed', (self.host.artifacts / 'summary.txt').read_text())
         self.assertFalse(self.host.secrets.exists())
         self.assertIn('playwright install --with-deps chromium', SCRIPT.read_text())
+        self.assertIn("docker inspect --format '{{.Id}}' addp-kafka-connect", SCRIPT.read_text())
+        self.assertIn('export ADDP_ONLINE_CDC_CONNECT_ID', SCRIPT.read_text())
         self.assertIn('playwright install --with-deps chromium', trace)
 
     def test_suite_failure_still_destroys_owned_application_business_and_infra(self):
