@@ -879,7 +879,7 @@ node 行内刷新与 node 详情深度扫描共用执行等待和扫描后的资
 `cleaning_index` 操作显示旧组件索引清理进度，`index_cleanup_total`、`index_cleanup_completed`、`index_cleanup_failed` 为本次范围的累计指纹数量，后两项分别只统计已确认成功及本次未确认成功的批次；失败不表示外部任务已取消。Meta 每批检查取消、逐批上报，索引清理未确认不冒充数据项扫描失败，也不计入成功清理数；不得以后台心跳伪造进展。
 
 - `files_discovered`、`directories_discovered` 是本次清单中排除系统噪声后的物理条目数，目录数包含扫描起点；`files_total_known` 表示枚举完整。计数、组合识别与扫描复用同一清单，每个目录仅枚举一次，不额外遍历仅为计算分母。
-- `items_planned` 是识别后实际要处理的逻辑 DataItem 数；`items_total_known` 仅在全部范围识别完成且无清单/识别错误时为真。multi / whole 按逻辑数据项计数，不能以物理文件或历史 `meta_item` 数作分母。`items_completed = items_succeeded + items_failed`，复用未变化项也属于已处理；尚未进入处理的项不算成功。
+- `items_planned` 是识别后实际要处理的逻辑 DataItem 数；`items_total_known` 仅在全部范围识别完成且无清单/识别错误时为真。multi / whole 按逻辑数据项计数，不能以物理文件或历史 `meta_item` 数作分母。`items_completed = items_succeeded + items_failed`，复用未变化项也属于已处理；尚未进入处理的项不算成功。执行摘要的 `metadata.items_scanned` 同样统计逻辑 DataItem，不是物理文件数；例如一份独立 TIFF 加一份 TIFF＋MSK，共发现三个物理文件，全部成功处理后为两个逻辑数据项。消费方应分别核对物理清单、逻辑完成计数和实际 DataItem 组成，不把辅助文件计作额外 item。
 - `current_bytes_read` / `current_bytes_total` 仅表示当前文件的内容指纹读取，不累加元数据采样、解压或重复读取；切换操作时清零。内容读取过程持续上报字节变化，并检查取消。
 - 属性提取期间，`current_range_bytes_read` 累计实际范围读取的返回字节，`current_ranges_read` 统计已经返回至少一个字节的范围流，每个流只计一次；重复采样读取仍按实际 I/O 计数。二者仅描述当前数据项的属性范围读取，切换操作或数据项时清零，不混入内容指纹字节、物理文件总数、采样点总数或数据项处理比例。只在真实读取有变化时更新进展，不因打开空范围、EOF 或后台心跳增加计数；每次范围打开和读取前检查取消，保留原范围参数、采样算法与 provider 能力。
 - `last_progress_at` 只随清单、阶段、当前操作、计数或读取字节的真实变化更新，不随 Worker 租约心跳刷新。前端分别显示耗时与距最近进展的时间；长时间未变化表示“未收到新进展”，不据此判定执行失败。

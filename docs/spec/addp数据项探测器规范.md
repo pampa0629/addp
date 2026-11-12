@@ -407,6 +407,7 @@ TIFF / GeoTIFF 的主资源是 `.tif` 或 `.tiff`。当同 basename 存在空间
 | `.aux.xml` | auxiliary_metadata | 否 | GDAL / ESRI 辅助元数据。GDAL PAM 的文件名为主 TIFF 完整文件名追加 `.aux.xml`。 |
 | `.ovr` | overview | 否 | 外部 overview。 |
 | `.hdr` | header | 否 | 栅格头文件或补充说明。 |
+| `.msk` | mask | 否 | 主 TIFF 完整文件名追加 `.msk` 的外置有效像元掩膜。仅实际存在时与主文件组成 multi；登记后完整参与授权、组件版本和读取，不独立计为另一个 DataItem。 |
 
 目录：
 

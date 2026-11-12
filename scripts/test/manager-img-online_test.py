@@ -198,7 +198,10 @@ class ManagerIMGTests(unittest.TestCase):
             name: {'base64': base64.b64encode(data).decode(), 'size_bytes': len(data),
                    'sha256': hashlib.sha256(data).hexdigest()} for name, data in raw.items()},
             'proofs': {'single': {'invalid_mask_pixels': 1}, 'multi': {'invalid_mask_pixels': 257}}}
-        for fault in (None, 'range_bytes', 'revoked', 'generation', 'cleanup', 'source_changed', 'extra_meta'):
+        scan_faults = {'missing_file', 'extra_file', 'extra_directory', 'unknown_files', 'unknown_items',
+                       'extra_logical_item', 'incomplete_items', 'failed_item', 'physical_as_logical',
+                       'missing_progress', 'wrong_actor', 'wrong_scan_status', 'unfinished_scan', 'integer_known_flag'}
+        for fault in (None, 'range_bytes', 'revoked', 'generation', 'cleanup', 'source_changed', 'extra_meta', *sorted(scan_faults)):
             with self.subTest(fault=fault), tempfile.TemporaryDirectory() as temporary:
                 root = Path(temporary); archive = root / 'archive'; archive.mkdir()
                 env = {'ADDP_ONLINE_ARTIFACT_DIR': str(archive), 'ADDP_ONLINE_MANAGER_NFS_ENGINE_ID': '3',
@@ -229,7 +232,22 @@ class ManagerIMGTests(unittest.TestCase):
                 issuer = mock.Mock()
                 def issuer_request(method, path, statuses):
                     if '/executions/' in path:
-                        payload = {'triggered_by': 11, 'metadata': {'items_scanned': 3}}
+                        payload = {'status': 'success', 'triggered_by': 11, 'metadata': {'items_scanned': 2},
+                                   'scan_progress': {'phase': 'finalizing', 'files_discovered': 3,
+                                       'directories_discovered': 1, 'files_total_known': True,
+                                       'items_planned': 2, 'items_total_known': True, 'items_completed': 2,
+                                       'items_succeeded': 2, 'items_failed': 0}}
+                        for label, field, value in (
+                                ('missing_file', 'files_discovered', 2), ('extra_file', 'files_discovered', 4),
+                                ('extra_directory', 'directories_discovered', 2), ('unknown_files', 'files_total_known', False),
+                                ('unknown_items', 'items_total_known', False), ('extra_logical_item', 'items_planned', 3),
+                                ('incomplete_items', 'items_completed', 1), ('failed_item', 'items_failed', 1),
+                                ('unfinished_scan', 'phase', 'processing'), ('integer_known_flag', 'files_total_known', 1)):
+                            if fault == label: payload['scan_progress'][field] = value
+                        if fault == 'missing_progress': payload.pop('scan_progress')
+                        if fault == 'wrong_actor': payload['triggered_by'] = 22
+                        if fault == 'wrong_scan_status': payload['status'] = 'failed'
+                        if fault == 'physical_as_logical': payload['metadata']['items_scanned'] = 3
                     elif '/data-items?' in path:
                         payload = {'total': 3 if fault == 'extra_meta' else 2,
                                    'data': [{'full_name': item['full_name'], 'item_fingerprint': item['fingerprint']} for item in items]}
@@ -282,8 +300,16 @@ class ManagerIMGTests(unittest.TestCase):
                         IMG.verify_nfs_tiff_msk(OWNER, env, client, {'principal_id': '22'}, physical, report, 30)
                 auth.cleanup.assert_called_once()
                 self.assertEqual(report['result'], 'failed' if fault else 'passed')
-                if fault not in ('range_bytes', 'extra_meta'): delete.assert_called_once()
+                if fault in scan_faults:
+                    auth.grant.assert_not_called()
+                    delete.assert_not_called()
+                    self.assertEqual(models, [])
+                elif fault not in ('range_bytes', 'extra_meta'):
+                    delete.assert_called_once()
                 if not fault:
+                    self.assertEqual(report['scan']['items_scanned'], 2)
+                    self.assertEqual(report['scan']['scan_progress']['files_discovered'], 3)
+                    self.assertEqual(report['scan']['scan_progress']['items_completed'], 2)
                     self.assertEqual([m['layout'] for m in models], ['single', 'multi'])
                     self.assertEqual(models[1]['composition'][1], {'path': 'raster-tiff-msk/with-mask.tif.msk',
                         'role': 'mask', 'required': False, 'primary': False})

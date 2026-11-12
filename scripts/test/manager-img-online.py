@@ -221,8 +221,19 @@ def verify_nfs_tiff_msk(owner, environment, client, identity, physical, report, 
                                              scope={'catalog_paths': [directory]})
         report['scan_execution_id'] = execution
         scan = issuer.request('GET', f'/api/v1/meta/executions/{execution}', (200,)).payload
-        if scan.get('triggered_by') != int(auth.operator) or scan.get('metadata', {}).get('items_scanned') != 3:
-            raise owner.SuiteError('MSK scan did not process exactly the three owned source files')
+        progress = scan.get('scan_progress')
+        report['scan'] = {'status': scan.get('status'), 'triggered_by': scan.get('triggered_by'),
+                          'items_scanned': scan.get('metadata', {}).get('items_scanned'), 'scan_progress': progress}
+        # Meta counts physical inventory separately from resolved DataItems:
+        # one single TIFF and one TIFF+MSK consume three files but two items.
+        expected_progress = {'phase': 'finalizing', 'files_discovered': 3, 'directories_discovered': 1,
+                             'files_total_known': True, 'items_planned': 2, 'items_total_known': True,
+                             'items_completed': 2, 'items_succeeded': 2, 'items_failed': 0}
+        if (scan.get('status') != 'success' or scan.get('triggered_by') != int(auth.operator)
+                or report['scan']['items_scanned'] != 2 or not isinstance(progress, dict)
+                or any(type(progress.get(key)) is not type(value) or progress[key] != value
+                       for key, value in expected_progress.items())):
+            raise owner.SuiteError('MSK scan must discover exactly three files and successfully complete two logical DataItems')
         identities = issuer.request('GET', auth.base + '/data-items?' + urlencode({
             'search': directory, 'page': 1, 'page_size': 100}), (200,)).payload
         rows = identities.get('data', [])

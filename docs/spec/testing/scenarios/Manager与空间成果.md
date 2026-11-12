@@ -234,6 +234,8 @@ Parquet物理列沿现有writer按字段名排序，按列名完整核对类型�
 
 同一 TIFF 子报告增加 `nfs_tiff_msk`：在本轮 NFS 导出创建两份字节相同的有定位 TIFF，其中一份带真实外置 `.tif.msk`。固定公式独立核对全部 65,536 个 Int32 像元、NoData、CRS 和仿射网格；无 MSK 仅一个无效像元，有 MSK 共 257 个无效像元。Meta 必须分别登记 single 和 multi，multi 的主 TIFF 为 required=true、mask 为 required=false；授权命令只提交正式 Meta DataItem 指纹和 System 返回的完整边界 hash，不根据扩展名或文件数量自行组装授权边界。普通 User 在授权前读取均为 403，整项精确授权后每个已登记成员完整 Range 的大小、Content-Range 和 SHA-256 均匹配，跨 DataItem 借用 MSK 为 400。沿既有生成入口额外生成一份带掩膜 COG，完整数值、掩膜、空间事实及 COG 布局必须通过原生物理核验；删除成果后确认对象消失。撤销本轮两项 read 授权后，在源仍存在时重新读取各主文件及 MSK 必须为 403。归档正式组成、授权回执、执行和像元证明；本轮源、授权、成果与 Infra 全部按既有生命周期清理。保留原四份 COG、单文件浏览器和自然到期断言，不增加权限、服务或运行预算；新增 MSK 范围须由新版本 Hosted 运行另行证明，确定性测试不能计作 Hosted 通过。
 
+MSK 扫描回执必须同时证明三个物理文件和两个成功完成的逻辑 DataItem：`scan_progress.files_discovered=3`、`directories_discovered=1`、两个 total_known 均为 true，`items_planned/items_completed/items_succeeded=2`、`items_failed=0`、`phase=finalizing`，以及 `metadata.items_scanned=2`。核对原初始化用户和成功终态，将回执计数写入 `nfs_tiff_msk.scan`。计数缺失、清单未完成、额外文件／目录／逻辑项或任何未完成／失败项均在签发授权前拒绝；后续仍须验证正式 Meta single／multi 身份和完整 MSK 组成，计数相等不能替代组成证明。
+
 短暂签发并收回精确元数据授权以取得正式 DataItem ID，再以同一个普通 User API 会话验证 Range 依次返回 403、206、403。正向请求核对 Content-Range 和实际字节；授权有效时真实 Console 还须核对同一账号、Range 206 和完整灰阶／透明像元。到期后重新请求，核对元数据 404 和未撤销的已到期历史。失败时只清理本轮命令，源文件随既有 NFS 夹具清理。此用例覆盖该有界 NFS GeoTIFF／COG 的自然到期，BigTIFF、任意布局／容量和 Float64 地图渲染另行验收。
 
 ### ENVI 双文件 COG（限定 Hosted 已验收）
