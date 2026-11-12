@@ -551,6 +551,7 @@ type ListTasksRequest struct {
 	Status          *TaskStatus `form:"status"`
 	TaskType        string      `form:"task_type"`
 	RuntimeBoundary string      `form:"runtime_boundary"`
+	ChangeDetection string      `form:"change_detection"`
 	Page            int         `form:"page" binding:"min=1"`
 	PageSize        int         `form:"page_size" binding:"min=1,max=100"`
 }

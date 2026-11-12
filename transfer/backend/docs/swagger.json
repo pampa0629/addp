@@ -1631,6 +1631,12 @@
                         "description": "执行边界: bounded, continuous | Runtime boundary: bounded, continuous",
                         "name": "runtime_boundary",
                         "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "变更检测筛选，仅支持 cdc；不与 bounded 组合 | Change detection filter: cdc only; cannot be combined with bounded",
+                        "name": "change_detection",
+                        "in": "query"
                     }
                 ],
                 "responses": {

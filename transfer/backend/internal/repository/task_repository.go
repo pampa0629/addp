@@ -364,6 +364,13 @@ func (r *TaskRepository) List(tenantID uint, filters map[string]interface{}, pag
 			query = query.Where("config -> 'runtime' ->> 'boundary' = ?", boundary)
 		}
 	}
+	if detection, ok := filters["change_detection"].(string); ok && detection != "" {
+		if r.db.Dialector.Name() == "sqlite" {
+			query = query.Where("json_extract(config, '$.load.change_detection.type') = ?", detection)
+		} else {
+			query = query.Where("config -> 'load' -> 'change_detection' ->> 'type' = ?", detection)
+		}
+	}
 	// 支持根据 enabled 状态过滤（用于调度器加载定时任务）
 	if enabled, ok := filters["enabled"].(bool); ok {
 		query = query.Where("enabled = ?", enabled)

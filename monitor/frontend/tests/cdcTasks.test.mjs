@@ -1,0 +1,26 @@
+import test from 'node:test'
+import assert from 'node:assert/strict'
+import { cdcView, cdcEndpoints, resolveCDCTaskRoute, validateCDCTask, validateCDCTaskPage, validateCDCTaskExecution } from '../src/utils/cdcTasks.js'
+export const task = () => ({ id: 7, name: 'Orders CDC', task_type: 'sync', status: 'running', desired_state: 'running', config: { runtime: { boundary: 'continuous' }, load: { change_detection: { type: 'cdc' } }, source: { locator: 'addp://engine/2/path/public/orders?type=table' }, target: { parent_locator: 'addp://engine/3/path/sales?type=schema', name: 'orders_copy' } }, capture: { generation: 1, status: 'running' }, last_execution_id: '10000000-0000-4000-8000-000000000001' })
+test('CDC task view uses context defaults and canonical bounded URL state', () => {
+ assert.equal(cdcView({},'tenant'),'tasks'); assert.equal(cdcView({},'platform'),'resources')
+ assert.equal(cdcView({view:'tasks'},'platform'),'tasks')
+ const state = resolveCDCTaskRoute({task_id:'7',page:'2',refresh:'off',scope:'infra',deployment_id:'foreign'})
+ assert.deepEqual(state.query,{view:'tasks',page:'2',task_id:'7',refresh:'off'})
+ assert.equal(resolveCDCTaskRoute(state.query).changed,false)
+ assert.deepEqual(resolveCDCTaskRoute({task_id:'-7',page:'0',refresh:'1'}).query,{view:'tasks'})
+})
+test('CDC endpoints come only from task locators and task reads reject foreign/bounded data', () => {
+ assert.deepEqual(cdcEndpoints(task()),{source:{engineID:2,path:'public.orders'},target:{engineID:3,path:'sales.orders_copy'}})
+ assert.equal(validateCDCTask(task(),'7').id,7)
+ for (const mutate of [t=>t.id=8,t=>t.config.runtime.boundary='bounded',t=>t.config.load.change_detection.type='watermark',t=>t.config.source.locator='https://foreign',t=>t.last_execution_id='bad']) {
+  const value=task();mutate(value);assert.throws(()=>validateCDCTask(value,'7'),/invalid_resource_response/)
+ }
+ const value={items:[task()],total:1,page:1,page_size:20};assert.equal(validateCDCTaskPage(value,1).total,1)
+ assert.throws(()=>validateCDCTaskPage({...value,items:[task(),task()]},1),/invalid_resource_response/)
+})
+test('Task chain accepts only its latest execution and same capture generation', () => {
+ const value={execution_id:task().last_execution_id,module:'transfer',task_type:'sync',source_task_id:'7',execution_boundary:'continuous',metadata:{continuous:{capture:{generation:1}}}}
+ assert.equal(validateCDCTaskExecution(value,task()),value)
+ for (const changed of [{source_task_id:'8'},{module:'meta'},{execution_boundary:'bounded'},{execution_id:'foreign'},{metadata:{continuous:{capture:{generation:2}}}}]) assert.throws(()=>validateCDCTaskExecution({...value,...changed},task()),/invalid_resource_response/)
+})

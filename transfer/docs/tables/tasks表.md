@@ -134,7 +134,7 @@ Console 与 Transfer 页面使用 `/task-definitions`。每次请求独立校验
 
 | 方法 | 路径 | Permission | 说明 |
 |---|---|---|---|
-| `GET` | `/task-definitions` | `read` | 当前 Tenant 的用户任务列表，与机器发现入口分离。 |
+| `GET` | `/task-definitions` | `read` | 当前 Tenant 的用户任务列表，与机器发现入口分离；可用 `change_detection=cdc` 在服务端筛选数据库 CDC，并在筛选后计算分页和总数。该筛选不与 `runtime_boundary=bounded` 组合，不用于 TaskProvider 机器发现。 |
 | `POST` | `/task-definitions` | `create` | 创建任务定义，不等于启动执行。 |
 | `GET` | `/task-definitions/statistics` | `read` | 查询任务统计。 |
 | `GET` | `/task-definitions/:id` | `read` | 查询任务定义详情。 |

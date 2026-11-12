@@ -1409,7 +1409,7 @@ test-catalog-frontend: check-node-runtime ## 运行 Catalog 前端路由状态�
 
 test-console-frontend: check-node-runtime ## 运行 Console 前端确定性测试、浏览器回归与构建
 	@cd console/frontend && npm test
-	@cd console/frontend && npm run test:e2e
+	@cd console/frontend && npm run test:e2e -- $(CONSOLE_FRONTEND_BROWSER_ARGS)
 	@cd console/frontend && npm run build
 
 test-common-frontend: check-node-runtime ## 运行共享前端组件、契约与唯一所有权门禁
@@ -1440,7 +1440,7 @@ test-meta-frontend: check-node-runtime ## 运行 Meta 前端确定性测试与�
 
 test-monitor-frontend: check-node-runtime ## 运行 Monitor 前端确定性测试、诊断浏览器回归与构建
 	@cd monitor/frontend && npm test
-	@cd monitor/frontend && npm run test:e2e
+	@cd monitor/frontend && npm run test:e2e -- $(MONITOR_FRONTEND_BROWSER_ARGS)
 	@cd monitor/frontend && npm run build
 
 test-orchestrator-frontend: check-node-runtime ## 运行 Orchestrator 前端确定性测试、编辑器与路由浏览器回归及构建

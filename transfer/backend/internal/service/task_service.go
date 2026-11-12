@@ -476,6 +476,12 @@ func (s *TaskService) ListTasks(ctx context.Context, tenantID uint, req *models.
 	}
 
 	filters := make(map[string]interface{})
+	if req.ChangeDetection != "" {
+		if req.ChangeDetection != "cdc" || req.RuntimeBoundary == "bounded" {
+			return nil, 0, ErrInvalidTaskConfig
+		}
+		filters["change_detection"] = req.ChangeDetection
+	}
 	if req.Status != nil {
 		filters["status"] = *req.Status
 	}

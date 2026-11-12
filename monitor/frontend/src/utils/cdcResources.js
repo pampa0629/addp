@@ -18,7 +18,7 @@ export const cdcMetrics = {
   postgresql: engineMetrics.filter(item => item.group === 'pgReplication')
 }
 export function resolveCDCRoute(input = {}) {
-  const query = {}
+  const query = { view: 'resources' }
   const stage = ['postgresql', 'kafka-connect', 'redpanda'].includes(input.stage) ? input.stage : 'kafka-connect'
   const metric = cdcMetrics[stage].find(item => item.key === input.metric) || cdcMetrics[stage][0]
   const range = Object.hasOwn(resourceRanges, input.range) ? input.range : '5m'

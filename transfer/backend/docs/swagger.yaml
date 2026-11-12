@@ -3458,6 +3458,11 @@ paths:
         in: query
         name: runtime_boundary
         type: string
+      - description: '变更检测筛选，仅支持 cdc；不与 bounded 组合 | Change detection filter: cdc
+          only; cannot be combined with bounded'
+        in: query
+        name: change_detection
+        type: string
       produces:
       - application/json
       responses:

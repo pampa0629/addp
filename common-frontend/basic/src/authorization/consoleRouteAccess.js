@@ -50,7 +50,7 @@ export const CONSOLE_ROUTE_ACCESS = {
   '/monitor/dashboard': [tenant('monitor.statistics.read')],
   '/monitor/resource-overview': [platform('monitor.resource_observation.read', 'platform.host_node.read')],
   '/monitor/service-resources': [platform('monitor.resource_observation.read', 'platform.module.read')],
-  '/monitor/cdc-resources': [platform('monitor.resource_observation.read')],
+  '/monitor/cdc-resources': [platform('monitor.resource_observation.read'), tenant('transfer.task.read', 'monitor.execution.read')],
   '/monitor/engine-resources': [platform('monitor.resource_observation.read', 'platform.engine_deployment.read')],
   '/monitor/traces': [platform('monitor.trace.read', 'platform.module.read')],
   '/monitor/http-quality': [platform('monitor.http_observation.read', 'platform.module.read')],

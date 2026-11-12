@@ -11,8 +11,8 @@ export function getExecution(id) {
 }
 
 // 按 execution_id 获取单条执行记录
-export function getExecutionByExecutionID(executionId) {
-  return client.get(`/monitor/executions/by-execution-id/${executionId}`)
+export function getExecutionByExecutionID(executionId, config) {
+  return client.get(`/monitor/executions/by-execution-id/${executionId}`, config)
 }
 
 export function getExecutionEvents(executionId, params) {

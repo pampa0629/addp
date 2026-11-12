@@ -167,7 +167,9 @@ CDC 来源安装与恢复沿统一 `metrics-sources.py` 入口，仅允许 Infra
 
 CDC 固定来源复用 `sourceserver` 的单次完整投影和私有 mTLS `/metrics`，不提供任意地址或 JMX 查询入口。Redpanda 只读取 `/public_metrics`，聚合磁盘与不可用分区；消费组积压只在每个已提交分区都有对应末端 offset 时发布，空消费组只发布分区数为零，不伪造积压值。Kafka Connect 只读取 `/connectors?expand=status` 和两个固定 JMX 属性集合：Task 的 offset 提交失败比例，以及 Debezium PostgreSQL streaming 的连接状态、源端延迟。只输出固定状态计数和最大值，不输出 Connector、Topic、Group 或 MBean 名称。源端延迟为 Debezium 的毫秒值换算秒，offset 失败比例为原生 0～1 比例，均不能解释成整条链路延迟或失败率。
 
-CDC 页面唯一入口为 `/cdc-resources`。组件即时读取使用 `GET /platform/cdc_resource_observations`，不接受 query，按当前部署事实返回至多两项；发现 unavailable 与 available 的空集合分别表达。读取沿非委托 Platform User 的 `monitor.resource_observation.read`，不授予引擎、主机或业务数据读取权。PostgreSQL 源端选择和三项逻辑复制指标复用现有引擎部署列表、即时与趋势 API，并独立要求 `platform.engine_deployment.read`；页面不猜测 Connector 与数据库的对应关系。
+CDC 页面唯一入口为 `/cdc-resources`，以 `view=tasks|resources` 区分任务链路和运行资源；默认按当前 Tenant／Platform Context 进入对应视图。Tenant User 的任务链路要求 `transfer.task.read` 与 `monitor.execution.read`，直接沿 Transfer 正式任务列表的 `change_detection=cdc` 服务端筛选和任务详情读取源／目标定位符、捕获代次及公开捕获状态，沿 Monitor 既有授权执行详情读取该任务最近 execution 的 continuous 诊断。源／目标不从部署范围推断，Connector／Topic 私有名称不进入页面；积压与提交位置只展示 Owner 最近观测及其采样时间，不用 Broker 消费组 offset 重算，不把历史 execution 样本当成当前任务状态。完整诊断跳转既有执行详情，不复制诊断页面。未启动、无任务、缺样与失去读取权限分别表达，Context／任务变更及失败清除对应旧值。Platform User 只读取运行资源；跨 Context 不发起另一域的请求，不自动切换身份或扩大权限。
+
+运行资源中的组件即时读取使用 `GET /platform/cdc_resource_observations`，不接受 query，按当前部署事实返回至多两项；发现 unavailable 与 available 的空集合分别表达。读取沿非委托 Platform User 的 `monitor.resource_observation.read`，不授予引擎、主机或业务数据读取权。PostgreSQL 部署选择和三项逻辑复制指标复用现有引擎部署列表、即时与趋势 API，并独立要求 `platform.engine_deployment.read`。Infra／Business 仅表示部署范围，PostgreSQL 实例汇总不代表任何任务的实际源端；各卡片是独立部署指标，不推断彼此已组成某条任务链路。
 
 组件固定目录按每类最多十二项查询：Redpanda 为磁盘总量／空闲／使用率、不可用分区、消费组已提交分区数及待消费记录数；Connect 为 Connector／Task 总量、失败 Connector／Task、运行／暂停 Task、offset 提交观测 Task 数与最大失败百分比、Debezium streaming Connector／已连接数、有延迟样本 Connector 数与最大源端延迟秒数。所有指标均来自现有固定采集器；没有消费组时积压不补零，空 Connector 为有效零计数，未初始化延迟无值，原生负延迟保留表示时钟偏差，不能作为端到端延迟。页面常用指标直接展示，其余在卡片内部展开。
 

@@ -1,12 +1,13 @@
 import { expect, test } from '@playwright/test'
 import { cdcBackend } from '../../../monitor/frontend/e2e/cdc-resources.fixture'
+import { cdcTaskBackend } from '../../../monitor/frontend/e2e/cdc-tasks.fixture'
 
 test('Console CDC menu, history and language use one Monitor iframe without engine grants', async ({ page }) => {
   await cdcBackend(page, { permissions: ['monitor.resource_observation.read'] })
   await page.goto('/monitor/cdc-resources?refresh=off')
   const frame = page.frameLocator('iframe[data-testid="module-iframe"]')
   await expect(frame.getByTestId('cdc-value-failedTasks')).toHaveText('1')
-  await expect(frame.getByText('读取 PostgreSQL 源端还需引擎部署读取权限')).toBeVisible()
+  await expect(frame.getByText('读取 PostgreSQL 部署指标还需引擎部署读取权限')).toBeVisible()
   await expect(page.locator('.sidebar .el-menu-item').filter({ hasText: 'CDC 监控' })).toBeVisible()
   const origin = await frame.locator('body').evaluate(() => performance.timeOrigin)
   await frame.getByTestId('cdc-card-redpanda').getByRole('button', { name: '查看趋势', exact: true }).click()
@@ -26,4 +27,19 @@ test('Console CDC menu, history and language use one Monitor iframe without engi
   await expect(frame.getByRole('heading', { name: 'CDC Monitoring', exact: true })).toBeVisible()
   await expect(page.locator('iframe[data-testid="module-iframe"]')).toHaveCount(1)
   await page.screenshot({ path: '/tmp/addp-cdc-console-page.png', fullPage: true })
+})
+
+for (const detail of [false, true]) test(`Tenant CDC opens the Transfer ${detail ? 'definition' : 'task list'} through Console`, async ({ page }) => {
+  const state = await cdcTaskBackend(page)
+  await page.route('**/module-ui/transfer/**', route => route.fulfill({ contentType: 'text/html', body: '<title>Transfer navigation fixture</title><h1>Transfer destination</h1>' }))
+  await page.goto('/monitor/cdc-resources?view=tasks&task_id=7&refresh=off')
+  const frame = page.frameLocator('iframe[data-testid="module-iframe"]')
+  await expect(frame.getByTestId('cdc-task-lag')).toHaveText('3')
+  await frame.getByRole('button', { name: detail ? '查看任务定义' : '前往同步任务', exact: true }).click()
+  await expect(page).toHaveURL(new RegExp(`/transfer/tasks${detail ? '/7/detail' : ''}$`))
+  await expect(page.frameLocator('iframe[data-testid="module-iframe"]').getByRole('heading', { name: 'Transfer destination', exact: true })).toBeVisible()
+  await page.goBack()
+  await expect(page).toHaveURL(/\/monitor\/cdc-resources\?view=tasks&task_id=7&refresh=off$/)
+  await expect(frame.getByTestId('cdc-task-lag')).toHaveText('3')
+  expect(state.calls.some(call => call.path.includes('/platform/'))).toBe(false)
 })

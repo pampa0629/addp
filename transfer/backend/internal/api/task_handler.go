@@ -148,6 +148,7 @@ func (h *TaskHandler) GetTask(c *gin.Context) {
 // @Param task_type query string false "任务类型，当前固定为 sync | Task type, currently fixed to sync"
 // @Param status query string false "任务定义状态: idle, running, blocked | Task definition status: idle, running, blocked"
 // @Param runtime_boundary query string false "执行边界: bounded, continuous | Runtime boundary: bounded, continuous"
+// @Param change_detection query string false "变更检测筛选，仅支持 cdc；不与 bounded 组合 | Change detection filter: cdc only; cannot be combined with bounded"
 // @Success 200 {object} models.ListProviderTasksResponse "获取成功 | Retrieved successfully"
 // @Failure 400 {object} map[string]string "不支持的任务类型 | Unsupported task type"
 // @Failure 500 {object} map[string]string "服务器错误 | Server error"
@@ -190,11 +191,16 @@ func (h *TaskHandler) listTasks(c *gin.Context, providerOnly bool) {
 	}
 	req.TaskType = strings.TrimSpace(req.TaskType)
 	req.RuntimeBoundary = strings.TrimSpace(req.RuntimeBoundary)
+	req.ChangeDetection = strings.TrimSpace(req.ChangeDetection)
 	if req.TaskType != "" && req.TaskType != commonExecution.TaskTypeSync {
 		commonAPI.BadRequestError(c, "unsupported task_type: "+req.TaskType)
 		return
 	}
 	if providerOnly {
+		if req.ChangeDetection != "" {
+			respondTaskServiceError(c, service.ErrInvalidTaskConfig)
+			return
+		}
 		req.RuntimeBoundary = "bounded"
 	}
 

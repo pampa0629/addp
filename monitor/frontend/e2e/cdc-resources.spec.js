@@ -45,7 +45,7 @@ test('CDC has independent component permission and clears stale values after den
   const state = await cdcBackend(page, { permissions: ['monitor.resource_observation.read'] })
   await page.clock.install(); await page.goto('/cdc-resources')
   await expect(page.getByTestId('cdc-value-connectors')).toHaveText('2')
-  await expect(page.getByText('读取 PostgreSQL 源端还需引擎部署读取权限')).toBeVisible()
+  await expect(page.getByText('读取 PostgreSQL 部署指标还需引擎部署读取权限')).toBeVisible()
   expect(state.calls.some(path => path.includes('engine_'))).toBe(false)
   const visibility = hidden => page.evaluate(hidden => { Object.defineProperty(document, 'hidden', { configurable: true, value: hidden }); document.dispatchEvent(new Event('visibilitychange')) }, hidden)
   await expect(page.locator('.cdc-resources')).toHaveAttribute('aria-busy', 'false')
@@ -73,4 +73,14 @@ test('CDC cancels late responses after scope changes and preserves cards during 
   await page.getByRole('button', { name: '刷新', exact: true }).click()
   await expect(page.getByTestId('cdc-error')).toBeVisible()
   await expect(page.getByTestId('cdc-value-failedTasks')).toHaveText('—')
+})
+
+test('Platform task tab requests no Tenant facts and returns to runtime resources', async ({ page }) => {
+  const state = await cdcBackend(page)
+  await page.goto('/cdc-resources?view=tasks')
+  await expect(page.getByText('任务链路属于租户，请切换到目标租户身份查看')).toBeVisible()
+  expect(state.calls).toEqual([])
+  await page.getByRole('tab', { name: '运行资源', exact: true }).click()
+  await expect(page.getByTestId('cdc-card-kafka-connect')).toBeVisible()
+  expect(state.calls.some(path => path.includes('/transfer/'))).toBe(false)
 })

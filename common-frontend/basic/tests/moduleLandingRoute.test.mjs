@@ -123,12 +123,16 @@ test('measurement units have one entry in both verified contexts', () => {
 })
 
 
-test('CDC component entry is Platform-only and does not grant PostgreSQL or host reads', () => {
+test('CDC entry separates Tenant task chain and Platform component permissions', () => {
   const permission = ['monitor.resource_observation.read']
   assert.equal(allowsConsoleRoute('/monitor/cdc-resources', 'platform', permission), true)
   assert.equal(allowsConsoleRoute('/monitor/cdc-resources', 'tenant', permission), false)
   assert.equal(allowsConsoleRoute('/monitor/cdc-resources', 'platform', []), false)
   assert.equal(allowsConsoleRoute('/monitor/engine-resources', 'platform', permission), false)
   assert.equal(allowsConsoleRoute('/monitor/node-resources', 'platform', permission), false)
+  const taskPermissions = ['transfer.task.read', 'monitor.execution.read']
+  assert.equal(allowsConsoleRoute('/monitor/cdc-resources', 'tenant', taskPermissions), true)
+  assert.equal(allowsConsoleRoute('/monitor/cdc-resources', 'platform', taskPermissions), false)
+  for (const key of taskPermissions) assert.equal(allowsConsoleRoute('/monitor/cdc-resources', 'tenant', [key]), false)
   assert.equal(resolveModuleLandingRoute('/monitor', ['/node-resources', '/cdc-resources'], 'platform', permission), '/cdc-resources')
 })
