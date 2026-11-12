@@ -1312,6 +1312,7 @@ test-main-publication: ## 验证共享 main 续办、基线检查与发布锁
 	@python3 scripts/ci/publish-main_test.py
 
 test-platform: check-node-runtime ## 运行无外部服务依赖的平台一致性门禁
+	@$(MAKE) test-format-documentation
 	@$(MAKE) test-main-publication
 	@$(MAKE) test-infra-minio-cache
 	@$(MAKE) test-platform-review
@@ -1350,6 +1351,10 @@ test-platform: check-node-runtime ## 运行无外部服务依赖的平台一致�
 .PHONY: test-platform-review
 test-platform-review: ## 核验平台能力来源、覆盖与不可变发布快照，拒绝来源漂移
 	@cd ontology/backend && GOWORK=off go test ./internal/platform -count=1
+
+.PHONY: test-format-documentation
+test-format-documentation: ## 核验 datatype / format / layout 文档与内置格式注册事实一致
+	@cd common && GOWORK=off go test ./format/builtin -run '^TestFormatDocumentation$$' -count=1
 
 .PHONY: test-python-ci-registration
 test-python-ci-registration: ## 校验 Python 模块与已登记 owner Runtime 的 Make / CI 一致性

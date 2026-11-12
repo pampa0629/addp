@@ -117,6 +117,10 @@ class BuildRegistrationTest(unittest.TestCase):
         self._write("scripts/ci/check-release-eligibility.py", "print('eligible')\n")
         self._write("scripts/ci/update-cli-version.py", "print('updated')\n")
         self._write("scripts/ci/update-cli-version_test.py", "print('tested')\n")
+        self._write(
+            "common/format/builtin/documentation_test.go",
+            "package builtin\nfunc TestFormatDocumentation(t *testing.T) {}\n",
+        )
         self._write("scripts/test/dev-lifecycle-and-build.sh", "#!/bin/bash\n")
         self._write("scripts/test/schema-ownership-gates_test.py", "# ownership regression fixture\n")
         self._write("scripts/test/check-execution-test-fixtures.sh", "#!/bin/bash\n")
@@ -135,6 +139,7 @@ class BuildRegistrationTest(unittest.TestCase):
             "prepare-cli-release:\n\t@python3 scripts/ci/update-cli-version.py\n\n"
             "check-cli-release:\n\t@python3 scripts/ci/check-release-eligibility.py --pre-tag\n\n"
             "test-platform:\n\t@python3 scripts/ci/update-cli-version_test.py\n"
+            "\t@$(MAKE) test-format-documentation\n"
             "\t@$(MAKE) test-dev-lifecycle\n"
             "\t@$(MAKE) test-execution-fixtures\n\t@$(MAKE) test-projection-store-ownership\n\n"
             "test-execution-fixtures:\n"
@@ -144,6 +149,7 @@ class BuildRegistrationTest(unittest.TestCase):
             "\t@python3 scripts/test/schema-ownership-gates_test.py ProjectionStoreGateTest\n"
             "\t@bash scripts/test/check-protection-projection-store-ownership.sh\n\n"
             "test-dev-lifecycle:\n\t@bash scripts/test/dev-lifecycle-and-build.sh\n\n"
+            "test-format-documentation:\n\t@cd common && GOWORK=off go test ./format/builtin -run '^TestFormatDocumentation$$' -count=1\n\n"
             "test-go:\n\t@echo $${ADDP_CI_SUMMARY_FILE:-}; GOWORK=off go mod tidy -diff\n",
         )
         self._write(
@@ -312,10 +318,28 @@ class BuildRegistrationTest(unittest.TestCase):
              "Makefile test-platform must run test-dev-lifecycle"),
             ("\t@bash scripts/test/dev-lifecycle-and-build.sh\n",
              "Makefile test-dev-lifecycle must run the dev lifecycle tests"),
+            ("\t@$(MAKE) test-format-documentation\n",
+             "Makefile test-platform must run test-format-documentation"),
+            ("\t@cd common && GOWORK=off go test ./format/builtin -run '^TestFormatDocumentation$$' -count=1\n",
+             "Makefile test-format-documentation must run the builtin registry/documentation contract"),
         ):
             with self.subTest(removed=removed):
                 makefile.write_text(original.replace(removed, ""), encoding="utf-8")
                 self.assertIn(expected, MODULE.validate_registration(self.repository))
+
+    def test_format_documentation_gate_cannot_succeed_without_its_test(self) -> None:
+        path = self.repository / "common/format/builtin/documentation_test.go"
+        original = path.read_text()
+        for replacement in (None, original.replace("TestFormatDocumentation", "TestRenamed")):
+            with self.subTest(replacement=replacement):
+                if replacement is None:
+                    path.unlink()
+                else:
+                    path.write_text(replacement)
+                self.assertIn(
+                    "Common builtin must define TestFormatDocumentation for the T0 gate",
+                    MODULE.validate_registration(self.repository),
+                )
 
     def test_ownership_regressions_cannot_be_removed_from_standard_gates(self) -> None:
         makefile = self.repository / "Makefile"

@@ -543,6 +543,17 @@ def validate_registration(repository: Path) -> list[str]:
     if "$(MAKE) test-dev-lifecycle" not in platform_recipe:
         errors.append("Makefile test-platform must run test-dev-lifecycle")
 
+    format_docs_recipe = make_recipe(makefile, "test-format-documentation") or ""
+    if "cd common && GOWORK=off go test ./format/builtin -run '^TestFormatDocumentation$$' -count=1" not in format_docs_recipe:
+        errors.append("Makefile test-format-documentation must run the builtin registry/documentation contract")
+    if "$(MAKE) test-format-documentation" not in platform_recipe:
+        errors.append("Makefile test-platform must run test-format-documentation")
+    format_docs_test = repository / "common/format/builtin/documentation_test.go"
+    if not format_docs_test.is_file() or not re.search(
+        r"(?m)^func TestFormatDocumentation\(t \*testing\.T\)", format_docs_test.read_text(encoding="utf-8")
+    ):
+        errors.append("Common builtin must define TestFormatDocumentation for the T0 gate")
+
     ownership_tests = "scripts/test/schema-ownership-gates_test.py"
     if not (repository / ownership_tests).is_file():
         errors.append(f"{ownership_tests} is missing")

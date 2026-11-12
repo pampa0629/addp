@@ -21,7 +21,7 @@
 
 ADDP 只维护一套稳定的数据类型和类型信息语义。各模块不得按自己的展示、扫描或读写习惯重新发明平行的数据类型边界；具体代码结构、接口契约和字段落点见规范层文档。
 
-第一版基础数据类型如下：
+当前基础数据类型与 `common/datatype/data_type.go` 一致，共 10 种具体类型及 `unknown`：
 
 | 数据类型 | 含义 | 典型处理方式 |
 |---|---|---|
@@ -39,23 +39,27 @@ ADDP 只维护一套稳定的数据类型和类型信息语义。各模块不得
 
 ### 当前支持汇总
 
-本表按当前内置实现汇总数据类型、引擎和文件格式的关系。引擎侧事实来自内置 engine plugin 的能力声明；格式侧事实来自 `common/format/builtin` 加载的内置 `FormatDescriptor` 和已接入的容器 child 解析能力。
+本表按当前内置实现汇总数据类型、引擎和文件格式的关系。格式清单来自 [内置插件加载入口](../../common/format/builtin/init.go)及各格式包的 `Descriptor()`；按默认 `data_type` 归类，并明确 JSON、PLY 的内容分类结果。逐格式的 `layout` 与限制见[内置数据类型与文件格式规范](../spec/addp内置数据类型与文件格式规范.md#总览)。新增或调整内置格式时，两处汇总须同步更新。
 
-表中的“引擎支持”分两类：数据库、动态 schema 和图引擎可以产生原生 data item；对象存储和文件存储引擎只提供文件 / 对象内容承载，最终 data type 仍由格式识别、格式 provider 和扫描结果决定。GeoPython Workflow、Spark Workflow、Math Workflow、Jupyter 等计算 / 脚本引擎不作为 data item 的原生存储来源列入本表。
+“内置格式”表示已注册稳定格式身份，不代表已完整实现扫描、预览、读取和写出；具体能力以已注册 plugin 的 provider / reader / writer 接口及专题规范为准。格式 ID 也不等于文件后缀：Excel 工作簿使用 `excel`，GeoTIFF 使用 `tiff`，GeoParquet 使用 `parquet`，JSON Lines 使用 `json`。
 
-| 数据类型 | 当前支持的原生 / 承载引擎 | 当前内置文件格式或容器子格式 | 说明 |
+表中的引擎列举来源示例，不是完整引擎清单。数据库、动态 schema、键值和图引擎可以产生原生 data item；对象存储和文件存储引擎只提供文件 / 对象内容承载，最终 data type 仍由格式识别、格式 provider 和扫描结果决定。GeoPython Workflow、Spark Workflow、Math Workflow、Jupyter 等计算 / 脚本引擎不作为 data item 的原生存储来源列入本表。
+
+| 数据类型 | 原生 / 承载引擎示例 | 当前内置格式与容器 child | 说明 |
 |---|---|---|---|
-| `table` | 原生表格引擎：PostgreSQL、MySQL、Doris、ClickHouse、Spark SQL。动态 schema 引擎：MongoDB collection。文件 / 对象承载：NFS、S3、MinIO。 | `csv`、`tsv`、records `json` / JSON Lines、`geojson`、`shapefile`、`parquet`、`orc`、`avro`。容器 child 可归一为 table：Excel sheet、SQLite table / view、GeoPackage layer / table、File Geodatabase feature class / table、Personal Geodatabase feature class / table、ZIP 内部表格文件。 | 表格数据可以来自引擎原生 catalog leaf，也可以来自文件格式。空间语义通过 `capabilities.spatial` 表达，不新增空间表 data type。Iceberg 属于规范层 whole table 示例，当前未作为内置 format descriptor 注册。 |
+| `table` | 原生表格引擎：PostgreSQL、MySQL、Doris、ClickHouse、Spark SQL。动态 schema 引擎：MongoDB collection。文件 / 对象承载：NFS、S3、MinIO。 | `csv`、`tsv`、`geojson`、`shapefile`、`parquet`、`feather`、`orc`、`avro`；严格记录集合型 `json` / JSON Lines 按内容归为 table。容器 child 可归一为 table：Excel sheet、SQLite / GeoPackage / UDBX 内部表、FileGDB / PGeo 内部 feature class / table、KML / GML / TopoJSON 图层、ZIP 内部表格文件。 | 表格数据可以来自引擎原生 catalog leaf，也可以来自文件格式。空间语义通过 `capabilities.spatial` 表达，不新增空间表 data type。Feather V2 与 Arrow IPC file 使用同一 `feather` 身份，当前只读，不支持 Feather V1 或 IPC stream。 |
 | `key_value` | 原生键值引擎：Redis 的已连接逻辑数据库。 | 不定义 Redis 文件格式。 | keyspace 是数据项，key/value 是实时内容；原生值结构不扩展为独立 datatype。 |
-| `document` | 文件 / 对象承载：NFS、S3、MinIO。当前没有专用原生 document catalog 引擎。 | `pdf`、`doc`、`docx`、`rtf`、`pptx`、`wps`、`text`、`markdown`、文档型 `json`。ZIP 内部文档文件可作为 container child 被识别。 | MongoDB query 可以返回 document 形态结果，但 MongoDB collection data item 在当前语义中仍按动态 schema 记录集合归为 `table`。 |
-| `media` | 文件 / 对象承载：NFS、S3、MinIO。当前没有专用原生 media catalog 引擎。 | 图片：`image`、`jpeg`、`png`、`gif`、`tiff`、`img`、`jpeg2000`、`webp`、`bmp`、`svg`、`avif`、`heic`。地图数据集：`pmtiles`、`raster_mosaic`。视频：`video`、`mp4`、`mov`、`mkv`、`avi`、`webm`。音频：`audio`、`mp3`、`wav`、`flac`、`aac`、`ogg`。ZIP 内部媒体文件可作为 container child 被识别。 | `pmtiles` 表示 PMTiles v3 单文件矢量瓦片归档，当前内部编码固定为 gzip MVT；`raster_mosaic` 表示由 manifest、index、leaf COG 和 overview COG 组成的 whole-scope 栅格镶嵌数据集。 |
-| `container` | 文件 / 对象承载：NFS、S3、MinIO。当前没有专用原生 container catalog 引擎；目录、prefix、bucket 只是 catalog / storage 形态，不是 `container` data type。 | `excel`、`sqlite`、`geopackage`、`zip`。 | 容器 item 先记录轻量 children；进入某个 child 后，再按 child 自身格式归一为 `table`、`document`、`media`、`unknown` 等类型。JSON 作为 container 仍是概念可表达方向，当前内置 JSON plugin 未提供容器信息 provider。 |
+| `document` | 文件 / 对象承载：NFS、S3、MinIO。当前没有专用原生 document catalog 引擎。 | `pdf`、`doc`、`docx`、`rtf`、`pptx`、`wps`、`text`、`markdown`、`xml`、默认文档型 `json`。ZIP 内部文档文件可作为 container child 被识别。 | MongoDB query 可以返回 document 形态结果，但 MongoDB collection data item 在当前语义中仍按动态 schema 记录集合归为 `table`。 |
+| `media` | 文件 / 对象承载：NFS、S3、MinIO。当前没有专用原生 media catalog 引擎。 | 图片：`image`、`jpeg`、`png`、`gif`、`tiff`、`webp`、`bmp`、`svg`、`avif`、`heic`。栅格：`img`、`jpeg2000`、`envi`、`grd`。地图数据集：`pmtiles`、`raster_mosaic`。视频：`video`、`mp4`、`mov`、`mkv`、`avi`、`webm`。音频：`audio`、`mp3`、`wav`、`flac`、`aac`、`ogg`。ZIP 内部媒体文件可作为 container child 被识别。 | ENVI 为数据文件与头文件组成的双文件 item；GRD 限 Surfer 7 / 6 Binary / 6 ASCII 数值网格。SVG / AVIF / HEIC 及音视频当前仅注册静态格式身份，不能据此推断 Go 元信息解析能力。`pmtiles` 为 PMTiles v3 矢量瓦片归档；`raster_mosaic` 为 manifest 声明的 whole-scope 栅格镶嵌数据集。 |
+| `container` | 文件 / 对象承载：NFS、S3、MinIO。当前没有专用原生 container catalog 引擎；目录、prefix、bucket 只是 catalog / storage 形态，不是 `container` data type。 | `excel`、`sqlite`、`geopackage`、`udbx`、`access`、`filegdb`、`pgeo`、`kml`、`gml`、`topojson`、`netcdf`、`grib`、`zip`。 | 容器 item 先记录轻量 children；child 按内容具有 table、media 等语义，不改变父容器身份。Access 当前只有识别声明，深扫确认 PGeo 后才沿 PGeo 只读链路读取；UDBX 不承诺完整 SuperMap 空间语义。NetCDF 为变量数组容器，GRIB 当前限 GRIB2 消息容器，二者提供有界网格切片。JSON 尚无容器信息 provider，不计入当前 container 格式。 |
 | `graph` | 原生图引擎：Neo4j。 | 当前没有内置 graph 文件格式 descriptor。 | RDF、GraphML、GEXF、图结构 JSON 仍是概念层典型来源；进入内置主线前需要先补 format descriptor、provider 和扫描规则。 |
 | `cad` | 文件 / 对象承载：NFS、S3、MinIO；Meta deep scan 直接读取文件头识别格式与版本，Manager 预览在浏览器使用 LibreDWG Worker/WASM 与 WebGL。 | 当前内置：`dwg`、`dxf`。 | DWG、DXF 源 item 保留 CAD 语义，不因 entity 可投影为记录而归为 `table`。扫描和预览都不依赖 SuperMap；CAD→GIS 输出是新的 `table + capabilities.spatial` item。 |
-| `model_3d` | 文件 / 对象承载：NFS、S3、MinIO。当前没有专用原生三维模型 catalog 引擎。 | 当前内置：`glb`、`gltf`、`obj`、`stl`、`fbx`、`ifc`、网格型 `ply`、`osgb`、`osgb_scene`、`s3m`、`3dtiles`。后续扩展：`rvt`、`3mx`、`slpk`。 | GLB / glTF、OBJ / STL / FBX、PLY mesh、IFC BIM、单 OSGB、OSGB 倾斜摄影场景、S3M、3D Tiles、Revit BIM 都归入 `model_3d`；网格场景、倾斜摄影、BIM、分块场景等子形态由 `type_info.model_3d.model_kind` 表达，不新增平行 data type。Develop 可将 OSGB scene 生成业务 S3M / 3D Tiles item；Manager 可将同一源分别生成 infra S3M / 3D Tiles 快显结果。OBJ / STL / FBX / IFC 可通过转换后的 GLB artifact 快显，其中 IFC 必须走专用 `ifc_to_glb`。 |
-| `point_cloud` | 文件 / 对象承载：NFS、S3、MinIO。当前没有专用原生点云 catalog 引擎。 | 当前内置：`las`、`laz`、`copc`、`e57`、`pcd`、`xyz`、`ept`、点云型 `ply`。后续扩展：`potree`。 | 点云即使可被展开为 x/y/z 等列，也不默认归为 `table`；点数、点格式、维度、三维包围盒、scale / offset 等进入 `type_info.point_cloud`，空间参考进入 `capabilities.spatial`。 |
-| `gaussian_splat` | 文件 / 对象承载：NFS、S3、MinIO。当前没有专用原生高斯泼溅 catalog 引擎。 | 当前内置：3DGS 型 `ply`、`.splat`、`.ksplat`。后续扩展：`.spz`。 | 高斯泼溅虽然通常由 PLY vertex 或 splat record 承载，但每条记录表示可渲染高斯基元，不是普通点云采样点；尺度、旋转、不透明度、球谐颜色等进入 `type_info.gaussian_splat`，格式私有事实进入 `format_info.<format>`。 |
-| `unknown` | 文件 / 对象承载：NFS、S3、MinIO；其他存储扫描中无法判断内容语义的叶子也可落为 `unknown`。 | `unknown`。 | `unknown` 是识别失败或暂未接入时的兜底格式 / 数据类型组合；它保留 storage、item 等基础事实和 raw binary 读取能力，不引入 `file` data type。 |
+| `model_3d` | 文件 / 对象承载：NFS、S3、MinIO。当前没有专用原生三维模型 catalog 引擎。 | `glb`、`gltf`、`obj`、`stl`、`fbx`、`dae`、`3ds`、`sgm`、`skp`、`max`、`ifc`、网格型 `ply`、`osgb`、`osgb_scene`、`s3m`、`3dtiles`。 | 网格场景、倾斜摄影、BIM、分块场景等子形态由 `type_info.model_3d.model_kind` 表达，不新增平行 data type。SGM、SKP、MAX 的 Common plugin 当前仅注册静态身份，Manager 的受控 Runtime 转换能力另由专题限定。Develop 可将 OSGB scene 生成业务 S3M / 3D Tiles item；Manager 可将同一源分别生成 infra 快显结果。 |
+| `point_cloud` | 文件 / 对象承载：NFS、S3、MinIO。当前没有专用原生点云 catalog 引擎。 | `las`、`laz`、`copc`、`e57`、`pcd`、`xyz`、`ept`；点云型 `ply` 按内容归类。 | 点云即使可被展开为 x/y/z 等列，也不默认归为 `table`；点数、点格式、维度、三维包围盒、scale / offset 等进入 `type_info.point_cloud`，空间参考进入 `capabilities.spatial`。 |
+| `gaussian_splat` | 文件 / 对象承载：NFS、S3、MinIO。当前没有专用原生高斯泼溅 catalog 引擎。 | `splat`、`ksplat`；3DGS 型 `ply` 按内容归类，含受支持的 SuperSplat 压缩 PLY。 | 高斯泼溅虽然通常由 PLY vertex 或 splat record 承载，但每条记录表示可渲染高斯基元，不是普通点云采样点；尺度、旋转、不透明度、球谐颜色等进入 `type_info.gaussian_splat`，格式私有事实进入 `format_info.<format>`。 |
+| `unknown` | 文件 / 对象承载：NFS、S3、MinIO；其他存储扫描中无法判断内容语义的叶子也可落为 `unknown`。 | `unknown`、`mongodb_extended_jsonl`。 | `unknown` format 提供原始二进制兜底。`mongodb_extended_jsonl` 是 MongoDB Canonical Extended JSON Lines 的专用导出编码身份，descriptor 默认 data type 为 unknown，当前不提供通用 table / document reader 或 writer；这不改变源 MongoDB collection 的 table 语义。 |
+
+未计入上述内置清单的范围：`kmz` 只有 fallback 扩展名 / MIME 识别，未加载内置格式 plugin；Iceberg、RDF / GraphML / GEXF、Revit RVT / 3MX / SLPK、Potree、SPZ、RAR / TAR 等仍是规范示例或后续方向。`postgres` / `mysql` 格式常量也不等于已注册文件格式；原生数据库表、键值和图数据可以没有文件 `format`。下文的“典型来源”用于解释类型边界，当前实现范围以上表及逐格式规范为准。
 
 ### table
 
@@ -193,7 +197,7 @@ CAD entity 可在查询界面投影为行，也可经显式导入转换为 GIS G
 PLY 是内容敏感格式：同一个 `format=ply` 可以根据 header 分别落为三种 data type：
 
 - `element face` 数量大于 0：`data_type=model_3d`，`format=ply`，`format_info.ply.layout=mesh`。
-- 没有 face，且具备 `x/y/z`、`opacity`、`scale_0..2`、`rot_0..3`、`f_dc_0..2` 或颜色字段：`data_type=gaussian_splat`，`format=ply`，`format_info.ply.layout=gaussian_splat`。
+- 没有 face，且具备受支持的传统 3DGS 属性组合，或 SuperSplat 压缩 PLY 的 `chunk` element 与 `packed_position` / `packed_rotation` / `packed_scale` / `packed_color` vertex 属性：`data_type=gaussian_splat`，`format=ply`，`format_info.ply.layout=gaussian_splat`；完整判定规则见 [PLY 专题](../spec/builtin-formats/PLY与高斯泼溅.md#ply)。
 - 没有 face，且不满足高斯泼溅字段组合：`data_type=point_cloud`，`format=ply`，`format_info.ply.layout=point_cloud`。
 
 `.splat` 和 `.ksplat` 单文件按格式身份归为 `data_type=gaussian_splat`、`format=splat|ksplat`，复用高斯泼溅预览路线。

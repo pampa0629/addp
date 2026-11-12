@@ -1,6 +1,6 @@
 # ADDP 内置数据类型与文件格式规范
 
-本文定义 ADDP 首批内置数据类型与文件格式的确定性落地规则。概念边界见 [ADDP 数据类型和格式体系图](../concepts/addp数据类型和格式体系图.md)，item 识别规则见 [ADDP 数据项探测器规范](addp数据项探测器规范.md)，attributes 写入规则见 [ADDP 元数据 attributes 规范](addp元数据attributes规范.md)。
+本文汇总 ADDP 当前内置数据类型与文件格式的确定性落地规则。概念边界及按 data type 分类的支持清单见 [ADDP 数据类型和格式体系图](../concepts/addp数据类型和格式体系图.md#当前支持汇总)，item 识别规则见 [ADDP 数据项探测器规范](addp数据项探测器规范.md)，attributes 写入规则见 [ADDP 元数据 attributes 规范](addp元数据attributes规范.md)。
 
 本文只记录已经形成规范共识的格式。尚未定稿的格式、插件 manifest、whole scope explain / confidence 等问题，分别进入 `docs/plan/` 下的对应构想文档或后续事项文档，不再依赖 `docs/next/` 里的公共待规范页。
 
@@ -17,15 +17,17 @@
 | [PLY 与高斯泼溅](builtin-formats/PLY与高斯泼溅.md) | PLY 内容分类、SPLAT、KSPLAT |
 | [点云](builtin-formats/点云.md) | LAS、LAZ、COPC、E57、PCD、XYZ、EPT |
 | [表格与矢量交换](builtin-formats/表格与矢量交换.md) | CSV / TSV、JSON、GeoJSON、Shapefile、KML / GML / TopoJSON |
-| [列式文件与数据容器](builtin-formats/列式文件与数据容器.md) | Excel、Parquet / ORC / Avro / Iceberg、SQLite / GeoPackage、FileGDB / PGeo、ZIP |
-| [媒体与地图数据集](builtin-formats/媒体与地图数据集.md) | 图片、JPEG EXIF / GPS、GIF / WebP 动画、TIFF 分页、PMTiles、Raster mosaic、视频、音频 |
+| [列式文件与数据容器](builtin-formats/列式文件与数据容器.md) | Excel、Parquet / ORC / Avro / Feather、SQLite / GeoPackage、FileGDB / PGeo、ZIP；Iceberg 为尚未内置注册的规范示例 |
+| [媒体与地图数据集](builtin-formats/媒体与地图数据集.md) | 图片、ENVI、Surfer GRD、NetCDF、GRIB2、JPEG EXIF / GPS、GIF / WebP 动画、TIFF 分页、PMTiles、Raster mosaic、视频、音频 |
 | [文档](builtin-formats/文档.md) | PDF、DOC / DOCX / RTF / PPTX / WPS |
 
 跨格式的预览材料与组件协议见[Manager 数据预览语义协议](../../manager/docs/数据预览语义协议.md)。
 
 ## 编写模板
 
-新增内置格式时，在对应专题中按以下结构补充，并同步本页总览；新增阅读主题时同步专题导航。
+新增或调整内置格式时，在对应专题中按以下结构补充，并同步本页总览与[概念文档的当前支持汇总](../concepts/addp数据类型和格式体系图.md#当前支持汇总)；新增阅读主题时同步专题导航。核对各格式 descriptor 的默认 data type、支持的 layout、内容分类结果和实际能力边界；只有常量或 fallback 识别的格式不得列为已注册内置格式。
+
+`make test-format-documentation` 校验两份汇总的 datatype、format 和 layout 记录，以及列式专题中的 Parquet 布局表，并由 `make test-platform` 接入现有 Platform CI。表内身份使用反引号标注；同一行列出的多个格式必须具有相同的布局和类型组合。检查直接读取已加载的内置 descriptor，JSON / PLY 的额外内容分类通过现有 provider 的小样本验证；它不证明 Runtime 可用、全格式读写能力或 Hosted 验收。
 
 | 小节 | 必须说明 |
 |---|---|
@@ -50,37 +52,50 @@
 
 ## 总览
 
+下表覆盖 `common/format/builtin/init.go` 当前加载的内置格式身份；同一格式的不同布局或内容分类可分行列出。`data_type` 默认来自 descriptor，JSON 记录集合和 PLY 按实际内容分类。表中有格式身份不等于具备完整解析、预览或读写能力，具体能力按已注册 plugin 的接口及专题约束判断；Runtime 绑定能力还要求存在满足所需算子的可用 Runtime。尚未内置注册的规范示例与 fallback 候选在表后单列。
+
 | 格式 / 场景 | `layout` | `data_type` | `format` | 说明 |
 |---|---|---|---|---|
 | CSV | `single` | `table` | `csv` | 单资源表格文件 |
 | TSV | `single` | `table` | `tsv` | 单资源表格文件 |
 | Excel | `single` | `container` | `excel` | 外层工作簿先作为容器 item |
-| records JSON / JSON Lines | `single` | `table` | `json` | 行列结构 JSON |
+| records JSON / JSON Lines | `single` | `table` | `json` | descriptor 默认为 document；内容严格符合顶层对象数组或 JSON Lines 记录集合时归为 table |
 | GeoJSON / FeatureCollection | `single` | `table` | `geojson` | GeoJSON 格式；spatial 为解析后的横切能力 |
-| 任意对象 JSON / 配置 JSON | `single` | `document` 或 `container` | `json` | 按平台消费方式判断 |
+| 文档型 JSON / 配置 JSON | `single` | `document` | `json` | 当前 JSON 默认类型；不满足严格记录集合条件时保留 document，未提供容器信息 provider |
 | Shapefile | `multi` | `table` | `shapefile` | 同目录或同 prefix 的同 basename refs |
 | 单个 Parquet / GeoParquet | `single` | `table` | `parquet` | 单文件表；GeoParquet 仍使用 `format=parquet`，空间语义进入 `capabilities.spatial` |
-| sibling Parquet 文件组 | `multi` | `table` | `parquet` | 仅在有明确 ref 或 manifest 规则时成立 |
+| Parquet 分区表目录 | `whole` | `table` | `parquet` | 当前 descriptor 声明 single / whole；只有满足 whole scope 探测和组成规则时才归并，不声明 multi 文件组路径 |
 | Feather V2 / Arrow IPC file | `single` | `table` | `feather` | 同一静态格式；基础标量、日期、定点小数、时刻和时间戳只读，支持分页与连续读取，拒绝V1及IPC stream |
 | ORC / Avro 单文件 | `single` | `table` | `orc` / `avro` | 单文件表 |
-| Iceberg 表目录 | `whole` | `table` | `iceberg` | 整体表目录，需 whole scope 规则 |
+| Avro whole scope 声明 | `whole` | `table` | `avro` | descriptor 已声明此布局，但当前 plugin 未实现 scope table provider / reader；不能据静态声明认定目录表可读取 |
 | SQLite | `single` | `container` | `sqlite` | 内部表先写入 `type_info.container.children` |
 | GeoPackage | `single` | `container` | `geopackage` | 内部 layer 先写入 `type_info.container.children` |
+| UDBX | `single` | `container` | `udbx` | 复用 SQLite 容器与内部表读取；不代表已完整解释 SuperMap 原生空间语义 |
+| Microsoft Access | `single` | `container` | `access` | 当前仅注册识别声明；`.mdb` 与 MIME 不能直接证明 PGeo，深扫确认后精化为 pgeo；不提供通用 Access 内容 reader |
 | File Geodatabase | `whole` | `container` | `filegdb` | `.gdb` 目录整体构成容器，内部 feature class / table 为 child |
 | Personal Geodatabase | `single` | `container` | `pgeo` | `.mdb` 单文件容器，只允许作为只读 source |
+| KML / GML / TopoJSON | `single` | `container` | `kml` / `gml` / `topojson` | 通过 GDAL Runtime 枚举图层 children，选层后按 table 读取；GML / TopoJSON 只读，KML 另有二维简单要素 writer，父文件仍为 container |
+| NetCDF | `single` | `container` | `netcdf` | CDF-1/2/5 与受支持的自包含 NetCDF-4 根组数值网格；变量作为 array child，Runtime 提供有界切片，只读，不把父文件当单张影像 |
+| GRIB2 | `single` | `container` | `grib` | 当前只接入受支持的 GRIB2 规则网格消息，每条消息作为独立二维 array child；Runtime 提供有界切片，不支持 GRIB1、写出或 COG 快显 |
 | ZIP | `single` | `container` | `zip` | 压缩包 entry 先写入 `type_info.container.children` |
-| 图片 | `single` 或 TIFF sidecar `multi` | `media` | `jpeg` / `png` / `gif` / `tiff` / `webp` / `bmp` / `image` | GPS 或 GeoTIFF 空间语义进入 spatial |
+| 图片 | `single` | `media` | `jpeg` / `png` / `gif` / `webp` / `bmp` / `image` | 图片 GPS 空间语义进入 spatial |
+| TIFF / GeoTIFF | `single` / `multi` | `media` | `tiff` | 无旁文件时为 single；存在已确认的 TIFF sidecar 时按 multi 组织，空间语义进入 spatial |
+| SVG / AVIF / HEIC | `single` | `media` | `svg` / `avif` / `heic` | 当前仅注册静态格式身份，不提供 Go MediaInfoProvider；`.svgz` 归 svg，`.heif` 归 heic |
 | Raster mosaic | `whole` | `media` | `raster_mosaic` | 由 `mosaic.addp.json` manifest 声明的栅格镶嵌数据集 |
 | ERDAS Imagine IMG | `single` | `media` | `img` | 自包含 HFA；Runtime 深扫确认，快显派生受管 COG；外部 spill / dependent 组件暂不支持 |
 | JPEG2000 | `single` | `media` | `jpeg2000` | 自包含 JP2 / J2K；JP2OpenJPEG 原生检查，内部定位，快显派生受管 COG |
+| ENVI | `multi` | `media` | `envi` | 同目录一份数据文件与一份必需头文件，经完整配对证明后读取；Runtime 支持受限 ENVI Standard 栅格和 COG 派生，不以单个后缀确认身份，不写出 ENVI |
+| Surfer GRD | `single` | `media` | `grd` | 限 Surfer 7 / 6 Binary / 6 ASCII 数值网格，Runtime 按内容确认 GS7BG / GSBG / GSAG；不泛指所有 `.grd` 编码 |
 | 矢量瓦片集 | `single` | `media` | `pmtiles` | PMTiles v3 单文件；当前内部瓦片编码固定为 MVT |
-| 视频 | `single` | `media` | `mp4` / `mov` / `mkv` / `avi` / `webm` / `video` | 第一阶段以元信息和 range / stream 播放为主 |
-| 音频 | `single` | `media` | `mp3` / `wav` / `flac` / `aac` / `ogg` / `audio` | 第一阶段以元信息和 range / stream 播放为主 |
+| 视频 | `single` | `media` | `mp4` / `mov` / `mkv` / `avi` / `webm` / `video` | 当前 plugin 仅注册静态身份；内容通道与浏览器播放不等于已实现 Go 媒体元信息解析 |
+| 音频 | `single` | `media` | `mp3` / `wav` / `flac` / `aac` / `ogg` / `audio` | 当前 plugin 仅注册静态身份；`.m4a` 归 aac，`.opus` 归 ogg；内容播放不等于已实现 Go 媒体元信息解析 |
+| 纯文本 / Markdown | `single` | `document` | `text` / `markdown` | 提供 UTF-8 文档信息与有界文本读取；Markdown 保留独立格式身份 |
+| XML | `single` | `document` | `xml` | 提供 UTF-8 文档信息与有界文本读取，不代表 XML Schema 或领域语义解析；已确认的 KML / GML 使用其独立身份 |
 | PDF | `single` | `document` | `pdf` | 文档元信息和提取状态分区写入 |
 | DOC | `single` | `document` | `doc` | Word 97-2003 二进制文档；浏览器端统一 Office 预览 |
-| DOCX | `single` | `document` | `docx` | 第一阶段以内置格式识别和 raw / range 预览为主 |
+| DOCX | `single` | `document` | `docx` | 已提供文档信息与有界正文读取；浏览器预览通过原始内容通道消费 |
 | RTF | `single` | `document` | `rtf` | 富文本交换文档；浏览器端统一 Office 预览并按 RTF 声明的代码页解码 |
-| PPTX | `single` | `document` | `pptx` | 源文档保持 PPTX 身份，在线预览使用受管静态 PDF |
+| PPTX | `single` | `document` | `pptx` | 已提供文档信息与有界正文读取；源文档保持 PPTX 身份，在线预览使用受管静态 PDF |
 | WPS | `single` | `document` | `wps` | 第一阶段以内置格式识别和 raw / range 预览为主 |
 | DWG | `single` | `cad` | `dwg` | 二维 CAD 图纸；scan 读取 header，预览使用浏览器端 LibreDWG/WebGL |
 | DXF | `single` | `cad` | `dxf` | 二维 CAD 交换图纸；scan 读取 ASCII/Binary DXF header，预览使用浏览器端 LibreDWG/WebGL |
@@ -94,8 +109,10 @@
 | 3DS | `single` | `model_3d` | `3ds` | 3DS chunk 模型；摘要记录网格、顶点、三角面、材质和贴图引用；静态模型经 Assimp 生成 GLB 快显 |
 | SKP | `single` | `model_3d` | `skp` | SketchUp 原生文件；格式身份识别，静态网格经 Model3D 生成自包含 GLB 快显 |
 | MAX | `single` | `model_3d` | `max` | 3ds Max 原生场景；格式身份识别，支持范围内的静态网格经 Model3D 生成 GLB 快显 |
+| SGM | `single` | `model_3d` | `sgm` | SuperMap Global Model；Common 当前仅注册静态身份，Manager 经受控 SuperMap / Model3D Runtime 生成 GLB，具体组成与材质限制见专题 |
 | IFC | `single` | `model_3d` | `ifc` | IFC BIM 模型；第一阶段支持识别和轻量 BIM 摘要 |
 | 3D Tiles | `whole` | `model_3d` | `3dtiles` | 由 `tileset.json` manifest 声明的分块三维场景 |
+| S3M | `whole` | `model_3d` | `s3m` | SCP manifest 与场景资源组成整体；版本及瓦片扩展差异保留在 format_info.s3m，不拆分 data type |
 | OSGB | `single` | `model_3d` | `osgb` | 单个 `.osgb` 三维模型文件；快显通过 GLB artifact 实现 |
 | OSGB Scene | `whole` | `model_3d` | `osgb_scene` | 由 `metadata.xml` manifest 声明的一套 OSGB 倾斜摄影三维模型场景 |
 | LAS | `single` | `point_cloud` | `las` | LAS 原始点云格式；deep scan 读取 header 和轻量摘要，预算内可做 JSON 小样本基础预览，可视化主线转 COPC |
@@ -105,7 +122,23 @@
 | PCD | `single` | `point_cloud` | `pcd` | Point Cloud Data 单文件点云；deep scan 读取 PCD header 轻量摘要 |
 | XYZ | `single` | `point_cloud` | `xyz` | 文本 XYZ 点云；deep scan 做预算内采样摘要 |
 | EPT | `whole` | `point_cloud` | `ept` | Entwine Point Tiles whole-scope 点云数据集；`ept.json` manifest 强命中 |
+| SPLAT | `single` | `gaussian_splat` | `splat` | 固定记录式高斯泼溅场景；保留高斯基元语义，不按普通点云或 GLB 网格处理 |
+| KSPLAT | `single` | `gaussian_splat` | `ksplat` | 分块高斯泼溅场景；版本、压缩与分块事实进入 format_info.ksplat，复用高斯泼溅预览路线 |
+| 未识别二进制 | `single` | `unknown` | `unknown` | 提供 BinaryContentReader 读取原始字节；不是独立 binary 或 file data type |
+| MongoDB Canonical Extended JSON Lines | `single` | `unknown` | `mongodb_extended_jsonl` | `.ejsonl` 专用导出编码身份，descriptor 版本为 2；编码由源引擎承担，当前无通用 table / document reader 或 writer，不改变源 collection 的 table 类型 |
 
-## 原生键值数据集
+## 尚未内置注册的规范示例与识别候选
+
+- Iceberg 的 `whole + table + iceberg` 仍是整体表目录的规范示例，当前没有内置 format descriptor 或 plugin，不能计作已接入格式。
+- JSON 作为 container 在概念上可表达，但当前内置 JSON plugin 未提供容器信息 provider；已接入路径为默认 document 与严格记录集合 table。
+- KMZ 只有 `common/format/detection_fallback.go` 中的扩展名 / MIME 识别，未加载内置 plugin，不代表可读取其图层或写出 KMZ。
+- RDF / GraphML / GEXF、Revit RVT / 3MX / SLPK、Potree、SPZ、RAR / TAR 等未在当前内置插件中注册。存在格式名称、概念示例或规划，不等于实现支持。
+- `FormatPostgres` / `FormatMySQL` 常量未对应内置文件格式 plugin，不能据常量名给原生数据库表填入文件 format。
+
+## 原生引擎数据项
+
+原生数据库表、MongoDB collection、键值数据集和图数据项可以没有文件 `format`。它们分别按记录集合、键值或图语义归入 `table`、`key_value`、`graph`，不因缺少文件格式而降为 unknown；当前没有内置 graph 文件格式 descriptor。引擎事实与读取能力由各 engine plugin 提供，不纳入上述文件格式清单。
+
+### 原生键值数据集
 
 Redis 的连接指定逻辑数据库识别为单个 `item_type=keyspace`、`data_type=key_value`、`layout=single` 数据项。没有统一表字段，不声明 `format=redis`；值结构由原生内容读取提供。空键空间也可识别，单个键不登记 Meta item，原始字节、原生类型、长度和 TTL 不落库。详见键值数据集路径、attributes 和 Engine Provider 规范。
