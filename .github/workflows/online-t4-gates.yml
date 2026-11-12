@@ -247,6 +247,10 @@ on:
           - filegdb-mysql-export
           - filegdb-authorization
           - nfs-upload-initial
+      manager_source_commit:
+        description: Required full ancestor SHA when suite is manager-internal-artifact-lineage
+        required: false
+        type: string
       native_case:
         description: Explicit cleanup-native-effects case (manager-success, manager-object-unknown, manager-index-unknown, manager-late-writer, transfer-engine, transfer-dlq-unknown, transfer-capture-unknown)
         required: false
@@ -1613,11 +1617,30 @@ jobs:
       ONLINE_SUITE_INPUT: manager-internal-artifact-lineage
       ADDP_ONLINE_MANAGER_CASE: ${{ inputs.manager_case }}
     steps:
+      - name: Validate requested Manager source commit
+        env:
+          MANAGER_SOURCE_COMMIT: ${{ inputs.manager_source_commit }}
+        run: |
+          if [[ ! "$MANAGER_SOURCE_COMMIT" =~ ^[0-9a-f]{40}$ ]]; then
+            echo 'Manager source commit must be a full lowercase SHA' >&2
+            exit 1
+          fi
+
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           fetch-depth: 0
           persist-credentials: false
+          ref: ${{ inputs.manager_source_commit }}
+
+      - name: Verify Manager source ancestry
+        env:
+          MANAGER_SOURCE_COMMIT: ${{ inputs.manager_source_commit }}
+          MANAGER_DISPATCH_COMMIT: ${{ github.sha }}
+        run: |
+          [ "$(git rev-parse HEAD)" = "$MANAGER_SOURCE_COMMIT" ] || { echo 'Manager source checkout mismatch' >&2; exit 1; }
+          git merge-base --is-ancestor "$MANAGER_SOURCE_COMMIT" "$MANAGER_DISPATCH_COMMIT"
+          printf 'Manager source commit=%s; dispatch commit=%s\n' "$MANAGER_SOURCE_COMMIT" "$MANAGER_DISPATCH_COMMIT"
 
       - name: Set up Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7

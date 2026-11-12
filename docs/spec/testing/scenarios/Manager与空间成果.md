@@ -65,6 +65,8 @@ NFS／MinIO 各两份独立字节编码源文件，每份三条单场消息，�
 
 各 case 的精确身份、权限、源／成果、失败处理和清理证明以所链专题为准，不统一套用 `full` 的十项权限或模型清理条款。选择清单仅说明当前接线，不表示这些 case 已通过 Hosted；固定版本证据、首败、未覆盖项及业务与部署清理结果继续分别核对。
 
+人工 Hosted 的 Manager Job 必须显式提供 `manager_source_commit`，使用完整40位小写 SHA；空值、分支名、短 SHA 和非法格式在检出前拒绝。该参数只控制 Manager Job 的源码检出，其他 suite 不消费它。检出后核对实际 HEAD 等于所选 SHA，且该提交必须为本次 workflow dispatch 提交的祖先（含自身），随后才准备工具和部署；不回退到当前 main。日志分别记录源码与 dispatch 的完整 SHA，应用、Runtime、夹具和业务断言均来自所选源码。沿既有手工 workflow 传入 `suite=manager-internal-artifact-lineage`、明确 `manager_case` 和 `manager_source_commit`；权限、服务、预算及清理契约不变。没有该参数的历史 workflow 版本不能替代固定源码入口。
+
 `native-raster-media` 执行既有 IMG/JPEG2000、Surfer GRD 只读及 TIFF 无定位小图 COG 布局子场景。前两者沿同一入口验证真实 Meta、原文件、COG、页面、缓存和领域／物理清理；GRD 验证完整数值源、元数据、页面原文件下载及无定位边界。四个子场景任一个失败即失败，不因另一个通过继续宣称整项通过。独立根报告为 `manager-native-raster-media.json`、`schema_version=addp.manager-native-raster-media/v2`，包含 `case=native-raster-media`、完整 `source_formats=[img,jpeg2000,grd,tiff]`、普通身份、四个子报告及真实失败状态；总 `online-report.json` 仍由统一分发器生成。未执行的模型、点云、文档、结构化数据及其他格式既不计通过，也不伪装成跳过后完整通过；完整 case 在新模型源授权迁移完成前仍可能受其原有正向断言阻断，须单独验收。成功／失败后的应用、夹具、凭据与 Infra 清理继续使用同一 Hosted 生命周期，不修改开发服务。
 
 case 路由、默认完整场景保留、未知值只读拒绝、子场景失败与清理、case 归档及 workflow 接线由现有 `make test-manager-online-runner` 及 CI 登记检查覆盖；不新增长期脚本或根 Makefile 入口。

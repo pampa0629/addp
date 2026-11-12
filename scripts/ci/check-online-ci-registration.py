@@ -572,6 +572,20 @@ def validate_manager_internal_artifact_lineage_profile(repository: Path, registe
     job = re.search(r"(?ms)^  manager-hosted-t4:\n(?P<body>.*?)(?=^  [a-z][a-z0-9-]*:\n|\Z)", workflow)
     if not job or "runs-on: ubuntu-24.04" not in job.group("body"):
         raise RegistrationError("manager-internal-artifact-lineage requires Ubuntu Hosted job")
+    source_input = re.search(r"(?ms)^      manager_source_commit:\n(?P<body>.*?)(?=^      [a-z_]+:\n|^jobs:|\Z)", workflow)
+    source_steps = ('name: Validate requested Manager source commit', 'name: Check out repository',
+                    'name: Verify Manager source ancestry', 'name: Set up Go')
+    body = job.group('body')
+    if (not source_input or 'type: string' not in source_input.group('body')
+            or any(fragment not in body for fragment in (*source_steps,
+                'MANAGER_SOURCE_COMMIT: ${{ inputs.manager_source_commit }}',
+                'MANAGER_DISPATCH_COMMIT: ${{ github.sha }}',
+                '[[ ! "$MANAGER_SOURCE_COMMIT" =~ ^[0-9a-f]{40}$ ]]',
+                'ref: ${{ inputs.manager_source_commit }}',
+                '[ "$(git rev-parse HEAD)" = "$MANAGER_SOURCE_COMMIT" ]',
+                'git merge-base --is-ancestor "$MANAGER_SOURCE_COMMIT" "$MANAGER_DISPATCH_COMMIT"'))
+            or [body.index(step) for step in source_steps] != sorted(body.index(step) for step in source_steps)):
+        raise RegistrationError('Manager fixed source requires mandatory exact SHA, checkout and dispatch ancestry before deployment')
     manager_input = re.search(r"(?ms)^      manager_case:\n(?P<body>.*?)(?=^      [a-z_]+:\n|^jobs:|\Z)", workflow)
     if (not manager_input or any(not source_contract_contains(manager_input.group('body'), fragment, repository) for fragment in
             ('required: true', 'type: choice', 'default: full', '- full', '- native-raster-media', '- native-table-orc', '- native-table-avro', '- native-table-feather', '- delimited-read-settings', '- native-netcdf', '- native-grib', '- native-envi', '- kml-export', '- filegdb-export', '- filegdb-mysql-export', '- filegdb-authorization'))

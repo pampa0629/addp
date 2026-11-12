@@ -3891,6 +3891,52 @@ class OnlineCIRegistrationTest(unittest.TestCase):
                     CHECK.validate_raster_workflow_profile(self.repository, registered)
                 path.write_text(original)
 
+    @staticmethod
+    def manager_source_steps():
+        workflow = (SCRIPT.parents[2] / '.github/workflows/online-t4-gates.yml').read_text()
+        job = re.search(r'(?ms)^  manager-hosted-t4:\n(.*?)(?=^  [a-z][a-z0-9-]*:\n|\Z)', workflow)[1]
+        steps = {}
+        for name, body in re.findall(r'(?ms)^      - name: ([^\n]+)\n(.*?)(?=^      - name: |\Z)', job):
+            run = re.search(r'(?ms)^        run: \|\n(.*)', body)
+            if run:
+                steps[name] = textwrap.dedent(run[1])
+        return steps
+
+    def test_manager_source_requires_full_sha_before_checkout(self):
+        import os
+        script = self.manager_source_steps()['Validate requested Manager source commit']
+        for source, accepted in (('', False), ('b5f3bcdc9', False), ('A' * 40, False), ('a' * 39, False),
+                                 ('a' * 41, False), ('refs/heads/main', False), ('a' * 40 + '\n', False),
+                                 ('$(echo unsafe)', False), ('b5f3bcdc9f7e636d195bb01d41b7e7f50c7b0ed5', True)):
+            result = subprocess.run(['bash', '-euc', script], env={**os.environ, 'MANAGER_SOURCE_COMMIT': source},
+                                    capture_output=True, text=True)
+            with self.subTest(source=source):
+                self.assertEqual(result.returncode == 0, accepted, result.stderr)
+
+    def test_manager_source_checkout_and_ancestry_reject_drift_and_foreign_commit(self):
+        import os
+        script = self.manager_source_steps()['Verify Manager source ancestry']
+        with tempfile.TemporaryDirectory() as directory:
+            def git(*args):
+                return subprocess.check_output(['git', *args], cwd=directory, stderr=subprocess.DEVNULL).decode().strip()
+            git('init', '--initial-branch=main')
+            git('config', 'user.name', 'source-contract'); git('config', 'user.email', 'source-contract@example.invalid')
+            git('config', 'maintenance.auto', 'false'); git('config', 'gc.auto', '0')
+            git('commit', '--allow-empty', '-m', 'source'); source = git('rev-parse', 'HEAD')
+            git('commit', '--allow-empty', '-m', 'dispatch'); dispatch = git('rev-parse', 'HEAD')
+            foreign = git('commit-tree', git('rev-parse', 'HEAD^{tree}'), '-m', 'unrelated source')
+            for selected, head, planned, accepted in ((source, source, dispatch, True), (dispatch, dispatch, dispatch, True),
+                                                       (dispatch, source, dispatch, False), (foreign, foreign, dispatch, False),
+                                                       (source, source, foreign, False)):
+                git('checkout', '--detach', head)
+                result = subprocess.run(['bash', '-euc', script], cwd=directory,
+                                        env={**os.environ, 'MANAGER_SOURCE_COMMIT': selected, 'MANAGER_DISPATCH_COMMIT': planned},
+                                        capture_output=True, text=True)
+                with self.subTest(selected=selected, head=head, dispatch=planned):
+                    self.assertEqual(result.returncode == 0, accepted, result.stderr)
+                    if accepted:
+                        self.assertIn(f'source commit={selected}; dispatch commit={planned}', result.stdout)
+
     def test_requires_manager_internal_artifact_lineage_fixture_and_browser_suite(self) -> None:
         gate = self.repository / "scripts/test/online-gate.py"
         gate.write_text(
@@ -3912,7 +3958,8 @@ class OnlineCIRegistrationTest(unittest.TestCase):
         import re
         job = re.search(r"(?ms)^  manager-hosted-t4:\n.*?(?=^  [a-z][a-z0-9-]*:\n|\Z)", workflow).group()
         manager_input = re.search(r"(?ms)^      manager_case:\n.*?(?=^      [a-z_]+:\n)", workflow).group()
-        self.workflow.write_text(self.workflow.read_text().replace('jobs:', manager_input + 'jobs:', 1).replace("first-suite", "manager-internal-artifact-lineage").replace(
+        source_input = re.search(r"(?ms)^      manager_source_commit:\n.*?(?=^      [a-z_]+:\n)", workflow).group()
+        self.workflow.write_text(self.workflow.read_text().replace('jobs:', manager_input + source_input + 'jobs:', 1).replace("first-suite", "manager-internal-artifact-lineage").replace(
             "if: github.event_name == 'workflow_dispatch'", "if: github.event_name == 'workflow_dispatch' && inputs.suite != 'manager-internal-artifact-lineage'")
             + job, encoding="utf-8")
         fixture = self.repository / "business/scripts/online-manager-minio-fixture.sh"
@@ -4039,6 +4086,11 @@ class OnlineCIRegistrationTest(unittest.TestCase):
         make.write_text(make.read_text().replace('@echo test_online_avro_fixture.py', '@echo test_online_avro_fixture.py test_online_feather_fixture.py'))
         CHECK.check_registration(self.repository)
         for file, fragment, reason in (
+            (self.workflow, '      manager_source_commit:\n', 'Manager fixed source'),
+            (self.workflow, 'ref: ${{ inputs.manager_source_commit }}', 'Manager fixed source'),
+            (self.workflow, '[[ ! "$MANAGER_SOURCE_COMMIT" =~ ^[0-9a-f]{40}$ ]]', 'Manager fixed source'),
+            (self.workflow, '[ "$(git rev-parse HEAD)" = "$MANAGER_SOURCE_COMMIT" ]', 'Manager fixed source'),
+            (self.workflow, 'git merge-base --is-ancestor "$MANAGER_SOURCE_COMMIT" "$MANAGER_DISPATCH_COMMIT"', 'Manager fixed source'),
             (self.repository/'scripts/test/manager-feather-online.py', 'validate_content', 'Feather'),
             (self.repository/'console/frontend/e2e/online/manager-feather.spec.js', 'original_button_download_verified: true', 'Feather'),
             (self.repository/'console/frontend/e2e/online/manager-feather.spec.js', 'original_download_unavailable_verified: true', 'Feather'),
