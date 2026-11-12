@@ -3,10 +3,13 @@ package repository
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/google/uuid"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/addp/transfer/internal/models"
@@ -71,12 +74,17 @@ func (r *CaptureRepository) BeginGeneration(ctx context.Context, identity Captur
 		if identity.SourceType != models.CaptureSourcePostgreSQL && identity.SourceType != models.CaptureSourceMySQL && identity.SourceType != models.CaptureSourceOracle {
 			return fmt.Errorf("unsupported capture source type %q", identity.SourceType)
 		}
+		applyID, parseErr := uuid.Parse(task.ApplyIdentity)
+		if parseErr != nil || applyID == uuid.Nil {
+			return fmt.Errorf("capture requires a global task apply identity")
+		}
+		globalID := strings.ReplaceAll(applyID.String(), "-", "")
 		generation := uint64(1)
 		resource = models.CaptureResource{
 			TaskID: identity.TaskID, TenantID: identity.TenantID, Generation: generation,
-			ConnectorName: captureConnectorName(identity.TenantID, identity.TaskID, generation),
-			TopicName:     captureTopicName(identity.TenantID, identity.TaskID, generation),
-			ConsumerGroup: captureConsumerGroup(identity.TenantID, identity.TaskID, generation),
+			ConnectorName: captureConnectorName(globalID, generation),
+			TopicName:     captureTopicName(globalID, generation),
+			ConsumerGroup: captureConsumerGroup(globalID, generation),
 			SourceType:    identity.SourceType, SourceIdentity: identity.SourceIdentity, SourceConnectionFingerprint: identity.SourceConnectionFingerprint,
 			SourceEngineID: identity.SourceEngineID,
 			SourceDatabase: identity.SourceDatabase, SourceSchema: identity.SourceSchema, SourceTable: identity.SourceTable,
@@ -90,8 +98,8 @@ func (r *CaptureRepository) BeginGeneration(ctx context.Context, identity Captur
 		case models.CaptureSourcePostgreSQL:
 			resource.PostgreSQL = &models.PostgreSQLCaptureResource{
 				CaptureResourceID: resource.ID,
-				SlotName:          captureSlotName(identity.TenantID, identity.TaskID, generation), PublicationName: capturePublicationName(identity.TenantID, identity.TaskID, generation),
-				SlotOwned: true, PublicationOwned: true,
+				SlotName:          captureSlotName(globalID, generation), PublicationName: capturePublicationName(globalID, generation),
+				SlotOwned: false, PublicationOwned: false,
 			}
 			return tx.Create(resource.PostgreSQL).Error
 		case models.CaptureSourceMySQL:
@@ -101,20 +109,20 @@ func (r *CaptureRepository) BeginGeneration(ctx context.Context, identity Captur
 			}
 			resource.MySQL = &models.MySQLCaptureResource{
 				CaptureResourceID: resource.ID, ConnectorServerID: serverID,
-				SchemaHistoryTopicName:  captureSchemaHistoryTopicName(identity.TenantID, identity.TaskID, generation),
+				SchemaHistoryTopicName:  captureSchemaHistoryTopicName(globalID, generation),
 				SchemaHistoryTopicOwned: true,
 			}
 			return tx.Create(resource.MySQL).Error
 		case models.CaptureSourceOracle:
 			resource.Oracle = &models.OracleCaptureResource{
 				CaptureResourceID:       resource.ID,
-				SchemaHistoryTopicName:  captureSchemaHistoryTopicName(identity.TenantID, identity.TaskID, generation),
+				SchemaHistoryTopicName:  captureSchemaHistoryTopicName(globalID, generation),
 				SchemaHistoryTopicOwned: true,
 			}
 			if len(identity.SourceSpatialInfo) > 0 {
-				resource.Oracle.SpatialMirrorTableName = oracleSpatialMirrorTableName(resource.ID)
-				resource.Oracle.SpatialRowTriggerName = oracleSpatialRowTriggerName(resource.ID)
-				resource.Oracle.SpatialDDLGuardName = oracleSpatialDDLGuardName(resource.ID)
+				resource.Oracle.SpatialMirrorTableName = oracleSpatialMirrorTableName(globalID, generation)
+				resource.Oracle.SpatialRowTriggerName = oracleSpatialRowTriggerName(globalID, generation)
+				resource.Oracle.SpatialDDLGuardName = oracleSpatialDDLGuardName(globalID, generation)
 				resource.Oracle.SpatialArtifactsOwned = true
 			}
 			return tx.Create(resource.Oracle).Error
@@ -199,40 +207,36 @@ func captureStopInitiated(status models.CaptureStatus) bool {
 	return status == models.CaptureStatusCleaning || status == models.CaptureStatusCleanupFailed || status == models.CaptureStatusStopped
 }
 
-func captureConnectorName(tenantID, taskID uint, generation uint64) string {
-	return fmt.Sprintf("addp-cdc-t%d-task%d-g%d", tenantID, taskID, generation)
+func captureConnectorName(identity string, generation uint64) string {
+	return "addp-cdc-" + identity + "-g" + strconv.FormatUint(generation, 36)
 }
-
-func captureTopicName(tenantID, taskID uint, generation uint64) string {
-	return fmt.Sprintf("__addp_cdc.%d.%d.%d", tenantID, taskID, generation)
+func captureTopicName(identity string, generation uint64) string {
+	return "__addp_cdc." + identity + "." + strconv.FormatUint(generation, 36)
 }
-
-func captureSchemaHistoryTopicName(tenantID, taskID uint, generation uint64) string {
-	return fmt.Sprintf("__addp_cdc_schema.%d.%d.%d", tenantID, taskID, generation)
+func captureSchemaHistoryTopicName(identity string, generation uint64) string {
+	return "__addp_cdc_schema." + identity + "." + strconv.FormatUint(generation, 36)
 }
-
-func captureConsumerGroup(tenantID, taskID uint, generation uint64) string {
-	return fmt.Sprintf("__addp_cdc_consumer.%d.%d.%d", tenantID, taskID, generation)
+func captureConsumerGroup(identity string, generation uint64) string {
+	return "__addp_cdc_consumer." + identity + "." + strconv.FormatUint(generation, 36)
 }
-
-func captureSlotName(tenantID, taskID uint, generation uint64) string {
-	return fmt.Sprintf("addp_cdc_t%d_task%d_g%d", tenantID, taskID, generation)
+func captureSlotName(identity string, generation uint64) string {
+	return "addp_cdc_" + identity + "_g" + strconv.FormatUint(generation, 36)
 }
-
-func capturePublicationName(tenantID, taskID uint, generation uint64) string {
-	return fmt.Sprintf("addp_cdc_t%d_task%d_g%d_pub", tenantID, taskID, generation)
+func capturePublicationName(identity string, generation uint64) string {
+	return captureSlotName(identity, generation) + "_pub"
 }
-
-func oracleSpatialMirrorTableName(captureResourceID uint) string {
-	return "ADDP_M_" + strconv.FormatUint(uint64(captureResourceID), 36)
+func oracleSpatialResourceName(role, identity string, generation uint64) string {
+	sum := sha256.Sum256([]byte(captureTopicName(identity, generation)))
+	return fmt.Sprintf("ADDP_%s_%x", role, sum[:10])
 }
-
-func oracleSpatialRowTriggerName(captureResourceID uint) string {
-	return "ADDP_R_" + strconv.FormatUint(uint64(captureResourceID), 36)
+func oracleSpatialMirrorTableName(identity string, generation uint64) string {
+	return oracleSpatialResourceName("M", identity, generation)
 }
-
-func oracleSpatialDDLGuardName(captureResourceID uint) string {
-	return "ADDP_D_" + strconv.FormatUint(uint64(captureResourceID), 36)
+func oracleSpatialRowTriggerName(identity string, generation uint64) string {
+	return oracleSpatialResourceName("R", identity, generation)
+}
+func oracleSpatialDDLGuardName(identity string, generation uint64) string {
+	return oracleSpatialResourceName("D", identity, generation)
 }
 
 func mysqlConnectorServerID(captureResourceID uint) (uint32, error) {
@@ -276,4 +280,21 @@ func (r *CaptureRepository) BufferCommittedOffset(ctx context.Context, resource 
 		return nil, fmt.Errorf("invalid CDC committed offset")
 	}
 	return &offset, nil
+}
+
+// ClaimPostgreSQLResources records verified namespace reservation before Connect can create objects.
+func (r *CaptureRepository) ClaimPostgreSQLResources(ctx context.Context, resource *models.CaptureResource) error {
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := NewCaptureRepository(tx).Update(ctx, resource.ID, resource.ResourceVersion, map[string]interface{}{}); err != nil {
+			return err
+		}
+		result := tx.Model(&models.PostgreSQLCaptureResource{}).Where("capture_resource_id = ?", resource.ID).Updates(map[string]interface{}{"slot_owned": true, "publication_owned": true})
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected != 1 {
+			return fmt.Errorf("PostgreSQL provider reservation is missing")
+		}
+		return nil
+	})
 }

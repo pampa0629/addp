@@ -221,6 +221,9 @@ func (DatabaseSourceResources) EnsureOwnedResources(ctx context.Context, plan *C
 	if plan.SourceConnectionFingerprint == "" || plan.SourceConnectionFingerprint != resource.SourceConnectionFingerprint {
 		return fmt.Errorf("refuse to provision database capture resources because the source connection identity changed")
 	}
+	if plan.SourceType == models.CaptureSourcePostgreSQL {
+		return verifyPostgreSQLResourceReservation(ctx, plan, resource)
+	}
 	if plan.SourceType == models.CaptureSourceOracle {
 		return ensureOracleSpatialOwnedResources(ctx, plan, resource)
 	}
@@ -276,7 +279,7 @@ func dropPostgreSQLOwnedResources(ctx context.Context, plan *CapturePlan, resour
 			return fmt.Errorf("inspect ADDP-owned replication slot: %w", err)
 		}
 		if err == nil {
-			if plugin != "pgoutput" || database != resource.SourceDatabase {
+			if !ownsPostgreSQLSlot(resource, plugin, database) {
 				return fmt.Errorf("refuse to drop replication slot %q because its identity does not match capture registration", provider.SlotName)
 			}
 			if active {
@@ -320,4 +323,50 @@ func dropPostgreSQLOwnedResources(ctx context.Context, plan *CapturePlan, resour
 		}
 	}
 	return nil
+}
+
+func verifyPostgreSQLResourceReservation(ctx context.Context, plan *CapturePlan, resource *models.CaptureResource) error {
+	if resource.PostgreSQL == nil {
+		return fmt.Errorf("PostgreSQL capture requires provider resources")
+	}
+	db, err := openPostgreSQL(plan.SourceConnInfo)
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+	provider := resource.PostgreSQL
+	var plugin, database string
+	err = db.QueryRowContext(ctx, "SELECT plugin, database FROM pg_replication_slots WHERE slot_name = $1", provider.SlotName).Scan(&plugin, &database)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return fmt.Errorf("inspect capture slot reservation: %w", err)
+	}
+	if err == nil && !ownsPostgreSQLSlot(resource, plugin, database) {
+		return fmt.Errorf("refuse existing replication slot without matching generation ownership")
+	}
+	var exists, allTables bool
+	if err = db.QueryRowContext(ctx, "SELECT count(*) > 0, COALESCE(bool_or(puballtables),false) FROM pg_publication WHERE pubname = $1", provider.PublicationName).Scan(&exists, &allTables); err != nil {
+		return err
+	}
+	if exists {
+		if !provider.PublicationOwned {
+			return fmt.Errorf("refuse existing publication without generation ownership")
+		}
+		if allTables {
+			return fmt.Errorf("refuse all-tables publication")
+		}
+		var total, matching int
+		err = db.QueryRowContext(ctx, "SELECT count(*), count(*) FILTER (WHERE schemaname=$2 AND tablename=$3) FROM pg_publication_tables WHERE pubname=$1", provider.PublicationName, resource.SourceSchema, resource.SourceTable).Scan(&total, &matching)
+		if err != nil {
+			return err
+		}
+		if total != 1 || matching != 1 {
+			return fmt.Errorf("refuse publication with mismatched source table identity")
+		}
+	}
+	return nil
+}
+
+// Both provisioning and cleanup must establish the same changing slot identity.
+func ownsPostgreSQLSlot(resource *models.CaptureResource, plugin, database string) bool {
+	return resource.PostgreSQL.SlotOwned && plugin == "pgoutput" && database == resource.SourceDatabase
 }

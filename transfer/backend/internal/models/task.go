@@ -238,8 +238,8 @@ type PostgreSQLCaptureResource struct {
 	CaptureResourceID uint   `gorm:"primaryKey" json:"capture_resource_id"`
 	SlotName          string `gorm:"type:varchar(63);not null;uniqueIndex:uq_transfer_postgresql_capture_slot" json:"slot_name"`
 	PublicationName   string `gorm:"type:varchar(63);not null;uniqueIndex:uq_transfer_postgresql_capture_publication" json:"publication_name"`
-	SlotOwned         bool   `gorm:"not null;default:true" json:"slot_owned"`
-	PublicationOwned  bool   `gorm:"not null;default:true" json:"publication_owned"`
+	SlotOwned         bool   `gorm:"not null;default:false" json:"slot_owned"`
+	PublicationOwned  bool   `gorm:"not null;default:false" json:"publication_owned"`
 }
 
 func (PostgreSQLCaptureResource) TableName() string {

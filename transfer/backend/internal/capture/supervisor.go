@@ -16,6 +16,7 @@ import (
 )
 
 type ResourceStore interface {
+	ClaimPostgreSQLResources(context.Context, *models.CaptureResource) error
 	BufferCommittedOffset(context.Context, *models.CaptureResource) (*int64, error)
 	RunCleanupOperation(context.Context, *models.CaptureResource, string, any, func(context.Context) error) error
 	BeginGeneration(ctx context.Context, identity repository.CaptureIdentity) (*models.CaptureResource, error)
@@ -104,6 +105,13 @@ func (s *Supervisor) Start(ctx context.Context, task *models.TransferTask) (*mod
 	if err := s.source.EnsureOwnedResources(ctx, plan, resource); err != nil {
 		s.fail(ctx, resource, err)
 		return nil, err
+	}
+	if resource.SourceType == models.CaptureSourcePostgreSQL && (!resource.PostgreSQL.SlotOwned || !resource.PostgreSQL.PublicationOwned) {
+		if err := s.store.ClaimPostgreSQLResources(ctx, resource); err != nil {
+			return nil, err
+		}
+		resource.ResourceVersion++
+		resource.PostgreSQL.SlotOwned, resource.PostgreSQL.PublicationOwned = true, true
 	}
 	if err := s.topics.EnsureTopic(ctx, TopicSpec{
 		Name: resource.TopicName, Partitions: 1, ReplicationFactor: s.config.TopicReplication,

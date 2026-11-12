@@ -104,3 +104,17 @@ func TestDatabaseSourceResourcesAcceptsOracleWithoutGenerationOwnedDatabaseObjec
 		t.Fatalf("Oracle cleanup error = %v", err)
 	}
 }
+
+func TestPostgreSQLSlotOwnershipRequiresReservationAndPhysicalIdentity(t *testing.T) {
+	resource := &models.CaptureResource{SourceDatabase: "business", PostgreSQL: &models.PostgreSQLCaptureResource{SlotName: "existing"}}
+	if ownsPostgreSQLSlot(resource, "pgoutput", "business") {
+		t.Fatal("same-name compatible stranger adopted")
+	}
+	resource.PostgreSQL.SlotOwned = true
+	if !ownsPostgreSQLSlot(resource, "pgoutput", "business") {
+		t.Fatal("owned matching slot refused")
+	}
+	if ownsPostgreSQLSlot(resource, "pgoutput", "other") || ownsPostgreSQLSlot(resource, "other", "business") {
+		t.Fatal("changed physical slot identity accepted")
+	}
+}

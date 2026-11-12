@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/addp/common/datatype"
@@ -121,7 +122,7 @@ func createCaptureRepositoryTestTables(t *testing.T, db *gorm.DB) {
 	}
 	if err := db.Exec(`CREATE TABLE transfer.postgresql_capture_resources (
 		capture_resource_id INTEGER PRIMARY KEY, slot_name TEXT NOT NULL UNIQUE, publication_name TEXT NOT NULL UNIQUE,
-		slot_owned BOOLEAN NOT NULL DEFAULT TRUE, publication_owned BOOLEAN NOT NULL DEFAULT TRUE
+		slot_owned BOOLEAN NOT NULL DEFAULT FALSE, publication_owned BOOLEAN NOT NULL DEFAULT FALSE
 	)`).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -155,7 +156,7 @@ func TestCaptureRepositoryCreatesMySQLProviderFacts(t *testing.T) {
 		t.Fatal(err)
 	}
 	if resource.MySQL == nil || resource.PostgreSQL != nil || resource.MySQL.ConnectorServerID != uint32(resource.ID) ||
-		resource.MySQL.SchemaHistoryTopicName != "__addp_cdc_schema.7.1.1" || !resource.MySQL.SchemaHistoryTopicOwned {
+		resource.MySQL.SchemaHistoryTopicName != captureSchemaHistoryTopicName(strings.ReplaceAll(task.ApplyIdentity, "-", ""), 1) || !resource.MySQL.SchemaHistoryTopicOwned {
 		t.Fatalf("MySQL provider facts = %#v/%#v", resource.MySQL, resource.PostgreSQL)
 	}
 }
@@ -173,7 +174,7 @@ func TestCaptureRepositoryCreatesOracleProviderFacts(t *testing.T) {
 		t.Fatal(err)
 	}
 	if resource.Oracle == nil || resource.PostgreSQL != nil || resource.MySQL != nil ||
-		resource.Oracle.SchemaHistoryTopicName != "__addp_cdc_schema.7.1.1" || !resource.Oracle.SchemaHistoryTopicOwned {
+		resource.Oracle.SchemaHistoryTopicName != captureSchemaHistoryTopicName(strings.ReplaceAll(task.ApplyIdentity, "-", ""), 1) || !resource.Oracle.SchemaHistoryTopicOwned {
 		t.Fatalf("Oracle provider facts = %#v", resource.Oracle)
 	}
 }
@@ -199,10 +200,48 @@ func TestCaptureRepositoryCreatesOracleSpatialProviderFacts(t *testing.T) {
 }
 
 func TestCaptureResourceNamesAreStableAndSeparated(t *testing.T) {
-	if got := captureTopicName(2, 3, 4); got != "__addp_cdc.2.3.4" {
+	if got := captureTopicName("global_identity", 4); got != "__addp_cdc.global_identity.4" {
 		t.Fatalf("topic = %q", got)
 	}
-	if captureSlotName(2, 3, 4) == capturePublicationName(2, 3, 4) {
+	if captureSlotName("global_identity", 4) == capturePublicationName("global_identity", 4) {
 		t.Fatal("slot and publication names must differ")
+	}
+}
+
+func TestCaptureNamesFollowGlobalApplyIdentityAndIdentifierLimits(t *testing.T) {
+	first := "00112233445566778899aabbccddeeff"
+	second := "10112233445566778899aabbccddeeff"
+	names := []func(string, uint64) string{captureConnectorName, captureTopicName, captureSchemaHistoryTopicName, captureConsumerGroup, captureSlotName, capturePublicationName, oracleSpatialMirrorTableName, oracleSpatialRowTriggerName, oracleSpatialDDLGuardName}
+	for _, name := range names {
+		if name(first, 1) == name(second, 1) || name(first, 1) == name(first, 2) {
+			t.Fatal("global identity or generation not separated")
+		}
+	}
+	if len(capturePublicationName(first, ^uint64(0))) > 63 || len(oracleSpatialMirrorTableName(first, ^uint64(0))) > 30 {
+		t.Fatal("provider identifier limit exceeded")
+	}
+	db := newTaskRepositoryTestDB(t)
+	createCaptureRepositoryTestTables(t, db)
+	task := createTaskRepositoryTestTask(t, db, 7, "global names")
+	resource, err := NewCaptureRepository(db).BeginGeneration(context.Background(), CaptureIdentity{TaskID: task.ID, TenantID: task.TenantID, SourceType: models.CaptureSourcePostgreSQL})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(resource.PostgreSQL.SlotName, strings.ReplaceAll(task.ApplyIdentity, "-", "")) {
+		t.Fatal("names do not use frozen task identity")
+	}
+	if resource.PostgreSQL.SlotOwned || resource.PostgreSQL.PublicationOwned {
+		t.Fatal("name registration claimed source ownership")
+	}
+	repo := NewCaptureRepository(db)
+	if err = repo.ClaimPostgreSQLResources(context.Background(), resource); err != nil {
+		t.Fatal(err)
+	}
+	if err = repo.ClaimPostgreSQLResources(context.Background(), resource); err == nil {
+		t.Fatal("stale ownership CAS accepted")
+	}
+	current, err := repo.GetLatest(context.Background(), task.ID, task.TenantID)
+	if err != nil || !current.PostgreSQL.SlotOwned || !current.PostgreSQL.PublicationOwned {
+		t.Fatalf("reservation not persisted: %v", err)
 	}
 }

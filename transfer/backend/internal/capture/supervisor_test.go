@@ -232,10 +232,12 @@ func TestCaptureSupervisorOwnsOracleSchemaHistoryTopic(t *testing.T) {
 }
 
 type fakeCaptureStore struct {
-	committed    *int64
-	committedErr error
-	resource     *models.CaptureResource
-	terminal     bool
+	reservationErr   error
+	reservationCalls int
+	committed        *int64
+	committedErr     error
+	resource         *models.CaptureResource
+	terminal         bool
 }
 
 func (f *fakeCaptureStore) BeginGeneration(_ context.Context, identity repository.CaptureIdentity) (*models.CaptureResource, error) {
@@ -415,6 +417,7 @@ func (f *fakeTopicControl) DeleteSchemaHistoryAccess(context.Context, string) er
 func (f *fakeTopicControl) Close() {}
 
 type fakeSourceResources struct {
+	ensureErr       error
 	ensureCalls     int
 	calls           int
 	probeCalls      int
@@ -427,7 +430,7 @@ type fakeSourceResources struct {
 
 func (f *fakeSourceResources) EnsureOwnedResources(context.Context, *CapturePlan, *models.CaptureResource) error {
 	f.ensureCalls++
-	return nil
+	return f.ensureErr
 }
 
 func (f *fakeSourceResources) DropOwnedResources(context.Context, *CapturePlan, *models.CaptureResource) error {
@@ -456,4 +459,47 @@ func (f *fakeTopicControl) BufferOffsets(context.Context, string) (int64, int64,
 }
 func (f *fakeCaptureStore) BufferCommittedOffset(context.Context, *models.CaptureResource) (*int64, error) {
 	return f.committed, f.committedErr
+}
+
+func (f *fakeCaptureStore) ClaimPostgreSQLResources(_ context.Context, resource *models.CaptureResource) error {
+	f.reservationCalls++
+	if f.reservationErr != nil {
+		return f.reservationErr
+	}
+	if resource.ResourceVersion != f.resource.ResourceVersion {
+		return errors.New("version conflict")
+	}
+	return nil
+}
+
+func TestCaptureRejectsForeignReservationBeforeTopicOrConnectorEffects(t *testing.T) {
+	store := &fakeCaptureStore{resource: &models.CaptureResource{ID: 1, TaskID: 3, TenantID: 2, SourceType: models.CaptureSourcePostgreSQL, ResourceVersion: 1, Status: models.CaptureStatusProvisioning, PostgreSQL: &models.PostgreSQLCaptureResource{SlotName: "reserved", PublicationName: "reserved_pub"}}}
+	topics := &fakeTopicControl{}
+	connect := &fakeConnectControl{state: "RUNNING"}
+	s, err := NewSupervisor(store, fakePlanResolver{plan: &CapturePlan{}}, connect, topics, &fakeSourceResources{ensureErr: errors.New("foreign publication")}, SupervisorConfig{TopicRetention: time.Hour, TopicReplication: 1, ProvisioningTimeout: time.Second, StatusPollInterval: time.Millisecond, MonitorInterval: time.Second}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = s.Start(context.Background(), &models.TransferTask{ID: 3, TenantID: 2}); err == nil {
+		t.Fatal("foreign resource accepted")
+	}
+	if topics.created || connect.putConfig != nil || store.reservationCalls != 0 || store.resource.PostgreSQL.SlotOwned || store.resource.PostgreSQL.PublicationOwned {
+		t.Fatal("foreign rejection claimed resources or invoked external creation")
+	}
+}
+
+func TestCaptureReservationPersistenceFailurePreventsExternalCreation(t *testing.T) {
+	store := &fakeCaptureStore{reservationErr: errors.New("ownership CAS rejected"), resource: &models.CaptureResource{ID: 1, TaskID: 3, TenantID: 2, SourceType: models.CaptureSourcePostgreSQL, ResourceVersion: 1, Status: models.CaptureStatusProvisioning, PostgreSQL: &models.PostgreSQLCaptureResource{SlotName: "reserved", PublicationName: "reserved_pub"}}}
+	topics := &fakeTopicControl{}
+	connect := &fakeConnectControl{state: "RUNNING"}
+	s, err := NewSupervisor(store, fakePlanResolver{plan: &CapturePlan{}}, connect, topics, &fakeSourceResources{}, SupervisorConfig{TopicRetention: time.Hour, TopicReplication: 1, ProvisioningTimeout: time.Second, StatusPollInterval: time.Millisecond, MonitorInterval: time.Second}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = s.Start(context.Background(), &models.TransferTask{ID: 3, TenantID: 2}); err == nil {
+		t.Fatal("unpersisted reservation accepted")
+	}
+	if topics.created || connect.putConfig != nil || store.reservationCalls != 1 || store.resource.PostgreSQL.SlotOwned || store.resource.PostgreSQL.PublicationOwned {
+		t.Fatal("external creation preceded durable ownership")
+	}
 }

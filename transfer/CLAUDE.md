@@ -264,6 +264,9 @@ Transfer schema 仅由 Backend 迁移；模块级数据库锁、成功提交的�
 
 ## 开发与验证
 
+CDC 捕获资源名沿全局 `apply_identity`／generation 生成，源端同名资源须先核验所有权，具体见[捕获资源登记](../docs/spec/tasks/Transfer数据库CDC.md#捕获资源所有权与登记)。命名隔离／长度及预留 CAS 沿 `make test-module MODULE=transfer GO_ONLY=1`，真实 PostgreSQL publication 碰撞、同表陌生对象拒绝及拒绝后零修改沿 `make test-transfer-postgres` 的 Capture 专项；不以此代替真实 CDC 事件联验。
+
+
 ### 当前启动与测试入口
 
 开发启动、由用户执行的后端重启、实际端口与就绪检查统一见[README 启动说明](README.md#开发启动与就绪检查)。测试和构建不要求重启开发服务；就绪响应不证明 Worker、源读、目标写或公开入口已经验收。

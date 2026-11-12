@@ -247,9 +247,11 @@ Oracle 单表 -> Debezium Oracle Connector -> Infra Kafka
 #### 捕获资源所有权与登记
 
 - Kafka Connect 使用独立 distributed 集群。Transfer capture supervisor 是 connector 生命周期 owner；continuous worker 只消费 Infra Kafka，不在 Go 进程内嵌入 Debezium。
-- connector、provider 专属资源、CDC data/schema-history topic 和 consumer group 由服务端按 task/generation 生成稳定内部名称，不接受用户自定义，也不进入 System Engine、Meta 资源树或公开任务 config。
+- connector、provider 专属资源、CDC data/schema-history topic 和 consumer group 由服务端按任务不可变的全局 `apply_identity` 与 generation 生成稳定内部名称，不接受用户自定义，也不进入 System Engine、Meta 资源树或公开任务 config。
    `transfer.capture_resources` 只保存 engine-neutral generation、connector/data topic/group、source identity 与 lifecycle 状态，并以 `source_type` 明确 provider。PostgreSQL slot/publication 只存在于一对一 `transfer.postgresql_capture_resources`；MySQL connector server id、schema-history topic name 和 ownership 只存在于一对一 `transfer.mysql_capture_resources`；Oracle schema-history topic name、Spatial 镜像表、行级触发器、DDL guard 名称及 ownership 只存在于一对一 `transfer.oracle_capture_resources`。provider 子事实必须与 generation 同事务创建并通过外键级联清理，不得在 generic 主表保留 provider 字段、兼容读取或伪资源占位。
 - PostgreSQL publication 只包含任务源表；slot 和 publication 均由 ADDP 创建并拥有，不得复用或删除用户已有 replication slot/publication。
+- PostgreSQL provider 初始 `slot_owned/publication_owned=false`，名称登记不等于已取得所有权。创建 Connector 前先只读检查同名槽及 publication；未取得本 generation 预留事实时，只要对象已存在就拒绝，包括同库／同表的陌生对象。两项检查均通过后，原子按 resource version 保存本 generation 的名称预留／所有权声明，再允许 Connector 创建；失败不取得声明，Stop 不删除未声明对象。已声明对象重入仍须核对槽的 database/plugin 及 publication 的精确单表范围；名称相同不能替代身份核验。未知外部结果沿已保存的声明处理，不为重试另造名称或采用陌生资源。
+- 内部名字不依赖可复用的数据库数字 ID。PG/Kafka 名字使用完整 UUID 去除连字符及 base36 generation；Oracle Spatial 标识符在 30 字符限制内使用同一全局身份与 generation 的固定摘要。同一角色名字保持稳定，不同任务／generation 隔离。已有登记仍读取其唯一持久资源名，不增加旧命名的推导、查找或采用路径。
 - MySQL 不创建或登记伪 slot/publication；每个 generation 使用唯一非零 connector server id。
 - MySQL 和 Oracle generation 均拥有独立单分区 schema-history topic。
 - Debezium 3.6 history record key 为空，因此该 topic 固定 `cleanup.policy=delete`、`retention.ms=-1`，由 Stop 显式删除，不能改成 compact 或依赖自动建 topic。

@@ -79,4 +79,27 @@ func TestIntegrationPostgresCDCBufferObservation(t *testing.T) {
 	if err = repo.Update(ctx, resource.ID, 1, map[string]interface{}{"buffer_observation": models.JSONMap{}}); err == nil {
 		t.Fatal("old lifecycle CAS accepted")
 	}
+	provider := models.PostgreSQLCaptureResource{CaptureResourceID: resource.ID, SlotName: task.Name, PublicationName: task.Name + "_pub"}
+	if err = db.Create(&provider).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err = db.First(&provider, "capture_resource_id = ?", resource.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if provider.SlotOwned || provider.PublicationOwned {
+		t.Fatal("name registration acquired ownership")
+	}
+	if err = repo.ClaimPostgreSQLResources(ctx, loaded); err != nil {
+		t.Fatal(err)
+	}
+	if err = repo.ClaimPostgreSQLResources(ctx, loaded); err == nil {
+		t.Fatal("stale reservation CAS accepted")
+	}
+	if err = db.First(&provider, "capture_resource_id = ?", resource.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if !provider.SlotOwned || !provider.PublicationOwned {
+		t.Fatal("reservation not persisted atomically")
+	}
+
 }
