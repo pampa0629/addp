@@ -225,6 +225,12 @@ func runPrivatePublicationCase(t *testing.T, db *gorm.DB, repo *FileExecutionRep
 	if err := repo.RecordPrivatePublicationOutcome(ctx, *lease, *prepared, outcome); err != nil {
 		t.Fatal(err)
 	}
+	observed, err := repo.ReadPrivatePublication(ctx, 7, item.ExecutionID)
+	if err != nil || observed.OutcomeObservedAt == nil || observed.OutcomeObservedAt.IsZero() || observed.RecoveryObservedAt != nil {
+		t.Fatal("first outcome lost its persisted observation time", observed, err)
+	}
+	firstObserved := *observed.OutcomeObservedAt
+
 	if err := repo.RecordPrivatePublicationOutcome(ctx, *lease, *prepared, outcome); err == nil {
 		t.Fatal("original outcome was replaced")
 	}
@@ -236,7 +242,7 @@ func runPrivatePublicationCase(t *testing.T, db *gorm.DB, repo *FileExecutionRep
 	}
 	final, err := repo.ReadPrivatePublication(ctx, 7, item.ExecutionID)
 	outcome.CleanupPending = false
-	if err != nil || final.DispatchState != plugin.NewFilePublished || !reflect.DeepEqual(final.Outcome, &outcome) {
+	if err != nil || final.OutcomeObservedAt == nil || !final.OutcomeObservedAt.Equal(firstObserved) || final.DispatchState != plugin.NewFilePublished || !reflect.DeepEqual(final.Outcome, &outcome) {
 		t.Fatal("outcome and cleanup state did not survive the original record", err)
 	}
 	after, err = repo.Read(ctx, 7, item.ExecutionID)
@@ -267,6 +273,19 @@ func runPrivatePublicationCase(t *testing.T, db *gorm.DB, repo *FileExecutionRep
 	if err := repo.RecordPrivatePublicationRecovery(ctx, 7, item.ExecutionID, *prepared, outcome); err != nil {
 		t.Fatal(err)
 	}
+	recoveredTime, err := repo.ReadPrivatePublication(ctx, 7, item.ExecutionID)
+	if err != nil || recoveredTime.RecoveryObservedAt == nil || recoveredTime.RecoveryObservedAt.IsZero() || recoveredTime.OutcomeObservedAt == nil || !recoveredTime.OutcomeObservedAt.Equal(firstObserved) {
+		t.Fatal("recovery rewrote original observation", recoveredTime, err)
+	}
+	firstRecovery := *recoveredTime.RecoveryObservedAt
+	if err := repo.RecordPrivatePublicationRecovery(ctx, 7, item.ExecutionID, *prepared, outcome); err != nil {
+		t.Fatal(err)
+	}
+	repeated, err := repo.ReadPrivatePublication(ctx, 7, item.ExecutionID)
+	if err != nil || repeated.RecoveryObservedAt == nil || !repeated.RecoveryObservedAt.Equal(firstRecovery) {
+		t.Fatal("repeated reconciliation renewed observation time", repeated, err)
+	}
+
 	regressed := outcome
 	regressed.CleanupPending = true
 	if err := repo.RecordPrivatePublicationRecovery(ctx, 7, item.ExecutionID, *prepared, regressed); err == nil {
@@ -279,6 +298,30 @@ func runPrivatePublicationCase(t *testing.T, db *gorm.DB, repo *FileExecutionRep
 	after, err = repo.Read(ctx, 7, item.ExecutionID)
 	if err != nil || !reflect.DeepEqual(after, facts) {
 		t.Fatal("late recovery changed authorization projection", err)
+	}
+
+	if err := db.Where("execution_id=?", item.ExecutionID).First(&row).Error; err != nil {
+		t.Fatal(err)
+	}
+	legacy, err := privateFilePublication(&row)
+	if err != nil {
+		t.Fatal(err)
+	}
+	legacy.OutcomeObservedAt = nil
+	legacy.RecoveryObservedAt = nil
+	rawLegacy, err := json.Marshal(legacy)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Model(&row).Update("publication_json", rawLegacy).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := repo.RecordPrivatePublicationRecovery(ctx, 7, item.ExecutionID, *prepared, outcome); err != nil {
+		t.Fatal(err)
+	}
+	unchanged, err := repo.ReadPrivatePublication(ctx, 7, item.ExecutionID)
+	if err != nil || unchanged.OutcomeObservedAt != nil || unchanged.RecoveryObservedAt != nil {
+		t.Fatal("historical observation time was invented during replay", unchanged, err)
 	}
 
 }

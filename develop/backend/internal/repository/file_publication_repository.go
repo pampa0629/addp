@@ -22,6 +22,8 @@ type privatePublicationRecord struct {
 	PreparationObserved bool                               `json:"preparation_observed"`
 	ProviderState       []byte                             `json:"provider_state,omitempty"`
 	DispatchReleasedAt  *time.Time                         `json:"dispatch_released_at,omitempty"`
+	OutcomeObservedAt   *time.Time                         `json:"outcome_observed_at,omitempty"`
+	RecoveryObservedAt  *time.Time                         `json:"recovery_observed_at,omitempty"`
 	Outcome             *plugin.NewFilePublicationOutcome  `json:"outcome,omitempty"`
 	RecoveryOutcome     *plugin.NewFilePublicationOutcome  `json:"recovery_outcome,omitempty"`
 }
@@ -34,6 +36,9 @@ func privateFilePublication(row *models.FileExecution) (*privatePublicationRecor
 	var admission client.DevelopFileAdmissionObservation
 	if err := json.Unmarshal(row.AdmissionJSON, &admission); err != nil {
 		return nil, err
+	}
+	if (record.OutcomeObservedAt != nil && (record.Outcome == nil || record.OutcomeObservedAt.IsZero())) || (record.RecoveryObservedAt != nil && (record.RecoveryOutcome == nil || record.RecoveryObservedAt.IsZero())) {
+		return nil, commonapi.ErrConflict
 	}
 	digest := record.Facts.PreparationDigest
 	if admission.ApprovalID != record.Facts.ApprovalID ||
@@ -184,13 +189,15 @@ func (r *FileExecutionRepository) ClaimPrivatePublicationDispatch(ctx context.Co
 // PrivateFilePublicationRecovery is only used by the Develop owner. A past
 // dispatch claim carries no authority to publish again.
 type PrivateFilePublicationRecovery struct {
-	Issued            client.IssuedDevelopFileAuthorization
-	ApprovalID        string
-	Prepared          plugin.PreparedNewFile
-	PreparationDigest string
-	DispatchState     plugin.NewFilePublicationState
-	Outcome           *plugin.NewFilePublicationOutcome
-	RecoveryOutcome   *plugin.NewFilePublicationOutcome
+	Issued             client.IssuedDevelopFileAuthorization
+	ApprovalID         string
+	Prepared           plugin.PreparedNewFile
+	PreparationDigest  string
+	DispatchState      plugin.NewFilePublicationState
+	OutcomeObservedAt  *time.Time
+	RecoveryObservedAt *time.Time
+	Outcome            *plugin.NewFilePublicationOutcome
+	RecoveryOutcome    *plugin.NewFilePublicationOutcome
 }
 
 func (r *FileExecutionRepository) ReadPrivatePublication(ctx context.Context, tenant uint, executionID string) (*PrivateFilePublicationRecovery, error) {
@@ -218,7 +225,7 @@ func (r *FileExecutionRepository) ReadPrivatePublication(ctx context.Context, te
 	}
 	return &PrivateFilePublicationRecovery{
 		Issued: issued, ApprovalID: record.Facts.ApprovalID, PreparationDigest: record.Facts.PreparationDigest,
-		Prepared: record.prepared(), DispatchState: state, Outcome: record.Outcome, RecoveryOutcome: record.RecoveryOutcome,
+		Prepared: record.prepared(), DispatchState: state, Outcome: record.Outcome, RecoveryOutcome: record.RecoveryOutcome, OutcomeObservedAt: record.OutcomeObservedAt, RecoveryObservedAt: record.RecoveryObservedAt,
 	}, nil
 }
 
@@ -253,8 +260,16 @@ func (r *FileExecutionRepository) updatePrivatePublicationOutcome(ctx context.Co
 		if record.DispatchReleasedAt == nil || !reflect.DeepEqual(record.prepared(), prepared) {
 			return commonapi.ErrConflict
 		}
+		firstOutcome := record.Outcome == nil
 		if err := change(record); err != nil {
 			return err
+		}
+		if firstOutcome && record.Outcome != nil {
+			now, err := execution.DatabaseNow(tx)
+			if err != nil {
+				return err
+			}
+			record.OutcomeObservedAt = &now
 		}
 		raw, err := json.Marshal(record)
 		if err != nil {
@@ -303,6 +318,13 @@ func (r *FileExecutionRepository) RecordPrivatePublicationRecovery(ctx context.C
 				(!prior.CleanupPending && outcome.CleanupPending)) {
 				return commonapi.ErrConflict
 			}
+		}
+		if record.RecoveryOutcome == nil {
+			now, err := execution.DatabaseNow(tx)
+			if err != nil {
+				return err
+			}
+			record.RecoveryObservedAt = &now
 		}
 		record.RecoveryOutcome = &outcome
 		raw, err := json.Marshal(record)
