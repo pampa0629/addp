@@ -617,3 +617,14 @@ Safari复用实际Console的系统管理员会话，打开记录ID`17035`、实�
 最终输入的完整入口两次重跑均在前置`test-metrics-sources`中的既有`test_recovery_uses_unified_entry_for_both_scopes_and_preserves_failure`因五秒`TimeoutExpired`停止，尚未运行到追加证书测试；原因未确定，未修改或放宽该测试，失败日志保留为`/tmp/addp-manager-trace-infra-verified.log`及`/tmp/addp-manager-trace-infra-final.log`。随后显式沿原入口执行`make -o test-metrics-sources test-infra-runtime-log-lifecycle`，不重复前置，后续HTTP／Trace runner、CI登记及最后169项组件测试全部通过、退出0，日志为`/tmp/addp-manager-trace-infra-components.log`。此命令跳过的前置不计通过，完整入口仍保留失败结论；后续169项中也包含原PostgreSQL生命周期组件，但不能据此抹去前置失败或推断其根因。
 
 CI登记核对确认原Platform consistency的`make test-platform`沿开发生命周期调用原Infra入口；原Go workspace的`make test-go`自动发现新增Manager API用例，现有Trace T2输入清单已包含生成器及配置测试。无新增Make／workflow入口。本轮仅本地确定性验证，未推送触发CI或运行真实设施、Safari、Hosted、容量、定时；真实来源材料生成、单项配置合并、用户重启及业务验收仍待另行确认。
+
+## 2026-11-12 Manager Trace 追加准备：固定提交自然 CI 补证
+
+手动核对实现提交`7f06f242462f37b8cdd1db5ecee95ddaca92b18b`的自然[Platform CI 43204426642](https://github.com/pampa0629/addp/actions/runs/43204426642)。下列两项专项Job及各自实际执行门禁步骤均为completed／success；原始日志均确认checkout固定SHA，不把排队、路径选择或摘要代替执行结果。
+
+| 专项Job | 原始日志核验 |
+| --- | --- |
+| [Go workspace tests 131135866503](https://github.com/pampa0629/addp/actions/runs/43204426642/job/131135866503) | 第118／229行确认固定SHA；第334—335行实际运行`make test-go`；第844行Manager API包通过，第855行预览包通过。新增传播与完成日志组件用例由该固定提交API包的标准Go测试发现执行；日志按包汇总，未逐项列出测试函数。 |
+| [Platform consistency 131135866728](https://github.com/pampa0629/addp/actions/runs/43204426642/job/131135866728) | 第119／207行确认固定SHA；第2366—2367行实际运行完整`make test-platform`，无本机分段验证使用的`-o`前置跳过。第2454—2456行前置生命周期3项通过；第2563—2566行208项Trace本地runner及CI登记核验通过；第2571—2573行包括配置测试文件的169项组件全部通过。固定提交的原Infra入口包含`trace-deployment-config_test.py`，新增Manager追加9项用例未设置Skip条件；日志按批次汇总，不声称逐项列名。门禁步骤于UTC 11:55:54结束，Job于11:56:02完成。 |
+
+原始日志为`/tmp/addp-manager-trace-ci-go-131135866503.log`及`/tmp/addp-manager-trace-ci-platform-131135866728.log`。本次Linux完整标准入口通过，补齐上一节本机分项验证的CI证据；本机两次五秒超时原记录及原因未知结论保持，不据Linux通过声称本机偶发超时已修复。未核验无关Job，不扩大为所有CI或产品验收通过；169项后的“未安装／恢复跳过”是受控生命周期分支输出，不是个人来源已部署或恢复的证明。本轮仅手动读取自然CI并补证，未重跑或更改CI，未生成个人环境证书、修改个人`.env`、重启服务或运行Hosted／容量／定时；实际业务与Safari验收仍待另行确认。
