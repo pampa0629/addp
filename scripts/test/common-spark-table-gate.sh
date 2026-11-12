@@ -19,10 +19,12 @@ MYSQL="$OWNER-mysql" DORIS="$OWNER-doris" MASTER="$OWNER-master" WORKER="$OWNER-
 SPARK_IMAGE='apache/spark:3.5.0-scala2.12-java11-python3-ubuntu@sha256:0ed5154e6b32ac3af1272d4d65e9f65b13afcfe80b41ad10bd059bcd6317863c'
 MYSQL_IMAGE='mysql:8.0@sha256:7dcddc01f13bab2f15cde676d44d01f61fc9f99fe7785e86196dfc07d358ae2b'
 DORIS_IMAGE='apache/doris:doris-all-in-one-2.1.0@sha256:83538f071c8ea22134b8151d8b751cdf36da9e1a5da315443ba461909ee11835'
+stage=dependency_preparation
 cleanup() {
     local status=$? container containers networks volume volumes=''
     trap - EXIT INT TERM
     set +e
+    if [ "$status" -ne 0 ]; then printf 'Spark table T2 failed during stage: %s\n' "$stage" >&2; fi
     for container in "$WORKER" "$MASTER" "$DORIS" "$MYSQL"; do
         if docker container inspect "$container" >/dev/null 2>&1; then
             volumes="$volumes $(docker inspect --format '{{range .Mounts}}{{if eq .Type "volume"}}{{println .Name}}{{end}}{{end}}' "$container")"
@@ -51,6 +53,7 @@ sys.path.insert(0, sys.argv[1] + '/engines/spark-workflow')
 from spark_dependencies import ensure_doris_jar
 print('Verified Doris connector:', ensure_doris_jar(sys.argv[2]).name)
 PY
+stage=container_preparation
 docker network create --label "addp.spark.table.owner=$OWNER" "$OWNER" >/dev/null
 docker run -d --name "$MYSQL" --label "addp.spark.table.owner=$OWNER" --network "$OWNER" --network-alias mysql \
     --tmpfs /var/lib/mysql --memory 1g -e MYSQL_ROOT_PASSWORD=owned-spark-only -e MYSQL_DATABASE=spark_results "$MYSQL_IMAGE" >/dev/null
@@ -74,8 +77,10 @@ docker run -d --name "$WORKER" --label "addp.spark.table.owner=$OWNER" --network
     --entrypoint /opt/spark/bin/spark-class "$SPARK_IMAGE" org.apache.spark.deploy.worker.Worker --host spark-worker --cores 2 --memory 1g spark://spark-master:7077 >/dev/null
 ready=false
 for _ in $(seq 1 120); do
+    stage=mysql_readiness
     if ! docker exec "$MYSQL" mysql -h127.0.0.1 -uroot -powned-spark-only --connect-timeout=2 -e 'SELECT 1' >/dev/null 2>&1; then sleep 2; continue; fi
     if [ "$test_engine" != mysql ]; then
+        stage=doris_readiness
         if [ "$(docker inspect --format '{{.State.Running}}' "$DORIS")" != true ]; then echo 'Doris disposable container exited before readiness' >&2; exit 1; fi
         if ! docker exec "$DORIS" mysql -h127.0.0.1 -P9030 -uroot --batch -e 'SHOW BACKENDS;' 2>/dev/null |
             awk -F '\t' 'NR == 1 { for (i=1;i<=NF;i++) if ($i=="Alive") alive=i; next } alive && tolower($alive)=="true" { found=1 } END { exit !found }'; then sleep 5; continue; fi
@@ -83,29 +88,39 @@ for _ in $(seq 1 120); do
         # Doris HOSTNAME accepts names, not IP literals: the historical IP-to-
         # hostname migration is covered by the Business fixture, not a fake
         # reverse migration which the server rejects before our code runs.
+        stage=doris_repeated_initialization
         docker exec -i "$DORIS" bash <<'VERIFY'
 set -euo pipefail
+verify_stage=backend_facts_before
+trap 'printf "Doris repeated initialization failed during stage: %s\n" "$verify_stage" >&2' ERR
 source /addp/doris/init.sh
 before=$(doris_backend_facts)
 before_id=${before%%$'\t'*}
+verify_stage=backend_registration
 doris_register_backend
+verify_stage=backend_identity_after
 after=$(doris_backend_facts)
 [ "${after%%$'\t'*}" = "$before_id" ]
+verify_stage=backend_health
 for _ in {1..30}; do
     if doris_health; then exit 0; fi
     sleep 1
 done
+printf 'Doris repeated initialization failed during stage: %s\n' "$verify_stage" >&2
 exit 1
 VERIFY
+        stage=doris_database_creation
         docker exec "$DORIS" mysql -h127.0.0.1 -P9030 -uroot -e 'CREATE DATABASE spark_results;'
     fi
     ready=true; break
 done
 [ "$ready" = true ] || { echo 'Disposable databases not ready' >&2; exit 1; }
+stage=spark_publication
 docker exec "$MASTER" /opt/spark/bin/spark-submit --master spark://spark-master:7077 \
     --conf spark.driver.host=spark-master --conf spark.task.maxFailures=1 \
     --packages com.mysql:mysql-connector-j:8.4.0 --jars /gate/spark-doris-connector-spark-3.5-25.2.0.jar \
     /addp/contract.py "$test_engine" 2>&1 | tee "$WORK_DIR/contract.log"
+stage=publication_evidence
 if [ "$test_engine" != doris ]; then grep -q '^SPARK_MYSQL_PUBLICATION_PASS ' "$WORK_DIR/contract.log"; fi
 if [ "$test_engine" != mysql ]; then
     grep -q '^SPARK_DORIS_PUBLICATION_PASS ' "$WORK_DIR/contract.log"

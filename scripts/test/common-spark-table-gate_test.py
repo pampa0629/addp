@@ -30,6 +30,9 @@ elif a[0] == 'inspect':
     status = int(a[-1] not in s['containers'])
     if not status: print('v-' + a[-1] if '.Mounts' in ' '.join(a) else 'true')
 elif a[0] == 'exec':
+    if os.environ.get('FAIL_DORIS_VERIFY') and '-i' in a:
+        print("ERROR 2013 (HY000): Lost connection at initial communication packet", file=sys.stderr)
+        status=54
     if 'SHOW BACKENDS;' in a: print('BackendId\tAlive\n1\ttrue')
     if '/opt/spark/bin/spark-submit' in a:
         if os.environ.get('FAIL_SUBMIT'): status=42
@@ -42,7 +45,7 @@ elif a[0] == 'ps': print('\n'.join(s['containers']))
 elif a[0] != 'logs': raise AssertionError(a)
 p.write_text(json.dumps(s)); sys.exit(status)
 '''
-        for flag, expected_success in ((None, True), ('FAIL_SUBMIT', False), ('LEAK_VOLUME', False)):
+        for flag, expected_success in ((None, True), ('FAIL_SUBMIT', False), ('LEAK_VOLUME', False), ('FAIL_DORIS_VERIFY', False)):
             with self.subTest(flag=flag), tempfile.TemporaryDirectory() as work:
                 directory = Path(work)
                 (directory / 'docker').write_text('#!' + sys.executable + '\n' + docker)
@@ -51,11 +54,14 @@ p.write_text(json.dumps(s)); sys.exit(status)
                 (directory / 'python3').chmod(0o755)
                 env = dict(os.environ, PATH=work + os.pathsep + os.environ['PATH'],
                            TMPDIR=work, FAKE_STATE=str(directory / 'state.json'), SPARK_TABLE_TEST_ENGINE='all')
-                env.pop('FAIL_SUBMIT', None); env.pop('LEAK_VOLUME', None)
+                env.pop('FAIL_SUBMIT', None); env.pop('LEAK_VOLUME', None); env.pop('FAIL_DORIS_VERIFY', None)
                 if flag: env[flag] = '1'
                 result = subprocess.run(['bash', str(ROOT / 'scripts/test/common-spark-table-gate.sh')],
                                         env=env, capture_output=True, text=True, timeout=20)
                 self.assertEqual(result.returncode == 0, expected_success, result.stderr)
+                if flag == 'FAIL_DORIS_VERIFY':
+                    self.assertIn('Spark table T2 failed during stage: doris_repeated_initialization', result.stderr)
+                    self.assertNotIn('SPARK_TABLE_T2_PASS', result.stdout)
                 state = json.loads((directory / 'state.json').read_text())
                 self.assertEqual(state['containers'], [])
                 self.assertEqual(state['networks'], [])
