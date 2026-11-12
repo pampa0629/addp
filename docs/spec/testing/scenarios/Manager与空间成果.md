@@ -794,16 +794,46 @@ Native候选树`83c8384f0ae808f1d9947b9126ded49c72289797`，原始日志SHA-256�
 
 ### ORC 单文件表格 Hosted
 
+阅读导航：[入口与权限](#orc-入口与权限) · [平坦字段与批量传输](#orc-平坦字段与批量传输) · [嵌套对象与数组只读](#orc-嵌套对象与数组只读) · [源变化与读取限制](#orc-源变化与读取限制) · [清理与报告](#orc-清理与报告) · [分层验证与历史证据](#orc-分层验证与历史证据)。
+
+#### ORC 入口与权限
+
 2026-10-27 用户批准 `native-table-orc` 独立 case，标准业务入口为 `ADDP_ONLINE_MANAGER_CASE=native-table-orc make test-online ONLINE_SUITE=manager-internal-artifact-lineage`。人工 Hosted 沿原 Manager Job，复用隔离 NFSv3、Business MinIO、现有 GeoPython 产品镜像、六个业务 Backend 与 Console；不构建或启动本 case 不使用的模型、点云或文档 Runtime，不改变其他 case 的断言及部署。
 
 一次性普通 User 仅使用已批准 11 项现有权限：`manager.content.read`、`manager.data_item.read`、`meta.catalog.read`、`meta.scan_task.execute`、`meta.scan_task.read`、`monitor.execution.read`、`transfer.task.create`、`transfer.task.read`、`transfer.task.execute`、`transfer.task.delete`、`system.execution_authorization.create`。不授予管理员角色，不修改个人／生产账号或产品权限声明。源和目标由明确 locator 及 source-only plan 绑定，不枚举同目录兄弟源。
 
-两份相同物理内容的 NFS／MinIO 单文件各含 2503 行，覆盖超过 JavaScript 安全范围的大整数、decimal(38,9)、NULL／空值及二进制。验收深度扫描、Meta 原生字段与 footer 行数／源版本、三页精确值与尾页、真实页面下一页和原文件下载；真实 Transfer 以 1000 行批次写 Parquet，由产品镜像内独立 PyArrow 完整回读所有字段、数值、缺失掩膜和 Decimal 精度。源字节／元数据不变、本人任务删除及物理夹具产物清理分别断言；应用部署、NFS 导出、卷、镜像和 Infra 零残留由既有 Hosted 生命周期独立收尾。报告为 `manager-orc.json`、`manager-orc-browser.json`、两份原文件、Meta 与截图，并与 `online-report.json` 和运行 SHA 一并复核；没有真实报告时不得回填 Hosted 通过。
+#### ORC 平坦字段与批量传输
 
-对应 T1/T0 沿 `make test-geopython-workflow`、六个受影响 Go owner、`make test-manager-online-runner`、`make test-online-runner` 与现有 CI 注册检查；不新建 Job／suite。ORC 源变化在 Runtime 使用封闭 `ORC_SOURCE_CHANGED`，Manager 复用 `preview_source_refresh_required` 409 和既有国际化提示；不通过解析本地化异常文本识别变化。
+两份相同物理内容的 NFS／MinIO 单文件各含 2503 行，覆盖超过 JavaScript 安全范围的大整数、decimal(38,9)、NULL／空值及二进制。验收深度扫描、Meta 原生字段与 footer 行数／源版本、三页精确值与尾页、真实页面下一页和原文件下载；真实 Transfer 以 1000 行批次写 Parquet，由产品镜像内独立 PyArrow 完整回读所有字段、数值、缺失掩膜和 Decimal 精度。
 
-ORC 嵌套扩展复用同一 `native-table-orc` case、原 11 项权限与精确两引擎夹具范围；不增服务／Job／权限。保留原平面 2503 行、原始下载、两次真实 Transfer→Parquet 全值回读和完整清理断言，另在两源各加入 43 行 struct/list 组合文件：Meta 完整类型树，三页全部 43 行的结构与精确值、NULL／空集合区别，实际页面下一页与下载、打开对象／数组详情逐项核对精确内容、四张分页截图及两张结构详情截图、源字节和元数据不变。原生 decoder、Common 批量 reader 继续拒绝 Map／Union；嵌套源的 `OpenTableReader` 在任何行内容读取前拒绝，即使请求仅标量列也不能绕过。该只读扩展不计为嵌套批量传输通过；正式 Hosted 结果按固定源码与新产物单独登记。
+#### ORC 嵌套对象与数组只读
 
+ORC 嵌套扩展复用同一 `native-table-orc` case、原 11 项权限与精确两引擎夹具范围；不增服务／Job／权限。保留原平面 2503 行、原始下载、两次真实 Transfer→Parquet 全值回读和完整清理断言，另在两源各加入 43 行 struct/list 组合文件：Meta 完整类型树，三页全部 43 行的结构与精确值、NULL／空集合区别，实际页面下一页与下载、打开对象／数组详情逐项核对精确内容、四张分页截图及两张结构详情截图、源字节和元数据不变。
+
+同一 case 的两个 Transfer 任务读取原平坦源；新增嵌套源只验收元数据、分页、结构详情和原件，不据同轮保留的 Transfer 成功推定嵌套源可批量传输。
+
+#### ORC 源变化与读取限制
+
+ORC 源变化在 Runtime 使用封闭 `ORC_SOURCE_CHANGED`，Manager 复用 `preview_source_refresh_required` 409 和既有国际化提示；不通过解析本地化异常文本识别变化。
+
+原生 decoder、Common 批量 reader 继续拒绝 Map／Union；嵌套源的 `OpenTableReader` 在任何行内容读取前拒绝，即使请求仅标量列也不能绕过。该只读扩展不计为嵌套批量传输通过；正式 Hosted 结果按固定源码与新产物单独登记。
+
+#### ORC 清理与报告
+
+源字节／元数据不变、本人任务删除及物理夹具产物清理分别断言；应用部署、NFS 导出、卷、镜像和 Infra 零残留由既有 Hosted 生命周期独立收尾。
+
+报告为 `manager-orc.json`、`manager-orc-browser.json`；原件归档包括两份平坦源和新增两份嵌套源，以及各自 Meta 与截图，并与 `online-report.json` 和运行 SHA 一并复核；没有真实报告时不得回填 Hosted 通过。
+
+#### ORC 分层验证与历史证据
+
+对应 T1/T0 沿 `make test-geopython-workflow`、六个受影响 Go owner、`make test-manager-online-runner`、`make test-online-runner` 与现有 CI 注册检查；不新建 Job／suite。
+
+两类固定版本结果分别查阅，源码、实际 Job、原始产物、失败与清理细节由证据专题保存：
+
+- [平坦标量的单文件、分页与批量读取证据](../evidence/资源读取与预览历史证据.md#orc-单文件只读分页与批量读取--nfsminio-普通-user-hosted-t4)：实际验收 `c16d563fc2e177521f3924b36b56c9bfc8cce18d`、Job `122074622494`；仅按两源 2503 行及两个 Parquet 任务范围使用，保留前三轮失败、旧轮预检漏列 Transfer，以及本地 T2 失败与 Linux T2 结果的区别。
+- [嵌套对象与数组只读证据](../evidence/资源读取与预览历史证据.md#orc-对象与数组只读预览--nfsminio-普通-user-hosted-t4)：实际验收 `f947636548da8055f7f9cd68c797e6979a1514cd`、Job `122242512428`；保留首轮页面 size 未初始化失败、准备性复验取消和详情截图处于动画帧的限制，详情精确内容由实际 DOM 比对证明，不将截图视为稳定视觉快照。
+
+源变化、坏输入与预算拒绝按 Native 回归记录使用；嵌套批量拒绝（包括仅投影标量列）按 Common T1 使用，不冒充 Hosted 中实际搬运或注入失败的证明。`validation=footer` 不代表全数据页校验。两类 Hosted 结果均不认证 Map／Union、加密／ACID／whole、ORC 写出、上传导入界面、任意来源／目标或容量；历史通过及清理结果不扩展当前验收范围。
 
 ### 双DEM填挖方统计独立 Hosted 验收
 
