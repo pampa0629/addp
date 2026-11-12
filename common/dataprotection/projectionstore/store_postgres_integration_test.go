@@ -19,6 +19,7 @@ import (
 	"github.com/google/uuid"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
+	"gorm.io/gorm/logger"
 )
 
 func TestProjectionStoreSchemaContractAgainstPostgres(t *testing.T) {
@@ -422,7 +423,15 @@ func TestProjectionStoreMigrationIsSerializedAgainstPostgres(t *testing.T) {
 	if dsn == "" {
 		t.Skip("ADDP_TEST_PROJECTIONSTORE_POSTGRES_DSN is not set")
 	}
-	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
+	trace := &projectionMigrationTrace{Interface: logger.Default}
+	defer func() {
+		if t.Failed() {
+			for _, statement := range trace.statements {
+				t.Log(statement)
+			}
+		}
+	}()
+	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{Logger: trace})
 	if err != nil {
 		t.Fatalf("open PostgreSQL: %v", err)
 	}
@@ -431,22 +440,45 @@ func TestProjectionStoreMigrationIsSerializedAgainstPostgres(t *testing.T) {
 		t.Fatalf("open SQL database: %v", err)
 	}
 	sqlDB.SetMaxOpenConns(8)
+	t.Cleanup(func() { _ = sqlDB.Close() })
 
 	schema := "projection_store_concurrent_it"
 	dropProjectionStoreTestSchema(t, db, schema)
 	t.Cleanup(func() { dropProjectionStoreTestSchema(t, db, schema) })
 
 	start := make(chan struct{})
+	ready := make(chan struct{}, 8)
 	errorsByProcess := make(chan error, 8)
 	var wait sync.WaitGroup
 	for range 8 {
 		wait.Add(1)
 		go func() {
 			defer wait.Done()
-			<-start
-			_, err := Migrate(db, schema, "concurrent_owner", nil)
+			signalReady := sync.OnceFunc(func() { ready <- struct{}{} })
+			defer signalReady()
+			err := db.Connection(func(conn *gorm.DB) error {
+				var backendID int
+				if err := conn.Raw("SELECT pg_backend_pid()").Scan(&backendID).Error; err != nil {
+					return err
+				}
+				var exists bool
+				if err := conn.Raw("SELECT to_regnamespace(?) IS NOT NULL", schema).Scan(&exists).Error; err != nil {
+					return err
+				}
+				if exists {
+					return fmt.Errorf("fresh concurrent schema already exists on backend %d", backendID)
+				}
+				signalReady()
+				<-start
+				ctx := context.WithValue(t.Context(), projectionMigrationBackendKey{}, backendID)
+				_, err := Migrate(conn.WithContext(ctx), schema, "concurrent_owner", nil)
+				return err
+			})
 			errorsByProcess <- err
 		}()
+	}
+	for range 8 {
+		<-ready
 	}
 	close(start)
 	wait.Wait()
@@ -458,6 +490,31 @@ func TestProjectionStoreMigrationIsSerializedAgainstPostgres(t *testing.T) {
 	}
 	store := &Store{migrationsTable: schema + ".protection_projection_store_migrations"}
 	assertCurrentMigrations(t, db, store)
+}
+
+type projectionMigrationBackendKey struct{}
+
+// Keep the actual concurrent DDL trace only for failures. It contains this
+// fresh test schema and migration IDs, never projection payloads or a DSN.
+type projectionMigrationTrace struct {
+	logger.Interface
+	mu         sync.Mutex
+	statements []string
+}
+
+func (l *projectionMigrationTrace) Trace(ctx context.Context, begin time.Time, fc func() (string, int64), err error) {
+	statement, _ := fc()
+	if !strings.HasPrefix(statement, "SELECT pg_advisory_xact_lock(") &&
+		!strings.HasPrefix(statement, "SELECT EXISTS (SELECT 1 FROM pg_catalog.pg_namespace ") &&
+		!strings.HasPrefix(statement, "CREATE ") &&
+		!strings.HasPrefix(statement, "INSERT INTO projection_store_concurrent_it.protection_projection_store_migrations") {
+		return
+	}
+	entry := fmt.Sprintf("backend=%v begin=%s end=%s sql=%s error=%v", ctx.Value(projectionMigrationBackendKey{}),
+		begin.UTC().Format(time.RFC3339Nano), time.Now().UTC().Format(time.RFC3339Nano), statement, err)
+	l.mu.Lock()
+	l.statements = append(l.statements, entry)
+	l.mu.Unlock()
 }
 
 func assertCurrentMigrations(t *testing.T, db *gorm.DB, store *Store) {

@@ -1012,3 +1012,12 @@ v46仅修正该消费者：先校验历史默认值，按同一UUID读取/result
 独立审计原始Run／Job／artifact API身份、实际步骤、双SHA，artifact13870725957的ZIP SHA256为8f549c70f1d26070722bd4224d9d02ab0be09bd97b04f70116b84cb3787fe458，与API digest匹配；44成员CRC、安全路径及所有解压原件逐字节一致。原件 /tmp/addp-ci-0000-1112.9bGP9I/security-artifact.zip 和同名解压目录；raw Job日志SHA256 21213ba88159959ec1ee69570f8d506e2103d233004b71db849e0aa98a45d86c。独立元信息、脚本与结果 /tmp/p145-430485-independent/{job.json,run.json,artifact.json,audit.py,audit.json}，脚本实际退出0。当前精确7f候选的Linux292／登记156和既有T2／本地证据保持有效，本次不判产品回归或Hosted通过，旧v45业务首失败保持。
 
 已先核对清单维护会话最新M155／M156仍为部分实现、已记精确Linux层级但尚未记本次准备失败；本次仅补正确边界。外部CI问题由专门协调会话处理，本会话没有调查其他CI、修改镜像／软件源、启停本地服务或重复运行测试。此次单次授权已消耗，不重派、不重试、不定时、不重复请求已有授权；优先等待外部条件处理，未来确需真实复验时再提交具体候选与单次范围确认。本轮仅证据文档，验证为独立原件审计和所属git diff --check，无新产品实现或门禁输入变化。
+
+
+### Owner 投影存储首次并发初始化的目录读取修正（2026-11-12，T2）
+
+自然Run43143870160／Job130939582473、源码5df18e46507ada2f00cd5acc43cabbc126377b45的TestProjectionStoreMigrationIsSerializedAgainstPostgres实际失败：CREATE SCHEMA IF NOT EXISTS projection_store_concurrent_it触发SQLSTATE23505／pg_namespace_nspname_index。原日志4962–4968和数据库日志5237–5238保留于/tmp/addp-ci-1200-1112.J8xJkB/logs/130939582473.log，不用后继偶发通过覆盖。原样本地projection-store标准组、32轮及256轮临时诊断曾通过，均只作排障观察，不算修复；临时探针仅在/tmp并经原标准入口的Go overlay运行，未改数据库清单或产品进程。
+
+加强原并发用例为八个独立连接全部就绪、先各自观察schema缺失后同时迁移，并在失败时保留PID、锁及DDL时序。该条件在本地真实PostgreSQL复现同一23505；时序证实锁逐个放行，却不能直接依赖后续CREATE的缺失缓存检查。按既有事务／schema迁移锁契约先完善规范，再将schema存在性判断改为锁后独立SQL读取pg_catalog.pg_namespace，确认不存在才创建。迁移锁、版本和结构核验不变，无重试、吞错、Worker DDL或第二条迁移路径。
+
+最终同一测试输入的红绿校验走make test-common-postgres COMMON_POSTGRES_TEST_ARGS='--test projection-store'：用Go overlay仅还原5df原schema.go时退出2并重现23505；恢复修复源码退出0，投影存储完整子组无跳过，涵盖同构／历史／漂移、未来生效历史、四出口原因矩阵、首次并发初始化和版本提交锁竞争。不是完整Common PostgreSQL全门禁。make test-module MODULE=common GO_ONLY=1退出0；make test-projection-store-ownership退出0（9项／5504个Go或SQL文件），git diff --check通过。独立输入、红绿日志、原CI元信息和摘要/tmp/p145-projectionstore-fix-independent/{red-green.json,verification.json,red.log,green.log,first-ci-job.json}；Go及唯一归属日志/tmp/p145-projectionstore-{common-go,ownership}.log。既有自动发现和Common PostgreSQL CI已覆盖，无新增workflow。此修正尚无后继Linux自然CI或运行验收，不启动个人服务、不申请重启，也不消耗／重派Hosted授权。

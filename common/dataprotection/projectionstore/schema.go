@@ -76,8 +76,17 @@ func (s *Store) ensureSchema() error {
 
 func (s *Store) ensureSchemaLocked(tx *gorm.DB) error {
 	if tx.Dialector.Name() == "postgres" {
-		if err := tx.Exec("CREATE SCHEMA IF NOT EXISTS " + s.schema).Error; err != nil {
-			return fmt.Errorf("create protection projection owner schema: %w", err)
+		// A waiter may have observed the namespace as missing before acquiring
+		// the migration lock. Read the current catalog in a separate statement
+		// after the lock, rather than relying on CREATE's namespace cache check.
+		var exists bool
+		if err := tx.Raw("SELECT EXISTS (SELECT 1 FROM pg_catalog.pg_namespace WHERE nspname = ?)", s.schema).Scan(&exists).Error; err != nil {
+			return fmt.Errorf("inspect protection projection owner schema: %w", err)
+		}
+		if !exists {
+			if err := tx.Exec("CREATE SCHEMA " + s.schema).Error; err != nil {
+				return fmt.Errorf("create protection projection owner schema: %w", err)
+			}
 		}
 	}
 	if err := s.ensureMigrationTable(tx); err != nil {
