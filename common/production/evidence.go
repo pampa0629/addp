@@ -35,9 +35,9 @@ func (r Reference) Validate() error {
 }
 
 type UserOrigin struct {
-	PrincipalID          int64 `json:"principal_id,string"`
-	MembershipID         int64 `json:"membership_id,string"`
-	AuthorizationVersion int64 `json:"authorization_version,string"`
+	PrincipalID          int64 `json:"principal_id,string" swaggertype:"string"`
+	MembershipID         int64 `json:"membership_id,string" swaggertype:"string"`
+	AuthorizationVersion int64 `json:"authorization_version,string" swaggertype:"string"`
 }
 
 // SourceEvidence distinguishes a proven empty business read set from absent
@@ -91,8 +91,8 @@ type CommittedObject struct {
 // producer's persisted write path, never from a scan or a caller's target list.
 type Receipt struct {
 	Reference           Reference                `json:"reference"`
-	TenantID            int64                    `json:"tenant_id,string"`
-	TargetEngineVersion int64                    `json:"target_engine_version,string"`
+	TenantID            int64                    `json:"tenant_id,string" swaggertype:"string"`
+	TargetEngineVersion int64                    `json:"target_engine_version,string" swaggertype:"string"`
 	RetryOfExecutionID  *string                  `json:"retry_of_execution_id,omitempty"`
 	Attempt             int                      `json:"attempt"`
 	OperationID         string                   `json:"operation_id"`

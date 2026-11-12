@@ -232,6 +232,8 @@ Copilot ResourceFact 必须保留 Owner 提供的 `source_engine_type`、`full_n
 
 ### 执行授权与效果
 
+已提交私有文件成果的最小机器回执、真实必要来源和证据缺失规则见[生产来源规范](../docs/spec/tasks/生产来源与产物扫描.md#develop-产物自动扫描的执行归属)。读取入口只允许 System／Meta Tenant Service，不替代文件初始 Grant 或统一后台续办；当前不据此开放公共文件保存或真实跨模块验收。验证复用 Develop Go、Develop PostgreSQL、System `production-receipt-runtime` 迁移和授权清单标准门禁。
+
 - SQL、Workflow、Notebook 执行效果固定为 `read | write | ddl | external_effect`。
 - `develop.task.execute` / `develop.notebook.execute` 只允许使用执行功能，不自动授予任意数据效果。
 - 当前 User AuthContext、owner Resource Rule/Policy、Engine 归属和执行效果共同决定 Execution Authorization；Engine 创建人和 Runtime Service Principal 都不是授权来源。

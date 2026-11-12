@@ -3,6 +3,7 @@ package repository
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"reflect"
 	"strconv"
 	"strings"
@@ -230,6 +231,18 @@ func runPrivatePublicationCase(t *testing.T, db *gorm.DB, repo *FileExecutionRep
 		t.Fatal("first outcome lost its persisted observation time", observed, err)
 	}
 	firstObserved := *observed.OutcomeObservedAt
+	production, err := repo.ReadPrivateProduction(ctx, 7, item.ExecutionID, op)
+	if err != nil || production.OperationID != op || production.Attempt != 1 || !production.CommittedAt.Equal(firstObserved) || len(production.SourceReads) != len(facts.Intent.Sources) {
+		t.Fatal("committed production lost original operation/read evidence", production, err)
+	}
+	for _, lookup := range []struct {
+		tenant uint
+		result string
+	}{{8, op}, {7, uuid.NewString()}} {
+		if _, err := repo.ReadPrivateProduction(ctx, lookup.tenant, item.ExecutionID, lookup.result); !errors.Is(err, gorm.ErrRecordNotFound) {
+			t.Fatal("foreign tenant/result acquired receipt", err)
+		}
+	}
 
 	if err := repo.RecordPrivatePublicationOutcome(ctx, *lease, *prepared, outcome); err == nil {
 		t.Fatal("original outcome was replaced")
@@ -259,6 +272,15 @@ func runPrivatePublicationCase(t *testing.T, db *gorm.DB, repo *FileExecutionRep
 	}
 	if err := repo.CompletePrivatePublication(ctx, running, *lease, nil); err == nil {
 		t.Fatal("terminal publication completed twice")
+	}
+	for _, status := range []string{"failed", "cancelled", "timeout", "success"} {
+		if err := db.Model(&execution.TaskExecution{}).Where("execution_id=?", item.ExecutionID).Update("status", status).Error; err != nil {
+			t.Fatal(err)
+		}
+		production, err := repo.ReadPrivateProduction(ctx, 7, item.ExecutionID, op)
+		if err != nil || !production.CommittedAt.Equal(firstObserved) {
+			t.Fatal("parent terminal status erased committed production", status, err)
+		}
 	}
 	var terminal execution.TaskExecution
 	if err := db.First(&terminal, "execution_id=?", item.ExecutionID).Error; err != nil {
@@ -307,7 +329,21 @@ func runPrivatePublicationCase(t *testing.T, db *gorm.DB, repo *FileExecutionRep
 	if err != nil {
 		t.Fatal(err)
 	}
+	// Resolve-only recovery may supply the sole committed result after the
+	// original dispatch acknowledgement was lost; retain that first time.
+	legacy.Outcome = nil
 	legacy.OutcomeObservedAt = nil
+	recoveryOnly, err := json.Marshal(legacy)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Model(&row).Update("publication_json", recoveryOnly).Error; err != nil {
+		t.Fatal(err)
+	}
+	late, err := repo.ReadPrivateProduction(ctx, 7, item.ExecutionID, op)
+	if err != nil || !late.CommittedAt.Equal(firstRecovery) {
+		t.Fatal("resolve-only committed result was lost", late, err)
+	}
 	legacy.RecoveryObservedAt = nil
 	rawLegacy, err := json.Marshal(legacy)
 	if err != nil {
@@ -322,6 +358,9 @@ func runPrivatePublicationCase(t *testing.T, db *gorm.DB, repo *FileExecutionRep
 	unchanged, err := repo.ReadPrivatePublication(ctx, 7, item.ExecutionID)
 	if err != nil || unchanged.OutcomeObservedAt != nil || unchanged.RecoveryObservedAt != nil {
 		t.Fatal("historical observation time was invented during replay", unchanged, err)
+	}
+	if _, err := repo.ReadPrivateProduction(ctx, 7, item.ExecutionID, op); !errors.Is(err, gorm.ErrRecordNotFound) {
+		t.Fatal("historical missing observation became a new production", err)
 	}
 
 }

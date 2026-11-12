@@ -653,7 +653,7 @@ case "$TEST_FILTER" in
         if [ "$PACKAGE_FILTER" != "migration" ]; then
             echo "production-receipt-runtime requires --package migration" >&2; exit 2
         fi
-        test_pattern='^TestProductionReceiptForwardMigrationAgainstPostgres$'
+        test_pattern='^Test(ProductionReceipt|DevelopProductionReceipt)ForwardMigrationAgainstPostgres$'
         ;;
     graph-protection-runtime)
         if [ "$PACKAGE_FILTER" != "migration" ]; then

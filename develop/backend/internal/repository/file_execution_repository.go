@@ -86,18 +86,24 @@ func fileExecutionRawConfig(ctx context.Context, db *gorm.DB, executionID string
 }
 
 func privateFileFacts(row *models.FileExecution) (*commonclient.DevelopFileExecutionFacts, error) {
+	value, _, err := privateFileFactsAndPublication(row)
+	return value, err
+}
+
+func privateFileFactsAndPublication(row *models.FileExecution) (*commonclient.DevelopFileExecutionFacts, *privatePublicationRecord, error) {
+	var publication *privatePublicationRecord
 	value := &commonclient.DevelopFileExecutionFacts{SchemaVersion: commonclient.DevelopFileExecutionSchema,
 		ExecutionID: row.ExecutionID, TenantID: strconv.FormatUint(uint64(row.TenantID), 10), ConfigJSON: bytes.Clone(row.ConfigJSON),
 		AdmissionState: row.AdmissionState, Actor: commonclient.DevelopFileExecutionActor{
 			PrincipalID: strconv.FormatInt(row.ActorPrincipalID, 10), TenantMembershipID: strconv.FormatInt(row.ActorMembershipID, 10),
 			AuthorizationVersion: strconv.FormatInt(row.AuthorizationVersion, 10)}}
 	if err := json.Unmarshal(row.IntentJSON, &value.Intent); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	if len(row.IssuedAuthorizationJSON) != 0 {
 		var issued commonclient.IssuedDevelopFileAuthorization
 		if err := json.Unmarshal(row.IssuedAuthorizationJSON, &issued); err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		value.AuthorizationID = issued.Authorization.ID
 		value.BoundScope, value.ScopeDigest = issued.Scope.Clone(), issued.ScopeDigest
@@ -105,11 +111,12 @@ func privateFileFacts(row *models.FileExecution) (*commonclient.DevelopFileExecu
 	if len(row.PublicationJSON) != 0 {
 		record, err := privateFilePublication(row)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
+		publication = record
 		value.Publication = &record.Facts
 	}
-	return value, value.Validate()
+	return value, publication, value.Validate()
 }
 
 func (r *FileExecutionRepository) Read(ctx context.Context, tenant uint, executionID string) (*commonclient.DevelopFileExecutionFacts, error) {

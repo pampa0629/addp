@@ -2065,6 +2065,92 @@ definitions:
       start:
         type: integer
     type: object
+  plugin.QueryReadSet:
+    properties:
+      paths:
+        items:
+          $ref: '#/definitions/plugin.EngineCatalogPath'
+        type: array
+    type: object
+  production.CommittedObject:
+    properties:
+      created:
+        type: boolean
+      target:
+        $ref: '#/definitions/plugin.EngineCatalogPath'
+    type: object
+  production.PrivateUploadProof:
+    properties:
+      manifest_sha256:
+        type: string
+      task_id:
+        example: ""
+        type: string
+      upload_id:
+        type: string
+      uploader_id:
+        example: ""
+        type: string
+    type: object
+  production.Receipt:
+    properties:
+      attempt:
+        type: integer
+      committed_at:
+        type: string
+      objects:
+        items:
+          $ref: '#/definitions/production.CommittedObject'
+        type: array
+      operation_id:
+        type: string
+      origin:
+        $ref: '#/definitions/production.UserOrigin'
+      primary:
+        $ref: '#/definitions/plugin.EngineCatalogPath'
+      reference:
+        $ref: '#/definitions/production.Reference'
+      retry_of_execution_id:
+        type: string
+      sources:
+        $ref: '#/definitions/production.SourceEvidence'
+      target_engine_version:
+        example: ""
+        type: string
+      tenant_id:
+        example: ""
+        type: string
+    type: object
+  production.Reference:
+    properties:
+      execution_id:
+        type: string
+      owner:
+        type: string
+      result_id:
+        type: string
+    type: object
+  production.SourceEvidence:
+    properties:
+      kind:
+        type: string
+      private_upload:
+        $ref: '#/definitions/production.PrivateUploadProof'
+      read_set:
+        $ref: '#/definitions/plugin.QueryReadSet'
+    type: object
+  production.UserOrigin:
+    properties:
+      authorization_version:
+        example: ""
+        type: string
+      membership_id:
+        example: ""
+        type: string
+      principal_id:
+        example: ""
+        type: string
+    type: object
   taskprovider.ExecutionContract:
     properties:
       input_defaults:
@@ -4183,6 +4269,69 @@ paths:
       x-addp-auth-mode: permission
       x-addp-required-permissions:
       - develop.file_execution.read
+  /runtime/productions/{execution_id}/{result_id}/receipt:
+    get:
+      description: 仅同租户 System 或 Meta Service；结果 UUID 是原发布 operation UUID。父任务失败不抹除已提交成果；不返回配置、Runtime
+        manifest、Provider 私有状态、连接、凭据、lease 或授权结论。 | Same-tenant System or Meta Service
+        only. The result UUID is the original publication operation UUID. Parent failure
+        does not erase committed results. Returns no config, Runtime manifest, private
+        Provider state, connection, credentials, lease or authorization verdict.
+      parameters:
+      - description: 原执行 UUID | Original execution UUID
+        in: path
+        name: execution_id
+        required: true
+        type: string
+      - description: 原发布 operation UUID | Original publication operation UUID
+        in: path
+        name: result_id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/production.Receipt'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: Forbidden
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 读取 Develop 最小成果回执 | Read minimal Develop production receipt
+      tags:
+      - Execution authorization
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - develop.production_receipt.read
   /settings/execution-policy:
     get:
       produces:

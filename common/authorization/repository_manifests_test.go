@@ -45,8 +45,8 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 		t.Fatalf("LoadRepositoryAuthorizationCatalog() error = %v", err)
 	}
 	descriptors := report.Permissions
-	if len(descriptors) != 546 {
-		t.Fatalf("descriptor count = %d, want 546", len(descriptors))
+	if len(descriptors) != 547 {
+		t.Fatalf("descriptor count = %d, want 547", len(descriptors))
 	}
 	for _, descriptor := range descriptors {
 		if (descriptor.Key == "service.ontology_fact.read" || descriptor.Key == "system.ontology_fact.execute") &&
@@ -58,6 +58,9 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 		}
 		if (descriptor.Key == "meta.inspect.execute" || descriptor.Key == "meta.node_identity.read") && (descriptor.TenantCustomizable || descriptor.Delegable || !reflect.DeepEqual(descriptor.AllowedScopeTypes, []string{"tenant"})) {
 			t.Fatal("Infra inspection must remain a non-customizable, non-delegable Tenant runtime permission")
+		}
+		if descriptor.Key == "develop.production_receipt.read" && (descriptor.TenantCustomizable || descriptor.Delegable || !reflect.DeepEqual(descriptor.AllowedScopeTypes, []string{"tenant"})) {
+			t.Fatal("Develop receipt authority escaped its fixed Tenant machine scope")
 		}
 		if descriptor.OwnerModule == "security" && !reflect.DeepEqual(descriptor.AllowedScopeTypes, []string{"tenant"}) {
 			t.Fatalf("Security permission %q scopes = %#v, want tenant only", descriptor.Key, descriptor.AllowedScopeTypes)
@@ -83,6 +86,9 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 			}
 			if key == "system.engine_access_initial_grant.execute" && role.Key != "tenant.transfer_runtime" && role.Key != "tenant.manager_runtime" {
 				t.Fatalf("unexpected initial production runtime role %q", role.Key)
+			}
+			if key == "develop.production_receipt.read" && role.Key != "tenant.meta_runtime" && role.Key != "tenant.system_runtime" {
+				t.Fatalf("unexpected Develop receipt reader %q", role.Key)
 			}
 			if key == "manager.upload_receipt.read" && role.Key != "tenant.meta_runtime" && role.Key != "tenant.system_runtime" {
 				t.Fatalf("unexpected upload receipt reader %q", role.Key)
@@ -180,7 +186,7 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 	assertRepositoryRolePermissions(t, roles, "platform.inference_runtime", []string{"system.runtime_registry.update"})
 	assertRepositoryRolePermissions(t, roles, "platform.catalog_runtime", []string{"platform.tenant.read", "system.runtime_registry.update"})
 	assertRepositoryRolePermissions(t, roles, "tenant.catalog_runtime", []string{"develop.catalog.read", "iam.department.read", "iam.project_group.read", "iam.tenant_membership.read", "meta.authorization_facts.read", "meta.catalog.read", "model.catalog.read", "quality.catalog.read", "service.catalog.read", "standard.catalog.read", "standard.domain.read", "standard.element.read", "standard.glossary.read", "system.engine_access_fulfillment.execute", "workbench.catalog.read"})
-	assertRepositoryRolePermissions(t, roles, "tenant.system_runtime", []string{"catalog.sharing_fulfillment.read", "manager.upload_receipt.read", "meta.authorization_facts.read", "meta.data_item_identity.read", "meta.node_identity.read", "meta.task_provider.read", "transfer.production_receipt.read"})
+	assertRepositoryRolePermissions(t, roles, "tenant.system_runtime", []string{"catalog.sharing_fulfillment.read", "develop.production_receipt.read", "manager.upload_receipt.read", "meta.authorization_facts.read", "meta.data_item_identity.read", "meta.node_identity.read", "meta.task_provider.read", "transfer.production_receipt.read"})
 	assertRepositoryRolePrincipalTypes(t, roles, "tenant.system_runtime", []string{"service_principal"})
 	assertRepositoryRolePermissions(t, roles, "platform.duckdb_runtime", []string{"system.runtime_registry.update"})
 	assertRepositoryRolePermissions(t, roles, "tenant.duckdb_runtime", []string{"system.execution_authorization.execute"})
@@ -253,6 +259,7 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 	})
 	assertRepositoryRolePermissions(t, roles, "tenant.meta_runtime", []string{
 		"audit.tenant_event.create",
+		"develop.production_receipt.read",
 		"manager.content_index.update",
 		"manager.upload_receipt.read",
 		"system.cleanup_authorization.execute",

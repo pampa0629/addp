@@ -38,44 +38,18 @@ func workflowLineageFacts(definition interface{}, outputs commonModels.JSONMap) 
 		}
 	}
 
-	// Memoize each node's physical read sources; runtime objects stay within the
-	// DAG and do not become resources. A reference's port selects data from the
-	// referenced node, whose contributing reads remain node-scoped.
-	sources := make(map[string][]string, len(tasks))
-	visiting := make(map[string]bool, len(tasks))
-	var sourcePorts func(string) ([]string, bool)
-	sourcePorts = func(id string) ([]string, bool) {
-		if ports, resolved := sources[id]; resolved {
-			return ports, true
-		}
-		task, exists := byID[id]
-		if !exists || visiting[id] {
-			return nil, false
-		}
-		visiting[id] = true
-		var ports []string
-		if len(directInputs[id]) > 0 {
-			ports = append(ports, "input."+id)
-		}
-		for _, reference := range workflowLineageReferenceNodes(task["params"]) {
-			upstream, valid := sourcePorts(reference)
-			if !valid {
-				return nil, false
-			}
-			ports = append(ports, upstream...)
-		}
-		slices.Sort(ports)
-		ports = slices.Compact(ports)
-		sources[id] = ports
-		visiting[id] = false
-		return ports, true
+	direct := make(map[string]bool, len(directInputs))
+	for id := range directInputs {
+		direct[id] = true
+	}
+	sources, valid := workflowDataSources(byID, direct, workflowLineageMapKeys(outputs))
+	if !valid {
+		return nil
 	}
 	for _, id := range workflowLineageMapKeys(outputs) {
-		ports, valid := sourcePorts(id)
-		if !valid {
-			// Invalid DAGs are rejected before execution; never invent a lineage
-			// relation if a caller supplies an unresolvable execution snapshot.
-			return nil
+		ports := make([]string, 0, len(sources[id]))
+		for _, node := range sources[id] {
+			ports = append(ports, "input."+node)
 		}
 		refs := collectLineageRefs(outputs[id], "output."+id)
 		facts.Outputs = append(facts.Outputs, refs...)
@@ -134,4 +108,45 @@ func workflowLineageMapKeys[V any](values map[string]V) []string {
 	}
 	slices.Sort(keys)
 	return keys
+}
+
+// Both lineage and initial-production evidence use the same data-dependency
+// traversal. This selects node IDs only; actual reads require separate proof.
+func workflowDataSources(byID map[string]map[string]interface{}, direct map[string]bool, outputs []string) (map[string][]string, bool) {
+	// Only data references contribute. depends_on controls ordering alone.
+	sources := make(map[string][]string, len(byID))
+	visiting := make(map[string]bool, len(byID))
+	var sourcePorts func(string) ([]string, bool)
+	sourcePorts = func(id string) ([]string, bool) {
+		if ports, resolved := sources[id]; resolved {
+			return ports, true
+		}
+		task, exists := byID[id]
+		if !exists || visiting[id] {
+			return nil, false
+		}
+		visiting[id] = true
+		var ports []string
+		if direct[id] {
+			ports = append(ports, id)
+		}
+		for _, reference := range workflowLineageReferenceNodes(task["params"]) {
+			upstream, valid := sourcePorts(reference)
+			if !valid {
+				return nil, false
+			}
+			ports = append(ports, upstream...)
+		}
+		slices.Sort(ports)
+		ports = slices.Compact(ports)
+		sources[id] = ports
+		visiting[id] = false
+		return ports, true
+	}
+	for _, id := range outputs {
+		if _, valid := sourcePorts(id); !valid {
+			return nil, false
+		}
+	}
+	return sources, true
 }

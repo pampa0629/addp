@@ -2917,6 +2917,96 @@
                 ]
             }
         },
+        "/runtime/productions/{execution_id}/{result_id}/receipt": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "仅同租户 System 或 Meta Service；结果 UUID 是原发布 operation UUID。父任务失败不抹除已提交成果；不返回配置、Runtime manifest、Provider 私有状态、连接、凭据、lease 或授权结论。 | Same-tenant System or Meta Service only. The result UUID is the original publication operation UUID. Parent failure does not erase committed results. Returns no config, Runtime manifest, private Provider state, connection, credentials, lease or authorization verdict.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Execution authorization"
+                ],
+                "summary": "读取 Develop 最小成果回执 | Read minimal Develop production receipt",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "原执行 UUID | Original execution UUID",
+                        "name": "execution_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "原发布 operation UUID | Original publication operation UUID",
+                        "name": "result_id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/production.Receipt"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "develop.production_receipt.read"
+                ]
+            }
+        },
         "/settings/execution-policy": {
             "get": {
                 "security": [
@@ -6989,6 +7079,135 @@
                 },
                 "start": {
                     "type": "integer"
+                }
+            }
+        },
+        "plugin.QueryReadSet": {
+            "type": "object",
+            "properties": {
+                "paths": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/plugin.EngineCatalogPath"
+                    }
+                }
+            }
+        },
+        "production.CommittedObject": {
+            "type": "object",
+            "properties": {
+                "created": {
+                    "type": "boolean"
+                },
+                "target": {
+                    "$ref": "#/definitions/plugin.EngineCatalogPath"
+                }
+            }
+        },
+        "production.PrivateUploadProof": {
+            "type": "object",
+            "properties": {
+                "manifest_sha256": {
+                    "type": "string"
+                },
+                "task_id": {
+                    "type": "string",
+                    "example": ""
+                },
+                "upload_id": {
+                    "type": "string"
+                },
+                "uploader_id": {
+                    "type": "string",
+                    "example": ""
+                }
+            }
+        },
+        "production.Receipt": {
+            "type": "object",
+            "properties": {
+                "attempt": {
+                    "type": "integer"
+                },
+                "committed_at": {
+                    "type": "string"
+                },
+                "objects": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/production.CommittedObject"
+                    }
+                },
+                "operation_id": {
+                    "type": "string"
+                },
+                "origin": {
+                    "$ref": "#/definitions/production.UserOrigin"
+                },
+                "primary": {
+                    "$ref": "#/definitions/plugin.EngineCatalogPath"
+                },
+                "reference": {
+                    "$ref": "#/definitions/production.Reference"
+                },
+                "retry_of_execution_id": {
+                    "type": "string"
+                },
+                "sources": {
+                    "$ref": "#/definitions/production.SourceEvidence"
+                },
+                "target_engine_version": {
+                    "type": "string",
+                    "example": ""
+                },
+                "tenant_id": {
+                    "type": "string",
+                    "example": ""
+                }
+            }
+        },
+        "production.Reference": {
+            "type": "object",
+            "properties": {
+                "execution_id": {
+                    "type": "string"
+                },
+                "owner": {
+                    "type": "string"
+                },
+                "result_id": {
+                    "type": "string"
+                }
+            }
+        },
+        "production.SourceEvidence": {
+            "type": "object",
+            "properties": {
+                "kind": {
+                    "type": "string"
+                },
+                "private_upload": {
+                    "$ref": "#/definitions/production.PrivateUploadProof"
+                },
+                "read_set": {
+                    "$ref": "#/definitions/plugin.QueryReadSet"
+                }
+            }
+        },
+        "production.UserOrigin": {
+            "type": "object",
+            "properties": {
+                "authorization_version": {
+                    "type": "string",
+                    "example": ""
+                },
+                "membership_id": {
+                    "type": "string",
+                    "example": ""
+                },
+                "principal_id": {
+                    "type": "string",
+                    "example": ""
                 }
             }
         },

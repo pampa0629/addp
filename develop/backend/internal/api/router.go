@@ -131,6 +131,7 @@ func SetupRouter(
 		catalogResources.GET("/catalog-resources/changes", permission(developauthorization.PermissionDevelopCatalogRead), catalogResourceHandler.ListChanges)
 		catalogResources.POST("/runtime/catalog-references/resolve", permission(developauthorization.PermissionDevelopCatalogRead), catalogResourceHandler.ResolveReferences)
 		registerFileExecutionRoutes(api, repository.NewFileExecutionRepository(db))
+		registerProductionReceiptRoutes(api, service.NewProductionReceiptService(repository.NewFileExecutionRepository(db)))
 
 		taskProvider := api.Group("/task-provider")
 		taskProvider.Use(commonAuth.MustNewServiceClientGuard("addp-orchestrator"))
