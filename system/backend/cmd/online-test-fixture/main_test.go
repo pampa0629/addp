@@ -1066,6 +1066,35 @@ func TestSecurityFixtureSeparatesPreparationFromOwnerPermissions(t *testing.T) {
 	}
 }
 
+func TestSecurityFixtureGroupedTransferHasItsOwnWriteExecutionPermission(t *testing.T) {
+	permissions, err := suitePermissions("security-mysql-owner-protection")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, key := range []string{"system.execution_authorization.create", "transfer.task.execute", "develop.data_read.execute", "develop.data_write.execute"} {
+		if !slices.Contains(permissions, key) {
+			t.Fatalf("grouped role-selected Transfer cannot issue its read/write execution: missing %s", key)
+		}
+	}
+	if slices.Contains(consumerPermissions, "develop.data_write.execute") {
+		t.Fatal("Security Transfer write prerequisite leaked into shared consumer permissions")
+	}
+	for _, suite := range []string{"security-plaintext-access", "opengauss-consumer-flow", "kingbase-consumer-flow"} {
+		other, err := suitePermissions(suite)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if slices.Contains(other, "develop.data_write.execute") {
+			t.Fatalf("Security Transfer write prerequisite leaked into %s", suite)
+		}
+	}
+	for _, key := range []string{"develop.data_ddl.execute", "develop.data_external_effect.execute", "system.engine_access_grant.create", "system.engine_access_delegation.create"} {
+		if slices.Contains(permissions, key) {
+			t.Fatalf("grouped Transfer fixture gained unrelated authority: %s", key)
+		}
+	}
+}
+
 func TestConsumerEnvironmentPublishesOnlyRequiredBrowserCredentials(t *testing.T) {
 	for _, suite := range []string{"pg-source-authorization", "security-plaintext-access", "security-mysql-owner-protection", "hdfs-spark-consumer-flow", "elasticsearch-consumer-flow", "raster-workflow", "raster-workflow-capacity", "redis-consumer-flow", "manager-internal-artifact-lineage", "transfer-relational-sql-etl"} {
 		t.Run(suite, func(t *testing.T) {

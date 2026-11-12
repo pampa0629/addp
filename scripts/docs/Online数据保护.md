@@ -1,6 +1,6 @@
 # ADDP 脚本：Online数据保护
 
-当前代码领域报告为 v46，沿 v45 分组三出口范围分别核对 Develop 当次结果与默认历史；浏览器为 v10、23 张必需图。最近完整通过的真实 Hosted 仍是 v44/v10（421da33a）；v45首轮已失败，v46唯一复验因Playwright系统依赖的软件源DNS故障在业务开始前停止，修正范围尚无真实业务验收结果；旧版本通过不覆盖新断言。
+当前代码领域报告为 v46，沿 v45 分组三出口范围分别核对 Develop 当次结果与默认历史；浏览器为 v10、23 张必需图。最近完整通过的真实 Hosted 仍是 v44/v10（421da33a）；v45首轮已失败，v46一次复验因软件源DNS在业务前停止；此后另经确认的Run43140011471已进入业务，前六阶段通过，第七阶段在所选方式Transfer任务的执行授权签发403处停止，仍无完整领域／浏览器报告（0/23图）。原失败分别保留，旧版本通过不覆盖新断言。
 
 [返回脚本导航](../README.md) · [返回测试与发布入口](测试与发布入口.md#test---测试与发布门禁)
 
@@ -12,7 +12,7 @@
 
 ## 现行契约与证据边界
 
-当前领域报告为 `addp.security-mysql-owner-protection-online/v44`、浏览器报告为 `addp.security-manager-export-browser/v9`，以[现行校验器](../test/security-mysql-owner-protection-online.py)为准。本页按主题保留 v23～v44 的增量要求。当前报告继承仍适用的断言。
+当前领域报告为 `addp.security-mysql-owner-protection-online/v46`、浏览器报告为 `addp.security-manager-export-browser/v10`，以[现行校验器](../test/security-mysql-owner-protection-online.py)为准。本页按主题保留 v23～v46 的增量要求。当前报告继承仍适用的断言。
 
 保护方式、角色资格及导出有效性的能力契约见[数据安全规范](../../docs/spec/addp数据安全与隐私保护实现规范.md#711-默认方式与角色可选方式)。本文维护 suite 断言与版本差异；已归档的固定源码、运行尝试、失败和清理结果见[数据保护与执行血缘历史证据](../../docs/spec/testing/evidence/数据保护与执行血缘历史证据.md)，不由版本号推导某次验收已通过。其中[四出口实际停机 v9](../../docs/spec/testing/evidence/数据保护与执行血缘历史证据.md#四出口实际停机--t4-v9)、[四出口重新发现 v10](../../docs/spec/testing/evidence/数据保护与执行血缘历史证据.md#四出口重新发现--t4-v10)分别维护对应旧证据，不作为 v23～v33 新增范围的通过记录。
 
@@ -354,3 +354,10 @@ Develop 查询及重复历史、私有 SQL Service 两页 JSON／CSV、Transfer 
 沿v45相同SQL、数据源、身份、角色方式、两任务／一服务／两目标、28阶段／23图及预算，不增加业务操作范围。Develop专业执行详情与列表是默认脱敏历史，不是当前角色方式的交付接口；当前方式输出沿现行GET /executions/{execution_id}/result交付。每个分组正例都先严格核对历史默认值，再核对同一UUID当次结果的所选值和单一no-store，最后复读同一历史并确认默认值不变。所选全遮盖与当时Policy的前1／后1默认必须分别命中独立固定样本，不再要求两者相同。恢复后两通道都核对原初默认值。准备阶段拒绝仍只读取同一失败历史并核对无结果；Service、Transfer及旧游标拒绝不变。
 
 v45实际运行在选中方式后的历史检查失败：该检查将默认历史与全遮盖的当次值比较，且没有调用当次接口。v46修正验收消费者及其边界模拟，不改变产品规则，不删除原值、字段、计数或排序断言；新增当次返回默认、当次混入原值、错误UUID、缺no-store、历史错误采用所选值等拒绝回归。领域报告唯一升为v46，原v45首失败保留，修正后的真实Hosted必须另经用户确认，不自动重派。
+
+
+### v46 分组 Transfer 执行签发前提修正（2026-11-12，用户已确认）
+
+精确业务源码7faff9ab8的Run43140011471／Job130924454141已实际进入第七阶段；所选方式的Transfer任务#9启动403。关联请求78ebe164-1ea5-4071-ac58-df13aaf01ef4在System的本人角色自查200、执行授权签发403，尚未创建该任务的Worker执行。现有角色选择链路会为原PG引擎签发read/write执行范围；System现行签发契约要求transfer.task.execute、develop.data_read.execute和develop.data_write.execute。该套件普通消费用户已有前两项及system.execution_authorization.create，但consumerPermissions与套件附加集合均未包含develop.data_write.execute；独立Transfer资格用户的专用权限集合已有此项，不能借该账号冒充原三出口同一用户验收。
+
+用户已确认并实施的最小方案：只在security-mysql-owner-protection的套件专属附加功能权限中加入既有develop.data_write.execute；不修改全局consumerPermissions、不增加源Grant、引擎、角色、用户、原值授权或产品签发规则。新增夹具正反回归核对该套件唯一增加此项、其他套件不受影响；沿现有System夹具Go与make test-security-online-runner登记验证。范围仍为本Job disposable账号及原目标，需新的精确候选和单次Hosted确认后才运行。本次只修改隔离夹具定义，当前个人账号没有增权、Hosted没有重派；原403与缺失领域／浏览器报告、0/23图保留，六Grant清理成功不替代业务通过。
