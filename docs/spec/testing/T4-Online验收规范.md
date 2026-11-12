@@ -23,7 +23,13 @@ T4 只在隔离的 ADDP 测试部署执行，并按运行条件选择唯一部�
 - `POSTGRES_DB` 必须精确为 `addp_online`，并拒绝 `addp`、`addp_test`、`addp_iam_test`。该数据库只属于当前 T4 部署，不属于本地共享 PostgreSQL 测试清单。
 - 证据目录必须位于仓库外；凭据目录不得被 artifact 归档。工作区必须干净，构建身份必须与当前 checkout 一致。
 
-三种 profile 共用同一个 `make test-online` 分发器和 owner 业务断言，生命周期脚本只负责当次环境和夹具。编排只调用现有 Infra、开发生命周期脚本和 `make test-online`，不得在 workflow 中复制模块启动逻辑或业务断言。Hosted 原生 Linux 经开发入口启动的 PointCloud、Document 容器使用宿主网络，直接以配置端口监听，通过回环地址访问 System、Infra 与 Business MinIO；不得用 bridge 的 host gateway 访问仅发布回环端口的服务。该启动契约由 `make test-dev-lifecycle` 覆盖，真实对象存储读写仍由 Manager T4 验证。退出路径必须停止本次应用进程并报告清理结果；常规 macOS self-hosted Infra 可在专用 Runner 常驻，Hosted 与 License 受控 owner-managed profile 的 Infra 必须随 Job 销毁。
+三种 profile 共用同一个 `make test-online` 分发器和 owner 业务断言，生命周期脚本只负责当次环境和夹具。编排只调用现有 Infra、开发生命周期脚本和 `make test-online`，不得在 workflow 中复制模块启动逻辑或业务断言。
+
+Hosted Manager 场景中，经开发入口启动的 PointCloud、Document 使用原生 Python 进程，监听配置的回环端口，按 PID 与监听归属管理；通过宿主机回环访问 System、Infra 与 Business MinIO，不进行 Docker host gateway 改写。启动和进程边界见[显式启动 Runtime](../../../scripts/docs/启动脚本使用指南.md#显式启动-runtime)，访问地址与宿主发布绑定的区别见[端口规范](../addp端口分配.md#system-addp-基础设施)。启动约束的确定性检查仍走 `make test-dev-lifecycle`；原生依赖准备或生命周期检查不替代真实对象读取、COPC／PDF 产物及页面验收，具体断言见[Manager 点云与 PPTX 场景](scenarios/Manager与空间成果.md#点云与-pptx)。
+
+产品容器部署仍按对应产品和 suite／profile 契约执行，不能将上述原生进程说明推广为容器统一使用宿主网络。容器访问仅发布回环端口的服务时，仍不得用 bridge 的 host gateway 代替实际可达路径。
+
+退出路径必须停止本次应用进程并报告清理结果；常规 macOS self-hosted Infra 可在专用 Runner 常驻，Hosted 与 License 受控 owner-managed profile 的 Infra 必须随 Job 销毁。
 
 各 suite 的部署选择、专用夹具和业务断言见[场景索引](../addp测试与验收规范.md#online-场景索引)；专用条款只适用于其声明的 suite 与 profile。
 
