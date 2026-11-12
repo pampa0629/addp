@@ -1724,6 +1724,7 @@ const submitQuery = async (parameters = {}) => {
       } catch {
         return
       }
+      if (requestSequence !== executionRequestSequence) return
       queryConfirmationToken = preflight.confirmation_token || ''
     }
     const started = await createExecution({
@@ -1742,6 +1743,7 @@ const submitQuery = async (parameters = {}) => {
       query_confirmation_token: queryConfirmationToken || undefined,
       timeout: 120
     })
+    if (requestSequence !== executionRequestSequence) return
     if (!started?.execution_id) throw new Error(t('develop.query.executionIdMissing'))
     executionResult.value = {
       status: 'pending', progress: 0, execution_id: started.execution_id,
@@ -1773,6 +1775,7 @@ const submitQuery = async (parameters = {}) => {
       await new Promise(resolve => window.setTimeout(resolve, 700))
     }
   } catch (error) {
+    if (requestSequence !== executionRequestSequence) return
     const responseError = error.response?.data
     const errorMessage = responseError?.details || responseError?.detail || responseError?.error || error.message
     executionResult.value = { success: false, status: 'failed', error: errorMessage, rows: [], columns: [] }
@@ -2444,6 +2447,10 @@ async function applyQueryTaskRoute() {
   if (applyingQueryTaskRoute) return
   applyingQueryTaskRoute = true
   try {
+    executionRequestSequence += 1
+    executing.value = false
+    clearResult()
+    announcement.value = ''
     const taskId = developTaskIDFromRoute(route)
     const canonicalLocation = buildDevelopTaskEditorLocation('query', taskId)
     if (route.fullPath !== router.resolve(canonicalLocation).fullPath) {

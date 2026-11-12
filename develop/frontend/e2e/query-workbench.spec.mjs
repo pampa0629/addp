@@ -1645,3 +1645,72 @@ for (const locale of ['zh-cn', 'en']) {
     expect(reads).toBe(3)
   })
 }
+
+
+for (const locale of ['zh-cn', 'en']) for (const stage of ['preflight', 'create', 'result']) {
+  test(`obsolete submission cannot overwrite the next task protection refusal (${stage}, ${locale})`, async ({ page }) => {
+    const words = JSON.parse(readFileSync(new URL(`../src/i18n/${locale}.json`, import.meta.url), 'utf8')).develop.query
+    await installMockBackend(page, { resultKind: 'table', locale })
+    await page.route('**/api/v1/develop/task-definitions/*', route => {
+      const id = Number(new URL(route.request().url()).pathname.split('/').at(-1))
+      return fulfillJSON(route, { id, version: 1, name: `fixture-query-${id}`, dev_type: 'query',
+        content: { query: `SELECT ${id} AS id`, query_type: 'sql' }, execution_config: { engine_id: ENGINE.id } })
+    })
+    const oldMarker = 'obsolete-protection-reason'
+    const currentMarker = 'current-protection-reason'
+    let preflights = 0
+    let phase = 'diagnostics'
+    let blocked = false
+    let release
+    const pending = new Promise(resolve => { release = resolve })
+    await page.route('**/api/v1/develop/query-preflight', async route => {
+      if (phase === 'diagnostics') return route.fallback()
+      preflights++
+      if (preflights > 1) return fulfillJSON(route, { error_code: 'data_protection_required', error: currentMarker }, 403)
+      if (stage !== 'preflight') return route.fallback()
+      blocked = true
+      await pending
+      return fulfillJSON(route, { error_code: 'data_protection_required', error: oldMarker }, 403)
+    })
+    if (stage === 'create') await page.route('**/api/v1/develop/executions', async route => {
+      blocked = true
+      await pending
+      return fulfillJSON(route, { execution_id: EXECUTION_ID })
+    })
+    if (stage === 'result') await page.route(`**/api/v1/develop/executions/${EXECUTION_ID}/result`, async route => {
+      blocked = true
+      await pending
+      return fulfillJSON(route, { error_code: 'data_protection_required', error: oldMarker }, 403)
+    })
+    const diagnosticFor = query => page.waitForResponse(response => new URL(response.url()).pathname === '/api/v1/develop/query-preflight' && response.request().postDataJSON()?.query === query)
+    const initialDiagnostic = diagnosticFor('SELECT 901 AS id')
+    await page.goto('/sql?action=edit&id=901')
+    await expect(page.getByRole('heading', { name: 'fixture-query-901', exact: true })).toBeVisible()
+    await (await initialDiagnostic).finished()
+    phase = 'submission'
+    const execute = page.getByRole('button', { name: words.execute, exact: true })
+    await execute.click()
+    await expect.poll(() => blocked).toBe(true)
+    phase = 'diagnostics'
+    const nextDiagnostic = diagnosticFor('SELECT 902 AS id')
+    // Same-component public route navigation, matching browser history/task links.
+    await page.locator('.query-workbench').evaluate(el => { void el.__vueParentComponent.proxy.$router.push('/sql?action=edit&id=902') })
+    await expect(page.getByRole('heading', { name: 'fixture-query-902', exact: true })).toBeVisible()
+    await expect(execute).toBeEnabled()
+    await (await nextDiagnostic).finished()
+    phase = 'submission'
+    await execute.click()
+    const result = page.locator('.result-panel')
+    await expect(result).toContainText(currentMarker)
+    const path = stage === 'preflight' ? '/api/v1/develop/query-preflight' : stage === 'create'
+      ? '/api/v1/develop/executions' : `/api/v1/develop/executions/${EXECUTION_ID}/result`
+    const late = page.waitForResponse(response => new URL(response.url()).pathname === path)
+    release()
+    await (await late).finished()
+    await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))))
+    await expect(result).toContainText(currentMarker)
+    await expect(result).not.toContainText(oldMarker)
+    await expect(execute).toBeEnabled()
+    expect(preflights).toBe(2)
+  })
+}

@@ -574,3 +574,10 @@ createQueryPlaintextRefresh原来复用一个计时器：5秒复核开始后等�
 定向7项单元通过，涵盖原清空／替换／退出、截止清除后脱敏恢复、挂起跨截止、迟到过期原值及初始已经到期。标准隔离Develop浏览器中英文2例通过：正式工作台先显示合成原值，5秒复核请求保持挂起，合成8秒期限经过后确认清空，迟到的过期200不恢复；再次执行显示合成保护结果。没有修改系统或浏览器时钟。以上是T1和受控T3，不是真实账户或真实授权自然到期T4。
 
 证据 /tmp/p145-develop-plaintext-deadline-{red,green,browser,frontend}.log；Manager本轮仅验证其既有父／子请求失效，共414项单元通过，无Manager产品变更。完整make test-develop-frontend实际退出0：test:workflow链通过、290项浏览器实际通过（含本轮中英文截止两项）、构建成功；不是Go／PostgreSQL或Hosted门禁。最终同一7项断言隔离导入旧控制器时3过4失败，原控制器与修后实现输入哈希及红例见/tmp/p145-plaintext-deadline-independent/，未回滚共享工作区源码。
+
+
+### 查询任务切换后的旧提交失效（2026-11-12）
+
+正式 Vue 同组件任务切换重现旧执行仍锁住新任务；隔离最终同一 4 项单元断言回放旧提交函数全部失败，分别为旧预检拒绝、旧结果读取拒绝、旧创建回执和过时高风险确认。修正沿用 executionRequestSequence：任务路由切换清除旧结果、原值复核与加载状态，确认结束、创建回执及外层失败分别验证归属。不取消已提交后台执行、不放开执行中的引擎下拉切换、不修改后端或授权；产品行为见[SQL 任务说明](frontend/docs/SQL任务功能说明.md#3-查看结果与导出)。
+
+定向 4 项单元、中英文三边界共 6 项受控浏览器通过；首次浏览器夹具混算自动语法诊断与手动执行预检，3 过 3 失败，修正为显式等待两次任务诊断后再点击执行，原失败保留。完整 make test-develop-frontend 实际退出 0：test:workflow 链、296 项浏览器及构建通过；make test-frontend-ci-registration 的 27 项及 21 个前端登记通过。以上是 T1／受控 T3，不是真实身份、真实授权或 Hosted T4。证据 /tmp/p145-query-submit-stale-{green,browser-green-v2,frontend,registration}.log；最终旧实现红例 /tmp/p145-query-submit-stale-independent/。

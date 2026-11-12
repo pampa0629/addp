@@ -1,4 +1,6 @@
 import assert from 'node:assert/strict'
+import test from 'node:test'
+import vm from 'node:vm'
 import { readFile } from 'node:fs/promises'
 import { createLatestRequestCoordinator } from '../../../common-frontend/basic/src/utils/latestRequest.js'
 
@@ -107,3 +109,82 @@ assert.match(queryEditor, /v-loading="loadingSampleQuery"/)
 assert.match(queryEditor, /:aria-busy="loadingSampleQuery"/)
 
 console.log('query target switch tests passed')
+
+
+function submissionHarness(api = {}) {
+  const notices = []
+  const calls = []
+  const ref = value => ({ value })
+  const state = {
+    loadingSampleQuery: ref(false), executing: ref(false), editorRef: ref(null),
+    selectedTarget: ref({}), selectedEngineId: ref(11), queryContent: ref('SELECT id FROM public.customers'),
+    queryExecutionTargetLocator: ref(''), currentQueryLanguage: ref('sql'), queryParameters: ref([]), queryParameterPayload: value => value,
+    protectionChoices: ref([]), exportProtectionChoices: ref([]), executionInputsComplete: () => true,
+    executionRequestSequence: 0, executionResult: ref(null), resultViewMode: ref('table'),
+    executionParameterDialogVisible: ref(false), announcement: ref(''), queryAnalysis: ref(null), diagnosticAnalysis: ref(null),
+    preflightQuery: async () => ({ allowed: true, diagnostics: [] }),
+    createExecution: async body => { calls.push(body); return { execution_id: 'old-execution' } },
+    getQueryResult: async () => ({ execution_id: 'old-execution', status: 'success', rows_count: 1 }),
+    queryResultFromExecution: value => value, plaintextRefresh: { schedule: value => calls.push(['schedule', value.execution_id]) },
+    hasGraphData: ref(false), isTerminalExecutionStatus: () => true,
+    ElMessage: { error: value => notices.push(value), success: value => notices.push(value), warning: value => notices.push(value) },
+    ElMessageBox: { confirm: async () => {} }, queryWarningMessage: value => value, t: key => key,
+    ...api
+  }
+  state.clearResult = () => { state.executionResult.value = null }
+  const method = queryEditor.slice(queryEditor.indexOf('const submitQuery = async'), queryEditor.indexOf('const formatQuery ='))
+  const submit = vm.runInContext(`${method}\nsubmitQuery`, vm.createContext(state))
+  const replace = () => {
+    state.executionRequestSequence++
+    state.executionResult.value = { execution_id: 'current-execution', status: 'failed', error: 'current protection refusal', rows: [] }
+    state.announcement.value = 'current protection refusal'
+  }
+  return { state, calls, notices, submit, replace }
+}
+
+for (const stage of ['preflightQuery', 'getQueryResult']) {
+  test(`a stale ${stage} failure cannot replace the current protection refusal`, async () => {
+    let rejectOld
+    let started
+    const entered = new Promise(resolve => { started = resolve })
+    const h = submissionHarness({ [stage]: () => { started(); return new Promise((resolve, reject) => { rejectOld = reject }) } })
+    const old = h.submit()
+    await Promise.race([entered, old.then(() => { throw Error('submission ended before the expected API boundary') })])
+    h.replace()
+    const before = JSON.stringify([h.state.executionResult.value, h.state.announcement.value, h.notices])
+    rejectOld({ response: { data: { error: 'obsolete protection refusal' } } })
+    await old
+    assert.equal(JSON.stringify([h.state.executionResult.value, h.state.announcement.value, h.notices]), before)
+  })
+}
+
+test('an obsolete create-execution receipt cannot publish its pending identity', async () => {
+  let resolveOld
+  let started
+  const entered = new Promise(resolve => { started = resolve })
+  const h = submissionHarness({ createExecution: () => { started(); return new Promise(resolve => { resolveOld = resolve }) } })
+  const old = h.submit()
+  await Promise.race([entered, old.then(() => { throw Error('submission ended before the expected API boundary') })])
+  h.replace()
+  const before = JSON.stringify([h.state.executionResult.value, h.state.announcement.value, h.notices])
+  resolveOld({ execution_id: 'obsolete-execution' })
+  await old
+  assert.equal(JSON.stringify([h.state.executionResult.value, h.state.announcement.value, h.notices]), before)
+  assert.deepEqual(h.calls, [])
+})
+
+test('an abandoned high-risk confirmation cannot submit an execution after context invalidation', async () => {
+  let confirm
+  let started
+  const entered = new Promise(resolve => { started = resolve })
+  const h = submissionHarness({
+    preflightQuery: async () => ({ allowed: true, diagnostics: [], requires_confirmation: true, effect: 'data_write', confirmation_token: 'fixture-confirmation' }),
+    ElMessageBox: { confirm: () => { started(); return new Promise(resolve => { confirm = resolve }) } }
+  })
+  const old = h.submit()
+  await Promise.race([entered, old.then(() => { throw Error('submission ended before the expected API boundary') })])
+  h.replace()
+  confirm()
+  await old
+  assert.deepEqual(h.calls, [])
+})
