@@ -206,7 +206,7 @@ Common 父子准入与 System 协调的用例定位见 [Owner 矩阵](../spec/te
 - 审核先受理：审核命令及准确目标操作在 G 共享事务中登记，确认 Cleanup 实际等待后提交。关闭随后可提交，但在途／未知操作及未完成审核回执仍阻清理，新审核被拒绝。原命令可以在关闭后保存已知结果，随后 Cleanup 正常完成；未知效果令 Cleanup 失败关闭并保留操作和审核；审核回执更新失败保留原命令与未提交结果，仍阻清理。
 - 各场景均保留原构建终态及摘要、其他待审项和 Engine 清理应保留的审核历史；随机 Tenant 事实与专用触发器／函数在退出清理。PG 为真实事务与锁交错，原生图写入由持久操作协议夹具代表，不计为 Neo4j／FalkorDB 原生效果或 Hosted 证明。
 
-本地 `make test-module MODULE=graph GO_ONLY=1`、`make test-common-postgres COMMON_POSTGRES_TEST_ARGS="--test graph"` 已通过；Graph PG 仍为 10 个主用例，新增六个子场景均准确 PASS、零 SKIP，退出事实清理检查通过。首轮关闭屏障错误来自测试回调复用 GORM 更新语句的参数，改用同一事务的新查询 Session 后通过；尚未复现需要修改生产逻辑的新缺陷。T2 登记 85＋9 项及注册检查通过；固定源码 Linux 结果在取得终态后补记。Graph 高级恢复继续暂缓，未运行 Hosted 或环境切换。
+本地 `make test-module MODULE=graph GO_ONLY=1`、`make test-common-postgres COMMON_POSTGRES_TEST_ARGS="--test graph"` 已通过；Graph PG 仍为 10 个主用例，新增六个子场景均准确 PASS、零 SKIP，退出事实清理检查通过。首轮关闭屏障错误来自测试回调复用 GORM 更新语句的参数，改用同一事务的新查询 Session 后通过；尚未复现需要修改生产逻辑的新缺陷。T2 登记 85＋9 项及注册检查通过。固定源码 `1ff28df73c8985b104a2b2888f34153bdf9323c3` 的 [Linux Go workspace](https://github.com/pampa0629/addp/actions/runs/43162604533/job/130997042017) 与 [Common PostgreSQL 15](https://github.com/pampa0629/addp/actions/runs/43162604574/job/131000500767) 均已终态 success；原始 Go 日志确认 Graph server／API／repository／service 包实际通过，PG 日志确认 Graph 10 个主用例与新增六个子场景准确 PASS、零 SKIP。Graph 高级恢复继续暂缓，未运行 Hosted 或环境切换。
 
 ## 七、确认范围与协作分工
 
