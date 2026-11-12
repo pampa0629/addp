@@ -628,3 +628,41 @@ CI登记核对确认原Platform consistency的`make test-platform`沿开发生�
 | [Platform consistency 131135866728](https://github.com/pampa0629/addp/actions/runs/43204426642/job/131135866728) | 第119／207行确认固定SHA；第2366—2367行实际运行完整`make test-platform`，无本机分段验证使用的`-o`前置跳过。第2454—2456行前置生命周期3项通过；第2563—2566行208项Trace本地runner及CI登记核验通过；第2571—2573行包括配置测试文件的169项组件全部通过。固定提交的原Infra入口包含`trace-deployment-config_test.py`，新增Manager追加9项用例未设置Skip条件；日志按批次汇总，不声称逐项列名。门禁步骤于UTC 11:55:54结束，Job于11:56:02完成。 |
 
 原始日志为`/tmp/addp-manager-trace-ci-go-131135866503.log`及`/tmp/addp-manager-trace-ci-platform-131135866728.log`。本次Linux完整标准入口通过，补齐上一节本机分项验证的CI证据；本机两次五秒超时原记录及原因未知结论保持，不据Linux通过声称本机偶发超时已修复。未核验无关Job，不扩大为所有CI或产品验收通过；169项后的“未安装／恢复跳过”是受控生命周期分支输出，不是个人来源已部署或恢复的证明。本轮仅手动读取自然CI并补证，未重跑或更改CI，未生成个人环境证书、修改个人`.env`、重启服务或运行Hosted／容量／定时；实际业务与Safari验收仍待另行确认。
+
+## 2026-11-12 Manager 本机来源准备与单项配置合并完成，待用户重启
+
+用户明确授权生成个人Manager客户端证书并只追加根`.env`来源数组。先执行标准`bash scripts/infra/status.sh`：Trace中心Ready，Alloy实际回环OTLP映射14318、查询代理14320，与当前配置和原`deployment.env`相符；Ready不代表业务采样送达。三套CA有效期均至UTC 2026-12-08 09:58:52，source CA私钥公钥匹配、source／query信任根独立，旧服务端／来源／查询叶证书离线校验通过；只读inspect确认当前Alloy挂载同一中心目录且只读。状态入口自身的日志探针成功，保留的累计发送／源丢弃计数非零，不据此声称历史日志完整。
+
+确认生成器与实现提交`7f06f2424`一致后，只执行一次原`prepare-development-producer --producer manager:backend`，目录为既有仓库外私有Trace准备根。新增Manager目录仅有三文件，目录0700、文件0600，独立密钥与证书匹配，source CA的sslclient验证成功、query CA验证拒绝；新叶证书有效期为UTC 2026-11-12 12:04:25至2026-12-07 12:04:25。逐文件摘要核对确认既有CA、来源／查询证书、CA序列文件及中心渲染结果未改变，准备文件仅更新来源数组。根`.env`采用同目录临时文件原子替换，只改变唯一`ADDP_TRACE_DEPLOYMENTS`行，来源5→6、原五项对象完全一致，其他配置行和文件权限保持。
+
+本轮没有运行Infra启用、服务重启或业务请求；Manager的SDK在启动时读取声明，当前进程不能据文件合并计为已启用。待用户执行`./scripts/dev/restart.sh -manager`，再分别核验新登记实例、正式预览请求及Trace／日志／页面。未运行Hosted、容量或定时，未将本机配置、私钥或凭据写入仓库。
+
+## 2026-11-12 Manager 重启后实际预览与 Safari 关联核验：部分通过
+
+用户告知已重启后，执行标准Infra status核验：Trace中心、查询代理和日志查询Ready，OTLP／Trace查询宿主端口仍为14318／14320。状态入口自身日志探针送达；历史累计丢弃／重试非零，不能据此声称日志完整。Safari正式System实例页确认Manager登记ID `17140`、运行实例 `c7b4e601-9697-4cdf-9af6-7a957f671142`，Backend监听`localhost:8081`，进程启动北京时间21:31:43、注册21:31:45，状态UP。新实例本地接收记录与页面身份一致。
+
+Safari当前平台系统管理员进入Manager数据探查页被明确拒绝；共享页面入口要求Tenant Context及`manager.data_item.read`，不以平台权限替代源数据读取权限。用户指出右侧已有可用账号后，实际确认内置浏览器为“ADDP开发管理员”，沿其已登录业务身份从资源树选择Business PostgreSQL的`public/test_pk_source`（DataItem 49），仅发起一次表预览，页面显示3行、3字段。业务发起在内置浏览器，平台Trace／日志核验在Safari，不能合称“全程Safari预览”。未复制凭据或新增权限，未创建任务、导出或修改源表。
+
+该次`GET /api/v1/manager/preview`于北京时间21:45:47完成，HTTP200、日志113ms，Trace `34f68d0025d2b21b07e1309dc0606bb7`、Manager Server Span `029d7467330fff01`、Request ID `3ce978e7-5f26-41ed-be72-413e9c27155a`。Safari按实例／同一Trace／21:45:45—21:45:49窗口读到1条Manager集中完成日志；System实例`758973cc-b5f9-413e-beac-3d7d2c5aa781`同窗读到3条相同Trace及Request ID的日志：身份核验GET 200／18ms（Span `7b89441d3fa0392d`）、引擎读取GET 200／3ms（`2f345243c42ce40f`）、预览源授权read-check POST 200／33ms（`58d8496148d61e5e`）。授权检查POST属于既有只读预览内部流程，未新增业务写操作。页面日志均标“采集完整性未确认”；这些记录证明实际Context关联与集中日志可读，不提供Client父子关系或SQL耗时证明。
+
+等待超过原120秒尾采样期限后，在Safari按该预览Trace及21:45—21:47窗口查询，返回“当前条件下没有可读的已保留调用链”，实例样本标识为“暂无法确认”。保留该原结果，未重放预览、刷新重试或改采样；当前普通成功保留5%，没有逐Trace采样决定回执，因此未命中采样只是可能原因，不能唯一归因，也不宣称本次预览下游Span详情通过。
+
+独立核验了该新实例此前真实只读引擎列表样本：Trace `95b4fe479f3a5a54ad6ad4411a9dc527`，21:34:51、HTTP200，总35.451ms、5 Span；Safari展示Gateway Server→Gateway Client→Manager Server→Manager Client→System `/auth/context`。Manager Server `cb61d1779eb82121`为Client `ad1b9802bbba34b7`的父Span，System Server `839f6581bbe6e349`的父Span为该Client，Manager实例匹配本次重启。分别点击Manager／System关联日志，自动携带对应实例、Trace和窄时间窗，各读到1条匹配Server Span的HTTP200完成日志（34ms／5ms）；Manager日志反向“查询调用链”恢复同一5 Span详情。此项证明Manager实际导出／保留、下游身份核验传播及双向页面跳转；不替代上述预览样本，不覆盖已知引擎业务Client的Background Context断点或Meta Server／SQL Span。
+
+结论分别记账：新实例与实际Trace接入通过；实际预览及跨服务日志关联通过；该预览的已保留Span详情未完成验收。无产品代码、权限、配置或采样变更，无自动重启、Hosted、容量、定时及加压。后续应先讨论低请求量下可靠取得诊断样本的最小方案，不能用重复点击或擅自提高采样率抹去本轮缺口。
+
+## 2026-11-12 未保留 Trace 的实例日志入口：确定性验证通过
+
+沿用户“继续”确认的首项最小改进，先修订6.5查询规范，再在Monitor调用链页补未找到Trace的实例日志入口。仅在精确Trace返回`trace_not_found`且保有本次当前User已授权实例时提供，仍要求既有日志正文权限；显示原Trace ID和日志起止，沿System原模块实例日志页独立授权。默认15分钟及30分钟／1小时相对范围在该次点查前冻结、显式提交，点击日志不滑动、不扩窗。无明确实例的全局ID点查不猜测归属；查询中、503、401／403、列表失败、投影无效及身份变化清除旧入口，迟到响应不能恢复。原Span日志与新增入口复用同一跳转实现，不新增API、预取、实例枚举、采样、存储、权限或第二套日志渲染。
+
+本批标准命令`make test-monitor-frontend MONITOR_FRONTEND_BROWSER_ARGS='traces.spec.js'`最终退出0：152项前端T1全部通过、失败／取消／跳过均0；调用链专项38项受控浏览器回归全部通过（新增11项），包括中英文窄屏、历史窗口原样传递与刷新恢复、三档相对时段冻结、零日志预取、无正文权限／无实例隐藏、四类失败清除和撤权后迟到响应拒绝；Vite生产构建成功，沿原有大chunk提示。最终日志`/tmp/addp-trace-missing-logs-verified.log`。首轮35过／3败的记录保留于`/tmp/addp-trace-missing-logs-gate.log`：三项新增断言误将路径内Trace ID视为query参数，核对原API client后仅修正测试预期；未改产品API或放宽窗口、权限断言。
+
+CI登记核验现有Platform frontend矩阵的Monitor项直接运行`test-monitor-frontend`，默认不带筛选，原测试自动发现覆盖新增用例，无需修改Makefile／workflow。上述本机命令的浏览器范围仅为调用链专项，不宣称完整Monitor浏览器门禁或自然CI已通过。实际Safari的新入口及Console→System真实页面闭环尚未复验，可复用上一节已知未保留的预览Trace与原实例／时间，不需重新发业务请求。未自动重启、运行Hosted、容量或定时；共享其他会话改动保持。
+
+## 2026-11-12 未保留 Trace 的实例日志入口：实际 Safari 复验通过
+
+用户“继续”授权沿上节建议复验，复用Safari当前平台系统管理员和既有实际请求，不重新发起Manager预览、不重启服务。Console5170的调用链页按登记ID17140、模块manager、Trace `34f68d0025d2b21b07e1309dc0606bb7`及UTC13:45—13:47（北京时间21:45—21:47）精确查询，仍明确显示无可读保留链路；服务模块、实例`c7b4e601-9697-4cdf-9af6-7a957f671142`、开始／截止及完整Trace输入保留，并显示新“查看该实例关联日志”按钮和相同日志时段。实例样本标识仍为“暂无法确认”，未改为有样本。
+
+点击一次该新按钮，Console实际跳到System模块实例日志页，公开URL及iframe均携带原module／instance／Trace及原两分钟窗口，没有滑动或扩窗。运行日志抽屉自动打开；北京时间22:02:15的查询显示1条：21:45:47、`GET /api/v1/manager/preview`、HTTP200、113ms，Trace与原值一致、Span `029d7467330fff01`、Request ID `3ce978e7-5f26-41ed-be72-413e9c27155a`。页面实例与原进程启动21:31:43匹配，日志窗口明确上界不含、采集完整性未确认。本轮以真实Console→Monitor空结果→System实例日志的单次页面路径确认入口可用；没有用日志替代未保留Span详情或扩大为完整链路／所有权限负例验收，中英文及撤权等受控回归仍沿上一节独立证据。
+
+本轮仅实际Safari读取及本证据追加，代码未变，复用上一节152项T1／38项调用链T3／构建结果，文档差异检查通过。没有业务重放、重试、采样／权限／配置修改、自动重启、Hosted、容量或定时；其他会话改动保持，本批尚未提交。

@@ -27,6 +27,11 @@
       <el-alert v-if="inputError" :title="t(inputError)" type="warning" :closable="false" />
       <el-alert v-if="modulesFailed" :title="t('monitor.traces.modulesFailed')" type="warning" :closable="false" />
       <el-alert v-if="error" :title="t(error)" type="warning" :closable="false" data-testid="trace-error" />
+      <div v-if="missingTraceLogs && canReadLogs && !loading" class="trace-log-alternative" data-testid="trace-missing-logs">
+        <p>{{ t('monitor.traces.missingLogsHint') }}</p>
+        <p>{{ t('monitor.traces.logWindow', { from: date(missingTraceLogs.start), to: date(missingTraceLogs.end) }) }}</p>
+        <el-button @click="openLogs(missingTraceLogs)">{{ t('monitor.traces.instanceLogs') }}</el-button>
+      </div>
       <el-table v-if="!directLookup" :data="instances" v-loading="loading && !instancesLoaded" :empty-text="t(loading ? 'common.loading' : instancesLoaded ? 'monitor.traces.noInstances' : 'monitor.traces.notLoaded')" data-testid="trace-instances">
         <el-table-column prop="module_name" :label="t('monitor.process.module')" min-width="130" />
         <el-table-column :label="t('monitor.http.instance')" min-width="270" show-overflow-tooltip>
@@ -88,6 +93,7 @@ const directLookup = computed(() => Boolean(state.value?.query.trace_id && !stat
 const instances = ref([]), total = ref(0), data = ref([]), loading = ref(false), instancesLoaded = ref(false), error = ref('')
 const traceDraft = ref(''), pickerStart = ref(null), inputError = ref('')
 const matchedFailure = ref(null)
+const missingTraceLogs = ref(null)
 const bounds = ref({})
 const moduleNames = ref([]), modulesLoading = ref(false), modulesFailed = ref(false)
 const requests = createLatestRequestScope()
@@ -171,10 +177,15 @@ function logs(span) {
   if (!canReadLogs.value || !detail.value) return
   const to = Math.min(Date.now(), Date.parse(span.end) + 1000)
   const from = Math.min(to - 1, Math.max(to - 3600000, Date.parse(span.start) - 1000))
-  return openConsoleRoute('/system/modules?' + new URLSearchParams({ tab: 'instances', module_name: span.module_name, status: 'all', log_instance: span.instance_id, trace_id: detail.value.trace_id, log_from: new Date(from).toISOString(), log_to: new Date(to).toISOString() }), { history: 'push' })
+  return openLogs({ module_name: span.module_name, instance_id: span.instance_id, trace_id: detail.value.trace_id, start: new Date(from).toISOString(), end: new Date(to).toISOString() })
+}
+function openLogs(source) {
+  if (!canReadLogs.value) return
+  return openConsoleRoute('/system/modules?' + new URLSearchParams({ tab: 'instances', module_name: source.module_name, status: 'all', log_instance: source.instance_id, trace_id: source.trace_id, log_from: source.start, log_to: source.end }), { history: 'push' })
 }
 async function reload(preserveInstance = false) {
   const ticket = requests.invalidate(); data.value = []; loading.value = false; error.value = ''
+  missingTraceLogs.value = null
   if (!preserveInstance) {
     instances.value = []; total.value = 0; instancesLoaded.value = false
     sampleRequests.invalidate(); sampleStates.value = {}; samplesLoading.value = false; sampleWindow.value = null
@@ -185,6 +196,7 @@ async function reload(preserveInstance = false) {
   const current = state.value
   const params = { page: current.instanceID ? 1 : current.page, page_size: 10, role: current.role, ...(current.module ? { module_name: current.module } : {}), ...(current.instanceID ? { ids: String(current.instanceID) } : {}) }
   let listed = false
+  let logQuery = null
   loading.value = true
   try {
     if (!directLookup.value && !preserveInstance) {
@@ -214,6 +226,14 @@ async function reload(preserveInstance = false) {
       start = new Date(now - traceRecentMinutes[range] * 60_000).toISOString()
       end = new Date(now).toISOString()
     }
+    if (trace_id && subject) {
+      if (!start) {
+        const now = Math.floor(Date.now() / 1000) * 1000
+        start = new Date(now - 15 * 60_000).toISOString()
+        end = new Date(now).toISOString()
+      }
+      logQuery = { module_name: subject.module_name, instance_id: subject.instance_id, trace_id, start, end }
+    }
     const instance_id = subject ? String(subject.id) : undefined
     const query = Object.fromEntries(Object.entries({ instance_id, trace_id, start, end, http_method, http_route }).filter(([, value]) => value))
     const result = validateTraces(await requests.request(config => traceAPI.read(query, config)), subject, trace_id)
@@ -230,6 +250,7 @@ async function reload(preserveInstance = false) {
     data.value = []
     const unavailable = listed && e.response?.status === 503 && e.response?.data?.error_code === 'trace_backend_unavailable'
     const missing = e.response?.status === 404 && e.response?.data?.error_code === 'trace_not_found'
+    if (missing && logQuery) { missingTraceLogs.value = logQuery; traceDraft.value = logQuery.trace_id }
     if (!unavailable && !missing) { instances.value = []; total.value = 0; instancesLoaded.value = false }
     error.value = unavailable || e.response?.data?.error_code === 'trace_backend_unavailable' ? 'monitor.traces.unavailable' : missing ? 'monitor.traces.empty' : e.response?.status === 403 || e.response?.status === 401 ? 'monitor.traces.denied' : e.message === 'invalid_trace_response' ? 'monitor.traces.invalidResponse' : 'monitor.traces.failed'
   } finally { if (requests.current(ticket)) loading.value = false }
@@ -305,6 +326,7 @@ header, .filters, .trace-window { display: flex; gap: 12px; align-items: center;
 .trace-window > .el-select { width: 138px; max-width: 100%; }
 .trace-window > .el-date-editor { width: 212px; max-width: 100%; }
 .window-hint { color: var(--addp-text-secondary); font-size: 13px; }
+.trace-log-alternative p { margin: 0 0 8px; overflow-wrap: anywhere; }
 
 @media (max-width: 700px) {
   .traces { padding: 16px; }
