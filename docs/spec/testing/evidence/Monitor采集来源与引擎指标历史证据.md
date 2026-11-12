@@ -830,6 +830,18 @@ PostgreSQL已有十二项固定失败阶段，统一入口此前直接显示英�
 用户随后回传本机全量启动的末尾只读摘要。指标中心和采集控制入口均运行中，主机、Infra PostgreSQL、Infra MinIO 和 Business PostgreSQL 均启用并运行中，其余三项停用且未部署。摘要共 7 项、失败 0 项，所贴输出未出现前序观测失败提示。此次复验覆盖本机全量启动的监控摘要，实际采样、主机关联和有效指标仍需在 Monitor 核对。CI／Hosted 结果由专门会话回传。
 
 
+### Redis／MinIO 同输入镜像复用与恢复实操（2026-11-11）
+
+该记录随[修订 388707358](https://github.com/pampa0629/addp/commit/388707358d6c49b46dcf661a9d35a00f962d0349)写入文档，原记录未另列测试运行 SHA 或 Job。
+
+**重复构建导致跨作用域恢复失败（2026-11-11）**。本机 BuildKit 历史确认：11 月 10 日 19:17 的 Infra 构建与 22:48／22:58 的 Business 构建使用相同源码摘要标签、相同程序 manifest 和 config；构建证明改变，镜像索引分别从 Redis `a01fad44fd56` 变为 `44c1bf73469c`、MinIO `d4c36b07b82d` 变为 `27b01b906797`。后一次导出覆盖标签后，Docker 无法按原索引读取镜像，但原容器仍运行并输出新鲜指标。只查看采集 UP 无法发现恢复依赖缺失。修复采用同输入镜像核验复用、准备前移和状态镜像检查；跨作用域复用、拒绝覆盖陌生／不可读镜像由 T1 验证，两作用域同时安装后的恢复与准备失败保留由现有实源 T2 验证。以上时间为北京时间，不能据此推断其他镜像缺失的原因。本次修复后，现有 Redis／MinIO 实源 T2 与启动生命周期门禁通过；本机只重新应用两项 Infra 来源，两轮全套 `recover --scope host --scope infra --scope business` 均为七项成功且未重建，状态检查异常零项。前后核对仅两个 Infra 采集容器更换，四个 Redis／MinIO 数据库及数据挂载、其余来源保持不变；Prometheus 为 34 个目标全部 UP，四个专业来源各有最近一分钟四个样本。未执行整套业务重启，不将来源阶段核验表述为全量重启验收。
+
+### Redis／MinIO 私有卷工具改用采集镜像（2026-11-12）
+
+该记录随[修订 1ddd5fe55](https://github.com/pampa0629/addp/commit/1ddd5fe55b48c3312df2424fb049240f0fab9501)写入文档，原记录未另列测试运行 SHA 或 Job。
+
+2026-11-12 的修复沿 `make test-metrics-sources`、`make test-monitor-metrics-config`、`make test-build-registration` 以及 `make test-monitor-minio-observation`／`make test-monitor-redis-source` 验证。两套独占 T2 在阻断引擎镜像引用的情况下，完成真实来源安装、健康复用、停止／缺失来源恢复及清理；原有账号隔离、mTLS、运行权限与业务数据保全检查继续通过，固定 PromQL 分别为 MinIO 46 项、Redis 21 项。该结果证明隔离生命周期，不代替个人部署重新应用及 Monitor 新鲜采样验收；旧安装的拒绝／提示由 T1 覆盖。
+
 ## Business MinIO 本机采集配置与证书准备（2026-11-08）
 
 用户确认继续接通 Business MinIO。只读核对原 `business-minio` 健康运行，实际 API／Console 映射为 19002／19003；当前 Business 管理员配置与容器输入一致，原镜像提供固定 `minio-observation-status/v1`，不需要为本批重建引擎。原先未启用专业采集，监听和 TLS 目录均未配置，因此“停用／未部署”描述的是采集来源。
