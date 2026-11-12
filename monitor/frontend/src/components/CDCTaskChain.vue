@@ -39,6 +39,15 @@
             <p>{{ t('monitor.cdc.latestExecution') }}: {{ execution ? t(`monitor.execution.status.${execution.status}`) : t('monitor.cdc.notStarted') }}</p>
           </el-card>
         </div>
+        <el-card shadow="never" class="progress-card" data-testid="cdc-task-buffer">
+          <template #header>{{ t('monitor.cdc.bufferTitle') }}</template>
+          <p>{{ t(`monitor.cdc.bufferStates.${bufferState}`) }}</p>
+          <p class="hint">{{ t('monitor.cdc.bufferHint') }}</p>
+          <p v-if="buffer" class="hint">{{ t('monitor.cdc.lastSample') }}: {{ date(buffer.sampled_at) }}</p>
+          <dl v-if="bufferState === 'available' || bufferState === 'lost' || bufferState === 'not_started'">
+            <div v-for="field in ['lag_offsets', 'committed_offset', 'earliest_offset', 'latest_offset']" :key="field"><dt>{{ t(`monitor.cdc.bufferFields.${field}`) }}</dt><dd :data-testid="`cdc-buffer-${field}`">{{ metric(buffer[field]) }}</dd></div>
+          </dl>
+        </el-card>
         <el-alert v-if="executionError" :title="t(executionError)" type="warning" :closable="false" data-testid="cdc-task-execution-error" />
         <el-card v-if="execution" shadow="never" class="progress-card" data-testid="cdc-task-progress">
           <template #header><div class="toolbar"><h3>{{ t('monitor.cdc.latestProgress') }}</h3><el-button link type="primary" @click="openExecution">{{ t('monitor.cdc.openExecution') }}</el-button></div></template>
@@ -82,6 +91,16 @@ const task = ref(null), execution = ref(null), choices = ref([]), total = ref(0)
 const endpoints = computed(() => task.value ? cdcEndpoints(task.value) : null)
 const diagnostics = computed(() => getContinuousDiagnostics(execution.value?.metadata))
 const partitions = computed(() => buildContinuousPartitionRows(execution.value?.metadata))
+const buffer = computed(() => task.value?.capture?.buffer_observation)
+const bufferExpired = ref(false)
+let bufferExpiryTimer
+watch(buffer, value => {
+  clearTimeout(bufferExpiryTimer)
+  const remaining = value ? Date.parse(value.expires_at) - Date.now() : 0
+  bufferExpired.value = remaining <= 0
+  if (remaining > 0) bufferExpiryTimer = setTimeout(() => { bufferExpired.value = true }, remaining)
+}, { immediate: true })
+const bufferState = computed(() => !buffer.value ? 'no_sample' : bufferExpired.value ? 'stale' : buffer.value.status === 'unavailable' ? 'unknown' : buffer.value.recovery_state)
 const requests = createLatestRequestScope()
 let context = ''
 const cycle = createAutoRefresh({ interval: () => state.value.refresh, enabled: () => canRead.value && !blocked.value && !loading.value, refresh: () => reload(true), pause: () => { requests.invalidate(); loading.value = false }, visibilityChanged: value => { visible.value = value } })
@@ -133,7 +152,7 @@ watch(() => JSON.stringify([route.query, auth.authContext]), () => {
   if (state.value.changed) navigate(state.value.query)
   else reload()
 }, { immediate: true })
-onBeforeUnmount(() => { cycle.dispose(); requests.dispose() })
+onBeforeUnmount(() => { clearTimeout(bufferExpiryTimer); cycle.dispose(); requests.dispose() })
 </script>
 <style scoped>
 .cdc-task-chain { min-width: 0; }

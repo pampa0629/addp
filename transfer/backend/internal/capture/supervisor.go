@@ -16,6 +16,7 @@ import (
 )
 
 type ResourceStore interface {
+	BufferCommittedOffset(context.Context, *models.CaptureResource) (*int64, error)
 	RunCleanupOperation(context.Context, *models.CaptureResource, string, any, func(context.Context) error) error
 	BeginGeneration(ctx context.Context, identity repository.CaptureIdentity) (*models.CaptureResource, error)
 	GetLatest(ctx context.Context, taskID, tenantID uint) (*models.CaptureResource, error)
@@ -490,6 +491,9 @@ func (s *Supervisor) refreshAll(ctx context.Context) error {
 		return err
 	}
 	for i := range resources {
+		if err := s.observeBuffer(ctx, &resources[i]); err != nil {
+			s.logger.Warn("capture buffer observation failed", "task_id", resources[i].TaskID, "error", err)
+		}
 		if _, err := s.Refresh(ctx, &resources[i]); err != nil {
 			s.logger.Warn("capture connector is unhealthy", "task_id", resources[i].TaskID, "connector", resources[i].ConnectorName, "error", err)
 		}

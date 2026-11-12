@@ -25,6 +25,7 @@ type TopicSpec struct {
 }
 
 type TopicControl interface {
+	BufferOffsets(context.Context, string) (int64, int64, error)
 	EnsureTopic(ctx context.Context, spec TopicSpec) error
 	EnsureAccess(ctx context.Context, topic, group string) error
 	EnsureSchemaHistoryAccess(ctx context.Context, topic string) error
@@ -295,4 +296,22 @@ func firstError(values ...error) error {
 		}
 	}
 	return nil
+}
+
+// BufferOffsets reads metadata for the single generation-owned partition; no consumer is opened.
+func (a *KafkaTopicAdmin) BufferOffsets(ctx context.Context, topic string) (int64, int64, error) {
+	starts, err := a.admin.ListStartOffsets(ctx, topic)
+	if err != nil {
+		return 0, 0, err
+	}
+	ends, err := a.admin.ListEndOffsets(ctx, topic)
+	if err != nil {
+		return 0, 0, err
+	}
+	start, ok := starts.Lookup(topic, 0)
+	end, endOK := ends.Lookup(topic, 0)
+	if !ok || !endOK || start.Err != nil || end.Err != nil || len(starts[topic]) != 1 || len(ends[topic]) != 1 {
+		return 0, 0, fmt.Errorf("CDC buffer metadata unavailable")
+	}
+	return start.Offset, end.Offset, nil
 }

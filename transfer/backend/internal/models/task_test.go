@@ -106,3 +106,20 @@ func TestTransferTaskTypeDefaultIsSync(t *testing.T) {
 		t.Fatalf("TaskType gorm tag = %q, want default:'sync'", tag)
 	}
 }
+
+func TestCaptureBufferProjectionExcludesPrivateFactsAndTerminalSamples(t *testing.T) {
+	resource := &CaptureResource{Status: CaptureStatusRunning, BufferObservation: JSONMap{"status": "available", "sampled_at": "2026-11-12T00:00:00Z", "expires_at": "2026-11-12T00:01:00Z", "earliest_offset": "0", "latest_offset": "9007199254740994", "committed_offset": "9007199254740993", "lag_offsets": "1", "recovery_state": "available", "topic": "private-topic", "error": "private-credential"}}
+	data, err := json.Marshal(NewCaptureSummary(resource))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(data), "private-") || !strings.Contains(string(data), `"committed_offset":"9007199254740993"`) {
+		t.Fatalf("unsafe or imprecise projection: %s", data)
+	}
+	for _, status := range []CaptureStatus{CaptureStatusStopped, CaptureStatusCleaning, CaptureStatusCleanupFailed} {
+		resource.Status = status
+		if NewCaptureSummary(resource).BufferObservation != nil {
+			t.Fatalf("terminal %s sample exposed", status)
+		}
+	}
+}

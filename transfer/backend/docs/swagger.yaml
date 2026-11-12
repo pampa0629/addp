@@ -506,6 +506,25 @@ definitions:
     required:
     - fields
     type: object
+  github_com_addp_transfer_internal_models.CaptureBufferObservation:
+    properties:
+      committed_offset:
+        type: string
+      earliest_offset:
+        type: string
+      expires_at:
+        type: string
+      lag_offsets:
+        type: string
+      latest_offset:
+        type: string
+      recovery_state:
+        type: string
+      sampled_at:
+        type: string
+      status:
+        type: string
+    type: object
   github_com_addp_transfer_internal_models.CaptureSourceRecovery:
     properties:
       capture_position:
@@ -572,6 +591,8 @@ definitions:
     - CaptureStatusStopped
   github_com_addp_transfer_internal_models.CaptureSummary:
     properties:
+      buffer_observation:
+        $ref: '#/definitions/github_com_addp_transfer_internal_models.CaptureBufferObservation'
       connector_status:
         type: string
       generation:

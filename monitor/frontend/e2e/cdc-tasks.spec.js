@@ -61,3 +61,24 @@ test('CDC execution-only permission loss shows a denial and clears task facts',a
  await expect(page.getByTestId('cdc-task-source')).toHaveCount(0)
  await expect(page.getByTestId('cdc-tasks-empty')).toHaveCount(0)
 })
+
+for (const locale of ['zh-cn','en']) test(`CDC paused task buffer grows, loses recovery and expires (${locale})`, async ({page}) => {
+ const state=await cdcTaskBackend(page,{locale}),en=locale==='en'
+ await page.clock.install()
+ state.setMode('buffer-caught-up')
+ await page.goto('/cdc-resources?view=tasks&task_id=7&refresh=off')
+ await expect(page.getByTestId('cdc-buffer-lag_offsets')).toHaveText('0')
+ const refresh=async()=>{await page.getByRole('button',{name:en?'Refresh':'刷新',exact:true}).click();await expect(page.getByTestId('cdc-task-chain')).toHaveAttribute('aria-busy','false')}
+ state.setMode('buffer-growth');await refresh()
+ await expect(page.getByTestId('cdc-buffer-lag_offsets')).toHaveText('100')
+ await expect(page.getByTestId('cdc-task-lag')).toHaveText('3') // historical execution stays independent
+ state.setMode('buffer-lost');await refresh()
+ await expect(page.getByTestId('cdc-task-buffer')).toContainText(en?'Recovery position was removed':'恢复起点已被清除')
+ state.setMode('buffer-failed');await refresh()
+ await expect(page.getByTestId('cdc-buffer-lag_offsets')).toHaveCount(0)
+ state.setMode('buffer-growth');await refresh()
+ await expect(page.getByTestId('cdc-buffer-lag_offsets')).toHaveText('100')
+ await page.clock.fastForward(30001)
+ await expect(page.getByTestId('cdc-task-buffer')).toContainText(en?'Observation expired':'观测已过期')
+ await expect(page.getByTestId('cdc-buffer-lag_offsets')).toHaveCount(0)
+})

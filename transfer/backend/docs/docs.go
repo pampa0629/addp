@@ -3899,6 +3899,35 @@ const docTemplate = `{
                 }
             }
         },
+        "github_com_addp_transfer_internal_models.CaptureBufferObservation": {
+            "type": "object",
+            "properties": {
+                "committed_offset": {
+                    "type": "string"
+                },
+                "earliest_offset": {
+                    "type": "string"
+                },
+                "expires_at": {
+                    "type": "string"
+                },
+                "lag_offsets": {
+                    "type": "string"
+                },
+                "latest_offset": {
+                    "type": "string"
+                },
+                "recovery_state": {
+                    "type": "string"
+                },
+                "sampled_at": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                }
+            }
+        },
         "github_com_addp_transfer_internal_models.CaptureSourceRecovery": {
             "type": "object",
             "properties": {
@@ -3994,6 +4023,9 @@ const docTemplate = `{
         "github_com_addp_transfer_internal_models.CaptureSummary": {
             "type": "object",
             "properties": {
+                "buffer_observation": {
+                    "$ref": "#/definitions/github_com_addp_transfer_internal_models.CaptureBufferObservation"
+                },
                 "connector_status": {
                     "type": "string"
                 },

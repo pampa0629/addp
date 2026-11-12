@@ -232,8 +232,10 @@ func TestCaptureSupervisorOwnsOracleSchemaHistoryTopic(t *testing.T) {
 }
 
 type fakeCaptureStore struct {
-	resource *models.CaptureResource
-	terminal bool
+	committed    *int64
+	committedErr error
+	resource     *models.CaptureResource
+	terminal     bool
 }
 
 func (f *fakeCaptureStore) BeginGeneration(_ context.Context, identity repository.CaptureIdentity) (*models.CaptureResource, error) {
@@ -286,6 +288,9 @@ func (f *fakeCaptureStore) ForceUpdate(_ context.Context, _ uint, fields map[str
 }
 
 func (f *fakeCaptureStore) apply(fields map[string]interface{}) {
+	if value, ok := fields["buffer_observation"].(models.JSONMap); ok {
+		f.resource.BufferObservation = value
+	}
 	if value, ok := fields["connector_error"].(string); ok {
 		f.resource.ConnectorError = value
 	}
@@ -369,6 +374,8 @@ func (f *fakeConnectControl) Resume(context.Context, string) error {
 func (f *fakeConnectControl) Delete(context.Context, string) error { f.deleted = true; return nil }
 
 type fakeTopicControl struct {
+	earliest, latest                                             int64
+	bufferErr                                                    error
 	created, accessCreated, deleted, groupDeleted, accessDeleted bool
 	schemaAccessCreated, schemaAccessDeleted                     bool
 	deletedTopics                                                int
@@ -442,4 +449,11 @@ func (f *fakeSourceResources) Observe(context.Context, *CapturePlan, *models.Cap
 
 func (f *fakeCaptureStore) RunCleanupOperation(ctx context.Context, _ *models.CaptureResource, _ string, _ any, invoke func(context.Context) error) error {
 	return invoke(ctx)
+}
+
+func (f *fakeTopicControl) BufferOffsets(context.Context, string) (int64, int64, error) {
+	return f.earliest, f.latest, f.bufferErr
+}
+func (f *fakeCaptureStore) BufferCommittedOffset(context.Context, *models.CaptureResource) (*int64, error) {
+	return f.committed, f.committedErr
 }

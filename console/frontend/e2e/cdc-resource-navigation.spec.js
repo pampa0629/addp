@@ -7,7 +7,7 @@ test('Console CDC menu, history and language use one Monitor iframe without engi
   await page.goto('/monitor/cdc-resources?refresh=off')
   const frame = page.frameLocator('iframe[data-testid="module-iframe"]')
   await expect(frame.getByTestId('cdc-value-failedTasks')).toHaveText('1')
-  await expect(frame.getByText('读取 PostgreSQL 部署指标还需引擎部署读取权限')).toBeVisible()
+  await expect(frame.getByTestId('cdc-card-postgresql')).toHaveCount(0)
   await expect(page.locator('.sidebar .el-menu-item').filter({ hasText: 'CDC 监控' })).toBeVisible()
   const origin = await frame.locator('body').evaluate(() => performance.timeOrigin)
   await frame.getByTestId('cdc-card-redpanda').getByRole('button', { name: '查看趋势', exact: true }).click()

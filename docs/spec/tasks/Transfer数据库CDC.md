@@ -266,6 +266,16 @@ capture supervisor 先在同一事务登记 generation 与对应 provider 子事
 - `pause` 只停止目标应用 runtime，Debezium connector 继续捕获并把变化写入 Infra Kafka；正常 pause 的主要代价是 Kafka backlog、磁盘和 retention 窗口。connector、Kafka 或网络故障时，还必须按 provider 独立观测 PostgreSQL slot/WAL、MySQL binlog 保留或 Oracle redo/archive log 容量风险。
 - pause 的无损恢复只在 connector 健康且 committed position 未被 Kafka retention 清除时成立，不是无限期保证。暂停期间必须继续观测 connector 状态、slot/WAL lag、topic 容量和 committed position 的 retention horizon。
 
+#### 任务消息缓冲持续观测
+
+Transfer Capture 后台按现有 MonitorInterval 对当前可观测 generation 持续只读采样其单分区 data topic 的最早保留位置及末端位置，并读取本任务／source identity／partition 0 的同步主状态；不读取消息正文、不加入消费组、不提交 offset、不启动 execution。此观测独立于 Connector／源连接健康，即使捕获故障也继续核对已经缓冲的消息。暂停停止目标应用而不停止该观测。
+
+最新快照保存在当前 capture resource 的 `buffer_observation`，沿正式任务详情／列表的 `capture.buffer_observation` 安全投影发布，权限沿用 `transfer.task.read`。只含 status、sampled_at、expires_at、earliest_offset、latest_offset、committed_offset、lag_offsets 和 recovery_state，不输出 Topic、Group、Connector、连接或原始错误。数值使用十进制字符串，避免 JavaScript 精度丢失；lag_offsets 为 offset 距离，不等同业务行数或精确消息数。先读取 committed position，再读取消息末端，允许并发消费下保守高估本次积压，不宣称跨系统原子快照。
+
+`recovery_state=available` 表示提交位置位于保留范围；`lost` 表示恢复起点早于最早保留位置；没有已提交位置时，generation 自建空 topic 的初始起点为 0，最早位置为 0 时为 `not_started`，大于 0 时为 `lost`。采样失败或位置异常为 `unknown/status=unavailable`，以本次缺样替换旧值；不把未知解释为零或健康。当前终止／清理状态不发布运行观测；CAS 拒绝跨生命周期发布。快照在两次采样间隔后过期，Monitor 显示过期并隐藏数值。只判断恢复起点是否被保留，不估算剩余秒数，不推断目标已经完成或源日志仍可恢复。
+
+任务持续观测只由 Transfer 拥有，Monitor 不读取私表或自行重算。已结束 execution 的诊断保持历史语义，页面独立展示“当前消息缓冲”与“最近执行进度”。新增字段由模块 schema 版本及现有 AutoMigrate 管理；旧 execution 诊断不迁移为任务快照，不保留双轨当前指标。验证沿 Transfer Go T1、标准 PostgreSQL T2、Monitor 前端 T1／CDC T3 和 Swagger 生成／覆盖门禁；真实暂停与恢复的事件联验单独认定。
+
 #### 捕获线程与源连接健康
 
 - capture generation 的 `running` 必须同时满足 Kafka Connect connector/task 为 `RUNNING`，以及使用该 connector 实际源数据库凭据执行的最小只读探针成功。

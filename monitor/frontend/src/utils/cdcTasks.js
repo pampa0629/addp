@@ -26,6 +26,7 @@ export function validateCDCTask(task, expectedID = null) {
   if (!positive(task?.id) || expectedID && String(task.id) !== expectedID || typeof task.name !== 'string' || !task.name || task.task_type !== 'sync' || task.config?.runtime?.boundary !== 'continuous' || task.config?.load?.change_detection?.type !== 'cdc' || typeof task.status !== 'string' || !['running', 'paused', 'stopped'].includes(task.desired_state) || typeof task.config?.target?.name !== 'string' || !task.config.target.name) invalid()
   if (task.last_execution_id != null && !isTargetUUID(task.last_execution_id)) invalid()
   if (task.capture && (!positive(task.capture.generation) || typeof task.capture.status !== 'string')) invalid()
+  if (task.capture) validateCDCBuffer(task.capture.buffer_observation)
   try { cdcEndpoints(task) } catch { invalid() }
   return task
 }
@@ -40,4 +41,21 @@ export function validateCDCTaskExecution(execution, task) {
   const generation = execution.metadata?.continuous?.capture?.generation
   if (generation != null && task.capture && generation !== task.capture.generation) invalid()
   return execution
+}
+
+export function validateCDCBuffer(value) {
+  if (value === null) return value
+  const sample = Date.parse(value?.sampled_at), expires = Date.parse(value?.expires_at)
+  if (!['available', 'unavailable'].includes(value?.status) || !Number.isFinite(sample) || !Number.isFinite(expires) || expires <= sample || !['available', 'lost', 'not_started', 'unknown'].includes(value.recovery_state)) invalid()
+  const fields = ['earliest_offset', 'latest_offset', 'committed_offset', 'lag_offsets']
+  for (const key of fields) if (value[key] !== null && (typeof value[key] !== 'string' || !/^(0|[1-9]\d*)$/.test(value[key]) || BigInt(value[key]) > 9223372036854775807n)) invalid()
+  if (value.status === 'unavailable') {
+    if (fields.some(key => value[key] !== null) || value.recovery_state !== 'unknown') invalid()
+  } else {
+    if (value.earliest_offset === null || value.latest_offset === null || BigInt(value.earliest_offset) > BigInt(value.latest_offset)) invalid()
+    if (value.committed_offset === null) {
+      if (value.lag_offsets !== null || value.recovery_state !== (BigInt(value.earliest_offset) > 0n ? 'lost' : 'not_started')) invalid()
+    } else if (value.lag_offsets === null || BigInt(value.latest_offset) - BigInt(value.committed_offset) !== BigInt(value.lag_offsets) || value.recovery_state !== (BigInt(value.committed_offset) < BigInt(value.earliest_offset) ? 'lost' : 'available')) invalid()
+  }
+  return value
 }

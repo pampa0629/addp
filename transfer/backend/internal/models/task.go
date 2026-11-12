@@ -217,6 +217,7 @@ type CaptureResource struct {
 	SourceRecoveryError         string                     `gorm:"type:text" json:"-"`
 	SourceTransactions          JSONMap                    `gorm:"type:jsonb;not null;default:'{}'" json:"source_transactions,omitempty"`
 	SourceTransactionsError     string                     `gorm:"type:text" json:"-"`
+	BufferObservation           JSONMap                    `gorm:"type:jsonb;not null;default:'{}'" json:"-"`
 	TopicCreated                bool                       `gorm:"not null;default:false" json:"topic_created"`
 	ConnectorCreated            bool                       `gorm:"not null;default:false" json:"connector_created"`
 	ResourceVersion             uint64                     `gorm:"not null;default:1" json:"resource_version"`
@@ -355,6 +356,7 @@ type SchemaChangeRequestView struct {
 
 // CaptureSummary 是任务 API 可展示的捕获状态；内部资源名称和连接身份不对外暴露。
 type CaptureSummary struct {
+	BufferObservation  *CaptureBufferObservation  `json:"buffer_observation"`
 	Generation         uint64                     `json:"generation"`
 	Status             CaptureStatus              `json:"status"`
 	ConnectorStatus    string                     `json:"connector_status,omitempty"`
@@ -363,6 +365,36 @@ type CaptureSummary struct {
 	SourceTransactions *CaptureSourceTransactions `json:"source_transactions,omitempty"`
 	LastObservedAt     *time.Time                 `json:"last_observed_at,omitempty"`
 	StoppedAt          *time.Time                 `json:"stopped_at,omitempty"`
+}
+
+// CaptureBufferObservation is a task-level metadata-only sample, never an execution result.
+type CaptureBufferObservation struct {
+	Status          string    `json:"status"`
+	SampledAt       time.Time `json:"sampled_at"`
+	ExpiresAt       time.Time `json:"expires_at"`
+	EarliestOffset  *string   `json:"earliest_offset"`
+	LatestOffset    *string   `json:"latest_offset"`
+	CommittedOffset *string   `json:"committed_offset"`
+	LagOffsets      *string   `json:"lag_offsets"`
+	RecoveryState   string    `json:"recovery_state"`
+}
+
+func captureBufferSummary(resource *CaptureResource) *CaptureBufferObservation {
+	if resource.Status != CaptureStatusRunning && resource.Status != CaptureStatusFailed {
+		return nil
+	}
+	if len(resource.BufferObservation) == 0 {
+		return nil
+	}
+	data, err := json.Marshal(resource.BufferObservation)
+	if err != nil {
+		return nil
+	}
+	var value CaptureBufferObservation
+	if json.Unmarshal(data, &value) != nil {
+		return nil
+	}
+	return &value
 }
 
 type CaptureSourceRecovery struct {
@@ -397,7 +429,7 @@ func NewCaptureSummary(resource *CaptureResource) *CaptureSummary {
 		return nil
 	}
 	return &CaptureSummary{
-		Generation: resource.Generation, Status: resource.Status,
+		Generation: resource.Generation, Status: resource.Status, BufferObservation: captureBufferSummary(resource),
 		ConnectorStatus:    resource.ConnectorStatus,
 		SourceStatus:       resource.SourceStatus,
 		SourceRecovery:     captureSourceRecoverySummary(resource.SourceRecovery),

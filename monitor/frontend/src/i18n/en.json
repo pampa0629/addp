@@ -1539,6 +1539,22 @@
         "provisioning": "Provisioning",
         "failed": "Failed",
         "cleanup_failed": "Cleanup failed"
+      },
+      "bufferTitle": "Current message buffer",
+      "bufferHint": "Observed while paused. Offset distance includes events such as snapshot notifications and is not a business row count. Recovery range does not promise remaining retention time.",
+      "bufferStates": {
+        "available": "Recovery position is within the retained range",
+        "lost": "Recovery position was removed; complete recovery cannot be guaranteed",
+        "not_started": "No target committed position yet",
+        "unknown": "Current observation unavailable",
+        "stale": "Observation expired",
+        "no_sample": "No task-level observation yet"
+      },
+      "bufferFields": {
+        "lag_offsets": "Offset backlog",
+        "committed_offset": "Target committed position",
+        "earliest_offset": "Earliest retained position",
+        "latest_offset": "Message end position"
       }
     },
     "engines": {

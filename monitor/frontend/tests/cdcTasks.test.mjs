@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { cdcView, cdcEndpoints, resolveCDCTaskRoute, validateCDCTask, validateCDCTaskPage, validateCDCTaskExecution } from '../src/utils/cdcTasks.js'
-export const task = () => ({ id: 7, name: 'Orders CDC', task_type: 'sync', status: 'running', desired_state: 'running', config: { runtime: { boundary: 'continuous' }, load: { change_detection: { type: 'cdc' } }, source: { locator: 'addp://engine/2/path/public/orders?type=table' }, target: { parent_locator: 'addp://engine/3/path/sales?type=schema', name: 'orders_copy' } }, capture: { generation: 1, status: 'running' }, last_execution_id: '10000000-0000-4000-8000-000000000001' })
+import { cdcView, cdcEndpoints, resolveCDCTaskRoute, validateCDCTask, validateCDCTaskPage, validateCDCTaskExecution, validateCDCBuffer } from '../src/utils/cdcTasks.js'
+export const task = () => ({ id: 7, name: 'Orders CDC', task_type: 'sync', status: 'running', desired_state: 'running', config: { runtime: { boundary: 'continuous' }, load: { change_detection: { type: 'cdc' } }, source: { locator: 'addp://engine/2/path/public/orders?type=table' }, target: { parent_locator: 'addp://engine/3/path/sales?type=schema', name: 'orders_copy' } }, capture: { generation: 1, status: 'running', buffer_observation: null }, last_execution_id: '10000000-0000-4000-8000-000000000001' })
 test('CDC task view uses context defaults and canonical bounded URL state', () => {
  assert.equal(cdcView({},'tenant'),'tasks'); assert.equal(cdcView({},'platform'),'resources')
  assert.equal(cdcView({view:'tasks'},'platform'),'tasks')
@@ -23,4 +23,11 @@ test('Task chain accepts only its latest execution and same capture generation',
  const value={execution_id:task().last_execution_id,module:'transfer',task_type:'sync',source_task_id:'7',execution_boundary:'continuous',metadata:{continuous:{capture:{generation:1}}}}
  assert.equal(validateCDCTaskExecution(value,task()),value)
  for (const changed of [{source_task_id:'8'},{module:'meta'},{execution_boundary:'bounded'},{execution_id:'foreign'},{metadata:{continuous:{capture:{generation:2}}}}]) assert.throws(()=>validateCDCTaskExecution({...value,...changed},task()),/invalid_resource_response/)
+})
+
+test('Task buffer preserves exact positions and rejects inconsistent or reused failure values', () => {
+ const value={status:'available',sampled_at:'2026-11-12T00:00:00Z',expires_at:'2026-11-12T00:01:00Z',earliest_offset:'0',latest_offset:'9007199254740994',committed_offset:'9007199254740993',lag_offsets:'1',recovery_state:'available'}
+ assert.equal(validateCDCBuffer(value).committed_offset,'9007199254740993')
+ for (const changed of [{lag_offsets:'0'},{committed_offset:9},{status:'unavailable'},{recovery_state:'lost'},{expires_at:value.sampled_at}]) assert.throws(()=>validateCDCBuffer({...value,...changed}),/invalid_resource_response/)
+ assert.equal(validateCDCBuffer(null),null)
 })
