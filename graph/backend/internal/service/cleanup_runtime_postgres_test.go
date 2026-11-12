@@ -30,6 +30,7 @@ func TestIntegrationPostgresGraphCleanupRuntime(t *testing.T) {
 	t.Run("delete_cleanup_interleavings", testGraphDeleteCleanupConcurrency)
 	t.Run("graph_delete_cleanup_interleavings", testGraphDefinitionDeleteCleanupConcurrency)
 	t.Run("parent_closure_interleavings", testGraphCleanupParentClosureConcurrency)
+	t.Run("terminal_update_rollback", testGraphCleanupTerminalRollback)
 }
 func cleanupRuntimeDomainFixture(t *testing.T, pg bool) (*gorm.DB, models.BuildTask, *execution.TaskExecution) {
 	t.Helper()
