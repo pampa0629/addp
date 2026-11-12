@@ -907,3 +907,30 @@ func TestFileWorkflowInputsBlockedPostReadFactsRemainPending(t *testing.T) {
 		t.Fatal("blocked observation delayed cancellation")
 	}
 }
+
+// The removed inline-GeoJSON path's content contract now belongs to Owner
+// staging. A rejected file must never be handed to the private Runtime.
+func TestPrivateGeoJSONStagingRetainsOriginalContentContract(t *testing.T) {
+	for _, value := range []struct {
+		name, body string
+		valid      bool
+	}{
+		{"empty collection", `{"type":"FeatureCollection","features":[]}`, true},
+		{"declared CRS", `{"type":"FeatureCollection","features":[],"crs":{"type":"name","properties":{"name":"EPSG:3857"}}}`, false},
+		{"null features", `{"type":"FeatureCollection","features":null}`, false},
+		{"other object", `{"type":"Feature","geometry":null}`, false},
+		{"truncated", `{"type":"FeatureCollection"`, false},
+		{"oversized", strings.Repeat(" ", maxWorkflowGeoJSONBytes+1), false},
+	} {
+		t.Run(value.name, func(t *testing.T) {
+			file := filepath.Join(t.TempDir(), "input-0.geojson")
+			if err := os.WriteFile(file, []byte(value.body), 0600); err != nil {
+				t.Fatal(err)
+			}
+			err := validatePrivateFileContent(t.Context(), "geojson", file)
+			if (err == nil) != value.valid {
+				t.Fatal("GeoJSON content contract", err)
+			}
+		})
+	}
+}
