@@ -32,6 +32,19 @@ func readVFFXML(ctx context.Context, raw []byte, budget *vffXMLBudget, namespace
 	}
 	budget.bytes += len(raw)
 	decoder := xml.NewDecoder(bytes.NewReader(raw))
+	decoder.CharsetReader = func(charset string, input io.Reader) (io.Reader, error) {
+		if !strings.EqualFold(charset, "ASCII") && !strings.EqualFold(charset, "US-ASCII") {
+			return nil, fmt.Errorf("unsupported VFF XML encoding")
+		}
+		// Validate original bytes, including comments and trailing content. ASCII
+		// needs no conversion; retaining the same stream preserves source offsets.
+		for _, b := range raw {
+			if b >= 0x80 {
+				return nil, fmt.Errorf("non-ASCII byte in ASCII-declared VFF XML")
+			}
+		}
+		return input, nil
+	}
 	var stack []*vffXMLNode
 	var root *vffXMLNode
 	declared := false
