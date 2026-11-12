@@ -17,6 +17,7 @@ test('a new preview clears previous rows and cursor metadata even when it fails 
       settle = () => outcome === 'error' ? reject(new Error('query failed')) : resolve({ data: outcome === 'empty' ? [] : null })
     })
     const state = {
+      previewSequence: 0,
       service: { value: { service_name: 'metric', config_type: 'sql', named_parameters: [] } },
       previewError: { value: 'previous failure' },
       previewData: { value: [{ subject_id: 'previous-person', value: 224 }] },
@@ -53,6 +54,7 @@ test('a handled protection refusal stays visible without a runtime console error
     const messages = []
     const error = { message: 'request failed', response: status ? { status, data: { error_code: code, error: 'controlled reason' } } : undefined }
     const state = {
+      previewSequence: 0,
       service: { value: { service_name: 'protected', named_parameters: [] } },
       previewError: { value: 'previous failure' },
       previewData: { value: [{ id: 'old-result' }] }, previewLoading: { value: false },
@@ -205,4 +207,73 @@ test('query inspection clears old results and discards in-flight responses after
   await second
   assert.equal(api.executionQuery.value,null)
   assert.equal(api.executionQueryError.value,'service.query.versionConflict')
+})
+
+
+async function pendingPreview() {
+  const source = await readFile(new URL('../src/views/QueryServiceDetail.vue', import.meta.url), 'utf8')
+  const method = source.slice(source.indexOf('const loadPreviewData = async'), source.indexOf('const handlePreviewPageChange'))
+  const pending = []
+  const notices = []
+  const state = {
+    previewSequence: 0,
+    service: { value: { service_name: 'protected', version: 1, named_parameters: [] } },
+    previewError: { value: '' }, previewData: { value: [] }, previewLoading: { value: false },
+    previewPagination: { value: { page: 1, pageSize: 20, cursors: [''], hasMore: false, nextCursor: '' } },
+    queryUnavailable: { value: false }, previewNamedParameterValues: {}, buildPreviewRequest: () => ({}),
+    queryServiceAPI: { testQuery: () => new Promise((resolve, reject) => pending.push({ resolve, reject })) },
+    ElMessage: { success: text => notices.push(text), error: text => notices.push(text), warning: text => notices.push(text) },
+    t: key => key, console: { error() {} }
+  }
+  return { state, pending, notices, load: vm.runInContext(`${method}\nloadPreviewData`, vm.createContext(state)) }
+}
+const protectedPreview = { data: [{ id: '1', phone: '138****0001' }], page: { limit: 20, has_more: true, next_cursor: 'obsolete' } }
+const protectionRefusal = { response: { status: 403, data: { error_code: 'data_protection_required', error: 'expired protection' } } }
+
+test('late success or error cannot overwrite a newer protection refusal or successful recovery', async () => {
+  for (const older of ['success', 'error']) {
+    for (const current of ['refusal', 'recovery']) {
+      const { state, pending, notices, load } = await pendingPreview()
+      const first = load()
+      const second = load()
+      if (current === 'refusal') pending[1].reject(protectionRefusal)
+      else pending[1].resolve({ data: [{ id: 'new', phone: '***********' }], page: { limit: 20, has_more: false } })
+      await second
+      const before = JSON.stringify([state.previewData.value, state.previewError.value, state.previewPagination.value, notices])
+      if (older === 'success') pending[0].resolve(protectedPreview)
+      else pending[0].reject(protectionRefusal)
+      await first
+      assert.equal(JSON.stringify([state.previewData.value, state.previewError.value, state.previewPagination.value, notices]), before, `${older}/${current}`)
+      assert.equal(state.previewLoading.value, false)
+    }
+  }
+})
+
+test('an older preview settling cannot release a newer request loading state', async () => {
+  const { state, pending, load } = await pendingPreview()
+  const first = load()
+  const second = load()
+  pending[0].resolve(protectedPreview)
+  await first
+  assert.equal(state.previewLoading.value, true)
+  assert.equal(state.previewData.value.length, 0)
+  pending[1].reject(protectionRefusal)
+  await second
+  assert.equal(state.previewLoading.value, false)
+})
+
+test('changed or inactive service definitions discard pending preview rows and notices', async () => {
+  for (const inactive of [false, true]) {
+    const { state, pending, notices, load } = await pendingPreview()
+    const result = load()
+    state.service.value = { ...state.service.value, version: 2, status: inactive ? 'inactive' : 'active' }
+    state.queryUnavailable.value = inactive
+    pending[0].resolve(protectedPreview)
+    await result
+    assert.equal(state.previewData.value.length, 0)
+    assert.equal(state.previewPagination.value.nextCursor, '')
+    assert.equal(state.previewError.value, '')
+    assert.equal(state.previewLoading.value, false)
+    assert.deepEqual(notices, [])
+  }
 })

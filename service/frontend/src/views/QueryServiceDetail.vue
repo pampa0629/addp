@@ -845,6 +845,7 @@ const loadExecutionQuery = async () => {
 }
 
 // 数据预览方法
+let previewSequence = 0
 const loadPreviewData = async () => {
   if (queryUnavailable.value) {
     ElMessage.warning(t(metricBindingRequired.value ? 'service.query.metricBindingRequiredDescription' : 'service.query.inactiveHint'))
@@ -855,6 +856,8 @@ const loadPreviewData = async () => {
     return
   }
 
+  const sequence = ++previewSequence
+  const definition = service.value
   previewLoading.value = true
   previewError.value = ''
   previewData.value = []
@@ -870,7 +873,8 @@ const loadPreviewData = async () => {
 	}
     const request = buildPreviewRequest()
 
-    const response = await queryServiceAPI.testQuery(service.value.service_name, request)
+    const response = await queryServiceAPI.testQuery(definition.service_name, request)
+    if (sequence !== previewSequence || definition !== service.value || queryUnavailable.value) return
 
     if (response && Array.isArray(response.data)) {
       previewData.value = response.data
@@ -889,6 +893,7 @@ const loadPreviewData = async () => {
       ElMessage.warning(t('service.query.noDataWarning'))
     }
   } catch (error) {
+    if (sequence !== previewSequence || definition !== service.value || queryUnavailable.value) return
     const status = error.response?.status
     const code = error.response?.data?.error_code
     const protectionRefusal = (status === 403 && ['data_protection_required', 'query_protection_roles_unavailable'].includes(code)) || (status === 409 && code === 'query_protection_choice_invalid')
@@ -899,7 +904,7 @@ const loadPreviewData = async () => {
     previewError.value = t('service.query.loadPreviewFailed') + ': ' + (error.response?.data?.error || error.message)
     if (!protectionRefusal) ElMessage.error(previewError.value)
   } finally {
-    previewLoading.value = false
+    if (sequence === previewSequence) previewLoading.value = false
   }
 }
 

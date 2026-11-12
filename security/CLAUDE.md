@@ -1064,3 +1064,8 @@ UpdateTask正式接口要求transfer.task.update，而原套件消费User没有�
 日志 /tmp/p145-grouped-task-update-{red,green,fixture-full,domain,standard-gate}.log，验证摘要及文件哈希 /tmp/p145-grouped-task-update-verification.json。功能清单已只读解密核对实际155行/B空为动态脱敏与静态加密执行总述，156行/B155为动态脱敏实时生效，两项M列仍部分实现；工作簿未写入，后续由维护会话更新。
 
 提交前发现System夹具同文件存在另一会话的topology工作区改动。已用HEAD加仅本次Security hunk构造临时Go overlay，排除该差异后完整online-test-fixture包再次通过；发布只暂存本次Security权限／测试hunk及三份所属文档，不包含topology改动。覆盖文件、补丁与输入摘要 /tmp/p145-grouped-task-update-candidate/，日志 /tmp/p145-grouped-task-update-pure-fixture.log。
+
+
+### Service 保护拒绝后旧响应回流修正（2026-11-12，独立T1/T3）
+
+不等待本次v46 Hosted，按已有“保护拒绝清旧行且持续显示原因”契约，核查Service页面在途响应归属。标准隔离浏览器的中英文正式Vue页均重现：第二请求403到期后，第一个旧200重新显示phone行及游标；原始失败保留。仅前端loadPreviewData增加当前请求／定义归属，旧成功、失败、finally不覆盖新展示，定义改变或停用后不接受旧结果。三个单元红例转绿；make test-service-frontend的123项／构建及Console标准隔离浏览器4项实际通过，make test-frontend-ci-registration通过；未改后端／权限／接口／Hosted套件，不操作个人服务或Chrome，也不把受控403当真实自然到期T4。细节与证据统一见Service [迟到响应专题](../service/docs/testing/查询与要素协议.md#保护拒绝后的旧预览响应回流2026-11-12)。
