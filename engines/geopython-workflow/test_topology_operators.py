@@ -11211,3 +11211,21 @@ def test_adjacency_t4_one_save_four_readonly_refusals_independent_ogr(tmp_path,p
         if problem!='field_type':assert layer.SetFeature(row)==0
         row=layer=ds=None
     with pytest.raises(f.FixtureError):f.worker('verify',tmp_path,f.ADJACENCY_CASE)
+
+
+def test_adjacency_empty_fixture_is_explicit_polygon_not_geojson_null(tmp_path,monkeypatch):
+    import importlib
+    from osgeo import ogr
+    f=importlib.import_module('business.scripts.online-vector-topology-fixture')
+    parse=ogr.CreateGeometryFromJson
+    def gdal38_json(text):
+        import json
+        return None if json.loads(text)=={'type':'Polygon','coordinates':[]}else parse(text)
+    monkeypatch.setattr(ogr,'CreateGeometryFromJson',gdal38_json)
+    path=tmp_path/'adjacency-empty.gpkg';f.seed_mixed_overlay(path,'empty',f.ADJACENCY_CASE)
+    checked=f.verify_mixed_overlay(path,'empty',f.ADJACENCY_CASE)
+    assert checked['features'][1]['geometry']=={'type':'Polygon','coordinates':[]}
+    ds=ogr.Open(str(path),1);layer=ds.GetLayer(0);row=layer.GetFeature(2)
+    geometry=row.GetGeometryRef();assert geometry is not None and geometry.IsEmpty()and geometry.GetGeometryName()=='POLYGON'
+    geometry=None;row.SetGeometry(None);assert layer.SetFeature(row)==0;row=layer=ds=None
+    with pytest.raises(f.FixtureError):f.verify_mixed_overlay(path,'empty',f.ADJACENCY_CASE)

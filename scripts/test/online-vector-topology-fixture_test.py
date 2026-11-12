@@ -643,3 +643,14 @@ class AdjacencyFixtureTest(unittest.TestCase):
         self.assertEqual(m.adjacency_features('empty')[1]['geometry']['coordinates'],[])
         self.assertEqual(m.adjacency_features('source')[9]['geometry']['coordinates'][0][0],[32+2**-40,1])
         self.assertEqual(m.topology_case({'ADDP_ONLINE_TOPOLOGY_CASE':m.ADJACENCY_CASE}),m.ADJACENCY_CASE)
+
+
+class TopologySeedBindingTest(unittest.TestCase):
+    def test_seed_profile_names_are_bound_in_their_own_function(self):
+        import ast
+        source=Path(m.__file__).read_text();tree=ast.parse(source)
+        for function in tree.body:
+            if not isinstance(function,ast.FunctionDef)or not function.name.startswith('seed_'):continue
+            loaded=any(isinstance(n,ast.Name)and n.id=='profile'and isinstance(n.ctx,ast.Load)for n in ast.walk(function))
+            bound=any(isinstance(n,ast.Name)and n.id=='profile'and isinstance(n.ctx,ast.Store)for n in ast.walk(function))or any(a.arg=='profile'for a in function.args.args)
+            with self.subTest(function=function.name):self.assertFalse(loaded and not bound, 'fixture seed uses an unbound profile')

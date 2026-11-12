@@ -1534,6 +1534,8 @@ Feather 日期与定点小数扩展复用同一 Hosted 场景和六份来源。M
 
 成功源含12条 EPSG:3857 有效面，使用非默认活动几何列 source_shape、未排序整型来源 parcel_key，以及同名业务 geometry 和 nullable note 字段。只输出5对 MultiLineString：普通邻边两对、孔洞共边一对、两部件合并成一条来源对一对、长度严格为 2^-40 的微小共边一对；点接触和微小缝隙不报告。物理 oracle 用手写坐标及 OGR 原生点重载，严格检查 ID 类型、原行顺序、完整部件、长度、CRS，不调用生产算法生成期望，不使用 epsilon 或十进制舍入。成果 adjacency-lines.gpkg 仅含 source_id_a、source_id_b、shared_length 和真实几何；FID 与业务 ID 分开核对。源属性不复制到成果，五源字节及 Meta 前后保持不变。
 
+EMPTY 坏源必须以明确的 OGR 空 Polygon 构造，重载仍严格区分 EMPTY 与 NULL；GeoJSON 空坐标在 CI 的 GDAL 3.8.4 会解析成 NULL，不能据此替代空面或放宽物理断言。
+
 四份独立坏源分别验证重复 ID、EMPTY 面、地理 CRS、微小正面积重叠，诊断依次为 operator_input_invalid/input_gdf、operator_input_invalid/input_gdf、operator_crs_invalid/无参数、operator_input_overlap/input_gdf，均无 field。失败 DAG 仅 load 与检查，不申请失败保存目标；断言无成果、扫描、产出事实或本次 derive、扫描库存和物理目录不变，并在 Develop/Monitor 中英文实页核对固定原因与复制内容，不泄漏字段、坐标或路径。不把本场景只读失败称作实际执行了下游保存阻断，后者保留既有 Native/DAG 证据。
 
 成功保存采用原协议自动基础扫描及成果初始只读授权；预览所需深扫如适用必须单独保留证据，不手工补扫或发 Grant 冒充自动阶段。严格核对正整数 physical==Meta 大小、公开 tenant_id/triggered_by 同一普通 User/非默认 Tenant、create 事实及 Monitor。面邻双方 ID 来自同一源，持久血缘只应有源 DataItem→线成果一条当前 execution active derive；不是双源血缘。浏览器核5条实际 EWKB/OL线坐标与属性、可见共边像素及截图；微小共边仅保证物理/API/OL数据精度，不要求亚像素边独立可见。读取导航当次实际请求绑定身份，禁写监听，完整失败页与原始 Meta/图/预览归档。最终再核字节、扫描库存及 owned NFS/Runtime/部署/Infra 零残留；阶段 incomplete 不能代替最终通过，清理不认证业务 DELETE。

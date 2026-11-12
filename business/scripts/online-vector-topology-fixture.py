@@ -464,7 +464,7 @@ def seed_vertices(path,kind):
         crs.SetLocalCS('Undefined Cartesian SRS');crs.SetLinearUnits('Meter',1)
     else:crs.ImportFromEPSG(3857)
     crs.SetAxisMappingStrategy(osr.OAMS_TRADITIONAL_GIS_ORDER)
-    ds=ogr.GetDriverByName('GPKG').CreateDataSource(str(path));layer=ds.CreateLayer(path.stem,crs,ogr.wkbMultiLineString if profile.get('line_only') and kind=='result' else ogr.wkbUnknown,options=['GEOMETRY_NAME=source_shape'])
+    ds=ogr.GetDriverByName('GPKG').CreateDataSource(str(path));layer=ds.CreateLayer(path.stem,crs,ogr.wkbUnknown,options=['GEOMETRY_NAME=source_shape'])
     for name,(native,subtype) in vertices_field_types(kind).items():
         field=ogr.FieldDefn(name,native);field.SetSubType(subtype)
         if layer.CreateField(field)!=0:raise FixtureError('cannot seed vertex field')
@@ -736,6 +736,13 @@ def overlay_field_types(kind):
 def seed_overlay(path,kind):return seed_mixed_overlay(path,kind,OVERLAY_CASE)
 
 
+def mixed_fixture_geometry(value):
+    from osgeo import ogr
+    # The fixture requires a genuine EMPTY Polygon, not GeoJSON's nullable coordinates.
+    if value=={'type':'Polygon','coordinates':[]}:return ogr.Geometry(ogr.wkbPolygon)
+    return ogr.CreateGeometryFromJson(json.dumps(value))
+
+
 def seed_mixed_overlay(path,kind,case):
     profile=mixed_fixture_profile(case)
     from osgeo import ogr,osr
@@ -749,7 +756,7 @@ def seed_mixed_overlay(path,kind,case):
         feature=ogr.Feature(layer.GetLayerDefn())
         for name,value in row['properties'].items():
             if value is not None:feature.SetField(name,int(value) if type(value) is bool else value)
-        feature.SetGeometry(ogr.CreateGeometryFromJson(json.dumps(row['geometry'])))
+        feature.SetGeometry(mixed_fixture_geometry(row['geometry']))
         if layer.CreateFeature(feature)!=0:raise FixtureError('intersection fixture feature creation failed')
     feature=layer=ds=None
 
@@ -789,7 +796,7 @@ def verify_mixed_overlay(path,kind,case):
     for index,feature in enumerate(layer):
         shape=feature.GetGeometryRef()
         if index>=len(expected) or feature.GetFID()!=index+1 or shape is None or (shape.IsEmpty() and expected[index]['geometry'].get('coordinates')!=[]) or shape.GetCoordinateDimension()!=2 or shape.IsMeasured() or(kind!=profile['invalid_kind']and not shape.IsValid()):raise FixtureError('intersection rows/FID/geometry/XY differ')
-        reference=ogr.CreateGeometryFromJson(json.dumps(expected[index]['geometry']))
+        reference=mixed_fixture_geometry(expected[index]['geometry'])
         if kind=='result':actual,reference=shape.Normalize(),reference.Normalize()
         else:actual=shape
         if actual.ExportToIsoWkb()!=reference.ExportToIsoWkb():raise FixtureError('intersection exact geometry differs from handwritten oracle')
@@ -981,7 +988,7 @@ def dissolve_field_types(kind):
 def seed_dissolve(path,kind):
     from osgeo import ogr,osr
     crs=osr.SpatialReference();crs.ImportFromEPSG(4326 if kind=='crs' else 3857);crs.SetAxisMappingStrategy(osr.OAMS_TRADITIONAL_GIS_ORDER)
-    ds=ogr.GetDriverByName('GPKG').CreateDataSource(str(path));layer=ds.CreateLayer(path.stem,crs,ogr.wkbMultiLineString if profile.get('line_only') and kind=='result' else ogr.wkbUnknown,options=['GEOMETRY_NAME=parcel_shape'])
+    ds=ogr.GetDriverByName('GPKG').CreateDataSource(str(path));layer=ds.CreateLayer(path.stem,crs,ogr.wkbUnknown,options=['GEOMETRY_NAME=parcel_shape'])
     for name,(native,subtype)in dissolve_field_types(kind).items():
         field=ogr.FieldDefn(name,native);field.SetSubType(subtype)
         if layer.CreateField(field)!=0:raise FixtureError('dissolve seed field failed')
@@ -1117,7 +1124,7 @@ def seed_proximity(path,kind):
     from osgeo import ogr,osr
     crs=osr.SpatialReference();crs.ImportFromEPSG(3857)
     ds=ogr.GetDriverByName('GPKG').CreateDataSource(str(path))
-    layer=ds.CreateLayer(path.stem,crs,ogr.wkbMultiLineString if profile.get('line_only') and kind=='result' else ogr.wkbUnknown,options=['GEOMETRY_NAME='+('source_shape' if kind=='source' else 'reference_shape')])
+    layer=ds.CreateLayer(path.stem,crs,ogr.wkbUnknown,options=['GEOMETRY_NAME='+('source_shape' if kind=='source' else 'reference_shape')])
     for name,native in proximity_field_types(kind).items():
         if layer.CreateField(ogr.FieldDefn(name,native))!=0:raise FixtureError('cannot seed proximity field')
     for row in proximity_features(kind):
@@ -1434,7 +1441,7 @@ def seed_normalize(path,case=NORMALIZE_CASE):
     from osgeo import ogr,osr
     crs=osr.SpatialReference();crs.ImportFromEPSG(3857)
     ds=ogr.GetDriverByName('GPKG').CreateDataSource(str(path))
-    layer=ds.CreateLayer(path.stem,crs,ogr.wkbMultiLineString if profile.get('line_only') and kind=='result' else ogr.wkbUnknown,options=['GEOMETRY_NAME=network_shape'])
+    layer=ds.CreateLayer(path.stem,crs,ogr.wkbUnknown,options=['GEOMETRY_NAME=network_shape'])
     fields=[('route_key',ogr.OFTInteger64 if case==COMPOSITION_CASE else ogr.OFTString),('note',ogr.OFTString),('grade',ogr.OFTInteger64),('enabled',ogr.OFTInteger)]
     if case==COMPOSITION_CASE:fields += [('chain_id',ogr.OFTInteger64),('member_no',ogr.OFTInteger64)]
     for name,kind in fields:
