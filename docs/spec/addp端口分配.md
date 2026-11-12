@@ -19,7 +19,9 @@ PostgreSQL、Redis、FalkorDB、MinIO、Meilisearch、Infra Kafka 和 Kafka Conn
 
 新会话或本地门禁开始前运行 `bash scripts/infra/status.sh` 查询当前映射。运行事实保存在 Docker Compose 容器映射中，根 `.env` 只记录首选值，不写回动态结果，也不另建一份 Infra 端口状态文件。测试 DSN 必须显式指向核实后的 ADDP PostgreSQL 宿主机端口及允许的测试 database；本地门禁不得在未提供端口时自行回退到 `15432`。CI 独占 PostgreSQL Service 的显式端口不受本地端口改选影响。
 
-Infra 宿主机绑定地址由 `INFRA_BIND_HOST` 指定，默认 `0.0.0.0`；Hosted Online 固定为 `127.0.0.1`。FalkorDB 始终只绑定回环。该地址只影响宿主机发布，不改变容器网络中的服务名或端口。
+Infra 宿主机绑定地址由根部署输入 `INFRA_BIND_HOST` 指定，Compose 和根环境示例的缺省为 `0.0.0.0`；Hosted Online 标准入口显式覆盖为 `127.0.0.1`。FalkorDB 始终只绑定回环。该地址只影响宿主机发布，不改变容器网络中的服务名或端口。
+
+Business MinIO 的 API／Console 由其独立部署输入 `MINIO_BIND_HOST` 控制，Business Compose 和环境示例的缺省同为 `0.0.0.0`，不继承 `INFRA_BIND_HOST`。仅回环发布须由相应部署或隔离 Fixture 显式设置并核对实际绑定；例如 [Compose 单入口场景](testing/scenarios/部署与执行恢复.md#compose-public-origin)为 Business MinIO 指定回环地址，并核验两个端口的配置与容器 `HostIp`。该场景的声明和检查要求不代表所有 Hosted 场景均已覆盖，也不是个人当前环境的运行事实。
 
 自动选端口只适用于本地基础设施宿主机映射。生产部署与 `addp-online` 专用 Runner 按其显式环境配置运行。Docker 最终绑定仍可能遇到检查后的并发抢占；启动失败时报告实际冲突，不连接占用该端口的其他服务。
 
@@ -33,7 +35,7 @@ Infra 宿主机绑定地址由 `INFRA_BIND_HOST` 指定，默认 `0.0.0.0`；Hos
 
 本地开发的 Gateway、各模块 Backend/Frontend 与工作流 Runtime 同样以本表开发端口为首选值。`scripts/dev/start.sh` 在 Infra 就绪后统一检查监听者；首选端口被其他服务占用时选取空闲端口，将最终端口注入模块进程、Gateway URL、Console 代理、iframe 地址、CORS 来源及 Vite HMR。运行中的本工作区服务沿用原端口；解析结果保存在忽略版本控制的 `.dev-state/ports.env`，仅作为本地运行状态，不改写根 `.env`。显式 `addp-online` Runner 仍使用配置端口并在冲突时失败。端口检查与监听之间仍可能出现并发抢占，实际绑定失败必须明确报错。
 
-Document、PointCloud 和 GeoPython 原生开发直接监听回环地址和已分配端口，按 PID 与监听归属管理，通过宿主机回环访问 System 与对象存储，不改写为 Docker host gateway。Hosted Manager 的 Document 与 PointCloud 同样使用原生进程；GeoPython 的 Hosted 产品容器独立使用宿主网络和回环地址。两套 MinIO 仍各自只发布回环端口，源数据和平台内部产物的存储域保持独立。`addp-runtimes` Compose 产品部署继续使用 Docker 服务名和固定容器端口。SuperMap Runtime 不自注册，需要按相应部署模式的实际可达地址登记。
+Document、PointCloud 和 GeoPython 原生开发直接监听回环地址和已分配端口，按 PID 与监听归属管理，通过宿主机回环访问 System 与对象存储，不改写为 Docker host gateway。Hosted Manager 的 Document 与 PointCloud 同样使用原生进程；GeoPython 的 Hosted 产品容器独立使用宿主网络和回环地址。两套 MinIO 的宿主绑定分别按上述部署输入与实际映射核对，不能由原生进程使用回环访问地址推断服务仅回环发布；源数据和平台内部产物的存储域保持独立。`addp-runtimes` Compose 产品部署继续使用 Docker 服务名和固定容器端口。SuperMap Runtime 不自注册，需要按相应部署模式的实际可达地址登记。
 
 Spark Workflow 本地开发使用原生进程，HTTP 以 `WORKFLOW_BIND_HOST=127.0.0.1` 监听实际 `SPARK_WORKFLOW_PORT`；端口归属通过 `.dev-pids/spark-workflow-engine.pid` 与实际监听进程核对。Driver RPC 和 BlockManager 动态端口在宿主机原生监听。macOS 以 `host.docker.internal` 公布 Driver 地址，并在本机 `/etc/hosts` 配置该名为 `127.0.0.1`；Docker Worker 使用内置宿主网关解析。无需 Docker Desktop host networking。Hosted 产品验收独立使用容器宿主网络，不由开发入口启动 Spark 镜像。
 
