@@ -177,11 +177,11 @@
       "kind": "implementation",
       "path": "transfer/backend/internal/planner/table_export.go",
       "anchor": "func validateTableTransferSpec(",
-      "commit": "d326857b59c24b50729546344abf892e6c5ed02d",
-      "sha256": "44920c78314f423701061171ef8e160eb2b041aaac3742be25d407380353f85d",
+      "commit": "a48cadaafd45d0edd68cb44adde802f1403fad48",
+      "sha256": "da014f88462cfc30aea6cb29a6e7dcf4446f95ed4586b5718efb8ec73fa3b0f5",
       "use": {
-        "zh-cn": "复核原规划传递实际写入目标引擎版本；初始授权独立由 System 按成果办理。停止态原生表 bounded/snapshot 创建、replace/append、查询与字段校验及权限、条件、效果保持，不扩展未建模的文件执行。",
-        "en": "Reviewed propagation of the actual target engine version into the original write plan. System handles initial grants by result separately. Stopped bounded/snapshot native-table creation, replace/append, query and field checks, permissions, conditions and effects remain unchanged; unmodeled file execution is not expanded."
+        "zh-cn": "复核同次实际连接解析的源与目标 Engine 版本沿原规划传递，实际来源版本随读取/提交事实冻结；初始授权独立由 System 按完整成果与当前版本办理。原有 stopped bounded/snapshot 原生表创建、replace/append、查询/字段校验、权限、条件和效果保持，不扩展未建模的文件执行。",
+        "en": "Reviewed propagation of actual source and target Engine versions from the same connection resolution into the original plan. Source versions freeze with actual reads and commit evidence; System separately handles initial grants by complete result and current versions. Existing stopped bounded/snapshot native-table creation, replace/append, query and field checks, permissions, conditions and effects remain unchanged; unmodeled file execution is not expanded."
       }
     },
     {
