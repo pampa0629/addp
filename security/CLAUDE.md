@@ -1041,3 +1041,10 @@ DNS恢复后，用户另行确认的唯一[Run43140011471／Job130924454141](htt
 原件/tmp/addp-ci-security-2664-l_naer3d/common-130974521958.log，SHA256为3fe428ef81b21dbf240ebe08b927f6d6bdaf5c3fa879fc1e433fd65b27bf55df。独立脚本、Job元信息和结果/tmp/p145-common-natural-independent/{audit.py,job.json,audit.json}，脚本实际退出0。已核7d为2664dd82881a553f6634afbbb4a2c3389803d9f0祖先，common全目录、根Makefile、release工作流、Common PG入口、其容量脚本、Graph backend、go.work/sum及Infra端口核验输入均无差异，故该T2结果可适用于2664候选；只比较既有入口依赖，不调查栅格或其他suite。
 
 本轮只补证据，未重复运行测试或Hosted、未启停个人服务。精确2664的Platform自然门禁仍由专门CI会话跟进，本轮未认定其通过；v46/v10新的完整T4尚未获单次授权或派发，原403与0/23图保持。下一步由专门CI会话核对该Platform结果后统一提出具体单次方案，不重复确认或自动重试。
+
+
+### 2664 精确候选的 Linux Platform 自然门禁（2026-11-12，非 Hosted）
+
+精确候选2664dd82881a553f6634afbbb4a2c3389803d9f0的push [Run43156617594／Platform Job130977934296](https://github.com/pampa0629/addp/actions/runs/43156617594/job/130977934296)，attempt1实际success。独立读取原始Job API，核对head SHA、completed/success及Run platform consistency gate实际步骤success；原始日志200行为完整checkout SHA，3529行登记156项并以OK结束，4458／4459行两组System Fixture Go选择实际ok，4462行Security292项以OK结束，无错误注解。非verbose Go包结果不证明逐例无跳过；本轮不推断整个Run其他Job结果。
+
+原件/tmp/addp-ci-1400-1112.ux0igerj/security-platform-h1.log，SHA256为879c3b545a14ae9afec4fd5c21724eee7145291df2c7f4f3b2eb4cce75a1015a；独立元信息、脚本和结果/tmp/p145-2664-platform-independent/{job.json,audit.py,audit.json}，脚本实际退出0。Common完整PG仍复用前节已核7d自然门禁的相同输入证据，不重复执行。此前三次Hosted首失败、已批准suite专属写入功能前提与严格oracle均保持；当前仅确定性自然门禁已补齐，新v46/v10真实Hosted尚待专门CI会话统一确认，未获新授权或派发。已核清单维护会话最近M155／M156均部分实现；本次只补精确候选Linux层级，不能把它记为新的T4通过。无产品或门禁输入变更，只更新证据文档并作所属diff检查。
