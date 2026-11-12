@@ -33,7 +33,7 @@ BEGIN
   IF prefix IS DISTINCT FROM parent THEN RETURN false; END IF;
   IF composition->>'format'='tiff' AND (
     jsonb_array_length(ref->'target'->'segments')<>jsonb_array_length(primary_path->'segments')
-    OR (ref->'primary'='false'::jsonb AND ref->>'role' NOT IN ('world_file','crs','header','auxiliary_metadata','overview','mask'))) THEN RETURN false; END IF;
+    OR (ref->'primary'='false'::jsonb AND ref->>'role' NOT IN ('world_file','crs','header','auxiliary_metadata','overview'))) THEN RETURN false; END IF;
   IF composition->>'format'='envi' AND (total<>2 OR ref->'required'<>'true'::jsonb
     OR jsonb_array_length(ref->'target'->'segments')<>jsonb_array_length(primary_path->'segments')
     OR (ref->'primary'='true'::jsonb AND (ref->>'role'<>'raster' OR lower(ref->'target'->'segments'->-1->>'name') ~ '\.hdr$'))

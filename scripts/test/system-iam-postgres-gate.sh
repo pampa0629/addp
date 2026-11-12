@@ -40,6 +40,7 @@ while [ "$#" -gt 0 ]; do
             echo "PG production source observation: --package engineaccess --test production-sources" >&2
             echo "Meta PG basic centralized scanning: --package engineaccess|migration --test meta-collection" >&2
             echo "FTP/NFS file composition Grant/current read: --package engineaccess --test file-composition" >&2
+            echo "TIFF mask upgrade from applied 285: --package migration --test tiff-mask" >&2
             echo "Unified human data authorizer: --package migration --test unified-data-authorizer" >&2
             echo "Owned-container crash recovery: --test database-crash-recovery (no external DSN)" >&2
             echo "Execution subject roles: --package iam --test execution-subject-roles" >&2
@@ -294,6 +295,10 @@ case "$TEST_FILTER" in
             iam) test_pattern='^Test(TenantAdministrationClosure|AuthContextService)AgainstPostgres$' ;;
             *) echo "tenant-functional-roles requires --package iam or migration" >&2; exit 2 ;;
         esac
+        ;;
+    tiff-mask)
+        [ "$PACKAGE_FILTER" = migration ] || { echo "tiff-mask requires --package migration" >&2; exit 2; }
+        test_pattern='^Test(TIFFMaskForwardMigration|Runner)AgainstPostgres$'
         ;;
     production-results)
         [ "$PACKAGE_FILTER" = migration ] || { echo "production-results requires --package migration" >&2; exit 2; }

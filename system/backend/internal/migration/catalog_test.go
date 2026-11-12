@@ -14,8 +14,20 @@ func TestEmbeddedMigrationCatalog(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ReadCatalog() error = %v", err)
 	}
-	if catalog.LatestVersion != 286 {
-		t.Fatalf("LatestVersion = %d, want 286", catalog.LatestVersion)
+	if catalog.LatestVersion != 287 {
+		t.Fatalf("LatestVersion = %d, want 287", catalog.LatestVersion)
+	}
+}
+
+const appliedTIFFComposition285Checksum = "86630a1629303176dbdfc0a2b8a07a1b90f8473fb6d8719d120534a6fc03255c"
+
+func TestTIFFCompositionMigration285RetainsAppliedChecksum(t *testing.T) {
+	data, err := fs.ReadFile(EmbeddedSQL, "sql/000285_tiff_dynamic_file_composition.up.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if actual := fmt.Sprintf("%x", sha256.Sum256(data)); actual != appliedTIFFComposition285Checksum {
+		t.Fatalf("already-applied migration 285 changed: got %s, want %s; use a new forward migration", actual, appliedTIFFComposition285Checksum)
 	}
 }
 

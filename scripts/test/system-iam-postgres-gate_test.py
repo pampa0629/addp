@@ -364,6 +364,14 @@ elif args[:2] != ["volume", "ls"]:
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("requires --package migration or api", result.stderr)
 
+    def test_tiff_mask_filter_keeps_applied_upgrade_and_fresh_database_checks(self):
+        result = self.run_gate(arguments=("--test", "tiff-mask"))
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("./internal/migration -run ^Test(TIFFMaskForwardMigration|Runner)AgainstPostgres$", (self.root / "trace-1").read_text())
+        rejected = self.run_gate(arguments=("--package", "engineaccess", "--test", "tiff-mask"))
+        self.assertNotEqual(rejected.returncode, 0)
+        self.assertIn("tiff-mask requires --package migration", rejected.stderr)
+
     def test_file_composition_filter_keeps_formal_grant_owner_and_rejects_other_packages(self):
         result = self.run_gate(arguments=("--package", "engineaccess", "--test", "file-composition"))
         self.assertEqual(result.returncode, 0, result.stderr)
