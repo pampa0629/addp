@@ -173,7 +173,10 @@ func (r *BuildRepository) EnqueueExecution(ctx context.Context, taskID, graphID,
 			}
 		}
 		var kg models.KnowledgeGraph
-		if err := tx.Where("id = ? AND tenant_id = ?", graphID, tenantID).First(&kg).Error; err != nil {
+		// G can be acquired after a closure commits, while REPEATABLE READ
+		// still sees the pre-wait snapshot. A locking target read rejects that
+		// changed row with 40001 instead of admitting through the stale snapshot.
+		if err := tx.Clauses(clause.Locking{Strength: "SHARE"}).Where("id = ? AND tenant_id = ?", graphID, tenantID).First(&kg).Error; err != nil {
 			return err
 		}
 		if kg.EngineID != expectedTarget.EngineID || kg.OntologyID != expectedTarget.OntologyID || kg.IndexManagement != expectedTarget.IndexManagement || !reflect.DeepEqual(kg.CatalogPath, expectedTarget.CatalogPath) {
