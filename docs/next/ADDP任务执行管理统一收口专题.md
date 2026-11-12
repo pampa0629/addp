@@ -161,7 +161,7 @@ Manager 源准备保持其正式授权链；本批 Transfer CDC 仅验证既有 
 | 顺序 | 事项／性质 | 具体交付与完成条件 |
 | --- | --- | --- |
 | P1a | Common／System 父子准入 PG | C2b/c/e/h 的竞争、拒绝与回滚，以及 C2d/f/g 的公共锁等待、非法绑定及子执行残留事实，见 [Common／System PG 两批验证](#本轮-pg-增补验证)。Graph 专属锁交错归 P1b，各 Owner 的外部效果核清沿对应专项。 |
-| P1b | Graph清理与输入冻结，测试及按证据修复 | [G2 摘要回滚与 G3 成功先提交](#graph-基础-pg-增补验证)、[G8 输入与登记目标漂移](#graph-g8-输入冻结验证)已有 PG 记录。[G9 在途审核与关闭准入](#graph-审核与-cleanup-竞争-pg-增补验证)已补六项真实 PG。[同一审核项九种动作竞争](#graph-同项审核竞争-pg-增补验证)也已补齐；[Cleanup 与普通构建／重跑入队竞争](#graph-入队与-cleanup-竞争-pg-增补验证)新增四项真实 PG，并修正关闭后旧快照错误准入。[任务／材料删除与 Cleanup 竞争](#graph-任务材料删除与-cleanup-竞争-pg-增补验证)再补八项真实 PG。[图配置删除与 Cleanup 竞争](#graph-图配置删除与-cleanup-竞争-pg-增补验证)补零／一张剩余图下八项真实 PG。剩余 C3 的其他跨类业务行排列、C4/C2j 的真实 PG 交错；目标重绑按原边界另议。C4当前代码核execute首尾候选一致，尚未定位原scan后候选漂移的完整反例；先验证上游生命周期围栏及原scan确认是否已足够，再决定修复，不将风险观察写成已复现漏洞 |
+| P1b | Graph清理与输入冻结，测试及按证据修复 | [G2 摘要回滚与 G3 成功先提交](#graph-基础-pg-增补验证)、[G8 输入与登记目标漂移](#graph-g8-输入冻结验证)已有 PG 记录。[G9 在途审核与关闭准入](#graph-审核与-cleanup-竞争-pg-增补验证)已补六项真实 PG。[同一审核项九种动作竞争](#graph-同项审核竞争-pg-增补验证)也已补齐；[Cleanup 与普通构建／重跑入队竞争](#graph-入队与-cleanup-竞争-pg-增补验证)新增四项真实 PG，并修正关闭后旧快照错误准入。[任务／材料删除与 Cleanup 竞争](#graph-任务材料删除与-cleanup-竞争-pg-增补验证)再补八项真实 PG。[图配置删除与 Cleanup 竞争](#graph-图配置删除与-cleanup-竞争-pg-增补验证)补零／一张剩余图下八项真实 PG。[已领取子执行与父截止关闭](#graph-cleanup-已领取子执行与父关闭-pg-增补验证)再补四项真实 PG。剩余 C3/C2j 的其他跨类／外键排列及 C4 最终事务与候选漂移验证；目标重绑按原边界另议。C4当前代码核execute首尾候选一致，尚未定位原scan后候选漂移的完整反例；先验证上游生命周期围栏及原scan确认是否已足够，再决定修复，不将风险观察写成已复现漏洞 |
 | P2 | System／Monitor消费者状态矩阵，T3工程 | C5g/k/l补撤去父读取权、404／503、User／Tenant／execution切换、closed pending替换及矛盾／迟到响应；C5c/h补隐藏计数与完整页面语义。复用共享组件／请求失效能力，补C5e/j相应PG交错，不复制组件 |
 | 并行待授权 | Manager迟到writer真实验收 | runner与CI已就绪，按§8.44单独确认一次Hosted；同一原请求、原身份及原预算，核11项、控制恢复与零残留；不能先记完成 |
 | P3 | Graph／Cleanup完整故障与Meta扫描闭环，runner／集成验收 | 已有profile先按场景核对并补缺：Cleanup规范§13的平台上下文、审计、Monitor父子树；Graph原生写图回包丢失及两引擎故障。受控runner与真实原生效果分开；若需新的Provider入口或身份／权限边界先讨论，不能借此重启高级恢复。新增Hosted均单独确认 |
@@ -241,6 +241,14 @@ Common 父子准入与 System 协调的用例定位见 [Owner 矩阵](../spec/te
 关闭先提交时旧版本请求由 version CAS 拒绝，再用当前正确版本核验仍被关闭准入拒绝。删除先提交时 Cleanup 重新读取零／剩余准确图及其定义，仅归档剩余范围；图删除的 `AFTER DELETE` PG 错误使原图和所有子记录完整回滚。删除已提交而 Cleanup 回执写入失败时，只回滚该轮剩余图归档及公共／专业回执，保留持久关闭、不恢复已删除配置。原 execution、冻结输入及通过生产命令／回执事务生成的已知操作记录逐字段不变；该操作是 PG 持久协议夹具，不是原生图写入证明。未复现需要修改生产逻辑的新缺陷，未改变删除语义、权限或作用范围。
 
 本地 `make test-module MODULE=graph GO_ONLY=1` 与 `make test-common-postgres COMMON_POSTGRES_TEST_ARGS="--test graph"` 通过：Graph 10 个主用例、原6／9／4／8项及新增八项准确 PASS，零 SKIP／FAIL，自有 Tenant 事实及专用触发器／函数退出清理通过。`graph/backend/` 及既有必需主测试继续命中标准 Common PG 门禁；登记／编排输入相对上批未变，未重复运行登记测试，无需新增 Make／workflow。固定源码 `54e93321ad424604c0132cf97da1bedc6c342cd0` 的 [Linux Go workspace](https://github.com/pampa0629/addp/actions/runs/43201655069/job/131126328636) 与 [Common PostgreSQL 15](https://github.com/pampa0629/addp/actions/runs/43201654477/job/131126972608) 均已终态 success；原始 Go 日志确认 Graph server／API／repository／service 包通过，PG 日志确认 Graph 10 个主用例、原6／9／4／8项及新增八项准确 PASS、零 SKIP／FAIL。Graph 高级恢复继续暂缓，未重启服务、触发 Hosted 或操作业务图／MinIO。
+
+### Graph Cleanup 已领取子执行与父关闭 PG 增补验证
+
+2026-11-12 在既有必需入口 `TestIntegrationPostgresGraphCleanupRuntime` 增加 `parent_closure_interleavings`，首次关闭准入前／已提交关闭后两个位置，各验证正常完成及专业结果写入失败，共四项。真实 Runtime 已提交子 claim，使用 `pg_blocking_pids` 固定等待 G，另以 C 的 `FOR UPDATE NOWAIT` 返回55P03核实 C 行确已被占用；数据库墙钟到达冻结协调 deadline 后，Common 父 lease 终态接口仍可在 C、G 被占用时独立提交 timeout。
+
+随后继续持有已关闭 P 的行更新锁，释放 G；原已领取的子执行按自身合法 lease 完成成功或失败终态，attempt、started_at、父绑定和冻结输入不替换，P 全部字段／时间戳不变，原构建及领域事实保留。结果写入失败时归档及公共／专业回执同事务回滚，已提交 Graph 关闭不被父关闭或子失败撤销。四秒协调预算仅用于本轮夹具，原夹具默认一分钟、产品预算及12秒场景等待上限不变；夹具时间改由数据库墙钟生成。未复现生产逻辑缺陷，无权限、接口或生产配置变化。
+
+本地 `make test-module MODULE=graph GO_ONLY=1` 与 `make test-common-postgres COMMON_POSTGRES_TEST_ARGS="--test graph"` 通过：Graph 10 个主用例、原6／9／4／8／8项及新增四项准确 PASS，零 SKIP／FAIL，自有 Tenant 事实及专用触发器退出清理通过。沿既有 Graph 源码目录、必需主测试及 Common PG 编排，登记输入相对上批未变，未重复运行登记测试。固定源码 Linux 结果待终态后补记。本批只验证 Common 父围栏与 Graph Runtime 的 PG 组合；System 私有截止快照／审计、真实当前授权及跨进程拓扑不由受控授权夹具代验。Graph 高级恢复继续暂缓，未重启服务或触发 Hosted。
 
 ## 七、确认范围与协作分工
 

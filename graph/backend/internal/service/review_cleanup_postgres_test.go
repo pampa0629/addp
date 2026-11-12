@@ -293,6 +293,11 @@ func newReviewPGFixture(t *testing.T) *reviewCleanupPGFixture {
 
 func newReviewCleanupPGFixture(t *testing.T) *reviewCleanupPGFixture {
 	t.Helper()
+	return newReviewCleanupPGFixtureWithBudget(t, time.Minute)
+}
+
+func newReviewCleanupPGFixtureWithBudget(t *testing.T, budget time.Duration) *reviewCleanupPGFixture {
+	t.Helper()
 	f := newReviewPGFixture(t)
 	db, task := f.db, f.task
 	ctx := execution.WithUserOrigin(t.Context(), authtest.NewTenantUserAuthContext(strconv.Itoa(int(task.TenantID)), "7", []string{"system.cleanup.execute"}))
@@ -300,8 +305,11 @@ func newReviewCleanupPGFixture(t *testing.T) *reviewCleanupPGFixture {
 	if err := execution.ApplyUserOrigin(ctx, &parent); err != nil {
 		t.Fatal(err)
 	}
-	now := time.Now().UTC()
-	input := events.CleanupRequest{RequestID: uuid.NewString(), ParentExecutionID: parent.ExecutionID, TenantID: task.TenantID, RequestedBy: 7, Action: "execute", CleanupMode: events.CleanupModeLogical, TriggerType: "manual", ExpectedModules: []string{"graph"}, BasedOnScan: uuid.NewString(), Context: events.CleanupContext{EngineID: 1}, Confirmation: events.CleanupConfirmation{Confirmed: true, RiskLevel: "low", ImpactDigest: strings.Repeat("a", 64)}, RequestedAt: now, Deadline: now.Add(time.Minute)}
+	now, err := execution.DatabaseNow(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	input := events.CleanupRequest{RequestID: uuid.NewString(), ParentExecutionID: parent.ExecutionID, TenantID: task.TenantID, RequestedBy: 7, Action: "execute", CleanupMode: events.CleanupModeLogical, TriggerType: "manual", ExpectedModules: []string{"graph"}, BasedOnScan: uuid.NewString(), Context: events.CleanupContext{EngineID: 1}, Confirmation: events.CleanupConfirmation{Confirmed: true, RiskLevel: "low", ImpactDigest: strings.Repeat("a", 64)}, RequestedAt: now, Deadline: now.Add(budget)}
 	if err := input.Seal(); err != nil {
 		t.Fatal(err)
 	}

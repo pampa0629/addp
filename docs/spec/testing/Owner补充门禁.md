@@ -51,7 +51,7 @@
 | C2g | attempt>0的恢复pending、残留lease／started_at、操作证据不完整：拒绝走未领取原语；已运行失联仍按自身围栏失败／核清，不重放 | Common＋Owner；T1与PG T2 | pending_with_prior_operation_facts 用真实失租恢复验证 attempt>0 的 pending，并覆盖 started_at、耗时、三个租约字段、进度与不完整回执。领取与未启动拒绝均冲突，不生成未启动展示。各 Owner 的外部效果核清沿对应专项。 |
 | C2h | 未领取拒绝并发／重复／写失败：只有一次pending→failed，completed_at／安全原因原子；失败回滚，重复不改时间；无cleanup_receipt／假零统计／attempt1事件，观测namespace保留 | Common＋Owner；T1与PG T2 | concurrent_and_duplicate_unstarted_rejection及rejection_outer_rollback／rejection_sql_failure覆盖唯一拒绝、completed_at不变、观测保留、无回执／attempt事件和真实PG写失败回滚。 |
 | C2i | 父冻结缺项后Owner离线恢复／合法子迟到：Owner只拒本模块未领取项；已运行合法完成保留子事实，父结论／观察快照不变；GET零状态写入，父可读不授予子专业详情权 | System＋Owner；PG T2与安全读取T1 | AdmissionRace／ReadOnlySnapshot覆盖迟到不改父与只读；ClosureRollback核截止结论／父终态／审计原子回滚与重复关闭不变；跨Owner离线恢复T4待证。 |
-| C2j | Graph组合P→C→G→T/B；未领取拒绝不改G或业务表；已领取结果只C→G且不回P，父关闭不撤领域证据，最终清理不反锁构建E | Graph＋Common；扩既有Graph PG包／筛选，验证真实外键锁与回滚 | Graph runtime的parent_closed／unknown_effect／result_rollback复用于PG；P/C/G外键争用未齐。 |
+| C2j | Graph组合P→C→G→T/B；未领取拒绝不改G或业务表；已领取结果只C→G且不回P，父关闭不撤领域证据，最终清理不反锁构建E | Graph＋Common；扩既有Graph PG包／筛选，验证真实外键锁与回滚 | Graph runtime 的 parent_closed／unknown_effect／result_rollback 已接 PG。parent_closure_interleavings 新增四项：实际 C→G 等待期间父截止 timeout 独立提交，继续持 P 行锁仍可完成子成功／失败收尾，父记录与领域证据不被撤销，子回执失败原子回滚。使用 Common 父围栏及受控授权，不代验 System 私有截止快照／审计；其他外键及跨类锁排列仍待补。 |
 
 本轮补测仍复用上述Common生命周期PG与 `make test-system-cleanup`。Common另覆盖prepare失败及外层claim事务回滚；System领取竞争改为准确backend PID的PG阻塞屏障，不用50ms推测先后。新增System主测试被标准入口逐项要求PASS，登记反例同时拒绝缺项、skip、错名和仅子项PASS。固定源码与实际结果见[专题记录](../../next/ADDP任务执行管理统一收口专题.md#本轮-pg-增补验证)。
 
