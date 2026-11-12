@@ -81,6 +81,38 @@
 - **清理**。领域报告为 `cleanup=failed`，Kafka task 1 的 `deployment_destruction` 步骤未取得完整拒删证明，`residual_resources=1`、`expected_deployment_residuals=0`。外层标准退出清理为 `cleanup=passed`、`infra_cleanup=zero_residuals`：停止应用、销毁本轮 Business PG／Kafka 夹具、移除 Infra 容器／网络／卷及私有凭据目录的检查完成。部署销毁成功不替代领域任务清理通过；个人开发服务、数据卷及原有逻辑槽未被本轮操作。
 - **归档**。Artifact `13937371862` 的 ZIP SHA-256 经独立下载核对，与 GitHub 声明一致：`dac509517e9474ad537cc74b385ef631ed737d53fe69544952b54e0fd752a089`。下载后的 JSON／JSONL／日志／文本未检出所检查的 JWT 模式或 `business-value-sentinel`。原始报告、浏览器回执、日志、ZIP 与独立评估在 `/tmp/addp-cdc-hosted-43202861644/`；没有新增 Hosted 重跑。本轮下一步是先定位并收敛 Kafka 拒删验证的 HTTP 等待边界，再复验原场景，拒删条件与运行会话退出确认要求保持原契约。
 
+## 2026-11-12 任务级 CDC 指标 Hosted 复验
+
+用户确认继续后，仅为 Kafka 强退拒删验证的唯一 DELETE 创建同一身份／Gateway 的 60 秒客户端，覆盖产品原有 45 秒 runtime stop 窗口；后置 GET 仍用原 10 秒客户端，服务端停止策略、拒删状态和持久围栏断言不变。新增失败类型仅公开固定子阶段／原因与已接收的状态，不发布原始异常或响应。原等待预算的确定性用例先复现 TimeoutError，修订 `63193b3c9aabfffc6acdee4289ffb0dda319d30e` 通过 `make test-transfer-continuous-online-runner` 的 115 项测试及 System 身份夹具 Go 检查，`make test-online-registration-unit` 的 156 项测试和登记检查通过。
+
+[Run 43213142409／Job 131165583466](https://github.com/pampa0629/addp/actions/runs/43213142409/job/131165583466) 为第二次独立运行、attempt 1，固定检出上述 SHA，六个正式服务构建身份均一致，repository_clean=true。因并发排队后，Job 北京时间 20:58:31 开始、21:13:46 结束；主门禁 20:59:06—21:13:41。整套结果为 failure，但新增 CDC 指标及暂停恢复断言已实际执行并通过，不能与首轮未执行混同。
+
+### 已闭合的前置和 CDC 断言
+
+Kafka 强退 task 1 的 DELETE 由 Gateway 在 45.008 秒返回 503、Transfer 在 45.007 秒返回 503，请求 ID 为 `dc9efd0d-d27b-4b63-b0db-e6d7b708d2a6`。原未确认退出 invocation、任务保留及零外部删除登记的后置核验全部通过，`hard_exit_delete_refused_without_dlq_dispatch` 成立；未通过缩短产品等待或放宽拒删条件取得结果。
+
+本轮任务 3／generation 1 绑定独占业务 PostgreSQL 引擎 1。逻辑槽、publication 和 Connector 沿该任务代次精确核对，全部阶段的源端／延迟／缓冲快照均新鲜；独立 PostgreSQL 核对源端绑定、原生 WAL 状态与安全余量的空值语义，定向 Jolokia 精确核对捕获延迟。WAL 字节值保持精确十进制字符串，不要求异步时刻的字节读数相等。以下为固定回执中的北京时间；字节值为 WAL 地址距离，不能解释成业务变更量或磁盘占用。
+
+| 阶段 | 缓冲采样时间 | committed / latest | 积压位点差 | 捕获延迟 | 保留 WAL 字节距离 |
+| --- | --- | --- | --- | --- | --- |
+| 初始追平 | 21:12:15.905 | 6 / 6 | 0 | null，尚无流式事件样本 | 22960 |
+| 暂停后、写入前 | 21:12:30.849 | 6 / 6 | 0 | null | 22960 |
+| 暂停后写入三条增删改 | 21:12:45.851 | 6 / 9 | 3 | 0.331 s | 23736 |
+| 恢复追平 | 21:13:00.843 | 9 / 9 | 0 | 0.331 s | 1656 |
+| 后续独立新采样 | 21:13:15.856 | 9 / 9 | 0 | 0.331 s | 1656 |
+
+槽始终活跃，`wal_status/risk_state=reserved`；源库未设置槽 WAL 保留上限，`safe_wal_size_bytes=null`，不补零。初始及暂停前无事件延迟的空值、真实变更后的 331 毫秒都与本任务 Connector 原生值对应。暂停期间目标行未变化，恢复后的精确新增／修改／删除结果通过；generation 保持 1，execution 从 `0ca8e056-ef1c-47f2-9772-ea1386f0e965` 切换为 `e17d8626-9f93-4673-9f5d-c871b3f85717`。后续 additive 审批、不同审批 User 的补扫归属及显式恢复通过；正式 Stop 后三类当前观测全部为空，源端槽／publication 的物理清理通过。
+
+共 17 项 checks 完成，live／recovery／revocation／owner_unavailable 四份真实浏览器回执均为 passed；这些浏览器场景验证既有执行页面行为，不外推为新增 CDC 指标卡片的真实浏览器验收。新增任务指标的 T4 证据来自正式任务 API 与原生只读对照。
+
+### 后续失败与清理边界
+
+套件随后停在 `scheduled_completion/request_or_contract_failed`，`uncertain_mutation=false`。bounded 定时 task 4 的 execution `4679dadb-5e68-4216-9bff-f489c588e855` 在归档中记录 success、2 行已提交；验收要求 `metadata.metadata_scan.status=submitted`，当次 metadata 未含该反馈。后续原始状态出现 `initial_authorization.status=pending/code=scan_failed`。固定源码的原生首次新建目标路径调用 `EnsureProductionBasicScan`，需要对照现行成果识别／限定 basic 补扫契约进一步核清；本轮未用替换反馈字段或删除该断言的方式将整套改记为通过。定时扫描归属／物理结果及末尾已删除定义的授权历史检查未完成。
+
+领域清理 `cleanup=passed`：task 4（scheduled）、task 3（CDC）、task 2（graceful Kafka）经正式删除读回缺失；正常 Kafka 的 invocation 退出、定义删除及准确 DLQ 缺失均有回执。task 1 按强退用例设计 `retained_for_deployment`，因此领域 `residual_resources=expected_deployment_residuals=1`，不是未核清残留。外层停止应用、销毁本轮业务夹具及私有材料完成，`cleanup=passed`、`infra_cleanup=zero_residuals`，计划留待部署销毁的 task 1 随独占数据卷一并移除。领域与外层清理通过不替代整个 suite 业务通过。
+
+Artifact `13946758225` 独立下载 ZIP 的 SHA-256 与 GitHub 声明一致：`cdb7f24a9b5248c5e33844f48b22c98caf3a6ff79c4f457eba601d8b5a5aed41`。下载的 JSON／JSONL／日志／文本未检出所检查 JWT 模式或 `business-value-sentinel`。原始报告、四份浏览器回执、日志、ZIP、摘要核验与独立评估保留在 `/tmp/addp-cdc-hosted-43213142409/`。首轮失败及其证据保持原记录，本轮未改个人开发服务、数据卷或原有逻辑槽。
+
 ## 2026-10-24 概览保留只读评估第一期
 
 Common 的 `AssessRetention` 由 System 既有维护循环调用，以数据库时间和只读、可重复读事务评估 180 天时间候选。首期检查完整执行树、租约、关系异常、树外引用及预算，保留 Owner 释放和消费者引用未核验原因。批次计数按当次读取范围解释，不能累加为全库唯一树数。[现行留存契约](../../tasks/执行监控.md#概览保留与清理契约)
