@@ -25,9 +25,21 @@ func runPrivateRuntimeRecordCase(t *testing.T, db *gorm.DB, repo *FileExecutionR
 	id := uuid.NewString()
 	directory := t.TempDir()
 	registration := func(runtimeID string, manifest plugin.WorkflowPrivateFileManifest) PrivateFileRuntimeRecord {
-		return PrivateFileRuntimeRecord{RuntimeExecutionID: runtimeID, Manifest: manifest, OwnerInstanceID: "fixture-instance", InputDirectory: directory}
+		reads := make([]PrivateFileSourceRead, 0, len(facts.Intent.Sources))
+		for _, source := range facts.Intent.Sources {
+			set, err := plugin.NewQueryReadSet(source.Target)
+			if err != nil {
+				t.Fatal(err)
+			}
+			reads = append(reads, PrivateFileSourceRead{NodeID: source.NodeID, ReadSet: set})
+		}
+		return PrivateFileRuntimeRecord{RuntimeExecutionID: runtimeID, Manifest: manifest, OwnerInstanceID: "fixture-instance", InputDirectory: directory, SourceReads: reads}
 	}
 	manifest := plugin.WorkflowPrivateFileManifest{SchemaVersion: plugin.WorkflowPrivateFilesAPIV1, TenantID: 7, ExecutionID: item.ExecutionID, Attempt: 1, AuthorizationID: 101, ScopeDigest: facts.ScopeDigest, Deadline: item.StartedAt.Add(time.Minute), WorkflowJSON: `{"tasks":[],"wide":9007199254740993}`, Inputs: []plugin.WorkflowPrivateFile{{NodeID: "source", Size: 123, SHA256: strings.Repeat("a", 64)}}, Outputs: []string{}}
+	manifest.Inputs = nil
+	for _, source := range facts.Intent.Sources {
+		manifest.Inputs = append(manifest.Inputs, plugin.WorkflowPrivateFile{NodeID: source.NodeID, Size: 123, SHA256: strings.Repeat("a", 64)})
+	}
 	if err := repo.RecordPrivateInputDirectory(t.Context(), lease, "fixture-instance", directory); err != nil {
 		t.Fatal(err)
 	}
@@ -65,6 +77,20 @@ func runPrivateRuntimeRecordCase(t *testing.T, db *gorm.DB, repo *FileExecutionR
 			t.Fatal("rejected registration left private record", fault, record, err)
 		}
 	}
+	for _, fault := range []string{"missing", "wrong_node", "wrong_target"} {
+		bad := registration(id, manifest)
+		switch fault {
+		case "missing":
+			bad.SourceReads = nil
+		case "wrong_node":
+			bad.SourceReads[0].NodeID = "other"
+		case "wrong_target":
+			bad.SourceReads[0].ReadSet, _ = plugin.NewQueryReadSet(plugin.FileItemPath(999, "other/source.gpkg"))
+		}
+		if err := repo.RecordPrivateRuntime(t.Context(), lease, bad); err == nil {
+			t.Fatal("unbound source proof accepted", fault)
+		}
+	}
 	// A domain write followed by a failed lease fence must not survive rollback.
 	injected := false
 	const hook = "private_runtime_fence_loss"
@@ -94,6 +120,9 @@ func runPrivateRuntimeRecordCase(t *testing.T, db *gorm.DB, repo *FileExecutionR
 	record, err := NewFileExecutionRepository(db).ReadPrivateRuntime(t.Context(), 7, item.ExecutionID)
 	if err != nil || record == nil {
 		t.Fatal(record, err)
+	}
+	if len(record.SourceReads) != len(facts.Intent.Sources) || record.SourceReads[0].NodeID != facts.Intent.Sources[0].NodeID {
+		t.Fatal("fresh Owner lost actual source proofs")
 	}
 	want, _ := json.Marshal(manifest)
 	actual, _ := json.Marshal(record.Manifest)

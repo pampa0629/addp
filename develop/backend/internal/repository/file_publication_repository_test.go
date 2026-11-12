@@ -69,8 +69,14 @@ func runPrivatePublicationCase(t *testing.T, db *gorm.DB, repo *FileExecutionRep
 	manifest := plugin.WorkflowPrivateFileManifest{SchemaVersion: plugin.WorkflowPrivateFilesAPIV1,
 		TenantID: 7, ExecutionID: item.ExecutionID, Attempt: lease.Attempt, AuthorizationID: authorizationID, ScopeDigest: issued.ScopeDigest,
 		Deadline: running.StartedAt.Add(time.Minute), WorkflowJSON: `{"tasks":[]}`, Outputs: []string{target.NodeID}}
+	var reads []PrivateFileSourceRead
+	for _, source := range facts.Intent.Sources {
+		set, _ := plugin.NewQueryReadSet(source.Target)
+		reads = append(reads, PrivateFileSourceRead{NodeID: source.NodeID, ReadSet: set})
+		manifest.Inputs = append(manifest.Inputs, plugin.WorkflowPrivateFile{NodeID: source.NodeID, Size: 123, SHA256: strings.Repeat("a", 64)})
+	}
 	if err := repo.RecordPrivateRuntime(ctx, *lease, PrivateFileRuntimeRecord{RuntimeExecutionID: id,
-		Manifest: manifest, OwnerInstanceID: "publication-fixture", InputDirectory: directory}); err != nil {
+		Manifest: manifest, OwnerInstanceID: "publication-fixture", InputDirectory: directory, SourceReads: reads}); err != nil {
 		t.Fatal(err)
 	}
 	otherLease := *lease

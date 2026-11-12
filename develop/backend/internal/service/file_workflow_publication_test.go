@@ -80,8 +80,14 @@ func TestPrivateFilePublicationProviderSequence(t *testing.T) {
 			manifest := plugin.WorkflowPrivateFileManifest{ExecutionID: item.ExecutionID, TenantID: 3,
 				Attempt: lease.Attempt, AuthorizationID: authorizationID, ScopeDigest: issued.ScopeDigest,
 				Outputs: []string{target.NodeID}}
+			var reads []repository.PrivateFileSourceRead
+			for _, source := range facts.Intent.Sources {
+				set, _ := plugin.NewQueryReadSet(source.Target)
+				reads = append(reads, repository.PrivateFileSourceRead{NodeID: source.NodeID, ReadSet: set})
+				manifest.Inputs = append(manifest.Inputs, plugin.WorkflowPrivateFile{NodeID: source.NodeID, Size: 123, SHA256: strings.Repeat("a", 64)})
+			}
 			if err := repo.RecordPrivateRuntime(ctx, *lease, repository.PrivateFileRuntimeRecord{
-				RuntimeExecutionID: fileInputRuntimeID, Manifest: manifest, OwnerInstanceID: "fixture-instance", InputDirectory: directory,
+				RuntimeExecutionID: fileInputRuntimeID, Manifest: manifest, OwnerInstanceID: "fixture-instance", InputDirectory: directory, SourceReads: reads,
 			}); err != nil {
 				t.Fatal(err)
 			}

@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"encoding/json"
+	"reflect"
 	"strconv"
 
 	commonapi "github.com/addp/common/api"
@@ -19,6 +20,14 @@ type PrivateFileRuntimeRecord struct {
 	Manifest           plugin.WorkflowPrivateFileManifest
 	OwnerInstanceID    string
 	InputDirectory     string
+	SourceReads        []PrivateFileSourceRead
+}
+
+// Actual read-session facts keyed by the frozen DAG input node. This remains
+// Owner-private; neither the declaration nor lineage can replace these reads.
+type PrivateFileSourceRead struct {
+	NodeID  string               `json:"node_id"`
+	ReadSet *plugin.QueryReadSet `json:"read_set"`
 }
 
 // Both stages lock E before O and finish with the same canonical lease fence.
@@ -76,11 +85,29 @@ func (r *FileExecutionRepository) RecordPrivateRuntime(ctx context.Context, leas
 		if m.ExecutionID != lease.ExecutionID || m.Attempt != lease.Attempt || int(m.TenantID) != lease.TenantID || strconv.FormatInt(m.AuthorizationID, 10) != issued.Authorization.ID || m.ScopeDigest != issued.ScopeDigest {
 			return commonapi.ErrConflict
 		}
+		var intent commonexecution.DevelopFileIntent
+		if err := json.Unmarshal(row.IntentJSON, &intent); err != nil {
+			return err
+		}
+		if len(record.SourceReads) != len(intent.Sources) || len(m.Inputs) != len(intent.Sources) {
+			return commonapi.ErrConflict
+		}
+		for i, source := range intent.Sources {
+			proof := record.SourceReads[i]
+			if proof.NodeID != source.NodeID || m.Inputs[i].NodeID != source.NodeID || proof.ReadSet == nil ||
+				len(proof.ReadSet.Paths) != 1 || !reflect.DeepEqual(proof.ReadSet.Paths[0], source.Target) {
+				return commonapi.ErrConflict
+			}
+		}
+		reads, err := json.Marshal(record.SourceReads)
+		if err != nil {
+			return err
+		}
 		raw, err := json.Marshal(m)
 		if err != nil {
 			return err
 		}
-		return tx.Model(row).Updates(map[string]interface{}{"runtime_execution_id": record.RuntimeExecutionID, "runtime_manifest_json": raw, "version": row.Version + 1}).Error
+		return tx.Model(row).Updates(map[string]interface{}{"runtime_execution_id": record.RuntimeExecutionID, "runtime_manifest_json": raw, "source_read_proofs_json": reads, "version": row.Version + 1}).Error
 	})
 }
 
@@ -124,7 +151,13 @@ func (r *FileExecutionRepository) ReadPrivateRuntime(ctx context.Context, tenant
 	if err := json.Unmarshal(row.RuntimeManifestJSON, &manifest); err != nil {
 		return nil, err
 	}
-	return &PrivateFileRuntimeRecord{RuntimeExecutionID: *row.RuntimeExecutionID, Manifest: manifest, OwnerInstanceID: row.InputOwnerInstanceID, InputDirectory: row.InputDirectory}, nil
+	var reads []PrivateFileSourceRead
+	if len(row.SourceReadProofsJSON) != 0 {
+		if err := json.Unmarshal(row.SourceReadProofsJSON, &reads); err != nil {
+			return nil, err
+		}
+	}
+	return &PrivateFileRuntimeRecord{RuntimeExecutionID: *row.RuntimeExecutionID, Manifest: manifest, OwnerInstanceID: row.InputOwnerInstanceID, InputDirectory: row.InputDirectory, SourceReads: reads}, nil
 }
 
 // ReadForDispatch returns the original private binding before the first I/O.

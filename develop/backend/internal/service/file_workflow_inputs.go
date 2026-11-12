@@ -35,13 +35,14 @@ type fileWorkflowInputCleanup struct {
 }
 
 type fileWorkflowInputs struct {
-	ctx        context.Context
-	cancel     context.CancelCauseFunc
-	directory  string
-	instanceID string
-	runtimeID  string
-	sources    []*fileSourceReader
-	manifest   plugin.WorkflowPrivateFileManifest
+	ctx         context.Context
+	cancel      context.CancelCauseFunc
+	directory   string
+	instanceID  string
+	runtimeID   string
+	sources     []*fileSourceReader
+	manifest    plugin.WorkflowPrivateFileManifest
+	sourceReads []repository.PrivateFileSourceRead
 
 	prepared        bool
 	attempted       bool
@@ -135,6 +136,7 @@ func prepareFileWorkflowInputs(ctx context.Context, instanceID string, authority
 			return b, errFileWorkflowInputs
 		}
 		b.manifest.Inputs = append(b.manifest.Inputs, plugin.WorkflowPrivateFile{NodeID: source.NodeID, Size: receipt.Size, SHA256: receipt.SHA256})
+		b.sourceReads = append(b.sourceReads, repository.PrivateFileSourceRead{NodeID: source.NodeID, ReadSet: receipt.ReadSet.Clone()})
 	}
 	b.prepared = true
 	if err := b.live(); err != nil {
@@ -211,7 +213,7 @@ func (b *fileWorkflowInputs) Upload(ctx context.Context, connection plugin.Conne
 	defer stop()
 	b.attempted = true
 	b.runtimeID = runtimeID
-	if err := record(callCtx, repository.PrivateFileRuntimeRecord{RuntimeExecutionID: runtimeID, Manifest: cloneFileWorkflowManifest(b.manifest), OwnerInstanceID: b.instanceID, InputDirectory: b.directory}); err != nil {
+	if err := record(callCtx, repository.PrivateFileRuntimeRecord{RuntimeExecutionID: runtimeID, Manifest: cloneFileWorkflowManifest(b.manifest), OwnerInstanceID: b.instanceID, InputDirectory: b.directory, SourceReads: b.sourceReads}); err != nil {
 		return err
 	}
 	if err := b.live(); err != nil {

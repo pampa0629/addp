@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"github.com/addp/common/engine/plugin"
 	"io"
+	"reflect"
 	"testing"
 	"time"
 
@@ -53,6 +54,14 @@ func TestFileWorkflowInputsDurableOwnerRecordBeforeRuntimeCreate(t *testing.T) {
 		actual, _ := json.Marshal(persisted.Manifest)
 		if id != persisted.RuntimeExecutionID || !bytes.Equal(expected, actual) {
 			t.Error("journal did not retain original full request")
+		}
+		if len(persisted.SourceReads) != len(frozen.Intent.Sources) {
+			t.Fatal("actual source reads were not persisted before Runtime Create")
+		}
+		for i, source := range frozen.Intent.Sources {
+			if persisted.SourceReads[i].NodeID != source.NodeID || persisted.SourceReads[i].ReadSet == nil || len(persisted.SourceReads[i].ReadSet.Paths) != 1 || !reflect.DeepEqual(persisted.SourceReads[i].ReadSet.Paths[0], source.Target) {
+				t.Error("actual source proof lost its input binding")
+			}
 		}
 		if persisted.OwnerInstanceID != record.OwnerInstanceID || persisted.InputDirectory != record.InputDirectory {
 			t.Error("directory/instance ownership changed")
