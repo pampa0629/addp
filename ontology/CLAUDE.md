@@ -1,3 +1,5 @@
+2026-11-12 Transfer 创建修订 71 仅复核目标引擎版本随原规划传递及 System 独立成果初始授权的同文件变化；仅冻结 planner 来源到 d326857b59c24b50729546344abf892e6c5ed02d。原定义除 revision 外、绑定和覆盖逐字段相同，运行 12／执行读取 9 不变，不扩大任务创建、执行或用户权限。当前全量 Go／平台来源门禁另有 handler、service、claim 三项由已提交 CDC 列表筛选改动造成的来源漂移，本会话不更新这些依据，不计为通过；本轮模块 T1 与 System／Transfer PostgreSQL T2 的通过不替代该门禁或真实跨模块验收。
+
 2026-11-08 Transfer创建69／运行12／执行读取9前向复核检索续查消费来源 `a4005807a565ce1d685698310256ba68b606c79a`：data.search 2.0.0在原委托ToolCall内消费空批，零召回由exhausted证明，依据变化终止。仅更新实际变更来源的提交、摘要和用途；定义除revision外、原覆盖与绑定保持，不扩张条件、权限或效果。`make test-platform-review`、Ontology Go owner、`make test-ontology-postgres`及`make test-ontology-falkor`全部通过，含真实PG／图投影与标准入口自动清理；定义除revision外及原覆盖／绑定逐字段相同。未提交、未推送，原103项暂存树保持；不激活运行态，不代表真实模型或Hosted验收。
 
 2026-11-08 平台 Transfer 创建修订 68 前向复核 `34e19346fe84fccc77c5f5c25c52b91d54520faf` 的 execution／attempt 恢复导航，仅更新 config 文档来源；不扩张停止态 bounded/snapshot 创建、运行、权限或效果，运行修订 11／执行读取修订 8 不变。其余来源、绑定、覆盖与发布预算保持，审查不等于真实恢复验收。

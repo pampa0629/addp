@@ -177,11 +177,11 @@
       "kind": "implementation",
       "path": "transfer/backend/internal/planner/table_export.go",
       "anchor": "func validateTableTransferSpec(",
-      "commit": "b4e1dc1cc058e8a69aafdce04aebfd0e156ff435",
-      "sha256": "d82537efefa55655b5666e8b5c1624d80fae364c3006e6c89c640cd46a2cd996",
+      "commit": "d326857b59c24b50729546344abf892e6c5ed02d",
+      "sha256": "44920c78314f423701061171ef8e160eb2b041aaac3742be25d407380353f85d",
       "use": {
-        "zh-cn": "复核 Manager 一次性 FileGDB 导出，仅给未建模的 encoded 归档执行增加精确 Infra 对象目标。停止态 native table 的 bounded/snapshot、replace/append、查询与字段资格校验，以及创建权限、条件和效果保持；不执行、调度或扫描。 复核 FileGDB 单表导出的专属来源及授权约束。此改动属于 Manager 发起的导出，不扩大 Agent 的原生表任务创建范围。",
-        "en": "Reviewed Manager one-off FileGDB export, which adds an exact Infra object target for unmodeled encoded archive execution. Stopped native creation retains bounded/snapshot, replace/append, query and field checks, permissions, conditions and effects; no execution, schedule or scan. Reviewed FileGDB single-table export source and authorization constraints. This applies to Manager-initiated export and does not expand the Agent native-table task creation scope."
+        "zh-cn": "复核原规划传递实际写入目标引擎版本；初始授权独立由 System 按成果办理。停止态原生表 bounded/snapshot 创建、replace/append、查询与字段校验及权限、条件、效果保持，不扩展未建模的文件执行。",
+        "en": "Reviewed propagation of the actual target engine version into the original write plan. System handles initial grants by result separately. Stopped bounded/snapshot native-table creation, replace/append, query and field checks, permissions, conditions and effects remain unchanged; unmodeled file execution is not expanded."
       }
     },
     {
