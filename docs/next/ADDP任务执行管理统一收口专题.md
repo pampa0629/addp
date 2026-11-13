@@ -280,6 +280,30 @@ Graph 在 C→G 内、关闭／取消／归档前比较当前模块影响与原�
 
 本地标准验证：`make test-module MODULE=common GO_ONLY=1`、`make test-module MODULE=graph GO_ONLY=1`、`make test-common-postgres COMMON_POSTGRES_TEST_ARGS="--test graph"` 与 `--test execution-lifecycle`；Common基线14项，Graph10主用例、原6／9／4／8／8／4／2项及新增6／2项均已实际PASS且零SKIP／FAIL，夹具退出清理自有事实。`make test-t2-ci-registration`已通过86＋9项及登记核对；沿原必需主测试、路径发现和Linux Common PG，无新Make／workflow／服务。固定源码 `c05f2292cb361674d38d1898870431caee8f12a9` 的 [Linux Go workspace](https://github.com/pampa0629/addp/actions/runs/43351341678/job/131642870339) 与 [完整 Common PostgreSQL 15](https://github.com/pampa0629/addp/actions/runs/43351341944/job/131643546461) 均已终态 success。原始 Go 日志核实 Common execution／cleanup 及 Graph server／API／repository／service 包通过；PG 日志核实 Common基线14项、Graph10主用例、原6／9／4／8／8／4／2项及新增6／2项准确PASS、零SKIP／FAIL。PG Job于2026-11-13 10:26:48、Go Job于10:27:57（Asia/Shanghai）结束。受控授权及Common父终态不代验System私有截止审计、真实IAM、跨进程／原生图效果；其他Owner未接入本次强制比对。新图创建提交围栏、其他跨类锁／外键排列和deleting显式重新确认仍是独立缺口。未重启服务、运行Hosted或实施Graph高级恢复。
 
+### 租户任务执行到阶段追踪（待确认的最小切片）
+
+2026-11-13 用户经“调用追踪体系”会话明确委托本会话主导：租户先从Monitor中自己有权查看的任务／执行进入，必要时下钻Trace，不逐次申请平台诊断签发。已核对现有执行详情、同步Owner读取裁决、公共execution事实、enqueue/latest私有关联及短阶段SDK；平台Trace与运行日志权限保持独立。本节为具体待确认方案，未修改正式租户字段／权限／查询契约，未实现接口或页面。
+
+**首期产品路径。** 沿唯一 `/monitor/executions?execution_id=...`，保留状态、排队／运行耗时、attempt、过程事件、安全错误和Owner专业结果导航；详情内显式打开“阶段追踪”才查询，不在列表逐行探测或打开详情时自动扇出。先接已审计生产者 Orchestrator orchestration 与 Develop bounded query；其他Owner／任务类型不能仅凭引用格式合法自动开放。Manager同步preview没有execution，不人为造任务或诊断实体。
+
+**最小服务边界（待确认）。** 建议新增 Tenant `GET /api/v1/monitor/executions/by-execution-id/{execution_id}/trace-stages`，仅接受执行身份，不接受trace/span/instance ID、任意时间窗或TraceQL。入口维持当前第一方Tenant User边界，复用现有 `monitor.execution.read` 与本次User的Owner execution-read-scope；每次查询、切换执行、刷新都重新核权，不加平台逐次签发或 `monitor.trace.read`，不扩大角色默认权限。父可读不授子可读，Owner失败整份失败关闭；撤权及迟到响应不得保留旧内容。服务端从已授权权威execution解析私有enqueue/latest，再按六字段精确匹配Tempo样本；不把私有配置或引用直接放入通用Observation。
+
+| 项目 | 首期拟定契约 |
+| --- | --- |
+| 可见范围 | 最多两个已持久阶段锚点；六字段精确匹配，且为已审计Owner的addp.execution根，phase/kind/outcome满足既有闭集和生产者契约，attempt从实际样本取得。enqueue槽另须phase=enqueue、attempt=0；latest正常为claim/dispatch/terminal，可属于旧attempt，不伪装当前进度。相同引用只查询一次、保留各来源槽位分别核验；latest误指enqueue仍属契约异常，不能为去重放宽。 |
+| 租户字段 | 槽位enqueue/latest、阶段、真实attempt、阶段动作结果、起止时间、短阶段耗时；Owner名复用已有execution模块。不返回trace/span ID、内部启动实例、运行节点、HTTP路由、ParentID、Links/Edges、整Trace计数／时长、日志正文或私有业务配置。 |
+| 可用性 | 分清未记录关联、精确阶段样本可读、当前未找到样本、暂不可查询；各槽独立说明超出查询窗口，不推断过期／丢弃，也不连带隐藏另一个可查槽。畸形引用、样本错绑、全局预算／上游失败使阶段查询失败且不返回部分样本，不降格为正常未命中；原execution详情与事件仍按原接口读取。 |
+| 查询与采样 | 在Owner裁决前，使用main.go同一TraceService一次身份2／Monitor8准入及一次5秒Context，涵盖Owner／记录读取／Tempo／解码／响应，返回前再检查原Context，不声称可抢占CPU解码。先按同Tenant内部行取得准确Owner，仅裁决这一Owner；沿现有Authorizer，registry与单Owner RPC串行，整体通过同一callUpstream占一个上游槽（不扇出4个Owner），Tempo同池，不新建池。裁剪前完整候选Detail（含不展示Span及Link）累计JSON≤2MiB／Span≤1000／实例≤100；每次原始OTLP响应仍按既有独立2MiB限制，不另改成原始字节累计限额。Trace数沿原100上限，本切片来源至多两个。保留普通5%、慢1秒、尾采样120秒、72小时／20GiB及原采样策略，不强制留样、不重放业务拿样本。 |
+| 覆盖限制 | 六字段仅证明精确锚点，不证明HTTP祖先、兄弟、子执行或整Trace归属；首期不沿Link跳转／递归。Orchestrator dispatch下游可能创建另有Owner权限的Develop子执行，不能凭父可读开放子Trace。不把两阶段包装成完整跨服务瀑布图；总任务耗时继续取execution。 |
+
+每个锚点的内部查询时间窗由服务端单独从其真实StartedAt确定为 `[StartedAt, min(StartedAt+现有1小时上限, 查询时刻)]`，同时服从现有72小时查询政策；超政策或未来时间只说明当前不可查询。两锚点可相隔多日，不把execution.created_at→completed_at当一条平台查询窗。用户不提交时间范围，不通过延长等待、重查或重放业务补齐样本。
+
+**职责。** 本会话负责Monitor执行页／详情、Owner授权查询编排、租户接口／DTO／Swagger与契约、状态失效和验收矩阵。“调用追踪体系”会话按用户明确授权直接协作，已回执精确锚点边界；待本方案确认后负责tracequery精确匹配与最小安全投影、复用TraceService总预算及对应后端测试，必要的Common SDK修改先另报。本轮不需改SDK或采集，不重复开发页面或改平台Trace／日志能力；各自通过publish-main只提交归属范围。
+
+**最小验收。** T1核跨租户／同租户无Owner权限、撤权不发Tempo查询、父可读子不可读、六字段逐项错绑、HTTP及同Trace其他Span不输出、不返回隐藏节点数量／ID、enqueue/latest去重、旧attempt真实展示、无关联／未命中／超窗口／解析及上游失败分别表达，以及共用总期限／并发／字节／Span预算。既有Monitor PG门禁验证授权后读取权威记录、不写业务状态、父子过滤和私有字段不泄露。Monitor／Console T3覆盖唯一可恢复详情地址、按需加载、切换／撤权／关闭后的旧响应丢弃、四主题及移动布局；正式User→Gateway→Owner→Tempo实链另行明确身份与运行验收，不用受控T1/T3或旧平台Trace实链代替。预计沿 `make test-module MODULE=monitor`、`make test-monitor-postgres`、既有Monitor前端门禁及对应路径发现；实施前核对并补足真实入口登记。本轮仅源码与跨会话只读对账，没有运行新测试、重启、Hosted、容量或定时任务。
+
+确认点是新增租户安全字段与执行授权到Trace阶段的消费语义：同意首期只读精确阶段锚点、保留现有Monitor＋Owner入口权限、隐藏技术ID及平台原始Trace／日志后，才按术语→正式规范→后端／前端顺序实施。若用户需要首期就是完整跨服务瀑布图，应先设计更充分的执行归属证明，不能在现有六字段上自动扩大。
+
 ## 七、确认范围与协作分工
 
 用户已确认由本会话统一牵头，正式契约先提交，按 Common → Graph → Cleanup 实施；已确认细节直接推进。已批准的补充边界包括 Graph 窄 reconcile／原目标 reopen、Cleanup 安全展示、目的限定执行授权、专业结果窄读取、Meta／Manager 独立治理和显式配对、原生三身份／双入口、Engine 授权用途分离、Manager 专属 CI 基线以及 Transfer capture_cleanup 连接用途。
