@@ -2749,7 +2749,7 @@ class FormalFileClient(OverlayClient):
         if path.endswith('/scan/run/manual'):
             self.calls.append((method,path,body));name=body['targets'][0].split('/path/')[1].split('?')[0]
             identifier='deep-'+name;self.scans.append(identifier);return SimpleNamespace(payload={'execution_id':identifier})
-        if path.endswith('/read-checks/manager-preview'):
+        if path.endswith('/read-observations/current-source'):
             self.calls.append((method,path,body));allowed=any(row['catalog_path']==body['targets'][0] and row['revocation'] is None for row in self.grants.values())
             if expected!=((200,) if allowed else (403,)):raise m.SuiteError('read-check mismatch')
             return SimpleNamespace(payload={'observed_at':'2026-11-12T00:00:00Z'} if allowed else {})
