@@ -29,7 +29,7 @@ function fakeFrontend() {
   writeFileSync(resolve(dependency, 'package.json'), JSON.stringify({ exports: { './cli': './cli.cjs' } }))
   writeFileSync(resolve(dependency, 'cli.cjs'), `
     const { fork } = require('node:child_process')
-    const { writeFileSync, mkdirSync, rmSync } = require('node:fs')
+    const { writeFileSync, mkdirSync, rmSync, renameSync } = require('node:fs')
     const { resolve } = require('node:path')
     const run = JSON.parse(process.env.ADDP_BROWSER_RUN)
     if (process.argv.includes('--serve')) {
@@ -51,7 +51,8 @@ function fakeFrontend() {
       mkdirSync(run.outputDir)
       const child = fork(__filename, ['--serve', ...process.argv.slice(2)], { stdio: ['ignore', 'ignore', 'inherit', 'ipc'] })
       child.once('message', ({pid}) => {
-        writeFileSync('scope.json', JSON.stringify({ ...run, fixturePID: pid }))
+        writeFileSync('scope.json.pending', JSON.stringify({ ...run, fixturePID: pid }))
+        renameSync('scope.json.pending', 'scope.json')
         if (!process.argv.includes('--wait')) process.exit(process.argv.includes('--fail') ? 7 : 0)
       })
       process.on('SIGINT', () => process.exit(0))
