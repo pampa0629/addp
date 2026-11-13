@@ -302,9 +302,9 @@ MinIO 小图、NFS 单文件及 MSK 结果分别判定；MSK 只在该扩展创�
 | --- | --- |
 | MinIO 无定位小图 | [布局修复与历史验收](../evidence/资源读取与预览历史证据.md#tiff-cog-布局误判--有界格式与未知状态修复)保留 `9b4fc5f7ae529100b8d263fd1de4e392a41c9b97`／Job `123998948462` 的有界小图 Hosted；该轮显示范围按原记录使用，不由后来的像素渲染扩展追认。overview 负例另有 Linux 真实失败、取消／未执行及后续同修复完整补证，不用正向 Hosted 替代负例门禁。 |
 | MinIO 刷新＋NFS 单文件自然到期 | [固定 Hosted 证据](../evidence/资源读取与预览历史证据.md#nfs-tiff-渲染授权自然到期与清理--hosted-t4)：`81d36a8d7a14c158935e4b0baa0b0236dc819223`、Job `129907983192` 已核四格式回归、MinIO 单项刷新、NFS 灰阶／透明像素、403→206→403、到期详情 404 与完整清理。前两轮分别在 IMG 目录可见性、TIFF 完整名／时间戳比对失败，未执行的 TIFF 或 NFS 阶段不追认通过；本地文档门禁超时与后续 Linux 结果分别保留。 |
-| MSK 实现与本地专项 | [MSK 接入与分层门禁](../evidence/资源读取与预览历史证据.md#msk-纳入-tiff-完整组成2026-11-12)及[后续修复与实操记录](../evidence/资源读取与预览历史证据.md#tiff-285-已应用迁移被原位修改--system-启动阻断2026-11-12)保留本地普通用户 MSK 结果、迁移已应用后摘要漂移导致的启动失败、修复和各层门禁。原单文件／PAM 证据、本地 MSK 结果及确定性 runner 不替代新增自动化 Hosted。 |
-| MSK 首轮 Hosted 失败 | 上述后续记录中的产品源码 `b5f3bcdc9f7e636d195bb01d41b7e7f50c7b0ed5`、Job `131265320291` 以扫描计数断言失败。实际已识别三文件、两逻辑项，MSK 未漏识别；单文件 NFS 渲染／到期和其他格式有各自证据，但 MSK 的正式组成核验、成员 Range、COG／mask、撤权及成果删除均未执行。整套仍失败，`cleanup=passed`／Infra 零残留不改变业务结果。 |
-| MSK 计数修复后 | `c139308afd53ec26af6720e0cb763bb8f9471a32` 修正物理／逻辑计数判定，本地 `make test-manager-online-runner`、`make test-format-documentation` 通过；自然 Platform Job `131434665099` 在前端隔离测试失败，未进入 Manager 验收脚本门禁，不计其 CI 通过。修复后完整 MSK 自动化 Hosted 成功证据仍缺，须另行获准固定源码复验；本次整理不触发新运行。 |
+| MSK 实现与本地专项 | [MSK 接入与分层门禁](../evidence/资源读取与预览历史证据.md#msk-纳入-tiff-完整组成2026-11-12)、[本机实操与清理](../evidence/资源读取与预览历史证据.md#msk-singlemulti-本机普通用户实操与清理2026-11-12)及[自动化入口](../evidence/资源读取与预览历史证据.md#msk-自动化验收入口与本地门禁2026-11-12)分别定位；[285 迁移启动阻断与恢复](../evidence/资源读取与预览历史证据.md#tiff-285-已应用迁移被原位修改--system-启动阻断2026-11-12)保留其独立记录。原单文件／PAM、本地 MSK 及确定性 runner 不替代新增自动化 Hosted。 |
+| MSK 首轮 Hosted 失败 | [计数失败审计](../evidence/资源读取与预览历史证据.md#msk-hosted-计数失败与修复后待验2026-11-13)中的产品源码 `b5f3bcdc9f7e636d195bb01d41b7e7f50c7b0ed5`、Job `131265320291` 以扫描计数断言失败。实际已识别三文件、两逻辑项，MSK 未漏识别；单文件 NFS 渲染／到期和其他格式有各自证据，但 MSK 的正式组成核验、成员 Range、COG／mask、撤权及成果删除均未执行。整套仍失败，`cleanup=passed`／Infra 零残留不改变业务结果。 |
+| MSK 计数修复后 | [修复后门禁与待验范围](../evidence/资源读取与预览历史证据.md#计数修复的自然-ci-与未覆盖范围)：`c139308afd53ec26af6720e0cb763bb8f9471a32` 修正物理／逻辑计数判定，本地 `make test-manager-online-runner`、`make test-format-documentation` 通过；自然 Platform Job `131434665099` 在前端隔离测试失败，未进入 Manager 验收脚本门禁，不计其 CI 通过。修复后完整 MSK 自动化 Hosted 成功证据仍缺，须另行获准固定源码复验；本次整理不触发新运行。 |
 
 BigTIFF、任意布局／容量、Float64 地图渲染和专业影像生产不在这些限定结论内；其他历史截图、原件、Native／T1／T2 与真实 Hosted 按各自实际范围使用，不把局部通过扩大为当前源码或整轮 CI 全部通过。
 
