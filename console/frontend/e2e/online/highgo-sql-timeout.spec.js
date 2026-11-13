@@ -29,9 +29,12 @@ async function preview(page, expected) {
   const payload = await json(await response, 'HighGo normal preview')
   expect(payload.preview_type).toBe('table')
   expect(payload.data.rows).toEqual(rows)
-  expect(payload.data.total).toBe(1)
+  // A basic scan has no exact row-count fact; preview must use its bounded page.
+  expect(payload.data.total).toBeNull()
+  expect(payload.data.has_more).toBe(false)
   const frame = frameOf(page)
   await expect(frame.getByRole('cell', { name: 'HighGo V4.5 Business', exact: true })).toBeVisible()
+  await expect(frame.locator('.el-table__body-wrapper tr')).toHaveCount(1)
   await expect(frame.getByText('显示 2 / 2 个字段', { exact: true })).toBeVisible()
   await expect(frame.getByTestId('preview-failure')).toHaveCount(0)
   return payload.data.rows
