@@ -210,10 +210,13 @@ def timeout_barrier(operation, phase):
     holder = ("(SELECT pid FROM pg_stat_activity WHERE datname='highgo' AND usename='sysdba' "
               f"AND application_name='{marker}' AND state='active' AND wait_event='PgSleep')")
     statement = f"""SELECT json_build_object('holder_id',{holder},'waiters',COALESCE((
-        SELECT json_agg(json_build_object('id',pid,'state',state,'wait_event_type',wait_event_type) ORDER BY pid)
-        FROM pg_stat_activity WHERE datname='highgo' AND usename='business' AND state='active'
+        SELECT json_agg(json_build_object('id',pid,'state',state,'wait_event_type',wait_event_type,
+            'operation',CASE WHEN query LIKE '%pg_total_relation_size(%' THEN 'table_catalog' ELSE 'table_read' END) ORDER BY pid)
+        FROM pg_stat_activity a WHERE datname='highgo' AND usename='business' AND state='active'
           AND wait_event_type='Lock' AND {holder}=ANY(pg_blocking_pids(pid))
-          AND query ~* 'FROM[[:space:]]+("?addp_business"?[.])?"?addp_engine_probe"?([[:space:];]|$)'
+          AND EXISTS (SELECT 1 FROM pg_locks l WHERE l.pid=a.pid AND l.locktype='relation'
+            AND NOT l.granted AND l.relation='addp_business.addp_engine_probe'::regclass)
+          AND (query LIKE '%pg_total_relation_size(%' OR query ~* 'FROM[[:space:]]+("?addp_business"?[.])?"?addp_engine_probe"?([[:space:];]|$)')
         ),'[]'::json));"""
 
     def snapshot():
@@ -223,9 +226,10 @@ def timeout_barrier(operation, phase):
                 and isinstance(result['waiters'], list), 'invalid native barrier snapshot')
         ids = set()
         for row in result['waiters']:
-            require(isinstance(row, dict) and set(row) == {'id', 'state', 'wait_event_type'}
+            require(isinstance(row, dict) and set(row) == {'id', 'state', 'wait_event_type', 'operation'}
                     and type(row['id']) is int and row['id'] > 0 and row['id'] not in ids
-                    and row['state'] == 'active' and row['wait_event_type'] == 'Lock',
+                    and row['state'] == 'active' and row['wait_event_type'] == 'Lock'
+                    and row['operation'] in ('table_catalog', 'table_read'),
                     'invalid native waiter identity')
             ids.add(row['id'])
         return result

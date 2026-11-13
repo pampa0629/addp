@@ -25,7 +25,7 @@ def report():
         for key, stage, held in [('before', 'acquire', True), ('during', 'observe', True),
                                   ('after_timeout', 'observe', True), ('released', 'release', False)]:
             snapshots[key] = dict(run_id='owned', phase=phase, stage=stage, holder_id=holder, held=held,
-                waiters=[dict(id=200, state='active', wait_event_type='Lock')] if key == 'during' else [])
+                waiters=[dict(id=200, state='active', wait_event_type='Lock', operation='table_read')] if key == 'during' else [])
         result[phase] = dict(**snapshots, elapsed_ms=55_000 if phase == 'manager' else 120_000,
             code='preview_sql_execution_timeout' if phase == 'manager' else 'sql_execution_timeout',
             heading='数据库 SQL 执行超时', recovery_rows=[dict(id=1, engine_name='HighGo V4.5 Business')],
@@ -60,6 +60,14 @@ class HighGoTimeoutTest(unittest.TestCase):
 
     def test_complete_browser_and_native_evidence_pass(self):
         self.assertEqual(OWNER.validate_browser(report(), expected()), report())
+
+    def test_catalog_sql_wait_is_named_separately_from_table_content_read(self):
+        value = report()
+        value['manager']['during']['waiters'][0]['operation'] = 'table_catalog'
+        self.assertEqual(OWNER.validate_browser(value, expected()), value)
+        value['manager']['during']['waiters'][0]['operation'] = 'unknown'
+        with self.assertRaisesRegex(RuntimeError, 'invalid native waiter'):
+            OWNER.validate_browser(value, expected())
 
     def test_rejects_wrong_scope_missing_phase_generic_timeout_and_missing_recovery(self):
         for fault in ('identity', 'permissions', 'case', 'missing', 'generic', 'recovery', 'early', 'sql', 'id'):

@@ -103,8 +103,7 @@ class HostedHighGoTest(unittest.TestCase):
         self.assertFalse(self.host.trace.exists())
         self.assertFalse(self.host.secrets.exists())
         for flags in ({'ADDP_ONLINE_HOSTED': '0'}, {'GITHUB_ACTIONS': 'false'},
-                      {'ONLINE_SUITE_INPUT': 'redis-consumer-flow'}, {'ADDP_TEST_UNAME_M': 'aarch64'},
-                      {'ADDP_ONLINE_HIGHGO_CASE': 'unknown'}):
+                      {'ONLINE_SUITE_INPUT': 'redis-consumer-flow'}, {'ADDP_TEST_UNAME_M': 'aarch64'}):
             result = self.run_gate(check=True, **flags)
             self.assertNotEqual(result.returncode, 0)
             self.assertFalse(self.host.trace.exists())
@@ -132,6 +131,19 @@ class HostedHighGoTest(unittest.TestCase):
                 self.assertIn('highgo-fixture:stop', trace)
                 self.assertIn('infra-down', trace)
                 self.assertFalse(self.host.secrets.exists())
+
+class HostedHighGoTimeoutTest(unittest.TestCase):
+    # These HighGo-only cases must not propagate to other suites which reuse
+    # HostedHighGoTest as their lifecycle harness.
+    setUp = HostedHighGoTest.setUp
+    tearDown = HostedHighGoTest.tearDown
+    run_gate = HostedHighGoTest.run_gate
+
+    def test_timeout_preflight_rejects_unknown_scope_without_mutation(self):
+        result = self.run_gate(check=True, ADDP_ONLINE_HIGHGO_CASE='unknown')
+        self.assertNotEqual(result.returncode, 0)
+        self.assertFalse(self.host.trace.exists())
+        self.assertFalse(self.host.secrets.exists())
 
     def test_timeout_case_has_only_highgo_query_services_and_pre_stop_revocation(self):
         result = self.run_gate(ADDP_ONLINE_HIGHGO_CASE='sql-timeout')

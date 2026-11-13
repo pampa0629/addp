@@ -100,9 +100,10 @@ def validate_browser(result, expected):
                     'HighGo real waiter or source cancellation evidence missing')
             if waiters:
                 row = waiters[0]
-                require(isinstance(row, dict) and set(row) == {'id', 'state', 'wait_event_type'}
+                require(isinstance(row, dict) and set(row) == {'id', 'state', 'wait_event_type', 'operation'}
                         and type(row['id']) is int and row['id'] > 0 and row['id'] != holder
-                        and row['state'] == 'active' and row['wait_event_type'] == 'Lock', 'invalid native waiter')
+                        and row['state'] == 'active' and row['wait_event_type'] == 'Lock'
+                        and row['operation'] in ('table_catalog', 'table_read'), 'invalid native waiter')
         for key in ('execution_id', 'recovery_execution_id'):
             value = proof[key]
             if phase == 'manager':

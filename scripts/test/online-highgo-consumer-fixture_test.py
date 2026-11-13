@@ -44,9 +44,13 @@ class HighGoTimeoutBarrierTest(unittest.TestCase):
         self.assertEqual(args[:4], ('docker', 'exec', '-d', FIXTURE.HIGHGO))
         self.assertIn('LOCK TABLE addp_business.addp_engine_probe IN ACCESS EXCLUSIVE MODE', args[-1])
         self.assertIn('pg_sleep(240)', args[-1])
-        waiting = dict(id=456, state='active', wait_event_type='Lock')
-        observed, _, _ = self.run_barrier('observe', [json.dumps(dict(holder_id=123, waiters=[waiting]))])
+        waiting = dict(id=456, state='active', wait_event_type='Lock', operation='table_read')
+        observed, _, sql = self.run_barrier('observe', [json.dumps(dict(holder_id=123, waiters=[waiting]))])
         self.assertEqual(observed['waiters'], [waiting])
+        observation = sql.call_args.args[1]
+        self.assertIn('l.pid=a.pid', observation)
+        self.assertIn("NOT l.granted AND l.relation='addp_business.addp_engine_probe'::regclass", observation)
+        self.assertIn("query LIKE '%pg_total_relation_size(%'", observation)
         released, _, sql = self.run_barrier('release', [holding, 't', json.dumps(dict(holder_id=None, waiters=[]))])
         self.assertFalse(released['held'])
         termination = sql.call_args_list[1].args[1]
@@ -88,9 +92,9 @@ class HighGoTimeoutBarrierTest(unittest.TestCase):
 
     def test_observation_rejects_duplicate_nonlock_or_unbounded_payload(self):
         self.receipt()
-        valid = dict(id=456, state='active', wait_event_type='Lock')
+        valid = dict(id=456, state='active', wait_event_type='Lock', operation='table_read')
         for waiters in ([valid, valid], [dict(valid, wait_event_type='IO')],
-                        [dict(valid, id=True)], [dict(valid, query='private SQL')]):
+                        [dict(valid, id=True)], [dict(valid, operation='unknown')], [dict(valid, query='private SQL')]):
             with self.subTest(waiters=waiters), self.assertRaisesRegex(RuntimeError, 'waiter identity'):
                 self.run_barrier('observe', [json.dumps(dict(holder_id=123, waiters=waiters))])
 
