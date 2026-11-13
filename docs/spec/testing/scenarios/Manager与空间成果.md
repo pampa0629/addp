@@ -151,13 +151,53 @@ case 路由、默认完整场景保留、未知值只读拒绝、子场景失败
 
 ### Surfer GRD 读取
 
+阅读导航：[格式准入](#grd-格式准入) · [四份样例](#grd-四份样例) · [页面与原件](#grd-页面与原件) · [清理与能力边界](#grd-清理与能力边界) · [分版本证据](#grd-分版本证据)。
+
+#### GRD 格式准入
+
 按内容认领 `DSRB` 的 Surfer 7 二进制 `.grd`（版本 1/2、单波段 Float64、零旋转、完整单 GRID/DATA）、`DSBB` 的 Surfer 6 Binary（单波段 Float32、完整头和全部节点）和 `DSAA` 的 Surfer 6 ASCII（五行头、完整 Float64 文本数值）。三种主体均不超过 64 MiB。拒绝其他同后缀格式、非有限值、断层／尾随结构及当前 GDAL 无法等价表达的版本 1 范围缺失值；不读取旁文件，不据 XY 数值推导 CRS，不新增 GRD 导出。完整产品契约见[媒体与地图数据集](../../builtin-formats/媒体与地图数据集.md)。
 
-沿现有 `native-raster-media` 部署和十项普通 User 权限增加两份自建 5×3 非方形网格，分别为版本 1 的经纬度外观 XY 和版本 2 的投影外观 XY；版本 2 还包含大于 BlankValue 的有效数值。独立物理 oracle 核对完整原字节与 SHA-256、15 个 Float64、14 个有效节点、NoData、上下行顺序及半像元网格；Meta 不发布空间能力；Manager 授权预览提供 GS7BG、单波段、版本和节点原点／间距／形状／范围。真实 Console iframe 的属性页、预览页及下载按钮逐一核对原文件哈希、截图、无地图、无破图、无 COG 生成入口；不创建 GRD 任务或产物，不宣称 GRD 缓存、地图或导出通过。源字节与 Meta 前后不变，所有部署、源和 Infra 仍由既有生命周期清理并核零残留。页面就绪统一观察当前 locator 的 `GET /api/v1/manager/preview`，沿该真实请求的 Bearer 核对同一普通身份；GRD 没有快显 target，不能等待页面本不请求的 COG capability。IMG/JPEG2000 的 Range、像素和缓存重开断言保留，页面报告升 `addp.manager-raster-media-browser/v4` 并逐源要求 `source_preview_verified=true`；旧 v2 不替代该页面证明。证据为 `manager-grd.json`、`manager-grd-browser.json`、两份原文件、Meta 快照及截图；新增范围须以对应 SHA 的正式 Hosted 通过证明，历史两格式报告不替代三格式证据。
+Surfer 6 Binary 的 Native 回归须拒绝 GDAL 掩膜与精确 NoData 判定不等价的输入，不修改值或绕过原生读取。ASCII 另验证 LF、全缺失、跨读取块 token、无末尾换行，以及畸形／多余／截断／下溢拒绝；像元或原生 mask 不等价即拒绝，保留源字节。这些拒绝的 Native 证据不冒充 Hosted 已注入对应负例。
 
-在原两份 Surfer 7 数据与所有 IMG／JPEG2000 断言外增加 `grd-surfer6.grd`，共三份 GRD；Surfer 6 原件 116 字节，5×3 Float32，14 有效值、1 个精确固定 NoData，含小数和大整数。原生物理 oracle 核全部 15 值、原 Float32 类型、mask、行序、半像元网格和无 CRS；Meta／真实属性页及原下载逐一核对，`profile=surfer6_binary`、`encoding=GSBG`，不得伪造不存在的版本字段。Native 回归另须拒绝 GDAL 掩膜与精确 NoData 判定不等价的输入，不修改值或绕过原生读取。不增加服务、权限、超时或 GRD 产物，不重用两份 Surfer 7 的通过结论认定 Surfer 6 已通过；现行三份原件／Meta／browser v3／截图及完整清理须由同一固定源码 Hosted 验证。
+#### GRD 四份样例
 
-在前三份 GRD 之外增加 `grd-surfer6-ascii.grd`，共四份；以 CRLF、tab／空格和跨网格行的像元列表构造 5×3 GSAG 文本，14 有效节点与精确 Float64 NoData，覆盖高精度小数和 `2^53−1`。物理 oracle 独立核全部源字节、五行头、15 个 Float64、mask、半像元格网、无 CRS；Meta／实际属性页／按钮下载须核 `profile=surfer6_ascii`、`encoding=GSAG` 与无伪造版本。Native 另验证 LF、全缺失、跨读取块 token、无末尾换行及畸形／多余／截断／下溢拒绝；像元或原生 mask 不等价则拒绝，保留源字节。沿原三种格式的同一 Hosted case、十权限、部署及预算，保留四 COG 像元／Range／缓存／删除和清理断言；历史三份 GRD 的通过不能替代新增 ASCII。
+复用 `native-raster-media`、十项普通 User 权限、既有部署和预算，不增加服务、权限、超时或 GRD 产物。四份自建样例均为 5×3 非方形单波段网格、14 个有效节点及一个 NoData，不因 XY 外观推定坐标系：
+
+| 样例 | 类型与独有断言 |
+| --- | --- |
+| Surfer 7 v1 | `DSRB`／`GS7BG`／Float64，保留版本 1、经纬度外观 XY，仍无 CRS。 |
+| Surfer 7 v2 | `DSRB`／`GS7BG`／Float64，保留版本 2、投影外观 XY；大于 BlankValue 的数值仍须按有效值核对。 |
+| `grd-surfer6.grd` | `DSBB`／`GSBG`／Float32，原件 116 字节，含小数和大整数、精确固定 NoData；`profile=surfer6_binary`，不得伪造不存在的版本字段。 |
+| `grd-surfer6-ascii.grd` | `DSAA`／`GSAG`／Float64，五行头、CRLF、tab／空格及跨网格行列表，含高精度小数和 `2^53−1`、精确 Float64 NoData；`profile=surfer6_ascii`，无版本字段。 |
+
+独立物理 oracle 逐份核完整原字节与 SHA-256、全部 15 个原类型数值、精确 NoData 与 mask、上下行顺序、节点原点／间距／形状／范围及半像元网格。Meta 不发布推断的空间能力；Manager 授权预览核对应驱动、单波段、Surfer 7 版本或 Surfer 6 无版本，以及节点网格事实。Float32 与 Float64 的 NoData 不混用，原类型和精度不变。
+
+#### GRD 页面与原件
+
+真实 Console iframe 的属性页、预览页和原件按钮逐份核对元数据、下载大小／哈希及截图，无地图、无破图、无 COG 生成入口。ASCII 的五行头与精确文本数值由原件及独立物理 oracle 核对，不由页面截图代替。截图按其实际可见内容使用，不据无定位 fallback／下载截图宣称 GRD 地图或属性表全量已取证。
+
+页面就绪统一观察当前 locator 的 `GET /api/v1/manager/preview`，沿该真实请求的 Bearer 核对同一普通身份；GRD 没有快显 target，不能等待页面本不请求的 COG capability。
+
+现行页面报告使用 `addp.manager-raster-media-browser/v4`，逐源要求 `source_preview_verified=true`，旧 v2 不替代该页面证明。报告归档为 `manager-grd.json`、`manager-grd-browser.json`、四份原文件、各自 Meta 快照及截图；历史轮次的实际报告版本与样例数量按其固定记录使用。
+
+#### GRD 清理与能力边界
+
+源字节与 Meta 前后不变，部署、精确源和 Infra 由既有生命周期清理并核零残留。不创建 GRD 任务或产物，不宣称 GRD 缓存、地图或导出通过；未知 CRS 不定位，不读取旁文件，不生成 GRD 快显。
+
+同一 case 原有 IMG／JPEG2000 的四份 COG 仍完整核像元、Range、缓存重开、任务／成果／物理删除及清理。这些 COG 属于原媒体栅格回归，不作为 GRD 生成或缓存证明；旧 IMG／JPEG2000 报告也不替代新增 GRD 验收。
+
+#### GRD 分版本证据
+
+固定源码、实际 Job、原始产物、失败／取消、清理结果和未覆盖项在以下证据正文维护；两份、三份、四份 GRD 的结论分别使用，旧样例通过不追认后续格式扩展：
+
+| 阶段 | 固定记录与边界 |
+| --- | --- |
+| Surfer 7 首轮失败 | [失败留证](../evidence/资源读取与预览历史证据.md#surfer-7-grd-读取首轮--hosted-失败留证)：`69623c8847c97fae0bb92d6b42fef281702fbd46`、Job `121439055657`。数值与 API 原件已核，但等待不存在的 COG capability 超时；GRD 属性页／真实下载按钮及浏览器后 Meta 快照未验，清理通过不改变整 case 失败。 |
+| Surfer 7 两份复验 | [固定复验](../evidence/资源读取与预览历史证据.md#surfer-7-grd-读取复验--普通-user-hosted-t4)：`7d8d738c1839c267c4259e2bd713d083110266e1`、Job `121493786622`。仅两份 Surfer 7 与原媒体回归，不代表 Surfer 6 或 NFS／FTP 专项通过。 |
+| Surfer 6 Binary 三份 | [Binary 扩展证据](../evidence/资源读取与预览历史证据.md#surfer-6-binary-扩展及三份-grd-读取--普通-user-hosted-t4)：`48aae0a4dbf79131edffd143bedb3407d20bfd18`、Job `121589927858`。保留首个 Native Job 在下载耗时后、测试未完成时取消及后续同 SHA 的实际结果，不追认取消为通过。 |
+| Surfer 6 ASCII 四份 | [ASCII 扩展证据](../evidence/资源读取与预览历史证据.md#surfer-6-ascii-扩展及四份-grd-读取--普通-user-hosted-t4)：`ff9e2fb512507d5e4ff1a4b1983be38c142dadfe`、Job `121910269484`。覆盖四份 GRD 与原媒体回归；保留早期 PROJ 环境失败、主动停止的重复 subset，以及父 Platform workflow 取消，不由分项成功推定整轮 CI 通过。 |
+
+Hosted 限于受验的有界单文件读取与原件下载；近 NoData 误掩膜、畸形／截断／尾随／下溢等拒绝分别按 Native 记录使用，不认证任意 ASCII 编码、其他 GRD 变体、写出、旁文件定位、NFS／FTP 专项或容量。
 
 ### KML 实际页面导出
 
