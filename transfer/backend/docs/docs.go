@@ -1087,6 +1087,70 @@ const docTemplate = `{
                 ]
             }
         },
+        "/runtime/cdc-risk-observations": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "仅 addp-monitor 平台服务身份读取当前 CDC 任务风险清单，不含业务数据或私有捕获资源。| Only the addp-monitor platform Service reads the current safe CDC risk inventory, without business data or private capture resources.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "运行时 | Runtime"
+                ],
+                "summary": "读取 CDC 任务风险观测 | Read CDC task risk observations",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "上一页最后一个任务 ID，首批为0，每批最多100项 | Last task ID from the previous page, initially zero; at most 100 items per page",
+                        "name": "after_id",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/client.TransferCDCRisks"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "transfer.cdc_risk_observation.read"
+                ]
+            }
+        },
         "/runtime/executions/{execution_id}/production-receipt": {
             "get": {
                 "security": [
@@ -3279,6 +3343,23 @@ const docTemplate = `{
                 }
             }
         },
+        "client.CDCRiskObservation": {
+            "type": "object",
+            "properties": {
+                "expires_at": {
+                    "type": "string"
+                },
+                "reason": {
+                    "type": "string"
+                },
+                "sampled_at": {
+                    "type": "string"
+                },
+                "state": {
+                    "type": "string"
+                }
+            }
+        },
         "client.ExecutionEngineAccessScope": {
             "type": "object",
             "properties": {
@@ -3373,6 +3454,56 @@ const docTemplate = `{
                     "$ref": "#/definitions/execution.FileGDBExportReadScope"
                 },
                 "tenant_id": {
+                    "type": "string"
+                }
+            }
+        },
+        "client.TransferCDCRiskItem": {
+            "type": "object",
+            "properties": {
+                "buffer": {
+                    "$ref": "#/definitions/client.CDCRiskObservation"
+                },
+                "execution_id": {
+                    "type": "string"
+                },
+                "generation": {
+                    "type": "string",
+                    "example": ""
+                },
+                "source": {
+                    "$ref": "#/definitions/client.CDCRiskObservation"
+                },
+                "state": {
+                    "type": "string"
+                },
+                "task_id": {
+                    "type": "integer"
+                },
+                "tenant_id": {
+                    "type": "integer"
+                }
+            }
+        },
+        "client.TransferCDCRisks": {
+            "type": "object",
+            "properties": {
+                "has_more": {
+                    "type": "boolean"
+                },
+                "items": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/client.TransferCDCRiskItem"
+                    }
+                },
+                "next_after_id": {
+                    "type": "integer"
+                },
+                "observed_at": {
+                    "type": "string"
+                },
+                "schema_version": {
                     "type": "string"
                 }
             }

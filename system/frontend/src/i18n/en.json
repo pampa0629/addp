@@ -760,6 +760,7 @@
           "rule": "Quality rule",
           "classification": "Data Classification",
           "cleanup_result": "Cleanup Professional Result",
+          "cdc_risk_observation": "CDC task risk observation",
           "cleanup_authorization": "Cleanup Authorization",
           "cleanup": "Cleanup Task",
           "code_set": "Code Set",

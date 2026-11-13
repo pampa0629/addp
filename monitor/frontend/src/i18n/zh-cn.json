@@ -294,6 +294,12 @@
               "title": "持续同步观测异常",
               "description": "Transfer 无法完成本次诊断采样：{error}"
             },
+            "cdc_source_recovery_lost": {
+              "title": "CDC 源端恢复能力已丢失"
+            },
+            "cdc_buffer_recovery_lost": {
+              "title": "CDC 消息恢复范围已丢失"
+            },
             "source_recovery_critical": {
               "title": "源日志恢复窗口已失效",
               "description": "捕获位点已早于源数据库当前可用日志边界，当前 capture generation 无法从原位点连续恢复。"
@@ -446,6 +452,13 @@
       "opened_at": "打开时间",
       "last_observed_at": "最近观测",
       "actions": "操作",
+      "view_cdc_task": "查看 CDC 任务",
+      "cdc_generation": "捕获代次 {generation}",
+      "cdc_reasons": {
+        "slot_missing": "任务源端逻辑槽已不存在",
+        "wal_lost": "任务所需 WAL 已丢失",
+        "buffer_position_lost": "任务消费位点已早于消息保留范围"
+      },
       "view_execution": "查看执行",
       "acknowledge": "确认",
       "acknowledged": "告警已确认",

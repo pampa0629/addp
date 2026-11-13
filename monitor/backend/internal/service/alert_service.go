@@ -22,6 +22,7 @@ var supportedAlertCodes = []string{
 	"recovery_circuit_open", "recovery_half_open", "recovery_waiting", "recovery_ready",
 	"retention_critical", "retention_degraded", "checkpoint_stalled", "diagnostics_error", "schema_change_blocked",
 	"source_recovery_critical", "source_recovery_unavailable", "source_transactions_unavailable",
+	"cdc_source_recovery_lost", "cdc_buffer_recovery_lost",
 }
 
 type observationSignal struct {
@@ -49,6 +50,7 @@ type activeAlertSignal struct {
 type AlertService struct {
 	db                  *gorm.DB
 	notificationService *NotificationService
+	cdcRiskReader       cdcRiskReader
 }
 
 func NewAlertService(db *gorm.DB, notificationService *NotificationService) *AlertService {
@@ -81,8 +83,13 @@ func (s *AlertService) Evaluate(ctx context.Context, now time.Time) error {
 	if err != nil {
 		return err
 	}
+	cdcSignals, preserve, err := s.evaluateCDCRisks(ctx, now)
+	if err != nil {
+		return err
+	}
 	signals := append(continuousSignals, ruleSignals...)
-	return s.reconcileSignals(ctx, signals, now)
+	signals = append(signals, cdcSignals...)
+	return s.reconcileSignals(ctx, signals, preserve, now)
 }
 
 func (s *AlertService) evaluateContinuousSignals(ctx context.Context, now time.Time) ([]activeAlertSignal, error) {
@@ -205,7 +212,7 @@ func deriveRuleSignal(rule monitorModels.AlertRule, executions []commonExecution
 	}, true
 }
 
-func (s *AlertService) reconcileSignals(ctx context.Context, signals []activeAlertSignal, now time.Time) error {
+func (s *AlertService) reconcileSignals(ctx context.Context, signals []activeAlertSignal, preserve []string, now time.Time) error {
 	sort.Slice(signals, func(i, j int) bool {
 		if signals[i].AlertRuleID == nil {
 			return signals[j].AlertRuleID != nil
@@ -215,7 +222,7 @@ func (s *AlertService) reconcileSignals(ctx context.Context, signals []activeAle
 		}
 		return *signals[i].AlertRuleID < *signals[j].AlertRuleID
 	})
-	activeFingerprints := make([]string, 0, len(signals))
+	activeFingerprints := append(make([]string, 0, len(signals)+len(preserve)), preserve...)
 	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		for _, signal := range signals {
 			if signal.AlertRuleID != nil {

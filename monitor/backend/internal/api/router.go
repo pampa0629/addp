@@ -206,9 +206,9 @@ func SetupRouter(
 		api.GET("/executions/:id/tree", permission(monitorauthorization.PermissionMonitorExecutionRead), executionReadMiddleware(queryService), executionHandler.GetExecutionTree)
 		api.GET("/executions/:id", permission(monitorauthorization.PermissionMonitorExecutionRead), executionReadMiddleware(queryService), executionHandler.GetExecution)
 
-		api.GET("/alerts", permission(monitorauthorization.PermissionMonitorAlertIncidentRead), executionReadMiddleware(queryService), alertHandler.ListAlerts)
-		api.POST("/alerts/:id/acknowledge", permission(monitorauthorization.PermissionMonitorAlertIncidentUpdate), executionReadMiddleware(queryService), alertHandler.AcknowledgeAlert)
-		api.POST("/alerts/:id/suppress", permission(monitorauthorization.PermissionMonitorAlertIncidentUpdate), executionReadMiddleware(queryService), alertHandler.SuppressAlert)
+		api.GET("/alerts", permission(monitorauthorization.PermissionMonitorAlertIncidentRead), alertReadMiddleware(queryService, alertService), alertHandler.ListAlerts)
+		api.POST("/alerts/:id/acknowledge", permission(monitorauthorization.PermissionMonitorAlertIncidentUpdate), alertReadMiddleware(queryService, alertService), alertHandler.AcknowledgeAlert)
+		api.POST("/alerts/:id/suppress", permission(monitorauthorization.PermissionMonitorAlertIncidentUpdate), alertReadMiddleware(queryService, alertService), alertHandler.SuppressAlert)
 		api.GET("/alert-rule-targets", permission(monitorauthorization.PermissionMonitorAlertRuleRead), alertRuleHandler.ListAlertRuleTargets)
 		api.GET("/alert-rules", permission(monitorauthorization.PermissionMonitorAlertRuleRead), alertRuleHandler.ListAlertRules)
 		api.POST("/alert-rules", permission(monitorauthorization.PermissionMonitorAlertRuleCreate), alertRuleHandler.CreateAlertRule)

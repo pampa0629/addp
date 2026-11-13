@@ -165,3 +165,5 @@ python3 scripts/infra/generate-trace-config.py prepare-development \
 `GATEWAY_METRICS_CONTROL_LISTEN` 为空时关闭；启用时显式设置 IP:端口、`GATEWAY_METRICS_CONTROL_SERVER_NAME` 和仓库外 `GATEWAY_METRICS_CONTROL_TLS_DIR`。目录提供服务器 `server.crt/server.key` 和仅信任 Prometheus 控制面身份的 `client-ca.crt`。本机监听回环地址，访问域名由部署指定并覆盖于服务器 SAN。Kubernetes 使用内部 Service DNS、可达的 Pod 监听及 Secret 投影，并由 NetworkPolicy 限制调用方。可选入口失败独立报告，不影响业务 HTTP；证书轮换沿标准进程重启生效。
 
 Prometheus 使用显式布尔值 `ADDP_METRICS_CONTROL_MTLS_ENABLED=true`，部署目录增加 `control-client.crt/control-client.key`，同时用于 OAuth 和 HTTP SD 的 TLS 客户端认证，不复用来源或中心健康证书。控制面服务端信任根仍为 `control-ca.crt`，两个 `PROMETHEUS_*_URL` 均由部署提供并严格校验服务器名称。具体入口约束和迁移边界见 [Gateway 架构](../../../gateway/docs/gateway架构说明.md#私有指标控制入口)。
+
+CDC 任务风险后台读取经现有 `GATEWAY_URL` 访问 Transfer 的固定机器端点，仅使用 `addp-monitor` 的 Platform Service Token；Gateway 不可用时相应任务风险保持未知，不影响 Monitor Ready 或其他规则评估。开发实际地址沿标准启动脚本，容器部署使用同一 Compose Gateway 地址。

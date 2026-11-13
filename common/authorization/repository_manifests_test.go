@@ -45,10 +45,13 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 		t.Fatalf("LoadRepositoryAuthorizationCatalog() error = %v", err)
 	}
 	descriptors := report.Permissions
-	if len(descriptors) != 547 {
-		t.Fatalf("descriptor count = %d, want 547", len(descriptors))
+	if len(descriptors) != 548 {
+		t.Fatalf("descriptor count = %d, want 548", len(descriptors))
 	}
 	for _, descriptor := range descriptors {
+		if descriptor.Key == "transfer.cdc_risk_observation.read" && (descriptor.Delegable || descriptor.TenantCustomizable || !reflect.DeepEqual(descriptor.AllowedScopeTypes, []string{"platform"})) {
+			t.Fatal("CDC risk inventory must remain a fixed Platform Service permission")
+		}
 		if (descriptor.Key == "service.ontology_fact.read" || descriptor.Key == "system.ontology_fact.execute") &&
 			(descriptor.TenantCustomizable || descriptor.Delegable || !reflect.DeepEqual(descriptor.AllowedScopeTypes, []string{"tenant"})) {
 			t.Fatalf("ontology fact permission escaped its fixed runtime scope: %+v", descriptor)
@@ -365,6 +368,7 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 		"system.observability_identity.read",
 		"system.runtime_registry.read",
 		"system.runtime_registry.update",
+		"transfer.cdc_risk_observation.read",
 	})
 	assertRepositoryRolePermissions(t, roles, "platform.gateway_runtime", []string{
 		"iam.api_consumer_runtime.read",

@@ -132,6 +132,7 @@ func main() {
 	emailService := service.NewEmailService(db, cfg.ConsoleBaseURL, emailSender)
 	notificationService := service.NewNotificationService(webhookService, emailService)
 	alertService := service.NewAlertService(db, notificationService)
+	alertService.SetCDCRiskReader(commonClient.NewTransferClient(cfg.GatewayURL, serviceTokenSource))
 	alertRuleService := service.NewAlertRuleService(db, alertService, systemTaskProviderLister)
 	webhookWorkerID := "monitor-webhook-" + uuid.NewString()
 	webhookDispatcher := service.NewWebhookDispatcher(

@@ -1,7 +1,15 @@
 schema_version: addp.permission_manifest/v1
 owner_module: transfer
-manifest_version: 11
+manifest_version: 12
 permissions:
+  - key: transfer.cdc_risk_observation.read
+    allowed_scope_types: [platform]
+    risk_level: low
+    tenant_customizable: false
+    delegable: false
+    status: active
+    name_i18n_key: permissions.transfer.cdc_risk_observation.read.name
+    description_i18n_key: permissions.transfer.cdc_risk_observation.read.description
   - key: transfer.cleanup_result.read
     allowed_scope_types: [tenant]
     risk_level: medium

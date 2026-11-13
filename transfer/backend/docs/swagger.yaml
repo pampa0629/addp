@@ -89,6 +89,17 @@ definitions:
       summary:
         $ref: '#/definitions/events.CleanupResultSummary'
     type: object
+  client.CDCRiskObservation:
+    properties:
+      expires_at:
+        type: string
+      reason:
+        type: string
+      sampled_at:
+        type: string
+      state:
+        type: string
+    type: object
   client.ExecutionEngineAccessScope:
     properties:
       effects:
@@ -151,6 +162,39 @@ definitions:
       source_read_scope:
         $ref: '#/definitions/execution.FileGDBExportReadScope'
       tenant_id:
+        type: string
+    type: object
+  client.TransferCDCRiskItem:
+    properties:
+      buffer:
+        $ref: '#/definitions/client.CDCRiskObservation'
+      execution_id:
+        type: string
+      generation:
+        example: ""
+        type: string
+      source:
+        $ref: '#/definitions/client.CDCRiskObservation'
+      state:
+        type: string
+      task_id:
+        type: integer
+      tenant_id:
+        type: integer
+    type: object
+  client.TransferCDCRisks:
+    properties:
+      has_more:
+        type: boolean
+      items:
+        items:
+          $ref: '#/definitions/client.TransferCDCRiskItem'
+        type: array
+      next_after_id:
+        type: integer
+      observed_at:
+        type: string
+      schema_version:
         type: string
     type: object
   client.TransferExecutionConfig:
@@ -3170,6 +3214,50 @@ paths:
       x-addp-auth-mode: permission
       x-addp-required-permissions:
       - transfer.task.execute
+  /runtime/cdc-risk-observations:
+    get:
+      description: 仅 addp-monitor 平台服务身份读取当前 CDC 任务风险清单，不含业务数据或私有捕获资源。| Only the addp-monitor
+        platform Service reads the current safe CDC risk inventory, without business
+        data or private capture resources.
+      parameters:
+      - description: 上一页最后一个任务 ID，首批为0，每批最多100项 | Last task ID from the previous page,
+          initially zero; at most 100 items per page
+        in: query
+        name: after_id
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/client.TransferCDCRisks'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: Forbidden
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "503":
+          description: Service Unavailable
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 读取 CDC 任务风险观测 | Read CDC task risk observations
+      tags:
+      - 运行时 | Runtime
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - transfer.cdc_risk_observation.read
   /runtime/executions/{execution_id}/production-receipt:
     get:
       description: 仅供当前 Tenant 的 addp-system 和 addp-meta 读取 PG Transfer 已提交的 v3 产出证据（不依赖父任务终态）、实际会话来源集合或私有导入读取证明，以及创建提交事实；false

@@ -157,6 +157,14 @@ Chrome 真实租户页面核对源／目标、活跃任务逻辑槽、WAL `reser
 
 任务及两张表按用户体验用途保留运行，不声明零残留。报告与分阶段原件在 `/tmp/addp-cdc-local-20261113/assessment.json` 及同目录，仅为本机临时证据，不是 Hosted Artifact。首次 UPDATE 因缺少显式目标定位符在预检阶段被拒绝、零写入；补齐正式目标定位符后执行。额外 CLI OAuth 读取 Monitor 执行详情返回 403，符合现行仅接受 unrestricted first-party User Token 的中间件，未调整权限；Chrome first-party 页面实际读回执行进度。此记录证明本机真实页面，不把旧 Hosted 的执行页面回执改判为 CDC 新卡片验收。
 
+## 2026-11-13 CDC 任务卡片的 Hosted 三阶段断言
+
+固定源码 `88416bf8a744066c9d7260807e038fe6bd599ad8` 的 [Run 43357940010／Job 131664345961](https://github.com/pampa0629/addp/actions/runs/43357940010/job/131664345961) 于北京时间 11:26:58 开始，11:43:47 成功完成。沿既有 `transfer-continuous-events` 的正式租户身份、源／目标和任务生命周期，新增 `cdc_initial`、`cdc_growth`、`cdc_resumed` 三份页面回执均为 passed；分别核对当前任务身份、源槽／WAL、捕获延迟、消息位点和 execution 关联，没有新增权限或读取业务样本。
+
+任务 3、generation 1 的初始提交／末端／积压为 `6/6/0`，暂停后写入三条事件形成 `6/9/3`，恢复后连续两次采样为 `9/9/0`。恢复产生新 execution `20f40079-12dd-461a-a8c1-9572bd5c7233`；原生槽始终 active、WAL 状态 reserved，事件后的任务捕获延迟为 0.175 秒。场景核对精确 Connector 的延迟与源端原生身份，并确认停止后当前样本退出。
+
+Artifact `online-t4-transfer-continuous-events-43357940010` 含三份 `continuous-browser-cdc_*.json` 及 `transfer-continuous-events.json`，在线套件 result／cleanup 均为 passed。套件专门验证清理控制返回 503 时不发出删除请求，故该阶段保留一条任务记录（residual_resources=1），不能声明该阶段业务对象为零；完整 Hosted Infra 回收摘要为 `infra_cleanup=zero_residuals`。上述结论不覆盖后续新增不可恢复风险告警的真实故障及渠道送达。
+
 ## 2026-10-24 概览保留只读评估第一期
 
 Common 的 `AssessRetention` 由 System 既有维护循环调用，以数据库时间和只读、可重复读事务评估 180 天时间候选。首期检查完整执行树、租约、关系异常、树外引用及预算，保留 Owner 释放和消费者引用未核验原因。批次计数按当次读取范围解释，不能累加为全库唯一树数。[现行留存契约](../../tasks/执行监控.md#概览保留与清理契约)

@@ -4,6 +4,8 @@ import (
 	"context"
 	"strings"
 
+	commonclient "github.com/addp/common/client"
+
 	"github.com/addp/common/execution"
 	"github.com/addp/common/models"
 	monitorModels "github.com/addp/monitor/internal/models"
@@ -11,11 +13,59 @@ import (
 )
 
 func (s *AlertService) visibleAlertQuery(ctx context.Context, query *gorm.DB, tenantID int) *gorm.DB {
-	if _, exists := execution.ReadScopesFromContext(ctx); !exists {
+	scopes, exists := execution.ReadScopesFromContext(ctx)
+	if !exists {
 		return query
 	}
 	visible := execution.ApplyReadScopes(ctx, s.db.WithContext(ctx).Model(&execution.TaskExecution{}).Where("tenant_id = ?", tenantID)).Select("execution_id")
-	return query.Where("execution_id IN (?)", visible)
+	taskScopes := make([]execution.ReadScope, 0, len(scopes))
+	for _, scope := range scopes {
+		taskScope := scope
+		taskScope.Grants = nil
+		for _, grant := range scope.Grants {
+			if grant.TaskHistory {
+				taskScope.Grants = append(taskScope.Grants, execution.ReadGrant{TaskType: grant.TaskType, TaskHistory: true})
+			}
+		}
+		taskScopes = append(taskScopes, taskScope)
+	}
+	predicate, args := execution.ReadPredicate(execution.WithReadScopes(ctx, taskScopes))
+	taskRisk := s.db.WithContext(ctx).Model(&monitorModels.AlertIncident{}).Where("tenant_id = ? AND signal_code IN ?", tenantID, cdcRiskCodes).Where(predicate, args...).Select("id")
+	return query.Where("execution_id IN (?) OR id IN (?)", visible, taskRisk)
+}
+
+// Task risks use the same Owner TaskHistory grant even after execution retention.
+func (s *AlertService) AuthorizeReadRequest(ctx context.Context, query *ExecutionQueryService, tenantID int, principalID int64, bearer, module string) (context.Context, error) {
+	owners, err := query.repo.ListOwnerModules(ctx, tenantID)
+	if err != nil {
+		return nil, commonclient.ErrExecutionOwnerUnavailable
+	}
+	var riskOwners []string
+	if err = s.db.WithContext(ctx).Model(&monitorModels.AlertIncident{}).Where("tenant_id = ? AND signal_code IN ?", tenantID, cdcRiskCodes).Distinct("module").Order("module").Pluck("module", &riskOwners).Error; err != nil {
+		return nil, commonclient.ErrExecutionOwnerUnavailable
+	}
+	for _, owner := range riskOwners {
+		found := false
+		for _, existing := range owners {
+			if owner == existing {
+				found = true
+				break
+			}
+		}
+		if !found {
+			owners = append(owners, owner)
+		}
+	}
+	if module != "" {
+		selected := []string{}
+		for _, owner := range owners {
+			if owner == module {
+				selected = append(selected, owner)
+			}
+		}
+		owners = selected
+	}
+	return query.authorizeReadOwners(ctx, tenantID, principalID, bearer, owners)
 }
 
 // Project alert evidence at the read boundary, including incidents recorded
@@ -40,6 +90,12 @@ func safeAlertForRead(alert monitorModels.AlertIncident) monitorModels.AlertInci
 				}
 			}
 			details[key] = safe
+		}
+	}
+	if alert.SignalCode == cdcRiskCodes[0] || alert.SignalCode == cdcRiskCodes[1] {
+		reason, _ := alert.Details["reason"].(string)
+		if reason == "slot_missing" || reason == "wal_lost" || reason == "buffer_position_lost" {
+			details["reason"] = reason
 		}
 	}
 	alert.Details = details

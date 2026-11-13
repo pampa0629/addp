@@ -29,6 +29,10 @@
               {{ signalText(row.signal_code) }}
             </el-tag>
             <div v-if="row.rule_name" class="rule-name">{{ row.rule_name }}</div>
+            <div v-if="cdcRiskCodes.includes(row.signal_code)" class="rule-name" data-testid="cdc-alert-reason">
+              {{ t('monitor.alert.cdc_generation', { generation: row.details?.generation }) }}
+              <span v-if="cdcRiskReasons.includes(row.details?.reason)"> · {{ t(`monitor.alert.cdc_reasons.${row.details.reason}`) }}</span>
+            </div>
           </template>
         </el-table-column>
         <el-table-column :label="t('monitor.alert.status')" width="130">
@@ -44,6 +48,7 @@
         </el-table-column>
         <el-table-column :label="t('monitor.alert.actions')" width="260" fixed="right">
           <template #default="{ row }">
+            <el-button v-if="cdcRiskCodes.includes(row.signal_code) && authStore.hasPermission('transfer.task.read') && authStore.hasPermission('monitor.execution.read')" text type="primary" data-testid="cdc-alert-open-task" @click="navigateMonitorRoute(router, { path: '/cdc-resources', query: { view: 'tasks', task_id: row.source_task_id } })">{{ t('monitor.alert.view_cdc_task') }}</el-button>
             <el-button v-if="authStore.hasPermission('monitor.execution.read')" text type="primary" @click="openExecution(row)">{{ t('monitor.alert.view_execution') }}</el-button>
             <el-button v-if="row.status === 'open' && authStore.hasPermission('monitor.alert_incident.update')" text @click="acknowledge(row)">{{ t('monitor.alert.acknowledge') }}</el-button>
             <el-button v-if="row.status !== 'resolved' && authStore.hasPermission('monitor.alert_incident.update')" text @click="suppress(row)">{{ t('monitor.alert.suppress_one_hour') }}</el-button>
@@ -79,6 +84,8 @@ const { t, te } = useI18n()
 const authStore = useAuthStore()
 const router = useRouter()
 const route = useRoute()
+const cdcRiskCodes = ['cdc_source_recovery_lost', 'cdc_buffer_recovery_lost']
+const cdcRiskReasons = ['slot_missing', 'wal_lost', 'buffer_position_lost']
 const resolveRouteState = routeQuery => resolveMonitorTabRouteState(routeQuery, ['incidents', 'rules'], 'incidents')
 const activeView = ref(resolveRouteState(route.query).tab)
 const loading = ref(false)

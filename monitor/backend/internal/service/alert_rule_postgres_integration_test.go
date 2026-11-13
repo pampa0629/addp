@@ -144,7 +144,7 @@ func TestIntegrationPostgresAlertRuleLifecycleAndRoutedOutbox(t *testing.T) {
 		t.Fatalf("disabling rule did not resolve incident = %#v", reopened)
 	}
 	assertRuleOutboxCounts(t, db, reopened.ID, 2, 2, 2)
-	if err := alertService.reconcileSignals(context.Background(), staleSignals, now.Add(10*time.Second)); err != nil {
+	if err := alertService.reconcileSignals(context.Background(), staleSignals, nil, now.Add(10*time.Second)); err != nil {
 		t.Fatal(err)
 	}
 	var activeIncidentCount int64

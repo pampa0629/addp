@@ -24,6 +24,10 @@ func (s *ExecutionQueryService) AuthorizeReadRequest(ctx context.Context, tenant
 		}
 		owners = selected
 	}
+	return s.authorizeReadOwners(ctx, tenantID, principalID, bearer, owners)
+}
+
+func (s *ExecutionQueryService) authorizeReadOwners(ctx context.Context, tenantID int, principalID int64, bearer string, owners []string) (context.Context, error) {
 	if len(owners) == 0 {
 		return execution.WithReadScopes(ctx, []execution.ReadScope{}), nil
 	}

@@ -760,6 +760,7 @@
           "rule": "质量规则",
           "classification": "数据分级分类",
           "cleanup_result": "资源回收专业结果",
+          "cdc_risk_observation": "CDC 任务风险观测",
           "cleanup_authorization": "清理执行授权",
           "cleanup": "清理任务",
           "code_set": "码表",

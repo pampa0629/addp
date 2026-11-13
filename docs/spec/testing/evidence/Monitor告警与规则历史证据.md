@@ -413,3 +413,14 @@ CI 专门会话回传 [Platform 40891592721／Job 123509561021](https://github.c
 专门 CI 会话回传修复源码 `226d1ad73564b9e681b9f0153f294132b92c2d3d` 的唯一自然 push 验证：[Platform 40959069552／Job 123746756104／attempt 1](https://github.com/pampa0629/addp/actions/runs/40959069552/job/123746756104)。本会话只读复核 checkout 与 CI head，原始日志 SHA-256 与独立审计一致（`620a0cfb04b79575b791a29f6960ca666b61ee329e3b550ae51bdd758688ef2b`）；219 项单元、270 项浏览器及生产构建均实际通过，无 FAIL／SKIP。原中英文自动筛选刷新用例见日志 859—860 行，新增受控发布时间竞态中英文见 861、863 行，总浏览器通过为 989 行，构建通过为 1020 行；精确时间／名称／主机、单 iframe、未知回执与迟到请求断言均属于该固定提交。原始日志 `/tmp/addp-ci-20261029-213834/job-123746756104.log`，审计 `Console-226d-fixed-actual-pass-audit.json`。
 
 据此关闭本次告警筛选刷新中英文旧 CI 故障及上述修复输入的 Console T3 缺口，原失败记录保留。此结论不扩展到 System 其他失败、Business 个人环境采集、产品采集能力新增或 Hosted；Release 条件跳过也不计业务验收。本轮仅补证据并做限定 diff 检查，没有重新执行本地门禁、查询／重跑／调度 CI 或设置定时。
+## CDC 任务不可恢复风险告警的本地实现验证（2026-11-13）
+
+范围为 `cdc_source_recovery_lost`（本任务 PG 槽 missing／WAL lost）及 `cdc_buffer_recovery_lost`（本代次消息恢复范围 lost），契约见 [Transfer 同步执行](../../tasks/Transfer同步执行.md#cdc-任务不可恢复风险告警2026-11-13-已确认)。Transfer 只发布当前已保存观测的安全投影，Monitor 沿既有告警生命周期及通知 outbox；没有新增采样器或采集实际业务数据。
+
+标准 `make test-transfer-postgres` 已纳入 `TestIntegrationPostgresCDCRiskInventory`：在 `addp_test` 创建 101 条跨两租户的暂停 CDC 任务，不创建 execution，验证固定 100 条批次后仍能取到第 101 条，并排除非 CDC／bounded／已删除行。所有新增任务行按确切 ID 清理并复查为零；不创建源表、Connector 或逻辑槽。
+
+`make test-monitor-postgres` 中 `TestIntegrationPostgresCDCRiskUnknownClearAndGeneration` 通过，覆盖 confirmed loss 打开一次事件／Webhook outbox、重复观测去重、unknown 保留 acknowledged 及 LastObservedAt、明确 clear 后恢复、新 generation 单独打开和 Owner closed 结束事件。没有 execution 行时仍向 Transfer Owner 获取同一 TaskHistory 准入，跨租户、其他模块、仅 OwnAdHoc grant 不可读取。Webhook 只入持久 outbox，没有向外部端点发送；夹具事件、通知、目标及 incident 按测试 Tenant 清理。
+
+Common／Transfer／Monitor Go 标准门禁、`make test-authorization`（含全模块 Swagger）、IAM `catalog-integrity` PostgreSQL 标准入口通过。Monitor 前端 152 项单元测试、21 项 CDC 受控浏览器测试及构建通过；新增三项核对中英文原因／代次、回到当前任务及缺权隐藏操作。首轮浏览器夹具缺少该既有告警页要求的规则读取 Permission，补齐夹具后通过，没有改变产品权限。首轮 Swagger 夹具发生 15 秒超时，原记录保留，未修改源码或超时的完整串行复验通过。
+
+此为工作区本地 T1／T2／受控 T3 结果；当前运行服务尚未加载新权限和后台读取。新代码真实部署后的准入、故障打开／恢复与外部通知送达仍未验证，不以既有页面 Hosted 成功替代本批告警验收。运行此批验证没有修改原有两个业务逻辑槽。

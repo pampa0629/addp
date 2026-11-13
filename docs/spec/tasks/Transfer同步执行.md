@@ -345,6 +345,19 @@ continuous 的 Owner 信号和 schema blocked 恢复沿[专用告警契约](#con
 - 抑制使用独立 `suppressed_until`，不新增 suppressed 状态；确认和抑制均不改变信号、execution 或任务状态。
 - 告警按 `tenant + module + task_type + source_task_id + signal_code` 去重，同一身份同时最多一个未恢复事件；恢复后的同类信号再次出现必须创建新事件，保留历史，不复用旧行。
 
+#### CDC 任务不可恢复风险告警（2026-11-13 已确认）
+
+本批在现有任务级观测上增加不可恢复风险告警，不新增采样器、任务状态或公共观测存储。Transfer 是当前 task／capture generation 及样本有效性的事实 owner；Monitor 不读 Transfer 私表、不直连源库／Kafka，不把任务当前事实写回已结束 execution。
+
+Transfer 提供唯一机器读取入口 `GET /runtime/cdc-risk-observations?after_id=<上一页任务ID>`，固定每批最多 100 个当前 CDC 任务，按稳定任务 ID 正序发布；首批 after_id 为 0。仅 `addp-monitor` Platform Service Access Token 且具备不可委派、非租户自定义的 `transfer.cdc_risk_observation.read` 可以读取；该 Permission 只加入 `platform.monitor_runtime`，不加入 User 角色。Monitor 经已有 Gateway 路由调用，分页读取完整清单，不能从可能已清理的 execution 历史发现暂停任务。100 是单次传输界限，不是任务容量上限。
+
+响应固定为版本、观察时间、items、next_after_id 和 has_more；每项只含 Tenant／task ID、当前 generation、最近 execution UUID、任务观测状态及 source／buffer 两项风险状态、固定原因码和采样／过期时间。禁止返回 Connector／Topic／Group／槽名称、源连接、事件正文或异常原文。已完成捕获清理的任务明确返回 closed；任务删除／不再属于 CDC 时退出当前清单。只有成功取得完整清单才可按缺失恢复原事件，任一页失败或不完整不以缺失推定关闭。读取失败、未初始化、停止清理未完成、缺样和过期均为 unknown。每项 Tenant 身份由 Owner 数据行发布，不接受调用者伪造；后台跨 Tenant 事实不授予用户读取权。
+
+- `cdc_source_recovery_lost`：仅本任务 PostgreSQL 逻辑槽的可信观测明确为 missing 或原生 WAL `lost` 时触发 critical。`reserved|extended|unreserved` 不是已经丢失；槽不活跃本身不触发本项告警。其他源端尚未开放本项原生判定。
+- `cdc_buffer_recovery_lost`：仅当前 generation 的有效 `buffer_observation.recovery_state=lost` 触发 critical；暂停期间照常评估。积压大于零本身不触发本批告警。
+
+两项分别处理 active／clear／unknown。新鲜明确风险打开／维持事件；同源新鲜 clear 或 Owner 明确 closed 才恢复。单项未知、Transfer／Gateway 不可用只保留对应已有事件，不更新 LastObservedAt，不冒充恢复，也不阻断其他来源的既有规则评估。generation 变化后，必须读到当前代次的明确事实才结束旧代次事件。去重身份为 Tenant＋Transfer sync task＋generation＋signal code，沿原事件事务、确认／抑制及通知 outbox；execution UUID 仅保留为当前 Owner 关联依据，不把其历史诊断当作风险事实。用户列表、更新及通知继续沿现有任务／执行读取权限，不以后台 Service 事实扩大用户可见范围。风险事件按自身 Tenant／模块／任务类型复用 Owner 的 TaskHistory 准入，不依赖对应 execution 行仍被保留；普通 execution 告警仍按其执行范围过滤。
+
 #### Schema change 公共事实投影
 
 - 数据库 CDC schema change 的跨模块公共事实固定写入触发阻塞的 execution `metadata.continuous.schema_change`。

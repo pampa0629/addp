@@ -55,6 +55,7 @@ func SetupRouter(
 	if systemClient != nil {
 		platform.Use(audit.ServiceAuditMiddleware("transfer", systemServiceClient))
 	}
+	platform.GET("/runtime/cdc-risk-observations", commonAuth.MustNewServiceClientGuard("addp-monitor"), commonAuth.MustNewPermissionGuard(transferauthorization.PermissionTransferCdcRiskObservationRead), NewTaskHandler(taskService).ReadCDCRisks)
 	if continuousPolicyService != nil {
 		handler := NewContinuousPolicyHandler(continuousPolicyService)
 		platform.GET("/settings/continuous-policy", commonAuth.MustNewPermissionGuard(transferauthorization.PermissionTransferConfigurationRead), handler.Get)
