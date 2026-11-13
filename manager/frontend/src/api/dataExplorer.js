@@ -95,8 +95,9 @@ export const dataExplorerAPI = {
     if (selection.nestedChildPath) payload.nested_child_path = selection.nestedChildPath
     return client.post('/manager/data-profile-executions', payload)
   },
-  getResourceActions(locator) {
+  getResourceActions(locator, config = {}) {
     return client.get('/manager/resource-actions', {
+      ...config,
       params: { locator }
     })
   },
@@ -109,11 +110,11 @@ export const dataExplorerAPI = {
       headers: { 'Content-Type': 'multipart/form-data' }
     })
   },
-  createExport(payload) {
-    return client.post('/manager/exports', payload)
+  createExport(payload, config) {
+    return client.post('/manager/exports', payload, config)
   },
-  getExport(id) {
-    return client.get(`/manager/exports/${id}`)
+  getExport(id, config) {
+    return client.get(`/manager/exports/${id}`, config)
   },
   // 获取要素的几何中心点（用于表格行定位到地图）
   // 注意：这是空间数据服务路由，不是引擎管理

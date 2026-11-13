@@ -238,3 +238,8 @@ make test-manager-online-runner
 - [数据安全与保护投影](../docs/spec/addp数据安全与隐私保护实现规范.md)
 - [资源回收规范](../docs/spec/addp-cleanup体系规范.md#4-manager)
 - [验证与历史证据导航](#开发与验证)
+
+
+### 全量导出旧观测失效（2026-11-13）
+
+PreviewPanel导出与resource-actions分别复用共享createLatestRequestScope，切换资源／child/ref/nested child及卸载时结束旧前端观测，旧创建／轮询／失败／finally不影响新页面；当前导出与当前能力读取保留，后端会话和授权不变。12项专项单元、8项中英文受控浏览器通过，最终同断言旧源码1过11失败；浏览器回归不冒充原实现失败，确切边界见[实现与验证](docs/数据预览与资源树实现规范.md#全量导出观测与动作能力归属2026-11-13)。完整`make test-manager-frontend`实际退出0，83文件／426单元、366浏览器及构建通过；前端登记27项通过。无新增T4。

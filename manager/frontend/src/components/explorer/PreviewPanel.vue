@@ -522,7 +522,7 @@ import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
 import { MagicStick, Download, Location, Collection, Document, View, Refresh, Select, InfoFilled, WarningFilled, Grid } from '@element-plus/icons-vue'
 import { getPreviewComponent } from '@/plugins/previews'
-import { createAuthenticatedFetch, downloadAuthenticatedExport, downloadFromUrl, ExportDialog, parseLocator, waitForExportSession } from '@addp/common-frontend'
+import { createLatestRequestScope, createAuthenticatedFetch, downloadAuthenticatedExport, downloadFromUrl, ExportDialog, parseLocator, waitForExportSession } from '@addp/common-frontend'
 import client from '@/api/client'
 import { useAuthStore } from '@/store/auth'
 import { downloadStorageSource } from '@/utils/storageSource'
@@ -674,7 +674,8 @@ const mvtGridVisible = ref(false)
 const resourceActions = ref(null)
 const exportDialogVisible = ref(false)
 const exporting = ref(false)
-let exportAbortController = null
+const exportRequests = createLatestRequestScope()
+const resourceActionRequests = createLatestRequestScope()
 let quickViewRequestSeq = 0
 let previewModeSelectionVersion = 0
 let quickViewStateSaveTimer = 0
@@ -1360,34 +1361,46 @@ const openExportDialog = () => {
 const handleExport = async ({ format, fileName }) => {
   const locator = props.selectedNode?.locator || ''
   if (!locator || !format || exporting.value) return
+  const ticket = exportRequests.invalidate()
   exporting.value = true
-  exportAbortController?.abort()
-  exportAbortController = new AbortController()
   try {
-    const response = await dataExplorerAPI.createExport({
-      source_item_locator: locator,
-      format,
-      file_name: fileName || defaultExportFileName.value
+    await exportRequests.request(async ({ signal }) => {
+      const response = await dataExplorerAPI.createExport({
+        source_item_locator: locator,
+        format,
+        file_name: fileName || defaultExportFileName.value
+      }, { signal })
+      if (!exportRequests.current(ticket)) return
+      const created = response?.data || response
+      exportDialogVisible.value = false
+      ElMessage.success(t('manager.explorer.exportSubmitted'))
+      const ready = await waitForExportSession(id => dataExplorerAPI.getExport(id, { signal }), created.id, {
+        signal,
+        failedMessage: t('manager.explorer.exportFailedUnknown'),
+        timeoutMessage: t('manager.explorer.exportTimeout')
+      })
+      if (!exportRequests.current(ticket)) return
+      await downloadAuthenticatedExport(client, ready, { signal, failedMessage: t('manager.explorer.exportFailedUnknown') })
+      if (!exportRequests.current(ticket)) return
+      ElMessage.success(t('manager.explorer.downloadStarted'))
     })
-    const created = response?.data || response
-    exportDialogVisible.value = false
-    ElMessage.success(t('manager.explorer.exportSubmitted'))
-    const ready = await waitForExportSession(dataExplorerAPI.getExport, created.id, {
-      signal: exportAbortController.signal,
-      failedMessage: t('manager.explorer.exportFailedUnknown'),
-      timeoutMessage: t('manager.explorer.exportTimeout')
-    })
-    await downloadAuthenticatedExport(client, ready, { signal: exportAbortController.signal, failedMessage: t('manager.explorer.exportFailedUnknown') })
-    ElMessage.success(t('manager.explorer.downloadStarted'))
   } catch (error) {
-    if (error?.name === 'AbortError') return
+    if (!exportRequests.current(ticket) || error?.name === 'AbortError') return
     console.error('导出失败:', error)
     ElMessage.error(t('manager.explorer.exportFailed', { error: error.response?.data?.error || error.message || error }))
   } finally {
-    exporting.value = false
-    exportAbortController = null
+    if (exportRequests.current(ticket)) exporting.value = false
   }
 }
+
+watch(() => JSON.stringify([
+  props.selectedNode?.locator || '', store.selectedChildName, store.selectedChildKey,
+  store.selectedRefPath, store.selectedNestedChildPath
+]), () => {
+  exportRequests.invalidate()
+  exporting.value = false
+  exportDialogVisible.value = false
+}, { flush: 'sync' })
 
 watch(
   () => props.previewData,
@@ -1402,21 +1415,19 @@ watch(
     sourceDownloadController?.abort()
     sourceDownloadController = null
     downloading.value = false
-    exportAbortController?.abort()
-    exportAbortController = null
-    exporting.value = false
+    const ticket = resourceActionRequests.invalidate()
     resourceActions.value = null
-    exportDialogVisible.value = false
     if (!locator) return
     try {
-      const response = await dataExplorerAPI.getResourceActions(locator)
-      resourceActions.value = response?.data || response
+      const response = await resourceActionRequests.request(config => dataExplorerAPI.getResourceActions(locator, config))
+      if (resourceActionRequests.current(ticket)) resourceActions.value = response?.data || response
     } catch (error) {
+      if (!resourceActionRequests.current(ticket) || error?.name === 'AbortError') return
       console.warn('加载资源动作能力失败:', error)
       resourceActions.value = null
     }
   },
-  { immediate: true }
+  { immediate: true, flush: 'sync' }
 )
 
 watch(
@@ -1434,8 +1445,8 @@ onUnmounted(() => {
   sourceDownloadController = null
   downloading.value = false
   exporting.value = false
-  exportAbortController?.abort()
-  exportAbortController = null
+  exportRequests.dispose()
+  resourceActionRequests.dispose()
   if (quickViewStateSaveTimer) {
     window.clearTimeout(quickViewStateSaveTimer)
     quickViewStateSaveTimer = 0
