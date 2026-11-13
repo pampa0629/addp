@@ -33,6 +33,7 @@ while [ "$#" -gt 0 ]; do
             echo "Platform alert publication: --package migration --test platform-alert-management" >&2
             echo "Production result identity migration: --package migration --test production-results" >&2
             echo "Focused authorization-relation migration: --package migration --test source-grant-relations" >&2
+            echo "Develop frozen file facts runtime: --package migration|api --test develop-file-runtime" >&2
             echo "Authorization facts: --package migration|api --test authorization-facts" >&2
             echo "Graph protection runtime: --package migration --test graph-protection-runtime" >&2
             echo "Transfer delegated run approval: --package migration --test transfer-run" >&2
@@ -186,6 +187,13 @@ run_without_skips() {
             exit 1
         }
     fi
+    if [ "$TEST_FILTER" = develop-file-runtime ] && { [ "$package" = ./internal/migration ] || [ "$package" = ./internal/api ]; }; then
+        case "$package" in
+            ./internal/migration) required_test=TestDevelopFileExecutionRuntimeForwardMigrationAgainstPostgres ;;
+            ./internal/api) required_test=TestDevelopFileRuntimeAuthContextAgainstPostgres ;;
+        esac
+        grep -q -- "^--- PASS: $required_test " "$log_path" || { echo "PostgreSQL gate requires real Develop file runtime PASS in $package" >&2; exit 1; }
+    fi
     if [ "$TEST_FILTER" = develop-file-inputs ] && [ "$package" = ./internal/migration ]; then
         grep -q -- '^--- PASS: TestDevelopControlledFileInputsForwardMigrationAgainstPostgres ' "$log_path" || { echo "PostgreSQL gate requires real controlled file input migration PASS" >&2; exit 1; }
     fi
@@ -261,6 +269,13 @@ case "$TEST_FILTER" in
     develop-file-definition)
         [ "$PACKAGE_FILTER" = migration ] || { echo "develop-file-definition requires --package migration" >&2; exit 2; }
         test_pattern='^Test(DevelopFileReadPermissionDefinition|Runner)AgainstPostgres$'
+        ;;
+    develop-file-runtime)
+        case "$PACKAGE_FILTER" in
+            migration) test_pattern='^TestDevelopFileExecutionRuntimeForwardMigrationAgainstPostgres$' ;;
+            api) test_pattern='^TestDevelopFileRuntimeAuthContextAgainstPostgres$' ;;
+            *) echo "develop-file-runtime requires --package migration or api" >&2; exit 2 ;;
+        esac
         ;;
     develop-file-inputs)
         [ "$PACKAGE_FILTER" = migration ] || { echo "develop-file-inputs requires --package migration" >&2; exit 2; }

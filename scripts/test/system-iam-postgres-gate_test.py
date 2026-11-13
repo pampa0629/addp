@@ -78,6 +78,12 @@ if "^TestResetDisposablePostgresForGate$" in sys.argv:
 if "./internal/migration" in sys.argv and "^Test(DevelopFileReadPermissionDefinition|Runner)AgainstPostgres$" in sys.argv:
     print("--- PASS: TestDevelopFileReadPermissionDefinitionAgainstPostgres (0.01s)")
     print("--- PASS: TestRunnerAgainstPostgres (0.01s)")
+for package, name in (("migration", "TestDevelopFileExecutionRuntimeForwardMigrationAgainstPostgres"), ("api", "TestDevelopFileRuntimeAuthContextAgainstPostgres")):
+    if "./internal/" + package in sys.argv and "^" + name + "$" in sys.argv:
+        result = os.environ.get("TEST_GO_FILE_RUNTIME_RESULT", "pass")
+        if result == "pass": print("--- PASS: " + name + " (0.01s)")
+        elif result == "skip": print("--- SKIP: " + name + " (0.01s)")
+        elif result == "wrong": print("--- PASS: " + name + "Extra (0.01s)")
 if "./internal/migration" in sys.argv and "^TestDevelopControlledFileInputsForwardMigrationAgainstPostgres$" in sys.argv:
     result = os.environ.get("TEST_GO_FILE_INPUTS_RESULT", "pass")
     if result == "pass": print("--- PASS: TestDevelopControlledFileInputsForwardMigrationAgainstPostgres (0.01s)")
@@ -450,6 +456,18 @@ elif args[:2] != ["volume", "ls"]:
             self.assertNotEqual(result.returncode, 0)
         for value in ("missing", "skip", "wrong"):
             result = self.run_gate(arguments=("--package", "iam", "--test", "develop-file-authorization"), TEST_GO_DEVELOP_FILE_RESULT=value)
+            self.assertNotEqual(result.returncode, 0)
+
+    def test_develop_file_runtime_requires_real_owner_pass(self):
+        for package, name in (("migration", "TestDevelopFileExecutionRuntimeForwardMigrationAgainstPostgres"), ("api", "TestDevelopFileRuntimeAuthContextAgainstPostgres")):
+            result = self.run_gate(arguments=("--package", package, "--test", "develop-file-runtime"))
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn("./internal/" + package + " -run ^" + name + "$", (self.root / "trace-1").read_text())
+            for value in ("missing", "skip", "wrong"):
+                result = self.run_gate(arguments=("--package", package, "--test", "develop-file-runtime"), TEST_GO_FILE_RUNTIME_RESULT=value)
+                self.assertNotEqual(result.returncode, 0, value)
+        for package in ("iam", "engineaccess", ""):
+            result = self.run_gate(arguments=("--package", package, "--test", "develop-file-runtime"))
             self.assertNotEqual(result.returncode, 0)
 
     def test_develop_controlled_file_inputs_uses_forward_migration(self):

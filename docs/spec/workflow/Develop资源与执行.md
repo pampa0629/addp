@@ -194,7 +194,7 @@ GeoJSON 保留原 8 MiB 上限、WGS84 FeatureCollection 内容约束及读取�
 
 `config_json` 是数据库实际存下的完整 `common.task_executions.execution_config` JSON 原值，不从 JSONMap 浮点往返还原、不只截取 DAG、不添加 Runtime 私有路径。Intent 与配置由同一共享工厂冻结；签发回包必须与原 Actor、Tenant、execution、预期 attempt 精确一致。目标缺失仍是同一只读路径，不生成虚拟批准或发布操作。
 
-Owner 唯一事实接口为 `GET /api/v1/develop/runtime/file-executions/{execution_id}`，只供持 `develop.file_execution.read` 的同 Tenant `addp-system` Service。返回 Common `DevelopFileExecutionFacts`，含原配置和 Intent 及可缺的原 EA／Scope；不复制公共 execution 生命周期或 lease secret。System 自行读取 common 权威行核状态、真实 claim 和期限。未签发即明确拒绝允许 `admission_state=rejected` 且无 Scope，未知签发不能伪造明确拒绝。私有记录只对本 purpose 关联原 pending 做领取过滤；普通非受控工作流及查询不走此协议；上述手动 Orchestrator 受控文件子执行使用同一协议。 pending 准入观察到期后只能用新的 System 观察刷新资格，不能据旧回包领取，刷新也不改变原 EA、预期 attempt 或开始运行后的固定业务预算。已知签发拒绝可原子关闭未开始的原执行；丢失回包、超时或依赖不可用不能被写成明确拒绝。
+Owner 唯一事实接口为 `GET /api/v1/develop/runtime/file-executions/{execution_id}`，只供持 `develop.file_execution.read` 的同 Tenant `addp-system` Service；该权限由前向迁移仅发布给既有 `tenant.system_runtime`，新租户复用原角色初始化，普通用户和其他服务不补权。旧机器凭据按授权版本及 Token Family 失效，System 重新取得当前服务凭据后消费同一接口。返回 Common `DevelopFileExecutionFacts`，含原配置和 Intent 及可缺的原 EA／Scope；不复制公共 execution 生命周期或 lease secret。System 自行读取 common 权威行核状态、真实 claim 和期限。未签发即明确拒绝允许 `admission_state=rejected` 且无 Scope，未知签发不能伪造明确拒绝。私有记录只对本 purpose 关联原 pending 做领取过滤；普通非受控工作流及查询不走此协议；上述手动 Orchestrator 受控文件子执行使用同一协议。 pending 准入观察到期后只能用新的 System 观察刷新资格，不能据旧回包领取，刷新也不改变原 EA、预期 attempt 或开始运行后的固定业务预算。已知签发拒绝可原子关闭未开始的原执行；丢失回包、超时或依赖不可用不能被写成明确拒绝。
 
 保存成功的 Develop 工作流必须包含完整、可直接执行的公开参数；执行输入只允许对本次 execution 覆盖保存值，不能用于补齐不完整任务。工作流任务的执行输入契约由 Develop 根据当前 `workflow_definition`、目标 Workflow Runtime 的 Public Operator Spec 和 Develop Adapter Spec 动态生成，不在任务内容中复制保存第二份 Schema 或默认值。
 

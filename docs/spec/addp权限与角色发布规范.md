@@ -301,3 +301,9 @@ ADDP_SYSTEM_POSTGRES_TEST_DSN='postgres://.../addp_iam_test?...' make test-syste
 ### 数据项身份清单机器权限（2026-10-28）
 
 `meta.data_item_identity.read` 由 Meta 发布，低风险、不可自定义、不可委托，仅默认授予 `tenant.system_runtime`。其运行接口另限定 `addp-system` Tenant Service；只允许读取租户与引擎内的最小 DataItem 身份清单。该独立能力不扩大人员权限，不代替数据读取许可，也不扩大原精确 `meta.authorization_facts.read` 的调用者范围。
+
+### Develop 冻结执行事实机器权限（2026-11-13）
+
+既有 `develop.file_execution.read` 仅向 `tenant.system_runtime` 发布，角色只允许 `service_principal`，接口另限定当前同租户 `addp-system` Client。新前向迁移为既有角色增加这一项 Permission，不修改已应用的 000274 定义迁移，不新建角色分配，不给人员角色、其他 Runtime、Platform Scope 或数据资源增权。新租户沿原运行角色初始化取得同一能力，无需逐租户补权限。现有 Role Permission 触发器推进受影响机器主体授权版本，迁移撤销旧 Token Family；不手工重复增加授权版本，不修改普通用户版本／会话。
+
+验证必须同时覆盖从已应用版本向前升级、空库迁移、重复执行不重复发布、新租户角色初始化、原普通用户／Grant 不变及旧机器凭据失效。使用真实 OAuth client_credentials 与 AuthContext、共享固定 Client／Permission Guard 验证 System 事实读取资格；伪造含 Permission 的 AuthContext 只能证明路由组件，不能证明目录发布完整。Owner 事实、来源 read Grant、计算及真实 T4 分别验证，标准门禁不等于业务验收。
