@@ -793,6 +793,7 @@
           "engine_access_grant": "源数据授权",
           "develop_file_create_approval": "工作流 GeoPackage 新建批准",
           "engine_access_initial_grant": "新数据初始使用权",
+          "manager_pg_read_check": "Manager PG 读取检查",
           "engine_access_deny": "源读取拒绝规则",
           "engine_access_delegation": "引擎授权管理委派",
           "engine_descriptor": "引擎描述",

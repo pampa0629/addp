@@ -793,6 +793,7 @@
           "engine_access_grant": "Source Data Grant",
           "develop_file_create_approval": "Workflow GeoPackage Creation Approval",
           "engine_access_initial_grant": "Initial New Data Access",
+          "manager_pg_read_check": "Manager PG Read Check",
           "engine_access_deny": "Source Read Deny",
           "engine_access_delegation": "Engine Access Management Delegation",
           "engine_descriptor": "Engine Descriptor",
