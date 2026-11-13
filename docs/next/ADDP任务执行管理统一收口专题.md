@@ -369,7 +369,7 @@ Graph 在 C→G 内、关闭／取消／归档前比较当前模块影响与原�
 
 **入口实施实证（2026-11-13）。** 已在原人工入口接入租户阶段HTTP读取、DTO白名单与精确终态校核、固定缺样候选、同一观察截止、单Owner请求日志关联，以及四次按需浏览器读取；平台／租户使用独立私有输入及真实登录上下文，复用既有正式登出并核旧会话拒绝。正式定义／四身份清理在业务成功或失败后均尝试，失败不由外层销毁掩盖。Source指纹登记已包含新接线；既有Execution CI路径选择补入Monitor来源，无新Make目标、workflow、权限或生产接口变更。
 
-本地 `make test-monitor-traces-local-runner` 通过216项Python及既有System身份夹具Go测试；`make test-execution-online-ci-runner` 通过417项Python聚合与登记；共享登录的 `make test-monitor-http-local-runner` 通过53项Python、15项Node及Go。`make test-console-frontend` 通过260项单元、357项完整受控浏览器回归及构建，新增租户登录场景所在10项认证浏览器专项另验通过；首轮既有devPorts回收断言失败保留，未改该断言，后继完整标准入口通过，不声称已定位其偶发根因。以上是确定性／受控环境证据，尚未执行 `make test-monitor-traces-local`、身份准备、样本业务、独立产品部署或Hosted，真实链路验收仍待单独确认。
+本地 `make test-monitor-traces-local-runner` 通过216项Python及既有System身份夹具Go测试；`make test-execution-online-ci-runner` 通过417项Python聚合与登记；共享登录的 `make test-monitor-http-local-runner` 通过53项Python、7项Node及Go。`make test-console-frontend` 通过260项单元、357项完整受控浏览器回归及构建，新增租户登录场景所在10项认证浏览器专项另验通过；首轮既有devPorts回收断言失败保留，未改该断言，后继完整标准入口通过，不声称已定位其偶发根因。以上是确定性／受控环境证据，尚未执行 `make test-monitor-traces-local`、身份准备、样本业务、独立产品部署或Hosted，真实链路验收仍待单独确认。
 
 ## 七、确认范围与协作分工
 
