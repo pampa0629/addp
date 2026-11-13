@@ -444,3 +444,10 @@ Chrome 正式租户页面的任务 61、generation 1 仍显示活跃任务槽、
 `d6e97ea23` 的 [Monitor Frontend Run 43364564823／Job 131685812363](https://github.com/pampa0629/addp/actions/runs/43364564823/job/131685812363) 实际已执行：152 单元通过，842 浏览器中 841 通过、1 失败，构建未执行。失败为 `cdc-resources.spec.js` 的拒绝刷新断言。原 Artifact `14012709653` 的 error-context 显示“抓取失败”即时卡片仍在、趋势已收到权限拒绝且自动刷新停止；原 SHA256 `fd40bf017b46f829a79dbd3a5df55f63ac5513750d544c927a1316e0e785347d` 的下载与 CRC 核验记录由 CI 验收会话保留。该失败不能继续记为排队。
 
 原因是测试在即时卡片更新后、本轮趋势请求完成前切换 fixture 为 denied 并推进受控时钟，拒绝可能落在尚未结束的趋势请求，而不是下一轮即时请求。本地原用例单次通过，未把它当作 CI 原失败不存在。修复仅让夹具保持趋势请求，明确核对请求期间不启动下一轮；释放并等 `aria-busy=false` 后再切 denied。原即时 403 清空、趋势清空、自动刷新停止及独立迟到响应隔离断言保留；产品逻辑、超时和重试未改。定向标准前端门禁、CI 登记已通过；完整 `make test-monitor-frontend` 的 152 单元、842 受控浏览器及构建全部通过。本地日志 `/tmp/addp-cdc-ci-monitor-full.log`、`/tmp/addp-cdc-ci-iam-runner.log` 和 `/tmp/addp-cdc-ci-migration-pg.log`。新提交自然 CI 结果另行记录，不外推新 Hosted T4 或个人服务验收。
+
+修复提交 `665f1679638958286ea259b7828f0e3c7a2c2c9f` 的自然 [Platform Run 43387788680](https://github.com/pampa0629/addp/actions/runs/43387788680) 两项对应 Job 已逐项核对：
+
+- [Platform consistency／Job 131760255999](https://github.com/pampa0629/addp/actions/runs/43387788680/job/131760255999) 的真实 gate 步骤及 Job 均 success；原始日志明确 `Ran 42 tests ... OK`，修复后的 IAM runner 实际通过。
+- [Monitor frontend／Job 131760256011](https://github.com/pampa0629/addp/actions/runs/43387788680/job/131760256011) 的真实 gate 步骤及 Job 均 success；152 单元、842 受控浏览器（36.7 分钟）及构建全部完成，含原 CDC 拒绝刷新用例。Job 北京时间 16:21:38 完成，不能只凭 summary 判定。
+
+原始 CI 日志保存于 `/tmp/addp-cdc-ci-platform-131760255999.log`、`/tmp/addp-cdc-ci-monitor-131760256011.log`。只认定上述固定提交的对应 Job；不外推整个父 workflow、其他 Job、真实服务权限应用或新 T4。此批未重启用户服务、未使用 keepalive、未操作业务表／逻辑槽或数据卷，也未新增 Hosted 或重跑原失败 CI。
