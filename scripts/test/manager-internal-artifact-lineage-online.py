@@ -1592,7 +1592,7 @@ def cleanup_managed_artifact(client: GatewayClient, model: ArtifactFixture, time
 
 def raster_physical(repository, environment, action, request):
     source_case = request.get('source_case', '')
-    if source_case and source_case not in ('wgs84', 'utm50n', 'msk'):
+    if source_case and source_case not in ('wgs84', 'utm50n', 'msk', 'sidecars'):
         raise SuiteError('unknown IMG physical source case')
     suffix = ('-'+request.get('source_format','img')+'-'+source_case) if source_case else ''
     artifact = Path(environment['ADDP_ONLINE_ARTIFACT_DIR']) / f'manager-artifact-physical-{action}{suffix}.json'
@@ -2483,20 +2483,21 @@ def run_native_raster_media_case(repository, environment, client, identity):
                 or nfs_tiff.get("expired_meta_status") != 404
                 or any(nfs_tiff.get(key) is not True for key in ("natural_expiry_verified", "source_unchanged", "zero_current_grants"))):
             raise SuiteError("native raster media requires complete NFS TIFF authorization evidence")
-        msk = report['tiff'].get('nfs_tiff_msk', {})
-        items = msk.get('items', [])
-        mask_proof = msk.get('cog', {}).get('artifact', {}).get('physical', {})
-        if (msk.get('result') != 'passed' or msk.get('cross_item_status') != 400
-                or any(msk.get(key) is not True for key in ('source_unchanged', 'zero_current_grants', 'object_deleted'))
-                or msk.get('cleanup_errors') != [] or len(items) != 2
-                or [item.get('layout') for item in items] != ['single', 'multi']
-                or mask_proof.get('invalid_mask_pixels') != 257 or mask_proof.get('pixels_verified') != 65536
-                or any(mask_proof.get(key) is not True for key in ('cog_valid', 'mask_verified', 'grid_verified'))
-                or any(len(item.get('members', [])) != count or any(
-                    len(item.get(phase, [])) != count or any(row.get('status') != status for row in item[phase])
-                    for phase, status in (('before_grant', 403), ('granted', 206), ('revoked', 403)))
-                    for item, count in zip(items, (1, 2)))):
-            raise SuiteError('native raster media requires complete single/multi MSK authorization and cleanup evidence')
+        for profile, member_count, invalid_pixels in (('msk', 2, 257), ('sidecars', 4, 1)):
+            composition = report['tiff'].get('nfs_tiff_' + profile, {})
+            items = composition.get('items', [])
+            mask_proof = composition.get('cog', {}).get('artifact', {}).get('physical', {})
+            if (composition.get('result') != 'passed' or composition.get('cross_item_status') != 400
+                    or any(composition.get(key) is not True for key in ('source_unchanged', 'zero_current_grants', 'object_deleted'))
+                    or composition.get('cleanup_errors') != [] or len(items) != 2
+                    or [item.get('layout') for item in items] != ['single', 'multi']
+                    or mask_proof.get('invalid_mask_pixels') != invalid_pixels or mask_proof.get('pixels_verified') != 65536
+                    or any(mask_proof.get(key) is not True for key in ('cog_valid', 'mask_verified', 'grid_verified'))
+                    or any(len(item.get('members', [])) != count or any(
+                        len(item.get(phase, [])) != count or any(row.get('status') != status for row in item[phase])
+                        for phase, status in (('before_grant', 403), ('granted', 206), ('revoked', 403)))
+                        for item, count in zip(items, (1, member_count)))):
+                raise SuiteError(f'native raster media requires complete {profile} TIFF authorization and cleanup evidence')
         report["result"] = "passed"
         return report
     except BaseException as failure:

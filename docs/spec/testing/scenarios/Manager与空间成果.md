@@ -288,9 +288,11 @@ Parquet物理列沿现有writer按字段名排序，按列名完整核对类型�
 
 MSK 扫描回执必须同时证明三个物理文件和两个成功完成的逻辑 DataItem：`scan_progress.files_discovered=3`、`directories_discovered=1`、两个 total_known 均为 true，`items_planned/items_completed/items_succeeded=2`、`items_failed=0`、`phase=finalizing`，以及 `metadata.items_scanned=2`。核对原初始化用户和成功终态，将回执计数写入 `nfs_tiff_msk.scan`。计数缺失、清单未完成、额外文件／目录／逻辑项或任何未完成／失败项均在签发授权前拒绝；后续仍须验证正式 Meta single／multi 身份和完整 MSK 组成，计数相等不能替代组成证明。
 
+四成员回归使用同一 TIFF 子报告的 `nfs_tiff_sidecars`，与MSK共享组成验收实现且保留原MSK断言。夹具为一份TIFF＋同basename HDR／TFW＋主文件完整名追加PAM，以及主文件字节相同的独立TIFF对照；不上传个人SRTM。主TIFF不内嵌定位，TFW提供固定仿射网格，PAM提供EPSG:4326，HDR作为完整可选成员参与授权、版本及读取。独立TIFF必须保持single且无定位，四成员multi的主image必需、header／world_file／auxiliary_metadata均显式可选。扫描必须恰好五物理文件／一目录／两逻辑项且全部成功；正式System事实必须完整对应Meta组成，五成员逐项核授权前403、完整Range206及撤权后403，single locator跨项借用辅助文件为400。额外一份COG核全部65,536个Int32像元、1个NoData无效像元、完整mask、TFW网格、PAM坐标系及COG布局；TFW／PAM缺失或变化的原生反例不得因主TIFF可读而通过；HDR完整性由正式组成、组件版本和原字节核对保证。原有四格式、单文件浏览器、自然到期和MSK证明保持不变，不增加权限／服务／预算。新增四成员Hosted须单独确认后执行；确定性测试或既有两成员MSK的成功不得替代。
+
 #### TIFF 清理与共同边界
 
-MinIO 小图、NFS 单文件及 MSK 结果分别判定；MSK 只在该扩展创建额外带掩膜 COG，不改变小图“不得提交生成”的要求。保留 IMG／JPEG2000 原四份受管 COG 的缓存、任务／成果／物理删除和模式恢复；它们不替代 TIFF 自身断言。
+MinIO 小图、NFS 单文件、MSK 及四成员结果分别判定；MSK和四成员扩展各生成一份额外COG，不改变小图“不得提交生成”的要求。保留 IMG／JPEG2000 原四份受管 COG 的缓存、任务／成果／物理删除和模式恢复；它们不替代 TIFF 自身断言。
 
 成功与失败均只清理本轮归属的命令、源和成果，保留首个业务失败及清理错误。源仍存在时先验证撤权／到期拒绝，再由本轮 NFS 夹具清理精确文件；业务资源与外层部署／Infra 分别核验，不以零残留替代未执行的授权、Range、像元或生成阶段。
 

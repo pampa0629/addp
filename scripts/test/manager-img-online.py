@@ -52,6 +52,14 @@ TIFF_SOURCES=({'case':'unlocated-small-cog','object':'raster/tiff-unlocated-smal
 NFS_TIFF_DIRECTORY = 'raster-tiff-authorization'
 NFS_TIFF_NAME = NFS_TIFF_DIRECTORY + '/tiff-unlocated-small-cog.tif'
 
+TIFF_COMPOSITIONS = {
+    'msk': {'directory': 'raster-tiff-msk', 'single': 'without-mask.tif', 'multi': 'with-mask.tif',
+            'auxiliary': [('with-mask.tif.msk', 'mask')], 'invalid_mask_pixels': 257},
+    'sidecars': {'directory': 'raster-tiff-sidecars', 'single': 'without-sidecars.tif', 'multi': 'with-sidecars.tif',
+                 'auxiliary': [('with-sidecars.hdr', 'header'), ('with-sidecars.tfw', 'world_file'),
+                               ('with-sidecars.tif.aux.xml', 'auxiliary_metadata')], 'invalid_mask_pixels': 1},
+}
+
 
 def nfs_tiff_root(environment):
     if (any(environment.get(key) != value for key, value in {
@@ -168,32 +176,33 @@ def verify_nfs_tiff_authorization(owner, environment, client, evidence, raw, bro
     return observed
 
 
-def verify_nfs_tiff_msk(owner, environment, client, identity, physical, report, timeout):
+def verify_nfs_tiff_composition(owner, environment, client, identity, physical, report, timeout, *, profile):
     grants = importlib.import_module('scripts.test.ftp-consumer-flow-online')
-    directory = 'raster-tiff-msk'
+    spec = TIFF_COMPOSITIONS[profile]
+    directory = spec['directory']
     root = nfs_tiff_root(environment)
-    source = physical('msk-source', {})
-    names = {'without-mask.tif', 'with-mask.tif', 'with-mask.tif.msk'}
+    source = physical(profile + '-source', {})
+    names = {spec['single'], spec['multi'], *(name for name, _ in spec['auxiliary'])}
     if (source.get('primary_bytes_equal') is not True or set(source.get('files', {})) != names
             or any(source.get('proofs', {}).get(layout, {}).get('invalid_mask_pixels') != count
-                   for layout, count in (('single', 1), ('multi', 257)))):
-        raise owner.SuiteError('MSK physical source proof is incomplete')
+                   for layout, count in (('single', 1), ('multi', spec['invalid_mask_pixels'])))):
+        raise owner.SuiteError('TIFF composition physical source proof is incomplete')
     raw = {name: base64.b64decode(entry['base64'], validate=True) for name, entry in source['files'].items()}
     for name, data in raw.items():
         entry = source['files'][name]
         if len(data) != entry['size_bytes'] or hashlib.sha256(data).hexdigest() != entry['sha256']:
-            raise owner.SuiteError('MSK fixture bytes differ from the physical receipt')
-    if raw['without-mask.tif'] != raw['with-mask.tif']:
-        raise owner.SuiteError('MSK paired TIFF primary bytes differ')
+            raise owner.SuiteError('TIFF composition fixture bytes differ from the physical receipt')
+    if raw[spec['single']] != raw[spec['multi']]:
+        raise owner.SuiteError('TIFF composition paired TIFF primary bytes differ')
     (root / directory).mkdir(mode=0o755)
     archive = Path(environment['ADDP_ONLINE_ARTIFACT_DIR'])
     for name, data in raw.items():
         path = root / directory / name
         with path.open('xb') as stream: stream.write(data)
         path.chmod(0o644)
-        (archive / ('nfs-msk-source-' + name)).write_bytes(data)
-    engine = owner.positive_int(environment['ADDP_ONLINE_MANAGER_NFS_ENGINE_ID'], 'MSK NFS Engine')
-    tenant = owner.positive_int(environment['ADDP_ONLINE_TEST_TENANT_ID'], 'MSK Tenant')
+        (archive / ('nfs-' + profile + '-source-' + name)).write_bytes(data)
+    engine = owner.positive_int(environment['ADDP_ONLINE_MANAGER_NFS_ENGINE_ID'], 'TIFF composition NFS Engine')
+    tenant = owner.positive_int(environment['ADDP_ONLINE_TEST_TENANT_ID'], 'TIFF composition Tenant')
     issuer = owner.GatewayClient(environment['GATEWAY_URL'], environment['ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN'], 30)
     auth = grants.ModelSourceAuthorization(issuer, client, {
         'tenant_id': tenant, 'engine_id': engine, 'principal_id': identity['principal_id'],
@@ -210,9 +219,9 @@ def verify_nfs_tiff_msk(owner, environment, client, identity, physical, report, 
         content_range = next((v for k, v in response.headers.items() if k.lower() == 'content-range'), None)
         if status == 206:
             if response.raw != data or content_range != f'bytes 0-{len(data)-1}/{len(data)}':
-                raise owner.SuiteError('MSK member Range bytes or Content-Range differ')
+                raise owner.SuiteError('TIFF composition member Range bytes or Content-Range differ')
         elif content_range is not None or response.raw == data or not isinstance(response.payload, dict) or not response.payload.get('error'):
-            raise owner.SuiteError('denied MSK member returned bytes or an invalid error')
+            raise owner.SuiteError('denied TIFF composition member returned bytes or an invalid error')
         return {'path': member, 'status': response.status, 'size_bytes': len(response.raw),
                 'sha256': hashlib.sha256(response.raw).hexdigest() if status == 206 else None}
 
@@ -225,34 +234,35 @@ def verify_nfs_tiff_msk(owner, environment, client, identity, physical, report, 
         report['scan'] = {'status': scan.get('status'), 'triggered_by': scan.get('triggered_by'),
                           'items_scanned': scan.get('metadata', {}).get('items_scanned'), 'scan_progress': progress}
         # Meta counts physical inventory separately from resolved DataItems:
-        # one single TIFF and one TIFF+MSK consume three files but two items.
-        expected_progress = {'phase': 'finalizing', 'files_discovered': 3, 'directories_discovered': 1,
+        # one single TIFF and one composite TIFF always resolve to two items.
+        expected_progress = {'phase': 'finalizing', 'files_discovered': len(names), 'directories_discovered': 1,
                              'files_total_known': True, 'items_planned': 2, 'items_total_known': True,
                              'items_completed': 2, 'items_succeeded': 2, 'items_failed': 0}
         if (scan.get('status') != 'success' or scan.get('triggered_by') != int(auth.operator)
                 or report['scan']['items_scanned'] != 2 or not isinstance(progress, dict)
                 or any(type(progress.get(key)) is not type(value) or progress[key] != value
                        for key, value in expected_progress.items())):
-            raise owner.SuiteError('MSK scan must discover exactly three files and successfully complete two logical DataItems')
+            raise owner.SuiteError(f'{profile} TIFF scan must discover exactly {len(names)} files and successfully complete two logical DataItems')
         identities = issuer.request('GET', auth.base + '/data-items?' + urlencode({
             'search': directory, 'page': 1, 'page_size': 100}), (200,)).payload
         rows = identities.get('data', [])
         if identities.get('total') != 2 or {row.get('full_name') for row in rows} != {
-                directory + '/without-mask.tif', directory + '/with-mask.tif'} or len(rows) != 2:
+                directory + '/' + spec['single'], directory + '/' + spec['multi']} or len(rows) != 2:
             raise owner.SuiteError('Meta must register exactly the single and multi TIFF DataItems')
-        for name, layout in (('without-mask.tif', 'single'), ('with-mask.tif', 'multi')):
+        for name, layout in ((spec['single'], 'single'), (spec['multi'], 'multi')):
             full_name = directory + '/' + name
             row, = [row for row in rows if row['full_name'] == full_name]
             model = {'format': 'tiff', 'layout': layout, 'full_name': full_name,
                      'fingerprint': row['item_fingerprint'], 'composition': [
                          {'path': full_name, 'role': 'image', 'required': True, 'primary': True}]}
             if layout == 'multi':
-                model['composition'].append({'path': full_name + '.msk', 'role': 'mask', 'required': False, 'primary': False})
+                model['composition'].extend({'path': directory + '/' + member, 'role': role, 'required': False, 'primary': False}
+                                            for member, role in spec['auxiliary'])
             facts = auth.facts(model)
             metadata_grant = auth.grant(model, action='metadata_read')
-            item = owner.find_fixture_item(client, engine, full_name, 'MSK TIFF')
+            item = owner.find_fixture_item(client, engine, full_name, 'TIFF composition')
             if item['fingerprint'] != row['item_fingerprint'] or item['item_type'] != 'file':
-                raise owner.SuiteError('MSK TIFF identity differs from formal Meta facts')
+                raise owner.SuiteError('TIFF composition identity differs from formal Meta facts')
             auth.revoke(metadata_grant['request_id'])
             entry = {'layout': layout, 'item_id': item['id'], 'locator': owner.build_item_locator(engine, item),
                      'authorization_facts': facts, 'members': [ref['path'] for ref in model['composition']]}
@@ -264,21 +274,21 @@ def verify_nfs_tiff_msk(owner, environment, client, identity, physical, report, 
                 raise owner.SuiteError('Meta TIFF layout differs from its formal authorization boundary')
             entry['granted'] = [read_member(entry, member, 206) for member in entry['members']]
             if layout == 'multi':
-                fixture = owner.ArtifactFixture('tiff-msk', item, entry['locator'])
+                fixture = owner.ArtifactFixture('tiff-' + profile, item, entry['locator'])
         single, multi = report['items']
         report['cross_item_status'] = read_member(single, multi['members'][1], 400)['status']
         owner.generate_raster_cog(client, fixture, tenant, timeout, physical, source_facts={
-            'case': 'msk', 'source_format': 'tiff', 'band_count': 1, 'source_srid': 4326,
+            'case': profile, 'source_format': 'tiff', 'band_count': 1, 'source_srid': 4326,
             'extent': [113., 27.9744, 113.0256, 28.]})
         proof = fixture.artifact['physical']
-        if proof.get('mask_verified') is not True or proof.get('invalid_mask_pixels') != 257 or proof.get('grid_verified') is not True:
-            raise owner.SuiteError('generated MSK COG complete mask proof is missing')
+        if proof.get('mask_verified') is not True or proof.get('invalid_mask_pixels') != spec['invalid_mask_pixels'] or proof.get('grid_verified') is not True:
+            raise owner.SuiteError('generated TIFF composition COG complete mask proof is missing')
         report['cog'] = {'execution_id': fixture.execution_id, 'result_id': fixture.result_id,
                          'artifact': fixture.artifact}
         cog_raw = client.request('GET', fixture.artifact['preview_url'], (200,)).raw
         if len(cog_raw) != fixture.artifact['size_bytes'] or hashlib.sha256(cog_raw).hexdigest() != fixture.artifact['sha256']:
-            raise owner.SuiteError('archived MSK COG differs from the verified artifact')
-        (archive / 'nfs-msk-result.cog.tif').write_bytes(cog_raw)
+            raise owner.SuiteError('archived TIFF composition COG differs from the verified artifact')
+        (archive / ('nfs-' + profile + '-result.cog.tif')).write_bytes(cog_raw)
     except BaseException as error:
         failure = error
         raise
@@ -288,10 +298,10 @@ def verify_nfs_tiff_msk(owner, environment, client, identity, physical, report, 
                 request = fixture.artifact.get('physical_request') if fixture.artifact else None
                 owner.cleanup_managed_artifact(client, fixture, timeout, 'raster_cog', owner.RASTER_TASK_TYPE)
                 if request is None:
-                    raise owner.SuiteError('MSK generation has no physical cleanup identity')
+                    raise owner.SuiteError('TIFF composition generation has no physical cleanup identity')
                 deleted = physical('deleted', request)
                 if deleted != {'object_deleted': True, 'source_unchanged': True, 'residual_objects': 0}:
-                    raise owner.SuiteError('MSK COG object cleanup is incomplete')
+                    raise owner.SuiteError('TIFF composition COG object cleanup is incomplete')
                 report['object_deleted'] = True
         except BaseException as error:
             report['cleanup_errors'].append(str(error))
@@ -303,15 +313,15 @@ def verify_nfs_tiff_msk(owner, environment, client, identity, physical, report, 
                     'recipient_type': 'user', 'recipient_id': auth.recipient,
                     'catalog_path': json.dumps(auth.target(entry['authorization_facts']['full_name']))}), (200,)).payload
                 if current.get('total') != 0 or current.get('data') != []:
-                    raise owner.SuiteError('MSK fixture left a current exact Grant')
+                    raise owner.SuiteError('TIFF composition fixture left a current exact Grant')
             report['zero_current_grants'] = True
             if any((root / directory / name).read_bytes() != data for name, data in raw.items()):
-                raise owner.SuiteError('MSK TIFF source bytes changed')
+                raise owner.SuiteError('TIFF composition TIFF source bytes changed')
             report['source_unchanged'] = True
         except BaseException as error:
             report['cleanup_errors'].append(str(error))
         if report['cleanup_errors'] and failure is None:
-            raise owner.SuiteError('MSK fixture cleanup failed: ' + '; '.join(report['cleanup_errors']))
+            raise owner.SuiteError('TIFF composition fixture cleanup failed: ' + '; '.join(report['cleanup_errors']))
     report['result'] = 'passed'
 
 
@@ -559,7 +569,9 @@ def run(repository, environment, owner, *, browser_runner=None, physical_runner=
         if source_format == 'tiff' and environment.get('ADDP_ONLINE_MANAGER_CASE') == 'native-raster-media':
             report['browser'] = verify_nfs_tiff_authorization(owner, environment, client, browser_evidence,
                 source_raw, browser, report.setdefault('nfs_tiff_authorization', {}), timeout)
-            verify_nfs_tiff_msk(owner, environment, client, identity, physical, report.setdefault('nfs_tiff_msk', {}), timeout)
+            for profile in TIFF_COMPOSITIONS:
+                verify_nfs_tiff_composition(owner, environment, client, identity, physical,
+                    report.setdefault('nfs_tiff_' + profile, {}), timeout, profile=profile)
         else:
             report['browser'] = validate_browser(owner, browser(browser_evidence), browser_evidence)
         for fixture in fixtures:

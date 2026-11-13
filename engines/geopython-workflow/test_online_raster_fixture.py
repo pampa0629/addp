@@ -2619,7 +2619,7 @@ def test_manager_msk_complete_source_and_cog_oracle(manager_physical, tmp_path, 
         assert len(raw) == entry['size_bytes'] and hashlib.sha256(raw).hexdigest() == entry['sha256']
         (sources / name).write_bytes(raw)
     assert (sources / 'with-mask.tif').read_bytes() == (sources / 'without-mask.tif').read_bytes()
-    assert fixture.manager_msk_facts(sources / 'without-mask.tif', masked=False)['mask_verified']
+    assert fixture.manager_tiff_composition_facts(sources / 'without-mask.tif', masked=False)['mask_verified']
     input_path = sources / 'with-mask.tif'
     dataset = gdal.Open(str(input_path), gdal.GA_Update)
     if fault == 'pixels':
@@ -2650,5 +2650,56 @@ def test_manager_msk_complete_source_and_cog_oracle(manager_physical, tmp_path, 
         assert proof['pixels_verified'] == 65536 and proof['invalid_mask_pixels'] == 257
         with pytest.raises(fixture.FixtureError, match='still exists'):
             fixture.manager_worker('deleted', manager_physical)
+        del LocalMinio.objects['infra', 'manager', key]
+        assert fixture.manager_worker('deleted', manager_physical)['object_deleted']
+
+
+@pytest.mark.parametrize('fault', [None, 'missing_tfw', 'missing_pam', 'changed_tfw', 'changed_pam', 'pixels', 'nodata'])
+def test_manager_tiff_four_member_sidecars_source_and_cog_oracle(manager_physical, tmp_path, fault):
+    source = fixture.manager_worker('sidecars-source', manager_physical)
+    assert source['primary_bytes_equal'] is True
+    assert source['proofs']['single']['source_srid'] is None
+    assert source['proofs']['multi']['source_srid'] == 4326
+    inputs = tmp_path / 'sidecar-input'; inputs.mkdir()
+    assert set(source['files']) == {'without-sidecars.tif', 'with-sidecars.tif', 'with-sidecars.hdr',
+                                    'with-sidecars.tfw', 'with-sidecars.tif.aux.xml'}
+    for name, entry in source['files'].items():
+        raw = base64.b64decode(entry['base64'], validate=True)
+        assert len(raw) == entry['size_bytes'] and hashlib.sha256(raw).hexdigest() == entry['sha256']
+        (inputs / name).write_bytes(raw)
+    main = inputs / 'with-sidecars.tif'
+    assert main.read_bytes() == (inputs / 'without-sidecars.tif').read_bytes()
+    fixture.manager_tiff_composition_facts(inputs / 'without-sidecars.tif', masked=False, located=False)
+    if fault == 'missing_tfw': main.with_suffix('.tfw').unlink()
+    elif fault == 'missing_pam': Path(str(main) + '.aux.xml').unlink()
+    elif fault == 'changed_tfw': main.with_suffix('.tfw').write_text('0.0002\n0\n0\n-0.0001\n113.00005\n27.99995\n')
+    elif fault == 'changed_pam':
+        crs = osr.SpatialReference(); crs.ImportFromEPSG(3857)
+        Path(str(main) + '.aux.xml').write_text('<PAMDataset><SRS>' + crs.ExportToWkt() + '</SRS></PAMDataset>')
+    elif fault in ('pixels', 'nodata'):
+        dataset = gdal.Open(str(main), gdal.GA_Update)
+        if fault == 'pixels': dataset.GetRasterBand(1).WriteRaster(100, 100, 1, 1, struct.pack('<i', 1), buf_type=gdal.GDT_Int32)
+        else: dataset.GetRasterBand(1).SetNoDataValue(-1)
+        dataset = None
+    output = tmp_path / 'sidecars.cog.tif'
+    generated = gdal.Translate(str(output), str(main), format='COG', creationOptions=['COMPRESS=DEFLATE'])
+    generated = None
+    raw = output.read_bytes(); fp = 'e' * 64
+    key = f'tenant_42/cog/{fp}/sidecars.cog.tif'
+    LocalMinio.objects['infra', 'manager', key] = raw
+    request = {'tenant_id': 42, 'fingerprint': fp, 'source_format': 'tiff', 'source_case': 'sidecars',
+               'locator': f'addp-infra://minio/manager/{key}?type=object',
+               'size_bytes': len(raw), 'sha256': hashlib.sha256(raw).hexdigest()}
+    fixture.private_json(manager_physical.parent / 'manager-raster-request.json', request)
+    if fault:
+        with pytest.raises(fixture.FixtureError): fixture.manager_worker('verify', manager_physical)
+    else:
+        proof = fixture.manager_worker('verify', manager_physical)
+        assert proof['pixels_verified'] == 65536 and proof['invalid_mask_pixels'] == 1
+        assert proof['cog_valid'] and proof['grid_verified'] and proof['mask_verified']
+        original = gdal.Open(str(main)); cog = gdal.Open(str(output))
+        assert original.GetRasterBand(1).ReadRaster() == cog.GetRasterBand(1).ReadRaster()
+        assert original.GetRasterBand(1).GetMaskBand().ReadRaster() == cog.GetRasterBand(1).GetMaskBand().ReadRaster()
+        with pytest.raises(fixture.FixtureError, match='still exists'): fixture.manager_worker('deleted', manager_physical)
         del LocalMinio.objects['infra', 'manager', key]
         assert fixture.manager_worker('deleted', manager_physical)['object_deleted']

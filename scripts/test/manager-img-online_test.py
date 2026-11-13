@@ -191,132 +191,177 @@ class ManagerIMGTests(unittest.TestCase):
                 self.assertEqual([call.kwargs for call in client.request.call_args_list if 'storage-stream' in call.args[1]],
                     [{'headers': {'Range': 'bytes=0-63'}}] * (2 if invalid == 'browser' else 3))
 
-    def test_msk_single_multi_complete_reads_revocation_and_failure_cleanup(self):
+    def test_four_member_grant_uses_complete_meta_boundary_and_rejects_missing_sidecars(self):
         grants = importlib.import_module('scripts.test.ftp-consumer-flow-online')
-        raw = {'without-mask.tif': b'TIFF' * 32, 'with-mask.tif': b'TIFF' * 32, 'with-mask.tif.msk': b'MSK' * 32}
-        source = {'primary_bytes_equal': True, 'files': {
-            name: {'base64': base64.b64encode(data).decode(), 'size_bytes': len(data),
-                   'sha256': hashlib.sha256(data).hexdigest()} for name, data in raw.items()},
-            'proofs': {'single': {'invalid_mask_pixels': 1}, 'multi': {'invalid_mask_pixels': 257}}}
-        scan_faults = {'missing_file', 'extra_file', 'extra_directory', 'unknown_files', 'unknown_items',
-                       'extra_logical_item', 'incomplete_items', 'failed_item', 'physical_as_logical',
-                       'missing_progress', 'wrong_actor', 'wrong_scan_status', 'unfinished_scan', 'integer_known_flag'}
-        for fault in (None, 'range_bytes', 'revoked', 'generation', 'cleanup', 'source_changed', 'extra_meta', *sorted(scan_faults)):
-            with self.subTest(fault=fault), tempfile.TemporaryDirectory() as temporary:
-                root = Path(temporary); archive = root / 'archive'; archive.mkdir()
-                env = {'ADDP_ONLINE_ARTIFACT_DIR': str(archive), 'ADDP_ONLINE_MANAGER_NFS_ENGINE_ID': '3',
-                       'ADDP_ONLINE_TEST_TENANT_ID': '4', 'GATEWAY_URL': 'http://fixture',
-                       'ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN': 'issuer'}
-                auth = mock.Mock(operator='11', recipient='22', base='/api/v1/system/engines/3')
-                auth.target.side_effect = lambda path: grants.file_target(3, path, 'nfs')
-                active, commands, models = set(), [], []
-                cleaned = False
-                def grant(model, *, action='read'):
-                    command = f'{action}-{model["layout"]}'; commands.append(command)
-                    if action == 'read': active.add(model['layout'])
-                    return {'request_id': command}
-                auth.grant.side_effect = grant
-                def facts(model):
-                    models.append(copy.deepcopy(model))
-                    return {'full_name': model['full_name'], 'boundary': {'layout': model['layout']},
-                            'boundary_hash': 'a' * 64}
-                auth.facts.side_effect = facts
-                def cleanup():
-                    nonlocal cleaned
-                    cleaned = True
-                    if fault == 'cleanup': raise OWNER.SuiteError('grant cleanup failed')
-                    active.clear()
-                auth.cleanup.side_effect = cleanup
-                items = [{'id': index, 'full_name': 'raster-tiff-msk/' + name, 'item_type': 'file',
-                          'fingerprint': str(index) * 64} for index, name in enumerate(('without-mask.tif', 'with-mask.tif'), 1)]
-                issuer = mock.Mock()
-                def issuer_request(method, path, statuses):
-                    if '/executions/' in path:
-                        payload = {'status': 'success', 'triggered_by': 11, 'metadata': {'items_scanned': 2},
-                                   'scan_progress': {'phase': 'finalizing', 'files_discovered': 3,
-                                       'directories_discovered': 1, 'files_total_known': True,
-                                       'items_planned': 2, 'items_total_known': True, 'items_completed': 2,
-                                       'items_succeeded': 2, 'items_failed': 0}}
-                        for label, field, value in (
-                                ('missing_file', 'files_discovered', 2), ('extra_file', 'files_discovered', 4),
-                                ('extra_directory', 'directories_discovered', 2), ('unknown_files', 'files_total_known', False),
-                                ('unknown_items', 'items_total_known', False), ('extra_logical_item', 'items_planned', 3),
-                                ('incomplete_items', 'items_completed', 1), ('failed_item', 'items_failed', 1),
-                                ('unfinished_scan', 'phase', 'processing'), ('integer_known_flag', 'files_total_known', 1)):
-                            if fault == label: payload['scan_progress'][field] = value
-                        if fault == 'missing_progress': payload.pop('scan_progress')
-                        if fault == 'wrong_actor': payload['triggered_by'] = 22
-                        if fault == 'wrong_scan_status': payload['status'] = 'failed'
-                        if fault == 'physical_as_logical': payload['metadata']['items_scanned'] = 3
-                    elif '/data-items?' in path:
-                        payload = {'total': 3 if fault == 'extra_meta' else 2,
-                                   'data': [{'full_name': item['full_name'], 'item_fingerprint': item['fingerprint']} for item in items]}
-                    else: payload = {'total': 0, 'data': []}
-                    return OWNER.Response(200, payload, {})
-                issuer.request.side_effect = issuer_request
-                client = mock.Mock()
-                def request(method, path, statuses, **kwargs):
-                    status, = statuses
-                    if '/storage-stream?' in path:
-                        query = parse_qs(urlsplit(path).query); member = query['storage_ref'][0]
-                        data = raw[Path(member).name]
-                        self.assertTrue((root / member).is_file(), 'revocation must be tested before source removal')
-                        layout = 'single' if 'without-mask' in query['locator'][0] else 'multi'
-                        if status == 206:
-                            self.assertIn(layout, active)
-                            body = b'bad' if fault == 'range_bytes' else data
-                            return OWNER.Response(206, {}, {'Content-Range': f'bytes 0-{len(data)-1}/{len(data)}'}, body)
-                        if status == 403:
-                            self.assertNotIn(layout, active)
-                            if cleaned and fault == 'revoked': return OWNER.Response(206, {}, {}, data)
-                        return OWNER.Response(status, {'error': 'denied'}, {})
-                    if '/meta/items/' in path:
-                        return OWNER.Response(200, {'attributes': {'item': {'layout': 'single' if path.endswith('/1') else 'multi'}}}, {})
-                    return OWNER.Response(200, {}, {}, b'COG')
-                client.request.side_effect = request
-                def generate(client, fixture, tenant, timeout, physical, **kwargs):
-                    self.assertEqual(active, {'single', 'multi'})
-                    fixture.task_id = 9; fixture.execution_id = 'execution'; fixture.result_id = 10
-                    fixture.artifact = {'physical': {'mask_verified': True, 'grid_verified': True, 'invalid_mask_pixels': 257},
-                                        'physical_request': {'source_case': 'msk'}, 'preview_url': '/cog/content',
-                                        'size_bytes': 3, 'sha256': hashlib.sha256(b'COG').hexdigest()}
-                    if fault == 'generation': raise OWNER.SuiteError('original generation failure')
-                    if fault == 'source_changed': (root / 'raster-tiff-msk/with-mask.tif.msk').write_bytes(b'changed')
-                physical = mock.Mock(side_effect=lambda action, request: source if action == 'msk-source' else {
-                    'object_deleted': True, 'source_unchanged': True, 'residual_objects': 0})
-                report = {}
-                with mock.patch.object(IMG, 'nfs_tiff_root', return_value=root), \
-                     mock.patch.object(grants, 'ModelSourceAuthorization', return_value=auth), \
-                     mock.patch.object(OWNER, 'GatewayClient', return_value=issuer), \
-                     mock.patch.object(OWNER, 'wait_for_meta_scan', return_value='scan'), \
-                     mock.patch.object(OWNER, 'find_fixture_item', side_effect=lambda client, engine, name, label: next(i for i in items if i['full_name'] == name)), \
-                     mock.patch.object(OWNER, 'generate_raster_cog', side_effect=generate), \
-                     mock.patch.object(OWNER, 'cleanup_managed_artifact') as delete:
-                    if fault:
-                        with self.assertRaises(OWNER.SuiteError) as error:
-                            IMG.verify_nfs_tiff_msk(OWNER, env, client, {'principal_id': '22'}, physical, report, 30)
-                        if fault == 'generation': self.assertIn('original generation failure', str(error.exception))
-                    else:
-                        IMG.verify_nfs_tiff_msk(OWNER, env, client, {'principal_id': '22'}, physical, report, 30)
-                auth.cleanup.assert_called_once()
-                self.assertEqual(report['result'], 'failed' if fault else 'passed')
-                if fault in scan_faults:
-                    auth.grant.assert_not_called()
-                    delete.assert_not_called()
-                    self.assertEqual(models, [])
-                elif fault not in ('range_bytes', 'extra_meta'):
-                    delete.assert_called_once()
-                if not fault:
-                    self.assertEqual(report['scan']['items_scanned'], 2)
-                    self.assertEqual(report['scan']['scan_progress']['files_discovered'], 3)
-                    self.assertEqual(report['scan']['scan_progress']['items_completed'], 2)
-                    self.assertEqual([m['layout'] for m in models], ['single', 'multi'])
-                    self.assertEqual(models[1]['composition'][1], {'path': 'raster-tiff-msk/with-mask.tif.msk',
-                        'role': 'mask', 'required': False, 'primary': False})
-                    self.assertEqual(commands, ['metadata_read-single', 'read-single', 'metadata_read-multi', 'read-multi'])
-                    self.assertTrue(report['source_unchanged'] and report['zero_current_grants'] and report['object_deleted'])
-                    self.assertEqual([r['status'] for item in report['items'] for r in item['revoked']], [403] * 3)
-                if fault in ('cleanup', 'revoked', 'source_changed'): self.assertTrue(report['cleanup_errors'])
+        spec = IMG.TIFF_COMPOSITIONS['sidecars']; name = spec['directory'] + '/' + spec['multi']
+        model = {'format': 'tiff', 'layout': 'multi', 'full_name': name, 'fingerprint': 'a' * 64,
+                 'composition': [{'path': name, 'role': 'image', 'primary': True, 'required': True},
+                     *({'path': spec['directory'] + '/' + path, 'role': role, 'primary': False, 'required': False}
+                       for path, role in spec['auxiliary'])]}
+        refs = [{'target': grants.file_target(3, ref['path'], 'nfs'),
+                 **{key: ref[key] for key in ('role', 'primary', 'required')}} for ref in model['composition']]
+        refs.sort(key=lambda ref: json.dumps(ref['target'], ensure_ascii=False, separators=(',', ':')))
+        composition = {'format': 'tiff', 'source_layout': 'multi', 'refs': refs}
+        facts = {'schema_version': 'meta.data_item_authorization_facts/v1', 'engine_id': '3',
+                 'item_fingerprint': model['fingerprint'], 'full_name': name, 'item_type': 'file',
+                 'basis_state': 'complete', 'boundary_hash': 'b' * 64, 'observed_at': '2026-11-13T03:00:00Z',
+                 'boundary': {'layout': 'multi', 'file_composition': composition}}
+        issuer = mock.Mock()
+        def request(method, path, statuses, body=None):
+            if method == 'GET': return SimpleNamespace(payload=facts)
+            return SimpleNamespace(payload={**body, 'engine_id': '3', 'approval_mode': 'independent',
+                'operator_principal_id': '11', 'revocation': None, 'boundary_hash': facts['boundary_hash'],
+                'file_composition': composition, 'expires_at': None})
+        issuer.request.side_effect = request
+        with mock.patch.object(grants, 'exact_user_principal', side_effect=['11', '22']):
+            auth = grants.ModelSourceAuthorization(issuer, mock.Mock(),
+                {'tenant_id': 4, 'engine_id': 3, 'principal_id': '22'}, source_type='nfs')
+        auth.grant(model)
+        command = issuer.request.call_args.args[3]
+        self.assertEqual(command['expected_boundary_hash'], facts['boundary_hash'])
+        self.assertEqual(command['item_fingerprint'], facts['item_fingerprint'])
+        self.assertNotIn('file_composition', command)
+        original = copy.deepcopy(facts)
+        for role in ('header', 'world_file', 'auxiliary_metadata'):
+            for mutation in ('missing', 'required', 'primary'):
+                facts.clear(); facts.update(copy.deepcopy(original))
+                current = facts['boundary']['file_composition']['refs']
+                ref = next(ref for ref in current if ref['role'] == role)
+                if mutation == 'missing': current.remove(ref)
+                else: ref[mutation] = True
+                count = sum(call.args[0] == 'POST' for call in issuer.request.call_args_list)
+                with self.subTest(role=role, mutation=mutation), self.assertRaises(grants.SuiteError): auth.grant(model)
+                self.assertEqual(sum(call.args[0] == 'POST' for call in issuer.request.call_args_list), count)
+
+    def test_tiff_compositions_complete_reads_revocation_and_failure_cleanup(self):
+        grants = importlib.import_module('scripts.test.ftp-consumer-flow-online')
+        for profile, spec in IMG.TIFF_COMPOSITIONS.items():
+            raw = {spec['single']: b'TIFF' * 32, spec['multi']: b'TIFF' * 32,
+                   **{name: role.encode() * 32 for name, role in spec['auxiliary']}}
+            source = {'primary_bytes_equal': True, 'files': {
+                name: {'base64': base64.b64encode(data).decode(), 'size_bytes': len(data),
+                       'sha256': hashlib.sha256(data).hexdigest()} for name, data in raw.items()},
+                'proofs': {'single': {'invalid_mask_pixels': 1}, 'multi': {'invalid_mask_pixels': spec['invalid_mask_pixels']}}}
+            scan_faults = {'missing_file', 'extra_file', 'extra_directory', 'unknown_files', 'unknown_items',
+                           'extra_logical_item', 'incomplete_items', 'failed_item', 'physical_as_logical',
+                           'missing_progress', 'wrong_actor', 'wrong_scan_status', 'unfinished_scan', 'integer_known_flag'}
+            for fault in (None, 'range_bytes', 'revoked', 'generation', 'cleanup', 'source_changed', 'extra_meta', *sorted(scan_faults)):
+                with self.subTest(profile=profile, fault=fault), tempfile.TemporaryDirectory() as temporary:
+                    root = Path(temporary); archive = root / 'archive'; archive.mkdir()
+                    env = {'ADDP_ONLINE_ARTIFACT_DIR': str(archive), 'ADDP_ONLINE_MANAGER_NFS_ENGINE_ID': '3',
+                           'ADDP_ONLINE_TEST_TENANT_ID': '4', 'GATEWAY_URL': 'http://fixture',
+                           'ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN': 'issuer'}
+                    auth = mock.Mock(operator='11', recipient='22', base='/api/v1/system/engines/3')
+                    auth.target.side_effect = lambda path: grants.file_target(3, path, 'nfs')
+                    active, commands, models = set(), [], []
+                    cleaned = False
+                    def grant(model, *, action='read'):
+                        command = f'{action}-{model["layout"]}'; commands.append(command)
+                        if action == 'read': active.add(model['layout'])
+                        return {'request_id': command}
+                    auth.grant.side_effect = grant
+                    def facts(model):
+                        models.append(copy.deepcopy(model))
+                        return {'full_name': model['full_name'], 'boundary': {'layout': model['layout']},
+                                'boundary_hash': 'a' * 64}
+                    auth.facts.side_effect = facts
+                    def cleanup():
+                        nonlocal cleaned
+                        cleaned = True
+                        if fault == 'cleanup': raise OWNER.SuiteError('grant cleanup failed')
+                        active.clear()
+                    auth.cleanup.side_effect = cleanup
+                    items = [{'id': index, 'full_name': spec['directory'] + '/' + name, 'item_type': 'file',
+                              'fingerprint': str(index) * 64} for index, name in enumerate((spec['single'], spec['multi']), 1)]
+                    issuer = mock.Mock()
+                    def issuer_request(method, path, statuses):
+                        if '/executions/' in path:
+                            payload = {'status': 'success', 'triggered_by': 11, 'metadata': {'items_scanned': 2},
+                                       'scan_progress': {'phase': 'finalizing', 'files_discovered': len(raw),
+                                           'directories_discovered': 1, 'files_total_known': True,
+                                           'items_planned': 2, 'items_total_known': True, 'items_completed': 2,
+                                           'items_succeeded': 2, 'items_failed': 0}}
+                            for label, field, value in (
+                                    ('missing_file', 'files_discovered', len(raw)-1), ('extra_file', 'files_discovered', len(raw)+1),
+                                    ('extra_directory', 'directories_discovered', 2), ('unknown_files', 'files_total_known', False),
+                                    ('unknown_items', 'items_total_known', False), ('extra_logical_item', 'items_planned', 3),
+                                    ('incomplete_items', 'items_completed', 1), ('failed_item', 'items_failed', 1),
+                                    ('unfinished_scan', 'phase', 'processing'), ('integer_known_flag', 'files_total_known', 1)):
+                                if fault == label: payload['scan_progress'][field] = value
+                            if fault == 'missing_progress': payload.pop('scan_progress')
+                            if fault == 'wrong_actor': payload['triggered_by'] = 22
+                            if fault == 'wrong_scan_status': payload['status'] = 'failed'
+                            if fault == 'physical_as_logical': payload['metadata']['items_scanned'] = len(raw)
+                        elif '/data-items?' in path:
+                            payload = {'total': 3 if fault == 'extra_meta' else 2,
+                                       'data': [{'full_name': item['full_name'], 'item_fingerprint': item['fingerprint']} for item in items]}
+                        else: payload = {'total': 0, 'data': []}
+                        return OWNER.Response(200, payload, {})
+                    issuer.request.side_effect = issuer_request
+                    client = mock.Mock()
+                    def request(method, path, statuses, **kwargs):
+                        status, = statuses
+                        if '/storage-stream?' in path:
+                            query = parse_qs(urlsplit(path).query); member = query['storage_ref'][0]
+                            data = raw[Path(member).name]
+                            self.assertTrue((root / member).is_file(), 'revocation must be tested before source removal')
+                            layout = 'single' if spec['single'] in query['locator'][0] else 'multi'
+                            if status == 206:
+                                self.assertIn(layout, active)
+                                body = b'bad' if fault == 'range_bytes' else data
+                                return OWNER.Response(206, {}, {'Content-Range': f'bytes 0-{len(data)-1}/{len(data)}'}, body)
+                            if status == 403:
+                                self.assertNotIn(layout, active)
+                                if cleaned and fault == 'revoked': return OWNER.Response(206, {}, {}, data)
+                            return OWNER.Response(status, {'error': 'denied'}, {})
+                        if '/meta/items/' in path:
+                            return OWNER.Response(200, {'attributes': {'item': {'layout': 'single' if path.endswith('/1') else 'multi'}}}, {})
+                        return OWNER.Response(200, {}, {}, b'COG')
+                    client.request.side_effect = request
+                    def generate(client, fixture, tenant, timeout, physical, **kwargs):
+                        self.assertEqual(active, {'single', 'multi'})
+                        fixture.task_id = 9; fixture.execution_id = 'execution'; fixture.result_id = 10
+                        fixture.artifact = {'physical': {'mask_verified': True, 'grid_verified': True, 'invalid_mask_pixels': spec['invalid_mask_pixels']},
+                                            'physical_request': {'source_case': 'msk'}, 'preview_url': '/cog/content',
+                                            'size_bytes': 3, 'sha256': hashlib.sha256(b'COG').hexdigest()}
+                        if fault == 'generation': raise OWNER.SuiteError('original generation failure')
+                        if fault == 'source_changed': (root / spec['directory'] / spec['auxiliary'][-1][0]).write_bytes(b'changed')
+                    physical = mock.Mock(side_effect=lambda action, request: source if action == profile + '-source' else {
+                        'object_deleted': True, 'source_unchanged': True, 'residual_objects': 0})
+                    report = {}
+                    with mock.patch.object(IMG, 'nfs_tiff_root', return_value=root), \
+                         mock.patch.object(grants, 'ModelSourceAuthorization', return_value=auth), \
+                         mock.patch.object(OWNER, 'GatewayClient', return_value=issuer), \
+                         mock.patch.object(OWNER, 'wait_for_meta_scan', return_value='scan'), \
+                         mock.patch.object(OWNER, 'find_fixture_item', side_effect=lambda client, engine, name, label: next(i for i in items if i['full_name'] == name)), \
+                         mock.patch.object(OWNER, 'generate_raster_cog', side_effect=generate), \
+                         mock.patch.object(OWNER, 'cleanup_managed_artifact') as delete:
+                        if fault:
+                            with self.assertRaises(OWNER.SuiteError) as error:
+                                IMG.verify_nfs_tiff_composition(OWNER, env, client, {'principal_id': '22'}, physical, report, 30, profile=profile)
+                            if fault == 'generation': self.assertIn('original generation failure', str(error.exception))
+                        else:
+                            IMG.verify_nfs_tiff_composition(OWNER, env, client, {'principal_id': '22'}, physical, report, 30, profile=profile)
+                    auth.cleanup.assert_called_once()
+                    self.assertEqual(report['result'], 'failed' if fault else 'passed')
+                    if fault in scan_faults:
+                        auth.grant.assert_not_called()
+                        delete.assert_not_called()
+                        self.assertEqual(models, [])
+                    elif fault not in ('range_bytes', 'extra_meta'):
+                        delete.assert_called_once()
+                    if not fault:
+                        self.assertEqual(report['scan']['items_scanned'], 2)
+                        self.assertEqual(report['scan']['scan_progress']['files_discovered'], len(raw))
+                        self.assertEqual(report['scan']['scan_progress']['items_completed'], 2)
+                        self.assertEqual([m['layout'] for m in models], ['single', 'multi'])
+                        self.assertEqual(models[1]['composition'][1:], [
+                            {'path': spec['directory'] + '/' + name, 'role': role, 'required': False, 'primary': False}
+                            for name, role in spec['auxiliary']])
+                        self.assertEqual(commands, ['metadata_read-single', 'read-single', 'metadata_read-multi', 'read-multi'])
+                        self.assertTrue(report['source_unchanged'] and report['zero_current_grants'] and report['object_deleted'])
+                        self.assertEqual([r['status'] for item in report['items'] for r in item['revoked']], [403] * len(raw))
+                    if fault in ('cleanup', 'revoked', 'source_changed'): self.assertTrue(report['cleanup_errors'])
 
     def test_browser_locators_match_actual_chinese_and_english_labels(self):
         import re
