@@ -2151,7 +2151,7 @@ class ManagerAcceptanceCaseTest(unittest.TestCase):
 
     def test_both_formats_use_shared_scene_and_failure_preserves_partial_root(self):
         grants = importlib.import_module('scripts.test.ftp-consumer-flow-online')
-        for failure in (None, 'second', 'third', 'fourth', 'unclean', 'missing_nfs', 'missing_msk', 'missing_revocation', 'missing_sidecars', 'sidecar_member_missing', 'sidecar_revocation_missing', 'grant_residue'):
+        for failure in (None, 'second', 'third', 'fourth', 'unclean', 'missing_nfs', 'missing_msk', 'missing_revocation', 'missing_sidecars', 'sidecar_member_missing', 'sidecar_revocation_missing', 'missing_composition_browser', 'bad_composition_browser', 'grant_residue'):
             with self.subTest(failure=failure), tempfile.TemporaryDirectory() as directory:
                 env = {'ADDP_ONLINE_ARTIFACT_DIR': directory, 'ADDP_ONLINE_TEST_RUN_ID': 'media-1',
                        'ADDP_ONLINE_MANAGER_MINIO_ENGINE_ID': '27', 'ADDP_ONLINE_MANAGER_MINIO_BUCKET': 'isolated',
@@ -2201,6 +2201,22 @@ class ManagerAcceptanceCaseTest(unittest.TestCase):
                                               ('revoked', 206 if failure == 'sidecar_revocation_missing' else 403))}}
                                       for layout, count in (('single', 1), ('multi', 3 if failure == 'sidecar_member_missing' else 4))],
                         }
+                    if source_format == 'tiff':
+                        helpers = importlib.import_module('scripts.test.manager-img-online_test')
+                        for profile in ('msk', 'sidecars'):
+                            composition = report.get('nfs_tiff_' + profile)
+                            if composition is None: continue
+                            multi = composition['items'][1]
+                            multi.update(item_id=42, locator='exact-' + profile)
+                            artifact = composition['cog']['artifact']
+                            artifact.update(preview_url='/cog/' + profile, size_bytes=3, sha256='hash')
+                            composition['cog']['result_id'] = 10
+                            source = {'item_id': multi['item_id'], 'locator': multi['locator'], 'result_id': 10,
+                                      **{key: artifact[key] for key in ('preview_url', 'size_bytes', 'sha256')}}
+                            if failure != 'missing_composition_browser':
+                                composition['browser'] = helpers.composition_browser_report({'run_id': env['ADDP_ONLINE_TEST_RUN_ID'],
+                                    'profile': profile, 'identity': identity, 'source': source})
+                                if failure == 'bad_composition_browser': composition['browser']['renders'][1]['pixels'][1]['rgba'][3] = 0
                     return report
                 scene.run.side_effect = run
                 with mock.patch.object(importlib.util, 'spec_from_file_location') as spec, \

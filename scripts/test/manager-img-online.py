@@ -176,7 +176,7 @@ def verify_nfs_tiff_authorization(owner, environment, client, evidence, raw, bro
     return observed
 
 
-def verify_nfs_tiff_composition(owner, environment, client, identity, physical, report, timeout, *, profile):
+def verify_nfs_tiff_composition(owner, environment, client, identity, physical, report, timeout, *, profile, browser):
     grants = importlib.import_module('scripts.test.ftp-consumer-flow-online')
     spec = TIFF_COMPOSITIONS[profile]
     directory = spec['directory']
@@ -289,6 +289,10 @@ def verify_nfs_tiff_composition(owner, environment, client, identity, physical, 
         if len(cog_raw) != fixture.artifact['size_bytes'] or hashlib.sha256(cog_raw).hexdigest() != fixture.artifact['sha256']:
             raise owner.SuiteError('archived TIFF composition COG differs from the verified artifact')
         (archive / ('nfs-' + profile + '-result.cog.tif')).write_bytes(cog_raw)
+        evidence = {'source_format': 'tiff', 'profile': profile, 'run_id': environment['ADDP_ONLINE_TEST_RUN_ID'],
+                    'identity': identity, 'source': {'item_id': multi['item_id'], 'locator': multi['locator'],
+                        'result_id': fixture.result_id, **{key: fixture.artifact[key] for key in ('preview_url', 'size_bytes', 'sha256')}}}
+        report['browser'] = validate_composition_browser(owner, browser(evidence), evidence)
     except BaseException as error:
         failure = error
         raise
@@ -490,16 +494,49 @@ def validate_browser(owner, report, evidence):
     return report
 
 
+def validate_composition_browser(owner, report, evidence):
+    expected = {'schema_version': 'addp.manager-tiff-composition-browser/v1', 'result': 'passed',
+                **{key: evidence[key] for key in ('run_id', 'profile', 'identity', 'source')},
+                'range_status': 206, 'reopened': True, 'reused_result': True,
+                'generation_requests': 0, 'failed_business_responses': 0, 'warnings_errors': 0}
+    if any(type(report.get(key)) is not type(value) or report[key] != value for key, value in expected.items()):
+        raise owner.SuiteError('TIFF composition browser identity, Range or reuse proof is incomplete')
+    renders = report.get('renders', [])
+    if len(renders) != 2:
+        raise owner.SuiteError('TIFF composition browser must verify open and cached reopen')
+    names = ['mask-center', 'mask-left', 'mask-right', 'middle', 'bottom', 'outside']
+    for render in renders:
+        extent = render.get('extent', [])
+        pixels = render.get('pixels', [])
+        if (render.get('projection') != 'EPSG:4326' or len(extent) != 4
+                or any(not isinstance(value, (int, float)) or not abs(value - expected) <= 1e-8
+                       for value, expected in zip(extent, [113, 27.9744, 113.0256, 28]))
+                or [pixel.get('name') for pixel in pixels] != names):
+            raise owner.SuiteError('TIFF composition browser rendered grid or samples differ')
+        for pixel in pixels:
+            opaque = pixel['name'] != 'outside' and (pixel['name'] != 'mask-center' or evidence['profile'] == 'sidecars')
+            rgba = pixel.get('rgba', [])
+            if (pixel.get('in_canvas') is not True or pixel.get('opaque') is not opaque or len(rgba) != 4
+                    or any(type(value) is not int or not 0 <= value <= 255 for value in rgba)
+                    or (rgba[3] < 200 if opaque else rgba[3] != 0)):
+                raise owner.SuiteError('TIFF composition browser rendered mask or location differs')
+    return report
+
+
 def run_browser(repository, environment, evidence, owner):
-    path = Path(environment['ADDP_ONLINE_ARTIFACT_DIR']) / ('manager-'+evidence['source_format']+'-browser.json')
+    composition = evidence.get('profile')
+    name = 'tiff-' + composition if composition else evidence['source_format']
+    path = Path(environment['ADDP_ONLINE_ARTIFACT_DIR']) / ('manager-' + name + '-browser.json')
     path.unlink(missing_ok=True)
     env = {key: value for key, value in environment.items() if not key.endswith('_ACCESS_TOKEN')}
     env['ADDP_ONLINE_MANAGER_RASTER_MEDIA_JSON'] = json.dumps(evidence)
-    result = subprocess.run(['npm', 'exec', '--', 'playwright', 'test', 'e2e/online/manager-img.spec.js',
+    spec = 'e2e/online/manager-tiff-composition.spec.js' if composition else 'e2e/online/manager-img.spec.js'
+    result = subprocess.run(['npm', 'exec', '--', 'playwright', 'test', spec,
                              '--config=playwright.online.config.js'], cwd=repository / 'console/frontend', env=env, check=False)
     if result.returncode or not path.is_file():
         raise owner.SuiteError('IMG Hosted browser acceptance did not succeed')
-    return validate_browser(owner, json.loads(path.read_text()), evidence)
+    validate = validate_composition_browser if composition else validate_browser
+    return validate(owner, json.loads(path.read_text()), evidence)
 
 
 def run(repository, environment, owner, *, browser_runner=None, physical_runner=None, source_format="img"):
@@ -571,7 +608,7 @@ def run(repository, environment, owner, *, browser_runner=None, physical_runner=
                 source_raw, browser, report.setdefault('nfs_tiff_authorization', {}), timeout)
             for profile in TIFF_COMPOSITIONS:
                 verify_nfs_tiff_composition(owner, environment, client, identity, physical,
-                    report.setdefault('nfs_tiff_' + profile, {}), timeout, profile=profile)
+                    report.setdefault('nfs_tiff_' + profile, {}), timeout, profile=profile, browser=browser)
         else:
             report['browser'] = validate_browser(owner, browser(browser_evidence), browser_evidence)
         for fixture in fixtures:

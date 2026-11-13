@@ -648,6 +648,8 @@ def validate_manager_internal_artifact_lineage_profile(repository: Path, registe
         "console/frontend/playwright.online.config.js",
         "console/frontend/e2e/online/manager-internal-artifact-lineage.spec.js",
         "console/frontend/e2e/online/manager-img.spec.js",
+        "console/frontend/e2e/online/manager-tiff-composition.spec.js",
+        "manager/frontend/e2e/raster-composition-support.js",
         "console/frontend/e2e/online/manager-kml-export.spec.js",
     ):
         if not (repository / relative).is_file():
@@ -711,6 +713,7 @@ def validate_manager_internal_artifact_lineage_profile(repository: Path, registe
             or "for source_format in ('img', 'jpeg2000', 'grd', 'tiff')" not in manager_owner
             or not img_runner or '\t@python3 -m unittest scripts/test/manager-img-online_test.py' not in make_target_commands(make, "test-manager-online-runner")
             or '\t@node --check --input-type=module < console/frontend/e2e/online/manager-img.spec.js' not in make_target_commands(make, "test-manager-online-runner")
+            or '\t@node --check --input-type=module < console/frontend/e2e/online/manager-tiff-composition.spec.js' not in make_target_commands(make, "test-manager-online-runner")
             or any(not source_contract_contains(img_owner, fragment, repository) for fragment in ('manager-img.spec.js', 'generate_raster_cog', 'cleanup_managed_artifact', 'source_format', 'JPEG2000_SOURCES', 'GRD_SOURCES', 'grid_facts', 'addp.manager-raster-media/v2'))
             or any(not source_contract_contains(img_browser, fragment, repository) for fragment in ('modelPixels', 'range_loaded', 'reused_result', 'generation_unavailable', 'source_image_absent', 'unsupported_message_visible', 'download_sha256', 'matchesSourcePreviewResponse', 'source_preview_verified', 'addp.manager-raster-media-browser/v4'))):
         raise RegistrationError('Manager IMG Hosted subscene must include real generation, browser, cleanup and standard regressions')

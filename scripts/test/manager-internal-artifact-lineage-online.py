@@ -2498,6 +2498,13 @@ def run_native_raster_media_case(repository, environment, client, identity):
                         for phase, status in (('before_grant', 403), ('granted', 206), ('revoked', 403)))
                         for item, count in zip(items, (1, member_count)))):
                 raise SuiteError(f'native raster media requires complete {profile} TIFF authorization and cleanup evidence')
+            from importlib import import_module
+            cog = composition['cog']
+            artifact = cog['artifact']
+            source = {'item_id': items[1]['item_id'], 'locator': items[1]['locator'], 'result_id': cog['result_id'],
+                      **{key: artifact[key] for key in ('preview_url', 'size_bytes', 'sha256')}}
+            import_module('scripts.test.manager-img-online').validate_composition_browser(sys.modules[__name__],
+                composition.get('browser', {}), {'run_id': report['run_id'], 'profile': profile, 'identity': identity, 'source': source})
         report["result"] = "passed"
         return report
     except BaseException as failure:

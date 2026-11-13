@@ -290,6 +290,10 @@ MSK 扫描回执必须同时证明三个物理文件和两个成功完成的逻�
 
 四成员回归使用同一 TIFF 子报告的 `nfs_tiff_sidecars`，与MSK共享组成验收实现且保留原MSK断言。夹具为一份TIFF＋同basename HDR／TFW＋主文件完整名追加PAM，以及主文件字节相同的独立TIFF对照；不上传个人SRTM。主TIFF不内嵌定位，TFW提供固定仿射网格，PAM提供EPSG:4326，HDR作为完整可选成员参与授权、版本及读取。独立TIFF必须保持single且无定位，四成员multi的主image必需、header／world_file／auxiliary_metadata均显式可选。扫描必须恰好五物理文件／一目录／两逻辑项且全部成功；正式System事实必须完整对应Meta组成，五成员逐项核授权前403、完整Range206及撤权后403，single locator跨项借用辅助文件为400。额外一份COG核全部65,536个Int32像元、1个NoData无效像元、完整mask、TFW网格、PAM坐标系及COG布局；TFW／PAM缺失或变化的原生反例不得因主TIFF可读而通过；HDR完整性由正式组成、组件版本和原字节核对保证。原有四格式、单文件浏览器、自然到期和MSK证明保持不变，不增加权限／服务／预算。新增四成员Hosted须单独确认后执行；确定性测试或既有两成员MSK的成功不得替代。
 
+#### TIFF 组成的浏览器画布断言
+
+MSK 与四成员 COG 在授权有效、成果删除前分别打开真实 Console 快显。共用本地 Manager 浏览器断言：使用夹具独立公式计算 EPSG:4326 网格与 Web Mercator 像素位置，核对实际 OpenLayers 源投影／范围、画布有效像元及范围外透明像元；MSK 的 16×16 无效区中心必须透明、邻近有效区必须可见，四成员同位置必须可见。读取 WebGL 层 postrender 的真实 RGBA，不用元数据或原生掩膜结果代替显示证据。页面重开必须复用同一成果并再次核对，实际 COG Range 为 206，浏览器零生成／零业务失败／零警告。页面报告单独使用 `addp.manager-tiff-composition-browser/v1`，绑定 run、profile、普通身份、源 locator、item、成果 ID 和 URL；缺失或错误页面证明均使组成验收失败，随后仍执行原撤权与清理。掩膜区被强制画成不透明、地图移出预期位置的本地画布反例，以及错误网格／掩膜报告必须被拒绝。本地页面／runner 通过不表示 Hosted 已通过，新增 Hosted 仍须单独确认。
+
 #### TIFF 清理与共同边界
 
 MinIO 小图、NFS 单文件、MSK 及四成员结果分别判定；MSK和四成员扩展各生成一份额外COG，不改变小图“不得提交生成”的要求。保留 IMG／JPEG2000 原四份受管 COG 的缓存、任务／成果／物理删除和模式恢复；它们不替代 TIFF 自身断言。

@@ -4005,7 +4005,10 @@ class OnlineCIRegistrationTest(unittest.TestCase):
             target.write_text((SCRIPT.parents[2]/relative).read_text())
         img_owner = self.repository / 'scripts/test/manager-img-online.py'
         img_browser = browser.with_name('manager-img.spec.js')
-        for target in (img_owner, img_browser, img_owner.with_name('manager-img-online_test.py')):
+        for target in (img_owner, img_browser, img_owner.with_name('manager-img-online_test.py'),
+                       img_browser.with_name('manager-tiff-composition.spec.js'),
+                       self.repository / 'manager/frontend/e2e/raster-composition-support.js'):
+            target.parent.mkdir(parents=True, exist_ok=True)
             target.write_text((SCRIPT.parents[2] / target.relative_to(self.repository)).read_text())
         kml_owner = owner.with_name('manager-kml-export-online.py')
         kml_browser = browser.with_name('manager-kml-export.spec.js')
@@ -4016,7 +4019,7 @@ class OnlineCIRegistrationTest(unittest.TestCase):
         owner.write_text(owner.read_text() + "\nfor source_format in ('img', 'jpeg2000', 'grd', 'tiff'):\n" + '\nimg_scene.run(repository, environment, sys.modules[__name__], source_format=source_format)\n')
         owner.write_text(owner.read_text() + '\ndef manager_case(\ndef run_full_case(\ndef run_raster_media_scenes(\ndef run_native_raster_media_case(\nmanager-native-raster-media.json addp.manager-native-raster-media/v2\ncase = manager_case(os.environ)\nif case == "native-raster-media":\n')
         make = self.repository / 'Makefile'
-        make.write_text((make.read_text() if make.exists() else '') + '\ntest-manager-online-runner:\n\t@node --check --input-type=module < console/frontend/e2e/online/manager-img.spec.js\n\t@python3 -m unittest scripts/test/manager-img-online_test.py\n')
+        make.write_text((make.read_text() if make.exists() else '') + '\ntest-manager-online-runner:\n\t@node --check --input-type=module < console/frontend/e2e/online/manager-img.spec.js\n\t@node --check --input-type=module < console/frontend/e2e/online/manager-tiff-composition.spec.js\n\t@python3 -m unittest scripts/test/manager-img-online_test.py\n')
         make.write_text(make.read_text() + '\t@node --check --input-type=module < console/frontend/e2e/online/manager-kml-export.spec.js\n\t@python3 -m unittest scripts/test/manager-kml-export-online_test.py scripts/test/manager-filegdb-export-online_test.py\n')
         for relative in ('scripts/test/manager-orc-online.py','scripts/test/manager-orc-online_test.py',
                          'business/scripts/online-orc-fixture.py','console/frontend/e2e/online/manager-orc.spec.js'):

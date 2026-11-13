@@ -51,6 +51,20 @@ def preview_payload(item):
         'object': {'size_bytes': item['size_bytes']}}}
 
 
+def composition_browser_report(evidence):
+    names = ['mask-center', 'mask-left', 'mask-right', 'middle', 'bottom', 'outside']
+    pixels = []
+    for name in names:
+        opaque = name != 'outside' and (name != 'mask-center' or evidence['profile'] == 'sidecars')
+        pixels.append({'name': name, 'in_canvas': True, 'opaque': opaque, 'rgba': [128, 128, 128, 209] if opaque else [0, 0, 0, 0]})
+    render = {'projection': 'EPSG:4326', 'extent': [113, 27.9744, 113.0256, 28], 'pixels': pixels}
+    return {'schema_version': 'addp.manager-tiff-composition-browser/v1', 'result': 'passed',
+            **{key: evidence[key] for key in ('run_id', 'profile', 'identity', 'source')},
+            'range_status': 206, 'reopened': True, 'reused_result': True,
+            'generation_requests': 0, 'failed_business_responses': 0, 'warnings_errors': 0,
+            'renders': [copy.deepcopy(render), copy.deepcopy(render)]}
+
+
 def browser_report(evidence):
     cases = []
     for source in evidence['cases']:
@@ -245,10 +259,10 @@ class ManagerIMGTests(unittest.TestCase):
             scan_faults = {'missing_file', 'extra_file', 'extra_directory', 'unknown_files', 'unknown_items',
                            'extra_logical_item', 'incomplete_items', 'failed_item', 'physical_as_logical',
                            'missing_progress', 'wrong_actor', 'wrong_scan_status', 'unfinished_scan', 'integer_known_flag'}
-            for fault in (None, 'range_bytes', 'revoked', 'generation', 'cleanup', 'source_changed', 'extra_meta', *sorted(scan_faults)):
+            for fault in (None, 'range_bytes', 'revoked', 'generation', 'cleanup', 'source_changed', 'extra_meta', 'browser', 'opaque_mask', 'shifted_grid', *sorted(scan_faults)):
                 with self.subTest(profile=profile, fault=fault), tempfile.TemporaryDirectory() as temporary:
                     root = Path(temporary); archive = root / 'archive'; archive.mkdir()
-                    env = {'ADDP_ONLINE_ARTIFACT_DIR': str(archive), 'ADDP_ONLINE_MANAGER_NFS_ENGINE_ID': '3',
+                    env = {'ADDP_ONLINE_TEST_RUN_ID': 'composition-1', 'ADDP_ONLINE_ARTIFACT_DIR': str(archive), 'ADDP_ONLINE_MANAGER_NFS_ENGINE_ID': '3',
                            'ADDP_ONLINE_TEST_TENANT_ID': '4', 'GATEWAY_URL': 'http://fixture',
                            'ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN': 'issuer'}
                     auth = mock.Mock(operator='11', recipient='22', base='/api/v1/system/engines/3')
@@ -328,6 +342,14 @@ class ManagerIMGTests(unittest.TestCase):
                         if fault == 'source_changed': (root / spec['directory'] / spec['auxiliary'][-1][0]).write_bytes(b'changed')
                     physical = mock.Mock(side_effect=lambda action, request: source if action == profile + '-source' else {
                         'object_deleted': True, 'source_unchanged': True, 'residual_objects': 0})
+                    def browser(evidence):
+                        self.assertFalse(cleaned, 'browser must run before grant cleanup')
+                        self.assertEqual(active, {'single', 'multi'})
+                        result = composition_browser_report(evidence)
+                        if fault == 'browser': raise OWNER.SuiteError('original browser failure')
+                        if fault == 'opaque_mask': result['renders'][1]['pixels'][0]['rgba'][3] = 255 if profile == 'msk' else 0
+                        if fault == 'shifted_grid': result['renders'][0]['extent'][0] += .1
+                        return result
                     report = {}
                     with mock.patch.object(IMG, 'nfs_tiff_root', return_value=root), \
                          mock.patch.object(grants, 'ModelSourceAuthorization', return_value=auth), \
@@ -338,10 +360,10 @@ class ManagerIMGTests(unittest.TestCase):
                          mock.patch.object(OWNER, 'cleanup_managed_artifact') as delete:
                         if fault:
                             with self.assertRaises(OWNER.SuiteError) as error:
-                                IMG.verify_nfs_tiff_composition(OWNER, env, client, {'principal_id': '22'}, physical, report, 30, profile=profile)
+                                IMG.verify_nfs_tiff_composition(OWNER, env, client, {'principal_id': '22'}, physical, report, 30, profile=profile, browser=browser)
                             if fault == 'generation': self.assertIn('original generation failure', str(error.exception))
                         else:
-                            IMG.verify_nfs_tiff_composition(OWNER, env, client, {'principal_id': '22'}, physical, report, 30, profile=profile)
+                            IMG.verify_nfs_tiff_composition(OWNER, env, client, {'principal_id': '22'}, physical, report, 30, profile=profile, browser=browser)
                     auth.cleanup.assert_called_once()
                     self.assertEqual(report['result'], 'failed' if fault else 'passed')
                     if fault in scan_faults:
@@ -362,6 +384,29 @@ class ManagerIMGTests(unittest.TestCase):
                         self.assertTrue(report['source_unchanged'] and report['zero_current_grants'] and report['object_deleted'])
                         self.assertEqual([r['status'] for item in report['items'] for r in item['revoked']], [403] * len(raw))
                     if fault in ('cleanup', 'revoked', 'source_changed'): self.assertTrue(report['cleanup_errors'])
+
+    def test_composition_browser_rejects_wrong_identity_grid_alpha_and_cached_result(self):
+        for profile in IMG.TIFF_COMPOSITIONS:
+            evidence = {'run_id': 'run', 'profile': profile, 'identity': {'principal_id': '22'},
+                        'source': {'item_id': 2, 'locator': 'exact', 'result_id': 10, 'preview_url': '/cog', 'size_bytes': 3, 'sha256': 'hash'}}
+            good = composition_browser_report(evidence)
+            IMG.validate_composition_browser(OWNER, good, evidence)
+            mutations = [lambda r: r.update(schema_version='old'), lambda r: r.update(run_id='other'),
+                lambda r: r.update(identity={}), lambda r: r['source'].update(result_id=11),
+                lambda r: r.update(range_status=200), lambda r: r.update(generation_requests=1),
+                lambda r: r.update(warnings_errors=1), lambda r: r.update(failed_business_responses=1),
+                lambda r: r.update(reopened=False), lambda r: r.update(reused_result=False),
+                lambda r: r['renders'].pop(), lambda r: r['renders'][0].update(projection='EPSG:3857'),
+                lambda r: r['renders'][0]['extent'].__setitem__(0, 114),
+                lambda r: r['renders'][0]['extent'].__setitem__(0, float('nan')),
+                lambda r: r['renders'][1]['pixels'].pop(), lambda r: r['renders'][1]['pixels'][1].update(in_canvas=False),
+                lambda r: r['renders'][1]['pixels'][1]['rgba'].__setitem__(3, 0),
+                lambda r: r['renders'][1]['pixels'][-1]['rgba'].__setitem__(3, 209),
+                lambda r: r['renders'][1]['pixels'][0]['rgba'].__setitem__(3, 209 if profile == 'msk' else 0)]
+            for index, mutate in enumerate(mutations):
+                bad = copy.deepcopy(good); mutate(bad)
+                with self.subTest(profile=profile, mutation=index), self.assertRaises(OWNER.SuiteError):
+                    IMG.validate_composition_browser(OWNER, bad, evidence)
 
     def test_browser_locators_match_actual_chinese_and_english_labels(self):
         import re
