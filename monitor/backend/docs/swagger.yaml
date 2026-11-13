@@ -1080,6 +1080,36 @@ definitions:
       window_started_at:
         type: string
     type: object
+  github_com_addp_monitor_internal_service.ExecutionTraceStage:
+    properties:
+      attempt:
+        type: integer
+      duration_ms:
+        type: number
+      end:
+        type: string
+      outcome:
+        type: string
+      phase:
+        type: string
+      slot:
+        type: string
+      start:
+        type: string
+      state:
+        type: string
+    type: object
+  github_com_addp_monitor_internal_service.ExecutionTraceStagesResponse:
+    properties:
+      execution_id:
+        type: string
+      stages:
+        items:
+          $ref: '#/definitions/github_com_addp_monitor_internal_service.ExecutionTraceStage'
+        type: array
+      supported:
+        type: boolean
+    type: object
   github_com_addp_monitor_internal_service.ExecutionTreeNode:
     properties:
       children:
@@ -3764,6 +3794,65 @@ paths:
       security:
       - BearerAuth: []
       summary: 获取执行过程事件 | Get execution process events
+      tags:
+      - Monitor
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - monitor.execution.read
+  /executions/by-execution-id/{execution_id}/trace-stages:
+    get:
+      description: 第一方Tenant User，当前Owner逐次裁决；最多两个精确阶段锚点，不返回技术ID、完整Trace或日志。整个Owner读取与Trace查询共用5秒及原预算
+        | First-party Tenant User with a fresh Owner decision. At most two exact stage
+        anchors, without technical IDs, full traces or logs. Owner and trace reads
+        share five seconds and existing budgets.
+      parameters:
+      - description: 规范执行UUID | Canonical execution UUID
+        in: path
+        name: execution_id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_addp_monitor_internal_service.ExecutionTraceStagesResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "422":
+          description: Unprocessable Entity
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "429":
+          description: Too Many Requests
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "504":
+          description: Gateway Timeout
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 查看已授权执行的阶段追踪 | Read authorized execution stage observations
       tags:
       - Monitor
       x-addp-auth-mode: permission

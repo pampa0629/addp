@@ -66,7 +66,7 @@ func SetupRouter(
 	})
 
 	// 创建 Handlers
-	executionHandler := NewExecutionHandler(queryService)
+	executionHandler := NewExecutionHandler(queryService, traceService)
 	statisticsHandler := NewStatisticsHandler(statisticsService)
 	healthHandler := NewHealthHandler(healthService)
 	var runtimeHealthHandler *RuntimeHealthHandler
@@ -202,6 +202,7 @@ func SetupRouter(
 		api.GET("/executions/by-execution-id/:execution_id/tree", permission(monitorauthorization.PermissionMonitorExecutionRead), executionReadMiddleware(queryService), executionHandler.GetExecutionTreeByExecutionID)
 		api.GET("/executions/by-execution-id/:execution_id", permission(monitorauthorization.PermissionMonitorExecutionRead), executionReadMiddleware(queryService), executionHandler.GetExecutionByExecutionID)
 		api.GET("/executions/by-execution-id/:execution_id/events", permission(monitorauthorization.PermissionMonitorExecutionRead), executionReadMiddleware(queryService), executionHandler.GetExecutionEvents)
+		api.GET("/executions/by-execution-id/:execution_id/trace-stages", permission(monitorauthorization.PermissionMonitorExecutionRead), executionHandler.GetExecutionTraceStages)
 		api.GET("/executions/:id/tree", permission(monitorauthorization.PermissionMonitorExecutionRead), executionReadMiddleware(queryService), executionHandler.GetExecutionTree)
 		api.GET("/executions/:id", permission(monitorauthorization.PermissionMonitorExecutionRead), executionReadMiddleware(queryService), executionHandler.GetExecution)
 

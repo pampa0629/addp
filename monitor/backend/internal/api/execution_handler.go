@@ -16,12 +16,14 @@ import (
 // ExecutionHandler 执行记录 Handler
 type ExecutionHandler struct {
 	queryService *service.ExecutionQueryService
+	traceService *service.TraceService
 }
 
 // NewExecutionHandler 创建 Handler
-func NewExecutionHandler(queryService *service.ExecutionQueryService) *ExecutionHandler {
+func NewExecutionHandler(queryService *service.ExecutionQueryService, traceService *service.TraceService) *ExecutionHandler {
 	return &ExecutionHandler{
 		queryService: queryService,
+		traceService: traceService,
 	}
 }
 

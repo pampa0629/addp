@@ -12,11 +12,8 @@ import (
 
 func executionReadMiddleware(query *service.ExecutionQueryService) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		identity, ok := commonauth.AuthContextFromGin(c)
-		tenant, tenantOK := commonauth.TenantIDFromGin(c)
-		principal, principalOK := commonauth.PrincipalIDFromGin(c)
-		if !ok || !tenantOK || !principalOK || identity.Principal.Type != "user" || identity.Token.Type != "first_party_access_token" || identity.Client.ScopeMode != "unrestricted" {
-			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error_code": "permission_denied", "error": commoni18n.T(c, commoni18n.MsgForbidden)})
+		tenant, principal, ok := executionReadIdentity(c)
+		if !ok {
 			return
 		}
 		if query == nil {
@@ -31,4 +28,15 @@ func executionReadMiddleware(query *service.ExecutionQueryService) gin.HandlerFu
 		c.Request = c.Request.WithContext(ctx)
 		c.Next()
 	}
+}
+
+func executionReadIdentity(c *gin.Context) (int64, int64, bool) {
+	identity, ok := commonauth.AuthContextFromGin(c)
+	tenant, tenantOK := commonauth.TenantIDFromGin(c)
+	principal, principalOK := commonauth.PrincipalIDFromGin(c)
+	if !ok || !tenantOK || !principalOK || identity.Principal.Type != "user" || identity.Token.Type != "first_party_access_token" || identity.Client.ScopeMode != "unrestricted" {
+		c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error_code": "permission_denied", "error": commoni18n.T(c, commoni18n.MsgForbidden)})
+		return 0, 0, false
+	}
+	return tenant, principal, true
 }

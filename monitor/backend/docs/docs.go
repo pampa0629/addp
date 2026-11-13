@@ -1060,6 +1060,92 @@ const docTemplate = `{
                 ]
             }
         },
+        "/executions/by-execution-id/{execution_id}/trace-stages": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "第一方Tenant User，当前Owner逐次裁决；最多两个精确阶段锚点，不返回技术ID、完整Trace或日志。整个Owner读取与Trace查询共用5秒及原预算 | First-party Tenant User with a fresh Owner decision. At most two exact stage anchors, without technical IDs, full traces or logs. Owner and trace reads share five seconds and existing budgets.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Monitor"
+                ],
+                "summary": "查看已授权执行的阶段追踪 | Read authorized execution stage observations",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "规范执行UUID | Canonical execution UUID",
+                        "name": "execution_id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_monitor_internal_service.ExecutionTraceStagesResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "429": {
+                        "description": "Too Many Requests",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "504": {
+                        "description": "Gateway Timeout",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "monitor.execution.read"
+                ]
+            }
+        },
         "/executions/by-execution-id/{execution_id}/tree": {
             "get": {
                 "security": [
@@ -8752,6 +8838,52 @@ const docTemplate = `{
                 },
                 "window_started_at": {
                     "type": "string"
+                }
+            }
+        },
+        "github_com_addp_monitor_internal_service.ExecutionTraceStage": {
+            "type": "object",
+            "properties": {
+                "attempt": {
+                    "type": "integer"
+                },
+                "duration_ms": {
+                    "type": "number"
+                },
+                "end": {
+                    "type": "string"
+                },
+                "outcome": {
+                    "type": "string"
+                },
+                "phase": {
+                    "type": "string"
+                },
+                "slot": {
+                    "type": "string"
+                },
+                "start": {
+                    "type": "string"
+                },
+                "state": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_addp_monitor_internal_service.ExecutionTraceStagesResponse": {
+            "type": "object",
+            "properties": {
+                "execution_id": {
+                    "type": "string"
+                },
+                "stages": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_monitor_internal_service.ExecutionTraceStage"
+                    }
+                },
+                "supported": {
+                    "type": "boolean"
                 }
             }
         },

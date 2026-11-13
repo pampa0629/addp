@@ -131,6 +131,18 @@ func (r *TaskExecutionRepository) GetByExecutionID(ctx context.Context, executio
 	return &exec, wrapDBError(err)
 }
 
+// OwnerByExecutionID locates only the internal identity needed for an Owner
+// decision. It grants no read scope and never reads private execution payloads.
+func (r *TaskExecutionRepository) OwnerByExecutionID(ctx context.Context, executionID string, tenantID int) (string, error) {
+	if tenantID <= 0 {
+		return "", commonapi.ErrNotFound
+	}
+	var identity struct{ Module string }
+	err := r.db.WithContext(ctx).Model(&TaskExecution{}).Select("module").
+		Where("execution_id = ? AND tenant_id = ?", executionID, tenantID).Take(&identity).Error
+	return identity.Module, wrapDBError(err)
+}
+
 // ListChildrenByParentExecutionID 根据父执行 UUID 查询直接子执行
 func (r *TaskExecutionRepository) ListChildrenByParentExecutionID(ctx context.Context, parentExecutionID string, tenantID, limit int) ([]*TaskExecution, error) {
 	if limit <= 0 || limit > 201 {
