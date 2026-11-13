@@ -61,9 +61,9 @@ func observeManagerPreviewTimings(c *gin.Context) {
 		return
 	}
 
-	// Authentication, Meta tenant resolution, then the rule snapshot each
+	// Authentication and the final rule snapshot each
 	// resolve once and synchronously. Extra or missing resolutions fail evidence.
-	var resolutions [3]slog.Value
+	var resolutions [2]slog.Value
 	count := 0
 	ctx = iam.WithAuthContextTiming(ctx, func(timing slog.Value) {
 		if count < len(resolutions) {
@@ -77,8 +77,7 @@ func observeManagerPreviewTimings(c *gin.Context) {
 	if count == len(resolutions) {
 		identity = slog.Group("auth_context_ns",
 			slog.Attr{Key: "route", Value: resolutions[0]},
-			slog.Attr{Key: "pre_meta", Value: resolutions[1]},
-			slog.Attr{Key: "rule_snapshot", Value: resolutions[2]})
+			slog.Attr{Key: "rule_snapshot", Value: resolutions[1]})
 	}
 	logging.SetCompletionDiagnostics(c, rule.LogGroup(), identity)
 }

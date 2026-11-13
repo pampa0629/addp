@@ -8,7 +8,23 @@ import (
 	commonapi "github.com/addp/common/api"
 	auth "github.com/addp/common/authorization"
 	engineplugin "github.com/addp/common/engine/plugin"
+	"github.com/addp/system/internal/iam"
+	"gorm.io/gorm"
 )
+
+// Exercise the real IAM entry resolution that HTTP authentication performs.
+// Invalid credentials leave no trusted request fact; the consumer must reject.
+func authenticatedManagerReadRequest(ctx context.Context, service *Service, credential string) context.Context {
+	resolver, err := iam.NewAuthContextService(service.repository.identity())
+	if err != nil {
+		panic(err)
+	}
+	current, err := resolver.ResolveAuthContext(ctx, credential)
+	if err != nil {
+		return ctx
+	}
+	return iam.WithAuthenticatedRequestIdentity(ctx, credential, *current)
+}
 
 func previewCheckContext() auth.AuthContext {
 	tenant, member, client := "3", "8", "addp-web"
@@ -19,6 +35,25 @@ func previewCheckContext() auth.AuthContext {
 		Authorization: auth.AuthorizationFacts{RoleAssignments: []auth.RoleAssignment{{
 			Scope: auth.AssignmentScope{Type: "tenant", TenantID: &tenant}, Permissions: []string{ManagerPreviewReadPermission},
 		}}},
+	}
+}
+
+func TestManagerReadRequiresThisRequestsAuthenticatedIdentity(t *testing.T) {
+	service := NewService(NewRepository(&gorm.DB{}), nil)
+	request := SourceReadCheckRequest{Targets: []engineplugin.EngineCatalogPath{engineplugin.TabularItemPath(12, "schema", "public", "C")}}
+	for _, check := range []func(context.Context, string, SourceReadCheckRequest) (*SourceReadCheck, error){
+		service.CheckManagerPreviewRead, service.CheckManagerProfileResultRead,
+	} {
+		for _, ctx := range []context.Context{
+			context.Background(),
+			iam.WithAuthenticatedRequestIdentity(context.Background(), "addp_at_other", previewCheckContext()),
+		} {
+			// The repository has no usable connection and there is no Meta reader:
+			// missing/mismatched entry facts must fail before either is consulted.
+			if result, err := check(ctx, "addp_at_original", request); result != nil || !errors.Is(err, commonapi.ErrUnauthorized) {
+				t.Fatalf("missing or different entry identity: result=%+v err=%v", result, err)
+			}
+		}
 	}
 }
 

@@ -15,6 +15,7 @@ import (
 	"github.com/addp/common/dataitem/authorizationfacts"
 	engineplugin "github.com/addp/common/engine/plugin"
 	"github.com/addp/system/internal/engineaccess"
+	"github.com/addp/system/internal/iam"
 	"github.com/addp/system/internal/middleware"
 	"github.com/gin-gonic/gin"
 )
@@ -31,8 +32,11 @@ func (f *sourceReadCheckFixture) CheckManagerProfileResultRead(ctx context.Conte
 	return f.CheckManagerPreviewRead(ctx, credential, request)
 }
 
-func (f *sourceReadCheckFixture) CheckManagerPreviewRead(_ context.Context, credential string, request engineaccess.SourceReadCheckRequest) (*engineaccess.SourceReadCheck, error) {
+func (f *sourceReadCheckFixture) CheckManagerPreviewRead(ctx context.Context, credential string, request engineaccess.SourceReadCheckRequest) (*engineaccess.SourceReadCheck, error) {
 	f.calls++
+	if _, ok := iam.AuthenticatedRequestIdentity(ctx, credential); !ok {
+		return nil, errors.New("route did not pass its credential-bound entry identity")
+	}
 	expected := f.credential
 	if expected == "" {
 		expected = "addp_at_test"

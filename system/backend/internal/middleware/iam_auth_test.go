@@ -12,6 +12,7 @@ import (
 	commonapi "github.com/addp/common/api"
 	commonauth "github.com/addp/common/authorization"
 	sharedauth "github.com/addp/common/middleware/auth"
+	"github.com/addp/system/internal/iam"
 	"github.com/gin-gonic/gin"
 )
 
@@ -30,6 +31,16 @@ func TestIAMAuthenticationMiddlewareInjectsOnlyCanonicalContext(t *testing.T) {
 		resolved, exists := IAMAuthContextFromGin(c)
 		if !exists || resolved.Principal.ID != "12" {
 			t.Fatalf("IAM AuthContext = %#v, exists = %t", resolved, exists)
+		}
+		entry, bound := iam.AuthenticatedRequestIdentity(c.Request.Context(), "addp_at_access")
+		if !bound || entry.Principal.ID != resolved.Principal.ID {
+			t.Fatal("authenticated request identity missing or changed")
+		}
+		if _, bound := iam.AuthenticatedRequestIdentity(c.Request.Context(), "another-access-token"); bound {
+			t.Fatal("request identity reused for another credential")
+		}
+		if _, bound := iam.AuthenticatedRequestIdentity(context.Background(), "addp_at_access"); bound {
+			t.Fatal("request identity escaped into another request")
 		}
 		for _, legacyKey := range []string{"user_id", "username", "user_type", "tenant_id", "authorization_context"} {
 			if _, exists := c.Get(legacyKey); exists {

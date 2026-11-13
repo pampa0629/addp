@@ -126,9 +126,25 @@ func (s *Service) checkSourceRead(ctx context.Context, credential string, reques
 	if preview && request.ExpectedSource == nil {
 		qualify = qualifyManagerPreviewRead
 	}
-	tenantID, err := s.repository.resolveSourceCredentialTenant(ctx, resolve, qualify)
-	if err != nil {
+	entry, ok := iam.AuthenticatedRequestIdentity(ctx, credential)
+	if !ok {
+		return nil, commonapi.ErrUnauthorized
+	}
+	// Preserve the credential kinds accepted by the selected IAM resolver.
+	// A profile or expected-source check never consumes a preview delegate.
+	if entry.Token.Type != "first_party_access_token" && entry.Token.Type != "oauth_access_token" &&
+		!(preview && request.ExpectedSource == nil && entry.Token.Type == "delegated_access_token") {
+		return nil, commonapi.ErrUnauthorized
+	}
+	if err := qualify(entry); err != nil {
 		return nil, err
+	}
+	if entry.Context.Type != "tenant" || entry.Context.TenantID == nil {
+		return nil, commonapi.ErrForbidden
+	}
+	tenantID, err := strconv.ParseInt(*entry.Context.TenantID, 10, 64)
+	if err != nil || tenantID <= 0 || strconv.FormatInt(tenantID, 10) != *entry.Context.TenantID {
+		return nil, commonapi.ErrForbidden
 	}
 	bindings, err := s.resolveReadBindings(ctx, tenantID, paths)
 	if err != nil {

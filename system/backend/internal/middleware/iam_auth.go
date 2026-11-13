@@ -13,6 +13,7 @@ import (
 	sharedauth "github.com/addp/common/middleware/auth"
 	commoni18n "github.com/addp/common/middleware/i18n"
 	sysi18n "github.com/addp/system/i18n"
+	"github.com/addp/system/internal/iam"
 	"github.com/gin-gonic/gin"
 )
 
@@ -63,6 +64,7 @@ func NewIAMAuthenticationMiddleware(resolver IAMAuthContextResolver) (gin.Handle
 			abortIAMInternalError(c)
 			return
 		}
+		c.Request = c.Request.WithContext(iam.WithAuthenticatedRequestIdentity(c.Request.Context(), accessToken, *authContext))
 		c.Next()
 	}, nil
 }

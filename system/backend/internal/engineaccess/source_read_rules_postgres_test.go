@@ -611,7 +611,20 @@ func exerciseCurrentSourceRules(t *testing.T, db *gorm.DB, acceptor *Service, ru
 				})
 			}
 		})
-		exerciseSourceReadCredentials(t, db, base.Path, newUser, grant, roles, runtime.TenantID, adminID, revoke)
+		exerciseSourceReadCredentials(t, db, base.Path, newUser, func(t *testing.T, kind string, id int64, expiry *time.Time) uuid.UUID {
+			if kind != "department" {
+				return grant(t, kind, id, expiry)
+			}
+			// Catalog fulfillment has no department recipient. Exercise the same
+			// formal independent Grant command used by the department cases above.
+			t.Helper()
+			binding := testReadBindings(base.Path)[0]
+			requestID := uuid.New()
+			if _, err := metadataService.CreateIndependentGrant(ctx, CreateIndependentGrantInput{Actor: actor, EngineID: int64(base.Path.EngineID), RequestID: requestID, CatalogPath: base.Path, ItemFingerprint: binding.ItemFingerprint, ExpectedBoundaryHash: binding.BoundaryHash, RecipientType: kind, RecipientID: id, Action: "read", ExpiryMode: shared.SharingExpiryUntilRevoked, Reason: "Request identity department withdrawal fixture"}); err != nil {
+				t.Fatal(err)
+			}
+			return requestID
+		}, roles, runtime.TenantID, adminID, revoke)
 		exerciseManagerProfileAuthorization(t, db, base.Path, newUser, grant, roles, runtime.TenantID, adminID, revoke)
 		exerciseFileGDBExportAuthorization(t, db, base.Path, newUser, grant, roles, runtime.TenantID, adminID, revoke)
 		t.Run("later handler suspension does not revoke recipient Grant", func(t *testing.T) {

@@ -351,6 +351,7 @@ class AuditLatencyObservationTest(unittest.TestCase):
                                session_snapshot_server_to_row=4000, session_snapshot_before_query=500,
                                session_snapshot_to_first_row=4500, session_snapshot_after_first_row=1000)
             diagnostics = {'source_rule_query': {**timing, 'private': 'ignore'}, 'auth_context_ns': identity}
+            self.assertEqual(ONLINE.AUTH_CONTEXT_PHASES, ('route', 'rule_snapshot'))
             http = record({**message, 'diagnostics': diagnostics})
             path = root / 'instance' / '1.jsonl'
             path.write_text(http)
@@ -361,6 +362,10 @@ class AuditLatencyObservationTest(unittest.TestCase):
             self.assertEqual(collected, {request: {**{key: int(value) for key, value in timing.items()},
                                                   'auth_context_ns': identity}})
             for invalid in (http + http, record(message),
+                            record({**message, 'diagnostics': {**diagnostics, 'auth_context_ns': {
+                                **identity, 'pre_meta': identity['route']}}}),
+                            record({**message, 'diagnostics': {**diagnostics, 'auth_context_ns': {
+                                'route': identity['route']}}}),
                             record({**message, 'diagnostics': {**diagnostics, 'auth_context_ns': {}}}),
                             record({**message, 'diagnostics': {**diagnostics, 'auth_context_ns': {
                                 **identity, 'rule_snapshot': {**identity['rule_snapshot'],

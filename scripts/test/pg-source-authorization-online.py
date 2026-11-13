@@ -67,7 +67,7 @@ READ_CHECK = '/api/v1/system/engine-access/read-checks/manager-preview'
 LATENCY_ROUNDS, LATENCY_SAMPLES, LATENCY_WARMUPS = 3, 500, 10
 LOAD_ROUNDS, LOAD_SAMPLES, LOAD_WARMUPS = 3, 100, 10
 CPU_LOAD_PROFILE = 'single_target_cpu'
-AUTH_CONTEXT_PHASES = ('route', 'pre_meta', 'rule_snapshot')
+AUTH_CONTEXT_PHASES = ('route', 'rule_snapshot')
 AUTH_CONTEXT_STAGES = ('transaction_begin', 'session_snapshot', 'departments', 'project_groups',
                        'role_permissions', 'projection', 'transaction_commit')
 SNAPSHOT_QUERY_TIMINGS = ('session_snapshot_query_wall', 'session_snapshot_server_to_row',
@@ -498,6 +498,8 @@ def collect_system_load_tail(directory, audits, *, rule_timings=None, wait_secon
                                             for value in (start, finish)) or int(start) >= int(finish)):
                                 raise ValueError('invalid or duplicate rule query timing')
                             identity = {}
+                            if set(diagnostics.get('auth_context_ns', {})) != set(AUTH_CONTEXT_PHASES):
+                                raise ValueError('unexpected auth context resolution phases')
                             for phase in AUTH_CONTEXT_PHASES:
                                 stages = diagnostics.get('auth_context_ns', {}).get(phase, {})
                                 values = {stage: stages.get(stage) for stage in AUTH_CONTEXT_STAGES}

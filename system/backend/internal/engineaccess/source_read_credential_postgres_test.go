@@ -3,6 +3,7 @@ package engineaccess
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"net/http"
 	"strings"
 	"testing"
@@ -163,7 +164,7 @@ func exerciseSourceReadCredentials(t *testing.T, db *gorm.DB, path engineplugin.
 							t.Fatalf("Meta delegate crossed into lineage: %+v %v", result, err)
 						}
 
-						if result, err := service.CheckManagerPreviewRead(ctx, credential, SourceReadCheckRequest{Targets: []engineplugin.EngineCatalogPath{path}}); result != nil || !errors.Is(err, commonapi.ErrForbidden) {
+						if result, err := service.CheckManagerPreviewRead(authenticatedManagerReadRequest(ctx, service, credential), credential, SourceReadCheckRequest{Targets: []engineplugin.EngineCatalogPath{path}}); result != nil || !errors.Is(err, commonapi.ErrForbidden) {
 							t.Fatalf("Meta delegate crossed into Manager: %v", err)
 						}
 					}
@@ -175,7 +176,7 @@ func exerciseSourceReadCredentials(t *testing.T, db *gorm.DB, path engineplugin.
 			check(false)
 			id := grant(t, "user", user.PrincipalID, nil)
 			check(true)
-			if result, err := service.CheckManagerPreviewRead(ctx, session.AccessToken, SourceReadCheckRequest{Targets: []engineplugin.EngineCatalogPath{path}}); result != nil || !errors.Is(err, commonapi.ErrForbidden) {
+			if result, err := service.CheckManagerPreviewRead(authenticatedManagerReadRequest(ctx, service, session.AccessToken), session.AccessToken, SourceReadCheckRequest{Targets: []engineplugin.EngineCatalogPath{path}}); result != nil || !errors.Is(err, commonapi.ErrForbidden) {
 				t.Fatalf("metadata function became preview authority: %+v %v", result, err)
 			}
 			revoke(t, id)
@@ -387,10 +388,10 @@ func exerciseSourceReadCredentials(t *testing.T, db *gorm.DB, path engineplugin.
 			user, _ := newUser(t, time.Hour)
 			grantID := grant(t, "user", user.PrincipalID, nil)
 			session, _ := issue(t, user, time.Minute)
-			if result, err := service.CheckManagerPreviewRead(ctx, session.AccessToken, request); result != nil || !errors.Is(err, commonapi.ErrForbidden) {
+			if result, err := service.CheckManagerPreviewRead(authenticatedManagerReadRequest(ctx, service, session.AccessToken), session.AccessToken, request); result != nil || !errors.Is(err, commonapi.ErrForbidden) {
 				t.Fatalf("Grant without function Permission accepted: %+v %v", result, err)
 			}
-			if result, err := service.CheckManagerProfileResultRead(ctx, session.AccessToken, request); result != nil || !errors.Is(err, commonapi.ErrForbidden) {
+			if result, err := service.CheckManagerProfileResultRead(authenticatedManagerReadRequest(ctx, service, session.AccessToken), session.AccessToken, request); result != nil || !errors.Is(err, commonapi.ErrForbidden) {
 				t.Fatalf("profile Grant without function accepted: %+v %v", result, err)
 			}
 			role, err := roles.CreateRole(ctx, iam.CreateTenantRoleInput{TenantID: tenantID, RoleKey: "custom.preview_check", Name: "Explicit preview access",
@@ -428,7 +429,7 @@ func exerciseSourceReadCredentials(t *testing.T, db *gorm.DB, path engineplugin.
 			credentials := []string{session.AccessToken, delegated}
 			checkProfile := func(credential string, targets []engineplugin.EngineCatalogPath, want error) {
 				t.Helper()
-				result, err := service.CheckManagerProfileResultRead(ctx, credential, SourceReadCheckRequest{Targets: targets})
+				result, err := service.CheckManagerProfileResultRead(authenticatedManagerReadRequest(ctx, service, credential), credential, SourceReadCheckRequest{Targets: targets})
 				if want == nil {
 					if err != nil || result == nil || result.ObservedAt.IsZero() {
 						t.Fatalf("profile result source coverage=%+v %v", result, err)
@@ -437,12 +438,127 @@ func exerciseSourceReadCredentials(t *testing.T, db *gorm.DB, path engineplugin.
 					t.Fatalf("profile result accepted=%+v %v want=%v", result, err, want)
 				}
 			}
+			for _, consumer := range []string{"preview", "profile"} {
+				for _, change := range []string{"unchanged", "grant withdrawal", "Grant expiry", "credential expiry", "logout", "function withdrawal", "department exit", "project group exit"} {
+					t.Run(consumer+" rechecks after Meta "+change, func(t *testing.T) {
+						readerUser, _ := newUser(t, time.Hour)
+						readerAssignment := assign(readerUser)
+						mutate := func() {}
+						recipientType, recipientID := "user", readerUser.PrincipalID
+						if change == "department exit" || change == "project group exit" {
+							organizations := iam.NewOrganizationService(identity, testDatabaseClock(t, db))
+							code := "request_reuse_" + strings.ReplaceAll(uuid.NewString(), "-", "")
+							var member *iam.ManagedOrganizationMembership
+							if change == "department exit" {
+								department, err := organizations.CreateDepartment(ctx, iam.CreateDepartmentInput{TenantID: tenantID, ActorPrincipalID: adminID, Code: code, Name: code})
+								if err != nil {
+									t.Fatal(err)
+								}
+								member, err = organizations.CreateDepartmentMembership(ctx, iam.CreateDepartmentMembershipInput{TenantID: tenantID, DepartmentID: department.ID, TenantMembershipID: readerUser.MembershipID, ActorPrincipalID: adminID, MembershipType: "primary", RelationRole: "member"})
+								if err != nil {
+									t.Fatal(err)
+								}
+								recipientType, recipientID = "department", department.ID
+								mutate = func() {
+									_, err := organizations.CloseDepartmentMembership(ctx, iam.CloseOrganizationMembershipInput{TenantID: tenantID, OrganizationID: department.ID, MembershipID: member.ID, Version: member.Version, ActorPrincipalID: adminID, Reason: "Exit during Meta facts IO"})
+									if err != nil {
+										t.Fatal(err)
+									}
+								}
+							} else {
+								group, err := organizations.CreateProjectGroup(ctx, iam.CreateProjectGroupInput{TenantID: tenantID, ActorPrincipalID: adminID, Code: code, Name: code})
+								if err != nil {
+									t.Fatal(err)
+								}
+								member, err = organizations.CreateProjectGroupMembership(ctx, iam.CreateProjectGroupMembershipInput{TenantID: tenantID, ProjectGroupID: group.ID, TenantMembershipID: readerUser.MembershipID, ActorPrincipalID: adminID, RelationRole: "member"})
+								if err != nil {
+									t.Fatal(err)
+								}
+								recipientType, recipientID = "project_group", group.ID
+								mutate = func() {
+									_, err := organizations.CloseProjectGroupMembership(ctx, iam.CloseOrganizationMembershipInput{TenantID: tenantID, OrganizationID: group.ID, MembershipID: member.ID, Version: member.Version, ActorPrincipalID: adminID, Reason: "Exit during Meta facts IO"})
+									if err != nil {
+										t.Fatal(err)
+									}
+								}
+							}
+						}
+						var expires *time.Time
+						if change == "Grant expiry" {
+							value := time.Now().UTC().Add(350 * time.Millisecond)
+							expires = &value
+						}
+						id := grant(t, recipientType, recipientID, expires)
+						ttl := time.Minute
+						if change == "credential expiry" {
+							ttl = 350 * time.Millisecond
+						}
+						readerSession, readerTokens := issue(t, readerUser, ttl)
+						want := error(nil)
+						switch change {
+						case "grant withdrawal":
+							want, mutate = commonapi.ErrForbidden, func() { revoke(t, id) }
+						case "Grant expiry", "credential expiry":
+							until := readerSession.AccessTokenExpiresAt
+							want = commonapi.ErrUnauthorized
+							if expires != nil {
+								until, want = *expires, commonapi.ErrForbidden
+							}
+							mutate = func() {
+								if err := db.WithContext(ctx).Exec("SELECT pg_sleep(GREATEST(0, EXTRACT(EPOCH FROM (?::timestamptz - clock_timestamp()))) + 0.02)", until).Error; err != nil {
+									t.Fatal(err)
+								}
+							}
+						case "logout":
+							want = commonapi.ErrUnauthorized
+							mutate = func() {
+								logout, err := iam.NewLogoutService(identity, readerTokens)
+								if err != nil {
+									t.Fatal(err)
+								}
+								if err := logout.LogoutBrowserSession(ctx, iam.LogoutBrowserSessionInput{AccessToken: readerSession.AccessToken, RefreshToken: readerSession.RefreshToken}); err != nil {
+									t.Fatal(err)
+								}
+							}
+						case "function withdrawal":
+							want = commonapi.ErrUnauthorized
+							mutate = func() {
+								if _, err := roles.RevokeAssignment(ctx, iam.RevokeTenantRoleAssignmentInput{TenantID: tenantID, AssignmentID: readerAssignment.ID, ActorPrincipalID: adminID, Reason: "Withdraw during Meta IO"}); err != nil {
+									t.Fatal(err)
+								}
+							}
+						case "department exit", "project group exit":
+							want = commonapi.ErrUnauthorized
+						}
+						resolutions, factsCalls := 0, 0
+						observed := iam.WithAuthContextTiming(ctx, func(slog.Value) { resolutions++ })
+						entry := authenticatedManagerReadRequest(observed, service, readerSession.AccessToken)
+						consumerService := NewService(repo, nil).WithAuthorizationFactsReader(bindingFactsReaderFunc(func(_ context.Context, tenant uint, fingerprint string) (*authorizationfacts.AuthorizationFacts, error) {
+							factsCalls++
+							facts := testBindingFacts(path)
+							if resolutions != 1 || int64(tenant) != tenantID || fingerprint != facts.ItemFingerprint {
+								t.Fatal("Meta preparation repeated IAM resolution or changed the trusted target")
+							}
+							mutate()
+							return &facts, nil
+						}))
+						check := consumerService.CheckManagerPreviewRead
+						if consumer == "profile" {
+							check = consumerService.CheckManagerProfileResultRead
+						}
+						result, err := check(entry, readerSession.AccessToken, request)
+						if factsCalls != 1 || (want == nil && (err != nil || result == nil || resolutions != 2)) || (want != nil && (result != nil || !errors.Is(err, want))) {
+							t.Fatalf("Meta return final check: result=%+v err=%v want=%v resolutions=%d calls=%d", result, err, want, resolutions, factsCalls)
+						}
+					})
+				}
+			}
 			var before, after int64
 			if err := db.Table("system.audit_logs").Count(&before).Error; err != nil {
 				t.Fatal(err)
 			}
 			for _, credential := range credentials {
-				result, err := service.CheckManagerPreviewRead(ctx, credential, request)
+				result, err := service.CheckManagerPreviewRead(authenticatedManagerReadRequest(ctx, service, credential), credential, request)
 				if err != nil || result == nil || result.ObservedAt.IsZero() {
 					t.Fatalf("function + source intersection=%+v %v", result, err)
 				}
@@ -491,11 +607,11 @@ func exerciseSourceReadCredentials(t *testing.T, db *gorm.DB, path engineplugin.
 						}
 					}))
 					for _, credential := range credentials {
-						if result, err := service.CheckManagerPreviewRead(ctx, credential, request); result != nil || !errors.Is(err, want) {
+						if result, err := service.CheckManagerPreviewRead(authenticatedManagerReadRequest(ctx, service, credential), credential, request); result != nil || !errors.Is(err, want) {
 							t.Fatalf("stored Grant bypassed Meta facts: result=%+v error=%v want=%v", result, err, want)
 						}
 					}
-					if result, err := service.CheckManagerProfileResultRead(ctx, session.AccessToken, request); result != nil || !errors.Is(err, want) {
+					if result, err := service.CheckManagerProfileResultRead(authenticatedManagerReadRequest(ctx, service, session.AccessToken), session.AccessToken, request); result != nil || !errors.Is(err, want) {
 						t.Fatalf("stored profile Grant bypassed Meta facts: result=%+v error=%v want=%v", result, err, want)
 					}
 					if calls != len(credentials)+1 {
@@ -504,7 +620,7 @@ func exerciseSourceReadCredentials(t *testing.T, db *gorm.DB, path engineplugin.
 				})
 				// The same credential and stored Grant recover only after trusted
 				// facts recover; no new grant or cached Allow is manufactured.
-				if result, err := service.CheckManagerPreviewRead(ctx, session.AccessToken, request); err != nil || result == nil {
+				if result, err := service.CheckManagerPreviewRead(authenticatedManagerReadRequest(ctx, service, session.AccessToken), session.AccessToken, request); err != nil || result == nil {
 					t.Fatalf("recovered facts failed to restore the original check: %+v %v", result, err)
 				}
 			}
@@ -514,14 +630,14 @@ func exerciseSourceReadCredentials(t *testing.T, db *gorm.DB, path engineplugin.
 			checkProfile(delegated, request.Targets, commonapi.ErrUnauthorized)
 			checkProfile(session.ResourceAccessTickets["manager"], request.Targets, commonapi.ErrUnauthorized)
 			for _, credential := range credentials {
-				if result, err := service.CheckManagerPreviewRead(ctx, credential, SourceReadCheckRequest{Targets: []engineplugin.EngineCatalogPath{path, d}}); result != nil || !errors.Is(err, commonapi.ErrForbidden) {
+				if result, err := service.CheckManagerPreviewRead(authenticatedManagerReadRequest(ctx, service, credential), credential, SourceReadCheckRequest{Targets: []engineplugin.EngineCatalogPath{path, d}}); result != nil || !errors.Is(err, commonapi.ErrForbidden) {
 					t.Fatalf("partial C+D accepted=%+v %v", result, err)
 				}
 			}
 			if result, err := repo.testReadCurrentUserSourceRules(ctx, delegated, request.Targets); result != nil || !errors.Is(err, commonapi.ErrUnauthorized) {
 				t.Fatalf("delegate downgraded into ordinary User reader=%+v %v", result, err)
 			}
-			if result, err := service.CheckManagerPreviewRead(ctx, session.ResourceAccessTickets["manager"], request); result != nil || !errors.Is(err, commonapi.ErrUnauthorized) {
+			if result, err := service.CheckManagerPreviewRead(authenticatedManagerReadRequest(ctx, service, session.ResourceAccessTickets["manager"]), session.ResourceAccessTickets["manager"], request); result != nil || !errors.Is(err, commonapi.ErrUnauthorized) {
 				t.Fatalf("ticket accepted=%+v %v", result, err)
 			}
 			if err := db.Table("system.audit_logs").Count(&after).Error; err != nil || before != after {
@@ -530,14 +646,14 @@ func exerciseSourceReadCredentials(t *testing.T, db *gorm.DB, path engineplugin.
 			revoke(t, grantID)
 			checkProfile(session.AccessToken, request.Targets, commonapi.ErrForbidden)
 			for _, credential := range credentials {
-				if result, err := service.CheckManagerPreviewRead(ctx, credential, request); result != nil || !errors.Is(err, commonapi.ErrForbidden) {
+				if result, err := service.CheckManagerPreviewRead(authenticatedManagerReadRequest(ctx, service, credential), credential, request); result != nil || !errors.Is(err, commonapi.ErrForbidden) {
 					t.Fatalf("revoked Grant accepted=%+v %v", result, err)
 				}
 			}
 			grant(t, "user", user.PrincipalID, nil)
 			checkProfile(session.AccessToken, request.Targets, nil)
 			for _, credential := range credentials {
-				if result, err := service.CheckManagerPreviewRead(ctx, credential, request); err != nil || result == nil {
+				if result, err := service.CheckManagerPreviewRead(authenticatedManagerReadRequest(ctx, service, credential), credential, request); err != nil || result == nil {
 					t.Fatalf("new explicit Grant not observed=%+v %v", result, err)
 				}
 			}
@@ -546,13 +662,13 @@ func exerciseSourceReadCredentials(t *testing.T, db *gorm.DB, path engineplugin.
 			}
 			checkProfile(session.AccessToken, request.Targets, commonapi.ErrUnauthorized)
 			for _, credential := range credentials {
-				if result, err := service.CheckManagerPreviewRead(ctx, credential, request); result != nil || !errors.Is(err, commonapi.ErrUnauthorized) {
+				if result, err := service.CheckManagerPreviewRead(authenticatedManagerReadRequest(ctx, service, credential), credential, request); result != nil || !errors.Is(err, commonapi.ErrUnauthorized) {
 					t.Fatalf("old authorization credential accepted=%+v %v", result, err)
 				}
 			}
 			session, _ = issue(t, user, time.Minute)
 			checkProfile(session.AccessToken, request.Targets, commonapi.ErrForbidden)
-			if result, err := service.CheckManagerPreviewRead(ctx, session.AccessToken, request); result != nil || !errors.Is(err, commonapi.ErrForbidden) {
+			if result, err := service.CheckManagerPreviewRead(authenticatedManagerReadRequest(ctx, service, session.AccessToken), session.AccessToken, request); result != nil || !errors.Is(err, commonapi.ErrForbidden) {
 				t.Fatalf("revoked function Permission accepted=%+v %v", result, err)
 			}
 			ungranted, _ := newUser(t, time.Hour)
@@ -560,7 +676,7 @@ func exerciseSourceReadCredentials(t *testing.T, db *gorm.DB, path engineplugin.
 			session, _ = issue(t, ungranted, time.Minute)
 			checkProfile(session.AccessToken, request.Targets, commonapi.ErrForbidden)
 			for _, credential := range []string{session.AccessToken, delegate(session)} {
-				if result, err := service.CheckManagerPreviewRead(ctx, credential, request); result != nil || !errors.Is(err, commonapi.ErrForbidden) {
+				if result, err := service.CheckManagerPreviewRead(authenticatedManagerReadRequest(ctx, service, credential), credential, request); result != nil || !errors.Is(err, commonapi.ErrForbidden) {
 					t.Fatalf("function without Grant accepted=%+v %v", result, err)
 				}
 			}
@@ -569,7 +685,7 @@ func exerciseSourceReadCredentials(t *testing.T, db *gorm.DB, path engineplugin.
 			grant(t, "user", familyUser.PrincipalID, nil)
 			familySession, tokens := issue(t, familyUser, time.Minute)
 			familyDelegate := delegate(familySession)
-			if _, err := service.CheckManagerPreviewRead(ctx, familyDelegate, request); err != nil {
+			if _, err := service.CheckManagerPreviewRead(authenticatedManagerReadRequest(ctx, service, familyDelegate), familyDelegate, request); err != nil {
 				t.Fatal(err)
 			}
 			logout, err := iam.NewLogoutService(identity, tokens)
@@ -579,7 +695,7 @@ func exerciseSourceReadCredentials(t *testing.T, db *gorm.DB, path engineplugin.
 			if err := logout.LogoutBrowserSession(ctx, iam.LogoutBrowserSessionInput{AccessToken: familySession.AccessToken, RefreshToken: familySession.RefreshToken}); err != nil {
 				t.Fatal(err)
 			}
-			if result, err := service.CheckManagerPreviewRead(ctx, familyDelegate, request); result != nil || !errors.Is(err, commonapi.ErrUnauthorized) {
+			if result, err := service.CheckManagerPreviewRead(authenticatedManagerReadRequest(ctx, service, familyDelegate), familyDelegate, request); result != nil || !errors.Is(err, commonapi.ErrUnauthorized) {
 				t.Fatalf("revoked source family delegate accepted=%+v %v", result, err)
 			}
 			checkProfile(familySession.AccessToken, request.Targets, commonapi.ErrUnauthorized)
