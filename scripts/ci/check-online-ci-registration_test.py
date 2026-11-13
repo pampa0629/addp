@@ -664,7 +664,7 @@ class OnlineCIRegistrationTest(unittest.TestCase):
             (paths[6],'profile.validate_persisted'),(paths[6],'lineage.verify_archive'),
             (paths[7],"'raster-slope-orthogonal-persistence': 'slope-orthogonal-lineage'"),
             (paths[8],'checks==712'),
-            (paths[9],'case \"raster-slope-orthogonal-persistence\", \"raster-sight-orthogonal-persistence\", \"sql-pool-consumer-flow\", \"transfer-continuous-events\":'),
+            (paths[9],'case \"raster-slope-orthogonal-persistence\", \"raster-sight-orthogonal-persistence\", \"sql-pool-consumer-flow\", \"transfer-continuous-events\", \"metric-service-revision-lifecycle\":'),
             (paths[10],'TestSlopeOrthogonalPreparationKeepsConsumerTwelveAndSeparateThirteen')):
             target=self.repository/relative;original=target.read_text();self.assertIn(fragment,original)
             target.write_text(original.replace(fragment,''if relative==paths[4]else'omitted'))
@@ -739,7 +739,7 @@ class OnlineCIRegistrationTest(unittest.TestCase):
             (paths[6],'profile.validate_persisted'),(paths[6],'lineage.verify_archive'),
             (paths[7],"'raster-sight-orthogonal-persistence': 'sight-orthogonal-lineage'"),
             (paths[8],'checks==776'),
-            (paths[9],'case \"raster-slope-orthogonal-persistence\", \"raster-sight-orthogonal-persistence\", \"sql-pool-consumer-flow\", \"transfer-continuous-events\":'),
+            (paths[9],'case \"raster-slope-orthogonal-persistence\", \"raster-sight-orthogonal-persistence\", \"sql-pool-consumer-flow\", \"transfer-continuous-events\", \"metric-service-revision-lifecycle\":'),
             (paths[10],'TestSightOrthogonalPreparationKeepsConsumerTwelveAndSeparateThirteen')):
             target=self.repository/relative;original=target.read_text();self.assertIn(fragment,original)
             target.write_text(original.replace(fragment,''if relative==paths[4]else'omitted'))

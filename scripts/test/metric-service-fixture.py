@@ -1,12 +1,14 @@
 """Build a deterministic metric fixture through public owner APIs on a disposable deployment."""
 
 import time
+from contextlib import contextmanager
 from importlib import import_module
 
 API = import_module("scripts.utils.online-api")
 SCAN = import_module("scripts.test.security-transfer-protection-online")
+REGISTRATION = import_module("scripts.test.online-engine-registration")
 REQUIRED_PERMISSIONS = {
-    "meta.scan_task.execute", "meta.scan_task.read", "meta.catalog.read",
+    "meta.catalog.read",
     "standard.metric.create", "standard.metric.read", "standard.metric.update", "standard.metric.publish",
     "model.dw_layer.create", "model.logical_model.create", "model.logical_model.read", "model.logical_model.update",
 }
@@ -23,15 +25,61 @@ GROUPED_EXPECTED_DATA = [
 NAMESPACES = {"postgresql": ("public", "schema"), "tidb": ("metric_fixture", "database")}
 
 
+class MetricSourceGrants(REGISTRATION.ExactRecordGrants):
+    """Adapt exact record grants to the metric consumer's existing Meta view."""
+    def __init__(self, initializer, consumer, tenant_id, engine_type, **options):
+        self.namespace_term = NAMESPACES[engine_type][1]
+        super().__init__(initializer, consumer, tenant_id, action="read", scan_preparation=True, **options)
+
+    def target(self, engine, namespace, name, item_term):
+        target = super().target(engine, namespace, name, item_term)
+        target["segments"][1]["term"] = self.namespace_term
+        return target
+
+    def observe(self, target, visible, *, phase="visibility_check"):
+        self.phase = phase
+        result = self.consumer.request("POST", "/api/v1/system/engine-access/metadata-checks/meta-query",
+                                       (200,), {"targets": [target]}).payload
+        if (not isinstance(result, dict) or not result.get("observed_at")
+                or result.get("targets") != [dict(target=target, visible=visible)]):
+            raise REGISTRATION.MetadataGrantError(phase, "metric_metadata_visibility_mismatch")
+
+
+@contextmanager
+def source_access(initializer, consumer, engine_id, tenant_id, engine_type, report, checkpoint):
+    def pending(rows):
+        report["source_grants"] = [dict(row) for row in rows]
+        checkpoint()
+
+    grants = MetricSourceGrants(initializer, consumer, tenant_id, engine_type, on_change=pending)
+    report["source_preparation"] = {"principal_id": grants.operator, "consumer_id": grants.recipient}
+    namespace, _ = NAMESPACES[engine_type]
+    tables = ["metric_people", "metric_events", "metric_facts", "metric_areas"]
+    try:
+        execution = SCAN.wait_for_scan(initializer, engine_id, time.monotonic() + 180,
+            targets=[f"addp://engine/{engine_id}/path/{namespace}/{table}?type=table" for table in tables])
+        scan = initializer.request("GET", f"/api/v1/meta/executions/{execution}", (200,)).payload
+        if scan.get("triggered_by") != int(grants.operator) or scan.get("status") != "success":
+            raise API.SuiteError("metric source scan must belong to the separate preparing User")
+        consumer.request("GET", f"/api/v1/meta/executions/{execution}", (404,))
+        report["scan_execution_id"] = execution
+        report["source_preparation"].update(scan_depth="deep", consumer_scan_hidden=True)
+        checkpoint()
+        for table in tables:
+            grants.grant(engine_id, namespace, table, "table")
+        yield
+    finally:
+        report["source_cleanup"] = "failed"
+        checkpoint()
+        report["source_cleanup"] = grants.cleanup()
+        checkpoint()
+
+
 def prepare(client, engine_id, tenant_id, engine_type, report, checkpoint):
-    """Scan and publish count and exact grouped-decimal metrics for one source."""
+    """Publish count and exact grouped-decimal metrics for the prepared source."""
     if engine_type not in NAMESPACES:
         raise API.SuiteError("unsupported metric fixture engine type")
     namespace, namespace_type = NAMESPACES[engine_type]
-    try:
-        report["scan_execution_id"] = SCAN.wait_for_scan(client, engine_id, time.monotonic() + 180)
-    except SCAN.SuiteError as error:
-        raise API.SuiteError("metric source scan did not complete successfully") from error
     report["fixture_resources"] = []
     checkpoint()
 

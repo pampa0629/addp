@@ -114,6 +114,8 @@ for start_target in -model -service -security; do
 done
 run_logged bash -c 'cd system/backend && go run ./cmd/online-test-fixture --suite metric-service-revision-lifecycle --wait-protection-owners service --output "$1"' _ "$IDENTITY_ENV"
 source "$IDENTITY_ENV"
+[ -n "${ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN:-}" ] || fail 'independent metric source preparing User required'
+[ "$ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN" != "$ADDP_ONLINE_TEST_USER_ACCESS_TOKEN" ] || fail 'metric preparing User must differ from consumer'
 run_logged python3 scripts/test/online-engine-registration.py \
   --descriptor "$ADDP_ONLINE_FIXTURE_ENGINE_DESCRIPTOR_FILE" --output "$ENGINE_RESULT_ENV"
 source "$ENGINE_RESULT_ENV"

@@ -175,6 +175,124 @@ class Gateway:
         raise AssertionError(f"unexpected request {method} {path}")
 
 
+class MetricSourceGateway:
+    def __init__(self, initializer, state, *, defect=None):
+        self.initializer, self.state, self.defect = initializer, state, defect
+        self.calls = []
+
+    def request(self, method, path, expected, body=None):
+        self.calls.append((method, path, copy.deepcopy(body)))
+        if path == "/api/v1/system/auth/context":
+            permissions = (ONLINE.FIXTURE.REGISTRATION.SOURCE_INITIALIZER_PERMISSIONS |
+                           {"meta.scan_task.execute", "meta.scan_task.read"}) if self.initializer else ONLINE.REQUIRED_PERMISSIONS | ONLINE.FIXTURE.REQUIRED_PERMISSIONS
+            return Response(200, {"principal": {"id": "71" if self.initializer else "72", "type": "user"},
+                                  "context": {"type": "tenant", "tenant_id": "42"},
+                                  "authorization": {"role_assignments": [{"role_key": ONLINE.FIXTURE.REGISTRATION.SOURCE_INITIALIZER_ROLE if self.initializer else "consumer", "permissions": sorted(permissions)}]}})
+        if path == "/api/v1/meta/executions/scan-1":
+            if not self.initializer:
+                assert expected == (404,)
+                return Response(404, {})
+            return Response(200, {"status": "success", "triggered_by": 72 if self.defect == "scan_actor" else 71})
+        if path == "/api/v1/system/engine-access/metadata-checks/meta-query":
+            assert not self.initializer
+            target = body["targets"][0]
+            visible = any(row["catalog_path"] == target for row in self.state.values())
+            return Response(200, {"observed_at": "now", "targets": [dict(target=target, visible=visible)]})
+        if path.endswith("/access_grants"):
+            assert self.initializer and body["action"] == "read"
+            receipt = dict(body, engine_id="8", approval_mode="independent", operator_principal_id="71",
+                           boundary_hash=body["expected_boundary_hash"], revocation=None, expires_at=None)
+            self.state[body["request_id"]] = receipt
+            if self.defect == "uncertain_grant":
+                raise SuiteError("response lost after accepted grant")
+            return Response(201, receipt)
+        if path.endswith("/revoke"):
+            assert self.initializer
+            if self.defect == "cleanup":
+                raise SuiteError("revoke failed")
+            self.state.pop(path.split("/")[-2])
+            return Response(200, {})
+        raise AssertionError((method, path))
+
+
+class MetricSourcePreparationTest(unittest.TestCase):
+    def context(self, initializer, consumer, report, engine_type="postgresql"):
+        return ONLINE.FIXTURE.source_access(initializer, consumer, 8, 42, engine_type, report, lambda: None)
+
+    def facts(self, initializer, target):
+        self.assertTrue(initializer.initializer)
+        return {"item_fingerprint": "a" * 64, "boundary_hash": "b" * 64}
+
+    def test_separate_scan_and_four_exact_grants_are_revoked_for_both_engines(self):
+        for engine_type, (namespace, term) in ONLINE.FIXTURE.NAMESPACES.items():
+            with self.subTest(engine_type=engine_type):
+                state, report = {}, {}
+                initializer, consumer = MetricSourceGateway(True, state), MetricSourceGateway(False, state)
+                with patch.object(ONLINE.FIXTURE.SCAN, "wait_for_scan", return_value="scan-1") as scan, patch.object(ONLINE.FIXTURE.REGISTRATION, "read_exact_record_authorization_facts", side_effect=self.facts):
+                    with self.context(initializer, consumer, report, engine_type):
+                        self.assertEqual(len(state), 4)
+                        for row in state.values():
+                            self.assertEqual(row["catalog_path"]["segments"][1], {"name": namespace, "term": term, "kind": "namespace"})
+                            self.assertEqual(row["recipient_id"], "72")
+                            self.assertEqual(row["action"], "read")
+                            self.assertEqual(row["operator_principal_id"], "71")
+                        self.assertIs(scan.call_args.args[0], initializer)
+                        self.assertEqual(len(scan.call_args.kwargs["targets"]), 4)
+                        self.assertTrue(report["source_preparation"]["consumer_scan_hidden"])
+                self.assertEqual(state, {})
+                self.assertEqual(report["source_grants"], [])
+                self.assertEqual(report["source_cleanup"], {"grants_revoked": True, "metadata_hidden": True})
+                self.assertFalse(any(path.endswith("/manager-preview") or path.endswith("/manager-search") for _, path, _ in consumer.calls))
+
+    def test_scan_failure_or_wrong_actor_never_enters_business_or_issues_grants(self):
+        for defect in ("scan_failed", "scan_actor"):
+            state, report = {}, {}
+            initializer, consumer = MetricSourceGateway(True, state, defect=defect), MetricSourceGateway(False, state)
+            with patch.object(ONLINE.FIXTURE.SCAN, "wait_for_scan", **({"side_effect": SuiteError("scan failed")} if defect == "scan_failed" else {"return_value": "scan-1"})):
+                with self.assertRaises(SuiteError):
+                    with self.context(initializer, consumer, report):
+                        self.fail("invalid scan reached business")
+            self.assertEqual(state, {})
+            self.assertFalse(any(path.endswith("/access_grants") for _, path, _ in initializer.calls))
+
+    def test_same_initializer_and_consumer_identity_is_rejected_before_scan(self):
+        state = {}
+        initializer = MetricSourceGateway(True, state)
+        with patch.object(ONLINE.FIXTURE.SCAN, "wait_for_scan") as scan:
+            with self.assertRaises(ONLINE.FIXTURE.REGISTRATION.RegistrationError):
+                with self.context(initializer, initializer, {}):
+                    self.fail("same actor accepted")
+            scan.assert_not_called()
+
+    def test_uncertain_grant_is_checkpointed_before_post_and_revoked(self):
+        state, report, pending = {}, {}, []
+        initializer, consumer = MetricSourceGateway(True, state, defect="uncertain_grant"), MetricSourceGateway(False, state)
+        def checkpoint():
+            pending.append(copy.deepcopy(report.get("source_grants", [])))
+        with patch.object(ONLINE.FIXTURE.SCAN, "wait_for_scan", return_value="scan-1"), patch.object(ONLINE.FIXTURE.REGISTRATION, "read_exact_record_authorization_facts", side_effect=self.facts):
+            with self.assertRaises(SuiteError):
+                with ONLINE.FIXTURE.source_access(initializer, consumer, 8, 42, "postgresql", report, checkpoint):
+                    self.fail("uncertain grant reached business")
+        self.assertTrue(any(rows and not rows[0]["confirmed"] for rows in pending))
+        self.assertEqual(state, {})
+
+    def test_business_failure_and_interrupt_still_revoke_but_cleanup_failure_stays_failed(self):
+        for defect in ("business", "interrupt", "cleanup"):
+            state, report = {}, {}
+            initializer, consumer = MetricSourceGateway(True, state, defect=defect), MetricSourceGateway(False, state)
+            expected = KeyboardInterrupt if defect == "interrupt" else SuiteError if defect == "business" else ONLINE.FIXTURE.REGISTRATION.MetadataGrantError
+            with patch.object(ONLINE.FIXTURE.SCAN, "wait_for_scan", return_value="scan-1"), patch.object(ONLINE.FIXTURE.REGISTRATION, "read_exact_record_authorization_facts", side_effect=self.facts):
+                with self.assertRaises(expected):
+                    with self.context(initializer, consumer, report):
+                        if defect == "interrupt":
+                            raise KeyboardInterrupt()
+                        if defect == "business":
+                            raise SuiteError("business failed")
+            self.assertEqual(bool(state), defect == "cleanup")
+            if defect == "cleanup":
+                self.assertEqual(report["source_cleanup"], "failed")
+
+
 class MetricLifecycleTest(unittest.TestCase):
     def test_hosted_fixture_uses_reviewed_definition_and_approved_related_tables(self):
         client, report = FixtureGateway(), {}
@@ -202,13 +320,6 @@ class MetricLifecycleTest(unittest.TestCase):
         self.assertEqual([contract["operation"] for contract in client.contracts],
                          ["count_distinct", "sum_decimal_by_group"])
         self.assertEqual(client.contracts[0]["filters"][0]["value"], True)
-
-    def test_failed_scan_creates_no_logical_or_standard_resources(self):
-        client = FixtureGateway()
-        with patch.object(ONLINE.FIXTURE.SCAN, "wait_for_scan", side_effect=ONLINE.FIXTURE.SCAN.SuiteError("failed")):
-            with self.assertRaises(SuiteError):
-                ONLINE.FIXTURE.prepare(client, 8, 42, "postgresql", {}, lambda: None)
-        self.assertEqual(client.requests, [])
 
     def test_physical_seed_has_a_nontrivial_deterministic_expected_count(self):
         source = (Path(__file__).parents[2] / "business/scripts/online-metric-postgres-fixture.sh").read_text()

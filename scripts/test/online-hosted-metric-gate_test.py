@@ -74,6 +74,21 @@ class HostedMetricGateTest(unittest.TestCase):
         self.assertIn("infra-down", trace)
         self.assertFalse(self.host.secrets.exists())
 
+    def test_missing_or_shared_preparer_stops_before_registration_and_cleans_up(self):
+        identity = (self.host.bin / "go").read_text()
+        for replacement in ("", "export ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN=consumer-token"):
+            with self.subTest(replacement=replacement):
+                self.host.trace.unlink(missing_ok=True)
+                self.host._executable("go", identity.replace(
+                    "export ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN=source-initializer-token", replacement))
+                result = self.run_gate()
+                self.assertNotEqual(result.returncode, 0)
+                trace = self.host.trace.read_text()
+                self.assertNotIn("register:", trace)
+                self.assertNotIn("make:test-online", trace)
+                self.assertIn("infra-down", trace)
+                self.assertFalse(self.host.secrets.exists())
+
     def test_preflight_is_read_only_and_rejects_personal_or_other_profile(self):
         result = self.run_gate(check=True)
         self.assertEqual(result.returncode, 0, result.stderr)

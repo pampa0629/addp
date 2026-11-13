@@ -271,20 +271,25 @@ def main():
                        "run_id": run_id, "tenant_id": str(tenant_id),
                        "engine_type": engine_type, "result": "failed"})
         checkpoint()
-        template_id, revision_id = FIXTURE.prepare(client, engine_id, tenant_id, engine_type, report, checkpoint)
-        grouped = report["grouped_fixture"]
-        report["cases"] = {"count_distinct": {}, "sum_decimal_by_group": {}}
-        checkpoint()
-        run_suite(client, tenant_id, run_id, template_id, revision_id,
-                  FIXTURE.QUERY, FIXTURE.EXPECTED_DATA, report["cases"]["count_distinct"], checkpoint)
-        grouped_run_id = run_id[:40] + "_area_" + hashlib.sha256(run_id.encode()).hexdigest()[:12]
-        run_suite(client, tenant_id, grouped_run_id, grouped["implementation_id"], grouped["revision_id"],
-                  FIXTURE.GROUPED_QUERY, FIXTURE.GROUPED_EXPECTED_DATA,
-                  report["cases"]["sum_decimal_by_group"], checkpoint)
+        preparing_token = os.environ["ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN"]
+        if not preparing_token or preparing_token == token:
+            raise SuiteError("metric source preparation requires a separate User")
+        initializer = GatewayClient(os.environ["GATEWAY_URL"], preparing_token, timeout)
+        with FIXTURE.source_access(initializer, client, engine_id, tenant_id, engine_type, report, checkpoint):
+            template_id, revision_id = FIXTURE.prepare(client, engine_id, tenant_id, engine_type, report, checkpoint)
+            grouped = report["grouped_fixture"]
+            report["cases"] = {"count_distinct": {}, "sum_decimal_by_group": {}}
+            checkpoint()
+            run_suite(client, tenant_id, run_id, template_id, revision_id,
+                      FIXTURE.QUERY, FIXTURE.EXPECTED_DATA, report["cases"]["count_distinct"], checkpoint)
+            grouped_run_id = run_id[:40] + "_area_" + hashlib.sha256(run_id.encode()).hexdigest()[:12]
+            run_suite(client, tenant_id, grouped_run_id, grouped["implementation_id"], grouped["revision_id"],
+                      FIXTURE.GROUPED_QUERY, FIXTURE.GROUPED_EXPECTED_DATA,
+                      report["cases"]["sum_decimal_by_group"], checkpoint)
         report["result"] = "passed"
         report["cleanup"] = "passed"
 
-    except (KeyError, ValueError, SuiteError) as error:
+    except (KeyError, ValueError, SuiteError, FIXTURE.REGISTRATION.RegistrationError) as error:
         report["result"] = "failed"
         # Do not print JSON/parser input, query data, or credentials from environment errors.
         message = str(error) if isinstance(error, SuiteError) else "invalid or missing Online fixture configuration"
