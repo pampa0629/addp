@@ -299,7 +299,7 @@ func readVFFDirectory(source *vffSource, base int64, limits vffReadLimits, profi
 		extra := int(binary.LittleEndian.Uint16(header[30:]))
 		comment := int(binary.LittleEndian.Uint16(header[32:]))
 		if n == 0 || n+extra > len(data)-position-46 || comment != 0 || binary.LittleEndian.Uint16(header[34:]) != 0 ||
-			(made>>8 != 0 && made>>8 != 3) || (needed != 10 && needed != 20) || flags & ^uint16(0x806) != 0 || (method != 0 && method != 8) || method == 0 && flags&6 != 0 {
+			(made>>8 != 0 && made>>8 != 3) || (needed != 10 && needed != 20 && !(profile == vffClassificationZIP && needed == 45)) || flags & ^uint16(0x806) != 0 || (method != 0 && method != 8) || method == 0 && flags&6 != 0 {
 			return nil, 0, fmt.Errorf("unsupported VFF ZIP metadata, flags or compression")
 		}
 		attrs := binary.LittleEndian.Uint32(header[38:])
@@ -317,6 +317,9 @@ func readVFFDirectory(source *vffSource, base int64, limits vffReadLimits, profi
 			}
 		} else if made>>8 == 3 && kind != 0 && kind != 0100000 {
 			return nil, 0, fmt.Errorf("VFF ZIP members must be regular files")
+		}
+		if needed == 45 && (isDirectory || flags != 0 || method != 8 || extra != 0) {
+			return nil, 0, fmt.Errorf("unsupported SKC local ZIP64 profile")
 		}
 		nameBytes := data[position+46 : position+46+n]
 		checkedName := nameBytes
@@ -416,12 +419,21 @@ func validateVFFLocal(source *vffSource, record *vffZIPRecord, profile vffZIPPro
 	needed := binary.LittleEndian.Uint16(header[4:])
 	if binary.LittleEndian.Uint32(header) != 0x04034b50 ||
 		binary.LittleEndian.Uint16(header[6:]) != record.flags || binary.LittleEndian.Uint16(header[8:]) != record.method ||
-		binary.LittleEndian.Uint32(header[14:]) != record.crc || int64(binary.LittleEndian.Uint32(header[18:])) != record.compressed ||
-		int64(binary.LittleEndian.Uint32(header[22:])) != record.expanded || n != int64(len(record.name)) {
+		binary.LittleEndian.Uint32(header[14:]) != record.crc || n != int64(len(record.name)) {
 		return 0, fmt.Errorf("VFF local header and central directory disagree")
 	}
-	if !(extra == 0 && needed == record.needed) && !(profile == vffModelZIP && extra == 20 && needed == 45 && record.needed == 20) {
-		return 0, fmt.Errorf("unsupported VFF local extension or version")
+	localZIP64 := profile == vffClassificationZIP && record.needed == 45
+	if localZIP64 {
+		if needed != 45 || extra != 20 || binary.LittleEndian.Uint32(header[18:]) != 0xffffffff || binary.LittleEndian.Uint32(header[22:]) != 0xffffffff {
+			return 0, fmt.Errorf("unsupported SKC local ZIP64 header")
+		}
+	} else {
+		if int64(binary.LittleEndian.Uint32(header[18:])) != record.compressed || int64(binary.LittleEndian.Uint32(header[22:])) != record.expanded {
+			return 0, fmt.Errorf("VFF local header and central directory disagree")
+		}
+		if !(extra == 0 && needed == record.needed) && !(profile == vffModelZIP && extra == 20 && needed == 45 && record.needed == 20) {
+			return 0, fmt.Errorf("unsupported VFF local extension or version")
+		}
 	}
 	fields, err := source.at(record.offset+30, n+extra)
 	if err != nil {
@@ -430,7 +442,15 @@ func validateVFFLocal(source *vffSource, record *vffZIPRecord, profile vffZIPPro
 	if string(fields[:n]) != record.name {
 		return 0, fmt.Errorf("VFF local and directory member names disagree")
 	}
-	if extra != 0 {
+	if localZIP64 {
+		payload := fields[n:]
+		// The directory already bounded both sizes. Compare as uint64 before
+		// using the existing lengths; never allocate or offset from ZIP64 input.
+		if binary.LittleEndian.Uint16(payload) != 1 || binary.LittleEndian.Uint16(payload[2:]) != 16 ||
+			binary.LittleEndian.Uint64(payload[4:]) != uint64(record.expanded) || binary.LittleEndian.Uint64(payload[12:]) != uint64(record.compressed) {
+			return 0, fmt.Errorf("SKC ZIP64 lengths and central directory disagree")
+		}
+	} else if extra != 0 {
 		// Observed SketchUp VFF packaging reserves two zero ZIP64 slots even
 		// though neither size has the sentinel required by APPNOTE 4.5.3.
 		// Recognize only these exact inactive bytes; never use them as sizes,
