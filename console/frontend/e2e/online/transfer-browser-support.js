@@ -161,3 +161,55 @@ export function isReadonlyTaskConfigCheckRequest(method, path) {
     path === '/api/v1/meta/engines' || /^\/api\/v1\/meta\/resource-tree\/\d+(?:\/(?:node|ancestors|search))?$/.test(path) ||
     /^\/api\/v1\/meta\/items\/\d+(?:\/fields)?$/.test(path)
 }
+
+export async function assertCDCTaskMonitoring(page, frame, binding, phase, executionID) {
+  const { task_id: taskID, engine_id: engineID } = binding
+  const checks = []
+  const response = page.waitForResponse(r => new URL(r.url()).pathname === `/api/v1/transfer/task-definitions/${taskID}` && r.request().method() === 'GET')
+  await frame.getByRole('button', { name: '刷新', exact: true }).click()
+  const task = await json(await response, 'CDC task response')
+  expect(task.id).toBe(taskID)
+  expect(task.config.source.locator).toBe(`addp://engine/${engineID}/path/public/continuous_source?type=table`)
+  expect(task.config.target.parent_locator).toBe(`addp://engine/${engineID}/path/public?type=schema`)
+  expect(task.config.target.name).toBe('continuous_cdc_target')
+  expect(task.desired_state).toBe(binding.desired_state)
+  expect(task.capture.generation).toBe(binding.generation)
+  await expect(frame.getByTestId('cdc-task-source')).toContainText('public.continuous_source')
+  await expect(frame.getByTestId('cdc-task-target')).toContainText('public.continuous_cdc_target')
+  checks.push('task_identity')
+  const source = task.capture.postgresql_observation
+  expect(source.status).toBe('available')
+  expect(Date.parse(source.expires_at)).toBeGreaterThan(Date.now())
+  expect(source.slot_active).toBe(true)
+  expect(source.risk_state).toBe('reserved')
+  await expect(frame.getByTestId('cdc-source-active')).toHaveText('活跃')
+  await expect(frame.getByTestId('cdc-source-risk')).toHaveText('WAL 仍在常规保留范围')
+  for (const field of ['retained_wal_bytes', 'unacknowledged_wal_bytes', 'safe_wal_size_bytes']) {
+    const metric = frame.getByTestId(`cdc-source-${field}`)
+    if (source[field] === null) await expect(metric).toHaveText('—')
+    else await expect(metric).toHaveAttribute('title', `${source[field]} B`)
+  }
+  checks.push('task_source_slot_wal')
+  const delay = task.capture.delay_observation
+  expect(delay.status).toBe('available')
+  expect(Date.parse(delay.expires_at)).toBeGreaterThan(Date.now())
+  expect(delay.connected).toBe(true)
+  if (phase !== 'cdc_initial') expect(typeof delay.delay_seconds).toBe('number')
+  await expect(frame.getByTestId('cdc-task-source-delay')).toHaveText(delay.delay_seconds === null ? '—' : delay.delay_seconds.toLocaleString('zh-CN', { maximumFractionDigits: 3 }) + ' s')
+  checks.push('task_capture_delay')
+  const buffer = task.capture.buffer_observation
+  expect(buffer.status).toBe('available')
+  expect(Date.parse(buffer.expires_at)).toBeGreaterThan(Date.now())
+  expect(buffer.recovery_state).toBe('available')
+  for (const field of ['committed_offset', 'latest_offset', 'lag_offsets']) expect(buffer[field]).toBe(binding[field])
+  await expect(frame.getByTestId('cdc-buffer-lag_offsets')).toHaveText(binding.lag_offsets)
+  await expect(frame.getByTestId('cdc-buffer-committed_offset')).toHaveText(binding.committed_offset)
+  await expect(frame.getByTestId('cdc-buffer-latest_offset')).toHaveText(binding.latest_offset)
+  checks.push('task_buffer_positions')
+  expect(task.last_execution_id).toBe(executionID)
+  await expect(frame.getByTestId('cdc-task-progress')).toBeVisible()
+  checks.push('execution_binding')
+  await expect(frame.getByTestId('cdc-task-chain')).not.toContainText('business-value-sentinel')
+  checks.push('no_samples')
+  return checks
+}

@@ -693,6 +693,36 @@ class ContinuousRunnerTest(unittest.TestCase):
                     M.run_browser('live', [UUID], subject, 'run-1', secrets, lambda: None, finish=finish)
             self.assertFalse(list(secrets.iterdir()))
 
+    def test_cdc_browser_binds_only_task_observations_and_rejects_foreign_evidence(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory); artifacts = root/'artifacts'; artifacts.mkdir()
+            secret = root/'private'; secret.mkdir()
+            subject = {'tenant_id':'2', 'principal_id':'33'}
+            env = {'ADDP_ONLINE_ARTIFACT_DIR':str(artifacts), 'ADDP_ONLINE_TEST_USER_USERNAME':'consumer', 'ADDP_ONLINE_TEST_USER_PASSWORD':'private-password'}
+            checks = ['task_identity','task_source_slot_wal','task_capture_delay','task_buffer_positions','execution_binding','no_samples']
+            binding = {'task_id':7,'engine_id':10,'generation':1,'desired_state':'running','committed_offset':'6','latest_offset':'6','lag_offsets':'0'}
+            class Process:
+                def __init__(self, args, **kwargs):
+                    self.ended = False
+                    environment = kwargs['env']; phase = environment['ADDP_CONTINUOUS_BROWSER_PHASE']
+                    assert json.loads(environment['ADDP_CONTINUOUS_BROWSER_CDC']) == binding
+                    receipt = {'schema_version':'addp.continuous-execution-browser/v1','phase':phase,'run_id':'run-1',
+                        'tenant_id':'2','principal_id':'33','execution_ids':[UUID],'checks':checks,'result':'passed'}
+                    (artifacts/f'continuous-browser-{phase}.json').write_text(json.dumps(receipt))
+                def poll(self): return 0 if self.ended else None
+                def wait(self, timeout): self.ended=True; return 0
+            with patch.dict(os.environ,env), patch.object(M.subprocess,'Popen',Process):
+                for phase in ['cdc_initial','cdc_growth','cdc_resumed']:
+                    binding.update(desired_state='paused' if phase=='cdc_growth' else 'running',
+                        committed_offset='9' if phase=='cdc_resumed' else '6',latest_offset='6' if phase=='cdc_initial' else '9',lag_offsets='3' if phase=='cdc_growth' else '0')
+                    proof=M.run_browser(phase,[UUID],subject,'run-1',secret,cdc=binding)
+                    self.assertEqual(proof['checks'],checks)
+            for change in [{'task_id':0},{'engine_id':'10'},{'lag_offsets':'1'},{'desired_state':'paused'},{'raw_response':{}}]:
+                with self.subTest(change=change), patch.object(M.subprocess,'Popen') as launch, self.assertRaises(M.SuiteError):
+                    M.run_browser('cdc_resumed',[UUID],subject,'run-1',secret,cdc={**binding,**change})
+                launch.assert_not_called()
+            self.assertFalse(list(secret.iterdir()))
+
     def test_browser_rejects_invalid_phase_identity_and_action_before_launch(self):
         with patch.object(M.subprocess, 'Popen') as launch:
             for phase, ids, action in [('unknown', [UUID], None), ('live', [UUID], None), ('live', [UUID], lambda: None),
@@ -1090,18 +1120,23 @@ class CDCTaskObservationTest(unittest.TestCase):
         resumed = deepcopy(initial); resumed['execution_id']='bbbbbbbb-2222-4222-8222-222222222222'
         resumed['buffer'].update(latest_offset='7',committed_offset='7')
         sustained = deepcopy(resumed)
-        calls=[]; phases=[]
+        calls=[]; phases=[]; pages=[]
+        def observe_page(phase, sample):
+            pages.append((phase, deepcopy(sample)));return {'result':'passed', 'phase':phase}
         def mutate(actor,path): calls.append(path)
         def launch(task_id,action): calls.append(action); return resumed['execution_id']
         with patch.object(M,'cdc_observation',side_effect=[initial,paused,growth,resumed,sustained]) as observe, \
                 patch.object(M,'wait_status') as wait, patch.object(M,'physical',return_value=True) as physical:
-            execution, proof = M.verify_cdc_task_monitoring(None,7,2,10,UUID,launch,mutate,phases.append)
+            execution, proof = M.verify_cdc_task_monitoring(None,7,2,10,UUID,launch,mutate,phases.append,observe_page)
         self.assertEqual(calls,[M.OWNER+'/task-definitions/7/pause','resume'])
         wait.assert_called_once_with(None,UUID,'cancelled')
         self.assertEqual([c.args[0] for c in physical.call_args_list],
                          ['mutate-cdc','verify-cdc-initial','verify-cdc-mutated','verify-cdc-mutated'])
         self.assertEqual(execution,resumed['execution_id']);self.assertEqual(proof['event_count'],3)
         self.assertEqual(list(proof['samples']),['initial','paused','growth','resumed','sustained'])
+        self.assertEqual([p[0] for p in pages], ['cdc_initial','cdc_growth','cdc_resumed'])
+        self.assertEqual([p[1]['buffer']['lag_offsets'] for p in pages], ['0','3','0'])
+        self.assertEqual(list(proof['browser']), ['initial','growth','resumed'])
         self.assertEqual(observe.call_count,5)
         self.assertTrue(all(c.kwargs.get('after') is not None for c in observe.call_args_list[1:]))
         self.assertEqual(phases,['cdc_monitor_initial','cdc_pause','cdc_mutation','cdc_buffer_growth','cdc_monitor_resume'])
@@ -1117,7 +1152,7 @@ class CDCTaskObservationTest(unittest.TestCase):
             with self.subTest(case=case), patch.object(M,'cdc_observation',side_effect=[initial,paused,bad]), \
                     patch.object(M,'wait_status'), patch.object(M,'physical',side_effect=[True,case!='target']), \
                     self.assertRaises(M.SuiteError):
-                M.verify_cdc_task_monitoring(None,7,2,10,UUID,lambda *args:self.fail('must not resume'),lambda *args:None,lambda *args:None)
+                M.verify_cdc_task_monitoring(None,7,2,10,UUID,lambda *args:self.fail('must not resume'),lambda *args:None,lambda *args:None,lambda *args:None)
 
 
 if __name__ == '__main__':

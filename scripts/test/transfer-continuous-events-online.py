@@ -424,7 +424,7 @@ def cdc_observation(client, task_id, tenant, engine_id, generation=None, *, afte
     return sample
 
 
-def verify_cdc_task_monitoring(client, task_id, tenant, engine_id, execution_id, launch, mutate, phase):
+def verify_cdc_task_monitoring(client, task_id, tenant, engine_id, execution_id, launch, mutate, phase, observe_page):
     phase('cdc_monitor_initial')
     def initial_ready():
         value = cdc_observation(client, task_id, tenant, engine_id)
@@ -433,6 +433,7 @@ def verify_cdc_task_monitoring(client, task_id, tenant, engine_id, execution_id,
     require(initial['desired_state'] == 'running' and initial['execution_id'] == execution_id
             and initial['buffer']['lag_offsets'] == '0',
             'CDC initial task progress mismatch')
+    browser = {'initial': observe_page('cdc_initial', initial)}
     generation = initial['generation']
     phase('cdc_pause')
     mutate(client, f'{OWNER}/task-definitions/{task_id}/pause')
@@ -456,6 +457,7 @@ def verify_cdc_task_monitoring(client, task_id, tenant, engine_id, execution_id,
         require(physical('verify-cdc-initial'), 'CDC paused target changed')
         return value
     growth = until(grown)
+    browser['growth'] = observe_page('cdc_growth', growth)
     phase('cdc_monitor_resume')
     resumed_id = launch(task_id, 'resume')
     require(resumed_id != execution_id, 'CDC resume reused execution identity')
@@ -471,7 +473,8 @@ def verify_cdc_task_monitoring(client, task_id, tenant, engine_id, execution_id,
         return value
     resumed = until(lambda: caught_up(resumed_at))
     sustained = until(lambda: caught_up(datetime.fromisoformat(resumed['buffer']['sampled_at'].replace('Z', '+00:00'))))
-    return resumed_id, {'initial_execution_id': execution_id, 'resumed_execution_id': resumed_id,
+    browser['resumed'] = observe_page('cdc_resumed', sustained)
+    return resumed_id, {'browser': browser, 'initial_execution_id': execution_id, 'resumed_execution_id': resumed_id,
                         'generation': generation, 'event_count': 3,
                         'samples': {'initial': initial, 'paused': paused, 'growth': growth,
                                     'resumed': resumed, 'sustained': sustained}}
@@ -891,8 +894,17 @@ def observe_browser_owner_outage(control, marker, process, faults):
     return proof
 
 
-def run_browser(phase, execution_ids, subject, run_id, secret, action=None, *, faults=None, finish=None):
-    require(phase in {'live', 'recovery', 'revocation', 'owner_unavailable'}, 'unknown browser phase')
+def run_browser(phase, execution_ids, subject, run_id, secret, action=None, *, faults=None, finish=None, cdc=None):
+    cdc_phase = phase in {'cdc_initial', 'cdc_growth', 'cdc_resumed'}
+    require(cdc_phase == (cdc is not None), 'CDC browser task binding changed')
+    if cdc_phase:
+        require(isinstance(cdc, dict) and set(cdc) == {'task_id', 'engine_id', 'generation', 'desired_state', 'committed_offset', 'latest_offset', 'lag_offsets'}
+                and all(type(cdc[key]) is int and cdc[key] > 0 for key in ('task_id', 'engine_id', 'generation'))
+                and cdc['desired_state'] == ('paused' if phase == 'cdc_growth' else 'running')
+                and all(isinstance(cdc[key], str) and re.fullmatch(r'0|[1-9][0-9]*', cdc[key]) for key in ('committed_offset', 'latest_offset', 'lag_offsets'))
+                and int(cdc['latest_offset']) - int(cdc['committed_offset']) == int(cdc['lag_offsets'])
+                and cdc['lag_offsets'] == ('3' if phase == 'cdc_growth' else '0'), 'CDC browser observation invalid')
+    require(phase in {'live', 'recovery', 'revocation', 'owner_unavailable', 'cdc_initial', 'cdc_growth', 'cdc_resumed'}, 'unknown browser phase')
     require((action is not None) == (phase in {'live', 'revocation'}), 'browser action binding changed')
     require((faults is not None) == (phase == 'owner_unavailable'), 'browser Owner fault binding changed')
     require((finish is not None) == (phase == 'live'), 'browser terminal action binding changed')
@@ -905,6 +917,7 @@ def run_browser(phase, execution_ids, subject, run_id, secret, action=None, *, f
         'recovery': ['old_failure', 'recovery_source', 'record_failure_code', 'no_samples'],
         'revocation': ['previously_readable', 'old_content_cleared', 'fresh_monitor_only_denied', 'no_samples'],
         'owner_unavailable': OWNER_OUTAGE_CHECKS,
+        **{name: ['task_identity', 'task_source_slot_wal', 'task_capture_delay', 'task_buffer_positions', 'execution_binding', 'no_samples'] for name in ('cdc_initial', 'cdc_growth', 'cdc_resumed')},
     }[phase]
     evidence = Path(os.environ['ADDP_ONLINE_ARTIFACT_DIR']) / f'continuous-browser-{phase}.json'
     evidence.unlink(missing_ok=True)
@@ -917,6 +930,8 @@ def run_browser(phase, execution_ids, subject, run_id, secret, action=None, *, f
                            ADDP_CONTINUOUS_BROWSER_CONTROL=str(control),
                            ADDP_CONTINUOUS_BROWSER_USERNAME=os.environ[f'ADDP_ONLINE_{prefix}_USER_USERNAME'],
                            ADDP_CONTINUOUS_BROWSER_PASSWORD=os.environ[f'ADDP_ONLINE_{prefix}_USER_PASSWORD'])
+        if cdc_phase:
+            environment['ADDP_CONTINUOUS_BROWSER_CDC'] = json.dumps(cdc)
         marker = {'run_id': run_id, 'phase': phase, 'execution_id': execution_ids[0]}
         # Raw Playwright output may contain login fill arguments; keep it private.
         with (control / 'output.log').open('w') as output:
@@ -1300,12 +1315,17 @@ def run_suite(client, denied, foreign, peer, reader, admin, login, tenant, run_i
         compare(cdc)
         report['checks'].append('real_owner_outage_browser_clears_and_recovers_without_grant_cache')
         original_cdc = cdc
+        def observe_cdc_page(browser_phase, sample):
+            context = {key: sample[key] for key in ('task_id', 'generation', 'desired_state')}
+            context.update(engine_id=pg, **{key: sample['buffer'][key] for key in ('committed_offset', 'latest_offset', 'lag_offsets')})
+            return run_browser(browser_phase, [sample['execution_id']], report['consumer_identity'], run_id, faults.secret, cdc=context)
         cdc, report['cdc_task_monitoring'] = verify_cdc_task_monitoring(
-            client, cdc_task, tenant, pg, original_cdc, launch, mutate, phase)
+            client, cdc_task, tenant, pg, original_cdc, launch, mutate, phase, observe_cdc_page)
         compare(original_cdc, 'cancelled')
         until(lambda: any(e['kind'] == 'progress' and e['counters'].get('records_written', 0) >= 3
                           for e in events(client, f'{OWNER}/executions', cdc)))
         report['checks'].append('cdc_task_slot_wal_delay_and_paused_backlog_resume')
+        report['checks'].append('cdc_task_monitoring_browser_initial_pause_resume')
         require(target_scan('cdc') == cdc_scan, 'ordinary CDC events repeated the initial target scan')
         require(target_scan('kafka') == kafka_scan, 'CDC scans changed the Kafka sibling target')
         require(physical('alter-cdc'), 'CDC additive schema fixture failed')

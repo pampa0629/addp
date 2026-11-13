@@ -61,7 +61,7 @@
       }
     },
     "login": {
-      "title": "运行监控登录"
+      "title": "统一监控登录"
     },
     "execution": {
       "recentDetailTitle": "监控执行",

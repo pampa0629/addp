@@ -50,9 +50,21 @@ Trace 中 request_id、trace_id、execution 身份分别表达请求、调用链
 
 受控运维中 ADDP 管理目标、计划、权限与审计，成熟执行设施实施变更。主机登记不默认保存 SSH 密码，采集身份不具备 Shell 权限；Monitor 不提供任意命令执行器，租户 Orchestrator 任务不隐含获得平台主机操作权。
 
-### Infra CDC 运行监控
+### CDC 任务与运行资源监控
 
-用户确认在现有运行监控中按 CDC 链路统一展示。页面并列展示 PostgreSQL 源端、Kafka Connect / Debezium 和 Redpanda 的状态及趋势。PostgreSQL 继续沿当前引擎部署与观测授权读取逻辑槽总数、不活跃数和保留 WAL 距离。Kafka Connect 按实际组件部署独立采集 Connector 和 Task 的状态、失败计数、offset 提交及 Debezium 源端延迟。Redpanda 按实际 broker 部署独立采集磁盘、不可用分区及版本支持的积压信号。空 Connector 清单、没有消费组样本和采集故障分别呈现。只有采到各环节的事实时才展示对应趋势，不根据三个全局汇总推断单个任务的端到端延迟。
+当前正式范围沿[平台运行观测规范](../spec/addp平台运行观测规范.md#cdc-基础设施组件的自动发现)：Tenant 按真实 Transfer 任务配置读取源／目标、当前 generation 的 PostgreSQL 槽与 WAL 风险、捕获延迟和当前消息缓冲；Platform 读取 Connect／Debezium 与 Redpanda 的共享组件指标及趋势。Infra PostgreSQL 不是默认 CDC 源端，其通用运行指标归引擎监控。菜单、入口及内容按 Context 和功能权限显示，Monitor 的中文模块名称统一为“统一监控”。
+
+已完成的任务级 API、原生对照及暂停恢复 Hosted 证据见[2026-11-13 闭环](../spec/testing/evidence/Monitor执行监控与留存历史证据.md#2026-11-13-basic-与-deep-串接及-cdc-hosted-闭环)；本机 Chrome 任务卡片核对另见同专题后续记录，不能代替新增页面断言的 Hosted 运行。
+
+| 优先级 | 未完成事项 | 价值与实施边界 | 当前推进状态 |
+| --- | --- | --- | --- |
+| P0 | CDC 任务页面的自动化真实链路验收 | 把源表／目标表、活跃槽、WAL 风险／字节距离、捕获延迟、暂停积压和恢复消退核对接入现有 `transfer-continuous-events`；沿原普通 User 和清理，不增加权限。 | 已补初始／暂停积压／恢复后三阶段浏览器入口及封闭回执；复用同一断言运行受控 T3，实际 Hosted 结果须独立回传，当前不计通过。 |
+| P1 | 任务风险与持续异常告警 | 优先覆盖源槽／WAL 不可恢复、消息恢复范围丢失、捕获失败，再讨论持续延迟和积压阈值。现有页面只是即时状态，不能代替告警。 | 未实现；暂停任务的观测不能写回已终止 execution，任务级事实与 Monitor 规则／事件／通知的归属和权限需先确认，不直接套平台组件告警。 |
+| P2 | 任务级指标历史趋势 | 回答积压何时开始、延迟持续多久、WAL 保留是否持续增长；组件全局趋势不能代替任务趋势。 | 只有当前观测和最近 execution 诊断；持久采样、保留期限、task＋generation 身份及授权查询契约待确认，不用浏览器内存拼造历史。 |
+| P3 | MySQL／Oracle 源端专业观测 | 在实际 CDC 任务需求出现后，按各引擎原生语义补 binlog／GTID、SCN／日志保留风险与本任务捕获延迟。 | 当前任务级专业指标只覆盖 PostgreSQL；不以无值或 PostgreSQL 指标表示其他源端健康。无实际需求时不扩大采集。 |
+| P3 | 共享组件持续异常告警及长期容量验证 | 平台用户关注失败 Connector／Task、不可用分区、磁盘容量；与租户任务告警分开。 | 共享组件即时值与当前运行段趋势已实现；持续规则、长时容量／保留与生产 T5 未完成。 |
+
+以下保留来源接入各批的历史范围；其中早期部署级 PostgreSQL 选择已被任务关联视图替换，不再代表当前页面结构。
 
 用户确认 Redpanda 与 Kafka Connect 按 Infra 部署事实自动纳入，复用现有 System 私有观测投影与 Monitor 统一发现。部署身份、来源就绪和平台读取权限分别核验，详见[CDC 基础设施组件的自动发现](../spec/addp平台运行观测规范.md#cdc-基础设施组件的自动发现)。
 

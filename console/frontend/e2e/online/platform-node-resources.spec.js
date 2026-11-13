@@ -791,7 +791,7 @@ test('platform node resources through real Console password MFA and Monitor ifra
     report.navigation = { list_summary_batch: true, iframe_preserved: true, history: true, metric_reload: true, range_reload: true, server_window: true, filesystem_reload: true, inode_reload: true, disk_reload: true, network_reload: true }
     save('service-monitor-inline-values-and-restore')
     const serviceMenu = page.locator('.sidebar .el-menu-item').filter({ hasText: /^服务监控$/ })
-    if (!await serviceMenu.isVisible()) await page.locator('.sidebar .el-sub-menu__title').filter({ hasText: /^运行监控$/ }).click()
+    if (!await serviceMenu.isVisible()) await page.locator('.sidebar .el-sub-menu__title').filter({ hasText: /^统一监控$/ }).click()
     await expect(serviceMenu).toBeVisible()
     await serviceMenu.click()
     await expect(page).toHaveURL(url => url.pathname === '/monitor/service-resources')

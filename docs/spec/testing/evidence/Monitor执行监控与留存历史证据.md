@@ -149,6 +149,14 @@ Kafka 强退拒删收到 503，原 invocation 未确认、任务保留及零外�
 
 Artifact `13968601880` 的 ZIP 已独立下载核对，SHA-256 与 GitHub 声明一致：`89e59a8b832d3368956ae95e51568d3b977bb634f0537b724bfff2c505b70765`。39 个 JSON／JSONL／日志／文本中未检出所检查 JWT 模式或 business-value-sentinel；这不是完整敏感信息审计。原始报告、浏览器回执、日志、ZIP、阶段时间及独立断言评估位于 `/tmp/addp-cdc-hosted-43253234380/`。本记录只认定该固定版本的本套件闭环，不覆盖其他生产 owner、引擎或全平台授权验收。
 
+## 2026-11-13 本机 CDC 任务页面与暂停恢复
+
+本机专用任务 `cdc_monitor_local_20261113`（task 61，Tenant 1，创建者 31）通过正式 Transfer 入口创建并启动；源／目标为 Business PostgreSQL 引擎 2 的独立 `public.addp_cdc_monitor_source_20261113`／`public.addp_cdc_monitor_target_20261113`。源表与两条初始记录、后续新增／修改／删除各一条均通过当前 User 的 Develop 正式查询预检与执行入口写入。
+
+Chrome 真实租户页面核对源／目标、活跃任务逻辑槽、WAL `reserved` 与约 10 GiB 的 PostgreSQL 原生写入余量。初始提交／末端／积压为 `6/6/0`；正式暂停后为 `6/9/3`，任务捕获延迟为 `0.141s`，目标物理数据保持暂停前两行；恢复产生新 execution `ed394a55-dcf5-432c-bc40-c45e5ba490e6`，页面及连续两次新采样均为 `9/9/0`。源／目标最终两行逐项相同。只读前后对照确认原 `addp_cdc_t1_task46_g1`、`addp_cdc_t1_task58_g1` 的活跃状态及两项位点未变。
+
+任务及两张表按用户体验用途保留运行，不声明零残留。报告与分阶段原件在 `/tmp/addp-cdc-local-20261113/assessment.json` 及同目录，仅为本机临时证据，不是 Hosted Artifact。首次 UPDATE 因缺少显式目标定位符在预检阶段被拒绝、零写入；补齐正式目标定位符后执行。额外 CLI OAuth 读取 Monitor 执行详情返回 403，符合现行仅接受 unrestricted first-party User Token 的中间件，未调整权限；Chrome first-party 页面实际读回执行进度。此记录证明本机真实页面，不把旧 Hosted 的执行页面回执改判为 CDC 新卡片验收。
+
 ## 2026-10-24 概览保留只读评估第一期
 
 Common 的 `AssessRetention` 由 System 既有维护循环调用，以数据库时间和只读、可重复读事务评估 180 天时间候选。首期检查完整执行树、租约、关系异常、树外引用及预算，保留 Owner 释放和消费者引用未核验原因。批次计数按当次读取范围解释，不能累加为全库唯一树数。[现行留存契约](../../tasks/执行监控.md#概览保留与清理契约)

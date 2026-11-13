@@ -152,7 +152,7 @@ test('reloaded Console opens the collapsed monitoring group and service-page ref
   await page.reload()
   await expect(monitor.getByTestId('process-list')).toBeVisible()
   const serviceMenu = page.locator('.sidebar .el-menu-item').filter({ hasText: /^服务监控$/ })
-  const monitoringGroup = page.locator('.sidebar .el-sub-menu__title').filter({ hasText: /^运行监控$/ })
+  const monitoringGroup = page.locator('.sidebar .el-sub-menu__title').filter({ hasText: /^统一监控$/ })
   if (await serviceMenu.isVisible()) await monitoringGroup.click()
   await expect(serviceMenu).not.toBeVisible()
   await monitoringGroup.click()

@@ -1,6 +1,7 @@
 import { expect, test } from '@playwright/test'
+import { assertCDCTaskMonitoring } from './online/transfer-browser-support'
 import { cdcBackend } from '../../../monitor/frontend/e2e/cdc-resources.fixture'
-import { cdcTaskBackend } from '../../../monitor/frontend/e2e/cdc-tasks.fixture'
+import { cdcTaskBackend, task } from '../../../monitor/frontend/e2e/cdc-tasks.fixture'
 
 test('Console CDC menu, history and language use one Monitor iframe without engine grants', async ({ page }) => {
   await cdcBackend(page, { permissions: ['monitor.resource_observation.read'] })
@@ -64,4 +65,29 @@ test('Console CDC Platform history preserves a Tenant URL as a scope tip', async
   await expect(page).toHaveURL(/view=tasks$/)
   await expect(frame.getByTestId('cdc-card-kafka-connect')).toHaveCount(0)
   expect(state.calls.some(path => path.includes('/transfer/'))).toBe(false)
+})
+
+for (const phase of ['cdc_initial', 'cdc_growth', 'cdc_resumed']) test(`CDC Hosted page assertions read current task buffer (${phase})`, async ({ page }) => {
+  await cdcTaskBackend(page)
+  const paused = phase === 'cdc_growth'
+  const binding = { task_id: 7, engine_id: 2, generation: 1, desired_state: paused ? 'paused' : 'running',
+    committed_offset: phase === 'cdc_resumed' ? '9' : '6', latest_offset: phase === 'cdc_initial' ? '6' : '9', lag_offsets: paused ? '3' : '0' }
+  let executionID
+  await page.route('**/api/v1/transfer/task-definitions/7', async route => {
+    const value = task(7), now = new Date().toISOString(), expires = new Date(Date.now() + 30000).toISOString()
+    executionID = value.last_execution_id
+    value.desired_state = binding.desired_state
+    value.config.source.locator = 'addp://engine/2/path/public/continuous_source?type=table'
+    value.config.target = { ...value.config.target, parent_locator: 'addp://engine/2/path/public?type=schema', name: 'continuous_cdc_target' }
+    value.capture.postgresql_observation = { status: 'available', sampled_at: now, expires_at: expires, slot_active: true, wal_status: 'reserved', risk_state: 'reserved', retained_wal_bytes: '32768', unacknowledged_wal_bytes: '1024', safe_wal_size_bytes: null, wal_keep_unlimited: true }
+    value.capture.delay_observation = { status: 'available', sampled_at: now, expires_at: expires, connected: true, delay_seconds: phase === 'cdc_initial' ? null : .141 }
+    value.capture.buffer_observation = { status: 'available', sampled_at: now, expires_at: expires, earliest_offset: '0', committed_offset: binding.committed_offset, latest_offset: binding.latest_offset, lag_offsets: binding.lag_offsets, recovery_state: 'available' }
+    await route.fulfill({ json: value })
+  })
+  await page.goto('/monitor/cdc-resources?view=tasks&task_id=7&refresh=off')
+  const frame = page.frameLocator('iframe[data-testid="module-iframe"]')
+  await expect(frame.getByTestId('cdc-task-progress')).toBeVisible()
+  await assertCDCTaskMonitoring(page, frame, binding, phase, executionID)
+  // The historical execution fixture has lag=3; it cannot stand in for current lag=0.
+  await expect(frame.getByTestId('cdc-task-lag')).toHaveText('3')
 })

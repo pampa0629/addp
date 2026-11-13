@@ -157,7 +157,7 @@
         "manager": "Manager - 数据管理",
         "meta": "Meta - 元数据",
         "model": "Model - 数据建模",
-        "monitor": "Monitor - 运行监控",
+        "monitor": "Monitor - 统一监控",
         "orchestrator": "Orchestrator - 工作流编排",
         "portal": "Portal - 资产门户",
         "quality": "Quality - 数据质量",
@@ -247,7 +247,7 @@
           "name": "数据传输"
         },
         "monitor": {
-          "name": "运行监控"
+          "name": "统一监控"
         },
         "service": {
           "name": "数据服务"
@@ -427,7 +427,7 @@
         "desc": "工作流编排、任务调度、执行管理"
       },
       "monitor": {
-        "label": "运行监控",
+        "label": "统一监控",
         "desc": "任务运行监控、统计分析、健康检查"
       },
       "catalog": {
@@ -551,7 +551,7 @@
         "orchestrations": "编排任务"
       },
       "monitor": {
-        "label": "运行监控",
+        "label": "统一监控",
         "dashboard": "监控仪表盘",
         "executions": "执行记录",
         "transferExecutions": "传输执行记录",
@@ -564,7 +564,7 @@
         "modelExecutions": "数据建模执行记录",
         "alerts": "告警事件",
         "notifications": "告警通知",
-        "recentDashboard": "运行监控仪表盘",
+        "recentDashboard": "统一监控仪表盘",
         "recentExecutions": "全域执行记录",
         "recentAlerts": "执行告警事件",
         "recentNotifications": "执行告警通知",

@@ -1,7 +1,7 @@
 import { expect, request, test } from '@playwright/test'
 import { existsSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { resolve } from 'node:path'
-import { identity, json, login } from './transfer-browser-support.js'
+import { assertCDCTaskMonitoring, identity, json, login } from './transfer-browser-support.js'
 
 // Only explicitly verified screenshots are public; failure artifacts stay private.
 test.use({ screenshot: 'off' })
@@ -18,7 +18,7 @@ test('continuous execution timeline, recovery and revoked Owner access', async (
   const control = process.env.ADDP_CONTINUOUS_BROWSER_CONTROL
   const artifacts = process.env.ADDP_ONLINE_ARTIFACT_DIR
   const credentials = [process.env.ADDP_CONTINUOUS_BROWSER_USERNAME, process.env.ADDP_CONTINUOUS_BROWSER_PASSWORD]
-  if (!['live', 'recovery', 'revocation', 'owner_unavailable'].includes(phase) || !control || !artifacts || credentials.some(value => !value)) throw new Error('incomplete browser scope')
+  if (!['live', 'recovery', 'revocation', 'owner_unavailable', 'cdc_initial', 'cdc_growth', 'cdc_resumed'].includes(phase) || !control || !artifacts || credentials.some(value => !value)) throw new Error('incomplete browser scope')
   const marker = { run_id: runID, phase, execution_id: ids[0] }
   const checks = []
   let stage = 'login'
@@ -27,14 +27,14 @@ test('continuous execution timeline, recovery and revoked Owner access', async (
     run_id: runID, tenant_id: tenantID, principal_id: principalID, execution_ids: ids, checks, result })
   const destination = resolve(artifacts, `continuous-browser-${phase}.json`)
   const route = id => id ? `/monitor/executions?execution_id=${encodeURIComponent(id)}` : '/monitor/executions'
-  async function signedPage(id, owner = true) {
+  async function signedPage(id, owner = true, destination = route(id)) {
     const prefix = owner ? 'owner_login' : 'fresh_monitor_only_login'
     stage = prefix
     const context = await browser.newContext({ baseURL: process.env.CONSOLE_URL, locale: 'zh-CN' })
     contexts.push(context)
     const page = await context.newPage()
     await page.addInitScript(() => localStorage.setItem('addp-lang', 'zh-cn'))
-    const token = await login(page, ...credentials, route(id))
+    const token = await login(page, ...credentials, destination)
     const api = await request.newContext({ baseURL: process.env.GATEWAY_URL, extraHTTPHeaders: { Authorization: `Bearer ${token}` } })
     try {
       stage = prefix + '_auth_context'
@@ -98,7 +98,16 @@ test('continuous execution timeline, recovery and revoked Owner access', async (
   }
   try {
     const { page, frame } = await signedPage(ids[0])
-    if (phase === 'live') {
+    if (phase.startsWith('cdc_')) {
+      const binding = JSON.parse(process.env.ADDP_CONTINUOUS_BROWSER_CDC)
+      const { task_id: taskID, engine_id: engineID } = binding
+      stage = 'cdc_task_login'
+      const { page, frame } = await signedPage(ids[0], true, `/monitor/cdc-resources?view=tasks&task_id=${taskID}`)
+      await expect(frame.getByTestId('cdc-task-chain')).toBeVisible()
+      await expect(frame.getByRole('tab', { name: '运行资源', exact: true })).toHaveCount(0)
+      stage = 'cdc_task_metrics'
+      checks.push(...await assertCDCTaskMonitoring(page, frame, binding, phase, ids[0]))
+    } else if (phase === 'live') {
       stage = 'live_timeline'
       const { detail, events } = await timeline(frame)
       const rows = events.locator('tbody tr')
