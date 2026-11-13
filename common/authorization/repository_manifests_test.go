@@ -45,11 +45,11 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 		t.Fatalf("LoadRepositoryAuthorizationCatalog() error = %v", err)
 	}
 	descriptors := report.Permissions
-	if len(descriptors) != 549 {
-		t.Fatalf("descriptor count = %d, want 549", len(descriptors))
+	if len(descriptors) != 550 {
+		t.Fatalf("descriptor count = %d, want 550", len(descriptors))
 	}
 	for _, descriptor := range descriptors {
-		if descriptor.Key == "system.workflow_private_files.execute" && (descriptor.OwnerModule != "system" || descriptor.Action != "execute" || descriptor.Delegable || descriptor.TenantCustomizable || !reflect.DeepEqual(descriptor.AllowedScopeTypes, []string{"tenant"})) {
+		if (descriptor.Key == "system.workflow_private_files.execute" || descriptor.Key == "system.manager_pg_read_check.execute") && (descriptor.OwnerModule != "system" || descriptor.Action != "execute" || descriptor.Delegable || descriptor.TenantCustomizable || !reflect.DeepEqual(descriptor.AllowedScopeTypes, []string{"tenant"})) {
 			t.Fatal("private Runtime transport permission escaped fixed Tenant machine qualification")
 		}
 		if descriptor.Key == "transfer.cdc_risk_observation.read" && (descriptor.Delegable || descriptor.TenantCustomizable || !reflect.DeepEqual(descriptor.AllowedScopeTypes, []string{"platform"})) {
@@ -92,6 +92,9 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 			}
 			if key == "system.engine_access_initial_grant.execute" && role.Key != "tenant.transfer_runtime" && role.Key != "tenant.manager_runtime" && role.Key != "tenant.develop_runtime" {
 				t.Fatalf("unexpected initial production runtime role %q", role.Key)
+			}
+			if key == "system.manager_pg_read_check.execute" && role.Key != "tenant.manager_runtime" {
+				t.Fatal("PG handoff permission escaped Manager runtime")
 			}
 			if key == "system.workflow_private_files.execute" && role.Key != "tenant.develop_runtime" {
 				t.Fatalf("unexpected private file Runtime caller %q", role.Key)
@@ -263,6 +266,7 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 		"system.engine_catalog.read",
 		"system.engine_descriptor.read",
 		"system.execution_authorization.execute",
+		"system.manager_pg_read_check.execute",
 		"transfer.execution.create",
 		"transfer.execution.read",
 		"transfer.task.create",

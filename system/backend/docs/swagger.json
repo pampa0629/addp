@@ -1842,14 +1842,14 @@
                 ]
             }
         },
-        "/engine-access/read-checks/manager-preview": {
+        "/engine-access/read-checks/manager-pg-preview": {
             "post": {
                 "security": [
                     {
                         "BearerAuth": []
                     }
                 ],
-                "description": "当前 Tenant 第一方或 OAuth API User，以及精确 manager audience 和唯一 data.preview Scope 的真实委托凭据；固定检查 manager.data_item.read，身份与完整源规则共用只读快照。不开放 Service、Resource Ticket 或其它 System API，无 Grant 或存在 Deny 整体拒绝，不接收自报身份、execution 或 Permission | Current Tenant first-party or OAuth API User, or a real delegated credential with exact manager audience and sole data.preview scope. Fixed manager.data_item.read and complete source rules share one read-only snapshot. Service, Resource Ticket and other System APIs remain unavailable; missing Grants or Deny reject the entire set; caller identity, execution and Permission are not accepted\n成功仅为当次源规则观察，不是完整 Allow、访问令牌或可缓存凭据。Manager 必须提供 Provider 证明的完整读取集合、完成本地 Security 保护并执行同一 PreparedQuery；本接口不访问源端或 Catalog | Success is a point-in-time source observation, not a complete Allow, access token or cacheable credential. Manager must supply the Provider-proven complete read set, apply local Security protection and execute the same PreparedQuery. This endpoint accesses neither the source nor Catalog",
+                "description": "仅 addp-manager Tenant Service 可提交同次正式 DataItem 与完整 Provider ReadSet，System 在最终只读快照核验原用户、功能权限及当前 Grant；不重复查询 Meta，不签发访问权或缓存凭据。原用户可为普通 User 或严格限定 manager/data.preview 委托。 | Only addp-manager Tenant Service may submit same-request formal DataItem facts and the complete Provider ReadSet. System rechecks the original user, function permissions and current Grants in the final read-only snapshot without querying Meta or issuing authority. The original credential may be an ordinary User or a narrowly qualified manager/data.preview delegate.",
                 "consumes": [
                     "application/json"
                 ],
@@ -1859,7 +1859,165 @@
                 "tags": [
                     "源数据读取检查 | Source Data Read Checks"
                 ],
-                "summary": "检查 Manager 预览的当前精确源读取范围 | Check current precise source read coverage for Manager preview",
+                "summary": "核验 Manager PostgreSQL 预览范围 | Check Manager PostgreSQL preview coverage",
+                "parameters": [
+                    {
+                        "description": "原用户凭据与完整 PG 读取事实，不记录或持久化凭据 | Original user credential and complete PG read facts; never log or persist the credential",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/client.ManagerPGReadCheckRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "不可缓存的当次观察时刻 | Non-cacheable observation time",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_engineaccess.SourceReadCheck"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "system.manager_pg_read_check.execute"
+                ]
+            }
+        },
+        "/engine-access/read-checks/manager-pg-profile-result": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "仅 addp-manager Tenant Service；使用实际历史结果冻结的完整 ReadSet 和同次正式 Meta 身份。最终重新核验原普通 User 及当前授权，不接受预览委托，不查询 Meta，不授予后台采样或 Grant 签发权限。 | Only addp-manager Tenant Service with the complete frozen historical result ReadSet and same-request formal Meta identity. Finally rechecks the original ordinary User and current authorization; no preview delegation, Meta query, background sampling authority or Grant issuance.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "源数据读取检查 | Source Data Read Checks"
+                ],
+                "summary": "核验 Manager PostgreSQL 剖析结果范围 | Check Manager PostgreSQL profile-result coverage",
+                "parameters": [
+                    {
+                        "description": "原用户凭据与完整历史 PG 读取事实 | Original user credential and complete historical PG read facts",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/client.ManagerPGReadCheckRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_engineaccess.SourceReadCheck"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "system.manager_pg_read_check.execute"
+                ]
+            }
+        },
+        "/engine-access/read-observations/current-source": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "当前 Tenant 第一方或 OAuth API User，以及精确 manager audience 和唯一 data.preview Scope 的真实委托凭据；固定检查 manager.data_item.read，身份与完整源规则共用只读快照。不开放 Service、Resource Ticket 或其它 System API，无 Grant 整体拒绝，不接收自报身份、execution 或 Permission | Current Tenant first-party or OAuth API User, or a real delegated credential with exact manager audience and sole data.preview scope. Fixed manager.data_item.read and complete source rules share one read-only snapshot. Service, Resource Ticket and other System APIs remain unavailable; missing Grants reject the entire set; caller identity, execution and Permission are not accepted\n成功仅为当次源规则观察，不是完整 Allow、访问令牌或可缓存凭据。此独立观察支持源离线时核查 Grant；PG 实际预览和剖析结果须使用 Manager 专用可信交接入口。本接口不访问源端或 Catalog | Success is a point-in-time source observation, not a complete Allow, access token or cacheable credential. It supports checking Grants while sources are offline; actual PG preview and profile-result reads require the dedicated Manager handoff. This endpoint accesses neither the source nor Catalog",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "源数据读取检查 | Source Data Read Checks"
+                ],
+                "summary": "观察当前用户的精确源读取授权 | Observe current precise source read authorization for a user",
                 "parameters": [
                     {
                         "description": "1 至 200 个完整读取目标；受管 FTP/NFS 模型结果须提交同次 expected_source 且仅限普通 User，不支持 query 参数 | 1 to 200 complete read targets; managed FTP/NFS model results require same-decision expected_source and ordinary User; no query parameters",
@@ -1874,85 +2032,6 @@
                 "responses": {
                     "200": {
                         "description": "当次观察时刻，不授予访问权 | Observation time without granting access",
-                        "schema": {
-                            "$ref": "#/definitions/github_com_addp_system_internal_engineaccess.SourceReadCheck"
-                        }
-                    },
-                    "400": {
-                        "description": "身份、授权边界或依赖核验失败 | Identity, authorization boundary or dependency validation failed",
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
-                        }
-                    },
-                    "401": {
-                        "description": "身份、授权边界或依赖核验失败 | Identity, authorization boundary or dependency validation failed",
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
-                        }
-                    },
-                    "403": {
-                        "description": "身份、授权边界或依赖核验失败 | Identity, authorization boundary or dependency validation failed",
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
-                        }
-                    },
-                    "409": {
-                        "description": "身份、授权边界或依赖核验失败 | Identity, authorization boundary or dependency validation failed",
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
-                        }
-                    },
-                    "500": {
-                        "description": "身份、授权边界或依赖核验失败 | Identity, authorization boundary or dependency validation failed",
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
-                        }
-                    },
-                    "503": {
-                        "description": "身份、授权边界或依赖核验失败 | Identity, authorization boundary or dependency validation failed",
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
-                        }
-                    }
-                },
-                "x-addp-auth-mode": "permission",
-                "x-addp-required-permissions": [
-                    "manager.data_item.read"
-                ]
-            }
-        },
-        "/engine-access/read-checks/manager-profile-result": {
-            "post": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "description": "仅当前 Tenant 普通第一方或 OAuth API User；固定核验 manager.data_item.read 及完整历史采样来源的现行规则，无 Grant 或命中 Deny 整体拒绝。不支持委托、Service、Resource Ticket 或自报身份、execution、Permission；不授予后台采样权限 | Current Tenant ordinary first-party or OAuth API User only. Fixed manager.data_item.read and current rules for all historical sampling sources; missing Grants or Deny reject the entire set. Delegation, Service, Resource Ticket and caller-supplied identity, execution or Permission are not supported; no background sampling authority is granted\nManager 必须提供实际结果冻结的完整 ReadSet，不能用当前视图依赖补造。只返回不可缓存的当次观察时刻，不访问源端，不创建 Grant 或执行授权 | Manager must supply the complete ReadSet frozen from the actual result, not reconstruct it from current view dependencies. Returns only a non-cacheable observation time; no source access, Grant or execution authorization",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "源数据读取检查 | Source Data Read Checks"
-                ],
-                "summary": "检查 Manager 剖析结果的当前源读取权限 | Check current source read coverage for Manager profile results",
-                "parameters": [
-                    {
-                        "description": "1 至 200 个完整历史读取目标，不支持 query 参数 | 1 to 200 complete historical read targets; no query parameters",
-                        "name": "request",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/github_com_addp_system_internal_engineaccess.SourceReadCheckRequest"
-                        }
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "当次观察时刻 | Observation time",
                         "schema": {
                             "$ref": "#/definitions/github_com_addp_system_internal_engineaccess.SourceReadCheck"
                         }
@@ -18827,6 +18906,20 @@
                 },
                 "file_composition": {
                     "$ref": "#/definitions/authorizationfacts.FileCompositionBoundary"
+                }
+            }
+        },
+        "client.ManagerPGReadCheckRequest": {
+            "type": "object",
+            "properties": {
+                "sources": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/authorizationfacts.Binding"
+                    }
+                },
+                "user_credential": {
+                    "type": "string"
                 }
             }
         },

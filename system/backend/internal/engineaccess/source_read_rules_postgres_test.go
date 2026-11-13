@@ -263,7 +263,7 @@ func exerciseCurrentSourceRules(t *testing.T, db *gorm.DB, acceptor *Service, ru
 			check := func(want string) {
 				t.Helper()
 				var rules []sourceReadRuleRow
-				if err := db.Raw(currentSourceReadRulesSQL, runtime.TenantID, user.PrincipalID, user.MembershipID, user.AuthorizationVersion, string(batch)).Scan(&rules).Error; err != nil || len(rules) != 1 || rules[0].Reason != want || rules[0].BackendPID <= 0 {
+				if err := db.Raw(currentSourceReadRulesSQL, runtime.TenantID, user.PrincipalID, user.MembershipID, user.AuthorizationVersion, string(batch), false).Scan(&rules).Error; err != nil || len(rules) != 1 || rules[0].Reason != want || rules[0].BackendPID <= 0 {
 					t.Fatalf("changed digest rules=%+v want=%s error=%v", rules, want, err)
 				}
 			}
@@ -653,7 +653,7 @@ func exerciseCurrentSourceRules(t *testing.T, db *gorm.DB, acceptor *Service, ru
 // IAM resolution, membership expansion, rules and sources share one statement.
 const sourceGrantInspectionSQL = `WITH input AS MATERIALIZED (
  SELECT m.tenant_id, p.id AS principal_id, m.id AS membership_id,
- p.authorization_version, ?::jsonb AS targets, clock_timestamp() AS observed_at
+ p.authorization_version, ?::jsonb AS targets, false AS node_first, clock_timestamp() AS observed_at
  FROM system.tenant_memberships m
  JOIN system.principals p ON p.id = m.principal_id AND p.principal_type = 'user'
  JOIN system.users u ON u.id = p.id

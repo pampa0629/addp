@@ -221,7 +221,7 @@ func exerciseFileCompositionGrants(t *testing.T, db *gorm.DB, tenantID, adminID 
 				}
 				read := func(request SourceReadCheckRequest, want bool) {
 					t.Helper()
-					result, err := service.CheckManagerPreviewRead(authenticatedManagerReadRequest(ctx, service, session.AccessToken), session.AccessToken, request)
+					result, err := service.ObserveCurrentSourceRead(authenticatedManagerReadRequest(ctx, service, session.AccessToken), session.AccessToken, request)
 					if want && (err != nil || result == nil) {
 						t.Fatalf("read denied: %v", err)
 					}
@@ -278,7 +278,7 @@ func exerciseFileCompositionGrants(t *testing.T, db *gorm.DB, tenantID, adminID 
 				}
 				if format == "stl" || format == "glb" || format == "fbx" || format == "filegdb" {
 					current.BasisState, current.Boundary, current.BoundaryHash = authorizationfacts.AuthorizationBasisIncomplete, nil, nil
-					if result, err := service.CheckManagerPreviewRead(authenticatedManagerReadRequest(ctx, service, session.AccessToken), session.AccessToken, request); result != nil || !errors.Is(err, commonapi.ErrConflict) {
+					if result, err := service.ObserveCurrentSourceRead(authenticatedManagerReadRequest(ctx, service, session.AccessToken), session.AccessToken, request); result != nil || !errors.Is(err, commonapi.ErrConflict) {
 						t.Fatal("incomplete STL facts did not fail closed", err)
 					}
 					current = original
@@ -292,7 +292,7 @@ func exerciseFileCompositionGrants(t *testing.T, db *gorm.DB, tenantID, adminID 
 					}
 					read(request, true)
 					offline = true
-					if result, err := service.CheckManagerPreviewRead(authenticatedManagerReadRequest(ctx, service, session.AccessToken), session.AccessToken, request); result != nil || !errors.Is(err, ErrAuthorizationFactsUnavailable) {
+					if result, err := service.ObserveCurrentSourceRead(authenticatedManagerReadRequest(ctx, service, session.AccessToken), session.AccessToken, request); result != nil || !errors.Is(err, ErrAuthorizationFactsUnavailable) {
 						t.Fatal("Meta outage allowed STL", err)
 					}
 					offline = false
@@ -368,7 +368,7 @@ func exerciseFileCompositionGrants(t *testing.T, db *gorm.DB, tenantID, adminID 
 				if err != nil {
 					t.Fatal(err)
 				}
-				if result, err := service.CheckManagerPreviewRead(authenticatedManagerReadRequest(ctx, service, delegate.AccessToken), delegate.AccessToken, currentRequest); result != nil || (!errors.Is(err, commonapi.ErrUnauthorized) && !errors.Is(err, commonapi.ErrForbidden)) {
+				if result, err := service.ObserveCurrentSourceRead(authenticatedManagerReadRequest(ctx, service, delegate.AccessToken), delegate.AccessToken, currentRequest); result != nil || (!errors.Is(err, commonapi.ErrUnauthorized) && !errors.Is(err, commonapi.ErrForbidden)) {
 					t.Fatal("raw delegated managed-result read accepted", err)
 				}
 				if err := db.Table("system.engines").Where("id=?", engine.ID).Update("version", 2).Error; err != nil {
@@ -380,7 +380,7 @@ func exerciseFileCompositionGrants(t *testing.T, db *gorm.DB, tenantID, adminID 
 				current.ObservedAt = time.Now() // re-observation is not a changed boundary.
 				read(currentRequest, true)
 				offline = true
-				if result, err := service.CheckManagerPreviewRead(authenticatedManagerReadRequest(ctx, service, session.AccessToken), session.AccessToken, currentRequest); result != nil || !errors.Is(err, ErrAuthorizationFactsUnavailable) {
+				if result, err := service.ObserveCurrentSourceRead(authenticatedManagerReadRequest(ctx, service, session.AccessToken), session.AccessToken, currentRequest); result != nil || !errors.Is(err, ErrAuthorizationFactsUnavailable) {
 					t.Fatal("Meta outage allowed cached composition", err)
 				}
 				offline = false

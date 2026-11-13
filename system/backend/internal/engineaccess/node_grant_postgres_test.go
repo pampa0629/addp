@@ -79,9 +79,11 @@ func exercisePersistentNodeGrants(t *testing.T, db *gorm.DB, service *Service, a
 		sibling := plugin.TabularItemPath(base.EngineID, "schema", scope.Segments[1].Name+"_sibling", "current")
 		read := func(action string, path plugin.EngineCatalogPath, covered bool) {
 			t.Helper()
-			result, err := repo.readCurrentSourceRules(ctx, sourceReadRequest{Action: action, TenantID: actor.TenantID, Source: user, Targets: []plugin.EngineCatalogPath{path}, Bindings: []authorizationfacts.Binding{factstest.Binding(path)}})
-			if err != nil || result == nil || result.Covered != covered {
-				t.Fatalf("action=%s scope=%v covered=%v result=%+v err=%v", action, path, covered, result, err)
+			for _, nodeFirst := range []bool{false, true} {
+				result, err := repo.readCurrentSourceRules(ctx, sourceReadRequest{NodeFirst: nodeFirst, Action: action, TenantID: actor.TenantID, Source: user, Targets: []plugin.EngineCatalogPath{path}, Bindings: []authorizationfacts.Binding{factstest.Binding(path)}})
+				if err != nil || result == nil || result.Covered != covered {
+					t.Fatalf("action=%s scope=%v covered=%v result=%+v err=%v", action, path, covered, result, err)
+				}
 			}
 		}
 		read("metadata_read", current, true)

@@ -108,7 +108,7 @@ class KMLCaseRoutingTest(unittest.TestCase):
                 return SimpleNamespace(payload=copy.deepcopy(items))
             if path.startswith('/api/v1/meta/items/'):
                 return SimpleNamespace(payload=copy.deepcopy(next(item for item in items if str(item['id']) == path.split('/')[-1])))
-            self.assertEqual((method, path), ('POST', '/api/v1/system/engine-access/read-checks/manager-preview'))
+            self.assertEqual((method, path), ('POST', '/api/v1/system/engine-access/read-observations/current-source'))
             self.assertEqual(len(body['targets']), 1)
             granted = any(receipt['catalog_path'] == body['targets'][0] for receipt in receipts)
             self.assertEqual(expected, (200,) if granted else (403,))

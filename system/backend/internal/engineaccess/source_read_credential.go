@@ -19,6 +19,7 @@ import (
 type sourceReadEngineVersion struct {
 	ID      uint
 	Version int64
+	PG      bool
 }
 
 func (r *Repository) observeSourceRules(ctx context.Context, credential, action string, targets []engineplugin.EngineCatalogPath, bindings []authorizationfacts.Binding, expectedTenantID int64, resolve func(*iam.AuthContextService) (*commonauth.AuthContext, error), qualify func(commonauth.AuthContext) error, expectedEngine *sourceReadEngineVersion) (*sourceReadRules, error) {
@@ -88,13 +89,19 @@ func (r *Repository) observePreparedSourceRules(ctx context.Context, action stri
 			if err != nil {
 				return err
 			}
-			for _, binding := range bindings {
-				if !commonexecution.ManagerFileSourceComposition(engine.EngineType, binding.FileComposition) {
+			if expectedEngine.PG {
+				if engine.EngineType != "postgresql" || engine.LifecycleState != "active" || engine.DeletedAt != nil {
 					return commonapi.ErrForbidden
 				}
-			}
-			if !commonexecution.ManagerFileSourceEngineType(engine.EngineType) || engine.LifecycleState != "active" || engine.Version != expectedEngine.Version || engine.DeletedAt != nil {
-				return commonapi.ErrForbidden
+			} else {
+				for _, binding := range bindings {
+					if !commonexecution.ManagerFileSourceComposition(engine.EngineType, binding.FileComposition) {
+						return commonapi.ErrForbidden
+					}
+				}
+				if !commonexecution.ManagerFileSourceEngineType(engine.EngineType) || engine.LifecycleState != "active" || engine.Version != expectedEngine.Version || engine.DeletedAt != nil {
+					return commonapi.ErrForbidden
+				}
 			}
 		}
 		principalID, err := parse(current.Principal.ID)
@@ -110,7 +117,7 @@ func (r *Repository) observePreparedSourceRules(ctx context.Context, action stri
 			return err
 		}
 		started = time.Now()
-		observation, err := tx.queryCurrentSourceRules(ctx, sourceReadRequest{Action: action, TenantID: tenantID,
+		observation, err := tx.queryCurrentSourceRules(ctx, sourceReadRequest{Action: action, TenantID: tenantID, NodeFirst: expectedEngine != nil && expectedEngine.PG,
 			Source: userProvenance{PrincipalID: principalID, MembershipID: membershipID, AuthorizationVersion: version}}, paths, batch)
 		if timing != nil {
 			timing.ruleQueries++

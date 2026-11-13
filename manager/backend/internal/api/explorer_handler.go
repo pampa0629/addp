@@ -53,6 +53,7 @@ type ExplorerHandler struct {
 	metadataService      *service.MetadataService
 	protectionStore      explorerProtectionStore
 	previewSourceChecker managerprotection.PreviewSourceChecker
+	pgSourceChecker      *commonClient.SystemServiceClient
 }
 
 type explorerProtectionStore interface {
@@ -76,6 +77,10 @@ func NewExplorerHandler(
 		protectionStore:      protectionStore,
 		previewSourceChecker: previewSourceChecker,
 	}
+}
+
+func (h *ExplorerHandler) SetPGSourceChecker(checker *commonClient.SystemServiceClient) {
+	h.pgSourceChecker = checker
 }
 
 func bearerToken(c *gin.Context) string {
@@ -246,9 +251,22 @@ func (h *ExplorerHandler) Preview(c *gin.Context) {
 			if h.previewSourceChecker == nil || h.protectionStore == nil || tenant == 0 {
 				return managerprotection.ErrRequired
 			}
-			return h.previewSourceChecker.CheckManagerPreviewRead(ctx, commonauth.CanonicalBearerToken(c.GetHeader("Authorization")), []plugin.EngineCatalogPath{root})
+			return h.previewSourceChecker.ObserveCurrentSourceRead(ctx, commonauth.CanonicalBearerToken(c.GetHeader("Authorization")), []plugin.EngineCatalogPath{root})
 		}
-		execute := managerprotection.PreviewQueryExecutor(h.previewSourceChecker, h.protectionStore, tenant, req.Engine.ID, commonauth.CanonicalBearerToken(c.GetHeader("Authorization")), protectionSubject)
+		checker := h.previewSourceChecker
+		if req.Engine.EngineType == "postgresql" {
+			checker = managerprotection.PreviewSourceCheckFunc(func(ctx context.Context, credential string, paths []plugin.EngineCatalogPath) error {
+				if h.pgSourceChecker == nil {
+					return managerprotection.ErrRequired
+				}
+				bindings, err := h.previewResolver.PGReadBindings(ctx, req, paths)
+				if err != nil {
+					return err
+				}
+				return h.pgSourceChecker.CheckManagerPGPreviewRead(ctx, tenant, credential, bindings)
+			})
+		}
+		execute := managerprotection.PreviewQueryExecutor(checker, h.protectionStore, tenant, req.Engine.ID, commonauth.CanonicalBearerToken(c.GetHeader("Authorization")), protectionSubject)
 		result, err = h.previewResolver.PreviewWithQueryExecutor(c.Request.Context(), req, execute)
 	}
 	if err != nil {

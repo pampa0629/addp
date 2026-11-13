@@ -17,17 +17,11 @@ var (
 	ErrManagerPreviewReadUnavailable    = errors.New("manager preview source read check unavailable")
 )
 
-// CheckManagerPreviewRead consumes System's fixed synchronous preview contract.
+// ObserveCurrentSourceRead consumes System's fixed synchronous preview contract.
 // credential is the current request's User or delegated data.preview token,
 // never this client's Service token. Success is not a reusable access lease.
-func (c *SystemServiceClient) CheckManagerPreviewRead(ctx context.Context, credential string, targets []plugin.EngineCatalogPath) error {
-	return c.checkSourceRead(ctx, credential, targets, "/api/v1/system/engine-access/read-checks/manager-preview", true)
-}
-
-// CheckManagerProfileResultRead uses only the current ordinary User request.
-// Targets must be the persisted actual sampling ReadSet, not current dependencies.
-func (c *SystemServiceClient) CheckManagerProfileResultRead(ctx context.Context, credential string, targets []plugin.EngineCatalogPath) error {
-	return c.checkSourceRead(ctx, credential, targets, "/api/v1/system/engine-access/read-checks/manager-profile-result", false)
+func (c *SystemServiceClient) ObserveCurrentSourceRead(ctx context.Context, credential string, targets []plugin.EngineCatalogPath) error {
+	return c.checkSourceRead(ctx, credential, targets, "/api/v1/system/engine-access/read-observations/current-source", true)
 }
 
 func (c *SystemServiceClient) checkSourceRead(ctx context.Context, credential string, targets []plugin.EngineCatalogPath, path string, delegated bool) error {

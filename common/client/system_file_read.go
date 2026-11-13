@@ -48,5 +48,5 @@ func (c *SystemServiceClient) CheckManagerFileRead(ctx context.Context, credenti
 		Targets        []plugin.EngineCatalogPath `json:"targets"`
 		ExpectedSource ManagerFileExpectedSource  `json:"expected_source"`
 	}{Targets: targets, ExpectedSource: expectedSource}
-	return c.checkSourceReadRequest(ctx, credential, targets, "/api/v1/system/engine-access/read-checks/manager-preview", false, request)
+	return c.checkSourceReadRequest(ctx, credential, targets, "/api/v1/system/engine-access/read-observations/current-source", false, request)
 }

@@ -61,7 +61,7 @@ def cleanup():
     preparer, consumer = client('ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN'), client('ADDP_ONLINE_TEST_USER_ACCESS_TOKEN')
     preparer.request('POST', f"/api/v1/system/engines/{grant['engine_id']}/access_grants/{grant['request_id']}/revoke",
                      (200, 404), {'reason': 'Disposable HighGo SQL timeout acceptance finished'})
-    consumer.request('POST', '/api/v1/system/engine-access/read-checks/manager-preview', (403,), {'targets': [grant['target']]})
+    consumer.request('POST', '/api/v1/system/engine-access/read-observations/current-source', (403,), {'targets': [grant['target']]})
     Path(SUPPORT.required_environment('ADDP_ONLINE_ARTIFACT_DIR'), 'highgo-timeout-grant-cleanup.json').write_text(
         json.dumps(dict(run_id=SUPPORT.required_environment('ADDP_ONLINE_TEST_RUN_ID'),
                         request_id=grant['request_id'], engine_id=grant['engine_id'], read_denied=True)))

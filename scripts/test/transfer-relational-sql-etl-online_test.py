@@ -469,7 +469,7 @@ class TransferRelationalSQLETLOnlineTest(unittest.TestCase):
         self.assertEqual(owned, [])
         self.assertEqual(initializer.request.call_count, 2)
         self.assertEqual(initializer.request.call_args.args[:3], ("POST", f"/api/v1/system/engines/9/access_grants/{grant_id}/revoke", (200,)))
-        client.request.assert_called_with("POST", "/api/v1/system/engine-access/read-checks/manager-preview", (403,), {"targets": [target]})
+        client.request.assert_called_with("POST", "/api/v1/system/engine-access/read-observations/current-source", (403,), {"targets": [target]})
 
     def test_binary_task_maps_nullable_bytes_into_the_observed_postgresql_schema(self):
         client = Mock()
@@ -1706,7 +1706,7 @@ class TransferRelationalSQLETLOnlineTest(unittest.TestCase):
                         metadata_statuses.append(status)
                         item = dict(source, fingerprint="different") if failure == "identity" else source
                         return SimpleNamespace(payload=item if visible else {"error": "hidden"})
-                    self.assertEqual((method, path, expected), ("POST", "/api/v1/system/engine-access/read-checks/manager-preview", (403,)))
+                    self.assertEqual((method, path, expected), ("POST", "/api/v1/system/engine-access/read-observations/current-source", (403,)))
                     self.assertFalse(visible)
                     return SimpleNamespace(payload={"error": "denied"})
                 client.request.side_effect = request
@@ -1768,7 +1768,7 @@ class TransferRelationalSQLETLOnlineTest(unittest.TestCase):
             grants.observe(target, allowed, phase=phase)
             self.assertEqual(grants.phase, phase)
             grants.consumer.request.assert_called_with(
-                "POST", "/api/v1/system/engine-access/read-checks/manager-preview",
+                "POST", "/api/v1/system/engine-access/read-observations/current-source",
                 (200,) if allowed else (403,), {"targets": [target]})
         for payload in ({}, None):
             grants.consumer.request.return_value = SimpleNamespace(payload=payload)

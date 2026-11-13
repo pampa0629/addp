@@ -8,6 +8,7 @@ import (
 	"github.com/addp/common/dataitem/authorizationfacts"
 	"github.com/addp/common/engine/plugin"
 	commonjson "github.com/addp/common/jsonmap"
+	commonmodels "github.com/addp/common/models"
 	"github.com/addp/meta/internal/models"
 	"gorm.io/gorm"
 )
@@ -79,7 +80,16 @@ func projectDataItemAuthorizationFacts(item models.MetaItem, observedAt time.Tim
 		if item.ItemType == "collection" {
 			target = plugin.EngineCatalogBranchLeafPath(plugin.DynamicSchemaCatalogModel(), item.EngineID, parent.NodeType, parent.Name, plugin.EngineCatalogTermCollection, plugin.EngineCatalogKindCollection, item.Name)
 		}
-		facts.Boundary = &authorizationfacts.AuthorizationBoundary{Layout: "single", NativeTarget: target}
+		if item.ItemType == "table" && parent.NodeType == plugin.EngineCatalogTermSchema {
+			binding, err := authorizationfacts.NativeTableBindingFromMeta(commonmodels.MetaItem{ID: item.ID, NodeID: item.NodeID, TenantID: item.TenantID, EngineID: item.EngineID, Name: item.Name, FullName: item.FullName, ItemType: item.ItemType, Fingerprint: item.Fingerprint, Attributes: item.Attributes}, target)
+			if err != nil {
+				facts.BasisState = authorizationfacts.AuthorizationBasisNeedsRefresh
+				return projectMetadataAuthorizationFacts(lookup, item, facts)
+			}
+			facts.Boundary = &authorizationfacts.AuthorizationBoundary{Layout: "single", NativeTarget: binding.NativeTarget}
+		} else {
+			facts.Boundary = &authorizationfacts.AuthorizationBoundary{Layout: "single", NativeTarget: target}
+		}
 		hash, err := facts.ComputeBoundaryHash()
 		if err != nil {
 			return err

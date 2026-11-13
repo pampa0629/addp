@@ -67,7 +67,7 @@ def cleanup():
         try:
             preparer.request('POST', f"/api/v1/system/engines/{grant['engine_id']}/access_grants/{grant['request_id']}/revoke",
                 (200, 404), {'reason': 'Disposable HighGo business acceptance finished'})
-            consumer.request('POST', '/api/v1/system/engine-access/read-checks/manager-preview', (403,), {'targets': [grant['target']]})
+            consumer.request('POST', '/api/v1/system/engine-access/read-observations/current-source', (403,), {'targets': [grant['target']]})
             revoked.append(grant)
         except (RuntimeError, OSError, ValueError):
             errors.append(grant['request_id'])

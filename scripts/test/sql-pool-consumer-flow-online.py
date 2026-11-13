@@ -201,7 +201,7 @@ def cleanup(private, artifacts, run_id):
     for entry in journal:
         endpoint = f"/api/v1/system/engines/{entry['engine_id']}/access_grants/{entry['request_id']}/revoke"
         preparer.request("POST", endpoint, (200, 404), {"reason": "Disposable SQL pool acceptance finished"})
-        consumer.request("POST", "/api/v1/system/engine-access/read-checks/manager-preview",
+        consumer.request("POST", "/api/v1/system/engine-access/read-observations/current-source",
                          (403,), {"targets": [entry["target"]]})
         revoked.append({"engine_id": entry["engine_id"], "request_id": entry["request_id"], "read_denied": True})
     (artifacts / "sql-pool-grant-cleanup.json").write_text(json.dumps({"run_id": run_id, "grants": revoked}))

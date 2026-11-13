@@ -15,6 +15,7 @@ import (
 
 	"github.com/addp/common/authorization"
 	commonClient "github.com/addp/common/client"
+	"github.com/addp/common/dataitem/authorizationfacts"
 	"github.com/addp/common/dataprotection"
 	"github.com/addp/common/dataprotection/projectionstore"
 	"github.com/addp/common/engine/plugin"
@@ -115,7 +116,7 @@ type dataProfileSamplePlanner interface {
 }
 
 type dataProfileResultReadChecker interface {
-	CheckManagerProfileResultRead(context.Context, string, []plugin.EngineCatalogPath) error
+	CheckManagerPGProfileResultRead(context.Context, uint, string, []authorizationfacts.Binding) error
 }
 
 func (s *DataProfileService) SetResultReadChecker(checker dataProfileResultReadChecker) {
@@ -224,7 +225,11 @@ func (s *DataProfileService) GetCurrent(
 		if err != nil || profile == nil || s.resultChecker == nil {
 			return nil, ErrDataProfileSourceAuthorizationRequired
 		}
-		if err := s.resultChecker.CheckManagerProfileResultRead(ctx, credential, readSet.Paths); err != nil {
+		bindings, err := s.sampler.PGResultReadBindings(ctx, target, readSet.Paths)
+		if err != nil {
+			return nil, err
+		}
+		if err := s.resultChecker.CheckManagerPGProfileResultRead(ctx, tenantID, credential, bindings); err != nil {
 			return nil, err
 		}
 	}

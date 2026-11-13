@@ -93,7 +93,7 @@ class OnlineEngineRegistrationTest(unittest.TestCase):
                     raise REGISTRATION.RegistrationError('recipient Meta branch hidden: HTTP 404')
                 return SimpleNamespace(payload=[{'full_name': item['full_name'], 'item_type': item['term'],
                     'fingerprint': item['fingerprint']} for item in items if item['fingerprint'] in granted])
-            self.assertEqual(path, '/api/v1/system/engine-access/read-checks/manager-preview')
+            self.assertEqual(path, '/api/v1/system/engine-access/read-observations/current-source')
             self.assertEqual(len(body['targets']), 1)
             target = body['targets'][0]
             self.assertEqual(expected, (200,) if any(item['path'] == target and item['fingerprint'] in granted for item in records) else (403,))

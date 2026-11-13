@@ -208,7 +208,7 @@ func exerciseMetadataOnlyGrants(t *testing.T, db *gorm.DB, tenantID, adminID int
 						t.Fatal("content proof accepted metadata", err)
 					}
 				}
-				if result, err := service.CheckManagerPreviewRead(authenticatedManagerReadRequest(ctx, service, credential), credential, SourceReadCheckRequest{Targets: request.Targets}); result != nil || err == nil {
+				if result, err := service.ObserveCurrentSourceRead(authenticatedManagerReadRequest(ctx, service, credential), credential, SourceReadCheckRequest{Targets: request.Targets}); result != nil || err == nil {
 					t.Fatal("metadata Grant allowed preview", err)
 				}
 				readCommand := command

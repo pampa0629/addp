@@ -70,17 +70,11 @@ func qualifyOrdinarySourceUser(current commonauth.AuthContext, permission string
 	return commonapi.ErrForbidden
 }
 
-// CheckManagerPreviewRead consumes real User or fixed Manager Tool Bearer. Function/client
+// ObserveCurrentSourceRead consumes real User or fixed Manager Tool Bearer. Function/client
 // conditions and complete source rules share one read-only committed snapshot.
 // Security and the actual immutable query remain the Manager owner's gates.
-func (s *Service) CheckManagerPreviewRead(ctx context.Context, credential string, request SourceReadCheckRequest) (*SourceReadCheck, error) {
+func (s *Service) ObserveCurrentSourceRead(ctx context.Context, credential string, request SourceReadCheckRequest) (*SourceReadCheck, error) {
 	return s.checkSourceRead(ctx, credential, request, true, nil)
-}
-
-// Result content uses the current ordinary User, never a preview Tool delegate
-// or a historical execution identity. It does not authorize background sampling.
-func (s *Service) CheckManagerProfileResultRead(ctx context.Context, credential string, request SourceReadCheckRequest) (*SourceReadCheck, error) {
-	return s.checkSourceRead(ctx, credential, request, false, nil)
 }
 
 func qualifyManagerProfileResultRead(current commonauth.AuthContext) error {

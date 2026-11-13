@@ -305,6 +305,7 @@ func SetupRouter(
 		previewResolver := preview.NewPreviewResolver(previewRegistry, systemClient, metaClient, systemServiceClient)
 		explorerService := service.NewExplorerService(systemClient, metaClient, previewResolver)
 		explorerHandler := NewExplorerHandler(explorerService, previewResolver, metadataService, protectionStore, systemServiceClient)
+		explorerHandler.SetPGSourceChecker(systemServiceClient)
 		metadataHandler := NewMetadataHandler(metadataService)
 		downloadHandler := NewDownloadHandler(metadataService, protectionStore)
 

@@ -517,3 +517,8 @@ other = "暂时无法读取实例概况；请检查连接和账号权限"
 
 [system.search.context_changed]
 other = "检索依据已变化，请重新检索"
+
+[permissions.system.manager_pg_read_check.execute.name]
+other = "核验 Manager PostgreSQL 读取范围"
+[permissions.system.manager_pg_read_check.execute.description]
+other = "仅 Manager 运行身份可提交同次请求的 PostgreSQL 资源事实并核验原用户的当前读取范围，不授予源读取或签发权限。"

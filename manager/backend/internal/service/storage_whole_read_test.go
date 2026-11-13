@@ -17,7 +17,7 @@ import (
 
 type storageWholeCheck func(context.Context, string, []plugin.EngineCatalogPath) error
 
-func (f storageWholeCheck) CheckManagerPreviewRead(ctx context.Context, token string, targets []plugin.EngineCatalogPath) error {
+func (f storageWholeCheck) ObserveCurrentSourceRead(ctx context.Context, token string, targets []plugin.EngineCatalogPath) error {
 	return f(ctx, token, targets)
 }
 

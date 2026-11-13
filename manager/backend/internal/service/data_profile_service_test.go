@@ -11,6 +11,7 @@ import (
 
 	"github.com/addp/common/authorization"
 	commonClient "github.com/addp/common/client"
+	"github.com/addp/common/dataitem/authorizationfacts"
 	"github.com/addp/common/dataprotection"
 	"github.com/addp/common/dataprotection/projectionstore"
 	"github.com/addp/common/datatype"
@@ -548,7 +549,11 @@ type profileResultCheckerForTest struct {
 	paths      []plugin.EngineCatalogPath
 }
 
-func (c *profileResultCheckerForTest) CheckManagerProfileResultRead(_ context.Context, credential string, paths []plugin.EngineCatalogPath) error {
+func (c *profileResultCheckerForTest) CheckManagerPGProfileResultRead(_ context.Context, _ uint, credential string, sources []authorizationfacts.Binding) error {
+	paths := make([]plugin.EngineCatalogPath, len(sources))
+	for i, b := range sources {
+		paths[i] = b.NativeTarget
+	}
 	c.calls++
 	c.credential = credential
 	c.paths = (&plugin.QueryReadSet{Paths: paths}).Clone().Paths
@@ -1175,4 +1180,16 @@ func managedDataProfileServiceTestGate(t *testing.T, itemFingerprint string, fie
 	return &dataProfileServiceTestProtectionGate{result: projectionstore.GateResult{
 		Managed: true, State: dataprotection.ProjectionStateActive, Projections: []dataprotection.Projection{projection},
 	}}
+}
+
+func (s *dataProfileServiceTestSampler) PGResultReadBindings(_ context.Context, _ *DataProfileTarget, paths []plugin.EngineCatalogPath) ([]authorizationfacts.Binding, error) {
+	bindings := make([]authorizationfacts.Binding, 0, len(paths))
+	for _, path := range paths {
+		b, err := authorizationfacts.NativeCandidateBinding(path)
+		if err != nil {
+			return nil, err
+		}
+		bindings = append(bindings, b)
+	}
+	return bindings, nil
 }

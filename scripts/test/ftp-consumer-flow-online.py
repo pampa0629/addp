@@ -1072,7 +1072,7 @@ def verify_failed_generation(client, report, timeout):
 
 
 def source_read_control(client, engine_id, model, status):
-    response = client.request('POST', '/api/v1/system/engine-access/read-checks/manager-preview', (status,),
+    response = client.request('POST', '/api/v1/system/engine-access/read-observations/current-source', (status,),
                               {'targets': [file_target(engine_id, model['full_name'])]}).payload
     require(isinstance(response, dict) and bool(response.get('observed_at') if status == 200 else response.get('error')),
             'FTP current source rule check omitted its explicit observation or denial')

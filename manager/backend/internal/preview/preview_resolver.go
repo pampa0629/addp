@@ -118,6 +118,7 @@ func (r *PreviewResolver) runtimeDescriptorClientForTenant(tenantID *uint) insta
 
 // PreviewRequest 新的预览请求（基于 ResourceLocator）
 type PreviewResolverRequest struct {
+	MetaItem                *commonModels.MetaItem // Actual tenant-bound Meta record for this synchronous request only.
 	GridSlice               *format.GridSliceSelection
 	CheckContainerSliceRead func(context.Context, plugin.EngineCatalogPath) error
 	TrajectorySelection     *models.TrajectorySelection
@@ -542,6 +543,7 @@ func (r *PreviewResolver) ResolveRequestFromURIWithSelection(ctx context.Context
 			sizeBytes = *metaItem.SizeBytes
 		}
 		attrs := cloneMetaAttributes(metaItem.Attributes)
+		req.MetaItem = metaItem
 		req.MetaItemID = &itemID
 		req.ItemName = metaItem.Name
 		req.ItemFullName = metaItem.FullName

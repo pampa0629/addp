@@ -10,7 +10,13 @@ import (
 )
 
 type PreviewSourceChecker interface {
-	CheckManagerPreviewRead(context.Context, string, []plugin.EngineCatalogPath) error
+	ObserveCurrentSourceRead(context.Context, string, []plugin.EngineCatalogPath) error
+}
+
+type PreviewSourceCheckFunc func(context.Context, string, []plugin.EngineCatalogPath) error
+
+func (f PreviewSourceCheckFunc) ObserveCurrentSourceRead(ctx context.Context, credential string, paths []plugin.EngineCatalogPath) error {
+	return f(ctx, credential, paths)
 }
 
 type PreviewQueryProtectionStore interface {
@@ -39,7 +45,7 @@ func PreviewQueryExecutor(checker PreviewSourceChecker, store PreviewQueryProtec
 				return nil, nil, ErrRequired
 			}
 		}
-		if err := checker.CheckManagerPreviewRead(ctx, credential, readSet.Paths); err != nil {
+		if err := checker.ObserveCurrentSourceRead(ctx, credential, readSet.Paths); err != nil {
 			return nil, nil, err
 		}
 		protection, err := store.PrepareQueryProtection(ctx, int64(tenantID), model.EngineCatalogModel(), prepared, ActionPreview, subject, nil, time.Now().UTC())

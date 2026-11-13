@@ -36,7 +36,7 @@ func TestManagerModel3DResultReadUsesExpectedSourceInSameHumanDecision(t *testin
 			calls := 0
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				calls++
-				if r.Method != "POST" || r.URL.Path != "/api/v1/system/engine-access/read-checks/manager-preview" || r.URL.RawQuery != "" || r.Header.Get("Authorization") != "Bearer addp_at_current_human" || r.Header.Get("X-Tenant-ID") != "" || r.Header.Get("Cookie") != "" {
+				if r.Method != "POST" || r.URL.Path != "/api/v1/system/engine-access/read-observations/current-source" || r.URL.RawQuery != "" || r.Header.Get("Authorization") != "Bearer addp_at_current_human" || r.Header.Get("X-Tenant-ID") != "" || r.Header.Get("Cookie") != "" {
 					t.Error("changed fixed Human protocol")
 				}
 				decoder := json.NewDecoder(r.Body)

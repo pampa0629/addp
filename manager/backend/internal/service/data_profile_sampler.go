@@ -13,6 +13,7 @@ import (
 	"time"
 
 	commonClient "github.com/addp/common/client"
+	"github.com/addp/common/dataitem/authorizationfacts"
 	"github.com/addp/common/datatype"
 	"github.com/addp/common/engine/plugin"
 	commonJSON "github.com/addp/common/jsonmap"
@@ -77,6 +78,7 @@ var DefaultDataProfileBudget = DataProfileBudget{
 }
 
 type DataProfileSampleProvider interface {
+	PGResultReadBindings(context.Context, *DataProfileTarget, []plugin.EngineCatalogPath) ([]authorizationfacts.Binding, error)
 	ResolveTarget(context.Context, uint, string, DataProfileSelection) (*DataProfileTarget, error)
 	Sample(context.Context, *DataProfileTarget, dataprofile.DataScope, DataProfileBudget, *DataProfileSamplePlan, func(context.Context) error) (*DataProfileSample, error)
 }
@@ -135,10 +137,7 @@ func (p *PreviewDataProfileSampleProvider) ResolveTarget(
 		return nil, ErrDataProfileUnsupported
 	}
 
-	item, err := p.metaClient.WithTenantID(tenantID).GetItemByID(ctx, *resolved.MetaItemID)
-	if err != nil {
-		return nil, fmt.Errorf("%w: resolve profile source item: %v", ErrDataProfileUnavailable, err)
-	}
+	item := resolved.MetaItem
 	if item == nil || item.TenantID != tenantID {
 		return nil, ErrDataProfileUnsupported
 	}
@@ -331,4 +330,11 @@ func profileFieldsFromAttributes(attributes map[string]interface{}) []datatype.F
 		return nil
 	}
 	return append([]datatype.FieldInfo(nil), table.Fields...)
+}
+
+func (p *PreviewDataProfileSampleProvider) PGResultReadBindings(ctx context.Context, target *DataProfileTarget, paths []plugin.EngineCatalogPath) ([]authorizationfacts.Binding, error) {
+	if p == nil || target == nil {
+		return nil, ErrDataProfileSourceAuthorizationRequired
+	}
+	return p.resolver.PGReadBindings(ctx, target.resolved, paths)
 }

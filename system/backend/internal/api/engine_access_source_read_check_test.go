@@ -28,11 +28,15 @@ type sourceReadCheckFixture struct {
 	expectedSource bool
 }
 
-func (f *sourceReadCheckFixture) CheckManagerProfileResultRead(ctx context.Context, credential string, request engineaccess.SourceReadCheckRequest) (*engineaccess.SourceReadCheck, error) {
-	return f.CheckManagerPreviewRead(ctx, credential, request)
+func (f *sourceReadCheckFixture) CheckManagerPGRead(ctx context.Context, tenantID int64, request client.ManagerPGReadCheckRequest, preview bool) (*engineaccess.SourceReadCheck, error) {
+	f.calls++
+	if tenantID != 3 || request.UserCredential != "addp_at_test" {
+		return nil, commonapi.ErrForbidden
+	}
+	return &engineaccess.SourceReadCheck{ObservedAt: time.Now()}, nil
 }
 
-func (f *sourceReadCheckFixture) CheckManagerPreviewRead(ctx context.Context, credential string, request engineaccess.SourceReadCheckRequest) (*engineaccess.SourceReadCheck, error) {
+func (f *sourceReadCheckFixture) ObserveCurrentSourceRead(ctx context.Context, credential string, request engineaccess.SourceReadCheckRequest) (*engineaccess.SourceReadCheck, error) {
 	f.calls++
 	if _, ok := iam.AuthenticatedRequestIdentity(ctx, credential); !ok {
 		return nil, errors.New("route did not pass its credential-bound entry identity")
@@ -72,7 +76,11 @@ func sourceReadCheckRouter(t *testing.T, f *sourceReadCheckFixture, current auth
 	if err != nil {
 		t.Fatal(err)
 	}
-	runtime := &IAMRuntime{Authentication: authenticate, UserAccessCredential: userCredential, BusinessCredential: businessCredential}
+	serviceCredential, err := middleware.NewIAMCredentialGuard(middleware.IAMTokenTypeServiceAccess)
+	if err != nil {
+		t.Fatal(err)
+	}
+	runtime := &IAMRuntime{Authentication: authenticate, UserAccessCredential: userCredential, BusinessCredential: businessCredential, ServiceCredential: serviceCredential}
 	if err := RegisterEngineAccessSourceReadCheckRoutes(router.Group("/api/v1/system"), runtime, &EngineAccessSourceReadCheckHandler{service: f}); err != nil {
 		t.Fatal(err)
 	}
@@ -106,7 +114,7 @@ func TestManagedFileExpectedSourceRouteRejectsDelegatesAndMachines(t *testing.T)
 			}
 			fixture := &sourceReadCheckFixture{credential: credential, expectedSource: true}
 			router := sourceReadCheckRouter(t, fixture, current)
-			request := httptest.NewRequest("POST", "/api/v1/system/engine-access/read-checks/manager-preview", strings.NewReader(string(body)))
+			request := httptest.NewRequest("POST", "/api/v1/system/engine-access/read-observations/current-source", strings.NewReader(string(body)))
 			request.Header.Set("Authorization", "Bearer "+credential)
 			response := httptest.NewRecorder()
 			router.ServeHTTP(response, request)
@@ -151,7 +159,7 @@ func TestSourceReadCheckDelegatedRouteContract(t *testing.T) {
 			tc.mutate(&current)
 			fixture := &sourceReadCheckFixture{credential: "addp_dat_test"}
 			router := sourceReadCheckRouter(t, fixture, current)
-			request := httptest.NewRequest("POST", "/api/v1/system/engine-access/read-checks/manager-preview", strings.NewReader(string(body)))
+			request := httptest.NewRequest("POST", "/api/v1/system/engine-access/read-observations/current-source", strings.NewReader(string(body)))
 			request.Header.Set("Authorization", "Bearer addp_dat_test")
 			response := httptest.NewRecorder()
 			router.ServeHTTP(response, request)
@@ -181,7 +189,7 @@ func sourceReadCheckAuth() auth.AuthContext {
 }
 
 func TestSourceReadCheckRouteContract(t *testing.T) {
-	for _, path := range []string{"/api/v1/system/engine-access/read-checks/manager-preview", "/api/v1/system/engine-access/read-checks/manager-profile-result", "/api/v1/system/engine-access/read-checks/develop-workflow-result"} {
+	for _, path := range []string{"/api/v1/system/engine-access/read-observations/current-source", "/api/v1/system/engine-access/read-checks/develop-workflow-result"} {
 		t.Run(path, func(t *testing.T) { testSourceReadCheckRouteContract(t, path) })
 	}
 }
@@ -258,7 +266,7 @@ func TestProfileResultRouteDoesNotAcceptPreviewDelegate(t *testing.T) {
 	fixture := &sourceReadCheckFixture{}
 	router := sourceReadCheckRouter(t, fixture, current)
 	body, _ := json.Marshal(engineaccess.SourceReadCheckRequest{Targets: []engineplugin.EngineCatalogPath{engineplugin.TabularItemPath(12, "schema", "public", "C")}})
-	request := httptest.NewRequest("POST", "/api/v1/system/engine-access/read-checks/manager-profile-result", strings.NewReader(string(body)))
+	request := httptest.NewRequest("POST", "/api/v1/system/engine-access/read-checks/manager-pg-profile-result", strings.NewReader(string(body)))
 	request.Header.Set("Authorization", "Bearer addp_dat_test")
 	response := httptest.NewRecorder()
 	router.ServeHTTP(response, request)
@@ -268,5 +276,5 @@ func TestProfileResultRouteDoesNotAcceptPreviewDelegate(t *testing.T) {
 }
 
 func (f *sourceReadCheckFixture) CheckDevelopWorkflowResultRead(ctx context.Context, credential string, request engineaccess.SourceReadCheckRequest) (*engineaccess.SourceReadCheck, error) {
-	return f.CheckManagerPreviewRead(ctx, credential, request)
+	return f.ObserveCurrentSourceRead(ctx, credential, request)
 }

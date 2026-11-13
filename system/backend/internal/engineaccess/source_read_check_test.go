@@ -7,6 +7,7 @@ import (
 
 	commonapi "github.com/addp/common/api"
 	auth "github.com/addp/common/authorization"
+	"github.com/addp/common/client"
 	engineplugin "github.com/addp/common/engine/plugin"
 	"github.com/addp/system/internal/iam"
 	"gorm.io/gorm"
@@ -42,7 +43,7 @@ func TestManagerReadRequiresThisRequestsAuthenticatedIdentity(t *testing.T) {
 	service := NewService(NewRepository(&gorm.DB{}), nil)
 	request := SourceReadCheckRequest{Targets: []engineplugin.EngineCatalogPath{engineplugin.TabularItemPath(12, "schema", "public", "C")}}
 	for _, check := range []func(context.Context, string, SourceReadCheckRequest) (*SourceReadCheck, error){
-		service.CheckManagerPreviewRead, service.CheckManagerProfileResultRead,
+		service.ObserveCurrentSourceRead,
 	} {
 		for _, ctx := range []context.Context{
 			context.Background(),
@@ -146,7 +147,7 @@ func TestManagerPreviewReadCheckValidatesSetBeforeDatabase(t *testing.T) {
 		{engineplugin.TabularNamespacePath(path.EngineID, "schema", "public")},
 		make([]engineplugin.EngineCatalogPath, 201),
 	} {
-		result, err := service.CheckManagerPreviewRead(context.Background(), "not-a-credential", SourceReadCheckRequest{Targets: targets})
+		result, err := service.ObserveCurrentSourceRead(context.Background(), "not-a-credential", SourceReadCheckRequest{Targets: targets})
 		if result != nil || !errors.Is(err, commonapi.ErrBadRequest) {
 			t.Fatalf("invalid target set reached database: %+v %v", result, err)
 		}
@@ -171,7 +172,7 @@ func TestManagerProfileResultQualificationRejectsPreviewDelegation(t *testing.T)
 		}
 	}
 	service := NewService(NewRepository(nil), nil)
-	if result, err := service.CheckManagerProfileResultRead(t.Context(), "token", SourceReadCheckRequest{}); result != nil || !errors.Is(err, commonapi.ErrBadRequest) {
+	if result, err := service.CheckManagerPGRead(t.Context(), 2, client.ManagerPGReadCheckRequest{}, false); result != nil || !errors.Is(err, commonapi.ErrBadRequest) {
 		t.Fatalf("empty source set reached DB: %+v %v", result, err)
 	}
 }

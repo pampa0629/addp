@@ -283,24 +283,26 @@ Grant 自然到期后不追加首次撤销；到期前已成功的原参重试�
 - 目标缺失时访问失败，不删除原规则；重新出现也不恢复已撤销权限、续期或扩大范围。Fingerprint、Meta 行号、CatalogEntry ID 本身都不是许可。
 - 查询须由 Provider 以同一个 PreparedQuery 证明完整 QueryReadSet，再核验所有依赖并执行该计划。文件读取遵循已识别的组成边界；解析失败、依赖不完整或执行范围不可约束时拒绝，不用正则猜测，不暴露宽权限源凭据。
 - System 规则观察在同一已提交快照及数据库时间中核验可信凭据、当前身份／授权版本、功能条件、Engine、直接组织成员关系、精确及节点范围 Grant；结束前复核自然到期。任一实际目标不满足即拒绝，父部门、责任、委托或历史办理人不推导读取许可。
-- Manager 预览与剖析结果检查均固定要求 `manager.data_item.read` 的当前 Tenant Assignment；缺少资源归属证明时，组织范围分配不能升级为 Tenant 范围。两者接受第一方／OAuth API User，只有预览另接受精确 `audience=manager`、唯一 `data.preview` Scope 的 Delegated Token；均不接受 Service Token 或 Resource Ticket。入口不允许客户端自选 Permission 或自报主体。
+- Manager 预览与剖析结果检查均固定要求 `manager.data_item.read` 的当前 Tenant Assignment；缺少资源归属证明时，组织范围分配不能升级为 Tenant 范围。两者的原始用户接受第一方／OAuth API User，只有预览另接受精确 `audience=manager`、唯一 `data.preview` Scope 的 Delegated Token；原始用户不能是 Service Token 或 Resource Ticket。事实提供方的机器认证见下文 PG 交接规则，不允许客户端自选 Permission 或自报主体。
 - 返回的 `observed_at` 只是当次观察，不是访问令牌、缓存 Allow 或完整 Security 裁决；实际 owner 继续施加 Security 并约束真实执行。规则底座保持私有，其他 owner 须定义固定操作契约，不能调用通用自选权限接口降低门槛。
 
-**Manager 读取检查的请求内身份复用。** Manager 预览与剖析结果检查复用 System 当前 HTTP 请求入口真实解析的身份，仅用于 Meta 准备前的操作资格与 Tenant 定位。入口事实在 System 内部按原始 Bearer 精确绑定、保留独立副本；不接受 HTTP 正文或跨模块传入的 AuthContext，不输出或记录凭据绑定，不存入跨请求缓存、数据库、异步任务或访问令牌。缺失入口事实或凭据不匹配即拒绝，不回退到额外身份解析。其他现有消费入口不自动获得该复用路径。
+**独立源授权观察的请求内身份复用。** 普通用户的独立源授权观察复用 System 当前 HTTP 请求入口真实解析的身份，仅用于 Meta 准备前的操作资格与 Tenant 定位。入口事实在 System 内部按原始 Bearer 精确绑定、保留独立副本；不接受 HTTP 正文或跨模块传入的 AuthContext，不输出或记录凭据绑定，不存入跨请求缓存、数据库、异步任务或访问令牌。缺失入口事实或凭据不匹配即拒绝，不回退到额外身份解析。其他现有消费入口不自动获得该复用路径。
 
 Meta 调用前不再重复执行一次完整用户身份投影；Meta 自身对调用服务的认证不合并。入口事务必须先结束，不能持有 IAM 事务跨越 Meta IO。入口已通过后发生撤权，允许仍完成一次所属租户的 Meta 机器事实准备，但不能读取业务源内容或向用户交付准备事实。Meta 返回后，必须在新的短只读规则快照内，以同一个原始 Bearer 重新核验当前凭据、身份、功能条件、组织关系及当前完整源规则，并保留结束前的数据库时间到期检查；不得使用入口旧权限、旧组织成员或旧授权版本替代这次重核。最终复核失败或依赖不可用即拒绝，不复用任何上次 Allow。第一方、OAuth、精确预览委托及剖析结果不接受委托等准入条件均不改变。
 
-该路径只有入口与最终规则快照两次真实用户身份解析，不修改通用 IAM 解析器为隐式 memoization。诊断与测试按实际两阶段记录，不保留虚假 `pre_meta` 阶段。复用本身不授予权限，也不改变已有规则事务观察时刻之后才发生撤销的语义。
+普通用户独立观察路径只有入口与最终规则快照两次真实用户身份解析，不修改通用 IAM 解析器为隐式 memoization。诊断与测试按实际两阶段记录，不保留虚假 `pre_meta` 阶段。复用本身不授予权限，也不改变已有规则事务观察时刻之后才发生撤销的语义。
 
-**2026-11-13 已确认的后续职责收敛，尚未实现。** 本段定义下一步目标，不将当前用户 Bearer 入口收到的资源正文直接升级为可信事实。首批限定 Manager 的 PG 普通表预览与剖析结果检查，其他 owner／引擎不自动取得新的事实提供资格。用户已确认使用现有 Manager Service Access Token 加当前同步请求中的原用户凭据交接，并增加仅授予 Manager 运行身份的最小机器 Permission；不授予机器源读取、Grant 签发或引擎管理权。
+**2026-11-13 PG 职责收敛已接入代码，验证按本地／CI／Hosted 分层记录。** 本段限定新的可信交接职责，不将普通用户 Bearer 入口收到的资源正文升级为可信事实。首批限定 Manager 的 PG 普通表预览与剖析结果检查，其他 owner／引擎不自动取得新的事实提供资格。用户已确认使用现有 Manager Service Access Token 加当前同步请求中的原用户凭据交接，并增加仅授予 Manager 运行身份的最小机器 Permission；不授予机器源读取、Grant 签发或引擎管理权。
 
 - Manager 在本次请求中复用正式 Meta 身份和授权边界，Provider 为实际执行的同一 PreparedQuery 证明完整 ReadSet；剖析结果沿用真实采样执行冻结的 ReadSet，不用当前依赖补造历史来源。不能把浏览器自报的 item_id、路径、指纹、边界或 AuthContext 当作后端事实。完整事实已经在本次请求取得时，不为 System 授权再反查同一份 Meta；不新增跨请求事实缓存、Allow 缓存、签名票据或执行实体。
 - System 只接受经固定受信消费方交接的本次目标集合，仍独立核对原用户当前身份、功能权限、租户／引擎、组织关系、Grant、撤销及自然到期。服务身份仅证明事实提供方，不代替用户获得数据读取权，也不取得签发或引擎管理资格。不得直接移除 Meta 调用而继续接受仅凭用户 Bearer 自报的资源事实。
 - 对可信实际目标集合，优先匹配当前有效的持续 node Grant；已经被节点覆盖的目标无需再有精确 DataItem Grant，未覆盖的目标才匹配精确 DataItem Grant。每个目标都须被某个有效来源覆盖，允许不同目标由不同节点或精确来源覆盖；无覆盖仍拒绝。这只收敛求值顺序，不改变授权并集、接收主体、期限或撤销语义，不将未覆盖项默认放行。
 - 节点匹配仍使用 Tenant、Engine 和类型化路径，保留非递归直属／递归后代语义。组合 DataItem 的全部实际读取成员必须在有效授权范围内，不能只凭主文件所在节点放行范围外依赖；完整布局和引用范围由实际消费 owner 准备并约束执行，System 不重新解析文件。节点覆盖不将元数据边界升级为已接入的内容读取能力，也不替代 Security。
-- 实施切换时同步统一 client、System 固定操作入口及 Manager 调用方，删除被替代的重取路径，不保留旧协议 fallback；其他消费契约不因本批修改而隐式变化。新协议须验证伪造事实／错误调用方拒绝、完整 ReadSet、节点及精确授权混合、相邻／非递归范围、撤销／到期与源读取前拒绝，确认原用户最终重核及失败清理未减弱。先运行对应本地标准门禁及 Swagger／授权一致性，新的 Hosted 仍须用户单独批准；原样本、七档负载和90秒预算不变。
+- 实施切换时同步统一 client、System 固定操作入口及 Manager 调用方，删除被替代的重取路径，不保留旧协议 fallback；其他消费契约不因本批修改而隐式变化。新协议须验证伪造事实／错误调用方拒绝、完整 ReadSet、节点及精确授权混合、相邻／非递归范围、撤销／到期与源读取前拒绝，确认原用户最终重核及失败清理未减弱。先运行对应本地标准门禁及 Swagger／授权一致性，新的 Hosted 仍须用户单独批准；原样本、七档负载和90秒预算不变。新 PG 入口的 HTTP 审计调用方是 Manager Service Principal，原用户凭据仅用于最终读取裁决；性能取证按该精确服务 Principal 和新路由关联审计，不能继续把 HTTP 调用方记为原用户。
 
 服务交接必须同时绑定 `addp-manager` 固定 OAuth Client、有效 Tenant Service Context、最小机器 Permission 和原始用户凭据；两者 Tenant 不同即拒绝。原用户只按同次请求中的真实 User／既有精确预览委托凭据重新解析，不接受服务提交的用户 ID、Role、AuthContext 或 Allow。用户凭据不得写入审计正文、日志、数据库、任务或异步消息，资源事实不得缓存为权限。剖析仍拒绝预览委托。该交接只用于当前同步、只读的权限观察，不创建 Execution Authorization 或新增租约，不扩展到 SQL／Workflow 执行。
+
+普通 User 的独立源授权观察统一使用 `POST /engine-access/read-observations/current-source`，保留原有当前用户／精确预览委托资格、`manager.data_item.read` 功能权限、Meta 正式事实核验及最终规则快照。它只观察当前 Grant，源离线不等于 Grant 撤销，不读取源端、不创建 Allow、租约或签发记录；既有 SQL 连接池等流程继续用它核查授权。该入口不接受用户提交的可信 DataItem Binding。Manager 的 PG 预览／剖析结果只使用上述固定机器入口，不回退到独立观察；其他已接入引擎仍可在执行 Provider 计划前调用观察入口，再独立执行 Security 和实际读取。旧 `/engine-access/read-checks/manager-preview` 及普通用户 `/engine-access/read-checks/manager-profile-result` 路由删除，不保留别名或兼容分支。
 
 #### 5.5.5 直接授权、业务批准与明确交接
 

@@ -1,6 +1,6 @@
 schema_version: addp.permission_manifest/v1
 owner_module: system
-manifest_version: 46
+manifest_version: 47
 permissions:
   - key: audit.event.create
     allowed_scope_types: [platform]
@@ -1282,6 +1282,14 @@ permissions:
     status: active
     name_i18n_key: permissions.system.execution_authorization.execute.name
     description_i18n_key: permissions.system.execution_authorization.execute.description
+  - key: system.manager_pg_read_check.execute
+    allowed_scope_types: [tenant]
+    risk_level: low
+    tenant_customizable: false
+    delegable: false
+    status: active
+    name_i18n_key: permissions.system.manager_pg_read_check.execute.name
+    description_i18n_key: permissions.system.manager_pg_read_check.execute.description
   - key: system.meta_collection.execute
     allowed_scope_types: [tenant]
     risk_level: high

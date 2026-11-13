@@ -15,7 +15,7 @@ import (
 )
 
 type wholeStorageReadChecker interface {
-	CheckManagerPreviewRead(context.Context, string, []plugin.EngineCatalogPath) error
+	ObserveCurrentSourceRead(context.Context, string, []plugin.EngineCatalogPath) error
 }
 
 func (s *MetadataService) SetWholeSourceReadChecker(checker wholeStorageReadChecker) {
@@ -60,5 +60,5 @@ func (r *storageRead) checkWhole(ctx context.Context, storageRef string) error {
 	}
 	// The root identifies one DataItem, including future internal members. A
 	// prior Allow is never cached across a source operation or Range request.
-	return r.service.wholeSourceChecker.CheckManagerPreviewRead(ctx, r.credential, []plugin.EngineCatalogPath{*r.wholeRoot})
+	return r.service.wholeSourceChecker.ObserveCurrentSourceRead(ctx, r.credential, []plugin.EngineCatalogPath{*r.wholeRoot})
 }

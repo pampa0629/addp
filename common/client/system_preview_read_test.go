@@ -19,7 +19,7 @@ func TestManagerPreviewReadUsesCurrentCredentialAndCompleteTargets(t *testing.T)
 	currentToken := "addp_at_user"
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		calls++
-		if r.Method != http.MethodPost || r.URL.Path != "/api/v1/system/engine-access/read-checks/manager-preview" || r.URL.RawQuery != "" ||
+		if r.Method != http.MethodPost || r.URL.Path != "/api/v1/system/engine-access/read-observations/current-source" || r.URL.RawQuery != "" ||
 			r.Header.Get("Authorization") != "Bearer "+currentToken || r.Header.Get("X-Tenant-ID") != "" {
 			t.Errorf("unexpected preview check contract: %s %s", r.Method, r.URL.Path)
 		}
@@ -38,7 +38,7 @@ func TestManagerPreviewReadUsesCurrentCredentialAndCompleteTargets(t *testing.T)
 	for _, token := range []string{"addp_at_user", "addp_dat_tool"} {
 		currentToken = token
 		for i := 0; i < 2; i++ {
-			if err := c.CheckManagerPreviewRead(context.Background(), token, targets); err != nil {
+			if err := c.ObserveCurrentSourceRead(context.Background(), token, targets); err != nil {
 				t.Fatal(err)
 			}
 		}
@@ -47,12 +47,12 @@ func TestManagerPreviewReadUsesCurrentCredentialAndCompleteTargets(t *testing.T)
 		t.Fatalf("check was cached: calls=%d", calls)
 	}
 	for _, token := range []string{"", "addp_at_", "addp_dat_", "machine", "addp_at_user extra"} {
-		if err := c.CheckManagerPreviewRead(context.Background(), token, targets); !errors.Is(err, ErrManagerPreviewCredentialRejected) {
+		if err := c.ObserveCurrentSourceRead(context.Background(), token, targets); !errors.Is(err, ErrManagerPreviewCredentialRejected) {
 			t.Fatalf("invalid token accepted: %v", err)
 		}
 	}
 	for _, invalid := range [][]plugin.EngineCatalogPath{nil, {{}}, make([]plugin.EngineCatalogPath, 201)} {
-		if err := c.CheckManagerPreviewRead(context.Background(), "addp_at_user", invalid); !errors.Is(err, ErrManagerPreviewReadDenied) {
+		if err := c.ObserveCurrentSourceRead(context.Background(), "addp_at_user", invalid); !errors.Is(err, ErrManagerPreviewReadDenied) {
 			t.Fatalf("invalid targets accepted: %v", err)
 		}
 	}
@@ -86,7 +86,7 @@ func TestManagerPreviewReadFailsClosedWithoutRetryOrDiagnosticLeak(t *testing.T)
 			}))
 			defer server.Close()
 			c := NewSystemServiceClient(server.URL, staticSystemServiceTokenSource("unused-machine"), server.Client())
-			for i, check := range []func(context.Context, string, []plugin.EngineCatalogPath) error{c.CheckManagerPreviewRead, c.CheckManagerProfileResultRead} {
+			for i, check := range []func(context.Context, string, []plugin.EngineCatalogPath) error{c.ObserveCurrentSourceRead} {
 				err := check(context.Background(), "addp_at_user", []plugin.EngineCatalogPath{plugin.TabularItemPath(12, "schema", "public", "C")})
 				if !errors.Is(err, test.want) || err.Error() != test.want.Error() || calls != i+1 {
 					t.Fatalf("unsafe failure: %v calls=%d", err, calls)
@@ -106,50 +106,11 @@ func TestManagerPreviewReadRejectsRedirectWithoutForwardingCredential(t *testing
 	defer server.Close()
 	httpClient := server.Client()
 	c := NewSystemServiceClient(server.URL, nil, httpClient)
-	err := c.CheckManagerPreviewRead(context.Background(), "addp_dat_tool", []plugin.EngineCatalogPath{plugin.TabularItemPath(12, "schema", "public", "C")})
+	err := c.ObserveCurrentSourceRead(context.Background(), "addp_dat_tool", []plugin.EngineCatalogPath{plugin.TabularItemPath(12, "schema", "public", "C")})
 	if !errors.Is(err, ErrManagerPreviewReadUnavailable) || calls != 1 || httpClient.CheckRedirect != nil {
 		t.Fatalf("redirect followed or shared client mutated: %v calls=%d", err, calls)
 	}
-	err = c.CheckManagerProfileResultRead(context.Background(), "addp_at_user", []plugin.EngineCatalogPath{plugin.TabularItemPath(12, "schema", "public", "C")})
-	if !errors.Is(err, ErrManagerPreviewReadUnavailable) || calls != 2 || httpClient.CheckRedirect != nil {
-		t.Fatalf("profile redirect followed or shared client mutated: %v calls=%d", err, calls)
-	}
-}
 
-func TestManagerProfileResultReadUsesOrdinaryCredentialAndNeverCaches(t *testing.T) {
-	calls := 0
-	paths := []plugin.EngineCatalogPath{plugin.TabularItemPath(12, "schema", "public", "C"), plugin.TabularItemPath(12, "schema", "public", "D")}
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		calls++
-		if r.Method != "POST" || r.URL.Path != "/api/v1/system/engine-access/read-checks/manager-profile-result" || r.Header.Get("Authorization") != "Bearer addp_at_user" {
-			t.Errorf("wrong profile check identity/path")
-		}
-		var body struct {
-			Targets []plugin.EngineCatalogPath `json:"targets"`
-		}
-		if err := json.NewDecoder(r.Body).Decode(&body); err != nil || !reflect.DeepEqual(body.Targets, paths) {
-			t.Errorf("lost historical sources: %v", err)
-		}
-		_, _ = w.Write([]byte(`{"observed_at":"2026-10-06T12:00:00Z"}`))
-	}))
-	defer server.Close()
-	c := NewSystemServiceClient(server.URL, staticSystemServiceTokenSource("never-use-service"), server.Client())
-	for i := 0; i < 2; i++ {
-		if err := c.CheckManagerProfileResultRead(t.Context(), "addp_at_user", paths); err != nil {
-			t.Fatal(err)
-		}
-	}
-	if calls != 2 {
-		t.Fatal("cached source decision")
-	}
-	for _, credential := range []string{"addp_dat_preview", "addp_sat_service", "", "addp_at_user extra"} {
-		if err := c.CheckManagerProfileResultRead(t.Context(), credential, paths); !errors.Is(err, ErrManagerPreviewCredentialRejected) {
-			t.Fatalf("unsupported credential: %v", err)
-		}
-	}
-	if calls != 2 {
-		t.Fatal("unsupported credential sent to System")
-	}
 }
 
 func TestDevelopWorkflowResultSourceCheckUsesCurrentHumanAndFixedRoute(t *testing.T) {

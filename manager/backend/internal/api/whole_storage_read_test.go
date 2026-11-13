@@ -27,7 +27,7 @@ import (
 
 type wholeReadAPICheck func(context.Context, string, []plugin.EngineCatalogPath) error
 
-func (f wholeReadAPICheck) CheckManagerPreviewRead(ctx context.Context, token string, targets []plugin.EngineCatalogPath) error {
+func (f wholeReadAPICheck) ObserveCurrentSourceRead(ctx context.Context, token string, targets []plugin.EngineCatalogPath) error {
 	return f(ctx, token, targets)
 }
 

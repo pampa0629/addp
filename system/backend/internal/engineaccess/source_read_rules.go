@@ -55,11 +55,13 @@ func (timing *SourceRuleTiming) LogGroup() slog.Attr {
 // execution consumer must establish the live credential and complete Provider
 // read set before using this method; no HTTP body may supply these references.
 type sourceReadRequest struct {
-	Action   string
-	TenantID int64
-	Source   userProvenance
-	Targets  []engineplugin.EngineCatalogPath
-	Bindings []authorizationfacts.Binding
+	// Only the synchronous Manager PG handoff needs coverage, not a derived access deadline.
+	NodeFirst bool
+	Action    string
+	TenantID  int64
+	Source    userProvenance
+	Targets   []engineplugin.EngineCatalogPath
+	Bindings  []authorizationfacts.Binding
 }
 
 type sourceReadTargetRule struct {
@@ -223,7 +225,7 @@ func (r *Repository) queryCurrentSourceRules(ctx context.Context, request source
 	}
 	if err := r.db.WithContext(ctx).Raw(currentSourceReadRulesSQL, request.TenantID,
 		request.Source.PrincipalID, request.Source.MembershipID, request.Source.AuthorizationVersion,
-		string(batch)).Scan(&rows).Error; err != nil {
+		string(batch), request.NodeFirst).Scan(&rows).Error; err != nil {
 		return nil, err
 	}
 	if timing != nil && len(rows) > 0 {
@@ -241,7 +243,7 @@ const currentSourceReadRulesSQL = `
 WITH input AS MATERIALIZED (
 	SELECT ?::bigint AS tenant_id, ?::bigint AS principal_id,
 	       ?::bigint AS membership_id, ?::bigint AS authorization_version,
-	       ?::jsonb AS targets, clock_timestamp() AS observed_at
+	       ?::jsonb AS targets, ?::boolean AS node_first, clock_timestamp() AS observed_at
 )` + sourceReadRuleCTEs + ` SELECT position, observed_at, reason, expires_at, pg_backend_pid() AS backend_pid FROM rules ORDER BY position`
 
 // Both actual reads and management inspection consume these exact predicates.
@@ -256,20 +258,29 @@ const sourceReadRuleCTEs = `, targets AS (
     WHERE ref->>'primary' = 'true') WHEN jsonb_exists(target.value->'binding', 'scope') THEN target.value->'binding'->'scope'->'root'
     WHEN jsonb_exists(target.value->'binding', 'metadata_target') THEN target.value->'binding'->'metadata_target'->'target'
     ELSE target.value->'binding'->'native_target' END AS path) primary_path
-)` + sourceReadSubjectCTEs + `, matched_grants AS MATERIALIZED (
+)` + sourceReadSubjectCTEs + `, node_grants AS MATERIALIZED (
  SELECT g.*, target.position,
   LEAST(g.expires_at, (SELECT membership_expires_at FROM current_source)) AS effective_expires_at
  FROM targets target CROSS JOIN input
- JOIN system.engine_access_grants g ON g.tenant_id = input.tenant_id
-  AND g.engine_id = target.engine_id AND (
-   (g.node_recursive IS NULL AND g.item_fingerprint = target.item_fingerprint AND g.boundary_hash = target.boundary_hash)
-   OR (g.node_recursive IS NOT NULL AND system.source_node_covers(g.catalog_path, g.node_recursive, target.path)
-       AND NOT EXISTS (SELECT 1 FROM jsonb_array_elements(COALESCE(target.proven_boundary->'file_composition'->'refs','[]'::jsonb)) AS ref
-         WHERE system.source_node_covers(g.catalog_path,g.node_recursive,ref->'target') IS NOT TRUE)
-       AND EXISTS (SELECT 1 FROM system.engines e WHERE e.id=target.engine_id AND e.tenant_id=input.tenant_id AND e.engine_type IN ('postgresql','nfs','minio')))
-  )
- JOIN recipients r ON r.recipient_type = g.recipient_type AND r.recipient_id = g.recipient_id
- WHERE (g.action = target.requested_action OR (target.requested_action = 'metadata_read' AND g.action = 'read'))
+ JOIN system.engine_access_grants g ON g.tenant_id=input.tenant_id AND g.engine_id=target.engine_id
+  AND g.node_recursive IS NOT NULL AND system.source_node_covers(g.catalog_path,g.node_recursive,target.path)
+  AND NOT EXISTS (SELECT 1 FROM jsonb_array_elements(COALESCE(target.proven_boundary->'file_composition'->'refs','[]'::jsonb)) AS ref
+    WHERE system.source_node_covers(g.catalog_path,g.node_recursive,ref->'target') IS NOT TRUE)
+  AND EXISTS (SELECT 1 FROM system.engines e WHERE e.id=target.engine_id AND e.tenant_id=input.tenant_id AND e.engine_type IN ('postgresql','nfs','minio'))
+ JOIN recipients r ON r.recipient_type=g.recipient_type AND r.recipient_id=g.recipient_id
+ WHERE (g.action = target.requested_action OR (target.requested_action='metadata_read' AND g.action='read'))
+  AND ` + sourceGrantCurrentPredicate + `
+), matched_grants AS MATERIALIZED (
+ SELECT * FROM node_grants
+ UNION ALL
+ SELECT g.*, target.position,
+  LEAST(g.expires_at, (SELECT membership_expires_at FROM current_source)) AS effective_expires_at
+ FROM targets target CROSS JOIN input
+ JOIN system.engine_access_grants g ON g.tenant_id=input.tenant_id AND g.engine_id=target.engine_id
+  AND g.node_recursive IS NULL AND g.item_fingerprint = target.item_fingerprint AND g.boundary_hash = target.boundary_hash
+ JOIN recipients r ON r.recipient_type=g.recipient_type AND r.recipient_id=g.recipient_id
+ WHERE (NOT input.node_first OR NOT EXISTS (SELECT 1 FROM node_grants n WHERE n.position=target.position))
+  AND (g.action = target.requested_action OR (target.requested_action='metadata_read' AND g.action='read'))
   AND ` + sourceGrantCurrentPredicate + `
 ), grant_deadlines AS (
  SELECT position,

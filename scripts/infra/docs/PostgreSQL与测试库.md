@@ -191,3 +191,5 @@ addp (database)
 Common PostgreSQL 门禁同时验证正式表结果的覆盖事务：重复覆盖、失败回滚、超时取消和并发写入。Model PostgreSQL 门禁验证正式表创建幂等、归属检查、结构漂移拒绝，以及物化任务排队、父子执行授权、固定版本和过期租约终态；Quality PostgreSQL 门禁验证物理表断言。均复用既有测试库与标准入口。
 
 `make test-security-postgres` 同时执行 `common/schema` 的真实 PostgreSQL 启动所有权回归：同 schema 并发迁移一次执行、只读 Worker 校验、失败 DDL 和版本回滚及拒绝降级。使用 `addp_test` 内专用测试 schema，并在测试结束清理；不创建额外 database。
+
+Manager PG 同步读取交接的最小机器权限迁移使用 `make test-system-iam-postgres SYSTEM_IAM_POSTGRES_TEST_ARGS="--package migration --test manager-pg-read"`。完整 Grant／node、身份重核与未变化的来源规则使用原 `--package engineaccess`，Meta 原生普通表正式事实使用原 `make test-meta-postgres META_POSTGRES_TEST_ARGS="--test authorization-facts"`。新用例由既有模块 T1、System IAM／Meta PG T2 自动发现，无新增服务依赖或 Hosted 套件。

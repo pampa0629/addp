@@ -75,7 +75,7 @@ func testGLBResultReadForEngine(t *testing.T, engineType, format string) {
 			calls := 0
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				calls++
-				if r.Method != "POST" || r.URL.Path != "/api/v1/system/engine-access/read-checks/manager-preview" || r.Header.Get("Authorization") != "Bearer addp_at_current_human" || r.Header.Get("Cookie") != "" {
+				if r.Method != "POST" || r.URL.Path != "/api/v1/system/engine-access/read-observations/current-source" || r.Header.Get("Authorization") != "Bearer addp_at_current_human" || r.Header.Get("Cookie") != "" {
 					t.Error("changed Human read protocol")
 				}
 				decoder := json.NewDecoder(r.Body)

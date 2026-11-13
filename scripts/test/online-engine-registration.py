@@ -318,7 +318,7 @@ class ExactFileReadGrants(_ExactGrantLifecycle):
 
     def observe(self, target, allowed, *, phase='read_check'):
         self.phase = phase
-        response = self.consumer.request('POST', '/api/v1/system/engine-access/read-checks/manager-preview',
+        response = self.consumer.request('POST', '/api/v1/system/engine-access/read-observations/current-source',
                                          (200,) if allowed else (403,), {'targets': [target]})
         if allowed and (not isinstance(response.payload, dict) or not response.payload.get('observed_at')):
             raise MetadataGrantError(phase, 'read_observation_invalid')
@@ -553,7 +553,7 @@ def initialize_exact_record_read_grants(authorizer, consumer, tenant_id, targets
         facts = read_exact_record_authorization_facts(authorizer, body['catalog_path'])
         fingerprint = facts['item_fingerprint']
         body.update(item_fingerprint=fingerprint, expected_boundary_hash=facts['boundary_hash'])
-        check_path = '/api/v1/system/engine-access/read-checks/manager-preview'
+        check_path = '/api/v1/system/engine-access/read-observations/current-source'
         check_body = {'targets': [body['catalog_path']]}
         consumer.request('POST', check_path, (403,), check_body)
         if on_pending is not None:

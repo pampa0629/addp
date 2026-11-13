@@ -7,6 +7,7 @@ import (
 	"net/http"
 
 	commonapi "github.com/addp/common/api"
+	"github.com/addp/common/client"
 	sharedauth "github.com/addp/common/middleware/auth"
 	"github.com/addp/common/middleware/logging"
 	"github.com/addp/system/internal/engineaccess"
@@ -16,8 +17,8 @@ import (
 )
 
 type sourceReadCheckService interface {
-	CheckManagerPreviewRead(context.Context, string, engineaccess.SourceReadCheckRequest) (*engineaccess.SourceReadCheck, error)
-	CheckManagerProfileResultRead(context.Context, string, engineaccess.SourceReadCheckRequest) (*engineaccess.SourceReadCheck, error)
+	ObserveCurrentSourceRead(context.Context, string, engineaccess.SourceReadCheckRequest) (*engineaccess.SourceReadCheck, error)
+	CheckManagerPGRead(context.Context, int64, client.ManagerPGReadCheckRequest, bool) (*engineaccess.SourceReadCheck, error)
 	CheckDevelopWorkflowResultRead(context.Context, string, engineaccess.SourceReadCheckRequest) (*engineaccess.SourceReadCheck, error)
 }
 
@@ -26,7 +27,7 @@ type EngineAccessSourceReadCheckHandler struct {
 }
 
 func RegisterEngineAccessSourceReadCheckRoutes(api *gin.RouterGroup, runtime *IAMRuntime, handler *EngineAccessSourceReadCheckHandler) error {
-	if api == nil || runtime == nil || runtime.Authentication == nil || runtime.UserAccessCredential == nil || handler == nil || handler.service == nil {
+	if api == nil || runtime == nil || runtime.Authentication == nil || runtime.UserAccessCredential == nil || runtime.ServiceCredential == nil || handler == nil || handler.service == nil {
 		return errors.New("source read check dependencies required")
 	}
 	tenant, err := middleware.NewIAMContextGuard("tenant")
@@ -48,10 +49,21 @@ func RegisterEngineAccessSourceReadCheckRoutes(api *gin.RouterGroup, runtime *IA
 		return err
 	}
 	routes := api.Group("/engine-access/read-checks")
-	routes.POST("/manager-preview", observeManagerPreviewTimings, runtime.Authentication, credential, tenant, delegated, permission, handler.CheckManagerPreview)
-	// The result operation has no Tool delegation route. Membership or preview
-	// capability does not broaden a delegated credential to derived results.
-	api.POST("/engine-access/read-checks/manager-profile-result", runtime.Authentication, runtime.UserAccessCredential, tenant, permission, handler.CheckManagerProfileResult)
+	api.POST("/engine-access/read-observations/current-source", observeManagerPreviewTimings, runtime.Authentication, credential, tenant, delegated, permission, handler.ObserveCurrentSource)
+	service, err := middleware.NewIAMServiceContextGuard("tenant")
+	if err != nil {
+		return err
+	}
+	manager, err := middleware.NewIAMClientGuard("addp-manager")
+	if err != nil {
+		return err
+	}
+	machinePermission, err := middleware.NewIAMPermissionGuard("system.manager_pg_read_check.execute")
+	if err != nil {
+		return err
+	}
+	routes.POST("/manager-pg-preview", observeManagerPreviewTimings, runtime.Authentication, runtime.ServiceCredential, service, manager, machinePermission, handler.CheckManagerPGPreview)
+	routes.POST("/manager-pg-profile-result", runtime.Authentication, runtime.ServiceCredential, service, manager, machinePermission, handler.CheckManagerPGProfileResult)
 	developPermission, err := middleware.NewIAMPermissionGuard("develop.task.read", "develop.data_read.execute")
 	if err != nil {
 		return err
@@ -88,10 +100,10 @@ func observeManagerPreviewTimings(c *gin.Context) {
 	logging.SetCompletionDiagnostics(c, rule.LogGroup(), identity)
 }
 
-// CheckManagerPreview godoc
-// @Summary 检查 Manager 预览的当前精确源读取范围 | Check current precise source read coverage for Manager preview
-// @Description 当前 Tenant 第一方或 OAuth API User，以及精确 manager audience 和唯一 data.preview Scope 的真实委托凭据；固定检查 manager.data_item.read，身份与完整源规则共用只读快照。不开放 Service、Resource Ticket 或其它 System API，无 Grant 或存在 Deny 整体拒绝，不接收自报身份、execution 或 Permission | Current Tenant first-party or OAuth API User, or a real delegated credential with exact manager audience and sole data.preview scope. Fixed manager.data_item.read and complete source rules share one read-only snapshot. Service, Resource Ticket and other System APIs remain unavailable; missing Grants or Deny reject the entire set; caller identity, execution and Permission are not accepted
-// @Description 成功仅为当次源规则观察，不是完整 Allow、访问令牌或可缓存凭据。Manager 必须提供 Provider 证明的完整读取集合、完成本地 Security 保护并执行同一 PreparedQuery；本接口不访问源端或 Catalog | Success is a point-in-time source observation, not a complete Allow, access token or cacheable credential. Manager must supply the Provider-proven complete read set, apply local Security protection and execute the same PreparedQuery. This endpoint accesses neither the source nor Catalog
+// ObserveCurrentSource godoc
+// @Summary 观察当前用户的精确源读取授权 | Observe current precise source read authorization for a user
+// @Description 当前 Tenant 第一方或 OAuth API User，以及精确 manager audience 和唯一 data.preview Scope 的真实委托凭据；固定检查 manager.data_item.read，身份与完整源规则共用只读快照。不开放 Service、Resource Ticket 或其它 System API，无 Grant 整体拒绝，不接收自报身份、execution 或 Permission | Current Tenant first-party or OAuth API User, or a real delegated credential with exact manager audience and sole data.preview scope. Fixed manager.data_item.read and complete source rules share one read-only snapshot. Service, Resource Ticket and other System APIs remain unavailable; missing Grants reject the entire set; caller identity, execution and Permission are not accepted
+// @Description 成功仅为当次源规则观察，不是完整 Allow、访问令牌或可缓存凭据。此独立观察支持源离线时核查 Grant；PG 实际预览和剖析结果须使用 Manager 专用可信交接入口。本接口不访问源端或 Catalog | Success is a point-in-time source observation, not a complete Allow, access token or cacheable credential. It supports checking Grants while sources are offline; actual PG preview and profile-result reads require the dedicated Manager handoff. This endpoint accesses neither the source nor Catalog
 // @Tags 源数据读取检查 | Source Data Read Checks
 // @Accept json
 // @Produce json
@@ -101,27 +113,9 @@ func observeManagerPreviewTimings(c *gin.Context) {
 // @Failure 400,401,403,409,500,503 {object} IAMErrorResponse "身份、授权边界或依赖核验失败 | Identity, authorization boundary or dependency validation failed"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["manager.data_item.read"]
-// @Router /engine-access/read-checks/manager-preview [post]
-func (h *EngineAccessSourceReadCheckHandler) CheckManagerPreview(c *gin.Context) {
-	h.check(c, h.service.CheckManagerPreviewRead)
-}
-
-// CheckManagerProfileResult godoc
-// @Summary 检查 Manager 剖析结果的当前源读取权限 | Check current source read coverage for Manager profile results
-// @Description 仅当前 Tenant 普通第一方或 OAuth API User；固定核验 manager.data_item.read 及完整历史采样来源的现行规则，无 Grant 或命中 Deny 整体拒绝。不支持委托、Service、Resource Ticket 或自报身份、execution、Permission；不授予后台采样权限 | Current Tenant ordinary first-party or OAuth API User only. Fixed manager.data_item.read and current rules for all historical sampling sources; missing Grants or Deny reject the entire set. Delegation, Service, Resource Ticket and caller-supplied identity, execution or Permission are not supported; no background sampling authority is granted
-// @Description Manager 必须提供实际结果冻结的完整 ReadSet，不能用当前视图依赖补造。只返回不可缓存的当次观察时刻，不访问源端，不创建 Grant 或执行授权 | Manager must supply the complete ReadSet frozen from the actual result, not reconstruct it from current view dependencies. Returns only a non-cacheable observation time; no source access, Grant or execution authorization
-// @Tags 源数据读取检查 | Source Data Read Checks
-// @Accept json
-// @Produce json
-// @Security BearerAuth
-// @Param request body engineaccess.SourceReadCheckRequest true "1 至 200 个完整历史读取目标，不支持 query 参数 | 1 to 200 complete historical read targets; no query parameters"
-// @Success 200 {object} engineaccess.SourceReadCheck "当次观察时刻 | Observation time"
-// @Failure 400,401,403,409,500,503 {object} IAMErrorResponse "身份、授权边界或依赖核验失败 | Identity, authorization boundary or dependency validation failed"
-// @x-addp-auth-mode "permission"
-// @x-addp-required-permissions ["manager.data_item.read"]
-// @Router /engine-access/read-checks/manager-profile-result [post]
-func (h *EngineAccessSourceReadCheckHandler) CheckManagerProfileResult(c *gin.Context) {
-	h.check(c, h.service.CheckManagerProfileResultRead)
+// @Router /engine-access/read-observations/current-source [post]
+func (h *EngineAccessSourceReadCheckHandler) ObserveCurrentSource(c *gin.Context) {
+	h.check(c, h.service.ObserveCurrentSourceRead)
 }
 
 func (h *EngineAccessSourceReadCheckHandler) check(c *gin.Context, check func(context.Context, string, engineaccess.SourceReadCheckRequest) (*engineaccess.SourceReadCheck, error)) {

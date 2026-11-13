@@ -279,7 +279,7 @@ def run_binary_roundtrip(client, initializer, repository, run_id, identity, targ
     finally:
         initializer.request("POST", f"/api/v1/system/engines/{source_engine_id}/access_grants/{grant_id}/revoke",
                             (200,), {"reason": "Disposable ClickHouse binary roundtrip completed"})
-        client.request("POST", "/api/v1/system/engine-access/read-checks/manager-preview", (403,), {"targets": [grant["catalog_path"]]})
+        client.request("POST", "/api/v1/system/engine-access/read-observations/current-source", (403,), {"targets": [grant["catalog_path"]]})
     commit = subprocess.run(["git", "rev-parse", "HEAD"], cwd=repository, capture_output=True, text=True, check=True, timeout=10).stdout.strip()
     proof = {"schema_version": "addp.clickhouse-binary-roundtrip/v1", "result": "passed", "run_id": run_id,
              "git_commit": commit, "identity": identity, "source_engine_id": source_engine_id, "source_scan_execution_id": source_scan,
@@ -1429,7 +1429,7 @@ class MongoDBSourceReadGrants(REGISTRATION.ExactRecordGrants):
 
     def observe(self, target, allowed, *, phase="visibility_check"):
         self.phase = phase
-        response = self.consumer.request("POST", "/api/v1/system/engine-access/read-checks/manager-preview",
+        response = self.consumer.request("POST", "/api/v1/system/engine-access/read-observations/current-source",
                                          (200,) if allowed else (403,), {"targets": [target]})
         if allowed and (not isinstance(response.payload, dict) or not response.payload.get("observed_at")):
             raise REGISTRATION.MetadataGrantError(phase, "read_observation_invalid")
@@ -1482,7 +1482,7 @@ def mongodb_source_access(initializer, client, tenant_id, engine_id, timeout):
                 proof["grants_revoked"] = True
             client.request("GET", route, (404,))
             proof["hidden_after_revoke"] = True
-            client.request("POST", "/api/v1/system/engine-access/read-checks/manager-preview", (403,), {"targets": [target]})
+            client.request("POST", "/api/v1/system/engine-access/read-observations/current-source", (403,), {"targets": [target]})
             proof["source_read_denied_after_revoke"] = True
             transfer = state.get("transfer")
             if transfer is not None:

@@ -20,7 +20,18 @@ REAL_WORKSPACE_OBSERVATION = ONLINE.WorkspaceObservation
 REAL_DEPENDENCY_OUTAGE = ONLINE.DependencyOutage
 REAL_MUTATE_SOURCE_CONTENT = ONLINE.mutate_source_content
 REAL_BIND_AUDITS = ONLINE.bind_audit_requests
-READ_CHECK = '/api/v1/system/engine-access/read-checks/manager-preview'
+READ_CHECK = '/api/v1/system/engine-access/read-checks/manager-pg-preview'
+
+
+class FixtureLifecycle(ONLINE.Lifecycle):
+    """Domain simulator; the actual wire handoff has separate contract tests below."""
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.pg_runtime_principal = '99'
+    def read_check(self, user, targets, expected, sources=None):
+        if sources is not None:
+            assert [source['native_target'] for source in sources] == targets
+        return user.request('POST', READ_CHECK, expected, {'targets': targets})
 
 
 class Server:
@@ -538,7 +549,7 @@ class PGPreviewPaginationTest(unittest.TestCase):
 class PGAuthorizationOnlineTest(unittest.TestCase):
     def setUp(self):
         self.facts = {'item_fingerprint': 'a' * 64, 'boundary_hash': 'b' * 64,
-                      'boundary': {'native_target': ONLINE.table_path(2, 'metric_people')}}
+                      'basis_state': 'complete', 'boundary': {'layout': 'single', 'native_target': ONLINE.table_path(2, 'metric_people')}}
         self.scans = patch.object(ONLINE, 'basic_scan', side_effect=[
             'initial-basic', 'exact-basic', 'content-grant-basic', 'content-reset-basic',
             'content-revoked-basic', 'content-restored-basic']).start()
@@ -579,7 +590,7 @@ class PGAuthorizationOnlineTest(unittest.TestCase):
     def lifecycle(self, fault=None):
         server = Server(fault)
         self.server = server
-        lifecycle = ONLINE.Lifecycle(server.client('operator'), server.client('reader'), 3, 2, '33',
+        lifecycle = FixtureLifecycle(server.client('operator'), server.client('reader'), 3, 2, '33',
                                      {'department': '41', 'project_group': '51'}, server.client('outsider'),
                                      server.client('coordinator'), server.client('login'), 'external-online-consumer', 'private-password')
         return server, lifecycle
@@ -1248,6 +1259,7 @@ class PGAuthorizationOnlineTest(unittest.TestCase):
                  patch.object(ONLINE, 'organization_administrator', return_value=('35', {})), \
                  patch.object(ONLINE, 'organization_memberships'), \
                  patch.object(ONLINE, 'Lifecycle', return_value=life), \
+                 patch.object(ONLINE, 'manager_pg_runtime', return_value=(Mock(), '99')), \
                  patch.object(ONLINE, 'MetaCollectionScenario', return_value=collection), \
                  patch.object(ONLINE.REFRESH, 'PersistedScanObservation'), \
                  patch.object(ONLINE.REFRESH, 'ScopedRefreshScenario', side_effect=refresh):
@@ -1331,7 +1343,7 @@ class PGCatalogApprovalTest(unittest.TestCase):
         self.entry = {'id': '553f9868-9021-4d23-bae2-43d5a9fbc030', 'version': '1',
                       'governance_status': 'discovered', 'visibility': 'tenant', 'responsibilities': [], 'semantic_links': []}
         self.fulfillments = {}
-        self.lifecycle = ONLINE.Lifecycle(self.client('operator'), self.client('reader'), 3, 2, '33',
+        self.lifecycle = FixtureLifecycle(self.client('operator'), self.client('reader'), 3, 2, '33',
             {'department': '41', 'project_group': '51'}, self.client('outsider'), self.client('coordinator'),
             self.client('login'), 'external-online-consumer', 'private-password')
         self.report = {'checks': [], 'principals': {'operator': '35'}}
@@ -1796,10 +1808,10 @@ class PGReadLoadTest(unittest.TestCase):
         self.audit_windows = patch.object(ONLINE, 'verify_load_audit_windows').start()
         self.server = Server()
         self.reader = self.server.client('reader')
-        self.lifecycle = ONLINE.Lifecycle(self.server.client('operator'), self.reader, 3, 2, '33', {},
+        self.lifecycle = FixtureLifecycle(self.server.client('operator'), self.reader, 3, 2, '33', {},
             self.server.client('outsider'), Mock(), Mock(), 'external-online-consumer', 'private-password')
         self.paths = [ONLINE.table_path(2, name) for name in ('metric_people', 'pg_initial_disposable')]
-        self.bindings = [(path, {'item_fingerprint': letter * 64, 'boundary_hash': 'b' * 64}, str(index))
+        self.bindings = [(path, {'item_fingerprint': letter * 64, 'boundary_hash': 'b' * 64, 'basis_state':'complete', 'boundary':{'layout':'single','native_target':path}}, str(index))
                          for index, (path, letter) in enumerate(zip(self.paths, ('a', 'c')))]
         for path, facts, command in self.bindings:
             self.server.grants[command] = dict(request_id=command, catalog_path=path, **facts,
@@ -2188,7 +2200,7 @@ class InitialProductionOnlineTest(unittest.TestCase):
         self.calls, self.source_revoked, self.output_revoked = [], False, False
         self.bad = None
         self.reader, self.operator = Mock(), Mock()
-        self.lifecycle = ONLINE.Lifecycle(self.operator, self.reader, 3, 2, '33', {}, Mock(), Mock(), Mock(),
+        self.lifecycle = FixtureLifecycle(self.operator, self.reader, 3, 2, '33', {}, Mock(), Mock(), Mock(),
                                           'external-online-consumer', 'private-password')
         self.lifecycle.grants.append(self.source_command)
         self.lifecycle.grant = Mock(return_value=(self.source_command, {'expires_at': self.expiry}))
@@ -3231,7 +3243,7 @@ class MetadataAccessServer(Server):
 class PGMetadataAccessTest(unittest.TestCase):
     def run_flow(self, fault=None):
         server = MetadataAccessServer(fault)
-        life = ONLINE.Lifecycle(server.client('operator'), server.client('reader'), 3, 2, '33',
+        life = FixtureLifecycle(server.client('operator'), server.client('reader'), 3, 2, '33',
             {'department': '41', 'project_group': '51'}, server.client('outsider'), server.client('coordinator'),
             server.client('login'), 'external-online-consumer', 'private-password')
         report = {'checks': [], 'principals': {'operator': '35'},
@@ -3284,7 +3296,7 @@ class PGMetadataAccessTest(unittest.TestCase):
 
 class PGPersistentNodeScopeTest(unittest.TestCase):
     def run_scope(self, fault=None):
-        base=Server();life=ONLINE.Lifecycle(base.client('operator'),base.client('reader'),3,2,'33',
+        base=Server();life=FixtureLifecycle(base.client('operator'),base.client('reader'),3,2,'33',
             {'department':'41','project_group':'51'},base.client('outsider'),base.client('coordinator'),base.client('login'),
             'external-online-consumer','private-password')
         grants={};expired=set();report={'checks':[]}
@@ -3358,3 +3370,23 @@ class PGPersistentNodeScopeTest(unittest.TestCase):
     def test_bad_node_facts_binding_duplicate_or_timeout_cannot_pass(self):
         for fault in ['items_in_node_page','wrong_scope','wrong_boundary','leaf_grant','never_expire']:
             with self.subTest(fault=fault),self.assertRaises(ONLINE.SuiteError):self.run_scope(fault)
+
+
+class ManagerPGWireContractTest(unittest.TestCase):
+    def test_handoff_uses_machine_transport_and_complete_frozen_sources(self):
+        user=SimpleNamespace(token='addp_at_original')
+        runtime=Mock()
+        life=ONLINE.Lifecycle(Mock(),user,3,2,'33',{},Mock(),Mock(),Mock(),'external-online-consumer','private-password')
+        life.pg_runtime=runtime
+        paths=[ONLINE.table_path(2,name) for name in ('metric_people','dependency')]
+        facts=[{'basis_state':'complete','boundary':{'layout':'single','native_target':path},
+                'item_fingerprint':letter*64,'boundary_hash':'b'*64} for path,letter in zip(paths,('a','c'))]
+        sources=ONLINE.pg_read_bindings(paths,facts)
+        with patch.object(ONLINE.REGISTRATION,'read_exact_record_authorization_facts') as meta:
+            life.read_check(user,paths,(200,),sources)
+            meta.assert_not_called()
+        runtime.request.assert_called_once_with('POST',READ_CHECK,(200,),
+            {'user_credential':'addp_at_original','sources':sources})
+        self.assertEqual(user.token,'addp_at_original')
+        for changed in ({**facts[0],'basis_state':'incomplete'}, {**facts[0],'boundary':{'layout':'single','native_target':paths[1]}}):
+            with self.assertRaises(ONLINE.SuiteError): ONLINE.pg_read_bindings([paths[0]],[changed])

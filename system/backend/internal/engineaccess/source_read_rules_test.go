@@ -24,7 +24,7 @@ func TestSourceReadRuleSQLPreservesGORMParameterPositions(t *testing.T) {
 		query string
 		args  []any
 	}{
-		{"direct_read", currentSourceReadRulesSQL, []any{int64(1), int64(2), int64(3), int64(4), "[]"}},
+		{"direct_read", currentSourceReadRulesSQL, []any{int64(1), int64(2), int64(3), int64(4), "[]", false}},
 	}
 	for _, filtered := range []bool{false, true} {
 		filter := SourceGrantFilter{}

@@ -33,6 +33,7 @@ while [ "$#" -gt 0 ]; do
             echo "Platform alert publication: --package migration --test platform-alert-management" >&2
             echo "Production result identity migration: --package migration --test production-results" >&2
             echo "Focused authorization-relation migration: --package migration --test source-grant-relations" >&2
+            echo "Manager PG trusted read Runtime: --package migration --test manager-pg-read" >&2
             echo "Workflow private files Runtime: --package migration|api --test workflow-private-files" >&2
             echo "Develop frozen file facts runtime: --package migration|api --test develop-file-runtime" >&2
             echo "Authorization facts: --package migration|api --test authorization-facts" >&2
@@ -277,6 +278,10 @@ case "$TEST_FILTER" in
     develop-file-definition)
         [ "$PACKAGE_FILTER" = migration ] || { echo "develop-file-definition requires --package migration" >&2; exit 2; }
         test_pattern='^Test(DevelopFileReadPermissionDefinition|Runner)AgainstPostgres$'
+        ;;
+    manager-pg-read)
+        [ "$PACKAGE_FILTER" = migration ] || { echo "manager-pg-read requires --package migration" >&2; exit 2; }
+        test_pattern='^TestManagerPGReadCheckRuntimeForwardMigrationAgainstPostgres$'
         ;;
     workflow-private-files)
         case "$PACKAGE_FILTER" in

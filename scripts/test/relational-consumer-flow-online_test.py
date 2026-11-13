@@ -46,7 +46,7 @@ class RelationalConsumerFlowOnlineTest(unittest.TestCase):
             if path.startswith("/api/v1/meta/engines/17/items"):
                 state["events"].append("recipient_catalog")
                 return ONLINE.SUPPORT.Response(200, [item for item in items if item["fingerprint"] in state["granted"]])
-            self.assertEqual(path, "/api/v1/system/engine-access/read-checks/manager-preview")
+            self.assertEqual(path, "/api/v1/system/engine-access/read-observations/current-source")
             name = body["targets"][0]["segments"][-1]["name"]
             item = next(item for item in items if item["full_name"] == "public." + name)
             allowed = item["fingerprint"] in state["granted"]

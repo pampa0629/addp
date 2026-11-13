@@ -76,7 +76,7 @@ func TestPreviewQueryExecutorUsesCurrentCredentialAndSameCompletePlan(t *testing
 			checks := 0
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				checks++
-				if r.URL.Path != "/api/v1/system/engine-access/read-checks/manager-preview" || r.Header.Get("Authorization") != "Bearer "+token || plan.executions != 0 {
+				if r.URL.Path != "/api/v1/system/engine-access/read-observations/current-source" || r.Header.Get("Authorization") != "Bearer "+token || plan.executions != 0 {
 					t.Error("wrong credential, endpoint or query ordering")
 				}
 				var body struct {

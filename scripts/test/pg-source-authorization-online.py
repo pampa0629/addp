@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import base64
 import math
 import os
 import re
@@ -63,7 +64,7 @@ METADATA_CHECKS = ['metadata_only_visible_content_denied', 'read_withdrawal_pres
                    'catalog_metadata_confirmation_does_not_grant', 'catalog_metadata_issuance_cannot_upgrade',
                    'catalog_metadata_withdrawal_replay_stays_denied']
 
-READ_CHECK = '/api/v1/system/engine-access/read-checks/manager-preview'
+READ_CHECK = '/api/v1/system/engine-access/read-checks/manager-pg-preview'
 LATENCY_ROUNDS, LATENCY_SAMPLES, LATENCY_WARMUPS = 3, 500, 10
 LOAD_ROUNDS, LOAD_SAMPLES, LOAD_WARMUPS = 3, 100, 10
 CPU_LOAD_PROFILE = 'single_target_cpu'
@@ -1874,6 +1875,41 @@ class MetaCollectionScenario:
         require(not errors,'; '.join(errors))
 
 
+def manager_pg_runtime(login, tenant):
+    """Only the already-provisioned Manager runtime; no human role or Grant changes."""
+    secret = os.environ['MANAGER_SERVICE_CLIENT_SECRET']
+    basic = base64.b64encode(('addp-manager:' + secret).encode()).decode()
+    payload = login.request('POST', '/api/v1/system/oauth/token', (200,),
+                            encoded_body=urlencode({'grant_type': 'client_credentials', 'audience': 'addp.api',
+                                                    'scope': 'addp.api', 'context_type': 'tenant',
+                                                    'tenant_id': str(tenant)}).encode(),
+                            content_type='application/x-www-form-urlencoded',
+                            authorization_header='Basic ' + basic).payload
+    require(isinstance(payload.get('access_token'), str) and payload.get('token_type', '').lower() == 'bearer',
+            'Manager runtime token response invalid')
+    runtime = API.GatewayClient(login.base_url, payload['access_token'], login.timeout)
+    current = runtime.request('GET', '/api/v1/system/auth/context', (200,)).payload
+    require(current.get('principal', {}).get('type') == 'service_principal'
+            and current.get('client', {}).get('client_id') == 'addp-manager'
+            and current.get('context', {}).get('type') == 'tenant'
+            and current['context'].get('tenant_id') == str(tenant)
+            and 'system.manager_pg_read_check.execute' in {p for r in tenant_functional_assignments(current, tenant) for p in r['permissions']},
+            'Manager runtime does not have its exact tenant handoff qualification')
+    return runtime, current['principal']['id']
+
+
+def pg_read_bindings(paths, facts):
+    require(len(paths) == len(facts) and 0 < len(paths) <= 200, 'complete PG read facts required')
+    result = []
+    for path, fact in zip(paths, facts):
+        require(fact.get('basis_state') == 'complete'
+                and fact.get('boundary') == {'layout': 'single', 'native_target': path},
+                'PG handoff must use the formal Meta native table boundary')
+        result.append({key: fact[key] for key in ('item_fingerprint', 'boundary_hash')}
+                      | {'native_target': path})
+    return result
+
+
 class Lifecycle:
     def __init__(self, operator, reader, tenant, engine, recipient, organizations, outsider,
                  organization_operator, login, username, password):
@@ -1892,6 +1928,8 @@ class Lifecycle:
         self.production_tasks = {}
         self.collection = None
         self.scoped_refresh = None
+        self.pg_runtime = None
+        self.pg_runtime_principal = None
 
     def production_history(self, path, *, state=None):
         # Path history includes covering node Grants. Narrow candidates using
@@ -2052,8 +2090,16 @@ class Lifecycle:
         self.operator.request('POST', self.base + f'/access_grants/{command}/revoke', (200,),
                               {'reason': 'Disposable PG lifecycle source withdrawal'})
 
+    def read_check(self, user, targets, expected, sources=None):
+        require(self.pg_runtime is not None, 'Manager PG runtime was not initialized')
+        if sources is None:
+            facts = [REGISTRATION.read_exact_record_authorization_facts(self.operator, path) for path in targets]
+            sources = pg_read_bindings(targets, facts)
+        return self.pg_runtime.request('POST', READ_CHECK, expected,
+                                       {'user_credential': user.token, 'sources': sources})
+
     def require_batch_denied(self, client, targets):
-        response = client.request('POST', READ_CHECK, (403,), {'targets': targets})
+        response = self.read_check(client, targets, (403,))
         require(response.status == 403 and set(response.payload) == {'error'}
                 and isinstance(response.payload.get('error'), str) and bool(response.payload['error']),
                 'batch denial must not expose partial data or substitute another boundary')
@@ -2062,7 +2108,7 @@ class Lifecycle:
         observation = {}
         report['authorization_load'] = {'result': 'failed', 'audit_observer_enabled': True,
                                         'audit_observation': observation}
-        with AuditLatencyObservation(observation, self.recipient, phase='load') as observer:
+        with AuditLatencyObservation(observation, self.pg_runtime_principal, phase='load') as observer:
             self.sample_read_load(report, bindings, observer, observation, profile=profile)
         require(observation.get('result') == 'passed' and observation.get('connection_closed') is True,
                 'read load observation did not finish cleanly')
@@ -2123,6 +2169,7 @@ class Lifecycle:
 
         baseline = snapshot()
         targets = [path for path, _, _ in bindings]
+        source_map = {json.dumps(path, sort_keys=True): binding for path,binding in zip(targets,pg_read_bindings(targets,[facts for _,facts,_ in bindings]))}
         self.require_batch_denied(self.outsider, targets)
         result['outsider_batch_denied'] = True
         modes = [('single_target', [[targets[0]]])]
@@ -2161,7 +2208,7 @@ class Lifecycle:
                                     return
                                 with lock:
                                     row['http_attempted_count'] += 1
-                                response = self.reader.request('POST', READ_CHECK, (200,), {'targets': group})
+                                response = self.read_check(self.reader,group,(200,),[source_map[json.dumps(path,sort_keys=True)] for path in group])
                                 payload = response.payload
                                 require(response.status == 200 and set(payload) == {'observed_at'},
                                         'invalid read load response shape')
@@ -2227,7 +2274,7 @@ class Lifecycle:
         report['authorization_latency'] = result
         deadline = time.monotonic() + 90
         credentials = (self.reader.token, self.operator.token)
-        body = {'targets': [json.loads(json.dumps(self.path))]}
+        sources = pg_read_bindings([self.path],[facts])
 
         def within_budget():
             require(time.monotonic() < deadline, 'fixed-target latency sampling exceeded its budget')
@@ -2264,7 +2311,7 @@ class Lifecycle:
         baseline = snapshot()
         try:
             observation = result['audit_observation'] = {}
-            with AuditLatencyObservation(observation, self.recipient) as observer:
+            with AuditLatencyObservation(observation, self.pg_runtime_principal) as observer:
                 for round_number in range(1, LATENCY_ROUNDS + 1):
                     row = {'round': round_number, 'warmup_count': 0, 'samples_ms': []}
                     result['rounds'].append(row)
@@ -2278,7 +2325,7 @@ class Lifecycle:
                         wall_start = time.time_ns()
                         started = time.perf_counter_ns()
                         try:
-                            response = self.reader.request('POST', READ_CHECK, (200,), body)
+                            response = self.read_check(self.reader,[self.path],(200,),sources)
                             elapsed = (time.perf_counter_ns() - started) / 1000000
                             wall_end = time.time_ns()
                             payload = response.payload
@@ -3169,6 +3216,8 @@ def main():
         lifecycle = Lifecycle(operator, reader, tenant, engine, recipient, organizations, outsider,
                               organization_operator, login, os.environ['ADDP_ONLINE_TEST_USER_USERNAME'],
                               os.environ['ADDP_ONLINE_TEST_USER_PASSWORD'])
+        lifecycle.pg_runtime, lifecycle.pg_runtime_principal = manager_pg_runtime(login, tenant)
+        report['principals']['manager_runtime'] = lifecycle.pg_runtime_principal
         lifecycle.run(report, load_profile=load_profile)
         lifecycle.function_permission_flow(report, business, confirmer)
         lifecycle.catalog_flow(report, business, confirmer)

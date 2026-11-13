@@ -517,3 +517,8 @@ other = "Instance overview is unavailable; check the connection and account perm
 
 [system.search.context_changed]
 other = "Search context changed. Start a new search."
+
+[permissions.system.manager_pg_read_check.execute.name]
+other = "Check Manager PostgreSQL read coverage"
+[permissions.system.manager_pg_read_check.execute.description]
+other = "Only the Manager runtime may submit same-request PostgreSQL resource facts for a final original-user read check; grants no source access or issuance authority."
