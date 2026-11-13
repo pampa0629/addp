@@ -1726,9 +1726,10 @@ test-manager-online-runner: test-manager-online-syntax test-online-registration-
 .PHONY: test-highgo-online-syntax
 test-highgo-online-syntax:
 	@node --check --input-type=module < console/frontend/e2e/online/highgo-consumer-flow.spec.js
+	@node --check --input-type=module < console/frontend/e2e/online/highgo-sql-timeout.spec.js
 
 test-highgo-online-runner: test-highgo-online-syntax test-online-dispatcher-unit test-online-registration-unit ## 验证瀚高 Online 场景、普通身份、物理夹具和 Hosted 隔离清理
-	@python3 -m unittest scripts/test/highgo-consumer-flow-online_test.py scripts/test/online-highgo-consumer-fixture_test.py scripts/test/online-hosted-highgo-gate_test.py
+	@python3 -m unittest scripts/test/highgo-consumer-flow-online_test.py scripts/test/online-highgo-consumer-fixture_test.py scripts/test/online-hosted-highgo-gate_test.py scripts/test/highgo-sql-timeout-online_test.py
 	@cd system/backend && GOWORK=off go test ./cmd/online-test-fixture
 
 .PHONY: test-common-neo4j

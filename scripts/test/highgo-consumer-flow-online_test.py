@@ -108,7 +108,8 @@ class HighGoRegistrationTest(unittest.TestCase):
                  'scripts/test/online-hosted-highgo-gate.sh', 'business/scripts/online-highgo-consumer-fixture.py',
                  'scripts/test/highgo-consumer-flow-online.py', 'console/frontend/e2e/online/highgo-consumer-flow.spec.js',
                  'scripts/test/highgo-consumer-flow-online_test.py', 'scripts/test/online-highgo-consumer-fixture_test.py',
-                 'scripts/test/online-hosted-highgo-gate_test.py']
+                 'scripts/test/online-hosted-highgo-gate_test.py', 'scripts/test/highgo-sql-timeout-online.py',
+                 'scripts/test/highgo-sql-timeout-online_test.py', 'console/frontend/e2e/online/highgo-sql-timeout.spec.js']
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
             for path in paths:

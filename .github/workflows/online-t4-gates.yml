@@ -182,6 +182,14 @@ on:
         required: false
         type: boolean
         default: false
+      highgo_case:
+        description: HighGo acceptance scope
+        required: true
+        type: choice
+        default: business
+        options:
+          - business
+          - sql-timeout
       quality_case:
         description: Quality acceptance scope (bounded-recovery runs only its new cases)
         required: true
@@ -1479,6 +1487,7 @@ jobs:
       ADDP_ONLINE_HOST: "1"
       ADDP_ONLINE_HOSTED: "1"
       ONLINE_SUITE_INPUT: highgo-consumer-flow
+      ADDP_ONLINE_HIGHGO_CASE: ${{ inputs.highgo_case || 'business' }}
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7

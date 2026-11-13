@@ -37,6 +37,7 @@ def guard():
         'ADDP_ONLINE_HOSTED': '1', 'ONLINE_SUITE': LABEL, 'POSTGRES_DB': 'addp_online'}.items()), 'dedicated GitHub Hosted Online is required')
     require(platform.system() == 'Linux' and platform.machine() == 'x86_64', 'Linux x86_64 required')
     require(os.environ.get('ADDP_ONLINE_OWNER_MANAGED') != '1', 'conflicting Online profile')
+    require(os.environ.get('ADDP_ONLINE_HIGHGO_CASE', 'business') in ('business', 'sql-timeout'), 'unknown HighGo case')
 
 
 def secret_directory():
@@ -134,17 +135,20 @@ def start():
             '--mount', f'type=bind,source={ROOT}/business/highgo/init,target=/docker-entrypoint-initdb.d,readonly',
             '--entrypoint', 'bash', highgo_image(), '/addp/highgo/entrypoint.sh',
             'postgres', '-p', '5866', '-c', 'listen_addresses=*', '-c', 'ssl=on', '-c', 'password_encryption=sm3', timeout=600)
-    env = dict(os.environ, POSTGRES_PASSWORD=values['postgres'])
-    command('docker', 'run', '-d', '--name', POSTGRES, '--label', 'com.addp.online-fixture=' + LABEL,
-            '-e', 'POSTGRES_PASSWORD', '-e', 'POSTGRES_DB=highgo_source', '-p', '127.0.0.1::5432',
-            'addp-postgres-pgvector:latest', env=env)
+    timeout_case = os.environ.get('ADDP_ONLINE_HIGHGO_CASE') == 'sql-timeout'
+    if not timeout_case:
+        env = dict(os.environ, POSTGRES_PASSWORD=values['postgres'])
+        command('docker', 'run', '-d', '--name', POSTGRES, '--label', 'com.addp.online-fixture=' + LABEL,
+                '-e', 'POSTGRES_PASSWORD', '-e', 'POSTGRES_DB=highgo_source', '-p', '127.0.0.1::5432',
+                'addp-postgres-pgvector:latest', env=env)
     deadline = time.monotonic() + 180
     while True:
         probing = HIGHGO
         try:
             require('HighGo V4.5 Business' in sql(HIGHGO, 'SELECT engine_name FROM addp_business.addp_engine_probe WHERE id=1;', directory), 'HighGo not ready')
-            probing = POSTGRES
-            sql(POSTGRES, 'SELECT 1;', directory)
+            if not timeout_case:
+                probing = POSTGRES
+                sql(POSTGRES, 'SELECT 1;', directory)
             break
         except RuntimeError:
             if time.monotonic() >= deadline:
@@ -155,19 +159,31 @@ def start():
     require('HighGo Database Management System 4.5' in version, 'native HighGo V4.5 required')
     login = json.loads(sql(HIGHGO, "SELECT json_build_object('user',current_user,'ssl',s.ssl,'admin',r.rolsuper OR r.rolcreatedb OR r.rolcreaterole OR r.rolreplication OR r.rolbypassrls) FROM pg_stat_ssl s JOIN pg_roles r ON r.rolname=current_user WHERE s.pid=pg_backend_pid();", directory))
     require(login == {'user': 'business', 'ssl': True, 'admin': False}, 'ordinary TLS business login required')
+    descriptor(directory, 'highgo-engine.json', 'highgo', HIGHGO, 5866, 'highgo', 'business', values['business'], 'require')
+    if timeout_case:
+        print('Disposable HighGo V4.5 SQL timeout probe ready')
+        return
     sql(POSTGRES, 'CREATE SCHEMA addp_business;\n' + (ROOT / 'business/highgo/init/init.sql').read_text(), directory)
     # The source uses a separate SELECT-only role; bind its password through stdin.
     pw = values['postgres']
     sql(POSTGRES, "\\set reader_password '" + pw + "'\nCREATE USER source_reader PASSWORD :'reader_password';\nGRANT CONNECT ON DATABASE highgo_source TO source_reader;\nGRANT USAGE ON SCHEMA addp_business TO source_reader;\nGRANT SELECT ON ALL TABLES IN SCHEMA addp_business TO source_reader;", directory)
     sql(HIGHGO, f"CREATE TABLE addp_business.{TARGET} (LIKE addp_business.orders INCLUDING ALL);\nINSERT INTO addp_business.{TARGET} VALUES (999,'SENTINEL',1,'old',999.99,TIMESTAMP '2020-01-01',TIMESTAMP '2020-01-01');", directory)
     require(sql(HIGHGO, f"SELECT count(*) FROM addp_business.{TARGET} WHERE order_no='SENTINEL';", directory) == '1', 'replace sentinel initialization failed')
-    descriptor(directory, 'highgo-engine.json', 'highgo', HIGHGO, 5866, 'highgo', 'business', values['business'], 'require')
     descriptor(directory, 'highgo-pg-engine.json', 'postgresql', POSTGRES, 5432, 'highgo_source', 'source_reader', pw, 'disable')
     print('Disposable HighGo V4.5 and PostgreSQL sources ready')
 
 
 def verify():
     directory = secret_directory()
+    if os.environ.get('ADDP_ONLINE_HIGHGO_CASE') == 'sql-timeout':
+        require(owned(HIGHGO) and not owned(POSTGRES), 'timeout case owns only HighGo')
+        probe = sql(HIGHGO, 'SELECT id,engine_name FROM addp_business.addp_engine_probe ORDER BY id;', directory)
+        require(probe == '1|HighGo V4.5 Business', 'HighGo timeout probe changed')
+        remaining = sql(HIGHGO, "SELECT count(*) FROM pg_stat_activity WHERE datname='highgo' "
+                        "AND application_name LIKE 'hg_timeout_%';", directory, admin=True)
+        require(remaining == '0', 'HighGo timeout control sessions remain')
+        print('HighGo native timeout probe preserved; zero control sessions')
+        return
     require(owned(HIGHGO) and owned(POSTGRES), 'owned sources required')
     fields = 'id,order_no,customer_id,order_status,total_amount,ordered_at,updated_at'
     source = sql(POSTGRES, f'SELECT {fields} FROM addp_business.orders ORDER BY id;', directory)

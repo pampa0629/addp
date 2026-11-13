@@ -120,7 +120,7 @@ var sourceInitializerPermissions = []string{
 
 func suiteSourceInitializerPermissions(suite string) []string {
 	switch suite {
-	case "raster-slope-orthogonal-persistence", "raster-sight-orthogonal-persistence", "sql-pool-consumer-flow", "transfer-continuous-events":
+	case "raster-slope-orthogonal-persistence", "raster-sight-orthogonal-persistence", "sql-pool-consumer-flow", "transfer-continuous-events", "metric-service-revision-lifecycle":
 		return append(slices.Clone(sourceInitializerPermissions), "meta.scan_task.execute", "meta.scan_task.read")
 	case "vector-topology-persistence":
 		if os.Getenv("ADDP_ONLINE_TOPOLOGY_CASE") == "geometry-difference" {
@@ -137,7 +137,7 @@ func suiteSourceInitializerPermissions(suite string) []string {
 		return nil
 	case "ontology-agent-protection", "raster-workflow-capacity", "ftp-consumer-flow", "manager-internal-artifact-lineage", "highgo-consumer-flow", "security-mysql-owner-protection", "security-plaintext-access", "hdfs-spark-consumer-flow", "cleanup-native-effects", "opengauss-consumer-flow", "transfer-relational-sql-etl":
 		permissions := append([]string{}, sourceInitializerPermissions...)
-		if suite == "ontology-agent-protection" || suite == "hdfs-spark-consumer-flow" || suite == "security-mysql-owner-protection" || suite == "transfer-relational-sql-etl" || (suite == "manager-internal-artifact-lineage" && slices.Contains([]string{"native-envi", "native-raster-media", "native-table-avro", "native-table-feather", "delimited-read-settings", "filegdb-export", "filegdb-mysql-export"}, os.Getenv("ADDP_ONLINE_MANAGER_CASE"))) {
+		if suite == "ontology-agent-protection" || suite == "hdfs-spark-consumer-flow" || suite == "security-mysql-owner-protection" || suite == "transfer-relational-sql-etl" || (suite == "highgo-consumer-flow" && os.Getenv("ADDP_ONLINE_HIGHGO_CASE") == "sql-timeout") || (suite == "manager-internal-artifact-lineage" && slices.Contains([]string{"native-envi", "native-raster-media", "native-table-avro", "native-table-feather", "delimited-read-settings", "filegdb-export", "filegdb-mysql-export"}, os.Getenv("ADDP_ONLINE_MANAGER_CASE"))) {
 			permissions = append(permissions, "meta.scan_task.execute", "meta.scan_task.read")
 		}
 		return permissions
@@ -240,7 +240,7 @@ var transferContinuousPermissions = []string{
 var transferConfigCheckPermissions = []string{"transfer.task.create", "meta.catalog.read"}
 
 var metricPermissions = []string{
-	"meta.catalog.read", "meta.scan_task.execute", "meta.scan_task.read",
+	"meta.catalog.read",
 	"standard.metric.create", "standard.metric.read", "standard.metric.update", "standard.metric.publish",
 	"model.dw_layer.create", "model.logical_model.create", "model.logical_model.read", "model.logical_model.update",
 	"model.metric_implementation.create", "model.metric_implementation.read", "model.metric_implementation.update",
@@ -409,6 +409,14 @@ func suitePermissions(suite string) ([]string, error) {
 	case "ftp-consumer-flow":
 		return append(append([]string{}, catalogConsumerPermissions...), "manager.derived_artifact.create", "manager.derived_artifact.read", "manager.derived_artifact.delete", "manager.data_item.update"), nil
 	case "highgo-consumer-flow":
+		switch os.Getenv("ADDP_ONLINE_HIGHGO_CASE") {
+		case "sql-timeout":
+			return []string{"system.engine_catalog.read", "meta.catalog.read", "manager.data_item.read", "manager.content.read",
+				"develop.task.read", "develop.task.execute", "develop.data_read.execute", "system.execution_authorization.create"}, nil
+		case "", "business":
+		default:
+			return nil, errors.New("unsupported HighGo Online acceptance case")
+		}
 		return append(append([]string{}, catalogConsumerPermissions...), "transfer.task.create", "transfer.task.delete", "transfer.task.execute", "transfer.task.read", "system.execution_authorization.create"), nil
 	case "transfer-relational-sql-etl":
 		return transferLineagePermissions, nil

@@ -1375,6 +1375,14 @@ def run_online(
         raise OnlineGateError(f"unknown ONLINE_SUITE {suite_name!r}; registered suites: {available}")
 
     profile = execution_profile(suite_name, environment)
+    if suite_name == 'highgo-consumer-flow':
+        highgo_case = environment.get('ADDP_ONLINE_HIGHGO_CASE', 'business')
+        if highgo_case not in {'business', 'sql-timeout'}:
+            raise OnlineGateError('unsupported HighGo acceptance case')
+        if highgo_case == 'sql-timeout':
+            suite = replace(suite, command=(sys.executable, '-m', 'scripts.test.highgo-sql-timeout-online'),
+                            services=tuple(service for service in suite.services if service[0] != 'transfer')
+                            + (('security', 'SECURITY_URL'), ('develop', 'DEVELOP_URL')))
     if profile == "graph":
         suite = replace(suite, command=(sys.executable, "-m", "scripts.test.graph-execution-online"),
                         services=(*suite.services, ("graph-peer", "ADDP_ONLINE_GRAPH_PEER_URL")))

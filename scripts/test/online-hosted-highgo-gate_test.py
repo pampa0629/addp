@@ -58,11 +58,26 @@ class HostedHighGoTest(unittest.TestCase):
             #!/usr/bin/env bash
             echo "make:$*" >> "$ADDP_TEST_GATE_TRACE"
             [ "$ADDP_ONLINE_HIGHGO_ENGINE_ID" = 17 ] &&
-              [ "$ADDP_ONLINE_HIGHGO_PG_ENGINE_ID" = 18 ] &&
               [ "$ADDP_ONLINE_TEST_USER_USERNAME" = external-online-consumer ] &&
-              [ -z "${ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN:-}" ] &&
-              [ "$ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN" = source-token ] || exit 1
+              [ -z "${ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN:-}" ] || exit 1
+            if [ "$ADDP_ONLINE_HIGHGO_CASE" = sql-timeout ]; then
+              [ -z "${ADDP_ONLINE_HIGHGO_PG_ENGINE_ID:-}" ] &&
+                [ -z "${ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN:-}" ] || exit 1
+            else
+              [ "$ADDP_ONLINE_HIGHGO_PG_ENGINE_ID" = 18 ] &&
+                [ "$ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN" = source-token ] || exit 1
+            fi
             [ "${ADDP_TEST_SUITE_FAIL:-0}" != 1 ]
+        ''')
+        self.host._write_repository_script('scripts/test/highgo-sql-timeout-online.py', '''
+            import os, sys
+            from pathlib import Path
+            with open(os.environ['ADDP_TEST_GATE_TRACE'], 'a') as trace:
+                trace.write('timeout:' + sys.argv[1] + '\\n')
+            assert os.environ['ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN'] == 'source-token'
+            if sys.argv[1] == 'prepare':
+                Path(os.environ['ADDP_ONLINE_SECRET_DIR'], 'highgo-timeout-grant.json').write_text('{}')
+            if os.environ.get('ADDP_TEST_TIMEOUT_FAIL') == sys.argv[1]: sys.exit(1)
         ''')
         self.host._executable('npm', '#!/usr/bin/env bash\necho "browser-install" >> "$ADDP_TEST_GATE_TRACE"\n')
         subprocess.run(['git', 'add', '.'], cwd=self.host.repository, check=True)
@@ -73,6 +88,7 @@ class HostedHighGoTest(unittest.TestCase):
 
     def run_gate(self, check=False, **overrides):
         env = dict(os.environ, PATH=f'{self.host.bin}:{os.environ["PATH"]}',
+                   PYTHONDONTWRITEBYTECODE='1',
                    GITHUB_ACTIONS='true', RUNNER_OS='Linux', RUNNER_TEMP=str(self.host.root),
                    ADDP_ONLINE_HOST='1', ADDP_ONLINE_HOSTED='1', ONLINE_SUITE_INPUT='highgo-consumer-flow',
                    ADDP_ONLINE_ARTIFACT_DIR=str(self.host.artifacts), ADDP_ONLINE_SECRET_DIR=str(self.host.secrets),
@@ -87,7 +103,8 @@ class HostedHighGoTest(unittest.TestCase):
         self.assertFalse(self.host.trace.exists())
         self.assertFalse(self.host.secrets.exists())
         for flags in ({'ADDP_ONLINE_HOSTED': '0'}, {'GITHUB_ACTIONS': 'false'},
-                      {'ONLINE_SUITE_INPUT': 'redis-consumer-flow'}, {'ADDP_TEST_UNAME_M': 'aarch64'}):
+                      {'ONLINE_SUITE_INPUT': 'redis-consumer-flow'}, {'ADDP_TEST_UNAME_M': 'aarch64'},
+                      {'ADDP_ONLINE_HIGHGO_CASE': 'unknown'}):
             result = self.run_gate(check=True, **flags)
             self.assertNotEqual(result.returncode, 0)
             self.assertFalse(self.host.trace.exists())
@@ -115,6 +132,30 @@ class HostedHighGoTest(unittest.TestCase):
                 self.assertIn('highgo-fixture:stop', trace)
                 self.assertIn('infra-down', trace)
                 self.assertFalse(self.host.secrets.exists())
+
+    def test_timeout_case_has_only_highgo_query_services_and_pre_stop_revocation(self):
+        result = self.run_gate(ADDP_ONLINE_HIGHGO_CASE='sql-timeout')
+        self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
+        trace = self.host.trace.read_text()
+        self.assertNotIn('highgo-pg-engine.json', trace)
+        self.assertNotIn('start:-transfer', trace)
+        self.assertIn('start:-develop', trace)
+        self.assertIn('--wait-protection-owners manager,develop', trace)
+        order = ['register:highgo-engine.json', 'timeout:prepare', 'make:test-online',
+                 'highgo-fixture:verify', 'timeout:cleanup', 'application-stop', 'highgo-fixture:stop']
+        self.assertEqual([trace.index(step) for step in order], sorted(trace.index(step) for step in order))
+        self.assertFalse(self.host.secrets.exists())
+
+    def test_timeout_failure_still_revokes_before_stopping_owned_services(self):
+        for failure in ('prepare', 'suite', 'cleanup'):
+            self.host.trace.unlink(missing_ok=True)
+            flags = {'ADDP_TEST_SUITE_FAIL': '1'} if failure == 'suite' else {'ADDP_TEST_TIMEOUT_FAIL': failure}
+            result = self.run_gate(ADDP_ONLINE_HIGHGO_CASE='sql-timeout', **flags)
+            self.assertNotEqual(result.returncode, 0)
+            trace = self.host.trace.read_text()
+            self.assertLess(trace.index('timeout:cleanup'), trace.index('application-stop'))
+            self.assertIn('highgo-fixture:stop', trace)
+            self.assertFalse(self.host.secrets.exists())
 
 
 if __name__ == '__main__':

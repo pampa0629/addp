@@ -746,6 +746,22 @@ func TestSuitePermissionsAreExplicitAndSeparate(t *testing.T) {
 	}
 }
 
+func TestMetricSourcePreparationIsSeparateFromTheConsumer(t *testing.T) {
+	consumer, err := suitePermissions("metric-service-revision-lifecycle")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, key := range []string{"meta.scan_task.execute", "meta.scan_task.read", "system.engine_access_grant.create", "manager.content.read", "manager.data_item.read"} {
+		if slices.Contains(consumer, key) {
+			t.Fatalf("metric consumer gained source preparation or Manager permission %s", key)
+		}
+	}
+	want := append(slices.Clone(sourceInitializerPermissions), "meta.scan_task.execute", "meta.scan_task.read")
+	if got := suiteSourceInitializerPermissions("metric-service-revision-lifecycle"); !slices.Equal(got, want) {
+		t.Fatalf("metric source initializer must use the existing exact scan preparation role: %v", got)
+	}
+}
+
 func TestOntologyEnvironmentDoesNotExportAnEngineCredential(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "ontology.env")
 	if err := writeEnvironmentFile(path, map[string]string{
@@ -1500,6 +1516,30 @@ func TestHighGoFixtureUsesOrdinaryConsumerAndSeparateProvisioner(t *testing.T) {
 	values := consumerEnvironment("highgo-consumer-flow", 2, "consumer-token", "private-password")
 	if len(values) != 4 || values["ADDP_ONLINE_TEST_USER_USERNAME"] != "external-online-consumer" {
 		t.Fatal("ordinary browser consumer required")
+	}
+}
+
+func TestHighGoTimeoutCaseSeparatesPreparationAndMinimalConsumer(t *testing.T) {
+	t.Setenv("ADDP_ONLINE_HIGHGO_CASE", "sql-timeout")
+	permissions, err := suitePermissions("highgo-consumer-flow")
+	if err != nil {
+		t.Fatal(err)
+	}
+	expected, _ := suitePermissions("sql-pool-consumer-flow")
+	if !slices.Equal(permissions, expected) {
+		t.Fatalf("HighGo timeout consumer expanded beyond query/preview: %v", permissions)
+	}
+	wantPreparation := append(slices.Clone(sourceInitializerPermissions), "meta.scan_task.execute", "meta.scan_task.read")
+	if !slices.Equal(suiteSourceInitializerPermissions("highgo-consumer-flow"), wantPreparation) {
+		t.Fatal("HighGo timeout requires separate scoped scan preparation")
+	}
+	t.Setenv("ADDP_ONLINE_HIGHGO_CASE", "business")
+	if !slices.Equal(suiteSourceInitializerPermissions("highgo-consumer-flow"), sourceInitializerPermissions) {
+		t.Fatal("timeout scan permission leaked into business preparation")
+	}
+	t.Setenv("ADDP_ONLINE_HIGHGO_CASE", "unknown")
+	if _, err := suitePermissions("highgo-consumer-flow"); err == nil {
+		t.Fatal("unknown HighGo case must not create an identity")
 	}
 }
 

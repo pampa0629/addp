@@ -206,6 +206,29 @@ class HighGoFixtureTest(unittest.TestCase):
                 self.assertEqual(descriptor.call_args_list[0].args[6], 'business')
                 self.assertEqual(descriptor.call_args_list[1].args[6], 'source_reader')
 
+    def test_timeout_case_starts_only_native_highgo_and_verifies_probe_and_no_control_sessions(self):
+        with tempfile.TemporaryDirectory() as temp:
+            directory = Path(temp)
+            def query(name, statement, *args, **kwargs):
+                self.assertEqual(name, FIXTURE.HIGHGO)
+                if 'SELECT version()' in statement: return 'HighGo Database Management System 4.5'
+                if 'SELECT json_build_object' in statement: return '{"user":"business","ssl":true,"admin":false}'
+                if 'SELECT engine_name' in statement: return 'HighGo V4.5 Business'
+                if 'SELECT id,engine_name' in statement: return '1|HighGo V4.5 Business'
+                if 'pg_stat_activity' in statement: return '0'
+                self.fail('timeout case must not initialize other target tables')
+            with patch.dict(os.environ, ADDP_ONLINE_HIGHGO_CASE='sql-timeout'), \
+                 patch.object(FIXTURE, 'secret_directory', return_value=directory), \
+                 patch.object(FIXTURE, 'owned', return_value=False), \
+                 patch.object(FIXTURE, 'command') as command, patch.object(FIXTURE, 'sql', side_effect=query), \
+                 patch.object(FIXTURE, 'descriptor') as descriptor:
+                FIXTURE.start()
+                runs = [c for c in command.call_args_list if c.args[:2] == ('docker', 'run')]
+                self.assertEqual(len(runs), 1)
+                descriptor.assert_called_once()
+                with patch.object(FIXTURE, 'owned', side_effect=lambda name: name == FIXTURE.HIGHGO):
+                    FIXTURE.verify()
+
     def test_highgo_sql_password_uses_stdin_only_and_requires_tls(self):
         with tempfile.TemporaryDirectory() as temp:
             path = Path(temp); (path / 'highgo-fixture.json').write_text(json.dumps({'business': 'private-value'}))

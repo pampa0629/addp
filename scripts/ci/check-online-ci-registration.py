@@ -7313,6 +7313,15 @@ def validate_highgo_profile(repository: Path, registered: set[str]) -> None:
             'current.principalID', 'attrs.capabilities.constraints.constraints',
             "['updated_at', 'id']", 'highgo-replace-console.png',
         ),
+        "scripts/test/highgo-sql-timeout-online.py": (
+            'initialize_exact_record_read_grants', "scan_depth='basic', targets=[locator]",
+            'validate_browser', "'sql_execution_timeout'", 'preparation credentials leaked',
+        ),
+        "console/frontend/e2e/online/highgo-sql-timeout.spec.js": (
+            "barrier('acquire', phase)", "barrier('release', phase)", 'after_timeout',
+            "toBe(504)", "toBe('sql_execution_timeout')", 'highgo-timeout-native.jsonl',
+        ),
+        "scripts/test/highgo-sql-timeout-online_test.py": (),
         "Makefile": ('test-highgo-online-runner:', '$(MAKE) test-highgo-online-runner'),
         "scripts/test/highgo-consumer-flow-online_test.py": (),
         "scripts/test/online-highgo-consumer-fixture_test.py": (),
@@ -7330,6 +7339,8 @@ def validate_highgo_profile(repository: Path, registered: set[str]) -> None:
     job = re.search(r"(?ms)^  highgo-hosted-t4:\n(?P<body>.*?)(?=^  [a-z][a-z0-9-]*:\n|\Z)", workflow)
     if not job or 'runs-on: ubuntu-24.04' not in job['body'] or "github.event_name == 'workflow_dispatch' && inputs.suite == 'highgo-consumer-flow'" not in job['body']:
         raise RegistrationError("highgo-consumer-flow requires a manual Linux x86_64 Hosted job")
+    if "ADDP_ONLINE_HIGHGO_CASE: ${{ inputs.highgo_case || 'business' }}" not in job['body']:
+        raise RegistrationError('HighGo Hosted must select an explicit acceptance case')
     if "inputs.suite != 'highgo-consumer-flow'" not in workflow:
         raise RegistrationError("highgo-consumer-flow must not also run on self-hosted")
 
