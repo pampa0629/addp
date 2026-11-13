@@ -15,6 +15,10 @@ export function getExecutionByExecutionID(executionId, config) {
   return client.get(`/monitor/executions/by-execution-id/${executionId}`, config)
 }
 
+export function getExecutionTraceStages(executionId, config) {
+  return client.get(`/monitor/executions/by-execution-id/${executionId}/trace-stages`, config)
+}
+
 export function getExecutionEvents(executionId, params) {
   return client.get(`/monitor/executions/by-execution-id/${executionId}/events`, { params })
 }

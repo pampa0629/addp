@@ -324,7 +324,44 @@
         "open_task_unavailable": "No task definition entry is available for this execution"
       },
       "load_failed": "Failed to load execution records",
-      "detail_failed": "Failed to load execution detail"
+      "detail_failed": "Failed to load execution detail",
+      "traceStages": {
+        "title": "Stage observations",
+        "open": "View stage observations",
+        "close": "Hide stage observations",
+        "loading": "Loading stage observations…",
+        "failed": "Stage observations are unavailable. Close and reopen to try again.",
+        "hint": "Sampled enqueue and latest linked stages only. They may describe an earlier attempt and do not indicate current progress.",
+        "unsupported": "Stage observations are not supported for this task type.",
+        "phase": "Phase",
+        "attempt": "Attempt",
+        "outcome": "Stage outcome",
+        "start": "Started",
+        "end": "Ended",
+        "duration": "Stage duration",
+        "slots": {
+          "enqueue": "Enqueue observation",
+          "latest": "Latest linked stage"
+        },
+        "phases": {
+          "enqueue": "Enqueue",
+          "claim": "Claim",
+          "dispatch": "Dispatch",
+          "terminal": "Terminal"
+        },
+        "outcomes": {
+          "success": "Succeeded",
+          "failed": "Failed",
+          "timeout": "Timed out",
+          "cancelled": "Cancelled",
+          "rejected": "Rejected"
+        },
+        "states": {
+          "not_recorded": "No stage association was recorded.",
+          "not_found": "No retained sample was found. This does not determine the execution outcome.",
+          "outside_window": "The association is outside the query window."
+        }
+      }
     },
     "table": {
       "id": "ID",

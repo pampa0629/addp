@@ -324,7 +324,44 @@
         "open_task_unavailable": "当前执行记录没有可跳转的任务定义入口"
       },
       "load_failed": "加载执行记录失败",
-      "detail_failed": "加载执行详情失败"
+      "detail_failed": "加载执行详情失败",
+      "traceStages": {
+        "title": "阶段追踪",
+        "open": "查看阶段追踪",
+        "close": "收起阶段追踪",
+        "loading": "正在查询阶段观测…",
+        "failed": "阶段观测暂时无法查询，请稍后重新打开。",
+        "hint": "仅展示入队和最近关联阶段的采样观测；可能来自较早的执行尝试，不代表当前进度。",
+        "unsupported": "此任务类型暂不支持阶段追踪。",
+        "phase": "阶段",
+        "attempt": "执行尝试",
+        "outcome": "阶段结果",
+        "start": "开始时间",
+        "end": "结束时间",
+        "duration": "阶段耗时",
+        "slots": {
+          "enqueue": "入队观测",
+          "latest": "最近关联阶段"
+        },
+        "phases": {
+          "enqueue": "入队",
+          "claim": "领取",
+          "dispatch": "分派",
+          "terminal": "结束"
+        },
+        "outcomes": {
+          "success": "成功",
+          "failed": "失败",
+          "timeout": "超时",
+          "cancelled": "已取消",
+          "rejected": "已拒绝"
+        },
+        "states": {
+          "not_recorded": "未记录阶段关联。",
+          "not_found": "未查询到已保留的样本，不能据此判断执行结果。",
+          "outside_window": "关联时间不在可查询范围内。"
+        }
+      }
     },
     "table": {
       "id": "ID",

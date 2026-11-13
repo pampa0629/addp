@@ -786,3 +786,134 @@ for(const locale of ['zh-cn','en'])for(const [operator_id,reason,parameter,field
     await page.setViewportSize({width:390,height:844})
     expect(await panel.evaluate(el=>el.scrollWidth<=el.clientWidth+1)).toBeTruthy()
  })
+
+const stageExecutionID = 'a110b9a2-0000-4000-8000-000000000001'
+const stageResponse = {
+  execution_id: stageExecutionID, supported: true, stages: [
+    { slot: 'enqueue', state: 'available', phase: 'enqueue', attempt: 0, outcome: 'success', start: '2026-11-12T01:00:00Z', end: '2026-11-12T01:00:00Z', duration_ms: 0 },
+    { slot: 'latest', state: 'available', phase: 'terminal', attempt: 1, outcome: 'failed', start: '2026-11-12T01:01:00Z', end: '2026-11-12T01:01:01Z', duration_ms: 1000 }
+  ]
+}
+
+test('stage observations are lazy, preserve zero/old attempts and clear when closed', async ({ page }) => {
+  await installBackend(page, { executionID: stageExecutionID, empty: true })
+  let calls = 0
+  await page.route('**/trace-stages', route => { calls++; return route.fulfill({ json: stageResponse }) })
+  await page.goto(`/executions?execution_id=${stageExecutionID}`)
+  const stages = page.locator('.execution-trace-stages')
+  await expect(stages).toBeVisible()
+  expect(calls).toBe(0)
+  await stages.getByRole('button', { name: '查看阶段追踪', exact: true }).click()
+  await expect(stages.locator('.stage-card')).toHaveCount(2)
+  await expect(stages.locator('.stage-card').first()).toContainText('0 ms')
+  await expect(stages).toContainText('不代表当前进度')
+  await expect(stages.locator('.stage-card').last()).toContainText('失败')
+  expect(calls).toBe(1)
+  await stages.getByRole('button', { name: '收起阶段追踪', exact: true }).click()
+  await expect(stages.locator('.stage-card')).toHaveCount(0)
+  await stages.getByRole('button', { name: '查看阶段追踪', exact: true }).click()
+  await expect(stages.locator('.stage-card')).toHaveCount(2)
+  expect(calls).toBe(2)
+})
+
+for (const [state, text] of [
+  ['not_recorded', '未记录阶段关联'], ['not_found', '不能据此判断执行结果'], ['outside_window', '不在可查询范围']
+]) test(`stage absence ${state} is separate from execution failure`, async ({ page }) => {
+  await installBackend(page, { executionID: stageExecutionID, empty: true })
+  await page.route('**/trace-stages', route => route.fulfill({ json: { ...stageResponse, stages: [{ slot: 'enqueue', state }, stageResponse.stages[1]] } }))
+  await page.goto(`/executions?execution_id=${stageExecutionID}`)
+  const stages = page.locator('.execution-trace-stages')
+  await stages.getByRole('button', { name: '查看阶段追踪' }).click()
+  await expect(stages.locator('.stage-card').first()).toContainText(text)
+  await expect(stages.locator('.stage-card').last()).toContainText('结束')
+  await expect(page.locator('.execution-detail-content')).toBeVisible()
+})
+
+for (const [status, code] of [[404, ''], [503, 'execution_owner_unavailable']]) test(`stage Owner denial ${status} removes the old execution detail`, async ({ page }) => {
+  await installBackend(page, { executionID: stageExecutionID, empty: true })
+  await page.route('**/trace-stages', route => route.fulfill({ status, json: { error_code: code } }))
+  await page.goto(`/executions?execution_id=${stageExecutionID}`)
+  await page.getByRole('button', { name: '查看阶段追踪', exact: true }).click()
+  await expect(page.locator('.execution-detail-content')).toHaveCount(0)
+  await expect(page.getByRole('button', { name: '重新加载', exact: true })).toBeVisible()
+})
+
+test('stage backend failure and unsupported types preserve execution facts', async ({ page }) => {
+  await installBackend(page, { executionID: stageExecutionID, empty: true })
+  let unavailable = true
+  await page.route('**/trace-stages', route => unavailable
+    ? route.fulfill({ status: 503, json: { error_code: 'trace_backend_unavailable' } })
+    : route.fulfill({ json: { execution_id: stageExecutionID, supported: false, stages: [] } }))
+  await page.goto(`/executions?execution_id=${stageExecutionID}`)
+  const stages = page.locator('.execution-trace-stages')
+  await stages.getByRole('button', { name: '查看阶段追踪' }).click()
+  await expect(stages).toContainText('阶段观测暂时无法查询')
+  await expect(page.locator('.execution-detail-content')).toBeVisible()
+  await stages.getByRole('button', { name: '收起阶段追踪' }).click()
+  unavailable = false
+  await stages.getByRole('button', { name: '查看阶段追踪' }).click()
+  await expect(stages).toContainText('此任务类型暂不支持')
+})
+
+test('closing an in-flight stage query prevents its late sample from repopulating details', async ({ page }) => {
+  await installBackend(page, { executionID: stageExecutionID, empty: true })
+  let release, received
+  const blocked = new Promise(resolve => { release = resolve })
+  const requested = new Promise(resolve => { received = resolve })
+  await page.route('**/trace-stages', async route => { received(); await blocked; await route.fulfill({ json: stageResponse }).catch(() => {}) })
+  await page.goto(`/executions?execution_id=${stageExecutionID}`)
+  const stages = page.locator('.execution-trace-stages')
+  await stages.getByRole('button', { name: '查看阶段追踪' }).click()
+  await requested
+  await stages.getByRole('button', { name: '收起阶段追踪' }).click()
+  release()
+  await expect(stages.locator('.stage-card')).toHaveCount(0)
+  await expect(stages.getByRole('button', { name: '查看阶段追踪' })).toBeVisible()
+})
+
+for (const theme of ['light', 'dark', 'blue', 'purple']) test(`stage cards remain readable and contained on mobile in ${theme}`, async ({ page }) => {
+  await installBackend(page, { executionID: stageExecutionID, empty: true, locale: 'en' })
+  await page.addInitScript(theme => localStorage.setItem('theme-mode', theme), theme)
+  await page.setViewportSize({ width: 390, height: 844 })
+  await page.route('**/trace-stages', route => route.fulfill({ json: stageResponse }))
+  await page.goto(`/executions?execution_id=${stageExecutionID}`)
+  const stages = page.locator('.execution-trace-stages')
+  await stages.getByRole('button', { name: 'View stage observations', exact: true }).click()
+  await expect(stages.locator('.stage-card')).toHaveCount(2)
+  await expect(stages).toContainText('earlier attempt')
+  const size = await stages.evaluate(element => ({ width: element.clientWidth, scroll: element.scrollWidth, color: getComputedStyle(element).color }))
+  expect(size.scroll).toBeLessThanOrEqual(size.width + 1)
+  expect(size.color).not.toBe('rgba(0, 0, 0, 0)')
+})
+
+for (const change of ['user', 'tenant', 'permission']) test(`stage samples clear immediately after ${change} changes`, async ({ page }) => {
+  await installBackend(page, { executionID: stageExecutionID, empty: true })
+  await page.route('**/trace-stages', route => route.fulfill({ json: stageResponse }))
+  await page.goto(`/executions?execution_id=${stageExecutionID}`)
+  const stages = page.locator('.execution-trace-stages')
+  await stages.getByRole('button', { name: '查看阶段追踪' }).click()
+  await expect(stages.locator('.stage-card')).toHaveCount(2)
+  await page.evaluate(change => {
+    const auth = document.querySelector('#app').__vue_app__.config.globalProperties.$pinia._s.get('monitor-auth')
+    if (change === 'user') auth.user = { ...auth.user, id: 10 }
+    else if (change === 'tenant') auth.authContext.context.tenant_id = '8'
+    else auth.authContext.authorization.role_assignments = []
+  }, change)
+  await expect(page.locator('.execution-trace-stages .stage-card')).toHaveCount(0)
+})
+
+test('switching the selected execution discards a pending stage response', async ({ page }) => {
+  const childID = 'a110b9a2-0000-4000-8000-000000000002'
+  await installBackend(page, { executionID: stageExecutionID, empty: true, children: [{ execution: { id: 2, execution_id: childID, module: 'develop', task_type: 'query', status: 'success', progress: 100, steps: [], source_task_name: '子执行', created_at: '2026-11-12T01:00:00Z' }, children: [] }] })
+  let release, received
+  const blocked = new Promise(resolve => { release = resolve })
+  const requested = new Promise(resolve => { received = resolve })
+  await page.route('**/trace-stages', async route => { received(); await blocked; await route.fulfill({ json: stageResponse }).catch(() => {}) })
+  await page.goto(`/executions?execution_id=${stageExecutionID}`)
+  await page.getByRole('button', { name: '查看阶段追踪' }).click()
+  await requested
+  await page.locator('.execution-tree').getByText('子执行', { exact: true }).click()
+  release()
+  await expect(page.locator('.execution-trace-stages .stage-card')).toHaveCount(0)
+  await expect(page.getByRole('button', { name: '查看阶段追踪' })).toBeVisible()
+})

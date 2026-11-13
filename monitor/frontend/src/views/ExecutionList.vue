@@ -246,6 +246,12 @@
           </el-button>
         </div>
 
+        <ExecutionTraceStages
+          v-if="detailDialogVisible"
+          :execution-id="currentExecution.execution_id"
+          @read-blocked="clearBlockedExecutionDetail"
+        />
+
         <div v-if="executionTreeData.length" class="execution-tree">
           <h4>{{ t('monitor.execution.detail.execution_tree') }}</h4>
           <el-tree
@@ -499,6 +505,7 @@ import {
   StatusAnnouncer,
   useConsolePageDescriptor
 } from '@common-ui'
+import ExecutionTraceStages from '@/components/ExecutionTraceStages.vue'
 import { listExecutions, getExecutionTreeByExecutionID, listTaskProviders, getExecutionEvents } from '@/api/monitor'
 import ExecutionLineageSummary from '@/components/ExecutionLineageSummary.vue'
 import ExecutionTable from '@/components/ExecutionTable.vue'
