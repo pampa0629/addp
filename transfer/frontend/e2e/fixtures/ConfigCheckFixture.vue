@@ -5,6 +5,7 @@ const executionMode = new URLSearchParams(window.location.search).has('execution
 import { useI18n } from 'vue-i18n'
 import Step5Review from '../../src/views/TaskWizard/Step5Review.vue'
 import Step1SelectSource from '../../src/views/TaskWizard/Step1SelectSource.vue'
+import Step4Configure from '../../src/views/TaskWizard/Step4Configure.vue'
 import { useTaskWizardState } from '../../src/views/TaskWizard/useTaskWizardState'
 import { useAuthStore } from '../../src/store/auth'
 import { taskConfigCheckPermissions } from '../../src/views/TaskWizard/useTaskConfigCheck'
@@ -14,6 +15,7 @@ auth.bindAuthSession()
 const { locale } = useI18n()
 const submits = ref(0)
 const sourceVisible = ref(false)
+const maskingMode = new URLSearchParams(window.location.search).has('masking')
 function setContext(permissions = taskConfigCheckPermissions, tenant = '900001', principal = '900001') {
   auth.authContext = {
     principal: { type: 'user', id: principal },
@@ -50,6 +52,12 @@ function queryDraft(language) {
 </script>
 <template>
   <ExecutionDetail v-if="executionMode" />
+  <div v-else-if="maskingMode">
+    <button data-testid="english" @click="locale = 'en'">English</button>
+    <button data-testid="masking-source-second" @click="wizard.sourceLocator.value = 'addp://engine/9000001/path/synthetic/second?type=table'">Second source</button>
+    <pre data-testid="masking-saved-choices">{{ JSON.stringify(wizard.sourceProtectionChoices.value) }}</pre>
+    <Step4Configure :wizard-state="wizard" />
+  </div>
   <div v-else>
     <label>Name <input data-testid="fixture-name" v-model="wizard.taskName.value"></label>
     <button v-for="permission in taskConfigCheckPermissions" :key="permission" :data-testid="`revoke-${permission}`"

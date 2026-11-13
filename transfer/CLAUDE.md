@@ -118,6 +118,8 @@ Worker 按实际 EA／execution／attempt／lease 逐批读取 System 当前角�
 
 分版本验证记录见[角色资格到期与导出拒绝证据](#角色资格到期与导出拒绝证据)。
 
+2026-11-13候选归属核查：现有Step4请求序号已隔离来源切换、手动刷新、折叠以及不支持的来源／模式；旧成功、错误和finally不覆盖当前字段、提示或loading。新增[9项实际Vue调度单元](frontend/tests/maskingCandidateOwnership.test.mjs)及[中英文6项受控页面回归](frontend/e2e/masking-candidates.spec.js)，确认切换后旧选择保留为不可用项，只有主动移除才清除，不静默恢复默认。未改产品代码、角色、权限或后台执行。`make test-transfer-frontend`实际139项单元、75项浏览器及构建通过；`make test-frontend-ci-registration`27项／21个前端登记通过。四组仅在临时目录移除成功／错误／finally／折叠失效保护的变异均被单元拒绝，原产品9项全过，不能称为修复红绿。证据索引`/tmp/p145-transfer-candidates-independent/verification.json`，仅T0/T1/T3，不新增真实HTTP或Hosted结论。
+
 ## 执行规则
 
 执行导航：[一次性执行与来源隔离](#一次性执行与来源隔离)、[通用执行约束](#通用执行约束)、[查询源与构建器](#查询源与构建器)、[字段血缘与导出保护](#字段血缘与导出保护)、[bounded 失败诊断](#bounded-失败诊断)、[生产来源与写后扫描](#生产来源与写后扫描)、[Cleanup 执行边界](#cleanup-执行边界)。
