@@ -118,7 +118,7 @@ func TestProfessionalExecutionReadEnforcesCurrentActorAndPermissions(t *testing.
 		{"all", "/executions/mine", 200}, {"all", "/executions/mine/result", 200},
 		{"all", "/executions/other/result", 404}, {"all", "/executions/cross-tenant/result", 404}, {"all", "/executions/wrong-membership/result", 404},
 		{"revoked", "/executions/mine/result", 404}, {"read-only", "/executions/mine/result", 404}, {"data-only", "/executions/mine/result", 403},
-		{"all", "/executions/saved/result", 403}, {"all", "/executions/notebook/result", 403}, {"all", "/executions/saved", 200}, {"all", "/executions/notebook", 200},
+		{"all", "/executions/saved/result", 409}, {"all", "/executions/notebook/result", 403}, {"all", "/executions/saved", 200}, {"all", "/executions/notebook", 200},
 		{"all", "/executions/other", 404}, {"all", "/executions/cross-tenant", 404}, {"all", "/executions/missing-origin", 404}, {"all", "/executions/wrong-membership", 404}, {"all", "/executions/other-module", 404},
 		{"all", "/executions/other/logs", 404}, {"read-only", "/executions/mine", 404}, {"data-only", "/executions/mine", 403}, {"revoked", "/executions/mine", 404},
 		{"all", "/executions", 200}, {"all", "/executions/statistics", 200}, {"read-only", "/executions", 200}, {"revoked", "/executions/statistics", 200},

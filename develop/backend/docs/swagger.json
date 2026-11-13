@@ -939,14 +939,14 @@
         },
         "/executions/{execution_id}/result": {
             "get": {
-                "description": "仅本人查询；原值仅从有界进程内暂存按当前授权返回。历史详情始终脱敏；暂存失效后需重新查询。| Own queries only. Plaintext is reauthorized from bounded process memory; history stays protected and expired delivery requires a new query.\n共享 SQL Runtime 的结果含真实输出 fields；bigint/decimal 单元格以精确字符串表示。| Shared SQL Runtime results include native output fields; bigint/decimal cells use exact strings.\nMySQL/PostGIS 几何单元格统一为 {wkt,srid}，保留原坐标、EMPTY 与 SQL NULL；脱敏文本不恢复几何。| MySQL/PostGIS geometry cells use {wkt,srid}, preserving coordinates, EMPTY and SQL NULL; masked text is never restored as geometry.",
+                "description": "仅本人查询；原值仅从有界进程内暂存按当前授权返回。历史详情始终脱敏；暂存失效后需重新查询。| Own queries only. Plaintext is reauthorized from bounded process memory; history stays protected and expired delivery requires a new query.\n共享 SQL Runtime 的结果含真实输出 fields；bigint/decimal 单元格以精确字符串表示。| Shared SQL Runtime results include native output fields; bigint/decimal cells use exact strings.\nMySQL/PostGIS 几何单元格统一为 {wkt,srid}，保留原坐标、EMPTY 与 SQL NULL；脱敏文本不恢复几何。| MySQL/PostGIS geometry cells use {wkt,srid}, preserving coordinates, EMPTY and SQL NULL; masked text is never restored as geometry.\n只读私有工作流表格仅从有界进程内暂存交付，逐次检查本人权限、实际来源 read Grant 与数据保护；过期返回409，历史和编排只保留摘要。| Read-only private workflow tables are delivered from bounded process memory with current owner permissions, actual source read grants and data protection rechecked; expired delivery returns 409 and history/orchestration keep summaries.",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
                     "Execution"
                 ],
-                "summary": "获取当次查询结果 | Get current query result",
+                "summary": "获取本人当次查询或工作流结果 | Get own current query or workflow result",
                 "parameters": [
                     {
                         "type": "string",
@@ -982,7 +982,7 @@
                         }
                     },
                     "409": {
-                        "description": "脱敏方式失效或当次结果过期，请重新查询 | Masking choice unavailable or live result expired; rerun the query",
+                        "description": "脱敏方式失效或当次查询/工作流结果不可用 | Masking choice unavailable or current query/workflow result unavailable",
                         "schema": {
                             "$ref": "#/definitions/github_com_addp_develop_backend_internal_models.ErrorResponse"
                         }

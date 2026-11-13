@@ -74,13 +74,13 @@ func qualifyOrdinarySourceUser(current commonauth.AuthContext, permission string
 // conditions and complete source rules share one read-only committed snapshot.
 // Security and the actual immutable query remain the Manager owner's gates.
 func (s *Service) CheckManagerPreviewRead(ctx context.Context, credential string, request SourceReadCheckRequest) (*SourceReadCheck, error) {
-	return s.checkSourceRead(ctx, credential, request, true)
+	return s.checkSourceRead(ctx, credential, request, true, nil)
 }
 
 // Result content uses the current ordinary User, never a preview Tool delegate
 // or a historical execution identity. It does not authorize background sampling.
 func (s *Service) CheckManagerProfileResultRead(ctx context.Context, credential string, request SourceReadCheckRequest) (*SourceReadCheck, error) {
-	return s.checkSourceRead(ctx, credential, request, false)
+	return s.checkSourceRead(ctx, credential, request, false, nil)
 }
 
 func qualifyManagerProfileResultRead(current commonauth.AuthContext) error {
@@ -90,7 +90,7 @@ func qualifyManagerProfileResultRead(current commonauth.AuthContext) error {
 	return qualifyManagerPreviewRead(current)
 }
 
-func (s *Service) checkSourceRead(ctx context.Context, credential string, request SourceReadCheckRequest, preview bool) (*SourceReadCheck, error) {
+func (s *Service) checkSourceRead(ctx context.Context, credential string, request SourceReadCheckRequest, preview bool, qualify func(commonauth.AuthContext) error) (*SourceReadCheck, error) {
 	if len(request.Targets) == 0 || len(request.Targets) > 200 {
 		return nil, commonapi.ErrBadRequest
 	}
@@ -122,9 +122,11 @@ func (s *Service) checkSourceRead(ctx context.Context, credential string, reques
 		}
 		return auth.ResolveUserAccessToken(ctx, credential)
 	}
-	qualify := qualifyManagerProfileResultRead
-	if preview && request.ExpectedSource == nil {
-		qualify = qualifyManagerPreviewRead
+	if qualify == nil {
+		qualify = qualifyManagerProfileResultRead
+		if preview && request.ExpectedSource == nil {
+			qualify = qualifyManagerPreviewRead
+		}
 	}
 	entry, ok := iam.AuthenticatedRequestIdentity(ctx, credential)
 	if !ok {
@@ -164,4 +166,19 @@ func (s *Service) checkSourceRead(ctx context.Context, credential string, reques
 		return nil, commonapi.ErrForbidden
 	}
 	return &SourceReadCheck{ObservedAt: result.ObservedAt}, nil
+}
+
+// CheckDevelopWorkflowResultRead rechecks all actual sources as the current human.
+func (s *Service) CheckDevelopWorkflowResultRead(ctx context.Context, credential string, request SourceReadCheckRequest) (*SourceReadCheck, error) {
+	return s.checkSourceRead(ctx, credential, request, false, qualifyDevelopWorkflowResultRead)
+}
+
+func qualifyDevelopWorkflowResultRead(current commonauth.AuthContext) error {
+	if err := qualifyOrdinarySourceUser(current, "develop.task.read"); err != nil {
+		return err
+	}
+	if !commonauth.HasContextPermissions(current, "develop.data_read.execute") {
+		return commonapi.ErrForbidden
+	}
+	return nil
 }

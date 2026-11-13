@@ -151,3 +151,26 @@ func TestManagerProfileResultReadUsesOrdinaryCredentialAndNeverCaches(t *testing
 		t.Fatal("unsupported credential sent to System")
 	}
 }
+
+func TestDevelopWorkflowResultSourceCheckUsesCurrentHumanAndFixedRoute(t *testing.T) {
+	calls := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		if r.Method != "POST" || r.URL.Path != "/api/v1/system/engine-access/read-checks/develop-workflow-result" || r.Header.Get("Authorization") != "Bearer addp_at_current" {
+			t.Error("wrong result check identity or purpose")
+		}
+		w.WriteHeader(http.StatusForbidden)
+	}))
+	defer server.Close()
+	c := NewSystemServiceClient(server.URL, nil, server.Client())
+	paths := []plugin.EngineCatalogPath{plugin.FileItemPath(12, "a.geojson")}
+	if err := c.CheckDevelopWorkflowResultRead(t.Context(), "addp_at_current", paths); !errors.Is(err, ErrManagerPreviewReadDenied) {
+		t.Fatal(err)
+	}
+	if err := c.CheckDevelopWorkflowResultRead(t.Context(), "addp_dat_delegate", paths); !errors.Is(err, ErrManagerPreviewCredentialRejected) {
+		t.Fatal(err)
+	}
+	if calls != 1 {
+		t.Fatal("retried as service or sent delegate", calls)
+	}
+}

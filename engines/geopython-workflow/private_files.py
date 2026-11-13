@@ -250,6 +250,16 @@ class PrivateFiles:
             with self._lock:
                 self._active_transfers -= 1
 
+    def professional_result(self, creator):
+        with self._lock:
+            self._admit(creator)
+            if self.worker is None or self.worker.snapshot()["status"] != "success":
+                raise PrivateFileError("PRIVATE_FILES_OUTPUT_UNAVAILABLE")
+            path = self.directory / "professional-result.json"
+            value = json.loads(path.read_bytes()) if not self.manifest.outputs and path.is_file() else None
+            return {"execution_id": self.manifest.execution_id, "attempt": self.manifest.attempt,
+                    "scope_digest": self.manifest.scope_digest, "available": value is not None, "result": value}
+
     def cleanup(self, creator):
         with self._lock:
             self._admit(creator, active=False)

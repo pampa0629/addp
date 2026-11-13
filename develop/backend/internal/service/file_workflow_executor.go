@@ -246,6 +246,28 @@ func (s *ExecutionService) executePrivateFileWorkflow(ctx context.Context, item 
 	if err == nil {
 		err = b.live()
 	}
+	keepResult := false
+	defer func() {
+		if !keepResult {
+			s.executor.workflowResults.remove(item.ExecutionID, lease.Token)
+		}
+	}()
+	if err == nil && status != nil && status.Status == "success" && facts.Intent.Target == nil {
+		var table *plugin.WorkflowTableResult
+		table, err = b.runtime.ProfessionalResult(runCtx)
+		if err == nil {
+			err = b.live()
+		}
+		if err == nil && table != nil {
+			sources := make([]workflowResultSource, 0, len(b.sourceReads))
+			for index, read := range b.sourceReads {
+				for _, path := range read.ReadSet.Paths {
+					sources = append(sources, workflowResultSource{Provider: b.sources[index].provider, Target: path})
+				}
+			}
+			err = s.executor.workflowResults.put(item, lease, issued.Authorization.ExpiresAt, sources, table)
+		}
+	}
 	var published *plugin.NewFilePublicationOutcome
 	if err == nil && status != nil && status.Status == "success" && facts.Intent.Target != nil {
 		file, receipt, downloadErr := b.downloadOutput(runCtx)
@@ -333,7 +355,9 @@ func (s *ExecutionService) executePrivateFileWorkflow(ctx context.Context, item 
 			metadata["outputs"], metadata["lineage_facts"] = outputs, lineage
 			return f.repository.CompletePrivatePublication(finalCtx, item, lease, fields)
 		}
-		return s.queue.CompleteWithLease(finalCtx, item, lease, terminal, time.Now().UTC(), fields)
+		err = s.queue.CompleteWithLease(finalCtx, item, lease, terminal, time.Now().UTC(), fields)
+		keepResult = err == nil
+		return err
 	}
 	return s.queue.CompleteWithLease(ctx, item, lease, terminal, time.Now().UTC(), fields)
 }

@@ -319,3 +319,76 @@ func TestWorkflowPrivateFilesCapabilityRequiresActualProvider(t *testing.T) {
 		t.Fatalf("declaration without implementation accepted: %v", err)
 	}
 }
+
+func TestWorkflowProfessionalTableBoundToOriginalExecutionAndCompleteRows(t *testing.T) {
+	for _, scenario := range []string{"success", "unicode", "unavailable", "wrong-owner", "wrong-runtime", "wrong-attempt", "wrong-scope", "row-count", "duplicate-column", "unknown-field", "oversized", "trailing", "denied"} {
+		t.Run(scenario, func(t *testing.T) {
+			manifest := privateTestManifest()
+			manifest.Outputs = []string{}
+			response := map[string]interface{}{"runtime_execution_id": privateRuntimeID, "execution_id": manifest.ExecutionID, "attempt": manifest.Attempt, "scope_digest": manifest.ScopeDigest, "available": true, "result": map[string]interface{}{"schema_version": "addp.workflow.table-result/v1", "columns": []string{"instance_id", "area"}, "rows": []map[string]interface{}{{"instance_id": 1, "area": 42.375}}, "row_count": 1}}
+			table := response["result"].(map[string]interface{})
+			switch scenario {
+			case "unicode":
+				table["rows"] = []map[string]interface{}{{"instance_id": 1, "area": strings.Repeat("建筑物", 4500)}}
+			case "unavailable":
+				response["available"] = false
+				response["result"] = nil
+			case "wrong-owner":
+				response["execution_id"] = privateRuntimeID
+			case "wrong-runtime":
+				response["runtime_execution_id"] = privateOwnerID
+			case "wrong-attempt":
+				response["attempt"] = 2
+			case "wrong-scope":
+				response["scope_digest"] = strings.Repeat("b", 64)
+			case "row-count":
+				table["row_count"] = 2
+			case "duplicate-column":
+				table["columns"] = []string{"area", "area"}
+			case "unknown-field":
+				response["private_path"] = "must-not-be-returned"
+			case "oversized":
+				table["rows"] = []map[string]interface{}{{"instance_id": 1, "area": strings.Repeat("x", 70<<10)}}
+			}
+			calls := 0
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				calls++
+				if r.Method != "GET" || r.URL.Path != "/api/private-files/"+privateRuntimeID+"/result" || r.Header.Get("Authorization") != "Bearer current" {
+					t.Error("wrong private exchange")
+				}
+				if scenario == "denied" {
+					w.WriteHeader(403)
+					return
+				}
+				_ = json.NewEncoder(w).Encode(response)
+				if scenario == "trailing" {
+					_, _ = w.Write([]byte(`{}`))
+				}
+			}))
+			defer server.Close()
+			c := privateTestClient(t, server, manifest, func(context.Context) (string, error) { return "current", nil })
+			value, err := c.ProfessionalResult(t.Context())
+			switch scenario {
+			case "success":
+				if err != nil || value == nil || value.Rows[0]["area"].(json.Number).String() != "42.375" {
+					t.Fatal(value, err)
+				}
+			case "unicode":
+				if err != nil || value == nil || value.Rows[0]["area"] != strings.Repeat("建筑物", 4500) {
+					t.Fatal("valid UTF-8 table rejected", err)
+				}
+			case "unavailable":
+				if err != nil || value != nil {
+					t.Fatal(value, err)
+				}
+			default:
+				if err == nil || value != nil {
+					t.Fatal("changed binding or table accepted", value, err)
+				}
+			}
+			if calls != 1 {
+				t.Fatal("private exchange replayed", calls)
+			}
+		})
+	}
+}

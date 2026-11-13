@@ -193,6 +193,8 @@ Manifest 固定 `schema_version=addp.workflow.private-files/v2`，包含十进�
 
 私有模式的 `result/all_results` 只投影计算结果类型和 DataFrame 行数，不再次编码全量行、坐标或业务属性。实际端口值仍由同一个 Runner 在内存中传给下游，完整编码文件是唯一成果字节来源；不得为状态预览把业务值改成 null、丢行或重新生成文件。由此，不能转成合法 JSON 的业务属性也不应在 load 的预览阶段提前阻断原本合法的文件计算。普通调用的既有预览投影保持不变；受控错误仍保留标准 code、v3 diagnostic 和实际任务顺序。
 
+无保存目标的私有工作流另通过 `GET /api/private-files/{runtime_execution_id}/result` 向原 Develop Service 交付最终表格，身份、执行绑定、截止及清理规则与其他私有交换相同，不把明细加入公开执行状态。响应绑定 `runtime_execution_id/execution_id/attempt/scope_digest`，含 `available` 与 `result`；不可交付时 `available=false,result=null`，不改变已经完成的计算终态。最终结果必须是无几何列的 DataFrame、列名非空且唯一，最多 1000 行及 64 KiB UTF-8 JSON；`result` 固定为 `schema_version=addp.workflow.table-result/v1`、`columns`、`rows`、`row_count`，只交付完整表格，不截断、不把非法 JSON 数值转为 null。几何、非 JSON 值及超限结果不交付；有保存目标仍只走完整文件成果。表格只存在本次 Runtime 私有目录，随原清理一并删除。
+
 所有私有接口失败沿工作流协议返回固定 `error_code` 和中英文安全文案，不回显 Token、字段值、存储路径或原生异常。错主体/未知序号为 `404`，请求结构、摘要或完整性错误为 `400`，重复操作、未完成输入、关闭或过期为 `409`，非二进制上传为 `415`；无法取得当前 AuthContext 为 `503`。首期只支持矢量内存计算，不接纳仅 direct 算子或栅格资源组，不能通过私有模式绕过既有栅格准入。当前 Runtime 私有状态属于进程生命周期，不是持久任务队列；服务进程丢失记录时 Owner 保留原操作未知及待清理事实，不能重发创建/执行或将 `404` 当作清理成功。进程自身也持有绝对计算截止，不能仅依赖 HTTP 父进程监控线程。接口的专用 [OpenAPI](../../../engines/geopython-workflow/private_files_openapi.json) 与 GeoPython 测试同次维护。
 
 ## 受控算子参数诊断

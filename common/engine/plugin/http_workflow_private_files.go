@@ -170,7 +170,12 @@ func (c *WorkflowPrivateFilesClient) call(ctx context.Context, method, suffix st
 	if response.StatusCode != expected {
 		return fmt.Errorf("workflow private-file request returned HTTP %d", response.StatusCode)
 	}
-	decoder := json.NewDecoder(response.Body)
+	var bodyReader io.Reader = response.Body
+	if suffix == "/result" {
+		bodyReader = io.LimitReader(response.Body, (68<<10)+1)
+	}
+	decoder := json.NewDecoder(bodyReader)
+	decoder.UseNumber()
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(result); err != nil {
 		return errors.New("invalid workflow private-file response")
@@ -292,6 +297,65 @@ func (c *WorkflowPrivateFilesClient) Execution(ctx context.Context) (*WorkflowEx
 		err = errors.New("workflow Runtime changed private execution identity")
 	}
 	return result, err
+}
+
+type WorkflowTableResult struct {
+	SchemaVersion string                   `json:"schema_version"`
+	Columns       []string                 `json:"columns"`
+	Rows          []map[string]interface{} `json:"rows"`
+	RowCount      int                      `json:"row_count"`
+}
+
+// ProfessionalResult is a private machine exchange, never an execution observation.
+func (c *WorkflowPrivateFilesClient) ProfessionalResult(ctx context.Context) (*WorkflowTableResult, error) {
+	ctx, cancel, err := c.bounded(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer cancel()
+	var response struct {
+		RuntimeID   string          `json:"runtime_execution_id"`
+		ExecutionID string          `json:"execution_id"`
+		Attempt     int             `json:"attempt"`
+		ScopeDigest string          `json:"scope_digest"`
+		Available   *bool           `json:"available"`
+		Result      json.RawMessage `json:"result"`
+	}
+	if err := c.call(ctx, http.MethodGet, "/result", nil, "application/json", http.StatusOK, &response); err != nil {
+		return nil, err
+	}
+	hasResult := len(response.Result) > 0 && !bytes.Equal(bytes.TrimSpace(response.Result), []byte("null"))
+	if response.RuntimeID != c.runtimeID || response.ExecutionID != c.manifest.ExecutionID || response.Attempt != c.manifest.Attempt || response.ScopeDigest != c.manifest.ScopeDigest || response.Available == nil || len(response.Result) == 0 || (*response.Available != hasResult) {
+		return nil, errors.New("workflow professional result changed execution binding")
+	}
+	if !hasResult {
+		return nil, nil
+	}
+	result := &WorkflowTableResult{}
+	decoder := json.NewDecoder(bytes.NewReader(response.Result))
+	decoder.UseNumber()
+	decoder.DisallowUnknownFields()
+	if len(response.Result) > 64<<10 || decoder.Decode(result) != nil || result.SchemaVersion != "addp.workflow.table-result/v1" || result.RowCount < 0 || result.RowCount > 1000 || result.Columns == nil || result.Rows == nil || len(result.Rows) != result.RowCount {
+		return nil, errors.New("invalid workflow professional table")
+	}
+	columns := map[string]bool{}
+	for _, name := range result.Columns {
+		if name == "" || columns[name] {
+			return nil, errors.New("invalid workflow professional columns")
+		}
+		columns[name] = true
+	}
+	for _, row := range result.Rows {
+		if len(row) != len(columns) {
+			return nil, errors.New("invalid workflow professional row")
+		}
+		for name := range row {
+			if !columns[name] {
+				return nil, errors.New("invalid workflow professional field")
+			}
+		}
+	}
+	return result, nil
 }
 
 func (c *WorkflowPrivateFilesClient) CopyOutput(ctx context.Context, index int, receipt WorkflowPrivateFile, target io.Writer) error {

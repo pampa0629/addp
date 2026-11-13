@@ -15,13 +15,14 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-type managerSourceReadCheckService interface {
+type sourceReadCheckService interface {
 	CheckManagerPreviewRead(context.Context, string, engineaccess.SourceReadCheckRequest) (*engineaccess.SourceReadCheck, error)
 	CheckManagerProfileResultRead(context.Context, string, engineaccess.SourceReadCheckRequest) (*engineaccess.SourceReadCheck, error)
+	CheckDevelopWorkflowResultRead(context.Context, string, engineaccess.SourceReadCheckRequest) (*engineaccess.SourceReadCheck, error)
 }
 
 type EngineAccessSourceReadCheckHandler struct {
-	service managerSourceReadCheckService
+	service sourceReadCheckService
 }
 
 func RegisterEngineAccessSourceReadCheckRoutes(api *gin.RouterGroup, runtime *IAMRuntime, handler *EngineAccessSourceReadCheckHandler) error {
@@ -51,6 +52,11 @@ func RegisterEngineAccessSourceReadCheckRoutes(api *gin.RouterGroup, runtime *IA
 	// The result operation has no Tool delegation route. Membership or preview
 	// capability does not broaden a delegated credential to derived results.
 	api.POST("/engine-access/read-checks/manager-profile-result", runtime.Authentication, runtime.UserAccessCredential, tenant, permission, handler.CheckManagerProfileResult)
+	developPermission, err := middleware.NewIAMPermissionGuard("develop.task.read", "develop.data_read.execute")
+	if err != nil {
+		return err
+	}
+	api.POST("/engine-access/read-checks/develop-workflow-result", runtime.Authentication, runtime.UserAccessCredential, tenant, developPermission, handler.CheckDevelopWorkflowResult)
 	return nil
 }
 
@@ -143,4 +149,23 @@ func (h *EngineAccessSourceReadCheckHandler) check(c *gin.Context, check func(co
 	}
 	c.Header("Cache-Control", "no-store")
 	c.JSON(http.StatusOK, result)
+}
+
+// CheckDevelopWorkflowResult godoc
+// @Summary 检查 Develop 本人工作流结果的当前来源读取权 | Check current source read access for own Develop workflow results
+// @Description 仅当前普通 Tenant User，核验全部实际来源的当前 read Grant；不签发执行授权，不接受 Service、委托凭据或 expected_source。 | Current ordinary Tenant User only; recheck all actual source read grants without issuing execution authorization or accepting service/delegated credentials or expected_source.
+// @Tags 源数据读取检查 | Source Data Read Checks
+// @Accept json
+// @Produce json
+// @Param request body engineaccess.SourceReadCheckRequest true "实际来源 ReadSet | Actual source ReadSet"
+// @Success 200 {object} engineaccess.SourceReadCheck
+// @Failure 400 {object} IAMErrorResponse
+// @Failure 401 {object} IAMErrorResponse
+// @Failure 403 {object} IAMErrorResponse
+// @Security BearerAuth
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["develop.task.read","develop.data_read.execute"]
+// @Router /engine-access/read-checks/develop-workflow-result [post]
+func (h *EngineAccessSourceReadCheckHandler) CheckDevelopWorkflowResult(c *gin.Context) {
+	h.check(c, h.service.CheckDevelopWorkflowResultRead)
 }

@@ -271,3 +271,55 @@ def test_private_files_api_production_copy_bundle_imports_real_entry(tmp_path):
             "assert any(str(r).startswith('/api/private-files/') for r in api_server.app.url_map.iter_rules())")
     result = subprocess.run([sys.executable, "-c", code], cwd=stage, env=env, text=True, capture_output=True, timeout=30)
     assert result.returncode == 0, result.stderr
+
+
+def test_private_professional_table_isolated_from_status_and_removed_with_inputs(private_api, tmp_path):
+    client, api, state, headers = private_api
+    raw, contents = _manifest(tmp_path, save=False)
+    workflow = json.loads(raw["workflow_json"])
+    import pyogrio
+    geometry_field = pyogrio.read_info(tmp_path / "business" / "source.gpkg")["geometry_name"]
+    import geopandas as gpd
+    source_path = tmp_path / "business" / "source.gpkg"
+    source = gpd.read_file(source_path)
+    source["label"] = "建筑物" * 4500 + "<&"
+    source.to_file(source_path, driver="GPKG", engine="pyogrio")
+    contents[0] = source_path.read_bytes()
+    raw["inputs"][0]["size_bytes"] = str(len(contents[0]))
+    raw["inputs"][0]["sha256"] = hashlib.sha256(contents[0]).hexdigest()
+
+    workflow["tasks"] += [
+        {"id": "area", "operator": "get_area", "params": {"input_gdf": {"$ref": "difference"}}, "depends_on": ["difference"]},
+        {"id": "values", "operator": "drop_fields", "params": {"input_gdf": {"$ref": "area"}, "field_names": [geometry_field]}, "depends_on": ["area"]},
+    ]
+    raw["workflow_json"] = json.dumps(workflow)
+    identifier = str(uuid4()); path = "/api/private-files/" + identifier
+    assert client.put(path, json=raw, headers=headers).status_code == 201
+    assert client.get(path + "/result", headers=headers).status_code == 409
+    for index, content in enumerate(contents):
+        assert client.put(path + f"/inputs/{index}", data=content, content_type="application/octet-stream", headers=headers).status_code == 200
+    assert client.post("/api/workflow", json=_runtime(path), headers=headers).status_code == 202
+    files = api.lookup(identifier, ("71", "2")); assert files.worker.wait(50)
+    observed = client.get("/api/executions/" + identifier, headers=headers).get_json()
+    assert observed["status"] == "success", observed
+    assert observed["result"] == {"runtime_type": "dataframe", "row_count": 1}
+    assert "area" not in json.dumps(observed["all_results"]["values"])
+    response = client.get(path + "/result", headers=headers)
+    assert response.status_code == 200 and response.headers["Cache-Control"] == "no-store"
+    value = response.get_json()
+    assert value["execution_id"] == raw["execution_id"] and value["scope_digest"] == raw["scope_digest"] and value["attempt"] == 1
+    assert value["available"] is True and value["result"]["row_count"] == 1
+    assert value["result"]["rows"][0]["area"] == 4.0
+    assert value["result"]["rows"][0]["key"] == 11
+    assert value["result"]["rows"][0]["label"] == "建筑物" * 4500 + "<&"
+    assert len(response.data) < 68 * 1024
+    assert geometry_field not in value["result"]["columns"]
+    assert client.get(path + "/result").status_code == 401
+    original = state["context"]
+    state["context"] = replace(original, principal_id=72)
+    assert client.get(path + "/result", headers=headers).status_code == 404
+    state["context"] = original
+    directory = files.directory
+    assert client.delete(path, headers=headers).get_json() == {"cleanup": "passed"}
+    assert not directory.exists()
+    assert client.get(path + "/result", headers=headers).status_code == 409

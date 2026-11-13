@@ -57,11 +57,11 @@ func TestPrivateFilesPermissionRequiresActualRuntimeOpenAPI(t *testing.T) {
 	found := false
 	for _, source := range report.OpenAPI {
 		if source.Path == path {
-			found = source.OwnerModule == "system" && source.OperationCount == 7 && source.DeclaredAuthOperationCount == 7
+			found = source.OwnerModule == "system" && source.OperationCount == 8 && source.DeclaredAuthOperationCount == 8
 		}
 	}
 	if !found {
-		t.Fatal("seven actual Runtime operations were not checked")
+		t.Fatal("eight actual Runtime operations were not checked")
 	}
 	canonical, err := MarshalAuthorizationCoverageReport(report)
 	if err != nil {

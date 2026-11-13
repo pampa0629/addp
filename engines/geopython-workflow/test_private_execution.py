@@ -219,3 +219,22 @@ def test_private_workflow_process_cannot_dispatch_after_terminal(tmp_path, cance
     assert worker._process is None
     with pytest.raises(RuntimeError, match="already been dispatched"):
         worker.start()
+
+
+def test_professional_table_is_complete_bounded_and_does_not_change_business_values():
+    import pandas as pd
+    import geopandas as gpd
+    from shapely.geometry import box
+
+    table = pd.DataFrame({"instance_id": [1, 2], "area": [4.125, 9.25]})
+    result = json.loads(private_execution._professional_table(table))
+    assert result == {"schema_version": "addp.workflow.table-result/v1", "columns": ["instance_id", "area"],
+                      "rows": [{"instance_id": 1, "area": 4.125}, {"instance_id": 2, "area": 9.25}], "row_count": 2}
+    assert private_execution._professional_table(pd.DataFrame({"x": [float("inf")]})) is None
+    assert private_execution._professional_table(pd.DataFrame({"x": [float("nan")]})) is None
+    assert private_execution._professional_table(pd.DataFrame({"x": [b"private"]})) is None
+    assert private_execution._professional_table(pd.DataFrame({"x": range(1001)})) is None
+    assert private_execution._professional_table(pd.DataFrame({"x": ["秘密" * 30000]})) is None
+    assert private_execution._professional_table(pd.DataFrame([[1, 2]], columns=["x", "x"])) is None
+    assert private_execution._professional_table(gpd.GeoDataFrame({"id": [1]}, geometry=[box(0, 0, 1, 1)])) is None
+    assert table.area.tolist() == [4.125, 9.25]

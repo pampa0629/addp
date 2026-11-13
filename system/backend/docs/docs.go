@@ -1787,6 +1787,68 @@ const docTemplate = `{
                 ]
             }
         },
+        "/engine-access/read-checks/develop-workflow-result": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "仅当前普通 Tenant User，核验全部实际来源的当前 read Grant；不签发执行授权，不接受 Service、委托凭据或 expected_source。 | Current ordinary Tenant User only; recheck all actual source read grants without issuing execution authorization or accepting service/delegated credentials or expected_source.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "源数据读取检查 | Source Data Read Checks"
+                ],
+                "summary": "检查 Develop 本人工作流结果的当前来源读取权 | Check current source read access for own Develop workflow results",
+                "parameters": [
+                    {
+                        "description": "实际来源 ReadSet | Actual source ReadSet",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_engineaccess.SourceReadCheckRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_engineaccess.SourceReadCheck"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "develop.task.read",
+                    "develop.data_read.execute"
+                ]
+            }
+        },
         "/engine-access/read-checks/manager-preview": {
             "post": {
                 "security": [

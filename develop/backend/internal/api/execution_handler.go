@@ -485,16 +485,17 @@ func (h *ExecutionHandler) GetExecution(c *gin.Context) {
 }
 
 // GetQueryResult 获取当次查询结果
-// @Summary 获取当次查询结果 | Get current query result
+// @Summary 获取本人当次查询或工作流结果 | Get own current query or workflow result
 // @Description 仅本人查询；原值仅从有界进程内暂存按当前授权返回。历史详情始终脱敏；暂存失效后需重新查询。| Own queries only. Plaintext is reauthorized from bounded process memory; history stays protected and expired delivery requires a new query.
 // @Description 共享 SQL Runtime 的结果含真实输出 fields；bigint/decimal 单元格以精确字符串表示。| Shared SQL Runtime results include native output fields; bigint/decimal cells use exact strings.
 // @Description MySQL/PostGIS 几何单元格统一为 {wkt,srid}，保留原坐标、EMPTY 与 SQL NULL；脱敏文本不恢复几何。| MySQL/PostGIS geometry cells use {wkt,srid}, preserving coordinates, EMPTY and SQL NULL; masked text is never restored as geometry.
+// @Description 只读私有工作流表格仅从有界进程内暂存交付，逐次检查本人权限、实际来源 read Grant 与数据保护；过期返回409，历史和编排只保留摘要。| Read-only private workflow tables are delivered from bounded process memory with current owner permissions, actual source read grants and data protection rechecked; expired delivery returns 409 and history/orchestration keep summaries.
 // @Tags Execution
 // @Produce json
 // @Param execution_id path string true "执行ID（UUID）| Execution ID (UUID)"
 // @Success 200 {object} models.ExecutionWithDevTaskSwagger "当次结果 | Current result"
 // @Failure 403 {object} map[string]string
-// @Failure 409 {object} models.ErrorResponse "脱敏方式失效或当次结果过期，请重新查询 | Masking choice unavailable or live result expired; rerun the query"
+// @Failure 409 {object} models.ErrorResponse "脱敏方式失效或当次查询/工作流结果不可用 | Masking choice unavailable or current query/workflow result unavailable"
 // @Failure 404 {object} map[string]string
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["develop.task.read"]
@@ -505,6 +506,10 @@ func (h *ExecutionHandler) GetQueryResult(c *gin.Context) {
 	bearer, _ := requestUserAccessToken(c)
 	execution, err := h.devExecutor.GetQueryResult(c.Request.Context(), c.Param("execution_id"), tenantIDValue(c), bearer)
 	if err != nil {
+		if errors.Is(err, service.ErrWorkflowResultUnavailable) {
+			c.JSON(http.StatusConflict, gin.H{"error": commoni18n.T(c, "develop.workflow.result_unavailable"), "error_code": "workflow_result_unavailable"})
+			return
+		}
 		if writeQueryProtectionError(c, err) {
 			return
 		}

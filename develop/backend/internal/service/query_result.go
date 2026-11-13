@@ -151,6 +151,9 @@ func (e *DevExecutor) GetQueryResult(ctx context.Context, executionID string, te
 	if err != nil {
 		return nil, err
 	}
+	if response.TaskType == commonExecution.TaskTypeWorkflow {
+		return e.workflowResultResponse(ctx, response, tenantID, bearer)
+	}
 	return e.queryResultResponse(ctx, response, tenantID, bearer)
 }
 

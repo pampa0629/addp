@@ -175,3 +175,31 @@ func TestManagerProfileResultQualificationRejectsPreviewDelegation(t *testing.T)
 		t.Fatalf("empty source set reached DB: %+v %v", result, err)
 	}
 }
+
+func TestDevelopWorkflowResultRequiresBothCurrentFunctionsAndOrdinaryUser(t *testing.T) {
+	for _, scenario := range []string{"allowed", "missing-read", "missing-execute", "service", "delegate", "ticket", "audience"} {
+		t.Run(scenario, func(t *testing.T) {
+			current := previewCheckContext()
+			current.Authorization.RoleAssignments[0].Permissions = []string{"develop.data_read.execute", "develop.task.read"}
+			switch scenario {
+			case "missing-read":
+				current.Authorization.RoleAssignments[0].Permissions = []string{"develop.data_read.execute"}
+			case "missing-execute":
+				current.Authorization.RoleAssignments[0].Permissions = []string{"develop.task.read"}
+			case "service":
+				current.Principal.Type = "service_principal"
+				current.Token.Type = "service_access_token"
+			case "delegate":
+				current.Token.Type = "delegated_access_token"
+			case "ticket":
+				current.Token.Type = "resource_access_ticket"
+			case "audience":
+				current.Client.Audiences = []string{"manager"}
+			}
+			err := qualifyDevelopWorkflowResultRead(current)
+			if (scenario == "allowed" && err != nil) || (scenario != "allowed" && !errors.Is(err, commonapi.ErrForbidden)) {
+				t.Fatal(scenario, err)
+			}
+		})
+	}
+}

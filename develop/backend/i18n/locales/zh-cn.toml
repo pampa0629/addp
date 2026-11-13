@@ -393,3 +393,6 @@ other = "精确文件工作流执行当前不可用。"
 
 [develop.workflow.private_file_failed]
 other = "精确文件工作流执行失败。"
+
+[develop.workflow.result_unavailable]
+other = "当次工作流结果不可用或已过期，请重新执行后读取"

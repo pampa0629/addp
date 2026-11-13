@@ -42,6 +42,7 @@ type DevExecutor struct {
 	executionQueue           *repository.ExecutionRepository
 	fileExecutions           *repository.FileExecutionRepository
 	queryResults             *queryResultCache
+	workflowResults          *workflowResultCache
 }
 
 // SetExecutionNotifier wakes the embedded query supervisor after a
@@ -92,6 +93,7 @@ func NewDevExecutor(
 	return &DevExecutor{
 		devTaskRepo:              devTaskRepo,
 		queryResults:             newQueryResultCache(),
+		workflowResults:          newWorkflowResultCache(),
 		taskExecutionRepo:        taskExecutionRepo,
 		workflowEngine:           workflowEngine,
 		operatorDiscovery:        operatorDiscovery,

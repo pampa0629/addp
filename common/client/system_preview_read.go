@@ -21,23 +21,23 @@ var (
 // credential is the current request's User or delegated data.preview token,
 // never this client's Service token. Success is not a reusable access lease.
 func (c *SystemServiceClient) CheckManagerPreviewRead(ctx context.Context, credential string, targets []plugin.EngineCatalogPath) error {
-	return c.checkManagerSourceRead(ctx, credential, targets, "/api/v1/system/engine-access/read-checks/manager-preview", true)
+	return c.checkSourceRead(ctx, credential, targets, "/api/v1/system/engine-access/read-checks/manager-preview", true)
 }
 
 // CheckManagerProfileResultRead uses only the current ordinary User request.
 // Targets must be the persisted actual sampling ReadSet, not current dependencies.
 func (c *SystemServiceClient) CheckManagerProfileResultRead(ctx context.Context, credential string, targets []plugin.EngineCatalogPath) error {
-	return c.checkManagerSourceRead(ctx, credential, targets, "/api/v1/system/engine-access/read-checks/manager-profile-result", false)
+	return c.checkSourceRead(ctx, credential, targets, "/api/v1/system/engine-access/read-checks/manager-profile-result", false)
 }
 
-func (c *SystemServiceClient) checkManagerSourceRead(ctx context.Context, credential string, targets []plugin.EngineCatalogPath, path string, delegated bool) error {
+func (c *SystemServiceClient) checkSourceRead(ctx context.Context, credential string, targets []plugin.EngineCatalogPath, path string, delegated bool) error {
 	request := struct {
 		Targets []plugin.EngineCatalogPath `json:"targets"`
 	}{Targets: targets}
-	return c.checkManagerSourceReadRequest(ctx, credential, targets, path, delegated, request)
+	return c.checkSourceReadRequest(ctx, credential, targets, path, delegated, request)
 }
 
-func (c *SystemServiceClient) checkManagerSourceReadRequest(ctx context.Context, credential string, targets []plugin.EngineCatalogPath, path string, delegated bool, request any) error {
+func (c *SystemServiceClient) checkSourceReadRequest(ctx context.Context, credential string, targets []plugin.EngineCatalogPath, path string, delegated bool, request any) error {
 	validToken := false
 	prefixes := []string{"addp_at_"}
 	if delegated {
@@ -83,4 +83,10 @@ func (c *SystemServiceClient) checkManagerSourceReadRequest(ctx context.Context,
 		return ErrManagerPreviewReadUnavailable
 	}
 	return nil
+}
+
+// CheckDevelopWorkflowResultRead consumes only the current ordinary User token.
+// The owner supplies the complete actual source ReadSet from this result.
+func (c *SystemServiceClient) CheckDevelopWorkflowResultRead(ctx context.Context, credential string, targets []plugin.EngineCatalogPath) error {
+	return c.checkSourceRead(ctx, credential, targets, "/api/v1/system/engine-access/read-checks/develop-workflow-result", false)
 }

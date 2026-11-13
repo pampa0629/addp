@@ -20,6 +20,23 @@ def _project_private_result(value):
     return {"runtime_type": "value"}
 
 
+def _professional_table(value):
+    import pandas as pd
+
+    if (not isinstance(value, pd.DataFrame) or len(value) > 1000 or
+            not value.columns.is_unique or
+            any(not isinstance(name, str) or not name for name in value.columns) or
+            any(str(dtype) == "geometry" for dtype in value.dtypes)):
+        return None
+    try:
+        encoded = json.dumps({"schema_version": "addp.workflow.table-result/v1",
+                              "columns": list(value.columns), "rows": value.to_dict(orient="records"),
+                              "row_count": len(value)}, ensure_ascii=False, allow_nan=False).encode("utf-8")
+    except (TypeError, ValueError, OverflowError):
+        return None
+    return encoded if len(encoded) <= 64 * 1024 else None
+
+
 def _run_private_dag(directory: str, workflow: dict, language: str, deadline: float) -> None:
     # Only private local files are passed in. Source access and final publication
     # belong to Develop, and neither is performed by this worker.
@@ -35,9 +52,21 @@ def _run_private_dag(directory: str, workflow: dict, language: str, deadline: fl
 
     os.umask(0o077)
     try:
-        result = GeoPythonWorkflowRunner(language=language, result_projector=_project_private_result).execute(workflow)
+        final_value = None
+
+        def project(value):
+            nonlocal final_value
+            final_value = value
+            return _project_private_result(value)
+
+        result = GeoPythonWorkflowRunner(language=language, result_projector=project).execute(workflow)
         report = {"status": "success", "result": result.final_result,
                   "all_results": result.all_results, "task_order": result.task_order}
+        if not any(task["operator"] == "save" for task in workflow["tasks"]):
+            table = _professional_table(final_value)
+            if table is not None:
+                with (Path(directory) / "professional-result.json").open("xb") as stream:
+                    stream.write(table)
     except WorkflowExecutionError as exc:
         # The diagnostic is the existing controlled projection. Native exception
         # text can contain local paths and is not a private-file API response.

@@ -823,6 +823,107 @@
         },
         "x-addp-auth-mode": "permission"
       }
+    },
+    "/api/private-files/{runtime_execution_id}/result": {
+      "parameters": [
+        {
+          "name": "runtime_execution_id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      ],
+      "get": {
+        "summary": "读取原执行的有界专业表格 / Read bounded professional table for the original execution",
+        "security": [
+          {
+            "ServiceBearer": []
+          }
+        ],
+        "x-addp-required-permissions": [
+          "system.workflow_private_files.execute"
+        ],
+        "description": "仅原 Develop Tenant Service，当前身份、原执行和截止均须有效；公开执行状态不含行值。 / Original Develop Tenant Service only; recheck identity, execution and deadline. Public execution status contains no rows.",
+        "responses": {
+          "200": {
+            "description": "原执行绑定、available与result；完整表格最多1000行及64KiB。 / Original binding, available and result; complete table at most 1000 rows and 64 KiB."
+          },
+          "400": {
+            "description": "受控错误 / Controlled error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "受控错误 / Controlled error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "受控错误 / Controlled error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "受控错误 / Controlled error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "受控错误 / Controlled error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "受控错误 / Controlled error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "受控错误 / Controlled error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-addp-auth-mode": "permission"
+      }
     }
   },
   "components": {

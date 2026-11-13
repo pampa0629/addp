@@ -32,7 +32,7 @@ import (
 // Actual claimed Owner SQL, private HTTP client and local staging. Authority,
 // NFS bytes and native computation remain explicit doubles, not business T4.
 func TestPrivateFileWorkerDispatchRecoveryAndCapacity(t *testing.T) {
-	for _, scenario := range []string{"success", "child-success", "saved-success", "native-failure", "parameter-failure", "create-unknown", "execute-unknown", "cleanup-running", "cleanup-directory", "cleanup-unknown", "expired-source-window", "late-success"} {
+	for _, scenario := range []string{"success", "table-success", "child-success", "saved-success", "native-failure", "parameter-failure", "create-unknown", "execute-unknown", "cleanup-running", "cleanup-directory", "cleanup-unknown", "expired-source-window", "late-success"} {
 		t.Run(scenario, func(t *testing.T) {
 			db, repo, item, lease, _, issued, base := privateFileWorkerFixture(t, scenario == "saved-success")
 			queue := repository.NewExecutionRepository(db)
@@ -205,6 +205,12 @@ func TestPrivateFileWorkerDispatchRecoveryAndCapacity(t *testing.T) {
 						out["diagnostic"] = map[string]any{"schema_version": "addp.execution-failure/v3", "stage": "execution", "reason": "operator_input_invalid", "operator": map[string]any{"node_index": 3, "operator_id": "buffer", "parameter": "input_gdf"}}
 					}
 					_ = json.NewEncoder(w).Encode(out)
+				case r.Method == "GET" && r.URL.Path == "/api/private-files/"+id+"/result":
+					var table *plugin.WorkflowTableResult
+					if scenario == "table-success" {
+						table = &plugin.WorkflowTableResult{SchemaVersion: "addp.workflow.table-result/v1", Columns: []string{"area"}, Rows: []map[string]interface{}{{"area": 42.375}}, RowCount: 1}
+					}
+					_ = json.NewEncoder(w).Encode(map[string]any{"runtime_execution_id": id, "execution_id": item.ExecutionID, "attempt": 1, "scope_digest": issued.ScopeDigest, "available": table != nil, "result": table})
 				case r.Method == "DELETE" && r.URL.Path == "/api/private-files/"+id:
 					deletes.Add(1)
 					switch cleanupMode.Load() {
@@ -292,6 +298,22 @@ func TestPrivateFileWorkerDispatchRecoveryAndCapacity(t *testing.T) {
 			private, _ := repo.ReadPrivateRuntime(t.Context(), 3, item.ExecutionID)
 			if private.RuntimeExecutionID != runtimeID.Load() {
 				t.Fatal("UUID replaced")
+			}
+			if scenario == "table-success" {
+				entry := executor.workflowResults.get(item.ExecutionID, lease.Attempt, 3, *item.ActorPrincipalID)
+				if entry == nil || !bytes.Contains(entry.data, []byte("42.375")) || len(entry.sources) != len(private.SourceReads) {
+					t.Fatal("private complete table not retained with actual ReadSet")
+				}
+				for index, source := range entry.sources {
+					if !reflect.DeepEqual(source.Target, private.SourceReads[index].ReadSet.Paths[0]) {
+						t.Fatal("result used intent instead of actual read proof")
+					}
+				}
+				t.Cleanup(func() { executor.workflowResults.remove(item.ExecutionID, lease.Token) })
+				payload, _ := json.Marshal(done.Metadata)
+				if bytes.Contains(payload, []byte("42.375")) {
+					t.Fatal("professional rows persisted")
+				}
 			}
 			serialized, _ := json.Marshal(done)
 			if strings.Contains(string(serialized), private.InputDirectory) || strings.Contains(string(serialized), private.RuntimeExecutionID) || strings.Contains(string(serialized), "private path must not leak") {

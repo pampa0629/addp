@@ -28,6 +28,7 @@ class PrivateFileAPI:
             ("", ["DELETE"], self.cleanup),
             ("/inputs/<int:index>", ["PUT"], self.upload),
             ("/outputs/<int:index>", ["GET"], self.download),
+            ("/result", ["GET"], self.professional_result),
         ]:
             app.add_url_rule("/api/private-files/<uuid:runtime_id>" + suffix,
                              "private_files_" + handler.__name__, self.protected(handler), methods=methods)
@@ -130,6 +131,13 @@ class PrivateFileAPI:
     def cleanup(self, creator, runtime_id):
         result = self.lookup(runtime_id, creator).cleanup(creator)
         return jsonify(result), 200 if result["cleanup"] == "passed" else 202
+
+    def professional_result(self, creator, runtime_id):
+        value = {"runtime_execution_id": str(runtime_id),
+                 **self.lookup(runtime_id, creator).professional_result(creator)}
+        response = Response(json.dumps(value, ensure_ascii=False, allow_nan=False), mimetype="application/json")
+        response.headers["Cache-Control"] = "no-store"
+        return response
 
     def execute(self, data, language):
         creator = self.creator()

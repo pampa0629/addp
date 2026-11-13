@@ -393,3 +393,6 @@ other = "Private file workflow execution is unavailable."
 
 [develop.workflow.private_file_failed]
 other = "The private file workflow execution failed."
+
+[develop.workflow.result_unavailable]
+other = "The current workflow result is unavailable or expired; execute again before reading"
