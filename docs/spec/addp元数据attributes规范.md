@@ -145,6 +145,10 @@ TIFF 外置掩膜（主文件完整路径加 `.msk`）使用可选 `mask` 角色
 
 TIFF 主文件必须存在且是唯一必需主项。Meta 依据格式插件的关联规则，登记本次实际扫描到的世界文件、坐标参考、头文件、辅助元数据、overview 等辅助成员；未发现的可选成员不登记。只有主文件时为 `layout=single`，存在任意辅助成员时为 `layout=multi`，成员数量不固定为两项或四项。授权、版本校验及读取消费同一完整 DataItem，不按消费能力删减已登记成员。已登记成员读取时缺失须报告源组成变化，由 Meta 刷新后重新核验；不得临时降为 single。辅助文件可选不代表其不影响空间能力，缺少定位事实时保持未知。Meta 写入 `item.refs` 时，每个成员都必须保留布尔型 `required`，可选成员显式写 `false`，不能因值为假而省略成未知事实；授权投影不把缺失字段推断为可选，已有不完整快照通过正常扫描重建，不在读取端补造。
 
+TIFF 的 deep 媒体描述沿同一格式插件读取主流及 Meta 已识别的明确 refs，不枚举兄弟文件、不按后缀探测未登记依赖。格式层通过 `MultiMediaInfoProvider.DescribeMultiMedia` 返回媒体、空间及格式事实，Meta 仍是 attributes 的唯一写入方；single 继续由同一插件的单流描述提供事实。主文件完整路径加 `.aux.xml` 的 PAM 中 `PAMDataset/SRS` 与 `GeoTransform`、TIFF 内嵌定位、世界文件按各自事实独立取最高优先级：PAM 优先于内嵌事实，世界文件只补足尚缺失的网格。已登记的 `.tfw`、`.tifw`、`.wld` 按此顺序选取世界文件，不依赖 refs 顺序；六参数中的原点是首像元中心，转换至像元外边界，并以四个角计算含旋转的包围盒。PAM GeoTransform 是六个逗号分隔的仿射参数，直接使用外边界原点。定义参见 [GDAL GeoTIFF 定位优先级](https://gdal.org/en/stable/drivers/raster/gtiff.html#georeferencing) 与 [世界文件参数](https://gdal.org/en/stable/drivers/raster/wld.html)。
+
+该提取不补默认 CRS、不从经纬度样式猜测坐标系，也不把缺少辅助文件当作错误；未登记的可选成员不存在时仍可描述主 TIFF。已登记且参与定位描述的文件读取失败、非法 XML／受支持字段、非有限或退化仿射参数、超出读取预算时，描述返回错误，不发布部分空间快照。PAM 限 1 MiB、每份世界文件限 4 KiB，不读取像元、不跟随 XML 中的文件或网络引用。当前只提取上述 PAM 与世界文件定位；HDR、PRJ、MSK、overview 仍保留完整组成、授权和版本，但不据其内容另行猜测空间事实。CRS 文本复用共享解析器，不能取得可靠 SRID 时保留 WKT 定义，来源为 `sidecar_pam`。成功刷新整体替换媒体、空间及 TIFF 格式命名空间，移除辅助定位后须清除旧事实；COG 布局提示独立于定位，不为开放生成而修改源 profile。
+
 TIFF 的深度扫描在 `storage.content_versions` 保存当前 DataItem 的完整组件内容版本。数组按精确 `path` 升序排列，每项为 `{path, size_bytes, sha256}`，`sha256` 是该组件原字节的 64 位小写十六进制 SHA-256。单文件 TIFF 记录主文件一项，多文件 TIFF 记录 Meta 已提交的主文件和全部 `item.refs`，路径集合必须精确相等。扫描只读取正式组件，不重新枚举目录寻找依赖。PAM 仍保留扫描所得的可选角色，但已登记的文件缺失时本次深扫失败，不提交部分版本。
 
 `item.refs` 表达组成，`storage.content_versions` 表达这些组件在本次深扫中的内容版本。内容变化不改写 DataItem 稳定指纹，也不把内容版本当成授权回执。TIFF 使用这一版本数组，删除同一 TIFF 上旧的 `storage.content_hash/content_hash_algorithm`，消费者缺少完整版本时要求深度刷新，不读取旧字段兜底。basic 扫描不计算内容哈希；组成变化时不得保留与新路径集合不一致的版本数组。其他格式的既有哈希契约保持各自规则。
@@ -549,7 +553,7 @@ GeoTIFF 的整体 CRS 必须与其像元坐标对应。[OGC GeoTIFF 1.1 的模�
 | `crs_definitions[].id` | CRS 定义 ID，必须被 `crs_ref` 引用。能确定 EPSG 时使用 `EPSG:<code>`；已识别 OGC CRS84 使用 `OGC:CRS84`；否则使用 `ADDP:CRS:<sha256>`。 |
 | `crs_definitions[].definition_encoding` | CRS 定义表达方式。只允许 `wkt`、`esri_wkt`、`proj4`、`projjson`。消费者必须按自身能力选择可处理的表达，不得因为前端不能直接注册某种表达而从平台空间事实中删除它。 |
 | `crs_definitions[].definition` | CRS 定义文本，例如 PostGIS `spatial_ref_sys.srtext`、Shapefile `.prj`、GeoPackage `gpkg_spatial_ref_sys.definition`、proj4 字符串或 GeoParquet `crs` 的 PROJJSON 文本。 |
-| `crs_definitions[].source` | CRS 定义来源枚举，例如 `postgis_spatial_ref_sys`、`mysql_st_spatial_reference_systems`、`sidecar_prj`、`geopackage_srs`、`geotiff_tags`、`geoparquet_metadata`。`crs_normalization_runtime` 只用于 execution-local CRS 定义转换结果，不得反写覆盖 Meta 保存的源定义事实。 |
+| `crs_definitions[].source` | CRS 定义来源枚举，例如 `postgis_spatial_ref_sys`、`mysql_st_spatial_reference_systems`、`sidecar_prj`、`sidecar_pam`、`geopackage_srs`、`geotiff_tags`、`geoparquet_metadata`。`crs_normalization_runtime` 只用于 execution-local CRS 定义转换结果，不得反写覆盖 Meta 保存的源定义事实。 |
 | `dimension` | 坐标维度，无法确定时可省略。 |
 | `nullable` | 字段是否可空，无法确定时可省略。 |
 | `primary_geometry_column` | Manager 默认空间预览使用的几何字段。多几何字段时必须明确；单几何字段时建议写入；没有字段列概念的空间媒体应省略。 |

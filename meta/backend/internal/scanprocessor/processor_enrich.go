@@ -78,7 +78,7 @@ func (p Processor) enrichDeep(ctx context.Context, input *input, attrs models.JS
 		TenantID:             input.TenantID,
 	})
 	if err != nil {
-		if input.StrictDeepEnrich || input.Encoding != "" || input.HasHeader != nil || source != nil {
+		if input.Detected.Format == "tiff" || input.StrictDeepEnrich || input.Encoding != "" || input.HasHeader != nil || source != nil {
 			return nil, err
 		}
 		p.warn("提取资源深度属性失败，保留基础属性", input, err)

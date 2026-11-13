@@ -14,6 +14,7 @@ import (
 	"github.com/addp/common/dataitem"
 	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/format"
+	commonJSON "github.com/addp/common/jsonmap"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/meta/internal/metaitem"
 	"github.com/addp/meta/internal/models"
@@ -179,7 +180,7 @@ func TestTIFFContentVersionsRefreshAgainstPostgres(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	reader := &tiffVersionReader{files: map[string]string{main: string(raw), pam: "<PAMDataset/>", header: "header", world: "world", mask: "mask"}}
+	reader := &tiffVersionReader{files: map[string]string{main: string(raw), pam: "<PAMDataset><SRS>EPSG:4326</SRS></PAMDataset>", header: "header", world: "0.0001\n0\n0\n-0.0001\n113.00005\n27.99995\n", mask: "mask"}}
 	size := int64(len(raw) + len(reader.files[pam]) + len(reader.files[header]) + len(reader.files[world]) + len(reader.files[mask]))
 	item, err := repo.UpsertItemWithDepth(1, 7, parent, "object", "scene.tif", main, models.JSONMap{
 		"item": map[string]interface{}{"format": "tiff", "data_type": "media", "layout": "multi", "refs": []map[string]interface{}{
@@ -212,6 +213,10 @@ func TestTIFFContentVersionsRefreshAgainstPostgres(t *testing.T) {
 	if err := db.First(&stored, item.ID).Error; err != nil {
 		t.Fatal(err)
 	}
+	spatial := commonJSON.Section(stored.Attributes, "capabilities.spatial")
+	if commonJSON.InterfaceInt64(spatial["srid"]) != 4326 || len(commonJSON.InterfaceFloat64Slice(spatial["extent"])) != 4 {
+		t.Fatalf("committed auxiliary spatial facts missing: %#v", spatial)
+	}
 	versions, err := dataitem.TIFFContentVersionsFromAttributes(stored.Attributes)
 	if err != nil || len(versions) != 5 || versions[3].SHA256 != fmt.Sprintf("%x", sha256.Sum256([]byte(reader.files[pam]))) || versions[4].SHA256 != fmt.Sprintf("%x", sha256.Sum256([]byte(reader.files[mask]))) {
 		t.Fatalf("persisted versions=%#v, err=%v", versions, err)
@@ -231,6 +236,22 @@ func TestTIFFContentVersionsRefreshAgainstPostgres(t *testing.T) {
 	if err != nil || !reflect.DeepEqual(current[:3], versions[:3]) || current[3].SHA256 == versions[3].SHA256 {
 		t.Fatal("PAM-only edit did not change the persisted version")
 	}
+	if commonJSON.InterfaceInt64(commonJSON.Section(changed.Attributes, "capabilities.spatial")["srid"]) != 3857 {
+		t.Fatal("PAM edit did not update committed CRS")
+	}
+	validPAM := reader.files[pam]
+	reader.files[pam] = "<PAMDataset><GeoTransform>0,1,2</GeoTransform></PAMDataset>"
+	if err := refresh(); err == nil {
+		t.Fatal("malformed registered spatial source did not fail refresh")
+	}
+	var invalidSpatial models.MetaItem
+	if err := db.First(&invalidSpatial, item.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(invalidSpatial.Attributes, changed.Attributes) || !reflect.DeepEqual(invalidSpatial.ScannedAt, changed.ScannedAt) {
+		t.Fatal("invalid spatial source overwrote committed snapshot")
+	}
+	reader.files[pam] = validPAM
 	delete(reader.files, mask)
 	if err := refresh(); err == nil {
 		t.Fatal("missing registered mask did not fail the refresh")
@@ -266,5 +287,26 @@ func TestTIFFContentVersionsRefreshAgainstPostgres(t *testing.T) {
 	}
 	if len(reader.reads) != 0 || rediscovered.Attributes["storage"].(map[string]interface{})["content_versions"] != nil {
 		t.Fatal("basic composition change retained old versions or read source bytes")
+	}
+}
+
+func TestTIFFSpatialFailureStopsDeepScan(t *testing.T) {
+	raw, err := os.ReadFile("../../../../common/format/plugins/image/testdata/unlocated-cog.tif")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, role := range []string{"world_file", "auxiliary_metadata"} {
+		t.Run(role, func(t *testing.T) {
+			main := "images/scene.tif"
+			aux := "images/scene.tfw"
+			if role == "auxiliary_metadata" {
+				aux = main + ".aux.xml"
+			}
+			reader := &tiffVersionReader{files: map[string]string{main: string(raw), aux: "invalid"}}
+			in := &input{PhysicalPath: main, ContentReader: reader, EngineCatalogPathFor: func(name string) plugin.EngineCatalogPath { return plugin.FileItemPath(7, name) }, Detected: &metaitem.DetectedItem{ResolvedItem: dataitem.ResolvedItem{Format: "tiff", DataType: "media", Layout: format.LayoutMulti, PrimaryContentPath: main, RefList: []dataitem.ItemRef{{Path: main, Role: "main", Primary: true, Required: true}, {Path: aux, Role: role}}}}}
+			if _, err := (Processor{}).enrichDeep(t.Context(), in, models.JSONMap{}); err == nil {
+				t.Fatal("invalid spatial source allowed content versions/persistence to continue")
+			}
+		})
 	}
 }

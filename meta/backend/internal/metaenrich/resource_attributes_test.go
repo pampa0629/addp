@@ -261,10 +261,14 @@ func TestEnrichResourceAttributesWritesMediaInfoForMultiTIFF(t *testing.T) {
 	attrs := metaattr.JSONMap(metaattr.BuildAttributes(metaitem.AttributeInput(item)))
 
 	_, _, err := EnrichResourceAttributes(context.Background(), attrs, ResourceAttributesInput{
-		ContentReader: bytesContentReader{content: content},
-		Item:          item,
-		PhysicalPath:  "geotiff/srtm_40_01.tif",
-		SizeBytes:     size,
+		ContentReader: pathContentReader{content: map[string][]byte{
+			"geotiff/srtm_40_01.tif":         content,
+			"geotiff/srtm_40_01.tfw":         []byte("10\n0\n0\n-10\n105\n195\n"),
+			"geotiff/srtm_40_01.tif.aux.xml": []byte(`<PAMDataset><SRS>EPSG:4326</SRS></PAMDataset>`),
+		}},
+		Item:         item,
+		PhysicalPath: "geotiff/srtm_40_01.tif",
+		SizeBytes:    size,
 		EngineCatalogPathFor: func(path string) plugin.EngineCatalogPath {
 			return plugin.FileItemPath(1, path)
 		},
@@ -1131,7 +1135,9 @@ func TestResolveAndEnrichMultiTIFFUsesPrimaryContent(t *testing.T) {
 	}
 	attrs := metaattr.JSONMap(metaattr.BuildAttributes(metaitem.AttributeInput(item)))
 	reader := pathContentReader{content: map[string][]byte{
-		"geotiff/srtm_40_01.tif": content,
+		"geotiff/srtm_40_01.tif":         content,
+		"geotiff/srtm_40_01.tfw":         []byte("10\n0\n0\n-10\n105\n195\n"),
+		"geotiff/srtm_40_01.tif.aux.xml": []byte(`<PAMDataset><SRS>EPSG:4326</SRS></PAMDataset>`),
 	}}
 
 	_, _, err = EnrichResourceAttributes(context.Background(), attrs, ResourceAttributesInput{

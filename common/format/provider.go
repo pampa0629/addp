@@ -361,6 +361,14 @@ type MediaInfoProvider interface {
 	DescribeMedia(ctx context.Context, input io.Reader, options *ParseOptions) (*MediaDescribeResult, error)
 }
 
+// MultiMediaInfoProvider describes only the caller's resolved members. It does
+// not enumerate or discover dependencies; spatial facts belong to the complete
+// media item rather than the primary byte stream alone.
+type MultiMediaInfoProvider interface {
+	MediaInfoProvider
+	DescribeMultiMedia(ctx context.Context, reader contentio.Reader, refs []RelatedRef, options *ParseOptions) (*MediaDescribeResult, error)
+}
+
 type Model3DInfoProvider interface {
 	FormatPlugin
 	DescribeModel3D(ctx context.Context, input io.Reader, options *ParseOptions) (*Model3DDescribeResult, error)

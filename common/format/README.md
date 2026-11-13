@@ -11,7 +11,7 @@
 - 根据文件名、MIME、magic bytes 识别 `FormatType`。扩展名 MIME 查询统一复用 `common/mimetype.ByExtension`，只推断基础媒体类型，不把注册表默认 charset 当作实际编码。
 - 维护 `FormatDescriptor` 静态事实，例如 data type、layout 和识别事实。
 - 提供 format identity、FormatPlugin、provider / reader 动态查询；通用 `DataType`、`FieldType`、`TableInfo`、`Model3DInfo`、`PointCloudInfo`、`GaussianSplatInfo` 等结构化语义模型归属 `common/datatype`。
-- 注册 format plugin，并通过同一个 plugin 的接口断言获取 info provider / content reader，例如 `FormatPlugin`、`FormatInfoProvider`、`TableInfoProvider`、`TableSampleReader`、`MultiTableInfoProvider`、`MultiTableSampleReader`、`ScopeTableInfoProvider`、`ScopeTableSampleReader`、`TableReaderProvider`、`MultiTableReaderProvider`、`TableWriterProvider`、`MultiTableWriterProvider`、`DocumentInfoProvider`、`DocumentTextReader`、`MediaInfoProvider`、`ContainerInfoProvider`、`ContainerChildResolver`、`Model3DInfoProvider`、`ScopeModel3DInfoProvider`、`PointCloudInfoProvider`、`ScopePointCloudInfoProvider`、`GaussianSplatInfoProvider`。
+- 注册 format plugin，并通过同一个 plugin 的接口断言获取 info provider / content reader，例如 `FormatPlugin`、`FormatInfoProvider`、`TableInfoProvider`、`TableSampleReader`、`MultiTableInfoProvider`、`MultiTableSampleReader`、`ScopeTableInfoProvider`、`ScopeTableSampleReader`、`TableReaderProvider`、`MultiTableReaderProvider`、`TableWriterProvider`、`MultiTableWriterProvider`、`DocumentInfoProvider`、`DocumentTextReader`、`MediaInfoProvider`、`MultiMediaInfoProvider`、`ContainerInfoProvider`、`ContainerChildResolver`、`Model3DInfoProvider`、`ScopeModel3DInfoProvider`、`PointCloudInfoProvider`、`ScopePointCloudInfoProvider`、`GaussianSplatInfoProvider`。
 - 提供 `TypeMapper` 注册机制，供 engine / format 在自身边界内把原生类型映射到 ADDP 通用字段类型；上层执行链路不读取原生字段类型。
 - 不再保留 `FileMetadataExtractor` 旁路注册表；新增格式必须通过 FormatPlugin、info provider 和 content reader 进入主线。
 
@@ -581,3 +581,5 @@ DAE 同样实现 `Model3DCompositionProvider`，通过调用方绑定的 range r
 OBJ 复用同一单文档接口返回完整 `mtllib` 原始声明，MTL 的 `obj.ReadMTLTextureRefs` 是 OBJ 格式包的结构解析 helper，不另注册 MTL 数据格式，也不接收自由路径回调。调用方逐个绑定明确的 MTL range reader，并独立证明目录/批准范围与合计预算；格式包不访问依赖、引擎、权限或 Meta。名字、选项、完整性和硬预算以[OBJ 格式规范](../../docs/spec/builtin-formats/三维模型与场景.md#obj-精确组成授权)为准；深度几何 `scan_complete` 与基础 `composition_complete` 不共用含义。
 
 ORC 单文件只读通过 `RuntimeTableProviderFactory` 绑定 source-only access plan；`BoundTableProvider` 的描述、分页和连续读取共用 GeoPython 内部固定 PyORC。平面标量可连续批量读取；声明式嵌套 struct/list 仅开放描述和分页，批量入口明确拒绝，Map/Union 不支持。它不实现未绑定的 io.Reader 表格接口，也不把 ORC 声明为 container 或 whole。范围与预算见[列式文件规范](../../docs/spec/builtin-formats/列式文件与数据容器.md#orc-单文件只读)。
+
+TIFF 的多成员媒体描述由同一插件的 `MultiMediaInfoProvider.DescribeMultiMedia(ctx, reader, refs, options)` 接收已识别的明确成员。该接口不枚举或发现依赖，复用单流 TIFF 元数据解析；PAM／世界文件优先级与预算见[TIFF 空间事实规则](../../docs/spec/addp元数据attributes规范.md#tiff-组件内容版本)。

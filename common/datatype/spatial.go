@@ -21,6 +21,7 @@ const (
 	CRSDefinitionSourceMySQLSpatialRefSys   = "mysql_st_spatial_reference_systems"
 	CRSDefinitionSourceOracleCSRS           = "oracle_mdsys_cs_srs"
 	CRSDefinitionSourceSidecarPRJ           = "sidecar_prj"
+	CRSDefinitionSourceSidecarPAM           = "sidecar_pam"
 	CRSDefinitionSourceGeoPackageSRS        = "geopackage_srs"
 	CRSDefinitionSourceGeoTIFFTags          = "geotiff_tags"
 	CRSDefinitionSourceSuperMapRuntimeSDK   = "supermap_runtime_sdk"

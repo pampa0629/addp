@@ -137,13 +137,20 @@ func EnrichSingleMediaItem(
 	if err != nil {
 		return nil
 	}
-	rc, err := contentReader.OpenContent(ctx, connInfo, catalogPathFor(path), plugin.ReadOptions{})
-	if err != nil {
-		return err
+	var info *format.MediaDescribeResult
+	if multi, ok := provider.(format.MultiMediaInfoProvider); ok && item.Layout == format.LayoutMulti {
+		reader := contentadapter.NewMappedReader(contentReader, connInfo, func(ref contentio.Ref) (plugin.EngineCatalogPath, error) {
+			return catalogPathFor(ref.Path), nil
+		}, plugin.ReadOptions{})
+		info, err = multi.DescribeMultiMedia(ctx, reader, item.RelatedRefs(), nil)
+	} else {
+		rc, openErr := contentReader.OpenContent(ctx, connInfo, catalogPathFor(path), plugin.ReadOptions{})
+		if openErr != nil {
+			return openErr
+		}
+		defer rc.Close()
+		info, err = provider.DescribeMedia(ctx, rc, nil)
 	}
-	defer rc.Close()
-
-	info, err := provider.DescribeMedia(ctx, rc, nil)
 	if err != nil {
 		return err
 	}
