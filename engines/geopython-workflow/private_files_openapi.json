@@ -120,7 +120,8 @@
               }
             }
           }
-        }
+        },
+        "x-addp-auth-mode": "permission"
       },
       "get": {
         "summary": "读取原执行私有观察 / Read private execution observations",
@@ -214,7 +215,8 @@
               }
             }
           }
-        }
+        },
+        "x-addp-auth-mode": "permission"
       },
       "delete": {
         "summary": "终止并清理本执行 / Stop and clean this execution",
@@ -318,7 +320,8 @@
               }
             }
           }
-        }
+        },
+        "x-addp-auth-mode": "permission"
       }
     },
     "/api/private-files/{runtime_execution_id}/inputs/{index}": {
@@ -476,7 +479,8 @@
               }
             }
           }
-        }
+        },
+        "x-addp-auth-mode": "permission"
       }
     },
     "/api/private-files/{runtime_execution_id}/outputs/{index}": {
@@ -601,7 +605,8 @@
               }
             }
           }
-        }
+        },
+        "x-addp-auth-mode": "permission"
       }
     },
     "/api/workflow": {
@@ -707,7 +712,8 @@
               }
             }
           }
-        }
+        },
+        "x-addp-auth-mode": "permission"
       }
     },
     "/api/executions/{execution_id}": {
@@ -814,7 +820,8 @@
               }
             }
           }
-        }
+        },
+        "x-addp-auth-mode": "permission"
       }
     }
   },

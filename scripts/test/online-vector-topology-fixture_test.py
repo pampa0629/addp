@@ -247,6 +247,30 @@ class TopologyFixtureTest(unittest.TestCase):
             value = copy.deepcopy(original); mutate(value)
             with self.subTest(mutate=mutate), self.assertRaises(m.FixtureError): m.validate_snap_features(value)
 
+    def test_file_seed_archives_sources_and_complete_oracle_before_business(self):
+        with tempfile.TemporaryDirectory() as directory:
+            base=Path(directory);root=base/'root';root.mkdir();(root/'outputs').mkdir()
+            secret=base/'secret';secret.mkdir();artifacts=base/'artifacts';artifacts.mkdir()
+            result={'sources':{},'source_tables':{}}
+            for name in m.DIFFERENCE_SOURCES:
+                (root/name).write_bytes(name.encode())
+                result['sources'][name]=m.digest(root/name)
+                result['source_tables'][name]={'features':[{'geometry':{'type':'Point','coordinates':[1,2]},'properties':{'value':None}}], 'geometry_column':'actual_shape','source_crs':'EPSG:3857',**m.digest(root/name)}
+            env={'ADDP_ONLINE_ARTIFACT_DIR':str(artifacts),'ADDP_ONLINE_TEST_RUN_ID':'topology-123-1','ADDP_ONLINE_TOPOLOGY_CASE':m.DIFFERENCE_CASE}
+            with patch.dict(os.environ,env),patch.object(m,'NFSExport')as export,patch.object(m,'runtime_worker',return_value=result)as worker:
+                export.return_value.guard.return_value=secret
+                export.return_value.owned_root.return_value=root
+                self.assertEqual(m.main('seed'),result)
+                worker.assert_called_once_with('seed',root)
+            preflight=json.loads((artifacts/'topology-source-preflight.json').read_text())
+            self.assertEqual(preflight['source_tables'],result['source_tables'])
+            self.assertEqual((preflight['case'],preflight['stage'],preflight['owned_root']),(m.DIFFERENCE_CASE,'seed_before_business',str(root)))
+            self.assertNotIn('targets',preflight)
+            for name in m.DIFFERENCE_SOURCES:
+                (root/name).unlink()
+                self.assertEqual((artifacts/'topology-physical'/name).read_bytes(),name.encode())
+            self.assertFalse(list((artifacts/'topology-physical'/'outputs').iterdir()))
+
     def test_physical_archive_retains_verified_bytes_and_refuses_changed_evidence(self):
         with tempfile.TemporaryDirectory() as directory:
             base=Path(directory);root=base/'root';root.mkdir();(root/'outputs').mkdir()

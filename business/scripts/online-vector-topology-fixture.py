@@ -820,7 +820,10 @@ def mixed_overlay_worker(action,root,case):
     if action=='seed':
         if any((root/n).exists()for n in names)or list((root/'outputs').iterdir()):raise FixtureError('refusing existing mixed fixture')
         for name,kind in zip(names,profile['kinds']):seed_mixed_overlay(root/name,kind,case)
-        return {'sources':{name:digest(root/name)for name in names}}
+        result={'sources':{name:digest(root/name)for name in names}}
+        if case in FILE_PUBLICATION_CASES:
+            result['source_tables']={name:verify_mixed_overlay(root/name,kind,case)for name,kind in zip(names,profile['kinds'])}
+        return result
     if action!='verify':raise FixtureError('unknown mixed fixture action')
     inventory=['.addp-online-owner','outputs',*names]
     if case in FILE_PUBLICATION_CASES:
@@ -2529,10 +2532,12 @@ def runtime_worker(action, root):
     return json.loads(command(['docker', 'exec', '-i', RUNTIME, 'python', '-', '--worker', action, str(root), topology_case()], input=Path(__file__).read_text()))
 
 
-def archive_physical_evidence(root, directory, result, case=None):
+def archive_physical_evidence(root, directory, result, case=None, *, sources_only=False):
     """Retain only this synthetic fixture's verified bytes for offline audit."""
     case=topology_case() if case is None else topology_case({'ADDP_ONLINE_TOPOLOGY_CASE':case})
     sources,targets=(ADJACENCY_SOURCES,(ADJACENCY_TARGET,)) if case==ADJACENCY_CASE else (VERTICES_SOURCES,VERTICES_TARGETS) if case==VERTICES_CASE else (DIFFERENCE_SOURCES,(DIFFERENCE_TARGET,)) if case==DIFFERENCE_CASE else (DISSOLVE_SOURCES,tuple(result["targets"])) if case==DISSOLVE_CASE else (OVERLAY_SOURCES,(OVERLAY_TARGET,)) if case==OVERLAY_CASE else (NODES_SOURCES,NODES_TARGETS) if case==NODES_CASE else (TRIM_SOURCES,TRIM_TARGETS) if case==TRIM_CASE else (RINGS_DIAGNOSTIC_SOURCES,()) if case==RINGS_DIAGNOSTIC_CASE else (RINGS_SOURCES,(RINGS_TARGET,)) if case==RINGS_CASE else (ENDPOINT_SOURCES,ENDPOINT_TARGETS) if case==ENDPOINT_CASE else (EXTENSION_SOURCES,EXTENSION_TARGETS) if case==EXTENSION_CASE else (PROXIMITY_SOURCES,(PROXIMITY_TARGET,)) if case==PROXIMITY_CASE else (DIAGNOSTIC_SOURCES,()) if case==DIAGNOSTIC_CASE else (BUFFER_SOURCES,BUFFER_TARGETS) if case==BUFFER_CASE else ((network_profile(case)['source'],),network_profile(case)['targets']) if case in (NORMALIZE_CASE,COMPOSITION_CASE) else (SOURCES,TARGETS)
+    if sources_only:
+        targets=()
     archive = directory / 'topology-physical'
     if archive.is_symlink() or (archive/'outputs').is_symlink():
         raise FixtureError('physical archive must not follow symlinks')
@@ -2562,6 +2567,12 @@ def main(action):
     baseline = secret / 'topology-source.json'
     if action == 'seed':
         baseline.write_text(json.dumps(result))
+        if case in FILE_PUBLICATION_CASES:
+            directory=Path(os.environ['ADDP_ONLINE_ARTIFACT_DIR'])
+            archive_physical_evidence(root,directory,result,case,sources_only=True)
+            (directory/'topology-source-preflight.json').write_text(json.dumps({
+                'schema_version':'addp.topology-source-preflight/v1','case':case,'run_id':run_id,
+                'owned_root':str(root),'result':'prepared','stage':'seed_before_business',**result},ensure_ascii=False,indent=2)+'\n')
     elif result['sources'] != json.loads(baseline.read_text())['sources']:
         raise FixtureError('source file changed')
     else:

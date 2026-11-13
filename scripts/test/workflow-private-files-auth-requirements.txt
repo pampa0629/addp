@@ -1,0 +1,2 @@
+# Match the Runtime HTTP dependency; spatial operators are not loaded by an authentication probe.
+flask==3.0.0

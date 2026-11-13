@@ -307,3 +307,11 @@ ADDP_SYSTEM_POSTGRES_TEST_DSN='postgres://.../addp_iam_test?...' make test-syste
 既有 `develop.file_execution.read` 仅向 `tenant.system_runtime` 发布，角色只允许 `service_principal`，接口另限定当前同租户 `addp-system` Client。新前向迁移为既有角色增加这一项 Permission，不修改已应用的 000274 定义迁移，不新建角色分配，不给人员角色、其他 Runtime、Platform Scope 或数据资源增权。新租户沿原运行角色初始化取得同一能力，无需逐租户补权限。现有 Role Permission 触发器推进受影响机器主体授权版本，迁移撤销旧 Token Family；不手工重复增加授权版本，不修改普通用户版本／会话。
 
 验证必须同时覆盖从已应用版本向前升级、空库迁移、重复执行不重复发布、新租户角色初始化、原普通用户／Grant 不变及旧机器凭据失效。使用真实 OAuth client_credentials 与 AuthContext、共享固定 Client／Permission Guard 验证 System 事实读取资格；伪造含 Permission 的 AuthContext 只能证明路由组件，不能证明目录发布完整。Owner 事实、来源 read Grant、计算及真实 T4 分别验证，标准门禁不等于业务验收。
+
+### Workflow 私有文件机器入口（2026-11-13）
+
+System 发布既有协议要求的 `system.workflow_private_files.execute`，Tenant、低风险、不可定制、不可委托，仅授予固定 `tenant.develop_runtime`（只允许 `service_principal`）。这是原 EA 约束下的 Runtime 私有文件交换及执行入口资格，不授予业务源读取、目标创建或任意算子效果；实际源 Grant、原 EA/Scope、租约、期限及单次发布批准继续独立核验。Runtime 仍逐次要求当前同 Tenant、固定 `addp-develop` Client 和原私有执行创建主体，拒绝 User、委托及其他服务，不缓存旧 Allow。
+
+新前向迁移 000293 只定义该 Permission 并绑定既有运行角色，不增加角色分配、人员权限或资源 Grant，不修改已应用迁移。原 Role Permission 触发器推进受影响机器主体授权版本，并撤其旧 Token Family；新租户沿原初始化取得同一角色资格。升级/空库/重复执行及旧机器凭据失效由标准 System IAM PostgreSQL 门禁覆盖。真实 OAuth 与 AuthContext 必须连接到实际 GeoPython PrivateFileAPI 守卫验证，手工注入权限的单测不能证明发布接线。
+
+私有文件机器权限的实际消费者覆盖读取已有 `engines/geopython-workflow/private_files_openapi.json`，其七个私有模式操作与 System Permission 目录一起核验；不是 System 代理路由、占位 Swagger 或未引用权限豁免。Runtime 组件测试同时核对真实路由、该 OpenAPI 及当前守卫。

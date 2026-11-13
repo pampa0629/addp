@@ -13,7 +13,6 @@ from flask import Response, jsonify, request, stream_with_context
 
 from addp_common.auth import resolve_authorization_context
 from addp_common.workflow_runtime import ExecutionSnapshot, WorkflowValidationError, validate_execution_authorization
-from operators import OPERATORS
 from private_files import FileManifest, PrivateFileError, PrivateFiles
 
 
@@ -58,9 +57,9 @@ class PrivateFileAPI:
             raise PrivateFileError("PRIVATE_FILES_AUTH_UNAVAILABLE", 503) from None
         if context.expires_at <= datetime.now(timezone.utc):
             raise PrivateFileError("PRIVATE_FILES_UNAUTHENTICATED", 401)
-        if (context.principal_type != "service" or context.context_type != "tenant" or
+        if (context.principal_type != "service_principal" or context.context_type != "tenant" or
                 context.tenant_id is None or context.client_id != "addp-develop" or
-                context.token_type != "first_party_access_token" or "addp.api" not in context.audiences or
+                context.token_type != "service_access_token" or "addp.api" not in context.audiences or
                 "system.workflow_private_files.execute" not in context.permissions):
             raise PrivateFileError("PRIVATE_FILES_FORBIDDEN", 403)
         return str(context.principal_id), str(context.tenant_id)
@@ -144,6 +143,7 @@ class PrivateFileAPI:
         runtime_id = runtime["private_files"]["execution_id"]
         files = self.lookup(runtime_id, creator)
         workflow = json.loads(files.manifest.workflow_json)
+        from operators import OPERATORS
         try:
             validate_execution_authorization(workflow, operator_effects={
                 key: ["read"] if key in {"load", "save"} else op["effects"] for key, op in OPERATORS.items()},

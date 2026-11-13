@@ -102,6 +102,18 @@ func BuildRepositoryAuthorizationCoverageReport(repositoryRoot string, catalog A
 		}
 	}
 
+	// This System-owned machine Permission is consumed directly by the Workflow
+	// Runtime. Validate its existing real OpenAPI, rather than invent a System
+	// endpoint or exempt the Permission from the reference closure.
+	if _, published := permissionCatalog["system.workflow_private_files.execute"]; published {
+		source, referenced, issues := inspectOpenAPIDocument(root, "system", "engines/geopython-workflow/private_files_openapi.json", permissionCatalog)
+		report.OpenAPI = append(report.OpenAPI, source)
+		report.Issues = append(report.Issues, issues...)
+		for key := range referenced {
+			referencedPermissions[key] = struct{}{}
+		}
+	}
+
 	toolSource, tools, toolIssues := inspectToolManifest(root, ownerCatalog, permissionCatalog)
 	report.ToolManifest = toolSource
 	report.Issues = append(report.Issues, toolIssues...)
@@ -151,6 +163,10 @@ func inspectOwnerOpenAPI(root, owner string, permissions map[string]PermissionDe
 	if _, python := pythonPermissionOwners[owner]; python {
 		relativePath = filepath.ToSlash(filepath.Join(owner, "backend", "openapi.json"))
 	}
+	return inspectOpenAPIDocument(root, owner, relativePath, permissions)
+}
+
+func inspectOpenAPIDocument(root, owner, relativePath string, permissions map[string]PermissionDescriptor) (OpenAPICoverageSource, map[string]struct{}, []AuthorizationCoverageIssue) {
 	source := OpenAPICoverageSource{OwnerModule: owner, Path: relativePath, Status: "available"}
 	data, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(relativePath)))
 	if err != nil {
@@ -411,6 +427,9 @@ func toolIssue(code string, tool toolManifestDefinition, sourcePath, detail stri
 
 func canonicalizeAuthorizationCoverageReport(report *AuthorizationCoverageReport) {
 	sort.Slice(report.OpenAPI, func(i, j int) bool {
+		if report.OpenAPI[i].OwnerModule == report.OpenAPI[j].OwnerModule {
+			return report.OpenAPI[i].Path < report.OpenAPI[j].Path
+		}
 		return report.OpenAPI[i].OwnerModule < report.OpenAPI[j].OwnerModule
 	})
 	sort.Slice(report.Issues, func(i, j int) bool {

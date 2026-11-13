@@ -175,7 +175,7 @@ Runtime 只在全部输入完整核验后启动本次执行专用的可终止工
 
 ### 首期私有传输接口
 
-以下端点仅接受 System 当前 AuthContext 确认的 Tenant Service Principal、固定 client `addp-develop` 及 `system.workflow_private_files.execute`。逐次验证同一创建主体与 Tenant；用户 Token、委托 Token、其他服务及调用方自报身份不具备此用途。System 无法确认身份时拒绝，不缓存旧 Allow。`runtime_execution_id` 是 Owner 在发起传输前持久化的本次 Runtime UUID；它与原 Owner execution UUID 分别绑定，不从节点名或业务路径派生。
+以下端点仅接受 System 当前 AuthContext 确认的 Tenant Service Principal、固定 client `addp-develop` 及 `system.workflow_private_files.execute`。该既有机器 Permission 由 System 正式发布，前向迁移仅绑定 `tenant.develop_runtime`，规范身份字段为 `principal.type=service_principal`、`token.type=service_access_token`，不接受历史别名或普通第一方 User Token。不向 User、其他服务或 Platform Scope 发布；它不替代源 read Grant、原 EA/Scope 或成果单次批准。逐次验证同一创建主体与 Tenant；用户 Token、委托 Token、其他服务及调用方自报身份不具备此用途。System 无法确认身份时拒绝，不缓存旧 Allow。`runtime_execution_id` 是 Owner 在发起传输前持久化的本次 Runtime UUID；它与原 Owner execution UUID 分别绑定，不从节点名或业务路径派生。
 
 | 方法与路径 | 请求与结果 |
 | --- | --- |

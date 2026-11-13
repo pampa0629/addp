@@ -2784,7 +2784,7 @@ class DifferenceOnlineTest(unittest.TestCase):
         client=DifferenceClient();report=self.run_case(client)
         stages=[row['stage'] for row in report['publication']['stages']]
         self.assertEqual(stages[:3],['source_basic_identified','source_read_granted','source_deep_inspected'])
-        self.assertEqual(stages[15:20],['approval_intent','approval_confirmed','result_basic_identified','result_initial_read_granted','result_deep_inspected'])
+        self.assertEqual(stages[15:22],['before_business_submit','execution_submitted','approval_intent','approval_confirmed','result_basic_identified','result_initial_read_granted','result_deep_inspected'])
         self.assertEqual(stages[-3:],['source_grants_revoked','materialized_result_still_readable','all_grants_revoked'])
         self.assertEqual(report['publication']['pending_grants'],[])
         self.assertEqual(len(report['publication']['preparation_scan_inventory']),11)
@@ -2792,6 +2792,46 @@ class DifferenceOnlineTest(unittest.TestCase):
         self.assertEqual(len([1 for method,path,_ in client.issuer.calls if method=='POST' and path.endswith('/access_grants')]),5)
         self.assertTrue(all(row['revocation'] is not None for row in client.grants.values()))
         self.assertNotIn('meta_scan_runs',report['execution']['metadata'])
+
+    def test_difference_first_submit_failure_keeps_identity_range_and_sources_without_retry(self):
+        client=DifferenceClient();original=client.request;attempts=[]
+        def request(method,path,expected=(200,),body=None):
+            if method=='POST' and path.endswith('/develop/executions'):
+                journal=json.loads((Path(self.directory.name)/'topology-difference-publication.json').read_text())
+                before=journal['stages'][-1]
+                self.assertEqual(before['stage'],'before_business_submit')
+                self.assertEqual(before['identity']['principal_id'],'33')
+                self.assertEqual(before['auth_context']['principal']['id'],'33')
+                self.assertEqual(len(before['sources']),5)
+                self.assertEqual(before['definition'],m.difference_definition(client.locators,'addp://engine/3/path/outputs?type=directory'))
+                self.assertIsNone(before['execution_id'])
+                attempts.append(body)
+                raise m.SuiteError('first submit unavailable')
+            return original(method,path,expected,body)
+        client.request=request
+        with self.assertRaisesRegex(m.SuiteError,'first submit unavailable'):self.run_case(client)
+        self.assertEqual(len(attempts),1)
+        journal=json.loads((Path(self.directory.name)/'topology-difference-publication.json').read_text())
+        self.assertEqual(journal['result'],'incomplete')
+        self.assertIn('business_failed',[row['stage']for row in journal['stages']])
+        self.assertNotIn('execution_submitted',[row['stage']for row in journal['stages']])
+        self.assertEqual(journal['pending_grants'],[])
+        self.assertTrue(all(row['revocation']is not None for row in client.grants.values()))
+        self.assertNotIn('initializer-test-token',json.dumps(journal))
+
+    def test_difference_records_returned_execution_before_approval_or_wait(self):
+        client=DifferenceClient();original=client.issuer.request
+        def request(method,path,expected=(200,),body=None):
+            if path.endswith('/create-approval-context'):
+                journal=json.loads((Path(self.directory.name)/'topology-difference-publication.json').read_text())
+                self.assertEqual(journal['stages'][-1],dict(stage='execution_submitted',execution_id=client.run_id,failure=None))
+            return original(method,path,expected,body)
+        client.issuer.request=request
+        report=self.run_case(client)
+        submitted=[row for row in report['publication']['stages']if row['stage']=='execution_submitted']
+        self.assertEqual(len(submitted),5)
+        self.assertEqual(submitted[0]['execution_id'],report['execution_id'])
+        self.assertEqual([row['failure']for row in submitted[1:]],[spec[0]for spec in m.fixture.DIFFERENCE_FAILURES])
 
     def test_difference_context_mismatch_never_approves_or_leaks_and_revokes_sources(self):
         registration=importlib.import_module('scripts.test.online-engine-registration')
@@ -3126,7 +3166,7 @@ class AdjacencyOnlineTest(unittest.TestCase):
         self.assertEqual((publication['schema_version'],publication['case'],publication['result']),('addp.polygon-adjacency-publication/v1',m.fixture.ADJACENCY_CASE,'passed'))
         stages=[r['stage']for r in publication['stages']]
         self.assertEqual(stages[:15],['source_basic_identified','source_read_granted','source_deep_inspected']*5)
-        self.assertEqual(stages[15:20],['approval_intent','approval_confirmed','result_basic_identified','result_initial_read_granted','result_deep_inspected'])
+        self.assertEqual(stages[15:22],['before_business_submit','execution_submitted','approval_intent','approval_confirmed','result_basic_identified','result_initial_read_granted','result_deep_inspected'])
         self.assertEqual(stages[-3:],['source_grants_revoked','materialized_result_still_readable','all_grants_revoked'])
         self.assertEqual(len(publication['preparation_scan_inventory']),11)
         self.assertEqual(report['initial_scan_inventory'],[]);self.assertEqual(report['final_scan_inventory'],['overlay-output-scan'])

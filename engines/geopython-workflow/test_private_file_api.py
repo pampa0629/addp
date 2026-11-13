@@ -31,8 +31,9 @@ def private_api(tmp_path, monkeypatch):
     app.add_url_rule("/api/workflow", view_func=api_server.execute_workflow_api, methods=["POST"])
     app.add_url_rule("/api/executions/<execution_id>", view_func=api_server.get_execution_status)
     context = AuthorizationContext(
-        principal_id=71, principal_type="service", context_type="tenant", tenant_id=2,
-        client_id="addp-develop", authentication_methods=("client_secret",),
+        principal_id=71, principal_type="service_principal", context_type="tenant", tenant_id=2,
+        token_type="service_access_token",
+        client_id="addp-develop", authentication_methods=("service_secret",),
         expires_at=datetime.now(timezone.utc) + timedelta(minutes=5),
         role_assignments=(RoleAssignment(8, "tenant.develop_runtime", "tenant",
                                         ("system.workflow_private_files.execute",), 2),))
@@ -135,11 +136,12 @@ def test_private_files_api_does_not_downgrade_public_save_business_effect(privat
     assert api._files == {}
 
 
-@pytest.mark.parametrize("change", ["user", "platform", "client", "permissions", "delegated", "audience", "expired"])
+@pytest.mark.parametrize("change", ["user", "platform", "client", "permissions", "delegated", "audience", "expired", "legacy_service", "user_token"])
 def test_private_files_api_requires_current_tenant_develop_service(private_api, tmp_path, change):
     client, api, state, headers = private_api
     raw, _ = _manifest(tmp_path)
-    changes = {"user": {"principal_type": "user"}, "platform": {"context_type": "platform", "tenant_id": None},
+    changes = {"legacy_service": {"principal_type": "service"}, "user_token": {"token_type": "first_party_access_token"},
+               "user": {"principal_type": "user"}, "platform": {"context_type": "platform", "tenant_id": None},
                "client": {"client_id": "addp-geopython"}, "permissions": {"role_assignments": ()},
                "delegated": {"token_type": "delegated_access_token"}, "audience": {"audiences": ("other",)},
                "expired": {"expires_at": datetime.now(timezone.utc) - timedelta(seconds=1)}}
@@ -237,6 +239,7 @@ def test_private_files_api_openapi_covers_all_owned_routes_and_machine_permissio
     assert operations == routes
     for path, method in operations:
         op = spec["paths"][path][method]
+        assert op["x-addp-auth-mode"] == "permission"
         assert op["security"] == [{"ServiceBearer": []}]
         assert op["x-addp-required-permissions"] == ["system.workflow_private_files.execute"]
     manifest = spec["components"]["schemas"]["Manifest"]

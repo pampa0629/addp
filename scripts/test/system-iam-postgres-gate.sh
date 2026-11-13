@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # ADDP_T2_SERVICES=postgres
 # ADDP_T2_REQUIRED_ENV=ADDP_SYSTEM_POSTGRES_TEST_DSN
-# ADDP_T2_INPUT_FILES=.node-version .github/actions/prepare-frontend-gate/ scripts/utils/node-runtime.sh scripts/test/system-iam-postgres-gate_test.py scripts/test/system-iam-browser-login.mjs console/frontend/e2e/online/local-identity-support.mjs workbench/frontend/src/ workbench/frontend/public/ workbench/frontend/index.html workbench/frontend/vite.config.js workbench/frontend/package.json workbench/frontend/package-lock.json workbench/frontend/e2e/fixtures/metricApplication.js portal/frontend/src/ portal/frontend/public/ portal/frontend/index.html portal/frontend/vite.config.js portal/frontend/package.json portal/frontend/package-lock.json common-frontend/basic/src/ common-frontend/chart/src/ common-frontend/map/src/ scripts/utils/deployment-inventory.py scripts/utils/metrics-project.py
+# ADDP_T2_INPUT_FILES=.github/actions/prepare-python-gate/ common-python/ engines/geopython-workflow/private_file_api.py engines/geopython-workflow/private_files.py engines/geopython-workflow/private_execution.py scripts/test/workflow-private-files-auth-probe.py scripts/test/workflow-private-files-auth-requirements.txt .node-version .github/actions/prepare-frontend-gate/ scripts/utils/node-runtime.sh scripts/test/system-iam-postgres-gate_test.py scripts/test/system-iam-browser-login.mjs console/frontend/e2e/online/local-identity-support.mjs workbench/frontend/src/ workbench/frontend/public/ workbench/frontend/index.html workbench/frontend/vite.config.js workbench/frontend/package.json workbench/frontend/package-lock.json workbench/frontend/e2e/fixtures/metricApplication.js portal/frontend/src/ portal/frontend/public/ portal/frontend/index.html portal/frontend/vite.config.js portal/frontend/package.json portal/frontend/package-lock.json common-frontend/basic/src/ common-frontend/chart/src/ common-frontend/map/src/ scripts/utils/deployment-inventory.py scripts/utils/metrics-project.py
 # system-iam-postgres-gate.sh - Run destructive System IAM tests against a disposable PostgreSQL database.
 
 set -euo pipefail
@@ -33,6 +33,7 @@ while [ "$#" -gt 0 ]; do
             echo "Platform alert publication: --package migration --test platform-alert-management" >&2
             echo "Production result identity migration: --package migration --test production-results" >&2
             echo "Focused authorization-relation migration: --package migration --test source-grant-relations" >&2
+            echo "Workflow private files Runtime: --package migration|api --test workflow-private-files" >&2
             echo "Develop frozen file facts runtime: --package migration|api --test develop-file-runtime" >&2
             echo "Authorization facts: --package migration|api --test authorization-facts" >&2
             echo "Graph protection runtime: --package migration --test graph-protection-runtime" >&2
@@ -187,6 +188,13 @@ run_without_skips() {
             exit 1
         }
     fi
+    if [ "$TEST_FILTER" = workflow-private-files ] && { [ "$package" = ./internal/migration ] || [ "$package" = ./internal/api ]; }; then
+        case "$package" in
+            ./internal/migration) required_test=TestWorkflowPrivateFilesRuntimeForwardMigrationAgainstPostgres ;;
+            ./internal/api) required_test=TestWorkflowPrivateFilesRuntimeAuthAgainstPostgres ;;
+        esac
+        grep -q -- "^--- PASS: $required_test " "$log_path" || { echo "PostgreSQL gate requires real Workflow private files Runtime PASS in $package" >&2; exit 1; }
+    fi
     if [ "$TEST_FILTER" = develop-file-runtime ] && { [ "$package" = ./internal/migration ] || [ "$package" = ./internal/api ]; }; then
         case "$package" in
             ./internal/migration) required_test=TestDevelopFileExecutionRuntimeForwardMigrationAgainstPostgres ;;
@@ -269,6 +277,13 @@ case "$TEST_FILTER" in
     develop-file-definition)
         [ "$PACKAGE_FILTER" = migration ] || { echo "develop-file-definition requires --package migration" >&2; exit 2; }
         test_pattern='^Test(DevelopFileReadPermissionDefinition|Runner)AgainstPostgres$'
+        ;;
+    workflow-private-files)
+        case "$PACKAGE_FILTER" in
+            migration) test_pattern='^TestWorkflowPrivateFilesRuntimeForwardMigrationAgainstPostgres$' ;;
+            api) test_pattern='^TestWorkflowPrivateFilesRuntimeAuthAgainstPostgres$' ;;
+            *) echo "workflow-private-files requires --package migration or api" >&2; exit 2 ;;
+        esac
         ;;
     develop-file-runtime)
         case "$PACKAGE_FILTER" in
@@ -702,6 +717,13 @@ case "$TEST_FILTER" in
         exit 2
         ;;
 esac
+# The default API gate also runs the actual Python Runtime authentication probe.
+# T1 Go runs may skip this cross-language integration; a selected T2 may not.
+if { [ -z "$TEST_FILTER" ] || [ "$TEST_FILTER" = workflow-private-files ]; } && { [ -z "$PACKAGE_FILTER" ] || [ "$PACKAGE_FILTER" = api ]; }; then
+    export ADDP_WORKFLOW_PRIVATE_FILES_PYTHON="${ADDP_WORKFLOW_PRIVATE_FILES_PYTHON:-$SOURCE_ROOT/engines/geopython-workflow/venv/bin/python}"
+    [ -x "$ADDP_WORKFLOW_PRIVATE_FILES_PYTHON" ] || { echo "Workflow private files T2 requires the standard GeoPython Python environment (or ADDP_WORKFLOW_PRIVATE_FILES_PYTHON)" >&2; exit 1; }
+fi
+
 for package in "${packages[@]}"; do
     run_without_skips "$package" "$test_pattern"
     if [ "$TEST_FILTER" = manager-search ]; then

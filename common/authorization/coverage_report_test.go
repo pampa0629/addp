@@ -1,6 +1,7 @@
 package authorization
 
 import (
+	"bytes"
 	"os"
 	"path/filepath"
 	"testing"
@@ -24,6 +25,57 @@ func TestOntologyRequiresItsOwnOpenAPI(t *testing.T) {
 	_, _, issues = inspectOwnerOpenAPI(root, "manager", nil)
 	if len(issues) != 1 || issues[0].Code != "missing_openapi_document" {
 		t.Fatal("other missing API was exempted")
+	}
+}
+
+func TestPrivateFilesPermissionRequiresActualRuntimeOpenAPI(t *testing.T) {
+	root := t.TempDir()
+	writeCoverageFixture(t, root, "system/backend/docs/swagger.json", `{"paths":{}}`)
+	writeCoverageFixture(t, root, "common-python/addp_common/tools/manifest.json", `{"tools":[]}`)
+	catalog := AuthorizationCatalogReport{
+		SchemaVersion:       AuthorizationCatalogReportSchemaVersion,
+		PermissionManifests: []PermissionManifestReference{{OwnerModule: "system", Path: "system/authorization/permissions.yaml"}},
+		Permissions:         []PermissionDescriptor{{Key: "system.workflow_private_files.execute", OwnerModule: "system", Status: "active"}},
+	}
+	report, err := BuildRepositoryAuthorizationCoverageReport(root, catalog)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.Complete {
+		t.Fatal("System Swagger alone hid the missing actual Runtime consumer")
+	}
+	path := "engines/geopython-workflow/private_files_openapi.json"
+	actual, err := os.ReadFile(filepath.Join(testRepositoryRoot(t), path))
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeCoverageFixture(t, root, path, string(actual))
+	report, err = BuildRepositoryAuthorizationCoverageReport(root, catalog)
+	if err != nil || !report.Complete {
+		t.Fatalf("actual Runtime coverage: %v %+v", err, report.Issues)
+	}
+	found := false
+	for _, source := range report.OpenAPI {
+		if source.Path == path {
+			found = source.OwnerModule == "system" && source.OperationCount == 7 && source.DeclaredAuthOperationCount == 7
+		}
+	}
+	if !found {
+		t.Fatal("seven actual Runtime operations were not checked")
+	}
+	canonical, err := MarshalAuthorizationCoverageReport(report)
+	if err != nil {
+		t.Fatal(err)
+	}
+	report.OpenAPI[0], report.OpenAPI[1] = report.OpenAPI[1], report.OpenAPI[0]
+	reordered, err := MarshalAuthorizationCoverageReport(report)
+	if err != nil || !bytes.Equal(canonical, reordered) {
+		t.Fatal("multiple real consumers of one Permission owner lost canonical ordering", err)
+	}
+	writeCoverageFixture(t, root, path, `{"paths":{"/api/private-files/{id}":{"get":{}}}}`)
+	report, err = BuildRepositoryAuthorizationCoverageReport(root, catalog)
+	if err != nil || report.Complete {
+		t.Fatal("undeclared actual Runtime guard bypassed reference coverage", err)
 	}
 }
 

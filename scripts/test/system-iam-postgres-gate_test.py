@@ -78,6 +78,12 @@ if "^TestResetDisposablePostgresForGate$" in sys.argv:
 if "./internal/migration" in sys.argv and "^Test(DevelopFileReadPermissionDefinition|Runner)AgainstPostgres$" in sys.argv:
     print("--- PASS: TestDevelopFileReadPermissionDefinitionAgainstPostgres (0.01s)")
     print("--- PASS: TestRunnerAgainstPostgres (0.01s)")
+for package, name in (("migration", "TestWorkflowPrivateFilesRuntimeForwardMigrationAgainstPostgres"), ("api", "TestWorkflowPrivateFilesRuntimeAuthAgainstPostgres")):
+    if "./internal/" + package in sys.argv and "^" + name + "$" in sys.argv:
+        result = os.environ.get("TEST_GO_WORKFLOW_PRIVATE_RESULT", "pass")
+        if result == "pass": print("--- PASS: " + name + " (0.01s)")
+        elif result == "skip": print("--- SKIP: " + name + " (0.01s)")
+        elif result == "wrong": print("--- PASS: " + name + "Extra (0.01s)")
 for package, name in (("migration", "TestDevelopFileExecutionRuntimeForwardMigrationAgainstPostgres"), ("api", "TestDevelopFileRuntimeAuthContextAgainstPostgres")):
     if "./internal/" + package in sys.argv and "^" + name + "$" in sys.argv:
         result = os.environ.get("TEST_GO_FILE_RUNTIME_RESULT", "pass")
@@ -142,6 +148,7 @@ elif args[:2] != ["volume", "ls"]:
         self.environment = dict(os.environ, PATH=f"{bin_dir}:{os.environ['PATH']}",
                                 TMPDIR=str(self.root),
                                 ADDP_SYSTEM_POSTGRES_TEST_DSN="postgres://fixture/addp_iam_test",
+                                ADDP_WORKFLOW_PRIVATE_FILES_PYTHON=shutil.which("python3"),
                                 GITHUB_ACTIONS="true",
                                 TEST_DOCKER_STATE=str(self.root / "docker-state"), TEST_DOCKER_REMOVED=str(self.root / "docker-removed"),
                                 TEST_STARTED=str(self.started), TEST_RELEASE=str(self.release), TEST_GO_CWD=str(self.root / "cwd-trace"))
@@ -457,6 +464,19 @@ elif args[:2] != ["volume", "ls"]:
         for value in ("missing", "skip", "wrong"):
             result = self.run_gate(arguments=("--package", "iam", "--test", "develop-file-authorization"), TEST_GO_DEVELOP_FILE_RESULT=value)
             self.assertNotEqual(result.returncode, 0)
+
+    def test_workflow_private_files_requires_real_runtime_and_migration_pass(self):
+        for package, name in (("migration", "TestWorkflowPrivateFilesRuntimeForwardMigrationAgainstPostgres"), ("api", "TestWorkflowPrivateFilesRuntimeAuthAgainstPostgres")):
+            result = self.run_gate(arguments=("--package", package, "--test", "workflow-private-files"))
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn("./internal/" + package + " -run ^" + name + "$", (self.root / "trace-1").read_text())
+            for value in ("missing", "skip", "wrong"):
+                result = self.run_gate(arguments=("--package", package, "--test", "workflow-private-files"), TEST_GO_WORKFLOW_PRIVATE_RESULT=value)
+                self.assertNotEqual(result.returncode, 0, value)
+        result = self.run_gate(arguments=("--package", "iam", "--test", "workflow-private-files"))
+        self.assertNotEqual(result.returncode, 0)
+        result = self.run_gate(arguments=("--package", "api", "--test", "workflow-private-files"), ADDP_WORKFLOW_PRIVATE_FILES_PYTHON="/missing/runtime/python")
+        self.assertNotEqual(result.returncode, 0)
 
     def test_develop_file_runtime_requires_real_owner_pass(self):
         for package, name in (("migration", "TestDevelopFileExecutionRuntimeForwardMigrationAgainstPostgres"), ("api", "TestDevelopFileRuntimeAuthContextAgainstPostgres")):

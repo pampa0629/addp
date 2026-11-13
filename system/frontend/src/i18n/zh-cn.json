@@ -898,6 +898,7 @@
           "unit": "计量单位",
           "user": "用户账号",
           "workflow": "工作流",
+          "workflow_private_files": "工作流私有文件",
           "metric_implementation": "指标实现",
           "module_log": "模块运行日志",
           "log_pipeline": "日志链路",

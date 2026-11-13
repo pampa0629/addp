@@ -898,6 +898,7 @@
           "unit": "Unit of Measure",
           "user": "User Account",
           "workflow": "Workflow",
+          "workflow_private_files": "Workflow Private Files",
           "metric_implementation": "Metric implementation",
           "module_log": "Module runtime logs",
           "log_pipeline": "Log pipeline",

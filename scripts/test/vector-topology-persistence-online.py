@@ -835,6 +835,14 @@ class _FilePublication:
         self.record(dict(stage='source_deep_inspected', target=scope, execution_id=deep))
         return deep
 
+    def before_submit(self, identity, engine, runtime, sources, definition, *, failure=None):
+        # Current public identity contains no bearer secret. Preserve the full
+        # requested range before POST, even when no execution UUID is returned.
+        context=self.consumer.request('GET','/api/v1/system/auth/context',(200,)).payload
+        self.record(dict(stage='before_business_submit',identity=identity,auth_context=context,
+                         engine_id=engine,runtime_id=runtime,sources=sources,definition=definition,
+                         failure=failure,execution_id=None,scope_state='not_yet_observed'))
+
     def approve(self, identifier, principal, engine, name):
         self.evidence['execution_id'] = identifier
         self.write()
@@ -934,8 +942,12 @@ def run_mixed_overlay_scenario(repository,env,client,physical_runner,browser_run
     if len(runtimes)!=1:raise SuiteError('mixed overlay requires one product Runtime')
     runtime=positive(runtimes[0]['id'],'Runtime');parent=f'addp://engine/{engine}/path/outputs?type=directory'
     target=f'addp://engine/{engine}/path/outputs/{target_name}?type=file';locators=[s['locator'] for s in sources]
-    workflow=definition(locators,parent);identifier=raster.submit(client,runtime,workflow)
-    if publication:publication.approve(identifier,principal,engine,'outputs/'+target_name)
+    workflow=definition(locators,parent)
+    if publication:publication.before_submit(identity,engine,runtime,sources,workflow)
+    identifier=raster.submit(client,runtime,workflow)
+    if publication:
+        publication.record(dict(stage='execution_submitted',execution_id=identifier,failure=None))
+        publication.approve(identifier,principal,engine,'outputs/'+target_name)
     execution=raster.wait_execution(client,'develop',identifier,remaining())
     if execution.get('execution_id')!=identifier or type(execution.get('triggered_by')) is not int or execution['triggered_by']!=principal:raise SuiteError('mixed overlay execution actor differs')
     if obj(obj(execution.get('execution_config'),'mixed overlay frozen config').get('content'),'mixed overlay content').get('workflow_definition')!=workflow:raise SuiteError('mixed overlay frozen DAG differs')
@@ -985,7 +997,10 @@ def run_mixed_overlay_scenario(repository,env,client,physical_runner,browser_run
     if scan_ids(client)!=expected_scans:raise SuiteError('mixed overlay scan inventory differs before failures')
     for spec in profile['failures']:
         key=spec[0];failed_workflow=definition(locators,parent,key)
-        failed_id=raster.submit(client,runtime,failed_workflow);failed=raster.wait_execution(client,'develop',failed_id,remaining(),expected='failed')
+        if publication:publication.before_submit(identity,engine,runtime,sources,failed_workflow,failure=key)
+        failed_id=raster.submit(client,runtime,failed_workflow)
+        if publication:publication.record(dict(stage='execution_submitted',execution_id=failed_id,failure=key))
+        failed=raster.wait_execution(client,'develop',failed_id,remaining(),expected='failed')
         validate_failure(failed,failed_id,principal,spec)
         if obj(obj(failed.get('execution_config'),'mixed overlay failed config').get('content'),'mixed overlay failed content').get('workflow_definition')!=failed_workflow:raise SuiteError('mixed overlay failed frozen DAG differs')
         failed_monitor=obj(client.request('GET',f'/api/v1/monitor/executions/by-execution-id/{failed_id}',(200,)).payload,'mixed overlay failed Monitor')

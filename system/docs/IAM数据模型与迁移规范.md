@@ -48,6 +48,8 @@ FileGDB 精确源表授权（实施中）：沿用 `execution_authorizations.sou
 
 Owner 事实读取的 `develop.file_execution.read` 仅登记为 Tenant、不可定制／委托的低风险 Permission 定义；迁移 000274 不写 Role Permission、Role Assignment、资源 Grant，不推进现有主体授权版本或撤销 Token。新增目录项本身不赋予 System 服务读取资格。目录／权限关系前后不变由 `make test-system-iam-postgres SYSTEM_IAM_POSTGRES_TEST_ARGS="--package migration --test develop-file-definition"` 验证。原 000274 的定义边界和历史校验保持不变。后续 000291 向既有 `tenant.system_runtime` 发布这一项 Permission，复用原服务成员关系／角色分配，不给人员或其他服务增权；现有触发器推进受影响机器主体授权版本，并撤销其旧 Token Family。新租户沿原角色初始化自动取得同一资格。标准定向验证为 `make test-system-iam-postgres SYSTEM_IAM_POSTGRES_TEST_ARGS="--package migration --test develop-file-runtime"` 与 `--package api --test develop-file-runtime`，并纳入原默认 migration／API 门禁。真实 OAuth 和共享路由守卫证明机器读取资格，Develop Owner 本地事实读写由其原标准门禁证明；真实跨模块 T4 仍另行确认。
 
+000293 正式发布既有私有文件入口契约 `system.workflow_private_files.execute`：只定义 Tenant 低风险、不可定制/委托的 Permission，并绑定既有 `tenant.develop_runtime`。不新建 Assignment、User 权限或数据 Grant。复用 Role Permission 授权版本触发器，并撤旧机器 Token Family；新 Tenant 复用正式初始化。标准入口 `make test-system-iam-postgres SYSTEM_IAM_POSTGRES_TEST_ARGS="--package migration --test workflow-private-files"` 与 `--package api --test workflow-private-files` 验证升级、真实 OAuth/AuthContext 和实际 Python Runtime 守卫；默认 migration/API 门禁自动发现。Python 守卫验证只操作测试请求，不计算业务或部署 Runtime。标准入口默认复用 `engines/geopython-workflow/venv/bin/python`，也可用测试变量 `ADDP_WORKFLOW_PRIVATE_FILES_PYTHON` 指定独立解释器；该解释器仅需 `common-python` 与 `scripts/test/workflow-private-files-auth-requirements.txt`，不需要 GDAL／GeoPandas。CI 同步准备这一最小环境；所选集成测试缺少解释器、依赖或真实 PASS 一律失败，不以 Skip 计通过。
+
 ## 一、事实边界
 
 System 是 ADDP 唯一 IAM 逻辑权威，负责 Principal、账号、认证方式、Tenant Membership、组织关系、Role/Permission、会话、OAuth 协议事实和 IAM 安全审计。

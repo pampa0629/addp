@@ -45,10 +45,13 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 		t.Fatalf("LoadRepositoryAuthorizationCatalog() error = %v", err)
 	}
 	descriptors := report.Permissions
-	if len(descriptors) != 548 {
-		t.Fatalf("descriptor count = %d, want 548", len(descriptors))
+	if len(descriptors) != 549 {
+		t.Fatalf("descriptor count = %d, want 549", len(descriptors))
 	}
 	for _, descriptor := range descriptors {
+		if descriptor.Key == "system.workflow_private_files.execute" && (descriptor.OwnerModule != "system" || descriptor.Action != "execute" || descriptor.Delegable || descriptor.TenantCustomizable || !reflect.DeepEqual(descriptor.AllowedScopeTypes, []string{"tenant"})) {
+			t.Fatal("private Runtime transport permission escaped fixed Tenant machine qualification")
+		}
 		if descriptor.Key == "transfer.cdc_risk_observation.read" && (descriptor.Delegable || descriptor.TenantCustomizable || !reflect.DeepEqual(descriptor.AllowedScopeTypes, []string{"platform"})) {
 			t.Fatal("CDC risk inventory must remain a fixed Platform Service permission")
 		}
@@ -89,6 +92,9 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 			}
 			if key == "system.engine_access_initial_grant.execute" && role.Key != "tenant.transfer_runtime" && role.Key != "tenant.manager_runtime" && role.Key != "tenant.develop_runtime" {
 				t.Fatalf("unexpected initial production runtime role %q", role.Key)
+			}
+			if key == "system.workflow_private_files.execute" && role.Key != "tenant.develop_runtime" {
+				t.Fatalf("unexpected private file Runtime caller %q", role.Key)
 			}
 			if key == "develop.file_execution.read" && role.Key != "tenant.system_runtime" {
 				t.Fatalf("unexpected Develop frozen facts reader %q", role.Key)
@@ -497,6 +503,7 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 		"transfer.task.read",
 		"transfer.task.update",
 	})
+	assertRepositoryRolePrincipalTypes(t, roles, "tenant.develop_runtime", []string{"service_principal"})
 	assertRepositoryRolePermissions(t, roles, "tenant.develop_runtime", []string{
 		"audit.tenant_event.create",
 		"meta.catalog.read",
@@ -509,6 +516,7 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 		"system.engine_descriptor.read",
 		"system.execution_authorization.execute",
 		"system.notebook_session_authorization.execute",
+		"system.workflow_private_files.execute",
 		"transfer.execution.create",
 		"transfer.execution.read",
 	})
