@@ -98,6 +98,17 @@ func safeAlertForRead(alert monitorModels.AlertIncident) monitorModels.AlertInci
 			details["reason"] = reason
 		}
 	}
+
+	if alert.SignalCode == cdcRiskCodes[2] {
+		reason, _ := alert.Details["reason"].(string)
+		if reason == "connector_not_running" || reason == "task_not_running" || reason == "source_disconnected" {
+			details["reason"] = reason
+		}
+		if since, ok := alert.Details["failed_since"].(string); ok {
+			details["failed_since"] = execution.SafeDiagnosticText(since)
+		}
+		details["trigger_seconds"] = cdcCaptureTriggerSeconds
+	}
 	alert.Details = details
 	alert.RuleName = execution.SafeDiagnosticText(alert.RuleName)
 	return alert

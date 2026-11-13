@@ -13,7 +13,7 @@ import (
 	"github.com/addp/common/httptrace"
 )
 
-const TransferCDCRiskSchema = "transfer.cdc_risk_observations/v1"
+const TransferCDCRiskSchema = "transfer.cdc_risk_observations/v2"
 const TransferCDCRiskBatchSize = 100
 
 type CDCRiskObservation struct {
@@ -23,14 +23,23 @@ type CDCRiskObservation struct {
 	ExpiresAt *time.Time `json:"expires_at,omitempty"`
 }
 
+type CDCCaptureObservation struct {
+	State       string     `json:"state"`
+	Reason      string     `json:"reason,omitempty"`
+	FailedSince *time.Time `json:"failed_since"`
+	SampledAt   *time.Time `json:"sampled_at,omitempty"`
+	ExpiresAt   *time.Time `json:"expires_at,omitempty"`
+}
+
 type TransferCDCRiskItem struct {
-	TenantID    uint               `json:"tenant_id"`
-	TaskID      uint               `json:"task_id"`
-	Generation  uint64             `json:"generation,string" swaggertype:"string"`
-	ExecutionID string             `json:"execution_id"`
-	State       string             `json:"state"`
-	Source      CDCRiskObservation `json:"source"`
-	Buffer      CDCRiskObservation `json:"buffer"`
+	Capture     CDCCaptureObservation `json:"capture"`
+	TenantID    uint                  `json:"tenant_id"`
+	TaskID      uint                  `json:"task_id"`
+	Generation  uint64                `json:"generation,string" swaggertype:"string"`
+	ExecutionID string                `json:"execution_id"`
+	State       string                `json:"state"`
+	Source      CDCRiskObservation    `json:"source"`
+	Buffer      CDCRiskObservation    `json:"buffer"`
 }
 
 type TransferCDCRisks struct {
@@ -98,6 +107,19 @@ func (c *TransferClient) ReadCDCRisks(ctx context.Context, afterID uint) (*Trans
 			if risk.State != "unknown" && (risk.SampledAt == nil || risk.SampledAt.IsZero() || risk.ExpiresAt == nil || !risk.ExpiresAt.After(*risk.SampledAt)) {
 				return nil, errors.New("invalid CDC risk sample")
 			}
+		}
+		capture := item.Capture
+		if capture.State != "healthy" && capture.State != "failed" && capture.State != "unknown" {
+			return nil, errors.New("invalid CDC capture state")
+		}
+		if capture.State != "unknown" && (capture.SampledAt == nil || capture.SampledAt.IsZero() || capture.ExpiresAt == nil || !capture.ExpiresAt.After(*capture.SampledAt)) {
+			return nil, errors.New("invalid CDC capture sample")
+		}
+		if capture.State == "failed" && (capture.FailedSince == nil || capture.FailedSince.IsZero() || capture.FailedSince.After(*capture.SampledAt) || (capture.Reason != "connector_not_running" && capture.Reason != "task_not_running" && capture.Reason != "source_disconnected")) {
+			return nil, errors.New("invalid CDC capture failure")
+		}
+		if capture.State != "failed" && (capture.FailedSince != nil || capture.Reason != "") {
+			return nil, errors.New("invalid CDC capture failure scope")
 		}
 		if item.Source.State == "active" && item.Source.Reason != "slot_missing" && item.Source.Reason != "wal_lost" || item.Buffer.State == "active" && item.Buffer.Reason != "buffer_position_lost" {
 			return nil, errors.New("invalid CDC risk reason")

@@ -28,3 +28,14 @@ test('CDC task actions are absent without task and execution permissions', async
   await expect(page.getByTestId('cdc-alert-open-task')).toHaveCount(0)
   await expect(page.getByRole('button', { name: '确认', exact: true })).toHaveCount(0)
 })
+
+for (const locale of ['zh-cn', 'en']) test(`Capture failure warning uses current task permissions (${locale})`, async ({ page }) => {
+  const warning = { ...alerts[0], signal_code: 'cdc_capture_failed', severity: 'warning',
+    details: { generation: '3', reason: 'source_disconnected', trigger_seconds: 60 } }
+  await cdcTaskBackend(page, { locale, alerts: [warning], permissions: ['monitor.alert_rule.read', 'monitor.alert_incident.read', 'monitor.execution.read', 'transfer.task.read'] })
+  await page.goto('/alerts')
+  await expect(page.getByText(locale === 'en' ? 'CDC capture has persistently failed' : 'CDC 捕获持续失败', { exact: true })).toBeVisible()
+  await expect(page.getByTestId('cdc-alert-reason')).toContainText(locale === 'en' ? 'Capture is disconnected from the source' : '捕获组件与源端已断连')
+  await expect(page.getByTestId('cdc-capture-failure-duration')).toContainText('60')
+  await expect(page.getByTestId('cdc-alert-open-task')).toHaveCount(1)
+})

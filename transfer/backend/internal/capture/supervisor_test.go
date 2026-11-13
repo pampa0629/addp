@@ -290,6 +290,9 @@ func (f *fakeCaptureStore) ForceUpdate(_ context.Context, _ uint, fields map[str
 }
 
 func (f *fakeCaptureStore) apply(fields map[string]interface{}) {
+	if v, ok := fields["health_observation"].(models.JSONMap); ok {
+		f.resource.HealthObservation = v
+	}
 	if v, ok := fields["postgresql_observation"].(models.JSONMap); ok {
 		f.resource.PostgreSQLObservation = v
 	}

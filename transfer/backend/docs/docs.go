@@ -1094,7 +1094,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "仅 addp-monitor 平台服务身份读取当前 CDC 任务风险清单，不含业务数据或私有捕获资源。| Only the addp-monitor platform Service reads the current safe CDC risk inventory, without business data or private capture resources.",
+                "description": "仅 addp-monitor 平台服务身份读取当前 CDC 任务风险与捕获健康 v2 清单，包含连续明确失败起点，不含业务数据或私有捕获资源。| Only the addp-monitor platform Service reads the v2 CDC risk and capture health inventory, including the confirmed failure start time, without business data or private capture resources.",
                 "produces": [
                     "application/json"
                 ],
@@ -3343,6 +3343,26 @@ const docTemplate = `{
                 }
             }
         },
+        "client.CDCCaptureObservation": {
+            "type": "object",
+            "properties": {
+                "expires_at": {
+                    "type": "string"
+                },
+                "failed_since": {
+                    "type": "string"
+                },
+                "reason": {
+                    "type": "string"
+                },
+                "sampled_at": {
+                    "type": "string"
+                },
+                "state": {
+                    "type": "string"
+                }
+            }
+        },
         "client.CDCRiskObservation": {
             "type": "object",
             "properties": {
@@ -3463,6 +3483,9 @@ const docTemplate = `{
             "properties": {
                 "buffer": {
                     "$ref": "#/definitions/client.CDCRiskObservation"
+                },
+                "capture": {
+                    "$ref": "#/definitions/client.CDCCaptureObservation"
                 },
                 "execution_id": {
                     "type": "string"
@@ -4079,6 +4102,26 @@ const docTemplate = `{
                 }
             }
         },
+        "github_com_addp_transfer_internal_models.CaptureHealthObservation": {
+            "type": "object",
+            "properties": {
+                "expires_at": {
+                    "type": "string"
+                },
+                "failed_since": {
+                    "type": "string"
+                },
+                "reason": {
+                    "type": "string"
+                },
+                "sampled_at": {
+                    "type": "string"
+                },
+                "state": {
+                    "type": "string"
+                }
+            }
+        },
         "github_com_addp_transfer_internal_models.CapturePostgreSQLObservation": {
             "type": "object",
             "properties": {
@@ -4233,6 +4276,9 @@ const docTemplate = `{
                 },
                 "generation": {
                     "type": "integer"
+                },
+                "health_observation": {
+                    "$ref": "#/definitions/github_com_addp_transfer_internal_models.CaptureHealthObservation"
                 },
                 "last_observed_at": {
                     "type": "string"

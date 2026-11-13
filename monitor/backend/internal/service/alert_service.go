@@ -22,7 +22,7 @@ var supportedAlertCodes = []string{
 	"recovery_circuit_open", "recovery_half_open", "recovery_waiting", "recovery_ready",
 	"retention_critical", "retention_degraded", "checkpoint_stalled", "diagnostics_error", "schema_change_blocked",
 	"source_recovery_critical", "source_recovery_unavailable", "source_transactions_unavailable",
-	"cdc_source_recovery_lost", "cdc_buffer_recovery_lost",
+	"cdc_source_recovery_lost", "cdc_buffer_recovery_lost", "cdc_capture_failed",
 }
 
 type observationSignal struct {

@@ -422,6 +422,7 @@
 | sync state | 同步主状态 | Transfer 为增量任务保存的已提交源位置。 | 存储于 `transfer.sync_states`；与任务定义、execution checkpoint 分离，只能在目标提交成功后通过 CAS/fencing 推进。 |
 | CDC buffer observation | CDC 消息缓冲观测 | Transfer 持续核对当前 capture generation 的消息保留范围与目标提交位置所得的任务级只读快照。 | 暂停期间继续采样；与 execution 历史诊断和源数据库日志恢复窗口分开，不表示业务行数、端到端延迟或恢复时间承诺。 |
 | CDC task risk observation | CDC 任务风险观测 | Transfer 从当前 capture generation 的已保存样本派生的源端与消息恢复风险安全投影。 | 与 execution 历史诊断分开；暂停期间仍可观测。Monitor 只消费明确 active／clear／closed，unknown 不触发恢复，不读取业务源或 Owner 私表。 |
+| CDC capture health observation | CDC 捕获健康观测 | Transfer 对当前 capture generation 的捕获运行状态、采样有效期和连续明确失败起点的安全快照。 | 与目标消费暂停、历史 execution 和不可恢复风险分开。未知中断失败计时，不证明捕获健康，也不能据此关闭已有告警。 |
 | capture position | 捕获位点 | 捕获组件已经从源数据库事务日志可靠读取并写入 Infra Kafka 的源日志位置。 | PostgreSQL CDC 对应 LSN，MySQL 对应 binlog position，Oracle 对应 SCN；均由 Debezium/Kafka Connect connector offset 管理，Transfer 只读观测而不复制维护。 |
 | source recovery window | 源恢复窗口 | 当前仍可供 capture position 连续恢复的源数据库事务日志范围。 | 与 Infra Kafka retention 正交；Oracle 由当前可用 redo/archive 最早 SCN、时间窗口和可选 FRA 容量事实表达，不从 SCN 差值伪造时间。 |
 | source transaction pressure | 源事务压力 | capture 数据库当前未提交事务形成的运行压力事实。 | 与源连通状态、源恢复窗口和已提交事件 lag 正交；Oracle 由活跃事务数、最老事务起始 SCN/持续秒数和 Undo blocks/records 表达，不按平台硬编码阈值派生健康状态。 |

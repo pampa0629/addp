@@ -31,6 +31,7 @@
             <div v-if="row.rule_name" class="rule-name">{{ row.rule_name }}</div>
             <div v-if="cdcRiskCodes.includes(row.signal_code)" class="rule-name" data-testid="cdc-alert-reason">
               {{ t('monitor.alert.cdc_generation', { generation: row.details?.generation }) }}
+              <span v-if="row.signal_code === 'cdc_capture_failed'" data-testid="cdc-capture-failure-duration"> · {{ t('monitor.alert.capture_failure_duration', { seconds: row.details?.trigger_seconds }) }}</span>
               <span v-if="cdcRiskReasons.includes(row.details?.reason)"> · {{ t(`monitor.alert.cdc_reasons.${row.details.reason}`) }}</span>
             </div>
           </template>
@@ -84,8 +85,8 @@ const { t, te } = useI18n()
 const authStore = useAuthStore()
 const router = useRouter()
 const route = useRoute()
-const cdcRiskCodes = ['cdc_source_recovery_lost', 'cdc_buffer_recovery_lost']
-const cdcRiskReasons = ['slot_missing', 'wal_lost', 'buffer_position_lost']
+const cdcRiskCodes = ['cdc_source_recovery_lost', 'cdc_buffer_recovery_lost', 'cdc_capture_failed']
+const cdcRiskReasons = ['slot_missing', 'wal_lost', 'buffer_position_lost', 'connector_not_running', 'task_not_running', 'source_disconnected']
 const resolveRouteState = routeQuery => resolveMonitorTabRouteState(routeQuery, ['incidents', 'rules'], 'incidents')
 const activeView = ref(resolveRouteState(route.query).tab)
 const loading = ref(false)

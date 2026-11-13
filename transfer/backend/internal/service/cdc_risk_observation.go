@@ -21,7 +21,7 @@ func (s *TaskService) ReadCDCRisks(ctx context.Context, afterID uint) (*commonCl
 	result := &commonClient.TransferCDCRisks{SchemaVersion: commonClient.TransferCDCRiskSchema, ObservedAt: now, Items: make([]commonClient.TransferCDCRiskItem, 0, len(tasks)), NextAfterID: afterID, HasMore: more}
 	for i := range tasks {
 		task := &tasks[i]
-		row := commonClient.TransferCDCRiskItem{TenantID: task.TenantID, TaskID: task.ID, State: "unknown", Source: commonClient.CDCRiskObservation{State: "unknown"}, Buffer: commonClient.CDCRiskObservation{State: "unknown"}}
+		row := commonClient.TransferCDCRiskItem{TenantID: task.TenantID, TaskID: task.ID, State: "unknown", Capture: commonClient.CDCCaptureObservation{State: "unknown"}, Source: commonClient.CDCRiskObservation{State: "unknown"}, Buffer: commonClient.CDCRiskObservation{State: "unknown"}}
 		if s.captureControl != nil {
 			capture, err := s.captureControl.Get(ctx, task.ID, task.TenantID)
 			if err == nil && capture != nil {
@@ -36,7 +36,7 @@ func (s *TaskService) ReadCDCRisks(ctx context.Context, afterID uint) (*commonCl
 
 func cdcTaskRisks(task *models.TransferTask, capture *models.CaptureResource, now time.Time) commonClient.TransferCDCRiskItem {
 	unknown := commonClient.CDCRiskObservation{State: "unknown"}
-	result := commonClient.TransferCDCRiskItem{TenantID: task.TenantID, TaskID: task.ID, Generation: capture.Generation, State: "unknown", Source: unknown, Buffer: unknown}
+	result := commonClient.TransferCDCRiskItem{TenantID: task.TenantID, TaskID: task.ID, Generation: capture.Generation, State: "unknown", Source: unknown, Buffer: unknown, Capture: commonClient.CDCCaptureObservation{State: "unknown"}}
 	if capture.Status == models.CaptureStatusStopped {
 		result.State = "closed"
 		return result
@@ -47,6 +47,10 @@ func cdcTaskRisks(task *models.TransferTask, capture *models.CaptureResource, no
 	result.ExecutionID = *task.LastExecutionID
 	result.State = "observing"
 	summary := models.NewCaptureSummary(capture)
+	if value := summary.HealthObservation; value != nil && !value.SampledAt.IsZero() && !value.SampledAt.After(now) && value.ExpiresAt.After(now) && (value.State == "healthy" || value.State == "failed") {
+		result.Capture = commonClient.CDCCaptureObservation{State: value.State, Reason: value.Reason, FailedSince: value.FailedSince, SampledAt: &value.SampledAt, ExpiresAt: &value.ExpiresAt}
+	}
+
 	if value := summary.PostgreSQLObservation; value != nil && !value.SampledAt.IsZero() && !value.SampledAt.After(now) && value.ExpiresAt.After(now) {
 		risk := commonClient.CDCRiskObservation{State: "unknown", SampledAt: &value.SampledAt, ExpiresAt: &value.ExpiresAt}
 		if value.Status == "missing" {

@@ -342,11 +342,13 @@ class CDCRiskReceiver:
         canonical_uuid(event['event_id'])
         require(set(incident) == {'id', 'module', 'task_type', 'source_task_id', 'execution_id', 'signal_code',
                                   'severity', 'status', 'opened_at', 'resolved_at'}, 'webhook incident fields invalid')
+        require(event['to_severity'] == incident['severity'], 'webhook event severity differs from incident')
         assert_safe(body)
-        if incident['signal_code'] not in CDC_RISK_CODES:
+        if incident['signal_code'] not in CDC_RISK_CODES | {'cdc_capture_failed'}:
             return  # The same tenant may also emit ordinary continuous-task alerts.
         require(incident['module'] == 'transfer' and incident['task_type'] == 'sync'
-                and incident['source_task_id'] == str(self.task_id) and incident['severity'] == 'critical'
+                and incident['source_task_id'] == str(self.task_id)
+                and incident['severity'] == ('warning' if incident['signal_code'] == 'cdc_capture_failed' else 'critical')
                 and type(incident['id']) is int and incident['id'] > 0, 'webhook risk identity mismatch')
         require(incident['status'] == ('open' if event['type'] == 'opened' else 'resolved'),
                 'webhook risk transition mismatch')
@@ -369,18 +371,19 @@ class CDCRiskReceiver:
         require(not self.thread.is_alive() and self.server.socket.fileno() == -1, 'webhook receiver survived cleanup')
 
 
-def cdc_risk_alerts(client, task_id, generation):
+def cdc_risk_alerts(client, task_id, generation, *, codes=CDC_RISK_CODES):
     page = client.request('GET', ALERTS + '?module=transfer&page_size=100', (200,)).payload
     require(type(page) is dict and type(page.get('data')) is list and page.get('total', 101) <= 100,
             'risk alert inventory incomplete')
     result = {}
     for item in page['data']:
-        if item.get('source_task_id') != str(task_id) or item.get('signal_code') not in CDC_RISK_CODES:
+        if item.get('source_task_id') != str(task_id) or item.get('signal_code') not in codes:
             continue
         assert_safe(item)
         require(item.get('tenant_id') == int(os.environ['ADDP_ONLINE_TEST_TENANT_ID'])
                 and item.get('module') == 'transfer' and item.get('task_type') == 'sync'
-                and item.get('severity') == 'critical' and item.get('details', {}).get('generation') == str(generation),
+                and item.get('severity') == ('warning' if item.get('signal_code') == 'cdc_capture_failed' else 'critical')
+                and item.get('details', {}).get('generation') == str(generation),
                 'risk alert binding invalid')
         code = item['signal_code']
         require(code not in result, 'duplicate CDC generation risk incident')
@@ -425,6 +428,96 @@ def cdc_risk_trim(binding, offset):
         '-X brokers=redpanda:29092 -X "user=${INFRA_KAFKA_ADMIN_USERNAME:-admin}" -X "pass=$INFRA_KAFKA_ADMIN_PASSWORD" '
         '-X sasl.mechanism=SCRAM-SHA-256', '_', binding['topic'], str(offset)],
         check=True, capture_output=True, text=True, timeout=20)
+
+
+def verify_capture_failure(client, task_id, generation, binding, mutate, delivered, receiver, proof, stage):
+    """Fault only this Hosted Connector; target consumption is already paused."""
+    code = 'cdc_capture_failed'
+    connect = cdc_risk_container('ADDP_ONLINE_CDC_CONNECT_ID', 'kafka-connect')
+    connector_paused = component_paused = False
+    evidence = proof['capture_failure'] = {'result': 'failed', 'trigger_seconds': 60}
+
+    def control(action):
+        subprocess.run(['docker', 'exec', connect, 'curl', '-fsS', '--max-time', '10', '-X', 'PUT',
+            'http://127.0.0.1:8083/connectors/' + binding['connector'] + '/' + action],
+            check=True, capture_output=True, timeout=15)
+
+    def health(state, *, after=None):
+        capture = client.request('GET', f'{OWNER}/task-definitions/{task_id}', (200,)).payload.get('capture') or {}
+        require(capture.get('generation') == generation, 'capture fault changed generation')
+        value = capture.get('health_observation')
+        if value is None:
+            return None
+        require(isinstance(value, dict) and set(value) <= {'state', 'reason', 'sampled_at', 'expires_at', 'failed_since'},
+                'capture health exposed private fields')
+        assert_safe(value)
+        sampled = cdc_sample_time(value, datetime.now(timezone.utc))
+        return value if sampled and (after is None or sampled > after) and value.get('state') == state else None
+
+    def incidents(status):
+        values = cdc_risk_alerts(client, task_id, generation, codes={code})
+        return values if len(values) == 1 and values[code]['status'] == status else None
+
+    try:
+        stage('capture_failure_start')
+        until(lambda: health('healthy'))
+        require(not cdc_risk_alerts(client, task_id, generation, codes={code}), 'healthy capture has a failure warning')
+        connector_paused = True
+        control('pause')
+        first = until(lambda: health('failed'))
+        since = datetime.fromisoformat(first['failed_since'].replace('Z', '+00:00'))
+        opened = until(lambda: incidents('open'))
+        incident = opened[code]
+        require(incident['severity'] == 'warning' and incident['details']['trigger_seconds'] == 60,
+                'capture failure warning policy differs')
+        sampled = datetime.fromisoformat(incident['details']['sampled_at'].replace('Z', '+00:00'))
+        require((sampled - since).total_seconds() >= 60, 'capture warning opened before 60 seconds of evidence')
+        evidence.update(incident_id=incident['id'], failed_since=first['failed_since'], opened_sampled_at=incident['details']['sampled_at'])
+        evidence['opened_deliveries'] = until(lambda: delivered(opened, 'opened'))
+        mutate(client, f"{ALERTS}/{incident['id']}/acknowledge")
+        stage('capture_failure_unknown')
+        component_paused = True
+        subprocess.run(['docker', 'pause', connect], check=True, capture_output=True, timeout=15)
+        unavailable_after = datetime.now(timezone.utc)
+        until(lambda: health('unknown', after=unavailable_after))
+        frozen = until(lambda: incidents('acknowledged'))[code]
+        deadline = time.monotonic() + 32
+        checks = 0
+        while time.monotonic() < deadline:
+            current = incidents('acknowledged')
+            require(current and current[code]['id'] == incident['id']
+                    and current[code]['last_observed_at'] == frozen['last_observed_at'], 'capture unknown changed confirmed warning')
+            require(not any(r['signal_code'] == code and r['event_type'] == 'resolved' for r in receiver.snapshot()),
+                    'capture unknown sent a recovery notification')
+            checks += 1
+            time.sleep(2)
+        evidence['missing_sample_checks'] = checks
+        subprocess.run(['docker', 'unpause', connect], check=True, capture_output=True, timeout=15)
+        component_paused = False
+        refreshed = datetime.now(timezone.utc)
+        until(lambda: health('failed', after=refreshed))
+        require(incidents('acknowledged')[code]['id'] == incident['id'], 'reconfirmed capture failure replaced warning')
+        stage('capture_failure_recovery')
+        control('resume')
+        connector_paused = False
+        until(lambda: health('healthy'))
+        resolved = until(lambda: incidents('resolved'))
+        require(resolved[code]['id'] == incident['id'], 'capture recovery replaced warning')
+        evidence['resolved_deliveries'] = until(lambda: delivered(resolved, 'resolved'))
+        evidence['result'] = 'passed'
+    finally:
+        original_failure = sys.exc_info()[0] is not None
+        errors = []
+        if component_paused:
+            try: subprocess.run(['docker', 'unpause', connect], check=True, capture_output=True, timeout=15)
+            except Exception: errors.append('capture_component_unpause_failed')
+        if connector_paused:
+            try: control('resume')
+            except Exception: errors.append('capture_connector_resume_failed')
+        evidence['fault_cleanup'] = 'failed' if errors else 'passed'
+        evidence['cleanup_failures'] = errors
+        if errors and not original_failure:
+            raise SuiteError('capture fault cleanup failed')
 
 
 def verify_cdc_risk_closure(client, tenant, task_id, engine_id, execution_id, name, run_id,
@@ -476,6 +569,8 @@ def verify_cdc_risk_closure(client, tenant, task_id, engine_id, execution_id, na
         stage('buffer_pause')
         mutate(client, f'{OWNER}/task-definitions/{task_id}/pause')
         wait_status(client, execution_id, 'cancelled')
+        verify_capture_failure(client, task_id, generation, binding, mutate, delivered, receiver, proof, stage)
+        stage('buffer_pause_settled')
         settled_after = datetime.now(timezone.utc)
         before = until(lambda: cdc_task_sample(client, task_id, engine_id, generation, after=settled_after))
         proof['paused_buffer'] = before['buffer']
@@ -537,7 +632,7 @@ def verify_cdc_risk_closure(client, tenant, task_id, engine_id, execution_id, na
             require(value['id'] == source_id and value['status'] == 'acknowledged'
                     and value['last_observed_at'] == frozen['last_observed_at'] and not value.get('resolved_at'),
                     'unknown source sample changed acknowledged incident')
-            require(not any(r['event_type'] == 'resolved' for r in receiver.snapshot()), 'unknown sample sent recovery')
+            require(not any(r['event_type'] == 'resolved' and r['signal_code'] in CDC_RISK_CODES for r in receiver.snapshot()), 'unknown sample sent recovery')
             samples += 1
             time.sleep(2)
         proof['missing_sample_checks'] = samples
@@ -697,7 +792,7 @@ def cdc_task_sample(client, task_id, engine_id, generation=None, *, after=None):
             'CDC task generation mismatch')
     require(set(capture) <= {'source_type', 'generation', 'status', 'connector_status', 'source_status',
             'last_observed_at', 'stopped_at', 'source_recovery', 'source_transactions',
-            'postgresql_observation', 'delay_observation', 'buffer_observation'}, 'CDC capture exposed private fields')
+            'postgresql_observation', 'delay_observation', 'buffer_observation', 'health_observation'}, 'CDC capture exposed private fields')
     require(capture.get('status') == 'running', 'CDC capture generation is not running')
     assert_safe(capture)
     allowed = {

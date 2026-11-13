@@ -351,7 +351,7 @@ continuous 的 Owner 信号和 schema blocked 恢复沿[专用告警契约](#con
 
 Transfer 提供唯一机器读取入口 `GET /runtime/cdc-risk-observations?after_id=<上一页任务ID>`，固定每批最多 100 个当前 CDC 任务，按稳定任务 ID 正序发布；首批 after_id 为 0。仅 `addp-monitor` Platform Service Access Token 且具备不可委派、非租户自定义的 `transfer.cdc_risk_observation.read` 可以读取；该 Permission 只加入 `platform.monitor_runtime`，不加入 User 角色。Monitor 经已有 Gateway 路由调用，分页读取完整清单，不能从可能已清理的 execution 历史发现暂停任务。100 是单次传输界限，不是任务容量上限。
 
-响应固定为版本、观察时间、items、next_after_id 和 has_more；每项只含 Tenant／task ID、当前 generation、最近 execution UUID、任务观测状态及 source／buffer 两项风险状态、固定原因码和采样／过期时间。禁止返回 Connector／Topic／Group／槽名称、源连接、事件正文或异常原文。已完成捕获清理的任务明确返回 closed；任务删除／不再属于 CDC 时退出当前清单。只有成功取得完整清单才可按缺失恢复原事件，任一页失败或不完整不以缺失推定关闭。读取失败、未初始化、停止清理未完成、缺样和过期均为 unknown。每项 Tenant 身份由 Owner 数据行发布，不接受调用者伪造；后台跨 Tenant 事实不授予用户读取权。
+响应固定为版本、观察时间、items、next_after_id 和 has_more；每项只含 Tenant／task ID、当前 generation、最近 execution UUID、任务观测状态、source／buffer 风险状态及 capture 健康事实、固定原因码和采样／过期时间（当前 v2 字段沿下一节）。禁止返回 Connector／Topic／Group／槽名称、源连接、事件正文或异常原文。已完成捕获清理的任务明确返回 closed；任务删除／不再属于 CDC 时退出当前清单。只有成功取得完整清单才可按缺失恢复原事件，任一页失败或不完整不以缺失推定关闭。读取失败、未初始化、停止清理未完成、缺样和过期均为 unknown。每项 Tenant 身份由 Owner 数据行发布，不接受调用者伪造；后台跨 Tenant 事实不授予用户读取权。
 
 - `cdc_source_recovery_lost`：仅本任务 PostgreSQL 逻辑槽的可信观测明确为 missing 或原生 WAL `lost` 时触发 critical。`reserved|extended|unreserved` 不是已经丢失；槽不活跃本身不触发本项告警。其他源端尚未开放本项原生判定。
 - `cdc_buffer_recovery_lost`：仅当前 generation 的有效 `buffer_observation.recovery_state=lost` 触发 critical；暂停期间照常评估。积压大于零本身不触发本批告警。
@@ -359,6 +359,16 @@ Transfer 提供唯一机器读取入口 `GET /runtime/cdc-risk-observations?afte
 两项分别处理 active／clear／unknown。新鲜明确风险打开／维持事件；同源新鲜 clear 或 Owner 明确 closed 才恢复。单项未知、Transfer／Gateway 不可用只保留对应已有事件，不更新 LastObservedAt，不冒充恢复，也不阻断其他来源的既有规则评估。generation 变化后，必须读到当前代次的明确事实才结束旧代次事件。去重身份为 Tenant＋Transfer sync task＋generation＋signal code，沿原事件事务、确认／抑制及通知 outbox；execution UUID 仅保留为当前 Owner 关联依据，不把其历史诊断当作风险事实。用户列表、更新及通知继续沿现有任务／执行读取权限，不以后台 Service 事实扩大用户可见范围。风险事件按自身 Tenant／模块／任务类型复用 Owner 的 TaskHistory 准入，不依赖对应 execution 行仍被保留；普通 execution 告警仍按其执行范围过滤。
 
 权限清单不在重启时重新覆盖历史数据库种子。`000292` 前向迁移发布上述 Permission，并且只绑定既有 `platform.monitor_runtime`；不创建身份、Role Assignment 或数据 Grant。沿既有角色权限触发器推进受影响机器身份的授权版本，并撤销其旧 Platform Token Family。验收必须覆盖从已应用 `000291` 的数据库升级、重复启动无变化及其他身份／角色不变，不能只核对 YAML 或空库重建。
+
+#### CDC 捕获持续失败告警（2026-11-14 已确认）
+
+沿同一机器入口、权限及完整分页清单发布 `transfer.cdc_risk_observations/v2`，新增 capture 健康事实，不保留 v1 解析或另开路由。Transfer 在当前 capture resource 中持久保存 state、固定 reason、sampled_at、expires_at 和 failed_since；同时按原任务读取权限公开 health_observation。事实不含内部资源名称或原始异常，不写回已结束 execution。
+
+明确 Connector／Task 为 FAILED、PAUSED 或 UNASSIGNED 是 failed；完整 RUNNING 状态且 PostgreSQL 当前原生 Connected=true 为 healthy，Connected=false 为 failed/source_disconnected。REST 不可用、状态不完整、PG JMX 缺样或过期为 unknown；其他已有 CDC Provider 仅按完整 Connector／Task 运行状态判定。源库辅助探测失败本身不冒充捕获已失败。Transfer 目标消费 pause 不停止捕获健康采样，完成 Stop 返回 closed。
+
+连续、有效且时间相接的 failed 样本延续同一代次 failed_since；healthy、unknown、过期缺口或时钟倒退均中断连续失败起点。Monitor 首次只在当前 failed_since 到当前明确失败样本的证据跨度达到 60 秒时打开 `cdc_capture_failed` warning，不能用无新样本的等待累计时间。已打开事件在后续明确失败时保持；unknown 不更新 LastObservedAt、不关闭事件，重新确认 failed 但不足 60 秒也不关闭已有事件。当前新鲜 healthy 或 Owner 明确 closed 才关闭；新代次未知仍保持旧事件，取得明确新代次事实后结束旧事件。沿原 Tenant＋task＋generation＋signal 去重、TaskHistory 准入、确认／抑制和通知事务，不新增规则实体、不自动恢复任务。
+
+T0/T1 覆盖共享 DTO、持续时间及中断语义，Transfer／Monitor PostgreSQL T2 验证存储和告警通知事务，受控前端验证文案与权限；既有 transfer-continuous-events Hosted 沿原身份与总预算验证真实捕获暂停、缺样保持、恢复和签名通知。不得操作个人任务或源槽。
 
 #### Schema change 公共事实投影
 

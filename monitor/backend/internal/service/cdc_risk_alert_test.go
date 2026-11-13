@@ -29,7 +29,8 @@ func (r *riskPageReader) ReadCDCRisks(_ context.Context, after uint) (*commonCli
 	return page, nil
 }
 
-func TestCDCRiskEvaluationPreservesUnknownWithoutHidingOtherFacts(t *testing.T) {
+func cdcRiskTestDB(t *testing.T) *gorm.DB {
+	t.Helper()
 	db, err := gorm.Open(sqlite.Open(fmt.Sprintf("file:cdc-risk-%d?mode=memory&cache=shared", time.Now().UnixNano())), &gorm.Config{})
 	if err != nil {
 		t.Fatal(err)
@@ -48,6 +49,12 @@ func TestCDCRiskEvaluationPreservesUnknownWithoutHidingOtherFacts(t *testing.T) 
 	)`).Error; err != nil {
 		t.Fatal(err)
 	}
+	return db
+}
+
+func TestCDCRiskEvaluationPreservesUnknownWithoutHidingOtherFacts(t *testing.T) {
+	db := cdcRiskTestDB(t)
+	var err error
 	now := time.Now().UTC()
 	at := now.Add(-time.Second)
 	expiry := now.Add(time.Minute)
@@ -102,5 +109,63 @@ func TestCDCRiskEvaluationPreservesUnknownWithoutHidingOtherFacts(t *testing.T) 
 	signals, keep, err = svc.evaluateCDCRisks(context.Background(), now)
 	if err != nil || len(signals) != 0 || len(keep) != 1 || keep[0] != "keep-source" {
 		t.Fatal("partial inventory published or cleared risks")
+	}
+}
+
+func TestCDCCaptureFailureRequiresSixtySecondsOfAdvancingEvidence(t *testing.T) {
+	db := cdcRiskTestDB(t)
+	var err error
+	svc := NewAlertService(db, nil)
+	now := time.Now().UTC()
+	since := now.Add(-60 * time.Second)
+	expiry := now.Add(time.Minute)
+	row := commonClient.TransferCDCRiskItem{TenantID: 2, TaskID: 7, Generation: 1, State: "observing", ExecutionID: "bb706a62-4256-453e-b471-0dbdbb305c53", Source: commonClient.CDCRiskObservation{State: "unknown"}, Buffer: commonClient.CDCRiskObservation{State: "unknown"}, Capture: commonClient.CDCCaptureObservation{State: "failed", Reason: "task_not_running", FailedSince: &since, SampledAt: &now, ExpiresAt: &expiry}}
+	reader := &riskPageReader{}
+	svc.SetCDCRiskReader(reader)
+	evaluate := func(at time.Time) ([]activeAlertSignal, []string) {
+		reader.pages = []*commonClient.TransferCDCRisks{{Items: []commonClient.TransferCDCRiskItem{row}}}
+		signals, keep, e := svc.evaluateCDCRisks(context.Background(), at)
+		if e != nil {
+			t.Fatal(e)
+		}
+		return signals, keep
+	}
+	sampled := since.Add(59 * time.Second)
+	row.Capture.SampledAt = &sampled
+	if signals, _ := evaluate(now.Add(20 * time.Second)); len(signals) != 0 {
+		t.Fatal("waiting without new evidence completed duration")
+	}
+	row.Capture.SampledAt = &now
+	signals, _ := evaluate(now)
+	if len(signals) != 1 || signals[0].Code != "cdc_capture_failed" || signals[0].Severity != "warning" {
+		t.Fatal(signals)
+	}
+	incident := monitorModels.AlertIncident{TenantID: 2, Module: "transfer", TaskType: "sync", SourceTaskID: "7", ExecutionID: row.ExecutionID, SignalCode: signals[0].Code, Fingerprint: signals[0].Fingerprint, Severity: "warning", Status: "acknowledged", OpenedAt: now, LastObservedAt: now, Details: map[string]interface{}{}}
+	if err = db.Create(&incident).Error; err != nil {
+		t.Fatal(err)
+	}
+	row.Capture = commonClient.CDCCaptureObservation{State: "unknown"}
+	if signals, keep := evaluate(now); len(signals) != 0 || len(keep) != 1 || keep[0] != incident.Fingerprint {
+		t.Fatal("unknown did not preserve acknowledged incident")
+	}
+	row.Capture = commonClient.CDCCaptureObservation{State: "failed", Reason: "source_disconnected", FailedSince: &now, SampledAt: &now, ExpiresAt: &expiry}
+	if signals, _ := evaluate(now); len(signals) != 1 {
+		t.Fatal("new failure episode closed an existing incident")
+	}
+	row.Capture = commonClient.CDCCaptureObservation{State: "healthy", SampledAt: &now, ExpiresAt: &expiry}
+	if signals, keep := evaluate(now); len(signals) != 0 || len(keep) != 0 {
+		t.Fatal("fresh healthy did not release incident")
+	}
+	row.State = "closed"
+	if signals, keep := evaluate(now); len(signals) != 0 || len(keep) != 0 {
+		t.Fatal("closed Owner did not release incident")
+	}
+}
+
+func TestCaptureWarningReadProjectionKeepsOnlySafeTimingAndReason(t *testing.T) {
+	alert := monitorModels.AlertIncident{SignalCode: "cdc_capture_failed", Details: map[string]interface{}{"generation": "3", "reason": "source_disconnected", "failed_since": "2026-11-14T00:00:00Z", "trigger_seconds": 60, "private_connector": "secret", "raw_error": "secret"}}
+	safe := safeAlertForRead(alert)
+	if len(safe.Details) != 4 || safe.Details["reason"] != "source_disconnected" || safe.Details["trigger_seconds"] != 60 || safe.Details["failed_since"] == nil {
+		t.Fatal(safe.Details)
 	}
 }

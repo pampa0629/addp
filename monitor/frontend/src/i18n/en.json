@@ -297,6 +297,9 @@
             "cdc_source_recovery_lost": {
               "title": "CDC source recovery is lost"
             },
+            "cdc_capture_failed": {
+              "title": "CDC capture has persistently failed"
+            },
             "cdc_buffer_recovery_lost": {
               "title": "CDC message recovery range is lost"
             },
@@ -491,7 +494,11 @@
       "actions": "Actions",
       "view_cdc_task": "View CDC task",
       "cdc_generation": "Capture generation {generation}",
+      "capture_failure_duration": "Failed continuously for at least {seconds} seconds",
       "cdc_reasons": {
+        "connector_not_running": "Capture Connector is not running",
+        "task_not_running": "Capture Task is not running",
+        "source_disconnected": "Capture is disconnected from the source",
         "slot_missing": "The task source slot no longer exists",
         "wal_lost": "WAL required by this task has been lost",
         "buffer_position_lost": "The task consumer position precedes message retention"

@@ -53,3 +53,39 @@ func TestCDCRisksUseCurrentTaskSamplesWhilePaused(t *testing.T) {
 		})
 	}
 }
+
+func TestCDCCaptureHealthProjectionRequiresFreshCurrentGeneration(t *testing.T) {
+	now := time.Now().UTC()
+	executionID := "bb706a62-4256-453e-b471-0dbdbb305c53"
+	task := &models.TransferTask{ID: 7, TenantID: 2, DesiredState: models.TaskDesiredStatePaused, LastExecutionID: &executionID}
+	since := now.Add(-time.Minute).Format(time.RFC3339Nano)
+	for _, tc := range []struct {
+		name, state, want string
+		sample, expiry    time.Time
+	}{
+		{"failed", "failed", "failed", now, now.Add(time.Minute)},
+		{"healthy", "healthy", "healthy", now, now.Add(time.Minute)},
+		{"unknown", "unknown", "unknown", now, now.Add(time.Minute)},
+		{"expired", "failed", "unknown", now.Add(-time.Minute), now},
+		{"future", "failed", "unknown", now.Add(time.Second), now.Add(time.Minute)},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			value := models.JSONMap{"state": tc.state, "sampled_at": tc.sample.Format(time.RFC3339Nano), "expires_at": tc.expiry.Format(time.RFC3339Nano), "connector": "private-connector"}
+			if tc.state == "failed" {
+				value["reason"], value["failed_since"] = "task_not_running", since
+			}
+			resource := &models.CaptureResource{Generation: 3, Status: models.CaptureStatusFailed, HealthObservation: value}
+			row := cdcTaskRisks(task, resource, now)
+			if row.State != "observing" || row.Generation != 3 || row.Capture.State != tc.want {
+				t.Fatalf("capture projection = %#v", row)
+			}
+			if tc.want == "failed" && (row.Capture.FailedSince == nil || row.Capture.FailedSince.Format(time.RFC3339Nano) != since) {
+				t.Fatal("capture failure start lost")
+			}
+			raw, _ := json.Marshal(row)
+			if strings.Contains(string(raw), "private-") {
+				t.Fatal("private health fields escaped")
+			}
+		})
+	}
+}

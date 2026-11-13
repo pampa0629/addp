@@ -143,4 +143,42 @@ func TestIntegrationPostgresCDCRiskUnknownClearAndGeneration(t *testing.T) {
 	if err = db.Model(&monitorModels.AlertEvent{}).Where("tenant_id = ?", tenant).Count(&count).Error; err != nil || count != 4 {
 		t.Fatalf("expected one open and one resolved event per generation, got %d: %v", count, err)
 	}
+	// The current-generation capture warning shares lifecycle, acknowledgement and outbox.
+	row.State = "observing"
+	row.Generation = 3
+	row.Source.State = "clear"
+	since := now.Add(-60 * time.Second)
+	sample := now
+	row.Capture = commonClient.CDCCaptureObservation{State: "failed", Reason: "task_not_running", FailedSince: &since, SampledAt: &sample, ExpiresAt: &expiry}
+	apply()
+	apply()
+	var warning monitorModels.AlertIncident
+	if err = db.Where("tenant_id = ? AND signal_code = ?", tenant, "cdc_capture_failed").First(&warning).Error; err != nil || warning.Status != "open" || warning.Severity != "warning" {
+		t.Fatal("capture warning not opened", err)
+	}
+	assertRuleOutboxCounts(t, db, warning.ID, 1, 1, 0)
+	visible, e := svc.List(authorized, ListAlertsRequest{TenantID: tenant, Severity: "warning"})
+	if e != nil || visible.Total != 1 || visible.Data[0].Details["reason"] != "task_not_running" || visible.Data[0].Details["trigger_seconds"] != 60 {
+		t.Fatal("capture warning lost safe public evidence", e)
+	}
+
+	if err = db.Model(&warning).Update("status", "acknowledged").Error; err != nil {
+		t.Fatal(err)
+	}
+	last := warning.LastObservedAt
+	row.Capture = commonClient.CDCCaptureObservation{State: "unknown"}
+	now = now.Add(time.Second)
+	apply()
+	if err = db.First(&warning, warning.ID).Error; err != nil || warning.Status != "acknowledged" || !warning.LastObservedAt.Equal(last) {
+		t.Fatal("capture unknown changed acknowledged warning", err)
+	}
+	assertRuleOutboxCounts(t, db, warning.ID, 1, 1, 0)
+	sample = now
+	row.Capture = commonClient.CDCCaptureObservation{State: "healthy", SampledAt: &sample, ExpiresAt: &expiry}
+	apply()
+	if err = db.First(&warning, warning.ID).Error; err != nil || warning.Status != "resolved" {
+		t.Fatal("capture healthy did not resolve warning", err)
+	}
+	assertRuleOutboxCounts(t, db, warning.ID, 2, 2, 0)
+
 }

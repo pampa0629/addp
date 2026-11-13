@@ -171,6 +171,7 @@ func (s *Supervisor) Start(ctx context.Context, task *models.TransferTask) (*mod
 	fields := map[string]interface{}{
 		"status": models.CaptureStatusRunning, "connector_status": status.ConnectorState,
 		"connector_error": "", "source_status": "ONLINE", "source_error": "", "last_observed_at": now,
+		"health_observation": s.healthObservation(resource, status, now),
 	}
 	s.observeSource(ctx, plan, resource, now, fields)
 	if err := s.advance(ctx, resource, fields); err != nil {
@@ -312,6 +313,7 @@ func (s *Supervisor) Stop(ctx context.Context, task *models.TransferTask) (failu
 	return s.advance(ctx, resource, map[string]interface{}{
 		"status": models.CaptureStatusStopped, "connector_status": "DELETED", "connector_error": "",
 		"connector_created": false, "topic_created": false, "last_observed_at": now, "stopped_at": now,
+		"health_observation": models.JSONMap{},
 	})
 }
 
@@ -393,6 +395,7 @@ func (s *Supervisor) Refresh(ctx context.Context, resource *models.CaptureResour
 	fields := map[string]interface{}{
 		"status": models.CaptureStatusRunning, "connector_status": status.ConnectorState,
 		"connector_error": connectorError, "source_status": "ONLINE", "source_error": "", "last_observed_at": now,
+		"health_observation": s.healthObservation(resource, status, now),
 	}
 	s.observeSource(ctx, plan, resource, now, fields)
 	if err := s.advance(ctx, resource, fields); err != nil {
@@ -560,6 +563,12 @@ func (s *Supervisor) advance(ctx context.Context, resource *models.CaptureResour
 		return err
 	}
 	resource.ResourceVersion++
+	if v, ok := fields["delay_observation"].(models.JSONMap); ok {
+		resource.DelayObservation = v
+	}
+	if v, ok := fields["health_observation"].(models.JSONMap); ok {
+		resource.HealthObservation = v
+	}
 	if status, ok := fields["status"].(models.CaptureStatus); ok {
 		resource.Status = status
 	}
@@ -572,6 +581,7 @@ func (s *Supervisor) fail(ctx context.Context, resource *models.CaptureResource,
 	}
 	fields := map[string]interface{}{
 		"status": models.CaptureStatusFailed, "connector_error": cause.Error(), "last_observed_at": time.Now(),
+		"health_observation": s.healthObservation(resource, nil, time.Now()),
 	}
 	markSourceObservationsUnavailable(resource, cause, time.Now(), fields)
 	if err := s.store.Update(ctx, resource.ID, resource.ResourceVersion, fields); err == nil {
@@ -590,7 +600,8 @@ func (s *Supervisor) failConnector(ctx context.Context, resource *models.Capture
 	}
 	fields := map[string]interface{}{
 		"status": models.CaptureStatusFailed, "connector_status": connectorStatus, "connector_error": cause.Error(),
-		"last_observed_at": time.Now(),
+		"last_observed_at":   time.Now(),
+		"health_observation": s.healthObservation(resource, status, time.Now()),
 	}
 	markSourceObservationsUnavailable(resource, cause, time.Now(), fields)
 	s.failWithFields(ctx, resource, fields)
@@ -607,6 +618,7 @@ func (s *Supervisor) failSource(ctx context.Context, resource *models.CaptureRes
 	fields := map[string]interface{}{
 		"status": models.CaptureStatusFailed, "connector_status": connectorStatus, "connector_error": "",
 		"source_status": "OFFLINE", "source_error": cause.Error(), "last_observed_at": time.Now(),
+		"health_observation": s.healthObservation(resource, status, time.Now()),
 	}
 	markSourceObservationsUnavailable(resource, cause, time.Now(), fields)
 	s.failWithFields(ctx, resource, fields)

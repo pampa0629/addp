@@ -297,6 +297,9 @@
             "cdc_source_recovery_lost": {
               "title": "CDC 源端恢复能力已丢失"
             },
+            "cdc_capture_failed": {
+              "title": "CDC 捕获持续失败"
+            },
             "cdc_buffer_recovery_lost": {
               "title": "CDC 消息恢复范围已丢失"
             },
@@ -491,7 +494,11 @@
       "actions": "操作",
       "view_cdc_task": "查看 CDC 任务",
       "cdc_generation": "捕获代次 {generation}",
+      "capture_failure_duration": "连续失败至少 {seconds} 秒",
       "cdc_reasons": {
+        "connector_not_running": "捕获 Connector 明确未运行",
+        "task_not_running": "捕获 Task 明确未运行",
+        "source_disconnected": "捕获组件与源端已断连",
         "slot_missing": "任务源端逻辑槽已不存在",
         "wal_lost": "任务所需 WAL 已丢失",
         "buffer_position_lost": "任务消费位点已早于消息保留范围"

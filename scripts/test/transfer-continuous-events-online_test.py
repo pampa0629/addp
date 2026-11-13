@@ -1156,6 +1156,22 @@ class CDCTaskObservationTest(unittest.TestCase):
 
 
 class CDCRiskAcceptanceTest(unittest.TestCase):
+    def test_capture_fault_failure_restores_connector_and_preserves_original_error(self):
+        for cleanup_fails in [False, True]:
+            proof = {}
+            with self.subTest(cleanup_fails=cleanup_fails), \
+                 patch.object(M, 'cdc_risk_container', return_value='a' * 64), \
+                 patch.object(M, 'cdc_risk_alerts', return_value={}), \
+                 patch.object(M, 'until', side_effect=[{}, M.SuiteError('original observation failure')]), \
+                 patch.object(M.subprocess, 'run', side_effect=[None, OSError('private') if cleanup_fails else None]) as run, \
+                 self.assertRaisesRegex(M.SuiteError, 'original observation failure'):
+                M.verify_capture_failure(object(), 7, 1, {'connector': 'owned'}, None, None, None, proof, lambda _: None)
+            self.assertTrue(run.call_args_list[0].args[0][-1].endswith('/owned/pause'))
+            self.assertTrue(run.call_args_list[1].args[0][-1].endswith('/owned/resume'))
+            self.assertEqual(proof['capture_failure']['result'], 'failed')
+            self.assertEqual(proof['capture_failure']['fault_cleanup'], 'failed' if cleanup_fails else 'passed')
+            self.assertNotIn('private', json.dumps(proof))
+
     def test_fault_batch_waits_for_a_sample_after_pause_and_preserves_failure_during_cleanup(self):
         from types import SimpleNamespace
         client = unittest.mock.Mock()
@@ -1168,6 +1184,7 @@ class CDCRiskAcceptanceTest(unittest.TestCase):
              patch.object(M,'cdc_capture_binding',return_value={}), \
              patch.object(M,'CDCRiskReceiver',return_value=receiver), \
              patch.object(M,'cdc_risk_alerts',return_value={}), patch.object(M,'wait_status'), \
+             patch.object(M,'verify_capture_failure'), \
              patch.object(M,'physical',side_effect=M.SuiteError('injected mutation failure')), \
              self.assertRaisesRegex(M.SuiteError,'injected mutation failure'):
             M.verify_cdc_risk_closure(client,2,7,10,UUID,'owned','run-1',
@@ -1225,6 +1242,19 @@ class CDCRiskAcceptanceTest(unittest.TestCase):
         finally:
             receiver.close()
         self.assertEqual(receiver.server.socket.fileno(), -1)
+
+    def test_capture_warning_uses_signed_warning_severity_and_retains_fixed_code(self):
+        receiver=M.CDCRiskReceiver(7)
+        try:
+            body=self.payload(receiver)
+            body['incident'].update(signal_code='cdc_capture_failed',severity='warning')
+            body['event']['to_severity']='warning'
+            receiver.accept(*self.signed(receiver,body))
+            receipt,=receiver.snapshot()
+            self.assertEqual(receipt['signal_code'],'cdc_capture_failed')
+            body['event']['to_severity']='critical'
+            with self.assertRaises(M.SuiteError):receiver.accept(*self.signed(receiver,body))
+        finally:receiver.close()
 
     def test_signature_task_and_transition_cannot_be_forged(self):
         receiver = M.CDCRiskReceiver(7)

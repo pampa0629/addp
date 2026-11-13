@@ -10,6 +10,7 @@ import (
 	"gorm.io/gorm"
 	"os"
 	"testing"
+	"time"
 )
 
 func TestIntegrationPostgresCDCBufferObservation(t *testing.T) {
@@ -66,7 +67,7 @@ func TestIntegrationPostgresCDCBufferObservation(t *testing.T) {
 		t.Fatalf("foreign identity: %v %v", value, e)
 	}
 	observation := models.JSONMap{"status": "unavailable", "recovery_state": "unknown", "sampled_at": "2026-11-12T00:00:00Z", "expires_at": "2026-11-12T00:01:00Z"}
-	if err = repo.Update(ctx, resource.ID, 1, map[string]interface{}{"buffer_observation": observation, "postgresql_observation": models.JSONMap{"status": "available", "retained_wal_bytes": "9007199254740993", "risk_state": "reserved"}, "delay_observation": models.JSONMap{"status": "available", "connected": true, "delay_seconds": 0.125}}); err != nil {
+	if err = repo.Update(ctx, resource.ID, 1, map[string]interface{}{"health_observation": models.JSONMap{"state": "failed", "reason": "task_not_running", "failed_since": "2026-11-12T00:00:00Z", "sampled_at": "2026-11-12T00:01:00Z", "expires_at": "2026-11-12T00:01:30Z"}, "buffer_observation": observation, "postgresql_observation": models.JSONMap{"status": "available", "retained_wal_bytes": "9007199254740993", "risk_state": "reserved"}, "delay_observation": models.JSONMap{"status": "available", "connected": true, "delay_seconds": 0.125}}); err != nil {
 		t.Fatal(err)
 	}
 	loaded, e := repo.GetLatest(ctx, task.ID, task.TenantID)
@@ -74,6 +75,9 @@ func TestIntegrationPostgresCDCBufferObservation(t *testing.T) {
 		t.Fatal(e)
 	}
 	summary := models.NewCaptureSummary(loaded)
+	if summary.HealthObservation == nil || summary.HealthObservation.State != "failed" || summary.HealthObservation.FailedSince == nil || summary.HealthObservation.SampledAt.Sub(*summary.HealthObservation.FailedSince) != time.Minute {
+		t.Fatal("capture failure timing did not persist")
+	}
 	if summary.PostgreSQLObservation == nil || summary.PostgreSQLObservation.RetainedWALBytes == nil || *summary.PostgreSQLObservation.RetainedWALBytes != "9007199254740993" || summary.DelayObservation == nil || summary.DelayObservation.DelaySeconds == nil || *summary.DelayObservation.DelaySeconds != 0.125 {
 		t.Fatal("task source snapshots did not persist precisely")
 	}

@@ -220,6 +220,7 @@ type CaptureResource struct {
 	PostgreSQLObservation       JSONMap                    `gorm:"column:postgresql_observation;type:jsonb;not null;default:'{}'" json:"-"`
 	DelayObservation            JSONMap                    `gorm:"type:jsonb;not null;default:'{}'" json:"-"`
 	BufferObservation           JSONMap                    `gorm:"type:jsonb;not null;default:'{}'" json:"-"`
+	HealthObservation           JSONMap                    `gorm:"type:jsonb;not null;default:'{}'" json:"-"`
 	TopicCreated                bool                       `gorm:"not null;default:false" json:"topic_created"`
 	ConnectorCreated            bool                       `gorm:"not null;default:false" json:"connector_created"`
 	ResourceVersion             uint64                     `gorm:"not null;default:1" json:"resource_version"`
@@ -358,6 +359,7 @@ type SchemaChangeRequestView struct {
 
 // CaptureSummary 是任务 API 可展示的捕获状态；内部资源名称和连接身份不对外暴露。
 type CaptureSummary struct {
+	HealthObservation     *CaptureHealthObservation     `json:"health_observation"`
 	SourceType            CaptureSourceType             `json:"source_type"`
 	PostgreSQLObservation *CapturePostgreSQLObservation `json:"postgresql_observation"`
 	DelayObservation      *CaptureDelayObservation      `json:"delay_observation"`
@@ -370,6 +372,14 @@ type CaptureSummary struct {
 	SourceTransactions    *CaptureSourceTransactions    `json:"source_transactions,omitempty"`
 	LastObservedAt        *time.Time                    `json:"last_observed_at,omitempty"`
 	StoppedAt             *time.Time                    `json:"stopped_at,omitempty"`
+}
+
+type CaptureHealthObservation struct {
+	State       string     `json:"state"`
+	Reason      string     `json:"reason,omitempty"`
+	FailedSince *time.Time `json:"failed_since"`
+	SampledAt   time.Time  `json:"sampled_at"`
+	ExpiresAt   time.Time  `json:"expires_at"`
 }
 
 // CaptureBufferObservation is a task-level metadata-only sample, never an execution result.
@@ -451,7 +461,8 @@ func NewCaptureSummary(resource *CaptureResource) *CaptureSummary {
 		return nil
 	}
 	summary := &CaptureSummary{
-		Generation: resource.Generation, Status: resource.Status, BufferObservation: captureObservationSummary[CaptureBufferObservation](resource, resource.BufferObservation),
+		HealthObservation: captureObservationSummary[CaptureHealthObservation](resource, resource.HealthObservation),
+		Generation:        resource.Generation, Status: resource.Status, BufferObservation: captureObservationSummary[CaptureBufferObservation](resource, resource.BufferObservation),
 		SourceType:         resource.SourceType,
 		ConnectorStatus:    resource.ConnectorStatus,
 		SourceStatus:       resource.SourceStatus,

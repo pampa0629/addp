@@ -107,6 +107,7 @@ func createCaptureRepositoryTestTables(t *testing.T, db *gorm.DB) {
 			source_transactions JSONB NOT NULL DEFAULT '{}',
 			source_transactions_error TEXT,
             buffer_observation JSONB NOT NULL DEFAULT '{}',
+ health_observation JSONB NOT NULL DEFAULT '{}',
  postgresql_observation JSONB NOT NULL DEFAULT '{}',
  delay_observation JSONB NOT NULL DEFAULT '{}',
 			topic_created BOOLEAN NOT NULL DEFAULT FALSE,

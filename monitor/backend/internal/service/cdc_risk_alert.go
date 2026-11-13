@@ -13,7 +13,9 @@ import (
 	"time"
 )
 
-var cdcRiskCodes = []string{"cdc_source_recovery_lost", "cdc_buffer_recovery_lost"}
+const cdcCaptureTriggerSeconds = 60
+
+var cdcRiskCodes = []string{"cdc_source_recovery_lost", "cdc_buffer_recovery_lost", "cdc_capture_failed"}
 
 type cdcRiskReader interface {
 	ReadCDCRisks(context.Context, uint) (*commonClient.TransferCDCRisks, error)
@@ -73,6 +75,32 @@ func (s *AlertService) evaluateCDCRisks(ctx context.Context, now time.Time) ([]a
 			}
 			digest := sha256.Sum256([]byte(fmt.Sprintf("cdc-risk|%d|%d|%d|%s", row.TenantID, row.TaskID, row.Generation, code)))
 			signals = append(signals, activeAlertSignal{TenantID: int(row.TenantID), Module: "transfer", TaskType: "sync", SourceTaskID: strconv.FormatUint(uint64(row.TaskID), 10), ExecutionID: row.ExecutionID, Code: code, Severity: monitorModels.AlertSeverityCritical, Fingerprint: hex.EncodeToString(digest[:]), Details: commonModels.JSONMap{"generation": strconv.FormatUint(row.Generation, 10), "reason": risk.Reason, "sampled_at": risk.SampledAt.UTC().Format(time.RFC3339Nano)}})
+		}
+
+		capture := row.Capture
+		known := row.State == "observing" && (capture.State == "healthy" || capture.State == "failed") && capture.SampledAt != nil && capture.ExpiresAt != nil && !capture.SampledAt.After(now) && capture.ExpiresAt.After(now)
+		if !known {
+			for _, incident := range existing {
+				if incident.TenantID == int(row.TenantID) && incident.SourceTaskID == strconv.FormatUint(uint64(row.TaskID), 10) && incident.SignalCode == cdcRiskCodes[2] {
+					preserve = append(preserve, incident.Fingerprint)
+				}
+			}
+			continue
+		}
+		if capture.State == "failed" {
+			digest := sha256.Sum256([]byte(fmt.Sprintf("cdc-risk|%d|%d|%d|%s", row.TenantID, row.TaskID, row.Generation, cdcRiskCodes[2])))
+			fingerprint := hex.EncodeToString(digest[:])
+			opened := false
+			for _, incident := range existing {
+				if incident.Fingerprint == fingerprint {
+					opened = true
+					break
+				}
+			}
+			if capture.FailedSince == nil || capture.SampledAt.Sub(*capture.FailedSince) < time.Duration(cdcCaptureTriggerSeconds)*time.Second && !opened {
+				continue
+			}
+			signals = append(signals, activeAlertSignal{TenantID: int(row.TenantID), Module: "transfer", TaskType: "sync", SourceTaskID: strconv.FormatUint(uint64(row.TaskID), 10), ExecutionID: row.ExecutionID, Code: cdcRiskCodes[2], Severity: monitorModels.AlertSeverityWarning, Fingerprint: fingerprint, Details: commonModels.JSONMap{"generation": strconv.FormatUint(row.Generation, 10), "reason": capture.Reason, "sampled_at": capture.SampledAt.UTC().Format(time.RFC3339Nano), "failed_since": capture.FailedSince.UTC().Format(time.RFC3339Nano), "trigger_seconds": cdcCaptureTriggerSeconds}})
 		}
 	}
 	return signals, preserve, nil
