@@ -381,7 +381,7 @@ func fileSubmissionDiscovery(t *testing.T) *OperatorDiscoveryService {
 			return []commonModels.OperatorDescriptor{
 				{ID: "external", Name: "external", EngineType: "geopython_workflow", ExecutionModes: []string{"workflow"}, Effects: []string{"external_effect"}},
 				{ID: "load", Name: "load", EngineType: "geopython_workflow", ExecutionModes: []string{"workflow"}, Effects: []string{"read"},
-					Parameters: []commonModels.ParameterDescriptor{{Name: "connection_info"}, {Name: "schema"}, {Name: "table"}, {Name: "path"}, {Name: "geojson"}}},
+					Parameters: []commonModels.ParameterDescriptor{{Name: "connection_info"}, {Name: "schema"}, {Name: "table"}, {Name: "path"}}},
 				{ID: "save", Name: "save", EngineType: "geopython_workflow", ExecutionModes: []string{"workflow"}, Effects: []string{"write"},
 					Parameters: []commonModels.ParameterDescriptor{{Name: "input_df"}, {Name: "connection_info"}, {Name: "schema"}, {Name: "table"}, {Name: "path"}, {Name: "mode"}}},
 			}, nil

@@ -84,7 +84,6 @@ func TestOperatorDiscoveryReturnsWorkflowCapableOperatorsOnly(t *testing.T) {
 						{Name: "schema", Type: "string"},
 						{Name: "table", Type: "string"},
 						{Name: "path", Type: "string"},
-						{Name: "geojson", Type: "object"},
 					},
 				},
 				{
@@ -136,7 +135,7 @@ func TestOperatorDiscoveryReturnsWorkflowCapableOperatorsOnly(t *testing.T) {
 			t.Fatalf("load public parameters = %+v, obsolete param %s leaked", operators[0].PublicParameters, name)
 		}
 	}
-	if len(operators[0].Parameters) != 5 {
+	if len(operators[0].Parameters) != 4 {
 		t.Fatalf("runtime parameters should remain intact for runtime contract: %+v", operators[0].Parameters)
 	}
 	assertResourceBinding(t, operators[0].PublicParameters, "source_resource", map[string]interface{}{
