@@ -371,6 +371,10 @@ Graph 在 C→G 内、关闭／取消／归档前比较当前模块影响与原�
 
 本地 `make test-monitor-traces-local-runner` 通过216项Python及既有System身份夹具Go测试；`make test-execution-online-ci-runner` 通过417项Python聚合与登记；共享登录的 `make test-monitor-http-local-runner` 通过53项Python、7项Node及Go。`make test-console-frontend` 通过260项单元、357项完整受控浏览器回归及构建，新增租户登录场景所在10项认证浏览器专项另验通过；首轮既有devPorts回收断言失败保留，未改该断言，后继完整标准入口通过，不声称已定位其偶发根因。以上是确定性／受控环境证据，尚未执行 `make test-monitor-traces-local`、身份准备、样本业务、独立产品部署或Hosted，真实链路验收仍待单独确认。
 
+**入口自然Linux CI收口。** 固定 `0af7dd7cd576d6b3d95ce19f5a0f9443cff1d7a8`（含实现 `9c1a0e889`），Platform Run `43425265125`、push／attempt 1 的两个相关Job均已实际选择并执行成功：[Execution runner](https://github.com/pampa0629/addp/actions/runs/43425265125/job/131885017413)为207＋19＋158＋35＝419项Python全部OK、登记一致；[Console前端](https://github.com/pampa0629/addp/actions/runs/43425265125/job/131885017678)为260项单元、358项浏览器及Vite构建通过，日志含新增租户登录场景。实际执行步骤与selected=true均已独立核验，不以汇总绿或条件跳过替代。
+
+本地417／357计数不改写：固定CI源码已包含前序 `165101b3e` 在原聚合模块 `online-continuous-fixture_test.py` 新增的2项风险夹具测试，远端首组为207；远端Console完整358项包含本地完整357项之后另由10项认证专项验证的新增登录场景。原始日志分别留在 `/tmp/addp-stage-execution-ci-runner.log`、`/tmp/addp-stage-console-full-second.log`、`/tmp/addp-stage-console-login-proof.log` 与 `/tmp/addp-ci-2200-1113-fjfm1ic6/logs/131885017413.log`、`131885017678.log`。早期Vite回收断言失败仍保留；本轮入口实施与相关Linux门禁缺口已关闭，正式Tenant User→Gateway→Owner→Tempo本机隔离窗口仍未运行，不能记为真实链路或T4验收通过。此次仅补证据，未追加运行、重试、Hosted、服务操作或授权变化。
+
 ## 七、确认范围与协作分工
 
 用户已确认由本会话统一牵头，正式契约先提交，按 Common → Graph → Cleanup 实施；已确认细节直接推进。已批准的补充边界包括 Graph 窄 reconcile／原目标 reopen、Cleanup 安全展示、目的限定执行授权、专业结果窄读取、Meta／Manager 独立治理和显式配对、原生三身份／双入口、Engine 授权用途分离、Manager 专属 CI 基线以及 Transfer capture_cleanup 连接用途。
