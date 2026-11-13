@@ -424,3 +424,15 @@ CI 专门会话回传 [Platform 40891592721／Job 123509561021](https://github.c
 Common／Transfer／Monitor Go 标准门禁、`make test-authorization`（含全模块 Swagger）、IAM `catalog-integrity` PostgreSQL 标准入口通过。Monitor 前端 152 项单元测试、21 项 CDC 受控浏览器测试及构建通过；新增三项核对中英文原因／代次、回到当前任务及缺权隐藏操作。首轮浏览器夹具缺少该既有告警页要求的规则读取 Permission，补齐夹具后通过，没有改变产品权限。首轮 Swagger 夹具发生 15 秒超时，原记录保留，未修改源码或超时的完整串行复验通过。
 
 此为工作区本地 T1／T2／受控 T3 结果；当前运行服务尚未加载新权限和后台读取。新代码真实部署后的准入、故障打开／恢复与外部通知送达仍未验证，不以既有页面 Hosted 成功替代本批告警验收。运行此批验证没有修改原有两个业务逻辑槽。
+
+### 重启后权限发布遗漏与前向迁移修复（2026-11-13）
+
+用户全量重启后，System／Monitor／Transfer 均 Ready，构建身份为包含 `8de17e723` 的 `d6e97ea236255a95ab456bfadda39ca2a1dbd8fc`。通过正式 Client Credentials 取得 `addp-monitor` Platform Service Token，AuthContext 确认为既有 `platform.monitor_runtime`，却没有 `transfer.cdc_risk_observation.read`；经 Gateway 的正式风险 GET 返回 403／permission_denied。后台 Transfer 同一路由持续返回 403，Monitor 同时记录 inventory unavailable 并保留原事件。首失败收据保留于 `/tmp/addp-cdc-risk-runtime-20261113/initial-failure.json`，不以刷新凭据或页面健康改判通过。
+
+Chrome 正式租户页面的任务 61、generation 1 仍显示活跃任务槽、WAL reserved、约 10 GiB 写入余量、事件捕获延迟 0.141 秒和当前消息 `9/9/0`。告警页仅有两条已恢复的历史事件，其中任务 61 的 checkpoint_stalled 已恢复；没有本批不可恢复风险事件。由于后台读取失败，不能据此认定本批告警正常。
+
+根因为权限清单与机器角色 YAML 已更新，但缺少现有数据库的前向发布迁移；不可变 `000006` 种子不会在重启时重新生成。补入 `000292_monitor_cdc_risk_observation.up.sql`，只向既有 Monitor Platform 机器角色发布这一个安全事实读取权限；沿现有触发器推进机器授权版本并撤销旧 Platform Token Family，不变更用户、租户角色、Assignment、OAuth Client 或数据 Grant。
+
+`make test-module MODULE=system GO_ONLY=1` 与标准 `scripts/test/system-iam-postgres-gate.sh --package migration --test catalog-integrity` 通过。该专项已纳入 `TestMonitorCDCRiskForwardMigrationAgainstPostgres`：从 291 升级，精确核对唯一角色绑定、权限属性、旧 Token Family 撤销、机器版本仅推进一次、重复 Runner 无变化，以及其他身份／角色／分配／客户端／Token Family 快照不变；原全迁移 Runner 同时通过，沿门禁清理 `addp_iam_test`。
+
+迁移尚待用户按标准入口重启 System 应用；Monitor 同步重启后取得当前服务 Token，再核对真实风险读取。上述修复验证不计为实际风险 GET 已恢复或真实告警故障／送达闭环通过。没有直接修写开发库，没有触发业务任务故障或修改逻辑槽。

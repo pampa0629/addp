@@ -358,6 +358,8 @@ Transfer 提供唯一机器读取入口 `GET /runtime/cdc-risk-observations?afte
 
 两项分别处理 active／clear／unknown。新鲜明确风险打开／维持事件；同源新鲜 clear 或 Owner 明确 closed 才恢复。单项未知、Transfer／Gateway 不可用只保留对应已有事件，不更新 LastObservedAt，不冒充恢复，也不阻断其他来源的既有规则评估。generation 变化后，必须读到当前代次的明确事实才结束旧代次事件。去重身份为 Tenant＋Transfer sync task＋generation＋signal code，沿原事件事务、确认／抑制及通知 outbox；execution UUID 仅保留为当前 Owner 关联依据，不把其历史诊断当作风险事实。用户列表、更新及通知继续沿现有任务／执行读取权限，不以后台 Service 事实扩大用户可见范围。风险事件按自身 Tenant／模块／任务类型复用 Owner 的 TaskHistory 准入，不依赖对应 execution 行仍被保留；普通 execution 告警仍按其执行范围过滤。
 
+权限清单不在重启时重新覆盖历史数据库种子。`000292` 前向迁移发布上述 Permission，并且只绑定既有 `platform.monitor_runtime`；不创建身份、Role Assignment 或数据 Grant。沿既有角色权限触发器推进受影响机器身份的授权版本，并撤销其旧 Platform Token Family。验收必须覆盖从已应用 `000291` 的数据库升级、重复启动无变化及其他身份／角色不变，不能只核对 YAML 或空库重建。
+
 #### Schema change 公共事实投影
 
 - 数据库 CDC schema change 的跨模块公共事实固定写入触发阻塞的 execution `metadata.continuous.schema_change`。
