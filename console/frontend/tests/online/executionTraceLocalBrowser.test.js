@@ -1,10 +1,10 @@
 import { readFileSync } from 'node:fs'
 import { expect, it } from 'vitest'
-import { admitExecutionTraceBrowserEnvironment, executionTraceBrowserInput, executionTraceTOTP } from '../../e2e/online/execution-trace-local-support.mjs'
+import { admitExecutionTraceBrowserEnvironment, executionTraceBrowserInput, executionTraceTOTP, tenantStageBrowserInput, tenantStagePermissions } from '../../e2e/online/execution-trace-local-support.mjs'
 
 const now = Date.parse('2026-10-23T06:00:00Z')
 const fixture = () => ({ schema: 'addp.execution-trace-browser/v1', run_id: 'local-trace-1', module_name: 'orchestrator', instance_id: 'owned-orchestrator', runtime_instance_id: 2, execution_id: '11111111-1111-4111-8111-111111111111', trace_id: '1'.repeat(32), span_id: '2'.repeat(16), started_at: '2026-10-23T05:59:00Z', start: '2026-10-23T05:58:59Z', end: '2026-10-23T05:59:01Z', links: [{ trace_id: '3'.repeat(32), span_id: '4'.repeat(16), module_name: 'orchestrator', instance_id: 'owned-orchestrator', role: 'backend', runtime_instance_id: 2, started_at: '2026-10-23T03:00:00Z' }] })
-const environment = () => ({ ADDP_EXECUTION_TRACE_LOCAL: '1', CONSOLE_URL: 'http://nginx/', ADDP_EXECUTION_TRACE_ADMIN_USERNAME: 'synthetic-admin', ADDP_EXECUTION_TRACE_ADMIN_PASSWORD: 'synthetic-password', ADDP_EXECUTION_TRACE_ADMIN_TOTP: 'GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ' })
+const environment = () => ({ ADDP_EXECUTION_TRACE_LOCAL: '1', CONSOLE_URL: 'http://nginx/', ADDP_EXECUTION_TRACE_ADMIN_USERNAME: 'synthetic-admin', ADDP_EXECUTION_TRACE_ADMIN_PASSWORD: 'synthetic-password', ADDP_EXECUTION_TRACE_ADMIN_TOTP: 'GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ', ADDP_EXECUTION_TRACE_USER_USERNAME: 'synthetic-user', ADDP_EXECUTION_TRACE_USER_PASSWORD: 'synthetic-password' })
 
 it('accepts only local admitted identities and never a Hosted/SGM authorization substitute', () => {
   expect(() => admitExecutionTraceBrowserEnvironment(environment())).not.toThrow()
@@ -48,4 +48,27 @@ it('keeps browser ownership with real UI and public responses, with no token inj
   for (const required of ['autocomplete="current-password"', 'autocomplete="one-time-code"', '/api/v1/system/auth/context', "getByTestId('trace-spans')", "getByTestId('trace-links')", "getByTestId('runtime-log-output')", "body.msg === 'execution.checkpoint'", "flag: 'wx'", "[200, 404].includes"]) expect(combined).toContain(required)
   expect(source).not.toMatch(/\.post\(|\.put\(|\.patch\(|\.delete\(/)
   expect(source).toContain("report.assertions.link_instance_currently_readable = true")
+})
+
+const tenantFixture = () => ({ schema: 'addp.tenant-stage-browser/v1', run_id: 'local-tenant-1', tenant_id: '7', user_id: '9',
+  cases: ['orchestrator', 'develop'].flatMap((module, i) => ['readable', 'missing'].map(kind => ({ module, kind,
+    execution_id: `${i ? '22222222' : '11111111'}-1111-4111-8111-111111111111`, stages: [
+      { slot: 'enqueue', state: 'not_found' },
+      { slot: 'latest', state: 'available', phase: 'terminal', attempt: 1, outcome: 'failed', start: '2026-11-13T00:00:00Z', end: '2026-11-13T00:00:00Z', duration_ms: 0 }
+    ] }))) })
+
+it('admits four safe tenant cases without accepting platform references or credentials', () => {
+  expect(tenantStageBrowserInput(tenantFixture()).cases).toHaveLength(4)
+  expect(tenantStagePermissions).toHaveLength(11)
+  for (const mutate of [v => { v.trace_id = '1'.repeat(32) }, v => { v.password = 'secret' },
+    v => { v.cases[0].stages[1].instance_id = 'private' }, v => { v.cases[0].execution_id = 'bad' },
+    v => { v.cases[0].stages[1].attempt = 0 }, v => { v.cases[0].stages[1].duration_ms = Infinity },
+    v => { v.cases[1].stages[0].state = 'not_recorded' }, v => { v.cases.push(v.cases[0]) },
+    v => { v.cases[1] = v.cases[0] }, v => { v.cases[0].stages[1].outcome = 'unknown' }
+  ]) { const candidate = tenantFixture(); mutate(candidate); expect(() => tenantStageBrowserInput(candidate)).toThrow() }
+})
+it('runs tenant and platform in separate real contexts with four lazy reads and logout', () => {
+  const source = readFileSync(new URL('../../e2e/online/execution-trace-local.spec.js', import.meta.url), 'utf8')
+  for (const marker of ["principal: 'USER', scope: 'tenant'", 'tenantStagePermissions', 'tenantContext.close()',
+    "expect(stageRequests).toBe(4)", "name: '查看阶段追踪'", "name: '收起阶段追踪'", "'cache-control'", 'tenant-browser-logout']) expect(source).toContain(marker)
 })

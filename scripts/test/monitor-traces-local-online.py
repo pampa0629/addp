@@ -8,6 +8,7 @@ import hmac
 import http.cookiejar
 import importlib
 import json
+import math
 import re
 import struct
 import sys
@@ -43,6 +44,10 @@ def guard_client(client, life):
     def guarded(*args, **kwargs):
         if hasattr(life,"before_api_request"): life.before_api_request(args[1] if len(args)>1 else kwargs.get("path",""))
         client.timeout = life.request_timeout()
+        if getattr(life,'phase','') in ('natural_tail_sampling','tenant_stage_observations') and hasattr(life,'stage_observation_deadline'):
+            remaining=life.stage_observation_deadline-time.monotonic()
+            require(remaining>0,'tenant_stage_observation_timeout')
+            client.timeout=min(client.timeout,5,remaining)
         try:
             reply = request(*args, **kwargs)
         except API.SuiteError as error:
@@ -243,6 +248,152 @@ def checkpoint_rows(client, instance, execution_id, start, end, trace_id=None):
     return result
 
 
+def tenant_stage_read(client, life, execution_id):
+    """One bounded real Gateway GET, including the response metadata oracle."""
+    path = '/api/v1/monitor/executions/by-execution-id/' + execution_id + '/trace-stages'
+    if hasattr(life, 'before_api_request'): life.before_api_request(path)
+    request = urllib.request.Request(client.base_url + path, headers={
+        'Accept': 'application/json', 'Authorization': 'Bearer ' + client.token})
+    try:
+        remaining = life.stage_observation_deadline-time.monotonic()
+        require(remaining > 0, 'tenant_stage_observation_timeout')
+        response = client.browser_opener.open(request, timeout=min(5, life.request_timeout(), remaining))
+    except urllib.error.HTTPError as error:
+        response = error
+    except (urllib.error.URLError, TimeoutError):
+        raise LocalTraceAssertionFailure('tenant_stage_transport_failed')
+    with response:
+        require(response.status == 200, 'tenant_stage_http_failed')
+        require(response.headers.get('Cache-Control') == 'no-store', 'tenant_stage_cache_contract_failed')
+        request_id = response.headers.get('X-Request-ID', '')
+        require(re.fullmatch(r'[A-Za-z0-9_-]{1,100}', request_id), 'tenant_stage_request_identity_missing')
+        raw = response.read(8193)
+    life.check()
+    require(len(raw) <= 8192, 'tenant_stage_response_budget_exceeded')
+    try: value = json.loads(raw)
+    except (ValueError, UnicodeError): raise LocalTraceAssertionFailure('tenant_stage_response_invalid')
+    return validate_tenant_stages(value, execution_id), request_id
+
+
+def validate_tenant_stages(value, execution_id):
+    require(isinstance(value, dict) and set(value) == {'execution_id', 'supported', 'stages'} and
+            value['execution_id'] == execution_id and value['supported'] is True and
+            isinstance(value['stages'], list) and len(value['stages']) == 2, 'tenant_stage_dto_invalid')
+    slots = {}
+    require([stage.get('slot') for stage in value['stages'] if isinstance(stage,dict)] == ['enqueue','latest'], 'tenant_stage_slots_invalid')
+    for stage in value['stages']:
+        require(isinstance(stage, dict) and stage.get('slot') in ('enqueue', 'latest') and
+                stage['slot'] not in slots, 'tenant_stage_slots_invalid')
+        state = stage.get('state')
+        require(state in ('available', 'not_found'), 'tenant_stage_fresh_reference_unavailable')
+        fields = {'slot', 'state'}
+        if state == 'available':
+            fields |= {'phase', 'attempt', 'outcome', 'start', 'end', 'duration_ms'}
+            attempt, duration = stage.get('attempt'), stage.get('duration_ms')
+            require(type(attempt) is int and type(duration) in (int, float) and math.isfinite(duration) and duration >= 0,
+                    'tenant_stage_number_invalid')
+            require(stage.get('outcome') in ('success', 'failed', 'timeout', 'cancelled', 'rejected'), 'tenant_stage_outcome_invalid')
+            require(stage.get('phase') in (('enqueue',) if stage['slot'] == 'enqueue' else ('claim', 'dispatch', 'terminal')) and
+                    (attempt == 0 if stage['slot'] == 'enqueue' else attempt >= 1), 'tenant_stage_phase_invalid')
+            try:
+                start, end = (datetime.fromisoformat(stage[key].replace('Z', '+00:00')) for key in ('start', 'end'))
+                require(start.tzinfo is not None and end.tzinfo is not None and end >= start and
+                        abs((end-start).total_seconds()*1000-duration) < .001, 'tenant_stage_time_invalid')
+            except (ValueError, TypeError, KeyError, AttributeError):
+                raise LocalTraceAssertionFailure('tenant_stage_time_invalid')
+        require(set(stage) == fields, 'tenant_stage_private_or_missing_fields')
+        slots[stage['slot']] = stage
+    return value
+
+
+def tenant_stage_observations(user, admin, life, report, executions, checkpoints, instances, terminals, start):
+    life.phase = 'tenant_stage_observations'
+    window = life.stage_observation_deadline - 90
+    requests, observed, latest = [], [], {}
+    previous_round = time.monotonic()
+    for round_index in range(6):
+        if round_index:
+            remaining = previous_round + 15 - time.monotonic()
+            if remaining > 0: life.wait(remaining)
+        require(time.monotonic() < window+90, 'tenant_stage_observation_timeout')
+        previous_round = time.monotonic()
+        for owner, key in (('orchestrator', 'parent'), ('develop', 'child')):
+            execution_id = executions[1][key]
+            require(time.monotonic() < window+85, 'tenant_stage_observation_timeout')
+            value, request_id = tenant_stage_read(user, life, execution_id)
+            requests.append((owner, request_id))
+            latest[(owner, 'failure')] = value
+            observed.append({'round': round_index, 'module': owner, 'sample': 'failure',
+                             'stages': value['stages'], 'elapsed_seconds': round(time.monotonic()-window,3)})
+        if all(value['stages'][1]['state'] == 'available' for value in latest.values()): break
+    require(time.monotonic() < window+80, 'tenant_stage_observation_timeout')
+    for owner, key in (('orchestrator', 'parent'), ('develop', 'child')):
+        execution_id = executions[0][key]
+        value, request_id = tenant_stage_read(user, life, execution_id)
+        requests.append((owner, request_id)); latest[(owner, 'success')] = value
+        observed.append({'module': owner, 'sample': 'success', 'stages': value['stages'], 'elapsed_seconds': round(time.monotonic()-window,3)})
+    require(len(requests) <= 14 and time.monotonic() < window+90, 'tenant_stage_observation_timeout')
+    report['tenant_stage_observations'] = observed
+    cases = []
+    for owner, key in (('orchestrator', 'parent'), ('develop', 'child')):
+        value = latest[(owner, 'failure')]
+        stage = value['stages'][1]; reference = terminals[owner]
+        require(stage['state'] == 'available' and stage['phase'] == 'terminal' and stage['outcome'] == 'failed' and
+                stage['attempt'] == 1 and all(stage[field] == reference[field] for field in
+                ('phase', 'attempt', 'outcome', 'start', 'end', 'duration_ms')), 'tenant_stage_terminal_mismatch')
+        cases.append({'module': owner, 'execution_id': value['execution_id'], 'kind': 'readable', 'stages': value['stages']})
+        candidate = next((latest[(owner, label)] for label in ('failure', 'success')
+                          if latest[(owner, label)]['stages'][0]['state'] == 'not_found'), None)
+        require(candidate is not None, 'tenant_stage_normal_missing_not_observed')
+        execution_id = candidate['execution_id']
+        entry, body = next(pair for pair in checkpoints[(owner, execution_id)] if pair[1]['phase'] == 'enqueue')
+        require(body['attempt'] == 0, 'tenant_stage_enqueue_checkpoint_invalid')
+        query = urllib.parse.urlencode({'instance_id': instances[owner]['id'], 'start': start, 'end': utc()})
+        missing = admin.request('GET', '/api/v1/monitor/platform/traces/'+entry['trace_id']+'?'+query, (404,))
+        require(missing.payload.get('error_code') == 'trace_not_found', 'tenant_stage_missing_not_normal')
+        detail = user.request('GET', '/api/v1/monitor/executions/by-execution-id/'+execution_id, (200,)).payload
+        safe_execution(detail)
+        events = user.request('GET', '/api/v1/monitor/executions/by-execution-id/'+execution_id+'/events?after=0&limit=10', (200,)).payload
+        safe_execution(events)
+        cases.append({'module': owner, 'execution_id': execution_id, 'kind': 'missing', 'stages': candidate['stages']})
+    report['assertions'].update(tenant_stage_readable_exact=True, tenant_stage_normal_missing=True,
+                                tenant_stage_business_facts_preserved=True)
+    life.tenant_stage_requests = requests
+    return {'schema': 'addp.tenant-stage-browser/v1', 'run_id': life.run_id, 'cases': cases}
+
+
+def tenant_stage_request_chain(admin, life, report):
+    """Existing completion logs correlate real Gateway/Monitor/Owner reads without sampling."""
+    life.phase = 'tenant_stage_request_chain'
+    rows = instance_rows(admin)
+    expected = {'gateway': ('ingress', '/api/v1/:module/*path'),
+                'monitor': ('backend', '/api/v1/monitor/executions/by-execution-id/:execution_id/trace-stages'),
+                'orchestrator': ('backend', '/api/v1/orchestrator/execution-read-scope'),
+                'develop': ('backend', '/api/v1/develop/execution-read-scope')}
+    selected = {}
+    for module, (role, route) in expected.items():
+        found = [row for row in rows if row.get('module_name') == module and row.get('role') == role]
+        require(len(found) == 1, 'tenant_stage_chain_instance_not_unique')
+        selected[module] = found[0]
+    for owner, request_id in life.tenant_stage_requests:
+        for module, (_, route) in expected.items():
+            instance = selected[module]
+            query = urllib.parse.urlencode({'from': life.tenant_stage_log_start, 'to': utc(), 'keyword': request_id, 'limit': 100})
+            path = '/api/v1/system/platform/modules/'+module+'/instances/'+instance['instance_id']+'/logs?'+query
+            response = admin.request('GET', path, (200,)).payload
+            require(response.get('has_more') is False, 'tenant_stage_chain_logs_incomplete')
+            matches = []
+            for entry in response.get('entries', []):
+                try: body = json.loads(entry.get('message', ''))
+                except (ValueError, TypeError): continue
+                if body.get('msg') == 'http.request.completed' and body.get('request_id') == request_id and body.get('route') == route:
+                    matches.append(body)
+            require(len(matches) == (0 if module not in ('gateway', 'monitor', owner) else 1) and
+                    all(body.get('method') == 'GET' and body.get('status') == 200 for body in matches),
+                    'tenant_stage_chain_owner_or_route_mismatch')
+    report['assertions']['tenant_stage_gateway_monitor_single_owner'] = True
+
+
 def run(life, env, report):
     life.phase='formal_password_and_authcontext'
     admin,admin_identity=login(env,'ADMIN',True,life)
@@ -251,6 +402,7 @@ def run(life, env, report):
     preparer,preparer_identity=login(env,'PREPARER',life=life)
     require({'monitor.trace.read','platform.module_log.read'}<=permissions(admin_identity),'administrator_diagnostic_permissions_missing')
     require(not {'monitor.trace.read','platform.module_log.read'}.intersection(permissions(negative_identity)|permissions(user_identity)),'negative_identity_has_platform_diagnostic_permission')
+    require(user_identity.get('client',{}).get('scope_mode')=='unrestricted','business_client_scope_not_unrestricted')
     require(permissions(user_identity)=={
         'orchestrator.workflow.create','orchestrator.workflow.read','orchestrator.workflow.delete','orchestrator.workflow.execute',
         'develop.task.create','develop.task.read','develop.task.delete','develop.task.execute','develop.data_read.execute',
@@ -336,14 +488,16 @@ def run(life, env, report):
     # Ordinary stages remain independent 5% samples. Only failure terminals are mandatory.
     life.phase='natural_tail_sampling'
     life.wait(125)
+    life.stage_observation_deadline=time.monotonic()+90
     retained=[]
+    terminals={}
     for name,key in [('orchestrator','parent'),('develop','child')]:
         failed=executions[1][key]
         entry,body=next(pair for pair in checkpoints[(name,failed)] if pair[1]['phase']=='terminal')
         instance=owner_instances[name]
         query=urllib.parse.urlencode({'instance_id':instance['id'],'start':start,'end':utc()})
         path='/api/v1/monitor/platform/traces/'+entry['trace_id']+'?'+query
-        deadline=time.monotonic()+90
+        deadline=life.stage_observation_deadline
         while True:
             response=admin.request('GET',path,(200,404))
             if response.status==200:break
@@ -354,7 +508,8 @@ def run(life, env, report):
         spans=traces[0].get('spans',[])
         require(len(spans)==1,'stage_must_be_independent_root')
         span=spans[0]
-        require(span.get('span_id')==entry['span_id'] and span.get('scope')=='addp.execution' and span.get('phase')=='terminal' and span.get('outcome')=='failed' and span.get('attempt')==body['attempt'],'retained_stage_contract_mismatch')
+        require(span.get('module_name')==name and span.get('instance_id')==instance['instance_id'] and span.get('role')=='backend' and span.get('parent_span_id')=='' and span.get('kind')=='internal' and span.get('span_id')==entry['span_id'] and span.get('scope')=='addp.execution' and span.get('phase')=='terminal' and span.get('outcome')=='failed' and span.get('attempt')==body['attempt'],'retained_stage_contract_mismatch')
+        terminals[name]=span
         expected_links={e['trace_id']+'/'+e['span_id']:e for e,b in checkpoints[(name,failed)] if b['phase'] in ('enqueue','dispatch')}
         known=set(expected_links)
         links=span.get('links',[])
@@ -375,20 +530,32 @@ def run(life, env, report):
                          'start':start,'end':utc(),'links':links})
     report['assertions'].update(retained_failure_stages_and_links=True,exact_trace_span_logs=True,tenant_and_wrong_platform_denied=True)
     # Save only safe references, never SQL, data or raw API payloads.
-    report['retained']=[{k:v for k,v in row.items() if k not in ('start','end','schema')} for row in retained]
-    return retained[1]
+    report['retained']=[{'module_name':row['module_name'],'execution_id':row['execution_id']} for row in retained]
+    tenant = tenant_stage_observations(user,admin,life,report,executions,checkpoints,owner_instances,terminals,start)
+    tenant['tenant_id']=user_identity['context']['tenant_id']
+    tenant['user_id']=user_identity['principal']['id']
+    life.tenant_stage_log_start=start
+    return {'platform':retained[1],'tenant':tenant}
 
 
 def finish(life,env,report):
     life.phase='owner_cleanup_and_logout'
     admin,negative,user,preparer=life.local_clients
+    definition_errors, session_errors = [], []
     for path,identifier in reversed(life.local_definitions):
-        user.request('DELETE',path+str(identifier),(200,204))
-        user.request('GET',path+str(identifier),(404,))
+        try:
+            user.request('DELETE',path+str(identifier),(200,204))
+            user.request('GET',path+str(identifier),(404,))
+        except Exception:
+            definition_errors.append('definition_cleanup_failed')
     for client in (admin,negative,user,preparer):
-        request=urllib.request.Request(env['GATEWAY_URL']+'/api/v1/system/logout',data=b'',method='POST',
-                                       headers={'Authorization':'Bearer '+client.token})
-        with client.browser_opener.open(request,timeout=life.request_timeout()) as response:
-            require(response.status==204,'formal_logout_did_not_close_cookie_session')
-        client.request('GET','/api/v1/system/auth/context',(401,))
-    report['assertions'].update(formal_definitions_deleted=True,logout_old_session_denied=True)
+        try:
+            request=urllib.request.Request(env['GATEWAY_URL']+'/api/v1/system/logout',data=b'',method='POST',
+                                           headers={'Authorization':'Bearer '+client.token})
+            with client.browser_opener.open(request,timeout=life.request_timeout()) as response:
+                require(response.status==204,'formal_logout_did_not_close_cookie_session')
+            client.request('GET','/api/v1/system/auth/context',(401,))
+        except Exception:
+            session_errors.append('session_cleanup_failed')
+    report['assertions'].update(formal_definitions_deleted=not definition_errors,logout_old_session_denied=not session_errors)
+    require(not definition_errors and not session_errors,'formal_cleanup_incomplete')

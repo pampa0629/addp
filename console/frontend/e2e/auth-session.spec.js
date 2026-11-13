@@ -280,3 +280,38 @@ for (const mode of ['direct', 'context', 'mfa']) {
     }
   })
 }
+
+test('local acceptance tenant login uses the real password form and keeps its exact tenant scope', async ({ page }) => {
+  const { localConsoleLogin } = await import('./online/local-identity-support.mjs')
+  const { tenantStagePermissions } = await import('./online/execution-trace-local-support.mjs')
+  const prefix = 'ADDP_LOCAL_LOGIN_TEST_'
+  process.env[prefix + 'USER_USERNAME'] = 'acceptance-user'
+  process.env[prefix + 'USER_PASSWORD'] = 'synthetic-password'
+  let authenticated = false
+  const writes = []
+  const identity = { principal: { type: 'user', id: '9' }, context: { type: 'tenant', tenant_id: '7' },
+    token: { type: 'first_party_access_token' }, client: { scope_mode: 'unrestricted' },
+    delegation: null, authorization: { role_assignments: [{ scope: { type: 'tenant', tenant_id: '7' }, permissions: tenantStagePermissions }] } }
+  await page.route('**/api/v1/**', async route => {
+    const request = route.request(), path = new URL(request.url()).pathname
+    if (request.method() !== 'GET') writes.push(path)
+    if (path === '/api/v1/system/refresh') return route.fulfill({ status: authenticated ? 200 : 401, json: authenticated ? { access_token: 'synthetic-access-token', expires_in: 3600 } : {} })
+    if (path === '/api/v1/system/login') {
+      expect(request.postDataJSON()).toEqual({ username: 'acceptance-user', password: 'synthetic-password' })
+      authenticated = true
+      return route.fulfill({ json: { next_action: 'session_issued', session: { access_token: 'synthetic-access-token', expires_in: 3600 } } })
+    }
+    if (path === '/api/v1/system/auth/context') return route.fulfill({ status: authenticated ? 200 : 401, json: authenticated ? identity : {} })
+    if (path === '/api/v1/system/users/me') return route.fulfill({ json: { id: 9, username: 'acceptance-user' } })
+    return route.fulfill({ json: [] })
+  })
+  try {
+    const actual = await localConsoleLogin(page, expect, { prefix, principal: 'USER', scope: 'tenant', path: '/' })
+    expect(actual).toEqual(identity)
+    await expect(page).toHaveURL(/\/$/)
+    expect(writes.filter(path => path !== '/api/v1/system/refresh')).toEqual(['/api/v1/system/login'])
+  } finally {
+    delete process.env[prefix + 'USER_USERNAME']
+    delete process.env[prefix + 'USER_PASSWORD']
+  }
+})

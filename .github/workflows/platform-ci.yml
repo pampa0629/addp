@@ -164,6 +164,7 @@ jobs:
             'common/*' \
             'develop/*' \
             'nginx/*' \
+            'monitor/*' \
             'orchestrator/*'
 
       - name: Set up Node.js

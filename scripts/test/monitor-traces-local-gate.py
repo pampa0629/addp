@@ -53,6 +53,9 @@ OWN_INPUTS = (
     'orchestrator/backend/internal/service/execution_trace_test.go', 'system/backend/go.mod', 'system/backend/go.sum', 'system/backend/cmd/online-test-fixture/main.go',
     'system/backend/cmd/online-test-fixture/execution_trace_local.go', 'system/backend/cmd/online-test-fixture/execution_trace_local_test.go',
     'console/frontend/e2e/online/execution-trace-local.spec.js', 'console/frontend/e2e/online/execution-trace-local-support.mjs',
+    'console/frontend/e2e/online/local-identity-support.mjs', 'console/frontend/e2e/http-quality-page-support.mjs', 'monitor/frontend/src/components/ExecutionTraceStages.vue',
+    'monitor/backend/internal/api/execution_trace_handler.go', 'monitor/backend/internal/service/execution_trace_read.go',
+    'monitor/backend/internal/service/execution_trace_stages.go', 'monitor/backend/internal/tracequery/execution_stage.go',
     'console/frontend/tests/online/executionTraceLocalBrowser.test.js',
 )
 MAX_SECONDS = 3600
@@ -2437,12 +2440,14 @@ def main():
         business=module('monitor-traces-local-online',life.checkout)
         browser=business.run(life,env,report)
         life.phase='real_console_browser'
-        browser_path=life.private_json('browser.json',browser)
+        browser_path=life.private_json('browser.json',browser['platform'])
+        life.private_json('tenant-browser.json',browser['tenant'])
         secret_env=life.work/'browser.env'
-        selected={k:v for k,v in env.items() if k.startswith('ADDP_EXECUTION_TRACE_ADMIN_')}
+        selected={k:v for k,v in env.items() if k.startswith(('ADDP_EXECUTION_TRACE_ADMIN_','ADDP_EXECUTION_TRACE_USER_'))}
         selected.update(ADDP_EXECUTION_TRACE_LOCAL='1',CONSOLE_URL='http://nginx',
                         ADDP_EXECUTION_TRACE_BROWSER_CONFIG_FILE='/private/browser.json',
                         ADDP_EXECUTION_TRACE_BROWSER_REPORT_FILE='/private/browser-report.json',
+                        ADDP_EXECUTION_TRACE_TENANT_BROWSER_CONFIG_FILE='/private/tenant-browser.json',
                         ADDP_ONLINE_ARTIFACT_DIR='/tmp/trace-browser')
         secret_env.write_text('\n'.join(k+'='+v for k,v in selected.items())+'\n');secret_env.chmod(0o600)
         version=json.loads((life.checkout/'console/frontend/package-lock.json').read_text())['packages']['node_modules/@playwright/test']['version']
@@ -2454,7 +2459,7 @@ def main():
             'node','node_modules/@playwright/test/cli.js','test','--config=playwright.online.config.js','execution-trace-local.spec.js','--reporter=line',timeout=300)
         report['browser']=json.loads((life.work/'browser-report.json').read_text())
         require(report['browser'].get('result')=='passed','browser_report_not_passed')
-        business.finish(life,env,report)
+        business.tenant_stage_request_chain(life.local_clients[0],life,report)
         life.sample()
         require(life.failure is None,life.failure or 'resource_guard_failed')
         report['result']='passed'
@@ -2489,6 +2494,14 @@ def main():
                 except GateError:pass
         if diagnostics:report['failed_service_diagnostics']=diagnostics
     finally:
+        # Formal API cleanup is attempted after success and failure. A failure
+        # stays visible even when the owned disposable deployment is removed.
+        if hasattr(life,'local_clients'):
+            try:
+                business.finish(life,env,report)
+            except Exception:
+                report['formal_cleanup']={'result':'failed','error_code':'formal_cleanup_incomplete'}
+                report['result']='failed'
         if hasattr(life,'cache_reclaim_receipt'):report['go_cache_reclaim']=life.cache_reclaim_receipt
         if hasattr(life,'compile_start_handoff'):report['compile_start_handoff']=life.compile_start_handoff
         report['resource_samples']=life.samples

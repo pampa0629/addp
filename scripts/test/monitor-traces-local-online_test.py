@@ -28,7 +28,7 @@ def identity(who):
                else BUSINESS_PERMISSIONS if who == 'USER' else {'iam.tenant_role.read','iam.tenant_role_assignment.create'} if who == 'PREPARER' else set())
     return {'principal': {'id': who, 'type': 'user'}, 'delegation': None,
             'context': {'type': 'platform' if who in ('ADMIN', 'SECURITY') else 'tenant', 'tenant_id': '7', 'tenant_membership_id': '9'},
-            'token': {'type': 'first_party_access_token'}, 'authentication': {'assurance_level': 'aal2'},
+            'client': {'scope_mode':'unrestricted'}, 'token': {'type': 'first_party_access_token'}, 'authentication': {'assurance_level': 'aal2'},
             'authorization': {'role_assignments': [{'role_key': 'tenant.administrator' if who=='PREPARER' else 'local.execution_trace', 'permissions': sorted(granted)}]}}
 
 
@@ -92,6 +92,10 @@ class FormalAPI:
         elif path.endswith('/execute') and '/orchestrations/' in path:
             label = self.workflows[int(path.split('/')[-2])]
             status, payload = 202, {'execution_id': EXECUTIONS[('orchestrator', label)]}
+        elif path.endswith('/events'):
+            payload={'items':[]}
+        elif '/monitor/executions/by-execution-id/' in path and not path.endswith('/tree'):
+            payload={'execution_id':path.split('/')[-1],'status':'failed'}
         elif '/executions/' in path and path.endswith('/tree'):
             payload = {'children': [{'execution_id': EXECUTIONS[('develop', 'failure')]}]}
         elif '/executions/' in path:
@@ -127,9 +131,11 @@ class FormalAPI:
         elif '/platform/traces/' in path:
             trace_id = path.split('/')[-1]
             matched = [(module, execution_id, entries) for (module, execution_id), entries in self.logs.items()
-                       if entries[-1]['trace_id'] == trace_id]
+                       if any(entry['trace_id'] == trace_id for entry in entries)]
             assert len(matched) == 1, 'Only exact failed terminal traces may be required by sampling assertions'
             module, execution_id, entries = matched[0]
+            if entries[0]['trace_id'] == trace_id:
+                return M.API.Response(404, {'error_code':'trace_not_found'})
             assert execution_id == EXECUTIONS[(module, 'failure')]
             instance = next(row for row in self.instances if row['module_name'] == module)
             links = [{'trace_id': entry['trace_id'], 'span_id': entry['span_id'], 'module_name': module, 'role': 'backend',
@@ -137,8 +143,8 @@ class FormalAPI:
                      for entry in (entries[0], entries[2])]
             if self.fault == 'duplicate_links': links[1] = deepcopy(links[0])
             if self.fault == 'wrong_stage_link': links[1].update(trace_id=entries[1]['trace_id'], span_id=entries[1]['span_id'])
-            span = {'span_id': entries[-1]['span_id'], 'scope': 'addp.execution', 'phase': 'terminal', 'outcome': 'failed',
-                    'attempt': 1, 'start': STAMP, 'end': STAMP, 'links': links}
+            span = {'module_name':module,'instance_id':instance['instance_id'],'role':'backend','parent_span_id':'','kind':'internal','span_id': entries[-1]['span_id'], 'scope': 'addp.execution', 'phase': 'terminal', 'outcome': 'failed',
+                    'attempt': 1, 'start': STAMP, 'end': STAMP, 'duration_ms': 0, 'links': links}
             if self.fault == 'wrong_trace_span': span['span_id'] = 'f' * 16
             payload = {'coverage': 'sampled', 'data': [{'trace_id': trace_id, 'spans': [span]}]}
         else:
@@ -147,6 +153,13 @@ class FormalAPI:
             raise M.API.SuiteError('unexpected_fixture_http_status_'+str(status))
         return M.API.Response(status, payload)
 
+    def stage_read(self,client,life,execution_id):
+        owner,label=next(key for key,value in EXECUTIONS.items() if value==execution_id)
+        stage={'slot':'latest','state':'available','phase':'terminal','attempt':1,
+               'outcome':'failed' if label=='failure' else 'success','start':STAMP,'end':STAMP,'duration_ms':0}
+        value={'execution_id':execution_id,'supported':True,'stages':[{'slot':'enqueue','state':'not_found'},stage]}
+        return M.validate_tenant_stages(value,execution_id),'request-'+owner
+
     def run(self):
         life = SimpleNamespace(run_id='local-trace-fixture', wait=lambda seconds: self.waits.append(seconds))
         env = {'POSTGRES_USER': 'fixture', 'POSTGRES_PASSWORD': 'fixture-private-password'}
@@ -154,7 +167,8 @@ class FormalAPI:
         with patch.object(M, 'login', side_effect=lambda env, who, platform=False, life=None: (self.client(who), identity(who))), \
              patch.object(M,'prepare_engine_authority',side_effect=lambda client,context,env,life,report:context), \
              patch.object(M.time, 'monotonic', new=Clock()), patch.object(M.time, 'sleep'):
-            retained = M.run(life, env, report)
+            with patch.object(M,'tenant_stage_read',side_effect=self.stage_read):
+                retained = M.run(life, env, report)
         return retained, report
 
 
@@ -286,11 +300,11 @@ class LocalExecutionTraceOwnerTests(unittest.TestCase):
     def test_real_owner_dtos_parent_child_and_natural_failure_sampling(self):
         server = FormalAPI()
         retained, report = server.run()
-        self.assertEqual(retained['execution_id'], EXECUTIONS[('develop', 'failure')])
-        self.assertEqual(retained['started_at'], STAMP)
+        self.assertEqual(retained['platform']['execution_id'], EXECUTIONS[('develop', 'failure')])
+        self.assertEqual(retained['platform']['started_at'], STAMP)
         self.assertEqual(server.waits, [125])
         traced = [call for call in server.calls if '/platform/traces/' in call[2] and call[0] == 'ADMIN']
-        self.assertEqual(len(traced), 2)
+        self.assertEqual(len(traced), 4)
         self.assertTrue(report['assertions']['tenant_and_wrong_platform_denied'])
         safe_report = json.dumps(report)
         for secret in ('fixture-private-password', 'SELECT ', 'private-query'):
@@ -363,3 +377,150 @@ class LocalExecutionTraceOwnerTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+class TenantStageAcceptanceTests(unittest.TestCase):
+    def value(self):
+        return {'execution_id':EXECUTIONS[('develop','failure')],'supported':True,'stages':[
+            {'slot':'enqueue','state':'not_found'},
+            {'slot':'latest','state':'available','phase':'terminal','attempt':1,'outcome':'failed',
+             'start':STAMP,'end':STAMP,'duration_ms':0}]}
+
+    def test_closed_dto_rejects_private_fields_missing_time_and_false_normal_absence(self):
+        value=self.value()
+        self.assertEqual(M.validate_tenant_stages(value,value['execution_id']),value)
+        for mutate in (
+            lambda v:v.update(trace_id='private'),lambda v:v.update(supported=False),
+            lambda v:v['stages'].reverse(),lambda v:v['stages'][0].update(state='not_recorded'),
+            lambda v:v['stages'][0].update(state='outside_window'),
+            lambda v:v['stages'][0].update(attempt=0),
+            lambda v:v['stages'][1].update(instance_id='private'),
+            lambda v:v['stages'][1].update(attempt=True),lambda v:v['stages'][1].update(duration_ms=float('nan')),
+            lambda v:v['stages'][1].update(phase='enqueue'),lambda v:v['stages'][1].update(start='bad'),
+            lambda v:v['stages'][1].update(end='2026-10-22T00:00:00Z'),lambda v:v['stages'][1].update(outcome='PRIVATE'),
+        ):
+            candidate=deepcopy(value);mutate(candidate)
+            with self.subTest(value=candidate),self.assertRaises(M.LocalTraceAssertionFailure):
+                M.validate_tenant_stages(candidate,value['execution_id'])
+
+    def test_real_wire_get_is_bounded_no_store_request_id_and_no_query_or_body(self):
+        from http.server import BaseHTTPRequestHandler,ThreadingHTTPServer
+        from threading import Thread
+        import urllib.request
+        state={'fault':None,'count':0};value=self.value()
+        class Handler(BaseHTTPRequestHandler):
+            def log_message(self,*args):pass
+            def do_GET(self):
+                state['count']+=1
+                assert self.path=='/api/v1/monitor/executions/by-execution-id/'+value['execution_id']+'/trace-stages'
+                assert self.headers.get('Authorization')=='Bearer private-token'
+                assert self.headers.get('Content-Length') is None
+                self.send_response(503 if state['fault']=='upstream' else 200)
+                self.send_header('Cache-Control','public' if state['fault']=='cache' else 'no-store')
+                self.send_header('X-Request-ID','' if state['fault']=='request_id' else 'request-identity')
+                self.end_headers()
+                raw=b'X'*8193 if state['fault']=='budget' else b'not-json' if state['fault']=='json' else json.dumps(value).encode()
+                self.wfile.write(raw)
+        server=ThreadingHTTPServer(('127.0.0.1',0),Handler);thread=Thread(target=server.serve_forever,daemon=True);thread.start()
+        try:
+            client=SimpleNamespace(base_url='http://127.0.0.1:'+str(server.server_port),token='private-token',
+                                   browser_opener=urllib.request.build_opener(urllib.request.ProxyHandler({})))
+            life=SimpleNamespace(request_timeout=lambda:5,check=lambda:None,stage_observation_deadline=M.time.monotonic()+90)
+            actual,request_id=M.tenant_stage_read(client,life,value['execution_id'])
+            self.assertEqual(actual,value);self.assertEqual(request_id,'request-identity')
+            for fault in ('upstream','cache','request_id','budget','json'):
+                state['fault']=fault
+                with self.subTest(fault=fault),self.assertRaises(M.LocalTraceAssertionFailure):
+                    M.tenant_stage_read(client,life,value['execution_id'])
+            self.assertEqual(state['count'],6) # no hidden retry
+        finally:server.shutdown();server.server_close();thread.join(timeout=2)
+
+    def test_sampling_candidate_shortfall_and_mismatched_terminal_never_pass(self):
+        for fault in ('all_sampled','wrong_terminal'):
+            server=FormalAPI();original=server.stage_read
+            def read(client,life,execution_id):
+                value,request_id=original(client,life,execution_id)
+                if fault=='all_sampled':value['stages'][0]={'slot':'enqueue','state':'available','phase':'enqueue','attempt':0,
+                    'outcome':'success','start':STAMP,'end':STAMP,'duration_ms':0}
+                else:value['stages'][1]['duration_ms']=1
+                return value,request_id
+            server.stage_read=read
+            with self.subTest(fault=fault),self.assertRaises(M.LocalTraceAssertionFailure):server.run()
+            self.assertEqual(len(server.tasks),2);self.assertEqual(len(server.workflows),2)
+
+    def test_shared_sampling_and_stage_window_and_four_browser_cases(self):
+        server=FormalAPI();result,report=server.run()
+        self.assertEqual(len(result['tenant']['cases']),4)
+        self.assertEqual({(r['module'],r['kind'])for r in result['tenant']['cases']},
+                         {(m,k)for m in ('orchestrator','develop')for k in ('readable','missing')})
+        self.assertNotIn('trace_id',json.dumps(report));self.assertNotIn('span_id',json.dumps(report))
+        self.assertNotIn('instance_id',json.dumps(result['tenant']))
+        self.assertTrue(report['assertions']['tenant_stage_readable_exact'])
+        self.assertTrue(report['assertions']['tenant_stage_normal_missing'])
+
+    def test_six_round_cap_never_reexecutes_business_to_manufacture_a_sample(self):
+        server=FormalAPI();original=server.stage_read;calls=[]
+        def missing(client,life,execution_id):
+            calls.append(execution_id);value,request_id=original(client,life,execution_id)
+            if len(calls)<=12:value['stages'][1]={'slot':'latest','state':'not_found'}
+            return value,request_id
+        server.stage_read=missing
+        with self.assertRaisesRegex(M.LocalTraceAssertionFailure,'tenant_stage_terminal_mismatch'):server.run()
+        self.assertEqual(len(calls),14)
+        self.assertEqual(len(server.tasks),2);self.assertEqual(len(server.workflows),2)
+
+    def test_chain_correlates_exact_owner_and_fails_on_missing_or_extra_route(self):
+        rows=[{'module_name':name,'role':'ingress' if name=='gateway' else 'backend','instance_id':name+'-instance'}
+              for name in ('gateway','monitor','orchestrator','develop')]
+        routes={'gateway':'/api/v1/:module/*path','monitor':'/api/v1/monitor/executions/by-execution-id/:execution_id/trace-stages',
+                'orchestrator':'/api/v1/orchestrator/execution-read-scope','develop':'/api/v1/develop/execution-read-scope'}
+        for fault in (None,'other_owner','missing','pagination','status'):
+            def request(method,path,expected):
+                if '/module-instances?' in path:return M.API.Response(200,{'data':rows})
+                module=path.split('/')[6]
+                body={'msg':'http.request.completed','request_id':'request-one','route':routes[module],'method':'GET','status':200}
+                if fault=='status':body['status']=503
+                entries=[] if module=='develop' else [{'message':json.dumps(body)}]
+                if fault=='other_owner' and module=='develop':entries=[{'message':json.dumps(body)}]
+                if fault=='missing' and module=='orchestrator':entries=[]
+                return M.API.Response(200,{'has_more':fault=='pagination','entries':entries})
+            life=SimpleNamespace(tenant_stage_requests=[('orchestrator','request-one')],tenant_stage_log_start=STAMP)
+            report={'assertions':{}}
+            if fault:
+                with self.subTest(fault=fault),self.assertRaises(M.LocalTraceAssertionFailure):M.tenant_stage_request_chain(SimpleNamespace(request=request),life,report)
+            else:
+                M.tenant_stage_request_chain(SimpleNamespace(request=request),life,report)
+                self.assertTrue(report['assertions']['tenant_stage_gateway_monitor_single_owner'])
+
+    def test_original_observation_deadline_is_not_reset_by_an_owner_read(self):
+        calls=[]
+        client=SimpleNamespace(request=lambda *args: calls.append(args))
+        life=SimpleNamespace(request_timeout=lambda:10,check=lambda:None,phase='tenant_stage_observations',stage_observation_deadline=90)
+        M.guard_client(client,life)
+        with patch.object(M.time,'monotonic',return_value=89):client.request('GET','/owned',(200,))
+        self.assertEqual(client.timeout,1)
+        with patch.object(M.time,'monotonic',return_value=90),self.assertRaisesRegex(M.LocalTraceAssertionFailure,'observation_timeout'):
+            client.request('GET','/owned',(200,))
+        self.assertEqual(len(calls),1)
+
+    def test_formal_cleanup_attempts_every_session_even_after_a_definition_failure(self):
+        calls=[]
+        class Reply:
+            status=204
+            def __enter__(self):return self
+            def __exit__(self,*args):pass
+        class Opener:
+            def open(self,request,**kwargs):calls.append(('logout',request.headers['Authorization']));return Reply()
+        def request(method,path,expected):
+            calls.append((method,path))
+            if method=='DELETE' and path.endswith('/2'):raise M.API.SuiteError('private error not archived')
+            return M.API.Response(expected[0],{})
+        clients=[SimpleNamespace(token='private-'+str(i),browser_opener=Opener(),request=request) for i in range(4)]
+        life=SimpleNamespace(local_clients=clients,local_definitions=[('/definition/',1),('/definition/',2)],request_timeout=lambda:5)
+        report={'assertions':{}}
+        with self.assertRaisesRegex(M.LocalTraceAssertionFailure,'formal_cleanup_incomplete'):
+            M.finish(life,{'GATEWAY_URL':'http://fixture'},report)
+        self.assertEqual(sum(call[0]=='logout' for call in calls),4)
+        self.assertIn(('DELETE','/definition/1'),calls)
+        self.assertFalse(report['assertions']['formal_definitions_deleted'])
+        self.assertTrue(report['assertions']['logout_old_session_denied'])
+        self.assertNotIn('private',json.dumps(report))

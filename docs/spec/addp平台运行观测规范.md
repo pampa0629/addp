@@ -835,6 +835,10 @@ Monitor 只接受两种已定义 scope 和对应 kind／属性契约，HTTP Span
 
 夹具只创建初始Tenant管理员和原业务用户，不提前授准备角色、不创建准备自定义角色，也不签发会话。入口从真实AuthContext读取准备Membership，核对既有角色的准确权限集合；MFA完成须替换HttpOnly Cookie与Access Token，并验证旧令牌拒绝。自分配前使用真实AAL2及未过期step-up，分配后沿正式Refresh与AuthContext重读同一User／Tenant／Membership和准确角色／权限；完成准备后再次确认普通执行User权限未变。失败诊断仅保留固定操作码／HTTP状态／稳定错误码，不保存密码、TOTP Secret、验证码、Cookie或响应正文。第七窗口的自定义准备角色方案已被本唯一主路径取代，原失败证据仍保留。
 
+2026-11-13用户确认将租户阶段追踪验收接入同一人工入口，原四身份、11项业务权限、采样、资源及清理范围不变。平台检查点／Trace校核与租户浏览器输入、会话分别隔离，业务User仅经Gateway调用[租户阶段接口](tasks/执行监控.md#租户执行阶段追踪)，不获取平台Trace／日志权限。原成功及受控失败各执行一次，失败父／子latest须与真实Tempo精确terminal逐字段一致；正常缺样仅从本Owner预先固定的失败／成功enqueue候选取得，须有真实检查点及平台精确404印证，不能将错误、无关联或超窗口改成缺样，两个候选均可读则缺样未覆盖、本轮不得判全部通过。
+
+固定125秒尾采样等待后，平台样本可见性与租户阶段读取共用一个最多90秒截止，不另开等待窗；租户读取最多6轮、轮间至少15秒，失败父／子每轮各一次、成功父／子末次各一次，最多14次，加浏览器最多4次显式打开。每次租户请求至多5秒且受全局剩余预算约束，Owner／上游错误立即停止，不重跑业务或调采样。既有请求完成日志按同request_id核对Gateway／Monitor／准确Owner及另一Owner未被调用，不依赖HTTP留样；报告只保留封闭断言与执行身份，原始Trace／Span／实例引用仅当轮私有核对、退出销毁。成功或失败均尝试本轮定义删除和四身份登出，失败如实记录，再由外层仅销毁自有对象；外层零残留不替代正式删除或旧会话拒绝。真实运行仍须单独确认，不因入口或确定性门禁完成而自动执行，细化断言及边界见[专题方案](../next/ADDP任务执行管理统一收口专题.md#tenant-stage-chain-acceptance)。
+
 产品镜像构建失败仅在`product_image_*`阶段沿唯一public_build分类器补充封闭诊断：固定原因／失败步骤、已知产物输入名、Dockerfile行号及有界HTTP状态／进程退出码。2026-11-01用户确认首批APT取证：仅在同一份完整BuildKit输出中，以唯一失败步骤编号关联其RUN apt-get及该编号输出；索引下载／deb下载／dpkg／unknown阶段只从该步骤实际错误推断，不能从未失败步骤、缓存提示或全局timed out／not found标记推定APT原因。固定错误类别涵盖DNS、超时、连接、HTTP、TLS、签名、包缺失、下载、dpkg、锁、空间及other；HTTP状态须带实际错误上下文，不从包名、版本、路径哈希或字节数中的数字提取。官方Debian源只输出HTTP／HTTPS、仓库类别及固定发行套件枚举，未知或含凭据／查询参数的URL不导出；不读取额外源文件或发探针。
 
 同一已捕获输出仅对精确白名单中的公共Python3.11／3.12 slim（含bookworm变体）及Debian Bookworm slim FROM步骤保留解析到的sha256；缺失或多个不同结果明确unavailable／ambiguous，不用当前可变tag或宿主机image inspect替代历史输入，不输出任意摘要或私有镜像名。代理证明只复用原prepare_builder的docker info及原宿主环境读取、既有无凭据本地代理校验结果，分别记录BuildKit／RUN构建参数／host CLI的来源和none／loopback／desktop_internal枚举，不保留端点、端口、代理值或完整环境，不追加Docker读取。

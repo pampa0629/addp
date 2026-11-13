@@ -24,10 +24,43 @@ export function executionTraceBrowserInput(value, now = Date.now()) {
 
 export function admitExecutionTraceBrowserEnvironment(env) {
   if (env.ADDP_EXECUTION_TRACE_LOCAL !== '1' || ['GITHUB_ACTIONS', 'ADDP_ONLINE_HOSTED', 'ADDP_ONLINE_OWNER_MANAGED', 'ADDP_ONLINE_LOCAL_SGM'].some(key => env[key] !== undefined)) throw new Error('execution_trace_local_browser_environment_denied')
-  for (const field of ['ADDP_EXECUTION_TRACE_ADMIN_USERNAME', 'ADDP_EXECUTION_TRACE_ADMIN_PASSWORD', 'ADDP_EXECUTION_TRACE_ADMIN_TOTP', 'CONSOLE_URL']) if (typeof env[field] !== 'string' || !env[field]) throw new Error('execution_trace_local_browser_environment_denied')
+  for (const field of ['ADDP_EXECUTION_TRACE_ADMIN_USERNAME', 'ADDP_EXECUTION_TRACE_ADMIN_PASSWORD', 'ADDP_EXECUTION_TRACE_ADMIN_TOTP', 'ADDP_EXECUTION_TRACE_USER_USERNAME', 'ADDP_EXECUTION_TRACE_USER_PASSWORD', 'CONSOLE_URL']) if (typeof env[field] !== 'string' || !env[field]) throw new Error('execution_trace_local_browser_environment_denied')
   let url
   try { url = new URL(env.CONSOLE_URL) } catch { throw new Error('execution_trace_local_browser_environment_denied') }
   if (url.protocol !== 'http:' || url.hostname !== 'nginx' || url.port || url.username || url.password || url.search || url.hash || url.pathname !== '/') throw new Error('execution_trace_local_browser_environment_denied')
 }
 
 export { localIdentityTOTP as executionTraceTOTP } from './local-identity-support.mjs'
+
+export const tenantStagePermissions = [
+  'orchestrator.workflow.create', 'orchestrator.workflow.read', 'orchestrator.workflow.delete', 'orchestrator.workflow.execute',
+  'develop.task.create', 'develop.task.read', 'develop.task.delete', 'develop.task.execute', 'develop.data_read.execute',
+  'monitor.execution.read', 'system.execution_authorization.create'
+]
+
+// Separate input for a separate real Tenant session. Never pass platform references.
+export function tenantStageBrowserInput(value) {
+  if (!value || Object.keys(value).sort().join(',') !== 'cases,run_id,schema,tenant_id,user_id' ||
+      value.schema !== 'addp.tenant-stage-browser/v1' || !/^[A-Za-z0-9_-]{1,100}$/.test(value.run_id) ||
+      !/^[1-9][0-9]*$/.test(value.tenant_id) || !/^[1-9][0-9]*$/.test(value.user_id) ||
+      !Array.isArray(value.cases) || value.cases.length !== 4) invalid()
+  const seen = new Set()
+  for (const row of value.cases) {
+    if (Object.keys(row).sort().join(',') !== 'execution_id,kind,module,stages' ||
+        !['orchestrator', 'develop'].includes(row.module) || !['readable', 'missing'].includes(row.kind) ||
+        !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(row.execution_id) ||
+        seen.has(row.module + row.kind) || !Array.isArray(row.stages) || row.stages.length !== 2) invalid()
+    seen.add(row.module + row.kind)
+    for (const [index, stage] of row.stages.entries()) {
+      const fields = stage.state === 'available' ? 'attempt,duration_ms,end,outcome,phase,slot,start,state' : 'slot,state'
+      if (Object.keys(stage).sort().join(',') !== fields || stage.slot !== ['enqueue', 'latest'][index] || !['available', 'not_found'].includes(stage.state)) invalid()
+      if (stage.state === 'available' && (!Number.isSafeInteger(stage.attempt) || (index ? stage.attempt < 1 : stage.attempt !== 0) ||
+          !Number.isFinite(stage.duration_ms) || stage.duration_ms < 0 || !utc(stage.start) || !utc(stage.end) || Date.parse(stage.end) < Date.parse(stage.start) ||
+          !['success', 'failed', 'timeout', 'cancelled', 'rejected'].includes(stage.outcome) ||
+          !(index ? ['claim', 'dispatch', 'terminal'] : ['enqueue']).includes(stage.phase))) invalid()
+    }
+    if (row.kind === 'readable' && (row.stages[1].state !== 'available' || row.stages[1].phase !== 'terminal' || row.stages[1].outcome !== 'failed') ||
+        row.kind === 'missing' && row.stages[0].state !== 'not_found') invalid()
+  }
+  return value
+}

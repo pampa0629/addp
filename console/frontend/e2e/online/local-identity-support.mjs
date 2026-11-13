@@ -16,15 +16,28 @@ export function localIdentityTOTP(secret, now = Date.now()) {
 }
 
 // One real browser password/MFA protocol for the local product acceptance profiles.
-export async function localConsoleLogin(page, expect, { prefix, path, beforeMFA = () => {} }) {
+export async function localConsoleLogin(page, expect, { prefix, path, beforeMFA = () => {}, scope = 'platform', principal = 'ADMIN' }) {
   const identityResponse = page.waitForResponse(response => new URL(response.url()).pathname === '/api/v1/system/auth/context' && response.ok())
   identityResponse.catch(() => {})
   await page.goto('/login?redirect=' + encodeURIComponent(path))
-  await page.locator('input[autocomplete="username"]').fill(process.env[prefix + 'ADMIN_USERNAME'])
-  await page.locator('input[autocomplete="current-password"]').fill(process.env[prefix + 'ADMIN_PASSWORD'])
+  await page.locator('input[autocomplete="username"]').fill(process.env[prefix + principal + '_USERNAME'])
+  await page.locator('input[autocomplete="current-password"]').fill(process.env[prefix + principal + '_PASSWORD'])
   const passwordResponse = page.waitForResponse(response => new URL(response.url()).pathname === '/api/v1/system/login')
   await page.locator('.auth-login-primary').click()
-  expect((await (await passwordResponse).json()).next_action).toBe('verify_mfa')
+  const password = await (await passwordResponse).json()
+  if (scope === 'tenant') {
+    expect(password.next_action).toBe('session_issued')
+    const identity = await (await identityResponse).json()
+    expect(identity.principal.type).toBe('user')
+    expect(identity.context.type).toBe('tenant')
+    expect(identity.token.type).toBe('first_party_access_token')
+    expect(identity.client.scope_mode).toBe('unrestricted')
+    expect(identity.delegation ?? null).toBeNull()
+    return identity
+  }
+  expect(scope).toBe('platform')
+  expect(principal).toBe('ADMIN')
+  expect(password.next_action).toBe('verify_mfa')
   await expect(page.locator('input[autocomplete="one-time-code"]')).toBeVisible()
   await new Promise(done => setTimeout(done, 30000 - Date.now() % 30000 + 150))
   const code = localIdentityTOTP(process.env[prefix + 'ADMIN_TOTP'])
