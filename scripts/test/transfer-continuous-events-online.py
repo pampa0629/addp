@@ -468,10 +468,13 @@ def verify_cdc_risk_closure(client, tenant, task_id, engine_id, execution_id, na
             'secret': receiver.secret, 'enabled': True, 'event_types': ['opened', 'resolved']}, (201,))
         destination_id = API.require_positive_int(destination, 'id')
         proof['destination_id'] = destination_id
-        stage('buffer_fault')
+        stage('buffer_pause')
         mutate(client, f'{OWNER}/task-definitions/{task_id}/pause')
         wait_status(client, execution_id, 'cancelled')
-        before = until(lambda: cdc_task_sample(client, task_id, engine_id, generation))
+        settled_after = datetime.now(timezone.utc)
+        before = until(lambda: cdc_task_sample(client, task_id, engine_id, generation, after=settled_after))
+        proof['paused_buffer'] = before['buffer']
+        stage('buffer_growth')
         require(physical('risk-mutate-cdc'), 'risk source mutation failed')
         def growth():
             sample = cdc_task_sample(client, task_id, engine_id, generation)
@@ -481,11 +484,16 @@ def verify_cdc_risk_closure(client, tenant, task_id, engine_id, execution_id, na
                     'paused risk consumer committed events')
             return sample if int(sample['buffer']['latest_offset']) > int(before['buffer']['committed_offset']) else None
         grown = until(growth)
+        proof['grown_buffer'] = grown['buffer']
+        stage('buffer_trim')
         cdc_risk_trim(binding, int(grown['buffer']['latest_offset']))
         trimmed_at = datetime.now(timezone.utc)
+        stage('buffer_loss_sample')
         lost = until(lambda: cdc_risk_sample(client, task_id, generation, 'buffer_observation', 'available', after=trimmed_at))
         require(lost.get('recovery_state') == 'lost' and int(lost['earliest_offset']) > int(lost['committed_offset']),
                 'trim did not prove lost recovery range')
+        proof['lost_buffer'] = lost
+        stage('buffer_alert_and_delivery')
         buffer_alert = until(lambda: alerts_ready({'cdc_buffer_recovery_lost'}, 'open'))
         require(buffer_alert['cdc_buffer_recovery_lost']['details']['reason'] == 'buffer_position_lost', 'wrong buffer loss reason')
         proof['opened_deliveries'] = until(lambda: delivered(buffer_alert, 'opened'))

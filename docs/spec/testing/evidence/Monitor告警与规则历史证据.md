@@ -463,3 +463,13 @@ Chrome 真实租户“ADDP 开发管理员”页面核对任务配置源／目�
 - [Monitor frontend／Job 131760256011](https://github.com/pampa0629/addp/actions/runs/43387788680/job/131760256011) 的真实 gate 步骤及 Job 均 success；152 单元、842 受控浏览器（36.7 分钟）及构建全部完成，含原 CDC 拒绝刷新用例。Job 北京时间 16:21:38 完成，不能只凭 summary 判定。
 
 原始 CI 日志保存于 `/tmp/addp-cdc-ci-platform-131760255999.log`、`/tmp/addp-cdc-ci-monitor-131760256011.log`。只认定上述固定提交的对应 Job；不外推整个父 workflow、其他 Job、真实服务权限应用或新 T4。此批未重启用户服务、未使用 keepalive、未操作业务表／逻辑槽或数据卷，也未新增 Hosted 或重跑原失败 CI。
+
+### CDC 风险闭环首次 Hosted 的基线失败（2026-11-13）
+
+固定 `165101b3e14b1ee54064a4b66ad3d220f3b0f441` 的 [Run 43424934200／Job 131883938738](https://github.com/pampa0629/addp/actions/runs/43424934200/job/131883938738) 失败于新增 `cdc_risk` 的 `buffer_fault`，不能认定故障打开、缺样保持、恢复关闭或通知送达通过。原套件 17 项 checks、原三阶段 CDC 页面及既有暂停恢复已完成。Artifact `14038496656` 的 SHA-256 为 `22482e66d4bf9d06b0bad65d006fa410f4c5862b5f2c91f9655bc2f494507925`，下载摘要和 ZIP CRC 均核对通过；原件及报告保留于 `/tmp/addp-cdc-risk-hosted-43424934200/`。
+
+原始采样记录显示：12:40:04.785 UTC 的 committed/latest 为 `9/9`；12:40:16 的正式 Pause 成功，12:40:19.774 的新采样为 `10/12`。schema 恢复后的提交已推进到 10，验收仍以暂停前的有效旧样本 9 为基线，因此错误触发“暂停后继续提交”断言。修复要求暂停完成后等待三项观测均晚于该边界，再写入专用事件；不放宽 committed 不变要求，并增加各故障子阶段及安全位点回执。该轮尚未取得告警或投递回执，不从上述数值推认故障触发。
+
+同时复核既有 Stop 契约发现，首版验收的“同任务停止后重新 Start”编排不成立；此问题由规范和服务实现确认，尚未由该轮执行到。修订 `d11f7311c6d4559dbc31f3efb15fc0fa29f8a80d` 改为正式新建专用替代任务和新目标表，重新 initial snapshot，保留原任务的告警关闭证据；不修改产品不可逆终态或旧数据恢复语义。
+
+失败轮 `uncertain_mutation=false`，CDC 与正常退出 Kafka 任务正式删除并读回不存在，Webhook 目标删除、接收端关闭均通过。硬退出 Kafka 任务按原场景保留给部署销毁，领域阶段 `residual_resources=1`；外层 `cleanup=passed`、`infra_cleanup=zero_residuals`。个人开发环境、原任务及两个原逻辑槽未操作。更早一次误绑定旧源码的调度 43424845828 已取消，不算本轮验收。

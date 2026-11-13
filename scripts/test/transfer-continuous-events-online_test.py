@@ -1156,6 +1156,28 @@ class CDCTaskObservationTest(unittest.TestCase):
 
 
 class CDCRiskAcceptanceTest(unittest.TestCase):
+    def test_fault_batch_waits_for_a_sample_after_pause_and_preserves_failure_during_cleanup(self):
+        from types import SimpleNamespace
+        client = unittest.mock.Mock()
+        client.request.side_effect = [SimpleNamespace(payload={}), SimpleNamespace(payload=[])]
+        receiver = unittest.mock.Mock(secret='private', url='http://127.0.0.1:12345/cdc-risk')
+        healthy = {'generation':1, 'buffer':{'committed_offset':'9'}}
+        settled = {'generation':1, 'buffer':{'committed_offset':'10'}}
+        report = {}
+        with patch.object(M,'cdc_task_sample',side_effect=[healthy,settled]) as sample, \
+             patch.object(M,'cdc_capture_binding',return_value={}), \
+             patch.object(M,'CDCRiskReceiver',return_value=receiver), \
+             patch.object(M,'cdc_risk_alerts',return_value={}), patch.object(M,'wait_status'), \
+             patch.object(M,'physical',side_effect=M.SuiteError('injected mutation failure')), \
+             self.assertRaisesRegex(M.SuiteError,'injected mutation failure'):
+            M.verify_cdc_risk_closure(client,2,7,10,UUID,'owned','run-1',
+                lambda *args:{'id':1},lambda *args:None,lambda *args:None,report,lambda:None)
+        self.assertIsInstance(sample.call_args_list[1].kwargs['after'],M.datetime)
+        self.assertEqual(report['cdc_risk_closure']['paused_buffer']['committed_offset'],'10')
+        self.assertEqual(report['cdc_risk_closure']['stage'],'buffer_growth')
+        self.assertEqual(report['cdc_risk_closure']['cleanup'],'passed')
+        receiver.close.assert_called_once()
+
     def test_replacement_uses_new_target_and_irreversible_cdc_cleanup_confirmation(self):
         original = M.task_config('cdc', 10, 11)
         replacement = M.task_config('cdc-rebuilt', 10, 11)
