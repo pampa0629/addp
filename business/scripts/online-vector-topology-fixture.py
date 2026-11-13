@@ -823,10 +823,10 @@ def mixed_overlay_worker(action,root,case):
         return {'sources':{name:digest(root/name)for name in names}}
     if action!='verify':raise FixtureError('unknown mixed fixture action')
     inventory=['.addp-online-owner','outputs',*names]
-    if case==DIFFERENCE_CASE:
+    if case in FILE_PUBLICATION_CASES:
         stage=root/'.addp-publication'
         if stage.is_symlink() or not stage.is_dir() or stage.stat().st_mode & 0o777 != 0o700 or stage.stat().st_uid!=os.getuid() or list(stage.iterdir()):
-            raise FixtureError('difference private staging must be owned, 0700 and empty after publication')
+            raise FixtureError('file publication staging must be owned, 0700 and empty after publication')
         inventory.append(stage.name)
     if sorted(p.name for p in root.iterdir())!=sorted(inventory)or sorted(p.name for p in(root/'outputs').iterdir())!=[target]:raise FixtureError('mixed exact inventory differs')
     return {'sources':{name:digest(root/name)for name in names},'source_tables':{name:verify_mixed_overlay(root/name,kind,case)for name,kind in zip(names,profile['kinds'])},
@@ -888,6 +888,7 @@ ADJACENCY_TITLE='面邻检查独立普通User单源线成果及四失败保护'
 ADJACENCY_KINDS=('source','duplicate-id','empty','crs','overlap')
 ADJACENCY_SOURCES=tuple('adjacency-'+k+'.gpkg'for k in ADJACENCY_KINDS)
 ADJACENCY_TARGET='adjacency-lines.gpkg'
+FILE_PUBLICATION_CASES=(DIFFERENCE_CASE,ADJACENCY_CASE)
 ADJACENCY_FAILURES=(('adjacency-id',1,1,'operator_input_invalid','input_gdf'),('adjacency-empty',2,2,'operator_input_invalid','input_gdf'),('adjacency-crs',3,3,'operator_crs_invalid',''),('adjacency-overlap',4,4,'operator_input_overlap','input_gdf'))
 
 
@@ -2551,7 +2552,7 @@ def archive_physical_evidence(root, directory, result, case=None):
 
 def main(action):
     case=topology_case()
-    export = NFSExport('topology', command, publication_staging=case==DIFFERENCE_CASE)
+    export = NFSExport('topology', command, publication_staging=case in FILE_PUBLICATION_CASES)
     secret = export.guard(os.environ)
     run_id = os.environ['ADDP_ONLINE_TEST_RUN_ID']
     if action in {'start','stop'}:

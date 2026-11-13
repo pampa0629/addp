@@ -2694,7 +2694,7 @@ const source=readFileSync(root+'/console/frontend/e2e/online/vector-topology-per
         result=subprocess.run(['node','--input-type=module','-e',script,str(repo)],capture_output=True,text=True,timeout=30);self.assertEqual(result.returncode,0,result.stderr)
 
 
-class DifferenceInitializer:
+class FilePublicationInitializer:
     def __init__(self, consumer):
         self.consumer=consumer;self.calls=[];self.scans=[];self.mutate_context=None;self.mutate_facts=None;self.unknown_approval=False
     def request(self, method, path, expected, body=None):
@@ -2710,7 +2710,7 @@ class DifferenceInitializer:
         elif '/meta/scan/runs?' in path:data={'total':len(self.scans),'items':[{'execution_id':identifier} for identifier in self.scans]}
         elif '/meta/executions/' in path:data={'status':'success'}
         elif path.endswith('/authorization-facts'):
-            name=next(n for n in m.fixture.DIFFERENCE_SOURCES if hashlib.sha256(('3:'+n).encode()).hexdigest()==path.split('/')[-2])
+            name=next(n for n in c.profile['sources'] if hashlib.sha256(('3:'+n).encode()).hexdigest()==path.split('/')[-2])
             target=registration.ExactFileReadGrants.target(3,name,'nfs');composition={'format':'geopackage','refs':[dict(target=target,role='container',required=True,primary=True)]}
             data=dict(schema_version='meta.data_item_authorization_facts/v1',engine_id='3',item_fingerprint=path.split('/')[-2],item_type='file',full_name=name,basis_state='complete',boundary_hash='a'*64,observed_at='2026-11-12T00:00:00Z',boundary=dict(layout='single',file_composition=composition))
             if self.mutate_facts:self.mutate_facts(data)
@@ -2725,23 +2725,23 @@ class DifferenceInitializer:
         elif path.endswith('/create-approval-context'):
             now=datetime.now(timezone.utc);c.approval_expires=(now+timedelta(minutes=20)).isoformat()
             data=dict(authorization_id='9',execution_id=c.run_id,tenant_id='2',actor_principal_id='33',expected_attempt=1,scope_digest='b'*64,
-                target=dict(target=registration.ExactFileReadGrants.target(3,'outputs/difference.gpkg','nfs'),mode='fail',engine_version='238'),
+                target=dict(target=registration.ExactFileReadGrants.target(3,'outputs/'+c.profile['target'],'nfs'),mode='fail',engine_version='238'),
                 authorization_expires_at=c.approval_expires,observed_at=(now-timedelta(seconds=1)).isoformat(),state='awaiting_approval')
             if self.mutate_context:self.mutate_context(data)
         elif path.endswith('/develop-geopackage-create-approvals'):
             if self.unknown_approval:raise RuntimeError('PRIVATE_TOKEN_OR_REMOTE_BODY')
-            target=registration.ExactFileReadGrants.target(3,'outputs/difference.gpkg','nfs');identifier=str(uuid.uuid4())
+            target=registration.ExactFileReadGrants.target(3,'outputs/'+c.profile['target'],'nfs');identifier=str(uuid.uuid4())
             c.grants[identifier]=dict(request_id=identifier,catalog_path=target,action='read',recipient_type='user',recipient_id='33',approval_mode='task_production',producer_owner='develop',production_execution_id=c.run_id,production_result_id=str(uuid.uuid4()),revocation=None,
-                engine_id='3',item_fingerprint=hashlib.sha256(b'3:outputs/difference.gpkg').hexdigest(),boundary_hash='a'*64,operator_principal_id='33',expiry_mode='until_revoked',expires_at=None,
+                engine_id='3',item_fingerprint=hashlib.sha256(('3:outputs/'+c.profile['target']).encode()).hexdigest(),boundary_hash='a'*64,operator_principal_id='33',expiry_mode='until_revoked',expires_at=None,
                 file_composition=dict(format='geopackage',refs=[dict(target=target,role='container',required=True,primary=True)]))
             data=dict(approval_id=str(uuid.uuid4()),approved_at=datetime.now(timezone.utc).isoformat(),expires_at=body['expires_at'])
         else:raise AssertionError((method,path,body))
         return SimpleNamespace(payload=copy.deepcopy(data))
 
 
-class DifferenceClient(OverlayClient):
-    def __init__(self):
-        super().__init__(m.fixture.DIFFERENCE_CASE);self.scans=[];self.grants={};self.issuer=DifferenceInitializer(self)
+class FormalFileClient(OverlayClient):
+    def __init__(self,case):
+        super().__init__(case);self.scans=[];self.grants={};self.issuer=FilePublicationInitializer(self)
         self.success['metadata'].pop('result')  # The product contract no longer supplies meta_scan_runs.
     def request(self,method,path,expected,body=None):
         if path.endswith('/auth/context'):
@@ -2757,6 +2757,10 @@ class DifferenceClient(OverlayClient):
             return SimpleNamespace(payload=dict(execution_id='overlay-output-scan',status='success',tenant_id=self.scan_tenant,triggered_by=self.scan_actor,source='develop',parent_execution_id=self.run_id,
                 scan_context=dict(scan_depth='basic',engine_id=3)))
         return super().request(method,path,expected,body)
+
+
+class DifferenceClient(FormalFileClient):
+    def __init__(self):super().__init__(m.fixture.DIFFERENCE_CASE)
 
 
 class DifferenceOnlineTest(unittest.TestCase):
@@ -3074,20 +3078,22 @@ assert.ok(body.includes('vertices&&expected.length>10'));assert.ok(body.includes
         self.assertEqual(result.returncode,0,result.stdout+result.stderr)
 
 
-class AdjacencyClient(OverlayClient):
+class AdjacencyClient(FormalFileClient):
     def __init__(self):super().__init__(m.fixture.ADJACENCY_CASE)
 
 
 class AdjacencyOnlineTest(unittest.TestCase):
     def setUp(self):
         self.directory=tempfile.TemporaryDirectory();self.addCleanup(self.directory.cleanup)
-        self.env={**ENV,'ADDP_ONLINE_TOPOLOGY_CASE':m.fixture.ADJACENCY_CASE,'ADDP_ONLINE_ARTIFACT_DIR':self.directory.name}
+        self.env={**ENV,'ADDP_ONLINE_TOPOLOGY_CASE':m.fixture.ADJACENCY_CASE,'ADDP_ONLINE_ARTIFACT_DIR':self.directory.name,'ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN':'initializer-test-token','GATEWAY_URL':'http://deterministic.invalid'}
     def run_case(self,client=None,physical=None,browser=lambda *a:a[2]):
-        return m.run_scenario(Path('.'),self.env,client or AdjacencyClient(),physical or(lambda *a:mixed_physical(m.fixture.ADJACENCY_CASE)),browser)
+        client=client or AdjacencyClient()
+        with patch.object(m.raster,'wait_lineage',return_value={}),patch.object(m.raster,'GatewayClient',return_value=client.issuer):
+            return m.run_scenario(Path('.'),self.env,client,physical or(lambda *a:mixed_physical(m.fixture.ADJACENCY_CASE)),browser)
     def test_adjacency_single_source_one_save_four_readonly_failures_scans_and_identity(self):
         client=AdjacencyClient();report=self.run_case(client)
         self.assertEqual((report['result'],report['schema_version']),('passed','addp.polygon-adjacency/v1'))
-        self.assertEqual([len(report[k])for k in('initial_scan_inventory','final_scan_inventory','meta_after')],[5,6,6])
+        self.assertEqual([len(report[k])for k in('initial_scan_inventory','final_scan_inventory','meta_after')],[0,1,6])
         self.assertEqual(len(report['raw_lineage']['edges']),1)
         self.assertEqual(report['raw_lineage']['edges'][0]['source']['item_id'],10)
         self.assertEqual(len(report['browser']['expected']['result']),5)
@@ -3115,6 +3121,75 @@ class AdjacencyOnlineTest(unittest.TestCase):
             if len(calls)>1:value['sources'][m.fixture.ADJACENCY_SOURCES[0]]['sha256']='changed'
             return value
         with self.assertRaises(m.SuiteError):self.run_case(physical=physical)
+    def test_adjacency_formal_stages_separate_initializer_and_business_identity_and_scans(self):
+        client=AdjacencyClient();report=self.run_case(client);publication=report['publication']
+        self.assertEqual((publication['schema_version'],publication['case'],publication['result']),('addp.polygon-adjacency-publication/v1',m.fixture.ADJACENCY_CASE,'passed'))
+        stages=[r['stage']for r in publication['stages']]
+        self.assertEqual(stages[:15],['source_basic_identified','source_read_granted','source_deep_inspected']*5)
+        self.assertEqual(stages[15:20],['approval_intent','approval_confirmed','result_basic_identified','result_initial_read_granted','result_deep_inspected'])
+        self.assertEqual(stages[-3:],['source_grants_revoked','materialized_result_still_readable','all_grants_revoked'])
+        self.assertEqual(len(publication['preparation_scan_inventory']),11)
+        self.assertEqual(report['initial_scan_inventory'],[]);self.assertEqual(report['final_scan_inventory'],['overlay-output-scan'])
+        self.assertEqual(publication['pending_grants'],[]);self.assertTrue(all(g['revocation']is not None for g in client.grants.values()))
+        granted=[body for method,path,body in client.issuer.calls if method=='POST'and path.endswith('/access_grants')]
+        self.assertEqual(len(granted),5)
+        self.assertEqual([body['catalog_path']['segments'][-1]['name']for body in granted],list(m.fixture.ADJACENCY_SOURCES))
+        self.assertTrue(all(body['recipient_id']=='33'and body['action']=='read'for body in granted))
+        approvals=[body for method,path,body in client.issuer.calls if method=='POST'and path.endswith('/develop-geopackage-create-approvals')]
+        self.assertEqual(len(approvals),1)
+        intent=next(row for row in publication['stages']if row['stage']=='approval_intent')['context']
+        self.assertEqual(intent['target']['target']['segments'][-1]['name'],m.fixture.ADJACENCY_TARGET)
+        self.assertEqual(set(approvals[0]),{'scope_digest','expires_at'})
+        self.assertEqual(approvals[0]['scope_digest'],intent['scope_digest'])
+        self.assertFalse(any(path.endswith('/scan/run/manual')for _,path,_ in client.calls))
+        self.assertNotIn('meta_scan_runs',report['execution']['metadata'])
+        saved=json.loads((Path(self.directory.name)/'topology-adjacency-publication.json').read_text());self.assertEqual(saved,publication)
+        self.assertEqual(saved['cleanup']['result'],'passed')
+
+    def test_adjacency_missing_initializer_or_wrong_case_never_uses_legacy_scan_route(self):
+        env=dict(self.env);env.pop('ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN');client=AdjacencyClient()
+        with self.assertRaisesRegex(m.SuiteError,'separate source initializer'):
+            m.run_scenario(Path('.'),env,client,lambda *a:mixed_physical(m.fixture.ADJACENCY_CASE),lambda *a:a[2])
+        self.assertFalse(client.calls);self.assertFalse(client.issuer.calls);self.assertFalse(client.executions)
+        with patch.object(m.raster,'GatewayClient',return_value=client.issuer):
+            with self.assertRaisesRegex(m.SuiteError,'case binding'):m._FilePublication(self.env,client,m.fixture.DIFFERENCE_CASE)
+            with self.assertRaisesRegex(m.SuiteError,'case binding'):m._FilePublication(self.env,client,m.fixture.OVERLAY_CASE)
+        self.assertFalse(client.issuer.calls)
+
+    def test_adjacency_wrong_context_never_approves_and_revokes_original_source_grants(self):
+        registration=importlib.import_module('scripts.test.online-engine-registration')
+        for mutate in [lambda c:c.update(tenant_id='1'),lambda c:c.update(actor_principal_id='8'),lambda c:c.update(execution_id='foreign'),lambda c:c.update(scope_digest='bad'),lambda c:c['target'].update(mode='replace'),lambda c:c['target']['target']['segments'][-1].update(name=m.fixture.DIFFERENCE_TARGET)]:
+            client=AdjacencyClient();client.issuer.mutate_context=mutate
+            with self.subTest(mutate=mutate),self.assertRaises(registration.MetadataGrantError):self.run_case(client)
+            self.assertFalse(any(path.endswith('/develop-geopackage-create-approvals')for _,path,_ in client.issuer.calls))
+            self.assertTrue(all(row['revocation']is not None for row in client.grants.values()))
+
+    def test_adjacency_unknown_approval_is_once_with_retained_original_intent(self):
+        registration=importlib.import_module('scripts.test.online-engine-registration');client=AdjacencyClient();client.issuer.unknown_approval=True
+        with self.assertRaisesRegex(registration.MetadataGrantError,'outcome_unknown_no_resubmit'):self.run_case(client)
+        self.assertEqual(sum(method=='POST'and path.endswith('/develop-geopackage-create-approvals')for method,path,_ in client.issuer.calls),1)
+        value=json.loads((Path(self.directory.name)/'topology-adjacency-publication.json').read_text())
+        self.assertEqual(value['result'],'incomplete');self.assertEqual(value['execution_id'],client.run_id)
+        self.assertTrue(any(row['stage']=='approval_intent'for row in value['stages']))
+        self.assertNotIn('PRIVATE_TOKEN_OR_REMOTE_BODY',json.dumps(value));self.assertTrue(all(g['revocation']is not None for g in client.grants.values()))
+
+    def test_adjacency_invalid_source_composition_rejects_before_any_business_submission(self):
+        registration=importlib.import_module('scripts.test.online-engine-registration');client=AdjacencyClient()
+        client.issuer.mutate_facts=lambda f:f.update(basis_state='incomplete')
+        with self.assertRaises(registration.MetadataGrantError):self.run_case(client)
+        self.assertFalse(client.executions);self.assertFalse(any(path.endswith('/develop-geopackage-create-approvals')for _,path,_ in client.issuer.calls))
+
+    def test_adjacency_automatic_basic_scan_rejects_foreign_parent_user_tenant_or_depth(self):
+        for mutate in [lambda v:v.update(parent_execution_id='foreign'),lambda v:v.update(source='transfer'),lambda v:v.update(tenant_id=True),lambda v:v.update(triggered_by='33'),lambda v:v['scan_context'].update(scan_depth='deep'),lambda v:v['scan_context'].update(engine_id='3')]:
+            client=AdjacencyClient();original=client.request
+            def request(method,path,expected,body=None):
+                value=original(method,path,expected,body)
+                if path.endswith('/meta/executions/overlay-output-scan'):mutate(value.payload)
+                return value
+            client.request=request
+            with self.subTest(mutate=mutate),self.assertRaisesRegex(m.SuiteError,'basic scan binding'):self.run_case(client)
+            self.assertFalse(any(path.endswith('/scan/run/manual')for _,path,_ in client.calls))
+
     def test_adjacency_browser_failure_preserves_incomplete_checkpoint(self):
         with self.assertRaisesRegex(m.SuiteError,'browser broke'):self.run_case(browser=lambda *a:(_ for _ in()).throw(m.SuiteError('browser broke')))
         checkpoint=json.loads((Path(self.directory.name)/'topology-adjacency-checkpoint.json').read_text())

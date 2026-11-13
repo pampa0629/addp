@@ -652,3 +652,13 @@ class TopologySeedBindingTest(unittest.TestCase):
             loaded=any(isinstance(n,ast.Name)and n.id=='profile'and isinstance(n.ctx,ast.Load)for n in ast.walk(function))
             bound=any(isinstance(n,ast.Name)and n.id=='profile'and isinstance(n.ctx,ast.Store)for n in ast.walk(function))or any(a.arg=='profile'for a in function.args.args)
             with self.subTest(function=function.name):self.assertFalse(loaded and not bound, 'fixture seed uses an unbound profile')
+
+
+class TopologyPublicationCaseTest(unittest.TestCase):
+    def test_only_approved_file_cases_share_private_staging(self):
+        import inspect
+        self.assertEqual(m.FILE_PUBLICATION_CASES,(m.DIFFERENCE_CASE,m.ADJACENCY_CASE))
+        self.assertIn('publication_staging=case in FILE_PUBLICATION_CASES',inspect.getsource(m.main))
+        self.assertIn('if case in FILE_PUBLICATION_CASES:',inspect.getsource(m.mixed_overlay_worker))
+        for case in m.FILE_PUBLICATION_CASES:
+            with self.subTest(case=case):self.assertEqual(len(m.network_profile(case)['targets']),1)

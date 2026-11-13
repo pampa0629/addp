@@ -655,9 +655,17 @@ def mixed_overlay_profile(case):
 
 
 def run_difference_scenario(repository,env,client,physical_runner,browser_runner):
-    publication=_DifferencePublication(env,client)
+    return run_prepared_file_scenario(repository,env,client,physical_runner,browser_runner,fixture.DIFFERENCE_CASE)
+
+
+def run_adjacency_scenario(repository,env,client,physical_runner,browser_runner):
+    return run_prepared_file_scenario(repository,env,client,physical_runner,browser_runner,fixture.ADJACENCY_CASE)
+
+
+def run_prepared_file_scenario(repository,env,client,physical_runner,browser_runner,case):
+    publication=_FilePublication(env,client,case)
     try:
-        result=run_mixed_overlay_scenario(repository,env,client,physical_runner,browser_runner,fixture.DIFFERENCE_CASE,publication)
+        result=run_mixed_overlay_scenario(repository,env,client,physical_runner,browser_runner,case,publication)
     except Exception as error:
         publication.record(dict(stage='business_failed',error=publication.registration.metadata_error_evidence(error)))
         raise
@@ -785,15 +793,18 @@ def run_overlay_scenario(repository,env,client,physical_runner,browser_runner):
     return run_mixed_overlay_scenario(repository,env,client,physical_runner,browser_runner,fixture.OVERLAY_CASE)
 
 
-class _DifferencePublication:
-    """Formal preparation and phased observations for the bounded difference case."""
-    def __init__(self, env, consumer):
+class _FilePublication:
+    """One formal preparation route for the approved single-file topology cases."""
+    def __init__(self, env, consumer, case):
+        if case not in fixture.FILE_PUBLICATION_CASES or fixture.topology_case(env)!=case:
+            raise SuiteError('formal file publication case binding differs')
+        profile=mixed_overlay_profile(case)
         registration = importlib.import_module('scripts.test.online-engine-registration')
         token = env.get('ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN')
         if not token:
-            raise SuiteError('difference requires its separate source initializer and approver')
-        self.path = Path(env['ADDP_ONLINE_ARTIFACT_DIR']) / 'topology-difference-publication.json'
-        self.evidence = {'schema_version':'addp.difference-publication/v1', 'result':'incomplete',
+            raise SuiteError('topology file case requires its separate source initializer and approver')
+        self.path = Path(env['ADDP_ONLINE_ARTIFACT_DIR']) / ('topology-'+profile['prefix']+'-publication.json')
+        self.evidence = {'schema_version':profile['schema']+'-publication/v1', 'case':case, 'result':'incomplete',
                          'run_id':env['ADDP_ONLINE_TEST_RUN_ID'], 'stages':[], 'pending_grants':[]}
         self.consumer = consumer
         self.issuer = raster.GatewayClient(env['GATEWAY_URL'], token, 30)
@@ -837,7 +848,7 @@ class _DifferencePublication:
             remaining()
             added = sorted(set(scan_ids(self.consumer))-set(initial))
             if len(added)>1:
-                raise SuiteError('difference requires exactly one automatic production scan')
+                raise SuiteError('topology file case requires exactly one automatic production scan')
             if added:
                 break
             time.sleep(min(0.2, remaining()))
@@ -847,7 +858,7 @@ class _DifferencePublication:
             or type(scan.get('tenant_id')) is not int or scan['tenant_id']!=self.tenant
             or type(scan.get('triggered_by')) is not int or scan['triggered_by']!=principal
             or config.get('scan_depth')!='basic' or type(config.get('engine_id')) is not int or config['engine_id']!=engine):
-            raise SuiteError('difference automatic basic scan binding differs')
+            raise SuiteError('topology file automatic basic scan binding differs')
         self.record(dict(stage='result_basic_identified', execution=scan))
         while True:
             remaining()
@@ -865,7 +876,7 @@ class _DifferencePublication:
         expected=sorted(row['execution_id'] for row in self.evidence['stages']
                         if row['stage'] in {'source_basic_identified','source_deep_inspected','result_deep_inspected'})
         if scan_ids(self.issuer)!=expected:
-            raise SuiteError('difference initializer scan inventory differs')
+            raise SuiteError('topology file initializer scan inventory differs')
         self.evidence['preparation_scan_inventory']=expected
         self.write()
 
@@ -890,7 +901,7 @@ class _DifferencePublication:
         self.evidence['cleanup'] = {'result':'failed' if errors else 'passed', 'errors':errors}
         self.write()
         if errors:
-            raise SuiteError('difference Grant cleanup incomplete; original evidence retained')
+            raise SuiteError('topology file Grant cleanup incomplete; original evidence retained')
 
 
 
@@ -1936,7 +1947,7 @@ def run_scenario(repository, env, client, physical_runner=physical, browser_runn
         return run_nodes_lineage_permissions(repository, env, client, physical_runner)
     if fixture.topology_case(env)==fixture.VERTICES_CASE:
         return run_vertices_scenario(repository,env,client,physical_runner,browser_runner)
-    if fixture.topology_case(env)==fixture.ADJACENCY_CASE:return run_mixed_overlay_scenario(repository,env,client,physical_runner,browser_runner,fixture.ADJACENCY_CASE)
+    if fixture.topology_case(env)==fixture.ADJACENCY_CASE:return run_adjacency_scenario(repository,env,client,physical_runner,browser_runner)
     if fixture.topology_case(env)==fixture.DIFFERENCE_CASE:
         return run_difference_scenario(repository,env,client,physical_runner,browser_runner)
     if fixture.topology_case(env)==fixture.DISSOLVE_CASE:

@@ -11168,11 +11168,12 @@ def test_polygon_adjacency_no_tolerance_and_all_adjacent_pairs():
     assert list(zip(result.source_id_a,result.source_id_b,result.shared_length))==[(0,1,1.),(0,2,1.)]
 
 
-@pytest.mark.parametrize('problem',[None,'coordinate','identity','length','order','field_type','extra_output','source_changed','missing_part','tiny_edge'])
+@pytest.mark.parametrize('problem',[None,'coordinate','identity','length','order','field_type','extra_output','source_changed','missing_part','tiny_edge','stage_permissions','stage_residual'])
 def test_adjacency_t4_one_save_four_readonly_refusals_independent_ogr(tmp_path,problem):
     import importlib
     from osgeo import ogr
     f=importlib.import_module('business.scripts.online-vector-topology-fixture');a=importlib.import_module('scripts.test.vector-topology-persistence-online')
+    (tmp_path/'.addp-publication').mkdir(mode=0o700)
     (tmp_path/'outputs').mkdir();(tmp_path/'.addp-online-owner').touch();seed=f.worker('seed',tmp_path,f.ADJACENCY_CASE)
     def definition(failure=None):
         value=a.adjacency_definition(list(f.ADJACENCY_SOURCES),'unused',failure)
@@ -11198,6 +11199,8 @@ def test_adjacency_t4_one_save_four_readonly_refusals_independent_ogr(tmp_path,p
         assert len(list((tmp_path.parent/'adjacency-archive'/'topology-physical').rglob('*.gpkg')))==6
         return
     if problem=='extra_output':(tmp_path/'outputs'/'unexpected.gpkg').write_bytes(b'x')
+    elif problem=='stage_permissions':(tmp_path/'.addp-publication').chmod(0o755)
+    elif problem=='stage_residual':(tmp_path/'.addp-publication'/'pending.tmp').write_bytes(b'not published')
     else:
         path=tmp_path/f.ADJACENCY_SOURCES[0]if problem=='source_changed'else tmp_path/'outputs'/f.ADJACENCY_TARGET
         ds=ogr.Open(str(path),1);layer=ds.GetLayer(0);row=layer.GetFeature(4 if problem=='missing_part'else 5 if problem=='tiny_edge'else 1)
