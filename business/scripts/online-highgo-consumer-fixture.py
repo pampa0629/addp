@@ -179,6 +179,78 @@ def verify():
     print('HighGo native replace comparison and Business sample preservation passed')
 
 
+def timeout_barrier(operation, phase):
+    """Hold only this disposable probe; archive native PIDs, never SQL or secrets."""
+    require(operation in ('acquire', 'observe', 'release') and phase in ('manager', 'develop'),
+            'use barrier acquire|observe|release manager|develop')
+    directory = secret_directory()
+    require(owned(HIGHGO), 'owned HighGo source required')
+    run_id = os.environ.get('ADDP_ONLINE_TEST_RUN_ID', '')
+    require(re.fullmatch(r'[A-Za-z0-9_-]{1,64}', run_id) is not None, 'safe run identity required')
+    marker = f'hg_timeout_{phase}_{run_id}'[:63]
+    journal = directory / f'highgo-{phase}-barrier.json'
+    holder = ("(SELECT pid FROM pg_stat_activity WHERE datname='highgo' AND usename='sysdba' "
+              f"AND application_name='{marker}' AND state='active' AND wait_event='PgSleep')")
+    statement = f"""SELECT json_build_object('holder_id',{holder},'waiters',COALESCE((
+        SELECT json_agg(json_build_object('id',pid,'state',state,'wait_event_type',wait_event_type) ORDER BY pid)
+        FROM pg_stat_activity WHERE datname='highgo' AND usename='business' AND state='active'
+          AND wait_event_type='Lock' AND {holder}=ANY(pg_blocking_pids(pid))
+          AND query ~* 'FROM[[:space:]]+("?addp_business"?[.])?"?addp_engine_probe"?([[:space:];]|$)'
+        ),'[]'::json));"""
+
+    def snapshot():
+        result = json.loads(sql(HIGHGO, statement, directory, admin=True))
+        require(isinstance(result, dict) and set(result) == {'holder_id', 'waiters'}
+                and (result['holder_id'] is None or type(result['holder_id']) is int and result['holder_id'] > 0)
+                and isinstance(result['waiters'], list), 'invalid native barrier snapshot')
+        ids = set()
+        for row in result['waiters']:
+            require(isinstance(row, dict) and set(row) == {'id', 'state', 'wait_event_type'}
+                    and type(row['id']) is int and row['id'] > 0 and row['id'] not in ids
+                    and row['state'] == 'active' and row['wait_event_type'] == 'Lock',
+                    'invalid native waiter identity')
+            ids.add(row['id'])
+        return result
+
+    if operation == 'acquire':
+        require(not journal.exists(), 'barrier acquire cannot be repeated')
+        # Record intent before dispatch: an unknown outcome must never resubmit.
+        write_private(journal, json.dumps({'run_id': run_id, 'phase': phase, 'holder_id': None}))
+        control = (f"SET application_name='{marker}'; BEGIN; "
+                   'LOCK TABLE addp_business.addp_engine_probe IN ACCESS EXCLUSIVE MODE; '
+                   'SELECT pg_sleep(240); ROLLBACK;')
+        command('docker', 'exec', '-d', HIGHGO, 'bash', '-c',
+                'export PGPASSWORD="$POSTGRES_PASSWORD" PGSSLMODE=require; '
+                'exec psql -X -h127.0.0.1 -p5866 -Usysdba -dhighgo -v ON_ERROR_STOP=1 -c "$1"',
+                'highgo-timeout', control)
+        deadline = time.monotonic() + 10
+        while (state := snapshot())['holder_id'] is None:
+            require(time.monotonic() < deadline, 'native HighGo barrier acquisition deadline exceeded')
+            time.sleep(0.1)
+        receipt = {'run_id': run_id, 'phase': phase, 'holder_id': state['holder_id']}
+        # The intent file is private and exclusive; replace only our own content.
+        journal.write_text(json.dumps(receipt))
+    else:
+        receipt = json.loads(journal.read_text())
+        require(receipt.get('run_id') == run_id and receipt.get('phase') == phase,
+                'barrier receipt belongs to another run')
+        state = snapshot()
+        require(type(receipt.get('holder_id')) is int and receipt['holder_id'] > 0
+                and state['holder_id'] == receipt['holder_id'], 'owned native HighGo barrier disappeared')
+        if operation == 'release':
+            # Check the marker again in the termination statement, not just an old PID.
+            released = sql(HIGHGO, f"SELECT pg_terminate_backend(pid) FROM pg_stat_activity "
+                           f"WHERE pid={receipt['holder_id']} AND application_name='{marker}' "
+                           "AND usename='sysdba' AND datname='highgo';", directory, admin=True)
+            require(released == 't', 'owned HighGo barrier release was not confirmed')
+            deadline = time.monotonic() + 10
+            while (state := snapshot())['holder_id'] is not None or state['waiters']:
+                require(time.monotonic() < deadline, 'owned HighGo barrier release deadline exceeded')
+                time.sleep(0.1)
+    return {'run_id': run_id, 'phase': phase, 'stage': operation, 'holder_id': receipt['holder_id'],
+            'held': state['holder_id'] == receipt['holder_id'], 'waiters': state['waiters']}
+
+
 def stop():
     errors = []
     for name in (HIGHGO, POSTGRES):
@@ -200,6 +272,9 @@ def stop():
 
 def main():
     guard()
+    if len(sys.argv) == 4 and sys.argv[1] == 'barrier':
+        print(json.dumps(timeout_barrier(sys.argv[2], sys.argv[3]), sort_keys=True))
+        return
     require(len(sys.argv) == 2 and sys.argv[1] in ('start', 'verify', 'stop'), 'use start|verify|stop')
     {'start': start, 'verify': verify, 'stop': stop}[sys.argv[1]]()
 

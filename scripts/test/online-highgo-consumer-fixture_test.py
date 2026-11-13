@@ -12,6 +12,95 @@ from unittest.mock import patch
 FIXTURE = import_module('business.scripts.online-highgo-consumer-fixture')
 
 
+class HighGoTimeoutBarrierTest(unittest.TestCase):
+    def setUp(self):
+        self.temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temporary.cleanup)
+        self.directory = Path(self.temporary.name)
+        self.environment = patch.dict(os.environ, ADDP_ONLINE_TEST_RUN_ID='owned-run')
+        self.environment.start()
+        self.addCleanup(self.environment.stop)
+
+    def run_barrier(self, operation, responses, *, phase='manager', owned=True):
+        with patch.object(FIXTURE, 'secret_directory', return_value=self.directory), \
+             patch.object(FIXTURE, 'owned', return_value=owned), \
+             patch.object(FIXTURE, 'command') as command, \
+             patch.object(FIXTURE, 'sql', side_effect=responses) as sql:
+            result = FIXTURE.timeout_barrier(operation, phase)
+        return result, command, sql
+
+    def receipt(self, holder=123):
+        (self.directory / 'highgo-manager-barrier.json').write_text(json.dumps(
+            dict(run_id='owned-run', phase='manager', holder_id=holder)))
+
+    def test_acquire_observe_release_follow_same_native_holder_and_private_journal(self):
+        holding = json.dumps(dict(holder_id=123, waiters=[]))
+        acquired, command, _ = self.run_barrier('acquire', [holding])
+        self.assertEqual(acquired, dict(run_id='owned-run', phase='manager', stage='acquire',
+                                       holder_id=123, held=True, waiters=[]))
+        journal = self.directory / 'highgo-manager-barrier.json'
+        self.assertEqual(journal.stat().st_mode & 0o777, 0o600)
+        args = command.call_args.args
+        self.assertEqual(args[:4], ('docker', 'exec', '-d', FIXTURE.HIGHGO))
+        self.assertIn('LOCK TABLE addp_business.addp_engine_probe IN ACCESS EXCLUSIVE MODE', args[-1])
+        self.assertIn('pg_sleep(240)', args[-1])
+        waiting = dict(id=456, state='active', wait_event_type='Lock')
+        observed, _, _ = self.run_barrier('observe', [json.dumps(dict(holder_id=123, waiters=[waiting]))])
+        self.assertEqual(observed['waiters'], [waiting])
+        released, _, sql = self.run_barrier('release', [holding, 't', json.dumps(dict(holder_id=None, waiters=[]))])
+        self.assertFalse(released['held'])
+        termination = sql.call_args_list[1].args[1]
+        self.assertIn("pid=123 AND application_name='hg_timeout_manager_owned-run'", termination)
+        self.assertIn("usename='sysdba' AND datname='highgo'", termination)
+
+    def test_unknown_dispatch_outcome_leaves_intent_and_refuses_repeat(self):
+        with patch.object(FIXTURE, 'secret_directory', return_value=self.directory), \
+             patch.object(FIXTURE, 'owned', return_value=True), \
+             patch.object(FIXTURE, 'command', side_effect=RuntimeError('dispatch failed')) as command:
+            with self.assertRaisesRegex(RuntimeError, 'dispatch failed'):
+                FIXTURE.timeout_barrier('acquire', 'manager')
+            with self.assertRaisesRegex(RuntimeError, 'cannot be repeated'):
+                FIXTURE.timeout_barrier('acquire', 'manager')
+            self.assertEqual(command.call_count, 1)
+        self.assertIsNone(json.loads((self.directory / 'highgo-manager-barrier.json').read_text())['holder_id'])
+
+    def test_release_never_terminates_a_replaced_or_missing_holder(self):
+        self.receipt()
+        for identity in (None, 999):
+            with self.subTest(identity=identity), \
+                 patch.object(FIXTURE, 'secret_directory', return_value=self.directory), \
+                 patch.object(FIXTURE, 'owned', return_value=True), \
+                 patch.object(FIXTURE, 'sql', return_value=json.dumps(dict(holder_id=identity, waiters=[]))) as sql:
+                with self.assertRaisesRegex(RuntimeError, 'disappeared'):
+                    FIXTURE.timeout_barrier('release', 'manager')
+                self.assertEqual(sql.call_count, 1)
+
+    def test_rejects_wrong_run_foreign_container_and_unknown_scope(self):
+        self.receipt()
+        with patch.dict(os.environ, ADDP_ONLINE_TEST_RUN_ID='another-run'):
+            with self.assertRaisesRegex(RuntimeError, 'another run'):
+                self.run_barrier('release', [])
+        with self.assertRaisesRegex(RuntimeError, 'owned HighGo'):
+            self.run_barrier('acquire', [], owned=False)
+        for operation, phase in [('retry', 'manager'), ('acquire', 'business-table')]:
+            with self.assertRaisesRegex(RuntimeError, 'use barrier'):
+                self.run_barrier(operation, [], phase=phase)
+
+    def test_observation_rejects_duplicate_nonlock_or_unbounded_payload(self):
+        self.receipt()
+        valid = dict(id=456, state='active', wait_event_type='Lock')
+        for waiters in ([valid, valid], [dict(valid, wait_event_type='IO')],
+                        [dict(valid, id=True)], [dict(valid, query='private SQL')]):
+            with self.subTest(waiters=waiters), self.assertRaisesRegex(RuntimeError, 'waiter identity'):
+                self.run_barrier('observe', [json.dumps(dict(holder_id=123, waiters=waiters))])
+
+    def test_expired_acquisition_is_not_retried_or_extended(self):
+        with patch.object(FIXTURE.time, 'monotonic', side_effect=[0, 11]), \
+             patch.object(FIXTURE.time, 'sleep') as sleep, self.assertRaisesRegex(RuntimeError, 'deadline exceeded'):
+            self.run_barrier('acquire', [json.dumps(dict(holder_id=None, waiters=[]))])
+        sleep.assert_not_called()
+
+
 class HighGoFixtureTest(unittest.TestCase):
     def test_startup_diagnostics_keep_owned_state_and_redact_all_credentials(self):
         values = {'admin': 'private-admin', 'business': 'private-business', 'postgres': 'private-postgres'}
