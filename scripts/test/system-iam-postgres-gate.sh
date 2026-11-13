@@ -281,7 +281,7 @@ case "$TEST_FILTER" in
         ;;
     manager-pg-read)
         [ "$PACKAGE_FILTER" = migration ] || { echo "manager-pg-read requires --package migration" >&2; exit 2; }
-        test_pattern='^TestManagerPGReadCheckRuntimeForwardMigrationAgainstPostgres$'
+        test_pattern='^Test(ManagerPGReadCheckRuntimeForwardMigration|Runner)AgainstPostgres$'
         ;;
     workflow-private-files)
         case "$PACKAGE_FILTER" in

@@ -454,6 +454,21 @@ elif args[:2] != ["volume", "ls"]:
             result = self.run_gate(arguments=("--package", package, "--test", "develop-file-definition"))
             self.assertNotEqual(result.returncode, 0)
 
+    def test_manager_pg_read_filter_includes_full_runtime_catalog(self):
+        result = self.run_gate(arguments=("--package", "migration", "--test", "manager-pg-read"))
+        self.assertEqual(result.returncode, 0, result.stderr)
+        trace = (self.root / "trace-1").read_text()
+        selected = re.findall(r"test ./internal/migration -run (\S+)", trace)
+        self.assertEqual(len(selected), 1)
+        pattern = re.compile(selected[0])
+        for name in ("TestManagerPGReadCheckRuntimeForwardMigrationAgainstPostgres", "TestRunnerAgainstPostgres"):
+            self.assertIsNotNone(pattern.search(name), name)
+        for name in ("TestOtherMigrationAgainstPostgres", "TestRunnerAgainstPostgresExtra"):
+            self.assertIsNone(pattern.search(name), name)
+        for package in ("iam", "api", "engineaccess"):
+            result = self.run_gate(arguments=("--package", package, "--test", "manager-pg-read"))
+            self.assertNotEqual(result.returncode, 0)
+
     def test_develop_file_authorization_filter_requires_real_main_pass(self):
         result = self.run_gate(arguments=("--package", "iam", "--test", "develop-file-authorization"))
         self.assertEqual(result.returncode, 0, result.stderr)
