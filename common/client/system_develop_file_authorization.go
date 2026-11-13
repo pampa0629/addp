@@ -198,10 +198,11 @@ func (c *SystemServiceClient) CheckDevelopFileSourceAccess(ctx context.Context, 
 	}
 	engine := result.Engine
 	version, _ := strconv.ParseInt(reference.EngineVersion, 10, 64)
+	expectedEngineType := map[string]string{"geopackage": "nfs", "geojson": "minio"}[reference.Format]
 	if result.AuthorizationID != issued.Authorization.ID || result.ExecutionID != request.ExecutionID || result.Attempt != request.Attempt || result.ScopeDigest != request.ScopeDigest ||
 		!reflect.DeepEqual(result.Source, request.Source) || !developFileObservationWindow(result.ObservedAt, result.ExpiresAt, issued.Authorization.ExpiresAt) ||
 		result.BusinessDeadline.IsZero() || result.ExpiresAt.After(result.BusinessDeadline) || result.BusinessDeadline.After(issued.Authorization.ExpiresAt) ||
-		engine == nil || engine.ID != request.Source.EngineID || engine.TenantID == nil || *engine.TenantID != *c.tenantID || engine.EngineType != "nfs" ||
+		engine == nil || engine.ID != request.Source.EngineID || engine.TenantID == nil || *engine.TenantID != *c.tenantID || engine.EngineType != expectedEngineType ||
 		engine.Version != version || engine.LifecycleState != models.EngineLifecycleActive || engine.DeletedAt != nil || len(engine.ConnectionInfo) == 0 {
 		return nil, errors.New("invalid current Develop file source observation")
 	}

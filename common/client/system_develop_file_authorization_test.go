@@ -431,3 +431,44 @@ func TestDevelopFileClientPublicationHistoryChecksOriginalRequest(t *testing.T) 
 		})
 	}
 }
+
+func TestDevelopFileClientSourceEngineMatchesSealedFormat(t *testing.T) {
+	for _, format := range []string{"geopackage", "geojson"} {
+		for _, engineType := range []string{"nfs", "minio"} {
+			t.Run(format+"/"+engineType, func(t *testing.T) {
+				intent, issued := developFileClientFixture(t, false)
+				if format == "geojson" {
+					intent.Sources[0].Target = plugin.ObjectItemPath(11, "sources", "A.geojson")
+					refs := []execution.DevelopFileSourceReference{{Target: intent.Sources[0].Target, Format: format,
+						ItemFingerprint: strings.Repeat("a", 64), BoundaryHash: strings.Repeat("b", 64), EngineVersion: "2"}}
+					scope, err := execution.NewDevelopBoundFileScope(intent, refs, "")
+					if err != nil {
+						t.Fatal(err)
+					}
+					issued.Scope = *scope
+					issued.ScopeDigest, err = scope.Digest()
+					if err != nil {
+						t.Fatal(err)
+					}
+				}
+				var calls atomic.Int32
+				server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					calls.Add(1)
+					if r.Header.Get("Authorization") != "Bearer addp_at_service" || r.Method != "POST" || r.URL.Path != "/api/v1/system/execution-authorizations/9/develop-file-source-accesses" {
+						t.Error("source observation lost fixed machine binding")
+					}
+					observation := developFileClientSource(issued)
+					observation.Engine.EngineType = engineType
+					_ = json.NewEncoder(w).Encode(observation)
+				}))
+				defer server.Close()
+				service := NewSystemServiceClient(server.URL, staticSystemServiceTokenSource("addp_at_service"), server.Client()).WithTenantID(3)
+				value, err := service.CheckDevelopFileSourceAccess(t.Context(), issued, developFileClientAccessRequest(issued))
+				wantOK := format == "geopackage" && engineType == "nfs" || format == "geojson" && engineType == "minio"
+				if (err == nil) != wantOK || (value != nil) != wantOK || calls.Load() != 1 {
+					t.Fatalf("sealed format/engine match: value=%v error=%v calls=%d", value != nil, err, calls.Load())
+				}
+			})
+		}
+	}
+}
