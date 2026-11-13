@@ -271,6 +271,83 @@ class TopologyFixtureTest(unittest.TestCase):
                 self.assertEqual((artifacts/'topology-physical'/name).read_bytes(),name.encode())
             self.assertFalse(list((artifacts/'topology-physical'/'outputs').iterdir()))
 
+    def test_command_retains_full_binary_output_exit_and_timeout_without_retry(self):
+        import subprocess, sys
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory);out=b'raw-output\x00\xff'+b'x'*12000;err=b'physical assertion: field type differs\n'+b'y'*14000
+            echoed=m.command([sys.executable,'-c','import sys;sys.stdout.buffer.write(sys.stdin.buffer.read())'],input='原始控制响应\n',evidence_directory=root/'success')
+            self.assertEqual(echoed,'原始控制响应')
+            self.assertEqual((root/'success'/'stdout.bin').read_bytes(),'原始控制响应\n'.encode())
+            self.assertEqual((root/'success'/'stderr.bin').read_bytes(),b'')
+            self.assertEqual(json.loads((root/'success'/'command.json').read_text())['returncode'],0)
+            code='import sys;sys.stdout.buffer.write('+repr(out)+');sys.stderr.buffer.write('+repr(err)+');sys.exit(7)'
+            with self.assertRaises(subprocess.CalledProcessError)as caught:
+                m.command([sys.executable,'-c',code],evidence_directory=root/'failed')
+            self.assertEqual(caught.exception.returncode,7)
+            self.assertEqual((root/'failed'/'stdout.bin').read_bytes(),out)
+            self.assertEqual((root/'failed'/'stderr.bin').read_bytes(),err)
+            observed=json.loads((root/'failed'/'command.json').read_text())
+            self.assertEqual((observed['returncode'],observed['timed_out']),(7,False))
+            timeout=subprocess.TimeoutExpired(['physical-worker'],120,output=out,stderr=err)
+            with patch.object(m.subprocess,'run',side_effect=timeout)as run:
+                with self.assertRaises(subprocess.TimeoutExpired):m.command(['physical-worker'],evidence_directory=root/'timeout')
+                run.assert_called_once()
+            self.assertEqual((root/'timeout'/'stdout.bin').read_bytes(),out)
+            self.assertEqual((root/'timeout'/'stderr.bin').read_bytes(),err)
+            observed=json.loads((root/'timeout'/'command.json').read_text())
+            self.assertIsNone(observed['returncode']);self.assertTrue(observed['timed_out'])
+
+    def test_runtime_archives_exact_raw_result_before_failing_physical_worker(self):
+        import subprocess
+        with tempfile.TemporaryDirectory()as directory:
+            root=Path(directory)/'owned';(root/'outputs').mkdir(parents=True)
+            raw=b'not a valid GeoPackage: preserve before OGR';(root/'outputs'/m.DIFFERENCE_TARGET).write_bytes(raw)
+            (root/'outputs'/'outside.gpkg').write_bytes(b'outside the declared output')
+            artifacts=Path(directory)/'artifacts'
+            info={'Config':{'Labels':{'com.addp.online-runtime':m.SUITE,'com.addp.online-run-id':'topology-123-1'},'Cmd':['sh','container_entrypoint.sh']}}
+            calls=[]
+            def command(args,**kwargs):
+                calls.append(args)
+                if args[:2]==['docker','inspect']:return json.dumps([info])
+                observation=artifacts/'topology-physical-checks'/'0001'
+                self.assertEqual((observation/m.DIFFERENCE_TARGET).read_bytes(),raw)
+                manifest=json.loads((observation/'before-verification.json').read_text())
+                self.assertEqual(manifest['target']['sha256'],m.hashlib.sha256(raw).hexdigest())
+                self.assertEqual(manifest['result'],'incomplete')
+                self.assertFalse((observation/'outside.gpkg').exists())
+                self.assertEqual(kwargs['evidence_directory'],observation)
+                raise subprocess.CalledProcessError(1,args,output=b'worker output',stderr=b'exact OGR mismatch')
+            env=dict(ADDP_ONLINE_ARTIFACT_DIR=str(artifacts),ADDP_ONLINE_TEST_RUN_ID='topology-123-1',ADDP_ONLINE_TOPOLOGY_CASE=m.DIFFERENCE_CASE)
+            with patch.dict(os.environ,env),patch.object(m,'command',side_effect=command):
+                with self.assertRaises(subprocess.CalledProcessError):m.runtime_worker('verify',root)
+            self.assertEqual(len(calls),2)
+            (root/'outputs'/m.DIFFERENCE_TARGET).unlink()
+            self.assertEqual((artifacts/'topology-physical-checks'/'0001'/m.DIFFERENCE_TARGET).read_bytes(),raw)
+
+    def test_unverified_snapshot_preserves_empty_missing_and_changed_outputs_without_overwrite(self):
+        with tempfile.TemporaryDirectory()as directory:
+            root=Path(directory)/'owned';(root/'outputs').mkdir(parents=True);artifacts=Path(directory)/'evidence'
+            target=root/'outputs'/m.DIFFERENCE_TARGET
+            for number,raw in enumerate([b'',b'first invalid result',b'changed result',None],1):
+                if raw is None:target.unlink()
+                else:target.write_bytes(raw)
+                observation=artifacts/f'{number:04d}';observation.mkdir(parents=True)
+                m.archive_before_verification(root,observation,m.DIFFERENCE_CASE,'topology-123-1')
+                value=json.loads((observation/'before-verification.json').read_text())
+                self.assertEqual(value['target']['state'],'missing'if raw is None else'captured')
+                if raw is not None:self.assertEqual((observation/m.DIFFERENCE_TARGET).read_bytes(),raw)
+            self.assertEqual((artifacts/'0002'/m.DIFFERENCE_TARGET).read_bytes(),b'first invalid result')
+            with self.assertRaises(FileExistsError):m.archive_before_verification(root,artifacts/'0002',m.DIFFERENCE_CASE,'topology-123-1')
+
+    def test_unverified_snapshot_rejects_symlink_without_reading_foreign_bytes(self):
+        with tempfile.TemporaryDirectory()as directory:
+            root=Path(directory)/'owned';(root/'outputs').mkdir(parents=True)
+            foreign=Path(directory)/'foreign';foreign.write_bytes(b'PRIVATE_OUTSIDE_BYTES')
+            (root/'outputs'/m.DIFFERENCE_TARGET).symlink_to(foreign)
+            observation=Path(directory)/'observation';observation.mkdir()
+            with self.assertRaises(m.FixtureError):m.archive_before_verification(root,observation,m.DIFFERENCE_CASE,'topology-123-1')
+            self.assertNotIn(b'PRIVATE_OUTSIDE_BYTES',b''.join(p.read_bytes()for p in observation.iterdir()if p.is_file()))
+
     def test_physical_archive_retains_verified_bytes_and_refuses_changed_evidence(self):
         with tempfile.TemporaryDirectory() as directory:
             base=Path(directory);root=base/'root';root.mkdir();(root/'outputs').mkdir()

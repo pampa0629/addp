@@ -948,7 +948,15 @@ def run_mixed_overlay_scenario(repository,env,client,physical_runner,browser_run
     if publication:
         publication.record(dict(stage='execution_submitted',execution_id=identifier,failure=None))
         publication.approve(identifier,principal,engine,'outputs/'+target_name)
+    directory=Path(env['ADDP_ONLINE_ARTIFACT_DIR']);path=directory/profile['checkpoint']
+    checkpoint={'schema_version':schema+'-checkpoint/v1','case':case,'result':'incomplete','run_id':env['ADDP_ONLINE_TEST_RUN_ID'],
+        'identity':identity,'runtime_id':runtime,'execution_id':identifier,'definition':workflow,'sources':sources,
+        'resource_preflight':preflight,'initial_scan_inventory':initial,'failures':[]}
+    def persist(stage):
+        checkpoint['stage']=stage;path.write_text(json.dumps(checkpoint,ensure_ascii=False,indent=2)+'\n')
+    persist('awaiting_execution')
     execution=raster.wait_execution(client,'develop',identifier,remaining())
+    checkpoint['execution']=execution;persist('execution_returned')
     if execution.get('execution_id')!=identifier or type(execution.get('triggered_by')) is not int or execution['triggered_by']!=principal:raise SuiteError('mixed overlay execution actor differs')
     if obj(obj(execution.get('execution_config'),'mixed overlay frozen config').get('content'),'mixed overlay content').get('workflow_definition')!=workflow:raise SuiteError('mixed overlay frozen DAG differs')
     bindings=[(f'input.{node}',locator)for node,locator in zip(input_nodes,locators)]
@@ -964,8 +972,12 @@ def run_mixed_overlay_scenario(repository,env,client,physical_runner,browser_run
         value=raster.wait_execution(client,'meta',scan['execution_id'],remaining())
         if type(value.get('tenant_id')) is not int or value['tenant_id']!=tenant or type(value.get('triggered_by')) is not int or value['triggered_by']!=principal:raise SuiteError('mixed overlay automatic scan public User/Tenant differs')
         observed.append(value)
-    monitor=obj(client.request('GET',f'/api/v1/monitor/executions/by-execution-id/{identifier}',(200,)).payload,'mixed overlay Monitor')
+    monitor_response=client.request('GET',f'/api/v1/monitor/executions/by-execution-id/{identifier}',(200,)).payload
+    checkpoint.update(automatic_scans=observed,lineage_facts=facts,monitor=monitor_response)
+    persist('monitor_returned')
+    monitor=obj(monitor_response,'mixed overlay Monitor')
     if monitor.get('execution_id')!=identifier or monitor.get('module')!='develop' or monitor.get('status')!='success' or type(monitor.get('triggered_by')) is not int or monitor['triggered_by']!=principal or obj(monitor.get('metadata'),'mixed overlay Monitor metadata').get('lineage_facts')!=facts:raise SuiteError('mixed overlay Monitor/facts differ')
+    persist('before_physical')
     native=physical_runner(repository,env)
     if native.get('exact_inventory_verified') is not True or set(native.get('sources',{}))!=set(names) or set(native.get('targets',{}))!={target_name}:raise SuiteError('mixed overlay physical inventory differs')
     for source,kind in zip(sources,profile['kinds']):
@@ -984,11 +996,7 @@ def run_mixed_overlay_scenario(repository,env,client,physical_runner,browser_run
             if after!=entry['before']:raise SuiteError('mixed overlay source or result Meta changed')
             result[entry['name']]=after
         return result
-    directory=Path(env['ADDP_ONLINE_ARTIFACT_DIR']);path=directory/profile['checkpoint']
-    checkpoint={'schema_version':schema+'-checkpoint/v1','case':case,'result':'incomplete','stage':'before_lineage','run_id':env['ADDP_ONLINE_TEST_RUN_ID'],
-        'identity':identity,'execution_id':identifier,'definition':workflow,'execution':execution,'sources':sources,'outputs':[output],'physical':native,'automatic_scans':observed,'monitor':monitor,'stable_outputs':execution['outputs'],'lineage_facts':facts,'resource_preflight':preflight,'failures':[]}
-    def persist(stage):
-        checkpoint['stage']=stage;path.write_text(json.dumps(checkpoint,ensure_ascii=False,indent=2)+'\n')
+    checkpoint.update(outputs=[output],physical=native,stable_outputs=execution['outputs'])
     persist('before_lineage')
     for source in sources[:len(input_nodes)]:raster.wait_lineage(client,source['id'],output['item_id'],identifier,remaining())
     graph=obj(client.request('GET',f'/api/v1/meta/lineage/graph?subject_kind=data_item&item_id={output["item_id"]}&direction=upstream',(200,)).payload,'mixed overlay original dual-source graph')
@@ -1666,11 +1674,16 @@ def validate_success(execution, sources, targets):
 
 
 def physical(repository, env):
-    result = subprocess.run([sys.executable, 'business/scripts/online-vector-topology-fixture.py', 'verify'],
-        cwd=repository, env=dict(env), text=True, capture_output=True, timeout=150)
-    if result.returncode:
-        raise SuiteError('independent topology physical verification failed: ' + result.stderr[-1000:])
-    return obj(json.loads(result.stdout), 'physical evidence')
+    checks = Path(env['ADDP_ONLINE_ARTIFACT_DIR']) / 'topology-physical-commands'
+    checks.mkdir(parents=True, exist_ok=True)
+    directory = checks / f'{len(list(checks.iterdir()))+1:04d}'
+    directory.mkdir()
+    try:
+        result = fixture.command([sys.executable, 'business/scripts/online-vector-topology-fixture.py', 'verify'],
+            cwd=repository, env=dict(env), timeout=150, evidence_directory=directory)
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as error:
+        raise SuiteError('independent topology physical verification failed: ' + str(error)) from error
+    return obj(json.loads(result), 'physical evidence')
 
 
 def validate_item(item, native, name):

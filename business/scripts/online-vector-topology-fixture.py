@@ -2252,8 +2252,33 @@ if sys.argv[1:2] != ['--worker']:
     from scripts.utils.online_nfs_fixture import NFSExport, FixtureError
 
 
-def command(args, **kwargs):
-    return subprocess.run(args, check=True, capture_output=True, text=True, timeout=120, **kwargs).stdout.strip()
+def command(args, *, evidence_directory=None, timeout=120, **kwargs):
+    # Preserve bytes before decoding control responses; failed OGR output may
+    # contain arbitrary bytes and must not disappear inside CalledProcessError.
+    if isinstance(kwargs.get('input'), str):
+        kwargs['input'] = kwargs['input'].encode('utf-8')
+    stdout = stderr = b''
+    returncode = None
+    timed_out = False
+    try:
+        result = subprocess.run(args, check=True, capture_output=True, timeout=timeout, **kwargs)
+        stdout, stderr, returncode = result.stdout, result.stderr, result.returncode
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as error:
+        stdout, stderr = error.stdout or b'', error.stderr or b''
+        timed_out = isinstance(error, subprocess.TimeoutExpired)
+        returncode = None if timed_out else error.returncode
+        raise
+    finally:
+        if evidence_directory is not None:
+            evidence_directory.mkdir(parents=True, exist_ok=True)
+            for name, value in [('stdout.bin', stdout), ('stderr.bin', stderr)]:
+                with (evidence_directory / name).open('xb') as stream:
+                    stream.write(value)
+            with (evidence_directory / 'command.json').open('x') as stream:
+                json.dump({'schema_version':'addp.topology-command/v1',
+                           'returncode':returncode, 'timed_out':timed_out,
+                           'stdout_bytes':len(stdout), 'stderr_bytes':len(stderr)}, stream)
+    return stdout.decode('utf-8').strip()
 
 
 def digest(path):
@@ -2529,7 +2554,39 @@ def runtime_worker(action, root):
     labels = info['Config']['Labels']
     if labels.get('com.addp.online-runtime') != SUITE or labels.get('com.addp.online-run-id') != os.environ['ADDP_ONLINE_TEST_RUN_ID'] or info['Config']['Cmd'] != ['sh', 'container_entrypoint.sh']:
         raise FixtureError('foreign Runtime or non-product entry')
-    return json.loads(command(['docker', 'exec', '-i', RUNTIME, 'python', '-', '--worker', action, str(root), topology_case()], input=Path(__file__).read_text()))
+    case = topology_case()
+    evidence_directory = None
+    if action == 'verify':
+        checks = Path(os.environ['ADDP_ONLINE_ARTIFACT_DIR']) / 'topology-physical-checks'
+        checks.mkdir(parents=True, exist_ok=True)
+        evidence_directory = checks / f'{len(list(checks.iterdir()))+1:04d}'
+        evidence_directory.mkdir()
+        if case in FILE_PUBLICATION_CASES:
+            archive_before_verification(root, evidence_directory, case, os.environ['ADDP_ONLINE_TEST_RUN_ID'])
+    return json.loads(command(['docker', 'exec', '-i', RUNTIME, 'python', '-', '--worker', action, str(root), case],
+                              input=Path(__file__).read_text(), evidence_directory=evidence_directory))
+
+
+def archive_before_verification(root, directory, case, run_id):
+    """Capture only the declared output; its validity is still the OGR oracle's job."""
+    name = mixed_fixture_profile(case)['target']
+    source = root / 'outputs' / name
+    target = {'name':name, 'state':'missing'}
+    unsafe = (root/'outputs').is_symlink() or source.is_symlink()
+    if unsafe or (source.exists() and not source.is_file()):
+        target['state'] = 'not_regular'
+    elif source.is_file():
+        value = source.read_bytes()
+        # Each observation is immutable, including empty or malformed outputs.
+        with (directory/name).open('xb') as stream:
+            stream.write(value)
+        target.update(state='captured', size_bytes=len(value), sha256=hashlib.sha256(value).hexdigest())
+    with (directory/'before-verification.json').open('x') as stream:
+        json.dump({'schema_version':'addp.topology-before-physical/v1', 'case':case,
+                   'run_id':run_id, 'owned_root':str(root), 'result':'incomplete',
+                   'stage':'before_verification', 'target':target}, stream, ensure_ascii=False, indent=2)
+    if target['state'] == 'not_regular':
+        raise FixtureError('physical evidence must not follow a non-regular output')
 
 
 def archive_physical_evidence(root, directory, result, case=None, *, sources_only=False):

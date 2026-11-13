@@ -2780,6 +2780,62 @@ class DifferenceOnlineTest(unittest.TestCase):
             self.assertEqual([task['operator'] for task in tasks], ['difference', 'load', 'load'])
             self.assertEqual(tasks[0]['depends_on'], ['load_a', 'load_b'])
             self.assertTrue(all('target_parent_locator' not in task['params'] and 'target_name' not in task['params'] for task in tasks))
+    def test_physical_wrapper_keeps_each_complete_failure_and_timeout_output(self):
+        import subprocess
+        stderr=b'original physical traceback\n'+b'x'*25000
+        for number,result in enumerate([
+                subprocess.CalledProcessError(3,['physical'],output=b'first partial JSON',stderr=stderr),
+                subprocess.TimeoutExpired(['physical'],150,output=b'second partial JSON',stderr=b'timeout stderr')],1):
+            with patch.object(m.fixture.subprocess,'run',side_effect=result)as run:
+                with self.assertRaises(m.SuiteError):m.physical(Path('.'),self.env)
+                run.assert_called_once()
+            directory=Path(self.directory.name)/'topology-physical-commands'/f'{number:04d}'
+            self.assertEqual((directory/'stdout.bin').read_bytes(),result.stdout)
+            self.assertEqual((directory/'stderr.bin').read_bytes(),result.stderr)
+            record=json.loads((directory/'command.json').read_text())
+            self.assertEqual(record['timed_out'],number==2)
+        self.assertEqual((Path(self.directory.name)/'topology-physical-commands'/'0001'/'stderr.bin').read_bytes(),stderr)
+
+    def test_difference_physical_failure_keeps_execution_monitor_and_range_before_cleanup(self):
+        client=DifferenceClient();calls=[]
+        def physical(*args):
+            calls.append('physical')
+            checkpoint=json.loads((Path(self.directory.name)/'topology-difference-checkpoint.json').read_text())
+            self.assertEqual((checkpoint['result'],checkpoint['stage']),('incomplete','before_physical'))
+            self.assertEqual(checkpoint['execution'],client.success)
+            self.assertEqual(checkpoint['monitor']['execution_id'],client.run_id)
+            self.assertEqual(len(checkpoint['sources']),5)
+            self.assertEqual(len(checkpoint['resource_preflight']),5)
+            self.assertEqual(checkpoint['runtime_id'],7)
+            self.assertEqual(checkpoint['failures'],[])
+            self.assertEqual(sum(method=='POST'and path.endswith('/develop/executions')for method,path,_ in client.calls),1)
+            raise m.SuiteError('original physical verification failed')
+        with self.assertRaisesRegex(m.SuiteError,'original physical verification failed'):self.run_case(client,physical=physical)
+        self.assertEqual(calls,['physical'])
+        checkpoint=json.loads((Path(self.directory.name)/'topology-difference-checkpoint.json').read_text())
+        self.assertEqual(checkpoint['stage'],'before_physical')
+        journal=json.loads((Path(self.directory.name)/'topology-difference-publication.json').read_text())
+        self.assertEqual(journal['pending_grants'],[]);self.assertEqual(journal['cleanup']['result'],'passed')
+        self.assertNotIn('initializer-test-token',json.dumps(checkpoint))
+
+    def test_difference_records_returned_execution_and_monitor_before_their_assertions(self):
+        for kind in ['execution','monitor']:
+            client=DifferenceClient()
+            if kind=='execution':client.success['triggered_by']=8
+            else:
+                request=client.request
+                def bad_monitor(method,path,expected,body=None):
+                    response=request(method,path,expected,body)
+                    if '/monitor/executions/'in path:response.payload['status']='failed'
+                    return response
+                client.request=bad_monitor
+            with self.subTest(kind=kind),self.assertRaises(m.SuiteError):self.run_case(client)
+            checkpoint=json.loads((Path(self.directory.name)/'topology-difference-checkpoint.json').read_text())
+            self.assertEqual(checkpoint['stage'],'execution_returned'if kind=='execution'else'monitor_returned')
+            self.assertIn('execution',checkpoint)
+            if kind=='monitor':self.assertEqual(checkpoint['monitor']['status'],'failed')
+            self.assertEqual(sum(method=='POST'and path.endswith('/develop/executions')for method,path,_ in client.calls),1)
+
     def test_difference_stages_keep_basic_grants_approval_and_deep_separate(self):
         client=DifferenceClient();report=self.run_case(client)
         stages=[row['stage'] for row in report['publication']['stages']]
