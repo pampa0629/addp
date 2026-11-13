@@ -18,7 +18,7 @@ export function cdcResponse(kind, keys = null, params = null, mode = '') {
   }] }
 }
 export async function cdcBackend(page, { locale = 'zh-cn', permissions = ['monitor.resource_observation.read'], mode: initial = '' } = {}) {
-  let mode = initial, held = null, release
+  let mode = initial, held = null, release, trendHeld = null, releaseTrend
   const calls = [], queries = []
   await page.addInitScript(lang => { if (!localStorage.getItem('addp-lang')) localStorage.setItem('addp-lang', lang) }, locale)
   await page.route('**/module-health/**', route => route.fulfill({ json: { status: 'ready' } }))
@@ -45,8 +45,9 @@ export async function cdcBackend(page, { locale = 'zh-cn', permissions = ['monit
       else if (path.endsWith('/platform/module-instances')) body = { data: [], total: 0, page: Number(url.searchParams.get('page')), page_size: 20 }
       else throw new Error(`Unexpected CDC fixture API: ${path}`)
       if (held) await held
+      if (path.endsWith('/cdc_resource_trends') && trendHeld) await trendHeld
     }
     await route.fulfill({ status, json: body })
   })
-  return { calls, queries, setMode: value => { mode = value }, hold: () => { held = new Promise(done => { release = done }) }, release: () => { release?.(); held = null } }
+  return { calls, queries, setMode: value => { mode = value }, hold: () => { held = new Promise(done => { release = done }) }, release: () => { release?.(); held = null }, holdTrend: () => { trendHeld = new Promise(done => { releaseTrend = done }) }, releaseTrend: () => { releaseTrend?.(); trendHeld = null } }
 }

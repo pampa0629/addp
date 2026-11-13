@@ -524,7 +524,12 @@ elif args[:2] != ["volume", "ls"]:
         result = self.run_gate(arguments=("--test", "catalog-integrity"))
         self.assertEqual(result.returncode, 0, result.stderr)
         trace = (self.root / "trace-1").read_text()
-        self.assertIn("./internal/migration -run ^Test(Runner|EngineAccessDelegationRoleForwardMigration|SourceDataAuthorizerRoleForwardMigration)AgainstPostgres$", trace)
+        pattern = "^Test(Runner|EngineAccessDelegationRoleForwardMigration|SourceDataAuthorizerRoleForwardMigration|MonitorCDCRiskForwardMigration)AgainstPostgres$"
+        self.assertIn("./internal/migration -run " + pattern, trace)
+        for name in ("Runner", "EngineAccessDelegationRoleForwardMigration", "SourceDataAuthorizerRoleForwardMigration", "MonitorCDCRiskForwardMigration"):
+            self.assertIsNotNone(re.fullmatch(pattern, "Test" + name + "AgainstPostgres"))
+        for name in ("TestMonitorCDCRiskForwardMigrationAgainstPostgresExtra", "TestOtherMigrationAgainstPostgres", "TestMonitorCDCRiskForwardMigration"):
+            self.assertIsNone(re.fullmatch(pattern, name))
         result = self.run_gate(arguments=("--package", "iam", "--test", "catalog-integrity"))
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("requires --package migration", result.stderr)

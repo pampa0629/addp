@@ -436,3 +436,11 @@ Chrome 正式租户页面的任务 61、generation 1 仍显示活跃任务槽、
 `make test-module MODULE=system GO_ONLY=1` 与标准 `scripts/test/system-iam-postgres-gate.sh --package migration --test catalog-integrity` 通过。该专项已纳入 `TestMonitorCDCRiskForwardMigrationAgainstPostgres`：从 291 升级，精确核对唯一角色绑定、权限属性、旧 Token Family 撤销、机器版本仅推进一次、重复 Runner 无变化，以及其他身份／角色／分配／客户端／Token Family 快照不变；原全迁移 Runner 同时通过，沿门禁清理 `addp_iam_test`。
 
 迁移尚待用户按标准入口重启 System 应用；Monitor 同步重启后取得当前服务 Token，再核对真实风险读取。上述修复验证不计为实际风险 GET 已恢复或真实告警故障／送达闭环通过。没有直接修写开发库，没有触发业务任务故障或修改逻辑槽。
+
+### 292 入口断言与 CDC 受控时钟的 CI 修复（2026-11-13）
+
+`69e7b0e60` 的 [Platform Run 43367331753／Job 131694726864](https://github.com/pampa0629/addp/actions/runs/43367331753/job/131694726864) 在 `make test-system-iam-runner` 失败：生产 gate 的 `catalog-integrity` 已加入 `MonitorCDCRiskForwardMigration`，测试仍精确要求原三项过滤表达式。同步为包含原三项及 CDC 升级的四项精确表达式，并验证其他名称、错误后缀和缺失结尾不匹配；不删原迁移、不放宽过滤。修改后本地 42 项 runner 测试通过；`make test-system-iam-postgres SYSTEM_IAM_POSTGRES_TEST_ARGS='--package migration --test catalog-integrity'` 的四类迁移全部通过，使用已核对端口的 `addp_iam_test`，沿标准门禁清理。
+
+`d6e97ea23` 的 [Monitor Frontend Run 43364564823／Job 131685812363](https://github.com/pampa0629/addp/actions/runs/43364564823/job/131685812363) 实际已执行：152 单元通过，842 浏览器中 841 通过、1 失败，构建未执行。失败为 `cdc-resources.spec.js` 的拒绝刷新断言。原 Artifact `14012709653` 的 error-context 显示“抓取失败”即时卡片仍在、趋势已收到权限拒绝且自动刷新停止；原 SHA256 `fd40bf017b46f829a79dbd3a5df55f63ac5513750d544c927a1316e0e785347d` 的下载与 CRC 核验记录由 CI 验收会话保留。该失败不能继续记为排队。
+
+原因是测试在即时卡片更新后、本轮趋势请求完成前切换 fixture 为 denied 并推进受控时钟，拒绝可能落在尚未结束的趋势请求，而不是下一轮即时请求。本地原用例单次通过，未把它当作 CI 原失败不存在。修复仅让夹具保持趋势请求，明确核对请求期间不启动下一轮；释放并等 `aria-busy=false` 后再切 denied。原即时 403 清空、趋势清空、自动刷新停止及独立迟到响应隔离断言保留；产品逻辑、超时和重试未改。定向标准前端门禁、CI 登记已通过；完整 `make test-monitor-frontend` 的 152 单元、842 受控浏览器及构建全部通过。本地日志 `/tmp/addp-cdc-ci-monitor-full.log`、`/tmp/addp-cdc-ci-iam-runner.log` 和 `/tmp/addp-cdc-ci-migration-pg.log`。新提交自然 CI 结果另行记录，不外推新 Hosted T4 或个人服务验收。
