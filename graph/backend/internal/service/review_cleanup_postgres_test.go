@@ -299,6 +299,12 @@ func newReviewCleanupPGFixture(t *testing.T) *reviewCleanupPGFixture {
 func newReviewCleanupPGFixtureWithBudget(t *testing.T, budget time.Duration) *reviewCleanupPGFixture {
 	t.Helper()
 	f := newReviewPGFixture(t)
+	prepareReviewCleanupPGFixture(t, f, budget)
+	return f
+}
+
+func prepareReviewCleanupPGFixture(t *testing.T, f *reviewCleanupPGFixture, budget time.Duration) {
+	t.Helper()
 	db, task := f.db, f.task
 	ctx := execution.WithUserOrigin(t.Context(), authtest.NewTenantUserAuthContext(strconv.Itoa(int(task.TenantID)), "7", []string{"system.cleanup.execute"}))
 	parent := execution.TaskExecution{ExecutionID: uuid.NewString(), TenantID: int(task.TenantID), Module: "system", TaskType: "cleanup", Source: "system", Status: "pending", ExecutionBoundary: "bounded", TriggerType: "manual", ExecutionConfig: commonmodels.JSONMap{execution.DisplayLanguageKey: "en"}}
@@ -310,6 +316,12 @@ func newReviewCleanupPGFixtureWithBudget(t *testing.T, budget time.Duration) *re
 		t.Fatal(err)
 	}
 	input := events.CleanupRequest{RequestID: uuid.NewString(), ParentExecutionID: parent.ExecutionID, TenantID: task.TenantID, RequestedBy: 7, Action: "execute", CleanupMode: events.CleanupModeLogical, TriggerType: "manual", ExpectedModules: []string{"graph"}, BasedOnScan: uuid.NewString(), Context: events.CleanupContext{EngineID: 1}, Confirmation: events.CleanupConfirmation{Confirmed: true, RiskLevel: "low", ImpactDigest: strings.Repeat("a", 64)}, RequestedAt: now, Deadline: now.Add(budget)}
+	input.BasedOnScan, input.Confirmation.ImpactDigest = graphCleanupScanFixture(t, db, input)
+	now, err = execution.DatabaseNow(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	input.RequestedAt, input.Deadline = now, now.Add(budget)
 	if err := input.Seal(); err != nil {
 		t.Fatal(err)
 	}
@@ -335,7 +347,6 @@ func newReviewCleanupPGFixtureWithBudget(t *testing.T, budget time.Duration) *re
 	}))
 	t.Cleanup(server.Close)
 	f.svc = NewCleanupService(db, client.NewSystemServiceClient(server.URL, cleanupRuntimeToken{}, nil))
-	return f
 }
 
 func (f *reviewCleanupPGFixture) start(t *testing.T, ctx context.Context) {
@@ -400,7 +411,7 @@ func (f *reviewCleanupPGFixture) assertBlocked(t *testing.T, ctx context.Context
 func (f *reviewCleanupPGFixture) assertReceiptCount(t *testing.T, want int64) {
 	t.Helper()
 	var count int64
-	if err := f.db.Table("graph.cleanup_results").Where("tenant_id = ?", f.task.TenantID).Count(&count).Error; err != nil || count != want {
+	if err := f.db.Table("graph.cleanup_results").Where("execution_id = ?", f.child.ExecutionID).Count(&count).Error; err != nil || count != want {
 		t.Fatalf("cleanup results=%d want=%d err=%v", count, want, err)
 	}
 }

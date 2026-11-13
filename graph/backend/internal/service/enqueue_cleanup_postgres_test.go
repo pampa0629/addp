@@ -179,10 +179,29 @@ func testGraphEnqueueCleanupConcurrency(t *testing.T) {
 					if err := tx.Where("task_id = ? AND tenant_id = ?", f.task.ID, f.task.TenantID).Order("created_at ASC, id ASC").Find(&queuedMaterials).Error; err != nil {
 						t.Fatal(err)
 					}
+					queuedFacts := readDeleteCleanupFacts(t, tx, f.task.TenantID)
 					f.start(t, ctx)
 					waitReviewCleanupPG(t, ctx, f.db, "SELECT EXISTS (SELECT 1 FROM pg_stat_activity WHERE ? = ANY(pg_blocking_pids(pid)))", blocker)
 					if err := tx.Commit().Error; err != nil {
 						t.Fatal(err)
+					}
+					if mode == repository.BuildExecutionClaimRerun {
+						// Rerun removed pending review candidates after scan. Under
+						// strict equality even this reduced scope needs a new scan.
+						child := f.waitTerminal(t, ctx, execution.ExecutionStatusFailed)
+						receipt, err := execution.ReadCleanupReceipt(*child)
+						if err != nil || receipt == nil || receipt.Reason != "scope_changed" {
+							t.Fatal("rerun scope reduction was not rejected", err)
+						}
+						if !reflect.DeepEqual(readDeleteCleanupFacts(t, f.db, f.task.TenantID), queuedFacts) {
+							t.Fatal("rejected old confirmation cancelled or rewrote the queued rerun/history")
+						}
+						var kg models.KnowledgeGraph
+						if err := f.db.First(&kg, f.graph.ID).Error; err != nil || !reflect.DeepEqual(kg, f.graph) {
+							t.Fatal("scope rejection changed graph admission", err)
+						}
+						f.assertReceiptCount(t, 1)
+						return
 					}
 					f.waitTerminal(t, ctx, execution.ExecutionStatusSuccess)
 					var cancelled execution.TaskExecution

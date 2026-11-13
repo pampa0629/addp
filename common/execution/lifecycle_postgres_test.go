@@ -37,6 +37,7 @@ func TestExecutionLifecycleAgainstPostgres(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Run("cleanup_protocol", func(t *testing.T) { testCleanupProtocolLifecycle(t, db) })
+	t.Run("cleanup_scan_baseline", func(t *testing.T) { testCleanupScanReceipt(t, db) })
 	t.Run("cleanup_lock_order", func(t *testing.T) { testCleanupPostgresLockOrder(t, db) })
 	t.Run("cleanup_admission_evidence", func(t *testing.T) { testCleanupPostgresAdmissionEvidence(t, db) })
 	fixture := func(t *testing.T) TaskExecution {

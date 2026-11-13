@@ -161,7 +161,7 @@ Manager 源准备保持其正式授权链；本批 Transfer CDC 仅验证既有 
 | 顺序 | 事项／性质 | 具体交付与完成条件 |
 | --- | --- | --- |
 | P1a | Common／System 父子准入 PG | C2b/c/e/h 的竞争、拒绝与回滚，以及 C2d/f/g 的公共锁等待、非法绑定及子执行残留事实，见 [Common／System PG 两批验证](#本轮-pg-增补验证)。Graph 专属锁交错归 P1b，各 Owner 的外部效果核清沿对应专项。 |
-| P1b | Graph清理与输入冻结，测试及按证据修复 | [G2 摘要回滚与 G3 成功先提交](#graph-基础-pg-增补验证)、[G8 输入与登记目标漂移](#graph-g8-输入冻结验证)已有 PG 记录。[G9 在途审核与关闭准入](#graph-审核与-cleanup-竞争-pg-增补验证)已补六项真实 PG。[同一审核项九种动作竞争](#graph-同项审核竞争-pg-增补验证)也已补齐；[Cleanup 与普通构建／重跑入队竞争](#graph-入队与-cleanup-竞争-pg-增补验证)新增四项真实 PG，并修正关闭后旧快照错误准入。[任务／材料删除与 Cleanup 竞争](#graph-任务材料删除与-cleanup-竞争-pg-增补验证)再补八项真实 PG。[图配置删除与 Cleanup 竞争](#graph-图配置删除与-cleanup-竞争-pg-增补验证)补零／一张剩余图下八项真实 PG。[已领取子执行与父截止关闭](#graph-cleanup-已领取子执行与父关闭-pg-增补验证)再补四项真实 PG。[最终子终态更新失败](#graph-cleanup-最终子终态更新回滚-pg-增补验证)补父正常／父截止两项，实际结果见下。剩余 C3/C2j 的其他跨类／外键排列及 C4 其他最终事务与候选漂移验证；目标重绑按原边界另议。[C4 scan 后候选漂移](#graph-scan-后候选漂移核查与已确认方案)已用真实 Graph PG 复现：validation 后经生产入口新增任务，execute 仍成功归档图谱。System 复扫能发现其观察前的变化，未覆盖该后续窗口；已确认严格摘要相等与原 scan 回执方案，正式契约已统一，实现和实际门禁结果另记，不视为已修复 |
+| P1b | Graph清理与输入冻结，测试及按证据修复 | [G2 摘要回滚与 G3 成功先提交](#graph-基础-pg-增补验证)、[G8 输入与登记目标漂移](#graph-g8-输入冻结验证)已有 PG 记录。[G9 在途审核与关闭准入](#graph-审核与-cleanup-竞争-pg-增补验证)已补六项真实 PG。[同一审核项九种动作竞争](#graph-同项审核竞争-pg-增补验证)也已补齐；[Cleanup 与普通构建／重跑入队竞争](#graph-入队与-cleanup-竞争-pg-增补验证)新增四项真实 PG，并修正关闭后旧快照错误准入。[任务／材料删除与 Cleanup 竞争](#graph-任务材料删除与-cleanup-竞争-pg-增补验证)再补八项真实 PG。[图配置删除与 Cleanup 竞争](#graph-图配置删除与-cleanup-竞争-pg-增补验证)补零／一张剩余图下八项真实 PG。[已领取子执行与父截止关闭](#graph-cleanup-已领取子执行与父关闭-pg-增补验证)再补四项真实 PG。[最终子终态更新失败](#graph-cleanup-最终子终态更新回滚-pg-增补验证)补父正常／父截止两项，实际结果见下。剩余 C3/C2j 的其他跨类／外键排列及 C4 其他最终事务与候选漂移验证；目标重绑按原边界另议。[C4 scan 后候选漂移](#graph-scan-后候选漂移核查与已确认方案)已用真实 Graph PG 复现：validation 后经生产入口新增任务，execute 仍成功归档图谱。System 复扫能发现其观察前的变化，未覆盖该后续窗口；已确认严格摘要相等与原 scan 回执方案，正式契约已统一，本地修复与验证结果见下，固定源码Linux结果须单独核验 |
 | P2 | System／Monitor消费者状态矩阵，T3工程 | C5g/k/l补撤去父读取权、404／503、User／Tenant／execution切换、closed pending替换及矛盾／迟到响应；C5c/h补隐藏计数与完整页面语义。复用共享组件／请求失效能力，补C5e/j相应PG交错，不复制组件 |
 | 并行待授权 | Manager迟到writer真实验收 | runner与CI已就绪，按§8.44单独确认一次Hosted；同一原请求、原身份及原预算，核11项、控制恢复与零残留；不能先记完成 |
 | P3 | Graph／Cleanup完整故障与Meta扫描闭环，runner／集成验收 | 已有profile先按场景核对并补缺：Cleanup规范§13的平台上下文、审计、Monitor父子树；Graph原生写图回包丢失及两引擎故障。受控runner与真实原生效果分开；若需新的Provider入口或身份／权限边界先讨论，不能借此重启高级恢复。新增Hosted均单独确认 |
@@ -271,6 +271,14 @@ Common 父子准入与 System 协调的用例定位见 [Owner 矩阵](../spec/te
 Graph 在 C→G 内、关闭／取消／归档前比较当前模块影响与原基线；变化则失败关闭本次请求，不执行未确认范围。最终清理仍在同一 G 围栏内复核候选与静止性，失败保留既有持久关闭、外部效果证据、原父子历史，不自动重跑／重开。缺失、伪造或越界原scan不得旁路；既有使用随机 `BasedOnScan` 的测试须改为真实匹配的成功scan夹具。
 
 **已确认取舍。** 首期采用严格摘要相等：新增、删除／范围缩小或影响分类改变都重新评估、显式确认；实现与审计最简单，但删除先提交时不能继续执行旧确认，后续合法新请求须引用删除后新scan。若要求“只阻新增、允许范围缩小”，单一摘要无法证明子集，必须另行设计 Owner 持久候选集合及其授权／保留语义，不能用数量下降或仅比较图ID替代。该选择改变先前未明确关联原scan的删除竞争用例解释，并新增 Common 的原scan证据消费契约，现已获用户明确确认，按正式规范同步 Common／Graph 与门禁。当前 `BeginDeletion` 明确拒绝 deleting，`Restore` 仅接受 deleted，所以“检测后要求新评估”不代表已有 deleting 原工作流的重新确认入口。首批失败继续保留 deleting／原失败，不复活原请求；若要恢复该工作流，必须另行明确显式重评估与确认的职责和接口，不靠通用execute或直接改库绕过。新图创建的提交围栏另按证据细化，不将本方案宣称为全生命周期完全封闭。
+
+### Common／Graph 原 scan 基线修复实施验证
+
+正式契约先提交 `8a41cf52b`。Common新增唯一只读 `ReadCleanupScanReceipt`：按 `BasedOnScan` 定位同Tenant／Owner的公共scan子项，严格核来源父子、请求、scope、成功终态和类型化回执；普通读取不取原P／C行锁、不读私表，不因scan请求者与execute请求者不同增加权限条件。Graph在首次C→G关闭／取消之前及最终清理事务中比较原模块摘要；前置不符只提交既有 `scope_changed` 失败结果，缺来源无伪造回执，最终不符保留已提交关闭／原历史，无归档或成功回执。没有兼容或无基线旁路。
+
+旧随机scan引用已改为实际公共scan生命周期与专业／公共结果夹具。删除先提交和重跑删除旧待审项时，候选减少也拒绝旧确认；已提交删除／排队事实、冻结输入和原执行历史逐字段保留。新的Graph真实Runtime分组跑两次scan，覆盖复扫前新增可被摘要发现、未变化成功、复扫后新增／减少／等量替换拒绝、缺scan失败；最终分组另核关闭后生产新建拒绝，以明确的直接PG故障注入证明末尾摘要仍拒绝变化且保留关闭，以及空范围成功。此PG故障不声称生产入口可绕过准入。原父截止与最终SQL回滚用例继续保留。
+
+本地标准验证：`make test-module MODULE=common GO_ONLY=1`、`make test-module MODULE=graph GO_ONLY=1`、`make test-common-postgres COMMON_POSTGRES_TEST_ARGS="--test graph"` 与 `--test execution-lifecycle`；Common基线14项，Graph10主用例、原6／9／4／8／8／4／2项及新增6／2项均已实际PASS且零SKIP／FAIL，夹具退出清理自有事实。`make test-t2-ci-registration`已通过86＋9项及登记核对；沿原必需主测试、路径发现和Linux Common PG，无新Make／workflow／服务。固定源码Linux结果待终态补记。受控授权及Common父终态不代验System私有截止审计、真实IAM、跨进程／原生图效果；其他Owner未接入本次强制比对。新图创建提交围栏、其他跨类锁／外键排列和deleting显式重新确认仍是独立缺口。未重启服务、运行Hosted或实施Graph高级恢复。
 
 ## 七、确认范围与协作分工
 

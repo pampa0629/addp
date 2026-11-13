@@ -26,7 +26,7 @@ func testGraphDeleteCleanupConcurrency(t *testing.T) {
 	for _, action := range []string{"task", "material"} {
 		for _, outcome := range []string{"closure_first", "delete_first", "delete_rollback", "cleanup_receipt_rollback"} {
 			t.Run(action+"/"+outcome, func(t *testing.T) {
-				f := newReviewCleanupPGFixture(t)
+				f := newReviewPGFixture(t)
 				ctx, cancel := context.WithTimeout(t.Context(), 12*time.Second)
 				defer cancel()
 				// A separate definition/material/review must survive every path.
@@ -42,6 +42,7 @@ func testGraphDeleteCleanupConcurrency(t *testing.T) {
 				if err := f.db.Create(&item).Error; err != nil {
 					t.Fatal(err)
 				}
+				prepareReviewCleanupPGFixture(t, f, time.Minute)
 				before := readDeleteCleanupFacts(t, f.db, f.task.TenantID)
 				var target models.BuildMaterial
 				if err := f.db.Where("task_id = ? AND tenant_id = ?", f.task.ID, f.task.TenantID).First(&target).Error; err != nil {
@@ -148,7 +149,7 @@ func testGraphDeleteCleanupConcurrency(t *testing.T) {
 					}
 				}
 				wantStatus := execution.ExecutionStatusSuccess
-				if outcome == "cleanup_receipt_rollback" {
+				if outcome == "cleanup_receipt_rollback" || outcome == "delete_first" {
 					wantStatus = execution.ExecutionStatusFailed
 				}
 				child := f.waitTerminal(t, ctx, wantStatus)
@@ -156,8 +157,9 @@ func testGraphDeleteCleanupConcurrency(t *testing.T) {
 				if !reflect.DeepEqual(after, expected) {
 					t.Fatal("deletion/Cleanup changed facts outside the committed exact deletion, including history or frozen input")
 				}
+				drifted := outcome == "delete_first" || outcome == "cleanup_receipt_rollback"
 				var kg models.KnowledgeGraph
-				if err := f.db.First(&kg, f.task.GraphID).Error; err != nil || !kg.AdmissionClosed || kg.AdmissionExecutionID != child.ExecutionID || kg.Version != f.graph.Version+1 || (kg.Status == "archived") != (wantStatus == execution.ExecutionStatusSuccess) {
+				if err := f.db.First(&kg, f.task.GraphID).Error; err != nil || (!drifted && (!kg.AdmissionClosed || kg.AdmissionExecutionID != child.ExecutionID || kg.Version != f.graph.Version+1)) || (drifted && !reflect.DeepEqual(kg, f.graph)) || (kg.Status == "archived") != (wantStatus == execution.ExecutionStatusSuccess) {
 					t.Fatalf("closure or archive rollback incorrect: %v", err)
 				}
 				receipt, err := execution.ReadCleanupReceipt(*child)
@@ -170,7 +172,7 @@ func testGraphDeleteCleanupConcurrency(t *testing.T) {
 					}
 					f.assertReceiptCount(t, 0)
 				} else {
-					if receipt == nil || receipt.Status != "success" {
+					if receipt == nil || receipt.Status != wantStatus || (drifted && receipt.Reason != "scope_changed") {
 						t.Fatal("successful Cleanup lost its receipt")
 					}
 					f.assertReceiptCount(t, 1)
@@ -178,8 +180,12 @@ func testGraphDeleteCleanupConcurrency(t *testing.T) {
 					if err := f.db.Table("graph.cleanup_results").Select("payload").Where("execution_id = ?", child.ExecutionID).Scan(&payload).Error; err != nil {
 						t.Fatal(err)
 					}
+					wantArchived := int64(1)
+					if drifted {
+						wantArchived = 0
+					}
 					var result cleanup.Result
-					if err := json.Unmarshal([]byte(payload), &result); err != nil || result.Statistics["build_tasks"] != int64(len(expected.tasks)) || result.Statistics["build_materials"] != int64(len(expected.materials)) || result.Statistics["review_items"] != int64(len(expected.reviews)) || result.Statistics["cancelled_build_tasks"] != 0 || result.Statistics["deleted_records"] != 0 || result.Statistics["archived_graphs"] != 1 {
+					if err := json.Unmarshal([]byte(payload), &result); err != nil || result.Statistics["build_tasks"] != int64(len(expected.tasks)) || result.Statistics["build_materials"] != int64(len(expected.materials)) || result.Statistics["review_items"] != int64(len(expected.reviews)) || result.Statistics["cancelled_build_tasks"] != 0 || result.Statistics["deleted_records"] != 0 || result.Statistics["archived_graphs"] != wantArchived {
 						t.Fatalf("Cleanup result did not reflect exact remaining facts: %v", err)
 					}
 				}

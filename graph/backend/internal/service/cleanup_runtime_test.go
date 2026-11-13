@@ -46,6 +46,12 @@ func testGraphCleanupRuntime(t *testing.T, pg bool) {
 			}
 			now := time.Now().UTC()
 			input := events.CleanupRequest{RequestID: uuid.NewString(), ParentExecutionID: parent.ExecutionID, TenantID: uint(tenant), RequestedBy: 7, Action: "execute", CleanupMode: events.CleanupModeLogical, TriggerType: "manual", ExpectedModules: []string{"graph"}, BasedOnScan: uuid.NewString(), Context: events.CleanupContext{EngineID: 1}, Confirmation: events.CleanupConfirmation{Confirmed: true, RiskLevel: "low", ImpactDigest: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}, RequestedAt: now, Deadline: now.Add(time.Minute)}
+			input.BasedOnScan, input.Confirmation.ImpactDigest = graphCleanupScanFixture(t, db, input)
+			acceptedAt, clockErr := execution.DatabaseNow(db)
+			if clockErr != nil {
+				t.Fatal(clockErr)
+			}
+			input.RequestedAt, input.Deadline = acceptedAt, acceptedAt.Add(time.Minute)
 			if err := input.Seal(); err != nil {
 				t.Fatal(err)
 			}
@@ -130,7 +136,7 @@ func testGraphCleanupRuntime(t *testing.T, pg bool) {
 				t.Fatal(err)
 			}
 			var rows int64
-			if err := db.Table("graph.cleanup_results").Where("tenant_id = ?", tenant).Count(&rows).Error; err != nil {
+			if err := db.Table("graph.cleanup_results").Where("execution_id = ?", child.ExecutionID).Count(&rows).Error; err != nil {
 				t.Fatal(err)
 			}
 			receipt, err := execution.ReadCleanupReceipt(child)

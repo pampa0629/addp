@@ -33,23 +33,37 @@ func (s *CleanupService) runCleanup(ctx context.Context, run *cleanup.Run) error
 			return completeGraphCleanup(ctx, tx, run, stats, impact, "success", "")
 		})
 	}
+	baseline, err := execution.ReadCleanupScanReceipt(ctx, s.db, run.Execution)
+	if err != nil {
+		return err
+	}
 	var graphs []models.KnowledgeGraph
+	scopeChanged := false
 	// Phase 1: C -> G -> graph rows. No target execution is locked here.
 	if err := run.Effect(ctx, func(tx *gorm.DB) error {
 		candidates, err := (&CleanupService{db: tx}).listCandidates(ctx, run.Input.TenantID, run.Input.Context.Map())
 		if err != nil {
 			return err
 		}
-		if len(candidates.knowledgeGraphs) == 0 {
-			return nil
+		if len(candidates.knowledgeGraphs) > 0 {
+			if err := repository.LockAdmission(tx, run.Input.TenantID, true); err != nil {
+				return err
+			}
+			// Repeat scope discovery under G; mutation paths also hold G.
+			candidates, err = (&CleanupService{db: tx}).listCandidates(ctx, run.Input.TenantID, run.Input.Context.Map())
+			if err != nil {
+				return err
+			}
 		}
-		if err := repository.LockAdmission(tx, run.Input.TenantID, true); err != nil {
-			return err
-		}
-		// Repeat scope discovery under G; mutation paths also hold G.
-		candidates, err = (&CleanupService{db: tx}).listCandidates(ctx, run.Input.TenantID, run.Input.Context.Map())
+		impact, err := graphEngineDeletionImpact(candidates)
 		if err != nil {
 			return err
+		}
+		if impact.Digest != baseline.ImpactDigest {
+			scopeChanged = true
+			stats := candidates.stats()
+			stats.Errors = []string{"scope_changed"}
+			return completeGraphCleanup(ctx, tx, run, stats, impact, "failed", "scope_changed")
 		}
 		graphs = candidates.knowledgeGraphs
 		for _, kg := range graphs {
@@ -65,6 +79,9 @@ func (s *CleanupService) runCleanup(ctx context.Context, run *cleanup.Run) error
 		return nil
 	}); err != nil {
 		return err
+	}
+	if scopeChanged {
+		return nil
 	}
 
 	// Phase 2: no G is held across cancellation calls or polling. Each short
@@ -132,6 +149,15 @@ func (s *CleanupService) runCleanup(ctx context.Context, run *cleanup.Run) error
 		candidates, err := scoped.listCandidates(ctx, run.Input.TenantID, run.Input.Context.Map())
 		if err != nil {
 			return err
+		}
+		currentImpact, err := graphEngineDeletionImpact(candidates)
+		if err != nil {
+			return err
+		}
+		if currentImpact.Digest != baseline.ImpactDigest {
+			stats := candidates.stats()
+			stats.Errors = []string{"scope_changed"}
+			return completeGraphCleanup(ctx, tx, run, stats, currentImpact, "failed", "scope_changed")
 		}
 		if len(candidates.knowledgeGraphs) != len(ids) {
 			return commonapi.ErrConflict

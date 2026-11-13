@@ -23,7 +23,7 @@ func testGraphDefinitionDeleteCleanupConcurrency(t *testing.T) {
 	for _, scope := range []string{"no_remaining_graph", "remaining_graph"} {
 		for _, outcome := range []string{"closure_first", "delete_first", "delete_rollback", "cleanup_receipt_rollback"} {
 			t.Run(scope+"/"+outcome, func(t *testing.T) {
-				f := newReviewCleanupPGFixture(t)
+				f := newReviewPGFixture(t)
 				ctx, cancel := context.WithTimeout(t.Context(), 12*time.Second)
 				defer cancel()
 				// A settled operation must remain history after its configuration
@@ -46,6 +46,7 @@ func testGraphDefinitionDeleteCleanupConcurrency(t *testing.T) {
 				if scope == "remaining_graph" {
 					addGraphDeleteCleanupSibling(t, f)
 				}
+				prepareReviewCleanupPGFixture(t, f, time.Minute)
 				before := readDeleteCleanupFacts(t, f.db, f.task.TenantID)
 				var graphs []models.KnowledgeGraph
 				if err := f.db.Where("tenant_id = ?", f.task.TenantID).Order("id").Find(&graphs).Error; err != nil {
@@ -129,7 +130,7 @@ func testGraphDefinitionDeleteCleanupConcurrency(t *testing.T) {
 					}
 				}
 				wantStatus := execution.ExecutionStatusSuccess
-				if outcome == "cleanup_receipt_rollback" {
+				if deleted {
 					wantStatus = execution.ExecutionStatusFailed
 				}
 				child := f.waitTerminal(t, ctx, wantStatus)
@@ -150,7 +151,7 @@ func testGraphDefinitionDeleteCleanupConcurrency(t *testing.T) {
 				}
 				for i, kg := range actual {
 					prior := remaining[i]
-					if kg.ID != prior.ID || !kg.AdmissionClosed || kg.AdmissionCause != "cleanup" || kg.AdmissionExecutionID != child.ExecutionID || kg.Version != prior.Version+1 || (kg.Status == "archived") != (wantStatus == execution.ExecutionStatusSuccess) || kg.EngineID != prior.EngineID || kg.OntologyID != prior.OntologyID || kg.IndexManagement != prior.IndexManagement || !reflect.DeepEqual(kg.CatalogPath, prior.CatalogPath) {
+					if (deleted && !reflect.DeepEqual(kg, prior)) || (!deleted && (kg.ID != prior.ID || !kg.AdmissionClosed || kg.AdmissionCause != "cleanup" || kg.AdmissionExecutionID != child.ExecutionID || kg.Version != prior.Version+1 || kg.Status != "archived" || kg.EngineID != prior.EngineID || kg.OntologyID != prior.OntologyID || kg.IndexManagement != prior.IndexManagement || !reflect.DeepEqual(kg.CatalogPath, prior.CatalogPath))) {
 						t.Fatal("Cleanup closed/archived the wrong graph or changed its target")
 					}
 					if outcome == "cleanup_receipt_rollback" && kg.Status != prior.Status {
@@ -176,7 +177,7 @@ func testGraphDefinitionDeleteCleanupConcurrency(t *testing.T) {
 					}
 					f.assertReceiptCount(t, 0)
 				} else {
-					if receipt == nil || receipt.Status != "success" {
+					if receipt == nil || receipt.Status != wantStatus || (deleted && receipt.Reason != "scope_changed") {
 						t.Fatal("successful Cleanup lost its receipt")
 					}
 					f.assertReceiptCount(t, 1)
@@ -184,8 +185,12 @@ func testGraphDefinitionDeleteCleanupConcurrency(t *testing.T) {
 					if err := f.db.Table("graph.cleanup_results").Select("payload").Where("execution_id = ?", child.ExecutionID).Scan(&payload).Error; err != nil {
 						t.Fatal(err)
 					}
+					wantArchived := int64(len(remaining))
+					if deleted {
+						wantArchived = 0
+					}
 					var result cleanup.Result
-					if err := json.Unmarshal([]byte(payload), &result); err != nil || result.Statistics["knowledge_graphs"] != int64(len(remaining)) || result.Statistics["archived_graphs"] != int64(len(remaining)) || result.Statistics["build_tasks"] != int64(len(expected.tasks)) || result.Statistics["build_materials"] != int64(len(expected.materials)) || result.Statistics["review_items"] != int64(len(expected.reviews)) || result.Statistics["cancelled_build_tasks"] != 0 || result.Statistics["deleted_records"] != 0 {
+					if err := json.Unmarshal([]byte(payload), &result); err != nil || result.Statistics["knowledge_graphs"] != int64(len(remaining)) || result.Statistics["archived_graphs"] != wantArchived || result.Statistics["build_tasks"] != int64(len(expected.tasks)) || result.Statistics["build_materials"] != int64(len(expected.materials)) || result.Statistics["review_items"] != int64(len(expected.reviews)) || result.Statistics["cancelled_build_tasks"] != 0 || result.Statistics["deleted_records"] != 0 {
 						t.Fatalf("Cleanup reported stale scope or invented deletion/cancellation: %v", err)
 					}
 				}

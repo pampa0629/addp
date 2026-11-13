@@ -46,6 +46,8 @@ common/
 
 ## 共享运行能力
 
+`execution.ReadCleanupScanReceipt` 沿[Owner原scan基线契约](../docs/spec/addp-cleanup体系规范.md#owner-原-scan-基线与严格影响比对)只读解析当前execute所引用的同Tenant／Owner成功scan回执及父子绑定，不取来源行锁、不读System私表、不裁决当前权限或完整模块集合。Graph消费其模块摘要，System继续独占总摘要与确认；T1与既有生命周期PG主测试覆盖来源拒绝及持来源P锁仍可读取。
+
 ### Schema 初始化
 
 `common/schema` 提供 schema 版本发布、模块级迁移互斥与只读校验，不登记业务模块清单。业务模块自行声明版本并由 Backend 执行迁移；Worker 初始化不执行平台 schema DDL。
