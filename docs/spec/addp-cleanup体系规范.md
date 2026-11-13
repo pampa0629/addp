@@ -493,10 +493,21 @@ cleanup 分为两个动作，支持手动、事件驱动和定时触发：
 - 确认文本只用于证明显式确认，不应作为业务密钥保存；审计日志只记录是否提供了确认文本、确认时间、风险等级和影响摘要。
 - executor 可以在 execute 前做幂等复查，但复查结果必须在 result 中报告。
 - scan result 与 execute result 的关联必须可审计。
+
 - 重新调用通用 `POST /api/v1/system/admin/cleanup/execute` 仍须通过当前 Tenant 与 `system.cleanup.execute`、已完成 scan 及本节确认校验；它创建新的 execute task 和 execution，不将原失败任务改为成功，也不等于恢复原 Engine 删除工作流。不得以新任务成功推断原 Engine 已转为 `deleted`。
 - scan 不得产生副作用；必要的短期诊断缓存必须由 executor 自己负责过期。
 - event 触发的自动 scan 必须记录 `cause_event`，并能关联到后续 execute。
 - 自动 physical cleanup 只允许用于确定性缓存、已过保留期对象或已被策略明确授权的低风险资源；其他物理删除必须由具备对应入口 Permission 的用户显式确认。
+
+### Owner 原 scan 基线与严格影响比对
+
+2026-11-13确认：Common 只读解析 execute 的 `based_on_scan` 对应的本 Owner 成功 scan 公共回执；Graph 是本轮强制消费方，其他 Owner 不因新增公共解析能力而宣称已完成同等比对。来源限定同 Tenant、同 Owner、相同 expected modules、cause 与 Engine／Tenant context，准确 scan 请求、父子绑定及请求摘要；来源父与子均须成功终态，子须有本 attempt 的有效类型化 scan 回执。缺失、重复、错范围、非成功或伪造回执均失败关闭。Common 不读取 System／其他 Owner 私表，不重新裁决用户权限，不用本 Owner 回执代替 System 完整模块集合、总摘要及显式确认。来源事实仅普通读取，不取得原 scan P／C 行锁；已领取当前 C 的收尾不新增 C→P 反锁。
+
+System 继续负责总摘要确认；Owner 摘要不能直接与 `confirmation.impact_digest` 总摘要比较。普通手工 scan 可由同 Tenant 的另一合法用户引用，Common 不额外要求 scan 与 execute 请求者相同；每份来源父子自身的可信 actor 绑定仍严格核验，当前执行授权沿原用途逐次复核。
+
+Graph 在关闭准入、取消或归档前，于当前 C→G 事务中按原扫描算法计算本模块影响摘要，必须与上述基线严格相等；最终清理事务在静止性及候选复核后再次比较。新增、删除／范围缩小及影响分类变化均拒绝旧确认，不凭数量下降、图 ID 集合不变或总摘要格式合法继续执行。前置比对失败不产生领域关闭或取消；最终比对失败保留之前已提交关闭、停止／外部效果与父子历史，仅以既有 `scope_changed` 记录本次失败，不提交归档或成功回执。原 scan 缺失／非法不构造回执或自动补 scan。
+
+严格比对不复活旧失败请求、不自动重新评估或重开领域准入。Engine 已为 deleting 时继续保留其原失败；当前没有 deleting 工作流重新确认入口，后续恢复须另行明确，不经通用 execute 或直接改库绕过。Graph 新图创建的提交围栏不由本次摘要比对宣称完全封闭，按独立证据处理。
 
 ## 七、清理模式
 

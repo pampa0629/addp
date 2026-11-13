@@ -161,7 +161,7 @@ Manager 源准备保持其正式授权链；本批 Transfer CDC 仅验证既有 
 | 顺序 | 事项／性质 | 具体交付与完成条件 |
 | --- | --- | --- |
 | P1a | Common／System 父子准入 PG | C2b/c/e/h 的竞争、拒绝与回滚，以及 C2d/f/g 的公共锁等待、非法绑定及子执行残留事实，见 [Common／System PG 两批验证](#本轮-pg-增补验证)。Graph 专属锁交错归 P1b，各 Owner 的外部效果核清沿对应专项。 |
-| P1b | Graph清理与输入冻结，测试及按证据修复 | [G2 摘要回滚与 G3 成功先提交](#graph-基础-pg-增补验证)、[G8 输入与登记目标漂移](#graph-g8-输入冻结验证)已有 PG 记录。[G9 在途审核与关闭准入](#graph-审核与-cleanup-竞争-pg-增补验证)已补六项真实 PG。[同一审核项九种动作竞争](#graph-同项审核竞争-pg-增补验证)也已补齐；[Cleanup 与普通构建／重跑入队竞争](#graph-入队与-cleanup-竞争-pg-增补验证)新增四项真实 PG，并修正关闭后旧快照错误准入。[任务／材料删除与 Cleanup 竞争](#graph-任务材料删除与-cleanup-竞争-pg-增补验证)再补八项真实 PG。[图配置删除与 Cleanup 竞争](#graph-图配置删除与-cleanup-竞争-pg-增补验证)补零／一张剩余图下八项真实 PG。[已领取子执行与父截止关闭](#graph-cleanup-已领取子执行与父关闭-pg-增补验证)再补四项真实 PG。[最终子终态更新失败](#graph-cleanup-最终子终态更新回滚-pg-增补验证)补父正常／父截止两项，实际结果见下。剩余 C3/C2j 的其他跨类／外键排列及 C4 其他最终事务与候选漂移验证；目标重绑按原边界另议。[C4 scan 后候选漂移](#graph-scan-后候选漂移核查与待确认方案)已用真实 Graph PG 复现：validation 后经生产入口新增任务，execute 仍成功归档图谱。System 复扫能发现其观察前的变化，未覆盖该后续窗口；修复裁决与原 scan 证据消费契约待确认，尚未实施，不视为已修复 |
+| P1b | Graph清理与输入冻结，测试及按证据修复 | [G2 摘要回滚与 G3 成功先提交](#graph-基础-pg-增补验证)、[G8 输入与登记目标漂移](#graph-g8-输入冻结验证)已有 PG 记录。[G9 在途审核与关闭准入](#graph-审核与-cleanup-竞争-pg-增补验证)已补六项真实 PG。[同一审核项九种动作竞争](#graph-同项审核竞争-pg-增补验证)也已补齐；[Cleanup 与普通构建／重跑入队竞争](#graph-入队与-cleanup-竞争-pg-增补验证)新增四项真实 PG，并修正关闭后旧快照错误准入。[任务／材料删除与 Cleanup 竞争](#graph-任务材料删除与-cleanup-竞争-pg-增补验证)再补八项真实 PG。[图配置删除与 Cleanup 竞争](#graph-图配置删除与-cleanup-竞争-pg-增补验证)补零／一张剩余图下八项真实 PG。[已领取子执行与父截止关闭](#graph-cleanup-已领取子执行与父关闭-pg-增补验证)再补四项真实 PG。[最终子终态更新失败](#graph-cleanup-最终子终态更新回滚-pg-增补验证)补父正常／父截止两项，实际结果见下。剩余 C3/C2j 的其他跨类／外键排列及 C4 其他最终事务与候选漂移验证；目标重绑按原边界另议。[C4 scan 后候选漂移](#graph-scan-后候选漂移核查与已确认方案)已用真实 Graph PG 复现：validation 后经生产入口新增任务，execute 仍成功归档图谱。System 复扫能发现其观察前的变化，未覆盖该后续窗口；已确认严格摘要相等与原 scan 回执方案，正式契约已统一，实现和实际门禁结果另记，不视为已修复 |
 | P2 | System／Monitor消费者状态矩阵，T3工程 | C5g/k/l补撤去父读取权、404／503、User／Tenant／execution切换、closed pending替换及矛盾／迟到响应；C5c/h补隐藏计数与完整页面语义。复用共享组件／请求失效能力，补C5e/j相应PG交错，不复制组件 |
 | 并行待授权 | Manager迟到writer真实验收 | runner与CI已就绪，按§8.44单独确认一次Hosted；同一原请求、原身份及原预算，核11项、控制恢复与零残留；不能先记完成 |
 | P3 | Graph／Cleanup完整故障与Meta扫描闭环，runner／集成验收 | 已有profile先按场景核对并补缺：Cleanup规范§13的平台上下文、审计、Monitor父子树；Graph原生写图回包丢失及两引擎故障。受控runner与真实原生效果分开；若需新的Provider入口或身份／权限边界先讨论，不能借此重启高级恢复。新增Hosted均单独确认 |
@@ -258,7 +258,7 @@ Common 父子准入与 System 协调的用例定位见 [Owner 矩阵](../spec/te
 
 本地 `make test-module MODULE=graph GO_ONLY=1` 与 `make test-common-postgres COMMON_POSTGRES_TEST_ARGS="--test graph"` 通过：Graph 10 个主用例、原6／9／4／8／8／4项及新增两项准确 PASS，零 SKIP／FAIL，夹具自有事实及专用触发器／函数退出清理通过。父截止初测仅差异 `LeaseExpiresAt`：复用 GORM 结构体回读 SQL NULL 保留旧时间指针，改从空结构体读取已提交快照后通过；未发现生产缺陷。额外 `make test-t2-ci-registration` 的首阶段85项中8项失败，均因既有 HighGo SharedSQLPool 新必需项与旧登记夹具不一致，后续检查未执行；本批未修改对应入口或夹具，不计为通过。固定源码 `c0f1f785281cff5c58fd719e09a4fee586e9a8fa` 的 [Linux Go workspace](https://github.com/pampa0629/addp/actions/runs/43229751083/job/131221609597) 与 [Common PostgreSQL 15](https://github.com/pampa0629/addp/actions/runs/43229751019/job/131259464039) 均已终态 success；PG Job 于2026-11-13 00:03:06（Asia/Shanghai）结束。原始 Go 日志确认 Graph server／API／repository／service 包通过，PG 日志确认 Graph 10 个主用例、原6／9／4／8／8／4项及新增两项准确 PASS、零 SKIP／FAIL；`running`／`timeout` 分别耗时0.43／4.35秒。Graph 高级恢复继续暂缓，未重启服务或触发 Hosted。
 
-### Graph scan 后候选漂移核查与待确认方案
+### Graph scan 后候选漂移核查与已确认方案
 
 2026-11-13 基于 `4fce73e77` 所在共享 main 核对：System `createEngineExecute` 将成功 validation scan 的总影响摘要写入 `Confirmation.ImpactDigest`，并冻结 `BasedOnScan`；该总摘要按 Owner 模块摘要聚合。Graph scan 生成稳定对象引用的模块摘要，execute 仅复核本次阶段1与阶段3的图 ID 集合，不消费原 scan 回执或比较其模块摘要。生产 `BuildRepository.CreateTask` 只锁 G 并检查既有图准入，未读取 Engine 生命周期，所以 validation 后、Graph 关闭前仍存在新增任务窗口。新图配置创建是否还存在独立 G／提交时生命周期窗口，当前仅源码观察，未作原生或跨服务复现。
 
@@ -266,11 +266,11 @@ Common 父子准入与 System 协调的用例定位见 [Owner 矩阵](../spec/te
 
 临时用例和原始失败日志保存在系统临时目录 `/tmp/addp-graph-scan-drift-probe_test.go`、`/tmp/addp-graph-scan-drift-probe-pg.log`，原有 Tenant 自有事实退出清理通过；已移除临时挂载，未把成功接受漂移固化成正式验收条件，也未提交失败测试或生产修复。恢复原测试入口后，同一标准 Graph PG 门禁重新 exit0：10个主用例、原6／9／4／8／8／4／2组全PASS，零SKIP／FAIL。该绿灯只证明临时挂载已撤回且原回归保持，不代表候选漂移已修复。未触发新的 Hosted，不以本地反例声称 Linux 或产品验收。
 
-**建议方向（待确认，非正式契约）。** 优先复用 `BasedOnScan` 与既有 Common 公共执行／类型化回执，让 Common 提供只读的“本 Owner 原 scan 基线”解析契约：核准确来源请求、Tenant、Owner、父子绑定、成功终态及有效回执；Graph 只消费自己的模块摘要，不读 System 或其他 Owner 私表，不新增公开API、权限、凭据或候选清单。System 继续独占完整Owner集合、用户确认和总摘要裁决，不允许 Owner 用自己的摘要推断全局通过。无需把总摘要当作 Graph 摘要，也不先新增请求字段或私有快照实体。
+**已确认方向。** 2026-11-13用户同意严格摘要相等、复用本 Owner 原 scan 回执与失败保留原状态；正式事实源为[Owner原scan基线契约](../spec/addp-cleanup体系规范.md#owner-原-scan-基线与严格影响比对)。 优先复用 `BasedOnScan` 与既有 Common 公共执行／类型化回执，让 Common 提供只读的“本 Owner 原 scan 基线”解析契约：核准确来源请求、Tenant、Owner、父子绑定、成功终态及有效回执；Graph 只消费自己的模块摘要，不读 System 或其他 Owner 私表，不新增公开API、权限、凭据或候选清单。System 继续独占完整Owner集合、用户确认和总摘要裁决，不允许 Owner 用自己的摘要推断全局通过。无需把总摘要当作 Graph 摘要，也不先新增请求字段或私有快照实体。
 
 Graph 在 C→G 内、关闭／取消／归档前比较当前模块影响与原基线；变化则失败关闭本次请求，不执行未确认范围。最终清理仍在同一 G 围栏内复核候选与静止性，失败保留既有持久关闭、外部效果证据、原父子历史，不自动重跑／重开。缺失、伪造或越界原scan不得旁路；既有使用随机 `BasedOnScan` 的测试须改为真实匹配的成功scan夹具。
 
-**需要明确的取舍。** 推荐先采用严格摘要相等：新增、删除／范围缩小或影响分类改变都重新评估、显式确认；实现与审计最简单，但删除先提交时不能继续执行旧确认，后续合法新请求须引用删除后新scan。若要求“只阻新增、允许范围缩小”，单一摘要无法证明子集，必须另行设计 Owner 持久候选集合及其授权／保留语义，不能用数量下降或仅比较图ID替代。该选择改变先前未明确关联原scan的删除竞争用例解释，并新增 Common 的原scan证据消费契约，依根 AGENTS.md 第0条先确认，再同步正式规范、Common／Graph与门禁。当前 `BeginDeletion` 明确拒绝 deleting，`Restore` 仅接受 deleted，所以“检测后要求新评估”不代表已有 deleting 原工作流的重新确认入口。首批失败继续保留 deleting／原失败，不复活原请求；若要恢复该工作流，必须另行明确显式重评估与确认的职责和接口，不靠通用execute或直接改库绕过。新图创建的提交围栏另按证据细化，不将本方案宣称为全生命周期完全封闭。
+**已确认取舍。** 首期采用严格摘要相等：新增、删除／范围缩小或影响分类改变都重新评估、显式确认；实现与审计最简单，但删除先提交时不能继续执行旧确认，后续合法新请求须引用删除后新scan。若要求“只阻新增、允许范围缩小”，单一摘要无法证明子集，必须另行设计 Owner 持久候选集合及其授权／保留语义，不能用数量下降或仅比较图ID替代。该选择改变先前未明确关联原scan的删除竞争用例解释，并新增 Common 的原scan证据消费契约，现已获用户明确确认，按正式规范同步 Common／Graph 与门禁。当前 `BeginDeletion` 明确拒绝 deleting，`Restore` 仅接受 deleted，所以“检测后要求新评估”不代表已有 deleting 原工作流的重新确认入口。首批失败继续保留 deleting／原失败，不复活原请求；若要恢复该工作流，必须另行明确显式重评估与确认的职责和接口，不靠通用execute或直接改库绕过。新图创建的提交围栏另按证据细化，不将本方案宣称为全生命周期完全封闭。
 
 ## 七、确认范围与协作分工
 
