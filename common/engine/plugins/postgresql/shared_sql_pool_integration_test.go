@@ -7,7 +7,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/addp/common/datatype"
 	"github.com/addp/common/engine/plugin"
+	"gorm.io/gorm"
 )
 
 func TestIntegrationPostgresSharedSQLPool(t *testing.T) {
@@ -83,6 +85,25 @@ func TestIntegrationPostgresSharedSQLPool(t *testing.T) {
 		if _, err := prepared.Execute(blocked); !errors.Is(err, context.DeadlineExceeded) ||
 			plugin.QueryErrorCodeOf(err) != plugin.QueryErrorCodeSQLExecutionTimeout {
 			t.Fatalf("native query deadline lost its phase: %v (code %q)", err, plugin.QueryErrorCodeOf(err))
+		}
+	})
+	t.Run("native catalog cancellation and recovery", func(t *testing.T) {
+		callbacks := provider.tabularCatalogCallbacks()
+		callbacks.GetTable = func(ctx context.Context, db *gorm.DB, _, name string) (*datatype.TableInfo, error) {
+			var ignored any
+			err := db.WithContext(ctx).Raw("SELECT pg_sleep(2)").Scan(&ignored).Error
+			return nil, err
+		}
+		blocked, stop := context.WithTimeout(plugin.WithPoolEngineVersion(ctx, engineID, 2), 150*time.Millisecond)
+		defer stop()
+		_, err := plugin.DescribeTabularCatalogFacts(blocked, callbacks,
+			&plugin.Engine{ID: engineID, Version: 2, EngineType: provider.Type(), ConnectionInfo: next},
+			plugin.TabularItemPath(engineID, "schema", "public", "pool_sample"), plugin.EngineCatalogFactsOptions{})
+		if !errors.Is(err, context.DeadlineExceeded) || plugin.QueryErrorCodeOf(err) != plugin.QueryErrorCodeSQLExecutionTimeout {
+			t.Fatalf("native catalog deadline lost acquired SQL phase: %v", err)
+		}
+		if _, err := run(ctx, 2, next); err != nil {
+			t.Fatalf("query did not recover after native catalog cancellation: %v", err)
 		}
 	})
 	t.Run("catalog spatial facts after pool replacement", func(t *testing.T) {

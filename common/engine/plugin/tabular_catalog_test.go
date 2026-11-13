@@ -469,3 +469,69 @@ func TestTabularExactLookupNeverEnumeratesOrReadsUnrequestedDetails(t *testing.T
 		t.Fatal("missing exact callback must fail without enumeration fallback")
 	}
 }
+
+// The native HighGo cancel response has no SQLSTATE or context wrapping.
+// The request deadline remains authoritative after a connection was acquired.
+type tabularDeadlineTestPlugin struct{ tabularCatalogTestPlugin }
+
+func (*tabularDeadlineTestPlugin) Type() string { return "tabular_deadline_test" }
+func (*tabularDeadlineTestPlugin) CreateConnectionPool(ConnectionInfo, *PoolConfig) (*gorm.DB, error) {
+	db, _ := poolTestDB()
+	db.Statement = &gorm.Statement{DB: db, Context: context.Background()}
+	return db, nil
+}
+func (*tabularDeadlineTestPlugin) ConnectionSpec() ConnectionSpec {
+	return WithSharedSQLPoolFields(ConnectionSpec{})
+}
+
+func TestTabularCatalogClassifiesNativeCancelWithRequestDeadline(t *testing.T) {
+	provider := &tabularDeadlineTestPlugin{}
+	Register(provider)
+	const engineID = 7012
+	t.Cleanup(func() { Unregister(provider.Type()); _ = ClosePool(engineID) })
+	engine := &Engine{ID: engineID, EngineType: provider.Type()}
+	path := TabularItemPath(engineID, EngineCatalogTermDatabase, "test", "probe")
+	driverError := errors.New("native cancel response without SQLSTATE")
+	for _, phase := range []string{"table", "columns", "indexes", "live-error", "cancelled"} {
+		t.Run(phase, func(t *testing.T) {
+			ctx, cancel := context.WithTimeout(t.Context(), 5*time.Millisecond)
+			defer cancel()
+			failure := func(ctx context.Context) error {
+				if phase == "cancelled" {
+					cancel()
+				} else if phase != "live-error" {
+					<-ctx.Done()
+				}
+				return driverError
+			}
+			callbacks := minimalTabularCatalogCallbacks()
+			callbacks.GetTable = func(ctx context.Context, _ *gorm.DB, _ string, name string) (*datatype.TableInfo, error) {
+				if phase != "columns" && phase != "indexes" {
+					return nil, failure(ctx)
+				}
+				return &datatype.TableInfo{Name: name}, nil
+			}
+			callbacks.ListColumns = func(ctx context.Context, _ *gorm.DB, _, _ string) ([]datatype.FieldInfo, error) {
+				if phase == "columns" {
+					return nil, failure(ctx)
+				}
+				return []datatype.FieldInfo{{Name: "id"}}, nil
+			}
+			callbacks.ListIndexes = func(ctx context.Context, _ *gorm.DB, _, _ string) ([]IndexFacts, error) { return nil, failure(ctx) }
+			_, err := DescribeTabularCatalogFacts(ctx, callbacks, engine, path, EngineCatalogFactsOptions{IncludeIndexes: true})
+			if !errors.Is(err, driverError) {
+				t.Fatalf("native error lost: %v", err)
+			}
+			if phase == "live-error" || phase == "cancelled" {
+				if QueryErrorCodeOf(err) != "" {
+					t.Fatalf("non-deadline classified as timeout: %v", err)
+				}
+				if phase == "cancelled" && !errors.Is(err, context.Canceled) {
+					t.Fatalf("cancellation lost: %v", err)
+				}
+			} else if !errors.Is(err, context.DeadlineExceeded) || QueryErrorCodeOf(err) != QueryErrorCodeSQLExecutionTimeout {
+				t.Fatalf("catalog %s deadline lost SQL execution classification: %v", phase, err)
+			}
+		})
+	}
+}

@@ -185,10 +185,9 @@ func DescribeTabularCatalogFacts(ctx context.Context, callbacks TabularCatalogCa
 		pinned := db.WithContext(ctx).Session(&gorm.Session{NewDB: true})
 		pinned.Statement.ConnPool = conn
 		facts, err := describeTabularCatalogFacts(ctx, pinned, callbacks, path, segments, opts)
-		if err == nil {
-			err = ctx.Err()
-		}
-		return facts, errors.Join(SQLExecutionError(err), conn.Close())
+		// Some native drivers report cancellation without wrapping the context
+		// deadline. Preserve both causes before assigning the acquired SQL phase.
+		return facts, errors.Join(SQLExecutionError(errors.Join(err, ctx.Err())), conn.Close())
 	}
 	return describeTabularCatalogFacts(ctx, db, callbacks, path, segments, opts)
 }

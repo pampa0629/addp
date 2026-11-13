@@ -127,7 +127,7 @@ PostgreSQL、MySQL 的 Engine Instance 通过驱动声明的连接表单保存 `
 
 通用有界 SQL 批读取从已经解析的 `EngineCatalogPath.EngineID` 和实际 Provider 类型传递查询的引擎身份，并保留调用上下文中绑定的配置版本，使已登记引擎复用对应共享池。未绑定 Engine Instance 的独立调用继续由执行层负责临时池的创建和关闭；这一规则不改变查询授权、SQL 事务方式或独占流式会话的生命周期。
 
-已登记引擎的共享只读事务查询在借出连接前将 deadline 标记为获取连接超时，借出后标记为 SQL 执行超时；该分类依实际执行阶段，不依赖表单是否声明池参数或是否通过协议 Provider 委托执行。内容 SELECT 或结果读取失败时，若请求 context 已结束，错误链同时保留 context 原因与原生驱动错误，不依赖驱动将取消错误包装为 context deadline。该归一化不作用于查询前授权和保护拒绝。源端会话预算仍由实际 Provider 的独立接口声明，不按方言推断。StarRocks 的单语句执行路线和独占会话保持原有契约。
+已登记引擎的共享只读事务查询在借出连接前将 deadline 标记为获取连接超时，借出后标记为 SQL 执行超时；该分类依实际执行阶段，不依赖表单是否声明池参数或是否通过协议 Provider 委托执行。单表目录事实 SQL、内容 SELECT 或结果读取失败时，若请求 context 已结束，错误链同时保留 context 原因与原生驱动错误，不依赖驱动将取消错误包装为 context deadline。该归一化不作用于查询前授权和保护拒绝。源端会话预算仍由实际 Provider 的独立接口声明，不按方言推断。StarRocks 的单语句执行路线和独占会话保持原有契约。
 
 MySQL 的有 deadline 共享只读连接在借出后读取原 max_execution_time，并按当前请求剩余毫秒设置不宽于原非零值的会话预算。事务内核验及 Catalog Facts 使用借出时预算，正式内容 SELECT 前刷新到当时剩余时间。它限定源端 SELECT 的单语句时间，不承诺整个多语句请求在源端同一时刻结束。客户端 context 继续约束整次请求。该机制由 MySQL Provider 声明，SQL Runtime、Catalog Facts 和有界表读取复用同一连接生命周期，其他插件不由 SQL 方言推断采用。
 
