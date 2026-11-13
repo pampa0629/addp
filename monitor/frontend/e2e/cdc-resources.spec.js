@@ -76,7 +76,7 @@ test('CDC cancels late responses after scope changes and preserves cards during 
   await expect(page.getByTestId('cdc-value-failedTasks')).toHaveText('—')
 })
 
-test('Platform task tab requests no Tenant facts and returns to runtime resources', async ({ page }) => {
+test('CDC Platform hides Tenant entry and preserves explicit history without cross-domain requests', async ({ page }) => {
   const state = await cdcBackend(page)
   await page.goto('/cdc-resources?view=tasks')
   await expect(page.getByText('任务链路属于租户，请切换到目标租户身份查看')).toBeVisible()
@@ -84,6 +84,11 @@ test('Platform task tab requests no Tenant facts and returns to runtime resource
   await page.getByRole('tab', { name: '运行资源', exact: true }).click()
   await expect(page.getByTestId('cdc-card-kafka-connect')).toBeVisible()
   expect(state.calls.some(path => path.includes('/transfer/'))).toBe(false)
+  await page.goBack()
+  await expect(page.getByText('任务链路属于租户，请切换到目标租户身份查看')).toBeVisible()
+  await expect(page).toHaveURL(/view=tasks$/)
+  await expect(page.getByTestId('cdc-card-kafka-connect')).toHaveCount(0)
+  await expect(page.getByRole('tab', { name: '任务链路', exact: true })).toHaveCount(0)
 })
 
 test('CDC links to the existing Transfer service monitor', async ({ page }) => {

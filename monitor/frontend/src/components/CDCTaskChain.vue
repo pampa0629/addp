@@ -102,7 +102,7 @@ import { createAutoRefresh } from '../../../../common-frontend/basic/src/utils/a
 import { useAuthStore } from '../store/auth'
 import { cdcTasksAPI } from '../api/cdcTasks'
 import { getExecutionByExecutionID } from '../api/monitor'
-import { cdcEndpoints, resolveCDCTaskRoute, validateCDCTask, validateCDCTaskPage, validateCDCTaskExecution, cdcObservationState } from '../utils/cdcTasks'
+import { cdcView, cdcEndpoints, resolveCDCTaskRoute, validateCDCTask, validateCDCTaskPage, validateCDCTaskExecution, cdcObservationState } from '../utils/cdcTasks'
 import { resourceErrorKey } from '../utils/nodeResources'
 import { navigateMonitorRoute } from '../utils/moduleNavigation'
 import { formatBytes } from '../../../../common-frontend/basic/src/utils/formatters.js'
@@ -180,6 +180,7 @@ async function reload(automatic = false) {
   finally { if (requests.current(ticket)) { loading.value = false; cycle.schedule() } }
 }
 watch(() => JSON.stringify([route.query, auth.authContext]), () => {
+  if (route.name !== 'CDCResources' || cdcView(route.query, auth.contextType) !== 'tasks') return
   if (state.value.changed) navigate(state.value.query)
   else reload()
 }, { immediate: true })

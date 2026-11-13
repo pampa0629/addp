@@ -61,6 +61,7 @@ import { formatBytes, scaleByteValue } from '../../../../common-frontend/basic/s
 import { formatFieldPresentationValue } from '../../../../common-frontend/basic/src/utils/fieldPresentation.mjs'
 import { useAuthStore } from '../store/auth'
 import { cdcResourcesAPI as api } from '../api/cdcResources'
+import { cdcView } from '../utils/cdcTasks'
 import { cdcMetrics, resolveCDCRoute, validateCDCResources } from '../utils/cdcResources'
 import { currentResourceValue, resourceErrorKey, resourceChartRows, resourceRanges } from '../utils/nodeResources'
 import { navigateMonitorRoute } from '../utils/moduleNavigation'
@@ -105,7 +106,7 @@ async function reload(automatic = false) {
   const next = JSON.stringify([identity.value, { ...state.value.query, refresh: undefined }])
   if (next !== context) { context = next; observed.value = null; history.value = null }
   error.value = ''; trendError.value = ''; loading.value = false
-  if (!canRead.value || route.name !== 'CDCResources') return
+  if (!canRead.value || route.name !== 'CDCResources' || cdcView(route.query, auth.contextType) !== 'resources') return
   if (state.value.changed) { await navigate(state.value.query); return }
   loading.value = true
   try {
