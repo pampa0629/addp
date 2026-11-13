@@ -195,6 +195,33 @@ elif args[0]=='exec' and 'produce' in args:
             self.assertNotEqual(self.run_fixture('observe-cdc-source',name,'owned_pub').returncode,0)
             self.assertEqual(self.trace.read_text(),before)
 
+    def test_risk_fault_requires_suite_and_container_owner(self):
+        for action in ('risk-pause-source', 'risk-unpause-source', 'risk-drop-slot'):
+            with self.subTest(action=action):
+                result = self.run_fixture(action, 'owned_slot', 'owned_pub', ONLINE_SUITE='cleanup-native-effects')
+                self.assertNotEqual(result.returncode, 0)
+                self.assertFalse(self.trace.exists())
+                result = self.run_fixture(action, 'owned_slot', 'owned_pub', ONLINE_SUITE='transfer-continuous-events', BAD_OWNER='1')
+                self.assertNotEqual(result.returncode, 0)
+                calls = [json.loads(line) for line in self.trace.read_text().splitlines()]
+                self.assertFalse(any(call[0] in ('pause', 'unpause', 'exec') for call in calls))
+                self.trace.unlink()
+
+    def test_risk_slot_drop_checks_inactive_pgoutput_and_exact_publication(self):
+        result = self.run_fixture('risk-drop-slot', 'owned_slot', 'owned_pub', ONLINE_SUITE='transfer-continuous-events')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout, '')
+        # The fake psql captures the query so the deletion fence is tested independently.
+        calls = [json.loads(line) for line in self.trace.read_text().splitlines()]
+        self.assertTrue(any('slot=owned_slot' in c and 'publication=owned_pub' in c for c in calls))
+        script = SCRIPT.read_text().split('  risk-drop-slot)', 1)[1].split('  verify-cdc-altered)', 1)[0]
+        for constraint in ['NOT s.active', "s.plugin='pgoutput'", 's.database=current_database()',
+                           "tablename='continuous_source'", '\\if :owned_slot', 'pg_drop_replication_slot']:
+            self.assertIn(constraint, script)
+        before = self.trace.read_text()
+        self.assertNotEqual(self.run_fixture('risk-drop-slot', '*', 'owned_pub', ONLINE_SUITE='transfer-continuous-events').returncode, 0)
+        self.assertEqual(before, self.trace.read_text())
+
     def test_nonzero_capture_residual_fails(self):
         self.assertEqual(self.run_fixture('verify-clean').returncode, 0)
         self.assertNotEqual(self.run_fixture('verify-clean', RESIDUAL_CAPTURE='1').returncode, 0)

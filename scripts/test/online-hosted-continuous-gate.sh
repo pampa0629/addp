@@ -14,6 +14,8 @@ source "$ROOT_DIR/scripts/utils/hosted-online.sh"
 export MONITOR_URL=http://127.0.0.1:8100
 export CONSOLE_URL=http://127.0.0.1:5170
 export SECURITY_URL=http://127.0.0.1:8194
+# Only this disposable deployment delivers signed alerts to its loopback receiver.
+export MONITOR_WEBHOOK_ALLOW_PRIVATE_NETWORKS=true
 export TRANSFER_CONTINUOUS_LEASE_DURATION=8s TRANSFER_CONTINUOUS_HEARTBEAT_INTERVAL=2s
 export TRANSFER_CONTINUOUS_CLAIM_INTERVAL=500ms
 infra_owned=1

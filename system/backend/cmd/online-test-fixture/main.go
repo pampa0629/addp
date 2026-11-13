@@ -421,7 +421,10 @@ func suitePermissions(suite string) ([]string, error) {
 	case "transfer-relational-sql-etl":
 		return transferLineagePermissions, nil
 	case "transfer-continuous-events":
-		return transferContinuousPermissions, nil
+		return append(append([]string{}, transferContinuousPermissions...),
+			"monitor.alert_incident.read", "monitor.alert_incident.update",
+			"monitor.notification_destination.create", "monitor.notification_destination.read", "monitor.notification_destination.delete",
+			"monitor.notification_delivery.read"), nil
 	case "metric-service-revision-lifecycle":
 		return metricPermissions, nil
 	case "quality-dynamic-binding":

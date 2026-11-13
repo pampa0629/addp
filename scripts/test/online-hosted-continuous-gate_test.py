@@ -73,6 +73,7 @@ class HostedContinuousGateTest(unittest.TestCase):
               [ "$ADDP_ONLINE_SCAN_POSTGRES_ID" = "$(printf '%064d' 1)" ] &&
               [ "$ADDP_ONLINE_CONTINUOUS_KAFKA_ENGINE_ID" = 18 ] &&
               [ "$TRANSFER_CONTINUOUS_LEASE_DURATION" = 8s ] &&
+              [ "$MONITOR_WEBHOOK_ALLOW_PRIVATE_NETWORKS" = true ] &&
               [ "$TRANSFER_CONTINUOUS_HEARTBEAT_INTERVAL" = 2s ] &&
               [ "$ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN" = preparing-token ] &&
               [ -z "${ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN:-}" ] || exit 1

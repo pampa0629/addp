@@ -1062,7 +1062,7 @@ class CDCTaskObservationTest(unittest.TestCase):
         env = {'ONLINE_SUITE': M.SUITE, 'ADDP_ONLINE_TEST_TENANT_ID':'2',
                'ADDP_ONLINE_SCAN_POSTGRES_ID':'a'*64, 'ADDP_ONLINE_CONTINUOUS_PG_ENGINE_ID':'10'}
         postgres = import_module('scripts.test.execution-retention-readonly-online')
-        binding = {'slot':'owned_slot', 'publication':'owned_pub', 'connector':'owned-connector'}
+        binding = {'slot':'owned_slot', 'publication':'owned_pub', 'connector':'owned-connector', 'topic':'__addp_cdc.2.7.1'}
         with patch.dict(os.environ, env), patch.object(postgres, 'sql', return_value=json.dumps(binding)) as sql:
             self.assertEqual(M.cdc_capture_binding(2, 7, 10, 1), binding)
             self.assertEqual(sql.call_args.kwargs, {'expected_suite':M.SUITE, 'postgres_id':'a'*64,
@@ -1153,6 +1153,97 @@ class CDCTaskObservationTest(unittest.TestCase):
                     patch.object(M,'wait_status'), patch.object(M,'physical',side_effect=[True,case!='target']), \
                     self.assertRaises(M.SuiteError):
                 M.verify_cdc_task_monitoring(None,7,2,10,UUID,lambda *args:self.fail('must not resume'),lambda *args:None,lambda *args:None,lambda *args:None)
+
+
+class CDCRiskAcceptanceTest(unittest.TestCase):
+    def payload(self, receiver, kind='opened'):
+        return {'schema_version': 'monitor.alert.webhook/v1', 'delivery_id': UUID,
+                'event': {'event_id': 'bbbbbbbb-2222-4222-8222-222222222222', 'type': kind,
+                          'occurred_at': '2026-11-13T12:00:00Z', 'from_severity': '', 'to_severity': 'critical'},
+                'incident': {'id': 3, 'module': 'transfer', 'task_type': 'sync', 'source_task_id': str(receiver.task_id),
+                             'execution_id': UUID, 'signal_code': 'cdc_source_recovery_lost', 'severity': 'critical',
+                             'status': 'open' if kind == 'opened' else 'resolved', 'opened_at': '2026-11-13T12:00:00Z',
+                             'resolved_at': None}, 'console_url': 'http://127.0.0.1:5170/monitor/alerts'}
+
+    def signed(self, receiver, body):
+        raw = json.dumps(body).encode()
+        timestamp = str(int(M.time.time()))
+        signature = 'v1=' + M.hmac.new(receiver.secret.encode(), timestamp.encode() + b'.' + raw, M.hashlib.sha256).hexdigest()
+        return raw, {'Content-Type': 'application/json', 'X-ADDP-Webhook-Timestamp': timestamp,
+                     'X-ADDP-Webhook-ID': body['delivery_id'], 'X-ADDP-Webhook-Signature': signature}
+
+    def test_real_signed_receiver_acknowledges_once_and_closes_listener(self):
+        import urllib.request
+        receiver = M.CDCRiskReceiver(7)
+        try:
+            raw, headers = self.signed(receiver, self.payload(receiver))
+            for _ in range(2):
+                with urllib.request.urlopen(urllib.request.Request(receiver.url, data=raw, headers=headers), timeout=5) as response:
+                    self.assertEqual(response.status, 202)
+            receipt, = receiver.snapshot()
+            self.assertEqual(receipt, {'delivery_id': UUID, 'event_id': 'bbbbbbbb-2222-4222-8222-222222222222',
+                'incident_id': 3, 'event_type': 'opened', 'signal_code': 'cdc_source_recovery_lost', 'http_status': 202})
+            self.assertNotIn(receiver.secret, json.dumps(receipt))
+        finally:
+            receiver.close()
+        self.assertEqual(receiver.server.socket.fileno(), -1)
+
+    def test_signature_task_and_transition_cannot_be_forged(self):
+        receiver = M.CDCRiskReceiver(7)
+        try:
+            for change in ['signature', 'timestamp', 'task', 'status', 'duplicate']:
+                body = self.payload(receiver)
+                if change == 'task': body['incident']['source_task_id'] = '8'
+                if change == 'status': body['incident']['status'] = 'resolved'
+                raw, headers = self.signed(receiver, body)
+                if change == 'signature': headers['X-ADDP-Webhook-Signature'] = 'v1=' + '0'*64
+                if change == 'timestamp': headers['X-ADDP-Webhook-Timestamp'] = '1000000000'
+                if change == 'duplicate':
+                    raw = raw.replace(b'"id": 3', b'"id": 3, "id": 4')
+                    timestamp = headers['X-ADDP-Webhook-Timestamp']
+                    headers['X-ADDP-Webhook-Signature'] = 'v1=' + M.hmac.new(receiver.secret.encode(), timestamp.encode()+b'.'+raw,M.hashlib.sha256).hexdigest()
+                with self.subTest(change=change), self.assertRaises(M.SuiteError): receiver.accept(raw, headers)
+            self.assertEqual(receiver.snapshot(), [])
+        finally:
+            receiver.close()
+
+    def test_unrelated_tenant_signal_is_accepted_without_publishing_its_body(self):
+        receiver = M.CDCRiskReceiver(7)
+        try:
+            body = self.payload(receiver)
+            body['incident']['signal_code'] = 'checkpoint_stalled'
+            receiver.accept(*self.signed(receiver, body))
+            self.assertEqual(receiver.snapshot(), [])
+        finally:
+            receiver.close()
+
+    def test_trim_uses_only_pinned_hosted_owner_and_positional_topic(self):
+        with patch.object(M, 'cdc_risk_container', return_value='c'*64) as pin, \
+             patch.dict(os.environ, {'INFRA_KAFKA_ADMIN_PASSWORD':'private'}), \
+             patch.object(M.subprocess, 'run') as run:
+            M.cdc_risk_trim({'topic':'__addp_cdc.2.7.1'}, 9)
+            pin.assert_called_once_with('ADDP_ONLINE_DLQ_REDPANDA_ID','redpanda')
+            command = run.call_args.args[0]
+            self.assertEqual(command[-2:], ['__addp_cdc.2.7.1','9'])
+            self.assertNotIn('private', str(command))
+            self.assertIn('trim-prefix "$1"', command[-4])
+        with patch.object(M, 'cdc_risk_container') as pin, self.assertRaises(M.SuiteError):
+            M.cdc_risk_trim({'topic':'foreign'}, 0)
+        pin.assert_not_called()
+
+    def test_alert_inventory_rejects_duplicates_foreign_tenant_and_generation(self):
+        from types import SimpleNamespace
+        item = {'id':1,'tenant_id':2,'module':'transfer','task_type':'sync','source_task_id':'7',
+                'signal_code':'cdc_source_recovery_lost','severity':'critical','status':'open',
+                'details':{'generation':'1','reason':'slot_missing'}}
+        client = unittest.mock.Mock()
+        for rows in [[item,item], [{**item,'tenant_id':3}], [{**item,'details':{'generation':'2'}}]]:
+            client.request.return_value = SimpleNamespace(payload={'data':rows,'total':len(rows)})
+            with patch.dict(os.environ,{'ADDP_ONLINE_TEST_TENANT_ID':'2'}), self.assertRaises(M.SuiteError):
+                M.cdc_risk_alerts(client,7,1)
+        client.request.return_value = SimpleNamespace(payload={'data':[item],'total':1})
+        with patch.dict(os.environ,{'ADDP_ONLINE_TEST_TENANT_ID':'2'}):
+            self.assertEqual(M.cdc_risk_alerts(client,7,1),{'cdc_source_recovery_lost':item})
 
 
 if __name__ == '__main__':

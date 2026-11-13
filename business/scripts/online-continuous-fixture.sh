@@ -127,6 +127,33 @@ COMMIT;
 SQL
     ;;
   alter-cdc) psql_owned -c "ALTER TABLE public.continuous_source ADD COLUMN scan_extra text; UPDATE public.continuous_source SET scan_extra='business-value-sentinel-added' WHERE id=1;" >/dev/null ;;
+  risk-mutate-cdc)
+    psql_owned -c "UPDATE public.continuous_source SET label=label WHERE id IN (1,3);" >/dev/null
+    ;;
+  risk-pause-source|risk-unpause-source)
+    [ "${ONLINE_SUITE:-}" = transfer-continuous-events ] || fail 'CDC risk suite required'
+    owned "$pg"
+    if [ "$action" = risk-pause-source ]; then docker pause "$pg" >/dev/null; else docker unpause "$pg" >/dev/null; fi
+    ;;
+  risk-drop-slot)
+    [ "${ONLINE_SUITE:-}" = transfer-continuous-events ] || fail 'CDC risk suite required'
+    [[ "${2:-}" =~ ^[a-z0-9_]{1,63}$ && "${3:-}" =~ ^[a-z0-9_]{1,63}$ ]] || fail 'exact CDC resources required'
+    psql_owned -q -v slot="$2" -v publication="$3" <<'SQL' >/dev/null
+SET statement_timeout='3s'; SET lock_timeout='1s';
+SELECT count(*)=1 AS owned_slot FROM pg_replication_slots s
+JOIN pg_publication p ON p.pubname=:'publication'
+WHERE s.slot_name=:'slot' AND NOT s.active AND s.slot_type='logical'
+ AND s.plugin='pgoutput' AND s.database=current_database() AND NOT p.puballtables
+ AND (SELECT count(*) FROM pg_publication_tables WHERE pubname=:'publication')=1
+ AND EXISTS(SELECT 1 FROM pg_publication_tables WHERE pubname=:'publication'
+            AND schemaname='public' AND tablename='continuous_source') \gset
+\if :owned_slot
+SELECT pg_drop_replication_slot(:'slot');
+\else
+\quit 4
+\endif
+SQL
+    ;;
   verify-cdc-altered)
     actual=$(psql_owned -c "SELECT id,label,scan_extra FROM public.continuous_cdc_target ORDER BY id" 2>/dev/null) || exit 1
     [ "$actual" = '1|business-value-sentinel-updated|business-value-sentinel-added

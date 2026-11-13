@@ -1474,7 +1474,7 @@ func TestContinuousEventFixtureUsesMinimalTenantPermissions(t *testing.T) {
 	if err != nil || !needsEngineProvisioner("transfer-continuous-events") {
 		t.Fatalf("permissions=%v err=%v", permissions, err)
 	}
-	want := []string{"transfer.task.create", "transfer.task.delete", "transfer.task.execute", "transfer.task.read", "transfer.task.update", "monitor.execution.read", "meta.catalog.read", "meta.scan_task.execute", "meta.scan_task.read", "system.execution_authorization.create"}
+	want := []string{"transfer.task.create", "transfer.task.delete", "transfer.task.execute", "transfer.task.read", "transfer.task.update", "monitor.execution.read", "meta.catalog.read", "meta.scan_task.execute", "meta.scan_task.read", "system.execution_authorization.create", "monitor.alert_incident.read", "monitor.alert_incident.update", "monitor.notification_destination.create", "monitor.notification_destination.read", "monitor.notification_destination.delete", "monitor.notification_delivery.read"}
 	if strings.Join(permissions, ",") != strings.Join(want, ",") {
 		t.Fatalf("expanded continuous permissions=%v", permissions)
 	}

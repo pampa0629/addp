@@ -4,6 +4,9 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from importlib import import_module
 import json
+import hashlib
+import hmac
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import math
 import os
 from pathlib import Path
@@ -12,6 +15,7 @@ import signal
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 import uuid
 import urllib.error
@@ -29,7 +33,10 @@ IAM = '/api/v1/system/tenant/role_assignments'
 TERMINAL = {'success', 'failed', 'cancelled', 'timeout'}
 REQUIRED = {'transfer.task.create', 'transfer.task.delete', 'transfer.task.execute', 'transfer.task.read',
             'transfer.task.update', 'monitor.execution.read', 'meta.catalog.read',
-            'meta.scan_task.execute', 'meta.scan_task.read', 'system.execution_authorization.create'}
+            'meta.scan_task.execute', 'meta.scan_task.read', 'system.execution_authorization.create',
+            'monitor.alert_incident.read', 'monitor.alert_incident.update',
+            'monitor.notification_destination.create', 'monitor.notification_destination.read',
+            'monitor.notification_destination.delete', 'monitor.notification_delivery.read'}
 PRIVATE = {'execution_config', 'authorization_ref', 'execution_authorization_id', 'parameters',
            'raw_response', 'runtime_response', 'connection_info', 'password', 'access_token', 'lease_token',
            'lease_owner', 'lease_expires_at', 'lease_until', 'owner_instance_id', 'fencing_token',
@@ -48,7 +55,8 @@ OWNER_METADATA = set('initial_authorization metadata_scan lineage_facts continuo
                      'recovery_consecutive_failures recovery_backoff_seconds recovery_not_before recovery_circuit_state'.split())
 PHYSICAL_ACTIONS = {'produce-initial', 'produce-after-recovery', 'produce-invalid', 'mutate-cdc', 'alter-cdc', 'verify-cdc-altered',
                     'verify-kafka-initial', 'verify-kafka-recovered', 'verify-cdc-initial',
-                    'verify-cdc-mutated', 'verify-scheduled', 'verify-clean'}
+                    'verify-cdc-mutated', 'verify-scheduled', 'verify-clean', 'risk-mutate-cdc',
+                    'risk-pause-source', 'risk-unpause-source'}
 OWNER_OUTAGE_CHECKS = ['previously_readable', 'event_transport_failure_isolated', 'event_transport_recovered',
                        'real_owner_503', 'old_details_tree_steps_events_cleared', 'old_list_and_total_cleared',
                        'recovered_authorized_reads', 'no_samples']
@@ -56,7 +64,7 @@ PHASES = {'preflight', 'source_scan', 'source_catalog', 'kafka_initial', 'kafka_
           'kafka_record_failure', 'owner_unavailable', 'reader_revocation', 'kafka_hard_delete', 'kafka_graceful',
           'cdc_initial', 'cdc_owner_outage',
           'cdc_mutation', 'cdc_monitor_initial', 'cdc_pause', 'cdc_buffer_growth', 'cdc_monitor_resume',
-          'cdc_approval', 'cdc_resume', 'cdc_stop', 'scheduled_create', 'scheduled_admission',
+          'cdc_approval', 'cdc_resume', 'cdc_risk', 'cdc_stop', 'scheduled_create', 'scheduled_admission',
           'scheduled_pause', 'scheduled_completion', 'scheduled_scan', 'scheduled_result', 'cleanup', 'deleted_history'}
 
 
@@ -258,6 +266,329 @@ def until(operation, timeout=120):
     raise SuiteError('continuous execution did not converge before the deadline')
 
 
+CDC_RISK_CODES = {'cdc_source_recovery_lost', 'cdc_buffer_recovery_lost'}
+ALERTS = '/api/v1/monitor/alerts'
+DESTINATIONS = '/api/v1/monitor/webhook-destinations'
+DELIVERIES = '/api/v1/monitor/webhook-deliveries'
+
+
+class CDCRiskReceiver:
+    """Actual loopback HTTP receipts, authenticated independently of delivery audit."""
+    def __init__(self, task_id):
+        self.task_id = task_id
+        self.secret = os.urandom(32).hex()
+        self.receipts = {}
+        self.failure = False
+        self.lock = threading.Lock()
+        receiver = self
+
+        class Handler(BaseHTTPRequestHandler):
+            def log_message(self, *_):
+                pass
+
+            def do_POST(self):
+                self.connection.settimeout(3)
+                try:
+                    require(self.path == '/cdc-risk', 'unexpected webhook path')
+                    require(self.headers.get('Content-Type') == 'application/json'
+                            and self.headers.get('Transfer-Encoding') is None, 'invalid webhook framing')
+                    for header in ('Content-Length', 'X-ADDP-Webhook-ID', 'X-ADDP-Webhook-Timestamp',
+                                   'X-ADDP-Webhook-Signature'):
+                        require(len(self.headers.get_all(header, [])) == 1, 'ambiguous webhook header')
+                    length = int(self.headers['Content-Length'])
+                    require(0 < length <= 65536, 'webhook exceeds bound')
+                    raw = self.rfile.read(length)
+                    require(len(raw) == length, 'incomplete webhook')
+                    receiver.accept(raw, self.headers)
+                    self.send_response(202)
+                except Exception:
+                    with receiver.lock:
+                        receiver.failure = True
+                    self.send_response(400)
+                self.send_header('Content-Length', '0')
+                self.end_headers()
+
+        self.server = ThreadingHTTPServer(('127.0.0.1', 0), Handler)
+        self.server.daemon_threads = True
+        self.url = f'http://127.0.0.1:{self.server.server_port}/cdc-risk'
+        self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
+        self.thread.start()
+
+    def accept(self, raw, headers):
+        timestamp = headers['X-ADDP-Webhook-Timestamp']
+        require(re.fullmatch(r'[0-9]{10}', timestamp) and abs(time.time() - int(timestamp)) <= 30,
+                'webhook timestamp invalid')
+        signature = 'v1=' + hmac.new(self.secret.encode(), timestamp.encode() + b'.' + raw, hashlib.sha256).hexdigest()
+        require(hmac.compare_digest(signature, headers['X-ADDP-Webhook-Signature']), 'webhook signature invalid')
+
+        def unique(pairs):
+            result = dict(pairs)
+            require(len(result) == len(pairs), 'duplicate webhook field')
+            return result
+
+        body = json.loads(raw, object_pairs_hook=unique)
+        require(set(body) == {'schema_version', 'delivery_id', 'event', 'incident', 'console_url'}
+                and body['schema_version'] == 'monitor.alert.webhook/v1', 'webhook schema invalid')
+        delivery = canonical_uuid(body['delivery_id'])
+        require(headers['X-ADDP-Webhook-ID'] == delivery, 'webhook delivery identity mismatch')
+        event, incident = body['event'], body['incident']
+        require(set(event) == {'event_id', 'type', 'occurred_at', 'from_severity', 'to_severity'}
+                and event['type'] in {'opened', 'resolved'}, 'webhook event invalid')
+        canonical_uuid(event['event_id'])
+        require(set(incident) == {'id', 'module', 'task_type', 'source_task_id', 'execution_id', 'signal_code',
+                                  'severity', 'status', 'opened_at', 'resolved_at'}, 'webhook incident fields invalid')
+        assert_safe(body)
+        if incident['signal_code'] not in CDC_RISK_CODES:
+            return  # The same tenant may also emit ordinary continuous-task alerts.
+        require(incident['module'] == 'transfer' and incident['task_type'] == 'sync'
+                and incident['source_task_id'] == str(self.task_id) and incident['severity'] == 'critical'
+                and type(incident['id']) is int and incident['id'] > 0, 'webhook risk identity mismatch')
+        require(incident['status'] == ('open' if event['type'] == 'opened' else 'resolved'),
+                'webhook risk transition mismatch')
+        receipt = {'delivery_id': delivery, 'event_id': event['event_id'], 'incident_id': incident['id'],
+                   'event_type': event['type'], 'signal_code': incident['signal_code'], 'http_status': 202}
+        with self.lock:
+            require(len(self.receipts) < 16 or delivery in self.receipts, 'webhook receipt bound exceeded')
+            require(delivery not in self.receipts or self.receipts[delivery] == receipt, 'delivery identity reused')
+            self.receipts[delivery] = receipt
+
+    def snapshot(self):
+        with self.lock:
+            require(not self.failure, 'signed CDC webhook receiver rejected a request')
+            return list(self.receipts.values())
+
+    def close(self):
+        self.server.shutdown()
+        self.server.server_close()
+        self.thread.join(timeout=5)
+        require(not self.thread.is_alive() and self.server.socket.fileno() == -1, 'webhook receiver survived cleanup')
+
+
+def cdc_risk_alerts(client, task_id, generation):
+    page = client.request('GET', ALERTS + '?module=transfer&page_size=100', (200,)).payload
+    require(type(page) is dict and type(page.get('data')) is list and page.get('total', 101) <= 100,
+            'risk alert inventory incomplete')
+    result = {}
+    for item in page['data']:
+        if item.get('source_task_id') != str(task_id) or item.get('signal_code') not in CDC_RISK_CODES:
+            continue
+        assert_safe(item)
+        require(item.get('tenant_id') == int(os.environ['ADDP_ONLINE_TEST_TENANT_ID'])
+                and item.get('module') == 'transfer' and item.get('task_type') == 'sync'
+                and item.get('severity') == 'critical' and item.get('details', {}).get('generation') == str(generation),
+                'risk alert binding invalid')
+        code = item['signal_code']
+        require(code not in result, 'duplicate CDC generation risk incident')
+        result[code] = item
+    return result
+
+
+def cdc_risk_sample(client, task_id, generation, field, status, *, after):
+    capture = client.request('GET', f'{OWNER}/task-definitions/{task_id}', (200,)).payload.get('capture') or {}
+    require(capture.get('generation') == generation, 'risk fault changed generation')
+    value = capture.get(field)
+    if value is None:
+        return None
+    assert_safe(value)
+    sampled = cdc_sample_time(value, datetime.now(timezone.utc))
+    if sampled is None or sampled <= after or value.get('status') != status:
+        return None
+    return value
+
+
+def cdc_risk_container(variable, service):
+    FAULTS.SUPPORT.deployment_secret()
+    container_id = os.environ.get(variable, '')
+    require(re.fullmatch(r'[0-9a-f]{64}', container_id), 'risk fault container not pinned')
+    result = subprocess.run(['docker', 'inspect', container_id], check=True, capture_output=True, text=True, timeout=10)
+    container, = json.loads(result.stdout)
+    labels = container['Config']['Labels']
+    require(container['Id'] == container_id and container['State']['Running'] is True
+            and labels.get('com.docker.compose.project') == 'addp-infra'
+            and labels.get('com.docker.compose.service') == service
+            and labels.get('com.docker.compose.project.working_dir') == str(ROOT), 'risk fault container ownership mismatch')
+    return container_id
+
+
+def cdc_risk_trim(binding, offset):
+    require(type(offset) is int and offset > 0, 'risk trim offset invalid')
+    broker = cdc_risk_container('ADDP_ONLINE_DLQ_REDPANDA_ID', 'redpanda')
+    require(bool(os.environ.get('INFRA_KAFKA_ADMIN_PASSWORD')), 'risk trim Infra owner identity missing')
+    # Shell program is constant; the private topic and position are positional args.
+    subprocess.run(['docker', 'exec', '-e', 'INFRA_KAFKA_ADMIN_PASSWORD', '-e', 'INFRA_KAFKA_ADMIN_USERNAME', broker, 'sh', '-c',
+        'exec rpk topic trim-prefix "$1" --offset "$2" --partitions 0 --no-confirm '
+        '-X brokers=redpanda:29092 -X "user=${INFRA_KAFKA_ADMIN_USERNAME:-admin}" -X "pass=$INFRA_KAFKA_ADMIN_PASSWORD" '
+        '-X sasl.mechanism=SCRAM-SHA-256', '_', binding['topic'], str(offset)],
+        check=True, capture_output=True, text=True, timeout=20)
+
+
+def verify_cdc_risk_closure(client, tenant, task_id, engine_id, execution_id, name, run_id,
+                            mutate, launch, report, checkpoint):
+    proof = report['cdc_risk_closure'] = {'task_id': task_id, 'cleanup': 'pending', 'stage': 'baseline'}
+    healthy = until(lambda: cdc_task_sample(client, task_id, engine_id))
+    generation = healthy['generation']
+    proof['generation'] = generation
+    binding = cdc_capture_binding(tenant, task_id, engine_id, generation)
+    receiver = CDCRiskReceiver(task_id)
+    destination_id = None
+    paused = False
+
+    def stage(value):
+        proof['stage'] = value
+        checkpoint()
+
+    def alerts_ready(codes, status):
+        values = cdc_risk_alerts(client, task_id, generation)
+        return values if set(values) == set(codes) and all(v['status'] == status for v in values.values()) else None
+
+    def delivered(incidents, event_type):
+        receipts = receiver.snapshot()
+        rows = client.request('GET', DELIVERIES + f'?destination_id={destination_id}&page_size=100', (200,)).payload
+        require(type(rows) is dict and type(rows.get('data')) is list and rows.get('total', 101) <= 100,
+                'risk delivery audit incomplete')
+        result = []
+        for code, incident in incidents.items():
+            matched = [r for r in rows['data'] if r['incident_id'] == incident['id'] and r['event_type'] == event_type]
+            require(len(matched) <= 1, 'risk transition created duplicate delivery')
+            if not matched or matched[0]['status'] != 'delivered':
+                return None
+            row = matched[0]
+            receipt = next((r for r in receipts if r['delivery_id'] == row['delivery_id']), None)
+            if receipt is None:
+                return None
+            require(receipt['signal_code'] == code and receipt['incident_id'] == incident['id']
+                    and receipt['event_type'] == event_type and row.get('last_http_status') == 202,
+                    'risk receipt and delivery audit differ')
+            result.append(receipt)
+        return result
+
+    try:
+        require(not cdc_risk_alerts(client, task_id, generation), 'healthy task already has loss incidents')
+        destination = mutate(client, DESTINATIONS, {'name': f'online-{run_id}-cdc-risk', 'url': receiver.url,
+            'secret': receiver.secret, 'enabled': True, 'event_types': ['opened', 'resolved']}, (201,))
+        destination_id = API.require_positive_int(destination, 'id')
+        proof['destination_id'] = destination_id
+        stage('buffer_fault')
+        mutate(client, f'{OWNER}/task-definitions/{task_id}/pause')
+        wait_status(client, execution_id, 'cancelled')
+        before = until(lambda: cdc_task_sample(client, task_id, engine_id, generation))
+        require(physical('risk-mutate-cdc'), 'risk source mutation failed')
+        def growth():
+            sample = cdc_task_sample(client, task_id, engine_id, generation)
+            if sample is None:
+                return None
+            require(sample['buffer']['committed_offset'] == before['buffer']['committed_offset'],
+                    'paused risk consumer committed events')
+            return sample if int(sample['buffer']['latest_offset']) > int(before['buffer']['committed_offset']) else None
+        grown = until(growth)
+        cdc_risk_trim(binding, int(grown['buffer']['latest_offset']))
+        trimmed_at = datetime.now(timezone.utc)
+        lost = until(lambda: cdc_risk_sample(client, task_id, generation, 'buffer_observation', 'available', after=trimmed_at))
+        require(lost.get('recovery_state') == 'lost' and int(lost['earliest_offset']) > int(lost['committed_offset']),
+                'trim did not prove lost recovery range')
+        buffer_alert = until(lambda: alerts_ready({'cdc_buffer_recovery_lost'}, 'open'))
+        require(buffer_alert['cdc_buffer_recovery_lost']['details']['reason'] == 'buffer_position_lost', 'wrong buffer loss reason')
+        proof['opened_deliveries'] = until(lambda: delivered(buffer_alert, 'opened'))
+        stage('source_fault')
+        connect = cdc_risk_container('ADDP_ONLINE_CDC_CONNECT_ID', 'kafka-connect')
+        subprocess.run(['docker', 'exec', connect, 'curl', '-fsS', '--max-time', '10', '-X', 'DELETE',
+            'http://127.0.0.1:8083/connectors/' + binding['connector']], check=True, capture_output=True, timeout=15)
+        def inactive():
+            value = subprocess.run(['bash', 'business/scripts/online-continuous-fixture.sh', 'observe-cdc-source',
+                binding['slot'], binding['publication']], cwd=ROOT, check=True, capture_output=True, text=True, timeout=15)
+            native = json.loads(value.stdout)
+            require(native.get('identity_matches') is True, 'source fault ownership mismatch')
+            return native.get('slot_active') is False
+        until(inactive, timeout=30)
+        subprocess.run(['bash', 'business/scripts/online-continuous-fixture.sh', 'risk-drop-slot',
+            binding['slot'], binding['publication']], cwd=ROOT, check=True, capture_output=True, timeout=15)
+        dropped_at = datetime.now(timezone.utc)
+        until(lambda: cdc_risk_sample(client, task_id, generation, 'postgresql_observation', 'missing', after=dropped_at))
+        opened = until(lambda: alerts_ready(CDC_RISK_CODES, 'open'))
+        require(opened['cdc_source_recovery_lost']['details']['reason'] == 'slot_missing', 'wrong source loss reason')
+        proof['opened_deliveries'] = until(lambda: delivered(opened, 'opened'))
+        source_id = opened['cdc_source_recovery_lost']['id']
+        mutate(client, f'{ALERTS}/{source_id}/acknowledge')
+        stage('missing_sample')
+        paused = True  # Also unpause if the pause command outcome becomes uncertain.
+        require(physical('risk-pause-source'), 'source pause failed')
+        paused_at = datetime.now(timezone.utc)
+        until(lambda: cdc_risk_sample(client, task_id, generation, 'postgresql_observation', 'unavailable', after=paused_at))
+        frozen = cdc_risk_alerts(client, task_id, generation)['cdc_source_recovery_lost']
+        require(frozen['id'] == source_id and frozen['status'] == 'acknowledged', 'missing sample closed acknowledged risk')
+        # Span two normal 15-second evaluations without changing product intervals.
+        deadline = time.monotonic() + 32
+        samples = 0
+        while time.monotonic() < deadline:
+            value = cdc_risk_alerts(client, task_id, generation)['cdc_source_recovery_lost']
+            require(value['id'] == source_id and value['status'] == 'acknowledged'
+                    and value['last_observed_at'] == frozen['last_observed_at'] and not value.get('resolved_at'),
+                    'unknown source sample changed acknowledged incident')
+            require(not any(r['event_type'] == 'resolved' for r in receiver.snapshot()), 'unknown sample sent recovery')
+            samples += 1
+            time.sleep(2)
+        proof['missing_sample_checks'] = samples
+        proof['acknowledged_incident_preserved'] = True
+        require(physical('risk-unpause-source'), 'source unpause failed')
+        paused = False
+        restored_at = datetime.now(timezone.utc)
+        until(lambda: cdc_risk_sample(client, task_id, generation, 'postgresql_observation', 'missing', after=restored_at))
+        still_active = cdc_risk_alerts(client, task_id, generation)
+        require(still_active['cdc_source_recovery_lost']['id'] == source_id
+                and still_active['cdc_source_recovery_lost']['status'] == 'acknowledged'
+                and still_active['cdc_buffer_recovery_lost']['status'] == 'open', 'fault disappeared without explicit close')
+        proof['confirmed_fault_after_sampling_resumed'] = True
+        stage('confirmed_close')
+        mutate(client, f'{OWNER}/task-definitions/{task_id}/stop', {'confirmed': True, 'confirmation_text': name})
+        closed = until(lambda: alerts_ready(CDC_RISK_CODES, 'resolved'))
+        require({v['id'] for v in closed.values()} == {v['id'] for v in opened.values()}, 'close replaced risk incidents')
+        proof['resolved_deliveries'] = until(lambda: delivered(closed, 'resolved'))
+        require(physical('verify-clean'), 'fault generation capture resources remain')
+        stage('new_generation')
+        new_execution = launch(task_id)
+        def rebuilt():
+            value = cdc_task_sample(client, task_id, engine_id)
+            return value if value and value['generation'] > generation and value['buffer']['lag_offsets'] == '0' else None
+        new = until(rebuilt)
+        require(new['generation'] > generation and new['execution_id'] == new_execution
+                and new['buffer']['lag_offsets'] == '0', 'new capture generation not healthy')
+        require(all(v['status'] == 'resolved' for v in cdc_risk_alerts(client, task_id, generation).values()),
+                'healthy new generation reopened old risks')
+        mutate(client, f'{OWNER}/task-definitions/{task_id}/stop', {'confirmed': True, 'confirmation_text': name})
+        wait_status(client, new_execution, 'cancelled')
+        require(physical('verify-clean'), 'new generation capture resources remain')
+        proof.update(new_generation=new['generation'], new_execution_id=new_execution,
+                     original_incident_ids={k: v['id'] for k, v in opened.items()}, result='passed')
+        stage('completed')
+    finally:
+        original_failure = sys.exc_info()[0] is not None
+        cleanup_errors = []
+        if paused:
+            try:
+                require(physical('risk-unpause-source'), 'fault source remained paused')
+            except Exception:
+                cleanup_errors.append('source_unpause_failed')
+        try:
+            if destination_id is not None:
+                client.request('DELETE', f'{DESTINATIONS}/{destination_id}', (200,))
+                remaining = client.request('GET', DESTINATIONS, (200,), response_type=list).payload
+                require(isinstance(remaining, list) and all(d['id'] != destination_id for d in remaining),
+                        'risk webhook destination remains')
+                proof['destination_deleted'] = True
+        except Exception:
+            cleanup_errors.append('destination_cleanup_failed')
+        try:
+            receiver.close()
+            proof['receiver_closed'] = True
+        except Exception:
+            cleanup_errors.append('receiver_cleanup_failed')
+        proof['cleanup'] = 'failed' if cleanup_errors else 'passed'
+        proof['cleanup_failures'] = cleanup_errors
+        checkpoint()
+        if cleanup_errors and not original_failure:
+            raise SuiteError('CDC risk acceptance cleanup failed')
+
+
 def cdc_capture_binding(tenant, task_id, engine_id, generation):
     require_transfer_fixture(tenant, task_id)
     postgres_id = os.environ.get('ADDP_ONLINE_SCAN_POSTGRES_ID', '')
@@ -267,7 +598,7 @@ def cdc_capture_binding(tenant, task_id, engine_id, generation):
     postgres = import_module('scripts.test.execution-retention-readonly-online')
     query = """BEGIN READ ONLY;
 SET LOCAL statement_timeout='3s'; SET LOCAL lock_timeout='1s';
-SELECT jsonb_build_object('slot', p.slot_name, 'publication', p.publication_name, 'connector', r.connector_name)
+SELECT jsonb_build_object('slot', p.slot_name, 'publication', p.publication_name, 'connector', r.connector_name, 'topic', r.topic_name)
 FROM transfer.capture_resources r JOIN transfer.postgresql_capture_resources p ON p.capture_resource_id=r.id
 JOIN transfer.transfer_tasks t ON t.id=r.task_id AND t.tenant_id=r.tenant_id
 WHERE r.tenant_id=:'tenant'::bigint AND r.task_id=:'task'::bigint
@@ -282,10 +613,11 @@ COMMIT;
             variables={'tenant': tenant, 'task': task_id, 'engine': engine_id, 'generation': generation}))
     except (OSError, ValueError, RuntimeError, subprocess.SubprocessError):
         raise SuiteError('CDC observation binding unavailable') from None
-    require(isinstance(binding, dict) and set(binding) == {'slot', 'publication', 'connector'}
+    require(isinstance(binding, dict) and set(binding) == {'slot', 'publication', 'connector', 'topic'}
             and all(isinstance(binding[k], str) and re.fullmatch(r'[a-z0-9_]{1,63}', binding[k])
                     for k in ('slot', 'publication'))
-            and isinstance(binding['connector'], str) and re.fullmatch(r'[a-zA-Z0-9_.-]{1,255}', binding['connector']),
+            and isinstance(binding['connector'], str) and re.fullmatch(r'[a-zA-Z0-9_.-]{1,255}', binding['connector'])
+            and isinstance(binding['topic'], str) and re.fullmatch(r'__addp_cdc\.[a-zA-Z0-9_.-]{1,240}', binding['topic']),
             'CDC observation binding invalid')
     return binding
 
@@ -1370,8 +1702,11 @@ def run_suite(client, denied, foreign, peer, reader, admin, login, tenant, run_i
         report['precise_scan_scope']['target_only_verified'] = True
         report['checks'].append('initial_scans_preserve_sibling_and_ancestors')
         name = next(name for task, kind, name in tasks if task == cdc_task)
+        phase('cdc_risk')
+        verify_cdc_risk_closure(client, tenant, cdc_task, pg, cdc_resumed, name, run_id,
+                                mutate, launch, report, checkpoint)
+        report['checks'].append('cdc_loss_alert_trigger_unknown_ack_close_signed_delivery_and_generation_rebuild')
         phase('cdc_stop')
-        mutate(client, f'{OWNER}/task-definitions/{cdc_task}/stop', {'confirmed': True, 'confirmation_text': name})
         wait_status(client, cdc_resumed, 'cancelled')
         compare(cdc_resumed, 'cancelled')
         require(physical('verify-clean'), 'CDC capture resources survived confirmed stop')
