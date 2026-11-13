@@ -16,10 +16,11 @@ type vffClassificationPackageLimits struct {
 }
 
 type vffClassificationPackage struct {
-	member      string
-	sha256      [32]byte
-	files       map[string][]byte
-	directories []string
+	member         string
+	sha256         [32]byte
+	files          map[string][]byte
+	directories    []string
+	systemMetadata []vffSKCSystemMetadataFact
 }
 
 type vffClassificationPackageFacts struct {
@@ -86,6 +87,7 @@ func readVFFClassificationPackageSelection(ctx context.Context, c *vffContainer,
 				item.files[record.name] = members[record.name]
 			}
 		}
+		item.systemMetadata = vffSKCSystemMetadata(item)
 		remainingReads, remainingMembers = source.remaining, remainingMembers-len(records)
 		result.packages = append(result.packages, item)
 	}

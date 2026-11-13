@@ -79,6 +79,7 @@ type vffSKCDocumentFact struct {
 	schemas          []vffSKCSchemaFact
 	filters          []vffSKCFilterFact
 	unexplained      []vffSKCMemberFact
+	systemMetadata   []vffSKCSystemMetadataFact
 	links            []vffSKCSchemaLink
 }
 
@@ -225,6 +226,13 @@ func readVFFSKCDocument(ctx context.Context, item vffClassificationPackage, budg
 		return nil, err
 	}
 	result.links = links
+	for _, metadata := range item.systemMetadata {
+		if claimed[metadata.member] {
+			return nil, fmt.Errorf("SKC system metadata used as a document resource")
+		}
+		result.systemMetadata = append(result.systemMetadata, metadata)
+		claimed[metadata.member] = true
+	}
 	var unclaimed []string
 	for name := range item.files {
 		if !claimed[name] {
