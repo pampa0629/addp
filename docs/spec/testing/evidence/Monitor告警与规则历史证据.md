@@ -512,3 +512,20 @@ Chrome 真实租户“ADDP 开发管理员”页面核对任务配置源／目�
 验证分层：当前 `make test-transfer-continuous-online-runner` 的 125 项与 System fixture Go 测试通过；Transfer Go T1 和标准 PostgreSQL T2 本地通过，前述自然 CI 对应实际 gate success。探测修复的 [Platform consistency／Job 131916244392](https://github.com/pampa0629/addp/actions/runs/43434570707/job/131916244392) 也实际执行并 success。本地 `make test-module MODULE=transfer` 则在平台 T0 的 public-origin 夹具两项 20 秒 TimeoutExpired 处退出 2，未运行完完整模块门禁；日志 `/tmp/addp-cdc-risk-transfer-module.log`，两项名称分别为 image_build_failure_cleans_registry_and_infra_before_app_start、initialization_failure_prevents_consumer_and_scene_execution。该无关范围未改动、未重跑，不将本地完整模块入口记为通过，也不外推父 CI workflow 的其他 Job。
 
 本轮覆盖 PostgreSQL 任务的 owned slot missing 与缓冲恢复范围丢失，不制造真实 WAL／磁盘耗尽；通知覆盖签名 Webhook 回环实收，不外推其他渠道、HA 或生产 T5。下一优先级仍为任务级捕获持续失败告警，持续延迟／积压阈值、任务历史趋势及共享组件长期容量另按原清单推进。
+
+
+### CDC 捕获持续失败 60 秒告警闭环通过（2026-11-14）
+
+固定 `e2455d7307fd47f032e36ad43c3b5d3ff318cba0` 的 [Run 43480095050／Job 132074055899](https://github.com/pampa0629/addp/actions/runs/43480095050/job/132074055899) 及实际 Hosted Online gate 均 success。Artifact `14066561800` 的 SHA-256 为 `6a99be0f6f7a5761df01e1673102bca665182acbf8871393a7678a81535cebee`，下载摘要与 ZIP CRC 核对通过；原件、外层及套件报告保留于 `/tmp/addp-cdc-capture-hosted-43480095050/`。场景耗时 579209 毫秒，保持原 850 秒场景／900 秒分发预算。
+
+- **真实触发**：Tenant 2 普通 User 的 task 3／generation 1 先正式暂停目标消费，捕获事实继续更新；仅暂停本轮所有权明确的 Connector。连续失败起点为 `2026-11-13T18:30:55.124993954Z`，首次 warning incident 2 的失败采样为 `18:32:10.072541395Z`，证据跨度约 74.95 秒，达到 60 秒阈值。不是用旧失败样本等待到期，也不把目标消费暂停当作捕获失败。
+- **缺样保持与恢复**：确认事件后暂停本轮 Connect 容器，Owner 发布新鲜 unknown。32 秒内连续 16 次检查保持 acknowledged、同一 incident ID、LastObservedAt 不变，未发送 resolved。解除容器暂停后仍明确捕获失败，原事件保持；恢复 Connector 并取得新鲜 healthy 后原 incident resolved，故障恢复动作和 finally 清理均 passed。
+- **通知实收**：opened delivery `b7367b0f-3205-439b-8efe-9678303fca4b`、resolved delivery `a95df275-807a-4a4d-9661-856ed79dd22c`，各自具有唯一 event UUID。独立接收端校验 HMAC、时间戳、任务／事件身份及 warning 严重级别，返回 202；两条正式投递审计均 delivered。沿用既有 User 权限、事件事务和 outbox，没有新增权限、读取消息正文或自动恢复任务。
+
+原有两项不可恢复风险闭环、本轮新任务重建、三字段成果、basic／deep 扫描与读取隔离均继续通过；对应四条 critical Webhook 也实际送达。套件原 21 项 checks 全部通过，新增捕获告警证据位于 `cdc_risk_closure.capture_failure`，7 份真实 Console 回执均 passed；原 CDC 暂停／恢复积压仍为 `0→3→0`。上述页面证据验证任务指标，不把受控告警页面测试当成 Hosted 告警 UI 验收。
+
+task 5／4／3／2 正式删除并读回 404，两个 CDC Stop 的源槽／publication 清理通过；Webhook 目标删除、接收端关闭，`uncertain_mutation=false`，cleanup_failures 为空。原硬退出 Kafka task 1 按原场景保留到部署销毁，领域 `residual_resources=expected_deployment_residuals=1`；外层 `cleanup=passed`、`infra_cleanup=zero_residuals`。个人开发环境未纳入故障范围；本机只读复核 task46／task58 两个原槽仍在且不活跃，原专用 task61 槽仍活跃，记录 `/tmp/addp-cdc-capture-preserved-slots.log`。
+
+本地验证：Common／Transfer／Monitor Go T1、Transfer／Monitor 标准 PostgreSQL T2、Monitor 前端单元与构建及 5 项受控浏览器断言通过；既有 runner 的 127 项和 System fixture Go 测试通过，前端 CI 登记 27 项及 21 个前端登记检查通过，Transfer Swagger 生成与覆盖检查通过。自然 CI 中 [Transfer Go／Job 132024127532](https://github.com/pampa0629/addp/actions/runs/43465701064/job/132024127532)、[Transfer PostgreSQL／Job 132024534745](https://github.com/pampa0629/addp/actions/runs/43465700862/job/132024534745)、[Monitor PostgreSQL／Job 132024533550](https://github.com/pampa0629/addp/actions/runs/43465700862/job/132024533550) 实际 success。Platform consistency Job 132024127283 失败于无关 vector-topology current-source 夹具断言，Monitor 前端 CI 随后 cancelled；未修复或重跑该无关范围，不将被取消的门禁或父 workflow 记为通过。
+
+本轮真实故障覆盖 Connector PAUSED，Task FAILED、PostgreSQL Connected=false、59 秒不触发、未知后重新计时及过期中断由本地确定性测试覆盖，不外推各变体均已做 Hosted 故障注入。下一优先级为明确任务级持续延迟／积压告警的阈值和暂停语义，尚未实施；历史趋势及其他 Provider 专业指标仍按原清单推进。
