@@ -11,9 +11,129 @@ import (
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 )
+
+func TestExecutionSupervisorNotificationRefreshesPrivateAdmissionThenWakesClaim(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sqlDB, _ := db.DB()
+	sqlDB.SetMaxOpenConns(1)
+	t.Cleanup(func() { _ = sqlDB.Close() })
+	if err := executiontest.EnsureSQLiteStore(db); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Exec("ATTACH DATABASE ':memory:' AS develop").Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Exec(`CREATE TABLE develop.file_executions (
+		execution_id TEXT PRIMARY KEY, tenant_id INTEGER, admission_state TEXT, admission_expires_at DATETIME
+	)`).Error; err != nil {
+		t.Fatal(err)
+	}
+	queue := repository.NewExecutionRepository(db)
+	id := uuid.NewString()
+	release := make(chan struct{})
+	service := &blockedQueryService{queries: queue, releases: map[string]chan struct{}{id: release}, started: make(chan string, 1)}
+	initialRecovery := make(chan struct{})
+	observing := make(chan struct{})
+	allowObservation := make(chan struct{})
+	var passes atomic.Int32
+	service.recoverPrivate = func(ctx context.Context) error {
+		pass := passes.Add(1)
+		if pass == 1 {
+			close(initialRecovery)
+			return nil
+		}
+		if pass == 2 {
+			close(observing)
+			select {
+			case <-allowObservation:
+			case <-ctx.Done():
+				return ctx.Err()
+			}
+			return db.WithContext(ctx).Exec(`UPDATE develop.file_executions SET admission_state='ready', admission_expires_at=? WHERE execution_id=?`, time.Now().UTC().Add(time.Minute), id).Error
+		}
+		return nil
+	}
+	supervisor, err := NewExecutionSupervisor(queue, service, ExecutionSupervisorConfig{
+		InstanceID: "notification", ResolveConcurrency: func(context.Context) (models.ExecutionConcurrency, error) {
+			return models.ExecutionConcurrency{Query: 1, QueryPerEngine: 1, Workflow: 1, Notebook: 1}, nil
+		},
+		LeaseDuration: time.Minute, HeartbeatInterval: time.Second, ClaimInterval: time.Hour,
+	}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(t.Context())
+	done := make(chan struct{})
+	go func() { defer close(done); supervisor.Run(ctx, nil) }()
+	t.Cleanup(func() {
+		cancel()
+		select {
+		case <-done:
+		case <-time.After(3 * time.Second):
+			t.Error("supervisor did not stop")
+		}
+	})
+	select {
+	case <-initialRecovery:
+	case <-time.After(2 * time.Second):
+		t.Fatal("initial recovery did not run")
+	}
+	authorization := int64(9)
+	expires := time.Now().UTC().Add(time.Hour)
+	item := &commonExecution.TaskExecution{TenantID: 7, ExecutionID: id, Module: "develop", TaskType: "workflow", Source: "develop", Status: "pending", ExecutionBoundary: "bounded", TriggerType: "manual", ExecutionAuthorizationID: &authorization, AuthorizationExpiresAt: &expires, ExecutionConfig: commonModels.JSONMap{}, CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC()}
+	// Match CreatePending: the queue row and its private purpose become visible
+	// atomically, so the ordinary workflow path cannot claim between inserts.
+	if err := db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Create(item).Error; err != nil {
+			return err
+		}
+		return tx.Exec(`INSERT INTO develop.file_executions (execution_id,tenant_id,admission_state) VALUES (?,7,'pending')`, id).Error
+	}); err != nil {
+		t.Fatal(err)
+	}
+	supervisor.Notify()
+	select {
+	case <-observing:
+	case <-time.After(2 * time.Second):
+		t.Fatal("new pending notification did not wake admission refresh")
+	}
+	var pending commonExecution.TaskExecution
+	if err := db.Where("execution_id=?", id).First(&pending).Error; err != nil {
+		t.Fatal(err)
+	}
+	if pending.Status != "pending" || pending.Attempt != 0 || pending.StartedAt != nil || pending.LeaseToken != nil {
+		t.Fatal("notification bypassed fresh admission")
+	}
+	close(allowObservation)
+	select {
+	case started := <-service.started:
+		if started != id {
+			t.Fatal("claimed another execution")
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("fresh admission did not wake claim before polling interval")
+	}
+	close(release)
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		var current commonExecution.TaskExecution
+		if err := db.Where("execution_id=?", id).First(&current).Error; err != nil {
+			t.Fatal(err)
+		}
+		if current.Status == "success" {
+			return
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	t.Fatal("claimed execution did not complete")
+}
 
 func TestExecutionSupervisorBudgetsAreIndependentAndShrinkDoesNotCancel(t *testing.T) {
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})

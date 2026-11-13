@@ -34,6 +34,7 @@ type ExecutionSupervisor struct {
 	capacity        map[string]*atomic.Int64
 	nextOwner       uint64
 	wake            chan struct{}
+	recoveryWake    chan struct{}
 	activeMu        sync.Mutex
 	activeEngines   map[uint]int
 	activeWorkflows map[string]struct{}
@@ -62,7 +63,7 @@ func NewExecutionSupervisor(
 	}
 	return &ExecutionSupervisor{
 		queue: queue, service: executor, config: config, logger: logger,
-		wake: make(chan struct{}, 1), activeEngines: make(map[uint]int), activeWorkflows: map[string]struct{}{},
+		wake: make(chan struct{}, 1), recoveryWake: make(chan struct{}, 1), activeEngines: make(map[uint]int), activeWorkflows: map[string]struct{}{},
 		active: executionCounters(), capacity: executionCounters(),
 	}, nil
 }
@@ -86,14 +87,19 @@ func (s *ExecutionSupervisor) ActiveCount(taskType string) int {
 	return int(s.active[taskType].Load())
 }
 
-// Notify wakes scheduling after a local execution or policy change. PostgreSQL
-// polling discovers changes committed by other Backend instances.
+// Notify wakes the existing scheduling and recovery loops after a local commit.
+// Private workflows still need fresh admission before the claim can succeed.
+// Periodic scans discover changes committed by other Backend instances.
 func (s *ExecutionSupervisor) Notify() {
 	if s == nil {
 		return
 	}
 	select {
 	case s.wake <- struct{}{}:
+	default:
+	}
+	select {
+	case s.recoveryWake <- struct{}{}:
 	default:
 	}
 }
@@ -286,6 +292,12 @@ func (s *ExecutionSupervisor) recoveryLoop(ctx context.Context, canRecover func(
 			if err := s.service.RecoverPrivateFiles(ctx); err != nil && ctx.Err() == nil {
 				s.logger.Error("recover original Develop private files failed", "error", err)
 			}
+			// A fresh admission may make a pending row claimable. Wake only
+			// scheduling; notifying recovery here would create a feedback loop.
+			select {
+			case s.wake <- struct{}{}:
+			default:
+			}
 			now := time.Now().UTC()
 			if count, err := s.queue.RecoverUnleased(ctx, now, 100); err != nil {
 				if ctx.Err() == nil {
@@ -305,6 +317,7 @@ func (s *ExecutionSupervisor) recoveryLoop(ctx context.Context, canRecover func(
 		select {
 		case <-ctx.Done():
 			return
+		case <-s.recoveryWake:
 		case <-ticker.C:
 		}
 	}

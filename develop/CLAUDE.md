@@ -220,6 +220,8 @@ Develop 使用 Common 导出会话在 Workbench 轮询并下载 infra 暂存产�
 
 Backend 内嵌唯一监督器统一领取。execution 的创建入口、冻结输入、授权签发／消费与失联不重放见[执行监督契约](../docs/spec/tasks/模块任务契约.md#develop-执行监督与授权)，事件提交见[Develop 接入约束](#执行过程事件与当前边界)。监督器不重读可变任务定义；失联失败不表示远端已停止。
 
+提交通知同时唤醒原准入／恢复循环及领取循环，原准入刷新结束后再唤醒领取；仍由 System 当前观察及同一 claim 门禁决定是否可运行，周期扫描间隔与并发策略不变。监督器回归覆盖通知到达时准入仍未完成、完成后立即领取和长周期下无需等到下一轮扫描。
+
 容量观测不参与 claim。每类型以 `execution_supervisor/<task_type>` 上报当前 Backend 的容量和活动数；预算、租户可配置范围及热更新沿[执行策略](../docs/spec/configuration/执行与模块策略.md#develop-执行策略)，不以心跳容量代替执行授权或领取结果。
 
 ### Copilot 范围与资源事实
