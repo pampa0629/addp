@@ -13,6 +13,9 @@ case "$ADDP_ONLINE_HIGHGO_CASE" in
 esac
 HOSTED_FIXTURE_CONTAINERS=(addp-highgo-online-disposable addp-highgo-pg-online-disposable)
 before_online_application_stop() {
+  if [ -f "$ADDP_ONLINE_SECRET_DIR/highgo-business-grants.json" ]; then
+    run_logged bash -c 'source "$1"; python3 -m scripts.test.highgo-consumer-flow-online cleanup' _ "$IDENTITY_ENV" || return 1
+  fi
   [ ! -f "$ADDP_ONLINE_SECRET_DIR/highgo-timeout-grant.json" ] ||
     run_logged bash -c 'source "$1"; python3 -m scripts.test.highgo-sql-timeout-online cleanup' _ "$IDENTITY_ENV"
 }
@@ -20,14 +23,14 @@ stop_online_fixture() {
   run_logged python3 business/scripts/online-highgo-consumer-fixture.py stop
 }
 source "$ROOT_DIR/scripts/utils/hosted-online.sh"
-export CONSOLE_URL=http://127.0.0.1:5170
-targets=(-transfer -manager)
-identity_command=(bash -c 'cd system/backend && go run ./cmd/online-test-fixture --suite highgo-consumer-flow --output "$1" "${@:2}"' _ "$IDENTITY_ENV")
+export CONSOLE_URL=http://127.0.0.1:5170 SECURITY_URL=http://127.0.0.1:8194
+export ADDP_ONLINE_TEST_RUN_ID="run-$(python3 -c 'import uuid; print(uuid.uuid4().hex)')"
+targets=(-system -security -meta -transfer -manager)
+identity_command=(bash -c 'cd system/backend && go run ./cmd/online-test-fixture --suite highgo-consumer-flow --output "$1" "${@:2}"' _ "$IDENTITY_ENV" --wait-protection-owners manager,transfer)
 if [ "$ADDP_ONLINE_HIGHGO_CASE" = sql-timeout ]; then
   export SECURITY_URL=http://127.0.0.1:8194
-  export ADDP_ONLINE_TEST_RUN_ID="run-$(python3 -c 'import uuid; print(uuid.uuid4().hex)')"
   targets=(-system -security -meta -manager -develop)
-  identity_command+=(--wait-protection-owners manager,develop)
+  identity_command=(bash -c 'cd system/backend && go run ./cmd/online-test-fixture --suite highgo-consumer-flow --output "$1" "${@:2}"' _ "$IDENTITY_ENV" --wait-protection-owners manager,develop)
 fi
 infra_owned=1
 run_logged bash scripts/infra/up.sh
@@ -52,6 +55,8 @@ else
     --descriptor "$ADDP_ONLINE_SECRET_DIR/highgo-pg-engine.json" --output "$ADDP_ONLINE_SECRET_DIR/highgo-pg-engine.env"
   source "$ADDP_ONLINE_SECRET_DIR/highgo-pg-engine.env"
   export ADDP_ONLINE_HIGHGO_PG_ENGINE_ID="$ADDP_ONLINE_CONSUMER_ENGINE_ID"
+  run_logged python3 -m scripts.test.highgo-consumer-flow-online prepare
+  unset ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN
 fi
 unset ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN
 run_logged make test-online "ONLINE_SUITE=$ONLINE_SUITE"

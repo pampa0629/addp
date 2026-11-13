@@ -65,7 +65,7 @@ class HostedHighGoTest(unittest.TestCase):
                 [ -z "${ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN:-}" ] || exit 1
             else
               [ "$ADDP_ONLINE_HIGHGO_PG_ENGINE_ID" = 18 ] &&
-                [ "$ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN" = source-token ] || exit 1
+                [ -z "${ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN:-}" ] || exit 1
             fi
             [ "${ADDP_TEST_SUITE_FAIL:-0}" != 1 ]
         ''')
@@ -79,6 +79,16 @@ class HostedHighGoTest(unittest.TestCase):
                 Path(os.environ['ADDP_ONLINE_SECRET_DIR'], 'highgo-timeout-grant.json').write_text('{}')
             if os.environ.get('ADDP_TEST_TIMEOUT_FAIL') == sys.argv[1]: sys.exit(1)
         ''')
+        self.host._write_repository_script('scripts/test/highgo-consumer-flow-online.py', """
+            import os, sys
+            from pathlib import Path
+            with open(os.environ['ADDP_TEST_GATE_TRACE'], 'a') as trace:
+                trace.write('business:' + sys.argv[1] + '\\n')
+            assert os.environ['ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN'] == 'source-token'
+            if sys.argv[1] == 'prepare':
+                Path(os.environ['ADDP_ONLINE_SECRET_DIR'], 'highgo-business-grants.json').write_text('[]')
+            if os.environ.get('ADDP_TEST_BUSINESS_FAIL') == sys.argv[1]: sys.exit(1)
+        """)
         self.host._executable('npm', '#!/usr/bin/env bash\necho "browser-install" >> "$ADDP_TEST_GATE_TRACE"\n')
         subprocess.run(['git', 'add', '.'], cwd=self.host.repository, check=True)
         subprocess.run(['git', 'commit', '-qm', 'highgo gate fixture'], cwd=self.host.repository, check=True)
@@ -114,7 +124,7 @@ class HostedHighGoTest(unittest.TestCase):
         trace = self.host.trace.read_text()
         order = ['infra-up', 'highgo-fixture:start', 'start:-transfer', 'start:-manager', '--suite highgo-consumer-flow',
                  'register:highgo-engine.json', 'register:highgo-pg-engine.json', 'make:test-online ONLINE_SUITE=highgo-consumer-flow',
-                 'highgo-fixture:verify', 'application-stop', 'highgo-fixture:stop', 'infra-down']
+                 'highgo-fixture:verify', 'business:cleanup', 'application-stop', 'highgo-fixture:stop', 'infra-down']
         indexes = [trace.index(step) for step in order]
         self.assertEqual(indexes, sorted(indexes))
         self.assertFalse(self.host.secrets.exists())
@@ -138,6 +148,16 @@ class HostedHighGoTimeoutTest(unittest.TestCase):
     setUp = HostedHighGoTest.setUp
     tearDown = HostedHighGoTest.tearDown
     run_gate = HostedHighGoTest.run_gate
+
+    def test_business_preparation_and_cleanup_failures_preserve_pre_stop_revocation(self):
+        for failure in ('prepare', 'cleanup'):
+            self.host.trace.unlink(missing_ok=True)
+            result = self.run_gate(ADDP_TEST_BUSINESS_FAIL=failure)
+            self.assertNotEqual(result.returncode, 0)
+            trace = self.host.trace.read_text()
+            self.assertLess(trace.index('business:cleanup'), trace.index('application-stop'))
+            self.assertIn('highgo-fixture:stop', trace)
+            self.assertFalse(self.host.secrets.exists())
 
     def test_timeout_preflight_rejects_unknown_scope_without_mutation(self):
         result = self.run_gate(check=True, ADDP_ONLINE_HIGHGO_CASE='unknown')

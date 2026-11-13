@@ -1501,7 +1501,7 @@ func TestHighGoFixtureUsesOrdinaryConsumerAndSeparateProvisioner(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	expected := append(append([]string{}, catalogConsumerPermissions...), "transfer.task.create", "transfer.task.delete", "transfer.task.execute", "transfer.task.read", "system.execution_authorization.create")
+	expected := []string{"system.engine_catalog.read", "meta.catalog.read", "manager.data_item.read", "manager.content.read", "transfer.task.create", "transfer.task.delete", "transfer.task.execute", "transfer.task.read", "system.execution_authorization.create"}
 	if len(permissions) != len(expected) {
 		t.Fatalf("unexpected HighGo permissions: %v", permissions)
 	}
@@ -1534,8 +1534,8 @@ func TestHighGoTimeoutCaseSeparatesPreparationAndMinimalConsumer(t *testing.T) {
 		t.Fatal("HighGo timeout requires separate scoped scan preparation")
 	}
 	t.Setenv("ADDP_ONLINE_HIGHGO_CASE", "business")
-	if !slices.Equal(suiteSourceInitializerPermissions("highgo-consumer-flow"), sourceInitializerPermissions) {
-		t.Fatal("timeout scan permission leaked into business preparation")
+	if !slices.Equal(suiteSourceInitializerPermissions("highgo-consumer-flow"), wantPreparation) {
+		t.Fatal("business needs the same independent scan preparation")
 	}
 	t.Setenv("ADDP_ONLINE_HIGHGO_CASE", "unknown")
 	if _, err := suitePermissions("highgo-consumer-flow"); err == nil {
@@ -1658,7 +1658,7 @@ func TestFTPFixtureSeparatesModelConsumerAndSourceAuthorization(t *testing.T) {
 	if !slices.Equal(suiteSourceInitializerPermissions("ftp-consumer-flow"), wantIssuer) || len(sourceInitializerPermissions) != 11 {
 		t.Fatal("FTP-specific lifecycle permissions must not mutate the shared initializer")
 	}
-	for _, suite := range []string{"highgo-consumer-flow", "security-plaintext-access"} {
+	for _, suite := range []string{"security-plaintext-access"} {
 		if !slices.Equal(suiteSourceInitializerPermissions(suite), sourceInitializerPermissions) {
 			t.Fatalf("FTP issuer permissions leaked into %s", suite)
 		}

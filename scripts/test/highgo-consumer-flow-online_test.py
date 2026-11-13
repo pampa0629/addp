@@ -2,6 +2,8 @@
 from importlib import import_module
 from pathlib import Path
 import re
+import json
+from copy import deepcopy
 import shutil
 import tempfile
 from types import SimpleNamespace
@@ -43,6 +45,55 @@ class HighGoConsumerTest(unittest.TestCase):
             with self.subTest(corruption=corruption), self.assertRaises(OWNER.API.SuiteError):
                 OWNER.validate_item(value, 'orders')
 
+    def test_structural_meta_rejects_content_and_statistics(self):
+        record = item('orders')
+        with self.assertRaises(OWNER.API.SuiteError): OWNER.validate_structure(record, 'orders')
+        record['attributes'].pop('capabilities')
+        record['attributes']['type_info']['table'].pop('row_count')
+        OWNER.validate_structure(record, 'orders')
+
+    def test_prepare_has_exact_six_deep_targets_and_private_intents(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            consumer, preparer = Mock(), Mock()
+            env = {'GATEWAY_URL': 'http://127.0.0.1:8000','ADDP_ONLINE_TEST_TENANT_ID':'2',
+                'ADDP_ONLINE_HIGHGO_ENGINE_ID':'29','ADDP_ONLINE_HIGHGO_PG_ENGINE_ID':'2',
+                'ADDP_ONLINE_TEST_USER_ACCESS_TOKEN':'consumer','ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN':'preparer'}
+            def grants(*args, **kwargs):
+                for engine, _, schema, table in args[3]: kwargs['on_pending'](engine, table, {'engine_id': engine})
+            with patch.dict(OWNER.os.environ,env), patch.object(OWNER.FIXTURE,'secret_directory',return_value=root), \
+                patch.object(OWNER.API,'validate_user_identity'), patch.object(OWNER.SUPPORT,'GatewayClient',side_effect=[consumer,preparer]), \
+                patch.object(OWNER.REGISTRATION,'source_grant_participants'), patch.object(OWNER.SUPPORT,'wait_for_scan',side_effect=['hg-scan','pg-scan']) as scan, \
+                patch.object(OWNER.REGISTRATION,'initialize_exact_record_read_grants',side_effect=grants) as grant:
+                OWNER.prepare()
+            self.assertEqual([c.args[0] for c in scan.call_args_list],[preparer,preparer])
+            self.assertEqual([len(c.kwargs['targets']) for c in scan.call_args_list],[5,1])
+            self.assertTrue(all(c.kwargs['scan_depth']=='deep' for c in scan.call_args_list))
+            self.assertEqual(grant.call_args.args[3], [(29,'schema',OWNER.NAMESPACE,n) for n in [*OWNER.TABLES,OWNER.TARGET]]+[(2,'schema',OWNER.NAMESPACE,'orders')])
+            journal=root/'highgo-business-grants.json'
+            self.assertEqual(len(json.loads(journal.read_text())),6)
+            self.assertEqual(journal.stat().st_mode&0o777,0o600)
+            self.assertNotIn('meta.scan_task.execute',OWNER.PERMISSIONS)
+            self.assertNotIn('meta.scan_task.read',OWNER.PERMISSIONS)
+
+    def test_cleanup_revokes_all_recorded_intents_even_after_one_failure(self):
+        for failed in (False, True):
+            with tempfile.TemporaryDirectory() as temp:
+                root = Path(temp)
+                pending = [dict(engine_id=29,request_id=str(i),target={'id':i}) for i in range(6)]
+                (root/'highgo-business-grants.json').write_text(json.dumps(pending))
+                preparer, consumer = Mock(), Mock()
+                preparer.request.side_effect = [RuntimeError('reject') if failed else None]+[None]*5
+                with patch.dict(OWNER.os.environ,ADDP_ONLINE_ARTIFACT_DIR=temp), patch.object(OWNER.FIXTURE,'secret_directory',return_value=root), \
+                    patch.object(OWNER.SUPPORT,'required_environment',side_effect=lambda key: temp if key=='ADDP_ONLINE_ARTIFACT_DIR' else 'token'), \
+                    patch.object(OWNER.SUPPORT,'GatewayClient',side_effect=[preparer,consumer]):
+                    if failed:
+                        with self.assertRaisesRegex(RuntimeError,'cleanup incomplete'): OWNER.cleanup()
+                    else: OWNER.cleanup()
+                self.assertEqual(preparer.request.call_count,6)
+                self.assertEqual(consumer.request.call_count,5 if failed else 6)
+                self.assertTrue(all(call.args[2] == (403,) for call in consumer.request.call_args_list))
+
     def test_replace_has_one_snapshot_policy_and_preserves_decimal(self):
         payload = OWNER.replace_task('owned', 'source', 29, {'node_id': 3})
         config = payload['config']
@@ -76,9 +127,12 @@ class HighGoConsumerTest(unittest.TestCase):
     def test_two_replaces_compare_values_and_cleanup_even_when_browser_or_copy_fails(self):
         for fault in (None, 'copy', 'browser'):
             hg = {name: item(name) for name in OWNER.TABLES}
-            hg['addp_engine_probe'] = {'id': 8}
             hg[OWNER.TARGET] = dict(item('orders'), full_name='addp_business.' + OWNER.TARGET)
             pg = {'orders': item('orders')}
+            raw_hg = deepcopy(hg)
+            for record in hg.values():
+                record['attributes'].pop('capabilities')
+                record['attributes']['type_info']['table'].pop('row_count')
             context = {'principal': {'id': '7'}, 'authorization': {'role_assignments': [{'permissions': list(OWNER.PERMISSIONS)}]}}
             selectors = [{'id': 29, 'engine_type': 'highgo', 'capabilities': {'storage': {
                 'facts': {k: True for k in ('indexes', 'constraints', 'partitioning')}, 'store': {'delete': True}}}},
@@ -88,17 +142,23 @@ class HighGoConsumerTest(unittest.TestCase):
             def preview(client, engine, record, name):
                 rows = [{'id': i} for i in range(3)]
                 if fault == 'copy' and name == OWNER.TARGET: rows[0]['id'] = 999
-                return {'columns': OWNER.ORDER_FIELDS, 'rows': rows, 'total': 3}
+                return {'columns': OWNER.ORDER_FIELDS, 'rows': rows, 'total': 3, 'item_meta': {'attributes': [{'key': k, 'value': v} for k,v in raw_hg[name if name in raw_hg else 'orders']['attributes'].items()]}}
             def create(client, payload, tasks): tasks.append(22); return 22
-            with self.subTest(fault=fault), patch.dict(OWNER.os.environ, {'GATEWAY_URL': 'http://127.0.0.1:8000', 'ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN': 'fixture-token', 'ADDP_ONLINE_TEST_RUN_ID': 'owned'}), patch.object(OWNER.API, 'validate_user_identity', return_value={}), patch.object(OWNER.SUPPORT, 'wait_for_scan', return_value='scan'), patch.object(OWNER, 'items', side_effect=lambda client, engine: hg if engine == 29 else pg), patch.object(OWNER, 'preview', side_effect=preview), patch.object(OWNER.REGISTRATION, 'initialize_exact_record_read_grants') as grants, patch.object(OWNER.FLOW, 'create_task', side_effect=create), patch.object(OWNER.FLOW, 'run_task', return_value={'execution_id': 'execution', 'records_read': 3, 'records_written': 3}) as execute, patch.object(OWNER.SUPPORT, 'cleanup_tasks') as cleanup, patch.object(OWNER, 'run_browser', side_effect=RuntimeError('browser failed') if fault == 'browser' else None, return_value={}):
-                if fault:
-                    with self.assertRaises(RuntimeError): OWNER.run(client, 2, 29, 2, 30)
-                else:
-                    result = OWNER.run(client, 2, 29, 2, 30)
-                    self.assertEqual(len(result['executions']), 2)
-                    self.assertEqual(execute.call_count, 2)
-                cleanup.assert_called_once_with(client, [22])
-                self.assertEqual(grants.call_args.args[3], [(2, 'schema', 'addp_business', 'orders')])
+            with tempfile.TemporaryDirectory() as temp, self.subTest(fault=fault):
+                Path(temp, 'highgo-business-scans.json').write_text('["scan-hg","scan-pg"]')
+                self.run_copy_case(fault, temp, client, hg, pg, preview, create)
+
+    def run_copy_case(self, fault, temp, client, hg, pg, preview, create):
+        time_counter = [2, 1]
+        with patch.object(OWNER.FIXTURE, 'secret_directory', return_value=Path(temp)), patch.dict(OWNER.os.environ, {'GATEWAY_URL': 'http://127.0.0.1:8000', 'ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN': '', 'ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN': '', 'ADDP_ONLINE_TEST_RUN_ID': 'owned'}), patch.object(OWNER.API, 'validate_user_identity', return_value={}), patch.object(OWNER.SUPPORT, 'wait_for_scan', return_value='scan'), patch.object(OWNER, 'items', side_effect=lambda client, engine: deepcopy(hg) if engine == 29 else pg), patch.object(OWNER.time, 'sleep', side_effect=lambda _: hg[OWNER.TARGET].update(scanned_at=str(time_counter.pop()))), patch.object(OWNER, 'preview', side_effect=preview), patch.object(OWNER.REGISTRATION, 'initialize_exact_record_read_grants') as grants, patch.object(OWNER.FLOW, 'create_task', side_effect=create), patch.object(OWNER.FLOW, 'run_task', return_value={'execution_id': 'execution', 'records_read': 3, 'records_written': 3}) as execute, patch.object(OWNER.SUPPORT, 'cleanup_tasks') as cleanup, patch.object(OWNER, 'run_browser', side_effect=RuntimeError('browser failed') if fault == 'browser' else None, return_value={}):
+            if fault:
+                with self.assertRaises(RuntimeError): OWNER.run(client, 2, 29, 2, 30)
+            else:
+                result = OWNER.run(client, 2, 29, 2, 30)
+                self.assertEqual(len(result['executions']), 2)
+                self.assertEqual(execute.call_count, 2)
+            cleanup.assert_called_once_with(client, [22])
+            grants.assert_not_called()
 
 
 class HighGoRegistrationTest(unittest.TestCase):

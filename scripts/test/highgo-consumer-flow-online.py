@@ -15,10 +15,11 @@ API = import_module('scripts.utils.online-api')
 SUPPORT = import_module('scripts.test.security-transfer-protection-online')
 FLOW = import_module('scripts.test.relational-consumer-flow-online')
 REGISTRATION = import_module('scripts.test.online-engine-registration')
+FIXTURE = import_module('business.scripts.online-highgo-consumer-fixture')
 NAMESPACE = 'addp_business'
 TARGET = 'orders_replace_online'
 PERMISSIONS = {
-    'system.engine_catalog.read', 'meta.catalog.read', 'meta.scan_task.execute', 'meta.scan_task.read',
+    'system.engine_catalog.read', 'meta.catalog.read',
     'manager.data_item.read', 'manager.content.read', 'transfer.task.create', 'transfer.task.delete',
     'transfer.task.execute', 'transfer.task.read', 'system.execution_authorization.create',
 }
@@ -29,6 +30,59 @@ ORDER_FIELDS = ['id', 'order_no', 'customer_id', 'order_status', 'total_amount',
 def require(ok, message):
     if not ok:
         raise API.SuiteError(message)
+
+
+def prepare():
+    private = FIXTURE.secret_directory()
+    tenant = int(SUPPORT.required_environment('ADDP_ONLINE_TEST_TENANT_ID'))
+    highgo = int(SUPPORT.required_environment('ADDP_ONLINE_HIGHGO_ENGINE_ID'))
+    postgres = int(SUPPORT.required_environment('ADDP_ONLINE_HIGHGO_PG_ENGINE_ID'))
+    consumer = SUPPORT.GatewayClient(SUPPORT.required_environment('GATEWAY_URL'), SUPPORT.required_environment('ADDP_ONLINE_TEST_USER_ACCESS_TOKEN'), 30)
+    preparer = SUPPORT.GatewayClient(SUPPORT.required_environment('GATEWAY_URL'), SUPPORT.required_environment('ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN'), 30)
+    API.validate_user_identity(consumer, tenant, PERMISSIONS)
+    REGISTRATION.source_grant_participants(preparer, consumer, tenant, scan_preparation=True)
+    scans = []
+    for engine, names in ((highgo, [*TABLES, TARGET]), (postgres, ['orders'])):
+        targets = [f'addp://engine/{engine}/path/{NAMESPACE}/{name}?type=table' for name in names]
+        scans.append(SUPPORT.wait_for_scan(preparer, engine, time.monotonic() + 180, scan_depth='deep', targets=targets))
+    journal = private / 'highgo-business-grants.json'
+    FIXTURE.write_private(journal, '[]')
+    pending = []
+    def on_pending(engine_id, request_id, target):
+        pending.append(dict(engine_id=engine_id, request_id=request_id, target=target))
+        journal.write_text(json.dumps(pending))
+    REGISTRATION.initialize_exact_record_read_grants(preparer, consumer, tenant,
+        [(highgo, 'schema', NAMESPACE, name) for name in [*TABLES, TARGET]]
+        + [(postgres, 'schema', NAMESPACE, 'orders')], scan_preparation=True, on_pending=on_pending)
+    FIXTURE.write_private(private / 'highgo-business-scans.json', json.dumps(scans))
+
+
+def cleanup():
+    private = FIXTURE.secret_directory()
+    pending = json.loads((private / 'highgo-business-grants.json').read_text())
+    preparer = SUPPORT.GatewayClient(SUPPORT.required_environment('GATEWAY_URL'), SUPPORT.required_environment('ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN'), 30)
+    consumer = SUPPORT.GatewayClient(SUPPORT.required_environment('GATEWAY_URL'), SUPPORT.required_environment('ADDP_ONLINE_TEST_USER_ACCESS_TOKEN'), 30)
+    revoked, errors = [], []
+    for grant in pending:
+        try:
+            preparer.request('POST', f"/api/v1/system/engines/{grant['engine_id']}/access_grants/{grant['request_id']}/revoke",
+                (200, 404), {'reason': 'Disposable HighGo business acceptance finished'})
+            consumer.request('POST', '/api/v1/system/engine-access/read-checks/manager-preview', (403,), {'targets': [grant['target']]})
+            revoked.append(grant)
+        except (RuntimeError, OSError, ValueError):
+            errors.append(grant['request_id'])
+    Path(SUPPORT.required_environment('ADDP_ONLINE_ARTIFACT_DIR'), 'highgo-business-grant-cleanup.json').write_text(json.dumps(dict(grants=revoked, failed_requests=errors, read_denied=not errors)))
+    require(not errors, 'HighGo exact Grant cleanup incomplete')
+
+
+def validate_structure(item, table):
+    attrs = item.get('attributes', {})
+    info = attrs.get('type_info', {}).get('table', {})
+    require(item.get('full_name') == NAMESPACE + '.' + table and item.get('item_type') == 'table', 'structural identity mismatch')
+    require(info.get('primary_key') == ['id'] and len(info.get('fields', [])) == TABLES[table][1], 'structural fields or primary key mismatch')
+    require('row_count' not in info and item.get('row_count') is None
+            and not any(k in attrs.get('capabilities', {}) for k in ('constraints', 'indexing')),
+            'public Meta leaked content statistics or relational details')
 
 
 def expected_facts(table):
@@ -129,15 +183,17 @@ def run(client, tenant, highgo, postgres, timeout):
             and storage.get('store', {}).get('delete') is True, 'certified HighGo facts and replace capabilities missing')
     require('connection_info' not in engines[highgo], 'consumer catalog leaked credentials')
     deadline = time.monotonic() + timeout
-    scans = [SUPPORT.wait_for_scan(client, e, deadline) for e in (highgo, postgres)]
+    require(not os.environ.get('ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN') and not os.environ.get('ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN'), 'preparation credentials leaked into consumer stage')
+    scans = json.loads((FIXTURE.secret_directory() / 'highgo-business-scans.json').read_text())
     hg, pg = items(client, highgo), items(client, postgres)
-    require(set(hg) == {*TABLES, 'addp_engine_probe', TARGET}, 'HighGo scan included unexpected system objects or omitted samples')
-    samples = {t: dict(validate_item(hg[t], t), locator=SUPPORT.build_item_locator(highgo, hg[t])) for t in TABLES}
-    initializer = SUPPORT.GatewayClient(SUPPORT.required_environment('GATEWAY_URL'), SUPPORT.required_environment('ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN'), 30)
-    REGISTRATION.initialize_exact_record_read_grants(initializer, client, tenant,
-        [(postgres, 'schema', NAMESPACE, 'orders')])
+    require(set(hg) == {*TABLES, TARGET}, 'HighGo scan included unexpected system objects or omitted samples')
+    samples = {}
     for table in TABLES:
-        preview(client, highgo, hg[table], table)
+        validate_structure(hg[table], table)
+        data = preview(client, highgo, hg[table], table)
+        raw = data.get('item_meta', {})
+        attrs = {row['key']: row['value'] for row in raw.get('attributes', [])}
+        samples[table] = dict(validate_item(dict(hg[table], attributes=attrs), table), locator=SUPPORT.build_item_locator(highgo, hg[table]))
     source = preview(client, postgres, pg['orders'], 'orders')
     require(source['columns'] == ORDER_FIELDS, 'source order fields mismatch')
     tasks, executions = [], []
@@ -146,15 +202,23 @@ def run(client, tenant, highgo, postgres, timeout):
         task = FLOW.create_task(client, replace_task('addp_online_highgo_' + run_id, SUPPORT.build_item_locator(postgres, pg['orders']), highgo, hg[TARGET]), tasks)
         for phase in ('replace_sentinel', 'repeat_replace'):
             executions.append(FLOW.assert_transfer_counts(FLOW.run_task(client, task, deadline), 3, phase))
-            scans.append(SUPPORT.wait_for_scan(client, highgo, deadline))
-            current = items(client, highgo)[TARGET]
+            previous = hg[TARGET] if phase == 'replace_sentinel' else current
+            while True:
+                current = items(client, highgo)[TARGET]
+                if current.get('scanned_at') and current['scanned_at'] != previous.get('scanned_at'):
+                    break
+                require(time.monotonic() < deadline, 'Transfer target automatic scan did not refresh its persisted snapshot')
+                time.sleep(1)
             data = preview(client, highgo, current, TARGET)
             require(data['columns'] == source['columns'] and sorted(data['rows'], key=lambda r: int(r['id'])) == sorted(source['rows'], key=lambda r: int(r['id'])), 'seven-field target data differs after ' + phase)
         for table in TABLES:
-            validate_item(items(client, highgo)[table], table)
+            record = items(client, highgo)[table]
+            validate_structure(record, table)
+            data = preview(client, highgo, record, table)
+            validate_item(dict(record, attributes={r['key']: r['value'] for r in data['item_meta']['attributes']}), table)
         report = {'suite': 'highgo-consumer-flow', 'run_id': run_id, 'tenant_id': tenant,
                   'principal_id': str(context['principal']['id']), 'engine_id': highgo,
-                  'identity': identity, 'samples': samples, 'target_locator': SUPPORT.build_item_locator(highgo, current),
+                  'identity': identity, 'permissions': sorted(PERMISSIONS), 'samples': samples, 'target_locator': SUPPORT.build_item_locator(highgo, current),
                   'executions': executions, 'scans': scans, 'constraints': 11, 'indexes': 10}
         report['browser'] = run_browser(report)
         return report
@@ -164,6 +228,9 @@ def run(client, tenant, highgo, postgres, timeout):
 
 def main():
     require(os.environ.get('ADDP_ONLINE_HOSTED') == '1' and os.environ.get('ADDP_ONLINE_TEST') == '1', 'Hosted Online entry required')
+    if len(sys.argv) == 2 and sys.argv[1] in ('prepare', 'cleanup'):
+        FIXTURE.guard()
+        return {'prepare': prepare, 'cleanup': cleanup}[sys.argv[1]]()
     tenant = SUPPORT.positive_int(SUPPORT.required_environment('ADDP_ONLINE_TEST_TENANT_ID'), 'Tenant')
     hg = SUPPORT.positive_int(SUPPORT.required_environment('ADDP_ONLINE_HIGHGO_ENGINE_ID'), 'HighGo')
     pg = SUPPORT.positive_int(SUPPORT.required_environment('ADDP_ONLINE_HIGHGO_PG_ENGINE_ID'), 'PostgreSQL')

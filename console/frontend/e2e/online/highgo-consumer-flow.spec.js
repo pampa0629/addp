@@ -14,8 +14,11 @@ test('HighGo business tables retain relational facts and replaced orders render 
   const api = await request.newContext({ baseURL: gateway, extraHTTPHeaders: {
     Authorization: `Bearer ${required('ADDP_ONLINE_TEST_USER_ACCESS_TOKEN')}`
   } })
+  expect(process.env.ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN).toBeUndefined()
+  expect(process.env.ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN).toBeUndefined()
   const current = identity(await json(await api.get('/api/v1/system/auth/context'), 'consumer identity'))
   await api.dispose()
+  expect([...current.permissions].sort()).toEqual(expected.permissions)
   expect(current.principalType).toBe('user')
   expect(current.tenantID).toBe(String(expected.tenant_id))
   expect(current.principalID).toBe(expected.principal_id)
