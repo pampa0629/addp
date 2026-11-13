@@ -437,6 +437,18 @@ Chrome 正式租户页面的任务 61、generation 1 仍显示活跃任务槽、
 
 迁移尚待用户按标准入口重启 System 应用；Monitor 同步重启后取得当前服务 Token，再核对真实风险读取。上述修复验证不计为实际风险 GET 已恢复或真实告警故障／送达闭环通过。没有直接修写开发库，没有触发业务任务故障或修改逻辑槽。
 
+### 292 应用后的真实任务风险读取与正常告警状态（2026-11-13）
+
+用户再次重启后，System／Monitor／Transfer 的 Ready 构建 SHA 均为 `2370cbb8d73fd90bb9b1947cece5b88954e6e957`。正式 OAuth Client Credentials 取得 `addp-monitor` Platform Service 身份（Principal 3，既有 `platform.monitor_runtime`），AuthContext 已包含 `transfer.cdc_risk_observation.read`。经 Gateway 的唯一风险 GET 返回 200，完整清单一项：Tenant 1／task 61／generation 1、Owner 当前 execution `f4f23f66-d93f-4089-87ac-2865e0b02522`，state=observing，source 与 buffer 均为 clear。
+
+两次独立读取的源端／消息样本时间由北京时间 20:03:00 推进到 20:04:15，对应有效期分别到 20:03:30 和 20:04:45；没有用过期样本补零。当前 Transfer 实例 `8364761a-898e-49b6-ac2d-732ce1625255` 保留的风险 GET 日志共 497 次、全部 HTTP 200，首条为 18:00:46，末条为 20:04:21（含本轮两次独立检查，其余连续约 15 秒读取）。Monitor 当前实例 `28fd6470-d1ac-46c9-ad0e-b9c6bd62a9b3` 的清单不可用警告仅见启动初期 18:00:16／18:00:31，未隐去这两次记录，也不据此猜测具体启动失败原因。
+
+Chrome 真实租户“ADDP 开发管理员”页面核对任务配置源／目标仍为两张专用 `addp_cdc_monitor_*_20261113` 表；代次 1、任务槽活跃、WAL 正常保留、保留／待确认地址距离约 9.11／8.34 KiB，距槽失效的 WAL 写入余量约 10 GiB。捕获 Connected、RUNNING／ONLINE，最近事件捕获延迟 0.141 秒；当前消息 committed／latest／lag 为 `9/9/0`，earliest 为 0。延迟值是最近事件的延迟，不是空闲时长或目标端到端延迟。
+
+同一租户告警页共两条历史事件，task 61 的 checkpoint_stalled 与 task 57 的 retention_critical 均为 resolved；没有新增源端／消息恢复丢失 incident，与当前 clear 事实一致。只读收据保存在 `/tmp/addp-cdc-risk-runtime-20261113/risks-120313.json`、`risks-120421.json`、`post-restart-runtime.json` 和 `post-restart-risk-requests.json`，最初 403 收据保持原样。
+
+本轮完成真实部署下的服务准入、当前事实新鲜度、连续读取及正常状态无新增风险告警的核对；没有故障注入、任务暂停／恢复或外部通知发送，不证明 loss→open→resolved 的真实故障闭环。没有直接修写开发库或操作原有两个逻辑槽。
+
 ### 292 入口断言与 CDC 受控时钟的 CI 修复（2026-11-13）
 
 `69e7b0e60` 的 [Platform Run 43367331753／Job 131694726864](https://github.com/pampa0629/addp/actions/runs/43367331753/job/131694726864) 在 `make test-system-iam-runner` 失败：生产 gate 的 `catalog-integrity` 已加入 `MonitorCDCRiskForwardMigration`，测试仍精确要求原三项过滤表达式。同步为包含原三项及 CDC 升级的四项精确表达式，并验证其他名称、错误后缀和缺失结尾不匹配；不删原迁移、不放宽过滤。修改后本地 42 项 runner 测试通过；`make test-system-iam-postgres SYSTEM_IAM_POSTGRES_TEST_ARGS='--package migration --test catalog-integrity'` 的四类迁移全部通过，使用已核对端口的 `addp_iam_test`，沿标准门禁清理。
