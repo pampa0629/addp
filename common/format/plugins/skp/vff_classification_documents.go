@@ -75,7 +75,7 @@ type vffSKCDocumentFact struct {
 	documents        []vffSKCXMLFact
 	rootSchema       string
 	title            string
-	thumbnail        vffImageFact
+	thumbnail        *vffImageFact
 	schemas          []vffSKCSchemaFact
 	filters          []vffSKCFilterFact
 	unexplained      []vffSKCMemberFact
@@ -169,21 +169,24 @@ func readVFFSKCDocument(ctx context.Context, item vffClassificationPackage, budg
 	if err != nil {
 		return nil, err
 	}
-	if err := vffSKCExactMember(item.files, thumbnail, ".png .jpg .jpeg"); err != nil {
-		return nil, err
-	}
-	// Decode through the existing one image implementation. Each exact SKC is
-	// visited once; different package identities consume aggregate budgets.
-	imageFacts, err := readVFFImages(ctx, &vffContainer{members: item.files}, []vffImageReference{{thumbnail, sha256.Sum256(item.files[thumbnail])}}, *images)
-	if err != nil {
-		return nil, err
-	}
 	result.title = title
-	result.thumbnail = imageFacts[0]
-	images.images--
-	images.bytes -= len(item.files[thumbnail])
-	images.pixels -= uint64(result.thumbnail.width) * uint64(result.thumbnail.height)
-	claimed[thumbnail] = true
+	// Properties require the element; only its exact empty text means no image.
+	if thumbnail != "" {
+		if err := vffSKCExactMember(item.files, thumbnail, ".png .jpg .jpeg"); err != nil {
+			return nil, err
+		}
+		// Decode through the existing one image implementation. Each exact SKC is
+		// visited once; different package identities consume aggregate budgets.
+		imageFacts, err := readVFFImages(ctx, &vffContainer{members: item.files}, []vffImageReference{{thumbnail, sha256.Sum256(item.files[thumbnail])}}, *images)
+		if err != nil {
+			return nil, err
+		}
+		result.thumbnail = &imageFacts[0]
+		images.images--
+		images.bytes -= len(item.files[thumbnail])
+		images.pixels -= uint64(result.thumbnail.width) * uint64(result.thumbnail.height)
+		claimed[thumbnail] = true
+	}
 	if roots[2].name != (xml.Name{Space: vffReferencesNS, Local: "references"}) {
 		return nil, fmt.Errorf("unsupported SKC references root")
 	}
