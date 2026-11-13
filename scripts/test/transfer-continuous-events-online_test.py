@@ -1186,6 +1186,8 @@ class CDCRiskAcceptanceTest(unittest.TestCase):
         self.assertEqual(replacement['target']['name'], 'continuous_cdc_rebuilt_target')
         self.assertNotEqual(replacement['target']['name'], original['target']['name'])
         self.assertEqual(replacement['target']['policy']['apply_mode'], 'upsert_delete')
+        self.assertEqual(replacement['transforms'][0]['fields'], [*original['transforms'][0]['fields'],
+            {'source':'scan_extra','target':'scan_extra','target_type':'string','nullable':True}])
         mutate = unittest.mock.Mock()
         actor = object()
         M.quiesce_task_for_cleanup(actor, 9, 'cdc-rebuilt', 'owned-rebuild', {'desired_state':'paused'}, mutate)

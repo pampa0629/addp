@@ -483,3 +483,15 @@ Chrome 真实租户“ADDP 开发管理员”页面核对任务配置源／目�
 缺样事实为：源端最后一次 missing 在 13:07:52 UTC；暂停源库后的 unavailable 样本起始 13:08:07.329、有效期至 13:08:37.329，却到 13:09:56.353 才写入日志。采样卡在初始 PostgreSQL 握手，源库解除暂停后才返回；120 秒验收等待内没有得到新鲜 unavailable。lib/pq v1.10.9 的 context-aware dial 只覆盖 TCP 建连，未设置连接截止时间时启动／TLS 握手可以继续阻塞，见[固定驱动源码](https://github.com/lib/pq/blob/v1.10.9/conn.go)。本地新测试使用仅接收 TCP、不完成握手的临时端点复现超时，原实现失败；将既有 SourceProbeTimeout 的截止时间应用到该次只读连接后，普通启动／TLS 握手两个用例及独立 JMX 发布均通过。没有增加配置、重试、样本有效期或验收预算。
 
 失败轮 Webhook 目标删除、接收端关闭、源库解除暂停及领域任务清理均成功；硬退出 Kafka 任务仍按原场景保留给部署销毁，领域残留为 1，最终 `cleanup=passed`、`infra_cleanup=zero_residuals`。本地 `make test-module MODULE=transfer GO_ONLY=1` 与 `make test-transfer-postgres` 已通过；完整模块门禁仍在运行，不能提前认定完成。第三轮必须重新取得缺样保持、正式关闭、关闭通知和替代任务的实际证据。
+
+### CDC 风险第三轮：四项闭环通过，替代任务字段配置失败（2026-11-13）
+
+固定探测修复 `5aa1dd0735f456cce658f84ca5649cd7d4a48606` 的 [Run 43434717346／Job 131916747314](https://github.com/pampa0629/addp/actions/runs/43434717346/job/131916747314) 已实际通过故障打开、缺样保持、正式停止关闭及四条签名 Webhook 送达；整套仍失败于其后的替代任务 Start，不能计为整套 T4 通过。Artifact `14045215097` 的 SHA-256 为 `5d33cf56185cec617a5cf14dc215e3813f3580566d2d648e9bd45cc643f706eb`，摘要和 ZIP CRC 核对通过，原件保留于 `/tmp/addp-cdc-risk-hosted-43434717346/`。
+
+该轮暂停／增长／截断的 committed/latest/earliest 分别为 `10/10/0`、`10/12/0`、`10/12/12`。源端 incident 3、缓冲 incident 2 分别唯一打开。源库暂停后取得三份 unavailable，样本均在有效期内发布；实际启动沿既有 KafkaConnectTimeout 的 15 秒配置注入 SourceProbeTimeout，没有将构造器默认值当成当前运行值。源端已确认告警连续 16 次检查保持 acknowledged、同一 ID 及冻结 LastObservedAt，缺样期没有 resolved 回执；解除暂停后仍明确 missing，原事件保持。正式 Stop 后两个原 incident 均 resolved。
+
+四条 HMAC Webhook 的独立接收回执与正式 delivered 审计匹配，HTTP 均为 202：source opened `76ed71fe-d544-4551-900f-86f257df8b8c`、buffer opened `c1604487-15d9-4f36-87b0-0a1eb4685f04`、source resolved `b92b9b11-6eaa-46e1-852e-9e5d05dd633a`、buffer resolved `83dde275-c4fe-4ff8-a373-554214f44423`。关闭代表正式结束丢失任务，不表示旧事件自动恢复。
+
+后续新任务 4 创建返回 201，Start 返回 500。Owner 原始诊断明确为真实源表 `[id label scan_extra]`、夹具配置 `[id label]` 不符；CDC 完整字段映射要求见[现行数据库 CDC 契约](../../tasks/Transfer数据库CDC.md#类型系统与字段映射)。修复只让替代任务使用变更后的三个字段和新目标，物理断言同步核对三字段行集，不改变产品校验。原报告 `uncertain_mutation=true` 保持不改；新旧 CDC 与正常退出 Kafka 定义均正式删除并读回 404，Webhook 目标删除、接收端关闭通过。硬退出任务保留到部署销毁，最终 `cleanup=passed`、`infra_cleanup=zero_residuals`。重建与剩余 scheduled 断言仍须在后续整套运行通过。
+
+探测修复对应自然 CI 已核对实际执行步骤：Platform Run `43434570707` 的 [Transfer Go T1／Job 131916244876](https://github.com/pampa0629/addp/actions/runs/43434570707/job/131916244876) success；Release Run `43434570660` 的 [Transfer PostgreSQL T2／Job 131916529453](https://github.com/pampa0629/addp/actions/runs/43434570660/job/131916529453) success。不据此外推两个父 workflow 的其他 Job。

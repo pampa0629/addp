@@ -176,6 +176,10 @@ elif args[0]=='exec' and 'produce' in args:
         self.assertEqual(result.stdout, '')
         self.assertNotEqual(self.run_fixture('verify-cdc-altered', PHYSICAL_ROWS=rows.replace('sentinel-added', 'sentinel-wrong')).returncode, 0)
         self.assertNotEqual(self.run_fixture('verify-cdc-altered', PHYSICAL_ROWS=rows + '\n4|extra|').returncode, 0)
+        rebuilt = self.run_fixture('verify-cdc-rebuilt', PHYSICAL_ROWS=rows)
+        self.assertEqual(rebuilt.returncode, 0, rebuilt.stderr)
+        self.assertEqual(rebuilt.stdout, '')
+        self.assertNotEqual(self.run_fixture('verify-cdc-rebuilt', PHYSICAL_ROWS='1|business-value-sentinel-updated\n3|business-value-sentinel-inserted').returncode, 0)
 
     def test_source_observer_is_readonly_exact_named_and_refuses_foreign_or_wildcard(self):
         native = json.dumps({'identity_matches':True, 'slot_active':True, 'wal_status':'reserved',

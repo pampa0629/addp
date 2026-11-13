@@ -233,7 +233,7 @@ def task_config(kind, pg, kafka):
                                     'key': {'source': 'value', 'fields': ['id']},
                                     'start': {'mode': 'committed', 'initial': 'earliest'}, 'poll_batch_size': 100}}
         detection = {'type': 'kafka'}
-    return {'runtime': {'boundary': 'continuous',
+    config = {'runtime': {'boundary': 'continuous',
                         'record_failure': {'mode': 'dead_letter' if kind == 'kafka-graceful' else 'block'}},
             'load': {'mode': 'incremental', 'change_detection': detection}, 'source': source,
             'target': {'parent_locator': f'addp://engine/{pg}/path/public?type=schema',
@@ -242,6 +242,11 @@ def task_config(kind, pg, kafka):
             'transforms': [{'type': 'field_mapping', 'version': 'v1', 'mode': 'project',
                             'fields': [{'source': 'id', 'target': 'id', 'target_type': 'bigint', 'nullable': False},
                                        {'source': 'label', 'target': 'label', 'target_type': 'string', 'nullable': False}]}]}
+
+    if kind == 'cdc-rebuilt':
+        config['transforms'][0]['fields'].append({'source': 'scan_extra', 'target': 'scan_extra',
+                                                 'target_type': 'string', 'nullable': True})
+    return config
 
 
 def physical(action, *, observe=None):
