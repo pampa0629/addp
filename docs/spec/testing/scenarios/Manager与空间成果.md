@@ -266,17 +266,47 @@ Parquet物理列沿现有writer按字段名排序，按列名完整核对类型�
 
 ### TIFF 无定位小图的 COG 布局回归
 
+阅读导航：[MinIO 小图](#tiff-minio-无定位小图) · [NFS 自然到期](#tiff-nfs-渲染与自然到期) · [MSK 组成扩展](#tiff-msk-组成扩展) · [清理与共同边界](#tiff-清理与共同边界) · [分版本证据](#tiff-分版本证据)。以下条款是当前断言；是否已验按固定版本证据分别判断，单文件历史通过不替代 MSK 扩展。
+
+当前子报告为`addp.manager-raster-media/v2`、页面报告`addp.manager-raster-media-browser/v4`。
+
+#### TIFF MinIO 无定位小图
+
 `native-raster-media` 保留原IMG/JPEG2000/四种GRD的全部断言，再添加一份自建240×120、Float64/NaN、512瓦片、DEFLATE、无CRS/网格定位及无overview的Classic TIFF COG。沿原十项普通User权限、原部署/预算/四份受管COG生成及缓存/删除/全部清理，不上传个人成果，不触发该小图的生成任务。隔离夹具的GDAL完整COG验证必须0错误/0警告，独立公式核全部28,800数值、35个NaN及完整有效掩膜、块尺寸/空CRS/空网格/零overview、原字节大小及SHA；源被修改后即使重写哈希收据也须拒绝。
 
 同一普通身份通过 Gateway 发起 Manager 精确 item 刷新，再从 Meta 核对结构和扫描时间，从 Manager 授权预览核对`tiff/cog/true/heuristic`、240×120、tiled=true、overview=false，无spatial事实；归档刷新前后的 Meta 结构和 Manager 内容事实、单项同步刷新请求范围/实际响应、前后扫描时间和独占源扫描execution；单项刷新后，顶层 `full_name`、指纹和数据项 ID 必须保持一致。`storage.last_modified_at` 按带时区的时间戳比较同一时刻，其他 attributes 和源文件字节严格不变。真实Console的属性弹窗核同一元数据，预览核240×120单页、Range 206 和全部 Float64 灰阶像素及透明 NoData，页面无地图。TIFF仍允许既有非定位可选转换动作，测试仅要求不提交生成，不把“不可地图定位”等同“按钮不存在”。原下载以 single TIFF 原字节核对大小和 SHA-256，API 和真实按钮下载一致，分别归档。页面重开后复核同一源，浏览器零生成/零业务失败/零警告，源/Meta保持（除本次显式单项刷新外），原四份COG缓存和领域/物理删除/模式恢复/部署/Infra清理仍必须全部通过。
 
-当前子报告为`addp.manager-raster-media/v2`、页面报告`addp.manager-raster-media-browser/v4`。`native-raster-media` 还必须提交 `nfs_tiff_authorization` 证据。只把已核对 SHA-256 的同一 TIFF 复制到本轮只读 NFS 导出，由一次性源初始化用户用 `meta.scan_task.execute` 和 `meta.scan_task.read` 完成单目录深扫。仅该 case 为一次性初始化用户增加这两个扫描权限，普通消费用户仍是原十项。
+#### TIFF NFS 渲染与自然到期
+
+`native-raster-media` 还必须提交 `nfs_tiff_authorization` 证据。只把已核对 SHA-256 的同一 TIFF 复制到本轮只读 NFS 导出，由一次性源初始化用户用 `meta.scan_task.execute` 和 `meta.scan_task.read` 完成单目录深扫。仅该 case 为一次性初始化用户增加这两个扫描权限，普通消费用户仍是原十项。
+
+短暂签发并收回精确元数据授权以取得正式 DataItem ID，再以同一个普通 User API 会话验证 Range 依次返回 403、206、403。正向请求核对 Content-Range 和实际字节；授权有效时真实 Console 还须核对同一账号、Range 206 和完整灰阶／透明像元。到期后重新请求，核对元数据 404 和未撤销的已到期历史。失败时只清理本轮命令，源文件随既有 NFS 夹具清理。此用例覆盖该有界 NFS GeoTIFF／COG 的自然到期，BigTIFF、任意布局／容量和 Float64 地图渲染另行验收。
+
+#### TIFF MSK 组成扩展
 
 同一 TIFF 子报告增加 `nfs_tiff_msk`：在本轮 NFS 导出创建两份字节相同的有定位 TIFF，其中一份带真实外置 `.tif.msk`。固定公式独立核对全部 65,536 个 Int32 像元、NoData、CRS 和仿射网格；无 MSK 仅一个无效像元，有 MSK 共 257 个无效像元。Meta 必须分别登记 single 和 multi，multi 的主 TIFF 为 required=true、mask 为 required=false；授权命令只提交正式 Meta DataItem 指纹和 System 返回的完整边界 hash，不根据扩展名或文件数量自行组装授权边界。普通 User 在授权前读取均为 403，整项精确授权后每个已登记成员完整 Range 的大小、Content-Range 和 SHA-256 均匹配，跨 DataItem 借用 MSK 为 400。沿既有生成入口额外生成一份带掩膜 COG，完整数值、掩膜、空间事实及 COG 布局必须通过原生物理核验；删除成果后确认对象消失。撤销本轮两项 read 授权后，在源仍存在时重新读取各主文件及 MSK 必须为 403。归档正式组成、授权回执、执行和像元证明；本轮源、授权、成果与 Infra 全部按既有生命周期清理。保留原四份 COG、单文件浏览器和自然到期断言，不增加权限、服务或运行预算；新增 MSK 范围须由新版本 Hosted 运行另行证明，确定性测试不能计作 Hosted 通过。
 
 MSK 扫描回执必须同时证明三个物理文件和两个成功完成的逻辑 DataItem：`scan_progress.files_discovered=3`、`directories_discovered=1`、两个 total_known 均为 true，`items_planned/items_completed/items_succeeded=2`、`items_failed=0`、`phase=finalizing`，以及 `metadata.items_scanned=2`。核对原初始化用户和成功终态，将回执计数写入 `nfs_tiff_msk.scan`。计数缺失、清单未完成、额外文件／目录／逻辑项或任何未完成／失败项均在签发授权前拒绝；后续仍须验证正式 Meta single／multi 身份和完整 MSK 组成，计数相等不能替代组成证明。
 
-短暂签发并收回精确元数据授权以取得正式 DataItem ID，再以同一个普通 User API 会话验证 Range 依次返回 403、206、403。正向请求核对 Content-Range 和实际字节；授权有效时真实 Console 还须核对同一账号、Range 206 和完整灰阶／透明像元。到期后重新请求，核对元数据 404 和未撤销的已到期历史。失败时只清理本轮命令，源文件随既有 NFS 夹具清理。此用例覆盖该有界 NFS GeoTIFF／COG 的自然到期，BigTIFF、任意布局／容量和 Float64 地图渲染另行验收。
+#### TIFF 清理与共同边界
+
+MinIO 小图、NFS 单文件及 MSK 结果分别判定；MSK 只在该扩展创建额外带掩膜 COG，不改变小图“不得提交生成”的要求。保留 IMG／JPEG2000 原四份受管 COG 的缓存、任务／成果／物理删除和模式恢复；它们不替代 TIFF 自身断言。
+
+成功与失败均只清理本轮归属的命令、源和成果，保留首个业务失败及清理错误。源仍存在时先验证撤权／到期拒绝，再由本轮 NFS 夹具清理精确文件；业务资源与外层部署／Infra 分别核验，不以零残留替代未执行的授权、Range、像元或生成阶段。
+
+#### TIFF 分版本证据
+
+固定源码、实际 Job、失败、原始产物和清理结果由所链证据正文维护：
+
+| 范围 | 已验与待验边界 |
+| --- | --- |
+| MinIO 无定位小图 | [布局修复与历史验收](../evidence/资源读取与预览历史证据.md#tiff-cog-布局误判--有界格式与未知状态修复)保留 `9b4fc5f7ae529100b8d263fd1de4e392a41c9b97`／Job `123998948462` 的有界小图 Hosted；该轮显示范围按原记录使用，不由后来的像素渲染扩展追认。overview 负例另有 Linux 真实失败、取消／未执行及后续同修复完整补证，不用正向 Hosted 替代负例门禁。 |
+| MinIO 刷新＋NFS 单文件自然到期 | [固定 Hosted 证据](../evidence/资源读取与预览历史证据.md#nfs-tiff-渲染授权自然到期与清理--hosted-t4)：`81d36a8d7a14c158935e4b0baa0b0236dc819223`、Job `129907983192` 已核四格式回归、MinIO 单项刷新、NFS 灰阶／透明像素、403→206→403、到期详情 404 与完整清理。前两轮分别在 IMG 目录可见性、TIFF 完整名／时间戳比对失败，未执行的 TIFF 或 NFS 阶段不追认通过；本地文档门禁超时与后续 Linux 结果分别保留。 |
+| MSK 实现与本地专项 | [MSK 接入与分层门禁](../evidence/资源读取与预览历史证据.md#msk-纳入-tiff-完整组成2026-11-12)及[后续修复与实操记录](../evidence/资源读取与预览历史证据.md#tiff-285-已应用迁移被原位修改--system-启动阻断2026-11-12)保留本地普通用户 MSK 结果、迁移已应用后摘要漂移导致的启动失败、修复和各层门禁。原单文件／PAM 证据、本地 MSK 结果及确定性 runner 不替代新增自动化 Hosted。 |
+| MSK 首轮 Hosted 失败 | 上述后续记录中的产品源码 `b5f3bcdc9f7e636d195bb01d41b7e7f50c7b0ed5`、Job `131265320291` 以扫描计数断言失败。实际已识别三文件、两逻辑项，MSK 未漏识别；单文件 NFS 渲染／到期和其他格式有各自证据，但 MSK 的正式组成核验、成员 Range、COG／mask、撤权及成果删除均未执行。整套仍失败，`cleanup=passed`／Infra 零残留不改变业务结果。 |
+| MSK 计数修复后 | `c139308afd53ec26af6720e0cb763bb8f9471a32` 修正物理／逻辑计数判定，本地 `make test-manager-online-runner`、`make test-format-documentation` 通过；自然 Platform Job `131434665099` 在前端隔离测试失败，未进入 Manager 验收脚本门禁，不计其 CI 通过。修复后完整 MSK 自动化 Hosted 成功证据仍缺，须另行获准固定源码复验；本次整理不触发新运行。 |
+
+BigTIFF、任意布局／容量、Float64 地图渲染和专业影像生产不在这些限定结论内；其他历史截图、原件、Native／T1／T2 与真实 Hosted 按各自实际范围使用，不把局部通过扩大为当前源码或整轮 CI 全部通过。
 
 ### ENVI 双文件 COG（限定 Hosted 已验收）
 
