@@ -492,6 +492,23 @@ Chrome 真实租户“ADDP 开发管理员”页面核对任务配置源／目�
 
 四条 HMAC Webhook 的独立接收回执与正式 delivered 审计匹配，HTTP 均为 202：source opened `76ed71fe-d544-4551-900f-86f257df8b8c`、buffer opened `c1604487-15d9-4f36-87b0-0a1eb4685f04`、source resolved `b92b9b11-6eaa-46e1-852e-9e5d05dd633a`、buffer resolved `83dde275-c4fe-4ff8-a373-554214f44423`。关闭代表正式结束丢失任务，不表示旧事件自动恢复。
 
-后续新任务 4 创建返回 201，Start 返回 500。Owner 原始诊断明确为真实源表 `[id label scan_extra]`、夹具配置 `[id label]` 不符；CDC 完整字段映射要求见[现行数据库 CDC 契约](../../tasks/Transfer数据库CDC.md#类型系统与字段映射)。修复只让替代任务使用变更后的三个字段和新目标，物理断言同步核对三字段行集，不改变产品校验。原报告 `uncertain_mutation=true` 保持不改；新旧 CDC 与正常退出 Kafka 定义均正式删除并读回 404，Webhook 目标删除、接收端关闭通过。硬退出任务保留到部署销毁，最终 `cleanup=passed`、`infra_cleanup=zero_residuals`。重建与剩余 scheduled 断言仍须在后续整套运行通过。
+后续新任务 4 创建返回 201，Start 返回 500。Owner 原始诊断明确为真实源表 `[id label scan_extra]`、夹具配置 `[id label]` 不符；CDC 完整字段映射要求见[现行数据库 CDC 契约](../../tasks/Transfer数据库CDC.md#postgresql-源字段与编码)。修复只让替代任务使用变更后的三个字段和新目标，物理断言同步核对三字段行集，不改变产品校验。原报告 `uncertain_mutation=true` 保持不改；新旧 CDC 与正常退出 Kafka 定义均正式删除并读回 404，Webhook 目标删除、接收端关闭通过。硬退出任务保留到部署销毁，最终 `cleanup=passed`、`infra_cleanup=zero_residuals`。重建与剩余 scheduled 断言仍须在后续整套运行通过。
 
 探测修复对应自然 CI 已核对实际执行步骤：Platform Run `43434570707` 的 [Transfer Go T1／Job 131916244876](https://github.com/pampa0629/addp/actions/runs/43434570707/job/131916244876) success；Release Run `43434570660` 的 [Transfer PostgreSQL T2／Job 131916529453](https://github.com/pampa0629/addp/actions/runs/43434570660/job/131916529453) success。不据此外推两个父 workflow 的其他 Job。
+
+### CDC 风险第四轮整套验收通过（2026-11-13）
+
+固定 `8eaf4c8bc50c9c4bdb8c0ec46aa6c6786a42199c` 的 [Run 43440790922／Job 131937559799](https://github.com/pampa0629/addp/actions/runs/43440790922/job/131937559799) 与实际 Online gate 均 success。Artifact `14046273434` 的 SHA-256 为 `fb36d03c00ef64fd17a80e10c15f8b31f8441a2fa0261f95fba1906bf3801965`，下载摘要及 ZIP CRC 核对通过；原件、套件报告和外层报告保留于 `/tmp/addp-cdc-risk-hosted-43440790922/`。场景耗时 408788 毫秒，沿原 850 秒场景／900 秒分发预算，没有提高等待上限。
+
+- **故障触发**：本轮 Tenant 2 普通 User 的 CDC task 3／generation 1 暂停后 `committed/latest/earliest=10/10/0`；专用事件形成 `10/12/0`，精确截断自有主题后 `10/12/12`、recovery_state=lost，唯一打开 buffer incident 1。删除已核对本轮所有权且不活跃的源槽后，唯一打开 source incident 2。
+- **缺样保持**：暂停本轮 Business PostgreSQL 后取得有效期内的 unavailable，32 秒内连续 16 次核对同一已确认 source incident 保持 acknowledged、LastObservedAt 不变、未发送 resolved。解除暂停后源槽仍明确 missing，事件继续保持，不能把重新可读当成故障已消失。
+- **正式关闭与重建**：正式不可逆 Stop 后两个原 incident 均 resolved；清理确认后新建 task 4、独立新目标和完整三字段 initial snapshot，执行 `c2e402c9-acaa-4a3d-b7b8-f373ed0730b9`。新任务槽／WAL、延迟和缓冲健康、积压归零，原两个 incident 保持 resolved；三字段物理行集通过后再停止新任务。关闭代表结束丢失任务，替代任务代表重新建立同步，不表示旧事件自动恢复。
+- **通知实际送达**：source/buffer opened 分别为 `2aa9fba6-4724-481e-b2ef-49c7300bf02e`、`495589db-33aa-404a-bb71-8c1d9c972644`；source/buffer resolved 分别为 `05c25a80-cbd6-4d88-bcfe-64e9b465b6ad`、`5761f9ad-bcc6-42e2-82c3-8a248fd8af57`。四个 delivery UUID 与 event UUID 均各自唯一，回环接收端独立校验 HMAC、时间戳、任务／incident 身份并返回 202，正式投递审计逐条 delivered。没有以创建 outbox 或 mock 回执代替送达。
+
+套件 21 项 checks 全部通过，7 份真实 Console 回执（live、recovery、revocation、owner_unavailable、cdc_initial、cdc_growth、cdc_resumed）均 passed。原 CDC 暂停／恢复仍为积压 `0→3→0`，源码指纹与原生源槽／定向 JMX 对照保持。末尾 scheduled 任务的 basic／deep 两个扫描 UUID、原人类与父关联、对等 User 读取隔离及精确物理行集均通过；删除定义后的授权历史读取也通过。整套不能由第三轮的四项部分通过追认，第四轮重新取得了完整证据。
+
+领域阶段 task 5、4、3、2 正式删除并读回 404，两个 CDC Stop 均核对源槽／publication 已清理，Webhook 目标删除、接收端关闭，`uncertain_mutation=false`、cleanup_failures 为空。原硬退出 Kafka task 1 按既有场景留到部署销毁，因此领域 `residual_resources=expected_deployment_residuals=1`；外层 `cleanup=passed`、`infra_cleanup=zero_residuals`。个人开发环境不在故障范围内；本机只读状态核对确认 task46／task58 两个原逻辑槽及原活跃专用任务槽仍在，记录 `/tmp/addp-cdc-risk-local-final-status.log`。
+
+验证分层：当前 `make test-transfer-continuous-online-runner` 的 125 项与 System fixture Go 测试通过；Transfer Go T1 和标准 PostgreSQL T2 本地通过，前述自然 CI 对应实际 gate success。探测修复的 [Platform consistency／Job 131916244392](https://github.com/pampa0629/addp/actions/runs/43434570707/job/131916244392) 也实际执行并 success。本地 `make test-module MODULE=transfer` 则在平台 T0 的 public-origin 夹具两项 20 秒 TimeoutExpired 处退出 2，未运行完完整模块门禁；日志 `/tmp/addp-cdc-risk-transfer-module.log`，两项名称分别为 image_build_failure_cleans_registry_and_infra_before_app_start、initialization_failure_prevents_consumer_and_scene_execution。该无关范围未改动、未重跑，不将本地完整模块入口记为通过，也不外推父 CI workflow 的其他 Job。
+
+本轮覆盖 PostgreSQL 任务的 owned slot missing 与缓冲恢复范围丢失，不制造真实 WAL／磁盘耗尽；通知覆盖签名 Webhook 回环实收，不外推其他渠道、HA 或生产 T5。下一优先级仍为任务级捕获持续失败告警，持续延迟／积压阈值、任务历史趋势及共享组件长期容量另按原清单推进。
