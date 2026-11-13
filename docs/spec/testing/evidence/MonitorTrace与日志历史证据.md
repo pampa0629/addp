@@ -666,3 +666,11 @@ CI登记核验现有Platform frontend矩阵的Monitor项直接运行`test-monito
 点击一次该新按钮，Console实际跳到System模块实例日志页，公开URL及iframe均携带原module／instance／Trace及原两分钟窗口，没有滑动或扩窗。运行日志抽屉自动打开；北京时间22:02:15的查询显示1条：21:45:47、`GET /api/v1/manager/preview`、HTTP200、113ms，Trace与原值一致、Span `029d7467330fff01`、Request ID `3ce978e7-5f26-41ed-be72-413e9c27155a`。页面实例与原进程启动21:31:43匹配，日志窗口明确上界不含、采集完整性未确认。本轮以真实Console→Monitor空结果→System实例日志的单次页面路径确认入口可用；没有用日志替代未保留Span详情或扩大为完整链路／所有权限负例验收，中英文及撤权等受控回归仍沿上一节独立证据。
 
 本轮仅实际Safari读取及本证据追加，代码未变，复用上一节152项T1／38项调用链T3／构建结果，文档差异检查通过。没有业务重放、重试、采样／权限／配置修改、自动重启、Hosted、容量或定时；其他会话改动保持，本批尚未提交。
+
+## 2026-11-13 未保留 Trace 的实例日志入口：固定提交自然 Linux CI 补证
+
+实现、规范与Safari记录已随`f0a7df82f7dda6c952b0b7fe33d40b4384fef0da`发布至main。手动核对其push自然触发的[Platform CI 43233404697](https://github.com/pampa0629/addp/actions/runs/43233404697)中[Monitor frontend Job 131234329424](https://github.com/pampa0629/addp/actions/runs/43233404697/job/131234329424)：Job及`Run Monitor frontend gate`实际步骤均completed／success，Job于UTC 2026-11-12 16:01:08（北京时间2026-11-13 00:01:08）完成。本轮只跟进该专项Job，不以整个workflow或其他Job状态作结论。
+
+原始日志`/tmp/addp-trace-missing-logs-ci-monitor-131234329424.log`第118／222行核对checkout固定完整SHA，第260行确认从本批6个变更文件实际选中Monitor；第540—541行执行完整`make test-monitor-frontend`，不带本机`traces.spec.js`筛选。第702—707行152项T1全部通过，失败／取消／跳过均0；第716行启动823项浏览器回归，第1769—1779行逐项列出本批11项新增中英文日志入口、三档时间冻结、错误清除、权限／无实例和撤权迟到响应用例，第1816行823项全部通过（37.7分钟）；第1818—1819行实际进入Vite构建，第1849行构建成功（11.69秒）。第1853—1855行门禁汇总为Monitor frontend／selected true／success，不把仅排队或路径命中视作执行通过。Job元数据另保留于同目录`addp-trace-missing-logs-ci-monitor-131234329424.json`。
+
+此项补齐该固定提交的完整Linux Monitor前端门禁，与上一节实际Safari及本机定向回归分别记账；不扩大为Console完整门禁、全部CI、Hosted或原Manager预览已保留Span详情通过。原预览无可读保留链路及采集完整性未确认结论保持。本轮仅读取自然CI原始结果并追加此证据，文档差异检查通过；未手动重跑、改CI、重启、重放业务或运行Hosted／容量／定时，其他会话改动保持。
