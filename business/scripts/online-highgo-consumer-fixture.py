@@ -66,7 +66,9 @@ def write_private(path, content):
 
 
 def password():
-    return 'Aa1!' + secrets.token_hex(18)
+    # HighGo rejects its reserved "db" keyword even inside random passwords.
+    # This one-to-one alphabet substitution retains all 144 random bits.
+    return 'Aa1!' + secrets.token_hex(18).translate(str.maketrans({'b': 'x', 'd': 'y'}))
 
 
 def highgo_image():

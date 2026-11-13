@@ -102,6 +102,15 @@ class HighGoTimeoutBarrierTest(unittest.TestCase):
 
 
 class HighGoFixtureTest(unittest.TestCase):
+    def test_random_password_cannot_contain_highgo_reserved_db_keyword(self):
+        random_hex = 'db0123456789abcdefdb0123456789abcdef00'
+        with patch.object(FIXTURE.secrets, 'token_hex', return_value=random_hex) as random:
+            value = FIXTURE.password()
+        random.assert_called_once_with(18)
+        self.assertEqual(value, 'Aa1!' + random_hex.replace('b', 'x').replace('d', 'y'))
+        self.assertNotIn('db', value.lower())
+        self.assertEqual(len(set('0123456789abcdef'.translate(str.maketrans({'b': 'x', 'd': 'y'})))), 16)
+
     def test_startup_diagnostics_keep_owned_state_and_redact_all_credentials(self):
         values = {'admin': 'private-admin', 'business': 'private-business', 'postgres': 'private-postgres'}
         state = {'Status': 'exited', 'ExitCode': 1, 'OOMKilled': False, 'Error': ''}
