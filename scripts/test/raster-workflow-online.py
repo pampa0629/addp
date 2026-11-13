@@ -58,10 +58,13 @@ def validate_identity(client, tenant_id, *, required_permissions=PERMISSIONS):
             'principal_type': 'user', 'permissions_verified': sorted(required_permissions)}
 
 
-def wait_execution(client, module, execution_id, timeout, expected='success'):
+def wait_execution(client, module, execution_id, timeout, expected='success', *, on_observation=None):
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
-        execution = obj(client.request('GET', f'/api/v1/{module}/executions/{urllib.parse.quote(execution_id)}', (200,)).payload, 'execution')
+        response = client.request('GET', f'/api/v1/{module}/executions/{urllib.parse.quote(execution_id)}', (200,)).payload
+        if on_observation is not None:
+            on_observation(response)
+        execution = obj(response, 'execution')
         if execution.get('status') in support.TERMINAL_STATUSES:
             if execution['status'] != expected:
                 raise SuiteError(f'{module} execution ended with status {execution["status"]}, expected {expected}')

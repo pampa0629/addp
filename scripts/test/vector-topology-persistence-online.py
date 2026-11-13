@@ -955,7 +955,9 @@ def run_mixed_overlay_scenario(repository,env,client,physical_runner,browser_run
     def persist(stage):
         checkpoint['stage']=stage;path.write_text(json.dumps(checkpoint,ensure_ascii=False,indent=2)+'\n')
     persist('awaiting_execution')
-    execution=raster.wait_execution(client,'develop',identifier,remaining())
+    def observe_execution(response):
+        checkpoint['execution']=response;persist('execution_observed')
+    execution=raster.wait_execution(client,'develop',identifier,remaining(),on_observation=observe_execution)
     checkpoint['execution']=execution;persist('execution_returned')
     if execution.get('execution_id')!=identifier or type(execution.get('triggered_by')) is not int or execution['triggered_by']!=principal:raise SuiteError('mixed overlay execution actor differs')
     if obj(obj(execution.get('execution_config'),'mixed overlay frozen config').get('content'),'mixed overlay content').get('workflow_definition')!=workflow:raise SuiteError('mixed overlay frozen DAG differs')
@@ -1008,19 +1010,24 @@ def run_mixed_overlay_scenario(repository,env,client,physical_runner,browser_run
         if publication:publication.before_submit(identity,engine,runtime,sources,failed_workflow,failure=key)
         failed_id=raster.submit(client,runtime,failed_workflow)
         if publication:publication.record(dict(stage='execution_submitted',execution_id=failed_id,failure=key))
-        failed=raster.wait_execution(client,'develop',failed_id,remaining(),expected='failed')
+        failure={'key':key,'execution_id':failed_id,'definition':failed_workflow,'expected_diagnostic':diagnostic(spec),'source_lineage':[]}
+        checkpoint['pending_failure']=failure
+        def observe_failure(response):
+            failure['execution']=response;persist('failure_'+key+'_execution_observed')
+        failed=raster.wait_execution(client,'develop',failed_id,remaining(),expected='failed',on_observation=observe_failure)
         validate_failure(failed,failed_id,principal,spec)
         if obj(obj(failed.get('execution_config'),'mixed overlay failed config').get('content'),'mixed overlay failed content').get('workflow_definition')!=failed_workflow:raise SuiteError('mixed overlay failed frozen DAG differs')
-        failed_monitor=obj(client.request('GET',f'/api/v1/monitor/executions/by-execution-id/{failed_id}',(200,)).payload,'mixed overlay failed Monitor')
+        failure['monitor']=client.request('GET',f'/api/v1/monitor/executions/by-execution-id/{failed_id}',(200,)).payload
+        persist('failure_'+key+'_monitor_returned')
+        failed_monitor=obj(failure['monitor'],'mixed overlay failed Monitor')
         validate_failure(failed_monitor,failed_id,principal,spec)
         if failed_monitor.get('module')!='develop' or failed_monitor.get('error_details')!=failed.get('error_details'):raise SuiteError('mixed overlay failure Monitor differs')
-        failure={'key':key,'execution_id':failed_id,'definition':failed_workflow,'execution':failed,'monitor':failed_monitor,'expected_diagnostic':diagnostic(spec),'source_lineage':[]}
         for index in dict.fromkeys(spec[1:3]):
             source=sources[index]
             failed_graph=obj(client.request('GET',f'/api/v1/meta/lineage/graph?subject_kind=data_item&item_id={source["id"]}&direction=downstream',(200,)).payload,'mixed overlay failed source lineage')
             if failed_graph.get('truncated') is not False or any(e.get('relation_kind')=='derive' and e.get('evidence',{}).get('execution_id')==failed_id for e in array(failed_graph.get('edges'),'mixed overlay failed edges')):raise SuiteError('mixed overlay failure published derive or incomplete graph')
             failure['source_lineage'].append({'source_item_id':source['id'],'graph':failed_graph})
-        checkpoint['failures'].append(failure);persist('failure_'+key+'_verified')
+        checkpoint['failures'].append(failure);checkpoint.pop('pending_failure');persist('failure_'+key+'_verified')
         if scan_ids(client)!=expected_scans or physical_runner(repository,env)!=native:raise SuiteError('mixed overlay failure changed physical files or scans')
         failure['meta_after']=unchanged_meta()
     if len({f['execution_id'] for f in checkpoint['failures']})!=len(profile['failures']):raise SuiteError('mixed overlay failures require distinct executions')

@@ -2819,9 +2819,10 @@ class DifferenceOnlineTest(unittest.TestCase):
         self.assertNotIn('initializer-test-token',json.dumps(checkpoint))
 
     def test_difference_records_returned_execution_and_monitor_before_their_assertions(self):
-        for kind in ['execution','monitor']:
+        for kind in ['execution','monitor','unexpected_terminal']:
             client=DifferenceClient()
             if kind=='execution':client.success['triggered_by']=8
+            elif kind=='unexpected_terminal':client.success['status']='failed'
             else:
                 request=client.request
                 def bad_monitor(method,path,expected,body=None):
@@ -2831,10 +2832,22 @@ class DifferenceOnlineTest(unittest.TestCase):
                 client.request=bad_monitor
             with self.subTest(kind=kind),self.assertRaises(m.SuiteError):self.run_case(client)
             checkpoint=json.loads((Path(self.directory.name)/'topology-difference-checkpoint.json').read_text())
-            self.assertEqual(checkpoint['stage'],'execution_returned'if kind=='execution'else'monitor_returned')
+            self.assertEqual(checkpoint['stage'],{'execution':'execution_returned','monitor':'monitor_returned','unexpected_terminal':'execution_observed'}[kind])
             self.assertIn('execution',checkpoint)
             if kind=='monitor':self.assertEqual(checkpoint['monitor']['status'],'failed')
+            if kind=='unexpected_terminal':self.assertEqual(checkpoint['execution']['status'],'failed')
             self.assertEqual(sum(method=='POST'and path.endswith('/develop/executions')for method,path,_ in client.calls),1)
+
+    def test_difference_unexpected_negative_terminal_keeps_original_response_without_retry(self):
+        client=DifferenceClient();client.mutate_failed=lambda value:value.update(status='success')
+        with self.assertRaisesRegex(m.SuiteError,'expected failed'):self.run_case(client)
+        checkpoint=json.loads((Path(self.directory.name)/'topology-difference-checkpoint.json').read_text())
+        self.assertEqual(checkpoint['pending_failure']['execution']['status'],'success')
+        self.assertEqual(checkpoint['pending_failure']['key'],'difference-id')
+        self.assertEqual(checkpoint['failures'],[])
+        self.assertEqual(sum(method=='POST'and path.endswith('/develop/executions')for method,path,_ in client.calls),2)
+        journal=json.loads((Path(self.directory.name)/'topology-difference-publication.json').read_text())
+        self.assertEqual(journal['cleanup']['result'],'passed');self.assertEqual(journal['pending_grants'],[])
 
     def test_difference_stages_keep_basic_grants_approval_and_deep_separate(self):
         client=DifferenceClient();report=self.run_case(client)
