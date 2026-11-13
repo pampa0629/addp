@@ -14,7 +14,7 @@ const deployments = [
   { id: 'segment-deployment', status: 'active', operations: ['segmentation'], modalities: ['image'] }
 ]
 
-async function openSettings(page, { writable = false, failRead = false } = {}) {
+async function openSettings(page, { writable = false, unavailablePath } = {}) {
   const context = { type: 'platform' }
   const permissions = ['manager.configuration.read', 'inference.profile.read', 'inference.deployment.read']
   if (writable) permissions.push('manager.configuration.update')
@@ -26,6 +26,7 @@ async function openSettings(page, { writable = false, failRead = false } = {}) {
     ['/api/v1/inference/model-deployments', { data: deployments }]
   ])
   const writes = []
+  const settingsReads = []
   await page.addInitScript(() => localStorage.setItem('addp-lang', 'zh-cn'))
   await page.route('**/api/v1/**', route => {
     const request = route.request()
@@ -36,7 +37,8 @@ async function openSettings(page, { writable = false, failRead = false } = {}) {
       return route.fulfill({ json: { context, authorization: { role_assignments: [{ scope: context, permissions }] } } })
     }
     if (request.method() === 'GET' && reads.has(path)) {
-      if (path === policyPath && failRead) return route.fulfill({ status: 503, json: { error: 'settings_unavailable' } })
+      if (path.startsWith(settingsPath)) settingsReads.push(path)
+      if (path === unavailablePath) return route.fulfill({ status: 503, json: { error: 'settings_unavailable' } })
       return route.fulfill({ json: reads.get(path) })
     }
     if (path.startsWith(`${settingsPath}/`) && request.method() !== 'GET') {
@@ -51,12 +53,12 @@ async function openSettings(page, { writable = false, failRead = false } = {}) {
     return route.fulfill({ status: 403, json: { error: 'unexpected_request' } })
   })
   await page.goto('/settings/embedding')
-  return writes
+  return { writes, settingsReads }
 }
 
-test('platform reader can view both settings tabs with no editable fields or writes', async ({ page }) => {
-  const writes = await openSettings(page)
-  const panel = page.getByRole('tabpanel')
+test('platform reader can view both settings pages with no editable fields or writes', async ({ page }) => {
+  const { writes, settingsReads } = await openSettings(page)
+  const panel = page.locator('main.embedding-configuration')
   const save = panel.getByRole('button', { name: '保存配置', exact: true })
   const distance = panel.getByRole('spinbutton', { name: '最大余弦距离' })
   await expect(distance).toHaveValue('0.42')
@@ -64,21 +66,30 @@ test('platform reader can view both settings tabs with no editable fields or wri
   await expect(panel.getByText('Embedding Profile · embedding · v1', { exact: true })).toBeVisible()
   await expect(panel.getByRole('combobox')).toHaveCount(0)
   await expect(save).toBeDisabled()
+  expect(settingsReads.toSorted()).toEqual([policyPath, embeddingBinding].sort())
 
-  await page.getByRole('tab', { name: '影像分割', exact: true }).click()
+  await page.getByRole('menuitem', { name: '影像分割', exact: true }).click()
+  await expect(page).toHaveURL(/tab=segmentation$/)
   await expect(panel.getByText('Segment Profile', { exact: true })).toBeVisible()
+  await expect(panel.getByText('绑定版本 9', { exact: true })).toBeVisible()
+  await expect(panel.getByRole('spinbutton')).toHaveCount(0)
+  expect(settingsReads.slice(2)).toEqual([segmentBinding])
   await expect(panel.getByRole('combobox')).toHaveCount(0)
   await expect(save).toBeDisabled()
   expect(writes).toEqual([])
 })
 
 test('platform editor can save embedding policy and both scenario bindings after reading', async ({ page }) => {
-  const writes = await openSettings(page, { writable: true })
-  const panel = page.getByRole('tabpanel')
+  const { writes } = await openSettings(page, { writable: true })
+  const panel = page.locator('main.embedding-configuration')
   const save = panel.getByRole('button', { name: '保存配置', exact: true })
   const distance = panel.getByRole('spinbutton', { name: '最大余弦距离' })
   await expect(distance).toHaveValue('0.42')
   await distance.fill('0.63')
+  await page.getByRole('menuitem', { name: '影像分割', exact: true }).click()
+  await page.getByRole('dialog', { name: '有未保存的修改' }).getByRole('button', { name: '继续编辑' }).click()
+  await expect(page).toHaveURL(/\/settings\/embedding$/)
+  await expect(distance).toHaveValue('0.63')
   await save.click()
   await expect(distance).toHaveValue('0.63')
   await expect(page.getByText('绑定版本 5', { exact: true })).toBeVisible()
@@ -88,7 +99,7 @@ test('platform editor can save embedding policy and both scenario bindings after
     { path: embeddingBinding, method: 'PUT', payload: { version: 4, model_profile_id: profiles[0].id } }
   ]))
 
-  await page.getByRole('tab', { name: '影像分割', exact: true }).click()
+  await page.getByRole('menuitem', { name: '影像分割', exact: true }).click()
   await expect(panel.getByRole('combobox')).toBeEnabled()
   await save.click()
   await expect.poll(() => writes.slice(2)).toEqual([
@@ -96,15 +107,16 @@ test('platform editor can save embedding policy and both scenario bindings after
   ])
 })
 
-test('a failed settings read prevents a platform editor from saving either tab', async ({ page }) => {
-  const writes = await openSettings(page, { writable: true, failRead: true })
+test('an unavailable embedding policy does not block segmentation settings', async ({ page }) => {
+  const { writes } = await openSettings(page, { writable: true, unavailablePath: policyPath })
   const save = page.getByRole('button', { name: '保存配置', exact: true })
-  await expect(page.getByText('加载向量化配置失败', { exact: true })).toBeVisible()
+  await expect(page.getByText('加载配置失败', { exact: true })).toBeVisible()
   await expect(page.getByText(/^绑定版本 /)).toHaveCount(0)
   await expect(page.getByRole('spinbutton')).toHaveCount(0)
   await expect(save).toHaveCount(0)
-  await page.getByRole('tab', { name: '影像分割', exact: true }).click()
-  await expect(page.getByRole('combobox')).toHaveCount(0)
-  await expect(save).toHaveCount(0)
+
+  await page.getByRole('menuitem', { name: '影像分割', exact: true }).click()
+  await expect(page.getByRole('combobox')).toBeEnabled()
+  await expect(save).toBeEnabled()
   expect(writes).toEqual([])
 })

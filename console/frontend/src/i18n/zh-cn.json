@@ -217,6 +217,8 @@
         "inference": "推理场景",
         "executionPolicy": "执行策略",
         "quickViewPolicy": "快显策略",
+        "embedding": "向量化",
+        "segmentation": "影像分割",
         "baseMap": "底图服务",
         "continuousPolicy": "连续任务策略",
         "runtimePolicy": "运行策略",

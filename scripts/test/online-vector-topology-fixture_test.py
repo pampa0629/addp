@@ -216,10 +216,8 @@ class TopologyFixtureTest(unittest.TestCase):
             self.assertFalse(root.exists());self.assertFalse(exports)
             self.assertFalse((secret/'topology-nfs-engine.json').exists())
 
-
     def test_private_staging_rejects_readonly_export(self):
         with self.assertRaises(m.FixtureError):m.NFSExport('topology',None,access_mode='ro',publication_staging=True)
-
 
     def test_topology_scope_cannot_clean_a_contour_or_foreign_root(self):
         with tempfile.TemporaryDirectory() as directory:

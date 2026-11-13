@@ -1,3 +1,6 @@
+export const MANAGER_INFERENCE_CONFIGURATION_ROUTE = '/manager/settings/embedding'
+export const MANAGER_SEGMENTATION_CONFIGURATION_ROUTE = `${MANAGER_INFERENCE_CONFIGURATION_ROUTE}?tab=segmentation`
+
 export function splitConsoleRoute(fullPath) {
   const route = String(fullPath || '')
   const queryIndex = route.indexOf('?')

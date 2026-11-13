@@ -144,6 +144,9 @@ func SetupRouter(db *gorm.DB, cfg *config.Config) *gin.Engine {
 	}); err != nil {
 		panic(err)
 	}
+	if err := registerManagerImageSegmentationRoutes(api, runtime, fulfillmentService); err != nil {
+		panic(err)
+	}
 	if err := RegisterEngineAccessSourceReadCheckRoutes(api, runtime, &EngineAccessSourceReadCheckHandler{service: fulfillmentService}); err != nil {
 		panic(err)
 	}

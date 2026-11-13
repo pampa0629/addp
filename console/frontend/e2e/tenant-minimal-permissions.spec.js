@@ -377,8 +377,23 @@ test('configuration hub omits entries whose page needs an ungranted reference ca
   const businessRequests = await openAsTenant(page, '/configuration', [
     'agent.configuration.read', 'develop.configuration.read'
   ], { configurationEntries: entries })
-  await expect(page.locator('.entries-table .el-table__row')).toHaveCount(1)
-  await expect(page.locator('.entries-table .el-table__row')).toContainText('develop')
+  const configuration = page.getByTestId('configuration-management')
+  const title = configuration.getByRole('heading', { level: 1 })
+  const rows = configuration.locator('.entries-table .el-table__row')
+  await expect(title).toHaveText('配置管理')
+  await expect(rows).toHaveCount(1)
+  await expect(rows).toContainText('develop')
+
+  await page.route('**/api/v1/develop/settings/execution-policy', route => {
+    expect(route.request().method()).toBe('GET')
+    return route.fulfill({ json: { default_query_timeout: 30 } })
+  })
+  await rows.click()
+  await expect(page).toHaveURL(/\/configuration\/develop$/)
+  await expect(title).toHaveText('数据开发')
+  await page.getByRole('button', { name: 'CN', exact: true }).click()
+  await page.getByRole('menuitem', { name: 'English', exact: true }).click()
+  await expect(title).toHaveText('Data Development')
   expect(businessRequests).toEqual([])
 })
 

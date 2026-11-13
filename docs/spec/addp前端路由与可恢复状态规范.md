@@ -92,6 +92,7 @@ Develop TaskProvider 的 canonical 前端路由为：
 | System | 部署清单接入 | `/system/host-admission`；主机确认后唯一 query `node_id` 保存稳定身份，刷新重新读取；唯一 Console 编排入口，不将导入文件、未保存来源或部署参数写入 URL；主机保存/选择后传递当前稳定 ID 到 Monitor，来源仅经下述内存草稿交接 |
 | System | 引擎纳管 | `/system/engine-deployments` 与 `/system/engine-deployments/:deployment_id`；`scope/search/page/page_size` 恢复列表上下文，默认 Infra、第 1 页、每页 20 条省略。Business 显式使用 `scope=business`。切换来源范围重置页码，保留已提交搜索和每页条数；详情返回保留列表条件。列表 API 始终按所选来源范围筛选，不使用租户或名称推断来源 |
 | Manager | 数据资源与预览子视图 | `locator`、`tab` |
+| Manager | 数据管理的模型配置 | `/manager/settings/embedding` 打开向量化，`tab=segmentation` 打开影像分割。Console 在数据管理配置内展示这两个同级页签，Manager 根据路由渲染对应场景表单。 |
 | Manager | 数据任务工作区 | 分类使用 `/manager/tasks/quick-view`、`/manager/tasks/spatial`、`/manager/tasks/embedding` 三个 canonical path；query 只保存 `task_type`、向量化页内 `tab`、`task_id`、`create=1` 及页面定义的创建来源参数，默认页内任务视图省略 `tab` |
 | Develop | SQL、工作流、Notebook 创建或编辑 | `action`、`id` |
 | Monitor | 平台监测目标管理 | 列表 `/monitor/monitoring-targets`、新建 `/monitor/monitoring-targets/new`、详情 `/monitor/monitoring-targets/:id`；query 为 `page/page_size`，新建另可带稳定主机 `node_id`；默认第 1 页及每页 20 条省略；新建成功 replace 为详情，关闭详情 replace 回列表并保留分页；未保存来源端点不进入 URL |

@@ -351,3 +351,5 @@ Manager 的 image_segmentation 场景使用一个 Profile，Deployment 声明 se
 本机上游契约为带 Bearer 凭据的 `POST /segment`。Inference 将用户与源窗口摘要和 tenant、Profile 版本、Deployment 合成不透明 scope，传给上游；上游以 scope 校验随机会话句柄。prepare 携带 base64 PNG，prompt 的几何提示使用点序列和标签（0 背景、1 前景、2／3 一对框角），类别提示使用 text。返回的每个 mask 包含窗口像素 x、y、width、height、局部黑白 PNG 及模型分数。同一窗口短时间复用，同一模型服务只监听回环；本机上游不承担 System、Manager 或 Meta 职责。
 
 Manager 将 image_segmentation 绑定到单独 Profile，场景管理使用 `/api/v1/manager/settings/inference-bindings/{scenario}`。当前实现的有界读取预算为压缩源 64 MiB、解码 32 Mi 像素、单边 32768 像素，单次模型输入最长边 1024；取窗从同一经授权的源像素解码，不包含底图，第一版不处理依赖附属文件、多页切换或无限尺寸的整幅 COG。JPEG／GeoTIFF 内容准入以授权上下文规范为准。真实浏览器验收以打开分割面板、切换窗口、点击到下一次画布绘制的耗时为依据。受控上游、模型进程与页面夹具分别验证契约，均不能代替在线用户链路。
+
+Manager 的[影像实例分割任务](tasks/模块任务契约.md#影像实例分割)复用同一 Profile、操作协议和调用身份。任务的会话范围由本次 execution 隔离。持久矢量结果及授权均由 Manager 与 System 的任务契约负责。

@@ -6,7 +6,8 @@ const targetBackedSourceTypes = new Set([
 
 const spatialBusinessTypes = new Set([
   'vector_tile_set_generation',
-  'raster_mosaic_generation'
+  'raster_mosaic_generation',
+  'image_segmentation'
 ])
 
 const objectValue = value => value && typeof value === 'object' && !Array.isArray(value) ? value : {}
@@ -40,7 +41,7 @@ export function derivedTaskTargetEngineID(task) {
 
 export function derivedTaskSourceFormat(task) {
   const source = derivedTaskSource(task)
-  return String(source.format || source.source_format || '').trim()
+  return String(source.format || source.source_format || source.composition?.format || '').trim()
 }
 
 export function derivedTaskSourceSize(task) {
@@ -60,7 +61,7 @@ export function derivedTaskTargetCatalogIdentity(task, parseLocator) {
   if (!spatialBusinessTypes.has(task?.task_type)) return null
   const target = derivedTaskTarget(task)
   const engineId = derivedTaskTargetEngineID(task)
-  const storageLocator = String(target.storage_locator || '').trim()
+  const storageLocator = String(target.storage_locator || target.locator || '').trim()
   if (!engineId || !storageLocator || typeof parseLocator !== 'function') return null
 
   const parsed = parseLocator(storageLocator)

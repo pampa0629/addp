@@ -14,7 +14,7 @@
         <el-dropdown @command="handleCommand">
           <span class="user-dropdown">
             <el-icon><User /></el-icon>
-            {{ authStore.user?.username || t('develop.layout.user') }}
+            {{ authStore.user?.display_name || authStore.user?.local_account?.username || t('develop.layout.user') }}
             <el-icon class="el-icon--right"><arrow-down /></el-icon>
           </span>
           <template #dropdown>

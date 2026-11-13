@@ -2739,7 +2739,6 @@ class DifferenceInitializer:
         return SimpleNamespace(payload=copy.deepcopy(data))
 
 
-
 class DifferenceClient(OverlayClient):
     def __init__(self):
         super().__init__(m.fixture.DIFFERENCE_CASE);self.scans=[];self.grants={};self.issuer=DifferenceInitializer(self)

@@ -4,6 +4,7 @@ const read = 'manager.configuration.read'
 const update = 'manager.configuration.update'
 const quickViewPath = '/api/v1/manager/settings/quick-view-policy'
 const baseMapPath = '/api/v1/manager/settings/base-map/providers'
+const embeddingPermissions = ['inference.profile.read', 'inference.deployment.read']
 const policy = {
   version: 7,
   direct_flatgeobuf_max_rows: 3500,
@@ -12,7 +13,7 @@ const policy = {
   raster_mosaic_generation_timeout_seconds: 8100
 }
 
-async function openConfiguration(page, scope, permissions, { failRead = false } = {}) {
+async function openConfiguration(page, scope, permissions, { failRead = false, startPath = '/configuration/manager' } = {}) {
   const requests = []
   const writes = []
   const context = scope === 'tenant' ? { type: scope, tenant_id: '3' } : { type: scope }
@@ -31,6 +32,14 @@ async function openConfiguration(page, scope, permissions, { failRead = false } 
           context,
           authorization: { role_assignments: [{ scope: context, permissions }] }
         } })
+      case '/api/v1/system/configuration-management/entries':
+        return route.fulfill({ json: [{
+          id: 'manager.configuration',
+          owner_module: 'manager',
+          scope_types: ['platform_default_with_tenant_override'],
+          frontend_route: '/configuration/manager',
+          available: true
+        }] })
       case baseMapPath:
         requests.push([method, pathname])
         if (method === 'GET' && permissions.includes(read)) return route.fulfill({ json: { data: [] } })
@@ -53,15 +62,16 @@ async function openConfiguration(page, scope, permissions, { failRead = false } 
     }
     return route.fulfill({ status: 403, json: { error: 'unexpected_business_request' } })
   })
-  await page.goto('/configuration/manager')
+  await page.goto(startPath)
   return { requests, writes }
 }
 
-test('tenant with Manager configuration permissions only requests the base map settings', async ({ page }) => {
-  const { requests } = await openConfiguration(page, 'tenant', [read, update])
+test('tenant with configuration and model read permissions only requests the base map settings', async ({ page }) => {
+  const { requests } = await openConfiguration(page, 'tenant', [read, update, ...embeddingPermissions])
   await expect(page.getByRole('tab', { name: '底图服务', exact: true })).toHaveAttribute('aria-selected', 'true')
   await expect(page.getByRole('row').filter({ hasText: 'osm' })).toBeVisible()
   await expect(page.getByRole('tab', { name: '快显策略', exact: true })).toHaveCount(0)
+  await expect(page.getByRole('tab', { name: /^(向量化|影像分割)$/ })).toHaveCount(0)
   expect(requests).toEqual([['GET', baseMapPath]])
 })
 
@@ -82,7 +92,73 @@ test('platform reader sees the saved policy with editing disabled', async ({ pag
   await expect(fields.first()).toHaveValue('3500')
   for (const field of await fields.all()) await expect(field).toBeDisabled()
   await expect(page.getByRole('button', { name: '保存', exact: true })).toBeDisabled()
+  await expect(page.getByRole('tab', { name: /^(向量化|影像分割)$/ })).toHaveCount(0)
   expect(requests).toEqual([['GET', quickViewPath]])
+})
+
+async function stubManagerInferencePage(page, documentReady) {
+  await page.route(url => url.pathname === '/module-ui/manager/settings/embedding', async route => {
+    await documentReady
+    const segmentation = new URL(route.request().url()).searchParams.get('tab') === 'segmentation'
+    await route.fulfill({
+      contentType: 'text/html',
+      body: segmentation ? '<h1>Manager segmentation page</h1>' : '<h1>Manager embedding page</h1>'
+    })
+  })
+}
+
+test('platform reader stays in Manager configuration when switching between its two inference tabs', async ({ page }) => {
+  const { promise: documentReady, resolve: releaseDocument } = Promise.withResolvers()
+  await stubManagerInferencePage(page, documentReady)
+  await openConfiguration(page, 'platform', [read, ...embeddingPermissions], { startPath: '/configuration' })
+  await page.getByRole('row', { name: /Manager 配置/ }).click()
+  const configuration = page.getByTestId('configuration-management')
+  const managerHeading = configuration.getByRole('heading', { level: 1, name: '数据管理' })
+  const embeddingTab = configuration.getByRole('tab', { name: '向量化', exact: true })
+  const segmentationTab = configuration.getByRole('tab', { name: '影像分割', exact: true })
+  const quickViewTab = configuration.getByRole('tab', { name: '快显策略', exact: true })
+  const iframe = configuration.frameLocator('iframe.module-iframe')
+  await expect(managerHeading).toBeVisible()
+  await expect(embeddingTab).toBeVisible()
+  try {
+    await embeddingTab.click()
+    await expect(configuration.locator('iframe.module-iframe')).toHaveCSS('visibility', 'hidden')
+  } finally {
+    releaseDocument()
+  }
+  await expect(page).toHaveURL(/\/manager\/settings\/embedding$/)
+  await expect(managerHeading).toBeVisible()
+  await expect(page.getByRole('menuitem', { name: '配置管理', exact: true })).toHaveClass(/\bis-active\b/)
+  await expect(embeddingTab).toHaveAttribute('aria-selected', 'true')
+  await expect(iframe.getByRole('heading', { name: 'Manager embedding page' })).toBeVisible()
+  const tabBounds = await embeddingTab.boundingBox()
+  const frameBounds = await configuration.locator('iframe.module-iframe').boundingBox()
+  expect(tabBounds.y + tabBounds.height).toBeLessThanOrEqual(frameBounds.y)
+  await segmentationTab.click()
+  await expect(page).toHaveURL(/\/manager\/settings\/embedding\?tab=segmentation$/)
+  await expect(segmentationTab).toHaveAttribute('aria-selected', 'true')
+  await expect(iframe.getByRole('heading', { name: 'Manager segmentation page' })).toBeVisible()
+  await page.goBack()
+  await expect(embeddingTab).toHaveAttribute('aria-selected', 'true')
+  await expect(iframe.getByRole('heading', { name: 'Manager embedding page' })).toBeVisible()
+  await quickViewTab.click()
+  await expect(page).toHaveURL(/\/configuration\/manager$/)
+  await expect(quickViewTab).toHaveAttribute('aria-selected', 'true')
+  await expect(configuration.locator('iframe')).toHaveCount(0)
+  await page.goBack()
+  await expect(embeddingTab).toHaveAttribute('aria-selected', 'true')
+})
+
+test('platform reader opening the segmentation URL directly can return to the configuration list', async ({ page }) => {
+  await stubManagerInferencePage(page)
+  await openConfiguration(page, 'platform', [read, ...embeddingPermissions], { startPath: '/manager/settings/embedding?tab=segmentation' })
+  const configuration = page.getByTestId('configuration-management')
+  await expect(configuration.getByRole('heading', { level: 1, name: '数据管理' })).toBeVisible()
+  await expect(configuration.getByRole('tab', { name: '影像分割', exact: true })).toHaveAttribute('aria-selected', 'true')
+  await expect(configuration.frameLocator('iframe.module-iframe').getByRole('heading', { name: 'Manager segmentation page' })).toBeVisible()
+  await configuration.getByRole('button', { name: '返回配置入口' }).click()
+  await expect(page).toHaveURL(/\/configuration$/)
+  await expect(configuration.getByRole('row', { name: /Manager 配置/ })).toBeVisible()
 })
 
 test('platform editor saves the loaded version and the four quick-view settings', async ({ page }) => {

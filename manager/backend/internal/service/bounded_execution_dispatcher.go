@@ -14,6 +14,7 @@ import (
 // BoundedExecutionDispatcher is the single Manager domain dispatch path used
 // by the Backend-embedded supervisor. HTTP handlers only enqueue executions.
 type BoundedExecutionDispatcher struct {
+	imageSegmentation      *ImageSegmentationTaskService
 	tileCache              *TileCacheTaskService
 	vectorTileSet          *VectorTileSetTaskService
 	vectorMaterializedView *VectorMaterializedViewTaskService
@@ -54,6 +55,11 @@ func NewBoundedExecutionDispatcher(
 	}
 }
 
+func (d *BoundedExecutionDispatcher) WithImageSegmentation(svc *ImageSegmentationTaskService) *BoundedExecutionDispatcher {
+	d.imageSegmentation = svc
+	return d
+}
+
 func (d *BoundedExecutionDispatcher) RunClaimedExecution(ctx context.Context, execution *commonExecution.TaskExecution, lease commonExecution.Lease) error {
 	if d == nil || execution == nil || execution.ExecutionID != lease.ExecutionID || execution.TenantID != lease.TenantID {
 		return fmt.Errorf("claimed Manager execution and lease are inconsistent")
@@ -73,6 +79,11 @@ func (d *BoundedExecutionDispatcher) RunClaimedExecution(ctx context.Context, ex
 	tenantID := uint(execution.TenantID)
 	ctx = commonExecution.ContextWithLease(ctx, lease)
 	switch execution.TaskType {
+	case commonExecution.TaskTypeImageSegmentation:
+		if d.imageSegmentation == nil {
+			return fmt.Errorf("image segmentation task service is unavailable")
+		}
+		return d.imageSegmentation.Run(ctx, taskID, execution, lease)
 	case commonExecution.TaskTypeVectorTileCacheGeneration:
 		task, err := d.tileCache.tileCacheRepo.GetTask(ctx, taskID, tenantID)
 		if err != nil || task == nil {

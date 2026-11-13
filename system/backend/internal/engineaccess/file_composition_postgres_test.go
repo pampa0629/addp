@@ -176,6 +176,9 @@ func exerciseFileCompositionGrants(t *testing.T, db *gorm.DB, tenantID, adminID 
 				if format == "geojson" {
 					readerPermissions = append(readerPermissions, "develop.task.execute", "develop.data_read.execute")
 				}
+				if kind == "minio" && format == "tiff" {
+					readerPermissions = append(readerPermissions, "manager.data_item.create")
+				}
 				readRole, err := roles.CreateRole(ctx, iam.CreateTenantRoleInput{TenantID: tenantID, RoleKey: "custom.file_grant_reader_" + kind + "_" + format, Name: "File reader", PermissionKeys: readerPermissions, ActorPrincipalID: adminID})
 				if err != nil {
 					t.Fatal(err)
@@ -257,6 +260,9 @@ func exerciseFileCompositionGrants(t *testing.T, db *gorm.DB, tenantID, adminID 
 				if format == "geojson" {
 					exerciseDevelopGeoJSONFileSource(t, db, service, tenantID, reader, current)
 					return
+				}
+				if kind == "minio" && format == "tiff" {
+					exerciseImageSegmentationAccess(t, db, service, tenantID, reader, current)
 				}
 				if format != "glb" && format != "filegdb" && format != "tiff" {
 					exerciseManagerFileAuthorization(t, db, service, tenantID, reader, session.AccessToken, actor, engine.ID, format+".file-composition.invalid", current)

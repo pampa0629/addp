@@ -30,6 +30,7 @@ import (
 //
 //	GET /api/v1/manager/task-provider/tasks/:task_type/:id, GET /api/v1/manager/task-provider/executions/:execution_id
 type TaskProviderHandler struct {
+	imageSegmentationTaskSvc      *service.ImageSegmentationTaskService
 	embeddingTaskSvc              *service.EmbeddingTaskService
 	tileCacheTaskSvc              *service.TileCacheTaskService
 	vectorTileSetTaskSvc          *service.VectorTileSetTaskService
@@ -70,6 +71,10 @@ func NewTaskProviderHandler(
 
 func (h *TaskProviderHandler) SetModel3DTilesTaskService(model3DTilesTaskSvc *service.Model3DTilesTaskService) {
 	h.model3DTilesTaskSvc = model3DTilesTaskSvc
+}
+
+func (h *TaskProviderHandler) SetImageSegmentationTaskService(svc *service.ImageSegmentationTaskService) {
+	h.imageSegmentationTaskSvc = svc
 }
 
 func (h *TaskProviderHandler) SetVectorTileSetTaskService(vectorTileSetTaskSvc *service.VectorTileSetTaskService) {
@@ -151,6 +156,11 @@ type derivedTaskService interface {
 
 func (h *TaskProviderHandler) derivedTaskService(taskType string) derivedTaskService {
 	switch taskType {
+	case commonExecution.TaskTypeImageSegmentation:
+		if h.imageSegmentationTaskSvc != nil {
+			return h.imageSegmentationTaskSvc
+		}
+		return nil
 	case commonExecution.TaskTypeVectorTileCacheGeneration:
 		if h.tileCacheTaskSvc == nil {
 			return nil
@@ -1368,6 +1378,22 @@ func (h *TaskProviderHandler) TaskDetail(c *gin.Context) {
 
 	ctx := c.Request.Context()
 	switch taskType {
+	case commonExecution.TaskTypeImageSegmentation:
+		if h.imageSegmentationTaskSvc == nil {
+			c.Status(http.StatusServiceUnavailable)
+			return
+		}
+		task, err := h.imageSegmentationTaskSvc.GetByID(ctx, uint(id), tenantID)
+		if err != nil {
+			managerError(c, http.StatusInternalServerError, manageri18n.MsgQueryFailed)
+			return
+		}
+		if task == nil {
+			c.Status(http.StatusNotFound)
+			return
+		}
+		h.respondManagerTaskDetail(c, taskType, task)
+
 	case commonExecution.TaskTypeVectorTileCacheGeneration:
 		task, err := h.tileCacheTaskSvc.GetByID(ctx, uint(id), tenantID)
 		if err != nil {
@@ -1547,6 +1573,21 @@ func (h *TaskProviderHandler) respondManagerTaskDetail(c *gin.Context, taskType 
 
 func managerTaskExecutionContract(taskType string) taskprovider.ExecutionContract {
 	contract := taskprovider.EmptyExecutionContract()
+	if taskType == commonExecution.TaskTypeImageSegmentation {
+		contract.OutputSchema = map[string]interface{}{
+			"type": "object", "additionalProperties": false, "required": []string{"resource"},
+			"properties": map[string]interface{}{
+				"resource": map[string]interface{}{
+					"type": "object", "additionalProperties": false, "required": []string{"locator", "type", "write_mode"},
+					"properties": map[string]interface{}{
+						"locator":    map[string]interface{}{"type": "string"},
+						"type":       map[string]interface{}{"type": "string", "enum": []string{"object"}},
+						"write_mode": map[string]interface{}{"type": "string", "enum": []string{"create"}},
+					},
+				},
+			},
+		}
+	}
 	if !managerTaskRequiresExistingResultAction(taskType) {
 		return contract
 	}
@@ -1719,6 +1760,17 @@ func (h *TaskProviderHandler) executeTask(c *gin.Context, taskProvider bool) {
 	executionStatus := commonExecution.ExecutionStatusPending
 
 	switch taskType {
+	case commonExecution.TaskTypeImageSegmentation:
+		if h.imageSegmentationTaskSvc == nil {
+			c.Status(http.StatusServiceUnavailable)
+			return
+		}
+		if !taskProvider {
+			facts, _ := commonauth.AuthContextFromGin(c)
+			ctx = commonExecution.WithUserOrigin(ctx, facts)
+		}
+		executionID, err = h.imageSegmentationTaskSvc.Execute(ctx, uint(id), tenantID, triggerType, source, parentExecID)
+
 	case commonExecution.TaskTypeVectorTileCacheGeneration:
 		executionID, err = h.tileCacheTaskSvc.Execute(ctx, uint(id), tenantID, triggerType, source, parentExecID, overwriteExistingResult)
 	case commonExecution.TaskTypeVectorTileSetGeneration:
@@ -1773,6 +1825,10 @@ func (h *TaskProviderHandler) executeTask(c *gin.Context, taskProvider bool) {
 	if err != nil {
 		if errors.Is(err, commonClient.ErrManagerPreviewCredentialRejected) {
 			managerError(c, http.StatusUnauthorized, commoni18n.MsgUnauthorized)
+			return
+		}
+		if errors.Is(err, commonapi.ErrBadRequest) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return
 		}
 		if errors.Is(err, commonapi.ErrForbidden) {

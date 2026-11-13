@@ -1,39 +1,37 @@
 <template>
-  <main class="embedding-configuration">
+  <main v-loading="loading" class="embedding-configuration" :class="{ 'embedding-configuration--embedded': isEmbedded }">
     <header class="page-header">
       <div>
-        <h1>{{ t('manager.embeddingConfiguration.title') }}</h1>
+        <h1 v-if="!isEmbedded">{{ t(isSegmentation ? 'manager.segment.title' : 'manager.embeddingConfiguration.title') }}</h1>
         <div class="status-line">
           <el-tag effect="plain">{{ scopeLabel }}</el-tag>
-          <span v-if="loaded">{{ t('manager.embeddingConfiguration.bindingVersion', { version: binding.version }) }}</span>
+          <span v-if="loaded">{{ t('manager.embeddingConfiguration.bindingVersion', { version: bindingVersion }) }}</span>
         </div>
       </div>
       <el-button :icon="Refresh" circle :loading="loading" :disabled="saving" :title="t('manager.embeddingConfiguration.reload')" @click="load" />
     </header>
 
-    <el-tabs v-model="activeTab" v-loading="loading" class="configuration-tabs">
-      <el-tab-pane :label="t('manager.embeddingConfiguration.tabs.embedding')" name="embedding">
     <el-form v-if="loaded" ref="formRef" :model="form" :rules="rules" :disabled="!canSave" label-position="top" @submit.prevent>
       <section class="form-section">
         <h2>{{ t('manager.embeddingConfiguration.profileSection') }}</h2>
-        <div class="form-grid">
+        <div class="form-grid" :class="{ 'form-grid--single': isSegmentation }">
           <el-form-item :label="t('manager.embeddingConfiguration.modelProfile')" prop="modelProfileID">
             <el-select v-model="form.modelProfileID" filterable class="profile-select">
               <el-option
                 v-for="profile in compatibleProfiles"
                 :key="profile.id"
-                :label="`${profile.name} · ${profile.code} · v${profile.version}`"
+                :label="isSegmentation ? profile.name : `${profile.name} · ${profile.code} · v${profile.version}`"
                 :value="profile.id"
               />
             </el-select>
           </el-form-item>
-          <el-form-item :label="t('manager.embeddingConfiguration.dimension')">
+          <el-form-item v-if="!isSegmentation" :label="t('manager.embeddingConfiguration.dimension')">
             <el-input-number :model-value="2560" disabled controls-position="right" />
           </el-form-item>
         </div>
       </section>
 
-      <section v-if="isPlatform" class="form-section">
+      <section v-if="!isSegmentation && isPlatform" class="form-section">
         <h2>{{ t('manager.embeddingConfiguration.policySection') }}</h2>
         <div class="form-grid form-grid--three">
           <el-form-item :label="t('manager.embeddingConfiguration.maxDistance')" prop="maxDistance">
@@ -54,26 +52,16 @@
         </el-button>
       </footer>
     </el-form>
-      </el-tab-pane>
-      <el-tab-pane :label="t('manager.segment.title')" name="segmentation" lazy>
-        <el-form v-if="loaded" :disabled="!canSave" label-position="top" @submit.prevent>
-          <el-form-item :label="t('manager.embeddingConfiguration.profileSection')">
-            <el-select v-model="segmentBinding.profile">
-              <el-option v-for="item in segmentProfiles" :key="item.id" :value="item.id" :label="item.name" />
-            </el-select>
-          </el-form-item>
-          <el-button type="primary" :disabled="!canSave || !segmentBinding.profile" :loading="saving" @click="saveSegment">{{ t('manager.embeddingConfiguration.save') }}</el-button>
-        </el-form>
-      </el-tab-pane>
-    </el-tabs>
   </main>
 </template>
 
 <script setup>
 import { computed, reactive, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { useRoute, useRouter } from 'vue-router'
 import { Check, Refresh } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
+import { useUnsavedChangesGuard } from '@common-ui'
 import { useAuthStore } from '../store/auth'
 import {
   getEmbeddingConfiguration,
@@ -91,16 +79,24 @@ const loading = ref(false)
 const loaded = ref(false)
 const saving = ref(false)
 const canSave = computed(() => loaded.value && !saving.value && authStore.hasPermission('manager.configuration.update'))
-const activeTab = ref('embedding')
+const isSegmentation = useRoute().query.tab === 'segmentation'
+const isEmbedded = window.self !== window.top
+const scenario = isSegmentation ? 'image_segmentation' : 'semantic_search_embedding'
 const profiles = ref([])
 const deployments = ref([])
-const binding = reactive({ version: 0, scopeType: '', effective: false })
+const bindingVersion = ref(0)
 const form = reactive({
   configurationVersion: 0,
   modelProfileID: '',
   maxDistance: 0.78,
   maxFileSizeMB: 10,
   batchConcurrency: 5
+})
+const savedForm = ref('')
+const captureForm = () => JSON.stringify(form)
+useUnsavedChangesGuard({
+  router: useRouter(),
+  isDirty: () => loaded.value && captureForm() !== savedForm.value
 })
 
 const isPlatform = computed(() => authStore.contextType === 'platform')
@@ -109,25 +105,10 @@ const deploymentByID = computed(() => new Map(deployments.value.map(item => [ite
 const compatibleProfiles = computed(() => profiles.value.filter(profile => {
   if (profile.status !== 'active') return false
   const deployment = deploymentByID.value.get(profile.model_deployment_id)
-  return deployment?.status === 'active' && deployment.dimension === 2560 &&
-    deployment.operations?.includes('embedding') &&
-    deployment.modalities?.includes('text') && deployment.modalities?.includes('image')
+  if (deployment?.status !== 'active' || !deployment.modalities?.includes('image')) return false
+  if (isSegmentation) return deployment.operations?.includes('segmentation')
+  return deployment.operations?.includes('embedding') && deployment.modalities.includes('text') && deployment.dimension === 2560
 }))
-const segmentBinding = reactive({version:0,profile:''})
-const segmentProfiles = computed(() => profiles.value.filter(p => {
-  const d = deploymentByID.value.get(p.model_deployment_id)
-  return p.status === 'active' && d?.status === 'active' && d.operations?.includes('segmentation') && d.modalities?.includes('image')
-}))
-async function saveSegment(){
-  if (!canSave.value || !segmentBinding.profile) return
-  saving.value=true
-  try {
-    const result=await updateInferenceBinding({version:segmentBinding.version,model_profile_id:segmentBinding.profile},'image_segmentation')
-    segmentBinding.version=result.version
-    ElMessage.success(t('manager.embeddingConfiguration.saveSuccess'))
-  } catch {ElMessage.error(t('manager.embeddingConfiguration.saveFailed'))}
-  finally {saving.value=false}
-}
 const rules = {
   modelProfileID: [{ required: true, message: () => t('manager.embeddingConfiguration.modelProfileRequired'), trigger: 'change' }]
 }
@@ -136,11 +117,10 @@ async function load() {
   loaded.value = false
   loading.value = true
   try {
-    const requests = [getInferenceBinding(), listInferenceProfiles(), listInferenceDeployments(), getInferenceBinding('image_segmentation')]
-    if (isPlatform.value) requests.push(getEmbeddingConfiguration())
-    const [bindingValue, profilePage, deploymentPage, segment, policy] = await Promise.all(requests)
-    Object.assign(segmentBinding,{version:segment.version || 0,profile:segment.model_profile_id || ''})
-    Object.assign(binding, { version: bindingValue.version || 0, scopeType: bindingValue.scope_type, effective: bindingValue.effective })
+    const requests = [getInferenceBinding(scenario), listInferenceProfiles(), listInferenceDeployments()]
+    if (!isSegmentation && isPlatform.value) requests.push(getEmbeddingConfiguration())
+    const [bindingValue, profilePage, deploymentPage, policy] = await Promise.all(requests)
+    bindingVersion.value = bindingValue.version || 0
     form.modelProfileID = bindingValue.model_profile_id || ''
     profiles.value = profilePage.data || []
     deployments.value = deploymentPage.data || []
@@ -150,6 +130,7 @@ async function load() {
       form.maxFileSizeMB = policy.max_file_size_mb
       form.batchConcurrency = policy.batch_concurrency
     }
+    savedForm.value = captureForm()
     loaded.value = true
   } catch (_error) {
     ElMessage.error(t('manager.embeddingConfiguration.loadFailed'))
@@ -164,8 +145,8 @@ async function save() {
   if (!valid || !canSave.value) return
   saving.value = true
   try {
-    const requests = [updateInferenceBinding({ version: binding.version, model_profile_id: form.modelProfileID })]
-    if (isPlatform.value) {
+    const requests = [updateInferenceBinding({ version: bindingVersion.value, model_profile_id: form.modelProfileID }, scenario)]
+    if (!isSegmentation && isPlatform.value) {
       requests.push(updateEmbeddingConfiguration({
         version: form.configurationVersion,
         max_distance: form.maxDistance,
@@ -193,12 +174,13 @@ load()
 
 <style scoped>
 .embedding-configuration { width: min(960px, 100%); margin: 0 auto; padding: 28px 32px 40px; box-sizing: border-box; }
-.page-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; margin-bottom: 28px; }
+.page-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; margin-bottom: 20px; }
 .page-header h1 { margin: 0 0 10px; color: var(--addp-text-primary); font-size: 24px; font-weight: 600; letter-spacing: 0; }
 .status-line { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; color: var(--addp-text-secondary); font-size: 13px; }
-.form-section { padding: 0 0 24px; margin-bottom: 26px; border-bottom: 1px solid var(--addp-border-color); }
+.form-section { padding: 0 0 16px; margin-bottom: 20px; border-bottom: 1px solid var(--addp-border-color); }
 .form-section h2 { margin: 0 0 18px; color: var(--addp-text-primary); font-size: 16px; font-weight: 600; letter-spacing: 0; }
 .form-grid { display: grid; grid-template-columns: minmax(0, 2fr) minmax(180px, 1fr); gap: 0 20px; }
+.form-grid--single { grid-template-columns: minmax(0, 480px); }
 .form-grid--three { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .profile-select { width: 100%; }
 .form-actions { display: flex; justify-content: flex-end; }
@@ -206,4 +188,5 @@ load()
   .embedding-configuration { padding: 20px 16px 32px; }
   .form-grid, .form-grid--three { grid-template-columns: minmax(0, 1fr); }
 }
+.embedding-configuration--embedded { width: 100%; padding: 8px 0 24px; }
 </style>

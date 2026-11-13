@@ -417,7 +417,10 @@ func main() {
 
 	lifecycleController := modulelifecycle.NewBusiness("manager", commonClient.ModuleRuntimeRoleBackend)
 	var notifyExecutionEnqueued func()
-	router := api.SetupRouter(api.NewCleanupResultHandler(db), cfg, metadataService, searchService, searchHistoryService, unifiedMVTService, quickViewService, metadataRepo, systemClient, systemServiceClient, metaClient, cacheManager, redisClient, embeddingService, embeddingConfigurationService, inferenceScenarioBindingService, quickViewPolicyService, baseMapProviderService, spatialPreviewService, rasterCOGRepo, taskProviderHandler, importHandler, uploadHandler, resourceActionHandler, exportHandler, rasterMosaicTileHandler, model3DGLBHandler, gaussianSplatKSplatHandler, pointCloudCOPCHandler, model3DTilesHandler, dataProfileHandler, protectionStore, protectionReadBoundary, lifecycleController, pptxPDFHandler, &api.ImageSegmentationHandler{Service: service.NewImageSegmentationService(metadataService, protectionStore, inferenceScenarioBindingService, inferenceClient, systemServiceClient)}, func() {
+	imageSegmentation := service.NewImageSegmentationService(metadataService, protectionStore, inferenceScenarioBindingService, inferenceClient, systemServiceClient)
+	imageSegmentationTask := service.NewImageSegmentationTaskService(repository.NewImageSegmentationTaskRepository(db), taskExecRepo, imageSegmentation, metaClient)
+	taskProviderHandler.SetImageSegmentationTaskService(imageSegmentationTask)
+	router := api.SetupRouter(api.NewCleanupResultHandler(db), cfg, metadataService, searchService, searchHistoryService, unifiedMVTService, quickViewService, metadataRepo, systemClient, systemServiceClient, metaClient, cacheManager, redisClient, embeddingService, embeddingConfigurationService, inferenceScenarioBindingService, quickViewPolicyService, baseMapProviderService, spatialPreviewService, rasterCOGRepo, taskProviderHandler, importHandler, uploadHandler, resourceActionHandler, exportHandler, rasterMosaicTileHandler, model3DGLBHandler, gaussianSplatKSplatHandler, pointCloudCOPCHandler, model3DTilesHandler, dataProfileHandler, protectionStore, protectionReadBoundary, lifecycleController, pptxPDFHandler, &api.ImageSegmentationHandler{Service: imageSegmentation}, func() {
 		if notifyExecutionEnqueued != nil {
 			notifyExecutionEnqueued()
 		}
@@ -525,7 +528,7 @@ func main() {
 			rasterCOGTaskSvc, rasterMosaicTaskSvc, model3DGLBTaskSvc, model3DTilesTaskSvc,
 			gaussianSplatKSplatTaskSvc, pointCloudCOPCTaskSvc, pptxPDFTaskSvc,
 			embeddingService, embeddingTaskSvc, dataProfileService, protectionReadBoundary,
-		),
+		).WithImageSegmentation(imageSegmentationTask),
 		worker.BoundedExecutionSupervisorConfig{
 			InstanceID:  fmt.Sprintf("%s-%d-%s", hostname, os.Getpid(), uuid.NewString()),
 			Concurrency: cfg.ExecutionSupervisor.Concurrency, LeaseDuration: cfg.ExecutionSupervisor.LeaseDuration,

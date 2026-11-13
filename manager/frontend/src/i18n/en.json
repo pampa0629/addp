@@ -89,6 +89,7 @@
         "model3DTiles": "3D Model Tiles",
         "gaussianSplat": "Gaussian KSplat",
         "pointCloudCOPC": "Point Cloud COPC",
+        "imageSegmentation": "Image Instance Segmentation",
         "vectorTileSet": "Business Vector Tile Set",
         "pptxPDF": "Presentation PDF"
       },
@@ -204,10 +205,7 @@
       "title": "Embedding Configuration",
       "profileSection": "Inference scenario binding",
       "policySection": "Runtime policy",
-      "tabs": {
-        "embedding": "Embedding"
-      },
-      "modelProfile": "Inference Model Profile",
+      "modelProfile": "Model profile",
       "dimension": "Vector dimension",
       "maxDistance": "Maximum cosine distance",
       "maxFileSize": "Maximum file size (MB)",
@@ -219,11 +217,18 @@
       },
       "reload": "Reload",
       "save": "Save configuration",
-      "modelProfileRequired": "Select an Inference Model Profile",
-      "loadFailed": "Failed to load embedding configuration",
-      "saveSuccess": "Embedding configuration saved",
-      "saveFailed": "Failed to save embedding configuration",
+      "modelProfileRequired": "Select a model profile",
+      "loadFailed": "Failed to load configuration",
+      "saveSuccess": "Configuration saved",
+      "saveFailed": "Failed to save configuration",
       "versionConflict": "The configuration changed elsewhere and has been reloaded"
+    },
+    "segmentationTask": {
+      "text": "Text prompt",
+      "target": "Result storage",
+      "folder": "Subdirectory (optional)",
+      "invalid": "Enter the name, text prompt, and filename, and select a source image and destination.",
+      "saveFailed": "Could not save segmentation task"
     },
     "vectorTileSet": {
       "title": "Vector Tile Tasks",

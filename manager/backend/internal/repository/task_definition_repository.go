@@ -31,6 +31,7 @@ var managedQuickViewTaskTypes = []string{
 }
 
 var spatialBusinessTaskTypes = []string{
+	commonExecution.TaskTypeImageSegmentation,
 	commonExecution.TaskTypeVectorTileSetGeneration,
 	commonExecution.TaskTypeRasterMosaicGeneration,
 }
@@ -175,6 +176,8 @@ func taskSemanticKey(taskType string, config commonModels.JSONMap) string {
 		return firstString(source, "item_fingerprint")
 	case commonExecution.TaskTypeModel3DTilesGeneration:
 		return joinSemantic(firstString(source, "item_fingerprint"), firstString(config, "target_format"))
+	case commonExecution.TaskTypeImageSegmentation:
+		return firstString(target, "locator")
 	case commonExecution.TaskTypeVectorTileSetGeneration, commonExecution.TaskTypeRasterMosaicGeneration:
 		return firstString(config, "semantic_hash")
 	default:

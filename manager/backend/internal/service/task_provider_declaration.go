@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 
+	"github.com/addp/common/execution"
 	commonModels "github.com/addp/common/models"
 )
 
@@ -12,6 +13,18 @@ func ManagerTaskProviderDeclaration() (*commonModels.TaskProviderDeclaration, er
 	capabilities := map[string]interface{}{
 		"schema_version": "task.capabilities/v2",
 		"task_capabilities": []map[string]interface{}{
+			{
+				"type":                      execution.TaskTypeImageSegmentation,
+				"display_name":              "影像实例分割",
+				"description":               "按文字提示将 GeoTIFF 实例轮廓保存为业务 GeoJSON",
+				"definition_schema":         map[string]interface{}{"type": "object"},
+				"supports_schedule":         false,
+				"supports_cancel":           false,
+				"supports_inline_execution": false,
+				"create_url":                "/manager/tasks/spatial?task_type=image_segmentation&create=1",
+				"edit_url":                  "/manager/tasks/spatial?task_type=image_segmentation&task_id=:id",
+				"deprecated":                false,
+			},
 			{
 				"type":                      "vector_tile_set_generation",
 				"display_name":              "矢量瓦片生成",

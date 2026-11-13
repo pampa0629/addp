@@ -5,10 +5,11 @@
         v-if="iframeUrl"
         :src="iframeUrl"
         :key="iframeKey || iframeUrl"
+        :class="{ 'module-iframe--loading': !frameLoaded }"
         data-testid="module-iframe"
         frameborder="0"
         allow="clipboard-write; clipboard-read; fullscreen"
-        @load="$emit('load')"
+        @load="handleLoad"
         class="module-iframe"
       ></iframe>
       <div v-else class="loading-container">
@@ -20,14 +21,25 @@
 </template>
 
 <script setup>
+import { ref, watch } from 'vue'
 import { Loading } from '@element-plus/icons-vue'
 
-defineProps({
+const props = defineProps({
   iframeUrl: { type: String, default: '' },
   iframeKey: { type: [String, Number], default: '' },
 })
 
-defineEmits(['load'])
+const emit = defineEmits(['load'])
+const frameLoaded = ref(false)
+
+watch([() => props.iframeUrl, () => props.iframeKey], () => {
+  frameLoaded.value = false
+})
+
+function handleLoad() {
+  frameLoaded.value = true
+  emit('load')
+}
 </script>
 
 <style scoped>
@@ -50,6 +62,10 @@ defineEmits(['load'])
   height: 100%;
   border: none;
   background: var(--addp-bg-secondary);
+}
+
+.module-iframe--loading {
+  visibility: hidden;
 }
 
 .loading-container {

@@ -1,6 +1,7 @@
 <template>
   <section
     class="configuration-management"
+    :class="{ 'configuration-management--embedded': showManagerInference }"
     data-testid="configuration-management"
     :data-load-state="configurationLoadState"
   >
@@ -8,14 +9,21 @@
       <div>
         <div class="title-line">
           <el-button v-if="selectedOwner" :icon="ArrowLeft" text circle :title="t('console.configuration.back')" @click="goBack" />
-          <h1>{{ t('console.configuration.title') }}</h1>
+          <h1>{{ selectedOwner ? ownerLabel(selectedOwner) : t('console.configuration.title') }}</h1>
         </div>
         <p>{{ contextLabel }}</p>
       </div>
-      <el-button :icon="Refresh" circle :loading="loading" @click="loadEntries" />
+      <el-button v-if="!showManagerInference" :icon="Refresh" circle :loading="loading" @click="loadEntries" />
     </header>
 
-    <ModuleConfiguration v-if="selectedOwner" :key="selectedOwner" :owner="selectedOwner" />
+    <ModuleConfiguration
+      v-if="selectedOwner"
+      :key="selectedOwner"
+      :owner="selectedOwner"
+      :show-manager-inference="showManagerInference"
+    >
+      <slot />
+    </ModuleConfiguration>
 
     <el-table v-else v-loading="loading" :data="moduleEntries" class="entries-table" :row-class-name="entryRowClass" @row-click="openEntry">
       <el-table-column :label="t('console.configuration.owner')" min-width="150">
@@ -65,6 +73,7 @@ import { listConfigurationManagementEntries } from '../api/configurationManageme
 import ModuleConfiguration from '../components/configuration/ModuleConfiguration.vue'
 import { translateDynamicKey } from '../utils/configurationI18n'
 
+const props = defineProps({ showManagerInference: Boolean })
 const { t } = useI18n()
 const router = useRouter()
 const route = useRoute()
@@ -119,6 +128,7 @@ const configurationLoadState = computed(() => loading.value
   ? 'loading'
   : (loadFailed.value ? 'error' : 'loaded'))
 const selectedOwner = computed(() => {
+  if (props.showManagerInference) return 'manager'
   const parts = route.path.split('/').filter(Boolean)
   return parts[0] === 'configuration' && ['agent', 'copilot', 'develop', 'manager', 'transfer', 'monitor', 'service'].includes(parts[1]) ? parts[1] : ''
 })
@@ -181,6 +191,10 @@ watch(() => authStore.authContext, (context) => {
   if (context && !selectedOwner.value) loadEntries()
 })
 
+watch(selectedOwner, (owner) => {
+  if (!owner) loadEntries()
+})
+
 function refreshEntries() {
   if (!selectedOwner.value && document.visibilityState !== 'hidden') {
     loadEntries({ silent: true })
@@ -215,6 +229,13 @@ onBeforeUnmount(() => {
   width: min(1120px, 100%);
   margin: 0 auto;
   padding: 28px 32px;
+}
+
+.configuration-management--embedded {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
 }
 
 .page-header {

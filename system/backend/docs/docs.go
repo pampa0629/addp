@@ -4612,6 +4612,61 @@ const docTemplate = `{
                 ]
             }
         },
+        "/execution-authorizations/manager-image-segmentation/access": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "仅 Manager 租户服务可按当前租约核验固定源与目标 | Only the Manager tenant service may verify frozen resources using the current lease",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Runtime 执行授权 | Runtime Execution Authorization"
+                ],
+                "summary": "复核影像分割执行的数据权限 | Verify image segmentation execution access",
+                "parameters": [
+                    {
+                        "description": "当前执行租约 | Current execution lease",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/client.ImageSegmentationAccessRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/client.ImageSegmentationAccessObservation"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "system.execution_authorization.execute"
+                ]
+            }
+        },
         "/execution-authorizations/{id}/cleanup-accesses": {
             "post": {
                 "security": [
@@ -18532,6 +18587,34 @@ const docTemplate = `{
                 },
                 "source_read_scope": {
                     "$ref": "#/definitions/execution.FileGDBExportReadScope"
+                }
+            }
+        },
+        "client.ImageSegmentationAccessObservation": {
+            "type": "object",
+            "properties": {
+                "observed_at": {
+                    "type": "string"
+                },
+                "source_engine": {
+                    "$ref": "#/definitions/github_com_addp_common_models.Engine"
+                },
+                "target_engine": {
+                    "$ref": "#/definitions/github_com_addp_common_models.Engine"
+                }
+            }
+        },
+        "client.ImageSegmentationAccessRequest": {
+            "type": "object",
+            "properties": {
+                "attempt": {
+                    "type": "integer"
+                },
+                "execution_id": {
+                    "type": "string"
+                },
+                "lease_token": {
+                    "type": "string"
                 }
             }
         },

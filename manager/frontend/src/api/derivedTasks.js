@@ -19,3 +19,11 @@ export function rebindDerivedTask(taskType, id, request) {
 export function deleteDerivedTask(taskType, id) {
   return client.delete(`/manager/tasks/${encodeURIComponent(taskType)}/${id}`)
 }
+
+export function createDerivedTask(taskType, request) {
+  return client.post(`/manager/tasks/${encodeURIComponent(taskType)}`, request)
+}
+
+export function updateDerivedTask(taskType, id, request) {
+  return client.put(`/manager/tasks/${encodeURIComponent(taskType)}/${id}`, request)
+}

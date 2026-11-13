@@ -878,6 +878,24 @@ definitions:
       source_read_scope:
         $ref: '#/definitions/execution.FileGDBExportReadScope'
     type: object
+  client.ImageSegmentationAccessObservation:
+    properties:
+      observed_at:
+        type: string
+      source_engine:
+        $ref: '#/definitions/github_com_addp_common_models.Engine'
+      target_engine:
+        $ref: '#/definitions/github_com_addp_common_models.Engine'
+    type: object
+  client.ImageSegmentationAccessRequest:
+    properties:
+      attempt:
+        type: integer
+      execution_id:
+        type: string
+      lease_token:
+        type: string
+    type: object
   client.IssueManagerFileAuthorizationRequest:
     properties:
       execution_id:
@@ -10707,6 +10725,42 @@ paths:
       x-addp-auth-mode: permission
       x-addp-required-permissions:
       - system.develop_file_create_approval.create
+  /execution-authorizations/manager-image-segmentation/access:
+    post:
+      consumes:
+      - application/json
+      description: 仅 Manager 租户服务可按当前租约核验固定源与目标 | Only the Manager tenant service
+        may verify frozen resources using the current lease
+      parameters:
+      - description: 当前执行租约 | Current execution lease
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/client.ImageSegmentationAccessRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/client.ImageSegmentationAccessObservation'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 复核影像分割执行的数据权限 | Verify image segmentation execution access
+      tags:
+      - Runtime 执行授权 | Runtime Execution Authorization
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - system.execution_authorization.execute
   /execution-read-scope:
     get:
       produces:

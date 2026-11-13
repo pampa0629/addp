@@ -67,8 +67,16 @@
           </el-result>
 
           <ConfigurationManagement
-            v-else-if="currentModule === 'configuration'"
-          />
+            v-else-if="currentModule === 'configuration' || showManagerInferenceConfiguration"
+            :show-manager-inference="showManagerInferenceConfiguration"
+          >
+            <PortalIframe
+              v-if="showManagerInferenceConfiguration"
+              :iframe-url="iframeUrl"
+              :iframe-key="iframeNavigationKey"
+              @load="handleIframeLoad"
+            />
+          </ConfigurationManagement>
 
           <PortalIframe
             v-else
@@ -175,7 +183,7 @@ import { handleEngineScanPolicyBridge } from '../utils/engineScanPolicy'
 import PortalIframe from '../components/portal/PortalIframe.vue'
 import ApiDocs from './ApiDocs.vue'
 import ConfigurationManagement from './ConfigurationManagement.vue'
-import { consoleRouteModule, isSynchronizedIframeRoute, splitConsoleRoute } from '../utils/consoleNavigation'
+import { MANAGER_INFERENCE_CONFIGURATION_ROUTE, consoleRouteModule, isSynchronizedIframeRoute, splitConsoleRoute } from '../utils/consoleNavigation'
 import { buildRecentVisitEntry, prependRecentVisit } from '../utils/recentVisits'
 
 const router = useRouter()
@@ -187,6 +195,8 @@ const { t } = useI18n()
 const user = computed(() => authStore.user)
 const activeMenu = ref('/')
 const currentModule = ref('home')
+const showManagerInferenceConfiguration = computed(() =>
+  currentModule.value === 'manager' && route.path === MANAGER_INFERENCE_CONFIGURATION_ROUTE)
 const iframeUrl = ref('')
 const iframeNavigationKey = ref(0)
 const iframeRoute = ref('')
@@ -410,7 +420,10 @@ const handleMenuSelect = (index) => {
 
 function syncRouteToPortal(fullPath) {
   const [pathPart, queryPart] = splitConsoleRoute(fullPath || '/')
-  activeMenu.value = pathPart === '/system/configuration' ? '/configuration' : pathPart || '/'
+  const managerInferenceConfiguration = pathPart === MANAGER_INFERENCE_CONFIGURATION_ROUTE
+  activeMenu.value = pathPart === '/system/configuration' || pathPart.startsWith('/configuration/') || managerInferenceConfiguration
+    ? '/configuration'
+    : pathPart || '/'
 
   const parts = pathPart.split('/').filter(Boolean)
   if (parts.length === 0) {
@@ -440,18 +453,20 @@ function syncRouteToPortal(fullPath) {
   if (fallback && visibleSidebarMenus.value[module]?.items?.some(item => item.index === fallback)) {
     activeMenu.value = fallback
   }
-	if (module === 'configuration') {
-		activeGroup.value = 'system'
-		sidebarModules.value = ['system']
-		iframeUrl.value = ''
-		return
-	}
-
-  // 同步 activeGroup 和 sidebarModules（搜索/最近访问跳转时也需要）
-  const group = MODULE_GROUPS.find(g => g.modules.includes(module))
-  if (group && !group.isPortal && !group.isApiDocs) {
-    activeGroup.value = group.key
-    sidebarModules.value = group.modules  // 保持显示整个群组的所有模块
+  if (module === 'configuration' || managerInferenceConfiguration) {
+    activeGroup.value = 'system'
+    sidebarModules.value = ['system']
+    if (module === 'configuration') {
+      iframeUrl.value = ''
+      return
+    }
+  } else {
+    // 同步 activeGroup 和 sidebarModules（搜索/最近访问跳转时也需要）
+    const group = MODULE_GROUPS.find(g => g.modules.includes(module))
+    if (group && !group.isPortal && !group.isApiDocs) {
+      activeGroup.value = group.key
+      sidebarModules.value = group.modules  // 保持显示整个群组的所有模块
+    }
   }
 
   const url = buildModuleUrl(module, page)

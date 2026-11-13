@@ -33,6 +33,7 @@ type managerExecutionOwnership struct {
 }
 
 var managerExecutionOwnerships = map[string]managerExecutionOwnership{
+	commonExecution.TaskTypeImageSegmentation:                {taskTable: "manager.task_definitions", taskTypeColumn: true},
 	commonExecution.TaskTypeVectorTileCacheGeneration:        {taskTable: "manager.task_definitions", taskTypeColumn: true, resultTable: "manager.vector_tile_cache", buildingStatus: "generating"},
 	commonExecution.TaskTypeVectorTileSetGeneration:          {taskTable: "manager.task_definitions", taskTypeColumn: true},
 	commonExecution.TaskTypeVectorMaterializedViewGeneration: {taskTable: "manager.task_definitions", taskTypeColumn: true, resultTable: "manager.vector_materialized_view", buildingStatus: "building"},
@@ -64,6 +65,7 @@ func ManagerManagedArtifactSpecs() []CleanupManagedArtifactSpec {
 
 func ManagerBoundedTaskTypes() []string {
 	return []string{
+		commonExecution.TaskTypeImageSegmentation,
 		commonExecution.TaskTypeVectorTileCacheGeneration,
 		commonExecution.TaskTypeVectorTileSetGeneration,
 		commonExecution.TaskTypeVectorMaterializedViewGeneration,

@@ -132,6 +132,14 @@
       @saved="handleEditorSaved"
       @closed="clearEditorRoute"
     />
+    <ImageSegmentationTaskEditor
+      v-if="editorType === 'image_segmentation'"
+      v-model="editorVisible"
+      :task="editingTask"
+      :locator="editorLocator"
+      @saved="handleEditorSaved"
+      @closed="clearEditorRoute"
+    />
     <RasterMosaicTaskEditor
       v-if="editorType === 'raster_mosaic_generation'"
       v-model="editorVisible"
@@ -168,6 +176,7 @@ import { deleteSelectedDerivedTasks } from '../utils/derivedTaskBatch'
 import { navigateManagerRoute } from '../utils/moduleNavigation'
 import QuickViewTaskCreator from '../components/tasks/QuickViewTaskCreator.vue'
 import VectorTileSetTaskEditor from '../components/tasks/VectorTileSetTaskEditor.vue'
+import ImageSegmentationTaskEditor from '../components/tasks/ImageSegmentationTaskEditor.vue'
 import RasterMosaicTaskEditor from '../components/tasks/RasterMosaicTaskEditor.vue'
 import { useAuthStore } from '../store/auth'
 
@@ -218,7 +227,8 @@ const taskTypes = {
   ],
   spatial_business: [
     ['vector_tile_set_generation', 'manager.derivedTasks.types.vectorTileSet'],
-    ['raster_mosaic_generation', 'manager.derivedTasks.types.rasterMosaic']
+    ['raster_mosaic_generation', 'manager.derivedTasks.types.rasterMosaic'],
+    ['image_segmentation', 'manager.derivedTasks.types.imageSegmentation']
   ]
 }
 function categoryForTaskType(value) {

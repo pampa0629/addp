@@ -74,7 +74,7 @@ func verifiedProducedTargetParent(tx *gorm.DB, tenantID int, req *models.ScanReq
 		return nil, commonapi.ErrNotFound
 	}
 	if module == execution.ModuleManager {
-		if parent.TaskType != execution.TaskTypeRasterMosaicGeneration && parent.TaskType != execution.TaskTypeVectorTileSetGeneration {
+		if parent.TaskType != execution.TaskTypeRasterMosaicGeneration && parent.TaskType != execution.TaskTypeVectorTileSetGeneration && parent.TaskType != execution.TaskTypeImageSegmentation {
 			return nil, commonapi.ErrNotFound
 		}
 		now := time.Now().UTC()
@@ -238,12 +238,22 @@ func matchesManagerProducedTarget(parent execution.TaskExecution, req *models.Sc
 	if parent.TaskType == execution.TaskTypeRasterMosaicGeneration {
 		return matchesManagerMosaicProducedTarget(parent, req)
 	}
-	if parent.TaskType != execution.TaskTypeVectorTileSetGeneration || req.EngineID == 0 || req.NodeID != 0 || req.ItemID != 0 || len(req.CatalogPaths) != 0 || len(req.Targets) != 0 || len(req.RefGroups) != 1 || len(req.RefGroups[0].Refs) != 0 || req.ScanDepth != "deep" || !req.Force {
+	if (parent.TaskType != execution.TaskTypeVectorTileSetGeneration && parent.TaskType != execution.TaskTypeImageSegmentation) || req.EngineID == 0 || req.NodeID != 0 || req.ItemID != 0 || len(req.CatalogPaths) != 0 || len(req.Targets) != 0 || len(req.RefGroups) != 1 || len(req.RefGroups[0].Refs) != 0 || req.ScanDepth != "deep" || !req.Force {
 		return false
 	}
 	var target commonclient.MetaScanProducedTarget
 	if !decodeMosaicFact(parent.Metadata["produced_target"], &target) || target.EngineID != req.EngineID || target.Attempt != parent.Attempt || target.ManifestRef != "" {
 		return false
+	}
+	if parent.TaskType == execution.TaskTypeImageSegmentation {
+		var cfg execution.ImageSegmentationConfig
+		raw, err := json.Marshal(parent.ExecutionConfig)
+		if err != nil || json.Unmarshal(raw, &cfg) != nil || cfg.Validate() != nil {
+			return false
+		}
+		if cfg.Target.EngineID != target.EngineID || cfg.Target.Path.StringPath() != target.CatalogPath {
+			return false
+		}
 	}
 	return target.CatalogPath != "" && target.CatalogPath != "." && !path.IsAbs(target.CatalogPath) && !strings.HasPrefix(target.CatalogPath, "../") && !strings.Contains(target.CatalogPath, "\\") && path.Clean(target.CatalogPath) == target.CatalogPath && parent.Metadata["catalog_path"] == target.CatalogPath && req.RefGroups[0].Primary == target.CatalogPath
 }

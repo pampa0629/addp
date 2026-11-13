@@ -11,6 +11,7 @@ import (
 )
 
 var managerExecutionReadPermissions = map[string]string{
+	execution.TaskTypeImageSegmentation:   ownerauthorization.PermissionManagerDerivedArtifactRead,
 	"vector_tile_cache_generation":        ownerauthorization.PermissionManagerDerivedArtifactRead,
 	"vector_tile_set_generation":          ownerauthorization.PermissionManagerDerivedArtifactRead,
 	"vector_materialized_view_generation": ownerauthorization.PermissionManagerDerivedArtifactRead,

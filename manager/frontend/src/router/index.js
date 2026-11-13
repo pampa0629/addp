@@ -30,7 +30,7 @@ const routes = [
 		path: 'settings/embedding',
 		name: 'EmbeddingConfiguration',
 		component: () => import('../views/EmbeddingConfiguration.vue'),
-		meta: { requiresAuth: true, title: '向量化配置-addp' }
+		meta: { requiresAuth: true, title: '数据管理配置-addp' }
 	  },
 	  {
         path: 'data-explorer',

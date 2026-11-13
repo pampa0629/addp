@@ -217,6 +217,8 @@
         "inference": "Inference Scenarios",
         "executionPolicy": "Execution Policy",
         "quickViewPolicy": "Quick-view policy",
+        "embedding": "Vectorization",
+        "segmentation": "Image segmentation",
         "baseMap": "Basemap services",
         "continuousPolicy": "Continuous task policy",
         "runtimePolicy": "Runtime policy",

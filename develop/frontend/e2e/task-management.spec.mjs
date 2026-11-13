@@ -1,6 +1,20 @@
 import { expect, test } from '@playwright/test'
 import { developAuthContext } from './developAuthContext.js'
 
+for (const [account, userProfile, expectedName] of [
+  ['local', { id: '1', display_name: '租户管理员', local_account: { username: 'tenant-admin' } }, '租户管理员'],
+  ['local without display name', { id: '1', display_name: '', local_account: { username: 'tenant-admin' } }, 'tenant-admin'],
+  ['external', { id: '1', display_name: '外部身份管理员', local_account: null }, '外部身份管理员']
+]) {
+  test(`shows the current ${account} account name after session restore and reload`, async ({ page }) => {
+    await installMockBackend(page, { userProfile })
+    await page.goto('/tasks')
+    await expect(page.locator('.user-dropdown')).toHaveText(expectedName)
+    await page.reload()
+    await expect(page.locator('.user-dropdown')).toHaveText(expectedName)
+  })
+}
+
 test('keeps every task action on one line', async ({ page }) => {
   await installMockBackend(page)
   await page.goto('/tasks')
@@ -167,7 +181,10 @@ function isUncovered(locator) {
   })
 }
 
-async function installMockBackend(page, { locale = 'zh-cn', statuses, taskItems } = {}) {
+async function installMockBackend(page, {
+  locale = 'zh-cn', statuses, taskItems,
+  userProfile = { id: '1', display_name: 'Develop E2E', local_account: { username: 'develop-e2e' } }
+} = {}) {
   let tasks = taskItems ?? [
     {
       id: 41,
@@ -203,7 +220,7 @@ async function installMockBackend(page, { locale = 'zh-cn', statuses, taskItems 
       return fulfillJSON(route, { access_token: 'develop-e2e-token', expires_in: 3600 })
     }
     if (path === '/api/v1/system/users/me') {
-      return fulfillJSON(route, { id: 1, username: 'develop-e2e' })
+      return fulfillJSON(route, userProfile)
     }
     if (path === '/api/v1/system/auth/context') return fulfillJSON(route, developAuthContext)
     if (path === '/api/v1/develop/task-definitions') {

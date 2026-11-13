@@ -51,6 +51,10 @@
 			<el-icon><Setting /></el-icon>
 			<span>{{ t('manager.layout.embeddingConfiguration') }}</span>
 		  </el-menu-item>
+          <el-menu-item v-if="canEnter(segmentationRoute)" :index="segmentationRoute">
+            <el-icon><Setting /></el-icon>
+            <span>{{ t('manager.segment.title') }}</span>
+          </el-menu-item>
           <el-sub-menu v-if="hasTaskPages" index="/tasks">
             <template #title>
             <el-icon><Operation /></el-icon>
@@ -73,7 +77,7 @@
       </el-aside>
 
       <el-main class="main-content">
-        <router-view />
+        <router-view :key="route.path === '/settings/embedding' ? activeMenu : undefined" />
       </el-main>
     </el-container>
   </el-container>
@@ -103,6 +107,7 @@ import {
 const route = useRoute()
 const router = useRouter()
 const authStore = useAuthStore()
+const segmentationRoute = '/settings/embedding?tab=segmentation'
 const canEnter = path => allowsConsoleRoute(`/manager${path}`, authStore.contextType, authStore.permissions)
 const hasTaskPages = computed(() => ['/tasks/quick-view', '/tasks/spatial', '/tasks/embedding'].some(canEnter))
 const { t } = useI18n()
@@ -114,7 +119,9 @@ console.log('Manager Layout - window.self:', window.self)
 console.log('Manager Layout - window.top:', window.top)
 
 const user = computed(() => authStore.user)
-const activeMenu = computed(() => route.path)
+const activeMenu = computed(() => route.path === '/settings/embedding' && route.query.tab === 'segmentation'
+  ? segmentationRoute
+  : route.path)
 
 onMounted(async () => {
   if (authStore.isAuthenticated && !authStore.user) {
