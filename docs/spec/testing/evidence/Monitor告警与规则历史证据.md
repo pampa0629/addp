@@ -473,3 +473,13 @@ Chrome 真实租户“ADDP 开发管理员”页面核对任务配置源／目�
 同时复核既有 Stop 契约发现，首版验收的“同任务停止后重新 Start”编排不成立；此问题由规范和服务实现确认，尚未由该轮执行到。修订 `d11f7311c6d4559dbc31f3efb15fc0fa29f8a80d` 改为正式新建专用替代任务和新目标表，重新 initial snapshot，保留原任务的告警关闭证据；不修改产品不可逆终态或旧数据恢复语义。
 
 失败轮 `uncertain_mutation=false`，CDC 与正常退出 Kafka 任务正式删除并读回不存在，Webhook 目标删除、接收端关闭均通过。硬退出 Kafka 任务按原场景保留给部署销毁，领域阶段 `residual_resources=1`；外层 `cleanup=passed`、`infra_cleanup=zero_residuals`。个人开发环境、原任务及两个原逻辑槽未操作。更早一次误绑定旧源码的调度 43424845828 已取消，不算本轮验收。
+
+### CDC 风险第二轮：真实打开与送达通过，缺样发布阻塞（2026-11-13）
+
+固定 `9986bdfdde2bcd63a10ed636c72a4f5d8f601817` 的 [Run 43428120603／Job 131894521640](https://github.com/pampa0629/addp/actions/runs/43428120603/job/131894521640) 失败于 `missing_sample` 的收敛超时，未通过整套闭环。Artifact `14038688037` 的 SHA-256 为 `b3b5bc6713014170b1141f648e548702036434ba670d41acdfb67e8c86a415a1`，摘要及 ZIP CRC 均已核对；原件和独立报告保留于 `/tmp/addp-cdc-risk-hosted-43428120603/`。
+
+该轮已取得真实证据：暂停后 committed/latest/earliest 为 `10/10/0`；专用事件形成 `10/12/0`、积压 2；截断后为 `10/12/12`，恢复状态 lost。消息与源槽丢失分别打开唯一 critical incident 1、2，两个 opened Webhook 分别为 delivery `a4b531da-8639-40a1-95bf-6f14a2d54acf`、`0b600353-5e2b-4354-acb1-16843ee9c46b`；独立接收端核对签名／事件身份并返回 202，正式投递记录均 delivered。两项故障触发及打开通知可认定通过，但不能据此认定后续缺样、关闭、关闭通知或替代任务重建通过。
+
+缺样事实为：源端最后一次 missing 在 13:07:52 UTC；暂停源库后的 unavailable 样本起始 13:08:07.329、有效期至 13:08:37.329，却到 13:09:56.353 才写入日志。采样卡在初始 PostgreSQL 握手，源库解除暂停后才返回；120 秒验收等待内没有得到新鲜 unavailable。lib/pq v1.10.9 的 context-aware dial 只覆盖 TCP 建连，未设置连接截止时间时启动／TLS 握手可以继续阻塞，见[固定驱动源码](https://github.com/lib/pq/blob/v1.10.9/conn.go)。本地新测试使用仅接收 TCP、不完成握手的临时端点复现超时，原实现失败；将既有 SourceProbeTimeout 的截止时间应用到该次只读连接后，普通启动／TLS 握手两个用例及独立 JMX 发布均通过。没有增加配置、重试、样本有效期或验收预算。
+
+失败轮 Webhook 目标删除、接收端关闭、源库解除暂停及领域任务清理均成功；硬退出 Kafka 任务仍按原场景保留给部署销毁，领域残留为 1，最终 `cleanup=passed`、`infra_cleanup=zero_residuals`。本地 `make test-module MODULE=transfer GO_ONLY=1` 与 `make test-transfer-postgres` 已通过；完整模块门禁仍在运行，不能提前认定完成。第三轮必须重新取得缺样保持、正式关闭、关闭通知和替代任务的实际证据。

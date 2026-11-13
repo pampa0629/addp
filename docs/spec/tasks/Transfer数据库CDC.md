@@ -280,6 +280,8 @@ Capture 后台按当前 generation 保存的 source identity、连接 fingerprin
 
 两份快照沿既有 generation CAS 持久化并通过原任务读取权限发布；在两次 Capture 采样间隔后过期。源 SQL 和 JMX 独立失败，单项缺样不隐藏另一项有效结果；终止／清理状态不再发布当前指标。MySQL／Oracle 返回空的 PostgreSQL 专属指标，不伪造同类能力。前后端、Swagger、Transfer Go／PostgreSQL T2、JMX 白名单及生命周期、Monitor CDC 浏览器门禁同次覆盖；真实部署与事件采样需应用配置后另核。
 
+源端 SQL 观测的既有 SourceProbeTimeout 必须覆盖连接建立、PostgreSQL／TLS 握手和查询全过程。源端接受 TCP 但不响应时，也须在该预算内结束并发布当前 unavailable 快照，随后继续独立的 JMX 和缓冲采样；不能等待源端恢复后才写出已经过期的缺样，也不通过扩大有效期或验收等待来补偿连接阻塞。
+
 #### 任务消息缓冲持续观测
 
 Transfer Capture 后台按现有 MonitorInterval 对当前可观测 generation 持续只读采样其单分区 data topic 的最早保留位置及末端位置，并读取本任务／source identity／partition 0 的同步主状态；不读取消息正文、不加入消费组、不提交 offset、不启动 execution。此观测独立于 Connector／源连接健康，即使捕获故障也继续核对已经缓冲的消息。暂停停止目标应用而不停止该观测。

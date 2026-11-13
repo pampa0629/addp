@@ -3,7 +3,10 @@ package capture
 import (
 	"context"
 	"database/sql"
+	engineplugin "github.com/addp/common/engine/plugin"
 	"github.com/addp/transfer/internal/models"
+	"io"
+	"net"
 	"testing"
 	"time"
 )
@@ -54,5 +57,74 @@ func TestPostgresTaskObservationFailureClearsOldFactsAndPublishesDelayIndependen
 	}
 	if summary = models.NewCaptureSummary(store.resource); summary.DelayObservation.Status != "no_sample" || summary.DelayObservation.DelaySeconds != nil {
 		t.Fatal("old delay reused")
+	}
+}
+
+// A paused database accepts TCP in the kernel but never completes PostgreSQL startup.
+// QueryRowContext alone does not bound lib/pq's initial handshake.
+func TestPostgresTaskObservationBoundsSilentStartupAndStillPublishesDelay(t *testing.T) {
+	for _, sslMode := range []string{"disable", "require"} {
+		t.Run(sslMode, func(t *testing.T) {
+
+			listener, err := net.Listen("tcp", "127.0.0.1:0")
+			if err != nil {
+				t.Fatal(err)
+			}
+			release, serverDone, handshakeReady := make(chan struct{}), make(chan struct{}), make(chan struct{})
+			go func() {
+				defer close(serverDone)
+				connection, acceptErr := listener.Accept()
+				if acceptErr != nil {
+					return
+				}
+				defer connection.Close()
+				if _, err := io.ReadFull(connection, make([]byte, 8)); err != nil {
+					return
+				}
+				if sslMode == "require" {
+					if _, err := connection.Write([]byte{'S'}); err != nil {
+						return
+					}
+					if _, err := io.ReadFull(connection, make([]byte, 5)); err != nil {
+						return
+					}
+				}
+				close(handshakeReady)
+				<-release
+			}()
+			connected, seconds := true, 0.125
+			store := &fakeCaptureStore{resource: &models.CaptureResource{ID: 1, SourceType: models.CaptureSourcePostgreSQL,
+				Status: models.CaptureStatusRunning, ResourceVersion: 1, SourceDatabase: "unused",
+				PostgreSQL: &models.PostgreSQLCaptureResource{SlotName: "owned", PublicationName: "owned", SlotOwned: true, PublicationOwned: true}}}
+			connect := &fakeConnectControl{delay: &CaptureDelay{Status: "available", Connected: &connected, Seconds: &seconds}}
+			plan := &CapturePlan{SourceConnInfo: engineplugin.ConnectionInfo{
+				"host": "127.0.0.1", "port": listener.Addr().(*net.TCPAddr).Port, "user": "fixture", "database": "unused", "sslmode": sslMode}}
+			s := &Supervisor{store: store, plans: fakePlanResolver{plan: plan}, connect: connect,
+				config: SupervisorConfig{SourceProbeTimeout: 100 * time.Millisecond, MonitorInterval: time.Second}}
+			result, clientDone := make(chan error, 1), make(chan struct{})
+			defer func() { close(release); listener.Close(); <-serverDone; <-clientDone }()
+			go func() {
+				defer close(clientDone)
+				result <- s.observePostgreSQLTask(context.Background(), store.resource)
+			}()
+			select {
+			case err := <-result:
+				if err != nil {
+					t.Fatal(err)
+				}
+			case <-time.After(time.Second):
+				t.Fatal("source probe exceeded its deadline during PostgreSQL startup")
+			}
+			select {
+			case <-handshakeReady:
+			default:
+				t.Fatal("probe did not reach the silent handshake")
+			}
+			summary := models.NewCaptureSummary(store.resource)
+			if summary.PostgreSQLObservation.Status != "unavailable" || !summary.PostgreSQLObservation.ExpiresAt.After(time.Now()) ||
+				summary.DelayObservation.Status != "available" || summary.DelayObservation.DelaySeconds == nil || *summary.DelayObservation.DelaySeconds != seconds {
+				t.Fatalf("source handshake blocked independent fresh observations: %+v", summary)
+			}
+		})
 	}
 }

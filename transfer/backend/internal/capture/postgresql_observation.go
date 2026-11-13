@@ -4,7 +4,10 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	engineplugin "github.com/addp/common/engine/plugin"
 	"github.com/addp/transfer/internal/models"
+	"github.com/lib/pq"
+	"net"
 	"strconv"
 	"time"
 )
@@ -16,6 +19,32 @@ type postgresSlotSample struct {
 	Unlimited                                 bool
 	PublicationAllTables                      sql.NullBool
 	PublicationTables, PublicationMatches     int
+}
+
+// lib/pq's context-aware dial bounds TCP establishment, but not PostgreSQL/TLS
+// startup. This connection belongs to one read-only probe, including its query.
+type postgresObservationDialer struct{ deadline time.Time }
+
+func (d postgresObservationDialer) Dial(network, address string) (net.Conn, error) {
+	return d.DialContext(context.Background(), network, address)
+}
+
+func (d postgresObservationDialer) DialTimeout(network, address string, timeout time.Duration) (net.Conn, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+	return d.DialContext(ctx, network, address)
+}
+
+func (d postgresObservationDialer) DialContext(ctx context.Context, network, address string) (net.Conn, error) {
+	conn, err := (&net.Dialer{Deadline: d.deadline}).DialContext(ctx, network, address)
+	if err != nil {
+		return nil, err
+	}
+	if err := conn.SetDeadline(d.deadline); err != nil {
+		conn.Close()
+		return nil, err
+	}
+	return conn, nil
 }
 
 func postgresSlotObservation(resource *models.CaptureResource, sample postgresSlotSample, now time.Time, validity time.Duration) *models.CapturePostgreSQLObservation {
@@ -92,10 +121,16 @@ func (s *Supervisor) observePostgreSQLTask(ctx context.Context, resource *models
 	probeCtx, cancel := context.WithTimeout(ctx, s.config.SourceProbeTimeout)
 	plan, err := s.plans.ResolveForObservation(probeCtx, resource)
 	if err == nil {
-		db, openErr := openPostgreSQL(plan.SourceConnInfo)
-		if openErr == nil {
-			pg = readPostgreSQLObservation(probeCtx, db, resource, now, validity)
-			db.Close()
+		dsn, dsnErr := engineplugin.BuildPostgreSQLDSN(plan.SourceConnInfo, 5432)
+		if dsnErr == nil {
+			connector, connectorErr := pq.NewConnector(dsn)
+			if connectorErr == nil {
+				deadline, _ := probeCtx.Deadline() // Established by WithTimeout above.
+				connector.Dialer(postgresObservationDialer{deadline: deadline})
+				db := sql.OpenDB(connector)
+				pg = readPostgreSQLObservation(probeCtx, db, resource, now, validity)
+				db.Close()
+			}
 		}
 	}
 	cancel()
