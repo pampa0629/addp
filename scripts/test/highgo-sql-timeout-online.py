@@ -78,7 +78,7 @@ def validate_browser(result, expected):
             'elapsed_ms', 'code', 'heading', 'recovery_rows', 'execution_id', 'recovery_execution_id'},
             'incomplete HighGo timeout phase: ' + phase)
         require(proof['code'] == ('preview_sql_execution_timeout' if phase == 'manager' else 'sql_execution_timeout')
-                and proof['heading'] == '数据库 SQL 执行超时'
+                and proof['heading'] == '数据库 SQL 执行超时。'
                 and proof['recovery_rows'] == [{'id': 1, 'engine_name': 'HighGo V4.5 Business'}],
                 'HighGo timeout classification or recovery mismatch: ' + phase)
         elapsed = proof['elapsed_ms']

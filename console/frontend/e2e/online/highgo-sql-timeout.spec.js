@@ -136,7 +136,7 @@ async function timeoutPhase(page, expected, phase) {
       await expect(panel).toContainText(executionID)
       await expect(completed.frame.locator('.query-result .result-table')).toHaveCount(0)
     }
-    expect(heading).toBe('数据库 SQL 执行超时')
+    expect(heading).toBe('数据库 SQL 执行超时。')
     let after
     await expect.poll(() => {
       after = barrier('observe', phase)

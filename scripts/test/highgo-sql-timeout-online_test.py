@@ -28,7 +28,7 @@ def report():
                 waiters=[dict(id=200, state='active', wait_event_type='Lock', operation='table_read')] if key == 'during' else [])
         result[phase] = dict(**snapshots, elapsed_ms=55_000 if phase == 'manager' else 120_000,
             code='preview_sql_execution_timeout' if phase == 'manager' else 'sql_execution_timeout',
-            heading='数据库 SQL 执行超时', recovery_rows=[dict(id=1, engine_name='HighGo V4.5 Business')],
+            heading='数据库 SQL 执行超时。', recovery_rows=[dict(id=1, engine_name='HighGo V4.5 Business')],
             execution_id=None if phase == 'manager' else '11111111-1111-4111-8111-111111111111',
             recovery_execution_id=None if phase == 'manager' else '22222222-2222-4222-8222-222222222222')
     return result
