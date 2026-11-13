@@ -310,6 +310,61 @@ Graph 在 C→G 内、关闭／取消／归档前比较当前模块影响与原�
 
 2026-11-13用户已同意新增租户安全阶段字段及执行授权消费语义；按术语→正式规范→后端／前端顺序实施，保持现有Monitor＋Owner入口权限，隐藏技术ID及平台原始Trace／日志。若用户需要首期就是完整跨服务瀑布图，应先设计更充分的执行归属证明，不能在现有六字段上自动扩大。
 
+### 正式用户阶段追踪真实链路验收方案（待确认，未实施／未运行）
+
+本节只规划前述最小切片的运行验收，不变更产品权限、采样或Owner边界。建议复用[正式身份本机隔离闭环](../spec/addp平台运行观测规范.md#正式身份的本机隔离闭环)及唯一人工入口 `make test-monitor-traces-local`：当前入口已有正式身份、合成Engine、Orchestrator→Develop成功／失败样本和平台独立校核，但**尚未接入租户trace-stages请求与租户执行详情浏览器断言**，不能直接运行旧入口宣称本切片已验收。本方案确认后先补同入口与确定性门禁，再单独确认一次真实运行；本次只改文档，不建身份、样本或环境。
+
+#### 1. 环境、身份与权限
+
+沿当前已提交SHA的仓库外私有源码副本及独占产品部署，使用正式System、Gateway、Security、Develop、Orchestrator、Monitor、Console／Nginx和Trace／日志设施。当前个人服务不接管、不重启；共享addp-postgres不连接。独占平台库 `addp_online` 与合成查询库 `trace_fixture` 均只存在于本轮专属容器，沿已有准入与自动销毁，不在共享本地PG新建database。归属标签、动态端口、构建身份与运行实例不匹配即拒绝。此为真实身份的本机隔离技术窗口，保持已有 `formal_runner_t4=false, hosted=false, capacity=false`，不包装成专用Runner T4或生产验收。
+
+| 身份 | 首轮用途与准确边界 |
+| --- | --- |
+| 业务Tenant User | 复用System-owned `execution-trace-local` 夹具的原11项权限：`orchestrator.workflow.create/read/delete/execute`、`develop.task.create/read/delete/execute`、`develop.data_read.execute`、`monitor.execution.read`、`system.execution_authorization.create`。真实密码登录，经正式Tenant选择／会话与AuthContext确认User、first_party_access_token、unrestricted、准确Tenant及权限集合；不持有 `monitor.trace.read` 或平台日志权限。 |
+| 准备User | 沿已有初始Tenant管理员→真实TOTP登记／验证→AAL2及有效step-up→正式分配 `tenant.infrastructure_administrator` 的唯一流程，准备本轮合成Engine；精确权限由现行角色事实核对，不复制自定义Engine授权、不直接写IAM表，不替业务User提交执行或查询阶段。 |
+| 平台诊断User | 沿现有真实密码＋TOTP＋Platform AuthContext，仅通过既有System实例／日志和Monitor平台Trace接口独立校核本轮精确检查点；不代业务User调用租户阶段接口，不把平台权限赋给业务User。 |
+| 原平台安全负例User | 仅保留现有夹具与会话清理责任，不扩为新的Tenant负例身份或增加权限。 |
+
+不新增User、角色、权限、默认授权或诊断签发。首轮不增加真实撤权、跨Tenant、父可读子不可读的身份场景；这些已有确定性／PG覆盖，真实负例仍独立列缺口，不能因本轮同User有两Owner读取权而声称已验证父子授权隔离。
+
+#### 2. 固定样本与真实路径
+
+仅创建已有两组样本，各一个禁用定时的编排定义＋一个Develop query定义，各手动执行一次：成功为 `SELECT 1 AS fixture_value`，受控失败为 `SELECT 1 / 0 AS fixture_value`，均访问本轮独占PostgreSQL，不读个人／租户真实数据、不创建业务表、不写外部结果。合计最多2次编排提交、2个父execution和2个子execution；不手工补建execution、改私有引用／历史时间或注入Span。核验实际终态、父子绑定与无额外attempt，不因等待观测重跑或重试业务。
+
+业务所有HTTP请求经本轮Nginx→Gateway正式控制面；阶段路径为 `GET /api/v1/monitor/executions/by-execution-id/{execution_id}/trace-stages`，不传query/body或技术ID。Monitor以该User同步向准确Owner的 `GET /execution-read-scope` 核权，再从权威execution读取私有锚点，通过部署mTLS查询代理访问真实Tempo。浏览器使用业务User独立登录，沿Console唯一 `/monitor/executions?execution_id=...` 打开父／子详情；不得使用现有平台管理员浏览器脚本替代租户页面验收。
+
+取证不依赖HTTP请求恰好被5%采样：用现有请求完成日志的同一request_id核对Gateway／Monitor入口及准确Owner授权路由，结合正式User AuthContext与Owner范围响应确认身份／用途；单一阶段请求只命中对应Owner，不把独立页面树读取造成的其他Owner调用混入计数。平台诊断User只读本轮模块／实例及精确execution检查点，从真实日志取得Trace／Span关联，与真实Tempo样本校对；不直读execution私有列、不查询其他Tenant、不沿Link递归。Tempo代理当前不记录访问正文，不新增代理或抓包；证据证明真实依赖与精确结果一致，不声称获得完整HTTP跨服务瀑布或全部内部调用时间。
+
+#### 3. 两类核心断言与页面验收
+
+| 编号 | 必须取得的证据与通过条件 |
+| --- | --- |
+| A1 正式业务身份 | 业务User的真实登录／AuthContext及原11项准确权限成立；无平台Trace／日志权限；同一业务会话分别获得两Owner当前授权，阶段接口返回 `200`、`Cache-Control: no-store`。 |
+| A2 真实样本闭环 | 两组编排／子查询的身份、父子绑定和success／failed终态与正式Owner接口相符；检查点真实产生，不伪造或回填。 |
+| A3 可读阶段 | 失败样本的父、子各自latest均为 `available`；与平台独立取得的精确terminal根Span逐项核对phase、attempt、outcome、起止时间及毫秒耗时，且绑定正确Owner／实例／六字段。预期terminal／failed／attempt=1来自实际本轮样本，不能从业务状态推算阶段值。 |
+| A4 正常缺样 | 每个Owner只在预先固定的两个enqueue候选（失败样本优先，其次成功样本）中选自然返回 `not_found` 的槽；真实enqueue检查点存在且attempt=0，同精确平台Trace查询正常返回404 `trace_not_found`。响应只有槽位与状态，无样本字段；同execution的可读latest仍保留，普通执行详情及过程事件继续可读。只能说明本次未找到已保留样本，不能断言被采样丢弃或已过期。 |
+| A5 输出边界 | DTO严格白名单及两槽，0值不丢；无Trace／Span／实例ID、Parent／Link、配置、SQL、凭据或日志正文；业务User访问平台Trace／日志入口沿原规则拒绝，不通过平台接口补齐租户数据。 |
+| A6 真实Console | 打开详情尚不查询阶段，显式打开才发精确请求；失败样本父／子各验证一次可读展示，已确认缺样候选各验证一次缺样文案。阶段结果不改任务状态／总耗时；收起及关闭后清空，切换execution不串样。浏览器仍沿现有240秒测试／300秒容器上限，不要求同一真实窗口重复四主题矩阵，四主题／撤权／迟到竞态继续沿已通过T3证据。 |
+| A7 清理 | 正式定义删除及旧会话拒绝、资源归属与外层零残留全部完成；业务断言与清理分别计证，清理成功不把缺样未覆盖或业务失败改为通过。 |
+
+`not_recorded` 与 `outside_window` 不冒充正常未命中：新鲜、已启用生产者若无关联，记录实测并判样本前置失败；不关闭SDK制造not_recorded，不改时钟／历史或等待72小时制造outside_window。503／504／422／429、错误码不符、错绑或预算失败均是失败，不能归为正常缺样或通过重复刷新掩盖。若两个候选均可读，则该Owner的A4未覆盖，整体本轮不得判全部通过；不追加候选业务、改采样或自动开下一轮。
+
+#### 4. 观察预算、证据与清理
+
+复用原普通5%、慢1秒、尾采样120秒及72小时／20GiB政策，单查询仍共用Owner前开始的5秒／原并发与数据预算。两组业务终态后，沿原固定125秒自然尾采样等待；随后阶段观测共用一个最多90秒窗口，最多6轮、轮间至少15秒。每轮只查询失败父／子；成功父／子仅在最后一次补读，阶段API最多14次，另有最多4次浏览器显式打开。无并发扇出、不重置总截止；首次缺样及后继状态均保留，只有窗口末次仍未命中且独立精确404才计A4。上游错误立即停止；窗口只等待同批真实样本可见性，不重跑业务。上述是待确认的验收客户端上限，不修改产品查询预算。
+
+整轮从准备／构建起最多60分钟，沿8 CPU／12 GiB总硬配额、4 GiB实际占用停止线、四秒完整采样及最多五秒间隔；每阶段使用全局剩余时间，剩余不足直接拒绝进入该阶段，不续窗、加配额或由本会话自行重启个人服务。已有宿主Docker计量／构建准入若失败，保留首失败并停止，不将本方案作为其绕行入口。业务截止后必须完成取消与清理，清理超时／失败另列，不能将超窗报告为通过。
+
+先经业务User正式API删除本轮自有编排及query定义并核404，已有Engine及执行历史／授权／遥测只存在于本轮独占库／卷；Engine产品删除及历史保留策略不是本轮断言，不能把外层销毁记为Cleanup业务删除通过。四个原身份均登出并验证旧会话拒绝，关闭浏览器；再按准确run标签移除本轮容器、网络、卷、镜像标签、私有源码／构建缓存、日志和临时秘密，核验零残留。不得全局prune、删除共享缓存／Infra或他人对象。异常也只清本轮所有物，未完成的正式定义／会话清理须列为失败，不能以最后销毁掩盖。
+
+只保留仓库外权限0600的脱敏报告：固定SHA／镜像与输入摘要、随机run标识、本轮execution UUID、身份／权限集合核对布尔值、断言结果、安全错误码、阶段观测／候选顺序／时间、耗时与资源峰值、清理摘要。原始Trace／Span／运行实例ID和完整API／AuthContext／日志仅在私有目录中暂存用于当轮核对，退出销毁，不进入租户页面或最终归档；密码、令牌、Cookie、TOTP及认证截图／HAR／浏览器trace／视频不落归档。平台诊断与业务User的独立会话不得混用。
+
+#### 5. 确认后的实施顺序
+
+1. 先将本方案确认结果落正式观测规范及现有入口说明，再在现有 `monitor-traces-local-gate.py`／`monitor-traces-local-online.py` 与Console的现有本机隔离浏览器支撑中接入租户阶段场景；保持唯一Make入口及当前四身份／权限，不新建Hosted workflow或旁路runner。租户与平台浏览器输入需按明确身份拆分，不把技术引用交给租户测试页。当前尚未实现的调用／断言不能用旧入口结果替代。
+2. 实施前核对现有源码输入摘要登记、路径发现与CI覆盖，必要适配同次提交。最小充分验证沿 `make test-monitor-traces-local-runner`、受影响Console前端标准入口及既有登记检查；若实际修改Common／Monitor／System生产代码或身份边界，重新识别门禁与确认范围，不借验收扩权。
+3. 代码和确定性门禁通过后提交固定SHA，提出一次本机隔离真实运行的准确命令／身份／预算与清理摘要，取得单独确认后才执行。当前用户只授权细化方案，本节不构成环境启动、身份准备、样本提交或真实验收授权。
+
 ## 七、确认范围与协作分工
 
 用户已确认由本会话统一牵头，正式契约先提交，按 Common → Graph → Cleanup 实施；已确认细节直接推进。已批准的补充边界包括 Graph 窄 reconcile／原目标 reopen、Cleanup 安全展示、目的限定执行授权、专业结果窄读取、Meta／Manager 独立治理和显式配对、原生三身份／双入口、Engine 授权用途分离、Manager 专属 CI 基线以及 Transfer capture_cleanup 连接用途。
