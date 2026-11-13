@@ -55,7 +55,7 @@ OWNER_METADATA = set('initial_authorization metadata_scan lineage_facts continuo
                      'recovery_consecutive_failures recovery_backoff_seconds recovery_not_before recovery_circuit_state'.split())
 PHYSICAL_ACTIONS = {'produce-initial', 'produce-after-recovery', 'produce-invalid', 'mutate-cdc', 'alter-cdc', 'verify-cdc-altered',
                     'verify-kafka-initial', 'verify-kafka-recovered', 'verify-cdc-initial',
-                    'verify-cdc-mutated', 'verify-scheduled', 'verify-clean', 'risk-mutate-cdc',
+                    'verify-cdc-mutated', 'verify-cdc-rebuilt', 'verify-scheduled', 'verify-clean', 'risk-mutate-cdc',
                     'risk-pause-source', 'risk-unpause-source'}
 OWNER_OUTAGE_CHECKS = ['previously_readable', 'event_transport_failure_isolated', 'event_transport_recovered',
                        'real_owner_503', 'old_details_tree_steps_events_cleared', 'old_list_and_total_cleared',
@@ -222,8 +222,8 @@ def lifecycle_events(items, terminal=None):
 
 
 def task_config(kind, pg, kafka):
-    require(kind in {'kafka', 'cdc', 'kafka-graceful'} and pg > 0 and kafka > 0, 'invalid physical source identity')
-    is_kafka = kind != 'cdc'
+    require(kind in {'kafka', 'cdc', 'cdc-rebuilt', 'kafka-graceful'} and pg > 0 and kafka > 0, 'invalid physical source identity')
+    is_kafka = kind not in {'cdc', 'cdc-rebuilt'}
     source = {'locator': f'addp://engine/{pg}/path/public/continuous_source?type=table',
               'data_type': 'table', 'representation': 'native'}
     detection = {'type': 'cdc', 'bootstrap': 'initial_snapshot'}
@@ -423,7 +423,7 @@ def cdc_risk_trim(binding, offset):
 
 
 def verify_cdc_risk_closure(client, tenant, task_id, engine_id, execution_id, name, run_id,
-                            mutate, launch, report, checkpoint):
+                            mutate, create, launch, report, checkpoint):
     proof = report['cdc_risk_closure'] = {'task_id': task_id, 'cleanup': 'pending', 'stage': 'baseline'}
     healthy = until(lambda: cdc_task_sample(client, task_id, engine_id))
     generation = healthy['generation']
@@ -544,20 +544,26 @@ def verify_cdc_risk_closure(client, tenant, task_id, engine_id, execution_id, na
         require({v['id'] for v in closed.values()} == {v['id'] for v in opened.values()}, 'close replaced risk incidents')
         proof['resolved_deliveries'] = until(lambda: delivered(closed, 'resolved'))
         require(physical('verify-clean'), 'fault generation capture resources remain')
-        stage('new_generation')
-        new_execution = launch(task_id)
+        stage('replacement_task')
+        # Stop is irreversible. Rebaseline through a new, independently owned definition.
+        new_task = create('cdc-rebuilt')
+        require(new_task != task_id, 'CDC replacement reused stopped task')
+        proof['replacement_task_id'] = new_task
+        new_execution = launch(new_task)
         def rebuilt():
-            value = cdc_task_sample(client, task_id, engine_id)
-            return value if value and value['generation'] > generation and value['buffer']['lag_offsets'] == '0' else None
+            value = cdc_task_sample(client, new_task, engine_id)
+            return value if value and value['buffer']['lag_offsets'] == '0' else None
         new = until(rebuilt)
-        require(new['generation'] > generation and new['execution_id'] == new_execution
-                and new['buffer']['lag_offsets'] == '0', 'new capture generation not healthy')
+        require(new['execution_id'] == new_execution and new['buffer']['lag_offsets'] == '0', 'replacement capture not healthy')
+        until(lambda: physical('verify-cdc-rebuilt'))
+        require(not cdc_risk_alerts(client, new_task, new['generation']), 'healthy replacement has loss incident')
         require(all(v['status'] == 'resolved' for v in cdc_risk_alerts(client, task_id, generation).values()),
                 'healthy new generation reopened old risks')
-        mutate(client, f'{OWNER}/task-definitions/{task_id}/stop', {'confirmed': True, 'confirmation_text': name})
+        new_name = client.request('GET', f'{OWNER}/task-definitions/{new_task}', (200,)).payload['name']
+        mutate(client, f'{OWNER}/task-definitions/{new_task}/stop', {'confirmed': True, 'confirmation_text': new_name})
         wait_status(client, new_execution, 'cancelled')
         require(physical('verify-clean'), 'new generation capture resources remain')
-        proof.update(new_generation=new['generation'], new_execution_id=new_execution,
+        proof.update(replacement_generation=new['generation'], replacement_execution_id=new_execution,
                      original_incident_ids={k: v['id'] for k, v in opened.items()}, result='passed')
         stage('completed')
     finally:
@@ -1333,13 +1339,13 @@ def scheduled_task_body(name, pg):
 
 
 def quiesce_task_for_cleanup(client, task_id, kind, name, current, mutate):
-    require(kind in {'scheduled', 'kafka', 'cdc', 'kafka-graceful'}, 'unknown cleanup task kind')
+    require(kind in {'scheduled', 'kafka', 'cdc', 'cdc-rebuilt', 'kafka-graceful'}, 'unknown cleanup task kind')
     if kind == 'scheduled':
         if current.get('enabled') is True:
             mutate(client, f'{OWNER}/task-definitions/{task_id}/pause')
     elif current.get('desired_state') != 'stopped':
         mutate(client, f'{OWNER}/task-definitions/{task_id}/stop',
-               {'confirmed': True, 'confirmation_text': name} if kind == 'cdc' else None)
+               {'confirmed': True, 'confirmation_text': name} if kind in {'cdc', 'cdc-rebuilt'} else None)
 
 
 def failure_diagnostic(phase, error):
@@ -1704,8 +1710,8 @@ def run_suite(client, denied, foreign, peer, reader, admin, login, tenant, run_i
         name = next(name for task, kind, name in tasks if task == cdc_task)
         phase('cdc_risk')
         verify_cdc_risk_closure(client, tenant, cdc_task, pg, cdc_resumed, name, run_id,
-                                mutate, launch, report, checkpoint)
-        report['checks'].append('cdc_loss_alert_trigger_unknown_ack_close_signed_delivery_and_generation_rebuild')
+                                mutate, create, launch, report, checkpoint)
+        report['checks'].append('cdc_loss_alert_trigger_unknown_ack_close_signed_delivery_and_task_rebuild')
         phase('cdc_stop')
         wait_status(client, cdc_resumed, 'cancelled')
         compare(cdc_resumed, 'cancelled')

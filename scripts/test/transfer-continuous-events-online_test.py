@@ -1156,6 +1156,20 @@ class CDCTaskObservationTest(unittest.TestCase):
 
 
 class CDCRiskAcceptanceTest(unittest.TestCase):
+    def test_replacement_uses_new_target_and_irreversible_cdc_cleanup_confirmation(self):
+        original = M.task_config('cdc', 10, 11)
+        replacement = M.task_config('cdc-rebuilt', 10, 11)
+        self.assertEqual(replacement['source'], original['source'])
+        self.assertEqual(replacement['load']['change_detection']['type'], 'cdc')
+        self.assertEqual(replacement['target']['name'], 'continuous_cdc_rebuilt_target')
+        self.assertNotEqual(replacement['target']['name'], original['target']['name'])
+        self.assertEqual(replacement['target']['policy']['apply_mode'], 'upsert_delete')
+        mutate = unittest.mock.Mock()
+        actor = object()
+        M.quiesce_task_for_cleanup(actor, 9, 'cdc-rebuilt', 'owned-rebuild', {'desired_state':'paused'}, mutate)
+        mutate.assert_called_once_with(actor, M.OWNER+'/task-definitions/9/stop',
+                                       {'confirmed':True,'confirmation_text':'owned-rebuild'})
+
     def payload(self, receiver, kind='opened'):
         return {'schema_version': 'monitor.alert.webhook/v1', 'delivery_id': UUID,
                 'event': {'event_id': 'bbbbbbbb-2222-4222-8222-222222222222', 'type': kind,

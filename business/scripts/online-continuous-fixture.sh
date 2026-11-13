@@ -159,7 +159,7 @@ SQL
     [ "$actual" = '1|business-value-sentinel-updated|business-value-sentinel-added
 3|business-value-sentinel-inserted|' ] || exit 1
     ;;
-  verify-kafka-initial|verify-kafka-recovered|verify-cdc-initial|verify-cdc-mutated)
+  verify-kafka-initial|verify-kafka-recovered|verify-cdc-initial|verify-cdc-mutated|verify-cdc-rebuilt)
     case "$action" in
       verify-kafka-initial) expected='1|business-value-sentinel-first
 2|business-value-sentinel-second'; table=continuous_kafka_target ;;
@@ -168,9 +168,10 @@ SQL
 3|business-value-sentinel-third'; table=continuous_kafka_target ;;
       verify-cdc-initial) expected='1|business-value-sentinel-initial
 2|business-value-sentinel-delete'; table=continuous_cdc_target ;;
-      verify-cdc-mutated) expected='1|business-value-sentinel-updated
+      verify-cdc-mutated|verify-cdc-rebuilt) expected='1|business-value-sentinel-updated
 3|business-value-sentinel-inserted'; table=continuous_cdc_target ;;
     esac
+    [ "$action" != verify-cdc-rebuilt ] || table=continuous_cdc_rebuilt_target
     actual=$(psql_owned -c "SELECT id,label FROM public.$table ORDER BY id" 2>/dev/null) || exit 2
     [ "$actual" = "$expected" ] || exit 3
     ;;
