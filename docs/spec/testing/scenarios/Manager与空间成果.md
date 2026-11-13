@@ -345,13 +345,53 @@ ENVI 原件出口要求当前普通 User，资源动作声明与实际受控读�
 
 ### IMG 原生扫描与 COG 快显
 
-同一 Manager Hosted suite 增加 IMG 子场景，使用既有普通 User、十项权限、Business MinIO、GeoPython 产品 Runtime 与同一部署生命周期，不新增 suite、服务或权限。Runtime 中生成三份自有 256×256 三波段 Byte HFA：WGS84、UTM50N 和无定位影像；全部自包含、同数据类型且无 NoData。真实 Meta 深度扫描须证明 `img/media/single`、HFA 编码、尺寸、波段及明确的源 CRS/范围；无定位样例不得出现推断的空间能力或 COG 生成动作。
+阅读导航：[正文分工与来源](#imgjpeg2000-正文分工与来源) · [COG 与缓存](#imgjpeg2000-cog-与缓存) · [页面与原件](#imgjpeg2000-页面与原件) · [清理与验证](#imgjpeg2000-清理与验证) · [历史证据与未覆盖项](#imgjpeg2000-历史证据与未覆盖项)。
 
-两份有定位 IMG 经正式 `generate_raster_cog` action 生成受管 TIFF/COG，核任务 `source_format=img`、原生 Runtime 身份、完整像元/mask/CRS/仿射网格、完整 COG 布局、API/物理哈希和大小、Range 前后缀及越界拒绝。同一普通 User 在真实 Console iframe 显示 WGS84/UTM COG，检查 WebGL 图层的品红/青/黄像素及截图，重开复用同一结果且不产生额外生成请求；原文件下载哈希保持一致。无定位样例核元数据、不开放地图，以及可见的“不支持直接预览”提示；预览区域不得挂载普通图片组件或 `<img>`，不得把 IMG/JP2/J2K 源交给浏览器图片解码。浏览器报告必须保存 `source_image_absent=true` 与 `unsupported_message_visible=true`，缺失或为假均拒绝，不能仅凭无地图／无生成按钮判通过。生成、页面、复用及退出均核源原字节不变；通过正式 Manager API 删除结果和任务，核内容404、物理对象缺失、源预览模式恢复与零残留。失败仍须尝试本轮已知精确资源清理，保留首个业务错误和清理错误。
+#### IMG／JPEG2000 正文分工与来源
 
-IMG 与 JPEG2000 子场景复用唯一媒体栅格 runner，分别归档 `manager-img*.json` 和 `manager-jpeg2000*.json`，报告使用 `addp.manager-raster-media/v2` 与 `addp.manager-raster-media-browser/v4`，旧 Manager 场景断言保持。标准确定性入口仍为 `make test-manager-online-runner`，原生物理夹具由 `make test-geopython-workflow` 自动发现，CI 注册检查须确认新子场景、浏览器和两组回归在已有入口中实际接线。仅手工触发既有 Manager Hosted，不增加定时；真实结果出来前不记通过。该证据不外推 IMG 导出、外部 IGE/RRD/依赖文件、复数/异质波段、自定义 WKT、NFS Hosted 或任意影像容量。
+IMG 与 JPEG2000 复用同一 Manager Hosted suite、普通 User 十项权限、Business MinIO、GeoPython 产品 Runtime 和唯一媒体栅格 runner，不新增 suite、服务或权限。按 case 选择组件及原生进程／产品容器的分工统一见[部署、模型转换与通用清理](#部署模型转换与通用清理)，不在各格式重复维护启动步骤。
 
-JPEG2000 扩展仍使用同一 Manager Hosted、Business MinIO、十项普通 User 权限及产品 Runtime，不新建 suite 或服务。四份 256×256 三波段 Byte 合成源分别为 GeoJP2 WGS84、GMLJP2 UTM50N、无定位 JP2 和原始 J2K；采用可逆无损编码。检查 canonical `jpeg2000/media/single`、JP2OpenJPEG、profile、尺寸和波段，完整下载核源大小/哈希。两份定位源沿同一任务入口生成 COG，核实际 source_format、完整像元、mask、CRS、仿射网格、COG布局、HTTP/物理哈希及Range和416；真实浏览器检查三色像素、截图、重开复用且零新生成请求。两份无定位源无地图、无生成动作，不假定经纬度。每份源 Meta 及字节前后不变，两个 COG 结果/任务经 API 删除后核物理对象缺失、内容404和预览模式恢复，部署与Infra清理仍须通过。此扩展不认证外部定位/PAM、JPX组合、NFS/FTP、JPEG2000写出或任意厂商容量；旧IMG通过证据不代表JPEG2000通过。
+| 来源／专题 | 本文职责与独有断言 |
+| --- | --- |
+| IMG／HFA | 三份自有 256×256 三波段 Byte：WGS84、UTM50N、无定位影像，全部自包含、同类型、无 NoData。核 `img/media/single`、HFA 编码、尺寸／波段及已声明 CRS。格式准入见 [IMG 正式契约](../../builtin-formats/媒体与地图数据集.md#img--erdas-imagine)。 |
+| JPEG2000 | 四份同尺寸三波段 Byte 可逆无损源：GeoJP2 WGS84、GMLJP2 UTM50N、无定位 JP2、原始 J2K。核 `jpeg2000/media/single`、JP2OpenJPEG、profile、尺寸／波段及源大小／哈希。格式准入见 [JPEG2000 正式契约](../../builtin-formats/媒体与地图数据集.md#jpeg2000)。 |
+| TIFF 回归 | 布局判定、无定位小图像素、单项刷新、NFS 授权／自然到期和 MSK 扩展分别归[TIFF 专题](#tiff-无定位小图的-cog-布局回归)。复用 runner 不表示沿用 IMG／JP2 的无定位失败提示或生成按钮判定；本节不复制其业务断言。 |
+
+真实 Meta 深度扫描核结构身份与已声明 CRS；尺寸、波段、编码、完整格式参数及内容范围通过同一普通用户的 Manager 授权预览核对，并分别归档公开 Meta 与受控内容响应。无定位样例不得出现推断的空间能力，不据名称或坐标外观假定经纬度。
+
+#### IMG／JPEG2000 COG 与缓存
+
+各格式的两份定位源沿正式 `generate_raster_cog` action 生成受管 TIFF／COG，共四份。逐任务核实际 `source_format=img` 或 `jpeg2000`、原生 Runtime 身份、完整像元／mask／CRS／仿射网格、完整 COG 布局、API／物理哈希与大小、Range 前后缀和越界 416 拒绝。
+
+同一普通 User 在真实 Console iframe 查看 WGS84／UTM COG，核 WebGL 图层品红／青／黄像素及截图；重开复用同一结果与执行，零额外生成请求。生成、页面、复用和退出均核源字节及 Meta 不变；原格式身份不因派生 COG 改写。
+
+#### IMG／JPEG2000 页面与原件
+
+无定位 IMG、JP2、J2K 核元数据及可见的“不支持直接预览”提示，无地图、无 COG 生成动作；预览区域不得挂载普通图片组件或源 `<img>`，不得把源交给浏览器图片解码。页面报告必须包含 `source_image_absent=true` 与 `unsupported_message_visible=true`，缺失或为假均拒绝，不能仅凭无地图／无生成按钮判通过。
+
+每份原件经 API 和真实页面按钮分别核完整大小与哈希；API 下载不替代按钮。TIFF 的无定位渲染与可选转换动作按其专节判定，不从上述 IMG／JP2 规则推导。
+
+#### IMG／JPEG2000 清理与验证
+
+通过正式 Manager API 删除四份受管结果和任务，核内容 404、物理对象缺失、源预览模式恢复及零残留；部署与 Infra 另按 Hosted 生命周期清理。失败仍尝试本轮已知精确资源清理，保留首个业务错误及各清理错误，清理成功不抵消业务失败。
+
+IMG／JPEG2000 分别归档 `manager-img*.json`、`manager-jpeg2000*.json`，现行报告为 `addp.manager-raster-media/v2` 与 `addp.manager-raster-media-browser/v4`。历史报告版本按固定记录使用，不追认新版覆盖；旧 Manager 场景断言保持。
+
+标准确定性入口为 `make test-manager-online-runner`，原生物理夹具由 `make test-geopython-workflow` 自动发现；CI 注册检查须确认子场景、浏览器和两组回归在既有入口实际接线。仅手工触发既有 Manager Hosted，不增加定时；未取得真实结果的新增范围不计通过。
+
+#### IMG／JPEG2000 历史证据与未覆盖项
+
+固定源码、实际 Job、原始产物、失败／取消、清理及未覆盖项由以下专题维护，部署成功、CI 分项和页面独立复核分别判定：
+
+| 记录 | 固定范围与边界 |
+| --- | --- |
+| IMG 早期 HFA | [IMG 原生链路记录](../evidence/资源读取与预览历史证据.md#manager-内部产物与-minio-模型入口--hosted-t4)中的 `3fdb1d7339339ffb1a88a6d3b88110c4117ff5e4`、Job `119751590212` 仅按三份 IMG／两 COG 的原范围使用，不据此证明 JPEG2000 已通过。 |
+| JPEG2000 首轮独立复核未过 | [初轮记录](../evidence/资源读取与预览历史证据.md#jpeg2000-初轮--hosted-外层成功独立页面复核未通过)：`4b4654e09ede6f8a42dc7a7d79f58c5337757787`、Job `120778458951`。数值、原件、四 COG 及清理有证据，但无定位 JP2／J2K 误用图片组件显示破图，旧 v1 漏检，不能按外层成功登记正式通过；初版 Linux 两项失败与后续结果分开保留。 |
+| IMG＋JPEG2000 独立 case 收口 | [正式证据](../evidence/资源读取与预览历史证据.md#imgjpeg2000-独立媒体栅格-case--hosted-t4)：`7941ba5420a958431a2b16dd96e4df25f9545524`、Job `120830824970`，覆盖七份源、四 COG、无定位提示和无源图片组件、页面／缓存与完整清理；当轮 browser v2 不改写为当前 v4，默认完整 Manager 模型场景未执行。 |
+| TIFF 布局及负例 | [布局误判与修复证据](../evidence/资源读取与预览历史证据.md#tiff-cog-布局误判--有界格式与未知状态修复)：保留 `9b4fc5f7ae529100b8d263fd1de4e392a41c9b97`／Job `123998948462` 的有界小图正向 Hosted，以及 overview 反例真实 Linux 失败、取消／未执行和后续完整 Linux 补证；这些记录不能互相替代或外推 TIFF 其他范围。 |
+| NFS TIFF 页面与自然到期 | [限定 Hosted 证据](../evidence/资源读取与预览历史证据.md#nfs-tiff-渲染授权自然到期与清理--hosted-t4)：`81d36a8d7a14c158935e4b0baa0b0236dc819223`、Job `129907983192`。仅按其小图 Range、灰阶／透明像素及授权到期范围使用，不替代新增 MSK 或其他布局验收。 |
+
+IMG 不外推导出、外部 IGE／RRD／依赖文件、复数／异质波段、自定义 WKT、NFS Hosted 或任意影像容量；JPEG2000 不外推外部定位／PAM、JPX 组合、NFS／FTP、写出或任意厂商容量。旧 IMG 通过不代表 JPEG2000 通过，两者也不替代 TIFF 或 GRD 的独有断言；专项及清理通过不表示整轮 CI、完整 Manager 或专业影像生产全部通过。
 
 ### 部署、模型转换与通用清理
 
