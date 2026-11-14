@@ -383,10 +383,13 @@ Graph 在 C→G 内、关闭／取消／归档前比较当前模块影响与原�
 
 **凭据准备诊断收口（2026-11-14）。** 按本轮确认范围先补正式观测契约，再将原唯一凭据fixture改为可导入且无执行副作用的实现；原九次OpenSSL调用、参数、顺序、文件与权限操作保持不变。回执只含16个固定步骤的已完成前缀／当前步骤及封闭错误类别，上限2048字节，无异常正文、路径、参数或秘密；入口仅识别准确fixture命令的原捕获流，错误／缺失／冲突／超限回执明确不可用，仍保留原命令失败。将fixture本体补入固定源码输入摘要，当前清单40项；现有Make生命周期与Platform consistency执行新增用例，Execution Linux门禁核验登记，既有路径选择已覆盖；无新增入口、探针、等待、配置或权限。
 
-新增6项确定性测试逐点注入全部16步故障，核验命令次数、九次原调用顺序、异常脱敏、成功／失败回执一致性、限额与错误输入拒绝、准确命令归属及失败退出码；既有产品渲染衔接测试同步核验成功回执。本轮未执行Trace真实凭据准备、身份准备、产品部署或业务验收，不改变原首失败结论；首轮报告SHA256再次核对未变。下一步先以携带诊断的固定源码取得实际失败步骤与类别，新的真实窗口另行确认；诊断不足前不修改OpenSSL默认配置或推定根因。
+新增6项确定性测试逐点注入全部16步故障，核验命令次数、九次原调用顺序、异常脱敏、成功／失败回执一致性、限额与错误输入拒绝、准确命令归属及失败退出码；既有产品渲染衔接测试同步核验成功回执。本地实施与确定性验证未启动本机Trace真实凭据准备、身份准备、产品部署或业务验收，不改变原首失败结论；首轮报告SHA256再次核对未变。下一步先以携带诊断的固定源码取得实际失败步骤与类别，新的真实窗口另行确认；诊断不足前不修改OpenSSL默认配置或推定根因。
 
+本地确定性门禁：`make test-monitor-traces-local-runner` 222项Python、登记与System身份夹具Go通过；`make test-infra-runtime-log-lifecycle` 共537项Python（含前述222项）、7项Node及夹具Go通过，PostgreSQL指标真实恢复未选择／未安装，不计为通过；`make test-execution-online-ci-runner` 207＋19＋158＋35＝419项Python及登记通过。新增凭据用例未启动OpenSSL、Docker或服务，既有HTTP离线TLS单测仍按原标准入口执行。首个本地新增测试因macOS临时路径别名导致prepare故障未注入而失败，已将测试工作目录解析为规范路径并重跑通过，原失败日志保留于`/tmp/addp-credentials-diagnostics-local.log`；最终日志为`/tmp/addp-credentials-diagnostics-{local-final,infra,execution}.log`。以上本地结果不代替真实窗口或Hosted；本次固定源码的Linux核验结果如下。
 
-本地确定性门禁：`make test-monitor-traces-local-runner` 222项Python、登记与System身份夹具Go通过；`make test-infra-runtime-log-lifecycle` 共537项Python（含前述222项）、7项Node及夹具Go通过，PostgreSQL指标真实恢复未选择／未安装，不计为通过；`make test-execution-online-ci-runner` 207＋19＋158＋35＝419项Python及登记通过。新增凭据用例未启动OpenSSL、Docker或服务，既有HTTP离线TLS单测仍按原标准入口执行。首个本地新增测试因macOS临时路径别名导致prepare故障未注入而失败，已将测试工作目录解析为规范路径并重跑通过，原失败日志保留于`/tmp/addp-credentials-diagnostics-local.log`；最终日志为`/tmp/addp-credentials-diagnostics-{local-final,infra,execution}.log`。这是本地确定性证据，不代表新的真实窗口、Hosted或远端Linux通过；自然CI由本次提交触发并另按固定SHA核验。
+**固定源码Linux CI已收口。** `4b4c3975799dd0f3a97c3be7b2c8e1cfcfa9963e`、push／attempt 1 的三个相关执行Job均到成功终态：[Platform consistency](https://github.com/pampa0629/addp/actions/runs/43536539805/job/132266825020)于北京时间09:42:42完成，日志09:13:52明确记录凭据runner整组222项Python全部OK，无跳过，后续登记、System身份夹具Go及169项生命周期回归通过；固定源码的标准入口无名称过滤、模块无load_tests／skip，新增6个无条件方法确实纳入该次整组执行，不能只依据Job绿或源码登记推定。[Execution runner](https://github.com/pampa0629/addp/actions/runs/43536539805/job/132266825193)于09:10:49完成，selected=true，207＋19＋158＋35＝419项Python及登记通过。[Trace T2](https://github.com/pampa0629/addp/actions/runs/43536539623/job/132270120130)于09:13:26完成，实际使用新fixture，回执16步全部完成、step=finalize／error_category=none，TestOwnedTracePipeline通过，末尾确认容器／网络／卷及临时文件零残留。这是Linux真实Trace T2证据，不是正式Tenant业务用户验收或Hosted。
+
+原始日志、固定源码方法／输入清单及核验摘要保留于`/tmp/addp-4b4c39757-linux-ci/{platform.log,execution.log,trace-t2.log,selection.log,source-manifest.json,audit.json,latest.json}`（目录0700、文件0600）。本轮仅只读跟进既有CI并补证据，无需代码修复、未重跑CI；首轮报告SHA256再次核对未变，其失败阶段和根因未明的结论保留，其他会话改动保留，未重启个人服务、运行Hosted或追加真实窗口。本次诊断实现及Linux门禁缺口已关闭；剩余为首轮本机凭据失败的实际根因，以及未进入的正式身份／业务／租户阶段／Console链路。下一步建议单独确认携带新诊断的一次本机隔离真实验收，启动前核对固定源码和既有输入，保持原身份权限、采样、预算及清理范围，不把Linux成功外推为本机根因已修复。
 
 ## 七、确认范围与协作分工
 
