@@ -15,8 +15,13 @@ import (
 // deliberately not a general-purpose ZIP author or alternate decompressor.
 func skcDescriptorFixture(t *testing.T) []byte {
 	t.Helper()
-	raw := skcTestZIP(t, false, vffTestMember{"document.xml", []byte("<classification/>"), zip.Deflate},
+	return skcDescriptorZIP(t, false, vffTestMember{"document.xml", []byte("<classification/>"), zip.Deflate},
 		vffTestMember{"Schemas/", nil, zip.Store}, vffTestMember{"Schemas/a.xsd", []byte("<schema/>"), zip.Deflate})
+}
+
+func skcDescriptorZIP(t *testing.T, unicodePath bool, members ...vffTestMember) []byte {
+	t.Helper()
+	raw := skcTestZIP(t, false, members...)
 	extra := make([]byte, 32)
 	binary.LittleEndian.PutUint16(extra, 0x5455)
 	binary.LittleEndian.PutUint16(extra[2:], 13)
@@ -37,6 +42,12 @@ func skcDescriptorFixture(t *testing.T) []byte {
 		start := offset + 30 + n + int(binary.LittleEndian.Uint16(local[28:]))
 		size := int(binary.LittleEndian.Uint32(h[20:]))
 		flags := uint16(8)
+		entryExtra := extra
+		if unicodePath {
+			flags = 0x808
+			entryExtra = skcUnicodePathExtra(name)
+			binary.LittleEndian.PutUint32(local[22:], 0)
+		}
 		if bytes.HasSuffix(name, []byte("/")) {
 			flags = 0
 		}
@@ -44,16 +55,16 @@ func skcDescriptorFixture(t *testing.T) []byte {
 		binary.LittleEndian.PutUint16(local[6:], flags)
 		binary.LittleEndian.PutUint32(local[14:], 0)
 		binary.LittleEndian.PutUint32(local[18:], 0)
-		binary.LittleEndian.PutUint16(local[28:], 32)
+		binary.LittleEndian.PutUint16(local[28:], uint16(len(entryExtra)))
 		binary.LittleEndian.PutUint16(h[6:], 20)
 		binary.LittleEndian.PutUint16(h[8:], flags)
-		binary.LittleEndian.PutUint16(h[30:], 32)
+		binary.LittleEndian.PutUint16(h[30:], uint16(len(entryExtra)))
 		binary.LittleEndian.PutUint32(h[42:], uint32(locals.Len()))
 		locals.Write(local)
 		locals.Write(name)
-		locals.Write(extra)
+		locals.Write(entryExtra)
 		locals.Write(raw[start : start+size])
-		if flags == 8 {
+		if flags&8 != 0 {
 			var descriptor [16]byte
 			binary.LittleEndian.PutUint32(descriptor[:], 0x08074b50)
 			copy(descriptor[4:], h[16:28])
@@ -61,7 +72,7 @@ func skcDescriptorFixture(t *testing.T) []byte {
 		}
 		central.Write(h)
 		central.Write(name)
-		central.Write(extra)
+		central.Write(entryExtra)
 		p += 46 + n
 	}
 	end := bytes.Clone(raw[len(raw)-22:])
@@ -142,7 +153,7 @@ func TestVFFSKCSignedDescriptorRejectsConflictsAndUnsupportedVariants(t *testing
 		},
 		"local needed":   func(b []byte) []byte { binary.LittleEndian.PutUint16(b[4:], 45); return b },
 		"central needed": func(b []byte) []byte { binary.LittleEndian.PutUint16(b[directoryPosition(b)+6:], 45); return b },
-		"utf8 descriptor": func(b []byte) []byte {
+		"UTF8 flag with IFC4 extensions": func(b []byte) []byte {
 			binary.LittleEndian.PutUint16(b[6:], 0x808)
 			binary.LittleEndian.PutUint16(b[directoryPosition(b)+8:], 0x808)
 			return b
