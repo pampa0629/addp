@@ -11,6 +11,7 @@ from contextlib import contextmanager, nullcontext
 import copy
 import hashlib
 import importlib
+import importlib.util
 import json
 import math
 import os
@@ -31,6 +32,9 @@ import uuid
 import urllib.parse
 
 ROOT = Path(__file__).resolve().parents[2]
+_credentials_spec = importlib.util.spec_from_file_location('trace_credentials', Path(__file__).with_name('trace-deployment-fixture.py'))
+CREDENTIALS = importlib.util.module_from_spec(_credentials_spec)
+_credentials_spec.loader.exec_module(CREDENTIALS)
 LABEL = 'com.addp.execution-trace-local'
 BACKENDS = ('system-backend', 'gateway', 'security-backend', 'develop-backend', 'orchestrator-backend', 'monitor-backend')
 FRONTENDS = ('console', 'system-frontend', 'monitor-frontend', 'nginx')
@@ -42,6 +46,7 @@ LIMITS = {name: (.25, 512) for name in BACKENDS} | {name: (.025, 32) for name in
     'trace-store-init': (.1, 128), 'tempo': (2, 2048), 'trace-query': (.25, 128), 'alloy': (1, 1024)}
 OWN_INPUTS = (
     'Makefile', 'nginx/nginx.conf', 'scripts/ci/check-online-ci-registration.py', 'scripts/ci/check-execution-trace-local-registration_test.py',
+    'scripts/test/trace-deployment-fixture.py',
     'scripts/test/monitor-traces-local-gate.py', 'scripts/test/monitor-traces-local-gate_test.py',
     'scripts/test/monitor-traces-local-online.py', 'scripts/test/monitor-traces-local-online_test.py',
     'scripts/test/monitor-traces-gate.sh', 'scripts/infra/init-postgresql.sql', 'scripts/infra/Dockerfile.minio', 'common/httptrace/execution.go', 'common/httptrace/execution_test.go',
@@ -1247,6 +1252,9 @@ class Lifecycle:
                         # Raw output may carry login/SQL details. Export closed fields only.
                         self.last_failure = {'exit_code': p.returncode, 'output_sha256': hashlib.sha256(raw).hexdigest(),
                                              'diagnostic_markers': diagnostic_markers(raw)}
+                        if (self.phase == 'isolated_deployment_credentials' and
+                                args == [sys.executable, 'scripts/test/trace-deployment-fixture.py', str(self.work)]):
+                            self.last_failure['credentials_preparation'] = CREDENTIALS.diagnostic(raw, failed=True)
                         if self.phase.startswith('product_image_'):
                             self.last_failure['public_build']=public_build_failure_diagnostic(raw,getattr(self,'build_proxy_provenance',None))
                         if args[0] == 'du':
@@ -2194,7 +2202,8 @@ def verify_telemetry_configuration(life):
 def prepare_deployment_documents(life, env):
     life.phase='isolated_deployment_credentials'
     (life.work/'unused-logs').mkdir(mode=0o700)
-    life.command([sys.executable,'scripts/test/trace-deployment-fixture.py',str(life.work)])
+    credentials = life.command([sys.executable,'scripts/test/trace-deployment-fixture.py',str(life.work)])
+    life.credentials_preparation = CREDENTIALS.diagnostic(credentials.encode() if isinstance(credentials, str) else b'', failed=False)
     env.update(ADDP_OBSERVABILITY_TRACES_ENABLED='true', MONITOR_TEMPO_URL='https://trace-query:8443',
                MONITOR_TRACE_TLS_DIR=str(life.work/'query-tls'),
                ADDP_TRACE_DEPLOYMENTS=json.dumps([{'module_name':m,'role':'ingress' if m=='gateway' else 'backend',
@@ -2502,6 +2511,7 @@ def main():
             except Exception:
                 report['formal_cleanup']={'result':'failed','error_code':'formal_cleanup_incomplete'}
                 report['result']='failed'
+        if hasattr(life,'credentials_preparation'):report['credentials_preparation']=life.credentials_preparation
         if hasattr(life,'cache_reclaim_receipt'):report['go_cache_reclaim']=life.cache_reclaim_receipt
         if hasattr(life,'compile_start_handoff'):report['compile_start_handoff']=life.compile_start_handoff
         report['resource_samples']=life.samples

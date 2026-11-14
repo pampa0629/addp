@@ -839,6 +839,8 @@ Monitor 只接受两种已定义 scope 和对应 kind／属性契约，HTTP Span
 
 固定125秒尾采样等待后，平台样本可见性与租户阶段读取共用一个最多90秒截止，不另开等待窗；租户读取最多6轮、轮间至少15秒，失败父／子每轮各一次、成功父／子末次各一次，最多14次，加浏览器最多4次显式打开。每次租户请求至多5秒且受全局剩余预算约束，Owner／上游错误立即停止，不重跑业务或调采样。既有请求完成日志按同request_id核对Gateway／Monitor／准确Owner及另一Owner未被调用，不依赖HTTP留样；报告只保留封闭断言与执行身份，原始Trace／Span／实例引用仅当轮私有核对、退出销毁。成功或失败均尝试本轮定义删除和四身份登出，失败如实记录，再由外层仅销毁自有对象；外层零残留不替代正式删除或旧会话拒绝。真实运行仍须单独确认，不因入口或确定性门禁完成而自动执行，细化断言及边界见[专题方案](../next/ADDP任务执行管理统一收口专题.md#tenant-stage-chain-acceptance)。
 
+本机隔离Trace凭据准备仅记录既有顺序中的有限步骤：prepare、ca_server/source/query、各身份的csr／sign／tls、publish_ca、render及finalize。唯一凭据fixture退出时输出不超过2048字节的封闭JSON回执，只含固定schema、已完成步骤、当前步骤及none／openssl_command_failed／timeout／filesystem_error／renderer_rejected／unknown类别；不记录异常正文、命令参数、路径、证书、密钥或环境。入口仅从本次准确fixture命令原有捕获流读取；缺失、超限、冲突、非规范或步骤顺序不符时明确诊断不可用，不能猜测失败点。回执不增加命令、探针、等待、重试或配置，不改变原退出码、全局截止、采样、身份权限及清理；超时或进程被终止而未产生完整回执时仍沿原失败路径。首轮旧报告保持原样，不以新诊断补写历史根因。本批新增确定性验证使用注入故障，不执行Trace凭据子命令或启动部署；新的真实运行另行确认。
+
 产品镜像构建失败仅在`product_image_*`阶段沿唯一public_build分类器补充封闭诊断：固定原因／失败步骤、已知产物输入名、Dockerfile行号及有界HTTP状态／进程退出码。2026-11-01用户确认首批APT取证：仅在同一份完整BuildKit输出中，以唯一失败步骤编号关联其RUN apt-get及该编号输出；索引下载／deb下载／dpkg／unknown阶段只从该步骤实际错误推断，不能从未失败步骤、缓存提示或全局timed out／not found标记推定APT原因。固定错误类别涵盖DNS、超时、连接、HTTP、TLS、签名、包缺失、下载、dpkg、锁、空间及other；HTTP状态须带实际错误上下文，不从包名、版本、路径哈希或字节数中的数字提取。官方Debian源只输出HTTP／HTTPS、仓库类别及固定发行套件枚举，未知或含凭据／查询参数的URL不导出；不读取额外源文件或发探针。
 
 同一已捕获输出仅对精确白名单中的公共Python3.11／3.12 slim（含bookworm变体）及Debian Bookworm slim FROM步骤保留解析到的sha256；缺失或多个不同结果明确unavailable／ambiguous，不用当前可变tag或宿主机image inspect替代历史输入，不输出任意摘要或私有镜像名。代理证明只复用原prepare_builder的docker info及原宿主环境读取、既有无凭据本地代理校验结果，分别记录BuildKit／RUN构建参数／host CLI的来源和none／loopback／desktop_internal枚举，不保留端点、端口、代理值或完整环境，不追加Docker读取。

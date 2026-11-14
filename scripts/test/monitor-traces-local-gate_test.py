@@ -2,6 +2,7 @@
 from pathlib import Path
 import copy
 import importlib.util
+import io
 import json
 import os
 import signal
@@ -15,6 +16,140 @@ from unittest import mock
 spec = importlib.util.spec_from_file_location('monitor_traces_local_gate', Path(__file__).with_name('monitor-traces-local-gate.py'))
 m = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(m)
+
+
+class CredentialsPreparationTests(unittest.TestCase):
+    fixture = m.CREDENTIALS
+
+    def receipt(self, completed=(), step='prepare', category='filesystem_error'):
+        return json.dumps({'schema': self.fixture.SCHEMA, 'completed_steps': list(completed),
+                           'step': step, 'error_category': category}, separators=(',', ':')).encode() + b'\n'
+
+    def run_fixture(self, failed_step=None, error=None):
+        # Only synthetic files and injected subprocesses: no OpenSSL or service is run.
+        f = self.fixture
+        error = error or OSError('PRIVATE-PATH password=PRIVATE-SECRET')
+        openssl_steps = ('ca_server', 'ca_source', 'ca_query', 'csr_server', 'sign_server',
+                         'csr_source', 'sign_source', 'csr_query', 'sign_query')
+        calls = []
+        original_mkdir, original_chmod, original_write = Path.mkdir, Path.chmod, Path.write_bytes
+        with tempfile.TemporaryDirectory() as directory:
+            work = Path(directory).resolve()
+            def run(args, **kwargs):
+                step = openssl_steps[len(calls)]
+                calls.append((args, kwargs))
+                self.assertEqual(kwargs, {'check': True, 'stdout': f.subprocess.DEVNULL, 'stderr': f.subprocess.DEVNULL})
+                if step == failed_step:
+                    raise error
+                for option in ('-out', '-keyout'):
+                    if option in args:
+                        Path(args[args.index(option) + 1]).write_text('synthetic credential placeholder')
+            def mkdir(path, *args, **kwargs):
+                if failed_step == 'prepare' and path == work/'deployment': raise error
+                return original_mkdir(path, *args, **kwargs)
+            def chmod(path, *args, **kwargs):
+                step = 'finalize' if path.name == 'tempo.yml' else 'tls_server' if path.name == 'server.key' else None
+                if step and step == failed_step: raise error
+                return original_chmod(path, *args, **kwargs)
+            def write(path, data):
+                step = ('tls_source' if path.parent.name == 'source-tls' else 'tls_query') if path.name == 'ca.crt' else 'publish_ca'
+                if step == failed_step: raise error
+                return original_write(path, data)
+            def render(center, logs):
+                self.assertTrue(logs)
+                if failed_step == 'render': raise error
+                (center/'tempo.yml').write_text('synthetic rendered configuration')
+            renderer = SimpleNamespace(render=render)
+            module_spec = SimpleNamespace(loader=SimpleNamespace(exec_module=lambda module: None))
+            output = io.StringIO()
+            with mock.patch.object(f.subprocess, 'run', side_effect=run), \
+                 mock.patch.object(Path, 'mkdir', mkdir), mock.patch.object(Path, 'chmod', chmod), \
+                 mock.patch.object(Path, 'write_bytes', write), \
+                 mock.patch.object(f.importlib.util, 'spec_from_file_location', return_value=module_spec), \
+                 mock.patch.object(f.importlib.util, 'module_from_spec', return_value=renderer), \
+                 mock.patch.object(f.sys, 'stdout', output):
+                code = f.main(directory)
+            raw = output.getvalue().encode()
+            self.assertLessEqual(len(raw), f.LIMIT)
+            self.assertNotIn('PRIVATE', raw.decode())
+            self.assertNotIn(directory, raw.decode())
+            return code, raw, calls
+
+    def test_all_sixteen_steps_stop_at_first_injected_failure(self):
+        for index, step in enumerate(self.fixture.STEPS):
+            with self.subTest(step=step):
+                code, raw, calls = self.run_fixture(step)
+                self.assertEqual(code, 1)
+                self.assertEqual(self.fixture.diagnostic(raw, failed=True), {
+                    'status': 'complete', 'completed_steps': list(self.fixture.STEPS[:index]),
+                    'step': step, 'error_category': 'filesystem_error'})
+                expected_calls = sum(name.startswith(('ca_', 'csr_', 'sign_')) for name in self.fixture.STEPS[:index + 1])
+                self.assertEqual(len(calls), expected_calls)
+
+    def test_closed_categories_do_not_export_exception_arguments_or_output(self):
+        cases = [(self.fixture.subprocess.CalledProcessError(17, ['PRIVATE-COMMAND'], output=b'PRIVATE-SECRET'), 'openssl_command_failed'),
+                 (self.fixture.subprocess.TimeoutExpired('PRIVATE-COMMAND', 7, output=b'PRIVATE-SECRET'), 'timeout'),
+                 (TimeoutError('PRIVATE-SECRET'), 'timeout'), (PermissionError('PRIVATE-SECRET'), 'filesystem_error'),
+                 (ValueError('PRIVATE-SECRET'), 'unknown')]
+        for error, category in cases:
+            with self.subTest(category=category):
+                code, raw, _ = self.run_fixture('ca_server', error)
+                self.assertEqual(code, 1)
+                self.assertEqual(self.fixture.diagnostic(raw, failed=True)['error_category'], category)
+        code, raw, _ = self.run_fixture('render', ValueError('PRIVATE-SECRET'))
+        self.assertEqual(code, 1)
+        self.assertEqual(self.fixture.diagnostic(raw, failed=True)['error_category'], 'renderer_rejected')
+
+    def test_success_preserves_nine_original_openssl_operations(self):
+        code, raw, calls = self.run_fixture()
+        self.assertEqual(code, 0)
+        self.assertEqual(len(calls), 9)
+        self.assertEqual([args[1] for args, _ in calls], ['req'] * 4 + ['x509', 'req', 'x509', 'req', 'x509'])
+        self.assertEqual(self.fixture.diagnostic(raw, failed=False), {'status': 'complete',
+            'completed_steps': list(self.fixture.STEPS), 'step': 'finalize', 'error_category': 'none'})
+        self.assertEqual(self.fixture.diagnostic(raw, failed=True), {'status': 'unavailable'})
+        self.assertEqual(self.fixture.diagnostic(self.receipt(), failed=False), {'status': 'unavailable'})
+
+    def test_missing_over_budget_conflicting_and_untrusted_receipts_are_unavailable(self):
+        valid = self.receipt()
+        malformed = [b'', b'Traceback PRIVATE-SECRET', b'\xff', b'X' * (self.fixture.LIMIT + 1),
+            b'[' * 1000 + b']' * 1000, valid + valid, valid.rstrip() + b',"PRIVATE-SECRET"',
+            valid.replace(b'"schema":', b'"schema":"PRIVATE-SECRET","schema":'),
+            self.receipt(('ca_server',), 'ca_source'), self.receipt((), 'PRIVATE-SECRET'),
+            self.receipt((), 'prepare', 'PRIVATE-SECRET'), self.receipt(self.fixture.STEPS, 'finalize'),
+            json.dumps({'PRIVATE-SECRET': True}).encode(), b'[]', b'null',
+            valid.replace(b'"error_category":', b'"extra":"PRIVATE-SECRET","error_category":')]
+        for raw in malformed:
+            with self.subTest(raw=raw[:40]):
+                self.assertEqual(self.fixture.diagnostic(raw, failed=True), {'status': 'unavailable'})
+        padded = valid.rstrip() + b' ' * (self.fixture.LIMIT - len(valid.rstrip()))
+        self.assertEqual(self.fixture.diagnostic(padded, failed=True)['status'], 'complete')
+        self.assertEqual(self.fixture.diagnostic(padded + b' ', failed=True), {'status': 'unavailable'})
+
+    def test_exact_fixture_failure_adds_diagnostic_without_replacing_exit_or_first_failure(self):
+        raw = self.receipt(('prepare',), 'ca_server', 'openssl_command_failed')
+        for phase, foreign in [('isolated_deployment_credentials', False), ('isolated_deployment_credentials', True), ('other', False)]:
+            with self.subTest(phase=phase, foreign=foreign), tempfile.TemporaryDirectory() as directory:
+                life = bare_lifecycle(directory); life.phase = phase
+                process = mock.Mock(pid=654321, returncode=1); process.poll.return_value = 1
+                def start(*args, **kwargs):
+                    kwargs['stdout'].write(raw)
+                    return process
+                args = [m.sys.executable, 'scripts/test/trace-deployment-fixture.py', str(life.work)]
+                if foreign: args[1] = 'PRIVATE-OTHER'
+                with mock.patch.object(m.time, 'monotonic', return_value=1), \
+                     mock.patch.object(m.subprocess, 'Popen', side_effect=start):
+                    with self.assertRaisesRegex(m.GateError, '^command_failed_1$'):
+                        life.command(args)
+                self.assertEqual(life.last_failure['exit_code'], 1)
+                self.assertEqual(life.last_failure['output_sha256'], m.hashlib.sha256(raw).hexdigest())
+                if phase == 'isolated_deployment_credentials' and not foreign:
+                    self.assertEqual(life.last_failure['credentials_preparation']['step'], 'ca_server')
+                else:
+                    self.assertNotIn('credentials_preparation', life.last_failure)
+
+    def test_fixture_is_part_of_fixed_source_inventory(self):
+        self.assertIn('scripts/test/trace-deployment-fixture.py', m.OWN_INPUTS)
 
 
 class IncrementalBuildProgressTests(unittest.TestCase):
@@ -1110,6 +1245,8 @@ class LocalTraceIsolationTests(unittest.TestCase):
                         tls=life.work/name;tls.mkdir(mode=0o700)
                         for filename in ('ca.crt','client.crt','client.key'):
                             p=tls/filename;p.write_text('public-contract-test');p.chmod(0o600)
+                    return json.dumps({'schema': m.CREDENTIALS.SCHEMA, 'completed_steps': list(m.CREDENTIALS.STEPS),
+                                       'step': 'finalize', 'error_category': 'none'}, separators=(',', ':'))
                 elif args[1]=='scripts/prod/generate-trace-platform.py':
                     with mock.patch.dict(os.environ,kwargs['env'],clear=True):renderer.render()
                     config=json.loads((life.work/'deployment/platform-traces.json').read_text())
@@ -1124,6 +1261,8 @@ class LocalTraceIsolationTests(unittest.TestCase):
             life.command=command
             documents=m.prepare_deployment_documents(life,env)
             self.assertEqual(documents['trace-query']['user'],str(os.getuid())+':'+str(os.getgid()))
+            self.assertEqual(life.credentials_preparation['error_category'], 'none')
+            self.assertEqual(life.credentials_preparation['status'], 'complete')
 
     def document(self):
         return {'system-backend': {
