@@ -5,6 +5,7 @@ import base64
 import hashlib
 import importlib
 import json
+import re
 from pathlib import Path
 import subprocess
 import time
@@ -55,6 +56,46 @@ def declared_field_facts(fields):
     return result
 
 
+REFUSAL_MESSAGE = ('execute common table transfer plan: open table source: open encoded source table reader: '
+                   'Avro nested fields support preview only; batch transfer is not supported')
+
+
+def verify_runtime_refusals(repository, execution_ids, tenant, *, timeout=10):
+    """Bind safe public failures to this isolated run's existing Worker evidence."""
+    deadline = time.monotonic() + timeout
+    while True:
+        found = {key: [] for key in execution_ids}
+        scanned = 0
+        for path in sorted((Path(repository) / 'logs/runtime/transfer').glob('*/*.jsonl')):
+            with path.open() as source:
+                for number, raw in enumerate(source, 1):
+                    scanned += len(raw.encode())
+                    require(scanned <= 128 * 1024 * 1024, 'Avro refusal evidence exceeds log budget')
+                    if not raw.endswith('\n') or not any(key in raw for key in found):
+                        continue
+                    event = json.loads(raw)
+                    if event.get('module_name') != 'transfer' or event.get('role') != 'worker':
+                        continue
+                    message = event.get('message', '')
+                    if ('UPDATE "common"."task_executions" SET ' not in message
+                            or '"status"=\'failed\'' not in message or '[rows:1]' not in message):
+                        continue
+                    for key in found:
+                        if f"WHERE (execution_id = '{key}' AND tenant_id = {tenant} AND " not in message:
+                            continue
+                        details = re.search(r'"error_details"=\'([^\']*)\'', message)
+                        require(details is not None and json.loads(details[1]) == {'message': REFUSAL_MESSAGE},
+                                'Avro execution failed for a different private reason')
+                        found[key].append({'execution_id': key, 'kind': 'nested_preview_only',
+                                           'log_file': str(path.relative_to(repository)), 'line': number,
+                                           'sha256': hashlib.sha256(raw.rstrip('\n').encode()).hexdigest()})
+        require(all(len(rows) <= 1 for rows in found.values()), 'Avro refusal evidence is duplicated')
+        if found and all(len(rows) == 1 for rows in found.values()):
+            return [found[key][0] for key in execution_ids]
+        require(time.monotonic() < deadline, 'Avro refusals lack exact Worker execution evidence')
+        time.sleep(.2)
+
+
 def task_body(locator, parent, name):
     return {'name': 'online-avro-' + name, 'task_type': 'sync', 'enabled': False,
             'auto_scan_metadata': False, 'batch_size': 1000, 'config': {
@@ -65,7 +106,7 @@ def task_body(locator, parent, name):
                 'batch_size': 1000}}
 
 
-def run(repository, environment, owner, *, physical_runner=None, browser_runner=None):
+def run(repository, environment, owner, *, physical_runner=None, browser_runner=None, runtime_refusal_runner=None):
     require(environment.get('ADDP_ONLINE_MANAGER_CASE') == 'native-table-avro', 'Avro requires its independent case')
     artifact = Path(environment['ADDP_ONLINE_ARTIFACT_DIR'])
     physical = physical_runner or (lambda action: FIXTURE.physical(action, repository, environment))
@@ -155,8 +196,11 @@ def run(repository, environment, owner, *, physical_runner=None, browser_runner=
                     execution = client.request('GET', f'/api/v1/transfer/executions/{execution_id}', (200,)).payload
                     status = execution.get('status')
                     if nested and status == 'failed':
+                        case['transfer'] = {'execution_id': execution_id, 'status': status,
+                                            'records_read': execution.get('records_read'), 'records_written': execution.get('records_written')}
                         require(execution.get('records_read') == 0 and execution.get('records_written') == 0
-                                and 'preview only' in execution.get('error_msg',''), 'Avro nested transfer failed for an unexpected reason or wrote rows')
+                                and execution.get('error_details') == {'category': 'execution_failed'} and 'error_msg' not in execution,
+                                'Avro nested transfer has nonzero counts or a different public failure contract')
                         break
                     if status == 'success':
                         require(not nested, 'Avro nested batch unexpectedly succeeded')
@@ -165,8 +209,16 @@ def run(repository, environment, owner, *, physical_runner=None, browser_runner=
                     require(status not in {'failed', 'cancelled', 'timeout'} and time.monotonic() < deadline, 'Avro Transfer did not succeed')
                     time.sleep(1)
                 case['transfer'] = {'execution_id': execution_id, 'records_read': 0 if nested else FIXTURE.COUNT, 'records_written': 0 if nested else FIXTURE.COUNT,
-                                    'status': 'failed' if nested else 'success', **({'nested_refusal_verified':True, 'rejection_reason':execution['error_msg']} if nested else {})}
+                                    'status': 'failed' if nested else 'success', **({'public_failure_category':'execution_failed'} if nested else {})}
                 require(client.request('GET', f'/api/v1/meta/items/{item["id"]}', (200,)).payload == detail, 'Avro read modified metadata')
+        stage = 'runtime_refusal_verification'
+        refused = [case['transfer']['execution_id'] for case in report['nested_cases']]
+        proofs = (runtime_refusal_runner or verify_runtime_refusals)(Path(repository), refused, tenant)
+        require([proof.get('execution_id') for proof in proofs] == refused
+                and all(proof.get('kind') == 'nested_preview_only' for proof in proofs), 'Avro runtime refusals differ')
+        report['runtime_refusals'] = proofs
+        for case in report['nested_cases']:
+            case['transfer'].update(nested_refusal_verified=True, rejection_reason='nested_preview_only')
         stage = 'physical_verification'
         verified = physical('verify')
         require(verified.get('sources_unchanged') is True and len(verified.get('outputs', [])) == 6, 'Avro output/source proof incomplete')

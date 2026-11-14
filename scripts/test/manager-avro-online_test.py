@@ -77,7 +77,9 @@ class Client:
             nested = 'nested-' in body['config']['source']['locator']
             result = {'status':'failed' if (nested and self.failure != 'nested-transfer') or self.failure == 'transfer' else 'success',
                       'records_read':0 if nested else FIXTURE.COUNT, 'records_written': (1 if self.failure == 'nested-count' else 0) if nested else FIXTURE.COUNT,
-                      'error_msg':'unexpected storage error' if self.failure == 'nested-reason' else 'Avro nested fields support preview only; batch transfer is not supported'}
+                      'error_details':{'category':'connection_failed' if self.failure == 'nested-reason' else 'execution_failed'}}
+            if nested and self.failure == 'legacy-error': result['error_msg'] = SCENE.REFUSAL_MESSAGE
+            if nested and self.failure == 'missing-count': result.pop('records_written')
         elif method == 'DELETE':
             self.deleted.append(int(path.rsplit('/', 1)[1]))
             result = {}
@@ -87,6 +89,38 @@ class Client:
         else:
             raise AssertionError((method, path))
         return SimpleNamespace(payload=result)
+
+
+class AvroRuntimeRefusalProofTest(unittest.TestCase):
+    def proof(self, fault=None):
+        execution_id = '11111111-2222-4333-8444-555555555555'
+        actual_id = '99999999-2222-4333-8444-555555555555' if fault == 'execution' else execution_id
+        tenant = 3 if fault == 'tenant' else 2
+        error = 'open target failed' if fault == 'reason' else SCENE.REFUSAL_MESSAGE
+        message = ('[rows:' + ('0' if fault == 'uncommitted' else '1') + '] '
+                   'UPDATE "common"."task_executions" SET "error_details"=\'' + json.dumps({'message': error}) +
+                   '\',"status"=\'failed\' WHERE (execution_id = \'' + actual_id +
+                   f"' AND tenant_id = {tenant} AND execution_boundary = 'bounded')")
+        event = {'module_name': 'meta' if fault == 'module' else 'transfer',
+                 'role': 'backend' if fault == 'role' else 'worker', 'message': message}
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            log = root / 'logs/runtime/transfer/worker/run.jsonl'
+            log.parent.mkdir(parents=True)
+            line = json.dumps(event)
+            if fault != 'missing': log.write_text((line + '\n') * (2 if fault == 'duplicate' else 1))
+            proof = SCENE.verify_runtime_refusals(root, [execution_id], 2, timeout=0)
+            self.assertEqual(proof, [{'execution_id': execution_id, 'kind': 'nested_preview_only',
+                                     'log_file': 'logs/runtime/transfer/worker/run.jsonl', 'line': 1,
+                                     'sha256': hashlib.sha256(line.encode()).hexdigest()}])
+            self.assertNotIn(SCENE.REFUSAL_MESSAGE, json.dumps(proof))
+
+    def test_exact_worker_tenant_and_persisted_refusal(self):
+        self.proof()
+
+    def test_wrong_scope_role_reason_missing_and_duplicate_evidence_fail(self):
+        for fault in ('execution', 'tenant', 'module', 'role', 'reason', 'uncommitted', 'missing', 'duplicate'):
+            with self.subTest(fault=fault), self.assertRaises(ValueError): self.proof(fault)
 
 
 class AvroSceneTest(unittest.TestCase):
@@ -137,12 +171,13 @@ class AvroSceneTest(unittest.TestCase):
             'ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN': 'initializer', 'ADDP_ONLINE_TEST_TENANT_ID': '2',
             'ADDP_ONLINE_TEST_RUN_ID': 'manager-1-1', 'ADDP_ONLINE_MANAGER_MINIO_BUCKET': 'source',
             'ADDP_ONLINE_MANAGER_MINIO_ENGINE_ID': '12', 'ADDP_ONLINE_MANAGER_NFS_ENGINE_ID': '14'}
+        runtime_refusals = lambda repo, ids, tenant: [{'execution_id':key,'kind':'wrong' if failure=='runtime-refusal' else 'nested_preview_only'} for key in ids]
         with patch.object(SCENE.REGISTRATION, 'ExactFileMetadataGrants', return_value=grants):
             if failure:
                 with self.assertRaises(ValueError):
-                    SCENE.run(root, environment, helpers, physical_runner=physical, browser_runner=browser)
+                    SCENE.run(root, environment, helpers, physical_runner=physical, browser_runner=browser, runtime_refusal_runner=runtime_refusals)
             else:
-                SCENE.run(root, environment, helpers, physical_runner=physical, browser_runner=browser)
+                SCENE.run(root, environment, helpers, physical_runner=physical, browser_runner=browser, runtime_refusal_runner=runtime_refusals)
         return client, actions, json.loads((root / 'manager-avro.json').read_text())
 
     def test_complete_six_sources_and_batch_outputs(self):
@@ -158,7 +193,7 @@ class AvroSceneTest(unittest.TestCase):
         self.assertEqual(client.assert_body['config']['source']['format'], 'avro')
 
     def test_failures_cannot_pass_and_always_clean_owned_sources_and_tasks(self):
-        for failure in ('seed', 'page', 'download', 'transfer', 'physical', 'ticks', 'browser', 'cleanup', 'nested-meta', 'nested-private-facts', 'nested-page', 'nested-transfer', 'nested-reason', 'nested-count', 'nested-browser', 'nested-output'):
+        for failure in ('seed', 'page', 'download', 'transfer', 'physical', 'ticks', 'browser', 'cleanup', 'nested-meta', 'nested-private-facts', 'nested-page', 'nested-transfer', 'nested-reason', 'nested-count', 'nested-browser', 'nested-output', 'runtime-refusal', 'legacy-error', 'missing-count'):
             with self.subTest(failure=failure):
                 client, actions, report = self.run_scene(failure)
                 self.assertEqual(report['result'], 'failed')
