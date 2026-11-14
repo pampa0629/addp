@@ -572,3 +572,10 @@ Transfer 的同一机器入口采用 v3 单一路线，增加当前消费状态�
 验证使用现有标准入口：新增四组 runner 回归在修复前明确丢失完成标记，修复后 `make test-module MODULE=transfer GO_ONLY=1` 通过；PostgreSQL 升级回归复现 revision 12 缺列、同版本跳过迁移，revision 13 修复后证明补列、健康 CAS 写入、同版本不重复应用，以及原 generation／connector／resource_version／缓冲位置保留。新增用例登记到既有 `make test-transfer-postgres`，完整 PostgreSQL 门禁通过，测试只使用 addp_test，升级模拟事务回滚。首轮升级夹具在插入缺列对象时因 GORM RETURNING 失败，已调整为先插入再模拟旧结构；首轮还出现既有 runtime_events 时钟约束失败，未改该范围，后续基线与最终完整门禁均不再出现。日志分别为 `/tmp/addp-cdc-runtime-regression-before.log`、`/tmp/addp-cdc-runtime-regression-after.log`、`/tmp/addp-cdc-runtime-final-t1.log`、`/tmp/addp-cdc-runtime-postgres-before.log`、`/tmp/addp-cdc-runtime-postgres-baseline.log` 与 `/tmp/addp-cdc-runtime-postgres-after.log`。
 
 个人开发库未应用本轮 revision 13，须由用户执行 `./scripts/dev/restart.sh -transfer`，让 Backend 迁移后再启动对应 Worker。修复后的个人运行健康事实和新完成标记仍待重启及后续正式任务事件核对；性能故障 Hosted、暂停／缺样保持与外部通知实收仍未完成，原有 Hosted 结果不外推到本批。
+
+
+### CDC revision 13 重启后健康事实补证（2026-11-14）
+
+用户随后全量重启。本机 Transfer build `20261114T040827Z-transfer-25772-lr5NeE`、Monitor build `20261114T040817Z-monitor-25772-mofwuc` 均 ready，构建 SHA `990cd2c4dfd1ec7d6bfcd7cf21f223fe2943f078` 已包含修订 `468c78aef5561b53b386e015849b1c4a6ab9fc89`。只读核对确认开发库 Transfer startup revision=13，task 61／generation 1 的 health_observation 从 12:13:09 持续推进至 12:28:39（Asia/Shanghai），均为 healthy、failed_since=null，并具有新的 30 秒有效期；此前缺列导致健康事实无法落库的问题已在个人运行环境核对通过。
+
+任务缓冲仍为 committed/latest/earliest=10/10/0、lag=0；旧位置无初始快照完成标记，仍为 false，没有回填或据此推定性能规则可正常评估。两个原逻辑槽 task46/task58 均保留且不活跃，专用 task61 槽保留且活跃。全量重启的 Infra MinIO 恢复失败另经只读排查，确认为本地 Trace 辅助容器继承正式部署标签；当前核验与精确 mTLS 样本见[来源证据](Monitor采集来源与引擎指标历史证据.md#infra-minio-恢复被隔离辅助容器标签干扰2026-11-14)。本轮未操作现有任务或规则，不将健康事实落库补证扩展为新性能规则触发、恢复或通知实收通过。

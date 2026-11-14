@@ -1317,6 +1317,32 @@ class LocalTraceAdmissionTests(unittest.TestCase):
 
 
 class LocalTraceIsolationTests(unittest.TestCase):
+    def test_direct_helpers_override_inherited_production_compose_identity(self):
+        inherited = {'com.docker.compose.project': 'addp-infra', 'com.docker.compose.service': 'minio'}
+        with tempfile.TemporaryDirectory() as directory:
+            life = bare_lifecycle(directory)
+            life.command = mock.Mock(return_value='owned')
+            for operation in ('run', 'create'):
+                options = ('--name', life.run_id+'-verify', '--label', life.label+'='+life.run_id,
+                           '--label', life.label+'.role=oneshot', '--network', 'none',
+                           '--read-only', life.minio_image, '--version')
+                self.assertEqual(life.docker(operation, *options, timeout=7), 'owned')
+                call = life.command.call_args
+                command = call.args[0]
+                labels = inherited.copy()
+                for i, argument in enumerate(command):
+                    if argument == '--label':
+                        key, value = command[i+1].split('=', 1)
+                        labels[key] = value
+                self.assertEqual(labels['com.docker.compose.project'], life.run_id)
+                self.assertEqual(labels['com.docker.compose.service'], 'local-helper')
+                self.assertEqual(labels[life.label], life.run_id)
+                self.assertEqual(labels[life.label+'.role'], 'oneshot')
+                self.assertEqual(command[-len(options):], list(options))
+                self.assertEqual(call.kwargs, {'timeout': 7})
+            life.docker('exec', 'owned', 'minio', '--version')
+            life.command.assert_called_with(['docker', 'exec', 'owned', 'minio', '--version'])
+
     def test_telemetry_configuration_probes_use_product_mounts_identity_and_no_network(self):
         with tempfile.TemporaryDirectory() as directory:
             life=bare_lifecycle(directory);life.docker=mock.Mock(return_value='verified')

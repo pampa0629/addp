@@ -1313,6 +1313,11 @@ class Lifecycle:
             return finish()
 
     def docker(self, *args, **kw):
+        # Local images can carry the production container's Compose labels.
+        # Direct helpers belong to this run, independently of image provenance.
+        if args and args[0] in ('run', 'create'):
+            args = (args[0], '--label', 'com.docker.compose.project='+self.run_id,
+                    '--label', 'com.docker.compose.service=local-helper', *args[1:])
         if args and args[0]=='run' and self.label+'.role=oneshot' in args:
             require('--rm' not in args,'oneshot_exit_state_must_be_retained')
         return self.command(['docker', *args], **kw)

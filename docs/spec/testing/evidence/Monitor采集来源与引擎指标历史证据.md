@@ -957,3 +957,14 @@ Safari 第二个标签页真实可见、自动刷新开启，显示 Infra Redis�
 最后执行 `python3 /tmp/addp-seven-sources-crosscheck-20261108.py` 退出 0：六个页面的当前部署、即时响应和趋势主体分别与六个 Prometheus 目标逐项一致，主机 UUID 和显示名称匹配；重新只读检查数据库容器仍在运行，启动身份未变。页面有效点的实际采样距其评估时刻最大约 14.69 秒。两张作用域列表不存在混入另一域的卡片；七页均可见。交叉收据 `/tmp/addp-seven-sources-crosscheck-20261108.json`。
 
 缺项继续按真实来源表达：Infra Redis 未设置内存上限，对应占用率不可计算；当次 Business Redis 已有内存上限，所展示资源分组没有缺点。两个 MinIO 的离线盘数仍未由原生端点发布，Business 另缺四项扫描字段；不补造零值、不以来源 UP 宣称全部 17 项有效。本轮没有源码、API、权限或环境变更，不重跑无关开发门禁；仅验证上述实际运行范围。正式 CI／Hosted 继续由专门会话回传，没有设置定时任务。
+
+
+### Infra MinIO 恢复被隔离辅助容器标签干扰（2026-11-14）
+
+用户全量重启报告 Infra MinIO“核对引擎部署阶段失败”。只读复现 `minio-observation.py` 的 Database 发现得到 `MinIO deployment is not uniquely available`：正式 `addp-minio` 健康运行，但相同 `com.docker.compose.project=addp-infra`、`service=minio` 过滤还命中本轮 `addp-trace-local-bee89889f95b41f790cf6273075206a3` 的 verify-minio、verify-mc、build-probe 和 space 辅助容器，包括已退出容器。镜像 `sha256:8ade3b171147c348d3edfe3e00ce9e55e734b981004229a72f66acb585af697c` 本身携带正式 Compose project/service 标签；本地 Trace 的直接 run/create 辅助命令未覆盖，导致继承后污染正式部署发现。原唯一性与归属检查拒绝符合要求，不修改 MinIO 来源选择、账号、端口或数据卷来规避。
+
+已修订本地 Trace 生命周期唯一 Docker 新建入口：直接 run/create 显式设置本轮 project 与 `service=local-helper`，保留原专用运行／role 标签、资源和网络参数，exec/inspect 等既有命令不变。Compose 业务服务仍由正式本轮 Compose 管理。新增回归模拟带有 addp-infra/minio 标签的镜像，同时核对 run/create 的覆盖、原身份与命令保留，以及 exec 不受影响；修复前明确失败，修复后既有 runner 的 225 项确定性测试、Node 语法和离线 TLS 夹具通过。`make test-monitor-traces-local-runner` 整体仍退出非零：全局登记检查报无关 consumer-engine-recovery process profile 缺失若干命令，后面的 System fixture Go 步骤未运行；未修改、调查或重跑该无关场景，未将完整入口或新的真实隔离 Trace 计为通过。日志 `/tmp/addp-minio-helper-label-before.log`、`/tmp/addp-minio-helper-label-after.log`。
+
+本次没有停止、删除或重建另一轮验收容器。核对期间该轮生命周期自行清理，12:28（Asia/Shanghai）再次发现只剩正式 addp-minio；使用标准 Database 构造、bind_source 及来源只读 status 复核，部署核验通过、来源运行中且原采集镜像可用。该当前状态恢复来自旧辅助容器清理，不归因于尚未应用到新运行的夹具修复，也不将原启动失败记录改写为成功。
+
+同一时段使用 Monitor 专用查询证书，经原生严格 mTLS 查询精确部署 `bf6a6a99-e304-4955-9c5f-d6ede4925d0f` 与正式数据库容器 ID `243cbf3e490f8d8a446667cb28119925d3017bc37b89585c19b17513d0019ef6`：唯一 up=1，最近一分钟 count_over_time(up)=4，来源 observed_at 距查询约 11.88 秒；目标 lastError 为空。安全收据 `/tmp/addp-infra-minio-sampling-20261114.json` 与 `/tmp/addp-infra-minio-target-20261114.json`，设施只读检查 `/tmp/addp-infra-minio-restart-status.log`。没有重跑 recover/up 或个人服务生命周期，未修改个人采集账号、安装证明、引擎或数据卷。

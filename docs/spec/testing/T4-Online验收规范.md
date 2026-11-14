@@ -37,6 +37,8 @@ Hosted Manager 场景中，经开发入口启动的 PointCloud、Document 使用
 
 2026-10-23 用户确认 `make test-monitor-traces-local`：在本机独占一次性容器部署验证正式密码／MFA、Orchestrator → Develop bounded query、Platform Trace 查询和精确日志关联。它是人工本地技术证据，不属于上述 GitHub profile，也不允许伪造 Hosted 环境；不会进入工作流、夜间调度或替代正式 Runner T4。身份、资源、停止线和清理的唯一契约见[运行观测规范](../addp平台运行观测规范.md#正式身份的本机隔离闭环)。System 专用夹具仅放行该明确本地标记与 `execution-trace-local`，不推广 SGM 例外，也不扩大生产权限。
 
+本地 Trace 直接新建的辅助容器（包括版本核对、构建探针与容量采样）必须显式使用本轮 Compose project 和辅助 service 标签，覆盖本地镜像可能携带的个人部署标签；不得被个人 Infra 的部署发现识别为正式引擎。Compose 业务容器仍由本轮 Compose 项目管理，现有资源归属拒绝与退出清理规则不变。
+
 ## Catalog 本地隔离浏览器验收
 
 `make test-catalog-browser-local` 是本机一次性 Catalog 浏览器验收入口，不属于 GitHub T4 profile，不调用 `make test-online`，不重跑已通过的 API T4。使用已提交源码、正式产品构建与 Compose 服务定义，独占 System、Gateway、Catalog、Standard、Model、Console 及必需基础设施。具体账号和页面断言见[授权与共享](scenarios/授权与共享.md#catalog-本地普通用户浏览器复验)。
@@ -60,7 +62,7 @@ Hosted Manager 场景中，经开发入口启动的 PointCloud、Document 使用
 - 显式非默认 `ADDP_ONLINE_TEST_TENANT_ID`，禁止 Tenant 1。
 - 全局唯一的 `ADDP_ONLINE_TEST_RUN_ID`；未提供时由分发器生成并贯穿全部子测试。
 - 每个参与 HTTP 服务 `/health/live` 可用，且 Build ID、Git commit 或源码指纹与当前 checkout 匹配；进入业务断言前 `/health/ready` 必须返回 200。
-- 除[平台节点指标控制面隔离验收的限定例外](scenarios/平台观测与语义生命周期.md#platform-node-metrics)外，测试 User、Service Principal 和 OAuth Scope 只具备场景所需的最小权限；不得使用个人会话或扩大生产身份权限。平台管理员 Token 默认禁止，仅在该限定例外及 `platform-administrator-governance` 的一次性 Hosted 三员身份中允许。
+- 除[平台节点指标控制面隔离验收的限定例外](scenarios/平台观测与语义生命周期.md#platform-node-metrics)外，测试 User、Service Principal 和 OAuth Scope 只具备场景所需的最小权限；不得使用个人会话或扩大生产身份权限。平台管理员 Token 默认禁止，仅在该限定例外及 `platform-administrator-governance`、`module-registry-recovery` 的一次性 Hosted 三员身份中允许。
 - 通过 System AuthContext API 证明 principal、context、Tenant、client、token 与 Permission 事实后，才进入资源创建或注册拓扑操作。
 - 同一 `suite + Run ID` 通过进程锁串行化，锁覆盖预检、业务断言和报告落盘全过程。
 
