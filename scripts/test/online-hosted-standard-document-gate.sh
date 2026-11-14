@@ -21,7 +21,7 @@ run_logged bash scripts/infra/up.sh
 application_owned=1
 run_daemon_launcher_logged env SKIP_MODTIDY=1 bash scripts/dev/start.sh --exact-process -system
 run_daemon_launcher_logged env SKIP_MODTIDY=1 bash scripts/dev/start.sh --exact-process -gateway
-run_daemon_launcher_logged env SKIP_MODTIDY=1 bash scripts/dev/start.sh --exact-process -standard
+run_daemon_launcher_logged env SKIP_MODTIDY=1 bash scripts/dev/start.sh -standard
 # Only the identity fixture comes from the acceptance checkout.
 run_logged bash -c 'cd "$1/system/backend" && go run ./cmd/online-test-fixture --suite standard-document-storage --output "$2"' _ "$HARNESS" "$IDENTITY_ENV"
 source "$IDENTITY_ENV"
