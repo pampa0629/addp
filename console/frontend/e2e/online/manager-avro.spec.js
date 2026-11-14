@@ -13,13 +13,30 @@ function expectedRow(i) {
     const digits = (n < 0n ? -n : n).toString().padStart(7, '0')
     return (n < 0n ? '-' : '') + digits.slice(0, -6) + '.' + digits.slice(-6)
   }
+  const timestamps = {
+    stamp_ms: [3, [0n, -1n, 1n, 946720800123n, -62135596800000n, 253402300799999n, 1730611800123n], 29],
+    stamp_us: [6, [0n, -1n, 1n, 946720800123456n, -62135596800000000n, 253402300799999999n, 9007199254740993n, -9007199254740993n], 31],
+    stamp_ns: [9, [0n, -1n, 1n, 946720800123456789n, -9223372036854775808n, 9223372036854775807n, 9007199254740993n, -9007199254740993n], 37],
+  }
+  const timestampValues = Object.fromEntries(Object.entries(timestamps).map(([name, [digits, ticks, period]]) => {
+    if (i > 7 && i % period === 0) return [name, null]
+    const count = ticks[i % ticks.length]
+    const rate = 10n ** BigInt(digits)
+    let seconds = count / rate
+    let fraction = count % rate
+    if (fraction < 0n) { seconds -= 1n; fraction += rate }
+    // Only whole seconds enter Date; the exact fractional tick is formatted
+    // separately, so the minimum int64 ns remains a valid instant.
+    return [name, new Date(Number(seconds) * 1000).toISOString().slice(0, 19)
+      + '.' + fraction.toString().padStart(digits, '0') + 'Z']
+  }))
   return { id: value.toString(), small: i - 1251,
     flag: i % 7 === 0 ? null : i % 2 === 0,
     label: i % 11 === 0 ? null : i % 5 === 0 ? '' : `设备-${String(i).padStart(4, '0')}`,
     ratio: i / 4, value: i === 0 ? 0 : -i / 2,
     payload: i % 13 === 0 ? null : i % 3 === 0 ? '' : Buffer.from([0, i % 256, 255]).toString('base64'),
     day: i > 3 && i % 17 === 0 ? null : date,
-    amount: i % 19 === 0 ? null : decimal(unscaled), fixed_amount: i % 23 === 0 ? null : decimal(-unscaled) }
+    amount: i % 19 === 0 ? null : decimal(unscaled), fixed_amount: i % 23 === 0 ? null : decimal(-unscaled), ...timestampValues }
 }
 
 test('ordinary user pages and downloads six Avro scalar sources', async ({ page }) => {
@@ -64,7 +81,7 @@ test('ordinary user pages and downloads six Avro scalar sources', async ({ page 
         const offset = second.data.page_size
         expect(second.data.rows).toEqual(Array.from({ length: second.data.rows.length }, (_, n) => expectedRow(offset + n)))
         await expect(frame.getByText(expectedRow(offset).id, { exact: true }).first()).toBeVisible()
-        for (const field of ['day', 'amount', 'fixed_amount']) {
+        for (const field of ['day', 'amount', 'fixed_amount', 'stamp_ms', 'stamp_us', 'stamp_ns']) {
           const value = second.data.rows.find(row => row[field] !== null)[field]
           const cell = frame.getByText(value, { exact: true }).first()
           await cell.scrollIntoViewIfNeeded()
@@ -101,7 +118,7 @@ test('ordinary user pages and downloads six Avro scalar sources', async ({ page 
     passed = true
   } finally {
     writeFileSync(resolve(env.ADDP_ONLINE_ARTIFACT_DIR, 'manager-avro-browser.json'), JSON.stringify({
-      schema_version: 'addp.manager-avro-browser/v2', result: passed ? 'passed' : 'failed',
+      schema_version: 'addp.manager-avro-browser/v3', result: passed ? 'passed' : 'failed',
       run_id: context.run_id, cases,
     }, null, 2) + '\n')
   }

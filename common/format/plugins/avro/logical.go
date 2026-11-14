@@ -52,6 +52,13 @@ func fieldDefinition(value interface{}, namespace string, named map[string]datat
 		result.Type = datatype.FieldTypeDate
 		return result, nil
 	}
+	if name, ok := logical.(string); ok && native == "long" {
+		if unit := map[string]string{"timestamp-millis": "ms", "timestamp-micros": "us", "timestamp-nanos": "ns"}[name]; unit != "" {
+			result.Type = datatype.FieldTypeTimestamp
+			result.Temporal = &datatype.TemporalInfo{Unit: unit, Timezone: "UTC"}
+			return result, nil
+		}
+	}
 	if logical != "decimal" || (native != "bytes" && native != "fixed") {
 		return result, fmt.Errorf("unsupported Avro logical type")
 	}

@@ -268,7 +268,7 @@ func TestAvroLogicalTransferToParquetPhysicalReadback(t *testing.T) {
 func TestAvroLogicalRejectsUnsupportedDeclarationsAndValues(t *testing.T) {
 	for _, field := range []string{
 		`{"type":"long","logicalType":"date"}`, `{"type":"int","logicalType":"time-millis"}`,
-		`{"type":"long","logicalType":"timestamp-micros"}`, `{"type":"bytes","logicalType":"big-decimal"}`,
+		`{"type":"long","logicalType":"local-timestamp-micros"}`, `{"type":"bytes","logicalType":"big-decimal"}`,
 		`{"type":"string","logicalType":"uuid"}`, `{"type":"bytes","logicalType":null}`,
 		`{"type":"bytes","logicalType":"decimal"}`, `{"type":"bytes","logicalType":"decimal","precision":0}`,
 		`{"type":"bytes","logicalType":"decimal","precision":1001}`, `{"type":"bytes","logicalType":"decimal","precision":2.0}`,

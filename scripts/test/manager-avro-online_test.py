@@ -27,9 +27,12 @@ class Client:
         item_id = engine * 10 + FIXTURE.CODECS.index(codec)
         expected = [('id', 'bigint', False), ('small', 'int', False), ('flag', 'bool', True),
                     ('label', 'string', True), ('ratio', 'float', False), ('value', 'double', False),
-                    ('payload', 'bytes', True), ('day', 'date', True), ('amount', 'decimal', True), ('fixed_amount', 'decimal', True)]
+                    ('payload', 'bytes', True), ('day', 'date', True), ('amount', 'decimal', True), ('fixed_amount', 'decimal', True),
+                    ('stamp_ms','timestamp',True), ('stamp_us','timestamp',True), ('stamp_ns','timestamp',True)]
         fields = [dict(name=name, type=kind, nullable=nullable, **({'precision':38,'scale':6} if kind == 'decimal' else {}))
                   for name, kind, nullable in expected]
+        for f in fields[-3:]:
+            f.update(native_type='long', temporal={'unit':FIXTURE.TIMESTAMPS[f['name']][0], 'timezone':'UTC'})
         result = {'id': item_id, 'engine_id': engine, 'full_name': full_name, 'fingerprint': str(item_id),
                   'attributes': {'item': {'format': 'avro', 'data_type': 'table', 'layout': 'single'},
                                  'type_info': {'table': {'fields': fields}}}}
@@ -97,7 +100,8 @@ class AvroSceneTest(unittest.TestCase):
                 return {'sources_unchanged': True, 'outputs': [
                     {'object': f'avro-output/from-{s}-{c}.parquet', 'size_bytes': len(raw),
                      'sha256': hashlib.sha256(raw).hexdigest(), 'content_base64': base64.b64encode(raw).decode(),
-                     'all_values_and_nulls_verified': failure != 'physical'}
+                     'all_values_and_nulls_verified': failure != 'physical', 'native_timestamp_ticks_verified': failure != 'ticks',
+                     'timestamp_units': {name:unit for name,(unit,_,_) in FIXTURE.TIMESTAMPS.items()}}
                     for s in ('minio', 'nfs') for c in FIXTURE.CODECS]}
             return {'objects_removed': True, 'files_removed': True, 'outputs_removed': failure != 'cleanup'}
 
@@ -108,7 +112,7 @@ class AvroSceneTest(unittest.TestCase):
                 rows.append({'locator': case['locator'], 'page_button_verified': failure != 'browser',
                              'values_verified': True, **({'original_download_disabled':True} if case['storage'] == 'nfs' else
                              {'download_sha256': case['spec']['sha256'], 'download_size': case['spec']['size_bytes']})})
-            return {'schema_version': 'addp.manager-avro-browser/v2', 'result': 'passed', 'run_id': 'manager-1-1', 'cases': rows}
+            return {'schema_version': 'addp.manager-avro-browser/v3', 'result': 'passed', 'run_id': 'manager-1-1', 'cases': rows}
 
         environment = {'ADDP_ONLINE_MANAGER_CASE': 'native-table-avro', 'ADDP_ONLINE_ARTIFACT_DIR': str(root),
             'GATEWAY_URL': 'http://fixture', 'ADDP_ONLINE_TEST_USER_ACCESS_TOKEN': 'consumer',
@@ -133,7 +137,7 @@ class AvroSceneTest(unittest.TestCase):
         self.assertEqual(client.assert_body['config']['source']['format'], 'avro')
 
     def test_failures_cannot_pass_and_always_clean_owned_sources_and_tasks(self):
-        for failure in ('seed', 'page', 'download', 'transfer', 'physical', 'browser', 'cleanup'):
+        for failure in ('seed', 'page', 'download', 'transfer', 'physical', 'ticks', 'browser', 'cleanup'):
             with self.subTest(failure=failure):
                 client, actions, report = self.run_scene(failure)
                 self.assertEqual(report['result'], 'failed')
@@ -141,7 +145,7 @@ class AvroSceneTest(unittest.TestCase):
                 self.assertEqual(client.deleted, list(reversed(client.tasks)))
 
     def test_page_validation_rejects_wrong_total_and_binary_or_bigint_corruption(self):
-        for key, value in [('id', 9007199254740992), ('payload', 'bad'), ('day', '1970-01-01'), ('amount', '0.000000'), ('fixed_amount', '0.000000')]:
+        for key, value in [('id', 9007199254740992), ('payload', 'bad'), ('day', '1970-01-01'), ('amount', '0.000000'), ('fixed_amount', '0.000000'), ('stamp_ms','1970-01-01T00:00:00Z'), ('stamp_us','1970-01-01T00:00:00.000Z'), ('stamp_ns',9007199254740992)]:
             rows = [FIXTURE.public_row(i) for i in range(20, 40)]
             rows[0][key] = value
             with self.assertRaises(ValueError):

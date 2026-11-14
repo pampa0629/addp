@@ -25,6 +25,24 @@ SCHEMA = {'type': 'record', 'name': 'AvroScalars', 'fields': [
     {'name': 'fixed_amount', 'type': ['null', {'type': 'fixed', 'name': 'FixedAmount', 'size': 16, 'logicalType': 'decimal', 'precision': 38, 'scale': 6}]},
 ]}
 
+# Original signed ticks; timestamp-nanos includes the valid int64 minimum,
+# which must not be treated as a pandas/NumPy NaT sentinel.
+TIMESTAMPS = {
+    'stamp_ms': ('ms', (0, -1, 1, 946720800123, -62135596800000, 253402300799999, 1730611800123), 29),
+    'stamp_us': ('us', (0, -1, 1, 946720800123456, -62135596800000000, 253402300799999999, 9007199254740993, -9007199254740993), 31),
+    'stamp_ns': ('ns', (0, -1, 1, 946720800123456789, -(2**63), 2**63-1, 9007199254740993, -9007199254740993), 37),
+}
+for name, (unit, _, _) in TIMESTAMPS.items():
+    logical = {'ms':'timestamp-millis', 'us':'timestamp-micros', 'ns':'timestamp-nanos'}[unit]
+    SCHEMA['fields'].append({'name': name, 'type': ['null', {'type':'long', 'logicalType':logical}]})
+
+
+def utc_text(ticks, unit):
+    digits = {'ms':3, 'us':6, 'ns':9}[unit]
+    seconds, fraction = divmod(ticks, 10**digits)
+    clock = datetime.datetime(1970, 1, 1) + datetime.timedelta(seconds=seconds)
+    return clock.isoformat(timespec='seconds') + '.' + str(fraction).zfill(digits) + 'Z'
+
 
 def row(index):
     days = [datetime.date(1, 1, 1), datetime.date(9999, 12, 31), datetime.date(2000, 2, 29), datetime.date(1969, 12, 31)]
@@ -33,7 +51,7 @@ def row(index):
     def exact(value):
         digits = str(abs(value)).zfill(7)
         return Decimal(('-' if value < 0 else '') + digits[:-6] + '.' + digits[-6:])
-    return {'id': (-1 if index % 2 else 1) * (2**53 + 1 + index),
+    result = {'id': (-1 if index % 2 else 1) * (2**53 + 1 + index),
             'small': index - 1251,
             'flag': None if index % 7 == 0 else index % 2 == 0,
             'label': None if index % 11 == 0 else '' if index % 5 == 0 else f'设备-{index:04d}',
@@ -42,6 +60,9 @@ def row(index):
             'day': None if index > 3 and index % 17 == 0 else day,
             'amount': None if index % 19 == 0 else exact(unscaled),
             'fixed_amount': None if index % 23 == 0 else exact(-unscaled)}
+    for name, (_, values, period) in TIMESTAMPS.items():
+        result[name] = None if index > 7 and index % period == 0 else values[index % len(values)]
+    return result
 
 
 def public_row(index):
@@ -54,6 +75,9 @@ def public_row(index):
     for name in ('amount', 'fixed_amount'):
         if result[name] is not None:
             result[name] = format(result[name], 'f')
+    for name, (unit, _, _) in TIMESTAMPS.items():
+        if result[name] is not None:
+            result[name] = utc_text(result[name], unit)
     return result
 
 
@@ -118,6 +142,11 @@ def source_bytes(codec):
                             if i % 5 == 0:
                                 encoded = (b'\xff' if integer < 0 else b'\0') + encoded
                             raw.extend(blob(encoded))
+            for name in TIMESTAMPS:
+                ticks = value[name]
+                raw.extend(number(0 if ticks is None else 1))
+                if ticks is not None:
+                    raw.extend(number(ticks))
         payload = bytes(raw)
         if codec == 'deflate':
             compressor = zlib.compressobj(wbits=-15)
@@ -186,20 +215,31 @@ def worker(request):
         for spec in sources():
             assert (directory / spec['name']).read_bytes() == remote('avro/' + spec['name']) == source_bytes(spec['codec']), 'source_changed'
         facts = []
+        expected_rows = [row(i) for i in range(COUNT)]
         for name in outputs:
             raw = remote(name)
             table = pq.read_table(io.BytesIO(raw))
             expected_types = {'id': pa.int64(), 'small': pa.int32(), 'flag': pa.bool_(), 'label': pa.string(),
                               'ratio': pa.float32(), 'value': pa.float64(), 'payload': pa.binary(), 'day': pa.date32(),
                               'amount': pa.decimal128(38, 6), 'fixed_amount': pa.decimal128(38, 6)}
+            expected_types.update({name:pa.timestamp(unit, 'UTC') for name,(unit,_,_) in TIMESTAMPS.items()})
             # The existing parquet-go Group writer emits fields by name. Bind
             # every type and value by its name rather than the OCF ordinal.
             assert table.column_names == sorted(expected_types) and table.num_rows == COUNT, 'output_fields'
             assert all(table.schema.field(name).type == kind and table.schema.field(name).nullable ==
-                       (name in {'flag', 'label', 'payload', 'day', 'amount', 'fixed_amount'}) for name, kind in expected_types.items()), 'output_types'
-            assert table.to_pylist() == [row(i) for i in range(COUNT)], 'output_values'
+                       (name in {'flag', 'label', 'payload', 'day', 'amount', 'fixed_amount'} | set(TIMESTAMPS)) for name, kind in expected_types.items()), 'output_types'
+            plain = [name for name in expected_types if name not in TIMESTAMPS]
+            assert table.select(plain).to_pylist() == [{name:value[name] for name in plain} for value in expected_rows], 'output_values'
+            physical_schema = pq.ParquetFile(io.BytesIO(raw)).schema
+            for name, (unit, _, _) in TIMESTAMPS.items():
+                assert table[name].cast(pa.int64()).to_pylist() == [value[name] for value in expected_rows], 'output_ticks'
+                column = physical_schema.column(table.column_names.index(name))
+                logical = json.loads(column.logical_type.to_json())
+                assert column.physical_type == 'INT64' and logical.get('Type') == 'Timestamp' and logical.get('isAdjustedToUTC') is True, 'output_temporal_annotation'
+                assert logical.get('timeUnit') == {'ms':'milliseconds','us':'microseconds','ns':'nanoseconds'}[unit], 'output_temporal_annotation'
             facts.append({'object': name, 'size_bytes': len(raw), 'sha256': hashlib.sha256(raw).hexdigest(),
-                          'all_values_and_nulls_verified': True, 'content_base64': base64.b64encode(raw).decode()})
+                          'all_values_and_nulls_verified': True, 'native_timestamp_ticks_verified': True,
+                          'timestamp_units': {name:unit for name,(unit,_,_) in TIMESTAMPS.items()}, 'content_base64': base64.b64encode(raw).decode()})
         return {'sources_unchanged': True, 'outputs': facts}
     if action == 'delete':
         for name in outputs + ['avro-output/.keep'] + ['avro/' + c + '.avro' for c in CODECS]:
@@ -224,7 +264,7 @@ def physical(action, repository, environment):
 def worker_error(error):
     codes = {'existing_inputs', 'existing_outputs', 'unowned_inputs', 'unowned_outputs',
              'fixture_ownership', 'source_symlink', 'source_changed', 'output_fields',
-             'output_types', 'output_values', 'input_cleanup', 'output_cleanup'}
+             'output_types', 'output_values', 'output_ticks', 'output_temporal_annotation', 'input_cleanup', 'output_cleanup'}
     return str(error) if isinstance(error, AssertionError) and str(error) in codes else type(error).__name__
 
 

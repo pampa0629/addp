@@ -313,7 +313,7 @@ type zeroReader struct{}
 func (zeroReader) Read(b []byte) (int, error) { clear(b); return len(b), nil }
 
 func TestRejectUnsupportedSchemaWithoutLosingSemantics(t *testing.T) {
-	for _, kind := range []string{`{"type":"long","logicalType":"timestamp-micros"}`, `{"type":"array","items":"string"}`, `{"type":"map","values":"string"}`, `{"type":"record","name":"nested","fields":[]}`, `{"type":"enum","name":"e","symbols":["a"]}`, `{"type":"fixed","name":"f","size":4}`, `["int","string"]`, `["null","int","string"]`, `"null"`} {
+	for _, kind := range []string{`{"type":"long","logicalType":"local-timestamp-micros"}`, `{"type":"array","items":"string"}`, `{"type":"map","values":"string"}`, `{"type":"record","name":"nested","fields":[]}`, `{"type":"enum","name":"e","symbols":["a"]}`, `{"type":"fixed","name":"f","size":4}`, `["int","string"]`, `["null","int","string"]`, `"null"`} {
 		schema := `{"type":"record","name":"r","fields":[{"name":"v","type":` + kind + `}]}`
 		if _, err := newReader(t.Context(), bytes.NewReader(rawHeader(schema, "null"))); err == nil {
 			t.Fatalf("unsupported schema accepted: %s", kind)

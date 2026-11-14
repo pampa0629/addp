@@ -47,7 +47,7 @@ def run(repository, environment, owner, *, physical_runner=None, browser_runner=
     client = owner.GatewayClient(environment['GATEWAY_URL'], environment['ADDP_ONLINE_TEST_USER_ACCESS_TOKEN'], 30)
     initializer = owner.GatewayClient(environment['GATEWAY_URL'], environment['ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN'], 30)
     tenant = owner.positive_int(environment['ADDP_ONLINE_TEST_TENANT_ID'], 'Avro tenant')
-    report = {'schema_version': 'addp.manager-avro/v2', 'case': 'native-table-avro',
+    report = {'schema_version': 'addp.manager-avro/v3', 'case': 'native-table-avro',
               'run_id': environment['ADDP_ONLINE_TEST_RUN_ID'], 'result': 'failed', 'cases': []}
     report['identity'] = owner.validate_user_identity(client, tenant, PERMISSIONS)
     grants = REGISTRATION.ExactFileMetadataGrants(initializer, client, tenant, scan_preparation=True)
@@ -78,9 +78,12 @@ def run(repository, environment, owner, *, physical_runner=None, browser_runner=
                 require([(f['name'], f['type']) for f in fields] == [
                     ('id', 'bigint'), ('small', 'int'), ('flag', 'bool'), ('label', 'string'),
                     ('ratio', 'float'), ('value', 'double'), ('payload', 'bytes'),
-                    ('day', 'date'), ('amount', 'decimal'), ('fixed_amount', 'decimal')], 'Avro declared fields differ')
-                require([f.get('nullable', False) for f in fields] == [False, False, True, True, False, False, True, True, True, True], 'Avro schema nullability differs')
-                require(all(f.get('precision') == 38 and f.get('scale') == 6 for f in fields[-2:]), 'Avro decimal definition lost precision or scale')
+                    ('day', 'date'), ('amount', 'decimal'), ('fixed_amount', 'decimal'),
+                    ('stamp_ms','timestamp'), ('stamp_us','timestamp'), ('stamp_ns','timestamp')], 'Avro declared fields differ')
+                require([f.get('nullable', False) for f in fields] == [False, False, True, True, False, False, True, True, True, True, True, True, True], 'Avro schema nullability differs')
+                require(all(f.get('precision') == 38 and f.get('scale') == 6 for f in fields if f['type'] == 'decimal'), 'Avro decimal definition lost precision or scale')
+                for f in fields[-3:]:
+                    require(f.get('native_type') == 'long' and f.get('temporal') == {'unit':FIXTURE.TIMESTAMPS[f['name']][0], 'timezone':'UTC'}, 'Avro UTC timestamp declaration differs')
                 locator = owner.build_item_locator(engine, item)
                 case = {'storage': storage, 'codec': spec['codec'], 'locator': locator,
                         'item_id': item['id'], 'spec': spec, 'metadata_grant': receipt, 'pages': []}
@@ -138,6 +141,9 @@ def run(repository, environment, owner, *, physical_runner=None, browser_runner=
             filename = 'avro-result-' + Path(output['object']).name
             (artifact / filename).write_bytes(raw)
             output['archive_file'] = filename
+        require(all(v.get('native_timestamp_ticks_verified') is True
+                    and v.get('timestamp_units') == {name:unit for name,(unit,_,_) in FIXTURE.TIMESTAMPS.items()}
+                    for v in verified['outputs']), 'Avro native timestamp proof incomplete')
         report['physical'] = verified
         stage = 'browser'
         context = {'run_id': report['run_id'], 'identity': report['identity'], 'cases': report['cases']}
@@ -148,7 +154,7 @@ def run(repository, environment, owner, *, physical_runner=None, browser_runner=
             subprocess.run(['npm', 'exec', '--', 'playwright', 'test', 'e2e/online/manager-avro.spec.js', '--config=playwright.online.config.js'],
                            cwd=Path(repository) / 'console/frontend', env=dict(browser_env, ADDP_ONLINE_MANAGER_AVRO_JSON=json.dumps(context)), check=True)
             browser = json.loads((artifact / 'manager-avro-browser.json').read_text())
-        require(browser.get('schema_version') == 'addp.manager-avro-browser/v2' and browser.get('result') == 'passed'
+        require(browser.get('schema_version') == 'addp.manager-avro-browser/v3' and browser.get('result') == 'passed'
                 and browser.get('run_id') == report['run_id'] and len(browser.get('cases', [])) == 6, 'Avro browser incomplete')
         for case, observed in zip(report['cases'], browser['cases'], strict=True):
             require(observed.get('locator') == case['locator'] and observed.get('page_button_verified') is True
