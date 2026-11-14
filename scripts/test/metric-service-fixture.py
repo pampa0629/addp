@@ -27,15 +27,6 @@ NAMESPACES = {"postgresql": ("public", "schema"), "tidb": ("metric_fixture", "da
 
 class MetricSourceGrants(REGISTRATION.ExactRecordGrants):
     """Adapt exact record grants to the metric consumer's existing Meta view."""
-    def __init__(self, initializer, consumer, tenant_id, engine_type, **options):
-        self.namespace_term = NAMESPACES[engine_type][1]
-        super().__init__(initializer, consumer, tenant_id, action="read", scan_preparation=True, **options)
-
-    def target(self, engine, namespace, name, item_term):
-        target = super().target(engine, namespace, name, item_term)
-        target["segments"][1]["term"] = self.namespace_term
-        return target
-
     def observe(self, target, visible, *, phase="visibility_check"):
         self.phase = phase
         result = self.consumer.request("POST", "/api/v1/system/engine-access/metadata-checks/meta-query",
@@ -51,9 +42,10 @@ def source_access(initializer, consumer, engine_id, tenant_id, engine_type, repo
         report["source_grants"] = [dict(row) for row in rows]
         checkpoint()
 
-    grants = MetricSourceGrants(initializer, consumer, tenant_id, engine_type, on_change=pending)
+    grants = MetricSourceGrants(initializer, consumer, tenant_id, action="read",
+                                scan_preparation=True, on_change=pending)
     report["source_preparation"] = {"principal_id": grants.operator, "consumer_id": grants.recipient}
-    namespace, _ = NAMESPACES[engine_type]
+    namespace, namespace_term = NAMESPACES[engine_type]
     tables = ["metric_people", "metric_events", "metric_facts", "metric_areas"]
     try:
         execution = SCAN.wait_for_scan(initializer, engine_id, time.monotonic() + 180,
@@ -66,7 +58,7 @@ def source_access(initializer, consumer, engine_id, tenant_id, engine_type, repo
         report["source_preparation"].update(scan_depth="deep", consumer_scan_hidden=True)
         checkpoint()
         for table in tables:
-            grants.grant(engine_id, namespace, table, "table")
+            grants.grant(engine_id, namespace, table, "table", namespace_term=namespace_term)
         yield
     finally:
         report["source_cleanup"] = "failed"
