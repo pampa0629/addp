@@ -55,6 +55,8 @@ System 是模块注册表权威。Gateway 使用自身 Platform Service Access T
 
 Gateway 使用公共 `/health/live` 与 `/health/ready`；就绪检查为 `system_registry_snapshot`，仅要求成功应用过完整快照。后续 watch 失败不清除已有快照，代理仍逐请求检查 Backend 租约；因此 Ready 不等于所有模块可路由或所有依赖健康。
 
+[第三阶段 Catalog 服务发现契约](../../docs/spec/api/健康与平台控制面.md#第三阶段-catalog-服务发现契约)仅适用于待实施的 Kubernetes 试点。届时 Gateway 仍只读 System 快照，对 Catalog 逐请求检查其中的端点截止时间。已应用的摘除立即生效，链路中断则最迟在截止时刻停止选用。本地和 Compose 继续执行上述 System 实例租约规则。
+
 ## 6. 数据库
 
 `gateway.api_access_logs` 保存 API Consumer 的消费访问记录，用于请求性能及限流排查；它与 [Nginx 请求记录](../../nginx/README.md#2-日志查看)、[模块服务正文日志](../../docs/spec/addp模块服务运行日志规范.md)使用不同来源，也不替代 System 操作审计。

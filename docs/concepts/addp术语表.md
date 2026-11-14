@@ -399,7 +399,7 @@
 | process liveness | 进程存活状态 | 进程的 HTTP 服务是否已监听并能响应最小本地检查。 | 只表达 Alive，不读取 System、其他业务模块或可选 Engine Instance，也不表示已注册、可路由或可处理业务请求。 |
 | module readiness | 模块就绪状态 | 业务 Backend 能否通过自身就绪检查并接受 HTTP 请求。 | 注册状态仅供 HTTP 诊断。Gateway 另以首个完整路由快照判断就绪，Worker 按原领取条件工作。 |
 | module registration lifecycle state | 模块注册生命周期状态 | 进程内公共注册客户端对当前 `instance_id` 注册与恢复阶段的瞬时观测。 | 唯一取值集是 `starting`、`registered`、`recovering`、`failed`、`stopped`；它不落库，不替代 System 中的模块定义、运行实例和租约事实。 |
-| module routability | 模块可路由状态 | Gateway 能否从 System 最新有效快照中为模块选出 Backend 实例。 | 必须满足 `enabled + backend + up + lease valid`；Ready 是进程自身的服务资格，Routable 还受管理员 `enabled` 意图和 Gateway 快照收敛影响，两者不得混用。 |
+| module routability | 模块可路由状态 | Gateway 能否从 System 最新有效快照中为已启用模块选出可用的 Backend 端点。 | 当前部署使用 `enabled + backend + up + lease valid`。待实施的 [Catalog Kubernetes 试点](../spec/api/健康与平台控制面.md#第三阶段-catalog-服务发现契约)按可信 Service 的端点及其发现截止时间选路。两者均区分进程自身 Ready 与管理员意图、快照收敛和端点有效性。 |
 | dispatcher | 投递器 | 从 owner outbox 或 delivery 队列领取待发送事项并调用外部接收方的后台角色。 | Monitor Webhook/邮件 dispatcher 不执行业务任务，不创建业务 execution；投递记录和重试状态归 Monitor outbox。 |
 | maintenance loop | 维护循环 | 处理固定系统维护、清理、注册同步或观测采集的后台循环。 | 不等于 execution worker；只有演进为可持久执行、可审计的任务定义后，才进入 owner scheduler + execution worker 体系。 |
 | source task id | 来源任务 ID | execution 关联的 owner 模块任务定义 ID。 | 在 `common.task_executions.source_task_id` 中保存；查询时必须结合 `module + task_type`。 |
