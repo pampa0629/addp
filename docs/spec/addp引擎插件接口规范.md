@@ -543,7 +543,7 @@ Provider 只返回原始 ChangeRecord，不负责 JSON、Debezium、Avro 或 Pro
 
 MySQL／HighGo 的 Manager 普通表预览（2026-11-14 用户确认）沿同一 `GuardedTableReadSessionProvider`，通过 `TableReadSessionOptions.Page` 传递服务端已校验范围编译出的分页条件与绑定值，不允许调用方提交自定义 SQL。Provider 在同一只读事务中锁定真实基表、证明实际 ReadSet、取得该次读取字段，并在内容读取前调用 Owner；Owner 复用当前 User 的 System 来源裁决和实时字段保护检查。分页、筛选、字段及读取证据绑定到该会话，不回退到未受控的 BatchRead。分页会话沿现有实例版本共享池和源端超时预算；关闭仅释放借用连接，不关闭共享池。MySQL 保留原生空间编码，仅接受 InnoDB 基表；HighGo 保留独立身份，只开放非空间普通表，以 ONLY 读取排除并发新增继承子表，拒绝视图、继承／分区、RLS、规则及未证明的类型或索引依赖。范围仅为本轮两引擎的实际读取绑定，不扩展持续节点或整引擎 Grant；Provider 不裁决人员权限，System 不以用户选择的表名替代实际读取事实。
 
-GaussDB 普通表预览按同一受控表契约接入（2026-11-14 用户确认），限已准入的集中式 Kernel 507.0.T1 非空间普通表。复用协议适配层的事务、锁、ONLY 分页、游标及实例版本共享池；GaussDB 插件以编译期固定目录谓词核验 `pg_rlspolicy`／`reloptions` 行安全、`parttype` 分区、原生 btree／ubtree 索引依赖和 `pg_attrdef.adgencol` 生成列，不把缺少 PostgreSQL 列当作安全事实。该谓词不是请求、连接配置或 Hints，协议兼容不能自动继承 PostgreSQL 证明。主键成员按原生约束数组顺序读取，字段与分页保持同一锁定事务。读取前的来源与实时字段核验仍由 Manager 当前 User 承担，不新增权限或整引擎授权。StarRocks 此阶段只进行隔离技术准入，验证单次执行的原生来源绑定；目录预查、EXPLAIN 或 PREPARE 均不能自行替代受控会话证据，未通过前不声明该能力或接入 Manager。
+GaussDB 普通表预览按同一受控表契约接入（2026-11-14 用户确认），限已准入的集中式 Kernel 507.0.T1 非空间普通表。复用协议适配层的事务、锁、ONLY 分页、游标及实例版本共享池；GaussDB 插件以编译期固定目录谓词核验 `pg_rlspolicy`／`reloptions` 行安全、`parttype` 分区、原生 btree／ubtree 索引依赖和 `pg_attrdef.adgencol` 生成列，不把缺少 PostgreSQL 列当作安全事实。该谓词不是请求、连接配置或 Hints，协议兼容不能自动继承 PostgreSQL 证明。主键成员按原生约束数组顺序读取，字段与分页保持同一锁定事务。读取前的来源与实时字段核验仍由 Manager 当前 User 承担，不新增权限或整引擎授权。StarRocks 此阶段只进行隔离技术准入，验证单次执行的原生来源绑定；目录预查、EXPLAIN 或 PREPARE 均不能自行替代受控会话证据，未通过前不声明该受控会话能力，也不接入 Manager 的受控会话入口；既有普通只读接入按原有证据边界认定。
 
 PostGIS 通过同一契约证明普通表的原生 EWKB 读取。表锁保持到游标关闭，回调在游标打开前执行。首期只接受具有一个 PostGIS geometry 列的普通表，排除视图、继承、分区、行级安全策略、生成列、表达式／部分索引和未知类型的读取依赖。空间编码使用数据库实际安装的 PostGIS 扩展函数，保留源坐标。导出期间源 schema 和 PostGIS 扩展的迁移、重命名沿用原生读取的结构运维边界。
 
