@@ -1,11 +1,15 @@
 """Deterministic local Trace lifecycle contracts; never execute Docker/services."""
 from pathlib import Path
 import copy
+from datetime import datetime
 import importlib.util
 import io
 import json
 import os
+import re
 import signal
+import shutil
+import time
 import tempfile
 import threading
 import unittest
@@ -38,7 +42,17 @@ class CredentialsPreparationTests(unittest.TestCase):
             def run(args, **kwargs):
                 step = openssl_steps[len(calls)]
                 calls.append((args, kwargs))
-                self.assertEqual(kwargs, {'check': True, 'stdout': f.subprocess.DEVNULL, 'stderr': f.subprocess.DEVNULL})
+                config = work/'openssl.cnf'
+                self.assertTrue(config.is_file(), 'private_openssl_config_required')
+                self.assertEqual(config.stat().st_mode & 0o777, 0o600)
+                self.assertEqual(config.read_text(), '[req]\nprompt = no\ndistinguished_name = dn\nx509_extensions = ca_extensions\n'
+                                 '[dn]\n[ca_extensions]\nsubjectKeyIdentifier = hash\nauthorityKeyIdentifier = keyid:always\n')
+                self.assertEqual(set(kwargs), {'check','stdout','stderr','env'})
+                self.assertTrue(kwargs['check'])
+                self.assertEqual((kwargs['stdout'], kwargs['stderr']), (f.subprocess.DEVNULL, f.subprocess.DEVNULL))
+                self.assertTrue(kwargs['env'] == dict(os.environ, OPENSSL_CONF=str(config)),
+                                'openssl_environment_must_only_override_config')
+                if args[1] == 'req': self.assertEqual(args[2:4], ['-config', str(config)])
                 if step == failed_step:
                     raise error
                 for option in ('-out', '-keyout'):
@@ -147,6 +161,107 @@ class CredentialsPreparationTests(unittest.TestCase):
                     self.assertEqual(life.last_failure['credentials_preparation']['step'], 'ca_server')
                 else:
                     self.assertNotIn('credentials_preparation', life.last_failure)
+
+    def test_private_configuration_creation_failure_stops_before_openssl(self):
+        import builtins
+        original = builtins.open
+        with tempfile.TemporaryDirectory() as directory:
+            def denied(path, *args, **kwargs):
+                if Path(path).name == 'openssl.cnf': raise PermissionError('PRIVATE-SECRET')
+                return original(path, *args, **kwargs)
+            output = io.StringIO()
+            with mock.patch.object(builtins, 'open', side_effect=denied), \
+                 mock.patch.object(self.fixture.subprocess, 'run') as run, mock.patch.object(self.fixture.sys, 'stdout', output):
+                self.assertEqual(self.fixture.main(directory), 1)
+            self.assertEqual(run.call_count, 0, 'openssl_started_after_config_failure')
+            self.assertEqual(self.fixture.diagnostic(output.getvalue().encode(), failed=True), {
+                'status': 'complete', 'completed_steps': [], 'step': 'prepare', 'error_category': 'filesystem_error'})
+            self.assertNotIn('PRIVATE', output.getvalue())
+
+    def test_offline_private_config_generates_original_chain_with_host_config_missing(self):
+        f = self.fixture
+        self.assertIsNotNone(shutil.which('openssl'), 'offline_openssl_required')
+        real_run = f.subprocess.run
+        began = time.monotonic(); calls = []; peak = 0
+        with tempfile.TemporaryDirectory(prefix='addp-trace-credentials-offline-') as directory:
+            work = Path(directory).resolve(); absent = work/'missing-host-openssl.cnf'
+            def bounded(args, **kwargs):
+                nonlocal peak
+                remaining = 60 - (time.monotonic() - began)
+                self.assertGreater(remaining, 0, 'offline_credentials_deadline')
+                self.assertEqual(args[0], 'openssl', 'offline_openssl_only')
+                calls.append(args); self.assertLessEqual(len(calls), 24, 'offline_credentials_command_budget')
+                kwargs['timeout'] = remaining
+                result = real_run(args, **kwargs)
+                output = result.stdout or b''
+                if isinstance(output, str): output = output.encode()
+                amount = sum(p.stat().st_size for p in work.rglob('*') if p.is_file()) + len(output)
+                peak = max(peak, amount); self.assertLessEqual(amount, 1024**2, 'offline_credentials_material_budget')
+                return result
+            output = io.StringIO()
+            with mock.patch.dict(os.environ, {'OPENSSL_CONF': str(absent)}), \
+                 mock.patch.object(f.subprocess, 'run', side_effect=bounded), mock.patch.object(f.sys, 'stdout', output):
+                code = f.main(directory)
+                self.assertEqual(os.environ['OPENSSL_CONF'], str(absent), 'global_environment_changed')
+            receipt = f.diagnostic(output.getvalue().encode(), failed=code != 0)
+            self.assertEqual(code, 0, 'offline_credentials_generation_failed: ' + str(receipt))
+            self.assertEqual(len(calls), 9, 'fixture_operation_count_changed')
+            self.assertEqual(receipt['error_category'], 'none')
+            self.assertEqual(receipt['completed_steps'], list(f.STEPS))
+            private = dict(os.environ, OPENSSL_CONF=str(work/'openssl.cnf'))
+            certificate_facts = []; key_identifiers = []
+            def openssl(*args, success=True):
+                result = bounded(['openssl', *map(str, args)], env=private, stdin=f.subprocess.DEVNULL,
+                                 stdout=f.subprocess.PIPE, stderr=f.subprocess.PIPE, text=True)
+                codes = re.findall(r'error (\d+) at', result.stderr or '')[:4]
+                self.assertEqual(result.returncode == 0, success,
+                                 'offline_certificate_verification_outcome: ' + json.dumps({'codes':codes,'certificate_facts':certificate_facts}))
+                return result.stdout
+            version = openssl('version').split()[1]
+            certificates = [work/(name+'-ca.crt') for name in ('server','source','query')] + [
+                work/'deployment/server.crt', work/'source-tls/client.crt', work/'query-tls/client.crt']
+            for index, certificate in enumerate(certificates):
+                text = openssl('x509','-in',certificate,'-noout','-text')
+                self.assertIn('Public-Key: (2048 bit)', text)
+                certificate_facts.append({'ca':index < 3,
+                    'subject_equals_issuer':re.search(r'\n\s*Subject:\s*(.+)',text).group(1).strip()==re.search(r'\n\s*Issuer:\s*(.+)',text).group(1).strip(),
+                    'subject_key_identifier':'X509v3 Subject Key Identifier' in text,
+                    'authority_key_identifier':'X509v3 Authority Key Identifier' in text})
+                self.assertTrue(certificate_facts[-1]['subject_key_identifier'])
+                self.assertTrue(certificate_facts[-1]['authority_key_identifier'])
+                ski = re.search(r'X509v3 Subject Key Identifier:\s*\n\s*([A-F0-9:]+)', text).group(1)
+                aki = re.search(r'X509v3 Authority Key Identifier:\s*\n\s*(?:keyid:)?([A-F0-9:]+)', text).group(1)
+                key_identifiers.append((ski, aki))
+                if index < 3: self.assertEqual(aki, ski)
+                else:
+                    self.assertEqual(aki, key_identifiers[index-3][0], 'issuer_key_binding_mismatch')
+                    self.assertNotEqual(ski, aki, 'leaf_must_use_distinct_key')
+                before = re.search(r'Not Before:\s*(.+)', text).group(1).strip()
+                after = re.search(r'Not After\s*:\s*(.+)', text).group(1).strip()
+                self.assertEqual((datetime.strptime(after,'%b %d %H:%M:%S %Y %Z') -
+                                  datetime.strptime(before,'%b %d %H:%M:%S %Y %Z')).total_seconds(), 86400)
+                if index < 3:
+                    self.assertIn('CA:TRUE', text)
+                    self.assertIn('Certificate Sign, CRL Sign', text)
+                elif index == 3:
+                    for name in ('DNS:localhost','DNS:trace-query','DNS:alloy','IP Address:127.0.0.1','TLS Web Server Authentication'):
+                        self.assertIn(name, text)
+                else:
+                    self.assertIn('TLS Web Client Authentication', text)
+            openssl('verify','-purpose','sslserver','-verify_hostname','trace-query','-CAfile',certificates[0],certificates[3])
+            openssl('verify','-purpose','sslclient','-CAfile',certificates[1],certificates[4])
+            openssl('verify','-purpose','sslclient','-CAfile',certificates[2],certificates[5])
+            openssl('verify','-purpose','sslclient','-CAfile',certificates[2],certificates[4],success=False)
+            openssl('verify','-purpose','sslserver','-CAfile',certificates[1],certificates[4],success=False)
+            openssl('verify','-purpose','sslserver','-verify_hostname','wrong.invalid','-CAfile',certificates[0],certificates[3],success=False)
+            for key in work.rglob('*.key'): self.assertEqual(key.stat().st_mode & 0o777, 0o600)
+            self.assertFalse(absent.exists(), 'host_configuration_written')
+        self.assertFalse(work.exists(), 'offline_private_directory_residue')
+        elapsed = time.monotonic() - began
+        self.assertLess(elapsed, 60, 'offline_credentials_total_deadline')
+        print('Trace credentials offline T1: ' + json.dumps({'fixture_operations':9,'total_commands':len(calls),
+              'openssl_version':version,'elapsed_seconds':round(elapsed,6),'material_and_output_peak_bytes':peak,
+              'expected_rejections':3,'cleanup_removed':True}))
 
     def test_fixture_is_part_of_fixed_source_inventory(self):
         self.assertIn('scripts/test/trace-deployment-fixture.py', m.OWN_INPUTS)

@@ -400,7 +400,17 @@ Graph 在 C→G 内、关闭／取消／归档前比较当前模块影响与原�
 
 **原因与证据限度。** 退出后只读查询版本／文件事实：当前PATH选中Homebrew OpenSSL 4.1.0，OPENSSLDIR为`/opt/homebrew/etc/openssl@4`，其`openssl.cnf`不存在；fixture未传`-config`，runner窄环境未传`OPENSSL_CONF`。对应版本[req.c](https://github.com/openssl/openssl/blob/openssl-4.1.0/apps/req.c#L532)先读取默认配置，失败即沿初始退出码1返回；[配置加载实现](https://github.com/openssl/openssl/blob/openssl-4.1.0/apps/lib/apps.c#L339)打开文件失败返回空。由实际ca_server失败、宿主文件事实和该版本源码，原因已收敛为fixture隐式依赖宿主默认OpenSSL配置，而本机缺少该文件；这不是原stderr逐字还原，也未通过重放／AB生成验证。原OpenSSL正文仍被原实现丢弃，未恢复或归档私钥／证书；没有重放证书命令、修改宿主配置、切换工具链、重启个人服务、运行Hosted或追加下一轮。
 
-**下一步建议。** 参照已有`generate-trace-config.py`开发准备的单一路径，让本轮fixture在私有目录内创建最小OpenSSL配置，并显式绑定其自身req／子进程；保持原九次操作、证书用途／算法／有效期、身份、采样、等待及清理不变，先补确定性与受控离线门禁。该配置修复尚未实施；不通过给宿主补文件或切换openssl版本绕过。修复通过后，新的本机真实窗口仍须单独确认，正式身份／业务／阶段／Console链路仍未覆盖。
+**后继实施。** 用户已确认fixture私有配置与随后明确的SKID／AKID方案，实施及验证见下；不通过给宿主补文件或切换openssl版本绕过。新的本机真实窗口仍须单独确认，正式身份／业务／阶段／Console链路仍未覆盖。
+
+
+**私有OpenSSL配置与显式密钥绑定（2026-11-14）。** 用户已确认自包含最小配置。正式观测规范先同步：prepare在本轮私有目录生成0600的最小req／dn配置，九次子进程均显式绑定OPENSSL_CONF、六次req另带-config；未改宿主配置、环境、工具链、证书用途／RSA 2048／1天／CN／SAN／EKU、身份权限、预算及清理。旧实现的受控离线用例先复现ca_server失败，修复后九次真实生成及全部16步骤完成；原16点注入、封闭类别、私有配置失败先于OpenSSL、环境不全局改写等确定性检查通过。原两次真实报告SHA256复核未变，未追加真实窗口。
+
+`make test-monitor-traces-local-runner`在加入密钥标识前，224项中223通过／1失败，原失败不能改记为通过。唯一失败为新增受控离线链验证：OpenSSL 4.1服务器证书验证返回error 18；同一次离线生成的只读解析确认三组CA／叶证书均无SKID／AKID、subject与issuer同名。对应版本[req说明](https://docs.openssl.org/4.1/man1/openssl-req/#history)和[x509说明](https://docs.openssl.org/4.1/man1/openssl-x509/#history)确认4.0起不再自动添加密钥标识；现有fixture在CA和对应叶证书使用相同CN，缺少标识后不能通过当前OpenSSL信任链校验。没有改为信任叶证书、忽略校验、换工具链或删断言；测试临时证书仍由TemporaryDirectory退出销毁。日志为`/tmp/addp-trace-private-config-{red,green,chain-diagnostic,chain-facts}.log`；其中red为旧实现回归，green仍因新增链验证失败，文件名不表示通过。
+
+用户已明确同意显式绑定SKID／AKID：CA在私有配置加入`subjectKeyIdentifier=hash`、`authorityKeyIdentifier=keyid:always`，叶证书在原扩展文件加入`subjectKeyIdentifier=hash`、`authorityKeyIdentifier=keyid,issuer`，保持现有CN／SAN／EKU、算法、期限、九次生成及原运行预算／权限不变；统一显式声明各版本的签发密钥关联，不按OpenSSL版本走分支。受控离线T1已在本机OpenSSL 4.1.0通过原九次生成、全部16步、RSA 2048／一天有效期、真实CA和叶SKID／AKID匹配、三条正确信任链及错误CA／用途／名称三项拒绝；共22次命令（含验证），小于原定24次，约0.38秒／材料与输出峰值32992字节，私有目录清理完成。`make test-monitor-traces-local-runner`整组224项、登记与System身份夹具Go通过；原ca_server及后继error 18失败日志保留，不能以当前通过改写历史。原标准入口／Platform consistency与Trace T2已覆盖fixture，Execution runner已有scripts路径选择与登记核验，无新增入口、依赖或环境。本轮仅确定性与离线验证，未启动新的真实窗口或Hosted；后续真实运行仍单独确认。
+
+
+本批最终本地门禁：`make test-monitor-traces-local-runner`224项Python、登记及夹具Go通过；`make test-infra-runtime-log-lifecycle`539项Python（包含224项）、7项Node及夹具Go通过，真实PostgreSQL指标恢复未选择／未安装，不计为通过；`make test-execution-online-ci-runner`207＋19＋158＋35＝419项Python及登记通过。最终日志为`/tmp/addp-trace-private-config-keyids-green.log`、`/tmp/addp-trace-private-config-infra-final.log`、`/tmp/addp-trace-private-config-execution-final.log`。标准Make／现有路径和Linux编排已覆盖，无需新增入口或CI环境；Linux实际执行仍按本批固定提交另核，不能以本地通过替代。
 
 ## 七、确认范围与协作分工
 

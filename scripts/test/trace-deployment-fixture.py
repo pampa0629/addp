@@ -2,6 +2,7 @@
 from pathlib import Path
 import importlib.util
 import json
+import os
 import subprocess
 import sys
 
@@ -44,8 +45,10 @@ def diagnostic(raw, *, failed):
             'error_category': CATEGORIES[CATEGORIES.index(value['error_category'])]}
 
 
-def openssl(*args):
-    subprocess.run(['openssl', *map(str, args)], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+def openssl(config, *args):
+    subprocess.run(['openssl', *map(str, args)], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                   env=dict(os.environ, OPENSSL_CONF=str(config)))
+
 
 def main(directory):
     completed = []
@@ -56,10 +59,14 @@ def main(directory):
         w = Path(directory).resolve()
         center = w / 'deployment'
         center.mkdir(mode=0o700)
+        config = w / 'openssl.cnf'
+        with open(config, 'x', opener=lambda path, flags: os.open(path, flags, 0o600)) as out:
+            out.write('[req]\nprompt = no\ndistinguished_name = dn\nx509_extensions = ca_extensions\n'
+                      '[dn]\n[ca_extensions]\nsubjectKeyIdentifier = hash\nauthorityKeyIdentifier = keyid:always\n')
         completed.append('prepare')
         for authority in ['server', 'source', 'query']:
             step = 'ca_' + authority
-            openssl('req', '-x509', '-newkey', 'rsa:2048', '-nodes', '-days', '1', '-subj', '/CN=trace-test-'+authority,
+            openssl(config, 'req', '-config', config, '-x509', '-newkey', 'rsa:2048', '-nodes', '-days', '1', '-subj', '/CN=trace-test-'+authority,
                     '-addext', 'basicConstraints=critical,CA:TRUE', '-addext', 'keyUsage=critical,keyCertSign,cRLSign', '-keyout', w/(authority+'-ca.key'), '-out', w/(authority+'-ca.crt'))
             completed.append(step)
         for identity, authority, server in [('server','server',True),('source','source',False),('query','query',False)]:
@@ -68,12 +75,14 @@ def main(directory):
             if not server: dest.mkdir(mode=0o700)
             key = dest / ('server.key' if server else 'client.key')
             crt = dest / ('server.crt' if server else 'client.crt')
-            openssl('req','-new','-newkey','rsa:2048','-nodes','-subj','/CN=trace-test-'+identity,'-keyout',key,'-out',w/(identity+'.csr'))
+            openssl(config, 'req','-config',config,'-new','-newkey','rsa:2048','-nodes','-subj','/CN=trace-test-'+identity,'-keyout',key,'-out',w/(identity+'.csr'))
             completed.append(step)
             step = 'sign_' + identity
             extensions = w/(identity+'.ext')
-            extensions.write_text('subjectAltName=DNS:localhost,DNS:trace-query,DNS:alloy,IP:127.0.0.1\nextendedKeyUsage=serverAuth\n' if server else 'extendedKeyUsage=clientAuth\n')
-            openssl('x509','-req','-in',w/(identity+'.csr'),'-CA',w/(authority+'-ca.crt'),'-CAkey',w/(authority+'-ca.key'),'-CAcreateserial','-days','1','-extfile',extensions,'-out',crt)
+            extensions.write_text('subjectKeyIdentifier=hash\nauthorityKeyIdentifier=keyid,issuer\n' +
+                                  ('subjectAltName=DNS:localhost,DNS:trace-query,DNS:alloy,IP:127.0.0.1\nextendedKeyUsage=serverAuth\n'
+                                   if server else 'extendedKeyUsage=clientAuth\n'))
+            openssl(config, 'x509','-req','-in',w/(identity+'.csr'),'-CA',w/(authority+'-ca.crt'),'-CAkey',w/(authority+'-ca.key'),'-CAcreateserial','-days','1','-extfile',extensions,'-out',crt)
             completed.append(step)
             step = 'tls_' + identity
             key.chmod(0o600)
