@@ -1,0 +1,35 @@
+--- a/system/backend/cmd/online-test-fixture/main.go
++++ b/system/backend/cmd/online-test-fixture/main.go
+@@ -423,0 +424,2 @@
++	case "infra-object-storage":
++		return []string{"manager.data_item.create", "manager.data_item.read", "manager.content.read", "manager.derived_artifact.create", "manager.derived_artifact.read", "meta.catalog.read", "meta.scan_task.read", "meta.scan_task.execute", "transfer.task.create", "transfer.task.read", "transfer.task.execute", "transfer.task.delete", "develop.task.read", "develop.task.execute", "develop.data_read.execute", "system.execution_authorization.create", "security.enrollment.create", "security.enrollment.read"}, nil
+@@ -478 +480 @@
+-	if suite == "pg-source-authorization" || suite == "sql-pool-consumer-flow" {
++	if suite == "infra-object-storage" || suite == "pg-source-authorization" || suite == "sql-pool-consumer-flow" {
+@@ -513,0 +516,4 @@
++	}
++	if suite == "infra-object-storage" {
++		config.AccessTokenTTL = time.Hour
++		config.RefreshTokenFamilyTTL = time.Hour
+@@ -724,0 +731,21 @@
++	if *suite == "infra-object-storage" {
++		readerPermissions := []string{"manager.derived_artifact.read", "develop.task.read", "develop.task.execute", "develop.data_read.execute", "transfer.task.read", "transfer.task.execute", "system.execution_authorization.create"}
++		outsider, _, _, err := createPermissionFixture(ctx, repository, identity, membershipService, roleService, selectionService,
++			tenant.ID, administrator.PrincipalID, "external-online-object-outsider", readerPermissions)
++		if err != nil {
++			return err
++		}
++		values["ADDP_ONLINE_FIXTURE_OUTSIDER_ACCESS_TOKEN"] = outsider.AccessToken
++		foreignTenant, err := createOnlineForeignTenant(ctx, tenantService.Create, reserve.PrincipalID, tenant.ID)
++		if err != nil {
++			return err
++		}
++		foreign, _, _, err := createPermissionFixture(ctx, repository, identity, membershipService, roleService, selectionService,
++			foreignTenant.ID, reserve.PrincipalID, "external-online-object-foreign", readerPermissions)
++		if err != nil {
++			return err
++		}
++		values["ADDP_ONLINE_FOREIGN_USER_ACCESS_TOKEN"] = foreign.AccessToken
++		values["ADDP_ONLINE_EVENTS_FOREIGN_TENANT_ID"] = fmt.Sprint(foreignTenant.ID)
++	}
++

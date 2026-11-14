@@ -1184,6 +1184,11 @@ test-transfer-continuous-online-runner: ## 验证连续任务 Hosted 生命周�
 	@python3 -m unittest scripts/test/transfer-continuous-events-online_test.py scripts/test/continuous-execution-faults_test.py scripts/test/online-continuous-fixture_test.py scripts/test/online-hosted-continuous-gate_test.py scripts/test/online-engine-registration_test.py
 	@cd system/backend && GOWORK=off go test ./cmd/online-test-fixture
 
+.PHONY: test-infra-object-online-runner
+test-infra-object-online-runner: ## 验证固定版本对象存储 T4 编排与观察器拒绝条件
+	@bash -n scripts/test/online-hosted-infra-object-gate.sh scripts/test/infra-object-source-fixture.sh
+	@python3 -m unittest scripts/test/infra-object-storage-online_test.py
+
 .PHONY: test-meta-scan-claim-online-runner
 test-meta-scan-claim-online-runner: ## 验证单次 Meta 扫描 Hosted 租约与事件证据
 	@bash -n scripts/test/online-hosted-meta-scan-gate.sh
@@ -1773,7 +1778,7 @@ test-graph-online-runner: test-execution-online-ci-runner ## 验证图保护和�
 test-execution-online-ci-syntax:
 	@node --check --input-type=module < console/frontend/e2e/online/cleanup-execution.spec.js
 
-test-execution-online-ci-runner: test-execution-online-ci-syntax test-monitor-traces-local-runner test-cleanup-native-online-runner test-online-dispatcher-unit test-online-registration-unit ## 验证 Graph/Cleanup 编排、前置、报告、恢复和登记，不启动 Hosted
+test-execution-online-ci-runner: test-execution-online-ci-syntax test-infra-object-online-runner test-monitor-traces-local-runner test-cleanup-native-online-runner test-online-dispatcher-unit test-online-registration-unit ## 验证 Graph/Cleanup 编排、前置、报告、恢复和登记，不启动 Hosted
 	@bash -n scripts/test/online-hosted-security-gate.sh
 	@python3 -m unittest scripts/test/online-hosted-security-gate_test.py scripts/test/online-preflight_test.py
 
