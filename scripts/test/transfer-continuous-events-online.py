@@ -682,19 +682,26 @@ def verify_cdc_performance(client, task_id, generation, engine_id, binding, dest
             paused.add(identity)
             docker('pause', identity)
         missing_after = datetime.now(timezone.utc)
+        missing_samples = {}
         def missing():
             current = sample()
             for field in ('buffer_observation', 'delay_observation'):
+                if field in missing_samples:
+                    continue
                 v = current[field] or {}
                 at = cdc_sample_time(v, datetime.now(timezone.utc))
-                if v.get('status') != 'unavailable' or not at or at <= missing_after:
-                    return None
+                if v.get('status') == 'unavailable' and at and at > missing_after:
+                    missing_samples[field] = v
+            evidence['missing_samples'] = missing_samples.copy()
             rows = rule_rows()
-            return current if len(rows) == 2 and all(r['cdc_evaluation']['state'] == 'unknown' for r in rows.values()) else None
-        evidence['missing_samples'] = until(missing)
+            return missing_samples if len(missing_samples) == 2 and len(rows) == 2 and all(r['cdc_evaluation']['state'] == 'unknown' for r in rows.values()) else None
+        until(missing)
         frozen = until(lambda: incidents('acknowledged'))
         deadline, checks = time.monotonic() + 32, 0
         while time.monotonic() < deadline:
+            rows = rule_rows()
+            require(len(rows) == 2 and all(r['cdc_evaluation']['state'] == 'unknown' for r in rows.values()),
+                    'missing performance observations did not remain unknown')
             current = incidents('acknowledged')
             require(current and all(current[k]['id'] == frozen[k]['id']
                     and current[k]['last_observed_at'] == frozen[k]['last_observed_at'] for k in CDC_PERFORMANCE_CODES),

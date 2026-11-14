@@ -1226,6 +1226,8 @@ class CDCRiskAcceptanceTest(unittest.TestCase):
                 output = b''
             elif args[-1] == '/sys/fs/cgroup/cpu.max':
                 output = state['cpu'].encode()
+            elif args[1] in ('pause','unpause'):
+                output = b''
             else:
                 self.assertIn('curl', args)
                 self.assertTrue(args[-1].endswith('/connectors/owned/config'))
@@ -1314,6 +1316,85 @@ class CDCRiskAcceptanceTest(unittest.TestCase):
         self.assertEqual(proof['performance']['fault_cpu_max'],'4000 100000')
         self.assertEqual(proof['performance']['cleanup'],'passed')
         self.assertNotIn('source_fill_succeeded',proof['performance'])
+
+    def test_performance_unknown_accepts_independent_fresh_samples_and_holds_incidents(self):
+        import io
+        state = {'phase':'', 'clock':0, 'trigger_reads':0, 'missing_reads':0,
+                 'ack':False, 'deleted':False, 'lock_done':False}
+        command, commands, native = self.performance_native_driver()
+        lock = SimpleNamespace(stdin=io.BytesIO(),stdout=io.BytesIO(b'ADDP_CDC_PERFORMANCE_LOCKED\n'),
+            poll=lambda:0 if state['lock_done'] else None,
+            wait=lambda **kwargs:state.update(lock_done=True))
+        proof = {}; definitions = []
+        observed = M.datetime.now(M.timezone.utc).isoformat()
+        def stage(value):
+            state['phase'] = value
+            if value == 'performance_recovery':
+                raise M.SuiteError('stop after real unknown orchestration')
+        def rules():
+            now = M.datetime.now(M.timezone.utc)
+            return [{'id':index,'rule_type':code,'cdc_evaluation':
+                     {'state':'unknown' if state['phase']=='performance_unknown' else 'active',
+                      'active':True,'trigger_since':(now-timedelta(seconds=200)).isoformat()}}
+                    for index,code in enumerate(sorted(M.CDC_PERFORMANCE_CODES),1)]
+        def alerts(*args, **kwargs):
+            if state['phase'] == 'performance_wal_wait' or state['trigger_reads'] < 2:
+                return {}
+            return {r['rule_type']:{'id':r['id'],'severity':'warning',
+                'status':'acknowledged' if state['ack'] else 'open','last_observed_at':observed,
+                'details':{'trigger_seconds':180,'sampled_at':M.datetime.now(M.timezone.utc).isoformat()}}
+                for r in rules()}
+        def request(method, path, *args, **kwargs):
+            if method == 'DELETE':
+                state['deleted'] = True
+                return SimpleNamespace(payload={})
+            if path == M.RULES:
+                return SimpleNamespace(payload=[] if state['deleted'] else rules())
+            self.assertEqual(path,M.OWNER+'/task-definitions/7')
+            now = M.datetime.now(M.timezone.utc)
+            fresh = {'sampled_at':now.isoformat(),'expires_at':(now+timedelta(seconds=30)).isoformat()}
+            stale = {'sampled_at':(now-timedelta(seconds=60)).isoformat(),
+                     'expires_at':(now-timedelta(seconds=30)).isoformat()}
+            buffer = {**fresh,'status':'available','initial_snapshot_completed':True,'lag_offsets':'0'}
+            delay = {**fresh,'status':'available','delay_seconds':70,'event_count':'0'}
+            if state['phase'] == 'performance_trigger':
+                state['trigger_reads'] += 1
+                delay['event_count'] = str(state['trigger_reads'])
+            if state['phase'] == 'performance_unknown':
+                state['missing_reads'] += 1
+                if state['missing_reads'] == 1:
+                    buffer = {**stale,'status':'available'}
+                    delay = {**fresh,'status':'unavailable'}
+                else:
+                    buffer = {**fresh,'status':'unavailable'}
+                    delay = {**stale,'status':'unavailable'}
+            return SimpleNamespace(payload={'capture':{'generation':1,'buffer_observation':buffer,
+                                                      'delay_observation':delay}})
+        def mutate(actor, path, body=None, status=None):
+            if path.endswith('/acknowledge'):
+                state['ack'] = True
+                return {}
+            definitions.append(body)
+            return {'id':len(definitions)}
+        delivered = unittest.mock.Mock(return_value=[{'signed_receipt_verified':True}])
+        with patch.object(M,'cdc_risk_container',side_effect=['owned-connect','owned-broker']), \
+             patch.object(M.subprocess,'run',side_effect=command),patch.object(M.subprocess,'Popen',return_value=lock), \
+             patch.object(M.select,'select',return_value=([lock.stdout],[],[])), \
+             patch.object(M.time,'monotonic',side_effect=lambda:state['clock']), \
+             patch.object(M.time,'sleep',side_effect=lambda seconds:state.update(clock=state['clock']+seconds)), \
+             patch.object(M,'cdc_risk_alerts',side_effect=alerts),patch.object(M,'physical',return_value=True), \
+             self.assertRaisesRegex(M.SuiteError,'stop after real unknown orchestration'):
+            M.verify_cdc_performance(SimpleNamespace(request=request),7,1,10,{'connector':'owned'},9,
+                mutate,delivered,SimpleNamespace(snapshot=lambda:[]),proof,stage)
+        value = proof['performance']
+        self.assertEqual(state['missing_reads'],2)
+        self.assertEqual(value['unknown_hold_checks'],16)
+        self.assertEqual(set(value['missing_samples']),{'buffer_observation','delay_observation'})
+        self.assertEqual(value['cleanup'],'passed')
+        self.assertEqual([args[1] for args in commands if args[1] in ('pause','unpause')],
+                         ['pause','pause','unpause','unpause'])
+        delivered.assert_called_once()
+        self.assertNotIn('private-performance-sentinel',json.dumps(proof))
 
     def test_performance_faults_reject_personal_environment_before_actions(self):
         with patch.dict(os.environ,{},clear=True), patch.object(M.subprocess,'run') as run, \

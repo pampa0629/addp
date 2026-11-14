@@ -612,3 +612,16 @@ Docker Moby 的资源更新实现仅在 NanoCPUs 非零时应用该字段，原 
 故障准备阶段的旧报告粒度不足，未保存 CFS 实际值。只读核对 [opencontainers systemd 资源实现](https://github.com/opencontainers/cgroups/blob/main/systemd/common.go) 明确发现：小数 CPU 百分比会向上取整到整数百分比，因此请求 quota 2500 并精确要求 cpu.max=2500 可能不成立；本轮没有保存实际值，不能将该推断写成已确认的唯一失败原因。夹具收敛到整数 3%（quota 3000、period 100000）并保持精确读回，分别标注 performance_cpu_fault 与 performance_workload、在断言前保存 fault_cpu_max 及 source_fill_succeeded。新增回归要求错误的有效限额仍拒绝执行工作量，且恢复与其他清理继续完成；没有放宽告警阈值、删掉缺样／恢复／通知断言或对个人任务注入故障。
 
 本次修订 `make test-transfer-continuous-online-runner` 的 134 项及 System 身份夹具 Go 测试通过，日志 `/tmp/addp-cdc-performance-hosted-runner-v4.log`。后继实故障 Hosted 仍须重新取得完整证据。
+
+
+### CDC 持续性能 Hosted 真实触发及 opened 送达通过、缺样联验超时（2026-11-14）
+
+固定 `ed00c0bbe1a8682c46a96d3c9d5ab13289e2cd83` 的 [Run 43574565475／Job 132385887992](https://github.com/pampa0629/addp/actions/runs/43574565475/job/132385887992) 整套仍失败，阶段为 `performance_unknown` 的 convergence_timeout；不能认定恢复及完整通知闭环通过。Artifact `14107125338` 的 SHA-256 为 `f0e6bcd95992b8dfcd6090f70e53ff30dbea2f562b4340d86a90537c81f4078c`，下载摘要与 ZIP CRC 均核对通过，原件及报告 `/tmp/addp-cdc-performance-hosted-43574565475/`。
+
+实际 cpu.max=3000 100000，60000 条源事件成功提交。目标提交停在 11，13 个实际活动样本中积压 418→4202，事件计数 2044→8450，延迟 61.463→240.861 秒。消费停滞 incident 2 与捕获延迟 incident 6 均实际 warning/open，规则持久窗口为 active；捕获延迟从 `08:37:49.340048393Z` 到 `08:40:49.340579772Z` 达到 180.000531379 秒，消费窗口起点 `08:36:49.710575455Z`。opened delivery 分别为消费 `9f7dce0a-29b7-4029-a4ef-eeb0fec57de9`、延迟 `53830712-ca7f-4c3d-bdf6-20199a9fbc81`；两个独立签名实收返回 202，与正式 delivered 审计匹配。
+
+缺样阶段，原始 Owner 持久记录证明两项分别发布新鲜 unavailable：delay 的 `08:41:04.340641248Z` 样本在 `08:41:19.355324494Z` 发布、到期 `08:41:34.340641248Z`；buffer 的 `08:41:19.353492224Z` 样本在 `08:41:39.362193274Z` 发布、到期 `08:41:49.353492224Z`。后续重复同样串行超时，两个有效窗口不重叠，原验收把独立观测误要求为同一帧同时新鲜，因此超时。修订为逐项取得并保存暂停后的新鲜 unavailable，再连续 32 秒核对两项规则均 unknown、同一 acknowledged incident、LastObservedAt 不变且无 resolved 实收；仍分别验证每项采样时效，不采用旧样本、不延长采样有效期，不修改产品规则。
+
+本轮性能清理、风险包装清理及 task 3／2 正式删除读回均 passed，CPU 和 Connector 原配置恢复、规则删除、Webhook 目标删除与接收端关闭均通过；领域 residual_resources=expected_deployment_residuals=1、uncertain_mutation=false，原硬退出 task 1 留给部署销毁，外层 cleanup=passed、infra_cleanup=zero_residuals。前置 17 项及 7 份 Console 回执继续通过；后继捕获失败、不可恢复风险、重建及 scheduled 场景尚未运行到。当前结果是两条告警触发和两条 opened 送达的部分实证，缺样保持、健康关闭和 resolved 实收仍须后继 Hosted 完成。
+
+新增回归通过完整原生故障编排到缺样保持：两项新鲜缺样仅分两帧出现、有效期不重叠，仍完成 16 次 unknown／事件保持及退出清理；未模拟完整恢复通过。初次测试驱动未识别 pause 命令导致失败，补齐驱动后 `make test-transfer-continuous-online-runner` 的 135 项与 System 身份夹具 Go 测试通过，日志 `/tmp/addp-cdc-performance-hosted-runner-v5-final.log`，初次输出保留于同前缀 v5.log。
