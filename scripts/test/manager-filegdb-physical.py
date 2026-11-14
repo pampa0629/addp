@@ -16,6 +16,8 @@ import tempfile
 import time
 
 NAME = 'authorization.gdb'
+FUTURE_NAME = 'authorization-future.gdb'
+EMPTY_NAME = 'authorization-empty'
 
 
 def require(value, message):
@@ -46,13 +48,39 @@ def owned_root(environment=None):
 
 def physical(action, root):
     expected, _ = owned_root()
-    require(root == expected and action in {'seed', 'add', 'snapshot', 'delete'}, 'unowned physical action')
+    require(root == expected and action in {'seed', 'add', 'snapshot', 'delete',
+            'root-seed', 'root-future', 'root-delete'}, 'unowned physical action')
     return json.loads(command(['/usr/bin/python3', str(Path(__file__).resolve()), '--worker', action, str(root)]))
 
 
 def native(action, root):
     # This worker also checks ownership; no command-line path can escape the run.
     require(root == owned_root()[0], 'native worker root mismatch')
+    if action.startswith('root-'):
+        marker = root / '.filegdb-engine-root-owner'
+        empty, future = root / EMPTY_NAME, root / FUTURE_NAME
+        require(not any(p.is_symlink() for p in (marker, empty, future)), 'root fixture symlink refused')
+        run = os.environ['ADDP_ONLINE_TEST_RUN_ID']
+        if action == 'root-seed':
+            require(not any(p.exists() for p in (marker, empty, future)), 'root fixture already exists')
+            marker.write_text(run)  # Own partial creation before changing the source.
+            empty.mkdir(mode=0o755)
+            return {'empty_directory': EMPTY_NAME}
+        if action == 'root-delete' and not marker.exists():
+            require(not empty.exists() and not future.exists(), 'unowned root fixture remains')
+            return {'root_source_cleanup': 'not_started'}
+        require(marker.is_file() and marker.read_text() == run, 'root fixture not owned')
+        if action == 'root-future':
+            source = root / NAME
+            require(source.is_dir() and not source.is_symlink() and not future.exists(), 'invalid future FileGDB source')
+            require(all(p.is_file() and not p.is_symlink() for p in source.iterdir()), 'unexpected future source member')
+            shutil.copytree(source, future)
+            return {'future_data_item': FUTURE_NAME}
+        require(action == 'root-delete', 'invalid root fixture action')
+        if future.exists(): shutil.rmtree(future)
+        if empty.exists(): empty.rmdir()
+        marker.unlink()
+        return {'root_source_cleanup': 'passed'}
     path, marker = root / NAME, root / '.filegdb-acceptance-owner'
     run = os.environ['ADDP_ONLINE_TEST_RUN_ID']
     require(not path.is_symlink() and not marker.is_symlink(), 'source symlink refused')

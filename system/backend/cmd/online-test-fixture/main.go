@@ -140,7 +140,7 @@ func suiteSourceInitializerPermissions(suite string) []string {
 		return nil
 	case "ontology-agent-protection", "raster-workflow-capacity", "ftp-consumer-flow", "manager-internal-artifact-lineage", "highgo-consumer-flow", "security-mysql-owner-protection", "security-plaintext-access", "hdfs-spark-consumer-flow", "cleanup-native-effects", "opengauss-consumer-flow", "transfer-relational-sql-etl":
 		permissions := append([]string{}, sourceInitializerPermissions...)
-		if suite == "ontology-agent-protection" || suite == "hdfs-spark-consumer-flow" || suite == "security-mysql-owner-protection" || suite == "transfer-relational-sql-etl" || suite == "highgo-consumer-flow" || (suite == "manager-internal-artifact-lineage" && slices.Contains([]string{"native-envi", "native-raster-media", "native-table-avro", "native-table-feather", "delimited-read-settings", "filegdb-export", "filegdb-mysql-export"}, os.Getenv("ADDP_ONLINE_MANAGER_CASE"))) {
+		if suite == "ontology-agent-protection" || suite == "hdfs-spark-consumer-flow" || suite == "security-mysql-owner-protection" || suite == "transfer-relational-sql-etl" || suite == "highgo-consumer-flow" || (suite == "manager-internal-artifact-lineage" && slices.Contains([]string{"native-envi", "native-raster-media", "native-table-avro", "native-table-feather", "delimited-read-settings", "filegdb-export", "filegdb-mysql-export", "filegdb-authorization"}, os.Getenv("ADDP_ONLINE_MANAGER_CASE"))) {
 			permissions = append(permissions, "meta.scan_task.execute", "meta.scan_task.read")
 		}
 		return permissions
@@ -173,7 +173,7 @@ func managerFileGDBOutsiderPermissions(suite string) []string {
 		case "nfs-upload-initial":
 			return []string{"manager.data_item.create", "manager.data_item.read", "manager.content.read", "meta.catalog.read"}
 		case "filegdb-authorization":
-			return []string{"manager.content.read", "manager.data_item.read"}
+			return []string{"manager.content.read", "manager.data_item.read", "meta.catalog.read"}
 		case "filegdb-export", "filegdb-mysql-export":
 			return []string{"manager.derived_artifact.read"}
 		}

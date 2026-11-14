@@ -639,14 +639,14 @@ class ModelSourceAuthorization:
         self.node_receipts.pop(command, None)
 
     def node_grant(self, target, *, action, recursive, seconds=300):
-        require(self.source_type == 'minio' and action in {'metadata_read', 'read'} and
+        require(self.source_type in {'minio', 'nfs'} and action in {'metadata_read', 'read'} and
                 type(recursive) is bool and (seconds is None or type(seconds) is int and 0 < seconds <= 300),
-                'bounded MinIO node fixture required')
+                'bounded file node fixture required')
         command = str(uuid.uuid4())
         body = dict(request_id=command, catalog_path=target, node_recursive=recursive,
                     recipient_type='user', recipient_id=self.recipient, action=action,
                     expiry_mode='until_revoked' if seconds is None else 'at_time',
-                    reason='Disposable MinIO persistent node scope')
+                    reason='Disposable persistent file node scope')
         self.grants.append(command)
         expires_at = None
         if seconds is not None:

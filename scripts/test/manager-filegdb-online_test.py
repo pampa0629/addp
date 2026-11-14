@@ -13,6 +13,7 @@ from types import SimpleNamespace
 import unittest
 import zipfile
 from unittest.mock import Mock, patch
+from urllib.parse import unquote
 
 M = importlib.import_module('scripts.test.manager-filegdb-online')
 P = importlib.import_module('scripts.test.manager-filegdb-physical')
@@ -33,7 +34,7 @@ def authorization():
     auth.target = lambda _: M.target(7)
     auth.operator = '9'; auth.recipient = '11'; auth.frozen = None
     auth.grants = []; auth.confirmed = set(); auth.denies = []; auth.confirmed_denies = set()
-    auth.node_receipts = {}
+    auth.node_receipts = {}; auth.exact_records = {}
     auth.issuer = Mock()
     return auth
 
@@ -415,18 +416,18 @@ class FileGDBAcceptanceTest(unittest.TestCase):
 
     def test_isolation_rejects_shared_identity_credentials_grant_or_wrong_denial(self):
         for mutation in ('same_user', 'issuer_user', 'same_token', 'issuer_token', 'has_grant',
-                         'has_deny', 'leaked_read', 'security_not_ready', 'grant_changed', 'relation_created'):
+                         'has_unknown_relation', 'leaked_read', 'security_not_ready', 'grant_changed', 'relation_created'):
             with self.subTest(mutation=mutation), self.assertRaises((ValueError, M.API.SuiteError)):
                 self.isolation_flow(mutation)
 
     def isolation_flow(self, mutation=None):
         before = {'data': [{'grant_count': 1, 'inspection': {'observed_at': '2026-10-30T10:00:00Z',
-            'reason': 'grant', 'sources': [{'request_id': 'original'}], 'denies': []}}], 'total': 1}
+            'reason': 'grant', 'sources': [{'request_id': 'original'}]}}], 'total': 1}
         after = deepcopy(before)
         if mutation == 'grant_changed': after['data'][0]['inspection']['sources'][0]['request_id'] = 'new'
         zero = {'data': [], 'total': 0}
         outsider_before = {'data': [{'grant_count': 1}], 'total': 1} if mutation == 'has_grant' else zero
-        if mutation == 'has_deny': outsider_before = {'data': [{'grant_count': 0, 'denies': ['deny']}], 'total': 1}
+        if mutation == 'has_unknown_relation': outsider_before = {'data': [{'grant_count': 0}], 'total': 1}
         outsider_after = {'data': [{'grant_count': 1}], 'total': 1} if mutation == 'relation_created' else zero
         auth = Mock(recipient='11', operator='9'); auth.issuer.token = 'issuer'
         auth.current.side_effect = [before, outsider_before, after, outsider_after]
@@ -457,71 +458,194 @@ class FileGDBAcceptanceTest(unittest.TestCase):
         self.assertEqual(report['account_isolation']['principal_id'], '12')
         auth.grant.assert_not_called(); auth.revoke.assert_not_called(); auth.deny.assert_not_called()
 
-    def test_deny_priority_and_release_keep_the_same_grant_and_both_child_reads(self):
-        self.deny_flow()
-
-    def test_deny_cannot_be_ignored_revoke_replace_grant_or_leak_content(self):
-        for mutation in ('ignored', 'grant_changed', 'revoked', 'not_released', 'new_grant', 'leak', 'security_not_ready'):
-            with self.subTest(mutation=mutation), self.assertRaises(ValueError):
-                self.deny_flow(mutation)
-
-    def deny_flow(self, mutation=None):
-        before = {'data': [{'grant_count': 1, 'inspection': {'observed_at': '2026-10-30T08:00:00Z',
-            'sources': [{'request_id': 'original'}], 'reason': 'grant', 'rule_covered': True, 'denies': []}}], 'total': 1}
-        during = deepcopy(before)
-        during['data'][0]['inspection'].update(reason='explicit_deny', rule_covered=False, denies=[{
-            'deny_id': 'denial', 'recipient_type': 'user', 'recipient_id': '11',
-            'expiry_mode': 'until_revoked', 'expires_at': None}])
-        after = deepcopy(before)
-        if mutation == 'ignored': during = deepcopy(before)
-        if mutation == 'grant_changed': during['data'][0]['inspection']['sources'][0]['request_id'] = 'other'
-        if mutation == 'not_released': after = deepcopy(during)
-        if mutation == 'new_grant': after['data'][0]['inspection']['sources'][0]['request_id'] = 'replacement'
-        history = {'request_id': 'original', 'revocation': None}
-        denied_history = dict(history, revocation={'reason': 'secret withdrawal'}) if mutation == 'revoked' else history
-        auth = Mock(recipient='11')
-        auth.current.side_effect = [before, during, after]
-        auth.history.side_effect = [history, denied_history, history]
-        auth.deny.return_value = 'denial'
-        client = Mock(token='unchanged-credential')
-        def response(method, path, statuses):
-            child = 'initial_points' if 'initial_points' in path else 'added_points'
-            if statuses == (403,):
-                payload = {'data': {'rows': []}} if mutation == 'leak' else {'error': 'denied'}
-                if mutation == 'security_not_ready': payload['error_code'] = 'security_protection_required'
-                return SimpleNamespace(status=403, payload=payload)
-            rows = 2 if child == 'initial_points' else 1
-            return SimpleNamespace(status=200, payload={'data': {'total': rows, 'rows': [
-                {'label': child + '_' + str(i), 'value': i + 1} for i in range(rows)]}})
-        client.request.side_effect = response
-        report = {'tenant_id': 2, 'engine_id': 7, 'raw_member': {'name': 'gdb'}}
-        download = Mock(return_value={'status': 200})
-        with patch.object(M.FILES, 'exact_user_principal', return_value='11'), patch.object(M, 'raw_member', return_value=[]) as raw:
-            result = M.verify_deny(auth, client, {'full_name': M.NAME}, 'locator', {'request_id': 'original'}, report, download)
-        self.assertEqual([call.args[-1] for call in raw.call_args_list], [403, 200])
-        self.assertEqual([call.args[1:] for call in download.call_args_list], [(403, 'deny'), (200, 'deny-release')])
-        self.assertEqual([r['status'] for r in result['denied_reads']], [403, 403])
-        self.assertEqual([r['rows'] for r in result['restored_reads']], [2, 1])
-        self.assertEqual(result['history_before'], result['history_after'])
-        self.assertTrue(result['same_grant']); self.assertTrue(result['same_credential'])
-        auth.deny.assert_called_once(); auth.release.assert_called_once_with('denial')
-        auth.grant.assert_not_called(); auth.revoke.assert_not_called()
-
-    def test_unknown_deny_and_grant_outcomes_are_cleaned(self):
-        auth = authorization(); auth.frozen = facts()
-        auth.issuer.request.side_effect = TimeoutError('unknown Deny response')
+    def test_unknown_grant_outcome_is_owned_and_cleaned(self):
+        auth = authorization(); auth.facts = Mock(return_value=facts())
+        auth.issuer.request.side_effect = TimeoutError('unknown Grant response')
         with self.assertRaises(TimeoutError):
-            auth.deny({'full_name': M.NAME, 'fingerprint': 'a' * 64})
-        command, = auth.denies
-        auth.grants = ['owned-grant']
+            auth.grant({'fingerprint': 'a' * 64})
+        command, = auth.grants
         auth.issuer.request.side_effect = None
         auth.issuer.request.return_value = SimpleNamespace(status=404, payload={'error': 'not found'})
         auth.current = Mock(return_value={'total': 0, 'data': []})
         auth.close()
-        self.assertEqual(auth.denies, []); self.assertEqual(auth.grants, [])
-        paths = [call.args[1] for call in auth.issuer.request.call_args_list]
-        self.assertEqual(paths[-2:], [auth.base + '/access_denies/' + command + '/release',
-            auth.base + '/access_grants/owned-grant/revoke'])
+        self.assertEqual(auth.grants, [])
+        self.assertTrue(auth.issuer.request.call_args.args[1].endswith('/' + command + '/revoke'))
+        self.assertEqual(auth.issuer.request.call_args.args[2], (200, 404))
+
+    def test_metadata_visibility_is_separate_from_read_relations(self):
+        auth = authorization(); auth.facts = Mock(return_value=facts())
+        def issue(method, path, statuses, body):
+            return SimpleNamespace(status=201, payload=dict(body, boundary_hash='b' * 64,
+                scope=facts()['boundary']['scope'], operator_principal_id='9', revocation=None))
+        auth.issuer.request.side_effect = issue
+        receipt = auth.grant({'fingerprint': 'a' * 64}, action='metadata_read')
+        self.assertEqual(receipt['action'], 'metadata_read')
+        auth.issuer.request.side_effect = None
+        rows = [{'action': 'metadata_read'}, {'action': 'read'}]
+        auth.issuer.request.return_value = SimpleNamespace(payload={'total': 2, 'data': rows})
+        self.assertEqual(auth.current()['data'], [{'action': 'read'}])
+        self.assertEqual(auth.current(action=None)['data'], rows)
+        self.assertIn('page_size=100', auth.issuer.request.call_args.args[1])
+
+    def test_expired_exact_history_is_verified_without_forging_revocation(self):
+        for fault in (None, 'scope', 'action', 'expiry', 'revoked', 'truncated'):
+            with self.subTest(fault=fault):
+                auth = authorization(); auth.facts = Mock(return_value=facts())
+                expiry = '2026-10-30T00:00:00+00:00'
+                def issue(method, path, statuses, body):
+                    return SimpleNamespace(status=201, payload=dict(body, boundary_hash='b' * 64,
+                        scope=facts()['boundary']['scope'], operator_principal_id='9', revocation=None))
+                auth.issuer.request.side_effect = issue
+                receipt = auth.grant({'fingerprint': 'a' * 64}, expiry)
+                auth.issuer.request.reset_mock()
+                row = deepcopy(receipt)
+                if fault == 'scope': row['scope'] = {}
+                if fault == 'action': row['action'] = 'metadata_read'
+                if fault == 'expiry': row['expires_at'] = '2026-10-29T00:00:00+00:00'
+                if fault == 'revoked': row['revocation'] = {'reason': 'unexpected'}
+                auth.issuer.request.side_effect = None
+                auth.issuer.request.return_value = SimpleNamespace(payload={'data': [row], 'total': 2 if fault == 'truncated' else 1})
+                if fault:
+                    with self.assertRaises(ValueError): auth.cleanup()
+                    self.assertEqual(auth.grants, [receipt['request_id']])
+                else:
+                    auth.cleanup()
+                    self.assertEqual(auth.grants, [])
+                self.assertTrue(all(call.args[0] == 'GET' for call in auth.issuer.request.call_args_list))
+
+    def test_engine_root_future_empty_withdrawal_and_expiry(self):
+        self.root_flow()
+
+    def test_engine_root_rejects_leaks_wrong_scope_history_identity_and_scan(self):
+        for fault in ('empty_hidden', 'future_precise_grant', 'future_read_failed', 'wrong_receipt',
+                      'future_leaked_after_withdrawal', 'independent_read_failed', 'expiry_forged_revocation', 'credential', 'empty_is_item', 'empty_scan_has_item'):
+            with self.subTest(fault=fault), self.assertRaises((ValueError, M.API.SuiteError)):
+                self.root_flow(fault)
+
+    def root_flow(self, fault=None):
+        auth = authorization(); auth.source_type = 'nfs'
+        auth.facts = Mock(return_value=facts())
+        client, outsider = Mock(token='reader'), Mock(token='outsider')
+        records, commands, clock, identified = {}, [], [0], {M.NAME}
+        start = M.datetime.now(M.timezone.utc)
+        class Clock(M.datetime):
+            @classmethod
+            def now(cls, tz=None): return start + M.timedelta(seconds=clock[0])
+        def active():
+            return [row for row in records.values() if row['revocation'] is None and
+                (row.get('expires_at') is None or Clock.fromisoformat(row['expires_at']) > Clock.now())]
+        def physical(action):
+            commands.append(action)
+            return {}
+        def scan(actor, engine, deadline, *, depth, scope):
+            self.assertIs(actor, auth.issuer); self.assertEqual(engine, 7); self.assertEqual(depth, 'basic')
+            name, = scope['catalog_paths']; self.assertIn(name, (M.EMPTY_NAME, M.FUTURE_NAME))
+            if name == M.FUTURE_NAME: identified.add(name)
+            return 'empty-scan' if name == M.EMPTY_NAME else 'future-scan'
+        owner = Mock(); owner.wait_for_meta_scan.side_effect = scan
+        def issuer_request(method, url, statuses, body=None):
+            if method == 'POST' and url.endswith('/access_grants'):
+                row = dict(body, engine_id='7', approval_mode='independent', operator_principal_id='9', revocation=None)
+                if 'item_fingerprint' in body:
+                    row.update(boundary_hash='b' * 64, scope=facts()['boundary']['scope'])
+                records[row['request_id']] = deepcopy(row)
+                if fault == 'wrong_receipt' and 'node_recursive' in body: row['node_recursive'] = False
+                return SimpleNamespace(status=201, payload=row)
+            if method == 'POST' and url.endswith('/revoke'):
+                command = url.split('/')[-2]; records[command]['revocation'] = {'reason': 'owned withdrawal'}
+                return SimpleNamespace(status=200, payload=records[command])
+            if '/data-items' in url:
+                rows = [{'full_name': name, 'item_type': 'file', 'item_fingerprint': ('a' if name == M.NAME else 'f') * 64}
+                        for name in sorted(identified)]
+                if 'search=' in url: rows = [row for row in rows if row['full_name'] == M.NAME]
+                return SimpleNamespace(status=200, payload={'data': rows, 'total': len(rows)})
+            if '/meta/executions/' in url:
+                return SimpleNamespace(status=200, payload={'status': 'success', 'metadata': {
+                    'items_scanned': int(fault == 'empty_scan_has_item'), 'catalog_nodes_scanned': 1}})
+            if '/access_grants/history' in url:
+                rows = deepcopy(list(records.values()))
+                if 'state=expired' in url:
+                    rows = [row for row in rows if row.get('expires_at') and Clock.fromisoformat(row['expires_at']) <= Clock.now() and row['revocation'] is None]
+                if fault == 'future_precise_grant' and M.FUTURE_NAME in identified:
+                    rows.append({'request_id': 'foreign', 'item_fingerprint': 'f' * 64})
+                if fault == 'expiry_forged_revocation':
+                    for row in rows:
+                        if row.get('expires_at') and Clock.fromisoformat(row['expires_at']) <= Clock.now(): row['revocation'] = {'reason': 'unexpected'}
+                return SimpleNamespace(status=200, payload={'data': rows, 'total': len(rows)})
+            if '/access_grants?' in url:
+                rows = deepcopy(active()); return SimpleNamespace(status=200, payload={'data': rows, 'total': len(rows)})
+            raise AssertionError((method, url))
+        auth.issuer.request.side_effect = issuer_request
+        def user_request(actor, method, url, statuses, body=None, **kwargs):
+            allowed = [] if actor is outsider else active()
+            root = any(row.get('node_recursive') is True and len(row['catalog_path']['segments']) == 1 for row in allowed)
+            leaf = any(row.get('item_fingerprint') == 'a' * 64 for row in allowed)
+            empty = any(row['catalog_path']['segments'][-1]['name'] == M.EMPTY_NAME for row in allowed)
+            visible = bool(allowed)
+            if url == '/api/v1/manager/engines':
+                return SimpleNamespace(status=200, payload={'data': [{'id': 7}] if visible else []})
+            if '/meta/resource-tree/' in url:
+                if not visible: return SimpleNamespace(status=404, payload={'error': 'not found'})
+                names = sorted(identified) if root else ([M.NAME] if leaf else [])
+                if fault == 'future_leaked_after_withdrawal' and not root and leaf: names.append(M.FUTURE_NAME)
+                children = [{'type': 'file', 'metadata': {'item_id': i + 1, 'full_name': name}} for i, name in enumerate(names)]
+                if (root or empty) and fault != 'empty_hidden':
+                    children.append({'type': 'directory', 'children': [], 'hasChildren': False,
+                        'metadata': {'full_name': M.EMPTY_NAME, 'item_count': 0, **({'item_id': 99} if fault == 'empty_is_item' else {})}})
+                return SimpleNamespace(status=200, payload={'metadata': {'engine_id': 7}, 'children': children})
+            if '/meta/engines/' in url:
+                return SimpleNamespace(status=200, payload=[{'id': i + 8, 'full_name': name,
+                    'item_type': 'file', 'fingerprint': ('a' if name == M.NAME else 'f') * 64}
+                    for i, name in enumerate(sorted(identified))])
+            if '/manager/preview?' in url:
+                if fault == 'credential': client.token = 'changed'
+                original = ('/path/' + M.NAME + '?') in unquote(url)
+                success = (root and fault != 'future_read_failed') or (original and leaf and fault != 'independent_read_failed')
+                if (200 if success else 403) not in statuses:
+                    raise M.API.SuiteError('unexpected status at GatewayClient boundary')
+                rows = [{'label': 'initial_points_' + str(i), 'value': i + 1} for i in range(2)]
+                return SimpleNamespace(status=200 if success else 403,
+                    payload={'data': {'rows': rows, 'total': 2}} if success else {'error': 'denied'})
+            raise AssertionError((method, url))
+        for actor in (client, outsider):
+            actor.request.side_effect = lambda *a, actor=actor, **kw: user_request(actor, *a, **kw)
+        report = {'checks': []}
+        with patch.object(M, 'datetime', Clock), patch.object(M.FILES, 'datetime', Clock), \
+                patch.object(M.time, 'sleep', side_effect=lambda delay: clock.__setitem__(0, clock[0] + delay)):
+            try:
+                M.verify_engine_root(auth, client, outsider, report, physical, owner)
+            finally:
+                if fault not in {'wrong_receipt', 'expiry_forged_revocation'}: auth.cleanup()
+        self.assertEqual(set(report['checks']), M.ROOT_CHECKS)
+        self.assertEqual(len(report['checks']), 6)
+        self.assertEqual(commands, ['root-seed', 'root-future'])
+        self.assertTrue(report['engine_navigation']['same_credential'])
+        self.assertTrue(report['engine_navigation']['no_leaf_grants'])
+        self.assertEqual(report['engine_navigation']['independent_item_read']['rows'], 2)
+        self.assertEqual(auth.grants, [])
+        self.assertTrue(all(row['revocation'] is None for row in records.values() if row.get('expires_at')))
+        return report
+
+    def test_root_source_partial_copy_and_cleanup_preserve_original_and_unowned_files(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory); (root / M.NAME).mkdir()
+            (root / M.NAME / 'a.gdbtable').write_bytes(b'original'); (root / 'foreign').write_bytes(b'keep')
+            with patch.object(P, 'owned_root', return_value=(root, root)), patch.dict(os.environ, ADDP_ONLINE_TEST_RUN_ID='run'):
+                self.assertEqual(P.native('root-seed', root), {'empty_directory': M.EMPTY_NAME})
+                self.assertEqual(P.native('root-future', root), {'future_data_item': M.FUTURE_NAME})
+                self.assertEqual((root / M.FUTURE_NAME / 'a.gdbtable').read_bytes(), b'original')
+                self.assertEqual(P.native('root-delete', root), {'root_source_cleanup': 'passed'})
+                self.assertEqual((root / M.NAME / 'a.gdbtable').read_bytes(), b'original')
+                self.assertEqual((root / 'foreign').read_bytes(), b'keep')
+                P.native('root-seed', root)
+                def interrupted(source, dest): dest.mkdir(); (dest / 'partial').write_bytes(b'x'); raise OSError('copy interrupted')
+                with patch.object(P.shutil, 'copytree', side_effect=interrupted), self.assertRaises(OSError):
+                    P.native('root-future', root)
+                P.native('root-delete', root)
+                self.assertFalse((root / M.FUTURE_NAME).exists())
+                self.assertFalse((root / M.EMPTY_NAME).exists())
+                (root / M.EMPTY_NAME).mkdir()
+                with self.assertRaisesRegex(ValueError, 'unowned root fixture'): P.native('root-delete', root)
 
     def test_environment_failure_is_not_counted_as_permission_denial_or_partial_content(self):
         client = Mock()
@@ -565,7 +689,7 @@ class FileGDBAcceptanceTest(unittest.TestCase):
             lambda row: row.update(expires_at='2026-11-01T00:00:00Z'),
             lambda row: row.update(grant_count=2),
             lambda row: row['inspection']['sources'][0].update(request_id='replacement'),
-            lambda row: row['inspection'].update(denies=[{'deny_id': 'new-deny'}]),
+            lambda row: row['inspection'].update(rule_covered=False),
             lambda row: row['catalog_path'].update(engine_id=8),
             lambda row: row['inspection'].pop('observed_at'),
             lambda row: row['inspection'].update(observed_at='invalid'),
@@ -577,7 +701,7 @@ class FileGDBAcceptanceTest(unittest.TestCase):
     def outage_observations(self, change=None):
         baseline = {'data': [{'catalog_path': M.target(7), 'grant_count': 1, 'expires_at': None,
             'inspection': {'observed_at': '2026-10-30T06:00:00+00:00', 'reason': 'grant',
-                'rule_covered': True, 'sources': [{'request_id': 'original'}], 'denies': []}}],
+                'rule_covered': True, 'sources': [{'request_id': 'original'}]}}],
             'total': 1, 'page': 1, 'page_size': 20, 'total_pages': 1}
         observations = [deepcopy(baseline) for _ in range(5)]
         for index, current in enumerate(observations):
@@ -672,7 +796,7 @@ class FileGDBAcceptanceTest(unittest.TestCase):
                     patch.object(P, 'physical', side_effect=physical):
                 with self.assertRaises(ValueError): M.run(root, env, owner)
             auth.close.assert_called_once_with()
-            self.assertEqual(actions, ['seed', 'snapshot', 'delete'])
+            self.assertEqual(actions, ['seed', 'snapshot', 'root-delete', 'delete'])
             report = json.loads((root / 'manager-filegdb.json').read_text())
             self.assertEqual(report['result'], 'failed')
             self.assertEqual(report['error_type'], 'ValueError')

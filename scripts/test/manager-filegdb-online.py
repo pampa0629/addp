@@ -22,19 +22,23 @@ FILES = importlib.import_module('scripts.test.ftp-consumer-flow-online')
 REGISTRATION = importlib.import_module('scripts.test.online-engine-registration')
 PERMISSIONS = {'manager.content.read', 'manager.data_item.read', 'meta.catalog.read',
                'meta.scan_task.execute', 'meta.scan_task.read', 'monitor.execution.read'}
-OUTSIDER_PERMISSIONS = {'manager.content.read', 'manager.data_item.read'}
+OUTSIDER_PERMISSIONS = {'manager.content.read', 'manager.data_item.read', 'meta.catalog.read'}
 NAME = 'authorization.gdb'
+FUTURE_NAME = 'authorization-future.gdb'
+EMPTY_NAME = 'authorization-empty'
+ROOT_CHECKS = {'nfs_engine_without_grants_hidden', 'nfs_root_grant_covers_future_filegdb',
+    'nfs_root_grant_shows_empty_directory', 'nfs_root_withdrawal_retains_independent_item',
+    'nfs_last_empty_node_withdrawal_hides_engine', 'nfs_root_natural_expiry_hides_navigation'}
 REQUIRED_CHECKS = {'basic_whole_identity', 'ungranted_child_denied', 'initial_child_actual_rows',
     'new_child_same_grant', 'manager_crash_and_source_disconnect_recovered_same_grant',
     'revoked_next_read_denied', 'natural_expiry_next_read_denied', 'read_child_sigkill_observed',
-    'explicit_deny_overrides_whole_grant', 'deny_release_restores_original_grant',
     'ungranted_account_initial_child_denied', 'ungranted_account_new_child_denied',
     'ungranted_raw_members_denied', 'raw_members_same_grant_and_account_isolation',
     'raw_members_revoked_and_expired_denied',
     'ungranted_directory_download_denied', 'directory_download_same_grant_and_new_child',
-    'directory_download_account_isolation_and_deny', 'directory_download_revoke_expiry',
+    'directory_download_account_isolation', 'directory_download_revoke_expiry',
     'directory_download_failure_cleanup_and_recovery', 'real_browser_directory_download_saved',
-    'real_browser_ungranted_revoked_expired_denied', 'real_browser_child_cells_and_switch', 'real_browser_child_pagination_and_reset'}
+    'real_browser_ungranted_revoked_expired_denied', 'real_browser_child_cells_and_switch', 'real_browser_child_pagination_and_reset'} | ROOT_CHECKS
 
 
 def require(value, message):
@@ -49,27 +53,40 @@ def guard(repository, environment):
     return physical.owned_root(environment)[0]
 
 
-def target(engine):
+def target(engine, name=NAME):
     return {'version': 'catalog.path/v1', 'engine_id': engine, 'segments': [
         {'term': 'root', 'kind': 'root', 'name': ''},
-        {'term': 'directory', 'kind': 'directory', 'name': NAME}]}
+        {'term': 'directory', 'kind': 'directory', 'name': name}]}
 
 
-def find_item(client, engine):
+def find_item(client, engine, name=NAME):
     items = client.request('GET', f'/api/v1/meta/engines/{engine}/items', (200,), response_type=list).payload
-    item, = [entry for entry in items if isinstance(entry, dict) and entry.get('full_name') == NAME]
+    item, = [entry for entry in items if isinstance(entry, dict) and entry.get('full_name') == name]
     require(item.get('item_type') == 'file' and type(item.get('id')) is int and item['id'] > 0
             and re.fullmatch('[0-9a-f]{64}', item.get('fingerprint', '')), 'invalid FileGDB item identity')
     return item
+
+
+def find_identity(issuer, engine):
+    page = issuer.request('GET', f'/api/v1/system/engines/{engine}/data-items?' +
+        urlencode({'search': NAME, 'page_size': 100}), (200,)).payload
+    require(isinstance(page.get('data'), list) and page.get('total') == len(page['data']),
+            'FileGDB handling identity inventory is incomplete')
+    row, = [row for row in page['data'] if row.get('full_name') == NAME]
+    require(row.get('item_type') == 'file' and re.fullmatch('[0-9a-f]{64}', row.get('item_fingerprint', '')),
+            'FileGDB handling identity is invalid')
+    return {'fingerprint': row['item_fingerprint']}
 
 
 class Authorization(FILES.ModelSourceAuthorization):
     def __init__(self, issuer, consumer, report):
         super().__init__(issuer, consumer, report, source_type='nfs',
                          consumer_permissions=PERMISSIONS,
-                         issuer_permissions=FILES.ISSUER_PERMISSIONS)
+                         issuer_permissions=REGISTRATION.SOURCE_INITIALIZER_PERMISSIONS |
+                            {'meta.scan_task.execute', 'meta.scan_task.read'})
         self.target = lambda _: target(self.engine_id)
         self.frozen = None
+        self.exact_records = {}
 
     def facts(self, item):
         facts = self.issuer.request('GET', self.base + f"/data-items/{item['fingerprint']}/authorization-facts", (200,)).payload
@@ -84,18 +101,21 @@ class Authorization(FILES.ModelSourceAuthorization):
             require(facts['boundary_hash'] == self.frozen['boundary_hash'], 'internal child changed whole boundary')
         return facts
 
-    def grant(self, item, expires_at=None):
+    def grant(self, item, expires_at=None, *, action='read'):
+        require(action in {'metadata_read', 'read'}, 'unsupported FileGDB action')
         facts = self.facts(item)
         self.frozen = facts
 
         command = str(uuid.uuid4())
         body = dict(request_id=command, catalog_path=target(self.engine_id), item_fingerprint=item['fingerprint'],
                     expected_boundary_hash=facts['boundary_hash'], recipient_type='user', recipient_id=self.recipient,
-                    action='read', expiry_mode='at_time' if expires_at else 'until_revoked',
+                    action=action, expiry_mode='at_time' if expires_at else 'until_revoked',
                     reason='Disposable NFS FileGDB acceptance')
         if expires_at:
             body['expires_at'] = expires_at
         self.grants.append(command)  # Own unknown outcomes before sending any write.
+        self.exact_records[command] = dict(body, boundary_hash=facts['boundary_hash'],
+            scope=facts['boundary']['scope'], operator_principal_id=self.operator)
         receipt = self.issuer.request('POST', self.base + '/access_grants', (201,), body).payload
         require(all(receipt.get(k) == body[k] for k in ('request_id', 'catalog_path', 'item_fingerprint',
                 'recipient_type', 'recipient_id', 'action', 'expiry_mode'))
@@ -109,11 +129,15 @@ class Authorization(FILES.ModelSourceAuthorization):
         self.confirmed.add(command)
         return receipt
 
-    def current(self, *, recipient=None):
+    def current(self, *, recipient=None, action='read'):
         response = self.issuer.request('GET', self.base + '/access_grants?' + urlencode({
-            'recipient_type': 'user', 'recipient_id': recipient or self.recipient, 'table_search': NAME}), (200,)).payload
-        require(response.get('total') in (0, 1), 'unexpected active source count')
-        return response
+            'recipient_type': 'user', 'recipient_id': recipient or self.recipient, 'page_size': 100}), (200,)).payload
+        require(isinstance(response.get('data'), list) and response.get('total') == len(response['data']) <= 100,
+                'incomplete current FileGDB source relations')
+        if action is None:
+            return response
+        rows = [row for row in response['data'] if row.get('action') == action]
+        return dict(response, data=rows, total=len(rows))
 
     def history(self, command):
         payload = self.issuer.request('GET', self.base + '/access_grants/history?' + urlencode({
@@ -127,8 +151,30 @@ class Authorization(FILES.ModelSourceAuthorization):
 
     def close(self):
         self.cleanup()
-        require(self.current()['total'] == 0, 'owned Grant survived cleanup')
+        require(self.current(action=None)['total'] == 0, 'owned Grant survived cleanup')
         return 'zero_current_source_rules'
+
+    def cleanup(self):
+        # Expired Grants are historical facts; never invent a first revocation.
+        if any(row['expiry_mode'] == 'at_time' for row in self.exact_records.values()):
+            page = self.issuer.request('GET', self.base + '/access_grants/history?' + urlencode({
+                'recipient_type': 'user', 'recipient_id': self.recipient, 'state': 'expired',
+                'page_size': 100}), (200,)).payload
+            require(isinstance(page.get('data'), list) and page.get('total') == len(page['data']) <= 100,
+                    'expired FileGDB history is incomplete')
+            for row in page['data']:
+                command = row.get('request_id')
+                if command not in self.grants or command not in self.exact_records:
+                    continue
+                expected = self.exact_records[command]
+                require(row.get('revocation') is None and all(row.get(k) == expected[k] for k in (
+                    'catalog_path', 'item_fingerprint', 'boundary_hash', 'scope', 'recipient_type',
+                    'recipient_id', 'action', 'expiry_mode', 'operator_principal_id')) and
+                    datetime.fromisoformat(row['expires_at']) == datetime.fromisoformat(expected['expires_at']),
+                    'expired FileGDB history changed its owned identity')
+                self.grants.remove(command)
+                self.confirmed.discard(command)
+        super().cleanup()
 
 
 def preview(client, locator, child, status, rows=None):
@@ -341,51 +387,127 @@ def verify_account_isolation(authorization, client, outsider, outsider_id, locat
     return observation
 
 
-def verify_deny(authorization, client, item, locator, grant, report, download):
-    """A Deny blocks a live Grant; release restores that same rule without signing."""
-    physical = importlib.import_module('scripts.test.manager-filegdb-physical')
-    token = client.token
-    before = authorization.current()
-    history = authorization.history(grant['request_id'])
-    require(history['revocation'] is None, 'Deny control requires the original active Grant')
-    evidence = report['deny_priority'] = {'grant_id': grant['request_id'], 'before': before,
-        'history_before': history, 'denied_reads': [], 'restored_reads': []}
-    command = authorization.deny(item)  # Existing owner ledger registers unknown outcomes before POST.
-    evidence['deny_id'] = command
-    denied = evidence['during'] = authorization.current()
-    expected = physical.rule_snapshot(before)
-    require(expected['total'] == 1 and len(expected['data']) == 1, 'Deny control requires one source relation')
-    row = expected['data'][0]
-    require(row['grant_count'] == 1 and row['inspection']['reason'] == 'grant'
-            and row['inspection']['rule_covered'] is True and row['inspection']['denies'] == []
-            and len(row['inspection']['sources']) == 1
-            and row['inspection']['sources'][0]['request_id'] == grant['request_id'],
-            'Deny control requires the exact original Grant')
-    row['inspection'].update(reason='explicit_deny', rule_covered=False, denies=[{
-        'deny_id': command, 'recipient_type': 'user', 'recipient_id': authorization.recipient,
-        'expiry_mode': 'until_revoked', 'expires_at': None}])
-    require(physical.rule_snapshot(denied) == expected, 'Deny changed Grant sources or did not take priority')
-    for child in ('initial_points', 'added_points'):
-        evidence['denied_reads'].append(preview(client, locator, child, 403))
-    evidence['raw_denied'] = raw_member(client, locator, report['engine_id'], report['raw_member'], 403)
-    evidence['directory_denied'] = download(client, 403, 'deny')
-    evidence['history_during'] = authorization.history(grant['request_id'])
-    require(evidence['history_during'] == history, 'Deny secretly revoked or changed the Grant')
-    authorization.release(command)
-    evidence['after'] = authorization.current()
-    require(physical.rule_snapshot(evidence['after']) == physical.rule_snapshot(before),
-            'Deny release did not restore the original source relation')
-    for child, rows in (('initial_points', 2), ('added_points', 1)):
-        evidence['restored_reads'].append(preview(client, locator, child, 200, rows))
-    evidence['raw_restored'] = raw_member(client, locator, report['engine_id'], report['raw_member'], 200)
-    evidence['directory_restored'] = download(client, 200, 'deny-release')
-    evidence['history_after'] = authorization.history(grant['request_id'])
-    require(evidence['history_after'] == history and client.token == token,
-            'Deny release replaced the Grant or reader credential')
-    require(FILES.exact_user_principal(client, report['tenant_id'], PERMISSIONS) == authorization.recipient,
-            'Deny control changed the reader identity or permissions')
-    evidence.update(same_grant=True, same_credential=True, deny_released=True)
-    return evidence
+def verify_engine_root(authorization, client, outsider, report, physical, owner):
+    """One recursive root rule; precise and empty-node sources remain independent."""
+    engine, issuer = authorization.engine_id, authorization.issuer
+    require(authorization.current(action=None)['total'] == 0, 'NFS root stage requires zero current rules')
+    credential = client.token
+    root = target(engine)
+    root['segments'] = root['segments'][:1]
+    proof = report['engine_navigation'] = {'observations': []}
+    report['phase'] = 'nfs_engine_root_navigation'
+
+    def history(command):
+        page = issuer.request('GET', authorization.base + '/access_grants/history?' + urlencode({
+            'recipient_type': 'user', 'recipient_id': authorization.recipient, 'page_size': 100}), (200,)).payload
+        require(isinstance(page.get('data'), list) and page.get('total') == len(page['data']) <= 100,
+                'NFS root history is incomplete')
+        row, = [row for row in page['data'] if row.get('request_id') == command]
+        return row
+
+    def navigation(actor, visible, leaves=(), empty=False):
+        engines = actor.request('GET', '/api/v1/manager/engines', (200,)).payload.get('data')
+        require(isinstance(engines, list) and sum(row.get('id') == engine for row in engines) == int(visible),
+                'NFS Manager engine visibility differs')
+        tree = actor.request('GET', f'/api/v1/meta/resource-tree/{engine}?expand_depth=3',
+                             (200,) if visible else (404,)).payload
+        found, empty_visible = [], False
+        if visible:
+            require(tree.get('metadata', {}).get('engine_id') == engine, 'NFS tree changed engine')
+            pending = [tree]
+            while pending:
+                row = pending.pop()
+                meta = row.get('metadata', {})
+                if meta.get('item_id'): found.append(meta.get('full_name'))
+                if meta.get('full_name') == EMPTY_NAME:
+                    require(row.get('type') == 'directory' and row.get('children') == []
+                            and row.get('hasChildren') is False and meta.get('item_count') == 0,
+                            'authorized NFS empty directory lost its identity')
+                    empty_visible = True
+                pending.extend(row.get('children', []))
+            require(sorted(found) == sorted(leaves) and empty_visible == empty,
+                    'NFS tree omitted authorized data or exposed another target')
+        else:
+            require(set(tree) <= {'error', 'error_code'} and bool(tree.get('error')), 'hidden NFS tree leaked identity')
+        proof['observations'].append(dict(principal='reader' if actor is client else 'outsider',
+            visible=visible, leaf_names=found, empty_visible=empty_visible))
+
+    navigation(client, False)
+    navigation(outsider, False)
+    report['checks'].append('nfs_engine_without_grants_hidden')
+    physical('root-seed')
+    scan = owner.wait_for_meta_scan(issuer, engine, time.monotonic() + 180,
+        depth='basic', scope={'catalog_paths': [EMPTY_NAME]})
+    execution = issuer.request('GET', f'/api/v1/meta/executions/{scan}', (200,)).payload
+    require(execution.get('status') == 'success' and execution.get('metadata', {}).get('items_scanned') == 0
+            and execution.get('metadata', {}).get('catalog_nodes_scanned') == 1,
+            'NFS empty directory identification differs')
+    proof['empty_scan_execution'] = scan
+    inventory = issuer.request('GET', authorization.base + '/data-items?page_size=100', (200,)).payload
+    require(isinstance(inventory.get('data'), list) and inventory.get('total') == len(inventory['data']) <= 100,
+            'NFS root inventory is incomplete')
+    names = [row['full_name'] for row in inventory['data']]
+    require(NAME in names and FUTURE_NAME not in names, 'future FileGDB already identified')
+    original = find_identity(issuer, engine)
+    root_grant = authorization.node_grant(root, action='read', recursive=True, seconds=None)
+    proof['root_grant'] = root_grant['request_id']
+    original_item = find_item(client, engine)
+    original_locator = f"addp://engine/{engine}/path/{NAME}?type=file&item_id={original_item['id']}"
+    navigation(client, True, names, True)
+    report['checks'].append('nfs_root_grant_shows_empty_directory')
+    physical('root-future')
+    proof['future_basic_scan'] = owner.wait_for_meta_scan(issuer, engine, time.monotonic() + 180,
+        depth='basic', scope={'catalog_paths': [FUTURE_NAME]})
+    future = find_item(client, engine, FUTURE_NAME)
+    future_locator = f"addp://engine/{engine}/path/{FUTURE_NAME}?type=file&item_id={future['id']}"
+    preview(client, future_locator, 'initial_points', 200, 2)
+    records = issuer.request('GET', authorization.base + '/access_grants/history?page_size=100', (200,)).payload
+    require(records.get('total') == len(records.get('data', [])) <= 100
+            and not any(row.get('item_fingerprint') == future['fingerprint'] for row in records['data']),
+            'future FileGDB acquired a precise Grant')
+    proof.update(future_item_id=future['id'], future_item_rows=2, no_leaf_grants=True)
+    names.append(FUTURE_NAME)
+    navigation(client, True, names, True)
+    navigation(outsider, False)
+    report['checks'].append('nfs_root_grant_covers_future_filegdb')
+    empty_grant = authorization.node_grant(target(engine, EMPTY_NAME), action='metadata_read', recursive=False, seconds=None)
+    leaf = authorization.grant(original)
+    leaf_history = authorization.history(leaf['request_id'])
+    proof.update(empty_grant=empty_grant['request_id'], independent_grant=leaf['request_id'])
+    authorization.revoke(root_grant['request_id'])
+    require(history(root_grant['request_id']).get('revocation') is not None, 'root withdrawal history missing')
+    navigation(client, True, [NAME], True)
+    proof['independent_item_read'] = preview(client, original_locator, 'initial_points', 200, 2)
+    require(authorization.history(leaf['request_id']) == leaf_history,
+            'root withdrawal changed the independent item Grant')
+    preview(client, future_locator, 'initial_points', 403)
+    report['checks'].append('nfs_root_withdrawal_retains_independent_item')
+    authorization.revoke(leaf['request_id'])
+    navigation(client, True, [], True)
+    authorization.revoke(empty_grant['request_id'])
+    navigation(client, False)
+    report['checks'].append('nfs_last_empty_node_withdrawal_hides_engine')
+    expiry = authorization.node_grant(root, action='read', recursive=True, seconds=45)
+    proof['expiry_grant'] = expiry['request_id']
+    navigation(client, True, names, True)
+    preview(client, future_locator, 'initial_points', 200, 2)
+    expires = datetime.fromisoformat(expiry['expires_at'])
+    while datetime.now(timezone.utc) <= expires:
+        time.sleep(.2)
+    preview(client, future_locator, 'initial_points', 403)
+    expired = history(expiry['request_id'])
+    require(expired.get('revocation') is None and expired.get('catalog_path') == root
+            and expired.get('node_recursive') is True and expired.get('action') == 'read'
+            and expired.get('recipient_id') == authorization.recipient
+            and expired.get('operator_principal_id') == authorization.operator
+            and datetime.fromisoformat(expired['expires_at']) == expires,
+            'root expiry changed its original scope or became a withdrawal')
+    navigation(client, False)
+    authorization.cleanup()
+    require(authorization.current(action=None)['total'] == 0 and client.token == credential,
+            'NFS root stage changed credential or retained a rule')
+    proof.update(result='passed', same_credential=True, natural_expiry_without_revocation=True)
+    report['checks'].append('nfs_root_natural_expiry_hides_navigation')
 
 
 def kill_read_child(client_environment, locator, secret):
@@ -473,8 +595,12 @@ def run(repository, environment, owner):
         require(outsider_id not in {principal, authorization.operator}, 'outsider must be a separate User')
         physical('seed')
         API.wait_manager_read_boundary(client, engine, time.monotonic() + 120, target_visible=False)
-        owner.wait_for_meta_scan(client, engine, time.monotonic() + 180, depth='basic', scope={'catalog_paths': [NAME]})
+        owner.wait_for_meta_scan(issuer, engine, time.monotonic() + 180, depth='basic', scope={'catalog_paths': [NAME]})
+        seed_identity = find_identity(issuer, engine)
+        metadata_grant = authorization.grant(seed_identity, action='metadata_read')
+        report['metadata_visibility_grant'] = metadata_grant
         item = find_item(client, engine)
+        require(item['fingerprint'] == seed_identity['fingerprint'], 'visible FileGDB changed handling identity')
         facts = authorization.facts(item)
         report['identity'] = dict(item_id=item['id'], fingerprint=item['fingerprint'], boundary_hash=facts['boundary_hash'])
         check('basic_whole_identity')
@@ -496,7 +622,7 @@ def run(repository, environment, owner):
         browser('ungranted', 403)
         first = authorization.grant(item)
         report['first_grant'] = first
-        owner.wait_for_meta_scan(client, engine, time.monotonic() + 180, scope={'catalog_paths': [NAME]})
+        owner.wait_for_meta_scan(issuer, engine, time.monotonic() + 180, scope={'catalog_paths': [NAME]})
         preview(client, locator, 'initial_points', 200, 2)
         check('initial_child_actual_rows')
         initial_archive = download(client, 200, 'initial')
@@ -504,7 +630,7 @@ def run(repository, environment, owner):
             [('initial_points', 2)], report)
         check('ungranted_account_initial_child_denied')
         physical('add')
-        owner.wait_for_meta_scan(client, engine, time.monotonic() + 180, scope={'catalog_paths': [NAME]})
+        owner.wait_for_meta_scan(issuer, engine, time.monotonic() + 180, scope={'catalog_paths': [NAME]})
         authorization.facts(item)
         preview(client, locator, 'added_points', 200, 1)
         check('new_child_same_grant')
@@ -536,10 +662,7 @@ def run(repository, environment, owner):
         report['raw_isolation'].update(before=raw_before, after=raw_after, history_before=raw_history,
             history_after=raw_history_after, outsider_after=raw_outsider, grant_id=first['request_id'], same_grant=True)
         check('raw_members_same_grant_and_account_isolation')
-        verify_deny(authorization, client, item, locator, first, report, download)
-        check('explicit_deny_overrides_whole_grant')
-        check('deny_release_restores_original_grant')
-        check('directory_download_account_isolation_and_deny')
+        check('directory_download_account_isolation')
         report['source_snapshot'] = physical('snapshot')
         report['original_current'] = authorization.current()
         # Product lifetime and source-connectivity faults have no authority to revoke a Grant.
@@ -584,6 +707,8 @@ def run(repository, environment, owner):
         report['crash_grant'] = third
         report['child_crash'] = kill_read_child(environment, locator, secret)
         check('read_child_sigkill_observed')
+        authorization.cleanup()
+        verify_engine_root(authorization, client, outsider, report, physical, owner)
         primary_completed = True
     except BaseException as error:
         report['error_type'] = type(error).__name__
@@ -618,6 +743,12 @@ def run(repository, environment, owner):
                 require(report['source_after'] == report['source_snapshot'], 'read or fault modified source')
         except Exception as error:
             failures.append({'stage': 'source_snapshot', 'error_type': type(error).__name__})
+        try:
+            report['root_source_cleanup'] = physical('root-delete')
+            if report.get('engine_navigation', {}).get('result') == 'passed':
+                require(report['root_source_cleanup'] == {'root_source_cleanup': 'passed'}, 'root source cleanup not confirmed')
+        except Exception as error:
+            failures.append({'stage': 'root_source_delete', 'error_type': type(error).__name__})
         try:
             report['physical_cleanup'] = physical('delete')
             require(report['physical_cleanup'] == {'source_removed': True}, 'test source removal not confirmed')

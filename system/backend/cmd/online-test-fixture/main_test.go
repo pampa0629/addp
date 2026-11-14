@@ -1822,7 +1822,7 @@ func TestFileGDBCaseUsesReadOnlyConsumerAndExistingSourceInitializer(t *testing.
 	if err != nil || !slices.Equal(permissions, want) {
 		t.Fatalf("FileGDB consumer permissions = %v, %v", permissions, err)
 	}
-	wantIssuer := append([]string{}, sourceInitializerPermissions...)
+	wantIssuer := append(slices.Clone(sourceInitializerPermissions), "meta.scan_task.execute", "meta.scan_task.read")
 	if !slices.Equal(suiteSourceInitializerPermissions("manager-internal-artifact-lineage"), wantIssuer) {
 		t.Fatal("FileGDB issuer must use the existing initializer without retired permissions")
 	}
@@ -1847,9 +1847,9 @@ func TestNativeFileGDBCasesReuseApprovedPermissions(t *testing.T) {
 
 func TestFileGDBOutsiderHasOnlyReadFunctionsAndIsScopedToItsCase(t *testing.T) {
 	t.Setenv("ADDP_ONLINE_MANAGER_CASE", "filegdb-authorization")
-	want := []string{"manager.content.read", "manager.data_item.read"}
+	want := []string{"manager.content.read", "manager.data_item.read", "meta.catalog.read"}
 	if !slices.Equal(managerFileGDBOutsiderPermissions("manager-internal-artifact-lineage"), want) {
-		t.Fatal("FileGDB outsider must have only the two read functions")
+		t.Fatal("FileGDB outsider must have only content and metadata navigation read functions")
 	}
 	for _, suite := range []string{"pg-source-authorization", "ftp-consumer-flow", "unknown"} {
 		if managerFileGDBOutsiderPermissions(suite) != nil {
@@ -1907,7 +1907,7 @@ func TestNativeMediaInitializersHaveOnlyThirteenPermissions(t *testing.T) {
 			t.Fatal("native media scan functions leaked to another suite")
 		}
 	}
-	for _, name := range []string{"full", "filegdb-authorization", "native-netcdf", "native-grib", ""} {
+	for _, name := range []string{"full", "native-netcdf", "native-grib", ""} {
 		t.Setenv("ADDP_ONLINE_MANAGER_CASE", name)
 		if !slices.Equal(suiteSourceInitializerPermissions("manager-internal-artifact-lineage"), sourceInitializerPermissions) {
 			t.Fatal("native media scan functions leaked to another Manager case")
@@ -2110,5 +2110,26 @@ func TestFilePublicationSourceInitializerHasOnlyPreparationAndApprovalPermission
 				t.Fatal("unrelated case expanded", got)
 			}
 		})
+	}
+}
+
+func TestFileGDBRootAuthorizationUsesManagedScannerAndReadOnlyOutsider(t *testing.T) {
+	t.Setenv("ADDP_ONLINE_MANAGER_CASE", "filegdb-authorization")
+	want := append(slices.Clone(sourceInitializerPermissions), "meta.scan_task.execute", "meta.scan_task.read")
+	if !slices.Equal(suiteSourceInitializerPermissions("manager-internal-artifact-lineage"), want) {
+		t.Fatal("FileGDB source preparation must use the existing distinct managed scanner")
+	}
+	got, err := suitePermissions("manager-internal-artifact-lineage")
+	if err != nil || !slices.Equal(got, managerFileGDBPermissions) {
+		t.Fatal("FileGDB consumer permissions changed", err)
+	}
+	if !slices.Equal(managerFileGDBOutsiderPermissions("manager-internal-artifact-lineage"), []string{
+		"manager.content.read", "manager.data_item.read", "meta.catalog.read"}) {
+		t.Fatal("FileGDB outsider must observe metadata navigation without data or management rights")
+	}
+	for _, key := range want {
+		if strings.Contains(key, "deny") {
+			t.Fatal("retired source prohibition permission", key)
+		}
 	}
 }
