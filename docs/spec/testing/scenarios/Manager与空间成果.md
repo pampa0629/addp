@@ -1874,8 +1874,6 @@ API与页面原文件按钮分别核对完整字节/大小/SHA256。
 
 #### GB18030 清理与能力边界
 
-正式脚本必须与差集共用同一文件产出准备适配：独立初始化员对五源逐个 basic识别→精确read Grant→deep物理检查；普通User扫描库存初始为空。成功提交原execution后，仅经既有审批上下文GET核对精确目标并单次批准，结果未知不重发；自动basic成果扫描和初始read生效先核，后由初始化员deep检查。初始化员11次准备扫描与执行用户1次自动扫描分开核对，撤源Grant后物化成果仍可读，再撤成果Grant。没有独立初始化凭据或case不匹配必须在业务提交前拒绝，不回退旧扫描路径。NFS和Native夹具都准备原0700私有暂存目录，权限扩大或残留仍拒绝。System初始化员case选择及正式部署仍需专项返回证据；本段只接脚本，不授予人员/机器新权限、不开放真实运行。
-
 成功、失败均撤销本轮Grant，核对元数据不可见及精确物理源零残留，再执行既有部署和Infra清理。该case不创建派生产物，不以其页面读取替代Transfer批量传输T4。
 
 #### GB18030 分层验证与历史证据
@@ -1945,6 +1943,8 @@ Feather 日期与定点小数扩展复用同一 Hosted 场景和六份来源。M
 EMPTY 坏源必须以明确的 OGR 空 Polygon 构造，重载仍严格区分 EMPTY 与 NULL；GeoJSON 空坐标在 CI 的 GDAL 3.8.4 会解析成 NULL，不能据此替代空面或放宽物理断言。
 
 四份独立坏源分别验证重复 ID、EMPTY 面、地理 CRS、微小正面积重叠，诊断依次为 operator_input_invalid/input_gdf、operator_input_invalid/input_gdf、operator_crs_invalid/无参数、operator_input_overlap/input_gdf，均无 field。失败 DAG 仅 load 与检查，不申请失败保存目标；断言无成果、扫描、产出事实或本次 derive、扫描库存和物理目录不变，并在 Develop/Monitor 中英文实页核对固定原因与复制内容，不泄漏字段、坐标或路径。不把本场景只读失败称作实际执行了下游保存阻断，后者保留既有 Native/DAG 证据。
+
+正式脚本必须与差集共用同一文件产出准备适配：独立初始化员对五源逐个 basic识别→精确read Grant→deep物理检查；普通User扫描库存初始为空。成功提交原execution后，仅经既有审批上下文GET核对精确目标并单次批准，结果未知不重发；自动basic成果扫描和初始read生效先核，后由初始化员deep检查。初始化员11次准备扫描与执行用户1次自动扫描分开核对，撤源Grant后物化成果仍可读，再撤成果Grant。没有独立初始化凭据或case不匹配必须在业务提交前拒绝，不回退旧扫描路径。NFS和Native夹具都准备原0700私有暂存目录，权限扩大或残留仍拒绝。System初始化员case选择及正式部署仍需专项返回证据；本段只接脚本，不授予人员/机器新权限、不开放真实运行。
 
 成功保存采用原协议自动基础扫描及成果初始只读授权；预览所需深扫如适用必须单独保留证据，不手工补扫或发 Grant 冒充自动阶段。严格核对正整数 physical==Meta 大小、公开 tenant_id/triggered_by 同一普通 User/非默认 Tenant、create 事实及 Monitor。面邻双方 ID 来自同一源，持久血缘只应有源 DataItem→线成果一条当前 execution active derive；不是双源血缘。浏览器核5条实际 EWKB/OL线坐标与属性、可见共边像素及截图；微小共边仅保证物理/API/OL数据精度，不要求亚像素边独立可见。读取导航当次实际请求绑定身份，禁写监听，完整失败页与原始 Meta/图/预览归档。最终再核字节、扫描库存及 owned NFS/Runtime/部署/Infra 零残留；阶段 incomplete 不能代替最终通过，清理不认证业务 DELETE。
 
