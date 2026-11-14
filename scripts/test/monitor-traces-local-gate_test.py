@@ -1107,7 +1107,9 @@ class NginxRouteContractTests(unittest.TestCase):
             self.assertFalse(hasattr(life,'nginx_route_assertions'))
 
     def test_local_scope_and_existing_ci_entry_cover_product_routes(self):
-        self.assertEqual(m.FRONTENDS,('console','system-frontend','monitor-frontend','nginx'))
+        self.assertEqual(m.FRONTENDS,('console','system-frontend','monitor-frontend','develop-frontend','nginx'))
+        self.assertEqual(m.LIMITS['develop-frontend'],(.025,32))
+        self.assertIn('develop/frontend/Dockerfile',m.OWN_INPUTS)
         self.assertEqual(len(m.BACKENDS),6)
         configuration=(m.ROOT/'nginx/nginx.conf').read_text()
         for name in ('system','manager','meta','transfer','orchestrator','develop','service'):

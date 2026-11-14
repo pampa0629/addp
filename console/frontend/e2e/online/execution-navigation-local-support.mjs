@@ -179,7 +179,7 @@ export async function runExecutionNavigation({ input, ledger, connect, navigate,
       await api.dispose(); api = null
       const stateDeadline = Math.min(deadline, now() + (state === 'success' ? 30000 : 15000))
       activeDeadline = stateDeadline
-      await navigate({ task, id, old, state, deadline: stateDeadline })
+      await navigate({ task, id, old, state, engine: input.engine_id, deadline: stateDeadline })
       require(now() <= stateDeadline, 'navigation_state_window_lost')
       await reconnect()
       const after = navigationExecution(await compare('/api/v1/develop/executions/' + id), input, task, id)
@@ -197,7 +197,7 @@ export async function runExecutionNavigation({ input, ledger, connect, navigate,
   } finally { if (api) await api.dispose() }
 }
 
-export async function assertExecutionNavigationPage({ page, expect, task, id, old, state, deadline, now = () => performance.now() }) {
+export async function assertExecutionNavigationPage({ page, expect, task, id, old, state, engine, deadline, now = () => performance.now() }) {
   const options = () => {
     const timeout = Math.min(5000, deadline - now())
     require(timeout > 0, 'navigation_state_window_lost'); return { timeout }
@@ -237,7 +237,8 @@ export async function assertExecutionNavigationPage({ page, expect, task, id, ol
   require(ownerResponse.status() === 200, 'navigation_owner_read_failed')
   const professional = await ownerResponse.json()
   require(professional.execution_id === id && professional.status === state && professional.source_task_id === String(task) &&
-    professional.execution_config?.content?.query === navigationSQL, 'navigation_owner_snapshot_invalid')
+    professional.execution_config?.content?.query === navigationSQL && professional.execution_config.engine_id === engine &&
+    professional.execution_config.timeout === 30, 'navigation_owner_snapshot_invalid')
   await expect(page).toHaveURL(url => url.pathname === '/develop/executions/' + id && url.searchParams.get('return_to') === monitorURL, options())
   await expect(frame.getByRole('heading', { name: '执行结果', exact: true })).toBeVisible(options())
   await expect(frame.locator('.execution-result-identity')).toContainText(id, options())

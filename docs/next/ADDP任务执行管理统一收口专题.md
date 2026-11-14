@@ -659,7 +659,7 @@ Job原始日志、固定源码／用例清单及核验摘要留在`/tmp/addp-25a
 ### 9.2 保持的身份、部署与证据边界
 
 - 复用原四身份。业务 User 仍仅原 11 项：`orchestrator.workflow.create/read/delete/execute`、`develop.task.create/read/delete/execute`、`develop.data_read.execute`、`monitor.execution.read`、`system.execution_authorization.create`；由真实密码／MFA／AuthContext 确认本次 Tenant、User 和准确集合，不增配置、平台 Trace／日志或 task.update 权限。准备 User 继续独占合成 Engine 的准备与删除；平台诊断 User 仍只核原阶段追踪，不能代业务 User 走导航。
-- 沿原仓库外私有源码副本、独占平台库／`trace_fixture`、产品镜像、Nginx→Gateway→Owner 及 Console iframe。新源码在实施、确定性门禁和提交后才冻结完整 SHA／输入摘要；现在不预填一个已验收版本。原租户／引擎／运行实例归属任一不符即拒绝，不连接个人服务或共享 addp-postgres。
+- 沿原仓库外私有源码副本、独占平台库／`trace_fixture`、产品镜像、Nginx→Gateway→Owner 及 Console iframe。导航所需的既有 Develop 前端须加入本轮镜像构建、就绪与清理清单，采用前端统一的0.025 CPU／32 MiB限额；连同浏览器与采样辅助仍为7.825 CPU／10016 MiB，不提高原8 CPU／12 GiB预算。新源码在实施、确定性门禁和提交后才冻结完整 SHA／输入摘要；现在不预填一个已验收版本。原租户／引擎／运行实例归属任一不符即拒绝，不连接个人服务或共享 addp-postgres。
 - 原两组成功／失败编排、四个 execution、四个阶段浏览器样本、A1—A7、causal-link 首失败保全及精确检查点不变；不以新增导航样本替换原可读／自然缺样候选。新样本只证明导航，不产生新的 Trace 缺样或父子隔离结论。
 - 不改查询并发策略、资源配额、采样、时钟、产品等待期限和清理语义；不暂停／终止 Backend／Worker、不改 execution 私有列、不拦截或伪造正式 API 返回，不通过执行结果缓存造 pending／running。
 

@@ -56,7 +56,7 @@ for (const state of ['pending', 'running', 'success']) test(`real navigation ora
   const execution = { id: 1256, execution_id: id, module: 'develop', task_type: 'query', source: 'develop', source_task_id: '37', source_task_name: '导航查询', triggered_by: 9,
     status: state, progress: state === 'success' ? 100 : 0, attempt: state === 'pending' ? 0 : 1,
     created_at: '2026-11-14T01:00:00Z', started_at: state === 'pending' ? null : '2026-11-14T01:00:01Z', lease_state: state === 'running' ? 'active' : 'none',
-    execution_config: { content: { query: 'SELECT 42 AS fixture_value FROM pg_catalog.pg_sleep(20)' }, inputs: { effective_parameters: {}, effective_inputs: {} } },
+    execution_config: { engine_id: 13, timeout: 30, content: { query: 'SELECT 42 AS fixture_value FROM pg_catalog.pg_sleep(20)' }, inputs: { effective_parameters: {}, effective_inputs: {} } },
     metadata: state === 'success' ? { result: { columns: ['fixture_value'], rows_count: 1, summary: { preview_rows: [{ fixture_value: 42 }] } } } : {}, dev_task: { name: '导航查询' }, steps: [] }
   const previous = { ...execution, execution_id: old, status: 'success', attempt: 1 }
   const errors = []; page.on('pageerror', error => errors.push(error.message))
@@ -71,6 +71,6 @@ for (const state of ['pending', 'running', 'success']) test(`real navigation ora
   await page.route('**/module-health/**', route => route.fulfill({ json: { status: 'ready' } }))
   let commands = 0
   page.on('request', request => { if (new URL(request.url()).pathname.startsWith('/api/v1/develop/') && request.method() !== 'GET') commands++ })
-  await assertExecutionNavigationPage({ page, expect, task: 37, id, old, state, deadline: performance.now() + 15000 })
+  await assertExecutionNavigationPage({ page, expect, task: 37, id, old, state, engine: 13, deadline: performance.now() + 15000 })
   expect(commands).toBe(0); expect(unexpected).toEqual([]); expect(errors).toEqual([])
 })

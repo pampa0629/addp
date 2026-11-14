@@ -37,7 +37,7 @@ CREDENTIALS = importlib.util.module_from_spec(_credentials_spec)
 _credentials_spec.loader.exec_module(CREDENTIALS)
 LABEL = 'com.addp.execution-trace-local'
 BACKENDS = ('system-backend', 'gateway', 'security-backend', 'develop-backend', 'orchestrator-backend', 'monitor-backend')
-FRONTENDS = ('console', 'system-frontend', 'monitor-frontend', 'nginx')
+FRONTENDS = ('console', 'system-frontend', 'monitor-frontend', 'develop-frontend', 'nginx')
 TRACE = ('minio', 'runtime-log-store-init', 'loki', 'runtime-log-api', 'trace-store-init', 'tempo', 'trace-query', 'alloy')
 # All concurrently running services, browser and the sampling helper fit 8 CPU/12 GiB.
 LIMITS = {name: (.25, 512) for name in BACKENDS} | {name: (.025, 32) for name in FRONTENDS} | {
@@ -73,6 +73,13 @@ OWN_INPUTS = (
     'develop/frontend/src/router/index.js',
     'develop/frontend/package.json',
     'develop/frontend/package-lock.json',
+    'develop/frontend/Dockerfile',
+    'develop/frontend/nginx.conf',
+    'develop/frontend/vite.config.js',
+    'develop/frontend/index.html',
+    'develop/frontend/src/api/execution.js',
+    'develop/frontend/src/components/QueryResult.vue',
+    'common-frontend/basic/src/components/TabularResultRenderer.vue',
     'common-frontend/basic/src/components/MonitorExecutionsButton.vue',
     'common-frontend/basic/src/utils/taskOwnerUrl.js',
     'console/frontend/src/router/index.js',
@@ -2099,7 +2106,7 @@ def build_products(life,env,proxies,*,compile_only=False):
         life.command(['make','build-images','IMAGE_BUILD_ARGS=--verify --jobs 1 --services '+service+
                       ' --registry localhost:5001 --tag '+life.run_id],env=build_env,timeout=600)
         # Only this run's cache is pruned, keeping the approved disk stop line
-        # meaningful without accumulating nine independent npm build trees.
+        # meaningful without accumulating independent npm build trees.
         life.docker('buildx','prune','--builder',life.builder,'--all','--force',timeout=60)
     images={name:life.docker('image','inspect',tag,'--format','{{.Id}}').strip() for name,tag in zip(services,references)}
     life.stop_builder()
