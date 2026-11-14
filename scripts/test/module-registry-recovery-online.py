@@ -101,11 +101,11 @@ def validate_manager_service_identity(
     if not isinstance(token, dict) or token.get("type") != "service_access_token":
         raise SuiteError("Manager registry token must be a service_access_token")
     roles, permissions = _identity_values(payload)
-    expected_permissions = {"system.runtime_registry.update"}
+    expected_permissions = {"platform.tenant.read", "system.runtime_registry.update"}
     if permissions != expected_permissions:
         raise SuiteError(
             "Manager registry Service Principal permissions must be exactly "
-            "system.runtime_registry.update"
+            "platform.tenant.read and system.runtime_registry.update"
         )
     if roles != {"platform.manager_runtime"}:
         raise SuiteError("Manager registry Service Principal must use platform.manager_runtime")

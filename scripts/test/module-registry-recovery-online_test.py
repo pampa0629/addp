@@ -186,7 +186,7 @@ class RegistryContractHandler(BaseHTTPRequestHandler):
                     "role_assignments": [
                         {
                             "role_key": "platform.manager_runtime",
-                            "permissions": ["system.runtime_registry.update"],
+                            "permissions": ["platform.tenant.read", "system.runtime_registry.update"],
                         }
                     ]
                 },
@@ -335,7 +335,7 @@ class ModuleRegistryRecoveryOnlineTest(unittest.TestCase):
                 "role_assignments": [
                     {
                         "role_key": "platform.manager_runtime",
-                        "permissions": ["system.runtime_registry.update"],
+                        "permissions": ["platform.tenant.read", "system.runtime_registry.update"],
                     }
                 ]
             },
@@ -344,6 +344,7 @@ class ModuleRegistryRecoveryOnlineTest(unittest.TestCase):
             ONLINE.validate_manager_service_identity(payload, "addp-manager")
 
         payload["principal"]["type"] = "service_principal"
+        ONLINE.validate_manager_service_identity(payload, "addp-manager")
         payload["authorization"]["role_assignments"][0]["permissions"].append(
             "platform.module.update"
         )
