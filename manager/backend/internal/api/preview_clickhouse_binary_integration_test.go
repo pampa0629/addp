@@ -23,6 +23,7 @@ import (
 	"github.com/addp/common/engine/plugins/clickhouse"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/manager/internal/preview"
+	managerprotection "github.com/addp/manager/internal/protection"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 )
@@ -124,12 +125,20 @@ func TestIntegrationManagerClickHouseBinaryPreview(t *testing.T) {
 		registry.Register(preview.NewDatabaseTablePreviewProvider(nil, metaClient))
 		resolver := preview.NewPreviewResolver(registry, systemClient, metaClient)
 		handler := NewExplorerHandler(nil, resolver, nil, gate, nil)
+		handler.previewSourceChecker = managerprotection.PreviewSourceCheckFunc(func(_ context.Context, credential string, paths []plugin.EngineCatalogPath) error {
+			if credential != "clickhouse-preview-user" || len(paths) != 1 || paths[0].EngineID != engineID || paths[0].StringPath() != dbName+"/"+tableName {
+				t.Fatal("ClickHouse preview lost current User or exact source")
+			}
+			return nil
+		})
 		router := gin.New()
 		router.Use(func(c *gin.Context) { setTenantAuthContextForTest(c, 1, 33); c.Next() })
 		router.GET("/api/v1/manager/preview", handler.Preview)
 		locator := "addp://engine/9/path/" + dbName + "/" + tableName + "?type=table&item_id=1"
 		res := httptest.NewRecorder()
-		router.ServeHTTP(res, httptest.NewRequest("GET", "/api/v1/manager/preview?page=1&page_size=4&locator="+url.QueryEscape(locator), nil))
+		req := httptest.NewRequest("GET", "/api/v1/manager/preview?page=1&page_size=4&locator="+url.QueryEscape(locator), nil)
+		req.Header.Set("Authorization", "Bearer clickhouse-preview-user")
+		router.ServeHTTP(res, req)
 		return res
 	}
 	type previewData struct {

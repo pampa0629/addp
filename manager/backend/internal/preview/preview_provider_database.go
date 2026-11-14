@@ -50,9 +50,9 @@ func (p *DatabaseTablePreviewProvider) Preview(ctx context.Context, req *Preview
 	if plug == nil {
 		return nil, fmt.Errorf("resolved engine provider is required for database table preview")
 	}
-	// These admitted ordinary-table providers use their native read route.
-	// Unlike PostgreSQL, that route does not call executePrepared.
-	checkNativeRead := plug.Type() == "gaussdb" || plug.Type() == "starrocks"
+	// Every native table route must check current User source access.
+	// PostgreSQL instead authorizes the exact PreparedQuery read set.
+	checkNativeRead := plug.Type() != "postgresql"
 	if checkNativeRead {
 		if req.CheckNativeTableRead == nil {
 			return nil, ErrSourceAuthorizationRequired

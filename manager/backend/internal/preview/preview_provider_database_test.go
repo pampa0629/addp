@@ -585,17 +585,49 @@ var _ plugin.EngineCatalogFactsProvider = (*recordingDatabasePreviewPlugin)(nil)
 var _ plugin.BatchReadableProvider = (*recordingDatabasePreviewPlugin)(nil)
 var _ plugin.TableReadSessionProvider = (*recordingDatabasePreviewPlugin)(nil)
 
+type recordingSessionPreviewPlugin struct {
+	*recordingDatabasePreviewPlugin
+}
+
+func (*recordingSessionPreviewPlugin) SQLDialect() string { return commonquery.DialectOracle }
+
+type recordingPagePreviewPlugin struct {
+	*recordingDatabasePreviewPlugin
+	pages int
+}
+
+func (p *recordingPagePreviewPlugin) ReadCatalogTablePage(_ context.Context, _ plugin.ConnectionInfo, _ plugin.EngineCatalogPath, opts plugin.CatalogTablePageOptions) (*plugin.BatchData, error) {
+	if opts.CheckSchema != nil {
+		if err := opts.CheckSchema(p.catalogFacts.Table.Fields); err != nil {
+			return nil, err
+		}
+	}
+	p.pages++
+	return p.batchData, nil
+}
+
 func TestNativeReadOnlyPreviewChecksSourceBeforeFactsAndBeforeRows(t *testing.T) {
-	for _, engineType := range []string{"gaussdb", "starrocks"} {
-		for _, mode := range []string{"missing", "denied", "unavailable", "revoked", "allowed"} {
+	// Future providers must be covered without adding an engine-name allowlist.
+	for _, engineType := range []string{"mysql", "highgo", "opengauss", "kingbase", "oceanbase", "tidb", "oracle", "dameng", "doris", "clickhouse", "gaussdb", "starrocks", "future-native", "native-session", "native-page"} {
+		for _, mode := range []string{"missing", "denied", "unavailable", "revoked", "schema-denied", "allowed"} {
 			t.Run(engineType+"/"+mode, func(t *testing.T) {
 				count := int64(1)
 				reader := &recordingDatabasePreviewPlugin{engineType: engineType,
 					catalogFacts: &plugin.EngineCatalogFacts{Table: &datatype.TableInfo{RowCount: &count,
 						Fields: []datatype.FieldInfo{{Name: "id", Type: datatype.FieldTypeBigInt, PrimaryKey: true}}}},
 					batchData: &plugin.BatchData{Rows: []map[string]interface{}{{"id": int64(1)}}}}
+				reader.sessionData = reader.batchData
+				var resolved plugin.EnginePlugin = reader
+				pageReader := &recordingPagePreviewPlugin{recordingDatabasePreviewPlugin: reader}
+				switch engineType {
+				case "native-session":
+					resolved = &recordingSessionPreviewPlugin{reader}
+				case "native-page":
+					resolved = pageReader
+				}
+				reads := func() int { return len(reader.readBatchCalls) + len(reader.openSessionCalls) + pageReader.pages }
 				previous, previousErr := plugin.Get(engineType)
-				plugin.Register(reader)
+				plugin.Register(resolved)
 				defer func() {
 					if previousErr == nil {
 						plugin.Register(previous)
@@ -604,11 +636,15 @@ func TestNativeReadOnlyPreviewChecksSourceBeforeFactsAndBeforeRows(t *testing.T)
 					}
 				}()
 				path := plugin.TabularItemPath(8, "schema", "business", "source")
-				req := &PreviewRequest{Engine: &models.Engine{ID: 8, EngineType: engineType}, EnginePlugin: reader,
+				req := &PreviewRequest{Engine: &models.Engine{ID: 8, EngineType: engineType}, EnginePlugin: resolved,
 					Schema: "business", Table: "source", ProviderPath: path, Page: 1, PageSize: 20}
 				calls := 0
 				denied := errors.New("source read denied")
 				unavailable := errors.New("source checker unavailable")
+				protected := errors.New("live schema protection rejected")
+				if mode == "schema-denied" {
+					req.CheckTableSchema = func([]datatype.FieldInfo) error { return protected }
+				}
 				if mode != "missing" {
 					req.CheckNativeTableRead = func(_ context.Context, actual plugin.EngineCatalogPath) error {
 						calls++
@@ -618,7 +654,7 @@ func TestNativeReadOnlyPreviewChecksSourceBeforeFactsAndBeforeRows(t *testing.T)
 						if calls == 1 && len(reader.describePaths) != 0 {
 							t.Fatal("source facts read before authorization")
 						}
-						if len(reader.readBatchCalls) != 0 {
+						if reads() != 0 {
 							t.Fatal("rows read before authorization")
 						}
 						if mode == "denied" || mode == "revoked" && calls == 2 {
@@ -632,22 +668,24 @@ func TestNativeReadOnlyPreviewChecksSourceBeforeFactsAndBeforeRows(t *testing.T)
 				}
 				result, err := (&DatabaseTablePreviewProvider{}).Preview(context.Background(), req)
 				if mode == "allowed" {
-					if err != nil || result == nil || len(result.Rows) != 1 || calls != 2 || len(reader.readBatchCalls) != 1 {
-						t.Fatalf("allowed preview: result=%#v err=%v checks=%d reads=%d", result, err, calls, len(reader.readBatchCalls))
+					if err != nil || result == nil || len(result.Rows) != 1 || calls != 2 || reads() != 1 {
+						t.Fatalf("allowed preview: result=%#v err=%v checks=%d reads=%d", result, err, calls, reads())
 					}
 					return
 				}
 				want := denied
-				if mode == "missing" {
+				switch mode {
+				case "missing":
 					want = ErrSourceAuthorizationRequired
-				}
-				if mode == "unavailable" {
+				case "unavailable":
 					want = unavailable
+				case "schema-denied":
+					want = protected
 				}
-				if result != nil || !errors.Is(err, want) || len(reader.readBatchCalls) != 0 {
-					t.Fatalf("denied preview returned data: result=%#v err=%v reads=%d", result, err, len(reader.readBatchCalls))
+				if result != nil || !errors.Is(err, want) || reads() != 0 {
+					t.Fatalf("denied preview returned data: result=%#v err=%v reads=%d", result, err, reads())
 				}
-				if mode != "revoked" && len(reader.describePaths) != 0 {
+				if mode != "revoked" && mode != "schema-denied" && len(reader.describePaths) != 0 {
 					t.Fatal("denied preview read source statistics or schema")
 				}
 			})

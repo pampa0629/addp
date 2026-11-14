@@ -1208,6 +1208,7 @@ test-gate-selection-unit:
 test-raster-lineage-observer-unit:
 	@python3 -m unittest scripts/test/online-raster-lineage_test.py
 test-online-registration-unit:
+	@python3 -m unittest scripts/test/online-engine-registration_test.py
 	@python3 -m unittest scripts/ci/check-online-ci-registration_test.py
 	@python3 scripts/ci/check-online-ci-registration.py --repository "$(CURDIR)"
 
@@ -1229,7 +1230,7 @@ test-ontology-online-runner: ## 核验本体发布与受保护单记录 Agent �
 .PHONY: test-sql-pool-online-runner
 test-sql-pool-online-runner: check-node-runtime ## 验证 PostgreSQL 与 MySQL 连接池页面验收的证据约束
 	@bash -n scripts/test/online-hosted-sql-pool-gate.sh
-	@cd console/frontend && npm exec -- playwright test e2e/online/sql-pool-consumer-flow.spec.js --config=playwright.online.config.js --list
+	@cd console/frontend && npm exec -- playwright test e2e/online/sql-pool-consumer-flow.spec.js e2e/online/native-preview-authorization.spec.js --config=playwright.online.config.js --list
 	@python3 -m unittest scripts/test/sql-pool-consumer-flow-online_test.py
 
 .PHONY: test-workflow-runtime-health-online-runner
@@ -1726,6 +1727,7 @@ test-manager-online-runner: test-manager-online-syntax test-online-registration-
 .PHONY: test-highgo-online-runner
 .PHONY: test-highgo-online-syntax
 test-highgo-online-syntax:
+	@node --check --input-type=module < console/frontend/e2e/online/native-preview-authorization.spec.js
 	@node --check --input-type=module < console/frontend/e2e/online/highgo-consumer-flow.spec.js
 	@node --check --input-type=module < console/frontend/e2e/online/highgo-sql-timeout.spec.js
 

@@ -64,8 +64,10 @@ class HighGoConsumerTest(unittest.TestCase):
             with patch.dict(OWNER.os.environ,env), patch.object(OWNER.FIXTURE,'secret_directory',return_value=root), \
                 patch.object(OWNER.API,'validate_user_identity'), patch.object(OWNER.SUPPORT,'GatewayClient',side_effect=[consumer,preparer]), \
                 patch.object(OWNER.REGISTRATION,'source_grant_participants'), patch.object(OWNER.SUPPORT,'wait_for_scan',side_effect=['hg-scan','pg-scan']) as scan, \
-                patch.object(OWNER.REGISTRATION,'initialize_exact_record_read_grants',side_effect=grants) as grant:
+                patch.object(OWNER.REGISTRATION,'initialize_exact_record_read_grants',side_effect=grants) as grant, \
+                patch.object(OWNER.REGISTRATION,'verify_native_preview_metadata_only') as metadata_preview:
                 OWNER.prepare()
+            metadata_preview.assert_called_once_with(preparer, consumer, 2, 29, 'schema', OWNER.NAMESPACE, 'customers', on_change=metadata_preview.call_args.kwargs['on_change'])
             self.assertEqual([c.args[0] for c in scan.call_args_list],[preparer,preparer])
             self.assertEqual([len(c.kwargs['targets']) for c in scan.call_args_list],[5,1])
             self.assertTrue(all(c.kwargs['scan_depth']=='deep' for c in scan.call_args_list))

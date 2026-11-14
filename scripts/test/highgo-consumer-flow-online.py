@@ -51,6 +51,10 @@ def prepare():
     def on_pending(engine_id, request_id, target):
         pending.append(dict(engine_id=engine_id, request_id=request_id, target=target))
         journal.write_text(json.dumps(pending))
+    def on_metadata(rows):
+        pending[:] = [dict(engine_id=row['engine'], request_id=row['request_id'], target=row['target']) for row in rows]
+        journal.write_text(json.dumps(pending))
+    REGISTRATION.verify_native_preview_metadata_only(preparer, consumer, tenant, highgo, 'schema', NAMESPACE, 'customers', on_change=on_metadata)
     REGISTRATION.initialize_exact_record_read_grants(preparer, consumer, tenant,
         [(highgo, 'schema', NAMESPACE, name) for name in [*TABLES, TARGET]]
         + [(postgres, 'schema', NAMESPACE, 'orders')], scan_preparation=True, on_pending=on_pending)

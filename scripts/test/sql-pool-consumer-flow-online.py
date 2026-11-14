@@ -174,6 +174,12 @@ def prepare(private, run_id):
         descriptor = REGISTRATION.load_descriptor(private / f"{engine}-engine.json")
         engine_id = REGISTRATION.register_engine(provisioner.base_url, provisioner.token, descriptor)
         scan_id = SUPPORT.wait_for_scan(preparer, engine_id, time.monotonic() + 120)
+        if engine == "mysql":
+            def on_metadata(rows):
+                retained = [row for row in grants if row["engine_id"] != engine_id]
+                grants[:] = retained + [{"engine_id": row["engine"], "request_id": row["request_id"], "target": row["target"]} for row in rows]
+                private_write(private / "pool-grants.json", json.dumps(grants))
+            REGISTRATION.verify_native_preview_metadata_only(preparer, consumer, tenant, engine_id, term, namespace, TABLE, on_change=on_metadata)
         REGISTRATION.initialize_exact_record_read_grants(
             preparer, consumer, tenant, [(engine_id, term, namespace, TABLE)],
             scan_preparation=True, on_pending=pending,

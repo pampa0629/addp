@@ -66,12 +66,20 @@ func TestPreviewRejectsLiveSchemaDriftBeforeReadingAndRecovers(t *testing.T) {
 	}
 	gate := &liveSchemaPreviewGate{result: projectionstore.GateResult{Managed: true, State: dataprotection.ProjectionStateActive, Projections: []dataprotection.Projection{projection}}}
 	handler := NewExplorerHandler(nil, resolver, nil, gate, nil)
+	handler.previewSourceChecker = managerprotection.PreviewSourceCheckFunc(func(_ context.Context, credential string, paths []plugin.EngineCatalogPath) error {
+		if credential != "preview-user" || len(paths) != 1 || paths[0].EngineID != 9 || paths[0].StringPath() != "business/cards" {
+			t.Fatal("native preview lost current User or exact source")
+		}
+		return nil
+	})
 	router := gin.New()
 	router.Use(func(c *gin.Context) { setTenantAuthContextForTest(c, 1, 33); c.Next() })
 	router.GET("/preview", handler.Preview)
 	request := func() *httptest.ResponseRecorder {
 		w := httptest.NewRecorder()
-		router.ServeHTTP(w, httptest.NewRequest("GET", "/preview?locator="+urlQueryEscape("addp://engine/9/path/business/cards?type=table&item_id=1"), nil))
+		req := httptest.NewRequest("GET", "/preview?locator="+urlQueryEscape("addp://engine/9/path/business/cards?type=table&item_id=1"), nil)
+		req.Header.Set("Authorization", "Bearer preview-user")
+		router.ServeHTTP(w, req)
 		if w.Result().Header.Get("Cache-Control") != "no-store" {
 			t.Fatalf("preview delivery/refusal may be cached: status=%d", w.Code)
 		}
@@ -128,6 +136,25 @@ func TestPreviewRejectsLiveSchemaDriftBeforeReadingAndRecovers(t *testing.T) {
 	if provider.reads != 3 {
 		t.Fatalf("recovered/authorized reads=%d", provider.reads)
 	}
+	for _, state := range []string{"source-denied", "source-checker-missing"} {
+		t.Run(state, func(t *testing.T) {
+			before := provider.describes
+			handler.previewSourceChecker = nil
+			if state == "source-denied" {
+				handler.previewSourceChecker = managerprotection.PreviewSourceCheckFunc(func(context.Context, string, []plugin.EngineCatalogPath) error {
+					return managerprotection.ErrRequired
+				})
+			}
+			denied := request()
+			var body map[string]interface{}
+			if err := json.Unmarshal(denied.Body.Bytes(), &body); err != nil || denied.Code != 403 || body["data"] != nil || body["preview_type"] != nil {
+				t.Fatalf("source refusal delivered content: status=%d decode=%v", denied.Code, err)
+			}
+			if provider.describes != before || provider.reads != 3 {
+				t.Fatal("source refusal read native facts or rows")
+			}
+		})
+	}
 }
 
 type liveSchemaPreviewGate struct{ result projectionstore.GateResult }
@@ -144,8 +171,9 @@ func (*liveSchemaPreviewGate) PrepareQueryProtection(context.Context, int64, plu
 
 type liveSchemaPreviewPlugin struct {
 	*apiDownloadTestFilePlugin
-	fields []datatype.FieldInfo
-	reads  int
+	fields    []datatype.FieldInfo
+	reads     int
+	describes int
 }
 
 func (p *liveSchemaPreviewPlugin) Capabilities() plugin.EngineCapabilities {
@@ -156,6 +184,7 @@ func (*liveSchemaPreviewPlugin) EngineCatalogModel() plugin.EngineCatalogModelSp
 }
 func (*liveSchemaPreviewPlugin) SQLDialect() string { return "mysql" }
 func (p *liveSchemaPreviewPlugin) DescribeEngineCatalogFacts(context.Context, plugin.ConnectionInfo, plugin.EngineCatalogPath, plugin.EngineCatalogFactsOptions) (*plugin.EngineCatalogFacts, error) {
+	p.describes++
 	return &plugin.EngineCatalogFacts{Table: &datatype.TableInfo{Fields: append([]datatype.FieldInfo(nil), p.fields...)}}, nil
 }
 func (p *liveSchemaPreviewPlugin) ReadBatch(context.Context, plugin.ConnectionInfo, plugin.EngineCatalogPath, plugin.BatchReadOptions) (*plugin.BatchData, error) {

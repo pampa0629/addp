@@ -11,6 +11,7 @@ import re
 import json
 import os
 import stat
+import subprocess
 import sys
 import urllib.error
 import urllib.parse
@@ -486,17 +487,17 @@ class ExactRecordGrants(_ExactGrantLifecycle):
                 raise MetadataGrantError(phase, 'read_observation_mismatch')
             expected_tag = tag
     @staticmethod
-    def target(engine, namespace, name, item_term):
-        if (type(engine) is not int or engine <= 0 or item_term not in {'table', 'collection'}
+    def target(engine, namespace, name, item_term, namespace_term="database"):
+        if (namespace_term not in {"schema", "database"} or type(engine) is not int or engine <= 0 or item_term not in {'table', 'collection'}
             or any(not isinstance(v, str) or not v or any(c in v for c in '/\\.\x00') for v in (namespace, name))):
             raise MetadataGrantError('target_validate', 'record_target_invalid')
         return dict(version='catalog.path/v1', engine_id=engine, segments=[
             dict(term='server', kind='server', name=''),
-            dict(term='database', kind='namespace', name=namespace),
+            dict(term=namespace_term, kind='namespace', name=namespace),
             dict(term=item_term, kind=item_term, name=name)])
 
-    def grant(self, engine, namespace, name, item_term):
-        target = self.target(engine, namespace, name, item_term)
+    def grant(self, engine, namespace, name, item_term, *, namespace_term="database"):
+        target = self.target(engine, namespace, name, item_term, namespace_term)
         facts = read_exact_record_authorization_facts(self.authorizer, target)
         self.observe(target, False, phase='visibility_before_grant')
         command = str(uuid.uuid4())
@@ -521,6 +522,50 @@ class ExactRecordGrants(_ExactGrantLifecycle):
         self.observe(target, True, phase='visibility_after_grant')
         return receipt
 
+
+
+def verify_native_preview_metadata_only(authorizer, consumer, tenant_id, engine_id, namespace_term, namespace, table, *, on_change):
+    """Ordinary consumer pages must reject content for the same exact metadata-only table."""
+    grants = ExactRecordGrants(authorizer, consumer, tenant_id, action='metadata_read',
+                              scan_preparation=True, on_change=on_change)
+    try:
+        receipt = grants.grant(engine_id, namespace, table, 'table', namespace_term=namespace_term)
+        target = receipt['catalog_path']
+        consumer.request('POST', '/api/v1/system/engine-access/read-observations/current-source',
+                         (403,), {'targets': [target]})
+        items = consumer.request('GET', f'/api/v1/meta/engines/{engine_id}/items?branch=' + urllib.parse.quote(namespace, safe=''), (200,)).payload
+        if not isinstance(items, list):
+            raise RegistrationError('metadata-only preview requires the consumer Meta catalog')
+        matches = [item for item in items if item.get('full_name') == namespace + '.' + table
+                   and item.get('fingerprint') == receipt['item_fingerprint'] and item.get('item_type') == 'table']
+        if len(matches) != 1 or type(matches[0].get('id')) is not int or matches[0]['id'] <= 0:
+            raise RegistrationError('metadata-only preview requires the exact scanned table')
+        locator = (f'addp://engine/{engine_id}/path/' + '/'.join(urllib.parse.quote(part, safe='') for part in (namespace, table))
+                   + '?type=table&item_id=' + str(matches[0]['id']))
+        context = consumer.request('GET', '/api/v1/system/auth/context', (200,)).payload
+        expected = dict(locator=locator, engine_id=engine_id, tenant_id=str(tenant_id),
+                        principal_id=context['principal']['id'],
+                        permissions=sorted({permission for role in context['authorization']['role_assignments'] for permission in role['permissions']}))
+        root = Path(__file__).resolve().parents[2]
+        artifacts = Path(os.environ['ADDP_ONLINE_ARTIFACT_DIR'])
+        report = artifacts / f'native-preview-{engine_id}-metadata-only.json'
+        report.unlink(missing_ok=True)
+        environment = dict(os.environ, ADDP_ONLINE_NATIVE_PREVIEW_EXPECTATIONS=json.dumps(expected),
+                           ADDP_ONLINE_NATIVE_PREVIEW_REPORT=str(report))
+        # A browser never receives preparation identities, even in the preparation stage.
+        environment.pop('ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN', None)
+        environment.pop('ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN', None)
+        result = subprocess.run(['npm', 'exec', '--', 'playwright', 'test',
+            'e2e/online/native-preview-authorization.spec.js', '--config=playwright.online.config.js'],
+            cwd=root / 'console/frontend', env=environment)
+        if result.returncode != 0 or not report.is_file():
+            raise RegistrationError('metadata-only native preview Console acceptance failed')
+        actual = json.loads(report.read_text())
+        if actual != dict(expected, preview_status=403, rows_visible=False):
+            raise RegistrationError('metadata-only native preview browser evidence differs')
+        return actual
+    finally:
+        grants.cleanup()
 
 
 def initialize_exact_record_read_grants(authorizer, consumer, tenant_id, targets, *, item_term="table", scan_preparation=False, on_pending=None):

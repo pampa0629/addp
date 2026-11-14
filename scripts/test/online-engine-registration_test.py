@@ -8,7 +8,7 @@ import unittest
 import urllib.parse
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
 
 SCRIPT = Path(__file__).with_name("online-engine-registration.py")
@@ -20,6 +20,46 @@ SPEC.loader.exec_module(REGISTRATION)
 
 
 class OnlineEngineRegistrationTest(unittest.TestCase):
+    def test_native_metadata_preview_uses_exact_namespace_and_cleans_up_on_failure(self):
+        for namespace_term in ('schema', 'database'):
+            for outcome in ('success', 'browser_failure', 'wrong_report', 'missing_item'):
+                with self.subTest(namespace_term=namespace_term, outcome=outcome), tempfile.TemporaryDirectory() as temp:
+                    target = REGISTRATION.ExactRecordGrants.target(9, 'business', 'source', 'table', namespace_term)
+                    self.assertEqual(target['segments'][1]['term'], namespace_term)
+                    receipt = dict(catalog_path=target, item_fingerprint='a' * 64)
+                    grants = Mock()
+                    grants.grant.return_value = receipt
+                    record = dict(id=7, full_name='business.source', fingerprint='a' * 64, item_type='table')
+                    consumer, preparer = Mock(), Mock()
+                    consumer.request.side_effect = [SimpleNamespace(payload={}),
+                        SimpleNamespace(payload=[] if outcome == 'missing_item' else [record]),
+                        SimpleNamespace(payload={'principal': {'id': '33'}, 'authorization': {
+                            'role_assignments': [{'permissions': ['manager.data_item.read', 'meta.catalog.read']}]}})]
+                    expected = dict(locator='addp://engine/9/path/business/source?type=table&item_id=7', engine_id=9,
+                        tenant_id='2', principal_id='33', permissions=['manager.data_item.read', 'meta.catalog.read'])
+                    def browser(*args, env, **kwargs):
+                        self.assertNotIn('ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN', env)
+                        self.assertNotIn('ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN', env)
+                        self.assertEqual(json.loads(env['ADDP_ONLINE_NATIVE_PREVIEW_EXPECTATIONS']), expected)
+                        report = dict(expected, preview_status=200 if outcome == 'wrong_report' else 403, rows_visible=False)
+                        Path(env['ADDP_ONLINE_NATIVE_PREVIEW_REPORT']).write_text(json.dumps(report))
+                        return SimpleNamespace(returncode=1 if outcome == 'browser_failure' else 0)
+                    with patch.dict(REGISTRATION.os.environ, ADDP_ONLINE_ARTIFACT_DIR=temp,
+                            ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN='preparer', ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN='provisioner'), \
+                         patch.object(REGISTRATION, 'ExactRecordGrants', return_value=grants) as lifecycle, \
+                         patch.object(REGISTRATION.subprocess, 'run', side_effect=browser) as run:
+                        operation = lambda: REGISTRATION.verify_native_preview_metadata_only(
+                            preparer, consumer, 2, 9, namespace_term, 'business', 'source', on_change=None)
+                        if outcome == 'success':
+                            self.assertEqual(operation(), dict(expected, preview_status=403, rows_visible=False))
+                        else:
+                            with self.assertRaises(REGISTRATION.RegistrationError): operation()
+                        lifecycle.assert_called_once_with(preparer, consumer, 2, action='metadata_read', scan_preparation=True, on_change=None)
+                        grants.grant.assert_called_once_with(9, 'business', 'source', 'table', namespace_term=namespace_term)
+                        grants.cleanup.assert_called_once_with()
+                        self.assertEqual(run.call_count, 0 if outcome == 'missing_item' else 1)
+                        self.assertEqual(consumer.request.call_args_list[0].args[2:], ((403,), {'targets': [target]}))
+
     def test_scan_preparation_requires_exact_explicit_permissions(self):
         for scan_preparation, extra, accepted in (
                 (False, set(), True),
