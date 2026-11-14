@@ -190,8 +190,8 @@ class MetricSourceGateway:
                                   "authorization": {"role_assignments": [{"role_key": ONLINE.FIXTURE.REGISTRATION.SOURCE_INITIALIZER_ROLE if self.initializer else "consumer", "permissions": sorted(permissions)}]}})
         if path == "/api/v1/meta/executions/scan-1":
             if not self.initializer:
-                assert expected == (404,)
-                return Response(404, {})
+                assert expected == (403,)
+                return Response(403, {"error_code": "permission_denied"})
             return Response(200, {"status": "success", "triggered_by": 72 if self.defect == "scan_actor" else 71})
         if path == "/api/v1/system/engine-access/metadata-checks/meta-query":
             assert not self.initializer

@@ -61,7 +61,7 @@ def source_access(initializer, consumer, engine_id, tenant_id, engine_type, repo
         scan = initializer.request("GET", f"/api/v1/meta/executions/{execution}", (200,)).payload
         if scan.get("triggered_by") != int(grants.operator) or scan.get("status") != "success":
             raise API.SuiteError("metric source scan must belong to the separate preparing User")
-        consumer.request("GET", f"/api/v1/meta/executions/{execution}", (404,))
+        consumer.request("GET", f"/api/v1/meta/executions/{execution}", (403,))
         report["scan_execution_id"] = execution
         report["source_preparation"].update(scan_depth="deep", consumer_scan_hidden=True)
         checkpoint()
