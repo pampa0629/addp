@@ -3459,6 +3459,38 @@ class FilePublicationMachineFactsTest(unittest.TestCase):
         with self.assertRaises(m.SuiteError):owner.run_case(client)
         self.assertFalse(client.executions)
 
+    def test_rejected_machine_response_never_enters_archives_even_after_cleanup(self):
+        changes=[lambda v:v.update(tenant_id=3),lambda v:v.update(engine_id=4),
+                 lambda v:v.update(id=11),lambda v:v.update(id=True),
+                 lambda v:v.update(fingerprint='foreign-fingerprint'),
+                 lambda v:v.update(full_name='foreign.gpkg'),lambda v:v.update(item_type='table'),
+                 lambda v:v.update(scanned_at='foreign-scan-version'),lambda v:v.update(scanned_depth='basic'),
+                 lambda v:v['attributes']['item'].update(format='foreign-format')]
+        marker='FOREIGN_META_RESPONSE_PRIVATE_MARKER'
+        for kind in ('difference','adjacency'):
+            for change in changes:
+                with self.subTest(kind=kind,change=change):
+                    owner=DifferenceOnlineTest() if kind=='difference' else AdjacencyOnlineTest()
+                    owner.setUp();self.addCleanup(owner.doCleanups)
+                    client=DifferenceClient() if kind=='difference' else AdjacencyClient()
+                    def mutate(value):
+                        change(value);value['private_marker']=marker
+                        value['attributes']['private_details']={'marker':marker}
+                    client.observer.mutate=mutate
+                    with self.assertRaisesRegex(m.SuiteError,'Meta fact identity or scan binding differs'):
+                        owner.run_case(client)
+                    path=Path(owner.directory.name)/('topology-'+client.profile['prefix']+'-publication.json')
+                    publication=json.loads(path.read_text())
+                    self.assertFalse(client.executions)
+                    self.assertTrue(all(v['revocation']is not None for v in client.grants.values()))
+                    self.assertEqual(publication['pending_grants'],[])
+                    for artifact in Path(owner.directory.name).glob('*.json'):
+                        self.assertNotIn(marker,artifact.read_text())
+                    rejected=[v for v in publication['stages']if v['stage']=='meta_facts_rejected']
+                    self.assertEqual(rejected,[{'stage':'meta_facts_rejected','phase':'source_prepared',
+                                               'item_id':10,'reason':'identity_or_scan_binding_differs'}])
+                    self.assertFalse(any(v['stage']=='meta_facts_observed'for v in publication['stages']))
+
     def test_missing_and_inexact_machine_statistics_still_fail_strict_oracle(self):
         for mutate in [lambda v:v.pop('size_bytes'),lambda v:v.update(size_bytes=True),lambda v:v.update(size_bytes=1),
                        lambda v:v['attributes']['type_info']['container']['children'][0].pop('row_count'),

@@ -859,11 +859,13 @@ class _FilePublication:
             snapshot=self.observer.request('GET',f'/api/v1/meta/items/{visible["id"]}',(200,)).payload
         except online_api.SuiteError as error:
             raise SuiteError('topology Meta fact read unavailable') from error
-        self.record(dict(stage='meta_facts_observed',phase=phase,item_id=visible['id'],snapshot=snapshot))
         if (not isinstance(snapshot,dict) or any(type(snapshot.get(k)) is not int for k in ('id','tenant_id','engine_id'))
                 or any(snapshot.get(k)!=visible.get(k) for k in ('id','tenant_id','engine_id','item_type','full_name','fingerprint','scanned_at','scanned_depth'))
                 or snapshot.get('attributes',{}).get('item')!=visible.get('attributes',{}).get('item')):
+            self.record(dict(stage='meta_facts_rejected',phase=phase,item_id=visible['id'],
+                             reason='identity_or_scan_binding_differs'))
             raise SuiteError('topology Meta fact identity or scan binding differs')
+        self.record(dict(stage='meta_facts_observed',phase=phase,item_id=visible['id'],snapshot=snapshot))
         self.fact_baselines.setdefault(visible['id'],snapshot)
         return snapshot
 
