@@ -625,3 +625,12 @@ Docker Moby 的资源更新实现仅在 NanoCPUs 非零时应用该字段，原 
 本轮性能清理、风险包装清理及 task 3／2 正式删除读回均 passed，CPU 和 Connector 原配置恢复、规则删除、Webhook 目标删除与接收端关闭均通过；领域 residual_resources=expected_deployment_residuals=1、uncertain_mutation=false，原硬退出 task 1 留给部署销毁，外层 cleanup=passed、infra_cleanup=zero_residuals。前置 17 项及 7 份 Console 回执继续通过；后继捕获失败、不可恢复风险、重建及 scheduled 场景尚未运行到。当前结果是两条告警触发和两条 opened 送达的部分实证，缺样保持、健康关闭和 resolved 实收仍须后继 Hosted 完成。
 
 新增回归通过完整原生故障编排到缺样保持：两项新鲜缺样仅分两帧出现、有效期不重叠，仍完成 16 次 unknown／事件保持及退出清理；未模拟完整恢复通过。初次测试驱动未识别 pause 命令导致失败，补齐驱动后 `make test-transfer-continuous-online-runner` 的 135 项与 System 身份夹具 Go 测试通过，日志 `/tmp/addp-cdc-performance-hosted-runner-v5-final.log`，初次输出保留于同前缀 v5.log。
+
+
+### CDC 持续性能 Hosted 后继准备被依赖清单阻断（2026-11-14）
+
+固定 `9fcaff49f94090e7b0b0e3630a6b98e75bc8fc39` 的 [Run 43577910665／Job 132396119904](https://github.com/pampa0629/addp/actions/runs/43577910665/job/132396119904) 在正式 suite 执行前的 Security／Security Worker 构建输入解析失败。原始编译器报告 `common/infra/objectstore/minio/area.go` 导入的 `github.com/minio/minio-go/v7`、`pkg/credentials`、`pkg/s3utils` 缺少依赖模块的 go.sum 记录；没有生成 online-report.json 或 transfer-continuous-events.json，不能认定修订后的缺样保持、恢复及通知实收已经运行，也不把准备失败写成新的告警业务失败。
+
+Artifact `14108023879` 的 SHA-256 为 `25d18507e050769161ea0156774c85b4e424f747efb637f526d702d389272cd8`，下载摘要与 ZIP CRC 均核对通过。原件、readiness、外层摘要及阶段日志位于 `/tmp/addp-cdc-performance-hosted-43577910665/`，完整 Job 日志 `/tmp/addp-cdc-performance-43577910665-job.log`。外层摘要为 result=failed、cleanup=passed、infra_cleanup=zero_residuals；业务任务尚未创建，不以零残留替代未运行的断言。未改动上述其他模块依赖文件、未为绕过准备失败重跑原样任务；本会话的 135 项 runner 与 System 身份夹具 Go 测试通过记录保持其原范围，真实触发和两个 opened 实收仍仅采用前一轮独立证据。
+
+本机只读复核记录 `/tmp/addp-cdc-performance-preserved-after-hosted-43577910665.log`：原 task46／task58 两个槽仍在且不活跃，task61 的全局身份槽仍活跃，task61 定义仍存在、desired_state=running。本轮未操作个人任务或逻辑槽。
