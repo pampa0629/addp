@@ -187,6 +187,51 @@ jobs:
           selected: ${{ steps.selection.outputs.run }}
           status: ${{ job.status }}
 
+  common-frontend-tests:
+    name: Common frontend contracts
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version-file: .node-version
+
+      - name: Run Common frontend contracts
+        run: make test-common-frontend
+
+      - name: Summarize Common frontend contracts
+        if: always()
+        uses: ./.github/actions/ci-gate-summary
+        with:
+          gate: Common frontend contracts
+          status: ${{ job.status }}
+
+  frontend-ci-registration:
+    name: Frontend CI registration
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Run Frontend CI registration
+        run: make test-frontend-ci-registration
+
+      - name: Summarize Frontend CI registration
+        if: always()
+        uses: ./.github/actions/ci-gate-summary
+        with:
+          gate: Frontend CI registration
+          status: ${{ job.status }}
+
   platform-consistency:
     name: Platform consistency
     runs-on: ubuntu-24.04

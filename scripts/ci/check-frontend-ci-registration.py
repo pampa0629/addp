@@ -318,6 +318,43 @@ def validate_registration(repository: Path) -> list[str]:
     return errors
 
 
+def validate_independent_frontend_jobs(jobs: list[str]) -> list[str]:
+    """Keep the existing shared checks runnable without the platform aggregate."""
+    errors = []
+    for job_id, target in (
+        ("common-frontend-tests", "test-common-frontend"),
+        ("frontend-ci-registration", "test-frontend-ci-registration"),
+    ):
+        matching = [job for job in jobs if job.startswith(f"  {job_id}:\n")]
+        if len(matching) != 1:
+            errors.append(f"{target}: exactly one independent Linux CI job is required")
+            continue
+        job = matching[0]
+        if re.search(r"(?m)^    (?:needs|if|services|strategy):", job) or "continue-on-error:" in job:
+            errors.append(f"{target}: independent CI job must run without dependencies or skip conditions")
+        if not re.search(r"(?m)^    runs-on: ubuntu-24\.04$", job) or not re.search(
+            r"(?m)^    timeout-minutes: 10$", job
+        ):
+            errors.append(f"{target}: independent CI job must use Ubuntu 24.04 with a 10 minute budget")
+        steps = re.split(r"(?m)^      - ", job)[1:]
+        gates = [step for step in steps if re.search(rf"(?m)^        run: make {target}$", step)]
+        if len(gates) != 1 or re.search(r"(?m)^        if:", gates[0]):
+            errors.append(f"{target}: independent CI job must unconditionally run its standard Make entry")
+        summaries = [step for step in steps if "uses: ./.github/actions/ci-gate-summary" in step]
+        if len(summaries) != 1 or not re.search(r"(?m)^        if: always\(\)$", summaries[0]) or (
+            "status: ${{ job.status }}" not in summaries[0] or "selected:" in summaries[0]
+        ):
+            errors.append(f"{target}: independent CI job must always report its actual status as selected")
+        if target == "test-common-frontend":
+            node_steps = [step for step in steps if "uses: actions/setup-node@" in step]
+            if len(node_steps) != 1 or "node-version-file: .node-version" not in node_steps[0] or (
+                re.search(r"(?m)^        if:", node_steps[0]) or not gates
+                or steps.index(node_steps[0]) > steps.index(gates[0])
+            ):
+                errors.append(f"{target}: independent CI job must prepare the declared Node runtime before testing")
+    return errors
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument("--repository", type=Path, default=Path.cwd())
@@ -328,6 +365,7 @@ def main() -> int:
     repository = parse_args().repository.resolve()
     try:
         errors = validate_registration(repository)
+        errors.extend(validate_independent_frontend_jobs(workflow_jobs(repository)))
     except (RegistrationError, json.JSONDecodeError, subprocess.CalledProcessError) as error:
         print(f"Frontend CI registration check failed: {error}", file=sys.stderr)
         return 1
@@ -336,7 +374,7 @@ def main() -> int:
             print(f"Frontend CI registration check failed: {error}", file=sys.stderr)
         return 1
     count = len(discover_frontends(repository))
-    print(f"Frontend CI registration check passed: {count} tracked frontends are registered.")
+    print(f"Frontend CI registration check passed: {count} tracked frontends are registered; independent shared frontend jobs are registered.")
     return 0
 
 

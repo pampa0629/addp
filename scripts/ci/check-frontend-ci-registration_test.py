@@ -460,5 +460,64 @@ class ConsoleBrowserPreparationTest(unittest.TestCase):
                                  mirror.read_text() if mirror.exists() else None)
 
 
+class IndependentFrontendJobsTest(unittest.TestCase):
+    def jobs(self) -> list[str]:
+        return [job for job in MODULE.workflow_jobs(SCRIPT.parents[2])
+                if job.startswith(("  common-frontend-tests:\n", "  frontend-ci-registration:\n"))]
+
+    def test_real_workflow_registers_both_independent_checks(self) -> None:
+        self.assertEqual([], MODULE.validate_independent_frontend_jobs(self.jobs()))
+
+    def test_rejects_missing_or_duplicate_jobs(self) -> None:
+        jobs = self.jobs()
+        for index in range(2):
+            for changed in [jobs[:index] + jobs[index + 1:], jobs + [jobs[index]]]:
+                with self.subTest(index=index, jobs=len(changed)):
+                    self.assertTrue(MODULE.validate_independent_frontend_jobs(changed))
+
+    def test_rejects_platform_dependencies_and_skips(self) -> None:
+        for field in ['needs: platform-consistency', "if: false", 'services: {}',
+                      'strategy: {}', 'continue-on-error: true']:
+            with self.subTest(field=field):
+                jobs = [job.replace('    steps:', f'    {field}\n    steps:') for job in self.jobs()]
+                self.assertTrue(MODULE.validate_independent_frontend_jobs(jobs))
+
+    def test_rejects_omitted_conditional_or_masked_standard_commands(self) -> None:
+        for target in ['test-common-frontend', 'test-frontend-ci-registration']:
+            for replacement in ['run: true', f"if: false\n        run: make {target}",
+                                f'run: make {target} || true', 'run: make test-platform']:
+                with self.subTest(target=target, replacement=replacement):
+                    jobs = [job.replace(f'run: make {target}', replacement) for job in self.jobs()]
+                    self.assertTrue(MODULE.validate_independent_frontend_jobs(jobs))
+
+    def test_rejects_missing_or_conditional_summary(self) -> None:
+        for before, after in [('if: always()', 'if: success()'),
+                              ('uses: ./.github/actions/ci-gate-summary', 'run: true'),
+                              ('status: ${{ job.status }}', 'status: success'),
+                              ('status: ${{ job.status }}', 'selected: false\n          status: ${{ job.status }}')]:
+            with self.subTest(after=after):
+                self.assertTrue(MODULE.validate_independent_frontend_jobs(
+                    [job.replace(before, after) for job in self.jobs()]))
+
+    def test_rejects_runtime_or_budget_drift(self) -> None:
+        for before, after in [('runs-on: ubuntu-24.04', 'runs-on: macos-latest'),
+                              ('timeout-minutes: 10', 'timeout-minutes: 20'),
+                              ('uses: actions/setup-node@', 'uses: actions/setup-go@'),
+                              ('node-version-file: .node-version', 'node-version: 22'),
+                              ('name: Set up Node.js', 'name: Set up Node.js\n        if: false')]:
+            with self.subTest(after=after):
+                self.assertTrue(MODULE.validate_independent_frontend_jobs(
+                    [job.replace(before, after) for job in self.jobs()]))
+
+    def test_rejects_node_preparation_after_gate(self) -> None:
+        jobs = self.jobs()
+        job = jobs[0]
+        steps = re.split(r"(?m)^      - ", job)
+        node = next(step for step in steps if 'uses: actions/setup-node@' in step)
+        gate = next(step for step in steps if 'run: make test-common-frontend' in step)
+        jobs[0] = job.replace(node, '__NODE_STEP__').replace(gate, node).replace('__NODE_STEP__', gate)
+        self.assertTrue(MODULE.validate_independent_frontend_jobs(jobs))
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -14,6 +14,8 @@ Push 使用事件的 `before...sha`，PR 使用 base 与本次 SHA 的 merge-bas
 
 System 与 Transfer 的 Go T1 分别使用 Platform CI 的独立 `System Go CI runner`、`Transfer Go CI runner` Job，按各自 owner／Common 及标准模块入口依赖路径选择，直接复用 `make test-module MODULE=system GO_ONLY=1`、`make test-module MODULE=transfer GO_ONLY=1`。两者沿用 Ubuntu 24.04 和 20 分钟预算，由各自 backend/go.mod 确定 Go 版本；因根 Make 入口仍校验 Node 版本，按 `.node-version` 准备固定版本并登记其输入，不绕过前提检查。独立 Job 不依赖 Go workspace 聚合 Job，不启用外部数据库、个人服务或 Hosted 验收；仅证明各自 Go T1，不计为完整模块门禁。聚合 workspace 继续承担全模块依赖及组合测试，其失败保持失败；不能把它在其它 owner 提前退出解释为 System 或 Transfer 已经执行或通过。独立 Job 须同时核对 selected、标准命令和实际终态。
 
+共享前端及前端 CI 登记分别由 Platform CI 的独立 `Common frontend contracts`、`Frontend CI registration` Job 执行，均使用既有 Ubuntu 24.04，每个 Job 预算 10 分钟，不依赖其他 Job。两项检查成本较低，所有 Platform CI 事件均直接执行，不设置路径跳过或矩阵条件：前者按根 `.node-version` 准备 Node，调用唯一 `make test-common-frontend`；后者使用 Runner 自带 Python 3，调用唯一 `make test-frontend-ci-registration`。两者沿用统一摘要，不安装共享库 `node_modules`，不启动浏览器、产品服务、数据库或 T4。`make test-platform` 保留对同一入口的聚合调用；独立 Job 成功只证明各自 T0/T1，不改变聚合 Job 的实际结果。前端登记检查同时约束这两个 Job 的独立性、无条件标准命令、运行环境和摘要，避免只登记但不执行。
+
 System Cleanup PostgreSQL 的公共DTO回归实际调用Hosted的唯一任务观察器。该T2入口通过 `ADDP_T2_INPUT_FILES` 显式登记观察器、共享支持和机器契约等运行时脚本依赖，使脚本变更也命中System门禁；函数改名同步全部真实消费者，不恢复旧别名。
 
 产品镜像构建继续由 `make build-images` 唯一入口负责。构建调度最多同时执行两个任务，基础镜像预热先于任务启动；单路和两路使用同一实现。前端 Node 版本来自根 `.node-version`，仅使用锁文件安装依赖。`make test-platform` 校验这些契约，并验证并发上限、失败汇总、日志隔离及中断时的进程和临时目录清理。现有 Platform CI 产品构建 Job 复用该入口验证实际镜像；Node 版本变更必须通过影响选择命中全部前端镜像，不缩减受影响服务范围。

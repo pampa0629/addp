@@ -62,7 +62,7 @@ ADDP 平台前端共享组件库，提供跨模块复用的 Vue 3 组件、工�
 make test-common-frontend
 ```
 
-根 `make test-platform` 调用同一入口。业务模块只验证自身的协议适配和组合行为，不代跑共享组件测试；本入口不代替消费模块的浏览器回归或真实后端验收。门禁选择见[测试与验收规范](../docs/spec/addp测试与验收规范.md)。
+Platform CI 的独立 `Common frontend contracts` Linux Job 在每次工作流运行时调用同一入口，按根 `.node-version` 准备 Node，无需安装共享库依赖或启动服务；`Frontend CI registration` 独立执行现有前端登记检查。根 `make test-platform` 仍调用同一入口。业务模块只验证自身的协议适配和组合行为，不代跑共享组件测试；本入口不代替消费模块的浏览器回归或真实后端验收。门禁选择见[测试与验收规范](../docs/spec/addp测试与验收规范.md)。
 
 ### 浏览器测试隔离
 
