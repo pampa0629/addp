@@ -312,7 +312,7 @@ Graph 在 C→G 内、关闭／取消／归档前比较当前模块影响与原�
 
 <a id="tenant-stage-chain-acceptance"></a>
 
-### 正式用户阶段追踪真实链路验收方案（已实施；本机凭据准备仍阻断，后续运行另行确认）
+### 正式用户阶段追踪真实链路验收方案（凭据fixture已修复；本机真实链路待复验）
 
 本节记录前述最小切片的已确认运行验收范围，不变更产品权限、采样或Owner边界。建议复用[正式身份本机隔离闭环](../spec/addp平台运行观测规范.md#正式身份的本机隔离闭环)及唯一人工入口 `make test-monitor-traces-local`：租户trace-stages请求与执行详情浏览器断言已接入，原平台独立校核保留，相关自然Linux门禁已通过。2026-11-14用户随后单独批准一次原范围本机隔离真实验收，该轮已在准备阶段失败并清理；授权不扩展为重试、续窗、下一轮或个人服务操作，后续真实运行仍须另行确认。
 
@@ -398,19 +398,24 @@ Graph 在 C→G 内、关闭／取消／归档前比较当前模块影响与原�
 
 原报告`cleanup.zero_owned_resources=true, failures=[]`；按本轮精确标签／名称另行只读复核容器、网络、卷、镜像标签、builder及私有工作目录均0，未删除共享缓存或他人对象。脱敏报告、起止、源码核对、清理和诊断保留于`/tmp/addp-tenant-stage-real-diag-20261114-4wvaifaw/{report.json,window.json,preflight.json,audit.json,diagnosis.json,run.log}`，目录0700／文件0600；preflight输入摘要来自启动前Git核对，不冒充提前失败时未写出的构建回执。报告SHA256为`47f1668a7ed8ad916c89796e7ad068641a4cf207171936a616201ef26e0e1335`。首轮旧报告SHA256仍为`8d5dcaa733d2c1ba4c3e6d43423fa30a2c369089d9aee2e58db6e4d412eae662`，未改写或补算。
 
-**原因与证据限度。** 退出后只读查询版本／文件事实：当前PATH选中Homebrew OpenSSL 4.1.0，OPENSSLDIR为`/opt/homebrew/etc/openssl@4`，其`openssl.cnf`不存在；fixture未传`-config`，runner窄环境未传`OPENSSL_CONF`。对应版本[req.c](https://github.com/openssl/openssl/blob/openssl-4.1.0/apps/req.c#L532)先读取默认配置，失败即沿初始退出码1返回；[配置加载实现](https://github.com/openssl/openssl/blob/openssl-4.1.0/apps/lib/apps.c#L339)打开文件失败返回空。由实际ca_server失败、宿主文件事实和该版本源码，原因已收敛为fixture隐式依赖宿主默认OpenSSL配置，而本机缺少该文件；这不是原stderr逐字还原，也未通过重放／AB生成验证。原OpenSSL正文仍被原实现丢弃，未恢复或归档私钥／证书；没有重放证书命令、修改宿主配置、切换工具链、重启个人服务、运行Hosted或追加下一轮。
+**原因与证据限度。** 退出后只读查询版本／文件事实：当前PATH选中Homebrew OpenSSL 4.1.0，OPENSSLDIR为`/opt/homebrew/etc/openssl@4`，其`openssl.cnf`不存在；fixture未传`-config`，runner窄环境未传`OPENSSL_CONF`。对应版本[req.c](https://github.com/openssl/openssl/blob/openssl-4.1.0/apps/req.c#L532)先读取默认配置，失败即沿初始退出码1返回；[配置加载实现](https://github.com/openssl/openssl/blob/openssl-4.1.0/apps/lib/apps.c#L339)打开文件失败返回空。由实际ca_server失败、宿主文件事实和该版本源码，原因已收敛为fixture隐式依赖宿主默认OpenSSL配置，而本机缺少该文件；该次只读判断未重放原命令或恢复原stderr；后继受控离线复现与修复见下，不回填原始输出。原OpenSSL正文仍被原实现丢弃，未恢复或归档私钥／证书；没有重放证书命令、修改宿主配置、切换工具链、重启个人服务、运行Hosted或追加下一轮。
 
 **后继实施。** 用户已确认fixture私有配置与随后明确的SKID／AKID方案，实施及验证见下；不通过给宿主补文件或切换openssl版本绕过。新的本机真实窗口仍须单独确认，正式身份／业务／阶段／Console链路仍未覆盖。
 
 
-**私有OpenSSL配置与显式密钥绑定（2026-11-14）。** 用户已确认自包含最小配置。正式观测规范先同步：prepare在本轮私有目录生成0600的最小req／dn配置，九次子进程均显式绑定OPENSSL_CONF、六次req另带-config；未改宿主配置、环境、工具链、证书用途／RSA 2048／1天／CN／SAN／EKU、身份权限、预算及清理。旧实现的受控离线用例先复现ca_server失败，修复后九次真实生成及全部16步骤完成；原16点注入、封闭类别、私有配置失败先于OpenSSL、环境不全局改写等确定性检查通过。原两次真实报告SHA256复核未变，未追加真实窗口。
+**私有OpenSSL配置与显式密钥绑定（2026-11-14）。** 用户已确认自包含最小配置。正式观测规范先同步：prepare在本轮私有目录生成0600的req／dn及CA密钥标识配置，九次子进程均显式绑定OPENSSL_CONF、六次req另带-config；未改宿主配置、环境、工具链、证书用途／RSA 2048／1天／CN／SAN／EKU、身份权限、预算及清理。旧实现的受控离线用例先复现ca_server失败，修复后九次真实生成及全部16步骤完成；原16点注入、封闭类别、私有配置失败先于OpenSSL、环境不全局改写等确定性检查通过。原两次真实报告SHA256复核未变，未追加真实窗口。
 
 `make test-monitor-traces-local-runner`在加入密钥标识前，224项中223通过／1失败，原失败不能改记为通过。唯一失败为新增受控离线链验证：OpenSSL 4.1服务器证书验证返回error 18；同一次离线生成的只读解析确认三组CA／叶证书均无SKID／AKID、subject与issuer同名。对应版本[req说明](https://docs.openssl.org/4.1/man1/openssl-req/#history)和[x509说明](https://docs.openssl.org/4.1/man1/openssl-x509/#history)确认4.0起不再自动添加密钥标识；现有fixture在CA和对应叶证书使用相同CN，缺少标识后不能通过当前OpenSSL信任链校验。没有改为信任叶证书、忽略校验、换工具链或删断言；测试临时证书仍由TemporaryDirectory退出销毁。日志为`/tmp/addp-trace-private-config-{red,green,chain-diagnostic,chain-facts}.log`；其中red为旧实现回归，green仍因新增链验证失败，文件名不表示通过。
 
 用户已明确同意显式绑定SKID／AKID：CA在私有配置加入`subjectKeyIdentifier=hash`、`authorityKeyIdentifier=keyid:always`，叶证书在原扩展文件加入`subjectKeyIdentifier=hash`、`authorityKeyIdentifier=keyid,issuer`，保持现有CN／SAN／EKU、算法、期限、九次生成及原运行预算／权限不变；统一显式声明各版本的签发密钥关联，不按OpenSSL版本走分支。受控离线T1已在本机OpenSSL 4.1.0通过原九次生成、全部16步、RSA 2048／一天有效期、真实CA和叶SKID／AKID匹配、三条正确信任链及错误CA／用途／名称三项拒绝；共22次命令（含验证），小于原定24次，约0.38秒／材料与输出峰值32992字节，私有目录清理完成。`make test-monitor-traces-local-runner`整组224项、登记与System身份夹具Go通过；原ca_server及后继error 18失败日志保留，不能以当前通过改写历史。原标准入口／Platform consistency与Trace T2已覆盖fixture，Execution runner已有scripts路径选择与登记核验，无新增入口、依赖或环境。本轮仅确定性与离线验证，未启动新的真实窗口或Hosted；后续真实运行仍单独确认。
 
 
-本批最终本地门禁：`make test-monitor-traces-local-runner`224项Python、登记及夹具Go通过；`make test-infra-runtime-log-lifecycle`539项Python（包含224项）、7项Node及夹具Go通过，真实PostgreSQL指标恢复未选择／未安装，不计为通过；`make test-execution-online-ci-runner`207＋19＋158＋35＝419项Python及登记通过。最终日志为`/tmp/addp-trace-private-config-keyids-green.log`、`/tmp/addp-trace-private-config-infra-final.log`、`/tmp/addp-trace-private-config-execution-final.log`。标准Make／现有路径和Linux编排已覆盖，无需新增入口或CI环境；Linux实际执行仍按本批固定提交另核，不能以本地通过替代。
+本批最终本地门禁：`make test-monitor-traces-local-runner`224项Python、登记及夹具Go通过；`make test-infra-runtime-log-lifecycle`539项Python（包含224项）、7项Node及夹具Go通过，真实PostgreSQL指标恢复未选择／未安装，不计为通过；`make test-execution-online-ci-runner`207＋19＋158＋35＝419项Python及登记通过。最终日志为`/tmp/addp-trace-private-config-keyids-green.log`、`/tmp/addp-trace-private-config-infra-final.log`、`/tmp/addp-trace-private-config-execution-final.log`。标准Make／现有路径和Linux编排已覆盖，无需新增入口或CI环境；本地通过不代替Linux或真实验收；本批Linux实际核验结果如下。
+
+
+**私有配置／密钥绑定Linux证据已收口。** 实现`edd6c31ca2e7970ad82b97053fc8ac79d9a6bf26`、push／attempt 1 的三个相关执行Job均成功终态：[Platform consistency](https://github.com/pampa0629/addp/actions/runs/43546730624/job/132299691394)于北京时间11:38:38完成，日志11:08:57确认224项Python全部OK、无跳过，新增私有配置失败用例及离线用例均由原无过滤模块入口实际执行；离线摘要为OpenSSL 3.0.13、原九次生成／共22次命令、1.652425秒、材料／输出峰值33073字节、三项拒绝与私有目录清理通过，后续登记、Go身份夹具及169项生命周期回归通过。本机OpenSSL 4.1.0与该Linux版本使用同一配置／扩展路径，不靠版本分支或放宽信任。[Execution runner](https://github.com/pampa0629/addp/actions/runs/43546730624/job/132299691443)于11:03:08完成，selected=true，207＋19＋158＋35＝419项Python及登记通过。[Trace T2](https://github.com/pampa0629/addp/actions/runs/43546730635/job/132304967523)于11:23:55完成，新fixture真实完成全部16步骤、finalize／none，TestOwnedTracePipeline通过，退出核验容器／网络／卷／临时文件零残留。
+
+原始Job日志、固定源码方法／本地验证清单及核验摘要留在`/tmp/addp-edd6c31ca-linux-ci-20261114/{platform.log,execution.log,trace-t2.log,selection.log,source-manifest.json,local-validation.json,audit.json,latest.json}`（目录0700／文件0600）。两次真实失败报告哈希再次核对未变，旧ca_server及离线error 18失败保留；其他会话改动保留。当前已确认的私有配置与SKID／AKID开发及相关Linux门禁缺口已关闭，本轮没有改宿主配置、重启个人服务、手工重跑CI、触发Hosted或追加本机真实窗口。剩余为原本机完整运行中的构建／资源守卫、正式身份、业务、阶段读取和Console断言复验；不以离线／Linux Trace T2通过冒充正式Tenant用户链路验收。下一步建议另行确认一次携带本批实现的本机隔离真实运行，先核对固定源码及输入，原身份权限、采样、预算和清理不变，到终态后停止，不自动追加下一轮。
 
 ## 七、确认范围与协作分工
 
