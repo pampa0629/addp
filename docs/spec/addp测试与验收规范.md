@@ -74,6 +74,7 @@ make test-release RELEASE_SUITE=<suite>
 
 - `make test-changed` 与 CI 共用 owner 影响计算；共享代码改动按真实依赖扩散到已登记消费者。
 - `make test-module` 自动发现模块的 Go、Python、CMake/C++、前端与基础设施门禁，不维护第二份模块清单。
+- 前端 Linux CI 整 Job 默认上限为 20 分钟；Monitor 明确为 40 分钟，Console 为 30 分钟，覆盖依赖与浏览器准备、完整回归、构建及清理。Console 原 20 分钟窗口曾在 361 项回归与构建成功后超时；例外只限定这两个 Owner，不扩大其他 Job，也不改变测试断言、并发或 T4 真实运行预算。
 - `make test-integration` 严格串行调用 owner 的 T2 事实入口，不复制测试逻辑。
 - `test-online` 与 `test-release` 必须显式选择已实现的 suite；未实现能力不得以占位 suite 登记。
 - 不提供跨 T0-T5 的 `test-all`。T4 与 T5 的身份、基础设施和安全前置条件不同，完整认证由 CI 分别编排标准入口并分别报告。

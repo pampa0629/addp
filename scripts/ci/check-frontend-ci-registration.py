@@ -150,7 +150,7 @@ def validate_browser_isolation(repository: Path) -> list[str]:
 
 
 def validate_frontend_job_budgets(jobs: list[str]) -> list[str]:
-    """Keep Monitor's exception and Console's explicit 20 minute requirement."""
+    """Keep only the bounded Monitor and Console frontend Job exceptions."""
     errors = []
     for job in jobs:
         if not job.startswith("  frontend-deterministic:"):
@@ -167,9 +167,10 @@ def validate_frontend_job_budgets(jobs: list[str]) -> list[str]:
             budgets = re.findall(r"(?m)^\s*timeout_minutes:\s*([^\n]*)", entry)
             if owner in required_owners:
                 required_owners[owner] += 1
-            if owner == "monitor":
-                if budgets != ["40"]:
-                    errors.append(f"{owner}: frontend Job must retain its bounded 40 minute budget")
+            if owner in required_owners:
+                expected = "40" if owner == "monitor" else "30"
+                if budgets != [expected]:
+                    errors.append(f"{owner}: frontend Job must retain its bounded {expected} minute budget")
             elif budgets and budgets != ["20"]:
                 errors.append(f"{owner}: frontend Job must retain the 20 minute default")
         for owner, count in required_owners.items():

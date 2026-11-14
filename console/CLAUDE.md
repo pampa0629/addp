@@ -98,3 +98,5 @@ PPTX PDF 与 COG 的物理观察结果在同一次检查完成后分别写入 `m
 浏览器验收复用现有认证测试 helper 区分匿名初始化与已认证消费：首次登录前，无 Refresh Cookie 的 `POST /api/v1/system/refresh` 401 单独计入报告，最多一次；首个带 Token 的认证上下文请求起，任何 API 失败仍使验收失败。其他匿名 API 错误、刷新 403／500、登录后的刷新 401 及非原生匿名刷新诊断的 warning／error 均不得排除。
 
 执行导航回归在既有 Console 隔离门禁中加载真实 Develop／Monitor 页面，核对最近 pending／running UUID、单历史、结果页瘦身、受限 return_to、刷新及前进后退。Develop 前端变更会选中 Console，CI 同步准备 Develop 锁定依赖；HTTP 全部为只读夹具，不执行任务或访问个人服务。
+
+Console 前端 Linux CI 的整 Job 上限为 30 分钟，包含只读模块夹具依赖准备、完整浏览器回归、构建和清理。原 20 分钟窗口曾在 361 项回归与构建成功后于汇总阶段超时；不以调整此 Job 上限改变单例断言、并发数或真实验收预算。
