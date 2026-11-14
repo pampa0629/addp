@@ -148,6 +148,7 @@ echo ""
 echo -e "${BLUE}========================================${NC}"
 echo -e "${BLUE}🚀 Starting Application Layer${NC}"
 echo -e "${BLUE}========================================${NC}"
+python3 scripts/prod/publish-module-declarations.py --bootstrap-compose --compose-file docker-compose.yml
 docker compose -f docker-compose.yml up -d --wait --wait-timeout 180 --remove-orphans
 docker compose -f docker-compose.runtimes.yml up -d --wait --wait-timeout 180 --remove-orphans
 

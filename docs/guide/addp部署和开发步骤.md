@@ -168,6 +168,8 @@ Develop 向 NFS 输出 UDBX 时，仍在执行期向 Runtime 传入所选 NFS �
 
 启停前核对容器的 Compose project 与工作区归属；固定 `container_name` 不能由多个 project 同时占用。平台与 Runtime 的标准停止入口保留数据卷，不删除 `addp-infra` 或 `business` 的数据卷；Infra 卷删除边界见[部署与项目隔离](../../scripts/infra/docs/部署与项目隔离.md#数据持久化)。
 
+源码开发、本地 Compose 和生产 Compose 三个启动入口均先等待 System 就绪，再使用所选模块制品发布声明。企业单模块升级可以独立使用同一发布接口。凭据准备与版本冲突处理见[模块声明发布契约](../spec/api/健康与平台控制面.md#第二阶段模块声明发布契约)。
+
 源码开发模式中的容器化 Runtime 仍由 `scripts/dev/` 启停，其项目标签用于 Docker Desktop 分组，不以生产 Compose 命令接管。
 
 ```bash

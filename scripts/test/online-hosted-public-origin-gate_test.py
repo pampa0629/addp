@@ -1,4 +1,7 @@
 import importlib
+import json
+import tempfile
+from unittest.mock import patch
 import os
 import shutil
 import subprocess
@@ -9,6 +12,46 @@ from pathlib import Path
 SUPPORT = importlib.import_module("scripts.test.online-hosted-opengauss-gate_test")
 SCRIPT = Path(__file__).with_name("online-hosted-public-origin-gate.sh")
 OVERLAY = Path(__file__).with_name("docker-compose.public-origin-t4.yml")
+
+
+class ComposeDeclarationBootstrapTest(unittest.TestCase):
+    def test_deployment_uses_selected_images_and_only_publisher_secret(self):
+        publisher = importlib.import_module("scripts.prod.publish-module-declarations")
+        services = ["manager-backend", "manager-frontend", "manager-worker", "gateway", "system-backend"]
+        commands = []
+
+        def output(cmd, **kwargs):
+            if cmd[-2:] == ["config", "--services"]:
+                return "\n".join(services)
+            if cmd[-3:] == ["ps", "-q", "system-backend"]:
+                return "system-container"
+            if cmd[:2] == ["docker", "inspect"]:
+                return "system-image"
+            if cmd[-2:] == ["printenv", "SYSTEM_URL"]:
+                return "http://system-backend:8180"
+            self.assertEqual(cmd[-1], "/app/module-declaration.json")
+            return json.dumps({"module_name": cmd[-2].split("-")[0], "route_prefix": ""}).encode()
+
+        with tempfile.TemporaryDirectory() as directory:
+            def run(cmd, **kwargs):
+                commands.append(cmd)
+                if cmd[-1] == "system-backend":
+                    self.assertEqual(sorted(p.name for p in Path(directory).iterdir()), ["gateway", "manager", "system"])
+                else:
+                    payload = json.loads(kwargs["input"])
+                    self.assertEqual(payload["secret"], (Path(directory) / cmd[-1]).read_text())
+                    self.assertNotIn(payload["secret"], cmd)
+                    if cmd[-2] == "publish-module-declaration":
+                        self.assertEqual(payload["declaration"]["module_name"], cmd[-1])
+                        self.assertEqual(cmd[:2], ["docker", "run"])
+                        self.assertEqual(cmd[cmd.index("-e")+1], "SYSTEM_URL=http://system-backend:8180")
+
+            with patch("sys.argv", ["publisher", "--bootstrap-compose", "--compose-file", "docker-compose.yml",
+                                    "--credential-dir", directory]), patch.object(publisher.subprocess, "check_output", side_effect=output), patch.object(publisher.subprocess, "run", side_effect=run):
+                publisher.main()
+        self.assertEqual([cmd[-1] for cmd in commands], ["system-backend", "system", "manager", "gateway", "system", "manager", "gateway"])
+        self.assertTrue(all(cmd[-2] == "provision-module-publisher" for cmd in commands[1:4]))
+        self.assertTrue(all(cmd[-2] == "publish-module-declaration" for cmd in commands[4:]))
 
 
 class HostedPublicOriginGateTest(unittest.TestCase):

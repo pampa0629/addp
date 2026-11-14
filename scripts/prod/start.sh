@@ -118,22 +118,8 @@ else
   echo 'Service expectations unavailable; business startup continues' >&2
 fi
 
-declaration_modules=(system)
-while read -r compose_service; do
-  case "$compose_service" in
-    system-backend) ;;
-    gateway) declaration_modules+=(gateway) ;;
-    *-backend) declaration_modules+=("${compose_service%-backend}") ;;
-  esac
-done < <(platform_compose config --services)
-python3 scripts/prod/publish-module-declarations.py --prepare "${declaration_modules[@]}"
-
-# 第二步：System 先就绪，再启动应用全量服务。
-echo -e "${YELLOW}[2/4] 等待 System Backend 就绪...${NC}"
-platform_compose up -d --wait --wait-timeout 120 system-backend
-
-python3 scripts/prod/publish-module-declarations.py --provision "${intent_compose_args[@]}" "${declaration_modules[@]}"
-python3 scripts/prod/publish-module-declarations.py "${intent_compose_args[@]}" "${declaration_modules[@]}"
+echo -e "${YELLOW}[2/4] 等待 System 就绪并发布模块声明...${NC}"
+python3 scripts/prod/publish-module-declarations.py --bootstrap-compose "${intent_compose_args[@]}"
 
 echo -e "${YELLOW}[3/4] 启动并等待平台服务就绪...${NC}"
 platform_compose up -d --wait --wait-timeout 180
