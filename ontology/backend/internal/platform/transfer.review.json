@@ -177,11 +177,11 @@
       "kind": "implementation",
       "path": "transfer/backend/internal/planner/table_export.go",
       "anchor": "func validateTableTransferSpec(",
-      "commit": "9bf02dfabeef43e712e2eda21aa7f1b4c8a07d29",
-      "sha256": "206d108baf42a02f9762d0c6ee151c352e11e483eca339fd4eee88e0c5454f55",
+      "commit": "fe84ae5e0639da971a4e486b137ad07c82269bf0",
+      "sha256": "9aff531fa00d582ad07fc0624db2d4487e29f0ddb96bc704c443c00ff2548746",
       "use": {
-        "zh-cn": "复核私有 workflow_result 只在同一 Develop 导出前缀内绑定摘要、原截止、完整列和全部来源，输出固定 CSV；普通任务不接收该来源。原 bounded/snapshot 原生表创建及 replace/append、查询和字段校验、权限与效果保持。",
-        "en": "Reviewed private workflow_result binding its digest, original deadline, complete columns and all sources within one Develop export prefix, with CSV output only; ordinary tasks do not accept it. Existing bounded/snapshot native-table creation, replace/append, query and field checks, permissions and effects remain unchanged."
+        "zh-cn": "复核私有 workflow_result 的同一 Develop 导出前缀、摘要、原截止、完整列和全部来源及固定 CSV；普通任务拒绝该来源。Infra 内容改为注入启动绑定的区域 Provider，普通业务 Engine 保留原插件及能力解析。原 bounded/snapshot 原生创建、replace/append、查询／字段校验、权限及效果保持。",
+        "en": "Reviewed private workflow_result: exact Develop prefix, digest, original deadline, full columns/sources, CSV only; ordinary tasks reject it. Infra content uses an injected, startup-bound area Provider. Ordinary business engines retain existing plugin/capability lookup. Native bounded/snapshot creation, replace/append, query/field checks, permissions and effects are unchanged."
       }
     },
     {

@@ -310,3 +310,10 @@ Outdoor 合成示例用于测试夹具及用户显式创建的本地演示本体
 复核 `f585f46a0` 的 basic 身份／初始授权与 deep 增强职责说明，以及已提交 `d12e8279b3dacb87f9fc196aa3f2ddb79598e0dd` 的写后 basic→deep 串接：`metadata_scan.execution_id` 指 deep，`basic_execution_id` 指基础识别，submitted 仅表示受理。该变化发生在后续成功写入，创建入口仍要求 auto_scan_metadata=false、bounded/snapshot/native table 且未启动，不增加扫描、执行或授权效果。
 
 创建来源仅 `config` 文档变化；前向修订 74 只更新该已提交文件的来源身份、摘要和中英文用途，保持全部 59 项来源、72 项绑定、6 项覆盖以及定义中除 revision 外的字段。运行／执行读取切片不变。现有 `make test-platform-review`、Ontology Go T1 和自然 Go／Platform 门禁覆盖本次元数据修复；源码冻结不表示运行时已激活或真实 Hosted 通过。
+
+
+### 平台对象解耦来源复核（2026-11-14）
+
+Transfer 创建前向修订 76 复核已提交 `fe84ae5e0639da971a4e486b137ad07c82269bf0` 的 Planner 内容 Provider 注入。同文件只增加 `EngineBinding.BoundProvider`、统一 Provider 取得及能力查询转接；普通业务 Engine 未注入时仍使用相同的 `effectiveEngineType` 和插件注册表。`validateTableTransferSpec`、原生源／目标构建、查询与字段规则不变。仅更新 planner 一项真实提交、整文件 SHA-256 及双语用途，创建定义除 revision 外逐字段保持，59 项来源、72 项绑定、6 项覆盖不变；运行修订 13、执行读取修订 9 保持。对象暂存私有链路的改造不扩张该原生创建切片，不改 Schema、发布／投影内核或运行激活。沿现有 `make test-platform-review` 与 Ontology Go owner 验证，不以源码冻结代替 T4。
+
+本轮 `make test-platform-review` 和 `make test-module MODULE=ontology GO_ONLY=1` 通过。独立 JSON 核对确认创建定义仅 revision 改变，review 仅 planner 的提交、摘要和用途改变，全部其他来源／绑定／覆盖保持；原有 512 字节用途上限保留。未执行发布激活、服务重启或真实模型／T4 验收。
