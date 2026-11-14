@@ -634,3 +634,12 @@ Docker Moby 的资源更新实现仅在 NanoCPUs 非零时应用该字段，原 
 Artifact `14108023879` 的 SHA-256 为 `25d18507e050769161ea0156774c85b4e424f747efb637f526d702d389272cd8`，下载摘要与 ZIP CRC 均核对通过。原件、readiness、外层摘要及阶段日志位于 `/tmp/addp-cdc-performance-hosted-43577910665/`，完整 Job 日志 `/tmp/addp-cdc-performance-43577910665-job.log`。外层摘要为 result=failed、cleanup=passed、infra_cleanup=zero_residuals；业务任务尚未创建，不以零残留替代未运行的断言。未改动上述其他模块依赖文件、未为绕过准备失败重跑原样任务；本会话的 135 项 runner 与 System 身份夹具 Go 测试通过记录保持其原范围，真实触发和两个 opened 实收仍仅采用前一轮独立证据。
 
 本机只读复核记录 `/tmp/addp-cdc-performance-preserved-after-hosted-43577910665.log`：原 task46／task58 两个槽仍在且不活跃，task61 的全局身份槽仍活跃，task61 定义仍存在、desired_state=running。本轮未操作个人任务或逻辑槽。
+
+
+### CDC Hosted 共享构建阻断解除与固定候选续验（2026-11-14）
+
+原 Infra 负责人发布 `7af201a28f237a0ef88aa27a8129e54042ff5d8f`，将对象存储启动装配移至 `common/infra/objectstore/bootstrap`，数据库启动装配不再引入 MinIO SDK。只读核对确认原固定构建失败记录继续有效，但“等待本会话修复 Security 依赖清单”的阻断已过时；本会话没有改动 Security 的 go.mod／go.sum，也无需扩大该模块修复范围。
+
+固定候选 `69a570e6f4d06870d44cb8ffb75336b0b3dde14e` 同时包含上述修复和 CDC `9fcaff49f`。CDC suite、原生业务夹具、Hosted 编排、断言、权限要求、1450／1500 秒预算及清理范围与原候选一致；System 身份夹具仅有其他 suite 的移除，当前提交中的 CDC 135 项与 System 身份夹具 Go 测试重新通过（`/tmp/addp-cdc-performance-post-bootstrap-runner.log`），`GOFLAGS=-mod=readonly make test-module MODULE=security GO_ONLY=1` 通过（`/tmp/addp-cdc-performance-security-bootstrap-go.log`）。精确候选及夹具摘要保存于 `/tmp/addp-cdc-performance-bootstrap-candidate.json`。共享修复的 [Go workspace Job 132404894253](https://github.com/pampa0629/addp/actions/runs/43580789482/job/132404894253) 和 [Product binary build Job 132404894123](https://github.com/pampa0629/addp/actions/runs/43580789482/job/132404894123) 均固定 7af201a28、对应实际测试／Compile all product binaries 步骤 success；不是当前 69a 候选整批 CI 或 CDC 业务通过。
+
+按原“在隔离环境完成性能告警联验”授权，保持同一套件及原规则，在单写入者发布锁内核对候选后发起唯一后继 [Run 43583934313／Job 132414317856](https://github.com/pampa0629/addp/actions/runs/43583934313/job/132414317856)，headSha 精确为 69a570e6f，当前 queued。没有重试／取消其他作业，不改写 43577910665 的构建失败和业务未执行事实；新运行的业务断言、通知及清理须另取原始证据。发起前只读复核个人 task61 仍 running、全局身份槽活跃，task46／task58 两个原槽保留且不活跃，记录 `/tmp/addp-cdc-performance-preserved-before-hosted-43583934313.log`。
