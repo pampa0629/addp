@@ -259,6 +259,7 @@ class OnlineGateTest(unittest.TestCase):
                 "platform-administrator-governance",
                 "platform-node-metrics",
                 "pg-source-authorization",
+                "standard-document-storage",
                 "meta-scan-claim",
                 "module-registry-recovery",
                 "workflow-runtime-health-recovery",

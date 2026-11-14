@@ -27,7 +27,7 @@ def absent(bucket, key):
         ["docker", "exec", "addp-minio", "mc", "stat", "--json", f"local/{bucket}/{key}"],
         capture_output=True, timeout=20,
     )
-    payload = json.loads(result.stdout)
+    payload = json.loads(result.stdout.splitlines()[-1])
     require(result.returncode != 0 and payload["error"]["cause"]["message"] in {"Object does not exist", "The specified bucket does not exist"},
             "expected physical object to be missing")
 
