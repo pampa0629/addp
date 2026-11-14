@@ -601,3 +601,14 @@ Transfer 的同一机器入口采用 v3 单一路线，增加当前消费状态�
 Docker Moby 的资源更新实现仅在 NanoCPUs 非零时应用该字段，原 `--cpus 0` 没有撤销正数配额的语义；见[官方实现](https://github.com/moby/moby/blob/v28.0.0/container/container_unix.go)。原夹具恢复命令无效，与读回失败相符；Stop 失败是否完全由残留配额引起尚无独立证据，不作唯一根因认定。修订为仅在已核对的无限额 Hosted profile 上使用 CFS quota 2500，恢复 quota=-1，并对 `cpu.max` 的实际 `max 100000 → 2500 100000 → max 100000` 逐项读回。专用 Connector 临时使用批次 64／队列 128，使真实活动持续推进，恢复原配置；凭据只通过私有 stdin，不入命令参数或报告。新增独立清理结果与部分事件／规则窗口证据，原产品阈值、持续时间、缺样语义和个人资源范围均不变，后继完整 Hosted 结果须独立取得。
 
 修正后 `make test-transfer-continuous-online-runner` 的 133 项及 System 身份夹具 Go 测试通过，覆盖原生配置 stdin 传递、失败后恢复、有效 CPU 限制读回失败的独立归因及其他清理继续执行；日志 `/tmp/addp-cdc-performance-hosted-runner-v3.log`。这些确定性结果不替代下一轮真实持续窗口和通知实收。
+
+
+### CDC 持续性能 Hosted 故障准备失败、恢复读回通过（2026-11-14）
+
+固定 `6e3e651d8c7518dee20c3e2105ec2ab4b22c8ef1` 的 [Run 43570626545／Job 132374018810](https://github.com/pampa0629/addp/actions/runs/43570626545/job/132374018810) 失败于 `cdc_risk/request_or_contract_failed`，嵌套 `performance_baseline`。Artifact `14105740772` 的 SHA-256 为 `5b40d0bc57c80be15655bc238a08ae8ff86f48da0e3e89cfa5acad48edb27dee`，下载摘要与 ZIP CRC 均核对通过；原件及完整报告 `/tmp/addp-cdc-performance-hosted-43570626545/`。前置 17 项及 7 份 Console 回执通过，性能报告无 workload_committed_at、活动样本或 incident，不能认定已注入完整工作量或进入正式 180 秒窗口。
+
+本轮恢复读回得到实证：cpu_restored、connector_config_restored、rules_deleted 均 true，性能与风险包装清理 passed；task 3 和 task 2 正式删除并读回不存在，task 1 按原硬退出场景留给部署销毁，领域 residual_resources=expected_deployment_residuals=1、uncertain_mutation=false，外层 cleanup=passed、infra_cleanup=zero_residuals。清理通过不证明告警业务通过。
+
+故障准备阶段的旧报告粒度不足，未保存 CFS 实际值。只读核对 [opencontainers systemd 资源实现](https://github.com/opencontainers/cgroups/blob/main/systemd/common.go) 明确发现：小数 CPU 百分比会向上取整到整数百分比，因此请求 quota 2500 并精确要求 cpu.max=2500 可能不成立；本轮没有保存实际值，不能将该推断写成已确认的唯一失败原因。夹具收敛到整数 3%（quota 3000、period 100000）并保持精确读回，分别标注 performance_cpu_fault 与 performance_workload、在断言前保存 fault_cpu_max 及 source_fill_succeeded。新增回归要求错误的有效限额仍拒绝执行工作量，且恢复与其他清理继续完成；没有放宽告警阈值、删掉缺样／恢复／通知断言或对个人任务注入故障。
+
+本次修订 `make test-transfer-continuous-online-runner` 的 134 项及 System 身份夹具 Go 测试通过，日志 `/tmp/addp-cdc-performance-hosted-runner-v4.log`。后继实故障 Hosted 仍须重新取得完整证据。

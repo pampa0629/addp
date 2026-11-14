@@ -1211,7 +1211,7 @@ class CDCRiskAcceptanceTest(unittest.TestCase):
         mutate.assert_called_once_with(actor, M.OWNER+'/task-definitions/9/stop',
                                        {'confirmed':True,'confirmation_text':'owned-rebuild'})
 
-    def performance_native_driver(self, *, restore_cpu=True):
+    def performance_native_driver(self, *, restore_cpu=True, applied_cpu='3000 100000'):
         commands = []
         state = {'cpu': 'max 100000', 'config': {'name':'owned','database.password':'private-performance-sentinel'}}
         def command(args, **kwargs):
@@ -1219,8 +1219,8 @@ class CDCRiskAcceptanceTest(unittest.TestCase):
             if args[1] == 'inspect':
                 output = json.dumps({'NanoCpus':0,'CpuQuota':0,'CpuPeriod':0}).encode()
             elif args[1] == 'update':
-                if args[3] == '2500':
-                    state['cpu'] = '2500 100000'
+                if args[3] == '3000':
+                    state['cpu'] = applied_cpu
                 elif restore_cpu:
                     state['cpu'] = 'max 100000'
                 output = b''
@@ -1265,14 +1265,14 @@ class CDCRiskAcceptanceTest(unittest.TestCase):
         self.assertNotIn('private-performance-sentinel',json.dumps(proof))
         self.assertNotIn('private-performance-sentinel',json.dumps(commands))
 
-    def performance_interrupted_backpressure(self, *, restore_cpu=True):
+    def performance_interrupted_backpressure(self, *, restore_cpu=True, applied_cpu='3000 100000'):
         import io
         actions, definitions = [], []
         state={'done':False}
         lock=SimpleNamespace(stdin=io.BytesIO(),stdout=io.BytesIO(b'ADDP_CDC_PERFORMANCE_LOCKED\n'),
             poll=lambda:0 if state['done'] else None,
             wait=lambda **kwargs:state.update(done=True))
-        command, commands, native = self.performance_native_driver(restore_cpu=restore_cpu)
+        command, commands, native = self.performance_native_driver(restore_cpu=restore_cpu, applied_cpu=applied_cpu)
         client=SimpleNamespace(request=lambda *args,**kwargs:SimpleNamespace(payload=[]))
         def mutate(actor,path,body,status):
             definitions.append(body);return {'id':len(definitions)}
@@ -1285,12 +1285,12 @@ class CDCRiskAcceptanceTest(unittest.TestCase):
              patch.object(M.select,'select',return_value=([lock.stdout],[],[])), \
              patch.object(M.time,'monotonic',side_effect=[0,100]), \
              patch.object(M,'physical',side_effect=lambda action:actions.append(action) or True), \
-             self.assertRaisesRegex(M.SuiteError,'stop after native backpressure'):
+             self.assertRaisesRegex(M.SuiteError,'stop after native backpressure' if applied_cpu=='3000 100000' else 'CPU fault not applied'):
             M.verify_cdc_performance(client,7,1,10,{'connector':'owned'},9,mutate,None,None,proof,stage)
         self.assertFalse(any(args[1] == 'pause' or args[-1].endswith('/pause') for args in commands))
-        self.assertIn(['docker','update','--cpu-quota','2500','owned-connect'],commands)
+        self.assertIn(['docker','update','--cpu-quota','3000','owned-connect'],commands)
         self.assertIn(['docker','update','--cpu-quota','-1','owned-connect'],commands)
-        self.assertEqual(actions,['performance-fill','performance-clear'])
+        self.assertEqual(actions,['performance-fill','performance-clear'] if applied_cpu=='3000 100000' else [])
         self.assertTrue(state['done'])
         self.assertEqual(native['config'],{'name':'owned','database.password':'private-performance-sentinel'})
         self.assertNotIn('private-performance-sentinel',json.dumps(proof))
@@ -1308,6 +1308,12 @@ class CDCRiskAcceptanceTest(unittest.TestCase):
         self.assertEqual(proof['performance']['cleanup_failures'],['cpu_restore_failed'])
         self.assertTrue(proof['performance']['connector_config_restored'])
         self.assertTrue(proof['performance']['rules_deleted'])
+
+    def test_performance_fault_readback_is_saved_before_rejecting_wrong_quota(self):
+        proof = self.performance_interrupted_backpressure(applied_cpu='4000 100000')
+        self.assertEqual(proof['performance']['fault_cpu_max'],'4000 100000')
+        self.assertEqual(proof['performance']['cleanup'],'passed')
+        self.assertNotIn('source_fill_succeeded',proof['performance'])
 
     def test_performance_faults_reject_personal_environment_before_actions(self):
         with patch.dict(os.environ,{},clear=True), patch.object(M.subprocess,'run') as run, \

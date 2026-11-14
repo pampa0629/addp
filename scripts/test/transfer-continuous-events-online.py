@@ -530,7 +530,7 @@ def verify_cdc_performance(client, task_id, generation, engine_id, binding, dest
     connect = cdc_risk_container('ADDP_ONLINE_CDC_CONNECT_ID', 'kafka-connect')
     broker = cdc_risk_container('ADDP_ONLINE_DLQ_REDPANDA_ID', 'redpanda')
     evidence = proof['performance'] = {'result': 'failed', 'trigger_seconds': 180,
-                                     'source_rows': 60000, 'throttled_cpu_quota': 2500,
+                                     'source_rows': 60000, 'throttled_cpu_quota': 3000,
                                      'connector_batch_size': 64, 'connector_queue_size': 128}
     rules, paused, lock = {}, set(), None
     source_dirty = throttled = connector_tuned = False
@@ -627,12 +627,16 @@ def verify_cdc_performance(client, task_id, generation, engine_id, binding, dest
         lock.stdin.flush()
         require(select.select([lock.stdout], [], [], 10)[0]
                 and lock.stdout.readline().strip() == b'ADDP_CDC_PERFORMANCE_LOCKED', 'owned target lock not established')
+        stage('performance_cpu_fault')
         throttled = True
-        docker('update', '--cpu-quota', '2500', connect)
-        require(docker('exec', connect, 'cat', '/sys/fs/cgroup/cpu.max') == '2500 100000',
+        docker('update', '--cpu-quota', '3000', connect)
+        evidence['fault_cpu_max'] = docker('exec', connect, 'cat', '/sys/fs/cgroup/cpu.max')
+        require(evidence['fault_cpu_max'] == '3000 100000',
                 'owned Connect CPU fault not applied')
+        stage('performance_workload')
         source_dirty = True
-        require(physical('performance-fill'), 'bounded performance workload failed')
+        evidence['source_fill_succeeded'] = physical('performance-fill')
+        require(evidence['source_fill_succeeded'], 'bounded performance workload failed')
         evidence['workload_committed_at'] = datetime.now(timezone.utc).isoformat()
         stage('performance_wal_wait')
         # Keep capture running: native CPU pressure creates age without a second failure signal.
