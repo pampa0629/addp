@@ -1,7 +1,11 @@
 package mysql
 
 import (
+	"context"
 	"database/sql"
+	"database/sql/driver"
+	"errors"
+	mysqldriver "github.com/go-sql-driver/mysql"
 	"strings"
 	"testing"
 
@@ -44,4 +48,52 @@ func TestMySQLSpatialInfoFromColumnsAppliesTargetSRID(t *testing.T) {
 	if info == nil || info.GeometryColumns[0].SRID == nil || *info.GeometryColumns[0].SRID != 3857 {
 		t.Fatalf("spatial info = %#v", info)
 	}
+}
+
+func TestMySQLTableSessionClassifiesNativeStreamingDeadline(t *testing.T) {
+	for _, shared := range []bool{false, true} {
+		db := sql.OpenDB(mysqlDeadlineConnector{})
+		t.Cleanup(func() { db.Close() })
+		rows, err := db.QueryContext(t.Context(), "SELECT id FROM table_fixture")
+		if err != nil {
+			t.Fatal(err)
+		}
+		session := &mysqlTableReadSession{db: db, rows: rows, shared: shared, fields: []datatype.FieldInfo{{Name: "id", Type: datatype.FieldTypeBigInt}}}
+		batch, err := session.ReadBatch(t.Context(), 1)
+		var native *mysqldriver.MySQLError
+		if batch != nil || plugin.QueryErrorCodeOf(err) != plugin.QueryErrorCodeSQLExecutionTimeout || !errors.Is(err, context.DeadlineExceeded) || !errors.As(err, &native) || native.Number != 3024 {
+			t.Fatalf("shared=%t streaming deadline lost code/cause: %#v %v", shared, batch, err)
+		}
+		if err := session.Close(t.Context()); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+type mysqlDeadlineConnector struct{}
+
+func (mysqlDeadlineConnector) Connect(context.Context) (driver.Conn, error) {
+	return mysqlDeadlineConn{}, nil
+}
+func (mysqlDeadlineConnector) Driver() driver.Driver { return mysqlDeadlineDriver{} }
+
+type mysqlDeadlineDriver struct{}
+
+func (mysqlDeadlineDriver) Open(string) (driver.Conn, error) { return mysqlDeadlineConn{}, nil }
+
+type mysqlDeadlineConn struct{}
+
+func (mysqlDeadlineConn) Prepare(string) (driver.Stmt, error) { return nil, errors.New("not used") }
+func (mysqlDeadlineConn) Close() error                        { return nil }
+func (mysqlDeadlineConn) Begin() (driver.Tx, error)           { return nil, errors.New("not used") }
+func (mysqlDeadlineConn) QueryContext(context.Context, string, []driver.NamedValue) (driver.Rows, error) {
+	return mysqlDeadlineRows{}, nil
+}
+
+type mysqlDeadlineRows struct{}
+
+func (mysqlDeadlineRows) Columns() []string { return []string{"id"} }
+func (mysqlDeadlineRows) Close() error      { return nil }
+func (mysqlDeadlineRows) Next([]driver.Value) error {
+	return &mysqldriver.MySQLError{Number: 3024, Message: "maximum statement execution time exceeded"}
 }

@@ -14,6 +14,7 @@ import (
 	"github.com/addp/common/datatype"
 	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/format"
+	mysqldriver "github.com/go-sql-driver/mysql"
 	"github.com/twpayne/go-geom"
 	"github.com/twpayne/go-geom/encoding/ewkb"
 	"github.com/twpayne/go-geom/encoding/wkt"
@@ -440,6 +441,73 @@ func verifyMySQLGuardedPage(t *testing.T, db *sql.DB, p *MySQLPlugin, info plugi
 	before := checks
 	if s, e := p.OpenGuardedTableReadSession(ctx, info, view, opts, check); s != nil || !errors.Is(e, plugin.ErrQueryReadSetUnresolved) || checks != before {
 		t.Fatalf("indirect view reached content authorization: %v", e)
+	}
+	// The source budget can fail while binding the locked table, before the
+	// client deadline and before the owner authorization callback is reached.
+	budgetConn, err := pooledDB.Conn(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var originalBudget uint64
+	if err := budgetConn.QueryRowContext(ctx, "SELECT @@session.max_execution_time").Scan(&originalBudget); err != nil {
+		budgetConn.Close()
+		t.Fatal(err)
+	}
+	if _, err := budgetConn.ExecContext(ctx, "SET SESSION max_execution_time=100"); err != nil {
+		budgetConn.Close()
+		t.Fatal(err)
+	}
+	budgetConn.Close()
+	holder, err := db.Conn(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer holder.Close()
+	if _, err := holder.ExecContext(ctx, "LOCK TABLES "+table+" WRITE"); err != nil {
+		t.Fatal(err)
+	}
+	defer holder.ExecContext(context.Background(), "UNLOCK TABLES")
+	bounded, stop := context.WithTimeout(ctx, 3*time.Second)
+	before = checks
+	blocked, sourceErr := p.OpenGuardedTableReadSession(bounded, info, path, opts, check)
+	var native *mysqldriver.MySQLError
+	if blocked != nil || !errors.As(sourceErr, &native) || native.Number != 3024 || plugin.QueryErrorCodeOf(sourceErr) != plugin.QueryErrorCodeSQLExecutionTimeout || !errors.Is(sourceErr, context.DeadlineExceeded) || bounded.Err() != nil || checks != before {
+		stop()
+		t.Fatalf("guarded source timeout lost native 3024 or execution classification: %v code=%s", sourceErr, plugin.QueryErrorCodeOf(sourceErr))
+	}
+	stop()
+	if _, err := holder.ExecContext(ctx, "UNLOCK TABLES"); err != nil {
+		t.Fatal(err)
+	}
+	holder.Close()
+	budgetConn, err = pooledDB.Conn(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var restored uint64
+	if err := budgetConn.QueryRowContext(ctx, "SELECT @@session.max_execution_time").Scan(&restored); err != nil {
+		budgetConn.Close()
+		t.Fatal(err)
+	}
+	if restored != 100 {
+		budgetConn.Close()
+		t.Fatalf("source budget was not restored: %d", restored)
+	}
+	if _, err := budgetConn.ExecContext(ctx, fmt.Sprintf("SET SESSION max_execution_time=%d", originalBudget)); err != nil {
+		budgetConn.Close()
+		t.Fatal(err)
+	}
+	budgetConn.Close()
+	s, err = p.OpenGuardedTableReadSession(ctx, info, path, opts, check)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close(context.Background())
+	if batch, err := s.ReadBatch(ctx, 1); err != nil || len(batch.Rows) != 1 {
+		t.Fatalf("guarded page did not recover: %#v %v", batch, err)
+	}
+	if err := s.Close(ctx); err != nil {
+		t.Fatal(err)
 	}
 	poisoned, err := pooledDB.Conn(ctx)
 	if err != nil {

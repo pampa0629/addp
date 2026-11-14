@@ -37,7 +37,7 @@ func (p *MySQLPlugin) readBatch(ctx context.Context, connInfo plugin.ConnectionI
 		Query: opts.Query, Args: opts.Args, Hints: opts.Hints,
 	}, opts.Limit, opts.Offset, shared, nil)
 	if err != nil {
-		return nil, mysqlReadError(err)
+		return nil, err
 	}
 	defer session.Close(context.Background())
 	batch, err := session.ReadBatch(ctx, opts.Limit)
@@ -45,7 +45,7 @@ func (p *MySQLPlugin) readBatch(ctx context.Context, connInfo plugin.ConnectionI
 	if shared {
 		err = plugin.SQLExecutionError(err)
 	}
-	return batch, mysqlReadError(err)
+	return batch, err
 }
 
 type mysqlTableSessionConnection interface {
@@ -59,6 +59,9 @@ type mysqlTableQueryer interface {
 }
 
 func (p *MySQLPlugin) openTableReadSession(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.EngineCatalogPath, opts plugin.TableReadSessionOptions, limit int, offset int64, shared bool, authorize plugin.GuardedTableReadAuthorizer) (_ plugin.TableReadSession, err error) {
+	// Both the native guarded reader and ReadBatch consume this same boundary.
+	// Server budgets may expire before the client context does (MySQL 3024).
+	defer func() { err = mysqlReadError(err) }()
 	if err := resume.RejectUnsupported(opts.ResumeMarker, "mysql.table_read_session"); err != nil {
 		return nil, err
 	}
@@ -433,6 +436,7 @@ func (s *mysqlTableReadSession) ReadSet(context.Context) (*plugin.QueryReadSet, 
 }
 
 func (s *mysqlTableReadSession) ReadBatch(_ context.Context, limit int) (_ *plugin.BatchData, err error) {
+	defer func() { err = mysqlReadError(err) }()
 	if s.shared {
 		defer func() { err = plugin.SQLExecutionError(err) }()
 	}
