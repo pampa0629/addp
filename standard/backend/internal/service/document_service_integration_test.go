@@ -13,7 +13,7 @@ import (
 	"time"
 
 	"github.com/addp/common/events"
-	"github.com/addp/common/infra/bootstrap"
+	"github.com/addp/common/infra/objectstore/bootstrap"
 	"github.com/addp/common/infra/objectstore"
 	"github.com/addp/standard/internal/models"
 	"github.com/addp/standard/internal/repository"

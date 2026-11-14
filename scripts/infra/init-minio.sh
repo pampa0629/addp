@@ -42,7 +42,7 @@ MINIO_ENDPOINT="${MINIO_API_PORT:-19000}"
 MINIO_ACCESS_KEY="${MINIO_ROOT_USER:-minioadmin}"
 MINIO_SECRET_KEY="${MINIO_ROOT_PASSWORD:-minioadmin}"
 
-# Keep the deployment binding in sync with common/infra/bootstrap.OpenObjectArea.
+# Keep the deployment binding in sync with common/infra/objectstore/bootstrap.OpenObjectArea.
 [[ ${ADDP_INFRA_OBJECTSTORE_PROVIDER:-minio} == minio ]] || {
   echo "Unsupported object store provider: ${ADDP_INFRA_OBJECTSTORE_PROVIDER}" >&2
   exit 1

@@ -117,7 +117,7 @@ for binding in '' 'standard=project-a-standard-docs'; do
         bash "$ROOT_DIR/scripts/infra/init-minio.sh" --compose-file "$STANDARD_T2_COMPOSE_FILE"
 done
 export ADDP_INFRA_OBJECTSTORE_BINDINGS=standard=project-a-standard-docs
-(cd "$ROOT_DIR/common" && run_without_skips ./infra/bootstrap '^TestStandardAreaAgainstMinIO$')
+(cd "$ROOT_DIR/common" && run_without_skips ./infra/objectstore/bootstrap '^TestStandardAreaAgainstMinIO$')
 
 cd "$ROOT_DIR/standard/backend"
 run_without_skips ./internal/repository '^(TestMigrateAgainstPostgres|TestMigrateConvertsLegacyDocumentToStableIdentityAndRevision|TestPostgresDeletePolicies|TestPostgresCodeSetScopeConstraint|TestPostgresElementScopeConstraint|TestPostgresExactElementRevisionResolutionKeepsPublishedHistory|TestPostgresGlossaryScopeConstraint|TestPostgresDocumentRevisionAndExtractionConstraints|TestPostgresMetricRevisionEffectiveIntervals|TestPostgresRemovesRetiredCollectionTables|TestPostgresCatalogMetricChangeFeedCapturesOwnerLifecycle|TestPostgresCatalogFiveStandardTypesCaptureRevisionsAndRollback|TestPostgresReferenceCandidatesFilterAndPaginateOwnerFacts|TestPostgresDocumentCandidateComparisonTargets|TestPostgresDocumentCandidateFormalization|TestPostgresDocumentCandidateFamilyDecision)$'
