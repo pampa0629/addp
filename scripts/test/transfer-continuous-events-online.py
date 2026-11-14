@@ -274,7 +274,9 @@ def until(operation, timeout=120):
 
 
 CDC_RISK_CODES = {'cdc_source_recovery_lost', 'cdc_buffer_recovery_lost'}
-CDC_PERFORMANCE_CODES = {'cdc_consumer_stalled', 'cdc_capture_delayed'}
+CDC_PERFORMANCE_SECONDS = {'cdc_consumer_stalled': 180, 'cdc_capture_delayed': 180, 'cdc_backlog_high': 300}
+CDC_PERFORMANCE_CODES = set(CDC_PERFORMANCE_SECONDS)
+CDC_BACKLOG_THRESHOLD = '256'
 RULES = '/api/v1/monitor/alert-rules'
 ALERTS = '/api/v1/monitor/alerts'
 DESTINATIONS = '/api/v1/monitor/webhook-destinations'
@@ -525,11 +527,12 @@ def verify_capture_failure(client, task_id, generation, binding, mutate, deliver
 
 
 def verify_cdc_performance(client, task_id, generation, engine_id, binding, destination_id,
-                           mutate, delivered, receiver, proof, stage):
+                           mutate, delivered, receiver, proof, stage, launch):
     """Real bounded workload and native faults, exclusively on this Hosted deployment."""
     connect = cdc_risk_container('ADDP_ONLINE_CDC_CONNECT_ID', 'kafka-connect')
     broker = cdc_risk_container('ADDP_ONLINE_DLQ_REDPANDA_ID', 'redpanda')
-    evidence = proof['performance'] = {'result': 'failed', 'trigger_seconds': 180,
+    evidence = proof['performance'] = {'result': 'failed', 'trigger_seconds': CDC_PERFORMANCE_SECONDS.copy(),
+                                     'backlog_threshold': CDC_BACKLOG_THRESHOLD,
                                      'source_rows': 60000, 'throttled_cpu_quota': 3000,
                                      'connector_batch_size': 64, 'connector_queue_size': 128}
     rules, paused, lock = {}, set(), None
@@ -615,10 +618,13 @@ def verify_cdc_performance(client, task_id, generation, engine_id, binding, dest
         baseline = until(initialized)
         evidence['baseline'] = baseline
         for code in sorted(CDC_PERFORMANCE_CODES):
-            row = mutate(client, RULES, {'name': f'cdc-performance-{task_id}-{code}',
+            definition = {'name': f'cdc-performance-{task_id}-{code}',
                 'module': 'transfer', 'task_type': 'sync', 'source_task_id': str(task_id),
                 'rule_type': code, 'severity': 'warning', 'enabled': True,
-                'routes': [{'channel': 'webhook', 'destination_id': destination_id}]}, (201,))
+                'routes': [{'channel': 'webhook', 'destination_id': destination_id}]}
+            if code == 'cdc_backlog_high':
+                definition['backlog_threshold'] = CDC_BACKLOG_THRESHOLD
+            row = mutate(client, RULES, definition, (201,))
             rules[code] = API.require_positive_int(row, 'id')
         evidence['rule_ids'] = rules.copy()
         lock = subprocess.Popen(['bash', 'business/scripts/online-continuous-fixture.sh', 'performance-target-lock'],
@@ -643,7 +649,7 @@ def verify_cdc_performance(client, task_id, generation, engine_id, binding, dest
         deadline = time.monotonic() + 75
         while time.monotonic() < deadline:
             require(not cdc_risk_alerts(client, task_id, generation, codes=CDC_PERFORMANCE_CODES),
-                    'performance warning opened before its 180-second evidence window')
+                    'performance warning opened before its sustained evidence window')
             time.sleep(2)
         stage('performance_trigger')
         def opened():
@@ -663,9 +669,15 @@ def verify_cdc_performance(client, task_id, generation, engine_id, binding, dest
             window = windows[code]['cdc_evaluation']
             since = datetime.fromisoformat(window['trigger_since'].replace('Z', '+00:00'))
             at = datetime.fromisoformat(incident['details']['sampled_at'].replace('Z', '+00:00'))
-            require(incident['severity'] == 'warning' and incident['details']['trigger_seconds'] == 180
-                    and window['active'] and (at - since).total_seconds() >= 180,
+            seconds = CDC_PERFORMANCE_SECONDS[code]
+            require(incident['severity'] == 'warning' and incident['details']['trigger_seconds'] == seconds
+                    and window['active'] and (at - since).total_seconds() >= seconds,
                     'performance warning lacks its real sustained window')
+        backlog = active['cdc_backlog_high']['details']
+        require(windows['cdc_backlog_high']['backlog_threshold'] == CDC_BACKLOG_THRESHOLD
+                and backlog['backlog_threshold'] == CDC_BACKLOG_THRESHOLD
+                and int(backlog['lag_offsets']) > int(CDC_BACKLOG_THRESHOLD),
+                'backlog warning differs from this task optional threshold')
         delayed = [r['delay_observation'] for r in samples if r['delay_observation']
                    and r['delay_observation'].get('delay_seconds') is not None
                    and r['delay_observation']['delay_seconds'] > 60]
@@ -676,6 +688,42 @@ def verify_cdc_performance(client, task_id, generation, engine_id, binding, dest
         evidence['opened_deliveries'] = until(lambda: delivered(active, 'opened'))
         for incident in active.values():
             mutate(client, f"{ALERTS}/{incident['id']}/acknowledge")
+
+        stage('performance_task_pause')
+        mutate(client, f'{OWNER}/task-definitions/{task_id}/pause')
+        task_state = sample()['task_state']
+        require(task_state['desired_state'] == 'paused', 'performance task did not pause')
+        paused_execution = canonical_uuid(task_state['last_execution_id'])
+        wait_status(client, paused_execution, 'cancelled')
+        evidence['paused_execution_id'] = paused_execution
+        consumption_codes = CDC_PERFORMANCE_CODES - {'cdc_capture_delayed'}
+        def evaluation_paused():
+            rows = rule_rows()
+            return all(rows[code]['cdc_evaluation']['state'] == 'paused' for code in consumption_codes)
+        until(evaluation_paused)
+        frozen_pause = until(lambda: incidents('acknowledged'))
+        evidence['paused_incidents'] = {k: frozen_pause[k] for k in consumption_codes}
+        deadline, checks = time.monotonic() + 32, 0
+        while time.monotonic() < deadline:
+            rows = rule_rows()
+            current = incidents('acknowledged')
+            require(rows['cdc_capture_delayed']['cdc_evaluation']['state'] != 'paused',
+                    'consumer pause also paused capture delay evaluation')
+            require(current and all(rows[k]['cdc_evaluation']['state'] == 'paused'
+                    and not rows[k]['cdc_evaluation'].get('trigger_since')
+                    and not rows[k]['cdc_evaluation'].get('recovery_since')
+                    and current[k]['id'] == frozen_pause[k]['id']
+                    and current[k]['last_observed_at'] == frozen_pause[k]['last_observed_at']
+                    for k in consumption_codes), 'pause changed confirmed consumption incidents or retained windows')
+            require(not any(r['signal_code'] in consumption_codes and r['event_type'] == 'resolved'
+                            for r in receiver.snapshot()), 'pause sent a consumption recovery')
+            checks += 1
+            time.sleep(2)
+        evidence['pause_hold_checks'] = checks
+        stage('performance_task_resume')
+        resumed_execution = launch(task_id, 'resume')
+        require(resumed_execution != paused_execution, 'performance resume reused ended execution')
+        evidence['resumed_execution_id'] = resumed_execution
 
         stage('performance_unknown')
         for identity in (connect, broker):
@@ -694,13 +742,13 @@ def verify_cdc_performance(client, task_id, generation, engine_id, binding, dest
                     missing_samples[field] = v
             evidence['missing_samples'] = missing_samples.copy()
             rows = rule_rows()
-            return missing_samples if len(missing_samples) == 2 and len(rows) == 2 and all(r['cdc_evaluation']['state'] == 'unknown' for r in rows.values()) else None
+            return missing_samples if len(missing_samples) == 2 and len(rows) == len(rules) and all(r['cdc_evaluation']['state'] == 'unknown' for r in rows.values()) else None
         until(missing)
         frozen = until(lambda: incidents('acknowledged'))
         deadline, checks = time.monotonic() + 32, 0
         while time.monotonic() < deadline:
             rows = rule_rows()
-            require(len(rows) == 2 and all(r['cdc_evaluation']['state'] == 'unknown' for r in rows.values()),
+            require(len(rows) == len(rules) and all(r['cdc_evaluation']['state'] == 'unknown' for r in rows.values()),
                     'missing performance observations did not remain unknown')
             current = incidents('acknowledged')
             require(current and all(current[k]['id'] == frozen[k]['id']
@@ -720,7 +768,7 @@ def verify_cdc_performance(client, task_id, generation, engine_id, binding, dest
         restore_connector()
         unlock()
         # New committed source events, rather than idle wall time, close delay.
-        recovery_samples, next_write = [], 0
+        recovery_samples, backlog_recovery_samples, next_write = [], [], 0
         def recovered():
             nonlocal next_write
             if time.monotonic() >= next_write:
@@ -732,7 +780,22 @@ def verify_cdc_performance(client, task_id, generation, engine_id, binding, dest
                 require(len(recovery_samples) < 32, 'recovery sample budget exceeded')
                 recovery_samples.append(delay)
                 evidence['recovery_samples'] = recovery_samples
-            return incidents('resolved')
+            buffer = current['buffer_observation'] or {}
+            at = cdc_sample_time(buffer, datetime.now(timezone.utc))
+            if buffer.get('status') != 'available' or not at or int(buffer['lag_offsets']) * 2 >= int(CDC_BACKLOG_THRESHOLD):
+                backlog_recovery_samples.clear()
+            elif not backlog_recovery_samples or buffer['sampled_at'] != backlog_recovery_samples[-1]['sampled_at']:
+                if backlog_recovery_samples and at > datetime.fromisoformat(backlog_recovery_samples[-1]['expires_at'].replace('Z', '+00:00')):
+                    backlog_recovery_samples.clear()
+                require(len(backlog_recovery_samples) < 32, 'backlog recovery sample budget exceeded')
+                backlog_recovery_samples.append(buffer)
+            evidence['backlog_recovery_samples'] = backlog_recovery_samples.copy()
+            closed = incidents('resolved')
+            if not closed or len(backlog_recovery_samples) < 2:
+                return None
+            span = (datetime.fromisoformat(backlog_recovery_samples[-1]['sampled_at'].replace('Z', '+00:00'))
+                    - datetime.fromisoformat(backlog_recovery_samples[0]['sampled_at'].replace('Z', '+00:00'))).total_seconds()
+            return closed if span >= 60 else None
         closed = until(recovered, timeout=240)
         require({k: v['id'] for k, v in closed.items()} == evidence['incident_ids'], 'recovery replaced performance incident identity')
         good = [v for v in recovery_samples if v.get('delay_seconds') is not None and 0 <= v['delay_seconds'] <= 30]
@@ -740,6 +803,15 @@ def verify_cdc_performance(client, task_id, generation, engine_id, binding, dest
                 and (datetime.fromisoformat(good[-1]['sampled_at'].replace('Z', '+00:00'))
                      - datetime.fromisoformat(good[0]['sampled_at'].replace('Z', '+00:00'))).total_seconds() >= 60,
                 'delay closed without 60 seconds of fresh healthy events')
+        backlog_window = rule_rows()['cdc_backlog_high']['cdc_evaluation']
+        require(len(backlog_recovery_samples) >= 2
+                and (datetime.fromisoformat(backlog_recovery_samples[-1]['sampled_at'].replace('Z', '+00:00'))
+                     - datetime.fromisoformat(backlog_recovery_samples[0]['sampled_at'].replace('Z', '+00:00'))).total_seconds() >= 60
+                and not backlog_window['active']
+                and (datetime.fromisoformat(backlog_window['sampled_at'].replace('Z', '+00:00'))
+                     - datetime.fromisoformat(backlog_window['recovery_since'].replace('Z', '+00:00'))).total_seconds() >= 60,
+                'backlog closed without 60 seconds strictly below half its threshold')
+        evidence['backlog_recovery_window'] = backlog_window
         evidence['resolved_deliveries'] = until(lambda: delivered(closed, 'resolved'))
         stage('performance_source_cleanup')
         require(physical('performance-clear'), 'performance source rows survived cleanup')
@@ -755,6 +827,7 @@ def verify_cdc_performance(client, task_id, generation, engine_id, binding, dest
         until(lambda: physical('verify-cdc-altered'))
         evidence['target_rowset_verified'] = True
         evidence['result'] = 'passed'
+        return resumed_execution
     finally:
         failure = sys.exc_info()[0] is not None
         errors = []
@@ -848,8 +921,8 @@ def verify_cdc_risk_closure(client, tenant, task_id, engine_id, execution_id, na
             'secret': receiver.secret, 'enabled': True, 'event_types': ['opened', 'resolved']}, (201,))
         destination_id = API.require_positive_int(destination, 'id')
         proof['destination_id'] = destination_id
-        verify_cdc_performance(client, task_id, generation, engine_id, binding, destination_id,
-                               mutate, delivered, receiver, proof, stage)
+        execution_id = verify_cdc_performance(client, task_id, generation, engine_id, binding, destination_id,
+                                              mutate, delivered, receiver, proof, stage, launch)
         stage('buffer_pause')
         mutate(client, f'{OWNER}/task-definitions/{task_id}/pause')
         paused_task = client.request('GET', f'{OWNER}/task-definitions/{task_id}', (200,)).payload
@@ -2121,6 +2194,7 @@ def run_suite(client, denied, foreign, peer, reader, admin, login, tenant, run_i
         cdc_paused = verify_cdc_risk_closure(client, tenant, cdc_task, pg, cdc_resumed, name, run_id,
                                             mutate, create, launch, report, checkpoint)
         report['checks'].append('cdc_performance_warning_trigger_missing_hold_recovery_signed_delivery')
+        report['checks'].append('cdc_optional_backlog_300s_pause_missing_hold_60s_recovery_signed_delivery')
         report['checks'].append('cdc_loss_alert_trigger_unknown_ack_close_signed_delivery_and_task_rebuild')
         phase('cdc_stop')
         wait_status(client, cdc_paused, 'cancelled')

@@ -1204,7 +1204,7 @@ class CDCRiskAcceptanceTest(unittest.TestCase):
              patch.object(M,'cdc_capture_binding',return_value={}), \
              patch.object(M,'CDCRiskReceiver',return_value=receiver), \
              patch.object(M,'cdc_risk_alerts',return_value={}), patch.object(M,'wait_status'), \
-             patch.object(M,'verify_capture_failure'), patch.object(M,'verify_cdc_performance'), \
+             patch.object(M,'verify_capture_failure'), patch.object(M,'verify_cdc_performance',return_value=UUID), \
              patch.object(M,'physical',side_effect=M.SuiteError('injected mutation failure')), \
              self.assertRaisesRegex(M.SuiteError,'injected mutation failure'):
             M.verify_cdc_risk_closure(client,2,7,10,UUID,'owned','run-1',
@@ -1216,6 +1216,7 @@ class CDCRiskAcceptanceTest(unittest.TestCase):
         receiver.close.assert_called_once()
 
     def test_risk_pause_uses_recovered_execution_and_refuses_unrelated_origin(self):
+        manual='cccccccc-3333-4333-8333-cccccccccccc'
         recovered='bbbbbbbb-2222-4222-8222-bbbbbbbbbbbb'
         for wrong_origin in (False,True):
             with self.subTest(wrong_origin=wrong_origin):
@@ -1225,13 +1226,13 @@ class CDCRiskAcceptanceTest(unittest.TestCase):
                     SimpleNamespace(payload={}),SimpleNamespace(payload=[])]
                 receiver=unittest.mock.Mock(secret='private',url='http://127.0.0.1:12345/cdc-risk')
                 cancelled={'task_id':7,'status':'cancelled','metadata':
-                    {'recovered_from_execution_id':recovered if wrong_origin else UUID,'recovery_reason':'execution_failed'}}
-                report={'executions':[UUID]}
+                    {'recovered_from_execution_id':recovered if wrong_origin else manual,'recovery_reason':'execution_failed'}}
+                report={'executions':[UUID,manual]}
                 with patch.object(M,'cdc_task_sample',return_value={'generation':1}), \
                      patch.object(M,'cdc_capture_binding',return_value={}), \
                      patch.object(M,'CDCRiskReceiver',return_value=receiver), \
                      patch.object(M,'cdc_risk_alerts',return_value={}), \
-                     patch.object(M,'verify_cdc_performance'), \
+                     patch.object(M,'verify_cdc_performance',return_value=manual), \
                      patch.object(M,'wait_status',return_value=cancelled) as wait, \
                      patch.object(M,'detail',return_value={'task_id':7,'status':'failed'}) as original, \
                      patch.object(M,'verify_capture_failure',side_effect=M.SuiteError('injected next phase')), \
@@ -1239,16 +1240,16 @@ class CDCRiskAcceptanceTest(unittest.TestCase):
                     M.verify_cdc_risk_closure(client,2,7,10,UUID,'owned','run-1',
                         lambda *args:{'id':1},None,None,report,lambda:None)
                 wait.assert_called_once_with(client,recovered,'cancelled')
-                original.assert_called_once_with(client,UUID)
+                original.assert_called_once_with(client,manual)
                 self.assertEqual(report['cdc_risk_closure']['paused_execution_id'],recovered)
                 self.assertEqual(report['cdc_risk_closure']['cleanup'],'passed')
                 if not wrong_origin:
                     self.assertEqual(report['cdc_risk_closure']['execution_recovery'],
-                        {'from_execution_id':UUID,'execution_id':recovered,'previous_status':'failed','reason':'execution_failed'})
-                    self.assertEqual(report['executions'],[UUID,recovered])
+                        {'from_execution_id':manual,'execution_id':recovered,'previous_status':'failed','reason':'execution_failed'})
+                    self.assertEqual(report['executions'],[UUID,manual,recovered])
                 else:
                     self.assertNotIn('execution_recovery',report['cdc_risk_closure'])
-                    self.assertEqual(report['executions'],[UUID])
+                    self.assertEqual(report['executions'],[UUID,manual])
                 self.assertNotIn('private',json.dumps(report))
                 receiver.close.assert_called_once()
 
@@ -1312,12 +1313,14 @@ class CDCRiskAcceptanceTest(unittest.TestCase):
              patch.object(M.subprocess,'run',side_effect=command), \
              patch.object(M.subprocess,'Popen',side_effect=OSError('private process failure')), \
              self.assertRaises(OSError):
-            M.verify_cdc_performance(client,7,1,10,{'connector':'owned'},9,mutate,None,None,proof,lambda _:None)
+            M.verify_cdc_performance(client,7,1,10,{'connector':'owned'},9,mutate,None,None,proof,lambda _:None,None)
         self.assertEqual({v['rule_type'] for v in definitions}, M.CDC_PERFORMANCE_CODES)
         self.assertTrue(all(v['severity']=='warning' and v['enabled'] is True and
                             v['routes']==[{'channel':'webhook','destination_id':9}] for v in definitions))
+        self.assertEqual([v['backlog_threshold'] for v in definitions if v['rule_type']=='cdc_backlog_high'],['256'])
+        self.assertTrue(all('backlog_threshold' not in v for v in definitions if v['rule_type']!='cdc_backlog_high'))
         self.assertEqual(proof['performance']['cleanup'],'passed')
-        self.assertEqual([p for method,p in calls if method=='DELETE'],[M.RULES+'/1',M.RULES+'/2'])
+        self.assertEqual([p for method,p in calls if method=='DELETE'],[M.RULES+'/1',M.RULES+'/2',M.RULES+'/3'])
         self.assertNotEqual(proof['performance']['result'],'passed')
         self.assertEqual(state['config'],{'name':'owned','database.password':'private-performance-sentinel'})
         self.assertTrue(proof['performance']['connector_config_restored'])
@@ -1345,7 +1348,7 @@ class CDCRiskAcceptanceTest(unittest.TestCase):
              patch.object(M.time,'monotonic',side_effect=[0,100]), \
              patch.object(M,'physical',side_effect=lambda action:actions.append(action) or True), \
              self.assertRaisesRegex(M.SuiteError,'stop after native backpressure' if applied_cpu=='3000 100000' else 'CPU fault not applied'):
-            M.verify_cdc_performance(client,7,1,10,{'connector':'owned'},9,mutate,None,None,proof,stage)
+            M.verify_cdc_performance(client,7,1,10,{'connector':'owned'},9,mutate,None,None,proof,stage,None)
         self.assertFalse(any(args[1] == 'pause' or args[-1].endswith('/pause') for args in commands))
         self.assertIn(['docker','update','--cpu-quota','3000','owned-connect'],commands)
         self.assertIn(['docker','update','--cpu-quota','-1','owned-connect'],commands)
@@ -1374,32 +1377,54 @@ class CDCRiskAcceptanceTest(unittest.TestCase):
         self.assertEqual(proof['performance']['cleanup'],'passed')
         self.assertNotIn('source_fill_succeeded',proof['performance'])
 
-    def test_performance_unknown_accepts_independent_fresh_samples_and_holds_incidents(self):
+    def performance_orchestration(self, *, invalid=None):
         import io
         state = {'phase':'', 'clock':0, 'trigger_reads':0, 'missing_reads':0,
-                 'ack':False, 'deleted':False, 'lock_done':False}
+                 'ack':False, 'deleted':False, 'lock_done':False, 'recovery_reads':0}
+        resumed = 'bbbbbbbb-2222-4222-8222-bbbbbbbbbbbb'
         command, commands, native = self.performance_native_driver()
         lock = SimpleNamespace(stdin=io.BytesIO(),stdout=io.BytesIO(b'ADDP_CDC_PERFORMANCE_LOCKED\n'),
             poll=lambda:0 if state['lock_done'] else None,
             wait=lambda **kwargs:state.update(lock_done=True))
         proof = {}; definitions = []
-        observed = M.datetime.now(M.timezone.utc).isoformat()
+        base = M.datetime.now(M.timezone.utc)
+        class Clock(M.datetime):
+            @classmethod
+            def now(cls, tz=None):
+                return base + timedelta(seconds=state['clock'])
+        observed = base.isoformat()
         def stage(value):
             state['phase'] = value
-            if value == 'performance_recovery':
-                raise M.SuiteError('stop after real unknown orchestration')
         def rules():
-            now = M.datetime.now(M.timezone.utc)
-            return [{'id':index,'rule_type':code,'cdc_evaluation':
-                     {'state':'unknown' if state['phase']=='performance_unknown' else 'active',
-                      'active':True,'trigger_since':(now-timedelta(seconds=200)).isoformat()}}
-                    for index,code in enumerate(sorted(M.CDC_PERFORMANCE_CODES),1)]
+            now = Clock.now()
+            phase = state['phase']
+            values = []
+            for index,code in enumerate(sorted(M.CDC_PERFORMANCE_CODES),1):
+                window = {'state':'active','active':True,
+                          'trigger_since':(now-timedelta(seconds=M.CDC_PERFORMANCE_SECONDS[code]+1)).isoformat()}
+                if invalid == 'early' and code == 'cdc_backlog_high':
+                    window['trigger_since'] = (now-timedelta(seconds=299)).isoformat()
+                if phase == 'performance_task_pause' and code != 'cdc_capture_delayed':
+                    window = {'state':'paused','active':True}
+                if phase == 'performance_unknown':
+                    window = {'state':'unknown','active':True}
+                if phase.startswith('performance_recovery') or phase.startswith('performance_source') or phase.startswith('performance_cleanup'):
+                    window = {'state':'healthy','active':False,'sampled_at':now.isoformat(),
+                              'recovery_since':(now-timedelta(seconds=90)).isoformat()}
+                values.append({'id':index,'rule_type':code,'cdc_evaluation':window,
+                    **({'backlog_threshold':'257' if invalid=='threshold' else '256'} if code=='cdc_backlog_high' else {})})
+            return values
         def alerts(*args, **kwargs):
             if state['phase'] == 'performance_wal_wait' or state['trigger_reads'] < 2:
                 return {}
-            return {r['rule_type']:{'id':r['id'],'severity':'warning',
-                'status':'acknowledged' if state['ack'] else 'open','last_observed_at':observed,
-                'details':{'trigger_seconds':180,'sampled_at':M.datetime.now(M.timezone.utc).isoformat()}}
+            status = 'acknowledged' if state['ack'] else 'open'
+            if state['phase'] == 'performance_recovery' and state['recovery_reads'] >= 7:
+                status = 'resolved'
+            return {r['rule_type']:{'id':r['id'],'severity':'warning','status':status,
+                'last_observed_at':Clock.now().isoformat() if invalid=='pause_changed' and state['phase']=='performance_task_pause' else observed,
+                'details':{'trigger_seconds':M.CDC_PERFORMANCE_SECONDS[r['rule_type']],
+                           'sampled_at':Clock.now().isoformat(),
+                           **({'backlog_threshold':'256','lag_offsets':'1000'} if r['rule_type']=='cdc_backlog_high' else {})}}
                 for r in rules()}
         def request(method, path, *args, **kwargs):
             if method == 'DELETE':
@@ -1408,7 +1433,11 @@ class CDCRiskAcceptanceTest(unittest.TestCase):
             if path == M.RULES:
                 return SimpleNamespace(payload=[] if state['deleted'] else rules())
             self.assertEqual(path,M.OWNER+'/task-definitions/7')
-            now = M.datetime.now(M.timezone.utc)
+            state['clock'] += 0.01
+            if state['phase'] == 'performance_recovery':
+                state['clock'] += 15
+                state['recovery_reads'] += 1
+            now = Clock.now()
             fresh = {'sampled_at':now.isoformat(),'expires_at':(now+timedelta(seconds=30)).isoformat()}
             stale = {'sampled_at':(now-timedelta(seconds=60)).isoformat(),
                      'expires_at':(now-timedelta(seconds=30)).isoformat()}
@@ -1417,6 +1446,7 @@ class CDCRiskAcceptanceTest(unittest.TestCase):
             if state['phase'] == 'performance_trigger':
                 state['trigger_reads'] += 1
                 delay['event_count'] = str(state['trigger_reads'])
+                buffer['lag_offsets'] = '1000'
             if state['phase'] == 'performance_unknown':
                 state['missing_reads'] += 1
                 if state['missing_reads'] == 1:
@@ -1425,38 +1455,66 @@ class CDCRiskAcceptanceTest(unittest.TestCase):
                 else:
                     buffer = {**fresh,'status':'unavailable'}
                     delay = {**stale,'status':'unavailable'}
-            return SimpleNamespace(payload={'capture':{'generation':1,'buffer_observation':buffer,
-                                                      'delay_observation':delay}})
+            if state['phase'] == 'performance_recovery':
+                delay.update(delay_seconds=20,event_count=str(state['recovery_reads']))
+                buffer['lag_offsets'] = '128' if invalid=='half' else '127'
+            return SimpleNamespace(payload={'desired_state':'paused' if state['phase']=='performance_task_pause' else 'running',
+                'last_execution_id':UUID,'capture':{'generation':1,'buffer_observation':buffer,'delay_observation':delay}})
         def mutate(actor, path, body=None, status=None):
             if path.endswith('/acknowledge'):
                 state['ack'] = True
                 return {}
+            if path.endswith('/pause'):
+                return {}
             definitions.append(body)
             return {'id':len(definitions)}
-        delivered = unittest.mock.Mock(return_value=[{'signed_receipt_verified':True}])
+        delivered = unittest.mock.Mock(return_value=[{'signed_receipt_verified':True}]*3)
+        launch = unittest.mock.Mock(return_value=resumed)
+        error = {'early':'real sustained window','threshold':'optional threshold',
+                 'pause_changed':'pause changed confirmed','half':'did not converge before the deadline'}.get(invalid)
         with patch.object(M,'cdc_risk_container',side_effect=['owned-connect','owned-broker']), \
              patch.object(M.subprocess,'run',side_effect=command),patch.object(M.subprocess,'Popen',return_value=lock), \
              patch.object(M.select,'select',return_value=([lock.stdout],[],[])), \
+             patch.object(M,'datetime',Clock), patch.object(M,'wait_status',return_value={'status':'cancelled'}), \
              patch.object(M.time,'monotonic',side_effect=lambda:state['clock']), \
              patch.object(M.time,'sleep',side_effect=lambda seconds:state.update(clock=state['clock']+seconds)), \
-             patch.object(M,'cdc_risk_alerts',side_effect=alerts),patch.object(M,'physical',return_value=True), \
-             self.assertRaisesRegex(M.SuiteError,'stop after real unknown orchestration'):
-            M.verify_cdc_performance(SimpleNamespace(request=request),7,1,10,{'connector':'owned'},9,
-                mutate,delivered,SimpleNamespace(snapshot=lambda:[]),proof,stage)
-        value = proof['performance']
+             patch.object(M,'cdc_risk_alerts',side_effect=alerts),patch.object(M,'physical',return_value=True):
+            if error:
+                with self.assertRaisesRegex(M.SuiteError,error):
+                    M.verify_cdc_performance(SimpleNamespace(request=request),7,1,10,{'connector':'owned'},9,
+                        mutate,delivered,SimpleNamespace(snapshot=lambda:[]),proof,stage,launch)
+            else:
+                result = M.verify_cdc_performance(SimpleNamespace(request=request),7,1,10,{'connector':'owned'},9,
+                    mutate,delivered,SimpleNamespace(snapshot=lambda:[]),proof,stage,launch)
+                self.assertEqual(result,resumed)
+        self.assertEqual(proof['performance']['cleanup'],'passed')
+        self.assertNotIn('private-performance-sentinel',json.dumps(proof))
+        return proof['performance'], state, delivered, launch
+
+    def test_optional_backlog_real_fault_orchestration_covers_pause_missing_recovery_and_delivery(self):
+        value,state,delivered,launch = self.performance_orchestration()
         self.assertEqual(state['missing_reads'],2)
         self.assertEqual(value['unknown_hold_checks'],16)
+        self.assertEqual(value['pause_hold_checks'],16)
         self.assertEqual(set(value['missing_samples']),{'buffer_observation','delay_observation'})
-        self.assertEqual(value['cleanup'],'passed')
-        self.assertEqual([args[1] for args in commands if args[1] in ('pause','unpause')],
-                         ['pause','pause','unpause','unpause'])
-        delivered.assert_called_once()
-        self.assertNotIn('private-performance-sentinel',json.dumps(proof))
+        self.assertEqual(value['trigger_seconds']['cdc_backlog_high'],300)
+        self.assertEqual(value['resumed_execution_id'],launch.return_value)
+        launch.assert_called_once_with(7,'resume')
+        self.assertEqual(delivered.call_count,2)
+        self.assertEqual(value['result'],'passed')
+        self.assertEqual(value['backlog_threshold'],'256')
+        self.assertGreaterEqual(len(value['backlog_recovery_samples']),5)
+
+    def test_backlog_guards_refuse_short_window_wrong_threshold_changed_pause_and_half_boundary(self):
+        for invalid in ('early','threshold','pause_changed','half'):
+            with self.subTest(invalid=invalid):
+                value,*_ = self.performance_orchestration(invalid=invalid)
+                self.assertEqual(value['result'],'failed')
 
     def test_performance_faults_reject_personal_environment_before_actions(self):
         with patch.dict(os.environ,{},clear=True), patch.object(M.subprocess,'run') as run, \
              self.assertRaises(Exception):
-            M.verify_cdc_performance(None,7,1,10,{},9,None,None,None,{},lambda _:None)
+            M.verify_cdc_performance(None,7,1,10,{},9,None,None,None,{},lambda _:None,None)
         run.assert_not_called()
 
     def test_real_signed_performance_open_and_close_are_warning_receipts(self):
