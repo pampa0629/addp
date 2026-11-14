@@ -885,6 +885,10 @@ def start_observer(directory):
                 terminate_observer(record)
             elif state != 'absent':
                 raise InventoryError('部署发现 PID 不属于当前工作区，拒绝接管')
+        # Retire the previous handshake before its new writer exists. Otherwise
+        # replacing it can unlink an old inode between the reader's open/fstat.
+        read_private_document(directory, 'observer-ready.json')
+        (directory / 'observer-ready.json').unlink(missing_ok=True)
         token = uuid.uuid4().hex
         # The source observer has no ADDP/SQL credentials in its environment.
         process = subprocess.Popen([sys.executable, str(Path(__file__).resolve()), 'watch', '--directory', str(directory),

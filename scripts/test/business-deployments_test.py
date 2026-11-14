@@ -2,6 +2,7 @@
 import copy
 import http.server
 import signal
+import stat
 import threading
 import importlib.util
 import io
@@ -14,6 +15,7 @@ import re
 import sys
 import time
 import unittest
+from types import SimpleNamespace
 from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -992,6 +994,123 @@ observer.watch(directory,sys.argv[-1])
             self.assertNotEqual(first['pid'], second['pid'])
             self.assertEqual(inventory.observer_state(first), 'absent')
             self.assertEqual(inventory.observer_state(second), 'owned')
+
+    def test_replacement_retires_old_ready_before_launching_its_writer(self):
+        gate = self.root/'publish-new-ready'
+        runner = r'''
+import importlib.util,sys,time
+from pathlib import Path
+spec=importlib.util.spec_from_file_location('observer',sys.argv[1])
+observer=importlib.util.module_from_spec(spec)
+spec.loader.exec_module(observer)
+real_write=observer.write_document
+def write(directory,name,value):
+    if name=='observer-ready.json':
+        deadline=time.monotonic()+3
+        while not Path(sys.argv[3]).exists():
+            if time.monotonic()>=deadline: raise RuntimeError('ready barrier expired')
+            time.sleep(.005)
+    real_write(directory,name,value)
+observer.write_document=write
+observer.watch(Path(sys.argv[2]),sys.argv[-1])
+'''
+        real_popen, real_open = subprocess.Popen, os.open
+        children, obsolete_reads = [], []
+        ready = self.directory.resolve()/'observer-ready.json'
+
+        def launch(command, *args, **kwargs):
+            if len(command) > 2 and command[1:3] == [str(Path(inventory.__file__).resolve()), 'watch']:
+                command = [sys.executable, '-c', runner, command[1], str(self.directory.resolve()),
+                           str(gate), '--observer-token', command[-1]]
+                child = real_popen(command, *args, **kwargs)
+                children.append(child)
+                return child
+            return real_popen(command, *args, **kwargs)
+
+        def opened(path, flags, *args, **kwargs):
+            try:
+                fd = real_open(path, flags, *args, **kwargs)
+            except FileNotFoundError:
+                if Path(path) == ready and children:
+                    gate.touch()
+                raise
+            if Path(path) == ready and children and not gate.exists():
+                before = os.fstat(fd)
+                gate.touch()
+                deadline = time.monotonic()+3
+                while ready.stat().st_ino == before.st_ino:
+                    if time.monotonic() >= deadline:
+                        os.close(fd)
+                        raise AssertionError('new observer did not publish its ready record')
+                    time.sleep(.005)
+                after = os.fstat(fd)
+                self.assertTrue(stat.S_ISREG(after.st_mode))
+                self.assertEqual(after.st_uid, os.getuid())
+                self.assertEqual(stat.S_IMODE(after.st_mode), 0o600)
+                self.assertLessEqual(after.st_size, 4096)
+                self.assertEqual(after.st_nlink, 0)
+                obsolete_reads.append(after.st_nlink)
+            return fd
+
+        with patch.dict(os.environ, self.environment, clear=True):
+            inventory.start_observer(self.directory)
+            first = inventory.observer_record(self.directory.resolve())
+            with patch.dict(os.environ, {'DOCKER_CONTEXT': 'explicit-local-context'}), \
+                    patch.object(inventory.subprocess, 'Popen', side_effect=launch), \
+                    patch.object(inventory.os, 'open', side_effect=opened):
+                try:
+                    inventory.start_observer(self.directory)
+                except inventory.InventoryError as error:
+                    self.fail(str(error)+'; opened obsolete ready nlink='+str(obsolete_reads))
+            second = inventory.observer_record(self.directory.resolve())
+            self.assertEqual(len(children), 1)
+            self.assertEqual(obsolete_reads, [])
+            self.assertNotEqual(first['token'], second['token'])
+            self.assertEqual(inventory.observer_state(first), 'absent')
+            self.assertEqual(inventory.observer_state(second), 'owned')
+            self.assertEqual(inventory.read_private_document(self.directory, 'observer-ready.json'), {'token': second['token']})
+
+    def test_stale_ready_security_checks_run_before_a_new_child(self):
+        inventory.private_directory(self.directory)
+        ready, peer = self.directory/'observer-ready.json', self.directory/'peer'
+        real_fstat = os.fstat
+        for invalid in ('permissions', 'hardlink', 'oversized', 'fifo', 'directory', 'symlink', 'owner'):
+            with self.subTest(invalid=invalid):
+                inventory.write_document(self.directory, 'observer-ready.json', {'token': 'a'*32})
+                if invalid == 'permissions':
+                    ready.chmod(0o644)
+                elif invalid == 'hardlink':
+                    os.link(ready, peer)
+                elif invalid == 'oversized':
+                    ready.write_bytes(b'x'*4097)
+                elif invalid in ('fifo', 'directory', 'symlink'):
+                    ready.unlink()
+                    if invalid == 'fifo':
+                        os.mkfifo(ready, 0o600)
+                    elif invalid == 'directory':
+                        ready.mkdir(mode=0o700)
+                    else:
+                        peer.write_text('unchanged')
+                        ready.symlink_to(peer)
+                identity = ready.stat()
+                def checked(fd):
+                    info = real_fstat(fd)
+                    if invalid == 'owner' and (info.st_dev, info.st_ino) == (identity.st_dev, identity.st_ino):
+                        return SimpleNamespace(st_mode=info.st_mode, st_uid=os.getuid()+1,
+                                               st_size=info.st_size, st_nlink=info.st_nlink)
+                    return info
+                try:
+                    with patch.object(inventory.subprocess, 'Popen', side_effect=AssertionError('unsafe ready reached child creation')) as launch, \
+                            patch.object(inventory.os, 'fstat', side_effect=checked):
+                        with self.assertRaises((inventory.InventoryError, OSError)):
+                            inventory.start_observer(self.directory)
+                        launch.assert_not_called()
+                finally:
+                    if invalid == 'directory':
+                        ready.rmdir()
+                    else:
+                        ready.unlink()
+                    peer.unlink(missing_ok=True)
 
 
 class SparkStartupTests(unittest.TestCase):
