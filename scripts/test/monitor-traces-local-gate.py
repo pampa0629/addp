@@ -2454,6 +2454,10 @@ def main():
         business=module('monitor-traces-local-online',life.checkout)
         browser=business.run(life,env,report)
         life.phase='real_console_browser'
+        browser_failure=target.with_name(target.stem+'-browser-first-failure.json')
+        browser_failure.parent.mkdir(parents=True,exist_ok=True)
+        with open(browser_failure,'x',opener=lambda path,flags:os.open(path,flags,0o600)):pass
+        report['browser_first_failure_file']=browser_failure.name
         browser_path=life.private_json('browser.json',browser['platform'])
         life.private_json('tenant-browser.json',browser['tenant'])
         secret_env=life.work/'browser.env'
@@ -2461,6 +2465,7 @@ def main():
         selected.update(ADDP_EXECUTION_TRACE_LOCAL='1',CONSOLE_URL='http://nginx',
                         ADDP_EXECUTION_TRACE_BROWSER_CONFIG_FILE='/private/browser.json',
                         ADDP_EXECUTION_TRACE_BROWSER_REPORT_FILE='/private/browser-report.json',
+                        ADDP_EXECUTION_TRACE_BROWSER_FIRST_FAILURE_FILE='/private/browser-first-failure.json',
                         ADDP_EXECUTION_TRACE_TENANT_BROWSER_CONFIG_FILE='/private/tenant-browser.json',
                         ADDP_ONLINE_ARTIFACT_DIR='/tmp/trace-browser')
         secret_env.write_text('\n'.join(k+'='+v for k,v in selected.items())+'\n');secret_env.chmod(0o600)
@@ -2469,7 +2474,9 @@ def main():
         life.docker('run','--name',life.run_id+'-browser','--label',f'{LABEL}={life.run_id}',
             '--label',LABEL+'.role=oneshot','--cpus','.5','--memory','1g','--network',life.run_id+'_data','--env-file',str(secret_env),
             '--mount',f'type=bind,source={life.checkout},target=/workspace',
-            '--mount',f'type=bind,source={life.work},target=/private','-w','/workspace/console/frontend',browser_image,
+            '--mount',f'type=bind,source={life.work},target=/private',
+            '--mount',f'type=bind,source={browser_failure},target=/private/browser-first-failure.json',
+            '-w','/workspace/console/frontend',browser_image,
             'node','node_modules/@playwright/test/cli.js','test','--config=playwright.online.config.js','execution-trace-local.spec.js','--reporter=line',timeout=300)
         report['browser']=json.loads((life.work/'browser-report.json').read_text())
         require(report['browser'].get('result')=='passed','browser_report_not_passed')

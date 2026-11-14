@@ -3523,6 +3523,68 @@ class LocalTraceCleanupTests(unittest.TestCase):
             self.assertEqual(process.wait.call_count, 3)
 
 
+
+class BrowserFirstFailurePersistenceTests(unittest.TestCase):
+    def run_browser_failure(self, directory, existing=False):
+        root = Path(directory).resolve()
+        work = root/'private'; work.mkdir()
+        life = bare_lifecycle(work)
+        life.run_id = 'addp-trace-local-'+'1'*32
+        life.module_commits = {}
+        life.input_hashes = {}
+        (life.checkout/'console/frontend').mkdir(parents=True)
+        (life.checkout/'console/frontend/package-lock.json').write_text(json.dumps({'packages':{'node_modules/@playwright/test':{'version':'1.61.1'}}}))
+        target = root/'result.json'
+        failure = root/'result-browser-first-failure.json'
+        receipt = {'schema':'addp.execution-trace-browser-first-failure/v1','run_id':life.run_id,
+                   'result':'failed','stage':'causal-link','causal_link':{'substep':'instance-response',
+                   'error_category':'timeout','instance_http_status':None,'trace_http_status':None}}
+        if existing:failure.write_text('original first failure')
+        def docker(*args, **kwargs):
+            if args[0]=='info':return 'aarch64'
+            life.browser_observation = {'args':args,'timeout':kwargs.get('timeout'),
+                'mode':failure.stat().st_mode & 0o777,'empty':failure.read_bytes()==b'',
+                'env':(work/'browser.env').read_text()}
+            failure.write_text(json.dumps(receipt))
+            raise m.GateError('command_failed_1')
+        life.docker = mock.Mock(side_effect=docker)
+        life.cleanup = mock.Mock(side_effect=lambda: shutil.rmtree(work) or [])
+        business = SimpleNamespace(run=mock.Mock(return_value={'platform':{},'tenant':{}}))
+        env={'PATH':os.environ['PATH']}
+        with mock.patch.object(m,'Lifecycle',return_value=life), mock.patch.object(m,'effective_docker_endpoint',return_value='unix:///synthetic.sock'), \
+             mock.patch.object(m,'private_docker_client'),mock.patch.object(m,'validate_profile'), \
+             mock.patch.object(m,'build',return_value=('fixed-source',env,{})),mock.patch.object(m,'setup'), \
+             mock.patch.object(m,'identity'),mock.patch.object(m,'module',return_value=business), \
+             mock.patch.dict(m.os.environ,{'MONITOR_TRACE_LOCAL_REPORT':str(target)},clear=True), \
+             mock.patch.object(m.sys,'argv',['monitor-traces-local-gate.py']),mock.patch('builtins.print'):
+            self.assertEqual(m.main(),1)
+        life.cleanup.assert_called_once()
+        self.assertFalse(work.exists())
+        return life, json.loads(target.read_text()), failure, receipt
+
+    def test_first_failure_file_is_single_bound_and_survives_private_cleanup(self):
+        with tempfile.TemporaryDirectory() as directory:
+            life, report, failure, receipt = self.run_browser_failure(directory)
+            self.assertEqual(len(life.docker.call_args_list),2)
+            observed=life.browser_observation
+            self.assertEqual(observed['args'][0],'run')
+            self.assertIn('type=bind,source='+str(failure)+',target=/private/browser-first-failure.json',observed['args'])
+            self.assertEqual(observed['timeout'],300)
+            self.assertEqual(observed['mode'],0o600)
+            self.assertTrue(observed['empty'])
+            self.assertIn('ADDP_EXECUTION_TRACE_BROWSER_FIRST_FAILURE_FILE=/private/browser-first-failure.json',observed['env'])
+            self.assertEqual(json.loads(failure.read_text()),receipt)
+            self.assertEqual(report['error_code'],'command_failed_1')
+            self.assertEqual(report['browser_first_failure_file'],failure.name)
+            self.assertEqual(report['result'],'failed')
+
+    def test_existing_first_failure_is_not_overwritten_or_reused(self):
+        with tempfile.TemporaryDirectory() as directory:
+            life, report, failure, _ = self.run_browser_failure(directory,existing=True)
+            life.docker.assert_called_once_with('info','--format','{{.Architecture}}')
+            self.assertEqual(failure.read_text(),'original first failure')
+            self.assertEqual(report['error_code'],'FileExistsError')
+
 if __name__ == '__main__':
     unittest.main()
 

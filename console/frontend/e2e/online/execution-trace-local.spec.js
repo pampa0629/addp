@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test'
 import { lstatSync, readFileSync, writeFileSync } from 'node:fs'
 import { isAbsolute } from 'node:path'
-import { executionTraceBrowserInput, admitExecutionTraceBrowserEnvironment, tenantStageBrowserInput, tenantStagePermissions } from './execution-trace-local-support.mjs'
+import { executionTraceBrowserInput, admitExecutionTraceBrowserEnvironment, tenantStageBrowserInput, tenantStagePermissions, causalLinkDiagnostics, writeExecutionTraceFirstFailure } from './execution-trace-local-support.mjs'
 
 import { assertHTTPBrowserLogout } from '../http-quality-page-support.mjs'
 import { localConsoleLogin } from './local-identity-support.mjs'
@@ -12,7 +12,14 @@ test.use({ screenshot: 'off', trace: 'off', video: 'off', locale: 'zh-CN' })
 test('execution trace local real Console password MFA, causal link and checkpoint logs', async ({ page }) => {
   test.setTimeout(240_000)
   const report = { schema: 'addp.execution-trace-browser-receipt/v1', result: 'failed', stage: 'admission', assertions: {} }
-  let reportPath
+  let reportPath, firstFailurePath, causal
+  let firstFailureAttempted = false
+  const persistFirstFailure = () => {
+    if (firstFailureAttempted || !firstFailurePath) return
+    firstFailureAttempted = true
+    try { writeExecutionTraceFirstFailure(firstFailurePath, report) }
+    catch { report.diagnostic_persistence = 'filesystem_error' }
+  }
   try {
     admitExecutionTraceBrowserEnvironment(process.env)
     const inputPath = process.env.ADDP_EXECUTION_TRACE_BROWSER_CONFIG_FILE
@@ -22,6 +29,8 @@ test('execution trace local real Console password MFA, causal link and checkpoin
     if (!info.isFile() || info.isSymbolicLink() || info.nlink !== 1 || (info.mode & 0o077) !== 0 || info.size > 65536) throw new Error('browser_private_input_invalid')
     const input = executionTraceBrowserInput(JSON.parse(readFileSync(inputPath, 'utf8')))
     report.run_id = input.run_id
+    firstFailurePath = process.env.ADDP_EXECUTION_TRACE_BROWSER_FIRST_FAILURE_FILE
+    if (!isAbsolute(firstFailurePath || '') || [inputPath, reportPath].includes(firstFailurePath)) throw new Error('browser_first_failure_path_invalid')
     report.stage = 'password-mfa'
     let initialTraceResponse
     const identity = await localConsoleLogin(page, expect, {
@@ -46,6 +55,8 @@ test('execution trace local real Console password MFA, causal link and checkpoin
     await expect(monitor.getByTestId('trace-spans')).toContainText(input.span_id)
     report.assertions.retained_failed_terminal_visible = true
     report.stage = 'causal-link'
+    causal = causalLinkDiagnostics(persistFirstFailure)
+    report.causal_link = causal.receipt
     const target = input.links[0]
     expect(Boolean(stage.links?.some(link => Object.keys(target).every(key => link[key] === target[key])))).toBe(true)
     const instanceResponse = page.waitForResponse(response => {
@@ -53,27 +64,50 @@ test('execution trace local real Console password MFA, causal link and checkpoin
       return url.pathname === '/api/v1/system/platform/module-instances' && url.searchParams.get('ids') === String(target.runtime_instance_id)
     })
     const targetResponse = page.waitForResponse(response => new URL(response.url()).pathname === '/api/v1/monitor/platform/traces/' + target.trace_id)
-    instanceResponse.catch(() => {}); targetResponse.catch(() => {})
+    // Observe the original promises immediately; their first rejection is not delayed by the click.
+    instanceResponse.then(response => causal.response('instance', response.status()), error => causal.fail(error, 'instance-response'))
+    targetResponse.then(response => causal.response('trace', response.status()), error => causal.fail(error, 'trace-response'))
+    causal.step('link-click')
     await monitor.getByTestId('trace-links').getByRole('row').filter({ hasText: target.trace_id }).first().getByRole('button', { name: '查看关联', exact: true }).click()
+    causal.step('instance-response')
     const instanceRead = await instanceResponse
+    causal.step('instance-status')
     expect(instanceRead.status()).toBe(200)
+    causal.step('instance-body')
     const instances = await instanceRead.json()
+    causal.step('instance-identity')
     expect(Boolean(instances.data?.some(row => row.id === target.runtime_instance_id && row.instance_id === target.instance_id && row.module_name === target.module_name && row.role === target.role))).toBe(true)
+    causal.step('trace-response')
     const linkedResponse = await targetResponse
+    causal.step('trace-status')
     expect([200, 404].includes(linkedResponse.status())).toBe(true)
     const linkURL = new URL(linkedResponse.url())
+    causal.step('trace-query-instance')
     expect(linkURL.searchParams.get('instance_id')).toBe(String(target.runtime_instance_id))
+    causal.step('trace-query-start')
     expect(Date.parse(linkURL.searchParams.get('start'))).toBe(Date.parse(target.started_at) - 1000)
+    causal.step('trace-query-end')
     expect(Date.parse(linkURL.searchParams.get('end'))).toBe(Date.parse(target.started_at) + 1000)
     if (linkedResponse.status() === 404) {
-      expect((await linkedResponse.json()).error_code).toBe('trace_not_found')
+      causal.step('trace-body')
+      const missing = await linkedResponse.json()
+      causal.step('trace-not-found-code')
+      expect(missing.error_code).toBe('trace_not_found')
+      causal.step('trace-missing-ui')
       await expect(monitor.getByTestId('trace-error')).toContainText('没有可读的已保留调用链')
+      causal.step('trace-missing-cleared')
       await expect(monitor.getByTestId('trace-spans')).toHaveCount(0)
     } else {
-      expect((await linkedResponse.json()).data?.[0]?.trace_id).toBe(target.trace_id)
+      causal.step('trace-body')
+      const retained = await linkedResponse.json()
+      causal.step('trace-identity')
+      expect(retained.data?.[0]?.trace_id).toBe(target.trace_id)
+      causal.step('trace-present-ui')
       await expect(monitor.getByTestId('trace-spans')).toBeVisible()
+      causal.step('trace-error-cleared')
       await expect(monitor.getByTestId('trace-error')).toHaveCount(0)
     }
+    causal.step('complete')
     report.assertions.link_instance_currently_readable = true
     report.assertions.link_target_time_window = true
     report.assertions.link_lookup_bounded_result = true
@@ -168,7 +202,9 @@ test('execution trace local real Console password MFA, causal link and checkpoin
       report.assertions.tenant_browser_lazy_readable_missing_clear_logout = true
     } finally { await tenantContext.close() }
     report.result = 'passed'; report.stage = 'complete'
-  } catch {
+  } catch (error) {
+    if (report.stage === 'causal-link') causal?.fail(error)
+    persistFirstFailure()
     // Do not export Playwright's password-fill call logs, response bodies or URL
     // snapshots. The caller keeps only this fixed stage and safe booleans.
     throw new Error('Execution Trace local browser failed at stage ' + report.stage)

@@ -1,3 +1,4 @@
+import { openSync, closeSync, fstatSync, fsyncSync, writeFileSync, constants } from 'node:fs'
 import { traceLinkQuery, traceRoute } from '../../../../monitor/frontend/src/utils/traces.js'
 
 const traceID = value => typeof value === 'string' && /^[0-9a-f]{32}$/.test(value) && !/^0+$/.test(value)
@@ -63,4 +64,51 @@ export function tenantStageBrowserInput(value) {
         row.kind === 'missing' && row.stages[0].state !== 'not_found') invalid()
   }
   return value
+}
+
+// Only the existing browser operations supply observations; this records no URLs or bodies.
+const causalLinkSteps = ['link-binding', 'link-click', 'instance-response', 'instance-status', 'instance-body',
+  'instance-identity', 'trace-response', 'trace-status', 'trace-query-instance', 'trace-query-start',
+  'trace-query-end', 'trace-body', 'trace-identity', 'trace-not-found-code', 'trace-missing-ui',
+  'trace-missing-cleared', 'trace-present-ui', 'trace-error-cleared', 'complete']
+
+export function causalLinkDiagnostics(onFirstFailure) {
+  const receipt = { substep: 'link-binding', instance_http_status: null, trace_http_status: null, first_failure: null }
+  return {
+    receipt,
+    step(value) {
+      if (!causalLinkSteps.includes(value)) throw new Error('causal_link_step_invalid')
+      if (!receipt.first_failure) receipt.substep = value
+    },
+    response(kind, status) {
+      if (!['instance', 'trace'].includes(kind)) throw new Error('causal_link_response_invalid')
+      if (!receipt.first_failure && Number.isInteger(status) && status >= 100 && status <= 599) receipt[kind + '_http_status'] = status
+    },
+    fail(error, substep = receipt.substep) {
+      if (receipt.first_failure) return
+      const error_category = error?.name === 'TimeoutError' ? 'timeout' : error instanceof SyntaxError ? 'invalid_json'
+        : error?.matcherResult ? 'assertion_failed' : 'operation_failed'
+      receipt.first_failure = Object.freeze({ substep: causalLinkSteps.includes(substep) ? substep : 'unknown', error_category,
+        instance_http_status: receipt.instance_http_status, trace_http_status: receipt.trace_http_status })
+      try { onFirstFailure() } catch { receipt.persistence = 'filesystem_error' }
+    }
+  }
+}
+
+// The host reserves this single external file; no directory or secret input is exposed.
+export function writeExecutionTraceFirstFailure(path, report) {
+  const allowedStages = ['admission', 'password-mfa', 'retained-terminal', 'causal-link', 'checkpoint-log',
+    'platform-browser-logout', 'tenant-input', 'tenant-password', 'tenant-orchestrator-readable',
+    'tenant-orchestrator-missing', 'tenant-develop-readable', 'tenant-develop-missing', 'tenant-browser-logout']
+  const value = { schema: 'addp.execution-trace-browser-first-failure/v1', run_id: report.run_id,
+    result: 'failed', stage: allowedStages.includes(report.stage) ? report.stage : 'unknown' }
+  if (report.causal_link?.first_failure) value.causal_link = report.causal_link.first_failure
+  const encoded = JSON.stringify(value)
+  if (Buffer.byteLength(encoded) > 2048) throw new Error('browser_first_failure_over_budget')
+  const fd = openSync(path, constants.O_RDWR | constants.O_NOFOLLOW)
+  try {
+    const info = fstatSync(fd)
+    if (!info.isFile() || info.nlink !== 1 || (info.mode & 0o077) !== 0 || info.size !== 0) throw new Error('browser_first_failure_file_invalid')
+    writeFileSync(fd, encoded); fsyncSync(fd)
+  } finally { closeSync(fd) }
 }

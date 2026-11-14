@@ -421,7 +421,11 @@ Graph 在 C→G 内、关闭／取消／归档前比较当前模块影响与原�
 
 保留下的浏览器安全回执为`result=failed, stage=causal-link`，仅确认平台密码／MFA及保留失败终态可见两项；浏览器容器于12:02:35启动、12:06:38退出1、OOMKilled=false。当前回执不能定位关联行点击、实例读取、目标Trace读取或后续断言中的具体失败点，不推断根因。等待会话中断后原exec句柄已不可恢复，Make退出码和原runner终态报告不可用；后置安全核验与恢复清理单独留证，不伪造原报告或补算资源峰值。正式定义DELETE／404和四会话注销未取得回执，不记为通过。
 
-已用原Lifecycle清理实现恢复本轮精确归属清理；首次恢复的镜像通配查询漏掉仓库路径，后置复核发现十个本轮镜像标签，按精确仓库前缀补清，退出0，原中间回执保留。最终12:20后的只读核验确认本轮容器／网络／卷、builder容器与状态卷、十个产品镜像标签及私有目录均0；仅保留脱敏证据目录`/tmp/addp-tenant-stage-real-keyids-20261114-57cayiaf`（0700／文件0600）中的`preflight.json`、原未完成`window.json`、`browser-failure.json`、`interruption.json`、`cleanup.json`、`image-cleanup.json`、`audit.json`和空`run.log`。原两轮失败报告SHA256均未变。未重启个人服务、改权限／预算、触发Hosted或追加运行。剩余优先项是沿现有浏览器调用补齐causal-link安全子步骤诊断并作确定性回归，先定位具体失败点；随后完整Console、请求链、正式API清理与资源守卫证据仍需另行批准的真实运行，不以外层零残留替代。
+已用原Lifecycle清理实现恢复本轮精确归属清理；首次恢复的镜像通配查询漏掉仓库路径，后置复核发现十个本轮镜像标签，按精确仓库前缀补清，退出0，原中间回执保留。最终12:20后的只读核验确认本轮容器／网络／卷、builder容器与状态卷、十个产品镜像标签及私有目录均0；仅保留脱敏证据目录`/tmp/addp-tenant-stage-real-keyids-20261114-57cayiaf`（0700／文件0600）中的`preflight.json`、原未完成`window.json`、`browser-failure.json`、`interruption.json`、`cleanup.json`、`image-cleanup.json`、`audit.json`和空`run.log`。原两轮失败报告SHA256均未变。未重启个人服务、改权限／预算、触发Hosted或追加运行。本轮之后的causal-link安全诊断及首失败落盘已按单独批准实施，见下；原真实失败与证据缺失不由新确定性验证改记为通过。完整Console、请求链、正式API清理与资源守卫仍需另行批准的真实运行，不以外层零残留替代。
+
+**causal-link诊断与首失败落盘（2026-11-14）。** 正式观测契约先同步后实施：原关联绑定、点击、实例响应／状态／JSON／身份、目标Trace响应／状态／查询范围及页面断言分别记录固定子步骤；仅保留既有Promise收到的HTTP状态及封闭错误类别，不输出异常正文、URL、响应体、凭据或技术引用。原两个响应Promise原位观察，原业务请求、断言、240秒／300秒及整轮预算不变。宿主在原总报告旁独占预留0600的首失败文件，只向原浏览器绑定该单个文件；首失败立即冻结并同步写入／fsync，最多2048字节，后继错误与私有目录清理不覆盖。空文件不作通过回执，写失败不替换首因，观察或写入前硬终止仍可能无证据。没有新增入口、依赖、身份、探针或等待；既有OWN_INPUTS、Console及Execution路径选择已覆盖。
+
+确定性用例直接执行现有浏览器用例的合成页面调用，覆盖18个失败子步骤、原200／404成功分支、原请求／点击数量、HTTP状态、真实Playwright断言异常分类、错误脱敏、文件权限／拒绝覆盖、写入失败保留首因，以及子进程直接退出后首失败仍保留；宿主侧注入验证单文件绑定、原300秒及外部证据在私有目录清理后保留。原三轮真实失败证据核验未变，本批没有重启服务、Hosted或新的真实运行；不将确定性验证记为旧causal-link根因已修复。最终本地`make test-monitor-traces-local-runner`通过227项Python、登记及System身份夹具Go；`make test-console-frontend`通过31文件／284项单测、370项浏览器夹具及生产构建；补充带GITHUB_ACTIONS标记的单测环境复跑284项通过，仅合成测试Worker隔离标记，真实准入仍拒绝Hosted；`make test-execution-online-ci-runner`通过207＋19＋28＋158＋35＝447项及登记。初轮夹具失败与超时日志保留，不计为通过。日志、源码摘要与旧证据哈希核对见`/tmp/addp-causal-link-{runner-complete,console-complete,browser-unit-ci-env,execution}.log`及`/tmp/addp-causal-link-prepublish.json`；Linux实际执行尚未核验，不外推。下一步先核验本提交相关Linux门禁，再单独确认真实复验以读取首失败子步骤；完整Console／请求链／正式API清理和资源守卫仍待真实证据。
 
 ## 七、确认范围与协作分工
 
