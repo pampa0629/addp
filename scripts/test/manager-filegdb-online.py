@@ -509,7 +509,7 @@ def verify_engine_root(authorization, client, outsider, report, physical, owner)
                 meta = row.get('metadata', {})
                 if meta.get('item_id'): found.append(meta.get('full_name'))
                 if meta.get('full_name') == EMPTY_NAME:
-                    require(row.get('type') == 'directory' and row.get('children') == []
+                    require(row.get('type') == 'dir' and row.get('children') == []
                             and row.get('hasChildren') is False and meta.get('item_count') == 0,
                             'authorized NFS empty directory lost its identity')
                     empty_visible = True

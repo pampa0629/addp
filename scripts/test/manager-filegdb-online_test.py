@@ -518,7 +518,7 @@ class FileGDBAcceptanceTest(unittest.TestCase):
 
     def test_engine_root_rejects_leaks_wrong_scope_history_identity_and_scan(self):
         for fault in ('empty_hidden', 'future_precise_grant', 'future_read_failed', 'wrong_receipt',
-                      'future_leaked_after_withdrawal', 'independent_read_failed', 'expiry_forged_revocation', 'credential', 'empty_is_item', 'empty_scan_has_item'):
+                      'future_leaked_after_withdrawal', 'independent_read_failed', 'expiry_forged_revocation', 'credential', 'empty_is_item', 'empty_scan_has_item', 'empty_wrong_type'):
             with self.subTest(fault=fault), self.assertRaises((ValueError, M.API.SuiteError)):
                 self.root_flow(fault)
 
@@ -590,7 +590,7 @@ class FileGDBAcceptanceTest(unittest.TestCase):
                 if fault == 'future_leaked_after_withdrawal' and not root and leaf: names.append(M.FUTURE_NAME)
                 children = [{'type': 'file', 'metadata': {'item_id': i + 1, 'full_name': name}} for i, name in enumerate(names)]
                 if (root or empty) and fault != 'empty_hidden':
-                    children.append({'type': 'directory', 'children': [], 'hasChildren': False,
+                    children.append({'type': 'directory' if fault == 'empty_wrong_type' else 'dir', 'children': [], 'hasChildren': False,
                         'metadata': {'full_name': M.EMPTY_NAME, 'item_count': 0, **({'item_id': 99} if fault == 'empty_is_item' else {})}})
                 return SimpleNamespace(status=200, payload={'metadata': {'engine_id': 7}, 'children': children})
             if '/meta/engines/' in url:
