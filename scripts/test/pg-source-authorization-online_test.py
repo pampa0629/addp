@@ -1549,7 +1549,7 @@ class PGDependencyOutageTest(unittest.TestCase):
             run.assert_not_called()
 
     def test_content_fixture_is_bounded_token_free_and_checks_source_receipt(self):
-        for action, receipt in (('content-change', 'pg-content:changed'), ('content-reset', 'pg-content:baseline'), ('node-future-create', 'pg-node:created')):
+        for action, receipt in (('content-change', 'pg-content:changed'), ('content-reset', 'pg-content:baseline'), ('node-future-create', 'pg-node:created'), ('node-empty-create', 'pg-node:empty')):
             with self.subTest(action=action), \
                  patch.object(ONLINE.subprocess, 'run', return_value=SimpleNamespace(returncode=0, stdout=receipt)) as run:
                 REAL_MUTATE_SOURCE_CONTENT(action)
@@ -3376,6 +3376,125 @@ class PGPersistentNodeScopeTest(unittest.TestCase):
     def test_bad_node_facts_binding_duplicate_or_timeout_cannot_pass(self):
         for fault in ['items_in_node_page','wrong_scope','wrong_boundary','leaf_grant','never_expire']:
             with self.subTest(fault=fault),self.assertRaises(ONLINE.SuiteError):self.run_scope(fault)
+
+
+class PGEngineRootNavigationTest(unittest.TestCase):
+    def run_flow(self, fault=None):
+        grants, expired, calls = {}, set(), []
+        clock = itertools.count(0, 10)
+        engine, principal = 2, '33'
+        root = ONLINE.table_path(engine, 'metric_people')
+        root['segments'] = root['segments'][:1]
+        def active(row):
+            return not row.get('revocation') and row['request_id'] not in expired
+        def allowed(name, action='read'):
+            for row in grants.values():
+                if not active(row): continue
+                if row['action'] != action and not (action == 'metadata_read' and row['action'] == 'read'): continue
+                segments = row['catalog_path']['segments']
+                if len(segments) == 1 and row.get('node_recursive'): return True
+                if segments[-1]['name'] == name: return True
+            return False
+        def listing(*, history=False, state=None, catalog_path=None, **kwargs):
+            if state == 'expired' and fault != 'never_expire':
+                expired.update(k for k,r in grants.items() if active(r) and r.get('expires_at') == expiring_time[0])
+            rows = []
+            for key,row in grants.items():
+                current = 'revoked' if row.get('revocation') else 'expired' if key in expired else 'active'
+                if not history and current != 'active' or history and state and current != state: continue
+                rows.append(dict(row))
+            return {'total': len(rows), 'data': rows}
+        expiring_time = [None]
+        def tree():
+            children = []
+            items = [name for name in ['metric_people','metric_events','metric_node_future'] if allowed(name, 'metadata_read')]
+            if fault == 'adjacent_item_leak' and items == ['metric_people']: items.append('metric_events')
+            if items:
+                children.append({'type':'schema','metadata':{'full_name':'public'},'children':[
+                    {'type':'table','metadata':{'item_id':10+i,'full_name':'public.'+name},'children':[]}
+                    for i,name in enumerate(items)]})
+            empty = allowed('metric_authorization_empty', 'metadata_read')
+            if fault == 'empty_node_omitted': empty = False
+            if empty: children.append({'type':'schema','metadata':{'full_name':'metric_authorization_empty','item_count':0},
+                                       'children':[],'hasChildren':False})
+            return {'metadata':{'engine_id':999 if fault == 'foreign_engine' else engine},'children':children}
+        class Client:
+            token = 'same-private-reader'
+            def __init__(self, kind): self.kind = kind
+            def request(self, method, url, expected, body=None, **kwargs):
+                path = urlsplit(url).path;calls.append((self.kind,method,path,deepcopy(body)))
+                status, result = 200, {}
+                if path.endswith('/access_grants') and method == 'POST':
+                    row = dict(body, approval_mode='independent', granted_at='2026-11-14T00:00:00Z', revocation=None)
+                    if body.get('item_fingerprint'): row['boundary_hash'] = 'b'*64
+                    grants[body['request_id']] = row
+                    if len(grants) == 4: expiring_time[0] = body['expires_at']
+                    if fault == 'lost_grant_response': raise ONLINE.SuiteError('lost response')
+                    status, result = 201, dict(row)
+                elif path.endswith('/revoke'):
+                    key=path.split('/')[-2]
+                    if fault != 'withdrawal_ignored': grants[key]['revocation']={'reason':'explicit'}
+                    result=dict(grants[key])
+                elif path.endswith('/scan/run/manual'):
+                    status,result=201,{'execution_id':'11111111-1111-4111-8111-111111111111'}
+                elif '/meta/executions/' in path:
+                    result={'execution_id':'11111111-1111-4111-8111-111111111111','status':'success',
+                        'scan_context':{'scan_depth':'basic'},'metadata':{'items_scanned':1 if fault=='scan_expanded' else 0,'catalog_nodes_scanned':1}}
+                elif path == '/api/v1/manager/engines':
+                    visible = self.kind == 'reader' and any(active(row) for row in grants.values())
+                    if fault == 'ungranted_engine_leak': visible = True
+                    result={'data':[{'id':engine}] if visible else []}
+                elif '/meta/resource-tree/' in path:
+                    visible=self.kind=='reader' and any(active(row)for row in grants.values())
+                    if visible: result=tree()
+                    else: status,result=404,{'error':'not found','error_code':'not_found'}
+                    if fault=='hidden_target_leak' and not visible: result['target']='private'
+                else: raise AssertionError((method,path))
+                ONLINE.require(status in expected, 'unexpected status')
+                return SimpleNamespace(payload=result,status=status)
+        operator,reader,outsider=Client('operator'),Client('reader'),Client('outsider')
+        life=FixtureLifecycle(operator,reader,3,engine,principal,{'department':'41','project_group':'51'},
+            outsider,Client('coordinator'),Client('login'),'external-online-consumer','private-password')
+        life.listing=listing
+        def preview(client,target,expected,*args,**kwargs):
+            name=urlsplit(target).path.rsplit('/',1)[-1]
+            ONLINE.require((client is reader and allowed(name)) == expected,'incorrect source read verdict')
+        def hidden(client,item_id): ONLINE.require(not allowed('metric_node_future','metadata_read'),'metadata leak')
+        report={'checks':[],'node_scope':{'future_item_id':12,'recursive_grant':'prior-root-command'}}
+        self.life,self.grants,self.expired=life,grants,expired
+        from contextlib import ExitStack
+        with ExitStack() as stack:
+            stack.enter_context(patch.object(ONLINE,'mutate_source_content'))
+            stack.enter_context(patch.object(ONLINE,'preview',side_effect=preview))
+            stack.enter_context(patch.object(ONLINE,'hidden_metadata',side_effect=hidden))
+            stack.enter_context(patch.object(ONLINE.REGISTRATION,'read_exact_record_authorization_facts',
+                return_value={'item_fingerprint':'a'*64,'boundary_hash':'b'*64}))
+            stack.enter_context(patch.object(ONLINE.time,'sleep'))
+            stack.enter_context(patch.object(ONLINE.time,'monotonic',side_effect=lambda:next(clock)))
+            try: life.engine_root_navigation_flow(report)
+            finally:
+                # Exercise the original finally cleanup for failed/unknown writes too.
+                if fault == 'withdrawal_ignored': life.revoke=lambda k: grants[k].update(revocation={'reason':'cleanup'})
+                life.cleanup()
+        return report,calls
+
+    def test_root_navigation_lifecycle_retains_empty_and_independent_sources(self):
+        report,calls=self.run_flow()
+        self.assertEqual(len(report['checks']),6)
+        self.assertTrue(report['engine_navigation']['same_credential'])
+        self.assertTrue(report['engine_navigation']['natural_expiry_without_revocation'])
+        self.assertEqual(len(self.grants),4)
+        self.assertEqual([x['leaf_names'] for x in report['engine_navigation']['observations'] if x['visible']][1:3],
+                         [['public.metric_people'],[]])
+        scan=next(x[3] for x in calls if x[2].endswith('/scan/run/manual'))
+        self.assertEqual(scan['targets'],['addp://engine/2/path/metric_authorization_empty?type=schema'])
+        self.assertTrue(all(r.get('revocation') or k in self.expired for k,r in self.grants.items()))
+
+    def test_navigation_leaks_wrong_engine_scope_and_unexpired_grants_cannot_pass(self):
+        for fault in ['ungranted_engine_leak','hidden_target_leak','empty_node_omitted','adjacent_item_leak',
+                      'foreign_engine','scan_expanded','withdrawal_ignored','never_expire','lost_grant_response']:
+            with self.subTest(fault=fault),self.assertRaises(ONLINE.SuiteError): self.run_flow(fault)
+            self.assertTrue(all(r.get('revocation') or k in self.expired for k,r in self.grants.items()))
 
 
 class ManagerPGWireContractTest(unittest.TestCase):

@@ -39,10 +39,22 @@ SELECT json_build_object(
 SQL
     exit 0
     ;;
-  node-future-create)
+  node-future-create|node-empty-create)
     [ "${ONLINE_SUITE:-}" = pg-source-authorization ] && [ "${ADDP_ONLINE_TEST:-}" = 1 ] &&
       [ "${POSTGRES_DB:-}" = addp_online ] || fail "PG node creation requires its isolated suite"
     [ "$(docker inspect --format '{{ index .Config.Labels "com.addp.online-fixture" }}' "$container")" = metric ] || fail "container ownership mismatch"
+    if [ "$1" = node-empty-create ]; then
+      docker exec -i "$container" psql -X -U postgres -d metric_fixture -Atq -v ON_ERROR_STOP=1 <<'SQL'
+BEGIN;
+SET LOCAL lock_timeout = '3s';
+SET LOCAL statement_timeout = '5s';
+CREATE SCHEMA metric_authorization_empty;
+GRANT USAGE ON SCHEMA metric_authorization_empty TO metric_reader;
+COMMIT;
+SELECT 'pg-node:empty' WHERE NOT EXISTS (SELECT 1 FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='metric_authorization_empty');
+SQL
+      exit 0
+    fi
     docker exec -i "$container" psql -X -U postgres -d metric_fixture -Atq -v ON_ERROR_STOP=1 <<'SQL'
 BEGIN;
 SET LOCAL lock_timeout = '3s';
@@ -107,7 +119,7 @@ SQL
     exit 0
     ;;
   start) ;;
-  *) fail "usage: online-metric-postgres-fixture.sh start|stop|snapshot-kml|snapshot-filegdb|content-change|content-reset|node-future-create" ;;
+  *) fail "usage: online-metric-postgres-fixture.sh start|stop|snapshot-kml|snapshot-filegdb|content-change|content-reset|node-future-create|node-empty-create" ;;
 esac
 # The PG authorization suite also produces a genuinely new table. Keep all
 # existing fixture tables read-only; CREATE only lets this disposable account

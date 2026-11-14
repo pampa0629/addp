@@ -967,7 +967,7 @@ def mutate_source_content(action):
     repository = Path(__file__).resolve().parents[2]
     required = {'GITHUB_ACTIONS': 'true', 'RUNNER_OS': 'Linux', 'ADDP_ONLINE_HOSTED': '1',
                 'ADDP_ONLINE_HOST': '1', 'ADDP_ONLINE_TEST': '1', 'POSTGRES_DB': 'addp_online'}
-    require(action in {'content-change', 'content-reset', 'node-future-create'} and sys.platform == 'linux'
+    require(action in {'content-change', 'content-reset', 'node-future-create', 'node-empty-create'} and sys.platform == 'linux'
             and os.uname().machine == 'x86_64' and not (repository / '.env').exists()
             and all(os.environ.get(key) == value for key, value in required.items()),
             'PG content changes require the isolated Hosted suite')
@@ -978,7 +978,8 @@ def mutate_source_content(action):
             cwd=repository, env=environment, capture_output=True, text=True, timeout=30)
     except (OSError, subprocess.TimeoutExpired) as exc:
         raise SuiteError('PG content fixture did not complete') from exc
-    receipt = {'content-change': 'pg-content:changed', 'content-reset': 'pg-content:baseline', 'node-future-create': 'pg-node:created'}[action]
+    receipt = {'content-change': 'pg-content:changed', 'content-reset': 'pg-content:baseline',
+               'node-future-create': 'pg-node:created', 'node-empty-create': 'pg-node:empty'}[action]
     require(result.returncode == 0 and result.stdout.strip() == receipt, 'PG content fixture failed its source oracle')
 
 
@@ -2567,6 +2568,115 @@ class Lifecycle:
             'node_ungranted_account_denied', 'node_withdrawal_preserves_metadata',
             'node_replay_cannot_restore_withdrawn_scope', 'node_natural_expiry_denies_read'])
 
+    def engine_root_navigation_flow(self, report):
+        report['phase'] = 'pg_engine_root_navigation'
+        token = self.reader.token
+        root = dict(self.path, segments=self.path['segments'][:1])
+        empty = dict(self.path, segments=[*root['segments'],
+            dict(term='schema', kind='namespace', name='metric_authorization_empty')])
+        self.paths.append(empty)  # Cleanup owns the target before any source/API mutation.
+        proof = report['engine_navigation'] = {'observations': []}
+
+        def navigation(client, visible, *, leaves=None, empty_visible=False):
+            engines = client.request('GET', '/api/v1/manager/engines', (200,)).payload.get('data')
+            require(isinstance(engines, list) and sum(row.get('id') == self.engine for row in engines) == int(visible),
+                    'Manager engine visibility differs from current authorization')
+            tree = client.request('GET', f'/api/v1/meta/resource-tree/{self.engine}?expand_depth=3',
+                                  (200,) if visible else (404,)).payload
+            observation = {'principal': 'reader' if client is self.reader else 'outsider',
+                           'visible': visible, 'leaf_names': [], 'empty_visible': False}
+            if not visible:
+                require(set(tree) <= {'error', 'error_code'} and bool(tree.get('error')),
+                        'hidden engine tree exposed target information')
+            else:
+                require(tree.get('metadata', {}).get('engine_id') == self.engine,
+                        'resource tree belongs to another engine')
+                pending = [tree]
+                while pending:
+                    row = pending.pop()
+                    metadata = row.get('metadata', {})
+                    if metadata.get('item_id'):
+                        observation['leaf_names'].append(metadata.get('full_name'))
+                    if metadata.get('full_name') == 'metric_authorization_empty':
+                        require(row.get('type') == 'schema' and row.get('children') == []
+                                and row.get('hasChildren') is False and metadata.get('item_count') == 0,
+                                'authorized empty schema gained items or lost its node identity')
+                        observation['empty_visible'] = True
+                    pending.extend(row.get('children', []))
+                if leaves is not None:
+                    require(sorted(observation['leaf_names']) == sorted(leaves),
+                            'resource tree omitted an authorized item or leaked an adjacent item')
+                require(observation['empty_visible'] == empty_visible,
+                        'authorized empty schema visibility changed')
+            proof['observations'].append(observation)
+
+        require(self.listing(history=True, state='active', catalog_path=root)['total'] == 0,
+                'engine navigation requires zero current source rules')
+        navigation(self.reader, False)
+        navigation(self.outsider, False)
+        mutate_source_content('node-empty-create')
+        created = self.operator.request('POST', '/api/v1/meta/scan/run/manual', (201,), {
+            'engine_id': self.engine, 'targets': [f'addp://engine/{self.engine}/path/metric_authorization_empty?type=schema'],
+            'scan_depth': 'basic', 'force': True, 'trigger_type': 'manual', 'source': 'meta'}).payload
+        execution = created.get('execution_id')
+        require(isinstance(execution, str) and str(uuid.UUID(execution)) == execution, 'empty schema scan identity missing')
+        proof['empty_scan_execution'] = execution
+        deadline = time.monotonic() + 120
+        while time.monotonic() < deadline:
+            run = self.operator.request('GET', f'/api/v1/meta/executions/{execution}', (200,)).payload
+            require(run.get('execution_id') == execution, 'empty schema scan identity changed')
+            if run.get('status') == 'success':
+                require(run.get('scan_context', {}).get('scan_depth') == 'basic'
+                        and run.get('metadata', {}).get('items_scanned') == 0
+                        and run.get('metadata', {}).get('catalog_nodes_scanned') == 1,
+                        'empty schema scan expanded its declared source scope')
+                break
+            require(run.get('status') in {'pending', 'running'}, 'empty schema basic scan failed')
+            time.sleep(1)
+        else:
+            raise SuiteError('empty schema basic scan exceeded its deadline')
+        root_grant, _ = self.node_grant(root, recursive=True)
+        navigation(self.reader, True, empty_visible=True)
+        navigation(self.outsider, False)
+        future_target = locator(self.engine, 'metric_node_future', report['node_scope']['future_item_id'])
+        preview(self.reader, future_target, True, 2, values=('N1', 'N2'))
+        empty_grant, _ = self.node_grant(empty, recursive=False, action='metadata_read')
+        facts = REGISTRATION.read_exact_record_authorization_facts(self.operator, self.path)
+        independent, _ = self.grant(facts)
+        self.revoke(root_grant)
+        navigation(self.reader, True, leaves=['public.metric_people'], empty_visible=True)
+        preview(self.reader, locator(self.engine, 'metric_people'), True, 2)
+        preview(self.reader, future_target, False)
+        hidden_metadata(self.reader, report['node_scope']['future_item_id'])
+        self.revoke(independent)
+        navigation(self.reader, True, leaves=[], empty_visible=True)
+        preview(self.reader, locator(self.engine, 'metric_people'), False)
+        self.revoke(empty_grant)
+        navigation(self.reader, False)
+        expiring, _ = self.node_grant(root, recursive=True, seconds=45)
+        navigation(self.reader, True, empty_visible=True)
+        deadline = time.monotonic() + 75
+        while time.monotonic() < deadline:
+            expired = [row for row in self.listing(history=True, state='expired', catalog_path=root)['data']
+                       if row.get('request_id') == expiring]
+            if expired:
+                break
+            time.sleep(1)
+        else:
+            raise SuiteError('engine root navigation Grant did not naturally expire')
+        require(len(expired) == 1 and expired[0].get('revocation') is None
+                and expired[0].get('node_recursive') is True, 'root expiry was replaced by withdrawal')
+        navigation(self.reader, False)
+        preview(self.reader, future_target, False)
+        require(self.reader.token == token and self.listing(catalog_path=root)['total'] == 0,
+                'engine navigation changed credential or left active sources')
+        proof.update(root_grant=root_grant, empty_grant=empty_grant, independent_grant=independent,
+                     expiry_grant=expiring, same_credential=True, natural_expiry_without_revocation=True,
+                     future_coverage_grant=report['node_scope']['recursive_grant'])
+        report['checks'].extend(['engine_without_grants_hidden', 'engine_root_grant_shows_empty_schema',
+            'root_withdrawal_retains_independent_item_and_ancestor', 'empty_node_grant_remains_without_items',
+            'last_node_withdrawal_hides_engine', 'engine_root_natural_expiry_hides_navigation'])
+
     def metadata_access_flow(self, report, business, confirmer):
         report['phase'] = 'metadata_access_boundary'
         token = self.reader.token
@@ -3231,6 +3341,7 @@ def main():
         del controller
         lifecycle.collection.run_inflight(report)
         lifecycle.node_scope_flow(report)
+        lifecycle.engine_root_navigation_flow(report)
         report['phase'] = 'authorized_pg_metadata_refresh'
         def register_refresh(body):
             lifecycle.grants.append(body['request_id'])
