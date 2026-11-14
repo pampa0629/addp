@@ -713,3 +713,33 @@ Artifact `14115449615`，7835428 字节，SHA-256=`f429550acd7ce2ce8084807451eb3
 领域 cleanup=passed：三条规则删除读回、源临时记录、事务锁、CPU、Connector 配置均清理或恢复；Webhook 目标删除且接收端关闭，任务 3／2 删除后读回不存在。硬退出 Kafka task 1 按原场景保留至部署销毁，因此领域 residual_resources=expected_deployment_residuals=1。失败请求仍保留 uncertain_mutation=true，不以清理成功改写请求结果；外层 summary 的 cleanup=passed、infra_cleanup=zero_residuals 单独认定。个人环境只读前后对照一致：task61 仍 running，task46／task58 两个原槽仍不活跃并保留，全局身份活动槽仍活跃；未对这些任务和逻辑槽执行控制或写入。
 
 同一候选的最终标准 `make test-transfer-continuous-online-runner` 在固定提交临时检出中通过：139 项 Python（45.888s）、Node／Shell 语法及 System 身份夹具 Go（1.257s）。此前本机标准复核分别出现 1、8、2 项既有替身夹具超时，单项／17 项夹具和带进程观察的 139 项诊断通过后，再经未改变预算、环境配置或测试逻辑的标准入口通过。超时根因尚未定位，不将最终通过表述为已经修复该环境问题；日志保留在 `/tmp/addp-cdc-backlog-runner.log`、`/tmp/addp-cdc-backlog-candidate-runner.log`、`/tmp/addp-cdc-backlog-candidate-steady-runner.log` 和 `/tmp/addp-cdc-backlog-candidate-final-standard.log`。验收编排及其反例已提交，产品修复另行确认。
+
+
+### 捕获控制与周期观测职责收敛，本地回归通过（2026-11-15）
+
+用户确认后，固定修复 `6681876925f19a275099519c12b4e9832ceb7121` 将 Pause／Resume 及已运行 generation 的 Start 重入检查收敛为只读健康检查；首次准备 generation 的初始事实继续由 Start 保存。周期 Refresh 只由后台采样调用；控制失败也不通过同步请求发布周期失败快照。复用同一 Connector／源端探针，检查后重新读取当前代次及 cleaning／cleanup_failed／stopped 状态，普通采样版本推进允许通过，代次更换或终态拒绝。现有 generation CAS、源端身份核验和生命周期写入保持；没有新增重试、互斥锁、版本字段、API 或权限。
+
+并发回归使用返回分离快照、实际推进存储 CAS 版本的测试 Store。在用户源端检查持有版本 103 期间，由后台真实调用 Refresh 发布健康观测；旧实现的 Pause／Resume 均重现 version conflict 及额外竞争写入，修复后控制成功且只有后台一次写入。检查期间切换代次及进入三种终态均被拒绝；源端／Connector 不健康仍拒绝控制，而失败事实由后续后台采样发布。日志保留 `/tmp/addp-cdc-control-regression-red.log` 与 `/tmp/addp-cdc-control-go-green.log`。
+
+标准验证在固定提交临时检出中执行，仅带入本次三个文件，未混入共享工作区其他改动：`make test-module MODULE=transfer GO_ONLY=1` 全部 Go T1 通过；同入口使用 GOFLAGS 对新控制回归执行 race 检测通过；`make test-transfer-postgres TRANSFER_POSTGRES_TEST_ARGS="--source-root /tmp/addp-cdc-backlog-validation"` 在已核对的共享 addp_test 运行通过，无测试跳过；`make test-transfer-continuous-online-runner` 的 139 项 Python、Node／Shell 语法和 System 身份夹具 Go 通过。日志分别为 `/tmp/addp-cdc-control-race.log`、`/tmp/addp-cdc-control-postgres.log` 和 `/tmp/addp-cdc-control-runner.log`。本地门禁不替代下述 Hosted 实故障验收。
+
+同一源码的 [Transfer Go CI runner / Job 132494342105](https://github.com/pampa0629/addp/actions/runs/43610507380/job/132494342105) 实际执行标准 Go T1 并通过；日志确认 checkout、ADDP_CI_HEAD、路径选择与 `go test ./...` 均为 `6681876925f19a275099519c12b4e9832ceb7121`，不是跳过或仅摘要成功。真实 Hosted 结果见下一节；前轮 43605219535 的部分通过、恢复失败及 uncertain_mutation=true 均原样保留，不据本地回归追认。
+
+
+### 可选积压告警与后继 CDC 完整 Hosted 通过（2026-11-15）
+
+固定修复 `6681876925f19a275099519c12b4e9832ceb7121` 的 [Hosted 43610830710 / Job 132495296433](https://github.com/pampa0629/addp/actions/runs/43610830710/job/132495296433) 实际运行与证据上传步骤均 success，suite 与外层 result 均 passed。业务场景耗时 1274023ms（约 21 分 14 秒），沿原 1450／1500 秒预算，没有扩大阈值、持续时间、权限或原生故障范围。23 个检查与 7 份真实 Console 回执（live／recovery／revocation／owner_unavailable／cdc_initial／cdc_growth／cdc_resumed）全部通过；preflight 的六个服务构建身份和源码均精确对应固定候选，repository_clean=true。
+
+Artifact `14122462773`（8759262 bytes）下载后核对 SHA-256 `ad64a0688038400acc46837b6a05e5d43f2c6ae4c493aa101b2493dd49fd8f28` 及 ZIP CRC。完整报告、独立核对摘要和个人保留对照分别位于 `/tmp/addp-cdc-control-hosted-43610830710/suite-report.json`、`verified-summary.json` 和 `preserved-after.log`，原始 Job 日志为 `/tmp/addp-cdc-control-hosted-43610830710-job.log`。
+
+- **任务可选阈值与触发**：只为本轮 task 3／generation 1 显式配置十进制阈值 `256`，不替个人任务建规则。`cdc_backlog_high` incident 19 在新鲜 offset 积压 5726 时打开，规则和事件持续时间均为 300 秒；实际有效窗口约 314.197 秒。消费停滞与捕获延迟同轮打开，窗口分别约 344.399607／285.015463 秒，延迟高值期间有真实新事件推进，不用暂停任务、闲置等待或受控 Owner 事实替代原生故障。
+- **暂停保持与正式恢复**：正式 Pause 结束 execution `983827df-51e6-4465-91aa-36c35843ca01`；积压及消费停滞评估暂停、待触发／待恢复窗口清空，同一已确认事件及 LastObservedAt 在 32 秒的 16 次检查中保持，没有关闭通知。捕获延迟继续按原条件评估。正式 Resume 成功返回并实际运行新 execution `f86c0faa-617e-4dd0-8288-8461accba15b`，当前 generation 保持，恢复未再被后台观测 CAS 更新阻断。
+- **缺样保持**：暂停本轮独占 Connect 与消息代理后，分别取得新的 buffer／delay unavailable；三条规则均为 unknown，同一已确认事件及 LastObservedAt 连续 32 秒、16 次检查保持，不发送恢复通知。解除故障时独立恢复原 Connector 配置、CFS 配额和目标表锁，未改变产品探测超时或告警持续窗口。
+- **恢复关闭**：真实消费赶上后，新鲜积压样本均为 0，严格低于半阈值 128。连续低积压样本跨度及规则恢复窗口均约 74.978728 秒，超过所需 60 秒后原 incident 19 resolved。消费停滞与有新事件证明的健康延迟也关闭原事件；三条 performance incident 身份保持，不以新建事件替代关闭。清除本轮 60000 条专用源记录后取得清理完成时间之后的新鲜零积压，目标三字段精确两行的数据库侧有界行集核验通过。
+- **通知实收**：三类性能 opened／resolved 共 6 条，均逐一通过 HMAC、准确任务／incident／event／delivery UUID、202 回执及 delivered 审计。积压 opened delivery=`404d7e74-c215-4e9b-b52e-24ece8c19108`，resolved delivery=`26838252-9765-4d24-bcb4-14f7520c264a`，事件均绑定 incident 19。加上捕获失败两条与不可恢复风险四条，全套为 12 条唯一 delivery 和 event UUID；不以投递排队或 mock 回执代替实收。
+- **后继场景**：消息代理故障后的 execution `1588556c-c0dd-4a6e-8ac8-0681f1462015` 精确关联上述手动 Resume execution，原执行仍 failed，当前 Pause execution cancelled。捕获失败 warning 52 的真实失败样本跨度约 75.003799 秒，16 次缺样保持、新鲜健康关闭及通知通过。消息恢复范围丢失 incident 56、源槽缺失 incident 58 均经历独立触发、16 次缺样保持及正式 Stop 关闭；task 4／generation 1 的全新目标、完整三字段 snapshot 和健康观测重建通过，execution=`5d2dc92f-67d4-4d48-81b6-92c2424fda77`。没有恢复已永久停止的旧任务或宣称遗失数据自动恢复。
+- **scheduled 与扫描**：task 5 scheduled execution=`b1990637-1d8d-4742-8863-15a5de7b983e`，basic=`943bc019-ba9e-4033-976f-0984e91ef015`、deep=`cd7196c2-b397-4565-bf05-323bf0952173` 分别完成。原发起人 Principal 55、父执行与读取权限、对等 User 拒绝、精确目标物理行集及原 sibling／祖先范围均通过，schedule 已暂停，删除定义后的授权历史读取仍通过。
+
+故障与领域 cleanup=passed，所有 cleanup_failures 为空、uncertain_mutation=false。三条临时性能规则、源批量记录、目标锁、CPU 配额、Connector 配置、Webhook 目标及接收端均已清理或恢复。任务 5／4／3／2 经正式 API 删除且读回不存在，两个本轮 CDC 的源槽与 publication 清理通过。硬退出 Kafka task 1 按既有场景保留至部署销毁，领域 residual_resources=expected_deployment_residuals=1；外层 summary 的 cleanup=passed、infra_cleanup=zero_residuals 单独核对，不把预期领域保留项伪称领域零项。
+
+个人环境前后只读结果一致：task61 仍 running，task46／task58 两个原逻辑槽保留且不活跃，全局身份槽仍活跃；没有操作个人服务、任务或逻辑槽。此轮证明当前 PostgreSQL 任务的三类性能告警、捕获失败及已列明的不可恢复风险、重建、scheduled 扫描与签名通知闭环；不外推其他源类型、生产 T5、任务历史指标查询或尚未执行的暂停前待触发窗口重置 T4（后者仍由现有 T2 验证）。
