@@ -680,6 +680,9 @@ type BatchReadOptions struct {
 }
 
 type TableReadSessionOptions struct {
+	// Page is a server-compiled bounded catalog read, supported only by guarded
+	// sessions. Query and Args remain empty; page values use Page.Args.
+	Page         *CatalogTablePageOptions
 	Query        string
 	Args         []interface{}
 	Hints        map[string]interface{}

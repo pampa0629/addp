@@ -285,3 +285,10 @@ func TestPostgresKeepsBytesOnlyForEWKBGeometryColumns(t *testing.T) {
 		t.Fatal("isGeometryColumn returned true for non-spatial column")
 	}
 }
+
+func TestPostgresNativeProjectionKeepsExactCatalogColumnNames(t *testing.T) {
+	got := postgresSelectExprForFields([]datatype.FieldInfo{{Name: " id"}, {Name: "value "}, {Name: "a.b"}, {Name: "a\"b"}})
+	if got != `" id", "value ", "a.b", "a""b"` {
+		t.Fatalf("native fields were renamed: %s", got)
+	}
+}

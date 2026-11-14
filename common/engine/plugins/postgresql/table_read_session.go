@@ -21,12 +21,27 @@ func (p *PostgreSQLPlugin) OpenTableReadSession(ctx context.Context, connInfo pl
 
 func (p *PostgreSQLPlugin) OpenGuardedTableReadSession(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.EngineCatalogPath,
 	opts plugin.TableReadSessionOptions, authorize plugin.GuardedTableReadAuthorizer) (plugin.TableReadSession, error) {
-	if authorize == nil || p.Type() != "postgresql" || strings.TrimSpace(opts.Query) != "" || len(opts.Args) != 0 ||
+	if opts.Page != nil || authorize == nil || p.Type() != "postgresql" || strings.TrimSpace(opts.Query) != "" || len(opts.Args) != 0 ||
 		postgresGeometryEncodingHint(opts.Hints) != format.GeometryEncodingEWKB ||
 		postgresGeometryTargetSRID(opts.Hints) != 0 || strings.TrimSpace(hintString(opts.Hints, plugin.TableReadHintGeometryField)) != "" {
 		return nil, plugin.ErrQueryReadSetUnresolved
 	}
 	return p.openTableReadSession(ctx, connInfo, path, opts, 0, 0, authorize)
+}
+
+// OpenGuardedNonSpatialTablePageSession is explicitly forwarded only by
+// independently certified non-spatial protocol plugins (currently HighGo).
+func (p *PostgreSQLPlugin) OpenGuardedNonSpatialTablePageSession(ctx context.Context, info plugin.ConnectionInfo, path plugin.EngineCatalogPath, opts plugin.TableReadSessionOptions, authorize plugin.GuardedTableReadAuthorizer) (plugin.TableReadSession, error) {
+	if authorize == nil || opts.Page == nil || opts.Page.Limit <= 0 || opts.Page.Offset < 0 ||
+		opts.Query != "" || len(opts.Args) != 0 || len(opts.Hints) != 0 {
+		return nil, plugin.ErrQueryReadSetUnresolved
+	}
+	return p.openTableReadSession(ctx, info, path, opts, opts.Page.Limit, opts.Page.Offset, authorize)
+}
+
+type postgresTableSessionConnection interface {
+	BeginTx(context.Context, *sql.TxOptions) (*sql.Tx, error)
+	Close() error
 }
 
 func (p *PostgreSQLPlugin) readBatch(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.EngineCatalogPath, opts plugin.BatchReadOptions) (*plugin.BatchData, error) {
@@ -46,7 +61,10 @@ func (p *PostgreSQLPlugin) readBatch(ctx context.Context, connInfo plugin.Connec
 	return session.ReadBatch(ctx, opts.Limit)
 }
 
-func (p *PostgreSQLPlugin) openTableReadSession(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.EngineCatalogPath, opts plugin.TableReadSessionOptions, limit int, offset int64, authorize plugin.GuardedTableReadAuthorizer) (plugin.TableReadSession, error) {
+func (p *PostgreSQLPlugin) openTableReadSession(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.EngineCatalogPath, opts plugin.TableReadSessionOptions, limit int, offset int64, authorize plugin.GuardedTableReadAuthorizer) (_ plugin.TableReadSession, err error) {
+	if opts.Page != nil && authorize == nil {
+		return nil, plugin.ErrQueryReadSetUnresolved
+	}
 	if err := resume.RejectUnsupported(opts.ResumeMarker, "postgresql.table_read_session"); err != nil {
 		return nil, err
 	}
@@ -54,11 +72,35 @@ func (p *PostgreSQLPlugin) openTableReadSession(ctx context.Context, connInfo pl
 	if err != nil {
 		return nil, fmt.Errorf("failed to build postgresql dsn: %w", err)
 	}
-	db, err := sql.Open(p.sqlDriverName(), connStr)
+	var db postgresTableSessionConnection
+	var readConn *plugin.SQLReadConnection
+	if opts.Page != nil && plugin.PoolEngineVersion(ctx, path.EngineID) > 0 {
+		pool, poolErr := plugin.GetOrCreatePoolFromFactory(&plugin.Engine{ID: path.EngineID, EngineType: p.Type(), Version: plugin.PoolEngineVersion(ctx, path.EngineID), ConnectionInfo: connInfo}, nil)
+		if poolErr != nil {
+			return nil, poolErr
+		}
+		sqlDB, poolErr := pool.DB()
+		if poolErr != nil {
+			return nil, poolErr
+		}
+		readConn, err = plugin.AcquireSQLReadConnection(ctx, sqlDB, p)
+		db = readConn
+	} else {
+		db, err = sql.Open(p.sqlDriverName(), connStr)
+	}
 	if err != nil {
 		return nil, fmt.Errorf("failed to open postgresql connection: %w", err)
 	}
-	tx, err := db.BeginTx(ctx, &sql.TxOptions{ReadOnly: true, Isolation: sql.LevelRepeatableRead})
+	if readConn != nil {
+		defer func() { err = plugin.SQLExecutionError(err) }()
+	}
+	isolation := sql.LevelRepeatableRead
+	if opts.Page != nil {
+		// Take catalog snapshots after the relation lock, including DDL which
+		// committed while this request was waiting for that lock.
+		isolation = sql.LevelReadCommitted
+	}
+	tx, err := db.BeginTx(ctx, &sql.TxOptions{ReadOnly: true, Isolation: isolation})
 	if err != nil {
 		db.Close()
 		return nil, fmt.Errorf("begin postgresql table read session: %w", err)
@@ -72,7 +114,11 @@ func (p *PostgreSQLPlugin) openTableReadSession(ctx context.Context, connInfo pl
 	}()
 	var readSet *plugin.QueryReadSet
 	if authorize != nil {
-		readSet, err = proveGuardedPostGISTable(ctx, tx, path)
+		if opts.Page != nil {
+			readSet, err = proveGuardedNonSpatialTable(ctx, tx, path)
+		} else {
+			readSet, err = proveGuardedPostGISTable(ctx, tx, path)
+		}
 		if err != nil {
 			return nil, err
 		}
@@ -88,9 +134,18 @@ func (p *PostgreSQLPlugin) openTableReadSession(ctx context.Context, connInfo pl
 		}
 	}
 
+	if readConn != nil {
+		if err := readConn.BeforeQuery(ctx, tx, query); err != nil {
+			return nil, err
+		}
+	}
+	args := opts.Args
+	if opts.Page != nil {
+		args = opts.Page.Args
+	}
 	cursorName := "addp_transfer_read_cursor"
 	declareSQL := fmt.Sprintf("DECLARE %s NO SCROLL CURSOR FOR %s", cursorName, query)
-	if _, err := tx.ExecContext(ctx, declareSQL, opts.Args...); err != nil {
+	if _, err := tx.ExecContext(ctx, declareSQL, args...); err != nil {
 		return nil, fmt.Errorf("declare postgresql read cursor: %w", err)
 	}
 
@@ -100,6 +155,7 @@ func (p *PostgreSQLPlugin) openTableReadSession(ctx context.Context, connInfo pl
 	opened = true
 	return &postgresTableReadSession{
 		readSet:          readSet,
+		readConn:         readConn,
 		db:               db,
 		tx:               tx,
 		cursorName:       cursorName,
@@ -162,7 +218,48 @@ func postgresReadSessionQuery(ctx context.Context, db interface {
 			selectExpr = expr
 		}
 	}
-	return commonquery.ForDialect("postgresql").SelectTableSQL(selectExpr, schema, table, "", "", limit, int(offset)), fields, postgresSpatialInfoFromFieldsWithHints(fields, opts.Hints), encoding, nil
+	query = commonquery.ForDialect("postgresql").SelectTableSQL(selectExpr, schema, table, "", "", limit, int(offset))
+	if opts.Page != nil {
+		// The locked ordinary relation itself is the only physical row source.
+		query = "SELECT " + selectExpr + " FROM ONLY " + commonquery.ForDialect("postgresql").QualifiedTable(schema, table)
+		if opts.Page.Predicate != "" {
+			query += " WHERE " + opts.Page.Predicate
+		}
+		// Resolve primary-key order in this same locked transaction rather
+		// than trusting an earlier catalog response from another connection.
+		keyRows, err := db.QueryContext(ctx, `SELECT a.attname FROM pg_catalog.pg_index i
+JOIN pg_catalog.pg_class c ON c.oid=i.indrelid JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace
+CROSS JOIN LATERAL pg_catalog.unnest(i.indkey) WITH ORDINALITY k(attnum,position)
+JOIN pg_catalog.pg_attribute a ON a.attrelid=c.oid AND a.attnum=k.attnum
+WHERE i.indisprimary AND n.nspname=$1 AND c.relname=$2 ORDER BY k.position`, schema, table)
+		if err != nil {
+			return "", nil, nil, "", err
+		}
+		var keys []string
+		for keyRows.Next() {
+			var name string
+			if err := keyRows.Scan(&name); err != nil {
+				keyRows.Close()
+				return "", nil, nil, "", err
+			}
+			keys = append(keys, commonquery.ForDialect("postgresql").QuoteIdentifier(name))
+			for i := range fields {
+				if fields[i].Name == name {
+					fields[i].PrimaryKey = true
+				}
+			}
+		}
+		keyErr := keyRows.Err()
+		keyRows.Close()
+		if keyErr != nil {
+			return "", nil, nil, "", keyErr
+		}
+		if len(keys) > 0 {
+			query += " ORDER BY " + strings.Join(keys, ", ")
+		}
+		query += fmt.Sprintf(" LIMIT %d OFFSET %d", limit, offset)
+	}
+	return query, fields, postgresSpatialInfoFromFieldsWithHints(fields, opts.Hints), encoding, nil
 }
 
 func postgresSelectedFields(fields []datatype.FieldInfo, hints map[string]interface{}) ([]datatype.FieldInfo, error) {
@@ -219,7 +316,7 @@ func postgresSelectExprForFields(fields []datatype.FieldInfo) string {
 	dialect := commonquery.ForDialect("postgresql")
 	exprs := make([]string, 0, len(fields))
 	for _, field := range fields {
-		name := strings.TrimSpace(field.Name)
+		name := field.Name
 		if name == "" {
 			continue
 		}
@@ -672,7 +769,8 @@ func hintString(values map[string]interface{}, key string) string {
 
 type postgresTableReadSession struct {
 	readSet          *plugin.QueryReadSet
-	db               *sql.DB
+	db               postgresTableSessionConnection
+	readConn         *plugin.SQLReadConnection
 	tx               *sql.Tx
 	cursorName       string
 	fields           []datatype.FieldInfo
@@ -689,7 +787,10 @@ func (s *postgresTableReadSession) ReadSet(context.Context) (*plugin.QueryReadSe
 	return s.readSet.Clone(), nil
 }
 
-func (s *postgresTableReadSession) ReadBatch(ctx context.Context, limit int) (*plugin.BatchData, error) {
+func (s *postgresTableReadSession) ReadBatch(ctx context.Context, limit int) (_ *plugin.BatchData, err error) {
+	if s.readConn != nil {
+		defer func() { err = plugin.SQLExecutionError(err) }()
+	}
 	if s.closed {
 		return nil, fmt.Errorf("postgresql table read session is closed")
 	}

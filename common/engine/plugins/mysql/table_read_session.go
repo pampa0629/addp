@@ -28,7 +28,7 @@ func (p *MySQLPlugin) OpenGuardedTableReadSession(ctx context.Context, connInfo 
 	if authorize == nil {
 		return nil, plugin.ErrQueryReadSetUnresolved
 	}
-	return p.openTableReadSession(ctx, connInfo, path, opts, 0, 0, false, authorize)
+	return p.openTableReadSession(ctx, connInfo, path, opts, 0, 0, opts.Page != nil && plugin.PoolEngineVersion(ctx, path.EngineID) > 0, authorize)
 }
 
 func (p *MySQLPlugin) readBatch(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.EngineCatalogPath, opts plugin.BatchReadOptions) (*plugin.BatchData, error) {
@@ -62,9 +62,15 @@ func (p *MySQLPlugin) openTableReadSession(ctx context.Context, connInfo plugin.
 	if err := resume.RejectUnsupported(opts.ResumeMarker, "mysql.table_read_session"); err != nil {
 		return nil, err
 	}
+	if opts.Page != nil {
+		if authorize == nil || opts.Page.Limit <= 0 || opts.Page.Offset < 0 {
+			return nil, plugin.ErrQueryReadSetUnresolved
+		}
+		limit, offset = opts.Page.Limit, opts.Page.Offset
+	}
 	var readSet *plugin.QueryReadSet
 	if authorize != nil {
-		if p.Type() != "mysql" || shared || strings.TrimSpace(opts.Query) != "" || len(opts.Args) != 0 ||
+		if p.Type() != "mysql" || strings.TrimSpace(opts.Query) != "" || len(opts.Args) != 0 ||
 			len(path.Segments) != 3 || path.Segments[0] != (plugin.EngineCatalogSegment{Term: plugin.EngineCatalogTermServer, Kind: plugin.EngineCatalogTermServer}) ||
 			path.Segments[1].Term != plugin.EngineCatalogTermDatabase || path.Segments[1].Kind != plugin.EngineCatalogKindNamespace ||
 			path.Segments[2].Term != plugin.EngineCatalogTermTable || path.Segments[2].Kind != plugin.EngineCatalogKindTable ||
@@ -90,7 +96,7 @@ func (p *MySQLPlugin) openTableReadSession(ctx context.Context, connInfo plugin.
 	if err != nil {
 		return nil, errors.Join(fmt.Errorf("begin mysql table read session: %w", err), db.Close())
 	}
-	session := &mysqlTableReadSession{db: db, tx: tx}
+	session := &mysqlTableReadSession{db: db, tx: tx, offset: offset, shared: shared}
 	defer func() {
 		if session.rows == nil {
 			err = errors.Join(err, session.Close(ctx))
@@ -121,7 +127,11 @@ func (p *MySQLPlugin) openTableReadSession(ctx context.Context, connInfo plugin.
 			return nil, err
 		}
 	}
-	rows, err := tx.QueryContext(ctx, query, opts.Args...)
+	args := opts.Args
+	if opts.Page != nil {
+		args = opts.Page.Args
+	}
+	rows, err := tx.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("query mysql table read session: %w", err)
 	}
@@ -165,7 +175,17 @@ func lockMySQLInnoDBBaseTable(ctx context.Context, tx *sql.Tx, database, table s
 	err = tx.QueryRowContext(ctx, `SELECT COUNT(*), COUNT(CASE WHEN BINARY TABLE_SCHEMA=? AND BINARY TABLE_NAME=?
 		AND TABLE_TYPE='BASE TABLE' AND ENGINE='InnoDB' THEN 1 END) FROM information_schema.tables
 		WHERE TABLE_SCHEMA=? AND TABLE_NAME=?`, database, table, database, table).Scan(&matchingNames, &exactBaseTables)
-	return matchingNames == 1 && exactBaseTables == 1, err
+	if err != nil || matchingNames != 1 || exactBaseTables != 1 {
+		return false, err
+	}
+	// A pooled session may have a same-name temporary table. The persistent
+	// information_schema row does not identify what that session resolves.
+	// SHOW CREATE observes the very relation locked by the zero-row query.
+	var name, definition string
+	if err := tx.QueryRowContext(ctx, "SHOW CREATE TABLE "+qualified).Scan(&name, &definition); err != nil {
+		return false, err
+	}
+	return name == table && strings.HasPrefix(definition, "CREATE TABLE "), nil
 }
 
 func mysqlReadSessionQuery(ctx context.Context, db mysqlTableQueryer, path plugin.EngineCatalogPath, opts plugin.TableReadSessionOptions, limit int, offset int64) (string, []datatype.FieldInfo, *datatype.SpatialInfo, format.GeometryEncoding, error) {
@@ -197,7 +217,18 @@ func mysqlReadSessionQuery(ctx context.Context, db mysqlTableQueryer, path plugi
 	if err != nil {
 		return "", nil, nil, "", err
 	}
-	query = commonquery.ForDialect("mysql").SelectTableSQL(selectExpr, database, table, "", "", limit, int(offset))
+	predicate, order := "", ""
+	if opts.Page != nil {
+		predicate = opts.Page.Predicate
+		var keys []string
+		for _, field := range fields {
+			if field.PrimaryKey {
+				keys = append(keys, mysqlDialect().QuoteIdentifier(field.Name))
+			}
+		}
+		order = strings.Join(keys, ", ")
+	}
+	query = commonquery.ForDialect("mysql").SelectTableSQL(selectExpr, database, table, predicate, order, limit, int(offset))
 	spatialInfo := mysqlSpatialInfoFromColumns(columns, fields, opts.Hints, encoding)
 	return query, fields, spatialInfo, encoding, nil
 }
@@ -381,6 +412,7 @@ func mysqlSpatialInfoFromColumns(columns []mysqlColumnInfo, fields []datatype.Fi
 }
 
 type mysqlTableReadSession struct {
+	shared           bool
 	db               mysqlTableSessionConnection
 	tx               *sql.Tx
 	rows             *sql.Rows
@@ -400,7 +432,10 @@ func (s *mysqlTableReadSession) ReadSet(context.Context) (*plugin.QueryReadSet, 
 	return s.readSet.Clone(), nil
 }
 
-func (s *mysqlTableReadSession) ReadBatch(_ context.Context, limit int) (*plugin.BatchData, error) {
+func (s *mysqlTableReadSession) ReadBatch(_ context.Context, limit int) (_ *plugin.BatchData, err error) {
+	if s.shared {
+		defer func() { err = plugin.SQLExecutionError(err) }()
+	}
 	if s.closed {
 		return nil, fmt.Errorf("mysql table read session is closed")
 	}

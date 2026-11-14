@@ -6,6 +6,8 @@ import (
 	"database/sql"
 	"encoding/hex"
 	"errors"
+	"fmt"
+	"maps"
 	"os"
 	"strconv"
 	"testing"
@@ -101,6 +103,7 @@ func TestIntegrationHighGoTableWrite(t *testing.T) {
 		}
 	})
 
+	t.Run("guarded native pages", func(t *testing.T) { verifyHighGoGuardedPages(t, db, p, info, schema) })
 	assertHighGoRelationalFacts(t, ctx, db, p, info, schema)
 
 	fields := []datatype.FieldInfo{
@@ -441,4 +444,153 @@ func highgoWriteTestConnection(t *testing.T, native bool) plugin.ConnectionInfo 
 		info["sslmode"] = value("SSLMODE")
 	}
 	return info
+}
+
+// Runs both on the standard disposable PG protocol gate and explicitly on the
+// native HighGo fixture. It owns only objects inside the parent's random schema.
+func verifyHighGoGuardedPages(t *testing.T, db *sql.DB, p *Plugin, info plugin.ConnectionInfo, schema string) {
+	t.Helper()
+	ctx := plugin.WithPoolEngineVersion(t.Context(), 987642, 1)
+	info = maps.Clone(info)
+	info["pool_max_open_conns"], info["pool_max_idle_conns"] = 1, 0
+	t.Cleanup(func() { _ = plugin.ClosePool(987642) })
+	qualified := pq.QuoteIdentifier(schema) + `."guarded_page"`
+	view := pq.QuoteIdentifier(schema) + `."guarded_view"`
+	child := pq.QuoteIdentifier(schema) + `."guarded_child"`
+	defer func() {
+		for _, q := range []string{"DROP VIEW IF EXISTS " + view, "DROP TABLE IF EXISTS " + child, "DROP TABLE IF EXISTS " + qualified} {
+			if _, e := db.ExecContext(context.Background(), q); e != nil {
+				t.Error(e)
+			}
+		}
+	}()
+	for _, q := range []string{
+		"CREATE TABLE " + qualified + " (id BIGINT PRIMARY KEY, value NUMERIC(38,18), label TEXT)",
+		"INSERT INTO " + qualified + " VALUES (9007199254740993,12345678901234567890.123456789012345678,'kept '),(9007199254740994,NULL,'kept '),(9007199254740995,1,'other')",
+		"CREATE VIEW " + view + " AS SELECT * FROM " + qualified,
+	} {
+		if _, e := db.ExecContext(ctx, q); e != nil {
+			t.Fatal(e)
+		}
+	}
+	path := plugin.TabularItemPath(987642, "schema", schema, "guarded_page")
+	opts := plugin.TableReadSessionOptions{Page: &plugin.CatalogTablePageOptions{Limit: 1, Offset: 1, Predicate: `"label" = $1`, Args: []any{"kept "}}}
+	checks := 0
+	check := func(_ context.Context, set *plugin.QueryReadSet, fields []datatype.FieldInfo) error {
+		checks++
+		if len(set.Paths) != 1 || set.Paths[0].EngineID != path.EngineID || set.Paths[0].Segments[2].Name != "guarded_page" || len(fields) != 3 || fields[1].Precision != 38 || fields[1].Scale != 18 || !fields[0].PrimaryKey {
+			t.Fatalf("locked actual source/fields: %#v %#v", set, fields)
+		}
+		return nil
+	}
+	denied := errors.New("current source revoked")
+	if s, e := p.OpenGuardedTableReadSession(ctx, info, path, opts, func(c context.Context, r *plugin.QueryReadSet, f []datatype.FieldInfo) error {
+		_ = check(c, r, f)
+		return denied
+	}); s != nil || !errors.Is(e, denied) {
+		t.Fatalf("denied source opened: %v", e)
+	}
+	s, e := p.OpenGuardedTableReadSession(ctx, info, path, opts, check)
+	if e != nil {
+		t.Fatal(e)
+	}
+	defer s.Close(context.Background())
+	batch, e := s.ReadBatch(ctx, 10)
+	if e != nil || len(batch.Rows) != 1 || batch.Offset != 1 || fmt.Sprint(batch.Rows[0]["id"]) != "9007199254740994" || batch.Rows[0]["value"] != nil || batch.Rows[0]["label"] != "kept " {
+		t.Fatalf("bounded native page: %#v %v", batch, e)
+	}
+	set, e := s.(plugin.ReadSessionEvidence).ReadSet(ctx)
+	if e != nil || len(set.Paths) != 1 || set.Paths[0].EngineID != path.EngineID {
+		t.Fatalf("read session evidence: %#v %v", set, e)
+	}
+	// DDL cannot replace the source in the authorization/execution interval.
+	ddl, stop := context.WithTimeout(t.Context(), 150*time.Millisecond)
+	_, ddlErr := db.ExecContext(ddl, "ALTER TABLE "+qualified+" ADD COLUMN forbidden INT")
+	stop()
+	if ddlErr == nil {
+		t.Fatal("concurrent DDL bypassed locked source")
+	}
+	if e := s.Close(ctx); e != nil {
+		t.Fatal(e)
+	}
+	opts.Page.Offset = 0
+	s, e = p.OpenGuardedTableReadSession(ctx, info, path, opts, check)
+	if e != nil {
+		t.Fatal(e)
+	}
+	defer s.Close(context.Background())
+	batch, e = s.ReadBatch(ctx, 1)
+	if e != nil || len(batch.Rows) != 1 || fmt.Sprint(batch.Rows[0]["id"]) != "9007199254740993" || fmt.Sprint(batch.Rows[0]["value"]) != "12345678901234567890.123456789012345678" {
+		t.Fatalf("exact recovered first page: %#v %v", batch, e)
+	}
+	if e := s.Close(ctx); e != nil {
+		t.Fatal(e)
+	}
+	pool, err := plugin.GetOrCreatePoolFromFactory(&plugin.Engine{ID: path.EngineID, EngineType: p.Type(), Version: 1, ConnectionInfo: info}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pooledDB, err := pool.DB()
+	if err != nil {
+		t.Fatal(err)
+	}
+	borrowed, err := pooledDB.Conn(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer borrowed.Close()
+	wait, stop := context.WithTimeout(t.Context(), 150*time.Millisecond)
+	wait = plugin.WithPoolEngineVersion(wait, path.EngineID, 1)
+	_, waitErr := p.OpenGuardedTableReadSession(wait, info, path, opts, check)
+	stop()
+	if !errors.Is(waitErr, context.DeadlineExceeded) || plugin.QueryErrorCodeOf(waitErr) != plugin.QueryErrorCodeConnectionAcquisitionTimeout {
+		t.Fatalf("guarded page bypassed shared pool wait: %v", waitErr)
+	}
+	if err := borrowed.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if pooledDB.Stats().InUse != 0 || pooledDB.PingContext(ctx) != nil {
+		t.Fatal("guarded session closed or leaked shared pool")
+	}
+	before := checks
+	viewPath := plugin.TabularItemPath(path.EngineID, "schema", schema, "guarded_view")
+	if s, e := p.OpenGuardedTableReadSession(ctx, info, viewPath, opts, check); s != nil || !errors.Is(e, plugin.ErrQueryReadSetUnresolved) || checks != before {
+		t.Fatalf("view reached guarded authorization: %v", e)
+	}
+	opts.Page.Limit = 10
+	s, e = p.OpenGuardedTableReadSession(ctx, info, path, opts, func(c context.Context, set *plugin.QueryReadSet, fields []datatype.FieldInfo) error {
+		if err := check(c, set, fields); err != nil {
+			return err
+		}
+		// ACCESS SHARE does not freeze the inheritance graph. Add a child
+		// after proof/authorization and before the provider opens its cursor.
+		ddl, stop := context.WithTimeout(c, 3*time.Second)
+		defer stop()
+		if _, err := db.ExecContext(ddl, "CREATE TABLE "+child+" () INHERITS ("+qualified+")"); err != nil {
+			return err
+		}
+		_, err := db.ExecContext(ddl, "INSERT INTO "+child+" VALUES (99,99,'kept ')")
+		return err
+	})
+	if e != nil {
+		t.Fatal(e)
+	}
+	defer s.Close(context.Background())
+	batch, e = s.ReadBatch(ctx, 10)
+	if e != nil || len(batch.Rows) != 2 {
+		t.Fatalf("concurrent inherited rows entered the read: %#v %v", batch, e)
+	}
+	for _, row := range batch.Rows {
+		if fmt.Sprint(row["id"]) == "99" {
+			t.Fatal("ONLY source boundary was lost")
+		}
+	}
+	if e := s.Close(ctx); e != nil {
+		t.Fatal(e)
+	}
+	before = checks
+	if s, e := p.OpenGuardedTableReadSession(ctx, info, path, opts, check); s != nil || !errors.Is(e, plugin.ErrQueryReadSetUnresolved) || checks != before {
+		t.Fatalf("inherited source reached guarded authorization: %v", e)
+	}
+	t.Log("actual HighGo read set, current authorization refusal, typed filtered page, DDL exclusion, view/inheritance refusal, shared-pool recovery verified")
 }

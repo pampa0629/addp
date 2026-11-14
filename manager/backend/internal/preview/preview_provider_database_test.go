@@ -692,3 +692,96 @@ func TestNativeReadOnlyPreviewChecksSourceBeforeFactsAndBeforeRows(t *testing.T)
 		}
 	}
 }
+
+// A guarded provider reports its locked source before any row read. Give it
+// every legacy interface as well so falling back would be observable.
+type guardedPreviewTestPlugin struct {
+	*recordingDatabasePreviewPlugin
+	actual   *plugin.QueryReadSet
+	calls    int
+	page     *plugin.CatalogTablePageOptions
+	rowsRead *bool
+}
+
+func (p *guardedPreviewTestPlugin) SQLDialect() string {
+	if p.engineType == "mysql" {
+		return "mysql"
+	}
+	return "postgresql"
+}
+func (p *guardedPreviewTestPlugin) OpenGuardedTableReadSession(ctx context.Context, _ plugin.ConnectionInfo, _ plugin.EngineCatalogPath, opts plugin.TableReadSessionOptions, authorize plugin.GuardedTableReadAuthorizer) (plugin.TableReadSession, error) {
+	p.calls++
+	p.page = opts.Page
+	if err := authorize(ctx, p.actual, p.catalogFacts.Table.Fields); err != nil {
+		return nil, err
+	}
+	return &guardedPreviewTestSession{read: p.rowsRead}, nil
+}
+
+type guardedPreviewTestSession struct{ read *bool }
+
+func (s *guardedPreviewTestSession) ReadBatch(context.Context, int) (*plugin.BatchData, error) {
+	*s.read = true
+	return &plugin.BatchData{Rows: []map[string]interface{}{{"id": int64(2)}}}, nil
+}
+func (*guardedPreviewTestSession) Close(context.Context) error { return nil }
+
+func TestDatabasePreviewGuardedSourceBinding(t *testing.T) {
+	for _, kind := range []string{"mysql", "highgo", "future-guarded"} {
+		for _, mode := range []string{"allowed", "revoked", "schema-rejected", "wrong-table", "wrong-engine", "extra-source", "missing-proof"} {
+			t.Run(kind+"/"+mode, func(t *testing.T) {
+				path := plugin.TabularItemPath(8, "schema", "business", "base")
+				set, _ := plugin.NewQueryReadSet(path)
+				other := plugin.TabularItemPath(8, "schema", "business", "secret")
+				switch mode {
+				case "wrong-table":
+					set, _ = plugin.NewQueryReadSet(other)
+				case "wrong-engine":
+					other = path
+					other.EngineID = 9
+					set, _ = plugin.NewQueryReadSet(other)
+				case "extra-source":
+					set, _ = plugin.NewQueryReadSet(path, other)
+				case "missing-proof":
+					set = nil
+				}
+				read := false
+				base := &recordingDatabasePreviewPlugin{engineType: kind, catalogFacts: &plugin.EngineCatalogFacts{Table: &datatype.TableInfo{Fields: []datatype.FieldInfo{{Name: "id", Type: datatype.FieldTypeBigInt, PrimaryKey: true}}}}}
+				p := &guardedPreviewTestPlugin{recordingDatabasePreviewPlugin: base, actual: set, rowsRead: &read}
+				denied := errors.New("current source or schema refused")
+				checks := 0
+				req := &PreviewRequest{Engine: &models.Engine{ID: 8, EngineType: kind}, EnginePlugin: p, ProviderPath: path, Schema: "business", Table: "base", Page: 2, PageSize: 1,
+					DataScope: dataprofile.DataScope{Kind: dataprofile.DataScopeKindCondition, Logic: dataprofile.DataScopeLogicAnd, Conditions: []dataprofile.DataScopeCondition{{Field: "id", Operator: "gt", Value: int64(1)}}},
+					CheckNativeTableRead: func(_ context.Context, got plugin.EngineCatalogPath) error {
+						checks++
+						if read || !reflect.DeepEqual(got, path) {
+							t.Fatal("checked after read or wrong identity")
+						}
+						if mode == "revoked" && checks == 2 {
+							return denied
+						}
+						return nil
+					}, CheckTableSchema: func([]datatype.FieldInfo) error {
+						if mode == "schema-rejected" {
+							return denied
+						}
+						return nil
+					}}
+				result, err := (&DatabaseTablePreviewProvider{}).Preview(t.Context(), req)
+				if len(base.readBatchCalls) != 0 || len(base.openSessionCalls) != 0 || len(base.prepareCalls) != 0 {
+					t.Fatal("unguarded fallback used")
+				}
+				if p.calls != 1 || p.page == nil || p.page.Offset != 1 || p.page.Limit != 2 || len(p.page.Args) != 1 || p.page.Args[0] != int64(1) || !strings.Contains(p.page.Predicate, "> ") {
+					t.Fatalf("wrong bounded session: %#v", p.page)
+				}
+				if mode == "allowed" {
+					if err != nil || !read || result == nil || checks != 2 {
+						t.Fatalf("allowed: %#v %v checks=%d", result, err, checks)
+					}
+				} else if err == nil || result != nil || read {
+					t.Fatalf("refusal delivered rows: %#v %v", result, err)
+				}
+			})
+		}
+	}
+}

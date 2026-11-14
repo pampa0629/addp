@@ -5,8 +5,11 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"maps"
 	"reflect"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/addp/common/datatype"
 	"github.com/addp/common/engine/plugin"
@@ -89,6 +92,10 @@ func TestIntegrationMySQLGuardedSpatialTableRead(t *testing.T) {
 	if err != nil || !ok || point.SRID() != 3857 || point.X() != 12000 || point.Y() != 6000 {
 		t.Fatalf("guarded native geometry = %#v, %v", geometry, err)
 	}
+	if err := session.Close(ctx); err != nil {
+		t.Fatal(err)
+	}
+	t.Run("bound page and shared pool", func(t *testing.T) { verifyMySQLGuardedPage(t, db, provider, connInfo, database) })
 }
 
 func TestIntegrationMySQLFileGDBSourceShapes(t *testing.T) {
@@ -315,5 +322,138 @@ func TestMySQLSpatialFactsAndReadIntegration(t *testing.T) {
 	}
 	if spatialIndexes != 1 {
 		t.Fatalf("prepared spatial index count = %d", spatialIndexes)
+	}
+}
+
+func verifyMySQLGuardedPage(t *testing.T, db *sql.DB, p *MySQLPlugin, info plugin.ConnectionInfo, database string) {
+	t.Helper()
+	ctx := plugin.WithPoolEngineVersion(t.Context(), 987641, 1)
+	info = maps.Clone(info)
+	info["pool_max_open_conns"], info["pool_max_idle_conns"] = 1, 1
+	t.Cleanup(func() { _ = plugin.ClosePool(987641) })
+	table := mysqlDialect().QualifiedTable(database, "guarded_page")
+	for _, q := range []string{
+		"CREATE TABLE " + table + " (id BIGINT PRIMARY KEY, value DECIMAL(38,18), label VARCHAR(40)) ENGINE=InnoDB",
+		"INSERT INTO " + table + " VALUES (9007199254740993,12345678901234567890.123456789012345678,'kept '),(9007199254740994,NULL,'kept '),(9007199254740995,1,'other')",
+		"CREATE VIEW " + mysqlDialect().QualifiedTable(database, "page_view") + " AS SELECT * FROM " + table,
+	} {
+		if _, err := db.ExecContext(ctx, q); err != nil {
+			t.Fatal(err)
+		}
+	}
+	path := plugin.TabularItemPath(987641, "database", database, "guarded_page")
+	opts := plugin.TableReadSessionOptions{Page: &plugin.CatalogTablePageOptions{Limit: 1, Offset: 1, Predicate: "`label` = ?", Args: []any{"kept "}}}
+	checks := 0
+	check := func(_ context.Context, set *plugin.QueryReadSet, fields []datatype.FieldInfo) error {
+		checks++
+		if !reflect.DeepEqual(set.Paths, []plugin.EngineCatalogPath{path}) || len(fields) != 3 || fields[1].Precision != 38 || fields[1].Scale != 18 {
+			t.Fatalf("actual page identity/fields: %#v %#v", set, fields)
+		}
+		return nil
+	}
+	denied := errors.New("current grant revoked")
+	if s, e := p.OpenGuardedTableReadSession(ctx, info, path, opts, func(c context.Context, r *plugin.QueryReadSet, f []datatype.FieldInfo) error {
+		_ = check(c, r, f)
+		return denied
+	}); s != nil || !errors.Is(e, denied) {
+		t.Fatalf("denied page opened: %v", e)
+	}
+	s, err := p.OpenGuardedTableReadSession(ctx, info, path, opts, check)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close(context.Background())
+	batch, err := s.ReadBatch(ctx, 10)
+	if err != nil || len(batch.Rows) != 1 || batch.Offset != 1 || fmt.Sprint(batch.Rows[0]["id"]) != "9007199254740994" || batch.Rows[0]["value"] != nil || batch.Rows[0]["label"] != "kept " {
+		t.Fatalf("bounded typed page: %#v %v", batch, err)
+	}
+	proof, err := s.(plugin.ReadSessionEvidence).ReadSet(ctx)
+	if err != nil || !reflect.DeepEqual(proof.Paths, []plugin.EngineCatalogPath{path}) {
+		t.Fatalf("session proof: %#v %v", proof, err)
+	}
+	// A concurrent shape change cannot pass the same session's metadata lock.
+	ddlConn, err := db.Conn(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ddlConn.Close()
+	if _, err := ddlConn.ExecContext(ctx, "SET SESSION lock_wait_timeout=1"); err != nil {
+		t.Fatal(err)
+	}
+	ddlCtx, stop := context.WithTimeout(t.Context(), 3*time.Second)
+	_, ddlErr := ddlConn.ExecContext(ddlCtx, "ALTER TABLE "+table+" ADD COLUMN forbidden INT")
+	stop()
+	// Wait for the server's statement failure. A cancelled client alone does
+	// not prove that the server discarded its queued DDL before source unlock.
+	if ddlErr == nil || !strings.Contains(ddlErr.Error(), "1205") {
+		t.Fatalf("DDL did not fail on the held metadata lock: %v", ddlErr)
+	}
+	if _, err := ddlConn.ExecContext(ctx, "SET SESSION lock_wait_timeout=DEFAULT"); err != nil {
+		t.Fatal(err)
+	}
+	if err := ddlConn.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Close(ctx); err != nil {
+		t.Fatal(err)
+	}
+	opts.Page.Offset = 0
+	s, err = p.OpenGuardedTableReadSession(ctx, info, path, opts, check)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close(context.Background())
+	batch, err = s.ReadBatch(ctx, 1)
+	if err != nil || len(batch.Rows) != 1 || fmt.Sprint(batch.Rows[0]["id"]) != "9007199254740993" || fmt.Sprint(batch.Rows[0]["value"]) != "12345678901234567890.123456789012345678" {
+		t.Fatalf("recovered exact first page: %#v %v", batch, err)
+	}
+	if err := s.Close(ctx); err != nil {
+		t.Fatal(err)
+	}
+	pool, err := plugin.GetOrCreatePoolFromFactory(&plugin.Engine{ID: path.EngineID, EngineType: p.Type(), Version: 1, ConnectionInfo: info}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pooledDB, err := pool.DB()
+	if err != nil {
+		t.Fatal(err)
+	}
+	borrowed, err := pooledDB.Conn(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer borrowed.Close()
+	wait, stop := context.WithTimeout(t.Context(), 150*time.Millisecond)
+	wait = plugin.WithPoolEngineVersion(wait, path.EngineID, 1)
+	_, waitErr := p.OpenGuardedTableReadSession(wait, info, path, opts, check)
+	stop()
+	if !errors.Is(waitErr, context.DeadlineExceeded) || plugin.QueryErrorCodeOf(waitErr) != plugin.QueryErrorCodeConnectionAcquisitionTimeout {
+		t.Fatalf("guarded page bypassed shared pool wait: %v", waitErr)
+	}
+	if err := borrowed.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if pooledDB.Stats().InUse != 0 || pooledDB.PingContext(ctx) != nil {
+		t.Fatal("guarded session closed or leaked shared pool")
+	}
+	view := plugin.TabularItemPath(path.EngineID, "database", database, "page_view")
+	before := checks
+	if s, e := p.OpenGuardedTableReadSession(ctx, info, view, opts, check); s != nil || !errors.Is(e, plugin.ErrQueryReadSetUnresolved) || checks != before {
+		t.Fatalf("indirect view reached content authorization: %v", e)
+	}
+	poisoned, err := pooledDB.Conn(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := poisoned.ExecContext(ctx, "CREATE TEMPORARY TABLE "+table+" (id BIGINT PRIMARY KEY, value DECIMAL(38,18), label VARCHAR(40))"); err != nil {
+		poisoned.Close()
+		t.Fatal(err)
+	}
+	if err := poisoned.Close(); err != nil {
+		t.Fatal(err)
+	}
+	before = checks
+	if s, e := p.OpenGuardedTableReadSession(ctx, info, path, opts, check); s != nil || !errors.Is(e, plugin.ErrQueryReadSetUnresolved) || checks != before {
+		t.Fatalf("temporary shadow was authorized as the persistent table: %v", e)
 	}
 }

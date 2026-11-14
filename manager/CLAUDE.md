@@ -8,7 +8,7 @@ Manager 模块负责数据探查、数据预览、表格数据剖析、混合检
 
 数据剖析执行和结果归 Manager，Meta 只提供身份、结构、源版本和扫描事实。剖析按需创建 `data_profiling` ad-hoc execution，不创建持久任务定义、不声明 TaskProvider capability；首版采样只开放已扫描 PostgreSQL 单表，视图、物化视图和多来源计划不支持。独立 execution 源授权、逐页／提交前复核及源端并发 DDL 的未覆盖边界，以[数据剖析规范](docs/数据剖析规范.md#当前授权切换边界)为准。
 
-预览必须使用当前 User 或固定 `data.preview` 委托身份。PostgreSQL 经同一 Provider PreparedQuery 证明完整 ReadSet、核验 System 源授权并执行本地 Security 保护，不回退 ReadBatch；所有关系型原生表预览路径，在结构／统计和内容读取前分别复核精确表的当前来源许可，并执行既有实时字段保护，不按引擎名称维护授权白名单。不得借用服务身份；其他引擎的实现和授权认证范围按各自证据认定。保护必须在响应输出前执行，空页也不能暴露被抑制列；具体规则见[预览实现规范](docs/数据预览与资源树实现规范.md)。
+预览必须使用当前 User 或固定 `data.preview` 委托身份。PostgreSQL 经同一 Provider PreparedQuery 证明完整 ReadSet、核验 System 源授权并执行本地 Security 保护，不回退 ReadBatch；MySQL、HighGo 普通表内容页沿 Provider 受控表会话，在锁定实际表后将 ReadSet 和实时字段交给同一当前 User 来源检查及字段保护，再读取有界内容页，不回退旧批读取；所有关系型原生表预览路径，在结构／统计和内容读取前分别复核精确表的当前来源许可，并执行既有实时字段保护，不按引擎名称维护授权白名单。不得借用服务身份；其他引擎的实现和授权认证范围按各自证据认定。保护必须在响应输出前执行，空页也不能暴露被抑制列；具体规则见[预览实现规范](docs/数据预览与资源树实现规范.md)。
 
 预览、剖析和全文索引只消费本地持久保护投影，Tenant HTTP／有界执行生命周期与 Security 回执屏障保持独立。剖析的保护版本核验与结果落库使用同一 checkpoint 事务；统计移除以完整源字段快照核验组件路径、类型与指纹，写前和读后使用同一幂等执行器，不要求已移除的敏感统计在结果中重新出现。结果读取失败停止轮询并显示读取失败，不保留旧的执行中状态；重试读取不创建新执行。Meilisearch 投递使用持久关联标记和完成回执，未知状态不得重发或提前开放搜索。完整规则及多 Backend／HA 未认证边界见[数据安全规范](../docs/spec/addp数据安全与隐私保护实现规范.md)和[剖析规范](docs/数据剖析规范.md)。旧 Meilisearch 数据卷迁移须按[Infra 说明](../scripts/infra/README.md)另行确认。
 

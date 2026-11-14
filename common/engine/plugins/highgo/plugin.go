@@ -165,6 +165,10 @@ func (p *Plugin) OpenTableReadSession(ctx context.Context, info plugin.Connectio
 	return p.protocol().OpenTableReadSession(ctx, info, path, opts)
 }
 
+func (p *Plugin) OpenGuardedTableReadSession(ctx context.Context, info plugin.ConnectionInfo, path plugin.EngineCatalogPath, opts plugin.TableReadSessionOptions, authorize plugin.GuardedTableReadAuthorizer) (plugin.TableReadSession, error) {
+	return p.protocol().OpenGuardedNonSpatialTablePageSession(ctx, info, path, opts, authorize)
+}
+
 func (p *Plugin) CheckTableWriteDefinition(definition plugin.TableWriteDefinition) plugin.TableWriteDefinitionReport {
 	return p.protocol().CheckNonSpatialTableWriteDefinition(definition)
 }

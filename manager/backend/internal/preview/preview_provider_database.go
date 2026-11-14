@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"reflect"
 	"strconv"
 	"strings"
 	"time"
@@ -67,6 +68,7 @@ func (p *DatabaseTablePreviewProvider) Preview(ctx context.Context, req *Preview
 	batchReader, ok := plug.(plugin.BatchReadableProvider)
 	pageReader, hasPageReader := plug.(plugin.CatalogTablePageReader)
 	sessionReader, hasSession := plug.(plugin.TableReadSessionProvider)
+	guardedReader, hasGuardedSession := plug.(plugin.GuardedTableReadSessionProvider)
 	if plug.Type() != "postgresql" && !ok && !hasSession && !hasPageReader {
 		return nil, fmt.Errorf("engine %s does not implement a table read provider", req.Engine.EngineType)
 	}
@@ -90,7 +92,7 @@ func (p *DatabaseTablePreviewProvider) Preview(ctx context.Context, req *Preview
 		}
 		return nil, fmt.Errorf("failed to describe table: %w", err)
 	}
-	if plug.Type() != "postgresql" && !hasPageReader && req.CheckTableSchema != nil {
+	if plug.Type() != "postgresql" && !hasPageReader && !hasGuardedSession && req.CheckTableSchema != nil {
 		if err := req.CheckTableSchema(columns); err != nil {
 			return nil, err
 		}
@@ -165,7 +167,7 @@ func (p *DatabaseTablePreviewProvider) Preview(ctx context.Context, req *Preview
 		limit++
 	}
 
-	if checkNativeRead {
+	if checkNativeRead && !hasGuardedSession {
 		if err := req.CheckNativeTableRead(ctx, req.ProviderPath); err != nil {
 			return nil, err
 		}
@@ -186,6 +188,47 @@ func (p *DatabaseTablePreviewProvider) Preview(ctx context.Context, req *Preview
 				return nil, ErrSourceAuthorizationRequired
 			}
 			rows, columnNames = result.Rows, result.Columns
+		}
+	} else if hasGuardedSession {
+		sqlProvider, ok := plug.(plugin.SQLDialectProvider)
+		if !ok {
+			return nil, ErrSourceAuthorizationRequired
+		}
+		predicate, args, scopeErr := profilefilter.SQL(req.DataScope, commonquery.ForDialect(sqlProvider.SQLDialect()), "")
+		if scopeErr != nil {
+			return nil, scopeErr
+		}
+		opts := plugin.TableReadSessionOptions{Page: &plugin.CatalogTablePageOptions{Limit: limit, Offset: int64(offset), Predicate: predicate, Args: args}}
+		caps := plug.Capabilities()
+		if caps.Storage != nil && caps.Storage.Store != nil && caps.Storage.Store.TableReadSpatialTransform {
+			opts.Hints = map[string]interface{}{plugin.TableReadHintGeometryEncoding: string(format.GeometryEncodingGeoJSON)}
+		}
+		var session plugin.TableReadSession
+		session, err = guardedReader.OpenGuardedTableReadSession(ctx, connInfo, req.ProviderPath, opts,
+			func(ctx context.Context, set *plugin.QueryReadSet, fields []datatype.FieldInfo) error {
+				// This fixed table read must be proven to read exactly its resolved
+				// target. Do not authorize an unexpected dependency or another engine.
+				if set == nil || len(set.Paths) != 1 || !reflect.DeepEqual(set.Paths[0], req.ProviderPath) {
+					return ErrSourceAuthorizationRequired
+				}
+				if err := req.CheckNativeTableRead(ctx, set.Paths[0]); err != nil {
+					return err
+				}
+				if req.CheckTableSchema != nil {
+					return req.CheckTableSchema(fields)
+				}
+				return nil
+			})
+		if err == nil {
+			defer session.Close(ctx)
+			var batch *plugin.BatchData
+			batch, err = session.ReadBatch(ctx, limit)
+			if err == nil {
+				if batch == nil {
+					return nil, ErrSourceAuthorizationRequired
+				}
+				rows = batch.Rows
+			}
 		}
 	} else if hasPageReader {
 		sqlProvider, ok := plug.(plugin.SQLDialectProvider)
