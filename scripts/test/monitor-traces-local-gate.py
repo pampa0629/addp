@@ -62,6 +62,24 @@ OWN_INPUTS = (
     'monitor/backend/internal/api/execution_trace_handler.go', 'monitor/backend/internal/service/execution_trace_read.go',
     'monitor/backend/internal/service/execution_trace_stages.go', 'monitor/backend/internal/tracequery/execution_stage.go',
     'console/frontend/tests/online/executionTraceLocalBrowser.test.js',
+    'console/frontend/e2e/online/execution-navigation-local-support.mjs',
+    'scripts/test/execution-navigation-local_test.mjs',
+    'console/frontend/e2e/online/transfer-browser-support.js',
+    'console/frontend/e2e/execution-result-navigation.spec.js',
+    'develop/frontend/src/views/TaskManagement.vue',
+    'develop/frontend/src/views/ExecutionDetail.vue',
+    'develop/frontend/src/utils/executionDetailRouteState.js',
+    'develop/frontend/src/utils/queryWorkbench.mjs',
+    'develop/frontend/src/router/index.js',
+    'develop/frontend/package.json',
+    'develop/frontend/package-lock.json',
+    'common-frontend/basic/src/components/MonitorExecutionsButton.vue',
+    'common-frontend/basic/src/utils/taskOwnerUrl.js',
+    'console/frontend/src/router/index.js',
+    'console/frontend/src/views/Portal.vue',
+    'monitor/frontend/src/views/ExecutionList.vue',
+    'develop/backend/internal/service/execution_policy_service.go',
+    'develop/backend/internal/service/navigation_fixture_preflight_test.go',
 )
 MAX_SECONDS = 3600
 VOLUME_STOP = 4 * 1024**3
@@ -2418,6 +2436,20 @@ def identity(life, env, *, suite="execution-trace-local", prefix="ADDP_EXECUTION
     env.update({k:v for item in text.split('\0') if '=' in item for k,v in [item.split('=',1)] if k.startswith(prefix)})
 
 
+def prepare_navigation_ledger(life,tenant,config):
+    require(set(tenant.get('navigation',{}))=={'engine_id','query_concurrency','query_per_engine_concurrency','backend_instances'},'navigation_input_invalid')
+    navigation=tenant['navigation']
+    require(type(navigation['engine_id']) is int and navigation['engine_id']>0 and navigation['query_concurrency']==20 and
+            navigation['query_per_engine_concurrency']==5 and navigation['backend_instances']==1,'navigation_policy_invalid')
+    require([name for name in config['services'] if name.startswith('develop-backend')]==['develop-backend'],'navigation_backend_not_unique')
+    policy=(life.checkout/'develop/backend/internal/service/execution_policy_service.go').read_text()
+    require(re.search(r'QueryConcurrency:\s*20,\s*QueryPerEngineConcurrency:\s*5,',policy) is not None,'navigation_default_policy_changed')
+    binding={'run_id':life.run_id,'tenant_id':tenant['tenant_id'],'user_id':tenant['user_id'],'engine_id':navigation['engine_id']}
+    require(all(isinstance(binding[k],str) and re.fullmatch('[1-9][0-9]*',binding[k]) for k in ('tenant_id','user_id')),'navigation_identity_invalid')
+    life.navigation_binding=binding
+    life.navigation_ledger=life.private_json('navigation-ownership.json',{'schema':'addp.execution-navigation-ownership/v1',**binding,'definitions':[],'executions':[],'reads':0})
+
+
 def main():
     require(len(sys.argv)==1,'local_entry_has_no_capacity_or_hosted_options')
     remaining=int(os.environ.get('MONITOR_TRACE_LOCAL_REMAINING_SECONDS',str(MAX_SECONDS)))
@@ -2453,6 +2485,7 @@ def main():
         os.environ['NO_PROXY']=os.environ['no_proxy']='127.0.0.1,localhost'
         business=module('monitor-traces-local-online',life.checkout)
         browser=business.run(life,env,report)
+        prepare_navigation_ledger(life,browser['tenant'],config)
         life.phase='real_console_browser'
         browser_failure=target.with_name(target.stem+'-browser-first-failure.json')
         browser_failure.parent.mkdir(parents=True,exist_ok=True)
@@ -2467,6 +2500,7 @@ def main():
                         ADDP_EXECUTION_TRACE_BROWSER_REPORT_FILE='/private/browser-report.json',
                         ADDP_EXECUTION_TRACE_BROWSER_FIRST_FAILURE_FILE='/private/browser-first-failure.json',
                         ADDP_EXECUTION_TRACE_TENANT_BROWSER_CONFIG_FILE='/private/tenant-browser.json',
+                        ADDP_EXECUTION_NAVIGATION_LEDGER_FILE='/private/navigation-ownership.json',
                         ADDP_ONLINE_ARTIFACT_DIR='/tmp/trace-browser')
         secret_env.write_text('\n'.join(k+'='+v for k,v in selected.items())+'\n');secret_env.chmod(0o600)
         version=json.loads((life.checkout/'console/frontend/package-lock.json').read_text())['packages']['node_modules/@playwright/test']['version']

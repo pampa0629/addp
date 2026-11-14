@@ -1,3 +1,4 @@
+import { navigationInput, navigationFailure } from './execution-navigation-local-support.mjs'
 import { openSync, closeSync, fstatSync, fsyncSync, writeFileSync, constants } from 'node:fs'
 import { traceLinkQuery, traceRoute } from '../../../../monitor/frontend/src/utils/traces.js'
 
@@ -41,10 +42,11 @@ export const tenantStagePermissions = [
 
 // Separate input for a separate real Tenant session. Never pass platform references.
 export function tenantStageBrowserInput(value) {
-  if (!value || Object.keys(value).sort().join(',') !== 'cases,run_id,schema,tenant_id,user_id' ||
+  if (!value || Object.keys(value).sort().join(',') !== 'cases,navigation,run_id,schema,tenant_id,user_id' ||
       value.schema !== 'addp.tenant-stage-browser/v1' || !/^[A-Za-z0-9_-]{1,100}$/.test(value.run_id) ||
       !/^[1-9][0-9]*$/.test(value.tenant_id) || !/^[1-9][0-9]*$/.test(value.user_id) ||
       !Array.isArray(value.cases) || value.cases.length !== 4) invalid()
+  navigationInput({ ...value.navigation, run_id: value.run_id, tenant_id: value.tenant_id, user_id: value.user_id })
   const seen = new Set()
   for (const row of value.cases) {
     if (Object.keys(row).sort().join(',') !== 'execution_id,kind,module,stages' ||
@@ -99,10 +101,17 @@ export function causalLinkDiagnostics(onFirstFailure) {
 export function writeExecutionTraceFirstFailure(path, report) {
   const allowedStages = ['admission', 'password-mfa', 'retained-terminal', 'causal-link', 'checkpoint-log',
     'platform-browser-logout', 'tenant-input', 'tenant-password', 'tenant-orchestrator-readable',
-    'tenant-orchestrator-missing', 'tenant-develop-readable', 'tenant-develop-missing', 'tenant-browser-logout']
+    'tenant-orchestrator-missing', 'tenant-develop-readable', 'tenant-develop-missing', 'tenant-browser-logout', 'navigation-prepare', 'navigation-pending', 'navigation-running', 'navigation-success']
   const value = { schema: 'addp.execution-trace-browser-first-failure/v1', run_id: report.run_id,
     result: 'failed', stage: allowedStages.includes(report.stage) ? report.stage : 'unknown' }
   if (report.causal_link?.first_failure) value.causal_link = report.causal_link.first_failure
+  if (report.navigation) value.navigation = {
+    page_reads: Number.isSafeInteger(report.navigation.page_reads) && report.navigation.page_reads >= 0 ? report.navigation.page_reads : null,
+    error_code: navigationFailure({ message: report.navigation.error_code }),
+    polls: Number.isInteger(report.navigation.polls) && report.navigation.polls >= 0 && report.navigation.polls <= 45 ? report.navigation.polls : null,
+    comparisons: Number.isInteger(report.navigation.comparisons) && report.navigation.comparisons >= 0 && report.navigation.comparisons <= 12 ? report.navigation.comparisons : null,
+    states: Object.fromEntries(['pending', 'running', 'success'].filter(key => report.navigation.states?.[key] === true).map(key => [key, true]))
+  }
   const encoded = JSON.stringify(value)
   if (Buffer.byteLength(encoded) > 2048) throw new Error('browser_first_failure_over_budget')
   const fd = openSync(path, constants.O_RDWR | constants.O_NOFOLLOW)

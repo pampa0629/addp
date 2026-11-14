@@ -4,6 +4,8 @@ import { isAbsolute } from 'node:path'
 import { executionTraceBrowserInput, admitExecutionTraceBrowserEnvironment, tenantStageBrowserInput, tenantStagePermissions, causalLinkDiagnostics, writeExecutionTraceFirstFailure } from './execution-trace-local-support.mjs'
 
 import { assertHTTPBrowserLogout } from '../http-quality-page-support.mjs'
+import { browserAPIFromResponse } from './transfer-browser-support.js'
+import { openNavigationLedger, runExecutionNavigation, assertExecutionNavigationPage, navigationFailure } from './execution-navigation-local-support.mjs'
 import { localConsoleLogin } from './local-identity-support.mjs'
 
 // A failed password or MFA action must never create browser captures.
@@ -11,6 +13,7 @@ test.use({ screenshot: 'off', trace: 'off', video: 'off', locale: 'zh-CN' })
 
 test('execution trace local real Console password MFA, causal link and checkpoint logs', async ({ page }) => {
   test.setTimeout(240_000)
+  const browserDeadline = performance.now() + 240000
   const report = { schema: 'addp.execution-trace-browser-receipt/v1', result: 'failed', stage: 'admission', assertions: {} }
   let reportPath, firstFailurePath, causal
   let firstFailureAttempted = false
@@ -157,6 +160,11 @@ test('execution trace local real Console password MFA, causal link and checkpoin
         if (path.endsWith('/trace-stages')) stageRequests++
         if (path.includes('/platform/traces') || path.includes('/platform/modules/') && path.endsWith('/logs')) platformRequests++
       })
+      let latestResponse
+      tenantPage.on('response', response => {
+        const url = new URL(response.url())
+        if (url.origin === process.env.CONSOLE_URL.replace(/\/$/, '') && url.pathname.startsWith('/api/v1/') && response.ok() && response.request().headers().authorization) latestResponse = response
+      })
       report.stage = 'tenant-password'
       const firstPath = '/monitor/executions?execution_id=' + tenant.cases[0].execution_id
       const user = await localConsoleLogin(tenantPage, expect, { prefix: 'ADDP_EXECUTION_TRACE_', principal: 'USER', scope: 'tenant', path: firstPath })
@@ -198,6 +206,45 @@ test('execution trace local real Console password MFA, causal link and checkpoin
       }
       expect(stageRequests).toBe(4)
       expect(platformRequests).toBe(0)
+      report.stage = 'navigation-prepare'
+      report.navigation = {}
+      const navigation = { ...tenant.navigation, run_id: tenant.run_id, tenant_id: tenant.tenant_id, user_id: tenant.user_id }
+      let uiCommands = 0
+      report.navigation.page_reads = 0
+      const command = request => {
+        const path = new URL(request.url()).pathname
+        if (path.startsWith('/api/v1/') && request.method() === 'GET') report.navigation.page_reads++
+        if (path.startsWith('/api/v1/develop/') && request.method() !== 'GET') uiCommands++
+      }
+      tenantPage.on('request', command)
+      try {
+        const ledger = openNavigationLedger(process.env.ADDP_EXECUTION_NAVIGATION_LEDGER_FILE, navigation)
+        await runExecutionNavigation({ input: navigation, ledger, receipt: report.navigation,
+          remaining: () => browserDeadline - performance.now(), stage: value => { report.stage = value },
+          connect: async timeout => {
+            const api = await browserAPIFromResponse(latestResponse, process.env.CONSOLE_URL, {
+              principalID: tenant.user_id, tenantID: tenant.tenant_id, permissions: tenantStagePermissions
+            }, timeout)
+            const call = async (method, path, data, timeout) => {
+              const response = await api.fetch(path, { method, data, timeout, maxRedirects: 0 })
+              const expected = method === 'GET' ? [200] : path.endsWith('/execute') ? [202] : [200]
+              if (!expected.includes(response.status())) throw new Error('navigation_control_http_status')
+              return response.json()
+            }
+            call.dispose = () => api.dispose()
+            return call
+          },
+          navigate: async sample => {
+            await assertExecutionNavigationPage({ page: tenantPage, expect, ...sample })
+            expect(stageRequests).toBe(4); expect(platformRequests).toBe(0); expect(uiCommands).toBe(0)
+          }
+        })
+      } catch (error) {
+        report.navigation.error_code = navigationFailure(error)
+        persistFirstFailure() // Persist before disposing the real Tenant browser context.
+        throw error
+      } finally { tenantPage.off('request', command) }
+      report.assertions.tenant_recent_navigation_three_states = true
       report.stage = 'tenant-browser-logout'
       expect(await assertHTTPBrowserLogout(tenantPage, expect, 2)).toBe(2)
       report.assertions.tenant_browser_lazy_readable_missing_clear_logout = true
@@ -205,6 +252,7 @@ test('execution trace local real Console password MFA, causal link and checkpoin
     report.result = 'passed'; report.stage = 'complete'
   } catch (error) {
     if (report.stage === 'causal-link') causal?.fail(error)
+    if (report.navigation && report.stage.startsWith('navigation-')) report.navigation.error_code = navigationFailure(error)
     persistFirstFailure()
     // Do not export Playwright's password-fill call logs, response bodies or URL
     // snapshots. The caller keeps only this fixed stage and safe booleans.

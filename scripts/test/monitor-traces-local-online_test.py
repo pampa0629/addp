@@ -375,8 +375,6 @@ class LocalExecutionTraceOwnerTests(unittest.TestCase):
             server.shutdown();server.server_close();thread.join(timeout=2)
 
 
-if __name__ == '__main__':
-    unittest.main()
 
 class TenantStageAcceptanceTests(unittest.TestCase):
     def value(self):
@@ -524,3 +522,112 @@ class TenantStageAcceptanceTests(unittest.TestCase):
         self.assertFalse(report['assertions']['formal_definitions_deleted'])
         self.assertTrue(report['assertions']['logout_old_session_denied'])
         self.assertNotIn('private',json.dumps(report))
+
+
+class NavigationOwnershipCleanupTests(unittest.TestCase):
+    def fixture(self, directory, *, unknown=False, unknown_execution=False):
+        import subprocess
+        from pathlib import Path
+        root=Path(__file__).resolve().parents[2]
+        binding={'run_id':'owned-navigation','tenant_id':'7','user_id':'9','engine_id':13}
+        path=Path(directory)/'navigation-ownership.json'
+        path.write_text(json.dumps({'schema':'addp.execution-navigation-ownership/v1',**binding,'definitions':[],'executions':[],'reads':0}));path.chmod(0o600)
+        module=(root/'console/frontend/e2e/online/execution-navigation-local-support.mjs').as_uri()
+        body='const row=ledger.definition(0);'
+        if not unknown:
+            body+='row.id=11;ledger.save();const execution=ledger.execution(0);'
+            if not unknown_execution:body+='execution.id="11111111-1111-4111-8111-111111111111";ledger.save();'
+        code='import {openNavigationLedger} from '+json.dumps(module)+';const ledger=openNavigationLedger('+json.dumps(str(path))+','+json.dumps({**binding,'query_concurrency':20,'query_per_engine_concurrency':5,'backend_instances':1})+');'+body
+        subprocess.run(['node','--input-type=module','-e',code],check=True,capture_output=True)
+        self.clock=0
+        def wait(seconds):self.clock+=seconds
+        return SimpleNamespace(navigation_ledger=path,navigation_binding=binding,checkout=root,started=0,wait=wait)
+
+    def client(self, fault=None):
+        calls=[]
+        sql='SELECT 42 AS fixture_value FROM pg_catalog.pg_sleep(20)'
+        execution={'execution_id':'11111111-1111-4111-8111-111111111111','module':'develop','task_type':'query','source_task_id':'11','triggered_by':9,'status':'success'}
+        task={'id':11,'tenant_id':7,'created_by':9,'name':'owned-navigation-navigation-0','dev_type':'query','timeout':30,'content':{'query':sql},'execution_config':{'engine_id':13}}
+        def request(method,path,expected,body=None):
+            calls.append((method,path,expected))
+            if '/executions/' in path:
+                value=deepcopy(execution)
+                if fault=='active':value['status']='running'
+                if fault=='wrong-execution':value['source_task_id']='99'
+                if fault=='private-execution':value['metadata']={'access_token':'private'}
+                return SimpleNamespace(payload=value)
+            if method=='DELETE':return SimpleNamespace(payload={})
+            if expected==(404,):return SimpleNamespace(payload={})
+            value=deepcopy(task)
+            if fault=='wrong-engine':value['execution_config']['engine_id']=99
+            if fault=='wrong-task':value['id']=99
+            if fault=='wrong-user':value['created_by']=99
+            return SimpleNamespace(payload=value)
+        return SimpleNamespace(request=request),calls
+
+    def test_actual_node_ledger_is_read_by_host_and_only_its_verified_definition_is_deleted(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as directory:
+            life=self.fixture(directory);client,calls=self.client();report={}
+            with patch.object(M.time,'monotonic',side_effect=lambda:self.clock):
+                self.assertEqual(M.finish_navigation(life,client,report),[])
+            self.assertEqual(report['navigation_cleanup']['result'],'passed')
+            self.assertEqual(report['navigation_cleanup']['terminal'],1)
+            self.assertEqual(report['navigation_cleanup']['deleted'],1)
+            self.assertEqual([path for method,path,_ in calls if method=='DELETE'],['/api/v1/develop/task-definitions/11'])
+            self.assertEqual(calls[-1][2],(404,))
+            self.assertEqual(json.loads(life.navigation_ledger.read_text())['reads'],1)
+
+    def test_unknown_intent_and_unknown_execution_never_turn_into_false_zero_residuals(self):
+        import tempfile
+        for kwargs in [{'unknown':True},{'unknown_execution':True}]:
+            with tempfile.TemporaryDirectory() as directory:
+                life=self.fixture(directory,**kwargs);client,calls=self.client();report={}
+                self.assertIn('navigation_unknown_admission',M.finish_navigation(life,client,report))
+                self.assertEqual(report['navigation_cleanup']['result'],'failed')
+                self.assertFalse(any(method=='DELETE' for method,_,_ in calls))
+
+    def test_wrong_scope_malformed_file_budget_and_duplicate_ids_are_rejected_before_calls(self):
+        import tempfile
+        for mutate in [lambda v:v.update(tenant_id='8'),lambda v:v.update(engine_id=True),lambda v:v.update(reads=46),
+                       lambda v:v['definitions'][0].update(digest='0'*64),lambda v:v.update(extra='private')]:
+            with tempfile.TemporaryDirectory() as directory:
+                life=self.fixture(directory);value=json.loads(life.navigation_ledger.read_text());mutate(value);life.navigation_ledger.write_text(json.dumps(value))
+                client,calls=self.client();report={}
+                self.assertTrue(M.finish_navigation(life,client,report));self.assertEqual(calls,[])
+                self.assertNotIn('private',json.dumps(report))
+
+    def test_active_or_misbound_owner_facts_do_not_authorize_definition_deletion(self):
+        import tempfile
+        for fault in ['active','wrong-execution','wrong-engine','wrong-task','wrong-user','private-execution']:
+            with self.subTest(fault=fault),tempfile.TemporaryDirectory() as directory:
+                life=self.fixture(directory);client,calls=self.client(fault);report={}
+                with patch.object(M.time,'monotonic',side_effect=lambda:self.clock):
+                    self.assertTrue(M.finish_navigation(life,client,report))
+                self.assertEqual(report['navigation_cleanup']['result'],'failed')
+                self.assertFalse(any(method=='DELETE' for method,_,_ in calls))
+                self.assertLessEqual(report['navigation_cleanup']['reads'],45)
+
+    def test_shared_read_budget_cannot_be_reset_after_browser_loss(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as directory:
+            life=self.fixture(directory);value=json.loads(life.navigation_ledger.read_text());value['reads']=45;life.navigation_ledger.write_text(json.dumps(value))
+            client,calls=self.client();report={}
+            self.assertIn('navigation_execution_not_terminal',M.finish_navigation(life,client,report))
+            self.assertFalse(any('/executions/' in path or method=='DELETE' for method,path,_ in calls))
+
+    def test_public_permissions_and_symlink_ledger_are_not_read(self):
+        import tempfile,os
+        for fault in ['permissions','symlink','oversize']:
+            with tempfile.TemporaryDirectory() as directory:
+                life=self.fixture(directory)
+                if fault=='permissions':life.navigation_ledger.chmod(0o644)
+                elif fault=='symlink':
+                    original=life.navigation_ledger;alias=original.with_name('alias');os.symlink(original,alias);life.navigation_ledger=alias
+                else:life.navigation_ledger.write_text(' '*4097)
+                client,calls=self.client();report={}
+                self.assertTrue(M.finish_navigation(life,client,report));self.assertEqual(calls,[])
+
+
+if __name__ == '__main__':
+    unittest.main()

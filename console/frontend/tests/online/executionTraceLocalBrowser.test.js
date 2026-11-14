@@ -54,6 +54,7 @@ it('keeps browser ownership with real UI and public responses, with no token inj
 })
 
 const tenantFixture = () => ({ schema: 'addp.tenant-stage-browser/v1', run_id: 'local-tenant-1', tenant_id: '7', user_id: '9',
+  navigation: { engine_id: 13, query_concurrency: 20, query_per_engine_concurrency: 5, backend_instances: 1 },
   cases: ['orchestrator', 'develop'].flatMap((module, i) => ['readable', 'missing'].map(kind => ({ module, kind,
     execution_id: `${i ? '22222222' : '11111111'}-1111-4111-8111-111111111111`, stages: [
       { slot: 'enqueue', state: 'not_found' },
@@ -83,7 +84,7 @@ vi.mock('@playwright/test', async () => {
   const test = (_name, body) => { captured.body = body }
   test.use = () => {}
   test.setTimeout = value => { captured.timeout = value }
-  return { test, expect: value => value?.locator ? {
+  return { request: { newContext: vi.fn() }, test, expect: value => value?.locator ? {
     toContainText: async () => { if (value.fail === 'text') expect(false).toBe(true) },
     toHaveCount: async () => { if (value.fail === 'count') expect(false).toBe(true) },
     toBeVisible: async () => { if (value.fail === 'visible') expect(false).toBe(true) }
@@ -210,4 +211,18 @@ it('retains a durable first failure after abrupt child exit without a final brow
   expect(child.status).toBe(17)
   expect(JSON.parse(readFileSync(path)).causal_link.substep).toBe('link-click')
   expect(readFileSync(path, 'utf8')).not.toContain('PRIVATE')
+})
+
+
+it('keeps navigation failure counters closed, durable and independent of the original causal failure', () => {
+  const path = join(directory, 'navigation-first.json'); writeFileSync(path, '', { mode: 0o600 })
+  const report = { run_id: 'local-trace-1', stage: 'navigation-pending', navigation: {
+    error_code: 'navigation_state_window_lost', polls: 19, comparisons: 3, page_reads: 27,
+    states: { pending: true, running: false, secret: 'PRIVATE' }, token: 'PRIVATE' } }
+  writeExecutionTraceFirstFailure(path, report)
+  expect(JSON.parse(readFileSync(path)).navigation).toEqual({ error_code: 'navigation_state_window_lost', polls: 19, comparisons: 3, page_reads: 27, states: { pending: true } })
+  expect(readFileSync(path, 'utf8')).not.toContain('PRIVATE')
+  const first = readFileSync(path, 'utf8'); report.stage = 'navigation-success'
+  expect(() => writeExecutionTraceFirstFailure(path, report)).toThrow('file_invalid')
+  expect(readFileSync(path, 'utf8')).toBe(first)
 })

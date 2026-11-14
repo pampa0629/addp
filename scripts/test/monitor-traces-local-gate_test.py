@@ -3549,11 +3549,14 @@ class BrowserFirstFailurePersistenceTests(unittest.TestCase):
             raise m.GateError('command_failed_1')
         life.docker = mock.Mock(side_effect=docker)
         life.cleanup = mock.Mock(side_effect=lambda: shutil.rmtree(work) or [])
-        business = SimpleNamespace(run=mock.Mock(return_value={'platform':{},'tenant':{}}))
+        (life.checkout/'develop/backend/internal/service').mkdir(parents=True)
+        (life.checkout/'develop/backend/internal/service/execution_policy_service.go').write_text('QueryConcurrency: 20, QueryPerEngineConcurrency: 5,')
+        tenant={'tenant_id':'7','user_id':'9','navigation':{'engine_id':13,'query_concurrency':20,'query_per_engine_concurrency':5,'backend_instances':1}}
+        business = SimpleNamespace(run=mock.Mock(return_value={'platform':{},'tenant':tenant}))
         env={'PATH':os.environ['PATH']}
         with mock.patch.object(m,'Lifecycle',return_value=life), mock.patch.object(m,'effective_docker_endpoint',return_value='unix:///synthetic.sock'), \
              mock.patch.object(m,'private_docker_client'),mock.patch.object(m,'validate_profile'), \
-             mock.patch.object(m,'build',return_value=('fixed-source',env,{})),mock.patch.object(m,'setup'), \
+             mock.patch.object(m,'build',return_value=('fixed-source',env,{})),mock.patch.object(m,'setup',return_value={'services':{'develop-backend':{}}}), \
              mock.patch.object(m,'identity'),mock.patch.object(m,'module',return_value=business), \
              mock.patch.dict(m.os.environ,{'MONITOR_TRACE_LOCAL_REPORT':str(target)},clear=True), \
              mock.patch.object(m.sys,'argv',['monitor-traces-local-gate.py']),mock.patch('builtins.print'):
@@ -3573,6 +3576,7 @@ class BrowserFirstFailurePersistenceTests(unittest.TestCase):
             self.assertEqual(observed['mode'],0o600)
             self.assertTrue(observed['empty'])
             self.assertIn('ADDP_EXECUTION_TRACE_BROWSER_FIRST_FAILURE_FILE=/private/browser-first-failure.json',observed['env'])
+            self.assertIn('ADDP_EXECUTION_NAVIGATION_LEDGER_FILE=/private/navigation-ownership.json',observed['env'])
             self.assertEqual(json.loads(failure.read_text()),receipt)
             self.assertEqual(report['error_code'],'command_failed_1')
             self.assertEqual(report['browser_first_failure_file'],failure.name)
@@ -3671,3 +3675,27 @@ class LocalTraceStartupAndWritableBudgetTests(unittest.TestCase):
             life.command=mock.Mock(return_value='2048 /private/work\n')
             self.assertEqual(m.Lifecycle.owned_bind_bytes(life,timeout=1),2*1024**2)
             self.assertEqual(life.command.call_args.args[0],['du','-sk',str(life.work)])
+
+
+class NavigationPreparationTests(unittest.TestCase):
+    def test_only_frozen_defaults_single_backend_and_private_fresh_ledger(self):
+        with tempfile.TemporaryDirectory() as directory:
+            life=bare_lifecycle(Path(directory))
+            life.run_id='owned-navigation'
+            policy=life.checkout/'develop/backend/internal/service/execution_policy_service.go'
+            policy.parent.mkdir(parents=True);policy.write_text('QueryConcurrency: 20, QueryPerEngineConcurrency: 5,')
+            tenant={'tenant_id':'7','user_id':'9','navigation':{'engine_id':13,'query_concurrency':20,'query_per_engine_concurrency':5,'backend_instances':1}}
+            config={'services':{'develop-backend':{},'nginx':{}}}
+            m.prepare_navigation_ledger(life,tenant,config)
+            self.assertEqual(life.navigation_ledger.stat().st_mode & 0o777,0o600)
+            self.assertEqual(json.loads(life.navigation_ledger.read_text()),{'schema':'addp.execution-navigation-ownership/v1',
+                'run_id':'owned-navigation','tenant_id':'7','user_id':'9','engine_id':13,'definitions':[],'executions':[],'reads':0})
+            for modify in (lambda t,c: t['navigation'].update(engine_id=True),
+                           lambda t,c: t['navigation'].update(query_per_engine_concurrency=6),
+                           lambda t,c: t['navigation'].update(extra='purpose'),
+                           lambda t,c: t.update(user_id='wrong'),
+                           lambda t,c: c['services'].update({'develop-backend-other':{}})):
+                value,services=copy.deepcopy(tenant),copy.deepcopy(config);modify(value,services)
+                with self.subTest(modify=modify),self.assertRaises(m.GateError):m.prepare_navigation_ledger(life,value,services)
+            policy.write_text('QueryConcurrency: 30, QueryPerEngineConcurrency: 5,')
+            with self.assertRaisesRegex(m.GateError,'navigation_default_policy_changed'):m.prepare_navigation_ledger(life,tenant,config)

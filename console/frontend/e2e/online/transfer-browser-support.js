@@ -28,11 +28,11 @@ export function identity(payload) {
   }
 }
 
-export async function browserAPIFromResponse(response, gateway, expected) {
+export async function browserAPIFromResponse(response, gateway, expected, timeout = 30000) {
   expect(response.ok()).toBe(true)
   const authorization = response.request().headers().authorization
   expect(typeof authorization === 'string' && /^Bearer\s+\S+$/.test(authorization)).toBe(true)
-  const api = await request.newContext({ baseURL: gateway, extraHTTPHeaders: { Authorization: authorization } })
+  const api = await request.newContext({ baseURL: gateway, timeout, extraHTTPHeaders: { Authorization: authorization } })
   try {
     let contextResponse
     try {

@@ -162,6 +162,7 @@ jobs:
             'system/*' \
             'transfer/*' \
             'common/*' \
+            'common-frontend/*' \
             'develop/*' \
             'nginx/*' \
             'monitor/*' \
@@ -172,6 +173,16 @@ jobs:
         uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version-file: .node-version
+
+      - name: Set up Go for execution fixture regressions
+        if: steps.selection.outputs.run == 'true'
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version-file: system/backend/go.mod
+          cache-dependency-path: |
+            system/backend/go.sum
+            common/go.sum
+            develop/backend/go.sum
 
       - name: Run execution online CI runner
         if: steps.selection.outputs.run == 'true'

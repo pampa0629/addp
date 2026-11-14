@@ -9,6 +9,9 @@ import http.cookiejar
 import importlib
 import json
 import math
+import os
+from pathlib import Path
+import stat
 import re
 import struct
 import sys
@@ -192,7 +195,7 @@ def login(env, who, platform=False, life=None, *, identity_prefix="ADDP_EXECUTIO
 
 def safe_execution(value):
     if isinstance(value, dict):
-        require('observability' not in value and not {'trace_id','span_id','authorization_ref','lease_token','lease_owner'}.intersection(value), 'private_execution_facts_exposed')
+        require('observability' not in value and not {'trace_id','span_id','authorization_ref','lease_token','lease_owner','access_token','password'}.intersection(value), 'private_execution_facts_exposed')
         for child in value.values(): safe_execution(child)
     elif isinstance(value,list):
         for child in value: safe_execution(child)
@@ -533,15 +536,112 @@ def run(life, env, report):
     report['retained']=[{'module_name':row['module_name'],'execution_id':row['execution_id']} for row in retained]
     tenant = tenant_stage_observations(user,admin,life,report,executions,checkpoints,owner_instances,terminals,start)
     tenant['tenant_id']=user_identity['context']['tenant_id']
-    tenant['user_id']=user_identity['principal']['id']
+    tenant['user_id']=str(user_identity['principal']['id'])
+    tenant['navigation']={'engine_id':engine_id,'query_concurrency':20,'query_per_engine_concurrency':5,'backend_instances':1}
     life.tenant_stage_log_start=start
     return {'platform':retained[1],'tenant':tenant}
+
+
+def navigation_ledger(life):
+    path=life.navigation_ledger
+    fd=os.open(path,os.O_RDONLY|os.O_NOFOLLOW)
+    try:
+        info=os.fstat(fd)
+        require(stat.S_ISREG(info.st_mode) and info.st_nlink==1 and info.st_mode&0o077==0 and info.st_size<=4096,'navigation_ledger_file_invalid')
+        raw=os.read(fd,4097)
+    finally:os.close(fd)
+    try:value=json.loads(raw)
+    except (ValueError,UnicodeDecodeError):raise LocalTraceAssertionFailure('navigation_ledger_invalid')
+    binding=life.navigation_binding
+    require(isinstance(value,dict) and set(value)=={'schema','run_id','tenant_id','user_id','engine_id','definitions','executions','reads'} and
+            value['schema']=='addp.execution-navigation-ownership/v1' and type(value['engine_id']) is int and all(value[k]==v for k,v in binding.items()),'navigation_ledger_binding_invalid')
+    require(type(value['reads']) is int and 0<=value['reads']<=45,'navigation_ledger_budget_invalid')
+    source=(life.checkout/'console/frontend/e2e/online/execution-navigation-local-support.mjs').read_text()
+    sql=re.search(r"export const navigationSQL = '([^']+)'",source)
+    require(sql is not None,'navigation_sql_contract_missing')
+    sql_hash=hashlib.sha256(sql[1].encode()).hexdigest()
+    def digest(values):return hashlib.sha256(json.dumps(values,separators=(',',':'),ensure_ascii=False).encode()).hexdigest()
+    prefix=[binding[k] for k in ('run_id','tenant_id','user_id','engine_id')]
+    definitions,executions=value['definitions'],value['executions']
+    require(isinstance(definitions,list) and len(definitions)<=6 and isinstance(executions,list) and len(executions)<=7,'navigation_ledger_limit')
+    for slot,row in enumerate(definitions):
+        require(isinstance(row,dict) and set(row)=={'slot','digest','id'} and type(row['slot']) is int and row['slot']==slot and
+                row['digest']==digest(prefix+['definition',slot,sql_hash]) and (row['id'] is None or type(row['id']) is int and row['id']>0),
+                'navigation_ledger_definition_invalid')
+    mapping=[0,1,2,3,4,5,0]
+    for slot,row in enumerate(executions):
+        require(isinstance(row,dict) and set(row)=={'slot','definition','digest','id'} and type(row['slot']) is int and row['slot']==slot and
+                type(row['definition']) is int and row['definition']==mapping[slot] and row['definition']<len(definitions),'navigation_ledger_execution_invalid')
+        task=definitions[row['definition']]['id']
+        require(task is not None and row['digest']==digest(prefix+['execution',slot,row['definition'],task]) and
+                (row['id'] is None or isinstance(row['id'],str) and re.fullmatch(r'[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}',row['id'])),
+                'navigation_ledger_execution_invalid')
+    for rows in (definitions,executions):
+        ids=[row['id'] for row in rows if row['id'] is not None]
+        require(len(ids)==len(set(ids)),'navigation_ledger_duplicate_identity')
+    return value,sql[1]
+
+
+def finish_navigation(life,user,report):
+    if not hasattr(life,'navigation_ledger'):return []
+    failures=[]
+    try:value,sql=navigation_ledger(life)
+    except (OSError,ValueError,LocalTraceAssertionFailure):
+        report['navigation_cleanup']={'result':'failed','error_code':'navigation_ledger_unavailable'}
+        return ['navigation_ledger_unavailable']
+    terminal=set()
+    pending=[row for row in value['executions'] if row['id'] is not None]
+    if any(row['id'] is None for row in value['definitions']+value['executions']):failures.append('navigation_unknown_admission')
+    # The durable counter is reserved before each read, so a killed browser cannot reset the 45-read cap.
+    deadline=min(time.monotonic()+60,life.started+3600)
+    while pending and value['reads']<45 and time.monotonic()<deadline:
+        row=pending[0]
+        try:
+            life.wait(2)
+            if time.monotonic()>=deadline:break
+            pending.pop(0)
+            value['reads']+=1
+            temporary=life.navigation_ledger.with_name('navigation-ownership-cleanup.tmp')
+            with open(temporary,'x',opener=lambda path,flags:os.open(path,flags,0o600)) as out:
+                out.write(json.dumps(value,separators=(',',':')));out.flush();os.fsync(out.fileno())
+            os.replace(temporary,life.navigation_ledger)
+            directory=os.open(life.navigation_ledger.parent,os.O_RDONLY)
+            try:os.fsync(directory)
+            finally:os.close(directory)
+            item=user.request('GET','/api/v1/develop/executions/'+row['id'],(200,)).payload
+            safe_execution(item)
+            require(item.get('execution_id')==row['id'] and item.get('module')=='develop' and item.get('task_type')=='query' and
+                    item.get('source_task_id')==str(value['definitions'][row['definition']]['id']) and str(item.get('triggered_by'))==value['user_id'],
+                    'navigation_cleanup_execution_binding_invalid')
+            if item.get('status') in ('success','failed','timeout','cancelled'):terminal.add(row['id'])
+            else:
+                require(item.get('status') in ('pending','running'),'navigation_cleanup_state_invalid');pending.append(row)
+        except Exception:
+            failures.append('navigation_execution_read_failed');break
+    if pending:failures.append('navigation_execution_not_terminal')
+    deleted=0
+    for row in reversed(value['definitions']):
+        if row['id'] is None:continue
+        associated=[item for item in value['executions'] if item['definition']==row['slot']]
+        if any(item['id'] not in terminal for item in associated):continue
+        path='/api/v1/develop/task-definitions/'+str(row['id'])
+        try:
+            task=user.request('GET',path,(200,)).payload
+            require(task.get('id')==row['id'] and str(task.get('tenant_id'))==value['tenant_id'] and str(task.get('created_by'))==value['user_id'] and
+                    task.get('name')==value['run_id']+'-navigation-'+str(row['slot']) and task.get('dev_type')=='query' and task.get('timeout')==30 and
+                    task.get('execution_config',{}).get('engine_id')==value['engine_id'] and task.get('content',{}).get('query')==sql,
+                    'navigation_cleanup_definition_binding_invalid')
+            user.request('DELETE',path,(200,204));user.request('GET',path,(404,));deleted+=1
+        except Exception:failures.append('navigation_definition_cleanup_failed')
+    report['navigation_cleanup']={'result':'failed' if failures else 'passed','definitions':len(value['definitions']),
+        'executions':len(value['executions']),'deleted':deleted,'terminal':len(terminal),'reads':value['reads']}
+    return failures
 
 
 def finish(life,env,report):
     life.phase='owner_cleanup_and_logout'
     admin,negative,user,preparer=life.local_clients
-    definition_errors, session_errors = [], []
+    definition_errors, session_errors = finish_navigation(life,user,report), []
     for path,identifier in reversed(life.local_definitions):
         try:
             user.request('DELETE',path+str(identifier),(200,204))
