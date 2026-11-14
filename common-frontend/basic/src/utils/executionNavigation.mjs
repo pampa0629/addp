@@ -16,4 +16,3 @@ export function resolveMonitorExecutionReturnRoute(executionId, returnTo) {
   if (url.pathname !== '/monitor/executions' || url.hash || new Set(keys).size !== keys.length || keys.some(key => !allowed.has(key)) || url.searchParams.get('execution_id') !== String(executionId)) return ''
   return url.pathname + url.search
 }
-
