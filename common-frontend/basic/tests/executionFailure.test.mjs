@@ -882,3 +882,13 @@ test('endpoint diagnostics show the correct bilingual input and distance guidanc
     }
   }
 })
+
+
+test('execution results retain only the exact Monitor execution context', () => {
+  const execution={module:'develop',task_type:'workflow',execution_id:'same-run'}
+  const back='/monitor/executions?module=develop&task_type=workflow&source_task_id=37&page=3&page_size=50&execution_id=same-run'
+  const target=new URL(buildDevelopExecutionRoute(execution,back),'http://console')
+  assert.equal(target.pathname,'/develop/executions/same-run')
+  assert.equal(target.searchParams.get('return_to'),back)
+  for (const bad of [null, '', ['same-run', 'same-run'], 'https://other.invalid/', '/develop/tasks?execution_id=same-run', '/monitor/executions?execution_id=other', '/monitor/executions?execution_id=same-run&execution_id=same-run', '/monitor/executions?execution_id=same-run&token=private']) assert.equal(buildDevelopExecutionRoute(execution,bad),'')
+})

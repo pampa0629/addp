@@ -784,7 +784,8 @@
     },
     "executionMonitor": {
       "viewExecutions": "查看执行记录",
-      "viewTaskExecutions": "在统一监控中查看"
+      "viewTaskExecutions": "在统一监控中查看",
+      "returnToExecution": "返回本次执行"
     },
     "confirm": "确定",
     "cancel": "取消",

@@ -83,8 +83,8 @@ test.describe('last execution from the task definition contract', () => {
       await installMockBackend(page, {
         locale,
         taskItems: [
-          { id: 101, name: 'completed_workflow', dev_type: 'workflow', status: 'active', last_run_at: '2026-10-30T04:00:00Z', last_execution_status: 'success' },
-          { id: 102, name: 'failed_workflow', dev_type: 'workflow', status: 'active', last_run_at: '2026-10-30T04:01:00Z', last_execution_status: 'failed' },
+          { id: 101, name: 'completed_workflow', dev_type: 'workflow', status: 'active', last_execution_id: 'latest-success', last_run_at: '2026-10-30T04:00:00Z', last_execution_status: 'success' },
+          { id: 102, name: 'failed_workflow', dev_type: 'workflow', status: 'active', last_execution_id: 'latest-failed', last_run_at: '2026-10-30T04:01:00Z', last_execution_status: 'failed' },
           { id: 103, name: 'never_run_omitted', dev_type: 'workflow', status: 'active' },
           { id: 104, name: 'never_run_null', dev_type: 'workflow', status: 'active', last_run_at: null }
         ]
@@ -96,7 +96,7 @@ test.describe('last execution from the task definition contract', () => {
       for (const [index, time, status] of [[0, '2026/10/30 12:00:00', 'success'], [1, '2026/10/30 12:01:00', 'failed']]) {
         const execution = rows.nth(index).getByRole('cell').nth(5)
         await expect(execution).toContainText(time)
-        await expect(execution.locator('.el-tag')).toHaveText(status)
+        await expect(execution.locator('.el-tag')).toHaveText(locale === 'en' ? (status === 'success' ? 'Success' : 'Failed') : (status === 'success' ? '成功' : '失败'))
         await expect(execution).not.toContainText(notExecuted)
       }
       for (const index of [2, 3]) {
@@ -117,7 +117,7 @@ for (const embedded of [false, true]) {
       await installMockBackend(page, {
         taskItems: Array.from({ length: 20 }, (_, index) => ({
           id: index + 1, name: `completed_task_${index}`, dev_type: 'workflow', status: 'active',
-          last_run_at: '2026-10-30T04:00:00Z', last_execution_status: 'success',
+          last_execution_id: 'latest-success', last_run_at: '2026-10-30T04:00:00Z', last_execution_status: 'success',
           created_at: '2026-10-29T04:00:00Z'
         }))
       })
@@ -142,7 +142,7 @@ for (const embedded of [false, true]) {
       const execution = rows.first().getByRole('cell').nth(5)
       await execution.scrollIntoViewIfNeeded()
       await expect.poll(() => isUncovered(execution)).toBe(true)
-      await expect(execution).toContainText('success')
+      await expect(execution).toContainText('成功')
 
       for (const control of [surface.getByRole('heading', { name: '任务管理', exact: true }), surface.locator('.toolbar-right .el-select').last()]) {
         await expect.poll(() => control.evaluate(element => {
@@ -245,11 +245,23 @@ async function fulfillJSON(route, body) {
 for (const locale of ['zh-cn', 'en']) test(`task execution records preserve exact task scope in ${locale}`, async ({ page }) => {
   await installMockBackend(page, { locale })
   await page.goto('/tasks')
-  const label = locale === 'en' ? 'Execution records' : '执行记录'
+  const label = locale === 'en' ? 'Execution history' : '历史记录'
   const rows = page.locator('.el-table__body-wrapper tbody tr')
   await expect(rows.first().getByRole('button', { name: locale === 'en' ? 'Details' : '详情', exact: true })).toHaveCount(0)
   await page.context().route('**/monitor/executions?**', route => route.fulfill({ contentType: 'text/html', body: '<main>Scoped Monitor destination</main>' }))
   const opened = page.waitForEvent('popup')
-  await rows.first().getByRole('button', { name: label, exact: true }).click()
+  await rows.first().getByRole('button', { name: locale === 'en' ? 'More' : '更多', exact: true }).click()
+  await page.getByRole('button', { name: label, exact: true }).click()
   await expect(await opened).toHaveURL(/\/monitor\/executions\?module=develop&task_type=workflow&source_task_id=41$/)
+})
+
+for (const status of ['pending','running']) test(`latest ${status} execution opens its exact UUID and never a list substitute`, async ({page})=>{
+ await installMockBackend(page,{taskItems:[{id:41,name:'queued task',dev_type:'workflow',status:'active',last_execution_id:'latest-'+status,last_execution_status:status,last_run_at:'2026-11-14T01:00:00Z'}, {id:42,name:'never',dev_type:'workflow',status:'active'}]})
+ await page.context().route('**/monitor/executions?**',route=>route.fulfill({contentType:'text/html',body:'<main>Exact execution</main>'}))
+ await page.goto('/tasks')
+ const rows=page.locator('.el-table__body-wrapper tbody tr')
+ await expect(rows.last().getByRole('button',{name:'最近执行',exact:true})).toBeDisabled()
+ await expect(rows.first().getByRole('cell').nth(5)).toContainText(status==='pending'?'排队中':'运行中')
+ await rows.first().getByRole('button',{name:'最近执行',exact:true}).click()
+ await expect(page).toHaveURL('/monitor/executions?execution_id=latest-'+status)
 })

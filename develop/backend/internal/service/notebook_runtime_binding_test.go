@@ -4,6 +4,7 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/addp/common/execution/executiontest"
 	"github.com/addp/develop/backend/internal/repository"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
@@ -101,6 +102,9 @@ func newNotebookBindingTestDB(t *testing.T) *gorm.DB {
 		)
 	`).Error; err != nil {
 		t.Fatalf("create develop.dev_tasks: %v", err)
+	}
+	if err := executiontest.EnsureSQLiteStore(db); err != nil {
+		t.Fatal(err)
 	}
 	return db
 }

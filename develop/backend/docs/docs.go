@@ -2255,6 +2255,12 @@ const docTemplate = `{
                         "schema": {
                             "$ref": "#/definitions/github_com_addp_develop_backend_internal_models.ListDevTasksSwaggerResponse"
                         }
+                    },
+                    "500": {
+                        "description": "执行事实读取失败 | Execution facts read failed",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_develop_backend_internal_models.ErrorResponse"
+                        }
                     }
                 },
                 "x-addp-auth-mode": "permission",
@@ -3178,6 +3184,12 @@ const docTemplate = `{
                         "schema": {
                             "$ref": "#/definitions/github_com_addp_develop_backend_internal_models.ListDevTasksSwaggerResponse"
                         }
+                    },
+                    "500": {
+                        "description": "执行事实读取失败 | Execution facts read failed",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_develop_backend_internal_models.ErrorResponse"
+                        }
                     }
                 },
                 "x-addp-auth-mode": "permission",
@@ -3294,8 +3306,14 @@ const docTemplate = `{
                             "$ref": "#/definitions/github_com_addp_develop_backend_internal_models.DevTaskDetailSwagger"
                         }
                     },
+                    "404": {
+                        "description": "任务不存在 | Task not found",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_develop_backend_internal_models.ErrorResponse"
+                        }
+                    },
                     "500": {
-                        "description": "执行契约不可用 | Execution contract unavailable",
+                        "description": "执行事实读取或执行契约不可用 | Execution facts read or execution contract unavailable",
                         "schema": {
                             "$ref": "#/definitions/github_com_addp_develop_backend_internal_models.ErrorResponse"
                         }
@@ -3770,6 +3788,12 @@ const docTemplate = `{
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "执行事实读取失败 | Execution facts read failed",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_develop_backend_internal_models.ErrorResponse"
                         }
                     }
                 },

@@ -67,6 +67,10 @@
       {
         "module": "agent",
         "readyPath": "/module-ui/agent/login"
+      },
+      {
+        "module": "develop",
+        "readyPath": "/module-ui/develop/login"
       }
     ]
   }

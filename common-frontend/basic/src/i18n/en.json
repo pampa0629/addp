@@ -784,7 +784,8 @@
     },
     "executionMonitor": {
       "viewExecutions": "View executions",
-      "viewTaskExecutions": "View in Monitor"
+      "viewTaskExecutions": "View in Monitor",
+      "returnToExecution": "Back to this execution"
     },
     "confirm": "Confirm",
     "cancel": "Cancel",

@@ -206,7 +206,7 @@ class ChangedGateTest(unittest.TestCase):
         subprocess.run(["git", "add", "."], cwd=self.repository, check=True)
         self.assertEqual(["console", "develop"], MODULE.affected_modules(self.repository,
             ["develop/frontend/src/utils/developTaskRoute.js"]))
-        self.assertEqual(["develop"], MODULE.affected_modules(self.repository,
+        self.assertEqual(["console", "develop"], MODULE.affected_modules(self.repository,
             ["develop/frontend/src/utils/workflowResourceBindings.js"]))
 
     def test_meta_frontend_changes_include_console_manual_scan_dialog_gate(self) -> None:

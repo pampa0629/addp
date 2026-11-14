@@ -5,9 +5,9 @@
       <div class="toolbar-left">
         <MonitorExecutionsButton
           module="develop"
-          :task-type="execution?.task_type"
-          :source-task-id="execution?.source_task_id"
-          scope="task"
+          :execution-id="executionId"
+          :return-to="route.query.return_to"
+          scope="execution"
         />
         <h2>{{ t('develop.executionDetail.title') }}</h2>
         <el-tag
@@ -23,7 +23,7 @@
       </div>
       <div class="toolbar-right">
         <el-button
-          v-if="['failed', 'timeout', 'cancelled'].includes(execution?.status)"
+          v-if="authStore.hasPermission('develop.task.execute') && ['failed', 'timeout', 'cancelled'].includes(execution?.status)"
           type="success"
           @click="handleRetry"
         >
@@ -41,59 +41,12 @@
       :status="execution?.status"
       :error-details="execution?.error_details"
       :execution-id="execution?.execution_id"
-      show-monitor-link
     />
 
-    <!-- 基本信息卡片 -->
-    <div class="info-section">
-      <el-card>
-        <template #header>
-          <div class="card-header">
-            <span>{{ t('develop.executionDetail.basicInfo') }}</span>
-          </div>
-        </template>
-        <el-descriptions :column="3" border>
-          <el-descriptions-item :label="t('develop.executionDetail.execId')">
-            {{ execution?.execution_id }}
-          </el-descriptions-item>
-          <el-descriptions-item :label="t('develop.executionDetail.taskName')">
-            {{ execution?.dev_task?.name || '-' }}
-          </el-descriptions-item>
-          <el-descriptions-item :label="t('develop.executionDetail.taskType')">
-            <el-tag :type="getTypeColor(execution?.task_type)">
-              {{ getTypeLabel(execution?.task_type) }}
-            </el-tag>
-          </el-descriptions-item>
-          <el-descriptions-item :label="t('develop.executionDetail.triggerType')">
-            {{ getTriggerLabel(execution?.trigger_type) }}
-          </el-descriptions-item>
-          <el-descriptions-item :label="t('develop.executionDetail.startTime')">
-            {{ formatTime(execution?.started_at) }}
-          </el-descriptions-item>
-          <el-descriptions-item :label="t('develop.executionDetail.endTime')">
-            {{ formatTime(execution?.completed_at) }}
-          </el-descriptions-item>
-          <el-descriptions-item :label="t('develop.executionDetail.duration')">
-            {{ formatDuration(execution?.execution_time_ms) }}
-          </el-descriptions-item>
-          <el-descriptions-item :label="t('develop.executionDetail.rowsAffected')">
-            {{ execution?.rows_affected || '-' }}
-          </el-descriptions-item>
-          <el-descriptions-item :label="t('develop.executionDetail.currentStep')">
-            {{ execution?.current_step || '-' }}
-          </el-descriptions-item>
-        </el-descriptions>
-
-        <!-- 进度条 -->
-        <div style="margin-top: 16px;">
-          <div style="margin-bottom: 8px; color: var(--addp-text-secondary);">{{ t('develop.executionDetail.progress') }}</div>
-          <el-progress
-            :percentage="execution?.progress || 0"
-            :status="getProgressStatus(execution?.status)"
-          />
-        </div>
-      </el-card>
-    </div>
+    <p class="execution-result-identity">
+      <strong>{{ execution?.source_task_name || execution?.dev_task?.name || '—' }}</strong>
+      <span>{{ executionId }}</span>
+    </p>
 
     <!-- Tab 页签 -->
     <div class="content-area">
@@ -198,6 +151,7 @@
               </div>
             </div>
 
+            <el-empty v-else-if="execution?.status === 'pending'" :description="t('develop.executionDetail.resultQueued')" />
             <el-empty v-else-if="execution?.status === 'running'" :description="t('develop.executionDetail.resultPending')" />
             <el-empty v-else-if="!executionResult" :description="t('develop.executionDetail.noResult')" />
           </div>
@@ -490,20 +444,6 @@ const loadResourceEngines = async () => {
 }
 
 // 工具函数
-const getTypeLabel = (type) => {
-  const labels = {
-    query: t('develop.execution.typeQuery'),
-    workflow: t('develop.execution.typeWorkflow'),
-    script: t('develop.execution.typeScript')
-  }
-  return labels[type] || type
-}
-
-const getTypeColor = (type) => {
-  const colors = { query: 'primary', workflow: 'success', script: 'warning' }
-  return colors[type] || 'info'
-}
-
 const getStatusLabel = (status) => {
   const labels = {
     pending: t('develop.execution.statusPending'),
@@ -528,34 +468,6 @@ const getStatusColor = (status) => {
   return colors[status] || 'info'
 }
 
-const getProgressStatus = (status) => {
-  const statusMap = {
-    success: 'success',
-    failed: 'exception',
-    timeout: 'warning',
-    cancelled: 'warning'
-  }
-  return statusMap[status] || undefined
-}
-
-const getTriggerLabel = (trigger) => {
-  const labels = {
-    manual: t('develop.execution.triggerManual'),
-    scheduled: t('develop.execution.triggerSchedule')
-  }
-  return labels[trigger] || trigger
-}
-
-const getTaskStatusColor = (status) => {
-  const colors = {
-    success: 'success',
-    failed: 'danger',
-    running: 'primary',
-    pending: 'info'
-  }
-  return colors[status] || 'info'
-}
-
 const getLogType = (level) => {
   const types = {
     ERROR: 'danger',
@@ -564,13 +476,6 @@ const getLogType = (level) => {
     DEBUG: 'info'
   }
   return types[level] || 'info'
-}
-
-const formatDuration = (ms) => {
-  if (!ms) return '-'
-  if (ms < 1000) return `${ms}ms`
-  if (ms < 60000) return `${(ms / 1000).toFixed(1)}s`
-  return `${(ms / 60000).toFixed(1)}min`
 }
 
 const formatTime = (time) => {
@@ -626,7 +531,7 @@ const handleRefresh = async () => {
 
 const handleTabChange = async (tab) => {
   if (tab !== 'result') stopProfessionalResult()
-  const routeState = resolveExecutionDetailRouteState({ tab })
+  const routeState = resolveExecutionDetailRouteState({ ...route.query, tab })
   const location = { path: route.path, query: routeState.query }
   if (router.resolve(location).fullPath !== route.fullPath) {
     await navigateDevelopRoute(router, location, { history: 'replace' })
@@ -715,6 +620,8 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
+.execution-result-identity { display: flex; flex-wrap: wrap; gap: 16px; color: var(--addp-text-secondary); }
+
 .execution-detail-page {
   display: flex;
   flex-direction: column;
@@ -742,17 +649,6 @@ onUnmounted(() => {
   font-size: 18px;
   color: var(--addp-text-primary);
   font-weight: 500;
-}
-
-.info-section {
-  padding: 16px;
-  flex-shrink: 0;
-}
-
-.card-header {
-  font-size: 16px;
-  font-weight: 600;
-  color: var(--addp-text-primary);
 }
 
 .content-area {

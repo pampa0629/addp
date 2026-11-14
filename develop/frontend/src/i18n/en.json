@@ -595,7 +595,7 @@
       "typeQuery": "Query",
       "typeWorkflow": "Workflow",
       "typeScript": "Script",
-      "statusPending": "Pending",
+      "statusPending": "Queued",
       "statusRunning": "Running",
       "statusSuccess": "Success",
       "statusFailed": "Failed",
@@ -605,8 +605,8 @@
       "triggerSchedule": "Scheduled"
     },
     "executionDetail": {
-      "recentVisitTitle": "Development Task Execution",
-      "title": "Execution Detail",
+      "recentVisitTitle": "Development execution results",
+      "title": "Execution results",
       "back": "Back",
       "reExecute": "Re-execute",
       "refresh": "Refresh",
@@ -661,10 +661,11 @@
       "noLogs": "No logs",
       "unknownError": "Unknown error",
       "stackTrace": "Stack trace:",
-      "loadFailed": "Load failed: "
+      "loadFailed": "Load failed: ",
+      "resultQueued": "Queued; no result is available for this execution yet"
     },
     "taskManagement": {
-      "executionRecords": "Execution records",
+      "executionRecords": "Execution history",
       "title": "Task Management",
       "newTask": "New Task",
       "refresh": "Refresh",
@@ -718,7 +719,10 @@
       "deleteFailed": "Delete failed: ",
       "loadFailed": "Load failed: ",
       "taskNotFound": "Task not found",
-      "viewNotSupported": "This type does not support viewing details"
+      "viewNotSupported": "This type does not support viewing details",
+      "allExecutionRecords": "All executions",
+      "latestExecution": "Latest execution",
+      "moreActions": "More"
     },
     "approval": {
       "title": "Tool Execution Approval",

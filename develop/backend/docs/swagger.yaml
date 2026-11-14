@@ -3847,6 +3847,10 @@ paths:
           description: Notebook列表 | Notebook list
           schema:
             $ref: '#/definitions/github_com_addp_develop_backend_internal_models.ListDevTasksSwaggerResponse'
+        "500":
+          description: 执行事实读取失败 | Execution facts read failed
+          schema:
+            $ref: '#/definitions/github_com_addp_develop_backend_internal_models.ErrorResponse'
       summary: 列出 Notebooks | List Notebooks
       tags:
       - Notebook
@@ -4472,6 +4476,10 @@ paths:
           description: 开发任务列表 | Development task list
           schema:
             $ref: '#/definitions/github_com_addp_develop_backend_internal_models.ListDevTasksSwaggerResponse'
+        "500":
+          description: 执行事实读取失败 | Execution facts read failed
+          schema:
+            $ref: '#/definitions/github_com_addp_develop_backend_internal_models.ErrorResponse'
       summary: 查询开发任务列表 | List development tasks
       tags:
       - DevTask
@@ -4552,8 +4560,13 @@ paths:
           description: 开发任务详情 | Development task details
           schema:
             $ref: '#/definitions/github_com_addp_develop_backend_internal_models.DevTaskDetailSwagger'
+        "404":
+          description: 任务不存在 | Task not found
+          schema:
+            $ref: '#/definitions/github_com_addp_develop_backend_internal_models.ErrorResponse'
         "500":
-          description: 执行契约不可用 | Execution contract unavailable
+          description: 执行事实读取或执行契约不可用 | Execution facts read or execution contract
+            unavailable
           schema:
             $ref: '#/definitions/github_com_addp_develop_backend_internal_models.ErrorResponse'
       summary: 获取开发任务详情 | Get development task details
@@ -4887,6 +4900,10 @@ paths:
           schema:
             additionalProperties: true
             type: object
+        "500":
+          description: 执行事实读取失败 | Execution facts read failed
+          schema:
+            $ref: '#/definitions/github_com_addp_develop_backend_internal_models.ErrorResponse'
       security:
       - BearerAuth: []
       summary: 获取 TaskProvider 开发任务详情 | Get TaskProvider development task detail

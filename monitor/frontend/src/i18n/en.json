@@ -323,9 +323,14 @@
         },
         "result": "Execution Result",
         "error": "Error Details",
-        "open_professional_details": "View professional details",
+        "open_professional_details": "View execution results",
         "open_task_definition": "Open task definition",
-        "open_task_unavailable": "No task definition entry is available for this execution"
+        "open_task_unavailable": "No task definition entry is available for this execution",
+        "overview": "Overview",
+        "technical": "Technical diagnostics",
+        "read_forbidden": "You cannot read this execution",
+        "record_unavailable": "This execution does not exist or is not currently readable",
+        "owner_unavailable": "The execution owner is temporarily unavailable; retry this execution read later"
       },
       "load_failed": "Failed to load execution records",
       "detail_failed": "Failed to load execution detail",

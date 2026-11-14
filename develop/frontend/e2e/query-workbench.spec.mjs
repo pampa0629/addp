@@ -310,14 +310,10 @@ for (const embedded of [false, true]) test(`keeps the query draft and opens the 
   await expect(page.locator('.execution-failure')).toContainText('develop.query.snapshot_invalid')
   await expect(page.locator('.execution-failure')).toContainText('查询内容与参数定义不一致')
   await expect(page.getByRole('tab', { name: '错误信息', exact: true })).toHaveCount(0)
-  const ownerUrl = page.url()
-  const [ownerMonitorPage] = await Promise.all([
-    page.waitForEvent('popup'),
-    page.locator('.execution-failure').getByRole('link', { name: '查看监控错误详情', exact: true }).click()
-  ])
-  await expect(ownerMonitorPage).toHaveURL(new RegExp(`/monitor/executions\\?execution_id=${EXECUTION_ID}$`))
-  expect(page.url()).toBe(ownerUrl)
-  await ownerMonitorPage.close()
+  await expect(page.locator('.execution-failure').getByRole('link', { name: '查看监控错误详情', exact: true })).toHaveCount(0)
+  await page.getByRole('button', { name: '返回本次执行', exact: true }).click()
+  await expect(page).toHaveURL(new RegExp(`/monitor/executions\\?execution_id=${EXECUTION_ID}$`))
+  await expect(page.getByText('Monitor execution destination')).toBeVisible()
 })
 
 test('keeps a Notebook runtime traceback in Owner logs after removing the generic error tab', async ({ page }) => {

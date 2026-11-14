@@ -881,10 +881,17 @@ func devTaskExecutionConfigEngineID(executionConfig map[string]interface{}) *uin
 // GetDevTask 获取开发任务详情
 func (s *DevTaskService) GetDevTask(id uint, tenantID uint) (*models.DevTask, error) {
 	item, err := s.devTaskRepo.FindByID(id, tenantID)
-	if err != nil {
-		return nil, fmt.Errorf("开发任务不存在")
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, ErrDevTaskNotFound
 	}
-	return item, nil
+	if err != nil {
+		return nil, err
+	}
+	items := []models.DevTask{*item}
+	if err := s.devTaskRepo.PopulateLatestExecutions(items, tenantID); err != nil {
+		return nil, err
+	}
+	return &items[0], nil
 }
 
 // ListDevTasks 查询开发任务列表
@@ -902,6 +909,9 @@ func (s *DevTaskService) ListDevTasks(req *models.ListDevTasksRequest, tenantID 
 		return nil, 0, fmt.Errorf("failed to list dev tasks: %w", err)
 	}
 
+	if err := s.devTaskRepo.PopulateLatestExecutions(items, tenantID); err != nil {
+		return nil, 0, err
+	}
 	return items, total, nil
 }
 
@@ -913,7 +923,14 @@ func (s *DevTaskService) ListNotebookScripts(req *models.ListDevTasksRequest, te
 	if req.PageSize <= 0 {
 		req.PageSize = 20
 	}
-	return s.devTaskRepo.ListNotebookScripts(req, tenantID)
+	items, total, err := s.devTaskRepo.ListNotebookScripts(req, tenantID)
+	if err != nil {
+		return nil, 0, err
+	}
+	if err := s.devTaskRepo.PopulateLatestExecutions(items, tenantID); err != nil {
+		return nil, 0, err
+	}
+	return items, total, nil
 }
 
 // DeleteDevTask 删除开发任务（软删除）

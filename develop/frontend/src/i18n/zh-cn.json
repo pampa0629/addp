@@ -606,7 +606,7 @@
       "typeQuery": "查询",
       "typeWorkflow": "工作流",
       "typeScript": "脚本",
-      "statusPending": "等待中",
+      "statusPending": "排队中",
       "statusRunning": "运行中",
       "statusSuccess": "成功",
       "statusFailed": "失败",
@@ -616,8 +616,8 @@
       "triggerSchedule": "定时"
     },
     "executionDetail": {
-      "recentVisitTitle": "开发任务执行",
-      "title": "执行详情",
+      "recentVisitTitle": "开发执行结果",
+      "title": "执行结果",
       "back": "返回",
       "reExecute": "重新执行",
       "refresh": "刷新",
@@ -672,10 +672,11 @@
       "noLogs": "暂无日志",
       "unknownError": "未知错误",
       "stackTrace": "详细堆栈信息:",
-      "loadFailed": "加载失败: "
+      "loadFailed": "加载失败: ",
+      "resultQueued": "任务排队中，暂无本次执行结果"
     },
     "taskManagement": {
-      "executionRecords": "执行记录",
+      "executionRecords": "历史记录",
       "title": "任务管理",
       "newTask": "新建任务",
       "refresh": "刷新",
@@ -731,7 +732,10 @@
       "deleteFailed": "删除失败: ",
       "loadFailed": "加载失败: ",
       "taskNotFound": "未找到指定任务",
-      "viewNotSupported": "该类型暂不支持查看详情"
+      "viewNotSupported": "该类型暂不支持查看详情",
+      "allExecutionRecords": "全部执行记录",
+      "latestExecution": "最近执行",
+      "moreActions": "更多"
     },
     "approval": {
       "title": "Tool 执行审批",

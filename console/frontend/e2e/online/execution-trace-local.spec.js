@@ -168,6 +168,7 @@ test('execution trace local real Console password MFA, causal link and checkpoin
       for (const [index, sample] of tenant.cases.entries()) {
         report.stage = 'tenant-' + sample.module + '-' + sample.kind
         if (index) await tenantPage.goto('/monitor/executions?execution_id=' + sample.execution_id)
+        await frame.locator('.execution-technical > summary').click()
         const panel = frame.locator('.execution-trace-stages')
         await expect(panel).toBeVisible()
         expect(stageRequests).toBe(index)

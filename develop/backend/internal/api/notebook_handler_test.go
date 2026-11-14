@@ -11,6 +11,7 @@ import (
 
 	commonClient "github.com/addp/common/client"
 	"github.com/addp/common/dbbridge"
+	"github.com/addp/common/execution/executiontest"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/develop/backend/internal/models"
 	"github.com/addp/develop/backend/internal/repository"
@@ -161,6 +162,9 @@ func newNotebookHandlerTestDB(t *testing.T) *gorm.DB {
 		)
 	`).Error; err != nil {
 		t.Fatalf("create develop.dev_tasks: %v", err)
+	}
+	if err := executiontest.EnsureSQLiteStore(db); err != nil {
+		t.Fatal(err)
 	}
 	return db
 }

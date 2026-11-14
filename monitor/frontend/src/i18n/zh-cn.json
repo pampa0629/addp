@@ -323,9 +323,14 @@
         },
         "result": "执行结果",
         "error": "错误详情",
-        "open_professional_details": "查看专业详情",
+        "open_professional_details": "查看执行结果",
         "open_task_definition": "打开任务定义",
-        "open_task_unavailable": "当前执行记录没有可跳转的任务定义入口"
+        "open_task_unavailable": "当前执行记录没有可跳转的任务定义入口",
+        "overview": "概览",
+        "technical": "技术诊断",
+        "read_forbidden": "当前无权查看本次执行",
+        "record_unavailable": "该执行不存在或当前不可读",
+        "owner_unavailable": "任务所属模块暂不可用，请稍后重试本次执行"
       },
       "load_failed": "加载执行记录失败",
       "detail_failed": "加载执行详情失败",

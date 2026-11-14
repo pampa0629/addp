@@ -18,7 +18,7 @@
             </el-dropdown-menu>
           </template>
         </el-dropdown>
-        <MonitorExecutionsButton module="develop" :task-type="filters.dev_type" />
+        <MonitorExecutionsButton module="develop" :task-type="filters.dev_type">{{ t('develop.taskManagement.allExecutionRecords') }}</MonitorExecutionsButton>
         <el-button @click="handleRefresh">
           <el-icon><Refresh /></el-icon>
           {{ t('develop.taskManagement.refresh') }}
@@ -90,16 +90,14 @@
         </el-table-column>
         <el-table-column :label="t('develop.taskManagement.colLastExecution')" width="180">
           <template #default="{ row }">
-            <div v-if="row.last_run_at">
+            <MonitorExecutionsButton v-if="row.last_execution_id && authStore.hasPermission('monitor.execution.read')"
+              module="develop" scope="execution" :execution-id="row.last_execution_id" link class="latest-execution-link">
+              <span class="latest-execution-summary"><span>{{ formatTime(row.last_run_at) }}</span>
+              <el-tag :type="getExecutionStatusColor(row.last_execution_status)" size="small">{{ t('develop.execution.status' + row.last_execution_status.charAt(0).toUpperCase() + row.last_execution_status.slice(1)) }}</el-tag></span>
+            </MonitorExecutionsButton>
+            <div v-else-if="row.last_execution_id">
               <div>{{ formatTime(row.last_run_at) }}</div>
-              <el-tag
-                v-if="row.last_execution_status"
-                :type="getExecutionStatusColor(row.last_execution_status)"
-                size="small"
-                style="margin-top: 4px;"
-              >
-                {{ row.last_execution_status }}
-              </el-tag>
+              <el-tag :type="getExecutionStatusColor(row.last_execution_status)" size="small">{{ t('develop.execution.status' + row.last_execution_status.charAt(0).toUpperCase() + row.last_execution_status.slice(1)) }}</el-tag>
             </div>
             <span v-else class="text-muted">{{ t('develop.taskManagement.notExecuted') }}</span>
           </template>
@@ -130,17 +128,18 @@
                 <el-icon><Edit /></el-icon>
                 {{ t('develop.taskManagement.edit') }}
               </el-button>
-              <MonitorExecutionsButton module="develop" :task-type="row.dev_type" :source-task-id="row.id"
-                scope="task" size="small">{{ t('develop.taskManagement.executionRecords') }}</MonitorExecutionsButton>
-              <el-button
-                v-if="authStore.hasPermission('develop.task.delete')"
-                type="danger"
-                size="small"
-                @click="handleDelete(row)"
-              >
-                <el-icon><Delete /></el-icon>
-                {{ t('develop.taskManagement.delete') }}
-              </el-button>
+              <MonitorExecutionsButton module="develop" scope="execution" :execution-id="row.last_execution_id || ''" size="small">{{ t('develop.taskManagement.latestExecution') }}</MonitorExecutionsButton>
+              <el-dropdown trigger="click">
+                <el-button size="small">{{ t('develop.taskManagement.moreActions') }}</el-button>
+                <template #dropdown>
+                  <el-dropdown-menu>
+                    <el-dropdown-item>
+                      <MonitorExecutionsButton module="develop" :task-type="row.dev_type" :source-task-id="row.id" scope="task" text>{{ t('develop.taskManagement.executionRecords') }}</MonitorExecutionsButton>
+                    </el-dropdown-item>
+                    <el-dropdown-item v-if="authStore.hasPermission('develop.task.delete')" @click="handleDelete(row)">{{ t('develop.taskManagement.delete') }}</el-dropdown-item>
+                  </el-dropdown-menu>
+                </template>
+              </el-dropdown>
             </div>
           </template>
         </el-table-column>
@@ -427,6 +426,9 @@ onMounted(async () => {
 </script>
 
 <style scoped>
+.latest-execution-link { height: auto; }
+.latest-execution-summary { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; }
+
 .task-management-page {
   display: flex;
   flex-direction: column;

@@ -42,9 +42,9 @@ type DevTask struct {
 
 	// 状态
 	Status              string     `gorm:"size:50;default:'active';index:idx_dev_tasks_status" json:"status"` // 'active' | 'inactive' | 'archived'
-	LastExecutionID     *string    `gorm:"size:36" json:"last_execution_id,omitempty"`                        // UUID，软引用 common.task_executions.execution_id
+	LastExecutionID     *string    `gorm:"size:36" json:"last_execution_id,omitempty"`                        // 最近受理执行 UUID，包含排队与运行 | Latest admitted execution UUID, including pending and running
 	LastExecutionStatus string     `gorm:"size:50" json:"last_execution_status,omitempty"`
-	LastRunAt           *time.Time `json:"last_run_at,omitempty"`
+	LastRunAt           *time.Time `json:"last_run_at,omitempty"` // 最近执行创建时间 | Creation time of the latest admitted execution
 
 	ExecutionContract *taskprovider.ExecutionContract `gorm:"-" json:"execution_contract,omitempty"`
 	QueryResultLimit  int                             `gorm:"-" json:"-"`
@@ -89,9 +89,9 @@ type ProviderDevTask struct {
 	CreatedAt           time.Time                       `json:"created_at"`
 	UpdatedAt           time.Time                       `json:"updated_at"`
 	Status              string                          `json:"status"`
-	LastExecutionID     *string                         `json:"last_execution_id,omitempty"`
+	LastExecutionID     *string                         `json:"last_execution_id,omitempty"` // 最近受理执行 UUID，包含排队与运行 | Latest admitted execution UUID, including pending and running
 	LastExecutionStatus string                          `json:"last_execution_status,omitempty"`
-	LastRunAt           *time.Time                      `json:"last_run_at,omitempty"`
+	LastRunAt           *time.Time                      `json:"last_run_at,omitempty"` // 最近执行创建时间 | Creation time of the latest admitted execution
 	ExecutionContract   *taskprovider.ExecutionContract `json:"execution_contract,omitempty"`
 }
 

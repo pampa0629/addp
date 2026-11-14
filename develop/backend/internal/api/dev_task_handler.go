@@ -126,7 +126,8 @@ func (h *DevTaskHandler) UpdateDevTask(c *gin.Context) {
 // @Produce json
 // @Param id path int true "开发任务ID | Development task ID"
 // @Success 200 {object} models.DevTaskDetailSwagger "开发任务详情 | Development task details"
-// @Failure 500 {object} models.ErrorResponse "执行契约不可用 | Execution contract unavailable"
+// @Failure 404 {object} models.ErrorResponse "任务不存在 | Task not found"
+// @Failure 500 {object} models.ErrorResponse "执行事实读取或执行契约不可用 | Execution facts read or execution contract unavailable"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["develop.task.read"]
 // @Router /task-definitions/{id} [get]
@@ -141,7 +142,11 @@ func (h *DevTaskHandler) GetDevTask(c *gin.Context) {
 
 	item, err := h.devTaskService.GetDevTask(uint(id), tenantID)
 	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+		if errors.Is(err, service.ErrDevTaskNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"error": commoni18n.T(c, developi18n.MsgTaskNotFound), "error_code": "task_not_found"})
+		} else {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": commoni18n.T(c, developi18n.MsgExecutionReadFailed), "error_code": "execution_read_failed"})
+		}
 		return
 	}
 	contract, err := h.executionContract(c, item, tenantID)
@@ -265,6 +270,7 @@ func (h *DevTaskHandler) RebindWorkflowStorageEngine(c *gin.Context) {
 // @Failure 400 {object} map[string]interface{} "参数错误 | Bad request"
 // @Failure 404 {object} map[string]interface{} "任务不存在 | Task not found"
 // @Security BearerAuth
+// @Failure 500 {object} models.ErrorResponse "执行事实读取失败 | Execution facts read failed"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["develop.task_provider.read"]
 // @Router /task-provider/tasks/{task_type}/{id} [get]
@@ -283,7 +289,11 @@ func (h *DevTaskHandler) ProviderGetDevTask(c *gin.Context) {
 	tenantID := tenantIDValue(c)
 	item, err := h.devTaskService.GetDevTask(uint(id), tenantID)
 	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+		if errors.Is(err, service.ErrDevTaskNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"error": commoni18n.T(c, developi18n.MsgTaskNotFound), "error_code": "task_not_found"})
+		} else {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": commoni18n.T(c, developi18n.MsgExecutionReadFailed), "error_code": "execution_read_failed"})
+		}
 		return
 	}
 	if item.DevType != taskType {
@@ -342,6 +352,7 @@ func isDevelopTaskType(taskType string) bool {
 // @Param tag query string false "标签过滤 | Filter by tag"
 // @Param keyword query string false "关键词搜索 | Keyword search"
 // @Success 200 {object} models.ListDevTasksSwaggerResponse "开发任务列表 | Development task list"
+// @Failure 500 {object} models.ErrorResponse "执行事实读取失败 | Execution facts read failed"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["develop.task.read"]
 // @Router /task-definitions [get]
@@ -356,7 +367,7 @@ func (h *DevTaskHandler) ListDevTasks(c *gin.Context) {
 
 	items, total, err := h.devTaskService.ListDevTasks(&req, tenantID)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": commoni18n.T(c, developi18n.MsgExecutionReadFailed), "error_code": "execution_read_failed"})
 		return
 	}
 

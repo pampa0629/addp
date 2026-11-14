@@ -1145,6 +1145,11 @@ jobs:
         with:
           frontend-directory: ${{ matrix.module }}/frontend
 
+      - name: Install Develop dependencies for Console execution result navigation
+        if: steps.selection.outputs.run == 'true' && matrix.module == 'console'
+        working-directory: develop/frontend
+        run: npm ci
+
       - name: Install Service dependencies for Console query-form integration
         if: steps.selection.outputs.run == 'true' && matrix.module == 'console'
         working-directory: service/frontend

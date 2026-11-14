@@ -154,6 +154,7 @@
         v-else-if="detailLoadFailed"
         icon="error"
         :title="t('monitor.execution.detail.load_failed')"
+        :sub-title="detailFailureReason ? t('monitor.execution.detail.' + detailFailureReason) : ''"
       >
         <template #extra>
           <el-button type="primary" @click="reloadExecutionDetail">
@@ -168,13 +169,19 @@
           :error-details="currentExecution.error_details"
           :execution-id="currentExecution.execution_id"
         />
+        <header class="execution-detail-heading"><h3>{{ executionDisplayName(currentExecution) }}</h3></header>
+        <div class="detail-actions">
+          <el-button v-if="professionalRoute" type="primary" @click="openConsoleRoute(professionalRoute)">
+            {{ t('monitor.execution.detail.open_professional_details') }}
+          </el-button>
+          <el-button v-if="currentExecution.source_task_id" @click="openOwnerTask(currentExecution)">
+            <el-icon><Link /></el-icon>
+            {{ t('monitor.execution.detail.open_task_definition') }}
+          </el-button>
+        </div>
+
+        <h4>{{ t('monitor.execution.detail.overview') }}</h4>
         <el-descriptions :column="2" border>
-          <el-descriptions-item :label="t('monitor.execution.detail.id')">
-            {{ currentExecution.id }}
-          </el-descriptions-item>
-          <el-descriptions-item :label="t('monitor.execution.detail.uuid')">
-            {{ currentExecution.execution_id }}
-          </el-descriptions-item>
           <el-descriptions-item :label="t('monitor.execution.detail.module')">
             <el-tag size="small">{{ currentExecution.module }}</el-tag>
           </el-descriptions-item>
@@ -184,9 +191,7 @@
           <el-descriptions-item :label="t('monitor.execution.detail.type')">
             {{ formatTaskType(currentExecution) }}
           </el-descriptions-item>
-          <el-descriptions-item :label="t('monitor.execution.detail.source_task_id')">
-            {{ currentExecution.source_task_id || '-' }}
-          </el-descriptions-item>
+
           <el-descriptions-item :label="t('monitor.execution.detail.source_task_name')">
             {{ currentExecution.source_task_name || '-' }}
           </el-descriptions-item>
@@ -210,23 +215,6 @@
           <el-descriptions-item :label="t('monitor.execution.detail.queue_duration')">
             {{ formatDuration(currentExecution.queue_duration_ms) }}
           </el-descriptions-item>
-          <el-descriptions-item :label="t('monitor.execution.detail.attempt')">
-            {{ currentExecution.attempt || 0 }} / {{ currentExecution.max_attempts || '-' }}
-          </el-descriptions-item>
-          <el-descriptions-item :label="t('monitor.execution.detail.lease_state')">
-            <el-tag :type="leaseStateTagType(currentExecution.lease_state)" size="small">
-              {{ leaseStateText(currentExecution.lease_state) }}
-            </el-tag>
-          </el-descriptions-item>
-          <el-descriptions-item :label="t('monitor.execution.detail.lease_owner')">
-            <span class="runtime-identity">{{ currentExecution.lease_owner || '-' }}</span>
-          </el-descriptions-item>
-          <el-descriptions-item :label="t('monitor.execution.detail.lease_expires_at')">
-            {{ formatDate(currentExecution.lease_expires_at) }}
-          </el-descriptions-item>
-          <el-descriptions-item :label="t('monitor.execution.detail.recovery_reason')">
-            {{ currentExecution.recovery_reason || '-' }}
-          </el-descriptions-item>
           <el-descriptions-item :label="t('monitor.execution.detail.created_at')">
             {{ formatDate(currentExecution.created_at) }}
           </el-descriptions-item>
@@ -238,22 +226,7 @@
           </el-descriptions-item>
         </el-descriptions>
 
-        <div class="detail-actions">
-          <el-button v-if="professionalRoute" type="primary" @click="openConsoleRoute(professionalRoute)">
-            {{ t('monitor.execution.detail.open_professional_details') }}
-          </el-button>
-          <el-button v-if="currentExecution.source_task_id" type="primary" @click="openOwnerTask(currentExecution)">
-            <el-icon><Link /></el-icon>
-            {{ t('monitor.execution.detail.open_task_definition') }}
-          </el-button>
-        </div>
-
-        <ExecutionTraceStages
-          v-if="detailDialogVisible"
-          :execution-id="currentExecution.execution_id"
-          @read-blocked="clearBlockedExecutionDetail"
-        />
-
+        <ExecutionLineageSummary :metadata="currentExecutionMetadata" />
         <div v-if="executionTreeData.length" class="execution-tree">
           <h4>{{ t('monitor.execution.detail.execution_tree') }}</h4>
           <el-tree
@@ -440,6 +413,7 @@
           </el-table>
         </div>
 
+        <section class="execution-process">
         <ExecutionSteps
           :execution-status="currentExecution.status"
           :steps="currentExecution.steps || []"
@@ -448,13 +422,51 @@
           :truncated="currentExecution.steps_truncated || currentExecution.diagnostics_truncated || executionTreeTruncated"
         />
 
-        <ExecutionLineageSummary :metadata="currentExecutionMetadata" />
+
 
         <ExecutionEvents
           v-if="detailDialogVisible && currentExecution.execution_id"
           :execution-id="currentExecution.execution_id"
           :load-page="loadExecutionEventPage"
           :running="isRunningStatus(currentExecution.status)"
+        />
+
+        </section>
+
+        <details class="execution-technical">
+          <summary>{{ t('monitor.execution.detail.technical') }}</summary>
+          <el-descriptions :column="2" border>
+          <el-descriptions-item :label="t('monitor.execution.detail.id')">
+            {{ currentExecution.id }}
+          </el-descriptions-item>
+          <el-descriptions-item :label="t('monitor.execution.detail.uuid')">
+            {{ currentExecution.execution_id }}
+          </el-descriptions-item>
+          <el-descriptions-item :label="t('monitor.execution.detail.source_task_id')">
+            {{ currentExecution.source_task_id || '-' }}
+          </el-descriptions-item>
+          <el-descriptions-item :label="t('monitor.execution.detail.attempt')">
+            {{ currentExecution.attempt || 0 }} / {{ currentExecution.max_attempts || '-' }}
+          </el-descriptions-item>
+          <el-descriptions-item :label="t('monitor.execution.detail.lease_state')">
+            <el-tag :type="leaseStateTagType(currentExecution.lease_state)" size="small">
+              {{ leaseStateText(currentExecution.lease_state) }}
+            </el-tag>
+          </el-descriptions-item>
+          <el-descriptions-item :label="t('monitor.execution.detail.lease_owner')">
+            <span class="runtime-identity">{{ currentExecution.lease_owner || '-' }}</span>
+          </el-descriptions-item>
+          <el-descriptions-item :label="t('monitor.execution.detail.lease_expires_at')">
+            {{ formatDate(currentExecution.lease_expires_at) }}
+          </el-descriptions-item>
+          <el-descriptions-item :label="t('monitor.execution.detail.recovery_reason')">
+            {{ currentExecution.recovery_reason || '-' }}
+          </el-descriptions-item>
+          </el-descriptions>
+        <ExecutionTraceStages
+          v-if="detailDialogVisible"
+          :execution-id="currentExecution.execution_id"
+          @read-blocked="clearBlockedExecutionDetail"
         />
 
         <!-- 执行元数据 -->
@@ -479,6 +491,7 @@
           </el-descriptions>
         </div>
 
+        </details>
       </div>
     </el-dialog>
   </div>
@@ -520,11 +533,12 @@ const route = useRoute()
 const router = useRouter()
 const professionalRoute = computed(() => {
   const execution = currentExecution.value
-  const route = buildDevelopExecutionRoute(execution)
-  if (!route) return ''
+  if (!execution) return ''
+  const destination = buildDevelopExecutionRoute(execution, '/monitor/executions?' + new URLSearchParams({ ...route.query, execution_id: execution.execution_id }))
+  if (!destination) return ''
   const auth = useAuthStore()
   const permission = execution.task_type === 'script' ? 'develop.notebook.read' : 'develop.data_read.execute'
-  return auth.hasPermission('develop.task.read') && auth.hasPermission(permission) ? route : ''
+  return auth.hasPermission('develop.task.read') && auth.hasPermission(permission) ? destination : ''
 })
 
 // 过滤条件
@@ -553,6 +567,7 @@ const loading = ref(false)
 const detailDialogVisible = ref(false)
 const detailLoading = ref(false)
 const detailLoadFailed = ref(false)
+const detailFailureReason = ref('')
 const currentExecution = ref(null)
 const pageVisible = ref(!document.hidden)
 const filterInput = createAutoFilter({
@@ -1022,6 +1037,7 @@ async function openExecutionByExecutionID(executionID) {
   detailDialogVisible.value = true
   detailLoading.value = true
   detailLoadFailed.value = false
+  detailFailureReason.value = ''
   currentExecution.value = null
   executionTreeData.value = []
   openedExecutionID.value = ''
@@ -1032,6 +1048,7 @@ async function openExecutionByExecutionID(executionID) {
   } catch (error) {
     if (requestToken !== detailRequestToken) return
     detailLoadFailed.value = true
+    detailFailureReason.value = ({ 403: 'read_forbidden', 404: 'record_unavailable', 503: 'owner_unavailable' })[error.response?.status] || ''
     ElMessage.error(t('monitor.execution.detail_failed'))
     console.error(error)
   } finally {
@@ -1366,6 +1383,11 @@ watch(detailDialogVisible, async visible => {
 </script>
 
 <style scoped>
+.execution-detail-heading h3 { margin: 0 0 12px; }
+.execution-technical { margin-top: 20px; border-top: 1px solid var(--addp-border-color); padding-top: 12px; }
+.execution-technical > summary { cursor: pointer; font-weight: 600; margin-bottom: 12px; }
+.execution-process { margin-top: 20px; }
+
 .execution-list {
   padding: 20px;
   background: var(--addp-bg-secondary);

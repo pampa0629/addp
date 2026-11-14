@@ -3,8 +3,10 @@ package repository
 import (
 	"errors"
 	"fmt"
+	"strconv"
 	"time"
 
+	commonExecution "github.com/addp/common/execution"
 	"github.com/addp/develop/backend/internal/models"
 	"gorm.io/gorm"
 )
@@ -247,4 +249,45 @@ func (r *DevTaskRepository) BatchUpdateStatus(ids []uint, tenantID uint, status 
 	return r.db.Model(&models.DevTask{}).
 		Where("id IN ? AND tenant_id = ?", ids, tenantID).
 		Update("status", status).Error
+}
+
+// PopulateLatestExecutions projects one bounded batch from authoritative execution facts.
+// Runtime summary columns remain private bookkeeping, never a fallback for this read.
+func (r *DevTaskRepository) PopulateLatestExecutions(items []models.DevTask, tenantID uint) error {
+	if len(items) == 0 {
+		return nil
+	}
+	ids := make([]string, 0, len(items))
+	byTask := make(map[string]*models.DevTask, len(items))
+	for i := range items {
+		item := &items[i]
+		id := strconv.FormatUint(uint64(item.ID), 10)
+		ids = append(ids, id)
+		byTask[item.DevType+"/"+id] = item
+		item.LastExecutionID = nil
+		item.LastExecutionStatus = ""
+		item.LastRunAt = nil
+	}
+	var rows []struct {
+		SourceTaskID string
+		TaskType     string
+		ExecutionID  string
+		Status       string
+		CreatedAt    time.Time
+	}
+	ranked := r.db.Model(&commonExecution.TaskExecution{}).
+		Select("source_task_id, task_type, execution_id, status, created_at, row_number() OVER (PARTITION BY source_task_id, task_type ORDER BY created_at DESC, id DESC) AS position").
+		Where("tenant_id = ? AND module = ? AND source_task_id IN ?", tenantID, commonExecution.ModuleDevelop, ids)
+	if err := r.db.Table("(?) AS latest", ranked).Where("position = 1").Scan(&rows).Error; err != nil {
+		return err
+	}
+	for _, row := range rows {
+		if item := byTask[row.TaskType+"/"+row.SourceTaskID]; item != nil {
+			id, at := row.ExecutionID, row.CreatedAt
+			item.LastExecutionID = &id
+			item.LastExecutionStatus = row.Status
+			item.LastRunAt = &at
+		}
+	}
+	return nil
 }

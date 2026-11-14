@@ -1,5 +1,5 @@
 <template>
-  <el-button v-if="canViewExecutions" @click="handleClick">
+  <el-button v-if="canViewExecutions" :disabled="scope === 'execution' && !executionRoute" @click="handleClick">
     <slot>{{ label }}</slot>
   </el-button>
 </template>
@@ -7,7 +7,7 @@
 <script setup>
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { openMonitorExecutions } from '../utils/taskOwnerUrl'
+import { openMonitorExecutions, openConsoleRoute, resolveMonitorExecutionReturnRoute } from '../utils/taskOwnerUrl'
 import { getBoundAuthStore } from '../composables/useAuth'
 
 const props = defineProps({
@@ -23,10 +23,12 @@ const props = defineProps({
     type: [String, Number],
     default: ''
   },
+  executionId: { type: String, default: '' },
+  returnTo: { type: [String, Array], default: undefined },
   scope: {
     type: String,
     default: 'module',
-    validator: value => ['module', 'task'].includes(value)
+    validator: value => ['module', 'task', 'execution'].includes(value)
   }
 })
 
@@ -39,7 +41,9 @@ const canViewExecutions = computed(() => {
   }
 })
 
+const executionRoute = computed(() => resolveMonitorExecutionReturnRoute(props.executionId, props.returnTo))
 const label = computed(() => t(
+  props.scope === 'execution' ? 'common.executionMonitor.returnToExecution' :
   props.scope === 'task'
     ? 'common.executionMonitor.viewTaskExecutions'
     : 'common.executionMonitor.viewExecutions'
@@ -47,6 +51,10 @@ const label = computed(() => t(
 
 const handleClick = () => {
   if (!canViewExecutions.value) return
+  if (props.scope === 'execution') {
+    if (executionRoute.value) openConsoleRoute(executionRoute.value)
+    return
+  }
   openMonitorExecutions({
   module: props.module,
   task_type: props.taskType,

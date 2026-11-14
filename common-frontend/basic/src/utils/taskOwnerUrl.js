@@ -1,3 +1,5 @@
+import { buildMonitorExecutionRoute } from './executionNavigation.mjs'
+export { buildMonitorExecutionRoute, resolveMonitorExecutionReturnRoute } from './executionNavigation.mjs'
 import { requestConsoleBridge } from './consoleBridge'
 import { resolveConsoleOrigin } from './consoleOrigin'
 import { copyNavigationDraft } from './navigationDraft.mjs'
@@ -100,11 +102,6 @@ export function resolveConsoleRouteUrl(route, options = {}) {
 
 export function buildTaskOwnerUrl(rawUrl, replacements = {}, options = {}) {
   return resolveTaskOwnerUrl(fillTaskOwnerUrlTemplate(rawUrl, replacements), options)
-}
-
-export function buildMonitorExecutionRoute(executionId) {
-  if (!hasValue(executionId)) return ''
-  return `/monitor/executions?execution_id=${encodeURIComponent(String(executionId))}`
 }
 
 export function buildMonitorExecutionsRoute(params = {}) {

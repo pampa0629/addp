@@ -49,6 +49,7 @@ func TestQueryExecutionEventsAgainstPostgres(t *testing.T) {
 		}
 		return tx
 	}
+	t.Run("latest task includes pending and running", func(t *testing.T) { runLatestTaskExecutionCases(t, database(t)) })
 	runExecutionEventCases(t, database)
 	runQueryTraceCases(t, database)
 }

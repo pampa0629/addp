@@ -215,3 +215,71 @@ func createQueryExecutionTestTask(t *testing.T, db *gorm.DB) *models.DevTask {
 	}
 	return task
 }
+
+func TestLatestTaskExecutionSummaries(t *testing.T) {
+	runLatestTaskExecutionCases(t, newQueryExecutionTestDB(t))
+}
+
+func runLatestTaskExecutionCases(t *testing.T, db *gorm.DB) {
+	t.Helper()
+	tenant := int(time.Now().UnixNano()%100000000 + 50000)
+	now := time.Now().UTC().Truncate(time.Microsecond)
+	sourceID := "301"
+	stale := "stale-cache"
+	items := []models.DevTask{{ID: 301, TenantID: uint(tenant), DevType: "query", LastExecutionID: &stale, LastExecutionStatus: "success", LastRunAt: &now}, {ID: 302, TenantID: uint(tenant), DevType: "workflow", LastExecutionID: &stale}}
+	var older commonExecution.TaskExecution
+	for i, tc := range []struct {
+		tenant               int
+		module, task, status string
+		at                   time.Time
+	}{
+		{tenant, "develop", "query", "success", now.Add(-time.Hour)},
+		{tenant, "develop", "query", "running", now.Add(-time.Minute)},
+		{tenant, "develop", "query", "pending", now},
+		{tenant + 1, "develop", "query", "success", now.Add(time.Hour)},
+		{tenant, "transfer", "query", "success", now.Add(time.Hour)},
+		{tenant, "develop", "script", "success", now.Add(time.Hour)},
+	} {
+		row := commonExecution.TaskExecution{TenantID: tc.tenant, ExecutionID: uuid.NewString(), Module: tc.module, TaskType: tc.task, Source: "develop", SourceTaskID: &sourceID, Status: tc.status, TriggerType: commonExecution.TriggerTypeManual, CreatedAt: tc.at, UpdatedAt: now}
+		if err := db.Create(&row).Error; err != nil {
+			t.Fatal(err)
+		}
+		if i == 1 {
+			older = row
+		}
+	}
+	repo := NewDevTaskRepository(db)
+	if err := repo.PopulateLatestExecutions(items, uint(tenant)); err != nil {
+		t.Fatal(err)
+	}
+	if items[0].LastExecutionID == nil || items[0].LastExecutionStatus != "pending" || !items[0].LastRunAt.Equal(now) {
+		t.Fatalf("latest queued execution: %#v", items[0])
+	}
+	queued := *items[0].LastExecutionID
+	if items[1].LastExecutionID != nil || items[1].LastRunAt != nil || items[1].LastExecutionStatus != "" {
+		t.Fatal("stale cache substituted for absent execution")
+	}
+	// Finishing an older execution cannot reorder admission history.
+	if err := db.Model(&older).Updates(map[string]interface{}{"status": "success", "completed_at": now.Add(time.Hour)}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := repo.PopulateLatestExecutions(items, uint(tenant)); err != nil {
+		t.Fatal(err)
+	}
+	if *items[0].LastExecutionID != queued {
+		t.Fatal("old completion replaced queued execution")
+	}
+	newest := commonExecution.TaskExecution{TenantID: tenant, ExecutionID: uuid.NewString(), Module: "develop", TaskType: "query", Source: "orchestrator", SourceTaskID: &sourceID, Status: "running", TriggerType: commonExecution.TriggerTypeManual, CreatedAt: now, UpdatedAt: now}
+	if err := db.Create(&newest).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := repo.PopulateLatestExecutions(items, uint(tenant)); err != nil {
+		t.Fatal(err)
+	}
+	if *items[0].LastExecutionID != newest.ExecutionID || items[0].LastExecutionStatus != "running" {
+		t.Fatal("same-time id ordering or running execution lost")
+	}
+	if err := db.Where("tenant_id IN ?", []int{tenant, tenant + 1}).Delete(&commonExecution.TaskExecution{}).Error; err != nil {
+		t.Fatal(err)
+	}
+}

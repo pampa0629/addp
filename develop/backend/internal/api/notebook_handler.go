@@ -369,6 +369,7 @@ func (h *NotebookHandler) DownloadNotebook(c *gin.Context) {
 // @Param page query int false "页码 | Page number" default(1)
 // @Param page_size query int false "每页数量 | Page size" default(20)
 // @Success 200 {object} models.ListDevTasksSwaggerResponse "Notebook列表 | Notebook list"
+// @Failure 500 {object} models.ErrorResponse "执行事实读取失败 | Execution facts read failed"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["develop.notebook.read"]
 // @Router /notebooks [get]
@@ -393,7 +394,7 @@ func (h *NotebookHandler) ListNotebooks(c *gin.Context) {
 	// Notebook 是 script 类型开发任务的当前承载形态，通过 content.notebook_path 标识。
 	items, total, err := h.devTaskService.ListNotebookScripts(&req, tenantID)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("查询失败: %v", err)})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": commoni18n.T(c, developi18n.MsgExecutionReadFailed), "error_code": "execution_read_failed"})
 		return
 	}
 

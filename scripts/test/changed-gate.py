@@ -205,7 +205,7 @@ def affected_modules(repository: Path, files: list[str]) -> list[str]:
         affected.add("console")
 
     # Console's Hosted login contract consumes Develop's canonical editor route builder.
-    if "develop/frontend/src/utils/developTaskRoute.js" in files:
+    if any(path.startswith("develop/frontend/") for path in files):
         affected.add("console")
 
     # Console's browser gate mounts Meta's production manual-scan dialog.
