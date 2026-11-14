@@ -1816,6 +1816,8 @@ class PGReadLoadTest(unittest.TestCase):
         self.reader = self.server.client('reader')
         self.lifecycle = FixtureLifecycle(self.server.client('operator'), self.reader, 3, 2, '33', {},
             self.server.client('outsider'), Mock(), Mock(), 'external-online-consumer', 'private-password')
+        self.runtime = SimpleNamespace(token='fresh-private-runtime')
+        self.runtime_factory = patch.object(ONLINE, 'manager_pg_runtime', return_value=(self.runtime, '99')).start()
         self.paths = [ONLINE.table_path(2, name) for name in ('metric_people', 'pg_initial_disposable')]
         self.bindings = [(path, {'item_fingerprint': letter * 64, 'boundary_hash': 'b' * 64, 'basis_state':'complete', 'boundary':{'layout':'single','native_target':path}}, str(index))
                          for index, (path, letter) in enumerate(zip(self.paths, ('a', 'c')))]
@@ -1860,6 +1862,8 @@ class PGReadLoadTest(unittest.TestCase):
                             payload['data'] = []
                         if self.fault == 'credential':
                             self.reader.token = 'changed-private-token'
+                        if self.fault == 'runtime_credential':
+                            self.lifecycle.pg_runtime.token = 'changed-private-runtime'
                         if self.fault == 'context':
                             self.server.version += 1
                         if self.fault == 'grant':
@@ -1875,7 +1879,12 @@ class PGReadLoadTest(unittest.TestCase):
     def test_matrix_uses_real_distinct_targets_and_counts_operations_not_http_calls(self):
         report = {}
         before = json.dumps(self.server.grants, sort_keys=True)
+        original_tokens = (self.reader.token, self.lifecycle.operator.token, self.lifecycle.outsider.token)
+        self.lifecycle.pg_runtime = SimpleNamespace(token='expired-private-runtime')
         self.lifecycle.measure_read_load(report, self.bindings)
+        self.runtime_factory.assert_called_once_with(self.lifecycle.login, 3)
+        self.assertIs(self.lifecycle.pg_runtime, self.runtime)
+        self.assertEqual((self.reader.token, self.lifecycle.operator.token, self.lifecycle.outsider.token), original_tokens)
         evidence = report['authorization_load']
         self.assertEqual(evidence['result'], 'passed')
         self.assertEqual(evidence['profile'], 'full')
@@ -1919,7 +1928,7 @@ class PGReadLoadTest(unittest.TestCase):
         self.assertEqual(json.dumps(self.server.grants, sort_keys=True), before)
 
     def test_failure_stops_without_retry_drains_threads_and_preserves_failure(self):
-        for fault in ('transport', 'wrong_status', 'time', 'shape', 'credential', 'context', 'grant', 'boundary'):
+        for fault in ('transport', 'wrong_status', 'time', 'shape', 'credential', 'runtime_credential', 'context', 'grant', 'boundary'):
             with self.subTest(fault=fault):
                 self.fault = fault
                 report = {}
@@ -1931,9 +1940,22 @@ class PGReadLoadTest(unittest.TestCase):
                 if fault in ('transport', 'wrong_status', 'time', 'shape', 'credential'):
                     self.assertLessEqual(len(report['authorization_load']['cells'][0]['rounds'][0]['requests']), 1)
                 self.reader.token = 'reader-private-token'
+                self.runtime.token = 'fresh-private-runtime'
                 self.server.version = 1
                 self.server.grants['0']['expires_at'] = '2099-01-01T00:00:00Z'
                 self.bindings[0][1]['boundary_hash'] = 'b' * 64
+
+    def test_runtime_preparation_failure_or_changed_principal_never_starts_window(self):
+        for failure in ('wrong_principal', 'authentication_failed'):
+            with self.subTest(failure=failure), patch.object(ONLINE, 'AuditLatencyObservation') as observer:
+                self.runtime_factory.reset_mock()
+                self.runtime_factory.return_value = (self.runtime, 'unexpected')
+                self.runtime_factory.side_effect = ONLINE.SuiteError('authentication failed') if failure == 'authentication_failed' else None
+                with self.assertRaises(ONLINE.SuiteError):
+                    self.lifecycle.measure_read_load({}, self.bindings)
+                self.runtime_factory.assert_called_once_with(self.lifecycle.login, 3)
+                observer.assert_not_called()
+                self.assertEqual(self.reads, [])
 
     def test_duplicate_item_or_control_mismatch_stops_before_sampling(self):
         for bindings in ([self.bindings[0], self.bindings[0]],

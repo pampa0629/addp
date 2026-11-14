@@ -2106,6 +2106,11 @@ class Lifecycle:
                 'batch denial must not expose partial data or substitute another boundary')
 
     def measure_read_load(self, report, bindings, *, profile='full'):
+        # A Service Access Token lasts five minutes. Earlier lifecycle stages
+        # may outlive it; authenticate the same Runtime before the timed window.
+        runtime, principal = manager_pg_runtime(self.login, self.tenant)
+        require(principal == self.pg_runtime_principal, 'read load Manager runtime principal changed')
+        self.pg_runtime = runtime
         observation = {}
         report['authorization_load'] = {'result': 'failed', 'audit_observer_enabled': True,
                                         'audit_observation': observation}
@@ -2135,14 +2140,14 @@ class Lifecycle:
                 and bindings[0][1]['item_fingerprint'] != bindings[1][1]['item_fingerprint'],
                 'load comparison requires two distinct DataItems')
         deadline = time.monotonic() + 90
-        tokens = (self.reader.token, self.operator.token, self.outsider.token)
+        tokens = (self.reader.token, self.operator.token, self.outsider.token, self.pg_runtime.token)
 
         def guard():
             observer.healthy()
             if time.monotonic() >= deadline:
                 result['failure_code'] = 'read_load_budget_exceeded'
                 raise SuiteError('read load exceeded its budget')
-            require((self.reader.token, self.operator.token, self.outsider.token) == tokens,
+            require((self.reader.token, self.operator.token, self.outsider.token, self.pg_runtime.token) == tokens,
                     'read load credentials changed')
 
         def snapshot():
