@@ -2,7 +2,7 @@
 
 更新时间：2026-11-14
 
-**当前状态：公共执行、Graph 基础持久运行、十个 Cleanup Owner 及安全读取已接线。Common／System 父子 PG、Graph 已列竞争与原 scan 比对、最近执行导航及共享前端独立 Linux 检查已有固定源码通过证据；Manager 三项、Transfer 三项原生清理及后继 Kafka／CDC 整套验收已分别通过。剩余为第六节列明的专用测试缺口、真实验收与待讨论操作；Manager 迟到 writer 未 Hosted，正式用户阶段追踪仍保留 causal-link 首失败。第九节导航补充方案已确认，runner／私有清理台账及本机专项已补齐，Linux 证据待本批提交后核验；新的真实运行仍须单独确认。Graph 高级恢复继续暂缓。**
+**当前状态：公共执行、Graph 基础持久运行、十个 Cleanup Owner 及安全读取已接线。Common／System 父子 PG、Graph 已列竞争与原 scan 比对、最近执行导航及共享前端独立 Linux 检查已有固定源码通过证据；Manager 三项、Transfer 三项原生清理及后继 Kafka／CDC 整套验收已分别通过。剩余为第六节列明的专用测试缺口、真实验收与待讨论操作；Manager 迟到 writer 未 Hosted，正式用户阶段追踪仍保留 causal-link 首失败。第九节导航补充方案已确认，runner／私有清理台账、本机专项与相关 Linux 已补齐；新的真实运行仍须单独确认。Graph 高级恢复继续暂缓。**
 
 本专题保留当前方案、已确认边界、关键证据及剩余工作。逐轮排队快照、命令流水、临时测试计数和重复失败过程已合并；历史原件沿固定提交、GitHub Run／Job 和原有私有证据目录追溯。整理不改变契约，也不将历史失败或未运行项改记为通过。
 
@@ -173,7 +173,7 @@ Manager 源准备保持其正式授权链；本批 Transfer CDC 仅验证既有 
 
 | 顺序／性质 | 剩余事项与定位 | 下一交付及关闭条件 |
 | --- | --- | --- |
-| 1／runner 已补齐，待 Linux 与真实证据 | 最近执行（pending／running／success）到 Monitor、Develop 结果与同次回跳的真实导航。现有 `execution-result-navigation.spec.js` 是受控 T3；真实 `execution-trace-local.spec.js` 只在业务终态后按 UUID 直入 Monitor | 按第九节已确认的自有样本、调用和观察窗口补唯一 runner、确定性回归及登记；不改权限、策略、采样或旧首失败，不在本轮运行 |
+| 1／待单次真实验收 | 最近执行（pending／running／success）到 Monitor、Develop 结果与同次回跳。第九节 runner、私有台账、确定性及 Linux 已完成；此前实跑只覆盖业务终态后的 Monitor 直达，新导航仍无真实证据 | 以第九节固定源码与65项输入核准下一次真实窗口，先保留原阶段首失败，再核三状态与分层清理；权限、策略、采样和预算不变，本轮不运行 |
 | 2／待单次真实运行 | 正式用户阶段追踪：`25a62c07c` 的 causal-link 分步诊断、首失败落盘及对应 Linux 已完成；上一实跑仍停在 causal-link，精确原因未知 | 原两组样本、四身份、11 项业务权限、采样、预算和清理不变；新的真实窗口单独确认，先读首失败再决定修复，不从合成用例宣称根因解决 |
 | 3／基础 PG 缺口 | C2j／C3 其它跨类与外键锁排列；C4 新建图配置在目标核验与提交间的窗口、其它最终事务竞争。`KnowledgeGraphService.Create` 先解析／探测目标，`KnowledgeGraphRepository.Create` 直接插入；现有删除、入队与 scan 漂移用例不覆盖此窗口 | 下一小切片先明确新图与同目标关闭的准入关系，真实双连接 PG 验证两序及回滚；若需要新增 Engine／Graph 跨模块提交权威先讨论。目标重绑、deleting 显式重评估／确认同样是待设计事项，不从现有 execute／Restore 推导可用 |
 | 4／消费者 T3 与读取 PG 缺口 | C5g／h／k／l 的 Cleanup 专用组合仍未齐。System 已有 503、非法 attempt、迟到专业响应和身份切换；Monitor 已有 closed pending 清除及通用 401／403／404／503 失效，不能把这些当作全部 Cleanup 组合 | 补父详情撤权 404 且不自动补查子、closed pending→Owner 合法拒绝／running 矛盾的整体替换、空／省略／非法／隐藏计数区别和两消费者双语展示。C5e 的 claim 未提交跨截止、C5j 的 HTTP 裁决后新增未裁决 Owner 仍缺专用真实 PG；复用现有共享组件与标准入口 |
@@ -646,7 +646,7 @@ Job原始日志、固定源码／用例清单及核验摘要留在`/tmp/addp-25a
 
 **如产品需要硬终止后仍可删除**，另立核清契约。由可信部署控制面提供绑定原主机／运行单元代次与确切进程的退出证明，由 Transfer 绑定 Tenant、task、execution、owner、fencing token 核验，单独保存核清事实。还须证明准确 DLQ 上该 invocation 的在途写入已排空或被原生围栏拒绝，且未遗留未知外部效果；进程退出证据单独不够。匹配全部证据后才允许既有授权入口重新显式提交删除，沿原 task 锁、外部操作登记、未知效果隔离和目标不存在核验。错代际、失联、过期、作用域不符和证据不可用继续阻断。现有 System 实例心跳及 Hosted pidfd 私有观察均不足以直接承担此产品信任边界。生产证据来源、权限及核清操作另议。
 
-## 九、最近执行与同次回跳的真实验收补充（runner 已实施，Linux 待核验，真实未运行）
+## 九、最近执行与同次回跳的真实验收补充（runner 与相关 Linux 已完成，真实未运行）
 
 ### 9.1 目标与既有覆盖
 
@@ -654,12 +654,12 @@ Job原始日志、固定源码／用例清单及核验摘要留在`/tmp/addp-25a
 
 已有证据：Develop PG 验证最近受理及旧完成不换记录；`console/frontend/e2e/execution-result-navigation.spec.js` 对 pending／running／success 验证模块 iframe、结果页、日志、刷新、返回及浏览器后退／前进；`307de5e6b` 的 320 项 Linux 浏览器与构建含顶部标签回归。它们均不替代正式 User 的真实服务链路。
 
-现有真实入口是 `make test-monitor-traces-local`，实现为 `monitor-traces-local-gate.py`／`monitor-traces-local-online.py` 与 `execution-trace-local.spec.js`。原业务先等两组编排及 Develop 子执行终结，再打开浏览器，租户场景按 UUID 直接进入 Monitor；没有经过任务行最近执行、Develop 结果页或非终态导航。本方案补已有入口，不增加旁路 Make／workflow，不接管个人部署。
+现有真实入口是 `make test-monitor-traces-local`，实现为 `monitor-traces-local-gate.py`／`monitor-traces-local-online.py` 与 `execution-trace-local.spec.js`。补充前，原业务先等两组编排及 Develop 子执行终结，再打开浏览器，租户场景按 UUID 直接进入 Monitor；此前实跑没有经过任务行最近执行、Develop 结果页或非终态导航。本方案补已有入口，不增加旁路 Make／workflow，不接管个人部署。
 
 ### 9.2 保持的身份、部署与证据边界
 
 - 复用原四身份。业务 User 仍仅原 11 项：`orchestrator.workflow.create/read/delete/execute`、`develop.task.create/read/delete/execute`、`develop.data_read.execute`、`monitor.execution.read`、`system.execution_authorization.create`；由真实密码／MFA／AuthContext 确认本次 Tenant、User 和准确集合，不增配置、平台 Trace／日志或 task.update 权限。准备 User 继续独占合成 Engine 的准备与删除；平台诊断 User 仍只核原阶段追踪，不能代业务 User 走导航。
-- 沿原仓库外私有源码副本、独占平台库／`trace_fixture`、产品镜像、Nginx→Gateway→Owner 及 Console iframe。导航所需的既有 Develop 前端须加入本轮镜像构建、就绪与清理清单，采用前端统一的0.025 CPU／32 MiB限额；连同浏览器与采样辅助仍为7.825 CPU／10016 MiB，不提高原8 CPU／12 GiB预算。新源码在实施、确定性门禁和提交后才冻结完整 SHA／输入摘要；现在不预填一个已验收版本。原租户／引擎／运行实例归属任一不符即拒绝，不连接个人服务或共享 addp-postgres。
+- 沿原仓库外私有源码副本、独占平台库／`trace_fixture`、产品镜像、Nginx→Gateway→Owner 及 Console iframe。导航所需的既有 Develop 前端须加入本轮镜像构建、就绪与清理清单，采用前端统一的0.025 CPU／32 MiB限额；连同浏览器与采样辅助仍为7.825 CPU／10016 MiB，不提高原8 CPU／12 GiB预算。本批完整技术源码和65项输入摘要已冻结，见9.7；它们不是已通过真实验收的版本。原租户／引擎／运行实例归属任一不符即拒绝，不连接个人服务或共享 addp-postgres。
 - 原两组成功／失败编排、四个 execution、四个阶段浏览器样本、A1—A7、causal-link 首失败保全及精确检查点不变；不以新增导航样本替换原可读／自然缺样候选。新样本只证明导航，不产生新的 Trace 缺样或父子隔离结论。
 - 不改查询并发策略、资源配额、采样、时钟、产品等待期限和清理语义；不暂停／终止 Backend／Worker、不改 execution 私有列、不拦截或伪造正式 API 返回，不通过执行结果缓存造 pending／running。
 
@@ -669,7 +669,7 @@ Job原始日志、固定源码／用例清单及核验摘要留在`/tmp/addp-25a
 
 新增最多 **6 个 Develop query 定义、7 次正式执行提交**，无新增编排定义：5 个占位定义各执行1次，1个导航定义先成功1次再受理1次。连同原阶段样本，整轮最多8个Develop定义、2个编排定义，11个execution（2个父＋9个Develop执行）；不存在第8次导航提交、自动重试或额外候选。全部定义由同一原业务User创建，绑定同一本轮自有 PostgreSQL Engine。
 
-候选合成只读 SQL 固定为 `SELECT 42 AS fixture_value FROM pg_catalog.pg_sleep(20)`；结果最多一行，不读取业务表、不建表、不写业务数据，执行 timeout 仍为原30秒。它是待验证的固定夹具输入：先补当前 Develop preflight／Provider 的确定性契约用例，确认受控准备和冻结路径接受后，未来真实运行仍必须经正式预检／授权。任何拒绝保持首失败，不换SQL、加权限或在真实窗口临时修样本。原 User 执行结束后既有的有界结果保存不是新增业务数据写入。
+候选合成只读 SQL 固定为 `SELECT 42 AS fixture_value FROM pg_catalog.pg_sleep(20)`；结果最多一行，不读取业务表、不建表、不写业务数据，执行 timeout 仍为原30秒。该固定输入已通过当前 Develop preflight／Provider 实现的确定性契约用例；未来真实运行仍必须经正式预检／授权。任何拒绝保持首失败，不换SQL、加权限或在真实窗口临时修样本。原 User 执行结束后既有的有界结果保存不是新增业务数据写入。
 
 | 次序 | 准备与真实事实 | 观察目标 |
 | --- | --- | --- |
@@ -709,18 +709,33 @@ Job原始日志、固定源码／用例清单及核验摘要留在`/tmp/addp-25a
 ### 9.6 确认后的实施与验收顺序
 
 1. **方案已确认，本轮只实施 runner 与确定性门禁。** 新增六定义／七次提交、20秒只读夹具、120秒导航观察及请求上限、4 KiB私有清理台账均沿本节；原权限、查询timeout、并发策略、资源／整轮／浏览器／采样预算不变。新的真实运行另行确认。
-2. 沿现有host／业务／浏览器实现新增阶段、唯一规范的私有导航输入及封闭报告，不保留旧schema兼容路线。补输入拒绝、样本归属、额度前置、旧success不替代、非终态窗口丢失、预算不足、受理不明、首失败与精确清理的确定性回归。先证明固定SQL经过当前preflight／Provider契约，不靠实际窗口试错后放宽。
-3. 更新原 `OWN_INPUTS`、输入摘要与在线登记的真实闭包，包含新消费的TaskManagement／ExecutionDetail、共享Monitor导航／return_to、Console iframe／路由、fixture及相关依赖声明；复用原自动选择，不增workflow或复制测试入口。沿 `make test-monitor-traces-local-runner`、`make test-console-frontend`、`make test-develop-frontend` 及实际受影响的登记／共享门禁验证并提交，跟进相关Linux实际执行结果；不将跳过或旧输入通过计为新方案通过。
-4. 之后另行提交固定源码、完整输入摘要、身份／样本／调用与预算、资源归属及清理清单供**单次真实运行确认**。本方案不是运行授权；不得自动新开窗口、Hosted、环境切换、重启个人服务或追加下一轮。Graph高级恢复继续暂缓。
+2. **已实施并验证。** 沿现有host／业务／浏览器实现新增阶段、唯一规范的私有导航输入及封闭报告，不保留旧schema兼容路线。补输入拒绝、样本归属、额度前置、旧success不替代、非终态窗口丢失、预算不足、受理不明、首失败与精确清理的确定性回归。先证明固定SQL经过当前preflight／Provider契约，不靠实际窗口试错后放宽。
+3. **已接线并取得 Linux 证据。** 更新原 `OWN_INPUTS`、输入摘要与在线登记的真实闭包，包含新消费的TaskManagement／ExecutionDetail、共享Monitor导航／return_to、Console iframe／路由、fixture及相关依赖声明；复用原自动选择，不增workflow或复制测试入口。沿 `make test-monitor-traces-local-runner`、`make test-console-frontend`、`make test-develop-frontend` 及实际受影响的登记／共享门禁验证并提交，跟进相关Linux实际执行结果；不将跳过或旧输入通过计为新方案通过。
+4. **下一次真实运行未授权。** 另行核准固定源码、完整输入摘要、身份／样本／调用与预算、资源归属及清理清单供**单次真实运行确认**。本方案不是运行授权；不得自动新开窗口、Hosted、环境切换、重启个人服务或追加下一轮。Graph高级恢复继续暂缓。
 
 
 ### 9.7 本轮实施与证据边界
 
 唯一导航控制器和页面断言已接入原 `execution-trace-local.spec.js`；受控 T3 直接复用同一页面断言。私有台账采用封闭 schema、0600、4 KiB、原子替换与 fsync；提交前记意图，浏览器与宿主共用45次状态读取额度，受理不明或执行未终结不计领域清理成功。保留原首失败，并增加封闭导航错误类别、三状态命中及页面读取计数；不归档 SQL、凭据或原始响应。原身份、7次提交与全部预算保持。
 
-Linux 沿既有 Execution runner 接入确定性入口及固定 SQL 的真实 Provider 预检，不运行真实验收；复用共享登记唯一入口，语法预检仍先执行，Job 仍为10分钟。源码／用例及最终 Linux 结果在本批提交后核验；新的本机隔离真实运行继续单独确认，原 causal-link 首失败不被这些确定性结果替代。
+Linux 沿既有 Execution runner 接入确定性入口及固定 SQL 的当前 Provider 预检 T1，不运行真实验收；复用共享登记唯一入口，语法预检仍先执行，Job 仍为10分钟。最终 Linux 结果见下表；新的本机隔离真实运行继续单独确认，原 causal-link 首失败不被这些确定性结果替代。
 
 
 本机专项结果：导航控制／台账 Node 16项、宿主与原 Trace Python 235项、浏览器安全诊断与会话绑定47项、同一导航断言的 T3 六项通过；固定 SQL Provider 预检与 Develop Go T1通过。CI 登记28＋158项、前端登记34项及 Console 构建通过。共享 Make 的重复登记和语法预检顺序问题已修正，相关11项复核通过。首次受控 success 失败为 fixture 的行数组不符合现行行对象契约，已修 fixture，保留42与一行断言；不改产品结果语义。
 
-本机聚合失败另记：Console 首次单元门禁的 devPorts 清理 PID 标记失败，后继285项单元通过；浏览器夹具启动超时的原证据保留，后继六项专项通过。Develop 全量319／320通过，失败为既有 graph-fit-view 缩放断言；Execution 聚合的既有 Cleanup脚本模拟出现20秒超时及输出时序失败，未接管该范围外实现，整项不计通过。首轮日志分别为 `/tmp/addp-navigation-console.log`、`/tmp/addp-navigation-query-browser-serial.log`、`/tmp/addp-navigation-develop-frontend.log`、`/tmp/addp-navigation-execution.log`；新的 Linux 结果按固定 SHA 单独记录，不以本机专项通过替代聚合或真实验收。
+本机聚合失败另记：Console 首次单元门禁的 devPorts 清理 PID 标记失败，后继285项单元通过；浏览器夹具启动超时的原证据保留，后继六项专项通过。Develop 全量319／320通过，失败为既有 graph-fit-view 缩放断言；Execution 聚合的既有 Cleanup脚本模拟出现20秒超时及输出时序失败，未接管该范围外实现，整项不计通过。首轮日志分别为 `/tmp/addp-navigation-console.log`、`/tmp/addp-navigation-query-browser.log`（启动）与 `/tmp/addp-navigation-query-browser-serial.log`（fixture）、`/tmp/addp-navigation-develop-frontend.log`、`/tmp/addp-navigation-execution.log`；新的 Linux 结果按固定 SHA 单独记录，不以本机专项通过替代聚合或真实验收。
+
+
+**固定源码与 Linux 终态（2026-11-14）。** 实施提交为 `e145319cd60f6b3cf6c7b90c45e5431d64ab9570`，最终补漏源码为 `fd0fcad58bf5491d7bd379db55b08724456f1d1a`。后者的65项 `OWN_INPUTS` 合并 SHA-256 为 `60a916f4bd1e48e41e96028e0966744ad13701db0dc419926da11a2478b33ce0`；该干净检出完整执行 `make test-monitor-traces-local-runner` 并退出0，含28＋158＋235项 Python、16项 Node、System fixture 及具名 Provider 预检。
+
+| Linux 门禁 | 实际执行及结果 | 固定源码与 Job |
+| --- | --- | --- |
+| Execution online CI runner | 通过。16项 Node、235项宿主／Trace Python、6个台账清理用例、Develop 前端选择与资源总上限用例及 `TestLocalNavigationFixturePreparedReadOnly` 均实际执行；原 Cleanup 208项也通过 | [fd0fcad58／Run 43607149926／Job 132484137532](https://github.com/pampa0629/addp/actions/runs/43607149926/job/132484137532) |
+| Console frontend | 285项单元、367条浏览器及构建通过；日志逐条包含原三状态导航和新增三状态共六条，验证结果页、冻结输入、顶部标签、刷新与同次回跳 | [fd0fcad58／Job 132484137363](https://github.com/pampa0629/addp/actions/runs/43607149926/job/132484137363) |
+| Common frontend contracts | 379项通过，`selected: true` | [fd0fcad58／Job 132484137352](https://github.com/pampa0629/addp/actions/runs/43607149926/job/132484137352) |
+| Frontend CI registration | 34项与登记检查通过，`selected: true` | [fd0fcad58／Job 132484137384](https://github.com/pampa0629/addp/actions/runs/43607149926/job/132484137384) |
+| Develop frontend | 工作流检查、320条浏览器及构建通过；含本机首轮失败的 graph-fit-view 用例 | [e145319cd／Run 43606622821／Job 132482540496](https://github.com/pampa0629/addp/actions/runs/43606622821/job/132482540496) |
+
+跳过单列：`fd0fcad58` 的 Develop Job 132484137460 为 `selected: false`，不计一次通过；已核对两次源码之间 `develop/frontend/` 与 `common-frontend/` 无变化，保留前一 SHA 的实际全量证据。`e145319cd` 的本次五个相关 Job 同样均到实际成功终态；不扩大为其它 Job 或整条 Platform CI 通过。
+
+本批开发与确定性／Linux 缺口已关闭；新的真实窗口未运行，原 causal-link 首失败、真实 pending／running 导航与领域／外层零残留仍待单独确认的一次本机隔离验收。Graph 高级恢复继续暂缓，不重启个人服务、不触发 Hosted，也不自动追加真实运行。
