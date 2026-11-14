@@ -257,7 +257,7 @@ Standard 第一阶段资源回收执行方只治理 Standard-owned 标准治理�
 
 - `tenant.deleted` 时，扫描该租户下 Standard-owned 业务域、术语、数据元、码值集、单位、指标定义、标准文档及其修订和关联状态；维度层级属于 Model，安全分类分级属于 Security。
 - `logical_cleanup` 将有状态的术语、数据元和指标置为 `deprecated`；标准文档文件不因逻辑清理删除。
-- `physical_cleanup` 在租户删除范围内删除 Standard-owned PostgreSQL 状态记录，并删除 `standard.documents.file_key` 明确登记的 `standard` bucket 文档对象。
+- `physical_cleanup` 在租户删除范围内删除 Standard-owned PostgreSQL 状态记录，并删除 `standard.document_revisions.file_key` 明确登记的文档对象。删除使用启动时绑定的 `standard` 逻辑区域。
 - 单个标准文档由用户显式删除时，可以同步删除 PG 状态和 `file_key` 指向的 MinIO 文件。
 - `engine.deleted` 不扫描 Standard 状态；标准治理材料和文档不受 engine 生命周期影响。
 - Standard cleanup 不删除引用它的 Model、Quality、Asset 等模块状态；跨模块引用残留由引用方 owner executor 自己治理。

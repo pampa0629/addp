@@ -79,7 +79,7 @@ Metric 的指标依赖与基准指标关系通过当前 User Token 读取 `GET /
 
 **数据库 Schema**: `standard`
 
-**外部存储**: MinIO（存储标准文档文件，bucket 名为 `standard`）
+**外部存储**: MinIO（存储标准文档文件，逻辑区域为 `standard`）
 
 独立前端根路径在 AuthContext 加载后，按 Console 菜单顺序 `/domains`、`/glossaries`、`/elements`、`/code-sets`、`/units`、`/metrics`、`/documents` 选择第一个符合页面准入条件的地址；没有可访问页面时进入 `/forbidden`。登录后的默认返回地址为根路径。显式列表或详情地址继续只按自身权限判断，不改跳其他标准页面。
 
@@ -108,7 +108,7 @@ Metric 的指标依赖与基准指标关系通过当前 User Token 读取 `GET /
 
 文档文件采用“新对象上传、数据库切换引用、旧对象补偿清理”的顺序。失效对象记录在 `standard.document_file_cleanups`，该表仅用于物理清理重试，不作为文档当前文件引用。
 
-文件写入 MinIO 的 `standard` bucket，`file_key` 格式为 `tenant_{tenant_id}/documents/{id}/revisions/{revision_id}/{uuid}{extension}`，下载时按确定修订的 `file_key` 从 MinIO 读取流。
+文件写入启动时绑定的 `standard` 逻辑区域，默认与 MinIO 桶同名。改绑时由部署统一设置 `ADDP_INFRA_OBJECTSTORE_BINDINGS=standard=<物理桶名>`。文档服务和租户清理使用同一绑定。`file_key` 格式为 `tenant_{tenant_id}/documents/{id}/revisions/{revision_id}/{uuid}{extension}`，下载时按确定修订的 `file_key` 从 MinIO 读取流。
 
 上传要求 `standard.document.update`，以 multipart 提交 `file` 和当前文档并发 `version`，只允许替换草稿修订文件；修订 ID 与文档版本分别表达目标和写入并发条件。下载要求 `standard.document.read`，按同租户的文档与确定修订读取文件；浏览器原生资源票据沿[统一认证规范](../docs/spec/addp登录认证的统一要求.md#23-browser-resource-access-ticket)执行，不替代上传或普通业务 API 的认证。
 
@@ -158,7 +158,6 @@ standard/
 │       └── service/                   # 业务校验与用例编排
 │           ├── document_service.go    # 文档、修订、提炼与候选处置
 │           ├── document_candidate_group_service.go # 候选聚合、族分页与裁决历史
-│           ├── document_storage.go    # 文档对象存储接口与 MinIO 适配
 │           ├── element_revision_resolution_service.go # 数据元修订解析
 │           └── professional_relation_service.go       # 一跳专业关系读取
 └── frontend/
@@ -680,7 +679,7 @@ GET /api/v1/standard/cleanup-executions/:execution_id/result
 - **Model 模块**: 删除业务域、数据元和指标定义前冻结 Model 标准引用删除屏障并执行权威影响扫描（`MODEL_URL`）；维度层级是 Model 本地聚合
 - **Quality 模块**: 删除业务域时还须冻结 Quality 的规则/方案归属引用屏障（`QUALITY_URL`，本地默认 `http://localhost:8182`）；任一消费者不可用时保留协调记录等待补偿，不跳过引用检查。Quality 使用自身服务身份校验归属域，worker 不调用域服务。
 - **Copilot 模块**: Standard 使用当前 Tenant 的 `addp-standard` Service Access Token 调用候选提炼端点（`COPILOT_URL`）；Copilot 不回写 Standard 数据库
-- **MinIO**: 标准文档文件存储（bucket: `standard`）
+- **MinIO**: 标准文档文件存储（逻辑区域 `standard`）
 
 **被依赖**（其他模块调用 Standard 的 API）:
 - **Quality 模块**: 管理端按当前 User 读取数据元精确修订，规则导入与来源约束变化由 Quality 后端复核；执行只消费已冻结规则与目标，Worker 不回读 Standard。权限与只读投影沿[质量 API 与页面](../docs/spec/addp数据质量规范.md#6-api-与页面)，来源冻结沿[方案和规则](../docs/spec/addp数据质量规范.md#2-方案和规则)，执行快照与授权沿[执行与授权](../docs/spec/addp数据质量规范.md#4-执行与授权)。
@@ -893,7 +892,7 @@ Standard 浏览器门禁使用独立的 Vite 依赖缓存，测试模式关闭 H
 
 [存储服务单测](backend/internal/service/document_service_test.go)使用 SQLite 与受控对象存储验证草稿替换、文件大小拒绝及清理失败保留重试；不计为真实 MinIO 验收。
 
-文档文件 T2 沿[PostgreSQL／MinIO 标准入口](#标准测试入口与范围)执行，由[现有生命周期用例](backend/internal/service/document_service_integration_test.go)直接调用服务层：复用 Infra 的 MinIO Dockerfile 构建独立临时实例，验证真实上传、替换、下载、草稿删除，以及发布后撤回仍可按历史修订下载。测试对自身对象执行清理并验证空前缀，数据库夹具随事务回滚且检查零残留；门禁在正常、失败及中断退出时仅销毁自己的 Compose 项目、临时卷与构建镜像，不操作现有 Infra / Business MinIO。
+文档文件 T2 沿[PostgreSQL／MinIO 标准入口](#标准测试入口与范围)执行，由[现有生命周期用例](backend/internal/service/document_service_integration_test.go)直接调用服务层：复用 Infra 的 MinIO Dockerfile 构建独立临时实例，验证真实上传、替换、下载、草稿删除，以及发布后撤回仍可按历史修订下载。测试对自身对象执行清理并验证空前缀，历史修订夹具随事务回滚；已提交草稿夹具使用独立数据库查询核对版本冲突后的原键、原字节和新对象补偿，并通过租户物理清理验证改绑后的删除；门禁在正常、失败及中断退出时仅销毁自己的 Compose 项目、临时卷与构建镜像，不操作现有 Infra / Business MinIO。
 
 该 T2 核对服务层下载字节，不证明真实 HTTP 身份与 Permission、资源票据、multipart 请求、响应头、代理传输或浏览器下载。真实入口验收还须核对认证、当前权限、客户端响应完整性和中断结果；HTTP 成功状态不能代替这些断言。
 

@@ -13,13 +13,13 @@ import (
 	commonClient "github.com/addp/common/client"
 	commonConfig "github.com/addp/common/config"
 	"github.com/addp/common/events"
+	"github.com/addp/common/infra/bootstrap"
+	"github.com/addp/common/infra/objectstore"
 	"github.com/addp/common/modulelifecycle"
 	"github.com/addp/standard/internal/api"
 	"github.com/addp/standard/internal/config"
 	"github.com/addp/standard/internal/repository"
 	"github.com/addp/standard/internal/service"
-	minio "github.com/minio/minio-go/v7"
-	"github.com/minio/minio-go/v7/pkg/credentials"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 )
@@ -87,16 +87,11 @@ func main() {
 		return metricRepo.DeleteTx(tx, resourceID, tenantID)
 	})
 
-	// 初始化 MinIO 客户端（用于文档文件存储）
-	var minioClient *minio.Client
-	if mc, err := minio.New(cfg.MinioEndpoint, &minio.Options{
-		Creds:  credentials.NewStaticV4(cfg.MinioAccessKey, cfg.MinioSecretKey, ""),
-		Secure: cfg.MinioUseSSL,
-	}); err != nil {
-		log.Printf("⚠️  MinIO 初始化失败: %v", err)
-	} else {
-		minioClient = mc
-		log.Printf("✅ MinIO 已连接: %s", cfg.MinioEndpoint)
+	areaContext, cancelAreaCheck := context.WithTimeout(runtimeContext, cfg.DocumentStorageTimeout)
+	documentArea, err := bootstrap.OpenObjectArea(areaContext, objectstore.Standard)
+	cancelAreaCheck()
+	if err != nil {
+		log.Fatalf("Failed to bind Standard document storage: %v", err)
 	}
 
 	// 创建 Services
@@ -106,7 +101,7 @@ func main() {
 	codeSetSvc := service.NewCodeSetService(codeSetRepo, tenantReferenceRepo)
 	unitSvc := service.NewUnitService(mCatRepo, unitRepo)
 	metricSvc := service.NewMetricService(metricCatRepo, metricRepo, tenantReferenceRepo, standardReferenceDeletionSvc)
-	documentSvc := service.NewDocumentService(documentRepo, tenantReferenceRepo, minioClient, service.DocumentStorageOptions{
+	documentSvc := service.NewDocumentService(documentRepo, tenantReferenceRepo, documentArea, service.DocumentStorageOptions{
 		MaxFileSize:        cfg.DocumentMaxFileSize,
 		Timeout:            cfg.DocumentStorageTimeout,
 		CopilotURL:         cfg.CopilotURL,
@@ -116,7 +111,7 @@ func main() {
 	referenceResolutionSvc := service.NewReferenceResolutionService(referenceResolutionRepo)
 	elementRevisionResolutionSvc := service.NewElementRevisionResolutionService(elementRepo, codeSetRepo)
 	catalogResourceSvc := service.NewCatalogResourceService(catalogResourceRepo)
-	cleanupSvc := service.NewCleanupService(db, systemClient, minioClient)
+	cleanupSvc := service.NewCleanupService(db, systemClient, documentArea)
 	if err := cleanupSvc.Start(runtimeContext); err != nil {
 		log.Printf("Standard 资源回收执行方启动失败: %v", err)
 	}

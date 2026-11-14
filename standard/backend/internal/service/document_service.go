@@ -20,14 +20,13 @@ import (
 
 	commonapi "github.com/addp/common/api"
 	commonclient "github.com/addp/common/client"
+	"github.com/addp/common/infra/objectstore"
 	"github.com/addp/standard/internal/models"
 	"github.com/addp/standard/internal/repository"
 	"github.com/google/uuid"
-	minio "github.com/minio/minio-go/v7"
 )
 
 const (
-	minioBucket                   = "standard"
 	defaultDocumentMaxFileSize    = 100 * 1024 * 1024
 	defaultDocumentStorageTimeout = 30 * time.Second
 	maxDocumentExtractionBytes    = 2 * 1024 * 1024
@@ -70,7 +69,7 @@ func (r *documentContextReadCloser) Close() error { r.cancel(); return r.ReadClo
 type DocumentService struct {
 	repo               *repository.DocumentRepository
 	refs               *repository.TenantReferenceRepository
-	objectStore        documentObjectStore
+	objectStore        objectstore.Area
 	maxFileSize        int64
 	timeout            time.Duration
 	copilotURL         string
@@ -79,7 +78,7 @@ type DocumentService struct {
 	stopCh             chan struct{}
 }
 
-func NewDocumentService(repo *repository.DocumentRepository, refs *repository.TenantReferenceRepository, minioClient *minio.Client, options DocumentStorageOptions) *DocumentService {
+func NewDocumentService(repo *repository.DocumentRepository, refs *repository.TenantReferenceRepository, area objectstore.Area, options DocumentStorageOptions) *DocumentService {
 	if options.MaxFileSize <= 0 {
 		options.MaxFileSize = defaultDocumentMaxFileSize
 	}
@@ -92,19 +91,7 @@ func NewDocumentService(repo *repository.DocumentRepository, refs *repository.Te
 	if options.HTTPClient == nil {
 		options.HTTPClient = &http.Client{Timeout: 120 * time.Second}
 	}
-	svc := &DocumentService{repo: repo, refs: refs, objectStore: newMinioDocumentObjectStore(minioClient), maxFileSize: options.MaxFileSize, timeout: options.Timeout, copilotURL: strings.TrimRight(options.CopilotURL, "/"), serviceTokenSource: options.ServiceTokenSource, httpClient: options.HTTPClient, stopCh: make(chan struct{})}
-	if svc.objectStore != nil {
-		ctx, cancel := context.WithTimeout(context.Background(), svc.timeout)
-		defer cancel()
-		exists, err := svc.objectStore.BucketExists(ctx, minioBucket)
-		if err != nil {
-			log.Printf("standard document bucket check failed: %v", err)
-		} else if !exists {
-			if err := svc.objectStore.MakeBucket(ctx, minioBucket, minio.MakeBucketOptions{}); err != nil {
-				log.Printf("standard document bucket creation failed: %v", err)
-			}
-		}
-	}
+	svc := &DocumentService{repo: repo, refs: refs, objectStore: area, maxFileSize: options.MaxFileSize, timeout: options.Timeout, copilotURL: strings.TrimRight(options.CopilotURL, "/"), serviceTokenSource: options.ServiceTokenSource, httpClient: options.HTTPClient, stopCh: make(chan struct{})}
 	go svc.runFileCleanupWorker()
 	return svc
 }
@@ -316,7 +303,7 @@ func (s *DocumentService) UploadFile(documentID, revisionID, tenantID, userID, v
 	hasher := sha256.New()
 	reader := io.TeeReader(content, hasher)
 	ctx, cancel := context.WithTimeout(context.Background(), s.timeout)
-	_, err = s.objectStore.PutObject(ctx, minioBucket, fileKey, reader, size, minio.PutObjectOptions{ContentType: contentType})
+	err = s.objectStore.Put(ctx, fileKey, reader, size, contentType)
 	cancel()
 	if err != nil {
 		return nil, fmt.Errorf("%w: %v", ErrDocumentFileUpload, err)
@@ -349,11 +336,11 @@ func (s *DocumentService) DownloadFile(documentID, revisionID, tenantID int64) (
 		return nil, "", "", 0, commonapi.ErrNotFound
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), s.timeout)
-	if _, err := s.objectStore.StatObject(ctx, minioBucket, revision.FileKey, minio.StatObjectOptions{}); err != nil {
+	if _, err := s.objectStore.Stat(ctx, revision.FileKey); err != nil {
 		cancel()
 		return nil, "", "", 0, fmt.Errorf("%w: %v", ErrDocumentFileDownload, err)
 	}
-	obj, err := s.objectStore.GetObject(ctx, minioBucket, revision.FileKey, minio.GetObjectOptions{})
+	obj, err := s.objectStore.Open(ctx, revision.FileKey)
 	if err != nil {
 		cancel()
 		return nil, "", "", 0, fmt.Errorf("%w: %v", ErrDocumentFileDownload, err)
@@ -1148,7 +1135,7 @@ func mapCandidateFormalizationError(err error) error {
 func (s *DocumentService) removeObject(key string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), s.timeout)
 	defer cancel()
-	return s.objectStore.RemoveObject(ctx, minioBucket, key, minio.RemoveObjectOptions{})
+	return s.objectStore.Delete(ctx, key)
 }
 func (s *DocumentService) runFileCleanupWorker() {
 	ticker := time.NewTicker(time.Minute)

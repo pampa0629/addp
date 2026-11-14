@@ -10,16 +10,16 @@ import (
 	commonClient "github.com/addp/common/client"
 	"github.com/addp/common/events"
 	commonExecution "github.com/addp/common/execution"
+	"github.com/addp/common/infra/objectstore"
 	"github.com/addp/common/logger"
 	"github.com/addp/standard/internal/models"
-	minio "github.com/minio/minio-go/v7"
 	"gorm.io/gorm"
 )
 
 type CleanupService struct {
-	db          *gorm.DB
-	runtime     *cleanup.Runner
-	minioClient *minio.Client
+	db           *gorm.DB
+	runtime      *cleanup.Runner
+	documentArea objectstore.Area
 }
 
 type StandardCleanupStats struct {
@@ -51,8 +51,8 @@ type StandardCleanupStats struct {
 	Errors                   []string `json:"errors,omitempty"`
 }
 
-func NewCleanupService(db *gorm.DB, systemClient *commonClient.SystemServiceClient, minioClient *minio.Client) *CleanupService {
-	s := &CleanupService{db: db, minioClient: minioClient}
+func NewCleanupService(db *gorm.DB, systemClient *commonClient.SystemServiceClient, documentArea objectstore.Area) *CleanupService {
+	s := &CleanupService{db: db, documentArea: documentArea}
 	s.runtime = &cleanup.Runner{DB: db, Owner: events.ModuleStandard, System: systemClient, Log: logger.With("component", "standard_cleanup_service"), Handle: s.runCleanup}
 	return s
 }
@@ -65,7 +65,7 @@ func (s *CleanupService) runCleanup(ctx context.Context, run *cleanup.Run) error
 		return fmt.Errorf("historical tenant cleanup is unsupported")
 	}
 	return run.Effect(ctx, func(tx *gorm.DB) error {
-		scoped := &CleanupService{db: tx, minioClient: s.minioClient}
+		scoped := &CleanupService{db: tx, documentArea: s.documentArea}
 		var stats *StandardCleanupStats
 		var err error
 		if run.Input.Action == events.CleanupActionScan {
@@ -417,13 +417,13 @@ func (s *CleanupService) deleteStandardDocumentFiles(ctx context.Context, revisi
 		if revision.FileKey == "" {
 			continue
 		}
-		if s.minioClient == nil {
-			stats.Errors = append(stats.Errors, fmt.Sprintf("delete document file %s failed: minio client is not configured", revision.FileKey))
+		if s.documentArea == nil {
+			stats.Errors = append(stats.Errors, fmt.Sprintf("delete document file %s failed: document storage is not configured", revision.FileKey))
 			stats.SkippedItems++
 			blockedDocumentIDs[revision.DocumentID] = struct{}{}
 			continue
 		}
-		if err := s.minioClient.RemoveObject(ctx, minioBucket, revision.FileKey, minio.RemoveObjectOptions{}); err != nil {
+		if err := s.documentArea.Delete(ctx, revision.FileKey); err != nil {
 			stats.Errors = append(stats.Errors, fmt.Sprintf("delete document file %s failed: %v", revision.FileKey, err))
 			stats.SkippedItems++
 			blockedDocumentIDs[revision.DocumentID] = struct{}{}

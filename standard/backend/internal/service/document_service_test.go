@@ -13,9 +13,9 @@ import (
 	"time"
 
 	commonclient "github.com/addp/common/client"
+	"github.com/addp/common/contentio"
 	"github.com/addp/standard/internal/models"
 	"github.com/addp/standard/internal/repository"
-	minio "github.com/minio/minio-go/v7"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 )
@@ -28,28 +28,22 @@ type fakeDocumentObjectStore struct {
 	removeErr   error
 }
 
-func (f *fakeDocumentObjectStore) BucketExists(context.Context, string) (bool, error) {
-	return true, nil
-}
-func (f *fakeDocumentObjectStore) MakeBucket(context.Context, string, minio.MakeBucketOptions) error {
-	return nil
-}
-func (f *fakeDocumentObjectStore) PutObject(_ context.Context, _ string, key string, reader io.Reader, _ int64, _ minio.PutObjectOptions) (minio.UploadInfo, error) {
+func (f *fakeDocumentObjectStore) Put(_ context.Context, key string, reader io.Reader, _ int64, _ string) error {
 	if f.putErr != nil {
-		return minio.UploadInfo{}, f.putErr
+		return f.putErr
 	}
 	content, err := io.ReadAll(reader)
 	if err != nil {
-		return minio.UploadInfo{}, err
+		return err
 	}
 	if f.objects == nil {
 		f.objects = map[string][]byte{}
 	}
 	f.objects[key] = content
 	f.putKeys = append(f.putKeys, key)
-	return minio.UploadInfo{Key: key, Size: int64(len(content))}, nil
+	return nil
 }
-func (f *fakeDocumentObjectStore) RemoveObject(_ context.Context, _ string, key string, _ minio.RemoveObjectOptions) error {
+func (f *fakeDocumentObjectStore) Delete(_ context.Context, key string) error {
 	if f.removeErr != nil {
 		return f.removeErr
 	}
@@ -57,14 +51,14 @@ func (f *fakeDocumentObjectStore) RemoveObject(_ context.Context, _ string, key 
 	f.removedKeys = append(f.removedKeys, key)
 	return nil
 }
-func (f *fakeDocumentObjectStore) StatObject(_ context.Context, _ string, key string, _ minio.StatObjectOptions) (minio.ObjectInfo, error) {
+func (f *fakeDocumentObjectStore) Stat(_ context.Context, key string) (*contentio.Stat, error) {
 	content, ok := f.objects[key]
 	if !ok {
-		return minio.ObjectInfo{}, errors.New("object not found")
+		return nil, contentio.ErrContentNotFound
 	}
-	return minio.ObjectInfo{Key: key, Size: int64(len(content))}, nil
+	return &contentio.Stat{Exists: true, Size: int64(len(content))}, nil
 }
-func (f *fakeDocumentObjectStore) GetObject(_ context.Context, _ string, key string, _ minio.GetObjectOptions) (io.ReadCloser, error) {
+func (f *fakeDocumentObjectStore) Open(_ context.Context, key string) (io.ReadCloser, error) {
 	content, ok := f.objects[key]
 	if !ok {
 		return nil, errors.New("object not found")

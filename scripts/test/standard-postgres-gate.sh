@@ -2,7 +2,7 @@
 # ADDP_T2_SERVICES=postgres
 # ADDP_T2_OWNED_SERVICES=minio
 # ADDP_T2_COMPOSE_FILE=scripts/test/docker-compose.standard-minio-t2.yml
-# ADDP_T2_INPUT_FILES=scripts/infra/Dockerfile.minio scripts/infra/minio-observation/
+# ADDP_T2_INPUT_FILES=scripts/infra/Dockerfile.minio scripts/infra/minio-observation/ scripts/infra/init-minio.sh common/infra/bootstrap/ common/infra/objectstore/
 # ADDP_T2_REQUIRED_ENV=STANDARD_POSTGRES_TEST_DSN
 # standard-postgres-gate.sh - PostgreSQL and gate-owned disposable MinIO integration tests.
 
@@ -108,6 +108,16 @@ run_without_skips() {
         exit 1
     fi
 }
+
+# Exercise the deployment initializer on the gate-owned compose project only.
+export ADDP_INFRA_OBJECTSTORE_PROVIDER=minio
+export MINIO_ENDPOINT="$STANDARD_MINIO_TEST_ENDPOINT" MINIO_ROOT_USER="$STANDARD_MINIO_TEST_ACCESS_KEY" MINIO_ROOT_PASSWORD="$STANDARD_MINIO_TEST_SECRET_KEY" MINIO_USE_SSL=false
+for binding in '' 'standard=project-a-standard-docs'; do
+    ADDP_INFRA_RESOLVED=1 COMPOSE_PROJECT_NAME="$STANDARD_T2_PROJECT" ADDP_INFRA_OBJECTSTORE_BINDINGS="$binding" \
+        bash "$ROOT_DIR/scripts/infra/init-minio.sh" --compose-file "$STANDARD_T2_COMPOSE_FILE"
+done
+export ADDP_INFRA_OBJECTSTORE_BINDINGS=standard=project-a-standard-docs
+(cd "$ROOT_DIR/common" && run_without_skips ./infra/bootstrap '^TestStandardAreaAgainstMinIO$')
 
 cd "$ROOT_DIR/standard/backend"
 run_without_skips ./internal/repository '^(TestMigrateAgainstPostgres|TestMigrateConvertsLegacyDocumentToStableIdentityAndRevision|TestPostgresDeletePolicies|TestPostgresCodeSetScopeConstraint|TestPostgresElementScopeConstraint|TestPostgresExactElementRevisionResolutionKeepsPublishedHistory|TestPostgresGlossaryScopeConstraint|TestPostgresDocumentRevisionAndExtractionConstraints|TestPostgresMetricRevisionEffectiveIntervals|TestPostgresRemovesRetiredCollectionTables|TestPostgresCatalogMetricChangeFeedCapturesOwnerLifecycle|TestPostgresCatalogFiveStandardTypesCaptureRevisionsAndRollback|TestPostgresReferenceCandidatesFilterAndPaginateOwnerFacts|TestPostgresDocumentCandidateComparisonTargets|TestPostgresDocumentCandidateFormalization|TestPostgresDocumentCandidateFamilyDecision)$'

@@ -42,6 +42,25 @@ MINIO_ENDPOINT="${MINIO_API_PORT:-19000}"
 MINIO_ACCESS_KEY="${MINIO_ROOT_USER:-minioadmin}"
 MINIO_SECRET_KEY="${MINIO_ROOT_PASSWORD:-minioadmin}"
 
+# Keep the deployment binding in sync with common/infra/bootstrap.OpenObjectArea.
+[[ ${ADDP_INFRA_OBJECTSTORE_PROVIDER:-minio} == minio ]] || {
+  echo "Unsupported object store provider: ${ADDP_INFRA_OBJECTSTORE_PROVIDER}" >&2
+  exit 1
+}
+standard_bucket=standard
+if [[ -n ${ADDP_INFRA_OBJECTSTORE_BINDINGS:-} ]]; then
+  if [[ $ADDP_INFRA_OBJECTSTORE_BINDINGS != standard=* ]]; then
+    echo "Unsupported object store binding: $ADDP_INFRA_OBJECTSTORE_BINDINGS (expected standard=bucket)" >&2
+    exit 1
+  fi
+  standard_bucket=${ADDP_INFRA_OBJECTSTORE_BINDINGS#standard=}
+  if [[ ! $standard_bucket =~ ^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$ || $standard_bucket =~ ^([0-9]+\.){3}[0-9]+$ ||
+        $standard_bucket == *..* || $standard_bucket == *.-* || $standard_bucket == *-.* ]]; then
+    echo "Invalid MinIO bucket for standard: $standard_bucket" >&2
+    exit 1
+  fi
+fi
+
 if ! command -v docker >/dev/null 2>&1; then
   echo -e "${RED}✗ docker 未安装或不可用${NC}"
   exit 1
@@ -77,6 +96,7 @@ echo ""
 # 创建模块化 buckets（幂等操作，已存在不报错）
 echo -e "${YELLOW}▶ 创建模块化 Buckets...${NC}"
 BUCKETS=(
+  "${standard_bucket}:Standard 文档文件"
   "system:System 模块（用户头像、系统配置、审计日志归档）"
   "manager:Manager 模块（预览缓存、MVT 瓦片）"
   "meta:Meta 模块（元数据相关文件）"
@@ -138,6 +158,7 @@ echo "  访问地址: http://localhost:${MINIO_ENDPOINT}"
 echo "  控制台:   http://localhost:${MINIO_CONSOLE_PORT:-19001}"
 echo ""
 echo "  已创建的 Buckets:"
+echo "  - ${standard_bucket} (私有)  : Standard 文档文件"
 echo "  - system        (私有)  : 用户头像、系统配置、审计日志归档"
 echo "  - manager       (私有)  : 预览缓存、瓦片缓存对象、导入临时文件（temp/ 7天后自动过期）"
 echo "  - meta          (私有)  : 元数据文件"

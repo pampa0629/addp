@@ -28,12 +28,6 @@ type Config struct {
 	CopilotURL          string
 	ServiceClientSecret string
 
-	// MinIO 配置
-	MinioEndpoint  string
-	MinioAccessKey string
-	MinioSecretKey string
-	MinioUseSSL    bool
-
 	// 文档文件策略
 	DocumentMaxFileSize    int64
 	DocumentStorageTimeout time.Duration
@@ -61,12 +55,6 @@ func LoadConfig() (*Config, error) {
 		DocumentMaxFileSize:    int64(commonConfig.GetEnvInt("STANDARD_DOCUMENT_MAX_FILE_SIZE", 100*1024*1024)),
 		DocumentStorageTimeout: commonConfig.GetEnvDuration("STANDARD_DOCUMENT_STORAGE_TIMEOUT", "30s"),
 	}
-	minioCfg := commonConfig.LoadBuiltinMinIOConfig()
-	cfg.MinioEndpoint = minioCfg.Endpoint
-	cfg.MinioAccessKey = minioCfg.AccessKey
-	cfg.MinioSecretKey = minioCfg.SecretKey
-	cfg.MinioUseSSL = minioCfg.UseSSL
-
 	commonConfig.LoadDeploymentConfig(&cfg.BaseConfig)
 
 	// 设置 System 服务 URL
