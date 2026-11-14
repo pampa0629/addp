@@ -656,10 +656,6 @@ onUnmounted(() => {
   padding: 0 16px 16px 16px;
 }
 
-:deep(.el-tabs) {
-  display: block;
-}
-
 :deep(.el-tabs__content) {
   overflow: visible;
 }

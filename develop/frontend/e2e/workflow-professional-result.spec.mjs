@@ -25,6 +25,14 @@ async function fixture(page, locale = 'zh-cn', resultHandler) {
     return json(route, {})
   })
 }
+async function expectTopTabs(page) {
+  const tabs = page.locator('.content-area > .el-tabs')
+  const header = await tabs.locator(':scope > .el-tabs__header').boundingBox()
+  const content = await tabs.locator(':scope > .el-tabs__content').boundingBox()
+  expect(header).not.toBeNull()
+  expect(content).not.toBeNull()
+  expect(header.y + header.height).toBeLessThanOrEqual(content.y + 1)
+}
 for (const locale of ['zh-cn', 'en']) test(`professional workflow rows, explicit sum, pagination and clearing in ${locale}`, async ({ page }, testInfo) => {
   const errors = []; page.on('pageerror', e => errors.push(e.message))
   let requests = 0
@@ -34,6 +42,7 @@ for (const locale of ['zh-cn', 'en']) test(`professional workflow rows, explicit
   const section = page.locator('.workflow-professional-result')
   const read = page.getByRole('button', { name: locale === 'en' ? 'View current details' : '查看当次明细', exact: true })
   await expect(read).toBeVisible(); expect(requests).toBe(0)
+  await expectTopTabs(page)
   await read.click()
   await expect(section.locator('.query-result')).toBeVisible()
   await expect(section).toContainText('10.25')
@@ -47,12 +56,17 @@ for (const locale of ['zh-cn', 'en']) test(`professional workflow rows, explicit
   await expect(section.getByRole('button', { name: locale === 'en' ? 'Export current details' : '导出当次明细', exact: true })).toBeVisible()
   await page.screenshot({ path: testInfo.outputPath(`workflow-professional-${locale}-desktop.png`), fullPage: true })
   await page.setViewportSize({ width: 390, height: 844 })
+  await expectTopTabs(page)
   await expect(section).toBeVisible()
   expect(await section.evaluate(el => el.scrollWidth <= el.clientWidth + 1)).toBe(true)
   await page.screenshot({ path: testInfo.outputPath(`workflow-professional-${locale}-narrow.png`), fullPage: true })
+  await page.getByRole('tab', { name: locale === 'en' ? 'Logs' : '执行日志', exact: true }).click()
+  await expectTopTabs(page)
   await page.getByRole('tab', { name: locale === 'en' ? 'Inputs' : '输入参数', exact: true }).click()
+  await expectTopTabs(page)
   await expect(section.locator('.query-result')).toHaveCount(0)
   await page.getByRole('tab', { name: locale === 'en' ? 'Result' : '执行结果', exact: true }).click()
+  await expectTopTabs(page)
   await expect(section.locator('.query-result')).toHaveCount(0)
   await read.click(); await expect(section.locator('.query-result')).toBeVisible()
   await page.evaluate(async () => { const { default: router } = await import('/src/router/index.js'); await router.push('/executions/another') })
