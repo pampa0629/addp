@@ -1,6 +1,8 @@
 import { expect, test } from '@playwright/test'
 import { managerAuthContext } from './managerAuthContext.js'
 
+test.use({ trace: 'retain-on-failure' })
+
 const engines = [25, 29].map(id => ({
   id, name: `Expansion engine ${id}`, engine_type: 'postgresql',
   lifecycle_state: 'active', connection_status: 'online'
