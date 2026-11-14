@@ -45,7 +45,8 @@ python3 - <<'PY'
 import json, os
 fd = os.open(os.environ['ADDP_ONLINE_FIXTURE_ENGINE_DESCRIPTOR_FILE'], os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
 with os.fdopen(fd, 'w') as output:
-    json.dump({'name': 'Object T4 PostgreSQL', 'engine_type': 'postgresql', 'engine_origin': 'general',
+    json.dump({'name': 'Object T4 PostgreSQL', 'description': 'Disposable object-storage acceptance source',
+               'engine_type': 'postgresql', 'engine_origin': 'general',
                'connection_info': {'host': '127.0.0.1', 'port': 55433, 'database': 'object_fixture',
                                    'user': 'object_operator', 'password': os.environ['OBJECT_SOURCE_PASSWORD'], 'sslmode': 'disable'}}, output)
 PY

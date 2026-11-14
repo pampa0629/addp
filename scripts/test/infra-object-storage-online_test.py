@@ -1,9 +1,11 @@
 """Reject incomplete or fabricated evidence before launching the Hosted case."""
 import copy
+import json
 import os
 from importlib import import_module
 from pathlib import Path
 import subprocess
+import sys
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -117,6 +119,42 @@ class ObserverTest(unittest.TestCase):
                                 capture_output=True, text=True, timeout=5)
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("isolated Hosted object suite required", result.stderr)
+
+    def test_generated_source_descriptor_passes_the_standard_registration_contract(self):
+        with tempfile.TemporaryDirectory(prefix="addp-object-descriptor-") as directory:
+            root = Path(directory)
+            docker = root / "docker"
+            docker.write_text(f"#!{sys.executable}\n" + '''import sys
+args = sys.argv[1:]
+if args[:2] == ['container', 'inspect']:
+    sys.exit(1)
+if args[0] == 'run':
+    print('disposable-fixture')
+elif args[0] == 'exec' and args[-1] == 'SELECT current_database()':
+    print('object_fixture')
+elif args[:2] == ['exec', '-i']:
+    sys.stdin.read()
+else:
+    sys.exit(99)
+''')
+            docker.chmod(0o700)
+            descriptor = root / "engine.json"
+            environment = dict(os.environ, PATH=str(root) + os.pathsep + os.environ["PATH"],
+                               GITHUB_ACTIONS="true", RUNNER_OS="Linux", ADDP_ONLINE_HOSTED="1",
+                               ADDP_ONLINE_HOST="1", ONLINE_SUITE="infra-object-storage", POSTGRES_DB="addp_online",
+                               POSTGRES_PASSWORD="fixture-only", ADDP_ONLINE_SECRET_DIR=str(root),
+                               ADDP_ONLINE_FIXTURE_ENGINE_DESCRIPTOR_FILE=str(descriptor))
+            result = subprocess.run(["bash", str(ROOT / "scripts/test/infra-object-source-fixture.sh"), "start"],
+                                    env=environment, capture_output=True, text=True, timeout=10)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            record = scenario.etl.REGISTRATION.load_descriptor(descriptor)
+            self.assertEqual(record["engine_type"], "postgresql")
+            self.assertTrue(record["description"])
+            self.assertEqual(descriptor.stat().st_mode & 0o777, 0o600)
+            record.pop("description")
+            descriptor.write_text(json.dumps(record))
+            with self.assertRaises(scenario.etl.REGISTRATION.RegistrationError):
+                scenario.etl.REGISTRATION.load_descriptor(descriptor)
 
     def test_original_product_cannot_be_replaced_by_fixture_patch(self):
         patch_text = (ROOT / "scripts/test/infra-object-identity.patch").read_text()
