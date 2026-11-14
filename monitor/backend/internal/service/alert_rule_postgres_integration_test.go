@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"os"
 	"testing"
@@ -70,6 +71,14 @@ func TestIntegrationPostgresAlertRuleLifecycleAndRoutedOutbox(t *testing.T) {
 		ModuleName: commonExecution.ModuleDevelop, Enabled: true,
 		TaskProviderDeclaration: commonModels.TaskProviderDeclaration{Capabilities: &capabilities},
 	}}})
+	empty, listErr := ruleService.List(context.Background(), tenantID)
+	if listErr != nil {
+		t.Fatal(listErr)
+	}
+	emptyJSON, marshalErr := json.Marshal(empty)
+	if marshalErr != nil || string(emptyJSON) != "[]" {
+		t.Fatalf("empty rule list must be an array: %s %v", emptyJSON, marshalErr)
+	}
 	rule, err := ruleService.Create(context.Background(), CreateAlertRuleInput{
 		TenantID: tenantID, Name: "latest failure", Module: commonExecution.ModuleDevelop,
 		TaskType: commonExecution.TaskTypeWorkflow, SourceTaskID: taskID, SourceTaskName: "integration workflow",

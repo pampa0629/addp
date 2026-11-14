@@ -530,14 +530,39 @@ def verify_cdc_performance(client, task_id, generation, engine_id, binding, dest
     connect = cdc_risk_container('ADDP_ONLINE_CDC_CONNECT_ID', 'kafka-connect')
     broker = cdc_risk_container('ADDP_ONLINE_DLQ_REDPANDA_ID', 'redpanda')
     evidence = proof['performance'] = {'result': 'failed', 'trigger_seconds': 180,
-                                     'source_rows': 60000, 'throttled_nano_cpus': 25000000}
+                                     'source_rows': 60000, 'throttled_cpu_quota': 2500,
+                                     'connector_batch_size': 64, 'connector_queue_size': 128}
     rules, paused, lock = {}, set(), None
-    source_dirty = throttled = False
-    original_cpu = None
+    source_dirty = throttled = connector_tuned = False
+    original_cpu = original_config = None
     samples = []
 
-    def docker(*args):
-        return subprocess.run(['docker', *args], check=True, capture_output=True, timeout=15).stdout.decode().strip()
+    def docker(*args, data=None):
+        return subprocess.run(['docker', *args], input=data, check=True, capture_output=True, timeout=15).stdout.decode().strip()
+
+    config_url = 'http://127.0.0.1:8083/connectors/' + binding['connector'] + '/config'
+
+    def connector_config(value=None):
+        # Config contains credentials: stdin only, never command arguments or evidence.
+        args = ['exec', '-i', connect, 'curl', '-fsS', '--max-time', '10']
+        if value is not None:
+            args += ['-X', 'PUT', '-H', 'Content-Type: application/json', '--data-binary', '@-']
+        return json.loads(docker(*args, config_url, data=json.dumps(value).encode() if value is not None else None))
+
+    def restore_cpu():
+        nonlocal throttled
+        docker('update', '--cpu-quota', '-1', connect)
+        require(docker('exec', connect, 'cat', '/sys/fs/cgroup/cpu.max') == original_cpu,
+                'Connect effective CPU limit was not restored')
+        throttled = False
+        evidence['cpu_restored'] = True
+
+    def restore_connector():
+        nonlocal connector_tuned
+        connector_config(original_config)
+        require(connector_config() == original_config, 'Connect configuration was not restored')
+        connector_tuned = False
+        evidence['connector_config_restored'] = True
 
     def rule_rows():
         rows = client.request('GET', RULES, (200,), response_type=list).payload
@@ -549,6 +574,7 @@ def verify_cdc_performance(client, task_id, generation, engine_id, binding, dest
         capture = task.get('capture') or {}
         require(capture.get('generation') == generation, 'performance fault changed generation')
         value = {k: capture.get(k) for k in ('buffer_observation', 'delay_observation')}
+        value['task_state'] = {k: task.get(k) for k in ('desired_state', 'status', 'last_execution_id')}
         assert_safe(value)
         return value
 
@@ -572,6 +598,17 @@ def verify_cdc_performance(client, task_id, generation, engine_id, binding, dest
 
     try:
         stage('performance_baseline')
+        native = json.loads(docker('inspect', '--format', '{{json .HostConfig}}', connect))
+        require(native['NanoCpus'] == 0 and native['CpuQuota'] in (0, -1)
+                and native['CpuPeriod'] in (0, 100000), 'performance fault requires unlimited Hosted CPU profile')
+        original_cpu = docker('exec', connect, 'cat', '/sys/fs/cgroup/cpu.max')
+        require(original_cpu == 'max 100000', 'unexpected Hosted effective CPU profile')
+        evidence['original_cpu_max'] = original_cpu
+        original_config = connector_config()
+        tuned = dict(original_config, **{'max.batch.size': '64', 'max.queue.size': '128'})
+        connector_tuned = True
+        connector_config(tuned)
+        require(connector_config() == tuned, 'owned Connector fault configuration not applied')
         def initialized():
             current = sample()['buffer_observation'] or {}
             return current if current.get('status') == 'available' and current.get('initial_snapshot_completed') is True and current.get('lag_offsets') == '0' else None
@@ -584,8 +621,6 @@ def verify_cdc_performance(client, task_id, generation, engine_id, binding, dest
                 'routes': [{'channel': 'webhook', 'destination_id': destination_id}]}, (201,))
             rules[code] = API.require_positive_int(row, 'id')
         evidence['rule_ids'] = rules.copy()
-        original_cpu = int(docker('inspect', '--format', '{{.HostConfig.NanoCpus}}', connect))
-        require(original_cpu >= 0, 'invalid owned Connect CPU quota')
         lock = subprocess.Popen(['bash', 'business/scripts/online-continuous-fixture.sh', 'performance-target-lock'],
             cwd=ROOT, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
         lock.stdin.write(b"BEGIN;\nSET LOCAL lock_timeout='3s';\nLOCK TABLE public.continuous_cdc_target IN ACCESS EXCLUSIVE MODE;\n\\echo ADDP_CDC_PERFORMANCE_LOCKED\n")
@@ -593,7 +628,9 @@ def verify_cdc_performance(client, task_id, generation, engine_id, binding, dest
         require(select.select([lock.stdout], [], [], 10)[0]
                 and lock.stdout.readline().strip() == b'ADDP_CDC_PERFORMANCE_LOCKED', 'owned target lock not established')
         throttled = True
-        docker('update', '--cpus', '0.025', connect)
+        docker('update', '--cpu-quota', '2500', connect)
+        require(docker('exec', connect, 'cat', '/sys/fs/cgroup/cpu.max') == '2500 100000',
+                'owned Connect CPU fault not applied')
         source_dirty = True
         require(physical('performance-fill'), 'bounded performance workload failed')
         evidence['workload_committed_at'] = datetime.now(timezone.utc).isoformat()
@@ -612,7 +649,10 @@ def verify_cdc_performance(client, task_id, generation, engine_id, binding, dest
                 require(len(samples) < 48, 'performance evidence exceeded sample budget')
                 samples.append(current)
                 evidence['samples'] = samples
-            return incidents('open')
+                evidence['latest_rule_windows'] = {k: v['cdc_evaluation'] for k, v in rule_rows().items()}
+            values = cdc_risk_alerts(client, task_id, generation, codes=CDC_PERFORMANCE_CODES)
+            evidence['latest_incidents'] = values
+            return values if set(values) == CDC_PERFORMANCE_CODES and all(v['status'] == 'open' for v in values.values()) else None
         active = until(opened, timeout=450)
         windows = rule_rows()
         for code, incident in active.items():
@@ -665,8 +705,8 @@ def verify_cdc_performance(client, task_id, generation, engine_id, binding, dest
         for identity in (broker, connect):
             docker('unpause', identity)
             paused.remove(identity)
-        docker('update', '--cpus', str(original_cpu / 1000000000), connect)
-        throttled = False
+        restore_cpu()
+        restore_connector()
         unlock()
         # New committed source events, rather than idle wall time, close delay.
         recovery_samples, next_write = [], 0
@@ -706,9 +746,14 @@ def verify_cdc_performance(client, task_id, generation, engine_id, binding, dest
                     errors.append('component_unpause_failed')
         if throttled and original_cpu is not None:
             try:
-                docker('update', '--cpus', str(original_cpu / 1000000000), connect)
+                restore_cpu()
             except Exception:
                 errors.append('cpu_restore_failed')
+        if connector_tuned and original_config is not None:
+            try:
+                restore_connector()
+            except Exception:
+                errors.append('connector_config_restore_failed')
         try:
             unlock()
         except Exception:
@@ -725,10 +770,9 @@ def verify_cdc_performance(client, task_id, generation, engine_id, binding, dest
                 errors.append('rule_cleanup_failed')
         try:
             require(not rule_rows(), 'performance rules remain')
-            require(original_cpu is None or int(docker('inspect', '--format', '{{.HostConfig.NanoCpus}}', connect)) == original_cpu,
-                    'Connect CPU quota was not restored exactly')
+            evidence['rules_deleted'] = True
         except Exception:
-            errors.append('cleanup_readback_failed')
+            errors.append('rule_cleanup_readback_failed')
         for stream in (lock.stdin, lock.stdout) if lock is not None else ():
             if not stream.closed:
                 stream.close()

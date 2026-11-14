@@ -588,3 +588,16 @@ Transfer 的同一机器入口采用 v3 单一路线，增加当前消费状态�
 [Run 43565365504／Job 132357928330](https://github.com/pampa0629/addp/actions/runs/43565365504/job/132357928330) 固定该 SHA，随后主动取消，不计通过或业务失败。编排复核发现预先暂停 Connector 75 秒会引入已有捕获失败告警，破坏后继原捕获失败场景的无既往事件前提；修订为保持 Connector 运行，仅使用真实 CPU 压力和源事件形成延迟，不删除原捕获断言、不伪造指标或改阈值。新行为回归在生成事件后注入观察中断，核对未暂停捕获、恢复原 CPU、释放锁会话、删除规则和临时源记录；修正版本地 132 项及 System 身份夹具 Go 测试通过。
 
 取消 Artifact `14101999389` 的 SHA-256 为 `93d3c225de4848a9e8786a1a4ff3d2c9c4d04c2531f79a13fee1d975438ab56c`，下载摘要与 ZIP CRC 均核对通过。Artifact 只有 readiness 与设施镜像构建日志，尚未生成业务或完整清理报告；不认定性能断言、通知实收或零残留通过。原件 `/tmp/addp-cdc-performance-hosted-43565365504.zip`，解包 `/tmp/addp-cdc-performance-hosted-43565365504/`；确定性门禁日志 `/tmp/addp-cdc-performance-hosted-runner-final.log`、`/tmp/addp-cdc-performance-hosted-runner-v2-corrected.log`。个人开发环境在首次调度前只读确认 task46／task58 两个原槽与 task61 活跃槽均保留，记录 `/tmp/addp-cdc-performance-hosted-preserved-before.log`。
+
+
+### CDC 持续性能 Hosted 首次实故障失败与夹具修订（2026-11-14）
+
+固定 `dd159c8815d9a128fd33f72dce576d9871ee58fc` 的 [Run 43566333209／Job 132360895439](https://github.com/pampa0629/addp/actions/runs/43566333209/job/132360895439) 实际失败于 `cdc_risk/convergence_timeout`，嵌套阶段 `performance_trigger`。Artifact `14102339587` 的 SHA-256 为 `18e65cd1e7bd64644bb43572ffe3012a4664bee769ce06ec6accaa16252c26ea`，下载摘要与 ZIP CRC 均核对通过，原件及完整报告位于 `/tmp/addp-cdc-performance-hosted-43566333209/`。前置 17 项检查及 7 份 Console 回执通过，不追认为本批告警通过。
+
+真实 CPU 压力下捕获持续推进、目标提交停在 10，缓冲积压由 480 增至 9396。连续高延迟样本首段从 `06:46:56.439565688Z` 到 `06:49:56.435942418Z`，跨度只有 179.996376730 秒；后继大批次使事件计数出现约 60 秒平台，按已有规则应中断活动窗口，不能向上取整或降低 180 秒要求。原报告未保存部分告警与规则窗口，无法分别断言两条规则中哪一条已触发。后续缺样、恢复及四条性能通知均未完成，旧捕获失败和不可恢复风险后继阶段也未运行到。
+
+领域清理 `cleanup=failed`、`residual_resources=2`、`uncertain_mutation=true`：合并读回错误 `cleanup_readback_failed`，task 3 正式 Stop 返回 500；Webhook 目标删除与接收端关闭通过。外层独占部署销毁 `cleanup=passed`、`infra_cleanup=zero_residuals`，不能用部署最终销毁替代领域清理通过。最初怀疑空规则清单返回 null 未获证实；原实现在 GORM 查询后返回空数组，本地 `make test-monitor-postgres`（含新增明确 `[]` 断言）实际通过，日志 `/tmp/addp-cdc-performance-empty-rules-postgres.log`，因此不修改产品 API。
+
+Docker Moby 的资源更新实现仅在 NanoCPUs 非零时应用该字段，原 `--cpus 0` 没有撤销正数配额的语义；见[官方实现](https://github.com/moby/moby/blob/v28.0.0/container/container_unix.go)。原夹具恢复命令无效，与读回失败相符；Stop 失败是否完全由残留配额引起尚无独立证据，不作唯一根因认定。修订为仅在已核对的无限额 Hosted profile 上使用 CFS quota 2500，恢复 quota=-1，并对 `cpu.max` 的实际 `max 100000 → 2500 100000 → max 100000` 逐项读回。专用 Connector 临时使用批次 64／队列 128，使真实活动持续推进，恢复原配置；凭据只通过私有 stdin，不入命令参数或报告。新增独立清理结果与部分事件／规则窗口证据，原产品阈值、持续时间、缺样语义和个人资源范围均不变，后继完整 Hosted 结果须独立取得。
+
+修正后 `make test-transfer-continuous-online-runner` 的 133 项及 System 身份夹具 Go 测试通过，覆盖原生配置 stdin 传递、失败后恢复、有效 CPU 限制读回失败的独立归因及其他清理继续执行；日志 `/tmp/addp-cdc-performance-hosted-runner-v3.log`。这些确定性结果不替代下一轮真实持续窗口和通知实收。

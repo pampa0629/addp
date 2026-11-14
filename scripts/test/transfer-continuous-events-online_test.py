@@ -1211,7 +1211,32 @@ class CDCRiskAcceptanceTest(unittest.TestCase):
         mutate.assert_called_once_with(actor, M.OWNER+'/task-definitions/9/stop',
                                        {'confirmed':True,'confirmation_text':'owned-rebuild'})
 
-    def test_performance_preparation_failure_deletes_rules_and_keeps_original_cpu(self):
+    def performance_native_driver(self, *, restore_cpu=True):
+        commands = []
+        state = {'cpu': 'max 100000', 'config': {'name':'owned','database.password':'private-performance-sentinel'}}
+        def command(args, **kwargs):
+            commands.append(args)
+            if args[1] == 'inspect':
+                output = json.dumps({'NanoCpus':0,'CpuQuota':0,'CpuPeriod':0}).encode()
+            elif args[1] == 'update':
+                if args[3] == '2500':
+                    state['cpu'] = '2500 100000'
+                elif restore_cpu:
+                    state['cpu'] = 'max 100000'
+                output = b''
+            elif args[-1] == '/sys/fs/cgroup/cpu.max':
+                output = state['cpu'].encode()
+            else:
+                self.assertIn('curl', args)
+                self.assertTrue(args[-1].endswith('/connectors/owned/config'))
+                if '-X' in args:
+                    self.assertIn('@-', args)
+                    state['config'] = json.loads(kwargs['input'])
+                output = json.dumps(state['config']).encode()
+            return SimpleNamespace(stdout=output)
+        return command, commands, state
+
+    def test_performance_preparation_failure_deletes_rules_and_restores_connector(self):
         calls = []
         def request(method, path, *args, **kwargs):
             calls.append((method, path))
@@ -1222,9 +1247,7 @@ class CDCRiskAcceptanceTest(unittest.TestCase):
             definitions.append(body)
             return {'id': len(definitions)}
         proof = {}
-        def command(args, **kwargs):
-            self.assertEqual(args[:3], ['docker', 'inspect', '--format'])
-            return SimpleNamespace(stdout=b'2000000000\n')
+        command, commands, state = self.performance_native_driver()
         with patch.object(M,'cdc_risk_container',side_effect=['owned-connect','owned-broker']), \
              patch.object(M,'until',return_value={'initial_snapshot_completed':True,'lag_offsets':'0'}), \
              patch.object(M.subprocess,'run',side_effect=command), \
@@ -1237,17 +1260,19 @@ class CDCRiskAcceptanceTest(unittest.TestCase):
         self.assertEqual(proof['performance']['cleanup'],'passed')
         self.assertEqual([p for method,p in calls if method=='DELETE'],[M.RULES+'/1',M.RULES+'/2'])
         self.assertNotEqual(proof['performance']['result'],'passed')
+        self.assertEqual(state['config'],{'name':'owned','database.password':'private-performance-sentinel'})
+        self.assertTrue(proof['performance']['connector_config_restored'])
+        self.assertNotIn('private-performance-sentinel',json.dumps(proof))
+        self.assertNotIn('private-performance-sentinel',json.dumps(commands))
 
-    def test_performance_backpressure_keeps_capture_running_and_restores_native_faults(self):
+    def performance_interrupted_backpressure(self, *, restore_cpu=True):
         import io
-        commands, actions, definitions = [], [], []
+        actions, definitions = [], []
         state={'done':False}
         lock=SimpleNamespace(stdin=io.BytesIO(),stdout=io.BytesIO(b'ADDP_CDC_PERFORMANCE_LOCKED\n'),
             poll=lambda:0 if state['done'] else None,
             wait=lambda **kwargs:state.update(done=True))
-        def command(args,**kwargs):
-            commands.append(args)
-            return SimpleNamespace(stdout=b'2000000000\n' if args[1]=='inspect' else b'')
+        command, commands, native = self.performance_native_driver(restore_cpu=restore_cpu)
         client=SimpleNamespace(request=lambda *args,**kwargs:SimpleNamespace(payload=[]))
         def mutate(actor,path,body,status):
             definitions.append(body);return {'id':len(definitions)}
@@ -1262,12 +1287,27 @@ class CDCRiskAcceptanceTest(unittest.TestCase):
              patch.object(M,'physical',side_effect=lambda action:actions.append(action) or True), \
              self.assertRaisesRegex(M.SuiteError,'stop after native backpressure'):
             M.verify_cdc_performance(client,7,1,10,{'connector':'owned'},9,mutate,None,None,proof,stage)
-        self.assertFalse(any(args[1] in ('pause','exec') for args in commands))
-        self.assertIn(['docker','update','--cpus','0.025','owned-connect'],commands)
-        self.assertIn(['docker','update','--cpus','2.0','owned-connect'],commands)
+        self.assertFalse(any(args[1] == 'pause' or args[-1].endswith('/pause') for args in commands))
+        self.assertIn(['docker','update','--cpu-quota','2500','owned-connect'],commands)
+        self.assertIn(['docker','update','--cpu-quota','-1','owned-connect'],commands)
         self.assertEqual(actions,['performance-fill','performance-clear'])
         self.assertTrue(state['done'])
+        self.assertEqual(native['config'],{'name':'owned','database.password':'private-performance-sentinel'})
+        self.assertNotIn('private-performance-sentinel',json.dumps(proof))
+        return proof
+
+    def test_performance_backpressure_keeps_capture_running_and_restores_native_faults(self):
+        proof = self.performance_interrupted_backpressure()
         self.assertEqual(proof['performance']['cleanup'],'passed')
+        self.assertTrue(proof['performance']['cpu_restored'])
+        self.assertTrue(proof['performance']['rules_deleted'])
+
+    def test_performance_cpu_readback_failure_does_not_hide_other_cleanup(self):
+        proof = self.performance_interrupted_backpressure(restore_cpu=False)
+        self.assertEqual(proof['performance']['cleanup'],'failed')
+        self.assertEqual(proof['performance']['cleanup_failures'],['cpu_restore_failed'])
+        self.assertTrue(proof['performance']['connector_config_restored'])
+        self.assertTrue(proof['performance']['rules_deleted'])
 
     def test_performance_faults_reject_personal_environment_before_actions(self):
         with patch.dict(os.environ,{},clear=True), patch.object(M.subprocess,'run') as run, \
