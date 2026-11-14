@@ -323,6 +323,7 @@
         },
         "result": "执行结果",
         "error": "错误详情",
+        "open_professional_details": "查看专业详情",
         "open_task_definition": "打开任务定义",
         "open_task_unavailable": "当前执行记录没有可跳转的任务定义入口"
       },

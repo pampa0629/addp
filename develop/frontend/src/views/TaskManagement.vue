@@ -130,14 +130,8 @@
                 <el-icon><Edit /></el-icon>
                 {{ t('develop.taskManagement.edit') }}
               </el-button>
-              <el-button
-                type="info"
-                size="small"
-                @click="handleView(row)"
-              >
-                <el-icon><View /></el-icon>
-                {{ t('develop.taskManagement.detail') }}
-              </el-button>
+              <MonitorExecutionsButton module="develop" :task-type="row.dev_type" :source-task-id="row.id"
+                scope="task" size="small">{{ t('develop.taskManagement.executionRecords') }}</MonitorExecutionsButton>
               <el-button
                 v-if="authStore.hasPermission('develop.task.delete')"
                 type="danger"
@@ -216,7 +210,6 @@ import {
   Search,
   VideoPlay,
   Edit,
-  View,
   Delete
 } from '@element-plus/icons-vue'
 import {
@@ -354,7 +347,6 @@ const openTaskEditor = async (devType, taskID = '') => {
 
 const handleCreate = (devType) => openTaskEditor(devType)
 const handleEdit = (row) => openTaskEditor(row.dev_type, row.id)
-const handleView = (row) => openTaskEditor(row.dev_type, row.id)
 
 const handleExecute = async (row) => {
   try {

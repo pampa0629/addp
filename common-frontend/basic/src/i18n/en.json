@@ -183,7 +183,6 @@
       "copy": "Copy diagnostics",
       "copied": "Diagnostics copied",
       "copyFailed": "Copy failed. Select and copy the diagnostics manually.",
-      "openQueryExecution": "View query execution details",
       "openMonitorExecution": "View error details in Monitor",
       "unrecordedAction": "No specific diagnostic was recorded. Copy the error code and execution ID for an administrator to investigate.",
       "stages": {

@@ -42,7 +42,7 @@ test('execution list and stable tabs delegate to Monitor module navigation', () 
 
   assert.match(navigationSource, /navigateConsoleModuleRoute\(router, 'monitor', location, options\)/)
   assert.match(executionListSource, /const location = executionDetailLocation\(row\)/)
-  assert.match(executionListSource, /navigateMonitorRoute\(router, location\)/)
+  assert.match(executionListSource, /navigateMonitorRoute\(router, /)
   assert.match(executionListSource, /execution_id: undefined/)
   assert.match(alertSource, /resolveMonitorTabRouteState/)
   assert.match(notificationSource, /resolveMonitorTabRouteState/)
@@ -111,4 +111,12 @@ test('automatic refresh pauses while the page is hidden and catches up when visi
   assert.match(executionListSource, /document\.removeEventListener\('visibilitychange', handleVisibilityChange\)/)
   assert.match(executionListSource, /void refreshRunningExecutionList\(\)/)
   assert.match(executionListSource, /void refreshOpenedExecution\(\)/)
+})
+
+test('professional details use one shared route outside the failure panel and preserve task filters', () => {
+ const source = readFileSync(new URL('../src/views/ExecutionList.vue', import.meta.url), 'utf8')
+ assert.match(source, /v-if="professionalRoute"/)
+ assert.match(source, /openConsoleRoute\(professionalRoute\)/)
+ assert.match(source, /query: \{ \.\.\.route.query, \.\.\.location.query \}/)
+ assert.doesNotMatch(source, /:owner-route|buildDevelopQueryExecutionRoute/)
 })

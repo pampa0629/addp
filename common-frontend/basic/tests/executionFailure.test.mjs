@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import test from 'node:test'
-import { buildDevelopQueryExecutionRoute, executionFailurePresentation, failureStages, failureReasons, operatorInputRules } from '../src/utils/executionFailure.mjs'
+import { buildDevelopExecutionRoute, executionFailurePresentation, failureStages, failureReasons, operatorInputRules } from '../src/utils/executionFailure.mjs'
 
 const read = path => fs.readFileSync(new URL(path, import.meta.url), 'utf8')
 
@@ -62,10 +62,10 @@ test('SQL failure facts accept only bounded identifiers and coordinates under th
   assert.equal(executionFailurePresentation({ diagnostic: { ...base, schema_version: 'addp.execution-failure/v1' } }, translate).stage, '')
 })
 
-test('query execution navigation works without a task definition and does not guess other owners', () => {
-  assert.equal(buildDevelopQueryExecutionRoute({ module: 'develop', task_type: 'query', execution_id: 'execution/id' }), '/develop/executions/execution%2Fid')
-  for (const input of [{ module: 'develop', task_type: 'workflow', execution_id: 'id' }, { module: 'meta', task_type: 'query', execution_id: 'id' }, {}]) {
-    assert.equal(buildDevelopQueryExecutionRoute(input), '')
+test('Develop professional execution navigation works without a task definition and does not guess other owners', () => {
+  for (const task_type of ['query', 'workflow', 'script']) for (const status of ['success', 'failed', 'running']) assert.equal(buildDevelopExecutionRoute({ module: 'develop', task_type, status, execution_id: 'execution/id' }), '/develop/executions/execution%2Fid')
+  for (const input of [{ module: 'develop', task_type: 'cleanup', execution_id: 'id' }, { module: 'meta', task_type: 'query', execution_id: 'id' }, {}]) {
+    assert.equal(buildDevelopExecutionRoute(input), '')
   }
 })
 

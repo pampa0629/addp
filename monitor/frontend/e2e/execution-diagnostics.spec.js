@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test'
 
-async function installBackend(page, { empty = false, unavailable = false, eventsDenied = false, waiting = false, executionStatus = 'failed', locale = 'zh-cn', children = [], metadata = {}, queryFailure = false, errorDetails, targetExists = false, executionID = 'diagnostic-run', cleanup = false } = {}) {
+async function installBackend(page, { empty = false, unavailable = false, eventsDenied = false, waiting = false, executionStatus = 'failed', locale = 'zh-cn', children = [], metadata = {}, queryFailure = false, errorDetails, targetExists = false, executionID = 'diagnostic-run', ownerType = '', permissions = ['monitor.execution.read', 'develop.task.read', 'develop.data_read.execute', 'develop.notebook.read'], cleanup = false } = {}) {
   const execution = { id: 1, execution_id: 'diagnostic-run', module: 'orchestrator', task_type: 'orchestration', source: 'orchestrator', source_task_id: 'deleted-task', source_task_name: '历史任务', status: 'failed', progress: 50, current_step: 'transform', metadata: {}, error_details: { code: 'STEP_FAILED', category: 'connection_failed' }, steps: waiting ? [{ id: 'child', status: 'running', phase: 'waiting' }, { id: 'submit', status: 'running', phase: 'dispatching' }, { id: 'uncertain', status: 'failed', error_code: 'submission_uncertain' }] : empty ? [] : [{ id: 'read', status: 'success', started_at: '2026-10-01T01:00:00Z', duration: 120 }, { id: 'transform', status: 'failed', duration: 8, error_code: 'connection_failed' }], steps_truncated: false }
   execution.status = executionStatus
   execution.execution_id = executionID
@@ -14,6 +14,7 @@ async function installBackend(page, { empty = false, unavailable = false, events
     } })
   }
 
+  if (ownerType) Object.assign(execution, { module: 'develop', task_type: ownerType })
   if (targetExists) Object.assign(execution, {
     module: 'develop', task_type: 'workflow', source: 'develop', steps: [],
     error_details: { code: 'develop.workflow.target_exists', category: 'execution_failed',
@@ -33,7 +34,7 @@ async function installBackend(page, { empty = false, unavailable = false, events
     let status = 200
     if (path === '/api/v1/system/refresh') body = { access_token: 'fixture-token', expires_in: 3600 }
     else if (path === '/api/v1/system/users/me') body = { id: 9, username: 'fixture-user' }
-    else if (path === '/api/v1/system/auth/context') body = { context: { type: 'tenant', tenant_id: '7' }, authorization: { role_assignments: [{ scope: { type: 'tenant', tenant_id: '7' }, permissions: ['monitor.execution.read'] }] } }
+    else if (path === '/api/v1/system/auth/context') body = { context: { type: 'tenant', tenant_id: '7' }, authorization: { role_assignments: [{ scope: { type: 'tenant', tenant_id: '7' }, permissions }] } }
     else if (path === '/api/v1/monitor/task-providers') body = []
     else if (path.endsWith('/tree')) { treeRequests++; body = { execution, children, truncated: !empty }; if (unavailable) { status = 503; body = { error_code: 'execution_owner_unavailable', error: '任务所属模块暂时无法完成读取授权' } } }
     else if (path.endsWith('/events')) {
@@ -189,7 +190,7 @@ for (const locale of ['zh-cn', 'en']) test(`shows query failure at the top and o
   await expect(diagnostic).toContainText(locale === 'zh-cn' ? '准备执行' : 'Prepare execution')
   await expect(diagnostic).toContainText('public.farmla1nd')
   await expect(diagnostic).toContainText(locale === 'zh-cn' ? '第 1 行，第 15 列' : 'Line 1, column 15')
-  const button = diagnostic.getByRole('button', { name: locale === 'zh-cn' ? '查看查询执行详情' : 'View query execution details', exact: true })
+  const button = page.locator('.detail-actions').getByRole('button', { name: locale === 'zh-cn' ? '查看专业详情' : 'View professional details', exact: true })
   await expect(button).toBeVisible()
   await expect(page.getByRole('button', { name: locale === 'zh-cn' ? '打开任务定义' : 'Open task definition', exact: true })).toHaveCount(0)
   await page.setViewportSize({ width: 620, height: 700 })
@@ -916,4 +917,33 @@ test('switching the selected execution discards a pending stage response', async
   release()
   await expect(page.locator('.execution-trace-stages .stage-card')).toHaveCount(0)
   await expect(page.getByRole('button', { name: '查看阶段追踪' })).toBeVisible()
+})
+
+for (const ownerType of ['query', 'workflow', 'script']) for (const executionStatus of ['success', 'running', 'failed']) test(`professional detail is independent of diagnostic state: ${ownerType}/${executionStatus}`, async ({ page }) => {
+  await installBackend(page, { ownerType, executionStatus })
+  await page.goto('/executions?module=develop&task_type='+ownerType+'&source_task_id=37&execution_id=diagnostic-run')
+  const button = page.getByRole('button', { name: '查看专业详情', exact: true })
+  await expect(button).toBeVisible()
+  await expect(page.locator('.execution-failure').getByRole('button', { name: /专业详情|查询执行详情/ })).toHaveCount(0)
+  await page.route('**/develop/executions/diagnostic-run', route => route.fulfill({ contentType: 'text/html', body: '<main>Professional owner destination</main>' }))
+  await button.click()
+  await expect(page).toHaveURL(/\/develop\/executions\/diagnostic-run$/)
+  await page.goBack()
+  await expect(page.getByRole('dialog')).toBeVisible()
+  await expect(page).toHaveURL(/source_task_id=37/)
+})
+for (const ownerType of ['workflow', 'script']) test(`missing owner read permission hides professional entry: ${ownerType}`, async ({ page }) => {
+  await installBackend(page, { ownerType, executionStatus: 'success', permissions: ['monitor.execution.read', 'develop.task.read'] })
+  await page.goto('/executions?execution_id=diagnostic-run')
+  await expect(page.getByRole('dialog')).toBeVisible()
+  await expect(page.getByRole('button', { name: '查看专业详情', exact: true })).toHaveCount(0)
+})
+
+test('opening a row and closing its drawer retains the exact committed task filters', async ({ page }) => {
+  await installBackend(page, { ownerType: 'workflow', executionStatus: 'success' })
+  await page.goto('/executions?module=develop&task_type=workflow&source_task_id=37')
+  await page.getByRole('button', { name: '查看详情', exact: true }).click()
+  await expect(page).toHaveURL(/module=develop&task_type=workflow&source_task_id=37&execution_id=diagnostic-run/)
+  await page.getByRole('dialog').getByRole('button', { name: /Close|关闭/i }).click()
+  await expect(page).toHaveURL(/module=develop&task_type=workflow&source_task_id=37$/)
 })

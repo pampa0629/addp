@@ -675,6 +675,7 @@
       "loadFailed": "加载失败: "
     },
     "taskManagement": {
+      "executionRecords": "执行记录",
       "title": "任务管理",
       "newTask": "新建任务",
       "refresh": "刷新",

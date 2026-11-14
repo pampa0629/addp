@@ -323,6 +323,7 @@
         },
         "result": "Execution Result",
         "error": "Error Details",
+        "open_professional_details": "View professional details",
         "open_task_definition": "Open task definition",
         "open_task_unavailable": "No task definition entry is available for this execution"
       },

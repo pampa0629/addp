@@ -241,3 +241,15 @@ async function fulfillJSON(route, body) {
     body: JSON.stringify(body)
   })
 }
+
+for (const locale of ['zh-cn', 'en']) test(`task execution records preserve exact task scope in ${locale}`, async ({ page }) => {
+  await installMockBackend(page, { locale })
+  await page.goto('/tasks')
+  const label = locale === 'en' ? 'Execution records' : '执行记录'
+  const rows = page.locator('.el-table__body-wrapper tbody tr')
+  await expect(rows.first().getByRole('button', { name: locale === 'en' ? 'Details' : '详情', exact: true })).toHaveCount(0)
+  await page.context().route('**/monitor/executions?**', route => route.fulfill({ contentType: 'text/html', body: '<main>Scoped Monitor destination</main>' }))
+  const opened = page.waitForEvent('popup')
+  await rows.first().getByRole('button', { name: label, exact: true }).click()
+  await expect(await opened).toHaveURL(/\/monitor\/executions\?module=develop&task_type=workflow&source_task_id=41$/)
+})

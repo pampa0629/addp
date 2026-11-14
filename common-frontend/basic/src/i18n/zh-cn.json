@@ -183,7 +183,6 @@
       "copy": "复制诊断信息",
       "copied": "诊断信息已复制",
       "copyFailed": "复制失败，请手动选择并复制诊断信息",
-      "openQueryExecution": "查看查询执行详情",
       "openMonitorExecution": "查看监控错误详情",
       "unrecordedAction": "本次执行未记录具体诊断。可复制错误码和执行 ID，交给管理员排查。",
       "stages": {

@@ -319,7 +319,7 @@ function validSQLContext(sql, reason) {
   return true
 }
 
-export function buildDevelopQueryExecutionRoute(execution) {
-  if (execution?.module !== 'develop' || execution?.task_type !== 'query' || !execution?.execution_id) return ''
+export function buildDevelopExecutionRoute(execution) {
+  if (execution?.module !== 'develop' || !['query', 'workflow', 'script'].includes(execution?.task_type) || !execution?.execution_id) return ''
   return `/develop/executions/${encodeURIComponent(execution.execution_id)}`
 }

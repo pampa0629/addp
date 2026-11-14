@@ -167,7 +167,6 @@
           :status="currentExecution.status"
           :error-details="currentExecution.error_details"
           :execution-id="currentExecution.execution_id"
-          :owner-route="buildDevelopQueryExecutionRoute(currentExecution)"
         />
         <el-descriptions :column="2" border>
           <el-descriptions-item :label="t('monitor.execution.detail.id')">
@@ -240,6 +239,9 @@
         </el-descriptions>
 
         <div class="detail-actions">
+          <el-button v-if="professionalRoute" type="primary" @click="openConsoleRoute(professionalRoute)">
+            {{ t('monitor.execution.detail.open_professional_details') }}
+          </el-button>
           <el-button v-if="currentExecution.source_task_id" type="primary" @click="openOwnerTask(currentExecution)">
             <el-icon><Link /></el-icon>
             {{ t('monitor.execution.detail.open_task_definition') }}
@@ -484,7 +486,8 @@
 
 <script setup>
 import { computed, ref, onMounted, onBeforeUnmount, watch } from 'vue'
-import { CleanupAdmission, parseCleanupAdmission, ExecutionSteps, ExecutionEvents, ExecutionFailure, buildDevelopQueryExecutionRoute } from '@common-ui'
+import { CleanupAdmission, parseCleanupAdmission, ExecutionSteps, ExecutionEvents, ExecutionFailure, buildDevelopExecutionRoute, openConsoleRoute } from '@common-ui'
+import { useAuthStore } from '@/store/auth'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus'
@@ -515,6 +518,14 @@ import { navigateMonitorRoute } from '@/utils/moduleNavigation'
 const { t, te } = useI18n()
 const route = useRoute()
 const router = useRouter()
+const professionalRoute = computed(() => {
+  const execution = currentExecution.value
+  const route = buildDevelopExecutionRoute(execution)
+  if (!route) return ''
+  const auth = useAuthStore()
+  const permission = execution.task_type === 'script' ? 'develop.notebook.read' : 'develop.data_read.execute'
+  return auth.hasPermission('develop.task.read') && auth.hasPermission(permission) ? route : ''
+})
 
 // 过滤条件
 const filters = ref({
@@ -999,7 +1010,7 @@ function handleSizeChange(size) {
 async function handleViewExecution(row) {
   const location = executionDetailLocation(row)
   if (!location) return
-  await navigateMonitorRoute(router, location)
+  await navigateMonitorRoute(router, { ...location, query: { ...route.query, ...location.query } })
 }
 
 async function openExecutionByExecutionID(executionID) {
