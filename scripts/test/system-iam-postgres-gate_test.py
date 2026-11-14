@@ -573,7 +573,12 @@ elif args[:2] != ["volume", "ls"]:
         result = self.run_gate(arguments=("--test", "source-grant-relations"))
         self.assertEqual(result.returncode, 0, result.stderr)
         trace = (self.root / "trace-1").read_text()
-        self.assertIn("./internal/migration -run ^Test(SourceGrantRelations|SourceDataItemBoundary(Identity)?|SourceSingleRecordTargets)ForwardMigrationAgainstPostgres$", trace)
+        pattern = "^Test(SourceGrantRelations|SourceDataItemBoundary(Identity)?|SourceSingleRecordTargets|MinIONodeSourceGrants|RecursiveEngineRoot)ForwardMigrationAgainstPostgres$"
+        self.assertIn("./internal/migration -run " + pattern, trace)
+        for name in ("SourceGrantRelations", "SourceDataItemBoundary", "SourceDataItemBoundaryIdentity", "SourceSingleRecordTargets", "MinIONodeSourceGrants", "RecursiveEngineRoot"):
+            self.assertIsNotNone(re.fullmatch(pattern, "Test" + name + "ForwardMigrationAgainstPostgres"))
+        for name in ("TestRecursiveEngineRootForwardMigrationAgainstPostgresExtra", "TestMinIONodeSourceGrantsForwardMigration", "TestOtherForwardMigrationAgainstPostgres"):
+            self.assertIsNone(re.fullmatch(pattern, name))
         result = self.run_gate(arguments=("--package", "iam", "--test", "source-grant-relations"))
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("requires --package migration", result.stderr)
