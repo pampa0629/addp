@@ -1073,7 +1073,8 @@ done
 
 MAX_WAIT=60
 
-# Only the deployment entrypoint holds publisher credentials. Exact-process acceptance controls publication explicitly.
+# 2. 启动 System Backend 并发布所选模块声明
+# 正式恢复验收独立控制声明的发布时间。
 declaration_modules=()
 if [ "${ONLINE_SUITE:-}" != module-registry-recovery ] || [ "$EXACT_PROCESS" != true ]; then
   if [ "$START_SYSTEM_BACKEND" = true ]; then declaration_modules+=(system); fi
@@ -1089,7 +1090,6 @@ if [ "${ONLINE_SUITE:-}" != module-registry-recovery ] || [ "$EXACT_PROCESS" != 
   fi
 fi
 
-# 2. 启动 System Backend
 if [ "$START_SYSTEM_BACKEND" = true ]; then
   echo -e "${YELLOW}Step 2/7: 启动 System Backend${NC}"
 
@@ -1118,8 +1118,8 @@ else
 fi
 
 if [ "${#declaration_modules[@]}" -gt 0 ]; then
-    python3 scripts/prod/publish-module-declarations.py --provision "${declaration_modules[@]}" || exit 1
-    python3 scripts/prod/publish-module-declarations.py "${declaration_modules[@]}" || exit 1
+  python3 scripts/prod/publish-module-declarations.py --provision "${declaration_modules[@]}" || exit 1
+  python3 scripts/prod/publish-module-declarations.py "${declaration_modules[@]}" || exit 1
 fi
 
 # 3. 并行启动所有后端服务 + Workers (System 已就绪)

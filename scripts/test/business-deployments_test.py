@@ -47,10 +47,14 @@ class StartupResultsTest(unittest.TestCase):
                     case = Path(directory) / name
                     (case / '.dev-pids').mkdir(parents=True)
                     (case / '.dev-pids/system.pid').write_text(str(os.getpid()))
+                    (case / 'system').mkdir()
+                    (case / 'system/module-declaration.json').touch()
                     script = '''
 set -eu
 RED= GREEN= YELLOW= NC=
 MAX_WAIT=2
+EXACT_PROCESS=false
+python3() { [ "$1" = scripts/prod/publish-module-declarations.py ] && [ "$2" = --prepare ]; }
 check_service_running() { return 1; }
 sleep() { SECONDS=$((SECONDS + 1)); }
 curl() {
@@ -180,13 +184,22 @@ curl() {
         with tempfile.TemporaryDirectory() as directory:
             case = Path(directory); (case / '.dev-pids').mkdir()
             (case / '.dev-pids/system.pid').write_text(str(os.getpid()))
-            script = ('set -eu\nRED= GREEN= YELLOW= NC=\nSTART_SYSTEM_BACKEND=true\n'
+            (case / 'system').mkdir()
+            (case / 'system/module-declaration.json').write_text('{"module_name":"system"}')
+            script = ('set -eu\nRED= GREEN= YELLOW= NC=\nSTART_SYSTEM_BACKEND=true\nEXACT_PROCESS=false\n'
+                      'python3(){ if [ "$1" = scripts/prod/publish-module-declarations.py ]; then '
+                      'echo "$*" >> publisher-calls; else command python3 "$@"; fi; }\n'
                       'check_service_running(){ return 1; }\ncurl(){ printf "%s\\n" "$*" >> requests; return 0; }\n' +
                       self.readiness_helpers() + '\n' + match[-1].group() + '\n' + block)
             environment = dict(os.environ); environment.pop('MAX_WAIT', None)
             result = subprocess.run(['bash', '-ec', script], cwd=case, env=environment, capture_output=True, text=True, timeout=5)
             self.assertEqual(result.returncode, 0, result.stdout+result.stderr)
             self.assertIn('--connect-timeout 60 --max-time 60', (case / 'requests').read_text())
+            self.assertEqual((case / 'publisher-calls').read_text().splitlines(), [
+                'scripts/prod/publish-module-declarations.py --prepare system',
+                'scripts/prod/publish-module-declarations.py --provision system',
+                'scripts/prod/publish-module-declarations.py system',
+            ])
             self.assertIn('System Backend 就绪', result.stdout)
 
     def test_readiness_failure_message_matches_the_recorded_process_state(self):
