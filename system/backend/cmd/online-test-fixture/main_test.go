@@ -2078,19 +2078,37 @@ func TestFeatherCaseRetainsApprovedConsumerAndInitializerPermissions(t *testing.
 	}
 }
 
-func TestDifferenceSourceInitializerHasOnlyPreparationAndApprovalPermissions(t *testing.T) {
-	t.Setenv("ADDP_ONLINE_TOPOLOGY_CASE", "geometry-difference")
+func TestFilePublicationSourceInitializerHasOnlyPreparationAndApprovalPermissions(t *testing.T) {
+	t.Setenv("ADDP_ONLINE_TOPOLOGY_LINEAGE_PERMISSIONS", "0")
 	want := append(slices.Clone(sourceInitializerPermissions), "meta.scan_task.execute", "meta.scan_task.read", "system.develop_file_create_approval.create")
-	got := suiteSourceInitializerPermissions("vector-topology-persistence")
-	if !slices.Equal(got, want) {
-		t.Fatal(got)
+	for _, caseName := range []string{"geometry-difference", "polygon-adjacency"} {
+		t.Run(caseName, func(t *testing.T) {
+			t.Setenv("ADDP_ONLINE_TOPOLOGY_CASE", caseName)
+			got := suiteSourceInitializerPermissions("vector-topology-persistence")
+			if !slices.Equal(got, want) || len(got) != 14 {
+				t.Fatal(got)
+			}
+			consumer, err := suitePermissions("vector-topology-persistence")
+			wantConsumer := []string{
+				"develop.task.read", "develop.task.execute", "develop.data_read.execute", "develop.data_write.execute",
+				"system.execution_authorization.create", "meta.catalog.read", "meta.scan_task.execute", "meta.scan_task.read",
+				"meta.lineage.read", "monitor.execution.read", "manager.data_item.read",
+			}
+			if err != nil || len(consumer) != 11 || !slices.Equal(consumer, wantConsumer) || slices.Contains(consumer, "system.develop_file_create_approval.create") || slices.Contains(consumer, "system.engine_access_grant.create") {
+				t.Fatal(consumer, err)
+			}
+			wantSupplement := []string{"meta.scan_task.execute", "meta.scan_task.read", "system.develop_file_create_approval.create"}
+			if got := sourceInitializerSupplement(want); !slices.Equal(got, wantSupplement) {
+				t.Fatal(got)
+			}
+		})
 	}
-	consumer, err := suitePermissions("vector-topology-persistence")
-	if err != nil || len(consumer) != 11 || slices.Contains(consumer, "system.develop_file_create_approval.create") || slices.Contains(consumer, "system.engine_access_grant.create") {
-		t.Fatal(consumer, err)
-	}
-	t.Setenv("ADDP_ONLINE_TOPOLOGY_CASE", "intersection-overlay")
-	if slices.Contains(suiteSourceInitializerPermissions("vector-topology-persistence"), "system.develop_file_create_approval.create") {
-		t.Fatal("unrelated case expanded")
+	for _, caseName := range []string{"", "full", "intersection-overlay", "polygon-dissolve", "line-nodes", "vertex-extraction", "unknown"} {
+		t.Run("unrelated_"+caseName, func(t *testing.T) {
+			t.Setenv("ADDP_ONLINE_TOPOLOGY_CASE", caseName)
+			if got := suiteSourceInitializerPermissions("vector-topology-persistence"); len(got) != 0 {
+				t.Fatal("unrelated case expanded", got)
+			}
+		})
 	}
 }
