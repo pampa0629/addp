@@ -866,6 +866,7 @@
           "role": "Role",
           "run": "Run",
           "runtime": "Runtime",
+          "module_declaration": "Module declaration",
           "runtime_registry": "Runtime Registry",
           "scan_task": "Metadata Scan Task",
           "search": "Data Search",

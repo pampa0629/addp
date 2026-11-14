@@ -866,6 +866,7 @@
           "role": "角色",
           "run": "运行任务",
           "runtime": "运行时",
+          "module_declaration": "模块声明",
           "runtime_registry": "运行时注册表",
           "scan_task": "元数据扫描任务",
           "search": "数据搜索",

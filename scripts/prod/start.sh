@@ -118,6 +118,7 @@ else
   echo 'Service expectations unavailable; business startup continues' >&2
 fi
 
+# 第二步：System 就绪后由部署入口发布声明
 echo -e "${YELLOW}[2/4] 等待 System 就绪并发布模块声明...${NC}"
 python3 scripts/prod/publish-module-declarations.py --bootstrap-compose "${intent_compose_args[@]}"
 
