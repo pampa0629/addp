@@ -627,3 +627,20 @@ Transfer continuous 弹窗手动刷新前后的窗口结束时刻为 `23:00:24` 
 本机 `.env` 已保留原 17 个进程配置及所有引擎和主机来源，增加 Agent、Copilot、Develop、Graph、Inference、Model、Ontology、Orchestrator、Portal、Workbench 的独立回环端点、准入及 Docker Desktop 转发，预算设为 34。现有 CA 不变，新端点使用独立叶证书。Agent/Copilot 沿既有 Python HTTP 及进程启动时间范围。
 
 北京时间 19:21，用户重启后以本机 Prometheus 只读 mTLS 查询核验：34 个外部目标全部 `up`，包括 27 个进程、6 个引擎和 1 个主机，Security Backend 与 Worker 均正常。新增十个后端各有一个健康目标；按该目标的当前实例身份核对，进程启动时间和 HTTP 采集启动指标均在 45 秒内采样，HTTP 请求计数在最近一分钟各有至少四个样本，八个 Go 后端另有新鲜 CPU 和 RSS 样本。这是本机真实采集复验，页面回归仍以此前的受控浏览器结果计。
+
+
+## observer 旧 ready 交接的零链接竞态修复（2026-11-15）
+
+中央问题 `deployment_observer_ready_private_record_intermittent_32c_20261115` 的原失败保留：[Run 43602511131 / Platform consistency Job 132470124632](https://github.com/pampa0629/addp/actions/runs/43602511131/job/132470124632)，源码 `32c75745ebd155225443716ccf0582aadf9e353b`，push／attempt 1。原日志 2718—2737 行显示 54 项部署回归中 1 项错误：`test_source_environment_change_replaces_owned_observer_but_credentials_do_not` 在 Docker 来源环境变化触发替换时，由 `start_observer` 读取 `observer-ready.json`，经 `read_private_document` 抛出“部署发现运行记录权限或大小无效”。原日志位于 `/tmp/addp-ci-0000-1115-b1t5f8o1/logs/132470124632.log`；后继旧范围通过记录不用于推定本竞态已修复。
+
+根因是上一代 ready 的退役晚于新写入者启动。旧 observer 已确认退出，但旧 ready 仍在；父进程打开旧 ready 后，新 observer 通过既有 NamedTemporaryFile／flush／fsync／os.replace 原子发布本代 ready，旧打开 inode 的 nlink 随之变为 0，严格单链接检查正确拒绝该描述符。原子写实现本已存在，本批不将问题解释为缺少原子写。真实文件交接诊断确认 regular=true、UID 相同、mode=0600、size=45，只有打开的旧 inode 的 nlink=0，路径上的新 inode 则 nlink=1；诊断为 `/tmp/addp-observer-ready-fd-diagnosis.json`。
+
+确定性回归使用现有标准测试私有目录及已取得所有权的临时 observer：在新 child 的实际 ready 发布前设置文件屏障，固定“打开上一代文件→本代原子替换→对旧 fd 做 fstat”的合法时序。旧实现精确重现同一错误并记录 `opened obsolete ready nlink=[0]`，不依赖概率性重复或扩大等待。补充 7 个安全子例验证共享权限、硬链接、超量、FIFO、目录、符号链接及错误 UID 仍被拒绝，且拒绝发生在创建新 child 前。旧实现的红结果为 `/tmp/addp-observer-ready-red-final.log`，没有删除原 54 项断言。
+
+修复 `029e14776064a9a033ae2dd859f44951a0903b33` 仅在已有 observer-control 锁内、需要新建 child 时，先使用原私有读取校验检查并移除旧 ready，再创建新写入者；有旧进程时仍先完成原归属和退出核验。同环境／仅凭据变化的幂等启动仍提前返回，不动当前记录。生产代码增加 4 行（含说明），`read_private_document` 的文件类型、UID、mode、nlink=1、4096 字节、O_NOFOLLOW／O_NONBLOCK 及 JSON 校验原样保留，PID／token／工作区归属、单次 TERM、未确认退出保留记录和原期限未改；没有新锁、重试、吞异常、兼容路线或安全契约放宽。
+
+标准入口在固定提交临时检出中仅带入本批三个文件验证：`make test-deployment-discovery` 通过 56 项（4.828s）与 6 项容器证明（0.024s），日志 `/tmp/addp-observer-ready-green.log`；上层 `make test-business-config` 通过，包含相同部署入口及原其余配置回归，日志 `/tmp/addp-observer-ready-business-config.log`。既有 CI 链为 Platform 的 `make test-platform` → `test-business-config` → `test-deployment-discovery`，无新增入口或依赖，无需修改 Make／workflow 登记。
+
+本次 push 自然触发的 [Run 43620893019 / Platform consistency Job 132526100819](https://github.com/pampa0629/addp/actions/runs/43620893019/job/132526100819) 已 success，event=push、attempt=1、head_sha 精确为 `029e14776064a9a033ae2dd859f44951a0903b33`。原始日志 2375—2376 行实际执行 `make test-platform`；2991—3015 行的上层配置链实际完成 56 项（4.427s）和 6 项（0.023s），均 OK；5923—5924 行明确 Platform consistency 的 status=success、selected=true。完整原日志保留 `/tmp/addp-observer-ready-platform-132526100819.log`，不是仅按摘要、跳过或其他版本通过认定。
+
+本轮仅创建／回收标准测试自有临时进程与目录，没有操作个人当前 observer、开发服务、keepalive 或数据卷，没有重跑任何已有排队 Job 或额外 Hosted。此证据收敛上述 ready 交接故障；不据一次通过外推其他私有文件生命周期或长期运行认证。
