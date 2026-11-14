@@ -40,12 +40,15 @@ class OnlineEngineRegistrationTest(unittest.TestCase):
                     def browser(*args, env, **kwargs):
                         self.assertNotIn('ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN', env)
                         self.assertNotIn('ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN', env)
+                        self.assertNotIn('ADDP_ONLINE_POOL_OPERATOR_USERNAME', env)
+                        self.assertNotIn('ADDP_ONLINE_POOL_OPERATOR_PASSWORD', env)
                         self.assertEqual(json.loads(env['ADDP_ONLINE_NATIVE_PREVIEW_EXPECTATIONS']), expected)
                         report = dict(expected, preview_status=200 if outcome == 'wrong_report' else 403, rows_visible=False)
                         Path(env['ADDP_ONLINE_NATIVE_PREVIEW_REPORT']).write_text(json.dumps(report))
                         return SimpleNamespace(returncode=1 if outcome == 'browser_failure' else 0)
                     with patch.dict(REGISTRATION.os.environ, ADDP_ONLINE_ARTIFACT_DIR=temp,
-                            ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN='preparer', ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN='provisioner'), \
+                            ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN='preparer', ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN='provisioner',
+                            ADDP_ONLINE_POOL_OPERATOR_USERNAME='operator', ADDP_ONLINE_POOL_OPERATOR_PASSWORD='operator-private'), \
                          patch.object(REGISTRATION, 'ExactRecordGrants', return_value=grants) as lifecycle, \
                          patch.object(REGISTRATION.subprocess, 'run', side_effect=browser) as run:
                         operation = lambda: REGISTRATION.verify_native_preview_metadata_only(

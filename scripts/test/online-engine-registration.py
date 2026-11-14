@@ -555,6 +555,8 @@ def verify_native_preview_metadata_only(authorizer, consumer, tenant_id, engine_
         # A browser never receives preparation identities, even in the preparation stage.
         environment.pop('ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN', None)
         environment.pop('ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN', None)
+        environment.pop('ADDP_ONLINE_POOL_OPERATOR_USERNAME', None)
+        environment.pop('ADDP_ONLINE_POOL_OPERATOR_PASSWORD', None)
         result = subprocess.run(['npm', 'exec', '--', 'playwright', 'test',
             'e2e/online/native-preview-authorization.spec.js', '--config=playwright.online.config.js'],
             cwd=root / 'console/frontend', env=environment)

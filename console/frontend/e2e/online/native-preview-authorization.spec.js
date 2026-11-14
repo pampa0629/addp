@@ -7,6 +7,8 @@ test('metadata-only native table stays visible but Manager refuses content', asy
   const expected = JSON.parse(process.env.ADDP_ONLINE_NATIVE_PREVIEW_EXPECTATIONS)
   expect(process.env.ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN).toBeUndefined()
   expect(process.env.ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN).toBeUndefined()
+  expect(process.env.ADDP_ONLINE_POOL_OPERATOR_USERNAME).toBeUndefined()
+  expect(process.env.ADDP_ONLINE_POOL_OPERATOR_PASSWORD).toBeUndefined()
   await page.addInitScript(() => localStorage.setItem('addp-lang', 'zh-cn'))
   const response = page.waitForResponse(response => {
     const url = new URL(response.url())
