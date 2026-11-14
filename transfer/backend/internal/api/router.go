@@ -112,10 +112,11 @@ func SetupRouter(
 
 	taskDefinitions := protected.Group("/task-definitions")
 	{
-		taskDefinitions.GET("", permission(transferauthorization.PermissionTransferTaskRead), taskHandler.ListTasks)                                        // 获取任务列表
-		taskDefinitions.POST("", permission(transferauthorization.PermissionTransferTaskCreate), taskHandler.CreateTask)                                    // 创建任务
-		taskDefinitions.GET("/statistics", permission(transferauthorization.PermissionTransferTaskRead), taskHandler.GetTaskStatistics)                     // 获取任务统计
-		taskDefinitions.GET("/:id", permission(transferauthorization.PermissionTransferTaskRead), taskHandler.GetTask)                                      // 获取任务详情
+		taskDefinitions.GET("", permission(transferauthorization.PermissionTransferTaskRead), taskHandler.ListTasks)                    // 获取任务列表
+		taskDefinitions.POST("", permission(transferauthorization.PermissionTransferTaskCreate), taskHandler.CreateTask)                // 创建任务
+		taskDefinitions.GET("/statistics", permission(transferauthorization.PermissionTransferTaskRead), taskHandler.GetTaskStatistics) // 获取任务统计
+		taskDefinitions.GET("/:id", permission(transferauthorization.PermissionTransferTaskRead), taskHandler.GetTask)                  // 获取任务详情
+		taskDefinitions.GET("/:id/cdc-metric-history", permission(transferauthorization.PermissionTransferTaskRead), taskHandler.GetCaptureMetricHistory)
 		taskDefinitions.PUT("/:id", permission(transferauthorization.PermissionTransferTaskUpdate), taskHandler.UpdateTask)                                 // 更新任务
 		taskDefinitions.DELETE("/:id", permission(transferauthorization.PermissionTransferTaskDelete), taskHandler.DeleteTask)                              // 删除任务
 		taskDefinitions.POST("/:id/start", permission(transferauthorization.PermissionTransferTaskExecute), taskHandler.StartTask)                          // 启动任务

@@ -70,6 +70,18 @@
             <div v-for="field in ['lag_offsets', 'committed_offset', 'earliest_offset', 'latest_offset']" :key="field"><dt>{{ t(`monitor.cdc.bufferFields.${field}`) }}</dt><dd :data-testid="`cdc-buffer-${field}`">{{ metric(buffer[field]) }}</dd></div>
           </dl>
         </el-card>
+        <el-card v-if="task.capture" shadow="never" class="progress-card" data-testid="cdc-task-history">
+          <template #header><div class="toolbar">
+            <h3>{{ t('monitor.cdc.taskHistory.title') }}</h3><el-tag>{{ t('monitor.cdc.taskHistory.generation', { generation: task.capture.generation }) }}</el-tag>
+            <el-select :model-value="state.historyMetric" :aria-label="t('monitor.http.metric')" @update:model-value="task_metric => navigate({ ...state.query, task_metric })"><el-option v-for="metric in historyMetrics" :key="metric" :value="metric" :label="t(`monitor.cdc.taskHistory.metrics.${metric}`)" /></el-select>
+            <el-select :model-value="state.historyRange" :aria-label="t('monitor.http.range')" @update:model-value="task_range => navigate({ ...state.query, task_range })"><el-option v-for="range in Object.keys(cdcTaskHistoryRanges)" :key="range" :value="range" :label="t(`monitor.cdc.taskHistory.ranges.${range}`)" /></el-select>
+          </div></template>
+          <p class="hint">{{ t('monitor.cdc.taskHistory.hint') }}</p>
+          <el-alert v-if="historyError" :title="t(historyError)" type="warning" :closable="false" data-testid="cdc-task-history-error" />
+          <p v-else-if="!historyHasValues" class="hint" data-testid="cdc-task-history-empty">{{ t('monitor.cdc.taskHistory.empty') }}</p>
+          <p v-if="historyPrecisionLimited" class="hint" data-testid="cdc-task-history-precision">{{ t('monitor.cdc.taskHistory.precision') }}</p>
+          <template v-if="historyChart && !historyError"><p class="hint">{{ t('monitor.cdc.taskHistory.window', { start: date(history.start), end: date(history.end), step: history.step_seconds }) }}</p><ChartRenderer :rows="historyChart.rows" :config="historyChart.config" zoomable data-testid="cdc-task-history-chart" @invalid="history = null; historyError = 'monitor.resources.errors.invalidResponse'" /></template>
+        </el-card>
         <el-alert v-if="executionError" :title="t(executionError)" type="warning" :closable="false" data-testid="cdc-task-execution-error" />
         <el-card v-if="execution" shadow="never" class="progress-card" data-testid="cdc-task-progress">
           <template #header><div class="toolbar"><h3>{{ t('monitor.cdc.latestProgress') }}</h3><el-button link type="primary" @click="openExecution">{{ t('monitor.cdc.openExecution') }}</el-button></div></template>
@@ -93,6 +105,7 @@
 </template>
 <script setup>
 import { computed, ref, watch, onBeforeUnmount } from 'vue'
+import ChartRenderer from '../../../../common-frontend/chart/src/ChartRenderer.vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { buildContinuousPartitionRows, getContinuousDiagnostics, openConsoleRoute } from '@common-ui'
@@ -103,14 +116,26 @@ import { useAuthStore } from '../store/auth'
 import { cdcTasksAPI } from '../api/cdcTasks'
 import { getExecutionByExecutionID } from '../api/monitor'
 import { cdcView, cdcEndpoints, resolveCDCTaskRoute, validateCDCTask, validateCDCTaskPage, validateCDCTaskExecution, cdcObservationState } from '../utils/cdcTasks'
+import { cdcTaskHistoryParams, validateCDCTaskHistory, cdcTaskHistoryValue, cdcTaskHistoryPrecisionLimited } from '../utils/cdcTaskHistory'
+import { cdcTaskHistoryRanges, cdcTaskHistoryMetrics } from '../utils/cdcTasks'
 import { resourceErrorKey } from '../utils/nodeResources'
 import { navigateMonitorRoute } from '../utils/moduleNavigation'
-import { formatBytes } from '../../../../common-frontend/basic/src/utils/formatters.js'
+import { formatBytes, scaleByteValue } from '../../../../common-frontend/basic/src/utils/formatters.js'
 import { executionDetailLocation } from '../utils/executionNavigation'
 const auth = useAuthStore(), route = useRoute(), router = useRouter(), { t, te, locale } = useI18n()
 const state = computed(() => resolveCDCTaskRoute(route.query))
 const canRead = computed(() => auth.contextType === 'tenant' && auth.authContext?.principal?.type === 'user' && !auth.authContext?.delegation && auth.hasPermission('transfer.task.read') && auth.hasPermission('monitor.execution.read'))
 const task = ref(null), execution = ref(null), choices = ref([]), total = ref(0), loading = ref(false), error = ref(''), executionError = ref(''), blocked = ref(false), visible = ref(!document.hidden)
+const history = ref(null), historyError = ref('')
+const historyMetrics = computed(() => task.value?.capture?.source_type === 'postgresql' ? cdcTaskHistoryMetrics : ['lag_offsets'])
+const historyHasValues = computed(() => history.value?.points.some(point => cdcTaskHistoryValue(point, state.value.historyMetric) !== null))
+const historyPrecisionLimited = computed(() => history.value?.points.some(point => cdcTaskHistoryPrecisionLimited(point, state.value.historyMetric)))
+const historyChart = computed(() => {
+ if (!history.value) return null
+ const metric = state.value.historyMetric, values = history.value.points.map(point => cdcTaskHistoryValue(point, metric))
+ const scale = metric.endsWith('_bytes') ? scaleByteValue(Math.max(0, ...values.map(value => value ?? 0))) : null
+ return { rows: history.value.points.map((point,index) => ({ at: point.timestamp, value: values[index] === null ? null : values[index] / (scale?.divisor || 1) })), config: { chart_type: 'line', dimension: 'at', measures: ['value'], field_presentations: [{ field: 'at', label: t('monitor.cdc.taskHistory.interval'), temporal_format: 'datetime' }, { field: 'value', label: t(`monitor.cdc.taskHistory.metrics.${metric}`), unit: scale?.unit || (metric === 'delay_seconds' ? 's' : ''), precision: metric === 'delay_seconds' ? 3 : 0 }] } }
+})
 const endpoints = computed(() => task.value ? cdcEndpoints(task.value) : null)
 const diagnostics = computed(() => getContinuousDiagnostics(execution.value?.metadata))
 const partitions = computed(() => buildContinuousPartitionRows(execution.value?.metadata))
@@ -134,7 +159,7 @@ const bufferState=computed(()=>{
 })
 const requests = createLatestRequestScope()
 let context = ''
-const cycle = createAutoRefresh({ interval: () => state.value.refresh, enabled: () => canRead.value && !blocked.value && !loading.value, refresh: () => reload(true), pause: () => { requests.invalidate(); loading.value = false }, visibilityChanged: value => { visible.value = value } })
+const cycle = createAutoRefresh({ interval: () => state.value.refresh, enabled: () => canRead.value && !blocked.value && !loading.value, refresh: () => reload(true), pause: () => { requests.invalidate(); loading.value = false; history.value = null }, visibilityChanged: value => { visible.value = value } })
 const refreshStatus = computed(() => state.value.refresh === 'off' ? 'manual' : blocked.value ? 'stopped' : !visible.value ? 'paused' : 'automatic')
 const date = value => value ? new Date(value).toLocaleString(locale.value) : '—'
 const metric = value => value === null || value === undefined ? '—' : String(value)
@@ -142,15 +167,15 @@ function taskState(value) { const key = `monitor.cdc.taskStates.${value}`; retur
 function navigate(query) { navigateMonitorRoute(router, { path: '/cdc-resources', query: resolveCDCTaskRoute(query).query }, { history: 'replace' }) }
 function openTask(id) { openConsoleRoute(id ? `/transfer/tasks/${id}/detail` : '/transfer/tasks', { history: 'push' }) }
 function openExecution() { const location = executionDetailLocation(execution.value); if (location) navigateMonitorRoute(router, location, { history: 'push' }) }
-function clear() { task.value = null; execution.value = null; choices.value = []; total.value = 0 }
+function clear() { history.value = null; historyError.value = ''; task.value = null; execution.value = null; choices.value = []; total.value = 0 }
 function failure(cause) { if ([401, 403, 404].includes(cause.response?.status)) { blocked.value = true; clear() }; return resourceErrorKey(cause) }
 async function reload(automatic = false) {
   cycle.stop()
   const ticket = requests.invalidate()
   if (!automatic) blocked.value = false
-  const next = JSON.stringify([auth.authContext, state.value.taskID, state.value.page])
+  const next = JSON.stringify([auth.authContext, state.value.taskID, state.value.page, state.value.historyRange])
   if (next !== context) { context = next; clear() }
-  error.value = ''; executionError.value = ''; loading.value = false
+  error.value = ''; executionError.value = ''; historyError.value = ''; loading.value = false
   if (!canRead.value) { clear(); return }
   loading.value = true
   try {
@@ -160,8 +185,22 @@ async function reload(automatic = false) {
     if (!state.value.taskID) { task.value = null; execution.value = null; return }
     const selected = validateCDCTask(await requests.request(config => cdcTasksAPI.get(state.value.taskID, config)), state.value.taskID)
     if (!requests.current(ticket)) return
+    if (selected.capture?.source_type !== 'postgresql' && state.value.historyMetric !== 'lag_offsets') { navigate({ ...state.value.query, task_metric: undefined }); return }
+    if (history.value?.generation !== selected.capture?.generation) history.value = null
     task.value = selected; execution.value = null
     if (!choices.value.some(item => item.id === selected.id)) choices.value = [selected, ...choices.value]
+    if (selected.capture) {
+      const params = cdcTaskHistoryParams(selected.capture.generation, state.value.historyRange)
+      try {
+        const observed = await requests.request(config => cdcTasksAPI.history(selected.id, params, config))
+        if (!requests.current(ticket)) return
+        history.value = validateCDCTaskHistory(observed, selected.id, params)
+      } catch (cause) {
+        if (!requests.current(ticket)) return
+        history.value = null; historyError.value = failure(cause)
+        if (blocked.value) { error.value = historyError.value; return }
+      }
+    }
     if (selected.last_execution_id) {
       try {
         const observed = await requests.request(config => getExecutionByExecutionID(selected.last_execution_id, config))
@@ -198,6 +237,7 @@ h3, h4 { margin: 0 0 8px; }
 dl { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
 dt { color: var(--addp-text-secondary); font-size: 13px; } dd { margin: 8px 0 0; font-size: 20px; overflow-wrap: anywhere; }
 .progress-card { margin-top: 16px; }
+.progress-card .el-select { width: 210px; max-width: 100%; }
 .progress-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px; }
 .partition { border: 1px solid var(--addp-border-color); padding: 12px; border-radius: 6px; }
 @media (max-width: 900px) { .chain-grid { grid-template-columns: 1fr; } }

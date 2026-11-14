@@ -20,6 +20,19 @@ export async function cdcTaskBackend(page,{locale='zh-cn',permissions=['transfer
    else if(path.endsWith('/monitor/webhook-destinations') || path.endsWith('/monitor/email-destinations')) body=[]
    else if(path.endsWith('/monitor/alerts')) body={data:alerts,total:alerts.length,page:1,page_size:20}
    else if(path.endsWith('/transfer/task-definitions')) body={items:mode==='empty'?[]:[task(7),task(8)],total:mode==='empty'?0:2,page:Number(url.searchParams.get('page')),page_size:20}
+   else if(path.endsWith('/cdc-metric-history')) {
+    if(mode==='history-failed'){status=503;body={error_code:'cdc_metric_history_unavailable'}}
+    else if(mode==='history-denied'){status=403;body={error_code:'permission_denied'}}
+    else {
+     const start=Date.parse(url.searchParams.get('start')),end=Date.parse(url.searchParams.get('end')),step=Math.ceil((end-start)/60000/1000)*60
+     const points=Array.from({length:Math.ceil((end-start)/1000/step)},(_,i)=>({timestamp:new Date(start+i*step*1000).toISOString(),recorded_at:null,consumption_state:'',buffer_observation:null,postgresql_observation:null,delay_observation:null}))
+     if(mode==='history-values'||mode==='history-large') {
+      const at=new Date(start+5000).toISOString(),expires=new Date(start+35000).toISOString()
+      Object.assign(points[0],{recorded_at:at,consumption_state:'paused',buffer_observation:{status:'available',sampled_at:at,expires_at:expires,earliest_offset:'0',latest_offset:mode==='history-large'?'9007199254740993':'10',committed_offset:'0',lag_offsets:mode==='history-large'?'9007199254740993':'10',recovery_state:'available'}})
+     }
+     body={task_id:Number(path.split('/').at(-2)),generation:Number(url.searchParams.get('generation')),start:new Date(start).toISOString(),end:new Date(end).toISOString(),queried_at:new Date().toISOString(),step_seconds:step,points}
+    }
+   }
    else if(path.includes('/transfer/task-definitions/')){body=task(Number(path.split('/').at(-1)));if(mode.startsWith('source-')){
  const at=new Date().toISOString(),expires=new Date(Date.now()+30000).toISOString()
  const status=({'source-missing':'missing','source-identity':'identity_mismatch','source-failed':'unavailable'})[mode]||'available'

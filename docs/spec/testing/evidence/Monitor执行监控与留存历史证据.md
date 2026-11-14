@@ -392,3 +392,21 @@ System 测试 helper 创建同租户和跨租户身份后，遗漏了 `writeEnvi
 [Run 43590178112／Develop Job 132433054640](https://github.com/pampa0629/addp/actions/runs/43590178112/job/132433054640) 的源码与修复完整 SHA 一致，Job已实际 success；原始日志核对 `make test-develop-frontend`、320 passed（13.6分钟）、构建成功（18.22秒）、`selected=true / success`，不是路径跳过。日志保存于 `/tmp/addp-develop-tabs-top-linux.log`，本地原失败及完整门禁分别为 `/tmp/addp-develop-tabs-top-red.log`、`/tmp/addp-develop-tabs-top-gate.log`。本轮只记录受控T3及构建，不升级为正式用户真实服务验收。
 
 2026-11-14 文档对账将上述结果、`2d5e63d43` 两项独立检查及Transfer后继19项闭环归回[专题当前清单](../../../next/ADDP任务执行管理统一收口专题.md#六剩余工作与共享环境)。[导航真实验收补充](../../../next/ADDP任务执行管理统一收口专题.md#九最近执行与同次回跳的真实验收补充方案待确认未实施运行)仅为待确认方案；本轮未实施导航样本、启动产品部署／真实窗口、重启个人服务或触发Hosted，Graph高级恢复继续暂缓，其他会话改动保留。
+
+
+### 七天 CDC 任务历史：本地持久化与受控页面（2026-11-15）
+
+用户已确认 Transfer 复用现有后台采样，每分钟留一份安全任务历史、保留七天，Monitor 沿原任务读取权限查询；本批没有新增源端探针、权限、采集来源或个人任务。当前实现沿[正式契约](../../tasks/Transfer数据库CDC.md#cdc-任务指标历史2026-11-15-已确认)：schema version 15 与 `022_create_capture_metric_history.sql` 建立历史表，按 Tenant＋全局任务身份＋generation＋分钟去重，后台每轮最多删除 1000 条过期历史；读取独立执行七天过滤，未结束分钟不进入窗口。每个显示区间选择最后一次真实采样，最多 1000 点，不以均值／峰值或旧 execution 拼造历史。Stop／删除不复活历史读取资格，不操作源槽或外部捕获资源。
+
+本地最小充分门禁：
+
+- `make test-module MODULE=transfer GO_ONLY=1` 通过；共享工作区与隔离验证 checkout 分别运行，隔离版本只复制本轮 Transfer 文件及标准 PG 入口，不带入其他会话的 Common 改动。T1 覆盖时间窗与点数预算、参数拒绝、控制请求不写历史、无活跃任务仍清理，以及历史写入失败不停止原采样。
+- `make test-transfer-postgres TRANSFER_POSTGRES_TEST_ARGS="--source-root /tmp/addp-cdc-backlog-validation"` 通过，28 个顶层集成用例无跳过。入口先核验实际 `addp-postgres` 映射 25432，测试仅用 `addp_test`；新增 `TestIntegrationPostgresCDCMetricHistory` 实际执行并通过，核对 SQL 迁移重复应用、分钟去重、暂停记录、9007199254740993 的精确字串、空档／过期样本、代次／Tenant／全局任务身份隔离、终态不再发布、每批 1000 条删除上限、后续清零及删除定义后的 404。没有创建 Connector、业务源表或逻辑槽。
+- `bash scripts/swagger/gen-swagger.sh transfer` 与 `bash scripts/swagger/check-route-coverage.sh transfer` 通过，45 个公开路由方法覆盖一致。唯一新增路由为 `GET /task-definitions/{id}/cdc-metric-history`，沿原 Tenant Context、任务读取及默认委托拒绝，不新增 Monitor 后台中转或机器权限。
+- `make test-monitor-frontend MONITOR_FRONTEND_BROWSER_ARGS='e2e/cdc-task-history.spec.js e2e/cdc-tasks.spec.js e2e/cdc-resources.spec.js e2e/cdc-risk-alerts.spec.js'` 通过：156 项 T1、29 项 CDC 浏览器及生产构建。核对当前代次、URL 窗口、7 天查询、缺样断点、整数超出图形精度提示、刷新保留图形、失败清值、撤权清除任务与趋势、中英文及 390px 布局。复用共享 ChartRenderer，采样历史独立于最近 execution；同主体刷新保留图表及缩放，代次变化先清旧值。
+- `make test-t2-ci-registration` 在同一隔离 checkout 通过（87＋10 项测试及完整登记比较）；既有 Transfer PostgreSQL、Monitor 前端和 Hosted suite 路径均已登记，仅扩展原 PG 用例选择器，没有新增入口或改变 workflow。
+- `make test-transfer-continuous-online-runner` 通过：141 项 Python 断言及既有 Node／Shell／System fixture 检查。原 Hosted 场景新增读取同一任务代次的安全历史网格、实际高积压后归零、WAL 与捕获延迟样本的断言；缺少恢复、错任务／代次、私有字段及伪造空档均拒绝。没有增加故障、权限或总预算。
+
+首次前端全量尝试因新增用例误用既有标签名而失败，修正标签后又定位到 Element Select 内部只读 input 被标签遮挡；用例改为点击用户实际可点的选择框，不使用 force 或修改共享样式。首轮全量在保留失败收据后中止（88 通过、1 失败、1 中断、775 未运行），不记为全量通过；上述 CDC 专项是修订后实际全部通过的范围。日志分别保留于 `/tmp/addp-cdc-history-monitor-frontend.log`、`/tmp/addp-cdc-history-monitor-cdc.log` 和最终 `...-monitor-cdc-final.log`。后端、PG、Swagger 与 Runner 收据为 `/tmp/addp-cdc-history-transfer-isolated-go.log`、`/tmp/addp-cdc-history-transfer-postgres-final.log`、`/tmp/addp-cdc-history-swagger-final.log`、`/tmp/addp-cdc-history-swagger-coverage-final.log` 和 `/tmp/addp-cdc-history-runner-final.log`。
+
+本批新增历史断言尚未实际运行 Hosted，当前个人运行进程也尚未核对已加载 schema version 15；旧 `668187692` 的告警 Hosted 通过不追认为历史趋势验收。需由用户通过标准入口重启 Transfer 后开始产生真实历史，再核对固定新源码的真实页面／Hosted。七天自然留存、长期容量和生产 T5 仍无独立证据。只读 Infra 状态核对仍有 task46／task58 两个原槽及全局身份活跃槽；本轮未修改个人任务、槽、Connector 或已有来源。

@@ -293,6 +293,18 @@ Transfer Capture 后台按现有 MonitorInterval 对当前可观测 generation �
 
 任务持续观测只由 Transfer 拥有，Monitor 不读取私表或自行重算。已结束 execution 的诊断保持历史语义，页面独立展示“当前消息缓冲”与“最近执行进度”。新增字段由模块 schema 版本及现有 AutoMigrate 管理；旧 execution 诊断不迁移为任务快照，不保留双轨当前指标。验证沿 Transfer Go T1、标准 PostgreSQL T2、Monitor 前端 T1／CDC T3 和 Swagger 生成／覆盖门禁；真实暂停与恢复的事件联验单独认定。
 
+#### CDC 任务指标历史（2026-11-15 已确认）
+
+Transfer 沿现有 Capture 后台采样，每个 UTC 分钟保存首次完成的一份安全历史，保留 7 天；不增加源端探针，不从控制请求采样，不回写已结束 execution，也不改变告警的当前观测及持续窗口。持久身份为 Tenant＋任务不可变 apply_identity＋generation＋分钟，任务数字 ID 仅用于当前定义的关联读取。只保存积压／位点、PostgreSQL WAL 字节及槽风险、捕获延迟与事件活动的白名单投影和各自 sampled_at／expires_at，以及当时的 desired_state；不保存内部 Connector、Topic、Group、槽名、连接或错误原文。各项采样独立，历史不宣称同一物理时刻的原子采样。
+
+后台完成一轮后只读当前 generation 并写历史；终态／清理中的 generation 不新增历史，缺样或过期在趋势中明确呈现为空值，暂停任务继续记录捕获与积压。写历史失败只报告观测失败，不影响业务控制、当前事实或告警。后台每轮有界删除最多 1000 条已超过 7 天的历史，查询同时硬性过滤保留边界；无活跃任务时也清理。Stop／删除不复用旧样本，历史仅保留至到期；公开入口沿当前任务定义的原读取权限，定义不存在或不属当前 Tenant 返回 404，不因历史存在恢复已删除定义的读取资格。
+
+唯一入口 `GET /task-definitions/{id}/cdc-metric-history?generation=<代次>&start=<RFC3339>&end=<RFC3339>`，沿 Tenant Context 和 `transfer.task.read`，不增加权限或机器读取。仅真实 continuous CDC 定义可读；generation 必须明确为正整数，窗口最长 7 天且不可查询未来，响应窗口归一到完整 UTC 分钟（当前未结束分钟不纳入）。返回 task_id、generation、start、end、step_seconds、queried_at 和 points。服务端自动选取整数分钟步长，最多 1000 点；每个区间选择最后一份真实历史，是区间末次采样而非均值／峰值。各指标独立按原样本有效期判定，以精确十进制字符串返回字节／offset 距离，延迟用秒；缺样或采样间隙输出 null，不前值填充或补零。长窗口的区间取样可能遗漏区间内尖峰，不能用于重新评估告警；告警仍消费原实时事实。不同 generation 不拼接。
+
+Monitor 在任务链路复用共享 ChartRenderer 显示积压、捕获延迟及 WAL 保留趋势，窗口为近 1 小时／6 小时／24 小时／7 天；图形仅使用可安全表达的数值，精确整数超出 JavaScript 安全范围时显示断点并说明，不静默舍入。任务／Context／权限切换、隐藏和请求失败沿既有失效及取消机制清值。页面首次上线前没有历史，不追补旧 execution 或旧样本。
+
+门禁沿 Transfer Go T1、标准 PostgreSQL T2、Swagger 生成及覆盖、Monitor 前端 T1／受控浏览器与构建；新增真实链路验收继续扩展原 transfer-continuous-events，不把受控页面、数据库测试或现有告警 Hosted 通过当作历史趋势的真实验收。
+
 #### 捕获线程与源连接健康
 
 - capture generation 的 `running` 必须同时满足 Kafka Connect connector/task 为 `RUNNING`，以及使用该 connector 实际源数据库凭据执行的最小只读探针成功。

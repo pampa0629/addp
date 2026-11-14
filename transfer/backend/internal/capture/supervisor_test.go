@@ -57,6 +57,9 @@ func TestCaptureSupervisorStartPauseResumeStopLifecycle(t *testing.T) {
 	if connect.resumeCalls != 1 {
 		t.Fatalf("resume calls = %d", connect.resumeCalls)
 	}
+	if store.historyCalls != 0 || store.pruneCalls != 0 {
+		t.Fatal("controls published periodic history")
+	}
 	if err := supervisor.Stop(context.Background(), task); err != nil {
 		t.Fatal(err)
 	}
@@ -401,12 +404,25 @@ func TestCaptureSupervisorOwnsOracleSchemaHistoryTopic(t *testing.T) {
 }
 
 type fakeCaptureStore struct {
+	historyCalls     int
+	pruneCalls       int
+	historyErr       error
+	observable       []models.CaptureResource
 	reservationErr   error
 	reservationCalls int
 	committed        *int64
 	committedErr     error
 	resource         *models.CaptureResource
 	terminal         bool
+}
+
+func (f *fakeCaptureStore) RecordMetricHistory(context.Context, uint, time.Time) error {
+	f.historyCalls++
+	return f.historyErr
+}
+func (f *fakeCaptureStore) PruneMetricHistory(context.Context, time.Time) error {
+	f.pruneCalls++
+	return nil
 }
 
 func (f *fakeCaptureStore) BeginGeneration(_ context.Context, identity repository.CaptureIdentity) (*models.CaptureResource, error) {
@@ -442,7 +458,7 @@ func (f *fakeCaptureStore) GetLatest(context.Context, uint, uint) (*models.Captu
 }
 
 func (f *fakeCaptureStore) ListObservable(context.Context, int) ([]models.CaptureResource, error) {
-	return nil, nil
+	return f.observable, nil
 }
 
 func (f *fakeCaptureStore) Update(_ context.Context, _ uint, expected uint64, fields map[string]interface{}) error {
@@ -688,4 +704,22 @@ func (f *fakeConnectControl) Delay(context.Context, string) (*CaptureDelay, erro
 		return f.delay, nil
 	}
 	return &CaptureDelay{Status: "no_sample"}, nil
+}
+
+func TestCaptureHistoryIsBackgroundOnlyAndFailureDoesNotStopSampling(t *testing.T) {
+	store := &fakeCaptureStore{resource: &models.CaptureResource{ID: 1, TaskID: 3, TenantID: 2, Generation: 1, SourceType: models.CaptureSourcePostgreSQL, Status: models.CaptureStatusRunning, ResourceVersion: 1}, historyErr: errors.New("history unavailable")}
+	supervisor, err := NewSupervisor(store, fakePlanResolver{plan: &CapturePlan{SourceType: models.CaptureSourcePostgreSQL}}, &fakeConnectControl{state: "RUNNING"}, &fakeTopicControl{}, &fakeSourceResources{}, SupervisorConfig{TopicRetention: time.Hour, TopicReplication: 1, ProvisioningTimeout: time.Second, StatusPollInterval: time.Millisecond, MonitorInterval: time.Second}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = supervisor.refreshAll(context.Background()); err != nil || store.pruneCalls != 1 || store.historyCalls != 0 {
+		t.Fatal("idle pruning missing", err)
+	}
+	store.observable = []models.CaptureResource{*store.resource}
+	if err = supervisor.refreshAll(context.Background()); err != nil || store.pruneCalls != 2 || store.historyCalls != 1 {
+		t.Fatal("history failure interrupted sampling", err)
+	}
+	if store.resource.Status != models.CaptureStatusRunning {
+		t.Fatal("history failure changed capture health")
+	}
 }

@@ -355,6 +355,7 @@ func transferSchemaModels() []interface{} {
 		&models.RuntimeSession{},
 		&models.CleanupOperation{},
 		&models.CaptureResource{},
+		&models.CaptureMetricHistory{},
 		&models.PostgreSQLCaptureResource{},
 		&models.MySQLCaptureResource{},
 		&models.OracleCaptureResource{},

@@ -2103,6 +2103,111 @@ const docTemplate = `{
                 ]
             }
         },
+        "/task-definitions/{id}/cdc-metric-history": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "当前租户按任务及明确代次读取最近七天的安全指标。窗口按整分钟归一，每区间最后一次历史采样，最多1000点；缺样为空，不用于告警重算。| Read safe metrics for a task generation in the current tenant over the last seven days. Minute-aligned intervals contain their last retained sample, at most 1000 points; gaps are null and do not re-evaluate alerts.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "任务管理 | Task Management"
+                ],
+                "summary": "读取 CDC 任务指标历史 | Read CDC task metric history",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "任务 ID | Task ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "minimum": 1,
+                        "type": "integer",
+                        "description": "捕获代次 | Capture generation",
+                        "name": "generation",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "RFC3339 开始时间 | RFC3339 start time",
+                        "name": "start",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "RFC3339 结束时间 | RFC3339 end time",
+                        "name": "end",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_transfer_internal_models.CaptureMetricHistoryResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "transfer.task.read"
+                ]
+            }
+        },
         "/task-definitions/{id}/dead-letters": {
             "get": {
                 "security": [
@@ -4217,6 +4322,58 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "state": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_addp_transfer_internal_models.CaptureMetricHistoryResponse": {
+            "type": "object",
+            "properties": {
+                "end": {
+                    "type": "string"
+                },
+                "generation": {
+                    "type": "integer"
+                },
+                "points": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_transfer_internal_models.CaptureMetricPoint"
+                    }
+                },
+                "queried_at": {
+                    "type": "string"
+                },
+                "start": {
+                    "type": "string"
+                },
+                "step_seconds": {
+                    "type": "integer"
+                },
+                "task_id": {
+                    "type": "integer"
+                }
+            }
+        },
+        "github_com_addp_transfer_internal_models.CaptureMetricPoint": {
+            "type": "object",
+            "properties": {
+                "buffer_observation": {
+                    "$ref": "#/definitions/github_com_addp_transfer_internal_models.CaptureBufferObservation"
+                },
+                "consumption_state": {
+                    "type": "string"
+                },
+                "delay_observation": {
+                    "$ref": "#/definitions/github_com_addp_transfer_internal_models.CaptureDelayObservation"
+                },
+                "postgresql_observation": {
+                    "$ref": "#/definitions/github_com_addp_transfer_internal_models.CapturePostgreSQLObservation"
+                },
+                "recorded_at": {
+                    "type": "string"
+                },
+                "timestamp": {
                     "type": "string"
                 }
             }

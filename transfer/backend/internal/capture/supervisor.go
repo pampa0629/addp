@@ -24,6 +24,8 @@ type ResourceStore interface {
 	ListObservable(ctx context.Context, limit int) ([]models.CaptureResource, error)
 	Update(ctx context.Context, id uint, expectedVersion uint64, fields map[string]interface{}) error
 	HasStopInitiatedGeneration(ctx context.Context, taskID, tenantID uint) (bool, error)
+	RecordMetricHistory(context.Context, uint, time.Time) error
+	PruneMetricHistory(context.Context, time.Time) error
 }
 
 type SupervisorConfig struct {
@@ -527,6 +529,9 @@ func (s *Supervisor) Run(ctx context.Context) error {
 }
 
 func (s *Supervisor) refreshAll(ctx context.Context) error {
+	if err := s.store.PruneMetricHistory(ctx, time.Now().UTC()); err != nil {
+		s.logger.Warn("capture metric history pruning failed", "error", err)
+	}
 	resources, err := s.store.ListObservable(ctx, 100)
 	if err != nil {
 		return err
@@ -540,6 +545,9 @@ func (s *Supervisor) refreshAll(ctx context.Context) error {
 		}
 		if _, err := s.Refresh(ctx, &resources[i]); err != nil {
 			s.logger.Warn("capture connector is unhealthy", "task_id", resources[i].TaskID, "connector", resources[i].ConnectorName, "error", err)
+		}
+		if err := s.store.RecordMetricHistory(ctx, resources[i].ID, time.Now().UTC()); err != nil {
+			s.logger.Warn("capture metric history publication failed", "task_id", resources[i].TaskID, "error", err)
 		}
 	}
 	return nil

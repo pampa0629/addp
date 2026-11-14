@@ -2,6 +2,8 @@ import { autoRefreshOptions } from '../../../../common-frontend/basic/src/utils/
 import { parseLocator } from '../../../../common-frontend/basic/src/types/resourceLocator.js'
 import { isTargetUUID } from './monitoringTargets.js'
 
+export const cdcTaskHistoryRanges = { '1h': 3600, '6h': 21600, '24h': 86400, '7d': 604800 }
+export const cdcTaskHistoryMetrics = ['lag_offsets', 'delay_seconds', 'retained_wal_bytes', 'unacknowledged_wal_bytes', 'safe_wal_size_bytes']
 const invalid = () => { throw new Error('invalid_resource_response') }
 const positive = value => Number.isSafeInteger(value) && value > 0
 export function cdcView(query, context) {
@@ -11,11 +13,15 @@ export function resolveCDCTaskRoute(input = {}) {
   const page = typeof input.page === 'string' && /^[1-9]\d{0,5}$/.test(input.page) ? Number(input.page) : 1
   const taskID = typeof input.task_id === 'string' && /^[1-9]\d*$/.test(input.task_id) && positive(Number(input.task_id)) ? input.task_id : ''
   const refresh = autoRefreshOptions.includes(input.refresh) ? input.refresh : '15'
+  const historyRange = Object.hasOwn(cdcTaskHistoryRanges, input.task_range) ? input.task_range : '1h'
+  const historyMetric = cdcTaskHistoryMetrics.includes(input.task_metric) ? input.task_metric : 'lag_offsets'
   const query = { view: 'tasks' }
   if (page !== 1) query.page = String(page)
   if (taskID) query.task_id = taskID
   if (refresh !== '15') query.refresh = refresh
-  return { page, taskID, refresh, query, changed: JSON.stringify(Object.entries(input).sort()) !== JSON.stringify(Object.entries(query).sort()) }
+  if (historyRange !== '1h') query.task_range = historyRange
+  if (historyMetric !== 'lag_offsets') query.task_metric = historyMetric
+  return { page, taskID, refresh, historyRange, historyMetric, query, changed: JSON.stringify(Object.entries(input).sort()) !== JSON.stringify(Object.entries(query).sort()) }
 }
 export function cdcEndpoints(task) {
   const source = parseLocator(task.config.source.locator)

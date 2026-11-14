@@ -675,6 +675,40 @@ definitions:
       state:
         type: string
     type: object
+  github_com_addp_transfer_internal_models.CaptureMetricHistoryResponse:
+    properties:
+      end:
+        type: string
+      generation:
+        type: integer
+      points:
+        items:
+          $ref: '#/definitions/github_com_addp_transfer_internal_models.CaptureMetricPoint'
+        type: array
+      queried_at:
+        type: string
+      start:
+        type: string
+      step_seconds:
+        type: integer
+      task_id:
+        type: integer
+    type: object
+  github_com_addp_transfer_internal_models.CaptureMetricPoint:
+    properties:
+      buffer_observation:
+        $ref: '#/definitions/github_com_addp_transfer_internal_models.CaptureBufferObservation'
+      consumption_state:
+        type: string
+      delay_observation:
+        $ref: '#/definitions/github_com_addp_transfer_internal_models.CaptureDelayObservation'
+      postgresql_observation:
+        $ref: '#/definitions/github_com_addp_transfer_internal_models.CapturePostgreSQLObservation'
+      recorded_at:
+        type: string
+      timestamp:
+        type: string
+    type: object
   github_com_addp_transfer_internal_models.CapturePostgreSQLObservation:
     properties:
       expires_at:
@@ -3983,6 +4017,79 @@ paths:
       - transfer.task.execute
       x-addp-required-permissions:
       - transfer.task.update
+  /task-definitions/{id}/cdc-metric-history:
+    get:
+      description: 当前租户按任务及明确代次读取最近七天的安全指标。窗口按整分钟归一，每区间最后一次历史采样，最多1000点；缺样为空，不用于告警重算。|
+        Read safe metrics for a task generation in the current tenant over the last
+        seven days. Minute-aligned intervals contain their last retained sample, at
+        most 1000 points; gaps are null and do not re-evaluate alerts.
+      parameters:
+      - description: 任务 ID | Task ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: 捕获代次 | Capture generation
+        in: query
+        minimum: 1
+        name: generation
+        required: true
+        type: integer
+      - description: RFC3339 开始时间 | RFC3339 start time
+        in: query
+        name: start
+        required: true
+        type: string
+      - description: RFC3339 结束时间 | RFC3339 end time
+        in: query
+        name: end
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_addp_transfer_internal_models.CaptureMetricHistoryResponse'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: Forbidden
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "503":
+          description: Service Unavailable
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 读取 CDC 任务指标历史 | Read CDC task metric history
+      tags:
+      - 任务管理 | Task Management
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - transfer.task.read
   /task-definitions/{id}/dead-letters:
     get:
       description: 分页查询当前租户 owner task 的安全 DLQ 控制索引。只返回源位置、稳定错误、execution 与观测审计事实，不返回

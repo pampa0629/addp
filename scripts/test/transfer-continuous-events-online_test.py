@@ -1638,5 +1638,53 @@ class CDCRiskAcceptanceTest(unittest.TestCase):
             self.assertEqual(M.cdc_risk_alerts(client,7,1),{'cdc_source_recovery_lost':item})
 
 
+
+
+class CDCMetricHistoryTests(unittest.TestCase):
+    def verify_history(self, mutate=None):
+        def request(method, path, expected):
+            q = M.urllib.parse.parse_qs(M.urllib.parse.urlparse(path).query)
+            start = M.datetime.fromisoformat(q['start'][0])
+            points = []
+            for index in range(60):
+                at = start + timedelta(minutes=index)
+                point = {'timestamp': at.isoformat(), 'recorded_at': None, 'consumption_state': '',
+                         'buffer_observation': None, 'postgresql_observation': None, 'delay_observation': None}
+                if index < 2:
+                    sample = (at + timedelta(seconds=5)).isoformat()
+                    expires = (at + timedelta(seconds=35)).isoformat()
+                    point.update(recorded_at=sample, consumption_state='paused' if index == 0 else 'running',
+                        buffer_observation={'status':'available','sampled_at':sample,'expires_at':expires,
+                            'initial_snapshot_completed':True,'earliest_offset':'0','latest_offset':'300' if index==0 else '0',
+                            'committed_offset':'0','lag_offsets':'300' if index==0 else '0','recovery_state':'available'},
+                        postgresql_observation={'status':'available','sampled_at':sample,'expires_at':expires,
+                            'slot_active':True,'wal_status':'reserved','retained_wal_bytes':'100','unacknowledged_wal_bytes':'0',
+                            'safe_wal_size_bytes':None,'wal_keep_unlimited':True,'risk_state':'reserved'},
+                        delay_observation={'status':'available','sampled_at':sample,'expires_at':expires,
+                            'connected':True,'delay_seconds':.1,'event_count':'100','last_event_age_seconds':0})
+                points.append(point)
+            value = {'task_id':7,'generation':1,'start':q['start'][0],'end':q['end'][0],
+                     'step_seconds':60,'queried_at':q['end'][0],'points':points}
+            if mutate:
+                mutate(value)
+            return SimpleNamespace(payload=value)
+        return M.verify_cdc_metric_history(SimpleNamespace(request=request),7,1)
+
+    def test_history_requires_real_safe_task_samples_and_backlog_recovery(self):
+        value = self.verify_history()
+        self.assertEqual(value['result'],'passed')
+        self.assertEqual(value['recorded_samples'],2)
+
+    def test_history_rejects_wrong_identity_private_fields_missing_recovery_and_fabricated_gaps(self):
+        mutations = [lambda v:v.update(generation=2), lambda v:v.update(task_id=8),
+            lambda v:v['points'][0]['buffer_observation'].update(topic='private'),
+            lambda v:v['points'][1]['buffer_observation'].update(lag_offsets='300'),
+            lambda v:v['points'][2].update(consumption_state='paused'),
+            lambda v:v['points'][0].update(timestamp=v['end'])]
+        for mutate in mutations:
+            with self.subTest(mutate=mutate), self.assertRaises(M.SuiteError):
+                self.verify_history(mutate)
+
+
 if __name__ == '__main__':
     unittest.main()

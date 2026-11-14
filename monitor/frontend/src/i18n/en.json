@@ -1678,6 +1678,28 @@
         "disconnected": "Disconnected",
         "delay": "Event capture delay",
         "delayHint": "Time from the latest source event to Connector processing, not idle age or target end-to-end latency. Missing samples stay empty; negative values reflect clock skew."
+      },
+      "taskHistory": {
+        "title": "Task metric history",
+        "generation": "Generation {generation}",
+        "hint": "Retained for 7 days, one sample per minute. Longer windows show the last sample in each interval and may omit spikes. Missing samples appear as gaps.",
+        "empty": "No valid history in this window. Recording starts when this feature is enabled.",
+        "precision": "Some integers exceed the chart’s exact numeric range and appear as gaps.",
+        "metrics": {
+          "lag_offsets": "Consumer backlog (offset distance)",
+          "delay_seconds": "Capture delay (seconds)",
+          "retained_wal_bytes": "Retained WAL",
+          "unacknowledged_wal_bytes": "Unacknowledged WAL",
+          "safe_wal_size_bytes": "Safe WAL headroom"
+        },
+        "ranges": {
+          "1h": "Last hour",
+          "6h": "Last 6 hours",
+          "24h": "Last 24 hours",
+          "7d": "Last 7 days"
+        },
+        "interval": "Interval start",
+        "window": "{start} to {end}, display interval {step} seconds"
       }
     },
     "engines": {

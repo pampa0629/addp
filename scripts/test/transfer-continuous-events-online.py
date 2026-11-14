@@ -1,7 +1,7 @@
 """Continuous Worker and safe tenant execution events on disposable Hosted T4."""
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from importlib import import_module
 import json
 import hashlib
@@ -20,6 +20,7 @@ import threading
 import time
 import uuid
 import urllib.error
+import urllib.parse
 
 API = import_module('scripts.utils.online-api')
 FAULTS = import_module('scripts.test.continuous-execution-faults')
@@ -1145,6 +1146,54 @@ def cdc_native_observation(binding):
     return pg, delay['value']
 
 
+def verify_cdc_metric_history(client, task_id, generation):
+    end = datetime.now(timezone.utc).replace(second=0, microsecond=0)
+    start = end - timedelta(hours=1)
+    query = urllib.parse.urlencode({'generation': generation, 'start': start.isoformat(), 'end': end.isoformat()})
+    value = client.request('GET', f'{OWNER}/task-definitions/{task_id}/cdc-metric-history?{query}', (200,)).payload
+    require(type(value) is dict and set(value) == {'task_id', 'generation', 'start', 'end', 'step_seconds', 'queried_at', 'points'}
+            and value['task_id'] == task_id and value['generation'] == generation and value['step_seconds'] == 60
+            and datetime.fromisoformat(value['start'].replace('Z', '+00:00')) == start
+            and datetime.fromisoformat(value['end'].replace('Z', '+00:00')) == end
+            and type(value['points']) is list and len(value['points']) == 60, 'CDC task metric history identity/window invalid')
+    recorded, lag, pg_samples, delay_samples = [], [], [], []
+    fields = {'timestamp', 'recorded_at', 'consumption_state', 'buffer_observation', 'postgresql_observation', 'delay_observation'}
+    observation_fields = {
+        'buffer_observation': {'initial_snapshot_completed', 'status', 'sampled_at', 'expires_at', 'earliest_offset', 'latest_offset', 'committed_offset', 'lag_offsets', 'recovery_state'},
+        'postgresql_observation': {'status', 'sampled_at', 'expires_at', 'slot_active', 'wal_status', 'retained_wal_bytes', 'unacknowledged_wal_bytes', 'safe_wal_size_bytes', 'wal_keep_unlimited', 'risk_state'},
+        'delay_observation': {'status', 'sampled_at', 'expires_at', 'connected', 'delay_seconds', 'event_count', 'last_event_age_seconds'}}
+    for index, point in enumerate(value['points']):
+        require(type(point) is dict and set(point) == fields
+                and datetime.fromisoformat(point['timestamp'].replace('Z', '+00:00')) == start + timedelta(minutes=index),
+                'CDC history interval or safe fields invalid')
+        if point['recorded_at'] is None:
+            require(point['consumption_state'] == '' and all(point[key] is None for key in observation_fields),
+                    'CDC history gap fabricated a sample')
+            continue
+        at = datetime.fromisoformat(point['recorded_at'].replace('Z', '+00:00'))
+        require(start + timedelta(minutes=index) <= at < start + timedelta(minutes=index+1)
+                and point['consumption_state'] in {'running', 'paused', 'stopped'}, 'CDC history actual sample invalid')
+        recorded.append(at)
+        for key, allowed in observation_fields.items():
+            observation = point[key]
+            require(observation is None or type(observation) is dict and set(observation) == allowed,
+                    'CDC history exposed non-public fields')
+            if observation is None or observation.get('status') != 'available' or cdc_sample_time(observation, at) is None:
+                continue
+            if key == 'buffer_observation' and observation['lag_offsets'] is not None:
+                require(type(observation['lag_offsets']) is str and re.fullmatch(r'0|[1-9][0-9]*', observation['lag_offsets']),
+                        'CDC history offset distance lost exactness')
+                lag.append((at, int(observation['lag_offsets'])))
+            elif key == 'postgresql_observation' and observation['retained_wal_bytes'] is not None:
+                pg_samples.append(at)
+            elif key == 'delay_observation' and observation['delay_seconds'] is not None:
+                delay_samples.append(at)
+    high = [at for at, count in lag if count > int(CDC_BACKLOG_THRESHOLD)]
+    require(high and any(at > min(high) and count == 0 for at, count in lag)
+            and pg_samples and delay_samples, 'CDC history lacks real backlog growth/recovery, WAL or capture delay')
+    return {'result': 'passed', 'recorded_samples': len(recorded), 'backlog_high_then_zero': True, 'response': value}
+
+
 def cdc_sample_time(value, now):
     try:
         sample = datetime.fromisoformat(value['sampled_at'].replace('Z', '+00:00'))
@@ -2193,6 +2242,8 @@ def run_suite(client, denied, foreign, peer, reader, admin, login, tenant, run_i
         phase('cdc_risk')
         cdc_paused = verify_cdc_risk_closure(client, tenant, cdc_task, pg, cdc_resumed, name, run_id,
                                             mutate, create, launch, report, checkpoint)
+        report['cdc_task_metric_history'] = verify_cdc_metric_history(client, cdc_task, report['cdc_risk_closure']['generation'])
+        report['checks'].append('cdc_task_metric_history_safe_generation_backlog_growth_recovery_wal_delay')
         report['checks'].append('cdc_performance_warning_trigger_missing_hold_recovery_signed_delivery')
         report['checks'].append('cdc_optional_backlog_300s_pause_missing_hold_60s_recovery_signed_delivery')
         report['checks'].append('cdc_loss_alert_trigger_unknown_ack_close_signed_delivery_and_task_rebuild')

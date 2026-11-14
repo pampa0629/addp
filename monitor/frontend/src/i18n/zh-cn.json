@@ -1678,6 +1678,28 @@
         "disconnected": "未连接",
         "delay": "事件捕获延迟",
         "delayHint": "最近事件从源端发生到 Connector 处理的时间差，不是空闲时长或目标端到端延迟。无样本不补零；负值反映时钟偏差。"
+      },
+      "taskHistory": {
+        "title": "任务指标历史",
+        "generation": "代次 {generation}",
+        "hint": "保留最近 7 天，每分钟一份。长窗口显示区间最后一次采样，可能遗漏区间内尖峰；缺样显示断点。",
+        "empty": "当前窗口暂无有效历史样本；历史从本功能启用后开始记录。",
+        "precision": "部分整数超过图表的精确表达范围，已显示为断点。",
+        "metrics": {
+          "lag_offsets": "消费积压（offset 距离）",
+          "delay_seconds": "捕获延迟（秒）",
+          "retained_wal_bytes": "槽保留 WAL",
+          "unacknowledged_wal_bytes": "未确认 WAL",
+          "safe_wal_size_bytes": "WAL 安全余量"
+        },
+        "ranges": {
+          "1h": "近 1 小时",
+          "6h": "近 6 小时",
+          "24h": "近 24 小时",
+          "7d": "近 7 天"
+        },
+        "interval": "区间开始时间",
+        "window": "{start} 至 {end}，显示间隔 {step} 秒"
       }
     },
     "engines": {
