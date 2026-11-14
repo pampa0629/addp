@@ -11,6 +11,7 @@
 | 配置维度与通用同步约束 | [Transfer 同步执行契约](#transfer-同步执行契约) |
 | bounded Worker 领取、Scheduler 定时触发与在途任务 | [bounded 领取与定时触发](#bounded-领取与定时触发) |
 | continuous 配置、目标提交、位点与观测规则 | [continuous 主契约](#transfer-continuous-sync-v1-契约) |
+| 企业治理失联、进程退出与同步会话交接 | [continuous 领取与会话交接](#continuous-领取与会话交接) |
 | 业务 Kafka 来源、显式映射、目标账本、CAS 与位置恢复 | [来源配置与目标提交](#continuous-来源配置与目标提交) |
 | 分区位置、窗口估算、retention／checkpoint 与安全样本 | [采样与健康诊断](#continuous-采样与健康诊断) |
 | 通用规则目标、失败判定、模式切换与统一评估 | [通用告警规则](#通用执行告警规则与统一评估) |
@@ -60,6 +61,20 @@ Transfer `sync` 的稳定语义由以下正交维度表达：
 ## Transfer continuous sync v1 契约
 
 continuous execution 表示一次长期运行的 runtime session，不是把 bounded executor 放进无限循环。正式实现必须使用 Transfer 独立 continuous worker/supervisor；`transfer-bounded-worker` 只通过 PostgreSQL claim 承担 bounded execution。
+
+### continuous 领取与会话交接
+
+本节约定待实施的企业试点。本地和 Compose 的 continuous supervisor 继续以本进程的 System 注册状态作为领取资格。当前实现在填充空闲槽的循环入口检查一次。企业试点要求**每次发起 `ClaimNext` 前**检查本进程的 `continuous_sync` 职责、确认截止时间和退出状态，覆盖首次启动、用户恢复、自动恢复及同一轮的第二个空闲槽。已经发出的领取以数据库提交结果确定归属。已领取会话的下一次 poll 属于同一会话。资格来源与撤销规则见[控制面契约](../api/健康与平台控制面.md#transfer-后台工作资格试点)。
+
+| 事件 | 新会话与在途会话的处理 |
+| --- | --- |
+| 明确撤销领取资格，或治理链路中断 | 收到撤销即停止发起领取。单纯失联可用上次确认至截止时刻，到期即停领。缓存重发和重连不能延期。已领取会话在任务仍期望运行、运行租约有效且业务条件满足时，可继续 poll、提交目标事务和 checkpoint。仅治理失联不改变 `desired_state`、不创建 recovery，也不增加失败计数。 |
+| 进程收到 SIGTERM 或正常退出 | 先关闭领取入口，迟到确认不能重开。取消各 runner，停止 poll，完成或放弃当前在途批次，等待源和目标会话关闭后才确认实际停止。仍持有效租约时释放 owner，以 `cancelled + worker_shutdown` 结束旧 execution。若任务仍可恢复，在收尾事务中产生唯一的 pending recovery，退出不增加连续失败次数。 |
+| 进程崩溃或运行租约失效 | 崩溃不能产生实际停止确认。存活的 runner 续租失败时停止推进，失去所有权后不得提交 checkpoint 或终态。Transfer 按数据库时间确认旧租约过期后，对仍期望运行且可恢复的任务，将旧 execution 收敛为失败，按 `lease_expired` 创建恢复执行。过期核对由合格 Worker 的 `ClaimNext` 驱动；所有 Worker 都已停领时，数据库可暂留旧 running 记录，过期租约仍然无效。 |
+
+**交接位置。** 每个 task 同时仅有一个有效 runtime lease，绑定 execution、owner、截止时刻及 fencing token。接替者取得新 execution UUID 和递增的 token，沿用原任务的 `apply_identity`，从每分区 `transfer.sync_states` 已提交的 `next_offset` 继续。业务行与目标应用账本先在同一目标事务中提交，成功后才允许凭当前 token 和 state version 做 CAS 推进 checkpoint。两次提交之间中断时，接替者重读，目标账本吸收已应用记录并防止旧批次倒写。超出源端保留窗口须明确报错。完整规则见[恢复窗口](#显式起点与恢复窗口)和[目标提交与 Infra CAS](#共享目标提交与-infra-cas)。
+
+**恢复领取。** 创建 pending 与实际开跑分别取证。实际领取须同时满足当前进程资格有效、任务仍期望运行、旧租约已释放或过期、`recovery_not_before` 已到及既有任务准入条件。治理重连不能跳过退避或清除熔断。用户 Pause、Stop 和待处理的 schema 变更继续按原规则阻止自动恢复。PostgreSQL CDC 的进程换代沿用原 capture generation，遵循[捕获位点与消费位点](Transfer数据库CDC.md)及[不可逆停止规则](Transfer数据库CDC.md#恢复与不可逆停止)，不触发用户 Stop 的资源清理。正式验收见[continuous 治理与位点恢复试点](../testing/scenarios/同步与引擎消费.md#continuous-治理与位点恢复试点)。
 
 ### continuous 来源配置与目标提交
 
@@ -498,8 +513,8 @@ API 沿现有 alert-rules 的 CRUD，增加 backlog_threshold 和只读 CDC 评�
 #### 恢复触发与执行身份
 
 - 正常总运行时长不触发 timeout。
-- source poll、target apply、position commit 分别使用操作超时；heartbeat 丢失或 lease 过期以 `failed` 结束当前 execution，并在任务 desired state 仍为 running 时创建新 execution 恢复。
-- worker 正常退出时当前 execution 以 `cancelled + stop_reason=worker_shutdown` 结束，由新 worker 自动创建 recovery execution。
+- source poll、target apply、position commit 分别使用操作超时。运行租约因未能续租而过期时，Transfer 按数据库中的过期事实收敛旧 execution，对仍期望运行且可恢复的任务创建新 execution。治理确认到期仅关闭新领取入口。
+- Worker 正常退出并持有效租约收尾时，当前 execution 以 `cancelled + stop_reason=worker_shutdown` 结束。任务仍可恢复时由同一收尾事务创建 pending recovery，合格 Worker 随后领取。过期核对遇到尚缺 recovery 的合法退出记录时，沿同一恢复规则处理。
 - lease 过期恢复同样创建新 execution，并记录 `recovery_reason=lease_expired`。自动恢复继承上一 execution 的 `trigger_type`，通过公共字段 `retry_of_execution_id` 关联上一 execution，Transfer 恢复审计另在 `metadata.recovered_from_execution_id` 记录同一 UUID。旧 execution 保持原终态。 [公共执行记录字段](执行记录与租约.md#执行记录规范)
 
 #### 恢复领取与排除条件
