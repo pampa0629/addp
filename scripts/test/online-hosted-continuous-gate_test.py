@@ -72,6 +72,7 @@ class HostedContinuousGateTest(unittest.TestCase):
               [ "$ADDP_ONLINE_DLQ_REDPANDA_ID" = "$(printf '%064d' 1)" ] &&
               [ "$ADDP_ONLINE_SCAN_POSTGRES_ID" = "$(printf '%064d' 1)" ] &&
               [ "$ADDP_ONLINE_CONTINUOUS_KAFKA_ENGINE_ID" = 18 ] &&
+              [ "$ADDP_ONLINE_TEST_TIMEOUT_SECONDS" = 1500 ] &&
               [ "$TRANSFER_CONTINUOUS_LEASE_DURATION" = 8s ] &&
               [ "$MONITOR_WEBHOOK_ALLOW_PRIVATE_NETWORKS" = true ] &&
               [ "$TRANSFER_CONTINUOUS_HEARTBEAT_INTERVAL" = 2s ] &&

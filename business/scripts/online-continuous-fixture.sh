@@ -130,6 +130,22 @@ SQL
   risk-mutate-cdc)
     psql_owned -c "UPDATE public.continuous_source SET label=label WHERE id IN (1,3);" >/dev/null
     ;;
+  performance-target-lock|performance-target-unlock|performance-fill|performance-clear)
+    [ "${ONLINE_SUITE:-}" = transfer-continuous-events ] || fail 'CDC performance suite required'
+    owned "$pg"
+    case "$action" in
+      performance-target-lock)
+        # A private stdin session holds only the owned target table lock. EOF rolls back.
+        docker exec -i -e PGAPPNAME=addp-continuous-performance-lock "$pg" \
+          psql -X -qAt -U postgres -d continuous_fixture -v ON_ERROR_STOP=1 ;;
+      performance-target-unlock)
+        psql_owned -q -c "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname=current_database() AND usename='postgres' AND application_name='addp-continuous-performance-lock' AND pid<>pg_backend_pid();" >/dev/null ;;
+      performance-fill)
+        psql_owned -q -c "SET statement_timeout='15s'; INSERT INTO public.continuous_source(id,label) SELECT i,repeat('business-value-sentinel-performance',200) FROM generate_series(100001,160000) i;" >/dev/null ;;
+      performance-clear)
+        psql_owned -q -c "SET statement_timeout='15s'; DELETE FROM public.continuous_source WHERE id BETWEEN 100001 AND 160000;" >/dev/null ;;
+    esac
+    ;;
   risk-pause-source|risk-unpause-source)
     [ "${ONLINE_SUITE:-}" = transfer-continuous-events ] || fail 'CDC risk suite required'
     owned "$pg"

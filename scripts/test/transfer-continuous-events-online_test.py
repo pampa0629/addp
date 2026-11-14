@@ -1184,7 +1184,7 @@ class CDCRiskAcceptanceTest(unittest.TestCase):
              patch.object(M,'cdc_capture_binding',return_value={}), \
              patch.object(M,'CDCRiskReceiver',return_value=receiver), \
              patch.object(M,'cdc_risk_alerts',return_value={}), patch.object(M,'wait_status'), \
-             patch.object(M,'verify_capture_failure'), \
+             patch.object(M,'verify_capture_failure'), patch.object(M,'verify_cdc_performance'), \
              patch.object(M,'physical',side_effect=M.SuiteError('injected mutation failure')), \
              self.assertRaisesRegex(M.SuiteError,'injected mutation failure'):
             M.verify_cdc_risk_closure(client,2,7,10,UUID,'owned','run-1',
@@ -1210,6 +1210,57 @@ class CDCRiskAcceptanceTest(unittest.TestCase):
         M.quiesce_task_for_cleanup(actor, 9, 'cdc-rebuilt', 'owned-rebuild', {'desired_state':'paused'}, mutate)
         mutate.assert_called_once_with(actor, M.OWNER+'/task-definitions/9/stop',
                                        {'confirmed':True,'confirmation_text':'owned-rebuild'})
+
+    def test_performance_preparation_failure_deletes_rules_and_keeps_original_cpu(self):
+        calls = []
+        def request(method, path, *args, **kwargs):
+            calls.append((method, path))
+            return SimpleNamespace(payload=[])
+        client = SimpleNamespace(request=request)
+        definitions = []
+        def mutate(actor, path, body, status):
+            definitions.append(body)
+            return {'id': len(definitions)}
+        proof = {}
+        def command(args, **kwargs):
+            self.assertEqual(args[:3], ['docker', 'inspect', '--format'])
+            return SimpleNamespace(stdout=b'2000000000\n')
+        with patch.object(M,'cdc_risk_container',side_effect=['owned-connect','owned-broker']), \
+             patch.object(M,'until',return_value={'initial_snapshot_completed':True,'lag_offsets':'0'}), \
+             patch.object(M.subprocess,'run',side_effect=command), \
+             patch.object(M.subprocess,'Popen',side_effect=OSError('private process failure')), \
+             self.assertRaises(OSError):
+            M.verify_cdc_performance(client,7,1,10,{'connector':'owned'},9,mutate,None,None,proof,lambda _:None)
+        self.assertEqual({v['rule_type'] for v in definitions}, M.CDC_PERFORMANCE_CODES)
+        self.assertTrue(all(v['severity']=='warning' and v['enabled'] is True and
+                            v['routes']==[{'channel':'webhook','destination_id':9}] for v in definitions))
+        self.assertEqual(proof['performance']['cleanup'],'passed')
+        self.assertEqual([p for method,p in calls if method=='DELETE'],[M.RULES+'/1',M.RULES+'/2'])
+        self.assertNotEqual(proof['performance']['result'],'passed')
+
+    def test_performance_faults_reject_personal_environment_before_actions(self):
+        with patch.dict(os.environ,{},clear=True), patch.object(M.subprocess,'run') as run, \
+             self.assertRaises(Exception):
+            M.verify_cdc_performance(None,7,1,10,{},9,None,None,None,{},lambda _:None)
+        run.assert_not_called()
+
+    def test_real_signed_performance_open_and_close_are_warning_receipts(self):
+        import urllib.request
+        for code in sorted(M.CDC_PERFORMANCE_CODES):
+            receiver=M.CDCRiskReceiver(7)
+            try:
+                for index,kind in enumerate(('opened','resolved')):
+                    body=self.payload(receiver,kind)
+                    body['delivery_id']=str(M.uuid.uuid4());body['event']['event_id']=str(M.uuid.uuid4())
+                    body['event']['to_severity']='warning'
+                    body['incident'].update(signal_code=code,severity='warning')
+                    raw,headers=self.signed(receiver,body)
+                    with urllib.request.urlopen(urllib.request.Request(receiver.url,data=raw,headers=headers),timeout=5) as response:
+                        self.assertEqual(response.status,202)
+                self.assertEqual({v['event_type'] for v in receiver.snapshot()},{'opened','resolved'})
+                self.assertEqual({v['signal_code'] for v in receiver.snapshot()},{code})
+            finally:
+                receiver.close()
 
     def payload(self, receiver, kind='opened'):
         return {'schema_version': 'monitor.alert.webhook/v1', 'delivery_id': UUID,

@@ -12,6 +12,7 @@ import os
 from pathlib import Path
 import re
 import signal
+import select
 import subprocess
 import sys
 import tempfile
@@ -35,6 +36,7 @@ REQUIRED = {'transfer.task.create', 'transfer.task.delete', 'transfer.task.execu
             'transfer.task.update', 'monitor.execution.read', 'meta.catalog.read',
             'meta.scan_task.execute', 'meta.scan_task.read', 'system.execution_authorization.create',
             'monitor.alert_incident.read', 'monitor.alert_incident.update',
+            'monitor.alert_rule.read', 'monitor.alert_rule.create', 'monitor.alert_rule.delete',
             'monitor.notification_destination.create', 'monitor.notification_destination.read',
             'monitor.notification_destination.delete', 'monitor.notification_delivery.read'}
 PRIVATE = {'execution_config', 'authorization_ref', 'execution_authorization_id', 'parameters',
@@ -56,7 +58,7 @@ OWNER_METADATA = set('initial_authorization metadata_scan lineage_facts continuo
 PHYSICAL_ACTIONS = {'produce-initial', 'produce-after-recovery', 'produce-invalid', 'mutate-cdc', 'alter-cdc', 'verify-cdc-altered',
                     'verify-kafka-initial', 'verify-kafka-recovered', 'verify-cdc-initial',
                     'verify-cdc-mutated', 'verify-cdc-rebuilt', 'verify-scheduled', 'verify-clean', 'risk-mutate-cdc',
-                    'risk-pause-source', 'risk-unpause-source'}
+                    'risk-pause-source', 'risk-unpause-source', 'performance-fill', 'performance-clear', 'performance-target-unlock'}
 OWNER_OUTAGE_CHECKS = ['previously_readable', 'event_transport_failure_isolated', 'event_transport_recovered',
                        'real_owner_503', 'old_details_tree_steps_events_cleared', 'old_list_and_total_cleared',
                        'recovered_authorized_reads', 'no_samples']
@@ -272,6 +274,8 @@ def until(operation, timeout=120):
 
 
 CDC_RISK_CODES = {'cdc_source_recovery_lost', 'cdc_buffer_recovery_lost'}
+CDC_PERFORMANCE_CODES = {'cdc_consumer_stalled', 'cdc_capture_delayed'}
+RULES = '/api/v1/monitor/alert-rules'
 ALERTS = '/api/v1/monitor/alerts'
 DESTINATIONS = '/api/v1/monitor/webhook-destinations'
 DELIVERIES = '/api/v1/monitor/webhook-deliveries'
@@ -344,11 +348,11 @@ class CDCRiskReceiver:
                                   'severity', 'status', 'opened_at', 'resolved_at'}, 'webhook incident fields invalid')
         require(event['to_severity'] == incident['severity'], 'webhook event severity differs from incident')
         assert_safe(body)
-        if incident['signal_code'] not in CDC_RISK_CODES | {'cdc_capture_failed'}:
+        if incident['signal_code'] not in CDC_RISK_CODES | CDC_PERFORMANCE_CODES | {'cdc_capture_failed'}:
             return  # The same tenant may also emit ordinary continuous-task alerts.
         require(incident['module'] == 'transfer' and incident['task_type'] == 'sync'
                 and incident['source_task_id'] == str(self.task_id)
-                and incident['severity'] == ('warning' if incident['signal_code'] == 'cdc_capture_failed' else 'critical')
+                and incident['severity'] == ('warning' if incident['signal_code'] in CDC_PERFORMANCE_CODES | {'cdc_capture_failed'} else 'critical')
                 and type(incident['id']) is int and incident['id'] > 0, 'webhook risk identity mismatch')
         require(incident['status'] == ('open' if event['type'] == 'opened' else 'resolved'),
                 'webhook risk transition mismatch')
@@ -382,7 +386,7 @@ def cdc_risk_alerts(client, task_id, generation, *, codes=CDC_RISK_CODES):
         assert_safe(item)
         require(item.get('tenant_id') == int(os.environ['ADDP_ONLINE_TEST_TENANT_ID'])
                 and item.get('module') == 'transfer' and item.get('task_type') == 'sync'
-                and item.get('severity') == ('warning' if item.get('signal_code') == 'cdc_capture_failed' else 'critical')
+                and item.get('severity') == ('warning' if item.get('signal_code') in CDC_PERFORMANCE_CODES | {'cdc_capture_failed'} else 'critical')
                 and item.get('details', {}).get('generation') == str(generation),
                 'risk alert binding invalid')
         code = item['signal_code']
@@ -520,6 +524,233 @@ def verify_capture_failure(client, task_id, generation, binding, mutate, deliver
             raise SuiteError('capture fault cleanup failed')
 
 
+def verify_cdc_performance(client, task_id, generation, engine_id, binding, destination_id,
+                           mutate, delivered, receiver, proof, stage):
+    """Real bounded workload and native faults, exclusively on this Hosted deployment."""
+    connect = cdc_risk_container('ADDP_ONLINE_CDC_CONNECT_ID', 'kafka-connect')
+    broker = cdc_risk_container('ADDP_ONLINE_DLQ_REDPANDA_ID', 'redpanda')
+    evidence = proof['performance'] = {'result': 'failed', 'trigger_seconds': 180,
+                                     'source_rows': 60000, 'throttled_nano_cpus': 25000000}
+    rules, paused, lock = {}, set(), None
+    source_dirty = throttled = connector_paused = False
+    original_cpu = None
+    samples = []
+
+    def docker(*args):
+        return subprocess.run(['docker', *args], check=True, capture_output=True, timeout=15).stdout.decode().strip()
+
+    def control(action):
+        docker('exec', connect, 'curl', '-fsS', '--max-time', '10', '-X', 'PUT',
+               'http://127.0.0.1:8083/connectors/' + binding['connector'] + '/' + action)
+
+    def rule_rows():
+        rows = client.request('GET', RULES, (200,), response_type=list).payload
+        require(isinstance(rows, list), 'performance rule inventory invalid')
+        return {r['rule_type']: r for r in rows if r.get('id') in rules.values()}
+
+    def sample():
+        task = client.request('GET', f'{OWNER}/task-definitions/{task_id}', (200,)).payload
+        capture = task.get('capture') or {}
+        require(capture.get('generation') == generation, 'performance fault changed generation')
+        value = {k: capture.get(k) for k in ('buffer_observation', 'delay_observation')}
+        assert_safe(value)
+        return value
+
+    def incidents(status):
+        values = cdc_risk_alerts(client, task_id, generation, codes=CDC_PERFORMANCE_CODES)
+        return values if set(values) == CDC_PERFORMANCE_CODES and all(v['status'] == status for v in values.values()) else None
+
+    def unlock():
+        if lock is None:
+            return
+        if lock.poll() is None:
+            try:
+                lock.stdin.write(b'ROLLBACK;\n\\q\n')
+                lock.stdin.flush()
+                lock.stdin.close()
+                lock.wait(timeout=10)
+            except (OSError, subprocess.TimeoutExpired):
+                require(physical('performance-target-unlock'), 'owned target lock release failed')
+                lock.wait(timeout=10)
+        require(lock.poll() is not None, 'owned lock client survived cleanup')
+
+    try:
+        stage('performance_baseline')
+        def initialized():
+            current = sample()['buffer_observation'] or {}
+            return current if current.get('status') == 'available' and current.get('initial_snapshot_completed') is True and current.get('lag_offsets') == '0' else None
+        baseline = until(initialized)
+        evidence['baseline'] = baseline
+        for code in sorted(CDC_PERFORMANCE_CODES):
+            row = mutate(client, RULES, {'name': f'cdc-performance-{task_id}-{code}',
+                'module': 'transfer', 'task_type': 'sync', 'source_task_id': str(task_id),
+                'rule_type': code, 'severity': 'warning', 'enabled': True,
+                'routes': [{'channel': 'webhook', 'destination_id': destination_id}]}, (201,))
+            rules[code] = API.require_positive_int(row, 'id')
+        evidence['rule_ids'] = rules.copy()
+        original_cpu = int(docker('inspect', '--format', '{{.HostConfig.NanoCpus}}', connect))
+        require(original_cpu >= 0, 'invalid owned Connect CPU quota')
+        lock = subprocess.Popen(['bash', 'business/scripts/online-continuous-fixture.sh', 'performance-target-lock'],
+            cwd=ROOT, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+        lock.stdin.write(b"BEGIN;\nSET LOCAL lock_timeout='3s';\nLOCK TABLE public.continuous_cdc_target IN ACCESS EXCLUSIVE MODE;\n\\echo ADDP_CDC_PERFORMANCE_LOCKED\n")
+        lock.stdin.flush()
+        require(select.select([lock.stdout], [], [], 10)[0]
+                and lock.stdout.readline().strip() == b'ADDP_CDC_PERFORMANCE_LOCKED', 'owned target lock not established')
+        connector_paused = True
+        control('pause')
+        throttled = True
+        docker('update', '--cpus', '0.025', connect)
+        source_dirty = True
+        require(physical('performance-fill'), 'bounded performance workload failed')
+        evidence['workload_committed_at'] = datetime.now(timezone.utc).isoformat()
+        stage('performance_wal_wait')
+        # Create actual source age before resuming its real streaming reader.
+        deadline = time.monotonic() + 75
+        while time.monotonic() < deadline:
+            require(not cdc_risk_alerts(client, task_id, generation, codes=CDC_PERFORMANCE_CODES),
+                    'performance warning opened before its 180-second evidence window')
+            time.sleep(2)
+        control('resume')
+        connector_paused = False
+        stage('performance_trigger')
+        def opened():
+            current = sample()
+            delay = current['delay_observation'] or {}
+            if delay.get('sampled_at') and (not samples or samples[-1]['delay_observation'].get('sampled_at') != delay['sampled_at']):
+                require(len(samples) < 48, 'performance evidence exceeded sample budget')
+                samples.append(current)
+                evidence['samples'] = samples
+            return incidents('open')
+        active = until(opened, timeout=450)
+        windows = rule_rows()
+        for code, incident in active.items():
+            window = windows[code]['cdc_evaluation']
+            since = datetime.fromisoformat(window['trigger_since'].replace('Z', '+00:00'))
+            at = datetime.fromisoformat(incident['details']['sampled_at'].replace('Z', '+00:00'))
+            require(incident['severity'] == 'warning' and incident['details']['trigger_seconds'] == 180
+                    and window['active'] and (at - since).total_seconds() >= 180,
+                    'performance warning lacks its real sustained window')
+        delayed = [r['delay_observation'] for r in samples if r['delay_observation']
+                   and r['delay_observation'].get('delay_seconds') is not None
+                   and r['delay_observation']['delay_seconds'] > 60]
+        require(len(delayed) >= 2 and int(delayed[-1]['event_count']) > int(delayed[0]['event_count']),
+                'delay warning lacked actual streaming event activity')
+        evidence['opened_windows'] = {k: v['cdc_evaluation'] for k, v in windows.items()}
+        evidence['incident_ids'] = {k: v['id'] for k, v in active.items()}
+        evidence['opened_deliveries'] = until(lambda: delivered(active, 'opened'))
+        for incident in active.values():
+            mutate(client, f"{ALERTS}/{incident['id']}/acknowledge")
+
+        stage('performance_unknown')
+        for identity in (connect, broker):
+            paused.add(identity)
+            docker('pause', identity)
+        missing_after = datetime.now(timezone.utc)
+        def missing():
+            current = sample()
+            for field in ('buffer_observation', 'delay_observation'):
+                v = current[field] or {}
+                at = cdc_sample_time(v, datetime.now(timezone.utc))
+                if v.get('status') != 'unavailable' or not at or at <= missing_after:
+                    return None
+            rows = rule_rows()
+            return current if len(rows) == 2 and all(r['cdc_evaluation']['state'] == 'unknown' for r in rows.values()) else None
+        evidence['missing_samples'] = until(missing)
+        frozen = until(lambda: incidents('acknowledged'))
+        deadline, checks = time.monotonic() + 32, 0
+        while time.monotonic() < deadline:
+            current = incidents('acknowledged')
+            require(current and all(current[k]['id'] == frozen[k]['id']
+                    and current[k]['last_observed_at'] == frozen[k]['last_observed_at'] for k in CDC_PERFORMANCE_CODES),
+                    'unknown samples changed confirmed performance incidents')
+            require(not any(r['signal_code'] in CDC_PERFORMANCE_CODES and r['event_type'] == 'resolved'
+                            for r in receiver.snapshot()), 'missing sample sent a performance recovery')
+            checks += 1
+            time.sleep(2)
+        evidence['unknown_hold_checks'] = checks
+
+        stage('performance_recovery')
+        for identity in (broker, connect):
+            docker('unpause', identity)
+            paused.remove(identity)
+        docker('update', '--cpus', str(original_cpu / 1000000000), connect)
+        throttled = False
+        unlock()
+        # New committed source events, rather than idle wall time, close delay.
+        recovery_samples, next_write = [], 0
+        def recovered():
+            nonlocal next_write
+            if time.monotonic() >= next_write:
+                require(physical('risk-mutate-cdc'), 'performance recovery source event failed')
+                next_write = time.monotonic() + 2
+            current = sample()
+            delay = current['delay_observation'] or {}
+            if delay.get('sampled_at') and (not recovery_samples or recovery_samples[-1].get('sampled_at') != delay['sampled_at']):
+                require(len(recovery_samples) < 32, 'recovery sample budget exceeded')
+                recovery_samples.append(delay)
+                evidence['recovery_samples'] = recovery_samples
+            return incidents('resolved')
+        closed = until(recovered, timeout=240)
+        require({k: v['id'] for k, v in closed.items()} == evidence['incident_ids'], 'recovery replaced performance incident identity')
+        good = [v for v in recovery_samples if v.get('delay_seconds') is not None and 0 <= v['delay_seconds'] <= 30]
+        require(len(good) >= 2 and int(good[-1]['event_count']) > int(good[0]['event_count'])
+                and (datetime.fromisoformat(good[-1]['sampled_at'].replace('Z', '+00:00'))
+                     - datetime.fromisoformat(good[0]['sampled_at'].replace('Z', '+00:00'))).total_seconds() >= 60,
+                'delay closed without 60 seconds of fresh healthy events')
+        evidence['resolved_deliveries'] = until(lambda: delivered(closed, 'resolved'))
+        require(physical('performance-clear'), 'performance source rows survived cleanup')
+        source_dirty = False
+        until(lambda: (v := sample()['buffer_observation']) and v.get('lag_offsets') == '0', timeout=180)
+        until(lambda: physical('verify-cdc-altered'))
+        evidence['result'] = 'passed'
+    finally:
+        failure = sys.exc_info()[0] is not None
+        errors = []
+        for identity in (broker, connect):
+            if identity in paused:
+                try:
+                    docker('unpause', identity)
+                except Exception:
+                    errors.append('component_unpause_failed')
+        if connector_paused:
+            try:
+                control('resume')
+            except Exception:
+                errors.append('connector_restore_failed')
+        if throttled and original_cpu is not None:
+            try:
+                docker('update', '--cpus', str(original_cpu / 1000000000), connect)
+            except Exception:
+                errors.append('cpu_restore_failed')
+        try:
+            unlock()
+        except Exception:
+            errors.append('target_unlock_failed')
+        if source_dirty:
+            try:
+                require(physical('performance-clear'), 'performance source cleanup failed')
+            except Exception:
+                errors.append('source_cleanup_failed')
+        for identity in rules.values():
+            try:
+                client.request('DELETE', f'{RULES}/{identity}', (200,))
+            except Exception:
+                errors.append('rule_cleanup_failed')
+        try:
+            require(not rule_rows(), 'performance rules remain')
+            require(original_cpu is None or int(docker('inspect', '--format', '{{.HostConfig.NanoCpus}}', connect)) == original_cpu,
+                    'Connect CPU quota was not restored exactly')
+        except Exception:
+            errors.append('cleanup_readback_failed')
+        for stream in (lock.stdin, lock.stdout) if lock is not None else ():
+            if not stream.closed:
+                stream.close()
+        evidence['cleanup'] = 'failed' if errors else 'passed'
+        evidence['cleanup_failures'] = errors
+        if errors and not failure:
+            raise SuiteError('performance fault cleanup failed')
+
+
 def verify_cdc_risk_closure(client, tenant, task_id, engine_id, execution_id, name, run_id,
                             mutate, create, launch, report, checkpoint):
     proof = report['cdc_risk_closure'] = {'task_id': task_id, 'cleanup': 'pending', 'stage': 'baseline'}
@@ -566,6 +797,8 @@ def verify_cdc_risk_closure(client, tenant, task_id, engine_id, execution_id, na
             'secret': receiver.secret, 'enabled': True, 'event_types': ['opened', 'resolved']}, (201,))
         destination_id = API.require_positive_int(destination, 'id')
         proof['destination_id'] = destination_id
+        verify_cdc_performance(client, task_id, generation, engine_id, binding, destination_id,
+                               mutate, delivered, receiver, proof, stage)
         stage('buffer_pause')
         mutate(client, f'{OWNER}/task-definitions/{task_id}/pause')
         wait_status(client, execution_id, 'cancelled')
@@ -1565,7 +1798,7 @@ def run_suite(client, denied, foreign, peer, reader, admin, login, tenant, run_i
         name = f'online-{run_id}-{kind}'
         result = mutate(client, f'{OWNER}/task-definitions',
                         {'name': name, 'task_type': 'sync', 'enabled': False, 'auto_scan_metadata': kind != 'kafka-graceful',
-                         'batch_size': 100, 'config': task_config(kind, pg, kafka)}, (201,))
+                         'batch_size': 1000 if kind in {'cdc', 'cdc-rebuilt'} else 100, 'config': task_config(kind, pg, kafka)}, (201,))
         task_id = API.require_positive_int(result, 'id')
         API.assert_tenant(result, tenant, 'continuous task')
         tasks.append((task_id, kind, name))
@@ -1819,6 +2052,7 @@ def run_suite(client, denied, foreign, peer, reader, admin, login, tenant, run_i
         phase('cdc_risk')
         verify_cdc_risk_closure(client, tenant, cdc_task, pg, cdc_resumed, name, run_id,
                                 mutate, create, launch, report, checkpoint)
+        report['checks'].append('cdc_performance_warning_trigger_missing_hold_recovery_signed_delivery')
         report['checks'].append('cdc_loss_alert_trigger_unknown_ack_close_signed_delivery_and_task_rebuild')
         phase('cdc_stop')
         wait_status(client, cdc_resumed, 'cancelled')
@@ -1960,7 +2194,7 @@ def main():
         require(len(set(identities)) == 5, 'fixture business Users must be distinct')
         for signum in (signal.SIGINT, signal.SIGTERM, signal.SIGALRM):
             signal.signal(signum, interrupted)
-        signal.alarm(850)
+        signal.alarm(1450)
         faults.wait_protection_ready(tenant)
         report['protection_projection_ready'] = True
         run_suite(client, denied, foreign, peer, reader, admin, API.GatewayClient(gateway, '', timeout),

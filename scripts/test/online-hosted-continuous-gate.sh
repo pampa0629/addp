@@ -11,6 +11,8 @@ stop_online_fixture() {
   run_logged bash business/scripts/online-continuous-fixture.sh stop
 }
 source "$ROOT_DIR/scripts/utils/hosted-online.sh"
+# Real 180-second performance windows run in addition to the existing CDC closure.
+export ADDP_ONLINE_TEST_TIMEOUT_SECONDS=1500
 export MONITOR_URL=http://127.0.0.1:8100
 export CONSOLE_URL=http://127.0.0.1:5170
 export SECURITY_URL=http://127.0.0.1:8194

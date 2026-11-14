@@ -200,7 +200,8 @@ elif args[0]=='exec' and 'produce' in args:
             self.assertEqual(self.trace.read_text(),before)
 
     def test_risk_fault_requires_suite_and_container_owner(self):
-        for action in ('risk-pause-source', 'risk-unpause-source', 'risk-drop-slot'):
+        for action in ('risk-pause-source', 'risk-unpause-source', 'risk-drop-slot',
+                       'performance-target-lock', 'performance-target-unlock', 'performance-fill', 'performance-clear'):
             with self.subTest(action=action):
                 result = self.run_fixture(action, 'owned_slot', 'owned_pub', ONLINE_SUITE='cleanup-native-effects')
                 self.assertNotEqual(result.returncode, 0)

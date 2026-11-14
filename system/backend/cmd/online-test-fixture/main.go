@@ -424,6 +424,7 @@ func suitePermissions(suite string) ([]string, error) {
 		return transferLineagePermissions, nil
 	case "transfer-continuous-events":
 		return append(append([]string{}, transferContinuousPermissions...),
+			"monitor.alert_rule.read", "monitor.alert_rule.create", "monitor.alert_rule.delete",
 			"monitor.alert_incident.read", "monitor.alert_incident.update",
 			"monitor.notification_destination.create", "monitor.notification_destination.read", "monitor.notification_destination.delete",
 			"monitor.notification_delivery.read"), nil
