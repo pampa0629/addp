@@ -34,11 +34,11 @@
       "kind": "implementation",
       "path": "transfer/backend/internal/service/task_service.go",
       "anchor": "Status:       models.TaskStatusIdle,",
-      "commit": "879ba19cb545ec99c04fd51d7212815a2fdfe397",
-      "sha256": "25a51be8f86586796a1a36b4a7d1bd167de85cfd6ce0c146617625a6b2c1ac2d",
+      "commit": "9bf02dfabeef43e712e2eda21aa7f1b4c8a07d29",
+      "sha256": "220b8ee4fd58193c1cdc8018090e8a8a1f2c09e14eb33c44bb5dd5e73f8723a8",
       "use": {
-        "zh-cn": "复核仅在 ListTasks 校验并加入 CDC 查询过滤的同文件变化；原 idle/stopped 创建、运行审批、执行读取及 FileGDB 专属来源／授权边界逐字不变，不扩大 Agent 原生表创建范围。",
-        "en": "Reviewed the same-file change that validates and adds CDC filtering only in ListTasks. Idle/stopped creation, run approval, execution reads and FileGDB-specific source/authorization boundaries are byte-identical; the Agent native-table creation scope is unchanged."
+        "zh-cn": "复核 Develop 完整当次工作流表格仅经精确导出会话创建一次性 bounded sync；普通任务定义拒绝私有 workflow_result。原 idle/stopped 原生表创建、运行审批、权限、条件和效果保持，不扩大 Agent 创建范围。",
+        "en": "Reviewed complete current Develop workflow tables admitted only through exact one-off bounded export sessions; ordinary task definitions reject private workflow_result. Idle/stopped native-table creation, run approval, permissions, conditions and effects remain unchanged; Agent creation scope is not expanded."
       }
     },
     {
@@ -177,11 +177,11 @@
       "kind": "implementation",
       "path": "transfer/backend/internal/planner/table_export.go",
       "anchor": "func validateTableTransferSpec(",
-      "commit": "a48cadaafd45d0edd68cb44adde802f1403fad48",
-      "sha256": "da014f88462cfc30aea6cb29a6e7dcf4446f95ed4586b5718efb8ec73fa3b0f5",
+      "commit": "9bf02dfabeef43e712e2eda21aa7f1b4c8a07d29",
+      "sha256": "206d108baf42a02f9762d0c6ee151c352e11e483eca339fd4eee88e0c5454f55",
       "use": {
-        "zh-cn": "复核同次实际连接解析的源与目标 Engine 版本沿原规划传递，实际来源版本随读取/提交事实冻结；初始授权独立由 System 按完整成果与当前版本办理。原有 stopped bounded/snapshot 原生表创建、replace/append、查询/字段校验、权限、条件和效果保持，不扩展未建模的文件执行。",
-        "en": "Reviewed propagation of actual source and target Engine versions from the same connection resolution into the original plan. Source versions freeze with actual reads and commit evidence; System separately handles initial grants by complete result and current versions. Existing stopped bounded/snapshot native-table creation, replace/append, query and field checks, permissions, conditions and effects remain unchanged; unmodeled file execution is not expanded."
+        "zh-cn": "复核私有 workflow_result 只在同一 Develop 导出前缀内绑定摘要、原截止、完整列和全部来源，输出固定 CSV；普通任务不接收该来源。原 bounded/snapshot 原生表创建及 replace/append、查询和字段校验、权限与效果保持。",
+        "en": "Reviewed private workflow_result binding its digest, original deadline, complete columns and all sources within one Develop export prefix, with CSV output only; ordinary tasks do not accept it. Existing bounded/snapshot native-table creation, replace/append, query and field checks, permissions and effects remain unchanged."
       }
     },
     {
