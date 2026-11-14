@@ -287,7 +287,7 @@ S3M 同样使用 `data_type=model_3d`。SCP 的 XML / JSON 编码、S3M 版本�
 
 `FieldInfo.path` 是可选的结构化可查询字段路径，取值为从记录根开始的非空名称段数组。普通关系表字段使用单段路径或省略；MongoDB collection 等动态 schema 记录集合必须为嵌套字段返回完整路径，并同时保留各中间 object / array 字段事实。例如 `members`、`members.userInfo`、`members.userInfo.nickName` 分别返回对应 `path`，其中 `name` 是当前查询语言可直接使用的规范字段表达。数组字段在样本中存在非空元素时还必须通过 `element_type` 返回采样确认的 ADDP 标准元素类型；元素类型不一致时为 `mixed`，无非空元素可供推断时省略，不得从 `native_type` 重新推断。Provider 不得只返回 `members=array` 后丢弃数组元素结构，也不得把原始样本记录或样本值写入字段事实。路径递归必须设置深度、字段数和数组采样上限，超过上限时停止扩展而不是截断名称或编造类型。
 
-文件 schema 明确声明的嵌套结构使用 `FieldInfo.fields`（`type=json` 的完整对象成员）与 `FieldInfo.element`（`type=array` 的完整元素定义）递归表达；它们不是可查询路径展开，不自动产生子列或改变行粒度。数组同时提供 `element_type=element.type` 的浅层摘要，两者必须一致；无显式结构的动态 json/array 不从值猜造声明。对象成员保留原名、可空性及标量精度，数组元素没有业务字段名；不得用点号拼接名称，以免混淆含点号的实际字段。ORC 的完整声明最多 16 层、1024 个类型节点；超限整体拒绝，不截断 schema。共享 payload、深拷贝和公开精确数值序列化必须递归消费同一结构；保护后的整字段文本保持原样，不能重新解析。该描述不自动赋予任何目标 writer 嵌套写出能力。
+文件 schema 明确声明的嵌套结构使用 `FieldInfo.fields`（`type=json` 的完整对象成员）与 `FieldInfo.element`（`type=array` 的完整元素定义）递归表达；它们不是可查询路径展开，不自动产生子列或改变行粒度。数组同时提供 `element_type=element.type` 的浅层摘要，两者必须一致；无显式结构的动态 json/array 不从值猜造声明。对象成员保留原名、可空性及标量精度，数组元素没有业务字段名；不得用点号拼接名称，以免混淆含点号的实际字段。ORC 的完整声明最多 16 层、1024 个类型节点；超限整体拒绝，不截断 schema。共享 payload、深拷贝和公开精确数值序列化必须递归消费同一结构；保护后的整字段文本保持原样，不能重新解析。该描述不自动赋予任何目标 writer 嵌套写出能力。 Avro 无递归 record／array 复用同一结构与精确公开序列化；最多16层、1024个展开字段／元素节点（不计根record，保留原平面字段上限），仅开放描述与分页，任何包含嵌套字段的连续读取／传输均拒绝，标量投影不绕过此边界。
 
 原生 schema 明确声明整数时间单位的 `time`／`timestamp` 字段，以 `FieldInfo.temporal` 保存 `unit`（`s`、`ms`、`us`、`ns`）和可选的源 `timezone`。时刻是从当天午夜起的计数，不能带时区。时间戳的空时区表示本地日期时间，有时区表示从 Unix 纪元起的绝对时刻，源时区标识保留在字段中。Provider 与批量读写使用有符号 64 位整数；JSON 预览使用保留小数位的 ISO 文本，有时区的时间戳以 UTC 展示。未声明 `temporal` 的字段沿用来源原有值契约。
 

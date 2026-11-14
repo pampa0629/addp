@@ -32,6 +32,9 @@ func (p *Plugin) Descriptor() format.FormatDescriptor {
 }
 
 func (p *Plugin) OpenTableReader(ctx context.Context, input io.Reader, options *format.ParseOptions) (format.TableReader, error) {
+	return p.open(ctx, input, options, false)
+}
+func (p *Plugin) open(ctx context.Context, input io.Reader, options *format.ParseOptions, preview bool) (*tableReader, error) {
 	if options != nil {
 		if err := resume.RejectUnsupported(options.ResumeMarker, "avro.table_reader"); err != nil {
 			return nil, err
@@ -43,6 +46,13 @@ func (p *Plugin) OpenTableReader(ctx context.Context, input io.Reader, options *
 	r, err := newReader(ctx, input)
 	if err != nil {
 		return nil, err
+	}
+	if !preview {
+		for _, f := range r.fields {
+			if f.Type == datatype.FieldTypeJSON || f.Type == datatype.FieldTypeArray {
+				return nil, fmt.Errorf("Avro nested fields support preview only; batch transfer is not supported")
+			}
+		}
 	}
 	if options != nil {
 		selected, err := format.ApplyFieldSelectionToTableInfo(&datatype.TableInfo{Fields: r.fields}, options.FieldSelection)
@@ -58,15 +68,21 @@ func (p *Plugin) DescribeTable(ctx context.Context, input io.Reader, options *fo
 	// A declared Avro source must not degrade into descriptor-only metadata when
 	// its schema, framing, or source read fails.
 	defer func() { err = format.NewDefinitiveParseError(err) }()
-	opened, err := p.OpenTableReader(ctx, input, options)
+	r, err := p.open(ctx, input, options, true)
 	if err != nil {
 		return nil, err
 	}
-	r := opened.(*tableReader)
 	defer r.Close(ctx)
 	var count int64
 	for {
-		rows, err := r.ReadRows(ctx, 1024)
+		batch := 1024
+		for _, f := range r.fields {
+			if f.Type == datatype.FieldTypeJSON || f.Type == datatype.FieldTypeArray {
+				batch = 1
+				break
+			}
+		}
+		rows, err := r.ReadRows(ctx, batch)
 		if err != nil {
 			return nil, err
 		}
@@ -85,13 +101,19 @@ func (p *Plugin) SampleTable(ctx context.Context, input io.Reader, offset, limit
 	if offset < 0 || limit <= 0 || limit > int64(int(^uint(0)>>1)) {
 		return nil, fmt.Errorf("Avro sample requires a nonnegative offset and positive limit")
 	}
-	r, err := p.OpenTableReader(ctx, input, options)
+	r, err := p.open(ctx, input, options, true)
 	if err != nil {
 		return nil, err
 	}
 	defer r.Close(ctx)
 	for offset > 0 {
 		n := min(offset, 1024)
+		for _, f := range r.fields {
+			if f.Type == datatype.FieldTypeJSON || f.Type == datatype.FieldTypeArray {
+				n = 1
+				break
+			}
+		}
 		rows, err := r.ReadRows(ctx, int(n))
 		if err != nil {
 			return nil, err

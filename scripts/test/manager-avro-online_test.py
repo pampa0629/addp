@@ -21,10 +21,13 @@ class Client:
         self.tasks = []
         self.deleted = []
         self.items = {}
+        self.task_bodies = {}
 
     def item(self, engine, full_name, *_):
-        codec = Path(full_name).stem
-        item_id = engine * 10 + FIXTURE.CODECS.index(codec)
+        stem = Path(full_name).stem
+        nested = stem.startswith('nested-')
+        codec = stem.removeprefix('nested-')
+        item_id = engine * 10 + FIXTURE.CODECS.index(codec) + (3 if nested else 0)
         expected = [('id', 'bigint', False), ('small', 'int', False), ('flag', 'bool', True),
                     ('label', 'string', True), ('ratio', 'float', False), ('value', 'double', False),
                     ('payload', 'bytes', True), ('day', 'date', True), ('amount', 'decimal', True), ('fixed_amount', 'decimal', True),
@@ -33,9 +36,13 @@ class Client:
                   for name, kind, nullable in expected]
         for f in fields[-3:]:
             f.update(native_type='long', temporal={'unit':FIXTURE.TIMESTAMPS[f['name']][0], 'timezone':'UTC'})
+        if nested:
+            fields = SCENE.nested_field_facts()
+            if self.failure == 'nested-meta': fields[2]['element']['type'] = 'string'
         result = {'id': item_id, 'engine_id': engine, 'full_name': full_name, 'fingerprint': str(item_id),
                   'attributes': {'item': {'format': 'avro', 'data_type': 'table', 'layout': 'single'},
-                                 'type_info': {'table': {'fields': fields}}}}
+                                 'type_info': {'table': {'fields': fields}},
+                                 **({'format_info':{'avro':{'schema':FIXTURE.NESTED_SCHEMA}}} if nested else {})}}
         self.items[item_id] = result
         return result
 
@@ -44,26 +51,33 @@ class Client:
             result = self.items[int(path.rsplit('/', 1)[1])]
         elif '/manager/preview?' in path:
             q = parse_qs(urlsplit(path).query)
+            nested = 'nested-' in q['locator'][0]
             page = int(q['page'][0])
             start = (page - 1) * 20
             result = {'preview_type': 'table', 'data': {'total': FIXTURE.COUNT, 'has_more': page != 126,
-                      'rows': [FIXTURE.public_row(i) for i in range(start, min(start + 20, FIXTURE.COUNT))]}}
+                      'rows': [(FIXTURE.nested_public_row if nested else FIXTURE.public_row)(i) for i in range(start, min(start + 20, FIXTURE.COUNT))]}}
+            if self.failure == 'nested-page' and nested:
+                result['data']['rows'][0]['id'] = 9007199254740992
             if self.failure == 'page':
                 result['data']['rows'][0]['id'] = 9007199254740992
         elif '/manager/downloads/file?' in path:
             if expected == (403,):
                 return SimpleNamespace(status=403, headers={'Content-Type':'application/json'}, payload={'error':'denied'})
             codec = next(c for c in FIXTURE.CODECS if c + '.avro' in path)
-            return SimpleNamespace(raw=FIXTURE.source_bytes(codec) + (b'bad' if self.failure == 'download' else b''))
+            return SimpleNamespace(raw=(FIXTURE.nested_source_bytes if 'nested-' in path else FIXTURE.source_bytes)(codec) + (b'bad' if self.failure == 'download' else b''))
         elif method == 'POST' and path.endswith('/task-definitions'):
             self.tasks.append(len(self.tasks) + 1)
             self.assert_body = body
+            self.task_bodies[self.tasks[-1]] = body
             result = {'id': self.tasks[-1]}
         elif path.endswith('/start'):
             result = {'execution_id': 'execution-' + path.split('/')[-2]}
         elif '/transfer/executions/' in path:
-            result = {'status': 'failed' if self.failure == 'transfer' else 'success',
-                      'records_read': FIXTURE.COUNT, 'records_written': FIXTURE.COUNT}
+            body = self.task_bodies[int(path.rsplit('-',1)[1])]
+            nested = 'nested-' in body['config']['source']['locator']
+            result = {'status':'failed' if (nested and self.failure != 'nested-transfer') or self.failure == 'transfer' else 'success',
+                      'records_read':0 if nested else FIXTURE.COUNT, 'records_written': (1 if self.failure == 'nested-count' else 0) if nested else FIXTURE.COUNT,
+                      'error_msg':'unexpected storage error' if self.failure == 'nested-reason' else 'Avro nested fields support preview only; batch transfer is not supported'}
         elif method == 'DELETE':
             self.deleted.append(int(path.rsplit('/', 1)[1]))
             result = {}
@@ -94,10 +108,10 @@ class AvroSceneTest(unittest.TestCase):
             if action == 'seed':
                 if failure == 'seed':
                     raise ValueError('seed failed')
-                return {'sources': FIXTURE.sources(), 'count': FIXTURE.COUNT}
+                return {'sources': FIXTURE.sources(), 'nested_sources':FIXTURE.nested_sources(), 'count': FIXTURE.COUNT}
             if action == 'verify':
                 raw = b'parquet'
-                return {'sources_unchanged': True, 'outputs': [
+                return {'sources_unchanged': True, 'nested_sources_verified':6, 'nested_outputs_absent':failure != 'nested-output', 'outputs': [
                     {'object': f'avro-output/from-{s}-{c}.parquet', 'size_bytes': len(raw),
                      'sha256': hashlib.sha256(raw).hexdigest(), 'content_base64': base64.b64encode(raw).decode(),
                      'all_values_and_nulls_verified': failure != 'physical', 'native_timestamp_ticks_verified': failure != 'ticks',
@@ -106,13 +120,17 @@ class AvroSceneTest(unittest.TestCase):
             return {'objects_removed': True, 'files_removed': True, 'outputs_removed': failure != 'cleanup'}
 
         def browser(context):
-            rows = []
-            for case in context['cases']:
-                (root / f'avro-{case["storage"]}-{case["codec"]}-page2.png').write_bytes(b'\x89PNG\r\n\x1a\nfixture')
-                rows.append({'locator': case['locator'], 'page_button_verified': failure != 'browser',
-                             'values_verified': True, **({'original_download_disabled':True} if case['storage'] == 'nfs' else
-                             {'download_sha256': case['spec']['sha256'], 'download_size': case['spec']['size_bytes']})})
-            return {'schema_version': 'addp.manager-avro-browser/v3', 'result': 'passed', 'run_id': 'manager-1-1', 'cases': rows}
+            outcomes = {'cases':[], 'nested_cases':[]}
+            for name in outcomes:
+                for case in context[name]:
+                    nested = case.get('nested') is True
+                    prefix = f'avro-{case["storage"]}-' + ('nested-' if nested else '') + case['codec']
+                    (root / (prefix+'-page2.png')).write_bytes(b'\x89PNG\r\n\x1a\nfixture')
+                    if nested:(root / (prefix+'-detail.png')).write_bytes(b'\x89PNG\r\n\x1a\nfixture')
+                    outcomes[name].append({'locator':case['locator'],'page_button_verified':failure != 'browser',
+                        'values_verified':True, **({'nested_values_verified':True,'structured_dialogs_verified':failure != 'nested-browser'} if nested else {}),
+                        **({'original_download_disabled':True} if case['storage']=='nfs' else {'download_sha256':case['spec']['sha256'],'download_size':case['spec']['size_bytes']})})
+            return {'schema_version':'addp.manager-avro-browser/v4','result':'passed','run_id':'manager-1-1',**outcomes}
 
         environment = {'ADDP_ONLINE_MANAGER_CASE': 'native-table-avro', 'ADDP_ONLINE_ARTIFACT_DIR': str(root),
             'GATEWAY_URL': 'http://fixture', 'ADDP_ONLINE_TEST_USER_ACCESS_TOKEN': 'consumer',
@@ -131,13 +149,16 @@ class AvroSceneTest(unittest.TestCase):
         client, actions, report = self.run_scene()
         self.assertEqual(report['result'], 'passed')
         self.assertEqual(len(report['cases']), 6)
+        self.assertEqual(len(report['nested_cases']), 6)
+        self.assertTrue(all(c['transfer']['nested_refusal_verified'] for c in report['nested_cases']))
+        self.assertEqual(len(client.tasks), 12)
         self.assertEqual(len(report['physical']['outputs']), 6)
         self.assertEqual(client.deleted, list(reversed(client.tasks)))
         self.assertEqual(actions, ['seed', 'verify', 'delete'])
         self.assertEqual(client.assert_body['config']['source']['format'], 'avro')
 
     def test_failures_cannot_pass_and_always_clean_owned_sources_and_tasks(self):
-        for failure in ('seed', 'page', 'download', 'transfer', 'physical', 'ticks', 'browser', 'cleanup'):
+        for failure in ('seed', 'page', 'download', 'transfer', 'physical', 'ticks', 'browser', 'cleanup', 'nested-meta', 'nested-page', 'nested-transfer', 'nested-reason', 'nested-count', 'nested-browser', 'nested-output'):
             with self.subTest(failure=failure):
                 client, actions, report = self.run_scene(failure)
                 self.assertEqual(report['result'], 'failed')
@@ -150,6 +171,20 @@ class AvroSceneTest(unittest.TestCase):
             rows[0][key] = value
             with self.assertRaises(ValueError):
                 SCENE.validate_page({'preview_type': 'table', 'data': {'rows': rows, 'total': 2503, 'has_more': True}}, 2, 20)
+
+    def test_nested_page_validation_rejects_lost_structure_or_precision(self):
+        for key, value in [('detail', '{}'), ('items', []), ('grid', [9007199254740992]), ('fixed_values', [None, 0.1])]:
+            rows = [FIXTURE.nested_public_row(i) for i in range(20,40)]
+            rows[1][key] = value
+            with self.assertRaises(ValueError):
+                SCENE.validate_page({'preview_type':'table','data':{'rows':rows,'total':2503,'has_more':True}},2,20,nested=True)
+
+    def test_browser_nested_oracle_matches_all_fixture_values(self):
+        source = (Path(__file__).resolve().parents[2] / 'console/frontend/e2e/online/manager-avro.spec.js').read_text()
+        start = source.index('function expectedRow(')
+        functions = source[start:source.index('\ntest(',start)]
+        result = subprocess.run(['node','--input-type=commonjs','-e',functions+'\nconsole.log(JSON.stringify(Array.from({length:2503},(_,i)=>expectedNestedRow(i))))'],check=True,capture_output=True,text=True)
+        self.assertEqual(json.loads(result.stdout),[FIXTURE.nested_public_row(i) for i in range(2503)])
 
     def test_fixture_profile_and_unknown_case_rejected_before_launch(self):
         self.assertEqual(OWNER.manager_case({'ADDP_ONLINE_MANAGER_CASE': 'native-table-avro'}), 'native-table-avro')

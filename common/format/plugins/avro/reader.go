@@ -24,13 +24,14 @@ const (
 	maxFields      = 1024
 )
 
-// The codec decodes a validated flat record. OCF framing and decompression stay
+// The codec decodes a validated record. OCF framing and decompression stay
 // here so no library-global limits or unbounded decompression affect requests.
 type tableReader struct {
 	input            *bufio.Reader
 	codec            *goavro.Codec
 	schema           map[string]interface{}
 	fields, selected []datatype.FieldInfo
+	plan             *valueSchema
 	compression      string
 	sync             [16]byte
 	block            []byte
@@ -131,11 +132,11 @@ func newReader(ctx context.Context, input io.Reader) (*tableReader, error) {
 		return nil, fmt.Errorf("invalid Avro schema text")
 	}
 	var err error
-	r.fields, r.schema, err = recordSchema(raw)
+	r.fields, r.schema, r.plan, err = recordSchema(raw)
 	if err != nil {
 		return nil, err
 	}
-	physical, err := physicalRecordSchema(r.schema)
+	physical, err := physicalRecordSchema(r.schema, r.plan)
 	if err != nil {
 		return nil, err
 	}
@@ -145,67 +146,6 @@ func newReader(ctx context.Context, input io.Reader) (*tableReader, error) {
 	}
 	r.selected = r.fields
 	return r, nil
-}
-
-func recordSchema(raw []byte) ([]datatype.FieldInfo, map[string]interface{}, error) {
-	var schema map[string]interface{}
-	decoder := json.NewDecoder(bytes.NewReader(raw))
-	decoder.UseNumber()
-	if err := decoder.Decode(&schema); err != nil {
-		return nil, nil, fmt.Errorf("Avro schema: %w", err)
-	}
-	var trailing interface{}
-	if decoder.Decode(&trailing) != io.EOF {
-		return nil, nil, fmt.Errorf("Avro schema has trailing data")
-	}
-	list, ok := schema["fields"].([]interface{})
-	if schema["type"] != "record" || !ok || len(list) == 0 || len(list) > maxFields {
-		return nil, nil, fmt.Errorf("Avro requires a flat record with 1 to %d fields", maxFields)
-	}
-	if _, exists := schema["logicalType"]; exists {
-		return nil, nil, fmt.Errorf("Avro logical types are unsupported")
-	}
-	fields := make([]datatype.FieldInfo, 0, len(list))
-	seen := map[string]bool{}
-	named := map[string]datatype.FieldInfo{}
-	namespace := recordNamespace(schema)
-	for i, item := range list {
-		field, ok := item.(map[string]interface{})
-		if !ok {
-			return nil, nil, fmt.Errorf("invalid Avro field")
-		}
-		name, _ := field["name"].(string)
-		if name == "" || seen[name] {
-			return nil, nil, fmt.Errorf("invalid or duplicate Avro field name")
-		}
-		seen[name] = true
-		value := field["type"]
-		nullable := false
-		if union, ok := value.([]interface{}); ok {
-			if len(union) != 2 {
-				return nil, nil, fmt.Errorf("Avro only supports nullable primitive unions")
-			}
-			left := primitiveName(union[0])
-			right := primitiveName(union[1])
-			if left == "null" {
-				value = union[1]
-			} else if right == "null" {
-				value = union[0]
-			} else {
-				return nil, nil, fmt.Errorf("Avro only supports nullable primitive unions")
-			}
-			nullable = true
-		}
-		definition, err := fieldDefinition(value, namespace, named)
-		if err != nil {
-			return nil, nil, fmt.Errorf("Avro field %q: %w", name, err)
-		}
-		comment, _ := field["doc"].(string)
-		definition.Name, definition.Nullable = name, nullable
-		definition.Comment, definition.OrdinalPosition = comment, i+1
-		fields = append(fields, definition)
-	}
-	return fields, schema, nil
 }
 
 func primitiveName(value interface{}) string {
@@ -328,7 +268,7 @@ func (r *tableReader) loadBlock(ctx context.Context) error {
 }
 
 func (r *tableReader) Fields() []datatype.FieldInfo {
-	return append([]datatype.FieldInfo(nil), r.selected...)
+	return datatype.CloneFieldInfos(r.selected)
 }
 
 func (r *tableReader) ReadRows(ctx context.Context, limit int) ([]map[string]interface{}, error) {
@@ -342,6 +282,7 @@ func (r *tableReader) ReadRows(ctx context.Context, limit int) ([]map[string]int
 		return nil, fmt.Errorf("Avro read limit must be positive")
 	}
 	rows := make([]map[string]interface{}, 0, min(limit, 1024))
+	visits := 0
 	for !r.closed && len(rows) < limit {
 		if err := ctx.Err(); err != nil {
 			r.failed = err
@@ -357,20 +298,18 @@ func (r *tableReader) ReadRows(ctx context.Context, limit int) ([]map[string]int
 				return nil, r.failed
 			}
 		}
-		value, rest, err := r.codec.NativeFromBinary(r.block)
+		scanned, err := r.plan.scan(r.block, &visits, false)
 		if err != nil {
 			r.failed = fmt.Errorf("Avro record: %w", err)
 			return nil, r.failed
 		}
-		// The upstream integer decoder can truncate malformed overlong/range
-		// encodings. Require the same codec to reproduce the consumed bytes,
-		// preventing silent integer/union/boolean corruption without a fallback.
-		consumed := r.block[:len(r.block)-len(rest)]
-		canonical, err := r.codec.BinaryFromNative(nil, value)
-		if err != nil || !bytes.Equal(canonical, consumed) {
-			r.failed = fmt.Errorf("Avro record contains a noncanonical or out-of-range encoding")
+		consumed := len(r.block) - len(scanned)
+		value, rest, err := r.codec.NativeFromBinary(r.block[:consumed])
+		if err != nil || len(rest) != 0 {
+			r.failed = fmt.Errorf("invalid Avro record decoding")
 			return nil, r.failed
 		}
+		rest = scanned
 		r.block = rest
 		r.remaining--
 		if r.remaining == 0 && len(rest) != 0 {
@@ -383,26 +322,29 @@ func (r *tableReader) ReadRows(ctx context.Context, limit int) ([]map[string]int
 			return nil, r.failed
 		}
 		row := make(map[string]interface{}, len(r.selected))
-		for _, field := range r.fields {
-			value := record[field.Name]
-			if field.Nullable && value != nil {
-				union, ok := value.(map[string]interface{})
-				if !ok || len(union) != 1 {
-					r.failed = fmt.Errorf("invalid Avro union")
+		for _, node := range r.plan.children {
+			converted, err := node.convert(record[node.field.Name])
+			if err != nil {
+				r.failed = fmt.Errorf("Avro field %q: %w", node.field.Name, err)
+				return nil, r.failed
+			}
+			record[node.field.Name] = converted
+			if node.field.Type == datatype.FieldTypeJSON || node.field.Type == datatype.FieldTypeArray {
+				public, err := datatype.RowsForJSON([]datatype.FieldInfo{node.field}, []map[string]interface{}{{node.field.Name: converted}})
+				if err != nil {
+					r.failed = err
 					return nil, r.failed
 				}
-				value = union[field.NativeType]
+				encoded, err := json.Marshal(public[0][node.field.Name])
+				if err != nil {
+					r.failed = fmt.Errorf("Avro structure cannot be represented as JSON")
+					return nil, r.failed
+				}
+				if len(encoded) > maxStructureJSON {
+					r.failed = fmt.Errorf("Avro structure exceeds JSON value budget")
+					return nil, r.failed
+				}
 			}
-			if field.Type == datatype.FieldTypeString && value != nil && !utf8.ValidString(value.(string)) {
-				r.failed = fmt.Errorf("invalid Avro UTF-8 string")
-				return nil, r.failed
-			}
-			value, err = logicalFieldValue(value, field)
-			if err != nil {
-				r.failed = fmt.Errorf("Avro field %q: %w", field.Name, err)
-				return nil, r.failed
-			}
-			record[field.Name] = value
 		}
 		for _, field := range r.selected {
 			row[field.Name] = record[field.Name]

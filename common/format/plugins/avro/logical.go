@@ -29,7 +29,7 @@ func qualifiedName(name, namespace string) string {
 	return namespace + "." + name
 }
 
-func fieldDefinition(value interface{}, namespace string, named map[string]datatype.FieldInfo) (datatype.FieldInfo, error) {
+func fieldDefinition(value interface{}, namespace string) (datatype.FieldInfo, error) {
 	var result datatype.FieldInfo
 	object, isObject := value.(map[string]interface{})
 	if isObject {
@@ -42,9 +42,6 @@ func fieldDefinition(value interface{}, namespace string, named map[string]datat
 		result.Type = map[string]datatype.FieldType{"boolean": datatype.FieldTypeBool, "int": datatype.FieldTypeInt, "long": datatype.FieldTypeBigInt, "float": datatype.FieldTypeFloat, "double": datatype.FieldTypeDouble, "bytes": datatype.FieldTypeBytes, "string": datatype.FieldTypeString}[native]
 		if result.Type != "" {
 			return result, nil
-		}
-		if definition, ok := named[qualifiedName(native, namespace)]; ok {
-			return definition, nil
 		}
 		return result, fmt.Errorf("unsupported Avro field type")
 	}
@@ -92,8 +89,8 @@ func fieldDefinition(value interface{}, namespace string, named map[string]datat
 			}
 		}
 		name, _ := object["name"].(string)
-		if name == "" {
-			return result, fmt.Errorf("Avro decimal fixed requires a name")
+		if name == "" || primitiveTypeName(name[strings.LastIndexByte(name, '.')+1:]) {
+			return result, fmt.Errorf("invalid Avro fixed name")
 		}
 		if declared, present := object["namespace"]; present {
 			var ok bool
@@ -103,10 +100,9 @@ func fieldDefinition(value interface{}, namespace string, named map[string]datat
 			}
 		}
 		result.NativeType = qualifiedName(name, namespace)
-		if _, duplicate := named[result.NativeType]; duplicate {
-			return result, fmt.Errorf("duplicate Avro fixed declaration")
+		if !avroFullName.MatchString(result.NativeType) {
+			return result, fmt.Errorf("invalid Avro fixed fullname")
 		}
-		named[result.NativeType] = result
 	}
 	return result, nil
 }
@@ -115,7 +111,7 @@ func fieldDefinition(value interface{}, namespace string, named map[string]datat
 // the existing codec once, on a copy of the physical schema, retaining the
 // untouched source declaration for metadata. This preserves legal redundant
 // decimal sign bytes through the reader's canonical framing check.
-func physicalRecordSchema(schema map[string]interface{}) (string, error) {
+func physicalRecordSchema(schema map[string]interface{}, plan *valueSchema) (string, error) {
 	raw, err := json.Marshal(schema)
 	if err != nil {
 		return "", err
@@ -126,20 +122,63 @@ func physicalRecordSchema(schema map[string]interface{}) (string, error) {
 	if err := decoder.Decode(&physical); err != nil {
 		return "", err
 	}
-	for _, item := range physical["fields"].([]interface{}) {
-		field := item.(map[string]interface{})
-		values := []interface{}{field["type"]}
-		if union, ok := field["type"].([]interface{}); ok {
-			values = union
+	// Private codec names prevent the fixed codec's symbol lookup from mistaking
+	// a legal named type such as "array" for a later complex-type declaration.
+	// Source declarations and public native types remain unchanged.
+	names := map[string]string{}
+	var collect func(*valueSchema)
+	collect = func(node *valueSchema) {
+		if node.codecName != "" {
+			names[node.field.NativeType] = node.codecName
 		}
-		for _, value := range values {
-			if object, ok := value.(map[string]interface{}); ok && object["logicalType"] != nil {
-				delete(object, "logicalType")
-				delete(object, "precision")
-				delete(object, "scale")
-			}
+		for _, child := range node.children {
+			collect(child)
+		}
+		if node.item != nil {
+			collect(node.item)
 		}
 	}
+	collect(plan)
+	var physicalType func(interface{}, string) interface{}
+	physicalType = func(value interface{}, namespace string) interface{} {
+		switch value := value.(type) {
+		case string:
+			if name := names[qualifiedName(value, namespace)]; !primitiveTypeName(value) && name != "" {
+				return name
+			}
+		case []interface{}:
+			for i, branch := range value {
+				value[i] = physicalType(branch, namespace)
+			}
+		case map[string]interface{}:
+			delete(value, "logicalType")
+			delete(value, "precision")
+			delete(value, "scale")
+			typ, _ := value["type"].(string)
+			switch typ {
+			case "record", "fixed":
+				if declared, ok := value["namespace"].(string); ok {
+					namespace = declared
+				}
+				full := qualifiedName(value["name"].(string), namespace)
+				namespace = recordNamespace(map[string]interface{}{"name": full})
+				value["name"] = names[full]
+				delete(value, "namespace")
+				if typ == "record" {
+					for _, item := range value["fields"].([]interface{}) {
+						field := item.(map[string]interface{})
+						field["type"] = physicalType(field["type"], namespace)
+					}
+				}
+			case "array":
+				value["items"] = physicalType(value["items"], namespace)
+			default:
+				value["type"] = physicalType(typ, namespace)
+			}
+		}
+		return value
+	}
+	physicalType(physical, "")
 	raw, err = json.Marshal(physical)
 	return string(raw), err
 }
@@ -194,4 +233,40 @@ func logicalFieldValue(value interface{}, field datatype.FieldInfo) (interface{}
 	default:
 		return value, nil
 	}
+}
+
+func (n *valueSchema) convert(value interface{}) (interface{}, error) {
+	if value == nil {
+		return nil, nil
+	}
+	if n.nullBranch >= 0 {
+		key := n.field.NativeType
+		if n.codecName != "" {
+			key = n.codecName
+		}
+		value = value.(map[string]interface{})[key]
+	}
+	switch n.field.Type {
+	case datatype.FieldTypeJSON:
+		record := value.(map[string]interface{})
+		for _, child := range n.children {
+			converted, err := child.convert(record[child.field.Name])
+			if err != nil {
+				return nil, err
+			}
+			record[child.field.Name] = converted
+		}
+		return record, nil
+	case datatype.FieldTypeArray:
+		array := value.([]interface{})
+		for i, item := range array {
+			converted, err := n.item.convert(item)
+			if err != nil {
+				return nil, err
+			}
+			array[i] = converted
+		}
+		return array, nil
+	}
+	return logicalFieldValue(value, n.field)
 }

@@ -39,6 +39,15 @@ function expectedRow(i) {
     amount: i % 19 === 0 ? null : decimal(unscaled), fixed_amount: i % 23 === 0 ? null : decimal(-unscaled), ...timestampValues }
 }
 
+function expectedNestedRow(i) {
+  const flat = expectedRow(i)
+  const detail = empty => Object.fromEntries(['uid', 'amount', 'fixed_amount', 'day', 'stamp_ms', 'stamp_us', 'stamp_ns', 'payload', 'label']
+    .map(name => [name, empty ? null : flat[name === 'uid' ? 'id' : name]]))
+  return { id: flat.id, detail: i % 3 === 0 ? null : detail(i % 5 === 0),
+    items: i % 7 === 0 ? null : i % 5 === 0 ? [] : [detail(false), null, detail(true)],
+    grid: i % 11 === 0 ? null : [[flat.id, null], [], null], fixed_values: [null, flat.fixed_amount] }
+}
+
 test('ordinary user pages and downloads six Avro scalar sources', async ({ page }) => {
   test.setTimeout(300_000)
   const env = process.env
@@ -47,14 +56,16 @@ test('ordinary user pages and downloads six Avro scalar sources', async ({ page 
   expect(context.cases.map(s => `${s.storage}/${s.codec}`)).toEqual([
     'minio/null', 'minio/deflate', 'minio/snappy', 'nfs/null', 'nfs/deflate', 'nfs/snappy',
   ])
+  expect(context.nested_cases.map(s => `${s.storage}/${s.codec}`)).toEqual(context.cases.map(s => `${s.storage}/${s.codec}`))
   const identity = { principalID: context.identity.principal_id, tenantID: context.identity.tenant_id,
     permissions: new Set(context.identity.permissions_verified) }
   expect(identity.permissions.size).toBe(11)
   const cases = []
+  const nestedCases = []
   let passed = false
   try {
     await login(page, env.ADDP_ONLINE_TEST_USER_USERNAME, env.ADDP_ONLINE_TEST_USER_PASSWORD, '/')
-    for (const source of context.cases) {
+    for (const source of [...context.cases, ...context.nested_cases]) {
       const observed = page.waitForResponse(response => {
         const u = new URL(response.url())
         return u.pathname === '/api/v1/manager/preview' && u.searchParams.get('locator') === source.locator
@@ -79,22 +90,39 @@ test('ordinary user pages and downloads six Avro scalar sources', async ({ page 
         expect(second.data.page).toBe(2)
         expect(second.data.total).toBe(2503)
         const offset = second.data.page_size
-        expect(second.data.rows).toEqual(Array.from({ length: second.data.rows.length }, (_, n) => expectedRow(offset + n)))
+        expect(second.data.rows).toEqual(Array.from({ length: second.data.rows.length }, (_, n) => (source.nested ? expectedNestedRow : expectedRow)(offset + n)))
         await expect(frame.getByText(expectedRow(offset).id, { exact: true }).first()).toBeVisible()
-        for (const field of ['day', 'amount', 'fixed_amount', 'stamp_ms', 'stamp_us', 'stamp_ns']) {
-          const value = second.data.rows.find(row => row[field] !== null)[field]
-          const cell = frame.getByText(value, { exact: true }).first()
-          await cell.scrollIntoViewIfNeeded()
-          await expect(cell).toBeVisible()
+        if (source.nested) {
+          const detailIndex = second.data.rows.findIndex(row => row.detail?.uid && row.items?.length && row.grid?.length && row.fixed_values?.length)
+          expect(detailIndex).toBeGreaterThanOrEqual(0)
+          const detailRow = frame.locator('.el-table__body tr').nth(detailIndex)
+          for (const [buttonIndex, field] of ['detail', 'items', 'grid', 'fixed_values'].entries()) {
+            await detailRow.locator('button.structured-cell').nth(buttonIndex).click()
+            const dialog = frame.getByRole('dialog', { name: field, exact: true })
+            await expect(dialog).toBeVisible()
+            await expect(dialog.locator('.structured-value-json')).toHaveText(JSON.stringify(second.data.rows[detailIndex][field], null, 2))
+            if (field === 'detail') await page.screenshot({ path: resolve(env.ADDP_ONLINE_ARTIFACT_DIR, `avro-${source.storage}-nested-${source.codec}-detail.png`) })
+            await dialog.locator('.el-dialog__headerbtn').click()
+            await expect(dialog).not.toBeVisible()
+          }
+        } else {
+          for (const field of ['day', 'amount', 'fixed_amount', 'stamp_ms', 'stamp_us', 'stamp_ns']) {
+            const value = second.data.rows.find(row => row[field] !== null)[field]
+            const cell = frame.getByText(value, { exact: true }).first()
+            await cell.scrollIntoViewIfNeeded()
+            await expect(cell).toBeVisible()
+          }
         }
+        const outcomes = source.nested ? nestedCases : cases
+        const nestedProof = source.nested ? { nested_values_verified: true, structured_dialogs_verified: true } : {}
         if (source.storage === 'nfs') {
           const actions = await json(await api.get('/api/v1/manager/resource-actions', {
             params: { locator: source.locator }
           }), 'Avro current browser download capability')
           expect(actions.actions.download.supported).toBe(false)
           await expect(frame.getByRole('button', { name: /^(下载|Download)$/ })).toHaveCount(0)
-          await page.screenshot({ path: resolve(env.ADDP_ONLINE_ARTIFACT_DIR, `avro-${source.storage}-${source.codec}-page2.png`) })
-          cases.push({ locator: source.locator, page_button_verified: true, values_verified: true, original_download_disabled: true })
+          await page.screenshot({ path: resolve(env.ADDP_ONLINE_ARTIFACT_DIR, `avro-${source.storage}-${source.nested ? 'nested-' : ''}${source.codec}-page2.png`) })
+          outcomes.push({ ...nestedProof, locator: source.locator, page_button_verified: true, values_verified: true, original_download_disabled: true })
           continue
         }
         const ready = page.waitForEvent('download')
@@ -109,8 +137,8 @@ test('ordinary user pages and downloads six Avro scalar sources', async ({ page 
           const hash = createHash('sha256').update(raw).digest('hex')
           expect(raw.length).toBe(source.spec.size_bytes)
           expect(hash).toBe(source.spec.sha256)
-          await page.screenshot({ path: resolve(env.ADDP_ONLINE_ARTIFACT_DIR, `avro-${source.storage}-${source.codec}-page2.png`) })
-          cases.push({ locator: source.locator, page_button_verified: true, values_verified: true,
+          await page.screenshot({ path: resolve(env.ADDP_ONLINE_ARTIFACT_DIR, `avro-${source.storage}-${source.nested ? 'nested-' : ''}${source.codec}-page2.png`) })
+          outcomes.push({ ...nestedProof, locator: source.locator, page_button_verified: true, values_verified: true,
             download_sha256: hash, download_size: raw.length })
         } finally { await download.delete() }
       } finally { await api.dispose() }
@@ -118,8 +146,8 @@ test('ordinary user pages and downloads six Avro scalar sources', async ({ page 
     passed = true
   } finally {
     writeFileSync(resolve(env.ADDP_ONLINE_ARTIFACT_DIR, 'manager-avro-browser.json'), JSON.stringify({
-      schema_version: 'addp.manager-avro-browser/v3', result: passed ? 'passed' : 'failed',
-      run_id: context.run_id, cases,
+      schema_version: 'addp.manager-avro-browser/v4', result: passed ? 'passed' : 'failed',
+      run_id: context.run_id, cases, nested_cases: nestedCases,
     }, null, 2) + '\n')
   }
 })

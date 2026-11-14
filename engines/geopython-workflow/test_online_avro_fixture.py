@@ -73,7 +73,7 @@ def avro_physical(tmp_path, monkeypatch):
 def test_hosted_avro_actual_parquet_oracle_and_cleanup(avro_physical):
     request, objects, write_outputs = avro_physical
     seeded = FIXTURE.worker(dict(request, action='seed'))
-    assert seeded == {'sources': FIXTURE.sources(), 'count': 2503}
+    assert seeded == {'sources': FIXTURE.sources(), 'nested_sources':FIXTURE.nested_sources(), 'count': 2503}
     write_outputs()
     proof = FIXTURE.worker(dict(request, action='verify'))
     assert proof['sources_unchanged'] and len(proof['outputs']) == 6
@@ -147,3 +147,16 @@ def test_hosted_avro_cleanup_preserves_an_unclaimed_directory(avro_physical):
         FIXTURE.worker(dict(request, action='delete'))
     assert foreign.read_bytes() == b'not owned by this format fixture'
     assert objects == {'avro/null.avro': b'foreign'}
+
+
+@pytest.mark.parametrize('mutation',['nested_source','nested_output'])
+def test_hosted_avro_nested_source_and_no_output_proof(avro_physical,mutation):
+    request,objects,write_outputs=avro_physical
+    FIXTURE.worker(dict(request,action='seed'));write_outputs()
+    if mutation=='nested_source':objects['avro/nested-null.avro']+=b'changed'
+    else:objects['avro-output/rejected-nested-from-minio-null.parquet']=b'unexpected'
+    with pytest.raises(AssertionError,match='source_changed' if mutation=='nested_source' else 'unexpected_nested_output'):
+        FIXTURE.worker(dict(request,action='verify'))
+    # Remove only this test's injected object so normal cleanup can prove ownership.
+    objects.pop('avro-output/rejected-nested-from-minio-null.parquet',None)
+    FIXTURE.worker(dict(request,action='delete'));assert not objects
