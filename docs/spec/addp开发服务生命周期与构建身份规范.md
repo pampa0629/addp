@@ -200,3 +200,5 @@ Quality 复用既有 bounded claim、独立 Worker ID 与租约，不改变任�
 标准启动边界在执行模块进程前产生 `ADDP_PROCESS_INSTANCE_ID`，共享 Go/Python 入口消费同一身份，登记、健康及日志不得各自生成不同 ID。启动器建立受控日志通道后直接 exec 业务进程，业务 PID 和信号语义保持不变；独立接收器不进入模块登记。真正重启产生新身份，同进程重新登记保持身份。源日志按实例追加和分段，禁止固定模块文件截断或应用文件与 stdout 双写。日志接收器使用有界队列并记录丢弃，日志故障不得无限缓存或阻塞业务。
 
 受控输出、接收器所有权、源轮转、技术探针及可靠性边界统一遵循[模块服务运行日志规范](addp模块服务运行日志规范.md)，部署入口遵循 [Infra 指南](../../scripts/infra/docs/运行日志.md#模块实例运行日志)。
+
+Hosted 模块注册恢复验收可通过受 `ADDP_ONLINE_HOST=1` 限定的 `--exact-process -copilot` 单独启动正式 Copilot Backend。精准停止同时核对 Python 命令、受管 PID 与模块工作目录；构建身份由当次干净部署注入。正式场景与清理统一见[部署与执行恢复](testing/scenarios/部署与执行恢复.md#module-registry-recovery)。

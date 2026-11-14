@@ -35,7 +35,7 @@ class HostedModuleRegistryGateTest(unittest.TestCase):
               [ "${ADDP_TEST_FAIL_PHASE:-}" != "$phase" ] || exit 1
               while [ "$#" -gt 0 ]; do
                 if [ "$1" = --output ]; then
-                  echo '{"manager":{"instance_id":"formal-instance"}}' > "$2"
+                  echo '{"backend":{"instance_id":"formal-instance"}}' > "$2"
                   exit 0
                 fi
                 shift
@@ -44,6 +44,11 @@ class HostedModuleRegistryGateTest(unittest.TestCase):
             fi
             exec "$ADDP_TEST_REAL_PYTHON" "$@"
         ''')
+        (self.host.repository / 'copilot/backend').mkdir(parents=True)
+        (self.host.repository / 'copilot/backend/main.py').write_text('# fixture')
+        (self.host.repository / 'common-python').mkdir()
+        (self.host.repository / 'common-python/fixture.py').write_text('# fixture')
+        (self.host.repository / '.env.example').write_text('COPILOT_BACKEND_PORT=8087\n')
         self.host._executable('make', '''
             #!/usr/bin/env bash
             echo "make:$*" >> "$ADDP_TEST_GATE_TRACE"
@@ -56,7 +61,7 @@ class HostedModuleRegistryGateTest(unittest.TestCase):
         old = SUPPORT.SCRIPT
         SUPPORT.SCRIPT = SCRIPT
         try:
-            return SUPPORT.HostedExecutionRetentionGateTest.run_gate(self, check, ONLINE_SUITE_INPUT='module-registry-recovery', **overrides)
+            return SUPPORT.HostedExecutionRetentionGateTest.run_gate(self, check, ONLINE_SUITE_INPUT='module-registry-recovery', GITHUB_RUN_ID='fixture', timeout=40, **overrides)
         finally:
             SUPPORT.SCRIPT = old
 
@@ -65,21 +70,25 @@ class HostedModuleRegistryGateTest(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         actions = self.host.trace.read_text().splitlines()
         expected = ['infra-up', 'start:--exact-process -system', 'stop-exact:-system',
-                    'start:--exact-process --wait-live -manager', 'observe:business-before-system',
-                    'start:--exact-process -system', 'observe:manager-registered',
+                    'start:--exact-process -manager', 'observe:business-before-system',
+                    'start:--exact-process -system', 'observe:backend-registered',
                     'start:--exact-process -gateway', 'observe:gateway-established',
                     'stop-exact:-system', 'observe:system-interrupted',
                     'start:--exact-process -system', 'observe:system-recovered',
-                    'stop-exact:--force -manager', 'observe:manager-abnormally-stopped',
-                    'start:--exact-process -manager', 'observe:manager-restarted',
-                    'stop-exact:-manager', 'observe:manager-gracefully-stopped',
-                    'make:test-online ONLINE_SUITE=module-registry-recovery', 'application-stop', 'infra-down']
+                    'stop-exact:--force -manager', 'observe:backend-abnormally-stopped',
+                    'start:--exact-process -manager', 'observe:backend-restarted',
+                    'stop-exact:-manager', 'observe:backend-gracefully-stopped',
+                    'make:test-online ONLINE_SUITE=module-registry-recovery']
+        cycle = expected[3:-1]
+        expected += ['stop-exact:-gateway', 'stop-exact:-system']
+        expected += [action.replace('-manager', '-copilot') for action in cycle]
+        expected += ['application-stop', 'infra-down']
         self.assertEqual(actions, expected)
         self.assertFalse(self.host.secrets.exists())
         self.assertIn('infra_cleanup=zero_residuals', (self.host.artifacts / 'summary.txt').read_text())
 
     def test_fault_failure_still_cleans(self):
-        result = self.run_gate(ADDP_TEST_FAIL_PHASE='manager-abnormally-stopped')
+        result = self.run_gate(ADDP_TEST_FAIL_PHASE='backend-abnormally-stopped')
         self.assertNotEqual(result.returncode, 0)
         self.assertFalse(self.host.secrets.exists())
         self.assertIn('infra-down', self.host.trace.read_text())

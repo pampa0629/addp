@@ -61,7 +61,7 @@ def instance_record(instance_id=PROCESS_INSTANCE_ID, status="up", reason="", *, 
 
 
 def baseline_record(record=None):
-    return {"manager": {"instance": record or instance_record()}}
+    return {"backend": {"instance": record or instance_record()}}
 
 
 class ProcessFakeClient:
@@ -79,7 +79,9 @@ class ProcessFakeClient:
         platform=True,
         read_permission=True,
         ignore_time_to=False,
+        module_name="manager",
     ) -> None:
+        self.module_name = module_name
         self.registration_state = registration_state
         self.manager_ready = manager_ready
         self.system_available = system_available
@@ -88,6 +90,8 @@ class ProcessFakeClient:
         self.instance_id = instance_id
         self.manager_available = manager_available
         self.records = records if records is not None else [instance_record(instance_id)]
+        for record in self.records:
+            record["module_name"] = module_name
         self.platform = platform
         self.read_permission = read_permission
         self.ignore_time_to = ignore_time_to
@@ -98,7 +102,7 @@ class ProcessFakeClient:
             if not self.manager_available:
                 raise PROCESS_ONLINE.TransportUnavailable("connection refused")
             if path == "/health/live":
-                live = process_live_payload("manager")
+                live = process_live_payload(self.module_name)
                 current = next((row for row in self.records if row["instance_id"] == self.instance_id), None)
                 if current:
                     live["started_at"] = current["process_started_at"]
@@ -113,10 +117,12 @@ class ProcessFakeClient:
                         "registration_state": self.registration_state,
                     },
                 )
+            if path.startswith("/api/v1/copilot/"):
+                return PROCESS_ONLINE.Response(401, {"error": "authentication required"})
             if path == "/":
                 if self.manager_ready:
                     return PROCESS_ONLINE.Response(
-                        200, {"message": "Manager 数据管理服务"}
+                        200, {"message": "ADDP Copilot API" if self.module_name == "copilot" else "Manager 数据管理服务"}
                     )
                 return PROCESS_ONLINE.Response(
                     503,
@@ -162,7 +168,7 @@ class ProcessFakeClient:
                 return PROCESS_ONLINE.Response(200, {"status": "ready", "module": "gateway"})
             modules = {"system": SYSTEM_PROCESS_URL}
             if self.gateway_manager_present:
-                modules["manager"] = MANAGER_PROCESS_URL
+                modules[self.module_name] = MANAGER_PROCESS_URL
             return PROCESS_ONLINE.Response(200, {"modules": modules})
         raise AssertionError(f"unexpected request: {base_url}{path}")
 
@@ -428,7 +434,8 @@ class ModuleLifecycleProcessOnlineTest(unittest.TestCase):
         return PROCESS_ONLINE.observe_once(
             phase,
             client,
-            manager_url=MANAGER_PROCESS_URL,
+            module_name=client.module_name,
+            backend_url=MANAGER_PROCESS_URL,
             system_url=SYSTEM_PROCESS_URL,
             gateway_url=GATEWAY_PROCESS_URL,
             expected_instance_id=expected_instance_id,
@@ -449,7 +456,7 @@ class ModuleLifecycleProcessOnlineTest(unittest.TestCase):
                 None,
             ),
             (
-                "manager-registered",
+                "backend-registered",
                 ProcessFakeClient(
                     system_available=True,
                     gateway_available=False,
@@ -490,8 +497,19 @@ class ModuleLifecycleProcessOnlineTest(unittest.TestCase):
                 report = self._observe(phase, client, instance_id)
                 self.assertEqual(report["phase"], phase)
                 self.assertEqual(
-                    report["manager"]["instance_id"], PROCESS_INSTANCE_ID
+                    report["backend"]["instance_id"], PROCESS_INSTANCE_ID
                 )
+
+    def test_copilot_local_readiness_and_lease_route_are_independent(self):
+        client = ProcessFakeClient(module_name="copilot", registration_state="recovering",
+                                   system_available=False, gateway_available=True)
+        report = self._observe("system-interrupted", client, PROCESS_INSTANCE_ID)
+        self.assertEqual(report["module"], "copilot")
+        self.assertTrue(report["backend"]["ready"])
+        self.assertFalse(report["gateway"]["backend_route_present"])
+        client.gateway_manager_present = True
+        with self.assertRaisesRegex(PROCESS_ONLINE.ObservationError, "still exposes"):
+            self._observe("system-interrupted", client, PROCESS_INSTANCE_ID)
 
     def test_registration_recovery_requires_local_readiness_and_current_state(self):
         client = ProcessFakeClient(system_available=False, gateway_available=True,
@@ -554,11 +572,11 @@ class ModuleLifecycleProcessOnlineTest(unittest.TestCase):
         old = instance_record(status="down", reason="lease_expired")
         new = instance_record("manager-runtime-new", newer=True)
         defaults = dict(system_available=True, gateway_available=True,
-                        manager_available=phase == "manager-restarted",
-                        gateway_manager_present=phase == "manager-restarted")
-        if phase == "manager-restarted":
+                        manager_available=phase == "backend-restarted",
+                        gateway_manager_present=phase == "backend-restarted")
+        if phase == "backend-restarted":
             defaults.update(instance_id=new["instance_id"], records=[new, old])
-        elif phase == "manager-gracefully-stopped":
+        elif phase == "backend-gracefully-stopped":
             new.update(status="down", stop_reason="graceful", stopped_at="2026-08-26T00:04:00Z")
             defaults.update(instance_id=new["instance_id"], records=[new, old])
         else:
@@ -567,22 +585,22 @@ class ModuleLifecycleProcessOnlineTest(unittest.TestCase):
         return ProcessFakeClient(**defaults)
 
     def test_accepts_forced_exit_restart_and_graceful_exit(self):
-        phase = "manager-abnormally-stopped"
+        phase = "backend-abnormally-stopped"
         client = self._fault_client(phase)
         report = self._observe(phase, client, PROCESS_INSTANCE_ID)
-        self.assertEqual(report["manager"]["instance"]["stop_reason"], "lease_expired")
+        self.assertEqual(report["backend"]["instance"]["stop_reason"], "lease_expired")
         self.assertTrue(any(query.get("node_ip") == NODE_IPS[1] and
                             query.get("time_basis") == "offline" and
                             query.get("stop_reason") == "lease_expired" for query in client.queries))
-        restarted = self._observe("manager-restarted", self._fault_client("manager-restarted"))
-        self.assertEqual(restarted["manager"]["previous_instance"]["status"], "down")
-        self.assertNotEqual(restarted["manager"]["instance_id"], PROCESS_INSTANCE_ID)
-        graceful = self._observe("manager-gracefully-stopped", self._fault_client("manager-gracefully-stopped"),
+        restarted = self._observe("backend-restarted", self._fault_client("backend-restarted"))
+        self.assertEqual(restarted["backend"]["previous_instance"]["status"], "down")
+        self.assertNotEqual(restarted["backend"]["instance_id"], PROCESS_INSTANCE_ID)
+        graceful = self._observe("backend-gracefully-stopped", self._fault_client("backend-gracefully-stopped"),
                                  "manager-runtime-new", baseline=restarted)
-        self.assertEqual(graceful["manager"]["instance"]["stop_reason"], "graceful")
+        self.assertEqual(graceful["backend"]["instance"]["stop_reason"], "graceful")
 
     def test_rejects_wrong_offline_reason_or_time_boundary(self):
-        phase = "manager-abnormally-stopped"
+        phase = "backend-abnormally-stopped"
         for override in ("reason", "boundary", "lease"):
             with self.subTest(override=override):
                 client = self._fault_client(phase, ignore_time_to=override == "boundary")
@@ -596,7 +614,7 @@ class ModuleLifecycleProcessOnlineTest(unittest.TestCase):
     def test_rejects_restart_reusing_identity_or_rewriting_old_start(self):
         for field in ("instance_id", "process_started_at", "old_start"):
             with self.subTest(field=field):
-                client = self._fault_client("manager-restarted")
+                client = self._fault_client("backend-restarted")
                 if field == "instance_id":
                     client.instance_id = PROCESS_INSTANCE_ID
                     client.records[0][field] = PROCESS_INSTANCE_ID
@@ -605,10 +623,10 @@ class ModuleLifecycleProcessOnlineTest(unittest.TestCase):
                 else:
                     client.records[0][field] = instance_record()[field]
                 with self.assertRaises(PROCESS_ONLINE.ObservationError):
-                    self._observe("manager-restarted", client)
+                    self._observe("backend-restarted", client)
 
     def test_rejects_changed_start_after_same_process_recovery(self):
-        client = self._fault_client("manager-restarted", instance_id=PROCESS_INSTANCE_ID,
+        client = self._fault_client("backend-restarted", instance_id=PROCESS_INSTANCE_ID,
                                     records=[instance_record()])
         client.records[0]["process_started_at"] = "2026-08-26T00:02:00Z"
         with self.assertRaisesRegex(PROCESS_ONLINE.ObservationError, "process_started_at"):
@@ -617,13 +635,13 @@ class ModuleLifecycleProcessOnlineTest(unittest.TestCase):
     def test_rejects_missing_node_ips_and_observer_permission(self):
         for override in ("ips", "platform", "permission"):
             with self.subTest(override=override):
-                client = self._fault_client("manager-abnormally-stopped",
+                client = self._fault_client("backend-abnormally-stopped",
                                             platform=override != "platform",
                                             read_permission=override != "permission")
                 if override == "ips":
                     client.records[0]["host_node_ips"] = []
                 with self.assertRaises(PROCESS_ONLINE.ObservationError):
-                    self._observe("manager-abnormally-stopped", client, PROCESS_INSTANCE_ID)
+                    self._observe("backend-abnormally-stopped", client, PROCESS_INSTANCE_ID)
 
     def test_node_ip_normalization_rejects_empty_and_invalid(self):
         self.assertEqual(PROCESS_ONLINE.node_ips("192.0.2.10,::ffff:192.0.2.10,2001:0db8::10"), NODE_IPS)

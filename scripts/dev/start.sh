@@ -259,9 +259,9 @@ if [ "$EXACT_PROCESS" = true ]; then
     exit 1
   }
   case "$SELECTED_MODULE" in
-    system|manager|gateway) ;;
+    system|manager|gateway|copilot) ;;
     *)
-      echo "❌ --exact-process 必须且只能选择 -system、-manager 或 -gateway" >&2
+      echo "❌ --exact-process 必须且只能选择 -system、-manager、-gateway 或 -copilot" >&2
       exit 1
       ;;
   esac
@@ -406,6 +406,9 @@ else
         ;;
       manager)
         START_MANAGER_BACKEND=true
+        ;;
+      copilot)
+        START_COPILOT_BACKEND=true
         ;;
       gateway)
         START_GATEWAY=true

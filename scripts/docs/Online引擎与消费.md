@@ -16,7 +16,7 @@
 
 `module-registry-recovery` 使用唯一 Hosted Ubuntu profile，入口为 `scripts/test/online-hosted-module-registry-gate.sh`，由 workflow 临时准备身份、服务凭据、节点 IP 与 Infra。正式进程及清理契约见[注册恢复场景](../../docs/spec/testing/scenarios/部署与执行恢复.md#module-registry-recovery)。
 
-Host Gate 先通过受保护的正式进程入口依次启动 Manager、System、Gateway，验证 Manager 在 System 前为 Ready/starting 且直连公开入口可用，System 到达后同一 `instance_id` 进入 registered，Gateway 首个快照建立路由；随后停止 System，验证 Manager 保持 Ready 并报告 recovering、租约路由消失，再恢复 System 并验证 Manager 和 Gateway 无需重启即恢复。五个阶段分别写入 `module-lifecycle-*.json`。
+Host Gate 先通过受保护的正式进程入口依次启动 Manager、System、Gateway，验证 Manager 在 System 前为 Ready/starting 且直连公开入口可用，System 到达后同一 `instance_id` 进入 registered，Gateway 首个快照建立路由；随后停止 System，验证 Manager 保持 Ready 并报告 recovering、租约路由消失，再恢复 System 并验证 Manager 和 Gateway 无需重启即恢复。八个阶段按模块分别写入 `manager-lifecycle-*.json` 和 `copilot-lifecycle-*.json`。
 
 正式 Manager 优雅停止后，owner 套件再使用 `addp-manager` Platform Service Principal 获取短期 Token，经 System 正式注册、心跳和注销 API验证两个回环探针的幂等注册、租约失效、同 ID 恢复、双实例路由、发布元数据更新、优雅注销和零活跃实例残留。`ADDP_ONLINE_PROCESS_TIMEOUT_SECONDS`、`ADDP_ONLINE_ROUTE_TIMEOUT_SECONDS` 和 `ADDP_ONLINE_LEASE_TIMEOUT_SECONDS` 分别控制正式进程、路由和租约收敛上限。
 

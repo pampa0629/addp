@@ -3277,8 +3277,8 @@ class OnlineCIRegistrationTest(unittest.TestCase):
         CHECK.validate_module_registry_process_profile(self.repository, {"module-registry-recovery"})
         host = self.repository / paths[0]
         original = host.read_text()
-        for fragment in ("bash scripts/dev/stop-exact-process.sh --force -manager",
-                         "observe_with_identity manager-restarted",
+        for fragment in ('bash scripts/dev/stop-exact-process.sh --force -"$backend_module"',
+                         "observe_with_identity backend-restarted",
                          'source "$IDENTITY_ENV"', "ADDP_HOST_NODE_IPS"):
             with self.subTest(fragment=fragment):
                 host.write_text(original.replace(fragment, "REMOVED"))

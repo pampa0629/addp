@@ -151,38 +151,7 @@ class OnlineHostGateTest(unittest.TestCase):
                 """
             ),
         )
-        self._write_executable(
-            "scripts/test/module-lifecycle-process-online.py",
-            textwrap.dedent(
-                """\
-                #!/usr/bin/env python3
-                import json
-                import os
-                import pathlib
-                import sys
 
-                phase = sys.argv[sys.argv.index("--phase") + 1]
-                output = pathlib.Path(sys.argv[sys.argv.index("--output") + 1])
-                report = {
-                    "schema_version": "addp.module-lifecycle-process/v1",
-                    "phase": phase,
-                    "manager": {"instance_id": "manager-restarted-process" if phase in
-                                {"manager-restarted", "manager-gracefully-stopped"} else "manager-online-process"},
-                }
-                if os.environ.get("ADDP_TEST_FAIL_PHASE") == phase:
-                    raise SystemExit(1)
-                if phase in {"system-recovered", "manager-abnormally-stopped", "manager-restarted", "manager-gracefully-stopped"}:
-                    baseline = pathlib.Path(sys.argv[sys.argv.index("--baseline") + 1])
-                    assert baseline.is_file()
-                if phase == "manager-gracefully-stopped":
-                    assert sys.argv[sys.argv.index("--expected-instance-id") + 1] == "manager-restarted-process"
-                output.write_text(json.dumps(report) + "\\n", encoding="utf-8")
-                with open(os.environ["ADDP_TEST_COMMAND_LOG"], "a", encoding="utf-8") as log:
-                    log.write(f"observe:{phase}\\n")
-                print(json.dumps(report))
-                """
-            ),
-        )
         self.env_file = self.external / "online.env"
         self.env_file.write_text(
             textwrap.dedent(
@@ -777,6 +746,20 @@ class ExactProcessControlTest(unittest.TestCase):
         self.assertIsNone(system.poll())
         self.assertFalse((self.repository / ".dev-pids/manager.pid").exists())
         self.assertTrue((self.repository / ".dev-pids/system.pid").exists())
+
+    def test_exact_stop_targets_copilot_python_in_its_owned_directory(self):
+        runtime = self.repository / "copilot/backend"
+        (runtime / "venv/bin").mkdir(parents=True)
+        binary = runtime / "venv/bin/python"
+        binary.write_text("#!/usr/bin/env bash\ntrap 'exit 0' TERM\nwhile true; do sleep 0.1; done\n")
+        binary.chmod(0o755)
+        process = subprocess.Popen([str(binary), "main.py"], cwd=runtime)
+        self.processes.append(process)
+        (self.repository / ".dev-pids/copilot-backend.pid").write_text(str(process.pid))
+        time.sleep(0.1)
+        result = self._run("-copilot")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIsNotNone(process.wait(timeout=2))
 
     def test_force_stop_skips_term_and_keeps_other_process_alive(self):
         manager = self._managed_process("manager")

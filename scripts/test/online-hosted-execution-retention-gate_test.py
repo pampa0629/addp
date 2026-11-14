@@ -73,7 +73,7 @@ class HostedExecutionRetentionGateTest(unittest.TestCase):
         subprocess.run(['git','add','.'],cwd=self.host.repository,check=True)
         subprocess.run(['git','commit','-qm','retention fixture'],cwd=self.host.repository,check=True)
 
-    def run_gate(self, check=False, **overrides):
+    def run_gate(self, check=False, *, timeout=20, **overrides):
         env = dict(os.environ, PATH=f'{self.host.bin}:{os.environ["PATH"]}', GITHUB_ACTIONS='true', RUNNER_OS='Linux',
                    RUNNER_TEMP=str(self.host.root), ADDP_ONLINE_HOST='1', ADDP_ONLINE_HOSTED='1',
                    ONLINE_SUITE_INPUT='execution-retention-readonly', ADDP_ONLINE_ARTIFACT_DIR=str(self.host.artifacts),
@@ -81,7 +81,7 @@ class HostedExecutionRetentionGateTest(unittest.TestCase):
                    ADDP_TEST_BACKGROUND_PIDS=str(self.host.background_pids), ADDP_TEST_REAL_PYTHON=sys.executable)
         env.update(overrides)
         return subprocess.run(['bash',f'scripts/test/{SCRIPT.name}']+(['--check-only'] if check else []),
-                              cwd=self.host.repository,env=env,capture_output=True,text=True,timeout=20)
+                              cwd=self.host.repository,env=env,capture_output=True,text=True,timeout=timeout)
 
     def test_real_system_cycle_order_and_disposable_cleanup(self):
         result=self.run_gate();self.assertEqual(result.returncode,0,result.stdout+result.stderr)

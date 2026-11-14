@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Observe formal Manager/System/Gateway process lifecycle transitions for T4."""
+"""Observe formal Go/Python Backend, System and Gateway transitions for T4."""
 
 from __future__ import annotations
 
@@ -21,13 +21,13 @@ from typing import Protocol
 
 PHASES = {
     "business-before-system",
-    "manager-registered",
+    "backend-registered",
     "gateway-established",
     "system-interrupted",
     "system-recovered",
-    "manager-abnormally-stopped",
-    "manager-restarted",
-    "manager-gracefully-stopped",
+    "backend-abnormally-stopped",
+    "backend-restarted",
+    "backend-gracefully-stopped",
 }
 
 
@@ -132,33 +132,36 @@ def _validate_build_identity(
             raise ObservationError(f"{module} {field} must contain a build identity")
 
 
-def _manager_state(
+def _backend_state(
     client: Client,
-    manager_url: str,
+    backend_url: str,
     *,
     registration_state: str,
     expected_instance_id: str | None,
     expected_git_commit: str | None,
+    module_name: str = "manager",
 ) -> dict[str, object]:
-    live = _response(client, manager_url, "/health/live", 200)
-    if live.get("status") != "live" or live.get("module") != "manager":
-        raise ObservationError("Manager liveness contract is invalid")
-    _validate_build_identity(live, "Manager", expected_git_commit)
-    readiness = _response(client, manager_url, "/health/ready", 200)
+    live = _response(client, backend_url, "/health/live", 200)
+    if live.get("status") != "live" or live.get("module") != module_name:
+        raise ObservationError("Backend liveness contract is invalid")
+    _validate_build_identity(live, module_name, expected_git_commit)
+    readiness = _response(client, backend_url, "/health/ready", 200)
     if readiness.get("status") != "ready":
-        raise ObservationError("Manager local readiness is not ready")
+        raise ObservationError("Backend local readiness is not ready")
     if readiness.get("registration_state") != registration_state:
-        raise ObservationError(f"Manager registration_state is not {registration_state}")
+        raise ObservationError(f"Backend registration_state is not {registration_state}")
     instance_id = readiness.get("instance_id")
     if not isinstance(instance_id, str) or not instance_id:
-        raise ObservationError("Manager readiness does not expose instance_id")
+        raise ObservationError("Backend readiness does not expose instance_id")
     if expected_instance_id and instance_id != expected_instance_id:
         raise ObservationError(
-            f"Manager instance_id changed from {expected_instance_id} to {instance_id}"
+            f"Backend instance_id changed from {expected_instance_id} to {instance_id}"
         )
-    business = _response(client, manager_url, "/", 200)
-    if business.get("message") != "Manager 数据管理服务":
-        raise ObservationError("Manager direct business route is unavailable")
+    business = _response(client, backend_url, "/", 200)
+    if business.get("message") != {"manager": "Manager 数据管理服务", "copilot": "ADDP Copilot API"}[module_name]:
+        raise ObservationError("Backend direct business route is unavailable")
+    if module_name == "copilot":
+        _response(client, backend_url, "/api/v1/copilot/settings/inference-bindings/query_generation", 401)
     return {
         "live": True,
         "ready": True,
@@ -182,10 +185,11 @@ def _system_ready(
 def _gateway_state(
     client: Client,
     gateway_url: str,
-    manager_url: str,
+    backend_url: str,
     *,
-    manager_present: bool,
+    backend_present: bool,
     expected_git_commit: str | None,
+    module_name: str = "manager",
 ) -> dict[str, object]:
     live = _response(client, gateway_url, "/health/live", 200)
     ready = _response(client, gateway_url, "/health/ready", 200)
@@ -196,14 +200,14 @@ def _gateway_state(
     modules = root.get("modules")
     if not isinstance(modules, dict):
         raise ObservationError("Gateway root does not expose a module snapshot")
-    observed = modules.get("manager")
-    if manager_present and observed != manager_url:
+    observed = modules.get(module_name)
+    if backend_present and observed != backend_url:
         raise ObservationError(
-            f"Gateway Manager route is {observed!r}, expected {manager_url!r}"
+            f"Gateway Backend route is {observed!r}, expected {backend_url!r}"
         )
-    if not manager_present and observed is not None:
-        raise ObservationError("Gateway still exposes an expired Manager route")
-    return {"ready": True, "manager_route_present": manager_present}
+    if not backend_present and observed is not None:
+        raise ObservationError("Gateway still exposes an expired Backend route")
+    return {"ready": True, "backend_route_present": backend_present}
 
 
 
@@ -278,8 +282,9 @@ def _target(rows: list[dict[str, object]], instance_id: str) -> dict[str, object
 def _runtime_instance(
     client: Client, system_url: str, instance_id: str, status: str,
     expected_ips: tuple[str, ...], reason: str = "",
+    module_name: str = "manager",
 ) -> dict[str, object]:
-    filters = {"module_name": "manager", "role": "backend", "status": status}
+    filters = {"module_name": module_name, "role": "backend", "status": status}
     if reason:
         filters["stop_reason"] = reason
     record = _target(_instances(client, system_url, **filters), instance_id)
@@ -313,10 +318,10 @@ def _runtime_instance(
 
 
 def _baseline_instance(baseline: dict[str, object] | None) -> dict[str, object]:
-    manager = baseline.get("manager", {}) if isinstance(baseline, dict) else {}
-    record = manager.get("instance") if isinstance(manager, dict) else None
+    backend = baseline.get("backend", {}) if isinstance(baseline, dict) else {}
+    record = backend.get("instance") if isinstance(backend, dict) else None
     if not isinstance(record, dict) or not record.get("instance_id"):
-        raise ObservationError("phase requires baseline Manager instance evidence")
+        raise ObservationError("phase requires baseline Backend instance evidence")
     return record
 
 
@@ -329,146 +334,156 @@ def observe_once(
     phase: str,
     client: Client,
     *,
-    manager_url: str,
+    backend_url: str,
     system_url: str,
     gateway_url: str,
     expected_instance_id: str | None,
     expected_git_commit: str | None = None,
     expected_host_node_ips: tuple[str, ...] = (),
     baseline: dict[str, object] | None = None,
+    module_name: str = "manager",
 ) -> dict[str, object]:
     if phase not in PHASES:
         raise ObservationError(f"unsupported lifecycle phase: {phase}")
 
     if phase == "business-before-system":
-        manager = _manager_state(
+        backend = _backend_state(
             client,
-            manager_url,
+            backend_url,
             registration_state="starting",
             expected_instance_id=expected_instance_id,
             expected_git_commit=expected_git_commit,
+            module_name=module_name,
         )
         _unavailable(client, system_url, "System")
         _unavailable(client, gateway_url, "Gateway")
         system = {"reachable": False}
         gateway = {"reachable": False}
-    elif phase == "manager-registered":
+    elif phase == "backend-registered":
         _system_ready(client, system_url, expected_git_commit)
-        manager = _manager_state(
+        backend = _backend_state(
             client,
-            manager_url,
+            backend_url,
             registration_state="registered",
             expected_instance_id=expected_instance_id,
             expected_git_commit=expected_git_commit,
+            module_name=module_name,
         )
         _unavailable(client, gateway_url, "Gateway")
         system = {"ready": True}
         gateway = {"reachable": False}
     elif phase == "gateway-established":
         _system_ready(client, system_url, expected_git_commit)
-        manager = _manager_state(
+        backend = _backend_state(
             client,
-            manager_url,
+            backend_url,
             registration_state="registered",
             expected_instance_id=expected_instance_id,
             expected_git_commit=expected_git_commit,
+            module_name=module_name,
         )
         system = {"ready": True}
         gateway = _gateway_state(
             client,
             gateway_url,
-            manager_url,
-            manager_present=True,
+            backend_url,
+            backend_present=True,
             expected_git_commit=expected_git_commit,
+            module_name=module_name,
         )
     elif phase == "system-interrupted":
         _unavailable(client, system_url, "System")
-        manager = _manager_state(
+        backend = _backend_state(
             client,
-            manager_url,
+            backend_url,
             registration_state="recovering",
             expected_instance_id=expected_instance_id,
             expected_git_commit=expected_git_commit,
+            module_name=module_name,
         )
         system = {"reachable": False}
         gateway = _gateway_state(
             client,
             gateway_url,
-            manager_url,
-            manager_present=False,
+            backend_url,
+            backend_present=False,
             expected_git_commit=expected_git_commit,
+            module_name=module_name,
         )
-    elif phase in {"manager-abnormally-stopped", "manager-gracefully-stopped"}:
+    elif phase in {"backend-abnormally-stopped", "backend-gracefully-stopped"}:
         previous = _baseline_instance(baseline)
         if expected_instance_id != previous["instance_id"]:
             raise ObservationError("stopped instance does not match baseline")
-        _unavailable(client, manager_url, "Manager")
+        _unavailable(client, backend_url, module_name)
         _system_ready(client, system_url, expected_git_commit)
         _platform_identity(client, system_url)
-        reason = "lease_expired" if phase == "manager-abnormally-stopped" else "graceful"
-        record = _runtime_instance(client, system_url, expected_instance_id, "down", expected_host_node_ips, reason)
+        reason = "lease_expired" if phase == "backend-abnormally-stopped" else "graceful"
+        record = _runtime_instance(client, system_url, expected_instance_id, "down", expected_host_node_ips, reason, module_name=module_name)
         _same_process(record, previous)
-        manager = {"live": False, "ready": False, "instance_id": expected_instance_id, "instance": record,
+        backend = {"live": False, "ready": False, "instance_id": expected_instance_id, "instance": record,
                    "runtime_seconds": (_timestamp(record["stopped_at"]) - _timestamp(record["process_started_at"])).total_seconds()}
-        if phase == "manager-gracefully-stopped":
-            previous_manager = baseline["manager"]
-            original = previous_manager.get("previous_instance")
+        if phase == "backend-gracefully-stopped":
+            previous_backend = baseline["backend"]
+            original = previous_backend.get("previous_instance")
             if not isinstance(original, dict):
                 raise ObservationError("graceful phase requires the original DOWN instance evidence")
-            old = _runtime_instance(client, system_url, original["instance_id"], "down", expected_host_node_ips, "lease_expired")
+            old = _runtime_instance(client, system_url, original["instance_id"], "down", expected_host_node_ips, "lease_expired", module_name=module_name)
             _same_process(old, original)
-            manager["previous_instance"] = old
+            backend["previous_instance"] = old
         system = {"ready": True}
-        gateway = _gateway_state(client, gateway_url, manager_url, manager_present=False,
-                                 expected_git_commit=expected_git_commit)
+        gateway = _gateway_state(client, gateway_url, backend_url, backend_present=False,
+                                 expected_git_commit=expected_git_commit, module_name=module_name)
     else:
         _system_ready(client, system_url, expected_git_commit)
-        manager = _manager_state(
+        backend = _backend_state(
             client,
-            manager_url,
+            backend_url,
             registration_state="registered",
             expected_instance_id=expected_instance_id,
             expected_git_commit=expected_git_commit,
+            module_name=module_name,
         )
         system = {"ready": True}
         gateway = _gateway_state(
             client,
             gateway_url,
-            manager_url,
-            manager_present=True,
+            backend_url,
+            backend_present=True,
             expected_git_commit=expected_git_commit,
+            module_name=module_name,
         )
 
-    if phase in {"manager-registered", "gateway-established", "system-recovered", "manager-restarted"}:
+    if phase in {"backend-registered", "gateway-established", "system-recovered", "backend-restarted"}:
         _platform_identity(client, system_url)
-        record = _runtime_instance(client, system_url, manager["instance_id"], "up", expected_host_node_ips)
+        record = _runtime_instance(client, system_url, backend["instance_id"], "up", expected_host_node_ips, module_name=module_name)
         if record.get("stop_reason") or record.get("stopped_at"):
             raise ObservationError("UP instance retains offline state")
-        if _timestamp(record["process_started_at"]) != _timestamp(manager["process_started_at"]):
-            raise ObservationError("registry process_started_at differs from Manager liveness")
-        manager["instance"] = record
+        if _timestamp(record["process_started_at"]) != _timestamp(backend["process_started_at"]):
+            raise ObservationError("registry process_started_at differs from Backend liveness")
+        backend["instance"] = record
         observed_at = datetime.now(timezone.utc)
-        manager["observed_at"] = observed_at.isoformat()
-        manager["uptime_seconds"] = (observed_at - _timestamp(record["process_started_at"])).total_seconds()
-        if manager["uptime_seconds"] < 0:
-            raise ObservationError("Manager process_started_at is in the future")
+        backend["observed_at"] = observed_at.isoformat()
+        backend["uptime_seconds"] = (observed_at - _timestamp(record["process_started_at"])).total_seconds()
+        if backend["uptime_seconds"] < 0:
+            raise ObservationError("Backend process_started_at is in the future")
         if phase == "system-recovered":
             _same_process(record, _baseline_instance(baseline))
-        if phase == "manager-restarted":
+        if phase == "backend-restarted":
             previous = _baseline_instance(baseline)
             if record["instance_id"] == previous["instance_id"]:
                 raise ObservationError("restarted process must have a new instance_id")
             if _timestamp(record["process_started_at"]) <= _timestamp(previous["process_started_at"]):
                 raise ObservationError("restarted process must have a newer process_started_at")
-            old = _runtime_instance(client, system_url, previous["instance_id"], "down", expected_host_node_ips, "lease_expired")
+            old = _runtime_instance(client, system_url, previous["instance_id"], "down", expected_host_node_ips, "lease_expired", module_name=module_name)
             _same_process(old, previous)
-            manager["previous_instance"] = old
+            backend["previous_instance"] = old
 
     return {
-        "schema_version": "addp.module-lifecycle-process/v1",
+        "schema_version": "addp.module-lifecycle-process/v2",
+        "module": module_name,
         "phase": phase,
         "git_commit": expected_git_commit,
-        "manager": manager,
+        "backend": backend,
         "system": system,
         "gateway": gateway,
     }
@@ -478,7 +493,7 @@ def wait_for_phase(
     phase: str,
     client: Client,
     *,
-    manager_url: str,
+    backend_url: str,
     system_url: str,
     gateway_url: str,
     expected_instance_id: str | None,
@@ -487,6 +502,7 @@ def wait_for_phase(
     expected_host_node_ips: tuple[str, ...] = (),
     baseline: dict[str, object] | None = None,
     interval: float = 0.25,
+    module_name: str = "manager",
 ) -> dict[str, object]:
     if timeout <= 0 or interval <= 0:
         raise ObservationError("timeout and interval must be greater than zero")
@@ -497,11 +513,12 @@ def wait_for_phase(
             return observe_once(
                 phase,
                 client,
-                manager_url=manager_url,
+                backend_url=backend_url,
                 system_url=system_url,
                 gateway_url=gateway_url,
                 expected_instance_id=expected_instance_id,
                 expected_git_commit=expected_git_commit,
+                module_name=module_name,
                 expected_host_node_ips=expected_host_node_ips,
                 baseline=baseline,
             )
@@ -524,7 +541,8 @@ def _write_report(path: Path, report: dict[str, object]) -> None:
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument("--phase", choices=sorted(PHASES), required=True)
-    parser.add_argument("--manager-url", default=os.environ.get("MANAGER_URL", ""))
+    parser.add_argument("--module", choices=("manager", "copilot"), required=True)
+    parser.add_argument("--backend-url", default="")
     parser.add_argument("--system-url", default=os.environ.get("SYSTEM_URL", ""))
     parser.add_argument("--gateway-url", default=os.environ.get("GATEWAY_URL", ""))
     parser.add_argument("--expected-instance-id")
@@ -543,7 +561,7 @@ def main() -> int:
             raise ObservationError("ADDP_ONLINE_TEST_PLATFORM_ACCESS_TOKEN is required")
         expected_ips = node_ips(os.environ.get("ADDP_HOST_NODE_IPS", ""))
         baseline = json.loads(args.baseline.read_text(encoding="utf-8")) if args.baseline else None
-        manager_url = _loopback_url(args.manager_url, "MANAGER_URL")
+        backend_url = _loopback_url(args.backend_url, "BACKEND_URL")
         system_url = _loopback_url(args.system_url, "SYSTEM_URL")
         gateway_url = _loopback_url(args.gateway_url, "GATEWAY_URL")
         expected_git_commit = subprocess.run(
@@ -555,9 +573,10 @@ def main() -> int:
         report = wait_for_phase(
             args.phase,
             HTTPClient(timeout=min(args.timeout, 2.0), system_url=system_url, token=token),
-            manager_url=manager_url,
+            backend_url=backend_url,
             system_url=system_url,
             gateway_url=gateway_url,
+            module_name=args.module,
             expected_instance_id=args.expected_instance_id,
             expected_git_commit=expected_git_commit,
             timeout=args.timeout,

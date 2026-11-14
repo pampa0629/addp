@@ -18,7 +18,7 @@ if [ "${1:-}" = "--force" ]; then
   force=1
   shift
 fi
-[ "$#" -eq 1 ] || fail "usage: bash scripts/dev/stop-exact-process.sh [--force] -system|-manager|-gateway|-meta-worker-1|-meta-worker-2|-quality-worker-[12]|-transfer-bounded-worker-[12]|-transfer-continuous-worker-[12]"
+[ "$#" -eq 1 ] || fail "usage: bash scripts/dev/stop-exact-process.sh [--force] -system|-manager|-gateway|-copilot|-meta-worker-1|-meta-worker-2|-quality-worker-[12]|-transfer-bounded-worker-[12]|-transfer-continuous-worker-[12]"
 
 case "$1" in
   -system)
@@ -36,6 +36,10 @@ case "$1" in
   -quality-worker-[12]|-transfer-bounded-worker-[12]|-transfer-continuous-worker-[12])
     module="${1#-}"
     expected_command="\\.dev-bins/addp-${module%-*}([[:space:]]|$)"
+    ;;
+  -copilot)
+    module=copilot-backend
+    expected_command="venv/bin/python([[:space:]]|[0-9.])* main\.py([[:space:]]|$)"
     ;;
   -gateway)
     module=gateway
@@ -72,7 +76,9 @@ if [ -d "/proc/$pid" ]; then
 else
   process_cwd=$(lsof -nP -a -p "$pid" -d cwd -Fn 2>/dev/null | sed -n 's/^n//p' | head -n 1)
 fi
-[ "$process_cwd" = "$ROOT_DIR" ] || fail "PID $pid does not belong to this checkout"
+expected_cwd="$ROOT_DIR"
+[ "$module" != copilot-backend ] || expected_cwd="$ROOT_DIR/copilot/backend"
+[ "$process_cwd" = "$expected_cwd" ] || fail "PID $pid does not belong to this checkout"
 
 if [ "$force" -eq 1 ]; then
   kill -KILL "$pid"

@@ -373,22 +373,23 @@ def validate_module_registry_process_profile(repository: Path, registered: set[s
         raise RegistrationError("module-registry-recovery process profile is missing Hosted gate")
     host_gate = gate.read_text(encoding="utf-8")
     required_fragments = (
-        "bash scripts/dev/start.sh --exact-process --wait-live -manager",
+        "bash scripts/dev/start.sh --exact-process -manager",
         "observe_with_identity business-before-system",
         "bash scripts/dev/start.sh --exact-process -system",
-        "observe_with_identity manager-registered",
+        "observe_with_identity backend-registered",
         "bash scripts/dev/start.sh --exact-process -gateway",
         "observe_with_identity gateway-established",
         "bash scripts/dev/stop-exact-process.sh -system",
         "observe_with_identity system-interrupted",
         "observe_with_identity system-recovered",
-        "bash scripts/dev/stop-exact-process.sh --force -manager",
-        "observe_with_identity manager-abnormally-stopped",
-        "observe_with_identity manager-restarted",
-        "observe_with_identity manager-gracefully-stopped",
+        'bash scripts/dev/stop-exact-process.sh --force -"$backend_module"',
+        "observe_with_identity backend-abnormally-stopped",
+        "observe_with_identity backend-restarted",
+        "observe_with_identity backend-gracefully-stopped",
         'source "$IDENTITY_ENV"',
         "ADDP_HOST_NODE_IPS",
-        "bash scripts/dev/stop-exact-process.sh -manager",
+        'run_backend_lifecycle copilot "http://127.0.0.1:${COPILOT_BACKEND_PORT}"',
+        'bash scripts/dev/stop-exact-process.sh -"$backend_module"',
     )
     missing = [fragment for fragment in required_fragments if not source_contract_contains(host_gate, fragment, repository)]
     if missing:
