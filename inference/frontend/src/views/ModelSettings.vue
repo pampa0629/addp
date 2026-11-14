@@ -133,9 +133,7 @@
               </el-table-column>
               <el-table-column prop="chat_max_output_tokens_parameter" :label="t('inference.deployment.chatMaxOutputTokensParameter')" min-width="210" />
               <el-table-column prop="chat_temperature_mode" :label="t('inference.deployment.chatTemperatureMode')" min-width="160" />
-              <el-table-column :label="t('inference.deployment.chatThinkingMode')" min-width="160">
-                <template #default="{ row }">{{ t(`inference.deployment.thinkingModes.${row.chat_thinking_mode}`) }}</template>
-              </el-table-column>
+              <el-table-column prop="chat_thinking_mode" :label="t('inference.deployment.chatThinkingMode')" :formatter="formatThinkingMode" min-width="160" />
               <el-table-column prop="dimension" :label="t('inference.deployment.dimension')" width="105" />
               <el-table-column :label="t('inference.common.status')" width="105">
                 <template #default="{ row }"><el-tag :type="statusType(row.status)">{{ t(`inference.status.${row.status}`) }}</el-tag></template>
@@ -305,9 +303,7 @@
           <el-table-column prop="profileCode" :label="t('inference.profile.code')" min-width="170" />
           <el-table-column prop="chatMaxOutputTokensParameter" :label="t('inference.deployment.chatMaxOutputTokensParameter')" min-width="210" />
           <el-table-column prop="chatTemperatureMode" :label="t('inference.deployment.chatTemperatureMode')" min-width="160" />
-          <el-table-column :label="t('inference.deployment.chatThinkingMode')" min-width="160">
-            <template #default="{ row }">{{ t(`inference.deployment.thinkingModes.${row.chatThinkingMode}`) }}</template>
-          </el-table-column>
+          <el-table-column prop="chatThinkingMode" :label="t('inference.deployment.chatThinkingMode')" :formatter="formatThinkingMode" min-width="160" />
           <el-table-column prop="dimension" :label="t('inference.deployment.dimension')" width="110" />
           <el-table-column width="80" align="right">
             <template #default="{ row }">
@@ -486,6 +482,7 @@ function canManageDeployment(row) { return canManageProvider(providers.value.fin
 function canManageProfile(row) { return row.scope_type === contextType.value }
 function scopeTypeLabel(scopeType) { return ['platform', 'tenant'].includes(scopeType) ? t(`inference.scope.${scopeType}`) : '-' }
 function statusType(status) { return status === 'active' ? 'success' : 'info' }
+function formatThinkingMode(_row, _column, mode) { return t(`inference.deployment.thinkingModes.${mode}`) }
 function providerName(id) { return providers.value.find(item => item.id === id)?.name || id }
 function deploymentName(id) { return deployments.value.find(item => item.id === id)?.name || id }
 function errorMessage(error) { return error?.response?.data?.error || error?.message || t('inference.common.failed') }

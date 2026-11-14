@@ -10,7 +10,17 @@ const template = {
 }
 const modelID = 'manual-chat-model'
 
-async function openSettings(page, canDiscover) {
+function collectThinkingModeWarnings(page) {
+  const warnings = []
+  page.on('console', message => {
+    if (message.type() === 'warning' && message.text().includes('inference.deployment.thinkingModes.')) {
+      warnings.push(message.text())
+    }
+  })
+  return warnings
+}
+
+async function openSettings(page, canDiscover, language = 'en') {
   const calls = []
   const unexpected = []
   const deployments = []
@@ -21,7 +31,7 @@ async function openSettings(page, canDiscover) {
     'inference.deployment.create', 'inference.profile.create'
   ]
   if (canDiscover) permissions.push('inference.deployment.execute')
-  await page.addInitScript(() => localStorage.setItem('addp-lang', 'en'))
+  await page.addInitScript(lang => localStorage.setItem('addp-lang', lang), language)
   await page.route('**/api/v1/**', route => {
     const request = route.request()
     const path = new URL(request.url()).pathname
@@ -56,19 +66,47 @@ async function openSettings(page, canDiscover) {
     return route.fulfill({ status: 403, json: { error: 'unexpected_request' } })
   })
   await page.goto('/module-ui/inference/settings/models')
-  await page.getByRole('button', { name: 'Add model', exact: true }).click()
-  return { calls, unexpected, dialog: page.getByRole('dialog') }
+  return { calls, unexpected, deployments }
 }
 
+test('deployment thinking modes render without translation warnings on empty and populated tabs', async ({ page }) => {
+  const warnings = collectThinkingModeWarnings(page)
+  const { deployments, calls, unexpected } = await openSettings(page, false, 'zh-cn')
+  await page.getByRole('tab', { name: '高级设置' }).click()
+  await page.getByRole('tab', { name: 'Model Deployment' }).click()
+  const table = page.getByRole('tabpanel', { name: 'Model Deployment' })
+  await expect(table.getByRole('columnheader', { name: '对话思考控制' })).toBeVisible()
+  await expect(table.getByRole('cell')).toHaveCount(0)
+
+  for (const mode of ['upstream_default', 'disabled']) {
+    deployments.push({ id: mode, name: mode, provider_connection_id: provider.id, chat_thinking_mode: mode, status: 'active' })
+  }
+  await page.getByRole('button', { name: '刷新' }).click()
+  await page.getByRole('tab', { name: '模型服务' }).click()
+  await page.getByRole('tab', { name: '高级设置' }).click()
+  for (const [mode, label] of [['upstream_default', '使用上游默认'], ['disabled', '显式关闭思考']]) {
+    const row = table.getByRole('row').filter({ has: page.getByRole('cell', { name: mode, exact: true }) })
+    await expect(row.getByRole('cell', { name: label, exact: true })).toBeVisible()
+  }
+  expect(warnings).toEqual([])
+  expect(calls).toEqual([])
+  expect(unexpected).toEqual([])
+})
+
 test('a tenant model creator without execution permission manually creates a deployment and profile without discovery', async ({ page }) => {
-  const { calls, unexpected, dialog } = await openSettings(page, false)
+  const warnings = collectThinkingModeWarnings(page)
+  const { calls, unexpected } = await openSettings(page, false)
+  await page.getByRole('button', { name: 'Add model', exact: true }).click()
+  const dialog = page.getByRole('dialog')
   await expect(dialog.getByText('Select a suggested model or enter an upstream model identifier.')).toBeVisible()
   const upstream = dialog.getByRole('combobox').first()
   await upstream.fill(modelID)
   await page.getByRole('option', { name: modelID, exact: true }).click()
   await dialog.getByRole('textbox', { name: 'Model profile code' }).fill('manual-chat')
   await dialog.getByRole('button', { name: 'Add to enabled models' }).click()
-  await expect(dialog.getByRole('row').filter({ hasText: 'manual-chat' })).toBeVisible()
+  const selected = dialog.getByRole('row').filter({ hasText: 'manual-chat' })
+  await expect(selected.getByRole('cell', { name: 'Use upstream default', exact: true })).toBeVisible()
+  expect(warnings).toEqual([])
   await dialog.getByRole('button', { name: 'Create models and profiles' }).click()
   await expect(dialog.getByText('Model service connected', { exact: true })).toBeVisible()
   expect(calls).toEqual([
@@ -86,7 +124,9 @@ test('a tenant model creator without execution permission manually creates a dep
 })
 
 test('the same discoverable provider requests its model list with execution permission', async ({ page }) => {
-  const { calls, unexpected, dialog } = await openSettings(page, true)
+  const { calls, unexpected } = await openSettings(page, true)
+  await page.getByRole('button', { name: 'Add model', exact: true }).click()
+  const dialog = page.getByRole('dialog')
   await expect(dialog.getByText('Connected and discovered 1 models', { exact: true })).toBeVisible()
   await dialog.getByRole('combobox').first().fill('discovered')
   await expect(page.getByRole('option', { name: 'discovered-chat-model', exact: true })).toBeVisible()
