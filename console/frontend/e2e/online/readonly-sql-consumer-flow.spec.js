@@ -10,11 +10,14 @@ function required(name) {
 
 test('Read-only SQL SELECT-only source retains precise values and field facts in Console', async ({ page }) => {
   const expected = JSON.parse(required('ADDP_ONLINE_READONLY_SQL_EXPECTATIONS'))
+  expect(process.env.ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN).toBeUndefined()
+  expect(process.env.ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN).toBeUndefined()
   const api = await request.newContext({ baseURL: required('GATEWAY_URL'), extraHTTPHeaders: {
     Authorization: `Bearer ${required('ADDP_ONLINE_TEST_USER_ACCESS_TOKEN')}`
   } })
   const current = identity(await json(await api.get('/api/v1/system/auth/context'), 'consumer identity'))
   await api.dispose()
+  expect([...current.permissions].sort()).toEqual(expected.permissions)
   expect(current.principalType).toBe('user')
   expect(current.tenantID).toBe(String(expected.tenant_id))
   expect(current.principalID).toBe(expected.principal_id)
@@ -28,7 +31,9 @@ test('Read-only SQL SELECT-only source retains precise values and field facts in
     expect(browserIdentity.tenantID).toBe(current.tenantID)
     expect([...browserIdentity.permissions].sort()).toEqual([...current.permissions].sort())
     const manager = page.frameLocator('iframe[data-testid="module-iframe"]')
-    await expect(manager.getByRole('treeitem', { name: 'source', exact: true })).toBeVisible()
+    for (const name of expected.catalog_tables) {
+      await expect(manager.getByRole('treeitem', { name, exact: true })).toBeVisible()
+    }
     await manager.getByRole('treeitem', { name: 'source', exact: true }).click()
     await manager.getByRole('tab', { name: /^(预览|Preview)$/ }).click()
     await expect(manager.getByText(`${expected.namespace}/source - 数据预览`, { exact: true })).toBeVisible()

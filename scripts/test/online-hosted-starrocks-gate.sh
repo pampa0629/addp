@@ -6,6 +6,10 @@ SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)
 ROOT_DIR=$(cd "$SCRIPT_DIR/../.." && pwd -P)
 ONLINE_SUITE=starrocks-consumer-flow
 HOSTED_FIXTURE_CONTAINERS=()
+before_online_application_stop() {
+  [ ! -f "$ADDP_ONLINE_SECRET_DIR/readonly-sql-grants.json" ] ||
+    run_logged bash -c 'source "$1"; python3 -m scripts.test.readonly-sql-consumer-flow-online --engine-type "$2" cleanup' _ "$IDENTITY_ENV" starrocks
+}
 stop_online_fixture() {
   run_logged python3 business/starrocks/admission.py stop
   local evidence
@@ -33,5 +37,6 @@ source "$IDENTITY_ENV"
 run_logged python3 scripts/test/online-engine-registration.py --descriptor "$ADDP_ONLINE_SECRET_DIR/starrocks-engine.json" --output "$ENGINE_RESULT_ENV"
 source "$ENGINE_RESULT_ENV"
 export ADDP_ONLINE_CONSUMER_ENGINE_ID
-unset ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN
+run_logged python3 -m scripts.test.readonly-sql-consumer-flow-online --engine-type starrocks prepare
+unset ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN
 run_logged make test-online "ONLINE_SUITE=$ONLINE_SUITE"

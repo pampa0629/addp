@@ -79,5 +79,5 @@ class StarRocksConsumerTest(unittest.TestCase):
         root = Path(__file__).resolve().parents[2]
         for old in ('scripts/test/gaussdb-consumer-flow-online.py', 'console/frontend/e2e/online/gaussdb-consumer-flow.spec.js'):
             self.assertFalse((root/old).exists())
-        self.assertEqual(len(FLOW.PERMISSIONS), 10)
+        self.assertEqual(len(FLOW.PERMISSIONS), 8)
         self.assertFalse(any(p.startswith(('transfer.', 'service.', 'system.engine.')) for p in FLOW.PERMISSIONS))

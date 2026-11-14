@@ -15,13 +15,15 @@ from urllib.parse import urlencode
 
 API=import_module('scripts.utils.online-api')
 SUPPORT=import_module('scripts.test.security-transfer-protection-online')
-PERMISSIONS={'system.engine_catalog.read','meta.catalog.read','meta.scan_task.execute','meta.scan_task.read','manager.data_item.read','manager.content.read','develop.task.read','develop.task.execute','develop.data_read.execute','system.execution_authorization.create'}
+REGISTRATION=import_module('scripts.test.online-engine-registration')
+PERMISSIONS={'system.engine_catalog.read','meta.catalog.read','manager.data_item.read','manager.content.read','develop.task.read','develop.task.execute','develop.data_read.execute','system.execution_authorization.create'}
 
 
 @dataclass(frozen=True)
 class ConsumerProfile:
     engine_type: str
     namespace: str
+    namespace_term: str
     source_columns: tuple[str, ...]
     sample_name: str
     empty_value: object
@@ -29,14 +31,73 @@ class ConsumerProfile:
     catalog_tables: tuple[str, ...]
 
 PROFILES = {
-    'gaussdb': ConsumerProfile('gaussdb', 'addp_acceptance', ('id','name','amount','optional_text'), '高斯正式接入中文', None, 'TEXT', ('source',)),
-    'starrocks': ConsumerProfile('starrocks', 'business', ('name','id','amount','optional_text'), '正式接入中文', '', 'CHAR(128)', ('source','customers','products','orders')),
+    'gaussdb': ConsumerProfile('gaussdb', 'addp_acceptance', 'schema', ('id','name','amount','optional_text'), '高斯正式接入中文', None, 'TEXT', ('source',)),
+    'starrocks': ConsumerProfile('starrocks', 'business', 'database', ('name','id','amount','optional_text'), '正式接入中文', '', 'CHAR(128)', ('source','customers','products','orders')),
 }
 
 
 def require(ok,message):
     if not ok:
         raise API.SuiteError(message)
+
+
+def private_directory(profile):
+    fixture = import_module('business.scripts.online-gaussdb-consumer-fixture' if profile.engine_type == 'gaussdb' else 'business.starrocks.admission')
+    return fixture.directory()
+
+
+def prepare(profile, tenant, engine):
+    private = private_directory(profile)
+    consumer = SUPPORT.GatewayClient(SUPPORT.required_environment('GATEWAY_URL'), SUPPORT.required_environment('ADDP_ONLINE_TEST_USER_ACCESS_TOKEN'), 30)
+    preparer = SUPPORT.GatewayClient(SUPPORT.required_environment('GATEWAY_URL'), SUPPORT.required_environment('ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN'), 30)
+    API.validate_user_identity(consumer, tenant, PERMISSIONS)
+    REGISTRATION.source_grant_participants(preparer, consumer, tenant, scan_preparation=True)
+    scan = SUPPORT.wait_for_scan(preparer, engine, time.monotonic()+180, scan_depth='deep', targets=[
+        f'addp://engine/{engine}/path/{profile.namespace}/{name}?type=table' for name in profile.catalog_tables])
+    journal = private / 'readonly-sql-grants.json'
+    with open(journal, 'x', opener=lambda path, flags: os.open(path, flags, 0o600)) as output:
+        json.dump([], output)
+    reads, metadata = [], []
+    def checkpoint():
+        journal.write_text(json.dumps(reads+metadata))
+    def on_pending(engine_id, request_id, target):
+        reads.append(dict(engine=engine_id, request_id=request_id, target=target, action='read'))
+        checkpoint()
+    REGISTRATION.initialize_exact_record_read_grants(preparer, consumer, tenant,
+        [(engine, profile.namespace_term, profile.namespace, 'source')], scan_preparation=True, on_pending=on_pending)
+    def on_metadata(rows):
+        metadata[:] = rows
+        checkpoint()
+    grants = REGISTRATION.ExactRecordGrants(preparer, consumer, tenant, action='metadata_read', scan_preparation=True, on_change=on_metadata)
+    for name in profile.catalog_tables[1:]:
+        grants.grant(engine, profile.namespace, name, 'table')
+        consumer.request('POST', '/api/v1/system/engine-access/read-observations/current-source', (403,), {'targets':[grants.target(engine,profile.namespace,name,'table')]})
+    (private / 'readonly-sql-scan.json').write_text(json.dumps(scan))
+
+
+def cleanup(profile):
+    pending = json.loads((private_directory(profile) / 'readonly-sql-grants.json').read_text())
+    preparer = SUPPORT.GatewayClient(SUPPORT.required_environment('GATEWAY_URL'), SUPPORT.required_environment('ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN'), 30)
+    consumer = SUPPORT.GatewayClient(SUPPORT.required_environment('GATEWAY_URL'), SUPPORT.required_environment('ADDP_ONLINE_TEST_USER_ACCESS_TOKEN'), 30)
+    revoked, errors = [], []
+    for row in pending:
+        try:
+            preparer.request('POST', f"/api/v1/system/engines/{row['engine']}/access_grants/{row['request_id']}/revoke", (200,404), {'reason':'Disposable read-only SQL acceptance finished'})
+            observed=consumer.request('POST', '/api/v1/system/engine-access/metadata-checks/meta-query', (200,), {'targets':[row['target']]}).payload
+            require(isinstance(observed,dict) and observed.get('observed_at') and observed.get('targets')==[dict(target=row['target'],visible=False)], 'revoked record remains visible')
+            consumer.request('POST', '/api/v1/system/engine-access/read-observations/current-source', (403,), {'targets':[row['target']]})
+            revoked.append(row)
+        except (RuntimeError,OSError,ValueError):
+            errors.append(row['request_id'])
+    Path(SUPPORT.required_environment('ADDP_ONLINE_ARTIFACT_DIR'), profile.engine_type+'-grant-cleanup.json').write_text(json.dumps(dict(grants=revoked,failed_requests=errors,metadata_hidden=not errors,read_denied=not errors)))
+    require(not errors,'read-only SQL exact Grant cleanup incomplete')
+
+
+def validate_structure(item,profile):
+    attrs=item.get('attributes',{})
+    table=attrs.get('type_info',{}).get('table',{})
+    require(item.get('row_count') is None and 'row_count' not in table and not attrs.get('capabilities'), 'public Meta leaked content statistics or enrichment')
+    validate_fields(item,profile)
 
 
 def select_source(items, profile):
@@ -48,7 +109,7 @@ def select_source(items, profile):
     return next(item for item in items if item['full_name']==profile.namespace+'.source')
 
 
-def validate_item(item, profile):
+def validate_fields(item, profile):
     require(item.get('item_type')=='table' and item.get('full_name')==profile.namespace+'.source' and bool(item.get('fingerprint')), 'scanned read-only SQL item identity differs')
     attrs=item.get('attributes',{})
     require(attrs.get('schema_version')==1 and attrs.get('item',{}).get('data_type')=='table', 'Meta item attributes required')
@@ -56,12 +117,17 @@ def validate_item(item, profile):
     fields=table.get('fields',[])
     require(table.get('primary_key')==['name','id'], f"read-only SQL native primary key order differs: {table.get('primary_key')!r}")
     require({f['name'] for f in fields if f.get('primary_key')}=={'name','id'}, 'read-only SQL primary key membership differs')
-    require(table.get('row_count')==2, f"read-only SQL exact row count differs: {table.get('row_count')!r}")
     require([f['name'] for f in fields]==list(profile.source_columns), 'read-only SQL source column order differs')
     by_name={field['name']:field for field in fields}
     require(by_name['id'].get('type')=='bigint' and by_name['id'].get('primary_key') is True and fields[2].get('type')=='decimal' and fields[2].get('precision')==38 and fields[2].get('scale')==18, 'read-only SQL bigint/Decimal schema lost')
     caps=attrs.get('capabilities',{})
     require(not any(key in caps for key in ('indexing','constraints','partitioning','spatial')), 'uncertified enrichment persisted')
+
+
+def validate_item(item,profile):
+    validate_fields(item,profile)
+    count=item['attributes']['type_info']['table'].get('row_count')
+    require(count==2,f'read-only SQL exact row count differs: {count!r}')
 
 
 def validate_preview(payload, profile):
@@ -119,14 +185,25 @@ def run(client,tenant,engine,timeout,profile):
     require(len(matches)==1 and matches[0].get('engine_type')==profile.engine_type and 'connection_info' not in matches[0], 'read-only SQL registration identity or credential boundary differs')
     storage=matches[0].get('capabilities',{}).get('storage',{})
     require(storage.get('store',{}).get('batch_read') is True and not storage.get('store',{}).get('batch_write'), 'read-only capabilities differ')
-    scan=SUPPORT.wait_for_scan(client,engine,time.monotonic()+timeout)
+    require(not os.environ.get('ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN') and not os.environ.get('ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN'),'preparation credentials leaked into consumer stage')
+    scan=json.loads((private_directory(profile)/'readonly-sql-scan.json').read_text())
     items=client.request('GET',f'/api/v1/meta/engines/{engine}/items?branch={profile.namespace}',(200,)).payload
     item=select_source(items,profile)
-    validate_item(item,profile)
+    validate_structure(item,profile)
+    metadata_only=[]
+    for name in profile.catalog_tables[1:]:
+        record=next(row for row in items if row['full_name']==profile.namespace+'.'+name)
+        locator=SUPPORT.build_item_locator(engine,record)
+        client.request('GET','/api/v1/manager/preview?'+urlencode({'locator':locator,'page':1,'page_size':20}),(403,))
+        target=REGISTRATION.ExactRecordGrants.target(engine,profile.namespace,name,'table')
+        client.request('POST','/api/v1/system/engine-access/read-observations/current-source',(403,),{'targets':[target]})
+        metadata_only.append(dict(target=target,locator=locator,preview_status=403,content_readable=False))
     target=SUPPORT.build_item_locator(engine,item)
     preview=client.request('GET','/api/v1/manager/preview?'+urlencode({'locator':target,'page':1,'page_size':20}),(200,)).payload
     rows=validate_preview(preview,profile)
-    report={'suite':profile.engine_type+'-consumer-flow','engine_type':profile.engine_type,'namespace':profile.namespace,'source_columns':list(profile.source_columns),'sample_name':profile.sample_name,'text_cast':profile.text_cast,'run_id':SUPPORT.required_environment('ADDP_ONLINE_TEST_RUN_ID'),'tenant_id':tenant,'principal_id':str(context['principal']['id']),'engine_id':engine,'engine_name':matches[0]['name'],'scan_execution_id':scan,'item_id':item['id'],'locator':target,'rows':rows,'identity':identity}
+    protected={row['key']:row['value'] for row in preview['data']['item_meta']['attributes']}
+    validate_item(dict(item,attributes=protected),profile)
+    report={'suite':profile.engine_type+'-consumer-flow','engine_type':profile.engine_type,'namespace':profile.namespace,'source_columns':list(profile.source_columns),'sample_name':profile.sample_name,'text_cast':profile.text_cast,'run_id':SUPPORT.required_environment('ADDP_ONLINE_TEST_RUN_ID'),'tenant_id':tenant,'principal_id':str(context['principal']['id']),'engine_id':engine,'engine_name':matches[0]['name'],'scan_execution_id':scan,'item_id':item['id'],'locator':target,'rows':rows,'identity':identity,'permissions':sorted(PERMISSIONS),'catalog_tables':list(profile.catalog_tables),'metadata_only':metadata_only}
     report['browser']=run_browser(report)
     return report
 
@@ -134,10 +211,17 @@ def run(client,tenant,engine,timeout,profile):
 def main():
     parser=argparse.ArgumentParser()
     parser.add_argument('--engine-type',choices=PROFILES,required=True)
-    profile=PROFILES[parser.parse_args().engine_type]
+    parser.add_argument('operation',nargs='?',choices=['prepare','cleanup'])
+    arguments=parser.parse_args()
+    profile=PROFILES[arguments.engine_type]
     require(os.environ.get('ADDP_ONLINE_HOSTED')=='1' and os.environ.get('ADDP_ONLINE_TEST')=='1','Hosted Online entry required')
     tenant=SUPPORT.positive_int(SUPPORT.required_environment('ADDP_ONLINE_TEST_TENANT_ID'),'Tenant')
     engine=SUPPORT.positive_int(SUPPORT.required_environment('ADDP_ONLINE_CONSUMER_ENGINE_ID'),'read-only SQL')
+    if arguments.operation:
+        require(os.environ.get('GITHUB_ACTIONS')=='true' and os.environ.get('RUNNER_OS')=='Linux' and os.environ.get('ADDP_ONLINE_HOST')=='1','disposable Hosted Linux required')
+        if arguments.operation=='prepare': prepare(profile,tenant,engine)
+        else: cleanup(profile)
+        return 0
     client=SUPPORT.GatewayClient(SUPPORT.required_environment('GATEWAY_URL'),SUPPORT.required_environment('ADDP_ONLINE_TEST_USER_ACCESS_TOKEN'),30)
     report=run(client,tenant,engine,float(os.environ.get('ADDP_ONLINE_TEST_TIMEOUT_SECONDS','900')),profile)
     Path(SUPPORT.required_environment('ADDP_ONLINE_ARTIFACT_DIR'),profile.engine_type+'-consumer-flow.json').write_text(json.dumps(report,ensure_ascii=False,indent=2))

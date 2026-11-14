@@ -33,15 +33,25 @@ class HostedGaussDBTest(HIGHGO.HostedHighGoTest):
               [ "$SECURITY_URL" = http://127.0.0.1:8194 ] &&
               [ "$DEVELOP_URL" = http://127.0.0.1:8185 ] &&
               [ "$ADDP_ONLINE_TEST_USER_USERNAME" = external-online-consumer ] &&
-              [ -z "${ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN:-}" ] || exit 1
+              [ -z "${ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN:-}" ] &&
+              [ -z "${ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN:-}" ] || exit 1
             [ "${ADDP_TEST_SUITE_FAIL:-0}" != 1 ]
         ''')
+        self.host._write_repository_script('scripts/test/readonly-sql-consumer-flow-online.py', """
+            import os,sys
+            from pathlib import Path
+            operation=sys.argv[-1]
+            with open(os.environ['ADDP_TEST_GATE_TRACE'],'a') as trace:trace.write('readonly:'+operation+'\\n')
+            assert os.environ['ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN']=='source-token'
+            if operation=='prepare': Path(os.environ['ADDP_ONLINE_SECRET_DIR'],'readonly-sql-grants.json').write_text('[]')
+            if os.environ.get('ADDP_TEST_READONLY_FAIL')==operation:sys.exit(1)
+        """)
         subprocess.run(['git','add','.'],cwd=self.host.repository,check=True)
         subprocess.run(['git','commit','-qm','gaussdb gate fixture'],cwd=self.host.repository,check=True)
 
     def run_gate(self,check=False,**overrides):
         environment={**os.environ,'PATH':f'{self.host.bin}:{os.environ["PATH"]}',
-            'GITHUB_ACTIONS':'true','RUNNER_OS':'Linux','RUNNER_TEMP':str(self.host.root),
+            'PYTHONDONTWRITEBYTECODE':'1','GITHUB_ACTIONS':'true','RUNNER_OS':'Linux','RUNNER_TEMP':str(self.host.root),
             'ADDP_ONLINE_HOST':'1','ADDP_ONLINE_HOSTED':'1','ONLINE_SUITE_INPUT':'gaussdb-consumer-flow',
             'ADDP_ONLINE_ARTIFACT_DIR':str(self.host.artifacts),'ADDP_ONLINE_SECRET_DIR':str(self.host.secrets),
             'ADDP_TEST_GATE_TRACE':str(self.host.trace),'ADDP_TEST_BACKGROUND_PIDS':str(self.host.background_pids),**overrides}
@@ -54,8 +64,8 @@ class HostedGaussDBTest(HIGHGO.HostedHighGoTest):
         trace=self.host.trace.read_text()
         order=['infra-up','gaussdb-fixture:start','start:-security','start:-manager','start:-develop','--suite gaussdb-consumer-flow',
             '--wait-protection-owners manager,develop',
-            'register:gaussdb-engine.json','make:test-online ONLINE_SUITE=gaussdb-consumer-flow',
-            'application-stop','gaussdb-fixture:stop','infra-down']
+            'register:gaussdb-engine.json','readonly:prepare','make:test-online ONLINE_SUITE=gaussdb-consumer-flow',
+            'readonly:cleanup','application-stop','gaussdb-fixture:stop','infra-down']
         positions=[trace.index(step) for step in order]
         self.assertEqual(positions,sorted(positions))
         self.assertEqual(trace.count('register:'),1)
@@ -78,3 +88,13 @@ class HostedGaussDBTest(HIGHGO.HostedHighGoTest):
                 if flags.get('ADDP_TEST_PROTECTION_WAIT_FAIL')=='1':
                     self.assertNotIn('register:',trace)
                     self.assertNotIn('make:test-online',trace)
+
+    def test_preparation_or_revocation_failure_still_cleans_owned_services(self):
+        for failure in ('prepare','cleanup'):
+            self.host.trace.unlink(missing_ok=True)
+            result=self.run_gate(ADDP_TEST_READONLY_FAIL=failure)
+            self.assertNotEqual(result.returncode,0,result.stderr+result.stdout)
+            trace=self.host.trace.read_text()
+            self.assertLess(trace.index('readonly:cleanup'),trace.index('application-stop'))
+            self.assertIn('infra-down',trace)
+            self.assertFalse(self.host.secrets.exists())

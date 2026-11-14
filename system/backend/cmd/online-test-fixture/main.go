@@ -120,6 +120,8 @@ var sourceInitializerPermissions = []string{
 
 func suiteSourceInitializerPermissions(suite string) []string {
 	switch suite {
+	case "gaussdb-consumer-flow", "starrocks-consumer-flow":
+		return append(slices.Clone(sourceInitializerPermissions), "meta.scan_task.execute", "meta.scan_task.read")
 	case "raster-slope-orthogonal-persistence", "raster-sight-orthogonal-persistence", "sql-pool-consumer-flow", "transfer-continuous-events", "metric-service-revision-lifecycle":
 		return append(slices.Clone(sourceInitializerPermissions), "meta.scan_task.execute", "meta.scan_task.read")
 	case "vector-topology-persistence":
@@ -403,7 +405,7 @@ func suitePermissions(suite string) ([]string, error) {
 		return []string{"system.engine_catalog.read", "meta.catalog.read", "manager.data_item.read", "manager.content.read",
 			"develop.task.read", "develop.task.execute", "develop.data_read.execute", "system.execution_authorization.create"}, nil
 	case "gaussdb-consumer-flow", "starrocks-consumer-flow":
-		return append(append([]string{}, catalogConsumerPermissions...), "develop.task.read", "develop.task.execute", "develop.data_read.execute", "system.execution_authorization.create"), nil
+		return []string{"system.engine_catalog.read", "meta.catalog.read", "manager.data_item.read", "manager.content.read", "develop.task.read", "develop.task.execute", "develop.data_read.execute", "system.execution_authorization.create"}, nil
 	case "redis-consumer-flow":
 		return catalogConsumerPermissions, nil
 	case "ftp-consumer-flow":

@@ -1590,7 +1590,7 @@ func TestVectorTopologyIdentityHasExactlyElevenPermissions(t *testing.T) {
 
 func TestGaussDBReadOnlyConsumerFixture(t *testing.T) {
 	permissions, err := suitePermissions("gaussdb-consumer-flow")
-	expected := append(append([]string{}, catalogConsumerPermissions...), "develop.task.read", "develop.task.execute", "develop.data_read.execute", "system.execution_authorization.create")
+	expected := []string{"system.engine_catalog.read", "meta.catalog.read", "manager.data_item.read", "manager.content.read", "develop.task.read", "develop.task.execute", "develop.data_read.execute", "system.execution_authorization.create"}
 	if err != nil || !reflect.DeepEqual(permissions, expected) {
 		t.Fatalf("minimal read-only permissions: %v", err)
 	}
@@ -1602,13 +1602,13 @@ func TestGaussDBReadOnlyConsumerFixture(t *testing.T) {
 		t.Fatal("browser must use the same consumer User")
 	}
 	if _, ok := values["ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN"]; ok {
-		t.Fatal("source authorization is outside GaussDB admission")
+		t.Fatal("preparation credentials must not be manufactured by consumerEnvironment")
 	}
 }
 
 func TestStarRocksReadOnlyConsumerFixture(t *testing.T) {
 	permissions, err := suitePermissions("starrocks-consumer-flow")
-	expected := append(append([]string{}, catalogConsumerPermissions...), "develop.task.read", "develop.task.execute", "develop.data_read.execute", "system.execution_authorization.create")
+	expected := []string{"system.engine_catalog.read", "meta.catalog.read", "manager.data_item.read", "manager.content.read", "develop.task.read", "develop.task.execute", "develop.data_read.execute", "system.execution_authorization.create"}
 	if err != nil || !reflect.DeepEqual(permissions, expected) || !needsEngineProvisioner("starrocks-consumer-flow") {
 		t.Fatal("minimal ordinary consumer plus independent Engine provisioner required")
 	}
@@ -1617,7 +1617,16 @@ func TestStarRocksReadOnlyConsumerFixture(t *testing.T) {
 		t.Fatal("same browser consumer User required")
 	}
 	if _, ok := values["ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN"]; ok {
-		t.Fatal("source authorization is outside read-only fixture scope")
+		t.Fatal("preparation credentials must not be manufactured by consumerEnvironment")
+	}
+}
+
+func TestReadOnlySQLPreparationOwnsOnlyExistingScanQualifications(t *testing.T) {
+	want := append(slices.Clone(sourceInitializerPermissions), "meta.scan_task.execute", "meta.scan_task.read")
+	for _, suite := range []string{"gaussdb-consumer-flow", "starrocks-consumer-flow"} {
+		if !slices.Equal(suiteSourceInitializerPermissions(suite), want) {
+			t.Fatalf("%s requires independent exact scan preparation", suite)
+		}
 	}
 }
 
@@ -1663,7 +1672,7 @@ func TestFTPFixtureSeparatesModelConsumerAndSourceAuthorization(t *testing.T) {
 			t.Fatalf("FTP issuer permissions leaked into %s", suite)
 		}
 	}
-	for _, suite := range []string{"redis-consumer-flow", "gaussdb-consumer-flow", "starrocks-consumer-flow"} {
+	for _, suite := range []string{"redis-consumer-flow"} {
 		if len(suiteSourceInitializerPermissions(suite)) != 0 {
 			t.Fatalf("FTP unexpectedly created a source initializer for %s", suite)
 		}
