@@ -187,6 +187,74 @@ func TestDataSessionRunnerConsumesRegisteredPostgreSQLCDCGeneration(t *testing.T
 	}
 }
 
+func TestDataSessionRunnerPersistsSnapshotPhaseAcrossBatchesAndSessions(t *testing.T) {
+	for _, scan := range []bool{false, true} {
+		for _, resumed := range []bool{false, true} {
+			t.Run(fmt.Sprintf("scan_%t/resumed_%t", scan, resumed), func(t *testing.T) {
+				caps := (&postgresql.PostgreSQLPlugin{}).Capabilities()
+				target := &fakeChangeApplyProvider{}
+				states := &fakeContinuousStateStore{target: target}
+				if resumed {
+					states.initialStates = []models.SyncState{{ID: 1, TaskID: 42, Partition: "0", PositionType: plugin.ChangeStreamPositionTypeKafkaOffset, PositionVersion: plugin.ChangeStreamPositionVersionV1, Position: positionJSON(withDatabaseCDCInitialSnapshotCommitted(kafkaOffsetPosition("0", 1)))}}
+				}
+				first := plugin.ChangeRecord{Partition: "0", Offset: 0, Position: kafkaOffsetPosition("0", 1), Value: []byte(`{"id":"n","type":"COMPLETED","aggregate_type":"Initial Snapshot","additional_data":{"connector_name":"owned"},"timestamp":1}`)}
+				if resumed {
+					first = plugin.ChangeRecord{Partition: "0", Offset: 1, Position: kafkaOffsetPosition("0", 2), Key: []byte(`{"id":1}`), Value: []byte(debeziumEnvelope("c", `null`, `{"id":1}`, "business", "public", "orders"))}
+				}
+				second := plugin.ChangeRecord{Partition: "0", Offset: 2, Position: kafkaOffsetPosition("0", 3), Key: []byte(`{"id":2}`), Value: []byte(debeziumEnvelope("c", `null`, `{"id":2}`, "business", "public", "orders"))}
+				reader := &fakeChangeStreamReader{batches: []*plugin.ChangeRecordBatch{{Records: []plugin.ChangeRecord{first}}, {Records: []plugin.ChangeRecord{second}}}}
+				progress := &fakeContinuousProgressStore{committed: make(chan repository.ContinuousProgress, 2)}
+				scanner := &fakePreparedTargetMetadataScanner{}
+				runner := &DataSessionRunner{ProtectionGate: allowSourceProtectionGate{}, States: states, Progress: progress, MetadataScanner: scanner,
+					Resolver:             planner.StaticEngineResolver{12: {Type: "postgresql", ConnInfo: plugin.ConnectionInfo{"database": "business"}}, 20: {Type: "postgresql", Capabilities: &caps}},
+					Captures:             &fakeCaptureStore{resource: &models.CaptureResource{TaskID: 42, TenantID: 7, Generation: 1, ConnectorName: "owned", SourceType: models.CaptureSourcePostgreSQL, Status: models.CaptureStatusRunning, TopicName: "owned", ConsumerGroup: "owned", SourceIdentity: "addp://engine/12/path/public/orders?type=table", SourceDatabase: "business", SourceSchema: "public", SourceTable: "orders", TopicCreated: true, ConnectorCreated: true}},
+					InfraKafkaConnection: plugin.ConnectionInfo{"bootstrap_servers": "infra"},
+					GetPlugin: func(kind string) (plugin.EnginePlugin, error) {
+						if kind == "kafka" {
+							return &fakeChangeStreamProvider{reader: reader}, nil
+						}
+						return target, nil
+					},
+				}
+				claim := continuousRunnerClaim()
+				claim.Task.TenantID = 7
+				claim.Task.Config = postgresqlCDCRunnerConfig()
+				claim.Task.AutoScanMetadata = scan
+				ctx, cancel := context.WithCancel(context.Background())
+				defer cancel()
+				done := make(chan error, 1)
+				go func() { done <- runner.Run(ctx, claim) }()
+				for i := 0; i < 2; i++ {
+					select {
+					case <-progress.committed:
+					case <-time.After(2 * time.Second):
+						t.Fatal("missing committed batch")
+					}
+				}
+				cancel()
+				if err := <-done; !errors.Is(err, context.Canceled) {
+					t.Fatal(err)
+				}
+				if len(states.positions) != 2 {
+					t.Fatalf("committed positions: %d", len(states.positions))
+				}
+				for i, position := range states.positions {
+					if !databaseCDCInitialSnapshotCommitted(map[string]plugin.ChangeStreamPosition{"0": position}) {
+						t.Errorf("batch %d lost initial snapshot completion (scan=%t resumed=%t)", i, scan, resumed)
+					}
+				}
+				want := 0
+				if scan {
+					want = 1
+				}
+				if scanner.calls != want {
+					t.Fatalf("scan calls=%d want=%d", scanner.calls, want)
+				}
+			})
+		}
+	}
+}
+
 func TestDataSessionRunnerConsumesRegisteredMySQLCDCGeneration(t *testing.T) {
 	targetCaps := (&postgresql.PostgreSQLPlugin{}).Capabilities()
 	resolver := planner.StaticEngineResolver{
@@ -614,8 +682,9 @@ func TestDataSessionRunnerOmitsCaptureFactsForBusinessKafka(t *testing.T) {
 }
 
 type fakeChangeStreamReader struct {
-	batch *plugin.ChangeRecordBatch
-	sent  bool
+	batch   *plugin.ChangeRecordBatch
+	batches []*plugin.ChangeRecordBatch
+	sent    bool
 }
 
 func (r *fakeChangeStreamReader) PositionRanges(context.Context) ([]plugin.ChangeStreamPositionRange, error) {
@@ -625,6 +694,12 @@ func (r *fakeChangeStreamReader) PositionRanges(context.Context) ([]plugin.Chang
 }
 
 func (r *fakeChangeStreamReader) Poll(ctx context.Context, _ int) (*plugin.ChangeRecordBatch, error) {
+	if len(r.batches) > 0 {
+		batch := r.batches[0]
+		r.batches = r.batches[1:]
+		r.sent = true
+		return batch, nil
+	}
 	if !r.sent {
 		r.sent = true
 		return r.batch, nil
@@ -685,12 +760,18 @@ type fakeContinuousStateStore struct {
 	events          *[]string
 	commitErr       error
 	commitCalls     int
+	initialStates   []models.SyncState
+	positions       []plugin.ChangeStreamPosition
 }
 
 func (s *fakeContinuousStateStore) List(context.Context, uint, string) ([]models.SyncState, error) {
-	return nil, nil
+	return s.initialStates, nil
 }
 func (s *fakeContinuousStateStore) ClaimContinuousPartition(context.Context, uint, string, string, string, string, string, uint64) (*models.SyncState, error) {
+	if len(s.initialStates) > 0 {
+		state := s.initialStates[0]
+		return &state, nil
+	}
 	return &models.SyncState{ID: 1, TaskID: 42, Partition: "0", PositionType: plugin.ChangeStreamPositionTypeKafkaOffset, PositionVersion: plugin.ChangeStreamPositionVersionV1}, nil
 }
 func (s *fakeContinuousStateStore) CommitContinuousPosition(_ context.Context, _, _ uint, _ uint64, _ uint64, _ string, position models.JSONMap, _ string) error {
@@ -709,6 +790,7 @@ func (s *fakeContinuousStateStore) CommitContinuousPosition(_ context.Context, _
 	if err != nil {
 		return err
 	}
+	s.positions = append(s.positions, parsed)
 	s.committedOffset, err = kafkaNextOffset(parsed)
 	return err
 }

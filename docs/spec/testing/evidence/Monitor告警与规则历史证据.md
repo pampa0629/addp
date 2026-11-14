@@ -555,3 +555,20 @@ Transfer 的同一机器入口采用 v3 单一路线，增加当前消费状态�
 - 既有 `make test-transfer-continuous-online-runner` 的 127 项与 System fixture Go 测试通过；原 Hosted 指标断言同步公开 DTO 字段，没有放宽字段闭集。前端 CI 登记 27 项及 21 个前端登记检查通过；两模块 Swagger 生成和路由覆盖通过。现有 owner Go／PostgreSQL／前端及 CDC native 门禁已覆盖本批路径，无需新增入口或 workflow。
 
 本轮未运行新的 Hosted 性能故障场景，不把原 60 秒捕获失败、不可恢复风险闭环、指标 native T2 或受控通知 outbox当成本批性能告警的跨模块实故障／Webhook 实收通过。新白名单在个人运行中的 Connect 尚未加载，只读精确属性请求仍返回 403；需由用户重启 Kafka Connect，并因 `common/` 契约变化全量重启 ADDP 后核对任务页、当前规则和样本。现有任务及源槽未写入或清理。后续先完成新版本实际读取，再安排独立性能告警联验，不扩大原 Hosted 的通过范围。
+
+
+### CDC 性能规则重启后只读核对与启动迁移修复（2026-11-14）
+
+用户已执行 Connect 与 ADDP 重启。本机 Transfer／Monitor readiness 均为 ready，构建 SHA `9ff8f56e0b32e0145d342d74bbb42e7ee9d6a50d` 包含持续性能规则修订 `6b135e726f89cc4e461c90fe3030036ecee559d9`；Transfer build `20261114T020651Z-transfer-32631-zAX9mo`、Monitor build `20261114T020640Z-monitor-32631-Yx3txl`。本轮只读核对个人运行环境，没有创建、暂停、恢复或删除任务，没有修改个人规则、位点或逻辑槽。安全采样和风险读取日志位于 `/tmp/addp-cdc-performance-runtime-20261114/`。
+
+- Chrome 现有 Tenant User 的真实页面选中 task 61／`cdc_monitor_local_20261113`：generation 1 运行中、实际源端 engine 2 的专用表、源槽活跃、WAL reserved；当前缓冲 committed/latest/earliest=`10/10/0`、lag=0，源端、延迟和缓冲采样时间持续更新。三条历史告警均为 resolved；通用任务告警规则页与只读数据库查询均确认当前未配置规则。未创建性能规则，不把“暂无告警”认定为规则评估、故障触发或恢复关闭已验收。
+- 10:15:03 与 10:17:08（Asia/Shanghai）精确读取当前 Connector 的四项 streaming Jolokia 属性均为 status 200，新白名单已生效。两次 Connected=true、TotalNumberOfEventsSeen=0、MilliSecondsBehindSource=-1、MilliSecondsSinceLastEvent=-1；Connect 重启后尚无流事件样本，Transfer 安全投影保留 delay/event activity 为 null，页面显示“—”，没有补零或把空闲当延迟。未向源表写入新事件，因此本轮不证明事件计数推进或真实延迟阈值闭环。
+- Transfer 日志确认 Monitor 每 15 秒调用正式 `/runtime/cdc-risk-observations`，10:15:54 至 10:16:54 的五次读取均 HTTP 200。Monitor 启动早期 10:07:39、10:07:54、10:08:09 曾记录 Owner inventory unavailable，随后不再出现；这里只确认接口持续可达，不以 HTTP 200 代替健康事实有效。
+
+进一步只读核对发现实际缺陷：开发库 `transfer.startup_schema_revision=12`，`capture_resources.health_observation` 不存在，Capture 后台反复出现 SQLSTATE 42703。新增字段时漏升模块版本，同版本启动按规范跳过 AutoMigrate，因此新代码已加载仍不能持久发布捕获健康事实。已将 Transfer revision 提升至 13，继续复用 Backend 的唯一版本化前向迁移，不向个人库直接执行补列 SQL，也不让 Worker 迁移。Monitor 的 `cdc_window` 与 `backlog_threshold` 列实际已存在，无需改 Monitor schema。
+
+同一 task 61 的实际 committed position 只有 next_offset=10，`initial_snapshot_completed=false`。代码回溯发现完成标记被自动扫描开关控制，且后续普通批次提交会覆盖标记。本轮修订使 COMPLETED 成功提交后无论是否自动扫描都记录完成事实，后续批次和 runtime session 继续保留；Meta 扫描仍只受原扫描开关控制。没有根据历史运行、普通 DML 或旧位置推定完成，不回填 task 61。该旧任务当前仍会停留在性能规则初始化阶段，不能称为已完成性能告警验收。
+
+验证使用现有标准入口：新增四组 runner 回归在修复前明确丢失完成标记，修复后 `make test-module MODULE=transfer GO_ONLY=1` 通过；PostgreSQL 升级回归复现 revision 12 缺列、同版本跳过迁移，revision 13 修复后证明补列、健康 CAS 写入、同版本不重复应用，以及原 generation／connector／resource_version／缓冲位置保留。新增用例登记到既有 `make test-transfer-postgres`，完整 PostgreSQL 门禁通过，测试只使用 addp_test，升级模拟事务回滚。首轮升级夹具在插入缺列对象时因 GORM RETURNING 失败，已调整为先插入再模拟旧结构；首轮还出现既有 runtime_events 时钟约束失败，未改该范围，后续基线与最终完整门禁均不再出现。日志分别为 `/tmp/addp-cdc-runtime-regression-before.log`、`/tmp/addp-cdc-runtime-regression-after.log`、`/tmp/addp-cdc-runtime-final-t1.log`、`/tmp/addp-cdc-runtime-postgres-before.log`、`/tmp/addp-cdc-runtime-postgres-baseline.log` 与 `/tmp/addp-cdc-runtime-postgres-after.log`。
+
+个人开发库未应用本轮 revision 13，须由用户执行 `./scripts/dev/restart.sh -transfer`，让 Backend 迁移后再启动对应 Worker。修复后的个人运行健康事实和新完成标记仍待重启及后续正式任务事件核对；性能故障 Hosted、暂停／缺样保持与外部通知实收仍未完成，原有 Hosted 结果不外推到本批。

@@ -525,6 +525,7 @@ API 沿现有 alert-rules 的 CRUD，增加 backlog_threshold 和只读 CDC 评�
 
 - 数据库 CDC task 的 connector 必须启用 Debezium `sink` notification，并把通知写入当前 generation-owned 单分区 CDC data topic；Transfer 只接受 connector name 与当前 generation 完全一致的 `aggregate_type=Initial Snapshot` 通知，所有合法初始快照通知都作为目标 `skip` 与 apply ledger、Transfer committed position 一起推进，只有 `type=COMPLETED` 所在 offset 成功提交后才触发首次扫描。
 - 该顺序同时覆盖非空表与空表，不依赖首条数据事件、`source.snapshot=last` 或等待时间猜测。
+- 初始快照完成事实独立于 `auto_scan_metadata`：当前 generation 的 `COMPLETED` offset 经目标提交与 Transfer 位点 CAS 成功后，`initial_snapshot_completed=true` 随该分区后续每次位点提交保留，跨 runtime session 继续使用。扫描开关只控制 Meta 扫描，不控制性能告警的初始化阶段；普通 DML、`SKIPPED` 和旧位置无标记都不能推定快照已完成。
 
 通知编码、身份校验、`skip` 与 `COMPLETED/SKIPPED` 的协议区别见[CDC 事件契约](Transfer数据库CDC.md#事件编码与初始快照通知)。
 

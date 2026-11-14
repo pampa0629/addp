@@ -291,8 +291,8 @@ func (r *DataSessionRunner) Run(ctx context.Context, claim repository.RuntimeLea
 			if result == nil {
 				return fmt.Errorf("apply continuous partition %q returned nil result", group.partition)
 			}
-			snapshotComplete := metadataScanPending && shouldScanContinuousTargetAfterBatch(plan, group.records)
-			if snapshotComplete {
+			snapshotComplete := plan.CDC != nil && shouldScanContinuousTargetAfterBatch(plan, group.records)
+			if snapshotComplete || start.Values[databaseCDCInitialSnapshotCommittedKey] == "true" {
 				result.Position = withDatabaseCDCInitialSnapshotCommitted(result.Position)
 			}
 			if err := r.States.CommitContinuousPosition(
@@ -313,7 +313,7 @@ func (r *DataSessionRunner) Run(ctx context.Context, claim repository.RuntimeLea
 			}); err != nil {
 				return fmt.Errorf("record continuous progress: %w", err)
 			}
-			if snapshotComplete {
+			if metadataScanPending && snapshotComplete {
 				if err := r.MetadataScanner.ScanPreparedTarget(ctx, claim, plan); err != nil {
 					return fmt.Errorf("scan applied continuous target metadata: %w", err)
 				}

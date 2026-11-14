@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"github.com/addp/common/engine/plugins/postgresql"
+	"github.com/addp/common/schema"
 	"github.com/addp/transfer/internal/models"
 	"github.com/addp/transfer/internal/testpg"
 	"github.com/google/uuid"
@@ -110,4 +111,69 @@ func TestIntegrationPostgresCDCBufferObservation(t *testing.T) {
 		t.Fatal("reservation not persisted atomically")
 	}
 
+}
+
+func TestIntegrationPostgresCaptureHealthSchemaUpgrade(t *testing.T) {
+	if os.Getenv("ADDP_POSTGRES_INTEGRATION") != "1" {
+		t.Skip("requires standard PostgreSQL gate")
+	}
+	dsn, err := (&postgresql.PostgreSQLPlugin{}).BuildDSN(testpg.ConnInfoFromEnv(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	db, err := gorm.Open(postgresdriver.Open(dsn), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	tx := db.Begin()
+	if tx.Error != nil {
+		t.Fatal(tx.Error)
+	}
+	defer tx.Rollback()
+	if err = tx.Exec("CREATE SCHEMA IF NOT EXISTS transfer").Error; err != nil {
+		t.Fatal(err)
+	}
+	if err = tx.AutoMigrate(&models.TransferTask{}, &models.CaptureResource{}, &models.PostgreSQLCaptureResource{}, &models.MySQLCaptureResource{}, &models.OracleCaptureResource{}); err != nil {
+		t.Fatal(err)
+	}
+	task := models.TransferTask{TenantID: 991232, Name: "health-upgrade-" + uuid.NewString(), TaskType: "sync", Config: models.JSONMap{}}
+	if err = tx.Create(&task).Error; err != nil {
+		t.Fatal(err)
+	}
+	resource := models.CaptureResource{TaskID: task.ID, TenantID: task.TenantID, Generation: 1, ConnectorName: task.Name, TopicName: task.Name, ConsumerGroup: task.Name, SourceType: models.CaptureSourcePostgreSQL, SourceIdentity: "owned", SourceConnectionFingerprint: "owned", SourceEngineID: 2, SourceDatabase: "fixture", SourceSchema: "public", SourceTable: "owned", Status: models.CaptureStatusRunning, ResourceVersion: 19, BufferObservation: models.JSONMap{"committed_offset": "10"}}
+	if err = tx.Create(&resource).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err = tx.Exec(`ALTER TABLE transfer.capture_resources DROP COLUMN health_observation;
+ CREATE TABLE IF NOT EXISTS transfer.startup_schema_revision(singleton boolean PRIMARY KEY DEFAULT true CHECK(singleton),version bigint NOT NULL);
+ INSERT INTO transfer.startup_schema_revision VALUES(true,12) ON CONFLICT(singleton) DO UPDATE SET version=12`).Error; err != nil {
+		t.Fatal(err)
+	}
+	applyCalls := 0
+	apply := func(db *gorm.DB) error { applyCalls++; return db.AutoMigrate(&models.CaptureResource{}) }
+	if err = schema.Migrate(tx, "transfer", SchemaVersion, apply); err != nil {
+		t.Fatal(err)
+	}
+	if !tx.Migrator().HasColumn(&models.CaptureResource{}, "health_observation") {
+		t.Fatal("startup revision skipped capture health column upgrade")
+	}
+	if err = schema.Require(tx, "transfer", SchemaVersion); err != nil {
+		t.Fatal(err)
+	}
+	if err = schema.Migrate(tx, "transfer", SchemaVersion, apply); err != nil {
+		t.Fatal(err)
+	}
+	if applyCalls != 1 {
+		t.Fatalf("migration applied %d times", applyCalls)
+	}
+	var loaded models.CaptureResource
+	if err = tx.First(&loaded, resource.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if loaded.ConnectorName != resource.ConnectorName || loaded.Generation != 1 || loaded.ResourceVersion != 19 || loaded.BufferObservation["committed_offset"] != "10" {
+		t.Fatal("migration changed existing generation or position")
+	}
+	if err = NewCaptureRepository(tx).Update(context.Background(), loaded.ID, 19, map[string]interface{}{"health_observation": models.JSONMap{"state": "healthy"}}); err != nil {
+		t.Fatal(err)
+	}
 }
