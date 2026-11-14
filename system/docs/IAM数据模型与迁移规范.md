@@ -8,7 +8,7 @@
 
 ## 持续节点 Grant 与源 Deny 退役（2026-11-02）
 
-MinIO 扩展（2026-11-04）：000270 只扩展现有节点路径约束和引擎 profile guard，允许 bucket／普通 prefix 的 metadata_read、read 与显式递归；服务根只导航。既有 Grant、期限、撤销与审计不改写。Meta 使用已有最小身份机器权限核对；整体容器继续为精确 DataItem。节点范围不能把仅元数据边界升级为可读内容边界。
+MinIO 扩展（2026-11-04）：000270 只扩展现有节点路径约束和引擎 profile guard，允许 bucket／普通 prefix 的 metadata_read、read 与显式递归；当时服务根只导航。000295 扩展同一约束和引擎 profile guard，允许签发递归服务根授权；不改写任何存量 Grant。既有 Grant、期限、撤销与审计不改写。Meta 使用已有最小身份机器权限核对；整体容器继续为精确 DataItem。节点范围不能把仅元数据边界升级为可读内容边界。
 
 FileGDB 精确源表授权（实施中）：沿用 `execution_authorizations.source_read_scope`，新增只用于 Manager 发起、Transfer 执行的 `filegdb_source`。范围冻结完整执行配置摘要、PostGIS／MySQL 原生单表的身份及边界摘要、引擎版本。签发要求同一用户的精确待执行任务、现有两项 Manager 功能权限和当前源 Grant。消费只允许固定 Transfer Runtime 的当前租约，重新读取 Meta 和源规则后返回同版本的受控源引擎连接。既有通用引擎访问接口拒绝消费此授权。数据库迁移不改写已有授权、角色或 Grant。实际 Manager 派发、下载和 Hosted 验收分别登记。
 

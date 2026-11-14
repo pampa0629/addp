@@ -16,6 +16,7 @@ import (
 )
 
 type metadataVisibilityClient interface {
+	CheckMetaNavigation(context.Context, string, authorization.SourceNavigationCheckRequest) (*authorization.SourceMetadataCheck, error)
 	CheckMetaMetadataRead(context.Context, string, []plugin.EngineCatalogPath) (*authorization.SourceMetadataCheck, error)
 }
 
@@ -25,7 +26,16 @@ func (h *Handler) metadataBrowsingContext(c *gin.Context) context.Context {
 		return c.Request.Context()
 	}
 	c.Header("Cache-Control", "no-store")
-	return service.WithMetadataVisibility(c.Request.Context(), func(ctx context.Context, targets []plugin.EngineCatalogPath) (*authorization.SourceMetadataCheck, error) {
+	ctx := c.Request.Context()
+	if ok && current.Principal.Type == "user" && current.Token.Type != "delegated_access_token" {
+		ctx = service.WithNavigationVisibility(ctx, func(ctx context.Context, query authorization.SourceNavigationCheckRequest) (*authorization.SourceMetadataCheck, error) {
+			if !ok || current.Principal.Type != "user" || current.Context.Type != "tenant" || h.metadataVisibility == nil {
+				return nil, commonapi.ErrForbidden
+			}
+			return h.metadataVisibility.CheckMetaNavigation(ctx, commonAuth.CanonicalBearerToken(c.GetHeader("Authorization")), query)
+		})
+	}
+	return service.WithMetadataVisibility(ctx, func(ctx context.Context, targets []plugin.EngineCatalogPath) (*authorization.SourceMetadataCheck, error) {
 		if !ok || current.Principal.Type != "user" || current.Context.Type != "tenant" || h.metadataVisibility == nil {
 			return nil, commonapi.ErrForbidden
 		}

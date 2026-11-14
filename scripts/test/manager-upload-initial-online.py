@@ -184,7 +184,7 @@ def run(repository, environment, owner):
         return result.status
     try:
         require(history() == [], 'upload fixture starts with Grant history')
-        API.wait_manager_read_boundary(client, engine, deadline)
+        API.wait_manager_read_boundary(client, engine, deadline, target_visible=False)
         metadata(client, 'existing.obj', 404)
         value, state = upload([('created.obj', MODEL), ('metadata.csv', b'id,name\n1,A\n')])
         require(state.get('status') == 'success' and not value.get('failed_files'), 'new upload did not physically succeed')

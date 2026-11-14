@@ -26,7 +26,7 @@ var (
 
 // GetResourceTree 获取标准资源树
 // @Summary 获取标准资源树 | Get resource tree
-// @Description 用户及既有委托工具只返回当前授权可见的数据项和必要祖先；统计数量与搜索限额在过滤后计算，不返回样本或源内容统计 | Users and existing delegated tools receive only currently visible items and required ancestors; counts and search limits apply after filtering, without samples or source content statistics
+// @Description 用户仅见当前可见项、必要祖先及有效节点（包括空节点）；现有委托工具只返回可见项与必要祖先；统计数量与搜索限额在过滤后计算，不返回样本或源内容统计 | Users receive visible items, necessary ancestors and authorized nodes including empty nodes; existing delegated tools receive visible items and necessary ancestors; counts and search limits apply after filtering, without samples or source content statistics
 // @Description 获取指定引擎的标准资源树视图，返回 common/resourcetree.TreeNode | Get standard resource tree for an engine
 // @Description 委托 resource.children.list 仅允许 expand_depth=1 且没有其他查询参数 | Delegated resource.children.list requires expand_depth=1 and no other query parameters
 // @Tags Meta Resource Tree
@@ -70,7 +70,7 @@ func (h *Handler) GetResourceTree(c *gin.Context) {
 
 // GetResourceTreeNode 获取标准资源树节点
 // @Summary 获取标准资源树节点 | Get resource tree node
-// @Description 用户及既有委托工具只返回当前授权可见的数据项和必要祖先；统计数量与搜索限额在过滤后计算，不返回样本或源内容统计 | Users and existing delegated tools receive only currently visible items and required ancestors; counts and search limits apply after filtering, without samples or source content statistics
+// @Description 用户仅见当前可见项、必要祖先及有效节点（包括空节点）；现有委托工具只返回可见项与必要祖先；统计数量与搜索限额在过滤后计算，不返回样本或源内容统计 | Users receive visible items, necessary ancestors and authorized nodes including empty nodes; existing delegated tools receive visible items and necessary ancestors; counts and search limits apply after filtering, without samples or source content statistics
 // @Description 按 locator 获取资源树节点及直接子级，返回 common/resourcetree.TreeNode | Get resource tree node and direct children by locator
 // @Tags Meta Resource Tree
 // @Produce json
@@ -111,7 +111,7 @@ func (h *Handler) GetResourceTreeNode(c *gin.Context) {
 
 // GetResourceTreeAncestors 获取标准资源树祖先链
 // @Summary 获取标准资源树祖先链 | Get resource tree ancestors
-// @Description 用户及既有委托工具只返回当前授权可见的数据项和必要祖先；统计数量与搜索限额在过滤后计算，不返回样本或源内容统计 | Users and existing delegated tools receive only currently visible items and required ancestors; counts and search limits apply after filtering, without samples or source content statistics
+// @Description 用户仅见当前可见项、必要祖先及有效节点（包括空节点）；现有委托工具只返回可见项与必要祖先；统计数量与搜索限额在过滤后计算，不返回样本或源内容统计 | Users receive visible items, necessary ancestors and authorized nodes including empty nodes; existing delegated tools receive visible items and necessary ancestors; counts and search limits apply after filtering, without samples or source content statistics
 // @Description 按 locator 获取 root 到目标资源的标准资源树祖先链，并重写为当前 Meta 事实 locator | Get resource tree ancestor chain by locator and rewrite target locator from current Meta facts
 // @Tags Meta Resource Tree
 // @Produce json
@@ -152,7 +152,7 @@ func (h *Handler) GetResourceTreeAncestors(c *gin.Context) {
 
 // SearchResourceTree 搜索标准资源树
 // @Summary 搜索标准资源树 | Search resource tree
-// @Description 用户及既有委托工具只返回当前授权可见的数据项和必要祖先；统计数量与搜索限额在过滤后计算，不返回样本或源内容统计 | Users and existing delegated tools receive only currently visible items and required ancestors; counts and search limits apply after filtering, without samples or source content statistics
+// @Description 用户仅见当前可见项、必要祖先及有效节点（包括空节点）；现有委托工具只返回可见项与必要祖先；统计数量与搜索限额在过滤后计算，不返回样本或源内容统计 | Users receive visible items, necessary ancestors and authorized nodes including empty nodes; existing delegated tools receive visible items and necessary ancestors; counts and search limits apply after filtering, without samples or source content statistics
 // @Description 在指定引擎的标准资源树中按关键词搜索节点 | Search nodes in a standard resource tree by keyword
 // @Tags Meta Resource Tree
 // @Produce json

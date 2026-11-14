@@ -411,3 +411,14 @@ func TestManagerObjectPreviewCheckHasPreviewQualificationOnly(t *testing.T) {
 		})
 	}
 }
+
+func (f *metadataCheckFixture) CheckManagerNavigation(_ context.Context, _ string, q authorization.SourceNavigationCheckRequest) (*authorization.SourceMetadataCheck, error) {
+	result := &authorization.SourceMetadataCheck{ObservedAt: time.Now()}
+	for _, target := range q.Targets {
+		result.Targets = append(result.Targets, authorization.SourceMetadataTargetCheck{Target: target})
+	}
+	return result, nil
+}
+func (f *metadataCheckFixture) CheckMetaNavigation(ctx context.Context, token string, q authorization.SourceNavigationCheckRequest) (*authorization.SourceMetadataCheck, error) {
+	return f.CheckManagerNavigation(ctx, token, q)
+}

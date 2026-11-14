@@ -48,6 +48,16 @@ func TestPGMetadataHandlersForwardOriginalCredentialAndFilter(t *testing.T) {
 						t.Errorf("engine facts used wrong identity")
 					}
 					json.NewEncoder(w).Encode(engine)
+				case "/api/v1/system/engine-access/metadata-checks/meta-navigation":
+					var query authorization.SourceNavigationCheckRequest
+					if json.NewDecoder(r.Body).Decode(&query) != nil || !query.Valid() {
+						t.Fatal("invalid navigation query")
+					}
+					result := authorization.SourceMetadataCheck{ObservedAt: time.Now()}
+					for _, target := range query.Targets {
+						result.Targets = append(result.Targets, authorization.SourceMetadataTargetCheck{Target: target})
+					}
+					json.NewEncoder(w).Encode(result)
 				case "/api/v1/system/engine-access/metadata-checks/meta-query":
 					checks++
 					if r.Method != "POST" || r.Header.Get("Authorization") != "Bearer "+credential || r.Header.Get("X-Tenant-ID") != "" {
@@ -229,7 +239,7 @@ func TestPGMetadataHandlersForwardOriginalCredentialAndFilter(t *testing.T) {
 				}
 				for _, route := range routes {
 					response = get("/api/v1/meta" + route)
-					list := route == "/stats" || route == "/engines" || (strings.HasPrefix(route, "/engines/") && !strings.Contains(route, "?branch=")) || strings.HasSuffix(route, "/children")
+					list := route == "/stats" || route == "/engines" || (strings.HasPrefix(route, "/engines/") && !strings.Contains(route, "?branch="))
 					want := 404
 					if list {
 						want = 200

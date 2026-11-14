@@ -1818,7 +1818,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "用户及既有委托工具只返回当前授权可见的数据项和必要祖先；统计数量与搜索限额在过滤后计算，不返回样本或源内容统计 | Users and existing delegated tools receive only currently visible items and required ancestors; counts and search limits apply after filtering, without samples or source content statistics\n获取指定引擎的标准资源树视图，返回 common/resourcetree.TreeNode | Get standard resource tree for an engine\n委托 resource.children.list 仅允许 expand_depth=1 且没有其他查询参数 | Delegated resource.children.list requires expand_depth=1 and no other query parameters",
+                "description": "用户仅见当前可见项、必要祖先及有效节点（包括空节点）；现有委托工具只返回可见项与必要祖先；统计数量与搜索限额在过滤后计算，不返回样本或源内容统计 | Users receive visible items, necessary ancestors and authorized nodes including empty nodes; existing delegated tools receive visible items and necessary ancestors; counts and search limits apply after filtering, without samples or source content statistics\n获取指定引擎的标准资源树视图，返回 common/resourcetree.TreeNode | Get standard resource tree for an engine\n委托 resource.children.list 仅允许 expand_depth=1 且没有其他查询参数 | Delegated resource.children.list requires expand_depth=1 and no other query parameters",
                 "produces": [
                     "application/json"
                 ],
@@ -1897,7 +1897,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "用户及既有委托工具只返回当前授权可见的数据项和必要祖先；统计数量与搜索限额在过滤后计算，不返回样本或源内容统计 | Users and existing delegated tools receive only currently visible items and required ancestors; counts and search limits apply after filtering, without samples or source content statistics\n按 locator 获取 root 到目标资源的标准资源树祖先链，并重写为当前 Meta 事实 locator | Get resource tree ancestor chain by locator and rewrite target locator from current Meta facts",
+                "description": "用户仅见当前可见项、必要祖先及有效节点（包括空节点）；现有委托工具只返回可见项与必要祖先；统计数量与搜索限额在过滤后计算，不返回样本或源内容统计 | Users receive visible items, necessary ancestors and authorized nodes including empty nodes; existing delegated tools receive visible items and necessary ancestors; counts and search limits apply after filtering, without samples or source content statistics\n按 locator 获取 root 到目标资源的标准资源树祖先链，并重写为当前 Meta 事实 locator | Get resource tree ancestor chain by locator and rewrite target locator from current Meta facts",
                 "produces": [
                     "application/json"
                 ],
@@ -1977,7 +1977,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "用户及既有委托工具只返回当前授权可见的数据项和必要祖先；统计数量与搜索限额在过滤后计算，不返回样本或源内容统计 | Users and existing delegated tools receive only currently visible items and required ancestors; counts and search limits apply after filtering, without samples or source content statistics\n按 locator 获取资源树节点及直接子级，返回 common/resourcetree.TreeNode | Get resource tree node and direct children by locator",
+                "description": "用户仅见当前可见项、必要祖先及有效节点（包括空节点）；现有委托工具只返回可见项与必要祖先；统计数量与搜索限额在过滤后计算，不返回样本或源内容统计 | Users receive visible items, necessary ancestors and authorized nodes including empty nodes; existing delegated tools receive visible items and necessary ancestors; counts and search limits apply after filtering, without samples or source content statistics\n按 locator 获取资源树节点及直接子级，返回 common/resourcetree.TreeNode | Get resource tree node and direct children by locator",
                 "produces": [
                     "application/json"
                 ],
@@ -2151,7 +2151,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "用户及既有委托工具只返回当前授权可见的数据项和必要祖先；统计数量与搜索限额在过滤后计算，不返回样本或源内容统计 | Users and existing delegated tools receive only currently visible items and required ancestors; counts and search limits apply after filtering, without samples or source content statistics\n在指定引擎的标准资源树中按关键词搜索节点 | Search nodes in a standard resource tree by keyword",
+                "description": "用户仅见当前可见项、必要祖先及有效节点（包括空节点）；现有委托工具只返回可见项与必要祖先；统计数量与搜索限额在过滤后计算，不返回样本或源内容统计 | Users receive visible items, necessary ancestors and authorized nodes including empty nodes; existing delegated tools receive visible items and necessary ancestors; counts and search limits apply after filtering, without samples or source content statistics\n在指定引擎的标准资源树中按关键词搜索节点 | Search nodes in a standard resource tree by keyword",
                 "produces": [
                     "application/json"
                 ],

@@ -180,7 +180,7 @@ class Server:
                     if recipient == ('user', '36') and server.fault == 'function_wrong_binding' and rows:
                         rows[0]['item_fingerprint'] = 'wrong-dataitem'
                 elif path == '/api/v1/manager/engines':
-                    result = {'data': [{'id': 2}]}
+                    result = {'data': []}
                 elif path == '/api/v1/manager/preview':
                     target = query['locator'][0]
                     matching = [row for key, row in server.grants.items()
@@ -831,6 +831,12 @@ class PGAuthorizationOnlineTest(unittest.TestCase):
                 ONLINE.API.wait_manager_read_boundary(client, 2, 10)
             sleep.assert_not_called()
             client.request.assert_called_once()
+
+    def test_shared_manager_boundary_accepts_empty_authorized_catalog(self):
+        client = SimpleNamespace(request=Mock(return_value=SimpleNamespace(status=200, payload={'data': []})))
+        with patch.object(ONLINE.time, 'monotonic', return_value=0):
+            ONLINE.API.wait_manager_read_boundary(client, 2, 10, target_visible=False)
+        client.request.assert_called_once_with('GET', '/api/v1/manager/engines', (200, 403))
 
     def test_shared_manager_boundary_fails_when_initial_sync_does_not_finish(self):
         client = SimpleNamespace(request=Mock(return_value=SimpleNamespace(

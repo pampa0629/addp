@@ -472,7 +472,7 @@ def run(repository, environment, owner):
         outsider_id = FILES.exact_user_principal(outsider, tenant, OUTSIDER_PERMISSIONS)
         require(outsider_id not in {principal, authorization.operator}, 'outsider must be a separate User')
         physical('seed')
-        API.wait_manager_read_boundary(client, engine, time.monotonic() + 120)
+        API.wait_manager_read_boundary(client, engine, time.monotonic() + 120, target_visible=False)
         owner.wait_for_meta_scan(client, engine, time.monotonic() + 180, depth='basic', scope={'catalog_paths': [NAME]})
         item = find_item(client, engine)
         facts = authorization.facts(item)

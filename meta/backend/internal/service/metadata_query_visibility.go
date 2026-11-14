@@ -3,6 +3,8 @@ package service
 import (
 	"context"
 	"database/sql"
+	"errors"
+	metaErrors "github.com/addp/meta/internal/errors"
 
 	"gorm.io/gorm"
 
@@ -100,6 +102,10 @@ func (s *ResourceTreeService) FilterMetadataNodes(ctx context.Context, tenantID 
 		}
 		if _, checked := indexes[node.EngineID]; !checked {
 			tree, err := s.GetTree(ctx, tenantID, node.EngineID, -1)
+			if errors.Is(err, metaErrors.ErrNodeNotFound) {
+				indexes[node.EngineID] = map[uint]*resourcetree.TreeNode{}
+				continue
+			}
 			if err != nil {
 				return nil, err
 			}

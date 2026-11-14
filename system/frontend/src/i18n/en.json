@@ -1261,6 +1261,7 @@
           "mixed": "Multiple authorization sources",
           "upload_creation": "Initial uploaded DataItem grant"
         },
+        "wholeEngine": "Entire engine (including future DataItems)",
         "nodeRecursive": "Include descendant DataItems recursively",
         "mixedSelection": "Select DataItems and nodes together. Nodes cover current and future DataItems; set recursion separately for each node.",
         "scope": "Authorization scope",

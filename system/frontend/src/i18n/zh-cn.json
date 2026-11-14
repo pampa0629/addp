@@ -1261,6 +1261,7 @@
           "mixed": "多种授权来源",
           "upload_creation": "上传新数据初始授权"
         },
+        "wholeEngine": "整个引擎（含以后新增的数据项）",
         "nodeRecursive": "递归包含下级节点的数据项",
         "mixedSelection": "可同时勾选数据项与节点。节点覆盖当前及以后新增的数据项；每个节点可单独设置递归。",
         "scope": "授权范围",

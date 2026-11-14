@@ -3096,7 +3096,7 @@ class Lifecycle:
     def run(self, report, *, load_profile='full'):
         reader_before = self.reader.token
         report['phase'] = 'initial_protection_sync'
-        API.wait_manager_read_boundary(self.reader, self.engine, time.monotonic() + 120)
+        API.wait_manager_read_boundary(self.reader, self.engine, time.monotonic() + 120, target_visible=False)
         report['phase'] = 'initial_basic_scan'
         report['initial_scan'] = basic_scan(self.operator, self.engine, ['metric_people', 'metric_events'])
         # Paths identify the request, never permission. Meta identities are read by

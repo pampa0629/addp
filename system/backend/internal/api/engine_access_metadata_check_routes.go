@@ -21,6 +21,8 @@ import (
 )
 
 type metaMetadataCheckService interface {
+	CheckManagerNavigation(context.Context, string, authorization.SourceNavigationCheckRequest) (*authorization.SourceMetadataCheck, error)
+	CheckMetaNavigation(context.Context, string, authorization.SourceNavigationCheckRequest) (*authorization.SourceMetadataCheck, error)
 	CheckManagerObjectPreview(context.Context, string, authorization.SourceMetadataCheckRequest) (*authorization.SourceObjectPreviewCheck, error)
 	CheckMetaLineageRead(context.Context, string, authorization.SourceMetadataCheckRequest) (*authorization.SourceMetadataCheck, error)
 	CheckMetaMetadataRead(context.Context, string, authorization.SourceMetadataCheckRequest) (*authorization.SourceMetadataCheck, error)
@@ -73,6 +75,7 @@ func RegisterEngineAccessMetadataCheckRoutes(api *gin.RouterGroup, runtime *IAMR
 		}
 		guards[current.Client.Scopes[0]](c)
 	}
+	api.POST("/engine-access/metadata-checks/meta-navigation", runtime.Authentication, runtime.UserAccessCredential, tenant, permission, handler.CheckMetaNavigation)
 	api.POST("/engine-access/metadata-checks/meta-query", runtime.Authentication, credential, tenant, delegated, permission, handler.CheckMetaQuery)
 	lineagePermission, err := middleware.NewIAMPermissionGuard(engineaccess.MetaLineageReadPermission)
 	if err != nil {
@@ -83,6 +86,7 @@ func RegisterEngineAccessMetadataCheckRoutes(api *gin.RouterGroup, runtime *IAMR
 	if err != nil {
 		return err
 	}
+	api.POST("/engine-access/metadata-checks/manager-navigation", runtime.Authentication, runtime.UserAccessCredential, tenant, previewPermission, handler.CheckManagerNavigation)
 	previewDelegate, err := sharedauth.NewDelegatedRouteGuard(sharedauth.DelegatedRouteGuardConfig{Audience: "manager", RequiredScopes: []string{"data.preview"}, RequiredPermissions: []string{engineaccess.ManagerPreviewReadPermission}})
 	if err != nil {
 		return err
@@ -254,6 +258,60 @@ func (h *EngineAccessMetadataCheckHandler) CheckManagerObjectPreview(c *gin.Cont
 	}
 	if !result.Matches(request) {
 		respondIAMError(c, errors.New("incomplete preview observation"))
+		return
+	}
+	c.JSON(http.StatusOK, result)
+}
+
+// CheckManagerNavigation godoc
+// @Summary 检查数据探查引擎可见性 | Check explorer engine visibility
+// @Description 当前用户的有效个人和组织 Grant 决定 PG、NFS、MinIO 引擎根可见性；跨 Meta 查询后重核。结果不包含授权来源、内容或可缓存许可 | Current personal and organization Grants determine PG, NFS and MinIO root visibility, rechecked after Meta queries. Returns no Grant provenance, content or reusable lease
+// @Tags 源数据读取检查 | Source Data Read Checks
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param request body authorization.SourceNavigationCheckRequest true "1 至 200 个引擎根 | 1 to 200 engine roots"
+// @Success 200 {object} authorization.SourceMetadataCheck
+// @Failure 400,401,403,500,503 {object} IAMErrorResponse "核验失败 | Check failed"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["manager.data_item.read"]
+// @Router /engine-access/metadata-checks/manager-navigation [post]
+func (h *EngineAccessMetadataCheckHandler) CheckManagerNavigation(c *gin.Context) {
+	h.navigation(c, h.service.CheckManagerNavigation)
+}
+
+// CheckMetaNavigation godoc
+// @Summary 检查元数据路径可见性 | Check metadata navigation visibility
+// @Description 当前租户用户按有效节点授权检查导航范围；精确项祖先由 Meta 从可见叶子保留。撤权和到期实时重核 | Current Tenant users check navigation ranges from active node grants. Meta retains ancestors of visible exact items. Revocation and expiry are checked on each request
+// @Tags 源数据读取检查 | Source Data Read Checks
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param request body authorization.SourceNavigationCheckRequest true "1 至 200 个规范节点 | 1 to 200 canonical nodes"
+// @Success 200 {object} authorization.SourceMetadataCheck
+// @Failure 400,401,403,500,503 {object} IAMErrorResponse "核验失败 | Check failed"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["meta.catalog.read"]
+// @Router /engine-access/metadata-checks/meta-navigation [post]
+func (h *EngineAccessMetadataCheckHandler) CheckMetaNavigation(c *gin.Context) {
+	h.navigation(c, h.service.CheckMetaNavigation)
+}
+
+func (h *EngineAccessMetadataCheckHandler) navigation(c *gin.Context, check func(context.Context, string, authorization.SourceNavigationCheckRequest) (*authorization.SourceMetadataCheck, error)) {
+	c.Header("Cache-Control", "no-store")
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 512<<10)
+	var query authorization.SourceNavigationCheckRequest
+	if c.Request.URL.RawQuery != "" || commonapi.BindOptionalJSONStrict(c, &query) != nil || !query.Valid() {
+		respondIAMError(c, commonapi.ErrBadRequest)
+		return
+	}
+	result, err := check(c.Request.Context(), sharedauth.CanonicalBearerToken(c.GetHeader("Authorization")), query)
+	if err != nil {
+		respondAuthorizationFactsError(c, err)
+		return
+	}
+	if !result.MatchesNavigation(query) {
+		respondIAMError(c, errors.New("incomplete navigation observation"))
 		return
 	}
 	c.JSON(http.StatusOK, result)

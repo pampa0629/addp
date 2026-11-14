@@ -403,6 +403,16 @@ func exercisePersistentNodeGrants(t *testing.T, db *gorm.DB, service *Service, a
 		if _, e := service.CreateIndependentGrant(ctx, rootCommand); !errors.Is(e, commonapi.ErrBadRequest) {
 			t.Fatalf("service root Grant admitted: %v", e)
 		}
+		rootCommand.RequestID = uuid.New()
+		recursiveRoot := true
+		rootCommand.NodeRecursive = &recursiveRoot
+		rootGrant, err := service.CreateIndependentGrant(ctx, rootCommand)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err = service.RevokeGrant(ctx, RevokeGrantInput{Actor: actor, EngineID: int64(base.EngineID), RequestID: rootGrant.RequestID, Reason: "End recursive service root setup"}); err != nil {
+			t.Fatal(err)
+		}
 		if _, e := service.RevokeGrant(ctx, RevokeGrantInput{Actor: actor, EngineID: int64(base.EngineID), RequestID: bucketGrant.RequestID, Reason: "End bucket setup"}); e != nil {
 			t.Fatal(e)
 		}

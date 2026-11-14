@@ -116,3 +116,38 @@ func (c *SystemServiceClient) CheckManagerObjectPreview(ctx context.Context, cre
 	}
 	return &result, nil
 }
+
+// CheckManagerNavigation observes root/path visibility with the current User.
+func (c *SystemServiceClient) CheckManagerNavigation(ctx context.Context, credential string, query authorization.SourceNavigationCheckRequest) (*authorization.SourceMetadataCheck, error) {
+	return c.checkNavigation(ctx, credential, query, "manager-navigation", false)
+}
+func (c *SystemServiceClient) CheckMetaNavigation(ctx context.Context, credential string, query authorization.SourceNavigationCheckRequest) (*authorization.SourceMetadataCheck, error) {
+	return c.checkNavigation(ctx, credential, query, "meta-navigation", false)
+}
+func (c *SystemServiceClient) checkNavigation(ctx context.Context, credential string, query authorization.SourceNavigationCheckRequest, operation string, delegate bool) (*authorization.SourceMetadataCheck, error) {
+	if !validSourceCredential(credential, delegate) {
+		return nil, ErrMetadataCredentialRejected
+	}
+	if !query.Valid() {
+		return nil, ErrMetadataQueryDenied
+	}
+	if c == nil || c.baseURL == "" || c.httpClient == nil {
+		return nil, ErrMetadataQueryUnavailable
+	}
+	bound := *c
+	transport := *c.httpClient
+	transport.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
+	bound.httpClient = &transport
+	var result authorization.SourceMetadataCheck
+	status, err := bound.doJSON(ctx, http.MethodPost, "/api/v1/system/engine-access/metadata-checks/"+operation, credential, query, &result, 512<<10)
+	if status == http.StatusUnauthorized {
+		return nil, ErrMetadataCredentialRejected
+	}
+	if status == http.StatusForbidden {
+		return nil, ErrMetadataQueryDenied
+	}
+	if err != nil || status != http.StatusOK || !result.MatchesNavigation(query) {
+		return nil, ErrMetadataQueryUnavailable
+	}
+	return &result, nil
+}

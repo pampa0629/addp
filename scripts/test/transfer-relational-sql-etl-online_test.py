@@ -332,6 +332,12 @@ class TransferRelationalSQLETLOnlineTest(unittest.TestCase):
             sleep.assert_not_called()
             client.request.assert_called_once()
 
+    def test_manager_read_boundary_allows_hidden_engine_before_first_grant(self):
+        client = SimpleNamespace(request=Mock(return_value=SimpleNamespace(status=200, payload={"data": []})))
+        with patch.object(ONLINE.time, "monotonic", return_value=0):
+            ONLINE.wait_manager_read_boundary(client, 7, 10, target_visible=False)
+        client.request.assert_called_once_with("GET", "/api/v1/manager/engines", (200, 403))
+
     def test_manager_read_boundary_initial_sync_has_a_deadline(self):
         client = SimpleNamespace(request=Mock(return_value=SimpleNamespace(status=403, payload={"error_code": "security_protection_required"})))
         with patch.object(ONLINE.time, "monotonic", side_effect=[0, 11]), patch.object(ONLINE.time, "sleep"), self.assertRaisesRegex(ONLINE.SuiteError, "initial Security protection synchronization"):

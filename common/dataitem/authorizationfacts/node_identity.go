@@ -152,11 +152,25 @@ func (p NodeIdentityPage) Validate(tenantID uint, q NodeIdentityPageQuery) error
 	return nil
 }
 
+// NavigationRoot identifies the actual catalog root of the admitted node Grant profiles.
+func NavigationRoot(engineType string, engineID uint) (plugin.EngineCatalogPath, bool) {
+	switch engineType {
+	case "postgresql":
+		return plugin.EngineCatalogRootPath(plugin.TabularCatalogModel(plugin.EngineCatalogTermSchema), engineID), true
+	case "nfs":
+		return plugin.FileRootPath(engineID), true
+	case "minio":
+		return plugin.ObjectRootPath(engineID), true
+	default:
+		return plugin.EngineCatalogPath{}, false
+	}
+}
+
 // NodeIdentityMatchesEngine keeps admission aligned across discovery and signing.
 func NodeIdentityMatchesEngine(engineType string, path plugin.EngineCatalogPath) bool {
 	if !ValidNodeIdentityTarget(path) {
 		return false
 	}
-	term := path.Segments[0].Term
-	return (engineType == "postgresql" && term == "server") || (engineType == "nfs" && term == "root") || (engineType == "minio" && term == "service")
+	root, ok := NavigationRoot(engineType, path.EngineID)
+	return ok && root.Segments[0] == path.Segments[0]
 }

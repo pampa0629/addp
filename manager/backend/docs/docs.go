@@ -860,7 +860,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "获取当前租户 active 且具备存储能力的注册引擎及其连接状态；非 online 项由前端展示并禁选 | Get active registered storage-capable engines with connection status for the current tenant; clients must show but disable non-online options",
+                "description": "获取当前租户存储引擎；PG、NFS、MinIO 仅返回当前用户有有效数据范围的引擎，离线获权引擎可见且禁选 | List current Tenant storage engines; PG, NFS and MinIO require a current authorized data range. Authorized offline engines remain visible and disabled",
                 "produces": [
                     "application/json"
                 ],

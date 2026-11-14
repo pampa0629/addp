@@ -17,8 +17,8 @@ func (s SourceNodeScope) Validate() error {
 	if err := (authorizationfacts.NodeIdentityQuery{Target: s.Target}).Validate(); err != nil {
 		return err
 	}
-	if s.Target.Segments[0].Term == "service" && len(s.Target.Segments) < 2 {
-		return errors.New("MinIO Grant requires a bucket or prefix")
+	if s.Target.Segments[0].Term == "service" && len(s.Target.Segments) == 1 && !s.Recursive {
+		return errors.New("MinIO service root requires recursive scope")
 	}
 	return nil
 }

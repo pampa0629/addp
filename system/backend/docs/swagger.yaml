@@ -413,6 +413,13 @@ definitions:
       visible:
         type: boolean
     type: object
+  authorization.SourceNavigationCheckRequest:
+    properties:
+      targets:
+        items:
+          $ref: '#/definitions/plugin.EngineCatalogPath'
+        type: array
+    type: object
   authorization.SourceNodeScope:
     properties:
       recursive:
@@ -7711,6 +7718,56 @@ paths:
       tags:
       - 配置管理 | Configuration Management
       x-addp-auth-mode: self
+  /engine-access/metadata-checks/manager-navigation:
+    post:
+      consumes:
+      - application/json
+      description: 当前用户的有效个人和组织 Grant 决定 PG、NFS、MinIO 引擎根可见性；跨 Meta 查询后重核。结果不包含授权来源、内容或可缓存许可
+        | Current personal and organization Grants determine PG, NFS and MinIO root
+        visibility, rechecked after Meta queries. Returns no Grant provenance, content
+        or reusable lease
+      parameters:
+      - description: 1 至 200 个引擎根 | 1 to 200 engine roots
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/authorization.SourceNavigationCheckRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/authorization.SourceMetadataCheck'
+        "400":
+          description: 核验失败 | Check failed
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "401":
+          description: 核验失败 | Check failed
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "403":
+          description: 核验失败 | Check failed
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "500":
+          description: 核验失败 | Check failed
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "503":
+          description: 核验失败 | Check failed
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 检查数据探查引擎可见性 | Check explorer engine visibility
+      tags:
+      - 源数据读取检查 | Source Data Read Checks
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - manager.data_item.read
   /engine-access/metadata-checks/manager-object-preview:
     post:
       consumes:
@@ -7879,6 +7936,55 @@ paths:
       x-addp-auth-mode: permission
       x-addp-required-permissions:
       - meta.lineage.read
+  /engine-access/metadata-checks/meta-navigation:
+    post:
+      consumes:
+      - application/json
+      description: 当前租户用户按有效节点授权检查导航范围；精确项祖先由 Meta 从可见叶子保留。撤权和到期实时重核 | Current Tenant
+        users check navigation ranges from active node grants. Meta retains ancestors
+        of visible exact items. Revocation and expiry are checked on each request
+      parameters:
+      - description: 1 至 200 个规范节点 | 1 to 200 canonical nodes
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/authorization.SourceNavigationCheckRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/authorization.SourceMetadataCheck'
+        "400":
+          description: 核验失败 | Check failed
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "401":
+          description: 核验失败 | Check failed
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "403":
+          description: 核验失败 | Check failed
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "500":
+          description: 核验失败 | Check failed
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "503":
+          description: 核验失败 | Check failed
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 检查元数据路径可见性 | Check metadata navigation visibility
+      tags:
+      - 源数据读取检查 | Source Data Read Checks
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - meta.catalog.read
   /engine-access/metadata-checks/meta-query:
     post:
       consumes:
@@ -8864,10 +8970,10 @@ paths:
       consumes:
       - application/json
       description: |-
-        当前 Tenant User 需授予功能和目标引擎管理范围。精确 DataItem 提交指纹及预期边界摘要，System 独立读取 Meta 完整边界并按已接入 profile 核验；PG 持续节点范围显式提交 node_recursive，不带指纹或摘要，System 独立核对 Meta 真实 server/schema。节点在期限内覆盖当前及以后新识别项；非递归只覆盖直属项。两种目标互斥，无需企业 Catalog 编目 | Current Tenant User needs Grant creation permission and target engine management scope. Exact DataItems carry fingerprint and expected boundary hash, independently verified from complete Meta facts for admitted profiles. Persistent PG server/schema scopes carry explicit node_recursive and no item fingerprint/hash; Meta independently proves the node. Covers current and future identified items during validity; nonrecursive scopes cover direct DataItems only. The variants are mutually exclusive and require no enterprise Catalog curation
+        当前 Tenant User 需授予功能和目标引擎管理范围。精确 DataItem 提交指纹及预期边界摘要，System 独立读取 Meta 完整边界并按已接入 profile 核验；PG、NFS、MinIO 的持续节点范围显式提交 node_recursive，不带指纹或摘要。整引擎使用经 Meta 核验的递归根路径。节点在期限内覆盖当前及以后新识别项；非递归只覆盖直属项。两种目标互斥，无需企业 Catalog 编目 | Current Tenant User needs Grant creation permission and target engine management scope. Exact DataItems carry fingerprint and expected boundary hash, independently verified from complete Meta facts for admitted profiles. PG, NFS and MinIO node scopes carry explicit node_recursive without item fingerprint/hash. Entire-engine scope uses the Meta-verified recursive root. Covers current and future identified items during validity; nonrecursive scopes cover direct DataItems only. The variants are mutually exclusive and require no enterprise Catalog curation
         同命令同操作者同参数重试仅恢复原签发及撤销事实，不续期或恢复读取。不同参数 409；成功不替代消费侧功能权限、当前主体和安全策略 | Identical command, operator and parameters recover issuance and revocation history without renewal or restored access. Changed parameters return 409; success does not replace consumer permissions, current identity or security policy
         同目标、接收方和动作已有有效授权时，新命令返回 409 engine_access_grant_relation_exists，不重复发放或静默变更期限；包括业务批准来源 | A new command returns 409 engine_access_grant_relation_exists when the same target, recipient and action already have active access, including business-approved Grants. No duplicate issuance or silent validity change
-        可靠识别的 DataItem 支持 metadata_read（仅查看元数据）；read（读取内容并包含必要元数据）仍按已接入内容 profile 核验。metadata_target 仅支持 metadata_read；PG 节点范围保持既有准入。动作必须明确填写，不自动提升 | Reliably identified DataItems support metadata_read; read still requires an admitted content profile. metadata_target permits metadata_read only. Persistent node scopes remain PG-only. Explicit action is required and never upgraded
+        可靠识别的 DataItem 支持 metadata_read（仅查看元数据）；read（读取内容并包含必要元数据）仍按已接入内容 profile 核验。metadata_target 仅支持 metadata_read；节点范围按 PG、NFS、MinIO 的已接入路径办理。动作必须明确填写，不自动提升 | Reliably identified DataItems support metadata_read; read still requires an admitted content profile. metadata_target permits metadata_read only. Persistent node scopes support admitted PG, NFS and MinIO paths. Explicit action is required and never upgraded
       parameters:
       - description: 引擎 ID | Engine ID
         in: path

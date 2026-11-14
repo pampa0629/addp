@@ -189,3 +189,35 @@ func TestManagerObjectPreviewUsesFixedOriginalCredentialAndStrictObservation(t *
 		})
 	}
 }
+
+func TestNavigationClientRetainsUserAndBindsEveryNode(t *testing.T) {
+	target := plugin.ObjectRootPath(9)
+	query := authorization.SourceNavigationCheckRequest{Targets: []plugin.EngineCatalogPath{target}}
+	for _, mode := range []string{"ok", "wrong-target", "missing", "unavailable"} {
+		t.Run(mode, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.Method != "POST" || r.URL.Path != "/api/v1/system/engine-access/metadata-checks/manager-navigation" || r.Header.Get("Authorization") != "Bearer addp_at_user" || r.Header.Get("X-Tenant-ID") != "" {
+					t.Error("navigation identity replaced")
+				}
+				if mode == "unavailable" {
+					w.WriteHeader(503)
+					return
+				}
+				result := authorization.SourceMetadataCheck{ObservedAt: time.Now(), Targets: []authorization.SourceMetadataTargetCheck{{Target: target, Visible: true}}}
+				if mode == "wrong-target" {
+					result.Targets[0].Target.EngineID = 10
+				}
+				if mode == "missing" {
+					result.Targets = nil
+				}
+				json.NewEncoder(w).Encode(result)
+			}))
+			defer server.Close()
+			client := &SystemServiceClient{baseURL: server.URL, httpClient: server.Client()}
+			got, err := client.CheckManagerNavigation(t.Context(), "addp_at_user", query)
+			if (mode == "ok") != (err == nil) {
+				t.Fatal(got, err)
+			}
+		})
+	}
+}

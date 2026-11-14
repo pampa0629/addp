@@ -65,7 +65,11 @@ func TestMinIONodeScopeCoversTypedCurrentAndFutureObjects(t *testing.T) {
 			t.Fatal("foreign/self target covered", path)
 		}
 	}
-	if (SourceNodeScope{Target: plugin.ObjectRootPath(9), Recursive: true}).Validate() == nil {
-		t.Fatal("service root became a Grant")
+	root := SourceNodeScope{Target: plugin.ObjectRootPath(9), Recursive: true}
+	if root.Validate() != nil || !root.Covers(nested) || !root.Covers(plugin.ObjectItemPath(9, "future-bucket", "future.ifc")) || root.Covers(plugin.ObjectItemPath(10, "bucket", "future.ifc")) {
+		t.Fatal("recursive root must cover objects in this engine only")
+	}
+	if (SourceNodeScope{Target: root.Target}).Validate() == nil {
+		t.Fatal("nonrecursive service root is not a whole-engine grant")
 	}
 }

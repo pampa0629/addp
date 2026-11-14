@@ -6,13 +6,21 @@ import (
 
 	commonapi "github.com/addp/common/api"
 	"github.com/addp/common/authorization"
+	"github.com/addp/common/dataitem/authorizationfacts"
 	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/resourcetree"
 	"gorm.io/gorm"
+	"slices"
 )
 
 type MetadataVisibilityCheck func(context.Context, []plugin.EngineCatalogPath) (*authorization.SourceMetadataCheck, error)
 type metadataVisibilityKey struct{}
+type navigationVisibilityKey struct{}
+type NavigationVisibilityCheck func(context.Context, authorization.SourceNavigationCheckRequest) (*authorization.SourceMetadataCheck, error)
+
+func WithNavigationVisibility(ctx context.Context, check NavigationVisibilityCheck) context.Context {
+	return context.WithValue(ctx, navigationVisibilityKey{}, check)
+}
 
 // WithMetadataVisibility belongs only to the synchronous user query stack.
 // Runtime facts and scan readers retain their separately guarded machine paths.
@@ -31,8 +39,13 @@ func filterMetadataResourceTree(ctx context.Context, root *resourcetree.TreeNode
 	}
 	targets := []plugin.EngineCatalogPath{}
 	keys := map[string]string{}
-	var collect func(*resourcetree.TreeNode) error
-	collect = func(node *resourcetree.TreeNode) error {
+	nodeCheck, checkNodes := ctx.Value(navigationVisibilityKey{}).(NavigationVisibilityCheck)
+	engineType, _ := root.Metadata["engine_type"].(string)
+	rootPath, managedRoot := authorizationfacts.NavigationRoot(engineType, engineID)
+	nodes := []*resourcetree.TreeNode{}
+	paths := []plugin.EngineCatalogPath{}
+	var collect func(*resourcetree.TreeNode, plugin.EngineCatalogPath) error
+	collect = func(node *resourcetree.TreeNode, parent plugin.EngineCatalogPath) error {
 		if err := ctx.Err(); err != nil {
 			return err
 		}
@@ -61,19 +74,67 @@ func filterMetadataResourceTree(ctx context.Context, root *resourcetree.TreeNode
 			keys[node.Locator] = string(key)
 			targets = append(targets, target)
 		}
+		var path plugin.EngineCatalogPath
+		if checkNodes && managedRoot && loc.NodeID != nil && loc.ItemID == nil {
+			if node == root {
+				path = rootPath
+			} else if parent.EngineID != 0 {
+				part := plugin.EngineCatalogSegment{Term: node.Type, Kind: node.Type, Name: node.Label}
+				switch node.Type {
+				case "schema":
+					part.Kind = "namespace"
+				case "dir":
+					part.Term = "directory"
+					part.Kind = "directory"
+				}
+				path = parent
+				path.Segments = append(slices.Clone(parent.Segments), part)
+			}
+			fullName, _ := node.Metadata["full_name"].(string)
+			expected := path.StringPath()
+			if node.Type == "schema" {
+				expected = node.Label
+			}
+			if authorizationfacts.NodeIdentityMatchesEngine(engineType, path) && expected == fullName {
+				paths = append(paths, path)
+				nodes = append(nodes, node)
+			} else {
+				path = plugin.EngineCatalogPath{}
+			}
+		}
 		for _, child := range node.Children {
-			if err := collect(child); err != nil {
+			if err := collect(child, path); err != nil {
 				return err
 			}
 		}
 		return nil
 	}
-	if err := collect(root); err != nil {
+	if err := collect(root, plugin.EngineCatalogPath{}); err != nil {
 		return nil, err
 	}
 	visible, err := observeMetadataVisibility(ctx, targets, check)
 	if err != nil {
 		return nil, err
+	}
+	navigation := map[string]bool{}
+	if checkNodes && managedRoot {
+		for offset := 0; offset < len(paths); offset += 200 {
+			end := offset + 200
+			if end > len(paths) {
+				end = len(paths)
+			}
+			query := authorization.SourceNavigationCheckRequest{Targets: paths[offset:end]}
+			result, err := nodeCheck(ctx, query)
+			if err != nil {
+				return nil, err
+			}
+			if !result.MatchesNavigation(query) {
+				return nil, commonapi.ErrForbidden
+			}
+			for i, target := range result.Targets {
+				navigation[nodes[offset+i].Locator] = target.Visible
+			}
+		}
 	}
 	var prune func(*resourcetree.TreeNode, bool) (*resourcetree.TreeNode, int)
 	prune = func(node *resourcetree.TreeNode, isRoot bool) (*resourcetree.TreeNode, int) {
@@ -94,7 +155,7 @@ func filterMetadataResourceTree(ctx context.Context, root *resourcetree.TreeNode
 				count += n
 			}
 		}
-		if !isRoot && !isItem && len(children) == 0 {
+		if (!isRoot || managedRoot) && !isItem && len(children) == 0 && !navigation[node.Locator] {
 			return nil, 0
 		}
 		if isItem {

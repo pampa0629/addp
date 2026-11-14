@@ -1348,7 +1348,7 @@ def run(client, tenant_id, engine_id, samples, model_samples, timeout, source_ty
     require(source_type in {"ftp", "nfs", "minio"}, "unadmitted file model source")
     require(tenant_id > 1, 'FTP Online requires a nondefault disposable Tenant')
     API.validate_user_identity(client, tenant_id, PERMISSIONS)
-    API.wait_manager_read_boundary(client, engine_id, time.monotonic() + min(timeout, 120))
+    API.wait_manager_read_boundary(client, engine_id, time.monotonic() + min(timeout, 120), target_visible=source_type == "ftp")
     context = client.request('GET', '/api/v1/system/auth/context', (200,)).payload
     selectors = client.request('GET', '/api/v1/system/engine-catalog/engines', (200,)).payload
     selected = [entry for entry in selectors if entry.get('id') == engine_id]

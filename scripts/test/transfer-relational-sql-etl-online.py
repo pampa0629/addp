@@ -733,7 +733,7 @@ def verify_upload_visibility(client, initializer, identity, engine_id, items):
 def run_object_upload(client, initializer, repository, identity, timeout):
     engine_id = positive_int(required_environment("ADDP_ONLINE_TRANSFER_MINIO_ENGINE_ID"), "upload MinIO engine id")
     validate_engine(client, engine_id, "Hosted Transfer MinIO", "minio", time.monotonic() + timeout)
-    wait_manager_read_boundary(client, engine_id, time.monotonic() + timeout)
+    wait_manager_read_boundary(client, engine_id, time.monotonic() + timeout, target_visible=False)
     if _array(client.request("GET", f"/api/v1/meta/engines/{engine_id}/items", (200,)).payload, "fresh object items"):
         raise SuiteError("object upload requires a fresh engine without scanned items")
     artifact = Path(required_environment("ADDP_ONLINE_ARTIFACT_DIR"))
@@ -1972,10 +1972,10 @@ def validate_user_identity(client: GatewayClient, tenant_id: int) -> dict[str, o
     }
 
 
-def wait_manager_read_boundary(client: GatewayClient, engine_id: int, deadline: float) -> None:
+def wait_manager_read_boundary(client: GatewayClient, engine_id: int, deadline: float, *, target_visible: bool = True) -> None:
     # Only adapt this suite's error type; the shared helper owns readiness.
     try:
-        API.wait_manager_read_boundary(client, engine_id, deadline)
+        API.wait_manager_read_boundary(client, engine_id, deadline, target_visible=target_visible)
     except API.SuiteError as error:
         raise SuiteError(str(error)) from error
 

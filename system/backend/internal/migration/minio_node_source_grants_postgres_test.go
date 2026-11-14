@@ -18,6 +18,12 @@ import (
 // The additive profile migration must not rewrite earlier grants, recipients,
 // revocations or audit facts. It grants no data to any account by itself.
 func TestMinIONodeSourceGrantsForwardMigrationAgainstPostgres(t *testing.T) {
+	exerciseMinIONodeMigration(t, "000270_minio_node_source_grants.up.sql", false)
+}
+func TestRecursiveEngineRootForwardMigrationAgainstPostgres(t *testing.T) {
+	exerciseMinIONodeMigration(t, "000295_recursive_engine_root.up.sql", true)
+}
+func exerciseMinIONodeMigration(t *testing.T, migration string, rootAllowed bool) {
 	dsn := os.Getenv("ADDP_SYSTEM_POSTGRES_TEST_DSN")
 	if dsn == "" {
 		t.Skip("requires standard System PostgreSQL gate")
@@ -36,7 +42,7 @@ func TestMinIONodeSourceGrantsForwardMigrationAgainstPostgres(t *testing.T) {
 	}
 	reset()
 	defer reset()
-	before, through := migrationFilesBeforeAndThrough(t, "000270_minio_node_source_grants.up.sql")
+	before, through := migrationFilesBeforeAndThrough(t, migration)
 	run := func(r *Runner) {
 		t.Helper()
 		ctx, cancel := context.WithTimeout(t.Context(), 2*time.Minute)
@@ -100,12 +106,12 @@ func TestMinIONodeSourceGrantsForwardMigrationAgainstPostgres(t *testing.T) {
 		if err := db.QueryRow(`SELECT system.valid_source_node_path($1::jsonb,$2)`, string(raw), engine).Scan(&valid); err != nil {
 			t.Fatal(err)
 		}
-		if root.Segments[0].Term == "service" && valid {
+		if root.Segments[0].Term == "service" && valid != rootAllowed {
 			t.Fatal("service root admitted")
 		}
 		if _, err := db.Exec(`INSERT INTO system.engine_access_grants(request_id,approval_mode,tenant_id,engine_id,catalog_path,item_fingerprint,boundary_hash,node_recursive,recipient_type,recipient_id,action,expiry_mode,operator_principal_id,operator_membership_id,operator_authorization_version,reason)
- VALUES($1,'independent',$2,$3,$4::jsonb,'','',true,'user',$5,'read','until_revoked',$5,$6,$7,'Must reject root or wrong engine profile')`, uuid.New(), tenant, engine, string(raw), principal, member, version); err == nil {
-			t.Fatal("unsupported scope persisted")
+ VALUES($1,'independent',$2,$3,$4::jsonb,'','',true,'user',$5,'read','until_revoked',$5,$6,$7,'Must reject root or wrong engine profile')`, uuid.New(), tenant, engine, string(raw), principal, member, version); (err == nil) != (rootAllowed && root.Segments[0].Term == "service") {
+			t.Fatal("root profile mismatch", err)
 		}
 	}
 }

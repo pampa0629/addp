@@ -432,7 +432,7 @@ case "$TEST_FILTER" in
             echo "source-grant-relations test requires --package migration" >&2
             exit 2
         fi
-        test_pattern='^Test(SourceGrantRelations|SourceDataItemBoundary(Identity)?|SourceSingleRecordTargets)ForwardMigrationAgainstPostgres$'
+        test_pattern='^Test(SourceGrantRelations|SourceDataItemBoundary(Identity)?|SourceSingleRecordTargets|MinIONodeSourceGrants|RecursiveEngineRoot)ForwardMigrationAgainstPostgres$'
         ;;
     oauth-client-credentials)
         if [ "$PACKAGE_FILTER" != "api" ]; then

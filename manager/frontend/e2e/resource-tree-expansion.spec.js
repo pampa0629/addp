@@ -419,3 +419,33 @@ test('a delayed child response does not reopen its collapsed engine', async ({ p
   await expect(row(page, 'schema 29')).toBeVisible()
   await expanded(page, engines[0].name, false)
 })
+
+test('authorized catalog keeps an empty node and removes the last visible engine on refresh', async ({ page }) => {
+  const backend = await installBackend(page)
+  backend.engines = [engines[0]]
+  const empty = { ...branch(25), id: branchKey(25).replace('business', 'empty').replace('251', '253'),
+    label: 'empty directory', hasChildren: false, children: [] }
+  empty.locator = empty.id
+  backend.root = id => ({ ...root(id), children: [branch(id), empty] })
+  await page.goto('/data-explorer')
+  await expect(row(page, engines[0].name)).toBeVisible()
+  await expect(row(page, engines[1].name)).toBeHidden()
+  expect(backend.rootRequests).toEqual([])
+  await arrow(page, engines[0].name).click()
+  await expect(arrow(page, 'empty directory')).toHaveClass(/is-leaf/)
+  await arrow(page, 'schema 25').click()
+  await row(page, 'customers 25').click()
+
+  backend.root = root
+  await page.locator('.tree-header button').click()
+  await expect(row(page, 'empty directory')).toBeHidden()
+  await expect(row(page, 'customers 25')).toBeVisible()
+  await expect.poll(() => new URL(page.url()).searchParams.get('locator')).toBe(customerKey(25))
+
+  backend.engines = []
+  await page.locator('.tree-header button').click()
+  await expect(row(page, engines[0].name)).toBeHidden()
+  await expect(row(page, 'customers 25')).toBeHidden()
+  await expect.poll(() => new URL(page.url()).searchParams.get('locator')).toBe(null)
+  expect(backend.writes).toEqual([])
+})

@@ -49,6 +49,9 @@ func writeCatalogPreviewError(c *gin.Context, err error) bool {
 // ExplorerHandler 数据探查 API Handler（新版本）
 // 基于 ResourceLocator URI 系统
 type ExplorerHandler struct {
+	navigationChecker interface {
+		CheckManagerNavigation(context.Context, string, authorization.SourceNavigationCheckRequest) (*authorization.SourceMetadataCheck, error)
+	}
 	explorerService      *service.ExplorerService
 	previewResolver      *preview.PreviewResolver
 	metadataService      *service.MetadataService
@@ -489,7 +492,7 @@ func queryCSV(c *gin.Context, key string) []string {
 // ListEngines 获取存储引擎选择项
 // GET /api/explorer/engines
 // @Summary 获取引擎列表 | List engines
-// @Description 获取当前租户 active 且具备存储能力的注册引擎及其连接状态；非 online 项由前端展示并禁选 | Get active registered storage-capable engines with connection status for the current tenant; clients must show but disable non-online options
+// @Description 获取当前租户存储引擎；PG、NFS、MinIO 仅返回当前用户有有效数据范围的引擎，离线获权引擎可见且禁选 | List current Tenant storage engines; PG, NFS and MinIO require a current authorized data range. Authorized offline engines remain visible and disabled
 // @Tags Manager
 // @Produce json
 // @Success 200 {object} map[string]interface{} "引擎列表 | Engine list"
@@ -511,6 +514,12 @@ func (h *ExplorerHandler) ListEngines(c *gin.Context) {
 		return
 	}
 
+	engines, err = h.filterVisibleEngines(c, engines)
+	if err != nil {
+		writePreviewAuthorizationError(c, err)
+		return
+	}
+	c.Header("Cache-Control", "no-store")
 	logger.L().Info("获取引擎列表成功", "count", len(engines))
 
 	c.JSON(http.StatusOK, gin.H{

@@ -1486,7 +1486,7 @@ test('one batch freezes item and two independent node recursion choices; cancell
  await resourceOption(tree,'outdoor').click()
  await resourceOption(tree,'授权验证 PostgreSQL').click()
  const rootRow=targets.getByRole('row').filter({hasText:'授权验证 PostgreSQL'})
- await rootRow.getByTestId('authorization-node-recursive').click()
+ await expect(rootRow.getByRole('checkbox')).toBeDisabled()
  await expandSchema(tree)
  await resourceOption(tree,'activities').click()
  await expect(targets.getByTestId('approval-basis-status')).toHaveCount(3)
@@ -1551,6 +1551,25 @@ for (const sourceType of ['postgresql','nfs','minio']) test(`${sourceType} engin
   expect(writes).toEqual([])
 })
 
+
+for (const [sourceType, root] of [['postgresql', rootPath], ['nfs', ftpRootPath], ['minio', minioRootPath]]) {
+  test(`entire engine issues one recursive node Grant for ${sourceType}`, async ({ page }) => {
+    const { reads, writes } = await fixture(page, { allowed: grantPermissions, sourceType, ftp: sourceType === 'postgresql' ? '' : 'gpkg' })
+    await page.goto('/engines/2?tab=data-authorization')
+    await openNewAuthorization(page)
+    await resourceOption(page.getByTestId('approval-resource-tree'), '授权验证 PostgreSQL').click()
+    const targets = page.getByTestId('approval-targets')
+    await expect(targets).toContainText('整个引擎（含以后新增的数据项）')
+    await expect(targets.getByRole('checkbox')).toBeChecked()
+    await expect(targets.getByRole('checkbox')).toBeDisabled()
+    await grantDraft(page)
+    await confirmGrant(page)
+    expect(writes).toHaveLength(1)
+    expect(writes[0].body).toMatchObject({catalog_path: root, node_recursive: true, action: 'read'})
+    expect(writes[0].body.item_fingerprint).toBeUndefined()
+    expect(reads.filter(url => url.includes('/authorization-facts'))).toEqual([])
+  })
+}
 
 for (const recursive of [false,true]) for (const action of ['metadata_read','read']) test(`MinIO one bucket Grant ${action} recursive=${recursive} does not expand into items`,async({page})=>{
  const {reads,writes}=await fixture(page,{allowed:grantPermissions,sourceType:'minio',ftp:'gpkg',metadataOnly:true})

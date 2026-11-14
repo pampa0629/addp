@@ -47,6 +47,9 @@ func (s *ResourceTreeService) GetTree(ctx context.Context, tenantID, engineID ui
 			return nil, err
 		}
 	}
+	if tree == nil {
+		return nil, metaErrors.ErrNodeNotFound
+	}
 	limitVisibleTreeDepth(tree, expandDepth)
 	return tree, nil
 }

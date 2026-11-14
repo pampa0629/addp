@@ -177,7 +177,7 @@ def cleanup_resource(client: GatewayClient, path: str) -> bool:
     return remaining.status == 404
 
 
-def wait_manager_read_boundary(client: GatewayClient, engine_id: int, deadline: float) -> None:
+def wait_manager_read_boundary(client: GatewayClient, engine_id: int, deadline: float, *, target_visible: bool = True) -> None:
     """Observe initial Security synchronization without mutating owner storage."""
     while time.monotonic() < deadline:
         response = client.request("GET", "/api/v1/manager/engines", (200, 403))
@@ -189,10 +189,10 @@ def wait_manager_read_boundary(client: GatewayClient, engine_id: int, deadline: 
                 raise SuiteError("Manager engine readiness was denied by authorization")
         else:
             engines = payload.get("data")
-            if not isinstance(engines, list) or sum(
-                isinstance(engine, dict) and engine.get("id") == engine_id for engine in engines
-            ) != 1:
-                raise SuiteError("Manager engine readiness did not return the exact target Engine")
+            if not isinstance(engines, list) or any(
+                not isinstance(row, dict) or type(row.get("id")) is not int for row in engines
+            ) or sum(row["id"] == engine_id for row in engines) != int(target_visible):
+                raise SuiteError("Manager catalog did not match expected visibility for the exact target Engine")
             return
         time.sleep(1)
     raise SuiteError("Manager initial Security protection synchronization did not become ready")

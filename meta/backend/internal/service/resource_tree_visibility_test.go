@@ -132,7 +132,7 @@ func TestPGUserResourceTreeFiltersBeforeDepthSearchAndAncestors(t *testing.T) {
 	}
 	allow = false
 	tree, err = svc.GetTree(ctx, tenant, engine, -1)
-	if err != nil || len(tree.Children) != 0 || tree.HasChildren || tree.Metadata["item_count"] != 0 || calls != 6 {
+	if !errors.Is(err, metaErrors.ErrNodeNotFound) || tree != nil || calls != 6 {
 		t.Fatalf("revocation was cached: %+v calls=%d err=%v", tree, calls, err)
 	}
 }
@@ -275,7 +275,7 @@ func TestFileAndObjectMetadataViewsShareCurrentVisibility(t *testing.T) {
 				t.Fatal("revoked count retained", count, err)
 			}
 			tree, err = svc.GetTree(ctx, tenant, engine, -1)
-			if err != nil || len(tree.Children) != 0 || tree.Metadata["item_count"] != 0 {
+			if !errors.Is(err, metaErrors.ErrNodeNotFound) || tree != nil {
 				t.Fatal("revoked tree retained", err)
 			}
 		})
@@ -313,5 +313,94 @@ func visibilityTestTargetResolver(root *resourcetree.TreeNode, engineType string
 			return result, commonapi.ErrForbidden
 		}
 		return result, nil
+	}
+}
+
+func TestGrantedEmptyNodesAndIndependentItemSurviveRootRevocation(t *testing.T) {
+	for _, engineType := range []string{"postgresql", "nfs", "minio"} {
+		t.Run(engineType, func(t *testing.T) {
+			rootPath := plugin.EngineCatalogRootPath(plugin.TabularCatalogModel("schema"), 9)
+			branch := plugin.TabularNamespacePath(9, "schema", "public")
+			empty := plugin.TabularNamespacePath(9, "schema", "empty")
+			leafPath := plugin.TabularItemPath(9, "schema", "public", "visible")
+			if engineType == "nfs" {
+				rootPath = plugin.FileDirectoryPath(9, "")
+				branch = plugin.FileDirectoryPath(9, "public")
+				empty = plugin.FileDirectoryPath(9, "empty")
+				leafPath = plugin.FileItemPath(9, "public/visible")
+			}
+			if engineType == "minio" {
+				rootPath = plugin.ObjectRootPath(9)
+				branch = plugin.ObjectDirectoryPath(9, "public", "")
+				empty = plugin.ObjectDirectoryPath(9, "empty", "")
+				leafPath = plugin.ObjectItemPath(9, "public", "visible")
+			}
+			node := func(path plugin.EngineCatalogPath, id uint, item bool) *resourcetree.TreeNode {
+				names := []string{}
+				for _, s := range path.Segments[1:] {
+					names = append(names, s.Name)
+				}
+				loc := &resourcetree.ResourceLocator{EngineID: 9, Path: names, Type: resourcetree.ResourceType(path.Segments[len(path.Segments)-1].Term)}
+				if item {
+					loc.ItemID = &id
+				} else {
+					loc.NodeID = &id
+				}
+				part := path.Segments[len(path.Segments)-1]
+				typ := part.Term
+				if typ == "directory" {
+					typ = "dir"
+				}
+				return &resourcetree.TreeNode{Locator: loc.ToURI(), Label: part.Name, Type: typ, Metadata: map[string]interface{}{"engine_type": engineType, "full_name": path.StringPath()}}
+			}
+			root, b, e, leaf := node(rootPath, 1, false), node(branch, 2, false), node(empty, 3, false), node(leafPath, 4, true)
+			root.Children = []*resourcetree.TreeNode{b, e}
+			b.Children = []*resourcetree.TreeNode{leaf}
+			rootGrant, itemGrant, emptyGrant := false, false, false
+			ctx := WithNavigationVisibility(t.Context(), func(_ context.Context, q authorization.SourceNavigationCheckRequest) (*authorization.SourceMetadataCheck, error) {
+				r := &authorization.SourceMetadataCheck{ObservedAt: time.Now()}
+				for _, path := range q.Targets {
+					visible := rootGrant || itemGrant && authorization.NavigationContains(path, leafPath) || emptyGrant && authorization.NavigationContains(path, empty)
+					r.Targets = append(r.Targets, authorization.SourceMetadataTargetCheck{Target: path, Visible: visible})
+				}
+				return r, nil
+			})
+			check := func(_ context.Context, paths []plugin.EngineCatalogPath) (*authorization.SourceMetadataCheck, error) {
+				r := &authorization.SourceMetadataCheck{ObservedAt: time.Now()}
+				for _, p := range paths {
+					r.Targets = append(r.Targets, authorization.SourceMetadataTargetCheck{Target: p, Visible: rootGrant || itemGrant})
+				}
+				return r, nil
+			}
+			run := func() *resourcetree.TreeNode {
+				t.Helper()
+				got, err := filterMetadataResourceTree(ctx, root, 9, func(context.Context, uint) (plugin.EngineCatalogPath, error) { return leafPath, nil }, check)
+				if err != nil {
+					t.Fatal(err)
+				}
+				return got
+			}
+			if run() != nil {
+				t.Fatal("unauthorized root shown")
+			}
+			emptyGrant = true
+			if got := run(); got == nil || len(got.Children) != 1 || got.Children[0].Locator != e.Locator || got.Children[0].HasChildren {
+				t.Fatal("authorized empty node missing", got)
+			}
+			emptyGrant = false
+			rootGrant = true
+			itemGrant = true
+			if got := run(); got == nil || len(got.Children) != 2 {
+				t.Fatal("root does not include empty descendants")
+			}
+			rootGrant = false
+			if got := run(); got == nil || len(got.Children) != 1 || got.Children[0].Locator != b.Locator || len(got.Children[0].Children) != 1 {
+				t.Fatal("independent item or ancestor lost", got)
+			}
+			itemGrant = false
+			if run() != nil {
+				t.Fatal("final withdrawal retained root")
+			}
+		})
 	}
 }

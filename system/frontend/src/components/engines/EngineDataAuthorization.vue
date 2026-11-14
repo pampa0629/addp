@@ -27,8 +27,8 @@
             <el-table-column :label="t('system.engine.dataAuthorization.target')" min-width="180"><template #default="{ row }">{{ approvalPathLabel(row) || engine.name }}</template></el-table-column>
             <el-table-column :label="t('system.engine.dataAuthorization.scope')" min-width="230"><template #default="{ row }">
               <template v-if="isNodePath(row)">
-                <el-tag>{{ t('system.engine.dataAuthorization.nodeTarget') }}</el-tag>
-                <el-checkbox v-model="nodeRecursions[basisKey(row)]" :disabled="busy" data-testid="authorization-node-recursive">{{ t('system.engine.dataAuthorization.nodeRecursive') }}</el-checkbox>
+                <el-tag>{{ t(row.segments.length === 1 ? 'system.engine.dataAuthorization.wholeEngine' : 'system.engine.dataAuthorization.nodeTarget') }}</el-tag>
+                <el-checkbox v-model="nodeRecursions[basisKey(row)]" :disabled="busy || row.segments.length === 1" data-testid="authorization-node-recursive">{{ t('system.engine.dataAuthorization.nodeRecursive') }}</el-checkbox>
               </template>
               <el-tag v-else type="info">{{ t('system.engine.dataAuthorization.itemTarget') }}</el-tag>
               <p v-if="isOverlapping(row)" class="hint" data-testid="authorization-scope-overlap">{{ t('system.engine.dataAuthorization.overlap') }}</p>
@@ -96,7 +96,7 @@ const adapter = computed(() => {
   if (!itemAdapter.value) return null
   return createMixedApprovalCatalogAdapter(catalogEngine.value, enginesAPI.listAuthorizationItems, enginesAPI.getAuthorizationFacts, enginesAPI.listAuthorizationNodes)
 })
-const isSelectableTarget = node => isApprovalTarget(node) || (isApprovalNode(node) && !(node.metadata.node_identity.target.segments[0].term === 'service' && node.metadata.node_identity.target.segments.length === 1))
+const isSelectableTarget = node => isApprovalTarget(node) || isApprovalNode(node)
 const isNodePath = path => selections.value.some(selection => isApprovalNode(selection.raw?.node) && approvalTargetsEqual(targetPaths.get(selection.identity.locator), path))
 const isOverlapping = path => targets.value.some(other => !approvalTargetsEqual(path, other) && (
   (isNodePath(other) && approvalScopeContains(other, path, !!nodeRecursions.value[basisKey(other)], isNodePath(path))) ||
@@ -152,6 +152,9 @@ function applySelection(next) {
   nodeRecursions.value = Object.fromEntries(Object.entries(nodeRecursions.value).filter(([key]) => retained.has(key)))
   selections.value = next
   targets.value = next.map(selection => targetPaths.get(selection.identity.locator)).filter(Boolean)
+  for (const path of targets.value) {
+    if (isNodePath(path) && path.segments.length === 1) nodeRecursions.value[basisKey(path)] = true
+  }
   inspectTargets(targets.value)
 }
 function remove(index) {
